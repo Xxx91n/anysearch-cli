@@ -3,24 +3,7 @@
 // ponytail: MVP - register provider, check auth, set default model via env/config.
 
 import { createModels } from "@earendil-works/pi-ai";
-
-const PROVIDER_FACTORIES: Record<string, () => Promise<unknown>> = {
-  openai: () => import("@earendil-works/pi-ai/providers/openai").then(m => m.openaiProvider()),
-  anthropic: () => import("@earendil-works/pi-ai/providers/anthropic").then(m => m.anthropicProvider()),
-  google: () => import("@earendil-works/pi-ai/providers/google").then(m => m.googleProvider()),
-};
-
-const MODELS: Record<string, string[]> = {
-  openai: ["gpt-4o", "gpt-4o-mini", "o3-mini", "o4-mini"],
-  anthropic: ["claude-sonnet-4-6", "claude-opus-4-1", "claude-haiku-4-5"],
-  google: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
-};
-
-const API_KEYS: Record<string, string> = {
-  openai: "OPENAI_API_KEY",
-  anthropic: "ANTHROPIC_API_KEY",
-  google: "GOOGLE_API_KEY",
-};
+import { PROVIDER_IMPORTS, MODELS, API_KEYS } from "../providers";
 
 export async function runLlm(args: string[]): Promise<number> {
   if (args.length === 0) {
@@ -53,7 +36,7 @@ export async function runLlm(args: string[]): Promise<number> {
       return 2;
     }
     const provider = args[1];
-    if (!PROVIDER_FACTORIES[provider]) {
+    if (!PROVIDER_IMPORTS[provider]) {
       process.stderr.write("Unknown provider: " + provider + "\n");
       process.stderr.write("Available: openai, anthropic, google\n");
       return 2;
@@ -71,7 +54,7 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("  export ANS_LLM_MODEL=" + model);
     console.log("");
     try {
-      await PROVIDER_FACTORIES[provider]();
+      await PROVIDER_IMPORTS[provider]();
       console.log("[OK] Provider " + provider + " factory loaded successfully.");
     } catch (e: any) {
       console.log("[WARN] Provider factory failed: " + (e?.message || String(e)));
@@ -83,7 +66,7 @@ export async function runLlm(args: string[]): Promise<number> {
   if (subcommand === "check") {
     console.log("ans llm check - Auth status");
     console.log("---");
-    for (const [name, factoryFn] of Object.entries(PROVIDER_FACTORIES)) {
+    for (const [name, factoryFn] of Object.entries(PROVIDER_IMPORTS)) {
       const apiKey = API_KEYS[name] || "UNKNOWN";
       const keySet = !!process.env[apiKey];
       try {

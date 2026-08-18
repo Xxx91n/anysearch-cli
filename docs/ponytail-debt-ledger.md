@@ -9,6 +9,8 @@ apps/cli/src/commands/recommend.ts:2 | MVP stub. Domain recommendation engine de
 packages/retriever/src/providers/tavily.ts | AbortSignal not forwarded (SDK lacks support) | Add when @tavily/core exposes signal
 packages/retriever/src/providers/tavily.ts | usage() returns undefined (per-call credits only) | Map credits when standalone usage API exists
 packages/retriever/src/providers/exa.ts | usage() returns undefined (costDollars per-call only) | Map costDollars when standalone usage API exists
-packages/kernel/src/pi-runtime.ts:31 | transformContext RAG injection is minimal (config.note only). Full RAG adapter wiring deferred. | Implement when rag adapter types are defined
+packages/kernel/src/pi-runtime.ts:124 | transformContext RAG injection is minimal (config.note only). Full RAG adapter wiring deferred. | Implement when rag adapter types are defined
 packages/kernel/src/pi-runtime.ts:210 | Dual session FTS5 sync is best-effort (try/catch swallows errors). | Add error reporting when FTS5 sync reliability matters
+packages/kernel/src/pi-runtime.ts:183 | BudgetLedger uses per-call dimension (reserveCalls/settleCalls). Token dimension methods not yet in BudgetLedgerPort. | Add token dimension methods to BudgetLedgerPort when ADR-0007 D5 fully implemented
+packages/kernel/src/pi-runtime.ts:53 | filterAgentTools uses hooks.toolWhitelist only (skills.active not used as tool filter). Domain activation semantics may need refinement. | Revisit when multi-tool domains are designed
 apps/cli/src/commands/llm.ts | LLM config persistence via env vars only (no config file write). | Add config file write when needed

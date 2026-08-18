@@ -8,19 +8,7 @@ import type { RetrieverPort, DomainConfigPort } from "@anysearch/kernel";
 import { createEngine } from "../composition";
 import { loadDomainByName } from "@anysearch/store";
 
-// Provider factory map (same as llm.ts).
-const PROVIDER_IMPORTS: Record<string, () => Promise<any>> = {
-  openai: () => import("@earendil-works/pi-ai/providers/openai").then(m => m.openaiProvider()),
-  anthropic: () => import("@earendil-works/pi-ai/providers/anthropic").then(m => m.anthropicProvider()),
-  google: () => import("@earendil-works/pi-ai/providers/google").then(m => m.googleProvider()),
-};
-
-// Known models per provider.
-const MODELS: Record<string, string[]> = {
-  openai: ["gpt-4o", "gpt-4o-mini", "o3-mini", "o4-mini"],
-  anthropic: ["claude-sonnet-4-6", "claude-opus-4-1", "claude-haiku-4-5"],
-  google: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
-};
+import { PROVIDER_IMPORTS, MODELS } from "../providers";
 
 export async function runChat(args: string[]): Promise<number> {
   // Parse query from args.
@@ -75,7 +63,8 @@ export async function runChat(args: string[]): Promise<number> {
     const engineResult = createEngine(domainName);
     retriever = engineResult.retriever;
     domain = engineResult.config || loadDomainByName(domainName) as DomainConfigPort;
-  } catch {
+  } catch (e: any) {
+    console.error("[warn] Domain load failed: " + (e?.message || String(e)) + ", using fallback.");
     // Fallback: no domain filtering, all providers.
     const fallback = createEngine();
     retriever = fallback.retriever;

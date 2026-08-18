@@ -1,4 +1,4 @@
-// PiAgentRuntime: AgentRuntime interface implementation via pi-agent-core.
+// PiAgentRuntime: pi-agent-core Agent wrapper for anysearch-cli.
 // ADR-0007 decision 2: lives in packages/kernel.
 // ADR-0007 decision 3: maps pi-agent-core 9 events to our 7 AgentEvent types.
 // ADR-0007 decision 4: Domain 5-layer full consumption.
@@ -8,7 +8,7 @@
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import type { RetrieverPort, SessionStorePort, ToolPort, DomainConfigPort, BudgetLedgerPort, Query } from "./ports";
+import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query } from "./ports";
 import type { AgentEvent } from "./runtime";
 
 // Build the search AgentTool: wraps RetroaererdEngine.search() with TypeBox schema.
@@ -49,13 +49,11 @@ function buildSystemPrompt(domain: DomainConfigPort): string {
 
 // Filter AgentTools by domain skills.active + hooks.toolWhitelist.
 function filterAgentTools(tools: AgentTool[], domain: DomainConfigPort): AgentTool[] {
-  const active = new Set(domain.skills.active);
+  // ADR-0007 D4: hooks.toolWhitelist is the security filter.
+  // skills.active is domain activation (not a tool filter).
   const whitelist = new Set(domain.hooks.toolWhitelist);
-  // A tool passes if it's in both active and whitelist, or in whitelist if active is empty.
-  if (active.size === 0) {
-    return tools.filter(t => whitelist.size === 0 || whitelist.has(t.name));
-  }
-  return tools.filter(t => active.has(t.name) && (whitelist.size === 0 || whitelist.has(t.name)));
+  if (whitelist.size === 0) return tools;
+  return tools.filter(t => whitelist.has(t.name));
 }
 
 export interface PiAgentRuntimeOptions {
@@ -178,7 +176,7 @@ export class PiAgentRuntime {
     });
 
     // Token budget: reserve at agent_start (ADR-0007 decision 5).
-    // ponytail: rough estimate — 4096 tokens per turn, reserve up front.
+    // ponytail: per-call dimension used (token dimension pending BudgetLedgerPort API, ADR-0007 D5)
     if (ledger && sessionId) {
       ledger.reserveCalls(sessionId, 1);
     }
@@ -203,6 +201,10 @@ export class PiAgentRuntime {
 
     // Wait for prompt() to fully resolve.
     await promptPromise;
+    // Drain any events that arrived between agent_end and promptPromise resolution.
+    while (eventBuffer.length > 0) {
+      yield eventBuffer.shift()!;
+    }
 
     // Token budget: settle at agent_end (ADR-0007 decision 5).
     if (ledger && sessionId) {
