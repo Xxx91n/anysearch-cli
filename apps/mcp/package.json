@@ -1,0 +1,42 @@
+{
+  "name": "@anysearch/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ans-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts",
+    "lint": "tsc --noEmit",
+    "test": "tsx test/server.test.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anysearch/kernel": "workspace:*",
+    "@anysearch/retriever": "workspace:*",
+    "@anysearch/store": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "express": "^4.21.0",
+    "zod": "^3.25.0",
+    "@earendil-works/pi-ai": "^0.84.2",
+    "@earendil-works/pi-agent-core": "^0.84.2",
+    "better-sqlite3": "^13.0.3"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/better-sqlite3": "^9.6.0"
+  }
+}

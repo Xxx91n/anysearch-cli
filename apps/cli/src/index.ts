@@ -11,6 +11,7 @@ import { runLlm } from "./commands/llm";
 import { runSkill } from "./commands/skill";
 import { runChat } from "./commands/chat";
 import { runRecommend } from "./commands/recommend";
+import { runMcp } from "./commands/mcp";
 
 const VERSION = "0.0.0";
 
@@ -28,6 +29,7 @@ const help = [
   "  chat      Interactive retrieval-augmented chat session",
   "  recommend Get recommendations from the active domain",
   "  domain    Switch Active Domain (cc-persona TOML, ADR-0002)",
+"  mcp       Start the anysearch MCP server (stdio or HTTP transport)",
   "",
   "Options:",
   "  --version, -v     Print version",
@@ -55,7 +57,7 @@ if (cmd === "--help" || cmd === "-h") {
   process.exit(0);
 }
 
-const known = new Set(["doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain"]);
+const known = new Set(["doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp"]);
 if (!known.has(cmd)) {
   process.stderr.write("ans: unknown command " + String.fromCharCode(39) + cmd + String.fromCharCode(39) + "\n" + "See " + String.fromCharCode(39) + "ans --help" + String.fromCharCode(39) + ".\n");
   process.exit(2);
@@ -73,6 +75,7 @@ const handlers: Record<string, (args: string[]) => Promise<number>> = {
   skill: runSkill,
   chat: runChat,
   recommend: runRecommend,
+  mcp: runMcp,
 };
 
 const handler = handlers[cmd];

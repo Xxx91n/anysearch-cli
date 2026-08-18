@@ -14,3 +14,5 @@ packages/kernel/src/pi-runtime.ts:210 | Dual session FTS5 sync is best-effort (t
 packages/kernel/src/pi-runtime.ts:183 | BudgetLedger uses per-call dimension (reserveCalls/settleCalls). Token dimension methods not yet in BudgetLedgerPort. | Add token dimension methods to BudgetLedgerPort when ADR-0007 D5 fully implemented
 packages/kernel/src/pi-runtime.ts:53 | filterAgentTools uses hooks.toolWhitelist only (skills.active not used as tool filter). Domain activation semantics may need refinement. | Revisit when multi-tool domains are designed
 apps/cli/src/commands/llm.ts | LLM config persistence via env vars only (no config file write). | Add config file write when needed
+apps/mcp/src/server.ts | TypeBox→zod: v1 SDK registerTool only accepts zod, not TypeBox JSON Schema. TypeBox deferred to v2 SDK upgrade (fromJsonSchema). | Switch to TypeBox when upgrading to @modelcontextprotocol/server v2
+packages/kernel/src/composition.ts | Provider factories wrapped in try/catch to skip providers without API keys. May silently hide real construction errors. | Add debug logging when provider construction fails before API key missing is expected
