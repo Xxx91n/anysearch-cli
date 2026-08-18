@@ -10,8 +10,10 @@ export default defineConfig({
     "@anysearch/retriever/providers",
     "@anysearch/store",
     "@anysearch/kernel",
+    "@earendil-works/pi-agent-core",
+    "@earendil-works/pi-ai",
+    "@sinclair/typebox",
   ],
-  // Native addons must stay external — bundling them breaks .node binary resolution.
   external: ["better-sqlite3"],
   target: "es2022",
 });

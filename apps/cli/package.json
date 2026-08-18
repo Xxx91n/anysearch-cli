@@ -18,13 +18,16 @@
     "@anysearch/kernel": "workspace:*",
     "@anysearch/retriever": "workspace:*",
     "@anysearch/store": "workspace:*",
+    "@earendil-works/pi-agent-core": "^0.84.2",
+    "@earendil-works/pi-ai": "^0.84.2",
+    "@sinclair/typebox": "^0.34.52",
     "better-sqlite3": "^13.0.3"
   },
   "devDependencies": {
-    "tsx": "^4.19.0",
-    "tsup": "^8.3.0",
-    "typescript": "^5.6.0",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.10.0",
-    "@types/better-sqlite3": "^9.6.0"
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
   }
 }
