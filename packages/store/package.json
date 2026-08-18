@@ -10,7 +10,10 @@
     "test": "tsx test/domain-schema.test.ts"
   },
   "dependencies": {
-    "@anysearch/retriever": "workspace:*"
+    "@anysearch/retriever": "workspace:*",
+    "@types/better-sqlite3": "^9.6.0",
+    "better-sqlite3": "^13.0.3",
+    "smol-toml": "^1.8.0"
   },
   "devDependencies": {
     "tsx": "^4.19.0",
