@@ -47,4 +47,10 @@ export interface DomainConfigPort {
 export interface BudgetLedgerPort {
   reserveCalls(sessionId: string, count: number): boolean;
   settleCalls(sessionId: string, reservedCount: number, actualCount: number): void;
+  // ADR-0007 D5: token dimension reserve-then-settle.
+  reserveTokens(sessionId: string, amount: number): boolean;
+  settleTokens(sessionId: string, reservedAmount: number, actualAmount: number): void;
+  // ADR-0007 D5: USD dimension reserve-then-settle.
+  reserveUsd(sessionId: string, amount: number): boolean;
+  settleUsd(sessionId: string, reservedAmount: number, actualAmount: number): void;
 }

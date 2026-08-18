@@ -223,8 +223,12 @@ this.opts.store.append(sessionId || "default", {
             timestamp: Date.now(),
           } as any);
         }
-      } catch {
+      } catch (e) {
         // ponytail: FTS5 sync is best-effort, don't block agent on store failure.
+        // But log the error so it's not silently swallowed (ADR-0007 debt fix).
+        if (typeof process !== "undefined" && process.stderr) {
+          process.stderr.write("[anysearch] FTS5 sync warning: " + (e instanceof Error ? e.message : String(e)) + "\n");
+        }
       }
     }
 

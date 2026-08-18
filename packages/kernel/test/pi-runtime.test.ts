@@ -44,6 +44,10 @@ class MockLedger implements BudgetLedgerPort {
   settled = 0;
   reserveCalls(_s: string, count: number): boolean { this.reserved += count; return true; }
   settleCalls(_s: string, _r: number, actual: number): void { this.settled += actual; }
+  reserveTokens(_s: string, _a: number): boolean { return true; }
+  settleTokens(): void {}
+  reserveUsd(_s: string, _a: number): boolean { return true; }
+  settleUsd(): void {}
 }
 
 // Mock streamFn: returns a faux assistant message stream.
