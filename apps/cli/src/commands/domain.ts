@@ -1,6 +1,8 @@
 // ans domain: switch or show Active Domain (cc-persona TOML, ADR-0002).
 // ADR-0006 decision 4A: loads TOML from domains/<name>.toml convention directory.
 
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { loadDomainByName } from "@anysearch/store";
 import type { DomainConfigPort } from "@anysearch/kernel";
 
@@ -8,10 +10,7 @@ export async function runDomain(args: string[]): Promise<number> {
   const current = process.env.ANS_DOMAIN || "default";
   if (args.length === 0) {
     console.log("Active Domain: " + current);
-    // List available domains from convention directory.
     try {
-      const { readdirSync } = require("node:fs");
-      const { join } = require("node:path");
       const dir = join(process.cwd(), "domains");
       const files = readdirSync(dir).filter((f: string) => f.endsWith(".toml"));
       if (files.length > 0) {

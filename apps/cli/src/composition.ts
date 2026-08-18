@@ -31,7 +31,7 @@ export function createEngine(domain?: string): CompositionResult {
   if (domain) {
     try {
       const schema = loadDomainByName(domain);
-      config = schema as unknown as DomainConfigPort;
+      config = schema as DomainConfigPort;
       // Filter providers by domain sources.enabled.
       const enabled = schema.sources.enabled;
       providers = enabled
