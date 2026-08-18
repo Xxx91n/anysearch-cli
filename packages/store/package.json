@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "tsx test/domain-schema.test.ts && tsx test/session-store.test.ts && tsx test/budget-ledger.test.ts"
+    "test": "tsx test/domain-schema.test.ts && tsx test/session-store.test.ts && tsx test/budget-ledger.test.ts && tsx test/domain-loader.test.ts"
   },
   "dependencies": {
     "@anysearch/retriever": "workspace:*",
