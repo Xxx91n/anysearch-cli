@@ -54,6 +54,12 @@ async function main() {
     assert(count.c === 2, "saveResults stored 2 rows in retrieval_results (got " + count.c + ")");
     checkDb.close();
 
+    // 4b. searchMemory — ADR-0008 D3 recall_memory searchMemory searches retrieval_results_fts.
+    const memHits = await store.searchMemory("Test", 10);
+    assert(memHits.length >= 2, "searchMemory finds saved results in retrieval_results_fts (got " + memHits.length + ")");
+    assert(typeof memHits[0].rank === "number", "searchMemory hits have numeric rank");
+    assert(memHits[0].sessionId === session.id, "searchMemory hits have correct sessionId");
+
     // 5. saveAnchor + getAnchors
     await store.saveAnchor(session.id, "query", { query: "test query", timestamp: 12345 });
     await store.saveAnchor(session.id, "fetch", { url: "https://example.com" });

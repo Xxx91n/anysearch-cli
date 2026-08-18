@@ -31,6 +31,7 @@ const mockStore: SessionStore = {
   createSession: async (_d: string) => ({ id: "test-session", domain: _d, createdAt: new Date().toISOString() }),
   append: async () => {},
   searchFts5: async (_s: string | null, _q: string, _l?: number): Promise<MemoryHit[]> => [],
+  searchMemory: async (_q: string, _l?: number): Promise<MemoryHit[]> => [],
   saveResults: async () => {},
   saveAnchor: async () => {},
   getAnchors: async () => [],

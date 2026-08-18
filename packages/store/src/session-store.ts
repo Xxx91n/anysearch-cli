@@ -47,6 +47,8 @@ export interface SessionStore {
   saveResults(sessionId: string, results: NormalizedResult[]): Promise<void>;
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
   getAnchors(sessionId: string): Promise<ResumeAnchor[]>;
+  // ADR-0008 D3: search Research Memory layer for recall_memory MCP tool.
+  searchMemory(query: string, limit?: number): Promise<MemoryHit[]>;
 }
 
 // better-sqlite3 sync API wrapped in async interface to match SessionStore port.
@@ -62,6 +64,7 @@ export class SqliteSessionStore implements SessionStore {
     searchResults: Database.Statement;
     saveAnchor: Database.Statement;
     getAnchors: Database.Statement;
+    searchAllResults: Database.Statement;
   };
 
   constructor(dbPath: string) {
@@ -98,6 +101,8 @@ export class SqliteSessionStore implements SessionStore {
       searchResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND r.session_id = ? ORDER BY rank LIMIT ?"),
       saveAnchor: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)"),
       getAnchors: this.db.prepare("SELECT id, session_id as sessionId, anchor_type as anchorType, payload, created_at as createdAt FROM resume_anchors WHERE session_id = ? ORDER BY id"),
+      // ADR-0008 D3: recall_memory searches Research Memory (retrieval_results_fts), not messages.
+      searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? ORDER BY rank LIMIT ?"),
     };
   }
 
@@ -120,6 +125,11 @@ export class SqliteSessionStore implements SessionStore {
       return this.stmts.searchMessages.all(query, sessionId, limit) as MemoryHit[];
     }
     return this.stmts.searchAllMessages.all(query, limit) as MemoryHit[];
+  }
+
+  // ADR-0008 D3: search Research Memory layer (retrieval_results_fts) — used by recall_memory MCP tool.
+  async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
+    return this.stmts.searchAllResults.all(query, limit) as MemoryHit[];
   }
 
   async saveResults(sessionId: string, results: NormalizedResult[]): Promise<void> {

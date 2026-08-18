@@ -58,14 +58,14 @@ export function buildServer(engine?: CompositionResult): McpServer {
     }
   );
 
-  // Tool 2: research_web — minute-level deep research (stub, G018 will implement multi-round).
+  // Tool 2: research_web — multi-round deep research with dedup + structured citations.
   server.registerTool(
     "research_web",
     {
       description: "Deep research mode: multi-round search + LLM synthesis. Takes a question and returns a structured research report.",
       inputSchema: z.object({
         question: z.string().describe("The research question to investigate"),
-        depth: z.enum(["brief", "standard", "deep"]).optional().describe("Research depth: brief (1 round), standard (3 rounds), deep (5+ rounds)"),
+        depth: z.enum(["brief", "standard", "deep"]).optional().describe("Research depth: brief (1 round), standard (2 rounds), deep (3 rounds)"),
       }),
     },
     async (args: Record<string, unknown>) => {
@@ -123,7 +123,8 @@ export function buildServer(engine?: CompositionResult): McpServer {
         const limit = Number(args.limit) || 5;
         // ADR-0008 D3: FTS5 memory recall with time edge effect.
         const { isTimeSensitive, isEvergreen } = await import("@anysearch/store");
-        const hits = await eng.store.searchFts5(null, query, limit);
+        // ADR-0008 D3: search Research Memory layer (retrieval_results_fts), not messages.
+        const hits = await eng.store.searchMemory(query, limit);
         const ts = isTimeSensitive(query);
         const eg = isEvergreen(query);
         const summary = JSON.stringify({
@@ -145,7 +146,8 @@ export function buildServer(engine?: CompositionResult): McpServer {
     }
   );
 
-  // Tool 4: query_knowledge — RAG adapter dispatch (stub, G018 will implement).
+  // Tool 4: query_knowledge — RAG adapter dispatch stub.
+  // ADR-0006 MVP deferral: RAG adapter types not yet defined. Returns adapter name only.
   server.registerTool(
     "query_knowledge",
     {
