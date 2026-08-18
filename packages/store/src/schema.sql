@@ -89,3 +89,21 @@ CREATE TABLE IF NOT EXISTS resume_anchors (
   payload TEXT NOT NULL, -- JSON blob
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Budget Ledger: Mole reserve-then-settle pattern (ADR-0005 decision 4).
+-- Non-negative constraints in DB schema layer (not application layer).
+-- Budget = resource consumption, belongs to store layer (not kernel).
+-- Three dimensions: token-cap / usd-cap / time-limit (ADR-0005).
+CREATE TABLE IF NOT EXISTS budget_ledger (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  token_cap INTEGER NOT NULL DEFAULT 0 CHECK (token_cap >= 0),
+  usd_cap REAL NOT NULL DEFAULT 0 CHECK (usd_cap >= 0),
+  time_limit_ms INTEGER NOT NULL DEFAULT 0 CHECK (time_limit_ms >= 0),
+  reserved_tokens INTEGER NOT NULL DEFAULT 0 CHECK (reserved_tokens >= 0),
+  spent_tokens INTEGER NOT NULL DEFAULT 0 CHECK (spent_tokens >= 0),
+  reserved_usd REAL NOT NULL DEFAULT 0 CHECK (reserved_usd >= 0),
+  spent_usd REAL NOT NULL DEFAULT 0 CHECK (spent_usd >= 0),
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
