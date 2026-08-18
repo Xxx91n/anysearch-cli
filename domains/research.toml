@@ -1,0 +1,19 @@
+# Research domain — focused on deep web research.
+name = "research"
+description = "Deep web research with Exa + Tavily"
+
+[settings]
+language = "TypeScript"
+depth = "advanced"
+
+[skills]
+active = ["research", "atomcode-research"]
+
+[sources]
+enabled = ["exa", "tavily"]
+
+[rag]
+adapter = "none"
+
+[hooks]
+toolWhitelist = ["ctx_execute", "ctx_search", "ctx_batch_execute", "atomcode"]

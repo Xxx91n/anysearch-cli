@@ -3,8 +3,9 @@
 // atomcode research: smol-toml parse() returns JS object; deep-merge is NOT parser job (domain-schema.resolve does it).
 
 import { parse as tomlParse } from "smol-toml";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve, validate, type DomainSchema, type RawDomain } from "./domain-schema";
+import { join } from "node:path";
 
 // Parse a TOML string into a RawDomain object.
 export function parseDomainToml(toml: string): RawDomain {
@@ -52,4 +53,28 @@ export function loadDomainFromString(
   const schema = resolve(raw, lookupFn);
   validate(schema);
   return schema;
+}
+
+// ADR-0006 decision 4A: load domain from convention directory domains/<name>.toml.
+// Returns DomainSchema; callers treat it as DomainConfigPort (structurally compatible).
+const DOMAINS_DIR = "domains";
+
+export function loadDomainByName(
+  name: string,
+  baseDir: string = process.cwd(),
+  lookup?: (name: string) => RawDomain | undefined,
+): DomainSchema {
+  const tomlPath = join(baseDir, DOMAINS_DIR, name + ".toml");
+  if (!existsSync(tomlPath)) {
+    const dir = join(baseDir, DOMAINS_DIR);
+    let available = "";
+    try {
+      available = readdirSync(dir)
+        .filter((f: string) => f.endsWith(".toml"))
+        .map((f: string) => f.replace(/\.toml$/, ""))
+        .join(", ");
+    } catch { /* dir not found */ }
+    throw new Error("Domain not found: " + name + (available ? " (available: " + available + ")" : ""));
+  }
+  return loadDomain(tomlPath, lookup);
 }

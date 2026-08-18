@@ -1,7 +1,7 @@
 // Domain Loader test (G005). smol-toml parse + domain-schema resolve/validate.
 // Self-check via assert-based demo (ponytail: no test framework).
 
-import { parseDomainToml, loadDomainFromString } from "../src/domain-loader";
+import { parseDomainToml, loadDomainFromString, loadDomainByName } from "../src/domain-loader";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -133,4 +133,41 @@ toolWhitelist = []
   if (failed > 0) process.exit(1);
 }
 
-main();
+// ADR-0006 decision 4A: loadDomainByName from convention directory.
+async function testLoadByName() {
+  // Load default.toml from domains/ directory.
+  try {
+    const schema = loadDomainByName("default", "D:/Aworker/anysearch-cli");
+    assert(schema.name === "default", "loadDomainByName: name = default");
+    assert(schema.sources.enabled.length === 3, "loadDomainByName: 3 sources enabled");
+    assert(schema.hooks.toolWhitelist.length === 3, "loadDomainByName: 3 hooks");
+  } catch (e: any) {
+    assert(false, "loadDomainByName default: " + e.message);
+  }
+
+  // Load research.toml — should have 2 sources (exa + tavily only).
+  try {
+    const schema = loadDomainByName("research", "D:/Aworker/anysearch-cli");
+    assert(schema.name === "research", "loadDomainByName: name = research");
+    assert(schema.sources.enabled.length === 2, "loadDomainByName: 2 sources (exa+tavily)");
+    assert(schema.sources.enabled.includes("exa"), "research includes exa");
+    assert(schema.sources.enabled.includes("tavily"), "research includes tavily");
+    assert(!schema.sources.enabled.includes("anysearch"), "research excludes anysearch");
+  } catch (e: any) {
+    assert(false, "loadDomainByName research: " + e.message);
+  }
+
+  // Non-existent domain should throw with available list.
+  let threw = false;
+  try {
+    loadDomainByName("nonexistent", "D:/Aworker/anysearch-cli");
+  } catch (e: any) {
+    threw = true;
+    assert(e.message.includes("not found"), "error message contains 'not found'");
+  }
+  assert(threw, "nonexistent domain throws");
+
+  console.log("--- loadDomainByName tests done ---");
+}
+
+testLoadByName().then(() => main()).catch((e) => { console.error(e); process.exit(1); });

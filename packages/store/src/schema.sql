@@ -100,10 +100,14 @@ CREATE TABLE IF NOT EXISTS budget_ledger (
   token_cap INTEGER NOT NULL DEFAULT 0 CHECK (token_cap >= 0),
   usd_cap REAL NOT NULL DEFAULT 0 CHECK (usd_cap >= 0),
   time_limit_ms INTEGER NOT NULL DEFAULT 0 CHECK (time_limit_ms >= 0),
+  call_cap INTEGER NOT NULL DEFAULT 0 CHECK (call_cap >= 0),
   reserved_tokens INTEGER NOT NULL DEFAULT 0 CHECK (reserved_tokens >= 0),
   spent_tokens INTEGER NOT NULL DEFAULT 0 CHECK (spent_tokens >= 0),
   reserved_usd REAL NOT NULL DEFAULT 0 CHECK (reserved_usd >= 0),
   spent_usd REAL NOT NULL DEFAULT 0 CHECK (spent_usd >= 0),
+  -- ADR-0006 decision 2B: per-call billing dimension (reserved_calls + billable_calls).
+  reserved_calls INTEGER NOT NULL DEFAULT 0 CHECK (reserved_calls >= 0),
+  billable_calls INTEGER NOT NULL DEFAULT 0 CHECK (billable_calls >= 0),
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

@@ -6,7 +6,8 @@
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope } from "@anysearch/retriever";
 import { rrfRank } from "@anysearch/retriever";
-import type { Budget } from "./ports";
+import type { Budget, Query, RetrieverPort } from "./ports";
+import type { BudgetLedgerPort } from "./ports";
 
 // Sufficiency gate config: minimum quality thresholds for a search result.
 // atomcode research: min angles (providers) / min fetches (results) / min domains / cross-engine verify.
@@ -63,14 +64,29 @@ function extractDomain(url: string): string {
 
 export class RetroaererdEngine {
   private providers: Map<string, SearchProvider> = new Map();
+  private ledger?: BudgetLedgerPort;
+  private sessionId?: string;
 
-  registerProvider(provider: SearchProvider): void {
+  // ADR-0006 decision 1C: constructor accepts providers array.
+  // ADR-0006 decision 2A: optional BudgetLedger + sessionId for per-call billing.
+  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string }) {
+    this.ledger = opts?.ledger;
+    this.sessionId = opts?.sessionId;
+    for (const p of providers) {
+      this.providers.set(p.id, p);
+    }
+  }
+
+  // Internal convenience, not on RetrieverPort.
+  private registerProvider(provider: SearchProvider): void {
     this.providers.set(provider.id, provider);
   }
 
   // Fanout search: parallel provider queries, enough-results-then-collect, RRF fusion.
+  // ADR-0006 decision 1A: implements RetrieverPort.
+  // ADR-0006 decision 1B: accepts Query (superset with budget + provider filter).
   async search(
-    req: SearchRequest,
+    q: Query,
     config: EngineConfig = {},
   ): Promise<FusedEnvelope> {
     const start = Date.now();
@@ -78,10 +94,24 @@ export class RetroaererdEngine {
     const graceWindow = config.graceWindowMs ?? 1500;
     const deepMode = config.deepMode ?? false;
 
-    // Select providers: all registered, or subset if req.mode covers.
-    const allProviders = [...this.providers.values()];
+    // Select providers: all registered, or subset via Query.providers filter.
+    let allProviders = [...this.providers.values()];
+    if (q.providers && q.providers.length > 0) {
+      const allowed = new Set(q.providers);
+      allProviders = allProviders.filter((p) => allowed.has(p.id));
+    }
     if (allProviders.length === 0) {
       throw new Error("No providers registered");
+    }
+
+    // ADR-0006 decision 2C: reserve per-call budget by provider count (MoleAPI pre-consumption).
+    const hasLedger = !!(this.ledger && this.sessionId);
+    if (hasLedger) {
+      // ponytail: per-call cost = 1 unit per provider. Coarse upper bound, settle actual.
+      const reserved = this.ledger!.reserveCalls(this.sessionId!, allProviders.length);
+      if (!reserved) {
+        throw new Error("Budget exceeded: per-call cap reached (reserved " + allProviders.length + " calls)");
+      }
     }
 
     // atomcode research: per-provider AbortController + shared abort for grace window.
@@ -90,7 +120,7 @@ export class RetroaererdEngine {
 
     // Fire all providers in parallel (atomcode research: attributed tasks).
     const promises = allProviders.map((p, i) =>
-      p.search(req, controllers[i].signal)
+      p.search(q, controllers[i].signal)
         .then((env) => ({ provider: p.id, status: "fulfilled" as const, envelope: env }))
         .catch((err) => ({ provider: p.id, status: "rejected" as const, error: String(err) })),
     );
@@ -139,6 +169,11 @@ export class RetroaererdEngine {
 
     // Cancelled = queried but neither fulfilled nor failed (should not happen with allSettled, but keep for API).
     // atomcode research: providers_cancelled = set difference.
+
+    // ADR-0006 decision 2C: settle per-call budget — actual = successful providers.
+    if (hasLedger) {
+      this.ledger!.settleCalls(this.sessionId!, allProviders.length, providerLists.length);
+    }
 
     // RRF fusion: rrfRank from packages/retriever (k=60).
     const rankedUrls = rrfRank(providerLists, 60);

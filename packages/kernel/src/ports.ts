@@ -32,7 +32,19 @@ export interface ToolPort {
 }
 
 // DomainConfigPort: provides the active domain tool whitelist.
+// ADR-0006 decision 4C: full 5-layer interface matching DomainSchema.
+// Consumers read only what they need; current consumers use sources + hooks.
 export interface DomainConfigPort {
-  toolWhitelist: string[];
-  ragAdapter: string;
+  sources: { enabled: string[] };
+  prompts: { name: string; content: string }[];
+  skills: { active: string[] };
+  hooks: { toolWhitelist: string[] };
+  rag: { adapter: string; config?: Record<string, unknown> };
+}
+
+// BudgetLedgerPort: per-call reserve-then-settle interface.
+// ADR-0006 decision 2A: defined as port (one implementation now, two = real seam).
+export interface BudgetLedgerPort {
+  reserveCalls(sessionId: string, count: number): boolean;
+  settleCalls(sessionId: string, reservedCount: number, actualCount: number): void;
 }

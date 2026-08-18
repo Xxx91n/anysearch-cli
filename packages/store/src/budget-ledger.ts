@@ -9,6 +9,7 @@ export interface BudgetCaps {
   tokenCap: number;
   usdCap: number;
   timeLimitMs: number;
+  callCap?: number; // ADR-0006 decision 2B: per-call cap
 }
 
 export interface BudgetBalance {
@@ -20,10 +21,14 @@ export interface BudgetBalance {
   spentTokens: number;
   reservedUsd: number;
   spentUsd: number;
+  reservedCalls: number;
+  billableCalls: number;
+  callCap: number;
   // Derived: remaining = cap - reserved - spent
   remainingTokens: number;
   remainingUsd: number;
   remainingTimeMs: number;
+  remainingCalls: number;
 }
 
 // ponytail: thinnest ledger - 3 methods (reserve/settle/getBalance).
@@ -36,23 +41,27 @@ export class BudgetLedger {
     reserveUsd: Database.Statement;
     settleTokens: Database.Statement;
     settleUsd: Database.Statement;
+    reserveCalls: Database.Statement;
+    settleCalls: Database.Statement;
     getBalance: Database.Statement;
   };
 
   constructor(private db: Database.Database) {
     this.stmts = {
-      initBudget: db.prepare("INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms) VALUES (?, ?, ?, ?)"),
+      initBudget: db.prepare("INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap) VALUES (?, ?, ?, ?, ?)"),
       reserveTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens + ? WHERE session_id = ? AND reserved_tokens + spent_tokens + ? <= token_cap"),
       reserveUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = reserved_usd + ? WHERE session_id = ? AND reserved_usd + spent_usd + ? <= usd_cap"),
       settleTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens - ?, spent_tokens = spent_tokens + ? WHERE session_id = ?"),
       settleUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = reserved_usd - ?, spent_usd = spent_usd + ? WHERE session_id = ?"),
-      getBalance: db.prepare("SELECT session_id as sessionId, token_cap as tokenCap, usd_cap as usdCap, time_limit_ms as timeLimitMs, reserved_tokens as reservedTokens, spent_tokens as spentTokens, reserved_usd as reservedUsd, spent_usd as spentUsd FROM budget_ledger WHERE session_id = ?"),
+      reserveCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = reserved_calls + ? WHERE session_id = ? AND reserved_calls + billable_calls + ? <= call_cap"),
+      settleCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = reserved_calls - ?, billable_calls = billable_calls + ? WHERE session_id = ?"),
+      getBalance: db.prepare("SELECT session_id as sessionId, token_cap as tokenCap, usd_cap as usdCap, time_limit_ms as timeLimitMs, call_cap as callCap, reserved_tokens as reservedTokens, spent_tokens as spentTokens, reserved_usd as reservedUsd, spent_usd as spentUsd, reserved_calls as reservedCalls, billable_calls as billableCalls FROM budget_ledger WHERE session_id = ?"),
     };
   }
 
   // Initialize budget for a session. Called once when session starts.
   initBudget(sessionId: string, caps: BudgetCaps): void {
-    this.stmts.initBudget.run(sessionId, caps.tokenCap, caps.usdCap, caps.timeLimitMs);
+    this.stmts.initBudget.run(sessionId, caps.tokenCap, caps.usdCap, caps.timeLimitMs, caps.callCap ?? 0);
   }
 
   // Reserve tokens before a call. Returns false if would exceed cap (non-negative constraint).
@@ -77,6 +86,17 @@ export class BudgetLedger {
     this.stmts.settleUsd.run(reservedAmount, actualAmount, sessionId);
   }
 
+  // ADR-0006 decision 2C: reserve per-call budget by provider count.
+  reserveCalls(sessionId: string, count: number): boolean {
+    const result = this.stmts.reserveCalls.run(count, sessionId, count);
+    return result.changes > 0;
+  }
+
+  // ADR-0006 decision 2C: settle calls — actual successful providers.
+  settleCalls(sessionId: string, reservedCount: number, actualCount: number): void {
+    this.stmts.settleCalls.run(reservedCount, actualCount, sessionId);
+  }
+
   // Get current balance for a session.
   getBalance(sessionId: string): BudgetBalance | null {
     const row = this.stmts.getBalance.get(sessionId) as Omit<BudgetBalance, "remainingTokens" | "remainingUsd" | "remainingTimeMs"> | undefined;
@@ -85,7 +105,8 @@ export class BudgetLedger {
       ...row,
       remainingTokens: row.tokenCap - row.reservedTokens - row.spentTokens,
       remainingUsd: row.usdCap - row.reservedUsd - row.spentUsd,
-      remainingTimeMs: row.timeLimitMs, // time is wall-clock, checked at runtime not ledger
+      remainingTimeMs: row.timeLimitMs,
+      remainingCalls: row.callCap - row.reservedCalls - row.billableCalls,
     };
   }
 }

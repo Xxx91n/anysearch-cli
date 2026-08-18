@@ -25,6 +25,7 @@ async function main() {
 
     // 1. initBudget + getBalance
     const s = await store.createSession("research");
+    const s2 = await store.createSession("billing");
     {
       ledger.initBudget(s.id, { tokenCap: 100000, usdCap: 5.0, timeLimitMs: 60000 });
       const bal = ledger.getBalance(s.id);
@@ -69,6 +70,23 @@ async function main() {
       // 7. getBalance on non-existent session
       const nullBal = ledger.getBalance("non-existent");
       assert(nullBal === null, "getBalance returns null for non-existent session");
+
+      // 8. ADR-0006: reserveCalls + settleCalls (per-call billing).
+      ledger.initBudget(s2.id, { tokenCap: 100000, usdCap: 10.0, timeLimitMs: 60000, callCap: 10 });
+      const ok5 = ledger.reserveCalls(s2.id, 3); // reserve 3 calls
+      assert(ok5, "reserveCalls 3 succeeds");
+      ledger.settleCalls(s2.id, 3, 2); // actual: only 2 succeeded
+      const bal7 = ledger.getBalance(s2.id);
+      assert(bal7 !== null, "balance after settle calls");
+      assert(bal7!.billableCalls === 2, "billableCalls = 2 (actual)");
+      assert(bal7!.reservedCalls === 0, "reservedCalls = 0 after settle");
+
+      // 9. ADR-0006: reserveCalls exceeds call_cap fails.
+      // s2 already has billable_calls=2, reserved=0, call_cap=10 -> remaining=8
+      const ok6 = ledger.reserveCalls(s2.id, 9); // would be 9 > 8 remaining
+      assert(!ok6, "reserveCalls 9 fails (only 8 remaining: cap=10 - spent=2)");
+      const ok7 = ledger.reserveCalls(s2.id, 8); // exactly remaining
+      assert(ok7, "reserveCalls 8 succeeds (exactly at remaining)");
 
       store.close();
     }

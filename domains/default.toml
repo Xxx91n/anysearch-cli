@@ -1,0 +1,18 @@
+# Default domain — all providers enabled.
+name = "default"
+description = "Default domain with all search providers"
+
+[settings]
+language = "TypeScript"
+
+[skills]
+active = ["search", "doctor"]
+
+[sources]
+enabled = ["tavily", "exa", "anysearch"]
+
+[rag]
+adapter = "none"
+
+[hooks]
+toolWhitelist = ["ctx_execute", "ctx_search", "ctx_batch_execute"]

@@ -1,10 +1,8 @@
 // ans search: run a retrieval query through the Retroaererd Engine.
-// Composition root: registers providers + runs engine.search with RRF fusion.
+// ADR-0006 decision 3A: uses createEngine() factory, not inline wiring.
 
-import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch/retriever/providers";
-import type { SearchProvider } from "@anysearch/retriever";
-import { RetroaererdEngine } from "@anysearch/kernel";
 import type { Mode } from "@anysearch/retriever";
+import { createEngine } from "../composition";
 
 export async function runSearch(args: string[]): Promise<number> {
   const query = args.join(" ");
@@ -24,22 +22,15 @@ export async function runSearch(args: string[]): Promise<number> {
   }
   const queryClean = args.filter(a => !a.startsWith("--mode") && a !== mode).join(" ").trim();
 
-  // Composition root: register providers + create engine.
-  const engine = new RetroaererdEngine();
-  const providers: SearchProvider[] = [
-    new TavilyProvider(),
-    new ExaProvider(),
-    new AnySearchProvider(),
-  ];
-  for (const p of providers) {
-    engine.registerProvider(p);
-  }
+  // ADR-0006 decision 3A: createEngine factory with domain filtering.
+  const domain = process.env.ANS_DOMAIN;
+  const { retriever } = createEngine(domain);
 
   console.log("ans search: " + JSON.stringify({ query: queryClean, mode }));
   console.log("---");
 
   try {
-    const envelope = await engine.search({ query: queryClean, mode, maxResults: 10 });
+    const envelope = await retriever.search({ query: queryClean, mode, maxResults: 10 });
 
     // Render results.
     for (let i = 0; i < envelope.results.length; i++) {
