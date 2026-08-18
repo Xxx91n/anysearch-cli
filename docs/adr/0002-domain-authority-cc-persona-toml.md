@@ -1,7 +1,7 @@
 # ADR-0002: 领域权威 = cc-persona TOML 联动模式（不等 MCP Contexts/分组原语）
 
 日期: 2026-08-18
-状态: Proposed
+状态: Accepted
 
 ## 领域权威的架构是什么
 

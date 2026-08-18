@@ -1,7 +1,7 @@
 # ADR-0003: Code Mode MVP 软依赖已装 context-mode / codegraph
 
 日期: 2026-08-18
-状态: Proposed
+状态: Accepted
 
 ## 背景 (Context)
 

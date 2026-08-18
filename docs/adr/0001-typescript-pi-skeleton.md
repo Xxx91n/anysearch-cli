@@ -1,7 +1,7 @@
 # ADR-0001: TypeScript 内核 + @earendil-works/pi-* 骨架
 
 日期: 2026-08-18
-状态: Proposed
+状态: Accepted
 
 ## 背景 (Context)
 

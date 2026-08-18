@@ -1,0 +1,19 @@
+{
+  "name": "@anysearch/store",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "tsx test/domain-schema.test.ts"
+  },
+  "dependencies": {
+    "@anysearch/retriever": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

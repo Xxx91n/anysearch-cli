@@ -1,0 +1,20 @@
+{
+  "name": "@anysearch/kernel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@anysearch/retriever": "workspace:*",
+    "@anysearch/store": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "scripts": {
+    "test": "tsx test/runtime.test.ts"
+  }
+}

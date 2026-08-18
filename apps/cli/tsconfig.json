@@ -15,5 +15,16 @@
   },
   "include": [
     "src/**/*"
+  ],
+  "references": [
+    {
+      "path": "../../packages/store"
+    },
+    {
+      "path": "../../packages/retriever"
+    },
+    {
+      "path": "../../packages/kernel"
+    }
   ]
 }
