@@ -15,6 +15,6 @@
     "typescript": "^5.6.0"
   },
   "scripts": {
-    "test": "tsx test/runtime.test.ts"
+    "test": "tsx test/runtime.test.ts && tsx test/engine.test.ts"
   }
 }
