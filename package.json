@@ -1,0 +1,17 @@
+{
+  "name": "anysearch-cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "check": "turbo run check"
+  },
+  "devEngines": {
+    "packageManager": "pnpm@9.12.0"
+  }
+}

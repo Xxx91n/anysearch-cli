@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# build outputs
+dist/
+.turbo/
+
+# ctx-mode temp (AGENTS.md policy)
+.codex-tmp/
+
+# omx runtime
+.omx/
+
+# os/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# logs
+*.log
