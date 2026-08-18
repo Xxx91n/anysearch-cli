@@ -1,0 +1,37 @@
+# Glossary
+
+本仓库只放领域术语表，不放实现细节、规格或决策记录。决策记录见 `docs/adr/`。
+
+## Active Domain（当前领域）
+"Agent 此刻被专精到哪个领域"的权威单元。切换 Active Domain 会同时联动以下五个下游层：Hooks Tool Whitelist、Prompt Skill Selection、Skill Active List、Info Source Whitelist、RAG Adapter。持有一份 TOML。对应经典工程术语 Software Product Line 的 variation-point selection（ISO/IEC 26580:2021）。
+
+## Retroaererd Engine（检索专精引擎）
+anysearch-cli 的内核：bounded budget（token-cap、usd-cap）、serialized sufficiency-gate（≥4 angles / ≥6 fetches / ≥3 domains / cross-engine verify）、tokio::JoinSet fanout + RRF(k=60) consensus fusion、cross-engine verify、Resume Anchoring on timeout/crash。其 spec 直接采用 paperfoot search-cli 的 RRF + Mole 的预算强制 + atomcode research 协议——作为 spec 不作为运行时依赖（atomcode 是已商业化的外部产品）。
+
+## Info Source Provider（信息源头供应方）
+一个具体供应方实现，满足 `search` / `chat` / `recommend` 调用面，对接单一检索后端（anysearch 内部通道、Exa、Tavily、Brave，或企业内部数据源 via RAG Adapter）。每个 Active Domain 的 `[sources]` 决定启用哪几个供应方与融合权重。
+
+## Retriever Result Store（检索结果仓）
+按会话隔离的轻量 SQLite+FTS5 仓，承载 Consolidated Retrieval Output。落地 "Think-in-Code" 心智模型：大输出不直接进主上下文，主上下文只看 self-check 蒸馏出的产出。模型抄自 context-mode；MVP 用本地临时文件，后期可选 MCP resource 暴露。
+
+## RAG Adapter（领域专属检索适配器）
+领域的可选资源加载器，做企业内部/机密数据的 onboarding 与检索。MVP 不实施；预设 `[rag] adapter=<id>` 配置位，后续实现。
+
+## Skill Active List
+Active Domain 切换时被激活的 Agent Skills（按 agentskills.io 标准，SKILL.md + 渐进式披露）名单。每个 skill 常驻 ~100 tokens，正文按需加载 <5k tokens。
+
+## Hooks Tool Whitelist
+Active Domain 切换时同步设置的工具调用白名单。落地优先级：Anthropic SDK 的 `allowedTools: ["mcp__<server>__*"]` 风格。微软实测 16 工具可撑爆 128k 上下文，是该层存在的根本动因。
+
+## Prompt Skill Selection
+Active Domain 切换时选择当前领域预置提示词作为哪个 Agent Skill 的描述。预置提示词不再是硬挂 prompt字符串，而是走 Agent Skills 载体。
+
+## Code Mode（代码开发模式）
+Active Domain 的一种特殊值 `domain="code"`。本模式下 CLI 软依赖用户已安装的 `context-mode` ctx 工具或 `codegraph` MCP 服务做本地仓库索引；CLI 不内置索引实现。后期商业化才考虑内置轻量 SQLite+tree-sitter。
+
+## Kernel Distribution（内核分发形态）
+MVP：纯独立 CLI（single TypeScript binary via Node/Bun, npm publish）。后期：加 MCP stdio server 包装同一内核（`ans mcp serve`），参考 Mole 的双形态并行 + Perplexity 的 remote+local 双形态。参考 ctx/context-mode 的"插件级嵌子进程"心智模型但不是硬约束。
+
+## Vertical Agent（垂直 Agent）
+该 CLI 在工业术语上的对外定位：vertical Agent / Vertical AI Agent，"information specialization" 是同一理念的短语化。Agentic Search 是其能力模块，不构成产品本身。差异化于 Perplexity / Exa（水平检索原语供应方）的方式是：站在供应方之上做垂直深度研究与应用层专精，不自建索引。
+*End of Glossary*
