@@ -60,12 +60,10 @@ export class ExaProvider implements SearchProvider {
       results,
       answers,
       elapsedMs: Date.now() - start,
-      usage: res.costDollars !== undefined ? { remaining: undefined, limit: undefined } : undefined,
+      usage: undefined, // ponytail: Exa usage comes per-call in costDollars, no standalone API.
     };
   }
 
-  async usage(): Promise<{ remaining?: number; limit?: number; resetAt?: string } | undefined> {
-    // ponytail: Exa usage comes per-call in costDollars, no standalone API.
-    return undefined;
-  }
+  // ponytail: Exa usage comes per-call in costDollars, no standalone API.
+  // No standalone usage() method — contract's usage?() is optional.
 }

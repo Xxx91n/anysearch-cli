@@ -26,6 +26,8 @@ export class TavilyProvider implements SearchProvider {
   async search(req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
     const start = Date.now();
     const depth = MODE_DEPTH[req.mode] ?? "basic";
+    // atomcode research: @tavily/core 0.7.7 has no AbortSignal support in search options.
+    // signal param accepted per contract but SDK doesn't forward it. SDK uses internal timeout.
     // atomcode research: maxResults 0-20, includeAnswer for answer mode.
     const res = await this.client.search(req.query, {
       searchDepth: depth,
@@ -53,12 +55,10 @@ export class TavilyProvider implements SearchProvider {
       results,
       answers,
       elapsedMs: res.responseTime ?? (Date.now() - start),
-      usage: res.usage ? { remaining: undefined, limit: undefined } : undefined,
+      usage: undefined, // ponytail: Tavily usage comes per-call in response.usage.credits, no standalone API.
     };
   }
 
-  async usage(): Promise<{ remaining?: number; limit?: number; resetAt?: string } | undefined> {
-    // ponytail: Tavily usage comes per-call in response.usage.credits, no standalone API.
-    return undefined;
-  }
+  // ponytail: Tavily usage comes per-call in response.usage.credits, no standalone API.
+  // No standalone usage() method — contract's usage?() is optional.
 }

@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/index.ts",
-    "lint": "echo \"lint placeholder\"",
+    "lint": "tsc --noEmit",
     "test": "echo \"test placeholder\"",
     "check": "tsc --noEmit"
   },

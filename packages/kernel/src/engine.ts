@@ -27,6 +27,8 @@ export const DEFAULT_GATE: SufficiencyGate = {
 
 // Engine config: budget caps + sufficiency gate + grace window.
 export interface EngineConfig {
+  // ponytail: budget field is accepted but not yet wired to BudgetLedger (ADR-0005 decision 4 known deferral).
+  // Kernel stays pure orchestration; budget enforcement will be injected via store layer when implemented.
   budget?: Budget;
   gate?: Partial<SufficiencyGate>;  // override DEFAULT_GATE fields
   graceWindowMs?: number;            // default 1500 (paperfoot EARLY_STOP_GRACE)
