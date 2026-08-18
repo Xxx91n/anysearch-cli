@@ -8,6 +8,7 @@ import Database from "better-sqlite3";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { SCHEMA_SQL } from "./schema-content";
 import type { NormalizedResult } from "@anysearch/retriever";
 
 export interface Session {
@@ -69,9 +70,16 @@ export class SqliteSessionStore implements SessionStore {
     this.db.pragma("synchronous = NORMAL");
     this.db.pragma("foreign_keys = ON");
     this.db.pragma("busy_timeout = 5000");
-    // Apply schema from schema.sql (idempotent IF NOT EXISTS).
-    const schemaPath = join(dirname(fileURLToPath(import.meta.url)), "schema.sql");
-    const schema = readFileSync(schemaPath, "utf8");
+    // Apply schema (idempotent IF NOT EXISTS).
+    // ESM dev mode: read schema.sql from source dir via import.meta.url.
+    // CJS bundled mode: import.meta is empty, use inlined SCHEMA_SQL constant.
+    let schema: string;
+    try {
+      const schemaPath = join(dirname(fileURLToPath(import.meta.url)), "schema.sql");
+      schema = readFileSync(schemaPath, "utf8");
+    } catch {
+      schema = SCHEMA_SQL;
+    }
     this.db.exec(schema);
     // Module-level prepared statements (atomcode research pattern).
     this.stmts = {

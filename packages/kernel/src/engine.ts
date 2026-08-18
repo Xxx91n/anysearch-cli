@@ -147,7 +147,7 @@ export class RetroaererdEngine {
       const r = allResults.get(url);
       if (r) {
         // Restore original URL for output.
-        rankedResults.push({ ...r, url: r.extra?.originalUrl ?? r.url });
+        rankedResults.push({ ...r, url: String(r.extra?.originalUrl ?? r.url) });
       }
     }
 

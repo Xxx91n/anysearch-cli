@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
+    "module": "ES2022",
     "moduleResolution": "Bundler",
     "lib": [
       "ES2022"
@@ -11,20 +11,23 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@anysearch/retriever": [
+        "../../packages/retriever/src/index.ts"
+      ],
+      "@anysearch/store": [
+        "../../packages/store/src/index.ts"
+      ],
+      "@anysearch/kernel": [
+        "../../packages/kernel/src/index.ts"
+      ],
+      "@anysearch/retriever/providers": [
+        "../../packages/retriever/src/providers/index.ts"
+      ]
+    }
   },
   "include": [
     "src/**/*"
-  ],
-  "references": [
-    {
-      "path": "../../packages/store"
-    },
-    {
-      "path": "../../packages/retriever"
-    },
-    {
-      "path": "../../packages/kernel"
-    }
   ]
 }

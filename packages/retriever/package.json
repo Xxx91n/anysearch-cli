@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./providers": "./src/providers/index.ts"
   },
   "scripts": {
     "test": "tsx test/rrf.test.ts && tsx test/tavily.test.ts && tsx test/exa.test.ts && tsx test/anysearch.test.ts"

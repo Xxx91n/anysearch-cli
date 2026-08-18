@@ -36,7 +36,7 @@ export interface SearchProvider {
   readonly id: string;
   readonly modes: readonly Mode[];
   search(req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope>;
-  usage?(): Promise<UsageInfo>;
+  usage?(): Promise<UsageInfo | undefined>;
 }
 
 // Fused envelope: the output of RRF consensus fusion across N providers.

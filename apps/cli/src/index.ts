@@ -1,10 +1,16 @@
 #!/usr/bin/env tsx
 // anysearch-cli entry - vertical agent for information retrieval.
 // Seam 5: CLI composition root. Packages are wired here.
+// Composition root: provider registry + store + engine injected per command.
 
-import type { SearchProvider, FusedEnvelope } from "@anysearch/retriever";
-import type { AgentRuntime, RetrieverPort, SessionStorePort, DomainConfigPort } from "@anysearch/kernel";
-import type { SessionStore, DomainSchema } from "@anysearch/store";
+import { runDoctor } from "./commands/doctor";
+import { runSearch } from "./commands/search";
+import { runDomain } from "./commands/domain";
+import { runAuth } from "./commands/auth";
+import { runLlm } from "./commands/llm";
+import { runSkill } from "./commands/skill";
+import { runChat } from "./commands/chat";
+import { runRecommend } from "./commands/recommend";
 
 const VERSION = "0.0.0";
 
@@ -14,8 +20,8 @@ const help = [
   "Usage: ans <command> [options]",
   "",
   "Commands:",
-  "  doctor    Run smoke tests: provider ping + ctx/codegraph probe + config check",
-  "  auth      Configure provider API keys and anysearch channel credentials",
+  "  doctor    Run smoke tests: provider ping + store check + domain validate",
+  "  auth      Show provider API key configuration status",
   "  llm       Configure LLM providers (via @earendil-works/pi-ai)",
   "  skill     Manage Agent Skills (install / list / remove)",
   "  search    Run a retrieval query through the Retroaererd Engine",
@@ -30,6 +36,8 @@ const help = [
   "Env:",
   "  ANS_DOMAIN        Active Domain name (overrides TOML selection)",
   "  ANS_LOG_LEVEL     trace | debug | info | warn | error (default: info)",
+  "  TAVILY_API_KEY    Tavily provider API key",
+  "  EXA_API_KEY       Exa provider API key",
 ].join("\n") + "\n";
 
 if (argv.length === 0) {
@@ -47,12 +55,30 @@ if (cmd === "--help" || cmd === "-h") {
   process.exit(0);
 }
 
-// ponytail: stub map for Step 3 - each command becomes one file under src/commands/<name>.ts
-// Seam 5: composition root will inject real implementations here.
 const known = new Set(["doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain"]);
 if (!known.has(cmd)) {
   process.stderr.write("ans: unknown command " + String.fromCharCode(39) + cmd + String.fromCharCode(39) + "\n" + "See " + String.fromCharCode(39) + "ans --help" + String.fromCharCode(39) + ".\n");
   process.exit(2);
 }
-process.stderr.write("ans: " + String.fromCharCode(39) + cmd + String.fromCharCode(39) + " not implemented yet (kernel split seam 5 pending)\n");
-process.exit(3);
+
+// Composition root: dispatch to command implementation.
+// Each command receives remaining args and returns exit code.
+const cmdArgs = argv.slice(1);
+const handlers: Record<string, (args: string[]) => Promise<number>> = {
+  doctor: runDoctor,
+  search: runSearch,
+  domain: runDomain,
+  auth: runAuth,
+  llm: runLlm,
+  skill: runSkill,
+  chat: runChat,
+  recommend: runRecommend,
+};
+
+const handler = handlers[cmd];
+handler(cmdArgs)
+  .then((code) => process.exit(code))
+  .catch((e) => {
+    process.stderr.write("ans: " + cmd + " failed: " + (e instanceof Error ? e.message : String(e)) + "\n");
+    process.exit(1);
+  });

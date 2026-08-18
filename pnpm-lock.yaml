@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  zod: '>=3.25.28'
+
 importers:
 
   .: {}
@@ -19,7 +22,13 @@ importers:
       '@anysearch/store':
         specifier: workspace:*
         version: link:../../packages/store
+      better-sqlite3:
+        specifier: ^13.0.3
+        version: 13.0.3
     devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^9.6.0
+        version: 9.6.0
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.1
@@ -826,7 +835,7 @@ packages:
     hasBin: true
     peerDependencies:
       ws: ^8.18.0
-      zod: ^3.23.8
+      zod: '>=3.25.28'
     peerDependenciesMeta:
       ws:
         optional: true
@@ -966,10 +975,10 @@ packages:
   zod-to-json-schema@3.25.2:
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
     peerDependencies:
-      zod: ^3.25.28 || ^4
+      zod: '>=3.25.28'
 
-  zod@3.22.0:
-    resolution: {integrity: sha512-y5KZY/ssf5n7hCGDGGtcJO/EBJEm5Pa+QQvFBeyMOtnFYOSflalxIFFvdaYevPhePcmcKC4aTbFkCcXN7D0O8Q==}
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
 snapshots:
 
@@ -1404,9 +1413,9 @@ snapshots:
     dependencies:
       cross-fetch: 4.1.0
       dotenv: 16.4.7
-      openai: 5.0.1(zod@3.22.0)
-      zod: 3.22.0
-      zod-to-json-schema: 3.25.2(zod@3.22.0)
+      openai: 5.0.1(zod@4.4.3)
+      zod: 4.4.3
+      zod-to-json-schema: 3.25.2(zod@4.4.3)
     transitivePeerDependencies:
       - encoding
       - ws
@@ -1527,9 +1536,9 @@ snapshots:
 
   object-assign@4.1.1: {}
 
-  openai@5.0.1(zod@3.22.0):
+  openai@5.0.1(zod@4.4.3):
     optionalDependencies:
-      zod: 3.22.0
+      zod: 4.4.3
 
   pathe@2.0.3: {}
 
@@ -1670,8 +1679,8 @@ snapshots:
       tr46: 0.0.3
       webidl-conversions: 3.0.0
 
-  zod-to-json-schema@3.25.2(zod@3.22.0):
+  zod-to-json-schema@3.25.2(zod@4.4.3):
     dependencies:
-      zod: 3.22.0
+      zod: 4.4.3
 
-  zod@3.22.0: {}
+  zod@4.4.3: {}
