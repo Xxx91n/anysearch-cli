@@ -9,8 +9,8 @@ PRAGMA journal_mode = WAL;
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   domain TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime("now")),
-  updated_at TEXT NOT NULL DEFAULT (datetime("now"))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Messages table: conversation entries within a session.
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS messages (
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   role TEXT NOT NULL, -- "user" | "assistant" | "tool"
   content TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime("now"))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- FTS5 virtual table with external content (avoids storing content twice).
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS retrieval_results (
   source TEXT, -- provider id
   rrf_score REAL,
   fetched BOOLEAN DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime("now"))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- FTS5 for retrieval results (search within session results).
@@ -87,5 +87,5 @@ CREATE TABLE IF NOT EXISTS resume_anchors (
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   anchor_type TEXT NOT NULL, -- "query" | "fetch" | "sufficiency"
   payload TEXT NOT NULL, -- JSON blob
-  created_at TEXT NOT NULL DEFAULT (datetime("now"))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
