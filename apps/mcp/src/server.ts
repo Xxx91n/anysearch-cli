@@ -39,6 +39,14 @@ export function buildServer(engine?: CompositionResult): McpServer {
         snippet: r.snippet,
         source: r.source,
       }));
+      // ADR-0008 D3: auto-index results to FTS5 (context-mode mental model).
+      try {
+        const session = await eng.store.createSession("mcp");
+        await eng.store.saveResults(session.id, envelope.results);
+      } catch (e) {
+        // ponytail: auto-index is best-effort, don't block search response.
+        process.stderr.write("search_web auto-index error: " + (e instanceof Error ? e.message : String(e)) + "\n");
+      }
       const summary = JSON.stringify({
         query,
         totalResults: envelope.results.length,
@@ -61,13 +69,38 @@ export function buildServer(engine?: CompositionResult): McpServer {
       }),
     },
     async (args: Record<string, unknown>) => {
-      // ponytail: stub until G018 implements multi-round deep research.
       const question = String(args.question);
-      const envelope = await eng.retriever.search({ query: question, mode: "deep" });
+      const depth = (args.depth as "brief" | "standard" | "deep") || "standard";
+      const rounds = depth === "brief" ? 1 : depth === "deep" ? 3 : 2;
+      // ADR-0008 D3: multi-round search — each round refines query from prior results.
+      const allResults: Array<{ title: string; url: string; snippet: string; source: string }> = [];
+      const seenUrls = new Set<string>();
+      let currentQuery = question;
+      for (let round = 0; round < rounds; round++) {
+        const envelope = await eng.retriever.search({ query: currentQuery, mode: "deep" });
+        // Auto-index each round to FTS5.
+        try {
+          const session = await eng.store.createSession("mcp-research");
+          await eng.store.saveResults(session.id, envelope.results);
+        } catch { /* best-effort */ }
+        for (const r of envelope.results) {
+          if (!seenUrls.has(r.url)) {
+            seenUrls.add(r.url);
+            allResults.push({ title: r.title, url: r.url, snippet: r.snippet, source: r.source });
+          }
+        }
+        // Refine query: pick top result title as follow-up angle.
+        if (round + 1 < rounds && envelope.results.length > 0) {
+          currentQuery = envelope.results[0].title;
+        }
+      }
       const summary = JSON.stringify({
         question,
-        phase: "stub",
-        results: envelope.results.slice(0, 10),
+        depth,
+        rounds,
+        totalResults: allResults.length,
+        results: allResults.slice(0, 10),
+        citations: allResults.slice(0, 5).map(r => ({ title: r.title, url: r.url, source: r.source })),
       }, null, 2);
       return { content: [{ type: "text" as const, text: summary }] };
     }
@@ -88,19 +121,24 @@ export function buildServer(engine?: CompositionResult): McpServer {
       try {
         const query = String(args.query);
         const limit = Number(args.limit) || 5;
-        // ponytail: recall_memory requires a SessionStore instance.
-        // For now, return time-decay classification info as preview.
-        const { isTimeSensitive, isEvergreen, classifyTier, decayMultiplier } = await import("@anysearch/store");
+        // ADR-0008 D3: FTS5 memory recall with time edge effect.
+        const { isTimeSensitive, isEvergreen } = await import("@anysearch/store");
+        const hits = await eng.store.searchFts5(null, query, limit);
         const ts = isTimeSensitive(query);
         const eg = isEvergreen(query);
-        const analysis = JSON.stringify({
+        const summary = JSON.stringify({
           query,
           qdfClassification: ts ? "time-sensitive" : eg ? "evergreen" : "standard",
           decayActive: !eg,
-          decayWeight: ts ? 0.4 : 0.25,
-          message: "recall_memory: FTS5 time edge effect analysis (full recall requires session store instance)",
+          hitsCount: hits.length,
+          hits: hits.map(h => ({
+            role: h.role,
+            content: h.content.slice(0, 200),
+            rank: h.rank,
+            sessionId: h.sessionId,
+          })),
         }, null, 2);
-        return { content: [{ type: "text", text: analysis }] };
+        return { content: [{ type: "text", text: summary }] };
       } catch (e) {
         return { content: [{ type: "text", text: "recall_memory error: " + (e instanceof Error ? e.message : String(e)) }] };
       }

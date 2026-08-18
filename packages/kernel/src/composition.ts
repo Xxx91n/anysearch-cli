@@ -8,8 +8,8 @@
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch/retriever/providers";
 import type { SearchProvider } from "@anysearch/retriever";
 import { RetroaererdEngine } from "./engine";
-import type { RetrieverPort, DomainConfigPort } from "./ports";
-import { loadDomainByName } from "@anysearch/store";
+import type { RetrieverPort, DomainConfigPort, SessionStorePort } from "./ports";
+import { loadDomainByName, SqliteSessionStore } from "@anysearch/store";
 
 // Map provider ids to constructors.
 // ponytail: wrap in try/catch — providers without API keys are skipped, not crashed.
@@ -22,6 +22,7 @@ const PROVIDER_FACTORIES: Record<string, () => SearchProvider | undefined> = {
 export interface CompositionResult {
   retriever: RetrieverPort;
   config?: DomainConfigPort;
+  store: SessionStorePort;
 }
 
 // createEngine: build configured engine.
@@ -47,5 +48,7 @@ export function createEngine(domain?: string): CompositionResult {
   }
 
   const retriever: RetrieverPort = new RetroaererdEngine(providers);
-  return { retriever, config };
+  // ponytail: share one SessionStore across CLI + MCP. In-memory DB for MVP.
+  const store = new SqliteSessionStore(":memory:");
+  return { retriever, config, store };
 }

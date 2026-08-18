@@ -4,6 +4,7 @@
 import { buildServer } from "../src/server.js";
 import type { CompositionResult } from "@anysearch/kernel";
 import type { RetrieverPort, Query } from "@anysearch/kernel";
+import type { SessionStore, MemoryHit } from "@anysearch/store";
 import type { FusedEnvelope } from "@anysearch/retriever";
 
 let passed = 0;
@@ -26,7 +27,15 @@ const mockRetriever: RetrieverPort = {
     metadata: { providersQueried: [], providersFailed: [], providersCancelled: [], elapsedMs: 0 },
   }),
 };
-const mockEngine: CompositionResult = { retriever: mockRetriever };
+const mockStore: SessionStore = {
+  createSession: async (_d: string) => ({ id: "test-session", domain: _d, createdAt: new Date().toISOString() }),
+  append: async () => {},
+  searchFts5: async (_s: string | null, _q: string, _l?: number): Promise<MemoryHit[]> => [],
+  saveResults: async () => {},
+  saveAnchor: async () => {},
+  getAnchors: async () => [],
+};
+const mockEngine: CompositionResult = { retriever: mockRetriever, store: mockStore };
 
 // Test 1: buildServer returns an McpServer instance.
 const server = buildServer(mockEngine);
