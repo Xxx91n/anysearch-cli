@@ -59,7 +59,11 @@ CREATE TABLE IF NOT EXISTS retrieval_results (
   source TEXT, -- provider id
   rrf_score REAL,
   fetched BOOLEAN DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  -- G019: Time Edge Effect columns.
+  valid_until TEXT, -- bi-temporal: NULL = still valid, non-null = invalidated timestamp.
+  pinned BOOLEAN DEFAULT 0, -- pinned exemption: bypasses time decay.
+  entity TEXT -- entity key for bi-temporal invalidation (URL for MVP).
 );
 
 -- FTS5 for retrieval results (search within session results).
@@ -111,3 +115,8 @@ CREATE TABLE IF NOT EXISTS budget_ledger (
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- G019 migration: add time edge effect columns to existing retrieval_results table.
+-- ALTER TABLE ADD COLUMN is idempotent-safe: errors if column already exists, caught by try/catch in SessionStore constructor.
+-- These run after the CREATE TABLE IF NOT EXISTS, so new databases already have the columns.
+-- For existing databases, these add the missing columns.

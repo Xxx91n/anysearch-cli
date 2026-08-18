@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { SCHEMA_SQL } from "./schema-content";
+import { registerTimeDecayFunction, invalidateOldRecords } from "./time-decay.js";
 import type { NormalizedResult } from "@anysearch/retriever";
 
 export interface Session {
@@ -81,13 +82,19 @@ export class SqliteSessionStore implements SessionStore {
       schema = SCHEMA_SQL;
     }
     this.db.exec(schema);
+    // G019: Register time_decay custom function for FTS5 queries with time edge effect.
+    registerTimeDecayFunction(this.db);
+    // G019: Migration for existing databases (ALTER TABLE ADD COLUMN is not IF NOT EXISTS safe).
+    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN valid_until TEXT"); } catch {}
+    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN pinned BOOLEAN DEFAULT 0"); } catch {}
+    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN entity TEXT"); } catch {}
     // Module-level prepared statements (atomcode research pattern).
     this.stmts = {
       createSession: this.db.prepare("INSERT INTO sessions (id, domain) VALUES (?, ?) RETURNING id, domain, created_at as createdAt"),
       append: this.db.prepare("INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)"),
       searchMessages: this.db.prepare("SELECT m.id as rowid, m.session_id as sessionId, m.role, m.content, bm25(messages_fts) as rank FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid WHERE messages_fts MATCH ? AND m.session_id = ? ORDER BY rank LIMIT ?"),
       searchAllMessages: this.db.prepare("SELECT m.id as rowid, m.session_id as sessionId, m.role, m.content, bm25(messages_fts) as rank FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid WHERE messages_fts MATCH ? ORDER BY rank LIMIT ?"),
-      saveResult: this.db.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, rrf_score) VALUES (?, ?, ?, ?, ?, ?)"),
+      saveResult: this.db.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, rrf_score, entity) VALUES (?, ?, ?, ?, ?, ?, ?)"),
       searchResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND r.session_id = ? ORDER BY rank LIMIT ?"),
       saveAnchor: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)"),
       getAnchors: this.db.prepare("SELECT id, session_id as sessionId, anchor_type as anchorType, payload, created_at as createdAt FROM resume_anchors WHERE session_id = ? ORDER BY id"),
@@ -119,7 +126,7 @@ export class SqliteSessionStore implements SessionStore {
     // atomcode research: db.transaction(fn) auto-rollback on throw.
     const insertMany = this.db.transaction((rs: NormalizedResult[]) => {
       for (const r of rs) {
-        this.stmts.saveResult.run(sessionId, r.url, r.title, r.snippet, r.source, null);
+        this.stmts.saveResult.run(sessionId, r.url, r.title, r.snippet, r.source, null, r.url);
       }
     });
     insertMany(results);

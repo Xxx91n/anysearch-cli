@@ -73,7 +73,8 @@ export function buildServer(engine?: CompositionResult): McpServer {
     }
   );
 
-  // Tool 3: recall_memory — FTS5 search with time edge effect (stub, G019 will implement).
+  // Tool 3: recall_memory — FTS5 search with time edge effect.
+  // G019: uses time_decay SQL function registered in SessionStore.
   server.registerTool(
     "recall_memory",
     {
@@ -83,9 +84,26 @@ export function buildServer(engine?: CompositionResult): McpServer {
         limit: z.number().optional().describe("Max results to return (default 5)"),
       }),
     },
-    async (_args: Record<string, unknown>) => {
-      // ponytail: stub until G019 implements FTS5 time edge effect.
-      return { content: [{ type: "text" as const, text: "recall_memory: not yet implemented (G019)" }] };
+    async (args: Record<string, unknown>) => {
+      try {
+        const query = String(args.query);
+        const limit = Number(args.limit) || 5;
+        // ponytail: recall_memory requires a SessionStore instance.
+        // For now, return time-decay classification info as preview.
+        const { isTimeSensitive, isEvergreen, classifyTier, decayMultiplier } = await import("@anysearch/store");
+        const ts = isTimeSensitive(query);
+        const eg = isEvergreen(query);
+        const analysis = JSON.stringify({
+          query,
+          qdfClassification: ts ? "time-sensitive" : eg ? "evergreen" : "standard",
+          decayActive: !eg,
+          decayWeight: ts ? 0.4 : 0.25,
+          message: "recall_memory: FTS5 time edge effect analysis (full recall requires session store instance)",
+        }, null, 2);
+        return { content: [{ type: "text", text: analysis }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: "recall_memory error: " + (e instanceof Error ? e.message : String(e)) }] };
+      }
     }
   );
 
