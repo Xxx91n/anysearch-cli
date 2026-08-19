@@ -105,7 +105,9 @@ export class SqliteSessionStore implements SessionStore {
       saveAnchor: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)"),
       getAnchors: this.db.prepare("SELECT id, session_id as sessionId, anchor_type as anchorType, payload, created_at as createdAt FROM resume_anchors WHERE session_id = ? ORDER BY id"),
       // ADR-0008 D3: recall_memory searches Research Memory (retrieval_results_fts), not messages.
-      searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? ORDER BY rank LIMIT ?"),
+     // ADR-0008 D2: time_decay() in ORDER BY + bi-temporal filter (valid_until IS NULL).
+     // MemoryHit.role <-- r.title, MemoryHit.content <-- r.snippet (recall_memory maps these fields).
+     searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, time_decay(bm25(retrieval_results_fts), r.created_at, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) ORDER BY rank LIMIT ?"),
       // ADR-0009 D3 L2: update last_accessed on recall hit (access-time signal, Mem0 1.5×/0.3×).
       touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now') WHERE id = ?"),
     };
@@ -139,7 +141,9 @@ export class SqliteSessionStore implements SessionStore {
 
   // ADR-0008 D3: search Research Memory layer (retrieval_results_fts) — used by recall_memory MCP tool.
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
-    const hits = this.stmts.searchAllResults.all(this.fts5Escape(query), limit) as MemoryHit[];
+   const safeQuery = this.fts5Escape(query);
+   // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
+   const hits = this.stmts.searchAllResults.all(safeQuery, safeQuery, limit) as MemoryHit[];
     // ADR-0009 D3 L2: refresh last_accessed for each hit (access-time signal).
     for (const hit of hits) {
       try { this.stmts.touchAccessed.run(hit.rowid); } catch {}
@@ -151,7 +155,10 @@ export class SqliteSessionStore implements SessionStore {
     // atomcode research: db.transaction(fn) auto-rollback on throw.
     const insertMany = this.db.transaction((rs: NormalizedResult[]) => {
       for (const r of rs) {
-        this.stmts.saveResult.run(sessionId, r.url, r.title, r.snippet, r.source, null, r.entity ?? r.url);
+       const info = this.stmts.saveResult.run(sessionId, r.url, r.title, r.snippet, r.source, null, r.entity ?? r.url);
+                // ADR-0008 D2: bi-temporal invalidation — close old records for same entity (URL) at write time.
+                // Not relying on decay to suppress staleness; valid_until set immediately on new write.
+                try { invalidateOldRecords(this.db, r.url, Number(info.lastInsertRowid)); } catch {}
       }
     });
     insertMany(results);
