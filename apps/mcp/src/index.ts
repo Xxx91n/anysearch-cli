@@ -6,7 +6,6 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
-import { randomUUID } from "node:crypto";
 import { buildServer } from "./server.js";
 
 const argv = process.argv.slice(2);
@@ -58,8 +57,11 @@ async function main() {
     app.post("/mcp", async (req, res) => {
       try {
         const server = buildServer();
+        // ADR-0008 D4: stateless mode — sessionIdGenerator: undefined, enableJsonResponse, keepAliveMs: 0
         const t = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
+          sessionIdGenerator: undefined,
+          enableJsonResponse: true,
+          keepAliveMs: 0,
         });
         await server.connect(t);
         await t.handleRequest(req, res, req.body);

@@ -22,6 +22,7 @@ packages/kernel/src/composition.ts | Provider factories wrapped in try/catch to 
 | apps/plugin/src/hooks/session-start.ts | .mdc write to user workspace .cursor/rules/ is a side effect. | Add .gitignore entry or opt-out config when user reports |
 
 ## Resolved (no longer debt)
+- D4 sessionIdGenerator used randomUUID() instead of undefined (stateless) — FIXED in ADR-0008 audit. Now sessionIdGenerator: undefined, enableJsonResponse: true, keepAliveMs: 0 per ADR-0008 D4 spec.
 
 - time_decay() registered but not called from searchAllResults SQL — FIXED in commit 7f46683 (ADR-0008 D2 audit). Now wired into ORDER BY + bi-temporal filter in session-store.ts.
 - invalidateOldRecords() imported but not called in saveResults() — FIXED in commit 7f46683. Now called per-insert to close old valid records for same entity URL.
