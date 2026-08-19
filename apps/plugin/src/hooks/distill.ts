@@ -3,6 +3,7 @@
 // Distillation = extract key info, compress, prepare for indexing.
 
 import { isAnsTool, type HookInput, type HookDecision } from "./core.js";
+import { createHash } from "node:crypto";
 
 interface DistillResult {
   distilled: string;
@@ -16,15 +17,6 @@ interface DistillResult {
   }>;
 }
 
-// Hash function for content dedup (ADR-0009 D4: content-hash dedup).
-function simpleHash(s: string): string {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) - h) + s.charCodeAt(i);
-    h |= 0;
-  }
-  return h.toString(36);
-}
 
 export function distillOutput(input: HookInput): DistillResult {
   if (!isAnsTool(input.toolName)) {
@@ -54,7 +46,7 @@ export function distillOutput(input: HookInput): DistillResult {
     url: r.url || "",
     snippet: (r.snippet || "").slice(0, 500),
     source: r.source || "unknown",
-    contentHash: simpleHash(r.url + r.title + r.snippet),
+    contentHash: createHash("sha256").update(r.url + r.title + r.snippet).digest("hex").slice(0, 16),
   }));
 
   // Structured summary: concise JSON for host agent context window economy.

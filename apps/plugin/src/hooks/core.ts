@@ -30,11 +30,6 @@ export interface HookDecision {
   }>;
 }
 
-// ans_* prefix matching (ADR-0009 Q5 decision): only intercept our 5 MCP tools.
-// ADR-0009 Q5: only intercept our 5 MCP tools (ans_* prefix with fallback to bare names).
-// Handles platform namespace prefixes like mcp__anysearch__search_web or ans__search_web.
-const ANS_TOOL_NAMES = ["search_web", "research_web", "recall_memory", "query_knowledge", "ans_chat"];
-
 // Pattern: matches any tool name ending with one of our ans_* tool names (handles platform prefixes).
 const ANS_TOOL_PATTERN = /(?:^|_|__)(?:search_web|research_web|recall_memory|query_knowledge|ans_chat)$/;
 
