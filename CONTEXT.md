@@ -107,4 +107,20 @@ hooks 层错误处理策略：hooks 挂了/MCP server 没响应/FTS5 写失败�
 ## Entity Configurable（实体可配置）
 NormalizedResult 新增可选 entity 字段，允许调用方显式指定实体标识覆盖 URL 默认值。saveResults 写入 retrieval_results 时用 r.entity ?? r.url 作为 entity 列值。覆盖"同实体多 URL"场景：同一公司/产品有多个页面（about、pricing、blog），URL 不同但实体相同，通过显式 entity 字段聚合。前期 fallback 到 URL（零行为变更），后期配合双时态失效按实体族去重。ADR-0009 Decision 3 L2 增量。
 
+
+## Hot-Cold Injection（热冷路径注入）
+L1 记忆注入的分治策略：热路径（transformContext async）做 L1 会话摘要速召回，结果 prepend 到 systemPrompt 与当前轮 LLM 同步生效；冷路径（shouldStopAfterTurn async）做 L2 FTS5 + 两 stage 管道深召回，不阻塞当前轮，记忆到下一轮生效。热路径快（内存内 resume_anchors）、冷路径慢（FTS5 + 双库），是 Letta 同步压缩 + 异步 dreaming 的同构映射。ADR-0010 Decision 1。
+
+## Progressive Disclosure（渐进披露）
+hooks 层判断指南的分发架构：SessionStart hook 注入 ~20 行 / 150-400 token 静态路由卡（轻量指针）+ 独立 SKILL.md 按需加载（~100 tokens 常驻 description，命中才载入正文）+ AGENTS.md 最小化常驻（<200 行，只放每会话事实）。三层按"加载时机 × 上下文成本 × 权威性"分工：常驻事实进 AGENTS.md，过程判断进 SKILL.md，确定性触发进 hooks。参考 context-mode 三件套、Anthropic 2026-06-18 steering 博客。ADR-0010 Decision 2。
+
+## Routing Card（路由卡）
+SessionStart hook 注入的静态路由指令，~20 行 / 150-400 token。四块内容：插件存在声明 + 5 个 ans_* 工具一句话用途、触发规则（何时 search_web vs research_web vs recall_memory）、fail-open 降级说明、指向 SKILL.md 深挖入口的显式指针。不内联完整 guidance。跨平台降级：hook 注入（Claude/Codex）-> rules 文件（Cursor 无 SessionStart）-> AGENTS.md 段。注入太少 -> skill 永不触发（Vercel 56% 不触发）；注入太多 -> 会话崩溃（issue #15554 6MB）。ADR-0010 Decision 2。
+
+## Fact-Process Split（事实流程分置）
+AGENTS.md vs SKILL.md 的内容归属裁决线。Anthropic memory 文档金句："facts Claude should hold in every session" -> AGENTS.md 一行级；"multi-step procedure or only matters for one part" -> SKILL.md。工具白名单、fail-open 行为预期、命名空间约定是每会话事实 -> AGENTS.md；诊断/重试/恢复步骤是多步流程 -> SKILL.md。强制语义（白名单/fail-open）= AGENTS.md 一行意图声明 + hook 代码强制实现。AGENTS.md 是 context not enforced configuration。arXiv:2605.10039 确认文件大小/位置在多重检验校正后无差异。ADR-0010 Decision 2。
+
+## ARD Tracking（ARD 追踪）
+Agentic Resource Discovery v0.9 协议的追踪型 ADR 策略：记录事实基线（2026-08：v0.9 Draft，IANA 未注册，采纳约等于 0，两个参考实现）+ 季度复查哨（Synscribe 式普查 .well-known/ai-catalog.json）+ 可选低成本动作（发布时挂 ai-catalog.json 作为选项非承诺）+ 明确非目标（不按 ARD 重构分发格式、不引入运行时依赖。打包格式归属 Agent Plugins 1.0.0 Published spec）。ARD 是发现层与 MCP 执行层正交，未来接入只需加 catalog entry 无需改架构。ADR-0010 Decision 4。
+
 *End of Glossary*
