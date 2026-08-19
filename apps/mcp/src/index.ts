@@ -41,6 +41,20 @@ async function main() {
     const app = express();
     app.use(express.json());
 
+    // SECURITY: bind to 127.0.0.1 only — prevent network exposure (CWE-306).
+    // SECURITY: optional bearer token auth via ANS_MCP_KEY env var (CWE-306).
+    const mcpKey = process.env.ANS_MCP_KEY;
+    if (mcpKey) {
+      app.use((req, _res, next) => {
+        const auth = req.headers.authorization || "";
+        if (auth !== "Bearer " + mcpKey) {
+          _res.status(401).json({ error: { code: -32001, message: "Unauthorized" } });
+          return;
+        }
+        next();
+      });
+    }
+
     app.post("/mcp", async (req, res) => {
       try {
         const server = buildServer();
@@ -60,7 +74,8 @@ async function main() {
       res.json({ status: "ok", server: "anysearch-mcp", version: "0.0.0" });
     });
 
-    app.listen(port, () => {
+    // SECURITY: localhost-only binding — no remote access (CWE-306).
+    app.listen(port, "127.0.0.1", () => {
       process.stderr.write("anysearch MCP server: HTTP transport on port " + port + "\n");
     });
   }

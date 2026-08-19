@@ -37,7 +37,8 @@ function writeConfig(key: string, value: string): void {
   const content = Object.entries(existing)
     .map(([k, v]) => k + "=" + v)
     .join("\n") + "\n";
-  writeFileSync(configPath(), content, "utf8");
+  // SECURITY: restrict config file permissions to owner-only (CWE-312).
+  writeFileSync(configPath(), content, { encoding: "utf8", mode: 0o600 });
 }
 
 export async function runDomain(args: string[]): Promise<number> {

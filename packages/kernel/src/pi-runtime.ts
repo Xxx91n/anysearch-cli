@@ -77,6 +77,12 @@ export class PiAgentRuntime {
 
   // ADR-0007 decision 3: run() returns AsyncIterable<AgentEvent>, mapping pi events.
   async *run(input: string): AsyncIterable<AgentEvent> {
+    // SECURITY: timeout to prevent agent loop hang (CWE-400, CWE-840).
+    // ponytail: 5-minute default, override via opts.timeoutMs.
+    const timeoutMs = (this.opts as any).timeoutMs ?? 300000;
+    const startTime = Date.now();
+    const timedOut = () => Date.now() - startTime > timeoutMs;
+
     const { retriever, domain, model, streamFn, ledger, sessionId } = this.opts;
 
     // Build tools: search tool + any extra tools, filtered by domain.
@@ -188,7 +194,7 @@ export class PiAgentRuntime {
     });
 
     // Yield events as they arrive.
-    while (!agentDone || eventBuffer.length > 0) {
+    while ((!agentDone || eventBuffer.length > 0) && !timedOut()) {
       if (eventBuffer.length > 0) {
         yield eventBuffer.shift()!;
       } else if (!agentDone) {
@@ -204,6 +210,11 @@ export class PiAgentRuntime {
     // Drain any events that arrived between agent_end and promptPromise resolution.
     while (eventBuffer.length > 0) {
       yield eventBuffer.shift()!;
+    }
+
+    // SECURITY: timeout check after loop (CWE-400).
+    if (timedOut() && !agentDone) {
+      yield { type: "error", message: "Agent timeout after " + timeoutMs + "ms" };
     }
 
     // Token budget: settle at agent_end (ADR-0007 decision 5).

@@ -71,6 +71,8 @@ export function buildServer(engine?: CompositionResult): McpServer {
     async (args: Record<string, unknown>) => {
       const question = String(args.question);
       const depth = (args.depth as "brief" | "standard" | "deep") || "standard";
+      // SECURITY: cap multi-round fanout to prevent API quota exhaustion (CWE-400).
+      // ponytail: max 3 rounds — increase when budget enforcement lands.
       const rounds = depth === "brief" ? 1 : depth === "deep" ? 3 : 2;
       // ADR-0008 D3: multi-round search — each round refines query from prior results.
       const allResults: Array<{ title: string; url: string; snippet: string; source: string }> = [];

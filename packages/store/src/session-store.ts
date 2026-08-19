@@ -119,17 +119,22 @@ export class SqliteSessionStore implements SessionStore {
     this.stmts.append.run(sessionId, message.role, message.content);
   }
 
+  // SECURITY: escape FTS5 special chars by wrapping query as phrase literal (CWE-20).
+  private fts5Escape(query: string): string {
+    return '"' + query.replace(/"/g, '""') + '"';
+  }
+
   async searchFts5(sessionId: string | null, query: string, limit = 20): Promise<MemoryHit[]> {
-    // bm25() returns smaller=better. ORDER BY rank ascending (best first).
+    const safeQuery = this.fts5Escape(query);
     if (sessionId) {
-      return this.stmts.searchMessages.all(query, sessionId, limit) as MemoryHit[];
+      return this.stmts.searchMessages.all(safeQuery, sessionId, limit) as MemoryHit[];
     }
-    return this.stmts.searchAllMessages.all(query, limit) as MemoryHit[];
+    return this.stmts.searchAllMessages.all(safeQuery, limit) as MemoryHit[];
   }
 
   // ADR-0008 D3: search Research Memory layer (retrieval_results_fts) — used by recall_memory MCP tool.
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
-    return this.stmts.searchAllResults.all(query, limit) as MemoryHit[];
+    return this.stmts.searchAllResults.all(this.fts5Escape(query), limit) as MemoryHit[];
   }
 
   async saveResults(sessionId: string, results: NormalizedResult[]): Promise<void> {
