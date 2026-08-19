@@ -17,3 +17,5 @@ Candidates in implementation order:
 5. CLI composition root (seam 5)
 
 Acceptance: compile + build + process liveness (node dist/index.js --version).
+
+Status: Completed — all 5 candidates implemented. Covered by ADR-0004 through ADR-0010.

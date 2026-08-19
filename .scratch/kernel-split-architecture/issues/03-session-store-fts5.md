@@ -1,5 +1,7 @@
 # 03: Session Store FTS5 schema (candidate 3, seam 4)
 
+
+Status: Completed — implemented. Covered by ADR-0004, ADR-0008 (schema.sql + session-store.ts).
 Implement:
 - packages/store/src/schema.sql: FTS5 external content table + triggers + bm25() ranking
 - packages/store/src/session-store.ts: SessionStore interface (save/search/resume)

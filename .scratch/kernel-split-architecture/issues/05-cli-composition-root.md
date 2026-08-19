@@ -1,5 +1,7 @@
 # 05: CLI composition root (seam 5)
 
+
+Status: Completed — implemented. Covered by ADR-0006, ADR-0008 (composition.ts + createEngine lift).
 Implement:
 - apps/cli/src/commands/*.ts: replace stubs with real implementations
 - Composition root: inject provider registry + store into kernel

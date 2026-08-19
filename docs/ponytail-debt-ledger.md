@@ -16,3 +16,8 @@ apps/cli/src/commands/llm.ts | LLM config persistence via env vars only (no conf
 apps/mcp/src/server.ts | TypeBox→zod: v1 SDK registerTool only accepts zod, not TypeBox JSON Schema. TypeBox deferred to v2 SDK upgrade (fromJsonSchema). | Switch to TypeBox when upgrading to @modelcontextprotocol/server v2
 apps/mcp/src/server.ts | search_web/research_web createSession per call — high-frequency tools should reuse a cached session. | Cache session ID in buildServer closure when session churn matters
 packages/kernel/src/composition.ts | Provider factories wrapped in try/catch to skip providers without API keys. May silently hide real construction errors. | Add debug logging when provider construction fails before API key missing is expected
+
+## Resolved (no longer debt)
+
+- time_decay() registered but not called from searchAllResults SQL — FIXED in commit 7f46683 (ADR-0008 D2 audit). Now wired into ORDER BY + bi-temporal filter in session-store.ts.
+- invalidateOldRecords() imported but not called in saveResults() — FIXED in commit 7f46683. Now called per-insert to close old valid records for same entity URL.

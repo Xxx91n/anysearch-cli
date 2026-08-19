@@ -1,5 +1,7 @@
 # 02: SearchProvider contract + RRF pure function (candidate 2, seam 1+2)
 
+
+Status: Completed — implemented. Covered by ADR-0004, ADR-0005 (contract.ts + rrf.ts).
 Implement:
 - packages/retriever/src/contract.ts: SearchProvider interface + NormalizedResult
 - packages/retriever/src/rrf.ts: rrfScores(lists, k=60) pure function
