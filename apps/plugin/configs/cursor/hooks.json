@@ -30,6 +30,5 @@
         "timeout": 5
       }
     ]
-  },
-  "_degradation_note": "Cursor has no SessionStart hook. Routing card is injected via .cursorrules or AGENTS.md fallback."
+  }
 }

@@ -17,6 +17,10 @@ apps/mcp/src/server.ts | TypeBox→zod: v1 SDK registerTool only accepts zod, no
 apps/mcp/src/server.ts | search_web/research_web createSession per call — high-frequency tools should reuse a cached session. | Cache session ID in buildServer closure when session churn matters
 packages/kernel/src/composition.ts | Provider factories wrapped in try/catch to skip providers without API keys. May silently hide real construction errors. | Add debug logging when provider construction fails before API key missing is expected
 
+| apps/plugin/src/hooks/adapters/cursor.ts | ROUTING_CARD + MDC_CONTENT duplicated in cursor.ts, antigravity.ts, session-start.ts — one source three outputs. | Extract to shared constants module when 4th platform added |
+| apps/plugin/src/hooks/adapters/antigravity.ts | .mdc generated on every hook invocation (not just SessionStart) since Antigravity has no SessionStart event. | Remove when Antigravity adds SessionStart event support |
+| apps/plugin/src/hooks/session-start.ts | .mdc write to user workspace .cursor/rules/ is a side effect. | Add .gitignore entry or opt-out config when user reports |
+
 ## Resolved (no longer debt)
 
 - time_decay() registered but not called from searchAllResults SQL — FIXED in commit 7f46683 (ADR-0008 D2 audit). Now wired into ORDER BY + bi-temporal filter in session-store.ts.

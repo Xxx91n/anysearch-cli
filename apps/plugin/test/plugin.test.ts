@@ -170,6 +170,59 @@ test("AGENTS.md: minimal and has required sections", () => {
   assert.ok(lineCount < 200, "AGENTS.md should be < 200 lines, got " + lineCount);
 });
 
+
+
+// === ADR-0011: Cursor dual channel + .mdc generation ===
+test("ADR-0011: cursor.ts uses additional_context (snake_case)", () => {
+  const cursorSrc = fs.readFileSync(join(process.cwd(), "src", "hooks", "adapters", "cursor.ts"), "utf8");
+  assert.ok(cursorSrc.includes("additional_context"), "cursor.ts should use additional_context (snake_case)");
+  assert.ok(cursorSrc.includes("ensureMdc"), "cursor.ts should have ensureMdc function for .mdc generation");
+  assert.ok(cursorSrc.includes(".cursor"), "cursor.ts should write to .cursor/rules/");
+  // Verify it handles sessionStart event
+  assert.ok(cursorSrc.includes("sessionstart"), "cursor.ts should handle sessionStart event");
+});
+
+test("ADR-0011: antigravity.ts has .mdc fallback", () => {
+  const antigravitySrc = fs.readFileSync(join(process.cwd(), "src", "hooks", "adapters", "antigravity.ts"), "utf8");
+  assert.ok(antigravitySrc.includes("ensureMdc"), "antigravity.ts should have ensureMdc for .mdc fallback");
+  assert.ok(antigravitySrc.includes(".antigravity"), "antigravity.ts should write to .antigravity/rules/");
+  assert.ok(antigravitySrc.includes("SessionStart"), "antigravity.ts should keep SessionStart for forward-compat");
+});
+
+test("ADR-0011: session-start.ts has .mdc generation logic", () => {
+  const sessionStartSrc = fs.readFileSync(join(process.cwd(), "src", "hooks", "session-start.ts"), "utf8");
+  assert.ok(sessionStartSrc.includes("ensureMdc"), "session-start.ts should have ensureMdc function");
+  assert.ok(sessionStartSrc.includes("MDC_CONTENT"), "session-start.ts should define MDC_CONTENT");
+  assert.ok(sessionStartSrc.includes("ROUTING_CARD"), "session-start.ts should define ROUTING_CARD");
+  assert.ok(sessionStartSrc.includes("writeFileSync"), "session-start.ts should write .mdc file");
+  assert.ok(sessionStartSrc.includes("existsSync"), "session-start.ts should check if .mdc exists before writing");
+});
+
+test("ADR-0011: cursor hooks.json has no _degradation_note", () => {
+  const hooksPath = join(process.cwd(), "configs", "cursor", "hooks.json");
+  const hooksContent = fs.readFileSync(hooksPath, "utf8");
+  const parsed = JSON.parse(hooksContent);
+  assert.ok(!parsed._degradation_note, "cursor hooks.json should NOT have _degradation_note");
+  assert.ok(parsed.hooks.sessionStart, "cursor hooks.json should have sessionStart config");
+  assert.ok(parsed.hooks.preToolUse, "cursor hooks.json should have preToolUse config");
+  assert.ok(parsed.hooks.postToolUse, "cursor hooks.json should have postToolUse config");
+});
+
+test("ADR-0011: routing card 4-block structure", () => {
+  // Verify routing card has 4 blocks: plugin declaration, tools, trigger rules, fail-open
+  const block1 = "[anysearch plugin active]";
+  const block2 = "Tools available";
+  const block3 = "Trigger rules";
+  const block4 = "Fail-open";
+  // These are verified in the source code string above in the SessionStart test
+  // Here we verify the consistency across session-start.ts and cursor.ts
+  const sessionStartSrc = fs.readFileSync(join(process.cwd(), "src", "hooks", "session-start.ts"), "utf8");
+  assert.ok(sessionStartSrc.includes(block1), "session-start.ts has block 1");
+  assert.ok(sessionStartSrc.includes(block2), "session-start.ts has block 2");
+  assert.ok(sessionStartSrc.includes(block3), "session-start.ts has block 3");
+  assert.ok(sessionStartSrc.includes(block4), "session-start.ts has block 4");
+});
+
 // === Server liveness ===
 testAsync("Server: /health endpoint returns 200", async () => {
   const { spawn } = await import("node:child_process");

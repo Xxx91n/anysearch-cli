@@ -124,3 +124,12 @@ AGENTS.md vs SKILL.md 的内容归属裁决线。Anthropic memory 文档金句�
 Agentic Resource Discovery v0.9 协议的追踪型 ADR 策略：记录事实基线（2026-08：v0.9 Draft，IANA 未注册，采纳约等于 0，两个参考实现）+ 季度复查哨（Synscribe 式普查 .well-known/ai-catalog.json）+ 可选低成本动作（发布时挂 ai-catalog.json 作为选项非承诺）+ 明确非目标（不按 ARD 重构分发格式、不引入运行时依赖。打包格式归属 Agent Plugins 1.0.0 Published spec）。ARD 是发现层与 MCP 执行层正交，未来接入只需加 catalog entry 无需改架构。ADR-0010 Decision 4。
 
 *End of Glossary*
+
+## Cursor Dual Channel（Cursor 双通道注入）
+Cursor 平台 SessionStart hook 的注入策略。hook 照常 emit additional_context（snake_case 顶层字段）做前向兼容，但关键路由上下文走 .cursor/rules/anysearch.mdc（alwaysApply: true）规则文件兜底。原因：Cursor 的 additional_context 注入通道有官方承认的竞态 bug（2026-04 至 2026-08 多帖确认，Hooks 日志显示 merged 但实际未进模型上下文）。三个成熟项目（context-mode 20k stars、Hindsight、superpowers）的一致实践。ADR-0011 Decision 4。
+
+## MDC Fallback（.mdc 规则文件兜底）
+无可靠 SessionStart hook 注入通道的平台（Cursor、Antigravity）的路由卡注入方式。由 SessionStart hook 运行时动态生成 .cursor/rules/anysearch.mdc 或等价规则文件，frontmatter alwaysApply: true 确保每次会话可靠注入。路由卡内容在 session-start.ts 的 ROUTING_CARD 常量中一处定义，hook 执行时检查 .mdc 是否存在且内容一致，不存在或过期则写入。对齐 Hindsight 的"每次 sessionStart 重新生成"实践。ADR-0011 Decision 5/8。
+
+## Fire-and-Forget（不阻塞注入）
+Cursor sessionStart hook 的执行语义。agent loop 不等待 hook 完成、不强制阻塞响应。continue/user_message 字段 schema 接受但当前 callers 不 enforce（写 continue: false 也不会阻止建会话）。与 Claude Code 的 SessionStart 不同（Claude Code 会随 resume/compact/clear 重新触发）。Antigravity 同样无 SessionStart 等价事件，采用与 Cursor 相同的 .mdc 规则文件兜底策略。ADR-0011 Decision 4/8。

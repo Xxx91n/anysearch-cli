@@ -18,7 +18,7 @@ recall, multi-source RRF fusion, and an MCP server that auto-indexes results.
 
 ## Before you explore
 
-- Read `CONTEXT.md` at the repo root — the glossary of domain terms (38 terms).
+- Read `CONTEXT.md` at the repo root — the glossary of domain terms (41 terms).
 - Read `docs/adr/` — 10 ADRs (0001-0010), all Accepted, consecutive.
 - Read `docs/agents/domain.md` for how to consume domain docs.
 - Read `docs/agents/issue-tracker.md` for the local-markdown issue tracker conventions.
@@ -37,6 +37,7 @@ recall, multi-source RRF fusion, and an MCP server that auto-indexes results.
 | 0008 | 5 | MCP phase 2 design (5 tools, time edge effect, dual transport) |
 | 0009 | 6 | Phase 3 plugin design (hooks, project index, dual DB, two-stage recall) |
 | 0010 | 7 | Post-phase 3 evolution (L1 hot-cold hybrid, SessionStart hook, progressive disclosure) |
+| 0011 | 8 | SessionStart hook + progressive disclosure implementation (Cursor dual channel, .mdc fallback) |
 
 ## Build & test
 
