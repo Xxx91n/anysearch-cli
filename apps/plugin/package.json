@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "pnpm run build:hooks && pnpm run build:server",
-    "build:hooks": "pnpm run build:core && pnpm run build:distill && pnpm run build:preheat && pnpm run build:adapters",
+    "build:hooks": "pnpm run build:core && pnpm run build:distill && pnpm run build:preheat && pnpm run build:session-start && pnpm run build:adapters",
     "build:core": "esbuild src/hooks/core.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/core.cjs --external:better-sqlite3",
     "build:distill": "esbuild src/hooks/distill.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/distill.cjs --external:better-sqlite3",
     "build:preheat": "esbuild src/hooks/preheat.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/preheat.cjs --external:better-sqlite3",
@@ -26,7 +26,8 @@
     "dev": "tsx src/server/index.ts",
     "lint": "tsc --noEmit",
     "test": "tsx test/plugin.test.ts",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "build:session-start": "esbuild src/hooks/session-start.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/session-start.cjs --external:better-sqlite3"
   },
   "dependencies": {
     "@anysearch/kernel": "workspace:*",

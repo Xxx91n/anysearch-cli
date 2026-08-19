@@ -125,34 +125,87 @@ export class PiAgentRuntime {
           totalOutputTokens += response.usage.outputTokens || 0;
         }
       },
-      // ADR-0007 decision 4: rag.adapter -> transformContext injection.
-      // ADR-0009 D3 L1: transformContext pipeline — [RAG注入] → [记忆注入] → [compaction修剪].
-      // Always active now (not just when rag.adapter set), pipeline stages are no-ops if no data.
-      transformContext: (ctx: any) => {
-        let result = ctx;
+      // ADR-0010 D1: transformContext async hot path — L1 session summary injection.
+      // pi-agent-core signature: (messages: AgentMessage[], signal?) => Promise<AgentMessage[]>
+      // Hot path: fast L1 recall (resume_anchors), prepend summary to first user message.
+      // Cold path (L2 FTS5 deep recall) is in shouldStopAfterTurn below.
+      transformContext: async (messages: any[]) => {
+        let result = messages;
 
-        // Stage 1: RAG injection (if domain.rag.adapter configured).
-        if (domain.rag.adapter && domain.rag.config?.note) {
-          result = {
-            ...result,
-            systemPrompt: (result.systemPrompt || "") + "\n\n[RAG Context] " + domain.rag.config.note,
-          };
+        // Stage 1: RAG injection — prepend RAG context note to first user message.
+        // ponytail: pi-agent-core transformContext receives messages array, no ctx.systemPrompt.
+        if (domain.rag.adapter && domain.rag.config?.note && result.length > 0) {
+          const first = result[0];
+          result = [
+            { ...first, content: (typeof first.content === "string" ? first.content : "") + "\n\n[RAG Context] " + domain.rag.config.note },
+            ...result.slice(1),
+          ];
         }
 
-        // Stage 2: Memory injection (L1 — inject session summary + recall results).
-        // ponytail: inject from resume_anchors if store is available.
+        // Stage 2: L1 hot path — inject session summary from resume_anchors.
         if (this.opts.store && sessionId) {
           try {
-            // Sync: read anchors synchronously is not possible (async interface).
-            // ponytail: memory injection happens via shouldStopAfterTurn compaction path instead.
-            // This stage is a no-op placeholder for the pipeline shape; actual memory injection
-            // occurs when compaction triggers and writes summary to resume_anchors.
+            const anchors = await this.opts.store.getAnchors(sessionId);
+            const summaryAnchor = anchors.find(a => a.anchorType === "rolling_summary") as (typeof anchors[0] & { payload: { summary?: string } }) | undefined;
+            if (summaryAnchor?.payload?.summary) {
+              const summaryText = "[Session Memory] " + String(summaryAnchor.payload.summary).slice(0, 2000);
+              if (result.length > 0) {
+                const first = result[0];
+                result = [
+                  { ...first, content: (typeof first.content === "string" ? first.content : "") + "\n\n" + summaryText },
+                  ...result.slice(1),
+                ];
+              }
+            }
           } catch {}
         }
 
-        // Stage 3: compaction trimming — pi-agent-core handles via shouldStopAfterTurn.
-        // No additional trimming needed here; the core handles message compaction.
         return result;
+      },
+      // ADR-0010 D1: shouldStopAfterTurn async cold path — L2 FTS5 deep recall + L0 rolling summary.
+      // Fires after each assistant turn; async, does not block current turn.
+      shouldStopAfterTurn: async (_ctx: any) => {
+        if (this.opts.store && sessionId) {
+          try {
+            // L0 rolling summary (ADR-0010 D3 Phase 2: Letta sliding_window alignment).
+            turnCount++;
+            if (turnCount % ROLLING_SUMMARY_INTERVAL === 0 || totalInputTokens + totalOutputTokens > TOKEN_WATERMARK) {
+              const messages = (agent as any).state?.messages || [];
+              if (messages.length > 4) {
+                // Letta sliding_window: summarize oldest ~30%, retain ~70%.
+                const cutPoint = Math.floor(messages.length * 0.3);
+                const toSummarize = messages.slice(0, cutPoint);
+                const summary = toSummarize.map((m: any) =>
+                  m.role + ": " + (typeof m.content === "string" ? m.content.slice(0, 300) : "[complex]")
+                ).join(" | ");
+                // self_compact: include system prompt for prefix cache hit (Letta alignment).
+                const fullSummary = systemPrompt + "\n\n[Summary] " + summary.slice(0, 50000);
+                this.opts.store.saveAnchor(sessionId, "rolling_summary", {
+                  turnCount,
+                  tokenWatermark: totalInputTokens + totalOutputTokens,
+                  summary: fullSummary.slice(0, 50000),
+                  cutPoint,
+                  totalMessages: messages.length,
+                });
+              }
+            }
+            // L2 cold path: FTS5 deep recall — fire-and-forget, results land in resume_anchors.
+            const recentUserMsgs = (agent as any).state?.messages?.filter((m: any) => m.role === "user") || [];
+            const lastQuery = recentUserMsgs[recentUserMsgs.length - 1]?.content;
+            if (typeof lastQuery === "string" && lastQuery.length > 10) {
+              this.opts.store.searchMemory(lastQuery, 5).then((hits) => {
+                if (hits.length > 0) {
+                  const memorySnippet = hits.map(h => h.content || "").slice(0, 200).join(" | ");
+                  this.opts.store!.saveAnchor(sessionId!, "l2_recall", {
+                    query: lastQuery, hits: memorySnippet.slice(0, 2000), timestamp: Date.now(),
+                  }).catch(() => {});
+                }
+              }).catch(() => {});
+            }
+          } catch {}
+        }
+        // Never force stop — cold path is side-effect only, let agent decide.
+        return false;
       },
     });
 
@@ -186,23 +239,7 @@ export class PiAgentRuntime {
           break;
        case "agent_end":
          agentDone = true;
-          // ADR-0009 D3 L0: rolling summary — increment turn count, trigger on watermark.
-          turnCount++;
-          if (turnCount % ROLLING_SUMMARY_INTERVAL === 0 || totalInputTokens + totalOutputTokens > TOKEN_WATERMARK) {
-            if (this.opts.store && sessionId) {
-              try {
-                const messages = (agent as any).state?.messages || [];
-                // ponytail: rolling summary = last 5 messages compressed to text.
-                const recentMsgs = messages.slice(-ROLLING_SUMMARY_INTERVAL * 2);
-                const summary = recentMsgs.map((m: any) => m.role + ": " + (typeof m.content === "string" ? m.content.slice(0, 200) : "[complex]")).join(" | ");
-                this.opts.store.saveAnchor(sessionId, "rolling_summary", {
-                  turnCount,
-                  tokenWatermark: totalInputTokens + totalOutputTokens,
-                  summary: summary.slice(0, 1000),
-                });
-              } catch {}
-            }
-          }
+         // ADR-0010 D1: rolling summary moved to shouldStopAfterTurn cold path.
          break;
         case "error":
           agentError = event.error?.message || String(event.error || "Unknown error");

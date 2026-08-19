@@ -19,6 +19,17 @@
         ],
         "timeout": 10
       }
+    ],
+    "sessionStart": [
+      {
+        "name": "anysearch-session-start",
+        "command": "node",
+        "args": [
+          "${CURSOR_PLUGIN_DIR}/../dist/hooks/session-start.cjs"
+        ],
+        "timeout": 5
+      }
     ]
-  }
+  },
+  "_degradation_note": "Cursor has no SessionStart hook. Routing card is injected via .cursorrules or AGENTS.md fallback."
 }

@@ -19,6 +19,16 @@
         ],
         "timeout": 10
       }
+    ],
+    "SessionStart": [
+      {
+        "name": "anysearch-session-start",
+        "command": "node",
+        "args": [
+          "${CLAUDE_PLUGIN_DIR}/../dist/hooks/session-start.cjs"
+        ],
+        "timeout": 5
+      }
     ]
   }
 }
