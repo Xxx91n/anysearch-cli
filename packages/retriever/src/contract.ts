@@ -16,6 +16,8 @@ export interface NormalizedResult {
   source: string; // provider id
   publishedAt?: string;
   extra?: Record<string, unknown>;
+  // ADR-0009 D3: entity configurable — overrides URL as entity key for multi-URL same-entity scenarios.
+  entity?: string;
 }
 
 export interface ProviderEnvelope {

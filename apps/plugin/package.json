@@ -1,0 +1,47 @@
+{
+  "name": "@anysearch/plugin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./hooks/core": "./src/hooks/core.ts",
+    "./hooks/distill": "./src/hooks/distill.ts",
+    "./hooks/preheat": "./src/hooks/preheat.ts",
+    "./server": "./src/server/index.ts",
+    "./store": "./src/store/project-index-store.ts"
+  },
+  "scripts": {
+    "build": "pnpm run build:hooks && pnpm run build:server",
+    "build:hooks": "pnpm run build:core && pnpm run build:distill && pnpm run build:preheat && pnpm run build:adapters",
+    "build:core": "esbuild src/hooks/core.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/core.cjs --external:better-sqlite3",
+    "build:distill": "esbuild src/hooks/distill.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/distill.cjs --external:better-sqlite3",
+    "build:preheat": "esbuild src/hooks/preheat.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/preheat.cjs --external:better-sqlite3",
+    "build:adapters": "pnpm run build:claude && pnpm run build:cursor && pnpm run build:codex && pnpm run build:antigravity",
+    "build:claude": "esbuild src/hooks/adapters/claude.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/claude.cjs --external:./core.cjs",
+    "build:cursor": "esbuild src/hooks/adapters/cursor.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/cursor.cjs --external:./core.cjs",
+    "build:codex": "esbuild src/hooks/adapters/codex.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/codex.cjs --external:./core.cjs",
+    "build:antigravity": "esbuild src/hooks/adapters/antigravity.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/antigravity.cjs --external:./core.cjs",
+    "build:server": "tsup",
+    "dev": "tsx src/server/index.ts",
+    "lint": "tsc --noEmit",
+    "test": "tsx test/plugin.test.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anysearch/kernel": "workspace:*",
+    "@anysearch/retriever": "workspace:*",
+    "@anysearch/store": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "better-sqlite3": "^13.0.3",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/better-sqlite3": "^9.6.0",
+    "esbuild": "^0.24.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

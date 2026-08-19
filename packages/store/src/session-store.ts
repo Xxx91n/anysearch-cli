@@ -65,6 +65,7 @@ export class SqliteSessionStore implements SessionStore {
     saveAnchor: Database.Statement;
     getAnchors: Database.Statement;
     searchAllResults: Database.Statement;
+    touchAccessed: Database.Statement;
   };
 
   constructor(dbPath: string) {
@@ -90,8 +91,10 @@ export class SqliteSessionStore implements SessionStore {
     // G019: Migration for existing databases (ALTER TABLE ADD COLUMN is not IF NOT EXISTS safe).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN valid_until TEXT"); } catch {}
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN pinned BOOLEAN DEFAULT 0"); } catch {}
-    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN entity TEXT"); } catch {}
-    // Module-level prepared statements (atomcode research pattern).
+   try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN entity TEXT"); } catch {}
+    // ADR-0009 D3 L2: access-time signal (align Mem0 1.5×/0.3× — recall hit refreshes last_accessed).
+    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN last_accessed TEXT"); } catch {}
+   // Module-level prepared statements (atomcode research pattern).
     this.stmts = {
       createSession: this.db.prepare("INSERT INTO sessions (id, domain) VALUES (?, ?) RETURNING id, domain, created_at as createdAt"),
       append: this.db.prepare("INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)"),
@@ -103,6 +106,8 @@ export class SqliteSessionStore implements SessionStore {
       getAnchors: this.db.prepare("SELECT id, session_id as sessionId, anchor_type as anchorType, payload, created_at as createdAt FROM resume_anchors WHERE session_id = ? ORDER BY id"),
       // ADR-0008 D3: recall_memory searches Research Memory (retrieval_results_fts), not messages.
       searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? ORDER BY rank LIMIT ?"),
+      // ADR-0009 D3 L2: update last_accessed on recall hit (access-time signal, Mem0 1.5×/0.3×).
+      touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now') WHERE id = ?"),
     };
   }
 
@@ -134,14 +139,19 @@ export class SqliteSessionStore implements SessionStore {
 
   // ADR-0008 D3: search Research Memory layer (retrieval_results_fts) — used by recall_memory MCP tool.
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
-    return this.stmts.searchAllResults.all(this.fts5Escape(query), limit) as MemoryHit[];
+    const hits = this.stmts.searchAllResults.all(this.fts5Escape(query), limit) as MemoryHit[];
+    // ADR-0009 D3 L2: refresh last_accessed for each hit (access-time signal).
+    for (const hit of hits) {
+      try { this.stmts.touchAccessed.run(hit.rowid); } catch {}
+    }
+    return hits;
   }
 
   async saveResults(sessionId: string, results: NormalizedResult[]): Promise<void> {
     // atomcode research: db.transaction(fn) auto-rollback on throw.
     const insertMany = this.db.transaction((rs: NormalizedResult[]) => {
       for (const r of rs) {
-        this.stmts.saveResult.run(sessionId, r.url, r.title, r.snippet, r.source, null, r.url);
+        this.stmts.saveResult.run(sessionId, r.url, r.title, r.snippet, r.source, null, r.entity ?? r.url);
       }
     });
     insertMany(results);

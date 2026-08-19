@@ -125,22 +125,48 @@ export function buildServer(engine?: CompositionResult): McpServer {
         const limit = Number(args.limit) || 5;
         // ADR-0008 D3: FTS5 memory recall with time edge effect.
         const { isTimeSensitive, isEvergreen } = await import("@anysearch/store");
-        // ADR-0008 D3: search Research Memory layer (retrieval_results_fts), not messages.
-        const hits = await eng.store.searchMemory(query, limit);
-        const ts = isTimeSensitive(query);
-        const eg = isEvergreen(query);
-        const summary = JSON.stringify({
-          query,
-          qdfClassification: ts ? "time-sensitive" : eg ? "evergreen" : "standard",
-          decayActive: !eg,
-          hitsCount: hits.length,
-          hits: hits.map(h => ({
-            role: h.role,
-            content: h.content.slice(0, 200),
-            rank: h.rank,
-            sessionId: h.sessionId,
-          })),
-        }, null, 2);
+       // ADR-0008 D3: search Research Memory layer (retrieval_results_fts), not messages.
+       const hits = await eng.store.searchMemory(query, limit);
+       const ts = isTimeSensitive(query);
+       const eg = isEvergreen(query);
+        // ADR-0009 D4: Two-stage recall pipeline.
+        // Stage 2: project index fallback (if internal hits insufficient).
+        // provenance tagged, no cross-layer score mixing.
+        let projectHits: Array<{ title: string; url: string; snippet: string; source: string; rank: number; createdAt: string }> = [];
+        if (hits.length < limit) {
+          try {
+            const { ProjectIndexStore } = await import("@anysearch/plugin");
+            const dbPath = process.env.ANS_PROJECT_DB || "";
+            if (dbPath) {
+              const store = new ProjectIndexStore(dbPath);
+              projectHits = store.search(query, limit - hits.length);
+              store.close();
+            }
+          } catch {
+            // ponytail: project index optional, fail-open.
+          }
+        }
+       const summary = JSON.stringify({
+         query,
+         qdfClassification: ts ? "time-sensitive" : eg ? "evergreen" : "standard",
+         decayActive: !eg,
+          hitsCount: hits.length + projectHits.length,
+          internal: hits.map(h => ({
+           role: h.role,
+           content: h.content.slice(0, 200),
+           rank: h.rank,
+           sessionId: h.sessionId,
+           provenance: "internal",
+         })),
+         projectIndex: projectHits.map(h => ({
+           title: h.title,
+           url: h.url,
+           snippet: (h.snippet || "").slice(0, 200),
+           source: h.source,
+           rank: h.rank,
+           provenance: "project-index",
+         })),
+       }, null, 2);
         return { content: [{ type: "text", text: summary }] };
       } catch (e) {
         return { content: [{ type: "text", text: "recall_memory error: " + (e instanceof Error ? e.message : String(e)) }] };

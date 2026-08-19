@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@anysearch/kernel": "workspace:*",
+    "@anysearch/plugin": "workspace:*",
     "@anysearch/retriever": "workspace:*",
     "@anysearch/store": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.0",

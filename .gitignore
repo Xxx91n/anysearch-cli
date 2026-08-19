@@ -19,3 +19,7 @@ Thumbs.db
 
 # logs
 *.log
+
+# Phase 3 plugin
+.anysearch/
+apps/plugin/dist/

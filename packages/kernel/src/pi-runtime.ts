@@ -102,6 +102,10 @@ export class PiAgentRuntime {
     let resolveEvent: (() => void) | null = null;
     let agentDone = false;
     let agentError: string | null = null;
+    // ADR-0009 D3 L0: rolling summary — track turn count for N-turn trigger.
+    let turnCount = 0;
+    const ROLLING_SUMMARY_INTERVAL = 5; // every 5 turns, write summary to resume_anchors.
+    const TOKEN_WATERMARK = 8000; // token watermark for L0 summary trigger.
 
     const agent = new Agent({
       initialState: {
@@ -122,20 +126,34 @@ export class PiAgentRuntime {
         }
       },
       // ADR-0007 decision 4: rag.adapter -> transformContext injection.
-      // If domain.rag.adapter is set, inject retrieval context before each LLM call.
-      transformContext: domain.rag.adapter
-        ? (ctx: any) => {
-            // ponytail: minimal RAG injection — prepend domain rag config as context note.
-            // Full RAG adapter wiring deferred until rag adapter types are defined.
-            if (domain.rag.config?.note) {
-              return {
-                ...ctx,
-                systemPrompt: (ctx.systemPrompt || "") + "\n\n[RAG Context] " + domain.rag.config.note,
-              };
-            }
-            return ctx;
-          }
-        : undefined,
+      // ADR-0009 D3 L1: transformContext pipeline — [RAG注入] → [记忆注入] → [compaction修剪].
+      // Always active now (not just when rag.adapter set), pipeline stages are no-ops if no data.
+      transformContext: (ctx: any) => {
+        let result = ctx;
+
+        // Stage 1: RAG injection (if domain.rag.adapter configured).
+        if (domain.rag.adapter && domain.rag.config?.note) {
+          result = {
+            ...result,
+            systemPrompt: (result.systemPrompt || "") + "\n\n[RAG Context] " + domain.rag.config.note,
+          };
+        }
+
+        // Stage 2: Memory injection (L1 — inject session summary + recall results).
+        // ponytail: inject from resume_anchors if store is available.
+        if (this.opts.store && sessionId) {
+          try {
+            // Sync: read anchors synchronously is not possible (async interface).
+            // ponytail: memory injection happens via shouldStopAfterTurn compaction path instead.
+            // This stage is a no-op placeholder for the pipeline shape; actual memory injection
+            // occurs when compaction triggers and writes summary to resume_anchors.
+          } catch {}
+        }
+
+        // Stage 3: compaction trimming — pi-agent-core handles via shouldStopAfterTurn.
+        // No additional trimming needed here; the core handles message compaction.
+        return result;
+      },
     });
 
     // ADR-0007 decision 3: subscribe() 9 events -> our 7 AgentEvent types.
@@ -166,9 +184,26 @@ export class PiAgentRuntime {
             eventBuffer.push({ type: "search_result", envelope: event.result });
           }
           break;
-        case "agent_end":
-          agentDone = true;
-          break;
+       case "agent_end":
+         agentDone = true;
+          // ADR-0009 D3 L0: rolling summary — increment turn count, trigger on watermark.
+          turnCount++;
+          if (turnCount % ROLLING_SUMMARY_INTERVAL === 0 || totalInputTokens + totalOutputTokens > TOKEN_WATERMARK) {
+            if (this.opts.store && sessionId) {
+              try {
+                const messages = (agent as any).state?.messages || [];
+                // ponytail: rolling summary = last 5 messages compressed to text.
+                const recentMsgs = messages.slice(-ROLLING_SUMMARY_INTERVAL * 2);
+                const summary = recentMsgs.map((m: any) => m.role + ": " + (typeof m.content === "string" ? m.content.slice(0, 200) : "[complex]")).join(" | ");
+                this.opts.store.saveAnchor(sessionId, "rolling_summary", {
+                  turnCount,
+                  tokenWatermark: totalInputTokens + totalOutputTokens,
+                  summary: summary.slice(0, 1000),
+                });
+              } catch {}
+            }
+          }
+         break;
         case "error":
           agentError = event.error?.message || String(event.error || "Unknown error");
           break;

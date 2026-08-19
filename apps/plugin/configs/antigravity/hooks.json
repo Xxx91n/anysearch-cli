@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "name": "anysearch-preheat",
+        "command": "node",
+        "args": [
+          "${ANTIGRAVITY_PLUGIN_DIR}/../dist/hooks/preheat.cjs"
+        ],
+        "timeout": 5
+      }
+    ],
+    "PostToolUse": [
+      {
+        "name": "anysearch-distill",
+        "command": "node",
+        "args": [
+          "${ANTIGRAVITY_PLUGIN_DIR}/../dist/hooks/distill.cjs"
+        ],
+        "timeout": 10
+      }
+    ]
+  }
+}
