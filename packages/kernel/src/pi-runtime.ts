@@ -90,6 +90,9 @@ export function distillGap(messages: any[], fromIdx: number): string {
 // ADR-0013 D1/D3/D6: NOOP adjudication — LLM decides REUSE vs COMPRESS.
 // D6: prompt includes IR 5-segment structure for per-segment coverage check.
 // D10: failure → default COMPRESS (fail-open, Mem0 "不确定就写入").
+// ponytail: D3 spec says function-calling, but streamFn (pi-agent-core streamSimple)
+//   doesn't expose function-calling API. Text streaming + keyword match is the pragmatic
+//   path; D10 fail-open covers fragility. Upgrade to function-calling when pi-agent-core adds it.
 export async function adjudicateReuseCompress(
   streamFn: any,
   model: any,
@@ -295,6 +298,9 @@ export class PiAgentRuntime {
               // D9: gap distillation — search tool results since last summary.
               const gapDistillation = distillGap(messages, lastSummaryMsgCount);
 
+              // Capture msg count at trigger time for race-safe gap anchor update.
+              const msgCountAtTrigger = messages.length;
+
               // D5: fire-and-forget compression helper (reused by both tracks).
               const fireCompress = () => {
                 if (modelsObj && actualModel) {
@@ -308,7 +314,8 @@ export class PiAgentRuntime {
                     "off", // thinkingLevel
                   ).then((result: any) => {
                     if (result?.ok && result.value?.text) {
-                      lastSummaryMsgCount = messages.length; // D9: advance gap anchor.
+                      // D9: advance gap anchor using captured count (race-safe vs live array).
+                      lastSummaryMsgCount = msgCountAtTrigger;
                       this.opts.store!.saveAnchor(sessionId!, "rolling_summary", {
                         summary: result.value.text,
                         tokenWatermark: totalTokens,
