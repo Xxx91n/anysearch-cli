@@ -4,7 +4,7 @@
 // Run: pnpm --filter @anysearch/kernel run test
 
 import { PiAgentRuntime } from "../src/pi-runtime";
-import { distillGap, adjudicateReuseCompress } from "../src/pi-runtime";
+import { distillGap, adjudicateReuseCompress } from "../src/memory-pipeline";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
 import type { FusedEnvelope, SufficiencySignal } from "@anysearch/retriever";
 
