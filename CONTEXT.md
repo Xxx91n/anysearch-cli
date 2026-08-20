@@ -133,3 +133,18 @@ Cursor 平台 SessionStart hook 的注入策略。hook 照常 emit additional_co
 
 ## Fire-and-Forget（不阻塞注入）
 Cursor sessionStart hook 的执行语义。agent loop 不等待 hook 完成、不强制阻塞响应。continue/user_message 字段 schema 接受但当前 callers 不 enforce（写 continue: false 也不会阻止建会话）。与 Claude Code 的 SessionStart 不同（Claude Code 会随 resume/compact/clear 重新触发）。Antigravity 同样无 SessionStart 等价事件，采用与 Cursor 相同的 .mdc 规则文件兜底策略。ADR-0011 Decision 4/8。
+
+## Write-Read Seam（写读缝）
+L0 写入端与 L1 读取端之间的契约接口。L0 在 shouldStopAfterTurn 写滚动摘要到 resume_anchors（冷、异步），L1 在 transformContext 读最新摘要注入当前轮（热、同步）。学术上对应 CoALA 的 consolidation/retrieval 接口（episodic→semantic 巩固 vs working memory 装载），工业上与 Mem0 的异步写同步读 conversation summary 模块同构。契约 = 版本化的摘要格式 schema，写读端共享。与 pi-agent-core compact() 窗口管理是不同心智模型：L0 管记忆持久化（旁路写），compact() 管窗口腾挪（修改 entry 流）。ADR-0012 Decision 2/5。
+
+## REUSE/COMPRESS 判别
+L0 事件驱动触发的判别逻辑。检索工具调用返回后先判别：现有摘要 + 新增 gap 仍 fit 就直接 REUSE（省一次 LLM 调用），否则 COMPRESS 增量生成（generateSummaryWithUsage(previousSummary) UPDATE 语义）。判别机制属工程直觉（省 LLM 调用），无直接学术文献；邻域同构为 Mem0 更新阶段的 NOOP 操作（现有记忆已覆盖新信息则跳过写入，docs.mem0.ai how-it-works），已列为待设计项。与低水位线（128K，1M 窗口 ~12.8%；设计参数，无文献给出最优水位，方向对齐 MemGPT 70% 预警与 context rot 研究，偏激进端需 ablation 验证——Anthropic cookbook 警告过度压缩会丢失微妙但关键的上下文）构成双轨触发，废弃纯轮次触发。判别算法（阈值、信息量度量）是重点难题，后续心智模型着重设计。ADR-0012 Decision 3。
+
+## IR Summary Schema（IR 专精摘要契约）
+L0 滚动摘要的版本化 5 段格式契约：已查证证据 / 未决假设 / 被否决信源 / 关键数字与来源 / 工具调用与已读状态。其中已查证/未决/被否决三段跨压缩只增补不覆盖——认知分段的学术原型为 OIDA（类型化有向符号图：decisions vs hypotheses、commitment vs contradicted）与 Memanto（arXiv:2604.22085，typed semantic memory 区分 decisions/hypotheses/resolved findings）、survey arXiv:2603.07670（uncertainty-aware memory / hypothesis ledger）；Ontheia 为自托管 agent 平台（pgvector RAG），无 Decisions/Commitments/Uncertainties 分段，不作锚点。数字、效应量、URL verbatim 保留（Anthropic cookbook IR 指令 + Cognitive Scaffold ACL 2026 原子约束，压缩幻觉压到 5.3%）。区别于通用对话 Agent 的聊天要点摘要——信息检索 Agent 的摘要必须保真到证据粒度。ADR-0012 Decision 5。
+
+## Injection Hot Zone（注入热区）
+L1/L2 记忆注入的位置策略。动态内容（[Session Memory] 会话摘要 + [Research Recall] 深召回）锚定到最新一条 user message 末尾——窗口末端是注意力热区（Lost in the Middle U 型偏置：首尾最优、中段显著下降，GPT-3.5-Turbo 多文档 QA 中段最坏降幅 >20% 且部分设置低于闭卷基线），且前缀（systemPrompt + 历史）保持稳定 → prefix cache 命中（Hermes PR #2361：Anthropic 未缓存前缀 $3/MTok vs 缓存 $0.30/MTok 约 10×，33K–100K token 前缀未命中重读 ≈ $0.10–0.30/次，为推算值）。静态内容（RAG note）保持首条消息形成稳定前缀（Anthropic prompt caching 最佳实践）。预算：L1 4000 chars + L2 1500 chars，总注入 ≤ 5500 chars。ADR-0012 Decision 8/9/11。
+
+## Routing Card Override（路由卡配置覆盖）
+路由卡内容的高阶用户定制机制。内置 DEFAULT_ROUTING_CARD（routing-card.ts 共享常量模块，从 3 文件重复提取）保证零配置开箱即用；项目根 .anysearch/routing-card.json 可选覆盖；JSON 解析失败 fail-open 回退默认 + stderr 警告（ADR-0009 D6 fail-open 原则）。一处源多输出：hook additionalContext 注入、.mdc 规则文件生成、E2E 测试断言共享同一内容源。ADR-0012 Decision 14。
