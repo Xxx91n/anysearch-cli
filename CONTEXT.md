@@ -158,3 +158,21 @@ L1/L2 记忆注入的位置策略。动态内容（[Session Memory] 会话摘要
 
 ## Routing Card Override（路由卡配置覆盖）
 路由卡内容的高阶用户定制机制。内置 DEFAULT_ROUTING_CARD（routing-card.ts 共享常量模块，从 3 文件重复提取）保证零配置开箱即用；项目根 .anysearch/routing-card.json 可选覆盖；JSON 解析失败 fail-open 回退默认 + stderr 警告（ADR-0009 D6 fail-open 原则）。一处源多输出：hook additionalContext 注入、.mdc 规则文件生成、E2E 测试断言共享同一内容源。ADR-0012 Decision 14。
+
+## Sufficiency Gate Placement（门禁架构归属）
+Sufficiency gate 的 LLM 判断层（named gap 生成 + 定向重搜循环）归属 PiAgentRuntime agent loop，不在 RetroaererdEngine 内部。engine 保持纯净（无 LLM 依赖），只暴露 metadata.sufficiency 信号。学术锚点：Google SCA（编排层独立 agent，RAG Engine 纯净）、CRAG（evaluator 在 retriever 外部，plug-and-play）、LangGraph/LlamaIndex（grader 是图节点/workflow step，retriever 哑组件）、Self-RAG（reflection tokens 训练进生成器）。LevelRAG 唯一反例中 high-level searcher 本身是 LLM 规划器，低层 searcher 仍纯检索。ADR-0014 Decision 2。
+
+## MVSS（最低可行信号集）
+Sufficiency gate 元数据的最低可行信号契约。四段式结构：verdict（CRAG 三态量词聚合 correct/incorrect/ambiguous）+ agreement（纯 rank 派生 Jaccard@K + RBO@K，始终可算）+ volume（uniqueResults/uniqueDomains/successfulProviders 卫生信号）+ spread（rrfVariance rank 派生弱信号 + scoreScale 原生分数量纲，仅在有分数 provider 上计算）+ perProvider（原生分数随附，明确不跨源归一化）。硬上限：廉价信号 AUC 天花板 ≈0.76，reachability 型失败对所有廉价信号不可见——MVSS 只承诺 escalate 决策，最终 sufficiency 判定需 LLM 内容级检查（Google SCA 93%）。调研发现 Exa auto 模式 2025-07 起无 score、highlightScores 2026-05 移除，3 provider 中仅 Tavily 有 float score。ADR-0014 Decision 3。
+
+## Dual-Output Sufficiency（单计算源双输出）
+engine.ts 散落的死布尔 gatePassed/crossEngineOk/sufficiencyPassed 删除，重构为单个 computeSufficiency() 纯函数，双路输出：control（gatePassed/crossEngineOk/sufficiencyPassed 布尔，供引擎内部 fanout 早停）+ mvs（verdict/agreement/volume/spread/perProvider，写入 FusedEnvelope.metadata 外部暴露）。SufficiencyGate 配置（minProviders/minResults/minDomains/crossEngineVerify）按 ADR-0005 原意保留为内部 fanout 早停阈值。学术先例：Fagin TA（PODS 2001）阈值早停 + ε-approximation 双用途、CRAG 同一置信度双用途、paperfoot RRF 融合分一次两用、Google SCA autorater 标签三用途。Qdrant 纪律：同一统计被算两次就是冗余信号。ADR-0005 的 SufficiencyGate 定位为内部质量下界（从未赋予外部判断职责），ADR-0014 补上从未声明的"外部判断"空位，不修改 ADR-0005。ADR-0014 Decision 7。
+
+## MCP Sufficiency Annotate（MCP 信号注解层）
+MCP search_web/research_web 路径的 sufficiency 处理形态。MCP server 消费 engine metadata.sufficiency → 不做 LLM 循环 → 在返回 JSON 中追加 sufficiency 对象（A+ 方案）。双通道暴露：content 文本块中序列化 sufficiency 摘要（确保所有 agent 可见，SEP-1624 证实 structuredContent 在 Claude Code/Windsurf 被忽略）+ structuredContent 镜像完整对象供支持客户端使用。fail-open：metadata 缺失时正常返回。调研 5 个生产级搜索 MCP server（Tavily/Exa/Perplexity/Brave/Firecrawl）源码，无一在基础 search 工具做服务器内 LLM 质量门——LLM 后处理只在后端 API 或独立 research/agent 工具。MCP server 本身一律"确定性薄代理 + 确定性蒸馏"。ADR-0014 Decision 4。
+
+## Named Gap Re-search（命名缺口定向重搜）
+PiAgentRuntime agent loop 的 sufficiency gate 行为模型（Google Sufficient Context Agent 范式）。gate 不止布尔判定 → 输出"缺什么"（named gap，如 missing: ["time-sensitive pricing data"]）→ 回灌查询改写器做定向二次检索 → 有界循环（默认 1 轮重搜，domain TOML compaction.sufficiencyMaxRerounds 可配）→ 仍不达标也返回（annotate verdict=ambiguous）。学术锚点：Google SCA（Reason/Feedback 结构化缺口日志 + Query Rewriter 迭代）、LevelRAG（Verify/Supplement 原子查询补充循环）、arXiv 2411.06037（sufficient context 分类器 93% + guided abstention +2-10%）。ADR-0014 Decision 1/6。
+
+## QPP vs Sufficient Context（内部资源控制 vs 外部质量判断）
+检索引擎内部资源控制（QPP，Query Performance Prediction）与外部质量判断（Sufficient Context）的学术区分。QPP（ECIR 2024 UvA IRLab）：无相关性判断下预测检索质量，典型用途全是资源控制（选排序函数、决定多阶段处理量、自适应池深）。Sufficient Context（Google ICLR 2025）：LLM autorater 判定"能否仅凭片段给出确定答案"。两者形状不同：内部控制需要"够不够继续等"（延迟/成本语义，布尔），外部消费者需要"为什么可信/覆盖怎样"（解释语义，verdict/agreement/volume/spread）。RetroaererdEngine 的 SufficiencyGate 配置属 QPP 谱系（内部控制），MVSS 暴露属 Sufficient Context 谱系（外部判断），同一份统计中间量单计算源双输出。ADR-0014 Decision 7。
