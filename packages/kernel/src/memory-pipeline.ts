@@ -5,7 +5,6 @@
 // State vars (lastSearchTurn / consecutiveReuses / lastSummaryMsgCount) promoted to instance fields.
 
 import { generateSummaryWithUsage, DEFAULT_COMPACTION_SETTINGS } from "@earendil-works/pi-agent-core";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
 
@@ -219,7 +218,12 @@ export class MemoryPipeline {
                   timestamp: Date.now(),
                 }).catch(() => {});
               }
-            }).catch(() => {}); // D10: compression failure is silent (fire-and-forget).
+            }).catch((e: any) => {
+              // D10: compression failure is fire-and-forget, but log to stderr (HaluMem: silent catch masks memory corruption).
+              if (typeof process !== "undefined" && process.stderr) {
+                process.stderr.write("[anysearch] L0 compression warning: " + (e instanceof Error ? e.message : String(e)) + "`n");
+              }
+            });
           }
         };
 

@@ -3,6 +3,9 @@
 // ADR-0014 D2/D5/D1: Google SCA paradigm — gate outputs "what's missing" (named gap), not just boolean.
 // D5: bounded reround — default 1, max via domain TOML.
 // Independent fail-open, does not block MemoryPipeline.
+// TEMPORAL COUPLING: evaluate() modifies messages in-place (enriches tool_result with merged results).
+// MemoryPipeline.consolidate() reads the same messages array for gap distillation AFTER evaluate().
+// Order MUST be gate.evaluate() -> pipeline.consolidate(). Reversing breaks gap distillation content.
 
 import { computeSufficiency } from "./engine";
 import type { RetrieverPort, DomainConfigPort } from "./ports";

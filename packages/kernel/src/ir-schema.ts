@@ -19,11 +19,3 @@ export const IR_CUSTOM_INSTRUCTIONS = [
   "5. Tool Calls & Read Status: which tools were called and what was read",
   "Sections 1-3 are append-only: preserve all existing entries, only add new ones.",
 ].join("\n");
-
-export const IR_ADJUDICATION_SECTIONS = [
-  "Verified Evidence",
-  "Open Hypotheses",
-  "Rejected Sources",
-  "Key Numbers & Sources",
-  "Tool Calls & Read Status",
-] as const;
