@@ -33,8 +33,8 @@ const lookup = (n: string) => n === "base" ? base : undefined;
 const result = resolve(derived, lookup);
 
 // settings: deep-merge -> theme replaced, font preserved, tools array replaced
-assert("settings.ui.theme is dark", result.settings.ui?.theme === "dark");
-assert("settings.ui.font preserved", result.settings.ui?.font === "mono");
+assert("settings.ui.theme is dark", (result.settings.ui as any)?.theme === "dark");
+assert("settings.ui.font preserved", (result.settings.ui as any)?.font === "mono");
 assert("settings.tools array replaced", JSON.stringify(result.settings.tools) === '["bash","edit"]');
 
 // skills: entire replace -> base-skill gone

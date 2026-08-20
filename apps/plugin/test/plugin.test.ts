@@ -8,6 +8,9 @@ import { ProjectIndexStore, isAnsTool, distillOutput, makePostToolUseDecision } 
 
 const fs = { readFileSync: fsReadFileSync, existsSync };
 
+// ADR-0012 audit fix: tests run from repo root, but source files live under apps/plugin/.
+const PLUGIN_ROOT = join(process.cwd(), "apps", "plugin");
+
 let passed = 0;
 let failed = 0;
 
@@ -174,7 +177,7 @@ test("AGENTS.md: minimal and has required sections", () => {
 
 // === ADR-0011: Cursor dual channel + .mdc generation ===
 test("ADR-0011: cursor.ts uses additional_context (snake_case)", () => {
-  const cursorSrc = fs.readFileSync(join(process.cwd(), "src", "hooks", "adapters", "cursor.ts"), "utf8");
+  const cursorSrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "adapters", "cursor.ts"), "utf8");
   assert.ok(cursorSrc.includes("additional_context"), "cursor.ts should use additional_context (snake_case)");
   assert.ok(cursorSrc.includes("ensureMdc"), "cursor.ts should have ensureMdc function for .mdc generation");
   assert.ok(cursorSrc.includes(".cursor"), "cursor.ts should write to .cursor/rules/");
@@ -183,14 +186,14 @@ test("ADR-0011: cursor.ts uses additional_context (snake_case)", () => {
 });
 
 test("ADR-0011: antigravity.ts has .mdc fallback", () => {
-  const antigravitySrc = fs.readFileSync(join(process.cwd(), "src", "hooks", "adapters", "antigravity.ts"), "utf8");
+  const antigravitySrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "adapters", "antigravity.ts"), "utf8");
   assert.ok(antigravitySrc.includes("ensureMdc"), "antigravity.ts should have ensureMdc for .mdc fallback");
   assert.ok(antigravitySrc.includes(".antigravity"), "antigravity.ts should write to .antigravity/rules/");
   assert.ok(antigravitySrc.includes("SessionStart"), "antigravity.ts should keep SessionStart for forward-compat");
 });
 
 test("ADR-0011: session-start.ts has .mdc generation logic", () => {
-  const sessionStartSrc = fs.readFileSync(join(process.cwd(), "src", "hooks", "session-start.ts"), "utf8");
+  const sessionStartSrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "session-start.ts"), "utf8");
   assert.ok(sessionStartSrc.includes("ensureMdc"), "session-start.ts should have ensureMdc function");
   assert.ok(sessionStartSrc.includes("routing-card"), "session-start.ts should import from routing-card.ts");
   assert.ok(sessionStartSrc.includes("MDC_CONTENT"), "session-start.ts should use MDC_CONTENT");
@@ -200,7 +203,7 @@ test("ADR-0011: session-start.ts has .mdc generation logic", () => {
 });
 
 test("ADR-0011: cursor hooks.json has no _degradation_note", () => {
-  const hooksPath = join(process.cwd(), "configs", "cursor", "hooks.json");
+  const hooksPath = join(PLUGIN_ROOT, "configs", "cursor", "hooks.json");
   const hooksContent = fs.readFileSync(hooksPath, "utf8");
   const parsed = JSON.parse(hooksContent);
   assert.ok(!parsed._degradation_note, "cursor hooks.json should NOT have _degradation_note");
@@ -212,7 +215,7 @@ test("ADR-0011: cursor hooks.json has no _degradation_note", () => {
 test("ADR-0012: routing card 4-block structure in shared module", () => {
   // ADR-0012 D14: routing card extracted to routing-card.ts shared module.
   // Verify 4 blocks: plugin declaration, tools, trigger rules, fail-open.
-  const rcSrc = fs.readFileSync(join(process.cwd(), "src", "hooks", "routing-card.ts"), "utf8");
+  const rcSrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "routing-card.ts"), "utf8");
   assert.ok(rcSrc.includes("[anysearch plugin active]"), "routing-card.ts has block 1");
   assert.ok(rcSrc.includes("Tools available"), "routing-card.ts has block 2");
   assert.ok(rcSrc.includes("Trigger rules"), "routing-card.ts has block 3");
@@ -223,7 +226,7 @@ test("ADR-0012: routing card 4-block structure in shared module", () => {
 testAsync("Server: /health endpoint returns 200", async () => {
   const { spawn } = await import("node:child_process");
   const proc = spawn("npx", ["tsx", "src/server/index.ts"], {
-    cwd: process.cwd(),
+    cwd: PLUGIN_ROOT,
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, ANS_SERVER_PORT: "33334" },
   });
