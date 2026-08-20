@@ -2,7 +2,7 @@
 // Mock providers: verify fanout, RRF fusion, sufficiency gate, cross-engine verify.
 // ponytail: no test framework, assert-based demo.
 
-import { RetroaererdEngine, DEFAULT_GATE } from "../src/engine";
+import { RetroaererdEngine, DEFAULT_GATE, computeSufficiency } from "../src/engine";
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, FusedEnvelope } from "@anysearch/retriever";
 
 let passed = 0, failed = 0;
@@ -132,6 +132,80 @@ async function main() {
   // 10. RetroaererdEngine satisfies RetrieverPort (interface check).
   const port: import("../src/ports").RetrieverPort = engine1;
   assert(typeof port.search === "function", "engine satisfies RetrieverPort");
+
+
+  // 11. computeSufficiency: correct verdict when all gates pass.
+  const results11 = [
+    { url: "https://a.com/1", title: "A1", snippet: "S", source: "tavily" },
+    { url: "https://b.com/2", title: "B2", snippet: "S", source: "exa" },
+    { url: "https://c.com/3", title: "C3", snippet: "S", source: "tavily" },
+    { url: "https://d.com/4", title: "D4", snippet: "S", source: "exa" },
+    { url: "https://e.com/5", title: "E5", snippet: "S", source: "tavily" },
+  ] as any[];
+  const providerLists11 = [
+    ["https://a.com/1", "https://c.com/3", "https://e.com/5", "https://shared.com/x"],
+    ["https://b.com/2", "https://d.com/4", "https://shared.com/x"],
+  ];
+  const suff11 = computeSufficiency(results11, providerLists11, DEFAULT_GATE);
+  assert(suff11.control.sufficiencyPassed === true, "D7: gate passes with 2 providers, 5 results, 5 domains");
+  assert(suff11.mvs.verdict === "correct", "D3: verdict correct when all providers have results and gate passes");
+  assert(typeof suff11.mvs.agreement.jaccardAtK === "number", "D3: jaccardAtK is number");
+  assert(typeof suff11.mvs.agreement.rboAtK === "number", "D3: rboAtK is number");
+  assert(suff11.mvs.volume.uniqueResults === 5, "D3: volume.uniqueResults = 5");
+  assert(suff11.mvs.volume.uniqueDomains === 5, "D3: volume.uniqueDomains = 5");
+  assert(suff11.mvs.volume.successfulProviders === 2, "D3: volume.successfulProviders = 2");
+  assert(typeof suff11.mvs.spread.rrfVariance === "number", "D3: spread.rrfVariance is number");
+
+  // 12. computeSufficiency: incorrect verdict when no results.
+  const suff12 = computeSufficiency([], [], DEFAULT_GATE);
+  assert(suff12.mvs.verdict === "incorrect", "D3: verdict incorrect when no providers have results");
+  assert(suff12.control.sufficiencyPassed === false, "D7: gate fails with 0 providers");
+  assert(suff12.mvs.volume.successfulProviders === 0, "D3: 0 successful providers");
+
+  // 13. computeSufficiency: ambiguous verdict when partial results.
+  const results13 = [
+    { url: "https://a.com/1", title: "A1", snippet: "S", source: "tavily" },
+  ] as any[];
+  const suff13 = computeSufficiency(results13, [["https://a.com/1"]], DEFAULT_GATE);
+  assert(suff13.mvs.verdict === "ambiguous", "D3: verdict ambiguous when 1 provider, 1 result (below gate)");
+  assert(suff13.control.sufficiencyPassed === false, "D7: gate fails with 1 provider");
+
+  // 14. computeSufficiency: MVSS agreement signals computed correctly.
+  const providerLists14 = [
+    ["url1", "url2", "url3"],
+    ["url1", "url2", "url4"],
+  ];
+  const suff14 = computeSufficiency(
+    [{ url: "url1", title: "T", snippet: "S", source: "p1" }] as any[],
+    providerLists14,
+    { minProviders: 1, minResults: 1, minDomains: 1, crossEngineVerify: false }
+  );
+  assert(suff14.mvs.agreement.jaccardAtK > 0, "D3: jaccardAtK > 0 when providers share URLs");
+  assert(suff14.mvs.agreement.rboAtK > 0, "D3: rboAtK > 0 when providers share URLs");
+
+  // 15. computeSufficiency: perProvider scores attached when provided.
+  const suff15 = computeSufficiency(
+    [{ url: "url1", title: "T", snippet: "S", source: "p1" }] as any[],
+    [["url1"]],
+    { minProviders: 1, minResults: 1, minDomains: 1, crossEngineVerify: false },
+    [],
+    { tavily: [0.9, 0.8], exa: [0.7] }
+  );
+  assert(suff15.mvs.perProvider !== undefined, "D3: perProvider attached when scores provided");
+  assert(suff15.mvs.perProvider!.tavily.length === 2, "D3: perProvider.tavily has 2 scores");
+  assert(suff15.mvs.spread.scoreScale !== undefined, "D3: scoreScale present when scores provided");
+  assert(suff15.mvs.spread.scoreScale!.min === 0.7, "D3: scoreScale.min = 0.7");
+  assert(suff15.mvs.spread.scoreScale!.max === 0.9, "D3: scoreScale.max = 0.9");
+
+  // 16. engine.search() returns metadata.sufficiency (D3/D7 integration).
+  const engine16 = new RetroaererdEngine([
+    mockProvider("tavily", ["https://a.com/1", "https://b.com/2", "https://c.com/3"]),
+    mockProvider("exa", ["https://a.com/1", "https://d.com/4", "https://e.com/5"]),
+  ]);
+  const result16 = await engine16.search({ query: "test", mode: "fast" });
+  assert(result16.metadata.sufficiency !== undefined, "D3/D7: metadata.sufficiency is populated");
+  assert(result16.metadata.sufficiency!.verdict === "correct", "D3: verdict correct with 5 results, 5 domains, 2 providers");
+  assert(result16.metadata.sufficiency!.volume.successfulProviders === 2, "D3: 2 successful providers in metadata");
 
   console.log("--- RetroaererdEngine tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);

@@ -4,7 +4,7 @@
 // 1.5s grace window, abort_all + drain, providers_cancelled distinct state, RRF(k=60) fusion.
 // JS adaptation: Promise.allSettled + AbortController + unique-URL counter early stop.
 
-import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope } from "@anysearch/retriever";
+import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal } from "@anysearch/retriever";
 import { rrfRank } from "@anysearch/retriever";
 import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort } from "./ports";
@@ -57,10 +57,131 @@ function normalizeUrl(url: string): string {
 // Extract domain from URL for sufficiency gate domain counting.
 function extractDomain(url: string): string {
   try {
-    return new URL(url).host.replace(/^www\./, "");
+    // Handle normalized URLs without protocol (e.g. "a.com/1" after normalizeUrl).
+    const withProto = url.includes("://") ? url : "https://" + url;
+    return new URL(withProto).host.replace(/^www\./, "");
   } catch {
     return "";
   }
+}
+
+
+// ADR-0014 D7: computeSufficiency pure function — single computation source, dual output.
+// control: internal fanout early-stop booleans (SufficiencyGate config stays as internal threshold).
+// mvs: MVSS four-segment signal written to FusedEnvelope.metadata for external consumption.
+// Academic: Fagin TA (PODS 2001) threshold early-stop + epsilon-approximation dual-use;
+// CRAG same confidence dual-use; Qdrant discipline: same statistic computed twice = redundant.
+export interface SufficiencyResult {
+  control: {
+    gatePassed: boolean;
+    crossEngineOk: boolean;
+    sufficiencyPassed: boolean;
+  };
+  mvs: SufficiencySignal;
+}
+
+export function computeSufficiency(
+  rankedResults: NormalizedResult[],
+  providerLists: string[][],
+  gate: SufficiencyGate,
+  rrfRanks: number[] = [],
+  providerScores: Record<string, number[]> = {},
+): SufficiencyResult {
+  const uniqueUrls = new Set(rankedResults.map((r) => normalizeUrl(r.url)));
+  const uniqueDomains = new Set(rankedResults.map((r) => extractDomain(r.url)));
+  const successfulProviders = providerLists.length;
+
+  // Control booleans (internal fanout early-stop).
+  const gatePassed =
+    successfulProviders >= gate.minProviders &&
+    uniqueUrls.size >= gate.minResults &&
+    uniqueDomains.size >= gate.minDomains;
+  const crossEngineOk = !gate.crossEngineVerify || checkCrossEngine(providerLists);
+  const sufficiencyPassed = gatePassed && crossEngineOk;
+
+  // MVSS: verdict (CRAG three-state quantifier aggregation).
+  const allProvidersHaveResults = providerLists.every(l => l.length > 0);
+  const someProvidersHaveResults = providerLists.some(l => l.length > 0);
+  let verdict: SufficiencySignal["verdict"] = "ambiguous";
+  if (sufficiencyPassed) {
+    verdict = allProvidersHaveResults ? "correct" : "ambiguous";
+  } else if (!someProvidersHaveResults) {
+    verdict = "incorrect";
+  }
+
+  // MVSS: agreement (Jaccard@K + RBO@K, rank-derived, always computable).
+  const K = Math.min(10, ...providerLists.map(l => l.length));
+  const jaccardAtK = computeJaccardAtK(providerLists, K);
+  const rboAtK = computeRboAtK(providerLists, K);
+
+  // MVSS: spread (rrfVariance + scoreScale).
+  const rrfVariance = rrfRanks.length > 1 ? computeVariance(rrfRanks) : 0;
+  let scoreScale: { min: number; max: number } | undefined;
+  const allScores = Object.values(providerScores).flat();
+  if (allScores.length > 0) {
+    scoreScale = { min: Math.min(...allScores), max: Math.max(...allScores) };
+  }
+
+  const mvs: SufficiencySignal = {
+    verdict,
+    agreement: { jaccardAtK, rboAtK },
+    volume: {
+      uniqueResults: uniqueUrls.size,
+      uniqueDomains: uniqueDomains.size,
+      successfulProviders,
+    },
+    spread: { rrfVariance, scoreScale },
+  };
+  if (Object.keys(providerScores).length > 0) {
+    mvs.perProvider = providerScores;
+  }
+
+  return { control: { gatePassed, crossEngineOk, sufficiencyPassed }, mvs };
+}
+
+// Jaccard@K: intersection over union of top-K URLs across all provider pairs.
+function computeJaccardAtK(providerLists: string[][], k: number): number {
+  if (providerLists.length < 2 || k === 0) return 0;
+  let totalJ = 0, pairs = 0;
+  for (let i = 0; i < providerLists.length; i++) {
+    for (let j = i + 1; j < providerLists.length; j++) {
+      const a = new Set(providerLists[i].slice(0, k));
+      const b = new Set(providerLists[j].slice(0, k));
+      let inter = 0;
+      for (const u of a) if (b.has(u)) inter++;
+      const union = a.size + b.size - inter;
+      totalJ += union > 0 ? inter / union : 0;
+      pairs++;
+    }
+  }
+  return pairs > 0 ? totalJ / pairs : 0;
+}
+
+// RBO@K: Rank-Biased Overlap (simplified, p=0.9).
+function computeRboAtK(providerLists: string[][], k: number): number {
+  if (providerLists.length < 2 || k === 0) return 0;
+  const p = 0.9;
+  let totalRbo = 0, pairs = 0;
+  for (let i = 0; i < providerLists.length; i++) {
+    for (let j = i + 1; j < providerLists.length; j++) {
+      let sum = 0, inter = 0;
+      for (let d = 1; d <= k; d++) {
+        const a = new Set(providerLists[i].slice(0, d));
+        const b = new Set(providerLists[j].slice(0, d));
+        for (const u of a) if (b.has(u)) inter++;
+        sum += Math.pow(p, d - 1) * (inter / d);
+      }
+      totalRbo += (1 - p) * sum;
+      pairs++;
+    }
+  }
+  return pairs > 0 ? totalRbo / pairs : 0;
+}
+
+function computeVariance(values: number[]): number {
+  if (values.length === 0) return 0;
+  const mean = values.reduce((s, v) => s + v, 0) / values.length;
+  return values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
 }
 
 export class RetroaererdEngine {
@@ -189,17 +310,9 @@ export class RetroaererdEngine {
       }
     }
 
-    // Sufficiency gate check (atomcode research: min angles/fetches/domains/cross-engine).
-    const uniqueUrls = new Set(rankedResults.map((r) => normalizeUrl(r.url)));
-    const uniqueDomains = new Set(rankedResults.map((r) => extractDomain(r.url)));
-    const successfulProviders = providerLists.length;
-    const gatePassed =
-      successfulProviders >= gate.minProviders &&
-      uniqueUrls.size >= gate.minResults &&
-      uniqueDomains.size >= gate.minDomains;
-    // crossEngineVerify: at least 2 providers shared a URL (consensus in RRF).
-    const crossEngineOk = !gate.crossEngineVerify || checkCrossEngine(providerLists);
-    const sufficiencyPassed = gatePassed && crossEngineOk;
+    // ADR-0014 D7: single computation source, dual output (control + MVSS).
+    // Dead booleans deleted; computeSufficiency() replaces scattered logic.
+    const suff = computeSufficiency(rankedResults, providerLists, gate);
 
     return {
       results: rankedResults,
@@ -209,6 +322,8 @@ export class RetroaererdEngine {
         providersFailed,
         providersCancelled,
         elapsedMs: Date.now() - start,
+        // ADR-0014 D3: MVSS four-segment sufficiency signal.
+        sufficiency: suff.mvs,
       },
     };
   }

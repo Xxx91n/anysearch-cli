@@ -41,6 +41,30 @@ export interface SearchProvider {
   usage?(): Promise<UsageInfo | undefined>;
 }
 
+// ADR-0014 D3: MVSS four-segment sufficiency signal.
+// verdict: CRAG three-state quantifier aggregation (correct/incorrect/ambiguous).
+// agreement: rank-derived (Jaccard@K + RBO@K), always computable.
+// volume: hygiene signals (uniqueResults/uniqueDomains/successfulProviders).
+// spread: rrfVariance (rank-derived weak signal) + scoreScale (native score dimension).
+// perProvider: native scores attached, explicitly not cross-source normalized.
+// Hard ceiling: cheap-signal AUC ceiling approx 0.76 — MVSS only promises escalate.
+export interface SufficiencySignal {
+  verdict: "correct" | "incorrect" | "ambiguous";
+  agreement: {
+    jaccardAtK: number;
+    rboAtK: number;
+  };
+  volume: {
+    uniqueResults: number;
+    uniqueDomains: number;
+    successfulProviders: number;
+  };
+  spread: {
+    rrfVariance: number;
+    scoreScale?: { min: number; max: number };
+  };
+  perProvider?: Record<string, number[]>;
+}
 // Fused envelope: the output of RRF consensus fusion across N providers.
 export interface FusedEnvelope {
   results: NormalizedResult[];
@@ -50,5 +74,7 @@ export interface FusedEnvelope {
     providersFailed: string[];
     providersCancelled: string[];
     elapsedMs: number;
+    // ADR-0014 D3/D7: MVSS sufficiency signal from computeSufficiency().
+    sufficiency?: SufficiencySignal;
   };
 }

@@ -6,7 +6,7 @@
 import { PiAgentRuntime } from "../src/pi-runtime";
 import { distillGap, adjudicateReuseCompress } from "../src/pi-runtime";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
-import type { FusedEnvelope } from "@anysearch/retriever";
+import type { FusedEnvelope, SufficiencySignal } from "@anysearch/retriever";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -191,6 +191,31 @@ test: {
 }
 
 console.log("---");
+
+  // ADR-0014 D2/D5/D1: sufficiency gate tests.
+  // 23. DomainConfigPort compaction.sufficiencyMaxRerounds field exists.
+  const domain23: DomainConfigPort = {
+    sources: { enabled: ["tavily", "exa"] },
+    prompts: [],
+    skills: { active: ["search"] },
+    hooks: { toolWhitelist: ["search"] },
+    rag: { adapter: "none" },
+    compaction: { model: "test-model", sufficiencyMaxRerounds: 3 },
+  };
+  assert(domain23.compaction?.sufficiencyMaxRerounds === 3, "D6: sufficiencyMaxRerounds = 3");
+
+  // 24. SufficiencySignal type has four segments.
+  const mockSuff: SufficiencySignal = {
+    verdict: "ambiguous",
+    agreement: { jaccardAtK: 0.5, rboAtK: 0.3 },
+    volume: { uniqueResults: 3, uniqueDomains: 2, successfulProviders: 2 },
+    spread: { rrfVariance: 0.1 },
+  };
+  assert(mockSuff.verdict === "ambiguous", "D3: verdict field accessible");
+  assert(mockSuff.agreement.jaccardAtK === 0.5, "D3: agreement.jaccardAtK accessible");
+  assert(mockSuff.volume.uniqueResults === 3, "D3: volume.uniqueResults accessible");
+  assert(mockSuff.spread.rrfVariance === 0.1, "D3: spread.rrfVariance accessible");
+
 console.log(`PiAgentRuntime tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
 

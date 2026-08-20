@@ -47,14 +47,22 @@ export function buildServer(engine?: CompositionResult): McpServer {
         // ponytail: auto-index is best-effort, don't block search response.
         process.stderr.write("search_web auto-index error: " + (e instanceof Error ? e.message : String(e)) + "\n");
       }
+      // ADR-0014 D4: MCP sufficiency annotation — A+ dual-channel (content + structuredContent).
+      // SEP-1624: structuredContent ignored by Claude Code/Windsurf, so also serialize in content text.
+      // fail-open: if metadata.sufficiency missing, return normally without it.
+      const sufficiency = envelope.metadata?.sufficiency;
       const summary = JSON.stringify({
         query,
         totalResults: envelope.results.length,
         showing: topResults.length,
         results: topResults,
         providersQueried: envelope.metadata.providersQueried,
+        ...(sufficiency ? { sufficiency } : {}),
       }, null, 2);
-      return { content: [{ type: "text", text: summary }] };
+      return {
+        content: [{ type: "text", text: summary }],
+        ...(sufficiency ? { structuredContent: { sufficiency } } : {}),
+      };
     }
   );
 
@@ -77,6 +85,7 @@ export function buildServer(engine?: CompositionResult): McpServer {
       // ADR-0008 D3: multi-round search — each round refines query from prior results.
       const allResults: Array<{ title: string; url: string; snippet: string; source: string }> = [];
       const seenUrls = new Set<string>();
+      let lastRoundSufficiency: any = undefined;
       let currentQuery = question;
       for (let round = 0; round < rounds; round++) {
         const envelope = await eng.retriever.search({ query: currentQuery, mode: "deep" });
@@ -85,6 +94,10 @@ export function buildServer(engine?: CompositionResult): McpServer {
           const session = await eng.store.createSession("mcp-research");
           await eng.store.saveResults(session.id, envelope.results);
         } catch { /* best-effort */ }
+        // ADR-0014 D4: capture sufficiency from last round.
+        if (envelope.metadata?.sufficiency) {
+          lastRoundSufficiency = envelope.metadata.sufficiency;
+        }
         for (const r of envelope.results) {
           if (!seenUrls.has(r.url)) {
             seenUrls.add(r.url);
@@ -96,6 +109,9 @@ export function buildServer(engine?: CompositionResult): McpServer {
           currentQuery = envelope.results[0].title;
         }
       }
+      // ADR-0014 D4: MCP sufficiency annotation for research_web.
+      // Collect last round's sufficiency if available.
+      const lastSufficiency = lastRoundSufficiency;
       const summary = JSON.stringify({
         question,
         depth,
@@ -103,8 +119,12 @@ export function buildServer(engine?: CompositionResult): McpServer {
         totalResults: allResults.length,
         results: allResults.slice(0, 10),
         citations: allResults.slice(0, 5).map(r => ({ title: r.title, url: r.url, source: r.source })),
+        ...(lastSufficiency ? { sufficiency: lastSufficiency } : {}),
       }, null, 2);
-      return { content: [{ type: "text" as const, text: summary }] };
+      return {
+        content: [{ type: "text" as const, text: summary }],
+        ...(lastSufficiency ? { structuredContent: { sufficiency: lastSufficiency } } : {}),
+      };
     }
   );
 
