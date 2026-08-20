@@ -69,6 +69,70 @@ export interface PiAgentRuntimeOptions {
   getApiKey?: () => Promise<string | undefined>;
 }
 
+// ADR-0013 D9: Gap distillation — extract search tool results from messages after last summary point.
+export function distillGap(messages: any[], fromIdx: number): string {
+  const gap = messages.slice(fromIdx);
+  const results: string[] = [];
+  for (const msg of gap) {
+    if (msg.role !== "tool") continue;
+    const toolName = msg.toolName || msg.name || "";
+    if (typeof toolName !== "string" || !toolName.includes("search")) continue;
+    const content = typeof msg.content === "string"
+      ? msg.content
+      : Array.isArray(msg.content)
+        ? msg.content.map((c: any) => c?.text || "").join("")
+        : JSON.stringify(msg.content || "");
+    if (content) results.push(content);
+  }
+  return results.join("\n\n").slice(0, 4000);
+}
+
+// ADR-0013 D1/D3/D6: NOOP adjudication — LLM decides REUSE vs COMPRESS.
+// D6: prompt includes IR 5-segment structure for per-segment coverage check.
+// D10: failure → default COMPRESS (fail-open, Mem0 "不确定就写入").
+export async function adjudicateReuseCompress(
+  streamFn: any,
+  model: any,
+  gapDistillation: string,
+  existingSummary: string | undefined,
+): Promise<"reuse" | "compress"> {
+  const prompt = [
+    "You are a memory adjudicator for a research agent.",
+    "Decide if the new search results are already fully covered by the existing IR summary.",
+    "",
+    "IR Summary has 5 sections: Verified Evidence, Open Hypotheses, Rejected Sources, Key Numbers & Sources, Tool Calls & Read Status.",
+    "Check each section: is the new information already present?",
+    "",
+    "If ALL new information is already covered -> respond: reuse",
+    "If ANY new information is NOT covered -> respond: compress",
+    "",
+    "=== Existing IR Summary ===",
+    existingSummary || "(empty - no prior summary)",
+    "",
+    "=== New Search Results (gap) ===",
+    gapDistillation || "(no new results)",
+  ].join("\n");
+
+  const context = {
+    systemPrompt: prompt,
+    messages: [{ role: "user", content: "Respond with exactly 'reuse' or 'compress'." }],
+  };
+
+  let text = "";
+  try {
+    const stream = streamFn(model, context, {});
+    for await (const event of stream) {
+      if (event?.type === "text" && event.text) text += event.text;
+    }
+  } catch {
+    return "compress"; // D10: fail-open.
+  }
+
+  const lower = text.toLowerCase().trim();
+  if (lower.includes("reuse")) return "reuse";
+  return "compress"; // D10: unparseable -> COMPRESS.
+}
+
 export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
 
@@ -107,6 +171,10 @@ export class PiAgentRuntime {
     // 128K low watermark (~12.8% of 1M window, anti context rot; design param, needs ablation).
     const LOW_WATERMARK_TOKENS = 128000;
     let lastSearchTurn = 0; // track if last turn had a search tool call (REUSE/COMPRESS signal).
+    // ADR-0013 D8: consecutive REUSE counter — 3 cap forces COMPRESS.
+    let consecutiveReuses = 0;
+    // ADR-0013 D9: track message index at last summary point for gap distillation.
+    let lastSummaryMsgCount = 0;
     // ADR-0012 D5: IR 5-section summary schema customInstructions.
     const IR_CUSTOM_INSTRUCTIONS = [
       "Format the summary as exactly these 5 sections:",
@@ -204,38 +272,67 @@ export class PiAgentRuntime {
             if (triggerLowWatermark || triggerPostSearch) {
               lastSearchTurn = 0; // reset
 
-              // ADR-0012 D4: reuse generateSummaryWithUsage, not compact().
-              // D6: fire-and-forget — don't await, let summary land in next round.
               const modelsObj = this.opts.models as any;
               const summaryModel = (domain as any).compaction?.model
                 ? (modelsObj?.getModel ? modelsObj.getModel((this.opts as any).providerName || "openai", (domain as any).compaction.model) : undefined)
                 : (model as any);
               const actualModel = summaryModel || (model as any);
 
-              if (modelsObj && actualModel) {
-                // D5: IR 5-section schema via customInstructions.
-                // D4: previousSummary for UPDATE incremental semantics.
-                const prevAnchors = await this.opts.store.getAnchors(sessionId);
-                const prevSummaryAnchors = prevAnchors.filter(a => a.anchorType === "rolling_summary");
-                const prevSummaryAnchor = prevSummaryAnchors[prevSummaryAnchors.length - 1];
-                const previousSummary = (prevSummaryAnchor?.payload as any)?.summary as string | undefined;
+              // ADR-0013 D4: dual-track dispatch.
+              // Low watermark → direct COMPRESS (hard, MemGPT flush).
+              // Post-search → NOOP adjudication first (soft, Mem0 NOOP).
+              const shouldAdjudicate = triggerPostSearch && !triggerLowWatermark;
+              // D8: consecutive REUSE cap — 3 forces COMPRESS.
+              const reuseCapped = consecutiveReuses >= 3;
+              const needsAdjudication = shouldAdjudicate && !reuseCapped;
 
-                generateSummaryWithUsage(
-                  messages, modelsObj, actualModel,
-                  DEFAULT_COMPACTION_SETTINGS.reserveTokens,
-                  undefined, // signal
-                  IR_CUSTOM_INSTRUCTIONS,
-                  previousSummary,
-                  "off", // thinkingLevel
-                ).then((result: any) => {
-                  if (result?.ok && result.value?.text) {
-                    this.opts.store!.saveAnchor(sessionId!, "rolling_summary", {
-                      summary: result.value.text,
-                      tokenWatermark: totalTokens,
-                      timestamp: Date.now(),
-                    }).catch(() => {});
-                  }
-                }).catch(() => {});
+              // Shared: get previous summary for both adjudication and compression.
+              const prevAnchors = await this.opts.store.getAnchors(sessionId);
+              const prevSummaryAnchors = prevAnchors.filter(a => a.anchorType === "rolling_summary");
+              const prevSummaryAnchor = prevSummaryAnchors[prevSummaryAnchors.length - 1];
+              const previousSummary = (prevSummaryAnchor?.payload as any)?.summary as string | undefined;
+
+              // D9: gap distillation — search tool results since last summary.
+              const gapDistillation = distillGap(messages, lastSummaryMsgCount);
+
+              // D5: fire-and-forget compression helper (reused by both tracks).
+              const fireCompress = () => {
+                if (modelsObj && actualModel) {
+                  consecutiveReuses = 0; // D8: COMPRESS resets counter.
+                  generateSummaryWithUsage(
+                    messages, modelsObj, actualModel,
+                    DEFAULT_COMPACTION_SETTINGS.reserveTokens,
+                    undefined, // signal
+                    IR_CUSTOM_INSTRUCTIONS,
+                    previousSummary,
+                    "off", // thinkingLevel
+                  ).then((result: any) => {
+                    if (result?.ok && result.value?.text) {
+                      lastSummaryMsgCount = messages.length; // D9: advance gap anchor.
+                      this.opts.store!.saveAnchor(sessionId!, "rolling_summary", {
+                        summary: result.value.text,
+                        tokenWatermark: totalTokens,
+                        timestamp: Date.now(),
+                      }).catch(() => {});
+                    }
+                  }).catch(() => {}); // D10: compression failure is silent (fire-and-forget).
+                }
+              };
+
+              if (needsAdjudication) {
+                // D1/D5: fire-and-forget adjudication, .then() decides compress.
+                adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary)
+                  .then((decision: "reuse" | "compress") => {
+                    if (decision === "reuse") {
+                      consecutiveReuses++; // D8: increment on REUSE.
+                    } else {
+                      fireCompress();
+                    }
+                  })
+                  .catch(() => fireCompress()); // D10: adjudication failure → COMPRESS.
+              } else {
+                // Low watermark or reuse-capped → direct COMPRESS.
+                fireCompress();
               }
             }
 

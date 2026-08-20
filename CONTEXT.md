@@ -123,6 +123,16 @@ AGENTS.md vs SKILL.md 的内容归属裁决线。Anthropic memory 文档金句�
 ## ARD Tracking（ARD 追踪）
 Agentic Resource Discovery v0.9 协议的追踪型 ADR 策略：记录事实基线（2026-08：v0.9 Draft，IANA 未注册，采纳约等于 0，两个参考实现）+ 季度复查哨（Synscribe 式普查 .well-known/ai-catalog.json）+ 可选低成本动作（发布时挂 ai-catalog.json 作为选项非承诺）+ 明确非目标（不按 ARD 重构分发格式、不引入运行时依赖。打包格式归属 Agent Plugins 1.0.0 Published spec）。ARD 是发现层与 MCP 执行层正交，未来接入只需加 catalog entry 无需改架构。ADR-0010 Decision 4。
 
+
+## NOOP Adjudication（NOOP 裁决）
+REUSE/COMPRESS 判别的核心机制。检索工具返回后，用 compaction.model 做一次 LLM 裁决：新检索结果的每个关键信息点是否已落在现有 IR 摘要的对应段内？全部覆盖 → REUSE（跳过摘要生成省一次 LLM 调用），有未覆盖信息 → COMPRESS（增量生成）。二元 function-calling 输出 { decision: "reuse" | "compress" }。对齐 Mem0 A.U.D.N. 四路裁决的 NOOP 分支但简化为二元——IR 摘要三段只增补不覆盖，无 DELETE/UPDATE 语义。裁决 LLM 调用 fire-and-forget，不阻塞 agent 循环。ADR-0013 D1/D3/D5。
+
+## Gap Distillation（gap 蒸馏）
+NOOP 裁决的输入构造。从 messages 中定位上次 rolling_summary anchor 对应的消息位置，取之后 gap，过滤 role=tool 且 tool_name 包含 search 的消息内容作为裁决输入。不取对话内容（用户闲聊、assistant 推理）——信息覆盖度判断的输入只有检索结果和现有摘要。对齐 Mem0 "候选事实 + top-k 邻居记忆"输入构造。Token 成本 500-2000 token，远低于完整 messages gap（5K-20K）。ADR-0013 D2/D9。
+
+## Consecutive Reuse Cap（连续 REUSE 上限）
+NOOP 裁决的安全阀。维护 consecutiveReuses 计数器：REUSE 则递增，COMPRESS 则归零。连续 3 次后第 4 次跳过裁决直接 COMPRESS。防止裁决 LLM 系统性偏差（总判 REUSE）导致摘要长期过期。对齐 LOCA-bench "更高频压缩 → 更少 rot"结论和 Letta issue #957 死循环故障先例。ADR-0013 D8。
+
 *End of Glossary*
 
 ## Cursor Dual Channel（Cursor 双通道注入）
@@ -138,7 +148,7 @@ Cursor sessionStart hook 的执行语义。agent loop 不等待 hook 完成、�
 L0 写入端与 L1 读取端之间的契约接口。L0 在 shouldStopAfterTurn 写滚动摘要到 resume_anchors（冷、异步），L1 在 transformContext 读最新摘要注入当前轮（热、同步）。学术上对应 CoALA 的 consolidation/retrieval 接口（episodic→semantic 巩固 vs working memory 装载），工业上与 Mem0 的异步写同步读 conversation summary 模块同构。契约 = 版本化的摘要格式 schema，写读端共享。与 pi-agent-core compact() 窗口管理是不同心智模型：L0 管记忆持久化（旁路写），compact() 管窗口腾挪（修改 entry 流）。ADR-0012 Decision 2/5。
 
 ## REUSE/COMPRESS 判别
-L0 事件驱动触发的判别逻辑。检索工具调用返回后先判别：现有摘要 + 新增 gap 仍 fit 就直接 REUSE（省一次 LLM 调用），否则 COMPRESS 增量生成（generateSummaryWithUsage(previousSummary) UPDATE 语义）。判别机制属工程直觉（省 LLM 调用），无直接学术文献；邻域同构为 Mem0 更新阶段的 NOOP 操作（现有记忆已覆盖新信息则跳过写入，docs.mem0.ai how-it-works），已列为待设计项。与低水位线（128K，1M 窗口 ~12.8%；设计参数，无文献给出最优水位，方向对齐 MemGPT 70% 预警与 context rot 研究，偏激进端需 ablation 验证——Anthropic cookbook 警告过度压缩会丢失微妙但关键的上下文）构成双轨触发，废弃纯轮次触发。判别算法（阈值、信息量度量）是重点难题，后续心智模型着重设计。ADR-0012 Decision 3。
+L0 事件驱动触发的判别逻辑。检索工具调用返回后先判别：新检索结果是否已被现有 IR 摘要覆盖——覆盖则 REUSE（跳过 LLM 摘要生成），否则 COMPRESS 增量生成（generateSummaryWithUsage(previousSummary) UPDATE 语义）。判别核心机制为 Mem0 式 LLM 裁决 NOOP（ADR-0013 D1）：用 compaction.model 做二元 function-calling 裁决（REUSE|COMPRESS），裁决 prompt 内联 IR 5 段结构做逐段覆盖检查（D6），输入为 gap 蒸馏（检索工具返回蒸馏内容）+ 现有摘要全文（D2）。双轨触发分流：检索后轨道走 NOOP 判别（软触发），低水位线轨道直接 COMPRESS 不判别（硬触发，对齐 MemGPT flush 语义）（D4）。两级异步执行：裁决 fire-and-forget + 压缩 fire-and-forget（D5）。连续 REUSE 上限 3 次强制 COMPRESS 兜底（D8）。裁决失败 → 默认 COMPRESS（D10，对齐 Mem0 "不确定就写入"）。学术锚点：Mem0 A.U.D.N. 四路裁决 NOOP 分支（arXiv:2504.19413）、MemGPT 70% warning / 100% flush 双级阈值（arXiv:2310.08560）、Memanto typed semantic memory 分段独立判断（arXiv:2604.22085）、LOCA-bench 高频压缩降 rot（arXiv:2606.29718）、Anthropic context engineering 注意力预算。ADR-0012 D3 + ADR-0013 D1-D11。
 
 ## IR Summary Schema（IR 专精摘要契约）
 L0 滚动摘要的版本化 5 段格式契约：已查证证据 / 未决假设 / 被否决信源 / 关键数字与来源 / 工具调用与已读状态。其中已查证/未决/被否决三段跨压缩只增补不覆盖——认知分段的学术原型为 OIDA（类型化有向符号图：decisions vs hypotheses、commitment vs contradicted）与 Memanto（arXiv:2604.22085，typed semantic memory 区分 decisions/hypotheses/resolved findings）、survey arXiv:2603.07670（uncertainty-aware memory / hypothesis ledger）；Ontheia 为自托管 agent 平台（pgvector RAG），无 Decisions/Commitments/Uncertainties 分段，不作锚点。数字、效应量、URL verbatim 保留（Anthropic cookbook IR 指令 + Cognitive Scaffold ACL 2026 原子约束，压缩幻觉压到 5.3%）。区别于通用对话 Agent 的聊天要点摘要——信息检索 Agent 的摘要必须保真到证据粒度。ADR-0012 Decision 5。
