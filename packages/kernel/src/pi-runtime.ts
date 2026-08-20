@@ -263,13 +263,11 @@ export class PiAgentRuntime {
       // ADR-0010 D1: shouldStopAfterTurn async cold path — L2 FTS5 deep recall + L0 rolling summary.
       // Fires after each assistant turn; async, does not block current turn.
       shouldStopAfterTurn: async (ctx: any) => {
-        if (this.opts.store && sessionId) {
-          try {
-            const messages = (agent as any).state?.messages || [];
-            const totalTokens = totalInputTokens + totalOutputTokens;
-            // ADR-0012 D3: detect if last turn had a search tool call (REUSE/COMPRESS signal).
-            const lastTool = ctx?.lastToolName || ctx?.toolName || "";
-            if (typeof lastTool === "string" && lastTool.includes("search")) lastSearchTurn = 1;
+        const messages = (agent as any).state?.messages || [];
+        const totalTokens = totalInputTokens + totalOutputTokens;
+        // ADR-0012 D3: detect if last turn had a search tool call (REUSE/COMPRESS signal).
+        const lastTool = ctx?.lastToolName || ctx?.toolName || "";
+        if (typeof lastTool === "string" && lastTool.includes("search")) lastSearchTurn = 1;
 
             // ADR-0014 D2/D5/D1: Sufficiency gate in PiAgentRuntime agent loop.
             // Engine stays pure (no LLM); gate logic lives here.
@@ -278,7 +276,7 @@ export class PiAgentRuntime {
             // D6: sufficiencyMaxRerounds from domain config.
             const maxRerounds = (domain as any).compaction?.sufficiencyMaxRerounds ?? 1;
             const messages1 = (agent as any).state?.messages || [];
-            // Find last tool_result that contains envelope with metadata.sufficiency.
+            // Find last tool_result that contains envelope with sufficiency (top-level or metadata).
             const lastSearchResult = [...messages1].reverse().find((m: any) =>
               m.role === "user" && Array.isArray(m.content) &&
               m.content.some((c: any) => c.type === "tool_result" && c.content?.[0]?.text?.includes("sufficiency"))
@@ -289,12 +287,12 @@ export class PiAgentRuntime {
                 const envelopeJson = toolResultContent?.content?.[0]?.text;
                 if (envelopeJson) {
                   const envelope = JSON.parse(envelopeJson);
-                  const suff = envelope?.metadata?.sufficiency as SufficiencySignal | undefined;
+                  const suff = (envelope?.metadata?.sufficiency ?? envelope?.sufficiency) as SufficiencySignal | undefined;
                   if (suff && suff.verdict !== "correct") {
                     // D1: LLM generates named gap — "what's missing" from the search results.
                     const gapPrompt = [
                       { role: "system" as const, content: "You are a search sufficiency evaluator. Given the search query and results, identify what information is missing. Respond with a single rewritten search query that targets the gap. Respond with ONLY the query, no explanation." },
-                      { role: "user" as const, content: "Original query: " + (envelope.query || "") + "\n\nResults: " + (envelope.results || []).slice(0, 5).map((r: any) => r.title + ": " + (r.snippet || "").slice(0, 200)).join("\n") + "\n\nSufficiency verdict: " + suff.verdict + "\n\nWhat is missing? Write a single search query to fill the gap:" },
+                      { role: "user" as const, content: "Original query: " + (envelope.query || envelope._query || "") + "\n\nResults: " + (envelope.results || []).slice(0, 5).map((r: any) => r.title + ": " + (r.snippet || "").slice(0, 200)).join("\n") + "\n\nSufficiency verdict: " + suff.verdict + "\n\nWhat is missing? Write a single search query to fill the gap:" },
                     ];
                     const streamFn = this.opts.streamFn as any;
                     const model = this.opts.model as any;
@@ -322,7 +320,7 @@ export class PiAgentRuntime {
                           envelope.results = [...(envelope.results || []), ...newResults];
                           // Re-check sufficiency on merged results.
                           const reroundSuff = computeSufficiency(
-                            envelope.results, [envelope.metadata.providersQueried.map(() => envelope.results.map((r: any) => r.url))],
+                            envelope.results, [], // ponytail: reround re-check — real per-provider lists unavailable in tool_result JSON; agreement stays 0 (honest, not fabricated)
                             { minProviders: 1, minResults: 3, minDomains: 2, crossEngineVerify: false }
                           );
                           if (reroundSuff.mvs.verdict === "correct") break;
@@ -330,7 +328,7 @@ export class PiAgentRuntime {
                           // ponytail: single reround is default; multi-round uses same gap.
                         }
                         // Annotate: mark that sufficiency gate ran.
-                        envelope.metadata.sufficiencyRerounds = true;
+                        envelope.sufficiencyRerounds = true;
                         // Update the tool_result in-place so LLM sees enriched results.
                         toolResultContent.content[0].text = JSON.stringify(envelope, null, 2);
                       }
@@ -340,6 +338,9 @@ export class PiAgentRuntime {
               } catch {} // ponytail: sufficiency gate is best-effort, fail-open.
             }
 
+        // ADR-0010 D1: L0/L1/L2 memory pipeline — requires store + sessionId.
+        if (this.opts.store && sessionId) {
+          try {
             // ADR-0012 D3: dual-track trigger — low watermark OR post-search REUSE/COMPRESS.
             const triggerLowWatermark = totalTokens > LOW_WATERMARK_TOKENS;
             const triggerPostSearch = lastSearchTurn > 0 && messages.length > 4;

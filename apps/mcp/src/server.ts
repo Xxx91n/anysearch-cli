@@ -56,7 +56,7 @@ export function buildServer(engine?: CompositionResult): McpServer {
         totalResults: envelope.results.length,
         showing: topResults.length,
         results: topResults,
-        providersQueried: envelope.metadata.providersQueried,
+        providersQueried: envelope.metadata?.providersQueried ?? [],
         ...(sufficiency ? { sufficiency } : {}),
       }, null, 2);
       return {
