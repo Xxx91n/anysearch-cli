@@ -14,11 +14,17 @@ export interface DomainSchema {
   sources: { enabled: string[] };
   rag: { adapter: string; config?: Record<string, unknown> };
   hooks: { toolWhitelist: string[] };
+  compaction?: CompactionConfig;
 }
 
 export interface PromptEntry {
   name: string;
   content: string;
+}
+
+// ADR-0012 D7: compaction config for independent summary model.
+export interface CompactionConfig {
+  model?: string; // summary model id (default: cheap model e.g. deepseek-v4-fast)
 }
 
 // Raw TOML shape (before resolution/inheritance)
@@ -32,6 +38,7 @@ export interface RawDomain {
   sources?: { enabled?: string[] };
   rag?: { adapter?: string; config?: Record<string, unknown> };
   hooks?: { toolWhitelist?: string[] };
+  compaction?: CompactionConfig;
 }
 
 // Deep-merge two values. Objects merge recursively; everything else replaces.
@@ -94,6 +101,7 @@ export function resolve(
   let ragAdapter = "";
   let ragConfig: Record<string, unknown> | undefined;
   let hooksWhitelist: string[] = [];
+  let compaction: CompactionConfig | undefined;
   let name = "";
   let description: string | undefined;
 
@@ -108,6 +116,7 @@ export function resolve(
     if (d.sources?.enabled) sourcesEnabled = d.sources.enabled;
     if (d.rag?.adapter) { ragAdapter = d.rag.adapter; ragConfig = d.rag.config; }
     if (d.hooks?.toolWhitelist) hooksWhitelist = d.hooks.toolWhitelist;
+    if (d.compaction) compaction = d.compaction;
     if (d.name) name = d.name;
     if (d.description) description = d.description;
   }
@@ -121,6 +130,7 @@ export function resolve(
     sources: { enabled: sourcesEnabled },
     rag: { adapter: ragAdapter, config: ragConfig },
     hooks: { toolWhitelist: hooksWhitelist },
+    compaction,
   };
 }
 

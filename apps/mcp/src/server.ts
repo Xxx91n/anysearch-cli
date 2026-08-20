@@ -235,6 +235,7 @@ export function buildServer(engine?: CompositionResult): McpServer {
           domain,
           model,
           streamFn,
+          models,
           getApiKey: async () => apiKey,
         });
         let output = "";

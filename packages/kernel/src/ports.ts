@@ -40,6 +40,8 @@ export interface DomainConfigPort {
   skills: { active: string[] };
   hooks: { toolWhitelist: string[] };
   rag: { adapter: string; config?: Record<string, unknown> };
+  // ADR-0012 D7: compaction config for independent summary model.
+  compaction?: { model?: string };
 }
 
 // BudgetLedgerPort: per-call reserve-then-settle interface.

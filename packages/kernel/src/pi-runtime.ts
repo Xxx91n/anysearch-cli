@@ -5,7 +5,7 @@
 // ADR-0007 decision 5: token dimension budget via onResponse.
 // ADR-0007 decision 6: dual session (pi Agent memory + SqliteSessionStore FTS5 sync).
 
-import { Agent } from "@earendil-works/pi-agent-core";
+import { Agent, generateSummaryWithUsage, DEFAULT_COMPACTION_SETTINGS } from "@earendil-works/pi-agent-core";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query } from "./ports";
@@ -62,6 +62,7 @@ export interface PiAgentRuntimeOptions {
   domain: DomainConfigPort;
   model: unknown; // pi-ai Model instance
   streamFn: unknown; // models.streamSimple.bind(models)
+  models?: unknown; // ADR-0012 D4: Models object for generateSummaryWithUsage
   ledger?: BudgetLedgerPort;
   sessionId?: string;
   tools?: AgentTool[]; // extra tools beyond search
@@ -102,10 +103,20 @@ export class PiAgentRuntime {
     let resolveEvent: (() => void) | null = null;
     let agentDone = false;
     let agentError: string | null = null;
-    // ADR-0009 D3 L0: rolling summary — track turn count for N-turn trigger.
-    let turnCount = 0;
-    const ROLLING_SUMMARY_INTERVAL = 5; // every 5 turns, write summary to resume_anchors.
-    const TOKEN_WATERMARK = 8000; // token watermark for L0 summary trigger.
+    // ADR-0012 D3: dual-track trigger — low watermark + REUSE/COMPRESS after search.
+    // 128K low watermark (~12.8% of 1M window, anti context rot; design param, needs ablation).
+    const LOW_WATERMARK_TOKENS = 128000;
+    let lastSearchTurn = 0; // track if last turn had a search tool call (REUSE/COMPRESS signal).
+    // ADR-0012 D5: IR 5-section summary schema customInstructions.
+    const IR_CUSTOM_INSTRUCTIONS = [
+      "Format the summary as exactly these 5 sections:",
+      "1. Verified Evidence: facts confirmed by search results (append-only across compressions)",
+      "2. Open Hypotheses: claims not yet verified (append-only)",
+      "3. Rejected Sources: sources checked and dismissed (append-only)",
+      "4. Key Numbers & Sources: important figures with source URLs",
+      "5. Tool Calls & Read Status: which tools were called and what was read",
+      "Sections 1-3 are append-only: preserve all existing entries, only add new ones.",
+    ].join("\n");
 
     const agent = new Agent({
       initialState: {
@@ -142,20 +153,34 @@ export class PiAgentRuntime {
           ];
         }
 
-        // Stage 2: L1 hot path — inject session summary from resume_anchors.
+        // ADR-0012 D8/D9/D12: L1+L2 merged injection at latest user message (hot zone).
         if (this.opts.store && sessionId) {
           try {
             const anchors = await this.opts.store.getAnchors(sessionId);
-            const summaryAnchor = anchors.find(a => a.anchorType === "rolling_summary") as (typeof anchors[0] & { payload: { summary?: string } }) | undefined;
-            if (summaryAnchor?.payload?.summary) {
-              const summaryText = "[Session Memory] " + String(summaryAnchor.payload.summary).slice(0, 2000);
-              if (result.length > 0) {
-                const first = result[0];
-                result = [
-                  { ...first, content: (typeof first.content === "string" ? first.content : "") + "\n\n" + summaryText },
-                  ...result.slice(1),
-                ];
-              }
+            // D12: read LATEST rolling_summary (was find() which got oldest due to ORDER BY id ASC).
+            const summaryAnchors = anchors.filter(a => a.anchorType === "rolling_summary");
+            const summaryAnchor = summaryAnchors[summaryAnchors.length - 1];
+            const recallAnchors = anchors.filter(a => a.anchorType === "l2_recall");
+            const recallAnchor = recallAnchors[recallAnchors.length - 1];
+
+            const injections: string[] = [];
+            // D9: L1 session memory, budget 4000 chars.
+            if ((summaryAnchor?.payload as any)?.summary) {
+              injections.push("[Session Memory] " + String((summaryAnchor.payload as any).summary).slice(0, 4000));
+            }
+            // D9: L2 research recall, budget 1500 chars. Fixes l2_recall write-read seam break.
+            if ((recallAnchor?.payload as any)?.hits) {
+              injections.push("[Research Recall] " + String((recallAnchor.payload as any).hits).slice(0, 1500));
+            }
+
+            if (injections.length > 0 && result.length > 0) {
+              // D8: inject at LATEST user message (attention hot zone, prefix cache stable).
+              const lastIdx = result.length - 1;
+              const last = result[lastIdx];
+              result = [
+                ...result.slice(0, lastIdx),
+                { ...last, content: (typeof last.content === "string" ? last.content : "") + "\n\n" + injections.join("\n\n") },
+              ];
             }
           } catch {}
         }
@@ -164,47 +189,76 @@ export class PiAgentRuntime {
       },
       // ADR-0010 D1: shouldStopAfterTurn async cold path — L2 FTS5 deep recall + L0 rolling summary.
       // Fires after each assistant turn; async, does not block current turn.
-      shouldStopAfterTurn: async (_ctx: any) => {
+      shouldStopAfterTurn: async (ctx: any) => {
         if (this.opts.store && sessionId) {
           try {
-            // L0 rolling summary (ADR-0010 D3 Phase 2: Letta sliding_window alignment).
-            turnCount++;
-            if (turnCount % ROLLING_SUMMARY_INTERVAL === 0 || totalInputTokens + totalOutputTokens > TOKEN_WATERMARK) {
-              const messages = (agent as any).state?.messages || [];
-              if (messages.length > 4) {
-                // Letta sliding_window: summarize oldest ~30%, retain ~70%.
-                const cutPoint = Math.floor(messages.length * 0.3);
-                const toSummarize = messages.slice(0, cutPoint);
-                const summary = toSummarize.map((m: any) =>
-                  m.role + ": " + (typeof m.content === "string" ? m.content.slice(0, 300) : "[complex]")
-                ).join(" | ");
-                // self_compact: include system prompt for prefix cache hit (Letta alignment).
-                const fullSummary = systemPrompt + "\n\n[Summary] " + summary.slice(0, 50000);
-                this.opts.store.saveAnchor(sessionId, "rolling_summary", {
-                  turnCount,
-                  tokenWatermark: totalInputTokens + totalOutputTokens,
-                  summary: fullSummary.slice(0, 50000),
-                  cutPoint,
-                  totalMessages: messages.length,
-                });
+            const messages = (agent as any).state?.messages || [];
+            const totalTokens = totalInputTokens + totalOutputTokens;
+            // ADR-0012 D3: detect if last turn had a search tool call (REUSE/COMPRESS signal).
+            const lastTool = ctx?.lastToolName || ctx?.toolName || "";
+            if (typeof lastTool === "string" && lastTool.includes("search")) lastSearchTurn = 1;
+
+            // ADR-0012 D3: dual-track trigger — low watermark OR post-search REUSE/COMPRESS.
+            const triggerLowWatermark = totalTokens > LOW_WATERMARK_TOKENS;
+            const triggerPostSearch = lastSearchTurn > 0 && messages.length > 4;
+            if (triggerLowWatermark || triggerPostSearch) {
+              lastSearchTurn = 0; // reset
+
+              // ADR-0012 D4: reuse generateSummaryWithUsage, not compact().
+              // D6: fire-and-forget — don't await, let summary land in next round.
+              const modelsObj = this.opts.models as any;
+              const summaryModel = (domain as any).compaction?.model
+                ? (modelsObj?.getModel ? modelsObj.getModel((this.opts as any).providerName || "openai", (domain as any).compaction.model) : undefined)
+                : (model as any);
+              const actualModel = summaryModel || (model as any);
+
+              if (modelsObj && actualModel) {
+                // D5: IR 5-section schema via customInstructions.
+                // D4: previousSummary for UPDATE incremental semantics.
+                const prevAnchors = await this.opts.store.getAnchors(sessionId);
+                const prevSummaryAnchors = prevAnchors.filter(a => a.anchorType === "rolling_summary");
+                const prevSummaryAnchor = prevSummaryAnchors[prevSummaryAnchors.length - 1];
+                const previousSummary = (prevSummaryAnchor?.payload as any)?.summary as string | undefined;
+
+                generateSummaryWithUsage(
+                  messages, modelsObj, actualModel,
+                  DEFAULT_COMPACTION_SETTINGS.reserveTokens,
+                  undefined, // signal
+                  IR_CUSTOM_INSTRUCTIONS,
+                  previousSummary,
+                  "off", // thinkingLevel
+                ).then((result: any) => {
+                  if (result?.ok && result.value?.text) {
+                    this.opts.store!.saveAnchor(sessionId!, "rolling_summary", {
+                      summary: result.value.text,
+                      tokenWatermark: totalTokens,
+                      timestamp: Date.now(),
+                    }).catch(() => {});
+                  }
+                }).catch(() => {});
               }
             }
-            // L2 cold path: FTS5 deep recall — fire-and-forget, results land in resume_anchors.
-            const recentUserMsgs = (agent as any).state?.messages?.filter((m: any) => m.role === "user") || [];
-            const lastQuery = recentUserMsgs[recentUserMsgs.length - 1]?.content;
-            if (typeof lastQuery === "string" && lastQuery.length > 10) {
-              this.opts.store.searchMemory(lastQuery, 5).then((hits) => {
+
+            // ADR-0012 D10: L2 cold path — use latest search intent (tool_input.query), FTS5 only.
+            const allMsgs = (agent as any).state?.messages || [];
+            const lastToolCall = [...allMsgs].reverse().find((m: any) =>
+              m.role === "assistant" && Array.isArray(m.content) &&
+              m.content.some((c: any) => c.type === "tool_use" && typeof c.name === "string" && c.name.includes("search"))
+            );
+            const searchToolInput = lastToolCall?.content?.find((c: any) => c.type === "tool_use" && c.name?.includes("search"))?.input;
+            const l2Query = searchToolInput?.query || "";
+            if (typeof l2Query === "string" && l2Query.length > 3) {
+              this.opts.store.searchMemory(l2Query, 5).then((hits) => {
                 if (hits.length > 0) {
                   const memorySnippet = hits.map(h => h.content || "").slice(0, 200).join(" | ");
                   this.opts.store!.saveAnchor(sessionId!, "l2_recall", {
-                    query: lastQuery, hits: memorySnippet.slice(0, 2000), timestamp: Date.now(),
+                    query: l2Query, hits: memorySnippet.slice(0, 2000), timestamp: Date.now(),
                   }).catch(() => {});
                 }
               }).catch(() => {});
             }
           } catch {}
         }
-        // Never force stop — cold path is side-effect only, let agent decide.
         return false;
       },
     });

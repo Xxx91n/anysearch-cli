@@ -192,8 +192,9 @@ test("ADR-0011: antigravity.ts has .mdc fallback", () => {
 test("ADR-0011: session-start.ts has .mdc generation logic", () => {
   const sessionStartSrc = fs.readFileSync(join(process.cwd(), "src", "hooks", "session-start.ts"), "utf8");
   assert.ok(sessionStartSrc.includes("ensureMdc"), "session-start.ts should have ensureMdc function");
-  assert.ok(sessionStartSrc.includes("MDC_CONTENT"), "session-start.ts should define MDC_CONTENT");
-  assert.ok(sessionStartSrc.includes("ROUTING_CARD"), "session-start.ts should define ROUTING_CARD");
+  assert.ok(sessionStartSrc.includes("routing-card"), "session-start.ts should import from routing-card.ts");
+  assert.ok(sessionStartSrc.includes("MDC_CONTENT"), "session-start.ts should use MDC_CONTENT");
+  assert.ok(sessionStartSrc.includes("ROUTING_CARD"), "session-start.ts should use ROUTING_CARD");
   assert.ok(sessionStartSrc.includes("writeFileSync"), "session-start.ts should write .mdc file");
   assert.ok(sessionStartSrc.includes("existsSync"), "session-start.ts should check if .mdc exists before writing");
 });
@@ -208,19 +209,14 @@ test("ADR-0011: cursor hooks.json has no _degradation_note", () => {
   assert.ok(parsed.hooks.postToolUse, "cursor hooks.json should have postToolUse config");
 });
 
-test("ADR-0011: routing card 4-block structure", () => {
-  // Verify routing card has 4 blocks: plugin declaration, tools, trigger rules, fail-open
-  const block1 = "[anysearch plugin active]";
-  const block2 = "Tools available";
-  const block3 = "Trigger rules";
-  const block4 = "Fail-open";
-  // These are verified in the source code string above in the SessionStart test
-  // Here we verify the consistency across session-start.ts and cursor.ts
-  const sessionStartSrc = fs.readFileSync(join(process.cwd(), "src", "hooks", "session-start.ts"), "utf8");
-  assert.ok(sessionStartSrc.includes(block1), "session-start.ts has block 1");
-  assert.ok(sessionStartSrc.includes(block2), "session-start.ts has block 2");
-  assert.ok(sessionStartSrc.includes(block3), "session-start.ts has block 3");
-  assert.ok(sessionStartSrc.includes(block4), "session-start.ts has block 4");
+test("ADR-0012: routing card 4-block structure in shared module", () => {
+  // ADR-0012 D14: routing card extracted to routing-card.ts shared module.
+  // Verify 4 blocks: plugin declaration, tools, trigger rules, fail-open.
+  const rcSrc = fs.readFileSync(join(process.cwd(), "src", "hooks", "routing-card.ts"), "utf8");
+  assert.ok(rcSrc.includes("[anysearch plugin active]"), "routing-card.ts has block 1");
+  assert.ok(rcSrc.includes("Tools available"), "routing-card.ts has block 2");
+  assert.ok(rcSrc.includes("Trigger rules"), "routing-card.ts has block 3");
+  assert.ok(rcSrc.includes("Fail-open"), "routing-card.ts has block 4");
 });
 
 // === Server liveness ===

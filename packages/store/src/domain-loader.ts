@@ -20,6 +20,7 @@ export function parseDomainToml(toml: string): RawDomain {
     sources: obj.sources,
     rag: obj.rag,
     hooks: obj.hooks,
+    compaction: obj.compaction,
   };
 }
 

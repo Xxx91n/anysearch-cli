@@ -39,8 +39,9 @@ export async function runChat(args: string[]): Promise<number> {
   // Initialize models.
   let model: any;
   let streamFn: any;
+  let models: any;
   try {
-    const models = createModels();
+    models = createModels();
     const providerFactory = await PROVIDER_IMPORTS[providerName]();
     models.setProvider(providerFactory);
     model = models.getModel(providerName, modelName);
@@ -83,6 +84,7 @@ export async function runChat(args: string[]): Promise<number> {
     domain,
     model,
     streamFn,
+    models,
     getApiKey: async () => {
       const key = providerName === "openai" ? process.env.OPENAI_API_KEY
         : providerName === "anthropic" ? process.env.ANTHROPIC_API_KEY
