@@ -1,11 +1,11 @@
+import { McpServer } from "@modelcontextprotocol/server";
+
 // MCP Server factory: buildServer() registers 5 tools.
 // ADR-0008 D1: context-management mental model (context-mode style).
 // ADR-0008 D3: 5 MCP tools — search_web / research_web / recall_memory / query_knowledge / ans_chat.
 // ADR-0008 D5: v1 SDK. ponytail: v1 registerTool only accepts zod, not TypeBox.
 //   TypeBox deferred to v2 SDK upgrade (fromJsonSchema). Tracked as ponytail debt.
 // ADR-0008 D7: createEngine() from @anysearch/kernel.
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createEngine, createLlmSession, type CompositionResult, type LlmSession } from "@anysearch/kernel";
 

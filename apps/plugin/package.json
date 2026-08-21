@@ -62,9 +62,7 @@
     "@anysearch/kernel": "workspace:*",
     "@anysearch/retriever": "workspace:*",
     "@anysearch/store": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "better-sqlite3": "^13.0.3",
-    "zod": "^3.25.0"
+    "better-sqlite3": "^13.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

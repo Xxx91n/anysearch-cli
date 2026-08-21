@@ -2,9 +2,8 @@
 // anysearch MCP server entry.
 // ADR-0008 D4: dual transport — stdio + Streamable HTTP, factory pattern.
 // ADR-0008 D6: independent package, CLI forwards via ans mcp subcommand.
-
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import express from "express";
 import { buildServer } from "./server.js";
 
@@ -58,7 +57,7 @@ async function main() {
       try {
         const server = buildServer();
         // ADR-0008 D4: stateless mode — sessionIdGenerator: undefined, enableJsonResponse, keepAliveMs: 0
-        const t = new StreamableHTTPServerTransport({
+        const t = new NodeStreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableJsonResponse: true,
           keepAliveMs: 0,
