@@ -19,7 +19,12 @@ export default defineConfig({
     "@earendil-works/pi-ai",
   ],
   external: [
-    "@modelcontextprotocol/sdk",
+    // ponytail: ADR-0018 R16-1 migrated SDK v1 -> v2 split packages.
+    // stale `@modelcontextprotocol/sdk` external removed; the two v2 packages
+    // are listed explicitly here for clarity (they would also be externalized
+    // automatically because they are dependencies, but explicit > implicit).
+    "@modelcontextprotocol/node",
+    "@modelcontextprotocol/server",
     "express",
     "zod",
     "better-sqlite3",

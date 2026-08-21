@@ -24,38 +24,29 @@
     },
     "./hooks/adapters/claude": {
       "types": "./src/hooks/adapters/claude.ts",
-      "default": "./dist/hooks/claude.cjs"
+      "default": "./dist/hooks/adapters/claude.cjs"
     },
     "./hooks/adapters/cursor": {
       "types": "./src/hooks/adapters/cursor.ts",
-      "default": "./dist/hooks/cursor.cjs"
+      "default": "./dist/hooks/adapters/cursor.cjs"
     },
     "./hooks/adapters/codex": {
       "types": "./src/hooks/adapters/codex.ts",
-      "default": "./dist/hooks/codex.cjs"
+      "default": "./dist/hooks/adapters/codex.cjs"
     },
     "./hooks/adapters/antigravity": {
       "types": "./src/hooks/adapters/antigravity.ts",
-      "default": "./dist/hooks/antigravity.cjs"
+      "default": "./dist/hooks/adapters/antigravity.cjs"
     }
   },
   "scripts": {
-    "build": "pnpm run build:hooks && pnpm run build:server",
-    "build:hooks": "pnpm run build:core && pnpm run build:distill && pnpm run build:preheat && pnpm run build:session-start && pnpm run build:adapters",
-    "build:core": "esbuild src/hooks/core.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/core.cjs --external:better-sqlite3",
-    "build:distill": "esbuild src/hooks/distill.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/distill.cjs --external:better-sqlite3",
-    "build:preheat": "esbuild src/hooks/preheat.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/preheat.cjs --external:better-sqlite3",
-    "build:adapters": "pnpm run build:claude && pnpm run build:cursor && pnpm run build:codex && pnpm run build:antigravity",
-    "build:claude": "esbuild src/hooks/adapters/claude.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/claude.cjs --external:./core.cjs",
-    "build:cursor": "esbuild src/hooks/adapters/cursor.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/cursor.cjs --external:./core.cjs",
-    "build:codex": "esbuild src/hooks/adapters/codex.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/codex.cjs --external:./core.cjs",
-    "build:antigravity": "esbuild src/hooks/adapters/antigravity.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/antigravity.cjs --external:./core.cjs",
+    "build": "pnpm run build:server && pnpm run build:hooks",
+    "build:hooks": "esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --external:better-sqlite3",
     "build:server": "tsup",
     "dev": "tsx src/server/index.ts",
     "lint": "tsc --noEmit",
     "test": "tsx test/plugin.test.ts",
     "check": "tsc --noEmit",
-    "build:session-start": "esbuild src/hooks/session-start.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/session-start.cjs --external:better-sqlite3",
     "prepack": "pnpm run build"
   },
   "dependencies": {

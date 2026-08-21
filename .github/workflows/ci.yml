@@ -54,7 +54,7 @@ jobs:
             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
             '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
             '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-            | node apps/mcp/dist/index.cjs stdio \
+            | node apps/mcp/dist/index.cjs --transport stdio \
             | grep -q '"search_web"'
 
       - name: Smoke — apps/cli --help
