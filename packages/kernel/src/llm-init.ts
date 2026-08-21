@@ -24,10 +24,28 @@ export interface LlmSession {
 
 // ADR-0017 D2: provider registry — delegates to pi-ai provider factories.
 // ponytail: hardcoded for openai/anthropic/google; add more providers here when needed.
-const PROVIDER_FACTORIES: Record<string, () => Promise<any>> = {
+export const PROVIDER_FACTORIES: Record<string, () => Promise<any>> = {
   openai: () => import("@earendil-works/pi-ai/providers/openai").then(m => m.openaiProvider()),
   anthropic: () => import("@earendil-works/pi-ai/providers/anthropic").then(m => m.anthropicProvider()),
   google: () => import("@earendil-works/pi-ai/providers/google").then(m => m.googleProvider()),
+};
+
+// Derived from PROVIDER_FACTORIES keys — single source of truth, no drift.
+export const PROVIDER_NAMES = Object.keys(PROVIDER_FACTORIES);
+
+// Model catalog (pi-ai precedent: library owns the catalog, CLI renders it — generate-models).
+// ponytail: hand-pinned subset of the pi-ai generated catalog; upgrade when pi ships a public catalog export.
+export const MODELS: Record<string, string[]> = {
+  openai: ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5-codex"],
+  anthropic: ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"],
+  google: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+};
+
+// API_KEYS stays as CLI display hint (auth lives in pi-ai ProviderAuth, env name is consumer config).
+export const API_KEYS: Record<string, string> = {
+  openai: "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  google: "GOOGLE_API_KEY",
 };
 
 /**

@@ -3,7 +3,7 @@
 // ponytail: MVP - register provider, check auth, set default model via env/config.
 
 import { createModels } from "@earendil-works/pi-ai";
-import { PROVIDER_IMPORTS, MODELS, API_KEYS } from "../providers";
+import { PROVIDER_FACTORIES, PROVIDER_NAMES, MODELS, API_KEYS } from "@anysearch/kernel";
 
 export async function runLlm(args: string[]): Promise<number> {
   if (args.length === 0) {
@@ -36,7 +36,7 @@ export async function runLlm(args: string[]): Promise<number> {
       return 2;
     }
     const provider = args[1];
-    if (!PROVIDER_IMPORTS[provider]) {
+    if (!PROVIDER_FACTORIES[provider]) {
       process.stderr.write("Unknown provider: " + provider + "\n");
       process.stderr.write("Available: openai, anthropic, google\n");
       return 2;
@@ -54,7 +54,7 @@ export async function runLlm(args: string[]): Promise<number> {
     console.log("  export ANS_LLM_MODEL=" + model);
     console.log("");
     try {
-      await PROVIDER_IMPORTS[provider]();
+      await PROVIDER_FACTORIES[provider]();
       console.log("[OK] Provider " + provider + " factory loaded successfully.");
     } catch (e: any) {
       console.log("[WARN] Provider factory failed: " + (e?.message || String(e)));
@@ -66,7 +66,7 @@ export async function runLlm(args: string[]): Promise<number> {
   if (subcommand === "check") {
     console.log("ans llm check - Auth status");
     console.log("---");
-    for (const [name, factoryFn] of Object.entries(PROVIDER_IMPORTS)) {
+    for (const [name, factoryFn] of Object.entries(PROVIDER_FACTORIES)) {
       const apiKey = API_KEYS[name] || "UNKNOWN";
       const keySet = !!process.env[apiKey];
       try {

@@ -21,6 +21,8 @@ packages/kernel/src/composition.ts | Provider factories wrapped in try/catch to 
 | apps/plugin/src/hooks/adapters/antigravity.ts | .mdc generated on every hook invocation (not just SessionStart) since Antigravity has no SessionStart event. | Remove when Antigravity adds SessionStart event support |
 | apps/plugin/src/hooks/session-start.ts | .mdc write to user workspace .cursor/rules/ is a side effect. | Add .gitignore entry or opt-out config when user reports |
 
+packages/kernel/src/memory-pipeline.ts:116 | LOW_WATERMARK_TOKENS = 128_000 hardcoded. For 1M-token models (deepseek-v4-fast) ~13% triggers (over-eager rolling summary); for gpt-4o-class (128k window) totalTokens accumulates monotonically so watermark fires on nearly every turn after warmup. Semantics right ("cheap small-model flush", ADR-0012 D2/D4), number hardcoded. per prior grill decision #6/7 (user: defer to real-traffic phase), not fixed pre-release. | Per-model default or totalTokens -> contextWindow-occupancy dynamically. Triggered when real traffic shows compression is mistimed (too early / too late).
+
 ## Resolved (no longer debt)
 - #13 Temporal coupling between gate.evaluate() and pipeline.consolidate() — FIXED in ADR-0016. Pure function-ization: evaluate() returns GateEnvelope, applyTo() returns new array, consolidate() receives hasRetrievalEvidence parameter.
 - #14 signalSearchTurn() passive-aggressive command — FIXED in ADR-0016. Deleted, replaced by hasRetrievalEvidence boolean parameter.

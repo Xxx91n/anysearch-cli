@@ -19,10 +19,12 @@
     "@anysearch/kernel": "workspace:*",
     "@anysearch/retriever": "workspace:*",
     "@anysearch/store": "workspace:*",
-    "@earendil-works/pi-agent-core": "^0.84.2",
     "@earendil-works/pi-ai": "^0.84.2",
     "@sinclair/typebox": "^0.34.52",
-    "better-sqlite3": "^13.0.3"
+    "better-sqlite3": "^13.0.3",
+    "@earendil-works/pi-agent-core": "^0.84.2",
+    "@anysearch/plugin": "workspace:*",
+    "express": "^4.18.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",

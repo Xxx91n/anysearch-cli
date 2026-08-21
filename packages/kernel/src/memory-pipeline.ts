@@ -6,7 +6,10 @@
 //   consolidate() is now a shell that calls pure consolidateState() then executes I/O.
 //   signalSearchTurn() DELETED — replaced by hasRetrievalEvidence parameter.
 
-import { generateSummaryWithUsage, DEFAULT_COMPACTION_SETTINGS } from "@earendil-works/pi-agent-core";
+import { generateSummaryWithUsage } from "@earendil-works/pi-agent-core";
+// ADR-0012 D4: reuse summary engine only, NOT compact() window management.
+// Own constant so upstream window-management namespace changes cannot break L0.
+const COMPACTION_RESERVE_TOKENS = 16_384;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
 import type { GateEnvelope } from "./sufficiency-gate";
@@ -264,7 +267,7 @@ export class MemoryPipeline {
           };
           generateSummaryWithUsage(
             messages, modelsObj, actualModel,
-            DEFAULT_COMPACTION_SETTINGS.reserveTokens,
+            COMPACTION_RESERVE_TOKENS,
             undefined,
             IR_CUSTOM_INSTRUCTIONS,
             previousSummary,

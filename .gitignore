@@ -23,3 +23,4 @@ Thumbs.db
 # Phase 3 plugin
 .anysearch/
 apps/plugin/dist/
+*.tgz

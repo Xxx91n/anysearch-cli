@@ -14,9 +14,9 @@ export default defineConfig({
     "@anysearch/plugin",
     "@anysearch/retriever",
     "@anysearch/store",
+    "@sinclair/typebox",
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
-    "@sinclair/typebox",
   ],
   external: [
     "@modelcontextprotocol/sdk",
