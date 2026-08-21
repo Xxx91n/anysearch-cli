@@ -4,7 +4,7 @@
 // ponytail: no test framework, assert-based demo.
 // Run: tsx test/memory-pipeline.test.ts
 
-import { MemoryPipeline, distillGap, adjudicateReuseCompress } from "../src/memory-pipeline";
+import { MemoryPipeline, distillGap, adjudicateReuseCompress, consolidateState } from "../src/memory-pipeline";
 import { IR_CUSTOM_INSTRUCTIONS, IR_SUMMARY_SECTIONS } from "../src/ir-schema";
 import type { RetrieverPort, DomainConfigPort, Query } from "../src/ports";
 import type { FusedEnvelope } from "@anysearch/retriever";
@@ -414,4 +414,73 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
 
 console.log("---");
 console.log(`MemoryPipeline tests: ${passed} passed, ${failed} failed`);
+
+// ADR-0016 D9 Layer 1: Pure function tests for consolidateState — zero mock, zero I/O.
+{
+  // consolidateState already imported at top of file
+  
+  function assertPure(cond: boolean, msg: string) {
+    if (!cond) { console.error("FAIL: " + msg); failed++; }
+    else { passed++; }
+  }
+
+  // Test 1: Skip when no triggers (below watermark, no retrieval evidence)
+  {
+    const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
+    const result = consolidateState(state, ["m1", "m2"], 1000, false);
+    assertPure(result.decision === "skip", "pure: skip when no triggers");
+    assertPure(result.state === state, "pure: skip returns same state reference");
+    assertPure(result.summaryRequest === undefined, "pure: skip has no summaryRequest");
+  }
+
+  // Test 2: Trigger COMPRESS on low watermark
+  {
+    const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
+    const result = consolidateState(state, ["m1", "m2", "m3"], 200000, false);
+    assertPure(result.decision === "compress", "pure: compress on low watermark");
+    assertPure(result.state.consecutiveReuses === 0, "pure: compress resets consecutiveReuses");
+    assertPure(result.summaryRequest !== undefined, "pure: compress has summaryRequest");
+    assertPure(result.summaryRequest!.msgCountAtTrigger === 3, "pure: msgCountAtTrigger = 3");
+  }
+
+  // Test 3: Trigger REUSE on post-search with retrieval evidence
+  {
+    const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
+    const msgs = ["m1", "m2", "m3", "m4", "m5"];
+    const result = consolidateState(state, msgs, 1000, true);
+    assertPure(result.decision === "reuse", "pure: reuse on post-search with evidence");
+    assertPure(result.state.consecutiveReuses === 1, "pure: reuse increments consecutiveReuses to 1");
+  }
+
+  // Test 4: REUSE cap at 3 forces COMPRESS (D8)
+  {
+    const state = { version: 1, consecutiveReuses: 3, lastSummaryMsgCount: 0 };
+    const msgs = ["m1", "m2", "m3", "m4", "m5"];
+    const result = consolidateState(state, msgs, 1000, true);
+    assertPure(result.decision === "compress", "pure: REUSE cap 3 forces COMPRESS (D8)");
+    assertPure(result.state.consecutiveReuses === 0, "pure: cap-forced compress resets consecutiveReuses");
+  }
+
+  // Test 5: Idempotency — same input produces same output (pure function property)
+  {
+    const state = { version: 1, consecutiveReuses: 1, lastSummaryMsgCount: 2 };
+    const msgs = ["a", "b", "c", "d", "e"];
+    const r1 = consolidateState(state, msgs, 50000, true);
+    const r2 = consolidateState(state, msgs, 50000, true);
+    assertPure(r1.decision === r2.decision, "pure: idempotent decision");
+    assertPure(r1.state.consecutiveReuses === r2.state.consecutiveReuses, "pure: idempotent state");
+  }
+
+  // Test 6: No mutation of input state (pure function property)
+  {
+    const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
+    const stateCopy = { ...state };
+    consolidateState(state, ["m1", "m2", "m3", "m4", "m5"], 1000, true);
+    assertPure(state.consecutiveReuses === stateCopy.consecutiveReuses, "pure: no mutation of input state");
+    assertPure(state.lastSummaryMsgCount === stateCopy.lastSummaryMsgCount, "pure: no mutation of lastSummaryMsgCount");
+  }
+
+  console.log("consolidateState pure function tests: " + passed + " assertions passed, " + failed + " failed");
+}
+
 if (failed > 0) process.exit(1);

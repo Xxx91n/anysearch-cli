@@ -67,7 +67,6 @@ export class SqliteSessionStore implements SessionStore {
     searchAllResults: Database.Statement;
     touchAccessed: Database.Statement;
     // ADR-0016 D10: UPSERT for state-type anchors (consolidation_state).
-    deleteStateAnchor: Database.Statement;
     saveAnchorUpsert: Database.Statement;
   };
 
@@ -114,8 +113,8 @@ export class SqliteSessionStore implements SessionStore {
       // ADR-0009 D3 L2: update last_accessed on recall hit (access-time signal, Mem0 1.5×/0.3×).
       touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now') WHERE id = ?"),
       // ADR-0016 D10: UPSERT for state-type anchors.
-      deleteStateAnchor: this.db.prepare("DELETE FROM resume_anchors WHERE session_id = ? AND anchor_type = ?"),
-      saveAnchorUpsert: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)"),
+  
+      saveAnchorUpsert: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?) ON CONFLICT(session_id, anchor_type) WHERE anchor_type = 'consolidation_state' DO UPDATE SET payload = excluded.payload, created_at = datetime('now')"),
     };
   }
 
@@ -177,9 +176,6 @@ export class SqliteSessionStore implements SessionStore {
     const json = JSON.stringify(payload);
     // ponytail: state-type anchors use UPSERT (DELETE-then-INSERT avoids schema migration for UNIQUE constraint).
     if (anchorType === "consolidation_state") {
-      try {
-        this.stmts.deleteStateAnchor.run(sessionId, anchorType);
-      } catch {}
       this.stmts.saveAnchorUpsert.run(sessionId, anchorType, json);
     } else {
       this.stmts.saveAnchor.run(sessionId, anchorType, json);
