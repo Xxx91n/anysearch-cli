@@ -1,24 +1,24 @@
 {
   "name": "@anysearch/mcp",
   "version": "0.0.0",
-  "private": true,
   "type": "module",
   "bin": {
-    "ans-mcp": "./dist/index.js"
+    "ans-mcp": "./dist/index.cjs"
   },
   "files": [
     "dist"
   ],
   "exports": {
-    ".": "./src/index.ts",
-    "./server": "./src/server.ts"
+    ".": "./dist/index.cjs",
+    "./server": "./dist/index.cjs"
   },
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/index.ts",
     "lint": "tsc --noEmit",
     "test": "tsx test/server.test.ts",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "prepack": "pnpm run build"
   },
   "dependencies": {
     "@anysearch/kernel": "workspace:*",
@@ -39,5 +39,6 @@
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "@types/better-sqlite3": "^9.6.0"
-  }
+  },
+  "types": "./dist/index.d.cts"
 }

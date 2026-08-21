@@ -7,7 +7,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { createEngine, type CompositionResult } from "@anysearch/kernel";
+import { createEngine, createLlmSession, type CompositionResult, type LlmSession } from "@anysearch/kernel";
 
 // buildServer: factory function. Each connection gets a fresh server instance.
 // ADR-0008 D4: factory pattern, era-agnostic, entry selects transport.
@@ -212,7 +212,23 @@ export function buildServer(engine?: CompositionResult): McpServer {
   );
 
   // Tool 5: ans_chat — PiAgentRuntime agent loop as MCP tool.
-  // ponytail: inlines CLI chat.ts LLM init logic; MCP package can't depend on CLI package.
+  // ADR-0017 D2/D3: uses createLlmSession from kernel, lazy session cache in closure.
+  // ADR-0017 D3: lazy init on first ans_chat call, cached in buildServer closure.
+  // Env var change triggers rebuild (detected by key mismatch).
+  let _llmSession: LlmSession | null = null;
+  let _llmSessionKey = "";
+
+  async function getLlmSession(): Promise<LlmSession> {
+    const providerName = process.env.ANS_LLM_PROVIDER ?? "";
+    const modelName = process.env.ANS_LLM_MODEL ?? "";
+    const key = providerName + "/" + modelName;
+    if (_llmSession && _llmSessionKey === key) return _llmSession;
+    // Lazy init: create on first call or when env changed.
+    _llmSession = await createLlmSession({ provider: providerName, model: modelName });
+    _llmSessionKey = key;
+    return _llmSession;
+  }
+
   server.registerTool(
     "ans_chat",
     {
@@ -229,20 +245,8 @@ export function buildServer(engine?: CompositionResult): McpServer {
         return { content: [{ type: "text", text: "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars." }] };
       }
       try {
-        const [{ createModels }, PiAgentRuntime] = await Promise.all([
-          import("@earendil-works/pi-ai"),
-          import("@anysearch/kernel").then(m => m.PiAgentRuntime),
-        ]);
-        const providerMod = await import("@earendil-works/pi-ai/providers/" + providerName);
-        const models = createModels();
-        models.setProvider(providerMod.default ? providerMod.default() : providerMod[providerName + "Provider"]());
-        const model = models.getModel(providerName, modelName);
-        if (!model) return { content: [{ type: "text", text: "ans_chat: model not found: " + providerName + "/" + modelName }] };
-        const streamFn = models.streamSimple.bind(models);
-        const apiKey = providerName === "openai" ? process.env.OPENAI_API_KEY
-          : providerName === "anthropic" ? process.env.ANTHROPIC_API_KEY
-          : providerName === "google" ? (process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY)
-          : undefined;
+        const session = await getLlmSession();
+        const { PiAgentRuntime } = await import("@anysearch/kernel");
         const domain = eng.config ?? {
           sources: { enabled: [] },
           prompts: [],
@@ -250,13 +254,14 @@ export function buildServer(engine?: CompositionResult): McpServer {
           hooks: { toolWhitelist: ["search"] },
           rag: { adapter: "none" },
         };
+        // ponytail: models undefined fix — pass session.models instead of undefined.
         const runtime = new PiAgentRuntime({
           retriever: eng.retriever,
           domain,
-          model,
-          streamFn,
-          models,
-          getApiKey: async () => apiKey,
+          model: session.model,
+          streamFn: session.streamFn,
+          models: session.models,
+          getApiKey: async () => session.apiKey,
         });
         let output = "";
         for await (const event of runtime.run(message)) {

@@ -8,3 +8,4 @@ export * from "./sufficiency-gate";
 export * from "./ir-schema";
 
 export * from "./composition";
+export * from "./llm-init";

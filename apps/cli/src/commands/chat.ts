@@ -1,14 +1,12 @@
 // ans chat: interactive retrieval-augmented chat session.
 // ADR-0007 decision 7: uses PiAgentRuntime for agent loop.
+// ADR-0017 D2: uses createLlmSession deep module from kernel.
 // Reads LLM config from ANS_LLM_PROVIDER + ANS_LLM_MODEL env vars.
 
-import { createModels } from "@earendil-works/pi-ai";
-import { PiAgentRuntime } from "@anysearch/kernel";
+import { PiAgentRuntime, createLlmSession } from "@anysearch/kernel";
 import type { RetrieverPort, DomainConfigPort } from "@anysearch/kernel";
 import { createEngine } from "../composition";
 import { loadDomainByName } from "@anysearch/store";
-
-import { PROVIDER_IMPORTS, MODELS } from "../providers";
 
 export async function runChat(args: string[]): Promise<number> {
   // Parse query from args.
@@ -30,27 +28,10 @@ export async function runChat(args: string[]): Promise<number> {
     return 3;
   }
 
-  if (!PROVIDER_IMPORTS[providerName]) {
-    process.stderr.write("Unknown provider: " + providerName + "\n");
-    process.stderr.write("Available: " + Object.keys(PROVIDER_IMPORTS).join(", ") + "\n");
-    return 3;
-  }
-
-  // Initialize models.
-  let model: any;
-  let streamFn: any;
-  let models: any;
+  // Initialize LLM session via kernel deep module (ADR-0017 D2).
+  let session;
   try {
-    models = createModels();
-    const providerFactory = await PROVIDER_IMPORTS[providerName]();
-    models.setProvider(providerFactory);
-    model = models.getModel(providerName, modelName);
-    if (!model) {
-      process.stderr.write("Model not found: " + providerName + "/" + modelName + "\n");
-      process.stderr.write("Available: " + (MODELS[providerName] || []).join(", ") + "\n");
-      return 3;
-    }
-    streamFn = models.streamSimple.bind(models);
+    session = await createLlmSession({ provider: providerName, model: modelName });
   } catch (e: any) {
     process.stderr.write("Failed to initialize LLM: " + (e?.message || String(e)) + "\n");
     return 3;
@@ -79,19 +60,14 @@ export async function runChat(args: string[]): Promise<number> {
   }
 
   // Construct PiAgentRuntime and run.
+  // ADR-0017 D1: models undefined fix — session.models is now properly initialized.
   const runtime = new PiAgentRuntime({
     retriever,
     domain,
-    model,
-    streamFn,
-    models,
-    getApiKey: async () => {
-      const key = providerName === "openai" ? process.env.OPENAI_API_KEY
-        : providerName === "anthropic" ? process.env.ANTHROPIC_API_KEY
-        : providerName === "google" ? (process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY)
-        : undefined;
-      return key;
-    },
+    model: session.model,
+    streamFn: session.streamFn,
+    models: session.models,
+    getApiKey: async () => session.apiKey,
   });
 
   console.log("ans chat: " + query);

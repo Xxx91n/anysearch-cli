@@ -1,15 +1,43 @@
 {
   "name": "@anysearch/plugin",
   "version": "0.0.0",
-  "private": true,
-  "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./hooks/core": "./src/hooks/core.ts",
-    "./hooks/distill": "./src/hooks/distill.ts",
-    "./hooks/preheat": "./src/hooks/preheat.ts",
-    "./server": "./src/server/index.ts",
-    "./store": "./src/store/project-index-store.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.cjs"
+    },
+    "./hooks/core": {
+      "types": "./src/hooks/core.ts",
+      "default": "./dist/hooks/core.cjs"
+    },
+    "./hooks/distill": {
+      "types": "./src/hooks/distill.ts",
+      "default": "./dist/hooks/distill.cjs"
+    },
+    "./hooks/preheat": {
+      "types": "./src/hooks/preheat.ts",
+      "default": "./dist/hooks/preheat.cjs"
+    },
+    "./hooks/session-start": {
+      "types": "./src/hooks/session-start.ts",
+      "default": "./dist/hooks/session-start.cjs"
+    },
+    "./hooks/adapters/claude": {
+      "types": "./src/hooks/adapters/claude.ts",
+      "default": "./dist/hooks/claude.cjs"
+    },
+    "./hooks/adapters/cursor": {
+      "types": "./src/hooks/adapters/cursor.ts",
+      "default": "./dist/hooks/cursor.cjs"
+    },
+    "./hooks/adapters/codex": {
+      "types": "./src/hooks/adapters/codex.ts",
+      "default": "./dist/hooks/codex.cjs"
+    },
+    "./hooks/adapters/antigravity": {
+      "types": "./src/hooks/adapters/antigravity.ts",
+      "default": "./dist/hooks/antigravity.cjs"
+    }
   },
   "scripts": {
     "build": "pnpm run build:hooks && pnpm run build:server",
@@ -27,7 +55,8 @@
     "lint": "tsc --noEmit",
     "test": "tsx test/plugin.test.ts",
     "check": "tsc --noEmit",
-    "build:session-start": "esbuild src/hooks/session-start.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/session-start.cjs --external:better-sqlite3"
+    "build:session-start": "esbuild src/hooks/session-start.ts --bundle --platform=node --format=cjs --outfile=dist/hooks/session-start.cjs --external:better-sqlite3",
+    "prepack": "pnpm run build"
   },
   "dependencies": {
     "@anysearch/kernel": "workspace:*",
@@ -44,5 +73,9 @@
     "tsup": "^8.3.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
-  }
+  },
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.cjs"
 }
