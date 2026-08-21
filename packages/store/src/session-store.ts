@@ -66,6 +66,9 @@ export class SqliteSessionStore implements SessionStore {
     getAnchors: Database.Statement;
     searchAllResults: Database.Statement;
     touchAccessed: Database.Statement;
+    // ADR-0016 D10: UPSERT for state-type anchors (consolidation_state).
+    deleteStateAnchor: Database.Statement;
+    saveAnchorUpsert: Database.Statement;
   };
 
   constructor(dbPath: string) {
@@ -110,6 +113,9 @@ export class SqliteSessionStore implements SessionStore {
      searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, time_decay(bm25(retrieval_results_fts), r.created_at, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) ORDER BY rank LIMIT ?"),
       // ADR-0009 D3 L2: update last_accessed on recall hit (access-time signal, Mem0 1.5×/0.3×).
       touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now') WHERE id = ?"),
+      // ADR-0016 D10: UPSERT for state-type anchors.
+      deleteStateAnchor: this.db.prepare("DELETE FROM resume_anchors WHERE session_id = ? AND anchor_type = ?"),
+      saveAnchorUpsert: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)"),
     };
   }
 
@@ -164,8 +170,20 @@ export class SqliteSessionStore implements SessionStore {
     insertMany(results);
   }
 
+  // ADR-0016 D10: saveAnchor with UPSERT semantics for state-type anchors.
+  // State-type anchors (consolidation_state) use DELETE-then-INSERT to ensure single row per (session_id, anchor_type).
+  // Historical anchors (rolling_summary, l2_recall) remain append-only (INSERT).
   async saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void> {
-    this.stmts.saveAnchor.run(sessionId, anchorType, JSON.stringify(payload));
+    const json = JSON.stringify(payload);
+    // ponytail: state-type anchors use UPSERT (DELETE-then-INSERT avoids schema migration for UNIQUE constraint).
+    if (anchorType === "consolidation_state") {
+      try {
+        this.stmts.deleteStateAnchor.run(sessionId, anchorType);
+      } catch {}
+      this.stmts.saveAnchorUpsert.run(sessionId, anchorType, json);
+    } else {
+      this.stmts.saveAnchor.run(sessionId, anchorType, json);
+    }
   }
 
   async getAnchors(sessionId: string): Promise<ResumeAnchor[]> {

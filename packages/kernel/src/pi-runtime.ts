@@ -161,20 +161,19 @@ export class PiAgentRuntime {
       shouldStopAfterTurn: async (ctx: any) => {
         const messages = (agent as any).state?.messages || [];
         const totalTokens = totalInputTokens + totalOutputTokens;
-        // ADR-0012 D3: detect if last turn had a search tool call (REUSE/COMPRESS signal).
+        // ADR-0016 D6: 3-line sequential call — evaluate -> applyTo -> consolidate.
+        // Claim-ticket pattern: gate.evaluate returns envelope, gate.applyTo injects, pipeline.consolidate consumes.
         const lastTool = ctx?.lastToolName || ctx?.toolName || "";
-        if (typeof lastTool === "string" && lastTool.includes("search")) {
-          this.pipeline?.signalSearchTurn();
-        }
+        const hasSearchTurn = typeof lastTool === "string" && lastTool.includes("search");
 
-        // ADR-0014 D2/D5/D1: Sufficiency gate — independent, best-effort, fail-open.
-        if (this.gate) {
-          try { await this.gate.evaluate(messages); } catch {}
-        }
-
-        // ADR-0010 D1: L0/L1/L2 memory pipeline — delegated to MemoryPipeline.consolidate.
-        if (this.pipeline) {
-          try { await this.pipeline.consolidate(messages, totalTokens); } catch {}
+        if (this.gate && this.pipeline) {
+          try {
+            const env = await this.gate.evaluate(messages);
+            const enriched = this.gate.applyTo(messages, env);
+            await this.pipeline.consolidate(enriched, totalTokens, env.hasRetrievalEvidence || hasSearchTurn);
+          } catch {}
+        } else if (this.pipeline) {
+          try { await this.pipeline.consolidate(messages, totalTokens, hasSearchTurn); } catch {}
         }
         return false;
       },

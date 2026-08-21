@@ -284,9 +284,8 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
     streamFn: trackingStreamFn("reuse", callLog),
     sessionId: "s1",
   });
-  pipeline.signalSearchTurn();
   const msgs = Array.from({ length: 6 }, (_, i) => ({ role: "user", content: `msg${i}` }));
-  await pipeline.consolidate(msgs as any, 200000); // above low watermark.
+  await pipeline.consolidate(msgs as any, 200000, true); // above low watermark.
   await new Promise(r => setTimeout(r, 100));
   assert(callLog.count === 0, "consolidate: low watermark bypasses adjudication (no streamFn call)");
 }
@@ -304,9 +303,8 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
     streamFn: trackingStreamFn("compress", callLog),
     sessionId: "s1",
   });
-  pipeline.signalSearchTurn();
   const msgs = Array.from({ length: 6 }, (_, i) => ({ role: "user", content: `msg${i}` }));
-  await pipeline.consolidate(msgs as any, 1000); // below low watermark.
+  await pipeline.consolidate(msgs as any, 1000, true); // below low watermark.
   await new Promise(r => setTimeout(r, 100));
   assert(callLog.count > 0, "consolidate: post-search triggers adjudication (streamFn called)");
 }
@@ -324,19 +322,18 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
     streamFn: trackingStreamFn("reuse", callLog), // LLM always says REUSE.
     sessionId: "s1",
   });
-  // Simulate 3 consecutive REUSE by calling consolidate 3 times.
+// Simulate 3 consecutive REUSE by calling consolidate 3 times.
+  // ADR-0016: consecutiveReuses tracked in ConsolidationState (sync via pure function result.state).
   for (let i = 0; i < 3; i++) {
     callLog.count = 0;
-    pipeline.signalSearchTurn();
-    const msgs = Array.from({ length: 6 }, (_, j) => ({ role: "user", content: `msg${j}` }));
-    await pipeline.consolidate(msgs as any, 1000);
-    await new Promise(r => setTimeout(r, 50));
+    const msgs = Array.from({ length: 6 }, (_, j) => ({ role: "user", content: "msg" + j }));
+    await pipeline.consolidate(msgs as any, 1000, true);
+    await new Promise(r => setTimeout(r, 200));
   }
   // 4th call: reuse-capped, should bypass adjudication.
   callLog.count = 0;
-  pipeline.signalSearchTurn();
-  const msgs4 = Array.from({ length: 6 }, (_, j) => ({ role: "user", content: `msg${j}` }));
-  await pipeline.consolidate(msgs4 as any, 1000);
+  const msgs4 = Array.from({ length: 6 }, (_, j) => ({ role: "user", content: "msg" + j }));
+  await pipeline.consolidate(msgs4 as any, 1000, true);
   await new Promise(r => setTimeout(r, 100));
   assert(callLog.count === 0, "consolidate: D8 4th call after 3 REUSE -> no adjudication (direct COMPRESS)");
 }
@@ -353,11 +350,11 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
     sessionId: "",
   });
   const msgs = [{ role: "user", content: "q" }];
-  await pipeline.consolidate(msgs as any, 200000);
+  await pipeline.consolidate(msgs as any, 200000, false);
   assert(true, "consolidate: no store -> no-op, no throw");
 }
 
-// Test: signalSearchTurn sets trigger without throw.
+// ADR-0016 D2: signalSearchTurn deleted, replaced by hasRetrievalEvidence parameter.
 {
   const store = new MockStore();
   const pipeline = new MemoryPipeline({
@@ -368,10 +365,9 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
     streamFn: mockStreamFn("reuse"),
     sessionId: "s1",
   });
-  pipeline.signalSearchTurn();
   const msgs = Array.from({ length: 6 }, (_, j) => ({ role: "user", content: `msg${j}` }));
-  await pipeline.consolidate(msgs as any, 1000);
-  assert(true, "signalSearchTurn: sets trigger without throw");
+  await pipeline.consolidate(msgs as any, 1000, true);
+  assert(true, "hasRetrievalEvidence: triggers consolidation without throw");
 }
 
 // Test: L2 FTS5 recall writes l2_recall anchor.
@@ -391,7 +387,7 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
     { role: "assistant", content: [{ type: "tool_use", name: "search", input: { query: "AI research" } }] },
     ...Array.from({ length: 5 }, (_, j) => ({ role: "user", content: `msg${j}` })),
   ];
-  await pipeline.consolidate(msgs as any, 1000);
+  await pipeline.consolidate(msgs as any, 1000, true);
   await new Promise(r => setTimeout(r, 100));
   assert(store.saveAnchorCalls.some(c => c.type === "l2_recall"), "consolidate: L2 FTS5 recall writes l2_recall anchor");
 }
@@ -413,7 +409,7 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
   });
   assert(typeof pipeline.inject === "function", "MemoryPipeline.inject is function");
   assert(typeof pipeline.consolidate === "function", "MemoryPipeline.consolidate is function");
-  assert(typeof pipeline.signalSearchTurn === "function", "MemoryPipeline.signalSearchTurn is function");
+  assert(typeof pipeline.consolidate === "function" && pipeline.consolidate.length === 3, "MemoryPipeline.consolidate has 3 params");
 }
 
 console.log("---");

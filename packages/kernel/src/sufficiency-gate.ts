@@ -3,9 +3,9 @@
 // ADR-0014 D2/D5/D1: Google SCA paradigm — gate outputs "what's missing" (named gap), not just boolean.
 // D5: bounded reround — default 1, max via domain TOML.
 // Independent fail-open, does not block MemoryPipeline.
-// TEMPORAL COUPLING: evaluate() modifies messages in-place (enriches tool_result with merged results).
-// MemoryPipeline.consolidate() reads the same messages array for gap distillation AFTER evaluate().
-// Order MUST be gate.evaluate() -> pipeline.consolidate(). Reversing breaks gap distillation content.
+// ADR-0016 D2/D4: evaluate() returns GateEnvelope (pure, no mutation).
+//   applyTo() returns new messages array (pure reducer, LangGraph discipline).
+//   Claim-ticket pattern: gate.evaluate -> gate.applyTo -> pipeline.consolidate.
 
 import { computeSufficiency } from "./engine";
 import type { RetrieverPort, DomainConfigPort } from "./ports";
@@ -19,6 +19,14 @@ export interface SufficiencyEvaluatorDeps {
   getApiKey?: () => Promise<string | undefined>;
 }
 
+// ADR-0016 D4: GateEnvelope — pure data returned by evaluate(), consumed by applyTo().
+// Claim-ticket pattern: gate never touches messages array directly.
+export interface GateEnvelope {
+  enrichedEnvelope: any | null;       // merged search results (or null if no sufficiency work done)
+  hasRetrievalEvidence: boolean;      // true if gate did re-search (signals pipeline to consolidate)
+  targetMessageIndex: number;         // index of the tool_result message to update
+}
+
 export class SufficiencyEvaluator {
   private deps: SufficiencyEvaluatorDeps;
 
@@ -27,30 +35,39 @@ export class SufficiencyEvaluator {
   }
 
   // evaluate: check sufficiency of last search result, generate named gap, re-search if needed.
-  // Modifies messages in-place (enriches tool_result with merged results).
-  // Returns void — best-effort, fail-open.
-  async evaluate(messages: any[]): Promise<void> {
+  // ADR-0016 D2/D4: PURE — returns GateEnvelope, does NOT modify messages.
+  // Best-effort, fail-open. Returns empty envelope if no work needed.
+  async evaluate(messages: any[]): Promise<GateEnvelope> {
     const { domain, retriever, streamFn, model, getApiKey } = this.deps;
+
+    const empty: GateEnvelope = { enrichedEnvelope: null, hasRetrievalEvidence: false, targetMessageIndex: -1 };
 
     // D6: sufficiencyMaxRerounds from domain config.
     const maxRerounds = (domain as any).compaction?.sufficiencyMaxRerounds ?? 1;
-    if (maxRerounds <= 0) return;
+    if (maxRerounds <= 0) return empty;
 
     // Find last tool_result that contains envelope with sufficiency (top-level or metadata).
-    const lastSearchResult = [...messages].reverse().find((m: any) =>
-      m.role === "user" && Array.isArray(m.content) &&
-      m.content.some((c: any) => c.type === "tool_result" && c.content?.[0]?.text?.includes("sufficiency"))
-    );
-    if (!lastSearchResult) return;
+    let targetIndex = -1;
+    let lastSearchResult: any = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === "user" && Array.isArray(m.content) &&
+          m.content.some((c: any) => c.type === "tool_result" && c.content?.[0]?.text?.includes("sufficiency"))) {
+        targetIndex = i;
+        lastSearchResult = m;
+        break;
+      }
+    }
+    if (targetIndex < 0 || !lastSearchResult) return empty;
 
     try {
       const toolResultContent = lastSearchResult.content.find((c: any) => c.type === "tool_result");
       const envelopeJson = toolResultContent?.content?.[0]?.text;
-      if (!envelopeJson) return;
+      if (!envelopeJson) return empty;
 
       const envelope = JSON.parse(envelopeJson);
       const suff = (envelope?.metadata?.sufficiency ?? envelope?.sufficiency) as SufficiencySignal | undefined;
-      if (!suff || suff.verdict === "correct") return;
+      if (!suff || suff.verdict === "correct") return empty;
 
       // D1: LLM generates named gap — "what's missing" from the search results.
       const gapPrompt = [
@@ -58,7 +75,7 @@ export class SufficiencyEvaluator {
         { role: "user" as const, content: "Original query: " + (envelope.query || envelope._query || "") + "\n\nResults: " + (envelope.results || []).slice(0, 5).map((r: any) => r.title + ": " + (r.snippet || "").slice(0, 200)).join("\n") + "\n\nSufficiency verdict: " + suff.verdict + "\n\nWhat is missing? Write a single search query to fill the gap:" },
       ];
 
-      if (!streamFn || !model) return;
+      if (!streamFn || !model) return empty;
 
       let gapQuery = "";
       const apiKey = await getApiKey?.();
@@ -72,7 +89,7 @@ export class SufficiencyEvaluator {
         else if (chunk?.delta) gapQuery += chunk.delta;
       }
       gapQuery = gapQuery.trim().replace(/^["']|["']$/g, "");
-      if (gapQuery.length <= 3) return;
+      if (gapQuery.length <= 3) return empty;
 
       // D5: bounded re-search loop.
       for (let round = 0; round < maxRerounds; round++) {
@@ -88,13 +105,41 @@ export class SufficiencyEvaluator {
           { minProviders: 1, minResults: 3, minDomains: 2, crossEngineVerify: false }
         );
         if (reroundSuff.mvs.verdict === "correct") break;
-        // Generate next gap query from merged results.
-        // ponytail: single reround is default; multi-round uses same gap.
       }
       // Annotate: mark that sufficiency gate ran.
       envelope.sufficiencyRerounds = true;
-      // Update the tool_result in-place so LLM sees enriched results.
-      toolResultContent.content[0].text = JSON.stringify(envelope, null, 2);
-    } catch {} // ponytail: sufficiency gate is best-effort, fail-open.
+
+      return {
+        enrichedEnvelope: envelope,
+        hasRetrievalEvidence: true,
+        targetMessageIndex: targetIndex,
+      };
+    } catch {
+      return empty; // ponytail: sufficiency gate is best-effort, fail-open.
+    }
+  }
+
+  // applyTo: inject enriched results back into messages.
+  // ADR-0016 D4: PURE — returns NEW messages array, does NOT mutate input (LangGraph reducer discipline).
+  // atomcode research: LangGraph prohibits direct state mutation; applyTo is a pure reducer.
+  applyTo(messages: any[], envelope: GateEnvelope): any[] {
+    if (envelope.enrichedEnvelope === null || envelope.targetMessageIndex < 0) return messages;
+    if (envelope.targetMessageIndex >= messages.length) return messages;
+
+    const target = messages[envelope.targetMessageIndex];
+    const toolResultContent = target.content?.find((c: any) => c.type === "tool_result");
+    if (!toolResultContent) return messages;
+
+    // Create new messages array with updated envelope at target index.
+    const updatedTarget = {
+      ...target,
+      content: target.content.map((c: any) =>
+        c === toolResultContent
+          ? { ...c, content: [{ type: "text", text: JSON.stringify(envelope.enrichedEnvelope, null, 2) }] }
+          : c
+      ),
+    };
+
+    return messages.map((m, i) => i === envelope.targetMessageIndex ? updatedTarget : m);
   }
 }
