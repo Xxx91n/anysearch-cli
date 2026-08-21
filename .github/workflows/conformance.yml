@@ -1,0 +1,63 @@
+name: mcp-conformance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# ADR-0018 D2: bare npx + --requirements (per-revision); composite action lacks
+# spec-version/requirements inputs and pulls in npm-ci + build on every run.
+# Pin alpha explicitly: dist-tag latest=0.1.16 (pre --requirements support); typescript-sdk
+# pins 0.2.0-alpha.11 — same version pinned here for parity with typescript-sdk CI.
+env:
+  CONFORMANCE_VERSION: 0.2.0-alpha.11
+
+jobs:
+  server-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { run_install: false }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --ignore-scripts
+      - run: pnpm --filter @anysearch/mcp build
+
+      - name: Start MCP server (streamable HTTP, port 3001)
+        shell: bash
+        run: |
+          node apps/mcp/dist/index.cjs --transport http --port 3001 &
+          echo $! > mcp.pid
+          timeout 30 bash -c 'until curl -sf http://127.0.0.1:3001/mcp -o /dev/null 2>&1 || curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3001/mcp; do sleep 0.5; done'
+          sleep 1
+
+      # Legacy leg: stateful wire (initialize + Mcp-Session-Id). 30 server scenarios.
+      - name: Conformance 2025-11-25 (legacy)
+        run: npx -y @modelcontextprotocol/conformance@${{ env.CONFORMANCE_VERSION }} server --url http://127.0.0.1:3001/mcp --requirements 2025-11-25 -o artifacts/2025-11-25
+
+      # Modern leg: stateless wire (per-request _meta, no handshake). 37 server scenarios.
+      - name: Conformance 2026-07-28 (modern)
+        run: npx -y @modelcontextprotocol/conformance@${{ env.CONFORMANCE_VERSION }} server --url http://127.0.0.1:3001/mcp --requirements 2026-07-28 -o artifacts/2026-07-28
+
+      - name: Stop MCP server
+        if: always()
+        shell: bash
+        run: kill "$(cat mcp.pid)" 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: conformance-results
+          path: artifacts

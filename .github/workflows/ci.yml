@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# ponytail: matrix trimmed to ubuntu+windows (mac only differs in arm64 binary, covered
+# by better-sqlite3 prebuild). Add macos-latest when a mac user reports a real issue.
+jobs:
+  check-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { run_install: false }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      # ponytail: --ignore-scripts required because better-sqlite3 ships prebuilds
+      # and our allowBuilds=false pnpm-workspace.yaml entry is intentional (ADR-0017).
+      - run: pnpm install --ignore-scripts
+      - run: pnpm -w turbo check
+      - run: pnpm --filter @anysearch/kernel test
+      - run: pnpm -w turbo build
+
+      - name: Pack tarballs
+        run: |
+          pnpm --filter @anysearch/mcp pack --pack-destination ../../artifacts
+          pnpm --filter @anysearch/cli pack --pack-destination ../../artifacts
+          pnpm --filter @anysearch/plugin pack --pack-destination ../../artifacts
+        shell: bash
+
+      - name: Smoke — apps/mcp --help and protocol handshake
+        shell: bash
+        run: |
+          node apps/mcp/dist/index.cjs --help
+          # minimal MCP handshake (initialize + tools/list over stdio)
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+            | node apps/mcp/dist/index.cjs stdio \
+            | grep -q '"search_web"'
+
+      - name: Smoke — apps/cli --help
+        run: node apps/cli/dist/index.js --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tarballs-${{ matrix.os }}
+          path: artifacts/*.tgz
+          if-no-files-found: error
