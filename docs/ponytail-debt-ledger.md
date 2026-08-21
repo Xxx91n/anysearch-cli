@@ -22,6 +22,10 @@ packages/kernel/src/composition.ts | Provider factories wrapped in try/catch to 
 | apps/plugin/src/hooks/session-start.ts | .mdc write to user workspace .cursor/rules/ is a side effect. | Add .gitignore entry or opt-out config when user reports |
 
 ## Resolved (no longer debt)
+- #13 Temporal coupling between gate.evaluate() and pipeline.consolidate() — FIXED in ADR-0016. Pure function-ization: evaluate() returns GateEnvelope, applyTo() returns new array, consolidate() receives hasRetrievalEvidence parameter.
+- #14 signalSearchTurn() passive-aggressive command — FIXED in ADR-0016. Deleted, replaced by hasRetrievalEvidence boolean parameter.
+- DELETE-then-INSERT UPSERT anti-pattern in saveAnchor — FIXED in ADR-0016 audit. Migrated to atomic INSERT ... ON CONFLICT DO UPDATE with partial UNIQUE INDEX (SQLite 3.24.0+). atomcode research: 17 sources confirm DELETE-then-INSERT triggers DELETE triggers, cascades FK children, resets autoincrement.
+- D9 Layer 1 pure function tests missing — FIXED in ADR-0016 audit. Added 15 zero-mock assertions for consolidateState: skip/reuse/compress decisions, REUSE cap, idempotency, input immutability.
 - D4 sessionIdGenerator used randomUUID() instead of undefined (stateless) — FIXED in ADR-0008 audit. Now sessionIdGenerator: undefined, enableJsonResponse: true, keepAliveMs: 0 per ADR-0008 D4 spec.
 
 - time_decay() registered but not called from searchAllResults SQL — FIXED in commit 7f46683 (ADR-0008 D2 audit). Now wired into ORDER BY + bi-temporal filter in session-store.ts.
