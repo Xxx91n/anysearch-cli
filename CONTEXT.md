@@ -231,3 +231,16 @@ _Avoid_: 给内部包加无人消费的 dist 产物, exports 指向 src 但 file
 ## SDK Upgrade Sequencing（SDK 升级时序）
 MCP SDK v1 到 v2 升级的串行化策略：先做 v2 升级（transport 层骨架重写），再做算法深化（createLlmSession 提取加 models undefined 修复）。一次只改一个维度。v1 上先完成管道先行，v2 升级是独立架构演进 ADR。ADR-0017 D7。
 _Avoid_: 同时改 transport 层和 handler 内部, 在旧接口上做算法深化再迁移
+
+
+## Review By Clause（复审条款）
+带日期与具名 owner 的决策级复审字段，写入 ADR 正文（如 D5/D7），与债务台账的 review-by 列职责分离。ADR 回答"为什么必须复审"（决策时间边界），台账回答"到期后具体做什么"（EOL 数据 + 处置动作）。对齐 k8s/OTEP 生命周期分层先例、Fowler/AWS/WhyChose ADR 不可变惯例 + supersede 替代改写。ADR-0018 D6。
+
+## TypeBox Bridge（TypeBox 桥接）
+kernel（TypeBox schema）与 MCP v2 通信的桥接模式：借助 `@modelcontextprotocol/server` 的 `fromJsonSchema(TypeBoxSchema)` 在注册处完成 JSON Schema 解析，schema 本体零重写、与 v2 默认 validator 方言一致（2020-12）。理解性质：TypeBox 原生声明 = JSON Schema 资产 + TS 类型双面体。ADR-0018 D3。
+
+## Capability Detection（能力检测）
+zod 版本门禁的正确形态：检测 `~standard.jsonSchema` 接口存在性（PR #1895 三态范式），而非字符串版本号比对。zod 3 通过注册错误；zod 4.0-4.1 走降级加 warn；zod 4.2+ 走原生。ADR-0018 D4。
+
+## Conformance CLI Direct（conformance 直调）
+MCP 双版本兼容验证的工业做法：不用 composite GitHub Action（输入面无 spec-version/requirements），而直接跑官方 CLI `npx @modelcontextprotocol/conformance server --requirements 2025-11-25,2026-07-28`。tier-check 仅作为治理信号，不作硬门禁（issue #426 未闭合）。ADR-0018 D2。

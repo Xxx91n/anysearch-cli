@@ -35,6 +35,8 @@ Standard verification chain: tsup build -> MCP Inspector (stdio handshake + tool
 Internal packages (kernel/store/retriever, private:true) keep main/types pointing to ./src/index.ts (turbo internal packages mode). No build script, no dist. Apps (mcp/cli/plugin) get exports -> dist + files match + prepack build. turbo.json check removes ^build dependency. Two-class treatment: publishable vs internal.
 
 **D7: SDK Upgrade Sequencing**
+
+Review by: 2027-01-01 (owner: MCP owner) — Phase 2 (SDK v2 upgrade) must be complete before the v1 maintenance window closes (~2027-01). Superseded in part by ADR-0018.
 Phase 1: v1 pipeline (build + verify + ship). Phase 2: SDK v2 upgrade (transport layer rewrite buildServer -> createMcpHandler factory). Phase 3: Algorithm deepening (createLlmSession extraction + models undefined fix). Serial: transport skeleton first, then handler internals. One dimension at a time.
 
 **D8: exports/files Two-Class Treatment**

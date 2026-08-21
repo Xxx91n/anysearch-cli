@@ -23,6 +23,10 @@ packages/kernel/src/composition.ts | Provider factories wrapped in try/catch to 
 
 packages/kernel/src/memory-pipeline.ts:116 | LOW_WATERMARK_TOKENS = 128_000 hardcoded. For 1M-token models (deepseek-v4-fast) ~13% triggers (over-eager rolling summary); for gpt-4o-class (128k window) totalTokens accumulates monotonically so watermark fires on nearly every turn after warmup. Semantics right ("cheap small-model flush", ADR-0012 D2/D4), number hardcoded. per prior grill decision #6/7 (user: defer to real-traffic phase), not fixed pre-release. | Per-model default or totalTokens -> contextWindow-occupancy dynamically. Triggered when real traffic shows compression is mistimed (too early / too late).
 
+| packages/kernel/src/* (TypeBox) | TypeBox schema registry relies on v2 fromJsonSchema bridge for kernel->MCP registration. Currently zero rewrite path pending MCP SDK v2 migration. | When MCP SDK v2 migration completes (ADR-0018 D1), swap to `fromJsonSchema(TypeBoxSchema)` registrations; until then zod raw shape remains in apps/mcp. |
+| packages/kernel/src/* | zod 4.0-4.1 fallback path drops tool descriptions silently (PR #1895 degraded mode). Capability detection guard in kernel/llm-init.ts must emit one-time warn for this band. | When all consumers pin zod ^4.2.0 and no silent-fallback traffic observed in dual-era CI; close when `legacy: "stateless"` accepts only 4.2+ zod. |
+| docs/ponytail-debt-ledger.md | No review-by column exists for time-boxed debts. ADR-0018 D6 requires it as the operation-side companion to ADR Review-by clauses. | Add review-by column to all unresolved time-boxed rows when MCP SDK v1 EOL (2027-01-01, ADR-0008 D5) approaches. |
+
 ## Resolved (no longer debt)
 - #13 Temporal coupling between gate.evaluate() and pipeline.consolidate() — FIXED in ADR-0016. Pure function-ization: evaluate() returns GateEnvelope, applyTo() returns new array, consolidate() receives hasRetrievalEvidence parameter.
 - #14 signalSearchTurn() passive-aggressive command — FIXED in ADR-0016. Deleted, replaced by hasRetrievalEvidence boolean parameter.

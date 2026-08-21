@@ -66,6 +66,7 @@ CLI switch: ans mcp serve --transport stdio|http.
 References: context7 production mode, official SDK discussion #1677.
 
 ### Decision 5: SDK v1 stable (@modelcontextprotocol/sdk ^1.x)
+Review by: 2027-01-01 (owner: MCP owner) — MCP SDK v1 maintenance window ends ~2027-01 per TS SDK README (6-month post-v2 commitment). TypeBox fromJsonSchema migration must complete before this date.
 v1 is stable, tavily-mcp production-tested, full docs. v2 (@modelcontextprotocol/server)
 deferred until mandatory upgrade reason. TypeBox (not zod) for tool schemas — manual
 JSON Schema definition, similar to tavily-mcp low-level approach.
