@@ -202,3 +202,32 @@ _Avoid_: pure function with I/O, shell with decision logic
 **State Anchor Upsert（状态锚点覆写）:
 saveAnchor 对状态类锚点（consolidation_state）使用 UPSERT 语义（按 session_id + anchor_type 的 UPDATE-else-INSERT），历史类锚点（rolling_summary）保持 append-only。version 字段充当 CAS 校验位。对齐 SEP-2567 explicit state handle 模式 + Fastio version guard 建议。
 _Avoid_: append-only state anchors, unversioned state writes
+
+
+## Walking Skeleton（管道骨架）
+MCP server 生产构建的先验证再深化心智模型：先让最小可运行包走通完整交付管道（tsup build, MCP Inspector, npm pack --dry-run, 全新目录 npx 实测），再在真实客户端流量下迭代算法深化。协议层无状态（2026-07-28 规范）不等于应用层不能缓存资源。对齐 Pete Hodgson Tracer Bullet / Walking Skeleton 模式。Perplexity MCP、Anthropic 官方参考服务器、context-mode 均走此路径。ADR-0017 D1。
+_Avoid_: 功能先行再统一打包, 分发风险最后暴露
+
+## LlmSession Deep Module（LLM 会话深模块）
+kernel 内 createLlmSession({ provider, model }) 深模块：封装 pi-agent-core 官方固定组合步（createModels, setProvider, getModel, streamSimple.bind），内部藏住动态导入/setProvider/getModel/错误提示，返回 { models, model, streamFn } 或统一错误对象（含可用模型目录）。禁止在 kernel 内读 env。CLI/MCP/plugin 三消费端共享。对齐 Seemann 组合根、Ousterhout 深模块。ADR-0008 D7 createEngine 提升先例。ADR-0017 D2。
+_Avoid_: 透传函数浅模块, 库内 Service Locator（读 env 做选择）
+
+## Lazy Session Cache（惰性会话缓存）
+LLM client 资源的进程级惰性初始化加缓存策略：buildServer() 或首次 ans_chat 调用时懒加载 createLlmSession 并缓存到闭包变量，后续调用复用；环境变量变更时检测到重建。与 MCP 无状态协议不矛盾。所有生产级 LLM MCP server 均采用进程级一次性初始化。对齐 Mark Seemann 组合根。ADR-0017 D3。
+_Avoid_: 每次工具调用新建 LLM session, 模块级裸单例（Service Locator 反模式）
+
+## Dual Era Compatibility（双时代兼容）
+MCP server 同时服务 2025-era legacy transport 与 2026-07-28 无状态规范。TS SDK v2 createMcpHandler(factory, { legacy: stateless }) 默认双路。截至 2026-08-21：Claude 已支持新规范，Codex HTTP opt-in，Cursor/Windsurf/OpenClaw 仍 legacy。ADR-0017 D4。
+_Avoid_: modern-only server 拒绝 legacy client, 手写兼容层（SDK 已内置）
+
+## Build Verification Gate（构建验证关卡）
+MCP server 发布前的标准验证链：tsup build, MCP Inspector 自动化, npm pack --dry-run, 全新目录 npx 实测。与 Perplexity MCP、Anthropic 官方参考服务器的验证链一致。ansible-mcp-server 三版发布全部启动即崩是反面教材。ADR-0017 D5。
+_Avoid_: 仅 build 加测活（无法验证协议兼容性和外部可运行性）
+
+## Internal Package Mode（内部包模式）
+private:true 加 workspace:* 的内部包不需要 build 脚本和 dist 产物：main/types 指向 ./src/index.ts（turbo 官方 internal packages 模式）。会发布的包才需要 exports 指向 dist 加 files 匹配加 prepack 构建。对齐 LaunchDarkly 企业实战。ADR-0017 D6。
+_Avoid_: 给内部包加无人消费的 dist 产物, exports 指向 src 但 files 只发 dist
+
+## SDK Upgrade Sequencing（SDK 升级时序）
+MCP SDK v1 到 v2 升级的串行化策略：先做 v2 升级（transport 层骨架重写），再做算法深化（createLlmSession 提取加 models undefined 修复）。一次只改一个维度。v1 上先完成管道先行，v2 升级是独立架构演进 ADR。ADR-0017 D7。
+_Avoid_: 同时改 transport 层和 handler 内部, 在旧接口上做算法深化再迁移
