@@ -24,3 +24,4 @@ Thumbs.db
 .anysearch/
 apps/plugin/dist/
 *.tgz
+.codex-tmp/
