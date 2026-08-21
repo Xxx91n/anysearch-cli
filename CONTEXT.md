@@ -182,3 +182,23 @@ PiAgentRuntime agent loop 的 sufficiency gate 行为模型（Google Sufficient 
 信息专精 Agent CLI 的结构性重构纪律：提取 = 搬家 commit，行为逐字节守恒；债务修复 = 独立 commit。提取时不改变任何行为（fire-and-forget 时序、fail-open 语义、晚一轮生效全部原样保留），不混入债务修复（reviewer 无法区分搬家 diff 和改行为 diff）。现有测试不改作回归基线，新增独立单元测试覆盖新接口面。学术锚点：The Complexity Trap (arXiv 2508.21433) "提取不改变行为"是安全重构前提；Ousterhout "The interface is the test surface"。ADR-0015 D6/D7。
 ## Sibling Module（兄弟模块）
 SufficiencyGate 与 MemoryPipeline 作为 PiAgentRuntime 内部的同级兄弟模块，各自独立 fail-open 互不阻塞。gate 管"信息够不够"（LLM gap 生成 + 重搜循环），memory 管"记什么/忘什么"（摘要写入 + 召回）。两个模块接口不同（gate 接 FusedEnvelope + messages，memory 接 messages + store），不应混在一起。PiAgentRuntime 构造函数内部创建两个实例，调用方零改动。学术锚点：ADR-0014 D2 Google SCA / CRAG grader 独立组件先例；Ousterhout 不同接口不应混合；pi-agent-core new Agent(config) 模式（构造函数内部组装一切）。ADR-0015 D3/D8。
+
+**Temporal Decoupling（时序解耦）:
+gate.evaluate() 与 pipeline.consolidate() 之间的隐性顺序依赖被显式化——gate 返回 envelope 数据包（不碰 messages），编排层调用 gate.applyTo() 注入，再传给 consolidate()。对齐 LangMem "core API without side effects" 模式。消除 Fowler 定义的 "passive-aggressive command"（signalSearchTurn）。
+_Avoid_: implicit ordering, side-effect chaining
+
+**ConsolidationState（整合状态对象）:
+REUSE/COMPRESS 决策状态机的纯数据类型 `{version, consecutiveReuses, lastSummaryMsgCount}`。长生命周期变量对象化（非实例字段），单次调用快照（msgCountAtTrigger）保持局部 const，每调用信号（hadSearchTurn）作为参数传入。可序列化以支持 MCP 无状态协议。对齐 arXiv:2603.07670 POMDP belief state 形式化 + Functional Core/Imperative Shell 模式。
+_Avoid_: instance field state, hidden mutable state
+
+**Claim-Ticket Injection（凭单注入）:
+gate.evaluate() 返回 envelope 后，gate.applyTo(messages, envelope) 负责注入——编排层不接触 envelope 内部结构。envelope 是 gate 的私有实现细节，未来可自由演进。对齐 LangMem 纯函数返回数据结构 + 整合层组装的模式。
+_Avoid_: orchestration-layer envelope awareness, message structure leakage to gate
+
+**Functional Shell（函数化壳层）:
+MemoryPipeline.consolidate 退化为 shell——调用纯函数拿 decision + summaryRequest，按 decision 执行 I/O（LLM/DB），提交 state'。fire-and-forget + anchor 持久化 + fail-open 语义保留。纯函数做决策逻辑，shell 做 I/O。
+_Avoid_: pure function with I/O, shell with decision logic
+
+**State Anchor Upsert（状态锚点覆写）:
+saveAnchor 对状态类锚点（consolidation_state）使用 UPSERT 语义（按 session_id + anchor_type 的 UPDATE-else-INSERT），历史类锚点（rolling_summary）保持 append-only。version 字段充当 CAS 校验位。对齐 SEP-2567 explicit state handle 模式 + Fastio version guard 建议。
+_Avoid_: append-only state anchors, unversioned state writes
