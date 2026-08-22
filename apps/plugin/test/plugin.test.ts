@@ -8,8 +8,8 @@ import { ProjectIndexStore, isAnsTool, distillOutput, makePostToolUseDecision } 
 
 const fs = { readFileSync: fsReadFileSync, existsSync };
 
-// ADR-0012 audit fix: tests run from repo root, but source files live under apps/plugin/.
-const PLUGIN_ROOT = join(process.cwd(), "apps", "plugin");
+// ponytail: pnpm runs test from apps/plugin/. Use import.meta.url so cwd doesn't break paths.
+const PLUGIN_ROOT = join(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 
 let passed = 0;
 let failed = 0;

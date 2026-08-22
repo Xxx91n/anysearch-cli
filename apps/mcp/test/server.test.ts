@@ -2,6 +2,8 @@
 // G015 test closure: verify buildServer() creates server with registered tools.
 
 import { buildServer } from "../src/server.js";
+import { fromJsonSchema } from "@modelcontextprotocol/server";
+import { KernelJsonSchemas } from "@anysearch/kernel";
 import type { CompositionResult } from "@anysearch/kernel";
 import type { RetrieverPort, Query } from "@anysearch/kernel";
 import type { SessionStore, MemoryHit } from "@anysearch/store";
@@ -58,6 +60,35 @@ try {
 } catch (e) {
   assert(false, "buildServer() without engine crashed: " + (e as Error).message);
 }
+
+// ADR-0019 D4 (layer-2): input validation is enforced by AJV via fromJsonSchema.
+// Structural assertion: fromJsonSchema(KernelJsonSchemas.X) produces a Standard Schema
+// that the SDK will validate against. We verify the underlying JSON schemas still carry
+// the expected keyword signatures (minLength / enum-anyOf / required) so a regression
+// dropping them from KernelJsonSchemas is caught here.
+const searchSchema = KernelJsonSchemas.search_web as {
+  required?: string[];
+  properties?: Record<string, { minLength?: number; anyOf?: Array<{ const?: string }> }>;
+};
+assert(searchSchema.required?.includes("query") ?? false, "plain search_web requires query");
+const searchQuery = searchSchema.properties?.query;
+assert(searchQuery?.minLength === 1, "plain search_web query has minLength=1 (AJV rejects empty)");
+
+const researchSchema = KernelJsonSchemas.research_web as {
+  required?: string[];
+  properties?: Record<string, { anyOf?: Array<{ const?: string }> }>;
+};
+assert(researchSchema.required?.includes("question") ?? false, "plain research_web requires question");
+const researchDepth = researchSchema.properties?.depth?.anyOf ?? [];
+const depthValues = researchDepth.map((v) => v.const).sort();
+assert(
+  JSON.stringify(depthValues) === JSON.stringify(["brief", "deep", "standard"]),
+  "plain research_web depth enum=brief/standard/deep (got " + JSON.stringify(depthValues) + ")"
+);
+
+// Also confirm fromJsonSchema produces a plain object (not undefined / thrown).
+const wrapped = fromJsonSchema(KernelJsonSchemas.search_web);
+assert(wrapped !== undefined && typeof wrapped === "object", "fromJsonSchema returns non-null Standard Schema");
 
 console.log("--- MCP server tests: " + passed + " passed, " + failed + " failed ---");
 if (failed > 0) process.exit(1);
