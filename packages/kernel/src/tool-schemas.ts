@@ -16,7 +16,7 @@ export const SearchWebInput = Type.Object({
       Type.Literal("answer"),
     ], { description: "Search mode: fast (default), deep (more sources), answer (with synthesis)" })
   ),
-});
+}, { additionalProperties: false });
 export type SearchWebInput = {
   query: string;
   mode?: "fast" | "deep" | "answer";
@@ -31,7 +31,7 @@ export const ResearchWebInput = Type.Object({
       Type.Literal("deep"),
     ], { description: "Research depth: brief (1 round), standard (2 rounds), deep (3 rounds)" })
   ),
-});
+}, { additionalProperties: false });
 export type ResearchWebInput = {
   question: string;
   depth?: "brief" | "standard" | "deep";
@@ -42,7 +42,7 @@ export const RecallMemoryInput = Type.Object({
   limit: Type.Optional(
     Type.Integer({ minimum: 1, description: "Max results to return (default 5)" })
   ),
-});
+}, { additionalProperties: false });
 export type RecallMemoryInput = {
   query: string;
   limit?: number;
@@ -50,14 +50,14 @@ export type RecallMemoryInput = {
 
 export const QueryKnowledgeInput = Type.Object({
   query: Type.String({ minLength: 1, description: "The knowledge base query" }),
-});
+}, { additionalProperties: false });
 export type QueryKnowledgeInput = {
   query: string;
 };
 
 export const AnsChatInput = Type.Object({
   message: Type.String({ minLength: 1, description: "The user message to send to the agent" }),
-});
+}, { additionalProperties: false });
 export type AnsChatInput = {
   message: string;
 };

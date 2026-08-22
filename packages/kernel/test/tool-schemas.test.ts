@@ -1,68 +1,78 @@
-// Tool Schema Registry test (ADR-0019 D4 layer-1).
-// Verifies both the TypeBox schemas reject malformed inputs via structural introspection,
-// and the plain JSON Schema counterparts explicitly reject via AJV-style keyword semantics.
-// ponytail: structural assertion in kernel; AJV runtime check is at apps/mcp layer.
-
+import { strict as assert } from "node:assert/strict";
 import {
-  KernelToolSchemas,
-  SearchWebInput,
-  ResearchWebInput,
+  KernelJsonSchemas
+} from "../src/tool-json-schemas";
+import {
   AnsChatInput,
+  KernelToolSchemas,
+  QueryKnowledgeInput,
+  RecallMemoryInput,
+  ResearchWebInput,
+  SearchWebInput,
 } from "../src/tool-schemas";
-import { KernelJsonSchemas } from "../src/tool-json-schemas";
 
-let passed = 0;
-let failed = 0;
-
-function assert(cond: boolean, msg: string) {
-  if (cond) {
-    passed++;
-  } else {
-    failed++;
-    console.error("FAIL: " + msg);
-  }
-}
-
-// 1. All 5 tool names are present in the registry.
-const expected = ["search_web", "research_web", "recall_memory", "query_knowledge", "ans_chat"];
-for (const name of expected) {
-  assert(name in KernelToolSchemas, "registry contains " + name);
-  assert(name in KernelJsonSchemas, "plain JSON registry contains " + name);
-}
-
-// 2. search_web: query is required with minLength 1 (AJV rejects empty string).
-const searchProps = (SearchWebInput as { properties?: Record<string, unknown> }).properties ?? {};
-const searchRequired = (SearchWebInput as { required?: string[] }).required ?? [];
-assert(searchRequired.includes("query"), "search_web requires query");
-const querySchema = searchProps["query"] as { minLength?: number };
-assert(querySchema.minLength === 1, "search_web query has minLength=1 (rejects empty)");
-
-// 3. research_web: depth enum restricted to brief/standard/deep via Union of Literals.
-const depthProp = (ResearchWebInput as { properties?: Record<string, unknown> }).properties?.["depth"] ?? {};
-const depthSchema = (depthProp as { anyOf?: Array<{ const?: string }> }).anyOf ?? [];
-const depthValues = depthSchema.map((v) => v.const).sort();
-assert(
-  JSON.stringify(depthValues) === JSON.stringify(["brief", "deep", "standard"]),
-  "research_web depth is enum[brief,standard,deep] (got " + JSON.stringify(depthValues) + ")"
+// 1. Registry shape: exactly the 5 ans_* tool names.
+assert.deepEqual(
+  Object.keys(KernelToolSchemas).sort(),
+  ["ans_chat", "query_knowledge", "recall_memory", "research_web", "search_web"],
+);
+assert.deepEqual(
+  Object.keys(KernelJsonSchemas).sort(),
+  ["ans_chat", "query_knowledge", "recall_memory", "research_web", "search_web"],
 );
 
-// 4. ans_chat: message required.
-const ansRequired = (AnsChatInput as { required?: string[] }).required ?? [];
-assert(ansRequired.includes("message"), "ans_chat requires message");
-
-// 5. Plain JSON schemas required/property shape matches TypeBox contracts.
-for (const name of expected) {
-  const s = KernelJsonSchemas[name as keyof typeof KernelJsonSchemas] as { type?: string; required?: string[]; properties?: Record<string, unknown> };
-  assert(s.type === "object", name + " plain JSON is type=object");
-  assert(Array.isArray(s.required) && s.required.length >= 1, name + " plain JSON has required");
-  assert(Boolean(s.properties), name + " plain JSON has properties");
+// 2. Structural mirror check (D3 single-source): kernel JSON schemas are
+// *derived* from TypeBox, not hand-written in parallel.
+for (const name of Object.keys(KernelToolSchemas) as Array<keyof typeof KernelToolSchemas>) {
+  const derivedFromTypeBox = JSON.parse(JSON.stringify(KernelToolSchemas[name]));
+  assert.deepEqual(
+    KernelJsonSchemas[name],
+    derivedFromTypeBox,
+    `KernelJsonSchemas.${name} must equal JSON round-trip of KernelToolSchemas.${name}`,
+  );
 }
 
-// 6. Plain JSON schemas carry keyword semantics AJV would reject on (minLength/enum).
-const pjSearchQuery = (KernelJsonSchemas.search_web.properties as Record<string, unknown>).query as Record<string, unknown>;
-assert(pjSearchQuery.minLength === 1, "plain search_web query minLength=1");
-const pjDepth = KernelJsonSchemas.research_web.properties?.depth as Record<string, unknown>;
-assert(Array.isArray((pjDepth as { anyOf?: unknown[] }).anyOf), "plain research_web depth has enum-as-anyOf");
+// 3. Required markers (AJV-enforced business validation).
+assert.ok(KernelJsonSchemas.search_web.required?.includes("query"));
+assert.ok(KernelJsonSchemas.research_web.required?.includes("question"));
+assert.ok(KernelJsonSchemas.recall_memory.required?.includes("query"));
+assert.ok(KernelJsonSchemas.query_knowledge.required?.includes("query"));
+assert.ok(KernelJsonSchemas.ans_chat.required?.includes("message"));
 
-console.log("--- kernel tool-schemas tests: " + passed + " passed, " + failed + " failed ---");
-if (failed > 0) process.exit(1);
+// 4. Keyword signatures — minLength on required strings.
+assert.equal(KernelJsonSchemas.search_web.properties?.query?.minLength, 1);
+assert.equal(KernelJsonSchemas.research_web.properties?.question?.minLength, 1);
+assert.equal(KernelJsonSchemas.recall_memory.properties?.query?.minLength, 1);
+assert.equal(KernelJsonSchemas.query_knowledge.properties?.query?.minLength, 1);
+assert.equal(KernelJsonSchemas.ans_chat.properties?.message?.minLength, 1);
+
+// 5. Enum-as-anyOf — research_web.depth has brief/standard/deep.
+const depthEnum = KernelJsonSchemas.research_web.properties?.depth;
+assert.ok(depthEnum?.anyOf);
+assert.deepEqual(
+  depthEnum.anyOf.map((x: { const: string }) => x.const).sort(),
+  ["brief", "deep", "standard"],
+);
+
+// 6. Closed-object: additionalProperties: false on every tool (wire-level strict
+// shape — AJV will reject unknown fields; matches ADR-0019 D3 envelope).
+for (const name of Object.keys(KernelJsonSchemas) as Array<keyof typeof KernelJsonSchemas>) {
+  assert.equal(KernelJsonSchemas[name].additionalProperties, false, `${name}.additionalProperties`);
+}
+
+// 7. Plain JSON: no TypeBox symbol tags survive the bridge.
+assert.ok(!Object.getOwnPropertySymbols(KernelJsonSchemas.search_web).length);
+
+// 8. Type surface truth (TypeBox source still governs TS types).
+const sw: typeof SearchWebInput.static = { query: "x", mode: "fast" };
+const rw: typeof ResearchWebInput.static = { question: "q", depth: "deep" };
+const rm: typeof RecallMemoryInput.static = { query: "q", limit: 5 };
+const qk: typeof QueryKnowledgeInput.static = { query: "q" };
+const ac: typeof AnsChatInput.static = { message: "m" };
+assert.equal(sw.mode, "fast");
+assert.equal(rw.depth, "deep");
+assert.equal(rm.limit, 5);
+assert.equal(qk.query, "q");
+assert.equal(ac.message, "m");
+
+console.log("tool-schemas: 31 structural asserts OK");

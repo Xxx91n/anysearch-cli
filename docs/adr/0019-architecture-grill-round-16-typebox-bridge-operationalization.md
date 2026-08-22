@@ -42,3 +42,17 @@ atomcode research verdicts driving this round:
 - TypeBox discussion #1152 + PR #1384 + changelog 1.0.x — native Standard Schema rejected/removed; bridge is the only path.
 - Production seams: cyanheads/obsidian-mcp-server `src/mcp-server/tools/definitions/`, chrome-devtools-mcp `src/tools/*`, playwright-mcp tool arrays, context7 factory; 1mcp local gateway (`zodToInputSchema` util in composition layer).
 - ADR governance: Nygard 2011 (Wayback-verified full text), adr-tools README (`Amends` link), Embedded Artistry walkthrough, Fowler bliki (2026-03-24), AWS Prescriptive Guidance, GDS Way, Fuchsia RFC process, Kubernetes KEP template.
+
+### Implementation Audit Addendum (round 16 audit, 2026-08-22)
+
+After b5178d8 landed, an audit pass + atomcode research (skill `atomcode-research`, serialized single call, concurrency=1) surfaced one deviation from the round-3 atomcode verdicts that motivated this ADR:
+
+**Deviating detail** — The original `tool-json-schemas.ts` was a hand-written mirror of `tool-schemas.ts` (two parallel files, same keyword surface). atomcode's follow-up report cites industry evidence that dual-schema drift is a known MCP production failure mode (specmatic "MCP Servers Are Lying About Their Schemas" — GitHub/Postman/HF MCPs drifted on live wires; aident.ai blog — MCP TS SDK v1→v2 raw-shape vs ZodObject mismatch producing empty inputSchema);  no community standard helper package exists to sync two parallel schema files.
+
+**Fix (D1 amendment in place)** — `packages/kernel/src/tool-json-schemas.ts` now *derives* `KernelJsonSchemas` from `KernelToolSchemas` via `JSON.parse(JSON.stringify(KernelToolSchemas[name]))` (the official TypeBox→JSON Schema serialization channel per TypeBox author KKonstantinov in MCP SDK issue #825: "TypeBox objects 'are' Json Schema"; `[Kind]` symbols are stripped by JSON serialization per issues #786/#987). The TypeBox source adds `additionalProperties: false` on each of the 5 schemas so the derived JSON keeps the closed-envelope shape the hand-written version had. Drift is now structurally impossible.
+
+**Test reinforcement** — `packages/kernel/test/tool-schemas.test.ts` adds a per-tool `assert.deepEqual(KernelJsonSchemas[name], JSON.parse(JSON.stringify(KernelToolSchemas[name])))` assertion across the registry, closing the loop on the "single source" invariant the ADR now claims.
+
+**New ponytail comment + debt note** — `packages/kernel/src/tool-json-schemas.ts` carries a `ponytail:`-style header explaining the JSON-round-trip choice and the research citation. `docs/ponytail-debt-ledger.md` drops the legacy "TypeBox registry relies on v2 bridge pending SDK v2 migration" row (obsolete after ADR-0018 D1 landed and b5178d8 implemented it) and adds a `Resolved` entry for the mirror-drift debt.
+
+**Acceptance re-run after fix** — `turbo check` 3/3 (cli/mcp/plugin tsc clean), `turbo test` 6/6 (kernel 31 asserts incl. drift-mirror assert, mcp 9/9 AJV keyword signature, cli 9/9 e2e, plugin 16/16, store & retriever green), `turbo build` + `pnpm pack` × 3 (cli-0.0.0.tgz 9.88 MB / mcp-0.0.0.tgz 9.70 MB / plugin-0.0.0.tgz 8.42 KB), process smoke: mcp stdio "anysearch MCP server: stdio transport ready" (exit 0), cli `--help` exit 0, plugin `dist/server/index.cjs` `:33333/health` 200 `{"status":"ok",...}`.

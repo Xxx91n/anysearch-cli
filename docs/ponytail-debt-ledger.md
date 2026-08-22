@@ -23,9 +23,11 @@ packages/kernel/src/composition.ts | Provider factories wrapped in try/catch to 
 
 packages/kernel/src/memory-pipeline.ts:116 | LOW_WATERMARK_TOKENS = 128_000 hardcoded. For 1M-token models (deepseek-v4-fast) ~13% triggers (over-eager rolling summary); for gpt-4o-class (128k window) totalTokens accumulates monotonically so watermark fires on nearly every turn after warmup. Semantics right ("cheap small-model flush", ADR-0012 D2/D4), number hardcoded. per prior grill decision #6/7 (user: defer to real-traffic phase), not fixed pre-release. | Per-model default or totalTokens -> contextWindow-occupancy dynamically. Triggered when real traffic shows compression is mistimed (too early / too late).
 
-| packages/kernel/src/* (TypeBox) | TypeBox schema registry relies on v2 fromJsonSchema bridge for kernel->MCP registration. Currently zero rewrite path pending MCP SDK v2 migration. | When MCP SDK v2 migration completes (ADR-0018 D1), swap to `fromJsonSchema(TypeBoxSchema)` registrations; until then zod raw shape remains in apps/mcp. |
 | @modelcontextprotocol/server (built-in normalizeRawShapeSchema) | zod 4.0-4.1 fallback: SDK emits one-time `[mcp-sdk]` warn via its own capability detection; descriptions drop relative to 4.2+. No kernel-side guard needed — SDK is the single point of truth. | Resolved when v1 maintenance window closes (2027-01-01, ADR-0008 D5) and dual-era conformance matrix confirms 4.2+ only. Visited 2026-08-21 in R16-3 — SDK公允 message confirmed in source. |
 | docs/ponytail-debt-ledger.md | No review-by column exists for time-boxed debts. ADR-0018 D6 requires it as the operation-side companion to ADR Review-by clauses. | Add review-by column to all unresolved time-boxed rows when MCP SDK v1 EOL (2027-01-01, ADR-0008 D5) approaches. |
+
+## Resolved (no longer debt) — round 16 audit additions
+- Mirror-schema drift risk between kernel TypeBox source-of-truth and hand-written plain JSON - FIXED in round 16 audit. `tool-json-schemas.ts` now derives `KernelJsonSchemas` from `KernelToolSchemas` via `JSON.parse(JSON.stringify(...))`. Single-source-of-truth; no correction-sync between two files. TypeBox source adds `additionalProperties: false` so derived JSON stays closed. See docs/adr/0019 amendment note below.
 
 ## Resolved (no longer debt)
 - #13 Temporal coupling between gate.evaluate() and pipeline.consolidate() — FIXED in ADR-0016. Pure function-ization: evaluate() returns GateEnvelope, applyTo() returns new array, consolidate() receives hasRetrievalEvidence parameter.

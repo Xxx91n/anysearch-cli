@@ -1,78 +1,38 @@
-// Plain JSON Schema registry (JsonSchemaType shape) — the canonical source for
-// apps/mcp fromJsonSchema() calls. Mirrors tool-schemas.ts (TypeBox) 1:1 in keys/keywords.
-// ADR-0019 D1: TypeBox TString's contentEncoding union literal breaks TSC against
-// SDK's JsonSchemaType — emit plain-object JSON Schema instead of TypeBox objects here
-// so we don't drift TypeBox types against a private SDK type level.
-// ADR-0019 D3: keywords (minLength / enum) must mirror the TypeBox counterparts.
+// Plain JSON Schema registry (JsonSchemaType-compatible object shape) —
+// derived from kernel TypeBox schemas via JSON.stringify/parse (the official
+// TypeBox serialization path; [Kind] symbols are automatically stripped by
+// JSON serialization, per issue #786/#987). single-source-of-truth:
+// ADR-0019 D1/D3 amendment — atomcode research (round 16 audit) establishes that
+// maintaining a hand-written mirror alongside the TypeBox source is guaranteed
+// drift (specmatic "MCP Servers Are Lying About Their Schemas", aident.ai MCP
+// TS SDK v1→v2 inputSchema empty production incident). JSON round-trip is the
+// one zero-rewrite channel TypeBox author KKonstantinov endorses in MCP SDK
+// issue #825.
+//
+// The TypeBox schemas use `additionalProperties: false` explicitly so that the
+// derived JSON Schema matches the strict-closed shape we want on the wire.
 
-import type { KernelToolName } from "./tool-schemas";
+import type { JsonSchemaType } from "@modelcontextprotocol/server";
+import {
+  AnsChatInput,
+  QueryKnowledgeInput,
+  RecallMemoryInput,
+  ResearchWebInput,
+  SearchWebInput,
+  type KernelToolName,
+} from "./tool-schemas";
 
-type JsonSchemaType = Record<string, unknown>;
-
-const searchWebJsonSchema: JsonSchemaType = {
-  type: "object",
-  properties: {
-    query: { type: "string", minLength: 1, description: "The search query" },
-    mode: {
-      anyOf: [
-        { const: "fast", description: "Search mode: fast (default), deep (more sources), answer (with synthesis)" },
-        { const: "deep" },
-        { const: "answer" },
-      ],
-    },
-  },
-  required: ["query"],
-  additionalProperties: false,
-};
-
-const researchWebJsonSchema: JsonSchemaType = {
-  type: "object",
-  properties: {
-    question: { type: "string", minLength: 1, description: "The research question to investigate" },
-    depth: {
-      anyOf: [
-        { const: "brief", description: "Research depth: brief (1 round), standard (2 rounds), deep (3 rounds)" },
-        { const: "standard" },
-        { const: "deep" },
-      ],
-    },
-  },
-  required: ["question"],
-  additionalProperties: false,
-};
-
-const recallMemoryJsonSchema: JsonSchemaType = {
-  type: "object",
-  properties: {
-    query: { type: "string", minLength: 1, description: "The memory recall query" },
-    limit: { type: "integer", minimum: 1, description: "Max results to return (default 5)" },
-  },
-  required: ["query"],
-  additionalProperties: false,
-};
-
-const queryKnowledgeJsonSchema: JsonSchemaType = {
-  type: "object",
-  properties: {
-    query: { type: "string", minLength: 1, description: "The knowledge base query" },
-  },
-  required: ["query"],
-  additionalProperties: false,
-};
-
-const ansChatJsonSchema: JsonSchemaType = {
-  type: "object",
-  properties: {
-    message: { type: "string", minLength: 1, description: "The user message to send to the agent" },
-  },
-  required: ["message"],
-  additionalProperties: false,
-};
+// JSON round-trip to strip TypeBox [Kind] symbols and emit plain JSON Schema.
+// Per TypeBox author in MCP SDK issue #825, TypeBox objects ARE Json Schema;
+// stringify/parse is the official serialization path.
+function toPlainJsonSchema(schema: unknown): JsonSchemaType {
+  return JSON.parse(JSON.stringify(schema));
+}
 
 export const KernelJsonSchemas: Record<KernelToolName, JsonSchemaType> = {
-  search_web: searchWebJsonSchema,
-  research_web: researchWebJsonSchema,
-  recall_memory: recallMemoryJsonSchema,
-  query_knowledge: queryKnowledgeJsonSchema,
-  ans_chat: ansChatJsonSchema,
+  search_web: toPlainJsonSchema(SearchWebInput),
+  research_web: toPlainJsonSchema(ResearchWebInput),
+  recall_memory: toPlainJsonSchema(RecallMemoryInput),
+  query_knowledge: toPlainJsonSchema(QueryKnowledgeInput),
+  ans_chat: toPlainJsonSchema(AnsChatInput),
 };
