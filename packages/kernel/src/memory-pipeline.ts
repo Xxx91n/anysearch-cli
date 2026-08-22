@@ -247,10 +247,23 @@ export class MemoryPipeline {
       } catch {}
 
       // D8: Call pure function for decision; inject compaction opts (ADR-0021 D2).
-      const compactionCfg = (domain as any).compaction;
+      // ADR-0021 D1: fail-fast on unsupported {fraction} shape — silent fallback to
+      // default 128000 would violate the "不静默回退" principle stated in the ADR.
+      // Once model window probing lands (ADR-0022 scope), wire fraction → tokens here.
+      const compactionCfg = domain.compaction;
       const lw = compactionCfg?.lowWatermark;
-      const resolvedLowWatermark =
-        typeof lw === "number" ? lw : undefined; // {fraction} handled by caller pre-resolution; default fallback inside pure fn
+      let resolvedLowWatermark: number | undefined;
+      if (lw !== undefined) {
+        if (typeof lw === "number") {
+          resolvedLowWatermark = lw;
+        } else {
+          throw new Error(
+            "MemoryPipeline: compaction.lowWatermark as {fraction} is not yet wired " +
+            "(needs model context-window lookup). Use absolute token count " +
+            "e.g. lowWatermark = 128000. See ADR-0021 D1 + ADR-0022."
+          );
+        }
+      }
       const result = consolidateState(state, messages, totalTokens, hasRetrievalEvidence, {
         lowWatermark: resolvedLowWatermark,
         reuseCap: compactionCfg?.reuseCap,

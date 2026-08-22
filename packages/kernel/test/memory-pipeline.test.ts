@@ -502,6 +502,16 @@ console.log(`MemoryPipeline tests: ${passed} passed, ${failed} failed`);
   assertPure(r.decision === "compress", "pure: reuseCap=1 with consecutiveReuses=1 forces compress");
   assertPure(r.state.consecutiveReuses === 0, "pure: cap-forced compress resets consecutiveReuses");
 }
+
+// ADR-0021 audit Fix #2: {fraction} in TOML is currently rejected at caller, not pure fn.
+// Pure fn must still accept absolute lowWatermark; assert opts pass-through wins.
+{
+  const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
+  const withOpts = consolidateState(state, ["m1"], 60000, false, { lowWatermark: 50000 });
+  const withoutOpts = consolidateState(state, ["m1"], 60000, false);
+  assertPure(withOpts.decision === "compress" && withoutOpts.decision === "skip",
+    "pure: opts lowWatermark overrides default (function-level pass-through)");
+}
 console.log("consolidateState pure function tests: " + passed + " assertions passed, " + failed + " failed");
 }
 

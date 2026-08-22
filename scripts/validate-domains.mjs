@@ -19,17 +19,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DOMAINS_DIR = path.join(ROOT, "domains");
 
-// Resolve smol-toml from packages/store (single existing source).
-const requireFromStore = createRequire(
-  path.join(ROOT, "packages/store/package.json")
-);
-const { parse: parseToml } = requireFromStore("smol-toml");
+// smol-toml declared in root devDependencies (atomcode review #3: avoid phantom
+// dependency via createRequire traversal into packages/store).
+import { parse as parseToml } from "smol-toml";
 
 const ANSI = process.stdout.isTTY
   ? { green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", reset: "\x1b[0m" }

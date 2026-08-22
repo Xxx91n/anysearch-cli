@@ -58,5 +58,8 @@ jobs:
         with:
           name: ship-gate-${{ matrix.os }}
           path: .ship-gate/
+          # atomcode 评审 #1: upload-artifact 自 2024-09-02 (issue #602) 默认
+          # 排除 hidden files/dirs;.ship-gate/ 是点目录,需显式打开。
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 30
