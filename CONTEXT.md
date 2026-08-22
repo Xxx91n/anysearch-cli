@@ -253,3 +253,17 @@ apps/mcp 组合层的工具注册范式：每工具一个 `src/tools/<tool>.tool
 
 ## Standard Schema Trigger（Standard Schema 触发器）
 SDK v2 中 `fromJsonSchema()` 把 JSON Schema（2020-12 方言）包装成 StandardSchemaWithJSON 形态的注册边界，使任意 JSON Schema 资产可被 MCP registerTool 接受。触发条件 = ADR-0018 D3 deferred 条款所需的"v2 SDK 就位"已满足（@modelcontextprotocol/server ^2.0.0）。语义载体：ADR-0018 D3 的 trigger fired 状态。ADR-0019 D3。
+
+## Ship Gate（发布闸门）
+一个CLI任务的发布阻断闸门统称。产品层的ship-gate（`scripts/ship-gate.mjs`，D1）与协议层的conformance Action（`.github/workflows/conformance.yml`，D2）**合并**构成任何一次发布必须越过的门。ADR-0020 D1/D2。
+_Avoid_: quality-gate, pre-merge check, release-pipeline
+
+## Product Smoke Gate（产品冒烟闸门）
+ship-gate 5 步中的"干活者"：静态rg断言 + turbo build/test/pack + 三平台矩阵 tgz 真安装 + spawn stdio 发 initialize 断言合法 JSON-RPC + 无 env 快速失败断言。**This gate blocks release**。Feathers "higher-level tests tend to be smoke tests" 的落子。ADR-0020 D1。
+_Avoid_: smoke test（太笼统）, integration test, unit gate
+
+## Non-Blocking Conformance Heartbeat（非阻断一致性脉搏）
+官方 conformance Action 的进化角色：**报告存在但不阻断发布**。expected-failures baseline 采用 qaskills 治理（未登记失败退出非零、stale 通过也非零）从而为下轮升级 Blocking 薄信号。应对 MCP 2026-07-28 spec 漂移周期。ADR-0020 D2/D6。
+_Avoid_: benchmark, certification, tier-X badge
+
+*End of Glossary*
