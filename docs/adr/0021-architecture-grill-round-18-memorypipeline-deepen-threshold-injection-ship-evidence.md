@@ -120,3 +120,37 @@ consolidateState(state, messages, totalTokens, hasRetrievalEvidence,
 - `git push` 走 ship-gate → Actions 看到 `ship-gate-ubuntu-latest` / `-macos-latest` / `-windows-latest` 三个 artifact 各自挂`report.json`
 - packages/kernel/src/memory-pipeline.ts 中已不存在 `LOW_WATERMARK_TOKENS` / `consecutiveReuses >= 3` 的字面量；`consolidateState` 测试断言换成 `assert(opts.lowWatermark)`/`assert(opts.reuseCap)` 可注入
 - Ponytail full:ship-gate.mjs 仍单文件零依赖；validate-domains.mjs 第二单文件零依赖；总新引入 ~100 行 Node stdlib 代码
+
+
+---
+
+## Appendix A — post-implementation atomcode audit (commit 56ac644, 2026-08-23)
+
+Audit ran atomcode against github.com/actions/upload-artifact issue #602/#611, smol-toml 1.8.0
+package.json, OpenAI DynamicCompactionPolicy, LangChain PR #33825, Claude Code env-vars, and
+LangWatch 2026-08. Found 8 anti-patterns; applied 4 fixes in commit 56ac644.
+
+### Applied fixes (this commit)
+
+| # | Sev | Anti-pattern | Fix |
+|---|-----|--------------|-----|
+| 1 | high | `path: .ship-gate/` + upload-artifact default excluded hidden files since 2024-09-02 (issue #602) → Layer-2 artifact would always be empty + only `if-no-files-found: warn` | Added `include-hidden-files: true` |
+| 2 | high | `lowWatermark = {fraction = 0.7}` validated by validate-domains.mjs but silently fell back to 128000 at runtime | `memory-pipeline.ts` throws MemoryPipeline error requiring absolute value; fraction wiring deferred to ADR-0022 |
+| 3 | med | `createRequire` from `packages/store/package.json` to reach smol-toml — phantom dep breaks if store changes package manager layout | `smol-toml` declared in root `devDependencies`; script uses direct `import { parse } from "smol-toml"` |
+| 5 | med | `(domain as any).compaction` type cast in memory-pipeline.ts | Typed access via `DomainConfigPort.compaction` |
+
+### Deferred (ponytail, low severity, real ceiling named)
+
+| # | Sev | Anti-pattern | Reason deferred |
+|---|-----|--------------|-----------------|
+| 4 | med | validate-domains re-implements guards instead of calling `store.resolve()` | Calling `resolve()` requires module loading chain; smol-toml standalone is zero-dep. Track for future refactor if guard drift appears |
+| 6 | low | `KNOWN_TOP` hardcoded list of schema top-level keys | List is small (10 keys); drift unlikely; runtime check suffices |
+| 7 | low | ADR says "retention-days 90 default", workflow sets 30 | 30 is the safer value; ADR text stays immutable (this appendix IS the correction) |
+| 8 | low | upload-artifact pinned @v4 while v7 exists | Upgrade path orthogonal; no breaking behavior expected for our usage |
+
+### Acceptance status after audit
+
+- ADR-0020 回归 5 票: **all green** (build/test/pack/spawn/stderr-notice)
+- `node scripts/validate-domains.mjs` → exit 0 on default/research
+- `node scripts/ship-gate.mjs --skip-matrix` → green, `.ship-gate/report.json` contains `step_1_5_validate_domains`
+- ADR spec vs implementation: D1/D2/D5/D6 verified; D3=D4 delivered with Fix #1 note above
