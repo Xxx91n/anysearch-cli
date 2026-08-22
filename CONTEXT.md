@@ -244,3 +244,12 @@ zod 版本门禁的正确形态：检测 `~standard.jsonSchema` 接口存在性�
 
 ## Conformance CLI Direct（conformance 直调）
 MCP 双版本兼容验证的工业做法：不用 composite GitHub Action（输入面无 spec-version/requirements），而直接跑官方 CLI `npx @modelcontextprotocol/conformance server --requirements 2025-11-25,2026-07-28`。tier-check 仅作为治理信号，不作硬门禁（issue #426 未闭合）。ADR-0018 D2。
+
+## Tool Schema Registry（工具模式注册表）
+kernel 端（`packages/kernel/src/tool-schemas.ts`）集中导出 5 个 ans_* 工具 TypeBox input schema 的单一事实源。所有业务约束（枚举/minLength/maxLength/白名单）通过 TypeBox keyword 直接表达（Type.Union/Type.Literal/Type.Optional）。kernel 不引入 MCP SDK，保持 ADR-0015 cleanroom 边界。下游组合层（apps/mcp 等）通过 `fromJsonSchema(KernelSchema)` 桥接消费，零 schema 双写。ADR-0019 D1。
+
+## Per-tool Barrel Pattern（单工具桶模式）
+apps/mcp 组合层的工具注册范式：每工具一个 `src/tools/<tool>.tool.ts` 文件，导出 `{ name, description, inputSchema: fromJsonSchema(Kernel_X_Input), handler }`；`src/tools/index.ts` 以 barrel 数组汇总全部工具；`server.ts` 一次 `forEach(server.registerTool)` 完成装配。加新工具 = 新增一个 `.tool.ts` 文件 + barrel 数组追加一项，kernel 与装配管线零改动。行业先例：cyanheads/obsidian-mcp-server（教科书实例）、chrome-devtools-mcp（>30k★）、playwright-mcp（>15k★）同构。ADR-0019 D2。
+
+## Standard Schema Trigger（Standard Schema 触发器）
+SDK v2 中 `fromJsonSchema()` 把 JSON Schema（2020-12 方言）包装成 StandardSchemaWithJSON 形态的注册边界，使任意 JSON Schema 资产可被 MCP registerTool 接受。触发条件 = ADR-0018 D3 deferred 条款所需的"v2 SDK 就位"已满足（@modelcontextprotocol/server ^2.0.0）。语义载体：ADR-0018 D3 的 trigger fired 状态。ADR-0019 D3。

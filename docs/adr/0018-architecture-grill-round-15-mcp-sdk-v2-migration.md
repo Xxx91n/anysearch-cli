@@ -27,6 +27,8 @@ Run `npx @modelcontextprotocol/codemod@latest v1-to-v2 .` in each publishable pa
 **D3 (Q3): dual-layer schema strategy — kernel via fromJsonSchema(TypeBox), apps via codemod + zod ^4.2.0**
 packages/kernel keeps TypeBox schemas; register via `fromJsonSchema(TypeBoxSchema)` (zero rewrite, JSON Schema 2020-12 dialect aligned). apps/mcp/apps/plugin run codemod + lock zod `^4.2.0`. Both lanes converge at the MCP v2 registration surface; no forced merge of schema layers.
 
+*Amended by ADR-0019 — round 16 operationalization (bridge enabled, validation consolidated); strategy unchanged.*
+
 **D4 (Q4): capability detection, not version-string guard**
 Guard on `~standard.jsonSchema` existence (PR #1895 pattern): zod 3.x => throw with upgrade instructions; zod 4.0-4.1 => fallback path with one-time console.warn (descriptions may drop); zod 4.2.0+ => native path. Install-time floor via `zod` dependency `^4.2.0` (not peer-dep; npm bypassable, pnpm multi-version).
 
