@@ -1,0 +1,52 @@
+# ADR-0020 D1 — Product Smoke Gate (blocking).
+# Runs scripts/ship-gate.mjs; merge and tag are gated on this workflow.
+
+name: ship-gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_matrix:
+        description: "Skip cross-OS matrix install (CI matrix only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ship-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ship-gate:
+    name: ship-gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: install (no scripts — better-sqlite3 prebuilt, see pnpm-workspace allowBuilds)
+        run: pnpm install --ignore-scripts
+
+      - name: ship-gate (5 steps; matrix install runs per-OS in CI)
+        run: node scripts/ship-gate.mjs
+        env:
+          CI: "true"

@@ -1,4 +1,7 @@
 import { defineConfig } from "tsup";
+import { readFileSync } from "node:fs";
+
+const pkg = JSON.parse(readFileSync("./package.json", "utf8"));
 
 export default defineConfig({
   entry: ["src/index.ts"],
@@ -8,6 +11,9 @@ export default defineConfig({
   sourcemap: false,
   clean: true,
   dts: true,
+  define: {
+    __PACKAGE_VERSION__: JSON.stringify(pkg.version),
+  },
   // Bundle ESM-only packages into CJS to avoid ERR_PACKAGE_PATH_NOT_EXPORTED.
   noExternal: [
     "@anysearch/kernel",

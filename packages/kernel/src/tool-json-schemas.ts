@@ -12,7 +12,6 @@
 // The TypeBox schemas use `additionalProperties: false` explicitly so that the
 // derived JSON Schema matches the strict-closed shape we want on the wire.
 
-import type { JsonSchemaType } from "@modelcontextprotocol/server";
 import {
   AnsChatInput,
   QueryKnowledgeInput,
@@ -21,6 +20,11 @@ import {
   SearchWebInput,
   type KernelToolName,
 } from "./tool-schemas";
+
+// ponytail: kernel must not depend on MCP SDK types. JsonSchemaType is
+// structurally a JSON Schema object; a structural alias keeps kernel free of
+// any cross-layer type dependency.
+type JsonSchemaType = Record<string, unknown>;
 
 // JSON round-trip to strip TypeBox [Kind] symbols and emit plain JSON Schema.
 // Per TypeBox author in MCP SDK issue #825, TypeBox objects ARE Json Schema;

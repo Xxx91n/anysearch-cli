@@ -4,6 +4,23 @@
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch/retriever/providers";
 import { loadDomainFromString } from "@anysearch/store";
 import { SqliteSessionStore } from "@anysearch/store";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// ponytail: doctor is diagnostics, not public API — read version lazily from
+// package.json at runtime so dist/ (which ships package.json) stays accurate
+// without needing a build-time define here.
+const PKG_VERSION: string = (() => {
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    // dist/commands/../.. = package root; src/commands/../.. = package root.
+    const pkgPath = path.resolve(here, "..", "..", "package.json");
+    return JSON.parse(readFileSync(pkgPath, "utf8")).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
 
 let passed = 0;
 let failed = 0;
@@ -19,7 +36,7 @@ function skip(label: string, detail?: string) {
 }
 
 export async function runDoctor(): Promise<number> {
-  console.log("ans doctor v0.0.0");
+  console.log(`ans doctor v${PKG_VERSION}`);
   console.log("---");
 
   // 1. Provider smoke test: construct each, check id+modes.

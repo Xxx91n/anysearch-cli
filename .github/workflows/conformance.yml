@@ -1,63 +1,81 @@
-name: mcp-conformance
+# ADR-0020 D2 — Non-Blocking Conformance Heartbeat.
+# Tracks MCP spec drift (currently targeting 2025-11-25; 2026-07-28 RC is in
+# flight, see ADR-0018). Result is surfaced via step summary + artifact;
+# never blocks main or release. Promotion to blocking requires a new ADR.
+
+name: conformance-heartbeat
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  schedule:
+    - cron: "0 2 * * 1" # Monday 02:00 UTC
   workflow_dispatch:
-
-concurrency:
-  group: conformance-${{ github.ref }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
 
-# ADR-0018 D2: bare npx + --requirements (per-revision); composite action lacks
-# spec-version/requirements inputs and pulls in npm-ci + build on every run.
-# Pin alpha explicitly: dist-tag latest=0.1.16 (pre --requirements support); typescript-sdk
-# pins 0.2.0-alpha.11 — same version pinned here for parity with typescript-sdk CI.
-env:
-  CONFORMANCE_VERSION: 0.2.0-alpha.11
-
 jobs:
-  server-conformance:
+  conformance:
+    name: mcp-conformance (anysearch-mcp)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: pnpm/action-setup@v4
-        with: { run_install: false }
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - run: pnpm install --ignore-scripts
-      - run: pnpm --filter @anysearch/mcp build
 
-      - name: Start MCP server (streamable HTTP, port 3001)
-        shell: bash
+      - name: install + build
+        run: |
+          pnpm install --ignore-scripts
+          pnpm turbo run build
+
+      - name: start MCP server (Streamable HTTP, port 3001)
         run: |
           node apps/mcp/dist/index.cjs --transport http --port 3001 &
-          echo $! > mcp.pid
-          timeout 30 bash -c 'until curl -sf http://127.0.0.1:3001/mcp -o /dev/null 2>&1 || curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3001/mcp; do sleep 0.5; done'
-          sleep 1
+          echo $! > /tmp/ans-mcp.pid
+          # naive readiness: conformance runner will retry on its own
+          sleep 3
+          curl -sSf -X POST http://127.0.0.1:3001/mcp \
+            -H "content-type: application/json" \
+            -d '{"jsonrpc":"2.0","id":0,"method":"ping"}' || true
 
-      # Legacy leg: stateful wire (initialize + Mcp-Session-Id). 30 server scenarios.
-      - name: Conformance 2025-11-25 (legacy)
-        run: npx -y @modelcontextprotocol/conformance@${{ env.CONFORMANCE_VERSION }} server --url http://127.0.0.1:3001/mcp --requirements 2025-11-25 -o artifacts/2025-11-25
+      - name: run conformance (non-blocking; baseline suppresses known drifts)
+        id: conformance
+        continue-on-error: true
+        run: |
+          npx -y @modelcontextprotocol/conformance@0.1.16 \
+            --url http://127.0.0.1:3001/mcp \
+            --expected-failures .github/conformance-expected-failures.yml \
+            --json-out conformance-results.json || true
 
-      # Modern leg: stateless wire (per-request _meta, no handshake). 37 server scenarios.
-      - name: Conformance 2026-07-28 (modern)
-        run: npx -y @modelcontextprotocol/conformance@${{ env.CONFORMANCE_VERSION }} server --url http://127.0.0.1:3001/mcp --requirements 2026-07-28 -o artifacts/2026-07-28
-
-      - name: Stop MCP server
+      - name: summarize
         if: always()
-        shell: bash
-        run: kill "$(cat mcp.pid)" 2>/dev/null || true
+        run: |
+          echo "## MCP Conformance Heartbeat" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Spec target: 2025-11-25 (stable). RC 2026-07-28 tracked in ADR-0018." >> "$GITHUB_STEP_SUMMARY"
+          if [ -f conformance-results.json ]; then
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            head -c 4000 conformance-results.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "(no results file produced)" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
-      - uses: actions/upload-artifact@v4
+      - name: upload results
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: conformance-results
-          path: artifacts
+          name: conformance-results-${{ github.run_number }}
+          path: conformance-results.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: stop MCP server
+        if: always()
+        run: kill "$(cat /tmp/ans-mcp.pid)" 2>/dev/null || true

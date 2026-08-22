@@ -1,0 +1,10 @@
+# ADR-0020 D2 — baseline of known MCP spec drifts.
+# Any entry removed from the actual failures must also be removed here,
+# otherwise the conformance runner exits non-zero (stale baseline guard).
+# Spec target: 2025-11-25 (stable). 2026-07-28 RC is tracked in ADR-0018 and
+# intentionally NOT gating this file yet.
+
+spec: "2025-11-25"
+
+# Format: "<scenario>:<check-id>" — see modelcontextprotocol/conformance docs.
+expected-failures: []

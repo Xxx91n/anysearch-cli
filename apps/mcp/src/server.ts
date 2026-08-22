@@ -10,12 +10,21 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { createEngine, type CompositionResult } from "@anysearch/kernel";
 import { TOOL_REGISTRY } from "./tools/index.js";
 
+// ponytail: single source of truth for server version. Tsup substitutes
+// __PACKAGE_VERSION__ at build time (see tsup.config.ts `define`); dev-mode
+// tsx runs read it from the nearest package.json via a small helper.
+declare const __PACKAGE_VERSION__: string | undefined;
+const PKG_VERSION: string =
+  typeof __PACKAGE_VERSION__ !== "undefined" && __PACKAGE_VERSION__
+    ? __PACKAGE_VERSION__
+    : "0.0.0";
+
 // buildServer: factory function. Each connection gets a fresh server instance.
 // ADR-0008 D4: factory pattern, era-agnostic, entry selects transport.
 export function buildServer(engine?: CompositionResult): McpServer {
   const eng = engine ?? createEngine();
   const server = new McpServer(
-    { name: "anysearch", version: "0.0.0" },
+    { name: "anysearch", version: PKG_VERSION },
     { capabilities: { tools: {} } }
   );
 

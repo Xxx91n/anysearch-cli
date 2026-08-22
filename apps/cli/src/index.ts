@@ -13,7 +13,13 @@ import { runChat } from "./commands/chat";
 import { runRecommend } from "./commands/recommend";
 import { runMcp } from "./commands/mcp";
 
-const VERSION = "0.0.0";
+// ponytail: single source of truth for CLI version, same pattern as apps/mcp
+// (ADR-0020 D3). tsup injects __PACKAGE_VERSION__ at build time.
+declare const __PACKAGE_VERSION__: string | undefined;
+const VERSION: string =
+  typeof __PACKAGE_VERSION__ !== "undefined" && __PACKAGE_VERSION__
+    ? __PACKAGE_VERSION__
+    : "0.0.0";
 
 const argv = process.argv.slice(2);
 
