@@ -46,8 +46,23 @@ const ANSI = process.stdout.isTTY
   ? { green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", reset: "\x1b[0m" }
   : { green: "", red: "", yellow: "", reset: "" };
 
+// ADR-0021 D4 — L1 evidence JSON persistence: collect every report entry
+// in-memory, write to .ship-gate/report.json at the end of main().
+const reportEntries = [];
+let currentStep = null; // filled by reportStep()
+function reportStep(name) {
+  currentStep = name;
+  reportEntries.push({ step: name, started_at: new Date().toISOString(), results: [] });
+}
+
 /** @param {"pass"|"fail"|"skip"|"info"} kind @param {string} msg */
 function report(kind, msg) {
+  if (currentStep) {
+    const top = reportEntries[reportEntries.length - 1];
+    if (top && top.step === currentStep) {
+      top.results.push({ kind, msg, at: new Date().toISOString() });
+    }
+  }
   const badge =
     kind === "pass" ? `${ANSI.green}[pass]${ANSI.reset}`
     : kind === "fail" ? `${ANSI.red}[fail]${ANSI.reset}`
@@ -75,7 +90,32 @@ function run(cmd, args, opts = {}) {
   });
 }
 
+// ADR-0021 D4 — write Layer-1 evidence JSON. Best-effort, fail-open (must not
+// crash ship-gate when running on a read-only FS or before first mkdir).
+function flushReportEntries(exitKind) {
+  try {
+    const dir = path.join(ROOT, ".ship-gate");
+    fs.mkdirSync(dir, { recursive: true });
+    const payload = {
+      schema: "anysearch/ship-gate-report@1",
+      finished_at: new Date().toISOString(),
+      exit: exitKind,
+      entries: reportEntries,
+    };
+    fs.writeFileSync(
+      path.join(dir, "report.json"),
+      JSON.stringify(payload, null, 2)
+    );
+  } catch (e) {
+    // Fail-open — stderr, not stdout, so stdio purity contract holds.
+    process.stderr.write(
+      "ship-gate: report.json write failed: " + String(e && e.message) + "\n"
+    );
+  }
+}
+
 function fail(msg) {
+  flushReportEntries("fail");
   report("fail", msg);
   process.exit(1);
 }
@@ -162,6 +202,21 @@ function stepStaticAssertions() {
     );
   }
   report("pass", "tool-schemas.ts has 5 additionalProperties:false closers");
+}
+
+// ---------------------------------------------------------------------------
+// Step 1.5 — domain schema validation (ADR-0021 D3, blocking)
+// ---------------------------------------------------------------------------
+async function stepValidateDomains() {
+  reportStep("step_1_5_validate_domains");
+  report("info", "step 1.5/5: validate domains/*.toml compaction guards");
+  const vPath = path.join(ROOT, "scripts/validate-domains.mjs");
+  if (!fs.existsSync(vPath)) {
+    report("skip", "validate-domains.mjs absent — step skipped");
+    return;
+  }
+  await run(process.execPath, [vPath]);
+  report("pass", "domains/*.toml compaction guards green");
 }
 
 // ---------------------------------------------------------------------------
@@ -457,19 +512,25 @@ const skipMatrix = args.has("--skip-matrix");
 const quick = args.has("--quick");
 
 (async () => {
+  reportStep("step_1_static_assertions");
   stepStaticAssertions();
-  if (!quick) await stepBuildAndTest();
+  await stepValidateDomains();
+  if (!quick) { reportStep("step_2_turbo"); await stepBuildAndTest(); }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-ship-gate-"));
   try {
+    reportStep("step_3_pack");
     const tgzDir = await stepPack(tmpDir);
-    if (!quick) await stepInstallVerify(tgzDir, tmpDir, { skipMatrix });
+    if (!quick) { reportStep("step_4_install_verify"); await stepInstallVerify(tgzDir, tmpDir, { skipMatrix }); }
+    reportStep("step_5_mcp_stdio");
     await stepMcpInitialize();
     await stepFailOpenBoot();
     report("pass", "ship gate green — ready to tag v0.1.0-rc.0");
+    flushReportEntries("pass");
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 })().catch((err) => {
   report("fail", err.message);
+  flushReportEntries("fail");
   process.exit(1);
 });

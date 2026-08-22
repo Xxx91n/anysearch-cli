@@ -109,14 +109,21 @@ export async function adjudicateReuseCompress(
 
 // ADR-0016 D5/D8: PURE consolidateState function — zero I/O, zero side effects.
 // Returns decision + optional summaryRequest. Shell executes LLM + persistence.
+// ADR-0021 D2: options injectable; defaults 128000 / 3 preserve zero-behavior-change.
+export interface ConsolidateOpts {
+  lowWatermark?: number;
+  reuseCap?: number;
+}
+
 export function consolidateState(
   state: ConsolidationState,
   messages: any[],
   totalTokens: number,
   hasRetrievalEvidence: boolean,
+  opts?: ConsolidateOpts,
 ): ConsolidateResult {
-  // 128K low watermark (~12.8% of 1M window, anti context rot).
-  const LOW_WATERMARK_TOKENS = 128000;
+  const LOW_WATERMARK_TOKENS = opts?.lowWatermark ?? 128000;
+  const REUSE_CAP = opts?.reuseCap ?? 3;
   const msgCountAtTrigger = messages.length; // local const for race-safe gap anchor update.
 
   const triggerLowWatermark = totalTokens > LOW_WATERMARK_TOKENS;
@@ -126,8 +133,8 @@ export function consolidateState(
     return { state, decision: "skip" };
   }
 
-  // D8: consecutive REUSE cap — 3 forces COMPRESS.
-  const reuseCapped = state.consecutiveReuses >= 3;
+  // D8: consecutive REUSE cap forces COMPRESS.
+  const reuseCapped = state.consecutiveReuses >= REUSE_CAP;
   const shouldAdjudicate = triggerPostSearch && !triggerLowWatermark;
   const needsAdjudication = shouldAdjudicate && !reuseCapped;
 
@@ -239,8 +246,15 @@ export class MemoryPipeline {
         }
       } catch {}
 
-      // D8: Call pure function for decision.
-      const result = consolidateState(state, messages, totalTokens, hasRetrievalEvidence);
+      // D8: Call pure function for decision; inject compaction opts (ADR-0021 D2).
+      const compactionCfg = (domain as any).compaction;
+      const lw = compactionCfg?.lowWatermark;
+      const resolvedLowWatermark =
+        typeof lw === "number" ? lw : undefined; // {fraction} handled by caller pre-resolution; default fallback inside pure fn
+      const result = consolidateState(state, messages, totalTokens, hasRetrievalEvidence, {
+        lowWatermark: resolvedLowWatermark,
+        reuseCap: compactionCfg?.reuseCap,
+      });
 
       if (result.decision === "skip") return;
 

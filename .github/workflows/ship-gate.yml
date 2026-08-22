@@ -50,3 +50,13 @@ jobs:
         run: node scripts/ship-gate.mjs
         env:
           CI: "true"
+
+      # ADR-0021 D4 — Layer-2 artifact upload, runs even when ship-gate fails.
+      - name: upload ship-gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ship-gate-${{ matrix.os }}
+          path: .ship-gate/
+          if-no-files-found: warn
+          retention-days: 30

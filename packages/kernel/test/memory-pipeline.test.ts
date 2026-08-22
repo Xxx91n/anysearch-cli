@@ -480,7 +480,29 @@ console.log(`MemoryPipeline tests: ${passed} passed, ${failed} failed`);
     assertPure(state.lastSummaryMsgCount === stateCopy.lastSummaryMsgCount, "pure: no mutation of lastSummaryMsgCount");
   }
 
-  console.log("consolidateState pure function tests: " + passed + " assertions passed, " + failed + " failed");
+  
+// ADR-0021 D2: opts injection — overwrite lowWatermark triggers compress below default 128K
+{
+  const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
+  const r = consolidateState(state, ["m1","m2","m3"], 60000, false, { lowWatermark: 50000 });
+  assertPure(r.decision === "compress", "pure: opts.lowWatermark=50000 forces compress at 60K");
+}
+// ADR-0021 D2: fraction is resolved at caller; pure fn only sees absolute number.
+// Verify that with default watermark (128000) and 60K totalTokens, no trigger fires.
+{
+  const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
+  const r = consolidateState(state, ["m1","m2","m3"], 60000, false);
+  assertPure(r.decision === "skip", "pure: default 128K watermark skips at 60K");
+}
+// ADR-0021 D2: reuseCap overwrite — cap=1 with consecutiveReuses=1 forces compress (cap hit).
+{
+  const state = { version: 1, consecutiveReuses: 1, lastSummaryMsgCount: 0 };
+  const msgs = ["m1","m2","m3","m4","m5"];
+  const r = consolidateState(state, msgs, 1000, true, { reuseCap: 1 });
+  assertPure(r.decision === "compress", "pure: reuseCap=1 with consecutiveReuses=1 forces compress");
+  assertPure(r.state.consecutiveReuses === 0, "pure: cap-forced compress resets consecutiveReuses");
+}
+console.log("consolidateState pure function tests: " + passed + " assertions passed, " + failed + " failed");
 }
 
 if (failed > 0) process.exit(1);

@@ -266,4 +266,16 @@ _Avoid_: smoke test（太笼统）, integration test, unit gate
 官方 conformance Action 的进化角色：**报告存在但不阻断发布**。expected-failures baseline 采用 qaskills 治理（未登记失败退出非零、stale 通过也非零）从而为下轮升级 Blocking 薄信号。应对 MCP 2026-07-28 spec 漂移周期。ADR-0020 D2/D6。
 _Avoid_: benchmark, certification, tier-X badge
 
+## Threshold Injection（阈值注入）
+压缩/复用阈值（`lowWatermark` / `reuseCap`）从代码硬编码被提为 domain 一等公民：用户可在 `[compaction]` TOML 段声明两可选字段，类型为 `number | {fraction:number}`(Threshold Form)；纯函数 `consolidateState` 通过可选 `opts` 参数读取，默认值 = ADR-0013 现状，零行为变化。对齐 OpenAI DynamicCompactionPolicy + LangChain `trigger=("fraction",X)` + Anthropic `trigger:{type:"input_tokens",value:N}` 三家蓝图。ADR-0021 D1/D2。
+_Avoid_: magic number, voodoo constant, hardcoded constant
+
+## Ship-Gate Evidence Layer（Ship-Gate 证据层）
+ship-gate.mjs 的三层持久化心智：Layer 0=stdout 供人眼看；Layer 1=`.ship-gate/report.json` 机器可读结构化证据（脚本写、gitignored);Layer 2=CI `upload-artifact` 跨 job 传递、保留期审计、可下载。仅 stdout 不足，进 git 也错；仅文件不上传 CI 也错。Humble/Farley + Google SRE + GitLab/CircleCI 官方文档共识。ADR-0021 D4。
+_Avoid_: log, step-summary, telemetry
+
+## Domain Schema Validation Acceptance（Domain Schema 校验 Acceptance 阶段）
+ship-gate.mjs 在第 1 步（静态 rg 断言）与第 2 步（turbo check/test/build）之间插入 step 1.5 `validate-domains.mjs`：扫 `domains/*.toml` → resolve() → zod 校验 `CompactionConfig` 类型（`lowWatermark` 在 [50000,∞) 或 `fraction ∈ (0,1)`；`reuseCap ≥ 1`)，错误立即 fail-fast 并指向文件：行号，防 commit 后炸运行时。Humble/Farley acceptance-stage + Ousterhout fail-fast。ADR-0021 D3。
+_Avoid_: lint pass, configuration check, startup validation
+
 *End of Glossary*

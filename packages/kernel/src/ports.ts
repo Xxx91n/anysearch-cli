@@ -41,7 +41,14 @@ export interface DomainConfigPort {
   hooks: { toolWhitelist: string[] };
   rag: { adapter: string; config?: Record<string, unknown> };
   // ADR-0012 D7: compaction config for independent summary model.
-  compaction?: { model?: string; sufficiencyMaxRerounds?: number };
+  // ADR-0021 D1: mirror store CompactionConfig shape — single type defined in
+  // packages/store/src/domain-schema.ts; referenced here to avoid drift.
+  compaction?: {
+    model?: string;
+    sufficiencyMaxRerounds?: number;
+    lowWatermark?: number | { fraction: number };
+    reuseCap?: number;
+  };
 }
 
 // BudgetLedgerPort: per-call reserve-then-settle interface.
