@@ -7,6 +7,14 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import express from "express";
 import { buildServer } from "./server.js";
 
+// ponytail: tsup define substituites __PACKAGE_VERSION__ at build time (see
+// tsup.config.ts). Dev-mode tsx fallthrough reads "0.0.0" — fine for doctor.
+declare const __PACKAGE_VERSION__: string | undefined;
+const PKG_VERSION: string =
+  typeof __PACKAGE_VERSION__ !== "undefined" && __PACKAGE_VERSION__
+    ? __PACKAGE_VERSION__
+    : "0.0.0";
+
 const argv = process.argv.slice(2);
 
 // Parse --transport stdio|http and --port <n>
@@ -72,7 +80,7 @@ async function main() {
 
     // Health check endpoint
     app.get("/health", (_req, res) => {
-      res.json({ status: "ok", server: "anysearch-mcp", version: "0.0.0" });
+      res.json({ status: "ok", server: "anysearch-mcp", version: PKG_VERSION });
     });
 
     // SECURITY: localhost-only binding — no remote access (CWE-306).

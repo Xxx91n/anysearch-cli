@@ -115,6 +115,53 @@ function stepStaticAssertions() {
     }
   }
   report("pass", `tool registry wires ${tools.length} ans_* tools`);
+
+  // 1d. ADR-0020 D1.1: stdout purity — apps/mcp/src + packages/kernel/src must
+  // not call console.* / process.stdout.* (server stdio purity contract).
+  // Plugin hooks legitimately write stdout (host contract); they are out of scope.
+  const dirty = [];
+  for (const dir of ["apps/mcp/src", "packages/kernel/src"]) {
+    const abs = path.join(ROOT, dir);
+    if (!fs.existsSync(abs)) continue;
+    const stack = [abs];
+    while (stack.length) {
+      const cur = stack.pop();
+      for (const e of fs.readdirSync(cur, { withFileTypes: true })) {
+        const p = path.join(cur, e.name);
+        if (e.isDirectory()) stack.push(p);
+        else if (/\.(ts|mts|cts)$/.test(e.name)) {
+          const src = fs.readFileSync(p, "utf8");
+          const re = /(console\.(log|info|warn|error)|process\.stdout\.(write|dir))\b/g;
+          let m;
+          while ((m = re.exec(src))) {
+            dirty.push(`${path.relative(ROOT, p)} — ${m[0]}`);
+          }
+        }
+      }
+    }
+  }
+  if (dirty.length) {
+    fail(
+      `stdout purity violation in product sources:\n  - ${dirty.join("\n  - ")}\n` +
+        "ADR-0020 D1.1: MCP server must emit MCP protocol frames only on stdout. " +
+        "Use process.stderr.write / console.error redirected to stderr."
+    );
+  }
+  report("pass", "no console.log | stdout.write in apps/mcp/src + packages/kernel/src");
+
+  // 1e. ADR-0020 D1.1: kernel tool-schemas must explicitly close with
+  // `additionalProperties: false` 5 times (one per ans_* tool).
+  const schemasSrc = fs.readFileSync(
+    path.join(ROOT, "packages/kernel/src/tool-schemas.ts"),
+    "utf8"
+  );
+  const apfCount = (schemasSrc.match(/additionalProperties:\s*false/g) || []).length;
+  if (apfCount !== 5) {
+    fail(
+      `tool-schemas.ts expected 5 additionalProperties:false markers, found ${apfCount}`
+    );
+  }
+  report("pass", "tool-schemas.ts has 5 additionalProperties:false closers");
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +240,54 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
       report("pass", `${pkg.name}@${pkg.version} tarball shape ok (no bin)`);
     }
   }
+
+  // 4b. pnpm verify-ts-release pattern (PR #13061): do a REAL clean-prefix
+  // npm install of all six tgz, so pnpm-baked workspace deps resolve
+  // (pnpm pack rewrites "workspace:*" to "0.1.0-rc.0"; npm then needs every
+  // @anysearch/* present in the install set to resolve relatively).
+  const installPrefix = path.join(tmpDir, "install-prefix");
+  fs.mkdirSync(installPrefix, { recursive: true });
+  fs.writeFileSync(
+    path.join(installPrefix, "package.json"),
+    JSON.stringify({ name: "ans-ship-gate-install-smoke", private: true }, null, 2),
+    "utf8"
+  );
+  const tgzAll = fs
+    .readdirSync(tgzDir)
+    .filter((f) => f.endsWith(".tgz"))
+    .map((f) => path.join(tgzDir, f));
+  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+  await run(
+    npmCmd,
+    [
+      "install",
+      "--prefix",
+      installPrefix,
+      "--ignore-scripts=false",
+      "--no-audit",
+      "--no-fund",
+      "--no-package-lock",
+      ...tgzAll,
+    ],
+    { stdio: "pipe" }
+  );
+  // After real install, kernel/mcp/cli/plugin must all be resolvable AND the
+  // ans/ans-mcp bins must land on disk (bin-links created by npm).
+  const nmDir = path.join(installPrefix, "node_modules");
+  for (const sub of ["@anysearch/kernel", "@anysearch/mcp", "@anysearch/cli", "@anysearch/plugin", "@anysearch/store", "@anysearch/retriever"]) {
+    if (!fs.existsSync(path.join(nmDir, sub))) {
+      fail(`install-prefix: ${sub} missing after npm install`);
+    }
+  }
+  // bin links land in <prefix>/node_modules/.bin/
+  const binDir = path.join(nmDir, ".bin");
+  const binNames = process.platform === "win32" ? ["ans.cmd", "ans-mcp.cmd"] : ["ans", "ans-mcp"];
+  for (const b of binNames) {
+    if (!fs.existsSync(path.join(binDir, b))) {
+      fail(`install-prefix: bin ${b} missing after npm install`);
+    }
+  }
+  report("pass", "npm install --prefix smoke ok (6 workspace pkgs resolvable, bins linked)");
 }
 
 
@@ -267,6 +362,94 @@ async function stepMcpInitialize() {
 }
 
 // ---------------------------------------------------------------------------
+// Step 5b — fail-open: server must boot + respond to initialize even with NO
+// ANYSEARCH_* / TAVILY_* / EXA_* / ANS_* env set. Server-level fail-fast is
+// github-mcp-server convention (exit non-zero + stderr) — but our env vars are
+// tool-level (retriever providers check them per-call), so server MUST boot
+// and answer initialize. This is the ADR-0009 D6 contract: dead env = empty
+// data, not dead protocol.
+// ---------------------------------------------------------------------------
+async function stepFailOpenBoot() {
+  report("info", "step 5b: spawn MCP with scrubbed env, assert fail-open boot");
+
+  const mcpEntry = path.join(ROOT, MCP_MAIN);
+  const req = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "ship-gate-failopen", version: "0.1.0-rc.0" },
+    },
+  };
+
+  // Scrub anything that looks like an anysearch/provider env key.
+  const scrubbed = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (/^(ANYSEARCH|ANS|TAVILY|EXA|CONTEXT_MODE|OMEGA|SERP|BRAVE|GOOGLE)_/i.test(k)) continue;
+    scrubbed[k] = v;
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [mcpEntry, "--transport", "stdio"], {
+      cwd: ROOT,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: scrubbed,
+    });
+    let buf = "";
+    let stderrBuf = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("fail-open boot: initialize timed out after 15s (env scrub too aggressive?)"));
+    }, 15_000);
+
+    child.stderr.on("data", (d) => (stderrBuf += d.toString("utf8")));
+    child.stdout.on("data", (chunk) => {
+      buf += chunk.toString("utf8");
+      let idx;
+      while ((idx = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (!line) continue;
+        try {
+          const msg = JSON.parse(line);
+          if (msg.id === 1 && msg.result) {
+            clearTimeout(timer);
+            child.kill();
+            if (!stderrBuf.includes("stdio transport ready")) {
+              reject(
+                new Error(
+                  `fail-open boot: expected stderr "stdio transport ready" notice, got: ${stderrBuf.slice(0, 300)}`
+                )
+              );
+              return;
+            }
+            report(
+              "pass",
+              `fail-open boot ok: env scrubbed -> initialize green + stderr notice (server=${msg.result.serverInfo?.name} v${msg.result.serverInfo?.version})`
+            );
+            resolve();
+            return;
+          }
+        } catch {
+          // non-JSON line on stdout
+        }
+      }
+    });
+    child.on("exit", (code) => {
+      clearTimeout(timer);
+      reject(new Error(`fail-open boot: MCP exited early with code ${code}; stderr tail: ${stderrBuf.slice(-400)}`));
+    });
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.stdin.write(JSON.stringify(req) + "\n");
+  });
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 const args = new Set(process.argv.slice(2));
@@ -281,6 +464,7 @@ const quick = args.has("--quick");
     const tgzDir = await stepPack(tmpDir);
     if (!quick) await stepInstallVerify(tgzDir, tmpDir, { skipMatrix });
     await stepMcpInitialize();
+    await stepFailOpenBoot();
     report("pass", "ship gate green — ready to tag v0.1.0-rc.0");
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
