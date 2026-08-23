@@ -76,5 +76,11 @@ export interface FusedEnvelope {
     elapsedMs: number;
     // ADR-0014 D3/D7: MVSS sufficiency signal from computeSufficiency().
     sufficiency?: SufficiencySignal;
+    // ADR-0022 D3: per-provider answer attribution for transparency
+    // without restructuring envelope.answers (stays string[]).
+    providerAnswers?: Array<{ provider: string; text: string }>;
+    // ADR-0022 D4: fail-open marker — false when no queried provider
+    // supports answer mode (e.g. AnySearch-only future).
+    answersAvailable?: boolean;
   };
 }

@@ -46,6 +46,16 @@ export async function runSearch(args: string[]): Promise<number> {
 
     // Metadata.
     console.log("---");
+    // ADR-0022 D1: print provider answers when present (unverified, provider-side).
+    if (envelope.answers.length > 0) {
+      console.log("Provider answers (unverified):");
+      const pa = envelope.metadata.providerAnswers ?? [];
+      for (const a of pa.length > 0 ? pa : envelope.answers.map(t => ({ provider: "unknown", text: t }))) {
+        const text = a.text.length > 300 ? a.text.slice(0, 300) + "..." : a.text;
+        console.log("  [" + a.provider + "] " + text);
+      }
+      console.log("");
+    }
     console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
     if (envelope.metadata.providersFailed.length > 0) {
       console.log("Providers failed: " + envelope.metadata.providersFailed.join(", "));

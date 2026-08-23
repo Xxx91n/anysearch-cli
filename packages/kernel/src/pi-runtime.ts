@@ -20,14 +20,16 @@ function createSearchTool(retriever: RetrieverPort): AgentTool {
   return {
     name: "search",
     label: "Search",
-    description: "Search the web for information using multiple search engines. Returns fused, deduplicated results with RRF ranking.",
+    // ADR-0022 D1/D4: answer is provider-fulfilled (Exa/Tavily only); no CLI-side
+    // synthesis. When no provider supports it, answers=[] and metadata.answersAvailable=false.
+    description: "Search the web for information using multiple search engines. Returns fused, deduplicated results with RRF ranking. mode=answer returns provider-generated answers (Exa/Tavily only, unverified) alongside results; answers are provider-side, not synthesized locally.",
     parameters: Type.Object({
       query: Type.String({ description: "The search query" }),
       mode: Type.Optional(Type.Union([
         Type.Literal("fast"),
         Type.Literal("deep"),
         Type.Literal("answer"),
-      ], { description: "Search mode: fast (default), deep (more sources), answer (with synthesis)" })),
+      ], { description: "Search mode: fast (default), deep (more sources), answer (provider-generated answer, available only when provider supports it)" })),
     }),
     execute: async (_toolCallId: string, params: any) => {
       const q: Query = {
@@ -38,7 +40,12 @@ function createSearchTool(retriever: RetrieverPort): AgentTool {
       const summary = JSON.stringify(envelope, null, 2);
       return {
         content: [{ type: "text", text: summary }],
-        details: { resultCount: envelope.results?.length || 0 },
+        details: {
+          resultCount: envelope.results?.length || 0,
+          // ADR-0022 D1/D3: expose answers + provenance as first-class details.
+          answerCount: envelope.answers?.length || 0,
+          providerAnswers: envelope.metadata?.providerAnswers ?? [],
+        },
       };
     },
   };

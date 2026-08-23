@@ -11,7 +11,8 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
   server.registerTool(
     "search_web",
     {
-      description: "Search the web using multiple search engines (exa, tavily, anysearch). Results are auto-indexed to FTS5 and a distilled summary is returned.",
+      // ADR-0022 D1: surface provider answers as first-class output, marked unverified.
+      description: "Search the web using multiple search engines (exa, tavily, anysearch). Results are auto-indexed to FTS5 and a distilled summary is returned. mode=answer additionally returns provider-generated answers (unverified, provider-side only).",
       inputSchema: fromJsonSchema(KernelJsonSchemas.search_web),
     },
     async (args: unknown) => {
@@ -40,6 +41,12 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
         totalResults: envelope.results.length,
         showing: topResults.length,
         results: topResults,
+        // ADR-0022 D1/D2/D3: first-class answers marked providerGenerated+unverified.
+        answers: envelope.answers ?? [],
+        answersAvailable: envelope.metadata?.answersAvailable ?? false,
+        ...(envelope.metadata?.providerAnswers?.length
+          ? { providerAnswers: envelope.metadata.providerAnswers.map(a => ({ ...a, providerGenerated: true, verified: false })) }
+          : {}),
         providersQueried: envelope.metadata?.providersQueried ?? [],
         ...(sufficiency ? { sufficiency } : {}),
       }, null, 2);

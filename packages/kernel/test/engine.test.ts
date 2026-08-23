@@ -101,6 +101,14 @@ async function main() {
   const result6 = await engine6.search({ query: "meaning of life", mode: "answer" });
   assert(result6.answers.length === 1, "answer collected");
   assert(result6.answers[0] === "42", "answer content correct");
+  // ADR-0022 D3/D4: provenance in metadata, not in answers[]; fail-open marker.
+  assert(result6.metadata.providerAnswers?.length === 1, "providerAnswers collected");
+  assert(result6.metadata.providerAnswers?.[0].provider === "answer-provider", "providerAnswers attribution");
+  assert(result6.metadata.providerAnswers?.[0].text === "42", "providerAnswers text");
+  assert(result6.metadata.answersAvailable === true, "answersAvailable true when answers present");
+  // ADR-0022 D2: answers must NOT inflate sufficiency — sufficiency computed from results only.
+  // With a single provider + single result the verdict cannot be promoted by answers.
+  assert(result6.metadata.sufficiency?.volume.uniqueResults === 1, "sufficiency ignores answers (uniqueResults=1)");
 
   // 7. DEFAULT_GATE values.
   assert(DEFAULT_GATE.minProviders === 2, "default gate minProviders = 2");

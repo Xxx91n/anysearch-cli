@@ -261,6 +261,8 @@ export class RetroaererdEngine {
     const providersFailed: string[] = [];
     const providersCancelled: string[] = [];
     const answers: string[] = [];
+    // ADR-0022 D3: per-provider attribution in metadata, not in answers[].
+    const providerAnswers: Array<{ provider: string; text: string }> = [];
 
     for (let i = 0; i < settled.length; i++) {
       const s = settled[i];
@@ -280,6 +282,9 @@ export class RetroaererdEngine {
           providerLists.push(urls);
           if (inner.envelope.answers) {
             answers.push(...inner.envelope.answers);
+            for (const text of inner.envelope.answers) {
+              providerAnswers.push({ provider: providerIds[i], text });
+            }
           }
         } else if (inner.status === "rejected") {
           providersFailed.push(providerIds[i]);
@@ -324,6 +329,9 @@ export class RetroaererdEngine {
         elapsedMs: Date.now() - start,
         // ADR-0014 D3: MVSS four-segment sufficiency signal.
         sufficiency: suff.mvs,
+        // ADR-0022 D3/D4: provenance + fail-open marker.
+        providerAnswers,
+        answersAvailable: providerAnswers.length > 0,
       },
     };
   }

@@ -133,19 +133,6 @@ NOOP 裁决的输入构造。从 messages 中定位上次 rolling_summary anchor
 ## Consecutive Reuse Cap（连续 REUSE 上限）
 NOOP 裁决的安全阀。维护 consecutiveReuses 计数器：REUSE 则递增，COMPRESS 则归零。连续 3 次后第 4 次跳过裁决直接 COMPRESS。防止裁决 LLM 系统性偏差（总判 REUSE）导致摘要长期过期。对齐 LOCA-bench "更高频压缩 → 更少 rot"结论和 Letta issue #957 死循环故障先例。ADR-0013 D8。
 
-## Answer Mode（Answer 模式）
-检索提供端原生 answer 能力在 consumer 层的暴露契约。当前 retriever 层定义为 mode: "answer"（Exa /answer、Tavily includeAnswer），consumer 层（pi-runtime/search-web/CLI）透传但不读 envelope.answers。ADR-0022 决策：暴露给工具 schema 为 provider-fulfilled 搜索结果，不加 LLM 兜底，不做本地合成。任何 provider 无关性原则：answer 的实质责任在 provider 侧，AnySearch 可能后续跟进。
-_Avoid_: synthesis, generated answer, response mode, summarize
-
-## Answer Provenance（答案溯源）
-provider 原生 answer 在融合信封（FusedEnvelope）里的身份标记策略。answers 字段保持 string[]（不含 provider 归属），metadata 新增 providerAnswers[] 字段包含 {provider, text} 结构用于调试与 UI 展示。理由：envelope.answers 当前仅被工具壳 JSON.stringify 忽略，加 provider 维度会让 API 复杂化且没有消费者；若未来产品决定展示 answer 的来源，需要新 UI 决策再改契约（YAGNI 现在不建）。ADR-0022 D3。
-_Avoid_: annotated answers, source attribution, labeled answer
-
-## Sufficiency Gate Preserved（充足性门槛保持）
-answer 提取不参与 Sufficiency Gate 的 verdict/agreement/volume/spread 四维计算。sufficiency evaluator 继续只看 results 数组的 cheap signal（唯一结果、域名、成功 provider 数、分数扩展），不 treat answer 为额外 sufficiency 信号。理由：answers 来自 provider 生成，受上下文截断与模型能力限制，计入会混淆门户：AUC ≤ 0.76 的上限是由 results 信号质量决定的，answer 引入 false confidence。这与 LangChain CRAG 的 self-RAG 机制对齐：LLM 自信评估不可靠，仅作提示。ADR-0022 D3。
-_Avoid_: answer-informed gate, synthesis-aware sufficiency
-
-
 *End of Glossary*
 
 ## Cursor Dual Channel（Cursor 双通道注入）
@@ -290,5 +277,17 @@ _Avoid_: log, step-summary, telemetry
 ## Domain Schema Validation Acceptance（Domain Schema 校验 Acceptance 阶段）
 ship-gate.mjs 在第 1 步（静态 rg 断言）与第 2 步（turbo check/test/build）之间插入 step 1.5 `validate-domains.mjs`：扫 `domains/*.toml` → resolve() → zod 校验 `CompactionConfig` 类型（`lowWatermark` 在 [50000,∞) 或 `fraction ∈ (0,1)`；`reuseCap ≥ 1`)，错误立即 fail-fast 并指向文件：行号，防 commit 后炸运行时。Humble/Farley acceptance-stage + Ousterhout fail-fast。ADR-0021 D3。
 _Avoid_: lint pass, configuration check, startup validation
+
+## Answer Mode（Answer 模式）
+检索提供端原生 answer 能力在 consumer 层的暴露契约。当前 retriever 层定义为 mode: "answer"（Exa /answer、Tavily includeAnswer），consumer 层（pi-runtime/search-web/CLI）透传但不读 envelope.answers。ADR-0022 决策：暴露给工具 schema 为 provider-fulfilled 搜索结果，不加 LLM 兜底，不做本地合成。任何 provider 无关性原则：answer 的实质责任在 provider 侧，AnySearch 可能后续跟进。
+_Avoid_: synthesis, generated answer, response mode, summarize
+
+## Answer Provenance（答案溯源）
+provider 原生 answer 在融合信封（FusedEnvelope）里的身份标记策略。answers 字段保持 string[]（不含 provider 归属），metadata 新增 providerAnswers[] 字段包含 {provider, text} 结构用于调试与 UI 展示。理由：envelope.answers 当前仅被工具壳 JSON.stringify 忽略，加 provider 维度会让 API 复杂化且没有消费者；若未来产品决定展示 answer 的来源，需要新 UI 决策再改契约（YAGNI 现在不建）。ADR-0022。
+_Avoid_: annotated answers, source attribution, labeled answer
+
+## Sufficiency Gate Preserved（充足性门槛保持）
+answer 提取不参与 Sufficiency Gate 的 verdict/agreement/volume/spread 四维计算。sufficiency evaluator 继续只看 results 数组的 cheap signal（唯一结果、域名、成功 provider 数、分数扩展），不 treat answer 为额外 sufficiency 信号。理由：answers 来自 provider 生成，受上下文截断与模型能力限制，计入会混淆门户：AUC ≤ 0.76 的上限是由 results 信号质量决定的，answer 引入 false confidence。这与 LangChain CRAG 的 self-RAG 机制对齐：LLM 自信评估不可靠，仅作提示。ADR-0022。
+_Avoid_: answer-informed gate, synthesis-aware sufficiency
 
 *End of Glossary*
