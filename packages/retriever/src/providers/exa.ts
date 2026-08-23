@@ -4,7 +4,7 @@
 // searchAndContents is deprecated - use search(query, {contents: {text: true}}) instead.
 
 import Exa from "exa-js";
-import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, Mode } from "../contract";
+import type { ProviderAnswer, SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, Mode } from "../contract";
 
 // Mode mapping: our modes -> Exa search type.
 const MODE_TYPE: Record<Mode, "auto" | "fast" | "deep-lite" | "deep"> = {
@@ -45,13 +45,26 @@ export class ExaProvider implements SearchProvider {
     }));
 
     // answer mode: use exa.answer() separately.
+    // ADR-0022 D2/D3 round-47 fix: surface citations (Exa returns answer+citations paired)
+    // and log answer() failure to stderr instead of silent-swallow (failure must be visible;
+    // search results still return unblocked per ponytail fail-open).
     const answers: string[] = [];
+    let answersMeta: ProviderAnswer[] | undefined;
     if (req.mode === "answer") {
       try {
         const ans = await this.client.answer(req.query, { model: "exa" });
-        if (typeof ans.answer === "string") answers.push(ans.answer);
-      } catch {
-        // ponytail: answer() failure does not block search results.
+        if (typeof ans.answer === "string") {
+          answers.push(ans.answer);
+          const citations = Array.isArray((ans as { citations?: Array<{ url?: string; title?: string }> }).citations)
+            ? (ans as { citations?: Array<{ url?: string; title?: string }> }).citations!
+                .filter((c): c is { url: string; title?: string } => typeof c.url === "string")
+                .map((c) => ({ url: c.url, title: c.title }))
+            : undefined;
+          answersMeta = [{ provider: this.id, text: ans.answer, verified: false, ...(citations?.length ? { citations } : {}) }];
+        }
+      } catch (err) {
+        // fail-open: search results still return, but answer failure is observable on stderr.
+        console.error(`[exa] answer() failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
@@ -59,6 +72,7 @@ export class ExaProvider implements SearchProvider {
       provider: "exa",
       results,
       answers,
+      ...(answersMeta ? { answersMeta } : {}),
       elapsedMs: Date.now() - start,
       usage: undefined, // ponytail: Exa usage comes per-call in costDollars, no standalone API.
     };

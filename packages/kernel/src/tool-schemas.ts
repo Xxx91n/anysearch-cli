@@ -12,14 +12,15 @@ export const SearchWebInput = Type.Object({
   mode: Type.Optional(
     Type.Union([
       Type.Literal("fast"),
+      Type.Literal("index"),
       Type.Literal("deep"),
       Type.Literal("answer"),
-    ], { description: "Search mode: fast (default), deep (more sources), answer (with synthesis)" })
+    ], { description: "Search mode: fast (default), index, deep (more sources), answer (provider-generated answer, available only when provider supports it; not synthesized locally per ADR-0022 D4)" })
   ),
 }, { additionalProperties: false });
 export type SearchWebInput = {
   query: string;
-  mode?: "fast" | "deep" | "answer";
+  mode?: "fast" | "index" | "deep" | "answer";
 };
 
 export const ResearchWebInput = Type.Object({

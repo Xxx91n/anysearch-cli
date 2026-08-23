@@ -42,5 +42,20 @@ Three new glossary entries recorded. Answer Provenance term references this ADR 
 - If user research shows the answer is treated as authoritative despite the verified:false flag, revisit Q2 and consider requiring an LLM fact-check wrapper.
 - If a UI surface needs provider attribution, lift Q3 to schema-level providerList by promoting metadata.providerAnswers.
 
+
+## Amended by Round-47 audit (2026-08-23)
+
+Post-implementation audit (atomcode + manual) surfaced the following deltas against the original D1–D5 text. ADR remains append-only; these are additive clarifications locked to the same gate.
+
+1. **answersAvailable is a CAPABILITY marker, not an OUTPUT marker.** Computed from `provider.modes` in the engine at fan-out time, not from `providerAnswers.length > 0`. Justification: a provider can fail to produce an answer for a given query (quota, exception, empty result) while still advertising answer mode capability. Conflating the two makes consumers misread "zero output" as "capability absent".
+2. **verified:false and providerAnswers.citations are locked at the contract layer (`ProviderAnswer` alias shared by ProviderEnvelope.answersMeta and FusedEnvelope.metadata.providerAnswers).** Consumers (MCP / pi-runtime / CLI) MUST NOT re-stamp marker fields. One source of truth surfaces citation payloads end-to-end.
+3. **Exa answer() failures are now observable on stderr** (fail-open still — search results keep flowing — but no silent swallow). The previous `catch {}` violated "failure must be visible" precedent used by search-web.tool.ts:35 auto-index.
+4. **MCP summary output shape is stable**: `answers`, `answersAvailable`, `providerAnswers` always present (empty array / false defaults). SEP-1624 semantic parity between content and structuredContent steers toward stable keys over conditional spread.
+5. **Per-call budget reservation under answer mode now counts answer-capable providers as 2 units** (search + answer = two upstream calls). Other modes retain 1-per-provider.
+6. **pi-runtime + MCP tool schemas now expose the full Mode union** (`fast | index | deep | answer`); the contract Mode is the single source of truth. Stale "answer (with synthesis)" description updated to match D4.
+7. **CLI answer output defaults to full text per D1 "No silent truncation"; optional `ANSWER_CLI_TRUNCATE=N` env var re-enables a cap with an explicit truncation hint.**
+
+These clarifications preserve every original decision (D1–D6); they only tighten how the contract carries them across consumer surfaces.
+
 ## Research Sources
 Atomcode run this round read ADR-0005 line 42 (Tavily answer+extract integrated), CONTEXT.md Vertical Agent glossary, retriever contract, Exa /answer docs (exa.ai/docs/reference/answer), Tavily search include_answer docs (docs.tavily.com), LangChain Tavily integration docs. Exa and Tavily engines rate-limited during verification; cross-verification fell back to AnySearch plus direct fetch of official documentation.

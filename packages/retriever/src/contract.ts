@@ -24,6 +24,11 @@ export interface ProviderEnvelope {
   provider: string;
   results: NormalizedResult[];
   answers?: string[]; // for "answer" mode providers
+  // ADR-0022 D3 round-47 fix: parallel provider-attributed answers with optional citations.
+  // answers and answersMeta must have the same length when both are populated; the engine
+  // aligns per-index and prefers answersMeta over re-deriving provider attribution.
+  // Answers remain text-only in FusedEnvelope.answers; provenance moves to metadata.providerAnswers.
+  answersMeta?: ProviderAnswer[];
   elapsedMs: number;
   usage?: UsageInfo;
 }
@@ -65,6 +70,17 @@ export interface SufficiencySignal {
   };
   perProvider?: Record<string, number[]>;
 }
+
+// ADR-0022 D2/D3: provider answer with mandatory unverified marker + optional citations.
+// Single source of truth for the providerAnswers item shape — ProviderEnvelope.answersMeta
+// and FusedEnvelope.metadata.providerAnswers both reference this alias.
+export interface ProviderAnswer {
+  provider: string;
+  text: string;
+  verified: false;
+  citations?: Array<{ url: string; title?: string }>;
+}
+
 // Fused envelope: the output of RRF consensus fusion across N providers.
 export interface FusedEnvelope {
   results: NormalizedResult[];
@@ -78,9 +94,12 @@ export interface FusedEnvelope {
     sufficiency?: SufficiencySignal;
     // ADR-0022 D3: per-provider answer attribution for transparency
     // without restructuring envelope.answers (stays string[]).
-    providerAnswers?: Array<{ provider: string; text: string }>;
-    // ADR-0022 D4: fail-open marker — false when no queried provider
-    // supports answer mode (e.g. AnySearch-only future).
+    // D2: verified=false locked in at contract layer (single source of truth); consumers must not re-stamp.
+    // D3-D4 round-47 fix: optional provider citations for transparency (Exa supplies; Tavily grounding is same-batch).
+    providerAnswers?: ProviderAnswer[];
+    // ADR-0022 D4: capability marker, computed from provider.modes (NOT output).
+    // False when no queried provider advertises answer mode support
+    // (e.g. AnySearch-only future, or runtime stub stripping the capability).
     answersAvailable?: boolean;
   };
 }

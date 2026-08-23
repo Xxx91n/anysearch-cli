@@ -51,8 +51,12 @@ export async function runSearch(args: string[]): Promise<number> {
       console.log("Provider answers (unverified):");
       const pa = envelope.metadata.providerAnswers ?? [];
       for (const a of pa.length > 0 ? pa : envelope.answers.map(t => ({ provider: "unknown", text: t }))) {
-        const text = a.text.length > 300 ? a.text.slice(0, 300) + "..." : a.text;
-        console.log("  [" + a.provider + "] " + text);
+        // ADR-0022 D1: answers pass through at full length on CLI; if terminal rendering needs
+        // a cap, set ANSWER_CLI_TRUNCATE=N env-var. Default no truncation (D1: no silent truncation).
+        const cap = Number(process.env.ANSWER_CLI_TRUNCATE);
+        const truncated = Number.isFinite(cap) && cap > 0 && a.text.length > cap;
+        const text = truncated ? a.text.slice(0, cap) + "..." : a.text;
+        console.log("  [" + a.provider + "] " + text + (truncated ? " (truncated; unset ANSWER_CLI_TRUNCATE for full text)" : ""));
       }
       console.log("");
     }

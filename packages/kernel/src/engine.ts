@@ -4,7 +4,7 @@
 // 1.5s grace window, abort_all + drain, providers_cancelled distinct state, RRF(k=60) fusion.
 // JS adaptation: Promise.allSettled + AbortController + unique-URL counter early stop.
 
-import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal } from "@anysearch/retriever";
+import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer } from "@anysearch/retriever";
 import { rrfRank } from "@anysearch/retriever";
 import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort } from "./ports";
@@ -229,10 +229,16 @@ export class RetroaererdEngine {
     // ADR-0006 decision 2C: reserve per-call budget by provider count (MoleAPI pre-consumption).
     const hasLedger = !!(this.ledger && this.sessionId);
     if (hasLedger) {
-      // ponytail: per-call cost = 1 unit per provider. Coarse upper bound, settle actual.
-      const reserved = this.ledger!.reserveCalls(this.sessionId!, allProviders.length);
+      // ADR-0006 2C: per-call cost = 1 unit per provider. Coarse upper bound, settle actual.
+      // ADR-0022 P2-3 round-47 fix: answer mode doubles cost for answer-capable providers
+      // (Exa answer() is a second upstream /answer call). Reserve 2 units per such provider
+      // when mode === "answer"; other modes keep the 1-per-provider upper bound.
+      const perCallEstimate = q.mode === "answer"
+        ? allProviders.reduce((acc, p) => acc + (p.modes.includes("answer") ? 2 : 1), 0)
+        : allProviders.length;
+      const reserved = this.ledger!.reserveCalls(this.sessionId!, perCallEstimate);
       if (!reserved) {
-        throw new Error("Budget exceeded: per-call cap reached (reserved " + allProviders.length + " calls)");
+        throw new Error("Budget exceeded: per-call cap reached (reserved " + perCallEstimate + " calls)");
       }
     }
 
@@ -262,7 +268,7 @@ export class RetroaererdEngine {
     const providersCancelled: string[] = [];
     const answers: string[] = [];
     // ADR-0022 D3: per-provider attribution in metadata, not in answers[].
-    const providerAnswers: Array<{ provider: string; text: string }> = [];
+    const providerAnswers: ProviderAnswer[] = [];
 
     for (let i = 0; i < settled.length; i++) {
       const s = settled[i];
@@ -282,8 +288,14 @@ export class RetroaererdEngine {
           providerLists.push(urls);
           if (inner.envelope.answers) {
             answers.push(...inner.envelope.answers);
-            for (const text of inner.envelope.answers) {
-              providerAnswers.push({ provider: providerIds[i], text });
+            // ADR-0022 D3: prefer provider-supplied answersMeta (citations + verified=false);
+            // fall back to re-deriving from answers with verified=false for older adapters.
+            if (inner.envelope.answersMeta && inner.envelope.answersMeta.length === inner.envelope.answers.length) {
+              for (const m of inner.envelope.answersMeta) providerAnswers.push(m);
+            } else {
+              for (const text of inner.envelope.answers) {
+                providerAnswers.push({ provider: providerIds[i], text, verified: false });
+              }
             }
           }
         } else if (inner.status === "rejected") {
@@ -331,7 +343,12 @@ export class RetroaererdEngine {
         sufficiency: suff.mvs,
         // ADR-0022 D3/D4: provenance + fail-open marker.
         providerAnswers,
-        answersAvailable: providerAnswers.length > 0,
+        // ADR-0022 D4: capability marker — provider.modes covers answer mode.
+        // Round-47 fix: not output-derived. providerAnswers.length > 0 reflects OUTPUT; if a
+        // provider fails to produce an answer for this query (quota/exception/empty), the
+        // CAPABILITY still exists; consumers should read this as "can serve answer mode"
+        // and inspect providerAnswers (plus its length) for actually-returned answers.
+        answersAvailable: allProviders.some((p) => p.modes.includes("answer")),
       },
     };
   }

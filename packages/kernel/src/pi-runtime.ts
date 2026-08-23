@@ -27,14 +27,15 @@ function createSearchTool(retriever: RetrieverPort): AgentTool {
       query: Type.String({ description: "The search query" }),
       mode: Type.Optional(Type.Union([
         Type.Literal("fast"),
+        Type.Literal("index"),
         Type.Literal("deep"),
         Type.Literal("answer"),
-      ], { description: "Search mode: fast (default), deep (more sources), answer (provider-generated answer, available only when provider supports it)" })),
+      ], { description: "Search mode: fast (default), index, deep (more sources), answer (provider-generated answer, available only when provider supports it)" })),
     }),
     execute: async (_toolCallId: string, params: any) => {
       const q: Query = {
         query: String(params.query),
-        mode: (params.mode as "fast" | "deep" | "answer") || "fast",
+        mode: (params.mode as "fast" | "index" | "deep" | "answer") || "fast",
       };
       const envelope = await retriever.search(q);
       const summary = JSON.stringify(envelope, null, 2);

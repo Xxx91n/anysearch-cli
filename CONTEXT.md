@@ -279,7 +279,7 @@ ship-gate.mjs 在第 1 步（静态 rg 断言）与第 2 步（turbo check/test/
 _Avoid_: lint pass, configuration check, startup validation
 
 ## Answer Mode（Answer 模式）
-检索提供端原生 answer 能力在 consumer 层的暴露契约。当前 retriever 层定义为 mode: "answer"（Exa /answer、Tavily includeAnswer），consumer 层（pi-runtime/search-web/CLI）透传但不读 envelope.answers。ADR-0022 决策：暴露给工具 schema 为 provider-fulfilled 搜索结果，不加 LLM 兜底，不做本地合成。任何 provider 无关性原则：answer 的实质责任在 provider 侧，AnySearch 可能后续跟进。
+检索提供端原生 answer 能力在 consumer 层的暴露契约。当前 retriever 层定义为 mode: "answer"（Exa /answer、Tavily includeAnswer），consumer 层（pi-runtime/search-web/CLI）透传但不读 envelope.answers。ADR-0022 决策：暴露给工具 schema 为 provider-fulfilled 搜索结果，不加 LLM 兜底，不做本地合成。任何 provider 无关性原则：answer 的实质责任在 provider 侧，AnySearch 可能后续跟进。Round-47 修正：metadata.answersAvailable 是能力标记（按 provider.modes 计算），不再因单次 answer 调用失败/为空而翻转为 false；消费方需结合 providerAnswers.length 判断次产出。
 _Avoid_: synthesis, generated answer, response mode, summarize
 
 ## Answer Provenance（答案溯源）

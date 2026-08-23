@@ -42,11 +42,12 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
         showing: topResults.length,
         results: topResults,
         // ADR-0022 D1/D2/D3: first-class answers marked providerGenerated+unverified.
+        // Round-47 fix: stable output shape — always emit answers / answersAvailable / providerAnswers
+        // (key presence no longer conditional; aligns with SEP-1624 stable structured schema).
+        // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
         answers: envelope.answers ?? [],
         answersAvailable: envelope.metadata?.answersAvailable ?? false,
-        ...(envelope.metadata?.providerAnswers?.length
-          ? { providerAnswers: envelope.metadata.providerAnswers.map(a => ({ ...a, providerGenerated: true, verified: false })) }
-          : {}),
+        providerAnswers: envelope.metadata?.providerAnswers ?? [],
         providersQueried: envelope.metadata?.providersQueried ?? [],
         ...(sufficiency ? { sufficiency } : {}),
       }, null, 2);

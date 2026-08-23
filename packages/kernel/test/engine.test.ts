@@ -105,10 +105,28 @@ async function main() {
   assert(result6.metadata.providerAnswers?.length === 1, "providerAnswers collected");
   assert(result6.metadata.providerAnswers?.[0].provider === "answer-provider", "providerAnswers attribution");
   assert(result6.metadata.providerAnswers?.[0].text === "42", "providerAnswers text");
+  // ADR-0022 D2 round-47 fix: verified=false marker MUST be on the contract item (consumer layer trusts contract).
+  assert(result6.metadata.providerAnswers?.[0].verified === false, "providerAnswers verified=false locked");
   assert(result6.metadata.answersAvailable === true, "answersAvailable true when answers present");
   // ADR-0022 D2: answers must NOT inflate sufficiency — sufficiency computed from results only.
   // With a single provider + single result the verdict cannot be promoted by answers.
   assert(result6.metadata.sufficiency?.volume.uniqueResults === 1, "sufficiency ignores answers (uniqueResults=1)");
+
+  // 6b. ADR-0022 D4 (round-47): capability-based answersAvailable — false when no queried provider declares mode:answer.
+  // Build a fast-only mock on the spot (mockProvider() declares all modes by default).
+  const fastOnly: import("@anysearch/retriever").SearchProvider = {
+    id: "fast-only",
+    modes: ["fast"],
+    async search() {
+      return { provider: "fast-only", results: [{ url: "https://x.example", title: "t", snippet: "s", source: "fast-only" }], answers: [], elapsedMs: 5 };
+    },
+  };
+  const engine6b = new RetroaererdEngine([fastOnly]);
+  const result6b = await engine6b.search({ query: "q", mode: "answer" });
+  assert(result6b.answers.length === 0, "no answers returned when provider lacks mode:answer");
+  assert(result6b.metadata.providerAnswers?.length === 0, "providerAnswers empty");
+  // Round-47 fix: answersAvailable is a CAPABILITY marker (provider.modes), not output.
+  assert(result6b.metadata.answersAvailable === false, "answersAvailable false when no provider advertises answer capability");
 
   // 7. DEFAULT_GATE values.
   assert(DEFAULT_GATE.minProviders === 2, "default gate minProviders = 2");
