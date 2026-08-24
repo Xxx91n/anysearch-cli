@@ -10,7 +10,30 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { SCHEMA_SQL } from "./schema-content";
 import { registerTimeDecayFunction, invalidateOldRecords } from "./time-decay.js";
+import { fts5EscapeQuery, searchMemoryMultiQuery } from "./fts5.js";
+import { rrfRank } from "@anysearch/retriever";
 import type { NormalizedResult } from "@anysearch/retriever";
+
+// ADR-0023 D4: MemTX-simplified writer adjudication.
+// keyMemories carry the three-check inputs for write-path adjudication (D4, Q3=A).
+export type AdjudicationAction = "accept" | "supersede" | "quarantine";
+
+export interface KeyMemoryInput {
+  url: string;
+  title: string;
+  snippet: string;
+  source: string; // provider id — direct user interaction uses source='user'
+  evidence: number; // writer confidence score 0.0-1.0
+  entity?: string; // override URL as entity key (same as NormalizedResult.entity)
+}
+
+export interface AdjudicationResultItem {
+  action: AdjudicationAction;
+  reason?: "evidence" | "temporal" | "equal_conflict";
+  supersededId?: number; // temporal: new write supersedes this id
+  counterpartId?: number; // equal_conflict: the live memory in conflict with this write
+  insertedId?: number; // rowid if accepted (evidence pass) or supersceded (new row landed)
+}
 
 export interface Session {
   id: string;
@@ -49,6 +72,11 @@ export interface SessionStore {
   getAnchors(sessionId: string): Promise<ResumeAnchor[]>;
   // ADR-0008 D3: search Research Memory layer for recall_memory MCP tool.
   searchMemory(query: string, limit?: number): Promise<MemoryHit[]>;
+  // ADR-0023 D2 (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
+  searchMemoryMulti(queries: string[], limit?: number): Promise<MemoryHit[]>;
+  // ADR-0023 D4 (Q3=A): write-path adjudication with keyMemories carrying evidence score.
+  // Caller supplies quarantine check readiness (peer-conflict scan split into its own stmt).
+  adjudicateMemory(sessionId: string, keyMemories: KeyMemoryInput[]): Promise<AdjudicationResultItem[]>;
 }
 
 // better-sqlite3 sync API wrapped in async interface to match SessionStore port.
@@ -96,6 +124,8 @@ export class SqliteSessionStore implements SessionStore {
    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN entity TEXT"); } catch {}
     // ADR-0009 D3 L2: access-time signal (align Mem0 1.5×/0.3× — recall hit refreshes last_accessed).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN last_accessed TEXT"); } catch {}
+    // ADR-0023 D4 (Q3=A): equal-weight conflict quarantine — candidates held for user review at next interaction.
+    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN quarantine TEXT"); } catch {}
    // Module-level prepared statements (atomcode research pattern).
     this.stmts = {
       createSession: this.db.prepare("INSERT INTO sessions (id, domain) VALUES (?, ?) RETURNING id, domain, created_at as createdAt"),
@@ -109,7 +139,7 @@ export class SqliteSessionStore implements SessionStore {
       // ADR-0008 D3: recall_memory searches Research Memory (retrieval_results_fts), not messages.
      // ADR-0008 D2: time_decay() in ORDER BY + bi-temporal filter (valid_until IS NULL).
      // MemoryHit.role <-- r.title, MemoryHit.content <-- r.snippet (recall_memory maps these fields).
-     searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, time_decay(bm25(retrieval_results_fts), r.created_at, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) ORDER BY rank LIMIT ?"),
+     searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, time_decay(bm25(retrieval_results_fts), r.created_at, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) ORDER BY rank LIMIT ?"),
       // ADR-0009 D3 L2: update last_accessed on recall hit (access-time signal, Mem0 1.5×/0.3×).
       touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now') WHERE id = ?"),
       // ADR-0016 D10: UPSERT for state-type anchors.
@@ -131,9 +161,9 @@ export class SqliteSessionStore implements SessionStore {
     this.stmts.append.run(sessionId, message.role, message.content);
   }
 
-  // SECURITY: escape FTS5 special chars by wrapping query as phrase literal (CWE-20).
+  // SECURITY: escape FTS5 special chars, then ADR-0023 D2 FTS5 Query Tokenization (CWE-20).
   private fts5Escape(query: string): string {
-    return '"' + query.replace(/"/g, '""') + '"';
+    return fts5EscapeQuery(query);
   }
 
   async searchFts5(sessionId: string | null, query: string, limit = 20): Promise<MemoryHit[]> {
@@ -144,7 +174,6 @@ export class SqliteSessionStore implements SessionStore {
     return this.stmts.searchAllMessages.all(safeQuery, limit) as MemoryHit[];
   }
 
-  // ADR-0008 D3: search Research Memory layer (retrieval_results_fts) — used by recall_memory MCP tool.
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
    const safeQuery = this.fts5Escape(query);
    // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
@@ -154,6 +183,18 @@ export class SqliteSessionStore implements SessionStore {
       try { this.stmts.touchAccessed.run(hit.rowid); } catch {}
     }
     return hits;
+  }
+
+  // ADR-0023 D2 (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
+  async searchMemoryMulti(queries: string[], limit = 20): Promise<MemoryHit[]> {
+    return searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank);
+  }
+
+  // ADR-0023 D2 structural-typing seam: exposes db.prepare(...).all(...) as a function so
+  // private field doesn't escape through structural typing of the SearchableStoreLike contract.
+  // Public by design: duck-typed contract with SearchableStoreLike requires assignability.
+  dbQuery<Row = unknown>(sql: string, ...params: unknown[]): Row[] {
+    return this.db.prepare(sql).all(...params) as Row[];
   }
 
   async saveResults(sessionId: string, results: NormalizedResult[]): Promise<void> {
@@ -167,6 +208,45 @@ export class SqliteSessionStore implements SessionStore {
       }
     });
     insertMany(results);
+  }
+
+  // ADR-0023 D4 (Q3=A): write-path adjudication (MemTX-simplified three checks).
+  // Each KeyMemoryInput is classified by (1) evidence >=0.6, (2) temporal supersede, (3) equal-weight conflict.
+  // Quarantined writes get quarantine IS NOT NULL and are excluded from searchMemory until confirmed.
+  async adjudicateMemory(sessionId: string, keyMemories: KeyMemoryInput[]): Promise<AdjudicationResultItem[]> {
+    const out: AdjudicationResultItem[] = [];
+    for (const km of keyMemories) {
+      const evidence = typeof km.evidence === "number" && km.evidence >= 0.6;
+      // Evidence check: direct user input / high-trust sources bypass (MemTX authority >= 0.9 channel).
+      if (evidence || km.source === "user") {
+        const entityKey = km.entity ?? km.url;
+        // Temporal supersede: new write for same entity wins; close old record with valid_until = now (ADR-0008 D2 pattern).
+        const existing = this.db
+          .prepare("SELECT id FROM retrieval_results WHERE entity = ? AND session_id = ? AND valid_until IS NULL AND quarantine IS NULL LIMIT 1")
+          .get(entityKey, sessionId) as { id: number } | undefined;
+        const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, entityKey);
+        const insertedId = Number(info.lastInsertRowid);
+        if (existing) {
+          try {
+            this.db.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(existing.id);
+            out.push({ action: "supersede", reason: "temporal", supersededId: existing.id, insertedId });
+          } catch {
+            out.push({ action: "accept", insertedId });
+          }
+        } else {
+          out.push({ action: "accept", insertedId });
+        }
+      } else {
+        // Evidence < 0.6 or non-user source: quarantine candidate (MemTX equal-weight conflict / deferred review).
+        const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, km.entity ?? km.url);
+        const insertedId = Number(info.lastInsertRowid);
+        try {
+          this.db.prepare("UPDATE retrieval_results SET quarantine = ? WHERE id = ?").run("equal_conflict", insertedId);
+        } catch {}
+        out.push({ action: "quarantine", reason: "equal_conflict", insertedId });
+      }
+    }
+    return out;
   }
 
   // ADR-0016 D10: saveAnchor with UPSERT semantics for state-type anchors.

@@ -3,6 +3,7 @@
 // Written by hooks layer via IPC to long-running MCP server (ADR-0009 Decision 1+2).
 
 import Database from "better-sqlite3";
+import { fts5EscapeQuery } from "@anysearch/store";
 
 export interface ProjectIndexEntry {
   rowid: number;
@@ -145,6 +146,6 @@ export class ProjectIndexStore {
   }
 
   private fts5Escape(query: string): string {
-    return '"' + query.replace(/"/g, '""') + '"';
+    return fts5EscapeQuery(query);
   }
 }

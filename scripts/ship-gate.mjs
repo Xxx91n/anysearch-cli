@@ -78,7 +78,9 @@ function run(cmd, args, opts = {}) {
     stdio: opts.stdio ?? "inherit",
     // ponytail: `shell: true` only on Windows so pnpm.cmd resolves; argv is
     // still passed as an array so no real shell parsing happens on POSIX.
-    shell: process.platform === "win32",
+    // Explicit opts.shell=false bypasses the wrapper — used for native binaries (e.g. bsdtar)
+    // whose flags are mangled when routed through cmd.exe on Windows.
+    shell: opts.shell ?? (process.platform === "win32"),
     env: { ...process.env, ...opts.env },
   });
   return new Promise((resolve, reject) => {
@@ -267,12 +269,38 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
   }
   report("info", "step 4/5: extract tarballs + verify manifest shape + bin target exists");
 
+  // Ponytail: pick tar once per process. Windows POSIX-shim env (Git Bash PATH first) resolves bare "tar"
+  // to GNU tar which misparses "C:\..." paths as remote-host syntax and fails "Cannot connect to C".
+  // Native bsdtar lives at C:\Windows\System32\tar.exe — use absolute path on win32.
+  const TAR_BIN = process.platform === "win32"
+    ? "C:\\Windows\\System32\\tar.exe"
+    : "tar";
+
   for (const file of fs.readdirSync(tgzDir)) {
     if (!file.endsWith(".tgz")) continue;
     const tgzPath = path.join(tgzDir, file);
     const extractTo = path.join(tmpDir, "extract", file.replace(/\.tgz$/, ""));
     fs.mkdirSync(extractTo, { recursive: true });
-    await run("tar", ["-xzf", tgzPath, "-C", extractTo], { stdio: "pipe" });
+    // tar (bsdtar on Windows) is a native binary; bypass cmd.exe shell wrapper that mangles -xzf.
+    // Retry once on Windows Defender or antivirus hooks transiently blocking .tgz access.
+    // Windows: AV/indexer can transiently hold .tgz after pnpm pack; retry up to 3 times with backoff.
+    const tarArgs = ["-xzf", tgzPath, "-C", extractTo];
+    let lastErr;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await run(TAR_BIN, tarArgs, { stdio: "pipe", shell: false });
+        lastErr = undefined; break;
+      } catch (e) {
+        lastErr = e;
+        if (process.platform === "win32" && attempt < 2) {
+          report("warn", `tar attempt ${attempt + 1} failed for ${file}: ${String(e).slice(0, 100)}; retrying`);
+          await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
+        } else if (process.platform !== "win32") {
+          throw e;
+        }
+      }
+    }
+    if (lastErr) throw lastErr;
 
     const pkgDir = path.join(extractTo, "package");
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));

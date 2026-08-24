@@ -13,6 +13,8 @@ const COMPACTION_RESERVE_TOKENS = 16_384;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
 import type { GateEnvelope } from "./sufficiency-gate";
+import { rewriteQuery, classifyQdf } from "./query-rewrite";
+import type { LlmRewriteFn } from "./query-rewrite";
 
 export interface MemoryPipelineDeps {
   store: SessionStorePort;
@@ -24,6 +26,8 @@ export interface MemoryPipelineDeps {
   sessionId: string;
   getApiKey?: () => Promise<string | undefined> | undefined;
   providerName?: string;
+  // ADR-0023 D2: S1 LLM rewrite seam. When omitted, L2 recall degrades to single-query mode (fail-open).
+  llmRewriteFn?: LlmRewriteFn;
 }
 
 // ADR-0016 D5: ConsolidationState — pure, serializable type for MCP stateless mode.
@@ -346,14 +350,30 @@ export class MemoryPipeline {
       const searchToolInput = lastToolCall?.content?.find((c: any) => c.type === "tool_use" && c.name?.includes("search"))?.input;
       const l2Query = searchToolInput?.query || "";
       if (typeof l2Query === "string" && l2Query.length > 3) {
-        store.searchMemory(l2Query, 5).then((hits) => {
-          if (hits.length > 0) {
-            const memorySnippet = hits.map(h => h.content || "").slice(0, 200).join(" | ");
-            store!.saveAnchor(sessionId!, "l2_recall", {
-              query: l2Query, hits: memorySnippet.slice(0, 2000), timestamp: Date.now(),
-            }).catch(() => {});
-          }
-        }).catch(() => {});
+        // ADR-0023 D2 (Q2=B): S1 rewrite + RRF fusion. Fail-open via rewriteQuery when no LLM seam.
+        // QDF hint uses heuristic classifiers from @anysearch/store (no LLM call needed to tag).
+        const qdf = classifyQdf(l2Query, {
+          isTimeSensitive: (q) => /最新|最近|news|2024|2025|2026|latest|recent|新闻|更新/i.test(q),
+          isEvergreen: (q) => /什么是|定义|概念|原理|解释|how does|what is|explain/i.test(q),
+        });
+        rewriteQuery(l2Query, qdf, this.deps.llmRewriteFn)
+          .then((variants) => {
+            // Seamed call: searchMemoryMulti present on ADR-0023-capable stores. Fall back to single-query.
+            const s: any = store as any;
+            const searchPromise: Promise<any[]> = typeof s.searchMemoryMulti === "function"
+              ? s.searchMemoryMulti(variants, 5)
+              : store.searchMemory(l2Query, 5);
+            return searchPromise.then((hits) => ({ hits, variants }));
+          })
+          .then(({ hits, variants }) => {
+            if (hits.length > 0) {
+              const memorySnippet = (hits as any[]).map(h => h.content || "").slice(0, 200).join(" | ");
+              store!.saveAnchor(sessionId!, "l2_recall", {
+                query: l2Query, variants, hits: memorySnippet.slice(0, 2000), timestamp: Date.now(),
+              }).catch(() => {});
+            }
+          })
+          .catch(() => {});
       }
     } catch {}
   }

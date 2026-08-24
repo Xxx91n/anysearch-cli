@@ -290,4 +290,16 @@ _Avoid_: annotated answers, source attribution, labeled answer
 answer 提取不参与 Sufficiency Gate 的 verdict/agreement/volume/spread 四维计算。sufficiency evaluator 继续只看 results 数组的 cheap signal（唯一结果、域名、成功 provider 数、分数扩展），不 treat answer 为额外 sufficiency 信号。理由：answers 来自 provider 生成，受上下文截断与模型能力限制，计入会混淆门户：AUC ≤ 0.76 的上限是由 results 信号质量决定的，answer 引入 false confidence。这与 LangChain CRAG 的 self-RAG 机制对齐：LLM 自信评估不可靠，仅作提示。ADR-0022。
 _Avoid_: answer-informed gate, synthesis-aware sufficiency
 
+## FTS5 Query Tokenization（FTS5 查询分词）
+自然语言查询在进入 FTS5 前的转换约定：按空白/标点切词 → 每词生成 `词*` 前缀匹配 → 以 `AND` 连接，同时把完整短语查询保留为 `OR` 分支。禁止整句加双引号（会把 FTS5 退化为精确短语匹配，token 化失效）——这是曾存在于 `session-store.ts`/`project-index-store.ts` 的 `fts5Escape` 心智模型，被 ADR-0023 D1 替换。转义仍保留 FTS5 特殊字符的 CWE-20 防护（双引号原样 doubling）。对齐 SQLite FTS5 官方文档的 prefix query + AND 组合、`arXiv:2602.23368`（Bedrock agentic keyword search）与 Aleph 检索管线的候选召回层。ADR-0023 D2。
+_Avoid_: phrase-only search, exact sentence match, quoted whole query
+
+## Transactional Memory Adjudication（事务化记忆裁决）
+新记忆写入 `retrieval_results` 时的提交协议：写入不是提交，须通过三检查——（1）evidence：写入方置信 ≥0.6，用户直接输入/高信任工具豁免；（2）时序优先：同 `entity` 的新证据时间大于旧记忆时，新者生效、旧者置 `valid_until = now`（复用既有 bi-temporal 列，非物理删除，对齐 Zep non-lossy 模式）；（3）等权冲突：两源同级且矛盾时不自动覆盖，置 `quarantine` 交下次交互裁决。裁决由单次 LLM 调用完成（MemTX 简化版）。来源：MemTX（arXiv:2607.23929）四检查简化 + STALE（arXiv:2605.06527）"识别≠应用"结论——写时裁决优于检索时裁决。ADR-0023 D4。
+_Avoid_: last-write-wins, silent overwrite, delete-on-conflict
+
+## STALE Probe Suite（STALE 探针自测集）
+验证记忆系统"过期记忆不再被引用"的回归测试集，源自 STALE 基准（arXiv:2605.06527）的三探针：SR（Stale-Recognition，过期状态识别）、PR（Passive Recall，被动召回）、IPA（Implicit Preference Application，隐式偏好应用）。anysearch-cli 采用 STALE-lite 子集（每探针若干核心场景），断言 `valid_until` 非空的记忆不出现在后续 `searchMemory`/`recall_memory` 结果中。明确接受"隐式冲突整体 <55%"为模型能力天花板（STALE 数据），若探针跌破该线须追查裁决层而非加向量库。属于 Ship-Gate Evidence Layer 在记忆域的实例。ADR-0023 D5。
+_Avoid_: memory unit test, staleness benchmark, ad-hoc freshness check
+
 *End of Glossary*
