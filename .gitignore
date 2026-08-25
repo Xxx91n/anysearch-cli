@@ -22,7 +22,7 @@ Thumbs.db
 *.log
 
 # Phase 3 plugin
-.ship-gate/   # ADR-0021 D4 L1 evidence
+.ship-gate/
 
 .anysearch/
 apps/plugin/dist/
