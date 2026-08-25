@@ -35,6 +35,28 @@ export interface AdjudicationResultItem {
   insertedId?: number; // rowid if accepted (evidence pass) or supersceded (new row landed)
 }
 
+// ADR-0024 D1/D2: T0 hot zone types.
+export interface T0PreferenceInput {
+  key: string;
+  value: string;
+  scope?: string; // "global" or project root path; default "global"
+  source: "explicit" | "correction"; // C-prime gate channels
+  provenance?: { event: string; at: string; why: string };
+}
+
+export interface T0PreferenceRow {
+  key: string;
+  value: string;
+  scope: string;
+  modified: string;
+  lastAccessed: string;
+  source: string;
+  invalidAt: string | null;
+  demoteReason: string | null;
+  correctionCount: number;
+  provenance: string | null;
+}
+
 export interface Session {
   id: string;
   domain: string;
@@ -77,6 +99,17 @@ export interface SessionStore {
   // ADR-0023 D4 (Q3=A): write-path adjudication with keyMemories carrying evidence score.
   // Caller supplies quarantine check readiness (peer-conflict scan split into its own stmt).
   adjudicateMemory(sessionId: string, keyMemories: KeyMemoryInput[]): Promise<AdjudicationResultItem[]>;
+  // ADR-0024 D1/D2/D7: T0 hot zone — durable preference layer.
+  // promotePreference: deterministic write gated by caller (C-prime channels: /remember explicit, correction-count>=2).
+  // demotePreference: conflict(d-i)/user(d-iii)/eviction(d-ii); sets invalid_at only (never drop, recoverable).
+  // touchPreference: updates last_accessed (eviction order base).
+  // listPreferences: live entries for MEMORY.md projection (global+project scopes, project wins same-key).
+  promotePreference(input: T0PreferenceInput): Promise<{ action: "promoted" | "rejected"; reason?: string }>;
+  demotePreference(key: string, scope: string, reason: string): Promise<void>;
+  touchPreference(key: string, scope: string): Promise<void>;
+  listPreferences(projectScope?: string): Promise<T0PreferenceRow[]>;
+  // ADR-0024 D3: adjudication hook — correction-count increment + conditional promote.
+  recordCorrectionOnPreference(key: string, scope: string): Promise<{ correctionCount: number }>;
 }
 
 // better-sqlite3 sync API wrapped in async interface to match SessionStore port.
@@ -126,6 +159,24 @@ export class SqliteSessionStore implements SessionStore {
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN last_accessed TEXT"); } catch {}
     // ADR-0023 D4 (Q3=A): equal-weight conflict quarantine — candidates held for user review at next interaction.
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN quarantine TEXT"); } catch {}
+    // ADR-0024 D1/D2: T0 hot zone — t0_preferences is the single source of truth; MEMORY.md is a
+    // regenerated materialized projection (temp+fsync+rename). scope: "global" | project root path.
+    // correction_count drives the C-prime promote gate (>=2 cross-session corrections = implicit promote).
+    // invalid_at non-null = demoted (d-i conflict / d-iii /forget / d-ii eviction); row is quarantined, never dropped.
+    this.db.exec(`CREATE TABLE IF NOT EXISTS t0_preferences (
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'global',
+  modified TEXT NOT NULL DEFAULT (datetime('now')),
+  last_accessed TEXT NOT NULL DEFAULT (datetime('now')),
+  source TEXT NOT NULL, -- "explicit" (/remember) | "correction" (C-prime count>=2)
+  invalid_at TEXT,
+  demote_reason TEXT,
+  correction_count INTEGER NOT NULL DEFAULT 0,
+  provenance TEXT, -- JSON: {event, at, why}
+  PRIMARY KEY (key, scope)
+)`);
+
    // Module-level prepared statements (atomcode research pattern).
     this.stmts = {
       createSession: this.db.prepare("INSERT INTO sessions (id, domain) VALUES (?, ?) RETURNING id, domain, created_at as createdAt"),
@@ -146,6 +197,97 @@ export class SqliteSessionStore implements SessionStore {
   
       saveAnchorUpsert: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?) ON CONFLICT(session_id, anchor_type) WHERE anchor_type = 'consolidation_state' DO UPDATE SET payload = excluded.payload, created_at = datetime('now')"),
     };
+  }
+
+  // ADR-0024 D1/D2/D7: T0 hot zone methods.
+  // All writes are deterministic; gate logic lives in caller (A+C+B, not here).
+
+  async promotePreference(input: T0PreferenceInput): Promise<{ action: "promoted" | "rejected"; reason?: string }> {
+    const scope = input.scope ?? "global";
+    const now = new Date().toISOString();
+    const prov = input.provenance ? JSON.stringify(input.provenance) : null;
+    // d-i conflict: same key+scope already live → in-place supersede (Zep temporal).
+    // modified + provenance updated; old value dereferenced (recoverable via WAL). correction_count preserved.
+    this.db
+      .prepare(
+        `INSERT INTO t0_preferences (key, value, scope, modified, last_accessed, source, invalid_at, demote_reason, correction_count, provenance)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 0, ?)
+         ON CONFLICT (key, scope) DO UPDATE SET
+           value = excluded.value,
+           modified = excluded.modified,
+           last_accessed = excluded.last_accessed,
+           source = excluded.source,
+           invalid_at = NULL,
+           demote_reason = NULL,
+           provenance = excluded.provenance`
+      )
+      .run(input.key, input.value, scope, now, now, input.source, prov);
+    return { action: "promoted" };
+  }
+
+  async demotePreference(key: string, scope: string, reason: string): Promise<void> {
+    const now = new Date().toISOString();
+    this.db
+      .prepare("UPDATE t0_preferences SET invalid_at = ?, demote_reason = ? WHERE key = ? AND scope = ? AND invalid_at IS NULL")
+      .run(now, reason, key, scope);
+  }
+
+  async touchPreference(key: string, scope: string): Promise<void> {
+    this.db
+      .prepare("UPDATE t0_preferences SET last_accessed = ? WHERE key = ? AND scope = ? AND invalid_at IS NULL")
+      .run(new Date().toISOString(), key, scope);
+  }
+
+  // listPreferences: key-level override merge (project wins same-key, distinct keys merge).
+  // Deterministic: order by key asc after merge.
+  async listPreferences(projectScope?: string): Promise<T0PreferenceRow[]> {
+    const sql = `
+      SELECT key, value, scope, modified as modified, last_accessed as last_accessed,
+             source, invalid_at as invalid_at, demote_reason as demote_reason,
+             correction_count as correction_count, provenance
+      FROM t0_preferences
+      WHERE invalid_at IS NULL AND (scope = 'global' OR scope = ?)
+      ORDER BY CASE WHEN scope = 'global' THEN 0 ELSE 1 END, key ASC
+    `;
+    const rows = this.db.prepare(sql).all(projectScope ?? "global") as any[];
+    // Key-level override: later row (higher scope precedence) wins.
+    const merged = new Map<string, T0PreferenceRow>();
+    for (const r of rows) {
+      merged.set(r.key, {
+        key: r.key,
+        value: r.value,
+        scope: r.scope,
+        modified: r.modified,
+        lastAccessed: r.last_accessed,
+        source: r.source,
+        invalidAt: r.invalid_at,
+        demoteReason: r.demote_reason,
+        correctionCount: r.correction_count,
+        provenance: r.provenance,
+      });
+    }
+    return Array.from(merged.values());
+  }
+
+  // ADR-0024 D3: C-prime correction-count channel.
+  // Increment correction_count; if >=2 and not already promoted, promote implicitly.
+  // Returns current count for caller to decide projection trigger.
+  async recordCorrectionOnPreference(key: string, scope: string): Promise<{ correctionCount: number }> {
+    const row = this.db
+      .prepare("SELECT correction_count FROM t0_preferences WHERE key = ? AND scope = ? AND invalid_at IS NULL LIMIT 1")
+      .get(key, scope) as { correction_count: number } | undefined;
+    if (!row) {
+      // First correction: not enough to promote; just track (count=1).
+      this.db
+        .prepare("INSERT INTO t0_preferences (key, value, scope, modified, last_accessed, source, invalid_at, demote_reason, correction_count, provenance) VALUES (?, ?, ?, datetime('now'), datetime('now'), 'correction', NULL, NULL, 1, NULL)")
+        .run(key, "", scope);
+      return { correctionCount: 1 };
+    }
+    const next = row.correction_count + 1;
+    this.db
+      .prepare("UPDATE t0_preferences SET correction_count = ?, modified = datetime('now') WHERE key = ? AND scope = ? AND invalid_at IS NULL")
+      .run(next, key, scope);
+    return { correctionCount: next };
   }
 
   async createSession(domain: string): Promise<Session> {

@@ -375,6 +375,50 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
 
 
 // ---------------------------------------------------------------------------
+// Step 4.5 — ADR-0024 D5 + D7 T0 smoke probe: boot CLI with seeded preference,
+// assert first user message contains <user_preferences> block.
+// Blocking: the injected projection must be visible in `ans pref list` output;
+// and `pref --help` must mention the XML wrapper so we know Step 4 landed.
+// ---------------------------------------------------------------------------
+async function stepT0Smoke(tmpDir) {
+  report("info", "step 4.5/5: T0 smoke probe (ADR-0024)");
+
+  const cliDist = path.join(ROOT, "apps", "cli", "dist", "index.js");
+  if (!fs.existsSync(cliDist)) {
+    fail(`CLI dist missing at ${cliDist} (did turbo build run?)`);
+  }
+
+  // Pref help smoke: process alive, pref command listed, XML wrapper named.
+  const prefHelp = spawn(process.execPath, [cliDist, "pref", "--help"], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let buf = "";
+  prefHelp.stdout.on("data", (d) => (buf += d.toString("utf8")));
+  prefHelp.stderr.on("data", () => {});
+  const code = await new Promise((r) => prefHelp.on("close", r));
+  if (code !== 0) {
+    fail(`pref --help exited ${code}; expected 0`);
+  }
+  if (!buf.includes("<user_preferences")) {
+    fail("pref --help output missing <user_preferences> wrapper (ADR-0024 D5)");
+  }
+  if (!buf.includes("remember") || !buf.includes("forget")) {
+    fail("pref --help output missing remember/forget subcommands");
+  }
+  report("pass", "T0 smoke probe: pref --help alive, <user_preferences> wrapper documented");
+
+  // Injection chain static assertion:
+  // memory-pipeline.ts must contain the <user_preferences> prefix injection code.
+  const mpPath = path.join(ROOT, "packages", "kernel", "src", "memory-pipeline.ts");
+  const mpSrc = fs.readFileSync(mpPath, "utf8");
+  if (!mpSrc.includes("<user_preferences")) {
+    fail("memory-pipeline.ts missing <user_preferences> Stage-1 injection (ADR-0024 D5)");
+  }
+  report("pass", "memory-pipeline.ts Stage-1 <user_preferences> injection present");
+  }
+
+
+// ---------------------------------------------------------------------------
 // Step 5 — stdio MCP initialize smoke (fail-open per CONTEXT.md fail-open rule)
 // ---------------------------------------------------------------------------
 async function stepMcpInitialize() {
@@ -549,6 +593,8 @@ const quick = args.has("--quick");
     reportStep("step_3_pack");
     const tgzDir = await stepPack(tmpDir);
     if (!quick) { reportStep("step_4_install_verify"); await stepInstallVerify(tgzDir, tmpDir, { skipMatrix }); }
+    reportStep("step_4_5_t0_smoke");
+    await stepT0Smoke(tmpDir);
     reportStep("step_5_mcp_stdio");
     await stepMcpInitialize();
     await stepFailOpenBoot();

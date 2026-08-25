@@ -124,3 +124,22 @@ CREATE TABLE IF NOT EXISTS budget_ledger (
 -- ALTER TABLE ADD COLUMN is idempotent-safe: errors if column already exists, caught by try/catch in SessionStore constructor.
 -- These run after the CREATE TABLE IF NOT EXISTS, so new databases already have the columns.
 -- For existing databases, these add the missing columns.
+
+-- ADR-0024 D1/D2: T0 hot zone durable preference layer.
+-- t0_preferences is the single source of truth; MEMORY.md is a regenerated materialized projection
+-- (temp+fsync+rename atomic write in kernel t0-projection.ts). scope: 'global' | project root path.
+-- correction_count drives the C-prime promote gate (>=2 cross-session corrections = implicit promote).
+-- invalid_at non-null = demoted (d-i conflict / d-iii /forget / d-ii eviction); row quarantined, never dropped.
+CREATE TABLE IF NOT EXISTS t0_preferences (
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'global',
+  modified TEXT NOT NULL DEFAULT (datetime('now')),
+  last_accessed TEXT NOT NULL DEFAULT (datetime('now')),
+  source TEXT NOT NULL,
+  invalid_at TEXT,
+  demote_reason TEXT,
+  correction_count INTEGER NOT NULL DEFAULT 0,
+  provenance TEXT,
+  PRIMARY KEY (key, scope)
+);

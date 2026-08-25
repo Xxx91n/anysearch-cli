@@ -201,6 +201,24 @@ export class MemoryPipeline {
       ];
     }
 
+    // ADR-0024 D5: T0 user preferences injection — same Stage-1 slot, identical content/order.
+    // Idempotent: skip if first message already carries a <user_preferences> block
+    // (transformContext may be invoked more than once on retry/resume).
+    try {
+      if (result.length > 0) {
+        const first = result[0] as any;
+        const firstContent: string = typeof first.content === "string" ? first.content : "";
+        if (!firstContent.includes("<user_preferences")) {
+          const prefs = await store.listPreferences(process.cwd());
+          if (prefs.length > 0) {
+            const lines = prefs.map(r => "- **" + r.key + "**: " + r.value);
+            const block = "<user_preferences updated=\"" + (prefs[0].modified ?? "") + "\">\n" + lines.join("\n") + "\n</user_preferences>";
+            result = [{ ...first, content: block + "\n\n" + firstContent }, ...result.slice(1)];
+          }
+        }
+      }
+    } catch {}
+
     // ADR-0012 D8/D9/D12: L1+L2 merged injection at latest user message (hot zone).
     try {
       const anchors = await store.getAnchors(sessionId);

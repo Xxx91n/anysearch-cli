@@ -301,5 +301,16 @@ _Avoid_: last-write-wins, silent overwrite, delete-on-conflict
 ## STALE Probe Suite（STALE 探针自测集）
 验证记忆系统"过期记忆不再被引用"的回归测试集，源自 STALE 基准（arXiv:2605.06527）的三探针：SR（Stale-Recognition，过期状态识别）、PR（Passive Recall，被动召回）、IPA（Implicit Preference Application，隐式偏好应用）。anysearch-cli 采用 STALE-lite 子集（每探针若干核心场景），断言 `valid_until` 非空的记忆不出现在后续 `searchMemory`/`recall_memory` 结果中。明确接受"隐式冲突整体 <55%"为模型能力天花板（STALE 数据），若探针跌破该线须追查裁决层而非加向量库。属于 Ship-Gate Evidence Layer 在记忆域的实例。ADR-0023 D5。
 _Avoid_: memory unit test, staleness benchmark, ad-hoc freshness check
+## T0 Hot Zone（T0 热区 / MEMORY.md 偏好层）
+L0/L1/L2 记忆三层之上的零延迟常驻层：SQLite 表为唯一事实源，MEMORY.md 为物化投影（每次 promote/demote 后原子重生成，temp+fsync+rename）。硬上限 1500 字符 + 200 行双阈值，溢出显式告警绝不静默截断。与 Claude Code / Cursor / Letta MemFS 常驻块同构。ADR-0024 D2/D7。
+_Avoid_: system prompt notes, static instructions, always-on context
+
+## C-prime Promote Gate（C-prime 提升闸门）
+T0 偏好条目的双通道确定性闸门：任一满足即提升——(1) 用户显式 `/remember` 经 slash-guard 通道；(2) 跨会话纠正事件计数 ≥2（用户否定→肯定的结构化模式，L0/L1 管线捕获）。否决项：近 30 天有 quarantine 记录不提升；硬顶溢出进 quarantine 等位不挤爆。LLM 自报"高置信度"显式不可作为闸门（mem0 v1→v3 撤退证据）。ADR-0024 D3。
+_Avoid_: auto-promote, confidence threshold, LLM-judged promotion
+
+## Key-Level Override Merge（键级覆写合并）
+双层 MEMORY.md 的确定性合并规则：每条 T0 偏好有键名（SQLite PK），项目 `<repo>/.anysearch/MEMORY.md` 与全局 `~/.anysearch/MEMORY.md` 同键时取项目值，异键合并，与 git config 双层模型同构。投影产物为单份合并文件，非两份。分支级隔离显式拒绝。ADR-0024 D6。
+_Avoid_: layered merge, cascading config, branch-scoped memory
 
 *End of Glossary*

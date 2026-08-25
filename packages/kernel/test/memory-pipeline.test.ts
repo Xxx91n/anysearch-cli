@@ -515,4 +515,40 @@ console.log(`MemoryPipeline tests: ${passed} passed, ${failed} failed`);
 console.log("consolidateState pure function tests: " + passed + " assertions passed, " + failed + " failed");
 }
 
+// ADR-0024 D5: T0 user_preferences injection position assertion.
+// MockStore gets listPreferences via type cast (injected for this test block only).
+{
+  const mock = new MockStore() as any;
+  mock.listPreferences = async (scope?: string) => [{
+    key: "output.language", value: "Chinese",
+    scope: scope ?? "global",
+    modified: "2026-08-25T00:00:00.000Z",
+    lastAccessed: "2026-08-25T00:00:00.000Z",
+    source: "explicit", invalidAt: null, demoteReason: null,
+    correctionCount: 1, provenance: null,
+  }];
+  const pipeline = new MemoryPipeline({
+    store: mock, retriever: new MockRetriever(), domain: mockDomain,
+    model: {} as any, streamFn: mockStreamFn("compress"), sessionId: "sess-1",
+  });
+  const msgs = [
+    { role: "user", content: "What are T0 preferences?" },
+    { role: "user", content: "Second user message" },
+  ];
+  const out = await pipeline.inject(msgs);
+  const first = out[0] as any;
+  // Stage-1: must be a PREFIX (block before original text).
+  assert(first.content.startsWith("<user_preferences"), "T0 inject: block is prefix of first user message");
+  assert(first.content.includes("</user_preferences>"), "T0 inject: closing tag present");
+  assert(first.content.includes("**output.language**: Chinese"), "T0 inject: markdown list inside block");
+  assert(first.content.includes("updated=\"2026-08-25T00:00:00.000Z\""), "T0 inject: updated attribute present");
+  assert(first.content.includes("What are T0 preferences?"), "T0 inject: original user text preserved after block");
+  // Second (latest) user message must NOT have the block (Stage-1 only).
+  const second = out[out.length - 1] as any;
+  assert(!second.content.includes("<user_preferences"), "T0 inject: block NOT appended to latest user message");
+  // Idempotency: inject again should NOT duplicate.
+  const out2 = await pipeline.inject(out);
+  assert((out2[0].content.match(/<user_preferences/g) || []).length === 1, "T0 inject: idempotent (no duplicate block)");
+}
+
 if (failed > 0) process.exit(1);

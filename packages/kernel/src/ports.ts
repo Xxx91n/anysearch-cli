@@ -4,6 +4,7 @@
 
 import type { FusedEnvelope, SearchRequest } from "@anysearch/retriever";
 import type { SessionStore, Message } from "@anysearch/store";
+export type { T0PreferenceRow, T0PreferenceInput } from "@anysearch/store";
 
 export type Budget = {
   tokenCap?: number;
