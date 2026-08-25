@@ -133,6 +133,18 @@ NOOP 裁决的输入构造。从 messages 中定位上次 rolling_summary anchor
 ## Consecutive Reuse Cap（连续 REUSE 上限）
 NOOP 裁决的安全阀。维护 consecutiveReuses 计数器：REUSE 则递增，COMPRESS 则归零。连续 3 次后第 4 次跳过裁决直接 COMPRESS。防止裁决 LLM 系统性偏差（总判 REUSE）导致摘要长期过期。对齐 LOCA-bench "更高频压缩 → 更少 rot"结论和 Letta issue #957 死循环故障先例。ADR-0013 D8。
 
+## Native Smoke Matrix（原生依赖加载冒烟矩阵）
+GHA 4-job 并行 matrix（win32-x64 / darwin-arm64 / linux-x64 / linux-arm64），仅 pnpm install --frozen-lockfile + require('better-sqlite3') 加载断言，不跑构建。CI 保持 allowBuilds=false，故意禁编译让 prebuild 缺失显形（source-compile 沉默案例：sweet-search b33e732 / nchat e94ab08）。public repo 零成本。ADR-0025 D1。
+_Avoid_: cross-compile in CI, node-gyp on CI, build matrix
+
+## Equal-Conflict Review Channel（等权冲突裁决通道 / pref review）
+d-i' 等权机器写矛盾的唯一用户可见出口：CLI 一等命令 ans pref review 列出 quarantine 中 equal_conflict 记录并提供 keep/drop/promote 三处置动作，复用 adjudication 写路径，零新存储零新 LLM 调用。批量自动归档作为积压阈值兜底延后。ADR-0025 D2。
+_Avoid_: silent resolution, auto merge, background reconciliation
+
+## Flag-Don't-Silently-Pick（标记优先不静默二选一）
+业界共识裁决方向（Mem0 roadmap / Hindsight / OzBrain / TANGLE / MemConflict）：等权矛盾必须显式隔离+标记，绝不让检索器因打分偶然性静默选一。anysearch 的 quarantine + pref review 是该方向的完整实现。ADR-0025 D2。
+_Avoid_: retrieval-time coin toss, silent pick, first-match wins
+
 *End of Glossary*
 
 ## Cursor Dual Channel（Cursor 双通道注入）
