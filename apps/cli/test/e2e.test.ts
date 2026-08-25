@@ -96,6 +96,17 @@ async function t(name: string, fn: () => Promise<void>) {
     assert.equal(r.code, 0);
   });
 
+  await t("pref review lists quarantine state, exit 0", async () => {
+    const r = await run(["pref", "review"]);
+    assert.equal(r.code, 0);
+    assert.ok(/quarantine|entity=/.test(r.out), "unexpected out: " + r.out.slice(0, 300));
+  });
+
+  await t("pref review --keep unknown id exits 1", async () => {
+    const r = await run(["pref", "review", "--keep", "999999"]);
+    assert.equal(r.code, 1);
+  });
+
   console.log("---");
   console.log("CLI e2e: " + passed + " passed, " + failed + " failed");
   process.exit(failed === 0 ? 0 : 1);

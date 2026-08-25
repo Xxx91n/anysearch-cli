@@ -18,6 +18,7 @@ function printHelp(): void {
       "  list                              Show live preferences (global + project merged)",
       "  remember <key> <value> [--scope]  Promote a preference (explicit channel)",
       "  forget   <key> [--scope]          Demote a preference (user channel; recoverable)",
+      "  review  [--keep|--drop|--promote <id>]  Resolve quarantined equal-conflict memories (ADR-0025)",
       "",
       "Scope: --scope global (default) | --scope project",
       "  global  → ~/.anysearch/MEMORY.md",
@@ -91,6 +92,70 @@ export async function runMemoryPreference(args: string[]): Promise<number> {
     const written = await writeProjection(eng.store, scope === "global" ? undefined : scope);
     const out = written.map((w) => w.path).join(", ");
     process.stdout.write("Demoted: " + key + "\nProjected to: " + out + "\n");
+    return 0;
+  }
+
+  if (sub === "review") {
+    // ADR-0025 D2: equal-conflict review channel. List quarantined writes, resolve by id.
+    // keep = new value wins (quarantine cleared, live counterpart superseded);
+    // drop = old value confirmed (row stays isolated, marked resolved_drop);
+    // promote = keep + lift to T0 preference via the existing promotePreference channel.
+    let action: "keep" | "drop" | "promote" | null = null;
+    let idArg: string | null = null;
+    for (let i = 0; i < cleanArgs.length; i++) {
+      const a = cleanArgs[i];
+      if ((a === "--keep" || a === "--drop" || a === "--promote") && cleanArgs[i + 1]) {
+        action = a.slice(2) as "keep" | "drop" | "promote";
+        idArg = cleanArgs[i + 1];
+        i++;
+      }
+    }
+    if (action === null) {
+      const rows = await eng.store.listQuarantinedMemories();
+      if (rows.length === 0) {
+        process.stdout.write("(quarantine empty - nothing to review)\n");
+        return 0;
+      }
+      for (const r of rows) {
+        process.stdout.write(
+          "#" + r.id + "  entity=" + (r.entity ?? r.url) + "  source=" + (r.source ?? "?") + "  at=" + r.createdAt + "\n" +
+          "  " + (r.title ?? "") + " - " + (r.snippet ?? "") + "\n"
+        );
+      }
+      process.stdout.write("Resolve with: ans pref review --keep <id> | --drop <id> | --promote <id>\n");
+      return 0;
+    }
+    const id = Number(idArg);
+    if (!Number.isInteger(id) || id <= 0) {
+      process.stderr.write("ans pref review: invalid id " + JSON.stringify(idArg) + "\n");
+      return 2;
+    }
+    const row = (await eng.store.listQuarantinedMemories()).find((r) => r.id === id);
+    if (!row) {
+      process.stderr.write("ans pref review: no quarantined memory #" + id + "\n");
+      return 1;
+    }
+    const res = await eng.store.resolveQuarantinedMemory(id, action === "drop" ? "drop" : "keep");
+    if (!res.ok) {
+      process.stderr.write("ans pref review: resolve failed for #" + id + "\n");
+      return 1;
+    }
+    if (action === "promote") {
+      const promo = await eng.store.promotePreference({
+        key: row.entity ?? row.url,
+        value: (row.title ?? "") + " - " + (row.snippet ?? ""),
+        scope: "global",
+        source: "explicit",
+        provenance: { event: "user:pref review --promote", at: new Date().toISOString(), why: "promoted from quarantined memory #" + id },
+      });
+      if (promo.action === "rejected") {
+        process.stderr.write("ans pref review: promote rejected: " + (promo.reason ?? "unknown") + "\n");
+        return 1;
+      }
+      // Projection regen is fail-open, same contract as remember.
+      try { await writeProjection(eng.store, undefined); } catch {}
+    }
+    process.stdout.write("pref review " + action + ": #" + id + " resolved\n");
     return 0;
   }
 

@@ -37,7 +37,7 @@ const help = [
   "  recommend Get recommendations from the active domain",
   "  domain    Switch Active Domain (cc-persona TOML, ADR-0002)",
   "  mcp       Start the anysearch MCP server (stdio or HTTP transport)",
-  "  pref      Manage T0 durable preferences (/remember — ADR-0024)",
+  "  pref      Manage T0 durable preferences (/remember, pref review - ADR-0024/0025)",
   "",
   "Options:",
   "  --version, -v     Print version",

@@ -35,6 +35,17 @@ export interface AdjudicationResultItem {
   insertedId?: number; // rowid if accepted (evidence pass) or supersceded (new row landed)
 }
 
+// ADR-0025 D2: equal-conflict review channel row (flag, don't silently pick).
+export interface QuarantinedMemory {
+  id: number;
+  sessionId: string;
+  entity: string | null;
+  url: string;
+  title: string | null;
+  snippet: string | null;
+  source: string | null;
+  createdAt: string;
+}
 // ADR-0024 D1/D2: T0 hot zone types.
 export interface T0PreferenceInput {
   key: string;
@@ -110,6 +121,10 @@ export interface SessionStore {
   listPreferences(projectScope?: string): Promise<T0PreferenceRow[]>;
   // ADR-0024 D3: adjudication hook — correction-count increment + conditional promote.
   recordCorrectionOnPreference(key: string, scope: string): Promise<{ correctionCount: number }>;
+  // ADR-0025 D2: equal-conflict review channel over retrieval_results.quarantine.
+  listQuarantinedMemories(): Promise<QuarantinedMemory[]>;
+  // keep: new value wins (clear quarantine, supersede live counterpart). drop: keep quarantined, mark resolved_drop.
+  resolveQuarantinedMemory(id: number, action: "keep" | "drop"): Promise<{ ok: boolean }>;
 }
 
 // better-sqlite3 sync API wrapped in async interface to match SessionStore port.
@@ -407,6 +422,32 @@ export class SqliteSessionStore implements SessionStore {
   async getAnchors(sessionId: string): Promise<ResumeAnchor[]> {
     const rows = this.stmts.getAnchors.all(sessionId) as Array<Omit<ResumeAnchor, "payload"> & { payload: string }>;
     return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
+  }
+
+  // ADR-0025 D2: equal-conflict review channel. Zero new tables — the quarantine column
+  // on retrieval_results is the ledger; keep/drop reuse the bi-temporal valid_until path.
+  async listQuarantinedMemories(): Promise<QuarantinedMemory[]> {
+    const rows = this.db
+      .prepare("SELECT id, session_id, entity, url, title, snippet, source, created_at FROM retrieval_results WHERE quarantine = 'equal_conflict' ORDER BY created_at DESC")
+      .all() as Array<{ id: number; session_id: string; entity: string | null; url: string; title: string | null; snippet: string | null; source: string | null; created_at: string }>;
+    return rows.map((r) => ({ id: r.id, sessionId: r.session_id, entity: r.entity, url: r.url, title: r.title, snippet: r.snippet, source: r.source, createdAt: r.created_at }));
+  }
+
+  async resolveQuarantinedMemory(id: number, action: "keep" | "drop"): Promise<{ ok: boolean }> {
+    const row = this.db
+      .prepare("SELECT id, session_id, entity FROM retrieval_results WHERE id = ? AND quarantine = 'equal_conflict'")
+      .get(id) as { id: number; session_id: string; entity: string | null } | undefined;
+    if (!row) return { ok: false };
+    if (action === "keep") {
+      this.db.prepare("UPDATE retrieval_results SET quarantine = NULL WHERE id = ?").run(id);
+      // Kept value wins: close the live counterpart for the same entity (ADR-0008 bi-temporal pattern).
+      this.db
+        .prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE session_id = ? AND entity = ? AND id != ? AND valid_until IS NULL AND quarantine IS NULL")
+        .run(row.session_id, row.entity, id);
+    } else {
+      this.db.prepare("UPDATE retrieval_results SET quarantine = 'resolved_drop' WHERE id = ?").run(id);
+    }
+    return { ok: true };
   }
 
   close(): void {

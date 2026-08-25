@@ -598,6 +598,7 @@ const quick = args.has("--quick");
     reportStep("step_5_mcp_stdio");
     await stepMcpInitialize();
     await stepFailOpenBoot();
+    report("info", "cross-OS native loading covered by CI native-smoke.yml 4-job matrix (ADR-0025 D1)");
     report("pass", "ship gate green — ready to tag v0.1.0-rc.0");
     flushReportEntries("pass");
   } finally {

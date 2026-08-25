@@ -1,0 +1,39 @@
+# ADR-0025 D1: Native Smoke Matrix (consumer variant of better-sqlite3 build.yml).
+# Load-only: pnpm install --frozen-lockfile + verify-native.mjs. No toolchain, no build.
+# pnpm-workspace.yaml pins allowBuilds: better-sqlite3=false — a missing prebuild must
+# fail loudly here rather than being papered over by a silent node-gyp source build.
+name: native-smoke
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke:
+    name: native smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: darwin-arm64
+          - os: windows-latest
+            label: win32-x64
+          - os: ubuntu-latest
+            label: linux-x64
+          - os: ubuntu-24.04-arm
+            label: linux-arm64
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install (frozen-lockfile, builds disabled)
+        run: pnpm install --frozen-lockfile
+      - name: Verify native prebuild loads (${{ matrix.label }})
+        run: node scripts/verify-native.mjs
