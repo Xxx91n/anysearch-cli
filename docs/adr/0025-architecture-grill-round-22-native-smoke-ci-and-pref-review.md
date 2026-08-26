@@ -54,3 +54,8 @@ CI 面（yaml + verify-native.mjs + ship-gate step 标注）与 CLI 面（pref r
 ## Research Sources
 - atomcode round22 r22 调研（同一 batch: atomcode，16 searches / 11 full reads / 3 engines）：Mem0 #4896（ADD-only，无内置裁决）+ mem-audit 外部审计工具（"flags, prints a table, and stops. You decide"）、Zep bi-temporal invalid_at、Letta core_memory_replace 自编辑、LangMem tool-mediated merge-first、Cognee memify 图合并、Claude Code /memory + Auto Dream、Hindsight consolidation（2026-05-21，等权静默二选一失败模式）、OzBrain last-write-wins + conflict flag、TANGLE（arXiv 2608.13921）、MemConflict（arXiv 2605.20926）、Graphiti #1728（误退休）。
 - atomcode round54 native-deps 调研：pnpm v11 settings/build + v11 迁移页、prebuild-install 归档（2026-02-19）、node-gyp-build README、better-sqlite3 v13.0.3 package.json（registry 实证）、github.blog runner 变更公告（2025-01-16 ubuntu-24.04-arm free / 2025-09-19 macos-13 EOL）、sweet-search/nchat/latchkey.dev 翻车 commit。
+
+## Amended by round58 audit (2026-08-26)
+
+- D2 子命令参数原文写作 `<key>`，实施为 `<id>`（row id）。atomcode 跨项目调研（Memento 冲突行 ULID / mem0 memory_id+幻觉回退 / resolver-oss target_id / LangMem id+namespace）四源收敛：稳定 id 是冲突裁决的唯一正确寻址方式——语义 key 不唯一、随内容漂移、LLM 可幻觉，key 只做展示/筛选。ADR 原文以此修订为准。
+- D2 评审列表字段补齐实现：quarantined 行持久化 `evidence`（新列，ALTER 迁移，仅裁决路径写入），评审列表展示 live counterpart（同 entity 存值自连接）。置信度仅用于评审参考/排序，不参与自动裁决。

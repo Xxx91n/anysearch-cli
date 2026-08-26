@@ -45,6 +45,9 @@ export interface QuarantinedMemory {
   snippet: string | null;
   source: string | null;
   createdAt: string;
+  evidence: number | null;
+  counterpartTitle: string | null; // live counterpart for the same entity, shown for judgment
+  counterpartSnippet: string | null;
 }
 // ADR-0024 D1/D2: T0 hot zone types.
 export interface T0PreferenceInput {
@@ -174,6 +177,8 @@ export class SqliteSessionStore implements SessionStore {
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN last_accessed TEXT"); } catch {}
     // ADR-0023 D4 (Q3=A): equal-weight conflict quarantine — candidates held for user review at next interaction.
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN quarantine TEXT"); } catch {}
+    // ADR-0025 D2: evidence persisted on quarantined rows for the review list (atomcode: confidence for queue ordering, never for auto-adjudication).
+    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN evidence REAL"); } catch {}
     // ADR-0024 D1/D2: T0 hot zone — t0_preferences is the single source of truth; MEMORY.md is a
     // regenerated materialized projection (temp+fsync+rename). scope: "global" | project root path.
     // correction_count drives the C-prime promote gate (>=2 cross-session corrections = implicit promote).
@@ -398,7 +403,7 @@ export class SqliteSessionStore implements SessionStore {
         const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, km.entity ?? km.url);
         const insertedId = Number(info.lastInsertRowid);
         try {
-          this.db.prepare("UPDATE retrieval_results SET quarantine = ? WHERE id = ?").run("equal_conflict", insertedId);
+          this.db.prepare("UPDATE retrieval_results SET quarantine = ?, evidence = ? WHERE id = ?").run("equal_conflict", typeof km.evidence === "number" ? km.evidence : null, insertedId);
         } catch {}
         out.push({ action: "quarantine", reason: "equal_conflict", insertedId });
       }
@@ -427,10 +432,17 @@ export class SqliteSessionStore implements SessionStore {
   // ADR-0025 D2: equal-conflict review channel. Zero new tables — the quarantine column
   // on retrieval_results is the ledger; keep/drop reuse the bi-temporal valid_until path.
   async listQuarantinedMemories(): Promise<QuarantinedMemory[]> {
+    // Left-join the live counterpart of the same entity so the reviewer sees both sides (atomcode: counterpart display is mandatory).
     const rows = this.db
-      .prepare("SELECT id, session_id, entity, url, title, snippet, source, created_at FROM retrieval_results WHERE quarantine = 'equal_conflict' ORDER BY created_at DESC")
-      .all() as Array<{ id: number; session_id: string; entity: string | null; url: string; title: string | null; snippet: string | null; source: string | null; created_at: string }>;
-    return rows.map((r) => ({ id: r.id, sessionId: r.session_id, entity: r.entity, url: r.url, title: r.title, snippet: r.snippet, source: r.source, createdAt: r.created_at }));
+      .prepare(
+        "SELECT q.id, q.session_id, q.entity, q.url, q.title, q.snippet, q.source, q.created_at, q.evidence," +
+          " c.title AS counterpart_title, c.snippet AS counterpart_snippet" +
+          " FROM retrieval_results q" +
+          " LEFT JOIN retrieval_results c ON c.session_id = q.session_id AND c.entity = q.entity AND c.id != q.id AND c.valid_until IS NULL AND c.quarantine IS NULL" +
+          " WHERE q.quarantine = 'equal_conflict' ORDER BY q.created_at DESC"
+      )
+      .all() as Array<{ id: number; session_id: string; entity: string | null; url: string; title: string | null; snippet: string | null; source: string | null; created_at: string; evidence: number | null; counterpart_title: string | null; counterpart_snippet: string | null }>;
+    return rows.map((r) => ({ id: r.id, sessionId: r.session_id, entity: r.entity, url: r.url, title: r.title, snippet: r.snippet, source: r.source, createdAt: r.created_at, evidence: r.evidence, counterpartTitle: r.counterpart_title, counterpartSnippet: r.counterpart_snippet }));
   }
 
   async resolveQuarantinedMemory(id: number, action: "keep" | "drop"): Promise<{ ok: boolean }> {

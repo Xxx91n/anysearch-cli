@@ -33,6 +33,9 @@ async function main() {
     const listed = await store.listQuarantinedMemories();
     assert(listed.length === 2, "list returns 2 quarantined rows (got " + listed.length + ")");
     assert(listed.every((r) => r.source === "exa"), "list carries source for review display");
+    assert(listed.every((r) => typeof r.evidence === "number" && (r.evidence as number) < 0.6), "list carries persisted low evidence scores");
+    const q1Listed = listed.find((r) => r.id === q1);
+    assert(q1Listed !== undefined && q1Listed.counterpartTitle === "live fact", "list surfaces live counterpart for judgment");
 
     // keep: flag cleared, row becomes live, live counterpart superseded.
     const keep = await store.resolveQuarantinedMemory(q1, "keep");

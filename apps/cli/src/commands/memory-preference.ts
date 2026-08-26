@@ -104,10 +104,15 @@ export async function runMemoryPreference(args: string[]): Promise<number> {
     let idArg: string | null = null;
     for (let i = 0; i < cleanArgs.length; i++) {
       const a = cleanArgs[i];
-      if ((a === "--keep" || a === "--drop" || a === "--promote") && cleanArgs[i + 1]) {
-        action = a.slice(2) as "keep" | "drop" | "promote";
-        idArg = cleanArgs[i + 1];
-        i++;
+      if (a === "--keep" || a === "--drop" || a === "--promote") {
+        if (cleanArgs[i + 1]) {
+          action = a.slice(2) as "keep" | "drop" | "promote";
+          idArg = cleanArgs[i + 1];
+          i++;
+        } else {
+          process.stderr.write("ans pref review: " + a + " requires an <id>\n");
+          return 2;
+        }
       }
     }
     if (action === null) {
@@ -118,8 +123,9 @@ export async function runMemoryPreference(args: string[]): Promise<number> {
       }
       for (const r of rows) {
         process.stdout.write(
-          "#" + r.id + "  entity=" + (r.entity ?? r.url) + "  source=" + (r.source ?? "?") + "  at=" + r.createdAt + "\n" +
-          "  " + (r.title ?? "") + " - " + (r.snippet ?? "") + "\n"
+          "#" + r.id + "  entity=" + (r.entity ?? r.url) + "  source=" + (r.source ?? "?") + "  at=" + r.createdAt + (r.evidence === null ? "" : "  evidence=" + r.evidence) + "\n" +
+          "  quarantined: " + (r.title ?? "") + " - " + (r.snippet ?? "") + "\n" +
+          (r.counterpartTitle !== null ? "  counterpart(live): " + r.counterpartTitle + " - " + (r.counterpartSnippet ?? "") + "\n" : "")
         );
       }
       process.stdout.write("Resolve with: ans pref review --keep <id> | --drop <id> | --promote <id>\n");
