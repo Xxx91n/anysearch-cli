@@ -419,6 +419,51 @@ async function stepT0Smoke(tmpDir) {
 
 
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Step 4.6 — ADR-0027: memory eval harness gate (fail-closed three metrics;
+// LLM judge channel deliberately NOT in ship-gate per ADR-0027 D2/D6).
+// ---------------------------------------------------------------------------
+async function stepMemoryEval() {
+  report("info", "step 4.6/5: memory eval harness gate (ADR-0027)");
+  const outDir = path.join(ROOT, ".ship-gate");
+  fs.mkdirSync(outDir, { recursive: true });
+  const res = await new Promise((resolve) => {
+    const child = spawn(
+      process.execPath,
+      ["--import", "tsx", path.join("src", "eval", "cli.ts"), "--out", outDir],
+      { cwd: path.join(ROOT, "packages", "store"), stdio: ["ignore", "pipe", "pipe"] }
+    );
+    let buf = "";
+    child.stdout.on("data", (d) => (buf += d.toString("utf8")));
+    child.stderr.on("data", (d) => (buf += d.toString("utf8")));
+    child.on("close", (code) => resolve({ code, buf }));
+  });
+  if (res.code !== 0) {
+    const tail = res.buf.trim().split("\n").slice(-8).join("\n");
+    fail("memory-eval gate exited " + res.code + " (0=pass / 1=metric regression / 12=fingerprint mismatch)\n" + tail);
+  }
+  const reportPath = path.join(outDir, "eval-report.json");
+  const mdPath = path.join(outDir, "eval-report.md");
+  if (!fs.existsSync(reportPath) || !fs.existsSync(mdPath)) {
+    fail("memory-eval artifacts missing (.ship-gate/eval-report.{json,md})");
+  }
+  let rep;
+  try {
+    rep = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  } catch (e) {
+    fail("eval-report.json unreadable: " + String(e && e.message));
+  }
+  if (rep.totals.failed !== 0) {
+    fail("memory-eval: " + rep.totals.failed + " golden case(s) failed — see .ship-gate/eval-report.md");
+  }
+  if (typeof rep.datasetFingerprint !== "string" || rep.datasetFingerprint.length !== 16) {
+    fail("memory-eval report lacks 16-hex dataset fingerprint");
+  }
+  report("pass", "memory-eval: " + rep.totals.passed + "/" + rep.totals.cases + " cases PASS, fingerprint=" + rep.datasetFingerprint + ", passRate=" + rep.metrics.passRate);
+}
+
+// ---------------------------------------------------------------------------
 // Step 5 — stdio MCP initialize smoke (fail-open per CONTEXT.md fail-open rule)
 // ---------------------------------------------------------------------------
 async function stepMcpInitialize() {
@@ -595,6 +640,9 @@ const quick = args.has("--quick");
     if (!quick) { reportStep("step_4_install_verify"); await stepInstallVerify(tgzDir, tmpDir, { skipMatrix }); }
     reportStep("step_4_5_t0_smoke");
     await stepT0Smoke(tmpDir);
+
+    reportStep("step_4_6_memory_eval");
+    await stepMemoryEval();
     reportStep("step_5_mcp_stdio");
     await stepMcpInitialize();
     await stepFailOpenBoot();

@@ -1,0 +1,15 @@
+{
+  "schema": "anysearch/eval-baseline@1",
+  "fingerprint": "2a111b460726a7bf",
+  "metrics": {
+    "passRate": 1,
+    "supersessionSuccess": 1,
+    "quarantineFalsePositiveRate": 0
+  },
+  "margin": {
+    "supersession": 0,
+    "quarantineFp": 0
+  },
+  "updatedAt": "2026-08-26",
+  "note": "ADR-0027 calibration; review before commit. CI never auto-writes this file."
+}

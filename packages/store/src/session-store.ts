@@ -16,7 +16,7 @@ import type { NormalizedResult } from "@anysearch/retriever";
 
 // ADR-0023 D4: MemTX-simplified writer adjudication.
 // keyMemories carry the three-check inputs for write-path adjudication (D4, Q3=A).
-export type AdjudicationAction = "accept" | "supersede" | "quarantine";
+export type AdjudicationAction = "accept" | "supersede" | "quarantine" | "reject";
 
 export interface KeyMemoryInput {
   url: string;
@@ -29,7 +29,7 @@ export interface KeyMemoryInput {
 
 export interface AdjudicationResultItem {
   action: AdjudicationAction;
-  reason?: "evidence" | "temporal" | "equal_conflict";
+  reason?: "evidence" | "temporal" | "equal_conflict" | "secret";
   supersededId?: number; // temporal: new write supersedes this id
   counterpartId?: number; // equal_conflict: the live memory in conflict with this write
   insertedId?: number; // rowid if accepted (evidence pass) or supersceded (new row landed)
@@ -129,6 +129,10 @@ export interface SessionStore {
   // keep: new value wins (clear quarantine, supersede live counterpart). drop: keep quarantined, mark resolved_drop.
   resolveQuarantinedMemory(id: number, action: "keep" | "drop"): Promise<{ ok: boolean }>;
 }
+
+// ADR-0027 D5: secret rejection at write path — known secret patterns are never stored anywhere.
+// ponytail: naive regex heuristic, ceiling = obfuscated/novel secret encodings; upgrade path = import gitleaks/trufflehog rule pack.
+const SECRET_RE = /(sk-[A-Za-z0-9][A-Za-z0-9-]{14,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
 
 // better-sqlite3 sync API wrapped in async interface to match SessionStore port.
 // ponytail: thinnest wrapper - no extra abstraction, sync calls wrapped in Promise.resolve.
@@ -378,6 +382,11 @@ export class SqliteSessionStore implements SessionStore {
   async adjudicateMemory(sessionId: string, keyMemories: KeyMemoryInput[]): Promise<AdjudicationResultItem[]> {
     const out: AdjudicationResultItem[] = [];
     for (const km of keyMemories) {
+      // ADR-0027 D5: secret check runs BEFORE the evidence gate — a high-evidence leak is still a leak.
+      if (SECRET_RE.test(km.url + " " + (km.title ?? "") + " " + (km.snippet ?? ""))) {
+        out.push({ action: "reject", reason: "secret" });
+        continue;
+      }
       const evidence = typeof km.evidence === "number" && km.evidence >= 0.6;
       // Evidence check: direct user input / high-trust sources bypass (MemTX authority >= 0.9 channel).
       if (evidence || km.source === "user") {
