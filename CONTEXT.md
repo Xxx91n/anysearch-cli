@@ -325,4 +325,12 @@ _Avoid_: auto-promote, confidence threshold, LLM-judged promotion
 双层 MEMORY.md 的确定性合并规则：每条 T0 偏好有键名（SQLite PK），项目 `<repo>/.anysearch/MEMORY.md` 与全局 `~/.anysearch/MEMORY.md` 同键时取项目值，异键合并，与 git config 双层模型同构。投影产物为单份合并文件，非两份。分支级隔离显式拒绝。ADR-0024 D6。
 _Avoid_: layered merge, cascading config, branch-scoped memory
 
+## Package Manager Version Pinning（包管理器版本钉死）
+工具链地基契约：package.json 顶层 packageManager 与 devEngines.packageManager 同精确版本双写（前者给 corepack，后者由 pnpm 自身强制执行，#11676），不写 hash（工业界 0/6），锁文件重生成锁版本格式。Node 25+ 无 corepack 后，双写字段是声明层唯一真相源。ADR-0026 D3。
+_Avoid_: version range, floating latest, dual-lane drift
+
+## pmOnFail Error Gate（pmOnFail 错误闸门）
+执行层防线：pnpm-workspace.yaml 设 pmOnFail: error，运行中 pnpm 与声明版本不匹配时立即报错停产，而非静默 download/改写 lockfile。对人+AI Agent 双端免疫（绕过 corepack 直调内嵌二进制也被拦），agent-first 供应链敏感仓库业界主流。本地可用 pnpm_config_pm_on_fail=download 环变覆盖。ADR-0026 D5。
+_Avoid_: silent self-heal, fail-open tool chain, download-as-default
+
 *End of Glossary*

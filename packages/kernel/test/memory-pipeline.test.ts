@@ -551,4 +551,24 @@ console.log("consolidateState pure function tests: " + passed + " assertions pas
   assert((out2[0].content.match(/<user_preferences/g) || []).length === 1, "T0 inject: idempotent (no duplicate block)");
 }
 
+// ADR-0026 D7: leading/trailing non-user messages must not receive injections.
+{
+  const store = new MockStore() as any;
+  store.anchors = [{ anchorType: "rolling_summary", payload: { summary: "sys-safe summary" } }];
+  const pipeline = new MemoryPipeline({
+    store, retriever: new MockRetriever(), domain: mockDomain,
+    model: {} as any, streamFn: mockStreamFn("compress"), sessionId: "sess-role",
+  });
+  const msgs = [
+    { role: "system", content: "system prompt" },
+    { role: "user", content: "u1" },
+    { role: "assistant", content: "a1" },
+    { role: "tool", content: "t1" },
+  ];
+  const out = await pipeline.inject(msgs as any);
+  assert((out[0] as any).content === "system prompt", "ADR-0026: system message untouched");
+  assert((out[1] as any).content.includes("[Session Memory]"), "ADR-0026: L1 lands on latest USER message");
+  assert(!(out[3] as any).content.includes("[Session Memory]"), "ADR-0026: trailing tool message not injected");
+}
+
 if (failed > 0) process.exit(1);

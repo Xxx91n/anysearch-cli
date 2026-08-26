@@ -1,6 +1,10 @@
 packages:
   - "apps/*"
   - "packages/*"
+# ADR-0026 D5: 钉死 pnpm 版本对人+Agent 双端生效 - 版本不匹配立即报错，
+# 不自动下载/改写 lockfile。本地放行: pnpm_config_pm_on_fail=download (CLI>env>yaml)。
+pmOnFail: error
+
 allowBuilds:
   '@google/genai': true
   better-sqlite3: false

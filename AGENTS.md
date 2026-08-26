@@ -35,3 +35,15 @@ All anysearch tools use the `ans_*` prefix. Host agents may prepend their own na
 ## Platform install note (better-sqlite3)
 
 better-sqlite3@13 ships prebuilds for win32/darwin/linux (x64 + arm64 + musl). Repo pins `allowBuilds: better-sqlite3: false` in pnpm-workspace.yaml so node-gyp stays off (load-time dlopen of the prebuilt .node). If you ever override allowBuilds you will need MSBuild + ClangCL on Windows (Studio 2022 BuildTools MSVC v143 + ClangCL toolset). Don\'t flip this flag without a reason; the prebuilt path IS the supported production path.
+
+## Package manager pinning (ADR-0026)
+
+Pinned pnpm version: **11.24.0**, declared twice and kept in sync:
+- `packageManager: "pnpm@11.24.0"` (top-level, read by corepack)
+- `devEngines.packageManager: { name: "pnpm", version: "11.24.0" }` (object form, enforced by pnpm itself)
+
+`pnpm-workspace.yaml` sets `pmOnFail: error`: any pnpm whose version does not match fails immediately with `ERR_PNPM_BAD_PM_VERSION` instead of auto-downloading and rewriting the lockfile. Local developers may override once via `pnpm_config_pm_on_fail=download` (precedence CLI > env > workspace yaml).
+
+ship-gate no longer needs PATH front-loading of a global pnpm; any conforming install (corepack, pnpm/setup, or global 11.24.0) works. Bump both pinned fields in one commit when upgrading pnpm.
+
+CI uses `pnpm/setup@v2` (the v11+ successor of `pnpm/action-setup`), which reads the pinned version automatically.

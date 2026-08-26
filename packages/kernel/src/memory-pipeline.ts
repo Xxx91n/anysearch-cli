@@ -193,11 +193,14 @@ export class MemoryPipeline {
     let result = messages;
 
     // Stage 1: RAG injection — prepend RAG context note to first user message.
-    if (domain.rag.adapter && domain.rag.config?.note && result.length > 0) {
-      const first = result[0];
+    // ADR-0026 D7: injections target USER messages; a leading system/tool message must not swallow them.
+    const firstUserIdx = result.findIndex((m: any) => m?.role === "user");
+    if (domain.rag.adapter && domain.rag.config?.note && firstUserIdx >= 0) {
+      const first = result[firstUserIdx];
       result = [
+        ...result.slice(0, firstUserIdx),
         { ...first, content: (typeof first.content === "string" ? first.content : "") + "\n\n[RAG Context] " + domain.rag.config.note },
-        ...result.slice(1),
+        ...result.slice(firstUserIdx + 1),
       ];
     }
 
@@ -205,15 +208,15 @@ export class MemoryPipeline {
     // Idempotent: skip if first message already carries a <user_preferences> block
     // (transformContext may be invoked more than once on retry/resume).
     try {
-      if (result.length > 0) {
-        const first = result[0] as any;
+      if (firstUserIdx >= 0) {
+        const first = result[firstUserIdx] as any;
         const firstContent: string = typeof first.content === "string" ? first.content : "";
         if (!firstContent.includes("<user_preferences")) {
           const prefs = await store.listPreferences(process.cwd());
           if (prefs.length > 0) {
             const lines = prefs.map(r => "- **" + r.key + "**: " + r.value);
             const block = "<user_preferences updated=\"" + (prefs[0].modified ?? "") + "\">\n" + lines.join("\n") + "\n</user_preferences>";
-            result = [{ ...first, content: block + "\n\n" + firstContent }, ...result.slice(1)];
+            result = [...result.slice(0, firstUserIdx), { ...first, content: block + "\n\n" + firstContent }, ...result.slice(firstUserIdx + 1)];
           }
         }
       }
@@ -235,12 +238,15 @@ export class MemoryPipeline {
         injections.push("[Research Recall] " + String((recallAnchor.payload as any).hits).slice(0, 1500));
       }
 
-      if (injections.length > 0 && result.length > 0) {
-        const lastIdx = result.length - 1;
+      // ADR-0026 D7: latest USER message, not blindly the last array element.
+      let lastIdx = -1;
+      for (let i = result.length - 1; i >= 0; i--) if (result[i]?.role === "user") { lastIdx = i; break; }
+      if (injections.length > 0 && lastIdx >= 0) {
         const last = result[lastIdx];
         result = [
           ...result.slice(0, lastIdx),
           { ...last, content: (typeof last.content === "string" ? last.content : "") + "\n\n" + injections.join("\n\n") },
+          ...result.slice(lastIdx + 1),
         ];
       }
     } catch {}
