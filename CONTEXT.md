@@ -145,6 +145,22 @@ _Avoid_: silent resolution, auto merge, background reconciliation
 业界共识裁决方向（Mem0 roadmap / Hindsight / OzBrain / TANGLE / MemConflict）：等权矛盾必须显式隔离+标记，绝不让检索器因打分偶然性静默选一。anysearch 的 quarantine + pref review 是该方向的完整实现。ADR-0025 D2。
 _Avoid_: retrieval-time coin toss, silent pick, first-match wins
 
+
+## Memory Eval Harness（记忆评测台）
+把记忆生命周期（write→store→manage→read）当作可度量系统工程测试：golden dataset 化现有纯函数测试 + 确定性指标门禁 + 本地 judge 独立报告通道。业界 2026 共识（Hindsight/DeepEval/Langfuse/BuildPulse 多源交叉验证）：没有自家领域 golden dataset，任何记忆改动都没有方向判断依据。本项目的 eval harness 是度量能力本体，不只是测试。ADR-0027 D1。
+_Avoid_: pass/fail snapshot, judge-in-CI-gate, metric-only reviews
+
+## Golden Dataset Fingerprint（Golden 数据集指纹）
+golden case 集合的 SHA 指纹（随报告附件），防止跨数据集版本错误比较基线。llm-evalgate 明确主张：数据集变更须强制重新校准基线并更新指纹。ADR-0027 D9。
+_Avoid_: implicit dataset drift, baseline without fingerprint, cross-dataset threshold compare
+
+## Baseline Refresh Discipline（基线刷新纪律）
+门禁阈值只允许 review 确认真实改进后手工提交更新；CI 永不自动下调（静默 ratchet-down = 质量地龋崩坑）；golden 集增删 case 时强制重校准。llm-eval-ci 做法：报告即下一次基线，提交进 git 持久归档。ADR-0027 D10。
+_Avoid_: auto-lower baseline, silent drift, threshold update without review
+
+## Flaky Case Quarantine（Flaky 用例隔离）
+环境性 flaky case 进隔离区（30 天 TTL + 每周过期复评 + 续期上限 2 次），代替删 case 或改阈值。与记忆系统 conflict quarantine 心智模型一致（ADR-0023）：harness 的 case 也是小号记忆单元。ADR-0027 D8。
+_Avoid_: delete-on-flaky, threshold bump for flake, infinite retry
 *End of Glossary*
 
 ## Cursor Dual Channel（Cursor 双通道注入）
@@ -333,4 +349,20 @@ _Avoid_: version range, floating latest, dual-lane drift
 执行层防线：pnpm-workspace.yaml 设 pmOnFail: error，运行中 pnpm 与声明版本不匹配时立即报错停产，而非静默 download/改写 lockfile。对人+AI Agent 双端免疫（绕过 corepack 直调内嵌二进制也被拦），agent-first 供应链敏感仓库业界主流。本地可用 pnpm_config_pm_on_fail=download 环变覆盖。ADR-0026 D5。
 _Avoid_: silent self-heal, fail-open tool chain, download-as-default
 
+
+## Memory Eval Harness（记忆评测台）
+把记忆生命周期（write→store→manage→read）当作可度量系统工程测试：golden dataset 化现有纯函数测试 + 确定性指标门禁 + 本地 judge 独立报告通道。业界 2026 共识（Hindsight/DeepEval/Langfuse/BuildPulse 多源交叉验证）：没有自家领域 golden dataset，任何记忆改动都没有方向判断依据。本项目的 eval harness 是度量能力本体，不只是测试。ADR-0027 D1。
+_Avoid_: pass/fail snapshot, judge-in-CI-gate, metric-only reviews
+
+## Golden Dataset Fingerprint（Golden 数据集指纹）
+golden case 集合的 SHA 指纹（随报告附件），防止跨数据集版本错误比较基线。llm-evalgate 明确主张：数据集变更须强制重新校准基线并更新指纹。ADR-0027 D9。
+_Avoid_: implicit dataset drift, baseline without fingerprint, cross-dataset threshold compare
+
+## Baseline Refresh Discipline（基线刷新纪律）
+门禁阈值只允许 review 确认真实改进后手工提交更新；CI 永不自动下调（静默 ratchet-down = 质量地龋崩坑）；golden 集增删 case 时强制重校准。llm-eval-ci 做法：报告即下一次基线，提交进 git 持久归档。ADR-0027 D10。
+_Avoid_: auto-lower baseline, silent drift, threshold update without review
+
+## Flaky Case Quarantine（Flaky 用例隔离）
+环境性 flaky case 进隔离区（30 天 TTL + 每周过期复评 + 续期上限 2 次），代替删 case 或改阈值。与记忆系统 conflict quarantine 心智模型一致（ADR-0023）：harness 的 case 也是小号记忆单元。ADR-0027 D8。
+_Avoid_: delete-on-flaky, threshold bump for flake, infinite retry
 *End of Glossary*
