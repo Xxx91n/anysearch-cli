@@ -67,3 +67,9 @@ Accepted — 2026-08-26 (grill r23, Q1–Q7 全部记定)
 - pnpm.io official: settings/cli (pmOnFail 四档), migration guide, 11.0 release blog, configuring（配置优先级）
 - corepack README + corepack#550（无 TTY prompt 挂死）
 - claude-code#81960（harness 内嵌 pnpm 被 pmOnFail 前身拦下实证）
+
+## Amended by round59 audit (2026-08-26, append-only)
+
+1. **devEngines.packageManager 加 onFail: "warn"**（实施期偏离 D3 原措辞）：纯对象形式会让 npm 对目录内一切命令硬报 EBADDEVENGINES；npm 只实现 error/warn/ignore（npm/cli#8004 实证永不支持 download），warn 是 npm 兼容最优解；pnpm 侧强制由 pmOnFail 统一覆盖，不削弱 D5。
+2. **codex 捆绑 pnpm 已知豁免**：其 pnpm.cmd wrapper 硬编码 pnpm_config_pm_on_fail=ignore（env > yaml）；pmOnFail: error 对 codex 宿主不生效，仅对裸 pnpm 11.x（如 npx pnpm@其它版本）生效——实测 11.7.0 立即报错 exit 1。接受为宿主边界，不在本仓修复。
+3. **CI 修复（atomcode 调研，round59）**：conformance.yml / native-smoke.yml 裸 pnpm/setup@v2 漏写 install: false（install 默认 true，会在 setup-node 缓存 restore 前冷装一次 → 双倍 install）；已补齐。setup-node@v4 全仓升 @v5（Node 20 运行时 2026-09-23 移除）。
