@@ -74,7 +74,13 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
 
 async function main(): Promise<number> {
   // ADR-0029 D5: hard wall-clock watchdog (default 600s, EVAL_TIMEOUT_MS overrides).
-  const timeoutMs = Number(process.env.EVAL_TIMEOUT_MS ?? 600_000);
+  const envTimeout = process.env.EVAL_TIMEOUT_MS;
+  const timeoutMs = envTimeout === undefined ? 600_000 : Number(envTimeout);
+  // audit r67: an invalid override must fail loudly, not silently unset the watchdog.
+  if (envTimeout !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+    console.error("EVAL_TIMEOUT_MS invalid: " + JSON.stringify(envTimeout));
+    process.exit(2);
+  }
   if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
     setTimeout(() => {
       console.error("[eval] TIMEOUT: exceeded " + timeoutMs + "ms (ADR-0029 D5)");

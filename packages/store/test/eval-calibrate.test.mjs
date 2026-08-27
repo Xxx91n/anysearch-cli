@@ -1,6 +1,7 @@
 // ADR-0029 D2 test: kappa/AC1/bootstrap over synthetic 2x2-ish tables + timeout watchdog self-check.
 import assert from "node:assert";
 import { spawn } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { agreement, cohenKappa, gwetAC1, kappaBootstrapCI } from "../../../scripts/eval-calibrate.mjs";
@@ -55,6 +56,39 @@ const timeoutRun = await new Promise((resolve) => {
   p.stderr.on("data", (d) => (err += d));
   p.on("close", (code) => resolve({ code, err }));
 });
-a(timeoutRun.code !== null && timeoutRun.code !== 0); // timed out, not success
+// tighten (audit r67 P2-4): lock the exit-code contract, not just "nonzero"
+a(timeoutRun.code === 124); // watchdog exit code
+a(timeoutRun.err.includes("TIMEOUT"));
+console.log("timeout self-check exit=124 stderr has TIMEOUT: ok");
+
+// invalid EVAL_TIMEOUT_MS must fail loudly (exit 2), not silently unset the watchdog
+const badEnvRun = await new Promise((resolve) => {
+  const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "eval", "cli.ts");
+  const p = spawn("node", ["--import", "tsx", cli], {
+    env: { ...process.env, EVAL_TIMEOUT_MS: "not-a-number" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let err = "";
+  p.stderr.on("data", (d) => (err += d));
+  p.on("close", (code) => resolve({ code, err }));
+});
+a(badEnvRun.code === 2);
+a(badEnvRun.err.includes("EVAL_TIMEOUT_MS invalid"));
+console.log("invalid EVAL_TIMEOUT_MS -> exit 2: ok");
+
+// degenerate cohort (audit r67 P2-1): all labels identical -> kappa NaN -> decision fail, NOT po===1 pass
+const degRun = await new Promise((resolve) => {
+  const calib = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "scripts", "eval-calibrate.mjs");
+  const p = spawn("node", [calib, "--human", "1,1,1,1,1,1,1,1,1,1", "--judge", "1,1,1,1,1,1,1,1,1,1", "--boot", "200", "--out", path.join(os.tmpdir(), "eval-calibrate-degenerate-test.json")], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let out = "", err = "";
+  p.stdout.on("data", (d) => (out += d));
+  p.stderr.on("data", (d) => (err += d));
+  p.on("close", (code) => resolve({ code, out, err }));
+});
+a(degRun.code === 1); // perfect-agreement-but-degenerate must FAIL the kappa gate
+a(degRun.err.includes("degenerate cohort") || degRun.out.includes("decision=fail"));
+console.log("degenerate all-same-label cohort -> exit 1 fail: ok");
+
 console.log("eval-calibrate tests ok; timeout exit=" + timeoutRun.code);
-if (timeoutRun.code === 0) { console.error("timeout self-check failed"); process.exit(1); }

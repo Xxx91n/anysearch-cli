@@ -5,7 +5,7 @@
 // written to .ship-gate/calibration-report.json. Exit 0/1 is a human-review signal
 // (this script is NOT wired into ship-gate); exit 2 = setup failure (too few labels / judge data).
 //
-// Usage: JUDGE_API_KEY=... node scripts/eval-calibrate.mjs [--judge-report .ship-gate/calibration-judge-run.json]
+// Usage (real-time judge mode): JUDGE_API_KEY=... node scripts/eval-calibrate.mjs
 //                          [--out .ship-gate/calibration-report.json] [--boot 5000] [--min-labeled 30]
 // Deterministic mode: --human 1,0,... --judge 0,1,... skips set loading and endpoint calls.
 import fs from "node:fs";
@@ -76,7 +76,7 @@ async function main() {
   } else {
     const setPath = path.resolve(argVal("--set", "packages/store/src/eval/calibration-cases.ts"));
     const mod = await import(pathToFileURL(setPath).href); // tsx loader wraps .ts when present; plain node only in synthetic mode
-    set = { fingerprint: mod.CALIBRATION_SET.fingerprint, rubric: mod.CALIBRATION_SET.rubric, annotators: mod.CALIBRATION_SET.annotators, annotatedAt: mod.CALIBRATION_SET.annotatedAt, cases: mod.CALIBRATION_SET.cases };
+    set = { fingerprint: mod.CALIBRATION_SET.fingerprint, rubric: mod.CALIBRATION_SET.rubric, annotators: mod.CALIBRATION_SET.annotators, annotatedAt: mod.CALIBRATION_SET.annotatedAt, cases: mod.CALIBRATION_SET.cases, calibrationHash: mod.calibrationHash };
   }
 
   let pairs;
@@ -107,13 +107,17 @@ Is the returned snippet a plausible, relevant hit?`, { baseUrl, model, apiKey })
   const ac1 = gwetAC1(pairs);
   const [lo, hi] = kappaBootstrapCI(pairs, boot);
   const fmt = (x) => (Number.isFinite(x) ? x.toFixed(3) : "NaN");
-  const pass = po === 1 || (Number.isFinite(lo) && lo >= 0.6); // ADR-0029 D2: CI lower bound >= 0.6
+  // ADR-0029 D2 (audit r67): kappa CI lower bound >= 0.6 is the ONLY pass channel.
+  // A degenerate all-same-label cohort (kappa=NaN, po=1) is a setup failure, not perfect calibration.
+  const degenerate = po === 1 && !Number.isFinite(kappa);
+  if (degenerate) process.stderr.write("eval-calibrate: degenerate cohort (all labels identical, kappa undefined) -- treat as FAIL\n");
+  const pass = !degenerate && Number.isFinite(lo) && lo >= 0.6;
   const report = {
     schema: "anysearch/calibration-report@1",
     generatedAt: new Date().toISOString(),
     rubricHash: JUDGE_RUBRIC_HASH,
     judgeVersion: judgeVersion(process.env.JUDGE_MODEL || "deepseekpro", (process.env.JUDGE_BASE_URL || "http://127.0.0.1:20128/v1")),
-    fingerprint: set.fingerprint,
+    fingerprint: set.fingerprint, fingerprintLive: set.syntheticPairs ? "synthetic" : (typeof set.calibrationHash === "function" ? set.calibrationHash(pairs.length === 0 ? [] : set.cases.filter((c) => c.humanRelevant === 0 || c.humanRelevant === 1)) : null),
     annotator: (set.annotators ?? []).join("+") || "unlabeled",
     annotatedAt: set.annotatedAt ?? null,
     n: pairs.length, rawAgreement: po, kappa, kappaCI95: [lo, hi], gwetAC1: ac1,

@@ -53,3 +53,8 @@ ADR-0027 D2 定了 judge 通道（本地 DeepSeek、跨家族、fail-open、记 
 - 快照/触发器：tianpan.co LLM-as-Judge Drift（two clocks）、opentrain judge version pinned、Galileo recalibrate-on-model-swap、FutureAGI 月度校准 + 60–90 天漂移、Deepchecks 分数分布变平信号。
 - 预算守卫：aloknecessary llm-evaluation-in-production（15min 红线 + 硬超时代码）、FutureAGI eval gates in GitHub Actions（>10min merge-and-apologize，PR/nightly 双层）、Galtea CI 三触发路径、tech-insider 2026（paths 过滤 + 成本预算）。
 - scope 纪律：Hivel PR 反 bundling、mesrai While-You're-At-It 反模式、Pramida Tumma AI Scope Creep、Sapegin 原子 PR 判定、K8s deprecation Rule 5a/5b/6、Jaeger #2113 N+2、Apache Superset 集中清除废弃、keep-a-changelog Removed 分类、SemVer 废弃窗口。
+
+## Post-landing audit note (r67, 2026-08-28)
+
+- step 7（删 `--write-baseline` 别名）随 feat commit `210f629` 一并提交，未按实施计划独立 chore commit。历史已定格，显式记录偏差（scope discipline: deviations stay explicit）；后续轮次不回溯拆 commit。
+- 审计修复（同轮落地）：删 `po===1` 放行通道（退化 cohort 现在 fail）、`--judge-report` 死参数从 Usage 删除、fingerprint 补 run 时对标注子集现算 `fingerprintLive`、超时测试锁死 exit 124 + TIMEOUT 文案 + 新增非法 `EVAL_TIMEOUT_MS`（exit 2）用例、CI path 正则锚定 `.mjs$`、secret 组 #2 字面 key 改占位符。

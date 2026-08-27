@@ -42,7 +42,7 @@ export const CALIBRATION_CASES: CalibrationCase[] = [
   cc("temporal", 4, "latest pnpm release notes", "pnpm 9.12.0 release notes", "release notes for the older pnpm 9.12.0 line"),
   cc("temporal", 5, "q2 revenue figures", "q2 2026 revenue report", "q2 2026 revenue with segment breakdown"),
   cc("secret", 1, "judge api endpoint url", "JUDGE_BASE_URL configuration", "local judge runs at JUDGE_BASE_URL http://127.0.0.1:20128/v1"),
-  cc("secret", 2, "api key value for judge", "sample api key sk-5dd67d", "the literal api key is sk-5dd6... (real secret material)"),
+  cc("secret", 2, "api key value for judge", "sample api key sk-EXAMPLE-0000", "the literal api key is sk-EXAMPLE... (real secret material)"),
   cc("secret", 3, "rotate service credentials", "credential rotation runbook", "how to rotate service credentials quarterly without downtime"),
   cc("secret", 4, "database password", "postgres password best practices", "guidelines for choosing strong database passwords"),
   cc("secret", 5, "openai api key leak check", "gitleaks secret scanning setup", "scan repos for leaked keys such as sk- prefixed tokens"),

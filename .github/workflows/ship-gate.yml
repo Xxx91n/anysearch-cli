@@ -83,7 +83,7 @@ jobs:
           else
             files=$(git diff --name-only "${{ github.event.before }}..HEAD" || git show --pretty=format: --name-only HEAD)
           fi
-          if grep -Eq '^(packages/store/|scripts/eval-judge|scripts/eval-calibrate)' <<< "$files"; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "run=0" >> "$GITHUB_OUTPUT"; fi
+          if grep -Eq '^(packages/store/|scripts/eval-(judge|calibrate)\.mjs$)' <<< "$files"; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "run=0" >> "$GITHUB_OUTPUT"; fi
 
       - uses: pnpm/setup@v2
         if: ${{ steps.changes.outputs.run == '1' }}
