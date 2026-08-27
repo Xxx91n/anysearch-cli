@@ -416,10 +416,6 @@ async function stepT0Smoke(tmpDir) {
   }
   report("pass", "memory-pipeline.ts Stage-1 <user_preferences> injection present");
   }
-
-
-// ---------------------------------------------------------------------------
-
 // ---------------------------------------------------------------------------
 // Step 4.6 — ADR-0027: memory eval harness gate (fail-closed three metrics;
 // LLM judge channel deliberately NOT in ship-gate per ADR-0027 D2/D6).

@@ -70,6 +70,7 @@ export async function runCase(spec: CaseSpec): Promise<CaseResult> {
           case "adjudicate": {
             const res = await store.adjudicateMemory(session.id, op.items);
             adjResults[opIndex] = res;
+            // ponytail: wall-clock settle sleep, ceiling = flaky on heavily loaded CI hosts; upgrade path = injectable clock into store.
             await new Promise((r) => setTimeout(r, 12)); // mirror in-repo tests: let FTS/datetime('now') settle
             const mism = op.expect
               .map((e, i) => (res[i]?.action === e ? null : `item ${i}: got ${res[i]?.action ?? "<missing>"}, want ${e}`))
