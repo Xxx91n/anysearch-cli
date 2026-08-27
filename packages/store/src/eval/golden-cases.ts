@@ -75,7 +75,9 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "search", stage: "retrieve", query: "buildzone ci built", expectIncludesTitle: "buildzone ci built" },
     ],
   },
-  // --- Group 2: temporal expiry (decay / valid_until, 3) ---
+  // --- Group 2: temporal expiry (valid_until bi-temporal closing, 2) ---
+  // NOTE: this group covers bi-temporal close-out only, NOT decay scoring — decay (G019) is P2
+  // and currently has NO gate coverage (round63 atomcode audit finding 6).
   {
     id: "te_valid_until_set", group: "temporal",
     description: "supersede closes old record via valid_until (bi-temporal)",

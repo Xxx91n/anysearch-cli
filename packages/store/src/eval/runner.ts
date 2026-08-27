@@ -50,10 +50,12 @@ export function datasetFingerprint(cases: CaseSpec[]): string {
 const hitText = (h: { role?: unknown; content?: unknown }): string =>
   String(h.role ?? "") + " " + String(h.content ?? "");
 
-export async function runCase(spec: CaseSpec): Promise<CaseResult> {
+export type StoreFactory = (dbPath: string) => SqliteSessionStore;
+
+export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => new SqliteSessionStore(p)): Promise<CaseResult> {
   const tmpDir = mkdtempSync(join(tmpdir(), "ans-eval-"));
   const dbPath = join(tmpDir, "eval.db");
-  const store = new SqliteSessionStore(dbPath);
+  const store = makeStore(dbPath);
   const raw = new Database(dbPath, { readonly: true });
   const ops: OpRecord[] = [];
   const adjResults: AdjudicationResultItem[][] = []; // stashed per adjudicate opIndex

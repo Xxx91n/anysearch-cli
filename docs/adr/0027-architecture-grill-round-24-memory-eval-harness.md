@@ -79,3 +79,9 @@ Accepted — 2026-08-27 (grill r24, Q1–Q7 全部记定)
 - RAGAS vs DeepEval 2026 — https://qaskills.sh/blog/ragas-vs-deepeval-2026
 - AWS GEDD Cohen's κ for LLM Judges — https://github.com/aws-samples/sample-GEDD/blob/main/grounded-evals/docs/cohens-kappa-for-llm-judges.md
 - GitHub Actions artifacts retention — https://docs.github.com/en/organizations/managing-organization-settings/configuring-the-retention-period-for-github-actions-artifacts-and-logs-in-your-organization
+
+
+## Amended by round63 2026-08-27
+
+- Finding 1 (gate self-proof): added `test/eval-mutation.test.ts` — mutation surface at the adjudicate seam (mutant accepts secrets) must fail the golden secret case with failedStage=adjudicate and gate exit 1. This is now part of the store test suite.
+- Finding 6 (grouping honesty): golden-cases Group 2 header corrected — temporal group covers bi-temporal valid_until closing only (2 cases, not 3); decay scoring (G019) is P2 and has NO gate coverage. Handoff round62's "temporal 3" was an erratum.
