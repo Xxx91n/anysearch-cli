@@ -24,3 +24,9 @@ assert.equal(containsSecret({ nested: { v: SK } }), true, "object input stringif
 assert.ok(typeof SECRET_PATTERNS === "string" && SECRET_PATTERNS.includes("AKIA"), "test seam exports pattern source");
 
 console.log("secret-guard.test.ts: all assertions passed");
+
+// r66 audit F-02: bounded decode — base64 candidates > 2048 chars are skipped (no decode).
+const longB64 = Buffer.from(SK.repeat(80), "utf8").toString("base64");
+assert.ok(longB64.length > 2048, "fixture exceeds cap");
+assert.equal(containsSecret(longB64), false, "over-cap base64 skipped, no decode");
+assert.equal(containsSecret(Buffer.from(SK, "utf8").toString("base64")), true, "under-cap base64 still decoded+caught");

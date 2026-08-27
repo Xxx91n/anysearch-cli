@@ -6,16 +6,20 @@
 // ADR-0020 D5 — Ponytail floor: no execa / chalk / external packages.
 //
 // Steps:
-//   1. rg static assertions (workspace layout + version pin + tool registry)
-//   2. turbo check / test / build (fails fast)
-//   3. pnpm pack into a temp dir
-//   4. Install produced tarballs into a fresh tmp prefix and verify the `ans`
+//   1. task parity + rg static assertions (workspace + version pin + registry)
+//   2. domain schema validation (ADR-0021 D3)
+//   3. turbo check / test / build (fails fast)
+//   4. pnpm pack into a temp dir
+//   5. Install produced tarballs into a fresh tmp prefix and verify the `ans`
 //      bin lands on disk (napi-rs style "release verify install" pattern).
-//   5. Spawn the plugin MCP server over stdio and assert InitializeResult.
+//   6. T0 smoke probe (ADR-0024)
+//   7. memory eval harness gate (ADR-0027 / ADR-0028)
+//   8. Spawn the plugin MCP server over stdio and assert InitializeResult.
+//   9. fail-open boot: server must answer initialize with no anysearch backend.
 //
 // Flags:
 //   --skip-matrix   Skip cross-OS tgz install (CI runs the matrix instead).
-//   --quick         Steps 1, 3, 5 only (author edit loop).
+//   --quick         Skips step 3 (turbo) and step 5 (install); author edit loop.
 //
 // ponytail: single spawn per check, sequential. Concurrency is a CI concern.
 
@@ -136,7 +140,7 @@ function step1TaskParity() {
 function stepStaticAssertions() {
   // ADR-0028 D5: task-parity gate runs first — turbo skip-if-absent masks missing check/test scripts, so parity is asserted here before anything else.
   step1TaskParity();
-  report("info", "step 1/5: task parity + static rg assertions (version pin + ADR invariants)");
+  report("info", "step 1/9: task parity + static rg assertions (version pin + ADR invariants)");
 
   // 1a. workspace package versions must be pinned (ADR-0020 D3)
   for (const rel of PKG_DIRS) {
@@ -217,11 +221,11 @@ function stepStaticAssertions() {
 }
 
 // ---------------------------------------------------------------------------
-// Step 1.5 — domain schema validation (ADR-0021 D3, blocking)
+// Step 2 — domain schema validation (ADR-0021 D3, blocking)
 // ---------------------------------------------------------------------------
 async function stepValidateDomains() {
   reportStep("step_1_5_validate_domains");
-  report("info", "step 1.5/5: validate domains/*.toml compaction guards");
+  report("info", "step 2/9: validate domains/*.toml compaction guards");
   const vPath = path.join(ROOT, "scripts/validate-domains.mjs");
   if (!fs.existsSync(vPath)) {
     report("skip", "validate-domains.mjs absent — step skipped");
@@ -232,10 +236,10 @@ async function stepValidateDomains() {
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — turbo check / test / build
+// Step 3 — turbo check / test / build
 // ---------------------------------------------------------------------------
 async function stepBuildAndTest() {
-  report("info", "step 2/5: turbo check / test / build");
+  report("info", "step 3/9: turbo check / test / build");
   for (const task of ["check", "test", "build"]) {
     await run(PNPM, ["turbo", "run", task]);
     report("pass", `turbo run ${task}`);
@@ -243,10 +247,10 @@ async function stepBuildAndTest() {
 }
 
 // ---------------------------------------------------------------------------
-// Step 3 — pnpm pack into temp dir; verify tarballs for shipped packages
+// Step 4 — pnpm pack into temp dir; verify tarballs for shipped packages
 // ---------------------------------------------------------------------------
 async function stepPack(tmpDir) {
-  report("info", "step 3/5: pnpm pack into temp dir");
+  report("info", "step 4/9: pnpm pack into temp dir");
   const outDir = path.join(tmpDir, "pack");
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -270,14 +274,14 @@ async function stepPack(tmpDir) {
 }
 
 // ---------------------------------------------------------------------------
-// Step 4 — install tarballs into a clean prefix, verify bin entry exists
+// Step 5 — install tarballs into a clean prefix, verify bin entry exists
 // ---------------------------------------------------------------------------
 async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
   if (skipMatrix) {
-    report("skip", "step 4/5: cross-OS matrix install (delegated to CI matrix)");
+    report("skip", "step 5/9: cross-OS matrix install (delegated to CI matrix)");
     return;
   }
-  report("info", "step 4/5: extract tarballs + verify manifest shape + bin target exists");
+  report("info", "step 5/9: extract tarballs + verify manifest shape + bin target exists");
 
   // Ponytail: pick tar once per process. Windows POSIX-shim env (Git Bash PATH first) resolves bare "tar"
   // to GNU tar which misparses "C:\..." paths as remote-host syntax and fails "Cannot connect to C".
@@ -385,13 +389,13 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
 
 
 // ---------------------------------------------------------------------------
-// Step 4.5 — ADR-0024 D5 + D7 T0 smoke probe: boot CLI with seeded preference,
+// Step 6 — ADR-0024 D5 + D7 T0 smoke probe: boot CLI with seeded preference,
 // assert first user message contains <user_preferences> block.
 // Blocking: the injected projection must be visible in `ans pref list` output;
 // and `pref --help` must mention the XML wrapper so we know Step 4 landed.
 // ---------------------------------------------------------------------------
 async function stepT0Smoke(tmpDir) {
-  report("info", "step 4.5/5: T0 smoke probe (ADR-0024)");
+  report("info", "step 6/9: T0 smoke probe (ADR-0024)");
 
   const cliDist = path.join(ROOT, "apps", "cli", "dist", "index.js");
   if (!fs.existsSync(cliDist)) {
@@ -427,11 +431,11 @@ async function stepT0Smoke(tmpDir) {
   report("pass", "memory-pipeline.ts Stage-1 <user_preferences> injection present");
   }
 // ---------------------------------------------------------------------------
-// Step 4.6 — ADR-0027: memory eval harness gate (fail-closed three metrics;
+// Step 7 — ADR-0027: memory eval harness gate (fail-closed three metrics;
 // LLM judge channel deliberately NOT in ship-gate per ADR-0027 D2/D6).
 // ---------------------------------------------------------------------------
 async function stepMemoryEval() {
-  report("info", "step 4.6/5: memory eval harness gate (ADR-0027)");
+  report("info", "step 7/9: memory eval harness gate (ADR-0027)");
   const outDir = path.join(ROOT, ".ship-gate");
   fs.mkdirSync(outDir, { recursive: true });
   const res = await new Promise((resolve) => {
@@ -470,10 +474,10 @@ async function stepMemoryEval() {
 }
 
 // ---------------------------------------------------------------------------
-// Step 5 — stdio MCP initialize smoke (fail-open per CONTEXT.md fail-open rule)
+// Step 8 — stdio MCP initialize smoke (fail-open per CONTEXT.md fail-open rule)
 // ---------------------------------------------------------------------------
 async function stepMcpInitialize() {
-  report("info", "step 5/5: spawn plugin MCP over stdio, assert initialize result");
+  report("info", "step 8/9: spawn plugin MCP over stdio, assert initialize result");
 
   const mcpEntry = path.join(ROOT, MCP_MAIN);
   if (!fs.existsSync(mcpEntry)) {
@@ -540,7 +544,7 @@ async function stepMcpInitialize() {
 }
 
 // ---------------------------------------------------------------------------
-// Step 5b — fail-open: server must boot + respond to initialize even with NO
+// Step 9 — fail-open: server must boot + respond to initialize even with NO
 // ANYSEARCH_* / TAVILY_* / EXA_* / ANS_* env set. Server-level fail-fast is
 // github-mcp-server convention (exit non-zero + stderr) — but our env vars are
 // tool-level (retriever providers check them per-call), so server MUST boot
@@ -548,7 +552,7 @@ async function stepMcpInitialize() {
 // data, not dead protocol.
 // ---------------------------------------------------------------------------
 async function stepFailOpenBoot() {
-  report("info", "step 5b: spawn MCP with scrubbed env, assert fail-open boot");
+  report("info", "step 9/9: spawn MCP with scrubbed env, assert fail-open boot");
 
   const mcpEntry = path.join(ROOT, MCP_MAIN);
   const req = {
@@ -651,6 +655,7 @@ const quick = args.has("--quick");
     await stepMemoryEval();
     reportStep("step_5_mcp_stdio");
     await stepMcpInitialize();
+    reportStep("step_9_fail_open_boot");
     await stepFailOpenBoot();
     report("info", "cross-OS native loading covered by CI native-smoke.yml 4-job matrix (ADR-0025 D1)");
     report("pass", "ship gate green — ready to tag v0.1.0-rc.0");

@@ -27,6 +27,7 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
     `- generated: ${report.generatedAt}`,
     `- dataset fingerprint: ${report.datasetFingerprint}`,
     `- verdict: ${verdict}`,
+    `- note: allowance band is advisory at current sample sizes (allowance/n < MDE); the only hard gate is passRate == 1 (ADR-0028 D1; r66 audit F-03)`,
     "",
     "## Metrics (gate)",
     "",
@@ -128,6 +129,7 @@ async function main(): Promise<number> {
     `[eval] cases ${report.totals.passed}/${report.totals.cases} pass, fingerprint=${report.datasetFingerprint}, ` +
       `passRate=${report.metrics.passRate.toFixed(3)} supFails=${report.metrics.counts.supExpected - report.metrics.counts.supPassed} qfp=${report.metrics.counts.fpCount} mrr=${report.metrics.mrr.toFixed(3)} verdict=${g.verdict} exit=${exitCode}`
   );
+  console.log("[eval] note: allowance band advisory at current n (allowance/n < MDE) — hard gate is passRate==1 (ADR-0028 D1)");
   for (const w of g.warnings) console.warn("[eval] WARN: " + w);
   for (const x of g.failures) console.error("[eval] gate: " + x);
   return exitCode;

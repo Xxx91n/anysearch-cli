@@ -46,7 +46,7 @@ jobs:
       - name: install (no scripts — better-sqlite3 prebuilt, see pnpm-workspace allowBuilds)
         run: pnpm install --ignore-scripts
 
-      - name: ship-gate (5 steps; matrix install runs per-OS in CI)
+      - name: ship-gate (9 steps; matrix install runs per-OS in CI)
         run: node scripts/ship-gate.mjs
         env:
           CI: "true"
