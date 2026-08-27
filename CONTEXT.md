@@ -365,4 +365,23 @@ _Avoid_: auto-lower baseline, silent drift, threshold update without review
 ## Flaky Case Quarantine（Flaky 用例隔离）
 环境性 flaky case 进隔离区（30 天 TTL + 每周过期复评 + 续期上限 2 次），代替删 case 或改阈值。与记忆系统 conflict quarantine 心智模型一致（ADR-0023）：harness 的 case 也是小号记忆单元。ADR-0027 D8。
 _Avoid_: delete-on-flaky, threshold bump for flake, infinite retry
+## Integer Allowance Gate（整数 op 允许数门禁）
+eval 门禁的容差带用「允许挂 N 个 op」的整数表达，替代「baseline − 连续小数 margin」。n=11 时单 op 抖动 9.1pp，连续 margin 没有有意义的取值空间；地板 = (expected − k)/expected。报告层附 MDE/Wilson CI；margin < MDE 时该指标降为 WARN 而非 FAIL。ADR-0028 D1。
+_Avoid_: continuous margin on small-n metric, Holm/BH in CI gate, auto-lowered floor
+
+## Rank-of-Relevant Gate（rank 整数检索门禁）
+search op 的 per-case 断言 `expectRankOf: { title, maxRank }`，直接表达「期望记忆必须在前 N 名」。单相关文档场景 MRR=MAP（arXiv 2510.21440），rank 整数已含全部排序信号；聚合 MRR/nDCG 只进报告不进门禁。ADR-0028 D2。
+_Avoid_: qrels gate at n=20, aggregate nDCG threshold, graded labels for single-relevance set
+
+## Read-Side Secret Guard（检索侧 secret 兜底）
+「写入拒存」之上的第二层防线：共享 `containsSecret`（大小写不敏感 + JSON 转义还原 + 空白折叠 + 有限 base64 解码）挂全部 4 个写入口（adjudicateMemory/saveResults/saveAnchor/append）与 2 个检索出口（searchMemory/searchMemoryMulti）。全角同形与截断变体为文档化已知盲区，与 GitHub push protection "Some" 口径一致。ADR-0028 D3。
+_Avoid_: write-path-only regex, trust "retrievable by design" without guard, claiming full variant coverage
+
+## Difficulty Tier and Unanswerable Slice（难度分层与不可答切片）
+golden case 标 `difficulty: core|hard|adversarial`、按层报 pass rate（不进 gate）；加 near-answer distractor 的 unanswerable 负例（判分 = 返回 0 条相关结果），配 answerable 假拒率双向门禁防「全拒耍赖」。轻 paraphrase 变体必须配正向断言（负向在空结果下空洞通过）。ADR-0028 D4。
+_Avoid_: unanswerable without distractor, negative-assertion-only paraphrase variant, verbatim query==title probe
+
+## Task Parity Gate（任务平价门禁）
+monorepo「名义 N 包 vs 实际 M 包」漂移的防线：turbo skip-if-absent 是官方 feature（PR #1226 拒改），业界答案 = 契约在管道、实现靠门禁（Rush 默认严格 + ignoreMissingScript 豁免）。零依赖 `scripts/task-parity.mjs` 挂 ship-gate step 1,check/test 通用任务每包必实现，豁免集显式置空。ADR-0028 D5。
+_Avoid_: narrowing turbo.json to hide drift, migrating to Nx/Rush for this alone
 *End of Glossary*
