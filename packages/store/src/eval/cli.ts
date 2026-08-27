@@ -1,6 +1,6 @@
 // ADR-0027 D6: `pnpm -C packages/store eval` — writes .ship-gate/eval-report.{json,md},
 // applies the gate, exits with the partitioned code contract.
-// ADR-0028 D1: --write-baseline replaced by --calibrate (50-run hard floor; CI never rewrites).
+// ADR-0028 D1 / ADR-0029 D6: --calibrate only (50-run hard floor; CI never rewrites). The one-round --write-baseline alias was removed (ADR-0029 D6).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -73,8 +73,16 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
 }
 
 async function main(): Promise<number> {
+  // ADR-0029 D5: hard wall-clock watchdog (default 600s, EVAL_TIMEOUT_MS overrides).
+  const timeoutMs = Number(process.env.EVAL_TIMEOUT_MS ?? 600_000);
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    setTimeout(() => {
+      console.error("[eval] TIMEOUT: exceeded " + timeoutMs + "ms (ADR-0029 D5)");
+      process.exit(124);
+    }, timeoutMs).unref();
+  }
   const args = process.argv.slice(2);
-  const calibrateIdx = args.findIndex((a) => a === "--calibrate" || a === "--write-baseline"); // write-baseline kept as alias for one round
+  const calibrateIdx = args.indexOf("--calibrate");
   const outIdx = args.indexOf("--out");
   const root = repoRoot();
   const outDir = outIdx >= 0 ? resolve(args[outIdx + 1]!) : join(root, ".ship-gate");
@@ -112,6 +120,8 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  // ADR-0029 D5 test hook: synthetic delay so the watchdog has something to kill.
+  if (process.env.EVAL_SLOW_MS) await new Promise((r) => setTimeout(r, Number(process.env.EVAL_SLOW_MS)));
   const report = await runAll(GOLDEN_CASES);
   mkdirSync(outDir, { recursive: true });
 
