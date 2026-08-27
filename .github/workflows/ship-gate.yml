@@ -63,3 +63,40 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 30
+
+  # ADR-0029 D5: golden memory-eval as a dedicated path-filtered job (signal fast,
+  # avoid paying eval cost for doc/CI-only diffs). ship-gate above stays the merge gate.
+  memory-eval:
+    name: memory-eval (golden, path-filtered ADR-0029 D5)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: path filter (packages/store/**, eval scripts)
+        id: changes
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}" --depth=1 || true
+            files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          else
+            files=$(git diff --name-only "${{ github.event.before }}..HEAD" || git show --pretty=format: --name-only HEAD)
+          fi
+          if grep -Eq '^(packages/store/|scripts/eval-judge|scripts/eval-calibrate)' <<< "$files"; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "run=0" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: pnpm/setup@v2
+        if: ${{ steps.changes.outputs.run == '1' }}
+        with: { install: false }
+
+      - uses: actions/setup-node@v5
+        if: ${{ steps.changes.outputs.run == '1' }}
+        with: { node-version: 24, cache: pnpm }
+
+      - name: install
+        if: ${{ steps.changes.outputs.run == '1' }}
+        run: pnpm install --ignore-scripts
+
+      - name: memory eval (golden gate, ADR-0027/0028)
+        if: ${{ steps.changes.outputs.run == '1' }}
+        run: pnpm -C packages/store eval
