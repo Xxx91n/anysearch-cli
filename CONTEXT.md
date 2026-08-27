@@ -161,6 +161,18 @@ _Avoid_: auto-lower baseline, silent drift, threshold update without review
 ## Flaky Case Quarantine（Flaky 用例隔离）
 环境性 flaky case 进隔离区（30 天 TTL + 每周过期复评 + 续期上限 2 次），代替删 case 或改阈值。与记忆系统 conflict quarantine 心智模型一致（ADR-0023）：harness 的 case 也是小号记忆单元。ADR-0027 D8。
 _Avoid_: delete-on-flaky, threshold bump for flake, infinite retry
+
+## Calibration Holdout（校准留出集）
+人工标注的 30-50 条冻结 TS fixture（calibration-cases.ts），与 gate 用的 golden-cases.ts 物理分离，专用于度量 judge 与人类的一致性。从真实 judge 样本流分层抽样另写、负例偏多；拒从 golden 集抽样（pigeonhole 自认可回路）。ADR-0029 D1/D3。
+_Avoid_: sampling calibration set from golden cases, Likert rubric, calibration artifacts mixed into golden fingerprint
+
+## Kappa CI Lower Bound（κ 置信区间下界门禁）
+judge 启用的判据：Cohen's κ 的 percentile bootstrap CI（5000 次重采样）下界 ≥ 0.6，而非点估计——n=30-50 时 CI 宽可达 0.4，点估计会系统性高估可信度。报告双报 raw agreement + Gwet's AC1 兜底（kappa paradox）。ADR-0029 D2。
+_Avoid_: point-estimate kappa gate, asymptotic CI on small n, Fleiss on 2-rater setup
+
+## Scope Discipline（当轮范围纪律）
+一次 grill 一个主题 ADR + 身份明确的可选伴随项：内聚工程项进 Decision 段，到期 chore 走独立 commit + CHANGELOG Removed，显式拒绝项单列。反模式是无记录的 while-you're-at-it 顺手改。ADR-0029 D6 + AGENTS.md Scope discipline。
+_Avoid_: bundling unrelated decisions into one ADR Decision, silent scope creep, deferred chores without handoff record
 *End of Glossary*
 
 ## Cursor Dual Channel（Cursor 双通道注入）

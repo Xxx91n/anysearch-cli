@@ -47,3 +47,6 @@ Pinned pnpm version: **11.24.0**, declared twice and kept in sync:
 ship-gate no longer needs PATH front-loading of a global pnpm; any conforming install (corepack, pnpm/setup, or global 11.24.0) works. Bump both pinned fields in one commit when upgrading pnpm.
 
 CI uses `pnpm/setup@v2` (the v11+ successor of `pnpm/action-setup`), which reads the pinned version automatically.
+## Scope discipline (ADR-0029)
+
+One grill round = one themed topic. Cohesive engineering items in the same subsystem may land in the ADR as formal Decision entries; due chores ship as separate refactor commits + CHANGELOG Removed entries; rejections stay explicit in the ADR. The anti-pattern is undocumented while-you're-at-it edits — audit-checklist.md enforces diff-size thresholds and the found/fixed/deferred triplet.
