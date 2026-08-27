@@ -1,4 +1,5 @@
-// ADR-0027 D3/D5: golden dataset — 20 deterministic lifecycle cases in 6 groups.
+// ADR-0027 D3/D5: golden dataset — deterministic lifecycle cases (was 20 in 6 groups).
+// ADR-0028 D2/D3/D4: rank-of-relevant assertions, seed-op secret negative slices, difficulty tiers.
 // Cases are typed TS data (compiler-forced sync with store API); JSON fixtures rejected (ADR-0027 D11).
 // Runner materializes each case on a fresh temp SQLite DB: adjudicate stubs -> store -> retrieve.
 import type { AdjudicationAction, KeyMemoryInput } from "../session-store";
@@ -9,13 +10,17 @@ export type EvalGroup =
   | "secret"
   | "cprime"
   | "quarantine"
-  | "stale_topk";
+  | "stale_topk"
+  | "secret_bypass"
+  | "unanswerable"
+  | "paraphrase";
 
 export type EvalStage = "extract" | "adjudicate" | "store" | "retrieve";
 
 export type CaseOp =
   | { op: "adjudicate"; stage: "adjudicate"; items: KeyMemoryInput[]; expect: AdjudicationAction[] }
-  | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number }
+  | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number; expectRankOf?: { title: string; maxRank: number }; expectEmpty?: true }
+  | { op: "seed"; stage: "store"; items: KeyMemoryInput[] } /* ADR-0028 D3: direct DB insert, bypasses the write guard on purpose */
   | { op: "rawValidUntil"; stage: "store"; fromOp: number; expectSet: boolean }
   | { op: "promote"; stage: "store"; key: string; value: string; scope?: string; source: "explicit" | "correction"; expectAction: "promoted" | "rejected" }
   | { op: "correct"; stage: "adjudicate"; key: string; scope: string; times: number; expectCount: number }
@@ -26,6 +31,8 @@ export type CaseOp =
 export interface CaseSpec {
   id: string;
   group: EvalGroup;
+  // ADR-0028 D4: report-only tier; omitted defaults to "core" in the runner report.
+  difficulty?: "core" | "hard" | "adversarial";
   description: string;
   ops: CaseOp[];
 }
@@ -223,7 +230,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rc2", "relcycle version two", "relcycle is version two", 0.9, "relcycle")], expect: ["supersede"] },
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rc3", "relcycle version three", "relcycle is version three", 0.9, "relcycle")], expect: ["supersede"] },
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rc4", "relcycle version four", "relcycle is version four", 0.9, "relcycle")], expect: ["supersede"] },
-      { op: "search", stage: "retrieve", query: "relcycle", limit: 5, expectMaxCount: 1, expectIncludesTitle: "relcycle version four" },
+      { op: "search", stage: "retrieve", query: "relcycle", limit: 5, expectMaxCount: 1, expectRankOf: { title: "relcycle version four", maxRank: 1 } }, /* ADR-0028 D2 */
     ],
   },
   {
@@ -235,7 +242,137 @@ export const GOLDEN_CASES: CaseSpec[] = [
         km("https://ex.com/tw2", "timewindow two uncertain", "timewindow two uncertain wording", 0.4, "timewindow-2"),
         km("https://ex.com/tw3", "timewindow three live", "timewindow three live wording", 0.9, "timewindow-3"),
       ], expect: ["accept", "quarantine", "accept"] },
-      { op: "search", stage: "retrieve", query: "timewindow", limit: 5, expectMaxCount: 2, expectIncludesTitle: "timewindow one live", expectExcludesTitle: "timewindow two uncertain" },
+      { op: "search", stage: "retrieve", query: "timewindow", limit: 5, expectMaxCount: 2, expectExcludesTitle: "timewindow two uncertain", expectRankOf: { title: "timewindow one live", maxRank: 2 } }, /* ADR-0028 D2 */
+    ],
+  },
+
+  // --- ADR-0028 D3: seed-bypassed secret slices (8, adversarial) ---
+  // seed op writes straight into retrieval_results, bypassing the write guard; the
+  // read-side exit filter (containsSecret on searchMemory) must hide every variant.
+  {
+    id: "sb_seed_literal_sk", group: "secret_bypass", difficulty: "adversarial",
+    description: "seeded literal sk- token hidden at read side",
+    ops: [
+      { op: "seed", stage: "store", items: [km("https://ex.com/sb1", "stealthxa seed row", 'stealthxa holds sk-testDEADBEEFcafebabe1234abcd1234 verbatim', 0.9, "stealthx-a")] },
+      { op: "search", stage: "retrieve", query: "stealthxa", expectEmpty: true },
+    ],
+  },
+  {
+    id: "sb_seed_case_mixed_akia", group: "secret_bypass", difficulty: "adversarial",
+    description: "seeded lowercase akia variant hidden",
+    ops: [
+      { op: "seed", stage: "store", items: [km("https://ex.com/sb2", "stealthxb seed row", 'stealthxb key id akiaiosfodnn7example lowercase', 0.9, "stealthx-b")] },
+      { op: "search", stage: "retrieve", query: "stealthxb", expectEmpty: true },
+    ],
+  },
+  {
+    id: "sb_seed_pem_lowercase", group: "secret_bypass", difficulty: "adversarial",
+    description: "seeded lowercase PEM header hidden",
+    ops: [
+      { op: "seed", stage: "store", items: [km("https://ex.com/sb3", "stealthxc seed row", 'stealthxc embeds -----begin rsa private key----- lowercase', 0.9, "stealthx-c")] },
+      { op: "search", stage: "retrieve", query: "stealthxc", expectEmpty: true },
+    ],
+  },
+  {
+    id: "sb_seed_base64_sk", group: "secret_bypass", difficulty: "adversarial",
+    description: "seeded base64-wrapped sk token decoded then hidden",
+    ops: [
+      { op: "seed", stage: "store", items: [km("https://ex.com/sb4", "stealthxd seed row", 'stealthxd blob c2stdGVzdERFQURCRUVGY2FmZWJhYmUxMjM0YWJjZDEyMzQ= inline', 0.9, "stealthx-d")] },
+      { op: "search", stage: "retrieve", query: "stealthxd", expectEmpty: true },
+    ],
+  },
+  {
+    id: "sb_seed_base64_akia", group: "secret_bypass", difficulty: "adversarial",
+    description: "seeded base64-wrapped AKIA id hidden",
+    ops: [
+      { op: "seed", stage: "store", items: [km("https://ex.com/sb5", "stealthxe seed row", 'stealthxe blob QUtJQUlPU0ZPRE5ON0VYQU1QTEU= inline', 0.9, "stealthx-e")] },
+      { op: "search", stage: "retrieve", query: "stealthxe", expectEmpty: true },
+    ],
+  },
+  {
+    id: "sb_seed_json_escaped", group: "secret_bypass", difficulty: "adversarial",
+    description: "seeded JSON-escaped sk string hidden after unescape pass",
+    ops: [
+      { op: "seed", stage: "store", items: [km("https://ex.com/sb6", "stealthxf seed row", 'stealthxf json {\\"k\\": \\"sk-testDEADBEEFcafebabe1234abcd1234\\"} tail', 0.9, "stealthx-f")] },
+      { op: "search", stage: "retrieve", query: "stealthxf", expectEmpty: true },
+    ],
+  },
+  {
+    id: "sb_seed_whitespace_split", group: "secret_bypass", difficulty: "adversarial",
+    description: "seeded whitespace-split sk token hidden after squash pass",
+    ops: [
+      { op: "seed", stage: "store", items: [km("https://ex.com/sb7", "stealthxg seed row", 'stealthxg split sk-testDEADBEEF cafebabe1234 abcd1234 pieces', 0.9, "stealthx-g")] },
+      { op: "search", stage: "retrieve", query: "stealthxg", expectEmpty: true },
+    ],
+  },
+  {
+    id: "sb_seed_fullwidth_akia", group: "secret_bypass", difficulty: "adversarial",
+    description: "seeded fullwidth AKIA NFKC-folded then hidden",
+    ops: [
+      { op: "seed", stage: "store", items: [km("https://ex.com/sb8", "stealthxh seed row", 'stealthxh fullwidth ＡＫＩＡＩＯＳＦＯＤＮＮ７ＥＸＡＭＰＬＥ mixed', 0.9, "stealthx-h")] },
+      { op: "search", stage: "retrieve", query: "stealthxh", expectEmpty: true },
+    ],
+  },
+  // --- ADR-0028 D4: unanswerable slice (4, adversarial) — near-answer distractor stored,
+  // query carries tokens absent from the corpus; expectEmpty asserts the refusal path.
+  {
+    id: "un_cacheflush_schedule", group: "unanswerable", difficulty: "adversarial",
+    description: "distractor about cacheflush interval; schedule question must refuse",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/un1", "cacheflush interval config", "cacheflush interval is ten minutes default", 0.9, "cacheflush-cfg")], expect: ["accept"] },
+      { op: "search", stage: "retrieve", query: "cacheflush release timetable", expectEmpty: true },
+    ],
+  },
+  {
+    id: "un_deployregion_pricing", group: "unanswerable", difficulty: "adversarial",
+    description: "distractor about deployregion capacity; pricing question must refuse",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/un2", "deployregion capacity notes", "deployregion default useast capacity eighty nodes", 0.9, "deployregion-cap")], expect: ["accept"] },
+      { op: "search", stage: "retrieve", query: "deployregion pricing cost", expectEmpty: true },
+    ],
+  },
+  {
+    id: "un_toggleflag_rollback", group: "unanswerable", difficulty: "adversarial",
+    description: "distractor about toggleflag enable; disable-doc question must refuse",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/un3", "toggleflag enable guide", "toggleflag enables dark sidebar layout", 0.9, "toggleflag-en")], expect: ["accept"] },
+      { op: "search", stage: "retrieve", query: "toggleflag disable revert", expectEmpty: true },
+    ],
+  },
+  {
+    id: "un_metricspipe_dashboard", group: "unanswerable", difficulty: "adversarial",
+    description: "distractor about metricspipe counters; dashboard credentials must refuse",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/un4", "metricspipe emit config", "metricspipe emits counters once per minute", 0.9, "metricspipe-cfg")], expect: ["accept"] },
+      { op: "search", stage: "retrieve", query: "metricspipe dashboard credentials", expectEmpty: true },
+    ],
+  },
+  // --- ADR-0028 D4: paraphrase positive variants (3, hard) — answerable queries must still hit.
+  {
+    id: "pv_pref_change", group: "paraphrase", difficulty: "hard",
+    description: "paraphrase of ss_pref_change: lightmode query still returns live preference",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pt1", "prefer darkmode skin", "user prefers darkmode skin theme", 0.9, "ui-skin")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pt2", "prefer lightmode skin", "user prefers lightmode skin theme", 0.9, "ui-skin")], expect: ["supersede"] },
+      { op: "search", stage: "retrieve", query: "lightmode skin", expectIncludesTitle: "prefer lightmode skin" },
+    ],
+  },
+  {
+    id: "pv_api_docs_version", group: "paraphrase", difficulty: "hard",
+    description: "paraphrase of ss_api_docs_version: rephrased query returns new revision doc",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pa1", "refdocs old revision", "refdocs old revision is deprecated", 0.9, "refdocs")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pa2", "refdocs new revision", "refdocs new revision is canonical", 0.95, "refdocs")], expect: ["supersede"] },
+      { op: "search", stage: "retrieve", query: "refdocs new revision", expectIncludesTitle: "refdocs new revision" },
+    ],
+  },
+  {
+    id: "pv_user_then_provider", group: "paraphrase", difficulty: "hard",
+    description: "paraphrase of ss_user_then_provider: short query still returns pipeline-built zone",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pu1", "packzone manual built", "packzone is manually built", 0, "packzone", "user")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pu2", "packzone pipeline built", "packzone is pipeline built", 0.95, "packzone")], expect: ["supersede"] },
+      { op: "search", stage: "retrieve", query: "packzone pipeline", expectIncludesTitle: "packzone pipeline built" },
     ],
   },
 ];

@@ -5,6 +5,7 @@
 // db.transaction(fn) auto-rollback, avoid RETURNING+FTS trigger path (issue #654).
 
 import Database from "better-sqlite3";
+import { containsSecret } from "./secret.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -130,9 +131,9 @@ export interface SessionStore {
   resolveQuarantinedMemory(id: number, action: "keep" | "drop"): Promise<{ ok: boolean }>;
 }
 
-// ADR-0027 D5: secret rejection at write path — known secret patterns are never stored anywhere.
-// ponytail: naive regex heuristic, ceiling = obfuscated/novel secret encodings; upgrade path = import gitleaks/trufflehog rule pack.
-const SECRET_RE = /(sk-[A-Za-z0-9][A-Za-z0-9-]{14,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/;
+// ADR-0027 D5 + ADR-0028 D3: secret guard lives in ./secret.ts (shared containsSecret) —
+// covers case-insensitive / JSON-escape / whitespace-collapse / NFKC / bounded-base64 variants
+// at all 4 write entries and both search exits. Known blind spots: truncated secrets, novel encodings.
 
 // better-sqlite3 sync API wrapped in async interface to match SessionStore port.
 // ponytail: thinnest wrapper - no extra abstraction, sync calls wrapped in Promise.resolve.
@@ -322,6 +323,8 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   async append(sessionId: string, message: Message): Promise<void> {
+    // ADR-0028 D3 write entry: never persist a message that trips the secret guard.
+    if (containsSecret(message.role + " " + message.content)) return;
     // atomcode research: avoid RETURNING inside transaction with FTS triggers (#654).
     // Simple INSERT, no RETURNING - trigger syncs FTS automatically.
     this.stmts.append.run(sessionId, message.role, message.content);
@@ -343,7 +346,10 @@ export class SqliteSessionStore implements SessionStore {
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
    const safeQuery = this.fts5Escape(query);
    // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
-   const hits = this.stmts.searchAllResults.all(safeQuery, safeQuery, limit) as MemoryHit[];
+   const rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, limit) as MemoryHit[];
+    // ADR-0028 D3 read-side exit: rows written before the write guard (or via seed/test seams)
+    // must never surface back to the caller either.
+    const hits = rawHits.filter((h) => !containsSecret(h.role + " " + h.content));
     // ADR-0009 D3 L2: refresh last_accessed for each hit (access-time signal).
     for (const hit of hits) {
       try { this.stmts.touchAccessed.run(hit.rowid); } catch {}
@@ -353,7 +359,9 @@ export class SqliteSessionStore implements SessionStore {
 
   // ADR-0023 D2 (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
   async searchMemoryMulti(queries: string[], limit = 20): Promise<MemoryHit[]> {
-    return searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank);
+    const hits = await searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank);
+    // ADR-0028 D3 read-side exit: same guard as searchMemory.
+    return hits.filter((h) => !containsSecret(h.role + " " + h.content));
   }
 
   // ADR-0023 D2 structural-typing seam: exposes db.prepare(...).all(...) as a function so
@@ -367,6 +375,8 @@ export class SqliteSessionStore implements SessionStore {
     // atomcode research: db.transaction(fn) auto-rollback on throw.
     const insertMany = this.db.transaction((rs: NormalizedResult[]) => {
       for (const r of rs) {
+       // ADR-0028 D3 write entry: skip secret-bearing results entirely (no row, no FTS).
+       if (containsSecret(r.url + " " + (r.title ?? "") + " " + (r.snippet ?? ""))) continue;
        const info = this.stmts.saveResult.run(sessionId, r.url, r.title, r.snippet, r.source, null, r.entity ?? r.url);
                 // ADR-0008 D2: bi-temporal invalidation — close old records for same entity (URL) at write time.
                 // Not relying on decay to suppress staleness; valid_until set immediately on new write.
@@ -383,7 +393,7 @@ export class SqliteSessionStore implements SessionStore {
     const out: AdjudicationResultItem[] = [];
     for (const km of keyMemories) {
       // ADR-0027 D5: secret check runs BEFORE the evidence gate — a high-evidence leak is still a leak.
-      if (SECRET_RE.test(km.url + " " + (km.title ?? "") + " " + (km.snippet ?? ""))) {
+      if (containsSecret(km.url + " " + (km.title ?? "") + " " + (km.snippet ?? ""))) {
         out.push({ action: "reject", reason: "secret" });
         continue;
       }
@@ -425,6 +435,8 @@ export class SqliteSessionStore implements SessionStore {
   // Historical anchors (rolling_summary, l2_recall) remain append-only (INSERT).
   async saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void> {
     const json = JSON.stringify(payload);
+    // ADR-0028 D3 write entry: anchors are searchable surfaces too — refuse secret payloads.
+    if (containsSecret(anchorType + " " + json)) return;
     // ponytail: state-type anchors use UPSERT (DELETE-then-INSERT avoids schema migration for UNIQUE constraint).
     if (anchorType === "consolidation_state") {
       this.stmts.saveAnchorUpsert.run(sessionId, anchorType, json);

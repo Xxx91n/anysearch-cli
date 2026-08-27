@@ -59,17 +59,17 @@ async function main() {
   const answerResponse = { ...mockResponse, answer: "This is the answer" };
   (provider as any).client.search = async () => answerResponse;
   const answerEnvelope = await provider.search({ query: "test", mode: "answer" }, new AbortController().signal);
-  assert(answerEnvelope.answers.length === 1, "answer mode returns 1 answer");
-  assert(answerEnvelope.answers[0] === "This is the answer", "answer content correct");
+  assert(answerEnvelope.answers!.length === 1, "answer mode returns 1 answer");
+  assert(answerEnvelope.answers![0] === "This is the answer", "answer content correct");
 
   // 6. Empty results handling
   (provider as any).client.search = async () => ({ ...mockResponse, results: [] });
   const emptyEnvelope = await provider.search({ query: "empty", mode: "fast" }, new AbortController().signal);
   assert(emptyEnvelope.results.length === 0, "empty results handled");
-  assert(emptyEnvelope.answers.length === 0, "no answers when empty");
+  assert(emptyEnvelope.answers!.length === 0, "no answers when empty");
 
   // 7. usage() returns undefined (Tavily has no standalone usage API)
-  const usage = await provider.usage?.();
+  const usage = await (provider as any).usage?.();
   assert(usage === undefined, "usage returns undefined");
 
   console.log("--- TavilyProvider tests: " + passed + " passed, " + failed + " failed ---");

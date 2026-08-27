@@ -8,9 +8,11 @@
     "./providers": "./src/providers/index.ts"
   },
   "scripts": {
-    "test": "tsx test/rrf.test.ts && tsx test/tavily.test.ts && tsx test/exa.test.ts && tsx test/anysearch.test.ts"
+    "test": "tsx test/rrf.test.ts && tsx test/tavily.test.ts && tsx test/exa.test.ts && tsx test/anysearch.test.ts",
+    "check": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/node": "^22.20.1",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },

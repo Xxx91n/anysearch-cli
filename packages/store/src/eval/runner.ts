@@ -17,20 +17,39 @@ export interface OpRecord {
   ok: boolean;
   detail: string;
   samples?: Array<{ title: string | null; snippet: string | null }>;
+  // ADR-0028 D2/D4: rank-of-relevant + hit count feed MRR and the answerable false-refusal rate.
+  rank?: number;
+  hitCount?: number;
 }
 
 export interface CaseResult {
   id: string;
   group: CaseSpec["group"];
+  difficulty: NonNullable<CaseSpec["difficulty"]>;
   passed: boolean;
   failedStage: EvalStage | null;
   ops: OpRecord[];
+}
+
+export interface EvalCounts {
+  cases: number;
+  casesPassed: number;
+  supExpected: number;
+  supPassed: number;
+  fpEligible: number;
+  fpCount: number;
 }
 
 export interface EvalMetrics {
   passRate: number;
   supersessionSuccess: number;
   quarantineFalsePositiveRate: number;
+  // ADR-0028 D1: integer counts back the integer-allowance gate.
+  counts: EvalCounts;
+  // ADR-0028 D2: MRR over expectRankOf search ops (report-only).
+  mrr: number;
+  // ADR-0028 D4: answerable-case false-refusal rate (report-only).
+  answerableFalseRefusalRate: number;
 }
 
 export interface EvalReport {
@@ -39,6 +58,8 @@ export interface EvalReport {
   datasetFingerprint: string;
   totals: { cases: number; passed: number; failed: number };
   stageBreakdown: Record<EvalStage, number>;
+  // ADR-0028 D4: per-difficulty tier pass rates (report-only, never gated).
+  tierBreakdown: Record<string, { cases: number; passed: number; passRate: number }>;
   metrics: EvalMetrics;
   cases: CaseResult[];
 }
@@ -58,6 +79,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
   const store = makeStore(dbPath);
   const raw = new Database(dbPath, { readonly: true });
   const ops: OpRecord[] = [];
+  let sessionId = "";
   const adjResults: AdjudicationResultItem[][] = []; // stashed per adjudicate opIndex
   let failedStage: EvalStage | null = null;
   const mark = (rec: OpRecord) => {
@@ -66,6 +88,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
   };
   try {
     const session = await store.createSession("eval");
+    sessionId = session.id;
     for (const [opIndex, op] of spec.ops.entries()) {
       try {
         switch (op.op) {
@@ -87,11 +110,33 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
             if (op.expectIncludesTitle && !texts.some((t) => t.includes(op.expectIncludesTitle!))) fails.push(`missing "${op.expectIncludesTitle}"`);
             if (op.expectExcludesTitle && texts.some((t) => t.includes(op.expectExcludesTitle!))) fails.push(`stale "${op.expectExcludesTitle}" still returned`);
             if (op.expectMaxCount !== undefined && hits.length > op.expectMaxCount) fails.push(hits.length + " hits > max " + op.expectMaxCount);
+            if (op.expectEmpty === true && hits.length !== 0) fails.push(hits.length + " hit(s) returned, want 0 (expectEmpty)");
+            // ADR-0028 D2: rank-of-relevant — 1-based position of the first hit containing the title (0 = absent).
+            let rank: number | undefined;
+            if (op.expectRankOf) {
+              rank = texts.findIndex((t) => t.includes(op.expectRankOf!.title)) + 1;
+              if (rank === 0) fails.push(`rank-of-relevant absent: "${op.expectRankOf.title}"`);
+              else if (rank > op.expectRankOf.maxRank) fails.push(`rank ${rank} > maxRank ${op.expectRankOf.maxRank} for "${op.expectRankOf.title}"`);
+            }
             mark({
               op: opIndex, kind: op.op, stage: op.stage, ok: fails.length === 0,
               detail: fails.length ? fails.join("; ") : hits.length + " hit(s)",
               samples: hits.slice(0, 2).map((h) => ({ title: (h as { role?: string }).role ?? null, snippet: String((h as { content?: string }).content ?? "").slice(0, 200) })),
+              rank, hitCount: hits.length,
             });
+            break;
+          }
+          case "seed": {
+            // ADR-0028 D3: direct side-channel insert — bypasses SqliteSessionStore write guards on
+            // purpose so search assertions test the READ-side exit filter ("write got bypassed" premise).
+            const writer = new Database(dbPath);
+            try {
+              const ins = writer.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, rrf_score, entity) VALUES (?, ?, ?, ?, ?, NULL, ?)");
+              for (const it of op.items) ins.run(sessionId, it.url, it.title, it.snippet, it.source, it.entity ?? it.url);
+              mark({ op: opIndex, kind: op.op, stage: op.stage, ok: true, detail: "seeded " + op.items.length + " row(s) (write guard bypassed)" });
+            } catch (e) {
+              mark({ op: opIndex, kind: op.op, stage: op.stage, ok: false, detail: "seed error: " + String((e as Error).message) });
+            } finally { writer.close(); }
             break;
           }
           case "rawValidUntil": {
@@ -151,7 +196,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
     store.close();
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
-  return { id: spec.id, group: spec.group, passed: failedStage === null, failedStage, ops };
+  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops };
 }
 
 // Metrics per ADR-0027 D4: ① case pass rate (gate: 100%), ② supersession success,
@@ -179,10 +224,37 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
       }
     }
   }
+  // ADR-0028 D2: MRR over search ops with an expectRankOf assertion (report-only).
+  let rrSum = 0;
+  let rrN = 0;
+  // ADR-0028 D4: answerable false-refusal rate — answerable case, positively-asserted
+  // search op returning zero hits counts as a false refusal. Cases containing any
+  // expectEmpty op are the unanswerable slice and excluded from the denominator.
+  for (let i = 0; i < cases.length; i++) {
+    for (const [opIndex, op] of cases[i]!.ops.entries()) {
+      if (op.op !== "search") continue;
+      const rec = results[i]!.ops.find((r) => r.op === opIndex);
+      if (op.expectRankOf) { rrN += 1; rrSum += rec?.rank ? 1 / rec.rank : 0; }
+    }
+  }
+  let frEligible = 0;
+  let frCount = 0;
+  for (let i = 0; i < cases.length; i++) {
+    const unanswerable = cases[i]!.ops.some((o) => o.op === "search" && o.expectEmpty === true);
+    if (unanswerable) continue;
+    for (const [opIndex, op] of cases[i]!.ops.entries()) {
+      if (op.op !== "search" || !(op.expectIncludesTitle || op.expectRankOf)) continue;
+      const rec = results[i]!.ops.find((r) => r.op === opIndex);
+      if (rec) { frEligible += 1; if (rec.hitCount === 0) frCount += 1; }
+    }
+  }
   return {
     passRate: results.length ? passed / results.length : 0,
     supersessionSuccess: supExpected ? supPassed / supExpected : 1,
     quarantineFalsePositiveRate: fpEligible ? fpCount / fpEligible : 0,
+    counts: { cases: results.length, casesPassed: passed, supExpected, supPassed, fpEligible, fpCount },
+    mrr: rrN ? rrSum / rrN : 1,
+    answerableFalseRefusalRate: frEligible ? frCount / frEligible : 0,
   };
 }
 
@@ -191,12 +263,21 @@ export async function runAll(cases: CaseSpec[]): Promise<EvalReport> {
   for (const c of cases) results.push(await runCase(c));
   const stageBreakdown: Record<EvalStage, number> = { extract: 0, adjudicate: 0, store: 0, retrieve: 0 };
   for (const r of results) if (r.failedStage) stageBreakdown[r.failedStage] += 1;
+  // ADR-0028 D4: difficulty tier breakdown (report-only — never part of the gate).
+  const tierBreakdown: Record<string, { cases: number; passed: number; passRate: number }> = {};
+  for (const r of results) {
+    const t = (tierBreakdown[r.difficulty] ??= { cases: 0, passed: 0, passRate: 0 });
+    t.cases += 1;
+    if (r.passed) t.passed += 1;
+  }
+  for (const t of Object.values(tierBreakdown)) t.passRate = t.cases ? t.passed / t.cases : 0;
   return {
     schema: "anysearch/eval-report@1",
     generatedAt: new Date().toISOString(),
     datasetFingerprint: datasetFingerprint(cases),
     totals: { cases: results.length, passed: results.filter((r) => r.passed).length, failed: results.filter((r) => !r.passed).length },
     stageBreakdown,
+    tierBreakdown,
     metrics: computeMetrics(cases, results),
     cases: results,
   };

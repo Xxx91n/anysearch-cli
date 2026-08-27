@@ -41,13 +41,14 @@ async function main() {
     schema: "anysearch/eval-report@1" as const, generatedAt: "t", datasetFingerprint: "fp123",
     totals: { cases: 1, passed: 0, failed: 1 },
     stageBreakdown: { extract: 0, adjudicate: 1, store: 0, retrieve: 0 },
+    tierBreakdown: {},
     metrics: computeMetrics([secretCase!], [mutated]),
     cases: [mutated],
   };
   const baseline: EvalBaseline = {
     schema: "anysearch/eval-baseline@1", fingerprint: "fp123",
-    metrics: { passRate: 1, supersessionSuccess: 1, quarantineFalsePositiveRate: 0 },
-    margin: { supersession: 0, quarantineFp: 0 }, updatedAt: "t", note: "t",
+    metrics: computeMetrics([], []),
+    allowance: { supersessionFails: 0, quarantineFp: 0 }, updatedAt: "t", note: "t",
   };
   const g = evaluateGate(dirtyReport, baseline);
   assert(dirtyReport.metrics.passRate === 0, "mutated report passRate 0");

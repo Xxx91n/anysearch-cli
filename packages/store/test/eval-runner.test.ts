@@ -10,10 +10,10 @@ function assert(cond: boolean, msg: string) {
 }
 
 async function main() {
-  // Shape: 20 cases, 6 groups, every op has a stage.
-  assert(GOLDEN_CASES.length === 20, "20 golden cases (got " + GOLDEN_CASES.length + ")");
+  // Shape: 35 cases (ADR-0028: +15 D3/D4 slices), 9 groups, every op has a stage.
+  assert(GOLDEN_CASES.length === 35, "35 golden cases (got " + GOLDEN_CASES.length + ")");
   const groups = new Set(GOLDEN_CASES.map((c) => c.group));
-  assert(groups.size === 6, "6 groups (got " + groups.size + ")");
+  assert(groups.size === 9, "9 groups (got " + groups.size + ")");
   assert(GOLDEN_CASES.every((c) => c.ops.every((o) => typeof o.stage === "string")), "every op carries a stage");
 
   // Fingerprint stable across calls, changes when dataset changes.
@@ -29,6 +29,8 @@ async function main() {
   assert(report.totals.failed === 0, "all golden cases PASS (failed: " + report.cases.filter((c) => !c.passed).map((c) => c.id + "@" + c.failedStage).join(", ") + ")");
   assert(report.metrics.passRate === 1, "passRate 1.0");
   assert(report.datasetFingerprint === fp1, "report fingerprint matches dataset");
+  assert(Boolean(report.tierBreakdown.adversarial && report.tierBreakdown.hard), "ADR-0028 D4: tier breakdown present");
+  assert(report.metrics.counts && typeof report.metrics.mrr === "number", "ADR-0028 D1/D2: counts + mrr present");
 
   // Stage attribution: force a retrieve-stage failure, assert failedStage === retrieve.
   const broken = [{

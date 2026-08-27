@@ -1,14 +1,12 @@
-// ADR-0027 impl plan step 7: gate contract self-check (path 3/3, ship-gate step's decision table).
-// Path 2/3 (CLI) is covered by invoking the CLI below and asserting exit codes + artifacts.
+// ADR-0027 impl plan step 7 + ADR-0028 D1: gate contract self-check (integer allowance + WARN band).
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
-import { join } from "node:path";
 import { evaluateGate, type EvalBaseline } from "../src/eval/gate";
-import type { EvalReport } from "../src/eval/runner";
+import type { EvalMetrics, EvalReport } from "../src/eval/runner";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -16,36 +14,60 @@ function assert(cond: boolean, msg: string) {
   passed++;
 }
 
-function fakeReport(over: Partial<EvalReport["metrics"]> = {}, fp = "abc123"): EvalReport {
+function mkMetrics(over: Partial<EvalMetrics> & { supExpected?: number; supPassed?: number; fpEligible?: number; fpCount?: number } = {}): EvalMetrics {
+  const supExpected = over.supExpected ?? 12;
+  const supPassed = over.supPassed ?? supExpected;
+  const fpEligible = over.fpEligible ?? 4;
+  const fpCount = over.fpCount ?? 0;
+  return {
+    passRate: over.passRate ?? 1,
+    supersessionSuccess: supExpected ? supPassed / supExpected : 1,
+    quarantineFalsePositiveRate: fpEligible ? fpCount / fpEligible : 0,
+    counts: { cases: 20, casesPassed: 20, supExpected, supPassed, fpEligible, fpCount },
+    mrr: 1,
+    answerableFalseRefusalRate: 0,
+  };
+}
+
+function fakeReport(metrics: EvalMetrics = mkMetrics(), fp = "abc123"): EvalReport {
   return {
     schema: "anysearch/eval-report@1", generatedAt: "ts", datasetFingerprint: fp,
     totals: { cases: 20, passed: 20, failed: 0 },
     stageBreakdown: { extract: 0, adjudicate: 0, store: 0, retrieve: 0 },
-    metrics: { passRate: 1, supersessionSuccess: 1, quarantineFalsePositiveRate: 0, ...over },
+    tierBreakdown: { core: { cases: 20, passed: 20, passRate: 1 } },
+    metrics,
     cases: [],
   };
 }
 const baseline: EvalBaseline = {
   schema: "anysearch/eval-baseline@1", fingerprint: "abc123",
-  metrics: { passRate: 1, supersessionSuccess: 1, quarantineFalsePositiveRate: 0 },
-  margin: { supersession: 0.05, quarantineFp: 0 }, updatedAt: "2026-08-27", note: "t",
+  metrics: mkMetrics(),
+  allowance: { supersessionFails: 1, quarantineFp: 0 }, updatedAt: "2026-08-27", note: "t",
 };
 
 // pass
 assert(evaluateGate(fakeReport(), baseline).exitCode === 0, "clean report passes");
 // passRate fail-closed
-assert(evaluateGate(fakeReport({ passRate: 0.95 }), baseline).exitCode === 1, "passRate<1 fails");
-// margin respected
-assert(evaluateGate(fakeReport({ supersessionSuccess: 0.96 }), baseline).exitCode === 0, "supersession within margin passes");
-assert(evaluateGate(fakeReport({ supersessionSuccess: 0.94 }), baseline).exitCode === 1, "supersession below margin fails");
-// qfp ceiling
-assert(evaluateGate(fakeReport({ quarantineFalsePositiveRate: 0.01 }), baseline).exitCode === 1, "qfp above margin fails");
-// fingerprint mismatch = 12, missing baseline = 12
-assert(evaluateGate(fakeReport({}, "xyz999"), baseline).exitCode === 12, "fingerprint mismatch exits 12");
+assert(evaluateGate(fakeReport(mkMetrics({ passRate: 0.95 })), baseline).exitCode === 1, "passRate<1 fails");
+// integer allowance respected: 1 supersession fail <= allowance 1 passes
+assert(evaluateGate(fakeReport(mkMetrics({ supPassed: 11 })), baseline).exitCode === 0, "supersession within allowance passes");
+// over allowance but UNDER-POWERED (allowance/n=1/12 < MDE~0.404) -> WARN, exit 0
+{ const g = evaluateGate(fakeReport(mkMetrics({ supPassed: 10 })), baseline);
+  assert(g.verdict === "warn" && g.exitCode === 0 && g.warnings.length === 1, "under-powered overage downgrades to WARN (got " + g.verdict + ")"); }
+// over allowance WITH power (allowance 3/n=4 => 0.75 >= MDE(4)~0.7) -> FAIL, exit 1
+{ const b2: EvalBaseline = { ...baseline, allowance: { supersessionFails: 3, quarantineFp: 0 } };
+  const g = evaluateGate(fakeReport(mkMetrics({ supExpected: 4, supPassed: 0 })), b2);
+  assert(g.verdict === "fail" && g.exitCode === 1, "powered overage fails (got " + g.verdict + " exit " + g.exitCode + ")"); }
+// qfp over zero allowance -> under-powered WARN (1/4 frac 0 < MDE)
+{ const g = evaluateGate(fakeReport(mkMetrics({ fpCount: 1 })), baseline);
+  assert(g.verdict === "warn" && g.exitCode === 0, "qfp over zero allowance warns when under-powered"); }
+// fingerprint mismatch = 12, missing baseline = 12, missing allowance block = 12
+assert(evaluateGate(fakeReport(undefined, "xyz999"), baseline).exitCode === 12, "fingerprint mismatch exits 12");
 assert(evaluateGate(fakeReport(), null).exitCode === 12, "missing baseline exits 12");
+{ const legacy = { ...baseline, allowance: undefined } as unknown as EvalBaseline;
+  assert(evaluateGate(fakeReport(), legacy).exitCode === 12, "legacy fraction-margin baseline exits 12 (recalibrate)"); }
 
-// CLI end-to-end: --write-baseline in a scratch copy? No: baseline path is package-anchored.
-// Just run the CLI (real baseline committed in repo), assert exit 0 + artifacts in scratch out dir.
+// CLI end-to-end: run eval against committed baseline, assert exit 0 + artifacts in scratch out dir.
 const outDir = mkdtempSync(join(tmpdir(), "ans-gate-"));
 try {
   execFileSync(process.execPath, ["--import", "tsx", "src/eval/cli.ts", "--out", outDir], { cwd: join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"] });
@@ -56,6 +78,8 @@ try {
   assert(typeof rep.datasetFingerprint === "string" && rep.datasetFingerprint.length === 16, "report carries fingerprint");
   const md = readFileSync(join(outDir, "eval-report.md"), "utf8");
   assert(md.includes("Stage attribution") && md.includes("fingerprint"), "md has stage attribution + fingerprint");
+  assert(md.includes("Statistical power") && md.includes("Wilson95") && md.includes("family size"), "md has ADR-0028 power block (MDE/Wilson/family)");
+  assert(md.includes("Difficulty tiers"), "md has difficulty tier breakdown");
 } catch (e) {
   failed++; console.error("FAIL: CLI exited non-zero: " + String((e as { message?: string }).message).slice(0, 300));
 } finally {
@@ -65,6 +89,8 @@ try {
 // ship-gate wiring: the memory-eval step must exist (dropped step = dropped gate).
 const sg = readFileSync(join(__dirname, "..", "..", "..", "scripts", "ship-gate.mjs"), "utf8");
 assert(sg.includes("stepMemoryEval") && sg.includes("memory eval"), "ship-gate wires stepMemoryEval");
+// ADR-0028 D5: task-parity gate wired at step 1.
+assert(sg.includes("task-parity"), "ship-gate wires task parity check");
 
 console.log("eval-gate.test.ts: " + passed + " passed, " + failed + " failed");
 if (failed > 0) process.exit(1);

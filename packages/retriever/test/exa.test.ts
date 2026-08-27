@@ -91,3 +91,4 @@ function main() {
 }
 
 main();
+export {}; // tsc: mark as module so top-level names do not collide across test files (check task, ADR-0028 D5)

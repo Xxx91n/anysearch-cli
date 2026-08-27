@@ -2,6 +2,13 @@ import { strict as assert } from "node:assert/strict";
 import {
   KernelJsonSchemas
 } from "../src/tool-json-schemas";
+// KernelJsonSchemas is Record<string, JsonSchema-ish>; the declared value type stays {} for
+// wire-purity in the bridge. Tests need property access — alias once to a loose shape (ADR-0028 D5 noise fix).
+const KS = (KernelJsonSchemas) as unknown as Record<string, {
+  required?: string[];
+  additionalProperties?: boolean;
+  properties?: Record<string, { minLength?: number; anyOf?: Array<{ const: string }> }>;
+}>;
 import {
   AnsChatInput,
   KernelToolSchemas,
@@ -17,7 +24,7 @@ assert.deepEqual(
   ["ans_chat", "query_knowledge", "recall_memory", "research_web", "search_web"],
 );
 assert.deepEqual(
-  Object.keys(KernelJsonSchemas).sort(),
+  Object.keys(KS).sort(),
   ["ans_chat", "query_knowledge", "recall_memory", "research_web", "search_web"],
 );
 
@@ -26,28 +33,28 @@ assert.deepEqual(
 for (const name of Object.keys(KernelToolSchemas) as Array<keyof typeof KernelToolSchemas>) {
   const derivedFromTypeBox = JSON.parse(JSON.stringify(KernelToolSchemas[name]));
   assert.deepEqual(
-    KernelJsonSchemas[name],
+    KS[name],
     derivedFromTypeBox,
-    `KernelJsonSchemas.${name} must equal JSON round-trip of KernelToolSchemas.${name}`,
+    `KS.${name} must equal JSON round-trip of KernelToolSchemas.${name}`,
   );
 }
 
 // 3. Required markers (AJV-enforced business validation).
-assert.ok(KernelJsonSchemas.search_web.required?.includes("query"));
-assert.ok(KernelJsonSchemas.research_web.required?.includes("question"));
-assert.ok(KernelJsonSchemas.recall_memory.required?.includes("query"));
-assert.ok(KernelJsonSchemas.query_knowledge.required?.includes("query"));
-assert.ok(KernelJsonSchemas.ans_chat.required?.includes("message"));
+assert.ok(KS.search_web.required?.includes("query"));
+assert.ok(KS.research_web.required?.includes("question"));
+assert.ok(KS.recall_memory.required?.includes("query"));
+assert.ok(KS.query_knowledge.required?.includes("query"));
+assert.ok(KS.ans_chat.required?.includes("message"));
 
 // 4. Keyword signatures — minLength on required strings.
-assert.equal(KernelJsonSchemas.search_web.properties?.query?.minLength, 1);
-assert.equal(KernelJsonSchemas.research_web.properties?.question?.minLength, 1);
-assert.equal(KernelJsonSchemas.recall_memory.properties?.query?.minLength, 1);
-assert.equal(KernelJsonSchemas.query_knowledge.properties?.query?.minLength, 1);
-assert.equal(KernelJsonSchemas.ans_chat.properties?.message?.minLength, 1);
+assert.equal(KS.search_web.properties?.query?.minLength, 1);
+assert.equal(KS.research_web.properties?.question?.minLength, 1);
+assert.equal(KS.recall_memory.properties?.query?.minLength, 1);
+assert.equal(KS.query_knowledge.properties?.query?.minLength, 1);
+assert.equal(KS.ans_chat.properties?.message?.minLength, 1);
 
 // 5. Enum-as-anyOf — research_web.depth has brief/standard/deep.
-const depthEnum = KernelJsonSchemas.research_web.properties?.depth;
+const depthEnum = KS.research_web.properties?.depth;
 assert.ok(depthEnum?.anyOf);
 assert.deepEqual(
   depthEnum.anyOf.map((x: { const: string }) => x.const).sort(),
@@ -56,12 +63,12 @@ assert.deepEqual(
 
 // 6. Closed-object: additionalProperties: false on every tool (wire-level strict
 // shape — AJV will reject unknown fields; matches ADR-0019 D3 envelope).
-for (const name of Object.keys(KernelJsonSchemas) as Array<keyof typeof KernelJsonSchemas>) {
-  assert.equal(KernelJsonSchemas[name].additionalProperties, false, `${name}.additionalProperties`);
+for (const name of Object.keys(KS) as Array<keyof typeof KS>) {
+  assert.equal(KS[name].additionalProperties, false, `${name}.additionalProperties`);
 }
 
 // 7. Plain JSON: no TypeBox symbol tags survive the bridge.
-assert.ok(!Object.getOwnPropertySymbols(KernelJsonSchemas.search_web).length);
+assert.ok(!Object.getOwnPropertySymbols(KS.search_web).length);
 
 // 8. Type surface truth (TypeBox source still governs TS types).
 const sw: typeof SearchWebInput.static = { query: "x", mode: "fast" };

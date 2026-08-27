@@ -19,7 +19,7 @@
 //
 // ponytail: single spawn per check, sequential. Concurrency is a CI concern.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -125,8 +125,18 @@ function fail(msg) {
 // ---------------------------------------------------------------------------
 // Step 1 — static rg assertions
 // ---------------------------------------------------------------------------
+// ADR-0028 D5: synchronous stdio-piped invocation of the zero-dep parity gate.
+function step1TaskParity() {
+  const res = spawnSync(process.execPath, [path.join(ROOT, "scripts", "task-parity.mjs")], { cwd: ROOT, stdio: ["ignore", "inherit", "pipe"] });
+  if (res.error) fail("task-parity spawn error: " + res.error.message);
+  if (res.status !== 0) fail("task-parity gate red:\n" + String(res.stderr ?? "").trim());
+  report("pass", "task parity: check/test implemented in all packages");
+}
+
 function stepStaticAssertions() {
-  report("info", "step 1/5: static rg assertions (version pin + ADR invariants)");
+  // ADR-0028 D5: task-parity gate runs first — turbo skip-if-absent masks missing check/test scripts, so parity is asserted here before anything else.
+  step1TaskParity();
+  report("info", "step 1/5: task parity + static rg assertions (version pin + ADR invariants)");
 
   // 1a. workspace package versions must be pinned (ADR-0020 D3)
   for (const rel of PKG_DIRS) {
