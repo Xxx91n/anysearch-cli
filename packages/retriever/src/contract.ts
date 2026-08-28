@@ -1,3 +1,5 @@
+import type { AttributionReport } from "./attribution";
+
 // SearchProvider contract: normalized interface for all search providers.
 // Seam 1 from atomcode-kernel-split-architecture research.
 
@@ -102,4 +104,7 @@ export interface FusedEnvelope {
     // (e.g. AnySearch-only future, or runtime stub stripping the capability).
     answersAvailable?: boolean;
   };
+
+  // ADR-0034 D4: first-class attribution field — claim-level evidence linkage, orthogonal to verified:false.
+  attribution?: AttributionReport;
 }

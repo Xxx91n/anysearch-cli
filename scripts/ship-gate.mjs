@@ -36,6 +36,7 @@ const PNPM = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
 const PKG_DIRS = [
   "packages/kernel",
+  "packages/embedding",
   "packages/store",
   "packages/retriever",
   "apps/cli",
@@ -218,6 +219,39 @@ function stepStaticAssertions() {
     );
   }
   report("pass", "tool-schemas.ts has 5 additionalProperties:false closers");
+  // 1f. ADR-0034 D5: attribution module exists with required exports.
+  {
+    const attPath = path.join(ROOT, "packages/kernel/src/attribution.ts");
+    if (!fs.existsSync(attPath)) fail("ADR-0034: packages/kernel/src/attribution.ts missing");
+    const att = fs.readFileSync(attPath, "utf8");
+    const required = ["export function tokenize", "export function buildAttributionReport", "export function deriveGapRequests", "export function classifyClaim", "export function attachAttribution"];
+    for (const req of required) {
+      if (!att.includes(req)) fail("ADR-0034 attribution.ts missing export: " + req);
+    }
+    report("pass", "attribution module exports present");
+  }
+
+  // 1g. ADR-0034 D5: TypeBox schema parity — attribution-schema.ts must exist and mirror the runtime Attribution interface.
+  {
+    const schemaPath = path.join(ROOT, "packages/kernel/src/attribution-schema.ts");
+    if (!fs.existsSync(schemaPath)) fail("ADR-0034: packages/kernel/src/attribution-schema.ts missing");
+    const sch = fs.readFileSync(schemaPath, "utf8");
+    if (!sch.includes("AttributionReport") && !sch.includes("AttributionClaim")) {
+      fail("ADR-0034: attribution-schema.ts lacks AttributionReport/AttributionClaim exports");
+    }
+    report("pass", "attribution TypeBox schema present");
+  }
+
+  // 1h. ADR-0034 D5: IR contract — FusedEnvelope.attribution field must be declared before it is consumed.
+  {
+    const contractPath = path.join(ROOT, "packages/retriever/src/contract.ts");
+    const cSrc = fs.readFileSync(contractPath, "utf8");
+    if (!cSrc.includes("attribution?: AttributionReport")) {
+      fail("ADR-0034: FusedEnvelope missing attribution?: AttributionReport field");
+    }
+    report("pass", "FusedEnvelope.attribution declared");
+  }
+
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +288,7 @@ async function stepPack(tmpDir) {
   const outDir = path.join(tmpDir, "pack");
   fs.mkdirSync(outDir, { recursive: true });
 
-  // ponytail: pack all six so file: tarballs resolve workspace:* deps in
+  // ponytail: pack all seven so file: tarballs resolve workspace:* deps in
   // clean-prefix install (step 4). kernel/store/retriever aren't published
   // end-user packages, but they're still吃香 during tgz install resolution.
   for (const rel of PKG_DIRS) {
@@ -339,7 +373,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
   }
 
   // 4b. pnpm verify-ts-release pattern (PR #13061): do a REAL clean-prefix
-  // npm install of all six tgz, so pnpm-baked workspace deps resolve
+  // npm install of all seven tgz, so pnpm-baked workspace deps resolve
   // (pnpm pack rewrites "workspace:*" to "0.1.0-rc.0"; npm then needs every
   // @anysearch/* present in the install set to resolve relatively).
   const installPrefix = path.join(tmpDir, "install-prefix");
@@ -371,7 +405,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
   // After real install, kernel/mcp/cli/plugin must all be resolvable AND the
   // ans/ans-mcp bins must land on disk (bin-links created by npm).
   const nmDir = path.join(installPrefix, "node_modules");
-  for (const sub of ["@anysearch/kernel", "@anysearch/mcp", "@anysearch/cli", "@anysearch/plugin", "@anysearch/store", "@anysearch/retriever"]) {
+  for (const sub of ["@anysearch/kernel", "@anysearch/mcp", "@anysearch/cli", "@anysearch/plugin", "@anysearch/store", "@anysearch/retriever", "@anysearch/embedding"]) {
     if (!fs.existsSync(path.join(nmDir, sub))) {
       fail(`install-prefix: ${sub} missing after npm install`);
     }
@@ -384,7 +418,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
       fail(`install-prefix: bin ${b} missing after npm install`);
     }
   }
-  report("pass", "npm install --prefix smoke ok (6 workspace pkgs resolvable, bins linked)");
+  report("pass", "npm install --prefix smoke ok (7 workspace pkgs resolvable, bins linked)");
 }
 
 

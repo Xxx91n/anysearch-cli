@@ -40,6 +40,7 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
             // ponytail: project index optional, fail-open.
           }
         }
+        // ADR-0034 D4: no attribution — recall_memory reads from memory store, not provider envelopes.
         const summary = JSON.stringify({
           query,
           qdfClassification: ts ? "time-sensitive" : eg ? "evergreen" : "standard",

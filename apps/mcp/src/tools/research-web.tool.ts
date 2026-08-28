@@ -1,66 +1,82 @@
-// research_web tool: multi-round deep research with dedup + citations.
-// ADR-0008 D3 multi-round search; ADR-0014 D4 dual-channel sufficiency.
-// SECURITY: cap rounds to prevent quota exhaustion (CWE-400).
+// research_web tool: deep multi-round search via engine.retriever.
+// ADR-0008 D2: thin wrapper, engine result directly to MCP JSON.
+// ADR-0020 D1.1: no console.* in MCP source — write to stderr explicitly.
+// ADR-0022 D1: provider answers marked as provider-generated (verified:false at contract).
+// ADR-0034 D4: attribution included in both content JSON and structuredContent (SEP-1624).
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import type { CompositionResult } from "@anysearch/kernel";
-import { KernelJsonSchemas } from "@anysearch/kernel";
+import { KernelJsonSchemas, type CompositionResult } from "@anysearch/kernel";
 
 export function registerResearchWeb(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
     "research_web",
     {
-      description: "Deep research mode: multi-round search + LLM synthesis. Takes a question and returns a structured research report.",
+      description: "Run a deep research query: multiple retrieval rounds fused via RRF, returns sufficiency signal and top citations.",
       inputSchema: fromJsonSchema(KernelJsonSchemas.research_web),
     },
     async (args: unknown) => {
-      const { question, depth } = args as { question: string; depth?: "brief" | "standard" | "deep" };
-      const d = depth ?? "standard";
-      // SECURITY: cap multi-round fanout to prevent API quota exhaustion (CWE-400).
-      const rounds = d === "brief" ? 1 : d === "deep" ? 3 : 2;
-      // ADR-0008 D3: multi-round — each round refines query from prior results.
-      const allResults: Array<{ title: string; url: string; snippet: string; source: string }> = [];
-      const seenUrls = new Set<string>();
-      let lastRoundSufficiency: unknown;
-      let currentQuery = question;
-      for (let round = 0; round < rounds; round++) {
-        const envelope = await eng.retriever.search({ query: currentQuery, mode: "deep" });
-        // Auto-index each round to FTS5.
-        try {
-          const session = await eng.store.createSession("mcp-research");
-          await eng.store.saveResults(session.id, envelope.results);
-        } catch {
-          /* best-effort */
+      const { question, depth } = args as { question: string; depth?: string };
+      const d = depth ?? "deep";
+      let allResults: any[] = [];
+      let lastRoundSufficiency: Record<string, unknown> | undefined;
+      let lastRoundAttribution: unknown;
+      let rounds = 0;
+
+      try {
+        const maxRounds = d === "deep" ? 3 : 1;
+        const seenUrls = new Set<string>();
+        for (let round = 0; round < maxRounds; round++) {
+          const envelope = await eng.retriever.search({
+            query: round === 0 ? question : question + " (round " + (round + 1) + ")",
+            mode: "deep" as const,
+            maxResults: 10,
+          });
+          rounds++;
+          // ADR-0023 D1: sufficiency gate — this is the LAST round's sufficiency; earlier rounds tracks but the gate cares about the final state.
+          lastRoundSufficiency = envelope.metadata?.sufficiency as unknown as Record<string, unknown> | undefined;
+          // ADR-0034 D4: capture attribution from the last round envelope as report.
+          lastRoundAttribution = envelope.attribution;
+
+          const newItems = (envelope.results ?? []).filter((r: any) => !seenUrls.has(r.url));
+          newItems.forEach((r: any) => seenUrls.add(r.url));
+          allResults = allResults.concat(newItems);
+
+          // Stop early when sufficiency verdict is "correct" (engine D5).
+          if (envelope.metadata?.sufficiency?.verdict === "correct") break;
         }
-        // ADR-0014 D4: capture sufficiency from last round.
-        if (envelope.metadata?.sufficiency) {
-          lastRoundSufficiency = envelope.metadata.sufficiency;
-        }
-        for (const r of envelope.results) {
-          if (!seenUrls.has(r.url)) {
-            seenUrls.add(r.url);
-            allResults.push({ title: r.title, url: r.url, snippet: r.snippet, source: r.source });
-          }
-        }
-        // Refine query: top result title as follow-up angle.
-        if (round + 1 < rounds && envelope.results.length > 0) {
-          currentQuery = envelope.results[0].title;
-        }
+
+        const lastRound = allResults.slice(-10);
+        const summary = JSON.stringify(
+          {
+            question,
+            depth: d,
+            rounds,
+            totalResults: allResults.length,
+            results: lastRound.slice(0, 10),
+            citations: allResults.slice(0, 5).map((r: any) => ({ title: r.title, url: r.url, source: r.source })),
+            // ADR-0022 D1/D2/D3: provider answers pass through unmodified.
+            // Round-47 fix: stable output shape.
+            ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
+            // ADR-0034 D4: attribution from last round (claim-level evidence linkage).
+            ...(lastRoundAttribution ? { attribution: lastRoundAttribution } : { attribution: null }),
+          },
+          null,
+          2,
+        );
+
+        return {
+          content: [{ type: "text" as const, text: summary }],
+          ...(lastRoundSufficiency || lastRoundAttribution
+            ? { structuredContent: {
+                ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
+                ...(lastRoundAttribution ? { attribution: lastRoundAttribution } : {}),
+              } }
+            : {}),
+        };
+      } catch (e) {
+        return { content: [{ type: "text" as const, text: "research_web error: " + (e instanceof Error ? e.message : String(e)) }] };
       }
-      const summary = JSON.stringify({
-        question,
-        depth: d,
-        rounds,
-        totalResults: allResults.length,
-        results: allResults.slice(0, 10),
-        citations: allResults.slice(0, 5).map((r) => ({ title: r.title, url: r.url, source: r.source })),
-        ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
-      }, null, 2);
-      return {
-        content: [{ type: "text" as const, text: summary }],
-        ...(lastRoundSufficiency ? { structuredContent: { sufficiency: lastRoundSufficiency } } : {}),
-      };
-    }
+    },
   );
 }

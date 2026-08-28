@@ -60,6 +60,16 @@ export interface EvalMetrics {
   entityArm?: { queries: number; candidates: number; activations: number; hits: number; hitRate: number; activationRate: number; avgArmHits: number };
   // ADR-0032 D5: entity merge telemetry (report-only, never gated — Goodhart clause).
   entityMerge?: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number };
+  // ADR-0034 D5: attribution zone — report-only, missing zone = fail-closed in gate.
+  attribution?: {
+    supported: number;
+    uncertain: number;
+    unsupported: number;
+    supportedPrecision: number;   // fraction of supported claims that have >=1 evidence (proxy)
+    unsupportedRecall: number;  // fraction of truly unsupported claims caught (offline baseline, junction only)
+    totalClaims: number;
+    judgeEnhanced: boolean;
+  };
 }
 
 export interface EvalReport {
@@ -304,6 +314,18 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
     })(),
     mrr: rrN ? rrSum / rrN : 1,
     answerableFalseRefusalRate: frEligible ? frCount / frEligible : 0,
+    // ADR-0034 D5: attribution zone — Zero state (observation period).
+    // quality.threshold values will be filled after the three-gate observation period completes
+    // (golden n>=80, kappa CI>=0.6, >=3 ship-gate cycles).
+    attribution: {
+      supported: 0,
+      uncertain: 0,
+      unsupported: 0,
+      supportedPrecision: 0,
+      unsupportedRecall: 0,
+      totalClaims: 0,
+      judgeEnhanced: false,
+    },
   };
 }
 

@@ -15,3 +15,7 @@ export * from "./llm-init";
 // ADR-0023 D2: S1 query rewrite (pure + LLM seam, fail-open).
 export * from "./query-rewrite";
 export * from "./t0-projection";
+
+// ADR-0034: claim-level attribution layer (deterministic multi-signal fusion).
+export * from "./attribution";
+export * from "./attribution-schema";

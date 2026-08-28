@@ -8,6 +8,7 @@ import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, Su
 import { rrfRank } from "@anysearch/retriever";
 import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort } from "./ports";
+import { attachAttribution } from "./attribution";
 
 // Sufficiency gate config: minimum quality thresholds for a search result.
 // atomcode research: min angles (providers) / min fetches (results) / min domains / cross-engine verify.
@@ -331,7 +332,7 @@ export class RetroaererdEngine {
     // Dead booleans deleted; computeSufficiency() replaces scattered logic.
     const suff = computeSufficiency(rankedResults, providerLists, gate);
 
-    return {
+    const envelope: FusedEnvelope = {
       results: rankedResults,
       answers,
       metadata: {
@@ -351,6 +352,8 @@ export class RetroaererdEngine {
         answersAvailable: allProviders.some((p) => p.modes.includes("answer")),
       },
     };
+    attachAttribution(envelope);
+    return envelope;
   }
 }
 

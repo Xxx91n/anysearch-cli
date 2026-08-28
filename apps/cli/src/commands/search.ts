@@ -13,6 +13,7 @@ export async function runSearch(args: string[]): Promise<number> {
 
   // Parse optional --mode flag (default: fast).
   let mode: Mode = "fast";
+  const isJson = args.includes("--json");
   const modeIdx = args.indexOf("--mode");
   if (modeIdx >= 0 && args[modeIdx + 1]) {
     const m = args[modeIdx + 1];
@@ -60,6 +61,18 @@ export async function runSearch(args: string[]): Promise<number> {
       }
       console.log("");
     }
+    // ADR-0034 D4: CLI attribution rendering for TTY; --json outputs structured JSON only.
+    if (envelope.attribution) {
+      const { renderAttributionText } = await import("@anysearch/kernel");
+      if (isJson) {
+        // --json: Machine-readable output, no decorative chars. Attribution included as structured JSON.
+        console.log(JSON.stringify({ attribution: envelope.attribution }));
+      } else {
+        // TTY: inline ✓/~/✗+参考注解表 + Sources
+        console.log(renderAttributionText(envelope.attribution));
+      }
+    }
+
     console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
     if (envelope.metadata.providersFailed.length > 0) {
       console.log("Providers failed: " + envelope.metadata.providersFailed.join(", "));

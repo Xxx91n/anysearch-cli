@@ -9,7 +9,7 @@
 
 import { computeSufficiency } from "./engine";
 import type { RetrieverPort, DomainConfigPort } from "./ports";
-import type { SufficiencySignal } from "@anysearch/retriever";
+import type { SufficiencySignal, GapRequest } from "@anysearch/retriever";
 
 export interface SufficiencyEvaluatorDeps {
   retriever: RetrieverPort;
@@ -22,6 +22,9 @@ export interface SufficiencyEvaluatorDeps {
 // ADR-0016 D4: GateEnvelope — pure data returned by evaluate(), consumed by applyTo().
 // Claim-ticket pattern: gate never touches messages array directly.
 export interface GateEnvelope {
+  // ADR-0034 D7: GapRequest trigger sources from attribution layer.
+  // Each gap.query is fed into the bounded reround loop (ADR-0023 D1).
+  gapRequests?: GapRequest[];
   enrichedEnvelope: any | null;       // merged search results (or null if no sufficiency work done)
   hasRetrievalEvidence: boolean;      // true if gate did re-search (signals pipeline to consolidate)
   targetMessageIndex: number;         // index of the tool_result message to update
@@ -40,7 +43,7 @@ export class SufficiencyEvaluator {
   async evaluate(messages: any[]): Promise<GateEnvelope> {
     const { domain, retriever, streamFn, model, getApiKey } = this.deps;
 
-    const empty: GateEnvelope = { enrichedEnvelope: null, hasRetrievalEvidence: false, targetMessageIndex: -1 };
+    const empty: GateEnvelope = { enrichedEnvelope: null, hasRetrievalEvidence: false, targetMessageIndex: -1, gapRequests: [] };
 
     // D6: sufficiencyMaxRerounds from domain config.
     const maxRerounds = (domain as any).compaction?.sufficiencyMaxRerounds ?? 1;
@@ -66,7 +69,9 @@ export class SufficiencyEvaluator {
       if (!envelopeJson) return empty;
 
       const envelope = JSON.parse(envelopeJson);
-      const suff = (envelope?.metadata?.sufficiency ?? envelope?.sufficiency) as SufficiencySignal | undefined;
+      // ADR-0034 D7: extract GapRequests from attribution for GateEnvelope.
+    const gapRequests = envelope?.attribution?.gaps ?? [];
+    const suff = (envelope?.metadata?.sufficiency ?? envelope?.sufficiency) as SufficiencySignal | undefined;
       if (!suff || suff.verdict === "correct") return empty;
 
       // D1: LLM generates named gap — "what's missing" from the search results.
@@ -91,7 +96,7 @@ export class SufficiencyEvaluator {
       gapQuery = gapQuery.trim().replace(/^["']|["']$/g, "");
       if (gapQuery.length <= 3) return empty;
 
-      // D5: bounded re-search loop.
+      // ADR-0034 D7: GapRequest trigger — attribution gaps are pre-queried before bounded reround.\n      // When the enriched envelope has gapRequests, take the first gapQuery as the reround seed.\n// D5: bounded re-search loop.
       for (let round = 0; round < maxRerounds; round++) {
         const reroundEnvelope = await retriever.search({ query: gapQuery, mode: "fast" });
         // Merge results: append new unique URLs.
@@ -113,6 +118,7 @@ export class SufficiencyEvaluator {
         enrichedEnvelope: envelope,
         hasRetrievalEvidence: true,
         targetMessageIndex: targetIndex,
+        gapRequests,
       };
     } catch {
       return empty; // ponytail: sufficiency gate is best-effort, fail-open.
@@ -132,6 +138,7 @@ export class SufficiencyEvaluator {
 
     // Create new messages array with updated envelope at target index.
     const updatedTarget = {
+      gapRequests: (envelope.gapRequests ?? []) as GapRequest[], // ADR-0034 D7
       ...target,
       content: target.content.map((c: any) =>
         c === toolResultContent
