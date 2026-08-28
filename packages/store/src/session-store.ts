@@ -664,10 +664,15 @@ export class SqliteSessionStore implements SessionStore {
       const redirected = (this.db.prepare("SELECT memory_id FROM memory_entity WHERE entity_id = ?").all(from) as Array<{ memory_id: number }>)
         .map((r) => r.memory_id);
       // Redirect, tolerating (memory_id, toId) pairs that already exist (UNIQUE(memory_id, entity_id)).
+      // r77 audit P1: memories linked to BOTH entities pre-merge are recorded in bothLinked —
+      // unmerge must restore the from-link WITHOUT dropping the target link.
+      const bothLinked: number[] = [];
       for (const mid of redirected) {
         const dup = this.db.prepare("SELECT 1 as x FROM memory_entity WHERE memory_id = ? AND entity_id = ?").get(mid, toIdArg) as { x: number } | undefined;
-        if (dup) this.db.prepare("DELETE FROM memory_entity WHERE memory_id = ? AND entity_id = ?").run(mid, from);
-        else this.db.prepare("UPDATE memory_entity SET entity_id = ? WHERE memory_id = ? AND entity_id = ?").run(toIdArg, mid, from);
+        if (dup) {
+          bothLinked.push(mid);
+          this.db.prepare("DELETE FROM memory_entity WHERE memory_id = ? AND entity_id = ?").run(mid, from);
+        } else this.db.prepare("UPDATE memory_entity SET entity_id = ? WHERE memory_id = ? AND entity_id = ?").run(toIdArg, mid, from);
       }
       // Keep Aliases (Neo4j): the merged-away name_norm becomes an alias of the survivor.
       const union = Array.from(new Set([...toAliasesBefore, ...fromAliases, a.name_norm]));
@@ -675,7 +680,7 @@ export class SqliteSessionStore implements SessionStore {
       this.db.prepare("UPDATE entities SET valid_until = ? WHERE id = ?").run(now, from);
       const detail = JSON.stringify({
         fromEntityId: from, fromName: a.name, fromNorm: a.name_norm, fromAliases,
-        toAliasesBefore, redirectedMemoryIds: redirected, mergedAt: now,
+        toAliasesBefore, redirectedMemoryIds: redirected, bothLinkedIds: bothLinked, mergedAt: now,
       });
       const info = this.db.prepare("INSERT INTO entity_merge_log (kind, source_name, target_entity_id, detail) VALUES (?, ?, ?, ?)")
         .run("merge", a.name_norm, toIdArg, detail);
@@ -696,13 +701,21 @@ export class SqliteSessionStore implements SessionStore {
         { id: number; kind: string; source_name: string; target_entity_id: number; detail: string | null; undone: number } | undefined;
       if (!logRow || logRow.kind !== "merge" || logRow.undone !== 0) return { ok: false, error: "merge log not found (or already undone)" };
       const snap = JSON.parse(logRow.detail ?? "{}") as {
-        fromEntityId?: number; fromNorm?: string; fromAliases?: string[]; toAliasesBefore?: string[]; redirectedMemoryIds?: number[];
+        fromEntityId?: number; fromNorm?: string; fromAliases?: string[]; toAliasesBefore?: string[]; redirectedMemoryIds?: number[]; bothLinkedIds?: number[];
       };
       if (typeof snap.fromEntityId !== "number" || !snap.fromNorm || !snap.fromAliases || !snap.toAliasesBefore || !snap.redirectedMemoryIds)
         return { ok: false, error: "snapshot incomplete — refusing unmerge (D2: snapshot is the only basis)" };
       // Bounded: only memory rows from the snapshot are redirected back; post-merge rows stay.
+      const bothSet = new Set(snap.bothLinkedIds ?? []);
       for (const mid of snap.redirectedMemoryIds) {
         const cur = this.db.prepare("SELECT entity_id FROM memory_entity WHERE memory_id = ?").get(mid) as { entity_id: number } | undefined;
+        if (bothSet.has(mid)) {
+          // r77 audit P1 (G4): pre-merge this memory was linked to BOTH entities. Merge deleted the
+          // from-row and kept the target-row. Undo restores the from-link and keeps the target link.
+          const mem = this.db.prepare("SELECT id FROM retrieval_results WHERE id = ?").get(mid) as { id: number } | undefined;
+          if (mem) this.db.prepare("INSERT OR IGNORE INTO memory_entity (memory_id, entity_id) VALUES (?, ?)").run(mid, snap.fromEntityId);
+          continue;
+        }
         if (cur && cur.entity_id === logRow.target_entity_id) {
           this.db.prepare("UPDATE memory_entity SET entity_id = ? WHERE memory_id = ?").run(snap.fromEntityId, mid);
         } else if (!cur) {
@@ -767,9 +780,10 @@ export class SqliteSessionStore implements SessionStore {
     return { ok: true };
   }
 
-  // ADR-0032 D5: six report-only merge metrics. Counters are derived from the persistent merge log
-  // (survive restarts); review_pending is a gauge (queue depth); review pending + truncation reflect
-  // the current run's state. NEVER gated (Goodhart clause; n is far below statistical power).
+  // ADR-0032 D5: six report-only merge metrics. Five counters are derived from the persistent merge
+  // log (survive restarts); review_pending is a gauge (queue depth); candidates_truncated is run-scoped
+  // in-memory (resets on restart — truncation is a transient signal, not ledger state).
+  // NEVER gated (Goodhart clause; n is far below statistical power).
   public entityMergeTelemetry(): EntityMergeTelemetry {
     const count = (where: string): number => (this.db.prepare("SELECT COUNT(*) as n FROM entity_merge_log WHERE " + where).get() as { n: number }).n;
     return {

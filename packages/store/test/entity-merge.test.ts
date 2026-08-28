@@ -150,6 +150,62 @@ await put(overflowTitle + " again");
   console.log("step5 hit_count escalation: OK");
 }
 
+
+// --- step 6 (r77 audit G4 / P1 fix): pre-merge doubly-linked memory roundtrip ---
+// One memory mentions BOTH entities; merge deletes the from-link while keeping the target-link;
+// unmerge must restore the from-link WITHOUT dropping the target link.
+{
+  await put("Team uses RedisCluster and KeyVaultStore daily");
+  const eRedis = entityIdByNorm("rediscluster") as number;
+  const eVault = entityIdByNorm("keyvaultstore") as number;
+  assert.ok(eRedis && eVault && eRedis !== eVault, "two entities created");
+  const rowsBefore = raw.prepare("SELECT m.memory_id FROM memory_entity m JOIN retrieval_results r ON r.id = m.memory_id WHERE m.entity_id = ?").all(eRedis) as Array<{ memory_id: number }>;
+  const mid = rowsBefore.find((r) => {
+    const both = raw.prepare("SELECT 1 as x FROM memory_entity WHERE memory_id = ? AND entity_id = ?").get(r.memory_id, eVault);
+    return !!both;
+  })?.memory_id;
+  assert.ok(typeof mid === "number", "a memory linked to BOTH entities exists");
+  const c6 = await store.combineEntities(eRedis, eVault);
+  assert.equal(c6.ok, true, "combine ok");
+  const during = raw.prepare("SELECT entity_id FROM memory_entity WHERE memory_id = ?").all(mid) as Array<{ entity_id: number }>;
+  assert.deepEqual(during.map((r) => r.entity_id), [eVault], "merge: from-link removed, target-link kept");
+  const snap6 = JSON.parse((raw.prepare("SELECT detail FROM entity_merge_log WHERE id = ?").get(c6.logId) as { detail: string }).detail) as { bothLinkedIds?: number[] };
+  assert.ok(snap6.bothLinkedIds && snap6.bothLinkedIds.includes(mid), "snapshot records bothLinked");
+  const u6 = await store.unmergeEntity(c6.logId as number);
+  assert.equal(u6.ok, true, "unmerge ok");
+  const after = raw.prepare("SELECT entity_id FROM memory_entity WHERE memory_id = ? ORDER BY entity_id").all(mid) as Array<{ entity_id: number }>;
+  assert.deepEqual(after.map((r) => r.entity_id).sort(), [eRedis, eVault].sort(), "P1 fixed: BOTH links restored after roundtrip");
+  console.log("step6 G4 double-link roundtrip: OK");
+
+  // step 8 (G1) shares this pair: after unmerge, the pair must NOT auto-merge again.
+  await put("RedisCluster still used here");
+  const reRedis = entityIdByNorm("rediscluster") as number;
+  assert.equal(reRedis, eRedis, "name resolves back to revived entity");
+  const aliasLeak = raw.prepare("SELECT COUNT(*) as n FROM entity_merge_log WHERE kind = " + String.fromCharCode(39) + "alias" + String.fromCharCode(39) + " AND source_name = " + String.fromCharCode(39) + "rediscluster" + String.fromCharCode(39) + " AND target_entity_id = ?").get(eVault) as { n: number };
+  assert.equal(aliasLeak.n, 0, "G1: override keeps the pair separate (no auto alias re-merge)");
+  console.log("step8 G1 override no-auto-remerge: OK");
+}
+
+// --- step 7 (r77 audit G2/G3): guard branches ---
+{
+  const eVault = entityIdByNorm("keyvaultstore") as number;
+  const same = await store.combineEntities(eVault, eVault);
+  assert.equal(same.ok, false, "G2: same id rejected");
+  const missing = await store.combineEntities(999999, eVault);
+  assert.equal(missing.ok, false, "G2: nonexistent id rejected");
+  const m2 = await store.combineEntities(entityIdByNorm("rediscluster") as number, eVault);
+  assert.equal(m2.ok, true, "re-merge ok");
+  const again = await store.combineEntities(Number((raw.prepare("SELECT id FROM entities WHERE name_norm = " + String.fromCharCode(39) + "rediscluster" + String.fromCharCode(39)).get() as { id: number }).id), eVault);
+  assert.equal(again.ok, false, "G2: tombstoned entity rejected");
+  await store.unmergeEntity(m2.logId as number);
+  // G3: incomplete snapshot refused
+  const badSnap = raw.prepare("INSERT INTO entity_merge_log (kind, source_name, target_entity_id, detail) VALUES (?, ?, ?, ?)").run("merge", "ghostx", eVault, JSON.stringify({ fromEntityId: 123 }));
+  const rBad = await store.unmergeEntity(Number(badSnap.lastInsertRowid));
+  assert.equal(rBad.ok, false, "G3: incomplete snapshot refused");
+  const candRow = raw.prepare("SELECT id FROM entity_merge_log WHERE kind = " + String.fromCharCode(39) + "candidate" + String.fromCharCode(39) + " LIMIT 1").get() as { id: number } | undefined;
+  if (candRow) { const rCand = await store.unmergeEntity(candRow.id); assert.equal(rCand.ok, false, "G3: non-merge kind refused by unmerge"); }
+  console.log("step7 G2/G3 guard branches: OK");
+}
 store.close();
 raw.close();
 rmSync(dir, { recursive: true, force: true });
