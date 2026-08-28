@@ -143,3 +143,36 @@ CREATE TABLE IF NOT EXISTS t0_preferences (
   provenance TEXT,
   PRIMARY KEY (key, scope)
 );
+-- ADR-0031 D3: Entity link layer. Global (session-agnostic) entity registry.
+-- Reuses bi-temporal discipline: valid_until NULL = live. Soft-close only, never DELETE.
+CREATE TABLE IF NOT EXISTS entities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,            -- display name as first asserted
+  name_norm TEXT NOT NULL,       -- normalized match key (lowercase, edge punctuation stripped)
+  entity_type TEXT NOT NULL,     -- url | handle | phrase | ident | declared (type gate: cross-type never merges at fuzzy tiers)
+  aliases TEXT NOT NULL DEFAULT '[]', -- JSON array of normalized alias strings
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  valid_until TEXT
+);
+-- Partial unique index: one live entity per (name_norm, entity_type). Closed rows do not block re-creation.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entities_norm_type ON entities(name_norm, entity_type) WHERE valid_until IS NULL;
+
+-- Memory-to-entity link. Composite unique key keeps writes idempotent (INSERT OR IGNORE).
+CREATE TABLE IF NOT EXISTS memory_entity (
+  memory_id INTEGER NOT NULL REFERENCES retrieval_results(id) ON DELETE CASCADE,
+  entity_id INTEGER NOT NULL REFERENCES entities(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (memory_id, entity_id)
+);
+
+-- ADR-0031 D5: reversible merge log — every alias append / merge candidate is recorded and undoable.
+-- kind: 'alias' (auto-merged high-confidence variant) | 'candidate' (Fellegi-Sunter review band).
+CREATE TABLE IF NOT EXISTS entity_merge_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  source_name TEXT NOT NULL,     -- the variant text that triggered the merge decision
+  target_entity_id INTEGER NOT NULL REFERENCES entities(id),
+  detail TEXT,                   -- JSON: similarity, tier, etc.
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  undone INTEGER NOT NULL DEFAULT 0
+);
