@@ -131,11 +131,43 @@ export interface SessionStore {
   listQuarantinedMemories(): Promise<QuarantinedMemory[]>;
   // keep: new value wins (clear quarantine, supersede live counterpart). drop: keep quarantined, mark resolved_drop.
   resolveQuarantinedMemory(id: number, action: "keep" | "drop"): Promise<{ ok: boolean }>;
+  // ADR-0032 D1/D4: destructive entity merge with full snapshot (single transaction).
+  combineEntities(fromId: number, toId: number): Promise<{ ok: boolean; logId?: number; error?: string }>;
+  // ADR-0032 D2: bounded unmerge driven by the D1 snapshot; writes override records against re-merge.
+  unmergeEntity(logId: number): Promise<{ ok: boolean; error?: string }>;
+  // ADR-0031 D5: alias-append undo (exposed for the CLI unmerge entry point).
+  undoEntityMerge(logId: number): boolean;
+  // ADR-0032 D3: candidate review belt (list + keep/drop resolution, ADR-0025 quarantine pattern).
+  listEntityReview(): Promise<EntityReviewRow[]>;
+  resolveEntityReview(id: number, action: "keep" | "drop"): Promise<{ ok: boolean; error?: string }>;
 }
 
 // ADR-0027 D5 + ADR-0028 D3: secret guard lives in ./secret.ts (shared containsSecret) —
 // covers case-insensitive / JSON-escape / whitespace-collapse / NFKC / bounded-base64 variants
 // at all 4 write entries and both search exits. Known blind spots: truncated secrets, novel encodings.
+
+// ADR-0032 D3: one unresolved candidate row in the entity review belt.
+export interface EntityReviewRow {
+  id: number;
+  sourceName: string;
+  targetEntityId: number;
+  targetName: string | null;
+  hitCount: number;
+  suggested: boolean; // hitCount >= 2 (escalation threshold; value subject to E4 calibration)
+  detail: string | null;
+  createdAt: string;
+}
+
+// ADR-0032 D5: six report-only merge metrics — five counters derived from entity_merge_log
+// plus one run-scoped truncation counter; review_pending is a gauge (queue depth).
+export interface EntityMergeTelemetry {
+  auto_merged: number;
+  unmerged: number;
+  review_pending: number;
+  confirmed: number;
+  rejected: number;
+  candidates_truncated: number;
+}
 
 // better-sqlite3 sync API wrapped in async interface to match SessionStore port.
 // ponytail: thinnest wrapper - no extra abstraction, sync calls wrapped in Promise.resolve.
@@ -144,7 +176,7 @@ export class SqliteSessionStore implements SessionStore {
   // ADR-0031 D2: LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
   private readonly entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
   // ADR-0031 step7: entity arm telemetry counters (report-only in eval).
-  private readonly entityTel = { queries: 0, candidates: 0, activations: 0, hits: 0 };
+  private readonly entityTel = { queries: 0, candidates: 0, activations: 0, hits: 0, truncated: 0 };
   private stmts: {
     createSession: Database.Statement;
     append: Database.Statement;
@@ -193,6 +225,9 @@ export class SqliteSessionStore implements SessionStore {
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN quarantine TEXT"); } catch {}
     // ADR-0025 D2: evidence persisted on quarantined rows for the review list (atomcode: confidence for queue ordering, never for auto-adjudication).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN evidence REAL"); } catch {}
+    // ADR-0032 D3: candidate review belt columns on entity_merge_log.
+    try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN hit_count INTEGER NOT NULL DEFAULT 1"); } catch {}
+    try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN resolved TEXT"); } catch {}
     // ADR-0024 D1/D2: T0 hot zone — t0_preferences is the single source of truth; MEMORY.md is a
     // regenerated materialized projection (temp+fsync+rename). scope: "global" | project root path.
     // correction_count drives the C-prime promote gate (>=2 cross-session corrections = implicit promote).
@@ -481,7 +516,7 @@ export class SqliteSessionStore implements SessionStore {
 
   // ---- ADR-0031: entity link layer (write link + query arm) ----
 
-  public entityTelemetry(): { queries: number; candidates: number; activations: number; hits: number } {
+  public entityTelemetry(): { queries: number; candidates: number; activations: number; hits: number; truncated: number } {
     return { ...this.entityTel };
   }
 
@@ -497,7 +532,7 @@ export class SqliteSessionStore implements SessionStore {
     const known = new Set(this.liveEntities().flatMap((e) => [e.nameNorm, ...e.aliases]));
     const candidates: EntityCandidate[] = [];
     if (km.entity && !km.entity.includes("://")) candidates.push({ name: km.entity, type: "declared" });
-    for (const c of extractEntityCandidates(text, known)) candidates.push(c);
+    for (const c of extractEntityCandidates(text, known, MAX_CANDIDATES * 2)) candidates.push(c); // ADR-0032 D3: 2x cap — overflow tail feeds the review belt
     if (candidates.length === 0 && this.entityLlmFallback) {
       // ADR-0031 D2: LLM backfill (fail-open) — offline/no-key keeps rule output (here: empty).
       try { const extra = await this.entityLlmFallback(text); if (extra) candidates.push(...extra); } catch {}
@@ -505,6 +540,40 @@ export class SqliteSessionStore implements SessionStore {
     for (const c of candidates.slice(0, MAX_CANDIDATES + 1)) { // r74 audit E5: 1 declared + MAX_CANDIDATES rule/LLM
       const entityId = this.resolveEntity(c.name, c.type);
       this.db.prepare("INSERT OR IGNORE INTO memory_entity (memory_id, entity_id) VALUES (?, ?)").run(memoryId, entityId);
+    }
+    // ADR-0032 D3: extraction overflow (capped out) enters the candidate review belt — never silent loss.
+    const overflow = candidates.slice(MAX_CANDIDATES + 1);
+    this.entityTel.truncated += overflow.length;
+    for (const c of overflow) this.logOverflowCandidate(c);
+  }
+
+  // ADR-0032 D3: dedup'd candidate write — a re-hit of the same unresolved (source, target) pair
+  // increments hit_count (Senzing re-resolve evidence accumulation, lightweight proxy).
+  private logEntityCandidate(sourceName: string, targetId: number, detail: Record<string, unknown>): void {
+    const existing = this.db
+      .prepare("SELECT id FROM entity_merge_log WHERE kind = 'candidate' AND source_name = ? AND target_entity_id = ? AND resolved IS NULL AND undone = 0")
+      .get(sourceName, targetId) as { id: number } | undefined;
+    if (existing) {
+      this.db.prepare("UPDATE entity_merge_log SET hit_count = hit_count + 1 WHERE id = ?").run(existing.id);
+      return;
+    }
+    this.db.prepare("INSERT INTO entity_merge_log (kind, source_name, target_entity_id, detail) VALUES (?, ?, ?, ?)")
+      .run("candidate", sourceName, targetId, JSON.stringify(detail));
+  }
+
+  // Overflow candidates only enter the review belt when they pass the Fellegi-Sunter review band
+  // against a live entity (sub-band noise is just dropped by the cap, as before).
+  private logOverflowCandidate(c: EntityCandidate): void {
+    const norm = normalizeEntityName(c.name);
+    let best: { id: number; sim: number } | null = null;
+    for (const e of this.liveEntities()) {
+      if (e.type !== c.type && c.type !== "declared" && e.type !== "declared") continue;
+      const sims = [e.nameNorm, ...e.aliases].map((v) => trigramSimilarity(norm, v));
+      const sim = Math.max(...sims);
+      if (!best || sim > best.sim) best = { id: e.id, sim };
+    }
+    if (best && best.sim >= ENTITY_REVIEW_THRESHOLD) {
+      this.logEntityCandidate(c.name, best.id, { sim: best.sim, tier: "truncated" });
     }
   }
 
@@ -524,15 +593,23 @@ export class SqliteSessionStore implements SessionStore {
       if (!best || sim > best.sim) best = { id: e.id, sim };
     }
     if (best && best.sim >= ENTITY_ALIAS_THRESHOLD) {
-      // high-confidence variant: append as alias, reversible via entity_merge_log kind="alias".
-      const row = live.find((e) => e.id === (best as { id: number }).id);
-      if (row && !row.aliases.includes(norm)) {
-        const next = JSON.stringify([...row.aliases, norm]);
-        this.db.prepare("UPDATE entities SET aliases = ? WHERE id = ?").run(next, row.id);
-        this.db.prepare("INSERT INTO entity_merge_log (kind, source_name, target_entity_id, detail) VALUES (?, ?, ?, ?)")
-        .run("alias", name, row.id, JSON.stringify({ sim: best.sim, tier: "alias" }));
+      // ADR-0032 D2: unmerge wrote kind="override" records for the split pair — auto alias-merge
+      // of that pair is blocked until a human merges manually (Splink override precedent).
+      const blocked = this.db
+        .prepare("SELECT id FROM entity_merge_log WHERE kind = 'override' AND source_name = ? AND target_entity_id = ? LIMIT 1")
+        .get(norm, best.id) as { id: number } | undefined;
+      if (!blocked) {
+        // high-confidence variant: append as alias, reversible via entity_merge_log kind="alias".
+        const row = live.find((e) => e.id === (best as { id: number }).id);
+        if (row && !row.aliases.includes(norm)) {
+          const next = JSON.stringify([...row.aliases, norm]);
+          this.db.prepare("UPDATE entities SET aliases = ? WHERE id = ?").run(next, row.id);
+          this.db.prepare("INSERT INTO entity_merge_log (kind, source_name, target_entity_id, detail) VALUES (?, ?, ?, ?)")
+          .run("alias", name, row.id, JSON.stringify({ sim: best.sim, tier: "alias" }));
+        }
+        return best.id;
       }
-      return best.id;
+      // override-blocked: fall through and keep the pair separate (flag-don't-silently-merge).
     }
     // new entity row (unique-index race tolerated: on conflict re-read)
     let newId: number;
@@ -545,9 +622,8 @@ export class SqliteSessionStore implements SessionStore {
       newId = again.id;
     }
     if (best && best.sim >= ENTITY_REVIEW_THRESHOLD) {
-      // Fellegi-Sunter review band: keep separate, but log a merge candidate for review.
-      this.db.prepare("INSERT INTO entity_merge_log (kind, source_name, target_entity_id, detail) VALUES (?, ?, ?, ?)")
-      .run("candidate", name, best.id, JSON.stringify({ sim: best.sim, tier: "review", newEntityId: newId }));
+      // Fellegi-Sunter review band: keep separate, but log a merge candidate for review (dedup'd).
+      this.logEntityCandidate(name, best.id, { sim: best.sim, tier: "review", newEntityId: newId });
     }
     return newId;
   }
@@ -566,6 +642,146 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   // ADR-0031 D4: entity arm — read-only resolution (exact/containment, no mutation), arm-level valid_until+quarantine guard.
+  // ---- ADR-0032: destructive merge execution (combine / unmerge / review belt / telemetry) ----
+
+  // ADR-0032 D1/D4: destructive redirect merge. Single better-sqlite3 transaction (deferred);
+  // snapshot is written in the SAME transaction as the redirect (acceptance requires it).
+  // No RETURNING and no FTS-triggered tables touched inside the transaction (better-sqlite3 #654).
+  public async combineEntities(fromId: number, toId: number): Promise<{ ok: boolean; logId?: number; error?: string }> {
+    const now = (this.db.prepare("SELECT datetime('now') as t").get() as { t: string }).t;
+    const tx = this.db.transaction((from: number, toIdArg: number): { ok: boolean; logId?: number; error?: string } => {
+      if (from === toIdArg) return { ok: false, error: "same entity id" };
+      const a = this.db.prepare("SELECT id, name, name_norm, entity_type, aliases, valid_until FROM entities WHERE id = ?").get(from) as
+        { id: number; name: string; name_norm: string; entity_type: string; aliases: string; valid_until: string | null } | undefined;
+      const b = this.db.prepare("SELECT id, name, name_norm, entity_type, aliases, valid_until FROM entities WHERE id = ?").get(toIdArg) as
+        { id: number; name: string; name_norm: string; entity_type: string; aliases: string; valid_until: string | null } | undefined;
+      if (!a || !b) return { ok: false, error: "entity not found" };
+      if (a.valid_until || b.valid_until) return { ok: false, error: "one side is already closed (tombstoned)" };
+      if (a.entity_type !== b.entity_type && a.entity_type !== "declared" && b.entity_type !== "declared")
+        return { ok: false, error: "type gate: cross-type merge rejected (ADR-0031 D5)" };
+      const fromAliases = JSON.parse(a.aliases || "[]") as string[];
+      const toAliasesBefore = JSON.parse(b.aliases || "[]") as string[];
+      const redirected = (this.db.prepare("SELECT memory_id FROM memory_entity WHERE entity_id = ?").all(from) as Array<{ memory_id: number }>)
+        .map((r) => r.memory_id);
+      // Redirect, tolerating (memory_id, toId) pairs that already exist (UNIQUE(memory_id, entity_id)).
+      for (const mid of redirected) {
+        const dup = this.db.prepare("SELECT 1 as x FROM memory_entity WHERE memory_id = ? AND entity_id = ?").get(mid, toIdArg) as { x: number } | undefined;
+        if (dup) this.db.prepare("DELETE FROM memory_entity WHERE memory_id = ? AND entity_id = ?").run(mid, from);
+        else this.db.prepare("UPDATE memory_entity SET entity_id = ? WHERE memory_id = ? AND entity_id = ?").run(toIdArg, mid, from);
+      }
+      // Keep Aliases (Neo4j): the merged-away name_norm becomes an alias of the survivor.
+      const union = Array.from(new Set([...toAliasesBefore, ...fromAliases, a.name_norm]));
+      this.db.prepare("UPDATE entities SET aliases = ? WHERE id = ?").run(JSON.stringify(union), toIdArg);
+      this.db.prepare("UPDATE entities SET valid_until = ? WHERE id = ?").run(now, from);
+      const detail = JSON.stringify({
+        fromEntityId: from, fromName: a.name, fromNorm: a.name_norm, fromAliases,
+        toAliasesBefore, redirectedMemoryIds: redirected, mergedAt: now,
+      });
+      const info = this.db.prepare("INSERT INTO entity_merge_log (kind, source_name, target_entity_id, detail) VALUES (?, ?, ?, ?)")
+        .run("merge", a.name_norm, toIdArg, detail);
+      return { ok: true, logId: Number(info.lastInsertRowid) };
+    });
+    try {
+      return tx(fromId, toId);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  // ADR-0032 D2: bounded unmerge — snapshot-driven redirect-back + revive + alias restore + override.
+  // Compensation semantics: writes that landed on the target AFTER the merge stay on it.
+  public async unmergeEntity(logId: number): Promise<{ ok: boolean; error?: string }> {
+    const tx = this.db.transaction((id: number): { ok: boolean; error?: string } => {
+      const logRow = this.db.prepare("SELECT id, kind, source_name, target_entity_id, detail, undone FROM entity_merge_log WHERE id = ?").get(id) as
+        { id: number; kind: string; source_name: string; target_entity_id: number; detail: string | null; undone: number } | undefined;
+      if (!logRow || logRow.kind !== "merge" || logRow.undone !== 0) return { ok: false, error: "merge log not found (or already undone)" };
+      const snap = JSON.parse(logRow.detail ?? "{}") as {
+        fromEntityId?: number; fromNorm?: string; fromAliases?: string[]; toAliasesBefore?: string[]; redirectedMemoryIds?: number[];
+      };
+      if (typeof snap.fromEntityId !== "number" || !snap.fromNorm || !snap.fromAliases || !snap.toAliasesBefore || !snap.redirectedMemoryIds)
+        return { ok: false, error: "snapshot incomplete — refusing unmerge (D2: snapshot is the only basis)" };
+      // Bounded: only memory rows from the snapshot are redirected back; post-merge rows stay.
+      for (const mid of snap.redirectedMemoryIds) {
+        const cur = this.db.prepare("SELECT entity_id FROM memory_entity WHERE memory_id = ?").get(mid) as { entity_id: number } | undefined;
+        if (cur && cur.entity_id === logRow.target_entity_id) {
+          this.db.prepare("UPDATE memory_entity SET entity_id = ? WHERE memory_id = ?").run(snap.fromEntityId, mid);
+        } else if (!cur) {
+          // Row vanished (dedup'd away at merge time, or memory deleted) — restore if memory still exists.
+          const mem = this.db.prepare("SELECT id FROM retrieval_results WHERE id = ?").get(mid) as { id: number } | undefined;
+          if (mem) this.db.prepare("INSERT OR IGNORE INTO memory_entity (memory_id, entity_id) VALUES (?, ?)").run(mid, snap.fromEntityId);
+        }
+      }
+      // Revive + restore aliases by whole-value overwrite (overlap-safe: no set subtraction).
+      this.db.prepare("UPDATE entities SET valid_until = NULL, aliases = ? WHERE id = ? AND valid_until IS NOT NULL").run(JSON.stringify(snap.fromAliases), snap.fromEntityId);
+      const target = this.db.prepare("SELECT valid_until, name_norm FROM entities WHERE id = ?").get(logRow.target_entity_id) as
+        { valid_until: string | null; name_norm: string } | undefined;
+      if (target && target.valid_until === null)
+        this.db.prepare("UPDATE entities SET aliases = ? WHERE id = ?").run(JSON.stringify(snap.toAliasesBefore), logRow.target_entity_id);
+      this.db.prepare("UPDATE entity_merge_log SET undone = 1 WHERE id = ?").run(id);
+      // Override guard (both directions): the pair must not auto-merge again.
+      this.db.prepare("INSERT INTO entity_merge_log (kind, source_name, target_entity_id, detail) VALUES (?, ?, ?, ?)")
+        .run("override", snap.fromNorm, logRow.target_entity_id, JSON.stringify({ unmergedLogId: id }));
+      this.db.prepare("INSERT INTO entity_merge_log (kind, source_name, target_entity_id, detail) VALUES (?, ?, ?, ?)")
+        .run("override", target ? target.name_norm : "", snap.fromEntityId, JSON.stringify({ unmergedLogId: id }));
+      return { ok: true };
+    });
+    try {
+      return tx(logId);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  // ADR-0032 D3: candidate review belt — unresolved candidates, hit_count desc (Senzing escalation).
+  public async listEntityReview(): Promise<EntityReviewRow[]> {
+    const rows = this.db
+      .prepare(
+        "SELECT l.id, l.source_name, l.target_entity_id, l.hit_count, l.detail, l.created_at, e.name AS target_name" +
+        " FROM entity_merge_log l LEFT JOIN entities e ON e.id = l.target_entity_id" +
+        " WHERE l.kind = 'candidate' AND l.resolved IS NULL AND l.undone = 0 ORDER BY l.hit_count DESC, l.created_at DESC"
+      )
+      .all() as Array<{ id: number; source_name: string; target_entity_id: number; hit_count: number; detail: string | null; created_at: string; target_name: string | null }>;
+    return rows.map((r) => ({
+      id: r.id, sourceName: r.source_name, targetEntityId: r.target_entity_id, targetName: r.target_name,
+      hitCount: r.hit_count, suggested: r.hit_count >= 2, detail: r.detail, createdAt: r.created_at,
+    }));
+  }
+
+  // ADR-0032 D3/D5: keep = execute the merge (writes resolved='confirmed'); drop = keep separate
+  // ('rejected'). Outcomes are written back to the log (report-only telemetry source).
+  public async resolveEntityReview(id: number, action: "keep" | "drop"): Promise<{ ok: boolean; error?: string }> {
+    const row = this.db
+      .prepare("SELECT id, source_name, target_entity_id, detail FROM entity_merge_log WHERE id = ? AND kind = 'candidate' AND resolved IS NULL AND undone = 0")
+      .get(id) as { id: number; source_name: string; target_entity_id: number; detail: string | null } | undefined;
+    if (!row) return { ok: false, error: "candidate not found (or already resolved)" };
+    if (action === "drop") {
+      this.db.prepare("UPDATE entity_merge_log SET resolved = 'rejected' WHERE id = ?").run(id);
+      return { ok: true };
+    }
+    const detail = JSON.parse(row.detail ?? "{}") as { newEntityId?: number };
+    if (typeof detail.newEntityId !== "number")
+      return { ok: false, error: "no newEntityId in detail (truncated-tier candidate) — merge manually: ans entity merge <fromId> <toId>" };
+    const merged = await this.combineEntities(detail.newEntityId, row.target_entity_id);
+    if (!merged.ok) return { ok: false, error: merged.error };
+    this.db.prepare("UPDATE entity_merge_log SET resolved = 'confirmed' WHERE id = ?").run(id);
+    return { ok: true };
+  }
+
+  // ADR-0032 D5: six report-only merge metrics. Counters are derived from the persistent merge log
+  // (survive restarts); review_pending is a gauge (queue depth); review pending + truncation reflect
+  // the current run's state. NEVER gated (Goodhart clause; n is far below statistical power).
+  public entityMergeTelemetry(): EntityMergeTelemetry {
+    const count = (where: string): number => (this.db.prepare("SELECT COUNT(*) as n FROM entity_merge_log WHERE " + where).get() as { n: number }).n;
+    return {
+      auto_merged: count("kind = 'merge'"),
+      unmerged: count("kind = 'merge' AND undone = 1"),
+      review_pending: count("kind = 'candidate' AND resolved IS NULL AND undone = 0"),
+      confirmed: count("kind = 'candidate' AND resolved = 'confirmed'"),
+      rejected: count("kind = 'candidate' AND resolved = 'rejected'"),
+      candidates_truncated: this.entityTel.truncated,
+    };
+  }
+
   private entityArmRows(query: string, limit: number): MemoryHit[] {
     this.entityTel.queries += 1;
     const known = new Set(this.liveEntities().flatMap((e) => [e.nameNorm, ...e.aliases])); // r74 audit E2: aliases recognized read-side too

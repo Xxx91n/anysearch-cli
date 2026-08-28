@@ -45,6 +45,15 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
     `| answerableFalseRefusalRate | ${m.answerableFalseRefusalRate.toFixed(3)} |`,
     // r74 audit E1: entity-arm telemetry (report-only; D2 <0.5 advisory, never gated)
     ...(m.entityArm ? [`| entity rule-hitRate | ${m.entityArm.hitRate.toFixed(3)} |`,`| entity activationRate | ${m.entityArm.activationRate.toFixed(3)} |`,`| entity avgArmHits | ${m.entityArm.avgArmHits.toFixed(2)} |`] : []),
+    // ADR-0032 D5: merge/review telemetry — report-only, NEVER gated (Goodhart clause).
+    ...(m.entityMerge ? [
+      '| entity auto_merged | ' + m.entityMerge.auto_merged + ' |',
+      '| entity review_pending | ' + m.entityMerge.review_pending + ' |',
+      '| entity review confirmed | ' + m.entityMerge.confirmed + ' |',
+      '| entity review rejected | ' + m.entityMerge.rejected + ' |',
+      '| entity candidates_truncated | ' + m.entityMerge.candidates_truncated + ' |',
+      '| entity unmerged | ' + m.entityMerge.unmerged + ' |',
+    ] : []),
     ...(m.entityArm && m.entityArm.hitRate < 0.5 ? [`| WARNING | entity rule-hitRate < 0.5 — ADR-0031 D2: re-evaluate dual-layer extraction with fastCRW (report-only) |`] : []),
     "",
     "## Statistical power (ADR-0028 D1)",

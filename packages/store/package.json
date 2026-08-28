@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "tsx test/domain-schema.test.ts && tsx test/session-store.test.ts && tsx test/budget-ledger.test.ts && tsx test/domain-loader.test.ts && tsx test/time-decay.test.ts && tsx test/access-count.test.ts && tsx test/fts5-tokenize.test.ts && tsx test/adjudication.test.ts && tsx test/stale-probe.test.ts && tsx test/t0-preferences.test.ts && tsx test/quarantine-review.test.ts && tsx test/secret-guard.test.ts && tsx test/eval-runner.test.ts && tsx test/eval-gate.test.ts && tsx test/eval-mutation.test.ts && tsx test/entity-link.test.ts && node test/eval-judge.test.mjs && node test/eval-calibrate.test.mjs",
+    "test": "tsx test/domain-schema.test.ts && tsx test/session-store.test.ts && tsx test/budget-ledger.test.ts && tsx test/domain-loader.test.ts && tsx test/time-decay.test.ts && tsx test/access-count.test.ts && tsx test/fts5-tokenize.test.ts && tsx test/adjudication.test.ts && tsx test/stale-probe.test.ts && tsx test/t0-preferences.test.ts && tsx test/quarantine-review.test.ts && tsx test/secret-guard.test.ts && tsx test/eval-runner.test.ts && tsx test/eval-gate.test.ts && tsx test/eval-mutation.test.ts && tsx test/entity-link.test.ts && tsx test/entity-merge.test.ts && node test/eval-judge.test.mjs && node test/eval-calibrate.test.mjs",
     "eval": "tsx src/eval/cli.ts",
     "check": "tsc --noEmit"
   },

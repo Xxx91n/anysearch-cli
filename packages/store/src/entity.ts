@@ -61,7 +61,7 @@ const PHRASE_RE = /"([^"\n=]{2,80})"|\u201c([^\u201d\n]{2,80})\u201d|\u300c([^\u
 const IDENT_RE = /[A-Za-z][A-Za-z0-9_]{2,63}/g;
 const CAMEL_OK = /[A-Z]/; // internal uppercase beyond position 0 checked at runtime
 
-export function extractEntityCandidates(text: string, knownNorms?: ReadonlySet<string>): EntityCandidate[] {
+export function extractEntityCandidates(text: string, knownNorms?: ReadonlySet<string>, cap: number = MAX_ENTITY_CANDIDATES): EntityCandidate[] {
   const out: EntityCandidate[] = [];
   const seen = new Set<string>();
   const push = (name: string, type: EntityType): void => {
@@ -92,5 +92,6 @@ export function extractEntityCandidates(text: string, knownNorms?: ReadonlySet<s
       }
     }
   }
-  return out.slice(0, MAX_ENTITY_CANDIDATES);
+  // ADR-0032 D3: cap is a parameter so the store can observe + log the overflow tail (bounded at 2x).
+  return out.slice(0, cap);
 }

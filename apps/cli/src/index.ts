@@ -13,6 +13,7 @@ import { runChat } from "./commands/chat";
 import { runRecommend } from "./commands/recommend";
 import { runMcp } from "./commands/mcp";
 import { runMemoryPreference } from "./commands/memory-preference";
+import { runEntity } from "./commands/entity";
 
 // ponytail: single source of truth for CLI version, same pattern as apps/mcp
 // (ADR-0020 D3). tsup injects __PACKAGE_VERSION__ at build time.
@@ -38,6 +39,7 @@ const help = [
   "  domain    Switch Active Domain (cc-persona TOML, ADR-0002)",
   "  mcp       Start the anysearch MCP server (stdio or HTTP transport)",
   "  pref      Manage T0 durable preferences (/remember, pref review - ADR-0024/0025)",
+  "  entity    Entity merge / unmerge / review belt (ADR-0032)",
   "",
   "Options:",
   "  --version, -v     Print version",
@@ -65,7 +67,7 @@ if (cmd === "--help" || cmd === "-h") {
   process.exit(0);
 }
 
-const known = new Set(["doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp", "pref"]);
+const known = new Set(["doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp", "pref", "entity"]);
 if (!known.has(cmd)) {
   process.stderr.write("ans: unknown command " + String.fromCharCode(39) + cmd + String.fromCharCode(39) + "\n" + "See " + String.fromCharCode(39) + "ans --help" + String.fromCharCode(39) + ".\n");
   process.exit(2);
@@ -85,6 +87,7 @@ const handlers: Record<string, (args: string[]) => Promise<number>> = {
   recommend: runRecommend,
   mcp: runMcp,
   pref: runMemoryPreference,
+  entity: runEntity,
 };
 
 const handler = handlers[cmd];

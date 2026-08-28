@@ -31,6 +31,8 @@ export interface CaseResult {
   ops: OpRecord[];
   // ADR-0031 step7: per-case entity-arm telemetry snapshot (report-only).
   entityArm?: { queries: number; candidates: number; activations: number; hits: number };
+  // ADR-0032 D5: per-case merge/review telemetry snapshot (report-only).
+  entityMerge?: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number };
 }
 
 export interface EvalCounts {
@@ -54,6 +56,8 @@ export interface EvalMetrics {
   answerableFalseRefusalRate: number;
   // ADR-0031 step7: entity arm hit-rate telemetry (report-only, never gated).
   entityArm?: { queries: number; candidates: number; activations: number; hits: number; hitRate: number; activationRate: number; avgArmHits: number };
+  // ADR-0032 D5: entity merge telemetry (report-only, never gated — Goodhart clause).
+  entityMerge?: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number };
 }
 
 export interface EvalReport {
@@ -85,6 +89,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
   const ops: OpRecord[] = [];
   let sessionId = "";
   let entityArmSnapshot: { queries: number; candidates: number; activations: number; hits: number } | undefined;
+  let entityMergeSnapshot: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } | undefined;
   const adjResults: AdjudicationResultItem[][] = []; // stashed per adjudicate opIndex
   let failedStage: EvalStage | null = null;
   const mark = (rec: OpRecord) => {
@@ -212,11 +217,12 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
     mark({ op: -1, kind: "setup", stage: "extract", ok: false, detail: "case setup: " + String((e as Error).message) });
   } finally {
     entityArmSnapshot = (store as unknown as { entityTelemetry?: () => { queries: number; candidates: number; activations: number; hits: number } }).entityTelemetry?.();
+    entityMergeSnapshot = (store as unknown as { entityMergeTelemetry?: () => { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } }).entityMergeTelemetry?.();
     raw.close();
     store.close();
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
-  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot };
+  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot, entityMerge: entityMergeSnapshot };
 }
 
 // Metrics per ADR-0027 D4: ① case pass rate (gate: 100%), ② supersession success,
@@ -278,6 +284,16 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
       for (const r of results) if (r.entityArm) { q += r.entityArm.queries; c += r.entityArm.candidates; a += r.entityArm.activations; h += r.entityArm.hits; }
       // r74 audit E1: hitRate is the RULE-LAYER hit rate (candidates/queries) per ADR-0031 D2 (<0.5 -> fastCRW review, report-only).
       return { queries: q, candidates: c, activations: a, hits: h, hitRate: q ? c / q : 0, activationRate: q ? a / q : 0, avgArmHits: a ? h / a : 0 };
+    })(),
+    // ADR-0032 D5: six report-only merge metrics, aggregated over per-case stores (report-only, never gated).
+    entityMerge: (() => {
+      const acc = { auto_merged: 0, unmerged: 0, review_pending: 0, confirmed: 0, rejected: 0, candidates_truncated: 0 };
+      for (const r of results) if (r.entityMerge) {
+        acc.auto_merged += r.entityMerge.auto_merged; acc.unmerged += r.entityMerge.unmerged;
+        acc.review_pending += r.entityMerge.review_pending; acc.confirmed += r.entityMerge.confirmed;
+        acc.rejected += r.entityMerge.rejected; acc.candidates_truncated += r.entityMerge.candidates_truncated;
+      }
+      return acc;
     })(),
     mrr: rrN ? rrSum / rrN : 1,
     answerableFalseRefusalRate: frEligible ? frCount / frEligible : 0,

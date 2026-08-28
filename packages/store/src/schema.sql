@@ -165,14 +165,20 @@ CREATE TABLE IF NOT EXISTS memory_entity (
   UNIQUE (memory_id, entity_id)
 );
 
--- ADR-0031 D5: reversible merge log — every alias append / merge candidate is recorded and undoable.
--- kind: 'alias' (auto-merged high-confidence variant) | 'candidate' (Fellegi-Sunter review band).
+-- ADR-0031 D5 + ADR-0032: merge decision log — alias append, destructive merge (full snapshot),
+-- candidate review belt (hit_count re-hit escalation), and unmerge override records.
+-- kind: 'alias' | 'candidate' | 'merge' | 'override'
+-- merge rows carry a complete snapshot in detail: fromEntityId, fromName, fromNorm, fromAliases,
+-- toAliasesBefore, redirectedMemoryIds, mergedAt (the sole basis for bounded unmerge).
 CREATE TABLE IF NOT EXISTS entity_merge_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   kind TEXT NOT NULL,
   source_name TEXT NOT NULL,     -- the variant text that triggered the merge decision
   target_entity_id INTEGER NOT NULL REFERENCES entities(id),
-  detail TEXT,                   -- JSON: similarity, tier, etc.
+  detail TEXT,                   -- JSON: similarity, tier, snapshot (kind='merge'), etc.
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  undone INTEGER NOT NULL DEFAULT 0
+  undone INTEGER NOT NULL DEFAULT 0,
+  -- ADR-0032 D3: review belt — re-hit counter (>=2 = suggested review) and resolution outcome.
+  hit_count INTEGER NOT NULL DEFAULT 1,
+  resolved TEXT                  -- NULL = pending; 'confirmed' | 'rejected' after review
 );
