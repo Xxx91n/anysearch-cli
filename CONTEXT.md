@@ -423,4 +423,17 @@ _Avoid_: adding TTL as a recall tool, duplicate stale-flag columns, deleting sup
 QDF 正则里禁止出现具体年份字面值（2024|2025|2026 已删）：年份通道是无出处的伪触发器且会静默过期（2027 起失效）。kernel 侧必须 import store 导出的分类器，不允许内联复制（memory-pipeline.ts 漂移事故：isEvergreen 缺 什么是X）。ADR-0030 D5。
 _Avoid_: `/2024|2025|2026/` style literals, inline-copied classifier regex in kernel, dynamic-year injection as a fix
 
+
+## Entity Merge with Snapshot（快照式破坏合并）
+实体合并的物理语义：memory_entity 行 UPDATE 重定向到主实体 + 被并实体 valid_until 关闭（tombstone 不 DELETE）+ merge_log 携带完整快照（别名集、被重定向行 id 列表、合并时刻），快照是 unmerge 的唯一依据。Neo4j 破坏式主流 + Zep 可回放性合并进日志。ADR-0032 D1。
+_Avoid_: IS_DUPLICATE_OF edge redirect on read, unlogged merge, row DELETE on merge
+
+## Bounded Unmerge with Override（半还原撤销 + 防复发）
+unmerge 只回滚合并操作自身的副作用（快照内 memory_entity 行重指 + 实体复活 + 别名恢复），合并时刻之后的新写入留在主实体（补偿事务语义，不承诺回到操作前状态）；同时写 override 记录阻断同一对实体再被自动合并。Splink manual merge/unmerge + override 工业先例。ADR-0032 D2。
+_Avoid_: full rewind including post-merge writes, unmerge without anti-remerge override, blocklist-only "unmerge"
+
+## Candidate Review Belt（候选待审带）
+实体去重中带（0.6-0.9）与 MAX_ENTITY_CANDIDATES 截断溢出写 entity_merge_log kind="candidate" 行，由审查 CLI（复用 ADR-0025 quarantine 模式）keep/drop 消费，candidate 行带 hit_count 再命中升级复审（Senzing possible-match 轻量版）。合并遥测六指标（auto_merged/review_pending/confirmed/rejected/candidates_truncated/unmerged）进 Observational 区 report-only 永不 gate（Goodhart 条款 + ADR-0028 D1 统计功效纪律）。ADR-0032 D3/D5。
+_Avoid_: silent candidate drop, process-count gating, Senzing-style resident suspend engine
+
 *End of Glossary*
