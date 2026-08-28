@@ -13,12 +13,13 @@ export type EvalGroup =
   | "stale_topk"
   | "secret_bypass"
   | "unanswerable"
-  | "paraphrase";
+  | "paraphrase"
+  | "entity";
 
 export type EvalStage = "extract" | "adjudicate" | "store" | "retrieve";
 
 export type CaseOp =
-  | { op: "adjudicate"; stage: "adjudicate"; items: KeyMemoryInput[]; expect: AdjudicationAction[] }
+  | { op: "adjudicate"; stage: "adjudicate"; items: KeyMemoryInput[]; expect: AdjudicationAction[]; newSession?: boolean /* ADR-0031 step1: cross-session entity aggregation */ }
   | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number; expectRankOf?: { title: string; maxRank: number }; expectEmpty?: true }
   | { op: "seed"; stage: "store"; items: KeyMemoryInput[] } /* ADR-0028 D3: direct DB insert, bypasses the write guard on purpose */
   | { op: "rawValidUntil"; stage: "store"; fromOp: number; expectSet: boolean }
@@ -26,6 +27,7 @@ export type CaseOp =
   | { op: "correct"; stage: "adjudicate"; key: string; scope: string; times: number; expectCount: number }
   | { op: "listPrefs"; stage: "retrieve"; scope?: string; expectKeyValue?: { key: string; value: string }; expectKeyAbsent?: string }
   | { op: "listQuarantined"; stage: "retrieve"; expectCount: number }
+  | { op: "entities"; stage: "store"; expectNames?: string[]; expectCount?: number } /* ADR-0031 step1 */
   | { op: "resolveQuarantined"; stage: "adjudicate"; fromOp: number; item: number; action: "keep" | "drop"; expectOk: boolean };
 
 export interface CaseSpec {
@@ -293,7 +295,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
     id: "sb_seed_json_escaped", group: "secret_bypass", difficulty: "adversarial",
     description: "seeded JSON-escaped sk string hidden after unescape pass",
     ops: [
-      { op: "seed", stage: "store", items: [km("https://ex.com/sb6", "stealthxf seed row", 'stealthxf json {\\"k\\": \\"sk-testDEADBEEFcafebabe1234abcd1234\\"} tail', 0.9, "stealthx-f")] },
+      { op: "seed", stage: "store", items: [km("https://ex.com/sb6", "stealthxf seed row", 'stealthxf json {\"k\": \"sk-testDEADBEEFcafebabe1234abcd1234\"} tail', 0.9, "stealthx-f")] },
       { op: "search", stage: "retrieve", query: "stealthxf", expectEmpty: true },
     ],
   },
@@ -373,6 +375,47 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pu1", "packzone manual built", "packzone is manually built", 0, "packzone", "user")], expect: ["accept"] },
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pu2", "packzone pipeline built", "packzone is pipeline built", 0.95, "packzone")], expect: ["supersede"] },
       { op: "search", stage: "retrieve", query: "packzone pipeline", expectIncludesTitle: "packzone pipeline built" },
+    ],
+  },
+  // --- ADR-0031 step1: entity group (4) — entity link layer assertions (red until steps 2-6 land) ---
+  {
+    id: "ent_centric", group: "entity",
+    description: "one entity key groups both rows; superseded row invisible",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/ent1", "buildzone deployment runbook", "buildzone deployment runbook documented", 0.9, "buildzone")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/ent2", "buildzone rollback playbook", "buildzone rollback playbook documented", 0.95, "buildzone")], expect: ["supersede"] },
+      { op: "entities", stage: "store", expectNames: ["buildzone"], expectCount: 1 },
+      { op: "search", stage: "retrieve", query: "buildzone runbook details", expectIncludesTitle: "rollback playbook", expectExcludesTitle: "deployment runbook" },
+    ],
+  },
+  {
+    id: "ent_cross_session", group: "entity", difficulty: "hard",
+    description: "entity arm aggregates across sessions; non-FTS-matching row surfaces via containment match",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/ent3", "atlascorp funding pitch", "atlascorp funding pitch notes", 0.9, "atlascorp")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", newSession: true, items: [km("https://ex.com/ent4", "series b hiring radar", "series b hiring radar notes", 0.9, "atlascorp-rd")], expect: ["accept"] },
+      { op: "entities", stage: "store", expectNames: ["atlascorp", "atlascorp-rd"], expectCount: 2 },
+      { op: "search", stage: "retrieve", query: "atlascorp", expectIncludesTitle: "series b hiring radar" },
+      { op: "search", stage: "retrieve", query: "atlascorp", expectIncludesTitle: "funding pitch" },
+    ],
+  },
+  {
+    id: "ent_same_name_diff_type", group: "entity", difficulty: "adversarial",
+    description: "type gate: @handle and quoted-phrase \\u0022mercury\\u0022 never merge (Mem0 #5438 lesson)",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/ent5", "wire sent to @mercury yesterday", "wire sent to @mercury yesterday confirmed", 0.9, "mercury-pay")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/ent6", "opened account at \"Mercury\" bank", "opened account at \"Mercury\" bank today", 0.9, "mercury-bank")], expect: ["accept"] },
+      { op: "entities", stage: "store", expectNames: ["mercury", "mercury", "mercury-bank", "mercury-pay"], expectCount: 4 },
+    ],
+  },
+  {
+    id: "ent_variant_same", group: "entity",
+    description: "case/pascal variant BuildKit unifies with declared buildkit; second row links via dictionary pass",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/ent7", "BuildKit caching enabled", "BuildKit caching enabled for builds", 0.9, "buildkit")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/ent8", "buildkit registry prune shipped", "buildkit registry prune shipped notes", 0.9, "buildkit-v2")], expect: ["accept"] },
+      { op: "entities", stage: "store", expectNames: ["buildkit", "buildkit-v2"], expectCount: 2 },
+      { op: "search", stage: "retrieve", query: "BuildKit", expectIncludesTitle: "registry prune shipped" },
     ],
   },
 ];

@@ -29,6 +29,8 @@ export interface CaseResult {
   passed: boolean;
   failedStage: EvalStage | null;
   ops: OpRecord[];
+  // ADR-0031 step7: per-case entity-arm telemetry snapshot (report-only).
+  entityArm?: { queries: number; candidates: number; activations: number; hits: number };
 }
 
 export interface EvalCounts {
@@ -50,6 +52,8 @@ export interface EvalMetrics {
   mrr: number;
   // ADR-0028 D4: answerable-case false-refusal rate (report-only).
   answerableFalseRefusalRate: number;
+  // ADR-0031 step7: entity arm hit-rate telemetry (report-only, never gated).
+  entityArm?: { queries: number; candidates: number; activations: number; hits: number; hitRate: number };
 }
 
 export interface EvalReport {
@@ -80,6 +84,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
   const raw = new Database(dbPath, { readonly: true });
   const ops: OpRecord[] = [];
   let sessionId = "";
+  let entityArmSnapshot: { queries: number; candidates: number; activations: number; hits: number } | undefined;
   const adjResults: AdjudicationResultItem[][] = []; // stashed per adjudicate opIndex
   let failedStage: EvalStage | null = null;
   const mark = (rec: OpRecord) => {
@@ -93,7 +98,8 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
       try {
         switch (op.op) {
           case "adjudicate": {
-            const res = await store.adjudicateMemory(session.id, op.items);
+            const adjudicateSid = op.newSession ? (await store.createSession("eval")).id : session.id; // ADR-0031 step1: cross-session entity aggregation
+            const res = await store.adjudicateMemory(adjudicateSid, op.items);
             adjResults[opIndex] = res;
             // ponytail: wall-clock settle sleep, ceiling = flaky on heavily loaded CI hosts; upgrade path = injectable clock into store.
             await new Promise((r) => setTimeout(r, 12)); // mirror in-repo tests: let FTS/datetime('now') settle
@@ -137,6 +143,19 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
             } catch (e) {
               mark({ op: opIndex, kind: op.op, stage: op.stage, ok: false, detail: "seed error: " + String((e as Error).message) });
             } finally { writer.close(); }
+            break;
+          }
+          case "entities": {
+            // ADR-0031 step1: entity-table assertions (read-side, same raw handle as seed checks).
+            const rows = raw.prepare("SELECT name_norm AS name FROM entities WHERE valid_until IS NULL ORDER BY name_norm, entity_type").all() as Array<{ name: string }>;
+            const fails: string[] = [];
+            if (op.expectNames) {
+              const want = [...op.expectNames].sort().join("|");
+              const got = rows.map((r) => r.name).join("|");
+              if (got !== [...op.expectNames].sort().join("|")) fails.push("names " + got + " != " + want);
+            }
+            if (op.expectCount !== undefined && rows.length !== op.expectCount) fails.push("count " + rows.length + " != " + op.expectCount);
+            mark({ op: opIndex, kind: op.op, stage: op.stage, ok: fails.length === 0, detail: fails.length ? fails.join("; ") : rows.length + " entit(ies)" });
             break;
           }
           case "rawValidUntil": {
@@ -192,11 +211,12 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
   } catch (e) {
     mark({ op: -1, kind: "setup", stage: "extract", ok: false, detail: "case setup: " + String((e as Error).message) });
   } finally {
+    entityArmSnapshot = (store as unknown as { entityTelemetry?: () => { queries: number; candidates: number; activations: number; hits: number } }).entityTelemetry?.();
     raw.close();
     store.close();
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
-  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops };
+  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot };
 }
 
 // Metrics per ADR-0027 D4: ① case pass rate (gate: 100%), ② supersession success,
@@ -253,6 +273,11 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
     supersessionSuccess: supExpected ? supPassed / supExpected : 1,
     quarantineFalsePositiveRate: fpEligible ? fpCount / fpEligible : 0,
     counts: { cases: results.length, casesPassed: passed, supExpected, supPassed, fpEligible, fpCount },
+    entityArm: (() => {
+      let q = 0, c = 0, a = 0, h = 0;
+      for (const r of results) if (r.entityArm) { q += r.entityArm.queries; c += r.entityArm.candidates; a += r.entityArm.activations; h += r.entityArm.hits; }
+      return { queries: q, candidates: c, activations: a, hits: h, hitRate: q ? a / q : 0 };
+    })(),
     mrr: rrN ? rrSum / rrN : 1,
     answerableFalseRefusalRate: frEligible ? frCount / frEligible : 0,
   };
