@@ -35,5 +35,8 @@ export default defineConfig({
     "express",
     "zod",
     "better-sqlite3",
-  , "@huggingface/transformers", "onnxruntime-node", "sharp"],
+    "@huggingface/transformers",
+    "onnxruntime-node",
+    "sharp",
+  ],
 });
