@@ -396,4 +396,17 @@ _Avoid_: unanswerable without distractor, negative-assertion-only paraphrase var
 ## Task Parity Gate（任务平价门禁）
 monorepo「名义 N 包 vs 实际 M 包」漂移的防线：turbo skip-if-absent 是官方 feature（PR #1226 拒改），业界答案 = 契约在管道、实现靠门禁（Rush 默认严格 + ignoreMissingScript 豁免）。零依赖 `scripts/task-parity.mjs` 挂 ship-gate step 1,check/test 通用任务每包必实现，豁免集显式置空。ADR-0028 D5。
 _Avoid_: narrowing turbo.json to hide drift, migrating to Nx/Rush for this alone
+
+## Fused Freshness Factor（融合新鲜度因子）
+检索期唯一的时间信号乘子：created_at 衰减 + last_accessed 近因 + access_count 频率三路信号压进同一个 [0.3, 1.5] 乘性 factor，一次性乘到 BM25；双层独立 recency 型乘子相乘是 Mem0 官方明示的 over-correct 反模式（有用旧事实被埋）。pinned 全豁免、evergreen 查询仅豁免 decay 半边。ADR-0030 D2/D4。
+_Avoid_: stacked recency multipliers, per-layer clamping that yields 0.09 combined floor, adding a second time-signal UDF
+
+## Explicit Invalidation via Write Path（显式失效走写路径）
+用户/写侧发起的"这条过时了"映射到既有 `valid_until` / quarantine 通道，不新增 TTL、不新增四时间戳 bi-temporal。软衰减管"还正确但不再相关"，写时失效管"事实已过期"——MemStrata AUROC 0.59 证明前者替代不了后者。ADR-0030 D1。
+_Avoid_: adding TTL as a recall tool, duplicate stale-flag columns, deleting superseded facts instead of invalidating
+
+## Year-Free QDF Trigger（无年份 QDF 触发器）
+QDF 正则里禁止出现具体年份字面值（2024|2025|2026 已删）：年份通道是无出处的伪触发器且会静默过期（2027 起失效）。kernel 侧必须 import store 导出的分类器，不允许内联复制（memory-pipeline.ts 漂移事故：isEvergreen 缺 什么是X）。ADR-0030 D5。
+_Avoid_: `/2024|2025|2026/` style literals, inline-copied classifier regex in kernel, dynamic-year injection as a fix
+
 *End of Glossary*
