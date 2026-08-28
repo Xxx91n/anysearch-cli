@@ -454,4 +454,16 @@ _Avoid_: silent candidate drop, process-count gating, Senzing-style resident sus
 向量臂/实体臂召回但 FTS 臂未命中的 hit 带 arms 溯源且不计入强证据；unanswerable 断言从检索层零命中（expectEmpty）迁移为 expectAllWeak——检索保持 recall-only，拒答语义在证据层（A+B，LongMemEval/MemBench/CRAG 对齐）。expectMaxCount 仅统计强（FTS 臂）命中。ADR-0033 D8。
 _Avoid_: static cosine threshold to separate unanswerable distractors, expectEmpty reintroduced on adversarial slice, gating retrieval on vector-only recall
 
+## Claim-Level Attribution（断言级归因）
+答案被拆为断言序列（draft claim list），每条断言独立携 `label: supported|uncertain|unsupported`、`evidence:[{url, entity?, title?, span?, provider, sourceKey}]`、`rationale?`；与 ProviderAnswer.verified:false 严格正交——verified 是 provider 自声明，claim 标签是本地确定性信号融合结果。证据粒度：每 claim ≤3 条 evidence；unsupported ≠ 找不到，它是断言被确定性证据反证才用，缺证一律落 uncertain。ADR-0034 D3/D4。
+_Avoid_: rewriting provider sentences to match evidence, stacking evidence lists over 3, mixing "not found" with "refuted"
+
+## Signal-Gated Claim Proposal（信号门控 LLM 提案）
+切分流水线：L0 `Intl.Segmenter`(sentence) + 缩写/小数点白名单修正；L1 确定性碎片信号（多断言连接词、枚举、顿号/分号密度、长句、混排缩写、实体密度≥2）；仅 L1 标碎的句升级 LLM proposal（SAFE 式：句→事实+自包含化代词消解+ VeriScore 只保可验证 claim），claim 带 span 锚回原文；非法输出 fail-open 退整句为单 claim。与 cheap-first / gate the expensive path 同构（继 HyDE 门控、sufficiency-gate 后第三次复用）。ADR-0034 D6。
+_Avoid_: spaCy/Stanza/PySBD/SaT (native deps), full-text LLM decomposition every answer, treating sentence segmentation errors as primary pollution instead of absorbed fragments
+
+## Unsupported Named-Gap Escalation（不支持断言的 named-gap 升级）
+unsupported 断言运行时处置：红标 ✗ 直出原句（不改写），生成断言级 `GapRequest{ assertion, evidenceState:unsupported, gapQuery }` 进 ADR-0023 sufficiency-gate bounded reround；新证据支撑 → 降级为 supported（只改标不改文），新证据反证 → attribution 挂 counter-evidence，无果且核心主张 → 随 expectAllWeak 桥入整体 abstain/降级生成，无果非核心 → 红标直出。改写（RARR 式）与默认剔除（redact）双双否决。ADR-0034 D7。
+_Avoid_: RARR-style agent-side rewriting, default-redact of unsupported sentences, replacing expected human-visible red marks with silent suppression
+
 *End of Glossary*
