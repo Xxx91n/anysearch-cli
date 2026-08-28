@@ -52,13 +52,13 @@ Industry research (Mem0 official docs + blog 2026-05, SurrealDB, Zep/Graphiti, F
 
 ## Acceptance
 
-- [ ] Factor output always within [0.3, 1.5] for any input (fuzzed unit test).
-- [ ] Pinned memory unchanged; evergreen query bypasses decay half only.
-- [ ] access_count increment exactly-once test green.
-- [ ] No 4-digit year literal in `time-decay.ts`; kernel imports store classifiers (no inline regex).
-- [ ] turbo check 6/6, turbo build green, store tests green.
-- [ ] ship-gate quick green; CLI --help alive.
-- [ ] ADR + CONTEXT terms landed, UTF-8 no BOM, no CRLF.
+- [x] Factor output always within [0.3, 1.5] for any input (fuzzed unit test).
+- [x] Pinned memory unchanged; evergreen query bypasses decay half only.
+- [x] access_count increment exactly-once test green.
+- [x] No 4-digit year literal in `time-decay.ts`; kernel imports store classifiers (no inline regex).
+- [x] turbo check 6/6, turbo build green, store tests green.
+- [x] ship-gate quick green; CLI --help alive.
+- [x] ADR + CONTEXT terms landed, UTF-8 no BOM, no CRLF.
 
 ## Research Sources
 
