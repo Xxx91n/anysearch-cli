@@ -8,16 +8,19 @@
 export function rrfScores(
   lists: string[][],
   k = 60,
+  weights?: number[], // ADR-0031 D4: per-arm weight (FTS 1.0 / entity 0.5); default 1 per list
 ): Map<string, number> {
   const scores = new Map<string, number>();
-  for (const list of lists) {
+  for (let li = 0; li < lists.length; li++) {
+    const list = lists[li]!;
+    const w = weights?.[li] ?? 1;
     // Deduplicate within a single list to prevent double-counting.
     const seen = new Set<string>();
     for (let rank = 0; rank < list.length; rank++) {
       const doc = list[rank];
       if (seen.has(doc)) continue;
       seen.add(doc);
-      const score = 1 / (k + rank + 1);
+      const score = w / (k + rank + 1);
       scores.set(doc, (scores.get(doc) ?? 0) + score);
     }
   }
@@ -28,8 +31,9 @@ export function rrfScores(
 export function rrfRank(
   lists: string[][],
   k = 60,
+  weights?: number[],
 ): string[] {
-  const scores = rrfScores(lists, k);
+  const scores = rrfScores(lists, k, weights);
   return [...scores.entries()]
     .sort((a, b) => b[1] - a[1])
     .map((entry) => entry[0]);

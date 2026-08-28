@@ -32,7 +32,8 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
   store: SearchableStoreLike,
   queries: string[],
   limit: number,
-  rrfRankFn: (lists: string[][], k?: number) => string[],
+  rrfRankFn: (lists: string[][], k?: number, weights?: number[]) => string[],
+  extraArm?: string[], // ADR-0031 D4: entity arm ids appended as one extra RRF list (weight 0.5)
 ): Promise<THit[]> {
   const lists: string[][] = [];
   for (const q of queries) {
@@ -53,8 +54,11 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
       lists.push(hits.map((h) => String(h.rowid)));
     }
   }
+  if (extraArm && extraArm.length > 0) lists.push(extraArm);
   if (lists.length === 0) return [];
-  const fusedIds = rrfRankFn(lists, 60);
+  // ADR-0031 D4: entity arm weight 0.5 (weaker than FTS 1.0); conditional activation handled upstream (absent arm = no extra list).
+  const weights = lists.map((_, i) => (extraArm && extraArm.length > 0 && i === lists.length - 1 ? 0.5 : 1.0));
+  const fusedIds = rrfRankFn(lists, 60, weights);
   // SELECT ... WHERE r.id IN (<placeholders>) AND valid_until IS NULL preserves RRF order via CASE.
   const placeholders = fusedIds.map(() => "?").join(", ");
   const orderCases = fusedIds.map((id, i) => `WHEN ${id} THEN ${i}`).join(" ");

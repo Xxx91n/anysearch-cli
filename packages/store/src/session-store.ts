@@ -12,6 +12,8 @@ import { dirname, join } from "node:path";
 import { SCHEMA_SQL } from "./schema-content";
 import { registerFreshnessFactorFunction, invalidateOldRecords } from "./time-decay.js";
 import { fts5EscapeQuery, searchMemoryMultiQuery } from "./fts5.js";
+import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD } from "./entity.js";
+import type { EntityType, EntityCandidate } from "./entity.js";
 import { rrfRank } from "@anysearch/retriever";
 import type { NormalizedResult } from "@anysearch/retriever";
 
@@ -139,6 +141,10 @@ export interface SessionStore {
 // ponytail: thinnest wrapper - no extra abstraction, sync calls wrapped in Promise.resolve.
 export class SqliteSessionStore implements SessionStore {
   private db: Database.Database;
+  // ADR-0031 D2: LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
+  private readonly entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
+  // ADR-0031 step7: entity arm telemetry counters (report-only in eval).
+  private readonly entityTel = { queries: 0, candidates: 0, activations: 0, hits: 0 };
   private stmts: {
     createSession: Database.Statement;
     append: Database.Statement;
@@ -154,7 +160,8 @@ export class SqliteSessionStore implements SessionStore {
     saveAnchorUpsert: Database.Statement;
   };
 
-  constructor(dbPath: string) {
+  constructor(dbPath: string, opts?: { entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null> }) {
+    this.entityLlmFallback = opts?.entityLlmFallback;
     this.db = new Database(dbPath, { timeout: 5000 });
     // atomcode research: WAL persistent, set once, single shared connection.
     this.db.pragma("journal_mode = WAL");
@@ -349,9 +356,20 @@ export class SqliteSessionStore implements SessionStore {
    const safeQuery = this.fts5Escape(query);
    // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
    const rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, limit) as MemoryHit[];
+   // ADR-0031 D4: entity arm — conditional activation (absent when query has no entity match), weight 0.5 vs FTS 1.0.
+   const armHits = this.entityArmRows(query, limit);
+   const fusedHits = armHits.length === 0 ? rawHits : (() => {
+     const byId = new Map<number, MemoryHit>();
+     for (const h of rawHits) byId.set(h.rowid, h);
+     for (const h of armHits) byId.set(h.rowid, h);
+     const fused = rrfRank([rawHits.map((h) => String(h.rowid)), armHits.map((h) => String(h.rowid))], 60, [1.0, 0.5]);
+     const merged: MemoryHit[] = [];
+     for (const id of fused) { const h = byId.get(Number(id)); if (h) merged.push(h); if (merged.length >= limit) break; }
+     return merged;
+   })();
     // ADR-0028 D3 read-side exit: rows written before the write guard (or via seed/test seams)
     // must never surface back to the caller either.
-    const hits = rawHits.filter((h) => !containsSecret(h.role + " " + h.content));
+    const hits = fusedHits.filter((h) => !containsSecret(h.role + " " + h.content));
     // ADR-0009 D3 L2: refresh last_accessed for each hit (access-time signal).
     for (const hit of hits) {
       try { this.stmts.touchAccessed.run(hit.rowid); } catch {}
@@ -361,7 +379,9 @@ export class SqliteSessionStore implements SessionStore {
 
   // ADR-0023 D2 (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
   async searchMemoryMulti(queries: string[], limit = 20): Promise<MemoryHit[]> {
-    const hits = await searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank);
+    // ADR-0031 D4: entity arm on the raw user query (queries[0]); ids passed as extra RRF list (weight 0.5 in fts5.ts).
+    const armHits = this.entityArmRows(queries[0] ?? "", limit);
+    const hits = await searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank, armHits.map((h) => String(h.rowid)));
     // ADR-0028 D3 read-side exit: same guard as searchMemory.
     const kept = hits.filter((h) => !containsSecret(h.role + " " + h.content));
     // ADR-0030 D3: same exactly-once touch as searchMemory (both recall paths feed the signals).
@@ -414,6 +434,7 @@ export class SqliteSessionStore implements SessionStore {
           .get(entityKey, sessionId) as { id: number } | undefined;
         const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, entityKey);
         const insertedId = Number(info.lastInsertRowid);
+        try { await this.linkEntities(insertedId, km); } catch {} // ADR-0031: entity linking fail-open, covers accept+supersede
         if (existing) {
           try {
             this.db.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(existing.id);
@@ -428,6 +449,7 @@ export class SqliteSessionStore implements SessionStore {
         // Evidence < 0.6 or non-user source: quarantine candidate (MemTX equal-weight conflict / deferred review).
         const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, km.entity ?? km.url);
         const insertedId = Number(info.lastInsertRowid);
+        try { await this.linkEntities(insertedId, km); } catch {} // ADR-0031: fail-open
         try {
           this.db.prepare("UPDATE retrieval_results SET quarantine = ?, evidence = ? WHERE id = ?").run("equal_conflict", typeof km.evidence === "number" ? km.evidence : null, insertedId);
         } catch {}
@@ -455,6 +477,111 @@ export class SqliteSessionStore implements SessionStore {
   async getAnchors(sessionId: string): Promise<ResumeAnchor[]> {
     const rows = this.stmts.getAnchors.all(sessionId) as Array<Omit<ResumeAnchor, "payload"> & { payload: string }>;
     return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
+  }
+
+  // ---- ADR-0031: entity link layer (write link + query arm) ----
+
+  public entityTelemetry(): { queries: number; candidates: number; activations: number; hits: number } {
+    return { ...this.entityTel };
+  }
+
+  private liveEntities(): Array<{ id: number; name: string; nameNorm: string; type: string; aliases: string[] }> {
+    const rows = this.db.prepare("SELECT id, name, name_norm as nameNorm, entity_type as type, aliases FROM entities WHERE valid_until IS NULL").all() as Array<{ id: number; name: string; nameNorm: string; type: string; aliases: string }>;
+    return rows.map((r) => ({ ...r, aliases: JSON.parse(r.aliases || "[]") as string[] }));
+  }
+
+  // Write-path linking: declared entity key (non-URL) + rule extraction; LLM backfill only on empty rules (fail-open).
+  private async linkEntities(memoryId: number, km: KeyMemoryInput): Promise<void> {
+    const text = (km.title ?? "") + " " + (km.snippet ?? "");
+    const known = new Set(this.liveEntities().map((e) => e.nameNorm));
+    const candidates: EntityCandidate[] = [];
+    if (km.entity && !km.entity.includes("://")) candidates.push({ name: km.entity, type: "declared" });
+    for (const c of extractEntityCandidates(text, known)) candidates.push(c);
+    if (candidates.length === 0 && this.entityLlmFallback) {
+      // ADR-0031 D2: LLM backfill (fail-open) — offline/no-key keeps rule output (here: empty).
+      try { const extra = await this.entityLlmFallback(text); if (extra) candidates.push(...extra); } catch {}
+    }
+    for (const c of candidates.slice(0, 6)) {
+      const entityId = this.resolveEntity(c.name, c.type);
+      this.db.prepare("INSERT OR IGNORE INTO memory_entity (memory_id, entity_id) VALUES (?, ?)").run(memoryId, entityId);
+    }
+  }
+
+  // ADR-0031 D5: three-tier match (exact -> trigram) + Fellegi-Sunter two thresholds + type gate.
+  // Type gate: fuzzy tiers are same-type only; exact tier also reuses a declared row (declared is authoritative).
+  private resolveEntity(name: string, type: EntityType): number {
+    const norm = normalizeEntityName(name);
+    const live = this.liveEntities();
+    const normHit = live.find((e) => e.nameNorm === norm || e.aliases.includes(norm));
+    if (normHit && (normHit.type === type || type === "declared" || normHit.type === "declared")) return normHit.id;
+    // fuzzy: same-type only (type gate — Mem0 #5438 lesson: no cross-type merge)
+    let best: { id: number; sim: number } | null = null;
+    for (const e of live) {
+      if (e.type !== type) continue;
+      const sims = [e.nameNorm, ...e.aliases].map((v) => trigramSimilarity(norm, v));
+      const sim = Math.max(...sims);
+      if (!best || sim > best.sim) best = { id: e.id, sim };
+    }
+    if (best && best.sim >= ENTITY_ALIAS_THRESHOLD) {
+      // high-confidence variant: append as alias, reversible via entity_merge_log kind="alias".
+      const row = live.find((e) => e.id === (best as { id: number }).id);
+      if (row && !row.aliases.includes(norm)) {
+        const next = JSON.stringify([...row.aliases, norm]);
+        this.db.prepare("UPDATE entities SET aliases = ? WHERE id = ?").run(next, row.id);
+        this.db.prepare("INSERT INTO entity_merge_log (kind, source_name, target_entity_id, detail) VALUES (?, ?, ?, ?)")
+        .run("alias", name, row.id, JSON.stringify({ sim: best.sim, tier: "alias" }));
+      }
+      return best.id;
+    }
+    // new entity row (unique-index race tolerated: on conflict re-read)
+    let newId: number;
+    try {
+      const info = this.db.prepare("INSERT INTO entities (name, name_norm, entity_type) VALUES (?, ?, ?)").run(name, norm, type);
+      newId = Number(info.lastInsertRowid);
+    } catch {
+      const again = this.db.prepare("SELECT id FROM entities WHERE name_norm = ? AND entity_type = ? AND valid_until IS NULL").get(norm, type) as { id: number } | undefined;
+      if (!again) throw new Error("entity insert race for " + norm);
+      newId = again.id;
+    }
+    if (best && best.sim >= ENTITY_REVIEW_THRESHOLD) {
+      // Fellegi-Sunter review band: keep separate, but log a merge candidate for review.
+      this.db.prepare("INSERT INTO entity_merge_log (kind, source_name, target_entity_id, detail) VALUES (?, ?, ?, ?)")
+      .run("candidate", name, best.id, JSON.stringify({ sim: best.sim, tier: "review", newEntityId: newId }));
+    }
+    return newId;
+  }
+
+  // ADR-0031 D5: reversible merge undo — only alias-appends are undoable (candidate band never mutated anything).
+  public undoEntityMerge(logId: number): boolean {
+    const log = this.db.prepare("SELECT id, kind, source_name, target_entity_id, undone FROM entity_merge_log WHERE id = ?").get(logId) as { id: number; kind: string; source_name: string; target_entity_id: number; undone: number } | undefined;
+    if (!log || log.undone !== 0 || log.kind !== "alias") return false;
+    const row = this.db.prepare("SELECT aliases FROM entities WHERE id = ?").get(log.target_entity_id) as { aliases: string } | undefined;
+    if (!row) return false;
+    const norm = normalizeEntityName(log.source_name);
+    const next = (JSON.parse(row.aliases) as string[]).filter((a) => a !== norm);
+    this.db.prepare("UPDATE entities SET aliases = ? WHERE id = ?").run(JSON.stringify(next), log.target_entity_id);
+    this.db.prepare("UPDATE entity_merge_log SET undone = 1 WHERE id = ?").run(logId);
+    return true;
+  }
+
+  // ADR-0031 D4: entity arm — read-only resolution (exact/containment, no mutation), arm-level valid_until+quarantine guard.
+  private entityArmRows(query: string, limit: number): MemoryHit[] {
+    this.entityTel.queries += 1;
+    const known = new Set(this.liveEntities().map((e) => e.nameNorm));
+    const candidates = extractEntityCandidates(query, known);
+    if (candidates.length === 0) return [];
+    this.entityTel.candidates += 1;
+    const norms = candidates.map((c) => normalizeEntityName(c.name));
+    const matched = this.liveEntities().filter((e) => norms.some((nm) => e.nameNorm === nm || e.nameNorm.startsWith(nm + "-") || nm.startsWith(e.nameNorm + "-") || e.aliases.includes(nm)));
+    if (matched.length === 0) return [];
+    this.entityTel.activations += 1;
+    const ids = matched.map((e) => e.id);
+    const sql = "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content FROM retrieval_results r " +
+      "JOIN memory_entity me ON me.memory_id = r.id WHERE me.entity_id IN (" + ids.map(() => "?").join(", ") + ") " +
+      "AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) ORDER BY r.created_at DESC LIMIT ?";
+    const rows = this.db.prepare(sql).all(...ids, limit) as MemoryHit[];
+    this.entityTel.hits += rows.length;
+    return rows;
   }
 
   // ADR-0025 D2: equal-conflict review channel. Zero new tables — the quarantine column
