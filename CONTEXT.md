@@ -187,6 +187,20 @@ _Avoid_: always-on weak arms, post-hoc multiplicative boost outside the clamp ba
 _Avoid_: irreversible merge, threshold copied from other products, merge decision without entity_type gate (Mem0 #5438)
 
 
+
+## Vector Semantic Arm（向量语义臂）
+
+RRF 融合的第四臂：transformers.js 本地嵌入（multilingual-e5-small q8, 384d）经 BLOB 旁表 + JS 余弦全扫参与融合，权重 0.5 起步、k=60 保持。_Avoid_: 不称之为 "hybrid search 第四路" 或 "语义召回通道"；SQLite 外置向量扩展（sqlite-vec/hnswlib）在向量规模 <5 万前永久不在候选池。
+
+## Embedding Circuit Breaker（嵌入熔断器）
+
+嵌入路径的失败熔断：连续 n=3 次嵌入失败则本轮进程语义臂降级为 FTS-only，写侧与读侧共享同一枚 breaker；恢复依赖进程重启而非在线自愈。_Avoid_: 不做"条件激活 EMA 开关"（ADR-0031 D6 下 EMA 只做遥测不做开关）；不让嵌入失败导致 recall 直接报错。
+
+## Backfill-Vectors Command（向量回填命令）
+
+`ans memory backfill-vectors` 幂等回填子命令：同时负责存量无向量记忆回填、嵌入失败残留（pendingVectors）清理、未来模型升级后的全量重嵌入；支持 --dry-run。_Avoid_: 不区分"存量回填命令"和"失败重试命令"两套；不在写路径内做在线重试（写库必须永远成功）。
+
+
 *End of Glossary*
 
 ## Cursor Dual Channel（Cursor 双通道注入）
