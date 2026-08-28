@@ -14,13 +14,14 @@ export type EvalGroup =
   | "secret_bypass"
   | "unanswerable"
   | "paraphrase"
-  | "entity";
+  | "entity"
+  | "semantic";
 
 export type EvalStage = "extract" | "adjudicate" | "store" | "retrieve";
 
 export type CaseOp =
   | { op: "adjudicate"; stage: "adjudicate"; items: KeyMemoryInput[]; expect: AdjudicationAction[]; newSession?: boolean /* ADR-0031 step1: cross-session entity aggregation */ }
-  | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number; expectRankOf?: { title: string; maxRank: number }; expectEmpty?: true }
+  | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number; expectRankOf?: { title: string; maxRank: number }; expectEmpty?: true; expectAllWeak?: true /* ADR-0033 D8: unanswerable slice asserts weak-only evidence, not zero retrieval */ }
   | { op: "seed"; stage: "store"; items: KeyMemoryInput[] } /* ADR-0028 D3: direct DB insert, bypasses the write guard on purpose */
   | { op: "rawValidUntil"; stage: "store"; fromOp: number; expectSet: boolean }
   | { op: "promote"; stage: "store"; key: string; value: string; scope?: string; source: "explicit" | "correction"; expectAction: "promoted" | "rejected" }
@@ -315,14 +316,15 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "search", stage: "retrieve", query: "stealthxh", expectEmpty: true },
     ],
   },
-  // --- ADR-0028 D4: unanswerable slice (4, adversarial) — near-answer distractor stored,
-  // query carries tokens absent from the corpus; expectEmpty asserts the refusal path.
+  // --- ADR-0028 D4 / ADR-0033 D8: unanswerable slice (4, adversarial) — near-answer distractor stored;
+  // retrieval-layer zero-hit assertion migrated to evidence semantics: expectAllWeak asserts the
+  // vector arm may recall near-answer distractors ONLY as weak (non-FTS-armed) evidence.
   {
     id: "un_cacheflush_schedule", group: "unanswerable", difficulty: "adversarial",
     description: "distractor about cacheflush interval; schedule question must refuse",
     ops: [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/un1", "cacheflush interval config", "cacheflush interval is ten minutes default", 0.9, "cacheflush-cfg")], expect: ["accept"] },
-      { op: "search", stage: "retrieve", query: "cacheflush release timetable", expectEmpty: true },
+      { op: "search", stage: "retrieve", query: "cacheflush release timetable", expectAllWeak: true },
     ],
   },
   {
@@ -330,7 +332,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
     description: "distractor about deployregion capacity; pricing question must refuse",
     ops: [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/un2", "deployregion capacity notes", "deployregion default useast capacity eighty nodes", 0.9, "deployregion-cap")], expect: ["accept"] },
-      { op: "search", stage: "retrieve", query: "deployregion pricing cost", expectEmpty: true },
+      { op: "search", stage: "retrieve", query: "deployregion pricing cost", expectAllWeak: true },
     ],
   },
   {
@@ -338,7 +340,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
     description: "distractor about toggleflag enable; disable-doc question must refuse",
     ops: [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/un3", "toggleflag enable guide", "toggleflag enables dark sidebar layout", 0.9, "toggleflag-en")], expect: ["accept"] },
-      { op: "search", stage: "retrieve", query: "toggleflag disable revert", expectEmpty: true },
+      { op: "search", stage: "retrieve", query: "toggleflag disable revert", expectAllWeak: true },
     ],
   },
   {
@@ -346,7 +348,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
     description: "distractor about metricspipe counters; dashboard credentials must refuse",
     ops: [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/un4", "metricspipe emit config", "metricspipe emits counters once per minute", 0.9, "metricspipe-cfg")], expect: ["accept"] },
-      { op: "search", stage: "retrieve", query: "metricspipe dashboard credentials", expectEmpty: true },
+      { op: "search", stage: "retrieve", query: "metricspipe dashboard credentials", expectAllWeak: true },
     ],
   },
   // --- ADR-0028 D4: paraphrase positive variants (3, hard) — answerable queries must still hit.
@@ -416,6 +418,24 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/ent8", "buildkit registry prune shipped", "buildkit registry prune shipped notes", 0.9, "buildkit-v2")], expect: ["accept"] },
       { op: "entities", stage: "store", expectNames: ["buildkit", "buildkit-v2"], expectCount: 2 },
       { op: "search", stage: "retrieve", query: "BuildKit", expectIncludesTitle: "registry prune shipped" },
+    ],
+  },
+  // --- Group: semantic (ADR-0033 vector arm) ---
+  {
+    id: "sem_cross_lingual", group: "semantic", difficulty: "hard",
+    description: "Chinese paraphrase query recalls an English-only memory via the vector arm (FTS matches nothing)",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pnpm-pin", "pnpm version pinning guide", "pmOnFail error gate plus corepack packageManager pinning prevents lockfile drift across agents", 0.9, "PnpmPinningGuide")], expect: ["accept"] },
+      { op: "search", stage: "retrieve", query: "锁定 pnpm 版本防止 lockfile 漂移", expectRankOf: { title: "pnpm version pinning guide", maxRank: 1 } },
+    ],
+  },
+  {
+    id: "sem_paraphrase_rank", group: "semantic",
+    description: "english paraphrase of an outage fact outranks an unrelated runbook via the vector arm",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/deployomega", "deployment omega outage cause", "the deployment outage was caused by an expired TLS certificate on the ingress", 0.9, "DeployOmegaOutage")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/warmup", "marketing cache warmup runbook", "cache warmup runbook for the marketing site homepage", 0.9, "CacheWarmupRunbook")], expect: ["accept"] },
+      { op: "search", stage: "retrieve", query: "why did the release stop serving traffic", expectRankOf: { title: "deployment omega outage cause", maxRank: 2 } },
     ],
   },
 ];

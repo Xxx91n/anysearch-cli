@@ -15,6 +15,7 @@ import { fts5EscapeQuery, searchMemoryMultiQuery } from "./fts5.js";
 import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD, MAX_ENTITY_CANDIDATES as MAX_CANDIDATES } from "./entity.js";
 import type { EntityType, EntityCandidate } from "./entity.js";
 import { rrfRank } from "@anysearch/retriever";
+import { embedText, embeddingTelemetry as pkgEmbeddingTelemetry, cosineSimilarity, EMBEDDING_MODEL_ID } from "@anysearch/embedding";
 import type { NormalizedResult } from "@anysearch/retriever";
 
 // ADR-0023 D4: MemTX-simplified writer adjudication.
@@ -91,6 +92,8 @@ export interface MemoryHit {
   role: string;
   content: string;
   rank: number;
+  // ADR-0033 D8: arm provenance ("fts" | "entity" | "vector"); absent on legacy paths. A vector-only hit is weak evidence (answer-layer abstain signal).
+  arms?: string[];
 }
 
 export interface ResumeAnchor {
@@ -177,6 +180,8 @@ export class SqliteSessionStore implements SessionStore {
   private readonly entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
   // ADR-0031 step7: entity arm telemetry counters (report-only in eval).
   private readonly entityTel = { queries: 0, candidates: 0, activations: 0, hits: 0, truncated: 0 };
+  // ADR-0033 D5/D6: vector arm telemetry (fail-open writes; pendingVectors = rows lacking an embedding).
+  private readonly embedTel = { writes: 0, pendingVectors: 0, armQueries: 0, armHits: 0 };
   private stmts: {
     createSession: Database.Statement;
     append: Database.Statement;
@@ -393,15 +398,24 @@ export class SqliteSessionStore implements SessionStore {
    const rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, limit) as MemoryHit[];
    // ADR-0031 D4: entity arm — conditional activation (absent when query has no entity match), weight 0.5 vs FTS 1.0.
    const armHits = this.entityArmRows(query, limit);
-   const fusedHits = armHits.length === 0 ? rawHits : (() => {
-     const byId = new Map<number, MemoryHit>();
-     for (const h of rawHits) byId.set(h.rowid, h);
-     for (const h of armHits) byId.set(h.rowid, h);
-     const fused = rrfRank([rawHits.map((h) => String(h.rowid)), armHits.map((h) => String(h.rowid))], 60, [1.0, 0.5]);
-     const merged: MemoryHit[] = [];
-     for (const id of fused) { const h = byId.get(Number(id)); if (h) merged.push(h); if (merged.length >= limit) break; }
-     return merged;
-   })();
+   const vecHits = await this.vectorArmRows(query, limit);
+   const byId = new Map<number, MemoryHit>();
+    for (const h of rawHits) byId.set(h.rowid, h);
+    for (const h of armHits) byId.set(h.rowid, h);
+    for (const h of vecHits) byId.set(h.rowid, h);
+   // ADR-0033 D5: RRF arms = FTS (1.0) + entity (0.5) + vector (0.5); an absent arm adds no list (conditional activation).
+   const lists = [rawHits.map((h) => String(h.rowid))];
+   const weights = [1.0];
+   if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(0.5); }
+   if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(0.5); }
+   const fusedIds = lists.length === 1 ? lists[0]! : rrfRank(lists, 60, weights);
+   const fusedHits: MemoryHit[] = [];
+   for (const id of fusedIds) { const h = byId.get(Number(id)); if (h) fusedHits.push(h); if (fusedHits.length >= limit) break; }
+   // ADR-0033 D8: arm provenance — a hit recalled ONLY by the vector arm is weak evidence.
+   const ftsIds = new Set(rawHits.map((h) => h.rowid));
+   const entIds = new Set(armHits.map((h) => h.rowid));
+   const vecIds = new Set(vecHits.map((h) => h.rowid));
+   for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); h.arms = al; }
     // ADR-0028 D3 read-side exit: rows written before the write guard (or via seed/test seams)
     // must never surface back to the caller either.
     const hits = fusedHits.filter((h) => !containsSecret(h.role + " " + h.content));
@@ -416,7 +430,13 @@ export class SqliteSessionStore implements SessionStore {
   async searchMemoryMulti(queries: string[], limit = 20): Promise<MemoryHit[]> {
     // ADR-0031 D4: entity arm on the raw user query (queries[0]); ids passed as extra RRF list (weight 0.5 in fts5.ts).
     const armHits = this.entityArmRows(queries[0] ?? "", limit);
-    const hits = await searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank, armHits.map((h) => String(h.rowid)));
+    const vecHits = await this.vectorArmRows(queries[0] ?? "", limit);
+    // ADR-0033 D5: entity + vector arms, each weight 0.5 against FTS 1.0.
+    // ADR-0033 D8: labeled arms so searchMemoryMultiQuery can annotate hit.arms provenance.
+    const arms: { label: string; ids: string[] }[] = [];
+    if (armHits.length > 0) arms.push({ label: "entity", ids: armHits.map((h) => String(h.rowid)) });
+    if (vecHits.length > 0) arms.push({ label: "vector", ids: vecHits.map((h) => String(h.rowid)) });
+    const hits = await searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank, arms);
     // ADR-0028 D3 read-side exit: same guard as searchMemory.
     const kept = hits.filter((h) => !containsSecret(h.role + " " + h.content));
     // ADR-0030 D3: same exactly-once touch as searchMemory (both recall paths feed the signals).
@@ -469,6 +489,7 @@ export class SqliteSessionStore implements SessionStore {
           .get(entityKey, sessionId) as { id: number } | undefined;
         const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, entityKey);
         const insertedId = Number(info.lastInsertRowid);
+        await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
         try { await this.linkEntities(insertedId, km); } catch {} // ADR-0031: entity linking fail-open, covers accept+supersede
         if (existing) {
           try {
@@ -484,6 +505,7 @@ export class SqliteSessionStore implements SessionStore {
         // Evidence < 0.6 or non-user source: quarantine candidate (MemTX equal-weight conflict / deferred review).
         const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, km.entity ?? km.url);
         const insertedId = Number(info.lastInsertRowid);
+        await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
         try { await this.linkEntities(insertedId, km); } catch {} // ADR-0031: fail-open
         try {
           this.db.prepare("UPDATE retrieval_results SET quarantine = ?, evidence = ? WHERE id = ?").run("equal_conflict", typeof km.evidence === "number" ? km.evidence : null, insertedId);
@@ -519,6 +541,67 @@ export class SqliteSessionStore implements SessionStore {
   public entityTelemetry(): { queries: number; candidates: number; activations: number; hits: number; truncated: number } {
     return { ...this.entityTel };
   }
+  // ADR-0033 D5/D6: vector arm telemetry + breaker state (report-only).
+  public vectorTelemetry(): { writes: number; pendingVectors: number; armQueries: number; armHits: number; embeds: number; failures: number; circuitOpen: boolean; fromDb: number } {
+    const pkg = pkgEmbeddingTelemetry();
+    return { ...this.embedTel, embeds: pkg.embeds, failures: pkg.failures, circuitOpen: pkg.circuitOpen,
+      fromDb: (this.db.prepare("SELECT COUNT(*) as n FROM memory_embeddings").get() as { n: number }).n };
+  }
+
+  // ADR-0033 D6: synchronous embed at write; failure records pendingVector (recoverable via backfill-vectors).
+  private async embedWrite(memoryId: number, title: string | null, snippet: string | null): Promise<void> {
+    const text = ((title ?? "") + " " + (snippet ?? "")).trim();
+    if (!text) return;
+    const v = await embedText(text, "passage");
+    if (!v) { this.embedTel.pendingVectors++; return; }
+    this.embedTel.writes++;
+    this.db.prepare("INSERT OR REPLACE INTO memory_embeddings (memory_id, embedding, model) VALUES (?, ?, ?)")
+      .run(memoryId, Buffer.from(v.buffer, v.byteOffset, v.byteLength), EMBEDDING_MODEL_ID);
+  }
+
+  // ADR-0033 D4/D5: vector arm — full-scan JS cosine over live, non-quarantined rows. Absent on CB-open.
+  private async vectorArmRows(query: string, limit: number): Promise<MemoryHit[]> {
+    this.embedTel.armQueries++;
+    const qv = await embedText(query, "query");
+    if (!qv) return [];
+    const rows = this.db.prepare(
+      "SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, me.embedding as emb " +
+      "FROM memory_embeddings me JOIN retrieval_results r ON r.id = me.memory_id " +
+      "WHERE r.valid_until IS NULL AND r.quarantine IS NULL"
+    ).all() as Array<{ rowid: number; sessionId: string; role: string | null; content: string | null; emb: Buffer }>;
+    const scored: Array<{ h: MemoryHit; s: number }> = [];
+    for (const r of rows) {
+      const v = new Float32Array(r.emb.buffer, r.emb.byteOffset, r.emb.byteLength / 4);
+      const s = cosineSimilarity(qv, v);
+      scored.push({ h: { rowid: r.rowid, sessionId: r.sessionId, role: r.role ?? "", content: r.content ?? "", rank: -s } as MemoryHit, s });
+    }
+    scored.sort((a, b) => b.s - a.s);
+    const out = scored.slice(0, limit).map((x) => x.h);
+    this.embedTel.armHits += out.length;
+    return out;
+  }
+
+  // ADR-0033 D6: idempotent backfill for rows missing an embedding (write failures, pre-rename upgrade, model re-embed).
+  async backfillEmbeddings(dryRun = false, limit?: number): Promise<{ scanned: number; embedded: number; failed: number }> {
+    const rows = this.db.prepare(
+      "SELECT r.id, r.title, r.snippet FROM retrieval_results r LEFT JOIN memory_embeddings m ON m.memory_id = r.id WHERE m.memory_id IS NULL" +
+      (limit ? " LIMIT " + Math.max(1, Math.floor(limit)) : "")
+    ).all() as Array<{ id: number; title: string | null; snippet: string | null }>;
+    let embedded = 0, failed = 0;
+    if (!dryRun) {
+      for (const r of rows) {
+        const text = ((r.title ?? "") + " " + (r.snippet ?? "")).trim();
+        if (!text) { failed++; continue; }
+        const v = await embedText(text, "passage");
+        if (!v) { failed++; continue; }
+        this.db.prepare("INSERT OR REPLACE INTO memory_embeddings (memory_id, embedding, model) VALUES (?, ?, ?)")
+          .run(r.id, Buffer.from(v.buffer, v.byteOffset, v.byteLength), EMBEDDING_MODEL_ID);
+        embedded++;
+      }
+    }
+    return { scanned: rows.length, embedded, failed };
+  }
+
 
   private liveEntities(): Array<{ id: number; name: string; nameNorm: string; type: string; aliases: string[] }> {
     const rows = this.db.prepare("SELECT id, name, name_norm as nameNorm, entity_type as type, aliases FROM entities WHERE valid_until IS NULL").all() as Array<{ id: number; name: string; nameNorm: string; type: string; aliases: string }>;

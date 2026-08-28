@@ -119,7 +119,10 @@ const km = (url: string, title: string, snippet: string, evidence: number, entit
   assert.ok(!titles.some((t) => t.includes("rumor unverified")), "quarantined row excluded from arm");
   // no-entity query: arm absent, results = pure FTS
   const plain = await store.searchMemory("banana muffin recipe", 10);
-  assert.equal(plain.length, 0);
+  // ADR-0033 D8: the vector arm may recall semantic-noise hits (weak, non-FTS-armed);
+  // the contract is zero STRONG hits — weak hits are flagged for answer-layer abstention.
+  assert.equal(plain.filter((h) => (h.arms ?? []).includes("fts")).length, 0, "no-entity query yields zero strong (fts-armed) hits");
+  assert.ok(plain.every((h) => !(h.arms ?? []).includes("fts")), "any recalled hit is weak-evidence flagged");
   const tel = store.entityTelemetry();
   assert.ok(tel.queries >= 2 && tel.activations >= 1, "telemetry counts: " + JSON.stringify(tel));
   // multi-query path also gets the arm

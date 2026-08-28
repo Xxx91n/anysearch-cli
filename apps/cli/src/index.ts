@@ -13,6 +13,7 @@ import { runChat } from "./commands/chat";
 import { runRecommend } from "./commands/recommend";
 import { runMcp } from "./commands/mcp";
 import { runMemoryPreference } from "./commands/memory-preference";
+import { runMemory } from "./commands/memory";
 import { runEntity } from "./commands/entity";
 
 // ponytail: single source of truth for CLI version, same pattern as apps/mcp
@@ -39,6 +40,7 @@ const help = [
   "  domain    Switch Active Domain (cc-persona TOML, ADR-0002)",
   "  mcp       Start the anysearch MCP server (stdio or HTTP transport)",
   "  pref      Manage T0 durable preferences (/remember, pref review - ADR-0024/0025)",
+  "  memory    Memory embeddings maintenance (backfill-vectors, ADR-0033)",
   "  entity    Entity merge / unmerge / review belt (ADR-0032)",
   "",
   "Options:",
@@ -67,7 +69,7 @@ if (cmd === "--help" || cmd === "-h") {
   process.exit(0);
 }
 
-const known = new Set(["doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp", "pref", "entity"]);
+const known = new Set(["doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp", "pref", "memory", "entity"]);
 if (!known.has(cmd)) {
   process.stderr.write("ans: unknown command " + String.fromCharCode(39) + cmd + String.fromCharCode(39) + "\n" + "See " + String.fromCharCode(39) + "ans --help" + String.fromCharCode(39) + ".\n");
   process.exit(2);
@@ -87,6 +89,7 @@ const handlers: Record<string, (args: string[]) => Promise<number>> = {
   recommend: runRecommend,
   mcp: runMcp,
   pref: runMemoryPreference,
+  memory: runMemory,
   entity: runEntity,
 };
 

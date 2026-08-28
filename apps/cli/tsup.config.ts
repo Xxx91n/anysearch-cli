@@ -20,6 +20,6 @@ export default defineConfig({
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
   ],
-  external: ["better-sqlite3"],
+  
   target: "es2022",
 });

@@ -24,6 +24,7 @@ export default defineConfig({
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
   ],
+  // ADR-0033: native/ESM deps stay external (bundling crashes the onnx runtime binding).
   external: [
     // ponytail: ADR-0018 R16-1 migrated SDK v1 -> v2 split packages.
     // stale `@modelcontextprotocol/sdk` external removed; the two v2 packages
@@ -34,5 +35,5 @@ export default defineConfig({
     "express",
     "zod",
     "better-sqlite3",
-  ],
+  , "@huggingface/transformers", "onnxruntime-node", "sharp"],
 });

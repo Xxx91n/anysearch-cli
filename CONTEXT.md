@@ -450,4 +450,8 @@ _Avoid_: full rewind including post-merge writes, unmerge without anti-remerge o
 实体去重中带（0.6-0.9）与 MAX_ENTITY_CANDIDATES 截断溢出写 entity_merge_log kind="candidate" 行，由审查 CLI（复用 ADR-0025 quarantine 模式）keep/drop 消费，candidate 行带 hit_count 再命中升级复审（Senzing possible-match 轻量版）。合并遥测六指标（auto_merged/review_pending/confirmed/rejected/candidates_truncated/unmerged）进 Observational 区 report-only 永不 gate（Goodhart 条款 + ADR-0028 D1 统计功效纪律）。ADR-0032 D3/D5。
 _Avoid_: silent candidate drop, process-count gating, Senzing-style resident suspend engine
 
+## Weak Evidence Flag（弱证据标记）
+向量臂/实体臂召回但 FTS 臂未命中的 hit 带 arms 溯源且不计入强证据；unanswerable 断言从检索层零命中（expectEmpty）迁移为 expectAllWeak——检索保持 recall-only，拒答语义在证据层（A+B，LongMemEval/MemBench/CRAG 对齐）。expectMaxCount 仅统计强（FTS 臂）命中。ADR-0033 D8。
+_Avoid_: static cosine threshold to separate unanswerable distractors, expectEmpty reintroduced on adversarial slice, gating retrieval on vector-only recall
+
 *End of Glossary*

@@ -182,3 +182,13 @@ CREATE TABLE IF NOT EXISTS entity_merge_log (
   hit_count INTEGER NOT NULL DEFAULT 1,
   resolved TEXT                  -- NULL = pending; 'confirmed' | 'rejected' after review
 );
+
+-- ADR-0033 D4: vector semantic arm side table. BLOB = Float32Array bytes (384 dims, q8 model output).
+-- No index: full-scan JS cosine is the designed path (<50k vectors). pendingVectors = retrieval_results rows
+-- lacking a matching row here (embedded at write; backfilled by `ans memory backfill-vectors`).
+CREATE TABLE IF NOT EXISTS memory_embeddings (
+  memory_id INTEGER PRIMARY KEY REFERENCES retrieval_results(id) ON DELETE CASCADE,
+  embedding BLOB NOT NULL,
+  model TEXT NOT NULL,
+  embedded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

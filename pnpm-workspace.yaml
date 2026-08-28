@@ -10,6 +10,8 @@ allowBuilds:
   better-sqlite3: false
   esbuild: true
   protobufjs: true
+  onnxruntime-node: false  # ADR-0033: prebuilt napi binding; install script only fetches GPU variants
+  sharp: false             # ADR-0033: transitive via transformers.js; prebuilt @img/* optional deps used
 
 overrides:
   zod: ">=3.25.28"

@@ -29,6 +29,15 @@ Accepted — 2026-08-29 (grill round 30, commit pending implementation round).
 - 增益阈值（观测期）：首跑结果即基线（ADR-0027 D9 Baseline Refresh Discipline），观测 1 个发布轮后经 review 判定落 gate。39 例样本的 MDE 过大，提前绑阈值会误报。
 - 遥测三件套（臂命中率 / pendingVectors / CB 状态）：告警不 gate，数据回流 golden 防集子腐烂。
 
+
+### D8 (implementation amendment): arm provenance + weak-evidence assertion migration (r79 audit, option A+B)
+
+The 41-case eval exposed a topological conflict D1-D7 did not cover: the vector arm legitimately recalls near-answer distractors with cosine 0.84-0.87, fully overlapping the positive-case band — a static threshold cannot separate them (measured via probe). Aligning with LongMemEval / MemBench / CRAG, the unanswerable assertion migrates from retrieval-layer zero-hit (expectEmpty) to evidence semantics:
+
+- A: retrieval stays recall-only; the refusal decision belongs to evidence semantics, not retrieval.
+- B: every hit carries `arms` provenance; a hit present only in the vector arm is weak evidence — the abstain signal for the answer layer (Sufficiency Gate consumers), at zero new dependencies.
+- Runner: `expectAllWeak` asserts the unanswerable slice; `expectMaxCount` counts strong (FTS-armed) hits only; unanswerable-slice metrics exclusion keys off both `expectEmpty` and `expectAllWeak`.
+- Rejected: C (reranker) — violates the zero-new-native-dependency constraint; candidate for v2.
 ## Consequences
 
 - `<1ms` 检索延迟目标（千级）成立；首条嵌入冷加载 ~1-2s 一次性成本由长驻进程吸收。

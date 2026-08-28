@@ -1,24 +1,34 @@
 {
   "schema": "anysearch/eval-baseline@1",
-  "fingerprint": "59d0ae02207d1232",
+  "fingerprint": "dde96cbfe280daa1",
   "metrics": {
     "passRate": 1,
     "supersessionSuccess": 1,
     "quarantineFalsePositiveRate": 0,
     "counts": {
-      "cases": 39,
-      "casesPassed": 39,
+      "cases": 41,
+      "casesPassed": 41,
       "supExpected": 15,
       "supPassed": 15,
-      "fpEligible": 43,
+      "fpEligible": 46,
       "fpCount": 0
     },
     "entityArm": {
-      "queries": 38,
+      "queries": 40,
       "candidates": 16,
       "activations": 16,
       "hits": 19,
-      "hitRate": 0.42105263157894735
+      "hitRate": 0.4,
+      "activationRate": 0.4,
+      "avgArmHits": 1.1875
+    },
+    "entityMerge": {
+      "auto_merged": 0,
+      "unmerged": 0,
+      "review_pending": 6,
+      "confirmed": 0,
+      "rejected": 0,
+      "candidates_truncated": 0
     },
     "mrr": 1,
     "answerableFalseRefusalRate": 0

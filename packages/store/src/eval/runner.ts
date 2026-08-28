@@ -20,6 +20,8 @@ export interface OpRecord {
   // ADR-0028 D2/D4: rank-of-relevant + hit count feed MRR and the answerable false-refusal rate.
   rank?: number;
   hitCount?: number;
+  // ADR-0033 D8: count of non-weak (FTS-armed) hits, for weak-evidence semantics.
+  strongCount?: number;
 }
 
 export interface CaseResult {
@@ -117,11 +119,16 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
           case "search": {
             const hits = await store.searchMemory(op.query, op.limit ?? 20);
             const texts = hits.map((h) => hitText(h));
+            // ADR-0033 D8: weak = hit without the FTS arm (vector/entity-only recall). Weak hits are
+            // answer-layer abstain evidence: they don't count toward precision budgets.
+            const isWeak = (h: unknown): boolean => { const a = (h as { arms?: string[] }).arms; return Array.isArray(a) && a.length > 0 && !a.includes("fts"); };
+            const strongHits = hits.filter((h) => !isWeak(h));
             const fails: string[] = [];
             if (op.expectIncludesTitle && !texts.some((t) => t.includes(op.expectIncludesTitle!))) fails.push(`missing "${op.expectIncludesTitle}"`);
             if (op.expectExcludesTitle && texts.some((t) => t.includes(op.expectExcludesTitle!))) fails.push(`stale "${op.expectExcludesTitle}" still returned`);
-            if (op.expectMaxCount !== undefined && hits.length > op.expectMaxCount) fails.push(hits.length + " hits > max " + op.expectMaxCount);
+            if (op.expectMaxCount !== undefined && strongHits.length > op.expectMaxCount) fails.push(strongHits.length + " strong hit(s) > max " + op.expectMaxCount);
             if (op.expectEmpty === true && hits.length !== 0) fails.push(hits.length + " hit(s) returned, want 0 (expectEmpty)");
+            if (op.expectAllWeak === true && strongHits.length !== 0) fails.push(strongHits.length + " strong hit(s) returned, want 0 (expectAllWeak — hits must all be weak-evidence)");
             // ADR-0028 D2: rank-of-relevant — 1-based position of the first hit containing the title (0 = absent).
             let rank: number | undefined;
             if (op.expectRankOf) {
@@ -133,7 +140,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
               op: opIndex, kind: op.op, stage: op.stage, ok: fails.length === 0,
               detail: fails.length ? fails.join("; ") : hits.length + " hit(s)",
               samples: hits.slice(0, 2).map((h) => ({ title: (h as { role?: string }).role ?? null, snippet: String((h as { content?: string }).content ?? "").slice(0, 200) })),
-              rank, hitCount: hits.length,
+              rank, hitCount: hits.length, strongCount: strongHits.length,
             });
             break;
           }
@@ -255,7 +262,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
   let rrN = 0;
   // ADR-0028 D4: answerable false-refusal rate — answerable case, positively-asserted
   // search op returning zero hits counts as a false refusal. Cases containing any
-  // expectEmpty op are the unanswerable slice and excluded from the denominator.
+  // expectEmpty or expectAllWeak op (ADR-0033 D8) are the unanswerable slice and excluded from the denominator.
   for (let i = 0; i < cases.length; i++) {
     for (const [opIndex, op] of cases[i]!.ops.entries()) {
       if (op.op !== "search") continue;
@@ -266,7 +273,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
   let frEligible = 0;
   let frCount = 0;
   for (let i = 0; i < cases.length; i++) {
-    const unanswerable = cases[i]!.ops.some((o) => o.op === "search" && o.expectEmpty === true);
+    const unanswerable = cases[i]!.ops.some((o) => o.op === "search" && (o.expectEmpty === true || o.expectAllWeak === true));
     if (unanswerable) continue;
     for (const [opIndex, op] of cases[i]!.ops.entries()) {
       if (op.op !== "search" || !(op.expectIncludesTitle || op.expectRankOf)) continue;

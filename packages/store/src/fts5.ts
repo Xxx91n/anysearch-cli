@@ -33,7 +33,7 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
   queries: string[],
   limit: number,
   rrfRankFn: (lists: string[][], k?: number, weights?: number[]) => string[],
-  extraArm?: string[], // ADR-0031 D4: entity arm ids appended as one extra RRF list (weight 0.5)
+  extraArms?: { label: string; ids: string[] }[], // ADR-0031 D4 entity + ADR-0033 D5/D8 labeled arms (provenance); each list weighted 0.5
 ): Promise<THit[]> {
   const lists: string[][] = [];
   for (const q of queries) {
@@ -54,10 +54,11 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
       lists.push(hits.map((h) => String(h.rowid)));
     }
   }
-  if (extraArm && extraArm.length > 0) lists.push(extraArm);
+  const baseCount = lists.length;
+  for (const arm of extraArms ?? []) { if (arm.ids.length > 0) lists.push(arm.ids); }
   if (lists.length === 0) return [];
   // ADR-0031 D4: entity arm weight 0.5 (weaker than FTS 1.0); conditional activation handled upstream (absent arm = no extra list).
-  const weights = lists.map((_, i) => (extraArm && extraArm.length > 0 && i === lists.length - 1 ? 0.5 : 1.0));
+  const weights = lists.map((_, i) => (i >= baseCount ? 0.5 : 1.0));
   const fusedIds = rrfRankFn(lists, 60, weights);
   // SELECT ... WHERE r.id IN (<placeholders>) AND valid_until IS NULL preserves RRF order via CASE.
   const placeholders = fusedIds.map(() => "?").join(", ");
@@ -70,5 +71,15 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
      ORDER BY rrf_order LIMIT ?`,
     ...fusedIds, limit,
   );
+  // ADR-0033 D8: annotate arm provenance on each returned hit (weak-evidence flag source).
+  const ftsIds = new Set<string>();
+  for (let i = 0; i < baseCount; i++) for (const id of lists[i]!) ftsIds.add(id);
+  const labelMap = new Map<string, string[]>();
+  for (const arm of extraArms ?? []) { for (const id of arm.ids) { const arr = labelMap.get(id) ?? []; if (!arr.includes(arm.label)) arr.push(arm.label); labelMap.set(id, arr); } }
+  for (const row of rows) {
+    const id = String((row as { rowid: number }).rowid);
+    const labels = labelMap.get(id) ?? [];
+    (row as { arms?: string[] }).arms = ftsIds.has(id) ? ["fts", ...labels] : labels;
+  }
   return rows;
 }

@@ -15,7 +15,8 @@
     "@anysearch/retriever": "workspace:*",
     "@types/better-sqlite3": "^9.6.0",
     "better-sqlite3": "^13.0.3",
-    "smol-toml": "^1.8.0"
+    "smol-toml": "^1.8.0",
+    "@anysearch/embedding": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.19.0",
