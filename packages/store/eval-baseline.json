@@ -1,17 +1,24 @@
 {
   "schema": "anysearch/eval-baseline@1",
-  "fingerprint": "5692704b190851ba",
+  "fingerprint": "59d0ae02207d1232",
   "metrics": {
     "passRate": 1,
     "supersessionSuccess": 1,
     "quarantineFalsePositiveRate": 0,
     "counts": {
-      "cases": 35,
-      "casesPassed": 35,
-      "supExpected": 14,
-      "supPassed": 14,
-      "fpEligible": 35,
+      "cases": 39,
+      "casesPassed": 39,
+      "supExpected": 15,
+      "supPassed": 15,
+      "fpEligible": 43,
       "fpCount": 0
+    },
+    "entityArm": {
+      "queries": 38,
+      "candidates": 16,
+      "activations": 16,
+      "hits": 19,
+      "hitRate": 0.42105263157894735
     },
     "mrr": 1,
     "answerableFalseRefusalRate": 0
@@ -20,6 +27,6 @@
     "supersessionFails": 1,
     "quarantineFp": 1
   },
-  "updatedAt": "2026-08-27",
+  "updatedAt": "2026-08-28",
   "note": "ADR-0028 D1 calibration (runs=50); integer allowance = worst-observed failures + 1 op. CI never writes this file (ADR-0027 D9)."
 }
