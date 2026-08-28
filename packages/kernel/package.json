@@ -18,7 +18,7 @@
     "typescript": "^5.6.0"
   },
   "scripts": {
-    "test": "tsx test/runtime.test.ts && tsx test/engine.test.ts && tsx test/memory-pipeline.test.ts && tsx test/pi-runtime.test.ts && tsx test/llm-init.test.ts && tsx test/tool-schemas.test.ts && tsx test/query-rewrite.test.ts && tsx test/t0-projection.test.ts",
+    "test": "tsx test/runtime.test.ts && tsx test/engine.test.ts && tsx test/memory-pipeline.test.ts && tsx test/pi-runtime.test.ts && tsx test/llm-init.test.ts && tsx test/tool-schemas.test.ts && tsx test/query-rewrite.test.ts && tsx test/t0-projection.test.ts && tsx test/qdf-store-import.test.ts",
     "check": "tsc --noEmit"
   }
 }

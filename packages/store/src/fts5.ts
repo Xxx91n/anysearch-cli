@@ -38,11 +38,11 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
   for (const q of queries) {
     const safe = fts5EscapeQuery(q.trim());
     if (safe === '""') continue;
-    // ADR-0008 D3 mirror of stmts.searchAllResults: time_decay UDF must be registered (see registerTimeDecayFunction).
+    // ADR-0030: mirror of stmts.searchAllResults: freshness_factor UDF must be registered (see registerFreshnessFactorFunction).
     // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
     const hits = store.dbQuery<THit>(
       "SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, " +
-      "time_decay(bm25(retrieval_results_fts), r.created_at, r.title, r.url, ?, r.pinned) as rank " +
+      "freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank " +
       "FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid " +
       "WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) " +
       "ORDER BY rank LIMIT ?",

@@ -1,7 +1,8 @@
-// Time Edge Effect tests.
-// G019 test closure: verify decay, QDF, tier classification, pinned exemption.
+// Fused freshness factor tests (ADR-0030).
+// Covers: band boundaries, pinned/evergreen exemptions, fusion monotonicity,
+// year-literal-free QDF, kernel decayMultiplier legacy checks.
 
-import { applyTimeEdgeEffect, decayMultiplier, classifyTier, isTimeSensitive, isEvergreen, invalidateOldRecords } from "../src/time-decay.js";
+import { freshnessFactor, scoreWithFreshness, decayMultiplier, classifyTier, isTimeSensitive, isEvergreen, invalidateOldRecords } from "../src/time-decay.js";
 
 let passed = 0;
 let failed = 0;
@@ -10,55 +11,81 @@ function assert(cond: boolean, msg: string) {
   if (cond) { passed++; } else { failed++; console.error("FAIL: " + msg); }
 }
 
-// Test 1: decayMultiplier — fresh content has high multiplier.
-const fresh = decayMultiplier(0, "news");
-assert(Math.abs(fresh - 1.0) < 0.01, "fresh content decay ≈ 1.0 (got " + fresh + ")");
+const NOW = Date.now();
+const DAY = 86_400_000;
+function ts(daysAgo: number): string {
+  return new Date(NOW - daysAgo * DAY).toISOString().replace("T", " ").slice(0, 19);
+}
 
-// Test 2: decayMultiplier — old news decays fast (7d half-life).
-const oldNews = decayMultiplier(14, "news");
-assert(oldNews < 0.3 || Math.abs(oldNews - 0.3) < 0.01, "14d news decay ≈ 0.25 (got " + oldNews + ")");
+// 1. Band boundaries: factor always within [0.3, 1.5] over a wide fuzz grid.
+let minSeen = 2, maxSeen = -1;
+for (const tier of ["news", "docs", "evergreen"] as const) {
+  for (let age = 0; age <= 730; age += 7) {
+    for (const accDays of [null, 0, 3, 30, 400]) {
+      for (const cnt of [0, 1, 3, 10, 100, 10000]) {
+        const f = freshnessFactor({
+          createdAt: ts(age),
+          lastAccessed: accDays === null ? null : ts(accDays),
+          accessCount: cnt, tier, nowMs: NOW,
+        });
+        assert(f >= 0.3 && f <= 1.5, "factor in band [0.3,1.5]: " + age + "d/" + accDays + "/" + cnt + " tier=" + tier + " => " + f);
+        if (f < minSeen) minSeen = f;
+        if (f > maxSeen) maxSeen = f;
+      }
+    }
+  }
+}
+assert(Math.abs(minSeen - 0.3) < 1e-9, "band lower bound reachable (min=" + minSeen + ")");
+// ts() truncates to seconds: band head is approached, not exactly hit.
+assert(Math.abs(maxSeen - 1.5) < 1e-6, "band upper bound reachable (max=" + maxSeen + ")");
 
-// Test 3: decayMultiplier — evergreen decays slow (90d half-life).
-const oldEvergreen = decayMultiplier(30, "evergreen");
-assert(oldEvergreen > 0.5, "30d evergreen decay > 0.5 (got " + oldEvergreen + ")");
+// 2. Pinned bypass: factor exactly 1.0 even for inputs that would floor.
+assert(freshnessFactor({ createdAt: ts(400), lastAccessed: null, accessCount: 0, tier: "news", pinned: true, nowMs: NOW }) === 1.0, "pinned bypasses factor");
+// ts() truncates to seconds: band head is approached, not exactly hit.
+const bm = -10;
+assert(scoreWithFreshness(bm, { createdAt: ts(400), lastAccessed: null, accessCount: 0, tier: "news", pinned: true, nowMs: NOW }) === bm, "pinned score unchanged");
 
-// Test 4: decayMultiplier — floor 0.3 prevents zero.
-const veryOld = decayMultiplier(365, "news");
-assert(veryOld >= 0.3, "365d news floor >= 0.3 (got " + veryOld + ")");
+// 3. Evergreen query: decay half bypassed, reinforcement still applies (ADR-0030 D4).
+//    Same row, never accessed: evergreen query pins factor at exactly 1.0 (no decay).
+const evNoAccess = freshnessFactor({ createdAt: ts(400), lastAccessed: null, accessCount: 0, tier: "news", evergreenQuery: true, nowMs: NOW });
+assert(evNoAccess === 1.0, "evergreen query bypasses decay exactly (got " + evNoAccess + ")");
+//    Recently accessed + frequently accessed row keeps reinforcement under evergreen query.
+const evBoost = freshnessFactor({ createdAt: ts(400), lastAccessed: ts(0), accessCount: 3, tier: "news", evergreenQuery: true, nowMs: NOW });
+assert(evBoost > 1.4 && evBoost <= 1.5, "evergreen query keeps access reinforcement (got " + evBoost + ")");
+//    Same row without evergreen query: decayed band clearly below the evergreen one.
+const evDecayed = freshnessFactor({ createdAt: ts(400), lastAccessed: ts(0), accessCount: 3, tier: "news", nowMs: NOW });
+assert(evDecayed < evBoost, "evergreen query outranks decayed same-row (" + evDecayed + " vs " + evBoost + ")");
 
-// Test 5: isTimeSensitive — detects time keywords.
-assert(isTimeSensitive("最新AI新闻"), "QDF detects '最新'");
-assert(isTimeSensitive("latest news 2026"), "QDF detects 'latest'");
-assert(!isTimeSensitive("what is RRF"), "QDF does not trigger on evergreen query");
+// 4. Fusion monotonicity: fresh+accessed ranks above stale+untouched at equal BM25.
+const stale = scoreWithFreshness(bm, { createdAt: ts(180), lastAccessed: null, accessCount: 0, tier: "news", nowMs: NOW });
+const freshAccessed = scoreWithFreshness(bm, { createdAt: ts(1), lastAccessed: ts(0), accessCount: 5, tier: "news", nowMs: NOW });
+// bm25 negative: better => more negative
+assert(freshAccessed < stale, "fresh+accessed beats stale+untouched at equal BM25 (" + freshAccessed + " vs " + stale + ")");
+assert(Math.abs(stale - bm * 0.3) < 1e-9, "stale+untouched sits at 0.3 floor");
 
-// Test 6: isEvergreen — detects evergreen keywords.
-assert(isEvergreen("什么是RRF"), "evergreen detects '什么是'");
-assert(isEvergreen("how does RRF work"), "evergreen detects 'how does'");
+// 5. Year-literal-free QDF regex (ADR-0030 D5): 4-digit years no longer trigger;
+//    behavior survives every future rollover.
+assert(!isTimeSensitive("AI 2026 全景回顾"), "year literal 2026 no longer triggers QDF");
+assert(!isTimeSensitive("deep dive into 2099 retro"), "no future year literal triggers QDF");
+assert(isTimeSensitive("最新AI新闻"), "still detects 最新");
+assert(isTimeSensitive("latest news"), "still detects latest");
+assert(!isTimeSensitive("what is RRF"), "still neutral for evergreen query");
+
+// 6. Evergreen classifier kept.
+assert(isEvergreen("什么是RRF"), "evergreen detects 什么是");
+assert(isEvergreen("what is RRF"), "evergreen detects what is");
 assert(!isEvergreen("latest AI news"), "evergreen does not trigger on time-sensitive");
 
-// Test 7: classifyTier — news content.
+// 7. decayMultiplier legacy invariants (tau table unchanged: 7/30/90).
+assert(Math.abs(decayMultiplier(0, "news") - 1.0) < 0.01, "fresh decay ~1.0");
+assert(decayMultiplier(14, "news") <= 0.3 + 1e-9, "14d news at floor region");
+assert(decayMultiplier(30, "evergreen") > 0.5, "30d evergreen decay > 0.5");
+assert(decayMultiplier(365, "news") >= 0.3, "365d news floor >= 0.3");
+
+// 8. classifyTier unchanged.
 assert(classifyTier("Breaking news update", "https://news.example.com") === "news", "classify news");
 assert(classifyTier("API Reference Guide", "https://docs.example.com") === "docs", "classify docs");
 assert(classifyTier("What is RRF", "https://wiki.example.com") === "evergreen", "classify evergreen");
 
-// Test 8: applyTimeEdgeEffect — pinned bypasses decay.
-const bm25 = -10.0;
-const pinnedResult = applyTimeEdgeEffect(bm25, 365, "news", "latest news", true);
-assert(pinnedResult === bm25, "pinned bypasses decay (got " + pinnedResult + ")");
-
-// Test 9: applyTimeEdgeEffect — evergreen query disables decay.
-const evergreenResult = applyTimeEdgeEffect(bm25, 365, "news", "什么是X");
-assert(evergreenResult === bm25, "evergreen query disables decay (got " + evergreenResult + ")");
-
-// Test 10: applyTimeEdgeEffect — time-sensitive query applies stronger decay.
-const ts1 = applyTimeEdgeEffect(bm25, 14, "news", "latest news 2026");
-const ts0 = applyTimeEdgeEffect(bm25, 0, "news", "latest news 2026");
-assert(ts1 !== ts0, "time-sensitive query applies decay");
-
-// Test 11: applyTimeEdgeEffect — non-time-sensitive applies weaker decay.
-const nts1 = applyTimeEdgeEffect(bm25, 14, "news", "RRF fusion");
-const nts0 = applyTimeEdgeEffect(bm25, 0, "news", "RRF fusion");
-assert(nts1 !== nts0, "non-time-sensitive also applies decay but weaker");
-
-console.log("--- Time Edge Effect tests: " + passed + " passed, " + failed + " failed ---");
+console.log("time-decay tests: " + passed + " passed, " + failed + " failed");
 if (failed > 0) process.exit(1);

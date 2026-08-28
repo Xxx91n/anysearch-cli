@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { SCHEMA_SQL } from "./schema-content";
-import { registerTimeDecayFunction, invalidateOldRecords } from "./time-decay.js";
+import { registerFreshnessFactorFunction, invalidateOldRecords } from "./time-decay.js";
 import { fts5EscapeQuery, searchMemoryMultiQuery } from "./fts5.js";
 import { rrfRank } from "@anysearch/retriever";
 import type { NormalizedResult } from "@anysearch/retriever";
@@ -172,14 +172,16 @@ export class SqliteSessionStore implements SessionStore {
       schema = SCHEMA_SQL;
     }
     this.db.exec(schema);
-    // G019: Register time_decay custom function for FTS5 queries with time edge effect.
-    registerTimeDecayFunction(this.db);
+    // ADR-0030 D2: freshness_factor UDF (fused decay+recency+frequency band, supersedes time_decay).
+    registerFreshnessFactorFunction(this.db);
     // G019: Migration for existing databases (ALTER TABLE ADD COLUMN is not IF NOT EXISTS safe).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN valid_until TEXT"); } catch {}
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN pinned BOOLEAN DEFAULT 0"); } catch {}
    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN entity TEXT"); } catch {}
     // ADR-0009 D3 L2: access-time signal (align Mem0 1.5×/0.3× — recall hit refreshes last_accessed).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN last_accessed TEXT"); } catch {}
+    // ADR-0030 D3: frequency signal — access_count incremented exactly once per returned hit.
+    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN access_count INTEGER DEFAULT 0"); } catch {}
     // ADR-0023 D4 (Q3=A): equal-weight conflict quarantine — candidates held for user review at next interaction.
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN quarantine TEXT"); } catch {}
     // ADR-0025 D2: evidence persisted on quarantined rows for the review list (atomcode: confidence for queue ordering, never for auto-adjudication).
@@ -213,11 +215,11 @@ export class SqliteSessionStore implements SessionStore {
       saveAnchor: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)"),
       getAnchors: this.db.prepare("SELECT id, session_id as sessionId, anchor_type as anchorType, payload, created_at as createdAt FROM resume_anchors WHERE session_id = ? ORDER BY id"),
       // ADR-0008 D3: recall_memory searches Research Memory (retrieval_results_fts), not messages.
-     // ADR-0008 D2: time_decay() in ORDER BY + bi-temporal filter (valid_until IS NULL).
+      // ADR-0008 D2 -> ADR-0030: freshness_factor() in ORDER BY + bi-temporal filter (valid_until IS NULL).
      // MemoryHit.role <-- r.title, MemoryHit.content <-- r.snippet (recall_memory maps these fields).
-     searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, time_decay(bm25(retrieval_results_fts), r.created_at, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) ORDER BY rank LIMIT ?"),
+     searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) ORDER BY rank LIMIT ?"),
       // ADR-0009 D3 L2: update last_accessed on recall hit (access-time signal, Mem0 1.5×/0.3×).
-      touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now') WHERE id = ?"),
+      touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now'), access_count = COALESCE(access_count, 0) + 1 WHERE id = ?"),
       // ADR-0016 D10: UPSERT for state-type anchors.
   
       saveAnchorUpsert: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?) ON CONFLICT(session_id, anchor_type) WHERE anchor_type = 'consolidation_state' DO UPDATE SET payload = excluded.payload, created_at = datetime('now')"),
@@ -361,7 +363,12 @@ export class SqliteSessionStore implements SessionStore {
   async searchMemoryMulti(queries: string[], limit = 20): Promise<MemoryHit[]> {
     const hits = await searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank);
     // ADR-0028 D3 read-side exit: same guard as searchMemory.
-    return hits.filter((h) => !containsSecret(h.role + " " + h.content));
+    const kept = hits.filter((h) => !containsSecret(h.role + " " + h.content));
+    // ADR-0030 D3: same exactly-once touch as searchMemory (both recall paths feed the signals).
+    for (const hit of kept) {
+      try { this.stmts.touchAccessed.run(hit.rowid); } catch {}
+    }
+    return kept;
   }
 
   // ADR-0023 D2 structural-typing seam: exposes db.prepare(...).all(...) as a function so

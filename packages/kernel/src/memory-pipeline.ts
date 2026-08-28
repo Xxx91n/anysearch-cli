@@ -14,6 +14,7 @@ import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
+import { isTimeSensitive, isEvergreen } from "@anysearch/store"; // ADR-0030 D5: no inline regex copies
 import type { LlmRewriteFn } from "./query-rewrite";
 
 export interface MemoryPipelineDeps {
@@ -376,10 +377,7 @@ export class MemoryPipeline {
       if (typeof l2Query === "string" && l2Query.length > 3) {
         // ADR-0023 D2 (Q2=B): S1 rewrite + RRF fusion. Fail-open via rewriteQuery when no LLM seam.
         // QDF hint uses heuristic classifiers from @anysearch/store (no LLM call needed to tag).
-        const qdf = classifyQdf(l2Query, {
-          isTimeSensitive: (q) => /最新|最近|news|2024|2025|2026|latest|recent|新闻|更新/i.test(q),
-          isEvergreen: (q) => /什么是|定义|概念|原理|解释|how does|what is|explain/i.test(q),
-        });
+        const qdf = classifyQdf(l2Query, { isTimeSensitive, isEvergreen });
         rewriteQuery(l2Query, qdf, this.deps.llmRewriteFn)
           .then((variants) => {
             // Seamed call: searchMemoryMulti present on ADR-0023-capable stores. Fall back to single-query.
