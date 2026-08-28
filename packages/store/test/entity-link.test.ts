@@ -9,8 +9,6 @@ import { extractEntityCandidates, normalizeEntityName, trigramSimilarity } from 
 
 const dir = mkdtempSync(join(tmpdir(), "ans-ent-"));
 const dbPath = join(dir, "t.db");
-const t = (name: string, fn: () => Promise<void> | void) => fn();
-void t;
 
 // --- step 2: schema migration idempotent + existing six tables intact ---
 {
@@ -131,5 +129,38 @@ const km = (url: string, title: string, snippet: string, evidence: number, entit
   console.log("step6 RRF entity arm + step7 telemetry: OK");
 }
 
+
+// --- step 8 (r74 audit): E2 alias pass-through + E5 drop unlink + rank field presence ---
+{
+  const store = new SqliteSessionStore(join(dir, "t8.db"));
+  const sr = await store.createSession("eval");
+  await store.adjudicateMemory(sr.id, [km("https://ex.com/z1", "zvn ledger growth audit", "zvn ledger growth audit notes", 0.9, "zvnledger")]);
+  // inject an alias as if a prior reversible merge had appended it
+  const rw = new Database(join(dir, "t8.db"));
+  rw.prepare("UPDATE entities SET aliases = ? WHERE name_norm = ?").run(JSON.stringify(["vv9x"]), "zvnledger");
+  rw.close();
+  // E2 read-side: query token only known via the alias activates the arm
+  const byAlias = await store.searchMemory("vv9x quarterly", 10);
+  assert.ok(byAlias.some((h) => (h.role ?? "").includes("zvn ledger growth audit")), "E2 read: alias-only token activates arm");
+  assert.ok(byAlias.every((h) => typeof h.rank === "number"), "E5: arm rows carry numeric rank");
+  // E2 write-side: new memory mentioning the alias links to the canonical entity
+  const w = await store.adjudicateMemory(sr.id, [km("https://ex.com/z2", "vv9x reconciliation done", "vv9x reconciliation done mm", 0.9)]);
+  const wid = w[0]!.insertedId ?? -1;
+  assert.ok(typeof wid === "number", "accepted write returns insertedId");
+  const linked = store.dbQuery<{ n: number }>("SELECT COUNT(*) n FROM memory_entity me JOIN entities e ON e.id = me.entity_id WHERE me.memory_id = ? AND e.name_norm = ?", wid, "zvnledger");
+  assert.equal(linked[0]!.n, 1, "E2 write: alias mention links to canonical entity");
+  // E5: dropping a quarantined memory removes its entity links (no graph residue)
+  const q = await store.adjudicateMemory(sr.id, [km("https://ex.com/z3", "qzdropx leak hint", "qzdropx leak hint rumor", 0.5, "qzdropx")]);
+  const qid = q[0]!.insertedId ?? -1;
+  assert.ok(typeof qid === "number", "quarantined write returns insertedId");
+  const before = store.dbQuery<{ n: number }>("SELECT COUNT(*) n FROM memory_entity WHERE memory_id = ?", qid);
+  assert.ok(before[0]!.n >= 1, "quarantined memory is linked");
+  const dropped = await store.resolveQuarantinedMemory(qid, "drop");
+  assert.ok(dropped.ok, "drop resolves");
+  const after = store.dbQuery<{ n: number }>("SELECT COUNT(*) n FROM memory_entity WHERE memory_id = ?", qid);
+  assert.equal(after[0]!.n, 0, "E5: memory_entity rows removed on drop");
+  store.close();
+  console.log("step8 r74 audit fixes (E2 alias pass-through / E5 drop unlink + rank): OK");
+}
 rmSync(dir, { recursive: true, force: true });
 console.log("entity-link.test.ts ALL PASS");

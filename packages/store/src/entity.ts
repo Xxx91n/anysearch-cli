@@ -18,7 +18,8 @@ export interface EntityCandidate {
 export const ENTITY_ALIAS_THRESHOLD = 0.9;
 export const ENTITY_REVIEW_THRESHOLD = 0.6;
 
-const MAX_CANDIDATES = 5; // per-memory extraction cap (bounded cost, Mem0 channel cap pattern)
+// r74 audit E5: exported so the store uses one source of truth for the extraction cap.
+export const MAX_ENTITY_CANDIDATES = 5; // per-memory extraction cap (bounded cost, Mem0 channel cap pattern)
 
 // Normalization: lowercase, collapse whitespace, strip edge punctuation/quotes.
 // Hyphens and underscores INSIDE a name survive (buildzone-rd != buildzone, but BuildKit==buildkit).
@@ -91,5 +92,5 @@ export function extractEntityCandidates(text: string, knownNorms?: ReadonlySet<s
       }
     }
   }
-  return out.slice(0, MAX_CANDIDATES);
+  return out.slice(0, MAX_ENTITY_CANDIDATES);
 }

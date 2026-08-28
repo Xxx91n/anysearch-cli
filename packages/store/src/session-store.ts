@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { SCHEMA_SQL } from "./schema-content";
 import { registerFreshnessFactorFunction, invalidateOldRecords } from "./time-decay.js";
 import { fts5EscapeQuery, searchMemoryMultiQuery } from "./fts5.js";
-import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD } from "./entity.js";
+import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD, MAX_ENTITY_CANDIDATES as MAX_CANDIDATES } from "./entity.js";
 import type { EntityType, EntityCandidate } from "./entity.js";
 import { rrfRank } from "@anysearch/retriever";
 import type { NormalizedResult } from "@anysearch/retriever";
@@ -493,7 +493,8 @@ export class SqliteSessionStore implements SessionStore {
   // Write-path linking: declared entity key (non-URL) + rule extraction; LLM backfill only on empty rules (fail-open).
   private async linkEntities(memoryId: number, km: KeyMemoryInput): Promise<void> {
     const text = (km.title ?? "") + " " + (km.snippet ?? "");
-    const known = new Set(this.liveEntities().map((e) => e.nameNorm));
+    // r74 audit E2: known set includes aliases — alias pass-through on the write path (Neo4j Keep Aliases).
+    const known = new Set(this.liveEntities().flatMap((e) => [e.nameNorm, ...e.aliases]));
     const candidates: EntityCandidate[] = [];
     if (km.entity && !km.entity.includes("://")) candidates.push({ name: km.entity, type: "declared" });
     for (const c of extractEntityCandidates(text, known)) candidates.push(c);
@@ -501,7 +502,7 @@ export class SqliteSessionStore implements SessionStore {
       // ADR-0031 D2: LLM backfill (fail-open) — offline/no-key keeps rule output (here: empty).
       try { const extra = await this.entityLlmFallback(text); if (extra) candidates.push(...extra); } catch {}
     }
-    for (const c of candidates.slice(0, 6)) {
+    for (const c of candidates.slice(0, MAX_CANDIDATES + 1)) { // r74 audit E5: 1 declared + MAX_CANDIDATES rule/LLM
       const entityId = this.resolveEntity(c.name, c.type);
       this.db.prepare("INSERT OR IGNORE INTO memory_entity (memory_id, entity_id) VALUES (?, ?)").run(memoryId, entityId);
     }
@@ -567,7 +568,7 @@ export class SqliteSessionStore implements SessionStore {
   // ADR-0031 D4: entity arm — read-only resolution (exact/containment, no mutation), arm-level valid_until+quarantine guard.
   private entityArmRows(query: string, limit: number): MemoryHit[] {
     this.entityTel.queries += 1;
-    const known = new Set(this.liveEntities().map((e) => e.nameNorm));
+    const known = new Set(this.liveEntities().flatMap((e) => [e.nameNorm, ...e.aliases])); // r74 audit E2: aliases recognized read-side too
     const candidates = extractEntityCandidates(query, known);
     if (candidates.length === 0) return [];
     this.entityTel.candidates += 1;
@@ -576,7 +577,7 @@ export class SqliteSessionStore implements SessionStore {
     if (matched.length === 0) return [];
     this.entityTel.activations += 1;
     const ids = matched.map((e) => e.id);
-    const sql = "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content FROM retrieval_results r " +
+    const sql = "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank FROM retrieval_results r " + // r74 audit E5: rank required by MemoryHit
       "JOIN memory_entity me ON me.memory_id = r.id WHERE me.entity_id IN (" + ids.map(() => "?").join(", ") + ") " +
       "AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) ORDER BY r.created_at DESC LIMIT ?";
     const rows = this.db.prepare(sql).all(...ids, limit) as MemoryHit[];
@@ -613,6 +614,8 @@ export class SqliteSessionStore implements SessionStore {
         .run(row.session_id, row.entity, id);
     } else {
       this.db.prepare("UPDATE retrieval_results SET quarantine = 'resolved_drop' WHERE id = ?").run(id);
+      // r74 audit E5: dropped memories leave no entity-graph residue.
+      this.db.prepare("DELETE FROM memory_entity WHERE memory_id = ?").run(id);
     }
     return { ok: true };
   }

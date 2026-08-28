@@ -43,6 +43,9 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
     "|---|---|",
     `| mrr (rank-of-relevant) | ${m.mrr.toFixed(3)} |`,
     `| answerableFalseRefusalRate | ${m.answerableFalseRefusalRate.toFixed(3)} |`,
+    // r74 audit E1: entity-arm telemetry (report-only; D2 <0.5 advisory, never gated)
+    ...(m.entityArm ? [`| entity rule-hitRate | ${m.entityArm.hitRate.toFixed(3)} |`,`| entity activationRate | ${m.entityArm.activationRate.toFixed(3)} |`,`| entity avgArmHits | ${m.entityArm.avgArmHits.toFixed(2)} |`] : []),
+    ...(m.entityArm && m.entityArm.hitRate < 0.5 ? [`| WARNING | entity rule-hitRate < 0.5 — ADR-0031 D2: re-evaluate dual-layer extraction with fastCRW (report-only) |`] : []),
     "",
     "## Statistical power (ADR-0028 D1)",
     "",

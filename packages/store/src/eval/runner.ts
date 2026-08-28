@@ -53,7 +53,7 @@ export interface EvalMetrics {
   // ADR-0028 D4: answerable-case false-refusal rate (report-only).
   answerableFalseRefusalRate: number;
   // ADR-0031 step7: entity arm hit-rate telemetry (report-only, never gated).
-  entityArm?: { queries: number; candidates: number; activations: number; hits: number; hitRate: number };
+  entityArm?: { queries: number; candidates: number; activations: number; hits: number; hitRate: number; activationRate: number; avgArmHits: number };
 }
 
 export interface EvalReport {
@@ -276,7 +276,8 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
     entityArm: (() => {
       let q = 0, c = 0, a = 0, h = 0;
       for (const r of results) if (r.entityArm) { q += r.entityArm.queries; c += r.entityArm.candidates; a += r.entityArm.activations; h += r.entityArm.hits; }
-      return { queries: q, candidates: c, activations: a, hits: h, hitRate: q ? a / q : 0 };
+      // r74 audit E1: hitRate is the RULE-LAYER hit rate (candidates/queries) per ADR-0031 D2 (<0.5 -> fastCRW review, report-only).
+      return { queries: q, candidates: c, activations: a, hits: h, hitRate: q ? c / q : 0, activationRate: q ? a / q : 0, avgArmHits: a ? h / a : 0 };
     })(),
     mrr: rrN ? rrSum / rrN : 1,
     answerableFalseRefusalRate: frEligible ? frCount / frEligible : 0,
