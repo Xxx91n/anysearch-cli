@@ -173,6 +173,20 @@ _Avoid_: point-estimate kappa gate, asymptotic CI on small n, Fleiss on 2-rater 
 ## Scope Discipline（当轮范围纪律）
 一次 grill 一个主题 ADR + 身份明确的可选伴随项：内聚工程项进 Decision 段，到期 chore 走独立 commit + CHANGELOG Removed，显式拒绝项单列。反模式是无记录的 while-you're-at-it 顺手改。ADR-0029 D6 + AGENTS.md Scope discipline。
 _Avoid_: bundling unrelated decisions into one ADR Decision, silent scope creep, deferred chores without handoff record
+
+## Entity Link Layer（实体链接层）
+记忆本体的第四维度：扁平 FTS5 行之上加"实体 → 记忆"引用层——entities 全局表 + memory_entity 桥接会话级证据行，解锁实体中心问答与一跳多跳召回。图=关系表上的只读视图（SQL/PGQ），retrieval_results 行 = episode 层、entities = semantic 层（Zep 分层同构）。ADR-0031 D1/D3。
+_Avoid_: triple edge table before eval proves entity value, JSON column entity storage (unindexable), session-scoped entity keys masquerading as global
+
+## Conditional Arm Activation（臂条件激活）
+RRF 融合的弱臂防线：任一召回臂在其信号缺失时整条臂退出融合，不分泌零分稀释结果（VLDB 2026 weakest-link：弱路径显著拖累整体；Gini temporal arm 先例）。实体臂无规则层命中即缺席；臂权重初始 FTS 1.0 : entity 0.5，禁跨域不对称调参。ADR-0031 D4。
+_Avoid_: always-on weak arms, post-hoc multiplicative boost outside the clamp band, hard pre-filtering that dies with extraction failure
+
+## Reversible Entity Merge（可逆实体合并）
+实体去重的行业反差点：entity_merge_log 记录每次合并（from/to/方法/阈值/前后 canonical），被并实体走 valid_until 关闭而非删除，memory_entity 重定向留 provenance——Mnemoverse 审计六系统无一能撤销合并，这是唯一可领先点。阈值源自 eval 台错误预算（同名不同义/变体同义两类 golden case），不抄 0.95 常数。ADR-0031 D5。
+_Avoid_: irreversible merge, threshold copied from other products, merge decision without entity_type gate (Mem0 #5438)
+
+
 *End of Glossary*
 
 ## Cursor Dual Channel（Cursor 双通道注入）
