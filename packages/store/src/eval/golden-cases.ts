@@ -543,4 +543,136 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "search", stage: "retrieve", query: "BoltGrid", expectHopTitle: "rack mount setup note" },
     ],
   },
+  ...buildRelationExpansionR33(),
 ];
+
+// --- Group: relations (ADR-0036 Phase-1 expansion, r33) — Sakai-locked n = 80 for the group;
+// the pilot (12-case group) was degenerate (all-zero RoR deltas), so n locks at the cap per D2
+// (no mid-course top-ups). RoR cases carry expectRankOf on the neighbor memory so the single-run
+// counterfactual ablation (runner drop-relation recompute) has a nonzero paired sample.
+function buildRelationExpansionR33(): CaseSpec[] {
+  const out: CaseSpec[] = [];
+  // Closed-table predicates usable between arbitrary entity pairs (authored_by is url<->handle only).
+  const preds: ReadonlyArray<readonly [PredicateName: string, surface: string]> = [
+    ["works_on", "works on"], ["depends_on", "depends on"], ["uses", "uses"],
+    ["part_of", "is part of"], ["member_of", "is a member of"], ["located_at", "based in"],
+  ];
+  const head = ["North", "Quartz", "Iron", "Solar", "Nimbus", "Pixel", "Amber", "Ridge", "Cobalt", "Ember", "Halo", "Atlas"];
+  const tail = ["Forge", "Span", "Deck", "Vault", "Ring", "Bay", "Lane", "Nest", "Well", "Gate", "Hub", "Mill"];
+  const nm = (i: number): string => head[i % head.length]! + tail[(Math.floor(i / head.length) + i) % tail.length]!;
+  // subject/object pools stay disjoint so the FTS lane can never hit the RoR target directly.
+  const subOf = (i: number) => nm(i) + "Subj";
+  const objOf = (i: number) => nm(i + 47) + "Desk";
+  // 14 distractor memories per RoR case (ADR-0036 D5): with a 2-memory corpus the vector arm alone
+  // lands the neighbor at fused rank 2 by tie, making the paired delta degenerate. Distractors push
+  // the vector-only rank mid-corpus so the relation arm's causal lift registers as a positive delta.
+  const r33distractors = (i: number, cn: boolean): KeyMemoryInput[] =>
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map((k) => {
+      if (cn) {
+        const names = ["盔杉", "麸衣", "簪锣", "硅砺", "雀笼", "蓑篾", "铎泅", "膘峦", "颍舵", "缢筝", "铗辔", "舭桅", "钨锲", "簸箕"];
+        return km(`https://ex.com/r33dc/${i}/${k}`, `"${names[k]}" 运维记录`, `"${names[k]}" 的巡检与发布记录`, 0.7, `cn-dis-${i}-${k}`);
+      }
+      const dn = nm(i + 300 + k * 13) + "Hill";
+      return km(`https://ex.com/r33d/${i}/${k}`, `${dn} runbook notes`, `runbook notes for ${dn} uptime drills`, 0.7, `dis-${i}-${k}`);
+    });
+
+  // 30 EN RoR hop pairs (counterfactual sample carries the signal).
+  for (let i = 0; i < 30; i++) {
+    const sub = subOf(i), obj = objOf(i);
+    const dis = r33distractors(i, false);
+    const [pred, surface] = preds[i % preds.length]!;
+    out.push({
+      id: `rel33_ror_${pred}_${String(i).padStart(2, "0")}`, group: "relations",
+      description: `RoR pair EN: query on ${sub} must surface the ${obj} memory via the relation arm`,
+      ops: [
+        { op: "adjudicate", stage: "adjudicate", items: [km(`https://ex.com/r33/${sub.toLowerCase()}`, `${sub} ${surface} ${obj} plan`, `${sub} ${surface} ${obj} for the rollout window`, 0.9, sub + "-lane")], expect: ["accept"] },
+        { op: "edge", stage: "store", subject: sub, relation: pred, object: obj, assert: "edge", fromOp: 0 },
+        { op: "adjudicate", stage: "adjudicate", items: [km(`https://ex.com/r33/${obj.toLowerCase()}`, `${obj} runbook notes`, `runbook notes for ${obj} uptime drills`, 0.9, obj + "-lane")], expect: ["accept"] },
+        { op: "adjudicate", stage: "adjudicate", items: dis, expect: dis.map(() => "accept" as const) },
+        { op: "search", stage: "retrieve", query: sub, expectRankOf: { title: `${obj} runbook`, maxRank: 20 }, expectHopTitle: `${obj} runbook` },
+      ],
+    });
+  }
+
+  // 8 CN RoR hop pairs (quoted-phase CN extraction + CJK-bigram FTS path).
+  const cnSub = ["玄枢", "渒闾", "梦鳸", "切镜", "手冤", "蔚鸣", "点泰", "飼芸"];
+  const cnObj = ["星栈", "云架", "荧塔", "策船", "雾仓", "穿新", "竩闸", "睁塘"];
+  const cnVerb = ["负责", "依赖", "使用", "维护"];
+  for (let i = 0; i < 8; i++) {
+    const sub = cnSub[i]!, obj = cnObj[i]!, verb = cnVerb[i % cnVerb.length]!;
+    const disCn = r33distractors(i, true);
+    // covered verbs -> predicate: works_on (负责/维护), depends_on (依赖), uses (使用)
+    const pred = verb === "负责" || verb === "维护" ? "works_on" : verb === "依赖" ? "depends_on" : "uses";
+    out.push({
+      id: `rel33_ror_cn_${i}`, group: "relations", difficulty: "hard",
+      description: `RoR pair CN: query ${sub} surfaces the ${obj} memory via the relation arm (quoted CN entities)`,
+      ops: [
+        { op: "adjudicate", stage: "adjudicate", items: [km(`https://ex.com/r33/cn${i}a`, `"${sub}" ${verb} "${obj}"`, `"${sub}" ${verb} "${obj}" 的排期`, 0.9, `cn-r33-${i}`)], expect: ["accept"] },
+        { op: "edge", stage: "store", subject: sub, relation: pred, object: obj, assert: "edge", fromOp: 0 },
+        { op: "adjudicate", stage: "adjudicate", items: [km(`https://ex.com/r33/cn${i}b`, `"${obj}" 运维记录"`, `"${obj}" 的巡检与发布记录`, 0.9, `cn-r33-${i}-b`)], expect: ["accept"] },
+        { op: "adjudicate", stage: "adjudicate", items: disCn, expect: disCn.map(() => "accept" as const) },
+        { op: "search", stage: "retrieve", query: `"${sub}"`, expectRankOf: { title: `"${obj}" 运维`, maxRank: 20 }, expectHopTitle: `"${obj}" 运维` },
+      ],
+    });
+  }
+
+  // 14 EN alias-surface plain edge positives (covers the alias table breadth).
+  const aliases: ReadonlyArray<readonly [string, string]> = [
+    ["works_on", "is responsible for"], ["works_on", "maintains"], ["depends_on", "relies on"],
+    ["depends_on", "requires"], ["uses", "built on"], ["part_of", "included in"],
+    ["part_of", "ships with"], ["member_of", "joined"], ["uses", "built with"],
+    ["works_on", "leads"], ["works_on", "owns"], ["located_at", "based in"],
+    ["member_of", "is a member of"], ["depends_on", "depends on"],
+  ];
+  for (let i = 0; i < aliases.length; i++) {
+    const sub = nm(i + 90) + "Valve", obj = nm(i + 130) + "Pier";
+    const [pred, surface] = aliases[i]!;
+    out.push({
+      id: `rel33_alias_${String(i).padStart(2, "0")}`, group: "relations",
+      description: `alias surface "${surface}" -> ${pred} (edge assert)`,
+      ops: [
+        { op: "adjudicate", stage: "adjudicate", items: [km(`https://ex.com/r33a/${i}`, `${sub} ${surface} ${obj}`, `${sub} ${surface} ${obj} this quarter`, 0.9, `alias-${i}`)], expect: ["accept"] },
+        { op: "edge", stage: "store", subject: sub, relation: pred, object: obj, assert: "edge", fromOp: 0 },
+      ],
+    });
+  }
+
+  // 8 CN edge positives across alias verbs (维护 主导 依赖于 采用 包含 构成 写了 相关)
+  const cnEdge: ReadonlyArray<readonly [string, string, string]> = [
+    ["雪峨", "维护", "works_on"], ["基落", "主导", "works_on"],
+    ["霞桥", "依赖于", "depends_on"], ["皾颤", "采用", "uses"],
+    ["汇尖", "构成", "part_of"], ["朔阵", "加入", "member_of"],
+    ["冬标", "依赖", "depends_on"], ["隐簣", "使用", "uses"],
+  ];
+  const cnObj2 = ["霞鼎", "熬冯", "求鱼", "朝鏍", "昩坛", "簱垤", "森羾", "温阱"];
+  for (let i = 0; i < cnEdge.length; i++) {
+    const [sub, verb, pred] = cnEdge[i]!;
+    const obj = cnObj2[i]!;
+    out.push({
+      id: `rel33_cn_edge_${i}`, group: "relations",
+      description: `CN alias "${verb}" -> ${pred} (edge assert)`,
+      ops: [
+        { op: "adjudicate", stage: "adjudicate", items: [km(`https://ex.com/r33c/${i}`, `"${sub}" ${verb} "${obj}"`, `"${sub}" ${verb} "${obj}" 的交付`, 0.9, `cn-edge-${i}`)], expect: ["accept"] },
+        { op: "edge", stage: "store", subject: sub, relation: pred, object: obj, assert: "edge", fromOp: 0 },
+      ],
+    });
+  }
+
+  // 6 no_edge negatives (two bare noun pairs per case; EN first three, CN later three).
+  for (let i = 0; i < 6; i++) {
+    const isCn = i >= 3;
+    const sub = isCn ? ["凉逝", "炀档", "鸌馤"][i - 3]! : nm(i + 180) + "Loom";
+    const obj = isCn ? ["阅励", "凂筑", "穴营"][i - 3]! : nm(i + 210) + "Crate";
+    const title = isCn ? `"${sub}" 与 "${obj}" 的看板记录` : `${sub} ${obj} schedule board`;
+    const snip = isCn ? `看板里记录了 "${sub}" 与 "${obj}" 的排期` : `the board tracks ${sub} and ${obj} schedules`;
+    out.push({
+      id: `rel33_no_edge_${i}`, group: "relations", difficulty: isCn ? "adversarial" : "core",
+      description: `paired strong negative (${isCn ? "CN" : "EN"}): two nouns, no verb frame`,
+      ops: [
+        { op: "adjudicate", stage: "adjudicate", items: [km(`https://ex.com/r33n/${i}`, title, snip, 0.9, `noedge-${i}`)], expect: ["accept"] },
+        { op: "edge", stage: "store", subject: sub, relation: "works_on", object: obj, assert: "no_edge" },
+        ],
+    });
+  }
+  return out;
+}

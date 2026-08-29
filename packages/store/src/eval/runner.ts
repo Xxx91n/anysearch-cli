@@ -9,6 +9,7 @@ import Database from "better-sqlite3";
 import { SqliteSessionStore } from "../session-store";
 import { normalizeEntityName } from "../entity";
 import type { AdjudicationResultItem } from "../session-store";
+import { rrfRank } from "@anysearch/retriever";
 import type { CaseSpec, EvalStage } from "./golden-cases";
 
 export interface OpRecord {
@@ -26,6 +27,11 @@ export interface OpRecord {
   // ADR-0035 D5: relation observational flags (never flip case pass/fail).
   hopHit?: boolean;
   noEdgeViolation?: boolean;
+  // ADR-0036 D5: single-run counterfactual RoR ablation (capture only when expectRankOf set).
+  // rank of the expected memory in the fused list with / without the relation arm; k+1 = clipped.
+  rorRankOn?: number;
+  rorRankOff?: number;
+  rorExcluded?: boolean; // expected memory never identified in any arm list
 }
 
 export interface CaseResult {
@@ -91,6 +97,10 @@ export interface EvalMetrics {
     hopHitRate: number;
     tel: RelTel;
   };
+  // ADR-0036 D3/D5: paired RoR ablation sample — deltas = (rank_off - rank_on) / ROR_WINDOW,
+  // positive = the relation arm pulled the expected memory earlier. The gate consumes `deltas`
+  // (BCa lower bound + sign-flip + MEI floor); mean alone is report-only evidence.
+  relationGain?: { n: number; excluded: number; meanDelta: number; deltas: number[] };
 }
 
 export interface EvalReport {
@@ -111,6 +121,10 @@ export function datasetFingerprint(cases: CaseSpec[]): string {
 
 const hitText = (h: { role?: unknown; content?: unknown }): string =>
   String(h.role ?? "") + " " + String(h.content ?? "");
+
+// ADR-0036 D5: RRF window for the RoR ablation; target absent from a fused list clips to k+1 (61).
+export const ROR_WINDOW = 60;
+export const ROR_CLIP = ROR_WINDOW + 1;
 
 export type StoreFactory = (dbPath: string) => SqliteSessionStore;
 
@@ -168,11 +182,42 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
               if (rank === 0) fails.push(`rank-of-relevant absent: "${op.expectRankOf.title}"`);
               else if (rank > op.expectRankOf.maxRank) fails.push(`rank ${rank} > maxRank ${op.expectRankOf.maxRank} for "${op.expectRankOf.title}"`);
             }
+            // ADR-0036 D3/D5: single-run counterfactual — drop the relation list from the
+            // captured arm inputs and recompute the fused rank of the expected memory.
+            let rorRankOn: number | undefined;
+            let rorRankOff: number | undefined;
+            let rorExcluded: boolean | undefined;
+            if (op.expectRankOf) {
+              const prov = store.lastArmProvenance;
+              let targetId: number | undefined;
+              if (prov) for (const [id, text] of prov.texts) if (text.includes(op.expectRankOf.title)) { targetId = id; break; }
+              if (prov && targetId !== undefined) {
+                const onIdx = prov.fusedIds.indexOf(String(targetId));
+                rorRankOn = onIdx >= 0 ? onIdx + 1 : ROR_CLIP;
+                const offLists: string[][] = [];
+                const offWeights: number[] = [];
+                for (let i = 0; i < prov.labels.length; i++) {
+                  if (prov.labels[i] === "relation") continue;
+                  offLists.push(prov.lists[i]!);
+                  offWeights.push(prov.weights[i]!);
+                }
+                rorRankOff = ROR_CLIP;
+                if (offLists.length > 0) {
+                  const offFused = offLists.length === 1 ? offLists[0]! : rrfRank(offLists, ROR_WINDOW, offWeights);
+                  const offIdx = offFused.indexOf(String(targetId));
+                  if (offIdx >= 0) rorRankOff = offIdx + 1;
+                }
+              } else {
+                rorExcluded = true;
+              }
+            }
             mark({
               op: opIndex, kind: op.op, stage: op.stage, ok: fails.length === 0,
               detail: fails.length ? fails.join("; ") : hits.length + " hit(s)",
               samples: hits.slice(0, 2).map((h) => ({ title: (h as { role?: string }).role ?? null, snippet: String((h as { content?: string }).content ?? "").slice(0, 200) })),
               rank, hitCount: hits.length, strongCount: strongHits.length,
+              ...(rorRankOn !== undefined ? { rorRankOn, rorRankOff } : {}),
+              ...(rorExcluded !== undefined ? { rorExcluded } : {}),
               ...(op.expectHopTitle !== undefined ? { hopHit: texts.some((t) => t.includes(op.expectHopTitle!)) } : {}),
             });
             break;
@@ -347,6 +392,15 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
       if (rec) { frEligible += 1; if (rec.hitCount === 0) frCount += 1; }
     }
   }
+  // ADR-0036 D5: paired RoR deltas across every expectRankOf op (Track A causal sample).
+  const rorDeltas: number[] = [];
+  let rorExcludedCount = 0;
+  for (const r of results) {
+    for (const rec of r.ops) {
+      if (rec.rorExcluded) { rorExcludedCount += 1; continue; }
+      if (rec.rorRankOn !== undefined && rec.rorRankOff !== undefined) rorDeltas.push((rec.rorRankOff - rec.rorRankOn) / ROR_WINDOW);
+    }
+  }
   return {
     passRate: results.length ? passed / results.length : 0,
     supersessionSuccess: supExpected ? supPassed / supExpected : 1,
@@ -412,6 +466,9 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
       }
       return { noEdgeChecks, noEdgeViolations, hopChecks, hopHits, hopHitRate: hopChecks ? hopHits / hopChecks : 0, tel };
     })(),
+    relationGain: rorDeltas.length + rorExcludedCount > 0
+      ? { n: rorDeltas.length, excluded: rorExcludedCount, meanDelta: rorDeltas.length ? rorDeltas.reduce((a, b) => a + b, 0) / rorDeltas.length : 0, deltas: rorDeltas }
+      : undefined,
   };
 }
 

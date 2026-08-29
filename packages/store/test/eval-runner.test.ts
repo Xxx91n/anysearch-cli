@@ -10,8 +10,8 @@ function assert(cond: boolean, msg: string) {
 }
 
 async function main() {
-  // Shape: 53 cases (ADR-0028: +15 D3/D4 slices; ADR-0031: +4 entity group; ADR-0033: +2 semantic; ADR-0035: +12 relations), 12 groups, every op has a stage.
-  assert(GOLDEN_CASES.length === 53, "53 golden cases (got " + GOLDEN_CASES.length + ")");
+  // Shape: 119 cases (ADR-0028: +15 D3/D4 slices; ADR-0031: +4 entity group; ADR-0033: +2 semantic; ADR-0035: +12 relations; ADR-0036: +66 RoR/alias/no-edge expansion), 12 groups, every op has a stage.
+  assert(GOLDEN_CASES.length === 119, "119 golden cases (got " + GOLDEN_CASES.length + ")");
   const groups = new Set(GOLDEN_CASES.map((c) => c.group));
   assert(groups.size === 12, "12 groups (got " + groups.size + ")");
   assert(GOLDEN_CASES.every((c) => c.ops.every((o) => typeof o.stage === "string")), "every op carries a stage");

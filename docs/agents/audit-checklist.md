@@ -56,3 +56,19 @@
 - [x] --full-refresh 与 --from-id/--limit 互斥守卫：CLI exit 2 + store 层 throw，含 relation-edges.test.ts 回归断言（r88 修复）
 - [x] related_to write-once 遥测纯度：首次共现物化边、重复计 relatedToWriteOnce（不混入 dedupSkipped，r87 F2/F7）
 
+## ADR-0036 Relation-Arm Gain Observance
+
+- [x] 单跑反事实消融（D3/D5）：searchMemory 侧捕获 ArmProvenance（labels/lists/weights/fusedIds/texts），runner 丢 relation 列表重算 RRF，paired delta = (rankOff - rankOn)/60，不误伤单跑成本
+- [x] 配对统计（D2）：BCa 95% CI（mulberry32 定种 bootstrap + jackknife 加速）+ 单侧 sign-flip 置换检验（B=10000）+ Sakai n 公式（cap 80）+ chi² Wilson-Hilferty sigmaD upper
+- [x] 判定规则（D4）：BCa 下界>0 AND mean≥minGain(0.1) AND signFlipP<0.05 才记 PASS→本轮观测 WARN；违反即 FAIL；欠功效/退化/缺基线一律 WARN 不 gate
+- [x] sanity 通道（D5）：hop 命中率高但 RoR delta≈0 / 命中率为 0 但 delta 非零 两种组合 → WARN + 人工复核，永不进门槛
+- [x] golden 扩案（relations 组 12→78）：30 EN RoR + 8 CN RoR（含 14 干扰记忆防向量臂回流）+ 14 EN 别名 + 8 CN 别名 + 6 no_edge 负例；指纹翻牌后 50 趟 --calibrate 重基线（EVAL_TIMEOUT_MS 需放大）
+- [x] 校准实测：sigmaDU=0.102、lockedN=17（rawN=17，pilot n=42 非退化 → 不再锁 cap 80，符合 D2 recalibrate 预注册）；首次 gate 运行 mean=0.148 BCa95=[0.1254,0.1671] signFlipP=0.0001 → observational WARN 落地
+- [x] 回归测试 eval-relation-gain.test.ts：mdeForPaired/lockN/sigmaDUpper 公式值、BCa 定种确定性、sign-flip 显著性、判定双向（低于 minGain 必 FAIL）、欠功效 WARN、sanity 组合、真 RoR case 端到端反事实（off>on）
+
+### 审计要点（ADR-0036-specific）
+
+- [x] Track A 消融是唯一因果判定通道；历史裸基线永不 gate（ADR-0027 D9 纪律延伸）
+- [x] 命中类指标（hopHitRate）降级为 sanity 参考，不与 RoR 混权
+- [x] RoR case 的 corpus 噪声必须足以把向量臂单独能力压出 top-2，否则 paired delta 退化（14 干扰记忆为当前实测标定值，与 distractor 模板强耦合）
+- [x] 50 趟校准墙钟 > ADR-0029 D5 默认 600s 看门狗时，用 EVAL_TIMEOUT_MS 显式放大而不改默认值

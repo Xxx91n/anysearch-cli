@@ -98,6 +98,16 @@ export interface MemoryHit {
   arms?: string[];
 }
 
+// ADR-0036 D3: eval-only snapshot of one searchMemory call's RRF inputs, so the runner can
+// recompute the relation-arm-off counterfactual without a second retrieval (single-run cost ~1x).
+export interface ArmProvenance {
+  labels: string[];      // parallel to lists/weights; five-arm order: fts, entity, vector, relation
+  lists: string[][];     // rowid strings per arm, rank order
+  weights: number[];
+  fusedIds: string[];    // full fused id order (pre-limit, pre-secret-filter)
+  texts: Map<number, string>; // rowid -> role + " " + content for title matching
+}
+
 export interface ResumeAnchor {
   id: number;
   sessionId: string;
@@ -454,6 +464,11 @@ export class SqliteSessionStore implements SessionStore {
     return this.stmts.searchAllMessages.all(safeQuery, limit) as MemoryHit[];
   }
 
+  // ADR-0036 D3: eval-only capture of the latest searchMemory arm inputs. Written on every
+  // searchMemory call; the eval runner (golden search ops) is the only reader. Never part of
+  // the external contract — do not consume from apps/ or kernel.
+  public lastArmProvenance: ArmProvenance | null = null;
+
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
    const safeQuery = this.fts5Escape(query);
    // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
@@ -482,6 +497,15 @@ export class SqliteSessionStore implements SessionStore {
    const entIds = new Set(armHits.map((h) => h.rowid));
    const vecIds = new Set(vecHits.map((h) => h.rowid));
    const relIds = new Set(relHits.map((h) => h.rowid));
+   // ADR-0036 D3: provenance snapshot taken BEFORE the read-side secret filter (the filter can
+   // only remove rows; golden fixtures carry no secrets, so on/off deltas are unaffected).
+   { const armLabels: string[] = ["fts"];
+     if (armHits.length > 0) armLabels.push("entity");
+     if (vecHits.length > 0) armLabels.push("vector");
+     if (relHits.length > 0) armLabels.push("relation");
+     const provTexts = new Map<number, string>();
+     for (const h of byId.values()) provTexts.set(h.rowid, h.role + " " + h.content);
+     this.lastArmProvenance = { labels: armLabels, lists: lists.map((l) => [...l]), weights: [...weights], fusedIds: [...fusedIds], texts: provTexts }; }
    for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); if (relIds.has(h.rowid)) al.push("relation"); h.arms = al; }
     // ADR-0028 D3 read-side exit: rows written before the write guard (or via seed/test seams)
     // must never surface back to the caller either.

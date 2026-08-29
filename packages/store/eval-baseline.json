@@ -1,36 +1,36 @@
 {
   "schema": "anysearch/eval-baseline@1",
-  "fingerprint": "f0f87ae62251ac81",
+  "fingerprint": "9a135744b0c1f78f",
   "metrics": {
     "passRate": 1,
     "supersessionSuccess": 1,
     "quarantineFalsePositiveRate": 0,
     "counts": {
-      "cases": 53,
-      "casesPassed": 53,
+      "cases": 119,
+      "casesPassed": 119,
       "supExpected": 16,
       "supPassed": 16,
-      "fpEligible": 59,
+      "fpEligible": 201,
       "fpCount": 0
     },
     "entityArm": {
-      "queries": 41,
-      "candidates": 17,
-      "activations": 17,
-      "hits": 20,
-      "hitRate": 0.4146341463414634,
-      "activationRate": 0.4146341463414634,
-      "avgArmHits": 1.1764705882352942
+      "queries": 79,
+      "candidates": 55,
+      "activations": 55,
+      "hits": 58,
+      "hitRate": 0.6962025316455697,
+      "activationRate": 0.6962025316455697,
+      "avgArmHits": 1.0545454545454545
     },
     "entityMerge": {
       "auto_merged": 0,
       "unmerged": 0,
-      "review_pending": 6,
+      "review_pending": 504,
       "confirmed": 0,
       "rejected": 0,
       "candidates_truncated": 0
     },
-    "mrr": 1,
+    "mrr": 0.5476190476190477,
     "answerableFalseRefusalRate": 0,
     "attribution": {
       "supported": 0,
@@ -48,27 +48,83 @@
       }
     },
     "relation": {
-      "noEdgeChecks": 4,
+      "noEdgeChecks": 10,
       "noEdgeViolations": 0,
-      "hopChecks": 1,
-      "hopHits": 1,
+      "hopChecks": 39,
+      "hopHits": 39,
       "hopHitRate": 1,
       "tel": {
-        "ruleHits": 33,
+        "ruleHits": 137,
         "llmActivations": 0,
         "llmFailures": 0,
-        "triplesWritten": 11,
-        "dedupSkipped": 11,
+        "triplesWritten": 74,
+        "dedupSkipped": 52,
+        "relatedToWriteOnce": 0,
         "schemaRejected": 0,
-        "armQueries": 41,
-        "armHits": 20,
-        "pendingEdges": 65
+        "armQueries": 79,
+        "armHits": 96,
+        "pendingEdges": 1223
       }
+    },
+    "relationGain": {
+      "n": 42,
+      "excluded": 0,
+      "meanDelta": 0.14801587301587302,
+      "deltas": [
+        0,
+        0,
+        0,
+        0,
+        0.13333333333333333,
+        0.18333333333333332,
+        0.16666666666666666,
+        0.2,
+        0.16666666666666666,
+        0.13333333333333333,
+        0.2,
+        0.21666666666666667,
+        0.23333333333333334,
+        0.21666666666666667,
+        0.16666666666666666,
+        0.23333333333333334,
+        0.23333333333333334,
+        0.23333333333333334,
+        0.23333333333333334,
+        0.16666666666666666,
+        0.23333333333333334,
+        0.2,
+        0.13333333333333333,
+        0.21666666666666667,
+        0.18333333333333332,
+        0.23333333333333334,
+        0.21666666666666667,
+        0.21666666666666667,
+        0.08333333333333333,
+        0.23333333333333334,
+        0.21666666666666667,
+        0.23333333333333334,
+        0.16666666666666666,
+        0.08333333333333333,
+        0.08333333333333333,
+        0.13333333333333333,
+        0.08333333333333333,
+        0.016666666666666666,
+        0.05,
+        0.08333333333333333,
+        0,
+        0
+      ]
     }
   },
   "allowance": {
     "supersessionFails": 1,
     "quarantineFp": 1
+  },
+  "relationGain": {
+    "sigmaDU": 0.102348,
+    "rawN": 17,
+    "lockedN": 17,
+    "minGain": 0.1
   },
   "updatedAt": "2026-08-29",
   "note": "ADR-0028 D1 calibration (runs=50); integer allowance = worst-observed failures + 1 op. CI never writes this file (ADR-0027 D9)."

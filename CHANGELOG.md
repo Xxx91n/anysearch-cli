@@ -45,3 +45,15 @@ All notable changes to this project are recorded here. Format follows
   pagination, `--reprocess` supersedes stale rules_version rows, exit codes 0/1/2).
 
 [0.1.0-rc.0]: https://github.com/anysearch/anysearch-cli/releases/tag/v0.1.0-rc.0
+
+### Added
+- ADR-0036 relation-arm gain observance (Phase-1): single-run counterfactual ablation for the
+  relation arm — SqliteSessionStore captures arm provenance per searchMemory call; the eval runner
+  drops the relation list and recomputes RRF, producing paired rank deltas for every expectRankOf
+  golden op. Gate statistics: paired BCa 95% CI (seeded mulberry32 bootstrap + jackknife), one-sided
+  sign-flip permutation p, Sakai sample-size lock (cap 80), chi-square upper sigma_d. Decision rule
+  (BCa lo > 0 AND mean >= minGain AND signFlip p < 0.05) fails closed; under-powered / degenerate /
+  missing-baseline downgrade to WARN. Golden relations group expanded 12 -> 78 (30 EN + 8 CN RoR
+  pairs with 14-memory distractor corpus, 14 EN + 8 CN alias edges, 6 no_edge negatives); baseline
+  recalibrated over 50 seeded runs (sigmaDU=0.102, lockedN=17). New test eval-relation-gain.test.ts.
+

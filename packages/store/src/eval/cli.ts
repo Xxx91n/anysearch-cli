@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GOLDEN_CASES } from "./golden-cases";
 import { runAll, type EvalReport } from "./runner";
-import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, type EvalBaseline } from "./gate";
+import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, type EvalBaseline } from "./gate";
 
 function repoRoot(): string {
   let d = dirname(fileURLToPath(import.meta.url));
@@ -55,6 +55,16 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
       '| entity unmerged | ' + m.entityMerge.unmerged + ' |',
     ] : []),
     ...(m.entityArm && m.entityArm.hitRate < 0.5 ? [`| WARNING | entity rule-hitRate < 0.5 — ADR-0031 D2: re-evaluate dual-layer extraction with fastCRW (report-only) |`] : []),
+    // ADR-0036: Track-A paired RoR block (report shape; the gate decision lives in gate.verdict).
+    ...(m.relationGain ? [
+      "",
+      "## Relation-arm gain (ADR-0036 D3-D5)",
+      `- pairs n=${m.relationGain.n}, excluded=${m.relationGain.excluded} (round-WARN above 20%)`,
+      `- mean RoR delta: ${m.relationGain.meanDelta.toFixed(4)} of the RRF window (>0 = relation arm pulls the target earlier)`,
+      baseline?.relationGain
+        ? `- preregistered: minGain(MEI)=${baseline.relationGain.minGain}, sigmaDU=${baseline.relationGain.sigmaDU}, lockedN=${baseline.relationGain.lockedN} (rawN=${baseline.relationGain.rawN})`
+        : "- preregistered: MISSING — baseline has no relationGain block; run eval --calibrate",
+    ] : []),
     "",
     "## Statistical power (ADR-0028 D1)",
     "",
@@ -130,11 +140,28 @@ async function main(): Promise<number> {
       fingerprint: last!.datasetFingerprint,
       metrics: last!.metrics,
       allowance: { supersessionFails: worstSupFails + 1, quarantineFp: worstFp + 1 },
+      // ADR-0036 D2/D4 below
+      relationGain: undefined as EvalBaseline["relationGain"],
       updatedAt: new Date().toISOString().slice(0, 10),
       note: "ADR-0028 D1 calibration (runs=" + runs + "); integer allowance = worst-observed failures + 1 op. CI never writes this file (ADR-0027 D9).",
     };
+    // ADR-0036 D2/D4: pilot deltas -> sigma_d upper 95% CI -> Sakai n (locked ONCE, cap 80).
+    const pilotDeltas = last!.metrics.relationGain?.deltas ?? [];
+    if (pilotDeltas.length < 2) {
+      console.error("[eval:calibrate] ABORT: relation-gain pilot has " + pilotDeltas.length + " RoR pair(s) < 2 — expand/instrument the golden first (ADR-0036 D2)");
+      return 2;
+    }
+    // Degenerate pilot (sd=0): the pilot never exercised the arm — Webber 2008 rule: never
+    // shrink n on a zero-variance pilot; lock n at the cap instead (ADR-0036 D2 anti-top-up).
+    const degenerate = pilotDeltas.every((d) => d === pilotDeltas[0]);
+    const sigmaDU = degenerate ? 0 : sigmaDUpper(pilotDeltas);
+    const { rawN, lockedN } = degenerate
+      ? { rawN: RELATION_GAIN_LOCKED_N_CAP, lockedN: RELATION_GAIN_LOCKED_N_CAP }
+      : lockN(sigmaDU, RELATION_GAIN_MIN_GAIN);
+    if (degenerate) console.log("[eval:calibrate] pilot sd=0 — sigmaDU=0 placeholder, n locked at cap " + RELATION_GAIN_LOCKED_N_CAP + " (ADR-0036 D2; recalibrate after RoR-heavy expansion)");
+    next.relationGain = { sigmaDU: Number(sigmaDU.toFixed(6)), rawN, lockedN, minGain: RELATION_GAIN_MIN_GAIN };
     writeFileSync(baselinePath, JSON.stringify(next, null, 2) + "\n", "utf8");
-    console.log(`[eval:calibrate] baseline written: fingerprint=${next.fingerprint} allowance sup<=${next.allowance.supersessionFails} qfp<=${next.allowance.quarantineFp}`);
+    console.log(`[eval:calibrate] baseline written: fingerprint=${next.fingerprint} allowance sup<=${next.allowance.supersessionFails} qfp<=${next.allowance.quarantineFp} relationGain sigmaDU=${next.relationGain!.sigmaDU} lockedN=${next.relationGain!.lockedN} (rawN=${next.relationGain!.rawN}, pilot n=${pilotDeltas.length})`);
     return 0;
   }
 
