@@ -504,4 +504,19 @@ _Avoid_: promoting a sanity metric into a gate, CRC of rank delta into binary 0/
 `backfill-relations --apply` 从单整事务改为每 batch 一事务提交：SQLITE_BUSY 指数退避重试（50ms 起封顶 ~5s，对齐 busy_timeout=5000），SQLITE_BUSY_SNAPSHOT（deferred 升级类）直接报错不重试；可选 per-batch `PRAGMA wal_checkpoint(PASSIVE)` 抑 WAL 膨胀；keyset/--from-id 断点与幂等键不动。dry-run 保持整事务回滚（ADR-0035 r87 精确预测语义不回归）。ADR-0035 D7 quiet-window 约束改写为"建议而非必需"。expand-contract/shadow 表被拒：SQLite 12 步重构要求切换与拷贝同事务，无锁全量回填不存在。ADR-0036 D6。
 _Avoid_: whole-run apply transaction, retrying SQLITE_BUSY_SNAPSHOT, breaking dry-run exact-prediction, shadow-table expand-contract on SQLite
 
+## Episodic-to-Semantic Consolidation（情景到语义巩固）
+把陈旧/低价值的 episodic 检索快照（retrieval_results）蒸馏为 semantic_memories 行：每簇一次有界 LLM 摘要（pi-ai 缝），classifyClaim 忠实度 gate（首创四适配：episode→NormalizedResult、阈值重标、簇内证据域、sourceKey→source_episode_ids）；ops 四判定全确定性（NOOP cos>0.90 去重 / UPDATE 矛盾检测+valid_until 软关闭 / DELETE=归档）。语义行永不因 TTL 归档，只经 supersession 演化；provenance=source_episode_ids JSON 回链，原 episode 保留。ADR-0037 D1/D3/D4。
+_Avoid_: per-item LLM scoring for the trigger, LLM deciding ops quadruple judgments, physical deletion of episodes, TTL-archiving semantic rows, same-table kind column
+
+## Signal-Gated Consolidation Trigger（信号门控巩固触发器）
+巩固批的提出权在确定性信号（episode 数 + freshness 衰减带 + access_count 超阈值），执行权在手动 CLI（ans consolidate --dry-run/--apply，backfill-* 先例）；无常驻后台进程（CLI 无 daemon）；LangMem debounce 只内化为批窗口设计；Generative Agents 重要性阈值门控保留形态但去掉 LLM 计分。ADR-0037 D2。
+_Avoid_: resident background consolidation, per-event LLM importance scoring, auto-apply without dry-run
+
+## Soft Archive with Undo Log（软归档与撤销日志）
+主动遗忘（G019 闭环）= retrieval_results 列 archived（0/1）+ 检索过滤 AND archived=0，archive_log（entity_merge_log 同构：kind archive/unarchive + detail 快照 + undone 标记）保证 undo=archived=0 位级可逆；判定用确定性四因子（age tiered tau / access_count / last_accessed / salience 列），salience 由 consolidate LLM 顺便输出但决策零 LLM；dry-run 报告 wouldArchive/分 tier/rrfArmImpact/undoable:true；golden forget 组 L0 契约 fail-closed、质量阈值观测期后落。ADR-0037 D5。
+_Avoid_: hard DELETE, archiving semantic/entity/edge rows, LLM making the forget decision, irrecoverable archive, skipping the dry-run report
+
+## Three-Protocol LLM Endpoint Config（三协议 LLM 端点配置）
+LLM 使能一律走 pi-ai 缝 + createProvider 自定义端点（其 0.84.2 原生覆盖 openai-completions / openai-responses / anthropic-messages / google 四种 wire 协议）；配置 = ANS_LLM_BASE_URL + ANS_LLM_API（chat|messages|responses 显式声明，业界共识不做协议 sniff）+ ANS_LLM_MODEL；零自研 wire 适配代码。ADR-0037 D4(Q7)。
+_Avoid_: endpoint protocol sniffing/auto-detect, hand-rolled wire adapters, a second LLM client library alongside pi-ai
 *End of Glossary*
