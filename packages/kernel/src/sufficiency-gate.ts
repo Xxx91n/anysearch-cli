@@ -96,7 +96,11 @@ export class SufficiencyEvaluator {
       gapQuery = gapQuery.trim().replace(/^["']|["']$/g, "");
       if (gapQuery.length <= 3) return empty;
 
-      // ADR-0034 D7: GapRequest trigger — attribution gaps are pre-queried before bounded reround.\n      // When the enriched envelope has gapRequests, take the first gapQuery as the reround seed.\n// D5: bounded re-search loop.
+      // ADR-0034 D7: assertion-level GapRequest is the preferred reround seed.
+      // When the attribution layer produced gaps, the first gapQuery takes precedence over
+      // the LLM named-gap query (r83 audit F3: previous code extracted gaps but never used them).
+      if (gapRequests[0]?.gapQuery) gapQuery = gapRequests[0].gapQuery;
+      // D5: bounded re-search loop.
       for (let round = 0; round < maxRerounds; round++) {
         const reroundEnvelope = await retriever.search({ query: gapQuery, mode: "fast" });
         // Merge results: append new unique URLs.

@@ -8,7 +8,7 @@ import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, Su
 import { rrfRank } from "@anysearch/retriever";
 import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort } from "./ports";
-import { attachAttribution } from "./attribution";
+import { attachAttribution, applyJudgeEscalation, type JudgeFn } from "./attribution";
 
 // Sufficiency gate config: minimum quality thresholds for a search result.
 // atomcode research: min angles (providers) / min fetches (results) / min domains / cross-engine verify.
@@ -189,12 +189,16 @@ export class RetroaererdEngine {
   private providers: Map<string, SearchProvider> = new Map();
   private ledger?: BudgetLedgerPort;
   private sessionId?: string;
+  // ADR-0034 step 6: host-injected claim judge. The LLM and its budget ledger live in the host;
+  // kernel stays pure. r83 audit F2: previously shouldEscalateToJudge had zero callers.
+  private attributionJudge?: JudgeFn;
 
   // ADR-0006 decision 1C: constructor accepts providers array.
   // ADR-0006 decision 2A: optional BudgetLedger + sessionId for per-call billing.
-  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string }) {
+  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; attributionJudge?: JudgeFn }) {
     this.ledger = opts?.ledger;
     this.sessionId = opts?.sessionId;
+    this.attributionJudge = opts?.attributionJudge;
     for (const p of providers) {
       this.providers.set(p.id, p);
     }
@@ -352,7 +356,11 @@ export class RetroaererdEngine {
         answersAvailable: allProviders.some((p) => p.modes.includes("answer")),
       },
     };
-    attachAttribution(envelope);
+    const attributionReport = attachAttribution(envelope);
+    if (this.attributionJudge) {
+      // Judge escalation is bounded inside applyJudgeEscalation (max 3 calls/envelope).
+      await applyJudgeEscalation(attributionReport, this.attributionJudge);
+    }
     return envelope;
   }
 }

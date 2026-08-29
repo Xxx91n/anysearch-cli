@@ -31,7 +31,7 @@
 
 - [x] attribution.attribution 字段与 verified:false 正交（两条互补通道）
 - [x] unsupported 必须是确定性反对（否定关键词 + 高重叠），不是"找不到”（找不到一律归 uncertain）
-- [x] judge 不推荐 unsupported 且证据缺失（会导致呈隐式无关锁到 supported)
+- [x] judge 升级仅作用于 uncertain 且有证据的 claim（shouldEscalateToJudge）；无证据即诚实 uncertain，不隐式升级为 supported
 - [x] MCP 双通道：attribution 同时出现在 content JSON 和 structuredContent
 - [x] --json 输出无 ANSI charset（纯结构输出）
 - [x] GapRequest 通过 envelope.attribution.gaps 传递（sufficiency-gate reround 触发）

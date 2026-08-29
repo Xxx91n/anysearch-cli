@@ -25,9 +25,23 @@ import type {
 // ---------------------------------------------------------------------------
 
 const WORD_RE = /[\p{L}\p{N}]+/gu;
+// CJK runs are emitted as character bigrams (classic CJK IR trick, deterministic, no model):
+// without segmentation a whole Chinese sentence is one token, making jaccard overlap ~0 and
+// the contradiction gate dead for CJK (r83 audit F13 follow-up).
+const CJK_RE = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/;
 
 export function tokenize(text: string): string[] {
-  return text.toLowerCase().match(WORD_RE) ?? [];
+  const parts = (text.toLowerCase().match(WORD_RE) ?? []).flatMap((w) => {
+    if (!CJK_RE.test(w)) return [w];
+    // Mixed run: keep non-CJK fragments, emit CJK chars as bigrams.
+    const latin = w.match(/[a-z0-9]+/g) ?? [];
+    const cjk = [...w].filter((ch) => CJK_RE.test(ch));
+    if (cjk.length === 1) return [w];
+    const bigrams: string[] = [];
+    for (let i = 0; i < cjk.length - 1; i++) bigrams.push(cjk[i] + cjk[i + 1]);
+    return [...latin, ...bigrams];
+  });
+  return parts;
 }
 
 export function jaccard(a: readonly string[], b: readonly string[]): number {
@@ -108,10 +122,12 @@ export function splitSentences(text: string): SentenceSpan[] {
 // L1 fragment signals — deterministic flags on whether a sentence is multi-claim
 // ---------------------------------------------------------------------------
 
-const CONNECTOR_RE = /(?:并且|而且|以及|同时|但(?:是)?|然而|并且|\bbut\b|\bhowever\b|\band\b|\balso\b|\bmoreover\b|\bfurthermore\b)/;
+const CONNECTOR_RE = /(?:并且|而且|以及|且|同时|但(?:是)?|然而|\bbut\b|\bhowever\b|\band\b|\balso\b|\bmoreover\b|\bfurthermore\b)/;
 const ENUMERATION_RE = /[、;]/;
 const LONG_SENTENCE_CHARS = 200;
 const ENTITY_CANDIDATE_RE = /\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)+\b/g;
+// D6 signal 6: mixed-script / abbreviation co-occurrence (e.g. "e.g." + CJK, or CJK next to a Latin token).
+const MIXED_ABBREV_RE = /\b(?:e\.g|i\.e|etc|Dr|Prof|vs|Inc|Ltd)\.?\b|(?:[\u4e00-\u9fff][A-Za-z]{2,})|(?:[A-Za-z]{2,}[\u4e00-\u9fff])/;
 
 export interface FragmentFlags {
   isFragment: boolean;
@@ -138,6 +154,7 @@ export function detectFragments(sentence: string): FragmentFlags {
   if (hasEnumeration) reasons.push("enumeration");
   if (commaDensity > 0.04) reasons.push("comma_density");
   if (entityCount >= 2) reasons.push("entity_density");
+  if (MIXED_ABBREV_RE.test(sentence)) reasons.push("mixed_abbrev");
 
   return { isFragment: reasons.length > 0, reasons, isLongSentence, hasConnector, hasEnumeration, commaDensity, entityCount };
 }
@@ -164,7 +181,7 @@ export interface ClaimClassification {
 // Contradiction detection: a snippet that contains negation language AND has high
 // token overlap with the claim is treated as counter-evidence (D4: "unsupported" must be
 // a deterministic contradiction, not "we could not find support").
-const CONTRADICTION_RE = /\b(?:not|never|no longer)\b|(?:并非|不是|沒有|没有|不含|未)/i;
+const CONTRADICTION_RE = /\b(?:not|never|no longer)\b|(?:并非|毫无|全无|不是|不含|没[有在]?|未|无|非(?!常))/i;
 
 export function classifyClaim(claimText: string, ctx: ClassifyContext): ClaimClassification {
   const claimTokens = tokenize(claimText);
@@ -314,7 +331,7 @@ export function buildAttributionReport(
 
 export function deriveGapRequests(claims: AttributionClaim[]): GapRequest[] {
   return claims
-    .filter((c) => c.label === "unsupported" || (c.label === "uncertain" && c.evidence.length === 0))
+    .filter((c) => c.label === "unsupported" || c.label === "uncertain")
     .map((c) => ({
       assertion: c.text,
       evidenceState:
@@ -327,15 +344,18 @@ export function deriveGapRequests(claims: AttributionClaim[]): GapRequest[] {
     }));
 }
 
-// D7: when every claim is unsupported AND there is no evidence AND sufficiency says "incorrect",
-// bridge to a full abstain rather than emitting a misleading verified answer.
+// D7: "all-weak evidence" bridge — a claim counts as weak when it is unsupported
+// (deterministic contradiction) or uncertain with zero evidence. When EVERY claim is weak
+// and sufficiency says "incorrect", bridge to a full abstain rather than emitting a
+// misleading verified answer. (r83 audit F1: previous double-gate was unreachable —
+// unsupported implies evidence exists by construction.)
+export function claimIsWeak(c: AttributionClaim): boolean {
+  return c.label === "unsupported" || (c.label === "uncertain" && c.evidence.length === 0);
+}
+
 export function shouldBridgeToAbstain(report: AttributionReport, sufficiencyVerdict?: string): boolean {
   if (report.claims.length === 0) return false;
-  return (
-    report.claims.every((c) => c.label === "unsupported") &&
-    report.claims.every((c) => c.evidence.length === 0) &&
-    sufficiencyVerdict === "incorrect"
-  );
+  return report.claims.every(claimIsWeak) && sufficiencyVerdict === "incorrect";
 }
 
 // ---------------------------------------------------------------------------
@@ -344,6 +364,37 @@ export function shouldBridgeToAbstain(report: AttributionReport, sufficiencyVerd
 
 export function shouldEscalateToJudge(claim: AttributionClaim): boolean {
   return claim.label === "uncertain" && claim.evidence.length > 0;
+}
+
+export type JudgeFn = (claim: AttributionClaim) => Promise<ClaimLabel | null>;
+
+// ADR-0034 step 6 / ADR-0029 budget gate: judge escalation is host-injected (the host owns
+// the LLM and its budget ledger; kernel stays pure). applyJudgeEscalation re-labels
+// escalatable claims via the judge, bounded by maxCalls, and flips judgeEnhanced so the
+// report is honest about whether an actual judge ran.
+export async function applyJudgeEscalation(
+  report: AttributionReport,
+  judgeFn: JudgeFn,
+  maxCalls = 3,
+): Promise<number> {
+  let used = 0;
+  for (const c of report.claims) {
+    if (used >= maxCalls) break;
+    if (!shouldEscalateToJudge(c)) continue;
+    used++;
+    const verdict = await judgeFn(c);
+    if (verdict === "supported" || verdict === "unsupported") {
+      c.label = verdict;
+      c.rationale = (c.rationale ? c.rationale + " " : "") + "[judge:" + verdict + "]";
+    }
+  }
+  if (used > 0) {
+    report.judgeEnhanced = true;
+    report.supportedCount = report.claims.filter((c) => c.label === "supported").length;
+    report.uncertainCount = report.claims.filter((c) => c.label === "uncertain").length;
+    report.unsupportedCount = report.claims.filter((c) => c.label === "unsupported").length;
+  }
+  return used;
 }
 
 // ---------------------------------------------------------------------------
@@ -371,6 +422,8 @@ export function renderAttributionText(report: AttributionReport): string {
 }
 
 // Attach report onto envelope. Mutates envelope.attribution — caller owns the object.
+// r83 audit F14: attribution runs on every mode incl. fast — deliberate (D2 bounded loop,
+// maxClaims=20 * jaccard is O(ns); cost is negligible vs retrieval latency). Recorded, not gated.
 export function attachAttribution(envelope: FusedEnvelope, opts?: BuildAttributionOptions): AttributionReport {
   const report = buildAttributionReport(envelope, opts);
   envelope.attribution = report;

@@ -27,11 +27,25 @@ export async function runSearch(args: string[]): Promise<number> {
   const domain = process.env.ANS_DOMAIN;
   const { retriever } = createEngine(domain);
 
-  console.log("ans search: " + JSON.stringify({ query: queryClean, mode }));
-  console.log("---");
-
   try {
     const envelope = await retriever.search({ query: queryClean, mode, maxResults: 10 });
+
+    // r83 audit F5 / ADR-0034 D4: --json pure — single JSON document on stdout, nothing else.
+    if (isJson) {
+      const out = {
+        query: queryClean,
+        mode,
+        results: envelope.results,
+        answers: envelope.answers,
+        sufficiency: envelope.metadata?.sufficiency ?? null,
+        attribution: envelope.attribution ?? null,
+      };
+      process.stdout.write(JSON.stringify(out, null, 2) + "\n");
+      return envelope.results.length > 0 ? 0 : 1;
+    }
+
+    console.log("ans search: " + JSON.stringify({ query: queryClean, mode }));
+    console.log("---");
 
     // Render results.
     for (let i = 0; i < envelope.results.length; i++) {
@@ -61,16 +75,10 @@ export async function runSearch(args: string[]): Promise<number> {
       }
       console.log("");
     }
-    // ADR-0034 D4: CLI attribution rendering for TTY; --json outputs structured JSON only.
+    // ADR-0034 D4: CLI attribution rendering for TTY (mark/annotated Sources). --json exits earlier.
     if (envelope.attribution) {
       const { renderAttributionText } = await import("@anysearch/kernel");
-      if (isJson) {
-        // --json: Machine-readable output, no decorative chars. Attribution included as structured JSON.
-        console.log(JSON.stringify({ attribution: envelope.attribution }));
-      } else {
-        // TTY: inline ✓/~/✗+参考注解表 + Sources
-        console.log(renderAttributionText(envelope.attribution));
-      }
+      console.log(renderAttributionText(envelope.attribution));
     }
 
     console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));

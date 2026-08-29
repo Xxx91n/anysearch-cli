@@ -12,6 +12,7 @@ import {
   deriveGapRequests,
   shouldBridgeToAbstain,
   shouldEscalateToJudge,
+  applyJudgeEscalation,
   renderAttributionText,
 } from "../src/attribution";
 import type { FusedEnvelope, AttributionReport } from "@anysearch/retriever";
@@ -230,21 +231,22 @@ describe("shouldBridgeToAbstain", () => {
     const rep: AttributionReport = { claims: [], gaps: [], supportedCount: 0, uncertainCount: 0, unsupportedCount: 0, schema: "anysearch/attribution-report@1", generatedAt: "", judgeEnhanced: false };
     assert.equal(shouldBridgeToAbstain(rep, "incorrect"), false);
   });
-  it("true when all unsupported + no evidence + incorrect sufficiency", () => {
+  it("true when all claims weak (unsupported contradicts carry evidence) + incorrect sufficiency", () => {
     const rep = {
-      claims: [{ id: "c1", text: "X", label: "unsupported" as const, evidence: [], confidence: 0.5 }],
+      claims: [{ id: "c1", text: "X", label: "unsupported" as const, evidence: [{ url: "u", provider: "p", sourceKey: "retrieval_results[0]" }], confidence: 0.5 }],
       gaps: [], supportedCount: 0, uncertainCount: 0, unsupportedCount: 1,
       schema: "anysearch/attribution-report@1" as const, generatedAt: "", judgeEnhanced: false,
     };
+    // r83 F1: unsupported claims always carry contradiction evidence — weak ≠ evidence-less.
     assert.equal(shouldBridgeToAbstain(rep, "incorrect"), true);
   });
-  it("false when even one claim has evidence", () => {
+  it("false when verdict is not incorrect", () => {
     const rep = {
-      claims: [{ id: "c1", text: "X", label: "unsupported" as const, evidence: [{ url: "", provider: "", sourceKey: "" }], confidence: 0.5 }],
+      claims: [{ id: "c1", text: "X", label: "unsupported" as const, evidence: [{ url: "u", provider: "p", sourceKey: "k" }] }],
       gaps: [], supportedCount: 0, uncertainCount: 0, unsupportedCount: 1,
       schema: "anysearch/attribution-report@1" as const, generatedAt: "", judgeEnhanced: false,
     };
-    assert.equal(shouldBridgeToAbstain(rep, "incorrect"), false);
+    assert.equal(shouldBridgeToAbstain(rep, "sufficient"), false);
   });
   it("false for supported claims", () => {
     const rep = {
@@ -301,5 +303,78 @@ describe("renderAttributionText", () => {
     repData.claims[0].evidence = [{ url: "https://ex.com/a", provider: "exa", sourceKey: "retrieval_results[0]" }] as any;
     const out = renderAttributionText(repData as any);
     assert.ok(out.includes("https://ex.com/a"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// r83 audit additions — F2 judge wiring / F10 signals 5+6 / F12 partial_evidence / F13 negation
+// ---------------------------------------------------------------------------
+describe("detectFragments — r83 audit additions", () => {
+  it("flags mixed-script / abbreviation signal (F10 混排缩写)", () => {
+    const f = detectFragments("结果引用 Dr. Smith 2024报告指出结论相反。");
+    assert.ok(f.reasons.includes("mixed_abbrev"));
+  });
+  it("flags long sentence", () => {
+    const f = detectFragments("这是一个没有任何连接词的超长句子".repeat(15));
+    assert.ok(f.isLongSentence, "expected long_sentence flag");
+    assert.ok(f.reasons.includes("long_sentence"));
+  });
+  it("connector regex includes bare 且 (F10)", () => {
+    const f = detectFragments("该方案成本更低且部署更快。");
+    assert.ok(f.hasConnector);
+  });
+});
+
+describe("classifyClaim — Chinese single-character negation (F13)", () => {
+  it("无/没/非 negate high-overlap snippets into unsupported", () => {
+    const claim = "定期运动对心血管健康有益。";
+    const results = [{
+      title: "心血管健康研究",
+      snippet: "研究结论：定期运动对心血管健康无益。",
+      url: "https://example.org/x", source: "test",
+    }] as any;
+    const c = classifyClaim(claim, { retrievalResults: results });
+    assert.equal(c.label, "unsupported");
+  });
+});
+
+describe("deriveGapRequests — partial_evidence (F12)", () => {
+  it("uncertain claim with evidence yields partial_evidence gap", () => {
+    const gaps = deriveGapRequests([
+      { id: "c1", text: "A claim with some weak evidence", label: "uncertain", evidence: [{ url: "u", provider: "p", sourceKey: "k" }] } as any,
+    ]);
+    assert.equal(gaps.length, 1);
+    assert.equal(gaps[0].evidenceState, "partial_evidence");
+  });
+});
+
+describe("applyJudgeEscalation — host-injected judge (F2)", () => {
+  it("escalates only uncertain+evidence claims, bounded by maxCalls, honest judgeEnhanced", async () => {
+    const rep = {
+      schema: "anysearch/attribution-report@1" as const, generatedAt: "",
+      claims: [
+        { id: "c1", text: "a", label: "uncertain" as const, evidence: [{ url: "u", provider: "p", sourceKey: "k" }] },
+        { id: "c2", text: "b", label: "uncertain" as const, evidence: [{ url: "u", provider: "p", sourceKey: "k" }] },
+        { id: "c3", text: "c", label: "uncertain" as const, evidence: [] },
+        { id: "c4", text: "d", label: "supported" as const, evidence: [{ url: "u", provider: "p", sourceKey: "k" }] },
+      ],
+      gaps: [], supportedCount: 1, uncertainCount: 3, unsupportedCount: 0, judgeEnhanced: false,
+    } as any;
+    const used = await applyJudgeEscalation(rep, async () => "supported", 1);
+    assert.equal(used, 1);
+    assert.equal(rep.judgeEnhanced, true);
+    assert.equal(rep.claims[0].label, "supported");
+    assert.equal(rep.claims[1].label, "uncertain"); // maxCalls bound
+    assert.equal(rep.claims[2].label, "uncertain"); // no evidence — not escalatable
+  });
+  it("judgeEnhanced stays false when no escalation actually ran", async () => {
+    const rep = {
+      schema: "anysearch/attribution-report@1" as const, generatedAt: "",
+      claims: [{ id: "c1", text: "a", label: "supported" as const, evidence: [] }],
+      gaps: [], supportedCount: 1, uncertainCount: 0, unsupportedCount: 0, judgeEnhanced: false,
+    } as any;
+    const used = await applyJudgeEscalation(rep, async () => "supported");
+    assert.equal(used, 0);
+    assert.equal(rep.judgeEnhanced, false);
   });
 });

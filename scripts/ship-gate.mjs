@@ -236,10 +236,15 @@ function stepStaticAssertions() {
     const schemaPath = path.join(ROOT, "packages/kernel/src/attribution-schema.ts");
     if (!fs.existsSync(schemaPath)) fail("ADR-0034: packages/kernel/src/attribution-schema.ts missing");
     const sch = fs.readFileSync(schemaPath, "utf8");
-    if (!sch.includes("AttributionReport") && !sch.includes("AttributionClaim")) {
-      fail("ADR-0034: attribution-schema.ts lacks AttributionReport/AttributionClaim exports");
+    const apf = (sch.match(/additionalProperties:\s*false/g) || []).length;
+    if (apf < 4) {
+      fail("ADR-0034 1g: attribution-schema.ts must close additionalProperties:false on all 4 object schemas (evidence/claim/gap/report), found " + apf);
     }
-    report("pass", "attribution TypeBox schema present");
+    for (const tok of ["AttributionReportSchema", "ClaimSchema", "GapRequestSchema", "AttributionEvidenceSchema",
+      '"supported"', '"uncertain"', '"unsupported"', '"no_evidence"', '"partial_evidence"', '"conflicting_evidence"']) {
+      if (!sch.includes(tok)) fail("ADR-0034 1g: attribution-schema.ts missing " + tok);
+    }
+    report("pass", "attribution TypeBox schema parity (4 additionalProperties closers + enums present)");
   }
 
   // 1h. ADR-0034 D5: IR contract — FusedEnvelope.attribution field must be declared before it is consumed.
@@ -250,6 +255,33 @@ function stepStaticAssertions() {
       fail("ADR-0034: FusedEnvelope missing attribution?: AttributionReport field");
     }
     report("pass", "FusedEnvelope.attribution declared");
+  }
+
+  // 1i. ADR-0034 D4 D5: MCP dual-channel equivalence — both search_web and research_web must
+  // surface attribution in BOTH the content JSON and structuredContent.
+  {
+    for (const tool of ["search-web.tool.ts", "research-web.tool.ts"]) {
+      const src = fs.readFileSync(path.join(ROOT, "apps/mcp/src/tools", tool), "utf8");
+      if (!src.includes("structuredContent")) fail("ADR-0034 1i: " + tool + " lacks structuredContent channel");
+      const attrCount = (src.match(/attribution/g) || []).length;
+      if (attrCount < 3) fail("ADR-0034 1i: " + tool + " attribution wiring incomplete (found " + attrCount + " occurrences)");
+    }
+    report("pass", "MCP search/research dual-channel attribution (content + structuredContent)");
+  }
+
+  // 1j. ADR-0034 D4: CLI --json purity — single JSON document on stdout, no decorative chars in this file.
+  {
+    const cli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/search.ts"), "utf8");
+    if (!cli.includes("process.stdout.write(JSON.stringify(out")) fail("ADR-0034 1j: CLI --json pure-JSON exit path missing");
+    if (/[✓✗~═─]/.test(cli)) fail("ADR-0034 1j: decorative glyphs in CLI search (belong to kernel renderAttributionText only)");
+    report("pass", "CLI --json pure structural output, glyphs confined to kernel renderer");
+  }
+
+  // 1k. ADR-0034 D4 ghost-reference guard: renderer must dedupe sources before numbering.
+  {
+    const att = fs.readFileSync(path.join(ROOT, "packages/kernel/src/attribution.ts"), "utf8");
+    if (!att.includes("seen.add(e.url)")) fail("ADR-0034 1k: renderAttributionText lacks URL dedupe (ghost-reference risk)");
+    report("pass", "attribution renderer dedupes source URLs");
   }
 
 }
@@ -503,6 +535,15 @@ async function stepMemoryEval() {
   }
   if (typeof rep.datasetFingerprint !== "string" || rep.datasetFingerprint.length !== 16) {
     fail("memory-eval report lacks 16-hex dataset fingerprint");
+  }
+  // ADR-0034 D5: report is contract — the attribution zone must exist even at zero state.
+  {
+    const z = rep.metrics && rep.metrics.attribution;
+    const need = ["supported", "uncertain", "unsupported", "supportedPrecision", "unsupportedRecall", "totalClaims", "judgeEnhanced", "confusion"];
+    if (!z || typeof z !== "object") fail("memory-eval report missing metrics.attribution zone (ADR-0034 D5 fail-closed)");
+    const missing = need.filter((k) => !(k in z));
+    if (missing.length) fail("memory-eval attribution zone missing keys: " + missing.join(", "));
+    report("pass", "memory-eval attribution zone present (zero-state observation period)");
   }
   report("pass", "memory-eval: " + rep.totals.passed + "/" + rep.totals.cases + " cases PASS, fingerprint=" + rep.datasetFingerprint + ", passRate=" + rep.metrics.passRate);
 }

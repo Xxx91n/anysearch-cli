@@ -67,4 +67,4 @@ export const AttributionReportSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export type AttributionReportType = typeof AttributionReportSchema extends undefined ? never : undefined;
+// Removed (r83 audit F8): dead conditional type that could only ever be undefined.

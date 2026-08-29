@@ -89,3 +89,21 @@ Grill r31 的用户问题：四层决策盘点后（ADR-0024~0033 覆盖 pnpm �
 18. Facciani et al. AAAI 2025 — arXiv:2501.01303（随机引用亦提信任，检查反而降）
 19. Reuters Institute《Generative AI and news 2025》；Profound 700K 会话引用分布；NIST AI 600-1 over-reliance
 20. MCP 2025-06-18 spec + SEP-1624 双通道语义等价；SonarQube new-code；Codecov patch vs project gate；Stryker incremental；Kayenta (Netflix)；SPC Phase I/II (NASA NTRS 20000097967)；GitHub required checks 治理
+
+## Audit Round 83 Amendment（实施审计复核结果）
+
+代码级 diff 复核（atomcode 审计 + 逐行核对）后，以下偏差已修复并记录：
+
+1. **D7 abstain 桥可达性（F1）**：原 `shouldBridgeToAbstain` 双门槛（all-unsupported AND all-no-evidence）互斥永不可达。改为 all-weak 语义：unsupported（矛盾证据即在）或 uncertain 且零证据均计 weak；verdict 必须为 "incorrect"。测试改为生产可达数据。
+2. **Judge 升级接线（F2）**：`shouldEscalateToJudge` 原先无调用方。现 engine 构造器接受 host 注入的 `attributionJudge: JudgeFn`，kernel 新增 `applyJudgeEscalation(report, judgeFn, maxCalls=3)` 有界升级；无 judge 配置时 `judgeEnhanced` 如实保持 false。budget_ledger 计数职责归 host 侧（kernel 纯编排，ADR-0005 分工），host 接入点在下一轮 OBS 周期开启前需完成。
+3. **GapRequest → reround seed（F3）**：sufficiency-gate 现把 `gapRequests[0].gapQuery` 作为 reround 种子（优先于 LLM named-gap），并清理生成残留的 "\n" 注释串。
+4. **D5 L0 断言补齐（F4/F8）**：ship-gate 1g 从子串弱断言升级为 4× additionalProperties:false + 全部枚举断言；新增 1i（MCP 双通道等价静态断言）、1j（CLI --json 纯度：单 JSON 文档、无装饰字符）、1k（渲染器 URL 去重=幽灵引用防护）；step7 新增 attribution 区缺即 fail（真 fail-closed）。
+5. **CLI --json 纯结构（F5）**：--json 下只输出单个 JSON 文档（query/mode/results/answers/sufficiency/attribution），人类化渲染全部只走 TTY 分支。
+6. **recall_memory 豁免记录（F6）**：recall 工具的输入是 session memory 而非检索答案，无 claim 可归因——实施计划 step 3 的 recall 双通道为显式豁免。
+7. **混排缩写信号 + 且 连接词（F10）**：CONNECTOR_RE 去重并补 "且"；新增 mixed_abbrev 第六信号；长句与 fail-open 已有/新增显式测试。
+8. **中文单字否定（F13）**：CONTRADICTION_RE 补 无/没/非（"非常" 负预期排除）。连带修复：**CJK tokenize 改为字符 bigram**——无分词时整句为一 token，jaccard≈0，矛盾门对中文永假。
+9. **partial_evidence 产生路径（F12）**：uncertain 且有证据的 claim 现产生 partial_evidence GapRequest。
+10. **research_web 多轮归因（F11）**：多轮时以合并后 allResults 重算归因，evidence sourceKey 与实际返回的结果集一致。
+11. **fast 模式归因保留（F14）**：有界循环（maxClaims=20）成本可忽略，全文模式下保留，注释记录此决定。
+12. **验收 5 切分器漂移**：golden 扩展（claim 期望分布入 golden）仍为观察期前置条件，由 kernel 确定性测试（46/46）承担切分器回归红线；eval golden 扩展列入下一 OBS 周期任务。
+13. **混淆矩阵字段（F9）**：eval attribution 区新增 confusion{tp,fp,fn,tn} 零占位，观察期后填入。

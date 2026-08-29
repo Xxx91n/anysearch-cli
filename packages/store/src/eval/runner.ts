@@ -69,6 +69,8 @@ export interface EvalMetrics {
     unsupportedRecall: number;  // fraction of truly unsupported claims caught (offline baseline, junction only)
     totalClaims: number;
     judgeEnhanced: boolean;
+    // Confusion matrix over labelled verdicts — zero placeholders during the observation period.
+    confusion: { tp: number; fp: number; fn: number; tn: number };
   };
 }
 
@@ -325,6 +327,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
       unsupportedRecall: 0,
       totalClaims: 0,
       judgeEnhanced: false,
+      confusion: { tp: 0, fp: 0, fn: 0, tn: 0 },
     },
   };
 }

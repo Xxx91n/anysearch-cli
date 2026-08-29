@@ -20,7 +20,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
       const d = depth ?? "deep";
       let allResults: any[] = [];
       let lastRoundSufficiency: Record<string, unknown> | undefined;
-      let lastRoundAttribution: unknown;
+      let lastEnvelope: any = null;
       let rounds = 0;
 
       try {
@@ -35,8 +35,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           rounds++;
           // ADR-0023 D1: sufficiency gate — this is the LAST round's sufficiency; earlier rounds tracks but the gate cares about the final state.
           lastRoundSufficiency = envelope.metadata?.sufficiency as unknown as Record<string, unknown> | undefined;
-          // ADR-0034 D4: capture attribution from the last round envelope as report.
-          lastRoundAttribution = envelope.attribution;
+          lastEnvelope = envelope;
 
           const newItems = (envelope.results ?? []).filter((r: any) => !seenUrls.has(r.url));
           newItems.forEach((r: any) => seenUrls.add(r.url));
@@ -46,6 +45,15 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           if (envelope.metadata?.sufficiency?.verdict === "correct") break;
         }
 
+        // r83 audit F11: re-derive attribution over the MERGED result set so claim
+        // evidence sourceKeys point into the same results array this tool returns.
+        // (Last-round-only attribution indexes a per-round list the tool never returns.)
+        let mergedAttribution: unknown = null;
+        if (lastEnvelope?.attribution) {
+          const { attachAttribution } = await import("@anysearch/kernel");
+          const merged = { ...lastEnvelope, results: allResults };
+          mergedAttribution = attachAttribution(merged);
+        }
         const lastRound = allResults.slice(-10);
         const summary = JSON.stringify(
           {
@@ -59,7 +67,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             // Round-47 fix: stable output shape.
             ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
             // ADR-0034 D4: attribution from last round (claim-level evidence linkage).
-            ...(lastRoundAttribution ? { attribution: lastRoundAttribution } : { attribution: null }),
+            ...(mergedAttribution ? { attribution: mergedAttribution } : { attribution: null }),
           },
           null,
           2,
@@ -67,10 +75,10 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
 
         return {
           content: [{ type: "text" as const, text: summary }],
-          ...(lastRoundSufficiency || lastRoundAttribution
+          ...(lastRoundSufficiency || mergedAttribution
             ? { structuredContent: {
                 ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
-                ...(lastRoundAttribution ? { attribution: lastRoundAttribution } : {}),
+                ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
               } }
             : {}),
         };
