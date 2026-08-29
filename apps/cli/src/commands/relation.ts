@@ -20,7 +20,7 @@ function printHelp(): void {
       "    [--apply]                     Actually write edges (idempotent; reruns supersede)",
       "    [--batch N] [--from-id N] [--limit N]  Keyset pagination controls",
       "    [--reprocess]                 Re-extract rows whose rules_version is older (supersede, never DELETE)",
-      "    [--full-refresh]              Rebuild the edges table from scratch (dbt full-refresh safety net, r87)",
+      "    [--full-refresh]              Rebuild the edges table from scratch (dbt full-refresh safety net, r87; mutually exclusive with --from-id/--limit)",
       "",
       "Exit codes: 0 success / 1 runtime error / 2 usage error.",
       "Run backfills during a quiet window: WAL single-writer, no concurrent MCP traffic.",
@@ -69,6 +69,10 @@ export async function runRelation(args: string[]): Promise<number> {
     const limit = intOpt(rest, "--limit", "backfill-relations");
     const bad = batch.error || fromId.error || limit.error;
     if (bad) { process.stderr.write("ans relation backfill-relations: " + bad + "\n"); return 2; }
+    if (fullRefresh && (fromId.value !== undefined || limit.value !== undefined)) {
+      process.stderr.write("ans relation backfill-relations: --full-refresh cannot be combined with --from-id/--limit\n");
+      return 2;
+    }
     const r = await store.backfillRelations({
       apply, reprocess, fullRefresh, batch: batch.value, fromId: fromId.value, limit: limit.value,
     });

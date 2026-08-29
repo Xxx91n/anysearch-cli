@@ -170,6 +170,18 @@ const edgeCounts = (p: string) => {
   assert(liveRt.n === 1, "exactly one live related_to edge despite repeated episodes: " + liveRt.n);
   c.close();
 }
+// --- r88 audit: fullRefresh + partial window (--from-id/--limit) is rejected at the store layer ---
+{
+  const p4 = join(dir2, "rel4.db");
+  const d = new SqliteSessionStore(p4);
+  let threw = false;
+  try { await d.backfillRelations({ apply: true, fullRefresh: true, fromId: 1 }); } catch { threw = true; }
+  assert(threw, "store rejects fullRefresh + fromId");
+  threw = false;
+  try { await d.backfillRelations({ apply: true, fullRefresh: true, limit: 5 }); } catch { threw = true; }
+  assert(threw, "store rejects fullRefresh + limit");
+  d.close();
+}
 rmSync(dir2, { recursive: true, force: true });
 
 // --- relation telemetry shape ---

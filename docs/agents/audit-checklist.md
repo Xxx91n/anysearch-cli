@@ -52,4 +52,7 @@
 - [x] no_edge / hop 指标仅观测不进门槛（预算留白预注册），assert_edge/supersede 走常规 fail-closed 通道
 - [x] 谓词表变更 = golden 变更 = 指纹翻牌 + 强制重基线（与 ADR-0027 D9 同一纪律）
 - [x] 修复回灌：unmerge 的 memory_entity 恢复按 (memory_id, entity_id) 精确行更新（多实体记忆 UNIQUE 冲突回归）
+- [x] dry-run = 回滚事务内的同一条管线，计数为精确预测；apply 同为整轮单事务（r87 F1，r88 措辞翻正）
+- [x] --full-refresh 与 --from-id/--limit 互斥守卫：CLI exit 2 + store 层 throw，含 relation-edges.test.ts 回归断言（r88 修复）
+- [x] related_to write-once 遥测纯度：首次共现物化边、重复计 relatedToWriteOnce（不混入 dedupSkipped，r87 F2/F7）
 

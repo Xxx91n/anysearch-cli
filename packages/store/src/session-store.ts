@@ -1140,6 +1140,10 @@ export class SqliteSessionStore implements SessionStore {
   // edges table + telemetry counters are left untouched. fullRefresh is the dbt full-refresh
   // safety net (r87 audit F3): rebuild the edges table from scratch, atomic with the scan loop.
   public async backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean; fullRefresh?: boolean }): Promise<BackfillRelationsResult> {
+    // r88 audit: a partial window (--from-id/--limit) contradicts a full rebuild — reject the combination.
+    if (opts.fullRefresh && (opts.fromId !== undefined || opts.limit !== undefined)) {
+      throw new Error("backfillRelations: fullRefresh cannot be combined with fromId/limit (ADR-0035 D7 r88 guard)");
+    }
     const batch = opts.batch ?? 200;
     const maxRows = opts.limit ?? 100000;
     const fromId0 = opts.fromId ?? 0;
