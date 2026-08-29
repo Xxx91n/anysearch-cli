@@ -1237,7 +1237,7 @@ export class SqliteSessionStore implements SessionStore {
         const snap = {
           scanned: res.scanned, lastId: res.lastId, ruleHits: this.relationTel.ruleHits,
           triplesWritten: this.relationTel.triplesWritten, dedupSkipped: this.relationTel.dedupSkipped,
-          schemaRejected: this.relationTel.schemaRejected,
+          schemaRejected: this.relationTel.schemaRejected, relatedToWriteOnce: this.relationTel.relatedToWriteOnce,
         };
         let more = false;
         for (let attempt = 0; ; attempt++) {
@@ -1255,7 +1255,7 @@ export class SqliteSessionStore implements SessionStore {
           } catch (e) {
             if (isBusyRetryable(e) && attempt < 8) {
               Object.assign(res, { scanned: snap.scanned, lastId: snap.lastId });
-              Object.assign(this.relationTel, { ruleHits: snap.ruleHits, triplesWritten: snap.triplesWritten, dedupSkipped: snap.dedupSkipped, schemaRejected: snap.schemaRejected });
+              Object.assign(this.relationTel, { ruleHits: snap.ruleHits, triplesWritten: snap.triplesWritten, dedupSkipped: snap.dedupSkipped, schemaRejected: snap.schemaRejected, relatedToWriteOnce: snap.relatedToWriteOnce });
               await sleep(Math.min(50 * 2 ** attempt, 5000));
               continue;
             }

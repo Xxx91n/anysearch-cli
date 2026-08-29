@@ -497,7 +497,7 @@ _Avoid_: iterative n top-up until significant, expanding via LLM-labeled goldens
 _Avoid_: deriving minGain from n or σ_d, reusing the proportional mdeFor as arm-gain MDE, silently widening a locked n
 
 ## Judgment vs Sanity Metric（判定指标与 sanity 指标）
-判定指标（sole primary）= per-case RoR delta：rank_off − rank_on（负值=关系臂上推），top-k 外 clip 到 k+1 或排除并记排除率（>20% 整轮 WARN），k=60；all BCa/minGain/significance 只挂它。sanity 指标 = 1-hop hit-rate + relationTel，仅遥测与两种异常组合（命中但没用 / 臂死但排名动）触发 WARN+人工审查——二元 hit-rate 的 σ_d=√(p(1-p)) 天花板使 n=80 检 10pp 数学无解（dichotomization 反模式），永不进门禁。FDA 单一 primary 无 multiplicity。ADR-0036 D5。
+判定指标（sole primary）= per-case RoR delta：rank_off − rank_on（正值=关系臂上推，rank_on 更小），top-k 外 clip 到 k+1 或排除并记排除率（>20% 整轮 WARN），k=60；all BCa/minGain/significance 只挂它。sanity 指标 = 1-hop hit-rate + relationTel，仅遥测与两种异常组合（命中但没用 / 臂死但排名动）触发 WARN+人工审查——二元 hit-rate 的 σ_d=√(p(1-p)) 天花板使 n=80 检 10pp 数学无解（dichotomization 反模式），永不进门禁。FDA 单一 primary 无 multiplicity。ADR-0036 D5。
 _Avoid_: promoting a sanity metric into a gate, CRC of rank delta into binary 0/1, Holm/BH multiplicity over a single primary
 
 ## Chunked Backfill with Busy Retry（分块事务回填）

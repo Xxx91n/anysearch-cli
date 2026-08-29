@@ -72,3 +72,11 @@
 - [x] 命中类指标（hopHitRate）降级为 sanity 参考，不与 RoR 混权
 - [x] RoR case 的 corpus 噪声必须足以把向量臂单独能力压出 top-2，否则 paired delta 退化（14 干扰记忆为当前实测标定值，与 distractor 模板强耦合）
 - [x] 50 趟校准墙钟 > ADR-0029 D5 默认 600s 看门狗时，用 EVAL_TIMEOUT_MS 显式放大而不改默认值
+
+### r90 审计复核（round 91 落地）
+
+- [x] F1 已修：ADR-0036 D5 与 CONTEXT「Judgment vs Sanity」术语的 RoR delta 符号约定反转（文档写 negative=上推，实现/测试/基线均为 positive=帮助）——改为 positive，消除规范-实现回归陷阱
+- [x] F2 已修：BUSY 注入测试锁持 150ms 被 busy_timeout=5000 吸收、退避分支零覆盖 → 改为持 5200ms 强制 SQLITE_BUSY 走指数退避
+- [x] F3 已修：失败批计数快照补 relatedToWriteOnce，消除遥测双计
+- [ ] F4（观察，不修）：基线 42 deltas 含 6 个零（臂未激活案），mean 被稀释——方向保守，下轮可视需要切 treatment-active 子样本报告
+- [ ] F5（观察，待下轮确认归属）：验收 2 所指 ship-gate 新断言本轮未见 ship-gate.mjs diff

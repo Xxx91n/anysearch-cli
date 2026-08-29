@@ -6,6 +6,15 @@ All notable changes to this project are recorded here. Format follows
 
 ## [0.1.0-rc.0] — 2026-08-22
 
+### Fixed
+- r90 audit (ADR-0036): D5 RoR delta sign convention corrected in ADR-0036 and CONTEXT.md
+  (positive = relation arm pushed the memory earlier; sign was documented inverted while
+  code/tests/baseline all used positive=helps — regression trap removed).
+- r90 audit (ADR-0036 D6): backfill retry counter snapshot now also covers
+  `relatedToWriteOnce` so a failed batch retry no longer double-counts that telemetry bit;
+  busy-injection test now holds the foreign lock past busy_timeout (5200ms) so the
+  exponential-backoff branch actually executes (a 150ms hold was absorbed by busy_timeout).
+
 ### Added
 - ADR-0020 ship-gate pipeline: `scripts/ship-gate.mjs` (Node stdlib, single file)
   as the blocking Product Smoke Gate, plus a non-blocking

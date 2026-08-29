@@ -198,10 +198,12 @@ rmSync(dir2, { recursive: true, force: true });
   const chunked = await st.backfillRelations({ apply: true, batch: 1 });
   assert(chunked.written === dry3.written && chunked.scanned === 4, "chunked apply matches dry-run exact prediction across batches: " + chunked.written + " vs " + dry3.written);
   { const w = new Database(dbPath3); w.exec("DELETE FROM edges"); w.close(); }
-  // BUSY injection: a foreign connection holds the write lock briefly; the loop must not error out.
+  // BUSY injection: hold the foreign write lock slightly past the store's busy_timeout (5000ms),
+  // so the first batch attempt throws SQLITE_BUSY and the exponential-backoff retry path actually
+  // executes (a 150ms hold is absorbed by busy_timeout and never reaches it — r90 audit F2).
   const foreign = new Database(dbPath3);
   foreign.exec("BEGIN IMMEDIATE");
-  const releaser = setTimeout(() => foreign.exec("COMMIT"), 150);
+  const releaser = setTimeout(() => foreign.exec("COMMIT"), 5200);
   const retryRes = await st.backfillRelations({ apply: true, batch: 2 });
   clearTimeout(releaser);
   foreign.close();
