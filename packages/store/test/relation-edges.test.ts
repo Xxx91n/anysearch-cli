@@ -113,6 +113,65 @@ assert(afterApply >= beforeApply, "apply never shrinks the live edge set");
 const again = await store.backfillRelations({ apply: true });
 assert(again.written === 0, "second apply is a no-op (idempotent): " + again.written);
 
+// --- r87 audit F1: dry-run is an EXACT prediction (rolled-back tx), never an upper bound ---
+const dir2 = mkdtempSync(join(tmpdir(), "ans-rel2-"));
+const dbPath2 = join(dir2, "rel2.db");
+const edgeCounts = (p: string) => {
+  const d = new Database(p, { readonly: true });
+  const t = d.prepare("SELECT COUNT(*) as n FROM edges").get() as { n: number };
+  const l = d.prepare("SELECT COUNT(*) as n FROM edges WHERE valid_until IS NULL").get() as { n: number };
+  d.close();
+  return { total: t.n, live: l.n };
+};
+{
+  const b = new SqliteSessionStore(dbPath2);
+  const s2 = await b.createSession("eval");
+  await b.adjudicateMemory(s2.id, [
+    { url: "https://ex.com/p1", title: "PhotonKit uses CraneLib for render jobs", snippet: "PhotonKit uses CraneLib at 09:00", source: "exa", evidence: 0.9 },
+    { url: "https://ex.com/p2", title: "PhotonKit depends on CraneLib", snippet: "PhotonKit depends on CraneLib for queueing", source: "exa", evidence: 0.9 },
+  ]);
+  { const w = new Database(dbPath2); w.exec("DELETE FROM edges"); w.close(); } // simulate pre-backfill state
+  const tel0 = b.relationTelemetry();
+  const dry2 = await b.backfillRelations({ apply: false });
+  assert(dry2.scanned === 2 && dry2.written > 0, "dry-run predicts writes: " + JSON.stringify(dry2));
+  assert(edgeCounts(dbPath2).total === 0, "dry-run leaves the edges table untouched");
+  const tel1 = b.relationTelemetry();
+  assert(tel1.ruleHits === tel0.ruleHits && tel1.triplesWritten === tel0.triplesWritten && tel1.dedupSkipped === tel0.dedupSkipped && tel1.schemaRejected === tel0.schemaRejected && tel1.relatedToWriteOnce === tel0.relatedToWriteOnce, "dry-run leaves telemetry untouched");
+  const app2 = await b.backfillRelations({ apply: true });
+  assert(app2.written === dry2.written && app2.dedupSkipped === dry2.dedupSkipped && app2.schemaRejected === dry2.schemaRejected, "dry-run counters exactly predict apply: " + JSON.stringify(dry2) + " vs " + JSON.stringify(app2));
+  const app3 = await b.backfillRelations({ apply: true });
+  assert(app3.written === 0, "second apply remains a no-op");
+  // r87 audit F3: dbt full-refresh safety net — rebuild from scratch, closed rows never survive
+  const dryFull = await b.backfillRelations({ apply: false, fullRefresh: true });
+  assert(dryFull.written === app2.written, "full-refresh dry-run predicts the same live set: " + dryFull.written);
+  assert(edgeCounts(dbPath2).total > 0, "dry full-refresh deleted nothing");
+  const full = await b.backfillRelations({ apply: true, fullRefresh: true });
+  const c2 = edgeCounts(dbPath2);
+  assert(full.written === app2.written, "full-refresh rewrites the identical live edge set: " + full.written);
+  assert(c2.total === c2.live, "full-refresh leaves zero closed rows behind: " + JSON.stringify(c2));
+  b.close();
+}
+
+// --- r87 audit F2: related_to write-once skip is telemetry-pure (never counted as dedup) ---
+{
+  const p3 = join(dir2, "rel3.db");
+  const c = new SqliteSessionStore(p3);
+  const s3 = await c.createSession("eval");
+  const mem = (n: number) => ({ url: "https://ex.com/q" + n, title: "ZetaKit is linked to WidgetKit", snippet: "ZetaKit is linked to WidgetKit in the bench notes", source: "exa", evidence: 0.9 });
+  await c.adjudicateMemory(s3.id, [mem(1)]); // first write establishes the edge
+  await c.adjudicateMemory(s3.id, [mem(2)]); // second episode hits the write-once skip path
+  const tel3 = c.relationTelemetry();
+  assert(tel3.relatedToWriteOnce >= 1, "write-once skips counted separately: " + tel3.relatedToWriteOnce);
+  // dedupSkipped must contain ONLY same-episode duplicates (the m1 title+snippet double-match = 1), never write-once skips
+  assert(tel3.dedupSkipped === 1, "dedupSkipped counts same-episode dups only: " + tel3.dedupSkipped);
+  const d3 = new Database(p3, { readonly: true });
+  const liveRt = d3.prepare("SELECT COUNT(*) as n FROM edges WHERE relation = 'related_to' AND valid_until IS NULL").get() as { n: number };
+  d3.close();
+  assert(liveRt.n === 1, "exactly one live related_to edge despite repeated episodes: " + liveRt.n);
+  c.close();
+}
+rmSync(dir2, { recursive: true, force: true });
+
 // --- relation telemetry shape ---
 const finalTel = store.relationTelemetry();
 assert(typeof finalTel.pendingEdges === "number" && finalTel.pendingEdges >= 0, "pendingEdges gauge present");

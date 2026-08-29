@@ -6,7 +6,7 @@ import type { RelationRow, BackfillRelationsResult } from "@anysearch/store";
 
 interface RelationStore {
   listRelations(opts?: { entity?: string; limit?: number }): Promise<RelationRow[]>;
-  backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean }): Promise<BackfillRelationsResult>;
+  backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean; fullRefresh?: boolean }): Promise<BackfillRelationsResult>;
 }
 
 function printHelp(): void {
@@ -20,6 +20,7 @@ function printHelp(): void {
       "    [--apply]                     Actually write edges (idempotent; reruns supersede)",
       "    [--batch N] [--from-id N] [--limit N]  Keyset pagination controls",
       "    [--reprocess]                 Re-extract rows whose rules_version is older (supersede, never DELETE)",
+      "    [--full-refresh]              Rebuild the edges table from scratch (dbt full-refresh safety net, r87)",
       "",
       "Exit codes: 0 success / 1 runtime error / 2 usage error.",
       "Run backfills during a quiet window: WAL single-writer, no concurrent MCP traffic.",
@@ -62,13 +63,14 @@ export async function runRelation(args: string[]): Promise<number> {
     const rest = args.slice(1);
     const apply = rest.includes("--apply");
     const reprocess = rest.includes("--reprocess");
+    const fullRefresh = rest.includes("--full-refresh");
     const batch = intOpt(rest, "--batch", "backfill-relations");
     const fromId = intOpt(rest, "--from-id", "backfill-relations");
     const limit = intOpt(rest, "--limit", "backfill-relations");
     const bad = batch.error || fromId.error || limit.error;
     if (bad) { process.stderr.write("ans relation backfill-relations: " + bad + "\n"); return 2; }
     const r = await store.backfillRelations({
-      apply, reprocess, batch: batch.value, fromId: fromId.value, limit: limit.value,
+      apply, reprocess, fullRefresh, batch: batch.value, fromId: fromId.value, limit: limit.value,
     });
     const mode = r.apply ? "APPLY" : "DRY-RUN (use --apply to write)";
     process.stdout.write(

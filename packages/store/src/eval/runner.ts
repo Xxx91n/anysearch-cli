@@ -52,7 +52,7 @@ export interface EvalCounts {
   fpCount: number;
 }
 
-export interface RelTel { ruleHits: number; llmActivations: number; llmFailures: number; triplesWritten: number; dedupSkipped: number; schemaRejected: number; armQueries: number; armHits: number; pendingEdges: number }
+export interface RelTel { ruleHits: number; llmActivations: number; llmFailures: number; triplesWritten: number; dedupSkipped: number; relatedToWriteOnce: number; schemaRejected: number; armQueries: number; armHits: number; pendingEdges: number }
 
 export interface EvalMetrics {
   passRate: number;
@@ -387,7 +387,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
     // land in passRate via the normal case channel).
     relation: (() => {
       let noEdgeChecks = 0, noEdgeViolations = 0, hopChecks = 0, hopHits = 0;
-      const tel: RelTel = { ruleHits: 0, llmActivations: 0, llmFailures: 0, triplesWritten: 0, dedupSkipped: 0, schemaRejected: 0, armQueries: 0, armHits: 0, pendingEdges: 0 };
+      const tel: RelTel = { ruleHits: 0, llmActivations: 0, llmFailures: 0, triplesWritten: 0, dedupSkipped: 0, relatedToWriteOnce: 0, schemaRejected: 0, armQueries: 0, armHits: 0, pendingEdges: 0 };
       for (let i = 0; i < cases.length; i++) {
         const res = results[i]!;
         if (res.relationTel) {

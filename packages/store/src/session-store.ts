@@ -148,7 +148,7 @@ export interface SessionStore {
   // ADR-0035 D3/D5: entity-relation edge layer (KG-lite fifth retrieval arm).
   relationArmRows(query: string, limit?: number): MemoryHit[];
   listRelations(opts?: { entity?: string; limit?: number }): Promise<RelationRow[]>;
-  backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean }): Promise<BackfillRelationsResult>;
+  backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean; fullRefresh?: boolean }): Promise<BackfillRelationsResult>;
   relationTelemetry(): RelationTelemetry;
 }
 
@@ -193,8 +193,9 @@ export interface RelationRow {
   createdAt: string;
 }
 
-// ADR-0035 D7: dry-run/apply both report through the same shape; written = triples emitted
-// (dry-run) or actually inserted (apply). Exit code is a CLI concern (0 success / 1 runtime / 2 usage).
+// ADR-0035 D7: dry-run/apply report through the same shape. Dry-run executes the identical
+// apply pipeline inside a rolled-back transaction, so every counter is an exact prediction
+// (r87 audit F1) — never an upper bound. Exit code is a CLI concern (0/1/2).
 export interface BackfillRelationsResult {
   apply: boolean;
   scanned: number;
@@ -212,6 +213,8 @@ export interface RelationTelemetry {
   llmFailures: number;
   triplesWritten: number;
   dedupSkipped: number;
+  // repeat-episode attempts against a live write-once related_to edge — NOT dedup (r87 audit F2/F7)
+  relatedToWriteOnce: number;
   schemaRejected: number;
   pendingEdges: number;
   armQueries: number;
@@ -232,7 +235,7 @@ export class SqliteSessionStore implements SessionStore {
   // ADR-0033 D5/D6: vector arm telemetry (fail-open writes; pendingVectors = rows lacking an embedding).
   private readonly embedTel = { writes: 0, pendingVectors: 0, armQueries: 0, armHits: 0 };
   // ADR-0035 D8: relation extraction + arm telemetry (report-only, never gated).
-  private readonly relationTel = { ruleHits: 0, llmActivations: 0, llmFailures: 0, triplesWritten: 0, dedupSkipped: 0, schemaRejected: 0, armQueries: 0, armHits: 0 };
+  private readonly relationTel = { ruleHits: 0, llmActivations: 0, llmFailures: 0, triplesWritten: 0, dedupSkipped: 0, relatedToWriteOnce: 0, schemaRejected: 0, armQueries: 0, armHits: 0 };
   private stmts: {
     createSession: Database.Statement;
     append: Database.Statement;
@@ -501,6 +504,9 @@ export class SqliteSessionStore implements SessionStore {
     if (armHits.length > 0) arms.push({ label: "entity", ids: armHits.map((h) => String(h.rowid)) });
     if (vecHits.length > 0) arms.push({ label: "vector", ids: vecHits.map((h) => String(h.rowid)) });
     // ADR-0035 D5: relation arm on the raw query (weight 0.5 in fts5.ts like the other side arms).
+    // ADR-0035 D5: the relation arm attaches to queries[0] only — the multi-query lane keeps the
+    // conditional-activation contract on the primary query (r87 audit F5: documented to avoid
+    // misreading as all-queries activation).
     const relHitsM = this.relationArmRows(queries[0] ?? "", limit);
     if (relHitsM.length > 0) arms.push({ label: "relation", ids: relHitsM.map((h) => String(h.rowid)) });
     const hits = await searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank, arms);
@@ -1027,6 +1033,8 @@ export class SqliteSessionStore implements SessionStore {
         this.relationTel.llmFailures += 1;
       }
     }
+    // ADR-0035 D7 contract: live-path inserts are single-statement autocommit ops (no explicit
+    // tx here) — safe under WAL single-writer + busy_timeout. Backfill paths wrap their own tx.
     for (const t of triples) this.insertEdge(memoryId, t, linked);
   }
 
@@ -1064,8 +1072,8 @@ export class SqliteSessionStore implements SessionStore {
     const live = this.db
       .prepare("SELECT id FROM edges WHERE source_entity_id = ? AND relation = ? AND target_entity_id = ? AND valid_until IS NULL")
       .get(s.id, t.relation, o.id) as { id: number } | undefined;
+    if (live && t.relation === "related_to") { this.relationTel.relatedToWriteOnce += 1; return; } // ADR-0035 + r87 audit F7: write-once = first co-occurrence materializes the edge; repeat-episode attempts skip (noise control), counted separately from dedup
     if (live) this.db.prepare("UPDATE edges SET valid_until = datetime('now') WHERE id = ?").run(live.id);
-    else if (t.relation === "related_to") { this.relationTel.dedupSkipped += 1; return; } // ADR-0035: co-occurrence edges are write-once (noise control)
     this.db
       .prepare("INSERT INTO edges (source_entity_id, target_entity_id, relation, description, confidence, episode_memory_id, rules_version) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(s.id, o.id, t.relation, null, t.confidence, memoryId, RELATION_RULES_VERSION);
@@ -1127,43 +1135,57 @@ export class SqliteSessionStore implements SessionStore {
 
   // ADR-0035 D7: idempotent keyset-paginated backfill (rules only — the LLM seam stays on the live
   // write path). Covered rows skip unless --reprocess targets older rules_version rows (supersede).
-  public async backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean }): Promise<BackfillRelationsResult> {
+  // r87 audit F1: dry-run executes the IDENTICAL pipeline inside a rolled-back transaction, so
+  // written / dedupSkipped / schemaRejected are exact predictions (never upper bounds) and the
+  // edges table + telemetry counters are left untouched. fullRefresh is the dbt full-refresh
+  // safety net (r87 audit F3): rebuild the edges table from scratch, atomic with the scan loop.
+  public async backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean; fullRefresh?: boolean }): Promise<BackfillRelationsResult> {
     const batch = opts.batch ?? 200;
     const maxRows = opts.limit ?? 100000;
-    let fromId = opts.fromId ?? 0;
-    const res: BackfillRelationsResult = { apply: opts.apply, scanned: 0, written: 0, dedupSkipped: 0, schemaRejected: 0, lastId: fromId };
-    for (;;) {
-      if (res.scanned >= maxRows) break;
-      const rows = this.db
-        .prepare(
-          "SELECT r.id, r.title, r.snippet, MIN(e.rules_version) as rules FROM retrieval_results r" +
-          " LEFT JOIN edges e ON e.episode_memory_id = r.id AND e.valid_until IS NULL" +
-          " WHERE r.id > ? GROUP BY r.id ORDER BY r.id LIMIT ?"
-        )
-        .all(fromId, Math.min(batch, maxRows - res.scanned)) as Array<{ id: number; title: string | null; snippet: string | null; rules: number | null }>;
-      if (rows.length === 0) break;
-      for (const row of rows) {
-        res.lastId = row.id;
-        res.scanned += 1;
-        const stale = row.rules !== null && row.rules < RELATION_RULES_VERSION;
-        if (row.rules !== null && !(opts.reprocess && stale)) continue; // already extracted at current version
-        const linked = (this.db
-          .prepare("SELECT e.id, e.name, e.name_norm as nameNorm, e.entity_type as entityType FROM memory_entity me JOIN entities e ON e.id = me.entity_id WHERE me.memory_id = ? AND e.valid_until IS NULL")
-          .all(row.id) as LinkedEntityRef[]).map((e) => ({ ...e, preKnown: true }));
-        if (linked.length === 0) continue;
-        const text = (row.title ?? "") + " " + (row.snippet ?? "");
-        const triples = extractRelations(text, linked);
-        this.relationTel.ruleHits += triples.length;
-        if (!opts.apply) { res.written += triples.length; continue; }
-        const b0 = { d: this.relationTel.dedupSkipped, s: this.relationTel.schemaRejected, w: this.relationTel.triplesWritten };
-        const tx = this.db.transaction(() => { for (const t of triples) this.insertEdge(row.id, t, linked); });
-        tx();
-        res.dedupSkipped += this.relationTel.dedupSkipped - b0.d;
-        res.schemaRejected += this.relationTel.schemaRejected - b0.s;
-        res.written += this.relationTel.triplesWritten - b0.w;
+    const fromId0 = opts.fromId ?? 0;
+    const res: BackfillRelationsResult = { apply: opts.apply, scanned: 0, written: 0, dedupSkipped: 0, schemaRejected: 0, lastId: fromId0 };
+    const tel0 = { ...this.relationTel };
+    const dryRollback = Symbol("dry-run-rollback");
+    const run = () => {
+      let fromId = fromId0;
+      if (opts.fullRefresh) this.db.exec("DELETE FROM edges");
+      for (;;) {
+        if (res.scanned >= maxRows) break;
+        const rows = this.db
+          .prepare(
+            "SELECT r.id, r.title, r.snippet, MIN(e.rules_version) as rules FROM retrieval_results r" +
+            " LEFT JOIN edges e ON e.episode_memory_id = r.id AND e.valid_until IS NULL" +
+            " WHERE r.id > ? GROUP BY r.id ORDER BY r.id LIMIT ?"
+          )
+          .all(fromId, Math.min(batch, maxRows - res.scanned)) as Array<{ id: number; title: string | null; snippet: string | null; rules: number | null }>;
+        if (rows.length === 0) break;
+        for (const row of rows) {
+          res.lastId = row.id;
+          res.scanned += 1;
+          const stale = row.rules !== null && row.rules < RELATION_RULES_VERSION;
+          if (row.rules !== null && !(opts.reprocess && stale)) continue; // already extracted at current version
+          const linked = (this.db
+            .prepare("SELECT e.id, e.name, e.name_norm as nameNorm, e.entity_type as entityType FROM memory_entity me JOIN entities e ON e.id = me.entity_id WHERE me.memory_id = ? AND e.valid_until IS NULL")
+            .all(row.id) as LinkedEntityRef[]).map((e) => ({ ...e, preKnown: true }));
+          if (linked.length === 0) continue;
+          const text = (row.title ?? "") + " " + (row.snippet ?? "");
+          const triples = extractRelations(text, linked);
+          this.relationTel.ruleHits += triples.length;
+          for (const t of triples) this.insertEdge(row.id, t, linked);
+        }
+        fromId = res.lastId;
       }
-      fromId = res.lastId;
+      if (!opts.apply) throw dryRollback;
+    };
+    try {
+      this.db.transaction(run)();
+    } catch (e) {
+      if (e !== dryRollback) throw e;
     }
+    res.dedupSkipped = this.relationTel.dedupSkipped - tel0.dedupSkipped;
+    res.schemaRejected = this.relationTel.schemaRejected - tel0.schemaRejected;
+    res.written = this.relationTel.triplesWritten - tel0.triplesWritten;
+    if (!opts.apply) Object.assign(this.relationTel, tel0); // dry-run leaves telemetry untouched
     return res;
   }
 

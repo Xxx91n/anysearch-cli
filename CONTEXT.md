@@ -479,4 +479,13 @@ _Avoid_: free-form phrase predicates, LLM-judged predicate equivalence, schema c
 `backfill-relations` 默认 dry-run 报告、`--apply` 实写；幂等键 `(episode_memory_id, predicate, subject_norm, object_norm)` + 唯一索引兜底，确定性规则使重跑零副作用；`--batch/--from-id` 键集分页断点续跑；`--reprocess`（规则版本升级重抽）对旧行走 valid_until supersede 永不 DELETE——明确拒绝 `--reset`。与 backfill-vectors 的 opt-in dry-run 旗语极性差异在 ADR 备忘，不改已发版命令。ADR-0035 D7。
 _Avoid_: destructive --reset, in-place edge UPDATE, backfill concurrent with live MCP writes, changing shipped flag semantics
 
+
+## Exact Dry-Run via Rolled-Back Transaction（回滚式精确干跑）
+`backfill-relations` dry-run 在已包装事务内执行与 apply 完全相同的 insertEdge 流水线，末尾抛 rollback 回滚 — written/dedupSkipped/schemaRejected 是精确预测而非上界估计，edges 表与遥测计数器零副作用。结合 `--full-refresh`（dbt full-refresh 回退安全网：原子化重建 edges 表）构成幂等回填的完整观测面。ADR-0035 D7 r87 修订。
+_Avoid_: dry-run estimating by formula, write-in-dry-run, non-atomic full refresh
+
+## Write-Once Co-occurrence Edge（仅写一次共现边）
+`related_to` 边语义为写一次：首次共现实化该边，后续 episode 重复尝试跳过并计入独立的 `relatedToWriteOnce` 遥测位（绝不混入 `dedupSkipped`）。r87 审计 F7 修正了原实现的条件反置（旧代码是“首次跳过”，导致 D4 共现通道成为死代码），golden 套件不受影响（唯一 related_to 用例是 fresh-entity no_edge 负例）。ADR-0035 D4/D7。
+_Avoid_: counting write-once skips as dedup, supersede on related_to, removing the closed predicate without golden flip
+
 *End of Glossary*
