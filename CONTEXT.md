@@ -488,4 +488,20 @@ _Avoid_: dry-run estimating by formula, write-in-dry-run, non-atomic full refres
 `related_to` 边语义为写一次：首次共现实化该边，后续 episode 重复尝试跳过并计入独立的 `relatedToWriteOnce` 遥测位（绝不混入 `dedupSkipped`）。r87 审计 F7 修正了原实现的条件反置（旧代码是“首次跳过”，导致 D4 共现通道成为死代码），golden 套件不受影响（唯一 related_to 用例是 fresh-entity no_edge 负例）。ADR-0035 D4/D7。
 _Avoid_: counting write-once skips as dedup, supersede on related_to, removing the closed predicate without golden flip
 
+## Relation-Arm Gain Observance（关系臂增益观测）
+关系臂从观测区毕业的唯一通道：golden 关系组扩到 Sakai 公式一次锁定的 n（53 案 pilot 估 σ_d 上界 CI、σ²_d=2σ² 保守、上限 80、中途不追加），判定 = 配对 BCa 下界>0 且点估计 ≥ minGain=10pp（sign-flip permutation p<0.05 双保险）；n 或功效不足降 paired WARN 带（ADR-0028 D1），永不 FAIL 化为阈值。扩案保持断言式标签（assert_edge/no_edge），LLM 只合成 case 不合成 label，第二人复核 CN+EN。ADR-0036 D2/D4。
+_Avoid_: iterative n top-up until significant, expanding via LLM-labeled goldens, promoting 53-case observational metrics to gate
+
+## MDE vs MEI Separation（MDE 与 MEI 分离）
+两个独立预注册、禁止互推的参数：`mdeForPaired(n, σ̂_d_upper) = 2.8σ̂_d/√n` 是统计能力（σ̂_d 取 53 案 pilot 95% 上置信界，随 --calibrate 入 baseline，指纹翻转强制重算）；minGain=10pp 是业务地板（MEI，"关系臂值不值 10pp 复杂度"）。判定 = BCa 下界>0 **且**点估计 ≥ minGain。ADR-0034 "8-10%" 重述为 σ_d∈[0.25,0.38] 时 n=80 的配对均值差推导值；比例型 mdeFor(1.4/√n) 仅在 allowance 检查原位保留、绝不管辖臂增益。ADR-0036 D4。
+_Avoid_: deriving minGain from n or σ_d, reusing the proportional mdeFor as arm-gain MDE, silently widening a locked n
+
+## Judgment vs Sanity Metric（判定指标与 sanity 指标）
+判定指标（sole primary）= per-case RoR delta：rank_off − rank_on（负值=关系臂上推），top-k 外 clip 到 k+1 或排除并记排除率（>20% 整轮 WARN），k=60；all BCa/minGain/significance 只挂它。sanity 指标 = 1-hop hit-rate + relationTel，仅遥测与两种异常组合（命中但没用 / 臂死但排名动）触发 WARN+人工审查——二元 hit-rate 的 σ_d=√(p(1-p)) 天花板使 n=80 检 10pp 数学无解（dichotomization 反模式），永不进门禁。FDA 单一 primary 无 multiplicity。ADR-0036 D5。
+_Avoid_: promoting a sanity metric into a gate, CRC of rank delta into binary 0/1, Holm/BH multiplicity over a single primary
+
+## Chunked Backfill with Busy Retry（分块事务回填）
+`backfill-relations --apply` 从单整事务改为每 batch 一事务提交：SQLITE_BUSY 指数退避重试（50ms 起封顶 ~5s，对齐 busy_timeout=5000），SQLITE_BUSY_SNAPSHOT（deferred 升级类）直接报错不重试；可选 per-batch `PRAGMA wal_checkpoint(PASSIVE)` 抑 WAL 膨胀；keyset/--from-id 断点与幂等键不动。dry-run 保持整事务回滚（ADR-0035 r87 精确预测语义不回归）。ADR-0035 D7 quiet-window 约束改写为"建议而非必需"。expand-contract/shadow 表被拒：SQLite 12 步重构要求切换与拷贝同事务，无锁全量回填不存在。ADR-0036 D6。
+_Avoid_: whole-run apply transaction, retrying SQLITE_BUSY_SNAPSHOT, breaking dry-run exact-prediction, shadow-table expand-contract on SQLite
+
 *End of Glossary*
