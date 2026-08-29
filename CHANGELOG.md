@@ -32,4 +32,16 @@ All notable changes to this project are recorded here. Format follows
   composition, dual-era SDK v1+v2 bridge, TypeBox source-of-truth, plugin
   hooks layer, SessionStart routing, L0/L1 memory pipeline).
 
+### Added
+- ADR-0035 KG-lite relation arm (fifth RRF arm, weight 0.5): closed 8-predicate table
+  (`works_on/depends_on/uses/part_of/member_of/located_at/authored_by/related_to`) with EN+CN alias map,
+  rule-first extraction (verb frames + url<->handle bridge + 2-preKnown co-occurrence), single-call
+  LLM seam behind a strict post-filter (JSON degrade parse, never blocks the write path), edges table
+  with partial-unique active index and episode provenance, merge redirects edges within the combine
+  transaction with snapshot-driven bounded unmerge restore, `pendingEdges` gauge + relationTel counters,
+  golden `relations` group (12 cases: 8 predicate positives incl. CJK quoted, fail-closed supersede,
+  observational no_edge + 1-hop hit-rate), ship-gate 1j static + relation-zone metric assertions.
+- ADR-0035 D7: `ans relation list` + `ans relation backfill-relations` (dry-run default, keyset
+  pagination, `--reprocess` supersedes stale rules_version rows, exit codes 0/1/2).
+
 [0.1.0-rc.0]: https://github.com/anysearch/anysearch-cli/releases/tag/v0.1.0-rc.0

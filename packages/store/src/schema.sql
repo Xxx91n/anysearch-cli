@@ -192,3 +192,33 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
   model TEXT NOT NULL,
   embedded_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ADR-0035 D1/D2: KG-lite entity-relation edge layer (fifth retrieval arm).
+-- Closed predicate set enforced by CHECK; bi-temporal soft-close (valid_until); the partial
+-- unique index keeps one live row per (source, relation, target); re-assertion supersedes.
+CREATE TABLE IF NOT EXISTS edges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_entity_id INTEGER NOT NULL REFERENCES entities(id),
+  target_entity_id INTEGER NOT NULL REFERENCES entities(id),
+  relation TEXT NOT NULL CHECK (relation IN ('works_on','depends_on','uses','part_of','member_of','located_at','authored_by','related_to')),
+  description TEXT,
+  confidence REAL NOT NULL DEFAULT 0.5 CHECK (confidence >= 0 AND confidence <= 1),
+  episode_memory_id INTEGER REFERENCES retrieval_results(id) ON DELETE CASCADE,
+  rules_version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  valid_until TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_active_triple ON edges(source_entity_id, relation, target_entity_id) WHERE valid_until IS NULL;
+CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_entity_id) WHERE valid_until IS NULL;
+CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_entity_id) WHERE valid_until IS NULL;
+CREATE INDEX IF NOT EXISTS idx_edges_episode ON edges(episode_memory_id);
+
+-- Edge-pattern constraint table (LlamaIndex edge_pattern style): allowed
+-- (head_type, relation, tail_type) triples; '*' wildcard. Seeded from relation.ts
+-- EDGE_PATTERN_ROWS via INSERT OR IGNORE at store construction.
+CREATE TABLE IF NOT EXISTS edge_patterns (
+  head_type TEXT NOT NULL,
+  relation TEXT NOT NULL,
+  tail_type TEXT NOT NULL,
+  UNIQUE (head_type, relation, tail_type)
+);

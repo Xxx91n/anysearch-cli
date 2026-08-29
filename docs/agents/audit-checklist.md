@@ -35,3 +35,21 @@
 - [x] MCP 双通道：attribution 同时出现在 content JSON 和 structuredContent
 - [x] --json 输出无 ANSI charset（纯结构输出）
 - [x] GapRequest 通过 envelope.attribution.gaps 传递（sufficiency-gate reround 触发）
+
+## ADR-0035 KG-lite Relation Layer
+
+- [x] golden `relations` 组先行（8 谓词正例各≥1 含中文引号、fail-closed supersede、配对强负例 no_edge、1-hop hop 观测；53 案 12 组全绿，指纹翻牌后 --calibrate 重基线）
+- [x] edges 表 + 部分唯一活性索引 + 谓词 CHECK + edge_patterns 校验表（schema.sql 与 relation.ts PREDICATES 完全一致）
+- [x] combine() 三动作（memory_entity 重指 + 边重指 + snapshot redirectedEdges/closedDupEdgeIds）；unmerge 有界恢复（活性冲突防复活守卫）
+- [x] 规则优先 + ≤1/写 LLM seam（parse 降级容错，fail-open，relationTel 9 计数含 pendingEdges 派生仪表）
+- [x] 第五臂 RRF 0.5 接入（label "relation"，1-hop 邻居 episode 回链，cap 100）
+- [x] CLI `ans relation list` / `backfill-relations`（dry-run 默认，keyset 分页，--reprocess 不删行，exit 0/1/2）
+- [x] ship-gate 1j 静态断言 + metrics.relation 区 fail-closed
+
+### 审计要点（ADR-0035-specific)
+
+- [x] 无 TTY 也安全：每轮抽取只走规则，LLM seam 仅在规则空时激活一次
+- [x] no_edge / hop 指标仅观测不进门槛（预算留白预注册），assert_edge/supersede 走常规 fail-closed 通道
+- [x] 谓词表变更 = golden 变更 = 指纹翻牌 + 强制重基线（与 ADR-0027 D9 同一纪律）
+- [x] 修复回灌：unmerge 的 memory_entity 恢复按 (memory_id, entity_id) 精确行更新（多实体记忆 UNIQUE 冲突回归）
+

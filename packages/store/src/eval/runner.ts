@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { SqliteSessionStore } from "../session-store";
+import { normalizeEntityName } from "../entity";
 import type { AdjudicationResultItem } from "../session-store";
 import type { CaseSpec, EvalStage } from "./golden-cases";
 
@@ -22,6 +23,9 @@ export interface OpRecord {
   hitCount?: number;
   // ADR-0033 D8: count of non-weak (FTS-armed) hits, for weak-evidence semantics.
   strongCount?: number;
+  // ADR-0035 D5: relation observational flags (never flip case pass/fail).
+  hopHit?: boolean;
+  noEdgeViolation?: boolean;
 }
 
 export interface CaseResult {
@@ -35,6 +39,8 @@ export interface CaseResult {
   entityArm?: { queries: number; candidates: number; activations: number; hits: number };
   // ADR-0032 D5: per-case merge/review telemetry snapshot (report-only).
   entityMerge?: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number };
+  // ADR-0035 D4: per-case relation extraction telemetry snapshot (report-only).
+  relationTel?: RelTel;
 }
 
 export interface EvalCounts {
@@ -45,6 +51,8 @@ export interface EvalCounts {
   fpEligible: number;
   fpCount: number;
 }
+
+export interface RelTel { ruleHits: number; llmActivations: number; llmFailures: number; triplesWritten: number; dedupSkipped: number; schemaRejected: number; armQueries: number; armHits: number; pendingEdges: number }
 
 export interface EvalMetrics {
   passRate: number;
@@ -71,6 +79,17 @@ export interface EvalMetrics {
     judgeEnhanced: boolean;
     // Confusion matrix over labelled verdicts — zero placeholders during the observation period.
     confusion: { tp: number; fp: number; fn: number; tn: number };
+  };
+  // ADR-0035 D5: relation zone — no_edge precision + 1-hop hit rate are OBSERVATIONAL-only
+  // (budget formulas pre-registered with blank values); assert_edge / edge_supersede are fail-closed
+  // and surface through the normal case-pass channel. Zero placeholders during observation period.
+  relation?: {
+    noEdgeChecks: number;
+    noEdgeViolations: number;
+    hopChecks: number;
+    hopHits: number;
+    hopHitRate: number;
+    tel: RelTel;
   };
 }
 
@@ -103,6 +122,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
   const ops: OpRecord[] = [];
   let sessionId = "";
   let entityArmSnapshot: { queries: number; candidates: number; activations: number; hits: number } | undefined;
+  let relationTelSnapshot: RelTel | undefined;
   let entityMergeSnapshot: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } | undefined;
   const adjResults: AdjudicationResultItem[][] = []; // stashed per adjudicate opIndex
   let failedStage: EvalStage | null = null;
@@ -153,6 +173,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
               detail: fails.length ? fails.join("; ") : hits.length + " hit(s)",
               samples: hits.slice(0, 2).map((h) => ({ title: (h as { role?: string }).role ?? null, snippet: String((h as { content?: string }).content ?? "").slice(0, 200) })),
               rank, hitCount: hits.length, strongCount: strongHits.length,
+              ...(op.expectHopTitle !== undefined ? { hopHit: texts.some((t) => t.includes(op.expectHopTitle!)) } : {}),
             });
             break;
           }
@@ -219,6 +240,38 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
             mark({ op: opIndex, kind: op.op, stage: op.stage, ok: rows.length === op.expectCount, detail: rows.length + " quarantined" });
             break;
           }
+          case "edge": {
+            // ADR-0035 D5: assert_edge / edge_supersede are fail-closed; no_edge is observational.
+            const sn = normalizeEntityName(op.subject);
+            const on = normalizeEntityName(op.object);
+            const rows = raw.prepare(
+              "SELECT e.id, e.valid_until, e.episode_memory_id FROM edges e"
+              + " JOIN entities se ON se.id = e.source_entity_id JOIN entities te ON te.id = e.target_entity_id"
+              + " WHERE se.name_norm = ? AND e.relation = ? AND te.name_norm = ?",
+            ).all(sn, op.relation, on) as Array<{ id: number; valid_until: string | null; episode_memory_id: number }>;
+            const live = rows.filter((r) => r.valid_until === null);
+            const closed = rows.filter((r) => r.valid_until !== null);
+            if (op.assert === "no_edge") {
+              const violated = live.length > 0 || closed.length > 0;
+              mark({ op: opIndex, kind: op.op, stage: op.stage, ok: true, detail: (violated ? "OBSERVED VIOLATION: " : "") + live.length + " live " + closed.length + " closed edge(s) " + sn + "->" + op.relation + "->" + on, noEdgeViolation: violated });
+              break;
+            }
+            const fails: string[] = [];
+            if (live.length !== 1) fails.push("live edge count " + live.length + " != 1");
+            if (op.assert === "supersede") {
+              if (closed.length < 1) fails.push("no closed (superseded) row found");
+              const res = op.fromOp !== undefined ? adjResults[op.fromOp] : undefined;
+              const ep = res?.[0]?.insertedId;
+              if (ep === undefined) fails.push("fromOp " + op.fromOp + " has no insertedId to compare");
+              else if (live.length >= 1 && live[0].episode_memory_id !== ep) fails.push("live row episode " + live[0].episode_memory_id + " != latest write " + ep);
+            } else if (op.fromOp !== undefined) {
+              const res = adjResults[op.fromOp];
+              const ep = res?.[0]?.insertedId;
+              if (ep !== undefined && live.length >= 1 && live[0].episode_memory_id !== ep) fails.push("live row episode " + live[0].episode_memory_id + " != write " + ep);
+            }
+            mark({ op: opIndex, kind: op.op, stage: op.stage, ok: fails.length === 0, detail: fails.length ? fails.join("; ") : "edge live " + sn + "->" + op.relation + "->" + on });
+            break;
+          }
           case "resolveQuarantined": {
             const res = adjResults[op.fromOp];
             const id = res?.[op.item]?.insertedId;
@@ -237,11 +290,12 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
   } finally {
     entityArmSnapshot = (store as unknown as { entityTelemetry?: () => { queries: number; candidates: number; activations: number; hits: number } }).entityTelemetry?.();
     entityMergeSnapshot = (store as unknown as { entityMergeTelemetry?: () => { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } }).entityMergeTelemetry?.();
+    relationTelSnapshot = (store as unknown as { relationTelemetry?: () => RelTel }).relationTelemetry?.();
     raw.close();
     store.close();
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
-  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot, entityMerge: entityMergeSnapshot };
+  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot, entityMerge: entityMergeSnapshot, relationTel: relationTelSnapshot };
 }
 
 // Metrics per ADR-0027 D4: ① case pass rate (gate: 100%), ② supersession success,
@@ -329,6 +383,35 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
       judgeEnhanced: false,
       confusion: { tp: 0, fp: 0, fn: 0, tn: 0 },
     },
+    // ADR-0035 D5: relation zone (observational parts only — fail-closed edge assertions already
+    // land in passRate via the normal case channel).
+    relation: (() => {
+      let noEdgeChecks = 0, noEdgeViolations = 0, hopChecks = 0, hopHits = 0;
+      const tel: RelTel = { ruleHits: 0, llmActivations: 0, llmFailures: 0, triplesWritten: 0, dedupSkipped: 0, schemaRejected: 0, armQueries: 0, armHits: 0, pendingEdges: 0 };
+      for (let i = 0; i < cases.length; i++) {
+        const res = results[i]!;
+        if (res.relationTel) {
+          for (const k of Object.keys(tel) as Array<keyof RelTel>) {
+            if (k === "pendingEdges") continue; // gauge, not a counter
+            tel[k] += res.relationTel[k];
+          }
+          tel.pendingEdges += res.relationTel.pendingEdges;
+        }
+        for (const [opIndex, op] of cases[i]!.ops.entries()) {
+          const rec = res.ops.find((r) => r.op === opIndex);
+          if (!rec) continue;
+          if (op.op === "edge" && op.assert === "no_edge") {
+            noEdgeChecks += 1;
+            if (rec.noEdgeViolation) noEdgeViolations += 1;
+          }
+          if (op.op === "search" && op.expectHopTitle !== undefined) {
+            hopChecks += 1;
+            if (rec.hopHit) hopHits += 1;
+          }
+        }
+      }
+      return { noEdgeChecks, noEdgeViolations, hopChecks, hopHits, hopHitRate: hopChecks ? hopHits / hopChecks : 0, tel };
+    })(),
   };
 }
 

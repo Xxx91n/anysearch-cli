@@ -15,13 +15,14 @@ export type EvalGroup =
   | "unanswerable"
   | "paraphrase"
   | "entity"
-  | "semantic";
+  | "semantic"
+  | "relations";
 
 export type EvalStage = "extract" | "adjudicate" | "store" | "retrieve";
 
 export type CaseOp =
   | { op: "adjudicate"; stage: "adjudicate"; items: KeyMemoryInput[]; expect: AdjudicationAction[]; newSession?: boolean /* ADR-0031 step1: cross-session entity aggregation */ }
-  | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number; expectRankOf?: { title: string; maxRank: number }; expectEmpty?: true; expectAllWeak?: true /* ADR-0033 D8: unanswerable slice asserts weak-only evidence, not zero retrieval */ }
+  | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number; expectRankOf?: { title: string; maxRank: number }; expectEmpty?: true; expectAllWeak?: true /* ADR-0033 D8: unanswerable slice asserts weak-only evidence, not zero retrieval */; expectHopTitle?: string /* ADR-0035 D5: relation-arm 1-hop recall — observational only, never fails */ }
   | { op: "seed"; stage: "store"; items: KeyMemoryInput[] } /* ADR-0028 D3: direct DB insert, bypasses the write guard on purpose */
   | { op: "rawValidUntil"; stage: "store"; fromOp: number; expectSet: boolean }
   | { op: "promote"; stage: "store"; key: string; value: string; scope?: string; source: "explicit" | "correction"; expectAction: "promoted" | "rejected" }
@@ -29,7 +30,9 @@ export type CaseOp =
   | { op: "listPrefs"; stage: "retrieve"; scope?: string; expectKeyValue?: { key: string; value: string }; expectKeyAbsent?: string }
   | { op: "listQuarantined"; stage: "retrieve"; expectCount: number }
   | { op: "entities"; stage: "store"; expectNames?: string[]; expectCount?: number } /* ADR-0031 step1 */
-  | { op: "resolveQuarantined"; stage: "adjudicate"; fromOp: number; item: number; action: "keep" | "drop"; expectOk: boolean };
+  | { op: "resolveQuarantined"; stage: "adjudicate"; fromOp: number; item: number; action: "keep" | "drop"; expectOk: boolean }
+  // ADR-0035 D5: edge assertions — edge/supersede fail-closed, no_edge observational (paired strong negative).
+  | { op: "edge"; stage: "store"; subject: string; relation: string; object: string; assert: "edge" | "no_edge" | "supersede"; fromOp?: number };
 
 export interface CaseSpec {
   id: string;
@@ -436,6 +439,108 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/deployomega", "deployment omega outage cause", "the deployment outage was caused by an expired TLS certificate on the ingress", 0.9, "DeployOmegaOutage")], expect: ["accept"] },
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/warmup", "marketing cache warmup runbook", "cache warmup runbook for the marketing site homepage", 0.9, "CacheWarmupRunbook")], expect: ["accept"] },
       { op: "search", stage: "retrieve", query: "why did the release stop serving traffic", expectRankOf: { title: "deployment omega outage cause", maxRank: 2 } },
+    ],
+  },
+  // --- Group: relations (ADR-0035 D5, kg-lite arm; 12 cases: 8 predicate positives + CN,
+  //   supersede fail-closed, paired strong negatives observational, 1-hop observational) ---
+  {
+    id: "rel_works_on_en", group: "relations",
+    description: "EN works_on rule edge extracted and stored (fail-closed assert_edge)",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel01", "AriSz works on PipeFlow", "AriSz works on PipeFlow stream layer", 0.9, "ari-side")], expect: ["accept"] },
+      { op: "edge", stage: "store", subject: "AriSz", relation: "works_on", object: "PipeFlow", assert: "edge", fromOp: 0 },
+    ],
+  },
+  {
+    id: "rel_works_on_cn", group: "relations", difficulty: "hard",
+    description: "CN quoted-phrase works_on edge (CJK rule + alias channel, ADR-0035 D7)",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel02", "\"\u738B\u6587\u535A\" \u8D1F\u8D23 \"\u7075\u96C0\u7F51\u5173\"", "\"\u738B\u6587\u535A\" \u8D1F\u8D23 \"\u7075\u96C0\u7F51\u5173\" \u7684\u5F00\u53D1\u6392\u671F", 0.9, "cn-lingque")], expect: ["accept"] },
+      { op: "edge", stage: "store", subject: "\u738B\u6587\u535A", relation: "works_on", object: "\u7075\u96C0\u7F51\u5173", assert: "edge", fromOp: 0 },
+    ],
+  },
+  {
+    id: "rel_depends_on_en", group: "relations",
+    description: "depends_on positive",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel03", "OrbitQL depends on CacheLine", "OrbitQL depends on CacheLine for row caching", 0.9, "orbitql-edge")], expect: ["accept"] },
+      { op: "edge", stage: "store", subject: "OrbitQL", relation: "depends_on", object: "CacheLine", assert: "edge", fromOp: 0 },
+    ],
+  },
+  {
+    id: "rel_uses_en", group: "relations",
+    description: "uses positive",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel04", "TraceHub uses SnapStore", "TraceHub uses SnapStore for span ingestion", 0.9, "tracehub-edge")], expect: ["accept"] },
+      { op: "edge", stage: "store", subject: "TraceHub", relation: "uses", object: "SnapStore", assert: "edge", fromOp: 0 },
+    ],
+  },
+  {
+    id: "rel_part_of_en", group: "relations",
+    description: "part_of positive via is-part-of frame",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel05", "AuditPane is part of CoreBoard", "AuditPane is part of CoreBoard console shell", 0.9, "auditpane-edge")], expect: ["accept"] },
+      { op: "edge", stage: "store", subject: "AuditPane", relation: "part_of", object: "CoreBoard", assert: "edge", fromOp: 0 },
+    ],
+  },
+  {
+    id: "rel_member_of_en", group: "relations",
+    description: "member_of positive via is-a-member-of frame",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel06", "DevAmp is a member of CoreCircle", "DevAmp is a member of CoreCircle since march", 0.9, "devamp-edge")], expect: ["accept"] },
+      { op: "edge", stage: "store", subject: "DevAmp", relation: "member_of", object: "CoreCircle", assert: "edge", fromOp: 0 },
+    ],
+  },
+  {
+    id: "rel_located_at_en", group: "relations",
+    description: "located_at positive via is-located-in frame",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel07", "EdgeRelay is located in ZoneEastRack", "EdgeRelay is located in ZoneEastRack aisle two", 0.9, "edgerelay-edge")], expect: ["accept"] },
+      { op: "edge", stage: "store", subject: "EdgeRelay", relation: "located_at", object: "ZoneEastRack", assert: "edge", fromOp: 0 },
+    ],
+  },
+  {
+    id: "rel_authored_by_url_handle", group: "relations",
+    description: "url<->handle bridge edge authored_by (deduced, confidence 0.7)",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel08", "patch mirror note", "patch at https://ex.com/p92 was merged by @quinnro", 0.9, "patch-note")], expect: ["accept"] },
+      { op: "edge", stage: "store", subject: "https://ex.com/p92", relation: "authored_by", object: "quinnro", assert: "edge", fromOp: 0 },
+    ],
+  },
+  {
+    id: "rel_supersede_same_triple", group: "relations",
+    description: "re-asserting the same triple in a newer memory supersedes: one live row, episode moves (fail-closed)",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel09a", "PulseMon uses DuctTape", "PulseMon uses DuctTape for rack mounts", 0.9, "pulsemon-edge")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel09b", "PulseMon uses DuctTape extra", "PulseMon uses DuctTape for chassis rails", 0.9, "pulsemon-edge")], expect: ["supersede"] },
+      { op: "edge", stage: "store", subject: "PulseMon", relation: "uses", object: "DuctTape", assert: "supersede", fromOp: 1 },
+    ],
+  },
+  {
+    id: "rel_no_edge_two_nouns_en", group: "relations",
+    description: "paired strong negative EN: two fresh entities, no predicate frame -> no uses/no related_to (observational)",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel10", "VexTile grid and UmbraLake bench", "VexTile grid layout and UmbraLake bench numbers logged", 0.9, "vextile-note")], expect: ["accept"] },
+      { op: "edge", stage: "store", subject: "VexTile", relation: "uses", object: "UmbraLake", assert: "no_edge" },
+      { op: "edge", stage: "store", subject: "VexTile", relation: "related_to", object: "UmbraLake", assert: "no_edge" },
+    ],
+  },
+  {
+    id: "rel_no_edge_cn", group: "relations", difficulty: "adversarial",
+    description: "paired strong negative CN: two quoted entities mentioned without a verb frame (observational)",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel11", "\"\u9E92\u9E9F\u82AF\" \u4E0E \"\u76D8\u53E4\u7B97\"", "\u770B\u677F\u91CC\u8BB0\u5F55\u4E86 \"\u9E92\u9E9F\u82AF\" \u4E0E \"\u76D8\u53E4\u7B97\" \u7684\u6392\u671F", 0.9, "qilinxin-note")], expect: ["accept"] },
+      { op: "edge", stage: "store", subject: "\u9E92\u9E9F\u82AF", relation: "works_on", object: "\u76D8\u53E4\u7B97", assert: "no_edge" },
+      { op: "edge", stage: "store", subject: "\u9E92\u9E9F\u82AF", relation: "depends_on", object: "\u76D8\u53E4\u7B97", assert: "no_edge" },
+    ],
+  },
+  {
+    id: "rel_hop_recall_observational", group: "relations",
+    description: "1-hop recall observation: query on the neighbor entity may surface the edge-episode memory via the relation arm (never gated)",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel12", "rack mount setup note", "SteelFer uses BoltGrid for rack mounts", 0.9, "steel-fer")], expect: ["accept"] },
+      { op: "edge", stage: "store", subject: "SteelFer", relation: "uses", object: "BoltGrid", assert: "edge", fromOp: 0 },
+      { op: "search", stage: "retrieve", query: "BoltGrid", expectHopTitle: "rack mount setup note" },
     ],
   },
 ];

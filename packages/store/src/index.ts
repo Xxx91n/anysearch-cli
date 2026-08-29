@@ -8,3 +8,6 @@ export * from "./time-decay";
 
 // ADR-0023 D2: FTS5 Query Tokenization + multi-query RRF fusion helpers.
 export * from "./fts5";
+
+// ADR-0035: KG-lite entity-relation edge layer (fifth arm).
+export * from "./relation";

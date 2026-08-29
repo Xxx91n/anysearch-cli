@@ -267,6 +267,25 @@ function stepStaticAssertions() {
       if (attrCount < 3) fail("ADR-0034 1i: " + tool + " attribution wiring incomplete (found " + attrCount + " occurrences)");
     }
     report("pass", "MCP search/research dual-channel attribution (content + structuredContent)");
+
+  // 1j. ADR-0035 D2/D3/D4/D6: KG-lite relation layer static assertions.
+  {
+    const relPath = path.join(ROOT, "packages/store/src/relation.ts");
+    if (!fs.existsSync(relPath)) fail("ADR-0035 1j: packages/store/src/relation.ts missing");
+    const rel = fs.readFileSync(relPath, "utf8");
+    for (const tok of ["PREDICATES", "EDGE_PATTERN_ROWS", "extractRelations", "parseLlmTriples", "RELATION_RULES_VERSION"])
+      if (!rel.includes(tok)) fail("ADR-0035 1j: relation.ts missing " + tok);
+    const sql = fs.readFileSync(path.join(ROOT, "packages/store/src/schema.sql"), "utf8");
+    for (const tok of ["IF NOT EXISTS edges", "idx_edges_active_triple", "edge_patterns", "rules_version"])
+      if (!sql.includes(tok)) fail("ADR-0035 1j: schema.sql missing " + tok);
+    const ss = fs.readFileSync(path.join(ROOT, "packages/store/src/session-store.ts"), "utf8");
+    for (const tok of ["relationArmRows", "backfillRelations", "relationTelemetry", "linkRelations"])
+      if (!ss.includes(tok)) fail("ADR-0035 1j: session-store.ts missing " + tok);
+    if (!ss.includes('label: "relation"')) fail("ADR-0035 1j: session-store.ts missing the fifth-arm label (RRF extraArms wiring)");
+    const cliRel = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/relation.ts"), "utf8");
+    if (!cliRel.includes("backfill-relations")) fail("ADR-0035 1j: CLI relation command missing backfill-relations");
+    report("pass", "ADR-0035 KG-lite layer: relation module + edges schema + store hooks + fifth-arm label + CLI present");
+  }
   }
 
   // 1j. ADR-0034 D4: CLI --json purity — single JSON document on stdout, no decorative chars in this file.
@@ -544,6 +563,15 @@ async function stepMemoryEval() {
     const missing = need.filter((k) => !(k in z));
     if (missing.length) fail("memory-eval attribution zone missing keys: " + missing.join(", "));
     report("pass", "memory-eval attribution zone present (zero-state observation period)");
+  }
+  // ADR-0035 D5: relation zone must exist (fail-closed shape guard; its sub-metrics are observational).
+  {
+    const z = rep.metrics && rep.metrics.relation;
+    const need = ["noEdgeChecks", "noEdgeViolations", "hopChecks", "hopHits", "hopHitRate", "tel"];
+    if (!z || typeof z !== "object") fail("memory-eval report missing metrics.relation zone (ADR-0035 D5 fail-closed)");
+    const missing = need.filter((k) => !(k in z));
+    if (missing.length) fail("memory-eval relation zone missing keys: " + missing.join(", "));
+    report("pass", "memory-eval relation zone present (noEdge=" + z.noEdgeChecks + " hop=" + z.hopChecks + ")");
   }
   report("pass", "memory-eval: " + rep.totals.passed + "/" + rep.totals.cases + " cases PASS, fingerprint=" + rep.datasetFingerprint + ", passRate=" + rep.metrics.passRate);
 }

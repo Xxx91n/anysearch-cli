@@ -1,26 +1,26 @@
 {
   "schema": "anysearch/eval-baseline@1",
-  "fingerprint": "dde96cbfe280daa1",
+  "fingerprint": "f0f87ae62251ac81",
   "metrics": {
     "passRate": 1,
     "supersessionSuccess": 1,
     "quarantineFalsePositiveRate": 0,
     "counts": {
-      "cases": 41,
-      "casesPassed": 41,
-      "supExpected": 15,
-      "supPassed": 15,
-      "fpEligible": 46,
+      "cases": 53,
+      "casesPassed": 53,
+      "supExpected": 16,
+      "supPassed": 16,
+      "fpEligible": 59,
       "fpCount": 0
     },
     "entityArm": {
-      "queries": 40,
-      "candidates": 16,
-      "activations": 16,
-      "hits": 19,
-      "hitRate": 0.4,
-      "activationRate": 0.4,
-      "avgArmHits": 1.1875
+      "queries": 41,
+      "candidates": 17,
+      "activations": 17,
+      "hits": 20,
+      "hitRate": 0.4146341463414634,
+      "activationRate": 0.4146341463414634,
+      "avgArmHits": 1.1764705882352942
     },
     "entityMerge": {
       "auto_merged": 0,
@@ -31,12 +31,45 @@
       "candidates_truncated": 0
     },
     "mrr": 1,
-    "answerableFalseRefusalRate": 0
+    "answerableFalseRefusalRate": 0,
+    "attribution": {
+      "supported": 0,
+      "uncertain": 0,
+      "unsupported": 0,
+      "supportedPrecision": 0,
+      "unsupportedRecall": 0,
+      "totalClaims": 0,
+      "judgeEnhanced": false,
+      "confusion": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "tn": 0
+      }
+    },
+    "relation": {
+      "noEdgeChecks": 4,
+      "noEdgeViolations": 0,
+      "hopChecks": 1,
+      "hopHits": 1,
+      "hopHitRate": 1,
+      "tel": {
+        "ruleHits": 33,
+        "llmActivations": 0,
+        "llmFailures": 0,
+        "triplesWritten": 11,
+        "dedupSkipped": 11,
+        "schemaRejected": 0,
+        "armQueries": 41,
+        "armHits": 20,
+        "pendingEdges": 65
+      }
+    }
   },
   "allowance": {
     "supersessionFails": 1,
     "quarantineFp": 1
   },
-  "updatedAt": "2026-08-28",
+  "updatedAt": "2026-08-29",
   "note": "ADR-0028 D1 calibration (runs=50); integer allowance = worst-observed failures + 1 op. CI never writes this file (ADR-0027 D9)."
 }

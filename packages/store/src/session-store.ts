@@ -13,6 +13,8 @@ import { SCHEMA_SQL } from "./schema-content";
 import { registerFreshnessFactorFunction, invalidateOldRecords } from "./time-decay.js";
 import { fts5EscapeQuery, searchMemoryMultiQuery } from "./fts5.js";
 import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD, MAX_ENTITY_CANDIDATES as MAX_CANDIDATES } from "./entity.js";
+import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_PATTERN_ROWS, RELATION_RULES_VERSION } from "./relation.js";
+import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate } from "./entity.js";
 import { rrfRank } from "@anysearch/retriever";
 import { embedText, embeddingTelemetry as pkgEmbeddingTelemetry, cosineSimilarity, EMBEDDING_MODEL_ID } from "@anysearch/embedding";
@@ -143,6 +145,11 @@ export interface SessionStore {
   // ADR-0032 D3: candidate review belt (list + keep/drop resolution, ADR-0025 quarantine pattern).
   listEntityReview(): Promise<EntityReviewRow[]>;
   resolveEntityReview(id: number, action: "keep" | "drop"): Promise<{ ok: boolean; error?: string }>;
+  // ADR-0035 D3/D5: entity-relation edge layer (KG-lite fifth retrieval arm).
+  relationArmRows(query: string, limit?: number): MemoryHit[];
+  listRelations(opts?: { entity?: string; limit?: number }): Promise<RelationRow[]>;
+  backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean }): Promise<BackfillRelationsResult>;
+  relationTelemetry(): RelationTelemetry;
 }
 
 // ADR-0027 D5 + ADR-0028 D3: secret guard lives in ./secret.ts (shared containsSecret) —
@@ -172,16 +179,60 @@ export interface EntityMergeTelemetry {
   candidates_truncated: number;
 }
 
+// ADR-0035 D3: one live edge joined to both endpoint entity display names (relation list).
+export interface RelationRow {
+  id: number;
+  sourceEntityId: number;
+  sourceName: string;
+  relation: string;
+  targetEntityId: number;
+  targetName: string;
+  confidence: number;
+  episodeMemoryId: number | null;
+  rulesVersion: number;
+  createdAt: string;
+}
+
+// ADR-0035 D7: dry-run/apply both report through the same shape; written = triples emitted
+// (dry-run) or actually inserted (apply). Exit code is a CLI concern (0 success / 1 runtime / 2 usage).
+export interface BackfillRelationsResult {
+  apply: boolean;
+  scanned: number;
+  written: number;
+  dedupSkipped: number;
+  schemaRejected: number;
+  lastId: number;
+}
+
+// ADR-0035 D8: report-only relation telemetry. pendingEdges is a derived gauge (linked memories
+// lacking an edge episode row) — the backfill coverage signal, recomputed at read time.
+export interface RelationTelemetry {
+  ruleHits: number;
+  llmActivations: number;
+  llmFailures: number;
+  triplesWritten: number;
+  dedupSkipped: number;
+  schemaRejected: number;
+  pendingEdges: number;
+  armQueries: number;
+  armHits: number;
+}
+
 // better-sqlite3 sync API wrapped in async interface to match SessionStore port.
 // ponytail: thinnest wrapper - no extra abstraction, sync calls wrapped in Promise.resolve.
 export class SqliteSessionStore implements SessionStore {
   private db: Database.Database;
   // ADR-0031 D2: LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
   private readonly entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
+  // ADR-0035 D4: LLM relation seam (optional, fail-open) — returns RAW model text; relation.ts
+  // parseLlmTriples does the Graphiti-style json_schema to json_object degrade.
+  private readonly relationLlmFallback?: (text: string) => Promise<string | null>;
   // ADR-0031 step7: entity arm telemetry counters (report-only in eval).
   private readonly entityTel = { queries: 0, candidates: 0, activations: 0, hits: 0, truncated: 0 };
   // ADR-0033 D5/D6: vector arm telemetry (fail-open writes; pendingVectors = rows lacking an embedding).
   private readonly embedTel = { writes: 0, pendingVectors: 0, armQueries: 0, armHits: 0 };
+  // ADR-0035 D8: relation extraction + arm telemetry (report-only, never gated).
+  private readonly relationTel = { ruleHits: 0, llmActivations: 0, llmFailures: 0, triplesWritten: 0, dedupSkipped: 0, schemaRejected: 0, armQueries: 0, armHits: 0 };
   private stmts: {
     createSession: Database.Statement;
     append: Database.Statement;
@@ -197,8 +248,12 @@ export class SqliteSessionStore implements SessionStore {
     saveAnchorUpsert: Database.Statement;
   };
 
-  constructor(dbPath: string, opts?: { entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null> }) {
+  constructor(dbPath: string, opts?: {
+    entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
+    relationLlmFallback?: (text: string) => Promise<string | null>;
+  }) {
     this.entityLlmFallback = opts?.entityLlmFallback;
+    this.relationLlmFallback = opts?.relationLlmFallback;
     this.db = new Database(dbPath, { timeout: 5000 });
     // atomcode research: WAL persistent, set once, single shared connection.
     this.db.pragma("journal_mode = WAL");
@@ -216,6 +271,10 @@ export class SqliteSessionStore implements SessionStore {
       schema = SCHEMA_SQL;
     }
     this.db.exec(schema);
+    // ADR-0035 D2: edge-pattern constraint seed (idempotent; mirrors EDGE_PATTERN_ROWS in relation.ts;
+    // existing rows are preserved via INSERT OR IGNORE).
+    const seedPattern = this.db.prepare("INSERT OR IGNORE INTO edge_patterns (head_type, relation, tail_type) VALUES (?, ?, ?)");
+    for (const [h, r, t] of EDGE_PATTERN_ROWS) seedPattern.run(h, r, t);
     // ADR-0030 D2: freshness_factor UDF (fused decay+recency+frequency band, supersedes time_decay).
     registerFreshnessFactorFunction(this.db);
     // G019: Migration for existing databases (ALTER TABLE ADD COLUMN is not IF NOT EXISTS safe).
@@ -399,15 +458,19 @@ export class SqliteSessionStore implements SessionStore {
    // ADR-0031 D4: entity arm — conditional activation (absent when query has no entity match), weight 0.5 vs FTS 1.0.
    const armHits = this.entityArmRows(query, limit);
    const vecHits = await this.vectorArmRows(query, limit);
+   // ADR-0035 D5: relation arm (fifth, weight 0.5) — 1-hop neighbor memories via active edges.
+   const relHits = this.relationArmRows(query, limit);
    const byId = new Map<number, MemoryHit>();
     for (const h of rawHits) byId.set(h.rowid, h);
     for (const h of armHits) byId.set(h.rowid, h);
     for (const h of vecHits) byId.set(h.rowid, h);
+    for (const h of relHits) byId.set(h.rowid, h);
    // ADR-0033 D5: RRF arms = FTS (1.0) + entity (0.5) + vector (0.5); an absent arm adds no list (conditional activation).
    const lists = [rawHits.map((h) => String(h.rowid))];
    const weights = [1.0];
    if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(0.5); }
    if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(0.5); }
+   if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(0.5); }
    const fusedIds = lists.length === 1 ? lists[0]! : rrfRank(lists, 60, weights);
    const fusedHits: MemoryHit[] = [];
    for (const id of fusedIds) { const h = byId.get(Number(id)); if (h) fusedHits.push(h); if (fusedHits.length >= limit) break; }
@@ -415,7 +478,8 @@ export class SqliteSessionStore implements SessionStore {
    const ftsIds = new Set(rawHits.map((h) => h.rowid));
    const entIds = new Set(armHits.map((h) => h.rowid));
    const vecIds = new Set(vecHits.map((h) => h.rowid));
-   for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); h.arms = al; }
+   const relIds = new Set(relHits.map((h) => h.rowid));
+   for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); if (relIds.has(h.rowid)) al.push("relation"); h.arms = al; }
     // ADR-0028 D3 read-side exit: rows written before the write guard (or via seed/test seams)
     // must never surface back to the caller either.
     const hits = fusedHits.filter((h) => !containsSecret(h.role + " " + h.content));
@@ -436,6 +500,9 @@ export class SqliteSessionStore implements SessionStore {
     const arms: { label: string; ids: string[] }[] = [];
     if (armHits.length > 0) arms.push({ label: "entity", ids: armHits.map((h) => String(h.rowid)) });
     if (vecHits.length > 0) arms.push({ label: "vector", ids: vecHits.map((h) => String(h.rowid)) });
+    // ADR-0035 D5: relation arm on the raw query (weight 0.5 in fts5.ts like the other side arms).
+    const relHitsM = this.relationArmRows(queries[0] ?? "", limit);
+    if (relHitsM.length > 0) arms.push({ label: "relation", ids: relHitsM.map((h) => String(h.rowid)) });
     const hits = await searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank, arms);
     // ADR-0028 D3 read-side exit: same guard as searchMemory.
     const kept = hits.filter((h) => !containsSecret(h.role + " " + h.content));
@@ -620,10 +687,16 @@ export class SqliteSessionStore implements SessionStore {
       // ADR-0031 D2: LLM backfill (fail-open) — offline/no-key keeps rule output (here: empty).
       try { const extra = await this.entityLlmFallback(text); if (extra) candidates.push(...extra); } catch {}
     }
+    // ADR-0035 D4: relation extraction piggybacks this pass; preKnown marks entities that
+    // existed before this write (co-occurrence related_to edges only fire between two preKnown refs).
+    const linkedRefs: LinkedEntityRef[] = [];
     for (const c of candidates.slice(0, MAX_CANDIDATES + 1)) { // r74 audit E5: 1 declared + MAX_CANDIDATES rule/LLM
       const entityId = this.resolveEntity(c.name, c.type);
       this.db.prepare("INSERT OR IGNORE INTO memory_entity (memory_id, entity_id) VALUES (?, ?)").run(memoryId, entityId);
+      const refNorm = normalizeEntityName(c.name);
+      linkedRefs.push({ id: entityId, name: c.name, nameNorm: refNorm, entityType: c.type, preKnown: known.has(refNorm) });
     }
+    try { await this.linkRelations(memoryId, km, linkedRefs); } catch {} // ADR-0035: fail-open, same discipline as linkEntities
     // ADR-0032 D3: extraction overflow (capped out) enters the candidate review belt — never silent loss.
     const overflow = candidates.slice(MAX_CANDIDATES + 1);
     this.entityTel.truncated += overflow.length;
@@ -761,9 +834,29 @@ export class SqliteSessionStore implements SessionStore {
       const union = Array.from(new Set([...toAliasesBefore, ...fromAliases, a.name_norm]));
       this.db.prepare("UPDATE entities SET aliases = ? WHERE id = ?").run(JSON.stringify(union), toIdArg);
       this.db.prepare("UPDATE entities SET valid_until = ? WHERE id = ?").run(now, from);
+      // ADR-0035 D6: edges move with the merge. Self-loops and live-triple conflicts are
+      // closed, not redirected; pre-merge endpoints land in the snapshot for bounded unmerge.
+      const edgeRows = this.db
+        .prepare("SELECT id, source_entity_id, target_entity_id, relation FROM edges WHERE valid_until IS NULL AND (source_entity_id = ? OR target_entity_id = ?)")
+        .all(from, from) as Array<{ id: number; source_entity_id: number; target_entity_id: number; relation: string }>;
+      const redirectedEdges: Array<{ id: number; sourceWas: number; targetWas: number }> = [];
+      const closedDupEdgeIds: number[] = [];
+      for (const e of edgeRows) {
+        const ns = e.source_entity_id === from ? toIdArg : e.source_entity_id;
+        const nt = e.target_entity_id === from ? toIdArg : e.target_entity_id;
+        if (ns === nt) { closedDupEdgeIds.push(e.id); continue; }
+        const conflict = this.db
+          .prepare("SELECT id FROM edges WHERE source_entity_id = ? AND relation = ? AND target_entity_id = ? AND valid_until IS NULL AND id != ?")
+          .get(ns, e.relation, nt, e.id) as { id: number } | undefined;
+        if (conflict) { closedDupEdgeIds.push(e.id); continue; }
+        this.db.prepare("UPDATE edges SET source_entity_id = ?, target_entity_id = ? WHERE id = ?").run(ns, nt, e.id);
+        redirectedEdges.push({ id: e.id, sourceWas: e.source_entity_id, targetWas: e.target_entity_id });
+      }
+      for (const edgeId of closedDupEdgeIds) this.db.prepare("UPDATE edges SET valid_until = ? WHERE id = ?").run(now, edgeId);
       const detail = JSON.stringify({
         fromEntityId: from, fromName: a.name, fromNorm: a.name_norm, fromAliases,
         toAliasesBefore, redirectedMemoryIds: redirected, bothLinkedIds: bothLinked, mergedAt: now,
+        redirectedEdges, closedDupEdgeIds,
       });
       const info = this.db.prepare("INSERT INTO entity_merge_log (kind, source_name, target_entity_id, detail) VALUES (?, ?, ?, ?)")
         .run("merge", a.name_norm, toIdArg, detail);
@@ -785,13 +878,14 @@ export class SqliteSessionStore implements SessionStore {
       if (!logRow || logRow.kind !== "merge" || logRow.undone !== 0) return { ok: false, error: "merge log not found (or already undone)" };
       const snap = JSON.parse(logRow.detail ?? "{}") as {
         fromEntityId?: number; fromNorm?: string; fromAliases?: string[]; toAliasesBefore?: string[]; redirectedMemoryIds?: number[]; bothLinkedIds?: number[];
+        redirectedEdges?: Array<{ id: number; sourceWas: number; targetWas: number }>; closedDupEdgeIds?: number[];
       };
       if (typeof snap.fromEntityId !== "number" || !snap.fromNorm || !snap.fromAliases || !snap.toAliasesBefore || !snap.redirectedMemoryIds)
         return { ok: false, error: "snapshot incomplete — refusing unmerge (D2: snapshot is the only basis)" };
       // Bounded: only memory rows from the snapshot are redirected back; post-merge rows stay.
       const bothSet = new Set(snap.bothLinkedIds ?? []);
       for (const mid of snap.redirectedMemoryIds) {
-        const cur = this.db.prepare("SELECT entity_id FROM memory_entity WHERE memory_id = ?").get(mid) as { entity_id: number } | undefined;
+        const curTarget = this.db.prepare("SELECT 1 as x FROM memory_entity WHERE memory_id = ? AND entity_id = ?").get(mid, logRow.target_entity_id) as { x: number } | undefined;
         if (bothSet.has(mid)) {
           // r77 audit P1 (G4): pre-merge this memory was linked to BOTH entities. Merge deleted the
           // from-row and kept the target-row. Undo restores the from-link and keeps the target link.
@@ -799,13 +893,27 @@ export class SqliteSessionStore implements SessionStore {
           if (mem) this.db.prepare("INSERT OR IGNORE INTO memory_entity (memory_id, entity_id) VALUES (?, ?)").run(mid, snap.fromEntityId);
           continue;
         }
-        if (cur && cur.entity_id === logRow.target_entity_id) {
-          this.db.prepare("UPDATE memory_entity SET entity_id = ? WHERE memory_id = ?").run(snap.fromEntityId, mid);
-        } else if (!cur) {
+        if (curTarget) {
+          this.db.prepare("UPDATE memory_entity SET entity_id = ? WHERE memory_id = ? AND entity_id = ?").run(snap.fromEntityId, mid, logRow.target_entity_id);
+        } else if (!curTarget) {
           // Row vanished (dedup'd away at merge time, or memory deleted) — restore if memory still exists.
           const mem = this.db.prepare("SELECT id FROM retrieval_results WHERE id = ?").get(mid) as { id: number } | undefined;
           if (mem) this.db.prepare("INSERT OR IGNORE INTO memory_entity (memory_id, entity_id) VALUES (?, ?)").run(mid, snap.fromEntityId);
         }
+      }
+      // ADR-0035 D6: bounded edge restore — redirected edges return to the snapshot endpoints;
+      // closed duplicates revive only when no live row covers the same triple (conflict guard).
+      for (const e of snap.redirectedEdges ?? []) {
+        this.db.prepare("UPDATE edges SET source_entity_id = ?, target_entity_id = ? WHERE id = ?").run(e.sourceWas, e.targetWas, e.id);
+      }
+      for (const edgeId of snap.closedDupEdgeIds ?? []) {
+        const row = this.db.prepare("SELECT source_entity_id, relation, target_entity_id, valid_until FROM edges WHERE id = ?").get(edgeId) as
+          { source_entity_id: number; relation: string; target_entity_id: number; valid_until: string | null } | undefined;
+        if (!row || row.valid_until === null) continue;
+        const live = this.db
+          .prepare("SELECT id FROM edges WHERE source_entity_id = ? AND relation = ? AND target_entity_id = ? AND valid_until IS NULL")
+          .get(row.source_entity_id, row.relation, row.target_entity_id) as { id: number } | undefined;
+        if (!live) this.db.prepare("UPDATE edges SET valid_until = NULL WHERE id = ?").run(edgeId);
       }
       // Revive + restore aliases by whole-value overwrite (overlap-safe: no set subtraction).
       this.db.prepare("UPDATE entities SET valid_until = NULL, aliases = ? WHERE id = ? AND valid_until IS NOT NULL").run(JSON.stringify(snap.fromAliases), snap.fromEntityId);
@@ -896,6 +1004,175 @@ export class SqliteSessionStore implements SessionStore {
     const rows = this.db.prepare(sql).all(...ids, limit) as MemoryHit[];
     this.entityTel.hits += rows.length;
     return rows;
+  }
+
+  // ---- ADR-0035: KG-lite entity-relation edge layer ----
+
+  // Write-path extraction: rules first; LLM seam only when rules found nothing (fail-open).
+  private async linkRelations(memoryId: number, km: KeyMemoryInput, linked: LinkedEntityRef[]): Promise<void> {
+    if (linked.length === 0) return;
+    // ". " keeper: the rule pass splits on sentence boundaries, so title and snippet must join
+    // with a period — a bare space merge lets a clause span backtrack across both fields.
+    const text = (km.title ?? "") + ". " + (km.snippet ?? "");
+    let triples = extractRelations(text, linked);
+    this.relationTel.ruleHits += triples.filter((t) => t.sourceKind !== "llm").length;
+    if (triples.length === 0 && this.relationLlmFallback) {
+      this.relationTel.llmActivations += 1;
+      try {
+        const raw = await this.relationLlmFallback(text);
+        const parsed = raw ? parseLlmTriples(raw) : null;
+        if (parsed && parsed.length > 0) triples = dedupeTriples(parsed);
+        else this.relationTel.llmFailures += 1;
+      } catch {
+        this.relationTel.llmFailures += 1;
+      }
+    }
+    for (const t of triples) this.insertEdge(memoryId, t, linked);
+  }
+
+  // Triple to edge row. Pattern check against edge_patterns; same-episode re-write is a dedup
+  // skip; a live row for the same triple from another episode is superseded (close old, insert new).
+  // ADR-0035: a rule-side spans a clause ("CraneLib for batch scheduling"), not an entity name.
+  // Resolve by prefix-containment against any of the entity's surface forms (name + aliases).
+  private resolveTripleEnd(surface: string, linked: LinkedEntityRef[]): LinkedEntityRef | undefined {
+    const norm = normalizeEntityName(surface);
+    if (!norm) return undefined;
+    const cands = linked.filter((e) => {
+      const forms = [e.nameNorm, ...this.aliasNorms(e.id)];
+      return forms.some((f) => norm === f || norm.startsWith(f + " "));
+    });
+    if (cands.length === 0) return undefined;
+    cands.sort((a2_, b2) => b2.nameNorm.length - a2_.nameNorm.length); // longest match wins
+    return cands[0];
+  }
+
+  private aliasNorms(entityId: number): string[] {
+    const row = this.db.prepare("SELECT aliases FROM entities WHERE id = ?").get(entityId) as { aliases: string } | undefined;
+    if (!row) return [];
+    try { return JSON.parse(row.aliases || "[]") as string[]; } catch { return []; }
+  }
+
+  private insertEdge(memoryId: number, t: ExtractedTriple, linked: LinkedEntityRef[]): void {
+    const s = this.resolveTripleEnd(t.subject, linked);
+    const o = this.resolveTripleEnd(t.object, linked);
+    if (!s || !o || s.id === o.id) return;
+    if (!patternAllows(s.entityType, t.relation, o.entityType)) { this.relationTel.schemaRejected += 1; return; }
+    const dup = this.db
+      .prepare("SELECT id FROM edges WHERE episode_memory_id = ? AND source_entity_id = ? AND relation = ? AND target_entity_id = ? AND valid_until IS NULL")
+      .get(memoryId, s.id, t.relation, o.id) as { id: number } | undefined;
+    if (dup) { this.relationTel.dedupSkipped += 1; return; }
+    const live = this.db
+      .prepare("SELECT id FROM edges WHERE source_entity_id = ? AND relation = ? AND target_entity_id = ? AND valid_until IS NULL")
+      .get(s.id, t.relation, o.id) as { id: number } | undefined;
+    if (live) this.db.prepare("UPDATE edges SET valid_until = datetime('now') WHERE id = ?").run(live.id);
+    else if (t.relation === "related_to") { this.relationTel.dedupSkipped += 1; return; } // ADR-0035: co-occurrence edges are write-once (noise control)
+    this.db
+      .prepare("INSERT INTO edges (source_entity_id, target_entity_id, relation, description, confidence, episode_memory_id, rules_version) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(s.id, o.id, t.relation, null, t.confidence, memoryId, RELATION_RULES_VERSION);
+    this.relationTel.triplesWritten += 1;
+  }
+
+  // ADR-0035 D5: fifth arm — query-matched entities plus their 1-hop edge neighbors feed a
+  // DISTINCT memory pull through memory_entity (live, non-quarantined rows), capped at 100.
+  public relationArmRows(query: string, limit = 100): MemoryHit[] {
+    this.relationTel.armQueries += 1;
+    const known = new Set(this.liveEntities().flatMap((e) => [e.nameNorm, ...e.aliases]));
+    const candidates = extractEntityCandidates(query, known);
+    if (candidates.length === 0) return [];
+    const norms = candidates.map((c) => normalizeEntityName(c.name));
+    const matched = this.liveEntities().filter((e) => norms.some((nm) => e.nameNorm === nm || e.nameNorm.startsWith(nm + "-") || nm.startsWith(e.nameNorm + "-") || e.aliases.includes(nm)));
+    if (matched.length === 0) return [];
+    const ids = matched.map((e) => e.id);
+    const ph = ids.map(() => "?").join(", ");
+    const neighbors = this.db
+      .prepare(
+        "SELECT DISTINCT CASE WHEN e.source_entity_id IN (" + ph + ") THEN e.target_entity_id ELSE e.source_entity_id END as nid" +
+        " FROM edges e WHERE e.valid_until IS NULL AND (e.source_entity_id IN (" + ph + ") OR e.target_entity_id IN (" + ph + "))"
+      )
+      .all(...ids, ...ids, ...ids) as Array<{ nid: number }>;
+    const allIds = Array.from(new Set([...ids, ...neighbors.map((n) => n.nid)]));
+    const ph2 = allIds.map(() => "?").join(", ");
+    const rows = this.db
+      .prepare(
+        "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank" +
+        " FROM retrieval_results r JOIN memory_entity me ON me.memory_id = r.id" +
+        " WHERE me.entity_id IN (" + ph2 + ") AND r.valid_until IS NULL AND (r.quarantine IS NULL)" +
+        " ORDER BY r.created_at DESC LIMIT ?"
+      )
+      .all(...allIds, Math.min(limit, 100)) as MemoryHit[];
+    this.relationTel.armHits += rows.length;
+    return rows;
+  }
+
+  // ADR-0035 D3: relation list CLI backing query — live edges, optional single-entity filter.
+  public async listRelations(opts?: { entity?: string; limit?: number }): Promise<RelationRow[]> {
+    const limit = opts?.limit ?? 50;
+    const base =
+      "SELECT e.id, e.source_entity_id, e.target_entity_id, e.relation, e.confidence, e.episode_memory_id, e.rules_version, e.created_at," +
+      " s.name AS source_name, t.name AS target_name FROM edges e" +
+      " JOIN entities s ON s.id = e.source_entity_id JOIN entities t ON t.id = e.target_entity_id" +
+      " WHERE e.valid_until IS NULL";
+    const rows = (opts?.entity
+      ? this.db.prepare(base + " AND (s.name_norm = ? OR t.name_norm = ?) ORDER BY e.created_at DESC LIMIT ?").all(normalizeEntityName(opts.entity), normalizeEntityName(opts.entity), limit)
+      : this.db.prepare(base + " ORDER BY e.created_at DESC LIMIT ?").all(limit)) as Array<{
+      id: number; source_entity_id: number; target_entity_id: number; relation: string; confidence: number;
+      episode_memory_id: number | null; rules_version: number; created_at: string; source_name: string; target_name: string;
+    }>;
+    return rows.map((r) => ({
+      id: r.id, sourceEntityId: r.source_entity_id, sourceName: r.source_name, relation: r.relation,
+      targetEntityId: r.target_entity_id, targetName: r.target_name, confidence: r.confidence,
+      episodeMemoryId: r.episode_memory_id, rulesVersion: r.rules_version, createdAt: r.created_at,
+    }));
+  }
+
+  // ADR-0035 D7: idempotent keyset-paginated backfill (rules only — the LLM seam stays on the live
+  // write path). Covered rows skip unless --reprocess targets older rules_version rows (supersede).
+  public async backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean }): Promise<BackfillRelationsResult> {
+    const batch = opts.batch ?? 200;
+    const maxRows = opts.limit ?? 100000;
+    let fromId = opts.fromId ?? 0;
+    const res: BackfillRelationsResult = { apply: opts.apply, scanned: 0, written: 0, dedupSkipped: 0, schemaRejected: 0, lastId: fromId };
+    for (;;) {
+      if (res.scanned >= maxRows) break;
+      const rows = this.db
+        .prepare(
+          "SELECT r.id, r.title, r.snippet, MIN(e.rules_version) as rules FROM retrieval_results r" +
+          " LEFT JOIN edges e ON e.episode_memory_id = r.id AND e.valid_until IS NULL" +
+          " WHERE r.id > ? GROUP BY r.id ORDER BY r.id LIMIT ?"
+        )
+        .all(fromId, Math.min(batch, maxRows - res.scanned)) as Array<{ id: number; title: string | null; snippet: string | null; rules: number | null }>;
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        res.lastId = row.id;
+        res.scanned += 1;
+        const stale = row.rules !== null && row.rules < RELATION_RULES_VERSION;
+        if (row.rules !== null && !(opts.reprocess && stale)) continue; // already extracted at current version
+        const linked = (this.db
+          .prepare("SELECT e.id, e.name, e.name_norm as nameNorm, e.entity_type as entityType FROM memory_entity me JOIN entities e ON e.id = me.entity_id WHERE me.memory_id = ? AND e.valid_until IS NULL")
+          .all(row.id) as LinkedEntityRef[]).map((e) => ({ ...e, preKnown: true }));
+        if (linked.length === 0) continue;
+        const text = (row.title ?? "") + " " + (row.snippet ?? "");
+        const triples = extractRelations(text, linked);
+        this.relationTel.ruleHits += triples.length;
+        if (!opts.apply) { res.written += triples.length; continue; }
+        const b0 = { d: this.relationTel.dedupSkipped, s: this.relationTel.schemaRejected, w: this.relationTel.triplesWritten };
+        const tx = this.db.transaction(() => { for (const t of triples) this.insertEdge(row.id, t, linked); });
+        tx();
+        res.dedupSkipped += this.relationTel.dedupSkipped - b0.d;
+        res.schemaRejected += this.relationTel.schemaRejected - b0.s;
+        res.written += this.relationTel.triplesWritten - b0.w;
+      }
+      fromId = res.lastId;
+    }
+    return res;
+  }
+
+  // ADR-0035 D8: report-only. pendingEdges gauge = linked memories with no live edge episode row.
+  public relationTelemetry(): RelationTelemetry {
+    const pending = (this.db
+      .prepare("SELECT COUNT(*) as n FROM memory_entity me WHERE NOT EXISTS (SELECT 1 FROM edges e WHERE e.episode_memory_id = me.memory_id AND e.valid_until IS NULL)")
+      .get() as { n: number }).n;
+    return { ...this.relationTel, pendingEdges: pending };
   }
 
   // ADR-0025 D2: equal-conflict review channel. Zero new tables — the quarantine column
