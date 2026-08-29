@@ -1174,41 +1174,99 @@ export class SqliteSessionStore implements SessionStore {
     const res: BackfillRelationsResult = { apply: opts.apply, scanned: 0, written: 0, dedupSkipped: 0, schemaRejected: 0, lastId: fromId0 };
     const tel0 = { ...this.relationTel };
     const dryRollback = Symbol("dry-run-rollback");
-    const run = () => {
+    // Factored scan/process helpers shared by the dry-run and chunked-apply paths (ADR-0036 D6).
+    type ScanRow = { id: number; title: string | null; snippet: string | null; rules: number | null };
+    const scanBatch = (fromId: number): ScanRow[] =>
+      this.db
+        .prepare(
+          "SELECT r.id, r.title, r.snippet, MIN(e.rules_version) as rules FROM retrieval_results r" +
+          " LEFT JOIN edges e ON e.episode_memory_id = r.id AND e.valid_until IS NULL" +
+          " WHERE r.id > ? GROUP BY r.id ORDER BY r.id LIMIT ?"
+        )
+        .all(fromId, Math.min(batch, maxRows - res.scanned)) as ScanRow[];
+    const processRow = (row: ScanRow): void => {
+      res.lastId = row.id;
+      res.scanned += 1;
+      const stale = row.rules !== null && row.rules < RELATION_RULES_VERSION;
+      if (row.rules !== null && !(opts.reprocess && stale)) return; // already extracted at current version
+      const linked = (this.db
+        .prepare("SELECT e.id, e.name, e.name_norm as nameNorm, e.entity_type as entityType FROM memory_entity me JOIN entities e ON e.id = me.entity_id WHERE me.memory_id = ? AND e.valid_until IS NULL")
+        .all(row.id) as LinkedEntityRef[]).map((e) => ({ ...e, preKnown: true }));
+      if (linked.length === 0) return;
+      const text = (row.title ?? "") + " " + (row.snippet ?? "");
+      const triples = extractRelations(text, linked);
+      this.relationTel.ruleHits += triples.length;
+      for (const t of triples) this.insertEdge(row.id, t, linked);
+    };
+    if (!opts.apply) {
+      // Dry-run keeps the ADR-0035 r87 single rolled-back transaction: counts are exact predictions.
+      const run = () => {
+        let fromId = fromId0;
+        if (opts.fullRefresh) this.db.exec("DELETE FROM edges");
+        for (;;) {
+          if (res.scanned >= maxRows) break;
+          const rows = scanBatch(fromId);
+          if (rows.length === 0) break;
+          for (const row of rows) processRow(row);
+          fromId = res.lastId;
+        }
+        throw dryRollback;
+      };
+      try {
+        this.db.transaction(run)();
+      } catch (e) {
+        if (e !== dryRollback) throw e;
+      }
+    } else {
+      // ADR-0036 D6: apply mode commits one IMMEDIATE transaction per batch, so concurrent live
+      // MCP writes wait within busy_timeout instead of blocking for the whole run. SQLITE_BUSY is
+      // retried with exponential backoff (50ms base, 5s cap, <=8 tries); SQLITE_BUSY_SNAPSHOT (the
+      // deferred-upgrade class) fails fast because retrying a stale snapshot is meaningless. A
+      // passive WAL checkpoint runs after each committed batch to bound WAL growth. Failed batch
+      // attempts restore res/telemetry counters before retry so a rolled-back batch never
+      // double-counts.
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      const isBusyRetryable = (e: unknown): boolean => {
+        const code = (e as { code?: string })?.code ?? "";
+        return code.startsWith("SQLITE_BUSY") && code !== "SQLITE_BUSY_SNAPSHOT";
+      };
       let fromId = fromId0;
-      if (opts.fullRefresh) this.db.exec("DELETE FROM edges");
+      let needsFullRefresh = !!opts.fullRefresh;
       for (;;) {
         if (res.scanned >= maxRows) break;
-        const rows = this.db
-          .prepare(
-            "SELECT r.id, r.title, r.snippet, MIN(e.rules_version) as rules FROM retrieval_results r" +
-            " LEFT JOIN edges e ON e.episode_memory_id = r.id AND e.valid_until IS NULL" +
-            " WHERE r.id > ? GROUP BY r.id ORDER BY r.id LIMIT ?"
-          )
-          .all(fromId, Math.min(batch, maxRows - res.scanned)) as Array<{ id: number; title: string | null; snippet: string | null; rules: number | null }>;
-        if (rows.length === 0) break;
-        for (const row of rows) {
-          res.lastId = row.id;
-          res.scanned += 1;
-          const stale = row.rules !== null && row.rules < RELATION_RULES_VERSION;
-          if (row.rules !== null && !(opts.reprocess && stale)) continue; // already extracted at current version
-          const linked = (this.db
-            .prepare("SELECT e.id, e.name, e.name_norm as nameNorm, e.entity_type as entityType FROM memory_entity me JOIN entities e ON e.id = me.entity_id WHERE me.memory_id = ? AND e.valid_until IS NULL")
-            .all(row.id) as LinkedEntityRef[]).map((e) => ({ ...e, preKnown: true }));
-          if (linked.length === 0) continue;
-          const text = (row.title ?? "") + " " + (row.snippet ?? "");
-          const triples = extractRelations(text, linked);
-          this.relationTel.ruleHits += triples.length;
-          for (const t of triples) this.insertEdge(row.id, t, linked);
+        const snap = {
+          scanned: res.scanned, lastId: res.lastId, ruleHits: this.relationTel.ruleHits,
+          triplesWritten: this.relationTel.triplesWritten, dedupSkipped: this.relationTel.dedupSkipped,
+          schemaRejected: this.relationTel.schemaRejected,
+        };
+        let more = false;
+        for (let attempt = 0; ; attempt++) {
+          try {
+            more = this.db
+              .transaction((fullRf: boolean) => {
+                if (fullRf) this.db.exec("DELETE FROM edges");
+                const rows = scanBatch(fromId);
+                if (rows.length === 0) return false;
+                for (const row of rows) processRow(row);
+                return true;
+              })
+              .immediate(needsFullRefresh);
+            break;
+          } catch (e) {
+            if (isBusyRetryable(e) && attempt < 8) {
+              Object.assign(res, { scanned: snap.scanned, lastId: snap.lastId });
+              Object.assign(this.relationTel, { ruleHits: snap.ruleHits, triplesWritten: snap.triplesWritten, dedupSkipped: snap.dedupSkipped, schemaRejected: snap.schemaRejected });
+              await sleep(Math.min(50 * 2 ** attempt, 5000));
+              continue;
+            }
+            throw e;
+          }
         }
+        needsFullRefresh = false;
+        if (!more) break;
         fromId = res.lastId;
+        this.db.pragma("wal_checkpoint(PASSIVE)");
       }
-      if (!opts.apply) throw dryRollback;
-    };
-    try {
-      this.db.transaction(run)();
-    } catch (e) {
-      if (e !== dryRollback) throw e;
     }
     res.dedupSkipped = this.relationTel.dedupSkipped - tel0.dedupSkipped;
     res.schemaRejected = this.relationTel.schemaRejected - tel0.schemaRejected;

@@ -23,7 +23,7 @@ function printHelp(): void {
       "    [--full-refresh]              Rebuild the edges table from scratch (dbt full-refresh safety net, r87; mutually exclusive with --from-id/--limit)",
       "",
       "Exit codes: 0 success / 1 runtime error / 2 usage error.",
-      "Run backfills during a quiet window: WAL single-writer, no concurrent MCP traffic.",
+      "Chunked apply commits per batch with SQLITE_BUSY retry (ADR-0036 D6): a quiet window is recommended, not required.",
       "",
     ].join("\n") + "\n"
   );

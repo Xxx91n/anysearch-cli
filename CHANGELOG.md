@@ -57,3 +57,14 @@ All notable changes to this project are recorded here. Format follows
   pairs with 14-memory distractor corpus, 14 EN + 8 CN alias edges, 6 no_edge negatives); baseline
   recalibrated over 50 seeded runs (sigmaDU=0.102, lockedN=17). New test eval-relation-gain.test.ts.
 
+### Changed
+
+- ADR-0036 D6 (Phase-2): `ans relation backfill-relations --apply` now commits one IMMEDIATE
+  transaction per batch (was a single whole-run transaction), retries SQLITE_BUSY with exponential
+  backoff (50ms base, 5s cap, <=8 tries, aligned with busy_timeout=5000), fails fast on
+  SQLITE_BUSY_SNAPSHOT, and runs a passive WAL checkpoint after each committed batch. The dry-run
+  path keeps the single rolled-back transaction, so counters remain exact predictions (ADR-0035 r87).
+  The "no concurrent MCP traffic during backfill" constraint is relaxed to recommended-not-required;
+  CLI help and ADR-0035 D7 wording updated. Regression coverage: per-batch exact-parity and
+  live-writer contention cases in relation-edges.test.ts.
+

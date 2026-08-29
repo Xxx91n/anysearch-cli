@@ -184,6 +184,33 @@ const edgeCounts = (p: string) => {
 }
 rmSync(dir2, { recursive: true, force: true });
 
+// --- ADR-0036 D6: chunked apply commits per batch; live-writer SQLITE_BUSY is absorbed ---
+{
+  const dir3 = mkdtempSync(join(tmpdir(), "ans-rel-busy-"));
+  const dbPath3 = join(dir3, "rel3.db");
+  const st = new SqliteSessionStore(dbPath3);
+  const s3 = await st.createSession("eval");
+  for (let i = 0; i < 4; i++) {
+    await st.adjudicateMemory(s3.id, [{ url: "https://ex.com/busy/" + i, title: "Pane" + i + "Kit uses Glide" + i + "Lib daily", snippet: "Pane" + i + "Kit uses Glide" + i + "Lib for batch renders", source: "exa", evidence: 0.9 }]);
+  }
+  { const w = new Database(dbPath3); w.exec("DELETE FROM edges"); w.close(); }
+  const dry3 = await st.backfillRelations({ apply: false });
+  const chunked = await st.backfillRelations({ apply: true, batch: 1 });
+  assert(chunked.written === dry3.written && chunked.scanned === 4, "chunked apply matches dry-run exact prediction across batches: " + chunked.written + " vs " + dry3.written);
+  { const w = new Database(dbPath3); w.exec("DELETE FROM edges"); w.close(); }
+  // BUSY injection: a foreign connection holds the write lock briefly; the loop must not error out.
+  const foreign = new Database(dbPath3);
+  foreign.exec("BEGIN IMMEDIATE");
+  const releaser = setTimeout(() => foreign.exec("COMMIT"), 150);
+  const retryRes = await st.backfillRelations({ apply: true, batch: 2 });
+  clearTimeout(releaser);
+  foreign.close();
+  assert(retryRes.written === chunked.written, "live-writer contention absorbed, backfill completed: " + retryRes.written);
+  assert(edgeCounts(dbPath3).live === retryRes.written, "every written triple is a live edge after contention (uses + related_to per pair): " + edgeCounts(dbPath3).live);
+  st.close();
+  rmSync(dir3, { recursive: true, force: true });
+}
+
 // --- relation telemetry shape ---
 const finalTel = store.relationTelemetry();
 assert(typeof finalTel.pendingEdges === "number" && finalTel.pendingEdges >= 0, "pendingEdges gauge present");
