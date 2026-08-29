@@ -466,4 +466,17 @@ _Avoid_: spaCy/Stanza/PySBD/SaT (native deps), full-text LLM decomposition every
 unsupported 断言运行时处置：红标 ✗ 直出原句（不改写），生成断言级 `GapRequest{ assertion, evidenceState:unsupported, gapQuery }` 进 ADR-0023 sufficiency-gate bounded reround；新证据支撑 → 降级为 supported（只改标不改文），新证据反证 → attribution 挂 counter-evidence，无果且核心主张 → 随 expectAllWeak 桥入整体 abstain/降级生成，无果非核心 → 红标直出。改写（RARR 式）与默认剔除（redact）双双否决。ADR-0034 D7。
 _Avoid_: RARR-style agent-side rewriting, default-redact of unsupported sentences, replacing expected human-visible red marks with silent suppression
 
+
+## KG-lite Fifth Arm（关系第五臂，召回增强）
+实体间关系落成 `edges` 边表（闭集谓词、系统时态 valid_until、单事务 close+insert supersede），检索侧作为 RRF 第五臂接入（权重 0.5、条件激活、双向 1-hop、采样上限 100），arm 输出的是 `episode_memory_id` 回链记忆行——天然与既有臂在 RRF 层去重。关系臂是召回增强，永不做纯图检索替代（arXiv 2502.11371 证伪）。2-hop / as-of 时间推理是 P2+。ADR-0035 D1/D3。
+_Avoid_: free-form relation predicates, recursive CTE in v1, edge ids as RRF keys, world-time valid_from in v1
+
+## Closed Predicate Table（闭集谓词表）
+关系谓词为闭集 taxonomy，库层 `CHECK (relation IN (...))` + LLM 补缺三元组 `(head_type, relation, tail_type)` 约束 + strict 后置过滤三重把关；新谓词只能经 eval 评审后以迁移入库（golden 同步翻转指纹）。表层同义词（含中文）走确定性别名表，语义去重不引入 LLM 判断。ctxgraph 实测固定谓词 F1 0.763 vs free-form 0.104。ADR-0035 D2/D4。
+_Avoid_: free-form phrase predicates, LLM-judged predicate equivalence, schema change without golden flip
+
+## Idempotent Relations Backfill（幂等关系回填）
+`backfill-relations` 默认 dry-run 报告、`--apply` 实写；幂等键 `(episode_memory_id, predicate, subject_norm, object_norm)` + 唯一索引兜底，确定性规则使重跑零副作用；`--batch/--from-id` 键集分页断点续跑；`--reprocess`（规则版本升级重抽）对旧行走 valid_until supersede 永不 DELETE——明确拒绝 `--reset`。与 backfill-vectors 的 opt-in dry-run 旗语极性差异在 ADR 备忘，不改已发版命令。ADR-0035 D7。
+_Avoid_: destructive --reset, in-place edge UPDATE, backfill concurrent with live MCP writes, changing shipped flag semantics
+
 *End of Glossary*
