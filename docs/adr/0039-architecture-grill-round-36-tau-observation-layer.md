@@ -92,3 +92,8 @@ L3 Non-violation — N1 no gate references Observational fields; N2 no read-path
 - thinkr.io (2026) testable acceptance criteria with numbers + failure scenarios; rework.com AC vs DoD separation; ISO/IEC 25010 quantification.
 
 *Glossary additions land in CONTEXT.md (Tau Observation Layer / Pre-Registered Day Buckets / Access Events Log / Explicit-Skip Telemetry).*
+
+## r100 Implementation Amendment (append-only)
+
+- D2 pin revised during implementation: the frozen stack is `numpy==1.26.4 + pandas==2.0.3 + scipy==1.11.4 + autograd==1.7.0 + lifetimes==0.11.3` (see `scripts/tau/requirements.txt`), NOT the `numpy>=2.1` earlier text. Rationale (r100 atomcode re-check): lifetimes scales its objective with autograd, and autograd is incompatible with numpy 2.x (removed `numpy.core` attribute map import path plus float-cast behavior changes), so the lifetimes+autograd pairing fixes the stack below numpy 2. The D2 fallback clause unchanged: if the frozen stack breaks, self-implement the BG/NBD closed-form likelihood (scipy.special.hyp2f1) or take D7 explicit-skip. CI smoke prints `numpy.__version__` and asserts the envelope, so any future drift fails loudly in the tau-python workflow.
+- EVAL_TIMEOUT note: the observational zone makes the 50-round calibration exceed the ADR-0029 D5 default 600s watchdog; calibration runs set `EVAL_TIMEOUT_MS=3600000` locally. Watchdog and ADR stay unchanged — the default keeps blind regression-catching fast; the override is an explicit operator action.

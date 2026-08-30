@@ -7,6 +7,18 @@ All notable changes to this project are recorded here. Format follows
 ## [Unreleased]
 
 ### Added
+- ADR-0039 tau observation layer (r100 implementation round): access_events append-only log
+  joined into eval per-case observation; pre-registered day buckets (0-1/2-7/8-30/31-90/91+,
+  [min,next-min) semantics + dayBucketFingerprint) folded into datasetFingerprint so any bucket
+  change forces a recalibration; synthetic tau-scan (seeded mulberry32, kendall@2, shipped as
+  node scripts/tau/tau-scan.mjs); BG/NBD out-of-process fit via scripts/tau/bgnbd_fit.py on the
+  frozen lifetimes stack (numpy==1.26.4, autograd==1.7.0 pin below numpy 2 — see ADR-0039 r100
+  amendment) reached through a hardened spawn wrapper (timeout SIGKILL, non-JSON/non-converged
+  all map to explicit-skip); three-tier explicit-skip (gate-not-met / offline-deferred /
+  infra-failure) with TAU_FIT_GATE T1+T2+T3 and a skip ledger (anysearch/gain-ledger@1 shape,
+  resolve via gain-warn-resolve.mjs); eval report observational zone is a ship-gate contract.
+  ADR-0038 r99 text errata physically applied (D2 full-sample rule failure is WARN not red;
+  D6 single WARN ships with a ledger entry, three consecutive escalate).
 - ADR-0038: relation-arm gain gate promoted to a three-tier GREEN/WARN/RED verdict — RED only on
   proven-negative evidence (BCa upper < 0 or harm-side sign-flip p below the look budget); unproven-
   positive is WARN, never RED. Dual-track holdout: 40-case frozen baseline slice (19 RoR pairs) with

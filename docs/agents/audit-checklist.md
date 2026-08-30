@@ -141,3 +141,16 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 - [ ] day-bucket=0-1/2-7/8-30/31-90/91+ 出现在 ADR-0039 D4 与 CONTEXT 术语两处且一致
 - [ ] _Avoid_ 8 条全部出现在 ADR-0039
 
+
+## ADR-0039 实现轮复核（r100）
+
+- [x] 步1：schema.sql access_events(memory_id, accessed_at) + 双索引；schema-content.ts 再生成哈希一致
+- [x] 步2：session-store.ts insertAccessEvent 两处读路径双调用；归档写补偿事件、undo 不改写历史；access-count.test.ts 17 断言（含归档负例）
+- [x] 步3：day-buckets.ts（0-1/2-7/8-30/31-90/91+，[min,next-min)，dayBucketFingerprint join datasetFingerprint → 旧指纹 26c7dd20 翻转）；day-buckets.test.ts 30 断言 + pinned fp
+- [x] 步4：time-decay.ts TauTable/taus 开销覆盖；eval/tau-scan.ts + tau-scan-cli.ts + scripts/tau/tau-scan.mjs；tau-scan.test.ts 20 断言；CLI 冒烟 schema=anysearch/tau-scan@1 kendall@2=0.926
+- [x] 步5：eval/bgnbd.ts（TAU_FIT_GATE T1/T2/T3 + psi 对称 KL + 防御 spawn：超时 SIGKILL/非 JSON/ok!=true/converged:false 全部显式跳过）+ scripts/tau/bgnbd_fit.py + requirements.txt 钉子；6 个 node stub；bgnbd-spawn.test.ts 25 断言
+- [x] 步6：eval/skip-ledger.ts（anysearch/gain-ledger@1 schema 复用，gain-warn-resolve.mjs --ledger 兼容）；同 key 3 连击；eval-skip.test.ts 15 断言
+- [x] 步7：runner.ts observational 区 + CaseResult.accessEvents 快照；cli.ts skip-ledger.json 写出 + md 区；ship-gate.mjs step7 observational 存在性 fail + 3 连击未决 fail；eval-gate.test.ts N1/N2 坚守（20/20 绿）
+- [x] 步8：.github/workflows/tau-python.yml（paths 过滤；ubuntu+windows 矩阵；setup-python 3.12 + pip cache + 冻结 requirements；导入 + 包络合约断言）
+- [x] 验收：EVAL_TIMEOUT_MS=3600000 校准 fp=113be271869dbc54（rawN=25）；专项检查 107/107 绿
+- [ ] 剩余验收：turbo check/build、ship-gate 全程、apps cli+mcp 进程活测
