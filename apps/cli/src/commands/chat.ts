@@ -2,6 +2,8 @@
 // ADR-0007 decision 7: uses PiAgentRuntime for agent loop.
 // ADR-0017 D2: uses createLlmSession deep module from kernel.
 // Reads LLM config from ANS_LLM_PROVIDER + ANS_LLM_MODEL env vars.
+// ADR-0037 D4/A3: optional custom endpoint via ANS_LLM_BASE_URL + ANS_LLM_API (chat|messages|responses).
+// baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
 import { PiAgentRuntime, createLlmSession } from "@anysearch/kernel";
 import type { RetrieverPort, DomainConfigPort } from "@anysearch/kernel";
@@ -31,7 +33,16 @@ export async function runChat(args: string[]): Promise<number> {
   // Initialize LLM session via kernel deep module (ADR-0017 D2).
   let session;
   try {
-    session = await createLlmSession({ provider: providerName, model: modelName });
+    // ADR-0037 D4: custom endpoint config — ANS_LLM_API is required when ANS_LLM_BASE_URL is
+    // set (explicit three-way; no protocol sniffing). ANS_LLM_API_KEY supplies the key.
+    const baseUrl = process.env.ANS_LLM_BASE_URL;
+    const apiRaw = process.env.ANS_LLM_API;
+    const api = apiRaw === "chat" || apiRaw === "messages" || apiRaw === "responses" ? apiRaw : undefined;
+    if (baseUrl && !api) {
+      process.stderr.write("ANS_LLM_BASE_URL requires ANS_LLM_API=chat|messages|responses\n");
+      return 3;
+    }
+    session = await createLlmSession({ provider: providerName, model: modelName, baseUrl, api, apiKey: baseUrl ? process.env.ANS_LLM_API_KEY : undefined });
   } catch (e: any) {
     process.stderr.write("Failed to initialize LLM: " + (e?.message || String(e)) + "\n");
     return 3;

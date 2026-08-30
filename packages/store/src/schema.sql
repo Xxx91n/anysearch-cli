@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS retrieval_results (
   -- G019: Time Edge Effect columns.
   valid_until TEXT, -- bi-temporal: NULL = still valid, non-null = invalidated timestamp.
   pinned BOOLEAN DEFAULT 0, -- pinned exemption: bypasses time decay.
-  entity TEXT -- entity key for bi-temporal invalidation (URL for MVP).
+  entity TEXT, -- entity key for bi-temporal invalidation (URL for MVP).
+  archived INTEGER NOT NULL DEFAULT 0 -- ADR-0037 D5: soft archive (reversible forgetting); 1 = excluded from all read paths
 );
 
 -- FTS5 for retrieval results (search within session results).
@@ -222,3 +223,33 @@ CREATE TABLE IF NOT EXISTS edge_patterns (
   tail_type TEXT NOT NULL,
   UNIQUE (head_type, relation, tail_type)
 );
+
+-- ADR-0037 D3: semantic memory layer (sixth RRF arm, Phase-1 shadow). Consolidated, LLM-summarized
+-- memories distilled from episode clusters; episodes (retrieval_results) are never physically deleted.
+-- valid_until = bi-temporal soft-close used by the UPDATE op (old row closed, new row written).
+CREATE TABLE IF NOT EXISTS semantic_memories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  content TEXT NOT NULL,
+  source_episode_ids TEXT NOT NULL,        -- JSON array of retrieval_results.id that fed this memory
+  salience REAL NOT NULL DEFAULT 0.5 CHECK (salience >= 0 AND salience <= 1),
+  confidence REAL NOT NULL DEFAULT 1.0 CHECK (confidence >= 0 AND confidence <= 1), -- fidelity-gate outcome; 0.2 = low-confidence (gate absent / uncertain)
+  access_count INTEGER NOT NULL DEFAULT 0,
+  last_accessed TEXT,
+  embedding BLOB,                          -- Float32Array bytes (same model as memory_embeddings); NULL until embedded
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  valid_until TEXT                         -- NULL = live
+);
+CREATE INDEX IF NOT EXISTS idx_semantic_live ON semantic_memories(id) WHERE valid_until IS NULL;
+
+-- ADR-0037 D5: reversible archive ledger (entity_merge_log-style full snapshot). One row per
+-- archive action; undo restores retrieval_results.archived = 0 and stamps undone_at.
+CREATE TABLE IF NOT EXISTS archive_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  memory_id INTEGER NOT NULL REFERENCES retrieval_results(id),
+  snapshot TEXT NOT NULL,                  -- JSON: full retrieval_results row before archiving
+  reason TEXT,                             -- deterministic factor summary (age band, access_count, last_accessed, salience)
+  archived_at TEXT NOT NULL DEFAULT (datetime('now')),
+  undone_at TEXT                           -- NULL = still archived
+);
+CREATE INDEX IF NOT EXISTS idx_archive_log_memory ON archive_log(memory_id);
+CREATE INDEX IF NOT EXISTS idx_archive_active ON archive_log(memory_id) WHERE undone_at IS NULL;

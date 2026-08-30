@@ -45,7 +45,7 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
       "SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, " +
       "freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank " +
       "FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid " +
-      "WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) " +
+      "WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND r.archived = 0 " +
       "ORDER BY rank LIMIT ?",
       safe, safe, limit,
     );
@@ -67,10 +67,29 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
     `SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content,
             CASE r.id ${orderCases} END as rrf_order
      FROM retrieval_results r
-     WHERE r.id IN (${placeholders}) AND r.valid_until IS NULL AND r.quarantine IS NULL
+     WHERE r.id IN (${placeholders}) AND r.valid_until IS NULL AND r.quarantine IS NULL AND r.archived = 0
      ORDER BY rrf_order LIMIT ?`,
     ...fusedIds, limit,
   );
+  // ADR-0037 D6 Phase-2: semantic-arm ids are synthetic negatives (-semantic_memories.id) and
+  // never match retrieval_results; resolve them from semantic_memories and re-sort by RRF order.
+  const negIds = fusedIds.filter((id) => id.startsWith("-"));
+  if (negIds.length > 0) {
+    const ph = negIds.map(() => "?").join(", ");
+    const semRows = store.dbQuery<THit>(
+      `SELECT (-id) as rowid, '' as sessionId, '(semantic)' as role, content as content
+       FROM semantic_memories WHERE id IN (${ph}) AND valid_until IS NULL`,
+      ...negIds.map((x) => Math.abs(Number(x))),
+    );
+    rows.push(...semRows);
+    const rrfOrder = new Map(fusedIds.map((id, i) => [id, i]));
+    rows.sort(
+      (x, y) =>
+        (rrfOrder.get(String((x as { rowid: number }).rowid)) ?? Number.MAX_SAFE_INTEGER) -
+        (rrfOrder.get(String((y as { rowid: number }).rowid)) ?? Number.MAX_SAFE_INTEGER),
+    );
+    rows.length = Math.min(rows.length, limit);
+  }
   // ADR-0033 D8: annotate arm provenance on each returned hit (weak-evidence flag source).
   const ftsIds = new Set<string>();
   for (let i = 0; i < baseCount; i++) for (const id of lists[i]!) ftsIds.add(id);

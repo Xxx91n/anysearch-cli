@@ -27,11 +27,16 @@ export interface OpRecord {
   // ADR-0035 D5: relation observational flags (never flip case pass/fail).
   hopHit?: boolean;
   noEdgeViolation?: boolean;
+  dryRunExact?: boolean; // ADR-0037 D6: archive dry-run == apply (forget zone, report-only)
+  undoOk?: boolean;      // ADR-0037 D5: undo succeeded (forget zone, report-only)
   // ADR-0036 D5: single-run counterfactual RoR ablation (capture only when expectRankOf set).
   // rank of the expected memory in the fused list with / without the relation arm; k+1 = clipped.
   rorRankOn?: number;
   rorRankOff?: number;
   rorExcluded?: boolean; // expected memory never identified in any arm list
+  // ADR-0037 D6 Phase-2: semantic-arm counterfactual (six-arm list vs five-arm baseline).
+  semRankOn?: number;
+  semRankOff?: number;
 }
 
 export interface CaseResult {
@@ -47,6 +52,8 @@ export interface CaseResult {
   entityMerge?: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number };
   // ADR-0035 D4: per-case relation extraction telemetry snapshot (report-only).
   relationTel?: RelTel;
+  // ADR-0037 D6: per-case semantic-arm shadow telemetry (served must stay 0 in Phase-1).
+  semTel?: { queries: number; hits: number; served: number };
 }
 
 export interface EvalCounts {
@@ -101,6 +108,11 @@ export interface EvalMetrics {
   // positive = the relation arm pulled the expected memory earlier. The gate consumes `deltas`
   // (BCa lower bound + sign-flip + MEI floor); mean alone is report-only evidence.
   relationGain?: { n: number; excluded: number; meanDelta: number; deltas: number[] };
+  // ADR-0037 D6: semantic-arm shadow zone (Phase-1 observational; served>0 violates the
+  // shadow contract and fails the gate) and forget lifecycle counters.
+  // ADR-0037 D6 Phase-2: serve telemetry + fail-closed regression count + RoR gain (observation zone).
+  semantic: { queries: number; hits: number; served: number; regressions: number; gain?: { n: number; meanDelta: number } };
+  forget: { archiveChecks: number; archives: number; undoRestores: number; dryRunExact: number };
 }
 
 export interface EvalReport {
@@ -126,19 +138,32 @@ const hitText = (h: { role?: unknown; content?: unknown }): string =>
 export const ROR_WINDOW = 60;
 export const ROR_CLIP = ROR_WINDOW + 1;
 
-export type StoreFactory = (dbPath: string) => SqliteSessionStore;
+export type StoreFactory = (dbPath: string, spec: CaseSpec) => SqliteSessionStore;
 
-export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => new SqliteSessionStore(p)): Promise<CaseResult> {
+// ADR-0037 D4/D6: golden consolidate stubs — summarize/classify are deterministic
+// (classify stub returns one fixed label for every claim; label confidence mirrors the role).
+const defaultFactory: StoreFactory = (dbPath, spec) => {
+  const stub = spec.consolidateStub;
+  if (!stub) return new SqliteSessionStore(dbPath);
+  return new SqliteSessionStore(dbPath, {
+    consolidateSummarize: async () => stub.summary,
+    consolidateClassify: () => ({ label: stub.classify, confidence: stub.classify === "supported" ? 0.95 : 0.1 }),
+  });
+};
+
+export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultFactory): Promise<CaseResult> {
   const tmpDir = mkdtempSync(join(tmpdir(), "ans-eval-"));
   const dbPath = join(tmpDir, "eval.db");
-  const store = makeStore(dbPath);
+  const store = makeStore(dbPath, spec);
   const raw = new Database(dbPath, { readonly: true });
   const ops: OpRecord[] = [];
   let sessionId = "";
   let entityArmSnapshot: { queries: number; candidates: number; activations: number; hits: number } | undefined;
   let relationTelSnapshot: RelTel | undefined;
+  let semTelSnapshot: { queries: number; hits: number; served: number } | undefined;
   let entityMergeSnapshot: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } | undefined;
   const adjResults: AdjudicationResultItem[][] = []; // stashed per adjudicate opIndex
+  const archiveLogIdsByOp = new Map<number, number[]>(); // ADR-0037 D5: archive op -> archive_log ids for undo
   let failedStage: EvalStage | null = null;
   const mark = (rec: OpRecord) => {
     ops.push(rec);
@@ -187,6 +212,8 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
             let rorRankOn: number | undefined;
             let rorRankOff: number | undefined;
             let rorExcluded: boolean | undefined;
+            let semRankOn: number | undefined;
+            let semRankOff: number | undefined;
             if (op.expectRankOf) {
               const prov = store.lastArmProvenance;
               let targetId: number | undefined;
@@ -210,6 +237,25 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
               } else {
                 rorExcluded = true;
               }
+              // ADR-0037 D6 Phase-2: semantic-arm counterfactual — rank with the semantic arm vs
+              // the five-arm baseline (semantic lists dropped). Regression = on rank worse than off.
+              if (prov && targetId !== undefined) {
+                const onI = prov.fusedIds.indexOf(String(targetId));
+                semRankOn = onI >= 0 ? onI + 1 : ROR_CLIP;
+                const sLists: string[][] = [];
+                const sWeights: number[] = [];
+                for (let i = 0; i < prov.labels.length; i++) {
+                  if (prov.labels[i] === "semantic") continue;
+                  sLists.push(prov.lists[i]!);
+                  sWeights.push(prov.weights[i]!);
+                }
+                semRankOff = ROR_CLIP;
+                if (sLists.length > 0) {
+                  const sFused = sLists.length === 1 ? sLists[0]! : rrfRank(sLists, ROR_WINDOW, sWeights);
+                  const sIdx = sFused.indexOf(String(targetId));
+                  if (sIdx >= 0) semRankOff = sIdx + 1;
+                }
+              }
             }
             mark({
               op: opIndex, kind: op.op, stage: op.stage, ok: fails.length === 0,
@@ -218,6 +264,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
               rank, hitCount: hits.length, strongCount: strongHits.length,
               ...(rorRankOn !== undefined ? { rorRankOn, rorRankOff } : {}),
               ...(rorExcluded !== undefined ? { rorExcluded } : {}),
+              ...(semRankOn !== undefined ? { semRankOn, semRankOff } : {}),
               ...(op.expectHopTitle !== undefined ? { hopHit: texts.some((t) => t.includes(op.expectHopTitle!)) } : {}),
             });
             break;
@@ -228,7 +275,11 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
             const writer = new Database(dbPath);
             try {
               const ins = writer.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, rrf_score, entity) VALUES (?, ?, ?, ?, ?, NULL, ?)");
-              for (const it of op.items) ins.run(sessionId, it.url, it.title, it.snippet, it.source, it.entity ?? it.url);
+                            for (const it of op.items) ins.run(sessionId, it.url, it.title, it.snippet, it.source, it.entity ?? it.url);
+              if (op.agedDays && op.agedDays > 0) {
+                // ADR-0037 D5: backdate created_at so the archive scan sees an aged row (access_count stays 0).
+                writer.prepare("UPDATE retrieval_results SET created_at = datetime(created_at, ?), last_accessed = NULL WHERE session_id = ?").run("-" + op.agedDays + " days", sessionId);
+              }
               mark({ op: opIndex, kind: op.op, stage: op.stage, ok: true, detail: "seeded " + op.items.length + " row(s) (write guard bypassed)" });
             } catch (e) {
               mark({ op: opIndex, kind: op.op, stage: op.stage, ok: false, detail: "seed error: " + String((e as Error).message) });
@@ -317,6 +368,44 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
             mark({ op: opIndex, kind: op.op, stage: op.stage, ok: fails.length === 0, detail: fails.length ? fails.join("; ") : "edge live " + sn + "->" + op.relation + "->" + on });
             break;
           }
+          case "consolidate": {
+            // ADR-0037 D4/D7-1/2: consolidation against golden stubs; report counters are asserted directly.
+            const rep = await store.consolidateMemory();
+            const fails: string[] = [];
+            if (op.expectAdd !== undefined && rep.add !== op.expectAdd) fails.push("add " + rep.add + " != " + op.expectAdd);
+            if (op.expectNoop !== undefined && rep.noop !== op.expectNoop) fails.push("noop " + rep.noop + " != " + op.expectNoop);
+            if (op.expectRejected !== undefined && rep.gateRejected !== op.expectRejected) fails.push("gateRejected " + rep.gateRejected + " != " + op.expectRejected);
+            if (op.expectLlmUnavailable !== undefined && rep.llmUnavailable !== op.expectLlmUnavailable) fails.push("llmUnavailable " + rep.llmUnavailable + " != " + op.expectLlmUnavailable);
+            mark({ op: opIndex, kind: op.op, stage: op.stage, ok: fails.length === 0, detail: fails.length ? fails.join("; ") : "add=" + rep.add + " noop=" + rep.noop + " rejected=" + rep.gateRejected + " unavailable=" + rep.llmUnavailable });
+            break;
+          }
+          case "archive": {
+            // ADR-0037 D5/D7-6: dry-run (rolled-back transaction) must predict apply exactly;
+            // applyArchive's internal dryRun==apply assertion is re-asserted at the golden layer.
+            const candidates = store.scanArchive();
+            const dry = store.applyArchive(undefined, { dryRun: true });
+            const applied = store.applyArchive(candidates.map((c) => c.id));
+            const fails: string[] = [];
+            if (dry.archived !== candidates.length || applied.archived !== candidates.length) fails.push("dry-run!=apply (scan=" + candidates.length + " dry=" + dry.archived + " apply=" + applied.archived + ")");
+            if (applied.archived !== op.expectArchived) fails.push("archived " + applied.archived + " != " + op.expectArchived);
+            archiveLogIdsByOp.set(opIndex, applied.logIds);
+            mark({ op: opIndex, kind: op.op, stage: op.stage, ok: fails.length === 0, detail: fails.length ? fails.join("; ") : "archived " + applied.archived, dryRunExact: fails.length === 0 });
+            break;
+          }
+          case "undoArchive": {
+            // ADR-0037 D5/D7-4: undo restores the archived rows from the archive_log snapshot.
+            const logs = archiveLogIdsByOp.get(op.fromOp) ?? [];
+            const fails: string[] = [];
+            let anyOk = false;
+            for (const id of logs) {
+              const r = store.undoArchive(id);
+              if (r.ok !== op.expectOk) fails.push("undo log " + id + " ok=" + r.ok + " != " + op.expectOk);
+              anyOk = anyOk || r.ok;
+            }
+            if (logs.length === 0) fails.push("op " + op.fromOp + " recorded no archive log ids");
+            mark({ op: opIndex, kind: op.op, stage: op.stage, ok: fails.length === 0, detail: fails.length ? fails.join("; ") : "undone " + logs.length, undoOk: anyOk });
+            break;
+          }
           case "resolveQuarantined": {
             const res = adjResults[op.fromOp];
             const id = res?.[op.item]?.insertedId;
@@ -336,11 +425,12 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = (p) => n
     entityArmSnapshot = (store as unknown as { entityTelemetry?: () => { queries: number; candidates: number; activations: number; hits: number } }).entityTelemetry?.();
     entityMergeSnapshot = (store as unknown as { entityMergeTelemetry?: () => { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } }).entityMergeTelemetry?.();
     relationTelSnapshot = (store as unknown as { relationTelemetry?: () => RelTel }).relationTelemetry?.();
+    semTelSnapshot = store.semanticTelemetry();
     raw.close();
     store.close();
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
-  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot, entityMerge: entityMergeSnapshot, relationTel: relationTelSnapshot };
+  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot, entityMerge: entityMergeSnapshot, relationTel: relationTelSnapshot, semTel: semTelSnapshot };
 }
 
 // Metrics per ADR-0027 D4: ① case pass rate (gate: 100%), ② supersession success,
@@ -394,11 +484,19 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
   }
   // ADR-0036 D5: paired RoR deltas across every expectRankOf op (Track A causal sample).
   const rorDeltas: number[] = [];
+  const semDeltas: number[] = [];
+  let semRegressions = 0;
   let rorExcludedCount = 0;
   for (const r of results) {
     for (const rec of r.ops) {
       if (rec.rorExcluded) { rorExcludedCount += 1; continue; }
       if (rec.rorRankOn !== undefined && rec.rorRankOff !== undefined) rorDeltas.push((rec.rorRankOff - rec.rorRankOn) / ROR_WINDOW);
+      // ADR-0037 D6: semantic regression = arm made fused rank strictly worse (negative delta).
+      if (rec.semRankOn !== undefined && rec.semRankOff !== undefined) {
+        const d = (rec.semRankOff - rec.semRankOn) / ROR_WINDOW;
+        semDeltas.push(d);
+        if (d < 0) semRegressions += 1;
+      }
     }
   }
   return {
@@ -469,6 +567,29 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
     relationGain: rorDeltas.length + rorExcludedCount > 0
       ? { n: rorDeltas.length, excluded: rorExcludedCount, meanDelta: rorDeltas.length ? rorDeltas.reduce((a, b) => a + b, 0) / rorDeltas.length : 0, deltas: rorDeltas }
       : undefined,
+    // ADR-0037 D6: Phase-1 shadow telemetry (served must stay 0; fail-closed in the gate) and
+    // forget lifecycle counters (exact dry-run predictions, restores).
+    semantic: (() => {
+      let queries = 0, hits = 0, served = 0;
+      for (const r of results) if (r.semTel) { queries += r.semTel.queries; hits += r.semTel.hits; served += r.semTel.served; }
+      return {
+        queries, hits, served,
+        regressions: semRegressions,
+        ...(semDeltas.length > 0 ? { gain: { n: semDeltas.length, meanDelta: semDeltas.reduce((x, y) => x + y, 0) / semDeltas.length } } : {}),
+      };
+    })(),
+    forget: (() => {
+      let archiveChecks = 0, archives = 0, undoRestores = 0, dryRunExact = 0;
+      for (let i = 0; i < cases.length; i++) {
+        for (const [opIndex, op] of cases[i]!.ops.entries()) {
+          const rec = results[i]!.ops.find((r) => r.op === opIndex);
+          if (!rec) continue;
+          if (op.op === "archive") { archiveChecks += 1; if (rec.ok) archives += 1; if (rec.dryRunExact) dryRunExact += 1; }
+          if (op.op === "undoArchive" && rec.undoOk) undoRestores += 1;
+        }
+      }
+      return { archiveChecks, archives, undoRestores, dryRunExact };
+    })(),
   };
 }
 

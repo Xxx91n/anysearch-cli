@@ -25,7 +25,7 @@ function mkMetrics(over: Partial<EvalMetrics> & { supExpected?: number; supPasse
     quarantineFalsePositiveRate: fpEligible ? fpCount / fpEligible : 0,
     counts: { cases: 20, casesPassed: 20, supExpected, supPassed, fpEligible, fpCount },
     mrr: 1,
-    answerableFalseRefusalRate: 0,
+    answerableFalseRefusalRate: 0, semantic: over.semantic ?? { queries: 0, hits: 0, served: 0, regressions: 0 }, forget: { archiveChecks: 0, archives: 0, undoRestores: 0, dryRunExact: 0 },
   };
 }
 
@@ -53,7 +53,7 @@ assert(evaluateGate(fakeReport(mkMetrics({ passRate: 0.95 })), baseline).exitCod
 assert(evaluateGate(fakeReport(mkMetrics({ supPassed: 11 })), baseline).exitCode === 0, "supersession within allowance passes");
 // over allowance but UNDER-POWERED (allowance/n=1/12 < MDE~0.404) -> WARN, exit 0
 { const g = evaluateGate(fakeReport(mkMetrics({ supPassed: 10 })), baseline);
-  assert(g.verdict === "warn" && g.exitCode === 0 && g.warnings.length === 1, "under-powered overage downgrades to WARN (got " + g.verdict + ")"); }
+  assert(g.verdict === "warn" && g.exitCode === 0 && g.warnings.some((w) => w.includes("DOWNGRADED to WARN")), "under-powered overage downgrades to WARN (got " + g.verdict + ", warnings=" + g.warnings.length + ")"); }
 // over allowance WITH power (allowance 3/n=4 => 0.75 >= MDE(4)~0.7) -> FAIL, exit 1
 { const b2: EvalBaseline = { ...baseline, allowance: { supersessionFails: 3, quarantineFp: 0 } };
   const g = evaluateGate(fakeReport(mkMetrics({ supExpected: 4, supPassed: 0 })), b2);
@@ -62,6 +62,9 @@ assert(evaluateGate(fakeReport(mkMetrics({ supPassed: 11 })), baseline).exitCode
 { const g = evaluateGate(fakeReport(mkMetrics({ fpCount: 1 })), baseline);
   assert(g.verdict === "warn" && g.exitCode === 0, "qfp over zero allowance warns when under-powered"); }
 // fingerprint mismatch = 12, missing baseline = 12, missing allowance block = 12
+// ADR-0037 D6 Phase-2: semantic-arm regression fail-closed
+{ const g = evaluateGate(fakeReport(mkMetrics({ semantic: { queries: 1, hits: 1, served: 1, regressions: 1 } } as never)), baseline);
+  assert(g.verdict === "fail" && g.exitCode === 1, "semantic regression fails closed (got " + g.verdict + ")"); }
 assert(evaluateGate(fakeReport(undefined, "xyz999"), baseline).exitCode === 12, "fingerprint mismatch exits 12");
 assert(evaluateGate(fakeReport(), null).exitCode === 12, "missing baseline exits 12");
 { const legacy = { ...baseline, allowance: undefined } as unknown as EvalBaseline;

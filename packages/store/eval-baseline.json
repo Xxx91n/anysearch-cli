@@ -1,25 +1,25 @@
 {
   "schema": "anysearch/eval-baseline@1",
-  "fingerprint": "9a135744b0c1f78f",
+  "fingerprint": "211e3f449d72ab13",
   "metrics": {
     "passRate": 1,
     "supersessionSuccess": 1,
     "quarantineFalsePositiveRate": 0,
     "counts": {
-      "cases": 119,
-      "casesPassed": 119,
-      "supExpected": 16,
-      "supPassed": 16,
-      "fpEligible": 201,
+      "cases": 123,
+      "casesPassed": 123,
+      "supExpected": 22,
+      "supPassed": 22,
+      "fpEligible": 210,
       "fpCount": 0
     },
     "entityArm": {
-      "queries": 79,
+      "queries": 81,
       "candidates": 55,
       "activations": 55,
       "hits": 58,
-      "hitRate": 0.6962025316455697,
-      "activationRate": 0.6962025316455697,
+      "hitRate": 0.6790123456790124,
+      "activationRate": 0.6790123456790124,
       "avgArmHits": 1.0545454545454545
     },
     "entityMerge": {
@@ -54,16 +54,16 @@
       "hopHits": 39,
       "hopHitRate": 1,
       "tel": {
-        "ruleHits": 137,
+        "ruleHits": 138,
         "llmActivations": 0,
         "llmFailures": 0,
         "triplesWritten": 74,
         "dedupSkipped": 52,
         "relatedToWriteOnce": 0,
         "schemaRejected": 0,
-        "armQueries": 79,
+        "armQueries": 81,
         "armHits": 96,
-        "pendingEdges": 1223
+        "pendingEdges": 1232
       }
     },
     "relationGain": {
@@ -114,6 +114,17 @@
         0,
         0
       ]
+    },
+    "semantic": {
+      "queries": 0,
+      "hits": 0,
+      "served": 0
+    },
+    "forget": {
+      "archiveChecks": 1,
+      "archives": 1,
+      "undoRestores": 1,
+      "dryRunExact": 1
     }
   },
   "allowance": {

@@ -11,3 +11,6 @@ export * from "./fts5";
 
 // ADR-0035: KG-lite entity-relation edge layer (fifth arm).
 export * from "./relation";
+
+// ADR-0037: consolidation + reversible forgetting (sixth arm, Phase-1 shadow).
+export * from "./consolidate";

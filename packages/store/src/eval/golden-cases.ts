@@ -16,14 +16,17 @@ export type EvalGroup =
   | "paraphrase"
   | "entity"
   | "semantic"
-  | "relations";
+  | "relations"
+  | "consolidate"
+  | "forget";
 
 export type EvalStage = "extract" | "adjudicate" | "store" | "retrieve";
 
 export type CaseOp =
-  | { op: "adjudicate"; stage: "adjudicate"; items: KeyMemoryInput[]; expect: AdjudicationAction[]; newSession?: boolean /* ADR-0031 step1: cross-session entity aggregation */ }
+  | { op: "adjudicate"; stage: "adjudicate"; items: KeyMemoryInput[
+]; expect: AdjudicationAction[]; newSession?: boolean /* ADR-0031 step1: cross-session entity aggregation */ }
   | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number; expectRankOf?: { title: string; maxRank: number }; expectEmpty?: true; expectAllWeak?: true /* ADR-0033 D8: unanswerable slice asserts weak-only evidence, not zero retrieval */; expectHopTitle?: string /* ADR-0035 D5: relation-arm 1-hop recall — observational only, never fails */ }
-  | { op: "seed"; stage: "store"; items: KeyMemoryInput[] } /* ADR-0028 D3: direct DB insert, bypasses the write guard on purpose */
+  | { op: "seed"; stage: "store"; items: KeyMemoryInput[]; agedDays?: number } /* ADR-0028 D3: direct DB insert, bypasses the write guard on purpose; ADR-0037 D5: agedDays backdates created_at/last_accessed for archive-candidate cases */
   | { op: "rawValidUntil"; stage: "store"; fromOp: number; expectSet: boolean }
   | { op: "promote"; stage: "store"; key: string; value: string; scope?: string; source: "explicit" | "correction"; expectAction: "promoted" | "rejected" }
   | { op: "correct"; stage: "adjudicate"; key: string; scope: string; times: number; expectCount: number }
@@ -32,7 +35,12 @@ export type CaseOp =
   | { op: "entities"; stage: "store"; expectNames?: string[]; expectCount?: number } /* ADR-0031 step1 */
   | { op: "resolveQuarantined"; stage: "adjudicate"; fromOp: number; item: number; action: "keep" | "drop"; expectOk: boolean }
   // ADR-0035 D5: edge assertions — edge/supersede fail-closed, no_edge observational (paired strong negative).
-  | { op: "edge"; stage: "store"; subject: string; relation: string; object: string; assert: "edge" | "no_edge" | "supersede"; fromOp?: number };
+  | { op: "edge"; stage: "store"; subject: string; relation: string; object: string; assert: "edge" | "no_edge" | "supersede"; fromOp?: number }
+  // ADR-0037 D4/D6: consolidation run against golden stubs (D7-2: ops decisions never touch a live LLM).
+  | { op: "consolidate"; stage: "store"; expectAdd?: number; expectNoop?: number; expectRejected?: number; expectLlmUnavailable?: number }
+  // ADR-0037 D5/D6: archive apply + exact dry-run prediction (D7-6) + reversible undo (D7-4) go golden.
+  | { op: "archive"; stage: "store"; expectArchived: number }
+  | { op: "undoArchive"; stage: "store"; fromOp: number; expectOk: boolean };
 
 export interface CaseSpec {
   id: string;
@@ -41,6 +49,9 @@ export interface CaseSpec {
   difficulty?: "core" | "hard" | "adversarial";
   description: string;
   ops: CaseOp[];
+  // ADR-0037 D4: inject the bounded summarize + fidelity-gate stubs for consolidate cases
+  // (ops decisions stay deterministic / LLM-free; D7-1 negative via classify "unsupported").
+  consolidateStub?: { summary: string; classify: "supported" | "uncertain" | "unsupported" };
 }
 
 const km = (url: string, title: string, snippet: string, evidence: number, entity?: string, source = "exa"): KeyMemoryInput =>
@@ -544,6 +555,53 @@ export const GOLDEN_CASES: CaseSpec[] = [
     ],
   },
   ...buildRelationExpansionR33(),
+  // --- Group: consolidate (ADR-0037 D4/D6, Phase-1 golden; ops decisions stay LLM-free stubs) ---
+  {
+    id: "con_add_then_noop", group: "consolidate",
+    consolidateStub: { summary: "pnpm pins prevent lockfile drift; corepack enforces packageManager", classify: "supported" },
+    description: "3-episode cluster consolidates once (ADD), a rerun is a NOOP (theta boundary covered by unit tests)",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pn1", "kikis-delivery theme note", "kiki delivery cohort picks teal oceanic palette", 0.9, "PnpmPinning")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pn2", "vector arm telemetry plan", "shadow-mode arm counters land report only", 0.9, "PnpmPinning")], expect: ["supersede"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pn3", "archive undo drill", "reversible archive drills never lose rows", 0.9, "PnpmPinning")], expect: ["supersede"] },
+      { op: "consolidate", stage: "store", expectAdd: 1 },
+      { op: "consolidate", stage: "store", expectNoop: 1 },
+    ],
+  },
+  {
+    id: "con_gate_reject", group: "consolidate", difficulty: "adversarial",
+    consolidateStub: { summary: "hallucinated claim with no episode support", classify: "unsupported" },
+    description: "fidelity gate rejects an unsupported LLM summary — nothing is written (D7-1)",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/cg1", "harvest moon schedule", "harvest festival lands on first tuesday", 0.9, "GateProbe")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/cg2", "turbo task topology", "turbo fans out check tasks across workspaces", 0.9, "GateProbe")], expect: ["supersede"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/cg3", "quarantine belt review", "candidate belt requires manual review", 0.9, "GateProbe")], expect: ["supersede"] },
+      { op: "consolidate", stage: "store", expectRejected: 1, expectAdd: 0 },
+    ],
+  },
+  {
+    id: "con_llm_unavailable", group: "consolidate",
+    description: "no summarize seam wired -> consolidate fails open and writes nothing (D4)",
+    ops: [
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/cu1", "habit tracker cadence", "weekly habit review every sunday", 0.9, "UnavailProbe")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/cu2", "reading list migration", "move reading list into bookmarks db", 0.9, "UnavailProbe")], expect: ["supersede"] },
+      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/cu3", "office plant watering", "water the monstera on wednesdays", 0.9, "UnavailProbe")], expect: ["supersede"] },
+      { op: "consolidate", stage: "store", expectLlmUnavailable: 1, expectAdd: 0 },
+    ],
+  },
+  // --- Group: forget (ADR-0037 D5/D6, Phase-1 golden) ---
+  {
+    id: "for_archive_undo", group: "forget", difficulty: "adversarial",
+    description: "aged + never-accessed row archives (dry-run predicts apply exactly, D7-6), undo restores bit-exact (D7-4)",
+    ops: [
+      { op: "seed", stage: "store", agedDays: 400, items: [km("https://ex.com/oldnote", "obsolete cron runbook", "legacy cron runbook replaced by kanban pipeline", 0.9, "ObsoleteCron")] },
+      { op: "archive", stage: "store", expectArchived: 1 },
+      { op: "search", stage: "retrieve", query: "obsolete cron runbook", expectEmpty: true },
+      { op: "undoArchive", stage: "store", fromOp: 1, expectOk: true },
+      { op: "search", stage: "retrieve", query: "obsolete cron runbook", expectIncludesTitle: "obsolete cron runbook" },
+    ],
+  },
+
 ];
 
 // --- Group: relations (ADR-0036 Phase-1 expansion, r33) — Sakai-locked n = 80 for the group;

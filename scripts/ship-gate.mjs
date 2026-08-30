@@ -286,6 +286,40 @@ function stepStaticAssertions() {
     if (!cliRel.includes("backfill-relations")) fail("ADR-0035 1j: CLI relation command missing backfill-relations");
     report("pass", "ADR-0035 KG-lite layer: relation module + edges schema + store hooks + fifth-arm label + CLI present");
   }
+  // 1n. ADR-0037 D3/D4/D5/D6: consolidation + forgetting layer static assertions.
+  {
+    const conPath = path.join(ROOT, "packages/store/src/consolidate.ts");
+    if (!fs.existsSync(conPath)) fail("ADR-0037 1n: packages/store/src/consolidate.ts missing");
+    const con = fs.readFileSync(conPath, "utf8");
+    for (const tok of ["consolidateMemoryRun", "decideOp", "THETA_DUP", "BEGIN IMMEDIATE", "scanArchiveCandidates", "undoArchive", "applyArchive"])
+      if (!con.includes(tok)) fail("ADR-0037 1n: consolidate.ts missing " + tok);
+    const sql2 = fs.readFileSync(path.join(ROOT, "packages/store/src/schema.sql"), "utf8");
+    for (const tok of ["semantic_memories", "archive_log", "archived INTEGER NOT NULL DEFAULT 0"])
+      if (!sql2.includes(tok)) fail("ADR-0037 1n: schema.sql missing " + tok);
+    const ss2 = fs.readFileSync(path.join(ROOT, "packages/store/src/session-store.ts"), "utf8");
+    for (const tok of ["consolidateMemory", "scanArchive", "undoArchive", "archived = 0", "semanticTelemetry"])
+      if (!ss2.includes(tok)) fail("ADR-0037 1n: session-store.ts missing " + tok);
+    const kinit = fs.readFileSync(path.join(ROOT, "packages/kernel/src/llm-init.ts"), "utf8");
+    if (!kinit.includes('LlmEndpointKind') || !kinit.includes("ANS_LLM_API_KEY")) fail("ADR-0037 1n: kernel llm-init.ts missing three-endpoint wiring (LlmEndpointKind/ANS_LLM_API_KEY)");
+    report("pass", "ADR-0037 consolidation/forgetting layer: schema + consolidate module + store wiring + kernel 3-endpoint init present");
+
+  // 1o. ADR-0037 Phase-3 CLI: consolidate command + memory forget + durable DB path wiring.
+  {
+    const conCli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/consolidate.ts"), "utf8");
+    for (const tok of ["createLlmSession", "classifyClaim", "resolveDbPath", "consolidateMemory", "--dry-run"])
+      if (!conCli.includes(tok)) fail("ADR-0037 1o: apps/cli consolidate.ts missing " + tok);
+    const dbHelper = fs.readFileSync(path.join(ROOT, "apps/cli/src/db.ts"), "utf8");
+    if (!dbHelper.includes("createPersistentEngine") || !dbHelper.includes("resolveDbPath")) fail("ADR-0037 1o: db.ts helper missing");
+    const memCli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/memory.ts"), "utf8");
+    for (const tok of ["scanArchive", "applyArchive", "undoArchive", "--undo"])
+      if (!memCli.includes(tok)) fail("ADR-0037 1o: memory.ts forget subcommand missing " + tok);
+    const idx = fs.readFileSync(path.join(ROOT, "apps/cli/src/index.ts"), "utf8");
+    if (!idx.includes("runConsolidate") || !idx.includes('"consolidate"')) fail("ADR-0037 1o: index.ts missing consolidate registration");
+    const comp = fs.readFileSync(path.join(ROOT, "packages/kernel/src/composition.ts"), "utf8");
+    if (!comp.includes("ANS_DB_PATH") || !comp.includes("opts?.dbPath")) fail("ADR-0037 1o: kernel composition missing dbPath wiring");
+    report("pass", "ADR-0037 Phase-3 CLI: consolidate + forget + durable DB path present");
+  }
+  }
   }
 
   // 1j. ADR-0034 D4: CLI --json purity — single JSON document on stdout, no decorative chars in this file.
@@ -572,6 +606,27 @@ async function stepMemoryEval() {
     const missing = need.filter((k) => !(k in z));
     if (missing.length) fail("memory-eval relation zone missing keys: " + missing.join(", "));
     report("pass", "memory-eval relation zone present (noEdge=" + z.noEdgeChecks + " hop=" + z.hopChecks + ")");
+  }
+  // ADR-0037 D6 Phase-2: semantic serve zone (regressions fail-closed) + forget zone shape guards.
+  {
+    const zm = rep.metrics && rep.metrics.semantic;
+    if (!zm || typeof zm !== "object") fail("memory-eval report missing metrics.semantic zone (ADR-0037 D6 fail-closed)");
+    for (const k of ["queries", "hits", "served"]) if (!(k in zm)) fail("memory-eval semantic zone missing " + k);
+    if (!("regressions" in zm)) fail("memory-eval semantic zone missing regressions key (ADR-0037 D6 Phase-2)");
+    if (zm.regressions !== 0) fail("memory-eval semantic-arm regressions=" + zm.regressions + " — fail-closed (ADR-0037 D6 Phase-2)");
+    const zf = rep.metrics && rep.metrics.forget;
+    if (!zf || typeof zf !== "object") fail("memory-eval report missing metrics.forget zone (ADR-0037 D6 fail-closed)");
+    for (const k of ["archiveChecks", "archives", "undoRestores", "dryRunExact"]) if (!(k in zf)) fail("memory-eval forget zone missing " + k);
+    if (zf.archiveChecks > 0 && zf.dryRunExact !== zf.archiveChecks) fail("forget dry-run predictions not exact: " + zf.dryRunExact + "/" + zf.archiveChecks);
+    if (zf.archiveChecks > 0 && zf.undoRestores === 0) fail("forget undo restores absent despite archives");
+    report("pass", "memory-eval semantic serve + forget zones present (sem queries=" + zm.queries + " forget archives=" + zf.archives + ")");
+  }
+  // ADR-0037 D6 (carries ADR-0028 D1): fingerprint single-flip — report fingerprint must equal the committed baseline.
+  {
+    const blPath = path.join(ROOT, "packages/store/eval-baseline.json");
+    const bl = JSON.parse(fs.readFileSync(blPath, "utf8"));
+    if (bl.fingerprint !== rep.datasetFingerprint) fail("fingerprint drift: report " + rep.datasetFingerprint + " != baseline " + bl.fingerprint + " (run eval --calibrate, commit baseline)");
+    report("pass", "eval fingerprint matches baseline (" + rep.datasetFingerprint + ")");
   }
   report("pass", "memory-eval: " + rep.totals.passed + "/" + rep.totals.cases + " cases PASS, fingerprint=" + rep.datasetFingerprint + ", passRate=" + rep.metrics.passRate);
 }

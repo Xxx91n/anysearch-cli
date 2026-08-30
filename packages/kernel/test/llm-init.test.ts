@@ -34,4 +34,97 @@ ok(typeof s.streamFn === "function", "streamFn bound");
 ok(s.models && typeof s.models.getModel === "function", "models registry returned");
 if (process.env.OPENAI_API_KEY) ok(s.apiKey === process.env.OPENAI_API_KEY, "apiKey mirrors OPENAI_API_KEY env"); else ok(s.apiKey === undefined, "apiKey undefined without env (pi-ai fallback path)");
 
-console.log(`llm-init tests: ${passed} passed`);
+
+// --- ADR-0037 D4: explicit endpoint kind, three wire protocols against local stubs ---
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { LlmEndpointKind } from "../src/llm-init";
+
+function sseBody(kind: LlmEndpointKind): string {
+  if (kind === "chat") return [
+    'data: {"id":"c1","object":"chat.completion.chunk","created":1,"model":"stub-model","choices":[{"index":0,"delta":{"role":"assistant","content":"hi"},"finish_reason":null}]}',
+    '',
+    'data: {"id":"c1","object":"chat.completion.chunk","created":1,"model":"stub-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+    '',
+    'data: [DONE]',
+    ''].join("\n") + "\n";
+  if (kind === "messages") return [
+    'event: message_start',
+    'data: {"type":"message_start","message":{"id":"m1","type":"message","role":"assistant","content":[],"model":"stub-model","stop_reason":null,"usage":{"input_tokens":1,"output_tokens":1}}}',
+    '',
+    'event: content_block_start',
+    'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+    '',
+    'event: content_block_delta',
+    'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}',
+    '',
+    'event: content_block_stop',
+    'data: {"type":"content_block_stop","index":0}',
+    '',
+    'event: message_delta',
+    'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}',
+    '',
+    'event: message_stop',
+    'data: {"type":"message_stop"}',
+    ''].join("\n") + "\n";
+  // The openai SDK 6.x validates event payloads: a response.completed event is only
+  // delivered when the response object carries the full required-field set, and the final
+  // SSE entry must be flushed by a trailing blank line.
+  return [
+    'event: response.created',
+    'data: {"type":"response.created","response":{"id":"r1","object":"response","status":"in_progress","output":[]}}',
+    '',
+    'event: response.output_item.added',
+    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"m1","status":"in_progress","role":"assistant","content":[]}}',
+    '',
+    'event: response.output_text.delta',
+    'data: {"type":"response.output_text.delta","item_id":"m1","output_index":0,"content_index":0,"delta":"hi"}',
+    '',
+    'event: response.output_item.done',
+    'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"m1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[]}]}}',
+    '',
+    'event: response.completed',
+    'data: {"type":"response.completed","response":{"id":"r1","object":"response","status":"completed","created_at":1,"model":"stub-model","output":[{"type":"message","id":"m1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[]}]}],"parallel_tool_calls":true,"tool_choice":"auto","tools":[],"metadata":{},"temperature":null,"top_p":null,"max_output_tokens":null,"reasoning":null,"text":null,"truncation":"disabled","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2},"instructions":null,"background":false,"service_tier":"auto"}}',
+    ''].join("\n") + "\n";
+}
+
+process.env.ANS_LLM_API_KEY = "test-key";
+
+// pi-ai delegates to the official SDKs: the openai SDK appends "chat/completions" / "responses"
+// to baseURL (so baseUrl must already include /v1), while the anthropic SDK appends
+// "/v1/messages" itself (so baseUrl must be the host root without /v1). ADR-0037 D4.
+const endpointConfig: Record<LlmEndpointKind, { basePath: string; expectedPath: string }> = {
+  chat: { basePath: "/v1", expectedPath: "/v1/chat/completions" },
+  messages: { basePath: "", expectedPath: "/v1/messages" },
+  responses: { basePath: "/v1", expectedPath: "/v1/responses" },
+};
+
+let threw3 = false;
+try { await createLlmSession({ provider: "stub", model: "stub-model", baseUrl: "http://127.0.0.1:1/v1" }); }
+catch (e: any) { threw3 = /api kind|explicit/.test(String(e?.message)); }
+ok(threw3, "baseUrl without api kind throws (no protocol sniffing)");
+
+for (const kind of ["chat", "messages", "responses"] as LlmEndpointKind[]) {
+  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    ok(req.url === endpointConfig[kind].expectedPath, kind + " protocol hits " + endpointConfig[kind].expectedPath + " (got " + req.url + ")");
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.end(sseBody(kind));
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  const port = (server.address() as { port: number }).port;
+  try {
+    const ses = await createLlmSession({ provider: "stub-api", model: "stub-model", baseUrl: "http://127.0.0.1:" + port + endpointConfig[kind].basePath, api: kind });
+    const stream = ses.streamFn(ses.model, { messages: [{ role: "user", content: "hi" }] } as never, { apiKey: "test-key" } as never);
+    let sawText = false;
+    for await (const ev of stream) {
+      const t = (ev as any).type === "text_delta" ? (ev as any).delta : (ev as any).type === "text" ? (ev as any).content : "";
+      if (typeof t === "string" && t.includes("hi")) sawText = true;
+    }
+    const final = await (stream as any).result?.();
+    const finalText = JSON.stringify(final ?? {});
+    ok(sawText || finalText.includes("hi"), kind + " endpoint round-trip returns stub content");
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+}
+
+console.log("llm-init tests: " + passed + " passed, endpoints OK");

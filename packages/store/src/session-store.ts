@@ -17,6 +17,8 @@ import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_P
 import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate } from "./entity.js";
 import { rrfRank } from "@anysearch/retriever";
+import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
+import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
 import { embedText, embeddingTelemetry as pkgEmbeddingTelemetry, cosineSimilarity, EMBEDDING_MODEL_ID } from "@anysearch/embedding";
 import type { NormalizedResult } from "@anysearch/retriever";
 
@@ -87,6 +89,11 @@ export interface Message {
   role: "user" | "assistant" | "tool";
   content: string;
 }
+
+// ADR-0037 D3/D6: semantic arm mode. Phase-1 was shadow; landed Phase-2 serve below.
+// Phase-2 = "serve" (conditioned activation, weight 0.5 via fts5.ts extra arms).
+// ADR-0037 D6 Phase-2: arm live at weight 0.5, conditional activation; regression gate fail-closed (runner sem counterfactual).
+const SEMANTIC_ARM_MODE: "shadow" | "serve" = "serve";
 
 export interface MemoryHit {
   rowid: number;
@@ -240,6 +247,12 @@ export class SqliteSessionStore implements SessionStore {
   // ADR-0035 D4: LLM relation seam (optional, fail-open) — returns RAW model text; relation.ts
   // parseLlmTriples does the Graphiti-style json_schema to json_object degrade.
   private readonly relationLlmFallback?: (text: string) => Promise<string | null>;
+  // ADR-0037 D4: consolidation seams (summarize = bounded LLM per cluster; classify = kernel
+  // classifyClaim-shaped fidelity gate). Both optional and fail-open.
+  private readonly consolidateSummarize?: ConsolidateSummarizeFn;
+  private readonly consolidateClassify?: ConsolidateClassifyFn;
+  // ADR-0037 D3: semantic arm (Phase-1 shadow) telemetry.
+  private readonly semTel = { queries: 0, hits: 0, served: 0 };
   // ADR-0031 step7: entity arm telemetry counters (report-only in eval).
   private readonly entityTel = { queries: 0, candidates: 0, activations: 0, hits: 0, truncated: 0 };
   // ADR-0033 D5/D6: vector arm telemetry (fail-open writes; pendingVectors = rows lacking an embedding).
@@ -264,9 +277,14 @@ export class SqliteSessionStore implements SessionStore {
   constructor(dbPath: string, opts?: {
     entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
     relationLlmFallback?: (text: string) => Promise<string | null>;
+    // ADR-0037 D4: consolidation seams (same injection discipline as relationLlmFallback).
+    consolidateSummarize?: ConsolidateSummarizeFn;
+    consolidateClassify?: ConsolidateClassifyFn;
   }) {
     this.entityLlmFallback = opts?.entityLlmFallback;
     this.relationLlmFallback = opts?.relationLlmFallback;
+    this.consolidateSummarize = opts?.consolidateSummarize;
+    this.consolidateClassify = opts?.consolidateClassify;
     this.db = new Database(dbPath, { timeout: 5000 });
     // atomcode research: WAL persistent, set once, single shared connection.
     this.db.pragma("journal_mode = WAL");
@@ -305,6 +323,8 @@ export class SqliteSessionStore implements SessionStore {
     // ADR-0032 D3: candidate review belt columns on entity_merge_log.
     try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN hit_count INTEGER NOT NULL DEFAULT 1"); } catch {}
     try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN resolved TEXT"); } catch {}
+    // ADR-0037 D5: soft archive (reversible forgetting).
+    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"); } catch {}
     // ADR-0024 D1/D2: T0 hot zone — t0_preferences is the single source of truth; MEMORY.md is a
     // regenerated materialized projection (temp+fsync+rename). scope: "global" | project root path.
     // correction_count drives the C-prime promote gate (>=2 cross-session corrections = implicit promote).
@@ -330,13 +350,13 @@ export class SqliteSessionStore implements SessionStore {
       searchMessages: this.db.prepare("SELECT m.id as rowid, m.session_id as sessionId, m.role, m.content, bm25(messages_fts) as rank FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid WHERE messages_fts MATCH ? AND m.session_id = ? ORDER BY rank LIMIT ?"),
       searchAllMessages: this.db.prepare("SELECT m.id as rowid, m.session_id as sessionId, m.role, m.content, bm25(messages_fts) as rank FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid WHERE messages_fts MATCH ? ORDER BY rank LIMIT ?"),
       saveResult: this.db.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, rrf_score, entity) VALUES (?, ?, ?, ?, ?, ?, ?)"),
-      searchResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND r.session_id = ? ORDER BY rank LIMIT ?"),
+      searchResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND r.session_id = ? AND r.archived = 0 ORDER BY rank LIMIT ?"),
       saveAnchor: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)"),
       getAnchors: this.db.prepare("SELECT id, session_id as sessionId, anchor_type as anchorType, payload, created_at as createdAt FROM resume_anchors WHERE session_id = ? ORDER BY id"),
       // ADR-0008 D3: recall_memory searches Research Memory (retrieval_results_fts), not messages.
       // ADR-0008 D2 -> ADR-0030: freshness_factor() in ORDER BY + bi-temporal filter (valid_until IS NULL).
      // MemoryHit.role <-- r.title, MemoryHit.content <-- r.snippet (recall_memory maps these fields).
-     searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) ORDER BY rank LIMIT ?"),
+     searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) ORDER BY rank LIMIT ?"),
       // ADR-0009 D3 L2: update last_accessed on recall hit (access-time signal, Mem0 1.5×/0.3×).
       touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now'), access_count = COALESCE(access_count, 0) + 1 WHERE id = ?"),
       // ADR-0016 D10: UPSERT for state-type anchors.
@@ -478,6 +498,8 @@ export class SqliteSessionStore implements SessionStore {
    const vecHits = await this.vectorArmRows(query, limit);
    // ADR-0035 D5: relation arm (fifth, weight 0.5) — 1-hop neighbor memories via active edges.
    const relHits = this.relationArmRows(query, limit);
+   // ADR-0037 D6 Phase-2: semantic arm (sixth, weight 0.5, conditional activation).
+   const semHits = await this.semanticArmRows(query, limit);
    const byId = new Map<number, MemoryHit>();
     for (const h of rawHits) byId.set(h.rowid, h);
     for (const h of armHits) byId.set(h.rowid, h);
@@ -489,6 +511,7 @@ export class SqliteSessionStore implements SessionStore {
    if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(0.5); }
    if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(0.5); }
    if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(0.5); }
+    if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) { lists.push(semHits.map((h) => String(h.rowid))); weights.push(0.5); }
    const fusedIds = lists.length === 1 ? lists[0]! : rrfRank(lists, 60, weights);
    const fusedHits: MemoryHit[] = [];
    for (const id of fusedIds) { const h = byId.get(Number(id)); if (h) fusedHits.push(h); if (fusedHits.length >= limit) break; }
@@ -497,16 +520,18 @@ export class SqliteSessionStore implements SessionStore {
    const entIds = new Set(armHits.map((h) => h.rowid));
    const vecIds = new Set(vecHits.map((h) => h.rowid));
    const relIds = new Set(relHits.map((h) => h.rowid));
+   const semIds = new Set(semHits.map((h) => h.rowid));
    // ADR-0036 D3: provenance snapshot taken BEFORE the read-side secret filter (the filter can
    // only remove rows; golden fixtures carry no secrets, so on/off deltas are unaffected).
    { const armLabels: string[] = ["fts"];
      if (armHits.length > 0) armLabels.push("entity");
      if (vecHits.length > 0) armLabels.push("vector");
      if (relHits.length > 0) armLabels.push("relation");
+      if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) armLabels.push("semantic");
      const provTexts = new Map<number, string>();
      for (const h of byId.values()) provTexts.set(h.rowid, h.role + " " + h.content);
      this.lastArmProvenance = { labels: armLabels, lists: lists.map((l) => [...l]), weights: [...weights], fusedIds: [...fusedIds], texts: provTexts }; }
-   for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); if (relIds.has(h.rowid)) al.push("relation"); h.arms = al; }
+   for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); if (relIds.has(h.rowid)) al.push("relation"); if (SEMANTIC_ARM_MODE === "serve" && semIds.has(h.rowid)) al.push("semantic"); h.arms = al; }
     // ADR-0028 D3 read-side exit: rows written before the write guard (or via seed/test seams)
     // must never surface back to the caller either.
     const hits = fusedHits.filter((h) => !containsSecret(h.role + " " + h.content));
@@ -533,6 +558,10 @@ export class SqliteSessionStore implements SessionStore {
     // misreading as all-queries activation).
     const relHitsM = this.relationArmRows(queries[0] ?? "", limit);
     if (relHitsM.length > 0) arms.push({ label: "relation", ids: relHitsM.map((h) => String(h.rowid)) });
+    // ADR-0037 D3/D6 Phase-2: semantic arm fused into RRF in serve mode (negative ids resolved
+    // from semantic_memories in fts5.ts); telemetry still runs in both modes.
+    const semHits = await this.semanticArmRows(queries[0] ?? "", limit);
+    if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) arms.push({ label: "semantic", ids: semHits.map((h) => String(h.rowid)) });
     const hits = await searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank, arms);
     // ADR-0028 D3 read-side exit: same guard as searchMemory.
     const kept = hits.filter((h) => !containsSecret(h.role + " " + h.content));
@@ -582,7 +611,7 @@ export class SqliteSessionStore implements SessionStore {
         const entityKey = km.entity ?? km.url;
         // Temporal supersede: new write for same entity wins; close old record with valid_until = now (ADR-0008 D2 pattern).
         const existing = this.db
-          .prepare("SELECT id FROM retrieval_results WHERE entity = ? AND session_id = ? AND valid_until IS NULL AND quarantine IS NULL LIMIT 1")
+          .prepare("SELECT id FROM retrieval_results WHERE entity = ? AND session_id = ? AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 LIMIT 1")
           .get(entityKey, sessionId) as { id: number } | undefined;
         const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, entityKey);
         const insertedId = Number(info.lastInsertRowid);
@@ -664,7 +693,7 @@ export class SqliteSessionStore implements SessionStore {
     const rows = this.db.prepare(
       "SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, me.embedding as emb " +
       "FROM memory_embeddings me JOIN retrieval_results r ON r.id = me.memory_id " +
-      "WHERE r.valid_until IS NULL AND r.quarantine IS NULL"
+      "WHERE r.valid_until IS NULL AND r.quarantine IS NULL AND r.archived = 0"
     ).all() as Array<{ rowid: number; sessionId: string; role: string | null; content: string | null; emb: Buffer }>;
     const scored: Array<{ h: MemoryHit; s: number }> = [];
     for (const r of rows) {
@@ -681,7 +710,7 @@ export class SqliteSessionStore implements SessionStore {
   // ADR-0033 D6: idempotent backfill for rows missing an embedding (write failures, pre-rename upgrade, model re-embed).
   async backfillEmbeddings(dryRun = false, limit?: number): Promise<{ scanned: number; embedded: number; failed: number }> {
     const rows = this.db.prepare(
-      "SELECT r.id, r.title, r.snippet FROM retrieval_results r LEFT JOIN memory_embeddings m ON m.memory_id = r.id WHERE m.memory_id IS NULL" +
+      "SELECT r.id, r.title, r.snippet FROM retrieval_results r LEFT JOIN memory_embeddings m ON m.memory_id = r.id WHERE m.memory_id IS NULL AND r.archived = 0" +
       (limit ? " LIMIT " + Math.max(1, Math.floor(limit)) : "")
     ).all() as Array<{ id: number; title: string | null; snippet: string | null }>;
     let embedded = 0, failed = 0;
@@ -697,6 +726,46 @@ export class SqliteSessionStore implements SessionStore {
       }
     }
     return { scanned: rows.length, embedded, failed };
+  }
+  // ---- ADR-0037: episodic-to-semantic consolidation (D2/D4) + reversible forgetting (D5) ----
+
+  async consolidateMemory(opts?: { dryRun?: boolean; limit?: number }): Promise<ConsolidateReport> {
+    return consolidateMemoryRun(this.db, { summarize: this.consolidateSummarize, classify: this.consolidateClassify }, opts ?? {});
+  }
+
+  scanArchive(opts?: { ageFactor?: number; now?: number; limit?: number }): ArchiveCandidate[] {
+    return scanArchiveCandidates(this.db, opts ?? {});
+  }
+
+  applyArchive(ids?: number[], opts?: { dryRun?: boolean }): ArchiveApplyReport {
+    return applyArchive(this.db, ids, opts ?? {});
+  }
+
+  undoArchive(logId: number): { ok: boolean; memoryId?: number } {
+    return undoArchive(this.db, logId);
+  }
+
+  // ADR-0037 D3/D6: semantic arm scoring (served in Phase-2). Full-table JS cosine over live semantic
+  // rows, same pattern as vectorArmRows. Synthetic negative rowids (-semantic_memories.id) keep
+  // the RRF id-space collision-free vs retrieval_results.
+  private async semanticArmRows(query: string, limit: number): Promise<MemoryHit[]> {
+    this.semTel.queries++;
+    const qv = await embedText(query, "query");
+    if (!qv) return [];
+    const rows = this.db
+      .prepare("SELECT id, content, embedding FROM semantic_memories WHERE valid_until IS NULL AND embedding IS NOT NULL")
+      .all() as Array<{ id: number; content: string; embedding: Buffer }>;
+    const scored: Array<{ h: MemoryHit; s: number }> = [];
+    for (const r of rows) {
+      const v = new Float32Array(r.embedding.buffer, r.embedding.byteOffset, r.embedding.byteLength / 4);
+      const sv = cosineSimilarity(qv, v);
+      scored.push({ h: { rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: -sv } as MemoryHit, s: sv });
+    }
+    scored.sort((a, b) => b.s - a.s);
+    const out = scored.slice(0, limit).map((x) => x.h);
+    this.semTel.hits += out.length;
+    if (SEMANTIC_ARM_MODE === "serve") this.semTel.served += out.length;
+    return out;
   }
 
 
@@ -1030,7 +1099,7 @@ export class SqliteSessionStore implements SessionStore {
     const ids = matched.map((e) => e.id);
     const sql = "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank FROM retrieval_results r " + // r74 audit E5: rank required by MemoryHit
       "JOIN memory_entity me ON me.memory_id = r.id WHERE me.entity_id IN (" + ids.map(() => "?").join(", ") + ") " +
-      "AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) ORDER BY r.created_at DESC LIMIT ?";
+      "AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) ORDER BY r.created_at DESC LIMIT ?";
     const rows = this.db.prepare(sql).all(...ids, limit) as MemoryHit[];
     this.entityTel.hits += rows.length;
     return rows;
@@ -1128,7 +1197,7 @@ export class SqliteSessionStore implements SessionStore {
       .prepare(
         "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank" +
         " FROM retrieval_results r JOIN memory_entity me ON me.memory_id = r.id" +
-        " WHERE me.entity_id IN (" + ph2 + ") AND r.valid_until IS NULL AND (r.quarantine IS NULL)" +
+        " WHERE me.entity_id IN (" + ph2 + ") AND r.valid_until IS NULL AND (r.quarantine IS NULL) AND r.archived = 0" +
         " ORDER BY r.created_at DESC LIMIT ?"
       )
       .all(...allIds, Math.min(limit, 100)) as MemoryHit[];
@@ -1181,7 +1250,7 @@ export class SqliteSessionStore implements SessionStore {
         .prepare(
           "SELECT r.id, r.title, r.snippet, MIN(e.rules_version) as rules FROM retrieval_results r" +
           " LEFT JOIN edges e ON e.episode_memory_id = r.id AND e.valid_until IS NULL" +
-          " WHERE r.id > ? GROUP BY r.id ORDER BY r.id LIMIT ?"
+          " WHERE r.id > ? AND r.archived = 0 GROUP BY r.id ORDER BY r.id LIMIT ?"
         )
         .all(fromId, Math.min(batch, maxRows - res.scanned)) as ScanRow[];
     const processRow = (row: ScanRow): void => {
@@ -1276,6 +1345,11 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   // ADR-0035 D8: report-only. pendingEdges gauge = linked memories with no live edge episode row.
+  // ADR-0037 D6: semantic-arm telemetry (queries/hits/served; regressions gated in eval).
+  public semanticTelemetry(): { queries: number; hits: number; served: number } {
+    return { ...this.semTel };
+  }
+
   public relationTelemetry(): RelationTelemetry {
     const pending = (this.db
       .prepare("SELECT COUNT(*) as n FROM memory_entity me WHERE NOT EXISTS (SELECT 1 FROM edges e WHERE e.episode_memory_id = me.memory_id AND e.valid_until IS NULL)")
@@ -1292,7 +1366,7 @@ export class SqliteSessionStore implements SessionStore {
         "SELECT q.id, q.session_id, q.entity, q.url, q.title, q.snippet, q.source, q.created_at, q.evidence," +
           " c.title AS counterpart_title, c.snippet AS counterpart_snippet" +
           " FROM retrieval_results q" +
-          " LEFT JOIN retrieval_results c ON c.session_id = q.session_id AND c.entity = q.entity AND c.id != q.id AND c.valid_until IS NULL AND c.quarantine IS NULL" +
+          " LEFT JOIN retrieval_results c ON c.session_id = q.session_id AND c.entity = q.entity AND c.id != q.id AND c.valid_until IS NULL AND c.quarantine IS NULL AND c.archived = 0" +
           " WHERE q.quarantine = 'equal_conflict' ORDER BY q.created_at DESC"
       )
       .all() as Array<{ id: number; session_id: string; entity: string | null; url: string; title: string | null; snippet: string | null; source: string | null; created_at: string; evidence: number | null; counterpart_title: string | null; counterpart_snippet: string | null }>;

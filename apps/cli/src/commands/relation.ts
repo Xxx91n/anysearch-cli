@@ -1,7 +1,7 @@
 // ans relation: KG-lite edge inspection + idempotent backfill (ADR-0035 D6/D7).
 // Subcommands: list [--entity N] [--limit N] | backfill-relations [--apply] [--batch N] [--from-id N] [--limit N] [--reprocess]
 
-import { createEngine } from "../composition";
+import { createPersistentEngine } from "../db";
 import type { RelationRow, BackfillRelationsResult } from "@anysearch/store";
 
 interface RelationStore {
@@ -41,7 +41,7 @@ function intOpt(args: string[], flag: string, usage: string): { value?: number; 
 export async function runRelation(args: string[]): Promise<number> {
   const sub = args[0];
   if (!sub || sub === "--help" || sub === "-h") { printHelp(); return 0; }
-  const eng = createEngine(process.env.ANS_DOMAIN || "default");
+  const eng = createPersistentEngine(process.env.ANS_DOMAIN || "default");
   const store = eng.store as unknown as RelationStore;
 
   if (sub === "list") {

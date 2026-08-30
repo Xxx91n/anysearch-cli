@@ -16,6 +16,7 @@ import { runMemoryPreference } from "./commands/memory-preference";
 import { runMemory } from "./commands/memory";
 import { runEntity } from "./commands/entity";
 import { runRelation } from "./commands/relation";
+import { runConsolidate } from "./commands/consolidate";
 
 // ponytail: single source of truth for CLI version, same pattern as apps/mcp
 // (ADR-0020 D3). tsup injects __PACKAGE_VERSION__ at build time.
@@ -44,6 +45,7 @@ const help = [
   "  memory    Memory embeddings maintenance (backfill-vectors, ADR-0033)",
   "  entity    Entity merge / unmerge / review belt (ADR-0032)",
   "  relation  Entity relation edges: list + backfill-relations (ADR-0035 KG-lite arm)",
+  "  consolidate Episodic->semantic consolidation with fidelity gate (ADR-0037)",
   "",
   "Options:",
   "  --version, -v     Print version",
@@ -71,7 +73,7 @@ if (cmd === "--help" || cmd === "-h") {
   process.exit(0);
 }
 
-const known = new Set(["doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp", "pref", "memory", "entity", "relation"]);
+const known = new Set(["doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp", "pref", "memory", "entity", "relation", "consolidate"]);
 if (!known.has(cmd)) {
   process.stderr.write("ans: unknown command " + String.fromCharCode(39) + cmd + String.fromCharCode(39) + "\n" + "See " + String.fromCharCode(39) + "ans --help" + String.fromCharCode(39) + ".\n");
   process.exit(2);
@@ -94,6 +96,7 @@ const handlers: Record<string, (args: string[]) => Promise<number>> = {
   memory: runMemory,
   entity: runEntity,
   relation: runRelation,
+  consolidate: runConsolidate,
 };
 
 const handler = handlers[cmd];

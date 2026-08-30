@@ -240,6 +240,19 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null):
       }
     }
   }
+  // ADR-0037 D6 Phase-2: semantic arm live (weight 0.5, conditional activation) —
+  // regression gate fail-closed on per-case RoR counterfactual; gain is observation-zone only
+  // (promotion threshold preregistered in ADR-0036 formula, promoted after one window).
+  if (m.semantic) {
+    if (m.semantic.regressions > 0)
+      failures.push(`semantic-arm: ${m.semantic.regressions} case(s) where the semantic arm worsened the fused rank of the expected memory vs the five-arm baseline — serve is forbidden from regressing (ADR-0037 D6 Phase-2)`);
+    if (m.semantic.gain)
+      warnings.push(`semantic-gain: n=${m.semantic.gain.n} meanDelta=${m.semantic.gain.meanDelta.toFixed(4)} — observational (Phase-2 cite; promotion after one window, ADR-0037 D6)`);
+  }
+  if (m.forget && m.forget.archiveChecks > 0) {
+    if (m.forget.dryRunExact < m.forget.archiveChecks) failures.push(`forget: ${m.forget.dryRunExact}/${m.forget.archiveChecks} archive ops had exact dry-run===apply (D7-6 violated)`);
+    if (m.forget.undoRestores === 0) warnings.push("forget: no undo restores observed (D5 reversibility untested this round)");
+  }
   const verdict: GateResult["verdict"] = failures.length ? "fail" : warnings.length ? "warn" : "pass";
   return { verdict, exitCode: failures.length ? 1 : 0, failures, warnings };
 }

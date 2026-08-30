@@ -4,7 +4,7 @@
 // Zep bi-temporal invalidation, Google QDF (spike-driven, no year literals).
 
 // Tiered half-life (tau) in days: news decays fast, evergreen decays slow.
-const TAU_TIER = {
+export const TAU_TIER = {
   news: 7,       // 7d half-life for time-sensitive content
   docs: 30,      // 30d half-life for documentation
   evergreen: 90, // 90d half-life for evergreen content
