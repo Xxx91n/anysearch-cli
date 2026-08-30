@@ -11,6 +11,9 @@ export const TAU_TIER = {
 } as const;
 
 // Fused factor band (ADR-0030 D4/D6). Floor prevents zero-ing; ceiling prevents over-boost.
+// ADR-0039 D3: tau table type so the scan can replay scoring with candidate half-lives.
+export interface TauTable { news: number; docs: number; evergreen: number }
+
 const FACTOR_FLOOR = 0.3;
 const FACTOR_CEILING = 1.5;
 
@@ -48,9 +51,9 @@ export function classifyTier(title: string, url: string): ContentTier {
 }
 
 // Decay multiplier: exp(-age/tau), floored at 0.3. Returns [FACTOR_FLOOR, 1.0].
-export function decayMultiplier(ageInDays: number, tier: ContentTier): number {
+export function decayMultiplier(ageInDays: number, tier: ContentTier, taus: TauTable = TAU_TIER): number {
   if (!Number.isFinite(ageInDays) || ageInDays <= 0) return 1.0;
-  const raw = Math.exp(-ageInDays / TAU_TIER[tier]);
+  const raw = Math.exp(-ageInDays / taus[tier]);
   return Math.max(raw, FACTOR_FLOOR);
 }
 
@@ -66,6 +69,7 @@ export interface FreshnessInput {
   accessCount: number;            // incremented exactly once per returned hit
   tier: ContentTier;
   pinned?: boolean;               // full bypass
+  taus?: TauTable;                // ADR-0039 D3: override for scan replay; production passes nothing
   evergreenQuery?: boolean;       // decay-half bypass, reinforcement kept
   nowMs?: number;                 // test seam
 }
@@ -79,7 +83,7 @@ export function freshnessFactor(input: FreshnessInput): number {
   const now = input.nowMs ?? Date.now();
   const createdMs = sqliteTsToMs(input.createdAt);
   const ageDays = createdMs === null ? 0 : Math.max(0, (now - createdMs) / 86_400_000);
-  const decay = input.evergreenQuery ? 1.0 : decayMultiplier(ageDays, input.tier);
+  const decay = input.evergreenQuery ? 1.0 : decayMultiplier(ageDays, input.tier, input.taus);
 
   // Recency: fall back to creation age when never accessed.
   const accessedMs = sqliteTsToMs(input.lastAccessed);
