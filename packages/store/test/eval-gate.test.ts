@@ -74,7 +74,7 @@ assert(evaluateGate(fakeReport(), null).exitCode === 12, "missing baseline exits
 // CLI end-to-end: run eval against committed baseline, assert exit 0 + artifacts in scratch out dir.
 const outDir = mkdtempSync(join(tmpdir(), "ans-gate-"));
 try {
-  execFileSync(process.execPath, ["--import", "tsx", "src/eval/cli.ts", "--out", outDir], { cwd: join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"] });
+  execFileSync(process.execPath, ["--import", "tsx", "src/eval/cli.ts", "--out", outDir], { cwd: join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ANS_EVAL_NO_LOOK: "1" } });
   assert(existsSync(join(outDir, "eval-report.json")), "CLI writes eval-report.json");
   assert(existsSync(join(outDir, "eval-report.md")), "CLI writes eval-report.md");
   const rep = JSON.parse(readFileSync(join(outDir, "eval-report.json"), "utf8"));

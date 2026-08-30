@@ -125,4 +125,8 @@ Found（本轮子代理 + 人工复核）：
 - F2 回流第二轨 OF（n_j/N_max 信息时间）未实现；BACKFLOW_SLICES 为空故无实际风险 —— deferred（见 ADR-0038 D5 deferral）。
 - F4 ADR-0038 文本两处口径：D2 末句 "preregistered rule fails => red" 与本段前提矛盾（实现按开头：unproven-positive 非 red）；D6 字面 "WARN 仅经人工放行" 与 3 连败台账机制不一致 —— deferred（下轮 grill 勘误 ADR 文本，不改码）。
 
+- R1（atomcode P1，交接已知尾巴本轮封堵）：测试/校验运行每次消耗一个真实 OF look（cli.ts 账本无视 --out 写死 .ship-gate/eval-looks.json），r97 验收运行共污染 9 个 look。
+
+Fix run 2（R1）：cli.ts 加 ANS_EVAL_NO_LOOK=1 护栏（跳过账本写入）；eval-gate.test.ts 注入该 env；本地账本中 26c7dd20…:956d925d… 纯测试产生的 9 条 look 记录已人工清零并在此留痕（该对未产生过真实评审 look）。
+
 Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK 计算；新增断言 "degenerate holdout => WARN"（eval-holdout-gate 31 passed）；D6->D7 注释收敛 10 处。验证：pnpm -r check=0, pnpm -r test=0。

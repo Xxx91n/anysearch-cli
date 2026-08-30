@@ -210,8 +210,11 @@ async function main(): Promise<number> {
     try { looks = JSON.parse(readFileSync(looksPath, "utf8")) as typeof looks; } catch { /* corrupt ledger -> fail-closed below */ }
   }
   const look = looks.looks.filter((l) => l.key === lookKey).length + 1;
-  looks.looks.push({ key: lookKey, at: new Date().toISOString() });
-  writeFileSync(looksPath, JSON.stringify(looks, null, 2) + "\n", "utf8");
+  // r98 audit R1: tests must not spend preregistered OF looks on the real fingerprint pair.
+  if (process.env.ANS_EVAL_NO_LOOK !== "1") {
+    looks.looks.push({ key: lookKey, at: new Date().toISOString() });
+    writeFileSync(looksPath, JSON.stringify(looks, null, 2) + "\n", "utf8");
+  }
   const g = evaluateGate(report, baseline, { look });
   const exitCode = g.exitCode;
 
