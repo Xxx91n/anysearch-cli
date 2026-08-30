@@ -32,6 +32,7 @@ function mkMetrics(over: Partial<EvalMetrics> & { supExpected?: number; supPasse
 function fakeReport(metrics: EvalMetrics = mkMetrics(), fp = "abc123"): EvalReport {
   return {
     schema: "anysearch/eval-report@1", generatedAt: "ts", datasetFingerprint: fp,
+  holdoutFingerprint: "test-hfp",
     totals: { cases: 20, passed: 20, failed: 0 },
     stageBreakdown: { extract: 0, adjudicate: 0, store: 0, retrieve: 0 },
     tierBreakdown: { core: { cases: 20, passed: 20, passRate: 1 } },
@@ -40,7 +41,7 @@ function fakeReport(metrics: EvalMetrics = mkMetrics(), fp = "abc123"): EvalRepo
   };
 }
 const baseline: EvalBaseline = {
-  schema: "anysearch/eval-baseline@1", fingerprint: "abc123",
+  schema: "anysearch/eval-baseline@1", fingerprint: "abc123", holdoutFingerprint: "test-hfp",
   metrics: mkMetrics(),
   allowance: { supersessionFails: 1, quarantineFp: 0 }, updatedAt: "2026-08-27", note: "t",
 };

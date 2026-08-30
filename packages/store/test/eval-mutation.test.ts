@@ -38,7 +38,7 @@ async function main() {
 
   // Gate-level: a report produced by the mutated run has passRate < 1 => exit 1.
   const dirtyReport = {
-    schema: "anysearch/eval-report@1" as const, generatedAt: "t", datasetFingerprint: "fp123",
+    schema: "anysearch/eval-report@1" as const, generatedAt: "t", datasetFingerprint: "fp123", holdoutFingerprint: "test-hfp",
     totals: { cases: 1, passed: 0, failed: 1 },
     stageBreakdown: { extract: 0, adjudicate: 1, store: 0, retrieve: 0 },
     tierBreakdown: {},
@@ -46,7 +46,7 @@ async function main() {
     cases: [mutated],
   };
   const baseline: EvalBaseline = {
-    schema: "anysearch/eval-baseline@1", fingerprint: "fp123",
+    schema: "anysearch/eval-baseline@1", fingerprint: "fp123", holdoutFingerprint: "test-hfp",
     metrics: computeMetrics([], []),
     allowance: { supersessionFails: 0, quarantineFp: 0 }, updatedAt: "t", note: "t",
   };

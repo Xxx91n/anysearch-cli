@@ -25,7 +25,7 @@ export type EvalStage = "extract" | "adjudicate" | "store" | "retrieve";
 export type CaseOp =
   | { op: "adjudicate"; stage: "adjudicate"; items: KeyMemoryInput[
 ]; expect: AdjudicationAction[]; newSession?: boolean /* ADR-0031 step1: cross-session entity aggregation */ }
-  | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number; expectRankOf?: { title: string; maxRank: number }; expectEmpty?: true; expectAllWeak?: true /* ADR-0033 D8: unanswerable slice asserts weak-only evidence, not zero retrieval */; expectHopTitle?: string /* ADR-0035 D5: relation-arm 1-hop recall — observational only, never fails */ }
+  | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number; expectRankOf?: { title: string; maxRank: number }; expectEmpty?: true; expectAllWeak?: true /* ADR-0033 D8: unanswerable slice asserts weak-only evidence, not zero retrieval */; expectHopTitle?: string; relevanceGrades?: Record<string, 0 | 1 | 2 | 3> /* ADR-0038 D6: graded labels drive report-only nDCG@5/10/20; sem cases double as judge-calibration label rows */ }
   | { op: "seed"; stage: "store"; items: KeyMemoryInput[]; agedDays?: number } /* ADR-0028 D3: direct DB insert, bypasses the write guard on purpose; ADR-0037 D5: agedDays backdates created_at/last_accessed for archive-candidate cases */
   | { op: "rawValidUntil"; stage: "store"; fromOp: number; expectSet: boolean }
   | { op: "promote"; stage: "store"; key: string; value: string; scope?: string; source: "explicit" | "correction"; expectAction: "promoted" | "rejected" }
@@ -449,7 +449,12 @@ export const GOLDEN_CASES: CaseSpec[] = [
     ops: [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/deployomega", "deployment omega outage cause", "the deployment outage was caused by an expired TLS certificate on the ingress", 0.9, "DeployOmegaOutage")], expect: ["accept"] },
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/warmup", "marketing cache warmup runbook", "cache warmup runbook for the marketing site homepage", 0.9, "CacheWarmupRunbook")], expect: ["accept"] },
-      { op: "search", stage: "retrieve", query: "why did the release stop serving traffic", expectRankOf: { title: "deployment omega outage cause", maxRank: 2 } },
+      {
+        op: "search", stage: "retrieve", query: "why did the release stop serving traffic",
+        expectRankOf: { title: "deployment omega outage cause", maxRank: 2 },
+        // ADR-0038 D6: two-label graded row — paraphrase target grade 3, unrelated runbook grade 1.
+        relevanceGrades: { "deployment omega outage cause": 3, "marketing cache warmup runbook": 1 },
+      },
     ],
   },
   // --- Group: relations (ADR-0035 D5, kg-lite arm; 12 cases: 8 predicate positives + CN,
@@ -610,6 +615,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
 // counterfactual ablation (runner drop-relation recompute) has a nonzero paired sample.
 function buildRelationExpansionR33(): CaseSpec[] {
   const out: CaseSpec[] = [];
+  const cnDisNames = ["盔杉", "麸衣", "簪锣", "硅砺", "雀笼", "蓑篾", "铎泅", "膘峦", "颍舵", "缢筝", "铗辔", "舭桅", "钨锲", "簸箕"];
   // Closed-table predicates usable between arbitrary entity pairs (authored_by is url<->handle only).
   const preds: ReadonlyArray<readonly [PredicateName: string, surface: string]> = [
     ["works_on", "works on"], ["depends_on", "depends on"], ["uses", "uses"],
@@ -627,7 +633,7 @@ function buildRelationExpansionR33(): CaseSpec[] {
   const r33distractors = (i: number, cn: boolean): KeyMemoryInput[] =>
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map((k) => {
       if (cn) {
-        const names = ["盔杉", "麸衣", "簪锣", "硅砺", "雀笼", "蓑篾", "铎泅", "膘峦", "颍舵", "缢筝", "铗辔", "舭桅", "钨锲", "簸箕"];
+        const names = cnDisNames;
         return km(`https://ex.com/r33dc/${i}/${k}`, `"${names[k]}" 运维记录`, `"${names[k]}" 的巡检与发布记录`, 0.7, `cn-dis-${i}-${k}`);
       }
       const dn = nm(i + 300 + k * 13) + "Hill";
@@ -647,7 +653,16 @@ function buildRelationExpansionR33(): CaseSpec[] {
         { op: "edge", stage: "store", subject: sub, relation: pred, object: obj, assert: "edge", fromOp: 0 },
         { op: "adjudicate", stage: "adjudicate", items: [km(`https://ex.com/r33/${obj.toLowerCase()}`, `${obj} runbook notes`, `runbook notes for ${obj} uptime drills`, 0.9, obj + "-lane")], expect: ["accept"] },
         { op: "adjudicate", stage: "adjudicate", items: dis, expect: dis.map(() => "accept" as const) },
-        { op: "search", stage: "retrieve", query: sub, expectRankOf: { title: `${obj} runbook`, maxRank: 20 }, expectHopTitle: `${obj} runbook` },
+        {
+          op: "search", stage: "retrieve", query: sub,
+          expectRankOf: { title: `${obj} runbook`, maxRank: 20 }, expectHopTitle: `${obj} runbook`,
+          // ADR-0038 D6: hop target grade 3; own-subject relation sentence grade 2; distractors grade 1.
+          relevanceGrades: {
+            [`${obj} runbook`]: 3,
+            [`${sub} ${surface} ${obj} plan`]: 2,
+            ...Object.fromEntries(dis.map((_, k) => [`${nm(i + 300 + k * 13)}Hill runbook notes`, 1] as const)),
+          },
+        },
       ],
     });
   }
@@ -669,7 +684,16 @@ function buildRelationExpansionR33(): CaseSpec[] {
         { op: "edge", stage: "store", subject: sub, relation: pred, object: obj, assert: "edge", fromOp: 0 },
         { op: "adjudicate", stage: "adjudicate", items: [km(`https://ex.com/r33/cn${i}b`, `"${obj}" 运维记录"`, `"${obj}" 的巡检与发布记录`, 0.9, `cn-r33-${i}-b`)], expect: ["accept"] },
         { op: "adjudicate", stage: "adjudicate", items: disCn, expect: disCn.map(() => "accept" as const) },
-        { op: "search", stage: "retrieve", query: `"${sub}"`, expectRankOf: { title: `"${obj}" 运维`, maxRank: 20 }, expectHopTitle: `"${obj}" 运维` },
+        {
+          op: "search", stage: "retrieve", query: `"${sub}"`,
+          expectRankOf: { title: `"${obj}" 运维`, maxRank: 20 }, expectHopTitle: `"${obj}" 运维`,
+          // ADR-0038 D6: quoted hop target grade 3; quoted relation sentence grade 2; CN distractors grade 1.
+          relevanceGrades: {
+            [`"${obj}" 运维`]: 3,
+            [`"${sub}" ${verb} "${obj}"`]: 2,
+            ...Object.fromEntries(cnDisNames.map((n) => [`"${n}" 运维记录`, 1] as const)),
+          },
+        },
       ],
     });
   }

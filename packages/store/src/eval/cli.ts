@@ -5,8 +5,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GOLDEN_CASES } from "./golden-cases";
+import { assertBackflowNoOverlap } from "./holdout";
 import { runAll, type EvalReport } from "./runner";
-import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, type EvalBaseline } from "./gate";
+import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, type EvalBaseline, type GainConclusion } from "./gate";
 
 function repoRoot(): string {
   let d = dirname(fileURLToPath(import.meta.url));
@@ -18,7 +19,7 @@ function repoRoot(): string {
   }
 }
 
-function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures: string[], warnings: string[]): string {
+function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures: string[], warnings: string[], gain?: GainConclusion): string {
   const m = report.metrics;
   const verdict = failures.length ? "FAIL" : warnings.length ? "WARN" : "PASS";
   const lines: string[] = [
@@ -85,6 +86,22 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
       if (r.rank !== undefined) lines.push(`| ${c.id} | ${r.op} | ${r.rank === 0 ? "absent" : r.rank} | gate |`);
     }
   }
+  // ADR-0038 D2: three-tier gain-gate section (GREEN/WARN/RED; ship-gate reads the same JSON field).
+  if (gain) {
+    const f = gain.full;
+    lines.push("", "## Gain three-tier gate (ADR-0038 D2, look " + gain.look + "/" + gain.kMax + ")", "",
+      "- tier: " + gain.tier.toUpperCase(),
+      "- spent alpha: " + gain.spentAlpha.toFixed(6) + " (preregistered OF table, k_max=" + gain.kMax + ")",
+      ...(f ? ["- full sample: n=" + f.n + " mean=" + f.mean.toFixed(4) + " BCa=[" + f.bcaLo.toFixed(4) + ", " + f.bcaHi.toFixed(4) + "] signFlipP=" + f.signFlipP.toFixed(5) + " harmP=" + f.signFlipHarmP.toFixed(5) + " passAtLook=" + f.passAtLook] : []),
+      ...(gain.holdout ? ["- holdout: n=" + gain.holdout.n + " mean=" + gain.holdout.mean.toFixed(4) + " mde=" + gain.holdout.mde.toFixed(3) + (gain.holdout.underpowered ? " (UNDER-POWERED)" : "")] : []),
+      ...gain.reasons.map((r) => "- " + r));
+  }
+  // ADR-0038 D6: graded-relevance nDCG table (report-only).
+  if (report.metrics.ndcg) {
+    const nd = report.metrics.ndcg;
+    lines.push("", "## Graded relevance nDCG (ADR-0038 D6, report-only)", "", "- n graded cases: " + nd.n, "- nDCG@5: " + nd.at5.toFixed(4) + "  nDCG@10: " + nd.at10.toFixed(4) + "  nDCG@20: " + nd.at20.toFixed(4));
+  }
+
   lines.push("", "## Difficulty tiers (ADR-0028 D4, report-only)", "", "| tier | cases | passed | passRate |", "|---|---|---|---|");
   for (const [tier, t] of Object.entries(report.tierBreakdown)) lines.push(`| ${tier} | ${t.cases} | ${t.passed} | ${t.passRate.toFixed(3)} |`);
   lines.push("", "## Stage attribution (failed cases)", "", "```json", JSON.stringify(report.stageBreakdown), "```", "", "## Cases", "", "| case | group | tier | stage | result |", "|---|---|---|---|---|");
@@ -108,6 +125,13 @@ async function main(): Promise<number> {
       console.error("[eval] TIMEOUT: exceeded " + timeoutMs + "ms (ADR-0029 D5)");
       process.exit(124);
     }, timeoutMs).unref();
+  }
+  // ADR-0038 D5: backflow slice family must never intersect the frozen baseline — fail fast (exit 12).
+  try {
+    assertBackflowNoOverlap(GOLDEN_CASES);
+  } catch (e) {
+    console.error("[eval] backflow overlap: " + (e instanceof Error ? e.message : String(e)));
+    process.exit(12);
   }
   const args = process.argv.slice(2);
   const calibrateIdx = args.indexOf("--calibrate");
@@ -142,6 +166,7 @@ async function main(): Promise<number> {
       allowance: { supersessionFails: worstSupFails + 1, quarantineFp: worstFp + 1 },
       // ADR-0036 D2/D4 below
       relationGain: undefined as EvalBaseline["relationGain"],
+      holdoutFingerprint: last!.holdoutFingerprint,
       updatedAt: new Date().toISOString().slice(0, 10),
       note: "ADR-0028 D1 calibration (runs=" + runs + "); integer allowance = worst-observed failures + 1 op. CI never writes this file (ADR-0027 D9).",
     };
@@ -161,6 +186,8 @@ async function main(): Promise<number> {
     if (degenerate) console.log("[eval:calibrate] pilot sd=0 — sigmaDU=0 placeholder, n locked at cap " + RELATION_GAIN_LOCKED_N_CAP + " (ADR-0036 D2; recalibrate after RoR-heavy expansion)");
     next.relationGain = { sigmaDU: Number(sigmaDU.toFixed(6)), rawN, lockedN, minGain: RELATION_GAIN_MIN_GAIN };
     writeFileSync(baselinePath, JSON.stringify(next, null, 2) + "\n", "utf8");
+    // ADR-0038 D4: calibration flips the fingerprint pair — the pre-registered OF look ledger resets.
+    writeFileSync(join(root, ".ship-gate", "eval-looks.json"), JSON.stringify({ schema: "anysearch/eval-looks@1", looks: [] }, null, 2) + "\n", "utf8");
     console.log(`[eval:calibrate] baseline written: fingerprint=${next.fingerprint} allowance sup<=${next.allowance.supersessionFails} qfp<=${next.allowance.quarantineFp} relationGain sigmaDU=${next.relationGain!.sigmaDU} lockedN=${next.relationGain!.lockedN} (rawN=${next.relationGain!.rawN}, pilot n=${pilotDeltas.length})`);
     return 0;
   }
@@ -173,12 +200,24 @@ async function main(): Promise<number> {
   let baseline: EvalBaseline | null = null;
   if (existsSync(baselinePath)) baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as EvalBaseline;
 
-  const g = evaluateGate(report, baseline);
+  // ADR-0038 D4: per-fingerprint OF look ledger (.ship-gate/eval-looks.json) — each eval run on the
+  // current fingerprint pair spends the next preregistered look; --calibrate resets it.
+  const looksPath = join(root, ".ship-gate", "eval-looks.json");
+  const lookKey = report.datasetFingerprint + ":" + report.holdoutFingerprint;
+  mkdirSync(outDir, { recursive: true });
+  let looks: { schema: string; looks: Array<{ key: string; at: string }> } = { schema: "anysearch/eval-looks@1", looks: [] };
+  if (existsSync(looksPath)) {
+    try { looks = JSON.parse(readFileSync(looksPath, "utf8")) as typeof looks; } catch { /* corrupt ledger -> fail-closed below */ }
+  }
+  const look = looks.looks.filter((l) => l.key === lookKey).length + 1;
+  looks.looks.push({ key: lookKey, at: new Date().toISOString() });
+  writeFileSync(looksPath, JSON.stringify(looks, null, 2) + "\n", "utf8");
+  const g = evaluateGate(report, baseline, { look });
   const exitCode = g.exitCode;
 
-  const enriched = { ...report, baselineFingerprint: baseline?.fingerprint ?? null, gate: { verdict: g.verdict, exitCode, failures: g.failures, warnings: g.warnings } };
+  const enriched = { ...report, baselineFingerprint: baseline?.fingerprint ?? null, gate: { verdict: g.verdict, exitCode, failures: g.failures, warnings: g.warnings, gainConclusion: g.gainConclusion ?? null } };
   writeFileSync(join(outDir, "eval-report.json"), JSON.stringify(enriched, null, 2) + "\n", "utf8");
-  writeFileSync(join(outDir, "eval-report.md"), toMarkdown(report, baseline, g.failures, g.warnings), "utf8");
+  writeFileSync(join(outDir, "eval-report.md"), toMarkdown(report, baseline, g.failures, g.warnings, g.gainConclusion), "utf8");
 
   console.log(
     `[eval] cases ${report.totals.passed}/${report.totals.cases} pass, fingerprint=${report.datasetFingerprint}, ` +

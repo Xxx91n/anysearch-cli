@@ -1,0 +1,12 @@
+{
+  "schema": "anysearch/relevance-review@1",
+  "note": "ADR-0038 D6 dual-review of the graded relevance labels. Pass A = declared relevanceGrades in golden-cases.ts (39 cases). Pass B = independent rule-derived re-labeling (expectRankOf title=3, subject-side relation sentence=2, distractors=1). Feeds the judge-calibration label row (ADR-0035 D4) and stays report-only — it is NOT consumed by the gain gate.",
+  "generatedAt": "2026-08-30T07:58:19.338Z",
+  "cases": 39,
+  "labelPairs": 610,
+  "rawAgreement": 1,
+  "cohensKappa": 1,
+  "gwetAC1": 1,
+  "disagreements": 0,
+  "conclusion": "No disagreement — declared labels match the independent re-derivation rule exactly. Kappa/AC1 upper-boundary values flag maximal agreement; per-protocol disagreements would trigger re-tiebreak before any dataset fingerprint rotation."
+}

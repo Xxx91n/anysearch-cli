@@ -11,6 +11,7 @@ import { normalizeEntityName } from "../entity";
 import type { AdjudicationResultItem } from "../session-store";
 import { rrfRank } from "@anysearch/retriever";
 import type { CaseSpec, EvalStage } from "./golden-cases";
+import { holdoutFingerprint, isHoldout } from "./holdout";
 
 export interface OpRecord {
   op: number;
@@ -20,6 +21,8 @@ export interface OpRecord {
   detail: string;
   samples?: Array<{ title: string | null; snippet: string | null }>;
   // ADR-0028 D2/D4: rank-of-relevant + hit count feed MRR and the answerable false-refusal rate.
+  // ADR-0038 D6: per-K nDCG over graded relevance labels (report-only, never gated).
+  ndcg?: Record<string, number>;
   rank?: number;
   hitCount?: number;
   // ADR-0033 D8: count of non-weak (FTS-armed) hits, for weak-evidence semantics.
@@ -108,6 +111,10 @@ export interface EvalMetrics {
   // positive = the relation arm pulled the expected memory earlier. The gate consumes `deltas`
   // (BCa lower bound + sign-flip + MEI floor); mean alone is report-only evidence.
   relationGain?: { n: number; excluded: number; meanDelta: number; deltas: number[] };
+  // ADR-0038 D3: Track-A paired deltas restricted to the frozen baseline holdout (separate gate sample).
+  relationGainHoldout?: { n: number; excluded: number; meanDelta: number; deltas: number[] };
+  // ADR-0038 D6: graded-relevance nDCG aggregates (report-only, never gated).
+  ndcg?: { n: number; at5: number; at10: number; at20: number };
   // ADR-0037 D6: semantic-arm zone (Phase-2 serve; served counts live hits. The Phase-1
   // served-must-be-0 contract was retired when serve shipped — regression gate is fail-closed).
   // Forget lifecycle counters.
@@ -120,12 +127,25 @@ export interface EvalReport {
   schema: "anysearch/eval-report@1";
   generatedAt: string;
   datasetFingerprint: string;
+  // ADR-0038 D2: frozen-baseline + backflow-slice family fingerprint (gate stores it on the baseline).
+  holdoutFingerprint: string;
   totals: { cases: number; passed: number; failed: number };
   stageBreakdown: Record<EvalStage, number>;
   // ADR-0028 D4: per-difficulty tier pass rates (report-only, never gated).
   tierBreakdown: Record<string, { cases: number; passed: number; passRate: number }>;
   metrics: EvalMetrics;
   cases: CaseResult[];
+}
+
+// ADR-0038 D6: exponential-gain nDCG@k with log2(rank+1) discount; IDCG truncated to the same k
+// (trec eval / scikit semantics). Report-only — feeding the judge-calibration label row.
+export function ndcgAtK(rankedTexts: string[], grades: Record<string, number>, k: number): number {
+  const disc = (rank: number): number => Math.log2(rank + 1);
+  const gradeOf = (t: string): number => { let g = 0; for (const [key, gr] of Object.entries(grades)) if (t.includes(key) && gr > g) g = gr; return g; };
+  const dcg = rankedTexts.slice(0, k).reduce((acc, t, i) => acc + (Math.pow(2, gradeOf(t)) - 1) / disc(i + 1), 0);
+  const idcg = Object.values(grades).map((g) => Math.pow(2, g) - 1).sort((a, b) => b - a).slice(0, k)
+    .reduce((acc, g, i) => acc + g / disc(i + 1), 0);
+  return idcg > 0 ? dcg / idcg : 0;
 }
 
 export function datasetFingerprint(cases: CaseSpec[]): string {
@@ -267,6 +287,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
               ...(rorExcluded !== undefined ? { rorExcluded } : {}),
               ...(semRankOn !== undefined ? { semRankOn, semRankOff } : {}),
               ...(op.expectHopTitle !== undefined ? { hopHit: texts.some((t) => t.includes(op.expectHopTitle!)) } : {}),
+              ...(op.relevanceGrades ? { ndcg: { 5: ndcgAtK(texts, op.relevanceGrades, 5), 10: ndcgAtK(texts, op.relevanceGrades, 10), 20: ndcgAtK(texts, op.relevanceGrades, 20) } } : {}),
             });
             break;
           }
@@ -488,10 +509,15 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
   const semDeltas: number[] = [];
   let semRegressions = 0;
   let rorExcludedCount = 0;
-  for (const r of results) {
+  // ADR-0038 D2/D3: dual-track split — holdout ops come from the frozen baseline slice only and
+  // feed a separate sample (independent grade; the full sample keeps the coarse zone verdict).
+  const rorHoldoutDeltas: number[] = [];
+  let rorHoldoutExcluded = 0;
+  for (const [ci, r] of results.entries()) {
+    const holdout = isHoldout(cases[ci]!.id);
     for (const rec of r.ops) {
-      if (rec.rorExcluded) { rorExcludedCount += 1; continue; }
-      if (rec.rorRankOn !== undefined && rec.rorRankOff !== undefined) rorDeltas.push((rec.rorRankOff - rec.rorRankOn) / ROR_WINDOW);
+      if (rec.rorExcluded) { if (holdout) rorHoldoutExcluded += 1; else rorExcludedCount += 1; continue; }
+      if (rec.rorRankOn !== undefined && rec.rorRankOff !== undefined) (holdout ? rorHoldoutDeltas : rorDeltas).push((rec.rorRankOff - rec.rorRankOn) / ROR_WINDOW);
       // ADR-0037 D6: semantic regression = arm made fused rank strictly worse (negative delta).
       if (rec.semRankOn !== undefined && rec.semRankOff !== undefined) {
         const d = (rec.semRankOff - rec.semRankOn) / ROR_WINDOW;
@@ -568,6 +594,17 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
     relationGain: rorDeltas.length + rorExcludedCount > 0
       ? { n: rorDeltas.length, excluded: rorExcludedCount, meanDelta: rorDeltas.length ? rorDeltas.reduce((a, b) => a + b, 0) / rorDeltas.length : 0, deltas: rorDeltas }
       : undefined,
+    relationGainHoldout: rorHoldoutDeltas.length + rorHoldoutExcluded > 0
+      ? { n: rorHoldoutDeltas.length, excluded: rorHoldoutExcluded, meanDelta: rorHoldoutDeltas.length ? rorHoldoutDeltas.reduce((a, b) => a + b, 0) / rorHoldoutDeltas.length : 0, deltas: rorHoldoutDeltas }
+      : undefined,
+    ndcg: (() => {
+      const buckets: Record<string, number[]> = { "5": [], "10": [], "20": [] };
+      for (const r of results) for (const rec of r.ops) if (rec.ndcg) { buckets["5"]!.push(rec.ndcg["5"] ?? 0); buckets["10"]!.push(rec.ndcg["10"] ?? 0); buckets["20"]!.push(rec.ndcg["20"] ?? 0); }
+      const n = buckets["5"]!.length;
+      if (!n) return undefined;
+      const avg = (a: number[]): number => a.reduce((x, y) => x + y, 0) / a.length;
+      return { n, at5: avg(buckets["5"]!), at10: avg(buckets["10"]!), at20: avg(buckets["20"]!) };
+    })(),
     // ADR-0037 D6: Phase-1 shadow telemetry (served must stay 0; fail-closed in the gate) and
     // forget lifecycle counters (exact dry-run predictions, restores).
     semantic: (() => {
@@ -611,6 +648,7 @@ export async function runAll(cases: CaseSpec[]): Promise<EvalReport> {
     schema: "anysearch/eval-report@1",
     generatedAt: new Date().toISOString(),
     datasetFingerprint: datasetFingerprint(cases),
+    holdoutFingerprint: holdoutFingerprint(),
     totals: { cases: results.length, passed: results.filter((r) => r.passed).length, failed: results.filter((r) => !r.passed).length },
     stageBreakdown,
     tierBreakdown,

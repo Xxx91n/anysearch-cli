@@ -24,6 +24,7 @@
 // ponytail: single spawn per check, sequential. Concurrency is a CI concern.
 
 import { spawn, spawnSync } from "node:child_process";
+import { readGainLedger, writeGainLedger, applyTier, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -627,6 +628,32 @@ async function stepMemoryEval() {
     const bl = JSON.parse(fs.readFileSync(blPath, "utf8"));
     if (bl.fingerprint !== rep.datasetFingerprint) fail("fingerprint drift: report " + rep.datasetFingerprint + " != baseline " + bl.fingerprint + " (run eval --calibrate, commit baseline)");
     report("pass", "eval fingerprint matches baseline (" + rep.datasetFingerprint + ")");
+  }
+  // ADR-0038 D2/D5: three-tier gain gate (fail-closed) + holdout fingerprint cross-check + WARN ledger.
+  {
+    const blPath = path.join(ROOT, "packages/store/eval-baseline.json");
+    const bl = JSON.parse(fs.readFileSync(blPath, "utf8"));
+    if (typeof bl.holdoutFingerprint !== "string" || bl.holdoutFingerprint !== rep.holdoutFingerprint) {
+      fail("holdout fingerprint mismatch: report " + rep.holdoutFingerprint + " vs baseline " + (bl.holdoutFingerprint ?? "<absent>") + " — run eval --calibrate (ADR-0038 D5)");
+    }
+    const gc = rep.gate && rep.gate.gainConclusion;
+    if (!gc || typeof gc !== "object" || !gc.tier) fail("memory-eval report missing gate.gainConclusion (ADR-0038 D2 fail-closed)");
+    const ledgerPath = path.join(outDir, "gain-ledger.json");
+    const ledger = readGainLedger(ledgerPath);
+    if (gc.tier === "red") {
+      writeGainLedger(ledgerPath, applyTier(ledger, "red", new Date().toISOString(), gc.look));
+      fail("gain gate RED (proven-negative, ADR-0038 D2): " + (gc.reasons || []).join(" | "));
+    }
+    writeGainLedger(ledgerPath, applyTier(ledger, gc.tier, new Date().toISOString(), gc.look));
+    if (gc.tier === "warn") {
+      const streak = ledger.consecutiveWarn;
+      if (mustFail(ledger)) {
+        fail("gain gate WARN x" + streak + " consecutive (>= " + WARN_STREAK_LIMIT + ") — forced human review: node scripts/gain-warn-resolve.mjs --decision disable-arm|demote|stay-warn (ADR-0038 D2)");
+      }
+      report("pass", "gain gate WARN (streak " + streak + "/" + WARN_STREAK_LIMIT + "): " + ((gc.reasons || [])[0] ?? ""));
+    } else {
+      report("pass", "gain gate GREEN (look " + gc.look + "/" + gc.kMax + ", spent alpha " + Number(gc.spentAlpha).toFixed(6) + ")");
+    }
   }
   report("pass", "memory-eval: " + rep.totals.passed + "/" + rep.totals.cases + " cases PASS, fingerprint=" + rep.datasetFingerprint + ", passRate=" + rep.metrics.passRate);
 }

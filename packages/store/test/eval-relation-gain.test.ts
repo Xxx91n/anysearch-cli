@@ -23,7 +23,7 @@ function mkMetrics(relDeltas: number[], extra: { meanDelta?: number; hopChecks?:
 
 function fakeReport(metrics: EvalMetrics): EvalReport {
   return {
-    schema: "anysearch/eval-report@1", generatedAt: "ts", datasetFingerprint: "fp-r33",
+    schema: "anysearch/eval-report@1", generatedAt: "ts", datasetFingerprint: "fp-r33", holdoutFingerprint: "test-hfp",
     totals: { cases: 20, passed: 20, failed: 0 },
     stageBreakdown: { extract: 0, adjudicate: 0, store: 0, retrieve: 0 },
     tierBreakdown: { core: { cases: 20, passed: 20, passRate: 1 } },
@@ -35,7 +35,7 @@ function fakeReport(metrics: EvalMetrics): EvalReport {
 function mkBaseline(sigmaDU: number): EvalBaseline {
   const { rawN, lockedN } = lockN(sigmaDU);
   return {
-    schema: "anysearch/eval-baseline@1", fingerprint: "fp-r33", metrics: mkMetrics([]),
+    schema: "anysearch/eval-baseline@1", fingerprint: "fp-r33", holdoutFingerprint: "test-hfp", metrics: mkMetrics([]),
     allowance: { supersessionFails: 1, quarantineFp: 1 },
     relationGain: { sigmaDU, rawN, lockedN, minGain: 0.1 },
     updatedAt: "2026-08-29", note: "test fixture",
@@ -57,25 +57,29 @@ assert(lockN(10).lockedN === RELATION_GAIN_LOCKED_N_CAP, "lockN caps at " + RELA
 assert(lockN(0.05).rawN === 4, "lockN(0.05) rawN = ceil(2*0.0025*7.84/0.01) = ceil(3.92) = 4");
 assert(sigmaDUpper([0.1, 0.2, 0.15, 0.12]) > 0.036, "sigmaDUpper is an upper CI on sd");
 
-// --- D4: decision rule, both directions ---
+// --- D4: three-tier gain mapping (ADR-0038 D2 supersedes the observational "preregistered rule" verdict) ---
+const posDeltas = [0.14, 0.16, 0.15, 0.13, 0.17, 0.14, 0.16, 0.15, 0.14, 0.16, 0.15, 0.14];
 {
-  const deltas = [0.14, 0.16, 0.15, 0.13, 0.17, 0.14, 0.16, 0.15, 0.14, 0.16, 0.15, 0.14];
-  const g = evaluateGate(fakeReport(mkMetrics(deltas)), mkBaseline(0.05));
-  assert(g.exitCode === 0, "positive-paired sample passes (exit 0, observational WARN allowed)");
-  assert(g.warnings.some((w) => w.includes("observational")), "positive sample reports observational WARN");
+  const g = evaluateGate(fakeReport(mkMetrics(posDeltas)), mkBaseline(0.05));
+  assert(g.exitCode === 0, "positive-paired sample exits 0 (tier is decoupled from exit codes)");
+  assert(g.gainConclusion?.tier === "warn", "full-only sample (no holdout) => WARN, not green: " + g.gainConclusion?.reasons.join(" | "));
 }
 {
   const deltas = [0.04, 0.06, 0.05, 0.05, 0.06, 0.04, 0.05, 0.06, 0.05, 0.04, 0.06, 0.05];
   const g = evaluateGate(fakeReport(mkMetrics(deltas)), mkBaseline(0.05));
-  assert(g.exitCode === 1 && g.failures.some((f) => f.includes("FAILS preregistered")), "point estimate below minGain must FAIL even when CI excludes 0");
+  assert(g.gainConclusion?.tier === "warn" && g.exitCode === 0, "below-minGain is WARN — unproven-positive is never red (ADR-0038 D2)");
+}
+{
+  const g = evaluateGate(fakeReport(mkMetrics([-0.14, -0.16, -0.15, -0.13, -0.17, -0.14, -0.16, -0.15, -0.14, -0.16, -0.15, -0.14])), mkBaseline(0.05));
+  assert(g.gainConclusion?.tier === "red", "BCa upper < 0 => proven-negative RED");
 }
 {
   const g = evaluateGate(fakeReport(mkMetrics([0.3, -0.1, 0.2])), mkBaseline(2));
-  assert(g.exitCode === 0 && g.warnings.some((w) => w.includes("UNDER-POWERED")), "tiny n + huge sigmaDU -> under-powered WARN, never gate on noise");
+  assert(g.exitCode === 0 && g.gainConclusion?.tier === "warn", "tiny n + huge sigmaDU -> WARN, never a noise gate");
 }
 {
   const g = evaluateGate(fakeReport(mkMetrics([0, 0, 0, 0])), mkBaseline(0.05));
-  assert(g.exitCode === 0 && g.warnings.some((w) => w.includes("degenerate")), "all-zero sample -> degenerate WARN");
+  assert(g.gainConclusion?.tier === "warn" && g.warnings.some((w) => w.includes("degenerate")), "all-zero sample -> degenerate WARN");
 }
 {
   const g = evaluateGate(fakeReport(mkMetrics([0, 0, 0, 0], { meanDelta: 0, hopChecks: 6, hopHitRate: 1 })), mkBaseline(0.05));
