@@ -66,3 +66,18 @@ Golden-cases notes record "decay (G019) is P2 and currently has NO gate coverage
 - pi-ai multi-protocol providers (createProvider + baseUrl + compat) — pi.dev providers/models docs + GitHub source (packages/ai)
 - Endpoint config UX precedents — GitHub Copilot CLI BYOK, Cline base URL, pi models.json (explicit baseUrl + explicit protocol; no sniffing)
 - Internal: ADR-0029 (scope discipline), ADR-0031 D4/D6, ADR-0032, ADR-0033, ADR-0034, ADR-0035, ADR-0036
+
+
+## r94 Audit Amendment (round 94 review round)
+
+- Fingerprint flip recorded for the audit trail: 9a135744b0c1f78f (119 cases) -> 211e3f449d72ab13 (123 cases), single flip, recalibrated.
+- Implementation deviation recorded, accepted: the D5 dry-run/apply report shape ships as
+  {dryRun, requested, archived, skipped, logIds, undoableTotal} (+ consolidate counters);
+  the spec's tiered breakdown and rrfArmImpact fields are not emitted. Defer, not defect.
+- Two r94 fixes land as part of this amendment: single-query searchMemory populates
+  semantic hits into the byId resolution map (sixth arm visible to all consumers), and the
+  kernel llm-init no longer reads ANS_LLM_API_KEY from the environment (no-env-in-kernel
+  contract restored; callers pass it explicitly).
+- consolidateMemoryRun restructured plan/apply: the LLM summarize seam runs outside the
+  BEGIN IMMEDIATE write lock; op order and counters unchanged so the dry-run exact-prediction
+  contract (D5/D7-6) still holds.

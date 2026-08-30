@@ -109,6 +109,16 @@ assert(sem.length === 3, "row written even without fidelity gate");
 const live = sem.filter((r) => r.vu === null);
 assert(live.length === 1 && Math.abs(live[0].confidence - 0.2) < 1e-9, "gate-absent row carries LOW_CONFIDENCE 0.2 marker");
 
+// --- r94 audit A1 (atomcode Spec-1): semantic arm resolves on the single-query searchMemory path.
+// Pre-fix, negative synthetic rowids entered the RRF list but never the byId map -> silent drop.
+{
+  const hits = await store.searchMemory(SUMMARY_A, 5);
+  const semHit = hits.find((h) => h.rowid === -live[0].id);
+  if (!semHit) { console.error("FAIL: semantic-only id resolves via searchMemory (r94 A1)"); process.exit(1); }
+  assert(semHit.role === "(semantic)", "semantic hit carries the (semantic) role");
+  assert(!!semHit.arms && semHit.arms.includes("semantic"), "hit provenance lists the semantic arm");
+}
+
 // summarize seam absent -> llmUnavailable, fail-open, no write
 const store5 = new SqliteSessionStore(dbPath);
 rep2 = await store5.consolidateMemory();
@@ -170,6 +180,10 @@ const rawAfter = (() => { const d = new Database(dbPath, { readonly: true }); co
 assert(rawAfter.archived === 0, "archived flag restored to 0");
 assert(JSON.stringify(snapRow(oldId)) === JSON.stringify(rowBefore), "row snapshot bit-exact after apply+undo (D7-4)");
 assert(store.undoArchive(arep.logIds[0]).ok === false, "undo is idempotent (second call is a no-op)");
+
+// --- r94 audit A7: pinned exemption enforced at the force point on the explicit-ids path ---
+const prep = store.applyArchive([pinId]);
+assert(prep.archived === 0 && prep.skipped === 1, "explicit pinned id refused at apply (r94 A7)");
 
 for (const st of [store, store2, store3, store4, store5]) st.close();
 rmSync(dir, { recursive: true, force: true });

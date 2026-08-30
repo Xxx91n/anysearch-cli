@@ -108,8 +108,9 @@ export interface EvalMetrics {
   // positive = the relation arm pulled the expected memory earlier. The gate consumes `deltas`
   // (BCa lower bound + sign-flip + MEI floor); mean alone is report-only evidence.
   relationGain?: { n: number; excluded: number; meanDelta: number; deltas: number[] };
-  // ADR-0037 D6: semantic-arm shadow zone (Phase-1 observational; served>0 violates the
-  // shadow contract and fails the gate) and forget lifecycle counters.
+  // ADR-0037 D6: semantic-arm zone (Phase-2 serve; served counts live hits. The Phase-1
+  // served-must-be-0 contract was retired when serve shipped — regression gate is fail-closed).
+  // Forget lifecycle counters.
   // ADR-0037 D6 Phase-2: serve telemetry + fail-closed regression count + RoR gain (observation zone).
   semantic: { queries: number; hits: number; served: number; regressions: number; gain?: { n: number; meanDelta: number } };
   forget: { archiveChecks: number; archives: number; undoRestores: number; dryRunExact: number };

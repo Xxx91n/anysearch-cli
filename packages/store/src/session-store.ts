@@ -251,7 +251,7 @@ export class SqliteSessionStore implements SessionStore {
   // classifyClaim-shaped fidelity gate). Both optional and fail-open.
   private readonly consolidateSummarize?: ConsolidateSummarizeFn;
   private readonly consolidateClassify?: ConsolidateClassifyFn;
-  // ADR-0037 D3: semantic arm (Phase-1 shadow) telemetry.
+  // ADR-0037 D3/D6: semantic arm telemetry (serve mode; Phase-1 shadow contract retired).
   private readonly semTel = { queries: 0, hits: 0, served: 0 };
   // ADR-0031 step7: entity arm telemetry counters (report-only in eval).
   private readonly entityTel = { queries: 0, candidates: 0, activations: 0, hits: 0, truncated: 0 };
@@ -505,6 +505,7 @@ export class SqliteSessionStore implements SessionStore {
     for (const h of armHits) byId.set(h.rowid, h);
     for (const h of vecHits) byId.set(h.rowid, h);
     for (const h of relHits) byId.set(h.rowid, h);
+    for (const h of semHits) byId.set(h.rowid, h); // r94 audit A1: semantic ids must resolve on the single-query path (was silent drop, atomcode Spec-1)
    // ADR-0033 D5: RRF arms = FTS (1.0) + entity (0.5) + vector (0.5); an absent arm adds no list (conditional activation).
    const lists = [rawHits.map((h) => String(h.rowid))];
    const weights = [1.0];

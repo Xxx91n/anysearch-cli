@@ -4,6 +4,25 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- ADR-0037: `ans consolidate` and `ans memory forget --undo` CLI; durable maintenance DB
+  via ANS_DB_PATH (default ~/.anysearch/anysearch.db); semantic_memories sixth RRF arm
+  (serve, weight 0.5, conditional activation, fail-closed regression gate); three-protocol
+  LLM endpoint config (ANS_LLM_BASE_URL + ANS_LLM_API=chat|messages|responses + ANS_LLM_API_KEY).
+
+### Fixed
+- r94 audit (ADR-0037, atomcode Spec-1): single-query searchMemory resolved the semantic arm
+  through a byId map that was never populated with semantic hits — sixth arm silently dropped
+  on that path (MCP recall_memory consumer). Fixed + regression test.
+- r94 audit (ADR-0037, atomcode S1): kernel llm-init read ANS_LLM_API_KEY from the environment,
+  violating its own "No env reads in kernel" contract; callers pass the key explicitly now.
+- r94 audit (ADR-0037): applyArchive explicit-ids path now enforces pinned / closed /
+  quarantined exclusions at the force point; LLM summarize moved out of the BEGIN IMMEDIATE
+  write lock (plan/apply split; dry-run exact prediction unchanged); `ans consolidate`
+  rejects unknown flags (exit 2).
+
 ## [0.1.0-rc.0] — 2026-08-22
 
 ### Fixed

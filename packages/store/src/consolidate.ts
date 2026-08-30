@@ -132,7 +132,11 @@ export async function consolidateMemoryRun(
     gateRejected: 0, add: 0, noop: 0, update: 0, semanticIds: [],
   };
 
-  const run = async (): Promise<void> => {
+  // r94 audit A11: plan phase (scan + LLM summarize + classify + dedup) runs WITHOUT the
+  // write lock; only the collected ops run inside BEGIN IMMEDIATE. Same op order and counters,
+  // so the dry-run exact-prediction contract is unchanged (Bacon P2).
+  const writes: Array<() => void> = [];
+  const plan = async (): Promise<void> => {
     // Cluster scan INCLUDES superseded rows (valid_until NOT NULL): same-entity writes soft-close
     // the prior version immediately (ADR-0008), so episodic history *is* the closed-row set.
     const rows = db
@@ -226,26 +230,35 @@ export async function consolidateMemoryRun(
       const op = best ? decideOp(bestCos, bestJac, CONTRADICTION_RE.test(summary) || CONTRADICTION_RE.test(best.content), theta) : "add";
       if (best && op === "noop") {
         // D4 NOOP: touch only; the row is a stable anchor for idempotent reruns.
-        db.prepare("UPDATE semantic_memories SET access_count = access_count + 1, last_accessed = datetime('now') WHERE id = ?").run(best.id);
-        report.noop++;
+        const row = best;
+        writes.push(() => {
+          db.prepare("UPDATE semantic_memories SET access_count = access_count + 1, last_accessed = datetime('now') WHERE id = ?").run(row.id);
+          report.noop++;
+        });
       } else if (best && op === "update") {
         // D4 UPDATE: high-overlap contradiction -> soft-close old row, write new, union sources.
-        db.prepare("UPDATE semantic_memories SET valid_until = datetime('now') WHERE id = ?").run(best.id);
-        let prev: number[] = [];
-        try { prev = JSON.parse(best.source_episode_ids) as number[]; } catch { prev = []; }
-        insert(prev);
-        report.update++;
+        const row = best;
+        writes.push(() => {
+          db.prepare("UPDATE semantic_memories SET valid_until = datetime('now') WHERE id = ?").run(row.id);
+          let prev: number[] = [];
+          try { prev = JSON.parse(row.source_episode_ids) as number[]; } catch { prev = []; }
+          insert(prev);
+          report.update++;
+        });
       } else {
-        insert();
-        report.add++;
+        writes.push(() => {
+          insert();
+          report.add++;
+        });
       }
     }
   };
 
   if (db.inTransaction) throw new Error("consolidateMemoryRun must not run inside an open transaction");
+  await plan();
   db.exec("BEGIN IMMEDIATE");
   try {
-    await run();
+    for (const w of writes) w();
     db.exec(dryRun ? "ROLLBACK" : "COMMIT");
   } catch (err) {
     try { db.exec("ROLLBACK"); } catch { /* already rolled back */ }
@@ -309,6 +322,9 @@ export function applyArchive(
     for (const id of targets) {
       const row = sel.get(id) as Record<string, unknown> | undefined;
       if (!row || row.archived === 1) { report.skipped++; continue; }
+      // r94 audit A7: explicit ids bypass scanArchiveCandidates — enforce pinned / closed / quarantined
+      // exclusions at the force point too (Bacon P2). Scan path never reaches this (already excluded).
+      if (row.pinned === 1 || row.valid_until !== null || row.quarantine !== null) { report.skipped++; continue; }
       upd.run(id);
       const info = ins.run(id, JSON.stringify(row), "auto-scan");
       report.logIds.push(Number(info.lastInsertRowid));

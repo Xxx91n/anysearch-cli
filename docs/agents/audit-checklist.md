@@ -80,3 +80,17 @@
 - [x] F3 已修：失败批计数快照补 relatedToWriteOnce，消除遥测双计
 - [ ] F4（观察，不修）：基线 42 deltas 含 6 个零（臂未激活案），mean 被稀释——方向保守，下轮可视需要切 treatment-active 子样本报告
 - [ ] F5（观察，待下轮确认归属）：验收 2 所指 ship-gate 新断言本轮未见 ship-gate.mjs diff
+
+### r94 审计复核（ADR-0037，atomcode + 双子代理三轨）
+
+- [x] 总体判定 PASS（D1–D7 全部落地，D7 六断言证据链完整）；atomcode 对 e-branch-2 做新鲜度核验并确认 r93 审计维持有效
+- [x] Fixed F1（atomcode Spec-1）：searchMemory 单查询路径 byId 未收 semantic 臂合成负 rowid → 静默丢弃；session-store.ts 已补 byId.set + 回归测试（MCP recall_memory 消费者路径受益）
+- [x] Fixed F2（atomcode S1）：kernel llm-init.ts 读 ANS_LLM_API_KEY 违反 "No env reads in kernel" 头契 → 移除，caller 显式传参
+- [x] Fixed F3（Bacon P2）：applyArchive 显式 ids 路径补 pinned/valid_until/quarantine 强制点
+- [x] Fixed F4（Bacon P2）：consolidateMemoryRun LLM summarize 移出 BEGIN IMMEDIATE（plan/apply 两相，dry-run exact prediction 不变）
+- [x] Fixed F5（Pascal P3）：ans consolidate 未知 flag 拒绝（exit 2）
+- [x] Fixed F6（Bacon P2 注释）：runner.ts / session-store.ts Phase-1 shadow 陈旧注释同步至 serve 语义
+- [x] Fixed F7（Pascal P1/P2）：CHANGELOG 补轮次条目；CONTEXT.md 术语补 `## ` 标题前缀
+- [ ] Deferred D1（Bacon P2）：dry-run 报告缺 tier 分解/rrfArmImpact 字段——已写入 ADR-0037 r94 修订记录现状，需要时再补字段
+- [ ] Deferred D2（观察）：llm-init.ts 134-136 预存 env 读（OPENAI_/ANTHROPIC_/GOOGLE_API_KEY）属 r93 之前就存在的契约松弛，出本轮 scope，下次 kernel 轮统一收割
+- [ ] Deferred D3（Pascal P3）：consolidate 与 forget 的默认 apply/dry-run 不对称文档化为入口差异，行为不动

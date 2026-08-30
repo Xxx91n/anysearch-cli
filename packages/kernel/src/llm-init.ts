@@ -110,7 +110,8 @@ export async function createLlmSession(opts: LlmSessionOptions): Promise<LlmSess
     });
     const epModels = createModels();
     epModels.setProvider(provider);
-    const apiKey = opts.apiKey ?? process.env.ANS_LLM_API_KEY;
+    // r94 audit A2 (atomcode S1): no env reads in kernel — the caller (CLI chat/consolidate) passes ANS_LLM_API_KEY explicitly.
+    const apiKey = opts.apiKey;
     const resolvedModel = (epModels.getModel(opts.provider, opts.model) ?? model) as Model<string>;
     return { model: resolvedModel, streamFn: epModels.streamSimple.bind(epModels), models: epModels, providerName: opts.provider, modelName: opts.model, apiKey } as LlmSession;
   }
