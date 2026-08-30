@@ -253,3 +253,15 @@ CREATE TABLE IF NOT EXISTS archive_log (
 );
 CREATE INDEX IF NOT EXISTS idx_archive_log_memory ON archive_log(memory_id);
 CREATE INDEX IF NOT EXISTS idx_archive_active ON archive_log(memory_id) WHERE undone_at IS NULL;
+
+-- ADR-0039 D5: Access Events Log — append-only transaction-time event table for the tau
+-- observation layer. Lazy INSERT at the read-path touchAccessed point (max limit INSERTs per
+-- search request). No valid_until axis, no UPDATE/DELETE, undo never rewrites events
+-- (event-sourcing rule: undo = state flip or new event, never event mutation).
+CREATE TABLE IF NOT EXISTS access_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  memory_id INTEGER NOT NULL REFERENCES retrieval_results(id) ON DELETE CASCADE,
+  accessed_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_access_events_memory ON access_events(memory_id);
+CREATE INDEX IF NOT EXISTS idx_access_events_time ON access_events(accessed_at);

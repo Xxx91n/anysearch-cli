@@ -270,6 +270,8 @@ export class SqliteSessionStore implements SessionStore {
     getAnchors: Database.Statement;
     searchAllResults: Database.Statement;
     touchAccessed: Database.Statement;
+    // ADR-0039 D5: append-only access event twin of touchAccessed (transaction-time log; never gated).
+    insertAccessEvent: Database.Statement;
     // ADR-0016 D10: UPSERT for state-type anchors (consolidation_state).
     saveAnchorUpsert: Database.Statement;
   };
@@ -359,6 +361,8 @@ export class SqliteSessionStore implements SessionStore {
      searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) ORDER BY rank LIMIT ?"),
       // ADR-0009 D3 L2: update last_accessed on recall hit (access-time signal, Mem0 1.5×/0.3×).
       touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now'), access_count = COALESCE(access_count, 0) + 1 WHERE id = ?"),
+      // ADR-0039 D5: same exactly-once site — each returned hit logs one access event.
+      insertAccessEvent: this.db.prepare("INSERT INTO access_events (memory_id) VALUES (?)"),
       // ADR-0016 D10: UPSERT for state-type anchors.
   
       saveAnchorUpsert: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?) ON CONFLICT(session_id, anchor_type) WHERE anchor_type = 'consolidation_state' DO UPDATE SET payload = excluded.payload, created_at = datetime('now')"),
@@ -538,7 +542,7 @@ export class SqliteSessionStore implements SessionStore {
     const hits = fusedHits.filter((h) => !containsSecret(h.role + " " + h.content));
     // ADR-0009 D3 L2: refresh last_accessed for each hit (access-time signal).
     for (const hit of hits) {
-      try { this.stmts.touchAccessed.run(hit.rowid); } catch {}
+      try { this.stmts.touchAccessed.run(hit.rowid); this.stmts.insertAccessEvent.run(hit.rowid); } catch {}
     }
     return hits;
   }
@@ -568,7 +572,7 @@ export class SqliteSessionStore implements SessionStore {
     const kept = hits.filter((h) => !containsSecret(h.role + " " + h.content));
     // ADR-0030 D3: same exactly-once touch as searchMemory (both recall paths feed the signals).
     for (const hit of kept) {
-      try { this.stmts.touchAccessed.run(hit.rowid); } catch {}
+      try { this.stmts.touchAccessed.run(hit.rowid); this.stmts.insertAccessEvent.run(hit.rowid); } catch {}
     }
     return kept;
   }
