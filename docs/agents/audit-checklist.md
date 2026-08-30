@@ -94,3 +94,13 @@
 - [ ] Deferred D1（Bacon P2）：dry-run 报告缺 tier 分解/rrfArmImpact 字段——已写入 ADR-0037 r94 修订记录现状，需要时再补字段
 - [ ] Deferred D2（观察）：llm-init.ts 134-136 预存 env 读（OPENAI_/ANTHROPIC_/GOOGLE_API_KEY）属 r93 之前就存在的契约松弛，出本轮 scope，下次 kernel 轮统一收割
 - [ ] Deferred D3（Pascal P3）：consolidate 与 forget 的默认 apply/dry-run 不对称文档化为入口差异，行为不动
+
+## ADR-0038 审计要点（grill r95 决策复核）
+
+- D1 scope：env 清理须在独立 refactor commit；tau 拟合与语义臂 OF 激活条件须在 ADR 里显式登记（数据到位+标签达标），不允许在本轮回档里加一个“先做再继续”的隐性登记。
+- D2 三档语义：holdout 自身不要求显著；红只在已证为负（BCa 上界<0 或翻转 p<0.05）时才触发；WARN 必须放行+记观测；连续 3 轮 WARN 必须升人工评审 —— 任何“把未显著为正当红”的实现都是回退。
+- D3 holdout 切分：arm × difficulty × CN/EN 三层键一次切出；RoR 贡献按 n≈15‑19 条 counterpart 的最小统计功效倒推，不按语料 20%；固定+版本化+永不进入调参；基线/回流物理分离，不允许把训练过的用例轮换回 holdout。
+- D4 OF spending：阈值表必须按 H0 仿真标定到 bootstrap 分位（n=80 不可直接套正态近似）；k_max 后要么“升格常量监控（不再重测显著性）”要么“臂降级”；必须登记跨 release FWER 上界（k=10 约 40% 近似）。
+- D5 双轨：任一轨用例变更 = 指纹翻动 + 强制重校准，OF 家族按新家族重新注册；回流通道只进增量切片家族，不允许写进基线。
+- D6 三档驱动 ship：红硬阻断；WARN 放行但必须留痕；绿放行。Track B SPC 继续观测且不可再重测显著性违反定律。
+- D7 语义臂标签：本轮只落 schema/nDCG@k 报告/2 人工双审记录，没有任何 nDCG 门禁接入；语义臂 OF 在 ADR 里登记为占位符，在本轮中不得实算。

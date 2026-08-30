@@ -522,4 +522,16 @@ _Avoid_: endpoint protocol sniffing/auto-detect, hand-rolled wire adapters, a se
 ## Durable Maintenance DB (ANS_DB_PATH)（持久维护库路径）
 维护型命令（ans consolidate / memory forget / backfill / backfill-relations / entity merge）一律落持久化 SQLite：ANS_DB_PATH 显式覆盖，缺省 ~/.anysearch/anysearch.db（t0-projection 的全局 .anysearch 目录惯例）；kernel resolveDbPath 是唯一解析点，apps/cli 的 db.ts 负责 mkdir -p。搜索/聊天路径仍 :memory: 不受影响。ADR-0037 D6 Phase-3。
 _Avoid_: in-memory-only maintenance commands that silently do nothing, per-command ad-hoc db path flags, env sniffing inside packages/store
+## Three-Tier Gain Gate（三档增益门禁）
+gain 升级为独立 gate 结论字段（不合并单一 exit code）。绿=全量预注册规则通过且 holdout 无矛盾；WARN=holdout 功效不足 / 排除率>20% / 全量过但 holdout 未过（可能含过拟合）；红=holdout 配对检出退化或全量规则失败。“未显著为正”永不为红。ADR-0038 D2/D6。_Avoid_: hard fail-closed on unproven-positive, merging gain into one exit code。
+
+## Dual-Track Holdout（双轨 holdout）
+基线 holdout 冻结不变；生产回流用例单独成切片族（含 sourceTraceId/backflowRound/sliceId/addedAt/inputHash），用 inputHash 与基线+历史切片去重；同一条用例绝对不在两轨同时出现。两轨各 0.025 alpha，总 FWER<=0.05。两轨均绿才放行。ADR-0038 D5。_Avoid_: rotating training cases into holdout, appending to a fixed judgment baseline beyond k_max。
+
+## OF Alpha Spending（OF alpha 分摊）
+Lan-DeMets O'Brien-Fleming 边界：alpha(t) = 2 - 2*Phi(z_{1-alpha/2}/sqrt(t))，t_k=k/K_max 在基线路（按 look 计数）、t_j=n_j/N_max 在回流路（按累积样本数）。预注册表按 H0 bootstrap 仿真标定（不 directly 用正态近似；n<100 时 follow Bowyer 2025）；一次过 k_max 要么 promote-to-constant-monitor 要么动臂降级。ADR-0038 D4。
+_Avoid_: unplanned looks 增加 Type I error、重复测同一批用例不当 peeking、未校准 bootstrap 边界直接套 z。
+
+## Graded Relevance Label Skeleton（分级相关标签骨架）
+0-3 relevant-id 分级标签是数据基建不是 gate：本轮只落 schema/人工双审/报告层 nDCG@k（仅报告，绝不进门禁）；语义臂 OF 家族仅预注册占位不实算。触发后续升级=标签数过 Sakai 功效阈值 + judge 校准一致率达标 + D8 探测地面成立。ADR-0038 D7。_Avoid_: 未校准 judge 进门禁、语义臂双路 OF 同居一轮、nDCG gate at n≈20。
 *End of Glossary*
