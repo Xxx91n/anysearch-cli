@@ -125,6 +125,13 @@ function mkBaseline(sigmaDU: number): EvalBaseline {
   assert(g.gainConclusion?.tier === "warn", "full-pass + holdout mean<=0 => WARN (overfit suspicion)");
 }
 {
+  // degenerate holdout (sd=0): no-contradiction check unavailable => WARN, never GREEN (r98 audit F3)
+  const pos = [0.14, 0.16, 0.15, 0.13, 0.17, 0.14, 0.16, 0.15, 0.14, 0.16, 0.15, 0.14];
+  const g = evaluateGate(fakeReport(mkMetrics(pos, [0, 0, 0, 0, 0, 0, 0, 0])), mkBaseline(0.05), { look: OF_K_MAX });
+  assert(g.gainConclusion?.tier === "warn", "degenerate holdout => WARN (got " + g.gainConclusion?.tier + ")");
+  assert(g.gainConclusion?.reasons.some((r) => r.indexOf("holdout degenerate") >= 0) ?? false, "degenerate-holdout reason present");
+}
+{
   // holdout power check against the deployed constants: 19 pairs, sigmaDU=0.126239 (r97 calibration) must NOT be underpowered
   const mde = mdeForPaired(19, 0.126239);
   assert(mde < 0.1, "deployed holdout n=19 MDE (" + mde.toFixed(4) + ") < minGain 0.1 — no permanent WARN");

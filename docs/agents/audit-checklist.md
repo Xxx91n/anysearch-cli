@@ -114,3 +114,15 @@
 - [x] baseline：--calibrate 50 写 holdoutFingerprint；ship-gate 交叉校验基线 vs 报告双指纹 + 三档执行（WARN 台账 3 连升人工，gain-warn-resolve.mjs 三选一决议清零）
 - [x] 测试：eval-holdout-gate.test.ts（OF 单调/端值、三档映射含 unproven-positive 非 red、重叠负测、nDCG 手算、H0 FWER 600 重复 0.030<0.05）、eval-relation-gain.test.ts D4 改三档断言、gain-ledger.test.mjs
 - [x] env 清理独立 refactor commit（llm-init.ts + llm-init.test.ts），CHANGELOG Removed 条目
+
+## ADR-0038 审计复核（r98 subagent code-review）
+
+Found（本轮子代理 + 人工复核）：
+- F1 报称 20 文件 CRLF 入库——人工复核证伪（git blob 与工作区均 LF，0 行 CRLF），记为假阳性，不修。
+- F3 holdout 退化（sd=0）时无矛盾检查缺席、full 通过可静默产 GREEN —— 违反 D2 "green requires live holdout no-contradiction"。
+- F6 gate.ts 残留死语句 + alphaK/spentAlpha 双算。
+- F5 大量注释/JSON 把 nDCG 与标签挂在 D6，实际属于 D7。
+- F2 回流第二轨 OF（n_j/N_max 信息时间）未实现；BACKFLOW_SLICES 为空故无实际风险 —— deferred（见 ADR-0038 D5 deferral）。
+- F4 ADR-0038 文本两处口径：D2 末句 "preregistered rule fails => red" 与本段前提矛盾（实现按开头：unproven-positive 非 red）；D6 字面 "WARN 仅经人工放行" 与 3 连败台账机制不一致 —— deferred（下轮 grill 勘误 ADR 文本，不改码）。
+
+Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK 计算；新增断言 "degenerate holdout => WARN"（eval-holdout-gate 31 passed）；D6->D7 注释收敛 10 处。验证：pnpm -r check=0, pnpm -r test=0。

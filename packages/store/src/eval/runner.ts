@@ -21,7 +21,7 @@ export interface OpRecord {
   detail: string;
   samples?: Array<{ title: string | null; snippet: string | null }>;
   // ADR-0028 D2/D4: rank-of-relevant + hit count feed MRR and the answerable false-refusal rate.
-  // ADR-0038 D6: per-K nDCG over graded relevance labels (report-only, never gated).
+  // ADR-0038 D7: per-K nDCG over graded relevance labels (report-only, never gated).
   ndcg?: Record<string, number>;
   rank?: number;
   hitCount?: number;
@@ -113,7 +113,7 @@ export interface EvalMetrics {
   relationGain?: { n: number; excluded: number; meanDelta: number; deltas: number[] };
   // ADR-0038 D3: Track-A paired deltas restricted to the frozen baseline holdout (separate gate sample).
   relationGainHoldout?: { n: number; excluded: number; meanDelta: number; deltas: number[] };
-  // ADR-0038 D6: graded-relevance nDCG aggregates (report-only, never gated).
+  // ADR-0038 D7: graded-relevance nDCG aggregates (report-only, never gated).
   ndcg?: { n: number; at5: number; at10: number; at20: number };
   // ADR-0037 D6: semantic-arm zone (Phase-2 serve; served counts live hits. The Phase-1
   // served-must-be-0 contract was retired when serve shipped — regression gate is fail-closed).
@@ -137,7 +137,7 @@ export interface EvalReport {
   cases: CaseResult[];
 }
 
-// ADR-0038 D6: exponential-gain nDCG@k with log2(rank+1) discount; IDCG truncated to the same k
+// ADR-0038 D7: exponential-gain nDCG@k with log2(rank+1) discount; IDCG truncated to the same k
 // (trec eval / scikit semantics). Report-only — feeding the judge-calibration label row.
 export function ndcgAtK(rankedTexts: string[], grades: Record<string, number>, k: number): number {
   const disc = (rank: number): number => Math.log2(rank + 1);

@@ -96,10 +96,10 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
       ...(gain.holdout ? ["- holdout: n=" + gain.holdout.n + " mean=" + gain.holdout.mean.toFixed(4) + " mde=" + gain.holdout.mde.toFixed(3) + (gain.holdout.underpowered ? " (UNDER-POWERED)" : "")] : []),
       ...gain.reasons.map((r) => "- " + r));
   }
-  // ADR-0038 D6: graded-relevance nDCG table (report-only).
+  // ADR-0038 D7: graded-relevance nDCG table (report-only).
   if (report.metrics.ndcg) {
     const nd = report.metrics.ndcg;
-    lines.push("", "## Graded relevance nDCG (ADR-0038 D6, report-only)", "", "- n graded cases: " + nd.n, "- nDCG@5: " + nd.at5.toFixed(4) + "  nDCG@10: " + nd.at10.toFixed(4) + "  nDCG@20: " + nd.at20.toFixed(4));
+    lines.push("", "## Graded relevance nDCG (ADR-0038 D7, report-only)", "", "- n graded cases: " + nd.n, "- nDCG@5: " + nd.at5.toFixed(4) + "  nDCG@10: " + nd.at10.toFixed(4) + "  nDCG@20: " + nd.at20.toFixed(4));
   }
 
   lines.push("", "## Difficulty tiers (ADR-0028 D4, report-only)", "", "| tier | cases | passed | passRate |", "|---|---|---|---|");

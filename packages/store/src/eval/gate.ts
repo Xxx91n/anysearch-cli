@@ -287,7 +287,7 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
     const look = Math.max(1, opts.look ?? 1);
     const kMax = opts.kMax ?? OF_K_MAX;
     const alphaK = ofSpentAlpha(Math.min(look, kMax) / kMax);
-    const spentAlpha = ofSpentAlpha(Math.min(look, kMax) / kMax);
+    const spentAlpha = alphaK;
     const b = baseline.relationGain;
     const rgH = m.relationGainHoldout;
     const reasons: string[] = [];
@@ -341,6 +341,7 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
         holdoutSnap = stH
           ? { n: stH.n, mean: stH.mean, bcaLo: stH.bcaLo, bcaHi: stH.bcaHi, signFlipP: stH.signFlipP, signFlipHarmP: stH.signFlipHarmP, mde: mdeH, underpowered: under }
           : { n: rgH.n, mean: rgH.meanDelta, bcaLo: NaN, bcaHi: NaN, signFlipP: NaN, signFlipHarmP: NaN, mde: mdeH, underpowered: under };
+        if (stH && stH.degenerate) { warn = true; reasons.push("holdout degenerate (sd=0) — no-contradiction check unavailable; GREEN requires a live holdout (ADR-0038 D2)"); }
         if (stH && !stH.degenerate && (stH.bcaHi < 0 || stH.signFlipHarmP < alphaK)) {
           harm = true;
           reasons.push("holdout: mean=" + stH.mean.toFixed(4) + " BCa=[" + stH.bcaLo.toFixed(4) + ", " + stH.bcaHi.toFixed(4) + "] harmP=" + stH.signFlipHarmP.toFixed(5) + " — PROVEN-NEGATIVE on the frozen holdout (ADR-0038 D2 red)");
@@ -363,7 +364,6 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
       if (rel.hopHitRate >= 0.5 && Math.abs(rg.meanDelta) < 1 / 60) warnings.push("relation-gain sanity: high 1-hop hit-rate but ~zero RoR delta (hits but useless) — human review (ADR-0036 D5)");
       else if (rel.hopHitRate === 0 && Math.abs(rg.meanDelta) >= 1 / 60) warnings.push("relation-gain sanity: 0 hop hit-rate but RoR delta shifted ranking (arm idle but ranking moved) — human review (ADR-0036 D5)");
     }
-    (0 as unknown as void);
   }
 
   // ADR-0037 D6 Phase-2: semantic arm live (weight 0.5, conditional activation) —

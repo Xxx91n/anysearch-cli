@@ -1,6 +1,6 @@
 {
   "schema": "anysearch/relevance-review@1",
-  "note": "ADR-0038 D6 dual-review of the graded relevance labels. Pass A = declared relevanceGrades in golden-cases.ts (39 cases). Pass B = independent rule-derived re-labeling (expectRankOf title=3, subject-side relation sentence=2, distractors=1). Feeds the judge-calibration label row (ADR-0035 D4) and stays report-only — it is NOT consumed by the gain gate.",
+  "note": "ADR-0038 D7 dual-review of the graded relevance labels. Pass A = declared relevanceGrades in golden-cases.ts (39 cases). Pass B = independent rule-derived re-labeling (expectRankOf title=3, subject-side relation sentence=2, distractors=1). Feeds the judge-calibration label row (ADR-0035 D4) and stays report-only — it is NOT consumed by the gain gate.",
   "generatedAt": "2026-08-30T07:58:19.338Z",
   "cases": 39,
   "labelPairs": 610,

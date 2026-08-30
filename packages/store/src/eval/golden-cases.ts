@@ -25,7 +25,7 @@ export type EvalStage = "extract" | "adjudicate" | "store" | "retrieve";
 export type CaseOp =
   | { op: "adjudicate"; stage: "adjudicate"; items: KeyMemoryInput[
 ]; expect: AdjudicationAction[]; newSession?: boolean /* ADR-0031 step1: cross-session entity aggregation */ }
-  | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number; expectRankOf?: { title: string; maxRank: number }; expectEmpty?: true; expectAllWeak?: true /* ADR-0033 D8: unanswerable slice asserts weak-only evidence, not zero retrieval */; expectHopTitle?: string; relevanceGrades?: Record<string, 0 | 1 | 2 | 3> /* ADR-0038 D6: graded labels drive report-only nDCG@5/10/20; sem cases double as judge-calibration label rows */ }
+  | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number; expectRankOf?: { title: string; maxRank: number }; expectEmpty?: true; expectAllWeak?: true /* ADR-0033 D8: unanswerable slice asserts weak-only evidence, not zero retrieval */; expectHopTitle?: string; relevanceGrades?: Record<string, 0 | 1 | 2 | 3> /* ADR-0038 D7: graded labels drive report-only nDCG@5/10/20; sem cases double as judge-calibration label rows */ }
   | { op: "seed"; stage: "store"; items: KeyMemoryInput[]; agedDays?: number } /* ADR-0028 D3: direct DB insert, bypasses the write guard on purpose; ADR-0037 D5: agedDays backdates created_at/last_accessed for archive-candidate cases */
   | { op: "rawValidUntil"; stage: "store"; fromOp: number; expectSet: boolean }
   | { op: "promote"; stage: "store"; key: string; value: string; scope?: string; source: "explicit" | "correction"; expectAction: "promoted" | "rejected" }
@@ -452,7 +452,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
       {
         op: "search", stage: "retrieve", query: "why did the release stop serving traffic",
         expectRankOf: { title: "deployment omega outage cause", maxRank: 2 },
-        // ADR-0038 D6: two-label graded row — paraphrase target grade 3, unrelated runbook grade 1.
+        // ADR-0038 D7: two-label graded row — paraphrase target grade 3, unrelated runbook grade 1.
         relevanceGrades: { "deployment omega outage cause": 3, "marketing cache warmup runbook": 1 },
       },
     ],
@@ -656,7 +656,7 @@ function buildRelationExpansionR33(): CaseSpec[] {
         {
           op: "search", stage: "retrieve", query: sub,
           expectRankOf: { title: `${obj} runbook`, maxRank: 20 }, expectHopTitle: `${obj} runbook`,
-          // ADR-0038 D6: hop target grade 3; own-subject relation sentence grade 2; distractors grade 1.
+          // ADR-0038 D7: hop target grade 3; own-subject relation sentence grade 2; distractors grade 1.
           relevanceGrades: {
             [`${obj} runbook`]: 3,
             [`${sub} ${surface} ${obj} plan`]: 2,
@@ -687,7 +687,7 @@ function buildRelationExpansionR33(): CaseSpec[] {
         {
           op: "search", stage: "retrieve", query: `"${sub}"`,
           expectRankOf: { title: `"${obj}" 运维`, maxRank: 20 }, expectHopTitle: `"${obj}" 运维`,
-          // ADR-0038 D6: quoted hop target grade 3; quoted relation sentence grade 2; CN distractors grade 1.
+          // ADR-0038 D7: quoted hop target grade 3; quoted relation sentence grade 2; CN distractors grade 1.
           relevanceGrades: {
             [`"${obj}" 运维`]: 3,
             [`"${sub}" ${verb} "${obj}"`]: 2,
