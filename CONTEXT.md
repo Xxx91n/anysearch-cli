@@ -201,6 +201,7 @@ RRF 融合的第四臂：transformers.js 本地嵌入（multilingual-e5-small q8
 `ans memory backfill-vectors` 幂等回填子命令：同时负责存量无向量记忆回填、嵌入失败残留（pendingVectors）清理、未来模型升级后的全量重嵌入；支持 --dry-run。_Avoid_: 不区分"存量回填命令"和"失败重试命令"两套；不在写路径内做在线重试（写库必须永远成功）。
 
 
+
 *End of Glossary*
 
 ## Cursor Dual Channel（Cursor 双通道注入）
@@ -534,4 +535,21 @@ _Avoid_: unplanned looks 增加 Type I error、重复测同一批用例不当 pe
 
 ## Graded Relevance Label Skeleton（分级相关标签骨架）
 0-3 relevant-id 分级标签是数据基建不是 gate：本轮只落 schema/人工双审/报告层 nDCG@k（仅报告，绝不进门禁）；语义臂 OF 家族仅预注册占位不实算。触发后续升级=标签数过 Sakai 功效阈值 + judge 校准一致率达标 + D8 探测地面成立。ADR-0038 D7。_Avoid_: 未校准 judge 进门禁、语义臂双路 OF 同居一轮、nDCG gate at n≈20。
+## Tau Observation Layer（tau 观测层）
+tau（7/30/90 硬编码）不改参数、只配齐观测数据资产的层：P0 access-age 直方图（age_at_access 预留接口，预固定桶）+ tau 敏感性扫描（replay 生产打分、产出排名位移分布，绝不报命中率）；P1 BG/NBD 群体级寿命估计（外置 python scripts/tau/bgnbd_fit.py + 版本化 JSON）+ 校准图 + 复活遥测；全部进 eval-report Observational 区、永不进门禁。ADR-0039 D1–D4。
+_Avoid_: gating on observational metrics, proxy-fitting tau from top-k hit rate (circular), online histogram aggregation in read path
+
+## Pre-Registered Day Buckets（预注册 day-bucket）
+access-age 直方图/校准图/PSI 共用的一次性锁定桶界：0-1/2-7/8-30/31-90/91+，与 7/30/90 tier 对齐；桶界与任何模型预测无关（防自证分桶，FSRS 教训）；桶改动即 baseline 指纹翻牌 + 强制重基线（ADR-0027 D9 / ADR-0036 lockN 纪律家族）。ADR-0039 D4。
+_Avoid_: post-hoc bucket reselection, bucket boundaries derived from observed outcomes, cross-dataset bucket comparison without fingerprint
+
+## Access Events Log（访问事件 append-only 日志）
+access_events(memory_id, accessed_at) 事务时间维 append-only 事件表：touchAccessed 读路径懒触发 INSERT（每搜索上限 limit 次，微秒级），不继承 valid_until、undo 不改写不删除（补偿语义）；归档行不产生新事件。与检索行 valid_until 的 bi-temporal 轴是显式区分的两条时间轴。ADR-0039 D5 + Boundaries。
+_Avoid_: inserting access events in the save path, mutating/deleting events on undo, gating or ranking reads off this table
+
+## Explicit-Skip Telemetry（explicit-skip 三档遥测）
+样本/条件不足时不出占位数：目标指标标记 skipped + 报告写 deferred reason 原文引用触发条件 + 进 WARN 台账（exit 0 放行留痕，3 连败升人工）。与未校准标记、deferred-registry 同构。BG/NBD 三条件 AND 门（T1 300+100 / T2 PSI<0.25 同桶 / T3 90 天窗+30 天间隔）未达一律走它。ADR-0039 D6/D7。
+_Avoid_: placeholder parameters posing as fit results, silent skip without ledger, fail-closeding data-insufficiency as system red
+
+
 *End of Glossary*

@@ -68,3 +68,10 @@ ADR-0036 preregistered the relation-arm gain rule (paired BCa lower bound > 0 AN
 - RAGAS context precision docs; eugeneyan, Evaluating the effectiveness of LLM evaluators
 - CSA research note on MCP/AI-coding-assistant credential theft; GitGuardian Secrets Sprawl 2026 (env credential surface hygiene)
 - TypeGraph time-decay blog; Mem0 memory eviction/forgetting; Hindsight consolidation post (2026-05-21); fsrs4anki (FSRS fitting constraints)
+
+## r99 Text Errata (append-only; closes r98 audit F4; no code change)
+
+- D2 closing sentence "if the preregistered rule fails, red" contradicts the tier premise stated at the top of the same decision (red is reserved for proven-negative; never for merely-unproven-positive). Authoritative reading: the implementation is correct — unproven-positive is never red. The last sentence of D2 is to be read as applying to the original two-tier WORLD only; the three-tier table at the start of D2 supersedes it.
+- D6 sentence "WARN permits ship only through a recorded human review" contradicts the shipped WARN-streak-3 ledger mechanism (a single WARN ships, with a ledger entry; three consecutive WARNs escalate to mandatory human review). Authoritative reading: the implementation is correct — D6 is to be read as the escalation form (WARN ×3 ⇒ review), not per-instance.
+
+Pending physical text correction deferred to a docs-only pass; semantics above are normative.

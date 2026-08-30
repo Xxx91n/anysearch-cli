@@ -130,3 +130,14 @@ Found（本轮子代理 + 人工复核）：
 Fix run 2（R1）：cli.ts 加 ANS_EVAL_NO_LOOK=1 护栏（跳过账本写入）；eval-gate.test.ts 注入该 env；本地账本中 26c7dd20…:956d925d… 纯测试产生的 9 条 look 记录已人工清零并在此留痕（该对未产生过真实评审 look）。
 
 Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK 计算；新增断言 "degenerate holdout => WARN"（eval-holdout-gate 31 passed）；D6->D7 注释收敛 10 处。验证：pnpm -r check=0, pnpm -r test=0。
+
+## r99 检查点（grill r36 / ADR-0039 tau 观测层）
+
+- [ ] ADR-0039 七节齐（Status/Context/D1–D7/Consequences/Impl Plan 8 步/Acceptance 三层/Research Sources），无 BOM、无 CRLF
+- [ ] CONTEXT.md 增 4 术语（Tau Observation Layer / Pre-Registered Day Buckets / Access Events Log / Explicit-Skip Telemetry），均含 _Avoid_，End of Glossary 保留
+- [ ] ADR-0038 尾部 r99 Text Errata 段存在（F4 两处口径全文收录），正文未改（append-only）
+- [ ] 装机轮纪检：本 ADR 只声明不实现 （scripts/tau/* 新代码属于实现轮不在本轮 diff 内）
+- [ ] 返 Deferred 登记行带触发条件+owner：tau 校准（D6 AND 门）/ 语义臂 OF（ADR-0038 D7）/ F2 backflow / r90 F4·F5 / r94 D1+D3
+- [ ] day-bucket=0-1/2-7/8-30/31-90/91+ 出现在 ADR-0039 D4 与 CONTEXT 术语两处且一致
+- [ ] _Avoid_ 8 条全部出现在 ADR-0039
+
