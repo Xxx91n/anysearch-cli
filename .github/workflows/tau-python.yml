@@ -1,0 +1,49 @@
+name: tau-python
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tau-python.yml"
+      - "scripts/tau/**"
+      - "packages/store/src/eval/bgnbd.ts"
+      - "packages/store/test/bgnbd-spawn.test.ts"
+  pull_request:
+    paths:
+      - ".github/workflows/tau-python.yml"
+      - "scripts/tau/**"
+      - "packages/store/src/eval/bgnbd.ts"
+      - "packages/store/test/bgnbd-spawn.test.ts"
+  workflow_dispatch:
+
+concurrency:
+  group: tau-python-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# ADR-0039 D2 (r100): path-filtered python job for the frozen lifetimes stack.
+# The freeze is loaded only when the BG/NBD envelope changes shape; the main CI
+# never installs python deps. Stack pins live in scripts/tau/requirements.txt.
+jobs:
+  bgnbd-fit:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/tau/requirements.txt
+      - run: python -m pip install -r scripts/tau/requirements.txt
+      - name: Smoke - frozen stack import + envelope contract
+        run: |
+          python -c "import numpy, pandas, scipy, autograd, lifetimes; print(numpy.__version__, lifetimes.__version__)"
+          printf '%s' '{"rows":[{"frequency":3,"recency":20,"T":30},{"frequency":0,"recency":0,"T":15},{"frequency":5,"recency":40,"T":45},{"frequency":1,"recency":10,"T":25},{"frequency":2,"recency":18,"T":22},{"frequency":4,"recency":30,"T":35},{"frequency":0,"recency":0,"T":12},{"frequency":6,"recency":50,"T":60},{"frequency":1,"recency":8,"T":14},{"frequency":3,"recency":25,"T":28},{"frequency":2,"recency":14,"T":20},{"frequency":7,"recency":55,"T":70}]}' | python scripts/tau/bgnbd_fit.py > out.json
+          python -c "import json,sys; e=json.load(open('out.json')); assert e['ok'] is True; assert e['converged'] is True, e.get('error'); assert set(e['params']) >= {'r','alpha','a','b'}; assert 'validation' in e; print('envelope ok:', e['params'], 'chi2 p=', e['validation'].get('p'))"
+        shell: bash
