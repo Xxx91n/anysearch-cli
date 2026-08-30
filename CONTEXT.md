@@ -519,4 +519,7 @@ _Avoid_: hard DELETE, archiving semantic/entity/edge rows, LLM making the forget
 ## Three-Protocol LLM Endpoint Config（三协议 LLM 端点配置）
 LLM 使能一律走 pi-ai 缝 + createProvider 自定义端点（其 0.84.2 原生覆盖 openai-completions / openai-responses / anthropic-messages / google 四种 wire 协议）；配置 = ANS_LLM_BASE_URL + ANS_LLM_API（chat|messages|responses 显式声明，业界共识不做协议 sniff）+ ANS_LLM_MODEL；零自研 wire 适配代码。ADR-0037 D4(Q7)。
 _Avoid_: endpoint protocol sniffing/auto-detect, hand-rolled wire adapters, a second LLM client library alongside pi-ai
+Durable Maintenance DB (ANS_DB_PATH)（持久维护库路径）
+维护型命令（ans consolidate / memory forget / backfill / backfill-relations / entity merge）一律落持久化 SQLite：ANS_DB_PATH 显式覆盖，缺省 ~/.anysearch/anysearch.db（t0-projection 的全局 .anysearch 目录惯例）；kernel resolveDbPath 是唯一解析点，apps/cli 的 db.ts 负责 mkdir -p。搜索/聊天路径仍 :memory: 不受影响。ADR-0037 D6 Phase-3。
+_Avoid_: in-memory-only maintenance commands that silently do nothing, per-command ad-hoc db path flags, env sniffing inside packages/store
 *End of Glossary*
