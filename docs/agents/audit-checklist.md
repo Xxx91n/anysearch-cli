@@ -153,4 +153,4 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 - [x] 步7：runner.ts observational 区 + CaseResult.accessEvents 快照；cli.ts skip-ledger.json 写出 + md 区；ship-gate.mjs step7 observational 存在性 fail + 3 连击未决 fail；eval-gate.test.ts N1/N2 坚守（20/20 绿）
 - [x] 步8：.github/workflows/tau-python.yml（paths 过滤；ubuntu+windows 矩阵；setup-python 3.12 + pip cache + 冻结 requirements；导入 + 包络合约断言）
 - [x] 验收：EVAL_TIMEOUT_MS=3600000 校准 fp=113be271869dbc54（rawN=25）；专项检查 107/107 绿
-- [ ] 剩余验收：turbo check/build、ship-gate 全程、apps cli+mcp 进程活测
+- [x] 验收：turbo check 7/7、turbo build 3/3、ship-gate 9 步全绿（observational zone + fp 113be271 交叉校验）、ans cli/mcp --help 进程活测、bgnbd_fit.py 合约包络活测
