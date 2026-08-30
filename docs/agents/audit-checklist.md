@@ -92,7 +92,7 @@
 - [x] Fixed F6（Bacon P2 注释）：runner.ts / session-store.ts Phase-1 shadow 陈旧注释同步至 serve 语义
 - [x] Fixed F7（Pascal P1/P2）：CHANGELOG 补轮次条目；CONTEXT.md 术语补 `## ` 标题前缀
 - [ ] Deferred D1（Bacon P2）：dry-run 报告缺 tier 分解/rrfArmImpact 字段——已写入 ADR-0037 r94 修订记录现状，需要时再补字段
-- [ ] Deferred D2（观察）：llm-init.ts 134-136 预存 env 读（OPENAI_/ANTHROPIC_/GOOGLE_API_KEY）属 r93 之前就存在的契约松弛，出本轮 scope，下次 kernel 轮统一收割
+- [x] Deferred D2（观察，r97 收割）：llm-init.ts 134-136 预存 env 读（OPENAI_/ANTHROPIC_/GOOGLE_API_KEY）属 r93 之前就存在的契约松弛，出本轮 scope，下次 kernel 轮统一收割
 - [ ] Deferred D3（Pascal P3）：consolidate 与 forget 的默认 apply/dry-run 不对称文档化为入口差异，行为不动
 
 ## ADR-0038 审计要点（grill r95 决策复核）
@@ -104,3 +104,13 @@
 - D5 双轨：任一轨用例变更 = 指纹翻动 + 强制重校准，OF 家族按新家族重新注册；回流通道只进增量切片家族，不允许写进基线。
 - D6 三档驱动 ship：红硬阻断；WARN 放行但必须留痕；绿放行。Track B SPC 继续观测且不可再重测显著性违反定律。
 - D7 语义臂标签：本轮只落 schema/nDCG@k 报告/2 人工双审记录，没有任何 nDCG 门禁接入；语义臂 OF 在 ADR 里登记为占位符，在本轮中不得实算。
+
+## ADR-0038 实现轮复核（r97 impl）
+
+- [x] gate.ts：OF spending（0.025/track，k_max=5，t=1 恰好花完）+ 三档 GainConclusion（red 仅 proven-negative）+ holdout 指纹第二翻盘点进入 evaluateGate fail-closed（exit 12 分支）
+- [x] runner.ts：RoR 双轨分裂（relationGain vs relationGainHoldout）、OpRecord.ndcg、EvalReport.holdoutFingerprint、ndcgAtK（指数 gain + log2 折扣，trec 语义）
+- [x] golden-cases.ts：search op relevanceGrades（38 RoR + sem_paraphrase_rank），CN 干扰名表 hoist 至 case 生成域
+- [x] cli.ts：looks 账本 .ship-gate/eval-looks.json（--calibrate 重置）、报告 enriched gate.gainConclusion、md 三档段 + nDCG 段、assertBackflowNoOverlap fail-fast
+- [x] baseline：--calibrate 50 写 holdoutFingerprint；ship-gate 交叉校验基线 vs 报告双指纹 + 三档执行（WARN 台账 3 连升人工，gain-warn-resolve.mjs 三选一决议清零）
+- [x] 测试：eval-holdout-gate.test.ts（OF 单调/端值、三档映射含 unproven-positive 非 red、重叠负测、nDCG 手算、H0 FWER 600 重复 0.030<0.05）、eval-relation-gain.test.ts D4 改三档断言、gain-ledger.test.mjs
+- [x] env 清理独立 refactor commit（llm-init.ts + llm-init.test.ts），CHANGELOG Removed 条目

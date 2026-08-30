@@ -7,10 +7,26 @@ All notable changes to this project are recorded here. Format follows
 ## [Unreleased]
 
 ### Added
+- ADR-0038: relation-arm gain gate promoted to a three-tier GREEN/WARN/RED verdict — RED only on
+  proven-negative evidence (BCa upper < 0 or harm-side sign-flip p below the look budget); unproven-
+  positive is WARN, never RED. Dual-track holdout: 40-case frozen baseline slice (19 RoR pairs) with
+  a second fingerprint plus a backflow slice family (inputHash dedup vs baseline, cross-slice,
+  payload provenance). Preregistered Lan-DeMets OF alpha spending (0.025 per track, k_max=5,
+  convergence clause past k_max) with a per-fingerprint look ledger (.ship-gate/eval-looks.json).
+  ship-gate enforces the tier: RED hard-fails, GREEN passes, WARN is released but three consecutive
+  WARNs force `node scripts/gain-warn-resolve.mjs`. Graded relevance labels (0-3) on 39 cases feed
+  report-only nDCG@5/10/20 plus a dual-review record (relevance-review.json, kappa/AC1 = 1.0 on 610
+  label pairs) as the judge-calibration baseline row.
+
 - ADR-0037: `ans consolidate` and `ans memory forget --undo` CLI; durable maintenance DB
   via ANS_DB_PATH (default ~/.anysearch/anysearch.db); semantic_memories sixth RRF arm
   (serve, weight 0.5, conditional activation, fail-closed regression gate); three-protocol
   LLM endpoint config (ANS_LLM_BASE_URL + ANS_LLM_API=chat|messages|responses + ANS_LLM_API_KEY).
+
+### Removed
+- kernel llm-init residual env fallback (OPENAI_/ANTHROPIC_/GOOGLE_API_KEY): the kernel no longer
+  reads provider env (ADR-0038 step 7); provider auth stays entirely inside pi-ai. r94-deferred
+  hygiene, ships as its own refactor commit.
 
 ### Fixed
 - r94 audit (ADR-0037, atomcode Spec-1): single-query searchMemory resolved the semantic arm
