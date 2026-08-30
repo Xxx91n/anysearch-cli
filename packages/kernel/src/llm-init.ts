@@ -131,11 +131,9 @@ export async function createLlmSession(opts: LlmSessionOptions): Promise<LlmSess
   }
 
   const streamFn = models.streamSimple.bind(models);
-  const apiKey = opts.apiKey
-    ?? (opts.provider === "openai" ? process.env.OPENAI_API_KEY
-    : opts.provider === "anthropic" ? process.env.ANTHROPIC_API_KEY
-    : opts.provider === "google" ? (process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY)
-    : undefined);
+  // ADR-0038 step 7 (chore): the kernel never reads provider env — opts.apiKey only.
+  // Provider env fallback (OPENAI_/ANTHROPIC_/GOOGLE_API_KEY) lives inside pi-ai's ProviderAuth.
+  const apiKey = opts.apiKey;
 
   return { model: model as Model<string>, streamFn, models, providerName: opts.provider, modelName: opts.model, apiKey };
 }
