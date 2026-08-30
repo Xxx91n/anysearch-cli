@@ -90,6 +90,22 @@ try {
   try { rmSync(outDir, { recursive: true, force: true }); } catch {}
 }
 
+// ADR-0039 N1: observational metrics NEVER gate — verdict invariance under injected
+// observational content (Goodhart clause, ship-gate only asserts presence elsewhere).
+{
+  const m = mkMetrics();
+  (m as unknown as Record<string, unknown>).observational = { schema: "anysearch/observational@1", accessAge: "garbage-injected-value" };
+  const g = evaluateGate(fakeReport(m), baseline);
+  assert(g.exitCode === 0, "N1: observational injection must not change gate outcome (got " + g.exitCode + ")");
+}
+// N2: read-path contamination guard — no aggregation SQL over access_events in session-store's
+// read statements (touch path only INSERTs; aggregation lives in the runner's offline snapshot).
+{
+  const src = readFileSync(join(__dirname, "..", "src", "session-store.ts"), "utf8");
+  const reads = src.match(/searchAllResults[^`]*?prepare("([^"]+)")/g) ?? [];
+  for (const r of reads) assert(!r.includes("access_events"), "N2: read path must never query access_events");
+}
+
 // ship-gate wiring: the memory-eval step must exist (dropped step = dropped gate).
 const sg = readFileSync(join(__dirname, "..", "..", "..", "scripts", "ship-gate.mjs"), "utf8");
 assert(sg.includes("stepMemoryEval") && sg.includes("memory eval"), "ship-gate wires stepMemoryEval");

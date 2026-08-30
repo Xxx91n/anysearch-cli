@@ -12,6 +12,9 @@ import type { AdjudicationResultItem } from "../session-store";
 import { rrfRank } from "@anysearch/retriever";
 import type { CaseSpec, EvalStage } from "./golden-cases";
 import { holdoutFingerprint, isHoldout } from "./holdout";
+import { bucketHistogram, dayBucketFingerprint } from "./day-buckets";
+import { evaluateTauFitGate } from "./bgnbd";
+import { skip, type SkipMarker } from "./explicit-skip";
 
 export interface OpRecord {
   op: number;
@@ -57,6 +60,8 @@ export interface CaseResult {
   relationTel?: RelTel;
   // ADR-0037 D6: per-case semantic-arm shadow telemetry (served must stay 0 in Phase-1).
   semTel?: { queries: number; hits: number; served: number };
+  // ADR-0039 D1/D5: access-age histogram snapshot from the append-only access_events log.
+  accessEvents?: { total: number; histogram: Record<string, number> };
 }
 
 export interface EvalCounts {
@@ -115,12 +120,26 @@ export interface EvalMetrics {
   relationGainHoldout?: { n: number; excluded: number; meanDelta: number; deltas: number[] };
   // ADR-0038 D7: graded-relevance nDCG aggregates (report-only, never gated).
   ndcg?: { n: number; at5: number; at10: number; at20: number };
+  // ADR-0039 step 7: Observational zone — pre-registered, report-only, never read by the
+  // gate (N1); ship-gate fails if the zone is missing entirely (E3, report-as-contract).
+  observational?: ObservationalZone;
   // ADR-0037 D6: semantic-arm zone (Phase-2 serve; served counts live hits. The Phase-1
   // served-must-be-0 contract was retired when serve shipped — regression gate is fail-closed).
   // Forget lifecycle counters.
   // ADR-0037 D6 Phase-2: serve telemetry + fail-closed regression count + RoR gain (observation zone).
   semantic: { queries: number; hits: number; served: number; regressions: number; gain?: { n: number; meanDelta: number } };
   forget: { archiveChecks: number; archives: number; undoRestores: number; dryRunExact: number };
+}
+
+// ADR-0039 step 7: Observational zone — fixed 5-key shape; any value may be a SkipMarker.
+export interface ObservationalZone {
+  schema: "anysearch/observational@1";
+  dayBucketDefinition: string; // D4 fingerprint linkage
+  accessAge: { status: "ok"; events: number; histogram: Record<string, number> } | SkipMarker;
+  tauScan: { status: "ok"; [k: string]: unknown } | SkipMarker;
+  bgnbd: { status: "ok"; params: unknown; validation: unknown } | SkipMarker;
+  revival: { status: "ok"; archives: number; undone: number; undoneRate: number } | SkipMarker;
+  undoReentryEvents: { status: "ok"; count: number } | SkipMarker;
 }
 
 export interface EvalReport {
@@ -149,7 +168,9 @@ export function ndcgAtK(rankedTexts: string[], grades: Record<string, number>, k
 }
 
 export function datasetFingerprint(cases: CaseSpec[]): string {
-  return createHash("sha256").update(JSON.stringify(cases)).digest("hex").slice(0, 16);
+  // ADR-0039 D4: the pre-registered day-bucket definition joins the fingerprint — changing
+  // bucket boundaries flips the fingerprint and forces recalibration (no silent re-binning).
+  return createHash("sha256").update(JSON.stringify(cases) + "|" + dayBucketFingerprint()).digest("hex").slice(0, 16);
 }
 
 const hitText = (h: { role?: unknown; content?: unknown }): string =>
@@ -182,6 +203,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
   let entityArmSnapshot: { queries: number; candidates: number; activations: number; hits: number } | undefined;
   let relationTelSnapshot: RelTel | undefined;
   let semTelSnapshot: { queries: number; hits: number; served: number } | undefined;
+  let accessEventsSnapshot: { total: number; histogram: Record<string, number> } | undefined;
   let entityMergeSnapshot: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } | undefined;
   const adjResults: AdjudicationResultItem[][] = []; // stashed per adjudicate opIndex
   const archiveLogIdsByOp = new Map<number, number[]>(); // ADR-0037 D5: archive op -> archive_log ids for undo
@@ -448,11 +470,23 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
     entityMergeSnapshot = (store as unknown as { entityMergeTelemetry?: () => { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } }).entityMergeTelemetry?.();
     relationTelSnapshot = (store as unknown as { relationTelemetry?: () => RelTel }).relationTelemetry?.();
     semTelSnapshot = store.semanticTelemetry();
+    // ADR-0039 D1: access-age histogram (aggregation happens offline at report time — never
+    // in the read path, ADR-0039 N2). Ages in days; unreadable timestamps clamp via NaN.
+    try {
+      const ev = raw.prepare("SELECT ae.accessed_at, rr.created_at FROM access_events ae JOIN retrieval_results rr ON rr.id = ae.memory_id").all() as Array<{ accessed_at: string; created_at: string }>;
+      const ages: number[] = [];
+      for (const e of ev) {
+        const a = Date.parse(String(e.accessed_at).replace(" ", "T") + "Z");
+        const c = Date.parse(String(e.created_at).replace(" ", "T") + "Z");
+        ages.push(Number.isFinite(a) && Number.isFinite(c) ? (a - c) / 86_400_000 : NaN);
+      }
+      accessEventsSnapshot = { total: ev.length, histogram: bucketHistogram(ages) };
+    } catch { accessEventsSnapshot = undefined; }
     raw.close();
     store.close();
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
-  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot, entityMerge: entityMergeSnapshot, relationTel: relationTelSnapshot, semTel: semTelSnapshot };
+  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot, entityMerge: entityMergeSnapshot, relationTel: relationTelSnapshot, semTel: semTelSnapshot, accessEvents: accessEventsSnapshot };
 }
 
 // Metrics per ADR-0027 D4: ① case pass rate (gate: 100%), ② supersession success,
@@ -627,6 +661,39 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
         }
       }
       return { archiveChecks, archives, undoRestores, dryRunExact };
+    })(),
+    // ADR-0039 D1/D6/D7 + Acceptance E3: Observational zone. Pre-registered fields; skip
+    // markers carry verbatim trigger quotes; values NEVER feed the gate (N1).
+    observational: (() => {
+      let evTotal = 0;
+      const hist: Record<string, number> = {};
+      for (const r of results) if (r.accessEvents) {
+        evTotal += r.accessEvents.total;
+        for (const [b, n] of Object.entries(r.accessEvents.histogram)) hist[b] = (hist[b] ?? 0) + n;
+      }
+      let archives = 0, undone = 0;
+      for (let i = 0; i < cases.length; i++) {
+        for (const [opIndex, op] of cases[i]!.ops.entries()) {
+          const rec = results[i]!.ops.find((x) => x.op === opIndex);
+          if (!rec) continue;
+          if (op.op === "archive" && rec.ok) archives += 1;
+          if (op.op === "undoArchive" && rec.undoOk) undone += 1;
+        }
+      }
+      // D6 AND-gate evaluated against the eval corpus itself (golden cases are far below T1;
+      // the failure strings are quoted verbatim into the skip reason by contract).
+      const gate = evaluateTauFitGate({ activeRows: 0, fittableUnits: 0, psi: null, windowDays: 0, daysSinceLastFit: null });
+      return {
+        schema: "anysearch/observational@1" as const,
+        dayBucketDefinition: dayBucketFingerprint(),
+        accessAge: evTotal > 0 ? { status: "ok" as const, events: evTotal, histogram: hist } : skip("no access events observed in the eval run (goldens may predate the touch path)", "gate-not-met"),
+        tauScan: skip("tau scan is offline-only via scripts/tau/tau-scan.mjs — zero contact with the eval runner / OF look ledger (ADR-0039 D3)", "offline-deferred"),
+        bgnbd: skip("BG/NBD fit: " + gate.failures.join("; "), "gate-not-met"),
+        revival: archives > 0
+          ? { status: "ok" as const, archives, undone, undoneRate: undone / archives }
+          : skip("no archive ops present in this eval run — revival main ratio is inert", "gate-not-met"),
+        undoReentryEvents: skip("undo_reentry needs a 30-day post-undo window — outside the single-run eval horizon (observational sub-metric)", "offline-deferred"),
+      };
     })(),
   };
 }

@@ -622,6 +622,23 @@ async function stepMemoryEval() {
     if (zf.archiveChecks > 0 && zf.undoRestores === 0) fail("forget undo restores absent despite archives");
     report("pass", "memory-eval semantic serve + forget zones present (sem queries=" + zm.queries + " forget archives=" + zf.archives + ")");
   }
+  // ADR-0039 step 7 + E3: observational zone presence is fail-closed (report-as-contract);
+  // the VALUES inside are never gated (N1, Goodhart clause in ADR-0039 _Avoid_ 1).
+  {
+    const z = rep.metrics && rep.metrics.observational;
+    if (!z || typeof z !== "object") fail("memory-eval report missing metrics.observational zone (ADR-0039 E3 fail-closed)");
+    if (z.schema !== "anysearch/observational@1") fail("observational zone schema drift: " + z.schema);
+    for (const k of ["accessAge", "tauScan", "bgnbd", "revival", "undoReentryEvents", "dayBucketDefinition"]) if (!(k in z)) fail("observational zone missing " + k);
+    // D7: skip-ledger escalation — 3 consecutive identical observational skips force human review.
+    const skipL = path.join(outDir, "skip-ledger.json");
+    if (fs.existsSync(skipL)) {
+      const sl = JSON.parse(fs.readFileSync(skipL, "utf8"));
+      if (typeof sl.consecutiveWarn === "number" && sl.consecutiveWarn >= 3) {
+        fail("observational explicit-skip streak " + sl.consecutiveWarn + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note observational-skip --ledger " + skipL + " (ADR-0039 D7)");
+      }
+    }
+    report("pass", "memory-eval observational zone present (ADR-0039; values never gated, D7 streak ledger watched)");
+  }
   // ADR-0037 D6 (carries ADR-0028 D1): fingerprint single-flip — report fingerprint must equal the committed baseline.
   {
     const blPath = path.join(ROOT, "packages/store/eval-baseline.json");

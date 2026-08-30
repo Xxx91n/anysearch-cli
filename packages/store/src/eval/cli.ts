@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import { GOLDEN_CASES } from "./golden-cases";
 import { assertBackflowNoOverlap } from "./holdout";
 import { runAll, type EvalReport } from "./runner";
+import { isSkip } from "./explicit-skip";
+import { emptySkipLedger, parseSkipLedger, recordSkips, skipMustFail } from "./skip-ledger";
 import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, type EvalBaseline, type GainConclusion } from "./gate";
 
 function repoRoot(): string {
@@ -108,6 +110,18 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
   for (const c of report.cases) lines.push(`| ${c.id} | ${c.group} | ${c.difficulty} | ${c.failedStage ?? "-"} | ${c.passed ? "PASS" : "FAIL"} |`);
   if (warnings.length) lines.push("", "## Gate warnings (non-blocking)", "", ...warnings.map((w) => "- " + w));
   if (failures.length) lines.push("", "## Gate failures", "", ...failures.map((x) => "- " + x));
+  // ADR-0039 E3: observational zone rendered even when empty/skipped (report-as-contract).
+  const ob = report.metrics.observational;
+  lines.push("", "## Observational (ADR-0039 — report-only, never gated)", "");
+  if (!ob) { lines.push("MISSING: metrics.observational zone (ship-gate fails on this)"); }
+  else {
+    lines.push("- dayBucketDefinition: " + ob.dayBucketDefinition);
+    for (const [k, v] of Object.entries(ob)) {
+      if (k === "schema" || k === "dayBucketDefinition") continue;
+      const sv = v as { status?: string; tier?: string; reason?: string } | null;
+      lines.push("- " + k + ": " + (sv && sv.status === "skipped" ? "skipped (" + sv.tier + ") — " + sv.reason : JSON.stringify(v)));
+    }
+  }
   return lines.join("\n") + "\n";
 }
 
@@ -217,6 +231,24 @@ async function main(): Promise<number> {
   }
   const g = evaluateGate(report, baseline, { look });
   const exitCode = g.exitCode;
+
+  // ADR-0039 D7: every observational explicit-skip lands in the WARN ledger (share schema with
+  // gain-ledger so the existing resolve tool handles escalation). Exit stays 0; 3 consecutive
+  // identical skip-key sets escalate to forced human review (surfaced by ship-gate step 7).
+  const ob = report.metrics.observational;
+  if (ob) {
+    const keys: string[] = [];
+    for (const [k, v] of Object.entries(ob)) {
+      if (k === "schema" || k === "dayBucketDefinition") continue;
+      if (isSkip(v)) keys.push(k + "|" + v.tier + "|" + v.reason);
+    }
+    const skipPath = join(outDir, "skip-ledger.json");
+    const sl = existsSync(skipPath) ? parseSkipLedger(readFileSync(skipPath, "utf8")) : emptySkipLedger();
+    const streak = recordSkips(sl, keys, new Date().toISOString());
+    writeFileSync(skipPath, JSON.stringify(sl, null, 2) + "\n", "utf8");
+    if (skipMustFail(sl))
+      console.error("[eval] OBSERVATIONAL skip streak " + streak + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note observational-skip --ledger " + skipPath + " (ADR-0039 D7)");
+  }
 
   const enriched = { ...report, baselineFingerprint: baseline?.fingerprint ?? null, gate: { verdict: g.verdict, exitCode, failures: g.failures, warnings: g.warnings, gainConclusion: g.gainConclusion ?? null } };
   writeFileSync(join(outDir, "eval-report.json"), JSON.stringify(enriched, null, 2) + "\n", "utf8");

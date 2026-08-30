@@ -1,6 +1,6 @@
 {
   "schema": "anysearch/eval-baseline@1",
-  "fingerprint": "26c7dd20db53f6b4",
+  "fingerprint": "113be271869dbc54",
   "metrics": {
     "passRate": 1,
     "supersessionSuccess": 1,
@@ -143,6 +143,42 @@
       "archives": 1,
       "undoRestores": 1,
       "dryRunExact": 1
+    },
+    "observational": {
+      "schema": "anysearch/observational@1",
+      "dayBucketDefinition": "491711ffacdfa568",
+      "accessAge": {
+        "status": "ok",
+        "events": 645,
+        "histogram": {
+          "0-1": 644,
+          "2-7": 0,
+          "8-30": 0,
+          "31-90": 0,
+          "91+": 1
+        }
+      },
+      "tauScan": {
+        "status": "skipped",
+        "tier": "offline-deferred",
+        "reason": "tau scan is offline-only via scripts/tau/tau-scan.mjs — zero contact with the eval runner / OF look ledger (ADR-0039 D3)"
+      },
+      "bgnbd": {
+        "status": "skipped",
+        "tier": "gate-not-met",
+        "reason": "BG/NBD fit: T1: 0 active rows / 0 fittable units < 300/100; T2: PSI unavailable (no access-age histogram pair yet); T3: observation window 0d < 90d"
+      },
+      "revival": {
+        "status": "ok",
+        "archives": 1,
+        "undone": 1,
+        "undoneRate": 1
+      },
+      "undoReentryEvents": {
+        "status": "skipped",
+        "tier": "offline-deferred",
+        "reason": "undo_reentry needs a 30-day post-undo window — outside the single-run eval horizon (observational sub-metric)"
+      }
     }
   },
   "allowance": {
