@@ -133,7 +133,9 @@ function fail(msg) {
 // (b) a consumable db exists (ANS_DB_PATH or ~/.anysearch default) -> consumed track;
 // (c) neither -> gate-built track: chain-gate-fixture.ts materializes .ship-gate/chain-gate.db
 //     through the real SqliteSessionStore write path, verified via an explicit --db argument.
-// Pass requires exit 0 AND JSON verdict "PASSED" (CVE-2025-25204 lesson). The skip ledger
+// Pass requires exit 0 AND JSON verdict "PASSED" (CVE-2025-25204 lesson); gate-built track
+// additionally requires chainedRows >= 1 — an empty chain must not render green (Sigstore:
+// absent evidence must fail-closed; "empty gate must be loud", r106 audit F-01). The skip ledger
 // (ADR-0039 D7) is retained as defense-in-depth for the remaining exit-2 surface.
 function stepAccessChainVerify() {
   const verifyScript = path.join(ROOT, "scripts", "verify-access-events.mjs");
@@ -143,8 +145,8 @@ function stepAccessChainVerify() {
   let object;
   let dbArgs = [];
   const explicitDb = process.env.ANS_DB_PATH;
-  if (explicitDb) {
-    if (!fs.existsSync(explicitDb)) fail("ANS_DB_PATH is set but the database does not exist: " + explicitDb + " — misconfiguration, fail-closed (ADR-0041 D1)");
+  if (explicitDb !== undefined) {
+    if (!explicitDb || !fs.existsSync(explicitDb)) fail("ANS_DB_PATH is set but the database does not exist: " + explicitDb + " — misconfiguration, fail-closed (ADR-0041 D1)");
     object = "consumed";
   } else if (fs.existsSync(path.join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db"))) {
     object = "consumed";
@@ -163,9 +165,9 @@ function stepAccessChainVerify() {
   const out = String(res.stdout ?? "").trim().split("\n").pop() ?? "";
   let parsed = null;
   try { parsed = JSON.parse(out); } catch { /* non-JSON output -> cannot satisfy double-check */ }
-  if (res.status === 0 && parsed && parsed.verdict === "PASSED") {
+  if (res.status === 0 && parsed && parsed.verdict === "PASSED" && (object !== "gate-built" || (parsed.chainedRows ?? 0) >= 1)) {
     const l = readLedger(); l.consecutiveWarn = 0; l.history.push({ at: new Date().toISOString(), result: "pass", object }); writeLedger(l);
-    report("pass", "access-events chain verified (object=" + object + ", exit 0 + verdict PASSED): " + out.slice(0, 160));
+    report("pass", "access-events chain verified (object=" + object + ", exit 0 + verdict PASSED" + (object === "gate-built" ? ", chainedRows=" + parsed.chainedRows + " non-vacuous" : "") + "): " + out.slice(0, 160));
     return;
   }
   if (res.status === 2) {

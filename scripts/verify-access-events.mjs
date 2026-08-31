@@ -55,7 +55,9 @@ function fail(msg) {
 function main() {
   // ADR-0041 D1: resolution order --db <path> -> positional argv -> ANS_DB_PATH -> default path.
   const flagIdx = process.argv.indexOf("--db");
-  const dbPath = (flagIdx !== -1 ? process.argv[flagIdx + 1] : undefined) ?? process.argv[2] ?? process.env.ANS_DB_PATH ?? path.join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");
+  const flagValue = flagIdx !== -1 ? process.argv[flagIdx + 1] : undefined;
+  if (flagIdx !== -1 && (!flagValue || flagValue.startsWith("--"))) fail("usage: --db <path> (flag present but value missing) — fail-closed, refusing silent fallback (r106 audit F-04)");
+  const dbPath = flagValue ?? process.argv[2] ?? process.env.ANS_DB_PATH ?? path.join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");
   const t0 = performance.now();
   if (!fs.existsSync(dbPath)) {
     process.stdout.write(JSON.stringify({ verdict: "NO_DATABASE", dbPath }) + "\n");

@@ -42,9 +42,15 @@ Explicitly not in scope: external anchoring mechanisms, Merkle checkpoints, sign
 
 1. On a clean machine (no ~/.anysearch/anysearch.db) ship-gate step 1 no longer reports skip; results show object=gate-built and the ledger logs pass.
 2. ANS_DB_PATH set to a nonexistent path -> ship-gate exits non-zero with a misconfiguration message.
-3. Gate accepts only exit 0 AND verdict "PASSED"; deleting one chained row from the gate-built db turns the gate red.
+3. Gate accepts only exit 0 AND verdict "PASSED"; deleting a *middle* chained row from the gate-built db turns the gate red (head-row deletion also breaks the chain via successor prev_hash mismatch). Tail-row or whole-chain-segment truncation is undetectable by the forward walk — declared limitation under the non-adversarial threat model (ADR-0040); r106 audit F-03. Gate-built track additionally requires chainedRows >= 1 (no vacuous pass, r106 audit F-01).
 4. The pre-upgrade strip regex exists exactly once (access-chain-fixtures.ts); dead lgbak/copyFileSync lines are gone; store suite green.
 5. ADR-0040 D2 + Acceptance 6 wording corrected, Implementation Notes 6-8 present; CONTEXT.md new term carries _Avoid_; all touched files UTF-8 no BOM, LF only.
+
+### Implementation Notes (r106 audit amendments)
+
+- Step 3 deviation (equivalent, recorded): the gate spawns `node --import tsx scripts/chain-gate-fixture.ts` (cwd=packages/store, matching the existing tsx call pattern at ship-gate.mjs:592) instead of `pnpm exec tsx` — avoids the pnpm shim, behaviorally identical.
+- r106 audit fixes landed: F-01 gate-built requires chainedRows >= 1; F-02 fixtures regex refactored to match the DDL-closing `);` and to throw on silent no-op; F-04 `--db` without a value fails with usage instead of falling through to skip; F-05 `ANS_DB_PATH=""` treated as explicit misconfiguration (fail-closed); F-10 fixture comment corrected.
+- Deferred to grill r39: F-07 (no automated test for the three-tier ladder itself), F-09 (record subject digest of the verified db in report.json — SLSA VSA subject-digest analogue), F-08 (concurrent gate runs collide on `.ship-gate/chain-gate.db`), skip-ledger schema still `@1` despite the new `object` field.
 
 ## Research Sources
 

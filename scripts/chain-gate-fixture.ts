@@ -17,7 +17,9 @@ async function main() {
   await store.saveResults(session.id, [
     { url: "https://example.com/chain-gate-fixture", title: "chain gate fixture", snippet: "gate-built verification object seed", source: "ship-gate" },
   ]);
-  // Three chained events: deleting a middle row is detectable; head/tail deletion is invisible.
+  // Three chained events: deleting a middle OR head row is detectable (successor prev_hash
+  // no longer matches); only tail-row or whole-segment truncation is invisible (declared
+  // limitation, non-adversarial model — ADR-0040 / r106 audit F-03/F-10).
   for (let i = 0; i < 3; i++) await store.searchMemory("fixture", 10);
   store.close();
   process.stdout.write(dbPath + "\n");
