@@ -154,3 +154,14 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 - [x] 步8：.github/workflows/tau-python.yml（paths 过滤；ubuntu+windows 矩阵；setup-python 3.12 + pip cache + 冻结 requirements；导入 + 包络合约断言）
 - [x] 验收：EVAL_TIMEOUT_MS=3600000 校准 fp=113be271869dbc54（rawN=25）；专项检查 107/107 绿
 - [x] 验收：turbo check 7/7、turbo build 3/3、ship-gate 9 步全绿（observational zone + fp 113be271 交叉校验）、ans cli/mcp --help 进程活测、bgnbd_fit.py 合约包络活测
+
+## r102 检查点（grill r37 / ADR-0040 access_events tamper-evidence）
+
+- [ ] ADR-0040 七节齐（Status/Context/D1–D7/Consequences/_Avoid_ 8 条/Impl Plan 8 步/Acceptance 7 项/Research Sources），无 BOM、无 CRLF
+- [ ] CONTEXT.md +4 术语（Tamper-Evident Hash Chain / Chain Genesis Anchor / Fail-Closed Verification Gate / Alert-on-Silence Telemetry），均含 _Avoid_，*End of Glossary* 保留
+- [ ] 勘误入 ADR Status/Consequences：r101 报告「reverify hash-chain 先例」经 rg 证伪；Q4 字段集按真实三列 schema（id/memory_id/accessed_at）修正；D3 锚定因 foreign_keys=ON 落单行表 access_chain_anchor（实现驱动变更已声明）
+- [ ] 装机轮纪检：本 ADR 只声明不实现（schema/verify 脚本属实现轮，不在本轮 diff）
+- [ ] Deferred 登记行带触发条件+owner：签名/Merkle/外部锚定/幂等键/前向安全（D2 triggers，owner=架构 grill）；verifier 性能预算（100k 超秒级触发）；BG/NBD 领域适配 grill（r101 候选）
+- [ ] 复用不重定义：explicit-skip 三档/skip-ledger/observational zone/busy 处理均引用 ADR-0036/0038/0039 现成机制
+- [ ] Q5 对 ADR-0038/0039 观测轮惯例的收窄已写理由（确定性验证无 WARN 轮）
+- [ ] 哈希输入契约要素全落字：字段集六列 / 固定序命名 key canonical / 链公式 / NULL=JSON null / 白名单 / accessed_at 逐字节 / ORDER BY id+fork / 黄金向量 3+2 / schema_version 强制条款

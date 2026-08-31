@@ -551,5 +551,20 @@ _Avoid_: inserting access events in the save path, mutating/deleting events on u
 样本/条件不足时不出占位数：目标指标标记 skipped + 报告写 deferred reason 原文引用触发条件 + 进 WARN 台账（exit 0 放行留痕，3 连败升人工）。与未校准标记、deferred-registry 同构。BG/NBD 三条件 AND 门（T1 300+100 / T2 PSI<0.25 同桶 / T3 90 天窗+30 天间隔）未达一律走它。ADR-0039 D6/D7。
 _Avoid_: placeholder parameters posing as fit results, silent skip without ledger, fail-closeding data-insufficiency as system red
 
+## Tamper-Evident Hash Chain（prev_hash 防篡改哈希链）
+access_events 每新行携带 prev_hash = SHA-256(固定序命名 key canonical JSON(整行含 prev_hash))，对封闭 ASCII 标量集字节等价 RFC 8785。哈希字段集 {id, memory_id, accessed_at, prev_hash, schema_version, event_type}；legacy 行 prev_hash=NULL、schema_version=NULL(=v0)。独立验证器 ORDER BY id 逐行重算 + fork 检测 + legacy digest 比对。ADR-0040 D2/D4。
+_Avoid_: hand-concatenated key:value hash input, REAL columns in chain input, ORDER BY accessed_at verification, shared serialization code between writer and verifier
+
+## Chain Genesis Anchor（链创世锚定）
+存量行零改写前提下的 cut-over 承诺：升级首次打开时 BEGIN IMMEDIATE 单事务内扫描 legacy 段算聚合 digest，写入单行表 access_chain_anchor（id=1 CHECK 约束）；其 genesis_hash 作为首条受保护事件的 prev_hash，自身为链头。FK=ON 使表内 genesis 行不可行故落单行表。ADR-0040 D3/D6。
+_Avoid_: UPDATE rewriting legacy rows, cross-database anchoring transactions, silent absence of the anchor (missing anchor = writable unprotected events)
+
+## Fail-Closed Verification Gate（fail-closed 验证门）
+verify-access-events.mjs 挂 ship-gate step 1 即红：确定性验证无 WARN 观测轮（SLSA VSA 二元 PASSED/FAILED 先例；断链=ADR-0038 D2 proven-negative）。exit 契约：0=通过 / 1=断链·首错·FALSE PASS / 2=无输入·usage·内部错误；无库由 gate 层转 explicit-skip + skip-ledger（exit 0 留痕，3 连败升人工，ADR-0039 D7）。全量 O(n)，不抽检。ADR-0040 D5。
+_Avoid_: fixture databases as verification target, fail-open on missing database, WARN observation round for deterministic verification, sampling
+
+## Alert-on-Silence Telemetry（静默告警遥测）
+插桩写入失败不得静默：原 catch{} 改为计数遥测 eventWriteFailures 入 Observational 区（report-as-contract，永进门禁 Goodhart）。PCI DSS v4.0 把日志系统自身故障列为必告警事件类；bootstrap 失败同走此降级通道（stderr WARN + 遥测位，ADR-0009 D6 fail-open）。ADR-0040 D2/D6。
+_Avoid_: bare catch{} on instrumentation writes, gating ship on observational telemetry, silent bootstrap failure
 
 *End of Glossary*
