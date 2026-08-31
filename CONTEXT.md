@@ -560,11 +560,15 @@ _Avoid_: hand-concatenated key:value hash input, REAL columns in chain input, OR
 _Avoid_: UPDATE rewriting legacy rows, cross-database anchoring transactions, silent absence of the anchor (missing anchor = writable unprotected events)
 
 ## Fail-Closed Verification Gate（fail-closed 验证门）
-verify-access-events.mjs 挂 ship-gate step 1 即红：确定性验证无 WARN 观测轮（SLSA VSA 二元 PASSED/FAILED 先例；断链=ADR-0038 D2 proven-negative）。exit 契约：0=通过 / 1=断链·首错·FALSE PASS / 2=无输入·usage·内部错误；无库由 gate 层转 explicit-skip + skip-ledger（exit 0 留痕，3 连败升人工，ADR-0039 D7）。全量 O(n)，不抽检。ADR-0040 D5。
-_Avoid_: fixture databases as verification target, fail-open on missing database, WARN observation round for deterministic verification, sampling
+verify-access-events.mjs 挂 ship-gate step 1 即红：确定性验证无 WARN 观测轮（SLSA VSA 二元 PASSED/FAILED 先例；断链=ADR-0038 D2 proven-negative）。exit 契约：0=通过 / 1=断链·首错·FALSE PASS / 2=无输入·usage·内部错误；无库不再 skip：ANS_DB_PATH 显式设置但缺失=配置错误即 fail，未设置时 gate 走自产对象轨（Gate-Built Verification Object，ADR-0041 D1）；skip-ledger 留作纵深兜底。全量 O(n)，不抽检。ADR-0040 D5 / ADR-0041。
+_Avoid_: fixture databases masquerading as production verification object (gate-built object sanctioned only when produced by the real write path in this gate run), fail-open or silent skip on missing database, WARN observation round for deterministic verification, sampling, trusting exit code alone without the PASSED verdict double-check
 
 ## Alert-on-Silence Telemetry（静默告警遥测）
 插桩写入失败不得静默：原 catch{} 改为计数遥测 eventWriteFailures 入 Observational 区（report-as-contract，永进门禁 Goodhart）。PCI DSS v4.0 把日志系统自身故障列为必告警事件类；bootstrap 失败同走此降级通道（stderr WARN + 遥测位，ADR-0009 D6 fail-open）。ADR-0040 D2/D6。
 _Avoid_: bare catch{} on instrumentation writes, gating ship on observational telemetry, silent bootstrap failure
+
+## Gate-Built Verification Object（闸口自产验证对象）
+ship-gate step 1 无本地消费库时不再结构性 skip：spawn tsx scripts/chain-gate-fixture.ts 用真实 SqliteSessionStore 写路径现场生成 .ship-gate/chain-gate.db，verifier 经 --db 指向它；闸门通过条件=exit 0 且 JSON verdict="PASSED" 双校验。与 SLSA verify-what-you-build 同构（构建与验证同一 run，对象绑定本次产物）；分层规则：ANS_DB_PATH 缺失即配置错误 fail，默认库存在则 verify-what-you-consume 恒优先。ADR-0041 D1。
+_Avoid_: fixture substituting for the production chain claim, shared serialization code with the writer, non-deterministic fixture content, exit-code-only pass
 
 *End of Glossary*

@@ -179,3 +179,9 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 - [x] 验收：turbo check 7/7、build 3/3、store 34 测试文件全绿、eval 123/123 指纹不变（113be271869dbc54，无需 flip，理由已入 CHANGELOG+ADR）
 - [ ] 遗留观察：verdict=warn 为 ADR-0038 D2 观测层带过来的既有 tier，非本轮引入（exit 0）
 - [ ] perf 预算登记：100k ~0.9s；超秒级需触发 ADR-0040 deferred 行（verifier performance budget）
+
+### r105（grill r38 / ADR-0041 gate 验证对象分层 — 文档轮）
+
+- [ ] ADR-0041 七节齐（Status/Context/D1-D3/Consequences/Impl Plan 6 步/Acceptance 5/Research Sources 含 atomcode r105-Q2），无 BOM/CRLF
+- [ ] CONTEXT.md +1 术语 Gate-Built Verification Object（含 _Avoid_）；Fail-Closed Verification Gate 条目侏订 ANS_DB_PATH miss=fail 与 gate-built 轨，_Avoid_ 改为 masquerading 排述；*End of Glossary* 保留
+- [ ] 下轮实现验收：干净机无 skip（object=gate-built）、ANS_DB_PATH 缺失即 fail、exit0+PASSED 双校验、剥离正则单一来源（access-chain-fixtures.ts）、死代码删除、ship-gate 9/9、eval 123/123、fingerprint 113be271869dbc54 不变
