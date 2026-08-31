@@ -53,7 +53,9 @@ function fail(msg) {
 }
 
 function main() {
-  const dbPath = process.argv[2] ?? process.env.ANS_DB_PATH ?? path.join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");
+  // ADR-0041 D1: resolution order --db <path> -> positional argv -> ANS_DB_PATH -> default path.
+  const flagIdx = process.argv.indexOf("--db");
+  const dbPath = (flagIdx !== -1 ? process.argv[flagIdx + 1] : undefined) ?? process.argv[2] ?? process.env.ANS_DB_PATH ?? path.join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");
   const t0 = performance.now();
   if (!fs.existsSync(dbPath)) {
     process.stdout.write(JSON.stringify({ verdict: "NO_DATABASE", dbPath }) + "\n");

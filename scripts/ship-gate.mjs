@@ -128,27 +128,53 @@ function fail(msg) {
   process.exit(1);
 }
 
-// ADR-0040 D5/D6: run the independent verifier. Ledger lives next to report.json.
+// ADR-0041 D1 (supersedes ADR-0040 D5/D6's raw spawn): layered verification object.
+// (a) ANS_DB_PATH explicitly set but the file is missing -> misconfiguration -> fail (fail-closed);
+// (b) a consumable db exists (ANS_DB_PATH or ~/.anysearch default) -> consumed track;
+// (c) neither -> gate-built track: chain-gate-fixture.ts materializes .ship-gate/chain-gate.db
+//     through the real SqliteSessionStore write path, verified via an explicit --db argument.
+// Pass requires exit 0 AND JSON verdict "PASSED" (CVE-2025-25204 lesson). The skip ledger
+// (ADR-0039 D7) is retained as defense-in-depth for the remaining exit-2 surface.
 function stepAccessChainVerify() {
-  const res = spawnSync(process.execPath, [path.join(ROOT, "scripts", "verify-access-events.mjs")], {
-    cwd: ROOT, stdio: ["ignore", "pipe", "pipe"], env: process.env,
-  });
-  const out = String(res.stdout ?? "").trim().split("\n").pop() ?? "";
+  const verifyScript = path.join(ROOT, "scripts", "verify-access-events.mjs");
   const ledgerPath = path.join(ROOT, ".ship-gate", "access-chain-skip-ledger.json");
   const readLedger = () => { try { return JSON.parse(fs.readFileSync(ledgerPath, "utf8")); } catch { return { schema: "anysearch/access-chain-skip-ledger@1", consecutiveWarn: 0, history: [] }; } };
   const writeLedger = (l) => { fs.mkdirSync(path.dirname(ledgerPath), { recursive: true }); fs.writeFileSync(ledgerPath, JSON.stringify(l, null, 2)); };
-  if (res.status === 0) {
-    const l = readLedger(); l.consecutiveWarn = 0; l.history.push({ at: new Date().toISOString(), result: "pass" }); writeLedger(l);
-    report("pass", "access-events chain verified (exit 0): " + out.slice(0, 160));
+  let object;
+  let dbArgs = [];
+  const explicitDb = process.env.ANS_DB_PATH;
+  if (explicitDb) {
+    if (!fs.existsSync(explicitDb)) fail("ANS_DB_PATH is set but the database does not exist: " + explicitDb + " — misconfiguration, fail-closed (ADR-0041 D1)");
+    object = "consumed";
+  } else if (fs.existsSync(path.join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db"))) {
+    object = "consumed";
+  } else {
+    object = "gate-built";
+    const fx = spawnSync(process.execPath, ["--import", "tsx", path.join(ROOT, "scripts", "chain-gate-fixture.ts")], {
+      cwd: path.join(ROOT, "packages", "store"), stdio: ["ignore", "pipe", "pipe"], env: process.env,
+    });
+    const fxOut = String(fx.stdout ?? "").trim().split("\n").pop() ?? "";
+    if (fx.status !== 0 || !fxOut) fail("chain-gate fixture build failed (exit " + fx.status + "): " + String(fx.stderr ?? "").trim().slice(0, 300));
+    dbArgs = ["--db", fxOut];
+  }
+  const res = spawnSync(process.execPath, [verifyScript, ...dbArgs], {
+    cwd: ROOT, stdio: ["ignore", "pipe", "pipe"], env: process.env,
+  });
+  const out = String(res.stdout ?? "").trim().split("\n").pop() ?? "";
+  let parsed = null;
+  try { parsed = JSON.parse(out); } catch { /* non-JSON output -> cannot satisfy double-check */ }
+  if (res.status === 0 && parsed && parsed.verdict === "PASSED") {
+    const l = readLedger(); l.consecutiveWarn = 0; l.history.push({ at: new Date().toISOString(), result: "pass", object }); writeLedger(l);
+    report("pass", "access-events chain verified (object=" + object + ", exit 0 + verdict PASSED): " + out.slice(0, 160));
     return;
   }
   if (res.status === 2) {
-    const l = readLedger(); l.consecutiveWarn += 1; l.history.push({ at: new Date().toISOString(), result: "skip-no-db" }); writeLedger(l);
+    const l = readLedger(); l.consecutiveWarn += 1; l.history.push({ at: new Date().toISOString(), result: "skip-no-db", object }); writeLedger(l);
     if (l.consecutiveWarn >= 3) fail("access-chain verify skip streak " + l.consecutiveWarn + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note access-chain-no-db --ledger " + ledgerPath + " (ADR-0039 D7 discipline)");
-    report("skip", "access-chain verifier: no database at ANS_DB_PATH/~/.anysearch — explicit skip, ledger streak " + l.consecutiveWarn + "/3");
+    report("skip", "access-chain verifier: no database resolved — explicit skip, ledger streak " + l.consecutiveWarn + "/3");
     return;
   }
-  fail("access-events chain verification failed (exit " + res.status + "): " + out + (res.stderr ? " stderr: " + String(res.stderr).trim().slice(0, 300) : ""));
+  fail("access-events chain verification failed (object " + object + ", exit " + res.status + (res.status === 0 ? ", verdict " + (parsed && parsed.verdict) : "") + "): " + out + (res.stderr ? " stderr: " + String(res.stderr).trim().slice(0, 300) : ""));
 }
 
 // ---------------------------------------------------------------------------

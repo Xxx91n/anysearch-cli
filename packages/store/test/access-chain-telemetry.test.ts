@@ -2,11 +2,12 @@
 // construction is idempotent (no duplicate anchor, zero legacy byte rewrite), and the write
 // path stays unblocked under a degraded (renamed-away) events table.
 import Database from "better-sqlite3";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SqliteSessionStore } from "../src/session-store.js";
+import { preUpgradeSchema } from "./access-chain-fixtures.js";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -45,14 +46,13 @@ async function main() {
     const dir = mkdtempSync(join(tmpdir(), "ans-chain-idem-"));
     const dbPath = join(dir, "t.db");
     try {
-      const schema = readFileSync(join(STORE_DIR, "src", "schema.sql"), "utf8");
       const legacy = (p: string) => new Database(p, { readonly: true }).prepare("SELECT id, memory_id, accessed_at FROM access_events ORDER BY id").all();
       const ro = (p: string) => new Database(p, { readonly: true });
       {
         const db = new Database(dbPath);
         db.pragma("journal_mode = WAL");
         db.pragma("foreign_keys = ON");
-        db.exec(schema.replace(/CREATE TABLE IF NOT EXISTS access_chain_anchor[^;]*;/s, "").replace(/CREATE TABLE IF NOT EXISTS access_events \(([^)]*)\);/s, "CREATE TABLE access_events (id INTEGER PRIMARY KEY AUTOINCREMENT, memory_id INTEGER NOT NULL REFERENCES retrieval_results(id) ON DELETE CASCADE, accessed_at TEXT NOT NULL DEFAULT (datetime('now')));"));
+        db.exec(preUpgradeSchema(join(STORE_DIR, "src", "schema.sql")));
         db.prepare("INSERT INTO sessions (id, domain) VALUES ('s1', 'code')").run();
         db.prepare("INSERT INTO retrieval_results (session_id, url) VALUES ('s1', 'https://example.com/l1')").run();
         db.prepare("INSERT INTO access_events (memory_id, accessed_at) VALUES (1, '2025-01-01 00:00:01')").run();

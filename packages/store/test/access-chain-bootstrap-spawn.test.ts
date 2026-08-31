@@ -8,6 +8,7 @@ import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripChainAnchorDdl } from "./access-chain-fixtures.js";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -40,7 +41,7 @@ async function main() {
     const db0 = new Database(dbPath);
     db0.pragma("journal_mode = WAL");
     db0.pragma("foreign_keys = ON");
-    db0.exec(schema.replace(/CREATE TABLE IF NOT EXISTS access_chain_anchor[^;]*;/s, ""));
+    db0.exec(stripChainAnchorDdl(schema));
     db0.prepare("INSERT INTO sessions (id, domain) VALUES ('s1', 'code')").run();
     db0.prepare("INSERT INTO retrieval_results (session_id, url) VALUES ('s1', 'https://example.com/x')").run();
     db0.prepare("INSERT INTO retrieval_results (session_id, url) VALUES ('s1', 'https://example.com/y')").run();

@@ -3,11 +3,12 @@
 // first-error location. The verifier is spawned as a real process against fixture DBs.
 import Database from "better-sqlite3";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, readFileSync, copyFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SqliteSessionStore } from "../src/session-store.js";
+import { preUpgradeSchema } from "./access-chain-fixtures.js";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -44,12 +45,10 @@ async function makeChainedFixture(): Promise<{ dir: string; dbPath: string }> {
 function makeLegacyFixture(): { dir: string; dbPath: string } {
   const dir = mkdtempSync(join(tmpdir(), "ans-chain-legacy-"));
   const dbPath = join(dir, "t.db");
-  const schema = readFileSync(join(STORE_DIR, "src", "schema.sql"), "utf8");
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
-  db.exec(schema.replace(/CREATE TABLE IF NOT EXISTS access_chain_anchor[^;]*;/s, "").replace(/CREATE TABLE IF NOT EXISTS access_events \(([^)]*)\);/s,
-    "CREATE TABLE access_events (id INTEGER PRIMARY KEY AUTOINCREMENT, memory_id INTEGER NOT NULL REFERENCES retrieval_results(id) ON DELETE CASCADE, accessed_at TEXT NOT NULL DEFAULT (datetime('now')));"));
+  db.exec(preUpgradeSchema(join(STORE_DIR, "src", "schema.sql")));
   db.prepare("INSERT INTO sessions (id, domain) VALUES ('s1', 'code')").run();
   db.prepare("INSERT INTO retrieval_results (session_id, url) VALUES ('s1', 'https://example.com/l1')").run();
   db.prepare("INSERT INTO retrieval_results (session_id, url) VALUES ('s1', 'https://example.com/l2')").run();
@@ -97,7 +96,6 @@ async function main() {
 
   // Legacy segment: sealed via upgrade; positive + legacy-tamper negative.
   const lg = makeLegacyFixture();
-  const lgbak = join(lg.dir, "tampered.db"); copyFileSync(lg.dbPath, lgbak);
   try {
     const ok = verify(lg.dbPath);
     assert(ok.status === 0, "sealed legacy fixture verifies (got " + ok.status + " " + ok.out.slice(0, 200) + ")");
@@ -106,7 +104,6 @@ async function main() {
     const bad = verify(lg.dbPath);
     assert(bad.status === 1 && bad.out.includes("legacy digest mismatch"), "legacy tamper -> digest mismatch (got " + bad.out.slice(0, 220) + ")");
   } finally { try { rmSync(lg.dir, { recursive: true, force: true }); } catch {} }
-  void lgbak;
 
   console.log("access-chain-verify: " + passed + " passed, " + failed + " failed");
   process.exit(failed ? 1 : 0);
