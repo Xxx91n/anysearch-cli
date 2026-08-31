@@ -128,6 +128,29 @@ function fail(msg) {
   process.exit(1);
 }
 
+// ADR-0040 D5/D6: run the independent verifier. Ledger lives next to report.json.
+function stepAccessChainVerify() {
+  const res = spawnSync(process.execPath, [path.join(ROOT, "scripts", "verify-access-events.mjs")], {
+    cwd: ROOT, stdio: ["ignore", "pipe", "pipe"], env: process.env,
+  });
+  const out = String(res.stdout ?? "").trim().split("\n").pop() ?? "";
+  const ledgerPath = path.join(ROOT, ".ship-gate", "access-chain-skip-ledger.json");
+  const readLedger = () => { try { return JSON.parse(fs.readFileSync(ledgerPath, "utf8")); } catch { return { schema: "anysearch/access-chain-skip-ledger@1", consecutiveWarn: 0, history: [] }; } };
+  const writeLedger = (l) => { fs.mkdirSync(path.dirname(ledgerPath), { recursive: true }); fs.writeFileSync(ledgerPath, JSON.stringify(l, null, 2)); };
+  if (res.status === 0) {
+    const l = readLedger(); l.consecutiveWarn = 0; l.history.push({ at: new Date().toISOString(), result: "pass" }); writeLedger(l);
+    report("pass", "access-events chain verified (exit 0): " + out.slice(0, 160));
+    return;
+  }
+  if (res.status === 2) {
+    const l = readLedger(); l.consecutiveWarn += 1; l.history.push({ at: new Date().toISOString(), result: "skip-no-db" }); writeLedger(l);
+    if (l.consecutiveWarn >= 3) fail("access-chain verify skip streak " + l.consecutiveWarn + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note access-chain-no-db --ledger " + ledgerPath + " (ADR-0039 D7 discipline)");
+    report("skip", "access-chain verifier: no database at ANS_DB_PATH/~/.anysearch — explicit skip, ledger streak " + l.consecutiveWarn + "/3");
+    return;
+  }
+  fail("access-events chain verification failed (exit " + res.status + "): " + out + (res.stderr ? " stderr: " + String(res.stderr).trim().slice(0, 300) : ""));
+}
+
 // ---------------------------------------------------------------------------
 // Step 1 — static rg assertions
 // ---------------------------------------------------------------------------
@@ -337,6 +360,11 @@ function stepStaticAssertions() {
     if (!att.includes("seen.add(e.url)")) fail("ADR-0034 1k: renderAttributionText lacks URL dedupe (ghost-reference risk)");
     report("pass", "attribution renderer dedupes source URLs");
   }
+
+  // 1l. ADR-0040 D5: access_events tamper-evidence verifier — fail-closed at step 1.
+  //     exit 1 -> ship red; exit 2 (no database) -> explicit skip + WARN ledger
+  //     (3-streak escalation reuses the ADR-0039 D7 discipline).
+  stepAccessChainVerify();
 
 }
 
@@ -628,7 +656,7 @@ async function stepMemoryEval() {
     const z = rep.metrics && rep.metrics.observational;
     if (!z || typeof z !== "object") fail("memory-eval report missing metrics.observational zone (ADR-0039 E3 fail-closed)");
     if (z.schema !== "anysearch/observational@1") fail("observational zone schema drift: " + z.schema);
-    for (const k of ["accessAge", "tauScan", "bgnbd", "revival", "undoReentryEvents", "dayBucketDefinition"]) if (!(k in z)) fail("observational zone missing " + k);
+    for (const k of ["accessAge", "tauScan", "bgnbd", "revival", "undoReentryEvents", "dayBucketDefinition", "eventWriteFailures"]) if (!(k in z)) fail("observational zone missing " + k);
     // D7: skip-ledger escalation — 3 consecutive identical observational skips force human review.
     const skipL = path.join(outDir, "skip-ledger.json");
     if (fs.existsSync(skipL)) {

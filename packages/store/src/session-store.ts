@@ -19,6 +19,7 @@ import type { EntityType, EntityCandidate } from "./entity.js";
 import { rrfRank } from "@anysearch/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
+import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
 import { embedText, embeddingTelemetry as pkgEmbeddingTelemetry, cosineSimilarity, EMBEDDING_MODEL_ID } from "@anysearch/embedding";
 import type { NormalizedResult } from "@anysearch/retriever";
 
@@ -167,6 +168,8 @@ export interface SessionStore {
   listRelations(opts?: { entity?: string; limit?: number }): Promise<RelationRow[]>;
   backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean; fullRefresh?: boolean }): Promise<BackfillRelationsResult>;
   relationTelemetry(): RelationTelemetry;
+  // ADR-0040 D2: alert-on-silence telemetry — event write failures are counted, never silent.
+  accessEventTelemetry(): AccessEventTelemetry;
 }
 
 // ADR-0027 D5 + ADR-0028 D3: secret guard lives in ./secret.ts (shared containsSecret) —
@@ -238,6 +241,12 @@ export interface RelationTelemetry {
   armHits: number;
 }
 
+// ADR-0040 D2/D6: access-event chain telemetry (observational zone; report-only, never gated).
+export interface AccessEventTelemetry {
+  writeFailures: number;   // chained event insert failures (alert-on-silence counter)
+  bootstrapFailed: boolean; // constructor anchor bootstrap degraded (stderr WARN emitted)
+}
+
 // better-sqlite3 sync API wrapped in async interface to match SessionStore port.
 // ponytail: thinnest wrapper - no extra abstraction, sync calls wrapped in Promise.resolve.
 export class SqliteSessionStore implements SessionStore {
@@ -258,6 +267,8 @@ export class SqliteSessionStore implements SessionStore {
   // ADR-0033 D5/D6: vector arm telemetry (fail-open writes; pendingVectors = rows lacking an embedding).
   private readonly embedTel = { writes: 0, pendingVectors: 0, armQueries: 0, armHits: 0 };
   // ADR-0035 D8: relation extraction + arm telemetry (report-only, never gated).
+  // ADR-0040 D2: alert-on-silence — event write failures and bootstrap degradation are counted.
+  private readonly accessEventTel: AccessEventTelemetry = { writeFailures: 0, bootstrapFailed: false };
   private readonly relationTel = { ruleHits: 0, llmActivations: 0, llmFailures: 0, triplesWritten: 0, dedupSkipped: 0, relatedToWriteOnce: 0, schemaRejected: 0, armQueries: 0, armHits: 0 };
   private stmts: {
     createSession: Database.Statement;
@@ -272,6 +283,8 @@ export class SqliteSessionStore implements SessionStore {
     touchAccessed: Database.Statement;
     // ADR-0039 D5: append-only access event twin of touchAccessed (transaction-time log; never gated).
     insertAccessEvent: Database.Statement;
+    // ADR-0040 D4: chain head lookup (latest event with non-NULL prev_hash).
+    lastChainedEvent: Database.Statement;
     // ADR-0016 D10: UPSERT for state-type anchors (consolidation_state).
     saveAnchorUpsert: Database.Statement;
   };
@@ -345,6 +358,19 @@ export class SqliteSessionStore implements SessionStore {
   PRIMARY KEY (key, scope)
 )`);
 
+    // ADR-0040 step 1/3: chain columns (idempotent ALTER per existing convention) + one-off
+    // anchor bootstrap in an IMMEDIATE transaction (D6). Persistent busy/IO failure degrades to
+    // stderr WARN + telemetry bit (ADR-0009 D6 fail-open); the write path re-probes the anchor.
+    try { this.db.exec("ALTER TABLE access_events ADD COLUMN prev_hash TEXT"); } catch {}
+    try { this.db.exec("ALTER TABLE access_events ADD COLUMN schema_version INTEGER"); } catch {}
+    try { this.db.exec("ALTER TABLE access_events ADD COLUMN event_type TEXT"); } catch {}
+    try {
+      bootstrapAccessChain(this.db);
+    } catch (e) {
+      this.accessEventTel.bootstrapFailed = true;
+      process.stderr.write("anysearch: access-chain bootstrap degraded (fail-open): " + String((e as Error)?.message ?? e) + "\n");
+    }
+
    // Module-level prepared statements (atomcode research pattern).
     this.stmts = {
       createSession: this.db.prepare("INSERT INTO sessions (id, domain) VALUES (?, ?) RETURNING id, domain, created_at as createdAt"),
@@ -362,11 +388,42 @@ export class SqliteSessionStore implements SessionStore {
       // ADR-0009 D3 L2: update last_accessed on recall hit (access-time signal, Mem0 1.5×/0.3×).
       touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now'), access_count = COALESCE(access_count, 0) + 1 WHERE id = ?"),
       // ADR-0039 D5: same exactly-once site — each returned hit logs one access event.
-      insertAccessEvent: this.db.prepare("INSERT INTO access_events (memory_id) VALUES (?)"),
+      // ADR-0040 D4: chained insert — prev_hash + schema_version(v1) + event_type per event.
+      insertAccessEvent: this.db.prepare("INSERT INTO access_events (memory_id, prev_hash, schema_version, event_type) VALUES (?, ?, ?, ?)"),
+      lastChainedEvent: this.db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events WHERE prev_hash IS NOT NULL ORDER BY id DESC LIMIT 1"),
       // ADR-0016 D10: UPSERT for state-type anchors.
   
       saveAnchorUpsert: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?) ON CONFLICT(session_id, anchor_type) WHERE anchor_type = 'consolidation_state' DO UPDATE SET payload = excluded.payload, created_at = datetime('now')"),
     };
+  }
+
+  // ADR-0040 D4/D6: chain an access event onto the hash chain. Head-read + insert run in one
+  // IMMEDIATE transaction so CLI+MCP dual-process writes cannot interleave into a fork. The anchor
+  // is re-probed before the first chained insert so cut-over survives a crashed constructor (D6).
+  // Never throws into recall paths: call sites catch and increment accessEventTel.writeFailures.
+  private recordAccessEventChained(memoryId: number): void {
+    const write = this.db.transaction(() => {
+      const last = this.stmts.lastChainedEvent.get() as ChainEventRow | undefined;
+      let prevHash: string;
+      if (last) {
+        prevHash = eventHash(last);
+      } else {
+        let anchor = this.db.prepare("SELECT genesis_hash FROM access_chain_anchor WHERE id = 1").get() as { genesis_hash: string } | undefined;
+        if (!anchor) {
+          bootstrapAccessChain(this.db);
+          anchor = this.db.prepare("SELECT genesis_hash FROM access_chain_anchor WHERE id = 1").get() as { genesis_hash: string } | undefined;
+        }
+        if (!anchor) throw new Error("access-chain anchor unavailable");
+        prevHash = anchor.genesis_hash;
+      }
+      this.stmts.insertAccessEvent.run(memoryId, prevHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE);
+    });
+    write.immediate();
+  }
+
+  // ADR-0040 D2: alert-on-silence telemetry — observational zone only, never gated (Goodhart).
+  accessEventTelemetry(): AccessEventTelemetry {
+    return { ...this.accessEventTel };
   }
 
   // ADR-0024 D1/D2/D7: T0 hot zone methods.
@@ -542,7 +599,7 @@ export class SqliteSessionStore implements SessionStore {
     const hits = fusedHits.filter((h) => !containsSecret(h.role + " " + h.content));
     // ADR-0009 D3 L2: refresh last_accessed for each hit (access-time signal).
     for (const hit of hits) {
-      try { this.stmts.touchAccessed.run(hit.rowid); this.stmts.insertAccessEvent.run(hit.rowid); } catch {}
+      try { this.stmts.touchAccessed.run(hit.rowid); this.recordAccessEventChained(hit.rowid); } catch { this.accessEventTel.writeFailures += 1; }
     }
     return hits;
   }
@@ -572,7 +629,7 @@ export class SqliteSessionStore implements SessionStore {
     const kept = hits.filter((h) => !containsSecret(h.role + " " + h.content));
     // ADR-0030 D3: same exactly-once touch as searchMemory (both recall paths feed the signals).
     for (const hit of kept) {
-      try { this.stmts.touchAccessed.run(hit.rowid); this.stmts.insertAccessEvent.run(hit.rowid); } catch {}
+      try { this.stmts.touchAccessed.run(hit.rowid); this.recordAccessEventChained(hit.rowid); } catch { this.accessEventTel.writeFailures += 1; }
     }
     return kept;
   }

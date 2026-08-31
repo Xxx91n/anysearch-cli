@@ -165,3 +165,17 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 - [ ] 复用不重定义：explicit-skip 三档/skip-ledger/observational zone/busy 处理均引用 ADR-0036/0038/0039 现成机制
 - [ ] Q5 对 ADR-0038/0039 观测轮惯例的收窄已写理由（确定性验证无 WARN 轮）
 - [ ] 哈希输入契约要素全落字：字段集六列 / 固定序命名 key canonical / 链公式 / NULL=JSON null / 白名单 / accessed_at 逐字节 / ORDER BY id+fork / 黄金向量 3+2 / schema_version 强制条款
+
+### r103（实现轮检查点，ADR-0040 Impl Plan 1-8）
+
+- [x] schema 三列 idempotent ALTER + access_chain_anchor 单行表 + schema-content.ts 由 schema.sql 程序化再生（JSON.stringify 编码，无 BOM/CRLF，已验）
+- [x] 写侧 canonical 序列化器与 verifier 零共享代码（access-chain.ts vs verify-access-events.mjs 独立实现，ADR _Avoid_ 3）
+- [x] 构造器 bootstrap：transaction().immediate() + 一次 BUSY 重试 + 失败降级 stderr WARN + telemetry bit（fail-open，ADR-0009 D6）
+- [x] 写路径：每事件 head-read+insert 单 immediate tx（防 CLI+MCP 双进程 fork）+ 锚定重探 + catch 计数 eventWriteFailures（两处调用点）
+- [x] verifier：exit 0/1/2、legacy digest 比对、fork 检测优先于走链、ORDER BY id、未知 schema_version 显式报错、白名单负例、perf 计数
+- [x] ship-gate step 1 接线 fail-closed；exit 2 -> 显式 skip + access-chain-skip-ledger.json（3 连升级，复用 ADR-0039 D7 纪律）
+- [x] ans access-chain bootstrap --dry-run(默认)/--apply 薄封装同一幂等核心
+- [x] 六个零依赖测试文件全绿（golden 17 / verify tamper 4 类 12 / nodb 7 / spawn 并发 6 / telemetry+幂等 7 / schema+perf 4）
+- [x] 验收：turbo check 7/7、build 3/3、store 34 测试文件全绿、eval 123/123 指纹不变（113be271869dbc54，无需 flip，理由已入 CHANGELOG+ADR）
+- [ ] 遗留观察：verdict=warn 为 ADR-0038 D2 观测层带过来的既有 tier，非本轮引入（exit 0）
+- [ ] perf 预算登记：100k ~0.9s；超秒级需触发 ADR-0040 deferred 行（verifier performance budget）

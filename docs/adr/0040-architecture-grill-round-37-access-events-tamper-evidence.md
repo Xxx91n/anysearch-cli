@@ -76,3 +76,32 @@ ADR-0039 introduced `access_events` as a discipline-level append-only audit log 
 - Cossack Labs audit-log requirements (verification in seconds; AL-Verifier); AuditWeave tamper-mutation taxonomy; NIST CAVP KAT vectors; Confluent Schema Registry compatibility docs; INNOQ schema-testing guidance; QLDB discontinuation notice (2024-07 EOL 2025-07-31) — industry convergence on self-hosted chain+verifier.
 
 *Glossary additions land in CONTEXT.md (Tamper-Evident Hash Chain / Chain Genesis Anchor / Fail-Closed Verification Gate / Alert-on-Silence Telemetry).*
+
+## Implementation Notes (r103, added at implementation time — D3/D4 constants pinned verbatim)
+
+Canonicalization constants as implemented (writer: `packages/store/src/access-chain.ts`; verifier
+re-implements independently from this text, `scripts/verify-access-events.mjs`):
+
+```
+CHAIN_FIELDS  = ["accessed_at","event_type","id","memory_id","prev_hash","schema_version"]
+LEGACY_FIELDS = ["accessed_at","id","memory_id"]
+event hash    = SHA-256 hex of JSON.stringify(object literal built in CHAIN_FIELDS order)
+legacy digest = SHA-256 hex of byte concat of (legacyRowCanonicalJson + "\n") in id order
+genesis_hash  = SHA-256 hex of "access-chain-genesis:" + digest
+```
+
+Implementation-driven refinements (recorded, same discipline as the D3 anchor storage note):
+
+1. Event head-read + chained INSERT run in one `transaction().immediate()` per event so CLI+MCP
+   dual-process writes cannot interleave into a fork (WAL single-writer is not enough — two
+   connections could both read the same head between statements).
+2. Fork detection runs before the chain walk in the verifier: a sibling insertion would otherwise
+   surface only as a generic chain break on the later row, hiding the fork signature.
+3. `unknown schema_version` (values > 1) is an explicit verifier error (exit 1) — the D7 "v1
+   verifier on v2 -> explicit-skip" converged to explicit error because fail-closed admits no
+   silent skipping of unknown versions (consistent with D5; REAL/whitelist violations likewise).
+4. Perf evidence at implementation time (report-only, never gated): 100k-row full verify ~0.9s
+   (~113k rows/s, Node 24, single-thread sha256) — well inside the Cossack seconds-scale bar.
+5. Eval fingerprint: no flip. The chain writes no golden-visible data; baseline fingerprint
+   113be271869dbc54 verified unchanged by the r103 acceptance run (123/123, verdict warn-tier
+   carryover from ADR-0038 D2, exit 0). ADR-0027 D9 flip rule was evaluated and not triggered.

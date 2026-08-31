@@ -7,6 +7,21 @@ All notable changes to this project are recorded here. Format follows
 ## [Unreleased]
 
 ### Added
+- ADR-0040 access_events tamper-evidence layer (r102/r103 implementation): `prev_hash`
+  SHA-256 hash chain (six-field canonical contract: fixed key order = RFC 8785 lexicographic for
+  the closed ASCII scalar schema, NULL = JSON null, INTEGER/TEXT/NULL whitelist) + single-row
+  `access_chain_anchor` sealing legacy history as a one-off digest snapshot (lazy IMMEDIATE
+  constructor bootstrap, one defensive BUSY retry, busy/IO degrade = stderr WARN + telemetry bit)
+  + independent zero-shared-code verifier `scripts/verify-access-events.mjs` (fork detection,
+  legacy digest recompute, unknown schema_version = explicit error, exit 0/1/2) wired fail-closed
+  into ship-gate step 1 (no-db -> explicit skip + `access-chain-skip-ledger.json`, 3-streak
+  escalation) + alert-on-silence `eventWriteFailures` counter joined into the eval observational
+  zone + `ans access-chain bootstrap [--dry-run default | --apply]`. Six zero-dependency test
+  files (golden vectors 3+2 pinned, 4 tamper classes + seeded legacy, no-db exit 2, real-spawn
+  dual-process concurrent bootstrap, telemetry/idempotency/legacy byte-stability, 100k-row perf
+  smoke report-only + schema fwd/back + whitelist negatives). No dataset fingerprint flip —
+  the chain never touches golden cases; baseline fp 113be271869dbc54 verified unchanged (ADR-0027 D9
+  flip rule evaluated, not triggered).
 - ADR-0039 tau observation layer (r100 implementation round): access_events append-only log
   joined into eval per-case observation; pre-registered day buckets (0-1/2-7/8-30/31-90/91+,
   [min,next-min) semantics + dayBucketFingerprint) folded into datasetFingerprint so any bucket

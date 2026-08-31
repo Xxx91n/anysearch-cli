@@ -62,6 +62,8 @@ export interface CaseResult {
   semTel?: { queries: number; hits: number; served: number };
   // ADR-0039 D1/D5: access-age histogram snapshot from the append-only access_events log.
   accessEvents?: { total: number; histogram: Record<string, number> };
+  // ADR-0040 D2: alert-on-silence — chained event write failures per case (observational, never gated).
+  eventWriteFailures?: number;
 }
 
 export interface EvalCounts {
@@ -131,7 +133,7 @@ export interface EvalMetrics {
   forget: { archiveChecks: number; archives: number; undoRestores: number; dryRunExact: number };
 }
 
-// ADR-0039 step 7: Observational zone — fixed 5-key shape; any value may be a SkipMarker.
+// ADR-0039 step 7 + ADR-0040 D2: Observational zone — fixed 7-key shape; any metric value may be a SkipMarker.
 export interface ObservationalZone {
   schema: "anysearch/observational@1";
   dayBucketDefinition: string; // D4 fingerprint linkage
@@ -140,6 +142,8 @@ export interface ObservationalZone {
   bgnbd: { status: "ok"; params: unknown; validation: unknown } | SkipMarker;
   revival: { status: "ok"; archives: number; undone: number; undoneRate: number } | SkipMarker;
   undoReentryEvents: { status: "ok"; count: number } | SkipMarker;
+  // ADR-0040 D2: alert-on-silence counter, always reported (silence itself is the signal).
+  eventWriteFailures: { status: "ok"; count: number };
 }
 
 export interface EvalReport {
@@ -204,6 +208,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
   let relationTelSnapshot: RelTel | undefined;
   let semTelSnapshot: { queries: number; hits: number; served: number } | undefined;
   let accessEventsSnapshot: { total: number; histogram: Record<string, number> } | undefined;
+  let eventWriteFailures: number | undefined;
   let entityMergeSnapshot: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } | undefined;
   const adjResults: AdjudicationResultItem[][] = []; // stashed per adjudicate opIndex
   const archiveLogIdsByOp = new Map<number, number[]>(); // ADR-0037 D5: archive op -> archive_log ids for undo
@@ -470,6 +475,8 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
     entityMergeSnapshot = (store as unknown as { entityMergeTelemetry?: () => { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } }).entityMergeTelemetry?.();
     relationTelSnapshot = (store as unknown as { relationTelemetry?: () => RelTel }).relationTelemetry?.();
     semTelSnapshot = store.semanticTelemetry();
+    // ADR-0040 D2: alert-on-silence counter per case.
+    eventWriteFailures = store.accessEventTelemetry().writeFailures;
     // ADR-0039 D1: access-age histogram (aggregation happens offline at report time — never
     // in the read path, ADR-0039 N2). Ages in days; unreadable timestamps clamp via NaN.
     try {
@@ -486,7 +493,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
     store.close();
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
-  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot, entityMerge: entityMergeSnapshot, relationTel: relationTelSnapshot, semTel: semTelSnapshot, accessEvents: accessEventsSnapshot };
+  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot, entityMerge: entityMergeSnapshot, relationTel: relationTelSnapshot, semTel: semTelSnapshot, accessEvents: accessEventsSnapshot, eventWriteFailures };
 }
 
 // Metrics per ADR-0027 D4: ① case pass rate (gate: 100%), ② supersession success,
@@ -683,6 +690,8 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
       // D6 AND-gate evaluated against the eval corpus itself (golden cases are far below T1;
       // the failure strings are quoted verbatim into the skip reason by contract).
       const gate = evaluateTauFitGate({ activeRows: 0, fittableUnits: 0, psi: null, windowDays: 0, daysSinceLastFit: null });
+      let evWriteFails = 0;
+      for (const r of results) if (typeof r.eventWriteFailures === "number") evWriteFails += r.eventWriteFailures;
       return {
         schema: "anysearch/observational@1" as const,
         dayBucketDefinition: dayBucketFingerprint(),
@@ -692,6 +701,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
         revival: archives > 0
           ? { status: "ok" as const, archives, undone, undoneRate: undone / archives }
           : skip("no archive ops present in this eval run — revival main ratio is inert", "gate-not-met"),
+        eventWriteFailures: { status: "ok" as const, count: evWriteFails },
         undoReentryEvents: skip("undo_reentry needs a 30-day post-undo window — outside the single-run eval horizon (observational sub-metric)", "offline-deferred"),
       };
     })(),

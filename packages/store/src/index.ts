@@ -14,3 +14,6 @@ export * from "./relation";
 
 // ADR-0037: consolidation + reversible forgetting (sixth arm, Phase-1 shadow).
 export * from "./consolidate";
+
+// ADR-0040: access_events tamper-evidence chain (writer side; verifier is independent).
+export * from "./access-chain";

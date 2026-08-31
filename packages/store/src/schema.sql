@@ -265,3 +265,12 @@ CREATE TABLE IF NOT EXISTS access_events (
 );
 CREATE INDEX IF NOT EXISTS idx_access_events_memory ON access_events(memory_id);
 CREATE INDEX IF NOT EXISTS idx_access_events_time ON access_events(accessed_at);
+-- ADR-0040 D3/D6: single-row chain anchor sealing legacy access_events history as a one-off
+-- snapshot (Sigilbase "honest approach"; in-table genesis row impossible under PRAGMA foreign_keys
+-- because memory_id NOT NULL REFERENCES retrieval_results). Rows are never updated or deleted.
+CREATE TABLE IF NOT EXISTS access_chain_anchor (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  digest TEXT NOT NULL,
+  genesis_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
