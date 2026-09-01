@@ -1,6 +1,6 @@
 {
   "schema": "anysearch/eval-baseline@1",
-  "fingerprint": "5be13f8abcfab1f9",
+  "fingerprint": "2cf98c9130018956",
   "metrics": {
     "passRate": 1,
     "supersessionSuccess": 1,
@@ -147,6 +147,8 @@
     "observational": {
       "schema": "anysearch/observational@1",
       "dayBucketDefinition": "491711ffacdfa568",
+      "fixtureDefinitionHash": "06a7470b0931a505",
+      "dataAbsent": true,
       "track": "consumed",
       "accessAge": {
         "status": "ok",
@@ -157,7 +159,10 @@
           "8-30": 0,
           "31-90": 0,
           "91+": 1
-        }
+        },
+        "units": 638,
+        "fittableUnits": 7,
+        "windowDays": 0
       },
       "tauScan": {
         "status": "skipped",
@@ -167,7 +172,7 @@
       "bgnbd": {
         "status": "skipped",
         "tier": "gate-not-met",
-        "reason": "BG/NBD fit: T1: 0 active rows / 0 fittable units < 300/100; T2: PSI unavailable (no access-age histogram pair yet); T3: observation window 0d < 90d"
+        "reason": "BG/NBD fit (structural data absence — ledgered data-absent): T1: 645 active rows / 7 fittable units < 300/100; T2: PSI unavailable (no access-age histogram pair yet); T3: observation window 0.00028935185185185184d < 90d"
       },
       "revival": {
         "status": "ok",

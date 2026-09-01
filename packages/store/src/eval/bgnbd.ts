@@ -23,14 +23,31 @@ export interface TauFitGateInput {
   daysSinceLastFit: number | null;
 }
 
+// r110 SP-F-01: split gate failures into STRUCTURAL ABSENCE (single-run maturity limits —
+// insufficient rows/fit-eligible units, no baseline histogram pair, too-young observation
+// window; all of them quote an immature dataset, not a degraded pipeline) vs SUBSTANTIVE
+// hits (a numeric PSI drift vs an existing baseline, or the anti-peeking interval). The
+// consumed eval track records the former as reasonCode=data-absent (ADR-0042 D4 widened).
+export function isStructuralAbsence(failures: readonly string[]): boolean {
+  if (failures.length === 0) return false;
+  return failures.every((f) => f.startsWith("T1:") || f.includes("PSI unavailable") || f.startsWith("T3: observation window"));
+}
+
 export function evaluateTauFitGate(input: TauFitGateInput): { ok: boolean; failures: string[] } {
   const failures: string[] = [];
   // T1: T1 >= 300 active rows AND >= 100 fittable units.
   if (input.activeRows < TAU_FIT_GATE.minActiveRows || input.fittableUnits < TAU_FIT_GATE.minFittableUnits)
     failures.push("T1: " + input.activeRows + " active rows / " + input.fittableUnits + " fittable units < " + TAU_FIT_GATE.minActiveRows + "/" + TAU_FIT_GATE.minFittableUnits);
   // T2: PSI < 0.25 (baseline vs rolling 30d, D4 buckets, symmetric-KL). No histogram yet = block.
-  if (input.psi === null || input.psi >= TAU_FIT_GATE.psiMax)
-    failures.push(input.psi === null ? "T2: PSI unavailable (no access-age histogram pair yet)" : "T2: PSI " + input.psi.toFixed(4) + " >= " + TAU_FIT_GATE.psiMax);
+  // r110 SA-F-01: non-finite PSI is fail-closed — a bare >= comparison lets NaN slip to false.
+  if (input.psi === null || !Number.isFinite(input.psi) || input.psi >= TAU_FIT_GATE.psiMax)
+    failures.push(
+      input.psi === null
+        ? "T2: PSI unavailable (no access-age histogram pair yet)"
+        : !Number.isFinite(input.psi)
+          ? "T2: PSI non-finite (" + String(input.psi) + ") — fail-closed, NaN never silently passes"
+          : "T2: PSI " + input.psi.toFixed(4) + " >= " + TAU_FIT_GATE.psiMax
+    );
   // T3: window >= 90d AND >= 30d between fits (anti-peeking).
   if (input.windowDays < TAU_FIT_GATE.minWindowDays)
     failures.push("T3: observation window " + input.windowDays + "d < " + TAU_FIT_GATE.minWindowDays + "d");

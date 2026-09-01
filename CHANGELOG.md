@@ -6,6 +6,44 @@ All notable changes to this project are recorded here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+- ADR-0042 r110 audit repair round (dual-axis review of the r109 implementation; all
+  findings fixed in one round — SP-F-01..03 + SA-F-01..09):
+  - SP-F-01/SA-F-05 (severe): the consumed track's AND-gate input was hardcoded zeros, fully
+    disconnected from access_events, and the data-absent classifier only fired when NO events
+    existed at all — so a healthy eval always logged gate-not-met and the 3-streak fired
+    spuriously (ship-gate exit 1). Now the runner aggregates real unit-level stats
+    (events/units/fittableUnits/access-time span) and D4 "structural data absence" covers
+    "events exist but nothing is fit-eligible" — both empty-library and populated-but-
+    immature forms record reasonCode=data-absent and never build the streak.
+  - SA-F-01: non-finite PSI is fail-closed at the AND-gate (NaN can no longer slip past
+    the >= comparison).
+  - SA-F-02: skip-key identity excludes volatile numerics (normalized to '#') — the 3-streak
+    now matches on WHICH gate clauses failed, so identical conditions across runs actually
+    reach escalation.
+  - SA-F-03: unknown/corrupt skip-ledgers are never silently cleared; reading fails loud
+    (SkipLedgerError) and the eval CLI quarantines the file aside then restarts empty with a
+    stderr notice.
+  - SA-F-04: fixture definitionHash now pins generatorVersion + per-file SHA-256s (generator
+    bumped to v2) — a generator-contract change flips the fingerprint (declared flip
+    5be13f8abcfab1f9 -> re-baselined via --calibrate).
+  - SA-F-05: the observational zone carries an explicit dataAbsent boolean; the report zone
+    no longer presents structural absence as an unexplained gate-not-met.
+  - SA-F-06: fixtureDefinitionHash is recorded in the observational zone (and thus in
+    eval-baseline.json on calibration) — fingerprint flips are auditable from the artifact.
+  - SA-F-07: tau-python.yml regenera guard triggers on day-buckets.ts, and the fixture loader
+    hard-rejects a baselineHistogram whose keys drift from AGE_BUCKETS.
+  - SA-F-08: skip-ledger writes are atomic (tmp + rename), so a concurrent/crashed eval
+    cannot leave a half-written ledger.
+  - SA-F-09: @2 entry-level validation (tier/track enums; green rows MUST omit reasonCode,
+    warn/data-absent rows MUST carry one); @1 upcasts keep green rows reason-free.
+  - SP-F-02/03 (nits): runtime SHA-256-vs-MANIFEST check now documented as an anti-miswire
+    guard only (CI regenerate-and-diff is the tamper anchor); a missing MANIFEST yields the
+    explicit "no-fixtures" marker in the report + a stderr warning instead of a silent
+    fingerprint drift.
+- r39 deferred items F-07 (staircase automation tests) and F-09 (report subject digest)
+  remain deferred (tracked, r110 does not own them).
+
 ### Added
 - ADR-0042 observational data feeding (r109 implementation): dual-track loader
   (consumed=real access_events preferred; synthetic=hash-pinned fixture fallback via

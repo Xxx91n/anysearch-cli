@@ -1291,7 +1291,7 @@
   "meta": {
     "expect": "skip gate-not-met with T2 (PSI >= 0.25 vs pinned baseline histogram)",
     "generator": "scripts/tau/generate_fixtures.py",
-    "generatorVersion": 1,
+    "generatorVersion": 2,
     "params": {
       "a": 0.5,
       "alpha": 2.1,

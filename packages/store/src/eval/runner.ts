@@ -13,7 +13,7 @@ import { rrfRank } from "@anysearch/retriever";
 import type { CaseSpec, EvalStage } from "./golden-cases";
 import { holdoutFingerprint, isHoldout } from "./holdout";
 import { bucketHistogram, dayBucketFingerprint } from "./day-buckets";
-import { evaluateTauFitGate } from "./bgnbd";
+import { evaluateTauFitGate, isStructuralAbsence } from "./bgnbd";
 import { feedFromFixture, feedToGateInput, fixtureDefinitionHash, loadObsFixture, SIMULATED_LABEL, type ObsFeed } from "./obs-fixtures";
 import { skip, type SkipMarker } from "./explicit-skip";
 
@@ -62,7 +62,9 @@ export interface CaseResult {
   // ADR-0037 D6: per-case semantic-arm shadow telemetry (served must stay 0 in Phase-1).
   semTel?: { queries: number; hits: number; served: number };
   // ADR-0039 D1/D5: access-age histogram snapshot from the append-only access_events log.
-  accessEvents?: { total: number; histogram: Record<string, number> };
+  // r110 SP-F-01: unit-level stats (fittable units = repeat-access units) + the observed
+  // access time span, so the consumed track builds a REAL AND-gate input instead of zeros.
+  accessEvents?: { total: number; histogram: Record<string, number>; units: number; fittableUnits: number; firstAt: number | null; lastAt: number | null };
   // ADR-0040 D2: alert-on-silence — chained event write failures per case (observational, never gated).
   eventWriteFailures?: number;
 }
@@ -142,7 +144,15 @@ export interface ObservationalZone {
   // fixture snapshots; derived values must be labelled simulated-observation-window.
   track: "consumed" | "synthetic";
   simulatedObservationWindow?: boolean;
-  accessAge: { status: "ok"; events: number; histogram: Record<string, number>; track?: "synthetic" } | SkipMarker;
+  // r110 SP-F-01/SA-F-05: structural data-absence marker on the consumed track — true when
+  // there are no access events at all OR events exist but no unit qualifies as fit-eligible
+  // (ADR-0042 D4 widened: "structurally absent" covers the fit-eligible dimension). The eval
+  // CLI records reasonCode=data-absent for such runs; the 3-streak never counts them.
+  dataAbsent: boolean;
+  // r110 SA-F-06: fixture definition hash pinned in the report so a fingerprint flip is
+  // auditable from the artifact (eval-baseline.json carries the same zone on calibration).
+  fixtureDefinitionHash: string;
+  accessAge: { status: "ok"; events: number; histogram: Record<string, number>; track?: "synthetic"; units?: number; fittableUnits?: number; windowDays?: number } | SkipMarker;
   tauScan: { status: "ok"; [k: string]: unknown } | SkipMarker;
   bgnbd: { status: "ok"; params: unknown; validation: unknown } | { status: "ready-to-spawn"; track: "synthetic"; fixture: string; psi: number; label: string } | SkipMarker;
   revival: { status: "ok"; archives: number; undone: number; undoneRate: number } | SkipMarker;
@@ -212,7 +222,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
   let entityArmSnapshot: { queries: number; candidates: number; activations: number; hits: number } | undefined;
   let relationTelSnapshot: RelTel | undefined;
   let semTelSnapshot: { queries: number; hits: number; served: number } | undefined;
-  let accessEventsSnapshot: { total: number; histogram: Record<string, number> } | undefined;
+  let accessEventsSnapshot: NonNullable<CaseResult["accessEvents"]> | undefined;
   let eventWriteFailures: number | undefined;
   let entityMergeSnapshot: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } | undefined;
   const adjResults: AdjudicationResultItem[][] = []; // stashed per adjudicate opIndex
@@ -485,14 +495,24 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
     // ADR-0039 D1: access-age histogram (aggregation happens offline at report time — never
     // in the read path, ADR-0039 N2). Ages in days; unreadable timestamps clamp via NaN.
     try {
-      const ev = raw.prepare("SELECT ae.accessed_at, rr.created_at FROM access_events ae JOIN retrieval_results rr ON rr.id = ae.memory_id").all() as Array<{ accessed_at: string; created_at: string }>;
+      const ev = raw.prepare("SELECT ae.memory_id AS mid, ae.accessed_at, rr.created_at FROM access_events ae JOIN retrieval_results rr ON rr.id = ae.memory_id").all() as Array<{ mid: string; accessed_at: string; created_at: string }>;
       const ages: number[] = [];
+      const perUnit = new Map<string, number>();
+      let firstAt: number | null = null;
+      let lastAt: number | null = null;
       for (const e of ev) {
         const a = Date.parse(String(e.accessed_at).replace(" ", "T") + "Z");
         const c = Date.parse(String(e.created_at).replace(" ", "T") + "Z");
         ages.push(Number.isFinite(a) && Number.isFinite(c) ? (a - c) / 86_400_000 : NaN);
+        perUnit.set(String(e.mid), (perUnit.get(String(e.mid)) ?? 0) + 1);
+        if (Number.isFinite(a)) {
+          firstAt = firstAt === null || a < firstAt ? a : firstAt;
+          lastAt = lastAt === null || a > lastAt ? a : lastAt;
+        }
       }
-      accessEventsSnapshot = { total: ev.length, histogram: bucketHistogram(ages) };
+      let fittableUnits = 0;
+      for (const n of perUnit.values()) if (n >= 2) fittableUnits += 1;
+      accessEventsSnapshot = { total: ev.length, histogram: bucketHistogram(ages), units: perUnit.size, fittableUnits, firstAt, lastAt };
     } catch { accessEventsSnapshot = undefined; }
     raw.close();
     store.close();
@@ -701,16 +721,40 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
       let feed: ObsFeed | null = null;
       if (evTotal === 0 && fxName) feed = feedFromFixture(loadObsFixture(fxName));
       if (feed) zoneTrack = feed.track;
-      const gate = evaluateTauFitGate(feed ? feedToGateInput(feed) : { activeRows: 0, fittableUnits: 0, psi: null, windowDays: 0, daysSinceLastFit: null });
+      // r110 SP-F-01(a): the consumed track evaluates the AND-gate against the REAL
+      // access_events evidence (aggregated across per-case isolated DBs), not hardcoded zeros.
+      let units = 0;
+      let fittableUnits = 0;
+      let firstAt: number | null = null;
+      let lastAt: number | null = null;
+      for (const r of results) if (r.accessEvents) {
+        units += r.accessEvents.units;
+        fittableUnits += r.accessEvents.fittableUnits;
+        if (r.accessEvents.firstAt !== null) firstAt = firstAt === null || r.accessEvents.firstAt < firstAt ? r.accessEvents.firstAt : firstAt;
+        if (r.accessEvents.lastAt !== null) lastAt = lastAt === null || r.accessEvents.lastAt > lastAt ? r.accessEvents.lastAt : lastAt;
+      }
+      const windowDays = firstAt !== null && lastAt !== null ? (lastAt - firstAt) / 86_400_000 : 0;
+      // Consumed track has no pre-registered baseline histogram to compare against yet, so
+      // PSI is honestly null (gate T2 then reports "unavailable", not a fabricated 0).
+      const gate = evaluateTauFitGate(feed ? feedToGateInput(feed) : { activeRows: evTotal, fittableUnits, psi: null, windowDays, daysSinceLastFit: null });
+      // r110 SP-F-01(b)/SA-F-05: ADR-0042 D4's "structural data absence" covers BOTH shapes —
+      // no events at all (0 rows), and events that exist but are not fit-eligible (a single
+      // eval run's golden DB can never mature past the T1-units / T2-baseline / T3-window
+      // clauses — those failures quote data immaturity, not pipeline regressions). Such runs
+      // record reasonCode=data-absent and never build the 3-streak (eval exit stays 0).
+      // Synthetic-track skips stay reasonCode=gate-not-met: they are deliberate machinery.
+      const dataAbsent = zoneTrack === "consumed" && isStructuralAbsence(gate.failures);
       let evWriteFails = 0;
       for (const r of results) if (typeof r.eventWriteFailures === "number") evWriteFails += r.eventWriteFailures;
       return {
         schema: "anysearch/observational@1" as const,
         dayBucketDefinition: dayBucketFingerprint(),
+        fixtureDefinitionHash: fixtureDefinitionHash(),
+        dataAbsent,
         track: zoneTrack,
         ...(zoneTrack === "synthetic" ? { simulatedObservationWindow: true } : {}),
         accessAge: evTotal > 0
-          ? { status: "ok" as const, events: evTotal, histogram: hist }
+          ? { status: "ok" as const, events: evTotal, histogram: hist, units, fittableUnits, windowDays: Math.round(windowDays * 100) / 100 }
           : feed
             ? { status: "ok" as const, events: feed.activeRows, histogram: feed.histogram, track: "synthetic" as const }
             : skip("no access events observed in the eval run (goldens may predate the touch path)", "gate-not-met"),
@@ -719,7 +763,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
           ? gate.ok
             ? { status: "ready-to-spawn" as const, track: "synthetic" as const, fixture: feed.name, psi: feed.psi, label: SIMULATED_LABEL }
             : skip("BG/NBD fit (" + SIMULATED_LABEL + "): " + gate.failures.join("; "), "gate-not-met")
-          : skip("BG/NBD fit: " + gate.failures.join("; "), "gate-not-met"),
+          : skip("BG/NBD fit" + (dataAbsent ? " (structural data absence — ledgered data-absent)" : "") + ": " + gate.failures.join("; "), "gate-not-met"),
         revival: archives > 0
           ? { status: "ok" as const, archives, undone, undoneRate: undone / archives }
           : skip("no archive ops present in this eval run — revival main ratio is inert", "gate-not-met"),

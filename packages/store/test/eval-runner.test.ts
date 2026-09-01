@@ -29,6 +29,16 @@ async function main() {
   assert(report.totals.failed === 0, "all golden cases PASS (failed: " + report.cases.filter((c) => !c.passed).map((c) => c.id + "@" + c.failedStage).join(", ") + ")");
   assert(report.metrics.passRate === 1, "passRate 1.0");
   assert(report.datasetFingerprint === fp1, "report fingerprint matches dataset");
+{
+  // r110 SP-F-01: consumed track exposes REAL gate numbers + the data-absence signal.
+  const ob = report.metrics.observational;
+  assert(!!ob && ob.track === "consumed", "zone track = consumed (no fixture env)");
+  assert(typeof ob!.dataAbsent === "boolean", "dataAbsent marker present");
+  assert(typeof ob!.fixtureDefinitionHash === "string", "fixtureDefinitionHash pinned in zone");
+  assert(ob!.dataAbsent === true, "golden run is structurally data-absent (single-run window can never reach 90d / 100 fittable units)");
+  const bk = (ob!.bgnbd as { status?: string; reason?: string });
+  assert(bk.status === "skipped" && String(bk.reason).includes("structural data absence"), "report zone labels the absence explicitly (SA-F-05)");
+}
   assert(Boolean(report.tierBreakdown.adversarial && report.tierBreakdown.hard), "ADR-0028 D4: tier breakdown present");
   assert(report.metrics.counts && typeof report.metrics.mrr === "number", "ADR-0028 D1/D2: counts + mrr present");
 

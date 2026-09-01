@@ -1207,7 +1207,7 @@
   "meta": {
     "expect": "skip gate-not-met with T1 (299 < 300 active rows)",
     "generator": "scripts/tau/generate_fixtures.py",
-    "generatorVersion": 1,
+    "generatorVersion": 2,
     "params": {
       "a": 0.79,
       "alpha": 4.4,

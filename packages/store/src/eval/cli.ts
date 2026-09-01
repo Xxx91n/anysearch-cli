@@ -1,14 +1,15 @@
 // ADR-0027 D6: `pnpm -C packages/store eval` — writes .ship-gate/eval-report.{json,md},
 // applies the gate, exits with the partitioned code contract.
 // ADR-0028 D1 / ADR-0029 D6: --calibrate only (50-run hard floor; CI never rewrites). The one-round --write-baseline alias was removed (ADR-0029 D6).
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GOLDEN_CASES } from "./golden-cases";
 import { assertBackflowNoOverlap } from "./holdout";
 import { runAll, type EvalReport } from "./runner";
-import { isSkip } from "./explicit-skip";
+import { isSkip, skipKey } from "./explicit-skip";
 import { emptySkipLedger, parseSkipLedger, recordSkips, skipMustFail } from "./skip-ledger";
+import { fixtureDefinitionHash } from "./obs-fixtures";
 import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, type EvalBaseline, type GainConclusion } from "./gate";
 
 function repoRoot(): string {
@@ -242,20 +243,40 @@ async function main(): Promise<number> {
     const keys: string[] = [];
     for (const [k, v] of Object.entries(ob)) {
       if (k === "schema" || k === "dayBucketDefinition") continue;
-      if (isSkip(v)) keys.push(k + "|" + v.tier + "|" + v.reason);
+      if (isSkip(v)) keys.push(skipKey(k, v));
     }
     const skipPath = join(outDir, "skip-ledger.json");
-    const sl = existsSync(skipPath) ? parseSkipLedger(readFileSync(skipPath, "utf8")) : emptySkipLedger();
-    // ADR-0042 D4: structural data absence (consumed track, accessAge skip = no events,
-    // no fixture fallback) records reason-code data-absent — never builds the 3-streak.
+    // r110 SA-F-03: an unreadable/unknown-schema ledger must never be silently cleared.
+    // Quarantine the file aside (rename) and restart empty with a loud stderr notice —
+    // history is preserved for inspection, forward-compatible data is not destroyed.
+    let sl;
+    if (existsSync(skipPath)) {
+      try {
+        sl = parseSkipLedger(readFileSync(skipPath, "utf8"));
+      } catch (e) {
+        const quarantined = skipPath.replace(/\.json$/, ".quarantined-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json");
+        try { renameSync(skipPath, quarantined); } catch { /* keep going with fresh ledger */ }
+        console.error("[eval] OBSERVATIONAL skip-ledger fails the @2 contract — quarantined to " + quarantined + " and restarted empty (" + String((e as Error).message ?? e) + ")");
+        sl = emptySkipLedger();
+      }
+    } else sl = emptySkipLedger();
+    // ADR-0042 D4 + r110 SP-F-01: structural data absence (no events at all, or events but
+    // no fit-eligible units) records reason-code data-absent — never builds the 3-streak.
     const obTrack = (ob as { track?: "consumed" | "synthetic" }).track ?? "consumed";
-    const dataAbsent = keys.length > 0 && obTrack === "consumed" && isSkip(ob.accessAge);
+    const dataAbsent = keys.length > 0 && obTrack === "consumed" && ((ob as { dataAbsent?: boolean }).dataAbsent === true || isSkip(ob.accessAge));
     const streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
-    writeFileSync(skipPath, JSON.stringify(sl, null, 2) + "\n", "utf8");
+    // r110 SA-F-08: read-modify-write must not corrupt the ledger on crash mid-write — write
+    // to a sibling tmp file and rename atomically (POSIX + Windows both honor rename here).
+    const tmpPath = skipPath + ".tmp";
+    writeFileSync(tmpPath, JSON.stringify(sl, null, 2) + "\n", "utf8");
+    renameSync(tmpPath, skipPath);
     if (skipMustFail(sl))
       console.error("[eval] OBSERVATIONAL skip streak " + streak + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note observational-skip --ledger " + skipPath + " (ADR-0039 D7)");
   }
 
+  // r110 SP-F-03: if the fixture manifest is absent the fingerprint carries the explicit
+  // "no-fixtures" marker — surface it instead of letting the fingerprint silently drift.
+  if (fixtureDefinitionHash() === "no-fixtures") console.error("[eval] WARN: obs-feed MANIFEST.json absent — datasetFingerprint includes the explicit 'no-fixtures' marker; repack fixtures or expect a fingerprint flip on restore");
   const enriched = { ...report, baselineFingerprint: baseline?.fingerprint ?? null, gate: { verdict: g.verdict, exitCode, failures: g.failures, warnings: g.warnings, gainConclusion: g.gainConclusion ?? null } };
   writeFileSync(join(outDir, "eval-report.json"), JSON.stringify(enriched, null, 2) + "\n", "utf8");
   writeFileSync(join(outDir, "eval-report.md"), toMarkdown(report, baseline, g.failures, g.warnings, g.gainConclusion), "utf8");

@@ -1,12 +1,12 @@
 {
-  "definitionHash": "f5c6c438f3696995",
+  "definitionHash": "06a7470b0931a505",
   "files": {
-    "pass-stable.json": "1eae15541a5135c189e4396c0d135795ce23843020ab36ae3ef86b0f5add1c56",
-    "t1-fail.json": "ec2a53c3335cf880cca65d6dfa584d6e15b507cff7744ac42a27d8bf747b25af",
-    "t2-fail.json": "f9d85e7f6cc88ef3160a5cc235f4f1f88b476fb49a32fe30aeec69f356c289f1",
-    "t3-fail.json": "2711750ac74f28c93d04e5443bf5b71df318bc8eac45de6409fca67313474986"
+    "pass-stable.json": "de12341c8d6253ea6bac5d25852d785270b85879dcc4f506f116fa46060e2a69",
+    "t1-fail.json": "0c8db79c798711d3856c1e871e59e48d653989aa58e1c4daa07646facc82c701",
+    "t2-fail.json": "67900dd17738a1072c6405bf474e9f9b6035bbe290ddffc4576b323f37c39535",
+    "t3-fail.json": "a15a966c19f577459d10d57b22943859d550fa663f4149fa877dc01f8f827b62"
   },
   "generator": "scripts/tau/generate_fixtures.py",
-  "generatorVersion": 1,
+  "generatorVersion": 2,
   "schema": "anysearch/obs-fixture-manifest@1"
 }

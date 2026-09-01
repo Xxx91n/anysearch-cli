@@ -18,7 +18,10 @@ export function isSkip(v: unknown): v is SkipMarker {
   return !!v && typeof v === "object" && (v as SkipMarker).status === "skipped";
 }
 
-// Ledger key for the 3-streak rule: identical skip = same metric + same reason.
+// Ledger key for the 3-streak rule: identical skip = same metric + same tier + same clause
+// identity. r110 SA-F-02: volatile numerics (PSI value, row counts, window days) are first
+// normalized to '#' — the streak matches on WHICH clauses failed, not on their exact values,
+// while the full verdict text stays in the entry reason for humans.
 export function skipKey(metric: string, m: SkipMarker): string {
-  return metric + "|" + m.tier + "|" + m.reason;
+  return metric + "|" + m.tier + "|" + m.reason.replace(/\d+(?:\.\d+)?/g, "#");
 }

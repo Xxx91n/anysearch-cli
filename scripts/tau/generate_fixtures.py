@@ -19,7 +19,7 @@ import json
 import os
 import sys
 
-GENERATOR_VERSION = 1
+GENERATOR_VERSION = 2
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 OUT_DIR = os.path.join(ROOT, "packages", "store", "fixtures", "obs-feed")
@@ -163,9 +163,16 @@ def build_defs() -> dict:
     for d in DEFS:
         body = render_fixture(d)
         files[d["name"] + ".json"] = {"bytes": body, "sha256": hashlib.sha256(body).hexdigest()}
+    # r110 SA-F-04: the definition hash must change when the generator contract or the
+    # emitted event bytes change — pin generatorVersion and the per-file SHA-256s into it
+    # (seedfaker --fingerprint full-contract shape; mirrors this repo's r96 bucket-def fix).
     defhash = hashlib.sha256(
         json.dumps(
-            [{"name": d["name"], "seed": d["seed"], "windowDays": d["windowDays"], "spec": d["spec"], "params": d["params"]} for d in DEFS],
+            {
+                "generatorVersion": GENERATOR_VERSION,
+                "defs": [{"name": d["name"], "seed": d["seed"], "windowDays": d["windowDays"], "spec": d["spec"], "params": d["params"]} for d in DEFS],
+                "fileSha256": {k: v["sha256"] for k, v in files.items()},
+            },
             sort_keys=True,
         ).encode("utf-8")
     ).hexdigest()[:16]

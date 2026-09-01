@@ -216,21 +216,22 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 ## r110 修复待办（r109 ADR-0042 实现轮审计 findings，双轴）
 
 ### Spec 轴（代码 diff 复核子代理，审 commit 1758c63 vs ADR-0042）
-- [ ] SP-F-01【严重】ship-gate 实测 exit 1（observational skip streak 3>=3）。根因双层：(a) consumed 轨 AND-gate 输入硬编码为零（runner.ts:698 evaluateTauFitGate activeRows:0/fittableUnits:0/psi:null/windowDays:0），与实际 access_events 完全脱节；(b) cli.ts:250 dataAbsent 判据要求 isSkip(accessAge)，真实 eval 写库后 accessAge=ok（本次 645 events），永远记 gate-not-met → streak 单调增长。**D4「结构性缺数据」必须涵盖「有 events 但无 fit-eligible 数据」，修完后 ship-gate 必须 exit 0。验收：空库与非空库两种形态 ship-gate 均 exit 0。**
-- [ ] SP-F-02【nit】obs-fixtures.ts:64 运行时 SHA-256 校验是循环凭据（MANIFEST 同目录，可同改同过）；防篡改锚点是 CI regenerate-and-diff + commit 审核，运行时校验仅防低级错位——在代码注释/文档中声明此设计边界。
-- [ ] SP-F-03【nit】obs-fixtures.ts:53 fixtureDefinitionHash() 在 MANIFEST 缺失时静默退化为 "no-fixtures" → 指纹静默漂移（更难诊断的第二种指纹）。应改为显式失败或显式环境标记。
+- [x] SP-F-01【严重】ship-gate 实测 exit 1（observational skip streak 3>=3）。根因双层：(a) consumed 轨 AND-gate 输入硬编码为零（runner.ts:698 evaluateTauFitGate activeRows:0/fittableUnits:0/psi:null/windowDays:0），与实际 access_events 完全脱节；(b) cli.ts:250 dataAbsent 判据要求 isSkip(accessAge)，真实 eval 写库后 accessAge=ok（本次 645 events），永远记 gate-not-met → streak 单调增长。**D4「结构性缺数据」必须涵盖「有 events 但无 fit-eligible 数据」，修完后 ship-gate 必须 exit 0。验收：空库与非空库两种形态 ship-gate 均 exit 0。**
+- [x] SP-F-02【nit】obs-fixtures.ts:64 运行时 SHA-256 校验是循环凭据（MANIFEST 同目录，可同改同过）；防篡改锚点是 CI regenerate-and-diff + commit 审核，运行时校验仅防低级错位——在代码注释/文档中声明此设计边界。
+- [x] SP-F-03【nit】obs-fixtures.ts:53 fixtureDefinitionHash() 在 MANIFEST 缺失时静默退化为 "no-fixtures" → 指纹静默漂移（更难诊断的第二种指纹）。应改为显式失败或显式环境标记。
 
 ### Standards 轴（atomcode 工业实践对照审计，含三引擎+6 原文核验）
-- [ ] SA-F-01【高】psi() 返回 NaN 时 `NaN >= 0.25` 为 false → T2 漂移门静默放行（fail-open）。当前 latent；改桶边界即触发（与 SA-F-07 联动）。修法：NaN/undefined PSI 必须显式归类为 fail-closed（skip 或显式 not-evaluable），禁止比较落入 false 默认。
-- [ ] SA-F-02【高】skip-key 身份内嵌易变数值（PSI 4 位小数/行数）→ 生产场景下相邻 run 的 key 几乎必然不同 → 3 连击升级实际不可达。修法：skip-key 只含条款身份（哪几条 gate 不满足），数值细节进 reason 描述字段。
-- [ ] SA-F-03【中高】未知/更新 schema 版本的账本被静默清空 → 前向兼容数据丢失（违反 Confluent/Solace schema 演进纪律：保留未知字段）。修法：未知 schema 应 fail-loud 或保留原文件+重修，不得静默清空。
-- [ ] SA-F-04【中】fixture definitionHash 仅覆盖 name/seed/windowDays/spec/params，不含 generatorVersion 与事件字节 → 生成器逻辑演化不翻转指纹。修法：defhash 并入 generatorVersion；事件字节经 per-file SHA 聚合入指纹（对照 seedfaker --fingerprint 整契约模式 / 本 repo r96 已修 dayBucketDefinition 同类问题）。
-- [ ] SA-F-05【中】报告区（observational.bgnbd.tier）对空 consumed 仍标 gate-not-met；r39 治理目标「每报告一条固定 warning 消失」只达成一半（与 SP-F-01 同根）。修法随 SP-F-01。
-- [ ] SA-F-06【中低】eval-baseline.json 未记录 fixtureDefinitionHash（5be13f8abcfab1f9 为不透明指纹）→ flip 不可从产物审计。修法：baseline observational 区补 fixtureDefinitionHash 字段（对应 ADR-0027 D9 随附纪律）。
-- [ ] SA-F-07【中低】tau-python.yml 路径过滤缺 day-buckets.ts → 改桶边界不触发 regenerate-and-diff 守卫，且触发 SA-F-01 静默弱化链。修法：paths 补 packages/store/src/eval/day-buckets.ts；loader 校验 fixture baselineHistogram 键与当前 AGE_BUCKETS 一致（不一致即硬错）。
-- [ ] SA-F-08【中低】skip-ledger 读-改-写非原子，并发 eval 可互相清账。修法：文件锁或原子 rename 写入（tmp+rename）。
-- [ ] SA-F-09【低】@2 账本 parse 不校验 entry 字段类型（垃圾值可写入）；green 行带默认 reasonCode=gate-not-met 语义矛盾。修法：entry 级枚举校验；green 行省略或显式 reasonCode。
-- [ ] 架构联动：r39 遗留 F-07（阶梯自动化测试）、F-09（report.json 记 subject digest）仍未做，继续挂账。
+- [x] SA-F-01【高】psi() 返回 NaN 时 `NaN >= 0.25` 为 false → T2 漂移门静默放行（fail-open）。当前 latent；改桶边界即触发（与 SA-F-07 联动）。修法：NaN/undefined PSI 必须显式归类为 fail-closed（skip 或显式 not-evaluable），禁止比较落入 false 默认。
+- [x] SA-F-02【高】skip-key 身份内嵌易变数值（PSI 4 位小数/行数）→ 生产场景下相邻 run 的 key 几乎必然不同 → 3 连击升级实际不可达。修法：skip-key 只含条款身份（哪几条 gate 不满足），数值细节进 reason 描述字段。
+- [x] SA-F-03【中高】未知/更新 schema 版本的账本被静默清空 → 前向兼容数据丢失（违反 Confluent/Solace schema 演进纪律：保留未知字段）。修法：未知 schema 应 fail-loud 或保留原文件+重修，不得静默清空。
+- [x] SA-F-04【中】fixture definitionHash 仅覆盖 name/seed/windowDays/spec/params，不含 generatorVersion 与事件字节 → 生成器逻辑演化不翻转指纹。修法：defhash 并入 generatorVersion；事件字节经 per-file SHA 聚合入指纹（对照 seedfaker --fingerprint 整契约模式 / 本 repo r96 已修 dayBucketDefinition 同类问题）。
+- [x] SA-F-05【中】报告区（observational.bgnbd.tier）对空 consumed 仍标 gate-not-met；r39 治理目标「每报告一条固定 warning 消失」只达成一半（与 SP-F-01 同根）。修法随 SP-F-01。
+- [x] SA-F-06【中低】eval-baseline.json 未记录 fixtureDefinitionHash（5be13f8abcfab1f9 为不透明指纹）→ flip 不可从产物审计。修法：baseline observational 区补 fixtureDefinitionHash 字段（对应 ADR-0027 D9 随附纪律）。
+- [x] SA-F-07【中低】tau-python.yml 路径过滤缺 day-buckets.ts → 改桶边界不触发 regenerate-and-diff 守卫，且触发 SA-F-01 静默弱化链。修法：paths 补 packages/store/src/eval/day-buckets.ts；loader 校验 fixture baselineHistogram 键与当前 AGE_BUCKETS 一致（不一致即硬错）。
+- [x] SA-F-08【中低】skip-ledger 读-改-写非原子，并发 eval 可互相清账。修法：文件锁或原子 rename 写入（tmp+rename）。
+- [x] SA-F-09【低】@2 账本 parse 不校验 entry 字段类型（垃圾值可写入）；green 行带默认 reasonCode=gate-not-met 语义矛盾。修法：entry 级枚举校验；green 行省略或显式 reasonCode。
+- [x] 架构联动：r39 遗留 F-07（阶梯自动化测试）、F-09（report.json 记 subject digest）仍未做，继续挂账（r110 不处理）。
+- r110 修复落地摘要：全部 12 项已在同轮修复（详见 CHANGELOG Unreleased/Fixed + commit 消息）；SP-F-01 双形态（空库/有 events 无 fit-eligible）均记 data-absent，fingerprint 因 SA-F-04 defhash 契约升级（generator v2）二次翻转，已按 D6 声明并用 --calibrate 重基线。验收：tsc clean、store 全绿、ship-gate 空/非空两种形态 exit 0、eval 123/123。
 
 ### 共同结论
 - 8 步实现/四 fixture/哈希钉定/fingerprint flip 声明均经双轴独立复算为真（eval 指纹实跑复现 5be13f8abcfab1f9）。

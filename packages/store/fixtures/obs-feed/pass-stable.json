@@ -1291,7 +1291,7 @@
   "meta": {
     "expect": "gate ok (T1 active rows / T2 stable PSI / T3 window all satisfied)",
     "generator": "scripts/tau/generate_fixtures.py",
-    "generatorVersion": 1,
+    "generatorVersion": 2,
     "params": {
       "a": 0.79,
       "alpha": 4.4,
