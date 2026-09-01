@@ -185,3 +185,12 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 - [ ] ADR-0041 七节齐（Status/Context/D1-D3/Consequences/Impl Plan 6 步/Acceptance 5/Research Sources 含 atomcode r105-Q2），无 BOM/CRLF
 - [ ] CONTEXT.md +1 术语 Gate-Built Verification Object（含 _Avoid_）；Fail-Closed Verification Gate 条目侏订 ANS_DB_PATH miss=fail 与 gate-built 轨，_Avoid_ 改为 masquerading 排述；*End of Glossary* 保留
 - [ ] 下轮实现验收：干净机无 skip（object=gate-built）、ANS_DB_PATH 缺失即 fail、exit0+PASSED 双校验、剥离正则单一来源（access-chain-fixtures.ts）、死代码删除、ship-gate 9/9、eval 123/123、fingerprint 113be271869dbc54 不变
+
+## ADR-0041 r106 审计要点（审计轮 r106 落地）
+
+- gate-built 轨必须 chainedRows >= 1（空链不得变绿，ship-gate.mjs pass 条件含 non-vacuous 断言）
+- preUpgradeSchema 正则匹配 DDL 收尾 `);`，静默 no-op 时抛错（access-chain-fixtures.ts）
+- `verify-access-events.mjs --db` 无值 → usage 失败（不得退为 skip）
+- `ANS_DB_PATH=""` 视为显式配置错误（fail-closed）
+- Acceptance 3 措辞：中段/首行删除可检测；尾行/整段截断为已声明限制（非对抗模型）
+- 待办（r39）：F-07 阶梯自动化测试、F-09 report.json 记 subject digest、F-08 并发 gate 互撞、skip-ledger schema 版本仍 @1
