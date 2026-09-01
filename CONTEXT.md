@@ -571,4 +571,20 @@ _Avoid_: bare catch{} on instrumentation writes, gating ship on observational te
 ship-gate step 1 无本地消费库时不再结构性 skip：spawn tsx scripts/chain-gate-fixture.ts 用真实 SqliteSessionStore 写路径现场生成 .ship-gate/chain-gate.db，verifier 经 --db 指向它；闸门通过条件=exit 0 且 JSON verdict="PASSED" 双校验。与 SLSA verify-what-you-build 同构（构建与验证同一 run，对象绑定本次产物）；分层规则：ANS_DB_PATH 缺失即配置错误 fail，默认库存在则 verify-what-you-consume 恒优先。ADR-0041 D1。
 _Avoid_: fixture substituting for the production chain claim, shared serialization code with the writer, non-deterministic fixture content, exit-code-only pass
 
+## Synthetic Observation Track（合成观测轨）
+CI/验证专用的静态 fixture 数据轨，与 consumed track 严格分账；只喂养 gate/dashboard 机器，永不冒充生产信号。ADR-0042 D1/D2。
+_Avoid_: synthetic data leaking into production retrieval or archive signals, runtime generation inside CI, unmarked fixtures indistinguishable from real rows
+
+## Fixture Pair Falsification（成对 fixture 证伪）
+每个 gate 条款配一个最小 fail fixture（OFAT），与 pass fixture 成对覆盖真/假两分支。ADR-0042 D3。
+_Avoid_: fixtures that only test the happy path, parameter-matrix explosion beyond the four clause-mapped fixtures, duplicating unit-level negatives at integration level
+
+## Simulated Observation Window（模拟观测窗）
+仅在 synthetic track 内用模拟时钟构造 T3 观测窗；报告必须标注 simulated-observation-window，真实轨保持墙钟语义。ADR-0042 D5。
+_Avoid_: applying simulated clocks to the consumed track, unlabeled simulated-window reports, redefining T3 to dodge the simulation label
+
+## Data-Absent Skip（结构性缺数 skip）
+数据结构性缺失时的 skip 原因码，与 gate-not-met 分离，从不计入 3 连击升级预算。ADR-0042 D4。
+_Avoid_: counting data-absent toward the escalation streak, conflating empty-database runs with gate failures, streak resets that re-notify on the same condition
+
 *End of Glossary*

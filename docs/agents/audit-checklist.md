@@ -194,3 +194,13 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 - `ANS_DB_PATH=""` 视为显式配置错误（fail-closed）
 - Acceptance 3 措辞：中段/首行删除可检测；尾行/整段截断为已声明限制（非对抗模型）
 - 待办（r39）：F-07 阶梯自动化测试、F-09 report.json 记 subject digest、F-08 并发 gate 互撞、skip-ledger schema 版本仍 @1
+
+## r108 检查点（grill r39 / ADR-0042 observational data feeding）
+
+- [ ] ADR-0042 七节齐：Status / Context / D1-D6 / Consequences / Implementation Plan / Acceptance / Research Sources
+- [ ] ADR-0042 UTF-8 无 BOM、无 CRLF
+- [ ] CONTEXT.md +4 术语（Synthetic Observation Track / Fixture Pair Falsification / Simulated Observation Window / Data-Absent Skip）均含 _Avoid_，尾部 *End of Glossary* 保留
+- [ ] ADR-0039 追加 r108 Text Errata（D6 模拟窗 / D7 reason-code 拆分），正文未改
+- [ ] 本轮为 docs-only；实现（skip-ledger @2、四 fixture、regenerate-and-diff）留给下一轮
+- [ ] 下轮验收：四 fixture 端到端矩阵、data-absent 不计 streak、gate-not-met 从 1 计数、fingerprint flip 已声明并经审查
+- [ ] 平台验收：tsc clean、store suite green、ship-gate exit 0、eval 123/123、打包产物可启动且进程存活
