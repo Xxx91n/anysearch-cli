@@ -1,0 +1,12 @@
+{
+  "definitionHash": "f5c6c438f3696995",
+  "files": {
+    "pass-stable.json": "1eae15541a5135c189e4396c0d135795ce23843020ab36ae3ef86b0f5add1c56",
+    "t1-fail.json": "ec2a53c3335cf880cca65d6dfa584d6e15b507cff7744ac42a27d8bf747b25af",
+    "t2-fail.json": "f9d85e7f6cc88ef3160a5cc235f4f1f88b476fb49a32fe30aeec69f356c289f1",
+    "t3-fail.json": "2711750ac74f28c93d04e5443bf5b71df318bc8eac45de6409fca67313474986"
+  },
+  "generator": "scripts/tau/generate_fixtures.py",
+  "generatorVersion": 1,
+  "schema": "anysearch/obs-fixture-manifest@1"
+}

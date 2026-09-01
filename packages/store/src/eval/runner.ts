@@ -14,6 +14,7 @@ import type { CaseSpec, EvalStage } from "./golden-cases";
 import { holdoutFingerprint, isHoldout } from "./holdout";
 import { bucketHistogram, dayBucketFingerprint } from "./day-buckets";
 import { evaluateTauFitGate } from "./bgnbd";
+import { feedFromFixture, feedToGateInput, fixtureDefinitionHash, loadObsFixture, SIMULATED_LABEL, type ObsFeed } from "./obs-fixtures";
 import { skip, type SkipMarker } from "./explicit-skip";
 
 export interface OpRecord {
@@ -137,9 +138,13 @@ export interface EvalMetrics {
 export interface ObservationalZone {
   schema: "anysearch/observational@1";
   dayBucketDefinition: string; // D4 fingerprint linkage
-  accessAge: { status: "ok"; events: number; histogram: Record<string, number> } | SkipMarker;
+  // ADR-0042 D1/D5: dual-track marker — "synthetic" means the feed came from the pinned
+  // fixture snapshots; derived values must be labelled simulated-observation-window.
+  track: "consumed" | "synthetic";
+  simulatedObservationWindow?: boolean;
+  accessAge: { status: "ok"; events: number; histogram: Record<string, number>; track?: "synthetic" } | SkipMarker;
   tauScan: { status: "ok"; [k: string]: unknown } | SkipMarker;
-  bgnbd: { status: "ok"; params: unknown; validation: unknown } | SkipMarker;
+  bgnbd: { status: "ok"; params: unknown; validation: unknown } | { status: "ready-to-spawn"; track: "synthetic"; fixture: string; psi: number; label: string } | SkipMarker;
   revival: { status: "ok"; archives: number; undone: number; undoneRate: number } | SkipMarker;
   undoReentryEvents: { status: "ok"; count: number } | SkipMarker;
   // ADR-0040 D2: alert-on-silence counter, always reported (silence itself is the signal).
@@ -174,7 +179,7 @@ export function ndcgAtK(rankedTexts: string[], grades: Record<string, number>, k
 export function datasetFingerprint(cases: CaseSpec[]): string {
   // ADR-0039 D4: the pre-registered day-bucket definition joins the fingerprint — changing
   // bucket boundaries flips the fingerprint and forces recalibration (no silent re-binning).
-  return createHash("sha256").update(JSON.stringify(cases) + "|" + dayBucketFingerprint()).digest("hex").slice(0, 16);
+  return createHash("sha256").update(JSON.stringify(cases) + "|" + dayBucketFingerprint() + "|" + fixtureDefinitionHash()).digest("hex").slice(0, 16);
 }
 
 const hitText = (h: { role?: unknown; content?: unknown }): string =>
@@ -689,15 +694,32 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
       }
       // D6 AND-gate evaluated against the eval corpus itself (golden cases are far below T1;
       // the failure strings are quoted verbatim into the skip reason by contract).
-      const gate = evaluateTauFitGate({ activeRows: 0, fittableUnits: 0, psi: null, windowDays: 0, daysSinceLastFit: null });
+      // ADR-0042 D1: consumed track empty + ANS_OBS_FIXTURE set -> synthetic fallback (machinery
+      // verification only; the loader hard-verifies track + sha256 before any row is trusted).
+      const fxName = process.env.ANS_OBS_FIXTURE;
+      let zoneTrack: "consumed" | "synthetic" = "consumed";
+      let feed: ObsFeed | null = null;
+      if (evTotal === 0 && fxName) feed = feedFromFixture(loadObsFixture(fxName));
+      if (feed) zoneTrack = feed.track;
+      const gate = evaluateTauFitGate(feed ? feedToGateInput(feed) : { activeRows: 0, fittableUnits: 0, psi: null, windowDays: 0, daysSinceLastFit: null });
       let evWriteFails = 0;
       for (const r of results) if (typeof r.eventWriteFailures === "number") evWriteFails += r.eventWriteFailures;
       return {
         schema: "anysearch/observational@1" as const,
         dayBucketDefinition: dayBucketFingerprint(),
-        accessAge: evTotal > 0 ? { status: "ok" as const, events: evTotal, histogram: hist } : skip("no access events observed in the eval run (goldens may predate the touch path)", "gate-not-met"),
+        track: zoneTrack,
+        ...(zoneTrack === "synthetic" ? { simulatedObservationWindow: true } : {}),
+        accessAge: evTotal > 0
+          ? { status: "ok" as const, events: evTotal, histogram: hist }
+          : feed
+            ? { status: "ok" as const, events: feed.activeRows, histogram: feed.histogram, track: "synthetic" as const }
+            : skip("no access events observed in the eval run (goldens may predate the touch path)", "gate-not-met"),
         tauScan: skip("tau scan is offline-only via scripts/tau/tau-scan.mjs — zero contact with the eval runner / OF look ledger (ADR-0039 D3)", "offline-deferred"),
-        bgnbd: skip("BG/NBD fit: " + gate.failures.join("; "), "gate-not-met"),
+        bgnbd: feed
+          ? gate.ok
+            ? { status: "ready-to-spawn" as const, track: "synthetic" as const, fixture: feed.name, psi: feed.psi, label: SIMULATED_LABEL }
+            : skip("BG/NBD fit (" + SIMULATED_LABEL + "): " + gate.failures.join("; "), "gate-not-met")
+          : skip("BG/NBD fit: " + gate.failures.join("; "), "gate-not-met"),
         revival: archives > 0
           ? { status: "ok" as const, archives, undone, undoneRate: undone / archives }
           : skip("no archive ops present in this eval run — revival main ratio is inert", "gate-not-met"),

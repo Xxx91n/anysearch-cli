@@ -44,6 +44,8 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
     "",
     "| metric | value |",
     "|---|---|",
+    // ADR-0042 D5: synthetic runs must carry the simulated-observation-window label (ADR-0039 r108 errata D6).
+    `| observation track | ${m.observational?.track ?? "consumed"}${m.observational?.simulatedObservationWindow ? " (simulated-observation-window)" : ""} |`,
     `| mrr (rank-of-relevant) | ${m.mrr.toFixed(3)} |`,
     `| answerableFalseRefusalRate | ${m.answerableFalseRefusalRate.toFixed(3)} |`,
     // r74 audit E1: entity-arm telemetry (report-only; D2 <0.5 advisory, never gated)
@@ -244,7 +246,11 @@ async function main(): Promise<number> {
     }
     const skipPath = join(outDir, "skip-ledger.json");
     const sl = existsSync(skipPath) ? parseSkipLedger(readFileSync(skipPath, "utf8")) : emptySkipLedger();
-    const streak = recordSkips(sl, keys, new Date().toISOString());
+    // ADR-0042 D4: structural data absence (consumed track, accessAge skip = no events,
+    // no fixture fallback) records reason-code data-absent — never builds the 3-streak.
+    const obTrack = (ob as { track?: "consumed" | "synthetic" }).track ?? "consumed";
+    const dataAbsent = keys.length > 0 && obTrack === "consumed" && isSkip(ob.accessAge);
+    const streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
     writeFileSync(skipPath, JSON.stringify(sl, null, 2) + "\n", "utf8");
     if (skipMustFail(sl))
       console.error("[eval] OBSERVATIONAL skip streak " + streak + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note observational-skip --ledger " + skipPath + " (ADR-0039 D7)");

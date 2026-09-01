@@ -7,6 +7,21 @@ All notable changes to this project are recorded here. Format follows
 ## [Unreleased]
 
 ### Added
+- ADR-0042 observational data feeding (r109 implementation): dual-track loader
+  (consumed=real access_events preferred; synthetic=hash-pinned fixture fallback via
+  `ANS_OBS_FIXTURE`, track marker enforced in-load so synthetic rows can never pose as
+  consumed data) + pure-stdlib offline generator `scripts/tau/generate_fixtures.py`
+  (mulberry32, byte-deterministic, --check exits 2 on drift) producing the four-fixture
+  falsification matrix (`packages/store/fixtures/obs-feed/`: pass-stable / t1-fail 299 rows /
+  t2-fail PSI>=0.25 / t3-fail 89d window) with SHA-256 MANIFEST + definition hash pinned in the
+  eval baseline fingerprint — the initial flip 113be271869dbc54 -> re-baselined is the
+  declared one-time ADR-0042 D6 fingerprint flip (definitionHash `f5c6c438f3696995` joined).
+  skip-ledger schema @1 -> @2 (track + reason-code split; data-absent never builds the
+  3-streak and resets an in-flight gate-not-met run; @1 ledgers upcast losslessly on read,
+  closing r106 F-08; scripts/gain-ledger.mjs resolve tool accepts @2). Synthetic runs are
+  labelled simulated-observation-window in the report. CI: regenerate-and-diff guard step in
+  tau-python.yml. New test surface: obs-fixtures.test.ts (24 asserts, gate-ok -> ready-to-spawn
+  via node stub) + eval-skip.test.ts ledger-semantics block.
 - ADR-0040 access_events tamper-evidence layer (r102/r103 implementation): `prev_hash`
   SHA-256 hash chain (six-field canonical contract: fixed key order = RFC 8785 lexicographic for
   the closed ASCII scalar schema, NULL = JSON null, INTEGER/TEXT/NULL whitelist) + single-row

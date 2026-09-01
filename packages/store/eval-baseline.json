@@ -1,6 +1,6 @@
 {
   "schema": "anysearch/eval-baseline@1",
-  "fingerprint": "113be271869dbc54",
+  "fingerprint": "5be13f8abcfab1f9",
   "metrics": {
     "passRate": 1,
     "supersessionSuccess": 1,
@@ -147,6 +147,7 @@
     "observational": {
       "schema": "anysearch/observational@1",
       "dayBucketDefinition": "491711ffacdfa568",
+      "track": "consumed",
       "accessAge": {
         "status": "ok",
         "events": 645,
@@ -174,6 +175,10 @@
         "undone": 1,
         "undoneRate": 1
       },
+      "eventWriteFailures": {
+        "status": "ok",
+        "count": 0
+      },
       "undoReentryEvents": {
         "status": "skipped",
         "tier": "offline-deferred",
@@ -192,6 +197,6 @@
     "minGain": 0.1
   },
   "holdoutFingerprint": "956d925db2f73115",
-  "updatedAt": "2026-08-30",
+  "updatedAt": "2026-09-01",
   "note": "ADR-0028 D1 calibration (runs=50); integer allowance = worst-observed failures + 1 op. CI never writes this file (ADR-0027 D9)."
 }

@@ -1,0 +1,1223 @@
+{
+  "baselineHistogram": {
+    "0-1": 5,
+    "2-7": 27,
+    "31-90": 285,
+    "8-30": 105,
+    "91+": 173
+  },
+  "events": [
+    {
+      "ageDays": 119.48,
+      "unit": "u0000"
+    },
+    {
+      "ageDays": 33.39,
+      "unit": "u0000"
+    },
+    {
+      "ageDays": 63.5,
+      "unit": "u0001"
+    },
+    {
+      "ageDays": 7.53,
+      "unit": "u0001"
+    },
+    {
+      "ageDays": 8.04,
+      "unit": "u0002"
+    },
+    {
+      "ageDays": 89.09,
+      "unit": "u0002"
+    },
+    {
+      "ageDays": 5.69,
+      "unit": "u0003"
+    },
+    {
+      "ageDays": 7.88,
+      "unit": "u0003"
+    },
+    {
+      "ageDays": 105.18,
+      "unit": "u0004"
+    },
+    {
+      "ageDays": 23.09,
+      "unit": "u0004"
+    },
+    {
+      "ageDays": 31.39,
+      "unit": "u0005"
+    },
+    {
+      "ageDays": 102.02,
+      "unit": "u0005"
+    },
+    {
+      "ageDays": 111.76,
+      "unit": "u0006"
+    },
+    {
+      "ageDays": 7.27,
+      "unit": "u0006"
+    },
+    {
+      "ageDays": 54.79,
+      "unit": "u0007"
+    },
+    {
+      "ageDays": 32.92,
+      "unit": "u0007"
+    },
+    {
+      "ageDays": 43.64,
+      "unit": "u0008"
+    },
+    {
+      "ageDays": 82.94,
+      "unit": "u0008"
+    },
+    {
+      "ageDays": 83.78,
+      "unit": "u0009"
+    },
+    {
+      "ageDays": 111.82,
+      "unit": "u0009"
+    },
+    {
+      "ageDays": 28.9,
+      "unit": "u0010"
+    },
+    {
+      "ageDays": 7.34,
+      "unit": "u0010"
+    },
+    {
+      "ageDays": 111.76,
+      "unit": "u0011"
+    },
+    {
+      "ageDays": 46.68,
+      "unit": "u0011"
+    },
+    {
+      "ageDays": 75.45,
+      "unit": "u0012"
+    },
+    {
+      "ageDays": 50.96,
+      "unit": "u0012"
+    },
+    {
+      "ageDays": 97.98,
+      "unit": "u0013"
+    },
+    {
+      "ageDays": 80.95,
+      "unit": "u0013"
+    },
+    {
+      "ageDays": 74.5,
+      "unit": "u0014"
+    },
+    {
+      "ageDays": 118.63,
+      "unit": "u0014"
+    },
+    {
+      "ageDays": 30.35,
+      "unit": "u0015"
+    },
+    {
+      "ageDays": 70.56,
+      "unit": "u0015"
+    },
+    {
+      "ageDays": 27.8,
+      "unit": "u0016"
+    },
+    {
+      "ageDays": 2.07,
+      "unit": "u0016"
+    },
+    {
+      "ageDays": 98.78,
+      "unit": "u0017"
+    },
+    {
+      "ageDays": 101.99,
+      "unit": "u0017"
+    },
+    {
+      "ageDays": 61.5,
+      "unit": "u0018"
+    },
+    {
+      "ageDays": 108.39,
+      "unit": "u0018"
+    },
+    {
+      "ageDays": 91.0,
+      "unit": "u0019"
+    },
+    {
+      "ageDays": 94.85,
+      "unit": "u0019"
+    },
+    {
+      "ageDays": 119.4,
+      "unit": "u0020"
+    },
+    {
+      "ageDays": 65.58,
+      "unit": "u0020"
+    },
+    {
+      "ageDays": 85.59,
+      "unit": "u0021"
+    },
+    {
+      "ageDays": 36.07,
+      "unit": "u0021"
+    },
+    {
+      "ageDays": 31.79,
+      "unit": "u0022"
+    },
+    {
+      "ageDays": 95.31,
+      "unit": "u0022"
+    },
+    {
+      "ageDays": 7.24,
+      "unit": "u0023"
+    },
+    {
+      "ageDays": 38.88,
+      "unit": "u0023"
+    },
+    {
+      "ageDays": 61.45,
+      "unit": "u0024"
+    },
+    {
+      "ageDays": 89.53,
+      "unit": "u0024"
+    },
+    {
+      "ageDays": 95.84,
+      "unit": "u0025"
+    },
+    {
+      "ageDays": 23.34,
+      "unit": "u0025"
+    },
+    {
+      "ageDays": 90.43,
+      "unit": "u0026"
+    },
+    {
+      "ageDays": 12.92,
+      "unit": "u0026"
+    },
+    {
+      "ageDays": 113.68,
+      "unit": "u0027"
+    },
+    {
+      "ageDays": 105.92,
+      "unit": "u0027"
+    },
+    {
+      "ageDays": 9.64,
+      "unit": "u0028"
+    },
+    {
+      "ageDays": 116.51,
+      "unit": "u0028"
+    },
+    {
+      "ageDays": 39.83,
+      "unit": "u0029"
+    },
+    {
+      "ageDays": 49.07,
+      "unit": "u0029"
+    },
+    {
+      "ageDays": 7.1,
+      "unit": "u0030"
+    },
+    {
+      "ageDays": 50.26,
+      "unit": "u0030"
+    },
+    {
+      "ageDays": 114.2,
+      "unit": "u0031"
+    },
+    {
+      "ageDays": 98.34,
+      "unit": "u0031"
+    },
+    {
+      "ageDays": 107.96,
+      "unit": "u0032"
+    },
+    {
+      "ageDays": 109.62,
+      "unit": "u0032"
+    },
+    {
+      "ageDays": 75.73,
+      "unit": "u0033"
+    },
+    {
+      "ageDays": 22.81,
+      "unit": "u0033"
+    },
+    {
+      "ageDays": 9.26,
+      "unit": "u0034"
+    },
+    {
+      "ageDays": 94.27,
+      "unit": "u0034"
+    },
+    {
+      "ageDays": 90.47,
+      "unit": "u0035"
+    },
+    {
+      "ageDays": 40.61,
+      "unit": "u0035"
+    },
+    {
+      "ageDays": 85.41,
+      "unit": "u0036"
+    },
+    {
+      "ageDays": 100.38,
+      "unit": "u0036"
+    },
+    {
+      "ageDays": 109.76,
+      "unit": "u0037"
+    },
+    {
+      "ageDays": 114.56,
+      "unit": "u0037"
+    },
+    {
+      "ageDays": 113.03,
+      "unit": "u0038"
+    },
+    {
+      "ageDays": 33.24,
+      "unit": "u0038"
+    },
+    {
+      "ageDays": 45.1,
+      "unit": "u0039"
+    },
+    {
+      "ageDays": 39.1,
+      "unit": "u0039"
+    },
+    {
+      "ageDays": 70.01,
+      "unit": "u0040"
+    },
+    {
+      "ageDays": 4.19,
+      "unit": "u0040"
+    },
+    {
+      "ageDays": 47.02,
+      "unit": "u0041"
+    },
+    {
+      "ageDays": 109.52,
+      "unit": "u0041"
+    },
+    {
+      "ageDays": 54.08,
+      "unit": "u0042"
+    },
+    {
+      "ageDays": 85.17,
+      "unit": "u0042"
+    },
+    {
+      "ageDays": 16.44,
+      "unit": "u0043"
+    },
+    {
+      "ageDays": 19.56,
+      "unit": "u0043"
+    },
+    {
+      "ageDays": 68.83,
+      "unit": "u0044"
+    },
+    {
+      "ageDays": 20.31,
+      "unit": "u0044"
+    },
+    {
+      "ageDays": 90.57,
+      "unit": "u0045"
+    },
+    {
+      "ageDays": 102.15,
+      "unit": "u0045"
+    },
+    {
+      "ageDays": 23.18,
+      "unit": "u0046"
+    },
+    {
+      "ageDays": 37.08,
+      "unit": "u0046"
+    },
+    {
+      "ageDays": 86.96,
+      "unit": "u0047"
+    },
+    {
+      "ageDays": 40.13,
+      "unit": "u0047"
+    },
+    {
+      "ageDays": 36.01,
+      "unit": "u0048"
+    },
+    {
+      "ageDays": 60.92,
+      "unit": "u0048"
+    },
+    {
+      "ageDays": 99.95,
+      "unit": "u0049"
+    },
+    {
+      "ageDays": 105.81,
+      "unit": "u0049"
+    },
+    {
+      "ageDays": 78.65,
+      "unit": "u0050"
+    },
+    {
+      "ageDays": 8.58,
+      "unit": "u0050"
+    },
+    {
+      "ageDays": 48.03,
+      "unit": "u0051"
+    },
+    {
+      "ageDays": 86.06,
+      "unit": "u0051"
+    },
+    {
+      "ageDays": 30.63,
+      "unit": "u0052"
+    },
+    {
+      "ageDays": 54.43,
+      "unit": "u0052"
+    },
+    {
+      "ageDays": 32.12,
+      "unit": "u0053"
+    },
+    {
+      "ageDays": 1.99,
+      "unit": "u0053"
+    },
+    {
+      "ageDays": 48.88,
+      "unit": "u0054"
+    },
+    {
+      "ageDays": 54.84,
+      "unit": "u0054"
+    },
+    {
+      "ageDays": 59.04,
+      "unit": "u0055"
+    },
+    {
+      "ageDays": 80.47,
+      "unit": "u0055"
+    },
+    {
+      "ageDays": 41.01,
+      "unit": "u0056"
+    },
+    {
+      "ageDays": 15.36,
+      "unit": "u0056"
+    },
+    {
+      "ageDays": 21.78,
+      "unit": "u0057"
+    },
+    {
+      "ageDays": 14.04,
+      "unit": "u0057"
+    },
+    {
+      "ageDays": 55.18,
+      "unit": "u0058"
+    },
+    {
+      "ageDays": 59.18,
+      "unit": "u0058"
+    },
+    {
+      "ageDays": 102.79,
+      "unit": "u0059"
+    },
+    {
+      "ageDays": 6.31,
+      "unit": "u0059"
+    },
+    {
+      "ageDays": 92.41,
+      "unit": "u0060"
+    },
+    {
+      "ageDays": 98.48,
+      "unit": "u0060"
+    },
+    {
+      "ageDays": 112.89,
+      "unit": "u0061"
+    },
+    {
+      "ageDays": 77.85,
+      "unit": "u0061"
+    },
+    {
+      "ageDays": 80.35,
+      "unit": "u0062"
+    },
+    {
+      "ageDays": 18.06,
+      "unit": "u0062"
+    },
+    {
+      "ageDays": 116.93,
+      "unit": "u0063"
+    },
+    {
+      "ageDays": 30.12,
+      "unit": "u0063"
+    },
+    {
+      "ageDays": 28.16,
+      "unit": "u0064"
+    },
+    {
+      "ageDays": 70.3,
+      "unit": "u0064"
+    },
+    {
+      "ageDays": 58.46,
+      "unit": "u0065"
+    },
+    {
+      "ageDays": 8.02,
+      "unit": "u0065"
+    },
+    {
+      "ageDays": 29.77,
+      "unit": "u0066"
+    },
+    {
+      "ageDays": 86.18,
+      "unit": "u0066"
+    },
+    {
+      "ageDays": 79.25,
+      "unit": "u0067"
+    },
+    {
+      "ageDays": 67.62,
+      "unit": "u0067"
+    },
+    {
+      "ageDays": 117.0,
+      "unit": "u0068"
+    },
+    {
+      "ageDays": 30.24,
+      "unit": "u0068"
+    },
+    {
+      "ageDays": 26.51,
+      "unit": "u0069"
+    },
+    {
+      "ageDays": 46.3,
+      "unit": "u0069"
+    },
+    {
+      "ageDays": 40.76,
+      "unit": "u0070"
+    },
+    {
+      "ageDays": 113.71,
+      "unit": "u0070"
+    },
+    {
+      "ageDays": 101.4,
+      "unit": "u0071"
+    },
+    {
+      "ageDays": 117.4,
+      "unit": "u0071"
+    },
+    {
+      "ageDays": 105.01,
+      "unit": "u0072"
+    },
+    {
+      "ageDays": 108.47,
+      "unit": "u0072"
+    },
+    {
+      "ageDays": 58.28,
+      "unit": "u0073"
+    },
+    {
+      "ageDays": 116.6,
+      "unit": "u0073"
+    },
+    {
+      "ageDays": 60.43,
+      "unit": "u0074"
+    },
+    {
+      "ageDays": 59.41,
+      "unit": "u0074"
+    },
+    {
+      "ageDays": 59.18,
+      "unit": "u0075"
+    },
+    {
+      "ageDays": 28.31,
+      "unit": "u0075"
+    },
+    {
+      "ageDays": 78.33,
+      "unit": "u0076"
+    },
+    {
+      "ageDays": 111.59,
+      "unit": "u0076"
+    },
+    {
+      "ageDays": 114.8,
+      "unit": "u0077"
+    },
+    {
+      "ageDays": 11.91,
+      "unit": "u0077"
+    },
+    {
+      "ageDays": 99.65,
+      "unit": "u0078"
+    },
+    {
+      "ageDays": 47.35,
+      "unit": "u0078"
+    },
+    {
+      "ageDays": 95.41,
+      "unit": "u0079"
+    },
+    {
+      "ageDays": 60.03,
+      "unit": "u0079"
+    },
+    {
+      "ageDays": 49.28,
+      "unit": "u0080"
+    },
+    {
+      "ageDays": 77.18,
+      "unit": "u0080"
+    },
+    {
+      "ageDays": 59.47,
+      "unit": "u0081"
+    },
+    {
+      "ageDays": 19.5,
+      "unit": "u0081"
+    },
+    {
+      "ageDays": 81.53,
+      "unit": "u0082"
+    },
+    {
+      "ageDays": 79.68,
+      "unit": "u0082"
+    },
+    {
+      "ageDays": 118.07,
+      "unit": "u0083"
+    },
+    {
+      "ageDays": 67.12,
+      "unit": "u0083"
+    },
+    {
+      "ageDays": 88.42,
+      "unit": "u0084"
+    },
+    {
+      "ageDays": 18.86,
+      "unit": "u0084"
+    },
+    {
+      "ageDays": 88.57,
+      "unit": "u0085"
+    },
+    {
+      "ageDays": 94.35,
+      "unit": "u0085"
+    },
+    {
+      "ageDays": 21.68,
+      "unit": "u0086"
+    },
+    {
+      "ageDays": 35.79,
+      "unit": "u0086"
+    },
+    {
+      "ageDays": 91.8,
+      "unit": "u0087"
+    },
+    {
+      "ageDays": 74.38,
+      "unit": "u0087"
+    },
+    {
+      "ageDays": 20.71,
+      "unit": "u0088"
+    },
+    {
+      "ageDays": 100.24,
+      "unit": "u0088"
+    },
+    {
+      "ageDays": 17.93,
+      "unit": "u0089"
+    },
+    {
+      "ageDays": 84.11,
+      "unit": "u0089"
+    },
+    {
+      "ageDays": 86.86,
+      "unit": "u0090"
+    },
+    {
+      "ageDays": 26.23,
+      "unit": "u0090"
+    },
+    {
+      "ageDays": 18.48,
+      "unit": "u0091"
+    },
+    {
+      "ageDays": 14.75,
+      "unit": "u0091"
+    },
+    {
+      "ageDays": 78.41,
+      "unit": "u0092"
+    },
+    {
+      "ageDays": 49.25,
+      "unit": "u0092"
+    },
+    {
+      "ageDays": 114.03,
+      "unit": "u0093"
+    },
+    {
+      "ageDays": 55.42,
+      "unit": "u0093"
+    },
+    {
+      "ageDays": 64.66,
+      "unit": "u0094"
+    },
+    {
+      "ageDays": 27.49,
+      "unit": "u0094"
+    },
+    {
+      "ageDays": 112.01,
+      "unit": "u0095"
+    },
+    {
+      "ageDays": 63.33,
+      "unit": "u0095"
+    },
+    {
+      "ageDays": 110.85,
+      "unit": "u0096"
+    },
+    {
+      "ageDays": 96.27,
+      "unit": "u0096"
+    },
+    {
+      "ageDays": 38.87,
+      "unit": "u0097"
+    },
+    {
+      "ageDays": 3.46,
+      "unit": "u0097"
+    },
+    {
+      "ageDays": 34.92,
+      "unit": "u0098"
+    },
+    {
+      "ageDays": 5.52,
+      "unit": "u0098"
+    },
+    {
+      "ageDays": 33.15,
+      "unit": "u0099"
+    },
+    {
+      "ageDays": 65.18,
+      "unit": "u0099"
+    },
+    {
+      "ageDays": 5.92,
+      "unit": "u0100"
+    },
+    {
+      "ageDays": 46.4,
+      "unit": "u0100"
+    },
+    {
+      "ageDays": 22.82,
+      "unit": "u0101"
+    },
+    {
+      "ageDays": 95.82,
+      "unit": "u0101"
+    },
+    {
+      "ageDays": 20.68,
+      "unit": "u0102"
+    },
+    {
+      "ageDays": 19.98,
+      "unit": "u0102"
+    },
+    {
+      "ageDays": 110.31,
+      "unit": "u0103"
+    },
+    {
+      "ageDays": 29.65,
+      "unit": "u0103"
+    },
+    {
+      "ageDays": 98.45,
+      "unit": "u0104"
+    },
+    {
+      "ageDays": 29.35,
+      "unit": "u0104"
+    },
+    {
+      "ageDays": 100.01,
+      "unit": "u0105"
+    },
+    {
+      "ageDays": 35.26,
+      "unit": "u0105"
+    },
+    {
+      "ageDays": 67.41,
+      "unit": "u0106"
+    },
+    {
+      "ageDays": 92.26,
+      "unit": "u0106"
+    },
+    {
+      "ageDays": 86.42,
+      "unit": "u0107"
+    },
+    {
+      "ageDays": 71.28,
+      "unit": "u0107"
+    },
+    {
+      "ageDays": 83.5,
+      "unit": "u0108"
+    },
+    {
+      "ageDays": 58.32,
+      "unit": "u0108"
+    },
+    {
+      "ageDays": 49.31,
+      "unit": "u0109"
+    },
+    {
+      "ageDays": 103.79,
+      "unit": "u0109"
+    },
+    {
+      "ageDays": 69.42,
+      "unit": "u0110"
+    },
+    {
+      "ageDays": 73.36,
+      "unit": "u0110"
+    },
+    {
+      "ageDays": 51.18,
+      "unit": "u0111"
+    },
+    {
+      "ageDays": 24.28,
+      "unit": "u0111"
+    },
+    {
+      "ageDays": 12.44,
+      "unit": "u0112"
+    },
+    {
+      "ageDays": 83.73,
+      "unit": "u0112"
+    },
+    {
+      "ageDays": 26.94,
+      "unit": "u0113"
+    },
+    {
+      "ageDays": 118.13,
+      "unit": "u0113"
+    },
+    {
+      "ageDays": 49.46,
+      "unit": "u0114"
+    },
+    {
+      "ageDays": 103.71,
+      "unit": "u0114"
+    },
+    {
+      "ageDays": 45.82,
+      "unit": "u0115"
+    },
+    {
+      "ageDays": 70.29,
+      "unit": "u0115"
+    },
+    {
+      "ageDays": 93.05,
+      "unit": "u0116"
+    },
+    {
+      "ageDays": 99.6,
+      "unit": "u0116"
+    },
+    {
+      "ageDays": 99.89,
+      "unit": "u0117"
+    },
+    {
+      "ageDays": 17.84,
+      "unit": "u0117"
+    },
+    {
+      "ageDays": 40.26,
+      "unit": "u0118"
+    },
+    {
+      "ageDays": 49.91,
+      "unit": "u0118"
+    },
+    {
+      "ageDays": 37.84,
+      "unit": "u0119"
+    },
+    {
+      "ageDays": 105.8,
+      "unit": "u0119"
+    },
+    {
+      "ageDays": 14.12,
+      "unit": "u0120"
+    },
+    {
+      "ageDays": 72.55,
+      "unit": "u0120"
+    },
+    {
+      "ageDays": 59.62,
+      "unit": "u0121"
+    },
+    {
+      "ageDays": 32.93,
+      "unit": "u0121"
+    },
+    {
+      "ageDays": 43.78,
+      "unit": "u0122"
+    },
+    {
+      "ageDays": 50.32,
+      "unit": "u0122"
+    },
+    {
+      "ageDays": 74.82,
+      "unit": "u0123"
+    },
+    {
+      "ageDays": 21.54,
+      "unit": "u0123"
+    },
+    {
+      "ageDays": 44.14,
+      "unit": "u0124"
+    },
+    {
+      "ageDays": 37.43,
+      "unit": "u0124"
+    },
+    {
+      "ageDays": 105.97,
+      "unit": "u0125"
+    },
+    {
+      "ageDays": 80.85,
+      "unit": "u0125"
+    },
+    {
+      "ageDays": 43.08,
+      "unit": "u0126"
+    },
+    {
+      "ageDays": 96.46,
+      "unit": "u0126"
+    },
+    {
+      "ageDays": 8.4,
+      "unit": "u0127"
+    },
+    {
+      "ageDays": 17.3,
+      "unit": "u0127"
+    },
+    {
+      "ageDays": 99.37,
+      "unit": "u0128"
+    },
+    {
+      "ageDays": 53.78,
+      "unit": "u0128"
+    },
+    {
+      "ageDays": 9.99,
+      "unit": "u0129"
+    },
+    {
+      "ageDays": 115.06,
+      "unit": "u0129"
+    },
+    {
+      "ageDays": 28.81,
+      "unit": "u0130"
+    },
+    {
+      "ageDays": 76.92,
+      "unit": "u0130"
+    },
+    {
+      "ageDays": 99.9,
+      "unit": "u0131"
+    },
+    {
+      "ageDays": 109.57,
+      "unit": "u0131"
+    },
+    {
+      "ageDays": 105.3,
+      "unit": "u0132"
+    },
+    {
+      "ageDays": 117.94,
+      "unit": "u0132"
+    },
+    {
+      "ageDays": 53.61,
+      "unit": "u0133"
+    },
+    {
+      "ageDays": 38.55,
+      "unit": "u0133"
+    },
+    {
+      "ageDays": 78.43,
+      "unit": "u0134"
+    },
+    {
+      "ageDays": 72.2,
+      "unit": "u0134"
+    },
+    {
+      "ageDays": 1.6,
+      "unit": "u0135"
+    },
+    {
+      "ageDays": 66.78,
+      "unit": "u0135"
+    },
+    {
+      "ageDays": 35.73,
+      "unit": "u0136"
+    },
+    {
+      "ageDays": 64.77,
+      "unit": "u0136"
+    },
+    {
+      "ageDays": 51.91,
+      "unit": "u0137"
+    },
+    {
+      "ageDays": 55.28,
+      "unit": "u0137"
+    },
+    {
+      "ageDays": 37.89,
+      "unit": "u0138"
+    },
+    {
+      "ageDays": 106.58,
+      "unit": "u0138"
+    },
+    {
+      "ageDays": 113.01,
+      "unit": "u0139"
+    },
+    {
+      "ageDays": 58.5,
+      "unit": "u0139"
+    },
+    {
+      "ageDays": 90.28,
+      "unit": "u0140"
+    },
+    {
+      "ageDays": 61.95,
+      "unit": "u0141"
+    },
+    {
+      "ageDays": 76.21,
+      "unit": "u0142"
+    },
+    {
+      "ageDays": 5.05,
+      "unit": "u0143"
+    },
+    {
+      "ageDays": 41.88,
+      "unit": "u0144"
+    },
+    {
+      "ageDays": 91.58,
+      "unit": "u0145"
+    },
+    {
+      "ageDays": 119.08,
+      "unit": "u0146"
+    },
+    {
+      "ageDays": 80.07,
+      "unit": "u0147"
+    },
+    {
+      "ageDays": 87.54,
+      "unit": "u0148"
+    },
+    {
+      "ageDays": 35.44,
+      "unit": "u0149"
+    },
+    {
+      "ageDays": 91.66,
+      "unit": "u0150"
+    },
+    {
+      "ageDays": 67.35,
+      "unit": "u0151"
+    },
+    {
+      "ageDays": 21.68,
+      "unit": "u0152"
+    },
+    {
+      "ageDays": 109.04,
+      "unit": "u0153"
+    },
+    {
+      "ageDays": 0.56,
+      "unit": "u0154"
+    },
+    {
+      "ageDays": 92.85,
+      "unit": "u0155"
+    },
+    {
+      "ageDays": 93.7,
+      "unit": "u0156"
+    },
+    {
+      "ageDays": 109.56,
+      "unit": "u0157"
+    },
+    {
+      "ageDays": 106.02,
+      "unit": "u0158"
+    }
+  ],
+  "meta": {
+    "expect": "skip gate-not-met with T1 (299 < 300 active rows)",
+    "generator": "scripts/tau/generate_fixtures.py",
+    "generatorVersion": 1,
+    "params": {
+      "a": 0.79,
+      "alpha": 4.4,
+      "b": 2.4,
+      "r": 0.55
+    },
+    "seed": 43,
+    "windowDays": 120
+  },
+  "name": "t1-fail",
+  "schema": "anysearch/obs-fixture@1",
+  "track": "synthetic"
+}

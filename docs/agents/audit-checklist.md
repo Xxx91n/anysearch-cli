@@ -195,6 +195,14 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 - Acceptance 3 措辞：中段/首行删除可检测；尾行/整段截断为已声明限制（非对抗模型）
 - 待办（r39）：F-07 阶梯自动化测试、F-09 report.json 记 subject digest、F-08 并发 gate 互撞、skip-ledger schema 版本仍 @1
 
+## r109 检查点（ADR-0042 实现轮 / observational data feeding impl）
+
+- [ ] skip-ledger @2：schema 字符串、track/reasonCode 字段、@1→@2 无损迁移、data-absent 不计 streak 且打断后 gate-not-met 从 1 计（eval-skip.test.ts）
+- [ ] 四 fixture=pass-stable/t1-fail(299)/t2-fail(PSI≥0.25)/t3-fail(89d)，SHA-256 MANIFEST 一致性，loader 拒绝 track!=synthetic（obs-fixtures.test.ts）
+- [ ] regenerate-and-diff 守卫在 tau-python.yml：`python scripts/tau/generate_fixtures.py --check`（exit 2=drift）
+- [ ] fingerprint flip 声明：113be271869dbc54 → 新基线（fixture definitionHash 加入），eval --calibrate 50 轮重基线已提交
+- [ ] 平台验收：tsc clean、store suite green、ship-gate exit 0、eval 123/123、打包产物进程存活
+
 ## r108 检查点（grill r39 / ADR-0042 observational data feeding）
 
 - [ ] ADR-0042 七节齐：Status / Context / D1-D6 / Consequences / Implementation Plan / Acceptance / Research Sources

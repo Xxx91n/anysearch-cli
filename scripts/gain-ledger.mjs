@@ -15,7 +15,9 @@ export function readGainLedger(file) {
   if (!fs.existsSync(file)) return emptyLedger();
   try {
     const j = JSON.parse(fs.readFileSync(file, "utf8"));
-    if (j.schema !== GAIN_LEDGER_SCHEMA || typeof j.consecutiveWarn !== "number" || !Array.isArray(j.history)) return emptyLedger();
+    // ADR-0042 D4: also accept the @2 skip-ledger (shared wire family; fields/track are
+    // additive and preserved untouched on write-back).
+    if ((j.schema !== GAIN_LEDGER_SCHEMA && j.schema !== "anysearch/gain-ledger@2") || typeof j.consecutiveWarn !== "number" || !Array.isArray(j.history)) return emptyLedger();
     if (!Array.isArray(j.resolutions)) j.resolutions = [];
     return j;
   } catch {

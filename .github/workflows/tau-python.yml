@@ -7,13 +7,19 @@ on:
       - ".github/workflows/tau-python.yml"
       - "scripts/tau/**"
       - "packages/store/src/eval/bgnbd.ts"
+      - "packages/store/src/eval/obs-fixtures.ts"
+      - "packages/store/fixtures/obs-feed/**"
       - "packages/store/test/bgnbd-spawn.test.ts"
+      - "packages/store/test/obs-fixtures.test.ts"
   pull_request:
     paths:
       - ".github/workflows/tau-python.yml"
       - "scripts/tau/**"
       - "packages/store/src/eval/bgnbd.ts"
+      - "packages/store/src/eval/obs-fixtures.ts"
+      - "packages/store/fixtures/obs-feed/**"
       - "packages/store/test/bgnbd-spawn.test.ts"
+      - "packages/store/test/obs-fixtures.test.ts"
   workflow_dispatch:
 
 concurrency:
@@ -41,6 +47,8 @@ jobs:
           cache: pip
           cache-dependency-path: scripts/tau/requirements.txt
       - run: python -m pip install -r scripts/tau/requirements.txt
+      - name: Fixture regenerate-and-diff guard (ADR-0042 D6; pure stdlib, no pinned stack needed)
+        run: python scripts/tau/generate_fixtures.py --check
       - name: Smoke - frozen stack import + envelope contract
         run: |
           python -c "import numpy, pandas, scipy, autograd, lifetimes; print(numpy.__version__, lifetimes.__version__)"
