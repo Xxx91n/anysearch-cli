@@ -240,9 +240,9 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 
 ## r40 检查点（grill r40 / ADR-0043 consumed/synthetic 切换治理 — 文档轮）
 
-- [ ] ADR-0043 七节齐（Status / Context / D1–D7 / Consequences / Implementation Plan 8 步 / Acceptance 5 项 / Research Sources），UTF-8 无 BOM、无 CRLF
-- [ ] CONTEXT.md +3 术语（Switch State Machine (S0–S4) / Pre-Registered Readiness Trigger / Graded Rollback with Inconclusive Hold），均含 _Avoid_，位于尾部现役块、双 *End of Glossary*（205/602）结构保留
-- [ ] 本轮为 docs-only；实现（skip-ledger @3、stage-transition 链事件、切换状态机执行器、ans switch-state、预注册阈值表数据化）留给下一轮实现
-- [ ] D1 契约声明：r40 给出 data-absent 语义规范（「有 events 但无 fit-eligible」= data-absent），r110 修复轮按其落地；两轮互不阻塞
-- [ ] 下轮实现验收：状态机转换矩阵测试、@2→@3 无损 upcast、回退链路不递增 3 连击、迟滞防抖测试、完整性谱系 fail-closed 测试
-- [ ] 平台验收：tsc clean、store suite green、ship-gate 空库/非空库两形态 exit 0、eval 123/123、打包产物可启动且进程存活
+- [x] ADR-0043 七节齐（Status / Context / D1–D7 / Consequences / Implementation Plan 8 步 / Acceptance 5 项 / Research Sources），UTF-8 无 BOM、无 CRLF
+- [x] CONTEXT.md +3 术语（Switch State Machine (S0–S4) / Pre-Registered Readiness Trigger / Graded Rollback with Inconclusive Hold），均含 _Avoid_，位于尾部现役块、双 *End of Glossary*（205/602）结构保留
+- [x] 本轮为 docs-only；实现（skip-ledger @3、stage-transition 链事件、切换状态机执行器、ans switch-state、预注册阈值表数据化）留给下一轮实现
+- [x] D1 契约声明：r40 给出 data-absent 语义规范（「有 events 但无 fit-eligible」= data-absent），r110 修复轮按其落地；两轮互不阻塞
+- [x] 下轮实现验收：状态机转换矩阵测试、@2→@3 无损 upcast、回退链路不递增 3 连击、迟滞防抖测试、完整性谱系 fail-closed 测试
+- [x] 平台验收：tsc clean、store suite green、ship-gate 空库/非空库两形态 exit 0、eval 123/123、打包产物可启动且进程存活
