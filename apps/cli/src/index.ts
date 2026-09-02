@@ -18,6 +18,7 @@ import { runEntity } from "./commands/entity";
 import { runRelation } from "./commands/relation";
 import { runConsolidate } from "./commands/consolidate";
 import { runAccessChain } from "./commands/access-chain";
+import { runSwitchState } from "./commands/switch-state";
 
 // ponytail: single source of truth for CLI version, same pattern as apps/mcp
 // (ADR-0020 D3). tsup injects __PACKAGE_VERSION__ at build time.
@@ -45,6 +46,7 @@ const help = [
   "  pref      Manage T0 durable preferences (/remember, pref review - ADR-0024/0025)",
   "  memory    Memory embeddings maintenance (backfill-vectors, ADR-0033)",
   "  access-chain  Access-events tamper-evidence chain bootstrap (ADR-0040)",
+  "  switch-state Read switch governance state (S0-S4, ADR-0043)",
   "  entity    Entity merge / unmerge / review belt (ADR-0032)",
   "  relation  Entity relation edges: list + backfill-relations (ADR-0035 KG-lite arm)",
   "  consolidate Episodic->semantic consolidation with fidelity gate (ADR-0037)",
@@ -75,7 +77,7 @@ if (cmd === "--help" || cmd === "-h") {
   process.exit(0);
 }
 
-const known = new Set(["doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp", "pref", "memory", "entity", "relation", "consolidate", "access-chain"]);
+const known = new Set(["switch-state", "doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp", "pref", "memory", "entity", "relation", "consolidate", "access-chain"]);
 if (!known.has(cmd)) {
   process.stderr.write("ans: unknown command " + String.fromCharCode(39) + cmd + String.fromCharCode(39) + "\n" + "See " + String.fromCharCode(39) + "ans --help" + String.fromCharCode(39) + ".\n");
   process.exit(2);
@@ -100,6 +102,7 @@ const handlers: Record<string, (args: string[]) => Promise<number>> = {
   relation: runRelation,
   consolidate: runConsolidate,
   "access-chain": runAccessChain,
+  "switch-state": runSwitchState,
 };
 
 const handler = handlers[cmd];

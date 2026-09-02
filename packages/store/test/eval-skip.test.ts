@@ -41,11 +41,11 @@ assert(l.history.length === 5, "history retains all entries");
 // ---- ADR-0042 D4: skip-ledger schema @2 — @1 migration + reason-code split ----
 const v1 = { schema: "anysearch/gain-ledger@1", consecutiveWarn: 2, history: [{ at: "2026-01-01", tier: "warn", look: "a" }], resolutions: [{ at: "x", decision: "stay-warn", note: "n" }], lastSkipKeys: ["a"] };
 const m1 = parseSkipLedger(JSON.stringify(v1));
-assert(m1.schema === "anysearch/gain-ledger@2", "@1 upcasts to @2 on read");
+assert(m1.schema === "anysearch/gain-ledger@3", "@1 upcasts to @3 on read");
 assert(m1.consecutiveWarn === 2 && m1.history.length === 1, "@1 streak + history preserved (lossless)");
 assert(m1.history[0]!.track === "consumed" && m1.history[0]!.reasonCode === "gate-not-met", "@1 entries default track=consumed / reasonCode=gate-not-met");
 assert(m1.resolutions.length === 1 && m1.lastSkipKeys![0] === "a", "@1 resolutions + lastSkipKeys preserved");
-assert(parseSkipLedger(JSON.stringify(m1)).schema === "anysearch/gain-ledger@2", "@2 re-parse idempotent");
+assert(parseSkipLedger(JSON.stringify(m1)).schema === "anysearch/gain-ledger@3", "@3 re-parse idempotent");
 assertThrows("unknown future schema @9 throws (no forward-compat data loss)", () => parseSkipLedger('{"schema":"anysearch/gain-ledger@9"}'));
 
 // data-absent never increments the streak and breaks an in-flight gate-not-met run.
@@ -58,7 +58,7 @@ assert(l2.history[2]!.tier === "data-absent" && l2.history[2]!.reasonCode === "d
 assert(recordSkips(l2, ["bgnbd|gate-not-met|T1: x"], "t4") === 1, "first gate-not-met after data-absent starts counting from 1");
 assert(recordSkips(l2, ["bgnbd|gate-not-met|T1: x"], "t5") === 2 && !skipMustFail(l2), "streak resumes 1..2 after data-absent");
 assert(recordSkips(emptySkipLedger(), ["k"], "t6") === 1, "default meta = consumed + gate-not-met (legacy callers unchanged)");
-assert(emptySkipLedger().schema === "anysearch/gain-ledger@2", "new ledgers are @2");
+assert(emptySkipLedger().schema === "anysearch/gain-ledger@3", "new ledgers are @2");
 
 // ---- r110 SA-F-02: skip-key identity excludes volatile numerics ----
 assert(skipKey("bgnbd", skip("T2: PSI 0.2511 >= 0.25", "gate-not-met")) === skipKey("bgnbd", skip("T2: PSI 0.3099 >= 0.25", "gate-not-met")), "PSI value variation does not change the clause identity");
@@ -69,11 +69,11 @@ assert(skipKey("bgnbd", skip("T2: PSI 0.3 >= 0.25", "gate-not-met")) !== skipKey
 const lg = emptySkipLedger();
 recordSkips(lg, [], "t1");
 assert(lg.history[0]!.reasonCode === undefined, "green entry omits reasonCode (no contradiction)");
-const junk = { schema: "anysearch/gain-ledger@2", consecutiveWarn: 0, history: [{ at: "x", tier: "warn", look: "", track: "bogus", reasonCode: "gate-not-met" }], resolutions: [] };
+const junk = { schema: "anysearch/gain-ledger@3", consecutiveWarn: 0, history: [{ at: "x", tier: "warn", look: "", track: "bogus", reasonCode: "gate-not-met" }], resolutions: [] };
 assertThrows("bogus track entry rejected", () => parseSkipLedger(JSON.stringify(junk)));
-const junk2 = { schema: "anysearch/gain-ledger@2", consecutiveWarn: 0, history: [{ at: "x", tier: "green", look: "", track: "consumed", reasonCode: "gate-not-met" }], resolutions: [] };
+const junk2 = { schema: "anysearch/gain-ledger@3", consecutiveWarn: 0, history: [{ at: "x", tier: "green", look: "", track: "consumed", reasonCode: "gate-not-met" }], resolutions: [] };
 assertThrows("green row with reasonCode rejected", () => parseSkipLedger(JSON.stringify(junk2)));
-const junk3 = { schema: "anysearch/gain-ledger@2", consecutiveWarn: 0, history: [{ at: "x", tier: "warn", look: "", track: "consumed" }], resolutions: [] };
+const junk3 = { schema: "anysearch/gain-ledger@3", consecutiveWarn: 0, history: [{ at: "x", tier: "warn", look: "", track: "consumed" }], resolutions: [] };
 assertThrows("warn row without reasonCode rejected", () => parseSkipLedger(JSON.stringify(junk3)));
 // @1 green entries upcast without an invented reason code
 const v1g = { schema: "anysearch/gain-ledger@1", consecutiveWarn: 0, history: [{ at: "x", tier: "green", look: "" }], resolutions: [] };

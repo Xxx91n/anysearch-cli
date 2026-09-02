@@ -15,7 +15,8 @@ import { psi, type BgnbdRow, type TauFitGateInput } from "./bgnbd";
 export const OBS_FIXTURE_SCHEMA = "anysearch/obs-fixture@1";
 export const SIMULATED_LABEL = "simulated-observation-window";
 
-const FIXTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "fixtures", "obs-feed");
+// lazy (same CJS-bundle reason as bgnbd.ts).
+function fixtureDir(): string { return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "fixtures", "obs-feed"); }
 
 export interface ObsFixture {
   schema: typeof OBS_FIXTURE_SCHEMA;
@@ -55,7 +56,7 @@ function sha256(buf: Buffer): string {
 // (fixtureDefinitionHash field), and the eval CLI warns on stderr when it is active.
 export function fixtureDefinitionHash(): string {
   try {
-    const j = JSON.parse(readFileSync(join(FIXTURE_DIR, "MANIFEST.json"), "utf8")) as { definitionHash?: string };
+    const j = JSON.parse(readFileSync(join(fixtureDir(), "MANIFEST.json"), "utf8")) as { definitionHash?: string };
     return typeof j.definitionHash === "string" ? j.definitionHash : "no-fixtures";
   } catch {
     return "no-fixtures";
@@ -70,13 +71,13 @@ export function fixtureDefinitionHash(): string {
 // regenerate-and-diff step (fixtures must hash-match what the committed generator produces)
 // and code review; do not present the runtime check as integrity protection.
 export function loadObsFixture(name: string): ObsFixture {
-  const mpath = join(FIXTURE_DIR, "MANIFEST.json");
-  if (!existsSync(mpath)) throw new Error("obs-fixture MANIFEST.json missing at " + FIXTURE_DIR);
+  const mpath = join(fixtureDir(), "MANIFEST.json");
+  if (!existsSync(mpath)) throw new Error("obs-fixture MANIFEST.json missing at " + fixtureDir());
   const manifest = JSON.parse(readFileSync(mpath, "utf8")) as { schema?: string; files?: Record<string, string> };
   if (manifest.schema !== "anysearch/obs-fixture-manifest@1") throw new Error("obs-fixture manifest: unexpected schema " + manifest.schema);
   const want = manifest.files?.[name + ".json"];
   if (!want) throw new Error("obs-fixture unknown: " + name + " (not in MANIFEST.json)");
-  const buf = readFileSync(join(FIXTURE_DIR, name + ".json"));
+  const buf = readFileSync(join(fixtureDir(), name + ".json"));
   const got = sha256(buf);
   if (got !== want) throw new Error("obs-fixture " + name + " sha256 mismatch: " + got + " != " + want);
   const fx = JSON.parse(buf.toString("utf8")) as ObsFixture;

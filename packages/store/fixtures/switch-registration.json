@@ -1,0 +1,30 @@
+{
+  "schema": "anysearch/switch-registration@1",
+  "version": 1,
+  "note": "ADR-0043 D3-D6 pre-registered threshold table (data, not code). Git commit is the pinning channel (DVC/lockfile precedent); the load-time sha256 of this payload is reported as registrationHash in every verdict.",
+  "c": {
+    "c1MinActiveRows": 300,
+    "c1MinFittableUnits": 100,
+    "c2MinWindowDays": 90,
+    "c3PsiMax": 0.25,
+    "c3BaselineFixture": "pass-stable",
+    "c4ConsecutivePromote": 3,
+    "c4kMaxRounds": 10
+  },
+  "reconcile": {
+    "tierConcordanceMin": 0.95,
+    "psiDiffMax": 0.25,
+    "rankDisplacementMedianMax": 1,
+    "rankDisplacementP95Max": 3,
+    "mcnemarExactBelowN": 25,
+    "mcnemarWarnAlpha": 0.05
+  },
+  "rollback": {
+    "heavyConsecutiveConfirmations": 2,
+    "lightHysteresisRule": "any single C-family out-of-band in S3 -> Inconclusive hold back to S2; never auto-demote on one reading"
+  },
+  "freeze": {
+    "s3MinWindowDays": 7,
+    "consecutiveCleanReconciles": 3
+  }
+}

@@ -17,3 +17,10 @@ export * from "./consolidate";
 
 // ADR-0040: access_events tamper-evidence chain (writer side; verifier is independent).
 export * from "./access-chain";
+
+// ADR-0043: consumed/synthetic switch governance (state machine + chain evidence).
+export * from "./eval/switch-machine";
+export * from "./eval/switch-run";
+
+// ADR-0043 D7: skip-ledger @3 read surface for ans switch-state.
+export * from "./eval/skip-ledger";

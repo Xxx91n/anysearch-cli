@@ -694,6 +694,20 @@ async function stepMemoryEval() {
       }
     }
     report("pass", "memory-eval observational zone present (ADR-0039; values never gated, D7 streak ledger watched)");
+    // ADR-0043 impl-plan 8: ship-gate reads switch state through the ledger (informational;
+    // exit-code semantics unchanged — S0 data-absent boots must pass on both db shapes).
+    if (fs.existsSync(skipL)) {
+      try {
+        const sl2 = JSON.parse(fs.readFileSync(skipL, "utf8"));
+        const st = sl2 && sl2.state && typeof sl2.state.phase === "string" ? sl2.state : null;
+        report("info", "switch-state: phase " + (st ? st.phase : "S0 (pre-@3 ledger)") + (st && st.since ? " since " + st.since : "") + (st && st.transitionId ? " transitionId " + st.transitionId : ""));
+      } catch (e) {
+        report("info", "switch-state: ledger unreadable (handled by eval quarantine): " + String(e && e.message ? e.message : e));
+      }
+    } else {
+      report("info", "switch-state: no ledger yet — phase S0 (boot)");
+    }
+
   }
   // ADR-0037 D6 (carries ADR-0028 D1): fingerprint single-flip — report fingerprint must equal the committed baseline.
   {

@@ -3,12 +3,14 @@
 // ADR-0028 D1 / ADR-0029 D6: --calibrate only (50-run hard floor; CI never rewrites). The one-round --write-baseline alias was removed (ADR-0029 D6).
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { GOLDEN_CASES } from "./golden-cases";
 import { assertBackflowNoOverlap } from "./holdout";
 import { runAll, type EvalReport } from "./runner";
 import { isSkip, skipKey } from "./explicit-skip";
 import { emptySkipLedger, parseSkipLedger, recordSkips, skipMustFail } from "./skip-ledger";
+import { advanceSwitch } from "./switch-run";
 import { fixtureDefinitionHash } from "./obs-fixtures";
 import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, type EvalBaseline, type GainConclusion } from "./gate";
 
@@ -272,6 +274,20 @@ async function main(): Promise<number> {
     renameSync(tmpPath, skipPath);
     if (skipMustFail(sl))
       console.error("[eval] OBSERVATIONAL skip streak " + streak + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note observational-skip --ledger " + skipPath + " (ADR-0039 D7)");
+  }
+
+  // ADR-0043 impl-plan 3/8: advance the consumed/synthetic switch state machine.
+  // Reads the durable DB (ANS_DB_PATH or ~/.anysearch/anysearch.db), never the eval temp DB.
+  // IO failures are loud stderr but never crash the run (exit-code contract unchanged);
+  // the chain verifier at ship-gate step 1 remains the authority on chain health.
+  try {
+    const swDb = process.env.ANS_DB_PATH && process.env.ANS_DB_PATH.trim()
+      ? process.env.ANS_DB_PATH
+      : join(os.homedir(), ".anysearch", "anysearch.db");
+    const sw = advanceSwitch({ outDir, dbPath: swDb });
+    if (sw.decision.record || sw.integrityError) console.error("[switch] " + sw.decision.reason + (sw.integrityError ? " [FAIL-CLOSED]" : ""));
+  } catch (e) {
+    console.error("[switch] advance failed (eval continues; integrity checks live in ship-gate): " + String((e as Error).message ?? e));
   }
 
   // r110 SP-F-03: if the fixture manifest is absent the fingerprint carries the explicit

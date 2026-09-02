@@ -4,6 +4,20 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-02 — ADR-0043 r42: consumed/synthetic switch governance implemented
+
+### Added
+
+- Switch state machine S0-S4 (ADR-0043 D2-D6): pre-registered readiness trigger (C1-C4 wall-clock, k_max=10), SESOI-band reconcile + McNemar diagnostic (packages/store/src/eval/switch-machine.ts, pure core), graded rollback with Inconclusive hold (promote streak 3 > rollback streak 2 hysteresis), integrity lineage fail-closed, evidence-driven reversible freeze.
+- Pre-registered thresholds as data (version + hash): packages/store/fixtures/switch-registration.json; every verdict records registrationHash.
+- skip-ledger schema @3: state block (phase, since, transitionId, evidenceHash) + actions log (actions never touch the 3-streak); lossless @1/@2 upcast; unknown versions fail loud.
+- access_events chain switch events (stage-transition/rollback/freeze) with sentinel-row FK and chain-first ledger write order; ledger rebuild from chain fallback.
+- ans switch-state [--verify] [--db PATH] [--out DIR] read-only query.
+- ship-gate step 7 reports the current switch phase (exit semantics unchanged).
+
+### Fixed
+
+- bgnbd/obs-fixtures/switch-run no longer evaluate fileURLToPath(import.meta.url) at module init — the CJS CLI bundle crashed every ans command at boot once @anysearch/store re-exported switch modules.
 ## [Unreleased]
 
 ### Fixed

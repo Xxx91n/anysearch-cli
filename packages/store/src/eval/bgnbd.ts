@@ -91,7 +91,8 @@ export interface RunBgnbdOptions {
   timeoutMs?: number;     // default 120_000
 }
 
-const DEFAULT_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "scripts", "tau", "bgnbd_fit.py");
+// lazy: import.meta.url is undefined inside the CJS CLI bundle — never evaluate at module init.
+function defaultScriptPath(): string { return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "scripts", "tau", "bgnbd_fit.py"); }
 
 // Runs the fit only when the AND-gate is fully satisfied. NEVER throws (D7).
 export async function runBgnbdFit(rows: BgnbdRow[], opts: RunBgnbdOptions): Promise<BgnbdResult> {
@@ -99,7 +100,7 @@ export async function runBgnbdFit(rows: BgnbdRow[], opts: RunBgnbdOptions): Prom
   if (!gate.ok) return skip(gate.failures.join("; "), "gate-not-met");
 
   const python = opts.python ?? "python";
-  const scriptPath = opts.scriptPath ?? DEFAULT_SCRIPT;
+  const scriptPath = opts.scriptPath ?? defaultScriptPath();
   const timeoutMs = opts.timeoutMs ?? 120_000;
 
   return await new Promise<BgnbdResult>((resolve) => {
