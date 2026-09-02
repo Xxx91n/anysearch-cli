@@ -587,4 +587,16 @@ _Avoid_: applying simulated clocks to the consumed track, unlabeled simulated-wi
 数据结构性缺失时的 skip 原因码，与 gate-not-met 分离，从不计入 3 连击升级预算。ADR-0042 D4。
 _Avoid_: counting data-absent toward the escalation streak, conflating empty-database runs with gate failures, streak resets that re-notify on the same condition
 
+## Switch State Machine (S0–S4)（切换状态机 S0–S4）
+consumed/synthetic 双轨间的五阶段迁移状态机：S0 合成-only → S1 consumed 观测 → S2 双轨一致性窗口 → S3 consumed-primary → S4 合成轨定格为 CI 基线；带显式回退边。ADR-0043 D2。
+_Avoid_: one-shot switchover, binary consumed/synthetic flag, switches without back edges, retiring the synthetic track into deletion
+
+## Pre-Registered Readiness Trigger（C1–C4 预注册就绪触发）
+S0→S1 晋级的预注册复合阈值表（C1 数据量 / C2 观测窗 / C3 PSI 稳定 / C4 连续 N 轮 + k_max 收敛）；任何条款不满足即留 S0，「有 events 但无 fit-eligible」归 data-absent 永不晋级。ADR-0043 D3。
+_Avoid_: ad-hoc readiness checks, hardcoded placeholder inputs posing as triggers, promoting on a single round of evidence
+
+## Graded Rollback with Inconclusive Hold（分级回退与暂停核对）
+退化谱系分轻度（S3→S2 暂停核对，过即恢复，不计回退）与重度（连续确认后 S2→S1 真回退）；完整性谱系（哈希链/写失败/指纹漂移）不走回退走 fail-closed 硬阻断。回退事件不递增 3 连击。ADR-0043 D5。
+_Avoid_: single-shot rollback on any degradation, treating integrity failures as state rollback, rollbacks that pollute the escalation streak, flap between adjacent stages
+
 *End of Glossary*
