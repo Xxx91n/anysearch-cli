@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolveDbPath } from "@anysearch/kernel";
-import { parseSkipLedger, verifySwitchState } from "@anysearch/store";
+import { parseSkipLedger, quarantineSkipLedger, verifySwitchState } from "@anysearch/store";
 
 export async function runSwitchState(args: string[]): Promise<number> {
   if (args.includes("--help") || args.includes("-h")) {
@@ -43,6 +43,14 @@ export async function runSwitchState(args: string[]): Promise<number> {
   if (args.includes("--verify")) {
     const v = verifySwitchState(outDir, dbPath);
     process.stdout.write("[switch-state] verify: " + (v.ok ? "OK" : "FAIL") + " — " + v.detail + "\n");
+    if (!v.ok) {
+      try {
+        const q = quarantineSkipLedger(outDir, new Date().toISOString());
+        process.stderr.write("[switch-state] unverifiable ledger quarantined to " + q + "\n");
+      } catch (e) {
+        process.stderr.write("[switch-state] verify failed but quarantine was unavailable: " + String((e as Error).message ?? e) + "\n");
+      }
+    }
     return v.ok ? 0 : 1;
   }
   return 0;

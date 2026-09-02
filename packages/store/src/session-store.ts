@@ -249,6 +249,38 @@ export interface AccessEventTelemetry {
 
 // better-sqlite3 sync API wrapped in async interface to match SessionStore port.
 // ponytail: thinnest wrapper - no extra abstraction, sync calls wrapped in Promise.resolve.
+// ADR-0044 D5: legacy access_events had memory_id NOT NULL, forcing a fake retrieval_results
+// sentinel for switch edges. Rebuild that table once so switch edges can use NULL memory_id
+// while real access events still satisfy the FK through the same CHECK.
+function migrateSwitchEventSchema(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(access_events)").all() as Array<{ name: string; notnull: number }>;
+  const memory = cols.find((c) => c.name === "memory_id");
+  const hasChainColumns = cols.some((c) => c.name === "prev_hash");
+  if (!memory || memory.notnull !== 1 || !hasChainColumns) return;
+  db.pragma("foreign_keys = OFF");
+  const run = db.transaction((): void => {
+    db.exec(`
+      CREATE TABLE access_events_switch_migrate (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        memory_id INTEGER REFERENCES retrieval_results(id) ON DELETE CASCADE,
+        accessed_at TEXT NOT NULL DEFAULT (datetime('now')),
+        prev_hash TEXT,
+        schema_version INTEGER,
+        event_type TEXT,
+        CHECK (memory_id IS NOT NULL OR event_type IS NOT NULL)
+      );
+      INSERT INTO access_events_switch_migrate (id, memory_id, accessed_at, prev_hash, schema_version, event_type)
+        SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events;
+      DROP TABLE access_events;
+      ALTER TABLE access_events_switch_migrate RENAME TO access_events;
+      CREATE INDEX IF NOT EXISTS idx_access_events_memory ON access_events(memory_id);
+      CREATE INDEX IF NOT EXISTS idx_access_events_time ON access_events(accessed_at);
+    `);
+  });
+  run.immediate();
+  db.pragma("foreign_keys = ON");
+}
+
 export class SqliteSessionStore implements SessionStore {
   private db: Database.Database;
   // ADR-0031 D2: LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
@@ -317,6 +349,7 @@ export class SqliteSessionStore implements SessionStore {
       schema = SCHEMA_SQL;
     }
     this.db.exec(schema);
+    migrateSwitchEventSchema(this.db);
     // ADR-0035 D2: edge-pattern constraint seed (idempotent; mirrors EDGE_PATTERN_ROWS in relation.ts;
     // existing rows are preserved via INSERT OR IGNORE).
     const seedPattern = this.db.prepare("INSERT OR IGNORE INTO edge_patterns (head_type, relation, tail_type) VALUES (?, ?, ?)");

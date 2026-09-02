@@ -25,6 +25,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
+import { evalIntegrityCheck } from "./eval-integrity-contract.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -617,7 +618,7 @@ async function stepMemoryEval() {
   const res = await new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      ["--import", "tsx", path.join("src", "eval", "cli.ts"), "--out", outDir],
+      ["--import", "tsx", path.join("src", "eval", "cli.ts"), "--out", outDir, "--decision"],
       { cwd: path.join(ROOT, "packages", "store"), stdio: ["ignore", "pipe", "pipe"] }
     );
     let buf = "";
@@ -643,6 +644,11 @@ async function stepMemoryEval() {
   if (rep.totals.failed !== 0) {
     fail("memory-eval: " + rep.totals.failed + " golden case(s) failed — see .ship-gate/eval-report.md");
   }
+  // ADR-0044 D3: a decision-grade failed integrity verdict is publish-red. Observational runs
+  // remain report-only; the eval CLI only sets failed on a decision run.
+  const integrityContract = evalIntegrityCheck(rep);
+  if (!integrityContract.ok) fail(integrityContract.detail);
+  report("info", "memory-eval integrity contract: " + integrityContract.detail);
   if (typeof rep.datasetFingerprint !== "string" || rep.datasetFingerprint.length !== 16) {
     fail("memory-eval report lacks 16-hex dataset fingerprint");
   }

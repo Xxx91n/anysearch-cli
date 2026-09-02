@@ -8,21 +8,35 @@
 // consecutive-count first values land in fixtures/switch-registration.json
 // (promote=3 > rollback=2 hysteresis; k_max=10).
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { CHAIN_SCHEMA_VERSION, eventHash, bootstrapAccessChain, type ChainEventRow } from "../access-chain";
 import { AGE_BUCKETS, bucketHistogram } from "./day-buckets";
 import { psi } from "./bgnbd";
 import { loadObsFixture } from "./obs-fixtures";
-import { decideSwitch, evaluateReadiness, type ReconcileVerdict, type SwitchCounters, type SwitchDecision, type SwitchPhase, type SwitchReadings, type SwitchRegistration } from "./switch-machine";
-import { appendSwitchAction, emptySkipLedger, parseSkipLedger, tailStreak, type SkipLedger } from "./skip-ledger";
+import { decideSwitch, evaluateReadiness, SWITCH_EDGE_EVENTS, SWITCH_EDGE_TRANSITIONS, type ReconcileVerdict, type SwitchCounters, type SwitchDecision, type SwitchEdgeEventType, type SwitchPhase, type SwitchReadings, type SwitchRegistration } from "./switch-machine";
+import { appendSwitchAction, quarantineSkipLedger, readSkipLedger, tailStreak, withSkipLedgerLock, writeSkipLedgerAtomic, type SkipLedger } from "./skip-ledger";
 
 // lazy: import.meta.url is undefined inside the CJS CLI bundle (same as bgnbd/obs-fixtures).
-function regPath(): string { return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "fixtures", "switch-registration.json"); }
+function regPath(): string {
+  // r116 fix: tests must be able to point the loader at a mutated copy without writing
+  // through the bundle's relative path. The env override is the only place outside the
+  // shipped fixtures that is allowed to influence the loader's read target.
+  const override = process.env.ANS_SWITCH_REG_PATH;
+  if (typeof override === "string" && override.length > 0) return override;
+  return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "fixtures", "switch-registration.json");
+}
 
 // ---------- registration (D3 impl-plan 6: thresholds as data with version + hash) ----------
+
+// ADR-0044 D2: this expectation is the independent pin. The loader's self-computed digest is
+// only allowed to be compared against it; a mismatch is an integrity failure, not a re-record.
+export const SWITCH_REGISTRATION_HASH_EXPECTATION = "5f06ea1766b5999c3c2213b33cb324c988efc91336553056cb8dcb9faf63d2cb";
+
+export class SwitchRegistrationIntegrityError extends Error {}
 
 export function loadSwitchRegistration(): { reg: SwitchRegistration; registrationHash: string } {
   const raw = readFileSync(regPath(), "utf8");
@@ -30,7 +44,11 @@ export function loadSwitchRegistration(): { reg: SwitchRegistration; registratio
   if (j.schema !== "anysearch/switch-registration@1") throw new Error("switch-registration: unknown schema " + String((j as { schema?: string }).schema));
   if (typeof j.version !== "number" || !j.c || !j.reconcile || !j.rollback || !j.freeze) throw new Error("switch-registration: malformed shape");
   const payload = JSON.stringify({ schema: j.schema, version: j.version, c: j.c, reconcile: j.reconcile, rollback: j.rollback, freeze: j.freeze });
-  return { reg: j, registrationHash: createHash("sha256").update(payload).digest("hex").slice(0, 16) };
+  const registrationHash = createHash("sha256").update(payload).digest("hex");
+  if (registrationHash !== SWITCH_REGISTRATION_HASH_EXPECTATION) {
+    throw new SwitchRegistrationIntegrityError("integrity-fail-registration: payload digest " + registrationHash + " != pinned expectation " + SWITCH_REGISTRATION_HASH_EXPECTATION);
+  }
+  return { reg: j, registrationHash };
 }
 
 // ---------- consumed-track readings (durable DB only; eval temp DBs never reach here) ----------
@@ -44,7 +62,7 @@ export function readConsumedReadings(dbPath: string, reg: SwitchRegistration): C
     const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((t) => t.name));
     if (!tables.has("access_events")) return null;
     const rows = db.prepare("SELECT memory_id, accessed_at FROM access_events WHERE event_type IS NULL OR event_type = 'access'").all() as { memory_id: number; accessed_at: string }[];
-    if (rows.length === 0) return { readings: { activeRows: 0, fittableUnits: 0, windowDays: 0, psi: null }, degraded: false };
+    if (rows.length === 0) return { readings: { activeRows: 0, fittableUnits: 0, windowDays: 0, evaluationCount: 0, psi: null }, degraded: false };
     const perUnit = new Map<number, number>();
     const ages: number[] = [];
     const now = Date.now();
@@ -66,7 +84,7 @@ export function readConsumedReadings(dbPath: string, reg: SwitchRegistration): C
       psiVal = Number.isNaN(p) ? null : p;
     } catch { psiVal = null; }
     // C1 mirrors the runner's T1 shape: activeRows = total event rows.
-    const readings: SwitchReadings = { activeRows: rows.length, fittableUnits: fittable, windowDays, psi: psiVal };
+    const readings: SwitchReadings = { activeRows: rows.length, fittableUnits: fittable, windowDays, evaluationCount: rows.length, psi: psiVal };
     const degraded = fittable > 0 && psiVal !== null && psiVal >= reg.c.c3PsiMax;
     return { readings, degraded };
   } finally { db.close(); }
@@ -74,73 +92,88 @@ export function readConsumedReadings(dbPath: string, reg: SwitchRegistration): C
 
 // ---------- chain writer (D7: chain first, ledger second; never silent) ----------
 
-export const SWITCH_SENTINEL_SESSION = "switch-events-sentinel";
-export type SwitchChainEventType = "stage-transition" | "rollback" | "freeze";
+export type SwitchChainEventType = SwitchEdgeEventType;
+export const SWITCH_CHAIN_EVENT_TYPES: readonly string[] = SWITCH_EDGE_EVENTS;
 
-// Appends a switch event to the access_events hash chain in one IMMEDIATE transaction — the
-// same head-read + insert discipline as recordAccessEventChained (session-store.ts). The
-// sentinel session/row satisfies the FK (Q5 gap); it is archived + quarantined so no read
-// path can surface it.
-export function writeSwitchChainEvent(dbPath: string, eventType: SwitchChainEventType): { id: number; hash: string } {
+function isScratchPath(p: string): boolean {
+  const abs = resolve(p);
+  const root = resolve(tmpdir());
+  return abs === root || abs.startsWith(root + sep);
+}
+
+function assertScratchMode(mode: "real" | "drill", dbPath: string, outDir: string): void {
+  if (mode !== "drill") return;
+  if (!isScratchPath(dbPath) || !isScratchPath(outDir)) {
+    throw new Error("integrity-fail-drill-plane: drill mode requires scratch dbPath/outDir; dbPath=" + dbPath + " outDir=" + outDir);
+  }
+}
+
+// Appends a switch edge to the access_events hash chain in one IMMEDIATE transaction. The
+// switch_events side table carries edge provenance without changing the six hashed fields.
+export function writeSwitchChainEvent(dbPath: string, eventType: SwitchChainEventType, provenance: "real" | "drill" = "real"): { id: number; hash: string } {
   const db = new Database(dbPath);
   try {
     if (!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='access_events'").get()) throw new Error("access_events table missing — create the store first");
     const cols = new Set((db.prepare("PRAGMA table_info(access_events)").all() as { name: string }[]).map((c) => c.name));
     if (!cols.has("prev_hash")) throw new Error("access_events has no prev_hash column — run `ans access-chain bootstrap --apply` first");
     const go = db.transaction((): { id: number; hash: string } => {
-      db.prepare("INSERT OR IGNORE INTO sessions (id, domain) VALUES (?, 'switch')").run(SWITCH_SENTINEL_SESSION);
-      let rr = db.prepare("SELECT id FROM retrieval_results WHERE session_id = ?").get(SWITCH_SENTINEL_SESSION) as { id: number } | undefined;
-      if (!rr) {
-        const info = db.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, archived, quarantine) VALUES (?, 'ans://switch-events-sentinel', 'switch-events sentinel', 'ADR-0043 D5 sentinel row for chain events (rollback/freeze have no real memory_id)', 'ans', 1, 'switch-events-sentinel')").run(SWITCH_SENTINEL_SESSION);
-        rr = { id: Number(info.lastInsertRowid) };
-      }
       let anchor = db.prepare("SELECT genesis_hash FROM access_chain_anchor WHERE id = 1").get() as { genesis_hash: string } | undefined;
       if (!anchor) { bootstrapAccessChain(db); anchor = db.prepare("SELECT genesis_hash FROM access_chain_anchor WHERE id = 1").get() as { genesis_hash: string } | undefined; }
       if (!anchor) throw new Error("access-chain anchor unavailable");
       const last = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events WHERE prev_hash IS NOT NULL ORDER BY id DESC LIMIT 1").get() as ChainEventRow | undefined;
       const prevHash = last ? eventHash(last) : anchor.genesis_hash;
-      const info = db.prepare("INSERT INTO access_events (memory_id, prev_hash, schema_version, event_type) VALUES (?, ?, ?, ?)").run(rr.id, prevHash, CHAIN_SCHEMA_VERSION, eventType);
+      const info = db.prepare("INSERT INTO access_events (memory_id, prev_hash, schema_version, event_type) VALUES (NULL, ?, ?, ?)").run(prevHash, CHAIN_SCHEMA_VERSION, eventType);
       const id = Number(info.lastInsertRowid);
       const row = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events WHERE id = ?").get(id) as ChainEventRow;
+      db.prepare("INSERT INTO switch_events (access_event_id, event_type, provenance) VALUES (?, ?, ?)").run(id, eventType, provenance);
       return { id, hash: eventHash(row) };
     });
     return go.immediate();
   } finally { db.close(); }
 }
 
-// ---------- ledger helpers ----------
-
-function ledgerPathFor(outDir: string): string { return join(outDir, "skip-ledger.json"); }
-
-function writeLedgerAtomic(path: string, ledger: SkipLedger): void {
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = path + ".tmp";
-  writeFileSync(tmp, JSON.stringify(ledger, null, 2) + "\n", "utf8");
-  renameSync(tmp, path);
+export interface ReplayedSwitchChain {
+  phase: SwitchPhase;
+  transitionId: string | null;
+  evidenceHash: string | null;
+  since: string | null;
 }
 
-const NEXT_PHASE: Record<SwitchPhase, SwitchPhase | null> = { S0: "S1", S1: "S2", S2: "S3", S3: "S3", S4: null };
-
-// D7: the ledger state block is a materialized cache of the chain. On conflict the chain
-// wins: replay stage-transition/rollback/freeze rows in order to recover the phase.
-export function rebuildStateFromChain(dbPath: string): SkipLedger["state"] | null {
+// ADR-0044 D1: total replay over the closed edge set. Every edge maps to exactly one phase;
+// an inapplicable edge or unknown event_type is a hard error, never a guessed rebuild.
+export function replaySwitchChain(dbPath: string): ReplayedSwitchChain | null {
   if (!existsSync(dbPath)) return null;
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
   try {
-    const rows = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events WHERE event_type IN ('stage-transition','rollback','freeze') AND prev_hash IS NOT NULL ORDER BY id").all() as ChainEventRow[];
+    // ADR-0044 D1 + r115 audit C6: legacy r42 event_type values are not in the per-edge
+    // closed set and must fail loud (migrations belong to the operator, not the replay
+    // function). Detected up front so the loop below only sees canonical edges.
+    const legacy = db.prepare("SELECT id, event_type FROM access_events WHERE event_type IN ('stage-transition','rollback','freeze') AND prev_hash IS NOT NULL LIMIT 1").all() as { id: number; event_type: string }[];
+    if (legacy.length > 0) {
+      throw new Error("integrity-fail-replay: legacy switch event_type " + legacy[0]!.event_type + " (id=" + legacy[0]!.id + ") — migration required before this DB can be replayed");
+    }
+    const rows = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events WHERE event_type IN (" + SWITCH_CHAIN_EVENT_TYPES.map(() => "?").join(",") + ") AND prev_hash IS NOT NULL ORDER BY id").all(...[...SWITCH_CHAIN_EVENT_TYPES]) as ChainEventRow[];
     let phase: SwitchPhase = "S0";
     let since: string | null = null;
     let lastRow: ChainEventRow | null = null;
     for (const r of rows) {
-      if (r.event_type === "rollback") phase = "S1";
-      else if (r.event_type === "freeze") phase = "S4";
-      else phase = NEXT_PHASE[phase] ?? phase;
+      const edge = SWITCH_EDGE_TRANSITIONS[r.event_type as SwitchEdgeEventType];
+      if (!edge) throw new Error("integrity-fail-replay: unknown switch event_type " + r.event_type);
+      if (phase !== edge.from) throw new Error("integrity-fail-replay: inapplicable edge " + r.event_type + " at " + phase + " (expected from " + edge.from + ")");
+      phase = edge.to;
       since = r.accessed_at;
       lastRow = r;
     }
     if (!lastRow) return { phase: "S0", since: null, transitionId: null, evidenceHash: null };
     return { phase, since, transitionId: String(lastRow.id), evidenceHash: eventHash(lastRow) };
   } finally { db.close(); }
+}
+
+export function rebuildStateFromChain(dbPath: string): SkipLedger["state"] | null {
+  if (!existsSync(dbPath)) return null;
+  const replayed = replaySwitchChain(dbPath);
+  if (!replayed) return null;
+  return { phase: replayed.phase, since: replayed.since, transitionId: replayed.transitionId, evidenceHash: replayed.evidenceHash };
 }
 
 // ---------- orchestrator ----------
@@ -152,97 +185,151 @@ export interface AdvanceResult {
   integrityError?: string;
 }
 
+export function switchEventTypeFor(from: SwitchPhase, to: SwitchPhase): SwitchEdgeEventType {
+  for (const eventType of SWITCH_EDGE_EVENTS) {
+    const edge = SWITCH_EDGE_TRANSITIONS[eventType];
+    if (edge.from === from && edge.to === to) return eventType;
+  }
+  throw new Error("integrity-fail-transition: no registered edge from " + from + " to " + to);
+}
+
+function evaluationCountFromLedger(ledger: SkipLedger): number {
+  return ledger.actions.filter((a) => a.kind === "readiness").length;
+}
+
 export function advanceSwitch(opts: {
   outDir: string;
   dbPath: string;
   at?: string;
+  mode?: "real" | "drill";
   reconcile?: ReconcileVerdict;
   readingsOverride?: SwitchReadings;
   degradedOverride?: boolean;
   integrityFailed?: string | null;
+  untrustworthyEvidence?: boolean;
 }): AdvanceResult {
   const at = opts.at ?? new Date().toISOString();
-  const { reg, registrationHash } = loadSwitchRegistration();
-  const ledgerPath = ledgerPathFor(opts.outDir);
-  let ledger: SkipLedger;
+  const mode = opts.mode ?? "real";
+  assertScratchMode(mode, opts.dbPath, opts.outDir);
+
+  let reg: SwitchRegistration;
+  let registrationHash: string;
   try {
-    ledger = existsSync(ledgerPath) ? parseSkipLedger(readFileSync(ledgerPath, "utf8")) : emptySkipLedger();
+    ({ reg, registrationHash } = loadSwitchRegistration());
   } catch (e) {
-    // r110 SA-F-03/08: quarantine the unreadable/unknown-schema ledger aside; restart empty,
-    // loud stderr. Never silently drop history.
-    const q = ledgerPath.replace(/\.json$/, ".quarantined-" + at.replace(/[:.]/g, "-") + ".json");
-    try { renameSync(ledgerPath, q); } catch { /* restart empty regardless */ }
-    ledger = emptySkipLedger();
-    console.error("[switch] ledger failed the @3 contract — quarantined to " + q + " (" + String((e as Error).message ?? e) + ")");
+    return withSkipLedgerLock(opts.outDir, (ledger) => {
+      const reason = String((e as Error).message ?? e);
+      const decision: SwitchDecision = { from: ledger.state.phase, to: ledger.state.phase, kind: "check", record: true, reason, integrityBlock: true, counters: { readinessRounds: 0, readinessMetStreak: 0, heavyConfirmStreak: 0 } };
+      appendSwitchAction(ledger, { at, kind: decision.kind, from: decision.from, to: decision.to, reason: decision.reason, provenance: mode });
+      writeSkipLedgerAtomic(opts.outDir, ledger);
+      return { decision, state: ledger.state, registrationHash: "integrity-fail-registration", integrityError: reason };
+    });
   }
 
-  // D5 integrity lineage: with a chain present, a tampered/missing state block is a
-  // fail-closed block, never a silent rebuild. When no chain events exist yet there is
-  // nothing to be inconsistent with — boot state is fine (pointer field, not data loss).
-  const chained = rebuildStateFromChain(opts.dbPath);
-  if (chained && chained.transitionId !== null && ledger.state.transitionId !== chained.transitionId) {
-    // Ledger disagrees with the chain -> rebuild from the chain and ledger the recovery.
-    ledger.state = chained;
-    appendSwitchAction(ledger, { at, kind: "check", from: chained.phase, to: chained.phase, reason: "state rebuilt from chain (chain wins, D7): transitionId=" + chained.transitionId });
-    writeLedgerAtomic(ledgerPath, ledger);
-  }
+  return withSkipLedgerLock(opts.outDir, (ledger) => {
+    let replayed: ReplayedSwitchChain | null;
+    try {
+      replayed = replaySwitchChain(opts.dbPath);
+    } catch (e) {
+      const reason = String((e as Error).message ?? e);
+      quarantineSkipLedger(opts.outDir, at);
+      const fresh = readSkipLedger(opts.outDir);
+      const decision: SwitchDecision = { from: fresh.state.phase, to: fresh.state.phase, kind: "check", record: true, reason, integrityBlock: true, counters: { readinessRounds: 0, readinessMetStreak: 0, heavyConfirmStreak: 0 } };
+      appendSwitchAction(fresh, { at, kind: decision.kind, from: decision.from, to: decision.to, reason: decision.reason, provenance: mode });
+      writeSkipLedgerAtomic(opts.outDir, fresh);
+      return { decision, state: fresh.state, registrationHash, integrityError: reason };
+    }
 
-  const consumed = readConsumedReadings(opts.dbPath, reg);
-  const readiness = evaluateReadiness(opts.readingsOverride ?? consumed?.readings ?? { activeRows: 0, fittableUnits: 0, windowDays: 0, psi: null }, reg);
-  const counters: SwitchCounters = {
-    readinessRounds: tailStreak(ledger.actions, (a) => a.kind === "readiness"),
-    readinessMetStreak: tailStreak(ledger.actions, (a) => a.kind === "readiness" && a.reason.startsWith("C4 streak")),
-    heavyConfirmStreak: tailStreak(ledger.actions, (a) => a.kind === "check" && a.to === "S2" && a.from === "S2"),
-  };
-  const decision = decideSwitch(ledger.state.phase, {
-    readiness,
-    reconcile: opts.reconcile,
-    degraded: opts.degradedOverride ?? consumed?.degraded ?? false,
-    integrityFailed: opts.integrityFailed ?? null,
-    kMaxWarned: ledger.actions.some((a) => a.reason.includes("k_max reached")),
-  }, counters, reg);
+    // ADR-0043 D7 / ADR-0044 D1 chain-wins: rebuild the ledger state from the chain
+    // whenever chain and ledger disagree, regardless of which side carries a transition.
+    // The previous logic only rebuilt when the chain had a transition, leaving the
+    // ledger-has-but-chain-has-not direction stuck in an infinite quarantine loop.
+    const chainPhase = replayed ? replayed.phase : "S0";
+    const chainTransitionId = replayed ? replayed.transitionId : null;
+    const chainEvidenceHash = replayed ? replayed.evidenceHash : null;
+    const chainSince = replayed ? replayed.since : null;
+    const ledgerHasTransition = ledger.state.transitionId !== null;
+    const chainHasTransition = chainTransitionId !== null;
+    const mismatch =
+      ledger.state.phase !== chainPhase ||
+      ledger.state.transitionId !== chainTransitionId ||
+      ledger.state.evidenceHash !== chainEvidenceHash;
+    if ((ledgerHasTransition || chainHasTransition) && mismatch) {
+      const reason = "integrity-fail-replay: ledger state disagrees with chain replay (chain=" + chainPhase + ":" + chainTransitionId + ", ledger=" + ledger.state.phase + ":" + ledger.state.transitionId + ") — chain wins, rebuilding state";
+      ledger.state = { phase: chainPhase, since: chainSince, transitionId: chainTransitionId, evidenceHash: chainEvidenceHash };
+      appendSwitchAction(ledger, { at, kind: "check", from: ledger.state.phase, to: ledger.state.phase, reason, provenance: mode });
+      writeSkipLedgerAtomic(opts.outDir, ledger);
+      // fall through; the orchestrator below will read the recovered state
+    }
 
-  if (decision.integrityBlock) {
-    // Fail-closed: record the block; the caller treats integrityError as a hard stop.
-    appendSwitchAction(ledger, { at, kind: "check", from: decision.from, to: decision.to, reason: decision.reason });
-    writeLedgerAtomic(ledgerPath, ledger);
-    return { decision, state: ledger.state, registrationHash, integrityError: decision.reason };
-  }
-  if (!decision.record) return { decision, state: ledger.state, registrationHash };
+    const consumed = readConsumedReadings(opts.dbPath, reg);
+    const baseReadings = opts.readingsOverride ?? consumed?.readings ?? { activeRows: 0, fittableUnits: 0, windowDays: 0, evaluationCount: 0, psi: null };
+    const readiness = evaluateReadiness(opts.readingsOverride ? baseReadings : { ...baseReadings, evaluationCount: evaluationCountFromLedger(ledger) }, reg);
+    const counters: SwitchCounters = {
+      readinessRounds: tailStreak(ledger.actions, (a) => a.kind === "readiness" && !a.reason.startsWith("data-absent")),
+      readinessMetStreak: tailStreak(ledger.actions, (a) => a.kind === "readiness" && a.reason.startsWith("C4 streak")),
+      heavyConfirmStreak: tailStreak(ledger.actions, (a) => a.kind === "check" && a.to === "S2" && a.from === "S2"),
+    };
+    const decision = decideSwitch(ledger.state.phase, {
+      readiness,
+      reconcile: opts.reconcile,
+      degraded: opts.degradedOverride ?? consumed?.degraded ?? false,
+      integrityFailed: opts.integrityFailed ?? null,
+      untrustworthyEvidence: opts.untrustworthyEvidence ?? false,
+      kMaxWarned: ledger.actions.some((a) => a.reason.includes("k_max reached")),
+    }, counters, reg);
 
-  if (decision.to !== decision.from) {
-    // D7: chain event first (stage-transition covers check-driven moves like check-s3-s2;
-    // rollback/freeze carry their own type), then the ledger state update.
-    const chainType: SwitchChainEventType = decision.kind === "rollback" || decision.kind === "freeze" ? decision.kind : "stage-transition";
-    const ev = writeSwitchChainEvent(opts.dbPath, chainType);
-    ledger.state = { phase: decision.to, since: at, transitionId: String(ev.id), evidenceHash: ev.hash };
-    appendSwitchAction(ledger, { at, kind: decision.kind, from: decision.from, to: decision.to, reason: decision.reason + " [registrationHash=" + registrationHash + " transitionId=" + ev.id + "]" });
-    writeLedgerAtomic(ledgerPath, ledger);
+    if (decision.integrityBlock) {
+      if (decision.to !== decision.from) {
+        const chainType = switchEventTypeFor(decision.from, decision.to);
+        const ev = writeSwitchChainEvent(opts.dbPath, chainType, mode);
+        ledger.state = { phase: decision.to, since: at, transitionId: String(ev.id), evidenceHash: ev.hash };
+        appendSwitchAction(ledger, { at, kind: decision.kind, from: decision.from, to: decision.to, reason: decision.reason + " [registrationHash=" + registrationHash + " transitionId=" + ev.id + "]", provenance: mode });
+        writeSkipLedgerAtomic(opts.outDir, ledger);
+        return { decision, state: ledger.state, registrationHash, integrityError: decision.reason };
+      }
+      appendSwitchAction(ledger, { at, kind: decision.kind, from: decision.from, to: decision.to, reason: decision.reason, provenance: mode });
+      writeSkipLedgerAtomic(opts.outDir, ledger);
+      return { decision, state: ledger.state, registrationHash, integrityError: decision.reason };
+    }
+    if (!decision.record) return { decision, state: ledger.state, registrationHash };
+
+    if (decision.to !== decision.from) {
+      const chainType = switchEventTypeFor(decision.from, decision.to);
+      const ev = writeSwitchChainEvent(opts.dbPath, chainType, mode);
+      ledger.state = { phase: decision.to, since: at, transitionId: String(ev.id), evidenceHash: ev.hash };
+      appendSwitchAction(ledger, { at, kind: decision.kind, from: decision.from, to: decision.to, reason: decision.reason + " [registrationHash=" + registrationHash + " transitionId=" + ev.id + "]", provenance: mode });
+      writeSkipLedgerAtomic(opts.outDir, ledger);
+      return { decision, state: ledger.state, registrationHash };
+    }
+    appendSwitchAction(ledger, { at, kind: decision.kind, from: decision.from, to: decision.to, reason: decision.reason + " [registrationHash=" + registrationHash + "]", provenance: mode });
+    writeSkipLedgerAtomic(opts.outDir, ledger);
     return { decision, state: ledger.state, registrationHash };
-  }
-  appendSwitchAction(ledger, { at, kind: decision.kind, from: decision.from, to: decision.to, reason: decision.reason + " [registrationHash=" + registrationHash + "]" });
-  writeLedgerAtomic(ledgerPath, ledger);
-  return { decision, state: ledger.state, registrationHash };
+  });
 }
 
-// ---------- `ans switch-state --verify` cross-check (D7) ----------
+export function probeSwitchIntegrity(outDir: string, dbPath: string): { ok: boolean; detail: string } {
+  try {
+    return verifySwitchState(outDir, dbPath);
+  } catch (e) {
+    return { ok: false, detail: String((e as Error).message ?? e) };
+  }
+}
 
 export function verifySwitchState(outDir: string, dbPath: string): { ok: boolean; detail: string } {
-  const ledgerPath = ledgerPathFor(outDir);
-  if (!existsSync(ledgerPath)) return { ok: false, detail: "skip-ledger.json absent at " + ledgerPath };
-  const ledger = parseSkipLedger(readFileSync(ledgerPath, "utf8"));
-  const st = ledger.state;
-  if (st.transitionId === null) {
-    return { ok: st.evidenceHash === null, detail: st.evidenceHash === null ? "boot state, no transition to verify (pass)" : "state has evidenceHash without a transitionId (corrupt)" };
+  const ledger = readSkipLedger(outDir);
+  if (ledger.state.transitionId === null && ledger.state.evidenceHash === null) {
+    if (!existsSync(dbPath)) return { ok: true, detail: "boot state, no transition to verify (pass)" };
+    const replayed = replaySwitchChain(dbPath);
+    if (!replayed || replayed.transitionId === null) return { ok: true, detail: "boot state, no transition to verify (pass)" };
+    return { ok: false, detail: "chain has transition " + replayed.transitionId + " but ledger is boot state" };
   }
+  const st = ledger.state;
   if (!existsSync(dbPath)) return { ok: false, detail: "durable DB absent at " + dbPath + " — cannot verify" };
-  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
-  try {
-    const row = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events WHERE id = ?").get(Number(st.transitionId)) as ChainEventRow | undefined;
-    if (!row) return { ok: false, detail: "transition row id=" + st.transitionId + " not found in access_events" };
-    const h = eventHash(row);
-    return h === st.evidenceHash
-      ? { ok: true, detail: "evidenceHash matches chain row " + st.transitionId }
-      : { ok: false, detail: "evidenceHash MISMATCH: ledger " + st.evidenceHash + " != chain " + h + " — rebuild from chain (D7)" };
-  } finally { db.close(); }
+  const replayed = replaySwitchChain(dbPath);
+  if (!replayed || replayed.transitionId === null) return { ok: false, detail: "ledger has transition " + st.transitionId + " but chain has no replayable transition" };
+  if (replayed.phase !== st.phase) return { ok: false, detail: "phase MISMATCH: ledger " + st.phase + " != chain replay " + replayed.phase };
+  if (replayed.transitionId !== st.transitionId) return { ok: false, detail: "transitionId MISMATCH: ledger " + st.transitionId + " != chain replay " + replayed.transitionId };
+  if (replayed.evidenceHash !== st.evidenceHash) return { ok: false, detail: "evidenceHash MISMATCH: ledger " + st.evidenceHash + " != chain " + replayed.evidenceHash + " — rebuild from chain (D7)" };
+  return { ok: true, detail: "replay matches ledger phase " + replayed.phase + " at transitionId " + replayed.transitionId };
 }

@@ -43,7 +43,17 @@ function assertScalar(k: string, v: unknown): void {
 /** Canonical JSON bytes for a chained event row (fixed key order, whitelist-enforced). */
 export function canonicalEventJson(row: ChainEventRow): string {
   const out: Record<string, unknown> = {};
-  for (const k of CHAIN_FIELDS) { const v = row[k as keyof ChainEventRow]; assertScalar(k, v); out[k] = v; }
+  for (const k of CHAIN_FIELDS) {
+    const v = row[k as keyof ChainEventRow];
+    // ADR-0044 D5: switch edges carry a NULL memory_id; the access chain keeps the same
+    // six-field canonical form while the switch_events side table holds the edge provenance.
+    if (v === null && k === "memory_id" && typeof out.event_type === "string" && out.event_type !== CHAIN_EVENT_TYPE) {
+      out[k] = v;
+      continue;
+    }
+    assertScalar(k, v);
+    out[k] = v;
+  }
   return JSON.stringify(out);
 }
 

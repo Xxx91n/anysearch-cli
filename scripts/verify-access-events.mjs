@@ -32,9 +32,10 @@ const CHAIN_FIELDS = ["accessed_at", "event_type", "id", "memory_id", "prev_hash
 const LEGACY_FIELDS = ["accessed_at", "id", "memory_id"];
 const GENESIS_PREFIX = "access-chain-genesis:";
 // Whitelist (D4): TEXT (string), INTEGER (integer number), NULL only in the three nullable columns.
-function assertScalar(k, v) {
+function assertScalar(k, v, row = {}) {
   if (v === null) {
     if (k === "prev_hash" || k === "schema_version" || k === "event_type") return;
+    if (k === "memory_id" && row.event_type && row.event_type !== "access") return;
     throw new Error("NULL not allowed for " + k);
   }
   if (typeof v === "string") return;
@@ -43,7 +44,7 @@ function assertScalar(k, v) {
 }
 const canonical = (row, fields) => {
   const o = {};
-  for (const k of fields) { const v = row[k]; assertScalar(k, v); o[k] = v; }
+  for (const k of fields) { const v = row[k]; assertScalar(k, v, row); o[k] = v; }
   return JSON.stringify(o);
 };
 

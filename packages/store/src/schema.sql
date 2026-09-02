@@ -260,8 +260,12 @@ CREATE INDEX IF NOT EXISTS idx_archive_active ON archive_log(memory_id) WHERE un
 -- (event-sourcing rule: undo = state flip or new event, never event mutation).
 CREATE TABLE IF NOT EXISTS access_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  memory_id INTEGER NOT NULL REFERENCES retrieval_results(id) ON DELETE CASCADE,
-  accessed_at TEXT NOT NULL DEFAULT (datetime('now'))
+  memory_id INTEGER REFERENCES retrieval_results(id) ON DELETE CASCADE,
+  accessed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  prev_hash TEXT,
+  schema_version INTEGER,
+  event_type TEXT,
+  CHECK (memory_id IS NOT NULL OR event_type IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS idx_access_events_memory ON access_events(memory_id);
 CREATE INDEX IF NOT EXISTS idx_access_events_time ON access_events(accessed_at);
@@ -273,4 +277,12 @@ CREATE TABLE IF NOT EXISTS access_chain_anchor (
   digest TEXT NOT NULL,
   genesis_hash TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ADR-0044 D4/D5: switch edges are access_events rows whose provenance lives here. Keeping
+-- this side table avoids the retired retrieval_results sentinel row and adds no hashed field.
+CREATE TABLE IF NOT EXISTS switch_events (
+  access_event_id INTEGER PRIMARY KEY REFERENCES access_events(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL CHECK (event_type IN ('promote-s0-s1','promote-s1-s2','promote-s2-s3','hold-s3-s2','unfreeze-s4-s2','rollback-s2-s1','freeze-s3-s4','reject-s1-s0')),
+  provenance TEXT NOT NULL CHECK (provenance IN ('real','drill'))
 );

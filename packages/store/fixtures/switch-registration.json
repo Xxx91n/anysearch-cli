@@ -6,6 +6,7 @@
     "c1MinActiveRows": 300,
     "c1MinFittableUnits": 100,
     "c2MinWindowDays": 90,
+    "c2SlaFrequencyPerDay": 0.25,
     "c3PsiMax": 0.25,
     "c3BaselineFixture": "pass-stable",
     "c4ConsecutivePromote": 3,
@@ -17,11 +18,11 @@
     "rankDisplacementMedianMax": 1,
     "rankDisplacementP95Max": 3,
     "mcnemarExactBelowN": 25,
-    "mcnemarWarnAlpha": 0.05
+    "mcnemarWarnAlpha": 0.05,
+    "minDiscordantPairs": 10
   },
   "rollback": {
-    "heavyConsecutiveConfirmations": 2,
-    "lightHysteresisRule": "any single C-family out-of-band in S3 -> Inconclusive hold back to S2; never auto-demote on one reading"
+    "heavyConsecutiveConfirmations": 2
   },
   "freeze": {
     "s3MinWindowDays": 7,

@@ -8,6 +8,31 @@
 export type SwitchPhase = "S0" | "S1" | "S2" | "S3" | "S4";
 export const SWITCH_PHASES: readonly SwitchPhase[] = ["S0", "S1", "S2", "S3", "S4"];
 
+// ADR-0044 D1: the access_events chain is a total replay log. Each edge is named by its
+// from/to pair, not by a coarse stage-transition hint. D3 adds the S1->S0 reject edge.
+export const SWITCH_EDGE_EVENTS = [
+  "promote-s0-s1",
+  "promote-s1-s2",
+  "promote-s2-s3",
+  "hold-s3-s2",
+  "unfreeze-s4-s2",
+  "rollback-s2-s1",
+  "freeze-s3-s4",
+  "reject-s1-s0",
+] as const;
+export type SwitchEdgeEventType = (typeof SWITCH_EDGE_EVENTS)[number];
+
+export const SWITCH_EDGE_TRANSITIONS: Record<SwitchEdgeEventType, { from: SwitchPhase; to: SwitchPhase }> = {
+  "promote-s0-s1": { from: "S0", to: "S1" },
+  "promote-s1-s2": { from: "S1", to: "S2" },
+  "promote-s2-s3": { from: "S2", to: "S3" },
+  "hold-s3-s2": { from: "S3", to: "S2" },
+  "unfreeze-s4-s2": { from: "S4", to: "S2" },
+  "rollback-s2-s1": { from: "S2", to: "S1" },
+  "freeze-s3-s4": { from: "S3", to: "S4" },
+  "reject-s1-s0": { from: "S1", to: "S0" },
+};
+
 // ---------- stats primitives ----------
 
 // Error function, Abramowitz & Stegun 7.1.26 (|err| <= 1.5e-7 — fine for a WARN diagnostic).
@@ -26,10 +51,10 @@ export function chi2P1(x: number): number {
 // McNemar discordant-pair test, statsmodels semantics:
 // n_d < 25 -> exact binomial p = min(1, 2 * P(X <= min(b,c))), X ~ Bin(n_d, 0.5)
 // n_d >= 25 -> chi-square with Yates continuity correction, 1 df.
-export function mcnemar(b: number, c: number): { p: number; method: "exact" | "chi2" } {
+export function mcnemar(b: number, c: number, exactBelowN = 25): { p: number; method: "exact" | "chi2" } {
   const n = b + c;
   if (n === 0) return { p: 1, method: "exact" };
-  if (n < 25) {
+  if (n < exactBelowN) {
     const m = Math.min(b, c);
     let sum = 0;
     for (let k = 0; k <= m; k++) { let comb = 1; for (let j = 0; j < k; j++) comb = (comb * (n - j)) / (j + 1); sum += comb; }
@@ -44,24 +69,25 @@ export function mcnemar(b: number, c: number): { p: number; method: "exact" | "c
 export interface SwitchRegistration {
   schema: "anysearch/switch-registration@1";
   version: number;
-  c: { c1MinActiveRows: number; c1MinFittableUnits: number; c2MinWindowDays: number; c3PsiMax: number; c3BaselineFixture: string; c4ConsecutivePromote: number; c4kMaxRounds: number };
-  reconcile: { tierConcordanceMin: number; psiDiffMax: number; rankDisplacementMedianMax: number; rankDisplacementP95Max: number; mcnemarExactBelowN: number; mcnemarWarnAlpha: number };
+  c: { c1MinActiveRows: number; c1MinFittableUnits: number; c2MinWindowDays: number; c2SlaFrequencyPerDay: number; c3PsiMax: number; c3BaselineFixture: string; c4ConsecutivePromote: number; c4kMaxRounds: number };
+  reconcile: { tierConcordanceMin: number; psiDiffMax: number; rankDisplacementMedianMax: number; rankDisplacementP95Max: number; mcnemarExactBelowN: number; mcnemarWarnAlpha: number; minDiscordantPairs: number };
   rollback: { heavyConsecutiveConfirmations: number };
   freeze: { s3MinWindowDays: number; consecutiveCleanReconciles: number };
 }
 
 // ---------- D3: S0 -> S1 readiness (C1 before C3: PSI grows with sample size) ----------
 
-export interface SwitchReadings { activeRows: number; fittableUnits: number; windowDays: number; psi: number | null }
+export interface SwitchReadings { activeRows: number; fittableUnits: number; windowDays: number; evaluationCount: number; psi: number | null }
 export interface ReadinessVerdict { c1: boolean; c2: boolean; c3: boolean; allMet: boolean; dataAbsent: boolean; detail: string }
 
 export function evaluateReadiness(r: SwitchReadings, reg: SwitchRegistration): ReadinessVerdict {
   // D1/D3 data-absent contract: no events, or events but zero fit-eligible units.
   const dataAbsent = r.activeRows === 0 || r.fittableUnits === 0;
   const c1 = r.activeRows >= reg.c.c1MinActiveRows && r.fittableUnits >= reg.c.c1MinFittableUnits;
-  const c2 = r.windowDays >= reg.c.c2MinWindowDays;
+  const cadencePerDay = r.windowDays > 0 ? r.evaluationCount / r.windowDays : 0;
+  const c2 = r.windowDays >= reg.c.c2MinWindowDays && cadencePerDay >= reg.c.c2SlaFrequencyPerDay * 2;
   const c3 = r.psi !== null && Number.isFinite(r.psi) && r.psi < reg.c.c3PsiMax;
-  const detail = "C1 " + r.activeRows + " rows/" + r.fittableUnits + " units (>=" + reg.c.c1MinActiveRows + "/" + reg.c.c1MinFittableUnits + ") " + (c1 ? "OK" : "FAIL") + "; C2 window " + r.windowDays + "d>=" + reg.c.c2MinWindowDays + "d " + (c2 ? "OK" : "FAIL") + "; C3 PSI " + (r.psi === null ? "n/a" : r.psi.toFixed(4)) + "<" + reg.c.c3PsiMax + " " + (c3 ? "OK" : "FAIL");
+  const detail = "C1 " + r.activeRows + " rows/" + r.fittableUnits + " units (>=" + reg.c.c1MinActiveRows + "/" + reg.c.c1MinFittableUnits + ") " + (c1 ? "OK" : "FAIL") + "; C2 window " + r.windowDays + "d>=" + reg.c.c2MinWindowDays + "d cadence " + cadencePerDay.toFixed(3) + "/d>=" + (reg.c.c2SlaFrequencyPerDay * 2) + "/d " + (c2 ? "OK" : "FAIL") + "; C3 PSI " + (r.psi === null ? "n/a" : r.psi.toFixed(4)) + "<" + reg.c.c3PsiMax + " " + (c3 ? "OK" : "FAIL");
   return { c1, c2, c3, allMet: c1 && c2 && c3 && !dataAbsent, dataAbsent, detail };
 }
 
@@ -75,7 +101,7 @@ export interface ReconcileInput {
   discordantB: number; // synthetic right, consumed wrong
   discordantC: number; // consumed right, synthetic wrong
 }
-export interface ReconcileVerdict { equivalent: boolean; failures: string[]; mcnemarP: number; mcnemarMethod: string; mcnemarWarn: boolean; detail: string }
+export interface ReconcileVerdict { equivalent: boolean; underpowered: boolean; discordantPairs: number; failures: string[]; mcnemarP: number; mcnemarMethod: string; mcnemarWarn: boolean; detail: string }
 
 export function median(a: number[]): number {
   if (a.length === 0) return 0;
@@ -91,6 +117,9 @@ export function percentile95(a: number[]): number {
 
 export function evaluateReconcile(i: ReconcileInput, reg: SwitchRegistration): ReconcileVerdict {
   const failures: string[] = [];
+  const discordantPairs = i.discordantB + i.discordantC;
+  const underpowered = discordantPairs < reg.reconcile.minDiscordantPairs;
+  if (underpowered) failures.push("discordant pairs " + discordantPairs + " < " + reg.reconcile.minDiscordantPairs + " (WARN, never silent pass and never red)");
   const rate = i.total === 0 ? 0 : i.concordant / i.total;
   if (rate < reg.reconcile.tierConcordanceMin) failures.push("tier concordance " + rate.toFixed(4) + " < " + reg.reconcile.tierConcordanceMin);
   if (!(i.psiDiff <= reg.reconcile.psiDiffMax)) failures.push("PSI diff " + i.psiDiff + " > " + reg.reconcile.psiDiffMax);
@@ -98,11 +127,11 @@ export function evaluateReconcile(i: ReconcileInput, reg: SwitchRegistration): R
   const p95 = percentile95(i.rankDisplacements);
   if (med > reg.reconcile.rankDisplacementMedianMax) failures.push("rank displacement median " + med + " > " + reg.reconcile.rankDisplacementMedianMax);
   if (p95 > reg.reconcile.rankDisplacementP95Max) failures.push("rank displacement p95 " + p95 + " > " + reg.reconcile.rankDisplacementP95Max);
-  const mc = mcnemar(i.discordantB, i.discordantC);
+  const mc = mcnemar(i.discordantB, i.discordantC, reg.reconcile.mcnemarExactBelowN);
   // D4: directional asymmetry (consumed systematically worse) is a WARN diagnostic, never a promotion criterion.
   const mcnemarWarn = mc.p < reg.reconcile.mcnemarWarnAlpha && i.discordantB > i.discordantC;
-  const detail = "concordance " + rate.toFixed(4) + " (n=" + i.total + "), psiDiff " + i.psiDiff + ", rankDisp median/p95 " + med + "/" + p95 + ", McNemar(" + mc.method + ") p=" + mc.p.toFixed(4) + (mcnemarWarn ? " WARN(consumed-worse)" : "");
-  return { equivalent: failures.length === 0, failures, mcnemarP: mc.p, mcnemarMethod: mc.method, mcnemarWarn, detail };
+  const detail = "concordance " + rate.toFixed(4) + " (n=" + i.total + "), discordantPairs " + discordantPairs + ", psiDiff " + i.psiDiff + ", rankDisp median/p95 " + med + "/" + p95 + ", McNemar(" + mc.method + ") p=" + mc.p.toFixed(4) + (mcnemarWarn ? " WARN(consumed-worse)" : "") + (underpowered ? " WARN(underpowered)" : "");
+  return { equivalent: failures.length === 0, underpowered, discordantPairs, failures, mcnemarP: mc.p, mcnemarMethod: mc.method, mcnemarWarn, detail };
 }
 
 // ---------- D2/D5/D6: transition decision ----------
@@ -118,6 +147,7 @@ export interface SwitchInputs {
   reconcile?: ReconcileVerdict;
   degraded?: boolean;
   integrityFailed?: string | null;
+  untrustworthyEvidence?: boolean;
   freezeEvidence?: { s3Days: number; cleanReconciles: number };
   kMaxWarned: boolean;
 }
@@ -139,6 +169,11 @@ export function decideSwitch(from: SwitchPhase, i: SwitchInputs, c: SwitchCounte
   // Integrity lineage (D5): fail-closed block, NEVER a rollback. Recorded, counted as nothing.
   if (i.integrityFailed) {
     return { from, to: from, kind: "check", record: true, reason: "integrity-fail: " + i.integrityFailed, integrityBlock: true, counters: { readinessRounds: zero.readinessRounds, readinessMetStreak: 0, heavyConfirmStreak: 0 } };
+  }
+
+  // ADR-0044 D3: wholly untrustworthy consumed evidence at S1 demotes to S0 and fails closed.
+  if (from === "S1" && i.untrustworthyEvidence) {
+    return { from, to: "S0", kind: "check", record: true, reason: "reject-s1-s0: wholly untrustworthy consumed evidence base", integrityBlock: true, counters: { readinessRounds: 0, readinessMetStreak: 0, heavyConfirmStreak: 0 } };
   }
 
   // S4 -> S2: reversible freeze (major consumed-track change).
@@ -179,10 +214,12 @@ export function decideSwitch(from: SwitchPhase, i: SwitchInputs, c: SwitchCounte
 
   if (from === "S1") {
     if (!i.reconcile) return { from, to: from, kind: "readiness", record: false, reason: "S1 hold: consumed observed, no reconcile window yet", integrityBlock: false, counters: zero };
+    if (i.reconcile.underpowered) return { from, to: from, kind: "check", record: true, reason: "S1 underpowered reconcile WARN: " + i.reconcile.detail, integrityBlock: false, counters: zero };
     return { from, to: "S2", kind: "stage-transition", record: true, reason: "promote S1->S2: dual-track reconcile window opened. " + i.reconcile.detail, integrityBlock: false, counters: { readinessRounds: 0, readinessMetStreak: 0, heavyConfirmStreak: 0 } };
   }
 
   if (from === "S2" || from === "S3") {
+    if (i.reconcile?.underpowered) return { from, to: from, kind: "check", record: true, reason: "S2 underpowered reconcile WARN: " + i.reconcile.detail, integrityBlock: false, counters: { ...zero, heavyConfirmStreak: 0 } };
     const heavySignal = (i.degraded === true) || (i.reconcile?.mcnemarWarn === true);
     const heavyStreak = heavySignal ? zero.heavyConfirmStreak + 1 : 0;
     if (from === "S2" && heavyStreak >= reg.rollback.heavyConsecutiveConfirmations) {

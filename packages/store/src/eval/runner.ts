@@ -165,6 +165,7 @@ export interface EvalReport {
   schema: "anysearch/eval-report@1";
   generatedAt: string;
   datasetFingerprint: string;
+  integrity?: { verdict: "pass" | "failed"; runPurpose: "observational" | "decision" };
   // ADR-0038 D2: frozen-baseline + backflow-slice family fingerprint (gate stores it on the baseline).
   holdoutFingerprint: string;
   totals: { cases: number; passed: number; failed: number };
@@ -791,6 +792,7 @@ export async function runAll(cases: CaseSpec[]): Promise<EvalReport> {
     schema: "anysearch/eval-report@1",
     generatedAt: new Date().toISOString(),
     datasetFingerprint: datasetFingerprint(cases),
+    integrity: { verdict: "pass", runPurpose: "observational" },
     holdoutFingerprint: holdoutFingerprint(),
     totals: { cases: results.length, passed: results.filter((r) => r.passed).length, failed: results.filter((r) => !r.passed).length },
     stageBreakdown,

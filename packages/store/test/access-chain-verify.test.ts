@@ -22,7 +22,7 @@ const VERIFIER = join(ROOT, "scripts", "verify-access-events.mjs");
 
 function verify(dbPath: string): { status: number | null; out: string } {
   const r = spawnSync(process.execPath, [VERIFIER, dbPath], { cwd: ROOT, encoding: "utf8" });
-  return { status: r.status, out: String(r.stdout ?? "") + String(r.stderr ?? "") };
+  return { status: r.status, out: String(r.stdout ?? "") };
 }
 
 async function makeChainedFixture(): Promise<{ dir: string; dbPath: string }> {

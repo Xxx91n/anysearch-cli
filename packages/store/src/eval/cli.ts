@@ -1,7 +1,7 @@
 // ADR-0027 D6: `pnpm -C packages/store eval` — writes .ship-gate/eval-report.{json,md},
 // applies the gate, exits with the partitioned code contract.
 // ADR-0028 D1 / ADR-0029 D6: --calibrate only (50-run hard floor; CI never rewrites). The one-round --write-baseline alias was removed (ADR-0029 D6).
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
@@ -9,8 +9,8 @@ import { GOLDEN_CASES } from "./golden-cases";
 import { assertBackflowNoOverlap } from "./holdout";
 import { runAll, type EvalReport } from "./runner";
 import { isSkip, skipKey } from "./explicit-skip";
-import { emptySkipLedger, parseSkipLedger, recordSkips, skipMustFail } from "./skip-ledger";
-import { advanceSwitch } from "./switch-run";
+import { quarantineSkipLedger, recordSkips, skipMustFail, withSkipLedgerLock } from "./skip-ledger";
+import { advanceSwitch, probeSwitchIntegrity } from "./switch-run";
 import { fixtureDefinitionHash } from "./obs-fixtures";
 import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, type EvalBaseline, type GainConclusion } from "./gate";
 
@@ -154,6 +154,7 @@ async function main(): Promise<number> {
   }
   const args = process.argv.slice(2);
   const calibrateIdx = args.indexOf("--calibrate");
+  const decisionIdx = args.indexOf("--decision");
   const outIdx = args.indexOf("--out");
   const root = repoRoot();
   const outDir = outIdx >= 0 ? resolve(args[outIdx + 1]!) : join(root, ".ship-gate");
@@ -247,33 +248,27 @@ async function main(): Promise<number> {
       if (k === "schema" || k === "dayBucketDefinition") continue;
       if (isSkip(v)) keys.push(skipKey(k, v));
     }
-    const skipPath = join(outDir, "skip-ledger.json");
-    // r110 SA-F-03: an unreadable/unknown-schema ledger must never be silently cleared.
-    // Quarantine the file aside (rename) and restart empty with a loud stderr notice —
-    // history is preserved for inspection, forward-compatible data is not destroyed.
-    let sl;
-    if (existsSync(skipPath)) {
-      try {
-        sl = parseSkipLedger(readFileSync(skipPath, "utf8"));
-      } catch (e) {
-        const quarantined = skipPath.replace(/\.json$/, ".quarantined-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json");
-        try { renameSync(skipPath, quarantined); } catch { /* keep going with fresh ledger */ }
-        console.error("[eval] OBSERVATIONAL skip-ledger fails the @2 contract — quarantined to " + quarantined + " and restarted empty (" + String((e as Error).message ?? e) + ")");
-        sl = emptySkipLedger();
-      }
-    } else sl = emptySkipLedger();
     // ADR-0042 D4 + r110 SP-F-01: structural data absence (no events at all, or events but
     // no fit-eligible units) records reason-code data-absent — never builds the 3-streak.
     const obTrack = (ob as { track?: "consumed" | "synthetic" }).track ?? "consumed";
     const dataAbsent = keys.length > 0 && obTrack === "consumed" && ((ob as { dataAbsent?: boolean }).dataAbsent === true || isSkip(ob.accessAge));
-    const streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
-    // r110 SA-F-08: read-modify-write must not corrupt the ledger on crash mid-write — write
-    // to a sibling tmp file and rename atomically (POSIX + Windows both honor rename here).
-    const tmpPath = skipPath + ".tmp";
-    writeFileSync(tmpPath, JSON.stringify(sl, null, 2) + "\n", "utf8");
-    renameSync(tmpPath, skipPath);
-    if (skipMustFail(sl))
-      console.error("[eval] OBSERVATIONAL skip streak " + streak + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note observational-skip --ledger " + skipPath + " (ADR-0039 D7)");
+    let streak = 0;
+    try {
+      withSkipLedgerLock(outDir, (sl) => {
+        streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
+        if (skipMustFail(sl)) {
+          console.error("[eval] OBSERVATIONAL skip streak " + streak + " >= 3 — forced human review: node scripts/gain-warn-resolve.mjs --decision stay-warn --note observational-skip --ledger " + join(outDir, "skip-ledger.json") + " (ADR-0039 D7)");
+        }
+        return streak;
+      });
+    } catch (e) {
+      const quarantined = quarantineSkipLedger(outDir, new Date().toISOString());
+      console.error("[eval] OBSERVATIONAL skip-ledger fails the ledger contract — quarantined to " + quarantined + " and restarted empty (" + String((e as Error).message ?? e) + ")");
+      withSkipLedgerLock(outDir, (sl) => {
+        streak = recordSkips(sl, keys, new Date().toISOString(), { track: obTrack, reasonCode: dataAbsent ? "data-absent" : "gate-not-met" });
+        return streak;
+      });
+    }
   }
 
   // ADR-0043 impl-plan 3/8: advance the consumed/synthetic switch state machine.
@@ -284,10 +279,32 @@ async function main(): Promise<number> {
     const swDb = process.env.ANS_DB_PATH && process.env.ANS_DB_PATH.trim()
       ? process.env.ANS_DB_PATH
       : join(os.homedir(), ".anysearch", "anysearch.db");
-    const sw = advanceSwitch({ outDir, dbPath: swDb });
+    const probe = decisionIdx >= 0 ? probeSwitchIntegrity(outDir, swDb) : null;
+    // r115 audit S1: build the verdict AFTER the probe runs and AFTER advanceSwitch has
+    // returned. Default the verdict to failed for decision-grade runs and to pass for
+    // observational runs; advanceSwitch only ever flips a decision-grade verdict to
+    // failed on its own failure paths.
+    const sw = advanceSwitch({
+      outDir,
+      dbPath: swDb,
+      mode: "real",
+      integrityFailed: probe && !probe.ok ? probe.detail : null,
+      untrustworthyEvidence: decisionIdx >= 0 && ob?.eventWriteFailures && ob.eventWriteFailures.count > 0,
+    });
+    // r116 fix: decision-grade runs default to failed and only flip to pass when BOTH
+    // the chain probe succeeds AND advanceSwitch returns no integrity error. This closes
+    // the S1 P0 finding that the verdict producer could default to pass without a
+    // concrete publish-red signal.
+    const decisionProbeOk = probe ? probe.ok : false;
+    const integrityVerdict = decisionIdx >= 0
+      ? (sw.integrityError || !decisionProbeOk ? "failed" : "pass")
+      : "pass";
+    report.integrity = { verdict: integrityVerdict, runPurpose: decisionIdx >= 0 ? "decision" : "observational" };
     if (sw.decision.record || sw.integrityError) console.error("[switch] " + sw.decision.reason + (sw.integrityError ? " [FAIL-CLOSED]" : ""));
   } catch (e) {
     console.error("[switch] advance failed (eval continues; integrity checks live in ship-gate): " + String((e as Error).message ?? e));
+    if (decisionIdx >= 0) report.integrity = { verdict: "failed", runPurpose: "decision" };
+    else report.integrity = { verdict: "pass", runPurpose: "observational" };
   }
 
   // r110 SP-F-03: if the fixture manifest is absent the fingerprint carries the explicit
