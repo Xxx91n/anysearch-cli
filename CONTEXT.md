@@ -202,6 +202,7 @@ RRF 融合的第四臂：transformers.js 本地嵌入（multilingual-e5-small q8
 
 
 
+
 *End of Glossary*
 
 ## Cursor Dual Channel（Cursor 双通道注入）
@@ -598,5 +599,47 @@ _Avoid_: ad-hoc readiness checks, hardcoded placeholder inputs posing as trigger
 ## Graded Rollback with Inconclusive Hold（分级回退与暂停核对）
 退化谱系分轻度（S3→S2 暂停核对，过即恢复，不计回退）与重度（连续确认后 S2→S1 真回退）；完整性谱系（哈希链/写失败/指纹漂移）不走回退走 fail-closed 硬阻断。回退事件不递增 3 连击。ADR-0043 D5。
 _Avoid_: single-shot rollback on any degradation, treating integrity failures as state rollback, rollbacks that pollute the escalation streak, flap between adjacent stages
+
+## Edge-Typed Replay Function（按边类型化重放函数）
+切换链的每个 `event_type` 都对应唯一的 from-to 边，重放折叠对日志是全函数；`--verify` 从尾哈希比对升级为重放推导 phase 对比，不可验证即 quarantine 而非静默自愈。ADR-0044 D1。
+_Avoid_: hint-style transition rows that cannot determine the next phase, verify-by-last-hash-only, silent rebuild from an incomplete replay
+
+## Log Sufficiency with Materialized Cache（日志充分性与物化缓存）
+状态事件链必须是状态的日志，物化 state block 只是可重建缓存；链为真相，缓存漂移由重放验证器兜底。ADR-0044 D1。
+_Avoid_: treating the materialized block as the source of truth, accepting a lossy replay, rebuilding before the chain is proven sufficient
+
+## Committed Registration Payload（绑定预注册载荷）
+预注册阈值表按单消费律、绑定校验律、加性演进律管理：每个值只被一个决策位点消费；加载时对独立钉死的全长 SHA-256 期望值校验；schema 只做加性扩展并逐字段无损透传。ADR-0044 D2。
+_Avoid_: self-computed hashes without an expected value, dead registration fields, deleting or reinterpreting old reasonCode values, truncated identity hashes
+
+## PDP/PEP Enforcement Boundary（PDP/PEP 执行边界）
+完整性 fail-closed 只放在证据转裁决或发布的两个生效点（advanceSwitch 与 ship-gate）；eval runner 保持 audit/report-only，二者通过 run 级 integrity verdict 与 runPurpose 契约解耦。ADR-0044 D3。
+_Avoid_: aborting eval on integrity failure, moving the gate into the measurement loop, observational metrics driving release red
+
+## Synthetic Drill Plane（合成演练双平面）
+演练与真实裁决分属不同持久平面：drill 模式结构上拒绝写入真实 dbPath/outDir，链事件携带来源证明，synthetic 的 gate-not-met 不占 consumed 升级预算。ADR-0044 D4。
+_Avoid_: test-card-to-live persistence, source-less chain events, synthetic fixture failures consuming real escalation streak
+
+## Pre-Registered Statistical Power Guard（预注册统计功效守卫）
+C2 评估频率注册为 `slaFrequency` 并按不低于 2x SLA 检查；S2 注册最小 discordant pair 下限，样本不足时整窗 WARN，永不静默通过、永不 red。ADR-0044 D5。
+_Avoid_: window-only readiness checks, equivalent verdicts without a minimum sample guard, silent pass on insufficient statistical power
+
+
+## Unified Fusion Governance（统一融合治理）
+一条融合治理契约统一记忆侧五臂与 web provider 三源两套 RRF 实例的注册、权重、缺失语义、溯源和最终 top-k 契约，但两实例零数据共享且保留各自算法与校验权威。ADR-0045 D1。
+_Avoid_: fusing the two ranked lists into one score pool, sharing one runtime registry without instance authority, treating web and memory score semantics as interchangeable
+
+## Fusion Registry Field Set（融合注册字段集）
+L1 最小注册字段为 k_fusion、rank_window、ROR_WINDOW、weights.memory、weights.web、armAbsentSemantics，加只读 algorithm 枚举；三份历史同为 60 的值拆开注册并各自单消费。ADR-0045 D2。
+_Avoid_: implicit defaults scattered across call sites, a fused registry with no provenance schema, storing per-query or runtime-adaptive weights in the committed payload
+
+## Top-k Consumption Contract（最终 top-k 消费契约）
+融合结果按全池 RRF 排序、截断前溯源注解、全池 MVSS、纯前缀 top-k 截断；fused score 只是 rank_fusion 信号，不充当置信度、阈值、abstain 或跨查询可比分数。ADR-0045 D3。
+_Avoid_: exposing a bare fused score, thresholding rank fusion, reordering weak evidence below strong evidence, computing MVSS after truncation, letting attribution rewrite the fused order
+
+## Algorithm Switch Gate（算法切换门禁）
+记忆侧默认 weighted RRF；切换 CC/score fusion 必须预先注册分数完备、稳定性、分级标签功效和统计功效并复用 gain gate；web 侧长期固定等权 RRF。实现融合治理时禁止顺手换算法。ADR-0045 D5。
+_Avoid_: swapping fusion functions during a governance refactor, promoting an unregistered candidate, treating unproven-positive as red, folding integrity failures into state rollback
+
 
 *End of Glossary*

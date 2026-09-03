@@ -246,3 +246,29 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 - [x] D1 契约声明：r40 给出 data-absent 语义规范（「有 events 但无 fit-eligible」= data-absent），r110 修复轮按其落地；两轮互不阻塞
 - [x] 下轮实现验收：状态机转换矩阵测试、@2→@3 无损 upcast、回退链路不递增 3 连击、迟滞防抖测试、完整性谱系 fail-closed 测试
 - [x] 平台验收：tsc clean、store suite green、ship-gate 空库/非空库两形态 exit 0、eval 123/123、打包产物可启动且进程存活
+
+## r43 检查点（grill r41 / ADR-0044 ADR-0043 审计修复治理 — 文档轮）
+
+- [x] ADR-0044 七节齐（Status / Context / D1–D6 / Consequences / Implementation Plan 8 步 / Acceptance 5 项 / Research Sources），UTF-8 无 BOM、无 CRLF
+- [x] CONTEXT.md +6 术语（Edge-Typed Replay Function / Log Sufficiency with Materialized Cache / Committed Registration Payload / PDP/PEP Enforcement Boundary / Synthetic Drill Plane / Pre-Registered Statistical Power Guard），均含 _Avoid_，尾部 *End of Glossary* 保留
+- [x] 本轮为 docs-only；实现（按边类型化链事件、绑定预注册载荷、PDP/PEP 执行边界、合成演练双平面、统计功效守卫）留给下一轮 fixer
+- [ ] Q1 落地：event_type 扩为 7 个按边闭集值，chain replay 全函数，`--verify` 改重放推导对比；不可验证时 quarantine，禁止静默自愈
+- [ ] Q2 落地：@2→@3 保留 reasonCode；registrationHash 改全长 64-hex 并接独立期望值校验；mcnemarExactBelowN 改由注册表消费；mutation test 证明无死注册
+- [ ] Q3 落地：eval 报告增加 run 级 integrity verdict + runPurpose；decideSwitch integrityFailed 接真实只读链探针；ship-gate eval step 消费 failed；补 S1→S0
+- [ ] Q4 落地：advanceSwitch 增加 drill/real 平面强制；链事件/状态动作携带来源；synthetic gate-not-met 不递增 consumed 3-streak；fixture-drill 默认 scratch
+- [ ] Q5 落地：注册 slaFrequency + cadence 检查；S2 最小 discordant pair n_d>=10；skip-ledger 加锁/CAS；sentinel 改独立表或 nullable FK+CHECK；anchor 出带外副本；registrationHash 全长
+- [ ] 平台验收：tsc clean、store suite green、ship-gate 空库/非空库 exit 0、eval 123/123、打包产物可启动且进程存活
+
+
+## r45 检查点（grill r42 / ADR-0045 多臂 RRF 融合治理 — 文档轮）
+
+- [x] ADR-0045 七节齐（Status / Context / D1–D5 / Consequences / Implementation Plan 8 步 / Acceptance / Research Sources），UTF-8 无 BOM、无 CRLF
+- [x] CONTEXT.md +4 术语（Unified Fusion Governance / Fusion Registry Field Set / Top-k Consumption Contract / Algorithm Switch Gate），均含 _Avoid_，尾部 *End of Glossary* 保留
+- [x] 本轮为 docs-only；业务源码未改动；主体实现留给下一轮 fixer
+- [ ] 下一轮第一步：提交 r43 fixer 未提交工作树，重跑 ADR-0044 验收，避免 0044 与 0045 验收互相污染
+- [ ] fixer 落地 fusion-registry fixture：SHA-256 钉死期望值、单消费 mutation test、三份 60 拆开注册
+- [ ] fixer 落地 domain-schema sources.weights Record 形态 + 配置错误 fail-fast / provider 运行时 fail-open
+- [ ] fixer 落地 web provenance 快照 + score_kind 原子标签，禁止 NormalizedResult 裸暴露 fused score
+- [ ] fixer 落地四类成对回归：registry drift、provenance 缺失、非法权重、fused score 裸暴露；复用 ship-gate 现有步骤
+- [ ] fixer 平台验收：tsc clean、store suite green、ship-gate 空库/非空库 exit 0、eval 123/123、打包产物可启动且进程存活
+- [ ] 主 fingerprint 不变；若新增 observational fusion fixture，声明式翻转 observational 定义哈希并用 --calibrate 重基线
