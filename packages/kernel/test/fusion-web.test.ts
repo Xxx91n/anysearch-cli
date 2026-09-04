@@ -47,7 +47,12 @@ async function main() {
     assert("fusedIds == recomputation", JSON.stringify(fusion.fusedIds) === JSON.stringify(ref));
   }
 
-  // 2. Weight overlay mutation pair: equal weights tie (insertion order), boost flips order.
+
+  const truncated = await engine.search({ query: "q", mode: "fast", maxResults: 1 });
+  assert("top-k truncation limits consumer results", truncated.results.length === 1);
+  assert("provenance remains full pre-truncation", truncated.metadata.fusion!.fusedIds.length === fusion?.fusedIds.length);
+
+  // 2. Weight overlay mutation pair: equal weights tie (insertion order), boost flips order.: equal weights tie (insertion order), boost flips order.
   const mk = (w?: Record<string, number>) => new RetroaererdEngine([
     mockProvider("p1", ["https://one.dev/x"]),
     mockProvider("p2", ["https://two.dev/y"]),

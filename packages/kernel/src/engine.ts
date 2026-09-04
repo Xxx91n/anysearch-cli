@@ -343,19 +343,24 @@ export class RetroaererdEngine {
     // nativeScores extension. scoreKind marks the fused score as a rank_fusion signal only
     // (never confidence / threshold / cross-query comparable); NormalizedResult stays clean.
 
-    // Map back to NormalizedResult in ranked order.
-    const rankedResults: NormalizedResult[] = [];
+    // Map back to NormalizedResult in full ranked order.
+    const fullRankedResults: NormalizedResult[] = [];
     for (const url of rankedUrls) {
       const r = allResults.get(url);
       if (r) {
         // Restore original URL for output.
-        rankedResults.push({ ...r, url: String(r.extra?.originalUrl ?? r.url) });
+        fullRankedResults.push({ ...r, url: String(r.extra?.originalUrl ?? r.url) });
       }
     }
 
+    // ADR-0045 D3: top-k is a pure prefix truncation. MVSS still sees the full fused pool.
+    const rankedResults = q.maxResults && q.maxResults > 0
+      ? fullRankedResults.slice(0, q.maxResults)
+      : fullRankedResults;
+
     // ADR-0014 D7: single computation source, dual output (control + MVSS).
     // Dead booleans deleted; computeSufficiency() replaces scattered logic.
-    const suff = computeSufficiency(rankedResults, providerLists, gate);
+    const suff = computeSufficiency(fullRankedResults, providerLists, gate);
 
     const envelope: FusedEnvelope = {
       results: rankedResults,

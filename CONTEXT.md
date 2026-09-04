@@ -641,5 +641,21 @@ _Avoid_: exposing a bare fused score, thresholding rank fusion, reordering weak 
 记忆侧默认 weighted RRF；切换 CC/score fusion 必须预先注册分数完备、稳定性、分级标签功效和统计功效并复用 gain gate；web 侧长期固定等权 RRF。实现融合治理时禁止顺手换算法。ADR-0045 D5。
 _Avoid_: swapping fusion functions during a governance refactor, promoting an unregistered candidate, treating unproven-positive as red, folding integrity failures into state rollback
 
+## Fusion-Level Ablation（融合级逐臂消融）
+记忆侧六臂的增益证据通过 drop-arm 反事实重算 RRF 获得，臂级 delta 只是 secondary，融合后 RoR 是唯一 primary；FTS 锚臂只报告不判定。ADR-0046 D2/D3。
+_Avoid_: per-arm independent gate decisions, averaging arm deltas into a fused score, judging the FTS anchor from ablation deltas
+
+## Reverse Weakest-Link Gate（反向 weakest-link 门）
+预注册单侧 harm 检验（H0: delta >= 0 vs H1: delta < 0），与 gain 门共享同一 OF alpha 轨、只做 beta 校正；`minHarm = -minGain = -10pp`，n<10 降 WARN。ADR-0046 D4。
+_Avoid_: separate alpha budgets per arm, one-shot red on a single observation, unproven-negative as red, using holdout as an independent significance gate
+
+## Paraphrase-Only Golden Slice（纯释义 golden 切片）
+轻/中/重三档 paraphrase 变体；轻档必须配正向断言，中档为主体，重档只进报告与反事实正类；标签人写并双审，`maxLexicalOverlap` 预注册校准后启用。ADR-0046 D1。
+_Avoid_: turning paraphrase robustness into a positive threshold gate, lexical pseudo-paraphrase pollution, treating heavy-paraphrase FTS failure as a system red
+
+## Web Provider Observational Ledger（web provider 观测账本）
+web provider 的独占命中、重叠、原生分数缺失和失败只落 Observational zone，无 verdict、无阈值、无 gate、无新表；只能进入 WARN、人工 review 与 ADR-0045 生命周期降级。ADR-0046 D5。
+_Avoid_: observational provider metrics driving ship red, new durable tables for provider analytics, treating equal-weight deviation as evidence, provider thresholds in the ship gate
+
 
 *End of Glossary*

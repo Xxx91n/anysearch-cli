@@ -332,6 +332,9 @@ function stepStaticAssertions() {
       ["packages/store/src/fts5.ts", "FUSION_REGISTRY.k_fusion.memory"],
       ["packages/kernel/src/engine.ts", "FUSION_REGISTRY.k_fusion.web"],
       ["packages/store/src/eval/runner.ts", "FUSION_REGISTRY.ror_window"],
+      ['packages/store/src/session-store.ts', 'registryWeight("memory", "fts")'],
+      ["packages/kernel/src/engine.ts", "FUSION_REGISTRY.weights.web"],
+      ["packages/retriever/src/fusion-registry.ts", "armAbsentSemantics"],
     ];
     for (const [rel, needle] of wiring) {
       if (!fs.readFileSync(path.join(ROOT, rel), "utf8").includes(needle)) {

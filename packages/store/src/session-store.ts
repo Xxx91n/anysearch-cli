@@ -16,7 +16,7 @@ import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, ENTITY
 import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_PATTERN_ROWS, RELATION_RULES_VERSION } from "./relation.js";
 import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate } from "./entity.js";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND } from "@anysearch/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
@@ -607,11 +607,11 @@ export class SqliteSessionStore implements SessionStore {
    // ADR-0045 D2: MemoryFusion consumes the registry — k_fusion.memory + weights.memory
    // (FTS anchor 1.0; side arms 0.5). Values identical to the pre-registry literals.
    const lists = [rawHits.map((h) => String(h.rowid))];
-   const weights: number[] = [FUSION_REGISTRY.weights.memory.fts];
-   if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(FUSION_REGISTRY.weights.memory.entity); }
-   if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(FUSION_REGISTRY.weights.memory.vector); }
-   if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(FUSION_REGISTRY.weights.memory.relation); }
-    if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) { lists.push(semHits.map((h) => String(h.rowid))); weights.push(FUSION_REGISTRY.weights.memory.semantic); }
+   const weights: number[] = [registryWeight("memory", "fts")];
+   if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "entity")); }
+   if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
+   if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "relation")); }
+    if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) { lists.push(semHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "semantic")); }
    const fusedIds = lists.length === 1 ? lists[0]! : rrfRank(lists, FUSION_REGISTRY.k_fusion.memory, weights);
    const fusedHits: MemoryHit[] = [];
    for (const id of fusedIds) { const h = byId.get(Number(id)); if (h) fusedHits.push(h); if (fusedHits.length >= limit) break; }

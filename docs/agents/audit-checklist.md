@@ -278,3 +278,16 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 - Found:（1）r43 工作树未提交混在 0045 验收面；（2）eval-integrity-contract.mjs r116 条件反转（decision+pass 永不通过，负向测试未覆盖 happy path）；（3）session-store 字面类型数组把 0.5 臂推不进 number[]。
 - Fixed：r43 提交并重跑验收；契约改为 decision ⇒ 必须显式 pass 且补 happy-path 断言；weights 数组显式 number[]。
 - Deferred：r39 F-07/F-09、skip-ledger @1 升级照旧挂账（不在本轮范围）。
+
+## r46 检查点（grill r43 / ADR-0046 多臂 RRF 融合逐臂增益观测 — 文档轮）
+
+- [x] ADR-0046 七节齐（Status / Context / D1-D7 / Consequences / Implementation Plan 7 步 / Acceptance / Research Sources），UTF-8 无 BOM、无 CRLF
+- [x] CONTEXT.md +4 术语（Fusion-Level Ablation / Reverse Weakest-Link Gate / Paraphrase-Only Golden Slice / Web Provider Observational Ledger），均含 _Avoid_，尾部 *End of Glossary* 保留
+- [x] 本轮为 docs-only；业务源码未改动；主体实现留给下一轮 fixer
+- [x] Rejected R1-R5 语义已写入 ADR-0046：无 per-arm OF 轨道、无语义臂判定轨激活、无 per-arm 权重学习、无 web 观测阈值、无在线 interleaving、无 nDCG/qrels 门禁化
+- [ ] fixer 落地 runner `ablate(label)` 推广至全部非 anchor 记忆臂，记录 rankOn/rankOff/excluded；FTS 锚臂只报告
+- [ ] fixer 落地 paraphrase-only fixture：三档变体、词面 overlap 上限断言、人工标签双审；fingerprint flip 声明并重校准
+- [ ] fixer 落地三档判定：融合后 RoR 唯一 primary，臂级 secondary；反向 weakest-link 门复用 `pairedGainStats` 与 OF 表
+- [ ] fixer 落地 Observational zone 新字段（exclusiveHits/nativeScoresMissing/armDeltas/maxLexicalOverlap）缺区 fail；web ledger 无新表无 gate
+- [ ] fixer 落地 ship 处置：critical 红强制降级并阻断，observational 红 warn；单计数器并轨，silver bullet 闭枚举
+- [ ] 平台验收：tsc clean、store/kernel/retriever suite green、ship-gate 空库/非空库 exit 0、eval 123/123、打包产物进程存活
