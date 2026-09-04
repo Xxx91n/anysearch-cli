@@ -38,6 +38,9 @@ async function main() {
   assert(ob!.dataAbsent === true, "golden run is structurally data-absent (single-run window can never reach 90d / 100 fittable units)");
   const bk = (ob!.bgnbd as { status?: string; reason?: string });
   assert(bk.status === "skipped" && String(bk.reason).includes("structural data absence"), "report zone labels the absence explicitly (SA-F-05)");
+  assert(typeof ob!.armDeltas === "object" && ob!.armDeltas !== null, "ADR-0046 D7: armDeltas zone present");
+  assert("maxLexicalOverlap" in ob!, "ADR-0046 D7: maxLexicalOverlap field registered");
+  assert("exclusiveHits" in ob! && "nativeScoresMissing" in ob!, "ADR-0046 D7: web ledger skip fields registered");
 }
   assert(Boolean(report.tierBreakdown.adversarial && report.tierBreakdown.hard), "ADR-0028 D4: tier breakdown present");
   assert(report.metrics.counts && typeof report.metrics.mrr === "number", "ADR-0028 D1/D2: counts + mrr present");

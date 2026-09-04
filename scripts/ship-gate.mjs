@@ -129,6 +129,12 @@ function fail(msg) {
   process.exit(1);
 }
 
+function failUnverifiable(msg) {
+  flushReportEntries("unverifiable");
+  report("fail", msg);
+  process.exit(2);
+}
+
 // ADR-0041 D1 (supersedes ADR-0040 D5/D6's raw spawn): layered verification object.
 // (a) ANS_DB_PATH explicitly set but the file is missing -> misconfiguration -> fail (fail-closed);
 // (b) a consumable db exists (ANS_DB_PATH or ~/.anysearch default) -> consumed track;
@@ -435,6 +441,26 @@ function stepStaticAssertions() {
   //     (3-streak escalation reuses the ADR-0039 D7 discipline).
   stepAccessChainVerify();
 
+  // 1m. ADR-0046 D1/D2/D5/D7: fusion ablation, paraphrase fixture contract, and
+  //     web provider ledger must exist as source-level gates. Observational
+  //     provider fields must not be read by the memory gate.
+  {
+    const runnerSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/runner.ts"), "utf8");
+    for (const tok of ["computeArmDeltas", "NON_ANCHOR_MEMORY_ARMS", "armDeltas", "maxLexicalOverlap"])
+      if (!runnerSrc.includes(tok)) fail("ADR-0046 runner missing " + tok);
+    const gateSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/gate.ts"), "utf8");
+    for (const tok of ["evaluateWeakestLink", "minHarm", "betaCorrection", "SHIP_OVERRIDE_REASON_CODES", "SHIP_OVERRIDE_WINDOW_LIMIT"])
+      if (!gateSrc.includes(tok)) fail("ADR-0046 gate missing " + tok);
+    const goldenSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/golden-cases.ts"), "utf8");
+    for (const tok of ["paraphraseTier", "PARAPHRASE_MAX_LEXICAL_OVERLAP", "lexicalOverlap", "assertParaphraseSlice"])
+      if (!goldenSrc.includes(tok)) fail("ADR-0046 golden-cases missing " + tok);
+    const engineSrc = fs.readFileSync(path.join(ROOT, "packages/kernel/src/engine.ts"), "utf8");
+    for (const tok of ["buildWebProviderLedger", "webProviderLedger"])
+      if (!engineSrc.includes(tok)) fail("ADR-0046 engine missing webProviderLedger");
+    if (gateSrc.includes("webProviderLedger")) fail("ADR-0046 D5 violated: memory gate must never read web provider ledger");
+    report("pass", "ADR-0046 source gates: ablation, weakest-link, paraphrase fixture, web ledger");
+  }
+
 }
 
 // ---------------------------------------------------------------------------
@@ -666,9 +692,13 @@ async function stepMemoryEval() {
     child.stderr.on("data", (d) => (buf += d.toString("utf8")));
     child.on("close", (code) => resolve({ code, buf }));
   });
+  if (res.code === 2) {
+    const tail = res.buf.trim().split("\n").slice(-8).join("\n");
+    failUnverifiable("memory-eval gate exited 2 (unverifiable/inconclusive)\n" + tail);
+  }
   if (res.code !== 0) {
     const tail = res.buf.trim().split("\n").slice(-8).join("\n");
-    fail("memory-eval gate exited " + res.code + " (0=pass / 1=metric regression / 12=fingerprint mismatch)\n" + tail);
+    fail("memory-eval gate exited " + res.code + " (0=pass/warn / 1=publish-red / 2=unverifiable / 12=fingerprint mismatch)\n" + tail);
   }
   const reportPath = path.join(outDir, "eval-report.json");
   const mdPath = path.join(outDir, "eval-report.md");
@@ -728,9 +758,9 @@ async function stepMemoryEval() {
   // the VALUES inside are never gated (N1, Goodhart clause in ADR-0039 _Avoid_ 1).
   {
     const z = rep.metrics && rep.metrics.observational;
-    if (!z || typeof z !== "object") fail("memory-eval report missing metrics.observational zone (ADR-0039 E3 fail-closed)");
-    if (z.schema !== "anysearch/observational@1") fail("observational zone schema drift: " + z.schema);
-    for (const k of ["accessAge", "tauScan", "bgnbd", "revival", "undoReentryEvents", "dayBucketDefinition", "eventWriteFailures"]) if (!(k in z)) fail("observational zone missing " + k);
+    if (!z || typeof z !== "object") failUnverifiable("memory-eval report missing metrics.observational zone (ADR-0039 E3 fail-closed)");
+    if (z.schema !== "anysearch/observational@1") failUnverifiable("observational zone schema drift: " + z.schema);
+    for (const k of ["accessAge", "tauScan", "bgnbd", "revival", "undoReentryEvents", "dayBucketDefinition", "eventWriteFailures", "armDeltas", "maxLexicalOverlap", "exclusiveHits", "nativeScoresMissing"]) if (!(k in z)) failUnverifiable("observational zone missing " + k);
     // D7: skip-ledger escalation — 3 consecutive identical observational skips force human review.
     const skipL = path.join(outDir, "skip-ledger.json");
     if (fs.existsSync(skipL)) {

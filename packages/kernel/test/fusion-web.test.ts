@@ -31,6 +31,13 @@ async function main() {
   ]);
   const env = await engine.search({ query: "q", mode: "fast" });
   const fusion = env.metadata.fusion;
+  const ledger = env.metadata.webProviderLedger;
+  assert("web provider ledger present", !!ledger);
+  if (ledger) {
+    assert("ledger has both provider failures empty", Array.isArray(ledger.failures) && ledger.failures.length === 0);
+    assert("ledger counts native scores", ledger.nativeScoresMissing.tavily === 0 && ledger.nativeScoresMissing.exa === 0);
+    assert("ledger has provider overlap object", typeof ledger.providerOverlap === "object");
+  }
   assert("fusion snapshot present", !!fusion);
   if (fusion) {
     // validator accepted the runtime snapshot (positive member of the provenance pair)
@@ -71,6 +78,7 @@ async function main() {
   ]).search({ query: "q", mode: "fast" });
   assert("failed provider fail-open", partial.metadata.providersFailed.includes("exa") && partial.results.length === 1);
   assert("provenance excludes failed provider", partial.metadata.fusion!.labels.join(",") === "tavily");
+  assert("ledger records failed provider", partial.metadata.webProviderLedger!.failures.includes("exa"));
 
   console.log(`fusion-web tests: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

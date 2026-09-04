@@ -83,6 +83,15 @@ export interface ProviderAnswer {
   citations?: Array<{ url: string; title?: string }>;
 }
 
+// ADR-0046 D5: per-web-run observational ledger. It is intentionally separate from
+// the gated sufficiency signal and may never drive a ship verdict or durable table.
+export interface WebProviderLedger {
+  providerOverlap: Record<string, number>;
+  exclusiveHits: Record<string, number>;
+  nativeScoresMissing: Record<string, number>;
+  failures: string[];
+}
+
 // ADR-0045 D2/D3 (r118 impl): common fusion provenance shape — the six registered fields
 // instance/labels/lists/weights/fusedIds/scoreKind. Memory-only texts (session-store ArmProvenance)
 // and web-only nativeScores (below) are instance extensions on top of this base.
@@ -119,6 +128,8 @@ export interface FusedEnvelope {
     // ADR-0045 D2/D3 (r118 impl): pre-truncation WebFusion provenance snapshot. nativeScores are
     // raw provider scores per normalized url (web-only extension); they never enter fusion ranking.
     fusion?: FusionProvenance & { nativeScores: Record<string, Record<string, number>> };
+    // ADR-0046 D5: observational-only web provider ledger; no threshold, no gate, no table.
+    webProviderLedger?: WebProviderLedger;
   };
 
   // ADR-0034 D4: first-class attribution field — claim-level evidence linkage, orthogonal to verified:false.

@@ -1,6 +1,6 @@
 {
   "schema": "anysearch/eval-baseline@1",
-  "fingerprint": "2cf98c9130018956",
+  "fingerprint": "75b83d9862dd7a51",
   "metrics": {
     "passRate": 1,
     "supersessionSuccess": 1,
@@ -67,13 +67,10 @@
       }
     },
     "relationGain": {
-      "n": 23,
-      "excluded": 0,
-      "meanDelta": 0.14057971014492757,
+      "n": 20,
+      "excluded": 3,
+      "meanDelta": 0.16166666666666668,
       "deltas": [
-        0,
-        0,
-        0,
         0,
         0.18333333333333332,
         0.2,
@@ -134,8 +131,8 @@
       "served": 0,
       "regressions": 0,
       "gain": {
-        "n": 42,
-        "meanDelta": 0
+        "n": 39,
+        "meanDelta": 0.9837606837606842
       }
     },
     "forget": {
@@ -172,7 +169,7 @@
       "bgnbd": {
         "status": "skipped",
         "tier": "gate-not-met",
-        "reason": "BG/NBD fit (structural data absence — ledgered data-absent): T1: 645 active rows / 7 fittable units < 300/100; T2: PSI unavailable (no access-age histogram pair yet); T3: observation window 0.00028935185185185184d < 90d"
+        "reason": "BG/NBD fit (structural data absence — ledgered data-absent): T1: 645 active rows / 7 fittable units < 300/100; T2: PSI unavailable (no access-age histogram pair yet); T3: observation window 0.0005092592592592592d < 90d"
       },
       "revival": {
         "status": "ok",
@@ -188,6 +185,170 @@
         "status": "skipped",
         "tier": "offline-deferred",
         "reason": "undo_reentry needs a 30-day post-undo window — outside the single-run eval horizon (observational sub-metric)"
+      },
+      "armDeltas": {
+        "entity": {
+          "n": 39,
+          "excluded": 3,
+          "meanDelta": 0,
+          "deltas": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "role": "critical"
+        },
+        "vector": {
+          "n": 42,
+          "excluded": 0,
+          "meanDelta": 0.023809523809523808,
+          "deltas": [
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "role": "critical"
+        },
+        "relation": {
+          "n": 39,
+          "excluded": 3,
+          "meanDelta": 0.15940170940170942,
+          "deltas": [
+            0,
+            0.13333333333333333,
+            0.18333333333333332,
+            0.16666666666666666,
+            0.2,
+            0.16666666666666666,
+            0.13333333333333333,
+            0.2,
+            0.21666666666666667,
+            0.23333333333333334,
+            0.21666666666666667,
+            0.16666666666666666,
+            0.23333333333333334,
+            0.23333333333333334,
+            0.23333333333333334,
+            0.23333333333333334,
+            0.16666666666666666,
+            0.23333333333333334,
+            0.2,
+            0.13333333333333333,
+            0.21666666666666667,
+            0.18333333333333332,
+            0.23333333333333334,
+            0.21666666666666667,
+            0.21666666666666667,
+            0.08333333333333333,
+            0.23333333333333334,
+            0.21666666666666667,
+            0.23333333333333334,
+            0.16666666666666666,
+            0.08333333333333333,
+            0.08333333333333333,
+            0.13333333333333333,
+            0.08333333333333333,
+            0.016666666666666666,
+            0.05,
+            0.08333333333333333,
+            0,
+            0
+          ],
+          "role": "critical"
+        },
+        "semantic": {
+          "n": 0,
+          "excluded": 42,
+          "meanDelta": 0,
+          "deltas": [],
+          "role": "critical"
+        }
+      },
+      "maxLexicalOverlap": null,
+      "exclusiveHits": {
+        "status": "skipped",
+        "tier": "offline-deferred",
+        "reason": "web provider ledger is emitted by RetroaererdEngine.metadata.webProviderLedger; memory eval has no web fanout"
+      },
+      "nativeScoresMissing": {
+        "status": "skipped",
+        "tier": "offline-deferred",
+        "reason": "web provider ledger is emitted by RetroaererdEngine.metadata.webProviderLedger; memory eval has no web fanout"
       }
     }
   },
@@ -196,12 +357,12 @@
     "quarantineFp": 1
   },
   "relationGain": {
-    "sigmaDU": 0.126239,
-    "rawN": 25,
-    "lockedN": 25,
+    "sigmaDU": 0.112674,
+    "rawN": 20,
+    "lockedN": 20,
     "minGain": 0.1
   },
   "holdoutFingerprint": "956d925db2f73115",
-  "updatedAt": "2026-09-01",
+  "updatedAt": "2026-09-04",
   "note": "ADR-0028 D1 calibration (runs=50); integer allowance = worst-observed failures + 1 op. CI never writes this file (ADR-0027 D9)."
 }

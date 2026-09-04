@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
-import { evaluateGate, type EvalBaseline } from "../src/eval/gate";
+import { evaluateGate, evaluateWeakestLink, type EvalBaseline } from "../src/eval/gate";
 import type { EvalMetrics, EvalReport } from "../src/eval/runner";
 
 let passed = 0, failed = 0;
@@ -104,6 +104,19 @@ try {
   const src = readFileSync(join(__dirname, "..", "src", "session-store.ts"), "utf8");
   const reads = src.match(/searchAllResults[^`]*?prepare("([^"]+)")/g) ?? [];
   for (const r of reads) assert(!r.includes("access_events"), "N2: read path must never query access_events");
+}
+
+// ADR-0046 D4: reverse weakest-link harm gate — clear negative paired sample is a confirmed
+// critical red; n<10 degrades to WARN.
+{
+  const armDeltas = {
+    relation: { n: 12, excluded: 0, meanDelta: -0.14, deltas: [-0.14, -0.16, -0.15, -0.13, -0.17, -0.14, -0.16, -0.15, -0.14, -0.16, -0.12, -0.14], role: "critical" as const },
+  };
+  const wl = evaluateWeakestLink(armDeltas, { ...baseline, relationGain: { sigmaDU: 0.05, rawN: 4, lockedN: 4, minGain: 0.1 } }, 0.025);
+  assert(wl !== undefined && wl.arms[0]!.confirmedHarm === true, "ADR-0046: negative sample confirms weakest-link harm");
+  const m = { ...mkMetrics(), observational: { schema: "anysearch/observational@1", armDeltas } } as unknown as EvalMetrics;
+  const g = evaluateGate(fakeReport(m), { ...baseline, relationGain: { sigmaDU: 0.05, rawN: 4, lockedN: 4, minGain: 0.1 } });
+  assert(g.exitCode === 1 && g.failures.some((f) => f.includes("weakest-link RED relation")), "ADR-0046: critical weakest-link red blocks gate");
 }
 
 // ship-gate wiring: the memory-eval step must exist (dropped step = dropped gate).

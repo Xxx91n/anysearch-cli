@@ -10,7 +10,7 @@ import { SqliteSessionStore } from "../session-store";
 import { normalizeEntityName } from "../entity";
 import type { AdjudicationResultItem } from "../session-store";
 import { rrfRank, FUSION_REGISTRY } from "@anysearch/retriever";
-import type { CaseSpec, EvalStage } from "./golden-cases";
+import { assertParaphraseSlice, PARAPHRASE_MAX_LEXICAL_OVERLAP, type CaseSpec, type EvalStage } from "./golden-cases";
 import { holdoutFingerprint, isHoldout } from "./holdout";
 import { bucketHistogram, dayBucketFingerprint } from "./day-buckets";
 import { evaluateTauFitGate, isStructuralAbsence } from "./bgnbd";
@@ -44,6 +44,39 @@ export interface OpRecord {
   // ADR-0037 D6 Phase-2: semantic-arm counterfactual (six-arm list vs five-arm baseline).
   semRankOn?: number;
   semRankOff?: number;
+  // ADR-0046 D2: uniform drop-arm counterfactual for every non-anchor memory arm.
+  armDeltas?: Record<string, ArmDeltaRecord>;
+}
+
+export type MemoryArmLabel = "fts" | "entity" | "vector" | "relation" | "semantic";
+export const MEMORY_ARM_ROLES: Record<MemoryArmLabel, "anchor" | "critical" | "observational"> = {
+  fts: "anchor",
+  entity: "critical",
+  vector: "critical",
+  relation: "critical",
+  semantic: "critical",
+};
+export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MemoryArmLabel, "fts">[] = [
+  "entity",
+  "vector",
+  "relation",
+  "semantic",
+];
+
+export interface ArmDeltaRecord {
+  label: Exclude<MemoryArmLabel, "fts">;
+  role: "critical" | "observational";
+  rankOn: number;
+  rankOff: number;
+  excluded: boolean;
+}
+
+export interface ArmDeltaSample {
+  n: number;
+  excluded: number;
+  meanDelta: number;
+  deltas: number[];
+  role: "critical" | "observational";
 }
 
 export interface CaseResult {
@@ -159,6 +192,13 @@ export interface ObservationalZone {
   undoReentryEvents: { status: "ok"; count: number } | SkipMarker;
   // ADR-0040 D2: alert-on-silence counter, always reported (silence itself is the signal).
   eventWriteFailures: { status: "ok"; count: number };
+  // ADR-0046 D7: report-as-contract fields. armDeltas is computed by the memory eval;
+  // webProviderLedger fields are emitted by RetroaererdEngine per web run and remain
+  // explicit skips in a memory-only eval.
+  armDeltas: Record<string, ArmDeltaSample>;
+  maxLexicalOverlap: number | null | SkipMarker;
+  exclusiveHits: { status: "ok"; byProvider: Record<string, number> } | SkipMarker;
+  nativeScoresMissing: { status: "ok"; byProvider: Record<string, number> } | SkipMarker;
 }
 
 export interface EvalReport {
@@ -200,6 +240,43 @@ const hitText = (h: { role?: unknown; content?: unknown }): string =>
 // ADR-0045 D2: RoR window consumes the registered ror_window (was the third hardcoded 60).
 export const ROR_WINDOW = FUSION_REGISTRY.ror_window;
 export const ROR_CLIP = ROR_WINDOW + 1;
+
+// ADR-0046 D2: uniform drop-arm counterfactual. The FTS anchor is never judged, so this
+// helper only emits side arms. Dropping an absent arm is recorded as excluded rather than
+// a fabricated zero delta.
+export function computeArmDeltas(
+  prov: { labels: string[]; lists: string[][]; weights: number[]; fusedIds: string[] } | null,
+  targetId: number | undefined,
+): Record<string, ArmDeltaRecord> | undefined {
+  if (!prov || targetId === undefined) return undefined;
+  const onIdx = prov.fusedIds.indexOf(String(targetId));
+  const rankOn = onIdx >= 0 ? onIdx + 1 : ROR_CLIP;
+  const out: Record<string, ArmDeltaRecord> = {};
+  for (const label of NON_ANCHOR_MEMORY_ARMS) {
+    const drop = prov.labels.indexOf(label);
+    const role = MEMORY_ARM_ROLES[label];
+    if (role !== "critical" && role !== "observational") continue;
+    if (drop < 0) {
+      out[label] = { label, role, rankOn, rankOff: ROR_CLIP, excluded: true };
+      continue;
+    }
+    const lists: string[][] = [];
+    const weights: number[] = [];
+    for (let i = 0; i < prov.labels.length; i++) {
+      if (i === drop) continue;
+      lists.push(prov.lists[i]!);
+      weights.push(prov.weights[i]!);
+    }
+    let rankOff = ROR_CLIP;
+    if (lists.length > 0) {
+      const fused = lists.length === 1 ? lists[0]! : rrfRank(lists, ROR_WINDOW, weights);
+      const offIdx = fused.indexOf(String(targetId));
+      if (offIdx >= 0) rankOff = offIdx + 1;
+    }
+    out[label] = { label, role, rankOn, rankOff, excluded: false };
+  }
+  return out;
+}
 
 export type StoreFactory = (dbPath: string, spec: CaseSpec) => SqliteSessionStore;
 
@@ -272,53 +349,32 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
               if (rank === 0) fails.push(`rank-of-relevant absent: "${op.expectRankOf.title}"`);
               else if (rank > op.expectRankOf.maxRank) fails.push(`rank ${rank} > maxRank ${op.expectRankOf.maxRank} for "${op.expectRankOf.title}"`);
             }
-            // ADR-0036 D3/D5: single-run counterfactual — drop the relation list from the
-            // captured arm inputs and recompute the fused rank of the expected memory.
+            // ADR-0036/0037/0046: retain the legacy relation and semantic fields for the
+            // existing gate/tests, while deriving them from the same uniform drop-arm helper.
             let rorRankOn: number | undefined;
             let rorRankOff: number | undefined;
             let rorExcluded: boolean | undefined;
             let semRankOn: number | undefined;
             let semRankOff: number | undefined;
+            let armDeltas: Record<string, ArmDeltaRecord> | undefined;
             if (op.expectRankOf) {
               const prov = store.lastArmProvenance;
               let targetId: number | undefined;
               if (prov) for (const [id, text] of prov.texts) if (text.includes(op.expectRankOf.title)) { targetId = id; break; }
-              if (prov && targetId !== undefined) {
-                const onIdx = prov.fusedIds.indexOf(String(targetId));
-                rorRankOn = onIdx >= 0 ? onIdx + 1 : ROR_CLIP;
-                const offLists: string[][] = [];
-                const offWeights: number[] = [];
-                for (let i = 0; i < prov.labels.length; i++) {
-                  if (prov.labels[i] === "relation") continue;
-                  offLists.push(prov.lists[i]!);
-                  offWeights.push(prov.weights[i]!);
-                }
-                rorRankOff = ROR_CLIP;
-                if (offLists.length > 0) {
-                  const offFused = offLists.length === 1 ? offLists[0]! : rrfRank(offLists, ROR_WINDOW, offWeights);
-                  const offIdx = offFused.indexOf(String(targetId));
-                  if (offIdx >= 0) rorRankOff = offIdx + 1;
-                }
-              } else {
+              if (!prov || targetId === undefined) {
                 rorExcluded = true;
-              }
-              // ADR-0037 D6 Phase-2: semantic-arm counterfactual — rank with the semantic arm vs
-              // the five-arm baseline (semantic lists dropped). Regression = on rank worse than off.
-              if (prov && targetId !== undefined) {
-                const onI = prov.fusedIds.indexOf(String(targetId));
-                semRankOn = onI >= 0 ? onI + 1 : ROR_CLIP;
-                const sLists: string[][] = [];
-                const sWeights: number[] = [];
-                for (let i = 0; i < prov.labels.length; i++) {
-                  if (prov.labels[i] === "semantic") continue;
-                  sLists.push(prov.lists[i]!);
-                  sWeights.push(prov.weights[i]!);
+              } else {
+                armDeltas = computeArmDeltas(prov, targetId);
+                const rel = armDeltas?.["relation"];
+                if (rel) {
+                  rorRankOn = rel.rankOn;
+                  rorRankOff = rel.rankOff;
+                  if (rel.excluded) rorExcluded = true;
                 }
-                semRankOff = ROR_CLIP;
-                if (sLists.length > 0) {
-                  const sFused = sLists.length === 1 ? sLists[0]! : rrfRank(sLists, ROR_WINDOW, sWeights);
-                  const sIdx = sFused.indexOf(String(targetId));
-                  if (sIdx >= 0) semRankOff = sIdx + 1;
+                const sem = armDeltas?.["semantic"];
+                if (sem) {
+                  semRankOn = sem.rankOn;
+                  semRankOff = sem.rankOff;
                 }
               }
             }
@@ -330,6 +386,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
               ...(rorRankOn !== undefined ? { rorRankOn, rorRankOff } : {}),
               ...(rorExcluded !== undefined ? { rorExcluded } : {}),
               ...(semRankOn !== undefined ? { semRankOn, semRankOff } : {}),
+              ...(armDeltas ? { armDeltas } : {}),
               ...(op.expectHopTitle !== undefined ? { hopHit: texts.some((t) => t.includes(op.expectHopTitle!)) } : {}),
               ...(op.relevanceGrades ? { ndcg: { 5: ndcgAtK(texts, op.relevanceGrades, 5), 10: ndcgAtK(texts, op.relevanceGrades, 10), 20: ndcgAtK(texts, op.relevanceGrades, 20) } } : {}),
             });
@@ -594,6 +651,30 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
       }
     }
   }
+  // ADR-0046 D2/D3: aggregate the uniform drop-arm counterfactual. Deltas are
+  // report-only secondary evidence; only the fused RoR and reverse weakest-link gate
+  // consume them downstream.
+  const armAcc: Record<string, { role: "critical" | "observational"; deltas: number[]; excluded: number }> = {};
+  for (const r of results) {
+    for (const rec of r.ops) {
+      if (!rec.armDeltas) continue;
+      for (const d of Object.values(rec.armDeltas)) {
+        const acc = armAcc[d.label] ??= { role: d.role, deltas: [], excluded: 0 };
+        if (d.excluded) acc.excluded += 1;
+        else acc.deltas.push((d.rankOff - d.rankOn) / ROR_WINDOW);
+      }
+    }
+  }
+  const armDeltas: Record<string, ArmDeltaSample> = {};
+  for (const [label, acc] of Object.entries(armAcc)) {
+    armDeltas[label] = {
+      n: acc.deltas.length,
+      excluded: acc.excluded,
+      meanDelta: acc.deltas.length ? acc.deltas.reduce((a, b) => a + b, 0) / acc.deltas.length : 0,
+      deltas: acc.deltas,
+      role: acc.role,
+    };
+  }
   return {
     passRate: results.length ? passed / results.length : 0,
     supersessionSuccess: supExpected ? supPassed / supExpected : 1,
@@ -771,12 +852,17 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
           : skip("no archive ops present in this eval run — revival main ratio is inert", "gate-not-met"),
         eventWriteFailures: { status: "ok" as const, count: evWriteFails },
         undoReentryEvents: skip("undo_reentry needs a 30-day post-undo window — outside the single-run eval horizon (observational sub-metric)", "offline-deferred"),
+        armDeltas,
+        maxLexicalOverlap: PARAPHRASE_MAX_LEXICAL_OVERLAP,
+        exclusiveHits: skip("web provider ledger is emitted by RetroaererdEngine.metadata.webProviderLedger; memory eval has no web fanout", "offline-deferred"),
+        nativeScoresMissing: skip("web provider ledger is emitted by RetroaererdEngine.metadata.webProviderLedger; memory eval has no web fanout", "offline-deferred"),
       };
     })(),
   };
 }
 
 export async function runAll(cases: CaseSpec[]): Promise<EvalReport> {
+  assertParaphraseSlice(cases);
   const results: CaseResult[] = [];
   for (const c of cases) results.push(await runCase(c));
   const stageBreakdown: Record<EvalStage, number> = { extract: 0, adjudicate: 0, store: 0, retrieve: 0 };

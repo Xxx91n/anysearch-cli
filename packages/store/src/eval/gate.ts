@@ -21,11 +21,13 @@ export interface EvalBaseline {
 
 export interface GateResult {
   verdict: "pass" | "warn" | "fail" | "fingerprint_mismatch";
-  exitCode: 0 | 1 | 12;
+  exitCode: 0 | 1 | 2 | 12;
   failures: string[];
   warnings: string[];
   // ADR-0038 D2: independent three-tier gain conclusion; NOT merged into exitCode.
   gainConclusion?: GainConclusion;
+  // ADR-0046 D4: reverse weakest-link conclusion; critical red blocks ship.
+  weakestLink?: WeakestLinkConclusion;
 }
 
 // Wilson score interval (95%) for a binomial proportion.
@@ -217,9 +219,36 @@ export interface GainConclusion {
   reasons: string[];
 }
 
+export interface WeakestLinkArmConclusion {
+  label: string;
+  role: "critical" | "observational";
+  n: number;
+  excluded: number;
+  mean: number;
+  bcaHi: number;
+  signFlipHarmP: number;
+  minHarm: number;
+  confirmedHarm: boolean;
+  underpowered: boolean;
+  reason: string;
+}
+
+export interface WeakestLinkConclusion {
+  arms: WeakestLinkArmConclusion[];
+  testedNonAnchorArms: number;
+  betaCorrection: number;
+}
+
 // Sakai topic-set size formula: n = 2 * sigma^2 * (z_a + z_b)^2 / minD^2, capped (ADR-0036 D2).
 export const RELATION_GAIN_MIN_GAIN = 0.1;      // MEI = 10pp of the RRF window (~= 6 ranks)
 export const RELATION_GAIN_LOCKED_N_CAP = 80;
+// ADR-0046 D6: emergency ship override is a closed enum and is capped at one per release window.
+export const SHIP_OVERRIDE_REASON_CODES = [
+  "provider-emergency",
+  "upstream-breaking-change",
+  "data-loss-mitigation",
+] as const;
+export const SHIP_OVERRIDE_WINDOW_LIMIT = 1;
 export function lockN(sigmaDU: number, minGain: number = RELATION_GAIN_MIN_GAIN): { rawN: number; lockedN: number } {
   const rawN = Math.ceil((2 * sigmaDU * sigmaDU * Math.pow(2.8, 2)) / (minGain * minGain));
   return { rawN, lockedN: Math.min(RELATION_GAIN_LOCKED_N_CAP, rawN) };
@@ -231,6 +260,74 @@ export function sigmaDUpper(deltas: number[]): number {
   const df = deltas.length - 1;
   const s = sdOf(deltas);
   return s * Math.sqrt(df / chiSquareQuantile(0.05, df));
+}
+
+// ADR-0046 D4: reverse weakest-link harm gate. The direction is harm only
+// (H1: delta < minHarm); unproven-negative is never red. The alpha track is
+// shared with the gain gate and only beta is corrected for the number of
+// tested non-anchor arms (Spotify guardrail correction direction).
+export function evaluateWeakestLink(
+  armDeltas: Record<string, { n: number; excluded: number; deltas: number[]; meanDelta: number; role: "critical" | "observational" }> | undefined,
+  baseline: EvalBaseline | null,
+  alphaK: number,
+): WeakestLinkConclusion | undefined {
+  if (!armDeltas) return undefined;
+  const labels = Object.keys(armDeltas);
+  if (labels.length === 0) return undefined;
+  const minGain = baseline?.relationGain?.minGain ?? RELATION_GAIN_MIN_GAIN;
+  const minHarm = -minGain;
+  const betaCorrection = 1 / (labels.length + 1);
+  const sigmaDU = baseline?.relationGain?.sigmaDU ?? NaN;
+  const arms: WeakestLinkArmConclusion[] = labels.map((label) => {
+    const sample = armDeltas[label]!;
+    const underpowered = Number.isFinite(sigmaDU) && mdeForPaired(sample.n, sigmaDU) / betaCorrection > minGain;
+    if (sample.n < 10) {
+      return {
+        label,
+        role: sample.role,
+        n: sample.n,
+        excluded: sample.excluded,
+        mean: sample.meanDelta,
+        bcaHi: Number.NaN,
+        signFlipHarmP: Number.NaN,
+        minHarm,
+        confirmedHarm: false,
+        underpowered,
+        reason: `n=${sample.n} < 10 — harm verdict degrades to WARN (ADR-0046 D4)`,
+      };
+    }
+    const stats = pairedGainStats(sample.deltas, alphaK);
+    if (!stats || stats.degenerate) {
+      return {
+        label,
+        role: sample.role,
+        n: sample.n,
+        excluded: sample.excluded,
+        mean: sample.meanDelta,
+        bcaHi: stats ? stats.bcaHi : Number.NaN,
+        signFlipHarmP: stats ? stats.signFlipHarmP : Number.NaN,
+        minHarm,
+        confirmedHarm: false,
+        underpowered,
+        reason: stats?.degenerate ? "degenerate variance — unverifiable" : "insufficient paired sample",
+      };
+    }
+    const confirmedHarm = stats.bcaHi < minHarm;
+    return {
+      label,
+      role: sample.role,
+      n: sample.n,
+      excluded: sample.excluded,
+      mean: stats.mean,
+      bcaHi: stats.bcaHi,
+      signFlipHarmP: stats.signFlipHarmP,
+      minHarm,
+      confirmedHarm,
+      underpowered,
+      reason: `n=${sample.n} mean=${stats.mean.toFixed(4)} BCaHi=${stats.bcaHi.toFixed(4)} harmP=${stats.signFlipHarmP.toFixed(5)} minHarm=${minHarm.toFixed(3)}${confirmedHarm ? " — PROVEN-WEAKEST-LINK" : " — no confirmed harm"}`,
+    };
+  });
+  return { arms, testedNonAnchorArms: labels.length, betaCorrection };
 }
 
 function allowanceCheck(
@@ -282,11 +379,11 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
   // ONLY (BCa upper < 0 or harm-side sign-flip p < alpha_k) — unproven-positive is never red.
   // The conclusion ships as gate.gainConclusion (exit-code decoupling); ship-gate enforces it.
   let gainConclusion: GainConclusion | undefined;
+  const look = Math.max(1, opts.look ?? 1);
+  const kMax = opts.kMax ?? OF_K_MAX;
+  const alphaK = ofSpentAlpha(Math.min(look, kMax) / kMax);
   const rg = m.relationGain;
   if (rg) {
-    const look = Math.max(1, opts.look ?? 1);
-    const kMax = opts.kMax ?? OF_K_MAX;
-    const alphaK = ofSpentAlpha(Math.min(look, kMax) / kMax);
     const spentAlpha = alphaK;
     const b = baseline.relationGain;
     const rgH = m.relationGainHoldout;
@@ -366,6 +463,21 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
     }
   }
 
+  // ADR-0046 D4/D6: reverse weakest-link gate. Arm deltas are secondary
+  // evidence; only a confirmed critical-harm verdict is a ship-blocking red.
+  const weakestLink = evaluateWeakestLink(m.observational?.armDeltas, baseline, alphaK);
+  if (weakestLink) {
+    for (const arm of weakestLink.arms) {
+      if (arm.confirmedHarm && arm.role === "critical") {
+        failures.push(`weakest-link RED ${arm.label}: ${arm.reason} — critical arm must demote and block ship (ADR-0046 D6)`);
+      } else if (arm.confirmedHarm && arm.role === "observational") {
+        warnings.push(`weakest-link observational RED ${arm.label}: ${arm.reason} — WARN only, no gate (ADR-0046 D6)`);
+      } else {
+        warnings.push(`weakest-link ${arm.label}: ${arm.reason}${arm.underpowered ? "; beta-corrected underpowered" : ""}`);
+      }
+    }
+  }
+
   // ADR-0037 D6 Phase-2: semantic arm live (weight 0.5, conditional activation) —
   // regression gate fail-closed on per-case RoR counterfactual; gain is observation-zone only
   // (promotion threshold preregistered in ADR-0036 formula, promoted after one window).
@@ -380,5 +492,12 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
     if (m.forget.undoRestores === 0) warnings.push("forget: no undo restores observed (D5 reversibility untested this round)");
   }
   const verdict: GateResult["verdict"] = failures.length ? "fail" : warnings.length ? "warn" : "pass";
-  return { verdict, exitCode: failures.length ? 1 : 0, failures, warnings, ...(gainConclusion ? { gainConclusion } : {}) };
+  return {
+    verdict,
+    exitCode: failures.length ? 1 : 0,
+    failures,
+    warnings,
+    ...(gainConclusion ? { gainConclusion } : {}),
+    ...(weakestLink ? { weakestLink } : {}),
+  };
 }

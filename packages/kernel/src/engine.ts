@@ -4,7 +4,7 @@
 // 1.5s grace window, abort_all + drain, providers_cancelled distinct state, RRF(k=60) fusion.
 // JS adaptation: Promise.allSettled + AbortController + unique-URL counter early stop.
 
-import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer } from "@anysearch/retriever";
+import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger } from "@anysearch/retriever";
 import { rrfRank, FUSION_REGISTRY, SCORE_KIND } from "@anysearch/retriever";
 import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort } from "./ports";
@@ -362,6 +362,10 @@ export class RetroaererdEngine {
     // Dead booleans deleted; computeSufficiency() replaces scattered logic.
     const suff = computeSufficiency(fullRankedResults, providerLists, gate);
 
+    // ADR-0046 D5: observational-only ledger. It is emitted next to, never consumed
+    // by, the sufficiency/fusion gate.
+    const webProviderLedger = buildWebProviderLedger(listedProviderIds, providerLists, nativeScores, providersFailed);
+
     const envelope: FusedEnvelope = {
       results: rankedResults,
       answers,
@@ -389,6 +393,7 @@ export class RetroaererdEngine {
           scoreKind: SCORE_KIND,
           nativeScores,
         },
+        webProviderLedger,
       },
     };
     const attributionReport = attachAttribution(envelope);
@@ -398,6 +403,39 @@ export class RetroaererdEngine {
     }
     return envelope;
   }
+}
+
+function buildWebProviderLedger(
+  providerIds: string[],
+  providerLists: string[][],
+  nativeScores: Record<string, Record<string, number>>,
+  providersFailed: string[],
+): WebProviderLedger {
+  const providerOverlap: Record<string, number> = {};
+  const exclusiveHits: Record<string, number> = {};
+  const nativeScoresMissing: Record<string, number> = {};
+  const sets = providerLists.map((list) => new Set(list));
+  for (let i = 0; i < providerIds.length; i++) {
+    const pid = providerIds[i]!;
+    let exclusive = 0;
+    let missing = 0;
+    for (const url of sets[i]!) {
+      let seenElsewhere = false;
+      for (let j = 0; j < sets.length; j++) {
+        if (j !== i && sets[j]!.has(url)) {
+          seenElsewhere = true;
+          const other = providerIds[j]!;
+          const pair = [pid, other].sort().join("|");
+          providerOverlap[pair] = (providerOverlap[pair] ?? 0) + 1;
+        }
+      }
+      if (!seenElsewhere) exclusive += 1;
+      if (typeof nativeScores[pid]?.[url] !== "number") missing += 1;
+    }
+    exclusiveHits[pid] = exclusive;
+    nativeScoresMissing[pid] = missing;
+  }
+  return { providerOverlap, exclusiveHits, nativeScoresMissing, failures: [...providersFailed] };
 }
 
 // Check cross-engine verify: at least one URL appears in 2+ provider lists.

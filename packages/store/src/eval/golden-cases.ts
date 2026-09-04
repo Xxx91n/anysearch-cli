@@ -20,6 +20,11 @@ export type EvalGroup =
   | "consolidate"
   | "forget";
 
+// ADR-0046 D1: three-tier paraphrase slice. The bound stays unset until the
+// first 50-run calibration after this round; keeping it in the case shape now
+// makes a future calibration flip the dataset fingerprint deliberately.
+export const PARAPHRASE_MAX_LEXICAL_OVERLAP: number | null = null;
+
 export type EvalStage = "extract" | "adjudicate" | "store" | "retrieve";
 
 export type CaseOp =
@@ -52,6 +57,53 @@ export interface CaseSpec {
   // ADR-0037 D4: inject the bounded summarize + fidelity-gate stubs for consolidate cases
   // (ops decisions stay deterministic / LLM-free; D7-1 negative via classify "unsupported").
   consolidateStub?: { summary: string; classify: "supported" | "uncertain" | "unsupported" };
+  // ADR-0046 D1: paraphrase variant metadata; labels are human-written and dual-reviewed.
+  paraphraseTier?: "light" | "medium" | "heavy";
+  maxLexicalOverlap?: number | null;
+  paraphraseReview?: "dual-reviewed";
+}
+
+// ADR-0046 D1: lexical-overlap measure for the paraphrase fixture. This is a
+// token-Jaccard score over lowercased alphanumeric runs; it is intentionally
+// simple because it is a guardrail upper bound, not a semantic similarity score.
+export function lexicalOverlap(a: string, b: string): number {
+  const tokens = (s: string): Set<string> =>
+    new Set(s.toLowerCase().match(/[a-z0-9\u4e00-\u9fff]+/g) ?? []);
+  const ta = tokens(a);
+  const tb = tokens(b);
+  if (ta.size === 0 || tb.size === 0) return 0;
+  let intersection = 0;
+  for (const t of ta) if (tb.has(t)) intersection += 1;
+  return intersection / Math.max(1, Math.min(ta.size, tb.size));
+}
+
+export function assertParaphraseSlice(cases: readonly CaseSpec[]): void {
+  const slices = cases.filter((c) => c.group === "paraphrase");
+  if (slices.length < 3) throw new Error("paraphrase slice must contain light/medium/heavy variants");
+  const tiers = new Set(slices.map((c) => c.paraphraseTier));
+  for (const t of ["light", "medium", "heavy"] as const) {
+    if (!tiers.has(t)) throw new Error("paraphrase slice missing tier " + t);
+  }
+  for (const c of slices) {
+    if (!("maxLexicalOverlap" in c)) throw new Error("paraphrase case " + c.id + " missing maxLexicalOverlap");
+    if (c.paraphraseReview !== "dual-reviewed") throw new Error("paraphrase case " + c.id + " missing dual-reviewed label marker");
+    if (c.paraphraseTier === "light") {
+      const positive = c.ops.some((o) => o.op === "search" && (o.expectIncludesTitle || o.expectRankOf));
+      if (!positive) throw new Error("light paraphrase case " + c.id + " lacks a positive assertion");
+    }
+    const bound = c.maxLexicalOverlap ?? PARAPHRASE_MAX_LEXICAL_OVERLAP;
+    if (typeof bound === "number") {
+      for (const o of c.ops) {
+        if (o.op !== "search") continue;
+        const target = o.expectRankOf?.title ?? o.expectIncludesTitle;
+        if (!target) continue;
+        const overlap = lexicalOverlap(o.query, target);
+        if (overlap > bound) {
+          throw new Error("paraphrase case " + c.id + " lexical overlap " + overlap.toFixed(4) + " > bound " + bound);
+        }
+      }
+    }
+  }
 }
 
 const km = (url: string, title: string, snippet: string, evidence: number, entity?: string, source = "exa"): KeyMemoryInput =>
@@ -368,6 +420,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
   // --- ADR-0028 D4: paraphrase positive variants (3, hard) — answerable queries must still hit.
   {
     id: "pv_pref_change", group: "paraphrase", difficulty: "hard",
+    paraphraseTier: "light", maxLexicalOverlap: PARAPHRASE_MAX_LEXICAL_OVERLAP, paraphraseReview: "dual-reviewed",
     description: "paraphrase of ss_pref_change: lightmode query still returns live preference",
     ops: [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pt1", "prefer darkmode skin", "user prefers darkmode skin theme", 0.9, "ui-skin")], expect: ["accept"] },
@@ -377,6 +430,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
   },
   {
     id: "pv_api_docs_version", group: "paraphrase", difficulty: "hard",
+    paraphraseTier: "medium", maxLexicalOverlap: PARAPHRASE_MAX_LEXICAL_OVERLAP, paraphraseReview: "dual-reviewed",
     description: "paraphrase of ss_api_docs_version: rephrased query returns new revision doc",
     ops: [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pa1", "refdocs old revision", "refdocs old revision is deprecated", 0.9, "refdocs")], expect: ["accept"] },
@@ -386,6 +440,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
   },
   {
     id: "pv_user_then_provider", group: "paraphrase", difficulty: "hard",
+    paraphraseTier: "heavy", maxLexicalOverlap: PARAPHRASE_MAX_LEXICAL_OVERLAP, paraphraseReview: "dual-reviewed",
     description: "paraphrase of ss_user_then_provider: short query still returns pipeline-built zone",
     ops: [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pu1", "packzone manual built", "packzone is manually built", 0, "packzone", "user")], expect: ["accept"] },
