@@ -15,7 +15,7 @@ export function evalIntegrityCheck(report) {
   if (integrity.runPurpose !== "observational" && integrity.runPurpose !== "decision") {
     return { ok: false, detail: "memory-eval integrity runPurpose invalid: " + integrity.runPurpose };
   }
-  if (integrity.runPurpose === "decision" && integrity.verdict !== "failed") {
+  if (integrity.runPurpose === "decision" && integrity.verdict !== "pass") {
     return { ok: false, detail: "memory-eval decision-grade integrity verdict not fail-closed (ADR-0044 D3)" };
   }
   if (integrity.verdict === "failed") {

@@ -11,6 +11,8 @@
 //     (Anthropic 50K hard floor, see ADR-0021 D1);
 //   - compaction.lowWatermark as {fraction} must land in (0,1);
 //   - compaction.reuseCap must be a number >= 1;
+//   - sources.weights: Record keyed by registered provider id (exa/tavily/anysearch),
+//     each a finite number > 0 (ADR-0045 D2; config errors fail fast).
 //   - unknown top-level sections beyond schema (fail-fast, voodoo avoidance).
 //
 // Exit codes: 0 = all green (or no domains found → skip), 1 = violation.
@@ -92,6 +94,25 @@ for (const file of files) {
   for (const k of Object.keys(doc)) {
     if (!KNOWN_TOP.has(k)) {
       fail(`${file}:${lineOf(src, k)} unknown top-level key "${k}"`);
+    }
+  }
+
+  // ADR-0045 D2: sources.weights — Record keyed by registered provider id, finite number > 0.
+  // Config errors fail fast (file:line); provider runtime failures stay fail-open (engine).
+  const w = doc.sources?.weights;
+  if (w !== undefined) {
+    const REGISTERED = ["exa", "tavily", "anysearch"];
+    const ln = lineOf(src, "weights");
+    if (typeof w !== "object" || w === null || Array.isArray(w)) {
+      fail(`${file}:${ln} sources.weights must be a table keyed by provider id`);
+    }
+    for (const [k, v] of Object.entries(w)) {
+      if (!REGISTERED.includes(k)) {
+        fail(`${file}:${lineOf(src, k)} sources.weights unknown provider id "${k}" (registered: ${REGISTERED.join(", ")})`);
+      }
+      if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) {
+        fail(`${file}:${lineOf(src, k)} sources.weights.${k} must be a finite number > 0`);
+      }
     }
   }
 

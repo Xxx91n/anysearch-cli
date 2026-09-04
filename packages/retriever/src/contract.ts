@@ -83,6 +83,19 @@ export interface ProviderAnswer {
   citations?: Array<{ url: string; title?: string }>;
 }
 
+// ADR-0045 D2/D3 (r118 impl): common fusion provenance shape — the six registered fields
+// instance/labels/lists/weights/fusedIds/scoreKind. Memory-only texts (session-store ArmProvenance)
+// and web-only nativeScores (below) are instance extensions on top of this base.
+export interface FusionProvenance {
+  instance: "memory" | "web";
+  labels: string[];      // arm labels or provider ids, parallel to lists/weights
+  lists: string[][];     // pre-truncation per-source key lists (memory: rowids; web: normalized urls)
+  weights: number[];     // effective per-list weights used for this fusion run
+  fusedIds: string[];    // full fused id order (pre-truncation)
+  // D3: fused score is a rank_fusion signal only — never confidence/threshold/cross-query comparable.
+  scoreKind: "rank_fusion";
+}
+
 // Fused envelope: the output of RRF consensus fusion across N providers.
 export interface FusedEnvelope {
   results: NormalizedResult[];
@@ -103,6 +116,9 @@ export interface FusedEnvelope {
     // False when no queried provider advertises answer mode support
     // (e.g. AnySearch-only future, or runtime stub stripping the capability).
     answersAvailable?: boolean;
+    // ADR-0045 D2/D3 (r118 impl): pre-truncation WebFusion provenance snapshot. nativeScores are
+    // raw provider scores per normalized url (web-only extension); they never enter fusion ranking.
+    fusion?: FusionProvenance & { nativeScores: Record<string, Record<string, number>> };
   };
 
   // ADR-0034 D4: first-class attribution field — claim-level evidence linkage, orthogonal to verified:false.

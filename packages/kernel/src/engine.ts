@@ -5,7 +5,7 @@
 // JS adaptation: Promise.allSettled + AbortController + unique-URL counter early stop.
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer } from "@anysearch/retriever";
-import { rrfRank } from "@anysearch/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND } from "@anysearch/retriever";
 import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort } from "./ports";
 import { attachAttribution, applyJudgeEscalation, type JudgeFn } from "./attribution";
@@ -192,13 +192,17 @@ export class RetroaererdEngine {
   // ADR-0034 step 6: host-injected claim judge. The LLM and its budget ledger live in the host;
   // kernel stays pure. r83 audit F2: previously shouldEscalateToJudge had zero callers.
   private attributionJudge?: JudgeFn;
+  // ADR-0045 D2/D4: optional domain sources.weights overlay (user preference, never gained from
+  // observation). Invalid values are rejected at domain load (fail-fast); absent = equal weights.
+  private sourceWeights?: Record<string, number>;
 
   // ADR-0006 decision 1C: constructor accepts providers array.
   // ADR-0006 decision 2A: optional BudgetLedger + sessionId for per-call billing.
-  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; attributionJudge?: JudgeFn }) {
+  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; attributionJudge?: JudgeFn; sourceWeights?: Record<string, number> }) {
     this.ledger = opts?.ledger;
     this.sessionId = opts?.sessionId;
     this.attributionJudge = opts?.attributionJudge;
+    this.sourceWeights = opts?.sourceWeights;
     for (const p of providers) {
       this.providers.set(p.id, p);
     }
@@ -267,6 +271,9 @@ export class RetroaererdEngine {
 
     // Collect results into per-provider URL lists for RRF.
     const providerLists: string[][] = [];
+    // ADR-0045 D2: ids + native scores parallel to providerLists (provenance snapshot inputs).
+    const listedProviderIds: string[] = [];
+    const nativeScores: Record<string, Record<string, number>> = {};
     const allResults = new Map<string, NormalizedResult>(); // keyed by normalized URL
     const providersQueried: string[] = [];
     const providersFailed: string[] = [];
@@ -283,14 +290,20 @@ export class RetroaererdEngine {
         const inner = (s as PromiseFulfilledResult<{ provider: string; status: string; envelope?: any; error?: string }>).value;
         if (inner.status === "fulfilled" && inner.envelope) {
           const urls: string[] = [];
+          const native: Record<string, number> = {};
           for (const r of inner.envelope.results) {
             const norm = normalizeUrl(r.url);
             if (!allResults.has(norm)) {
               allResults.set(norm, { ...r, url: norm }); // store normalized URL as key
             }
             urls.push(norm);
+            // ADR-0045 D2: web native-score snapshot (raw provider score; never fused).
+            const ns = r.extra?.score;
+            if (typeof ns === "number" && Number.isFinite(ns)) native[norm] = ns;
           }
           providerLists.push(urls);
+          listedProviderIds.push(providerIds[i]);
+          nativeScores[providerIds[i]] = native;
           if (inner.envelope.answers) {
             answers.push(...inner.envelope.answers);
             // ADR-0022 D3: prefer provider-supplied answersMeta (citations + verified=false);
@@ -319,8 +332,16 @@ export class RetroaererdEngine {
       this.ledger!.settleCalls(this.sessionId!, allProviders.length, providerLists.length);
     }
 
-    // RRF fusion: rrfRank from packages/retriever (k=60).
-    const rankedUrls = rrfRank(providerLists, 60);
+    // ADR-0045 D2/D4: WebFusion consumes the registry k and registered web weights (equal-weight
+    // null model). A domain sources.weights value overrides per provider id (user preference);
+    // unregistered/extra providers stay fail-open at weight 1.
+    const fusedWeights = listedProviderIds.map((id) =>
+      this.sourceWeights?.[id] ?? FUSION_REGISTRY.weights.web[id as keyof typeof FUSION_REGISTRY.weights.web] ?? 1);
+    const rankedUrls = rrfRank(providerLists, FUSION_REGISTRY.k_fusion.web, fusedWeights);
+
+    // ADR-0045 D2/D3: pre-truncation provenance snapshot — common six-field shape + web
+    // nativeScores extension. scoreKind marks the fused score as a rank_fusion signal only
+    // (never confidence / threshold / cross-query comparable); NormalizedResult stays clean.
 
     // Map back to NormalizedResult in ranked order.
     const rankedResults: NormalizedResult[] = [];
@@ -354,6 +375,15 @@ export class RetroaererdEngine {
         // CAPABILITY still exists; consumers should read this as "can serve answer mode"
         // and inspect providerAnswers (plus its length) for actually-returned answers.
         answersAvailable: allProviders.some((p) => p.modes.includes("answer")),
+        fusion: {
+          instance: "web",
+          labels: [...listedProviderIds],
+          lists: providerLists.map((l) => [...l]),
+          weights: fusedWeights,
+          fusedIds: [...rankedUrls],
+          scoreKind: SCORE_KIND,
+          nativeScores,
+        },
       },
     };
     const attributionReport = attachAttribution(envelope);

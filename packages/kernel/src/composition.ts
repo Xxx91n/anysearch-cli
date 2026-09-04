@@ -42,23 +42,28 @@ export function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
 export function createEngine(domain?: string, opts?: { dbPath?: string }): CompositionResult {
   let providers: SearchProvider[] = [];
   let config: DomainConfigPort | undefined;
+  let sourceWeights: Record<string, number> | undefined;
 
   if (domain) {
     try {
       const schema = loadDomainByName(domain);
       config = schema as DomainConfigPort;
       const enabled = schema.sources.enabled;
+      sourceWeights = schema.sources.weights;
       providers = enabled
         .map((id) => PROVIDER_FACTORIES[id]?.())
         .filter((p): p is SearchProvider => p !== undefined);
-    } catch {
+    } catch (e) {
+      // ADR-0045 D2: configuration errors fail fast — an invalid sources.weights must not be
+      // swallowed by the fail-open full-fanout fallback (which exists for missing domains/keys).
+      if (e instanceof Error && e.message.includes("sources.weights")) throw e;
       providers = Object.values(PROVIDER_FACTORIES).map((f) => f()).filter((p): p is SearchProvider => p !== undefined);
     }
   } else {
     providers = Object.values(PROVIDER_FACTORIES).map((f) => f()).filter((p): p is SearchProvider => p !== undefined);
   }
 
-  const retriever: RetrieverPort = new RetroaererdEngine(providers);
+  const retriever: RetrieverPort = new RetroaererdEngine(providers, sourceWeights ? { sourceWeights } : undefined);
   // ponytail: share one SessionStore across CLI + MCP. In-memory DB by default;
   // opts.dbPath enables durable store for maintenance commands (ADR-0037).
   const store = new SqliteSessionStore(opts?.dbPath ?? ":memory:");

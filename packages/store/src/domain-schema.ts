@@ -4,6 +4,8 @@
 //   [prompts], [skills], [sources], [rag], [hooks] = entire section replace
 // ref: atomcode-cc-persona-toml research, ADR-0002.
 
+import { FUSION_REGISTRY } from "@anysearch/retriever";
+
 export interface DomainSchema {
   name: string;
   description?: string;
@@ -11,7 +13,7 @@ export interface DomainSchema {
   settings: Record<string, unknown>;
   prompts: PromptEntry[];
   skills: { active: string[] };
-  sources: { enabled: string[] };
+  sources: { enabled: string[]; weights?: Record<string, number> };
   rag: { adapter: string; config?: Record<string, unknown> };
   hooks: { toolWhitelist: string[] };
   compaction?: CompactionConfig;
@@ -40,7 +42,7 @@ export interface RawDomain {
   settings?: Record<string, unknown>;
   prompts?: PromptEntry[];
   skills?: { active?: string[] };
-  sources?: { enabled?: string[] };
+  sources?: { enabled?: string[]; weights?: Record<string, number> };
   rag?: { adapter?: string; config?: Record<string, unknown> };
   hooks?: { toolWhitelist?: string[] };
   compaction?: CompactionConfig;
@@ -103,6 +105,7 @@ export function resolve(
   let prompts: PromptEntry[] = [];
   let skillsActive: string[] = [];
   let sourcesEnabled: string[] = [];
+  let sourcesWeights: Record<string, number> | undefined;
   let ragAdapter = "";
   let ragConfig: Record<string, unknown> | undefined;
   let hooksWhitelist: string[] = [];
@@ -119,6 +122,8 @@ export function resolve(
     if (d.prompts) prompts = d.prompts;
     if (d.skills?.active) skillsActive = d.skills.active;
     if (d.sources?.enabled) sourcesEnabled = d.sources.enabled;
+    // ADR-0045 D2: sources.weights — section-replace semantics like enabled (per-chain override).
+    if (d.sources?.weights) sourcesWeights = d.sources.weights;
     if (d.rag?.adapter) { ragAdapter = d.rag.adapter; ragConfig = d.rag.config; }
     if (d.hooks?.toolWhitelist) hooksWhitelist = d.hooks.toolWhitelist;
     if (d.compaction) compaction = d.compaction;
@@ -132,7 +137,7 @@ export function resolve(
     settings,
     prompts,
     skills: { active: skillsActive },
-    sources: { enabled: sourcesEnabled },
+    sources: { enabled: sourcesEnabled, ...(sourcesWeights ? { weights: sourcesWeights } : {}) },
     rag: { adapter: ragAdapter, config: ragConfig },
     hooks: { toolWhitelist: hooksWhitelist },
     compaction,
@@ -147,6 +152,19 @@ export function validate(schema: DomainSchema): void {
     throw new Error("Domain schema: skills.active must be an array");
   if (!Array.isArray(schema.sources.enabled))
     throw new Error("Domain schema: sources.enabled must be an array");
+  // ADR-0045 D2/D4: sources.weights — Record keyed by registered provider id; config errors
+  // fail fast at load (provider runtime failures stay fail-open).
+  const w = schema.sources.weights;
+  if (w !== undefined) {
+    if (typeof w !== "object" || w === null || Array.isArray(w))
+      throw new Error("Domain schema: sources.weights must be a Record keyed by provider id");
+    for (const [key, value] of Object.entries(w)) {
+      if (!(key in FUSION_REGISTRY.weights.web))
+        throw new Error("Domain schema: sources.weights unknown provider id " + JSON.stringify(key) + " (registered: " + Object.keys(FUSION_REGISTRY.weights.web).join(", ") + ")");
+      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+        throw new Error("Domain schema: sources.weights." + key + " must be a finite number > 0");
+    }
+  }
   if (!Array.isArray(schema.hooks.toolWhitelist))
     throw new Error("Domain schema: hooks.toolWhitelist must be an array");
   // ADR-0021 D1: compaction guards — fail-fast on out-of-range.

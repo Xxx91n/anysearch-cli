@@ -16,7 +16,7 @@ import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, ENTITY
 import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_PATTERN_ROWS, RELATION_RULES_VERSION } from "./relation.js";
 import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate } from "./entity.js";
-import { rrfRank } from "@anysearch/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND } from "@anysearch/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
@@ -109,10 +109,13 @@ export interface MemoryHit {
 // ADR-0036 D3: eval-only snapshot of one searchMemory call's RRF inputs, so the runner can
 // recompute the relation-arm-off counterfactual without a second retrieval (single-run cost ~1x).
 export interface ArmProvenance {
+  // ADR-0045 D2/D3: common fusion provenance shape fields.
+  instance: "memory";
   labels: string[];      // parallel to lists/weights; five-arm order: fts, entity, vector, relation
   lists: string[][];     // rowid strings per arm, rank order
   weights: number[];
   fusedIds: string[];    // full fused id order (pre-limit, pre-secret-filter)
+  scoreKind: "rank_fusion"; // fused score is a rank_fusion signal only (ADR-0045 D3)
   texts: Map<number, string>; // rowid -> role + " " + content for title matching
 }
 
@@ -601,13 +604,15 @@ export class SqliteSessionStore implements SessionStore {
     for (const h of relHits) byId.set(h.rowid, h);
     for (const h of semHits) byId.set(h.rowid, h); // r94 audit A1: semantic ids must resolve on the single-query path (was silent drop, atomcode Spec-1)
    // ADR-0033 D5: RRF arms = FTS (1.0) + entity (0.5) + vector (0.5); an absent arm adds no list (conditional activation).
+   // ADR-0045 D2: MemoryFusion consumes the registry — k_fusion.memory + weights.memory
+   // (FTS anchor 1.0; side arms 0.5). Values identical to the pre-registry literals.
    const lists = [rawHits.map((h) => String(h.rowid))];
-   const weights = [1.0];
-   if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(0.5); }
-   if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(0.5); }
-   if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(0.5); }
-    if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) { lists.push(semHits.map((h) => String(h.rowid))); weights.push(0.5); }
-   const fusedIds = lists.length === 1 ? lists[0]! : rrfRank(lists, 60, weights);
+   const weights: number[] = [FUSION_REGISTRY.weights.memory.fts];
+   if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(FUSION_REGISTRY.weights.memory.entity); }
+   if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(FUSION_REGISTRY.weights.memory.vector); }
+   if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(FUSION_REGISTRY.weights.memory.relation); }
+    if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) { lists.push(semHits.map((h) => String(h.rowid))); weights.push(FUSION_REGISTRY.weights.memory.semantic); }
+   const fusedIds = lists.length === 1 ? lists[0]! : rrfRank(lists, FUSION_REGISTRY.k_fusion.memory, weights);
    const fusedHits: MemoryHit[] = [];
    for (const id of fusedIds) { const h = byId.get(Number(id)); if (h) fusedHits.push(h); if (fusedHits.length >= limit) break; }
    // ADR-0033 D8: arm provenance — a hit recalled ONLY by the vector arm is weak evidence.
@@ -625,7 +630,7 @@ export class SqliteSessionStore implements SessionStore {
       if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) armLabels.push("semantic");
      const provTexts = new Map<number, string>();
      for (const h of byId.values()) provTexts.set(h.rowid, h.role + " " + h.content);
-     this.lastArmProvenance = { labels: armLabels, lists: lists.map((l) => [...l]), weights: [...weights], fusedIds: [...fusedIds], texts: provTexts }; }
+     this.lastArmProvenance = { instance: "memory", labels: armLabels, lists: lists.map((l) => [...l]), weights: [...weights], fusedIds: [...fusedIds], scoreKind: SCORE_KIND, texts: provTexts }; }
    for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); if (relIds.has(h.rowid)) al.push("relation"); if (SEMANTIC_ARM_MODE === "serve" && semIds.has(h.rowid)) al.push("semantic"); h.arms = al; }
     // ADR-0028 D3 read-side exit: rows written before the write guard (or via seed/test seams)
     // must never surface back to the caller either.

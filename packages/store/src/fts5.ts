@@ -5,6 +5,9 @@
 // Multi-term = per-word `word*` joined by AND; the full phrase is kept as an OR branch;
 // queries with >8 terms are truncated to the first 8 terms (0-context "phrase" for long queries is D2's "empty fallback").
 // Heuristic balance chosen: prefix-match-with-truncate + phrase fallback gives ~90% intent capture per arXiv:2602.23368 evidence.
+// ADR-0045 D2: MemoryFusion registry consumption (k_fusion.memory + arm weights).
+import { FUSION_REGISTRY, registryWeight } from "@anysearch/retriever";
+
 const SANITIZE_RE = /[^A-Za-z0-9]+/g;
 const PHRASE_QUOTE_RE = /\"/g; // CWE-20 escape: double-quote doubling for FTS5
 
@@ -32,7 +35,7 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
   store: SearchableStoreLike,
   queries: string[],
   limit: number,
-  rrfRankFn: (lists: string[][], k?: number, weights?: number[]) => string[],
+  rrfRankFn: (lists: string[][], k: number, weights?: number[]) => string[],
   extraArms?: { label: string; ids: string[] }[], // ADR-0031 D4 entity + ADR-0033 D5/D8 labeled arms (provenance); each list weighted 0.5
 ): Promise<THit[]> {
   const lists: string[][] = [];
@@ -58,8 +61,10 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
   for (const arm of extraArms ?? []) { if (arm.ids.length > 0) lists.push(arm.ids); }
   if (lists.length === 0) return [];
   // ADR-0031 D4: entity arm weight 0.5 (weaker than FTS 1.0); conditional activation handled upstream (absent arm = no extra list).
-  const weights = lists.map((_, i) => (i >= baseCount ? 0.5 : 1.0));
-  const fusedIds = rrfRankFn(lists, 60, weights);
+  // ADR-0045 D2: MemoryFusion single decision point — registry weights + k_fusion.memory.
+  // Unknown arm label => registryWeight throws (configuration error fails fast).
+  const weights = lists.map((_, i) => (i >= baseCount ? registryWeight("memory", extraArms?.[i - baseCount]?.label ?? "") : FUSION_REGISTRY.weights.memory.fts));
+  const fusedIds = rrfRankFn(lists, FUSION_REGISTRY.k_fusion.memory, weights);
   // SELECT ... WHERE r.id IN (<placeholders>) AND valid_until IS NULL preserves RRF order via CASE.
   const placeholders = fusedIds.map(() => "?").join(", ");
   const orderCases = fusedIds.map((id, i) => `WHEN ${id} THEN ${i}`).join(" ");

@@ -9,7 +9,7 @@ import Database from "better-sqlite3";
 import { SqliteSessionStore } from "../session-store";
 import { normalizeEntityName } from "../entity";
 import type { AdjudicationResultItem } from "../session-store";
-import { rrfRank } from "@anysearch/retriever";
+import { rrfRank, FUSION_REGISTRY } from "@anysearch/retriever";
 import type { CaseSpec, EvalStage } from "./golden-cases";
 import { holdoutFingerprint, isHoldout } from "./holdout";
 import { bucketHistogram, dayBucketFingerprint } from "./day-buckets";
@@ -197,7 +197,8 @@ const hitText = (h: { role?: unknown; content?: unknown }): string =>
   String(h.role ?? "") + " " + String(h.content ?? "");
 
 // ADR-0036 D5: RRF window for the RoR ablation; target absent from a fused list clips to k+1 (61).
-export const ROR_WINDOW = 60;
+// ADR-0045 D2: RoR window consumes the registered ror_window (was the third hardcoded 60).
+export const ROR_WINDOW = FUSION_REGISTRY.ror_window;
 export const ROR_CLIP = ROR_WINDOW + 1;
 
 export type StoreFactory = (dbPath: string, spec: CaseSpec) => SqliteSessionStore;

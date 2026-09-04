@@ -36,7 +36,8 @@ export interface ToolPort {
 // ADR-0006 decision 4C: full 5-layer interface matching DomainSchema.
 // Consumers read only what they need; current consumers use sources + hooks.
 export interface DomainConfigPort {
-  sources: { enabled: string[] };
+  // ADR-0045 D2: optional per-provider weight Record (user preference overlay, ADR-0045 D4).
+  sources: { enabled: string[]; weights?: Record<string, number> };
   prompts: { name: string; content: string }[];
   skills: { active: string[] };
   hooks: { toolWhitelist: string[] };

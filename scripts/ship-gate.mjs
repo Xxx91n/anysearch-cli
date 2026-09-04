@@ -321,6 +321,43 @@ function stepStaticAssertions() {
     }
     report("pass", "MCP search/research dual-channel attribution (content + structuredContent)");
 
+  // 1i-fusion. ADR-0045 D2/D3: fusion governance static assertions (r118 impl).
+  // Registry wiring: three split 60s are consumed from FUSION_REGISTRY at their single
+  // decision points; rrf.ts carries no implicit k default.
+  {
+    const regSrc = fs.readFileSync(path.join(ROOT, "packages", "retriever", "src", "fusion-registry.ts"), "utf8");
+    if (!regSrc.includes("anysearch/fusion-registry@1")) fail("fusion-registry.ts missing schema marker");
+    const wiring = [
+      ["packages/store/src/session-store.ts", "FUSION_REGISTRY.k_fusion.memory"],
+      ["packages/store/src/fts5.ts", "FUSION_REGISTRY.k_fusion.memory"],
+      ["packages/kernel/src/engine.ts", "FUSION_REGISTRY.k_fusion.web"],
+      ["packages/store/src/eval/runner.ts", "FUSION_REGISTRY.ror_window"],
+    ];
+    for (const [rel, needle] of wiring) {
+      if (!fs.readFileSync(path.join(ROOT, rel), "utf8").includes(needle)) {
+        fail(rel + " not wired to " + needle + " (ADR-0045 D2 registry drift)");
+      }
+    }
+    const rrfSrc = fs.readFileSync(path.join(ROOT, "packages", "retriever", "src", "rrf.ts"), "utf8");
+    if (/k\s*=\s*60/.test(rrfSrc)) fail("rrf.ts still carries an implicit k=60 default (ADR-0045 D2)");
+    report("pass", "ADR-0045 fusion-registry wiring: k split registered, no implicit default");
+
+    // score_kind discipline: common provenance shape present; no bare fused score on
+    // NormalizedResult (fused score is a rank_fusion signal only, ADR-0045 D3).
+    const contractSrc = fs.readFileSync(path.join(ROOT, "packages", "retriever", "src", "contract.ts"), "utf8");
+    const nrStart = contractSrc.indexOf("export interface NormalizedResult");
+    const nrEnd = contractSrc.indexOf("export interface ProviderEnvelope");
+    if (nrStart < 0 || nrEnd < 0) fail("contract.ts NormalizedResult block not found");
+    const nrBlock = contractSrc.slice(nrStart, nrEnd);
+    if (/^\s*score\s*[:=]/m.test(nrBlock)) fail("NormalizedResult carries a bare score field (ADR-0045 D3)");
+    if (!contractSrc.includes('scoreKind: "rank_fusion"')) fail("contract.ts missing rank_fusion scoreKind");
+    const engSrc = fs.readFileSync(path.join(ROOT, "packages", "kernel", "src", "engine.ts"), "utf8");
+    if (!engSrc.includes("SCORE_KIND")) fail("engine.ts missing score_kind provenance annotation (ADR-0045 D3)");
+    const ssSrc = fs.readFileSync(path.join(ROOT, "packages", "store", "src", "session-store.ts"), "utf8");
+    if (!ssSrc.includes("SCORE_KIND")) fail("session-store.ts missing score_kind provenance annotation (ADR-0045 D3)");
+    report("pass", "ADR-0045 score_kind discipline: no bare fused score on NormalizedResult");
+  }
+
   // 1j. ADR-0035 D2/D3/D4/D6: KG-lite relation layer static assertions.
   {
     const relPath = path.join(ROOT, "packages/store/src/relation.ts");
