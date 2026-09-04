@@ -265,10 +265,16 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 - [x] ADR-0045 七节齐（Status / Context / D1–D5 / Consequences / Implementation Plan 8 步 / Acceptance / Research Sources），UTF-8 无 BOM、无 CRLF
 - [x] CONTEXT.md +4 术语（Unified Fusion Governance / Fusion Registry Field Set / Top-k Consumption Contract / Algorithm Switch Gate），均含 _Avoid_，尾部 *End of Glossary* 保留
 - [x] 本轮为 docs-only；业务源码未改动；主体实现留给下一轮 fixer
-- [ ] 下一轮第一步：提交 r43 fixer 未提交工作树，重跑 ADR-0044 验收，避免 0044 与 0045 验收互相污染
-- [ ] fixer 落地 fusion-registry fixture：SHA-256 钉死期望值、单消费 mutation test、三份 60 拆开注册
-- [ ] fixer 落地 domain-schema sources.weights Record 形态 + 配置错误 fail-fast / provider 运行时 fail-open
-- [ ] fixer 落地 web provenance 快照 + score_kind 原子标签，禁止 NormalizedResult 裸暴露 fused score
-- [ ] fixer 落地四类成对回归：registry drift、provenance 缺失、非法权重、fused score 裸暴露；复用 ship-gate 现有步骤
-- [ ] fixer 平台验收：tsc clean、store suite green、ship-gate 空库/非空库 exit 0、eval 123/123、打包产物可启动且进程存活
-- [ ] 主 fingerprint 不变；若新增 observational fusion fixture，声明式翻转 observational 定义哈希并用 --calibrate 重基线
+- [x] 下一轮第一步：提交 r43 fixer 未提交工作树，重跑 ADR-0044 验收，避免 0044 与 0045 验收互相污染（r118 完成：okl/xop 提交后全量验收重跑通过）
+- [x] fixer 落地 fusion-registry fixture：SHA-256 钉死期望值（33caa6f…1dbce）、单消费 mutation test（liveness + 重算断言）、三份 60 拆分注册（k_fusion.memory=60 / k_fusion.web=60 / ror_window=60）
+- [x] fixer 落地 domain-schema sources.weights Record 形态（替换语义）+ 配置错误 fail-fast（validate-domains.mjs 带 file:line）/ provider 运行时 fail-open（engine 未注册 id 退 1.0）
+- [x] fixer 落地 web provenance 快照（FusedEnvelope.metadata.fusion 六字段+nativeScores）+ score_kind="rank_fusion" 原子标签；NormalizedResult 无裸 fused score（ship-gate 静态断言护住）
+- [x] fixer 落地四类成对回归（retriever 23 + store 14 + kernel 13 asserts）+ ship-gate step 1i-fusion 静态断言块
+- [x] fixer 平台验收：tsc 7 包 clean、全量 pnpm -r test 0 fail、ship-gate gate-built（空库）与 consumed（非空库 ANS_DB_PATH）两形态 exit 0、eval 123/123、打包 CLI --help / switch-state 进程存活 exit 0
+- [x] 主 fingerprint 不变（2cf98c9130018956，双形态 ship-gate 均验证）；未新增 observational fixture，无需 flip
+
+## r118 修复轮记录（ADR-0045 fixer）
+
+- Found:（1）r43 工作树未提交混在 0045 验收面；（2）eval-integrity-contract.mjs r116 条件反转（decision+pass 永不通过，负向测试未覆盖 happy path）；（3）session-store 字面类型数组把 0.5 臂推不进 number[]。
+- Fixed：r43 提交并重跑验收；契约改为 decision ⇒ 必须显式 pass 且补 happy-path 断言；weights 数组显式 number[]。
+- Deferred：r39 F-07/F-09、skip-ledger @1 升级照旧挂账（不在本轮范围）。
