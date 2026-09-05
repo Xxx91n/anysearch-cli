@@ -12,14 +12,31 @@ export function evalIntegrityCheck(report) {
   if (integrity.verdict !== "pass" && integrity.verdict !== "failed") {
     return { ok: false, detail: "memory-eval integrity verdict invalid: " + integrity.verdict + " (ADR-0044 D3 fail-closed)" };
   }
-  if (integrity.runPurpose !== "observational" && integrity.runPurpose !== "decision") {
+  const reasonCodes = ["provider-emergency", "upstream-breaking-change", "data-loss-mitigation"];
+  if (
+    integrity.runPurpose !== "observational" &&
+    integrity.runPurpose !== "decision" &&
+    integrity.runPurpose !== "override"
+  ) {
     return { ok: false, detail: "memory-eval integrity runPurpose invalid: " + integrity.runPurpose };
   }
-  if (integrity.runPurpose === "decision" && integrity.verdict !== "pass") {
-    return { ok: false, detail: "memory-eval decision-grade integrity verdict not fail-closed (ADR-0044 D3)" };
+  if (
+    (integrity.runPurpose === "decision" || integrity.runPurpose === "override") &&
+    integrity.verdict !== "pass"
+  ) {
+    return { ok: false, detail: "memory-eval decision/override-grade integrity verdict not fail-closed (ADR-0044 D3)" };
+  }
+  if (integrity.runPurpose === "override" && !reasonCodes.includes(integrity.overrideReasonCode)) {
+    return { ok: false, detail: "memory-eval override runPurpose requires a valid overrideReasonCode" };
   }
   if (integrity.verdict === "failed") {
     return { ok: false, detail: "memory-eval integrity verdict failed (ADR-0044 D3 fail-closed)" };
   }
-  return { ok: true, detail: "verdict=" + integrity.verdict + " runPurpose=" + integrity.runPurpose };
+  return {
+    ok: true,
+    detail:
+      "verdict=" + integrity.verdict +
+      " runPurpose=" + integrity.runPurpose +
+      (integrity.overrideReasonCode ? " overrideReasonCode=" + integrity.overrideReasonCode : ""),
+  };
 }

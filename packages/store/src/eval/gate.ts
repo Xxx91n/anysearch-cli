@@ -2,6 +2,7 @@
 // ADR-0028 D1: integer-op allowance semantics + statistical-power WARN band.
 // Exit-code contract (EvalGate-style partition): 0 pass-or-warn / 1 metric regression / 2 internal error / 12 fingerprint mismatch.
 import type { EvalMetrics, EvalReport } from "./runner";
+export { SHIP_OVERRIDE_REASON_CODES, SHIP_OVERRIDE_WINDOW_LIMIT } from "./override-core";
 
 export interface EvalBaseline {
   schema: "anysearch/eval-baseline@1";
@@ -242,13 +243,6 @@ export interface WeakestLinkConclusion {
 // Sakai topic-set size formula: n = 2 * sigma^2 * (z_a + z_b)^2 / minD^2, capped (ADR-0036 D2).
 export const RELATION_GAIN_MIN_GAIN = 0.1;      // MEI = 10pp of the RRF window (~= 6 ranks)
 export const RELATION_GAIN_LOCKED_N_CAP = 80;
-// ADR-0046 D6: emergency ship override is a closed enum and is capped at one per release window.
-export const SHIP_OVERRIDE_REASON_CODES = [
-  "provider-emergency",
-  "upstream-breaking-change",
-  "data-loss-mitigation",
-] as const;
-export const SHIP_OVERRIDE_WINDOW_LIMIT = 1;
 export function lockN(sigmaDU: number, minGain: number = RELATION_GAIN_MIN_GAIN): { rawN: number; lockedN: number } {
   const rawN = Math.ceil((2 * sigmaDU * sigmaDU * Math.pow(2.8, 2)) / (minGain * minGain));
   return { rawN, lockedN: Math.min(RELATION_GAIN_LOCKED_N_CAP, rawN) };

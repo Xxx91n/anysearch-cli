@@ -12,7 +12,7 @@ import { isSkip, skipKey } from "./explicit-skip";
 import { quarantineSkipLedger, recordSkips, skipMustFail, withSkipLedgerLock } from "./skip-ledger";
 import { advanceSwitch, probeSwitchIntegrity } from "./switch-run";
 import { fixtureDefinitionHash } from "./obs-fixtures";
-import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, type EvalBaseline, type GainConclusion } from "./gate";
+import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, SHIP_OVERRIDE_REASON_CODES, type EvalBaseline, type GainConclusion } from "./gate";
 
 function repoRoot(): string {
   let d = dirname(fileURLToPath(import.meta.url));
@@ -155,10 +155,17 @@ async function main(): Promise<number> {
   const args = process.argv.slice(2);
   const calibrateIdx = args.indexOf("--calibrate");
   const decisionIdx = args.indexOf("--decision");
+  const overrideIdx = args.indexOf("--override");
+  const overrideReason = overrideIdx >= 0 ? args[overrideIdx + 1] : undefined;
   const outIdx = args.indexOf("--out");
   const root = repoRoot();
   const outDir = outIdx >= 0 ? resolve(args[outIdx + 1]!) : join(root, ".ship-gate");
   const baselinePath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "eval-baseline.json");
+
+  if (overrideIdx >= 0 && (!overrideReason || !(SHIP_OVERRIDE_REASON_CODES as readonly string[]).includes(overrideReason))) {
+    console.error("[eval] --override requires one of: " + SHIP_OVERRIDE_REASON_CODES.join(", "));
+    process.exit(2);
+  }
 
   if (calibrateIdx >= 0) {
     // ADR-0028 D1: 50-run hard floor. Any run with passRate < 1 aborts calibration (exit 2):
@@ -279,7 +286,8 @@ async function main(): Promise<number> {
     const swDb = process.env.ANS_DB_PATH && process.env.ANS_DB_PATH.trim()
       ? process.env.ANS_DB_PATH
       : join(os.homedir(), ".anysearch", "anysearch.db");
-    const probe = decisionIdx >= 0 ? probeSwitchIntegrity(outDir, swDb) : null;
+    const gateBoundary = decisionIdx >= 0 || overrideIdx >= 0;
+    const probe = gateBoundary ? probeSwitchIntegrity(outDir, swDb) : null;
     // r115 audit S1: build the verdict AFTER the probe runs and AFTER advanceSwitch has
     // returned. Default the verdict to failed for decision-grade runs and to pass for
     // observational runs; advanceSwitch only ever flips a decision-grade verdict to
@@ -289,22 +297,30 @@ async function main(): Promise<number> {
       dbPath: swDb,
       mode: "real",
       integrityFailed: probe && !probe.ok ? probe.detail : null,
-      untrustworthyEvidence: decisionIdx >= 0 && ob?.eventWriteFailures && ob.eventWriteFailures.count > 0,
+      untrustworthyEvidence: gateBoundary && ob?.eventWriteFailures && ob.eventWriteFailures.count > 0,
     });
     // r116 fix: decision-grade runs default to failed and only flip to pass when BOTH
     // the chain probe succeeds AND advanceSwitch returns no integrity error. This closes
     // the S1 P0 finding that the verdict producer could default to pass without a
     // concrete publish-red signal.
     const decisionProbeOk = probe ? probe.ok : false;
-    const integrityVerdict = decisionIdx >= 0
+    const integrityVerdict = gateBoundary
       ? (sw.integrityError || !decisionProbeOk ? "failed" : "pass")
       : "pass";
-    report.integrity = { verdict: integrityVerdict, runPurpose: decisionIdx >= 0 ? "decision" : "observational" };
+    report.integrity = {
+      verdict: integrityVerdict,
+      runPurpose: overrideIdx >= 0 ? "override" : decisionIdx >= 0 ? "decision" : "observational",
+      ...(overrideIdx >= 0 && overrideReason ? { overrideReasonCode: overrideReason as (typeof SHIP_OVERRIDE_REASON_CODES)[number] } : {}),
+    };
     if (sw.decision.record || sw.integrityError) console.error("[switch] " + sw.decision.reason + (sw.integrityError ? " [FAIL-CLOSED]" : ""));
   } catch (e) {
     console.error("[switch] advance failed (eval continues; integrity checks live in ship-gate): " + String((e as Error).message ?? e));
-    if (decisionIdx >= 0) report.integrity = { verdict: "failed", runPurpose: "decision" };
-    else report.integrity = { verdict: "pass", runPurpose: "observational" };
+    const gateBoundary = decisionIdx >= 0 || overrideIdx >= 0;
+    report.integrity = {
+      verdict: gateBoundary ? "failed" : "pass",
+      runPurpose: overrideIdx >= 0 ? "override" : decisionIdx >= 0 ? "decision" : "observational",
+      ...(overrideIdx >= 0 && overrideReason ? { overrideReasonCode: overrideReason as (typeof SHIP_OVERRIDE_REASON_CODES)[number] } : {}),
+    };
   }
 
   // r110 SP-F-03: if the fixture manifest is absent the fingerprint carries the explicit
@@ -321,7 +337,9 @@ async function main(): Promise<number> {
   console.log("[eval] note: allowance band advisory at current n (allowance/n < MDE) — hard gate is passRate==1 (ADR-0028 D1)");
   for (const w of g.warnings) console.warn("[eval] WARN: " + w);
   for (const x of g.failures) console.error("[eval] gate: " + x);
-  return exitCode;
+  // ADR-0047 D1: --override bypasses only a publish-red gate (exit 1), never
+  // fingerprint mismatch (12) or unverifiable/internal failure (2).
+  return overrideIdx >= 0 && exitCode === 1 ? 0 : exitCode;
 }
 
 main().then(

@@ -441,15 +441,16 @@ function stepStaticAssertions() {
   //     (3-streak escalation reuses the ADR-0039 D7 discipline).
   stepAccessChainVerify();
 
-  // 1m. ADR-0046 D1/D2/D5/D7: fusion ablation, paraphrase fixture contract, and
-  //     web provider ledger must exist as source-level gates. Observational
-  //     provider fields must not be read by the memory gate.
+  // 1m. ADR-0046 D1/D2/D5/D7 + ADR-0047 D1/D4/D5: fusion ablation, paraphrase
+  //     fixture contract, web provider ledger, and override governance must
+  //     exist as source-level gates. Ship-gate verifies the verifier instead of
+  //     only checking a reason-code token.
   {
     const runnerSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/runner.ts"), "utf8");
     for (const tok of ["computeArmDeltas", "NON_ANCHOR_MEMORY_ARMS", "armDeltas", "maxLexicalOverlap"])
       if (!runnerSrc.includes(tok)) fail("ADR-0046 runner missing " + tok);
     const gateSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/gate.ts"), "utf8");
-    for (const tok of ["evaluateWeakestLink", "minHarm", "betaCorrection", "SHIP_OVERRIDE_REASON_CODES", "SHIP_OVERRIDE_WINDOW_LIMIT"])
+    for (const tok of ["evaluateWeakestLink", "minHarm", "betaCorrection"])
       if (!gateSrc.includes(tok)) fail("ADR-0046 gate missing " + tok);
     const goldenSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/golden-cases.ts"), "utf8");
     for (const tok of ["paraphraseTier", "PARAPHRASE_MAX_LEXICAL_OVERLAP", "lexicalOverlap", "assertParaphraseSlice"])
@@ -458,7 +459,16 @@ function stepStaticAssertions() {
     for (const tok of ["buildWebProviderLedger", "webProviderLedger"])
       if (!engineSrc.includes(tok)) fail("ADR-0046 engine missing webProviderLedger");
     if (gateSrc.includes("webProviderLedger")) fail("ADR-0046 D5 violated: memory gate must never read web provider ledger");
-    report("pass", "ADR-0046 source gates: ablation, weakest-link, paraphrase fixture, web ledger");
+    const coreSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/override-core.ts"), "utf8");
+    for (const tok of ["deriveOverrideEpoch", "postmortemDeadline", "decideOverrideGovernance", "parseShipOverridePostmortem"])
+      if (!coreSrc.includes(tok)) fail("ADR-0047 override core missing " + tok);
+    const ledgerSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/override-ledger.ts"), "utf8");
+    for (const tok of ["parseShipOverrideLedger", "hashOverrideEntry", "withShipOverrideLedgerLock"])
+      if (!ledgerSrc.includes(tok)) fail("ADR-0047 override ledger missing " + tok);
+    if (!fs.readFileSync(path.join(ROOT, "scripts/ship-gate.mjs"), "utf8").includes("stepOverrideGovernance")) {
+      fail("ADR-0047 ship-gate missing stepOverrideGovernance");
+    }
+    report("pass", "ADR-0046 source gates + ADR-0047 override core/ledger/verifier wiring");
   }
 
 }
@@ -681,10 +691,13 @@ async function stepMemoryEval() {
   report("info", "step 7/9: memory eval harness gate (ADR-0027)");
   const outDir = path.join(ROOT, ".ship-gate");
   fs.mkdirSync(outDir, { recursive: true });
+  const evalArgs = ["--import", "tsx", path.join("src", "eval", "cli.ts"), "--out", outDir];
+  if (overrideReason !== undefined) evalArgs.push("--override", overrideReason);
+  else evalArgs.push("--decision");
   const res = await new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      ["--import", "tsx", path.join("src", "eval", "cli.ts"), "--out", outDir, "--decision"],
+      evalArgs,
       { cwd: path.join(ROOT, "packages", "store"), stdio: ["ignore", "pipe", "pipe"] }
     );
     let buf = "";
@@ -819,6 +832,48 @@ async function stepMemoryEval() {
     }
   }
   report("pass", "memory-eval: " + rep.totals.passed + "/" + rep.totals.cases + " cases PASS, fingerprint=" + rep.datasetFingerprint + ", passRate=" + rep.metrics.passRate);
+}
+
+// ---------------------------------------------------------------------------
+// Step 7b — ADR-0047 emergency ship override governance
+// ---------------------------------------------------------------------------
+async function stepOverrideGovernance() {
+  report("info", "step 7b/9: emergency ship override verifier (ADR-0047)");
+  const outDir = path.join(ROOT, ".ship-gate");
+  const reportPath = path.join(outDir, "eval-report.json");
+  const verifier = path.join(ROOT, "packages", "store", "src", "eval", "override-verifier.ts");
+  const base = ["--import", "tsx", verifier];
+
+  if (overrideReason !== undefined) {
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+    await run(process.execPath, [
+      ...base,
+      "record",
+      "--ledger", outDir,
+      "--dataset-fingerprint", report.datasetFingerprint,
+      "--holdout-fingerprint", report.holdoutFingerprint,
+      "--reason-code", overrideReason,
+      "--gate-report", reportPath,
+    ], { cwd: path.join(ROOT, "packages", "store") });
+    report("pass", "override verifier recorded emergency override for " + overrideReason);
+    return;
+  }
+
+  if (acknowledgeLate) {
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+    await run(process.execPath, [
+      ...base,
+      "acknowledge-late",
+      "--ledger", outDir,
+      "--dataset-fingerprint", report.datasetFingerprint,
+      "--holdout-fingerprint", report.holdoutFingerprint,
+    ], { cwd: path.join(ROOT, "packages", "store") });
+    report("pass", "override verifier recorded late acknowledgement");
+    return;
+  }
+
+  await run(process.execPath, [...base, "status", "--ledger", outDir], { cwd: path.join(ROOT, "packages", "store") });
+  report("info", "override ledger status valid; no override action requested");
 }
 
 // ---------------------------------------------------------------------------
@@ -982,9 +1037,18 @@ async function stepFailOpenBoot() {
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
-const args = new Set(process.argv.slice(2));
+const rawArgs = process.argv.slice(2);
+const args = new Set(rawArgs);
 const skipMatrix = args.has("--skip-matrix");
 const quick = args.has("--quick");
+const overrideIdx = rawArgs.indexOf("--override");
+const overrideReason = overrideIdx >= 0 ? rawArgs[overrideIdx + 1] : undefined;
+const acknowledgeLate = args.has("--acknowledge-late");
+const overrideReasonCodes = ["provider-emergency", "upstream-breaking-change", "data-loss-mitigation"];
+if (overrideIdx >= 0 && (!overrideReason || !overrideReasonCodes.includes(overrideReason))) {
+  process.stderr.write("ship-gate: --override requires one of " + overrideReasonCodes.join(", ") + "\n");
+  process.exit(2);
+}
 
 (async () => {
   reportStep("step_1_static_assertions");
@@ -1001,6 +1065,7 @@ const quick = args.has("--quick");
 
     reportStep("step_4_6_memory_eval");
     await stepMemoryEval();
+    await stepOverrideGovernance();
     reportStep("step_5_mcp_stdio");
     await stepMcpInitialize();
     reportStep("step_9_fail_open_boot");

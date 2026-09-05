@@ -7,6 +7,8 @@ function assert(cond, msg) { if (!cond) { failed++; console.error("FAIL: " + msg
 assert(evalIntegrityCheck({ integrity: { verdict: "pass", runPurpose: "observational" } }).ok, "observational pass contract is accepted");
 assert(evalIntegrityCheck({ integrity: { verdict: "pass", runPurpose: "decision" } }).ok, "decision pass verdict is accepted (ship-gate happy path)");
 assert(!evalIntegrityCheck({ integrity: { verdict: "failed", runPurpose: "decision" } }).ok, "failed decision verdict is publish-red");
+assert(evalIntegrityCheck({ integrity: { verdict: "pass", runPurpose: "override", overrideReasonCode: "provider-emergency" } }).ok, "override pass verdict with valid reasonCode is accepted");
+assert(!evalIntegrityCheck({ integrity: { verdict: "pass", runPurpose: "override", overrideReasonCode: "made-up" } }).ok, "override runPurpose rejects unknown reasonCode");
 assert(!evalIntegrityCheck({ integrity: { verdict: "pass", runPurpose: "invalid" } }).ok, "invalid runPurpose is rejected");
 assert(!evalIntegrityCheck({}).ok, "missing integrity contract is rejected");
 

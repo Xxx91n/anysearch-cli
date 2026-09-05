@@ -16,6 +16,7 @@ import { bucketHistogram, dayBucketFingerprint } from "./day-buckets";
 import { evaluateTauFitGate, isStructuralAbsence } from "./bgnbd";
 import { feedFromFixture, feedToGateInput, fixtureDefinitionHash, loadObsFixture, SIMULATED_LABEL, type ObsFeed } from "./obs-fixtures";
 import { skip, type SkipMarker } from "./explicit-skip";
+import type { ShipOverrideReasonCode } from "./override-core";
 
 export interface OpRecord {
   op: number;
@@ -205,7 +206,11 @@ export interface EvalReport {
   schema: "anysearch/eval-report@1";
   generatedAt: string;
   datasetFingerprint: string;
-  integrity?: { verdict: "pass" | "failed"; runPurpose: "observational" | "decision" };
+  integrity?: {
+    verdict: "pass" | "failed";
+    runPurpose: "observational" | "decision" | "override";
+    overrideReasonCode?: ShipOverrideReasonCode;
+  };
   // ADR-0038 D2: frozen-baseline + backflow-slice family fingerprint (gate stores it on the baseline).
   holdoutFingerprint: string;
   totals: { cases: number; passed: number; failed: number };
