@@ -420,6 +420,9 @@ importers:
       '@anysearch/retriever':
         specifier: workspace:*
         version: link:../retriever
+      '@sinclair/typebox':
+        specifier: ^0.34.52
+        version: 0.34.52
       '@types/better-sqlite3':
         specifier: ^9.6.0
         version: 9.6.0

@@ -34,6 +34,8 @@ jobs:
       # ponytail: --ignore-scripts required because better-sqlite3 ships prebuilds
       # and our allowBuilds=false pnpm-workspace.yaml entry is intentional (ADR-0017).
       - run: pnpm install --ignore-scripts
+      - name: Validate calibration labels (ADR-0048)
+        run: node scripts/eval-labels.mjs validate
       - run: pnpm -w turbo check
       - run: pnpm --filter @anysearch/kernel test
       - run: pnpm -w turbo build

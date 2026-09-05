@@ -10,8 +10,11 @@
 // Deterministic mode: --human 1,0,... --judge 0,1,... skips set loading and endpoint calls.
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { judgeOne, RUBRIC, JUDGE_RUBRIC_HASH, judgeVersion } from "./eval-judge.mjs";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // ponytail: seeded LCG — deterministic CI, no external rng dep; upgrade to crypto rng if it matters.
 function lcg(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32); }
@@ -76,7 +79,30 @@ async function main() {
   } else {
     const setPath = path.resolve(argVal("--set", "packages/store/src/eval/calibration-cases.ts"));
     const mod = await import(pathToFileURL(setPath).href); // tsx loader wraps .ts when present; plain node only in synthetic mode
-    set = { fingerprint: mod.CALIBRATION_SET.fingerprint, rubric: mod.CALIBRATION_SET.rubric, annotators: mod.CALIBRATION_SET.annotators, annotatedAt: mod.CALIBRATION_SET.annotatedAt, cases: mod.CALIBRATION_SET.cases, calibrationHash: mod.calibrationHash };
+    const labelsPath = path.resolve(process.env.ANS_CALIBRATION_LABELS_PATH || "packages/store/calibration-labels.jsonl");
+    const manifestPath = path.resolve(process.env.ANS_CALIBRATION_MANIFEST_PATH || "packages/store/calibration-manifest.json");
+    const labelsMod = await import(pathToFileURL(path.join(repoRoot, "packages", "store", "src", "eval", "calibration-labels.ts")).href);
+    const labelsState = fs.existsSync(labelsPath) ? labelsMod.parseLabelLines(fs.readFileSync(labelsPath, "utf8")) : { records: [], errors: [] };
+    if (labelsState.errors.length) {
+      process.stderr.write("eval-calibrate: calibration labels invalid: " + labelsState.errors.join("; ") + "\n");
+      process.exit(2);
+    }
+    if (!fs.existsSync(manifestPath)) {
+      process.stderr.write("eval-calibrate: calibration manifest missing: " + manifestPath + "\n");
+      process.exit(2);
+    }
+    const parsedManifest = labelsMod.parseManifest(fs.readFileSync(manifestPath, "utf8"));
+    if (parsedManifest.error || !parsedManifest.manifest) {
+      process.stderr.write("eval-calibrate: calibration manifest invalid: " + (parsedManifest.error ?? "missing") + "\n");
+      process.exit(2);
+    }
+    const validation = labelsMod.validateCalibrationState(labelsState.records, parsedManifest.manifest, mod.CALIBRATION_CASES);
+    if (!validation.ok) {
+      process.stderr.write("eval-calibrate: calibration state invalid: " + validation.detail + "\n");
+      process.exit(validation.code);
+    }
+    const labeledCases = labelsMod.labeledCalibrationCases(mod.CALIBRATION_CASES, labelsState.records);
+    set = { fingerprint: mod.CALIBRATION_SET.fingerprint, rubric: mod.CALIBRATION_SET.rubric, annotators: parsedManifest.manifest.annotators, annotatedAt: parsedManifest.manifest.annotatedAt, cases: labeledCases, calibrationHash: mod.calibrationHash };
   }
 
   let pairs;
@@ -132,5 +158,14 @@ Is the returned snippet a plausible, relevant hit?`, { baseUrl, model, apiKey })
 
 const invoked = process.argv[1] ? path.resolve(process.argv[1]) : "";
 if (invoked && import.meta.url === pathToFileURL(invoked).href) {
+  if (process.env.ANS_EVAL_CALIBRATE_TSX !== "1") {
+    const loader = pathToFileURL(path.join(repoRoot, "packages", "store", "node_modules", "tsx", "dist", "loader.mjs")).href;
+    const entry = path.relative(process.cwd(), fileURLToPath(import.meta.url)).split(path.sep).join("/");
+    const child = spawnSync(process.execPath, ["--import", loader, entry, ...process.argv.slice(2)], {
+      env: { ...process.env, ANS_EVAL_CALIBRATE_TSX: "1" },
+      stdio: "inherit",
+    });
+    process.exit(child.status ?? 2);
+  }
   main().catch((e) => { console.error("eval-calibrate: internal error: " + String(e && e.stack || e)); process.exit(2); });
 }

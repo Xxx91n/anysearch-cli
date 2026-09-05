@@ -1,0 +1,11 @@
+{
+  "schema": "anysearch/calibration-manifest@1",
+  "caseFingerprint": "df7a0a4b63954803",
+  "labelsFingerprint": "da39a3ee5e6b4b0d",
+  "annotators": [],
+  "annotatedAt": null,
+  "promotedVersion": null,
+  "promotedAt": null,
+  "promotedFingerprint": null,
+  "note": "ADR-0048 initial unlabeled calibration label set"
+}
