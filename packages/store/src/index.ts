@@ -24,3 +24,6 @@ export * from "./eval/switch-run";
 
 // ADR-0043 D7: skip-ledger @3 read surface for ans switch-state.
 export * from "./eval/skip-ledger";
+
+// ADR-0049 D2-D13: pure calibration revision lifecycle surface.
+export * from "./eval/revision-core";

@@ -22,7 +22,9 @@ Thumbs.db
 *.log
 
 # Phase 3 plugin
-.ship-gate/
+.ship-gate/*
+**/.ship-gate/*
+!.ship-gate/calibration-l2-preregistration.json
 
 .anysearch/
 apps/plugin/dist/

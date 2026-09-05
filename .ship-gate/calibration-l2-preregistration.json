@@ -1,0 +1,22 @@
+{
+  "schema": "anysearch/calibration-l2-preregistration@1",
+  "status": "preregistered",
+  "interim": {
+    "rule": "kappa bootstrap CI lower bound >= 0.6",
+    "judgeStatus": "provisional/uncalibrated",
+    "adr": "ADR-0029 D2"
+  },
+  "final": {
+    "ac1CILowerBound": 0.7,
+    "rawAgreementPo": 0.8,
+    "ciWidthMaximum": 0.4,
+    "kappaRole": "diagnostic-only",
+    "cohortPlan": {
+      "firstFreeze": "30-50 labels",
+      "targetRounds": 3,
+      "targetN": "100-200"
+    },
+    "adr": "ADR-0049 D10/D13"
+  },
+  "fixedAt": "git-timestamp"
+}
