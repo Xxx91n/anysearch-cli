@@ -1,5 +1,7 @@
 // ADR-0044 D3: isolated publish-red contract for the eval report's run-level integrity block.
 // Ship-gate consumes this helper so the negative case is testable without running the whole gate.
+export const SHIP_OVERRIDE_REASON_CODES = ["provider-emergency", "upstream-breaking-change", "data-loss-mitigation"];
+
 export function evalIntegrityCheck(report) {
   const integrity = report && typeof report === "object" ? report.integrity : undefined;
   if (!integrity || typeof integrity !== "object") {
@@ -12,7 +14,6 @@ export function evalIntegrityCheck(report) {
   if (integrity.verdict !== "pass" && integrity.verdict !== "failed") {
     return { ok: false, detail: "memory-eval integrity verdict invalid: " + integrity.verdict + " (ADR-0044 D3 fail-closed)" };
   }
-  const reasonCodes = ["provider-emergency", "upstream-breaking-change", "data-loss-mitigation"];
   if (
     integrity.runPurpose !== "observational" &&
     integrity.runPurpose !== "decision" &&
@@ -26,7 +27,7 @@ export function evalIntegrityCheck(report) {
   ) {
     return { ok: false, detail: "memory-eval decision/override-grade integrity verdict not fail-closed (ADR-0044 D3)" };
   }
-  if (integrity.runPurpose === "override" && !reasonCodes.includes(integrity.overrideReasonCode)) {
+  if (integrity.runPurpose === "override" && !SHIP_OVERRIDE_REASON_CODES.includes(integrity.overrideReasonCode)) {
     return { ok: false, detail: "memory-eval override runPurpose requires a valid overrideReasonCode" };
   }
   if (integrity.verdict === "failed") {

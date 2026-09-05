@@ -7,7 +7,6 @@ import {
   deriveOverrideEpoch,
   parseShipOverridePostmortem,
   postmortemDeadline,
-  SHIP_OVERRIDE_REASON_CODES,
 } from "../src/eval/override-core";
 import {
   appendOverrideEvent,
@@ -25,6 +24,8 @@ function assert(cond: boolean, msg: string) {
 
 const epoch = deriveOverrideEpoch("dataset-a", "holdout-b");
 assert(epoch === "dataset-a:holdout-b", "override epoch is the fingerprint pair");
+const missingEpoch = decideOverrideGovernance([], { epoch: "", action: "override", reasonCode: "provider-emergency" });
+assert(!missingEpoch.ok && missingEpoch.code === "missing-epoch", "missing epoch has its own decision code");
 
 const at = "2026-09-01T00:00:00.000Z";
 const windowEnd = "2026-09-05T00:00:00.000Z";

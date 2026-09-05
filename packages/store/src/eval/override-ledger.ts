@@ -224,13 +224,6 @@ export function writeShipOverrideLedgerAtomic(outDir: string, ledger: ShipOverri
   renameSync(tmp, p);
 }
 
-export function quarantineShipOverrideLedger(outDir: string, at: string): string {
-  const p = ledgerPathFor(outDir);
-  const q = p.replace(/\.json$/, ".quarantined-" + at.replace(/[:.]/g, "-") + ".json");
-  try { renameSync(p, q); } catch { /* restart empty is the caller's explicit choice */ }
-  return q;
-}
-
 export function withShipOverrideLedgerLock<T>(outDir: string, fn: (ledger: ShipOverrideLedger) => T): T {
   mkdirSync(outDir, { recursive: true });
   const lockPath = lockPathFor(outDir);
@@ -257,10 +250,6 @@ export function withShipOverrideLedgerLock<T>(outDir: string, fn: (ledger: ShipO
     }
   }
   throw new ShipOverrideLedgerError("override ledger lock timeout: " + lockPath);
-}
-
-export function hashFile(path: string): string {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
 export function readShipOverridePostmortem(path: string): {

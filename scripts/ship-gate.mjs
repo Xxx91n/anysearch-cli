@@ -25,7 +25,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
-import { evalIntegrityCheck } from "./eval-integrity-contract.mjs";
+import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -855,18 +855,18 @@ async function stepOverrideGovernance() {
       "--reason-code", overrideReason,
       "--gate-report", reportPath,
     ], { cwd: path.join(ROOT, "packages", "store") });
-    report("pass", "override verifier recorded emergency override for " + overrideReason);
+    await run(process.execPath, ["--import", "tsx", "src/eval/cli.ts", "--calibrate"], {
+      cwd: path.join(ROOT, "packages", "store"),
+    });
+    report("pass", "override verifier recorded emergency override and forced rebaseline for " + overrideReason);
     return;
   }
 
   if (acknowledgeLate) {
-    const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
     await run(process.execPath, [
       ...base,
       "acknowledge-late",
       "--ledger", outDir,
-      "--dataset-fingerprint", report.datasetFingerprint,
-      "--holdout-fingerprint", report.holdoutFingerprint,
     ], { cwd: path.join(ROOT, "packages", "store") });
     report("pass", "override verifier recorded late acknowledgement");
     return;
@@ -1044,9 +1044,8 @@ const quick = args.has("--quick");
 const overrideIdx = rawArgs.indexOf("--override");
 const overrideReason = overrideIdx >= 0 ? rawArgs[overrideIdx + 1] : undefined;
 const acknowledgeLate = args.has("--acknowledge-late");
-const overrideReasonCodes = ["provider-emergency", "upstream-breaking-change", "data-loss-mitigation"];
-if (overrideIdx >= 0 && (!overrideReason || !overrideReasonCodes.includes(overrideReason))) {
-  process.stderr.write("ship-gate: --override requires one of " + overrideReasonCodes.join(", ") + "\n");
+if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes(overrideReason))) {
+  process.stderr.write("ship-gate: --override requires one of " + SHIP_OVERRIDE_REASON_CODES.join(", ") + "\n");
   process.exit(2);
 }
 

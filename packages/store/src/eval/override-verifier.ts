@@ -49,8 +49,8 @@ function usage(): never {
     [
       "usage: tsx packages/store/src/eval/override-verifier.ts <mode> [options]",
       "modes: status | record | acknowledge-late | complete-postmortem | check",
-      "required for record: --ledger <dir> --dataset-fingerprint <hex> --holdout-fingerprint <hex> --reason-code <code>",
-      "optional for record: --gate-report <path> --override-at <ISO> --window-end <ISO>",
+      "required for record: --ledger <dir> --dataset-fingerprint <hex> --holdout-fingerprint <hex> --reason-code <code> --gate-report <path>",
+      "optional for record: --override-at <ISO> --window-end <ISO>",
       "required for acknowledge-late/check: --ledger <dir> --dataset-fingerprint <hex> --holdout-fingerprint <hex>",
       "required for complete-postmortem: --ledger <dir> --dataset-fingerprint <hex> --holdout-fingerprint <hex> --artifact <path>",
     ].join("\n"),
@@ -75,6 +75,16 @@ function readGateStateBefore(reportPath: string | undefined): OverrideLedgerEntr
       .filter((failure) => failure.startsWith("weakest-link RED"))
       .slice(0, 20),
   };
+}
+
+function requireConfirmedCriticalRed(gateStateBefore: OverrideLedgerEntry["gateStateBefore"]): void {
+  if (!gateStateBefore || gateStateBefore.weakestLinkCritical.length === 0) {
+    emitDenied("override requires a confirmed weakest-link RED on a critical arm");
+  }
+}
+
+function firstOutstandingLateEpoch(events: OverrideGovernanceEvent[]): string | undefined {
+  return events.find((event) => event.action === "override" && event.postmortemStatus === "late")?.epoch;
 }
 
 function effectivePostmortemStatus(ledger: ShipOverrideLedger, entry: OverrideLedgerEntry, now: string): OverrideGovernanceEvent["postmortemStatus"] {
@@ -134,31 +144,44 @@ try {
     });
   }
 
-  const datasetFingerprint = arg("--dataset-fingerprint", true)!;
-  const holdoutFingerprint = arg("--holdout-fingerprint", true)!;
-  const epoch = deriveOverrideEpoch(datasetFingerprint, holdoutFingerprint);
+  const datasetFingerprint = arg("--dataset-fingerprint");
+  const holdoutFingerprint = arg("--holdout-fingerprint");
+  const hasEpoch = Boolean(datasetFingerprint && holdoutFingerprint);
+  const epoch = hasEpoch ? deriveOverrideEpoch(datasetFingerprint!, holdoutFingerprint!) : undefined;
+
+  function requireEpoch(): string {
+    if (!epoch) {
+      console.error("missing required arguments: --dataset-fingerprint and --holdout-fingerprint");
+      process.exit(2);
+    }
+    return epoch;
+  }
 
   if (mode === "check") {
+    const checkedEpoch = requireEpoch();
     const reasonCode = validateReason(arg("--reason-code", true));
     const ledger = readShipOverrideLedger(ledgerDir);
     const decision = decideOverrideGovernance(governanceEvents(ledger, new Date().toISOString()), {
-      epoch,
+      epoch: checkedEpoch,
       action: "override",
       reasonCode,
     });
     if (!decision.ok) emitDenied(decision.detail);
-    emitSuccess({ ok: true, epoch, reasonCode });
+    emitSuccess({ ok: true, epoch: checkedEpoch, reasonCode });
   }
 
   if (mode === "record") {
+    const recordEpoch = requireEpoch();
     const reasonCode = validateReason(arg("--reason-code", true));
     const reportPath = arg("--gate-report");
+    const gateStateBefore = readGateStateBefore(reportPath);
+    requireConfirmedCriticalRed(gateStateBefore);
     const at = nowOrArg();
     const windowEnd = arg("--window-end");
     const deadline = postmortemDeadline(at, windowEnd);
     const ledger = withShipOverrideLedgerLock(ledgerDir, (current) => {
       const decision = decideOverrideGovernance(governanceEvents(current, at), {
-        epoch,
+        epoch: recordEpoch,
         action: "override",
         reasonCode,
       });
@@ -167,9 +190,9 @@ try {
         current,
         {
           action: "override",
-          epoch,
+          epoch: recordEpoch,
           reasonCode,
-          gateStateBefore: readGateStateBefore(reportPath),
+          gateStateBefore,
           postmortemDeadline: deadline,
           postmortem: { status: "pending" },
         },
@@ -178,14 +201,21 @@ try {
       writeShipOverrideLedgerAtomic(ledgerDir, next);
       return next;
     });
-    emitSuccess({ ok: true, epoch, reasonCode, deadline, revision: ledger.revision });
+    emitSuccess({ ok: true, epoch: recordEpoch, reasonCode, deadline, revision: ledger.revision });
   }
 
   if (mode === "acknowledge-late") {
     const at = nowOrArg();
+    let ackEpoch = epoch;
+    if (!ackEpoch) {
+      const current = readShipOverrideLedger(ledgerDir);
+      const lateEpoch = firstOutstandingLateEpoch(governanceEvents(current, at));
+      if (!lateEpoch) emitDenied("no outstanding late postmortem obligation");
+      ackEpoch = lateEpoch;
+    }
     const ledger = withShipOverrideLedgerLock(ledgerDir, (current) => {
       const decision = decideOverrideGovernance(governanceEvents(current, at), {
-        epoch,
+        epoch: ackEpoch!,
         action: "acknowledge-late",
       });
       if (!decision.ok) emitDenied(decision.detail);
@@ -193,7 +223,7 @@ try {
         current,
         {
           action: "acknowledge-late",
-          epoch,
+          epoch: ackEpoch!,
           postmortem: { status: "late-acknowledged" },
         },
         at,
@@ -201,22 +231,23 @@ try {
       writeShipOverrideLedgerAtomic(ledgerDir, next);
       return next;
     });
-    emitSuccess({ ok: true, epoch, revision: ledger.revision });
+    emitSuccess({ ok: true, epoch: ackEpoch, revision: ledger.revision });
   }
 
+  const completeEpoch = requireEpoch();
   const artifactPath = arg("--artifact", true)!;
   const artifact = readShipOverridePostmortem(artifactPath);
   const at = nowOrArg();
   const ledger = withShipOverrideLedgerLock(ledgerDir, (current) => {
-    const overrideExists = current.entries.some((entry) => entry.epoch === epoch && entry.action === "override");
-    if (!overrideExists) emitDenied("no override exists for epoch " + epoch);
-    const alreadyComplete = current.entries.some((entry) => entry.epoch === epoch && entry.action === "complete-postmortem");
-    if (alreadyComplete) emitDenied("postmortem already complete for epoch " + epoch);
+    const overrideExists = current.entries.some((entry) => entry.epoch === completeEpoch && entry.action === "override");
+    if (!overrideExists) emitDenied("no override exists for epoch " + completeEpoch);
+    const alreadyComplete = current.entries.some((entry) => entry.epoch === completeEpoch && entry.action === "complete-postmortem");
+    if (alreadyComplete) emitDenied("postmortem already complete for epoch " + completeEpoch);
     const next = appendOverrideEvent(
       current,
       {
         action: "complete-postmortem",
-        epoch,
+        epoch: completeEpoch,
         postmortem: {
           status: "complete",
           artifactPath,
@@ -229,7 +260,7 @@ try {
     writeShipOverrideLedgerAtomic(ledgerDir, next);
     return next;
   });
-  emitSuccess({ ok: true, epoch, contentHash: artifact.contentHash, revision: ledger.revision });
+  emitSuccess({ ok: true, epoch: completeEpoch, contentHash: artifact.contentHash, revision: ledger.revision });
 } catch (error) {
   console.error("override verifier internal error: " + String((error as Error).stack ?? error));
   process.exit(2);

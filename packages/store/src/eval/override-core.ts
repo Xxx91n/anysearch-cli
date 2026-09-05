@@ -10,9 +10,6 @@ export const SHIP_OVERRIDE_REASON_CODES = [
 
 export type ShipOverrideReasonCode = (typeof SHIP_OVERRIDE_REASON_CODES)[number];
 
-// One override event per baseline generation (dataset:holdout fingerprint pair).
-export const SHIP_OVERRIDE_WINDOW_LIMIT = 1;
-
 export type OverrideGovernanceAction =
   | "override"
   | "acknowledge-late"
@@ -33,6 +30,7 @@ export interface OverrideGovernanceEvent {
 }
 
 export type OverrideDecisionCode =
+  | "missing-epoch"
   | "invalid-reason-code"
   | "quota-exhausted"
   | "late-obligation-blocks"
@@ -75,17 +73,6 @@ export function postmortemDeadline(
   return new Date(Math.min(sevenDayMs, endMs)).toISOString();
 }
 
-export function isPostmortemLate(
-  deadline: string,
-  completedAt: string | null | undefined,
-  now: string,
-): boolean {
-  if (completedAt) return false;
-  const deadlineMs = parseTime("deadline", deadline);
-  const nowMs = parseTime("now", now);
-  return nowMs > deadlineMs;
-}
-
 function latestEvent(events: readonly OverrideGovernanceEvent[], predicate: (event: OverrideGovernanceEvent) => boolean): OverrideGovernanceEvent | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
     if (predicate(events[i]!)) return events[i];
@@ -101,7 +88,7 @@ export function decideOverrideGovernance(
   events: readonly OverrideGovernanceEvent[],
   request: { epoch: string; action: "override" | "acknowledge-late"; reasonCode?: ShipOverrideReasonCode },
 ): OverrideDecision {
-  if (!request.epoch) return { ok: false, code: "invalid-reason-code", detail: "missing override epoch" };
+  if (!request.epoch) return { ok: false, code: "missing-epoch", detail: "missing override epoch" };
   if (request.action === "override" && !isShipOverrideReasonCode(request.reasonCode)) {
     return { ok: false, code: "invalid-reason-code", detail: "invalid ship override reasonCode: " + String(request.reasonCode) };
   }

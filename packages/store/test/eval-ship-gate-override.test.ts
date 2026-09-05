@@ -34,6 +34,7 @@ function verifierRun(args: string[]): { code: number; stdout: string; stderr: st
   assert(shipGate.includes("stepOverrideGovernance"), "ship-gate wires stepOverrideGovernance");
   assert(shipGate.includes("override-verifier.ts"), "ship-gate references override-verifier.ts");
   assert(shipGate.includes("record") && shipGate.includes("acknowledge-late"), "ship-gate supports override record and late acknowledgement");
+  assert(shipGate.includes('"src/eval/cli.ts", "--calibrate"'), "ship-gate forces rebaseline after override");
 }
 
 // Independent verifier 0/1/2 semantics.
@@ -42,16 +43,27 @@ try {
   const status = verifierRun(["status", "--ledger", dir]);
   assert(status.code === 0, "empty ledger status exits 0");
 
+  const criticalReportPath = join(dir, "critical-gate-report.json");
+  writeFileSync(criticalReportPath, JSON.stringify({
+    gate: {
+      verdict: "fail",
+      exitCode: 1,
+      failures: ["weakest-link RED relation: critical arm must demote and block ship (ADR-0046 D6)"],
+    },
+  }), "utf8");
   const record = verifierRun([
     "record",
     "--ledger", dir,
     "--dataset-fingerprint", "ds",
     "--holdout-fingerprint", "h",
     "--reason-code", "provider-emergency",
+    "--gate-report", criticalReportPath,
     "--override-at", "2020-01-01T00:00:00.000Z",
     "--window-end", "2020-01-03T00:00:00.000Z",
   ]);
   assert(record.code === 0, "record override exits 0");
+  const ledgerAfterRecord = JSON.parse(readFileSync(join(dir, "ship-override-ledger.json"), "utf8"));
+  assert(ledgerAfterRecord.entries[0].gateStateBefore.weakestLinkCritical.length > 0, "record preserves critical weakest-link evidence");
 
   const duplicate = verifierRun([
     "record",
@@ -65,10 +77,27 @@ try {
   const ack = verifierRun([
     "acknowledge-late",
     "--ledger", dir,
-    "--dataset-fingerprint", "ds",
-    "--holdout-fingerprint", "h",
   ]);
   assert(ack.code === 0, "late acknowledgement exits 0 for a LATE obligation");
+
+  const nonCriticalDir = mkdtempSync(join(tmpdir(), "ans-override-noncritical-"));
+  try {
+    const nonCriticalReportPath = join(nonCriticalDir, "gate-report.json");
+    writeFileSync(nonCriticalReportPath, JSON.stringify({
+      gate: { verdict: "fail", exitCode: 1, failures: ["passRate 0.500 < 1.0"] },
+    }), "utf8");
+    const denied = verifierRun([
+      "record",
+      "--ledger", nonCriticalDir,
+      "--dataset-fingerprint", "ds2",
+      "--holdout-fingerprint", "h2",
+      "--reason-code", "provider-emergency",
+      "--gate-report", nonCriticalReportPath,
+    ]);
+    assert(denied.code === 1, "non-critical publish-red cannot be overridden");
+  } finally {
+    rmSync(nonCriticalDir, { recursive: true, force: true });
+  }
 
   const artifactPath = join(dir, "postmortem.json");
   writeFileSync(artifactPath, JSON.stringify({

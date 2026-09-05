@@ -2,7 +2,7 @@
 // ADR-0028 D1: integer-op allowance semantics + statistical-power WARN band.
 // Exit-code contract (EvalGate-style partition): 0 pass-or-warn / 1 metric regression / 2 internal error / 12 fingerprint mismatch.
 import type { EvalMetrics, EvalReport } from "./runner";
-export { SHIP_OVERRIDE_REASON_CODES, SHIP_OVERRIDE_WINDOW_LIMIT } from "./override-core";
+export { SHIP_OVERRIDE_REASON_CODES } from "./override-core";
 
 export interface EvalBaseline {
   schema: "anysearch/eval-baseline@1";
