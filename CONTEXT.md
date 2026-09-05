@@ -657,5 +657,41 @@ _Avoid_: turning paraphrase robustness into a positive threshold gate, lexical p
 web provider 的独占命中、重叠、原生分数缺失和失败只落 Observational zone，无 verdict、无阈值、无 gate、无新表；只能进入 WARN、人工 review 与 ADR-0045 生命周期降级。ADR-0046 D5。
 _Avoid_: observational provider metrics driving ship red, new durable tables for provider analytics, treating equal-weight deviation as evidence, provider thresholds in the ship gate
 
+## Emergency Ship Override（紧急发布放行）
+在已确认 critical arm 红色阻断发布时，允许以封闭枚举的 reasonCode 与显式 override 目的放行一次；每次 override 都强制重定基线并产生事后复核义务，且同一基线代际内至多一次。ADR-0046 D6。
+_Avoid_: 无理由码的静默放行、跨代际累计失败预算、把 observational red 当成 ship-blocking、允许 override 污染真实评测状态
+
+## Override Epoch（override 纪元 / 基线代际）
+override 配额所归属的时间边界由 forced rebaseline 后的 golden/holdout fingerprint 对决定；指纹对变化即新纪元、配额恢复。日历时间与代码版本只作观测与审计，不参与配额判定。
+_Avoid_: 用墙钟、git tag 或 package version 切分 override 配额，把“当前读取时刻”当作窗口锚点，把已发生窗口的债务带入下一代际
+
+## Ship Override Ledger（发布 override 账本）
+append-only 的事件账本记录每个 override 的纪元、reasonCode、时间与事后复核引用；损坏或不可验证时 fail-closed，不并入其它易重写的观测状态。
+_Avoid_: 与 skip/gain 观测账本共享状态、正文内嵌、静默重置计数、绕过内容哈希验证
+
+## Postmortem Obligation（postmortem 义务）
+每次 override 必须在截止前产出可校验的复盘工件，包含影响、原因与至少一个可执行后续项；未在截止前产出即进入 LATE，触发下一轮发布阻断。截止以事件锚定为主，且不超过七天宽限。
+_Avoid_: 只提醒不落工件、把空复盘当作已闭环、把完成动作省略为状态标志、用无限期等待替代截止
+
+## Late Acknowledge（迟交确认）
+postmortem 进入 LATE 后，允许显式确认迟交并继续推进，但该确认计入当前 override 纪元的同一次配额且不得豁免原有义务。
+_Avoid_: 免费重置义务、绕过账本记账、多次确认形成规范漂移、把确认当成 postmortem 完成
+
+## Calibration Labels File（校准标签行集）
+增长型人工 relevance 标签的 system of record，以可审计的文本文件保存，行级 diff 和 promote 都在这里发生；冻结 case 定义仍留在源码 fixture，不与标签数据同生命周期。
+_Avoid_: 把标签写回源码 case、放入运行产物目录、让 CI 自动写标签、用单对象 JSON 承载增长型标注
+
+## Calibration Manifest（校准 manifest）
+与标签行集配对的可验证元数据，记录 schema version、case fingerprint、labels fingerprint、annotator、rubric/judge 快照和 promote 状态；promote 时生成或更新。
+_Avoid_: 只存标签不存版本、promote 后不更新指纹、把 manifest 作为运行时临时报告、缺少 seed 与标签的一致性校验
+
+## Calibration Promote（校准标签 promote）
+用户显式把人审标签行集冻结为权威版本的治理动作；只更新 promote 状态和版本，不替代 judge κ CI 门禁，也不自动把标签并入 golden gate。
+_Avoid_: n 达到阈值即自动 promote、ship-gate 顺手 promote、把未校准 judge 的结论直接晋升、用 promote 绕过人工复核
+
+## Judge Calibration（judge 校准）
+用独立人工标签估计 judge 的 κ/AC1 置信区间和功效，只有下界达标且样本量满足预注册门槛时才允许 judge 报告参与下游决策；模型、rubric 或标签分布变化会要求重新校准。
+_Avoid_: 用 judge 自评作为校准证据、展示 judge 判定后再让人标、把 n 下限当作可信度保证、静默切换 judge 版本后继续沿用旧校准
+
 
 *End of Glossary*

@@ -270,7 +270,7 @@ export function evaluateWeakestLink(
   if (labels.length === 0) return undefined;
   const minGain = baseline?.relationGain?.minGain ?? RELATION_GAIN_MIN_GAIN;
   const minHarm = -minGain;
-  const betaCorrection = 1 / (labels.length + 1);
+  const betaCorrection = 1 / labels.length;
   const sigmaDU = baseline?.relationGain?.sigmaDU ?? NaN;
   const arms: WeakestLinkArmConclusion[] = labels.map((label) => {
     const sample = armDeltas[label]!;
@@ -306,7 +306,7 @@ export function evaluateWeakestLink(
         reason: stats?.degenerate ? "degenerate variance — unverifiable" : "insufficient paired sample",
       };
     }
-    const confirmedHarm = stats.bcaHi < minHarm;
+    const confirmedHarm = stats.bcaHi < minHarm && stats.mean <= minHarm && stats.signFlipHarmP < alphaK;
     return {
       label,
       role: sample.role,

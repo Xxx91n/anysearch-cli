@@ -115,7 +115,7 @@ try {
   const wl = evaluateWeakestLink(armDeltas, { ...baseline, relationGain: { sigmaDU: 0.05, rawN: 4, lockedN: 4, minGain: 0.1 } }, 0.025);
   assert(wl !== undefined && wl.arms[0]!.confirmedHarm === true, "ADR-0046: negative sample confirms weakest-link harm");
   const m = { ...mkMetrics(), observational: { schema: "anysearch/observational@1", armDeltas } } as unknown as EvalMetrics;
-  const g = evaluateGate(fakeReport(m), { ...baseline, relationGain: { sigmaDU: 0.05, rawN: 4, lockedN: 4, minGain: 0.1 } });
+  const g = evaluateGate(fakeReport(m), { ...baseline, relationGain: { sigmaDU: 0.05, rawN: 4, lockedN: 4, minGain: 0.1 } }, { look: 5 });
   assert(g.exitCode === 1 && g.failures.some((f) => f.includes("weakest-link RED relation")), "ADR-0046: critical weakest-link red blocks gate");
 }
 

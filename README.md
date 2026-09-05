@@ -18,26 +18,24 @@ recall, multi-source RRF fusion, and an MCP server that auto-indexes results.
 
 ## Before you explore
 
-- Read `CONTEXT.md` at the repo root — the glossary of domain terms (41 terms).
-- Read `docs/adr/` — 10 ADRs (0001-0010), all Accepted, consecutive.
+- Read `CONTEXT.md` at the repo root — the canonical single-context domain glossary.
+- Read `docs/adr/` — ADR-0001 through ADR-0046, all Accepted, consecutive.
 - Read `docs/agents/domain.md` for how to consume domain docs.
 - Read `docs/agents/issue-tracker.md` for the local-markdown issue tracker conventions.
 
 ## Architecture decisions
 
+The complete numbered record is in `docs/adr/`. The latest decisions are:
+
 | ADR | Round | Topic |
 |-----|-------|-------|
-| 0001 | — | TypeScript PI skeleton |
-| 0002 | — | Domain authority (CC persona TOML) |
-| 0003 | — | Code mode soft-depends (context-mode + codegraph) |
-| 0004 | — | Kernel split seam architecture |
-| 0005 | 2 | Architecture grill round 2 |
-| 0006 | 3 | Seam wiring (composition root, billing dimension, seam wiring) |
-| 0007 | 4 | PiAgentCore integration |
-| 0008 | 5 | MCP phase 2 design (5 tools, time edge effect, dual transport) |
-| 0009 | 6 | Phase 3 plugin design (hooks, project index, dual DB, two-stage recall) |
-| 0010 | 7 | Post-phase 3 evolution (L1 hot-cold hybrid, SessionStart hook, progressive disclosure) |
-| 0011 | 8 | SessionStart hook + progressive disclosure implementation (Cursor dual channel, .mdc fallback) |
+| 0042 | 39 | Observational data feeding |
+| 0043 | 40 | Consumed/synthetic switch governance |
+| 0044 | 41 | ADR-0043 audit remediation governance |
+| 0045 | 42 | Multi-arm RRF fusion governance |
+| 0046 | 43 | Multi-arm RRF fusion gain observation |
+
+Earlier decisions remain in `docs/adr/0001-0041`.
 
 ## Build & test
 
@@ -64,4 +62,4 @@ curl http://127.0.0.1:3099/health  # -> {"status":"ok",...}
 
 - `docs/ponytail-debt-ledger.md` — tracked technical debt with upgrade triggers
 - `.scratch/<feature-slug>/` — local-markdown issue tracker (not committed to git)
-- `AGENTS.md` — minimal project agent-skill metadata (13 lines)
+- `AGENTS.md` — project agent-skill metadata

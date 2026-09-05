@@ -393,7 +393,7 @@ export class RetroaererdEngine {
           scoreKind: SCORE_KIND,
           nativeScores,
         },
-        webProviderLedger,
+        observational: { webProviderLedger },
       },
     };
     const attributionReport = attachAttribution(envelope);

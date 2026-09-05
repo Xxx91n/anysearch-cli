@@ -128,8 +128,11 @@ export interface FusedEnvelope {
     // ADR-0045 D2/D3 (r118 impl): pre-truncation WebFusion provenance snapshot. nativeScores are
     // raw provider scores per normalized url (web-only extension); they never enter fusion ranking.
     fusion?: FusionProvenance & { nativeScores: Record<string, Record<string, number>> };
-    // ADR-0046 D5: observational-only web provider ledger; no threshold, no gate, no table.
-    webProviderLedger?: WebProviderLedger;
+    // ADR-0046 D5: observational-only zone. webProviderLedger is the engine-side
+    // counterpart to the eval report's Observational zone; no threshold, no gate, no table.
+    observational?: {
+      webProviderLedger?: WebProviderLedger;
+    };
   };
 
   // ADR-0034 D4: first-class attribution field — claim-level evidence linkage, orthogonal to verified:false.
