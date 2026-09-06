@@ -167,8 +167,8 @@ _Avoid_: delete-on-flaky, threshold bump for flake, infinite retry
 _Avoid_: sampling calibration set from golden cases, Likert rubric, calibration artifacts mixed into golden fingerprint
 
 ## Kappa CI Lower Bound（κ 置信区间下界门禁）
-judge 启用的判据：Cohen's κ 的 percentile bootstrap CI（5000 次重采样）下界 ≥ 0.6，而非点估计——n=30-50 时 CI 宽可达 0.4，点估计会系统性高估可信度。报告双报 raw agreement + Gwet's AC1 兜底（kappa paradox）。ADR-0029 D2。
-_Avoid_: point-estimate kappa gate, asymptotic CI on small n, Fleiss on 2-rater setup
+零标注冷启动期的 interim judge 判据：Cohen's κ 的 percentile bootstrap CI（5000 次重采样）下界 ≥ 0.6。正式 L2 判据预注册为 `AC1 CI 下界 ≥ 0.7 ∧ po ≥ 0.8 ∧ CI 宽度 ≤ 0.4`；κ 在正式阶段仅作边际差异诊断。报告必须双报 raw agreement + Gwet's AC1。ADR-0029 D2 / ADR-0049 D10/D13。
+_Avoid_: point-estimate kappa gate, asymptotic CI on small n, Fleiss on 2-rater setup, post-hoc threshold calibration
 
 ## Scope Discipline（当轮范围纪律）
 一次 grill 一个主题 ADR + 身份明确的可选伴随项：内聚工程项进 Decision 段，到期 chore 走独立 commit + CHANGELOG Removed，显式拒绝项单列。反模式是无记录的 while-you're-at-it 顺手改。ADR-0029 D6 + AGENTS.md Scope discipline。
@@ -678,20 +678,44 @@ postmortem 进入 LATE 后，允许显式确认迟交并继续推进，但该确
 _Avoid_: 免费重置义务、绕过账本记账、多次确认形成规范漂移、把确认当成 postmortem 完成
 
 ## Calibration Labels File（校准标签行集）
-增长型人工 relevance 标签的 system of record，以可审计的文本文件保存，行级 diff 和 promote 都在这里发生；冻结 case 定义仍留在源码 fixture，不与标签数据同生命周期。
+Relevance labels 的文本 system of record；每个 revision 的 JSONL 载荷只读，可写草稿只存在于未 commit buffer。行级 diff 和 promote 都在 revision 边界发生。
 _Avoid_: 把标签写回源码 case、放入运行产物目录、让 CI 自动写标签、用单对象 JSON 承载增长型标注
 
-## Calibration Manifest（校准 manifest）
-与标签行集配对的可验证元数据，记录 schema version、case fingerprint、labels fingerprint、annotator、rubric/judge 快照和 promote 状态；promote 时生成或更新。
-_Avoid_: 只存标签不存版本、promote 后不更新指纹、把 manifest 作为运行时临时报告、缺少 seed 与标签的一致性校验
+## Calibration Revision Registry（校准 revision registry）
+内容寻址的不可变 revision 目录加 registry index 与 head/labels 指针；revision 落盘后不可变，当前态由可变指针决定。
+_Avoid_: 覆盖已冻结 revision、用单一全局 stage 表达状态、把 head/labels 分文件无序更新
+
+## Calibration State File（校准状态文件）
+`state.json` 作为 `{head, labels, seedRef, schemaVersion}` 的单一原子提交点，通过同目录 temp + fsync + rename 切换。
+_Avoid_: 多指针分文件提交、原地覆盖写、跨卷 rename
+
+## Calibration Journal（校准 journal）
+append-only 事件流，记录 label、promote、retire、seed import 和 head move；reconcile 用单调 seq 与 state.json 对账。
+_Avoid_: 原地改写历史事件、journal 与 state 乱序提交、用 event log 加 replay 引擎替代全量 revision 快照
 
 ## Calibration Promote（校准标签 promote）
-用户显式把人审标签行集冻结为权威版本的治理动作；只更新 promote 状态和版本，不替代 judge κ CI 门禁，也不自动把标签并入 golden gate。
+用户显式把候选 revision 冻结为权威版本的治理动作；只更新指针和版本，不替代 judge 门禁，也不把标签并入 golden gate。
 _Avoid_: n 达到阈值即自动 promote、ship-gate 顺手 promote、把未校准 judge 的结论直接晋升、用 promote 绕过人工复核
 
 ## Judge Calibration（judge 校准）
-用独立人工标签估计 judge 的 κ/AC1 置信区间和功效，只有下界达标且样本量满足预注册门槛时才允许 judge 报告参与下游决策；模型、rubric 或标签分布变化会要求重新校准。
-_Avoid_: 用 judge 自评作为校准证据、展示 judge 判定后再让人标、把 n 下限当作可信度保证、静默切换 judge 版本后继续沿用旧校准
+用独立盲标人标签估计 judge 与人的一致性。正式判据为 pooled AC1 CI 下界 ≥ 0.7、po ≥ 0.8、CI 宽度 ≤ 0.4；Cohen κ 仅作边际差异诊断。模型、rubric 或标签分布变化要求重新校准。
+_Avoid_: 用 judge 自评作为校准证据、展示 judge 判定后再让人标、把 n 下限当作可信度保证、静默切换 judge 版本后继续沿用旧校准、数据后挑系数
+
+## Score Bridge（score bridge）
+候选 revision 与冻结 vN 之间的逐 case 集合差异报告：unchanged、added、removed、revised-case，并报告翻转方向和 exact McNemar。它只证明变化，不证明正确性。
+_Avoid_: 用候选与旧版的一致率替代盲标人效度证据、把 bridge 分数并入模型增益、无理由 removed/revised
+
+## Insufficient Calibration（insufficient 三态）
+CI 宽度过大或组内样本不足时，只报告“不可裁决”，不写 pass/fail；组级红旗用于定位 rubric/case 问题，不参与 judge 发证。
+_Avoid_: 小 n 下强行 pass/fail、组内 5-6 例直接做 chance-corrected 门禁、用多数票掩盖两人分歧
+
+## Calibration Seed Snapshot（校准 seed 快照）
+冻结 `calibration-cases.ts` 对应的不可变 `seeds/calibration-set-vN.*` 快照；未声明漂移保持 exit 12，声明 flip 后走新快照加重校准。
+_Avoid_: 就地改 frozen seed、绕过双锚校验、把 label 写回 seed 数组
+
+## Case Tombstone（case retire）
+`case_retire` journal 事件携带 `retiredAt`、`reason`、`supersededBy?`；不改历史记录，state 投影对 retired case 标记隐藏。
+_Avoid_: 删除 label 行代替 retire、无 reason 的静默移除、让 retired case 参与下一次 active-set promote 覆盖计算
 
 
 *End of Glossary*
