@@ -19,3 +19,6 @@ export * from "./t0-projection";
 // ADR-0034: claim-level attribution layer (deterministic multi-signal fusion).
 export * from "./attribution";
 export * from "./attribution-schema";
+
+// ADR-0050 D2/D5: beta calibration + held-out dual thresholds (pure core).
+export * from "./calibrate";

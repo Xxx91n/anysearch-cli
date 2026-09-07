@@ -1,0 +1,33 @@
+{
+  "schema": "anysearch/attribution-gold-preregistration@1",
+  "line": "attribution-gold",
+  "rubric": "supported: the cited retrieval evidence affirmatively supports the claim as current and on-topic. uncertain: evidence is partial, stale, or insufficient to affirm or contradict. unsupported: deterministic contradiction or materially incompatible evidence. Annotate strictly.",
+  "rubricHash": "a057d6e4f1ba1d04",
+  "iaaCriteria": {
+    "metric": "Gwet AC1",
+    "ac1LowerBound": 0.8,
+    "rawAgreementLowerBound": 0.85,
+    "ciWidthUpperBound": 0.35
+  },
+  "sampleTarget": {
+    "nMin": 30,
+    "targetPrecision": 0.9
+  },
+  "betaFamily": {
+    "parameters": ["a", "b", "c"],
+    "identity": { "a": 1, "b": 1, "c": 0 },
+    "scoreClamp": 1e-6
+  },
+  "thresholdSelection": {
+    "protocol": "held-out reverse lookup",
+    "minSamplesPerSide": 10,
+    "targetPrecision": 0.9,
+    "fallback": { "supported": 0.6, "unsupported": 0.6, "degraded": true }
+  },
+  "splits": {
+    "fit": "chronological",
+    "select": "chronological held-out",
+    "eval": "chronological held-out",
+    "randomOnlyDiagnostic": true
+  }
+}

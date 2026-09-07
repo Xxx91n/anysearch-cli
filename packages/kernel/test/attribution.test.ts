@@ -378,3 +378,36 @@ describe("applyJudgeEscalation — host-injected judge (F2)", () => {
     assert.equal(rep.judgeEnhanced, false);
   });
 });
+
+// ADR-0050 D5: calibrated path — beta params + held-out dual thresholds;
+// degraded calibration falls back to the legacy 0.6 floor.
+describe("classifyClaim — calibrated dual thresholds (ADR-0050 D5)", () => {
+  const calibration = {
+    params: { a: 1, b: 1, c: 0 }, // identity
+    thresholds: { supported: 0.5, unsupported: 0.2, degraded: false },
+  };
+  it("exact-overlap evidence -> supported", () => {
+    const result = classifyClaim("Exercise is good for health.", {
+      retrievalResults: [{ url: "u", title: "", snippet: "Exercise is good for health.", source: "exa" as const }],
+      calibration,
+    });
+    assert.equal(result.label, "supported");
+  });
+  it("very low fused score -> unsupported via lower threshold", () => {
+    const result = classifyClaim("Alpha beta gamma delta epsilon zeta.", {
+      retrievalResults: [{ url: "u", title: "", snippet: "totally unrelated words plus alpha only", source: "exa" as const }],
+      calibration,
+    });
+    assert.equal(result.label, "unsupported");
+    assert.ok(result.rationale.includes("unsupported threshold"));
+  });
+  it("degraded calibration falls back to legacy 0.6 floor", () => {
+    const fallback = { params: calibration.params, thresholds: { supported: 0.6, unsupported: 0.6, degraded: true } };
+    // fused = 0.35*1 + 0.15 = 0.5 >= 0.5 under calibrated, but legacy floor is 0.6 -> uncertain
+    const result = classifyClaim("Exercise is good for health.", {
+      retrievalResults: [{ url: "u", title: "", snippet: "Exercise is good for health.", source: "exa" as const }],
+      calibration: fallback,
+    });
+    assert.equal(result.label, "uncertain");
+  });
+});

@@ -19,6 +19,11 @@ import type {
   GapRequest,
   NormalizedResult,
 } from "@anysearch/retriever";
+import {
+  betaCalibrate,
+  LEGACY_ATTRIBUTION_THRESHOLD,
+  type AttributionCalibration,
+} from "./calibrate";
 
 // ---------------------------------------------------------------------------
 // tokenize / jaccard / cosine — small math helpers used by classifyClaim
@@ -169,6 +174,10 @@ export interface ClassifyContext {
   cosineFn?: (claimText: string) => number | undefined;
   // Entity hits from ADR-0031 entity link (lowercased token strings).
   entityHits?: string[];
+  // ADR-0050 D5: optional calibrated path. When thresholds are present and not
+  // degraded, classification uses beta-calibrated probability vs held-out dual
+  // thresholds; degraded or absent calibration falls back to the legacy floor.
+  calibration?: AttributionCalibration;
 }
 
 export interface ClaimClassification {
@@ -230,18 +239,28 @@ export function classifyClaim(claimText: string, ctx: ClassifyContext): ClaimCla
     label = "unsupported";
   } else if (top.length === 0) {
     label = "uncertain"; // no evidence — honest, not fabricated
-  } else if (confidence >= 0.6) {
+  } else if (ctx.calibration && !ctx.calibration.thresholds.degraded) {
+    const p = betaCalibrate(confidence, ctx.calibration.params);
+    label =
+      p >= ctx.calibration.thresholds.supported
+        ? "supported"
+        : p <= ctx.calibration.thresholds.unsupported
+          ? "unsupported"
+          : "uncertain";
+  } else if (confidence >= LEGACY_ATTRIBUTION_THRESHOLD) {
     label = "supported";
   } else {
     label = "uncertain";
   }
 
   const rationale =
-    label === "unsupported"
+    label === "unsupported" && hasContradiction
       ? "contradiction-detected: snippet contains negation keywords with high term overlap"
+      : label === "unsupported"
+        ? "calibrated probability below unsupported threshold (" + String(ctx.calibration?.thresholds.unsupported) + ")"
       : label === "supported"
-      ? "fused=" + confidence.toFixed(2) + " (bm25=" + bm25Score.toFixed(2) + " cos=" + cosScore.toFixed(2) + " arm=" + armScore + " entity=" + entityScore.toFixed(2) + ")"
-      : "fused=" + confidence.toFixed(2) + " below supported threshold or no evidence overlap; deterministic ambiguity";
+        ? "fused=" + confidence.toFixed(2) + " (bm25=" + bm25Score.toFixed(2) + " cos=" + cosScore.toFixed(2) + " arm=" + armScore + " entity=" + entityScore.toFixed(2) + ")"
+        : "fused=" + confidence.toFixed(2) + " below supported threshold or no evidence overlap; deterministic ambiguity";
 
   return { label, confidence, evidence, rationale };
 }
@@ -253,6 +272,8 @@ export function classifyClaim(claimText: string, ctx: ClassifyContext): ClaimCla
 export interface BuildAttributionOptions {
   cosineFn?: (claimText: string) => number | undefined;
   entityHits?: string[];
+  // ADR-0050 D5: calibrated path; absent or degraded falls back to legacy floor.
+  calibration?: AttributionCalibration;
   // Max claims produced per envelope (bounded loop, D2).
   maxClaims?: number;
   // ISO date to stamp the report (injectable for determinism in tests).
@@ -293,6 +314,7 @@ export function buildAttributionReport(
         retrievalResults: envelope.results,
         cosineFn: opts.cosineFn,
         entityHits: opts.entityHits,
+        calibration: opts.calibration,
       });
       claims.push({
         id: "c" + ++cid,

@@ -27,3 +27,6 @@ export * from "./eval/skip-ledger";
 
 // ADR-0049 D2-D13: pure calibration revision lifecycle surface.
 export * from "./eval/revision-core";
+
+// ADR-0050 D3/D4: independent attribution-gold binary claim label line.
+export * from "./eval/attribution-gold";

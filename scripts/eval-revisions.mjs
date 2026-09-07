@@ -23,9 +23,16 @@ async function run() {
   const labelsCore = await import("../packages/store/src/eval/calibration-labels.ts");
   const seed = await import("../packages/store/src/eval/calibration-cases.ts");
 
-  const revisionRoot = process.env.ANS_CALIBRATION_REVISION_ROOT
-    ? path.resolve(process.env.ANS_CALIBRATION_REVISION_ROOT)
-    : path.join(root, "packages", "store", "calibration-revisions");
+  // ADR-0050 D6: line is a first-class namespace. --line attribution-gold shares
+  // the rev verbs but stores revisions under an isolated root; label lifecycle
+  // for that line lives in scripts/attribution-gold-labels.mjs.
+  const line = argValue("--line") || "calibration";
+  if (!/^[a-z][a-z0-9-]*$/.test(line)) fail(2, "--line must be a slug");
+  const rootEnv = line === "attribution-gold" ? "ANS_ATTRIBUTION_GOLD_REVISION_ROOT" : "ANS_CALIBRATION_REVISION_ROOT";
+  const defaultRoot = line === "attribution-gold" ? "attribution-gold-revisions" : "calibration-revisions";
+  const revisionRoot = process.env[rootEnv]
+    ? path.resolve(process.env[rootEnv])
+    : path.join(root, "packages", "store", defaultRoot);
   const statePath = path.join(revisionRoot, "state.json");
   const registryPath = path.join(revisionRoot, "registry.json");
   const journalPath = path.join(revisionRoot, "journal.jsonl");
