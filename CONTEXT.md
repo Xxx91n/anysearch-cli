@@ -717,5 +717,21 @@ _Avoid_: 就地改 frozen seed、绕过双锚校验、把 label 写回 seed 数�
 `case_retire` journal 事件携带 `retiredAt`、`reason`、`supersededBy?`；不改历史记录，state 投影对 retired case 标记隐藏。
 _Avoid_: 删除 label 行代替 retire、无 reason 的静默移除、让 retired case 参与下一次 active-set promote 覆盖计算
 
+## Attribution Gold Label Line（归因 gold 标签线）
+独立于 relevance calibration 线的 claim-vs-evidence 二元 ground-truth 标签线；样本流与盲标批次可共享，标签、rubric、fingerprint、manifest 和 head 指针必须物理隔离。ADR-0050。
+_Avoid_: 用 judge 输出当 gold、复用 relevance label 标 claim、让两条线的 promote 互相改指纹
+
+## Fused Score Calibration（fused score 校准）
+把 attribution 的启发式 fused confidence 映射为 supported 后验概率的本地统计校准；小样本默认 beta calibration，isotonic 仅在标注量足够后作为升级路径。ADR-0050。
+_Avoid_: 把 fused score 当概率、未独立校准集就拟合、用 ECE 单指标代替 fit/eval 分离证据
+
+## Attribution Decision Threshold（归因决策双阈值）
+在校准后概率曲线上按预注册目标精度与 held-out 校准集选择的两条阈值：上阈进入 supported，下阈进入 unsupported，中间进入 uncertain 的升级或弃权路径。ADR-0050。
+_Avoid_: 后验调阈值、把阈值塞回 golden、在评价切分上搜索阈值、校准缺失时无限放行
+
+## Calibration Fallback Floor（校准兜底底线）
+校准 revision 缺失、样本不足或指纹漂移时回退 legacy 静态阈值并打 `degraded` 告警；它保持可用性，但不冒充已校准信号。ADR-0050。
+_Avoid_: 校准缺失时崩溃、静默继续、用回退值替代重新校准证据
+
 
 *End of Glossary*

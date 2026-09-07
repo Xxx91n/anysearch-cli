@@ -9,7 +9,7 @@ This repo is **single-context**:
 ```
 /
 ├── CONTEXT.md          ← glossary (domain terms only, no implementation details)
-├── docs/adr/           ← architecture decision records, 0001 through 0049
+├── docs/adr/           ← architecture decision records, 0001 through 0050
 ├── apps/cli/           ← anysearch CLI entry
 ├── apps/mcp/           ← MCP server
 ├── apps/plugin/        ← hooks layer and project-index plugin
