@@ -19,3 +19,12 @@ ADR-0050 closed the beta-fit, label, head, and threshold loop, but packaged CLI/
 - The current single calibration line remains sample-efficient and preserves one head/rollback/audit surface.
 - The `instance` field makes mixed calibration observable without converting observability into an implicit split.
 - Production behavior remains the existing degraded `0.6` floor until the next round actually wires and verifies the active head.
+
+## Implementation round audit amendments (2026-09-09)
+
+Post-implementation audit (two-axis code review + external stat review) locked the following clarifications; they are part of this decision record:
+
+- **D4 fingerprint form**: the canonical sample includes `instance` only when the field is present on the record. @1-era records (no instance field) keep their pre-@2 fingerprints, so promoted bundles stay valid. @1 records upcast losslessly to @2 at parse time (ADR-0043 precedent); the effective default "web" applies via `sampleInstance()`.
+- **D5 split semantics**: the fit/select/eval split is a global chronological 3-way split. Stratification never applies to it, because `instance` is audit-only and must not influence which samples enter fitting or threshold derivation. "Blind batches stratified by instance" is realized at the labeling stage: samples carry `--instance` and annotators label per-instance batches via the existing `--batch` flow.
+- **Revision root default**: `scripts/attribution-calibrate.mjs` and `scripts/eval-revisions.mjs --line attribution-gold` default to `~/.anysearch/attribution-gold-revisions`, the same path the packaged runtime resolves, so a written bundle is what the CLI/MCP actually loads without an env override. `ANS_ATTRIBUTION_GOLD_REVISION_ROOT` overrides both.
+- **Observability**: a degraded fit warns on stderr (cold start is expected; silence was not) and the composition root warns when calibration head loading throws an unexpected fault, while missing heads continue to fail open silently. Empty-set Brier/log-loss are `NaN`, never 0.
