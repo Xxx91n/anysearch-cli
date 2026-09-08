@@ -3,6 +3,7 @@
 import assert from "node:assert";
 import {
   ATTRIBUTION_GOLD_LABEL_SCHEMA,
+  ATTRIBUTION_GOLD_SAMPLE_SCHEMA,
   ATTRIBUTION_GOLD_LINE,
   addLabel,
   binaryFitSamples,
@@ -13,6 +14,7 @@ import {
   parseSampleLines,
   attributionGoldDigest,
   sampleFingerprint,
+  sampleInstance,
   setLabel,
   validateState,
   type AttributionGoldLabel,
@@ -21,8 +23,8 @@ import {
 
 const rubricHash = "a057d6e4f1ba1d04";
 const samples: AttributionGoldSample[] = [
-  { schema: "anysearch/attribution-gold-sample@1", claimId: "c1", claimText: "alpha", fusedScore: 0.9 },
-  { schema: "anysearch/attribution-gold-sample@1", claimId: "c2", claimText: "beta", fusedScore: 0.2 },
+  { schema: ATTRIBUTION_GOLD_SAMPLE_SCHEMA, claimId: "c1", claimText: "alpha", fusedScore: 0.9, instance: "web" },
+  { schema: ATTRIBUTION_GOLD_SAMPLE_SCHEMA, claimId: "c2", claimText: "beta", fusedScore: 0.2 },
 ];
 const labels: AttributionGoldLabel[] = [
   { schema: ATTRIBUTION_GOLD_LABEL_SCHEMA, claimId: "c1", aisLabel: "supported", annotator: "human", annotatedAt: "2026-09-07T00:00:00.000Z", batchId: "b1" },
@@ -59,3 +61,18 @@ const added = addLabel(labels, {
 assert.equal(added.ok, false, "unknown sample is rejected");
 
 console.log("attribution-gold.test: ok");
+
+// ADR-0051 D4: schema @2 segment audit field.
+assert.equal(ATTRIBUTION_GOLD_SAMPLE_SCHEMA, "anysearch/attribution-gold-sample@2", "sample schema is @2");
+assert.equal(sampleInstance(samples[0]!), "web");
+const { instance: _stripped, ...unlabeled } = samples[0]!;
+assert.equal(sampleInstance(unlabeled as AttributionGoldSample), "web", "absent instance defaults to web");
+const memoryVersion = samples.map((s) => ({ ...s, instance: "memory" as const }));
+assert.notEqual(sampleFingerprint(memoryVersion), sampleFingerprint(samples), "instance enters the canonical fingerprint");
+assert.equal(sampleFingerprint([unlabeled as AttributionGoldSample, samples[1]!]), sampleFingerprint(samples), "absent instance fingerprints identically to explicit web");
+// Audit-only: instance must not touch beta fitting inputs.
+assert.deepEqual(binaryFitSamples(memoryVersion, labels).fit, binaryFitSamples(samples, labels).fit, "fit is instance-blind");
+// Old @1 sample records are rejected after the migration.
+const legacy = parseSampleLines(JSON.stringify({ schema: "anysearch/attribution-gold-sample@1", claimId: "c9", claimText: "x", fusedScore: 0.5 }));
+assert.ok(legacy.errors.length > 0, "@1 sample records fail the @2 schema");
+console.log("attribution-gold.test ADR-0051 D4 assertions: ok");

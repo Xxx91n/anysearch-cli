@@ -233,6 +233,33 @@ async function main() {
   assert(result16.metadata.sufficiency!.verdict === "correct", "D3: verdict correct with 5 results, 5 domains, 2 providers");
   assert(result16.metadata.sufficiency!.volume.successfulProviders === 2, "D3: 2 successful providers in metadata");
 
+  // 17. ADR-0051 D1/D2: injected calibration flows into claim classification.
+  const answerProvider: SearchProvider = {
+    id: "ans",
+    modes: ["answer"],
+    async search(): Promise<ProviderEnvelope> {
+      return {
+        provider: "ans",
+        results: [{ url: "https://ex.com/a", title: "T", snippet: "Exercise is good for health.", source: "ans" }],
+        answers: ["Exercise is good for health."],
+        elapsedMs: 5,
+      };
+    },
+  };
+  // Legacy floor: fused = 0.35 + 0.15 = 0.5 < 0.6 -> uncertain.
+  const plain = await new RetroaererdEngine([answerProvider]).search({ query: "health", mode: "answer" });
+  assert(plain.attribution?.claims[0]?.label === "uncertain", "legacy floor yields uncertain", );
+  // Calibrated: identity beta, supported threshold 0.4; measured fused ~0.44 -> supported.
+  const calibrated = await new RetroaererdEngine([answerProvider], {
+    attributionCalibration: { params: { a: 1, b: 1, c: 0 }, thresholds: { supported: 0.4, unsupported: 0.2, degraded: false } },
+  }).search({ query: "health", mode: "answer" });
+  assert(calibrated.attribution?.claims[0]?.label === "supported", "active calibration yields supported");
+  // Degraded calibration keeps the legacy floor.
+  const degraded = await new RetroaererdEngine([answerProvider], {
+    attributionCalibration: { params: { a: 1, b: 1, c: 0 }, thresholds: { supported: 0.6, unsupported: 0.6, degraded: true } },
+  }).search({ query: "health", mode: "answer" });
+  assert(degraded.attribution?.claims[0]?.label === "uncertain", "degraded calibration falls back to legacy floor");
+
   console.log("--- RetroaererdEngine tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);
 }

@@ -9,7 +9,7 @@ import { Value } from "@sinclair/typebox/value";
 export const ATTRIBUTION_GOLD_LINE = "attribution-gold";
 export const ATTRIBUTION_GOLD_LABEL_SCHEMA = "anysearch/attribution-gold-label@1";
 export const ATTRIBUTION_GOLD_MANIFEST_SCHEMA = "anysearch/attribution-gold-manifest@1";
-export const ATTRIBUTION_GOLD_SAMPLE_SCHEMA = "anysearch/attribution-gold-sample@1";
+export const ATTRIBUTION_GOLD_SAMPLE_SCHEMA = "anysearch/attribution-gold-sample@2";
 
 const isoDateTime = () => Type.String({ minLength: 20 });
 
@@ -19,6 +19,12 @@ export const AttributionGoldSampleSchema = Type.Object(
     claimId: Type.String({ minLength: 1 }),
     claimText: Type.String({ minLength: 1 }),
     fusedScore: Type.Number({ minimum: 0, maximum: 1 }),
+    // ADR-0051 D4: audit-only segment marker. Absent means "web" (the line
+    // predates segmentation). Never enters beta fitting or threshold
+    // derivation; samples feed binaryFitSamples by fusedScore only.
+    instance: Type.Optional(
+      Type.Union([Type.Literal("web"), Type.Literal("memory")], { default: "web" }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -78,8 +84,13 @@ function jcs(value: unknown): string {
   return "{" + Object.keys(record).sort().map((key) => JSON.stringify(key) + ":" + jcs(record[key])).join(",") + "}";
 }
 
+// ADR-0051 D4: effective instance with the @2 default applied.
+export function sampleInstance(sample: AttributionGoldSample): "web" | "memory" {
+  return sample.instance ?? "web";
+}
+
 function canonicalSample(sample: AttributionGoldSample): Record<string, unknown> {
-  return { claimId: sample.claimId, claimText: sample.claimText, fusedScore: sample.fusedScore };
+  return { claimId: sample.claimId, claimText: sample.claimText, fusedScore: sample.fusedScore, instance: sampleInstance(sample) };
 }
 
 function canonicalLabel(label: AttributionGoldLabel): Record<string, unknown> {

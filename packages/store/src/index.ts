@@ -31,3 +31,5 @@ export * from "./eval/revision-core";
 // ADR-0050 D3/D4: independent attribution-gold binary claim label line.
 export * from "./eval/attribution-gold";
 export * from "./eval/attribution-calibration";
+// ADR-0051 D5: per-instance observability (audit-only, never gates).
+export * from "./eval/attribution-instance-report";

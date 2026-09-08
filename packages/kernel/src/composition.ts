@@ -9,8 +9,9 @@ import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch/retri
 import type { SearchProvider } from "@anysearch/retriever";
 import { RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort } from "./ports";
-import { loadDomainByName, SqliteSessionStore } from "@anysearch/store";
+import { loadDomainByName, SqliteSessionStore, readActiveCalibrationBundle } from "@anysearch/store";
 import * as path from "node:path";
+import type { AttributionCalibration } from "./calibrate";
 
 // Map provider ids to constructors.
 // ponytail: wrap in try/catch — providers without API keys are skipped, not crashed.
@@ -39,7 +40,34 @@ export function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(home, ".anysearch", "anysearch.db");
 }
 
-export function createEngine(domain?: string, opts?: { dbPath?: string }): CompositionResult {
+// ADR-0051 D1: attribution calibration lives on disk as a revision-root head
+// pointer; only the composition root resolves it. Env override mirrors
+// scripts/attribution-calibrate.mjs; default joins the ~/.anysearch dir convention.
+export function resolveAttributionRevisionRoot(env: NodeJS.ProcessEnv = process.env): string {
+  const explicit = env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT && env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT.trim();
+  if (explicit) return path.resolve(explicit);
+  const home = env.USERPROFILE || env.HOME || ".";
+  return path.join(home, ".anysearch", "attribution-gold-revisions");
+}
+
+// Fail-open: missing/corrupt head or bundle yields undefined and the engine
+// stays on the legacy 0.6 floor (ADR-0050 D5 degraded path).
+export function resolveActiveAttributionCalibration(
+  env: NodeJS.ProcessEnv = process.env,
+): AttributionCalibration | undefined {
+  try {
+    const active = readActiveCalibrationBundle(resolveAttributionRevisionRoot(env));
+    if (!active) return undefined;
+    return Object.freeze({
+      params: Object.freeze({ ...active.bundle.params }),
+      thresholds: Object.freeze({ ...active.bundle.thresholds }),
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+export function createEngine(domain?: string, opts?: { dbPath?: string; attributionCalibration?: AttributionCalibration }): CompositionResult {
   let providers: SearchProvider[] = [];
   let config: DomainConfigPort | undefined;
   let sourceWeights: Record<string, number> | undefined;
@@ -63,7 +91,16 @@ export function createEngine(domain?: string, opts?: { dbPath?: string }): Compo
     providers = Object.values(PROVIDER_FACTORIES).map((f) => f()).filter((p): p is SearchProvider => p !== undefined);
   }
 
-  const retriever: RetrieverPort = new RetroaererdEngine(providers, sourceWeights ? { sourceWeights } : undefined);
+  // ADR-0051 D1: explicit override wins; otherwise resolve the active head on disk.
+  const attributionCalibration = opts?.attributionCalibration ?? resolveActiveAttributionCalibration();
+  const engineOpts: ConstructorParameters<typeof RetroaererdEngine>[1] = {
+    ...(sourceWeights ? { sourceWeights } : {}),
+    ...(attributionCalibration ? { attributionCalibration } : {}),
+  };
+  const retriever: RetrieverPort = new RetroaererdEngine(
+    providers,
+    Object.keys(engineOpts).length ? engineOpts : undefined,
+  );
   // ponytail: share one SessionStore across CLI + MCP. In-memory DB by default;
   // opts.dbPath enables durable store for maintenance commands (ADR-0037).
   const store = new SqliteSessionStore(opts?.dbPath ?? ":memory:");

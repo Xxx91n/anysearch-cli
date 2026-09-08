@@ -31,6 +31,7 @@ function readJsonl(file) {
 async function run() {
   const kernel = await import("../packages/kernel/src/calibrate.ts");
   const store = await import("../packages/store/src/eval/attribution-gold.ts");
+  const instanceReportMod = await import("../packages/store/src/eval/attribution-instance-report.ts");
   const bundles = await import("../packages/store/src/eval/attribution-calibration.ts");
   const preregistration = JSON.parse(fs.readFileSync(preregistrationPath, "utf8"));
 
@@ -44,13 +45,30 @@ async function run() {
   const { fit, uncertain, coverage } = store.binaryFitSamples(samples, labels);
   // Chronological three-way split (D7 / preregistration splits): the JSONL
   // stream is append-only, so file order is arrival order. No re-sorting.
+  // ADR-0051 D5: the split is stratified by sample instance (audit field
+  // only); ratios apply per stratum and slices merge back in arrival order.
   const fitRatio = Number(argValue("--fit-ratio") ?? 0.6);
   const selectRatio = Number(argValue("--select-ratio") ?? 0.2);
-  const fitEnd = Math.floor(fit.length * fitRatio);
-  const selectEnd = Math.floor(fit.length * (fitRatio + selectRatio));
-  const fitSlice = fit.slice(0, fitEnd);
-  const selectSlice = fit.slice(fitEnd, selectEnd);
-  const evalSlice = fit.slice(selectEnd);
+  const instanceOf = new Map(samples.map((s) => [s.claimId, store.sampleInstance(s)]));
+  const strata = new Map();
+  fit.forEach((item, index) => {
+    const key = instanceOf.get(item.claimId) ?? "web";
+    if (!strata.has(key)) strata.set(key, []);
+    strata.get(key).push(index);
+  });
+  const fitIdx = [], selectIdx = [], evalIdx = [];
+  for (const indices of strata.values()) {
+    const fEnd = Math.floor(indices.length * fitRatio);
+    const sEnd = Math.floor(indices.length * (fitRatio + selectRatio));
+    fitIdx.push(...indices.slice(0, fEnd));
+    selectIdx.push(...indices.slice(fEnd, sEnd));
+    evalIdx.push(...indices.slice(sEnd));
+  }
+  const ascend = (a, b) => a - b;
+  const pick = (idx) => idx.sort(ascend).map((i) => fit[i]);
+  const fitSlice = pick(fitIdx);
+  const selectSlice = pick(selectIdx);
+  const evalSlice = pick(evalIdx);
   const fitResult = kernel.fitBetaCalibration(fitSlice);
   const selectSamples = selectSlice.map((sample) => ({ score: sample.score, label: sample.label }));
   // D4 cold-start gate: nMin is judged on the whole labeled binary set, not
@@ -114,6 +132,17 @@ async function run() {
     fit: fitResult,
     thresholds,
     gate,
+    // ADR-0051 D5: per-instance observability, computed on the whole labeled
+    // binary set against the active fit params. Audit-only; never gates.
+    byInstance: instanceReportMod.perInstanceReport(
+      fit.map((item) => ({
+        claimId: item.claimId,
+        instance: instanceOf.get(item.claimId) ?? "web",
+        score: item.score,
+        p: kernel.betaCalibrate(item.score, fitResult.params),
+        label: item.label,
+      })),
+    ),
     evaluation: {
       sensitivity: confusion.sensitivity,
       specificity: confusion.specificity,

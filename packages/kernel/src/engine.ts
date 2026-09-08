@@ -9,6 +9,7 @@ import { rrfRank, FUSION_REGISTRY, SCORE_KIND } from "@anysearch/retriever";
 import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort } from "./ports";
 import { attachAttribution, applyJudgeEscalation, type JudgeFn } from "./attribution";
+import type { AttributionCalibration } from "./calibrate";
 
 // Sufficiency gate config: minimum quality thresholds for a search result.
 // atomcode research: min angles (providers) / min fetches (results) / min domains / cross-engine verify.
@@ -195,14 +196,18 @@ export class RetroaererdEngine {
   // ADR-0045 D2/D4: optional domain sources.weights overlay (user preference, never gained from
   // observation). Invalid values are rejected at domain load (fail-fast); absent = equal weights.
   private sourceWeights?: Record<string, number>;
+  // ADR-0051 D1: active attribution calibration, injected once by the composition
+  // root (which owns the revision-root file I/O). Absent = legacy 0.6 floor.
+  private attributionCalibration?: AttributionCalibration;
 
   // ADR-0006 decision 1C: constructor accepts providers array.
   // ADR-0006 decision 2A: optional BudgetLedger + sessionId for per-call billing.
-  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; attributionJudge?: JudgeFn; sourceWeights?: Record<string, number> }) {
+  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; attributionJudge?: JudgeFn; sourceWeights?: Record<string, number>; attributionCalibration?: AttributionCalibration }) {
     this.ledger = opts?.ledger;
     this.sessionId = opts?.sessionId;
     this.attributionJudge = opts?.attributionJudge;
     this.sourceWeights = opts?.sourceWeights;
+    this.attributionCalibration = opts?.attributionCalibration;
     for (const p of providers) {
       this.providers.set(p.id, p);
     }
@@ -396,7 +401,12 @@ export class RetroaererdEngine {
         observational: { webProviderLedger },
       },
     };
-    const attributionReport = attachAttribution(envelope);
+    // ADR-0051 D1/D2: claim-level fused confidence is the only calibrated object;
+    // an absent or degraded calibration keeps the legacy 0.6 floor.
+    const attributionReport = attachAttribution(
+      envelope,
+      this.attributionCalibration ? { calibration: this.attributionCalibration } : undefined,
+    );
     if (this.attributionJudge) {
       // Judge escalation is bounded inside applyJudgeEscalation (max 3 calls/envelope).
       await applyJudgeEscalation(attributionReport, this.attributionJudge);

@@ -82,7 +82,9 @@ async function run() {
     if (scoreText === undefined || !Number.isFinite(Number(scoreText))) fail(2, "--score must be a finite number");
     const fusedScore = Number(scoreText);
     if (fusedScore < 0 || fusedScore > 1) fail(2, "--score must be in [0,1]");
-    return { schema: core.ATTRIBUTION_GOLD_SAMPLE_SCHEMA, claimId, claimText, fusedScore };
+    const instance = argValue("--instance") ?? "web";
+    if (!["web", "memory"].includes(instance)) fail(2, "--instance must be web|memory");
+    return { schema: core.ATTRIBUTION_GOLD_SAMPLE_SCHEMA, claimId, claimText, fusedScore, instance };
   }
 
   function labelInput() {
@@ -119,7 +121,7 @@ async function run() {
     } else if (sub === "list") {
       const { samples, errors } = readSamples();
       if (errors.length) fail(2, errors.join("; "));
-      process.stdout.write(samples.map((sample) => [sample.claimId, sample.fusedScore, sample.claimText].join("\t")).join("\n") + (samples.length ? "\n" : ""));
+      process.stdout.write(samples.map((sample) => [sample.claimId, core.sampleInstance(sample), sample.fusedScore, sample.claimText].join("\t")).join("\n") + (samples.length ? "\n" : ""));
     } else {
       fail(2, "unknown sample subcommand");
     }
