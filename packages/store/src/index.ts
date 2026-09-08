@@ -30,3 +30,4 @@ export * from "./eval/revision-core";
 
 // ADR-0050 D3/D4: independent attribution-gold binary claim label line.
 export * from "./eval/attribution-gold";
+export * from "./eval/attribution-calibration";

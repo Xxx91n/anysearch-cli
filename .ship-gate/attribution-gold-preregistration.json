@@ -30,4 +30,6 @@
     "eval": "chronological held-out",
     "randomOnlyDiagnostic": true
   }
+  ,
+  "derivedThresholds": null
 }

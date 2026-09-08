@@ -106,56 +106,52 @@ export function attributionGoldDigest(labels: AttributionGoldLabel[]): string {
   return "sha256:" + sha256(jcs([...labels].sort((a, b) => a.claimId.localeCompare(b.claimId)).map(canonicalLabel)));
 }
 
-export function parseSampleLine(line: string, lineNumber: number): { sample: AttributionGoldSample | null; error: string | null } {
-  if (line.trim() === "") return { sample: null, error: null };
+// One JSONL parse shape for every record kind on the line: trim -> JSON.parse
+// -> Value.Check -> numbered error string.
+function parseRecordLine(line: string, lineNumber: number, schema: Parameters<typeof Value.Check>[0]): { record: unknown; error: string | null } {
+  if (line.trim() === "") return { record: null, error: null };
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
   } catch (error) {
-    return { sample: null, error: "line " + lineNumber + ": invalid JSON: " + String(error && (error as Error).message) };
+    return { record: null, error: "line " + lineNumber + ": invalid JSON: " + String(error && (error as Error).message) };
   }
-  if (!Value.Check(AttributionGoldSampleSchema, parsed)) {
-    return { sample: null, error: "line " + lineNumber + ": schema mismatch: " + JSON.stringify(parsed) };
+  if (!Value.Check(schema, parsed)) {
+    return { record: null, error: "line " + lineNumber + ": schema mismatch: " + JSON.stringify(parsed) };
   }
-  return { sample: parsed as AttributionGoldSample, error: null };
+  return { record: parsed, error: null };
+}
+
+function parseRecordLines<T>(text: string, schema: Parameters<typeof Value.Check>[0]): { records: T[]; errors: string[] } {
+  const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
+  const records: T[] = [];
+  const errors: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const result = parseRecordLine(lines[i]!, i + 1, schema);
+    if (result.record) records.push(result.record as T);
+    if (result.error) errors.push(result.error);
+  }
+  return { records, errors };
+}
+
+export function parseSampleLine(line: string, lineNumber: number): { sample: AttributionGoldSample | null; error: string | null } {
+  const result = parseRecordLine(line, lineNumber, AttributionGoldSampleSchema);
+  return { sample: (result.record as AttributionGoldSample | null) ?? null, error: result.error };
 }
 
 export function parseSampleLines(text: string): { samples: AttributionGoldSample[]; errors: string[] } {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
-  const samples: AttributionGoldSample[] = [];
-  const errors: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const result = parseSampleLine(lines[i]!, i + 1);
-    if (result.sample) samples.push(result.sample);
-    if (result.error) errors.push(result.error);
-  }
-  return { samples, errors };
+  const result = parseRecordLines<AttributionGoldSample>(text, AttributionGoldSampleSchema);
+  return { samples: result.records, errors: result.errors };
 }
 
 export function parseLabelLine(line: string, lineNumber: number): { label: AttributionGoldLabel | null; error: string | null } {
-  if (line.trim() === "") return { label: null, error: null };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(line);
-  } catch (error) {
-    return { label: null, error: "line " + lineNumber + ": invalid JSON: " + String(error && (error as Error).message) };
-  }
-  if (!Value.Check(AttributionGoldLabelSchema, parsed)) {
-    return { label: null, error: "line " + lineNumber + ": schema mismatch: " + JSON.stringify(parsed) };
-  }
-  return { label: parsed as AttributionGoldLabel, error: null };
+  const result = parseRecordLine(line, lineNumber, AttributionGoldLabelSchema);
+  return { label: (result.record as AttributionGoldLabel | null) ?? null, error: result.error };
 }
 
 export function parseLabelLines(text: string): { labels: AttributionGoldLabel[]; errors: string[] } {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
-  const labels: AttributionGoldLabel[] = [];
-  const errors: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const result = parseLabelLine(lines[i]!, i + 1);
-    if (result.label) labels.push(result.label);
-    if (result.error) errors.push(result.error);
-  }
-  return { labels, errors };
+  const result = parseRecordLines<AttributionGoldLabel>(text, AttributionGoldLabelSchema);
+  return { labels: result.records, errors: result.errors };
 }
 
 export function parseManifest(text: string): { manifest: AttributionGoldManifest | null; error: string | null } {

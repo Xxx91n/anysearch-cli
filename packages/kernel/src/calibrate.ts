@@ -40,6 +40,9 @@ export interface AttributionCalibration {
 
 export interface ThresholdDerivationOptions {
   minSamplesPerSide?: number;
+  // Preregistration cold-start gate (D4): below this many total binary fit
+  // samples the line stays degraded regardless of per-side counts.
+  minSamplesTotal?: number;
   legacySupported?: number;
   legacyUnsupported?: number;
 }
@@ -53,6 +56,10 @@ export interface ThresholdGateResult {
 
 export const BETA_IDENTITY: BetaCalibrationParams = { a: 1, b: 1, c: 0 };
 export const LEGACY_ATTRIBUTION_THRESHOLD = 0.6;
+// One-sided 95% z for the precision floor gate, matching industry CI gates
+// (vLLM lm-eval gate, sigeval). Lower-bound gates are one-sided by nature;
+// a two-sided z would silently make the nominal 95% gate a ~97.5% one.
+export const WILSON_Z_ONE_SIDED_95 = 1.6448536269514722;
 const EPSILON = 1e-6;
 const MAX_ITERATIONS = 1000;
 const LEARNING_RATE = 0.1;
@@ -77,9 +84,11 @@ export function betaCalibrate(score: number, params: BetaCalibrationParams): num
   return stableSigmoid(logit);
 }
 
-function features(score: number): [number, number, number] {
+// Beta calibration (Kull 2017) logistic features for a raw score s:
+// log(s), -log(1-s), and the bias term.
+function features(score: number): { logS: number; negLog1mS: number; bias: 1 } {
   const s = clampProbability(score);
-  return [Math.log(s), -Math.log(1 - s), 1];
+  return { logS: Math.log(s), negLog1mS: -Math.log(1 - s), bias: 1 };
 }
 
 export function brierScore(samples: CalibrationSample[], params: BetaCalibrationParams): number {
@@ -120,8 +129,7 @@ export function fitBetaCalibration(
   const learningRate = options.learningRate ?? LEARNING_RATE;
   const n = samples.length;
   const prepared = samples.map((sample) => {
-    const [fa, fb, fc] = features(sample.score);
-    return { ...sample, fa, fb, fc };
+    return { ...sample, ...features(sample.score) };
   });
 
   let previousLoss = Number.POSITIVE_INFINITY;
@@ -133,11 +141,11 @@ export function fitBetaCalibration(
     let currentLoss = 0;
 
     for (const sample of prepared) {
-      const z = c + a * sample.fa + b * sample.fb;
+      const z = c + a * sample.logS + b * sample.negLog1mS;
       const p = stableSigmoid(z);
       const error = p - sample.label;
-      gradA += error * sample.fa;
-      gradB += error * sample.fb;
+      gradA += error * sample.logS;
+      gradB += error * sample.negLog1mS;
       gradC += error;
       currentLoss += -(
         sample.label * Math.log(Math.max(EPSILON, p)) +
@@ -190,6 +198,7 @@ export function deriveThresholds(
   options: ThresholdDerivationOptions = {},
 ): AttributionThresholds {
   const minSamplesPerSide = options.minSamplesPerSide ?? 10;
+  const minSamplesTotal = options.minSamplesTotal ?? 0;
   const legacySupported = options.legacySupported ?? LEGACY_ATTRIBUTION_THRESHOLD;
   const legacyUnsupported = options.legacyUnsupported ?? LEGACY_ATTRIBUTION_THRESHOLD;
   const fallback: AttributionThresholds = {
@@ -199,6 +208,7 @@ export function deriveThresholds(
   };
 
   if (!samples.length || targetPrecision < 0 || targetPrecision > 1) return fallback;
+  if (samples.length < minSamplesTotal) return fallback;
 
   const thresholds = uniqueThresholds(samples.map((sample) => sample.score));
   const supportedCandidates = thresholds
@@ -253,10 +263,10 @@ export function deriveThresholds(
   };
 }
 
-function wilsonLower(successes: number, total: number): number {
+export function wilsonLowerBound(successes: number, total: number): number {
   if (!total) return 0;
   const p = successes / total;
-  const z = 1.959963984540054;
+  const z = WILSON_Z_ONE_SIDED_95;
   const denominator = 1 + z * z / total;
   const centre = p + z * z / (2 * total);
   const margin = z * Math.sqrt((p * (1 - p) + z * z / (4 * total)) / total);
@@ -270,8 +280,8 @@ export function evaluateThresholdGate(
 ): ThresholdGateResult {
   const supported = samples.filter((sample) => sample.score >= thresholds.supported);
   const unsupported = samples.filter((sample) => sample.score <= thresholds.unsupported);
-  const supportedLower = wilsonLower(supported.reduce((sum, sample) => sum + sample.label, 0), supported.length);
-  const unsupportedLower = wilsonLower(unsupported.reduce((sum, sample) => sum + (1 - sample.label), 0), unsupported.length);
+  const supportedLower = wilsonLowerBound(supported.reduce((sum, sample) => sum + sample.label, 0), supported.length);
+  const unsupportedLower = wilsonLowerBound(unsupported.reduce((sum, sample) => sum + (1 - sample.label), 0), unsupported.length);
   const decision =
     thresholds.degraded || !supported.length || !unsupported.length
       ? "warn"
@@ -279,4 +289,49 @@ export function evaluateThresholdGate(
         ? "pass"
         : "fail";
   return { decision, supportedWilsonLower: supportedLower, unsupportedWilsonLower: unsupportedLower, targetPrecision };
+}
+
+// ADR-0050 D2: binary sens/spec + prevalence as a cross-check on the
+// dual-threshold decision, computed on a held-out segment.
+export interface ConfusionStats {
+  sensitivity: number;
+  specificity: number;
+  prevalence: number;
+  positives: number;
+  negatives: number;
+  truePositives: number;
+  trueNegatives: number;
+  falsePositives: number;
+  falseNegatives: number;
+}
+
+export function confusionStats(samples: CalibrationSample[], thresholds: AttributionThresholds): ConfusionStats {
+  let truePositives = 0;
+  let trueNegatives = 0;
+  let falsePositives = 0;
+  let falseNegatives = 0;
+  let positives = 0;
+  let negatives = 0;
+  for (const sample of samples) {
+    if (sample.label === 1) {
+      positives += 1;
+      if (sample.score >= thresholds.supported) truePositives += 1;
+      else falseNegatives += 1;
+    } else {
+      negatives += 1;
+      if (sample.score <= thresholds.unsupported) trueNegatives += 1;
+      else falsePositives += 1;
+    }
+  }
+  return {
+    sensitivity: positives ? truePositives / positives : 0,
+    specificity: negatives ? trueNegatives / negatives : 0,
+    prevalence: samples.length ? positives / samples.length : 0,
+    positives,
+    negatives,
+    truePositives,
+    trueNegatives,
+    falsePositives,
+    falseNegatives,
+  };
 }
