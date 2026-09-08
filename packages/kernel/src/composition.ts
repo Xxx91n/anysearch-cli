@@ -62,7 +62,11 @@ export function resolveActiveAttributionCalibration(
       params: Object.freeze({ ...active.bundle.params }),
       thresholds: Object.freeze({ ...active.bundle.thresholds }),
     });
-  } catch {
+  } catch (error) {
+    // Fail-open stays, but a thrown fault (I/O, parse) is unexpected - surface
+    // it instead of silently decaying to the legacy floor with no trace.
+    // stderr only: MCP servers must keep stdout protocol-pure (ADR-0020 D1.1).
+    process.stderr.write("[anysearch] attribution calibration load failed: " + String(error && (error as Error).message || error) + "\n");
     return undefined;
   }
 }

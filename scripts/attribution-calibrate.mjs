@@ -4,6 +4,7 @@
 // on select, the gate and sens/spec cross-check run on held-out eval.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -45,30 +46,18 @@ async function run() {
   const { fit, uncertain, coverage } = store.binaryFitSamples(samples, labels);
   // Chronological three-way split (D7 / preregistration splits): the JSONL
   // stream is append-only, so file order is arrival order. No re-sorting.
-  // ADR-0051 D5: the split is stratified by sample instance (audit field
-  // only); ratios apply per stratum and slices merge back in arrival order.
+  // ADR-0051 audit fix: the split is global, not stratified by instance.
+  // instance is audit-only (D4) and must not influence which samples enter
+  // fitting or threshold derivation; stratified blind batches live at the
+  // labeling stage (attribution-gold-labels.mjs --instance/--batch).
   const fitRatio = Number(argValue("--fit-ratio") ?? 0.6);
   const selectRatio = Number(argValue("--select-ratio") ?? 0.2);
   const instanceOf = new Map(samples.map((s) => [s.claimId, store.sampleInstance(s)]));
-  const strata = new Map();
-  fit.forEach((item, index) => {
-    const key = instanceOf.get(item.claimId) ?? "web";
-    if (!strata.has(key)) strata.set(key, []);
-    strata.get(key).push(index);
-  });
-  const fitIdx = [], selectIdx = [], evalIdx = [];
-  for (const indices of strata.values()) {
-    const fEnd = Math.floor(indices.length * fitRatio);
-    const sEnd = Math.floor(indices.length * (fitRatio + selectRatio));
-    fitIdx.push(...indices.slice(0, fEnd));
-    selectIdx.push(...indices.slice(fEnd, sEnd));
-    evalIdx.push(...indices.slice(sEnd));
-  }
-  const ascend = (a, b) => a - b;
-  const pick = (idx) => idx.sort(ascend).map((i) => fit[i]);
-  const fitSlice = pick(fitIdx);
-  const selectSlice = pick(selectIdx);
-  const evalSlice = pick(evalIdx);
+  const fEnd = Math.floor(fit.length * fitRatio);
+  const sEnd = Math.floor(fit.length * (fitRatio + selectRatio));
+  const fitSlice = fit.slice(0, fEnd);
+  const selectSlice = fit.slice(fEnd, sEnd);
+  const evalSlice = fit.slice(sEnd);
   const fitResult = kernel.fitBetaCalibration(fitSlice);
   const selectSamples = selectSlice.map((sample) => ({ score: sample.score, label: sample.label }));
   // D4 cold-start gate: nMin is judged on the whole labeled binary set, not
@@ -78,6 +67,12 @@ async function run() {
     nMin > 0 && fit.length < nMin
       ? { supported: fallback.supported, unsupported: fallback.unsupported, degraded: true }
       : kernel.deriveThresholds(selectSamples, targetPrecision, { minSamplesPerSide: minPerSide });
+  if (thresholds.degraded) {
+    console.warn("[warn] attribution calibration degraded: thresholds stay on the legacy floor; the bundle is not activated");
+  }
+  if (thresholds.degraded) {
+    console.warn("[warn] attribution calibration degraded: thresholds stay on the legacy floor; the bundle is not activated");
+  }
   const evalSamples = evalSlice.map((sample) => ({ score: sample.score, label: sample.label }));
   const gate = kernel.evaluateThresholdGate(evalSamples, thresholds, targetPrecision);
   const confusion = kernel.confusionStats(evalSamples, thresholds);
@@ -85,9 +80,11 @@ async function run() {
 
   // D6: the beta params and derived thresholds live in an immutable,
   // content-addressed bundle; activation only moves the head pointer.
+  // Default mirrors the packaged runtime (composition.resolveAttributionRevisionRoot):
+  // a bundle written here is what the CLI/MCP actually loads.
   const revisionRoot = process.env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT
     ? path.resolve(process.env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT)
-    : path.join(root, "packages", "store", "attribution-gold-revisions");
+    : path.join(os.homedir(), ".anysearch", "attribution-gold-revisions");
   const storable = selectSamples.length ? fitResult.params : { a: 1, b: 1, c: 0 };
   const { digest: bundleDigest } = bundles.writeCalibrationBundle(
     revisionRoot,

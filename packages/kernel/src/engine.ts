@@ -207,7 +207,12 @@ export class RetroaererdEngine {
     this.sessionId = opts?.sessionId;
     this.attributionJudge = opts?.attributionJudge;
     this.sourceWeights = opts?.sourceWeights;
-    this.attributionCalibration = opts?.attributionCalibration;
+    // ADR-0051 D1: immutable at the injection seam, even when the caller
+    // bypasses the composition root.
+    const cal = opts?.attributionCalibration;
+    this.attributionCalibration = cal
+      ? Object.freeze({ params: Object.freeze({ ...cal.params }), thresholds: Object.freeze({ ...cal.thresholds }) })
+      : undefined;
     for (const p of providers) {
       this.providers.set(p.id, p);
     }

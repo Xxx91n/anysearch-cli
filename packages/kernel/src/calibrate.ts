@@ -92,7 +92,7 @@ function features(score: number): { logS: number; negLog1mS: number; bias: 1 } {
 }
 
 export function brierScore(samples: CalibrationSample[], params: BetaCalibrationParams): number {
-  if (!samples.length) return 0;
+  if (!samples.length) return Number.NaN;
   let sum = 0;
   for (const sample of samples) {
     const p = betaCalibrate(sample.score, params);
@@ -102,7 +102,7 @@ export function brierScore(samples: CalibrationSample[], params: BetaCalibration
 }
 
 export function logLoss(samples: CalibrationSample[], params: BetaCalibrationParams): number {
-  if (!samples.length) return 0;
+  if (!samples.length) return Number.NaN;
   let sum = 0;
   for (const sample of samples) {
     const p = clampProbability(betaCalibrate(sample.score, params));
@@ -119,7 +119,7 @@ export function fitBetaCalibration(
   options: { maxIterations?: number; learningRate?: number } = {},
 ): BetaFitResult {
   if (!samples.length) {
-    return { params: { ...BETA_IDENTITY }, n: 0, iterations: 0, loss: 0, brier: 0 };
+    return { params: { ...BETA_IDENTITY }, n: 0, iterations: 0, loss: Number.NaN, brier: Number.NaN };
   }
 
   let a = BETA_IDENTITY.a;

@@ -10,6 +10,7 @@ export const ATTRIBUTION_GOLD_LINE = "attribution-gold";
 export const ATTRIBUTION_GOLD_LABEL_SCHEMA = "anysearch/attribution-gold-label@1";
 export const ATTRIBUTION_GOLD_MANIFEST_SCHEMA = "anysearch/attribution-gold-manifest@1";
 export const ATTRIBUTION_GOLD_SAMPLE_SCHEMA = "anysearch/attribution-gold-sample@2";
+export const ATTRIBUTION_GOLD_SAMPLE_SCHEMA_V1 = "anysearch/attribution-gold-sample@1";
 
 const isoDateTime = () => Type.String({ minLength: 20 });
 
@@ -90,7 +91,11 @@ export function sampleInstance(sample: AttributionGoldSample): "web" | "memory" 
 }
 
 function canonicalSample(sample: AttributionGoldSample): Record<string, unknown> {
-  return { claimId: sample.claimId, claimText: sample.claimText, fusedScore: sample.fusedScore, instance: sampleInstance(sample) };
+  const canonical: Record<string, unknown> = { claimId: sample.claimId, claimText: sample.claimText, fusedScore: sample.fusedScore };
+  // @1-era records carry no instance field; including it here would break
+  // their pre-@2 fingerprints. Absent field = legacy canonical form.
+  if (sample.instance !== undefined) canonical.instance = sample.instance;
+  return canonical;
 }
 
 function canonicalLabel(label: AttributionGoldLabel): Record<string, unknown> {
@@ -145,13 +150,29 @@ function parseRecordLines<T>(text: string, schema: Parameters<typeof Value.Check
   return { records, errors };
 }
 
+// ADR-0051 D4 (audit amendment) + ADR-0043 upcast precedent: @1 records are
+// losslessly rewritten to @2. @1 differs only by the absent optional instance
+// field, whose effective default is "web".
+export function upcastGoldSampleLine(line: string): string {
+  try {
+    const parsed = JSON.parse(line) as { schema?: unknown };
+    if (parsed && parsed.schema === ATTRIBUTION_GOLD_SAMPLE_SCHEMA_V1) {
+      (parsed as { schema: string }).schema = ATTRIBUTION_GOLD_SAMPLE_SCHEMA;
+      return JSON.stringify(parsed);
+    }
+  } catch {
+    // Invalid JSON is reported by parseRecordLine with a line number.
+  }
+  return line;
+}
+
 export function parseSampleLine(line: string, lineNumber: number): { sample: AttributionGoldSample | null; error: string | null } {
-  const result = parseRecordLine(line, lineNumber, AttributionGoldSampleSchema);
+  const result = parseRecordLine(upcastGoldSampleLine(line), lineNumber, AttributionGoldSampleSchema);
   return { sample: (result.record as AttributionGoldSample | null) ?? null, error: result.error };
 }
 
 export function parseSampleLines(text: string): { samples: AttributionGoldSample[]; errors: string[] } {
-  const result = parseRecordLines<AttributionGoldSample>(text, AttributionGoldSampleSchema);
+  const result = parseRecordLines<AttributionGoldSample>(text.split(/\r?\n/).map(upcastGoldSampleLine).join("\n"), AttributionGoldSampleSchema);
   return { samples: result.records, errors: result.errors };
 }
 

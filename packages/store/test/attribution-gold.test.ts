@@ -69,10 +69,13 @@ const { instance: _stripped, ...unlabeled } = samples[0]!;
 assert.equal(sampleInstance(unlabeled as AttributionGoldSample), "web", "absent instance defaults to web");
 const memoryVersion = samples.map((s) => ({ ...s, instance: "memory" as const }));
 assert.notEqual(sampleFingerprint(memoryVersion), sampleFingerprint(samples), "instance enters the canonical fingerprint");
-assert.equal(sampleFingerprint([unlabeled as AttributionGoldSample, samples[1]!]), sampleFingerprint(samples), "absent instance fingerprints identically to explicit web");
+assert.notEqual(sampleFingerprint([unlabeled as AttributionGoldSample, samples[1]!]), sampleFingerprint(samples), "explicit instance enters the fingerprint; absent keeps the legacy @1 canonical form");
 // Audit-only: instance must not touch beta fitting inputs.
 assert.deepEqual(binaryFitSamples(memoryVersion, labels).fit, binaryFitSamples(samples, labels).fit, "fit is instance-blind");
-// Old @1 sample records are rejected after the migration.
+// @1 records upcast losslessly to @2 (ADR-0043 precedent + ADR-0051 audit).
 const legacy = parseSampleLines(JSON.stringify({ schema: "anysearch/attribution-gold-sample@1", claimId: "c9", claimText: "x", fusedScore: 0.5 }));
-assert.ok(legacy.errors.length > 0, "@1 sample records fail the @2 schema");
+assert.equal(legacy.errors.length, 0, "@1 records parse after the lossless upcast");
+assert.equal(legacy.samples.length, 1, "upcast preserves the record");
+assert.equal(legacy.samples[0]!.instance, undefined, "upcast leaves instance absent so the fingerprint matches pre-@2 bundles");
+assert.equal(sampleInstance(legacy.samples[0]!), "web", "effective instance still defaults to web");
 console.log("attribution-gold.test ADR-0051 D4 assertions: ok");

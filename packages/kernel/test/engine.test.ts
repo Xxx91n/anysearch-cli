@@ -248,7 +248,7 @@ async function main() {
   };
   // Legacy floor: fused = 0.35 + 0.15 = 0.5 < 0.6 -> uncertain.
   const plain = await new RetroaererdEngine([answerProvider]).search({ query: "health", mode: "answer" });
-  assert(plain.attribution?.claims[0]?.label === "uncertain", "legacy floor yields uncertain", );
+  assert(plain.attribution?.claims[0]?.label === "uncertain", "legacy floor yields uncertain");
   // Calibrated: identity beta, supported threshold 0.4; measured fused ~0.44 -> supported.
   const calibrated = await new RetroaererdEngine([answerProvider], {
     attributionCalibration: { params: { a: 1, b: 1, c: 0 }, thresholds: { supported: 0.4, unsupported: 0.2, degraded: false } },
