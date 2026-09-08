@@ -734,4 +734,9 @@ _Avoid_: 后验调阈值、把阈值塞回 golden、在评价切分上搜索阈�
 _Avoid_: 校准缺失时崩溃、静默继续、用回退值替代重新校准证据
 
 
+## Attribution Calibration Segment（归因校准分段审计）
+对单一 attribution-gold 校准线按 retrieval instance（web|memory）做的只读分组观测；不参与 beta 拟合或阈值推导，只产出覆盖率、漂移和校准差异红旗。ADR-0051。
+_Avoid_: 把 segment 当独立校准线、用 segment 标签改拟合、按 segment 静默拆线
+
+
 *End of Glossary*
