@@ -80,13 +80,9 @@ const ZERO_WIDTH_RE = /[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g;
 const BIDI_RE = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 
 function stripTags(input: string): string {
-  const out: number[] = [];
-  for (let i = 0; i < input.length; i++) {
-    const code = input.charCodeAt(i);
-    if (code >= 0xE0000 && code <= 0xE007F) continue;
-    out.push(code);
-  }
-  return String.fromCharCode(...out);
+  // charCodeAt sees surrogate halves and misses supplementary-plane tag chars;
+  // code-point regex removes the whole U+E0000..E007F range.
+  return input.replace(/[\u{E0000}-\u{E007F}]/gu, "");
 }
 
 // Fixed point: NFC normalize, zero-width family, Unicode tag decode-rescan, bidi strip.

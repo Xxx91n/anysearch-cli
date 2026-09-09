@@ -81,6 +81,29 @@ function main() {
       assert(r.status === 1, "REAL schema_version rejected by whitelist (got " + r.status + ")");
     } finally { try { rmSync(f.dir, { recursive: true, force: true }); } catch {} }
   }
+  // ADR-0053 migration: the writer hashes a pre-existing schema_version=1 row
+  // with six fields, matching the independent verifier at the v1/v2 boundary.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "ans-chain-v1v2-"));
+    const dbPath = join(dir, "t.db");
+    try {
+      const store = new SqliteSessionStore(dbPath);
+      store.close();
+      const db = new Database(dbPath);
+      db.pragma("journal_mode = WAL");
+      db.prepare("INSERT INTO sessions (id, domain) VALUES ('s', 'code')").run();
+      db.prepare("INSERT INTO retrieval_results (session_id, url) VALUES ('s', 'https://example.com/p')").run();
+      const anchor = db.prepare("SELECT genesis_hash FROM access_chain_anchor WHERE id = 1").get() as { genesis_hash: string };
+      const v1 = { id: 1, memory_id: 1, accessed_at: "2026-01-01 00:00:00", prev_hash: anchor.genesis_hash, schema_version: 1, event_type: CHAIN_EVENT_TYPE, source_label: null } as ChainEventRow;
+      const v1Hash = eventHash(v1);
+      db.prepare("INSERT INTO access_events (memory_id, accessed_at, prev_hash, schema_version, event_type, source_label) VALUES (?, ?, ?, ?, ?, NULL)").run(v1.memory_id, v1.accessed_at, v1.prev_hash, v1.schema_version, v1.event_type);
+      const v2 = { id: 2, memory_id: 1, accessed_at: "2026-01-01 00:00:01", prev_hash: v1Hash, schema_version: 2, event_type: CHAIN_EVENT_TYPE, source_label: "system" } as ChainEventRow;
+      db.prepare("INSERT INTO access_events (memory_id, accessed_at, prev_hash, schema_version, event_type, source_label) VALUES (?, ?, ?, ?, ?, ?)").run(v2.memory_id, v2.accessed_at, v2.prev_hash, v2.schema_version, v2.event_type, v2.source_label);
+      db.close();
+      const r = verify(dbPath);
+      assert(r.status === 0, "v1-to-v2 boundary verifies (exit " + r.status + ": " + String(r.stdout).slice(0, 160) + ")");
+    } finally { try { rmSync(dir, { recursive: true, force: true }); } catch {} }
+  }
   // Backward: a legacy-sealed DB (v0 rows) verifies with the v2 verifier (covered by access-chain-verify).
 
   console.log("access-chain-schema: " + passed + " passed, " + failed + " failed");

@@ -21,6 +21,9 @@ import type Database from "better-sqlite3";
 export const CHAIN_SCHEMA_VERSION = 2;
 export const CHAIN_EVENT_TYPE = "access";
 export const CHAIN_FIELDS = ["accessed_at", "event_type", "id", "memory_id", "prev_hash", "schema_version", "source_label"] as const;
+// Pre-ADR-0053 rows were chained without source_label. The independent verifier
+// hashes them with this six-field shape, so the writer must match at the v1/v2 boundary.
+export const CHAIN_FIELDS_V1 = ["accessed_at", "event_type", "id", "memory_id", "prev_hash", "schema_version"] as const;
 export const LEGACY_FIELDS = ["accessed_at", "id", "memory_id"] as const;
 export const GENESIS_PREFIX = "access-chain-genesis:";
 
@@ -45,7 +48,8 @@ function assertScalar(k: string, v: unknown): void {
 /** Canonical JSON bytes for a chained event row (fixed key order, whitelist-enforced). */
 export function canonicalEventJson(row: ChainEventRow): string {
   const out: Record<string, unknown> = {};
-  for (const k of CHAIN_FIELDS) {
+  const fields: readonly (keyof ChainEventRow)[] = row.schema_version === 1 ? CHAIN_FIELDS_V1 : CHAIN_FIELDS;
+  for (const k of fields) {
     const v = row[k as keyof ChainEventRow];
     // ADR-0044 D5: switch edges carry a NULL memory_id; the access chain keeps the same
     // six-field canonical form while the switch_events side table holds the edge provenance.

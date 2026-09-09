@@ -54,7 +54,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         if (lastEnvelope?.attribution) {
           const { attachAttribution } = await import("@anysearch/kernel");
           const merged = { ...lastEnvelope, results: allResults };
-          mergedAttribution = attachAttribution(merged);
+          mergedAttribution = attachAttribution(merged, {
+            ...(eng.calibration ? { calibration: eng.calibration } : {}),
+          });
         }
           const lastRound = allResults.slice(-10);
           const summary = JSON.stringify(

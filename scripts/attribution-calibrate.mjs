@@ -66,16 +66,13 @@ async function run() {
   const thresholds =
     nMin > 0 && fit.length < nMin
       ? { supported: fallback.supported, unsupported: fallback.unsupported, degraded: true }
-      : kernel.deriveThresholds(selectSamples, targetPrecision, { minSamplesPerSide: minPerSide });
-  if (thresholds.degraded) {
-    console.warn("[warn] attribution calibration degraded: thresholds stay on the legacy floor; the bundle is not activated");
-  }
+      : kernel.deriveThresholds(selectSamples, targetPrecision, { minSamplesPerSide: minPerSide, params: fitResult.params });
   if (thresholds.degraded) {
     console.warn("[warn] attribution calibration degraded: thresholds stay on the legacy floor; the bundle is not activated");
   }
   const evalSamples = evalSlice.map((sample) => ({ score: sample.score, label: sample.label }));
-  const gate = kernel.evaluateThresholdGate(evalSamples, thresholds, targetPrecision);
-  const confusion = kernel.confusionStats(evalSamples, thresholds);
+  const gate = kernel.evaluateThresholdGate(evalSamples, thresholds, targetPrecision, fitResult.params);
+  const confusion = kernel.confusionStats(evalSamples, thresholds, fitResult.params);
   const labelsDigest = store.attributionGoldDigest(labels);
 
   // D6: the beta params and derived thresholds live in an immutable,

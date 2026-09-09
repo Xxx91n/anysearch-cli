@@ -24,6 +24,14 @@ const invisible = sanitizeRetrieved({
 assert(invisible.suspicious, "invisible chars marked suspicious");
 assert(invisible.content.disposal === "stripped", "invisible chars disposal stripped");
 assert(!invisible.content.snippet.includes("\u200B"), "zero-width removed");
+const tagPayload = sanitizeRetrieved({
+  url: "https://trusted.example/",
+  title: "visible",
+  snippet: "hidden\u{E0000}tag\u{E007F}text",
+  label: { source: "retrieved", traceId: "t-tag" },
+});
+assert(tagPayload.suspicious, "supplementary tag chars marked suspicious");
+assert(!tagPayload.content.snippet.includes("\u{E0000}") && !tagPayload.content.snippet.includes("\u{E007F}"), "supplementary tag range stripped by code point");
 
 const schema = sanitizeRetrieved({
   url: "https://trusted.example/",

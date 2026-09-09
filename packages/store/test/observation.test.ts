@@ -56,6 +56,9 @@ try {
   assert.ok(attributes.includes("gen_ai.system"));
   assert.ok(attributes.includes("gen_ai.usage.output_tokens"));
   assert.ok(attributes.includes("anysearch.provider"));
+  const firstSpan = resourceSpans[0]!.scopeSpans[0]!.spans[0]! as unknown as { spanId: string; status: { code: number } };
+  assert.equal(firstSpan.spanId.length, 16, "span_id is 8 bytes / 16 hex");
+  assert.equal(firstSpan.status.code, 1, "ok status maps to OTLP STATUS_CODE_OK");
 
   const evalRunId = "demo-eval";
   store.recordEvaluationTrace({

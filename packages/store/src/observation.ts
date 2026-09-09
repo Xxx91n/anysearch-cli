@@ -129,8 +129,8 @@ const ObservationEventSchema = Type.Object(
 export const ObservationSpanSchema = Type.Object(
   {
     traceId: Type.String({ minLength: 32, maxLength: 32 }),
-    spanId: Type.String({ minLength: 32, maxLength: 32 }),
-    parentSpanId: Type.Union([Type.String({ minLength: 32, maxLength: 32 }), Type.Null()]),
+    spanId: Type.String({ minLength: 16, maxLength: 16 }),
+    parentSpanId: Type.Union([Type.String({ minLength: 16, maxLength: 16 }), Type.Null()]),
     kind: Type.String({ minLength: 1 }),
     operation: Type.String({ minLength: 1 }),
     startUnixNano: Type.Integer({ minimum: 0 }),
@@ -151,7 +151,7 @@ export const ObservationSpanSchema = Type.Object(
 export const EvaluationObservationSchema = Type.Object(
   {
     traceId: Type.String({ minLength: 32, maxLength: 32 }),
-    spanId: Type.String({ minLength: 32, maxLength: 32 }),
+    spanId: Type.String({ minLength: 16, maxLength: 16 }),
     evaluationId: Type.String({ minLength: 1 }),
     name: Type.String({ minLength: 1 }),
     scoreValue: Type.Optional(Type.Number()),
@@ -316,7 +316,7 @@ class ObservationSpanNode implements TelemetrySpan {
   startSpan<T>(options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>): Promise<T> {
     const child = new ObservationSpanNode(
       this.traceId,
-      randomUUID().replace(/-/g, ""),
+      randomUUID().replace(/-/g, "").slice(0, 16),
       this.spanId,
       this.kind,
       options.name,
@@ -440,7 +440,7 @@ function mapSpanToOtlp(span: ObservationSpan): Record<string, unknown> {
     endTimeUnixNano: span.endUnixNano,
     attributes,
     events,
-    status: { code: span.status === "ok" ? 0 : 1 },
+    status: { code: span.status === "ok" ? 1 : 2 },
   };
 }
 
@@ -492,7 +492,7 @@ export class SqliteObservationStore {
   ): Promise<T> {
     const runId = options.runId ?? randomUUID();
     const traceId = randomUUID().replace(/-/g, "");
-    const spanId = randomUUID().replace(/-/g, "");
+    const spanId = randomUUID().replace(/-/g, "").slice(0, 16);
     const root = new ObservationSpanNode(traceId, spanId, null, options.kind, options.operation, options.attributes ?? {});
     const startUnixNano = nowUnixNano();
     let status: "ok" | "error" = "ok";
@@ -541,7 +541,7 @@ export class SqliteObservationStore {
   }): ObservationTrace {
     const runId = input.runId ?? randomUUID();
     const traceId = randomUUID().replace(/-/g, "");
-    const spanId = randomUUID().replace(/-/g, "");
+    const spanId = randomUUID().replace(/-/g, "").slice(0, 16);
     const startUnixNano = nowUnixNano();
     const evaluation: EvaluationObservationInput = {
       traceId,

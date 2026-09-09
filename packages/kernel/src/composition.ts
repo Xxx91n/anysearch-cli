@@ -31,6 +31,9 @@ export interface CompositionResult {
   config?: DomainConfigPort;
   store: SessionStorePort;
   observation: SqliteObservationStore;
+  // ADR-0051 D1: exposed so cross-round merged attribution can reuse the same
+  // immutable active head instead of silently falling back to the legacy floor.
+  calibration?: AttributionCalibration;
 }
 
 // createEngine: build configured engine.
@@ -116,5 +119,5 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
   const dbPath = opts?.dbPath ?? ":memory:";
   const store = new SqliteSessionStore(dbPath);
   const observation = new SqliteObservationStore(dbPath);
-  return { retriever, config, store, observation };
+  return { retriever, config, store, observation, calibration: attributionCalibration };
 }

@@ -87,6 +87,15 @@ assert.equal(
   "below the preregistration nMin cold-start gate the line stays degraded",
 );
 
+const shiftedParams = { a: 0.5, b: 0.5, c: 1 };
+const shiftedThresholds = deriveThresholds(powerfulSamples, 0.9, { minSamplesPerSide: 10, params: shiftedParams });
+assert.equal(shiftedThresholds.degraded, false, "non-identity calibration still derives thresholds");
+assert.equal(
+  evaluateThresholdGate(powerfulSamples, shiftedThresholds, 0.9, shiftedParams).decision,
+  "pass",
+  "gate and thresholds share calibrated-probability space",
+);
+
 const stats = confusionStats(powerfulSamples, powerfulThresholds);
 assert.ok(stats.sensitivity > 0.9 && stats.specificity > 0.9, "separable sample gives strong sens/spec");
 assert.ok(Math.abs(stats.prevalence - 0.5) < 1e-9, "prevalence matches the 50/50 mix");

@@ -45,6 +45,9 @@ export interface ThresholdDerivationOptions {
   minSamplesTotal?: number;
   legacySupported?: number;
   legacyUnsupported?: number;
+  // ADR-0050 D5: derive thresholds in calibrated-probability space, matching
+  // the value classifyClaim compares at runtime. Identity keeps raw scores.
+  params?: BetaCalibrationParams;
 }
 
 export interface ThresholdGateResult {
@@ -210,18 +213,20 @@ export function deriveThresholds(
   if (!samples.length || targetPrecision < 0 || targetPrecision > 1) return fallback;
   if (samples.length < minSamplesTotal) return fallback;
 
-  const thresholds = uniqueThresholds(samples.map((sample) => sample.score));
+  const params = options.params ?? BETA_IDENTITY;
+  const calibrated = samples.map((sample) => ({ ...sample, score: betaCalibrate(sample.score, params) }));
+  const thresholds = uniqueThresholds(calibrated.map((sample) => sample.score));
   const supportedCandidates = thresholds
     .map((threshold) => {
-      const { precision, n } = precisionAtOrAbove(samples, threshold);
-      return { threshold, precision, n, coverage: n / samples.length };
+      const { precision, n } = precisionAtOrAbove(calibrated, threshold);
+      return { threshold, precision, n, coverage: n / calibrated.length };
     })
     .filter((candidate) => candidate.n >= minSamplesPerSide && candidate.precision >= targetPrecision);
 
   const unsupportedCandidates = thresholds
     .map((threshold) => {
-      const { precision, n } = precisionAtOrBelow(samples, threshold);
-      return { threshold, precision, n, coverage: n / samples.length };
+      const { precision, n } = precisionAtOrBelow(calibrated, threshold);
+      return { threshold, precision, n, coverage: n / calibrated.length };
     })
     .filter((candidate) => candidate.n >= minSamplesPerSide && candidate.precision >= targetPrecision);
 
@@ -277,9 +282,11 @@ export function evaluateThresholdGate(
   samples: CalibrationSample[],
   thresholds: AttributionThresholds,
   targetPrecision: number,
+  params: BetaCalibrationParams = BETA_IDENTITY,
 ): ThresholdGateResult {
-  const supported = samples.filter((sample) => sample.score >= thresholds.supported);
-  const unsupported = samples.filter((sample) => sample.score <= thresholds.unsupported);
+  const calibrated = samples.map((sample) => ({ ...sample, score: betaCalibrate(sample.score, params) }));
+  const supported = calibrated.filter((sample) => sample.score >= thresholds.supported);
+  const unsupported = calibrated.filter((sample) => sample.score <= thresholds.unsupported);
   const supportedLower = wilsonLowerBound(supported.reduce((sum, sample) => sum + sample.label, 0), supported.length);
   const unsupportedLower = wilsonLowerBound(unsupported.reduce((sum, sample) => sum + (1 - sample.label), 0), unsupported.length);
   const decision =
@@ -305,7 +312,11 @@ export interface ConfusionStats {
   falseNegatives: number;
 }
 
-export function confusionStats(samples: CalibrationSample[], thresholds: AttributionThresholds): ConfusionStats {
+export function confusionStats(
+  samples: CalibrationSample[],
+  thresholds: AttributionThresholds,
+  params: BetaCalibrationParams = BETA_IDENTITY,
+): ConfusionStats {
   let truePositives = 0;
   let trueNegatives = 0;
   let falsePositives = 0;
@@ -313,13 +324,14 @@ export function confusionStats(samples: CalibrationSample[], thresholds: Attribu
   let positives = 0;
   let negatives = 0;
   for (const sample of samples) {
+    const score = betaCalibrate(sample.score, params);
     if (sample.label === 1) {
       positives += 1;
-      if (sample.score >= thresholds.supported) truePositives += 1;
+      if (score >= thresholds.supported) truePositives += 1;
       else falseNegatives += 1;
     } else {
       negatives += 1;
-      if (sample.score <= thresholds.unsupported) trueNegatives += 1;
+      if (score <= thresholds.unsupported) trueNegatives += 1;
       else falsePositives += 1;
     }
   }
