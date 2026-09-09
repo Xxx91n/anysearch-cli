@@ -1,6 +1,6 @@
 {
   "schema": "anysearch/eval-baseline@1",
-  "fingerprint": "75b83d9862dd7a51",
+  "fingerprint": "4a529f6fbe2096c8",
   "metrics": {
     "passRate": 1,
     "supersessionSuccess": 1,
@@ -363,6 +363,6 @@
     "minGain": 0.1
   },
   "holdoutFingerprint": "956d925db2f73115",
-  "updatedAt": "2026-09-04",
-  "note": "ADR-0028 D1 calibration (runs=50); integer allowance = worst-observed failures + 1 op. CI never writes this file (ADR-0027 D9)."
+  "updatedAt": "2026-09-09",
+  "note": "ADR-0053 D5 inject probe closure recalibrated dataset fingerprint (cases 123 -> 128); no gated allowance lowered."
 }

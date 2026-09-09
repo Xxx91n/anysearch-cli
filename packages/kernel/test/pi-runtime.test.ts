@@ -235,20 +235,20 @@ if (failed > 0) process.exit(1);
   ];
   // Gap from index 3 (after first summary point).
   const gap = distillGap(msgs as any, 3);
-  assert(gap.includes("result2"), "D9: gap distillation extracts search results after summary point");
-  assert(!gap.includes("result1"), "D9: gap excludes results before summary point");
-  assert(!gap.includes("query1"), "D9: gap excludes user/assistant messages");
+  assert(gap.text.includes("result2"), "D9: gap distillation extracts search results after summary point");
+  assert(!gap.text.includes("result1"), "D9: gap excludes results before summary point");
+  assert(!gap.text.includes("query1"), "D9: gap excludes user/assistant messages");
 }
 
 // D9: distillGap handles empty messages and no search results.
 {
   const gap1 = distillGap([], 0);
-  assert(gap1 === "", "D9: empty messages -> empty gap");
+  assert(gap1.text === "", "D9: empty messages -> empty gap");
   const gap2 = distillGap([
     { role: "user", content: "hi" },
     { role: "assistant", content: "hello" },
   ], 0);
-  assert(gap2 === "", "D9: no tool messages -> empty gap");
+  assert(gap2.text === "", "D9: no tool messages -> empty gap");
 }
 
 // D9: distillGap handles content array format.
@@ -257,7 +257,7 @@ if (failed > 0) process.exit(1);
     { role: "tool", toolName: "search_web", content: [{ type: "text", text: "array result" }] },
   ];
   const gap = distillGap(msgs as any, 0);
-  assert(gap.includes("array result"), "D9: distillGap handles content array format");
+  assert(gap.text.includes("array result"), "D9: distillGap handles content array format");
 }
 
 // D3: adjudicateReuseCompress returns "reuse" or "compress" (binary).
@@ -350,9 +350,9 @@ function makeMockStreamFn(decision: string): any {
     { role: "user", content: "Tell me more." },
   ];
   const gap = distillGap(msgs as any, 0);
-  assert(gap === "AI is artificial intelligence", "D2: gap contains only search tool content");
-  assert(!gap.includes("What is AI"), "D2: gap excludes user messages");
-  assert(!gap.includes("Let me search"), "D2: gap excludes assistant messages");
+  assert(gap.text === "AI is artificial intelligence", "D2: gap contains only search tool content");
+  assert(!gap.text.includes("What is AI"), "D2: gap excludes user messages");
+  assert(!gap.text.includes("Let me search"), "D2: gap excludes assistant messages");
 }
 
 // D7: adjudication reuses compaction.model (same model for both adjudication and compression).

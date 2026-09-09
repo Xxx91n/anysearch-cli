@@ -395,6 +395,9 @@ importers:
 
   packages/retriever:
     dependencies:
+      '@sinclair/typebox':
+        specifier: ^0.34.52
+        version: 0.34.52
       '@tavily/core':
         specifier: ^0.7.7
         version: 0.7.7(debug@4.4.3)

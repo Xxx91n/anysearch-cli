@@ -14,15 +14,16 @@ db.pragma("foreign_keys = ON");
 try { db.exec("ALTER TABLE access_events ADD COLUMN prev_hash TEXT"); } catch {}
 try { db.exec("ALTER TABLE access_events ADD COLUMN schema_version INTEGER"); } catch {}
 try { db.exec("ALTER TABLE access_events ADD COLUMN event_type TEXT"); } catch {}
+try { db.exec("ALTER TABLE access_events ADD COLUMN source_label TEXT"); } catch {}
 db.exec("CREATE TABLE IF NOT EXISTS access_chain_anchor (id INTEGER PRIMARY KEY CHECK (id = 1), digest TEXT NOT NULL, genesis_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))");
 
 const boot = bootstrapAccessChain(db);
 
 const chainWrite = db.transaction(() => {
-  const last = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events WHERE prev_hash IS NOT NULL ORDER BY id DESC LIMIT 1").get() as ChainEventRow | undefined;
+  const last = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type, source_label FROM access_events WHERE prev_hash IS NOT NULL ORDER BY id DESC LIMIT 1").get() as ChainEventRow | undefined;
   const anchor = db.prepare("SELECT genesis_hash FROM access_chain_anchor WHERE id = 1").get() as { genesis_hash: string } | undefined;
   const prevHash = last ? eventHash(last) : anchor!.genesis_hash;
-  db.prepare("INSERT INTO access_events (memory_id, prev_hash, schema_version, event_type) VALUES (?, ?, ?, ?)").run(memoryId, prevHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE);
+  db.prepare("INSERT INTO access_events (memory_id, prev_hash, schema_version, event_type, source_label) VALUES (?, ?, ?, ?, ?)").run(memoryId, prevHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, "system");
 });
 for (let i = 0; i < writes; i++) chainWrite.immediate();
 

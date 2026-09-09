@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@tavily/core": "^0.7.7",
-    "exa-js": "^2.18.1"
+    "exa-js": "^2.18.1",
+    "@sinclair/typebox": "^0.34.52"
   }
 }

@@ -3,7 +3,7 @@
 // of this spec (_Avoid_ 3: shared serialization code is forbidden — a bug must not hide in both).
 //
 // Pinned spec constants (duplicated verbatim in ADR-0040, implemented independently by the verifier):
-//   CHAIN_FIELDS  = ["accessed_at","event_type","id","memory_id","prev_hash","schema_version"]
+//   CHAIN_FIELDS  = ["accessed_at","event_type","id","memory_id","prev_hash","schema_version","source_label"]
 //                   (ASCII lexicographic order = RFC 8785 §3.2.3 key order for this closed ASCII
 //                   scalar schema; JSON.stringify of an object literal built in this order is
 //                   byte-equivalent to JCS.Canonicalize for this schema)
@@ -18,24 +18,26 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 
-export const CHAIN_SCHEMA_VERSION = 1;
+export const CHAIN_SCHEMA_VERSION = 2;
 export const CHAIN_EVENT_TYPE = "access";
-export const CHAIN_FIELDS = ["accessed_at", "event_type", "id", "memory_id", "prev_hash", "schema_version"] as const;
+export const CHAIN_FIELDS = ["accessed_at", "event_type", "id", "memory_id", "prev_hash", "schema_version", "source_label"] as const;
 export const LEGACY_FIELDS = ["accessed_at", "id", "memory_id"] as const;
 export const GENESIS_PREFIX = "access-chain-genesis:";
 
 export interface ChainEventRow {
   id: number; memory_id: number; accessed_at: string;
   prev_hash: string | null; schema_version: number | null; event_type: string | null;
+  source_label: string | null;
 }
 export interface LegacyEventRow { id: number; memory_id: number; accessed_at: string; }
 
 const sha256hex = (s: string): string => createHash("sha256").update(s, "utf8").digest("hex");
 
 function assertScalar(k: string, v: unknown): void {
-  if (v === null) { if (k === "prev_hash" || k === "schema_version" || k === "event_type") return; throw new Error("access-chain: " + k + " must not be NULL"); }
+  if (v === null) { if (k === "prev_hash" || k === "schema_version" || k === "event_type" || k === "source_label") return; throw new Error("access-chain: " + k + " must not be NULL"); }
   if (typeof v === "string") return;
   // D4 whitelist: INTEGER only — REAL (non-integer number) or anything else is rejected.
+  // source_label and trace_id are nullable TEXT in the v2 boundary.
   if (typeof v === "number" && Number.isInteger(v) && (k === "id" || k === "memory_id" || k === "schema_version")) return;
   throw new Error("access-chain: non-whitelisted value for " + k + " (" + Object.prototype.toString.call(v) + ")");
 }

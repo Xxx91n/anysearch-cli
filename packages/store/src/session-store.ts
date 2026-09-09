@@ -34,6 +34,8 @@ export interface KeyMemoryInput {
   source: string; // provider id — direct user interaction uses source='user'
   evidence: number; // writer confidence score 0.0-1.0
   entity?: string; // override URL as entity key (same as NormalizedResult.entity)
+  sourceLabel?: "system" | "user" | "retrieved" | "tool" | "memory";
+  traceId?: string;
 }
 
 export interface AdjudicationResultItem {
@@ -65,6 +67,8 @@ export interface T0PreferenceInput {
   scope?: string; // "global" or project root path; default "global"
   source: "explicit" | "correction"; // C-prime gate channels
   provenance?: { event: string; at: string; why: string };
+  sourceLabel?: "system" | "user" | "retrieved" | "tool" | "memory";
+  traceId?: string;
 }
 
 export interface T0PreferenceRow {
@@ -394,6 +398,12 @@ export class SqliteSessionStore implements SessionStore {
   PRIMARY KEY (key, scope)
 )`);
 
+    // ADR-0053 D2: source trust columns for existing databases.
+    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN source_label TEXT"); } catch {}
+    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN trace_id TEXT"); } catch {}
+    try { this.db.exec("ALTER TABLE t0_preferences ADD COLUMN source_label TEXT"); } catch {}
+    try { this.db.exec("ALTER TABLE t0_preferences ADD COLUMN trace_id TEXT"); } catch {}
+    try { this.db.exec("ALTER TABLE access_events ADD COLUMN source_label TEXT"); } catch {}
     // ADR-0040 step 1/3: chain columns (idempotent ALTER per existing convention) + one-off
     // anchor bootstrap in an IMMEDIATE transaction (D6). Persistent busy/IO failure degrades to
     // stderr WARN + telemetry bit (ADR-0009 D6 fail-open); the write path re-probes the anchor.
@@ -413,7 +423,7 @@ export class SqliteSessionStore implements SessionStore {
       append: this.db.prepare("INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)"),
       searchMessages: this.db.prepare("SELECT m.id as rowid, m.session_id as sessionId, m.role, m.content, bm25(messages_fts) as rank FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid WHERE messages_fts MATCH ? AND m.session_id = ? ORDER BY rank LIMIT ?"),
       searchAllMessages: this.db.prepare("SELECT m.id as rowid, m.session_id as sessionId, m.role, m.content, bm25(messages_fts) as rank FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid WHERE messages_fts MATCH ? ORDER BY rank LIMIT ?"),
-      saveResult: this.db.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, rrf_score, entity) VALUES (?, ?, ?, ?, ?, ?, ?)"),
+      saveResult: this.db.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, rrf_score, entity, source_label, trace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"),
       searchResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND r.session_id = ? AND r.archived = 0 ORDER BY rank LIMIT ?"),
       saveAnchor: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)"),
       getAnchors: this.db.prepare("SELECT id, session_id as sessionId, anchor_type as anchorType, payload, created_at as createdAt FROM resume_anchors WHERE session_id = ? ORDER BY id"),
@@ -425,8 +435,8 @@ export class SqliteSessionStore implements SessionStore {
       touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now'), access_count = COALESCE(access_count, 0) + 1 WHERE id = ?"),
       // ADR-0039 D5: same exactly-once site — each returned hit logs one access event.
       // ADR-0040 D4: chained insert — prev_hash + schema_version(v1) + event_type per event.
-      insertAccessEvent: this.db.prepare("INSERT INTO access_events (memory_id, prev_hash, schema_version, event_type) VALUES (?, ?, ?, ?)"),
-      lastChainedEvent: this.db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events WHERE prev_hash IS NOT NULL ORDER BY id DESC LIMIT 1"),
+      insertAccessEvent: this.db.prepare("INSERT INTO access_events (memory_id, prev_hash, schema_version, event_type, source_label) VALUES (?, ?, ?, ?, ?)"),
+      lastChainedEvent: this.db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type, source_label FROM access_events WHERE prev_hash IS NOT NULL ORDER BY id DESC LIMIT 1"),
       // ADR-0016 D10: UPSERT for state-type anchors.
   
       saveAnchorUpsert: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?) ON CONFLICT(session_id, anchor_type) WHERE anchor_type = 'consolidation_state' DO UPDATE SET payload = excluded.payload, created_at = datetime('now')"),
@@ -452,7 +462,7 @@ export class SqliteSessionStore implements SessionStore {
         if (!anchor) throw new Error("access-chain anchor unavailable");
         prevHash = anchor.genesis_hash;
       }
-      this.stmts.insertAccessEvent.run(memoryId, prevHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE);
+      this.stmts.insertAccessEvent.run(memoryId, prevHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, "system");
     });
     write.immediate();
   }
@@ -466,6 +476,11 @@ export class SqliteSessionStore implements SessionStore {
   // All writes are deterministic; gate logic lives in caller (A+C+B, not here).
 
   async promotePreference(input: T0PreferenceInput): Promise<{ action: "promoted" | "rejected"; reason?: string }> {
+    const sourceLabel = input.sourceLabel ?? "user";
+    // ADR-0053 D4 A: retrieved-derived and memory-derived content never promote T0.
+    if (sourceLabel === "retrieved" || sourceLabel === "memory") {
+      return { action: "rejected", reason: "source-gate" };
+    }
     const scope = input.scope ?? "global";
     const now = new Date().toISOString();
     const prov = input.provenance ? JSON.stringify(input.provenance) : null;
@@ -473,8 +488,8 @@ export class SqliteSessionStore implements SessionStore {
     // modified + provenance updated; old value dereferenced (recoverable via WAL). correction_count preserved.
     this.db
       .prepare(
-        `INSERT INTO t0_preferences (key, value, scope, modified, last_accessed, source, invalid_at, demote_reason, correction_count, provenance)
-         VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 0, ?)
+        `INSERT INTO t0_preferences (key, value, scope, modified, last_accessed, source, invalid_at, demote_reason, correction_count, provenance, source_label, trace_id)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 0, ?, ?, ?)
          ON CONFLICT (key, scope) DO UPDATE SET
            value = excluded.value,
            modified = excluded.modified,
@@ -482,9 +497,11 @@ export class SqliteSessionStore implements SessionStore {
            source = excluded.source,
            invalid_at = NULL,
            demote_reason = NULL,
-           provenance = excluded.provenance`
+           provenance = excluded.provenance,
+           source_label = excluded.source_label,
+           trace_id = excluded.trace_id`
       )
-      .run(input.key, input.value, scope, now, now, input.source, prov);
+      .run(input.key, input.value, scope, now, now, input.source, prov, sourceLabel, input.traceId ?? null);
     return { action: "promoted" };
   }
 
@@ -685,7 +702,9 @@ export class SqliteSessionStore implements SessionStore {
       for (const r of rs) {
        // ADR-0028 D3 write entry: skip secret-bearing results entirely (no row, no FTS).
        if (containsSecret(r.url + " " + (r.title ?? "") + " " + (r.snippet ?? ""))) continue;
-       const info = this.stmts.saveResult.run(sessionId, r.url, r.title, r.snippet, r.source, null, r.entity ?? r.url);
+       const sourceLabel = typeof (r.extra?.trustLabel as any)?.source === "string" ? (r.extra?.trustLabel as any).source : "retrieved";
+       const traceId = typeof (r.extra?.trustLabel as any)?.traceId === "string" ? (r.extra?.trustLabel as any).traceId : null;
+       const info = this.stmts.saveResult.run(sessionId, r.url, r.title, r.snippet, r.source, null, r.entity ?? r.url, sourceLabel, traceId);
                 // ADR-0008 D2: bi-temporal invalidation — close old records for same entity (URL) at write time.
                 // Not relying on decay to suppress staleness; valid_until set immediately on new write.
                 try { invalidateOldRecords(this.db, r.url, Number(info.lastInsertRowid)); } catch {}
@@ -713,7 +732,8 @@ export class SqliteSessionStore implements SessionStore {
         const existing = this.db
           .prepare("SELECT id FROM retrieval_results WHERE entity = ? AND session_id = ? AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 LIMIT 1")
           .get(entityKey, sessionId) as { id: number } | undefined;
-        const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, entityKey);
+        const sourceLabel = km.sourceLabel ?? (km.source === "user" ? "user" : "retrieved");
+        const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, entityKey, sourceLabel, km.traceId ?? null);
         const insertedId = Number(info.lastInsertRowid);
         await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
         try { await this.linkEntities(insertedId, km); } catch {} // ADR-0031: entity linking fail-open, covers accept+supersede
@@ -729,7 +749,8 @@ export class SqliteSessionStore implements SessionStore {
         }
       } else {
         // Evidence < 0.6 or non-user source: quarantine candidate (MemTX equal-weight conflict / deferred review).
-        const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, km.entity ?? km.url);
+        const sourceLabel = km.sourceLabel ?? (km.source === "user" ? "user" : "retrieved");
+        const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, km.entity ?? km.url, sourceLabel, km.traceId ?? null);
         const insertedId = Number(info.lastInsertRowid);
         await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
         try { await this.linkEntities(insertedId, km); } catch {} // ADR-0031: fail-open

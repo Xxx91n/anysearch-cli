@@ -10,10 +10,10 @@ function assert(cond: boolean, msg: string) {
 }
 
 async function main() {
-  // Shape: 123 cases (ADR-0028: +15 D3/D4 slices; ADR-0031: +4 entity group; ADR-0033: +2 semantic; ADR-0035: +12 relations; ADR-0036: +66 RoR/alias/no-edge expansion; ADR-0037: +4 consolidate/forget groups), 14 groups, every op has a stage.
-  assert(GOLDEN_CASES.length === 123, "123 golden cases (got " + GOLDEN_CASES.length + ")");
+  // Shape: 128 cases (ADR-0053: +5 INJECT probes), 15 groups, every op has a stage.
+  assert(GOLDEN_CASES.length === 128, "128 golden cases (got " + GOLDEN_CASES.length + ")");
   const groups = new Set(GOLDEN_CASES.map((c) => c.group));
-  assert(groups.size === 14, "14 groups (got " + groups.size + ")");
+  assert(groups.size === 15, "15 groups (got " + groups.size + ")");
   assert(GOLDEN_CASES.every((c) => c.ops.every((o) => typeof o.stage === "string")), "every op carries a stage");
 
   // Fingerprint stable across calls, changes when dataset changes.

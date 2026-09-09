@@ -110,21 +110,27 @@ function assertScratchMode(mode: "real" | "drill", dbPath: string, outDir: strin
 
 // Appends a switch edge to the access_events hash chain in one IMMEDIATE transaction. The
 // switch_events side table carries edge provenance without changing the six hashed fields.
+function ensureAccessChainSourceLabel(db: Database.Database): void {
+  const cols = new Set((db.prepare("PRAGMA table_info(access_events)").all() as { name: string }[]).map((c) => c.name));
+  if (!cols.has("source_label")) db.exec("ALTER TABLE access_events ADD COLUMN source_label TEXT");
+}
+
 export function writeSwitchChainEvent(dbPath: string, eventType: SwitchChainEventType, provenance: "real" | "drill" = "real"): { id: number; hash: string } {
   const db = new Database(dbPath);
   try {
     if (!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='access_events'").get()) throw new Error("access_events table missing — create the store first");
     const cols = new Set((db.prepare("PRAGMA table_info(access_events)").all() as { name: string }[]).map((c) => c.name));
     if (!cols.has("prev_hash")) throw new Error("access_events has no prev_hash column — run `ans access-chain bootstrap --apply` first");
+    ensureAccessChainSourceLabel(db);
     const go = db.transaction((): { id: number; hash: string } => {
       let anchor = db.prepare("SELECT genesis_hash FROM access_chain_anchor WHERE id = 1").get() as { genesis_hash: string } | undefined;
       if (!anchor) { bootstrapAccessChain(db); anchor = db.prepare("SELECT genesis_hash FROM access_chain_anchor WHERE id = 1").get() as { genesis_hash: string } | undefined; }
       if (!anchor) throw new Error("access-chain anchor unavailable");
-      const last = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events WHERE prev_hash IS NOT NULL ORDER BY id DESC LIMIT 1").get() as ChainEventRow | undefined;
+      const last = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type, source_label FROM access_events WHERE prev_hash IS NOT NULL ORDER BY id DESC LIMIT 1").get() as ChainEventRow | undefined;
       const prevHash = last ? eventHash(last) : anchor.genesis_hash;
       const info = db.prepare("INSERT INTO access_events (memory_id, prev_hash, schema_version, event_type) VALUES (NULL, ?, ?, ?)").run(prevHash, CHAIN_SCHEMA_VERSION, eventType);
       const id = Number(info.lastInsertRowid);
-      const row = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events WHERE id = ?").get(id) as ChainEventRow;
+      const row = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type, source_label FROM access_events WHERE id = ?").get(id) as ChainEventRow;
       db.prepare("INSERT INTO switch_events (access_event_id, event_type, provenance) VALUES (?, ?, ?)").run(id, eventType, provenance);
       return { id, hash: eventHash(row) };
     });
@@ -143,8 +149,9 @@ export interface ReplayedSwitchChain {
 // an inapplicable edge or unknown event_type is a hard error, never a guessed rebuild.
 export function replaySwitchChain(dbPath: string): ReplayedSwitchChain | null {
   if (!existsSync(dbPath)) return null;
-  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  const db = new Database(dbPath, { fileMustExist: true });
   try {
+    ensureAccessChainSourceLabel(db);
     // ADR-0044 D1 + r115 audit C6: legacy r42 event_type values are not in the per-edge
     // closed set and must fail loud (migrations belong to the operator, not the replay
     // function). Detected up front so the loop below only sees canonical edges.
@@ -152,7 +159,7 @@ export function replaySwitchChain(dbPath: string): ReplayedSwitchChain | null {
     if (legacy.length > 0) {
       throw new Error("integrity-fail-replay: legacy switch event_type " + legacy[0]!.event_type + " (id=" + legacy[0]!.id + ") — migration required before this DB can be replayed");
     }
-    const rows = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events WHERE event_type IN (" + SWITCH_CHAIN_EVENT_TYPES.map(() => "?").join(",") + ") AND prev_hash IS NOT NULL ORDER BY id").all(...[...SWITCH_CHAIN_EVENT_TYPES]) as ChainEventRow[];
+    const rows = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type, source_label FROM access_events WHERE event_type IN (" + SWITCH_CHAIN_EVENT_TYPES.map(() => "?").join(",") + ") AND prev_hash IS NOT NULL ORDER BY id").all(...[...SWITCH_CHAIN_EVENT_TYPES]) as ChainEventRow[];
     let phase: SwitchPhase = "S0";
     let since: string | null = null;
     let lastRow: ChainEventRow | null = null;

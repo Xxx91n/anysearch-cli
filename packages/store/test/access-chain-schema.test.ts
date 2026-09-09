@@ -31,14 +31,14 @@ function makeChainDb(n: number): { dir: string; dbPath: string; ms: number } {
   db.prepare("INSERT INTO sessions (id, domain) VALUES (?, 'code')").run(sessionId);
   db.prepare("INSERT INTO retrieval_results (session_id, url) VALUES (?, 'https://example.com/p')").run(sessionId);
   const anchor = db.prepare("SELECT genesis_hash FROM access_chain_anchor WHERE id = 1").get() as { genesis_hash: string };
-  const ins = db.prepare("INSERT INTO access_events (memory_id, accessed_at, prev_hash, schema_version, event_type) VALUES (?, ?, ?, ?, ?)");
+  const ins = db.prepare("INSERT INTO access_events (memory_id, accessed_at, prev_hash, schema_version, event_type, source_label) VALUES (?, ?, ?, ?, ?, ?)");
   const t0 = performance.now();
   const tx = db.transaction(() => {
     let prev = anchor.genesis_hash;
     for (let i = 0; i < n; i++) {
       const accessedAt = "2026-01-01 00:00:00";
-      const id = Number((ins.run(1, accessedAt, prev, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE)).lastInsertRowid);
-      prev = eventHash({ id, memory_id: 1, accessed_at: accessedAt, prev_hash: prev, schema_version: CHAIN_SCHEMA_VERSION, event_type: CHAIN_EVENT_TYPE });
+      const id = Number((ins.run(1, accessedAt, prev, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, "system")).lastInsertRowid);
+      prev = eventHash({ id, memory_id: 1, accessed_at: accessedAt, prev_hash: prev, schema_version: CHAIN_SCHEMA_VERSION, event_type: CHAIN_EVENT_TYPE, source_label: "system" });
     }
   });
   tx.immediate();
@@ -60,15 +60,15 @@ function main() {
     } finally { try { rmSync(f.dir, { recursive: true, force: true }); } catch {} }
   }
 
-  // schema_version forward/backward: v2 row -> explicit error; v1 row verifies; REAL -> rejected.
+  // schema_version forward/backward: v3 row -> explicit error; v2 row verifies; REAL -> rejected.
   {
     const f = makeChainDb(3);
     try {
       const db = new Database(f.dbPath);
-      db.prepare("UPDATE access_events SET schema_version = 2 WHERE id = 2").run();
+      db.prepare("UPDATE access_events SET schema_version = 3 WHERE id = 2").run();
       db.close();
       const r = verify(f.dbPath);
-      assert(r.status === 1 && String(r.stdout).includes("unknown schema_version"), "v2 row on v1 verifier -> explicit error (got " + r.status + " " + String(r.stdout).slice(0, 160) + ")");
+      assert(r.status === 1 && String(r.stdout).includes("unknown schema_version"), "v3 row on v2 verifier -> explicit error (got " + r.status + " " + String(r.stdout).slice(0, 160) + ")");
     } finally { try { rmSync(f.dir, { recursive: true, force: true }); } catch {} }
   }
   {
@@ -81,7 +81,7 @@ function main() {
       assert(r.status === 1, "REAL schema_version rejected by whitelist (got " + r.status + ")");
     } finally { try { rmSync(f.dir, { recursive: true, force: true }); } catch {} }
   }
-  // Backward: a legacy-sealed DB (v0 rows) verifies with the v1 verifier (covered by access-chain-verify).
+  // Backward: a legacy-sealed DB (v0 rows) verifies with the v2 verifier (covered by access-chain-verify).
 
   console.log("access-chain-schema: " + passed + " passed, " + failed + " failed");
   process.exit(failed ? 1 : 0);

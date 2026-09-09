@@ -36,6 +36,7 @@ export async function runSearch(args: string[]): Promise<number> {
           "anysearch.command": "search",
           "anysearch.mode": mode,
           "anysearch.domain": domain ?? "all",
+          "anysearch.source": "retrieved",
         },
       },
       () => retriever.search({ query: queryClean, mode, maxResults: 10 }),

@@ -510,6 +510,36 @@ function stepStaticAssertions() {
     report("pass", "ADR-0052 observation representation/store/export boundary and eval isolation present");
   }
 
+  // 1o. ADR-0053 D1-D5/D7: deterministic content trust boundary, source labels,
+  // sanitization/schema gate, fail-closed source gate, and INJECT probe closure.
+  {
+    const ctPath = path.join(ROOT, "packages/retriever/src/content-trust.ts");
+    if (!fs.existsSync(ctPath)) fail("ADR-0053 1o: retriever content-trust module missing");
+    const ct = fs.readFileSync(ctPath, "utf8");
+    for (const tok of ["sanitizeRetrieved", "RetrievalContentSchema", "combine_labels", "wrapRetrieved", "assertLlamaInput", "shouldAllowUrl", "additionalProperties: false"])
+      if (!ct.includes(tok)) fail("ADR-0053 1o: content-trust missing " + tok);
+    const retrieverIndex = fs.readFileSync(path.join(ROOT, "packages/retriever/src/index.ts"), "utf8");
+    if (!retrieverIndex.includes("./content-trust")) fail("ADR-0053 1o: content-trust not exported");
+    const pipeline = fs.readFileSync(path.join(ROOT, "packages/kernel/src/memory-pipeline.ts"), "utf8");
+    for (const tok of ["TaggedGap", "distillGap(messages: any[], fromIdx: number): TaggedGap"])
+      if (!pipeline.includes(tok)) fail("ADR-0053 1o: memory pipeline missing tagged gap " + tok);
+    const store = fs.readFileSync(path.join(ROOT, "packages/store/src/session-store.ts"), "utf8");
+    for (const tok of ["source-gate", "source_label", "trace_id"])
+      if (!store.includes(tok)) fail("ADR-0053 1o: session-store missing " + tok);
+    const domain = fs.readFileSync(path.join(ROOT, "packages/store/src/domain-schema.ts"), "utf8");
+    if (!domain.includes("urlAllowlist")) fail("ADR-0053 1o: URL consumption allowlist schema missing");
+    const chain = fs.readFileSync(path.join(ROOT, "packages/store/src/access-chain.ts"), "utf8");
+    if (!chain.includes('CHAIN_SCHEMA_VERSION = 2') || !chain.includes('"source_label"')) fail("ADR-0053 1o: access-chain schema v2/source_label missing");
+    const golden = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/golden-cases.ts"), "utf8");
+    for (const tok of ["inject_invisible_chars", "inject_instruction_injection", "inject_tool_output_url_egress", "inject_memory_poisoning", "inject_combined_adaptive"])
+      if (!golden.includes(tok)) fail("ADR-0053 1o: inject case missing " + tok);
+    const runner = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/runner.ts"), "utf8");
+    if (!runner.includes('case "inject"')) fail("ADR-0053 1o: inject runner op missing");
+    const cliSearch = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/search.ts"), "utf8");
+    if (!cliSearch.includes('"anysearch.source": "retrieved"')) fail("ADR-0053 1o: anysearch.source OTLP emission missing");
+    report("pass", "ADR-0053 content trust boundary + inject probes present");
+  }
+
 }
 
 // ---------------------------------------------------------------------------

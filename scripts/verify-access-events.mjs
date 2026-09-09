@@ -6,7 +6,7 @@
 // store package because pnpm does not hoist it to the root).
 //
 // Spec (verbatim from ADR-0040 D4/D3):
-//   chain fields   = ["accessed_at","event_type","id","memory_id","prev_hash","schema_version"]
+//   chain fields   = ["accessed_at","event_type","id","memory_id","prev_hash","schema_version","source_label"]
 //   legacy fields  = ["accessed_at","id","memory_id"]
 //   canonical JSON = JSON.stringify of an object literal whose keys are inserted in the fixed
 //                    order above (ASCII lexicographic = RFC 8785 key order for this closed schema)
@@ -28,13 +28,14 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "packages", "store", "package.json"));
 
 const sha = (s) => createHash("sha256").update(s, "utf8").digest("hex");
-const CHAIN_FIELDS = ["accessed_at", "event_type", "id", "memory_id", "prev_hash", "schema_version"];
+const CHAIN_FIELDS = ["accessed_at", "event_type", "id", "memory_id", "prev_hash", "schema_version", "source_label"];
+const CHAIN_FIELDS_V1 = ["accessed_at", "event_type", "id", "memory_id", "prev_hash", "schema_version"];
 const LEGACY_FIELDS = ["accessed_at", "id", "memory_id"];
 const GENESIS_PREFIX = "access-chain-genesis:";
 // Whitelist (D4): TEXT (string), INTEGER (integer number), NULL only in the three nullable columns.
 function assertScalar(k, v, row = {}) {
   if (v === null) {
-    if (k === "prev_hash" || k === "schema_version" || k === "event_type") return;
+    if (k === "prev_hash" || k === "schema_version" || k === "event_type" || k === "source_label") return;
     if (k === "memory_id" && row.event_type && row.event_type !== "access") return;
     throw new Error("NULL not allowed for " + k);
   }
@@ -72,7 +73,7 @@ function main() {
     const cols = new Set(db.prepare("PRAGMA table_info(access_events)").all().map((c) => c.name));
     for (const c of [...CHAIN_FIELDS]) if (!cols.has(c)) fail("access_events." + c + " missing — chain column absent (verify cannot run on pre-upgrade schema)");
 
-    const rows = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events ORDER BY id").all();
+    const rows = db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type, source_label FROM access_events ORDER BY id").all();
     const legacy = [], chained = [];
     for (const r of rows) (r.prev_hash === null ? legacy : chained).push(r);
 
@@ -109,10 +110,11 @@ function main() {
     let expected = genesis;
     let chainedOk = 0;
     for (const r of chained) {
-      try { canonical(r, CHAIN_FIELDS); } catch (e) { fail("event #" + r.id + ": canonicalization failed: " + e.message); }
-      if (r.schema_version !== 1) fail("event #" + r.id + ": unknown schema_version " + r.schema_version + " (explicit error per D7; newer verifier required)");
+      const fields = r.schema_version === 1 ? CHAIN_FIELDS_V1 : r.schema_version === 2 ? CHAIN_FIELDS : null;
+      if (!fields) fail("event #" + r.id + ": unknown schema_version " + r.schema_version + " (explicit error per D7; newer verifier required)");
+      try { canonical(r, fields); } catch (e) { fail("event #" + r.id + ": canonicalization failed: " + e.message); }
       if (r.prev_hash !== expected) fail("chain break at event #" + r.id + ": prev_hash " + r.prev_hash + " != expected " + expected);
-      expected = sha(canonical(r, CHAIN_FIELDS));
+      expected = sha(canonical(r, fields));
       chainedOk++;
     }
     const ms = Math.round((performance.now() - t0) * 1000) / 1000;

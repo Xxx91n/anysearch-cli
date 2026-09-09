@@ -11,6 +11,7 @@ import { normalizeEntityName } from "../entity";
 import type { AdjudicationResultItem } from "../session-store";
 import { rrfRank, FUSION_REGISTRY } from "@anysearch/retriever";
 import { assertParaphraseSlice, PARAPHRASE_MAX_LEXICAL_OVERLAP, type CaseSpec, type EvalStage } from "./golden-cases";
+import { injectFingerprint, runInjectProbe } from "./inject";
 import { holdoutFingerprint, isHoldout } from "./holdout";
 import { bucketHistogram, dayBucketFingerprint } from "./day-buckets";
 import { evaluateTauFitGate, isStructuralAbsence } from "./bgnbd";
@@ -532,6 +533,18 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
             }
             if (logs.length === 0) fails.push("op " + op.fromOp + " recorded no archive log ids");
             mark({ op: opIndex, kind: op.op, stage: op.stage, ok: fails.length === 0, detail: fails.length ? fails.join("; ") : "undone " + logs.length, undoOk: anyOk });
+            break;
+          }
+          case "inject": {
+            const fp = injectFingerprint(op.canonicalPayload);
+            if (fp !== op.expectFingerprint) {
+              mark({ op: opIndex, kind: op.op, stage: op.stage, ok: false, detail: "fingerprint " + fp + " != " + op.expectFingerprint });
+              break;
+            }
+            const ok = op.family === "memory"
+              ? (await store.promotePreference({ key: "inject-memory", value: op.canonicalPayload, source: "explicit", sourceLabel: "memory" })).action === "rejected"
+              : runInjectProbe(op.family, op.canonicalPayload);
+            mark({ op: opIndex, kind: op.op, stage: op.stage, ok, detail: ok ? "inject probe " + op.family + " passed" : "inject probe " + op.family + " failed" });
             break;
           }
           case "resolveQuarantined": {

@@ -13,7 +13,7 @@ export interface DomainSchema {
   settings: Record<string, unknown>;
   prompts: PromptEntry[];
   skills: { active: string[] };
-  sources: { enabled: string[]; weights?: Record<string, number> };
+  sources: { enabled: string[]; weights?: Record<string, number>; urlAllowlist?: string[] };
   rag: { adapter: string; config?: Record<string, unknown> };
   hooks: { toolWhitelist: string[] };
   compaction?: CompactionConfig;
@@ -42,7 +42,7 @@ export interface RawDomain {
   settings?: Record<string, unknown>;
   prompts?: PromptEntry[];
   skills?: { active?: string[] };
-  sources?: { enabled?: string[]; weights?: Record<string, number> };
+  sources?: { enabled?: string[]; weights?: Record<string, number>; urlAllowlist?: string[] };
   rag?: { adapter?: string; config?: Record<string, unknown> };
   hooks?: { toolWhitelist?: string[] };
   compaction?: CompactionConfig;
@@ -106,6 +106,7 @@ export function resolve(
   let skillsActive: string[] = [];
   let sourcesEnabled: string[] = [];
   let sourcesWeights: Record<string, number> | undefined;
+  let sourcesUrlAllowlist: string[] | undefined;
   let ragAdapter = "";
   let ragConfig: Record<string, unknown> | undefined;
   let hooksWhitelist: string[] = [];
@@ -124,6 +125,7 @@ export function resolve(
     if (d.sources?.enabled) sourcesEnabled = d.sources.enabled;
     // ADR-0045 D2: sources.weights — section-replace semantics like enabled (per-chain override).
     if (d.sources?.weights) sourcesWeights = d.sources.weights;
+    if (d.sources?.urlAllowlist) sourcesUrlAllowlist = d.sources.urlAllowlist;
     if (d.rag?.adapter) { ragAdapter = d.rag.adapter; ragConfig = d.rag.config; }
     if (d.hooks?.toolWhitelist) hooksWhitelist = d.hooks.toolWhitelist;
     if (d.compaction) compaction = d.compaction;
@@ -137,7 +139,7 @@ export function resolve(
     settings,
     prompts,
     skills: { active: skillsActive },
-    sources: { enabled: sourcesEnabled, ...(sourcesWeights ? { weights: sourcesWeights } : {}) },
+    sources: { enabled: sourcesEnabled, ...(sourcesWeights ? { weights: sourcesWeights } : {}), ...(sourcesUrlAllowlist ? { urlAllowlist: sourcesUrlAllowlist } : {}) },
     rag: { adapter: ragAdapter, config: ragConfig },
     hooks: { toolWhitelist: hooksWhitelist },
     compaction,
@@ -163,6 +165,11 @@ export function validate(schema: DomainSchema): void {
         throw new Error("Domain schema: sources.weights unknown provider id " + JSON.stringify(key) + " (registered: " + Object.keys(FUSION_REGISTRY.weights.web).join(", ") + ")");
       if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
         throw new Error("Domain schema: sources.weights." + key + " must be a finite number > 0");
+    }
+  }
+  if (schema.sources.urlAllowlist !== undefined) {
+    if (!Array.isArray(schema.sources.urlAllowlist) || schema.sources.urlAllowlist.some((v) => typeof v !== "string" || !v.trim())) {
+      throw new Error("Domain schema: sources.urlAllowlist must be an array of non-empty hostnames");
     }
   }
   if (!Array.isArray(schema.hooks.toolWhitelist))

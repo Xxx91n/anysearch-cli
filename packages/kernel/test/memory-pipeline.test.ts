@@ -101,13 +101,13 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
     { role: "tool", toolName: "search", content: "result2 about ML" },
   ];
   const gap = distillGap(msgs as any, 2);
-  assert(gap.includes("result2"), "distillGap: extracts after summary point");
-  assert(!gap.includes("result1"), "distillGap: excludes before summary point");
+  assert(gap.text.includes("result2"), "distillGap: extracts after summary point");
+  assert(!gap.text.includes("result1"), "distillGap: excludes before summary point");
 }
 
 // Test: distillGap handles empty messages.
 {
-  assert(distillGap([], 0) === "", "distillGap: empty messages -> empty");
+  assert(distillGap([], 0).text === "", "distillGap: empty messages -> empty");
 }
 
 // Test: distillGap handles content array format.
@@ -116,7 +116,7 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
     { role: "tool", toolName: "search_web", content: [{ type: "text", text: "array result" }] },
   ];
   const gap = distillGap(msgs as any, 0);
-  assert(gap.includes("array result"), "distillGap: handles content array");
+  assert(gap.text.includes("array result"), "distillGap: handles content array");
 }
 
 // === adjudicateReuseCompress Tests ===

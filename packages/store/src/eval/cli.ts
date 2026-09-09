@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { GOLDEN_CASES } from "./golden-cases";
+import { GOLDEN_CASES, assertInjectSuite } from "./golden-cases";
 import { assertBackflowNoOverlap } from "./holdout";
 import { runAll, type EvalReport } from "./runner";
 import { isSkip, skipKey } from "./explicit-skip";
@@ -149,6 +149,7 @@ async function main(): Promise<number> {
   // ADR-0038 D5: backflow slice family must never intersect the frozen baseline — fail fast (exit 12).
   try {
     assertBackflowNoOverlap(GOLDEN_CASES);
+    assertInjectSuite(GOLDEN_CASES);
   } catch (e) {
     console.error("[eval] backflow overlap: " + (e instanceof Error ? e.message : String(e)));
     process.exit(12);

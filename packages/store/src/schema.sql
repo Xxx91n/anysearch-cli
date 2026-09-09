@@ -64,7 +64,9 @@ CREATE TABLE IF NOT EXISTS retrieval_results (
   valid_until TEXT, -- bi-temporal: NULL = still valid, non-null = invalidated timestamp.
   pinned BOOLEAN DEFAULT 0, -- pinned exemption: bypasses time decay.
   entity TEXT, -- entity key for bi-temporal invalidation (URL for MVP).
-  archived INTEGER NOT NULL DEFAULT 0 -- ADR-0037 D5: soft archive (reversible forgetting); 1 = excluded from all read paths
+  archived INTEGER NOT NULL DEFAULT 0, -- ADR-0037 D5: soft archive (reversible forgetting); 1 = excluded from all read paths
+  source_label TEXT, -- ADR-0053 D2: FIDES-style source trust label
+  trace_id TEXT       -- ADR-0053 D2: correlation id, never treated as trust
 );
 
 -- FTS5 for retrieval results (search within session results).
@@ -142,6 +144,8 @@ CREATE TABLE IF NOT EXISTS t0_preferences (
   demote_reason TEXT,
   correction_count INTEGER NOT NULL DEFAULT 0,
   provenance TEXT,
+  source_label TEXT, -- ADR-0053 D4: untrusted sources never promote
+  trace_id TEXT,
   PRIMARY KEY (key, scope)
 );
 -- ADR-0031 D3: Entity link layer. Global (session-agnostic) entity registry.
@@ -265,6 +269,7 @@ CREATE TABLE IF NOT EXISTS access_events (
   prev_hash TEXT,
   schema_version INTEGER,
   event_type TEXT,
+  source_label TEXT,
   CHECK (memory_id IS NOT NULL OR event_type IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS idx_access_events_memory ON access_events(memory_id);

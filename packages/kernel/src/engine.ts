@@ -5,7 +5,8 @@
 // JS adaptation: Promise.allSettled + AbortController + unique-URL counter early stop.
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger } from "@anysearch/retriever";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND } from "@anysearch/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved } from "@anysearch/retriever";
+import { randomUUID } from "node:crypto";
 import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort } from "./ports";
 import { attachAttribution, applyJudgeEscalation, type JudgeFn } from "./attribution";
@@ -234,6 +235,7 @@ export class RetroaererdEngine {
     const gate = { ...DEFAULT_GATE, ...config.gate };
     const graceWindow = config.graceWindowMs ?? 1500;
     const deepMode = config.deepMode ?? false;
+    const retrievalTraceId = randomUUID().replace(/-/g, "");
 
     // Select providers: all registered, or subset via Query.providers filter.
     let allProviders = [...this.providers.values()];
@@ -301,7 +303,28 @@ export class RetroaererdEngine {
         if (inner.status === "fulfilled" && inner.envelope) {
           const urls: string[] = [];
           const native: Record<string, number> = {};
-          for (const r of inner.envelope.results) {
+          for (const original of inner.envelope.results) {
+            const trusted = sanitizeRetrieved({
+              url: original.url,
+              title: original.title,
+              snippet: original.snippet,
+              entity: original.entity,
+              source: original.source,
+              label: { source: "retrieved", traceId: retrievalTraceId },
+            });
+            const r: NormalizedResult = {
+              ...original,
+              url: trusted.content.url,
+              title: trusted.content.title,
+              snippet: trusted.content.snippet,
+              ...(trusted.content.entity !== undefined ? { entity: trusted.content.entity } : {}),
+              extra: {
+                ...(original.extra ?? {}),
+                trustLabel: trusted.content.label,
+                trustDisposal: trusted.content.disposal,
+                trustSuspicious: trusted.suspicious,
+              },
+            };
             const norm = normalizeUrl(r.url);
             if (!allResults.has(norm)) {
               allResults.set(norm, { ...r, url: norm }); // store normalized URL as key

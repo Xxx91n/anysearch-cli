@@ -15,7 +15,23 @@ import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports"
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
 import { isTimeSensitive, isEvergreen } from "@anysearch/store"; // ADR-0030 D5: no inline regex copies
+import { combineLabels, type SourceTraceLabel } from "@anysearch/retriever";
 import type { LlmRewriteFn } from "./query-rewrite";
+
+export interface TaggedGapResult {
+  url: string;
+  title: string;
+  snippet: string;
+  source: string;
+  label: SourceTraceLabel;
+}
+
+export interface TaggedGap {
+  text: string;
+  results: TaggedGapResult[];
+  source: SourceTraceLabel["source"];
+  traceId: string;
+}
 
 export interface MemoryPipelineDeps {
   store: SessionStorePort;
@@ -44,28 +60,57 @@ export interface ConsolidateResult {
   state: ConsolidationState;
   decision: "skip" | "reuse" | "compress";
   summaryRequest?: {
-    gap: string;
+    gap: TaggedGap;
     prevSummary: string | undefined;
     msgCountAtTrigger: number;
   };
 }
 
-// ADR-0013 D9: Gap distillation — extract search tool results from messages after last summary point.
-export function distillGap(messages: any[], fromIdx: number): string {
+// ADR-0013 D9 / ADR-0053 D2: gap distillation returns a tagged object, never a bare string.
+export function distillGap(messages: any[], fromIdx: number): TaggedGap {
   const gap = messages.slice(fromIdx);
-  const results: string[] = [];
+  const results: TaggedGap["results"] = [];
+  let label: SourceTraceLabel = { source: "retrieved", traceId: "gap" };
   for (const msg of gap) {
     if (msg.role !== "tool") continue;
     const toolName = msg.toolName || msg.name || "";
     if (typeof toolName !== "string" || !toolName.includes("search")) continue;
-    const content = typeof msg.content === "string"
+    const raw = typeof msg.content === "string"
       ? msg.content
       : Array.isArray(msg.content)
         ? msg.content.map((c: any) => c?.text || "").join("")
         : JSON.stringify(msg.content || "");
-    if (content) results.push(content);
+    if (!raw) continue;
+    let parsed: any;
+    try { parsed = JSON.parse(raw); } catch { parsed = null; }
+    const envelope = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : { schema: null, results: [] };
+    const items: any[] = Array.isArray(envelope?.results) && envelope.results.length > 0
+      ? envelope.results
+      : [{ url: "", title: "", snippet: raw, source: "retrieved" }];
+    for (const item of items) {
+      const traceId = typeof (item?.label?.traceId) === "string" && item.label.traceId
+        ? item.label.traceId
+        : "gap-" + results.length;
+      const itemLabel = combineLabels(label, {
+        source: item?.label?.source === "system" || item?.label?.source === "user" || item?.label?.source === "tool" || item?.label?.source === "memory"
+          ? item.label.source
+          : "retrieved",
+        traceId,
+      });
+      results.push({
+        url: typeof item?.url === "string" ? item.url : "",
+        title: typeof item?.title === "string" ? item.title : "",
+        snippet: typeof item?.snippet === "string" ? item.snippet : String(raw).slice(0, 4000),
+        source: typeof item?.source === "string" ? item.source : "retrieved",
+        label: itemLabel,
+      });
+      label = combineLabels(label, itemLabel);
+    }
   }
-  return results.join("\n\n").slice(0, 4000);
+  const text = results.map((r) => r.snippet).join("\n\n").slice(0, 4000);
+  return { text, results, source: label.source, traceId: label.traceId };
 }
 
 // ADR-0013 D1/D3/D6: NOOP adjudication — LLM decides REUSE vs COMPRESS.
@@ -348,7 +393,7 @@ export class MemoryPipeline {
         fireCompress();
       } else if (result.decision === "reuse") {
         // Adjudication: fire-and-forget LLM call to decide reuse vs compress.
-        const gapDistillation = result.summaryRequest?.gap || "";
+        const gapDistillation = result.summaryRequest?.gap.text || "";
         adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary)
           .then((adjDecision: "reuse" | "compress") => {
             if (adjDecision === "compress") {

@@ -9,21 +9,21 @@ function assert(cond: boolean, msg: string) {
   passed++;
 }
 
-const v1: ChainEventRow = { id: 1, memory_id: 42, accessed_at: "2026-01-01 00:00:00", prev_hash: "a".repeat(64), schema_version: 1, event_type: "access" };
-const v2: ChainEventRow = { id: 2, memory_id: 7, accessed_at: "2026-08-30 12:34:56", prev_hash: "c11f4e3e7a0a91dbfcc0d9155675aa09b57c6b6b91654289d8276e11b141f023", schema_version: 1, event_type: "access" };
-const v3: ChainEventRow = { id: 3, memory_id: 8, accessed_at: "2026-08-30 12:34:57", prev_hash: "098bb7da8c94e3a2e43603c2394bb4a014d99e88a7235c7eedfcb510daaf17de", schema_version: 1, event_type: "access" };
+const v1: ChainEventRow = { id: 1, memory_id: 42, accessed_at: "2026-01-01 00:00:00", prev_hash: "a".repeat(64), schema_version: 2, event_type: "access", source_label: "system" };
+const v2: ChainEventRow = { id: 2, memory_id: 7, accessed_at: "2026-08-30 12:34:56", prev_hash: "5495a5e82619282e0da68eab2b3db25c99b78a514ffc7ff2cad8ca121af7bbeb", schema_version: 2, event_type: "access", source_label: "system" };
+const v3: ChainEventRow = { id: 3, memory_id: 8, accessed_at: "2026-08-30 12:34:57", prev_hash: "997dfaae0d71099b88f63bbc047009f056eac6fc557c9244177382e8227c0b09", schema_version: 2, event_type: "access", source_label: "system" };
 
 function main() {
   // Core 1–3: canonical bytes + chain hashes.
-  assert(canonicalEventJson(v1) === '{"accessed_at":"2026-01-01 00:00:00","event_type":"access","id":1,"memory_id":42,"prev_hash":"' + "a".repeat(64) + '","schema_version":1}', "v1 canonical bytes");
-  assert(eventHash(v1) === "c11f4e3e7a0a91dbfcc0d9155675aa09b57c6b6b91654289d8276e11b141f023", "v1 hash");
-  assert(eventHash(v2) === "098bb7da8c94e3a2e43603c2394bb4a014d99e88a7235c7eedfcb510daaf17de", "v2 chains on v1 hash");
-  assert(eventHash(v3) === "cd786235fa8ceaaad6af16a5a4b09bf71e8a0bc48343337549e77326c28ed587", "v3 chains on v2 hash");
+  assert(canonicalEventJson(v1) === '{"accessed_at":"2026-01-01 00:00:00","event_type":"access","id":1,"memory_id":42,"prev_hash":"' + "a".repeat(64) + '","schema_version":2,"source_label":"system"}', "v1 canonical bytes");
+  assert(eventHash(v1) === "5495a5e82619282e0da68eab2b3db25c99b78a514ffc7ff2cad8ca121af7bbeb", "v1 hash");
+  assert(eventHash(v2) === "997dfaae0d71099b88f63bbc047009f056eac6fc557c9244177382e8227c0b09", "v2 chains on v1 hash");
+  assert(eventHash(v3) === "b3947e39bbd6cd93cba54bb113f813e588b0631c7123145ff6373295bb2164b5", "v3 chains on v2 hash");
 
   // Boundary 1: empty TEXT accessed_at stays in the hash input (no truthiness shortcut).
-  const b1: ChainEventRow = { id: 9, memory_id: 1, accessed_at: "", prev_hash: "f".repeat(64), schema_version: 1, event_type: "access" };
-  assert(canonicalEventJson(b1) === '{"accessed_at":"","event_type":"access","id":9,"memory_id":1,"prev_hash":"' + "f".repeat(64) + '","schema_version":1}', "boundary: empty TEXT serialized byte-exact");
-  assert(eventHash(b1) === "faa8eb8213ae8622ab3161be2acd1bebc2d3f2b39a33fed263350103c7b42dab", "boundary hash");
+  const b1: ChainEventRow = { id: 9, memory_id: 1, accessed_at: "", prev_hash: "f".repeat(64), schema_version: 2, event_type: "access", source_label: "system" };
+  assert(canonicalEventJson(b1) === '{"accessed_at":"","event_type":"access","id":9,"memory_id":1,"prev_hash":"' + "f".repeat(64) + '","schema_version":2,"source_label":"system"}', "boundary: empty TEXT serialized byte-exact");
+  assert(eventHash(b1) === "68e6e89be6c4c9bab57ddf556eb76611183ff959a7b06bb6a633d92574ee0933", "boundary hash");
 
   // Boundary 2: legacy 3-field canonical + aggregate digest + genesis.
   const l1 = { id: 5, memory_id: 11, accessed_at: "2025-05-05 05:05:05" };
@@ -41,10 +41,11 @@ function main() {
   // Whitelist boundary negatives (D7 gap item): REAL entering chain input is rejected, not hashed.
   const reject = (r: ChainEventRow) => { try { canonicalEventJson(r); return false; } catch { return true; } };
   assert(reject({ ...v1, schema_version: 1.5 }), "REAL schema_version rejected");
+  assert(canonicalEventJson({ ...v1, source_label: null }) === '{"accessed_at":"2026-01-01 00:00:00","event_type":"access","id":1,"memory_id":42,"prev_hash":"' + "a".repeat(64) + '","schema_version":2,"source_label":null}', "NULL source_label serializes as JSON null");
   assert(reject({ ...v1, id: 1.5 }), "REAL id rejected");
   assert(reject({ ...v1, memory_id: NaN }), "NaN memory_id rejected");
   assert(reject({ ...v1, accessed_at: null as unknown as string }), "NULL accessed_at (non-nullable column) rejected");
-  assert(canonicalEventJson({ ...v1, prev_hash: null }) === '{"accessed_at":"2026-01-01 00:00:00","event_type":"access","id":1,"memory_id":42,"prev_hash":null,"schema_version":1}', "NULL prev_hash serializes as JSON null");
+  assert(canonicalEventJson({ ...v1, prev_hash: null }) === '{"accessed_at":"2026-01-01 00:00:00","event_type":"access","id":1,"memory_id":42,"prev_hash":null,"schema_version":2,"source_label":"system"}', "NULL prev_hash serializes as JSON null");
 
   console.log("access-chain-golden: " + passed + " passed, " + failed + " failed");
   process.exit(failed ? 1 : 0);
