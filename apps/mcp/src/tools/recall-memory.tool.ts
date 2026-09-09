@@ -5,6 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch/kernel";
 import { KernelJsonSchemas } from "@anysearch/kernel";
+import { observeTool } from "./observation.js";
 
 export function registerRecallMemory(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
@@ -14,6 +15,7 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
       inputSchema: fromJsonSchema(KernelJsonSchemas.recall_memory),
     },
     async (args: unknown) => {
+      return observeTool(eng, "recall_memory", async () => {
       try {
         const { query, limit } = args as { query: string; limit?: number };
         const lim = limit ?? 5;
@@ -66,6 +68,7 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
       } catch (e) {
         return { content: [{ type: "text" as const, text: "recall_memory error: " + (e instanceof Error ? e.message : String(e)) }] };
       }
+      });
     }
   );
 }

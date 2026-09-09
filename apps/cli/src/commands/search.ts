@@ -2,7 +2,7 @@
 // ADR-0006 decision 3A: uses createEngine() factory, not inline wiring.
 
 import type { Mode } from "@anysearch/retriever";
-import { createEngine } from "../composition";
+import { createPersistentEngine } from "../db";
 
 export async function runSearch(args: string[]): Promise<number> {
   const query = args.join(" ");
@@ -25,10 +25,21 @@ export async function runSearch(args: string[]): Promise<number> {
 
   // ADR-0006 decision 3A: createEngine factory with domain filtering.
   const domain = process.env.ANS_DOMAIN;
-  const { retriever } = createEngine(domain);
+  const { retriever, observation } = createPersistentEngine(domain);
 
   try {
-    const envelope = await retriever.search({ query: queryClean, mode, maxResults: 10 });
+    const envelope = await observation.recordOperation(
+      {
+        kind: "retrieve",
+        operation: "ans.search",
+        attributes: {
+          "anysearch.command": "search",
+          "anysearch.mode": mode,
+          "anysearch.domain": domain ?? "all",
+        },
+      },
+      () => retriever.search({ query: queryClean, mode, maxResults: 10 }),
+    );
 
     // r83 audit F5 / ADR-0034 D4: --json pure — single JSON document on stdout, nothing else.
     if (isJson) {

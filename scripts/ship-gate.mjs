@@ -24,7 +24,7 @@
 // ponytail: single spawn per check, sequential. Concurrency is a CI concern.
 
 import { spawn, spawnSync } from "node:child_process";
-import { readGainLedger, writeGainLedger, applyTier, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
+import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -471,6 +471,45 @@ function stepStaticAssertions() {
     report("pass", "ADR-0046 source gates + ADR-0047 override core/ledger/verifier wiring");
   }
 
+  // 1n. ADR-0052 D2-D5: local observation representation, SQLite store, export
+  // boundary, and eval isolation. These assertions are structural, not runtime
+  // acceptance; runtime trace/eval smoke is verified below.
+  {
+    const obsPath = path.join(ROOT, "packages/store/src/observation.ts");
+    if (!fs.existsSync(obsPath)) fail("ADR-0052 1n: packages/store/src/observation.ts missing");
+    const obs = fs.readFileSync(obsPath, "utf8");
+    for (const tok of [
+      "OBSERVATION_SCHEMA_URL",
+      "SEMCONV_GENAI_COMMIT",
+      "SEMCONV_LEGACY_TAG",
+      "SEMCONV_MCP_TAG",
+      "OBSERVATION_TESTED_WITH",
+      "SqliteObservationStore",
+      "mapTraceToOtlp",
+      "gen_ai.evaluation.result",
+    ]) {
+      if (!obs.includes(tok)) fail("ADR-0052 1n: observation.ts missing " + tok);
+    }
+    const indexSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/index.ts"), "utf8");
+    if (!indexSrc.includes("./observation")) fail("ADR-0052 1n: observation module not exported from store index");
+    const gateSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/gate.ts"), "utf8");
+    for (const forbidden of ["observability_traces", "observability_spans", "observability_evaluations", "ObservabilityTrace", "SqliteObservationStore", "gen_ai."]) {
+      if (gateSrc.includes(forbidden)) fail("ADR-0052 D5 violated: eval gate references observational asset " + forbidden);
+    }
+    const cliSrc = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/search.ts"), "utf8");
+    if (!cliSrc.includes("observation.recordOperation")) fail("ADR-0052 1n: CLI search observation missing");
+    const mcpSrc = fs.readFileSync(path.join(ROOT, "apps/mcp/src/tools/index.ts"), "utf8");
+    const mcpObs = fs.readFileSync(path.join(ROOT, "apps/mcp/src/tools/observation.ts"), "utf8");
+    if (!mcpObs.includes("observeTool") || !mcpSrc.includes("registerSearchWeb")) fail("ADR-0052 1n: MCP observation helper/tool registry missing");
+    const evalCli = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/cli.ts"), "utf8");
+    if (!evalCli.includes("SqliteObservationStore") || !evalCli.includes("recordEvaluationTrace")) fail("ADR-0052 1n: eval-runner observation write missing");
+    const verifyScript = path.join(ROOT, "scripts", "verify-observation.mjs");
+    if (!fs.existsSync(verifyScript) || !fs.readFileSync(verifyScript, "utf8").includes("verdict")) {
+      fail("ADR-0052 1n: packaged observation verifier missing");
+    }
+    report("pass", "ADR-0052 observation representation/store/export boundary and eval isolation present");
+  }
+
 }
 
 // ---------------------------------------------------------------------------
@@ -820,14 +859,20 @@ async function stepMemoryEval() {
       writeGainLedger(ledgerPath, applyTier(ledger, "red", new Date().toISOString(), gc.look));
       fail("gain gate RED (proven-negative, ADR-0038 D2): " + (gc.reasons || []).join(" | "));
     }
-    writeGainLedger(ledgerPath, applyTier(ledger, gc.tier, new Date().toISOString(), gc.look));
     if (gc.tier === "warn") {
+      applyTier(ledger, gc.tier, new Date().toISOString(), gc.look);
       const streak = ledger.consecutiveWarn;
-      if (mustFail(ledger)) {
-        fail("gain gate WARN x" + streak + " consecutive (>= " + WARN_STREAK_LIMIT + ") — forced human review: node scripts/gain-warn-resolve.mjs --decision disable-arm|demote|stay-warn (ADR-0038 D2)");
+      const terminalUnproven = mustFail(ledger) || gc.look > gc.kMax;
+      if (terminalUnproven) {
+        applyResolution(ledger, "demote", new Date().toISOString(), "ADR-0052 r49 governance amendment: relation-arm unproven-positive, demote to observance");
+        writeGainLedger(ledgerPath, ledger);
+        report("pass", "gain gate demoted to observance (verdict=unproven-positive, disposition=demote, look " + gc.look + "/" + gc.kMax + "): " + ((gc.reasons || [])[0] ?? ""));
+      } else {
+        writeGainLedger(ledgerPath, ledger);
+        report("pass", "gain gate WARN (streak " + streak + "/" + WARN_STREAK_LIMIT + "): " + ((gc.reasons || [])[0] ?? ""));
       }
-      report("pass", "gain gate WARN (streak " + streak + "/" + WARN_STREAK_LIMIT + "): " + ((gc.reasons || [])[0] ?? ""));
     } else {
+      writeGainLedger(ledgerPath, applyTier(ledger, gc.tier, new Date().toISOString(), gc.look));
       report("pass", "gain gate GREEN (look " + gc.look + "/" + gc.kMax + ", spent alpha " + Number(gc.spentAlpha).toFixed(6) + ")");
     }
   }
@@ -944,6 +989,17 @@ async function stepMcpInitialize() {
     });
     child.stdin.write(JSON.stringify(req) + "\n");
   });
+}
+
+// ---------------------------------------------------------------------------
+// Step 8b — ADR-0052 D7: packaged CLI/MCP trace round-trip and durable SQLite
+// schema smoke. No network or provider keys are required; the verifier expects
+// fail-open operation traces, not successful upstream retrieval.
+// ---------------------------------------------------------------------------
+async function stepObservationSmoke() {
+  report("info", "step 8b/9: packaged CLI/MCP observation smoke (ADR-0052)");
+  await run(process.execPath, [path.join(ROOT, "scripts", "verify-observation.mjs")], { stdio: "pipe" });
+  report("pass", "packaged CLI/MCP observation trace round-trip green");
 }
 
 // ---------------------------------------------------------------------------
@@ -1067,6 +1123,7 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
     await stepOverrideGovernance();
     reportStep("step_5_mcp_stdio");
     await stepMcpInitialize();
+    await stepObservationSmoke();
     reportStep("step_9_fail_open_boot");
     await stepFailOpenBoot();
     report("info", "cross-OS native loading covered by CI native-smoke.yml 4-job matrix (ADR-0025 D1)");

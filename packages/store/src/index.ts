@@ -18,6 +18,10 @@ export * from "./consolidate";
 // ADR-0040: access_events tamper-evidence chain (writer side; verifier is independent).
 export * from "./access-chain";
 
+// ADR-0052 D2-D5: local-first observation representation, SQLite trace store,
+// and export mapping at the volatile OTel GenAI boundary.
+export * from "./observation";
+
 // ADR-0043: consumed/synthetic switch governance (state machine + chain evidence).
 export * from "./eval/switch-machine";
 export * from "./eval/switch-run";

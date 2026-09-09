@@ -8,7 +8,14 @@ export const GAIN_LEDGER_SCHEMA = "anysearch/gain-ledger@1";
 export const WARN_STREAK_LIMIT = 3;
 
 export function emptyLedger() {
-  return { schema: GAIN_LEDGER_SCHEMA, consecutiveWarn: 0, history: [], resolutions: [] };
+  return {
+    schema: GAIN_LEDGER_SCHEMA,
+    consecutiveWarn: 0,
+    history: [],
+    resolutions: [],
+    disposition: null,
+    verdict: null,
+  };
 }
 
 export function readGainLedger(file) {
@@ -19,6 +26,8 @@ export function readGainLedger(file) {
     // additive and preserved untouched on write-back).
     if ((j.schema !== GAIN_LEDGER_SCHEMA && j.schema !== "anysearch/gain-ledger@2") || typeof j.consecutiveWarn !== "number" || !Array.isArray(j.history)) return emptyLedger();
     if (!Array.isArray(j.resolutions)) j.resolutions = [];
+    if (j.disposition === undefined) j.disposition = null;
+    if (j.verdict === undefined) j.verdict = null;
     return j;
   } catch {
     return emptyLedger();
@@ -43,10 +52,11 @@ export function applyResolution(ledger, decision, at, note) {
   if (!RESOLUTIONS.includes(decision)) throw new Error("unknown resolution: " + decision);
   ledger.resolutions = [...ledger.resolutions, { at, decision, note: note ?? "" }].slice(-20);
   ledger.consecutiveWarn = 0;
+  ledger.disposition = decision;
+  ledger.verdict = decision === "demote" ? "unproven-positive" : null;
   return ledger;
 }
 
 export function mustFail(ledger) {
   return ledger.consecutiveWarn >= WARN_STREAK_LIMIT;
 }
-

@@ -7,6 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, type CompositionResult } from "@anysearch/kernel";
+import { observeTool } from "./observation.js";
 
 export function registerResearchWeb(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
@@ -16,34 +17,35 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
       inputSchema: fromJsonSchema(KernelJsonSchemas.research_web),
     },
     async (args: unknown) => {
-      const { question, depth } = args as { question: string; depth?: string };
-      const d = depth ?? "deep";
-      let allResults: any[] = [];
-      let lastRoundSufficiency: Record<string, unknown> | undefined;
-      let lastEnvelope: any = null;
-      let rounds = 0;
+      return observeTool(eng, "research_web", async () => {
+        const { question, depth } = args as { question: string; depth?: string };
+        const d = depth ?? "deep";
+        let allResults: any[] = [];
+        let lastRoundSufficiency: Record<string, unknown> | undefined;
+        let lastEnvelope: any = null;
+        let rounds = 0;
 
-      try {
-        const maxRounds = d === "deep" ? 3 : 1;
-        const seenUrls = new Set<string>();
-        for (let round = 0; round < maxRounds; round++) {
-          const envelope = await eng.retriever.search({
-            query: round === 0 ? question : question + " (round " + (round + 1) + ")",
-            mode: "deep" as const,
-            maxResults: 10,
-          });
-          rounds++;
-          // ADR-0023 D1: sufficiency gate — this is the LAST round's sufficiency; earlier rounds tracks but the gate cares about the final state.
-          lastRoundSufficiency = envelope.metadata?.sufficiency as unknown as Record<string, unknown> | undefined;
-          lastEnvelope = envelope;
+        try {
+          const maxRounds = d === "deep" ? 3 : 1;
+          const seenUrls = new Set<string>();
+          for (let round = 0; round < maxRounds; round++) {
+            const envelope = await eng.retriever.search({
+              query: round === 0 ? question : question + " (round " + (round + 1) + ")",
+              mode: "deep" as const,
+              maxResults: 10,
+            });
+            rounds++;
+            // ADR-0023 D1: sufficiency gate — this is the LAST round's sufficiency; earlier rounds tracks but the gate cares about the final state.
+            lastRoundSufficiency = envelope.metadata?.sufficiency as unknown as Record<string, unknown> | undefined;
+            lastEnvelope = envelope;
 
-          const newItems = (envelope.results ?? []).filter((r: any) => !seenUrls.has(r.url));
-          newItems.forEach((r: any) => seenUrls.add(r.url));
-          allResults = allResults.concat(newItems);
+            const newItems = (envelope.results ?? []).filter((r: any) => !seenUrls.has(r.url));
+            newItems.forEach((r: any) => seenUrls.add(r.url));
+            allResults = allResults.concat(newItems);
 
-          // Stop early when sufficiency verdict is "correct" (engine D5).
-          if (envelope.metadata?.sufficiency?.verdict === "correct") break;
-        }
+            // Stop early when sufficiency verdict is "correct" (engine D5).
+            if (envelope.metadata?.sufficiency?.verdict === "correct") break;
+          }
 
         // r83 audit F11: re-derive attribution over the MERGED result set so claim
         // evidence sourceKeys point into the same results array this tool returns.
@@ -54,8 +56,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           const merged = { ...lastEnvelope, results: allResults };
           mergedAttribution = attachAttribution(merged);
         }
-        const lastRound = allResults.slice(-10);
-        const summary = JSON.stringify(
+          const lastRound = allResults.slice(-10);
+          const summary = JSON.stringify(
           {
             question,
             depth: d,
@@ -71,20 +73,21 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           },
           null,
           2,
-        );
+          );
 
-        return {
-          content: [{ type: "text" as const, text: summary }],
-          ...(lastRoundSufficiency || mergedAttribution
-            ? { structuredContent: {
-                ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
-                ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
-              } }
-            : {}),
-        };
-      } catch (e) {
-        return { content: [{ type: "text" as const, text: "research_web error: " + (e instanceof Error ? e.message : String(e)) }] };
-      }
+          return {
+            content: [{ type: "text" as const, text: summary }],
+            ...(lastRoundSufficiency || mergedAttribution
+              ? { structuredContent: {
+                  ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
+                  ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
+                } }
+              : {}),
+          };
+        } catch (e) {
+          return { content: [{ type: "text" as const, text: "research_web error: " + (e instanceof Error ? e.message : String(e)) }] };
+        }
+      });
     },
   );
 }

@@ -420,6 +420,9 @@ importers:
       '@anysearch/retriever':
         specifier: workspace:*
         version: link:../retriever
+      '@earendil-works/pi-telemetry':
+        specifier: ^0.84.2
+        version: 0.84.2
       '@sinclair/typebox':
         specifier: ^0.34.52
         version: 0.34.52

@@ -9,7 +9,12 @@ import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch/retri
 import type { SearchProvider } from "@anysearch/retriever";
 import { RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort } from "./ports";
-import { loadDomainByName, SqliteSessionStore, readActiveCalibrationBundle } from "@anysearch/store";
+import {
+  loadDomainByName,
+  SqliteObservationStore,
+  SqliteSessionStore,
+  readActiveCalibrationBundle,
+} from "@anysearch/store";
 import * as path from "node:path";
 import type { AttributionCalibration } from "./calibrate";
 
@@ -25,6 +30,7 @@ export interface CompositionResult {
   retriever: RetrieverPort;
   config?: DomainConfigPort;
   store: SessionStorePort;
+  observation: SqliteObservationStore;
 }
 
 // createEngine: build configured engine.
@@ -107,6 +113,8 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
   );
   // ponytail: share one SessionStore across CLI + MCP. In-memory DB by default;
   // opts.dbPath enables durable store for maintenance commands (ADR-0037).
-  const store = new SqliteSessionStore(opts?.dbPath ?? ":memory:");
-  return { retriever, config, store };
+  const dbPath = opts?.dbPath ?? ":memory:";
+  const store = new SqliteSessionStore(dbPath);
+  const observation = new SqliteObservationStore(dbPath);
+  return { retriever, config, store, observation };
 }

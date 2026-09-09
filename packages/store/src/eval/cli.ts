@@ -13,6 +13,7 @@ import { quarantineSkipLedger, recordSkips, skipMustFail, withSkipLedgerLock } f
 import { advanceSwitch, probeSwitchIntegrity } from "./switch-run";
 import { fixtureDefinitionHash } from "./obs-fixtures";
 import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, SHIP_OVERRIDE_REASON_CODES, type EvalBaseline, type GainConclusion } from "./gate";
+import { SqliteObservationStore } from "../observation";
 
 function repoRoot(): string {
   let d = dirname(fileURLToPath(import.meta.url));
@@ -244,6 +245,40 @@ async function main(): Promise<number> {
   }
   const g = evaluateGate(report, baseline, { look });
   const exitCode = g.exitCode;
+
+  // ADR-0052 D5: persist the evaluation result as a representation-only
+  // observation. This write is deliberately after evaluateGate and never feeds
+  // the decision path above it.
+  try {
+    const observationDb = process.env.ANS_DB_PATH && process.env.ANS_DB_PATH.trim()
+      ? process.env.ANS_DB_PATH
+      : join(os.homedir(), ".anysearch", "anysearch.db");
+    mkdirSync(dirname(observationDb), { recursive: true });
+    const observation = new SqliteObservationStore(observationDb);
+    observation.recordEvaluationTrace({
+      runId: `eval:${report.datasetFingerprint}:${report.holdoutFingerprint}:${look}`,
+      name: "memory-eval",
+      attributes: {
+        "eval.datasetFingerprint": report.datasetFingerprint,
+        "eval.holdoutFingerprint": report.holdoutFingerprint,
+        "eval.verdict": g.verdict,
+        "eval.look": look,
+      },
+      evaluation: {
+        name: "memory-eval",
+        scoreValue: report.metrics.passRate,
+        scoreLabel: g.verdict,
+      },
+      scores: [
+        { rubricItem: "passRate", value: report.metrics.passRate },
+        { rubricItem: "supersessionFails", value: report.metrics.counts.supExpected - report.metrics.counts.supPassed },
+        { rubricItem: "quarantineFp", value: report.metrics.counts.fpCount },
+      ],
+    });
+    observation.close();
+  } catch (e) {
+    console.error("[eval] observation write failed (fail-open): " + String((e as Error).message ?? e));
+  }
 
   // ADR-0039 D7: every observational explicit-skip lands in the WARN ledger (share schema with
   // gain-ledger so the existing resolve tool handles escalation). Exit stays 0; 3 consecutive

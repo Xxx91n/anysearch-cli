@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch/kernel";
 import { createLlmSession, PiAgentRuntime, KernelJsonSchemas, type LlmSession } from "@anysearch/kernel";
+import { observeTool } from "./observation.js";
 
 export function registerAnsChat(server: McpServer, eng: CompositionResult): void {
   // ADR-0017 D3: lazy init on first ans_chat call, cached per server instance.
@@ -31,40 +32,45 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
       inputSchema: fromJsonSchema(KernelJsonSchemas.ans_chat),
     },
     async (args: unknown) => {
-      const { message } = args as { message: string };
       const providerName = process.env.ANS_LLM_PROVIDER;
       const modelName = process.env.ANS_LLM_MODEL;
-      if (!providerName || !modelName) {
-        return { content: [{ type: "text" as const, text: "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars." }] };
-      }
-      try {
-        const session = await getLlmSession();
-        const domain = eng.config ?? {
-          sources: { enabled: [] },
-          prompts: [],
-          skills: { active: ["search"] },
-          hooks: { toolWhitelist: ["search"] },
-          rag: { adapter: "none" },
-        };
-        // ponytail: models undefined fix — pass session.models instead of undefined.
-        const runtime = new PiAgentRuntime({
-          retriever: eng.retriever,
-          domain,
-          model: session.model,
-          streamFn: session.streamFn,
-          models: session.models,
-          getApiKey: async () => session.apiKey,
-        });
-        let output = "";
-        for await (const event of runtime.run(message)) {
-          if (event.type === "text") output += event.content;
-          else if (event.type === "done") output += "\n" + event.summary;
-          else if (event.type === "error") output += "\n[error: " + event.message + "]";
+      return observeTool(eng, "ans_chat", async () => {
+        const { message } = args as { message: string };
+        if (!providerName || !modelName) {
+          return { content: [{ type: "text" as const, text: "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars." }] };
         }
-        return { content: [{ type: "text" as const, text: output || "ans_chat: no response" }] };
-      } catch (e) {
-        return { content: [{ type: "text" as const, text: "ans_chat error: " + (e instanceof Error ? e.message : String(e)) }] };
-      }
+        try {
+          const session = await getLlmSession();
+          const domain = eng.config ?? {
+            sources: { enabled: [] },
+            prompts: [],
+            skills: { active: ["search"] },
+            hooks: { toolWhitelist: ["search"] },
+            rag: { adapter: "none" },
+          };
+          // ponytail: models undefined fix — pass session.models instead of undefined.
+          const runtime = new PiAgentRuntime({
+            retriever: eng.retriever,
+            domain,
+            model: session.model,
+            streamFn: session.streamFn,
+            models: session.models,
+            getApiKey: async () => session.apiKey,
+          });
+          let output = "";
+          for await (const event of runtime.run(message)) {
+            if (event.type === "text") output += event.content;
+            else if (event.type === "done") output += "\n" + event.summary;
+            else if (event.type === "error") output += "\n[error: " + event.message + "]";
+          }
+          return { content: [{ type: "text" as const, text: output || "ans_chat: no response" }] };
+        } catch (e) {
+          return { content: [{ type: "text" as const, text: "ans_chat error: " + (e instanceof Error ? e.message : String(e)) }] };
+        }
+      }, {
+        "anysearch.provider": providerName ?? "",
+        "anysearch.model": modelName ?? "",
+      });
     }
   );
 }

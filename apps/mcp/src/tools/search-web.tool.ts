@@ -7,6 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, type CompositionResult } from "@anysearch/kernel";
+import { observeTool } from "./observation.js";
 
 export function registerSearchWeb(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
@@ -16,15 +17,16 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
       inputSchema: fromJsonSchema(KernelJsonSchemas.search_web),
     },
     async (args: unknown) => {
-      const { query, mode, maxResults } = args as { query: string; mode?: string; maxResults?: number };
-      // ADR-0019 D3: args validated by AJV upstream (fromJsonSchema).
-      try {
-        const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", maxResults });
-        const topResults = envelope.results.slice(0, 10);
+      return observeTool(eng, "search_web", async () => {
+        const { query, mode, maxResults } = args as { query: string; mode?: string; maxResults?: number };
+        // ADR-0019 D3: args validated by AJV upstream (fromJsonSchema).
+        try {
+          const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", maxResults });
+          const topResults = envelope.results.slice(0, 10);
 
         // ADR-0022 D1: provider answers pass through as first-class fields.
         // ADR-0034 D4: attribution attached to envelope by engine.attachAttribution().
-        const summary = JSON.stringify(
+          const summary = JSON.stringify(
           {
             query,
             totalResults: envelope.results.length,
@@ -45,34 +47,35 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           },
           null,
           2,
-        );
+          );
 
-        // Auto-index into session store (best-effort, fail-open).
-        try {
-          const session = await eng.store.createSession("mcp");
-          await eng.store.saveResults(session.id, envelope.results);
+          // Auto-index into session store (best-effort, fail-open).
+          try {
+            const session = await eng.store.createSession("mcp");
+            await eng.store.saveResults(session.id, envelope.results);
+          } catch (e) {
+            // ponytail: auto-index is best-effort, don't block search response.
+            process.stderr.write("search_web auto-index error: " + (e instanceof Error ? e.message : String(e)) + "\n");
+          }
+
+          const attribution = envelope.attribution;
+          return {
+            content: [{ type: "text" as const, text: summary }],
+            ...(envelope.metadata?.sufficiency
+              ? {
+                  structuredContent: {
+                    ...(envelope.metadata.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
+                    ...(attribution ? { attribution } : {}),
+                  },
+                }
+              : attribution
+                ? { structuredContent: { attribution } }
+                : {}),
+          };
         } catch (e) {
-          // ponytail: auto-index is best-effort, don't block search response.
-          process.stderr.write("search_web auto-index error: " + (e instanceof Error ? e.message : String(e)) + "\n");
+          return { content: [{ type: "text" as const, text: "search_web error: " + (e instanceof Error ? e.message : String(e)) }] };
         }
-
-        const attribution = envelope.attribution;
-        return {
-          content: [{ type: "text" as const, text: summary }],
-          ...(envelope.metadata?.sufficiency
-            ? {
-                structuredContent: {
-                  ...(envelope.metadata.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
-                  ...(attribution ? { attribution } : {}),
-                },
-              }
-            : attribution
-              ? { structuredContent: { attribution } }
-              : {}),
-        };
-      } catch (e) {
-        return { content: [{ type: "text" as const, text: "search_web error: " + (e instanceof Error ? e.message : String(e)) }] };
-      }
+      });
     },
   );
 }

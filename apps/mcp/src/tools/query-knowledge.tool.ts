@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch/kernel";
 import { KernelJsonSchemas } from "@anysearch/kernel";
+import { observeTool } from "./observation.js";
 
 export function registerQueryKnowledge(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
@@ -15,9 +16,11 @@ export function registerQueryKnowledge(server: McpServer, eng: CompositionResult
       inputSchema: fromJsonSchema(KernelJsonSchemas.query_knowledge),
     },
     async (_args: unknown) => {
-      // ponytail: stub until RAG adapter types are defined.
-      const adapter = eng.config?.rag?.adapter ?? "none";
-      return { content: [{ type: "text" as const, text: "query_knowledge: adapter=" + adapter + " (not yet implemented)" }] };
+      return observeTool(eng, "query_knowledge", async () => {
+        // ponytail: stub until RAG adapter types are defined.
+        const adapter = eng.config?.rag?.adapter ?? "none";
+        return { content: [{ type: "text" as const, text: "query_knowledge: adapter=" + adapter + " (not yet implemented)" }] };
+      });
     }
   );
 }

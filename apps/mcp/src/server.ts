@@ -7,7 +7,7 @@
 // ADR-0019 D2: tools live in apps/mcp/src/tools/*, aggregated by tools/index.ts.
 
 import { McpServer } from "@modelcontextprotocol/server";
-import { createEngine, type CompositionResult } from "@anysearch/kernel";
+import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch/kernel";
 import { TOOL_REGISTRY } from "./tools/index.js";
 
 // ponytail: single source of truth for server version. Tsup substitutes
@@ -22,7 +22,7 @@ const PKG_VERSION: string =
 // buildServer: factory function. Each connection gets a fresh server instance.
 // ADR-0008 D4: factory pattern, era-agnostic, entry selects transport.
 export function buildServer(engine?: CompositionResult): McpServer {
-  const eng = engine ?? createEngine();
+  const eng = engine ?? createEngine(undefined, { dbPath: resolveDbPath() });
   const server = new McpServer(
     { name: "anysearch", version: PKG_VERSION },
     { capabilities: { tools: {} } }
