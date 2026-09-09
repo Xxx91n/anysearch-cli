@@ -759,4 +759,32 @@ _Avoid_: 直接暴露未钉版本 `gen_ai.*`、把自定义属性占入保留域
 对仍处 Development 的 OTel GenAI 语义按 commit 钉版本并记录 tested-with 表；不把 Development 命名空间当作长期稳定契约。ADR-0052。
 _Avoid_: 声称稳定、升级时不重跑映射测试、只记 SDK 版本不记 exporter/backend 版本
 
+## Content Trust Boundary（内容信任边界）
+把「读用户未写内容」的检索/工具/记忆输入统一视作不可信来源的信任边界：概率层降险（来源分类）+ 确定性层收口（schema 闸 + fail-closed 授权）组合，而非单一注入检测器。ADR-0053。
+_Avoid_: 把单一概率层当充分防线、把来源标签当检测器、对持久化记忆仓只做提示层防护
+
+## Indirect Prompt Injection Defense（间接提示注入防御）
+针对检索/工具结果携带指令注入（OWASP LLM01）的防御心智模型：不可信内容只进 tool_result、schema 化抽取、最小权限授权、防绕过探针闭环。ADR-0053。
+_Avoid_: 靠 prompt 措辞护栏、托管 Prompt Shields、静默二选一
+
+## Source Label（来源标签）
+FIDES 式 `{source, traceId}` 双轴标签：`source ∈ {system,user,retrieved,tool,memory}` 做信任，`traceId` 只做关联；最严格合并传播，untrusted 胜出，不可剥离。ADR-0053。
+_Avoid_: 用 traceId 当信任、裸 string 拼接、让检索内容剥离来源
+
+## Sanitization Pipeline（净化管道）
+对检索原始内容迭代到不动点的字符净化：NFC 规范化 → 剥离零宽族 → Unicode Tag 解码重扫 → bidi 剥离 →（可选）同形字折叠。ADR-0053。
+_Avoid_: 单层 strip、净化前做长度校验、解码后不回扫
+
+## Retrieval Content Schema（检索内容 schema）
+净化后经 TypeBox `additionalProperties:false` 校验的检索内容形状（url/title/snippet/entity 白名单 + 长度上限 + 版本化）；形状违规 fail-closed，内容可疑降级为 stripped summary。ADR-0053。
+_Avoid_: free-text 透传、无版本 schema、把 schema 校验当语义注入检测
+
+## Fail-Closed Authorization（fail-closed 授权）
+Rule of Two 总纲下的三个默认 deny 授权点：记忆仓写入（source-gate + evidence + secret guard）、URL 消费（allowlist + 用户确认）、LLM 判定输入（L1 管道断言）；判定全确定性、零 LLM。ADR-0053。
+_Avoid_: 检索派生 URL 自动成为后续输入、retrieved/memory 派生直接升 T0、用 LLM 做授权判定
+
+## INJECT Probe Suite（INJECT 探针套件）
+5 族 golden 探针（不可见字符/指令注入/tool-output+URL egress/记忆投毒/组合自适应）构成的注入防绕过 eval 闭包；`canonicalPayload→SHA-256` 指纹，唯一硬门禁 `passRate==1`。ADR-0053。
+_Avoid_: 用 ASR 统计当 gate、LLM 合成 label、与 STALE 探针合并
+
 *End of Glossary*

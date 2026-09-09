@@ -302,3 +302,13 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 - [ ] 语义钉版本写入 ADR-0052 D2：semantic-conventions-genai commit b5d8440f6f126738fd50f927752cd669772c517b，v1.42.0 与 v1.39.0 tag hash 同文记录
 - [ ] fixer 落地 local trace store schema + OTLP mapping layer + eval-runner 接线 + ship-gate 观测区 + MCP/CLI trace smoke
 - [ ] 平台验收：tsc clean、store/kernel/retriever suite green、ship-gate 空库/非空库 exit 0、eval 123/123、打包产物可启动且进程存活
+
+## r50 检查点（grill r50 / ADR-0053 Content Trust Boundary + Indirect Prompt Injection Defense — 文档轮）
+
+- [ ] ADR-0053 七节齐（Status / Context / D1-D7 / Consequences / Implementation Plan / Acceptance / Research Sources），UTF-8 无 BOM、无 CRLF
+- [ ] CONTEXT.md +7 术语（Content Trust Boundary / Indirect Prompt Injection Defense / Source Label / Sanitization Pipeline / Retrieval Content Schema / Fail-Closed Authorization / INJECT Probe Suite），均含 _Avoid_，尾部 *End of Glossary* 保留
+- [ ] 本轮为 docs-only；业务源码未改动；实现留给下一轮 fixer
+- [ ] D1-D5 契约完整写入：三层防御、FIDES 来源标签、净化 + RetrievalContentSchema、Rule of Two 三授权点、INJECT 5 族探针
+- [ ] D6 六项延迟带 P1/P2 触发条件；Rejected 五项显式登记；D7 fixer 边界锁定（6 实现 / 5 验证 / 6 不碰）
+- [ ] fixer 落地 sanitizeRetrieved 管道 + source-gate + URL allowlist + inject_* golden op + ship-gate step 2
+- [ ] 平台验收：tsc clean、store/kernel/retriever suite green、ship-gate exit 0、eval 零破坏（57 case / 192 op 基线统一口径）、三平台 tgz 测活
