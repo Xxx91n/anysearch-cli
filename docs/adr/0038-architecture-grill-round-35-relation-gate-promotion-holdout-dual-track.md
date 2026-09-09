@@ -76,3 +76,13 @@ ADR-0036 preregistered the relation-arm gain rule (paired BCa lower bound > 0 AN
 
 Pending physical text correction deferred to a docs-only pass; semantics above are normative.
 - r100: physical corrections applied in the D2 and D6 body sentences cited above; the quoted fragments now match the authoritative reading in code and ship-gate. This section remains append-only.
+
+## r49 Governance Amendment (2026-09-09; ADR-0052 grill round)
+
+The relation-arm gain gate reached `consecutiveWarn = 8` with three prior `stay-warn` resolutions. The holdout remains structurally underpowered at approximately 19 pairs, the eval fingerprint is unchanged, and the standing observation is not a regression. Following the D4 convergence clause and atomcode external review, the arm is demoted to observance.
+
+- Gain-ledger disposition: `demote`, verdict `unproven-positive`; the current WARN streak is exhausted and the relation arm leaves the promotion gate.
+- Governance rule: after `k_max` or WARN-streak-3, the default terminal action is demote to observance. `stay-warn` is allowed only when new independent evidence has arrived through a reflow slice or added holdout case; resetting the count does not renew a spent alpha budget.
+- Re-promotion path: only D5 reflow track and D7 graded-label track may promote the arm in the future. The frozen baseline holdout is never retested indefinitely.
+- Runtime disposition: the relation arm remains in the pipeline as an observational asset. MRR and passRate remain report-layer metrics and never participate in this gate.
+- If a final positive or negative judgment is required, preregister a holdout expansion or an explicit `minGain`/MDE contract change; do not substitute another `stay-warn`.

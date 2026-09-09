@@ -739,4 +739,24 @@ _Avoid_: 校准缺失时崩溃、静默继续、用回退值替代重新校准�
 _Avoid_: 把 segment 当独立校准线、用 segment 标签改拟合、按 segment 静默拆线
 
 
+## Context Engineering（上下文工程总纲）
+把 attention budget 下的 token 策展作为统一总纲：记忆与注入是 context curation，多臂 RRF 与充分性门禁是 context assembly，预注册评测与校准是 context quality measurement，观测闭环是 context telemetry。ADR-0052。
+_Avoid_: 把上下文工程当提示词措辞、把四个既有资产拆成平行系统、用模型推理替代证据治理
+
+## Observability Closed Loop（观测闭环）
+以本地优先观测资产连接 runtime trace、eval 与 experiment：生产 trace 回流 eval，失败回流 golden，实验经 ship-gate 后部署。`gen_ai.evaluation.result` 只承载结果，不执行判定。ADR-0052。
+_Avoid_: 把观测数据直接当 gate、用 trace 平台替代预注册评测、让在线观测绕过离线 holdout
+
+## Local-First Observation Asset（本地优先观测资产）
+单进程 SQLite 形态的 trace/observation 资产；一次用户任务一条 trace，generation/evaluation 为 observation，rubric 项为 score，`runId` 防重放。内容捕获 opt-in 且策略先行。ADR-0052。
+_Avoid_: 默认抓取高敏感内容、把单用户本地资产伪装成多租户服务、无保留策略无限增长
+
+## OTLP Mapping Layer（OTLP 映射层）
+自有版本化内部观测表示为 schema 契约，只在导出边界映射到 `gen_ai.*`；自定义属性使用 `anysearch.*` 与 `eval.*`。ADR-0052。
+_Avoid_: 直接暴露未钉版本 `gen_ai.*`、把自定义属性占入保留域、在内部模型里复制外部改名史
+
+## Semantic Pin（语义版本钉定）
+对仍处 Development 的 OTel GenAI 语义按 commit 钉版本并记录 tested-with 表；不把 Development 命名空间当作长期稳定契约。ADR-0052。
+_Avoid_: 声称稳定、升级时不重跑映射测试、只记 SDK 版本不记 exporter/backend 版本
+
 *End of Glossary*

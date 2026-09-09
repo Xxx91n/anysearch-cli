@@ -291,3 +291,14 @@ Fixed：gate.ts 退化 holdout push WARN + 删死语句 + 合并重复 alphaK �
 - [ ] fixer 落地 Observational zone 新字段（exclusiveHits/nativeScoresMissing/armDeltas/maxLexicalOverlap）缺区 fail；web ledger 无新表无 gate
 - [ ] fixer 落地 ship 处置：critical 红强制降级并阻断，observational 红 warn；单计数器并轨，silver bullet 闭枚举
 - [ ] 平台验收：tsc clean、store/kernel/retriever suite green、ship-gate 空库/非空库 exit 0、eval 123/123、打包产物进程存活
+
+
+## r49 检查点（grill r49 / ADR-0052 Observability Closed Loop + Context Engineering — 文档轮）
+
+- [ ] ADR-0052 七节齐（Status / Context / D1-D7 / Consequences / Implementation Plan / Acceptance / Research Sources），UTF-8 无 BOM、无 CRLF
+- [ ] CONTEXT.md +5 术语（Context Engineering / Observability Closed Loop / Local-First Observation Asset / OTLP Mapping Layer / Semantic Pin），均含 _Avoid_，尾部 *End of Glossary* 保留
+- [ ] ADR-0038 尾部 r49 Governance Amendment 段存在，正文未改（append-only）
+- [ ] 本轮为 docs-only；业务源码未改动；实现留给下一轮 fixer
+- [ ] 语义钉版本写入 ADR-0052 D2：semantic-conventions-genai commit b5d8440f6f126738fd50f927752cd669772c517b，v1.42.0 与 v1.39.0 tag hash 同文记录
+- [ ] fixer 落地 local trace store schema + OTLP mapping layer + eval-runner 接线 + ship-gate 观测区 + MCP/CLI trace smoke
+- [ ] 平台验收：tsc clean、store/kernel/retriever suite green、ship-gate 空库/非空库 exit 0、eval 123/123、打包产物可启动且进程存活
