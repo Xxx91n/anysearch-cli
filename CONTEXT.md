@@ -799,4 +799,20 @@ _Avoid_: 在每个 caller 内部各写一遍 schema 校验、断言后又下游�
 shouldAllowUrl 标 requiresHitl 的 URL 组成的持久化待审列表；headless 模式 block + reason + enqueue，TTY 模式 askAllowUrl 停机世界 y/N；用 ans hitl review 命令查看/批准/拒绝。ADR-0054。
 _Avoid_: headless 挂起等人工确认、静默放行 retrieved-derived URL、绕过 allowlist 直接自动批准
 
+## Policy Single Source（策略单一事实源）
+TOML [sources].urlAllowlist 作为 URL 授权策略的唯一权威源；env 仅可经显式开关降级为加法覆盖层。kernel/server/hook 三方共享同一 mergeAllowlist + canonicalVersion 实现，处处求值同一份解析结果。ADR-0055。
+_Avoid_: env 独立参与授权判定、共享解析函数各自执行（同函数多状态）
+
+## Append-Only Merge（只增不减合并）
+多层授权配置的合并语义：allow 数组跨层取并集，下层只能添加不能删除上层条目；deny 不进并集数组而是独立通道、最后评估、任何层与 hook 不可绕过（Cedar forbid-overrides-permit 同构）。ADR-0055。
+_Avoid_: deny 与 allow 放同一数组求并集、hook allow 覆盖 deny、下层删除上层条目
+
+## Policy Version（策略版本）
+授权策略合并集的内容寻址版本：sha256(canonical JSON)，canonical = sort(dedupe(trim(lowercase(hosts))))；env 覆盖参与哈希，空 env 与未设置产出逐字节相同版本。drift 检测 = 版本比对，变更即发 ConfigChange 审计。ADR-0055。
+_Avoid_: 单调计数器（需持久化中心状态）、TTL 过期机制、空 env 与未设置产生不同版本
+
+## ConfigChange Audit Event（配置变更审计事件）
+授权策略变更的审计记录：{ event_id, timestamp, actor, source, path, change(before/after), policy_version, trace_id, session_id }，写入本地 trace store（ADR-0052）；env 存在但覆盖开关未开时也发 config:env_override_ignored（一次/会话），绝不静默。ADR-0055。
+_Avoid_: 静默忽略安全配置、审计不带策略版本与 trace_id、每条重复告警不节流
+
 *End of Glossary*
