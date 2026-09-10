@@ -19,6 +19,7 @@ import {
   type RetrievalContent,
   type SourceTraceLabel,
 } from "@anysearch/retriever";
+import { createDomainReloader } from "@anysearch/store";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query } from "./ports";
 import type { AgentEvent } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
@@ -131,6 +132,8 @@ export interface PiAgentRuntimeOptions {
   retriever: RetrieverPort;
   store?: SessionStorePort;
   domain: DomainConfigPort;
+  // ADR-0055 D5: when set, the allow/deny lists are re-read lazily per tool call via mtime.
+  domainTomlPath?: string;
   model: unknown; // pi-ai Model instance
   streamFn: unknown; // models.streamSimple.bind(models)
   models?: unknown; // ADR-0012 D4: Models object for generateSummaryWithUsage
@@ -143,10 +146,12 @@ export interface PiAgentRuntimeOptions {
 
 export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
+  private readonly domainReloader: (() => unknown) | null;
   private pipeline?: MemoryPipeline;
   private gate?: SufficiencyEvaluator;
 
   constructor(opts: PiAgentRuntimeOptions) {
+    this.domainReloader = opts.domainTomlPath ? createDomainReloader(opts.domainTomlPath) : null;
     this.opts = opts;
 
     // ADR-0015 D8: constructor internally creates pipeline + gate instances.
@@ -228,13 +233,17 @@ export class PiAgentRuntime {
       // ADR-0054 D1/D4: shouldAllowUrl at the agent-loop tool-call seam. Retrieved-derived
       // URLs not on the domain [sources].urlAllowlist are HITL-gated; deny-first headless.
       beforeToolCall: async (ctx: any) => {
+        // ADR-0055 D5: lazy mtime-checked re-read; bad TOML keeps last known good.
+        const reloaded = this.domainReloader ? this.domainReloader() : null;
+        if (reloaded) (this.opts as { domain: DomainConfigPort }).domain = reloaded as DomainConfigPort;
         const allowlist: string[] = ((this.opts.domain as any)?.sources?.urlAllowlist ?? []) as string[];
+        const denylist: string[] = ((this.opts.domain as any)?.sources?.urlDenylist ?? []) as string[];
         const urls: string[] = JSON.stringify(ctx?.args ?? {}).match(/https?:\/\/[^\s"'<>\\)]+/g) ?? [];
         for (const url of urls) {
           const label: SourceTraceLabel = typeof input === "string" && input.includes(url)
             ? { source: "user", traceId: "user-input" }
             : { source: "retrieved", traceId: "tool-call" };
-          const verdict = shouldAllowUrl(url, label, allowlist);
+          const verdict = shouldAllowUrl(url, label, allowlist, denylist);
           if (verdict.allowed) continue;
           if (!verdict.requiresHitl) {
             return { block: true, reason: "URL rejected by trust boundary: " + url, terminate: true };

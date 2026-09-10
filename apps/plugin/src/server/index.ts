@@ -19,7 +19,28 @@ const DB_PATH = process.env.ANS_PROJECT_DB || join(process.cwd(), ".anysearch", 
 // Ensure .anysearch dir exists.
 import { mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { existsSync } from "node:fs";
+import {
+  loadPolicyFromToml,
+  resolveUrlPolicy,
+  atomicWriteFile,
+  emitConfigChangeAudit,
+  type UrlPolicy,
+} from "@anysearch/store";
 mkdirSync(dirname(DB_PATH), { recursive: true });
+
+// ADR-0055: startup policy parse. D3/D7 fail-closed: TOML parse failure or a misset
+// ANS_ALLOW_ENV_OVERRIDE throws here and refuses to start, naming variable + value.
+const DOMAIN_TOML = join(process.cwd(), "domains", (process.env.ANS_DOMAIN || "default") + ".toml");
+const POLICY_CACHE = join(process.cwd(), ".anysearch-cli", "policy.json");
+const OBS_DB = process.env.ANS_DB_PATH ||
+  join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");
+function readCurrentPolicy(): UrlPolicy {
+  if (!existsSync(DOMAIN_TOML)) return resolveUrlPolicy({ tomlHosts: [] });
+  return loadPolicyFromToml(DOMAIN_TOML);
+}
+let currentPolicyVersion = readCurrentPolicy().policyVersion;
+let envIgnoredAudited = false; // D7: config:env_override_ignored once per session
 
 const store = new ProjectIndexStore(DB_PATH);
 
@@ -54,6 +75,40 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     if (req.url === "/health" && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ status: "ok", timestamp: Date.now() }));
+      return;
+    }
+
+    if (req.url === "/policy" && req.method === "GET") {
+      // ADR-0055 D4: single-point parse + push-down. Re-parses TOML per request (event-driven,
+      // no TTL); deny channel + policy_version; atomically materializes policy.json for hooks.
+      const policy = readCurrentPolicy();
+      if (policy.envHostsIgnored) {
+        process.stderr.write("[anysearch] WARN: ANS_URL_ALLOWLIST set but ANS_ALLOW_ENV_OVERRIDE not enabled; env hosts ignored\n");
+        if (!envIgnoredAudited) {
+          envIgnoredAudited = true;
+          void emitConfigChangeAudit(OBS_DB, {
+            actor: "server", source: "env", path: DOMAIN_TOML,
+            change: { before: null, after: "config:env_override_ignored" },
+            policyVersion: policy.policyVersion,
+          });
+        }
+      }
+      if (policy.envHostsApplied > 0) {
+        process.stderr.write("[anysearch] info: env override active: " + policy.envHostsApplied + " hosts\n");
+      }
+      if (policy.policyVersion !== currentPolicyVersion) {
+        const before = currentPolicyVersion;
+        currentPolicyVersion = policy.policyVersion;
+        void emitConfigChangeAudit(OBS_DB, {
+          actor: "server", source: "toml", path: DOMAIN_TOML,
+          change: { before, after: policy.policyVersion },
+          policyVersion: policy.policyVersion,
+        });
+      }
+      const body = { allow: policy.allow, deny: policy.deny, policy_version: policy.policyVersion };
+      atomicWriteFile(POLICY_CACHE, JSON.stringify(body, null, 2) + "\n");
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(body));
       return;
     }
 

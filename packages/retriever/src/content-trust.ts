@@ -192,16 +192,23 @@ export function shouldAllowUrl(
   url: string,
   label: SourceTraceLabel,
   allowlistedHosts: readonly string[],
+  denylistedHosts: readonly string[] = [],
 ): { allowed: boolean; requiresHitl: boolean } {
-  if (label.source === "user") return { allowed: true, requiresHitl: false };
   if (!url) return { allowed: false, requiresHitl: false };
+  let host = "";
   try {
-    const host = new URL(url).hostname.toLowerCase().replace(/^\./, "");
-    if (allowlistedHosts.some((entry) => host === entry || host.endsWith("." + entry))) {
-      return { allowed: true, requiresHitl: false };
-    }
+    host = new URL(url).hostname.toLowerCase().replace(/^\./, "");
   } catch {
     return { allowed: false, requiresHitl: false };
+  }
+  // ADR-0055 D2: deny is a first-class channel evaluated LAST — it overrides any allow,
+  // including a hook-returned allow or a user-source label (Cedar forbid-overrides-permit).
+  if (denylistedHosts.some((entry) => host === entry || host.endsWith("." + entry))) {
+    return { allowed: false, requiresHitl: false };
+  }
+  if (label.source === "user") return { allowed: true, requiresHitl: false };
+  if (allowlistedHosts.some((entry) => host === entry || host.endsWith("." + entry))) {
+    return { allowed: true, requiresHitl: false };
   }
   return { allowed: false, requiresHitl: true };
 }

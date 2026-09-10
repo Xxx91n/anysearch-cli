@@ -53,7 +53,8 @@ export type ObservationKind =
   | "invoke_agent"
   | "chat"
   | "execute_tool"
-  | "plan";
+  | "plan"
+  | "config";
 
 export interface ObservationEvent {
   name: string;

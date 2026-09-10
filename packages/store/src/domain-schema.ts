@@ -13,7 +13,7 @@ export interface DomainSchema {
   settings: Record<string, unknown>;
   prompts: PromptEntry[];
   skills: { active: string[] };
-  sources: { enabled: string[]; weights?: Record<string, number>; urlAllowlist?: string[] };
+  sources: { enabled: string[]; weights?: Record<string, number>; urlAllowlist?: string[]; urlDenylist?: string[] };
   rag: { adapter: string; config?: Record<string, unknown> };
   hooks: { toolWhitelist: string[] };
   compaction?: CompactionConfig;
@@ -42,7 +42,7 @@ export interface RawDomain {
   settings?: Record<string, unknown>;
   prompts?: PromptEntry[];
   skills?: { active?: string[] };
-  sources?: { enabled?: string[]; weights?: Record<string, number>; urlAllowlist?: string[] };
+  sources?: { enabled?: string[]; weights?: Record<string, number>; urlAllowlist?: string[]; urlDenylist?: string[] };
   rag?: { adapter?: string; config?: Record<string, unknown> };
   hooks?: { toolWhitelist?: string[] };
   compaction?: CompactionConfig;
@@ -107,6 +107,7 @@ export function resolve(
   let sourcesEnabled: string[] = [];
   let sourcesWeights: Record<string, number> | undefined;
   let sourcesUrlAllowlist: string[] | undefined;
+  let sourcesUrlDenylist: string[] | undefined;
   let ragAdapter = "";
   let ragConfig: Record<string, unknown> | undefined;
   let hooksWhitelist: string[] = [];
@@ -126,6 +127,7 @@ export function resolve(
     // ADR-0045 D2: sources.weights — section-replace semantics like enabled (per-chain override).
     if (d.sources?.weights) sourcesWeights = d.sources.weights;
     if (d.sources?.urlAllowlist) sourcesUrlAllowlist = d.sources.urlAllowlist;
+    if (d.sources?.urlDenylist) sourcesUrlDenylist = d.sources.urlDenylist;
     if (d.rag?.adapter) { ragAdapter = d.rag.adapter; ragConfig = d.rag.config; }
     if (d.hooks?.toolWhitelist) hooksWhitelist = d.hooks.toolWhitelist;
     if (d.compaction) compaction = d.compaction;
@@ -139,7 +141,7 @@ export function resolve(
     settings,
     prompts,
     skills: { active: skillsActive },
-    sources: { enabled: sourcesEnabled, ...(sourcesWeights ? { weights: sourcesWeights } : {}), ...(sourcesUrlAllowlist ? { urlAllowlist: sourcesUrlAllowlist } : {}) },
+    sources: { enabled: sourcesEnabled, ...(sourcesWeights ? { weights: sourcesWeights } : {}), ...(sourcesUrlAllowlist ? { urlAllowlist: sourcesUrlAllowlist } : {}), ...(sourcesUrlDenylist ? { urlDenylist: sourcesUrlDenylist } : {}) },
     rag: { adapter: ragAdapter, config: ragConfig },
     hooks: { toolWhitelist: hooksWhitelist },
     compaction,
@@ -170,6 +172,12 @@ export function validate(schema: DomainSchema): void {
   if (schema.sources.urlAllowlist !== undefined) {
     if (!Array.isArray(schema.sources.urlAllowlist) || schema.sources.urlAllowlist.some((v) => typeof v !== "string" || !v.trim())) {
       throw new Error("Domain schema: sources.urlAllowlist must be an array of non-empty hostnames");
+    }
+  }
+  // ADR-0055 D2: deny channel — first-class, evaluated last, never merged into allow.
+  if (schema.sources.urlDenylist !== undefined) {
+    if (!Array.isArray(schema.sources.urlDenylist) || schema.sources.urlDenylist.some((v) => typeof v !== "string" || !v.trim())) {
+      throw new Error("Domain schema: sources.urlDenylist must be an array of non-empty hostnames");
     }
   }
   if (!Array.isArray(schema.hooks.toolWhitelist))

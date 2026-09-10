@@ -32,3 +32,6 @@ apps/plugin/dist/
 .codex-tmp/
 
 .model-cache/
+
+# runtime policy cache (ADR-0055)
+.anysearch-cli/

@@ -4,7 +4,8 @@
 // it into the active domain's [sources] urlAllowlist and drops matching pending entries.
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { loadDomainByName } from "@anysearch/store";
+import { loadDomainByName, atomicWriteFile, emitConfigChangeAudit, canonicalVersion } from "@anysearch/store";
+import { resolveDbPath } from "@anysearch/kernel";
 
 interface HitlEntry {
   url: string;
@@ -36,6 +37,7 @@ function allowHost(host: string): boolean {
   const domainName = process.env.ANS_DOMAIN || "default";
   const tomlPath = join(process.cwd(), "domains", domainName + ".toml");
   if (!existsSync(tomlPath)) throw new Error("domain TOML not found: " + tomlPath);
+  const beforeHosts = loadDomainByName(domainName).sources.urlAllowlist ?? [];
   const src = readFileSync(tomlPath, "utf8");
   const lines = src.split("\n");
   const srcStart = lines.findIndex((l) => l.trim() === "[sources]");
@@ -60,11 +62,22 @@ function allowHost(host: string): boolean {
       next = [...lines.slice(0, srcStart + 1), 'urlAllowlist = ["' + host + '"]', ...lines.slice(srcStart + 1)];
     }
   }
-  writeFileSync(tomlPath, next.join("\n"), "utf8");
+  // D5: structured atomic write (tmp + rename); round-trip verify below.
+  atomicWriteFile(tomlPath, next.join("\n"));
   // Verify: the written TOML must still parse and expose the host.
   const schema = loadDomainByName(domainName);
   if (!(schema.sources.urlAllowlist ?? []).includes(host)) {
     throw new Error("allowlist write did not round-trip for host " + host);
+  }
+  // D8: ConfigChange audit event into the ADR-0052 local trace store (fail-open).
+  if (!beforeHosts.includes(host)) {
+    void emitConfigChangeAudit(resolveDbPath(), {
+      actor: "cli",
+      source: "cli",
+      path: tomlPath,
+      change: { before: beforeHosts, after: schema.sources.urlAllowlist ?? [] },
+      policyVersion: canonicalVersion(schema.sources.urlAllowlist ?? [], (schema.sources as { urlDenylist?: string[] }).urlDenylist ?? []),
+    });
   }
   return true;
 }
