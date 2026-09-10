@@ -111,6 +111,26 @@ const future = Date.now() / 1000 + 2;
 utimesSync(tomlPath, future, future);
 const reloaded = rel();
 assert("reloader: changed mtime -> reloaded schema", reloaded === null ? false : (reloaded.sources.urlAllowlist ?? []).join(",") === "ok2.example.com");
+// --- audit M2: hostname format validation (fail-closed at load, D7 equal strictness) ---
+{
+  let threw2 = "";
+  try { parseEnvHosts("ok.example.com,https://evil.com"); } catch (e) { threw2 = (e as Error).message; }
+  assert("env entry with scheme rejected, naming var + offending entry",
+    threw2.includes(ENV_URL_ALLOWLIST) && threw2.includes("https://evil.com"));
+}
+assert("valid env host lists pass unchanged", parseEnvHosts(" A.com ,b.com ").join(",") === "a.com,b.com");
+
+// --- audit M3: bad TOML -> keep last known good + explicit stderr WARN (once per change) ---
+writeFileSync(tomlPath, "not = [valid toml", "utf8");
+const future2 = Date.now() / 1000 + 4;
+utimesSync(tomlPath, future2, future2);
+let warns = 0;
+const origWrite = process.stderr.write.bind(process.stderr);
+process.stderr.write = ((chunk: unknown) => { warns++; return true; }) as typeof process.stderr.write;
+const stillNull = rel();
+process.stderr.write = origWrite;
+assert("reloader: bad TOML returns null (keep last known good)", stillNull === null);
+assert("reloader: bad TOML emits stderr WARN exactly once", warns === 1);
 rmSync(tmpDir, { recursive: true, force: true });
 
 console.log("url-policy tests: " + passed + " passed, " + failed + " failed");

@@ -4,6 +4,7 @@
 // ADR-0055 D4: URL authorization policy comes from the server's single parse point
 // (GET /policy) or the materialized cache — hooks NEVER read ANS_URL_ALLOWLIST directly.
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isAnsTool, callServer, type HookInput, type HookDecision } from "./core.js";
@@ -18,30 +19,39 @@ function policyCachePath(): string {
   return join(process.cwd(), ".anysearch-cli", "policy.json");
 }
 
-// D4 pull-through cache semantics: try the live server first (which also rewrites the
-// cache atomically and only when reachable+changed); fall back to the materialized cache.
-// Returns null only when no cache exists AND the server is unreachable.
+// canonical hash mirror of packages/store/src/url-policy.ts canonicalVersion().
+// Hook bundles must stay dependency-free (esbuild --bundle breaks on the store index's
+// native deps), so this is an inlined copy; policy.test.ts guards drift by comparing
+// the two implementations through the cache round-trip.
+function canonicalVersion(allow: readonly string[], deny: readonly string[]): string {
+  const canon = (h: readonly string[]) => [...new Set(h.map((x) => x.trim().toLowerCase()).filter(Boolean))].sort();
+  return createHash("sha256").update(JSON.stringify({ allow: canon(allow), deny: canon(deny) })).digest("hex");
+}
+
+// ADR-0055 audit M4: cache integrity self-check — the sha256 of the content must match
+// the self-declared policy_version before the cache is trusted (tampered drop-in rejected).
+function usableCache(parsed: Partial<PolicyCache>): PolicyCache | null {
+  if (!Array.isArray(parsed.allow) || !Array.isArray(parsed.deny) || typeof parsed.policy_version !== "string") return null;
+  return canonicalVersion(parsed.allow, parsed.deny) === parsed.policy_version ? (parsed as PolicyCache) : null;
+}
+
+// D4 pull-through cache semantics: the live server is authoritative when reachable (it
+// also rewrote the cache atomically). The cache is a fallback only, consumed only with
+// the integrity self-check. Returns null when neither source is usable.
 export async function readPolicy(serverUrl: string, token: string): Promise<PolicyCache | null> {
-  let cached: PolicyCache | null = null;
-  try {
-    const parsed = JSON.parse(readFileSync(policyCachePath(), "utf8")) as Partial<PolicyCache>;
-    if (Array.isArray(parsed.allow) && Array.isArray(parsed.deny) && typeof parsed.policy_version === "string") {
-      cached = parsed as PolicyCache;
-    }
-  } catch { /* no usable cache */ }
   try {
     const res = await fetch(serverUrl + "/policy", {
       headers: { Authorization: "Bearer " + token },
       signal: AbortSignal.timeout(3000),
     });
-    if (res.ok) {
-      const fresh = (await res.json()) as PolicyCache;
-      // Version comparison is the drift signal; server already rewrote the cache file.
-      if (!cached || fresh.policy_version !== cached.policy_version) return fresh;
-      return cached;
-    }
-  } catch { /* server unreachable -> use cache below */ }
-  return cached;
+    if (res.ok) return (await res.json()) as PolicyCache;
+    // Audit M3: a reachable-but-failing server is a distinct signal, not silent cache reuse.
+    process.stderr.write("[anysearch] GET /policy returned HTTP " + res.status + "; falling back to cached policy\n");
+  } catch { /* server unreachable -> cache fallback */ }
+  try {
+    return usableCache(JSON.parse(readFileSync(policyCachePath(), "utf8")) as Partial<PolicyCache>);
+  } catch { /* no readable cache */ }
+  return null;
 }
 
 export async function makePreToolUseDecision(input: HookInput): Promise<HookDecision> {

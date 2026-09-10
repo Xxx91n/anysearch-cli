@@ -8,7 +8,7 @@
 import { PiAgentRuntime, createLlmSession } from "@anysearch/kernel";
 import type { RetrieverPort, DomainConfigPort } from "@anysearch/kernel";
 import { createEngine } from "../composition";
-import { loadDomainByName } from "@anysearch/store";
+import { domainTomlPath, loadDomainByName } from "@anysearch/store";
 import { join } from "node:path";
 
 export async function runChat(args: string[]): Promise<number> {
@@ -77,7 +77,7 @@ export async function runChat(args: string[]): Promise<number> {
     retriever,
     domain,
     // ADR-0055 D5: lazy mtime re-read lets `ans hitl --allow-url` write-back take effect live.
-    domainTomlPath: join(process.cwd(), "domains", (process.env.ANS_DOMAIN || "default") + ".toml"),
+    domainTomlPath: domainTomlPath(),
     // ADR-0054 D4: CLI is the TTY composition root; kernel decides isInteractive() itself.
     interactive: !process.env.ANS_NO_INTERACTIVE,
     model: session.model,

@@ -148,7 +148,18 @@ export function resolve(
   };
 }
 
+// ADR-0055 audit M2: entries are hostnames only — no scheme/port/wildcard. A malformed
+// entry could never match a real host and would silently deaden allow/deny.
+export const HOSTNAME_RE = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/;
+
+function assertHostnameList(list: unknown, field: string): void {
+  if (!Array.isArray(list)) throw new Error("Domain schema: sources." + field + " must be an array of hostnames");
+  const bad = list.filter((v) => typeof v !== "string" || !HOSTNAME_RE.test(v.trim().toLowerCase()));
+  if (bad.length > 0) throw new Error("Domain schema: sources." + field + " entries must be hostnames (no scheme/port/wildcard); invalid: " + JSON.stringify(bad));
+}
+
 // Validate a resolved schema. Throws on invalid.
+
 export function validate(schema: DomainSchema): void {
   if (!schema.name) throw new Error("Domain schema: name is required");
   if (!schema.rag.adapter) throw new Error("Domain schema: rag.adapter is required");
@@ -169,17 +180,9 @@ export function validate(schema: DomainSchema): void {
         throw new Error("Domain schema: sources.weights." + key + " must be a finite number > 0");
     }
   }
-  if (schema.sources.urlAllowlist !== undefined) {
-    if (!Array.isArray(schema.sources.urlAllowlist) || schema.sources.urlAllowlist.some((v) => typeof v !== "string" || !v.trim())) {
-      throw new Error("Domain schema: sources.urlAllowlist must be an array of non-empty hostnames");
-    }
-  }
+  if (schema.sources.urlAllowlist !== undefined) assertHostnameList(schema.sources.urlAllowlist, "urlAllowlist");
   // ADR-0055 D2: deny channel — first-class, evaluated last, never merged into allow.
-  if (schema.sources.urlDenylist !== undefined) {
-    if (!Array.isArray(schema.sources.urlDenylist) || schema.sources.urlDenylist.some((v) => typeof v !== "string" || !v.trim())) {
-      throw new Error("Domain schema: sources.urlDenylist must be an array of non-empty hostnames");
-    }
-  }
+  if (schema.sources.urlDenylist !== undefined) assertHostnameList(schema.sources.urlDenylist, "urlDenylist");
   if (!Array.isArray(schema.hooks.toolWhitelist))
     throw new Error("Domain schema: hooks.toolWhitelist must be an array");
   // ADR-0021 D1: compaction guards — fail-fast on out-of-range.

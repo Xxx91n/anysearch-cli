@@ -7,9 +7,9 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { writeFileSync, renameSync, mkdirSync, statSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { loadDomain } from "./domain-loader";
-import type { DomainSchema } from "./domain-schema";
+import { HOSTNAME_RE, type DomainSchema } from "./domain-schema";
 import { SqliteObservationStore } from "./observation";
 
 export const ENV_URL_ALLOWLIST = "ANS_URL_ALLOWLIST";
@@ -28,8 +28,14 @@ export function parseEnvOverrideSwitch(raw: string | undefined | null): boolean 
   );
 }
 
+// ADR-0055 audit M2: env entries validated to the same bar as TOML (D7 equal strictness).
 export function parseEnvHosts(raw: string | undefined | null): string[] {
-  return (raw ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const entries = (raw ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const bad = entries.filter((h) => !HOSTNAME_RE.test(h));
+  if (bad.length > 0) {
+    throw new Error("Refusing to start: " + ENV_URL_ALLOWLIST + " entries must be hostnames (no scheme/port/wildcard); invalid: " + JSON.stringify(bad));
+  }
+  return entries;
 }
 
 // canonical = sort(dedupe(trim(lowercase(hosts)))) (D6 hash-input contract).
@@ -84,7 +90,7 @@ export function resolvePolicyFromSchema(
 ): UrlPolicy {
   return resolveUrlPolicy({
     tomlHosts: schema.sources.urlAllowlist ?? [],
-    denyHosts: (schema.sources as { urlDenylist?: string[] }).urlDenylist ?? [],
+    denyHosts: schema.sources.urlDenylist ?? [],
     env,
   });
 }
@@ -94,6 +100,11 @@ export function resolvePolicyFromSchema(
 export function loadPolicyFromToml(tomlPath: string, env?: NodeJS.ProcessEnv): UrlPolicy {
   const schema = loadDomain(tomlPath);
   return resolvePolicyFromSchema(schema, env);
+}
+
+// Domain TOML path convention shared by CLI/MCP/plugin-server composition roots.
+export function domainTomlPath(cwd: string = process.cwd(), name: string = process.env.ANS_DOMAIN || "default"): string {
+  return join(cwd, "domains", name + ".toml");
 }
 
 // D4/D5 structured atomic write: tmp + rename.
@@ -107,6 +118,7 @@ export function atomicWriteFile(path: string, content: string): void {
 // D5: lazy mtime-checked re-read. Probe returns null = unchanged (or unreadable), schema = reloaded.
 export function createDomainReloader(tomlPath: string): () => DomainSchema | null {
   let lastMtime = -1;
+  let warnedMtime = -1;
   try { lastMtime = statSync(tomlPath).mtimeMs; } catch { /* path may appear later */ }
   return () => {
     let mtime: number;
@@ -116,7 +128,15 @@ export function createDomainReloader(tomlPath: string): () => DomainSchema | nul
       const schema = loadDomain(tomlPath);
       lastMtime = mtime;
       return schema;
-    } catch { return null; } // keep last known good (OPA bad-bundle semantics, D3)
+    } catch (e) {
+      // D3/OPA bad-bundle semantics: keep last known good, but signal it (audit M3:
+      // old policy persisting silently leaves new deny entries dead with zero trace).
+      if (warnedMtime !== mtime) {
+        warnedMtime = mtime;
+        process.stderr.write("[anysearch] domain TOML reload failed; keeping last known good policy: " + (e instanceof Error ? e.message : String(e)) + "\n");
+      }
+      return null;
+    }
   };
 }
 

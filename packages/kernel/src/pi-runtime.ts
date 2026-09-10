@@ -19,7 +19,7 @@ import {
   type RetrievalContent,
   type SourceTraceLabel,
 } from "@anysearch/retriever";
-import { createDomainReloader } from "@anysearch/store";
+import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveUrlPolicy } from "@anysearch/store";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query } from "./ports";
 import type { AgentEvent } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
@@ -147,11 +147,15 @@ export interface PiAgentRuntimeOptions {
 export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
   private readonly domainReloader: (() => unknown) | null;
+  private warnedEnvIgnored = false;
   private pipeline?: MemoryPipeline;
   private gate?: SufficiencyEvaluator;
 
   constructor(opts: PiAgentRuntimeOptions) {
     this.domainReloader = opts.domainTomlPath ? createDomainReloader(opts.domainTomlPath) : null;
+    // ADR-0055 D7 acceptance-4: the override switch is a strict enum at EVERY runtime
+    // (server, hook, kernel), not just the plugin server. Misset -> throw at startup.
+    parseEnvOverrideSwitch(process.env[ENV_ALLOW_OVERRIDE]);
     this.opts = opts;
 
     // ADR-0015 D8: constructor internally creates pipeline + gate instances.
@@ -236,14 +240,20 @@ export class PiAgentRuntime {
         // ADR-0055 D5: lazy mtime-checked re-read; bad TOML keeps last known good.
         const reloaded = this.domainReloader ? this.domainReloader() : null;
         if (reloaded) (this.opts as { domain: DomainConfigPort }).domain = reloaded as DomainConfigPort;
-        const allowlist: string[] = ((this.opts.domain as any)?.sources?.urlAllowlist ?? []) as string[];
-        const denylist: string[] = ((this.opts.domain as any)?.sources?.urlDenylist ?? []) as string[];
+        // ADR-0055 D7 single parse point: kernel consumes the same canonicalize+merge+
+        // strict-switch resolver as server/hooks (audit M1: raw-array reads re-introduced drift).
+        const src = (this.opts.domain as { sources?: { urlAllowlist?: string[]; urlDenylist?: string[] } } | undefined)?.sources;
+        const policy = resolveUrlPolicy({ tomlHosts: src?.urlAllowlist ?? [], denyHosts: src?.urlDenylist ?? [] });
+        if (policy.envHostsIgnored && !this.warnedEnvIgnored) {
+          this.warnedEnvIgnored = true;
+          process.stderr.write("[anysearch] " + ENV_URL_ALLOWLIST + " ignored; set " + ENV_ALLOW_OVERRIDE + "=1 to opt in\n");
+        }
         const urls: string[] = JSON.stringify(ctx?.args ?? {}).match(/https?:\/\/[^\s"'<>\\)]+/g) ?? [];
         for (const url of urls) {
           const label: SourceTraceLabel = typeof input === "string" && input.includes(url)
             ? { source: "user", traceId: "user-input" }
             : { source: "retrieved", traceId: "tool-call" };
-          const verdict = shouldAllowUrl(url, label, allowlist, denylist);
+          const verdict = shouldAllowUrl(url, label, policy.allow, policy.deny);
           if (verdict.allowed) continue;
           if (!verdict.requiresHitl) {
             return { block: true, reason: "URL rejected by trust boundary: " + url, terminate: true };

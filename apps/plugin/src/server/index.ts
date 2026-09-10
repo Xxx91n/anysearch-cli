@@ -20,18 +20,12 @@ const DB_PATH = process.env.ANS_PROJECT_DB || join(process.cwd(), ".anysearch", 
 import { mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { existsSync } from "node:fs";
-import {
-  loadPolicyFromToml,
-  resolveUrlPolicy,
-  atomicWriteFile,
-  emitConfigChangeAudit,
-  type UrlPolicy,
-} from "@anysearch/store";
+import { atomicWriteFile, domainTomlPath, emitConfigChangeAudit, loadPolicyFromToml, resolveUrlPolicy, type UrlPolicy } from "@anysearch/store";
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
 // ADR-0055: startup policy parse. D3/D7 fail-closed: TOML parse failure or a misset
 // ANS_ALLOW_ENV_OVERRIDE throws here and refuses to start, naming variable + value.
-const DOMAIN_TOML = join(process.cwd(), "domains", (process.env.ANS_DOMAIN || "default") + ".toml");
+const DOMAIN_TOML = domainTomlPath();
 const POLICY_CACHE = join(process.cwd(), ".anysearch-cli", "policy.json");
 const OBS_DB = process.env.ANS_DB_PATH ||
   join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");

@@ -74,5 +74,23 @@ try {
 } catch (e) { validatePassed = false; }
 assert("validate passes for valid schema", validatePassed);
 
+// Audit M2: policy host lists reject non-hostname entries (fail-closed at load).
+// A malformed entry could never match a real host and would silently deaden the policy.
+const badAllow = resolve({ name: "h", rag: { adapter: "x" }, sources: { urlAllowlist: ["https://evil.com"] } } as unknown as RawDomain, () => undefined);
+let schemeThrew = "";
+try { validate(badAllow); } catch (e) { schemeThrew = (e as Error).message; }
+assert("urlAllowlist rejects scheme entries, naming field + entry",
+  schemeThrew.includes("urlAllowlist") && schemeThrew.includes("https://evil.com"));
+
+const badDeny = resolve({ name: "h2", rag: { adapter: "x" }, sources: { urlDenylist: ["*.evil.com"] } } as unknown as RawDomain, () => undefined);
+let wildThrew = "";
+try { validate(badDeny); } catch (e) { wildThrew = (e as Error).message; }
+assert("urlDenylist rejects wildcard entries", wildThrew.includes("urlDenylist") && wildThrew.includes("*.evil.com"));
+
+const goodHosts = resolve({ name: "ok", rag: { adapter: "x" }, sources: { urlAllowlist: ["Example.COM", "a-b.example.org"] } } as unknown as RawDomain, () => undefined);
+let goodOk = true;
+try { validate(goodHosts); } catch { goodOk = false; }
+assert("valid hostnames pass (case tolerated, canonicalized downstream)", goodOk);
+
 console.log(`Domain schema tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -6,8 +6,8 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch/kernel";
 import { createLlmSession, PiAgentRuntime, KernelJsonSchemas, type LlmSession } from "@anysearch/kernel";
+import { domainTomlPath } from "@anysearch/store";
 import { observeTool } from "./observation.js";
-import { join } from "node:path";
 
 export function registerAnsChat(server: McpServer, eng: CompositionResult): void {
   // ADR-0017 D3: lazy init on first ans_chat call, cached per server instance.
@@ -53,7 +53,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
           const runtime = new PiAgentRuntime({
             retriever: eng.retriever,
             domain,
-            domainTomlPath: join(process.cwd(), "domains", (process.env.ANS_DOMAIN || "default") + ".toml"),
+            domainTomlPath: domainTomlPath(),
             model: session.model,
             streamFn: session.streamFn,
             models: session.models,
