@@ -787,4 +787,16 @@ _Avoid_: 检索派生 URL 自动成为后续输入、retrieved/memory 派生直�
 5 族 golden 探针（不可见字符/指令注入/tool-output+URL egress/记忆投毒/组合自适应）构成的注入防绕过 eval 闭包；`canonicalPayload→SHA-256` 指纹，唯一硬门禁 `passRate==1`。ADR-0053。
 _Avoid_: 用 ASR 统计当 gate、LLM 合成 label、与 STALE 探针合并
 
+## Abstain Smoke（拒答烟雾）
+LLM-in-the-loop 注入拒答行为的观测轨探针，由 probe → LLM 响应 → 三档 deterministic verdict（access-chain trace → keyword regex → LLM judge 异步采样）组成。abstainRate 与 falseAbstainRate 成对出现在 ObservationalZone，report-only，永不进 gate。ADR-0054。
+_Avoid_: 当 gate、用 ASR 命名、靠 LLM judge 做 verdict 门禁、和 STALE 混跑
+
+## Assert Judgment Input（断言判断输入）
+在五个 LLM 判断边界（gap distillation / NOOP adjudication / consolidation / claim attribution / sufficiency judge）统一调用的共享断言函数，强制输入是合法的 tagged RetrievalContent。对应 LangChain before_model 接缝。ADR-0054。
+_Avoid_: 在每个 caller 内部各写一遍 schema 校验、断言后又下游一次值变更
+
+## HITL Review Queue（HITL 待审队列）
+shouldAllowUrl 标 requiresHitl 的 URL 组成的持久化待审列表；headless 模式 block + reason + enqueue，TTY 模式 askAllowUrl 停机世界 y/N；用 ans hitl review 命令查看/批准/拒绝。ADR-0054。
+_Avoid_: headless 挂起等人工确认、静默放行 retrieved-derived URL、绕过 allowlist 直接自动批准
+
 *End of Glossary*

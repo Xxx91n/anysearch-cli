@@ -10,8 +10,9 @@ import { SqliteSessionStore } from "../session-store";
 import { normalizeEntityName } from "../entity";
 import type { AdjudicationResultItem } from "../session-store";
 import { rrfRank, FUSION_REGISTRY } from "@anysearch/retriever";
-import { assertParaphraseSlice, PARAPHRASE_MAX_LEXICAL_OVERLAP, type CaseSpec, type EvalStage } from "./golden-cases";
+import { ABSTAIN_CASES, assertParaphraseSlice, PARAPHRASE_MAX_LEXICAL_OVERLAP, type CaseSpec, type EvalStage } from "./golden-cases";
 import { injectFingerprint, runInjectProbe } from "./inject";
+import { runAbstainProbe } from "./abstain";
 import { holdoutFingerprint, isHoldout } from "./holdout";
 import { bucketHistogram, dayBucketFingerprint } from "./day-buckets";
 import { evaluateTauFitGate, isStructuralAbsence } from "./bgnbd";
@@ -102,6 +103,8 @@ export interface CaseResult {
   accessEvents?: { total: number; histogram: Record<string, number>; units: number; fittableUnits: number; firstAt: number | null; lastAt: number | null };
   // ADR-0040 D2: alert-on-silence — chained event write failures per case (observational, never gated).
   eventWriteFailures?: number;
+  // ADR-0054 D2/D3: abstain smoke outcome per case (observational only, never gated).
+  abstain?: { expectAbstain: boolean; abstain: boolean; tier: string; fingerprintOk: boolean };
 }
 
 export interface EvalCounts {
@@ -194,6 +197,8 @@ export interface ObservationalZone {
   undoReentryEvents: { status: "ok"; count: number } | SkipMarker;
   // ADR-0040 D2: alert-on-silence counter, always reported (silence itself is the signal).
   eventWriteFailures: { status: "ok"; count: number };
+  // ADR-0054 D2: abstain smoke metrics, pair-reported (abstainRate + falseAbstainRate).
+  abstain: { status: "ok"; n: number; abstainRate: number; falseAbstainRate: number } | SkipMarker;
   // ADR-0046 D7: report-as-contract fields. armDeltas is computed by the memory eval;
   // webProviderLedger fields are emitted by RetroaererdEngine per web run and remain
   // explicit skips in a memory-only eval.
@@ -309,6 +314,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
   let semTelSnapshot: { queries: number; hits: number; served: number } | undefined;
   let accessEventsSnapshot: NonNullable<CaseResult["accessEvents"]> | undefined;
   let eventWriteFailures: number | undefined;
+  let abstainSnap: CaseResult["abstain"];
   let entityMergeSnapshot: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } | undefined;
   const adjResults: AdjudicationResultItem[][] = []; // stashed per adjudicate opIndex
   const archiveLogIdsByOp = new Map<number, number[]>(); // ADR-0037 D5: archive op -> archive_log ids for undo
@@ -547,6 +553,19 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
             mark({ op: opIndex, kind: op.op, stage: op.stage, ok, detail: ok ? "inject probe " + op.family + " passed" : "inject probe " + op.family + " failed" });
             break;
           }
+          case "abstain": {
+            // ADR-0054 D2/D3: observational only — the verdict never flips case pass/fail.
+            const fingerprintOk = !op.expectFingerprint || injectFingerprint(op.prompt) === op.expectFingerprint;
+            const v = await runAbstainProbe({ family: op.family, prompt: op.prompt });
+            abstainSnap = { expectAbstain: op.expectAbstain, abstain: v.abstain, tier: v.tier, fingerprintOk };
+            const mismatch = v.abstain !== op.expectAbstain ? " MISMATCH" : "";
+            mark({
+              op: opIndex, kind: op.op, stage: op.stage, ok: true,
+              detail: "abstain probe tier=" + v.tier + " verdict=" + v.abstain + " expect=" + op.expectAbstain +
+                (fingerprintOk ? "" : " [fingerprint drift]") + mismatch + " (observational)",
+            });
+            break;
+          }
           case "resolveQuarantined": {
             const res = adjResults[op.fromOp];
             const id = res?.[op.item]?.insertedId;
@@ -595,12 +614,14 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
     store.close();
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
-  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot, entityMerge: entityMergeSnapshot, relationTel: relationTelSnapshot, semTel: semTelSnapshot, accessEvents: accessEventsSnapshot, eventWriteFailures };
+  return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot, entityMerge: entityMergeSnapshot, relationTel: relationTelSnapshot, semTel: semTelSnapshot, accessEvents: accessEventsSnapshot, eventWriteFailures, abstain: abstainSnap };
 }
 
 // Metrics per ADR-0027 D4: ① case pass rate (gate: 100%), ② supersession success,
 // ③ quarantine false-positive rate (high-evidence/user write quarantined anyway).
-export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMetrics {
+// ADR-0054 D2: abstain zone value computed by runAll (ABSTAIN_CASES live outside the
+// fingerprinted corpus) and threaded through; defaults to an explicit skip for direct callers.
+export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstainZone?: ObservationalZone["abstain"]): EvalMetrics {
   const passed = results.filter((r) => r.passed).length;
   let supExpected = 0;
   let supPassed = 0;
@@ -870,6 +891,8 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[]): EvalMe
           : skip("no archive ops present in this eval run — revival main ratio is inert", "gate-not-met"),
         eventWriteFailures: { status: "ok" as const, count: evWriteFails },
         undoReentryEvents: skip("undo_reentry needs a 30-day post-undo window — outside the single-run eval horizon (observational sub-metric)", "offline-deferred"),
+        // ADR-0054 D2: abstain smoke — pair-reported abstainRate + falseAbstainRate (never gated).
+        abstain: abstainZone ?? skip("no abstain_* cases registered — abstain smoke zone empty", "gate-not-met"),
         armDeltas,
         maxLexicalOverlap: PARAPHRASE_MAX_LEXICAL_OVERLAP,
         exclusiveHits: skip("web provider ledger is emitted by RetroaererdEngine.metadata.webProviderLedger; memory eval has no web fanout", "offline-deferred"),
@@ -883,6 +906,22 @@ export async function runAll(cases: CaseSpec[]): Promise<EvalReport> {
   assertParaphraseSlice(cases);
   const results: CaseResult[] = [];
   for (const c of cases) results.push(await runCase(c));
+  // ADR-0054 D2/D3: abstain smoke runs the same runCase switch but stays out of
+  // results/totals/fingerprint — verdicts feed ObservationalZone.abstain only.
+  const abstainResults: CaseResult[] = [];
+  for (const c of ABSTAIN_CASES) abstainResults.push(await runCase(c));
+  const abstainRecs = abstainResults.map((r) => r.abstain).filter((a): a is NonNullable<typeof a> => !!a);
+  const abstainZone: ObservationalZone["abstain"] = abstainRecs.length === 0
+    ? skip("no abstain_* cases registered — abstain smoke zone empty", "gate-not-met")
+    : {
+        status: "ok" as const,
+        n: abstainRecs.length,
+        abstainRate: abstainRecs.filter((a) => a.abstain).length / abstainRecs.length,
+        falseAbstainRate: (() => {
+          const answerable = abstainRecs.filter((a) => !a.expectAbstain);
+          return answerable.length ? answerable.filter((a) => a.abstain).length / answerable.length : 0;
+        })(),
+      };
   const stageBreakdown: Record<EvalStage, number> = { extract: 0, adjudicate: 0, store: 0, retrieve: 0 };
   for (const r of results) if (r.failedStage) stageBreakdown[r.failedStage] += 1;
   // ADR-0028 D4: difficulty tier breakdown (report-only — never part of the gate).
@@ -902,7 +941,7 @@ export async function runAll(cases: CaseSpec[]): Promise<EvalReport> {
     totals: { cases: results.length, passed: results.filter((r) => r.passed).length, failed: results.filter((r) => !r.passed).length },
     stageBreakdown,
     tierBreakdown,
-    metrics: computeMetrics(cases, results),
+    metrics: computeMetrics(cases, results, abstainZone),
     cases: results,
   };
 }

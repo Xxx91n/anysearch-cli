@@ -205,3 +205,53 @@ export function shouldAllowUrl(
   }
   return { allowed: false, requiresHitl: true };
 }
+
+// ADR-0054 D1: shared pre-LLM judgment assertion. Every LLM judgment boundary asserts
+// through this one wrapper (fail-closed). Input is a tagged judgment payload: a
+// TaggedGap-shaped object (text + source + traceId), optionally carrying items[]
+// of RetrievalContent which are asserted individually via assertLlamaInput.
+export interface JudgmentInput {
+  text: string;
+  source: SourceLabel;
+  traceId: string;
+  items?: RetrievalContent[];
+}
+
+export function assertJudgmentInput(
+  input: unknown,
+  site: string,
+): asserts input is JudgmentInput {
+  if (!input || typeof input !== "object") {
+    throw new Error("LLM judgment input at " + site + " must be a tagged object");
+  }
+  const j = input as Partial<JudgmentInput>;
+  if (typeof j.text !== "string" || j.text.length === 0) {
+    throw new Error("LLM judgment input at " + site + " must carry non-empty text");
+  }
+  if (typeof j.source !== "string" || typeof j.traceId !== "string" || j.traceId.length === 0) {
+    throw new Error("LLM judgment input at " + site + " must carry {source, traceId}");
+  }
+  if (Array.isArray(j.items)) {
+    for (const item of j.items) assertLlamaInput(item);
+  }
+}
+
+// ADR-0054 D1: unwrap a wrapRetrieved wire payload back to the engine envelope.
+// Returns the parsed envelope when the payload is a tagged RetrievalContent whose
+// schema matches, otherwise null (caller falls back to legacy parsing).
+export function unwrapRetrieved(parsed: unknown): unknown | null {
+  if (
+    parsed !== null &&
+    typeof parsed === "object" &&
+    (parsed as { schema?: unknown }).schema === RETRIEVAL_CONTENT_SCHEMA_URL
+  ) {
+    const snippet = (parsed as { snippet?: unknown }).snippet;
+    if (typeof snippet !== "string") return null;
+    try {
+      return JSON.parse(snippet);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}

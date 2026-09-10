@@ -15,7 +15,7 @@ import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports"
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
 import { isTimeSensitive, isEvergreen } from "@anysearch/store"; // ADR-0030 D5: no inline regex copies
-import { combineLabels, type SourceTraceLabel } from "@anysearch/retriever";
+import { assertJudgmentInput, combineLabels, unwrapRetrieved, type SourceTraceLabel } from "@anysearch/retriever";
 import type { LlmRewriteFn } from "./query-rewrite";
 
 export interface TaggedGapResult {
@@ -83,6 +83,7 @@ export function distillGap(messages: any[], fromIdx: number): TaggedGap {
     if (!raw) continue;
     let parsed: any;
     try { parsed = JSON.parse(raw); } catch { parsed = null; }
+    parsed = unwrapRetrieved(parsed) ?? parsed;
     const envelope = parsed && typeof parsed === "object" && !Array.isArray(parsed)
       ? parsed
       : { schema: null, results: [] };
@@ -345,6 +346,10 @@ export class MemoryPipeline {
 
       if (result.decision === "skip") return;
 
+      // ADR-0054 D1: judgment-input assertion boundary 1/5 — gap distillation.
+      const gap = result.summaryRequest?.gap;
+      if (gap && gap.text) assertJudgmentInput(gap, "gap-distillation");
+
       // Shell: execute I/O based on pure decision.
       const modelsObj = models;
       const summaryModel = (domain as any).compaction?.model
@@ -361,6 +366,8 @@ export class MemoryPipeline {
       // D5: fire-and-forget compression helper.
       const fireCompress = () => {
         if (modelsObj && actualModel) {
+          // ADR-0054 D1: judgment-input assertion boundary 3/5 — consolidation pre-call.
+          if (gap && gap.text) assertJudgmentInput(gap, "consolidation");
           this.consolidationState = {
             version: result.state.version,
             consecutiveReuses: 0,
@@ -394,6 +401,8 @@ export class MemoryPipeline {
       } else if (result.decision === "reuse") {
         // Adjudication: fire-and-forget LLM call to decide reuse vs compress.
         const gapDistillation = result.summaryRequest?.gap.text || "";
+        // ADR-0054 D1: judgment-input assertion boundary 2/5 — NOOP adjudication pre-call.
+        if (gap && gap.text) assertJudgmentInput(gap, "noop-adjudication");
         adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary)
           .then((adjDecision: "reuse" | "compress") => {
             if (adjDecision === "compress") {

@@ -15,6 +15,8 @@ export interface HookInput {
 
 export interface HookDecision {
   permission?: "allow" | "deny" | "ask";
+  // ADR-0054 D4: reason text for Claude hookSpecificOutput.permissionDecisionReason.
+  permissionReason?: string;
   updatedInput?: Record<string, unknown>;
   additionalContext?: string;
   // PostToolUse: distilled summary for host agent

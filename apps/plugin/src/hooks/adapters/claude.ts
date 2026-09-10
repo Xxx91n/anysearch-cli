@@ -54,6 +54,14 @@ async function main(): Promise<void> {
       const output: Record<string, unknown> = {};
       if (decision.additionalContext) output.additionalContext = decision.additionalContext;
       if (decision.updatedInput) output.updatedInput = decision.updatedInput;
+      // ADR-0054 D4: surface ask/allow/deny through Claude's hookSpecificOutput envelope.
+      if (decision.permission) {
+        output.hookSpecificOutput = {
+          hookEventName: "PreToolUse",
+          permissionDecision: decision.permission,
+          ...(decision.permissionReason ? { permissionDecisionReason: decision.permissionReason } : {}),
+        };
+      }
       if (Object.keys(output).length > 0) {
         process.stdout.write(JSON.stringify(output));
       }

@@ -5,6 +5,8 @@ import {
   shouldAllowUrl,
   wrapRetrieved,
   assertLlamaInput,
+  assertJudgmentInput,
+  unwrapRetrieved,
   RetrievalContentSchema,
 } from "@anysearch/retriever";
 import { Value } from "@sinclair/typebox/value";
@@ -50,6 +52,34 @@ assert(shouldAllowUrl("https://trusted.example/", { source: "retrieved", traceId
 let assertionPassed = false;
 try { assertLlamaInput({ text: "naked", label: { source: "retrieved", traceId: "t" } }); } catch { assertionPassed = true; }
 assert(assertionPassed, "assertLlamaInput rejects bare string shape");
+
+// ADR-0054 D1: assertJudgmentInput — fail-closed at judgment boundaries.
+assertJudgmentInput({ text: "gap", source: "retrieved", traceId: "g1" }, "test-site"); // must not throw
+let threw = false;
+try { assertJudgmentInput({ text: "", source: "retrieved", traceId: "g1" }, "test-site"); } catch { threw = true; }
+assert(threw, "assertJudgmentInput rejects empty text");
+threw = false;
+try { assertJudgmentInput({ text: "ok" }, "test-site"); } catch { threw = true; }
+assert(threw, "assertJudgmentInput rejects missing traceId");
+threw = false;
+try { assertJudgmentInput({ text: "ok", source: "retrieved", traceId: "g1", items: [{ bogus: true }] }, "test-site"); } catch { threw = true; }
+assert(threw, "assertJudgmentInput schema-checks items[] via assertLlamaInput");
+
+// ADR-0054 D1: wrapRetrieved -> unwrapRetrieved round-trip preserves the engine envelope.
+const envJson = JSON.stringify({ results: [{ title: "r1" }], metadata: { sufficiency: { verdict: "partial" } } });
+const wrappedRc = wrapRetrieved({
+  schema: "anysearch://schemas/retrieval-content/1",
+  version: 1,
+  url: "search://envelope/t1",
+  title: "q",
+  snippet: envJson,
+  source: "engine",
+  label: { source: "retrieved", traceId: "search-t1" },
+  disposal: "accepted",
+});
+const unwrapped = unwrapRetrieved(JSON.parse(wrappedRc.content[0]!.text)) as any;
+assert(unwrapped && unwrapped.metadata.sufficiency.verdict === "partial", "unwrapRetrieved restores envelope");
+assert(unwrapRetrieved({ hello: 1 }) === null, "unwrapRetrieved passes through legacy payloads as null");
 
 console.log("content-trust: " + passed + " passed, " + failed + " failed");
 process.exit(failed ? 1 : 0);

@@ -9,6 +9,29 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
     return {};
   }
 
+  // ADR-0054 D4: any URL in the tool input that is not user-provided and not on the
+  // persistent allowlist (ANS_URL_ALLOWLIST, comma-separated hosts) is treated as
+  // retrieved-derived and surfaced as Claude's "ask" permission decision.
+  if (input.toolInput?.userProvided !== true) {
+    const urls = JSON.stringify(input.toolInput ?? {}).match(/https?:\/\/[^\s"'<>\\)]+/g) ?? [];
+    const allowlist = (process.env.ANS_URL_ALLOWLIST || "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    for (const url of urls) {
+      let host = "";
+      try { host = new URL(url).hostname.toLowerCase(); } catch { continue; }
+      const allowed = allowlist.some((h) => host === h || host.endsWith("." + h));
+      if (!allowed) {
+        return {
+          permission: "ask",
+          permissionReason: "retrieved-derived URL not on allowlist: " + url +
+            " (persistent allow: `ans hitl review --allow-url " + host + "`)",
+        };
+      }
+    }
+  }
+
   const query = String(input.toolInput?.query || "");
   if (!query) return {};
 

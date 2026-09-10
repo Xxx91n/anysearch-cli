@@ -19,6 +19,7 @@ import type {
   GapRequest,
   NormalizedResult,
 } from "@anysearch/retriever";
+import { assertJudgmentInput } from "@anysearch/retriever";
 import {
   betaCalibrate,
   LEGACY_ATTRIBUTION_THRESHOLD,
@@ -404,6 +405,8 @@ export async function applyJudgeEscalation(
     if (used >= maxCalls) break;
     if (!shouldEscalateToJudge(c)) continue;
     used++;
+    // ADR-0054 D1: judgment-input assertion boundary 5/5 — claim attribution pre-call.
+    assertJudgmentInput({ text: c.text, source: "retrieved", traceId: "attr-judge-" + used }, "claim-attribution");
     const verdict = await judgeFn(c);
     if (verdict === "supported" || verdict === "unsupported") {
       c.label = verdict;

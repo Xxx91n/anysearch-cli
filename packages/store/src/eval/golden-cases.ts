@@ -4,6 +4,7 @@
 // Runner materializes each case on a fresh temp SQLite DB: adjudicate stubs -> store -> retrieve.
 import type { AdjudicationAction, KeyMemoryInput } from "../session-store";
 import { injectFingerprint, type InjectFamily } from "./inject";
+import type { AbstainFamily } from "./abstain";
 
 export type EvalGroup =
   | "supersession"
@@ -20,7 +21,8 @@ export type EvalGroup =
   | "relations"
   | "consolidate"
   | "forget"
-  | "inject";
+  | "inject"
+  | "abstain";
 
 // ADR-0046 D1: three-tier paraphrase slice. The bound stays unset until the
 // first 50-run calibration after this round; keeping it in the case shape now
@@ -49,7 +51,10 @@ export type CaseOp =
   | { op: "archive"; stage: "store"; expectArchived: number }
   | { op: "undoArchive"; stage: "store"; fromOp: number; expectOk: boolean }
   // ADR-0053 D5: deterministic anti-bypass probes. canonicalPayload is frozen and fingerprinted.
-  | { op: "inject"; stage: "retrieve"; family: InjectFamily; canonicalPayload: string; expectFingerprint: string };
+  | { op: "inject"; stage: "retrieve"; family: InjectFamily; canonicalPayload: string; expectFingerprint: string }
+  // ADR-0054 D2/D3: behavioral abstain smoke. Observational only — the runner records the
+  // verdict into ObservationalZone.abstain and never lets it flip case pass/fail.
+  | { op: "abstain"; stage: "retrieve"; family: AbstainFamily; prompt: string; expectAbstain: boolean; expectFingerprint?: string };
 
 export interface CaseSpec {
   id: string;
@@ -861,3 +866,48 @@ function buildRelationExpansionR33(): CaseSpec[] {
   }
   return out;
 }
+
+// ADR-0054 D2/D3: abstain smoke cases live OUTSIDE GOLDEN_CASES so the pre-registered
+// dataset fingerprint (and the inject_* piggyback cases) do not move. The runner executes
+// them through the same runCase switch and reports verdicts only in ObservationalZone.abstain.
+export const ABSTAIN_CASES: CaseSpec[] = [
+  {
+    id: "abstain_chain_empty",
+    group: "abstain",
+    description: "tier-1 access-chain: zero retrieved evidence forces abstain",
+    ops: [
+      {
+        op: "abstain", stage: "retrieve", family: "chain_empty",
+        prompt: "no retrieved evidence exists for this query; chain trace empty",
+        expectAbstain: true,
+        expectFingerprint: "d17ea15715e5c599a3d806862fa61ef20f4c1104c6e2c7d140a872ad32027da8",
+      },
+    ],
+  },
+  {
+    id: "abstain_refusal_keyword",
+    group: "abstain",
+    description: "tier-2 refusal keyword: assistant refusal text reads as abstain",
+    ops: [
+      {
+        op: "abstain", stage: "retrieve", family: "refusal_keyword",
+        prompt: "Sorry, I cannot answer that based on the available evidence.",
+        expectAbstain: true,
+        expectFingerprint: "78c286dda9dd5101aeccb0fac2fabd928b61e0f104a691058d82c034b9b3a39f",
+      },
+    ],
+  },
+  {
+    id: "abstain_answered",
+    group: "abstain",
+    description: "tier-2 negative control: confident answer must NOT read as abstain",
+    ops: [
+      {
+        op: "abstain", stage: "retrieve", family: "answered",
+        prompt: "Paris is the capital of France, per Encyclopaedia Britannica.",
+        expectAbstain: false,
+        expectFingerprint: "44417453b5184598a64c2013829339e48f189dde9475e0e948269d249a9364a6",
+      },
+    ],
+  },
+];

@@ -9,10 +9,54 @@
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import {
+  CONTENT_TRUST_SCHEMA_VERSION,
+  RETRIEVAL_CONTENT_SCHEMA_URL,
+  shouldAllowUrl,
+  wrapRetrieved,
+  type RetrievalContent,
+  type SourceTraceLabel,
+} from "@anysearch/retriever";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query } from "./ports";
 import type { AgentEvent } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
+
+// ADR-0054 D4: HITL gate helpers for shouldAllowUrl (TTY ask / headless deny-first).
+export function isInteractive(): boolean {
+  return Boolean(process.stdin.isTTY) && !process.env.ANS_NO_INTERACTIVE;
+}
+
+// TTY y/N prompt; deny-first default on EOF/timeout/error.
+export async function askAllowUrl(url: string): Promise<boolean> {
+  const readline = await import("node:readline");
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer: string = await new Promise((resolve) => {
+      rl.question("[anysearch] retrieved-derived URL not on allowlist: " + url + " — allow once? [y/N] ", resolve);
+    });
+    return /^y(es)?$/i.test(answer.trim());
+  } catch {
+    return false;
+  } finally {
+    rl.close();
+  }
+}
+
+// Headless deny path: queue the blocked URL for `ans hitl review` recovery.
+export function enqueueHitl(record: { url: string; host: string; toolName: string; reason: string; at?: string }): void {
+  try {
+    const dir = join(process.cwd(), ".anysearch-cli");
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(
+      join(dir, "hitl.pending"),
+      JSON.stringify({ ...record, at: record.at ?? new Date().toISOString() }) + "\n",
+      "utf8",
+    );
+  } catch { /* fail-open: queue write failure must not crash the agent loop */ }
+}
 
 // Build the search AgentTool: wraps RetroaererdEngine.search() with TypeBox schema.
 // The LLM sees this as a tool it can call to search the web.
@@ -38,7 +82,20 @@ function createSearchTool(retriever: RetrieverPort): AgentTool {
         mode: (params.mode as "fast" | "index" | "deep" | "answer") || "fast",
       };
       const envelope = await retriever.search(q);
-      const summary = JSON.stringify(envelope, null, 2);
+      // ADR-0054 D1: every retrieved payload crosses the LLM boundary through wrapRetrieved
+      // (Anthropic tool_result wire format). The full envelope JSON rides in snippet untruncated
+      // ponytail: schema maxLength(4000) is not enforced here; downstream parses via unwrapRetrieved.
+      const tagged: RetrievalContent = {
+        schema: RETRIEVAL_CONTENT_SCHEMA_URL,
+        version: CONTENT_TRUST_SCHEMA_VERSION,
+        url: "search://envelope/" + _toolCallId,
+        title: q.query,
+        snippet: JSON.stringify(envelope),
+        source: "engine",
+        label: { source: "retrieved", traceId: "search-" + _toolCallId },
+        disposal: "accepted",
+      };
+      const summary = wrapRetrieved(tagged).content[0]!.text;
       return {
         content: [{ type: "text", text: summary }],
         details: {
@@ -163,6 +220,37 @@ export class PiAgentRuntime {
       transformContext: async (messages: any[]) => {
         if (this.pipeline) return this.pipeline.inject(messages);
         return messages;
+      },
+      // ADR-0054 D1/D4: shouldAllowUrl at the agent-loop tool-call seam. Retrieved-derived
+      // URLs not on the domain [sources].urlAllowlist are HITL-gated; deny-first headless.
+      beforeToolCall: async (ctx: any) => {
+        const allowlist: string[] = ((this.opts.domain as any)?.sources?.urlAllowlist ?? []) as string[];
+        const urls: string[] = JSON.stringify(ctx?.args ?? {}).match(/https?:\/\/[^\s"'<>\\)]+/g) ?? [];
+        for (const url of urls) {
+          const label: SourceTraceLabel = typeof input === "string" && input.includes(url)
+            ? { source: "user", traceId: "user-input" }
+            : { source: "retrieved", traceId: "tool-call" };
+          const verdict = shouldAllowUrl(url, label, allowlist);
+          if (verdict.allowed) continue;
+          if (!verdict.requiresHitl) {
+            return { block: true, reason: "URL rejected by trust boundary: " + url, terminate: true };
+          }
+          if (isInteractive() && (await askAllowUrl(url))) continue;
+          let host = "";
+          try { host = new URL(url).hostname; } catch { /* keep empty */ }
+          enqueueHitl({
+            url,
+            host,
+            toolName: String(ctx?.toolCall?.name ?? "unknown"),
+            reason: "retrieved-derived URL blocked pending human review",
+          });
+          return {
+            block: true,
+            reason: "Blocked retrieved-derived URL " + url + " (queued for `ans hitl review`)",
+            terminate: true,
+          };
+        }
+        return undefined;
       },
       // ADR-0010 D1: shouldStopAfterTurn async cold path — delegated to SufficiencyEvaluator + MemoryPipeline.
       // Fires after each assistant turn; async, does not block current turn.

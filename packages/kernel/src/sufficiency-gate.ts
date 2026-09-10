@@ -9,7 +9,7 @@
 
 import { computeSufficiency } from "./engine";
 import type { RetrieverPort, DomainConfigPort } from "./ports";
-import type { SufficiencySignal, GapRequest } from "@anysearch/retriever";
+import { assertJudgmentInput, unwrapRetrieved, type SufficiencySignal, type GapRequest } from "@anysearch/retriever";
 
 export interface SufficiencyEvaluatorDeps {
   retriever: RetrieverPort;
@@ -68,7 +68,8 @@ export class SufficiencyEvaluator {
       const envelopeJson = toolResultContent?.content?.[0]?.text;
       if (!envelopeJson) return empty;
 
-      const envelope = JSON.parse(envelopeJson);
+      const parsedEnvelope = JSON.parse(envelopeJson);
+      const envelope = unwrapRetrieved(parsedEnvelope) ?? parsedEnvelope;
       // ADR-0034 D7: extract GapRequests from attribution for GateEnvelope.
     const gapRequests = envelope?.attribution?.gaps ?? [];
     const suff = (envelope?.metadata?.sufficiency ?? envelope?.sufficiency) as SufficiencySignal | undefined;
@@ -81,6 +82,16 @@ export class SufficiencyEvaluator {
       ];
 
       if (!streamFn || !model) return empty;
+
+      // ADR-0054 D1: judgment-input assertion boundary 4/5 — sufficiency judge pre-call.
+      assertJudgmentInput(
+        {
+          text: gapPrompt[1]!.content,
+          source: "retrieved",
+          traceId: (envelope.results?.[0] as any)?.label?.traceId ?? "sufficiency-gap",
+        },
+        "sufficiency-judge",
+      );
 
       let gapQuery = "";
       const apiKey = await getApiKey?.();
