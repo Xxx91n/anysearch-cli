@@ -9,10 +9,11 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
     return {};
   }
 
-  // ADR-0054 D4: any URL in the tool input that is not user-provided and not on the
-  // persistent allowlist (ANS_URL_ALLOWLIST, comma-separated hosts) is treated as
-  // retrieved-derived and surfaced as Claude's "ask" permission decision.
-  if (input.toolInput?.userProvided !== true) {
+  // ADR-0054 D4: any URL in the tool input that is not on the persistent allowlist
+  // (ANS_URL_ALLOWLIST, comma-separated hosts) is surfaced as Claude's "ask"
+  // permission decision. Provenance: a hook cannot distinguish retrieved-derived from
+  // user-typed URLs, and a model-controllable flag would be spoofable — gate all URLs.
+  {
     const urls = JSON.stringify(input.toolInput ?? {}).match(/https?:\/\/[^\s"'<>\\)]+/g) ?? [];
     const allowlist = (process.env.ANS_URL_ALLOWLIST || "")
       .split(",")
@@ -25,8 +26,8 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
       if (!allowed) {
         return {
           permission: "ask",
-          permissionReason: "retrieved-derived URL not on allowlist: " + url +
-            " (persistent allow: `ans hitl review --allow-url " + host + "`)",
+          permissionReason: "URL not on allowlist: " + url +
+            " (persistent allow for this hook: add host to ANS_URL_ALLOWLIST)",
         };
       }
     }

@@ -62,3 +62,18 @@ TTY-detect interactive / deny-first headless fallback (sudo template).
 - pydantic-ai deferred tools - requires_approval -> DeferredToolRequests/Results
 - NemoClaw CLI - NEMOCLAW_NON_INTERACTIVE hard reject
 - AbstentionBench (GitHub) - abstention_detector contains_abstention_keyword
+
+## Post-Review Audit (round-51 follow-up commit)
+
+Audit: two-axis code review (Standards + Spec sub-agents) plus independent industry-pattern research (agent-dojo / Anthropic mitigation docs / NCSC / MCP elicitation references). Diff base 07cc210 -> f0221a8 (978 lines; exceeds the 500-line audit threshold — declared, not split: single cohesive wiring round).
+
+Found / Fixed / Deferred:
+
+- Found: kernel read process.env.ANS_NO_INTERACTIVE (violates kernel env-read discipline). Fixed: interactivity is now passed in via PiAgentRuntimeOptions.interactive from the CLI composition root; kernel keeps only the isTTY capability check.
+- Found: fail-closed assertJudgmentInput inside fire-and-forget paths (fireCompress, noop-adjudication) could throw into the agent loop. Fixed: both wrapped, degrade to skip-compression / skip-adjudication.
+- Found: Claude hook trusted `toolInput.userProvided` — a model-controllable flag that nothing ever sets (spoofable and vacuous). Fixed: flag removed; all URLs are gated in the hook, allowlist is the only bypass.
+- Found: hook permissionReason told users to run `ans hitl review --allow-url`, which writes the domain TOML — a different allowlist source than the hook's ANS_URL_ALLOWLIST env. Fixed: message now names the env var the hook actually reads. Deferred: single-source allowlist unification (kernel reads TOML, hook reads env today) is intentionally deferred to the next grill round.
+- Found: askAllowUrl comment claimed "deny-first on timeout" but no timeout exists. Fixed: comment corrected.
+- Found: `ans hitl review --allow-url` with a missing value silently listed the queue. Fixed: exits 1 with an error.
+- Found: CONTEXT.md lost its trailing newline. Fixed.
+- Deferred (next grill round candidates, from industry-pattern comparison): HITL queue has no deny action, no TTL, and no access-chain audit binding; abstain tier-2 regex is a keyword deny-list and the tier-3 LLM judge is never wired in eval; no missed-abstain metric; envelope unwrap does not re-validate the 4000-char snippet limit at wrap time; persisted allowlist grant is host-wide permanent.

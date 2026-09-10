@@ -367,7 +367,13 @@ export class MemoryPipeline {
       const fireCompress = () => {
         if (modelsObj && actualModel) {
           // ADR-0054 D1: judgment-input assertion boundary 3/5 — consolidation pre-call.
-          if (gap && gap.text) assertJudgmentInput(gap, "consolidation");
+          // Fire-and-forget: an invalid judgment input skips compression instead of
+          // throwing into the agent loop (AGENTS.md fail-open for background paths).
+          try {
+            if (gap && gap.text) assertJudgmentInput(gap, "consolidation");
+          } catch {
+            return;
+          }
           this.consolidationState = {
             version: result.state.version,
             consecutiveReuses: 0,
@@ -402,8 +408,15 @@ export class MemoryPipeline {
         // Adjudication: fire-and-forget LLM call to decide reuse vs compress.
         const gapDistillation = result.summaryRequest?.gap.text || "";
         // ADR-0054 D1: judgment-input assertion boundary 2/5 — NOOP adjudication pre-call.
-        if (gap && gap.text) assertJudgmentInput(gap, "noop-adjudication");
-        adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary)
+        // Fire-and-forget: invalid judgment input skips adjudication (keep reuse),
+        // never throws into the agent loop.
+        let gapValid = true;
+        try {
+          if (gap && gap.text) assertJudgmentInput(gap, "noop-adjudication");
+        } catch {
+          gapValid = false;
+        }
+        if (gapValid) adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary)
           .then((adjDecision: "reuse" | "compress") => {
             if (adjDecision === "compress") {
               fireCompress();

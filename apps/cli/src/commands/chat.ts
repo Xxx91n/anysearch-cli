@@ -75,6 +75,8 @@ export async function runChat(args: string[]): Promise<number> {
   const runtime = new PiAgentRuntime({
     retriever,
     domain,
+    // ADR-0054 D4: CLI is the TTY composition root; kernel decides isInteractive() itself.
+    interactive: !process.env.ANS_NO_INTERACTIVE,
     model: session.model,
     streamFn: session.streamFn,
     models: session.models,

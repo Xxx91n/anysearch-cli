@@ -25,11 +25,14 @@ import { MemoryPipeline } from "./memory-pipeline";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
 
 // ADR-0054 D4: HITL gate helpers for shouldAllowUrl (TTY ask / headless deny-first).
+// Kernel reads no env config (r94 discipline): the composition root passes
+// `interactive` in PiAgentRuntimeOptions; this helper is the TTY capability check only.
 export function isInteractive(): boolean {
-  return Boolean(process.stdin.isTTY) && !process.env.ANS_NO_INTERACTIVE;
+  return Boolean(process.stdin.isTTY);
 }
 
-// TTY y/N prompt; deny-first default on EOF/timeout/error.
+// TTY y/N prompt; deny-first default on EOF/error. No timeout — waits for input
+// (ponytail: add clock timeout if HITL UX reports stuck prompts).
 export async function askAllowUrl(url: string): Promise<boolean> {
   const readline = await import("node:readline");
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
@@ -135,6 +138,7 @@ export interface PiAgentRuntimeOptions {
   sessionId?: string;
   tools?: AgentTool[]; // extra tools beyond search
   getApiKey?: () => Promise<string | undefined>;
+  interactive?: boolean; // ADR-0054 D4: composition root grants TTY-ask eligibility (headless/MCP omit -> deny-first)
 }
 
 export class PiAgentRuntime {
@@ -235,7 +239,7 @@ export class PiAgentRuntime {
           if (!verdict.requiresHitl) {
             return { block: true, reason: "URL rejected by trust boundary: " + url, terminate: true };
           }
-          if (isInteractive() && (await askAllowUrl(url))) continue;
+          if ((this.opts.interactive ?? false) && isInteractive() && (await askAllowUrl(url))) continue;
           let host = "";
           try { host = new URL(url).hostname; } catch { /* keep empty */ }
           enqueueHitl({

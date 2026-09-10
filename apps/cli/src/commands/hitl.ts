@@ -74,6 +74,11 @@ export async function runHitl(args: string[]): Promise<number> {
   const allowIdx = args.indexOf("--allow-url");
   const allowHostArg = allowIdx >= 0 ? args[allowIdx + 1] : undefined;
 
+  if (allowIdx >= 0 && !allowHostArg) {
+    process.stderr.write("ans hitl: --allow-url requires a host\n");
+    return 1;
+  }
+
   if (!sub || sub === "--help" || sub === "-h" || (sub === "review" && !allowHostArg)) {
     if (sub !== "review") {
       process.stdout.write([
