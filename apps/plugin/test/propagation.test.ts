@@ -2,9 +2,9 @@
 //
 // Two layers:
 // (a) buildPropagationHeaders / parseAndValidateHeaders round-trip + edge cases.
-//     All assertions are inlined (no for-loop) so grep -c "check(" matches the
-//     PASS count exactly; the audit's grep-based counting methodology now lines
-//     up with the report's number.
+//     All assertions are inlined (no for-loop) so the grep call count matches
+//     the PASS count exactly; the audit's grep-based counting methodology now
+//     lines up with the report's number.
 // (b) W3C 3.2.2 invalid traceparent MUST be discarded (fresh trace_id generated).
 // (c) session_id absent/empty -> "" (MCP path / never-throw).
 // (d) build/parse mutual consistency: every build() result is parseable back to
@@ -34,8 +34,7 @@ async function main() {
   const traceId = newTraceIdHex();
   const spanId = newSpanIdHex();
   const headers = buildPropagationHeaders({ sessionId, traceId, spanId });
-  check("build: traceparent format 00-<32hex>-<16hex>-01",
-    headers.traceparent === "00-" + traceId + "-" + spanId + "-01");
+  check("build: traceparent format 00-<32hex>-<16hex>-01", headers.traceparent === "00-" + traceId + "-" + spanId + "-01");
   check("build: x-anysearch-session-id propagated", headers["x-anysearch-session-id"] === sessionId);
   check("build: trace_id in traceparent is 32 hex", /^[0-9a-f]{32}$/.test(headers.traceparent.split("-")[1]!));
   check("build: span_id in traceparent is 16 hex", /^[0-9a-f]{16}$/.test(headers.traceparent.split("-")[2]!));
