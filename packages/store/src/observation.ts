@@ -14,7 +14,11 @@ import type {
 } from "@earendil-works/pi-telemetry";
 
 export const OBSERVATION_SCHEMA_URL = "anysearch://schemas/observation/1.0.0";
-export const OBSERVATION_SCHEMA_VERSION = 1;
+export const OBSERVATION_SCHEMA_VERSION = 2;
+// ADR-0056 D-010: PRAGMA user_version is the schema version for the observation
+// trace store. Fresh-create and incremental-migration paths MUST produce the
+// same column + index set when this matches OBSERVATION_SCHEMA_VERSION.
+export const OBSERVATION_USER_VERSION = 2;
 export const SEMCONV_GENAI_COMMIT = "b5d8440f6f126738fd50f927752cd669772c517b";
 export const SEMCONV_LEGACY_TAG = "v1.42.0";
 export const SEMCONV_LEGACY_COMMIT = "ae3a98640194ed405c4c797281502e4d3bd258b3";
@@ -203,7 +207,14 @@ CREATE TABLE IF NOT EXISTS observability_traces (
   operation TEXT NOT NULL,
   status TEXT NOT NULL,
   payload_json TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  -- ADR-0056 D-010: trace/session/client attribution columns.
+  -- injected_trace_id: external W3C 32-hex carried by hook/CLI/server; falls back to randomUUID.
+  -- session_id:        file/env-sourced session grouping anchor (NULL for MCP stateless path).
+  -- client_id:         Railway-mapped MCP client identity (NULL for hook/CLI paths).
+  injected_trace_id TEXT,
+  session_id TEXT,
+  client_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS observability_spans (
@@ -239,7 +250,94 @@ CREATE TABLE IF NOT EXISTS observability_scores (
 
 CREATE INDEX IF NOT EXISTS idx_observability_spans_trace ON observability_spans(trace_id);
 CREATE INDEX IF NOT EXISTS idx_observability_evaluations_trace ON observability_evaluations(trace_id);
+-- ADR-0056 D-010: the three attribution indexes live in migrateObservationSchema
+-- (not in OBSERVATION_SQL) so the v1-migration path can add the columns BEFORE
+-- the indexes that reference them. CREATE INDEX IF NOT EXISTS is idempotent so
+-- re-running migration on a fresh-create DB still produces the same set.
 `;
+
+// ADR-0056 D-010: span-attribute patch carrying session/client identifiers so
+// exporters (OTLP) observe the same values that the trace store columns hold.
+// Empty values are skipped to keep the JSON payload compact.
+function attributionAttributePatch(sessionId: string, clientId: string): ObservationAttributes {
+  const out: ObservationAttributes = {};
+  if (sessionId) out["anysearch.session_id"] = sessionId;
+  if (clientId) out["anysearch.client_id"] = clientId;
+  return out;
+}
+
+// ADR-0056 D-010: pull a single string attribute out of an arbitrary record.
+// Used by recordEvaluationTrace to forward session_id / client_id when the
+// caller has embedded them in attributes (e.g. via the observeTool helper).
+function extractString(attrs: ObservationAttributes | undefined, key: string): string | undefined {
+  const v = attrs?.[key];
+  return typeof v === "string" && v.length > 0 ? v : undefined;
+}
+
+// ADR-0056 D-010: versioned schema migration for the observation trace store.
+// PRAGMA user_version is the source of truth. Two paths converge on the same
+// column + index set:
+//   v0 (brand-new DB) -> the v2 CREATE TABLE + indexes above; user_version = 2.
+//   v1 (legacy DB)    -> BEGIN; ALTER TABLE ADD COLUMN x 3; CREATE INDEX x 3;
+//                        user_version = 2; COMMIT;
+// Fresh-create and migration MUST produce identical column/index sets; the
+// integration test (observation.test.ts) locks this with PRAGMA table_info /
+// PRAGMA index_list snapshots.
+function migrateObservationSchema(db: Database.Database): void {
+  const current = (db.pragma("user_version", { simple: true }) as number) | 0;
+  if (current >= OBSERVATION_USER_VERSION) return;
+  // v0 -> v2 (no incremental v1 -> v2 path; v1 had no attribution columns).
+  const tx = db.transaction((): void => {
+    // ADD COLUMN is idempotent-safe: ALTER TABLE errors if column exists; we use
+    // PRAGMA table_info to skip duplicates instead of relying on try/catch.
+    const cols = db.prepare("PRAGMA table_info(observability_traces)").all() as Array<{ name: string }>;
+    const have = new Set(cols.map((c) => c.name));
+    if (!have.has("injected_trace_id")) {
+      db.exec("ALTER TABLE observability_traces ADD COLUMN injected_trace_id TEXT");
+    }
+    if (!have.has("session_id")) {
+      db.exec("ALTER TABLE observability_traces ADD COLUMN session_id TEXT");
+    }
+    if (!have.has("client_id")) {
+      db.exec("ALTER TABLE observability_traces ADD COLUMN client_id TEXT");
+    }
+    // CREATE INDEX IF NOT EXISTS is idempotent and safe to re-run.
+    db.exec("CREATE INDEX IF NOT EXISTS idx_observability_traces_injected_trace ON observability_traces(injected_trace_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_observability_traces_session ON observability_traces(session_id) WHERE session_id IS NOT NULL");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_observability_traces_client ON observability_traces(client_id) WHERE client_id IS NOT NULL");
+    db.pragma(`user_version = ${OBSERVATION_USER_VERSION}`);
+  });
+  tx.immediate();
+}
+
+// ADR-0056 D-008/D-010: Railway PR #885 clientInfo -> client_id mapping. Unknown
+// clientInfo.name values (or empty input) collapse to "mcp_unknown"; the function
+// never throws so MCP fail-open is preserved.
+export function mapMcpClientId(rawName: string | null | undefined): string {
+  if (!rawName) return "mcp_unknown";
+  // Match longest-prefix-first to avoid losing specificity (e.g. "Visual Studio
+  // Code - Insiders" must beat a bare "Visual Studio Code" prefix).
+  const table: Array<[RegExp | string, string]> = [
+    ["claude-ai", "claude_code"],
+    ["codex-mcp-client", "codex"],
+    ["continue-client", "continue_dev"],
+    ["Cline", "cline"],
+    [/^Visual Studio Code(\s|-|$)/, "vscode_copilot"],
+    ["windsurf", "windsurf"],
+    ["cursor", "cursor"],
+  ];
+  for (const [pattern, mapped] of table) {
+    if (typeof pattern === "string" ? rawName === pattern : pattern.test(rawName)) return mapped;
+  }
+  return "mcp_unknown";
+}
+
+// ADR-0056 D-003: generate a W3C TraceContext 32-hex trace id. Validation happens
+// at parse time (parseAndValidateTraceparent); generation is always randomUUID with
+// dashes stripped.
+export function generateTraceIdHex(): string {
+  return randomUUID().replace(/-/g, "");
+}
 
 function nowUnixNano(): number {
   return Date.now() * 1_000_000;
@@ -476,6 +574,8 @@ export class SqliteObservationStore {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = NORMAL");
     this.db.exec(OBSERVATION_SQL);
+    // ADR-0056 D-010: bring v0/v1 stores up to OBSERVATION_USER_VERSION.
+    migrateObservationSchema(this.db);
   }
 
   close(): void {
@@ -488,13 +588,24 @@ export class SqliteObservationStore {
       kind: ObservationKind;
       operation: string;
       attributes?: ObservationAttributes;
+      // ADR-0056 D-002/D-003: externally-supplied IDs win; absent values fall
+      // back to randomUUID() (traceId) or "" (sessionId/clientId) to preserve
+      // the legacy call sites that pass nothing.
+      traceId?: string;
+      sessionId?: string;
+      clientId?: string;
     },
     callback: (span: TelemetrySpan) => T | Promise<T>,
   ): Promise<T> {
     const runId = options.runId ?? randomUUID();
-    const traceId = randomUUID().replace(/-/g, "");
+    // traceId: caller-supplied 32-hex wins; otherwise random 32-hex.
+    const traceId = (options.traceId && options.traceId.length === 32) ? options.traceId : randomUUID().replace(/-/g, "");
     const spanId = randomUUID().replace(/-/g, "").slice(0, 16);
-    const root = new ObservationSpanNode(traceId, spanId, null, options.kind, options.operation, options.attributes ?? {});
+    const sessionId = options.sessionId ?? "";
+    const clientId = options.clientId ?? "";
+    // Span attributes carry the same trio so downstream exporters (OTLP) see them.
+    const attrMerge = { ...(options.attributes ?? {}), ...attributionAttributePatch(sessionId, clientId) };
+    const root = new ObservationSpanNode(traceId, spanId, null, options.kind, options.operation, attrMerge);
     const startUnixNano = nowUnixNano();
     let status: "ok" | "error" = "ok";
     try {
@@ -527,9 +638,9 @@ export class SqliteObservationStore {
         spans: root.toSpans(),
         evaluations: [],
         scores: [],
-        attributes: cleanAttributes(options.attributes),
+        attributes: cleanAttributes(attrMerge),
       };
-      this.persistTrace(trace);
+      this.persistTrace(trace, { sessionId, clientId, traceId });
     }
   }
 
@@ -582,8 +693,32 @@ export class SqliteObservationStore {
       scores: input.scores ?? [],
       attributes: cleanAttributes(input.attributes),
     };
-    this.persistTrace(trace);
+    // Evaluation spans are audit-only and rarely carry session/client; the columns
+    // stay NULL unless the caller threads them in via attributes metadata. (MCP
+    // fail-open: passing nothing leaves columns NULL.)
+    this.persistTrace(trace, {
+      sessionId: extractString(input.attributes, "anysearch.session_id"),
+      clientId: extractString(input.attributes, "anysearch.client_id"),
+    });
     return trace;
+  }
+
+  // ADR-0056 D-005: SELECT-back verification of the attribution columns. Used by
+  // integration tests to close the OPA #6905 gap (fields defined but never
+  // persisted). Returns null when the runId is missing.
+  readAttribution(runId: string): { traceId: string; sessionId: string | null; clientId: string | null } | undefined {
+    const row = this.db.prepare(
+      "SELECT trace_id AS traceId, session_id AS sessionId, client_id AS clientId FROM observability_traces WHERE run_id = ?",
+    ).get(runId) as { traceId: string; sessionId: string | null; clientId: string | null } | undefined;
+    return row;
+  }
+
+  // ADR-0056 D-010: schema introspection for migration parity tests.
+  describeSchema(): { userVersion: number; columns: string[]; indexes: string[] } {
+    const userVersion = (this.db.pragma("user_version", { simple: true }) as number) | 0;
+    const cols = (this.db.prepare("PRAGMA table_info(observability_traces)").all() as Array<{ name: string }>).map((c) => c.name);
+    const indexes = (this.db.prepare("PRAGMA index_list(observability_traces)").all() as Array<{ name: string }>).map((i) => i.name);
+    return { userVersion, columns: cols, indexes };
   }
 
   getTrace(runId: string): ObservationTrace | undefined {
@@ -598,12 +733,24 @@ export class SqliteObservationStore {
     return trace ? mapTraceToOtlp(trace) : undefined;
   }
 
-  private persistTrace(trace: ObservationTrace): void {
+  // ADR-0056 D-010: persistTrace now also writes the three attribution columns.
+  // attribution.sessionId/clientId/traceId are sourced from the call site (CLI /
+  // hook / MCP) and persist alongside the payload_json so SELECT by column works
+  // without parsing the JSON. Empty values map to NULL (MCP session_id path).
+  private persistTrace(
+    trace: ObservationTrace,
+    attribution?: { sessionId?: string; clientId?: string; traceId?: string },
+  ): void {
     if (!Value.Check(ObservationTraceSchema, trace)) throw new Error("invalid observation trace");
     const payload = JSON.stringify(trace);
+    const sessionId = (attribution?.sessionId && attribution.sessionId.length > 0) ? attribution.sessionId : null;
+    const clientId = (attribution?.clientId && attribution.clientId.length > 0) ? attribution.clientId : null;
+    // injected_trace_id equals trace.traceId; we write it explicitly so the column
+    // carries the external-supplied value (or the internally-generated one).
+    const injected = (attribution?.traceId && attribution.traceId.length === 32) ? attribution.traceId : trace.traceId;
     this.db.prepare(
-      "INSERT OR IGNORE INTO observability_traces (trace_id, run_id, kind, operation, status, payload_json) VALUES (?, ?, ?, ?, ?, ?)",
-    ).run(trace.traceId, trace.runId, trace.kind, trace.operation, trace.status, payload);
+      "INSERT OR IGNORE INTO observability_traces (trace_id, run_id, kind, operation, status, payload_json, injected_trace_id, session_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(trace.traceId, trace.runId, trace.kind, trace.operation, trace.status, payload, injected, sessionId, clientId);
     const insertSpan = this.db.prepare(
       "INSERT OR IGNORE INTO observability_spans (span_id, trace_id, parent_span_id, kind, operation, status, attributes_json, events_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     );

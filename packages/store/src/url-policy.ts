@@ -6,11 +6,12 @@
 // allow = union across layers (D2); deny is a first-class independent channel evaluated last.
 
 import { createHash, randomUUID } from "node:crypto";
-import { writeFileSync, renameSync, mkdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadDomain } from "./domain-loader";
 import { HOSTNAME_RE, type DomainSchema } from "./domain-schema";
-import { SqliteObservationStore } from "./observation";
+import { SqliteObservationStore, generateTraceIdHex } from "./observation";
+import { readSessionId } from "./session-id";
 
 export const ENV_URL_ALLOWLIST = "ANS_URL_ALLOWLIST";
 export const ENV_ALLOW_OVERRIDE = "ANS_ALLOW_ENV_OVERRIDE";
@@ -115,6 +116,42 @@ export function atomicWriteFile(path: string, content: string): void {
   renameSync(tmp, path);
 }
 
+// ADR-0056 D-007 / ADR-0055 D6 supplement: write a MaterializedPolicy envelope
+// (policy body + materialized_at timestamp) to the disk cache so the hook
+// readPolicy cache fallback can surface staleness. The timestamp is the only
+// signal that lets the hook differentiate "fresh from server seconds ago" from
+// "last write was before the server went down 3 days ago".
+export interface MaterializedPolicy {
+  allow: string[];
+  deny: string[];
+  policy_version: string;
+  materialized_at: string; // ISO-8601 UTC
+}
+
+export function writePolicyCache(cachePath: string, policy: UrlPolicy): void {
+  const envelope: MaterializedPolicy = {
+    allow: policy.allow,
+    deny: policy.deny,
+    policy_version: policy.policyVersion,
+    materialized_at: new Date().toISOString(),
+  };
+  atomicWriteFile(cachePath, JSON.stringify(envelope, null, 2) + "\n");
+}
+
+// readPolicyCacheEnvelope: hook-side discriminator. Returns null when the cache
+// is unreadable / shape-broken; otherwise returns the envelope for downstream
+// staleness signaling.
+export function readPolicyCacheEnvelope(cachePath: string): MaterializedPolicy | null {
+  try {
+    const raw = JSON.parse(readFileSync(cachePath, "utf8")) as Partial<MaterializedPolicy>;
+    if (!Array.isArray(raw.allow) || !Array.isArray(raw.deny) || typeof raw.policy_version !== "string") return null;
+    if (typeof raw.materialized_at !== "string") return null;
+    return raw as MaterializedPolicy;
+  } catch {
+    return null;
+  }
+}
+
 // D5: lazy mtime-checked re-read. Probe returns null = unchanged (or unreadable), schema = reloaded.
 export function createDomainReloader(tomlPath: string): () => DomainSchema | null {
   let lastMtime = -1;
@@ -151,9 +188,18 @@ export interface ConfigChangeEvent {
   sessionId?: string;
 }
 
-// D8: write into the ADR-0052 local trace store. Fail-open (AGENTS.md: audit write failure
-// degrades to stderr), same posture as the rest of the observation layer.
+// ADR-0056 D-005 + D-002/D-003: write into the ADR-0052 local trace store. Fail-open
+// (AGENTS.md: audit write failure degrades to stderr), same posture as the rest of
+// the observation layer. traceId/sessionId are forwarded to recordOperation so
+// the new attribution columns are populated (OPA #6905 closure: SELECT after
+// write returns the same values the caller threaded in).
 export async function emitConfigChangeAudit(dbPath: string, event: ConfigChangeEvent): Promise<void> {
+  // Caller-supplied trace_id wins (server extracts from HTTP header); absent ->
+  // generate fresh W3C 32-hex for this audit call (CLI per-command lifetime).
+  const traceId = event.traceId && event.traceId.length === 32 ? event.traceId : generateTraceIdHex();
+  // Caller-supplied session_id wins (server extract); absent -> read from file
+  // (CLI path). MCP path keeps it empty.
+  const sessionId = event.sessionId && event.sessionId.length > 0 ? event.sessionId : readSessionId();
   const attributes = {
     "anysearch.config.event_id": randomUUID(),
     "anysearch.config.timestamp": new Date().toISOString(),
@@ -163,14 +209,20 @@ export async function emitConfigChangeAudit(dbPath: string, event: ConfigChangeE
     "anysearch.config.before": JSON.stringify(event.change.before ?? null),
     "anysearch.config.after": JSON.stringify(event.change.after ?? null),
     "anysearch.policy_version": event.policyVersion,
-    "anysearch.trace_id": event.traceId ?? "",
-    "anysearch.session_id": event.sessionId ?? "",
   };
   try {
     const store = new SqliteObservationStore(dbPath);
     try {
       await store.recordOperation(
-        { kind: "config", operation: "config:change", attributes },
+        {
+          kind: "config",
+          operation: "config:change",
+          attributes,
+          traceId,
+          sessionId,
+          // ConfigChange audit events do not carry a client_id (they originate from
+          // the CLI/plugin-server process, not from an MCP client). Leave empty.
+        },
         () => undefined,
       );
     } finally {
