@@ -6,6 +6,9 @@ import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import express from "express";
 import { buildServer } from "./server.js";
+// ADR-0056 D-008: stash clientInfo from initialize requests into AsyncLocalStorage
+// so observeTool can map it to a stable client_id via Railway PR #885.
+import { runWithMcpIdentity } from "./mcp-context.js";
 
 // ponytail: tsup define substituites __PACKAGE_VERSION__ at build time (see
 // tsup.config.ts). Dev-mode tsx fallthrough reads "0.0.0" — fine for doctor.
@@ -64,14 +67,19 @@ async function main() {
     app.post("/mcp", async (req, res) => {
       try {
         const server = buildServer();
-        // ADR-0008 D4: stateless mode — sessionIdGenerator: undefined, enableJsonResponse, keepAliveMs: 0
+        // ADR-0008 D4: stateless mode -- sessionIdGenerator: undefined, enableJsonResponse, keepAliveMs: 0
         const t = new NodeStreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableJsonResponse: true,
           keepAliveMs: 0,
         });
         await server.connect(t);
-        await t.handleRequest(req, res, req.body);
+        // ADR-0056 D-008: best-effort clientInfo extraction. The MCP spec
+        // sends clientInfo only on initialize; we still wrap every call in
+        // AsyncLocalStorage so observeTool can pick it up consistently.
+        const body = (req.body || {}) as { method?: string; params?: { clientInfo?: { name?: string } } };
+        const clientInfoName = body.params?.clientInfo?.name;
+        await runWithMcpIdentity({ clientInfoName }, () => t.handleRequest(req, res, req.body));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         res.status(500).json({ error: { code: -32603, message: "Internal error: " + msg } });

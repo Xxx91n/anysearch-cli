@@ -92,7 +92,7 @@ async function main(): Promise<void> {
           projectPath: cwd,
           toolName,
           entries: decision.indexEntries,
-        }).catch(() => null);
+        }, { sessionId: stdin.session_id || "" }).catch(() => null);
       }
 
       // Return distilled output to Claude.

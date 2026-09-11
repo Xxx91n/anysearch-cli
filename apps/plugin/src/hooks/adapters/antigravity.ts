@@ -95,7 +95,7 @@ async function main(): Promise<void> {
       if (decision.shouldIndex && decision.indexEntries) {
         await callServer(serverUrl + "/index", token, {
           projectPath: cwd, toolName, entries: decision.indexEntries,
-        }).catch(() => null);
+        }, { sessionId: stdin.session_id || "" }).catch(() => null);
       }
 
       if (decision.distilledOutput) {

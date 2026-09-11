@@ -3,6 +3,11 @@
 // 2. IPC to long-running MCP server (HTTP 127.0.0.1 + Bearer token)
 // 3. Decision output JSON to host
 // No SQLite, no file write, no network (except server IPC), no spawn.
+//
+// ADR-0056 D-003: outbound HTTP injects traceparent + x-anysearch-session-id so
+// the plugin server can extract (D-003 server path) the same IDs the host
+// intent produced. trace_id is per-hook-process; session_id is host stdin.
+import { buildPropagationHeaders } from "./propagation.js";
 
 export interface HookInput {
   event: "PreToolUse" | "PostToolUse";
@@ -39,19 +44,25 @@ export function isAnsTool(toolName: string): boolean {
   return ANS_TOOL_PATTERN.test(toolName);
 }
 
+// ADR-0056 D-003: callServer now carries the propagation trio on every outbound
+// request. sessionId may be empty (host did not provide one); buildPropagationHeaders
+// omits x-anysearch-session-id in that case so the server sees no session.
 export async function callServer(
   serverUrl: string,
   bearerToken: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  opts?: { sessionId?: string; traceId?: string; spanId?: string },
 ): Promise<Record<string, unknown> | null> {
   // ADR-0009 D2: single narrow IPC channel to long-running MCP server.
   // Fail-open: server unreachable = return null, caller放行 raw output.
   try {
+    const headers = buildPropagationHeaders(opts ?? {});
     const response = await fetch(serverUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": "Bearer " + bearerToken,
+        ...headers,
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(5000),

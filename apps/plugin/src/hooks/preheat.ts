@@ -98,11 +98,14 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   if (!query) return {};
 
   // Ask long-running server to recall from project index.
+  // ADR-0056 D-003: thread the host-supplied session_id into the outbound
+  // callServer call so the server can link the /recall response to the same
+  // logical session as the inbound hook invocation.
   const result = await callServer(serverUrl + "/recall", token, {
     query,
     projectPath: input.projectPath,
     limit: 3,
-  });
+  }, { sessionId: input.sessionId });
 
   if (!result || !result.hits || !Array.isArray(result.hits) || result.hits.length === 0) {
     return {};

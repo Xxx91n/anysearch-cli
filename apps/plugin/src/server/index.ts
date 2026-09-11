@@ -17,10 +17,13 @@ const TOKEN = process.env.ANS_SERVER_TOKEN || "";
 const DB_PATH = process.env.ANS_PROJECT_DB || join(process.cwd(), ".anysearch", "project-index.db");
 
 // Ensure .anysearch dir exists.
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { existsSync } from "node:fs";
-import { atomicWriteFile, domainTomlPath, emitConfigChangeAudit, loadPolicyFromToml, resolveUrlPolicy, type UrlPolicy } from "@anysearch/store";
+import { domainTomlPath, emitConfigChangeAudit, loadPolicyFromToml, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type UrlPolicy } from "@anysearch/store";
+// ADR-0056 D-003: parseAndValidateHeaders lives in the hook bundle module so
+// the wire format stays single-source across hook outbound and server inbound.
+import { parseAndValidateHeaders } from "../hooks/propagation.js";
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
 // ADR-0055: startup policy parse. D3/D7 fail-closed: TOML parse failure or a misset
@@ -29,9 +32,32 @@ const DOMAIN_TOML = domainTomlPath();
 const POLICY_CACHE = join(process.cwd(), ".anysearch-cli", "policy.json");
 const OBS_DB = process.env.ANS_DB_PATH ||
   join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");
+
+// ADR-0056 D-007 / ADR-0055 D6 supplement: on startup, if the policy server is
+// unreachable (TOML missing/unreadable), boot from the disk cache and WARN
+// rather than refusing to start. The materialized_at timestamp on the cache
+// lets operators audit staleness; the policy itself remains in effect.
 function readCurrentPolicy(): UrlPolicy {
-  if (!existsSync(DOMAIN_TOML)) return resolveUrlPolicy({ tomlHosts: [] });
-  return loadPolicyFromToml(DOMAIN_TOML);
+  if (existsSync(DOMAIN_TOML)) {
+    try {
+      return loadPolicyFromToml(DOMAIN_TOML);
+    } catch (e) {
+      // OPA pattern: keep last known good, signal it.
+      const cached = readPolicyCacheEnvelope(POLICY_CACHE);
+      if (cached) {
+        process.stderr.write("[anysearch] WARN: domain TOML parse failed at startup; using cached policy materialized_at=" + cached.materialized_at + ": " + (e instanceof Error ? e.message : String(e)) + "\n");
+        return resolveUrlPolicy({ tomlHosts: cached.allow, denyHosts: cached.deny });
+      }
+      throw e; // no cache -> fail-closed (D3)
+    }
+  }
+  // No TOML -> cached fallback path (same WARN semantics).
+  const cached = readPolicyCacheEnvelope(POLICY_CACHE);
+  if (cached) {
+    process.stderr.write("[anysearch] WARN: domain TOML absent; using cached policy materialized_at=" + cached.materialized_at + "\n");
+    return resolveUrlPolicy({ tomlHosts: cached.allow, denyHosts: cached.deny });
+  }
+  return resolveUrlPolicy({ tomlHosts: [] });
 }
 let currentPolicyVersion = readCurrentPolicy().policyVersion;
 let envIgnoredAudited = false; // D7: config:env_override_ignored once per session
@@ -80,10 +106,13 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         process.stderr.write("[anysearch] WARN: ANS_URL_ALLOWLIST set but ANS_ALLOW_ENV_OVERRIDE not enabled; env hosts ignored\n");
         if (!envIgnoredAudited) {
           envIgnoredAudited = true;
+          const incoming2 = parseAndValidateHeaders(req);
           void emitConfigChangeAudit(OBS_DB, {
             actor: "server", source: "env", path: DOMAIN_TOML,
             change: { before: null, after: "config:env_override_ignored" },
             policyVersion: policy.policyVersion,
+            traceId: incoming2.traceId,
+            sessionId: incoming2.sessionId,
           });
         }
       }
@@ -93,14 +122,23 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (policy.policyVersion !== currentPolicyVersion) {
         const before = currentPolicyVersion;
         currentPolicyVersion = policy.policyVersion;
+        // ADR-0056 D-003 server path: extract traceId/sessionId from inbound
+        // headers so the audit row links back to the same logical request the
+        // caller initiated. traceparentValid=false means the client sent garbage;
+        // parseAndValidateHeaders already substituted a fresh random traceId.
+        const incoming = parseAndValidateHeaders(req);
         void emitConfigChangeAudit(OBS_DB, {
           actor: "server", source: "toml", path: DOMAIN_TOML,
           change: { before, after: policy.policyVersion },
           policyVersion: policy.policyVersion,
+          traceId: incoming.traceId,
+          sessionId: incoming.sessionId,
         });
       }
       const body = { allow: policy.allow, deny: policy.deny, policy_version: policy.policyVersion };
-      atomicWriteFile(POLICY_CACHE, JSON.stringify(body, null, 2) + "\n");
+      // ADR-0056 D-007: writePolicyCache stamps materialized_at alongside the
+      // policy body so the hook fallback can surface staleness.
+      writePolicyCache(POLICY_CACHE, policy);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(body));
       return;
