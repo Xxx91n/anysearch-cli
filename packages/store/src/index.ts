@@ -23,6 +23,9 @@ export * from "./access-chain";
 // and export mapping at the volatile OTel GenAI boundary.
 export * from "./observation";
 
+// ADR-0056 D-006: session_id persistence (.anysearch-cli/session file + env override).
+export * from "./session-id";
+
 // ADR-0043: consumed/synthetic switch governance (state machine + chain evidence).
 export * from "./eval/switch-machine";
 export * from "./eval/switch-run";
