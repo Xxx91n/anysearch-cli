@@ -1,0 +1,90 @@
+# ADR-0057: Architecture Grill Round 57 — Test Truthfulness and CI Credibility (node:test migration + expectations governance)
+
+- Status: Accepted
+- Date: 2026-09-12
+- Round: grill-round-57
+- Ledger: .scratch/grill-round-57/decision-ledger.md (D-001..D-007)
+- Closes: ADR-0056 AC5 (see "Carried-over Acceptance Criteria Closure")
+
+## Context
+
+Round 56/57 push-closure left AC5 (pnpm -r check/test/build clean + ship-gate, CI green) as PARTIAL due to pre-existing CI breakage. An independent hostile review (.codex-tmp/锐评.txt) then demonstrated that the test execution mechanism itself was untrustworthy:
+
+- store/package.json chained 50+ test files with shell && (1916-char script); first failure aborts all remaining files; eval-switch-state-fixes.test.ts was never on the chain and never executed.
+- Per-file hand-rolled `let passed = 0` counters instead of a real test runner; exit-code correctness manual.
+- ci.yml/ship-gate.yml ran only `pnpm --filter @anysearch/kernel test` — 59/73 test files never ran in CI.
+- domain-loader.test.ts hardcoded "D:/Aworker/anysearch-cli" (3 occurrences) — tests fail on any other machine.
+- packages/embedding tests download the model from HuggingFace on first run — red offline.
+- README claims .scratch/ is not committed to git while 6 files are tracked.
+
+Per ADR-0029 scope discipline this round does ONLY test truthfulness + CI credibility. The other review findings are explicitly excluded and carried as separate rounds (engine dead config, doctor version, plugin CORS/token, api.anysearch.com ownership, eval governance freeze).
+
+## Decision
+
+### D1. Test execution mechanism: node:test official runner (ledger D-002)
+
+- Every package's `test` script becomes `node --import tsx --test "test/**/*.test.ts" "test/**/*.test.mjs" --test-timeout=30000`. All && chains deleted; file discovery by Node's own quoted-glob expansion (cross-platform, no shell globstar).
+- Phase-by-phase: first zero test-code changes (runner judges by process exit code, per official docs); then incrementally rewrite hand-rolled counters to describe/it + node:assert/strict.
+- turbo.json test task: `{ "dependsOn": ["^test"], "cache": false }` (conservative first; per-package cache later).
+- CI explicitly passes `--test-reporter=spec` (Node 22 non-TTY default is TAP).
+- vitest is explicitly rejected: whole Vite dependency tree conflicts with the zero-new-dependency discipline (ADR-0017/0026); its sweet spots (Vite pipeline, component tests, snapshots) do not exist in this project.
+
+### D2. Red-test handling: expectations-inventory model (ledger D-003)
+
+Adopt the industrial known-failure model verified across Chromium TestExpectations / WebKit TestExpectations (lint-enforced bug id) / WPT metadata / Mozilla manifestparser auto-bug-filing / pytest strict_xfail:
+
+- Phase 0 (mechanism-only PR): all packages switch to node:test discovery; all && chains deleted; CI runs `turbo run test --continue=dependencies-successful` (Turbo 2.5 flag: one red package must not block the others from executing — collect the full truth).
+- Phase 1 (triage): every red test is fixed / marked `{ todo: '<issue link>' }` (still executes, stays green per node:test semantics, execution evidence retained) / deleted with per-commit justification. Unconditional skip (dead code) is forbidden; silent non-fixing is forbidden.
+- Phase 2 (anti-rot ledger): reuse the existing .ship-gate/skip-ledger.json pattern and the ADR-0020 conformance expected-failures precedent. CI guard: every todo/skip must carry an issue link; ledger count only goes down; audited every grill round.
+- Node 22 constraint: node:test `expectFailure` (true xfail — flips pass/fail, XPASS goes red) requires Node >= 24.14. This round uses `todo`; a later Node upgrade migrates todo entries to expectFailure.
+
+### D3. Enabling change: resolveDbPath mkdir (ledger D-004; revises D-001 exclusion)
+
+The gap is at apps/mcp/src/server.ts:25 (createEngine(undefined, { dbPath: resolveDbPath() }) without mkdir; apps/cli/src/db.ts:9 has it). One-line fix + regression coverage via apps/mcp/test/server.test.ts Test 4. Rationale: without it, Phase 0's hard criterion (all test files executing in CI) fails red at apps/mcp, and the ci.yml MCP smoke step is already red today. Google Small CLs "Don't Break the Build" / SWE-book ch23 presubmit discipline classify this as an impediment cleared immediately, not backlog.
+
+### D4. Embedding test network sealing (ledger D-005; revises D-001 sub-item c)
+
+embedding.test.ts restructured into two layers: default suite fully stubbed via __setExtractorForTest (role prefixing, normalize/pooling, circuit breaker, telemetry, fail-open — wrapper logic which is what these assertions target); real-model path split into an explicitly gated `test:online` script (node:test native tags + --test-tag-filter; fallback: separate script + env gate — both zero new dependencies). test:online is excluded from default CI (or runs as a separate cached job). Pure-stubbing everything is rejected: cosine/fidelity assertions against a stub are circular and leave the real model with zero coverage — contradicting this round's truthfulness theme. Precedents: SWE-book ch23 hermetic-by-default, pytest-test-categories size tiers, Sopel --offline, vcrpy @pytest.mark.online, Fowler ContractTest.
+
+### D5. AC5 carried-over closure (ledger D-006)
+
+See "Carried-over Acceptance Criteria Closure" below.
+
+### R1. doc-reality drift cleanup (ledger D-001)
+
+README states .scratch/ is not committed; 6 files are tracked. Align reality with the doc (untrack + hygiene commit).
+
+## Carried-over Acceptance Criteria Closure
+
+Closes ADR-0056 AC5: `pnpm -r check/test/build` clean + ship-gate passes (CI green). Evidence to be attached at merge: CI run link (turbo test, ubuntu+windows), ship-gate log, 73/73 test-file execution record. ADR-0056 receives a single status-pointer line "AC5: CLOSED by ADR-0057 (2026-09-12)" and its body stays unmodified (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). deferred-registry gains one AC5 entry marked closed-by: ADR-0057.
+
+## Acceptance Criteria (ledger D-007)
+
+1. Mechanism: 73/73 test files execute in CI on ubuntu+windows; the chain-based membership-exclusion mechanism is structurally gone. (D-002)
+2. Zero unregistered red: every red test is fixed / todo-with-issue / deleted-with-justification; no silent skip. (D-003)
+3. Green CI: ci.yml and ship-gate.yml both green via `turbo run test --continue=dependencies-successful`. (D-002/D-003)
+4. Network sealing: embedding default suite fully stubbed; test:online explicitly gated; `turbo test` green offline. (D-005)
+5. Enabling fix: apps/mcp resolveDbPath mkdir + regression test. (D-004)
+6. AC5 closure: this ADR declares Closes ADR-0056 AC5; ADR-0056 pointer line; deferred-registry entry; atomic same PR. (D-006)
+7. Drift cleanup: .scratch/ tracking matches README. (D-001)
+
+## Explicitly out of scope (each its own round)
+
+- engine dead config (AbortController without .abort(), graceWindow, deepMode) — review cut 2
+- doctor printing v0.0.0 — cut 3
+- plugin server default no-token + CORS * — cut 4
+- api.anysearch.com ownership — cut 5
+- eval governance layer (6562 LoC) freeze — cut 6
+
+## Rejected
+
+- vitest (D-002): dependency tree unjustified here.
+- Keep hand-rolled scripts, only fix chains (D-002): no discovery/report/timeout/parallelism gains.
+- Strategy A/C for red tests (D-003): fix-everything-now balloons the round; stage-by-package preserves silent exclusion.
+- Pure-stub embedding suite (D-005): circular assertions, zero real-model coverage.
+- Round-scope splash A: mixing a + b + c across three subsystems violates one-logical-change (Google Small CLs; ACM ESEC/FSE 2018: size is the top reviewability factor).
+
+## Consequences
+
+Positive: CI becomes a real witness on both OSes; every future test file is auto-discovered; red debt is visible and attributable; AC5 historical wound closes with a traceable link.
+Costs/risks: store file-level parallelism may need --test-concurrency=1 (shared sqlite temp dirs) — measure at rollout; Node 22 test-tags may be experimental — fallback is a separate test:online script; hand-written counter rewrite is incremental, not a gate.

@@ -203,6 +203,48 @@ RRF 融合的第四臂：transformers.js 本地嵌入（multilingual-e5-small q8
 
 
 
+
+**Success-Only Aggregator (success-only 聚合器)**:
+An `always()` summary job whose green condition requires each needed job's
+result to strictly equal `success`; `failure`, `cancelled`, `skipped`,
+and unknown states are all red. The canonical richja pattern (success ||
+skipped) is forbidden because GitHub masks failed legs as `skipped` on
+partial re-run (ju-manns defect, #26822 2025-02). The only true fix for the
+false-green defect is `skipped = red` (ADR-0058 D-B).
+_Avoid_: skip-tolerant aggregator, cancelled-check add-on, continue-on-error
+disguise (those leave the ju-manns re-run hole open).
+
+**Two-Layer Entrypoint (两层入口)**:
+The separation of CI orchestration entrypoints by layer: gate:all is the
+single entrypoint for the gate layer (owns gates.json members exclusively);
+the test job is an independent CI-layer consumer that does not go through
+gate:all. The summary job aggregates both layers at the CI layer. This is the
+GoF Facade "entry point needed to each level of layered software" pattern
+applied to CI orchestration (ADR-0058 D-E, amending ADR-0034 D5).
+_Avoid_: gate:all as a god-facade absorbing non-gate concerns, test job as a
+"lane" of gate:all (semantic inflation breaks registry as fact-source).
+
+**Retired Order Slot (退役序号位)**:
+A gap in gates.json order numbering left by a removed gate entry. The slot is
+not renumbered, not reused, and not marked with a tombstone entry — it is
+simply absent. "Gaps are the expected steady state, not damage to repair"
+(GitHub spec-kit #4065, 2026-08). Order 100 is retired after the test gate
+migrated to the CI layer (ADR-0058 D-I).
+_Avoid_: renumbering for aesthetic compactness, tombstone entries in an
+executed runtime manifest (those break wiring-test assertions and require
+per-consumer special-casing).
+
+**Symmetric Tier Contract (对称语料分层契约)**:
+The explicit pairing of corpus tier with CI layer: gate:all job runs full
+tier (secret-injected private corpus, internal quality gate); test job runs
+public tier (`JIAHAO_TEST_TIER=public`, verifies clean-clone integrity).
+The contract is recorded in ADR prose even if gate:all code does not
+force-set the env, pinning the two-layer tier division against silent
+regression (ADR-0058 D-H).
+_Avoid_: auto-probe tier (environment drift → silent tier change), full tier
+in CI test job (fork PR has no secret → results incomparable across trigger
+contexts).
+
 *End of Glossary*
 
 ## Cursor Dual Channel（Cursor 双通道注入）
@@ -832,3 +874,12 @@ observability_traces 表中为可索引审计查询新增的三个列为 injecte
 
 ## user_version Migration（user_version 版本化迁移）
 首次对 observation SQLite store 应用 PRAGMA user_version：v0（全新库）直接建 v2 完整 schema，设为 user_version=2；v1（存量库）事务化 ALTER TABLE ADD COLUMN + CREATE INDEX + user_version=2。fresh 与 migration 双路径产出的列+索引集合须一致。仓库已有 migrateSwitchEventSchema 先例。ADR-0056 D6。
+
+## Grill Round 57 — Terms (ADR-0057)
+
+- **node:test runner** — the Node.js built-in test runner, driven via `node --import tsx --test "test/**/*.test.ts"`. Replaces the retired `&&` chain scripts; discovers files itself, judges pass/fail by process exit code, provides per-test timeout, concurrency, and spec/tap/lcov reporters.
+- **Chain membership exclusion (retired antipattern)** — the old store/package.json style where a test file only runs if a human remembered to append it to a 1916-char `&&` chain; first failure aborted the rest, and any file missing from the chain silently never ran (case: eval-switch-state-fixes.test.ts).
+- **Expectations inventory** — the known-failure governance model (Chromium TestExpectations / WebKit lint-enforced bug-id / WPT expectations / Mozilla manifestparser auto-bug-filing / pytest strict_xfail): red tests are triaged fix / todo-with-issue / delete-with-justification; `todo` keeps executing (evidence retained); unconditional skip is dead code and forbidden.
+- **expectFailure (node:test)** — true xfail semantics (`expectFailure` option flips pass/fail; unexpected-pass goes red). Requires Node >= 24.14; pinned Node 22 uses `todo` interim, migration deferred to Node upgrade.
+- **hermetic-by-default / online-gated tests** — embedding suite default runs fully stubbed (`__setExtractorForTest`); real-model tests live behind `test:online` (node:test tags / dedicated script) and never block offline CI (SWE-book ch23; pytest-test-categories; Sopel/vcrpy precedent).
+- **Carried-over acceptance closure** — ADR convention this repo follows per ADR-0057 D5: a later round that fixes a prior round's PARTIAL AC declares `Closes ADR-XXXX ACn` in its own ADR, adds a single pointer line to the old ADR, and registers the entry in deferred-registry — one atomic PR, old bodies never edited (Nygard/AWS/MS/MADR/KEP/GEP).

@@ -123,6 +123,8 @@ Rationale: Envoy xDS TTL semantics (remove on expiry) would be anti-pattern—po
 
 ## Acceptance Criteria
 
+> AC5: CLOSED by ADR-0057 (2026-09-12).
+
 1. **OPA #6905-style closure**: after emitConfigChangeAudit write, immediately SELECT trace_id, session_id, client_id to verify non-empty (where expected).
 2. Golden case: hook stdin carries session_id -> outbound HTTP -> server extract -> store write -> SELECT returns identical value.
 3. Hook session_id field compatibility verified across Claude/Codex/Cursor/Antigravity (integration test, NOT merely compile).
