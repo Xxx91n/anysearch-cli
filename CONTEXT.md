@@ -816,3 +816,19 @@ _Avoid_: 单调计数器（需持久化中心状态）、TTL 过期机制、空 
 _Avoid_: 静默忽略安全配置、审计不带策略版本与 trace_id、每条重复告警不节流
 
 *End of Glossary*
+
+
+## Session Identity File（会话身份文件）
+`~/.anysearch-cli/session` — session_id 的唯一磁盘主源。对标 systemd machine-id(5)：生成一次、原子写回、用户级作用域（跨项目复用）。session_id 是写时唯一引用、永不回读做身份判定的值；trace store 侧为 write-only 派生引用。环境变量 ANS_SESSION_ID 可覆盖文件值用于 CI/调试（不写回文件）。ADR-0056 D3。
+
+## Session ID Propagation（会话 ID 贯通协议）
+跨 CLI hook MCP server 三层透传 session_id/trace_id 的契约——包括 traceparent (W3C 32hex trace_id) 与 x-anysearch-session-id (自定义 header，本地 loopback 仅用于跨层透传、绝不上游转发)。MCP 的 session_id 保持置空（SEP-2567 已移除协议级 session 概念）；client_id 从 _meta clientInfo.name 按 Railway 映射表尽力提取并引入可索引归因列。ADR-0056 D2/D3/D4/D5。
+
+## Client ID Attribution（客户端归因标识）
+MCP stateless server 从客户端 _meta 提取的 client_id——归因到"哪个客户端"（Codex/Claude Code/Cursor/...），而非"哪次会话"。取 clientInfo.name 经 Railway PR #885 映射表转换，未知客户端得 mcp_unknown。与 session_id 构成归因双维度。ADR-0056 D4。
+
+## Attribution Columns（归因列）
+observability_traces 表中为可索引审计查询新增的三个列为 injected_trace_id / session_id / client_id——均为无约束 ADD COLUMN（O(1) 迁移）。session_id / client_id 使用 partial index (WHERE ... IS NOT NULL) 避免 NULL 行（MCP session_id 大量空串）进入索引。ADR-0056 D6。
+
+## user_version Migration（user_version 版本化迁移）
+首次对 observation SQLite store 应用 PRAGMA user_version：v0（全新库）直接建 v2 完整 schema，设为 user_version=2；v1（存量库）事务化 ALTER TABLE ADD COLUMN + CREATE INDEX + user_version=2。fresh 与 migration 双路径产出的列+索引集合须一致。仓库已有 migrateSwitchEventSchema 先例。ADR-0056 D6。
