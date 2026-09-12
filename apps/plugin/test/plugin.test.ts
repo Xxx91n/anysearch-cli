@@ -225,24 +225,47 @@ test("ADR-0012: routing card 4-block structure in shared module", () => {
 // === Server liveness ===
 testAsync("Server: /health endpoint returns 200", async () => {
   const { spawn } = await import("node:child_process");
-  // F-14: start the server with the same node + tsx loader the runner uses.
-  // Never via `npx` (it can fall back to the registry) and never with a stdin
-  // pipe. On POSIX the child gets its own process group so the kill reaches the
-  // whole tree: otherwise the tsx->node grandchild survives, keeps the stdio
-  // pipes open and the test process can never exit, hanging `turbo run test`.
+  const net = await import("node:net");
+  // F-14 + N-1 (audit rework): start the server with the same node + tsx loader
+  // the runner uses - never via `npx` (registry fallback) and never with a stdin
+  // pipe. Also never on a FIXED port with a FIXED startup sleep: a fixed port +
+  // fixed 2000 ms wait is load-sensitive, and under a loaded machine (ship-gate
+  // step 3 runs every package in parallel) the server may not be listening yet
+  // and a single fetch fails. Ask the OS for a free port and poll for readiness.
+  const port = await new Promise<number>((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const addr = probe.address();
+      const p = addr && typeof addr === "object" ? addr.port : 0;
+      probe.close(() => resolve(p));
+    });
+  });
   const proc = spawn(process.execPath, ["--import", "tsx", "src/server/index.ts"], {
     cwd: PLUGIN_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
     detached: process.platform !== "win32",
-    env: { ...process.env, ANS_SERVER_PORT: "33334" },
+    env: { ...process.env, ANS_SERVER_PORT: String(port) },
   });
   const exited = new Promise<void>((r) => proc.once("exit", () => r()));
-  await new Promise(r => setTimeout(r, 2000));
   try {
-    const response = await fetch("http://127.0.0.1:33334/health");
-    assert.equal(response.status, 200);
-    const body = await response.json();
-    assert.equal(body.status, "ok");
+    let ready = false;
+    let lastErr: unknown;
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch("http://127.0.0.1:" + port + "/health");
+        if (response.status === 200) {
+          const body = await response.json();
+          assert.equal(body.status, "ok");
+          ready = true;
+          break;
+        }
+        lastErr = new Error("status " + response.status);
+      } catch (e) { lastErr = e; }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    assert.ok(ready, "server did not become ready within 30s on port " + port + ": " + String(lastErr));
   } finally {
     // F-14: kill the WHOLE tree, then wait for it to be gone so no handle
     // outlives the test (POSIX: process group; Windows: taskkill /T /F).

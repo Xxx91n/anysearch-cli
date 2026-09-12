@@ -10,9 +10,11 @@
 // plugin-side tests covered half the chain each; this file covers the
 // full chain in one process.
 //
-// CI-only policy: this test does not run via `pnpm ship-gate` because
-// the project gates shell builds under CI. It IS included in
-// apps/plugin's `test` script and in tsconfig.test.json coverage.
+// Ship-gate coverage: this test DOES run under `pnpm ship-gate` - step 3 of
+// scripts/ship-gate.mjs runs `turbo run test`, whose glob discovers
+// apps/plugin/test/**/*.test.ts. It is also part of apps/plugin's `test`
+// script and of tsconfig.test.json coverage. (An earlier revision of this
+// comment claimed the opposite; corrected per the round-57 closure audit N-3.)
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

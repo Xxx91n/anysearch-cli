@@ -43,11 +43,14 @@ function check(label: string, cond: boolean) {
 
 async function main() {
   // --- 1) Schema parity: v0 fresh vs v1 upgrade converge to same shape ---
+  // N-2 (audit rework): descA is hoisted so the migrated-vs-fresh parity
+  // assertion below can compare against it instead of comparing descB to itself.
+  let descA: ReturnType<SqliteObservationStore["describeSchema"]>;
   {
     const dirA = mkdtempSync(join(tmpdir(), "obs-fresh-"));
     const dbA = join(dirA, "trace.db");
     const storeA = new SqliteObservationStore(dbA);
-    const descA = storeA.describeSchema();
+    descA = storeA.describeSchema();
     storeA.close();
     check("fresh user_version = OBSERVATION_USER_VERSION", descA.userVersion === OBSERVATION_USER_VERSION);
     check("fresh includes injected_trace_id column", descA.columns.includes("injected_trace_id"));
@@ -74,7 +77,7 @@ async function main() {
     storeB.close();
     check("migrated user_version = OBSERVATION_USER_VERSION", descB.userVersion === OBSERVATION_USER_VERSION);
     check("migrated has same columns as fresh", JSON.stringify(descB.columns) === JSON.stringify(["trace_id","run_id","kind","operation","status","payload_json","created_at","injected_trace_id","session_id","client_id"]));
-    check("migrated has same indexes as fresh", JSON.stringify(descB.indexes.sort()) === JSON.stringify(descB.indexes.sort()));
+    check("migrated has same indexes as fresh", JSON.stringify([...descB.indexes].sort()) === JSON.stringify([...descA.indexes].sort()));
     rmSync(dirB, { recursive: true, force: true });
   }
   check("OBSERVATION_SCHEMA_VERSION = 2", OBSERVATION_SCHEMA_VERSION === 2);
