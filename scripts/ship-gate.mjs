@@ -34,7 +34,10 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-const PNPM = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+// F-12: do NOT hardcode ".cmd". The standalone pnpm that pnpm/setup@v2
+// installs on CI ships pnpm.exe (no pnpm.cmd), while a corepack/npm install
+// ships pnpm.cmd. Bare "pnpm" lets cmd.exe resolve either via PATHEXT.
+const PNPM = "pnpm";
 
 const PKG_DIRS = [
   "packages/kernel",
