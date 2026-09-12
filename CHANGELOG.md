@@ -37,6 +37,11 @@ All notable changes to this project are recorded here. Format follows
   assertion while disclosing them; 30-day TTL, weekly review, max 2 renewals, promote/retire
   paths. The eval CLI now names the failing cases on gate failure so a CI log identifies an
   environment flake without needing the report artifact.
+- ADR-0059 D6 (T-5, round 58): the README ADR index is now a generated artifact.
+  `scripts/gen-adr-index.mjs` (Node stdlib) owns the `BEGIN/END ADR-INDEX` block derived from
+  `docs/adr/*.md`, and ship-gate step 1b runs it in `--check` mode (regenerate-and-diff) so the
+  index can never silently lag again. The one-time catch-up replaces the stale "ADR-0001 through
+  ADR-0046" claim with the real 0001-0059 range and the full 59-row index.
 
 ### Removed
 

@@ -548,6 +548,16 @@ function stepStaticAssertions() {
 // ---------------------------------------------------------------------------
 // Step 2 — domain schema validation (ADR-0021 D3, blocking)
 // ---------------------------------------------------------------------------
+// ADR-0059 D6 (T-5): the README ADR index is a derived artifact — regenerate-and-diff so it can
+// never silently lag behind docs/adr/ (round-57 failure mode: claimed 0001-0046 while 59 existed).
+function stepAdrIndex() {
+  report("info", "step 1b/9: README ADR index freshness (ADR-0059 D6)");
+  const res = spawnSync(process.execPath, [path.join("scripts", "gen-adr-index.mjs"), "--check"], { cwd: ROOT, encoding: "utf8" });
+  const out = ((res.stdout ?? "") + (res.stderr ?? "")).trim();
+  if (res.status !== 0) fail("README ADR index is stale (ADR-0059 D6): " + out);
+  report("pass", out || "README ADR index up to date");
+}
+
 async function stepValidateDomains() {
   reportStep("step_1_5_validate_domains");
   report("info", "step 2/9: validate domains/*.toml compaction guards");
@@ -1154,6 +1164,7 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
 (async () => {
   reportStep("step_1_static_assertions");
   stepStaticAssertions();
+  stepAdrIndex();
   await stepValidateDomains();
   if (!quick) { reportStep("step_2_turbo"); await stepBuildAndTest(); }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-ship-gate-"));
