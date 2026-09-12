@@ -101,3 +101,37 @@ Mitigation, recorded as an operational constraint for the PR: create the series 
 
 Positive: CI becomes a real witness on both OSes; every future test file is auto-discovered; red debt is visible and attributable; AC5 historical wound closes with a traceable link.
 Costs/risks: store file-level parallelism may need --test-concurrency=1 (shared sqlite temp dirs) — measure at rollout; Node 22 test-tags may be experimental — fallback is a separate test:online script; hand-written counter rewrite is incremental, not a gate.
+
+## Amendment — closure-window fixes and audit rework (2026-09-12)
+
+Per ADR-0029 (undocumented incidental edits are the anti-pattern) this section records what changed after the ADR was first written, so the record matches the landed configuration. The merge landed as `7318184` on `main`.
+
+### A1. Test task now depends on build (F-11)
+
+D1 recorded `test = { "dependsOn": ["^test"], "cache": false }`. The landed configuration is `{ "dependsOn": ["^test", "build"], "cache": false }`. Rationale: the `@anysearch/cli` e2e test spawns `apps/cli/dist/index.js`, so `turbo run test` on a clean tree failed 10 of 11 e2e cases. Making the dependency explicit fixes it at the task-graph level instead of by reordering CI steps. **Supersedes D1 on this point only.**
+
+### A2. ship-gate no longer hardcodes `pnpm.cmd` (F-12)
+
+`scripts/ship-gate.mjs` used `const PNPM = process.platform === "win32" ? "pnpm.cmd" : "pnpm"`. The standalone pnpm that `pnpm/setup@v2` installs on CI ships `pnpm.exe` (no `pnpm.cmd`), so ship-gate step 3 died on Windows with `'pnpm.cmd' is not recognized as an internal or external command`. Now `const PNPM = "pnpm"`; cmd resolves either via PATHEXT.
+
+### A3. `ci.yml` step name quoted (F-10)
+
+The `ci.yml` step `name:` contained an unquoted `: ` (`ADR-0057 D1/D2: node:test …`), which made the workflow file invalid YAML. GitHub Actions rejected it outright — a 0-job run titled *"This run likely failed because of a workflow file issue"* — so **`ci.yml` never executed** from the commit that introduced the change until the quoting fix. Zero semantic change.
+
+### A4. plugin server-liveness test (F-14 / audit N-1)
+
+`apps/plugin/test/plugin.test.ts` started the plugin server via `spawn("npx", ["tsx", …], { stdio: ["pipe","pipe","pipe"] })` and killed only the direct child. The `tsx`->`node` grandchild survived holding the stdio pipes, so the test process could never exit and `turbo run test` hung on Linux (>41 min on ubuntu CI). Now: `spawn(process.execPath, ["--import","tsx", …])`, `stdio[0] = "ignore"`, POSIX process group (`detached`) + `process.kill(-pid,"SIGKILL")`, Windows `taskkill /T /F`, and an `await` for the tree to exit. The closure audit then found the test was still load-sensitive (fixed port 33334 + fixed 2000 ms wait + a single `fetch` with no retry) — N-1 — so it now asks the OS for a free port and polls `/health` for readiness with a 30 s deadline.
+
+### A5. Tautological assertion in the session-id migration test (audit N-2)
+
+`packages/store/test/session-id-propagation.test.ts` compared `descB.indexes` with itself (always true). `descA` (fresh store) is now hoisted so the assertion actually compares migrated vs fresh indexes; it passes, so the migration genuinely converges.
+
+### A6. Honest status of the carried-over AC5 closure (audit Spec #1)
+
+The “Carried-over Acceptance Criteria Closure” section above states `Closes ADR-0056 AC5: pnpm -r check/test/build clean + ship-gate passes (CI green)`. As landed, `ci.yml` is green on ubuntu + windows and `native-smoke` is green, but **`ship-gate` is red on all three platforms**:
+
+- **F-15** — the per-fingerprint OF look ledger `.ship-gate/eval-looks.json` is gitignored (`.gitignore:25-26`), so a fresh CI checkout always evaluates at `look=1`, where the preregistered alpha is ~5.4e-7 and `passAtLook` is false → `integrity.verdict=failed`. `ship-gate` is therefore **structurally un-passable on any fresh CI checkout** until the eval governance layer is addressed (this round’s cut 6).
+- **F-16** — pre-existing better-sqlite3 exit-time crash on macOS (`libc++abi: … mutex lock failed`), present on every `ship-gate` macOS run to date.
+- **F-17** — the memory-eval harness is environment-dependent: 126/128 on CI vs 128/128 locally (`mrr` 0.524 vs 0.548).
+
+**AC5 is therefore only partially satisfied.** The residual is carried by round-58 tickets T-1..T-3 and is *not* claimed closed here.
