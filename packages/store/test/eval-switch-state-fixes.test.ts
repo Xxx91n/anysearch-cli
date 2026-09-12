@@ -11,7 +11,6 @@ import Database from "better-sqlite3";
 import { bootstrapAccessChain } from "../src/access-chain";
 import { SqliteSessionStore } from "../src/session-store";
 import { advanceSwitch, loadSwitchRegistration, replaySwitchChain } from "../src/eval/switch-run";
-import { evalIntegrityCheck } from "../src/eval/integrity-contract";
 
 const fixturePath = join(process.cwd(), "fixtures", "switch-registration.json");
 const canonical = readFileSync(fixturePath, "utf8");
