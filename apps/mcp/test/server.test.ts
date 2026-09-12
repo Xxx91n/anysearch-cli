@@ -82,6 +82,47 @@ assert(server2 !== server3, "buildServer() returns new instance each call (facto
   }
 }
 
+
+// Test 5 (ADR-0057 D3 / D-004 regression; audit F-3 / P7): the charter requires
+// proving boot works with a COLD HOME (no ~/.anysearch) via the DEFAULT path - i.e.
+// with ANS_DB_PATH UNSET, so resolveDbPath derives ~/.anysearch/anysearch.db from
+// USERPROFILE/HOME. Test 4 sets ANS_DB_PATH, which short-circuits that derivation
+// and therefore only proves the mkdir guard for an explicitly given path.
+{
+  const coldHome = mkdtempSync(join(tmpdir(), "ans-mcp-defhome-"));
+  const expectedParent = join(coldHome, ".anysearch");
+  const expectedDb = join(expectedParent, "anysearch.db");
+  const prevDb = process.env.ANS_DB_PATH;
+  const prevProfile = process.env.USERPROFILE;
+  const prevHome = process.env.HOME;
+  delete process.env.ANS_DB_PATH; // force the HOME-derived default path
+  process.env.USERPROFILE = coldHome;
+  process.env.HOME = coldHome;
+  try {
+    assert(
+      process.env.ANS_DB_PATH === undefined,
+      "precondition: ANS_DB_PATH unset so the HOME-derived default path is exercised"
+    );
+    const server5 = buildServer();
+    assert(server5 !== undefined, "buildServer() boots with a cold HOME via the default path");
+    assert(
+      existsSync(expectedParent),
+      "cold-HOME default boot created ~/.anysearch (mkdir guard on the derived path)"
+    );
+    assert(
+      existsSync(expectedDb),
+      "cold-HOME default boot created the DB file at ~/.anysearch/anysearch.db"
+    );
+  } catch (e) {
+    assert(false, "buildServer() cold-HOME default-path boot crashed: " + (e as Error).message);
+  } finally {
+    if (prevDb === undefined) delete process.env.ANS_DB_PATH; else process.env.ANS_DB_PATH = prevDb;
+    if (prevProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = prevProfile;
+    if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    try { rmSync(coldHome, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
 // ADR-0019 D4 (layer-2): input validation is enforced by AJV via fromJsonSchema.
 // Structural assertion: fromJsonSchema(KernelJsonSchemas.X) produces a Standard Schema
 // that the SDK will validate against. We verify the underlying JSON schemas still carry
