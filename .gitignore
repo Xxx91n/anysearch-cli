@@ -25,6 +25,7 @@ Thumbs.db
 .ship-gate/*
 **/.ship-gate/*
 !.ship-gate/calibration-l2-preregistration.json
+!.ship-gate/attribution-gold-preregistration.json
 
 .anysearch/
 apps/plugin/dist/

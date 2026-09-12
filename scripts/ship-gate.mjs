@@ -571,6 +571,33 @@ function stepDocClaims() {
   report("pass", "engine grace-window debt note present; CONTEXT.md does not over-claim (ADR-0014)");
 }
 
+// ADR-0059 D5 (T-4): three permanent invariants run FIRST, including under --quick, so a release
+// verdict can never be produced from a broken workflow file, a dirty tree, or a drifted ignore set.
+// NOTE on (c): the ledger wrote the command as `git ls-files -z --ignored --exclude-standard`,
+// which this git rejects ("-i must be used with either -o or -c"); the invariant's intent is
+// "no tracked file is also ignored", so `-c` (cached) is used.
+function stepZeroInvariants() {
+  report("info", "step 0/9: permanent invariants (ADR-0059 D5)");
+
+  // (a) workflow YAML validity - promoted from .scratch/check-workflows.mjs (backlog B-2), fail-closed.
+  const wf = spawnSync(process.execPath, [path.join("scripts", "check-workflows.mjs")], { cwd: ROOT, encoding: "utf8" });
+  const wfOut = ((wf.stdout ?? "") + (wf.stderr ?? "")).trim();
+  if (wf.status !== 0) fail("workflow YAML gate failed (ADR-0059 D5a):\n" + wfOut);
+  report("pass", (wfOut.split("\n").filter(Boolean).slice(-1)[0]) || "workflow YAML gate ok");
+
+  // (b) clean-tree invariant - a release verdict requires a committed tree (prism-coder precedent).
+  const st = spawnSync("git", ["status", "--porcelain"], { cwd: ROOT, encoding: "utf8" });
+  const dirty = (st.stdout ?? "").trim();
+  if (dirty) fail("clean-tree invariant violated (ADR-0059 D5b): git status --porcelain is not empty:\n" + dirty.split("\n").slice(0, 10).join("\n"));
+  report("pass", "clean-tree invariant: git status --porcelain is empty");
+
+  // (c) gitignore-drift invariant - a tracked file must never also be ignored.
+  const dr = spawnSync("git", ["ls-files", "-z", "-c", "--ignored", "--exclude-standard"], { cwd: ROOT, encoding: "utf8" });
+  const drifted = (dr.stdout ?? "").split("\0").filter(Boolean);
+  if (drifted.length) fail("gitignore-drift invariant violated (ADR-0059 D5c): tracked-but-ignored files:\n" + drifted.slice(0, 10).join("\n"));
+  report("pass", "gitignore-drift invariant: no tracked-but-ignored files");
+}
+
 async function stepValidateDomains() {
   reportStep("step_1_5_validate_domains");
   report("info", "step 2/9: validate domains/*.toml compaction guards");
@@ -1175,6 +1202,8 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
 }
 
 (async () => {
+  reportStep("step_0_invariants");
+  stepZeroInvariants();
   reportStep("step_1_static_assertions");
   stepStaticAssertions();
   stepAdrIndex();
