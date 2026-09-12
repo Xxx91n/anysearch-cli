@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "updated": "2026-09-12",
+  "note": "Machine-checkable registry of deferred work items and carried-over acceptance criteria. Discipline is isomorphic to .ship-gate/skip-ledger.json (schema @3) and the ADR-0020 conformance expected-failures ledger: every deferral is an explicit, traceable record, never a silent drop. ADR-0057 D5 / D-006 requires one entry per carried-over acceptance criterion, marked closed-by the ADR that closes it. Old ADR bodies are never edited; the pointer line lives in the old ADR and the record lives here (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). Additive only: new entries are appended, existing ids are never reused or renumbered.",
+  "entries": [
+    {
+      "id": "defer-ac5-adr0056",
+      "type": "carried-over-acceptance-criterion",
+      "title": "ADR-0056 AC5 - pnpm -r check/test/build clean + ship-gate passes (CI green)",
+      "source_adr": "docs/adr/0056-architecture-grill-round-56-session-id-propagation-protocol.md",
+      "pointer_line": "> AC5: CLOSED by ADR-0057 (2026-09-12).",
+      "status": "closed",
+      "closed_by": "ADR-0057",
+      "closed_at": "2026-09-12",
+      "closed_by_adr_path": "docs/adr/0057-architecture-grill-round-57-test-truthfulness-ci-credibility.md",
+      "evidence": "CI run (turbo test, ubuntu-latest + windows-latest) + ship-gate log + test-file execution record; attached at merge per ADR-0057 'Carried-over Acceptance Criteria Closure'."
+    }
+  ]
+}
