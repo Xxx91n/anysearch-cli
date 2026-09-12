@@ -89,7 +89,10 @@ jobs:
             if [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
               files=$(git diff --name-only "${{ github.event.before }}..HEAD")
             else
-              files=$(git show --pretty=format: --name-only HEAD)
+              # workflow_dispatch: the branch-vs-default-branch diff is the correct scope (the job
+              # asks "does THIS branch touch packages/store?", not "what did the last commit do").
+              git fetch origin "${{ github.event.repository.default_branch }}" --depth=1 || true
+              files=$(git diff --name-only "origin/${{ github.event.repository.default_branch }}...HEAD" || git show --pretty=format: --name-only HEAD)
             fi
           fi
           if grep -Eq '^(packages/store/|scripts/eval-(judge|calibrate)\.mjs$)' <<< "$files"; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "run=0" >> "$GITHUB_OUTPUT"; fi
