@@ -82,7 +82,15 @@ jobs:
             git fetch origin "${{ github.base_ref }}" --depth=1 || true
             files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
           else
-            files=$(git diff --name-only "${{ github.event.before }}..HEAD" || git show --pretty=format: --name-only HEAD)
+            # ADR-0059 D3 (T-2): on workflow_dispatch github.event.before is empty, so
+            # `git diff --name-only "..HEAD"` resolves to HEAD-vs-worktree (always empty) and the
+            # job silently skipped. Fall back to HEAD's own file list so the memory-eval signal is
+            # reachable outside push/PR events.
+            if [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+              files=$(git diff --name-only "${{ github.event.before }}..HEAD")
+            else
+              files=$(git show --pretty=format: --name-only HEAD)
+            fi
           fi
           if grep -Eq '^(packages/store/|scripts/eval-(judge|calibrate)\.mjs$)' <<< "$files"; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "run=0" >> "$GITHUB_OUTPUT"; fi
 
