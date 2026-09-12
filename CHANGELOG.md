@@ -20,6 +20,13 @@ All notable changes to this project are recorded here. Format follows
 - bgnbd/obs-fixtures/switch-run no longer evaluate fileURLToPath(import.meta.url) at module init — the CJS CLI bundle crashed every ans command at boot once @anysearch/store re-exported switch modules.
 ## [Unreleased]
 
+### Removed
+
+- ADR-0057 D-001/R1 (round 57): `.scratch/` is no longer tracked. The local-markdown
+  issue tracker and round artifacts were tracked as 16 files while README.md:64 documents
+  them as not committed to git; all 16 are now untracked (disk copies kept; `.gitignore`
+  gained `.scratch/`). Commits `ykm` (first 8) + `rpz` (remaining 8, audit F-1).
+
 ### Fixed
 - ADR-0042 r110 audit repair round (dual-axis review of the r109 implementation; all
   findings fixed in one round — SP-F-01..03 + SA-F-01..09):
