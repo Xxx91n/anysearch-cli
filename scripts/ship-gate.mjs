@@ -587,12 +587,15 @@ function stepZeroInvariants() {
 
   // (b) clean-tree invariant - a release verdict requires a committed tree (prism-coder precedent).
   const st = spawnSync("git", ["status", "--porcelain"], { cwd: ROOT, encoding: "utf8" });
+  // A non-zero git exit (e.g. git missing) must fail closed, not pass on empty stdout (round-58 audit C-2).
+  if (st.status !== 0) failUnverifiable("clean-tree invariant: git status --porcelain failed (exit " + st.status + ") - cannot verify a committed tree");
   const dirty = (st.stdout ?? "").trim();
   if (dirty) fail("clean-tree invariant violated (ADR-0059 D5b): git status --porcelain is not empty:\n" + dirty.split("\n").slice(0, 10).join("\n"));
   report("pass", "clean-tree invariant: git status --porcelain is empty");
 
   // (c) gitignore-drift invariant - a tracked file must never also be ignored.
   const dr = spawnSync("git", ["ls-files", "-z", "-c", "--ignored", "--exclude-standard"], { cwd: ROOT, encoding: "utf8" });
+  if (dr.status !== 0) failUnverifiable("gitignore-drift invariant: git ls-files failed (exit " + dr.status + ") - cannot verify the ignore set");
   const drifted = (dr.stdout ?? "").split("\0").filter(Boolean);
   if (drifted.length) fail("gitignore-drift invariant violated (ADR-0059 D5c): tracked-but-ignored files:\n" + drifted.slice(0, 10).join("\n"));
   report("pass", "gitignore-drift invariant: no tracked-but-ignored files");

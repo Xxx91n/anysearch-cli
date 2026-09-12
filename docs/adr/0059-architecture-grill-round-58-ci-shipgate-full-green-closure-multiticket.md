@@ -10,11 +10,20 @@
 
 Round 57 made main's ci workflow green for the first time but left ship-gate red on all three OSes (F-15 structural, F-16 pre-existing native crash, F-17 memory-eval nondeterminism), no permanent gates for the lessons learned (F-10 workflow YAML, F-11 stale dist masking), README ADR index lagging by 12 entries, and four hostile-review findings (.codex-tmp/锐评.txt) explicitly excluded from previous rounds.
 
+### Goal (rewritten — round-58 audit R-5)
+
+The umbrella goal was originally stated as "CI/ship-gate full-green closure". The round-58
+independent audit found the macOS native crash (F-16) unsolvable within scope and accepted the H3
+known-issue exit, so the goal is **rewritten** to: **non-macOS double-green** (`ci` ubuntu+windows
+green AND `ship-gate` ubuntu+windows green) **+ a macOS H3 known-issue ledger entry**
+(`defer-f16-macos-native-crash`). The macOS `ship-gate` job stays honestly red; no workflow-level
+silent skip is permitted. The original slug in this file name is retained (append-only ADR
+convention).
 ## Decision
 
 ### D1. One round, six tickets — explicit one-round waiver of ADR-0029 (ledger D-001/D-002)
 
-This round carries an umbrella theme "CI/ship-gate full-green closure" and is executed as six ordered, independently-verified tickets. The waiver is one-shot: ADR-0029 is NOT rewritten. Ticket order: T-1 (F-15 eval layering) → T-2 (F-17 quarantine) → T-3 (F-16 macOS native crash) → T-4 (permanent gates) → T-5 (README automation) → T-6 (four hostile-review cuts). T-4 must come after the functional tickets, otherwise the new gates block their own PRs. Each ticket lands as done or deferred-with-reason; silent dropping is forbidden.
+This round carries an umbrella theme "CI/ship-gate closure" (goal sharpened by the round-58 audit to non-macOS double-green + macOS H3 ledger — see Goal note) and is executed as six ordered, independently-verified tickets. The waiver is one-shot: ADR-0029 is NOT rewritten. Ticket order: T-1 (F-15 eval layering) → T-2 (F-17 quarantine) → T-3 (F-16 macOS native crash) → T-4 (permanent gates) → T-5 (README automation) → T-6 (four hostile-review cuts). T-4 must come after the functional tickets, otherwise the new gates block their own PRs. Each ticket lands as done or deferred-with-reason; silent dropping is forbidden.
 
 ### D2. T-1: CI runs observational grade; decision grade binds to release actions (ledger D-003/D-004)
 
@@ -35,11 +44,11 @@ Execute ADR-0027 D8's existing contract: the 2 flaky golden cases enter a quaran
 
 ### D5. T-4: permanent gates in ship-gate step_0 (ledger D-007)
 
-Three invariants run first in ship-gate.mjs (including --quick): (a) workflow YAML validity — .scratch/check-workflows.mjs is promoted to a formal script (closes backlog B-2) with its fail-open flipped to fail-closed, auto-discovering both .yml and .yaml; (b) clean-tree invariant — `git status --porcelain` must be empty before a release verdict (prism-coder check-publish-clean precedent); (c) gitignore-drift invariant — `git ls-files -z --ignored --exclude-standard` must be empty. Pre-requisite hygiene: one-time `git rm -r --cached .scratch/` as an independent chore commit, otherwise the drift gate is permanently red. Optional enhancement: a path-filtered actionlint CI signal job (binary download, SHA256-pinned, zero npm deps) folded into the ADR-0058 summary aggregation — never a standalone required check. Rejected: pre-commit hooks as enforcement (bypassable, hooks are fast-feedback only); a ci.yml explicit clean step (redundant with fresh checkout).
+Three invariants run first in ship-gate.mjs (including --quick): (a) workflow YAML validity — .scratch/check-workflows.mjs is promoted to a formal script (closes backlog B-2) with its fail-open flipped to fail-closed, auto-discovering both .yml and .yaml; (b) clean-tree invariant — `git status --porcelain` must be empty before a release verdict (prism-coder check-publish-clean precedent); (c) gitignore-drift invariant — `git ls-files -z -c --ignored --exclude-standard` must be empty (the literal `-z --ignored` form is rejected by git: `-i` requires `-o` or `-c`; `-c` implements the same intent). Pre-requisite hygiene: one-time `git rm -r --cached .scratch/` as an independent chore commit, otherwise the drift gate is permanently red. Optional enhancement: a path-filtered actionlint CI signal job (binary download, SHA256-pinned, zero npm deps) folded into the ADR-0058 summary aggregation — never a standalone required check. Rejected: pre-commit hooks as enforcement (bypassable, hooks are fast-feedback only); a ci.yml explicit clean step (redundant with fresh checkout).
 
 ### D6. T-5: README ADR index automation (ledger D-008)
 
-scripts/gen-adr-index.mjs (Node stdlib only, per ADR-0020 D5) regenerates a marker block in README.md from docs/adr/*.md; ship-gate gains a --check assertion (regenerate + diff, terraform-docs pattern). The one-time catch-up fixes README's 0001-0046 lag to the actual 0001-0058. Manual maintenance is rejected (documented failure mode: "Decision Documentation Theater"). docs/adr is the single source of truth; the README index is a derived artifact.
+scripts/gen-adr-index.mjs (Node stdlib only, per ADR-0020 D5) regenerates a marker block in README.md from docs/adr/*.md; ship-gate gains a --check assertion (regenerate + diff, terraform-docs pattern). The one-time catch-up fixes README's 0001-0046 lag to the actual count. The index is generated from the git tree of a ref (default HEAD), not the working-tree filesystem (round-58 audit R-1). Manual maintenance is rejected (documented failure mode: "Decision Documentation Theater"). docs/adr is the single source of truth; the README index is a derived artifact.
 
 ### D7. T-6: four hostile-review cuts, two-state verdicts (ledger D-009)
 
@@ -50,7 +59,7 @@ scripts/gen-adr-index.mjs (Node stdlib only, per ADR-0020 D5) regenerates a mark
 
 ## Consequences
 
-- Green definition sharpens: main's ship-gate is red until T-1..T-4 land; after landing, ship-gate green becomes a trustworthy signal again.
+- Green definition sharpens (round-58 audit R-5 rewrite): closure = **non-macOS double-green** (`ci` ubuntu+windows ✓ AND `ship-gate` ubuntu+windows ✓) **plus** a macOS H3 known-issue ledger entry (`defer-f16-macos-native-crash`); the macOS `ship-gate` job stays honestly red. main's ship-gate is red until T-1..T-4 land; after landing, the non-macOS signal becomes trustworthy again.
 - Release ergonomics change permanently: tagging without a pre-tag decision-grade dispatch is now an unverifiable act.
 - Deferred items are not silent: T-6.4 carries an owner and a monitoring channel; T-3's H3 exit carries issue links and TTL.
 - This ADR closes Round-57 leftover debt F-15, F-16, F-17 and the "no gate for the gate itself" class (F-10/F-11 lessons).
