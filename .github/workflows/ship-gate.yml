@@ -40,7 +40,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version: 22
           cache: pnpm
 
       - name: install (no scripts — better-sqlite3 prebuilt, see pnpm-workspace allowBuilds)
@@ -92,7 +92,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         if: ${{ steps.changes.outputs.run == '1' }}
-        with: { node-version: 24, cache: pnpm }
+        with: { node-version: 22, cache: pnpm }
 
       - name: install
         if: ${{ steps.changes.outputs.run == '1' }}

@@ -13,6 +13,7 @@ import { quarantineSkipLedger, recordSkips, skipMustFail, withSkipLedgerLock } f
 import { advanceSwitch, probeSwitchIntegrity } from "./switch-run";
 import { fixtureDefinitionHash } from "./obs-fixtures";
 import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, SHIP_OVERRIDE_REASON_CODES, type EvalBaseline, type GainConclusion } from "./gate";
+import { appendLook, emptyLooksLedger, nextLook, readLooksLedger, writeLooksLedger } from "./looks-ledger";
 import { SqliteObservationStore } from "../observation";
 
 function repoRoot(): string {
@@ -161,6 +162,9 @@ async function main(): Promise<number> {
   const overrideReason = overrideIdx >= 0 ? args[overrideIdx + 1] : undefined;
   const outIdx = args.indexOf("--out");
   const root = repoRoot();
+  // ADR-0059 D2: the OF look ledger lives at the repo root as a git-committed file, so a clean
+  // clone (no .ship-gate/) still carries the preregistration state.
+  const LOOKS_LEDGER_PATH = join(root, "eval-looks.json");
   const outDir = outIdx >= 0 ? resolve(args[outIdx + 1]!) : join(root, ".ship-gate");
   const baselinePath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "eval-baseline.json");
 
@@ -215,8 +219,9 @@ async function main(): Promise<number> {
     if (degenerate) console.log("[eval:calibrate] pilot sd=0 — sigmaDU=0 placeholder, n locked at cap " + RELATION_GAIN_LOCKED_N_CAP + " (ADR-0036 D2; recalibrate after RoR-heavy expansion)");
     next.relationGain = { sigmaDU: Number(sigmaDU.toFixed(6)), rawN, lockedN, minGain: RELATION_GAIN_MIN_GAIN };
     writeFileSync(baselinePath, JSON.stringify(next, null, 2) + "\n", "utf8");
-    // ADR-0038 D4: calibration flips the fingerprint pair — the pre-registered OF look ledger resets.
-    writeFileSync(join(root, ".ship-gate", "eval-looks.json"), JSON.stringify({ schema: "anysearch/eval-looks@1", looks: [] }, null, 2) + "\n", "utf8");
+    // ADR-0059 D2: calibration flips the fingerprint pair, so the pre-registered OF look ledger
+    // resets. The ledger is the git-committed repo-root file; commit the reset with the baseline.
+    writeLooksLedger(LOOKS_LEDGER_PATH, emptyLooksLedger());
     console.log(`[eval:calibrate] baseline written: fingerprint=${next.fingerprint} allowance sup<=${next.allowance.supersessionFails} qfp<=${next.allowance.quarantineFp} relationGain sigmaDU=${next.relationGain!.sigmaDU} lockedN=${next.relationGain!.lockedN} (rawN=${next.relationGain!.rawN}, pilot n=${pilotDeltas.length})`);
     return 0;
   }
@@ -229,21 +234,14 @@ async function main(): Promise<number> {
   let baseline: EvalBaseline | null = null;
   if (existsSync(baselinePath)) baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as EvalBaseline;
 
-  // ADR-0038 D4: per-fingerprint OF look ledger (.ship-gate/eval-looks.json) — each eval run on the
-  // current fingerprint pair spends the next preregistered look; --calibrate resets it.
-  const looksPath = join(root, ".ship-gate", "eval-looks.json");
+  // ADR-0038 D4 + ADR-0059 D2: per-fingerprint OF look ledger — the git-committed repo-root
+  // eval-looks.json. Reading always happens so the next look number comes from committed state;
+  // the append happens AFTER evaluateGate (below) so each row can carry its verdict.
+  const looksPath = LOOKS_LEDGER_PATH;
   const lookKey = report.datasetFingerprint + ":" + report.holdoutFingerprint;
   mkdirSync(outDir, { recursive: true });
-  let looks: { schema: string; looks: Array<{ key: string; at: string }> } = { schema: "anysearch/eval-looks@1", looks: [] };
-  if (existsSync(looksPath)) {
-    try { looks = JSON.parse(readFileSync(looksPath, "utf8")) as typeof looks; } catch { /* corrupt ledger -> fail-closed below */ }
-  }
-  const look = looks.looks.filter((l) => l.key === lookKey).length + 1;
-  // r98 audit R1: tests must not spend preregistered OF looks on the real fingerprint pair.
-  if (process.env.ANS_EVAL_NO_LOOK !== "1") {
-    looks.looks.push({ key: lookKey, at: new Date().toISOString() });
-    writeFileSync(looksPath, JSON.stringify(looks, null, 2) + "\n", "utf8");
-  }
+  let looks = readLooksLedger(looksPath);
+  const look = nextLook(looks, lookKey);
   const g = evaluateGate(report, baseline, { look });
   const exitCode = g.exitCode;
 
@@ -362,6 +360,20 @@ async function main(): Promise<number> {
   // r110 SP-F-03: if the fixture manifest is absent the fingerprint carries the explicit
   // "no-fixtures" marker — surface it instead of letting the fingerprint silently drift.
   if (fixtureDefinitionHash() === "no-fixtures") console.error("[eval] WARN: obs-feed MANIFEST.json absent — datasetFingerprint includes the explicit 'no-fixtures' marker; repack fixtures or expect a fingerprint flip on restore");
+  // ADR-0059 D2: a preregistered OF look is spent ONLY by a release-grade peek. Merge-gate/CI runs
+  // set ANS_EVAL_NO_LOOK=1; ordinary runs read the ledger but never append (ANS_EVAL_LOOKS_WRITE unset).
+  if (process.env.ANS_EVAL_NO_LOOK !== "1" && process.env.ANS_EVAL_LOOKS_WRITE === "1") {
+    const at = new Date().toISOString();
+    looks = appendLook(looks, {
+      key: lookKey,
+      at,
+      look,
+      verdict: g.verdict,
+      exitCode,
+      ...(report.integrity ? { integrity: report.integrity.verdict } : {}),
+    }, at);
+    writeLooksLedger(looksPath, looks);
+  }
   const enriched = { ...report, baselineFingerprint: baseline?.fingerprint ?? null, gate: { verdict: g.verdict, exitCode, failures: g.failures, warnings: g.warnings, gainConclusion: g.gainConclusion ?? null } };
   writeFileSync(join(outDir, "eval-report.json"), JSON.stringify(enriched, null, 2) + "\n", "utf8");
   writeFileSync(join(outDir, "eval-report.md"), toMarkdown(report, baseline, g.failures, g.warnings, g.gainConclusion), "utf8");

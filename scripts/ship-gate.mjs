@@ -776,12 +776,14 @@ async function stepMemoryEval() {
   fs.mkdirSync(outDir, { recursive: true });
   const evalArgs = ["--import", "tsx", path.join("src", "eval", "cli.ts"), "--out", outDir];
   if (overrideReason !== undefined) evalArgs.push("--override", overrideReason);
-  else evalArgs.push("--decision");
+  // ADR-0059 D2 (F-15): regular CI/merge runs are observational grade; decision grade is reserved
+  // for the release workflow (release.yml). No --decision here, and no OF look is ever consumed.
   const res = await new Promise((resolve) => {
     const child = spawn(
       process.execPath,
       evalArgs,
-      { cwd: path.join(ROOT, "packages", "store"), stdio: ["ignore", "pipe", "pipe"] }
+      // ADR-0059 D2: the merge gate never consumes a preregistered OF look.
+      { cwd: path.join(ROOT, "packages", "store"), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ANS_EVAL_NO_LOOK: "1" } }
     );
     let buf = "";
     child.stdout.on("data", (d) => (buf += d.toString("utf8")));

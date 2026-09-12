@@ -20,6 +20,17 @@ All notable changes to this project are recorded here. Format follows
 - bgnbd/obs-fixtures/switch-run no longer evaluate fileURLToPath(import.meta.url) at module init — the CJS CLI bundle crashed every ans command at boot once @anysearch/store re-exported switch modules.
 ## [Unreleased]
 
+### Added
+
+- ADR-0059 D2 (T-1 / F-15, round 58): eval-grade layering. The merge gate (ship-gate step 7) now
+  runs observational and never spends a preregistered OF look (ANS_EVAL_NO_LOOK=1); decision grade
+  moved to a new `release` workflow (pre-tag dispatch = the only OF peek; post-tag asserts the
+  recorded verdict is unexpired and spends nothing). The OF look ledger moved from the local
+  `.ship-gate/eval-looks.json` to the git-committed repo-root `eval-looks.json`
+  (`anysearch/eval-looks@2`, append-only with a 50-row compaction cap and a preserved
+  pre-compaction SHA-256); a look is written only when ANS_EVAL_LOOKS_WRITE=1, so CI and local runs
+  leave the tracked file untouched. ship-gate.yml Node 24 -> 22 to match ci.yml.
+
 ### Removed
 
 - ADR-0057 D-001/R1 (round 57): `.scratch/` is no longer tracked. The local-markdown
