@@ -176,3 +176,23 @@ property (ADR-0043 used gap-insertion at order 115).
 - `npm pack --dry-run`: clean.
 - `git diff --check`: clean.
 - All written files UTF-8 no BOM, LF.
+
+## r58 Text Errata (2026-09-13, ADR-0059 R-6 follow-up)
+
+This ADR was written against the "gates.json / gate:all" CI architecture line. That architecture
+does NOT exist in this repository: every artifact the Decision / Consequences / Acceptance
+sections name is absent — `gates.json` (`docs/gates.json`), `scripts/check-ci-jobs.js`,
+`scripts/check-ci-wiring.js`, `test/adr-0058-wiring.test.js`, `test/adr-0057-wiring.test.js`,
+`test/adr-0033-wiring.test.js`, the `gate:all` and `corpus:drift` npm scripts, and the
+`JIAHAO_TEST_TIER` environment variable. The deferral ids it cites (`defer-0003`, `defer-0004`,
+`defer-0024`, `defer-0026`) are likewise absent from `docs/deferred-registry.json`, which carries
+only `defer-ac5-adr0056`, `defer-anysearch-domain-ownership`, `defer-f16-macos-native-crash` and
+`defer-f17-quarantine-ids`.
+
+This repo's CI is a different shape: `.github/workflows/ci.yml` runs a `check-build` matrix
+(ubuntu + windows) over the pnpm/turbo workspace, and `scripts/ship-gate.mjs` is the release gate.
+
+This ADR is therefore a plan/decision record for an architecture that was NOT landed here (or was
+imported from another codebase) — not a description of the current repo. Round-57 audit N-4
+reached the same conclusion and dropped the matching CONTEXT.md terms (commit a349094). This
+errata supersedes those references; the ADR body is left unmodified (append-only).
