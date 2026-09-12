@@ -8,7 +8,7 @@
     "./providers": "./src/providers/index.ts"
   },
   "scripts": {
-    "test": "tsx test/fusion-registry.test.ts && tsx test/rrf.test.ts && tsx test/tavily.test.ts && tsx test/exa.test.ts && tsx test/anysearch.test.ts && tsx test/content-trust-deny.test.ts",
+    "test": "node --import tsx --test \"test/**/*.test.ts\" \"test/**/*.test.mjs\" --test-timeout=30000",
     "check": "tsc --noEmit"
   },
   "devDependencies": {

@@ -16,7 +16,7 @@
     "build": "tsup",
     "dev": "tsx src/index.ts",
     "lint": "tsc --noEmit",
-    "test": "tsx test/server.test.ts",
+    "test": "node --import tsx --test \"test/**/*.test.ts\" \"test/**/*.test.mjs\" --test-timeout=30000",
     "check": "tsc --noEmit",
     "prepack": "pnpm run build"
   },

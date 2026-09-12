@@ -14,7 +14,12 @@
       "persistent": true
     },
     "lint": {},
-    "test": {},
+    "test": {
+      "dependsOn": [
+        "^test"
+      ],
+      "cache": false
+    },
     "check": {}
   }
 }
