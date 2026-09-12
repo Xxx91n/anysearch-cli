@@ -225,11 +225,18 @@ test("ADR-0012: routing card 4-block structure in shared module", () => {
 // === Server liveness ===
 testAsync("Server: /health endpoint returns 200", async () => {
   const { spawn } = await import("node:child_process");
-  const proc = spawn("npx", ["tsx", "src/server/index.ts"], {
+  // F-14: start the server with the same node + tsx loader the runner uses.
+  // Never via `npx` (it can fall back to the registry) and never with a stdin
+  // pipe. On POSIX the child gets its own process group so the kill reaches the
+  // whole tree: otherwise the tsx->node grandchild survives, keeps the stdio
+  // pipes open and the test process can never exit, hanging `turbo run test`.
+  const proc = spawn(process.execPath, ["--import", "tsx", "src/server/index.ts"], {
     cwd: PLUGIN_ROOT,
-    stdio: ["pipe", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: process.platform !== "win32",
     env: { ...process.env, ANS_SERVER_PORT: "33334" },
   });
+  const exited = new Promise<void>((r) => proc.once("exit", () => r()));
   await new Promise(r => setTimeout(r, 2000));
   try {
     const response = await fetch("http://127.0.0.1:33334/health");
@@ -237,7 +244,18 @@ testAsync("Server: /health endpoint returns 200", async () => {
     const body = await response.json();
     assert.equal(body.status, "ok");
   } finally {
-    proc.kill("SIGTERM");
+    // F-14: kill the WHOLE tree, then wait for it to be gone so no handle
+    // outlives the test (POSIX: process group; Windows: taskkill /T /F).
+    const pid = proc.pid;
+    if (pid) {
+      if (process.platform === "win32") {
+        const { spawnSync } = await import("node:child_process");
+        try { spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" }); } catch { /* already gone */ }
+      } else {
+        try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ }
+      }
+    }
+    await Promise.race([exited, new Promise(r => setTimeout(r, 3000))]);
   }
 });
 
