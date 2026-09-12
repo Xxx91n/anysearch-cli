@@ -87,6 +87,7 @@ The complete numbered record lives in `docs/adr/` — ADR-0001 through ADR-0059.
 | [0055](docs/adr/0055-architecture-grill-round-52-authorization-policy-single-source.md) | Architecture Grill Round 52 - Authorization Policy Single Source Unification |
 | [0056](docs/adr/0056-architecture-grill-round-56-session-id-propagation-protocol.md) | Architecture Grill Round 56 — Session ID Propagation Protocol |
 | [0057](docs/adr/0057-architecture-grill-round-57-test-truthfulness-ci-credibility.md) | Architecture Grill Round 57 — Test Truthfulness and CI Credibility (node:test migration + expectations governance) |
+| [0058](docs/adr/0058-ci-test-job-independence-and-gate-layer-entrypoint-narrowing.md) | CI Test-Job Independence, Always() Success-Only Aggregation, and Gate-Layer Entrypoint Narrowing |
 | [0059](docs/adr/0059-architecture-grill-round-58-ci-shipgate-full-green-closure-multiticket.md) | Architecture Grill Round 58 — CI/Ship-Gate Full-Green Closure (multi-ticket override of ADR-0029, eval governance thaw) |
 <!-- END ADR-INDEX -->
 
