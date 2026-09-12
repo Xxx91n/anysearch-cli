@@ -839,3 +839,24 @@ observability_traces 表中为可索引审计查询新增的三个列为 injecte
 - **expectFailure (node:test)** — true xfail semantics (`expectFailure` option flips pass/fail; unexpected-pass goes red). Requires Node >= 24.14; pinned Node 22 uses `todo` interim, migration deferred to Node upgrade.
 - **hermetic-by-default / online-gated tests** — embedding suite default runs fully stubbed (`__setExtractorForTest`); real-model tests live behind `test:online` (node:test tags / dedicated script) and never block offline CI (SWE-book ch23; pytest-test-categories; Sopel/vcrpy precedent).
 - **Carried-over acceptance closure** — ADR convention this repo follows per ADR-0057 D5: a later round that fixes a prior round's PARTIAL AC declares `Closes ADR-XXXX ACn` in its own ADR, adds a single pointer line to the old ADR, and registers the entry in deferred-registry — one atomic PR, old bodies never edited (Nygard/AWS/MS/MADR/KEP/GEP).
+
+
+## Grill Round 58 — Terms (ADR-0059)
+
+## CI/Release Two-Tier Eval（评测双层分工）
+memory-eval 的门禁分层：CI 红绿 = 确定性回归断言层（fail-closed，observational 级，不消费 OF look 即 "不 peek 不花 alpha"）；统计显著性层 = decision 级，只在发布动作（pre-tag dispatch 评审 + post-tag release.yml 断言）消费预注册 OF look。工业先例：FirstMate "Deterministic checks gate merges. Statistical metrics report."、Braintrust promotion criteria。F-15 根因是 decision 语义挂错层级。
+
+## No-Alpha-Without-Peeking（不看不花 alpha）
+OF alpha spending 的正确接线语义（Spotify 原语）：只在真实评审/peek 时消费预注册 look。CI 每次跑不消费（ANS_EVAL_NO_LOOK=1）；look 账本不入外部存储、入库 git append-only + 压缩上限；post-tag 不消费新 look（防 OF 双花）。
+
+## Quarantine-by-Ledger（台账标记式隔离）
+flaky golden case 的隔离走 policy 层台账标记而非集合变更：golden 指纹不变、零重校准；30 天 TTL + 复评（ADR-0027 D8 执行）；移出再放回不算新证据、不重置统计预算（ADR-0038 对称）。
+
+## Gate-of-the-Gate（门禁自身的门禁）
+ship-gate step_0 三不变量：工作流 YAML 合法性（fail-closed）、干净树（git status 空才能发布）、gitignore 漂移（tracked∩ignored 为空）。原则：门禁的漏洞也要被门禁覆盖（F-10/F-11 教训）；pre-commit hook 只能快反馈、永不做强制点。
+
+## SSOT-Derived Index（单一事实源派生索引）
+docs/adr 是唯一事实源；README 索引 = 派生产物，由 stdlib 脚本生成 + ship-gate --check 漂移断言（terraform-docs "regenerate + diff" 模式）。手动维护索引 = Decision Documentation Theater 失败模式。
+
+## LYING-Class Doc Drift（LYING 类文档漂移）
+文档宣称从未存在的能力（withagents 四分类之一）。处置：删宣称 + 接线断言防复发，而非补实现（依 Ponytail 删优于留 + 价值裁决）。锐评的 engine 死配置即此类的仓库实例。
