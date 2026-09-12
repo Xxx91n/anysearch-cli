@@ -1,7 +1,7 @@
 // r116 fixer test wrapper. Covers:
 //   F1 chain-wins rebuild (replaces quarantine loop with ledger recovery)
 //   F2 legacy stage-transition/rollback/freeze rows fail loud
-//   F3 integrity verdict defaults to failed for decision runs
+//   F3 superseded on-chain by eval-ship-gate-integrity.test.mjs (ADR-0057 T6)
 //   F4 stale lock recovery (malformed JSON reaped)
 //   D6 mutation: changing registered fields changes the digest
 import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
@@ -66,18 +66,6 @@ try {
     try { replaySwitchChain(dbPath); } catch (e) { legacyFailed = String((e as Error).message ?? e).includes("legacy switch event_type"); }
     ok("F2 legacy stage-transition row fails loud", legacyFailed);
     rmSync(dir, { recursive: true, force: true });
-  }
-
-  // F3: ship-gate integrity contract: decision-grade pass must NOT publish green.
-  {
-    const okObs = evalIntegrityCheck({ integrity: { verdict: "pass", runPurpose: "observational" } });
-    
-    ok("F3 observational pass -> publish ok", okObs.ok === true);
-    const okDec = evalIntegrityCheck({ integrity: { verdict: "pass", runPurpose: "decision" } });
-    
-    ok("F3 decision pass -> publish fail (no default-to-pass)", okDec.ok === false);
-    const failedDec = evalIntegrityCheck({ integrity: { verdict: "failed", runPurpose: "decision" } });
-    ok("F3 decision failed -> publish fail", failedDec.ok === false);
   }
 
   // F4: malformed lock file is reaped, advanceSwitch succeeds.
