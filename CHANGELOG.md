@@ -42,6 +42,17 @@ All notable changes to this project are recorded here. Format follows
   `docs/adr/*.md`, and ship-gate step 1b runs it in `--check` mode (regenerate-and-diff) so the
   index can never silently lag again. The one-time catch-up replaces the stale "ADR-0001 through
   ADR-0046" claim with the real 0001-0059 range and the full 59-row index.
+- ADR-0059 D7 (T-6, round 58): four hostile-review cuts.
+  (1) engine dead config fixed BY DOCUMENTATION: CONTEXT.md no longer claims an implemented
+  grace window, ADR-0005 gains an append-only r58 errata, and ship-gate step 1c asserts the honest
+  engine debt note survives (ADR-0014). (2) `ans doctor` now prints the real version via the
+  `__PACKAGE_VERSION__` tsup define instead of a runtime package.json read that resolved to the
+  repo root after bundling. (3) plugin server trust boundary (highest priority): loopback Host
+  whitelist, Origin check (no Origin = native client), auto-generated 256-bit token when
+  ANS_SERVER_TOKEN is unset (persisted 0600 for the hooks), crypto.timingSafeEqual, 1MB body cap,
+  and 403-before-401 ordering; wildcard CORS removed. (4) api.anysearch.com ownership deferred
+  WITH deadline: named owner + quarterly review + CT/expiry monitoring in docs/deferred-registry.json
+  and an annotation block in anysearch.ts.
 
 ### Removed
 

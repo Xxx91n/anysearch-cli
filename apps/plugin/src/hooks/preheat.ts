@@ -8,6 +8,8 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isAnsTool, callServer, type HookInput, type HookDecision } from "./core.js";
+// ADR-0059 D7 (T-6.3): the server never runs open; resolve the shared token (env or the 0600 token file).
+import { resolveServerToken } from "../server/token.js";
 
 interface PolicyCache {
   allow: string[];
@@ -60,7 +62,7 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   }
 
   const serverUrl = process.env.ANS_SERVER_URL || "http://127.0.0.1:33333";
-  const token = process.env.ANS_SERVER_TOKEN || "";
+  const token = resolveServerToken().token;
 
   // ADR-0054 D4 + ADR-0055: any URL in the tool input is gated against the resolved
   // policy. D4 fail-closed: no cache AND server unreachable -> ask for every URL.

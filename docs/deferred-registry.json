@@ -14,6 +14,19 @@
       "closed_at": "2026-09-12",
       "closed_by_adr_path": "docs/adr/0057-architecture-grill-round-57-test-truthfulness-ci-credibility.md",
       "evidence": "CI run (turbo test, ubuntu-latest + windows-latest) + ship-gate log + test-file execution record; attached at merge per ADR-0057 'Carried-over Acceptance Criteria Closure'."
+    },
+    {
+      "id": "defer-anysearch-domain-ownership",
+      "type": "deferred-with-deadline",
+      "title": "api.anysearch.com ownership confirmation (legal/ops) - ADR-0059 D7 / T-6.4",
+      "source_adr": "docs/adr/0059-architecture-grill-round-58-ci-shipgate-full-green-closure-multiticket.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-12",
+      "deadline": "2026-12-31",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "monitoring_channel": "quarterly review + certificate-transparency/expiry watch",
+      "evidence": "Domain verified live at round 58: CloudFront CNAME; Amazon wildcard cert valid to 2026-12-03; fresh status subdomain cert. Annotation block in packages/retriever/src/providers/anysearch.ts (endpoint, CNAME, confirmation date, fail-open note)."
     }
   ]
 }

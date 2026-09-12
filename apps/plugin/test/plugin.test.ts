@@ -245,7 +245,8 @@ testAsync("Server: /health endpoint returns 200", async () => {
     cwd: PLUGIN_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
     detached: process.platform !== "win32",
-    env: { ...process.env, ANS_SERVER_PORT: String(port) },
+    // ADR-0059 D7 (T-6.3): the server is never open; pin a token so the liveness probe authenticates.
+    env: { ...process.env, ANS_SERVER_PORT: String(port), ANS_SERVER_TOKEN: "plugin-test-token" },
   });
   const exited = new Promise<void>((r) => proc.once("exit", () => r()));
   try {
@@ -254,7 +255,7 @@ testAsync("Server: /health endpoint returns 200", async () => {
     const deadline = Date.now() + 30000;
     while (Date.now() < deadline) {
       try {
-        const response = await fetch("http://127.0.0.1:" + port + "/health");
+        const response = await fetch("http://127.0.0.1:" + port + "/health", { headers: { Authorization: "Bearer plugin-test-token" } });
         if (response.status === 200) {
           const body = await response.json();
           assert.equal(body.status, "ok");

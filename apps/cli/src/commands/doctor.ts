@@ -8,19 +8,12 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// ponytail: doctor is diagnostics, not public API — read version lazily from
-// package.json at runtime so dist/ (which ships package.json) stays accurate
-// without needing a build-time define here.
-const PKG_VERSION: string = (() => {
-  try {
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    // dist/commands/../.. = package root; src/commands/../.. = package root.
-    const pkgPath = path.resolve(here, "..", "..", "package.json");
-    return JSON.parse(readFileSync(pkgPath, "utf8")).version ?? "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
-})();
+// ADR-0059 D7 (T-6.2): use the build-time define — the same single standard as src/index.ts.
+// The previous runtime package.json read resolved to the REPO ROOT once tsup bundled the CLI into
+// a single dist/index.js, so `ans doctor` printed the root package's 0.0.0.
+declare const __PACKAGE_VERSION__: string | undefined;
+const PKG_VERSION: string =
+  typeof __PACKAGE_VERSION__ !== "undefined" && __PACKAGE_VERSION__ ? __PACKAGE_VERSION__ : "0.0.0";
 
 let passed = 0;
 let failed = 0;

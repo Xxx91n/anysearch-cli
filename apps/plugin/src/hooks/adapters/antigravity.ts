@@ -8,6 +8,8 @@
 // JSON stdin/stdout, exit 0/2/other.
 
 import { isAnsTool, callServer } from "../core.js";
+// ADR-0059 D7 (T-6.3): resolve the shared server token (env or the 0600 token file).
+import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 import { writeFileSync, existsSync, readFileSync, mkdirSync } from "node:fs";
@@ -91,7 +93,7 @@ async function main(): Promise<void> {
       });
 
       const serverUrl = process.env.ANS_SERVER_URL || "http://127.0.0.1:33333";
-      const token = process.env.ANS_SERVER_TOKEN || "";
+      const token = resolveServerToken().token;
       if (decision.shouldIndex && decision.indexEntries) {
         await callServer(serverUrl + "/index", token, {
           projectPath: cwd, toolName, entries: decision.indexEntries,

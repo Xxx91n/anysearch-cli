@@ -558,6 +558,19 @@ function stepAdrIndex() {
   report("pass", out || "README ADR index up to date");
 }
 
+// ADR-0059 D7 (T-6.1): the engine's graceWindowMs is accepted but NOT wired to an early-cancel
+// (ADR-0014 ponytail debt). Round 58 caught docs claiming an implemented grace window, so this
+// asserts the honest debt note survives - a silent re-claim is what recurs, not the code.
+function stepDocClaims() {
+  report("info", "step 1c/9: engine dead-config debt note (ADR-0059 D7)");
+  const eng = fs.readFileSync(path.join(ROOT, "packages", "kernel", "src", "engine.ts"), "utf8");
+  if (!/graceWindowMs/.test(eng)) fail("engine.ts no longer declares graceWindowMs - update this assertion (ADR-0059 D7)");
+  if (!/Full grace-window abort would need a custom race/.test(eng)) fail("engine.ts lost its honest grace-window debt note (ADR-0014 / ADR-0059 D7)");
+  const ctx = fs.readFileSync(path.join(ROOT, "CONTEXT.md"), "utf8");
+  if (/够数即收 \+ grace window/.test(ctx)) fail("CONTEXT.md re-claims an implemented grace window (ADR-0059 D7)");
+  report("pass", "engine grace-window debt note present; CONTEXT.md does not over-claim (ADR-0014)");
+}
+
 async function stepValidateDomains() {
   reportStep("step_1_5_validate_domains");
   report("info", "step 2/9: validate domains/*.toml compaction guards");
@@ -1165,6 +1178,7 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
   reportStep("step_1_static_assertions");
   stepStaticAssertions();
   stepAdrIndex();
+  stepDocClaims();
   await stepValidateDomains();
   if (!quick) { reportStep("step_2_turbo"); await stepBuildAndTest(); }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-ship-gate-"));

@@ -114,3 +114,9 @@ Decision: three-phase distribution route.
 关联: ADR-0001 (TS + pi skeleton), ADR-0002 (domain authority TOML), ADR-0003 (Code Mode),
 ADR-0004 (kernel split seam architecture).
 *End of ADR-0005*
+## r58 Text Errata (2026-09-12, ADR-0059 D7 / T-6.1)
+
+The "Latency" bullet above claims `enough-results-then-collect + grace window`. The grace-window
+early stop is NOT implemented: `packages/kernel/src/engine.ts` accepts `graceWindowMs` but runs
+`Promise.allSettled` without an early-cancel race and carries an honest ponytail-debt note
+(ADR-0014). This errata supersedes the claim; the ADR body is left unmodified (append-only).

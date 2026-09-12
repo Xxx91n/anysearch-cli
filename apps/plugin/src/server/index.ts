@@ -9,11 +9,16 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { ProjectIndexStore } from "../store/project-index-store.js";
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { resolveServerToken } from "./token.js";
 
 const PORT = Number(process.env.ANS_SERVER_PORT || 33333);
 const HOST = process.env.ANS_SERVER_HOST || "127.0.0.1";
-const TOKEN = process.env.ANS_SERVER_TOKEN || "";
+// ADR-0059 D7 (T-6.3): the server never runs open. ANS_SERVER_TOKEN wins; when unset a 256-bit
+// token is generated and persisted to .anysearch-cli/server-token (0600) for the local hooks.
+const RESOLVED_TOKEN = resolveServerToken();
+const TOKEN = RESOLVED_TOKEN.token;
+const MAX_BODY_BYTES = 1024 * 1024;
 const DB_PATH = process.env.ANS_PROJECT_DB || join(process.cwd(), ".anysearch", "project-index.db");
 
 // Ensure .anysearch dir exists.
@@ -64,25 +69,76 @@ let envIgnoredAudited = false; // D7: config:env_override_ignored once per sessi
 
 const store = new ProjectIndexStore(DB_PATH);
 
+// ADR-0059 D7 (T-6.3): constant-time bearer compare. A wrong-length token is rejected without
+// walking the bytes, so a caller cannot learn a prefix from response timing.
 function authed(req: IncomingMessage): boolean {
-  if (!TOKEN) return true; // No token configured = open (dev mode).
   const auth = req.headers.authorization;
-  return auth === "Bearer " + TOKEN;
+  if (typeof auth !== "string" || !auth.startsWith("Bearer ")) return false;
+  const presented = Buffer.from(auth.slice("Bearer ".length), "utf8");
+  const expected = Buffer.from(TOKEN, "utf8");
+  if (presented.length !== expected.length) return false;
+  return timingSafeEqual(presented, expected);
 }
 
+// ADR-0059 D7 (T-6.3): a browser page on any origin can reach 127.0.0.1, so the server refuses a
+// non-loopback Host (DNS-rebinding) or a non-loopback Origin (cross-site). A native client sends
+// no Origin - those stay allowed.
+const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+function hostIsLoopback(host: string | undefined): boolean {
+  if (!host) return false;
+  const bare = host.replace(/^\[/, "[").replace(/\]:\d+$/, "]").replace(/:\d+$/, "").toLowerCase();
+  return LOOPBACK_HOSTNAMES.has(bare);
+}
+function originIsLoopback(origin: string | undefined): boolean {
+  if (!origin) return true; // no Origin = native client (allow)
+  try {
+    return LOOPBACK_HOSTNAMES.has(new URL(origin).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+// ADR-0059 D7 (T-6.3): hard body cap - refuse rather than buffer an unbounded body.
 function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let data = "";
-    req.on("data", chunk => data += chunk);
-    req.on("end", () => resolve(data));
+    let bytes = 0;
+    let tooLarge = false;
+    req.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > MAX_BODY_BYTES) {
+        // ADR-0059 D7: stop buffering but keep draining so the 413 can still be written.
+        tooLarge = true;
+        data = "";
+        return;
+      }
+      if (!tooLarge) data += chunk;
+    });
+    req.on("end", () => {
+      if (tooLarge) reject(new Error("request body exceeds " + MAX_BODY_BYTES + " bytes"));
+      else resolve(data);
+    });
+    req.on("error", (e) => reject(e));
   });
 }
 
 const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-  // CORS for local dev.
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  // ADR-0059 D7 (T-6.3): 403-before-401. Host/Origin rejection is a trust-boundary decision and
+  // must precede the auth challenge (Resilio model), so a cross-site caller never learns whether a
+  // token would have been accepted. CORS is reflected for loopback origins only - never "*".
+  const reqOrigin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
+  const reqHost = typeof req.headers.host === "string" ? req.headers.host : undefined;
+  if (!hostIsLoopback(reqHost) || !originIsLoopback(reqOrigin)) {
+    res.writeHead(403, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "forbidden: non-loopback host/origin" }));
+    return;
+  }
+  if (reqOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", reqOrigin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  }
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
   if (!authed(req)) {
@@ -196,14 +252,24 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     res.writeHead(404, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "not found" }));
   } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // ADR-0059 D7: an oversized body is a client error, not a server fault.
+    if (msg.includes("exceeds")) {
+      res.writeHead(413, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: msg }));
+      return;
+    }
     // ADR-0009 D6: fail-open.
     res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+    res.end(JSON.stringify({ error: msg }));
   }
 });
 
 server.listen(PORT, HOST, () => {
   process.stderr.write("[anysearch] Plugin server listening on http://" + HOST + ":" + PORT + "\n");
+  if (RESOLVED_TOKEN.generated) {
+    process.stderr.write("[anysearch] generated a 256-bit server token at " + RESOLVED_TOKEN.path + " (set ANS_SERVER_TOKEN to pin it)\n");
+  }
 });
 
 // Graceful shutdown.
