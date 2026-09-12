@@ -37,14 +37,17 @@ jobs:
       - name: Validate calibration labels (ADR-0048)
         run: node scripts/eval-labels.mjs validate
       - run: pnpm -w turbo check
-      - run: pnpm --filter @anysearch/kernel test
+      - name: Test — all packages (ADR-0057 D1/D2: node:test discovery, full truth)
+        run: pnpm -w turbo run test --continue=dependencies-successful
+        env:
+          NODE_OPTIONS: "--test-reporter=spec"
       - run: pnpm -w turbo build
 
       - name: Pack tarballs
         run: |
-          pnpm --filter @anysearch/mcp pack --pack-destination ../../artifacts
-          pnpm --filter @anysearch/cli pack --pack-destination ../../artifacts
-          pnpm --filter @anysearch/plugin pack --pack-destination ../../artifacts
+          pnpm --filter @anysearch/mcp pack --pack-destination artifacts
+          pnpm --filter @anysearch/cli pack --pack-destination artifacts
+          pnpm --filter @anysearch/plugin pack --pack-destination artifacts
         shell: bash
 
       - name: Smoke — apps/mcp --help and protocol handshake

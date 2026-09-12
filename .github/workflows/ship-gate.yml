@@ -50,6 +50,7 @@ jobs:
         run: node scripts/ship-gate.mjs
         env:
           CI: "true"
+          NODE_OPTIONS: "--test-reporter=spec"
 
       # ADR-0021 D4 — Layer-2 artifact upload, runs even when ship-gate fails.
       - name: upload ship-gate report

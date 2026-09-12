@@ -563,7 +563,10 @@ async function stepValidateDomains() {
 async function stepBuildAndTest() {
   report("info", "step 3/9: turbo check / test / build");
   for (const task of ["check", "test", "build"]) {
-    await run(PNPM, ["turbo", "run", task]);
+    // ADR-0057 D3: test collects the full truth across packages (one red package
+    // must not mask the others); check/build keep fail-fast semantics.
+    const args = task === "test" ? ["turbo", "run", task, "--continue=dependencies-successful"] : ["turbo", "run", task];
+    await run(PNPM, args);
     report("pass", `turbo run ${task}`);
   }
 }
