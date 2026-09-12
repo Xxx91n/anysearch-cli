@@ -27,6 +27,22 @@
       "status": "open",
       "monitoring_channel": "quarterly review + certificate-transparency/expiry watch",
       "evidence": "Domain verified live at round 58: CloudFront CNAME; Amazon wildcard cert valid to 2026-12-03; fresh status subdomain cert. Annotation block in packages/retriever/src/providers/anysearch.ts (endpoint, CNAME, confirmation date, fail-open note)."
+    },
+    {
+      "id": "defer-f16-macos-native-crash",
+      "type": "known-issue-quarantine",
+      "title": "F-16: better-sqlite3 exit-time mutex crash on darwin-arm64 (macOS ship-gate job)",
+      "source_adr": "docs/adr/0059-architecture-grill-round-58-ci-shipgate-full-green-closure-multiticket.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-12",
+      "deadline": "2026-12-31",
+      "ttl_days": 90,
+      "review_cadence": "monthly",
+      "status": "open",
+      "upstream_issue": "https://github.com/WiseLibs/better-sqlite3/issues/1514",
+      "ci_evidence": "https://github.com/Xxx91n/anysearch-cli/actions/runs/34700329763 (macos-latest job 103570831306): libc++abi: terminating due to uncaught exception of type std::__1::system_error: mutex lock failed: Invalid argument - hit in the packages/store test step AND the eval CLI spawn, on Node 22.23.2 arm64",
+      "decision_chain_state": "ADR-0059 D4 gate 1 probe DONE (crash = better-sqlite3, darwin-arm64); gate 2 Node 22 alignment applied by T-1 and did NOT fix it; gate 3 onnxruntime not implicated; exits 4 (subprocess isolation + sentinel exit code) and 5 (this ledger) remain. The workflow does NOT silently skip - the macos ship-gate job is honestly red.",
+      "monitoring_channel": "monthly CI re-run of the macos ship-gate job + upstream better-sqlite3 issue watch"
     }
   ]
 }
