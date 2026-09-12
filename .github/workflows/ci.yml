@@ -37,7 +37,7 @@ jobs:
       - name: Validate calibration labels (ADR-0048)
         run: node scripts/eval-labels.mjs validate
       - run: pnpm -w turbo check
-      - name: Test — all packages (ADR-0057 D1/D2: node:test discovery, full truth)
+      - name: "Test — all packages (ADR-0057 D1/D2: node:test discovery, full truth)"
         run: pnpm -w turbo run test --continue=dependencies-successful
         env:
           NODE_OPTIONS: "--test-reporter=spec"
