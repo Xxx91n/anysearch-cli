@@ -35,3 +35,6 @@ apps/plugin/dist/
 
 # runtime policy cache (ADR-0055)
 .anysearch-cli/
+
+# local-markdown issue tracker / round artifacts (README: not committed)
+.scratch/
