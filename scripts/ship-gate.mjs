@@ -650,8 +650,16 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     if (!pkg.name.startsWith("@anysearch/")) {
       fail(`${file}: unexpected pkg name ${pkg.name}`);
     }
-    if (!fs.existsSync(path.join(pkgDir, "dist"))) {
-      fail(`${file}: dist/ missing in tarball`);
+    // ADR-0057 T3 follow-up: only packages whose manifest points at dist/ are
+    // expected to ship one. The four source-only workspace packages
+    // (kernel / retriever / store / embedding) declare `exports: "./src/*.ts"`
+    // with no build script, so their tarball legitimately has no dist/.
+    // Asserting dist/ unconditionally made this gate unsatisfiable (4 of 7
+    // packages). Mirrors the existing "no bin" branch below.
+    const manifestForDist = JSON.stringify([pkg.files, pkg.main, pkg.module, pkg.bin, pkg.exports]);
+    const declaresDist = manifestForDist.includes("dist");
+    if (declaresDist && !fs.existsSync(path.join(pkgDir, "dist"))) {
+      fail(`${file}: dist/ declared in manifest but missing in tarball`);
     }
     if (pkg.bin && Object.keys(pkg.bin).length > 0) {
       const first = String(Object.values(pkg.bin)[0]);
