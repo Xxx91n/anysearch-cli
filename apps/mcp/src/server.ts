@@ -8,6 +8,8 @@
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch/kernel";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { TOOL_REGISTRY } from "./tools/index.js";
 
 // ponytail: single source of truth for server version. Tsup substitutes
@@ -22,7 +24,16 @@ const PKG_VERSION: string =
 // buildServer: factory function. Each connection gets a fresh server instance.
 // ADR-0008 D4: factory pattern, era-agnostic, entry selects transport.
 export function buildServer(engine?: CompositionResult): McpServer {
-  const eng = engine ?? createEngine(undefined, { dbPath: resolveDbPath() });
+  // ADR-0057 D3 (D-004): a cold HOME has no ~/.anysearch dir yet; create the DB
+  // parent before better-sqlite3 opens it (mirrors apps/cli/src/db.ts:9).
+  let eng: CompositionResult;
+  if (engine) {
+    eng = engine;
+  } else {
+    const dbPath = resolveDbPath();
+    mkdirSync(dirname(dbPath), { recursive: true });
+    eng = createEngine(undefined, { dbPath });
+  }
   const server = new McpServer(
     { name: "anysearch", version: PKG_VERSION },
     { capabilities: { tools: {} } }

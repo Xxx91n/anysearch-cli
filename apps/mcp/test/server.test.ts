@@ -2,6 +2,9 @@
 // G015 test closure: verify buildServer() creates server with registered tools.
 
 import { buildServer } from "../src/server.js";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas } from "@anysearch/kernel";
 import type { CompositionResult } from "@anysearch/kernel";
@@ -52,13 +55,31 @@ const server2 = buildServer(mockEngine);
 const server3 = buildServer(mockEngine);
 assert(server2 !== server3, "buildServer() returns new instance each call (factory pattern)");
 
-// Test 4: buildServer without engine arg (uses createEngine with try/catch providers).
-// This should not crash even without API keys.
-try {
-  const server4 = buildServer();
-  assert(server4 !== undefined, "buildServer() without engine does not crash");
-} catch (e) {
-  assert(false, "buildServer() without engine crashed: " + (e as Error).message);
+// Test 4 (ADR-0057 D3 / D-004 regression): buildServer() without an engine must
+// boot from a COLD HOME - a temp dir with no ~/.anysearch parent - proving the
+// resolveDbPath mkdir guard exists. Removing the guard turns this red.
+{
+  const coldHome = mkdtempSync(join(tmpdir(), "ans-mcp-cold-"));
+  const coldDb = join(coldHome, "nested", "missing", "anysearch.db"); // parents absent
+  const prevDb = process.env.ANS_DB_PATH;
+  const prevProfile = process.env.USERPROFILE;
+  const prevHome = process.env.HOME;
+  process.env.ANS_DB_PATH = coldDb;
+  process.env.USERPROFILE = coldHome;
+  process.env.HOME = coldHome;
+  try {
+    const server4 = buildServer();
+    assert(server4 !== undefined, "buildServer() boots with cold HOME (no ~/.anysearch)");
+    assert(existsSync(dirname(coldDb)), "cold boot created the DB parent directory");
+  } catch (e) {
+    assert(false, "buildServer() cold-HOME boot crashed: " + (e as Error).message);
+  } finally {
+    if (prevDb === undefined) delete process.env.ANS_DB_PATH; else process.env.ANS_DB_PATH = prevDb;
+    if (prevProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = prevProfile;
+    if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    // best-effort: the store keeps the sqlite handle open (Windows file lock)
+    try { rmSync(coldHome, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
 }
 
 // ADR-0019 D4 (layer-2): input validation is enforced by AJV via fromJsonSchema.
