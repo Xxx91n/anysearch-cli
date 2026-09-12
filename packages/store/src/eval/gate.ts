@@ -340,7 +340,7 @@ function allowanceCheck(
   }
 }
 
-export interface EvaluateGateOptions { look?: number; kMax?: number }
+export interface EvaluateGateOptions { look?: number; kMax?: number; quarantineActiveIds?: string[] }
 export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, opts: EvaluateGateOptions = {}): GateResult {
   if (!baseline) {
     return { verdict: "fail", exitCode: 12, warnings: [], failures: ["baseline missing — run pnpm -C packages/store eval --calibrate (review before commit, ADR-0027 D9 / ADR-0028 D1)"] };
@@ -362,7 +362,17 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
   const failures: string[] = [];
   const warnings: string[] = [];
   const m = report.metrics;
-  if (m.passRate < 1) failures.push(`passRate ${m.passRate.toFixed(3)} < 1.0 (D4: case lifecycle pass rate must be 100%)`);
+  // ADR-0027 D8 + ADR-0059 D3 (T-2/F-17): ACTIVE quarantined cases are excluded from the
+  // passRate==1 hard gate. The golden set and the dataset fingerprint are untouched — the
+  // quarantine is a policy-layer mark (zero recalibration cost).
+  const quarantine = new Set(opts.quarantineActiveIds ?? []);
+  const quarantinedFailed = report.cases.filter((c) => quarantine.has(c.id) && !c.passed).length;
+  const effectivePassRate = report.cases.length ? (m.counts.casesPassed + quarantinedFailed) / m.counts.cases : m.passRate;
+  if (effectivePassRate < 1) failures.push(`passRate ${effectivePassRate.toFixed(3)} < 1.0 (D4: case lifecycle pass rate must be 100%)`);
+  if (quarantine.size > 0) {
+    const qids = report.cases.filter((c) => quarantine.has(c.id)).map((c) => c.id);
+    warnings.push("ADR-0027 D8 quarantine active for " + qids.length + " case(s): " + qids.join(", ") + " (excluded from the passRate gate; TTL/review clock in eval-quarantine.json)");
+  }
   allowanceCheck("supersessionFails", m.counts.supExpected - m.counts.supPassed, m.counts.supExpected, baseline.allowance.supersessionFails, failures, warnings);
   allowanceCheck("quarantineFp", m.counts.fpCount, m.counts.fpEligible, baseline.allowance.quarantineFp, failures, warnings);
 

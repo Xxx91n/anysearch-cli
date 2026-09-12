@@ -30,6 +30,13 @@ All notable changes to this project are recorded here. Format follows
   (`anysearch/eval-looks@2`, append-only with a 50-row compaction cap and a preserved
   pre-compaction SHA-256); a look is written only when ANS_EVAL_LOOKS_WRITE=1, so CI and local runs
   leave the tracked file untouched. ship-gate.yml Node 24 -> 22 to match ci.yml.
+- ADR-0027 D8 / ADR-0059 D3 (T-2 / F-17, round 58): flaky-case quarantine ledger. A case that is
+  environment-flaky is quarantined by POLICY MARK (`packages/store/eval-quarantine.json`,
+  `anysearch/eval-quarantine@1`) — the golden set and the dataset fingerprint are untouched, so
+  zero recalibration cost. The gate excludes ACTIVE quarantined cases from the passRate==1 hard
+  assertion while disclosing them; 30-day TTL, weekly review, max 2 renewals, promote/retire
+  paths. The eval CLI now names the failing cases on gate failure so a CI log identifies an
+  environment flake without needing the report artifact.
 
 ### Removed
 

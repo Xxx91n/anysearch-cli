@@ -14,6 +14,7 @@ import { advanceSwitch, probeSwitchIntegrity } from "./switch-run";
 import { fixtureDefinitionHash } from "./obs-fixtures";
 import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, RELATION_GAIN_MIN_GAIN, RELATION_GAIN_LOCKED_N_CAP, OF_K_MAX, ofTable, SHIP_OVERRIDE_REASON_CODES, type EvalBaseline, type GainConclusion } from "./gate";
 import { appendLook, emptyLooksLedger, nextLook, readLooksLedger, writeLooksLedger } from "./looks-ledger";
+import { activeIds, expiredEntries, readQuarantine } from "./quarantine-ledger";
 import { SqliteObservationStore } from "../observation";
 
 function repoRoot(): string {
@@ -167,6 +168,11 @@ async function main(): Promise<number> {
   const LOOKS_LEDGER_PATH = join(root, "eval-looks.json");
   const outDir = outIdx >= 0 ? resolve(args[outIdx + 1]!) : join(root, ".ship-gate");
   const baselinePath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "eval-baseline.json");
+  // ADR-0027 D8 / ADR-0059 D3: flaky-case quarantine ledger (policy layer, next to the baseline).
+  const quarantinePath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "eval-quarantine.json");
+  const quarantine = readQuarantine(quarantinePath);
+  const quarantineActive = activeIds(quarantine, new Date().toISOString());
+  const quarantineExpired = expiredEntries(quarantine, new Date().toISOString()).map((e) => e.id);
 
   if (overrideIdx >= 0 && (!overrideReason || !(SHIP_OVERRIDE_REASON_CODES as readonly string[]).includes(overrideReason))) {
     console.error("[eval] --override requires one of: " + SHIP_OVERRIDE_REASON_CODES.join(", "));
@@ -184,8 +190,10 @@ async function main(): Promise<number> {
     let last: EvalReport | null = null;
     for (let i = 0; i < runs; i++) {
       const r = await runAll(GOLDEN_CASES);
-      if (r.metrics.passRate < 1) {
-        console.error(`[eval:calibrate] ABORT run ${i + 1}/${runs}: passRate ${r.metrics.passRate.toFixed(3)} < 1 — quarantine the flaky case before calibrating (ADR-0027 D7)`);
+      const qFailed = r.cases.filter((c) => quarantineActive.includes(c.id) && !c.passed).length;
+      const eff = r.cases.length ? (r.metrics.counts.casesPassed + qFailed) / r.metrics.counts.cases : r.metrics.passRate;
+      if (eff < 1) {
+        console.error(`[eval:calibrate] ABORT run ${i + 1}/${runs}: passRate ${eff.toFixed(3)} < 1 — quarantine the flaky case before calibrating (ADR-0027 D7)`);
         return 2;
       }
       worstSupFails = Math.max(worstSupFails, r.metrics.counts.supExpected - r.metrics.counts.supPassed);
@@ -242,7 +250,7 @@ async function main(): Promise<number> {
   mkdirSync(outDir, { recursive: true });
   let looks = readLooksLedger(looksPath);
   const look = nextLook(looks, lookKey);
-  const g = evaluateGate(report, baseline, { look });
+  const g = evaluateGate(report, baseline, { look, quarantineActiveIds: quarantineActive });
   const exitCode = g.exitCode;
 
   // ADR-0052 D5: persist the evaluation result as a representation-only
@@ -374,7 +382,13 @@ async function main(): Promise<number> {
     }, at);
     writeLooksLedger(looksPath, looks);
   }
-  const enriched = { ...report, baselineFingerprint: baseline?.fingerprint ?? null, gate: { verdict: g.verdict, exitCode, failures: g.failures, warnings: g.warnings, gainConclusion: g.gainConclusion ?? null } };
+  const enriched = {
+    ...report,
+    baselineFingerprint: baseline?.fingerprint ?? null,
+    gate: { verdict: g.verdict, exitCode, failures: g.failures, warnings: g.warnings, gainConclusion: g.gainConclusion ?? null },
+    // ADR-0059 D3: quarantine disclosure (policy layer; dataset fingerprint deliberately unchanged).
+    quarantine: { active: quarantineActive, expired: quarantineExpired, schema: quarantine.schema },
+  };
   writeFileSync(join(outDir, "eval-report.json"), JSON.stringify(enriched, null, 2) + "\n", "utf8");
   writeFileSync(join(outDir, "eval-report.md"), toMarkdown(report, baseline, g.failures, g.warnings, g.gainConclusion), "utf8");
 
@@ -385,6 +399,10 @@ async function main(): Promise<number> {
   console.log("[eval] note: allowance band advisory at current n (allowance/n < MDE) — hard gate is passRate==1 (ADR-0028 D1)");
   for (const w of g.warnings) console.warn("[eval] WARN: " + w);
   for (const x of g.failures) console.error("[eval] gate: " + x);
+  // F-17 diagnosability: name the failing cases so a CI log identifies an environment flake
+  // without needing the report artifact (ADR-0059 D3).
+  const failedCases = report.cases.filter((c) => !c.passed);
+  if (failedCases.length) console.error("[eval] failed cases: " + failedCases.map((c) => c.id + "(" + (c.failedStage ?? "-") + ")").join(", "));
   // ADR-0047 D1: --override bypasses only a publish-red gate (exit 1), never
   // fingerprint mismatch (12) or unverifiable/internal failure (2).
   return overrideIdx >= 0 && exitCode === 1 ? 0 : exitCode;
