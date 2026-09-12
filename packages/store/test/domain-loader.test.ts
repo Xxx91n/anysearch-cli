@@ -2,6 +2,12 @@
 // Self-check via assert-based demo (ponytail: no test framework).
 
 import { parseDomainToml, loadDomainFromString, loadDomainByName } from "../src/domain-loader";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+
+// ADR-0057 D1 (T5): derive the repo root from this file instead of a machine path.
+// test/ -> store/ -> packages/ -> repo root (domains/ lives at the repo root).
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -137,7 +143,7 @@ toolWhitelist = []
 async function testLoadByName() {
   // Load default.toml from domains/ directory.
   try {
-    const schema = loadDomainByName("default", "D:/Aworker/anysearch-cli");
+    const schema = loadDomainByName("default", REPO_ROOT);
     assert(schema.name === "default", "loadDomainByName: name = default");
     assert(schema.sources.enabled.length === 3, "loadDomainByName: 3 sources enabled");
     assert(schema.hooks.toolWhitelist.length === 3, "loadDomainByName: 3 hooks");
@@ -147,7 +153,7 @@ async function testLoadByName() {
 
   // Load research.toml — should have 2 sources (exa + tavily only).
   try {
-    const schema = loadDomainByName("research", "D:/Aworker/anysearch-cli");
+    const schema = loadDomainByName("research", REPO_ROOT);
     assert(schema.name === "research", "loadDomainByName: name = research");
     assert(schema.sources.enabled.length === 2, "loadDomainByName: 2 sources (exa+tavily)");
     assert(schema.sources.enabled.includes("exa"), "research includes exa");
@@ -160,7 +166,7 @@ async function testLoadByName() {
   // Non-existent domain should throw with available list.
   let threw = false;
   try {
-    loadDomainByName("nonexistent", "D:/Aworker/anysearch-cli");
+    loadDomainByName("nonexistent", REPO_ROOT);
   } catch (e: any) {
     threw = true;
     assert(e.message.includes("not found"), "error message contains 'not found'");
