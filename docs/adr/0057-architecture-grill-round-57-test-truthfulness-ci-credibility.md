@@ -15,7 +15,7 @@ Round 56/57 push-closure left AC5 (pnpm -r check/test/build clean + ship-gate, C
 - ci.yml/ship-gate.yml ran only `pnpm --filter @anysearch/kernel test` — 59/73 test files never ran in CI.
 - domain-loader.test.ts hardcoded "D:/Aworker/anysearch-cli" (3 occurrences) — tests fail on any other machine.
 - packages/embedding tests download the model from HuggingFace on first run — red offline.
-- README claims .scratch/ is not committed to git while 6 files are tracked.
+- README claims .scratch/ is not committed to git while 16 files are tracked (base feat/grill-56 tip).
 
 Per ADR-0029 scope discipline this round does ONLY test truthfulness + CI credibility. The other review findings are explicitly excluded and carried as separate rounds (engine dead config, doctor version, plugin CORS/token, api.anysearch.com ownership, eval governance freeze).
 
@@ -52,15 +52,24 @@ See "Carried-over Acceptance Criteria Closure" below.
 
 ### R1. doc-reality drift cleanup (ledger D-001)
 
-README states .scratch/ is not committed; 6 files are tracked. Align reality with the doc (untrack + hygiene commit).
+README states .scratch/ is not committed; 16 files are tracked at the base tip. Align reality with the doc (untrack + hygiene commit). Rework (audit F-1/F-2): the first hygiene commit removed only 8 of the 16; the residual 8 were untracked in a follow-up commit (rpz), leaving git ls-files .scratch empty.
 
+### E1. Incidental fix: pnpm pack --pack-destination resolves against the invocation cwd (ledger D-002/D-003; audit F-5)
+
+Discovered while making the CI test job trustworthy. `pnpm --filter X pack --pack-destination ../../artifacts` was intended to land tarballs in `<repo>/artifacts`, but a relative `--pack-destination` is resolved against the **invocation** cwd (the workspace root), not the package directory, so the tarballs landed in `D:/artifacts/` outside the workspace. `actions/upload-artifact@v4` uses `path: artifacts/*.tgz` with `if-no-files-found: error`, so the CI pack step would fail on both OSes. Fix: `--pack-destination artifacts` (commit `cb2518a`). Decisive probe: `--pack-destination zz-probe-out` run from the repo root produced `zz-probe-out/` at the repo root and nothing under `apps/mcp/`. A CI-credibility defect, in scope for this round; not an out-of-scope review cut.
+
+### E2. Incidental fix: ship-gate step 5 dist assertion made conditional on the manifest (ledger D-002; audit F-5)
+
+The gate asserted `dist/` exists in **every** tarball. Four of seven packages (kernel / retriever / store / embedding) are source-only: `exports: "./src/index.ts"`, no build script, no files/bin. Their tarballs legitimately contain no `dist/`, so the unconditional assertion made the gate unsatisfiable for 4/7 packages (`[fail] anysearch-embedding-0.1.0-rc.0.tgz: dist/ missing in tarball`). Fix: assert `dist/` only when the manifest (`files`/`main`/`module`/`bin`/`exports`) declares a dist entry, mirroring the existing no-bin branch in the same function (commit `b694a0b`). Pre-existing defect, unrelated to the runner migration. Both fixes are recorded here per ADR-0029 (undocumented incidental edits are the anti-pattern).
 ## Carried-over Acceptance Criteria Closure
 
-Closes ADR-0056 AC5: `pnpm -r check/test/build` clean + ship-gate passes (CI green). Evidence to be attached at merge: CI run link (turbo test, ubuntu+windows), ship-gate log, 73/73 test-file execution record. ADR-0056 receives a single status-pointer line "AC5: CLOSED by ADR-0057 (2026-09-12)" and its body stays unmodified (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). deferred-registry gains one AC5 entry marked closed-by: ADR-0057.
+Closes ADR-0056 AC5: `pnpm -r check/test/build` clean + ship-gate passes (CI green). Evidence to be attached at merge: CI run link (turbo test, ubuntu+windows), ship-gate log, 81-file (73 .test.ts + 8 .test.mjs) execution record. ADR-0056 receives a single status-pointer line "AC5: CLOSED by ADR-0057 (2026-09-12)" and its body stays unmodified (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). deferred-registry gains one AC5 entry marked closed-by: ADR-0057.
 
+
+**Atomicity of the three legs (audit P2 / rework F-4).** The legs do not sit in one commit: the ADR-0057 document and the ADR-0056 pointer line were introduced by `a76598d` (tip of `feat/grill-56-session-id-propagation`), while the deferred-registry entry lives in `027226d` (on `fix/grill-57-test-truthfulness`). They are atomic within one PR unit: `fix/grill-57-test-truthfulness` is stacked directly above `feat/grill-56-session-id-propagation` in the same GitButler stack, and `but pr new <top-branch>` publishes the stack with stack metadata (PR bases), so the legs merge together and cannot land half-applied. Adjudication: stack-internal atomicity is the operative reading of atomic same PR for this round.
 ## Acceptance Criteria (ledger D-007)
 
-1. Mechanism: 73/73 test files execute in CI on ubuntu+windows; the chain-based membership-exclusion mechanism is structurally gone. (D-002)
+1. Mechanism: the node:test glob discovers 81 test files (73 .test.ts + 8 store .test.mjs); all execute in CI on ubuntu+windows; the chain-based membership-exclusion mechanism is structurally gone. (D-002)
 2. Zero unregistered red: every red test is fixed / todo-with-issue / deleted-with-justification; no silent skip. (D-003)
 3. Green CI: ci.yml and ship-gate.yml both green via `turbo run test --continue=dependencies-successful`. (D-002/D-003)
 4. Network sealing: embedding default suite fully stubbed; test:online explicitly gated; `turbo test` green offline. (D-005)
