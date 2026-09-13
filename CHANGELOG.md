@@ -4,6 +4,24 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-14 — ADR-0061 r60: docs 域 walking skeleton（T1/B1）
+
+### Added
+
+- `domains/docs.toml`：首个垂直域（技术文档检索）。语料一手 allowlist：modelcontextprotocol.io / typescriptlang.org / pnpm.io（D-004 首批实例化）。
+- `eval-looks.json` 顶层 `golden` 集合（schema `anysearch/docs-golden@1`）：首批 11 条全真源提问（8 internal-dogfood + 3 external-community），逐条 provenance 可回访；OF 账本 looks[] 语义不变，读写路径保透传（looks-ledger.ts / eval cli calibrate）。
+- `eval-looks.coverage.json`（schema `anysearch/eval-looks-coverage@1`）：八维切片 manifest，covered×7 + deferred×1（injection，entryTrigger 挂 B4）。
+- `packages/store/src/eval/docs-golden.ts`：条目 schema + 八维词汇 + manifest/交叉校验器。
+- `loadDomainByNameIn` + `defaultDomainsDirs`（domain-loader.ts）：多目录解析链；`createEngine` 新增 `opts.domainsDirs`；`domainTomlPath` 增可选附加目录。
+- `apps/cli/src/config-env.ts`：config.env 共享读写 + 入口 rehydrate（`ans domain` 持久化从此对全命令生效，显式 env/空串不被覆盖）。
+- `apps/cli/src/db.ts` `domainSearchDirs()`：ANS_DOMAINS_DIR → cwd/domains → 包内建 domains → 仓根 domains 的解析链。
+- `ans doctor` 新增 `[5] Domains` 段：解析链逐目录发现 + 逐 TOML 校验 + 活动域五下游层（sources/skills/hooks/prompts/rag）可见。
+- @anysearch/cli 打包 domains/（files + build 期 sync-domains.mjs 从仓根同步）；测试：eval-docs-golden.test.ts（27 断言）、domain-loader.test.ts 链路用例、e2e doctor [5] 断言。
+
+### Fixed
+
+- 安装后 `ans` 因 shebang `#!/usr/bin/env tsx` 无法启动（tsx 非运行依赖）——walking skeleton 首次实装暴露；改 `#!/usr/bin/env node`。
+
 ## 2026-09-02 — ADR-0043 r42: consumed/synthetic switch governance implemented
 
 ### Added

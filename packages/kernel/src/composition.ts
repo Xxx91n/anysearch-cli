@@ -10,7 +10,8 @@ import type { SearchProvider } from "@anysearch/retriever";
 import { RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort } from "./ports";
 import {
-  loadDomainByName,
+  defaultDomainsDirs,
+  loadDomainByNameIn,
   SqliteObservationStore,
   SqliteSessionStore,
   readActiveCalibrationBundle,
@@ -80,14 +81,17 @@ export function resolveActiveAttributionCalibration(
   }
 }
 
-export function createEngine(domain?: string, opts?: { dbPath?: string; attributionCalibration?: AttributionCalibration }): CompositionResult {
+export function createEngine(domain?: string, opts?: { dbPath?: string; attributionCalibration?: AttributionCalibration; domainsDirs?: string[] }): CompositionResult {
   let providers: SearchProvider[] = [];
   let config: DomainConfigPort | undefined;
   let sourceWeights: Record<string, number> | undefined;
 
   if (domain) {
     try {
-      const schema = loadDomainByName(domain);
+      // ADR-0061 B1: resolution chain — caller-supplied domains dirs (builtin package
+      // dir etc.) then the ANS_DOMAINS_DIR/CWD defaults. Missing domain stays
+      // fail-open full-fanout; schema errors keep today's semantics.
+      const schema = loadDomainByNameIn(domain, opts?.domainsDirs ?? defaultDomainsDirs());
       config = schema as DomainConfigPort;
       const enabled = schema.sources.enabled;
       sourceWeights = schema.sources.weights;

@@ -2,9 +2,10 @@
 // Seam 5 composition root: wires providers + store + engine for diagnostic.
 
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch/retriever/providers";
-import { loadDomainFromString } from "@anysearch/store";
+import { loadDomain, loadDomainFromString } from "@anysearch/store";
+import { domainSearchDirs } from "../db";
 import { SqliteSessionStore } from "@anysearch/store";
-import { readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -103,6 +104,50 @@ export async function runDoctor(): Promise<number> {
     check("  " + key, true, val ? "set" : "not set (optional)");
   }
   check("  ANS_DOMAIN", true, process.env.ANS_DOMAIN || "not set (default)");
+
+  // 5. ADR-0061 B1 (T1 "五端联动 doctor 可见"): discover real domains/*.toml on the
+  // resolution chain, validate each, and show the active domain's five downstream
+  // layers a domain switch links (sources/skills/hooks/prompts/rag — CONTEXT.md).
+  console.log("[5] Domains:");
+  const found = new Map<string, string>(); // toml file name -> its domains dir
+  for (const dir of domainSearchDirs()) {
+    try {
+      for (const f of readdirSync(dir)) {
+        if (f.endsWith(".toml") && !found.has(f)) found.set(f, dir);
+      }
+    } catch { /* dir absent on this chain link */ }
+  }
+  if (found.size === 0) {
+    check("  discovery", false, "no domains/*.toml found on the resolution chain");
+  }
+  for (const [f, dir] of found) {
+    try {
+      const s = loadDomain(path.join(dir, f));
+      check("  " + f.replace(/\.toml$/, ""), s.name.length > 0, dir);
+    } catch (e: any) {
+      check("  " + f, false, String(e?.message || e).slice(0, 80));
+    }
+  }
+  const activeName = process.env.ANS_DOMAIN || "default";
+  const activeEntry = [...found].find(([f]) => f === activeName + ".toml");
+  if (!activeEntry) {
+    check("  active domain '" + activeName + "'", false, "not found on the resolution chain (silent full-fanout)");
+  } else {
+    try {
+      const s = loadDomain(path.join(activeEntry[1], activeEntry[0]));
+      console.log("  active: " + s.name + "  (resolved from " + activeEntry[1] + ")");
+      check("    sources.enabled", s.sources.enabled.length > 0, s.sources.enabled.join(","));
+      check("    skills.active", true, s.skills.active.join(",") || "none");
+      check("    hooks.toolWhitelist", true, s.hooks.toolWhitelist.length + " tools");
+      check("    prompts", true, (s.prompts?.length ?? 0) + " entries");
+      check("    rag.adapter", s.rag.adapter.length > 0, s.rag.adapter);
+      if (s.sources.urlAllowlist?.length) {
+        console.log("    urlAllowlist: " + s.sources.urlAllowlist.join(", "));
+      }
+    } catch (e: any) {
+      check("  active domain '" + activeName + "'", false, String(e?.message || e).slice(0, 80));
+    }
+  }
 
   console.log("---");
   console.log("Result: " + passed + " passed, " + skipped + " skipped, " + failed + " failed");

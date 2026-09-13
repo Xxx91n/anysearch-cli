@@ -6,7 +6,7 @@
 // allow = union across layers (D2); deny is a first-class independent channel evaluated last.
 
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync , existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadDomain } from "./domain-loader";
 import { HOSTNAME_RE, type DomainSchema } from "./domain-schema";
@@ -104,8 +104,20 @@ export function loadPolicyFromToml(tomlPath: string, env?: NodeJS.ProcessEnv): U
 }
 
 // Domain TOML path convention shared by CLI/MCP/plugin-server composition roots.
-export function domainTomlPath(cwd: string = process.cwd(), name: string = process.env.ANS_DOMAIN || "default"): string {
-  return join(cwd, "domains", name + ".toml");
+// ADR-0061 B1: optional extra domains dirs (e.g. the builtin dir shipped inside the
+// CLI package) are probed after the CWD convention; first existing file wins.
+export function domainTomlPath(
+  cwd: string = process.cwd(),
+  name: string = process.env.ANS_DOMAIN || "default",
+  extraDomainsDirs: string[] = [],
+): string {
+  const primary = join(cwd, "domains", name + ".toml");
+  if (existsSync(primary)) return primary;
+  for (const dir of extraDomainsDirs) {
+    const candidate = join(dir, name + ".toml");
+    if (existsSync(candidate)) return candidate;
+  }
+  return primary;
 }
 
 // D4/D5 structured atomic write: tmp + rename.

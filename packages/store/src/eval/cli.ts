@@ -231,7 +231,10 @@ async function main(): Promise<number> {
     writeFileSync(baselinePath, JSON.stringify(next, null, 2) + "\n", "utf8");
     // ADR-0059 D2: calibration flips the fingerprint pair, so the pre-registered OF look ledger
     // resets. The ledger is the git-committed repo-root file; commit the reset with the baseline.
-    writeLooksLedger(LOOKS_LEDGER_PATH, emptyLooksLedger());
+    // ADR-0061 D2: the reset must not destroy the docs-domain golden batch that
+    // shares this file — read-then-write preserves the golden collection.
+    const priorLooks = readLooksLedger(LOOKS_LEDGER_PATH);
+    writeLooksLedger(LOOKS_LEDGER_PATH, { ...emptyLooksLedger(), ...(priorLooks.golden ? { golden: priorLooks.golden } : {}) });
     console.log(`[eval:calibrate] baseline written: fingerprint=${next.fingerprint} allowance sup<=${next.allowance.supersessionFails} qfp<=${next.allowance.quarantineFp} relationGain sigmaDU=${next.relationGain!.sigmaDU} lockedN=${next.relationGain!.lockedN} (rawN=${next.relationGain!.rawN}, pilot n=${pilotDeltas.length})`);
     return 0;
   }

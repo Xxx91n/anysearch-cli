@@ -1,7 +1,10 @@
 // Domain Loader test (G005). smol-toml parse + domain-schema resolve/validate.
 // Self-check via assert-based demo (ponytail: no test framework).
 
-import { parseDomainToml, loadDomainFromString, loadDomainByName } from "../src/domain-loader";
+import { parseDomainToml, loadDomainFromString, loadDomainByName, loadDomainByNameIn } from "../src/domain-loader";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import os from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 

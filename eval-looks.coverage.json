@@ -1,0 +1,80 @@
+{
+  "schema": "anysearch/eval-looks-coverage@1",
+  "domain": "docs",
+  "recordedAt": "2026-09-14",
+  "dimensions": [
+    {
+      "dimension": "intent",
+      "status": "covered",
+      "count": 11,
+      "classes": {
+        "factoid": 1,
+        "howto": 3,
+        "troubleshoot": 3,
+        "comparison": 1,
+        "reference": 3
+      }
+    },
+    {
+      "dimension": "source-tier",
+      "status": "covered",
+      "count": 10,
+      "classes": {
+        "spec": 3,
+        "reference": 3,
+        "settings": 3
+      }
+    },
+    {
+      "dimension": "freshness",
+      "status": "covered",
+      "count": 11,
+      "classes": {
+        "stable": 6,
+        "active": 3,
+        "supersede-event": 3
+      }
+    },
+    {
+      "dimension": "lang",
+      "status": "covered",
+      "count": 11,
+      "classes": {
+        "zh": 7,
+        "en": 4
+      }
+    },
+    {
+      "dimension": "attribution",
+      "status": "covered",
+      "count": 10,
+      "classes": {
+        "claim": 9,
+        "domain": 1
+      }
+    },
+    {
+      "dimension": "hops",
+      "status": "covered",
+      "count": 11,
+      "classes": {
+        "single": 10,
+        "multi": 1
+      }
+    },
+    {
+      "dimension": "negative",
+      "status": "covered",
+      "count": 1,
+      "classes": {
+        "abstain": 1
+      }
+    },
+    {
+      "dimension": "adversarial",
+      "status": "deferred",
+      "entryTrigger": "docs 域真实流量中首次注入尝试，或 B4 badcase 回灌带入账",
+      "owner": "B4"
+    }
+  ]
+}

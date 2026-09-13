@@ -30,6 +30,7 @@ Thumbs.db
 .anysearch/
 apps/plugin/dist/
 *.tgz
+apps/cli/domains/
 .codex-tmp/
 
 .model-cache/

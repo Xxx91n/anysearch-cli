@@ -1,4 +1,340 @@
 {
   "schema": "anysearch/eval-looks@2",
-  "looks": []
+  "looks": [],
+  "golden": {
+    "schema": "anysearch/docs-golden@1",
+    "entries": [
+      {
+        "id": "docs-g0001",
+        "domain": "docs",
+        "question": "MCP 的 session id 在 Streamable HTTP transport 里怎么传播？",
+        "questionLang": "zh",
+        "intent": "reference",
+        "expected": {
+          "verdict": "answer",
+          "mustHitHosts": [
+            "modelcontextprotocol.io"
+          ],
+          "mustHitUrls": [
+            "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+          ],
+          "minResults": 1
+        },
+        "dimensions": [
+          "intent:reference",
+          "source-tier:spec",
+          "freshness:stable",
+          "lang:zh",
+          "attribution:claim",
+          "hops:single"
+        ],
+        "provenance": {
+          "type": "internal-dogfood",
+          "ref": "docs/adr/0056-architecture-grill-round-56-session-id-propagation-protocol.md",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "ADR-0056 session-id propagation work; apps/plugin propagation.test.ts is the in-repo evidence"
+      },
+      {
+        "id": "docs-g0002",
+        "domain": "docs",
+        "question": "pnpm-workspace.yaml 的 pmOnFail 和 package.json 的 devEngines.packageManager 怎么配合钉死 pnpm 版本？",
+        "questionLang": "zh",
+        "intent": "howto",
+        "expected": {
+          "verdict": "answer",
+          "mustHitHosts": [
+            "pnpm.io"
+          ],
+          "mustHitUrls": [
+            "https://pnpm.io/settings"
+          ],
+          "minResults": 1
+        },
+        "dimensions": [
+          "intent:howto",
+          "source-tier:settings",
+          "freshness:active",
+          "lang:zh",
+          "attribution:claim",
+          "hops:single"
+        ],
+        "provenance": {
+          "type": "internal-dogfood",
+          "ref": "docs/adr/0026-architecture-grill-round-23-pnpm-version-pinning-v11-pmonfail-error.md",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "ADR-0026 pinning work; repo package.json devEngines + pnpm-workspace.yaml pmOnFail in-repo"
+      },
+      {
+        "id": "docs-g0003",
+        "domain": "docs",
+        "question": "better-sqlite3 不想跑 node-gyp，pnpm 怎么只放行它的 prebuild、不跑安装脚本？",
+        "questionLang": "zh",
+        "intent": "troubleshoot",
+        "expected": {
+          "verdict": "answer",
+          "mustHitHosts": [
+            "pnpm.io"
+          ],
+          "mustHitUrls": [
+            "https://pnpm.io/settings"
+          ],
+          "minResults": 1
+        },
+        "dimensions": [
+          "intent:troubleshoot",
+          "source-tier:settings",
+          "freshness:active",
+          "lang:zh",
+          "attribution:claim",
+          "hops:single"
+        ],
+        "provenance": {
+          "type": "internal-dogfood",
+          "ref": "AGENTS.md",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "AGENTS.md platform note (allowBuilds better-sqlite3) + pnpm-workspace.yaml in-repo"
+      },
+      {
+        "id": "docs-g0004",
+        "domain": "docs",
+        "question": "tsconfig 的 moduleResolution \"bundler\" 和 \"nodenext\" 区别是什么？",
+        "questionLang": "zh",
+        "intent": "comparison",
+        "expected": {
+          "verdict": "answer",
+          "mustHitHosts": [
+            "www.typescriptlang.org"
+          ],
+          "mustHitUrls": [
+            "https://www.typescriptlang.org/tsconfig"
+          ],
+          "minResults": 1
+        },
+        "dimensions": [
+          "intent:comparison",
+          "source-tier:reference",
+          "freshness:stable",
+          "lang:zh",
+          "attribution:claim",
+          "hops:single"
+        ],
+        "provenance": {
+          "type": "internal-dogfood",
+          "ref": "apps/cli/tsconfig.json",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "all 8 repo tsconfigs use moduleResolution Bundler + paths to ../../packages/*/src"
+      },
+      {
+        "id": "docs-g0005",
+        "domain": "docs",
+        "question": "MCP 规范里 HTTP+SSE transport 是不是已经被 Streamable HTTP 取代了？",
+        "questionLang": "zh",
+        "intent": "factoid",
+        "expected": {
+          "verdict": "answer",
+          "mustHitHosts": [
+            "modelcontextprotocol.io"
+          ],
+          "mustHitUrls": [
+            "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+          ],
+          "minResults": 1
+        },
+        "dimensions": [
+          "intent:factoid",
+          "source-tier:spec",
+          "freshness:supersede-event",
+          "lang:zh",
+          "attribution:claim",
+          "hops:single"
+        ],
+        "provenance": {
+          "type": "internal-dogfood",
+          "ref": ".github/workflows/conformance.yml",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "repo runs @modelcontextprotocol/conformance weekly; SSE deprecation is a real spec supersede event (2025-03-26)"
+      },
+      {
+        "id": "docs-g0006",
+        "domain": "docs",
+        "question": "Where does tsc write the .tsbuildinfo file when incremental is true?",
+        "questionLang": "en",
+        "intent": "reference",
+        "expected": {
+          "verdict": "answer",
+          "mustHitHosts": [
+            "www.typescriptlang.org"
+          ],
+          "mustHitUrls": [
+            "https://www.typescriptlang.org/tsconfig"
+          ],
+          "minResults": 1
+        },
+        "dimensions": [
+          "intent:reference",
+          "source-tier:reference",
+          "freshness:stable",
+          "lang:en",
+          "attribution:claim",
+          "hops:single"
+        ],
+        "provenance": {
+          "type": "internal-dogfood",
+          "ref": ".gitignore",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "repo gitignores *.tsbuildinfo across the turbo monorepo"
+      },
+      {
+        "id": "docs-g0007",
+        "domain": "docs",
+        "question": "tokio::JoinSet 怎么给检索 fanout 做结构化并发？",
+        "questionLang": "zh",
+        "intent": "howto",
+        "expected": {
+          "verdict": "abstain"
+        },
+        "dimensions": [
+          "intent:howto",
+          "lang:zh",
+          "freshness:stable",
+          "hops:single",
+          "negative:abstain"
+        ],
+        "provenance": {
+          "type": "internal-dogfood",
+          "ref": ".scratch/grill-round-59/q3-prompt.md",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "real out-of-corpus question: CONTEXT.md:9 claimed tokio::JoinSet for a TS codebase; tokio docs outside allowlist → expect abstain"
+      },
+      {
+        "id": "docs-g0008",
+        "domain": "docs",
+        "question": "pnpm monorepo 里子包 tsconfig 用 paths 指到 workspace 包源码时，moduleResolution 该配什么？",
+        "questionLang": "zh",
+        "intent": "howto",
+        "expected": {
+          "verdict": "answer",
+          "mustHitHosts": [
+            "pnpm.io",
+            "www.typescriptlang.org"
+          ],
+          "minResults": 1
+        },
+        "dimensions": [
+          "intent:howto",
+          "source-tier:reference",
+          "freshness:stable",
+          "lang:zh",
+          "attribution:domain",
+          "hops:multi"
+        ],
+        "provenance": {
+          "type": "internal-dogfood",
+          "ref": "apps/cli/tsconfig.json",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "real config decision embodied by this repo: paths -> ../../packages/*/src under a pnpm workspace"
+      },
+      {
+        "id": "docs-g0009",
+        "domain": "docs",
+        "question": "Option 'baseUrl' is deprecated and will stop functioning in TypeScript 7 — How can I fix this error?",
+        "questionLang": "en",
+        "intent": "troubleshoot",
+        "expected": {
+          "verdict": "answer",
+          "mustHitHosts": [
+            "www.typescriptlang.org"
+          ],
+          "mustHitUrls": [
+            "https://www.typescriptlang.org/tsconfig"
+          ],
+          "minResults": 1
+        },
+        "dimensions": [
+          "intent:troubleshoot",
+          "source-tier:reference",
+          "freshness:supersede-event",
+          "lang:en",
+          "attribution:claim",
+          "hops:single"
+        ],
+        "provenance": {
+          "type": "external-community",
+          "ref": "https://stackoverflow.com/questions/79923194",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "verbatim SO question title+ask (score 23, answered); fetched via Stack Exchange API 2026-09-14"
+      },
+      {
+        "id": "docs-g0010",
+        "domain": "docs",
+        "question": "Mark SSE transport as deprecated",
+        "questionLang": "en",
+        "intent": "reference",
+        "expected": {
+          "verdict": "answer",
+          "mustHitHosts": [
+            "modelcontextprotocol.io"
+          ],
+          "mustHitUrls": [
+            "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+          ],
+          "minResults": 1
+        },
+        "dimensions": [
+          "intent:reference",
+          "source-tier:spec",
+          "freshness:supersede-event",
+          "lang:en",
+          "attribution:claim",
+          "hops:single"
+        ],
+        "provenance": {
+          "type": "external-community",
+          "ref": "https://github.com/modelcontextprotocol/python-sdk/issues/2278",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "verbatim GH issue title; body documents HTTP+SSE → Streamable HTTP supersede (spec 2025-03-26)"
+      },
+      {
+        "id": "docs-g0011",
+        "domain": "docs",
+        "question": "npm→pnpm migration: silent breakage when pnpm.onlyBuiltDependencies allowlist is removed (native modules like better-sqlite3 stop building without warning)",
+        "questionLang": "en",
+        "intent": "troubleshoot",
+        "expected": {
+          "verdict": "answer",
+          "mustHitHosts": [
+            "pnpm.io"
+          ],
+          "mustHitUrls": [
+            "https://pnpm.io/settings"
+          ],
+          "minResults": 1
+        },
+        "dimensions": [
+          "intent:troubleshoot",
+          "source-tier:settings",
+          "freshness:active",
+          "lang:en",
+          "attribution:claim",
+          "hops:single"
+        ],
+        "provenance": {
+          "type": "external-community",
+          "ref": "https://github.com/pnpm/pnpm/issues/12749",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "verbatim GH issue title; same better-sqlite3 surface as docs-g0003"
+      }
+    ]
+  }
 }

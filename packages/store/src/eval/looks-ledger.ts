@@ -36,6 +36,9 @@ export interface LooksLedger {
   schema: string;
   looks: LooksLedgerEntry[];
   compaction?: LooksLedgerCompaction;
+  // ADR-0061 D2: the docs-domain golden batch shares this file as a top-level
+  // collection. Writers must round-trip it — dropping it is silent data loss.
+  golden?: import("./docs-golden").DocsGoldenSet;
 }
 
 export function emptyLooksLedger(): LooksLedger {
@@ -55,7 +58,7 @@ export function readLooksLedger(file: string): LooksLedger {
   } catch {
     return emptyLooksLedger();
   }
-  const j = parsed as { schema?: unknown; looks?: unknown; compaction?: unknown };
+  const j = parsed as { schema?: unknown; looks?: unknown; compaction?: unknown; golden?: unknown };
   if (!j || typeof j !== "object" || !Array.isArray(j.looks)) return emptyLooksLedger();
   const looks: LooksLedgerEntry[] = [];
   for (const raw of j.looks as Array<Record<string, unknown>>) {
@@ -73,6 +76,7 @@ export function readLooksLedger(file: string): LooksLedger {
     schema: typeof j.schema === "string" ? j.schema : LOOKS_LEDGER_LEGACY_SCHEMA,
     looks,
     ...(j.compaction && typeof j.compaction === "object" ? { compaction: j.compaction as LooksLedgerCompaction } : {}),
+    ...(j.golden && typeof j.golden === "object" ? { golden: j.golden as import("./docs-golden").DocsGoldenSet } : {}),
   };
 }
 
@@ -83,8 +87,11 @@ export function nextLook(ledger: LooksLedger, key: string): number {
 // Append one peek row; compact when the cap is exceeded, preserving the pre-compaction hash.
 export function appendLook(ledger: LooksLedger, entry: LooksLedgerEntry, now: string): LooksLedger {
   const rows = [...ledger.looks, entry];
+  // ADR-0061 D2: the docs-domain golden batch shares this file — carry it through
+  // every write or appendLook becomes silent data loss.
+  const carry = ledger.golden ? { golden: ledger.golden } : {};
   if (rows.length <= LOOKS_LEDGER_MAX_ROWS) {
-    return { schema: LOOKS_LEDGER_SCHEMA, looks: rows, ...(ledger.compaction ? { compaction: ledger.compaction } : {}) };
+    return { schema: LOOKS_LEDGER_SCHEMA, looks: rows, ...(ledger.compaction ? { compaction: ledger.compaction } : {}), ...carry };
   }
   const preCompactionHash = hashRows(rows);
   const dropped = rows.length - LOOKS_LEDGER_MAX_ROWS;
@@ -92,6 +99,7 @@ export function appendLook(ledger: LooksLedger, entry: LooksLedgerEntry, now: st
     schema: LOOKS_LEDGER_SCHEMA,
     looks: rows.slice(-LOOKS_LEDGER_MAX_ROWS),
     compaction: { at: now, droppedRows: dropped, preCompactionHash, cap: LOOKS_LEDGER_MAX_ROWS },
+    ...carry,
   };
 }
 

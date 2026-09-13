@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env node
 // anysearch-cli entry - vertical agent for information retrieval.
 // Seam 5: CLI composition root. Packages are wired here.
 // Composition root: provider registry + store + engine injected per command.
@@ -20,6 +20,7 @@ import { runConsolidate } from "./commands/consolidate";
 import { runAccessChain } from "./commands/access-chain";
 import { runSwitchState } from "./commands/switch-state";
 import { runHitl } from "./commands/hitl";
+import { rehydrateConfigEnv } from "./config-env";
 
 // ponytail: single source of truth for CLI version, same pattern as apps/mcp
 // (ADR-0020 D3). tsup injects __PACKAGE_VERSION__ at build time.
@@ -87,6 +88,10 @@ if (!known.has(cmd)) {
 
 // Composition root: dispatch to command implementation.
 // Each command receives remaining args and returns exit code.
+// ADR-0061 B1: `ans domain <name>` persists to ~/.anysearch/config.env — rehydrate
+// it into env (only where unset) so the active domain actually reaches search/chat/etc.
+rehydrateConfigEnv();
+
 const cmdArgs = argv.slice(1);
 const handlers: Record<string, (args: string[]) => Promise<number>> = {
   doctor: runDoctor,

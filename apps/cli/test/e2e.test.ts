@@ -66,6 +66,9 @@ async function t(name: string, fn: () => Promise<void>) {
     for (const marker of ["[OK]", "Result:", "passed"]) {
       assert.ok(r.out.includes(marker), "missing " + marker);
     }
+    // ADR-0061 B1: doctor surfaces the real domains section + the docs domain.
+    assert.ok(r.out.includes("[5] Domains"), "missing domains section");
+    assert.ok(r.out.includes("docs"), "docs domain not listed");
   });
 
   await t("llm (no args) prints provider list, exit 0", async () => {

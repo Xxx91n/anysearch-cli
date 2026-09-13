@@ -79,3 +79,38 @@ export function loadDomainByName(
   }
   return loadDomain(tomlPath, lookup);
 }
+
+// ADR-0061 B1: domains-dir resolution chain. Each entry IS a domains directory
+// (contains <name>.toml directly). Lets an installed CLI find the builtin
+// domains shipped inside the package while CWD stays the first-class override.
+export function loadDomainByNameIn(
+  name: string,
+  domainsDirs: string[],
+  lookup?: (name: string) => RawDomain | undefined,
+): DomainSchema {
+  const seen = new Set<string>();
+  for (const dir of domainsDirs) {
+    const tomlPath = join(dir, name + ".toml");
+    if (seen.has(tomlPath)) continue;
+    seen.add(tomlPath);
+    if (existsSync(tomlPath)) return loadDomain(tomlPath, lookup);
+  }
+  const all = domainsDirs.flatMap((dir) => {
+    try {
+      return readdirSync(dir).filter((x: string) => x.endsWith(".toml"));
+    } catch {
+      return [] as string[];
+    }
+  });
+  const available = [...new Set(all.map((x) => x.replace(/\.toml$/, "")))].join(", ");
+  throw new Error("Domain not found: " + name + (available ? " (available: " + available + ")" : ""));
+}
+
+// Default domains-dir chain: ANS_DOMAINS_DIR (a directory containing tomls
+// directly), then the CWD convention dir.
+export function defaultDomainsDirs(env: NodeJS.ProcessEnv = process.env): string[] {
+  const dirs: string[] = [];
+  if (env.ANS_DOMAINS_DIR?.trim()) dirs.push(env.ANS_DOMAINS_DIR.trim());
+  dirs.push(join(process.cwd(), DOMAINS_DIR));
+  return dirs;
+}
