@@ -39,4 +39,10 @@ apps/cli/domains/
 .anysearch-cli/
 
 # local-markdown issue tracker / round artifacts (README: not committed)
-.scratch/
+.scratch/*
+# ADR-0061: round-60 账本/任务书/报告属治理产物随票入版本（D5c: tracked 必须 not-ignored；
+# 须 .scratch/* 而非 .scratch/——父目录整体排除后子路径无法再纳回）。
+!.scratch/grill-round-60/
+!.scratch/grill-round-60/**
+# 构建产物/安装前缀仍忽略（pack 输出 + 干净装 node_modules 不入库）
+.scratch/grill-round-60/t1-pack/
