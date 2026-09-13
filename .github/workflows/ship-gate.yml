@@ -32,7 +32,10 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
+      # round-59 audit R-1: the evidence-anchor assertion resolves non-tip history commits
+      # (`git cat-file -e`), which a default shallow checkout cannot do - fetch full history.
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
 
       - uses: pnpm/setup@v2 # ADR-0026 D6: reads packageManager (11.24.0) automatically
         with:
@@ -111,4 +114,6 @@ jobs:
 
       - name: memory eval (golden gate, ADR-0027/0028)
         if: ${{ steps.changes.outputs.run == '1' }}
-        run: pnpm -C packages/store eval
+        # round-59 audit R-2: the golden gate runs the offline slice; the vector-arm slice is
+        # re-established by the test-online job in ci.yml.
+        run: pnpm -C packages/store eval --offline

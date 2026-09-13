@@ -70,3 +70,24 @@ jobs:
           name: tarballs-${{ matrix.os }}
           path: artifacts/*.tgz
           if-no-files-found: error
+
+  # round-59 audit R-2 / ADR-0060 D7 + ADR-0057 r59 errata: the vector-arm golden cases left
+  # the offline default suite (the gate runs --offline); this job re-establishes that coverage
+  # with network access, so the anti-downgrade clause has automated support.
+  test-online:
+    name: test:online (vector-arm slice, network required)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/setup@v2
+        with: { install: false }
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --ignore-scripts
+      - name: vector-arm golden cases (store test:online)
+        run: pnpm -C packages/store test:online
+        env:
+          NODE_OPTIONS: "--test-reporter=spec"

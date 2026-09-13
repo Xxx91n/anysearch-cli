@@ -596,7 +596,13 @@ function stepSupersessionIntegrity() {
       if (!targetFile) fail("supersession-integrity: " + f + " points at ADR-" + targetNum + ", which has no file in docs/adr");
       const sourceNum = f.match(/^(\d{3,4})-/)[1];
       const targetText = fs.readFileSync(path.join(adrDir, targetFile), "utf8");
-      if (!new RegExp("ADR-" + sourceNum + "\\b").test(targetText)) {
+      // round-59 audit R-6: a back-reference must ASSERT the supersession relationship, not
+      // merely mention the ADR (nor use the noun "supersession"). Require ADR-<source> and a
+      // supersession VERB ("superseded by" / "supersedes") on the same line.
+      const srcLine = new RegExp("ADR-" + sourceNum + "\\b");
+      const supersedes = /superseded?\s+by|supersedes/i;
+      const backRef = targetText.split("\\n").some((l) => srcLine.test(l) && supersedes.test(l));
+      if (!backRef) {
         fail("supersession-integrity: " + f + " is superseded by ADR-" + targetNum + ", but " + targetFile + " carries no back-reference to ADR-" + sourceNum);
       }
       checked++;
@@ -620,27 +626,35 @@ function stepContextWiring() {
   const rrf = fs.readFileSync(path.join(ROOT, "packages", "retriever", "src", "rrf.ts"), "utf8");
   const ctx = fs.readFileSync(path.join(ROOT, "CONTEXT.md"), "utf8");
 
-  // L1 numeric (bidirectional)
+  // round-59 audit R-4/R-5: scope the numeric + negative assertions to the Retroaererd Engine
+  // term itself, not the whole glossary - a match elsewhere (e.g. an unrelated `k=NN` in another
+  // term) must neither satisfy nor violate THIS term's contract.
+  const termStart = ctx.indexOf("## Retroaererd Engine");
+  if (termStart < 0) fail("CONTEXT wiring: '## Retroaererd Engine' term not found in CONTEXT.md");
+  const termEnd = ctx.indexOf("\n## ", termStart + 1);
+  const term = ctx.slice(termStart, termEnd < 0 ? ctx.length : termEnd);
+
+  // L1 numeric (bidirectional, term-scoped)
   for (const field of ["minProviders", "minResults", "minDomains"]) {
     const src = new RegExp(field + ":\\s*(\\d+)").exec(eng);
     if (!src) fail("CONTEXT wiring L1: " + field + " not found in engine.ts - update this assertion");
-    const got = new RegExp(field + "=(\\d+)").exec(ctx);
-    if (!got) fail("CONTEXT wiring L1: CONTEXT.md does not declare " + field + " (source=" + src[1] + ")");
-    if (got[1] !== src[1]) fail("CONTEXT wiring L1: CONTEXT.md declares " + field + "=" + got[1] + " but engine.ts has " + src[1] + " - regenerate the term");
+    const got = new RegExp(field + "=(\\d+)").exec(term);
+    if (!got) fail("CONTEXT wiring L1: the Retroaererd term does not declare " + field + " (source=" + src[1] + ")");
+    if (got[1] !== src[1]) fail("CONTEXT wiring L1: the term declares " + field + "=" + got[1] + " but engine.ts has " + src[1] + " - regenerate the term");
   }
   const ceSrc = /crossEngineVerify:\s*(true|false)/.exec(eng);
   if (!ceSrc) fail("CONTEXT wiring L1: crossEngineVerify not found in engine.ts DEFAULT_GATE");
-  const ceCtx = /crossEngineVerify=(true|false)/.exec(ctx);
-  if (!ceCtx || ceCtx[1] !== ceSrc[1]) fail("CONTEXT wiring L1: CONTEXT.md declares crossEngineVerify=" + (ceCtx ? ceCtx[1] : "absent") + " but engine.ts has " + ceSrc[1]);
+  const ceTerm = /crossEngineVerify=(true|false)/.exec(term);
+  if (!ceTerm || ceTerm[1] !== ceSrc[1]) fail("CONTEXT wiring L1: the term declares crossEngineVerify=" + (ceTerm ? ceTerm[1] : "absent") + " but engine.ts has " + ceSrc[1]);
   const kf = /k_fusion:\s*Object\.freeze\(\{\s*memory:\s*(\d+),\s*web:\s*(\d+)/.exec(reg);
   if (!kf) fail("CONTEXT wiring L1: k_fusion not found in fusion-registry.ts - update this assertion");
   const kSrc = [kf[1], kf[2]];
-  const kCtx = [...ctx.matchAll(/k=(\d+)/g)].map((m) => m[1]);
+  const kTerm = [...term.matchAll(/k=(\d+)/g)].map((m) => m[1]);
   for (const k of kSrc) {
-    if (!kCtx.includes(k)) fail("CONTEXT wiring L1: CONTEXT.md does not declare k=" + k + " (fusion-registry k_fusion)");
+    if (!kTerm.includes(k)) fail("CONTEXT wiring L1: the term does not declare k=" + k + " (fusion-registry k_fusion)");
   }
-  for (const k of new Set(kCtx)) {
-    if (!kSrc.includes(k)) fail("CONTEXT wiring L1: CONTEXT.md declares k=" + k + " which is not in fusion-registry k_fusion {" + kSrc.join(",") + "} - regenerate the term");
+  for (const k of new Set(kTerm)) {
+    if (!kSrc.includes(k)) fail("CONTEXT wiring L1: the term declares k=" + k + " which is not in fusion-registry k_fusion {" + kSrc.join(",") + "} - regenerate the term");
   }
 
   // L2 symbol existence at the definition site
@@ -652,20 +666,27 @@ function stepContextWiring() {
     }
   }
 
-  // L3 negative over-claim assertions (retired claim strings must not return)
+  // L3 negative over-claim assertions, term-scoped (round-59 audit R-4): the retired claim
+  // strings must not return to the term. Both the hyphenated and the spaced spelling are listed
+  // so the guard cannot be defeated by a spelling variant. Non-ASCII is built from char codes to
+  // keep this file ASCII-clean.
   const GE = String.fromCharCode(0x2265);
+  const FULL_L = String.fromCharCode(0xff08);
+  const IDEO_COMMA = String.fromCharCode(0x3001);
+  const FULL_R = String.fromCharCode(0xff09);
   const retired = [
     "tokio::JoinSet",
     GE + "4 angles",
     GE + "6 fetches",
     "serialized sufficiency-gate",
-    "bounded budget" + String.fromCharCode(0xff08) + "token-cap" + String.fromCharCode(0x3001) + "usd-cap" + String.fromCharCode(0xff09),
+    "serialized sufficiency gate",
+    "bounded budget" + FULL_L + "token-cap" + IDEO_COMMA + "usd-cap" + FULL_R,
     "Resume Anchoring on timeout/crash",
   ];
   for (const bad of retired) {
-    if (ctx.includes(bad)) fail("CONTEXT wiring L3: CONTEXT.md re-claims a retired fact (" + bad + ") - ADR-0060 D3");
+    if (term.includes(bad)) fail("CONTEXT wiring L3: the Retroaererd term re-claims a retired fact (" + bad + ") - ADR-0060 D3");
   }
-  report("pass", "CONTEXT.md term wiring: L1 numeric + L2 symbols + L3 negative over-claim green (ADR-0060 D3)");
+  report("pass", "CONTEXT.md Retroaererd term wiring: L1 numeric + L2 symbols + L3 negative over-claim green (ADR-0060 D3)");
 }
 
 // ADR-0060 D5 (T-3): evidence anchors must resolve. Every backtick-quoted bare 40-hex git
@@ -675,29 +696,52 @@ function stepContextWiring() {
 // stdlib-only.
 function stepEvidenceAnchors() {
   report("info", "step 1f/9: ADR evidence-anchor resolvability (ADR-0060 D5)");
+  // round-59 audit R-1: `git cat-file -e` on a non-tip history commit needs the full object DB,
+  // so a SHALLOW clone is explicitly unverifiable (exit 2), never a misleading red. CI checks out
+  // with fetch-depth: 0 (.github/workflows/ship-gate.yml).
+  const shallow = spawnSync("git", ["rev-parse", "--is-shallow-repository"], { cwd: ROOT, encoding: "utf8" });
+  if (shallow.error) failUnverifiable("evidence-anchor: git rev-parse could not spawn (" + String(shallow.error.message) + ")");
+  if (shallow.status !== 0) failUnverifiable("evidence-anchor: git rev-parse --is-shallow-repository failed (exit " + shallow.status + ")");
+  if ((shallow.stdout ?? "").trim() === "true") {
+    failUnverifiable("evidence-anchor: the repository is a SHALLOW clone, so non-tip history commits cannot be resolved - check out with fetch-depth: 0 (CI: .github/workflows/ship-gate.yml) before running the gate");
+  }
   const adrDir = path.join(ROOT, "docs", "adr");
   const files = fs.readdirSync(adrDir).filter((f) => f.endsWith(".md")).sort();
-  let checked = 0;
+  let resolved = 0;
   let whitelisted = 0;
+  let external = 0;
   for (const f of files) {
     const lines = fs.readFileSync(path.join(adrDir, f), "utf8").split(/\r?\n/);
     lines.forEach((line, i) => {
-      const re = /`([0-9a-f]{40})`/g;
+      // round-59 audit R-8: scan any backtick-quoted token CONTAINING a 40-hex run, so a prefixed
+      // form (e.g. owner/repo@sha) can no longer hide from the regex. Three forms are lawful: a
+      // bare 40-hex SHA (must resolve), a permalink URL (external reference, reported), or a
+      // reference marked [squashed] (per-reference marker immediately after the token).
+      const re = /`([^`]*)`/g;
       let m;
       while ((m = re.exec(line))) {
-        const sha = m[1];
-        if (/\[squashed\]/.test(line)) { whitelisted++; continue; }
-        const res = spawnSync("git", ["cat-file", "-e", sha + "^{commit}"], { cwd: ROOT, encoding: "utf8" });
+        const token = m[1];
+        // round-59 audit: only a DELIMITED 40-hex run counts as a git reference. A 64-hex
+        // sha256 digest contains no delimited 40-hex run, so it is correctly ignored (the
+        // first cut of this scan false-positived on ADR-0045's sha256).
+        if (!/(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])/.test(token)) continue;
+        const after = line.slice(m.index + m[0].length, m.index + m[0].length + 48);
+        if (after.includes("[squashed]")) { whitelisted++; continue; }
+        if (/^https?:\/\//.test(token)) { external++; continue; }
+        if (!/^[0-9a-f]{40}$/.test(token)) {
+          fail("evidence-anchor: " + f + ":" + (i + 1) + " quotes an unrecognized git-reference form `" + token + "` - use a bare 40-hex SHA (resolvable), a full permalink URL (external), or mark it [squashed]");
+        }
+        const res = spawnSync("git", ["cat-file", "-e", token + "^{commit}"], { cwd: ROOT, encoding: "utf8" });
         if (res.error) failUnverifiable("evidence-anchor: git cat-file could not spawn for " + f + ":" + (i + 1) + " (" + String(res.error.message) + ")");
         if (res.status !== 0) {
-          fail("evidence-anchor: " + f + ":" + (i + 1) + " quotes " + sha + " but `git cat-file -e` cannot resolve it - re-anchor (PR number / permalink / path+line) or mark it [squashed]");
+          fail("evidence-anchor: " + f + ":" + (i + 1) + " quotes " + token + " but `git cat-file -e` cannot resolve it - re-anchor (PR number / permalink / path+line) or mark it [squashed]");
         }
-        checked++;
+        resolved++;
       }
     });
   }
-  if (checked + whitelisted === 0) fail("evidence-anchor: no 40-hex git reference found in docs/adr - the assertion would pass vacuously");
-  report("pass", "evidence-anchor: " + checked + " resolvable 40-hex reference(s), " + whitelisted + " [squashed]-whitelisted");
+  if (resolved + whitelisted + external === 0) fail("evidence-anchor: no 40-hex git reference found in docs/adr - the assertion would pass vacuously");
+  report("pass", "evidence-anchor: " + resolved + " resolvable 40-hex reference(s), " + external + " external permalink(s), " + whitelisted + " [squashed]-whitelisted");
 }
 
 // ADR-0059 D5 (T-4): three permanent invariants run FIRST, including under --quick, so a release
@@ -956,7 +1000,10 @@ async function stepMemoryEval() {
   report("info", "step 7/9: memory eval harness gate (ADR-0027)");
   const outDir = path.join(ROOT, ".ship-gate");
   fs.mkdirSync(outDir, { recursive: true });
-  const evalArgs = ["--import", "tsx", path.join("src", "eval", "cli.ts"), "--out", outDir];
+  // round-59 audit R-2 / ADR-0060 D7: the gate is offline-deterministic. The vector-arm slice
+  // is excluded here (it needs the embedding model) and re-established by the CI test-online job
+  // (.github/workflows/ci.yml). The dataset fingerprint is unaffected (runAll keeps it full).
+  const evalArgs = ["--import", "tsx", path.join("src", "eval", "cli.ts"), "--out", outDir, "--offline"];
   if (overrideReason !== undefined) evalArgs.push("--override", overrideReason);
   // ADR-0059 D2 (F-15): regular CI/merge runs are observational grade; decision grade is reserved
   // for the release workflow (release.yml). No --decision here, and no OF look is ever consumed.
