@@ -6,7 +6,7 @@
 "Agent 此刻被专精到哪个领域"的权威单元。切换 Active Domain 会同时联动以下五个下游层：Hooks Tool Whitelist、Prompt Skill Selection、Skill Active List、Info Source Whitelist、RAG Adapter。持有一份 TOML。对应经典工程术语 Software Product Line 的 variation-point selection（ISO/IEC 26580:2021）。
 
 ## Retroaererd Engine（检索专精引擎）
-anysearch-cli 的内核：bounded budget（token-cap、usd-cap）、serialized sufficiency-gate（≥4 angles / ≥6 fetches / ≥3 domains / cross-engine verify）、tokio::JoinSet fanout + RRF(k=60) consensus fusion、cross-engine verify、Resume Anchoring on timeout/crash。其 spec 直接采用 paperfoot search-cli 的 RRF + Mole 的预算强制 + atomcode research 协议——作为 spec 不作为运行时依赖（atomcode 是已商业化的外部产品）。
+anysearch-cli 的内核（检索专精引擎）。机器事实（claim = wiring）：per-call 预算 reserve-then-settle 已接线（engine.ts:250-264）；token-cap / usd-cap 两维当前仅类型占位、尚未接线（ports.ts:9-13，ADR-0060 D3）；sufficiency gate 阈值为 minProviders=2 / minResults=5 / minDomains=3 / crossEngineVerify=true（engine.ts:25-29），post-hoc 判定；RRF 融合 k=60，memory / web 两臂各自注册（FUSION_REGISTRY.k_fusion）；cross-engine verify 已接线（checkCrossEngine，engine.ts:480）。设计灵感（非实现承诺）：paperfoot search-cli 的 RRF、Mole 的预算强制、atomcode research 协议，仅作 spec 参考；atomcode 为已商业化的外部产品，非运行时依赖。超时/崩溃续跑锚点：未实现，无对应代码（remove-or-implement，见 `docs/ponytail-debt-ledger.md` 与 ADR-0060 D6）。
 
 ## Info Source Provider（信息源头供应方）
 一个具体供应方实现，满足 `search` / `chat` / `recommend` 调用面，对接单一检索后端（anysearch 内部通道、Exa、Tavily、Brave，或企业内部数据源 via RAG Adapter）。每个 Active Domain 的 `[sources]` 决定启用哪几个供应方与融合权重。

@@ -571,6 +571,135 @@ function stepDocClaims() {
   report("pass", "engine grace-window debt note present; CONTEXT.md does not over-claim (ADR-0014)");
 }
 
+// ADR-0060 D1 (T-1): supersession integrity, two-sided (armory pattern). An Accepted record is
+// corrected only by supersession; the forward pointer ("Status: Superseded by ADR-NNNN") must
+// resolve to an existing ADR file AND that target must carry the back-reference. A one-sided
+// pointer is exactly how the round-59 rot (an Accepted ADR describing a parallel universe)
+// stayed invisible. Fail-closed, stdlib-only.
+function stepSupersessionIntegrity() {
+  report("info", "step 1d/9: ADR supersession integrity (ADR-0060 D1)");
+  const adrDir = path.join(ROOT, "docs", "adr");
+  const files = fs.readdirSync(adrDir).filter((f) => f.endsWith(".md")).sort();
+  const byNum = new Map();
+  for (const f of files) {
+    const m = f.match(/^(\d{3,4})-/);
+    if (m) byNum.set(m[1], f);
+  }
+  let checked = 0;
+  for (const f of files) {
+    const text = fs.readFileSync(path.join(adrDir, f), "utf8");
+    const re = /^\s*Status:\s*Superseded by ADR-(\d{3,4})/gm;
+    let m;
+    while ((m = re.exec(text))) {
+      const targetNum = m[1];
+      const targetFile = byNum.get(targetNum);
+      if (!targetFile) fail("supersession-integrity: " + f + " points at ADR-" + targetNum + ", which has no file in docs/adr");
+      const sourceNum = f.match(/^(\d{3,4})-/)[1];
+      const targetText = fs.readFileSync(path.join(adrDir, targetFile), "utf8");
+      if (!new RegExp("ADR-" + sourceNum + "\\b").test(targetText)) {
+        fail("supersession-integrity: " + f + " is superseded by ADR-" + targetNum + ", but " + targetFile + " carries no back-reference to ADR-" + sourceNum);
+      }
+      checked++;
+    }
+  }
+  if (checked === 0) fail("supersession-integrity: no \"Status: Superseded by ADR-NNNN\" pointer found - the assertion would pass vacuously");
+  report("pass", "supersession-integrity: " + checked + " supersession pointer(s) resolve with a back-reference");
+}
+
+// ADR-0060 D3 (T-2): CONTEXT.md terms are Diataxis Reference - the body may state only machine
+// facts, and every stated value must resolve to source wiring. Three layers, all fail-closed:
+//   L1 numeric  - values CONTEXT declares must equal values parsed from source (bidirectional:
+//                 change the source without changing CONTEXT and this goes red).
+//   L2 symbol   - the symbols the term names must exist at their definition sites.
+//   L3 negative - over-claim assertions only (a claim is not a wiring; only the absence of the
+//                 retired claim strings is assertable). Mirrors the stepDocClaims pattern.
+function stepContextWiring() {
+  report("info", "step 1e/9: CONTEXT.md term wiring (ADR-0060 D3)");
+  const eng = fs.readFileSync(path.join(ROOT, "packages", "kernel", "src", "engine.ts"), "utf8");
+  const reg = fs.readFileSync(path.join(ROOT, "packages", "retriever", "src", "fusion-registry.ts"), "utf8");
+  const rrf = fs.readFileSync(path.join(ROOT, "packages", "retriever", "src", "rrf.ts"), "utf8");
+  const ctx = fs.readFileSync(path.join(ROOT, "CONTEXT.md"), "utf8");
+
+  // L1 numeric (bidirectional)
+  for (const field of ["minProviders", "minResults", "minDomains"]) {
+    const src = new RegExp(field + ":\\s*(\\d+)").exec(eng);
+    if (!src) fail("CONTEXT wiring L1: " + field + " not found in engine.ts - update this assertion");
+    const got = new RegExp(field + "=(\\d+)").exec(ctx);
+    if (!got) fail("CONTEXT wiring L1: CONTEXT.md does not declare " + field + " (source=" + src[1] + ")");
+    if (got[1] !== src[1]) fail("CONTEXT wiring L1: CONTEXT.md declares " + field + "=" + got[1] + " but engine.ts has " + src[1] + " - regenerate the term");
+  }
+  const ceSrc = /crossEngineVerify:\s*(true|false)/.exec(eng);
+  if (!ceSrc) fail("CONTEXT wiring L1: crossEngineVerify not found in engine.ts DEFAULT_GATE");
+  const ceCtx = /crossEngineVerify=(true|false)/.exec(ctx);
+  if (!ceCtx || ceCtx[1] !== ceSrc[1]) fail("CONTEXT wiring L1: CONTEXT.md declares crossEngineVerify=" + (ceCtx ? ceCtx[1] : "absent") + " but engine.ts has " + ceSrc[1]);
+  const kf = /k_fusion:\s*Object\.freeze\(\{\s*memory:\s*(\d+),\s*web:\s*(\d+)/.exec(reg);
+  if (!kf) fail("CONTEXT wiring L1: k_fusion not found in fusion-registry.ts - update this assertion");
+  const kSrc = [kf[1], kf[2]];
+  const kCtx = [...ctx.matchAll(/k=(\d+)/g)].map((m) => m[1]);
+  for (const k of kSrc) {
+    if (!kCtx.includes(k)) fail("CONTEXT wiring L1: CONTEXT.md does not declare k=" + k + " (fusion-registry k_fusion)");
+  }
+  for (const k of new Set(kCtx)) {
+    if (!kSrc.includes(k)) fail("CONTEXT wiring L1: CONTEXT.md declares k=" + k + " which is not in fusion-registry k_fusion {" + kSrc.join(",") + "} - regenerate the term");
+  }
+
+  // L2 symbol existence at the definition site
+  const defs = [[eng, "DEFAULT_GATE"], [eng, "checkCrossEngine"], [reg, "FUSION_REGISTRY"], [rrf, "rrfRank"]];
+  for (const pair of defs) {
+    const sym = pair[1];
+    if (!new RegExp("(const|function)\\s+" + sym + "\\b").test(pair[0])) {
+      fail("CONTEXT wiring L2: symbol " + sym + " not defined where the term points - update the term/assertion");
+    }
+  }
+
+  // L3 negative over-claim assertions (retired claim strings must not return)
+  const GE = String.fromCharCode(0x2265);
+  const retired = [
+    "tokio::JoinSet",
+    GE + "4 angles",
+    GE + "6 fetches",
+    "serialized sufficiency-gate",
+    "bounded budget" + String.fromCharCode(0xff08) + "token-cap" + String.fromCharCode(0x3001) + "usd-cap" + String.fromCharCode(0xff09),
+    "Resume Anchoring on timeout/crash",
+  ];
+  for (const bad of retired) {
+    if (ctx.includes(bad)) fail("CONTEXT wiring L3: CONTEXT.md re-claims a retired fact (" + bad + ") - ADR-0060 D3");
+  }
+  report("pass", "CONTEXT.md term wiring: L1 numeric + L2 symbols + L3 negative over-claim green (ADR-0060 D3)");
+}
+
+// ADR-0060 D5 (T-3): evidence anchors must resolve. Every backtick-quoted bare 40-hex git
+// reference in docs/adr must resolve via `git cat-file -e`, or carry an explicit `[squashed]`
+// marker (SPDX NOASSERTION-style honest unknown). A non-zero git exit is itself fail-closed
+// (round-58 audit C-2 discipline). Refs pinned as owner/repo@sha are external and out of scope.
+// stdlib-only.
+function stepEvidenceAnchors() {
+  report("info", "step 1f/9: ADR evidence-anchor resolvability (ADR-0060 D5)");
+  const adrDir = path.join(ROOT, "docs", "adr");
+  const files = fs.readdirSync(adrDir).filter((f) => f.endsWith(".md")).sort();
+  let checked = 0;
+  let whitelisted = 0;
+  for (const f of files) {
+    const lines = fs.readFileSync(path.join(adrDir, f), "utf8").split(/\r?\n/);
+    lines.forEach((line, i) => {
+      const re = /`([0-9a-f]{40})`/g;
+      let m;
+      while ((m = re.exec(line))) {
+        const sha = m[1];
+        if (/\[squashed\]/.test(line)) { whitelisted++; continue; }
+        const res = spawnSync("git", ["cat-file", "-e", sha + "^{commit}"], { cwd: ROOT, encoding: "utf8" });
+        if (res.error) failUnverifiable("evidence-anchor: git cat-file could not spawn for " + f + ":" + (i + 1) + " (" + String(res.error.message) + ")");
+        if (res.status !== 0) {
+          fail("evidence-anchor: " + f + ":" + (i + 1) + " quotes " + sha + " but `git cat-file -e` cannot resolve it - re-anchor (PR number / permalink / path+line) or mark it [squashed]");
+        }
+        checked++;
+      }
+    });
+  }
+  if (checked + whitelisted === 0) fail("evidence-anchor: no 40-hex git reference found in docs/adr - the assertion would pass vacuously");
+  report("pass", "evidence-anchor: " + checked + " resolvable 40-hex reference(s), " + whitelisted + " [squashed]-whitelisted");
+}
+
 // ADR-0059 D5 (T-4): three permanent invariants run FIRST, including under --quick, so a release
 // verdict can never be produced from a broken workflow file, a dirty tree, or a drifted ignore set.
 // NOTE on (c): the ledger wrote the command as `git ls-files -z --ignored --exclude-standard`,
@@ -1211,6 +1340,9 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
   stepStaticAssertions();
   stepAdrIndex();
   stepDocClaims();
+  stepSupersessionIntegrity();
+  stepContextWiring();
+  stepEvidenceAnchors();
   await stepValidateDomains();
   if (!quick) { reportStep("step_2_turbo"); await stepBuildAndTest(); }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-ship-gate-"));

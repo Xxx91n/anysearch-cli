@@ -16,7 +16,7 @@ Adopt Anthropic "context engineering" as the total frame for the existing archit
 
 ### D2 Semantic Pin
 
-Pin `open-telemetry/semantic-conventions-genai` at commit `b5d8440f6f126738fd50f927752cd669772c517b` (2026-09-09). Record `open-telemetry/semantic-conventions` tag `v1.42.0` (`ae3a98640194ed405c4c797281502e4d3bd258b3`) as the last versioned GenAI snapshot before the conventions moved to the dedicated repository. MCP semantics are introduced in tag `v1.39.0` (`6d05e92070f0a5c9a5bbcd396d2ebe2103377f8c`). Implementation must carry a tested-with table for semantic repo commit, OTel SDK, exporter, and local backend, and must not claim a stable GenAI namespace.
+Pin `open-telemetry/semantic-conventions-genai@b5d8440f6f126738fd50f927752cd669772c517b` (2026-09-09). Record `open-telemetry/semantic-conventions` tag `v1.42.0` (`open-telemetry/semantic-conventions@ae3a98640194ed405c4c797281502e4d3bd258b3`) as the last versioned GenAI snapshot before the conventions moved to the dedicated repository. MCP semantics are introduced in tag `v1.39.0` (`open-telemetry/semantic-conventions@6d05e92070f0a5c9a5bbcd396d2ebe2103377f8c`). Implementation must carry a tested-with table for semantic repo commit, OTel SDK, exporter, and local backend, and must not claim a stable GenAI namespace.
 
 ### D3 Local-First Observation Asset
 
