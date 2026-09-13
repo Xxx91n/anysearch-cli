@@ -40,7 +40,7 @@ Active Domain 的一种特殊值 `domain="code"`。本模式下 CLI 软依赖用
 Retroaererd Engine 的 budget enforcement 机制：reserve-then-settle ledger，在 packages/store 的 SQLite schema 中以非负约束固化。搜索前预留 budget（token-cap / usd-cap / time-limit），搜索后结算，0% overshoot。参考 Mole 的 DB schema 层非负约束模式。Budget 归 store 层职责（资源消耗），kernel 保持纯编排逻辑。
 
 ## Sufficiency Gate（充分性门禁）
-Retroaererd Engine 的质量下界：sufficiency gate（post-hoc 判定）确保每次检索满足最低质量阈值（角度数 / 抓取次数 / 域名数 / 交叉引擎验证）。参考 atomcode research 协议 + TeamLoop sufficiency loop。实现位置在 retriever fanout 层（够数即收；grace-window 早停尚未接线，属 ADR-0014 记录的 ponytail 债），与 budget enforcement（store 层上界）在三个维度互不打架：上界（budget）/ 下界（sufficiency）/ 延迟（fanout 收敛）。
+Retroaererd Engine 的质量下界：sufficiency gate（post-hoc 判定）确保每次检索满足最低质量阈值（角度数 / 抓取次数 / 域名数 / 交叉引擎验证）。参考 atomcode research 协议 + TeamLoop sufficiency loop。实现位置在 retriever fanout 层（够数即收；grace-window 早停已接线（pool 覆盖 maxResults 个唯一 URL 后给 straggler 一个 graceWindowMs 再 abort，deepMode 恒等全部；ADR-0061 G1 交付，此前为 ADR-0014 记录的 ponytail 债）），与 budget enforcement（store 层上界）在三个维度互不打架：上界（budget）/ 下界（sufficiency）/ 延迟（fanout 收敛）。
 
 ## Anysearch Plugin（anysearch 独属插件）
 最终商业化形态：一个 anysearch 独属的 context-mode 理念插件（MCP server + hooks + 沙箱子进程 + FTS5 索引 + Think in Code），内置 anysearch CLI 指令，能配置进各种 Agent。与 context-mode（mksglu）同一个心智模型理念，但是 anysearch 独属、可商业化的产品。前期先做 CLI 验证可行性，后期再包成插件分发。

@@ -4,7 +4,7 @@
 // 1.5s grace window, abort_all + drain, providers_cancelled distinct state, RRF(k=60) fusion.
 // JS adaptation: Promise.allSettled + AbortController + unique-URL counter early stop.
 
-import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger } from "@anysearch/retriever";
+import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope } from "@anysearch/retriever";
 import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved } from "@anysearch/retriever";
 import { randomUUID } from "node:crypto";
 import type { Budget, Query, RetrieverPort } from "./ports";
@@ -268,19 +268,43 @@ export class RetroaererdEngine {
     const controllers = allProviders.map(() => new AbortController());
     const providerIds = allProviders.map((p) => p.id);
 
-    // Fire all providers in parallel (atomcode research: attributed tasks).
+    // ADR-0061 G1: graceWindowMs / deepMode are wired now (was ADR-0014/ADR-0059 debt).
+    // Each provider outcome lands in out[i] on arrival. Once the fused pool covers
+    // q.maxResults unique URLs, stragglers get graceWindowMs, then their controllers
+    // abort and they surface as providersCancelled. deepMode never cancels (waits all).
+    // A rejected provider counts as arrived — failure is a completed fanout answer.
+    type ProviderOutcome =
+      | { provider: string; status: "fulfilled"; envelope: ProviderEnvelope }
+      | { provider: string; status: "rejected"; error: string };
+    const out: Array<ProviderOutcome | null> = new Array(allProviders.length).fill(null);
+    const uniqueUrls = new Set<string>();
+    const needed = Math.max(1, q.maxResults ?? 10);
+    let graceResolve: () => void = () => {};
+    const graceExpired = new Promise<void>((r) => { graceResolve = r; });
+    let graceArmed = false;
     const promises = allProviders.map((p, i) =>
       p.search(q, controllers[i].signal)
-        .then((env) => ({ provider: p.id, status: "fulfilled" as const, envelope: env }))
-        .catch((err) => ({ provider: p.id, status: "rejected" as const, error: String(err) })),
+        .then((env) => {
+          out[i] = { provider: p.id, status: "fulfilled", envelope: env };
+          for (const r of env.results ?? []) uniqueUrls.add(r.url);
+          if (!deepMode && !graceArmed && uniqueUrls.size >= needed) {
+            graceArmed = true;
+            setTimeout(() => {
+              for (let j = 0; j < controllers.length; j++) if (out[j] == null) controllers[j].abort();
+              graceResolve();
+            }, graceWindow).unref();
+          }
+        })
+        .catch((err) => {
+          out[i] = { provider: p.id, status: "rejected", error: String(err) };
+        }),
     );
 
-    // Enough-results-then-collect: wait for all OR grace window after enough unique results.
-    // ponytail: for MVP, use Promise.allSettled without early-cancel complexity.
-    // atomcode research: deep mode = wait all (allSettled equivalent).
-    // Non-deep mode = allSettled + check after, cancelled = none arrived in time.
-    // Full grace-window abort would need a custom race; keeping MVP simple.
-    const settled = await Promise.allSettled(promises);
+    // Wait for every provider, or for the grace window once enough unique results exist.
+    await Promise.race([Promise.all(promises).then(() => undefined), graceExpired]);
+    // Cancelled = queried but still unsettled when the grace window closed.
+    // Array.prototype.map skips sparse holes — fill(null) keeps every slot materialized.
+    const collected: Array<ProviderOutcome | "cancelled"> = out.map((w) => w ?? "cancelled");
 
     // Collect results into per-provider URL lists for RRF.
     const providerLists: string[][] = [];
@@ -295,12 +319,16 @@ export class RetroaererdEngine {
     // ADR-0022 D3: per-provider attribution in metadata, not in answers[].
     const providerAnswers: ProviderAnswer[] = [];
 
-    for (let i = 0; i < settled.length; i++) {
-      const s = settled[i];
+    for (let i = 0; i < collected.length; i++) {
+      const s = collected[i];
       providersQueried.push(providerIds[i]);
-      if (s.status === "fulfilled") {
-        // Inner promise fulfilled -> check provider result.
-        const inner = (s as PromiseFulfilledResult<{ provider: string; status: string; envelope?: any; error?: string }>).value;
+      if (s === "cancelled") {
+        providersCancelled.push(providerIds[i]);
+        continue;
+      }
+      {
+        // Inner outcome: provider resolved (fulfilled) or threw (rejected).
+        const inner = s;
         if (inner.status === "fulfilled" && inner.envelope) {
           const urls: string[] = [];
           const native: Record<string, number> = {};
@@ -353,13 +381,10 @@ export class RetroaererdEngine {
         } else if (inner.status === "rejected") {
           providersFailed.push(providerIds[i]);
         }
-      } else {
-        providersFailed.push(providerIds[i]);
       }
     }
 
-    // Cancelled = queried but neither fulfilled nor failed (should not happen with allSettled, but keep for API).
-    // atomcode research: providers_cancelled = set difference.
+    // providersCancelled now populated by the grace window above (was always-empty debt).
 
     // ADR-0006 decision 2C: settle per-call budget — actual = successful providers.
     if (hasLedger) {

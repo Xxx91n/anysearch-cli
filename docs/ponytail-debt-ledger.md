@@ -3,7 +3,6 @@
 Auto-generated from ponytail: comments across the repo.
 Each entry: file:line | debt description | upgrade trigger
 
-packages/kernel/src/engine.ts:97 | MVP uses Promise.allSettled without early-cancel. Full grace-window abort needs custom race. | Upgrade when latency matters
 apps/cli/src/commands/skill.ts:2 | MVP stub. Skill install from SearchCLI pattern deferred. | Implement when pi-agent-core lands
 apps/cli/src/commands/recommend.ts:2 | MVP stub. Domain recommendation engine deferred. | Implement when domain recommendation logic is designed
 packages/retriever/src/providers/tavily.ts | AbortSignal not forwarded (SDK lacks support) | Add when @tavily/core exposes signal
@@ -26,7 +25,8 @@ packages/kernel/src/memory-pipeline.ts:116 | LOW_WATERMARK_TOKENS = 128_000 hard
 | @modelcontextprotocol/server (built-in normalizeRawShapeSchema) | zod 4.0-4.1 fallback: SDK emits one-time `[mcp-sdk]` warn via its own capability detection; descriptions drop relative to 4.2+. No kernel-side guard needed — SDK is the single point of truth. | Resolved when v1 maintenance window closes (2027-01-01, ADR-0008 D5) and dual-era conformance matrix confirms 4.2+ only. Visited 2026-08-21 in R16-3 — SDK公允 message confirmed in source. |
 | docs/ponytail-debt-ledger.md | No review-by column exists for time-boxed debts. ADR-0018 D6 requires it as the operation-side companion to ADR Review-by clauses. | Add review-by column to all unresolved time-boxed rows when MCP SDK v1 EOL (2027-01-01, ADR-0008 D5) approaches. |
 
-## Resolved (no longer debt) — round 16 audit additions
+## Resolved (no longer debt)
+- packages/kernel/src/engine.ts graceWindowMs/deepMode dead config — DELIVERED in ADR-0061 G1 (round 60). The fanout now does real enough-results-then-collect: once the fused pool covers `q.maxResults` unique URLs, stragglers get `graceWindowMs` then their per-provider AbortControllers fire; `deepMode` waits for every provider. Cancelled providers surface in `metadata.providersCancelled` (previously always-empty). Sentinels flipped: ship-gate step1c + t6-hostile-cuts now assert the wired state; CONTEXT.md updated. — round 16 audit additions
 - Mirror-schema drift risk between kernel TypeBox source-of-truth and hand-written plain JSON - FIXED in round 16 audit. `tool-json-schemas.ts` now derives `KernelJsonSchemas` from `KernelToolSchemas` via `JSON.parse(JSON.stringify(...))`. Single-source-of-truth; no correction-sync between two files. TypeBox source adds `additionalProperties: false` so derived JSON stays closed. See docs/adr/0019 amendment note below.
 
 ## Resolved (no longer debt)

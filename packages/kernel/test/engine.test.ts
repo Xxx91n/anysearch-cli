@@ -260,7 +260,55 @@ async function main() {
   }).search({ query: "health", mode: "answer" });
   assert(degraded.attribution?.claims[0]?.label === "uncertain", "degraded calibration falls back to legacy floor");
 
-  console.log("--- RetroaererdEngine tests: " + passed + " passed, " + failed + " failed ---");
+  
+// --- ADR-0061 G1: wired grace window (was ADR-0014/ADR-0059 dead-config debt) ---
+function slowProvider(id: string, delayMs: number, urls: string[], aborted: {v:boolean}): SearchProvider {
+  return {
+    id,
+    modes: ["fast"],
+    async search(_req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {
+      await new Promise<void>((res, rej) => {
+        const t = setTimeout(res, delayMs);
+        signal.addEventListener("abort", () => { aborted.v = true; clearTimeout(t); rej(new Error("aborted")); });
+      });
+      const results: NormalizedResult[] = urls.map((url, i) => ({ url, title: id + " r" + i, snippet: "s", source: id }));
+      return { provider: id, results, answers: [], elapsedMs: delayMs };
+    },
+  };
+}
+{
+  // Fast provider alone covers maxResults -> slow straggler is aborted after grace.
+  const aborted = { v: false };
+  const eng = new RetroaererdEngine([
+    mockProvider("fast", ["https://a.com/1", "https://a.com/2", "https://a.com/3", "https://a.com/4"]),
+    slowProvider("slow", 500, ["https://slow.com/x"], aborted),
+  ]);
+  const r = await eng.search({ query: "g", mode: "fast", maxResults: 3 }, { graceWindowMs: 30 });
+  assert(r.metadata.providersCancelled.includes("slow"), "grace window: straggler reported cancelled");
+  assert(aborted.v, "grace window: straggler AbortController fired");
+  assert(r.results.length >= 3, "grace window: fast provider results kept");
+
+  // deepMode: never cancel — the same slow provider's results arrive.
+  const aborted2 = { v: false };
+  const eng2 = new RetroaererdEngine([
+    mockProvider("fast", ["https://a.com/1", "https://a.com/2", "https://a.com/3", "https://a.com/4"]),
+    slowProvider("slow", 200, ["https://slow.com/x"], aborted2),
+  ]);
+  const r2 = await eng2.search({ query: "g", mode: "fast", maxResults: 3 }, { graceWindowMs: 30, deepMode: true });
+  assert(r2.metadata.providersCancelled.length === 0, "deepMode: nobody cancelled");
+  assert(r2.metadata.providersQueried.includes("slow") && r2.results.some((x) => x.url.includes("slow.com")), "deepMode: slow provider results arrived");
+  assert(!aborted2.v, "deepMode: no abort fired");
+
+  // Under-limit: nobody meets maxResults -> everyone waited (no cancelled).
+  const eng3 = new RetroaererdEngine([
+    mockProvider("p1", ["https://p1.com/a"]),
+    mockProvider("p2", ["https://p2.com/b"]),
+  ]);
+  const r3 = await eng3.search({ query: "g", mode: "fast", maxResults: 10 }, { graceWindowMs: 10 });
+  assert(r3.metadata.providersCancelled.length === 0, "under-limit: all providers awaited");
+}
+
+console.log("--- RetroaererdEngine tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);
 }
 

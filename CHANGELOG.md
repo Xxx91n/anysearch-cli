@@ -4,6 +4,14 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-14 — ADR-0061 r60: graceWindow/deepMode 交付（T6/G1，remove-or-implement → implement）
+
+### Changed
+
+- `RetroaererdEngine.search` 真接线早停：fused pool 覆盖 `q.maxResults` 个唯一 URL 后，straggler 获 `graceWindowMs`（默认 1500）再触发 per-provider AbortController；`deepMode` 恒等全部。取消者进 `metadata.providersCancelled`（此前恒空）。
+- 哨兵翻正：ship-gate step1c + t6-hostile-cuts 从「债注存活」断言改为「接线存活」断言；CONTEXT.md「尚未接线」措辞移除；ponytail-debt-ledger 移入 Resolved。
+- engine.test.ts +5 断言：grace 取消上报/abort 实发、deepMode 不取消且慢 provider 结果到达、未达阈值全员等待。
+
 ## 2026-09-14 — ADR-0061 r60: doctor 自服务增强（T4/B3）
 
 ### Added

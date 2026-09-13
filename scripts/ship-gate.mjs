@@ -558,17 +558,17 @@ function stepAdrIndex() {
   report("pass", out || "README ADR index up to date");
 }
 
-// ADR-0059 D7 (T-6.1): the engine's graceWindowMs is accepted but NOT wired to an early-cancel
-// (ADR-0014 ponytail debt). Round 58 caught docs claiming an implemented grace window, so this
-// asserts the honest debt note survives - a silent re-claim is what recurs, not the code.
+// ADR-0059 D7 (T-6.1) / ADR-0061 G1: the grace window is WIRED now — the invariant
+// flips from "debt note survives" to "implementation present + docs not over-claiming".
+// The anti-pattern stays identical: silently re-claiming or silently de-wiring recurs.
 function stepDocClaims() {
-  report("info", "step 1c/9: engine dead-config debt note (ADR-0059 D7)");
+  report("info", "step 1c/9: engine grace-window wiring assertion (ADR-0059 D7 / ADR-0061 G1)");
   const eng = fs.readFileSync(path.join(ROOT, "packages", "kernel", "src", "engine.ts"), "utf8");
   if (!/graceWindowMs/.test(eng)) fail("engine.ts no longer declares graceWindowMs - update this assertion (ADR-0059 D7)");
-  if (!/Full grace-window abort would need a custom race/.test(eng)) fail("engine.ts lost its honest grace-window debt note (ADR-0014 / ADR-0059 D7)");
+  if (!/graceExpired/.test(eng) || !/controllers\[j\]\.abort\(\)/.test(eng)) fail("engine.ts lost the wired grace-window collect (ADR-0061 G1)");
   const ctx = fs.readFileSync(path.join(ROOT, "CONTEXT.md"), "utf8");
-  if (/够数即收 \+ grace window/.test(ctx)) fail("CONTEXT.md re-claims an implemented grace window (ADR-0059 D7)");
-  report("pass", "engine grace-window debt note present; CONTEXT.md does not over-claim (ADR-0014)");
+  if (/grace-window 早停尚未接线/.test(ctx)) fail("CONTEXT.md still claims the grace window is unwired (ADR-0061 G1 delivered it)");
+  report("pass", "engine grace window wired; CONTEXT.md consistent (ADR-0061 G1)");
 }
 
 // ADR-0060 D1 (T-1): supersession integrity, two-sided (armory pattern). An Accepted record is

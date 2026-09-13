@@ -13,9 +13,9 @@ function assert(cond, msg) { if (!cond) { failed++; console.error("FAIL: " + msg
 // --- cut 1: engine dead config fixed by DOCUMENTATION + a wiring assertion ---
 const engine = read("packages/kernel/src/engine.ts");
 assert(engine.includes("graceWindowMs"), "engine still declares graceWindowMs");
-assert(engine.includes("Full grace-window abort would need a custom race"), "engine keeps its honest debt note (ADR-0014)");
-assert(!/够数即收[\s\u00a0]*[+＋][\s\u00a0]*grace window/.test(read("CONTEXT.md")), "CONTEXT.md no longer claims an implemented grace window");
-assert(read("CONTEXT.md").includes("grace-window 早停尚未接线"), "CONTEXT.md states the deferral honestly");
+assert(engine.includes("graceExpired") && engine.includes("controllers[j].abort()"), "engine wires the grace-window collect (ADR-0061 G1 delivered ADR-0014 debt)");
+assert(!read("CONTEXT.md").includes("grace-window 早停尚未接线"), "CONTEXT.md no longer claims the grace window is unwired (G1 delivered)");
+assert(read("CONTEXT.md").includes("grace-window 早停已接线"), "CONTEXT.md states the wired state (G1 delivered)");
 assert(read("docs/adr/0005-architecture-grill-round-2.md").includes("r58 Text Errata"), "ADR-0005 carries the append-only errata");
 assert(read("scripts/ship-gate.mjs").includes("stepDocClaims"), "ship-gate wires the dead-config wiring assertion");
 
