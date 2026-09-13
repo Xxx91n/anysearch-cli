@@ -860,3 +860,23 @@ docs/adr 是唯一事实源；README 索引 = 派生产物，由 stdlib 脚本�
 
 ## LYING-Class Doc Drift（LYING 类文档漂移）
 文档宣称从未存在的能力（withagents 四分类之一）。处置：删宣称 + 接线断言防复发，而非补实现（依 Ponytail 删优于留 + 价值裁决）。锐评的 engine 死配置即此类的仓库实例。
+
+## Grill Round 59 — Terms (ADR-0060)
+
+## Corrective Supersession（更正性取代）
+ADR 状态机唯一合法的自更正出口：旧 ADR 翻 `Superseded by ADR-NNNN (date)`，仅动状态行，正文/errata append-only 保留；新 ADR 承载更正并反向指针。「Void」不是 Nygard 原语，不使用。工业来源：Nygard 2011 / Fowler / AWS Prescriptive Guidance / GitLab / MADR / adr-tools。
+
+## No-Grandfathering（禁止既有偏差豁存）
+被判定平行宇宙/不合规的历史内容不得以任何形式豁免保留，只能走 Superseded 出口。与 waiver（一次性、判据化、不自动续）严格区隔：豁免给流程，grandfathering 给内容——后者在本仓非法。
+
+## Waiver Quintet（豁免五判据）
+多票轮（ADR-0029 的例外）成立 iff：1 单一伞形主题且各票同源；2 票序显式且逐票独立验收；3 waiver 写进当轮 ADR 且下轮不得自动沿用（sunset）；4 两次内必回一轮一主题；5 独立复核签字（atomcode 审计角色）。工业映射：sunset clause / security exception expiry / FedRAMP POA&M / RFC 9280 §8。
+
+## Evidence Anchor Resolvability（证据锚点可解析）
+ADR 中的 git 引用（40 位 SHA）必须 `git cat-file -e` 可解析，否则 fail；被 squash 蒸发的引用改用 PR 编号 / 完整 SHA permalink / 文件路径+行号，不可解析者带显式 `[squashed]` 脚注进白名单。git 命令自身失败 = fail-closed。先例：git-filter-repo #108、GitHub 完整 SHA 钉定政策、SPDX checksum-on-reference。
+
+## Claim-Precision Errata（宣称精度更正）
+验收标准「发布时即不成立」的处置 = append-only errata（不翻状态、不改原文），且必须含 anti-downgrade 句（精度更正 ≠ 质量标准降级）。RFC errata 判据（发布时即错 → errata；新思路 → 新文档），仓内先例 ADR-0040。
+
+## Observable Fail-Open（可观测降级）
+fail-open 是 availability 的合法语义（authzed），但前提是降级必留痕迹（计数/telemetry/报告 degraded 标记）；静默降级改变被测语义 = 缺陷。仓内锚点：embedding index.ts 失败计数、ADR-0009 D6、ADR-0057 D4 test:online 边界。

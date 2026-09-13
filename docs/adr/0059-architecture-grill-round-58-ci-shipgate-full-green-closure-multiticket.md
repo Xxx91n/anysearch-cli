@@ -63,3 +63,7 @@ scripts/gen-adr-index.mjs (Node stdlib only, per ADR-0020 D5) regenerates a mark
 - Release ergonomics change permanently: tagging without a pre-tag decision-grade dispatch is now an unverifiable act.
 - Deferred items are not silent: T-6.4 carries an owner and a monitoring channel; T-3's H3 exit carries issue links and TTL.
 - This ADR closes Round-57 leftover debt F-15, F-16, F-17 and the "no gate for the gate itself" class (F-10/F-11 lessons).
+
+## r59 Text Errata (2026-09-13, ADR-0060 follow-up)
+
+D2's citation of ADR-0058 ("This is the completion of ... ADR-0058") is historical context only: ADR-0058 is superseded by ADR-0060 (2026-09-13) — its body describes a parallel universe (see its r58 Text Errata) and must not be read as governing this repo. Body unmodified (append-only).

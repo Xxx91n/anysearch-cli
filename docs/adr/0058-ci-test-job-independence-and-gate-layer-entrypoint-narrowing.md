@@ -1,6 +1,6 @@
 # ADR-0058: CI Test-Job Independence, Always() Success-Only Aggregation, and Gate-Layer Entrypoint Narrowing
 
-Status: Accepted
+Status: Superseded by ADR-0060 (2026-09-13)
 Date: 2026-09-12
 Amends: ADR-0034 (D5 single-entrypoint wording narrowed), ADR-0057 (D-D defer-0026 activation)
 
