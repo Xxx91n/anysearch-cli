@@ -1,6 +1,6 @@
 {
   "name": "@anysearch/mcp",
-  "version": "0.1.0-rc.0",
+  "version": "0.0.1",
   "type": "module",
   "bin": {
     "ans-mcp": "./dist/index.cjs"

@@ -48,7 +48,7 @@ async function t(name: string, fn: () => Promise<void>) {
   await t("--version prints pinned version (not 0.0.0)", async () => {
     const r = await run(["--version"]);
     assert.equal(r.code, 0);
-    // ADR-0020 D3: version pinned to package.json (currently 0.1.0-rc.0);
+    // ADR-0020 D3: version pinned to package.json (currently 0.0.1);
     // assert it is NOT the 0.0.0 placeholder and matches SemVer-ish shape.
     assert.doesNotMatch(r.out, /\b0\.0\.0\b/);
     assert.match(r.out, /\d+\.\d+\.\d+(-[\w.]+)?/);

@@ -211,7 +211,7 @@ function stepStaticAssertions() {
       fs.readFileSync(path.join(ROOT, rel, "package.json"), "utf8")
     );
     if (pkg.version === "0.0.0") {
-      fail(`${rel}/package.json still at 0.0.0 — pin to 0.1.0-rc.0 before ship`);
+      fail(`${rel}/package.json still at 0.0.0 — pin to 0.0.1 before ship (D-006 patch-start)`);
     }
   }
   report("pass", `all ${PKG_DIRS.length} packages not at 0.0.0`);
@@ -816,7 +816,7 @@ async function stepPack(tmpDir) {
     await run(PNPM, ["pack", "--pack-destination", outDir], { cwd: pkgDir });
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
     // pnpm pack emits `<scope>-<name>-<ver>.tgz` for scoped packages
-    // (@anysearch/cli -> anysearch-cli-0.1.0-rc.0.tgz).
+    // (@anysearch/cli -> anysearch-cli-<version>.tgz).
     const slug = pkg.name.replace(/^@/, "").replace("/", "-");
     const tgz = path.join(outDir, `${slug}-${pkg.version}.tgz`);
     if (!fs.existsSync(tgz)) {
@@ -902,7 +902,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
 
   // 4b. pnpm verify-ts-release pattern (PR #13061): do a REAL clean-prefix
   // npm install of all seven tgz, so pnpm-baked workspace deps resolve
-  // (pnpm pack rewrites "workspace:*" to "0.1.0-rc.0"; npm then needs every
+  // (pnpm pack rewrites "workspace:*" to the packed version; npm then needs every
   // @anysearch/* present in the install set to resolve relatively).
   const installPrefix = path.join(tmpDir, "install-prefix");
   fs.mkdirSync(installPrefix, { recursive: true });
@@ -1214,7 +1214,7 @@ async function stepMcpInitialize() {
     params: {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "ship-gate", version: "0.1.0-rc.0" },
+      clientInfo: { name: "ship-gate", version: "0.0.1" },
     },
   };
 
@@ -1296,7 +1296,7 @@ async function stepFailOpenBoot() {
     params: {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: "ship-gate-failopen", version: "0.1.0-rc.0" },
+      clientInfo: { name: "ship-gate-failopen", version: "0.0.1" },
     },
   };
 
@@ -1409,7 +1409,7 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
     reportStep("step_9_fail_open_boot");
     await stepFailOpenBoot();
     report("info", "cross-OS native loading covered by CI native-smoke.yml 4-job matrix (ADR-0025 D1)");
-    report("pass", "ship gate green — ready to tag v0.1.0-rc.0");
+    report("pass", "ship gate green — ready to tag the next release");
     flushReportEntries("pass");
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });

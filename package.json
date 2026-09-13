@@ -1,6 +1,6 @@
 {
   "name": "anysearch-cli",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.24.0",
@@ -12,7 +12,11 @@
     "check": "turbo run check"
   },
   "devEngines": {
-    "packageManager": { "name": "pnpm", "version": "11.24.0", "onFail": "warn" }
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.24.0",
+      "onFail": "warn"
+    }
   },
   "devDependencies": {
     "turbo": "^2.3.0",
