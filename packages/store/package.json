@@ -9,7 +9,8 @@
   "scripts": {
     "test": "node --import tsx --test \"test/**/*.test.ts\" \"test/**/*.test.mjs\" --test-concurrency=1 --test-timeout=30000",
     "eval": "tsx src/eval/cli.ts",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test:online": "node --import tsx --test \"test/online/**/*.online.ts\" --test-timeout=180000"
   },
   "dependencies": {
     "@anysearch/retriever": "workspace:*",

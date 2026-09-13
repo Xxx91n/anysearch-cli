@@ -177,6 +177,8 @@ export interface EvalMetrics {
 // ADR-0039 step 7 + ADR-0040 D2: Observational zone — fixed 7-key shape; any metric value may be a SkipMarker.
 export interface ObservationalZone {
   schema: "anysearch/observational@1";
+  // ADR-0060 D7: offline runs that exclude a group (vector arm) record it here - never silent.
+  offlineExcludedGroups?: string[];
   dayBucketDefinition: string; // D4 fingerprint linkage
   // ADR-0042 D1/D5: dual-track marker — "synthetic" means the feed came from the pinned
   // fixture snapshots; derived values must be labelled simulated-observation-window.
@@ -902,10 +904,15 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
   };
 }
 
-export async function runAll(cases: CaseSpec[]): Promise<EvalReport> {
+export async function runAll(cases: CaseSpec[], opts?: { excludeGroups?: readonly string[] }): Promise<EvalReport> {
   assertParaphraseSlice(cases);
+  // ADR-0060 D7 / ADR-0057 r59 errata: the vector arm needs the real embedding model, so the
+  // offline default run excludes its group. The RUN slice is filtered; the dataset fingerprint
+  // below stays over the FULL cases, so the committed baseline remains valid.
+  const excluded = new Set(opts?.excludeGroups ?? []);
+  const runnable = excluded.size ? cases.filter((c) => !excluded.has(c.group)) : cases;
   const results: CaseResult[] = [];
-  for (const c of cases) results.push(await runCase(c));
+  for (const c of runnable) results.push(await runCase(c));
   // ADR-0054 D2/D3: abstain smoke runs the same runCase switch but stays out of
   // results/totals/fingerprint — verdicts feed ObservationalZone.abstain only.
   const abstainResults: CaseResult[] = [];
@@ -932,7 +939,7 @@ export async function runAll(cases: CaseSpec[]): Promise<EvalReport> {
     if (r.passed) t.passed += 1;
   }
   for (const t of Object.values(tierBreakdown)) t.passRate = t.cases ? t.passed / t.cases : 0;
-  return {
+  const report: EvalReport = {
     schema: "anysearch/eval-report@1",
     generatedAt: new Date().toISOString(),
     datasetFingerprint: datasetFingerprint(cases),
@@ -941,7 +948,12 @@ export async function runAll(cases: CaseSpec[]): Promise<EvalReport> {
     totals: { cases: results.length, passed: results.filter((r) => r.passed).length, failed: results.filter((r) => !r.passed).length },
     stageBreakdown,
     tierBreakdown,
-    metrics: computeMetrics(cases, results, abstainZone),
+    metrics: computeMetrics(runnable, results, abstainZone),
     cases: results,
   };
+  // ADR-0060 D7 (c): the offline exclusion must be observable in the artifact, never silent.
+  if (excluded.size > 0 && report.metrics.observational) {
+    report.metrics.observational.offlineExcludedGroups = [...excluded];
+  }
+  return report;
 }

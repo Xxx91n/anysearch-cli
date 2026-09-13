@@ -911,3 +911,14 @@ export const ABSTAIN_CASES: CaseSpec[] = [
     ],
   },
 ];
+
+// ADR-0060 D7 / ADR-0057 r59 errata: the vector arm (group "semantic") needs the real embedding
+// model, so its golden cases are NOT part of the offline default suite - they live behind
+// `test:online` (hermetic-by-default, ADR-0057 D4/D5). The DATASET is unchanged (the committed
+// baseline fingerprint stays valid); only the offline RUN excludes the group, and the exclusion
+// is recorded in the report's observational zone (never silent).
+export const VECTOR_ARM_GROUP: EvalGroup = "semantic";
+export const OFFLINE_EXCLUDED_GROUPS: readonly EvalGroup[] = [VECTOR_ARM_GROUP];
+export function offlineCases(cases: readonly CaseSpec[] = GOLDEN_CASES): CaseSpec[] {
+  return cases.filter((c) => !OFFLINE_EXCLUDED_GROUPS.includes(c.group));
+}

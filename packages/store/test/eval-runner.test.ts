@@ -1,6 +1,6 @@
 // ADR-0027 impl plan step 7: runner self-check (path 1/3).
 // Verifies: golden set shape, runCase pass on golden spec, stage attribution on failure, metrics, fingerprint stability.
-import { GOLDEN_CASES } from "../src/eval/golden-cases";
+import { GOLDEN_CASES, OFFLINE_EXCLUDED_GROUPS, offlineCases } from "../src/eval/golden-cases";
 import { computeMetrics, datasetFingerprint, runCase, runAll } from "../src/eval/runner";
 
 let passed = 0, failed = 0;
@@ -25,9 +25,12 @@ async function main() {
   assert(datasetFingerprint(mutated) !== fp1, "fingerprint changes on dataset mutation");
 
   // Full golden suite passes as-is (this IS the calibration assert).
-  const report = await runAll(GOLDEN_CASES);
+  // ADR-0060 D7: default (offline) suite drops the vector-arm group; test:online covers it.
+  const report = await runAll(GOLDEN_CASES, { excludeGroups: OFFLINE_EXCLUDED_GROUPS });
   assert(report.totals.failed === 0, "all golden cases PASS (failed: " + report.cases.filter((c) => !c.passed).map((c) => c.id + "@" + c.failedStage).join(", ") + ")");
   assert(report.metrics.passRate === 1, "passRate 1.0");
+  assert(report.totals.cases === offlineCases().length, "offline run covers the non-vector-arm slice (" + report.totals.cases + "/" + GOLDEN_CASES.length + ")");
+  assert(Array.isArray(report.metrics.observational?.offlineExcludedGroups) && report.metrics.observational!.offlineExcludedGroups!.includes("semantic"), "offline exclusion is recorded in the observational zone (never silent)");
   assert(report.datasetFingerprint === fp1, "report fingerprint matches dataset");
 {
   // r110 SP-F-01: consumed track exposes REAL gate numbers + the data-absence signal.
@@ -57,7 +60,7 @@ async function main() {
   assert(!r.passed && r.failedStage === "retrieve", "retrieve failure attributed to retrieve stage (got " + r.failedStage + ")");
 
   // Metrics: supersession success counts only supersede-expected ops.
-  const m = computeMetrics(GOLDEN_CASES, report.cases);
+  const m = computeMetrics(offlineCases(), report.cases);
   assert(m.supersessionSuccess === 1, "supersessionSuccess 1.0");
   assert(m.quarantineFalsePositiveRate === 0, "qfp 0.0");
 

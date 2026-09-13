@@ -135,3 +135,15 @@ The “Carried-over Acceptance Criteria Closure” section above states `Closes 
 - **F-17** — the memory-eval harness is environment-dependent: 126/128 on CI vs 128/128 locally (`mrr` 0.524 vs 0.548).
 
 **AC5 is therefore only partially satisfied.** The residual is carried by round-58 tickets T-1..T-3 and is *not* claimed closed here.
+
+## r59 Text Errata (2026-09-13, ADR-0060 D7 follow-up)
+
+AC4 ("Network sealing: embedding default suite fully stubbed; test:online explicitly gated; `turbo test` green offline") is scoped precisely to the **default stub suite**. On a clean machine without HuggingFace reach the default `turbo test` was red on three store eval files; the claim was wrong **at publication time** (red on the old commit too), which is the RFC errata trigger (an error present in the published text), not a reversal of the network-sealing decision - that decision stands, so the Status stays Accepted and this section is append-only (body unmodified).
+
+Three facts, kept distinct (no "drifted" framing: nothing moved after publication):
+
+- (a) **Claim-precision correction, not a quality-bar downgrade.** The sentence is corrected to name its own scope; the bar itself is unchanged. Anti-downgrade clause: this errata does not lower the Definition of Done - the offline default suite keeps full pass/fail authority over the cases it covers, and the coverage moved out of it is re-established, not dropped, behind `test:online`.
+- (b) **`[switch] no such table: access_events`** was a test-fixture bug: the fixture bypassed the schema-application path. `schema.sql:265` already carries the idempotent `CREATE TABLE IF NOT EXISTS access_events`; the fixture now reuses the schema-application path. `switch-run.ts:121`'s fail-closed throw is correct and stays fail-closed. Deterministic ownership: this ticket (T-4).
+- (c) **Vector-arm fail-open is an observational semantic, not a defect.** With the model unavailable the vector arm degrades (failure counters already emitted) and the fused order can shift; the real finding is a boundary misplacement - vector-arm golden cases leaked into the default suite and belong behind `test:online` per D4/D5. Offline reports must mark the degraded slice; a green report must never present degraded input as equivalent.
+
+Authority for the semantic lives in ADR-0060's Consequences; CONTEXT.md carries one negative pointer line (round-57 Terms) to prevent re-claim.

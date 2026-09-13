@@ -838,6 +838,7 @@ observability_traces 表中为可索引审计查询新增的三个列为 injecte
 - **Expectations inventory** — the known-failure governance model (Chromium TestExpectations / WebKit lint-enforced bug-id / WPT expectations / Mozilla manifestparser auto-bug-filing / pytest strict_xfail): red tests are triaged fix / todo-with-issue / delete-with-justification; `todo` keeps executing (evidence retained); unconditional skip is dead code and forbidden.
 - **expectFailure (node:test)** — true xfail semantics (`expectFailure` option flips pass/fail; unexpected-pass goes red). Requires Node >= 24.14; pinned Node 22 uses `todo` interim, migration deferred to Node upgrade.
 - **hermetic-by-default / online-gated tests** — embedding suite default runs fully stubbed (`__setExtractorForTest`); real-model tests live behind `test:online` (node:test tags / dedicated script) and never block offline CI (SWE-book ch23; pytest-test-categories; Sopel/vcrpy precedent).
+  - 无网时向量臂 fail-open 降级为观测性语义（非缺陷）；向量臂 eval 金案例归属 `test:online`（ADR-0057 r59 errata、ADR-0060 D7），离线报告须标注 degraded。
 - **Carried-over acceptance closure** — ADR convention this repo follows per ADR-0057 D5: a later round that fixes a prior round's PARTIAL AC declares `Closes ADR-XXXX ACn` in its own ADR, adds a single pointer line to the old ADR, and registers the entry in deferred-registry — one atomic PR, old bodies never edited (Nygard/AWS/MS/MADR/KEP/GEP).
 
 

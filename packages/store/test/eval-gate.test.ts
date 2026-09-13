@@ -1,11 +1,12 @@
 // ADR-0027 impl plan step 7 + ADR-0028 D1: gate contract self-check (integer allowance + WARN band).
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 import { evaluateGate, evaluateWeakestLink, type EvalBaseline } from "../src/eval/gate";
+import { SqliteSessionStore } from "../src/session-store";
 import type { EvalMetrics, EvalReport } from "../src/eval/runner";
 
 let passed = 0, failed = 0;
@@ -74,7 +75,19 @@ assert(evaluateGate(fakeReport(), null).exitCode === 12, "missing baseline exits
 // CLI end-to-end: run eval against committed baseline, assert exit 0 + artifacts in scratch out dir.
 const outDir = mkdtempSync(join(tmpdir(), "ans-gate-"));
 try {
-  execFileSync(process.execPath, ["--import", "tsx", "src/eval/cli.ts", "--out", outDir], { cwd: join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ANS_EVAL_NO_LOOK: "1" } });
+  // ADR-0060 D7 / ADR-0057 r59 errata: the eval CLI writes observations into the durable DB
+  // (ANS_DB_PATH or ~/.anysearch/anysearch.db) and then advances the switch state machine
+  // against that same DB. The fixture must hand it a DB that carries the store schema
+  // (access_events et al.) - i.e. reuse the schema-application path. Otherwise the switch step
+  // hits the no-such-table error on a clean machine (fail-closed by design, but the fixture
+  // had bypassed the schema-application path).
+  const durableDb = join(outDir, "durable.db");
+  new SqliteSessionStore(durableDb).close();
+  const run = spawnSync(process.execPath, ["--import", "tsx", "src/eval/cli.ts", "--out", outDir, "--offline"], { cwd: join(__dirname, ".."), encoding: "utf8", env: { ...process.env, ANS_EVAL_NO_LOOK: "1", ANS_DB_PATH: durableDb } });
+  if (run.status !== 0) {
+    failed++; console.error("FAIL: CLI exited " + run.status + ": " + String(run.stderr).slice(0, 300));
+  } else {
+  assert(!String(run.stderr).includes("no such table"), "eval CLI switch step does not hit no-such-table (schema-application path reused)");
   assert(existsSync(join(outDir, "eval-report.json")), "CLI writes eval-report.json");
   assert(existsSync(join(outDir, "eval-report.md")), "CLI writes eval-report.md");
   const rep = JSON.parse(readFileSync(join(outDir, "eval-report.json"), "utf8"));
@@ -84,8 +97,7 @@ try {
   assert(md.includes("Stage attribution") && md.includes("fingerprint"), "md has stage attribution + fingerprint");
   assert(md.includes("Statistical power") && md.includes("Wilson95") && md.includes("family size"), "md has ADR-0028 power block (MDE/Wilson/family)");
   assert(md.includes("Difficulty tiers"), "md has difficulty tier breakdown");
-} catch (e) {
-  failed++; console.error("FAIL: CLI exited non-zero: " + String((e as { message?: string }).message).slice(0, 300));
+  }
 } finally {
   try { rmSync(outDir, { recursive: true, force: true }); } catch {}
 }

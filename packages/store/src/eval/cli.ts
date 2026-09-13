@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { GOLDEN_CASES, assertInjectSuite } from "./golden-cases";
+import { GOLDEN_CASES, assertInjectSuite, OFFLINE_EXCLUDED_GROUPS } from "./golden-cases";
 import { assertBackflowNoOverlap } from "./holdout";
 import { runAll, type EvalReport } from "./runner";
 import { isSkip, skipKey } from "./explicit-skip";
@@ -160,6 +160,8 @@ async function main(): Promise<number> {
   const calibrateIdx = args.indexOf("--calibrate");
   const decisionIdx = args.indexOf("--decision");
   const overrideIdx = args.indexOf("--override");
+  // ADR-0060 D7 / ADR-0057 r59 errata: --offline drops the vector-arm group (needs the model).
+  const offline = args.includes("--offline");
   const overrideReason = overrideIdx >= 0 ? args[overrideIdx + 1] : undefined;
   const outIdx = args.indexOf("--out");
   const root = repoRoot();
@@ -236,7 +238,8 @@ async function main(): Promise<number> {
 
   // ADR-0029 D5 test hook: synthetic delay so the watchdog has something to kill.
   if (process.env.EVAL_SLOW_MS) await new Promise((r) => setTimeout(r, Number(process.env.EVAL_SLOW_MS)));
-  const report = await runAll(GOLDEN_CASES);
+  const report = await runAll(GOLDEN_CASES, offline ? { excludeGroups: OFFLINE_EXCLUDED_GROUPS } : undefined);
+  if (offline) console.error("[eval] OFFLINE: vector-arm group excluded (" + OFFLINE_EXCLUDED_GROUPS.join(",") + ") - degraded run; full coverage lives behind test:online (ADR-0060 D7)");
   mkdirSync(outDir, { recursive: true });
 
   let baseline: EvalBaseline | null = null;
