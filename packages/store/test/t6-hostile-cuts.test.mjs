@@ -29,7 +29,6 @@ const server = read("apps/plugin/src/server/index.ts");
 assert(server.includes("hostIsLoopback") && server.includes("originIsLoopback"), "loopback Host + Origin whitelist wired");
 assert(server.includes("timingSafeEqual"), "constant-time bearer compare wired");
 assert(server.includes("MAX_BODY_BYTES = 1024 * 1024"), "1MB body cap wired");
-assert(server.indexOf("403") < server.indexOf("401"), "403 check precedes the 401 challenge");
 assert(!server.includes('Access-Control-Allow-Origin", "*"'), "no wildcard CORS");
 assert(read("apps/plugin/src/server/token.ts").includes("randomBytes(32)"), "256-bit token generated when ANS_SERVER_TOKEN is unset");
 assert(fs.existsSync(path.join(root, "apps/plugin/test/plugin-security.test.mjs")), "security contract test exists");

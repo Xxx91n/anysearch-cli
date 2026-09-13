@@ -56,6 +56,8 @@ All notable changes to this project are recorded here. Format follows
 
 ### Removed
 
+- due-chore (ADR-0029 channel, round 59): dropped the `t6-hostile-cuts.test.mjs` text-position assertion that `403` precedes `401` - it pinned source ordering, not behaviour; the behaviour is asserted end-to-end in `apps/plugin/test/plugin-security.test.mjs` (non-loopback Origin without token -> 403 before 401).
+- due-chore (ADR-0029 channel, round 59): `apps/plugin/src/hooks/preheat.ts` comment no longer says the policy cache guards against a *tampered* drop-in (downgraded to a *damaged* drop-in - the sha256 self-check is a damage detector, not an adversary defence), and `canonicalVersion()` now names the store implementation as authoritative.
 - ADR-0057 D-001/R1 (round 57): `.scratch/` is no longer tracked. The local-markdown
   issue tracker and round artifacts were tracked as 16 files while README.md:64 documents
   them as not committed to git; all 16 are now untracked (disk copies kept; `.gitignore`

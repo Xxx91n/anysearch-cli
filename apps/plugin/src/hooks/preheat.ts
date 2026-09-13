@@ -21,17 +21,18 @@ function policyCachePath(): string {
   return join(process.cwd(), ".anysearch-cli", "policy.json");
 }
 
-// canonical hash mirror of packages/store/src/url-policy.ts canonicalVersion().
-// Hook bundles must stay dependency-free (esbuild --bundle breaks on the store index's
-// native deps), so this is an inlined copy; policy.test.ts guards drift by comparing
-// the two implementations through the cache round-trip.
+// canonical hash mirror of packages/store/src/url-policy.ts canonicalVersion() - the STORE
+// implementation is authoritative for this digest; this inlined copy exists only because hook
+// bundles must stay dependency-free (esbuild --bundle breaks on the store index's native deps),
+// and policy.test.ts guards drift by comparing the two implementations through the cache
+// round-trip. Change the store version first, then mirror it here.
 function canonicalVersion(allow: readonly string[], deny: readonly string[]): string {
   const canon = (h: readonly string[]) => [...new Set(h.map((x) => x.trim().toLowerCase()).filter(Boolean))].sort();
   return createHash("sha256").update(JSON.stringify({ allow: canon(allow), deny: canon(deny) })).digest("hex");
 }
 
 // ADR-0055 audit M4: cache integrity self-check — the sha256 of the content must match
-// the self-declared policy_version before the cache is trusted (tampered drop-in rejected).
+// the self-declared policy_version before the cache is trusted (a damaged drop-in is rejected).
 function usableCache(parsed: Partial<PolicyCache>): PolicyCache | null {
   if (!Array.isArray(parsed.allow) || !Array.isArray(parsed.deny) || typeof parsed.policy_version !== "string") return null;
   return canonicalVersion(parsed.allow, parsed.deny) === parsed.policy_version ? (parsed as PolicyCache) : null;
