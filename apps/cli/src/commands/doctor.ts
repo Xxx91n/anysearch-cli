@@ -5,7 +5,7 @@ import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch/retri
 import { loadDomain, loadDomainFromString } from "@anysearch/store";
 import { domainSearchDirs } from "../db";
 import { SqliteSessionStore } from "@anysearch/store";
-import { readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -104,6 +104,19 @@ export async function runDoctor(): Promise<number> {
     check("  " + key, true, val ? "set" : "not set (optional)");
   }
   check("  ANS_DOMAIN", true, process.env.ANS_DOMAIN || "not set (default)");
+  check("  ANS_DOMAINS_DIR", true, process.env.ANS_DOMAINS_DIR?.trim() || "not set (resolution chain in [5])");
+  {
+    // Durable DB writability — created lazily at search time; probe the resolved path now.
+    try {
+      const { resolveDbPath } = await import("@anysearch/kernel");
+      const dbPath = resolveDbPath();
+      const dbDir = path.dirname(dbPath);
+      mkdirSync(dbDir, { recursive: true });
+      check("  durable DB path", existsSync(dbDir), dbPath);
+    } catch (e: any) {
+      check("  durable DB path", false, String(e?.message || e).slice(0, 80));
+    }
+  }
 
   // 5. ADR-0061 B1 (T1 "五端联动 doctor 可见"): discover real domains/*.toml on the
   // resolution chain, validate each, and show the active domain's five downstream
@@ -118,7 +131,7 @@ export async function runDoctor(): Promise<number> {
     } catch { /* dir absent on this chain link */ }
   }
   if (found.size === 0) {
-    check("  discovery", false, "no domains/*.toml found on the resolution chain");
+    check("  discovery", false, "no domains/*.toml found on the resolution chain — fix: create ./domains/, set ANS_DOMAINS_DIR, or reinstall @anysearch/cli");
   }
   for (const [f, dir] of found) {
     try {
@@ -131,7 +144,7 @@ export async function runDoctor(): Promise<number> {
   const activeName = process.env.ANS_DOMAIN || "default";
   const activeEntry = [...found].find(([f]) => f === activeName + ".toml");
   if (!activeEntry) {
-    check("  active domain '" + activeName + "'", false, "not found on the resolution chain (silent full-fanout)");
+    check("  active domain '" + activeName + "'", false, "not found on the resolution chain (silent full-fanout) — fix: ans domain <one of the listed names> or point ANS_DOMAINS_DIR at your toml dir");
   } else {
     try {
       const s = loadDomain(path.join(activeEntry[1], activeEntry[0]));
@@ -144,12 +157,26 @@ export async function runDoctor(): Promise<number> {
       if (s.sources.urlAllowlist?.length) {
         console.log("    urlAllowlist: " + s.sources.urlAllowlist.join(", "));
       }
+      // ADR-0061 B3 self-service: every enabled provider without a key is silently
+      // dropped from the fan-out — name the key to set or the entry to remove.
+      const KEY_BY_PROVIDER: Record<string, string> = { tavily: "TAVILY_API_KEY", exa: "EXA_API_KEY", anysearch: "ANS_API_KEY" };
+      for (const prov of s.sources.enabled) {
+        const key = KEY_BY_PROVIDER[prov];
+        if (key) {
+          // SKIP not FAIL: an unset key is a degraded-but-supported config — the
+          // engine drops that provider from the fan-out. Failing would turn every
+          // keyless CI run red; the remediation text is the self-service part.
+          if (process.env[key]) check("    provider " + prov + " key", true, "set");
+          else skip("    provider " + prov + " key", key + " unset -> provider skipped at search; set the key or drop '" + prov + "' from sources.enabled");
+        }
+      }
     } catch (e: any) {
       check("  active domain '" + activeName + "'", false, String(e?.message || e).slice(0, 80));
     }
   }
 
   console.log("---");
-  console.log("Result: " + passed + " passed, " + skipped + " skipped, " + failed + " failed");
+  const summary = "Result: " + passed + " passed, " + skipped + " skipped, " + failed + " failed";
+  if (failed > 0) console.error("ans doctor: " + summary); else console.log(summary);
   return failed === 0 ? 0 : 1;
 }

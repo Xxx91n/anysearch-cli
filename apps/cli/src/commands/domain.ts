@@ -51,7 +51,15 @@ export async function runDomain(args: string[]): Promise<number> {
     console.log("  rag: " + schema.rag.adapter);
   } catch (e: any) {
     console.log("  Note: " + e.message);
-    console.log("  No TOML found - domain name persisted (no config loaded).");
+    const names = new Set<string>();
+    for (const dir of domainSearchDirs()) {
+      try {
+        for (const f of readdirSync(dir)) if (f.endsWith(".toml")) names.add(f.replace(/\.toml$/, ""));
+      } catch { /* dir absent */ }
+    }
+    console.log("  No TOML found - domain name persisted but resolves to silent full-fanout.");
+    if (names.size > 0) console.log("  Available domains: " + [...names].join(", "));
+    console.log("  Remediation: ans domain <listed name>, or set ANS_DOMAINS_DIR to the dir holding " + newDomain + ".toml");
   }
   console.log("");
   console.log("Domain will persist across sessions via " + configPath() + ".");

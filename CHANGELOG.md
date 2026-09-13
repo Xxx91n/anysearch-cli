@@ -4,6 +4,15 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-14 — ADR-0061 r60: doctor 自服务增强（T4/B3）
+
+### Added
+
+- doctor [4] 增补：ANS_DOMAINS_DIR 可见化、durable DB 路径 mkdir+可写探测。
+- doctor [5] 增补：活动域 sources.enabled 逐 provider key 覆盖检查——未设 key 记 SKIP 并给双向修复路径（设 key 或移出 enabled）；域不在解析链/链上无 TOML 时点名具体修复命令。
+- `ans domain` 解析失败时列出可用域 + ANS_DOMAINS_DIR 修复指引，并明示 silent full-fanout 语义。
+- clig.dev 收口：doctor 失败摘要走 stderr（exit 0/1 不变）。
+
 ## 2026-09-14 — ADR-0061 r60: badcase→golden 回灌闭环（T3/B4）
 
 ### Added
