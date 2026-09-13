@@ -82,3 +82,13 @@ Costs accepted (bidirectional Consequences): offline default suite no longer cov
 Deferred: Resume Anchoring (remove-or-implement, ponytail-debt-ledger); whole-term-table audit (review-by-clause); F-16/F-17/ADR-0059-retitle per existing TTL.
 
 Evidence: atomcode reports `.scratch/grill-round-59/q1-atomcode.md`, `q3-atomcode.md`, `q4-atomcode.md`, `q5-atomcode.md`; ledger `.scratch/grill-round-59/decision-ledger.md` (D-001..D-005); review text `.codex-tmp/锐评.txt`.
+
+## r59 Text Errata (2026-09-13, post-audit)
+
+Append-only correction to this ADR (no status change, body unmodified). The round-59 audit
+(`.scratch/grill-round-59/reports/2026-09-13-audit-report.md`) checked the repository reality behind Context item 2 (刀二) and found its premise false:
+
+- **刀二's premise is false.** The six hashes were NOT destroyed by a squash. `git cat-file -e <sha>^{commit}` resolves all six, and `git merge-base --is-ancestor <sha> origin/main` is true for all six - they are permanently reachable on `origin/main`. The premise came from the round-59 grill, which recorded at `q4-atomcode.md:154` that the check was never actually run ("read-only mode, did not run git"). Reality: the evidence anchors were alive; the failure was in the audit trail, not the substrate.
+- **Attribution corrected.** ADR-0057 cites FIVE of the six (`cb2518a`, `b694a0b`, `a76598d`, `027226d`, `7318184`); the sixth (`a349094`) is cited in ADR-0058:197. "ADR-0057 cites six commit hashes" was inaccurate.
+- **The lawful repair, as landed.** Because the anchors resolve, the fixer round re-anchored them to full 40-hex SHAs (assertable by `stepEvidenceAnchors`) instead of writing a `[squashed]` footnote - the latter would have added a false claim to the archive this ADR exists to make truthful. `a349094` sits in ADR-0058's frozen body (byte-identical per D1) and was verified resolvable rather than edited. ADR-0052's three external 40-hex references were re-anchored to full permalink URLs (the D-004 authorized form); the earlier `owner/repo@sha` form was a self-invented fourth form and has been withdrawn.
+- **Waiver record (D4 criterion ⑤ + the found/fixed/deferred triplet).** The independent review sign-off for this round's ADR-0029 waiver is the round-59 audit: `.scratch/grill-round-59/reports/2026-09-13-audit-report.md` - hard acceptance (compile/package/start/test) independently re-run PASS; the double-axis code review returned the round for rework (R-1..R-8), of which this errata is part. The audit-checklist §2 diff-size threshold (>5 files) was exceeded by the fixer round; the found/fixed/deferred triplet lives in that audit report (§2 table, §6 rework list) rather than being duplicated here.

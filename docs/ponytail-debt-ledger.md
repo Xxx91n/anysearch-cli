@@ -38,3 +38,4 @@ packages/kernel/src/memory-pipeline.ts:116 | LOW_WATERMARK_TOKENS = 128_000 hard
 
 - time_decay() registered but not called from searchAllResults SQL — FIXED in commit 7f46683 (ADR-0008 D2 audit). Now wired into ORDER BY + bi-temporal filter in session-store.ts.
 - invalidateOldRecords() imported but not called in saveResults() — FIXED in commit 7f46683. Now called per-insert to close old valid records for same entity URL.
+packages/kernel/src/engine.ts:86 | Resume Anchoring on timeout/crash is not implemented - resume_anchors exists in the store schema but this engine never writes a checkpoint (no replay/recovery wiring). | Implement when long-running research sessions need crash recovery

@@ -83,6 +83,7 @@ export interface SufficiencyResult {
   mvs: SufficiencySignal;
 }
 
+// ponytail: Resume Anchoring on timeout/crash is not implemented - resume_anchors exists in the store schema but this engine never writes a checkpoint (no replay/recovery wiring). | Implement when long-running research sessions need crash recovery
 export function computeSufficiency(
   rankedResults: NormalizedResult[],
   providerLists: string[][],
