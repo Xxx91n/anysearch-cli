@@ -881,3 +881,14 @@ ADR 中的 git 引用（40 位 SHA）必须 `git cat-file -e` 可解析，否则
 
 ## Observable Fail-Open（可观测降级）
 fail-open 是 availability 的合法语义（authzed），但前提是降级必留痕迹（计数/telemetry/报告 degraded 标记）；静默降级改变被测语义 = 缺陷。仓内锚点：embedding index.ts 失败计数、ADR-0009 D6、ADR-0057 D4 test:online 边界。
+
+## Grill Round 60 — Terms (ADR-0061)
+
+## Coverage Manifest（覆盖清单）
+golden 评测集的自述文件（`eval-looks.coverage.json`）：每个维度标 `covered|deferred`；deferred 维度必须附**入账触发**（B4 回灌 / 首个真实弃答 / 首个真实注入），缺失维度显式呈报而非凑数合成。验收依据：声明了没有，而不是收齐了没有。先例：Pranay Suyash "Your LLM Eval Set Needs a Manifest"、matric-eval deliberately-deferred 模式。
+
+## First-Party Inclusion Rule（一手源入圈规则）
+语料锚定单元是**规则**而非 URL 清单；URL 清单是规则的当期输出。入圈需全部满足：一手性（官方源，禁止二手转述）、日常依赖可举证、可回访（版本化/permalink 锚）、八维切片有新增益。出圈触发：上游 supersede / 超期翻 stale / 连续两 round 无 golden 引用 / 404-410 无继任。出圈 URL 按 Corrective Supersession append-only（复用 ADR-0060 状态机与 HITL 出口）。来源：OWASP RAG Security Cheat Sheet、Ground/Waxell staleness budget、Coalent 事件驱动 supersede。
+
+## Milestone Serial Slicing（里程碑串行切票）
+walking skeleton 收尾后的首个交付轮遵循 B1→B2→B4→B3 串行票序；每票独立验收，票间依赖即"上票的真实产物"。并行流是假并行（合并成本超线性），单一大票被豁免五判据禁止。G1 治理票挂尾 + sunset，复用 Waiver Quintet。来源：valery.tech lifecycle、mergify TBD、Tricentis big-bang 教训。
