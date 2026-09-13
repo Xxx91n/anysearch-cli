@@ -10,7 +10,7 @@ import { SqliteSessionStore } from "../session-store";
 import { normalizeEntityName } from "../entity";
 import type { AdjudicationResultItem } from "../session-store";
 import { rrfRank, FUSION_REGISTRY } from "@anysearch/retriever";
-import { ABSTAIN_CASES, assertParaphraseSlice, PARAPHRASE_MAX_LEXICAL_OVERLAP, type CaseSpec, type EvalStage } from "./golden-cases";
+import { ABSTAIN_CASES, assertParaphraseSlice, PARAPHRASE_MAX_LEXICAL_OVERLAP, type CaseSpec, type EvalStage, type EvalGroup } from "./golden-cases";
 import { injectFingerprint, runInjectProbe } from "./inject";
 import { runAbstainProbe } from "./abstain";
 import { holdoutFingerprint, isHoldout } from "./holdout";
@@ -904,7 +904,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
   };
 }
 
-export async function runAll(cases: CaseSpec[], opts?: { excludeGroups?: readonly string[] }): Promise<EvalReport> {
+export async function runAll(cases: CaseSpec[], opts?: { excludeGroups?: readonly EvalGroup[] }): Promise<EvalReport> {
   assertParaphraseSlice(cases);
   // ADR-0060 D7 / ADR-0057 r59 errata: the vector arm needs the real embedding model, so the
   // offline default run excludes its group. The RUN slice is filtered; the dataset fingerprint
