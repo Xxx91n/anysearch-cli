@@ -211,7 +211,7 @@
           "ref": ".scratch/grill-round-59/q3-prompt.md",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "real out-of-corpus question: CONTEXT.md:9 claimed tokio::JoinSet for a TS codebase; tokio docs outside allowlist → expect abstain"
+        "notes": "real out-of-corpus question: CONTEXT.md:9 claimed tokio::JoinSet for a TS codebase; tokio docs outside allowlist → expect abstain | badcase docs-bc0001 observed 10 results (expected abstain)"
       },
       {
         "id": "docs-g0008",

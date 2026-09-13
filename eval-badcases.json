@@ -1,0 +1,32 @@
+{
+  "schema": "anysearch/eval-badcases@1",
+  "badcases": [
+    {
+      "id": "docs-bc0001",
+      "domain": "docs",
+      "question": "tokio::JoinSet 怎么给检索 fanout 做结构化并发？",
+      "expected": {
+        "verdict": "abstain"
+      },
+      "observed": {
+        "verdict": "answer",
+        "results": 10,
+        "providersQueried": [
+          "tavily",
+          "exa",
+          "anysearch"
+        ],
+        "allowlistHits": 0,
+        "topHost": "developer.cloud.tencent.cn"
+      },
+      "evidence": {
+        "command": "ans search 'tokio::JoinSet 怎么给检索 fanout 做结构化并发'",
+        "runAt": "2026-09-14",
+        "surface": "install-smoke clean prefix (.scratch/grill-round-60/t1-pack/prefix)"
+      },
+      "status": "promoted",
+      "promotedTo": "docs-g0007",
+      "notes": "域外提问未被 abstain：allowlist 0 命中仍返回 10 条。与 golden docs-g0007 同问句；修复方向 = 域检索 abstain 纪律或非 allowlist 标记。"
+    }
+  ]
+}

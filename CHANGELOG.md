@@ -4,6 +4,14 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-14 — ADR-0061 r60: badcase→golden 回灌闭环（T3/B4）
+
+### Added
+
+- `eval-badcases.json`（schema `anysearch/eval-badcases@1`）：真实 badcase 记录面，种子条目 docs-bc0001 来自安装物实跑（tokio 域外提问应 abstain 实返 10 条非 allowlist 结果）。
+- `scripts/badcase-backfill.mjs`：回灌两模式——`--into` attach 同问句既有 golden（回归证据），`--new` 生成下一条 docs-gNNNN 并自动重算 coverage manifest；无 observed/evidence.command 拒绝回灌（禁合成护栏）。
+- eval-docs-golden.test.ts 扩 badcase 回归段：badcase schema、promotedTo→golden 可解、attach 问句逐字一致、open 态不得已入集。
+
 ## 2026-09-14 — ADR-0061 r60: 装到用链路 CI（T2/B2）
 
 ### Added

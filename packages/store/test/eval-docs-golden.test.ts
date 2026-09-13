@@ -109,5 +109,27 @@ try {
 }
 assert(threw, "loadDomainByNameIn throws Domain not found after exhausting dirs");
 
+
+// --- 9. ADR-0061 B4: badcase -> golden regression loop ----------------------
+const badcasesRaw = JSON.parse(fs.readFileSync(path.join(root, "eval-badcases.json"), "utf8"));
+assert(badcasesRaw.schema === "anysearch/eval-badcases@1", "eval-badcases.json schema");
+const badcases = Array.isArray(badcasesRaw.badcases) ? badcasesRaw.badcases : [];
+const goldenIds = new Set(golden.entries.map((e) => e.id));
+for (const b of badcases) {
+  assert(/^docs-bc\d{4}$/.test(b.id), "badcase id shape: " + b.id);
+  // 禁合成: every badcase must carry a real observation + a rerunnable command.
+  assert(b.observed && typeof b.observed === "object", b.id + " carries an observed block");
+  assert(typeof b.evidence?.command === "string" && b.evidence.command.length > 0, b.id + " carries a rerunnable evidence.command");
+  if (b.status === "promoted") {
+    assert(typeof b.promotedTo === "string" && goldenIds.has(b.promotedTo), b.id + " promotedTo resolves to a golden entry");
+    const target = golden.entries.find((e) => e.id === b.promotedTo);
+    assert(target!.question.trim() === b.question.trim(), b.id + " promoted question matches " + b.promotedTo + " verbatim");
+  }
+  if (b.status === "open") {
+    assert(!golden.entries.some((e) => e.provenance.ref === "eval-badcases.json#" + b.id), b.id + " open badcase must not already be backfilled");
+  }
+}
+assert(badcases.length >= 1, "at least one real badcase is captured (the loop is seeded, not synthetic)");
+
 console.log("eval-docs-golden.test.ts: " + passed + " passed, " + failed + " failed");
 if (failed > 0) process.exit(1);

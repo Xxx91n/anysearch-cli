@@ -1,7 +1,7 @@
 {
   "schema": "anysearch/eval-looks-coverage@1",
   "domain": "docs",
-  "recordedAt": "2026-09-14",
+  "recordedAt": "2026-09-13",
   "dimensions": [
     {
       "dimension": "intent",
