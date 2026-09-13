@@ -601,7 +601,7 @@ function stepSupersessionIntegrity() {
       // supersession VERB ("superseded by" / "supersedes") on the same line.
       const srcLine = new RegExp("ADR-" + sourceNum + "\\b");
       const supersedes = /superseded?\s+by|supersedes/i;
-      const backRef = targetText.split("\\n").some((l) => srcLine.test(l) && supersedes.test(l));
+      const backRef = targetText.split(/\r?\n/).some((l) => srcLine.test(l) && supersedes.test(l));
       if (!backRef) {
         fail("supersession-integrity: " + f + " is superseded by ADR-" + targetNum + ", but " + targetFile + " carries no back-reference to ADR-" + sourceNum);
       }

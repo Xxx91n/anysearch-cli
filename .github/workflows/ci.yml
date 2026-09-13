@@ -74,8 +74,10 @@ jobs:
   # round-59 audit R-2 / ADR-0060 D7 + ADR-0057 r59 errata: the vector-arm golden cases left
   # the offline default suite (the gate runs --offline); this job re-establishes that coverage
   # with network access, so the anti-downgrade clause has automated support.
+  # round-59 audit D-3: also runs the embedding model tests (packages/embedding test:online),
+  # which had no CI home, so the online-gated coverage is complete.
   test-online:
-    name: test:online (vector-arm slice, network required)
+    name: "test:online (online-gated: store vector-arm + embedding, network required)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -89,5 +91,9 @@ jobs:
       - run: pnpm install --ignore-scripts
       - name: vector-arm golden cases (store test:online)
         run: pnpm -C packages/store test:online
+        env:
+          NODE_OPTIONS: "--test-reporter=spec"
+      - name: embedding model tests (embedding test:online)
+        run: pnpm -C packages/embedding test:online
         env:
           NODE_OPTIONS: "--test-reporter=spec"
