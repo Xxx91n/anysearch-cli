@@ -70,6 +70,36 @@ jobs:
           name: tarballs-${{ matrix.os }}
           path: artifacts/*.tgz
           if-no-files-found: error
+  # ADR-0061 B2/T2: install-to-use lane against the REAL packed artifacts —
+  # the historical gap that let 0.0.0 tarballs sit stale. Packs all seven
+  # packages, npm-installs them into a clean prefix, and drives the installed
+  # `ans` bin through doctor / domain / search. Online search assertions fire
+  # only when EXA_API_KEY / TAVILY_API_KEY secrets exist; offline asserts the
+  # documented no-results path. macOS stays excluded per the ponytail note
+  # above (arm64 better-sqlite3 prebuild delta only).
+  install-smoke:
+    name: "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search)"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/setup@v2
+        with: { install: false }
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --ignore-scripts
+      - run: pnpm -w turbo build
+      - name: install-smoke lane
+        run: node scripts/install-smoke.mjs
+        env:
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
 
   # round-59 audit R-2 / ADR-0060 D7 + ADR-0057 r59 errata: the vector-arm golden cases left
   # the offline default suite (the gate runs --offline); this job re-establishes that coverage

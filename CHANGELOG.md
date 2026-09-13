@@ -4,6 +4,13 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-14 — ADR-0061 r60: 装到用链路 CI（T2/B2）
+
+### Added
+
+- `scripts/install-smoke.mjs`：真实安装到用链路——pack 全部 7 个 workspace 包 → npm 干净前缀安装 → 安装物 `ans` bin 走 --version/doctor/domain docs/doctor/search。online 有 key 时硬断言 ≥1 结果且命中 docs allowlist 主机；无 key 断言文档化离线行为（exit 1 / Results: 0），不造假覆盖。
+- `.github/workflows/ci.yml` `install-smoke` job（ubuntu+windows 矩阵）：build 后跑 install-smoke；EXA/TAVILY key 走 secrets，缺失即离线断言路径。
+
 ## 2026-09-14 — ADR-0061 r60: docs 域 walking skeleton（T1/B1）
 
 ### Added
