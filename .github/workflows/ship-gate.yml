@@ -29,7 +29,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # R62 D-007: macos-latest pruned from the BLOCKING matrix — the F-16 exit-time
+        # libc++abi abort family is unresolved; the non-blocking spillover probe below
+        # keeps per-run signal. Promotion rule lives on the probe job.
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       # round-59 audit R-1: the evidence-anchor assertion resolves non-tip history commits
@@ -117,3 +120,40 @@ jobs:
         # round-59 audit R-2: the golden gate runs the offline slice; the vector-arm slice is
         # re-established by the test-online job in ci.yml.
         run: pnpm -C packages/store eval --offline
+
+  # R62 D-007 (T4): macOS exit-teardown spillover probe — EXPERIMENT. The name, the
+  # bounded continue-on-error, and the minimal repro (NOT the 9-step gate) are the
+  # contract: this job reports crash signatures without gating merges.
+  # TTL/promotion: >=5 consecutive green runs => evaluate restoring macos-latest to
+  # the blocking matrix; persistent crashes => prune stays + ledger
+  # defer-f16-macos-native-crash (ADR-0063 D-007).
+  macos-spillover-probe:
+    name: macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/setup@v2
+        with: { install: false }
+
+      - uses: actions/setup-node@v5
+        with: { node-version: 22, cache: pnpm }
+
+      - name: node baseline (env facts before any native load)
+        run: node -v
+
+      - name: install (no scripts — better-sqlite3 prebuilt)
+        run: pnpm install --ignore-scripts
+
+      # Signature split A: a require-time SIGSEGV/exit-139 here = better-sqlite3
+      # dlopen/registration family — NOT the exit-time abort being probed.
+      - name: better-sqlite3 registration check
+        run: node -e "const D=require('better-sqlite3'); new D(':memory:'); console.log('sqlite registration OK')"
+
+      - name: build cli (bundled artifact is the shipped exit path)
+        run: pnpm --filter @anysearch/cli build
+
+      # Signature split B: libc++abi/mutex abort on process exit = F-16 family.
+      - name: abstain-path repro + crash-signature summary
+        run: node scripts/macos-exit-probe.mjs

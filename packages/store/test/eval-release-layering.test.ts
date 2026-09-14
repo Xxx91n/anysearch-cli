@@ -47,7 +47,10 @@ assert(!release.includes("--decision"), "release.yml delegates the decision flag
 // --- 3. ship-gate.yml aligned on Node 22 (ledger D-003 4) ------------------
 const shipGateYml = read(".github/workflows/ship-gate.yml");
 assert(!shipGateYml.includes("node-version: 24"), "ship-gate.yml must not pin Node 24");
-assert((shipGateYml.match(/node-version: 22/g) ?? []).length === 2, "both ship-gate.yml jobs pin Node 22");
+// R62 T4 added a third job (macos-spillover-probe, non-blocking) — assert EVERY
+// node-version pin is 22 rather than a fixed job count (no 24, no other version).
+const pins = shipGateYml.match(/node-version: \d+/g) ?? [];
+assert(pins.length >= 2 && pins.every((p) => p === "node-version: 22"), "every ship-gate.yml job pins Node 22 (" + pins.join(", ") + ")");
 
 // --- 4. the ledger is a committed repo-root file --------------------------
 assert(fs.existsSync(path.join(root, "eval-looks.json")), "the OF look ledger is committed at the repo root");

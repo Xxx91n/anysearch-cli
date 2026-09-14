@@ -21,6 +21,7 @@ import { runAccessChain } from "./commands/access-chain";
 import { runSwitchState } from "./commands/switch-state";
 import { runHitl } from "./commands/hitl";
 import { rehydrateConfigEnv } from "./config-env";
+import { runTeardown, unrefPendingHandles } from "./teardown";
 
 // ponytail: single source of truth for CLI version, same pattern as apps/mcp
 // (ADR-0020 D3). tsup injects __PACKAGE_VERSION__ at build time.
@@ -114,9 +115,22 @@ const handlers: Record<string, (args: string[]) => Promise<number>> = {
 };
 
 const handler = handlers[cmd];
+// R62 D-003 (T4): exit path — explicit native teardown BEFORE exit. The old
+// process.exit(code) raced libuv teardown against live sqlite/onnx handles
+// (F1 macOS libc++abi abort family). close() first, then let the loop drain;
+// unrefPendingHandles is the D3a backstop for handles we cannot close, and
+// the watchdog preserves the old guaranteed-exit semantics if anything still
+// keeps the loop alive.
+const exit = (code: number): void => {
+  try { runTeardown(); } finally {
+    process.exitCode = code;
+    unrefPendingHandles();
+    setTimeout(() => process.exit(code), 5000).unref();
+  }
+};
 handler(cmdArgs)
-  .then((code) => process.exit(code))
+  .then(exit)
   .catch((e) => {
     process.stderr.write("ans: " + cmd + " failed: " + (e instanceof Error ? e.message : String(e)) + "\n");
-    process.exit(1);
+    exit(1);
   });

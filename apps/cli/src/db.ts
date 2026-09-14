@@ -23,8 +23,15 @@ export function domainSearchDirs(env: NodeJS.ProcessEnv = process.env): string[]
   return dirs;
 }
 
+// R62 D-003 (T4): teardown registry lives in ./teardown (pure leaf).
+import { registerTeardown } from "./teardown";
 export function createPersistentEngine(domain?: string): CompositionResult {
   const dbPath = resolveDbPath();
   mkdirSync(dirname(dbPath), { recursive: true });
-  return createEngine(domain, { dbPath, domainsDirs: domainSearchDirs() });
+  const result = createEngine(domain, { dbPath, domainsDirs: domainSearchDirs() });
+  registerTeardown(() => {
+    (result.store as { close?: () => void }).close?.();
+    result.observation.close();
+  });
+  return result;
 }
