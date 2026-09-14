@@ -75,9 +75,9 @@ function report(kind, msg) {
   }
   const badge =
     kind === "pass" ? `${ANSI.green}[pass]${ANSI.reset}`
-    : kind === "fail" ? `${ANSI.red}[fail]${ANSI.reset}`
-    : kind === "skip" ? `${ANSI.yellow}[skip]${ANSI.reset}`
-    : `${ANSI.yellow}[info]${ANSI.reset}`;
+      : kind === "fail" ? `${ANSI.red}[fail]${ANSI.reset}`
+        : kind === "skip" ? `${ANSI.yellow}[skip]${ANSI.reset}`
+          : `${ANSI.yellow}[info]${ANSI.reset}`;
   process.stdout.write(`${badge} ${msg}\n`);
 }
 
@@ -262,8 +262,8 @@ function stepStaticAssertions() {
   if (dirty.length) {
     fail(
       `stdout purity violation in product sources:\n  - ${dirty.join("\n  - ")}\n` +
-        "ADR-0020 D1.1: MCP server must emit MCP protocol frames only on stdout. " +
-        "Use process.stderr.write / console.error redirected to stderr."
+      "ADR-0020 D1.1: MCP server must emit MCP protocol frames only on stdout. " +
+      "Use process.stderr.write / console.error redirected to stderr."
     );
   }
   report("pass", "no console.log | stdout.write in apps/mcp/src + packages/kernel/src");
@@ -330,98 +330,98 @@ function stepStaticAssertions() {
     }
     report("pass", "MCP search/research dual-channel attribution (content + structuredContent)");
 
-  // 1i-fusion. ADR-0045 D2/D3: fusion governance static assertions (r118 impl).
-  // Registry wiring: three split 60s are consumed from FUSION_REGISTRY at their single
-  // decision points; rrf.ts carries no implicit k default.
-  {
-    const regSrc = fs.readFileSync(path.join(ROOT, "packages", "retriever", "src", "fusion-registry.ts"), "utf8");
-    if (!regSrc.includes("anysearch/fusion-registry@1")) fail("fusion-registry.ts missing schema marker");
-    const wiring = [
-      ["packages/store/src/session-store.ts", "FUSION_REGISTRY.k_fusion.memory"],
-      ["packages/store/src/fts5.ts", "FUSION_REGISTRY.k_fusion.memory"],
-      ["packages/kernel/src/engine.ts", "FUSION_REGISTRY.k_fusion.web"],
-      ["packages/store/src/eval/runner.ts", "FUSION_REGISTRY.ror_window"],
-      ['packages/store/src/session-store.ts', 'registryWeight("memory", "fts")'],
-      ["packages/kernel/src/engine.ts", "FUSION_REGISTRY.weights.web"],
-      ["packages/retriever/src/fusion-registry.ts", "armAbsentSemantics"],
-    ];
-    for (const [rel, needle] of wiring) {
-      if (!fs.readFileSync(path.join(ROOT, rel), "utf8").includes(needle)) {
-        fail(rel + " not wired to " + needle + " (ADR-0045 D2 registry drift)");
+    // 1i-fusion. ADR-0045 D2/D3: fusion governance static assertions (r118 impl).
+    // Registry wiring: three split 60s are consumed from FUSION_REGISTRY at their single
+    // decision points; rrf.ts carries no implicit k default.
+    {
+      const regSrc = fs.readFileSync(path.join(ROOT, "packages", "retriever", "src", "fusion-registry.ts"), "utf8");
+      if (!regSrc.includes("anysearch/fusion-registry@1")) fail("fusion-registry.ts missing schema marker");
+      const wiring = [
+        ["packages/store/src/session-store.ts", "FUSION_REGISTRY.k_fusion.memory"],
+        ["packages/store/src/fts5.ts", "FUSION_REGISTRY.k_fusion.memory"],
+        ["packages/kernel/src/engine.ts", "FUSION_REGISTRY.k_fusion.web"],
+        ["packages/store/src/eval/runner.ts", "FUSION_REGISTRY.ror_window"],
+        ['packages/store/src/session-store.ts', 'registryWeight("memory", "fts")'],
+        ["packages/kernel/src/engine.ts", "FUSION_REGISTRY.weights.web"],
+        ["packages/retriever/src/fusion-registry.ts", "armAbsentSemantics"],
+      ];
+      for (const [rel, needle] of wiring) {
+        if (!fs.readFileSync(path.join(ROOT, rel), "utf8").includes(needle)) {
+          fail(rel + " not wired to " + needle + " (ADR-0045 D2 registry drift)");
+        }
+      }
+      const rrfSrc = fs.readFileSync(path.join(ROOT, "packages", "retriever", "src", "rrf.ts"), "utf8");
+      if (/k\s*=\s*60/.test(rrfSrc)) fail("rrf.ts still carries an implicit k=60 default (ADR-0045 D2)");
+      report("pass", "ADR-0045 fusion-registry wiring: k split registered, no implicit default");
+
+      // score_kind discipline: common provenance shape present; no bare fused score on
+      // NormalizedResult (fused score is a rank_fusion signal only, ADR-0045 D3).
+      const contractSrc = fs.readFileSync(path.join(ROOT, "packages", "retriever", "src", "contract.ts"), "utf8");
+      const nrStart = contractSrc.indexOf("export interface NormalizedResult");
+      const nrEnd = contractSrc.indexOf("export interface ProviderEnvelope");
+      if (nrStart < 0 || nrEnd < 0) fail("contract.ts NormalizedResult block not found");
+      const nrBlock = contractSrc.slice(nrStart, nrEnd);
+      if (/^\s*score\s*[:=]/m.test(nrBlock)) fail("NormalizedResult carries a bare score field (ADR-0045 D3)");
+      if (!contractSrc.includes('scoreKind: "rank_fusion"')) fail("contract.ts missing rank_fusion scoreKind");
+      const engSrc = fs.readFileSync(path.join(ROOT, "packages", "kernel", "src", "engine.ts"), "utf8");
+      if (!engSrc.includes("SCORE_KIND")) fail("engine.ts missing score_kind provenance annotation (ADR-0045 D3)");
+      const ssSrc = fs.readFileSync(path.join(ROOT, "packages", "store", "src", "session-store.ts"), "utf8");
+      if (!ssSrc.includes("SCORE_KIND")) fail("session-store.ts missing score_kind provenance annotation (ADR-0045 D3)");
+      report("pass", "ADR-0045 score_kind discipline: no bare fused score on NormalizedResult");
+    }
+
+    // 1j. ADR-0035 D2/D3/D4/D6: KG-lite relation layer static assertions.
+    {
+      const relPath = path.join(ROOT, "packages/store/src/relation.ts");
+      if (!fs.existsSync(relPath)) fail("ADR-0035 1j: packages/store/src/relation.ts missing");
+      const rel = fs.readFileSync(relPath, "utf8");
+      for (const tok of ["PREDICATES", "EDGE_PATTERN_ROWS", "extractRelations", "parseLlmTriples", "RELATION_RULES_VERSION"])
+        if (!rel.includes(tok)) fail("ADR-0035 1j: relation.ts missing " + tok);
+      const sql = fs.readFileSync(path.join(ROOT, "packages/store/src/schema.sql"), "utf8");
+      for (const tok of ["IF NOT EXISTS edges", "idx_edges_active_triple", "edge_patterns", "rules_version"])
+        if (!sql.includes(tok)) fail("ADR-0035 1j: schema.sql missing " + tok);
+      const ss = fs.readFileSync(path.join(ROOT, "packages/store/src/session-store.ts"), "utf8");
+      for (const tok of ["relationArmRows", "backfillRelations", "relationTelemetry", "linkRelations"])
+        if (!ss.includes(tok)) fail("ADR-0035 1j: session-store.ts missing " + tok);
+      if (!ss.includes('label: "relation"')) fail("ADR-0035 1j: session-store.ts missing the fifth-arm label (RRF extraArms wiring)");
+      const cliRel = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/relation.ts"), "utf8");
+      if (!cliRel.includes("backfill-relations")) fail("ADR-0035 1j: CLI relation command missing backfill-relations");
+      report("pass", "ADR-0035 KG-lite layer: relation module + edges schema + store hooks + fifth-arm label + CLI present");
+    }
+    // 1n. ADR-0037 D3/D4/D5/D6: consolidation + forgetting layer static assertions.
+    {
+      const conPath = path.join(ROOT, "packages/store/src/consolidate.ts");
+      if (!fs.existsSync(conPath)) fail("ADR-0037 1n: packages/store/src/consolidate.ts missing");
+      const con = fs.readFileSync(conPath, "utf8");
+      for (const tok of ["consolidateMemoryRun", "decideOp", "THETA_DUP", "BEGIN IMMEDIATE", "scanArchiveCandidates", "undoArchive", "applyArchive"])
+        if (!con.includes(tok)) fail("ADR-0037 1n: consolidate.ts missing " + tok);
+      const sql2 = fs.readFileSync(path.join(ROOT, "packages/store/src/schema.sql"), "utf8");
+      for (const tok of ["semantic_memories", "archive_log", "archived INTEGER NOT NULL DEFAULT 0"])
+        if (!sql2.includes(tok)) fail("ADR-0037 1n: schema.sql missing " + tok);
+      const ss2 = fs.readFileSync(path.join(ROOT, "packages/store/src/session-store.ts"), "utf8");
+      for (const tok of ["consolidateMemory", "scanArchive", "undoArchive", "archived = 0", "semanticTelemetry"])
+        if (!ss2.includes(tok)) fail("ADR-0037 1n: session-store.ts missing " + tok);
+      const kinit = fs.readFileSync(path.join(ROOT, "packages/kernel/src/llm-init.ts"), "utf8");
+      if (!kinit.includes('LlmEndpointKind') || !kinit.includes("ANS_LLM_API_KEY")) fail("ADR-0037 1n: kernel llm-init.ts missing three-endpoint wiring (LlmEndpointKind/ANS_LLM_API_KEY)");
+      report("pass", "ADR-0037 consolidation/forgetting layer: schema + consolidate module + store wiring + kernel 3-endpoint init present");
+
+      // 1o. ADR-0037 Phase-3 CLI: consolidate command + memory forget + durable DB path wiring.
+      {
+        const conCli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/consolidate.ts"), "utf8");
+        for (const tok of ["createLlmSession", "classifyClaim", "resolveDbPath", "consolidateMemory", "--dry-run"])
+          if (!conCli.includes(tok)) fail("ADR-0037 1o: apps/cli consolidate.ts missing " + tok);
+        const dbHelper = fs.readFileSync(path.join(ROOT, "apps/cli/src/db.ts"), "utf8");
+        if (!dbHelper.includes("createPersistentEngine") || !dbHelper.includes("resolveDbPath")) fail("ADR-0037 1o: db.ts helper missing");
+        const memCli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/memory.ts"), "utf8");
+        for (const tok of ["scanArchive", "applyArchive", "undoArchive", "--undo"])
+          if (!memCli.includes(tok)) fail("ADR-0037 1o: memory.ts forget subcommand missing " + tok);
+        const idx = fs.readFileSync(path.join(ROOT, "apps/cli/src/index.ts"), "utf8");
+        if (!idx.includes("runConsolidate") || !idx.includes('"consolidate"')) fail("ADR-0037 1o: index.ts missing consolidate registration");
+        const comp = fs.readFileSync(path.join(ROOT, "packages/kernel/src/composition.ts"), "utf8");
+        if (!comp.includes("ANS_DB_PATH") || !comp.includes("opts?.dbPath")) fail("ADR-0037 1o: kernel composition missing dbPath wiring");
+        report("pass", "ADR-0037 Phase-3 CLI: consolidate + forget + durable DB path present");
       }
     }
-    const rrfSrc = fs.readFileSync(path.join(ROOT, "packages", "retriever", "src", "rrf.ts"), "utf8");
-    if (/k\s*=\s*60/.test(rrfSrc)) fail("rrf.ts still carries an implicit k=60 default (ADR-0045 D2)");
-    report("pass", "ADR-0045 fusion-registry wiring: k split registered, no implicit default");
-
-    // score_kind discipline: common provenance shape present; no bare fused score on
-    // NormalizedResult (fused score is a rank_fusion signal only, ADR-0045 D3).
-    const contractSrc = fs.readFileSync(path.join(ROOT, "packages", "retriever", "src", "contract.ts"), "utf8");
-    const nrStart = contractSrc.indexOf("export interface NormalizedResult");
-    const nrEnd = contractSrc.indexOf("export interface ProviderEnvelope");
-    if (nrStart < 0 || nrEnd < 0) fail("contract.ts NormalizedResult block not found");
-    const nrBlock = contractSrc.slice(nrStart, nrEnd);
-    if (/^\s*score\s*[:=]/m.test(nrBlock)) fail("NormalizedResult carries a bare score field (ADR-0045 D3)");
-    if (!contractSrc.includes('scoreKind: "rank_fusion"')) fail("contract.ts missing rank_fusion scoreKind");
-    const engSrc = fs.readFileSync(path.join(ROOT, "packages", "kernel", "src", "engine.ts"), "utf8");
-    if (!engSrc.includes("SCORE_KIND")) fail("engine.ts missing score_kind provenance annotation (ADR-0045 D3)");
-    const ssSrc = fs.readFileSync(path.join(ROOT, "packages", "store", "src", "session-store.ts"), "utf8");
-    if (!ssSrc.includes("SCORE_KIND")) fail("session-store.ts missing score_kind provenance annotation (ADR-0045 D3)");
-    report("pass", "ADR-0045 score_kind discipline: no bare fused score on NormalizedResult");
-  }
-
-  // 1j. ADR-0035 D2/D3/D4/D6: KG-lite relation layer static assertions.
-  {
-    const relPath = path.join(ROOT, "packages/store/src/relation.ts");
-    if (!fs.existsSync(relPath)) fail("ADR-0035 1j: packages/store/src/relation.ts missing");
-    const rel = fs.readFileSync(relPath, "utf8");
-    for (const tok of ["PREDICATES", "EDGE_PATTERN_ROWS", "extractRelations", "parseLlmTriples", "RELATION_RULES_VERSION"])
-      if (!rel.includes(tok)) fail("ADR-0035 1j: relation.ts missing " + tok);
-    const sql = fs.readFileSync(path.join(ROOT, "packages/store/src/schema.sql"), "utf8");
-    for (const tok of ["IF NOT EXISTS edges", "idx_edges_active_triple", "edge_patterns", "rules_version"])
-      if (!sql.includes(tok)) fail("ADR-0035 1j: schema.sql missing " + tok);
-    const ss = fs.readFileSync(path.join(ROOT, "packages/store/src/session-store.ts"), "utf8");
-    for (const tok of ["relationArmRows", "backfillRelations", "relationTelemetry", "linkRelations"])
-      if (!ss.includes(tok)) fail("ADR-0035 1j: session-store.ts missing " + tok);
-    if (!ss.includes('label: "relation"')) fail("ADR-0035 1j: session-store.ts missing the fifth-arm label (RRF extraArms wiring)");
-    const cliRel = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/relation.ts"), "utf8");
-    if (!cliRel.includes("backfill-relations")) fail("ADR-0035 1j: CLI relation command missing backfill-relations");
-    report("pass", "ADR-0035 KG-lite layer: relation module + edges schema + store hooks + fifth-arm label + CLI present");
-  }
-  // 1n. ADR-0037 D3/D4/D5/D6: consolidation + forgetting layer static assertions.
-  {
-    const conPath = path.join(ROOT, "packages/store/src/consolidate.ts");
-    if (!fs.existsSync(conPath)) fail("ADR-0037 1n: packages/store/src/consolidate.ts missing");
-    const con = fs.readFileSync(conPath, "utf8");
-    for (const tok of ["consolidateMemoryRun", "decideOp", "THETA_DUP", "BEGIN IMMEDIATE", "scanArchiveCandidates", "undoArchive", "applyArchive"])
-      if (!con.includes(tok)) fail("ADR-0037 1n: consolidate.ts missing " + tok);
-    const sql2 = fs.readFileSync(path.join(ROOT, "packages/store/src/schema.sql"), "utf8");
-    for (const tok of ["semantic_memories", "archive_log", "archived INTEGER NOT NULL DEFAULT 0"])
-      if (!sql2.includes(tok)) fail("ADR-0037 1n: schema.sql missing " + tok);
-    const ss2 = fs.readFileSync(path.join(ROOT, "packages/store/src/session-store.ts"), "utf8");
-    for (const tok of ["consolidateMemory", "scanArchive", "undoArchive", "archived = 0", "semanticTelemetry"])
-      if (!ss2.includes(tok)) fail("ADR-0037 1n: session-store.ts missing " + tok);
-    const kinit = fs.readFileSync(path.join(ROOT, "packages/kernel/src/llm-init.ts"), "utf8");
-    if (!kinit.includes('LlmEndpointKind') || !kinit.includes("ANS_LLM_API_KEY")) fail("ADR-0037 1n: kernel llm-init.ts missing three-endpoint wiring (LlmEndpointKind/ANS_LLM_API_KEY)");
-    report("pass", "ADR-0037 consolidation/forgetting layer: schema + consolidate module + store wiring + kernel 3-endpoint init present");
-
-  // 1o. ADR-0037 Phase-3 CLI: consolidate command + memory forget + durable DB path wiring.
-  {
-    const conCli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/consolidate.ts"), "utf8");
-    for (const tok of ["createLlmSession", "classifyClaim", "resolveDbPath", "consolidateMemory", "--dry-run"])
-      if (!conCli.includes(tok)) fail("ADR-0037 1o: apps/cli consolidate.ts missing " + tok);
-    const dbHelper = fs.readFileSync(path.join(ROOT, "apps/cli/src/db.ts"), "utf8");
-    if (!dbHelper.includes("createPersistentEngine") || !dbHelper.includes("resolveDbPath")) fail("ADR-0037 1o: db.ts helper missing");
-    const memCli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/memory.ts"), "utf8");
-    for (const tok of ["scanArchive", "applyArchive", "undoArchive", "--undo"])
-      if (!memCli.includes(tok)) fail("ADR-0037 1o: memory.ts forget subcommand missing " + tok);
-    const idx = fs.readFileSync(path.join(ROOT, "apps/cli/src/index.ts"), "utf8");
-    if (!idx.includes("runConsolidate") || !idx.includes('"consolidate"')) fail("ADR-0037 1o: index.ts missing consolidate registration");
-    const comp = fs.readFileSync(path.join(ROOT, "packages/kernel/src/composition.ts"), "utf8");
-    if (!comp.includes("ANS_DB_PATH") || !comp.includes("opts?.dbPath")) fail("ADR-0037 1o: kernel composition missing dbPath wiring");
-    report("pass", "ADR-0037 Phase-3 CLI: consolidate + forget + durable DB path present");
-  }
-  }
   }
 
   // 1j. ADR-0034 D4: CLI --json purity — single JSON document on stdout, no decorative chars in this file.
@@ -500,6 +500,35 @@ function stepStaticAssertions() {
       fail("ADR-0047 ship-gate missing stepOverrideGovernance");
     }
     report("pass", "ADR-0046/0047 source gates + ADR-0062 dual-gate abstain contracts + criterion anchors");
+  }
+
+  // 1q. R62 D-005 (T5): offline-eval governance — Declared Exclusion is a
+  //     compile-time/static boundary, diff-visible and reviewable. Source
+  //     assertions over the golden dataset — never a runtime NODATA quota.
+  {
+    const gcSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/golden-cases.ts"), "utf8");
+    // (a) the exclusion set exists as an export;
+    if (!gcSrc.includes("export const OFFLINE_EXCLUDED_GROUPS")) fail("R62 D-005: OFFLINE_EXCLUDED_GROUPS export missing");
+    // (b) its whitelist is exactly [VECTOR_ARM_GROUP] with VECTOR_ARM_GROUP === "semantic" —
+    //     widening the exclusion set fails here, at review time, not in a skipped run.
+    const arm = gcSrc.match(/export const VECTOR_ARM_GROUP: EvalGroup = "([^"]+)"/);
+    if (!arm || arm[1] !== "semantic") fail("R62 D-005: VECTOR_ARM_GROUP must be \"semantic\"");
+    const excl = gcSrc.match(/export const OFFLINE_EXCLUDED_GROUPS: readonly EvalGroup\[\] = \[([^\]]*)\]/);
+    const exclToks = (excl?.[1] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (exclToks.length !== 1 || exclToks[0] !== "VECTOR_ARM_GROUP")
+      fail("R62 D-005: OFFLINE_EXCLUDED_GROUPS must be exactly [VECTOR_ARM_GROUP], got [" + exclToks.join(",") + "]");
+    // (c) offline coverage floor, computed on the real dataset — 0.75 minimum.
+    const cov = spawnSync(process.execPath, ["--import", "tsx", "-e",
+      "import { GOLDEN_CASES, offlineCases } from './packages/store/src/eval/golden-cases.ts';" +
+      "const r = offlineCases().length / GOLDEN_CASES.length;" +
+      "if (!(r >= 0.75)) { console.error('offline coverage ' + r.toFixed(3) + ' < 0.75'); process.exit(1); }" +
+      "console.log('offline coverage ' + r.toFixed(3));"],
+      { cwd: ROOT, encoding: "utf8" });
+    if (cov.status !== 0) fail("R62 D-005: offline coverage below 0.75\n" + String(cov.stderr ?? cov.stdout ?? "").trim());
+    // (d) the excluded slice is re-established by the online lane in ci.yml.
+    if (!fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8").includes("test-online"))
+      fail("R62 D-005: ci.yml missing test-online job");
+    report("pass", "R62 D-005: offline exclusion governance (whitelist + 0.75 floor + test-online lane)");
   }
 
   // 1n. ADR-0052 D2-D5: local observation representation, SQLite store, export
@@ -998,7 +1027,7 @@ async function stepT0Smoke(tmpDir) {
   });
   let buf = "";
   prefHelp.stdout.on("data", (d) => (buf += d.toString("utf8")));
-  prefHelp.stderr.on("data", () => {});
+  prefHelp.stderr.on("data", () => { });
   const code = await new Promise((r) => prefHelp.on("close", r));
   if (code !== 0) {
     fail(`pref --help exited ${code}; expected 0`);
@@ -1019,7 +1048,7 @@ async function stepT0Smoke(tmpDir) {
     fail("memory-pipeline.ts missing <user_preferences> Stage-1 injection (ADR-0024 D5)");
   }
   report("pass", "memory-pipeline.ts Stage-1 <user_preferences> injection present");
-  }
+}
 // ---------------------------------------------------------------------------
 // Step 7 — ADR-0027: memory eval harness gate (fail-closed three metrics;
 // LLM judge channel deliberately NOT in ship-gate per ADR-0027 D2/D6).
