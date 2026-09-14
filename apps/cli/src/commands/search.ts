@@ -60,6 +60,9 @@ export async function runSearch(args: string[]): Promise<number> {
         query: queryClean,
         mode,
         results: envelope.results,
+        // ADR-0063 (R62 T2): providersFailed exposed so the install-smoke offline
+        // leg anchors a structured field instead of exit codes/regexes.
+        providersFailed: envelope.metadata?.providersFailed ?? [],
         answers: envelope.answers,
         sufficiency: envelope.metadata?.sufficiency ?? null,
         attribution: envelope.attribution ?? null,
