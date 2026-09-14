@@ -48,7 +48,9 @@ export class AnySearchProvider implements SearchProvider {
 
   constructor(apiKey?: string, endpoint?: string) {
     this.apiKey = apiKey ?? process.env.ANYSEARCH_API_KEY;
-    this.endpoint = endpoint ?? ANYSEARCH_ENDPOINT;
+    // ADR-0063 (R62 T2): ANYSEARCH_ENDPOINT env override — dead-port fault
+    // injection keeps the install-smoke offline leg hermetic; explicit arg wins.
+    this.endpoint = endpoint ?? process.env.ANYSEARCH_ENDPOINT ?? ANYSEARCH_ENDPOINT;
   }
 
   async search(req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {

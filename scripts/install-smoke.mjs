@@ -5,8 +5,12 @@
 // Online leg: when EXA_API_KEY or TAVILY_API_KEY is set, the script hard-asserts
 // that a real search returns >=1 result AND that at least one result URL lands on
 // the docs-domain urlAllowlist (pnpm.io / typescriptlang.org / modelcontextprotocol.io).
-// Without keys it asserts the documented offline behavior instead (exit 1, Results: 0)
-// — never fakes coverage. The offline golden lane is the committed
+// Without keys it fault-injects a dead endpoint (ANYSEARCH_ENDPOINT=127.0.0.1:9)
+// and asserts the documented abstain contract on `search --json` stdout under a
+// probe domain whose sources.enabled is [anysearch] alone —
+// abstain:true && providersFailed∋anysearch && results.length===0 (ADR-0063 /
+// R62 D-004: abstain exit 0 replaces the retired exit-1/Results:0 contract).
+// The offline golden lane is the committed
 // packages/store/test/eval-docs-golden.test.ts suite inside `turbo test`.
 //
 // macOS limitation: covered by the ci.yml ponytail note — the only arm64 delta is
@@ -50,7 +54,7 @@ function check(name, cond, detail) {
 }
 function sh(cmd, opts) {
   const r = spawnSync(cmd, { shell: true, encoding: "utf8", ...opts });
-  return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? "") };
+  return { code: r.status ?? 1, out: (r.stdout ?? "") + (r.stderr ?? ""), stdout: r.stdout ?? "" };
 }
 
 const dir = mkdtempSync(join(tmpdir(), "ans-install-smoke-"));
@@ -94,16 +98,41 @@ try {
   const d2 = ans("doctor");
   check("doctor shows active domain docs", d2.out.includes("active: docs"), d2.out.slice(-400));
 
-  // 4. Search leg — online hard assertion or offline documented behavior.
+  // 4. Search leg — online hard assertion or offline abstain contract.
   const online = Boolean(process.env.EXA_API_KEY || process.env.TAVILY_API_KEY);
-  const s = ans("search 'MCP Streamable HTTP transport session id'");
   if (online) {
+    const s = ans("search 'MCP Streamable HTTP transport session id'");
     check("search exit 0 with provider key", s.code === 0, s.out.slice(-400));
     check("search returns results", /Results: [1-9]/.test(s.out), s.out.slice(-400));
     check("a result lands on the docs urlAllowlist", ALLOWLIST.some((h) => s.out.includes(h)), s.out.slice(-400));
   } else {
-    check("offline search exits 1 (documented no-results path)", s.code === 1, s.out.slice(-400));
-    check("offline search reports Results: 0", s.out.includes("Results: 0"), s.out.slice(-400));
+    // R62 D-004: hermetic abstain leg. tavily/exa construct keyless (their
+    // factories never throw), so "no keys" does NOT mean "only the anysearch
+    // arm" — a probe domain narrows sources.enabled to [anysearch] explicitly,
+    // and a dead port fault-injects that arm. Zero external network is touched,
+    // in any network condition. Assertions anchor structured --json fields, not
+    // the exit code (R62 D-003 teardown rewrites it intermittently) — abstain
+    // is the contract; the exit-1/Results:0 shape is retired.
+    const probeDir = join(dir, "probe-domains");
+    mkdirSync(probeDir, { recursive: true });
+    writeFileSync(join(probeDir, "probe.toml"), [
+      'name = "probe"',
+      'description = "install-smoke offline leg — single-arm fault-injection domain (R62 D-004)"',
+      '[settings]', 'language = "TypeScript"', 'depth = "docs"',
+      '[skills]', 'active = ["search"]',
+      '[sources]', 'enabled = ["anysearch"]', 'urlAllowlist = ["nonexistent.invalid"]',
+      '[rag]', 'adapter = "none"', ''
+    ].join("\n"), "utf8");
+    const s = sh(`\"${bin}\" search 'MCP Streamable HTTP transport session id' --json`, {
+      cwd: prefix,
+      env: { ...process.env, ANS_DOMAIN: "probe", ANS_DOMAINS_DIR: probeDir, ANYSEARCH_ENDPOINT: "http://127.0.0.1:9" },
+    });
+    let j = null;
+    try { j = JSON.parse(s.stdout); } catch { /* null asserted below */ }
+    check("offline search --json stdout parses", j !== null, s.out.slice(-400));
+    check("offline abstain:true", j?.abstain?.abstain === true, s.out.slice(-400));
+    check("providersFailed includes anysearch", Array.isArray(j?.providersFailed) && j.providersFailed.includes("anysearch"), s.out.slice(-400));
+    check("offline results.length === 0", Array.isArray(j?.results) && j.results.length === 0, s.out.slice(-400));
   }
 } finally {
   rmSync(dir, { recursive: true, force: true });
