@@ -208,7 +208,7 @@
         ],
         "provenance": {
           "type": "internal-dogfood",
-          "ref": ".scratch/grill-round-59/q3-prompt.md",
+          "ref": "docs/adr/0060-architecture-grill-round-59-archive-truthfulness-closure.md",
           "harvestedAt": "2026-09-14"
         },
         "notes": "real out-of-corpus question: CONTEXT.md:9 claimed tokio::JoinSet for a TS codebase; tokio docs outside allowlist → expect abstain | badcase docs-bc0001 observed 10 results (expected abstain)"
