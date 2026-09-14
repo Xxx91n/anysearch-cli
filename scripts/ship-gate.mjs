@@ -210,11 +210,13 @@ function stepStaticAssertions() {
     const pkg = JSON.parse(
       fs.readFileSync(path.join(ROOT, rel, "package.json"), "utf8")
     );
-    if (pkg.version === "0.0.0") {
-      fail(`${rel}/package.json still at 0.0.0 — pin to 0.0.1 before ship (D-006 patch-start)`);
+    // R62 due-chore: hard pin — every workspace package must be exactly 0.0.1
+    // (the release candidate), not merely "not 0.0.0".
+    if (pkg.version !== "0.0.1") {
+      fail(`${rel}/package.json not pinned at 0.0.1 (got ${pkg.version}) — release pin (D-006 patch-start)`);
     }
   }
-  report("pass", `all ${PKG_DIRS.length} packages not at 0.0.0`);
+  report("pass", `all ${PKG_DIRS.length} packages pinned at 0.0.1`);
 
   // 1b. ADR-0017 dual-era: kernel and retriever must both export (ADR-0017)
   const kernelExports = JSON.parse(
