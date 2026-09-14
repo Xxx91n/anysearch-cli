@@ -3,6 +3,22 @@
   "looks": [],
   "golden": {
     "schema": "anysearch/docs-golden@1",
+    "scopes": {
+      "docs-g0001": "live",
+      "docs-g0002": "live",
+      "docs-g0003": "live",
+      "docs-g0004": "live",
+      "docs-g0005": "live",
+      "docs-g0006": "live",
+      "docs-g0007": "stub",
+      "docs-g0008": "live",
+      "docs-g0009": "live",
+      "docs-g0010": "live",
+      "docs-g0011": "live",
+      "docs-g0012": "live",
+      "docs-g0013": "stub",
+      "docs-g0014": "both"
+    },
     "entries": [
       {
         "id": "docs-g0001",

@@ -1,4 +1,105 @@
 {
   "schema": "anysearch/eval-quarantine@1",
-  "entries": []
+  "entries": [
+    {
+      "id": "docs-g0003",
+      "group": "eval-looks-live",
+      "reason": "live provider drift: pnpm.io host hits but exact mustHitUrl /settings path absent in today's result set (localized /zh/ and /10.x/ paths returned instead); strict assertion kept, re-verify at review",
+      "quarantinedAt": "2026-09-14T19:02:29Z",
+      "ttlDays": 30,
+      "expiresAt": "2026-10-14T19:02:29.000Z",
+      "renewals": 0,
+      "reviews": []
+    },
+    {
+      "id": "docs-g0005",
+      "group": "eval-looks-live",
+      "reason": "live provider drift: modelcontextprotocol.io host hits but dated spec path /specification/2025-06-18/basic/transports absent (providers return /specification/latest/... alias); strict assertion kept",
+      "quarantinedAt": "2026-09-14T19:02:29Z",
+      "ttlDays": 30,
+      "expiresAt": "2026-10-14T19:02:29.000Z",
+      "renewals": 0,
+      "reviews": []
+    },
+    {
+      "id": "docs-g0006",
+      "group": "eval-looks-live",
+      "reason": "live provider drift: typescriptlang.org host hits but exact /tsconfig path absent in today's result set; strict assertion kept",
+      "quarantinedAt": "2026-09-14T19:02:29Z",
+      "ttlDays": 30,
+      "expiresAt": "2026-10-14T19:02:29.000Z",
+      "renewals": 0,
+      "reviews": []
+    },
+    {
+      "id": "docs-g0008",
+      "group": "eval-looks-live",
+      "reason": "live provider drift: mustHitHosts requires BOTH pnpm.io and typescriptlang.org; today's result set contains only pnpm.io (zh localized paths) — no typescriptlang arrival; strict assertion kept",
+      "quarantinedAt": "2026-09-14T19:02:29Z",
+      "ttlDays": 30,
+      "expiresAt": "2026-10-14T19:02:29.000Z",
+      "renewals": 0,
+      "reviews": []
+    },
+    {
+      "id": "docs-g0010",
+      "group": "eval-looks-live",
+      "reason": "live verdict drift: terse query \"Mark SSE transport as deprecated\" now yields all-off-domain results => legitimate abstain; entry expected answer+mustHit — expectation vs provider drift, needs re-harvest review",
+      "quarantinedAt": "2026-09-14T19:02:29Z",
+      "ttlDays": 30,
+      "expiresAt": "2026-10-14T19:02:29.000Z",
+      "renewals": 0,
+      "reviews": []
+    },
+    {
+      "id": "docs-g0011",
+      "group": "eval-looks-live",
+      "reason": "live provider drift: pnpm.io host hits but exact mustHitUrl /settings path absent (versioned /10.x/ and /zh/ variants returned); strict assertion kept",
+      "quarantinedAt": "2026-09-14T19:02:29Z",
+      "ttlDays": 30,
+      "expiresAt": "2026-10-14T19:02:29.000Z",
+      "renewals": 0,
+      "reviews": []
+    },
+    {
+      "id": "docs-g0004",
+      "group": "eval-looks-live",
+      "reason": "live provider drift: typescriptlang.org host hits but exact /tsconfig path flaky across runs (passed one run, absent next — versioned/aliased doc paths); strict assertion kept",
+      "quarantinedAt": "2026-09-14T19:02:29Z",
+      "ttlDays": 30,
+      "expiresAt": "2026-10-14T19:02:29.000Z",
+      "renewals": 0,
+      "reviews": []
+    },
+    {
+      "id": "docs-g0001",
+      "group": "eval-looks-live",
+      "reason": "live provider drift (flaky across runs): modelcontextprotocol.io host hits but dated spec path /specification/2025-06-18/basic/transports flips run-to-run (providers return /latest/ alias); strict assertion kept",
+      "quarantinedAt": "2026-09-14T19:02:29Z",
+      "ttlDays": 30,
+      "expiresAt": "2026-10-14T19:02:29.000Z",
+      "renewals": 0,
+      "reviews": []
+    },
+    {
+      "id": "docs-g0002",
+      "group": "eval-looks-live",
+      "reason": "live provider drift (flaky across runs): pnpm.io host hits but exact /settings path flips run-to-run (versioned /10.x/ and localized /zh/ variants); strict assertion kept",
+      "quarantinedAt": "2026-09-14T19:02:29Z",
+      "ttlDays": 30,
+      "expiresAt": "2026-10-14T19:02:29.000Z",
+      "renewals": 0,
+      "reviews": []
+    },
+    {
+      "id": "docs-g0009",
+      "group": "eval-looks-live",
+      "reason": "live provider drift (flaky across runs): typescriptlang.org host hits but exact /tsconfig path flips run-to-run; strict assertion kept",
+      "quarantinedAt": "2026-09-14T19:02:29Z",
+      "ttlDays": 30,
+      "expiresAt": "2026-10-14T19:02:29.000Z",
+      "renewals": 0,
+      "reviews": []
+    }
+  ]
 }
