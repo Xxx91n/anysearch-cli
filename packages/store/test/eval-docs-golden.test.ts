@@ -110,6 +110,26 @@ try {
 assert(threw, "loadDomainByNameIn throws Domain not found after exhausting dirs");
 
 
+// --- 8b. ADR-0062 criteria 1-4 anchors: the golden set must carry ---------
+// an out-of-domain must-abstain (c1), a paired in-domain must-hit guard
+// against over-refusal (c2), a stub-provider degradation arm (c3), and a
+// cold-domain zero-result entry (c4).
+{
+  const docsAbstain = golden.entries.filter((e) => e.domain === "docs" && e.expected.verdict === "abstain");
+  assert(docsAbstain.length >= 1, "c1: docs-domain out-of-domain must-abstain entry exists");
+  const pairedHit = golden.entries.find((e) =>
+    e.domain === "docs" && e.expected.verdict === "answer" && (e.expected.mustHitHosts?.length ?? 0) > 0);
+  assert(!!pairedHit, "c2: paired in-domain must-hit entry exists (over-refusal guard)");
+  const stubArm = docsAbstain.find((e) => /domain-filter\.test\.ts|stub-provider/i.test(e.notes ?? "") || e.provenance.ref.includes("domain-filter"));
+  assert(!!stubArm, "c3: stub-provider degradation arm is anchored by an abstain entry");
+  const coldEntry = golden.entries.find((e) => e.domain !== "docs");
+  assert(!!coldEntry, "c4: cold-domain entry exists");
+  if (coldEntry) {
+    assert(coldEntry.expected.verdict === "abstain", "c4: cold-domain entry asserts abstain");
+    assert(!coldEntry.expected.mustHitHosts && !coldEntry.expected.mustHitUrls, "c4: cold-domain entry asserts no mustHit");
+  }
+}
+
 // --- 9. ADR-0061 B4: badcase -> golden regression loop ----------------------
 const badcasesRaw = JSON.parse(fs.readFileSync(path.join(root, "eval-badcases.json"), "utf8"));
 assert(badcasesRaw.schema === "anysearch/eval-badcases@1", "eval-badcases.json schema");

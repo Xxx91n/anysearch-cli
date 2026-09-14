@@ -334,6 +334,79 @@
           "harvestedAt": "2026-09-14"
         },
         "notes": "verbatim GH issue title; same better-sqlite3 surface as docs-g0003"
+      },
+      {
+        "id": "docs-g0012",
+        "domain": "docs",
+        "question": "pnpm-workspace.yaml 的 onlyBuiltDependencies 白名单怎么放行 better-sqlite3 的 prebuild 又禁掉安装脚本？",
+        "questionLang": "zh",
+        "intent": "howto",
+        "expected": {
+          "verdict": "answer",
+          "mustHitHosts": [
+            "pnpm.io"
+          ]
+        },
+        "dimensions": [
+          "intent:howto",
+          "source-tier:settings",
+          "freshness:stable",
+          "lang:zh",
+          "attribution:domain",
+          "hops:single"
+        ],
+        "provenance": {
+          "type": "internal-dogfood",
+          "ref": ".scratch/grill-round-61/handoffs/next-round.md",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "ADR-0062 判据2 域内 must-hit 成对锚——与 docs-g0007 同域同语言同 intent 家族的合法域内提问必须答出，防止 post-filter 过度弃答。"
+      },
+      {
+        "id": "docs-g0013",
+        "domain": "docs",
+        "question": "kubernetes pod eviction policy kubectl drain",
+        "questionLang": "en",
+        "intent": "troubleshoot",
+        "expected": {
+          "verdict": "abstain"
+        },
+        "dimensions": [
+          "intent:troubleshoot",
+          "freshness:stable",
+          "lang:en",
+          "hops:single",
+          "negative:abstain"
+        ],
+        "provenance": {
+          "type": "internal-dogfood",
+          "ref": "packages/kernel/test/domain-filter.test.ts",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "ADR-0062 判据3 降级 stub-provider 臂——当 provider 无域过滤能力（domainFilterSupported=false）时权威 post-gate 仍拦全部域外到达；可执行臂见 kernel 域过滤测试 §5。"
+      },
+      {
+        "id": "docs-g0014",
+        "domain": "cold",
+        "question": "kubernetes pod eviction policy kubectl drain",
+        "questionLang": "en",
+        "intent": "factoid",
+        "expected": {
+          "verdict": "abstain"
+        },
+        "dimensions": [
+          "intent:factoid",
+          "freshness:stable",
+          "lang:en",
+          "hops:single",
+          "negative:abstain"
+        ],
+        "provenance": {
+          "type": "internal-dogfood",
+          "ref": ".scratch/grill-round-61/narrow-domains/cold.toml",
+          "harvestedAt": "2026-09-14"
+        },
+        "notes": "ADR-0062 判据4 冷门域 0 结果——cold.toml allowlist 仅 nonexistent.invalid，任何到达均被闸，零幸存者即弃答；端到端臂见 apps/cli/test/abstain.test.ts live arm。"
       }
     ]
   }

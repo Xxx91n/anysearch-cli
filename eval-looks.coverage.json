@@ -1,16 +1,16 @@
 {
   "schema": "anysearch/eval-looks-coverage@1",
   "domain": "docs",
-  "recordedAt": "2026-09-13",
+  "recordedAt": "2026-09-14",
   "dimensions": [
     {
       "dimension": "intent",
       "status": "covered",
-      "count": 11,
+      "count": 14,
       "classes": {
-        "factoid": 1,
-        "howto": 3,
-        "troubleshoot": 3,
+        "factoid": 2,
+        "howto": 4,
+        "troubleshoot": 4,
         "comparison": 1,
         "reference": 3
       }
@@ -18,19 +18,19 @@
     {
       "dimension": "source-tier",
       "status": "covered",
-      "count": 10,
+      "count": 11,
       "classes": {
         "spec": 3,
         "reference": 4,
-        "settings": 3
+        "settings": 4
       }
     },
     {
       "dimension": "freshness",
       "status": "covered",
-      "count": 11,
+      "count": 14,
       "classes": {
-        "stable": 5,
+        "stable": 8,
         "active": 3,
         "supersede-event": 3
       }
@@ -38,36 +38,36 @@
     {
       "dimension": "lang",
       "status": "covered",
-      "count": 11,
+      "count": 14,
       "classes": {
-        "zh": 7,
-        "en": 4
+        "zh": 8,
+        "en": 6
       }
     },
     {
       "dimension": "attribution",
       "status": "covered",
-      "count": 10,
+      "count": 11,
       "classes": {
         "claim": 9,
-        "domain": 1
+        "domain": 2
       }
     },
     {
       "dimension": "hops",
       "status": "covered",
-      "count": 11,
+      "count": 14,
       "classes": {
-        "single": 10,
+        "single": 13,
         "multi": 1
       }
     },
     {
       "dimension": "negative",
       "status": "covered",
-      "count": 1,
+      "count": 3,
       "classes": {
-        "abstain": 1
+        "abstain": 3
       }
     },
     {

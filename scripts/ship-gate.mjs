@@ -468,10 +468,38 @@ function stepStaticAssertions() {
     const ledgerSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/override-ledger.ts"), "utf8");
     for (const tok of ["parseShipOverrideLedger", "hashOverrideEntry", "withShipOverrideLedgerLock"])
       if (!ledgerSrc.includes(tok)) fail("ADR-0047 override ledger missing " + tok);
+  }
+
+  // 1n. ADR-0062 D2/D3: dual-gate domain filter + first-class abstain must exist
+  //     as source-level contracts, and the eval-looks golden ledger must carry
+  //     the four criterion anchors (must-abstain / paired must-hit / stub-
+  //     provider degradation / cold-domain zero-result).
+  {
+    const contractSrc = fs.readFileSync(path.join(ROOT, "packages/retriever/src/contract.ts"), "utf8");
+    for (const tok of ["includeDomains", "domainFilterSupported", "domain_filter_empty"])
+      if (!contractSrc.includes(tok)) fail("ADR-0062 retriever contract missing " + tok);
+    const engineSrc62 = fs.readFileSync(path.join(ROOT, "packages/kernel/src/engine.ts"), "utf8");
+    for (const tok of ["adjudicateUrlPolicy", "retrieval.domain_filter.pre", "retrieval.domain_filter.post", "anysearch.outcome"])
+      if (!engineSrc62.includes(tok)) fail("ADR-0062 engine missing " + tok);
+    const cliSrc = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/search.ts"), "utf8");
+    for (const tok of ["--fail-on-abstain", "formatAbstainLine"])
+      if (!cliSrc.includes(tok)) fail("ADR-0062 CLI abstain surface missing " + tok);
+    const mcpSrc = fs.readFileSync(path.join(ROOT, "apps/mcp/src/tools/search-web.tool.ts"), "utf8");
+    if (!mcpSrc.includes("abstain")) fail("ADR-0062 MCP search_web missing abstain structuredContent");
+    const evalLooks = JSON.parse(fs.readFileSync(path.join(ROOT, "eval-looks.json"), "utf8"));
+    const ge = evalLooks.golden?.entries ?? [];
+    if (!ge.some((e) => e.domain === "docs" && e.expected?.verdict === "abstain"))
+      fail("ADR-0062 c1: no docs-domain abstain golden entry");
+    if (!ge.some((e) => e.domain === "docs" && e.expected?.verdict === "answer" && (e.expected?.mustHitHosts?.length ?? 0) > 0))
+      fail("ADR-0062 c2: no paired must-hit golden entry");
+    if (!ge.some((e) => e.domain !== "docs" && e.expected?.verdict === "abstain"))
+      fail("ADR-0062 c4: no cold-domain abstain golden entry");
+    if (!fs.existsSync(path.join(ROOT, "scripts/probe-tavily-domains.mjs")))
+      fail("ADR-0062 c5: tavily leakage probe missing");
     if (!fs.readFileSync(path.join(ROOT, "scripts/ship-gate.mjs"), "utf8").includes("stepOverrideGovernance")) {
       fail("ADR-0047 ship-gate missing stepOverrideGovernance");
     }
-    report("pass", "ADR-0046 source gates + ADR-0047 override core/ledger/verifier wiring");
+    report("pass", "ADR-0046/0047 source gates + ADR-0062 dual-gate abstain contracts + criterion anchors");
   }
 
   // 1n. ADR-0052 D2-D5: local observation representation, SQLite store, export

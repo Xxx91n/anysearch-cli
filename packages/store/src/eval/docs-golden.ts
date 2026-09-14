@@ -71,7 +71,15 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
   const e = raw as Partial<DocsGoldenEntry> | undefined;
   if (!e || typeof e !== "object") return ["entry is not an object"];
   if (typeof e.id !== "string" || !/^docs-g\d{4}$/.test(e.id)) p.push("id must match docs-gNNNN");
-  if (e.domain !== "docs") p.push('domain must be "docs"');
+  // ADR-0062 (T4): the collection is still the docs-golden batch (docs-gNNNN
+  // ids), but ADR-0062 criterion 4 needs a cold-domain abstain entry — a
+  // narrow-allowlist fixture domain where zero results can ever survive.
+  // Non-docs domains are allowed only as abstain-only records: they may
+  // assert "the gate blocks everything", never mustHit hits.
+  if (typeof e.domain !== "string" || !/^[a-z][a-z0-9-]{0,63}$/.test(e.domain)) p.push("domain must be a lowercase domain slug");
+  if (typeof e.domain === "string" && e.domain !== "docs" && (e.expected as { verdict?: string } | undefined)?.verdict !== "abstain") {
+    p.push("non-docs (cold-domain) entries may only assert verdict=abstain");
+  }
   if (typeof e.question !== "string" || e.question.trim().length < 8) p.push("question must be verbatim text (>=8 chars)");
   if (e.questionLang !== "zh" && e.questionLang !== "en") p.push("questionLang must be zh|en");
   if (!DOCS_GOLDEN_INTENTS.includes(e.intent as DocsGoldenIntent)) p.push("intent outside five-class enum");
@@ -155,6 +163,10 @@ export function crossCheckDocsGolden(set: DocsGoldenSet, manifest: CoverageManif
   const p: string[] = [];
   const allow = new Set(allowlist);
   for (const e of set.entries) {
+    // ADR-0062 (T4): the allowlist argument is the docs-domain one — cold-domain
+    // entries own their allowlist via the fixture TOML in provenance.ref, so
+    // the docs-allowlist subset check must not run against them.
+    if (e.domain !== "docs") continue;
     for (const h of e.expected.mustHitHosts ?? []) {
       if (!allow.has(h)) p.push(e.id + ": mustHitHost " + h + " outside docs urlAllowlist");
     }
