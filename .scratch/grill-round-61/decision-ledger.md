@@ -1,0 +1,9 @@
+# Round-61 Decision Ledger
+
+| ID | 状态 | 原问题 | 用户原回答 | 规范化需求 | 显式约束/负向需求 |
+|----|------|--------|-----------|-----------|------------------|
+| D-001 | current | Q1 本轮主题与发行决策 | "B，同时进行文档治理，完善readme.md 将内容写的清清楚楚" | 本轮主题 = R61 候选① docs 域外 abstain 缺口（bc0001 升正票）；同时一票做文档治理：重写 README.md（readme-crafter-skill），把安装/使用/已知限制写清楚 | npm 公开发布顺延到 abstain 缺口关闭之后；README 必须如实披露 known limitations，不得粉饰 |
+| D-002 | current | Q2 域外约束在哪一层执行 | "采纳" | B 变体：检索前置约束（能力协商式 includeDomains，Tavily/Exa 下发、Brave/AnySearch 降级 post-filter-only）+ engine 层 post-filter 权威兜底；双闸双 audit 事件（retrieval.domain_filter.pre/post）；policy 请求时从 ADR-0055 单源解析不缓存快照；post-filter 复用 canonicalizeHosts 匹配语义；query-rewrite 禁注入 site:；eval gate 增冷门域 0 结果 golden case | 不为不支持域参数的 provider 硬造过滤；不做 query 层 site: 重写 |
+| D-003 | current | Q3 abstain 呈现形态与验收判据 | "采纳" | a1: CLI 一行结构化消息(含域/pre/post过滤条数/触发闸)+exit 0,可编程区分走 --fail-on-abstain flag 不动默认; a2: MCP/plugin isError:false + structuredContent{abstain,reason,domain,preFiltered,postFiltered}; 判据1-5全保留(判据5 Tavily include_domains 泄漏实测升级必做),判据断言锚定结构化 verdict 字段,must-abstain 与 must-hit 成对; 判据6新增: abstain 计数独立可观测维度 outcome:abstain,不混入 error 计数; ADR 行文显式区分 ADR-0054 observational-only smoke 与本轮 golden 离线断言 | 禁 exit 非零默认; 禁仅靠 audit 留痕代替结构化 abstain 契约; 禁关键词 regex 作为主断言 |
+| D-004 | current | Q4 README 治理目标形态 | "A + readme-crafter-skill + beautify-github-readme" | README 重写为用户向快速上手版：0.0.1 定位诚实声明+安装/构建/首跑(含所需 API key 与 doctor 自检)+亲跑验证过的命令示例+Known Limitations 节(域外 abstain 修复中/macOS 未实测/tavily AbortSignal 限制未转发)；开发者信息压缩为链接；遵循 readme-crafter-skill 与 beautify-github-readme 两 skill 规约 | 不许粉饰未发布状态；示例命令必须有实跑证据；不删 ADR 索引(SSOT-Derived) |
+| D-005 | current | Q5 实现切票结构 | "串行" | 串行五票 T1→T2→T3→T4→T5，每票独立可回滚（沿用 Milestone Serial Slicing）：T1 pre-filter 合同+provider 适配+Tavily 探针实测；T2 post-filter 闸+abstain 桥+双 audit 事件+outcome:abstain 维度;T3 呈现层(CLI exit 0/--fail-on-abstain/MCP structuredContent);T4 golden/eval/ship-gate 接线;T5 README 重写 | 禁止合并 T1+T2 成中间态不闭环的票;T5 依赖 T1-T4 实跑证据回填 |

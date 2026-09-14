@@ -16,6 +16,10 @@ const MODE_DEPTH: Record<Mode, "basic" | "advanced" | "fast" | "ultra-fast"> = {
 export class TavilyProvider implements SearchProvider {
   readonly id = "tavily";
   readonly modes: readonly Mode[] = ["fast", "index", "deep", "answer"];
+  // ADR-0062 D2 (T1): forwards includeDomains as include_domains. The 0.7.7 SDK
+  // passes unknown kwargs through verbatim, so include_domains_mode reaches the
+  // wire; "filter" is the hard mode (Tavily changelog 2026-08: boost leaks).
+  readonly domainFilterSupported = true;
   private client: ReturnType<typeof tavily>;
 
   constructor(apiKey?: string) {
@@ -34,6 +38,12 @@ export class TavilyProvider implements SearchProvider {
       maxResults: req.maxResults ?? 10,
       includeAnswer: req.mode === "answer",
       includeRawContent: false,
+      // ADR-0062 D2: pre-filter send-down. include_domains_mode "filter" pins the
+      // hard-filter semantics (subdomains of a listed parent are included); the
+      // field rides the SDK kwargs passthrough (index signature on options).
+      ...(req.includeDomains?.length
+        ? { includeDomains: req.includeDomains, include_domains_mode: "filter" }
+        : {}),
       timeout: 60,
     });
 

@@ -17,6 +17,9 @@ const MODE_TYPE: Record<Mode, "auto" | "fast" | "deep-lite" | "deep"> = {
 export class ExaProvider implements SearchProvider {
   readonly id = "exa";
   readonly modes: readonly Mode[] = ["fast", "index", "deep", "answer"];
+  // ADR-0062 D2 (T1): exa-js BaseSearchOptions.includeDomains is a first-class
+  // typed field (walled-garden RAG positioning per Exa docs).
+  readonly domainFilterSupported = true;
   private client: Exa;
 
   constructor(apiKey?: string) {
@@ -32,6 +35,8 @@ export class ExaProvider implements SearchProvider {
       type,
       numResults: req.maxResults ?? 10,
       contents: { text: { maxCharacters: 500 } }, // snippet-sized text
+      // ADR-0062 D2: pre-filter send-down (provider-side domain restriction).
+      ...(req.includeDomains?.length ? { includeDomains: req.includeDomains } : {}),
     });
 
     // Map Exa results to NormalizedResult.

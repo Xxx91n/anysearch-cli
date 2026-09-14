@@ -9,6 +9,12 @@ export interface SearchRequest {
   query: string;
   mode: Mode;
   maxResults?: number;
+  // ADR-0062 D2 (T1): capability-negotiated provider pre-filter. Kernel sets this
+  // per provider to the domain's canonical allow hosts; only adapters that declare
+  // domainFilterSupported forward it (tavily include_domains / exa includeDomains).
+  // The provider parameter is an entry-convergence hint, never the authority —
+  // the kernel post-filter remains the fail-closed egress gate.
+  includeDomains?: string[];
 }
 
 export interface NormalizedResult {
@@ -44,6 +50,11 @@ export interface UsageInfo {
 export interface SearchProvider {
   readonly id: string;
   readonly modes: readonly Mode[];
+  // ADR-0062 D2 (T1): domain-filter capability bit. true = the adapter forwards
+  // SearchRequest.includeDomains to a provider-side domain parameter. Absent or
+  // false = unsupported; the engine degrades that provider to post-filter-only
+  // and records it in the retrieval.domain_filter.pre audit event.
+  readonly domainFilterSupported?: boolean;
   search(req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope>;
   usage?(): Promise<UsageInfo | undefined>;
 }

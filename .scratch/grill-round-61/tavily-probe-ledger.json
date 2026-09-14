@@ -1,0 +1,31 @@
+{
+  "schema": "anysearch/tavily-domain-probe@1",
+  "ranAt": "2026-09-14T10:35:20.554Z",
+  "key": "unset",
+  "arms": [
+    {
+      "id": "A-default-mode",
+      "status": "SKIPPED",
+      "summary": "TAVILY_API_KEY unset - live arm not run",
+      "evidence": null
+    },
+    {
+      "id": "B-filter-mode",
+      "status": "SKIPPED",
+      "summary": "TAVILY_API_KEY unset - live arm not run",
+      "evidence": null
+    },
+    {
+      "id": "C-subdomain-direction",
+      "status": "SKIPPED",
+      "summary": "TAVILY_API_KEY unset - live arm not run",
+      "evidence": null
+    },
+    {
+      "id": "D-research-endpoint",
+      "status": "SKIPPED",
+      "summary": "TAVILY_API_KEY unset - live arm not run",
+      "evidence": null
+    }
+  ]
+}

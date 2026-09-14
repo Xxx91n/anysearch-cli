@@ -36,6 +36,10 @@ interface AnySearchResponse {
 
 export class AnySearchProvider implements SearchProvider {
   readonly id = "anysearch";
+  // ADR-0062 D2 (T1): the /v1/search REST surface has no domain parameter —
+  // declared unsupported so the engine records the post-filter-only degrade
+  // in the pre audit event instead of faking a filter.
+  readonly domainFilterSupported = false;
   readonly modes: readonly ("fast" | "index" | "deep" | "answer")[] = ["fast", "index", "deep"];
   // ponytail: AnySearch does not have an "answer" mode like Tavily/Exa.
   // atomcode research: 4 tools are search/get_sub_domains/batch_search/extract - no standalone answer.
