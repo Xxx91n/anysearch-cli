@@ -20,7 +20,7 @@ import {
   type SourceTraceLabel,
 } from "@anysearch/retriever";
 import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveUrlPolicy } from "@anysearch/store";
-import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query } from "./ports";
+import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink } from "./ports";
 import type { AgentEvent } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
@@ -64,7 +64,7 @@ export function enqueueHitl(record: { url: string; host: string; toolName: strin
 
 // Build the search AgentTool: wraps RetroaererdEngine.search() with TypeBox schema.
 // The LLM sees this as a tool it can call to search the web.
-function createSearchTool(retriever: RetrieverPort): AgentTool {
+export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObservationSink): AgentTool {
   return {
     name: "search",
     label: "Search",
@@ -84,6 +84,11 @@ function createSearchTool(retriever: RetrieverPort): AgentTool {
       const q: Query = {
         query: String(params.query),
         mode: (params.mode as "fast" | "index" | "deep" | "answer") || "fast",
+        // ADR-0063 (R62 T7): pass the caller span through so retrieval
+        // domain_filter.* audit events + anysearch.outcome land inside the
+        // caller's trace (ans_chat path). Single span, multi-event — no
+        // sub-spans per agent-loop turn (D-011).
+        ...(span ? { span } : {}),
       };
       const envelope = await retriever.search(q);
       // ADR-0054 D1: every retrieved payload crosses the LLM boundary through wrapRetrieved
@@ -142,6 +147,9 @@ export interface PiAgentRuntimeOptions {
   tools?: AgentTool[]; // extra tools beyond search
   getApiKey?: () => Promise<string | undefined>;
   interactive?: boolean; // ADR-0054 D4: composition root grants TTY-ask eligibility (headless/MCP omit -> deny-first)
+  // ADR-0063 (R62 T7): caller observation span — retrieval audit events land
+  // inside the caller's span events_json (ans_chat / third retrieval surface).
+  span?: RetrievalObservationSink;
 }
 
 export class PiAgentRuntime {
@@ -193,7 +201,7 @@ export class PiAgentRuntime {
     const { retriever, domain, model, streamFn, ledger, sessionId } = this.opts;
 
     // Build tools: search tool + any extra tools, filtered by domain.
-    const searchTool = createSearchTool(retriever);
+    const searchTool = createSearchTool(retriever, this.opts.span);
     const allTools = [searchTool, ...(this.opts.tools || [])];
     const activeTools = filterAgentTools(allTools, domain);
 

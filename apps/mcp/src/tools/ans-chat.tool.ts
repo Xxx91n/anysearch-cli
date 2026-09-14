@@ -35,7 +35,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     async (args: unknown) => {
       const providerName = process.env.ANS_LLM_PROVIDER;
       const modelName = process.env.ANS_LLM_MODEL;
-      return observeTool(eng, "ans_chat", async () => {
+      return observeTool(eng, "ans_chat", async (span) => {
         const { message } = args as { message: string };
         if (!providerName || !modelName) {
           return { content: [{ type: "text" as const, text: "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars." }] };
@@ -58,6 +58,9 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
             streamFn: session.streamFn,
             models: session.models,
             getApiKey: async () => session.apiKey,
+            // ADR-0063 (R62 T7): one-line observation wiring — the ans_chat span
+            // receives the engine's retrieval.domain_filter.* audit events.
+            span,
           });
           let output = "";
           for await (const event of runtime.run(message)) {
