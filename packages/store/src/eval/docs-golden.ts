@@ -168,10 +168,16 @@ export function crossCheckDocsGolden(set: DocsGoldenSet, manifest: CoverageManif
     }
   }
   const counts = new Map<string, number>();
+  const classHist = new Map<string, Map<string, number>>();
   for (const e of set.entries) {
     for (const t of e.dimensions) {
-      const dim = t.split(":")[0]!;
+      const sep = t.indexOf(":");
+      const dim = t.slice(0, sep);
+      const cls = t.slice(sep + 1);
       counts.set(dim, (counts.get(dim) ?? 0) + 1);
+      const h = classHist.get(dim) ?? new Map<string, number>();
+      h.set(cls, (h.get(cls) ?? 0) + 1);
+      classHist.set(dim, h);
     }
   }
   for (const d of manifest.dimensions) {
@@ -179,6 +185,16 @@ export function crossCheckDocsGolden(set: DocsGoldenSet, manifest: CoverageManif
     if (d.status === "covered" && n === 0) p.push(d.dimension + ": declared covered but no golden entry carries the tag");
     if (d.status === "covered" && d.count !== n) p.push(d.dimension + ": manifest count " + d.count + " != actual " + n);
     if (d.status === "deferred" && n > 0) p.push(d.dimension + ": declared deferred but " + n + " golden entries carry the tag");
+    // R60-audit F3: declared class breakdown must match the actual tag histogram —
+    // count alone staying right is not enough for an honesty artifact.
+    if (d.status === "covered" && d.classes) {
+      const h = classHist.get(d.dimension) ?? new Map<string, number>();
+      for (const k of new Set([...Object.keys(d.classes), ...h.keys()])) {
+        const declared = d.classes[k] ?? 0;
+        const actual = h.get(k) ?? 0;
+        if (declared !== actual) p.push(d.dimension + ": class '" + k + "' manifest " + declared + " != actual " + actual);
+      }
+    }
   }
   return p;
 }

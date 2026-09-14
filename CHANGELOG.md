@@ -4,6 +4,15 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-14 — ADR-0061 r60: 审计修复（audit F1–F3 + F5，reports/2026-09-14-audit.md）
+
+### Fixed
+
+- 域解析链收口（F1/F2）：`domainTomlPath` 现读 `ANS_DOMAINS_DIR`（env → cwd → extras，与 `defaultDomainsDirs` 链头同序）；`ans chat`/`ans hitl` 走 `domainSearchDirs()` 四链；`ans pref` 改用 `createPersistentEngine`——顺带修复 `createEngine` 默认 `:memory:` 导致偏好从不落盘的存量 bug。
+- coverage manifest 算术（F3）：`source-tier.reference` 3→4、`freshness.stable` 6→5；`crossCheckDocsGolden` 新增 classes↔entries 直方校验，`badcase-backfill` 重算时同步 classes。
+- `badcase-backfill --new` 不再编造分类：badcase 记录须自带 intent/questionLang/dimensions（缺则拒），provenance.type 可由记录覆盖；三处台账写改原子写（tmp+rename）。
+- `engine` 早停阈值按 `normalizeUrl` 计唯一 URL（与融合去重口径一致）；`ans domain`/doctor 域列表改共享 `listDomainTomls`；doctor 删 `fileURLToPath` 死 import。
+
 ## 2026-09-14 — ADR-0061 r60: graceWindow/deepMode 交付（T6/G1，remove-or-implement → implement）
 
 ### Changed

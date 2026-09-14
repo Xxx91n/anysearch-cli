@@ -6,7 +6,7 @@
 // allow = union across layers (D2); deny is a first-class independent channel evaluated last.
 
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync , existsSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadDomain } from "./domain-loader";
 import { HOSTNAME_RE, type DomainSchema } from "./domain-schema";
@@ -111,6 +111,13 @@ export function domainTomlPath(
   name: string = process.env.ANS_DOMAIN || "default",
   extraDomainsDirs: string[] = [],
 ): string {
+  // Same chain-head order as defaultDomainsDirs: ANS_DOMAINS_DIR, then CWD
+  // convention, then caller-supplied extras (e.g. builtin package domains).
+  const envDir = process.env.ANS_DOMAINS_DIR?.trim();
+  if (envDir) {
+    const envPath = join(envDir, name + ".toml");
+    if (existsSync(envPath)) return envPath;
+  }
   const primary = join(cwd, "domains", name + ".toml");
   if (existsSync(primary)) return primary;
   for (const dir of extraDomainsDirs) {

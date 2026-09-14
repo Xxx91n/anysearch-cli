@@ -106,11 +106,27 @@ export function loadDomainByNameIn(
   throw new Error("Domain not found: " + name + (available ? " (available: " + available + ")" : ""));
 }
 
-// Default domains-dir chain: ANS_DOMAINS_DIR (a directory containing tomls
-// directly), then the CWD convention dir.
+// Default domains-dir chain head: ANS_DOMAINS_DIR (a directory containing tomls
+// directly), then the CWD convention dir. Callers with package-shipped or
+// repo-root fallback dirs append them after this list (see domainSearchDirs in
+// apps/cli) — the env → cwd head order is the single shared contract.
 export function defaultDomainsDirs(env: NodeJS.ProcessEnv = process.env): string[] {
   const dirs: string[] = [];
   if (env.ANS_DOMAINS_DIR?.trim()) dirs.push(env.ANS_DOMAINS_DIR.trim());
   dirs.push(join(process.cwd(), DOMAINS_DIR));
   return dirs;
+}
+
+// List <name>.toml files discoverable on a domains-dir chain, first dir wins.
+// Shared by `ans domain` and `doctor [5]` so listing semantics can't drift.
+export function listDomainTomls(domainsDirs: string[]): Map<string, string> {
+  const found = new Map<string, string>();
+  for (const dir of domainsDirs) {
+    try {
+      for (const f of readdirSync(dir)) {
+        if (f.endsWith(".toml") && !found.has(f)) found.set(f, dir);
+      }
+    } catch { /* dir absent on this chain link */ }
+  }
+  return found;
 }

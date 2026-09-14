@@ -4,6 +4,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch/kernel";
+import { defaultDomainsDirs } from "@anysearch/store";
 
 // ADR-0061 B1: the domains-dir resolution chain for this CLI.
 //   1. ANS_DOMAINS_DIR env (a dir containing the tomls directly)
@@ -15,9 +16,8 @@ export function domainSearchDirs(env: NodeJS.ProcessEnv = process.env): string[]
   // dist/index.js is a CJS bundle (tsup) — import.meta.url is undefined there;
   // dev runs under tsx as ESM. Cover both.
   const self = typeof __dirname !== "undefined" ? __dirname : dirname(fileURLToPath(import.meta.url));
-  const dirs: string[] = [];
-  if (env.ANS_DOMAINS_DIR?.trim()) dirs.push(env.ANS_DOMAINS_DIR.trim());
-  dirs.push(join(process.cwd(), "domains"));
+  // Shared chain head (ANS_DOMAINS_DIR → cwd/domains) + CLI-specific tails.
+  const dirs = defaultDomainsDirs(env);
   dirs.push(join(self, "..", "domains"));
   dirs.push(join(self, "..", "..", "..", "domains"));
   return dirs;

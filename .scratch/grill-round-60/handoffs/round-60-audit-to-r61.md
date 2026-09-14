@@ -7,12 +7,13 @@
 
 ## R61 grill 方向指示（候选票，按优先级）
 
-1. **docs 域外 abstain 缺口（bc0001 遗留，升级为正票）**：docs 域对域外提问无 abstain 纪律——engine 返回 10 条非 allowlist 结果而非拒答。**建议与审计 F1/F2 合票**：同一根因是「域解析链未单一化」——把 domainSearchDirs 4 链提为共享模块喂给 chat/memory-preference/mcp/plugin/policy 全部入口（policy 层 domainTomlPath 的 extraDomainsDirs 当前零调用方、ANS_DOMAINS_DIR 未读），再在其上落域外 abstain / 非 allowlist 标记纪律。一张票同时消 F1+F2+bc0001。
-2. **coverage manifest 算术修正小票（审计 F3）**：classes 数字改正（source-tier reference 3→4、freshness stable 6→5）+ `crossCheckDocsGolden` 补 classes↔entries 校验防再漂。
-3. **离线 golden 执行器决策（审计 F4）**：golden.expected（mustHitUrls/abstain）当前是只记录无执行器的死数据——要么实现快照 fixture 回放（原 T2 判据），要么按 D-002「首轮只记录不设阈」正式 documented deferral 入 ADR。
-4. **adversarial 维入圈触发**：B4 回灌见到首个注入型 badcase 时执行（既有 deferred entryTrigger）。
-5. **macOS CI lane**：真实 macOS 问题报告时加矩阵项（既有 documented limitation）。
-6. F5 微瑕随票清理：urlAllowlist 裸域归类裁决、`--new` 分类默认值、台账原子写（tmp+rename 惯例）、doctor mkdirSync 副作用/死 import、uniqueUrls 口径统一、toml 列表块去重。
+**审计发现 F1/F2/F3/F5 已在 `grill-60-fix` 修复落地**（见 CHANGELOG「审计修复」节）：域解析链 env→cwd 链头单一化到 `defaultDomainsDirs`/`domainTomlPath`，cli 面（chat/hitl/pref/domain/doctor）全走 `domainSearchDirs` 四链；policy 层 ANS_DOMAINS_DIR 生效；manifest 算术改正 + classes 校验补洞；`--new` 禁分类编造；台账原子写；uniqueUrls 口径统一；顺带真 bug——`ans pref` 此前 `:memory:` 从不落盘已改 durable。**残留说明**：mcp/plugin 面打包不随 cli 的 domains/，其上限仍是 ANS_DOMAINS_DIR + cwd（env 链已由本次修复覆盖；包内域对 mcp/plugin 本不存在）。
+
+1. **docs 域外 abstain 缺口（bc0001 遗留，升级为正票）**：docs 域对域外提问无 abstain 纪律——engine 返回 10 条非 allowlist 结果而非拒答。解析链单一化已由 audit-fix 扫清入口面，本轮可直接在 engine/policy 层落域外 abstain / 非 allowlist 标记纪律。
+2. **离线 golden 执行器决策（审计 F4）**：golden.expected（mustHitUrls/abstain）当前是只记录无执行器的死数据——要么实现快照 fixture 回放（原 T2 判据），要么按 D-002「首轮只记录不设阈」正式 documented deferral 入 ADR。
+3. **adversarial 维入圈触发**：B4 回灌见到首个注入型 badcase 时执行（既有 deferred entryTrigger）。
+4. **macOS CI lane**：真实 macOS 问题报告时加矩阵项（既有 documented limitation）。
+5. 残留微瑕（F5 未修部分）：urlAllowlist 裸域 `typescriptlang.org` 归类裁决（留或收，spec 附表 3 源→实际 4）。
 
 ## 恢复上下文顺序
 

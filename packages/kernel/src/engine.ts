@@ -279,14 +279,14 @@ export class RetroaererdEngine {
     const out: Array<ProviderOutcome | null> = new Array(allProviders.length).fill(null);
     const uniqueUrls = new Set<string>();
     const needed = Math.max(1, q.maxResults ?? 10);
-    let graceResolve: () => void = () => {};
+    let graceResolve: () => void = () => { };
     const graceExpired = new Promise<void>((r) => { graceResolve = r; });
     let graceArmed = false;
     const promises = allProviders.map((p, i) =>
       p.search(q, controllers[i].signal)
         .then((env) => {
           out[i] = { provider: p.id, status: "fulfilled", envelope: env };
-          for (const r of env.results ?? []) uniqueUrls.add(r.url);
+          for (const r of env.results ?? []) uniqueUrls.add(normalizeUrl(r.url));
           if (!deepMode && !graceArmed && uniqueUrls.size >= needed) {
             graceArmed = true;
             setTimeout(() => {

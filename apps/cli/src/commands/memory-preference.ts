@@ -5,7 +5,7 @@
 // demote: d-i conflict / d-iii /forget / d-ii eviction at cap overflow (all land in quarantine, never drop).
 // Post-write: regenerates MEMORY.md projection (temp+fsync+rename, key-override merge global+project).
 
-import { createEngine } from "../composition";
+import { createPersistentEngine } from "../db";
 import { writeProjection } from "@anysearch/kernel";
 import type { T0PreferenceInput } from "@anysearch/store";
 
@@ -47,7 +47,7 @@ export async function runMemoryPreference(args: string[]): Promise<number> {
     }
   }
 
-  const eng = createEngine(process.env.ANS_DOMAIN || "default");
+  const eng = createPersistentEngine(process.env.ANS_DOMAIN || "default");
 
   if (sub === "list") {
     const rows = await eng.store.listPreferences(process.cwd());
@@ -159,7 +159,7 @@ export async function runMemoryPreference(args: string[]): Promise<number> {
         return 1;
       }
       // Projection regen is fail-open, same contract as remember.
-      try { await writeProjection(eng.store, undefined); } catch {}
+      try { await writeProjection(eng.store, undefined); } catch { }
     }
     process.stdout.write("pref review " + action + ": #" + id + " resolved\n");
     return 0;

@@ -8,7 +8,8 @@
 import { PiAgentRuntime, createLlmSession } from "@anysearch/kernel";
 import type { RetrieverPort, DomainConfigPort } from "@anysearch/kernel";
 import { createEngine } from "../composition";
-import { domainTomlPath, loadDomainByName } from "@anysearch/store";
+import { domainSearchDirs } from "../db";
+import { domainTomlPath, loadDomainByNameIn } from "@anysearch/store";
 import { join } from "node:path";
 
 export async function runChat(args: string[]): Promise<number> {
@@ -54,9 +55,9 @@ export async function runChat(args: string[]): Promise<number> {
   let retriever: RetrieverPort;
   let domain: DomainConfigPort;
   try {
-    const engineResult = createEngine(domainName);
+    const engineResult = createEngine(domainName, { domainsDirs: domainSearchDirs() });
     retriever = engineResult.retriever;
-    domain = engineResult.config || loadDomainByName(domainName) as DomainConfigPort;
+    domain = engineResult.config || loadDomainByNameIn(domainName, domainSearchDirs()) as DomainConfigPort;
   } catch (e: any) {
     console.error("[warn] Domain load failed: " + (e?.message || String(e)) + ", using fallback.");
     // Fallback: no domain filtering, all providers.

@@ -4,7 +4,8 @@
 // it into the active domain's [sources] urlAllowlist and drops matching pending entries.
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWriteFile, canonicalVersion, domainTomlPath, emitConfigChangeAudit, loadDomainByName } from "@anysearch/store";
+import { atomicWriteFile, canonicalVersion, domainTomlPath, emitConfigChangeAudit, loadDomainByNameIn } from "@anysearch/store";
+import { domainSearchDirs } from "../db";
 import { resolveDbPath } from "@anysearch/kernel";
 
 interface HitlEntry {
@@ -37,7 +38,7 @@ function allowHost(host: string): boolean {
   const domainName = process.env.ANS_DOMAIN || "default";
   const tomlPath = domainTomlPath(process.cwd(), domainName);
   if (!existsSync(tomlPath)) throw new Error("domain TOML not found: " + tomlPath);
-  const beforeHosts = loadDomainByName(domainName).sources.urlAllowlist ?? [];
+  const beforeHosts = loadDomainByNameIn(domainName, domainSearchDirs()).sources.urlAllowlist ?? [];
   const src = readFileSync(tomlPath, "utf8");
   const lines = src.split("\n");
   const srcStart = lines.findIndex((l) => l.trim() === "[sources]");
@@ -65,7 +66,7 @@ function allowHost(host: string): boolean {
   // D5: structured atomic write (tmp + rename); round-trip verify below.
   atomicWriteFile(tomlPath, next.join("\n"));
   // Verify: the written TOML must still parse and expose the host.
-  const schema = loadDomainByName(domainName);
+  const schema = loadDomainByNameIn(domainName, domainSearchDirs());
   if (!(schema.sources.urlAllowlist ?? []).includes(host)) {
     throw new Error("allowlist write did not round-trip for host " + host);
   }

@@ -10,7 +10,7 @@
 // 禁合成护栏：badcase 必须携带 observed + evidence.command（真实观测），
 // 否则拒绝回灌。完整 schema/词汇/交叉校验由 packages/store/test/
 // eval-docs-golden.test.ts 在 CI 强制执行——本脚本只做结构前置检查。
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -54,17 +54,22 @@ if (into) {
   bc.promotedTo = into;
   console.log("attached " + id + " -> " + into + " (same-question regression evidence)");
 } else {
+  // 禁分类编造：--new 不回填默认 intent/lang/dimensions——badcase 记录须自带
+  // 八维切片归类，缺了就是不够格入 golden。
+  for (const f of ["intent", "questionLang", "dimensions"]) {
+    if (bc[f] === undefined) fail(id + " lacks '" + f + "' — record classification on the badcase before --new (no fabricated classification)");
+  }
   const nums = golden.entries.map((e) => Number(e.id.replace(/\D/g, ""))).filter((n) => Number.isFinite(n));
   const next = "docs-g" + String(Math.max(...nums) + 1).padStart(4, "0");
   const entry = {
     id: next,
     domain: bc.domain ?? "docs",
     question: bc.question,
-    questionLang: bc.questionLang ?? "zh",
-    intent: bc.intent ?? "troubleshoot",
+    questionLang: bc.questionLang,
+    intent: bc.intent,
     expected: bc.expected,
-    dimensions: bc.dimensions ?? ["intent:" + (bc.intent ?? "troubleshoot"), "lang:" + (bc.questionLang ?? "zh")],
-    provenance: { type: "internal-dogfood", ref: "eval-badcases.json#" + id, harvestedAt: bc.evidence.runAt ?? new Date().toISOString().slice(0, 10) },
+    dimensions: bc.dimensions,
+    provenance: { type: bc.provenance?.type ?? "internal-dogfood", ref: "eval-badcases.json#" + id, harvestedAt: bc.evidence.runAt ?? new Date().toISOString().slice(0, 10) },
     notes: "backfilled from badcase " + id + "; observed " + bc.observed.results + " results via '" + bc.evidence.command + "'",
   };
   golden.entries.push(entry);
@@ -73,24 +78,40 @@ if (into) {
   console.log("created " + next + " from " + id);
 }
 
-// Recount covered dimension counts so the manifest stays honest after backfill.
+// Recount covered dimension counts AND class histograms so the manifest stays
+// honest after backfill (r60-audit F3: count-only recount let classes drift).
 const cov = JSON.parse(readFileSync(COVERAGE, "utf8"));
 const counts = new Map();
+const classHist = new Map();
 for (const e of golden.entries) {
   for (const t of e.dimensions ?? []) {
-    const d = String(t).split(":")[0];
+    const s = String(t);
+    const sep = s.indexOf(":");
+    const d = s.slice(0, sep);
     counts.set(d, (counts.get(d) ?? 0) + 1);
+    const h = classHist.get(d) ?? new Map();
+    h.set(s.slice(sep + 1), (h.get(s.slice(sep + 1)) ?? 0) + 1);
+    classHist.set(d, h);
   }
 }
 for (const d of cov.dimensions ?? []) {
   if (d.status === "covered") {
     const n = counts.get(d.dimension) ?? 0;
-    if (n > 0) d.count = n;
+    if (n > 0) {
+      d.count = n;
+      if (d.classes) d.classes = Object.fromEntries(classHist.get(d.dimension) ?? []);
+    }
   }
 }
 cov.recordedAt = new Date().toISOString().slice(0, 10);
 
-writeFileSync(LOOKS, JSON.stringify(looks, null, 2) + "\n", "utf8");
-writeFileSync(BADCASES, JSON.stringify(badcases, null, 2) + "\n", "utf8");
-writeFileSync(COVERAGE, JSON.stringify(cov, null, 2) + "\n", "utf8");
+// Repo convention: committed ledgers write atomically (tmp + rename).
+function atomicWrite(path, content) {
+  const tmp = path + ".tmp";
+  writeFileSync(tmp, content, "utf8");
+  renameSync(tmp, path);
+}
+atomicWrite(LOOKS, JSON.stringify(looks, null, 2) + "\n");
+atomicWrite(BADCASES, JSON.stringify(badcases, null, 2) + "\n");
+atomicWrite(COVERAGE, JSON.stringify(cov, null, 2) + "\n");
 console.log("badcase-backfill: " + id + " promoted (" + (into ? "attach" : "create") + "); coverage recounted; run packages/store/test/eval-docs-golden.test.ts to verify");

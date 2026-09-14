@@ -2,12 +2,16 @@
 // ADR-0006 decision 4A: loads TOML from domains/<name>.toml convention directory.
 // G016: persists domain to ~/.anysearch/config.env for cross-session recall.
 
-import { readdirSync } from "node:fs";
-import { loadDomainByNameIn } from "@anysearch/store";
+import { loadDomainByNameIn, listDomainTomls } from "@anysearch/store";
 import { configPath, readConfig, writeConfig } from "../config-env";
 import { domainSearchDirs } from "../db";
 import type { DomainConfigPort } from "@anysearch/kernel";
 
+// Domain names discoverable on the resolution chain (shared lister; one
+// implementation for both call sites).
+function listDomains(): Set<string> {
+  return new Set([...listDomainTomls(domainSearchDirs()).keys()].map((f) => f.replace(/\.toml$/, "")));
+}
 
 export async function runDomain(args: string[]): Promise<number> {
   // Check persisted config first, then env var.
@@ -19,12 +23,7 @@ export async function runDomain(args: string[]): Promise<number> {
       console.log("  (persisted in " + configPath() + ")");
     }
     {
-      const names = new Set<string>();
-      for (const dir of domainSearchDirs()) {
-        try {
-          for (const f of readdirSync(dir)) if (f.endsWith(".toml")) names.add(f.replace(/\.toml$/, ""));
-        } catch { /* dir absent */ }
-      }
+      const names = listDomains();
       if (names.size > 0) console.log("Available: " + [...names].join(", "));
     }
 
@@ -51,12 +50,7 @@ export async function runDomain(args: string[]): Promise<number> {
     console.log("  rag: " + schema.rag.adapter);
   } catch (e: any) {
     console.log("  Note: " + e.message);
-    const names = new Set<string>();
-    for (const dir of domainSearchDirs()) {
-      try {
-        for (const f of readdirSync(dir)) if (f.endsWith(".toml")) names.add(f.replace(/\.toml$/, ""));
-      } catch { /* dir absent */ }
-    }
+    const names = listDomains();
     console.log("  No TOML found - domain name persisted but resolves to silent full-fanout.");
     if (names.size > 0) console.log("  Available domains: " + [...names].join(", "));
     console.log("  Remediation: ans domain <listed name>, or set ANS_DOMAINS_DIR to the dir holding " + newDomain + ".toml");

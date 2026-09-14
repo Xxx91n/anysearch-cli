@@ -2,12 +2,11 @@
 // Seam 5 composition root: wires providers + store + engine for diagnostic.
 
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch/retriever/providers";
-import { loadDomain, loadDomainFromString } from "@anysearch/store";
+import { loadDomain, loadDomainFromString, listDomainTomls } from "@anysearch/store";
 import { domainSearchDirs } from "../db";
 import { SqliteSessionStore } from "@anysearch/store";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 // ADR-0059 D7 (T-6.2): use the build-time define — the same single standard as src/index.ts.
 // The previous runtime package.json read resolved to the REPO ROOT once tsup bundled the CLI into
@@ -122,14 +121,7 @@ export async function runDoctor(): Promise<number> {
   // resolution chain, validate each, and show the active domain's five downstream
   // layers a domain switch links (sources/skills/hooks/prompts/rag — CONTEXT.md).
   console.log("[5] Domains:");
-  const found = new Map<string, string>(); // toml file name -> its domains dir
-  for (const dir of domainSearchDirs()) {
-    try {
-      for (const f of readdirSync(dir)) {
-        if (f.endsWith(".toml") && !found.has(f)) found.set(f, dir);
-      }
-    } catch { /* dir absent on this chain link */ }
-  }
+  const found = listDomainTomls(domainSearchDirs()); // toml file name -> its domains dir
   if (found.size === 0) {
     check("  discovery", false, "no domains/*.toml found on the resolution chain — fix: create ./domains/, set ANS_DOMAINS_DIR, or reinstall @anysearch/cli");
   }

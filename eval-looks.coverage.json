@@ -21,7 +21,7 @@
       "count": 10,
       "classes": {
         "spec": 3,
-        "reference": 3,
+        "reference": 4,
         "settings": 3
       }
     },
@@ -30,7 +30,7 @@
       "status": "covered",
       "count": 11,
       "classes": {
-        "stable": 6,
+        "stable": 5,
         "active": 3,
         "supersede-event": 3
       }
