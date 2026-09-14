@@ -903,3 +903,17 @@ abstain 是策略成功执行的第一类结果，非 error 非 no-match：CLI �
 
 ## Abstain Observability Dimension（拒答观测维度）
 abstain 计数是独立可观测维度（outcome:abstain），绝不混入 error 计数；abstain 率突增 = policy 误配置信号（over-refusal 的运行时镜像）。来源：You.com missing-results 与 request-exceptions 分桶要求、inspect_ai stop_reason 独立槽位。
+
+## Grill Round 62 — Terms (ADR-0063)
+
+## Declared Exclusion（声明式排除）
+eval 运行中被编译期常量（OFFLINE_EXCLUDED_GROUPS）显式排除的用例组——verdict 上是 warn/hold/skip 而非 failure，与 Data-Absent Skip（结构性缺数）是两个类目：排除是声明过的边界，缺席是数据事故。治理走静态断言（存在性 + 白名单精确匹配 + 离线覆盖下界），不走运行时配额——排除面是 diff 可见的常量，配额无感知对象。红线：排除面扩容必须撞红强制 review 自知，禁静默扩大。来源：Kayenta Nodata/NodataFailMetric 二分、Chromium TestExpectations 声明式治理、pytest skip 语义、coverage.py 集中排除声明。
+
+## Golden Entry Scope（golden 条目 scope 标记）
+docs-golden 条目的显式执行层归属 stub|live|both——带 mustHit* 的 answer 条目强制显式声明，无默认兜底（默认值即漂移入口）。离线 stub 层证管道契约（provider 给 X 则 verdict 必须 Y；夹具独立于 expected、取自 badcase observed 现场），在线层证现场真实性（真 provider + URL 硬断言）。来源：pytest-test-categories 显式分类哲学、Langfuse/Inngest offline-online 双层模型、Speedscale《Your Mock Is Lying》自证预言批判。
+
+## Spillover Probe（连带探针臂）
+非阻塞 CI 实验腿，验证某修复对同族异 OS 症状的连带效果——三件套：job 名显式实验标注（experiment, non-blocking）+ 崩溃签名进 step summary（区分注册期 segfault vs 退出期 mutex abort）+ TTL（复评点转正或摘除，禁无限期挂）。区别于被禁的工作流级静默跳过：仍执行、仍产出观测、仍上传 artifact。来源：onnxruntime #24579/PR #26445 修复链（1.24.3 实证）、better-sqlite3 #1476/#1514 同族签名、costops 矩阵剪枝+预注册恢复条件、minware quarantine 治理。
+
+## Install Closure（安装闭包）
+消费者 npm i -g 实际拉入的依赖集合——其内容（如"无 onnxruntime-node"）是可断言的发布面而非实现细节。可选能力走 optionalDependencies + 守卫式动态 import：缺席即降级（向量臂→FTS-only），不拖垮安装。红线：把重型可选运行时放进硬依赖 = 让安装闭包为可能永不启用的能力买单。来源：npm RFC-0000 optionalDependencies 心智模型、esbuild 官方形态、npm cli#7355 optional 非银弹需消费端容错。
