@@ -11,12 +11,12 @@
     "test": "node --import tsx --test \"test/**/*.test.ts\" \"test/**/*.test.mjs\" --test-timeout=30000",
     "test:online": "node --env-file=test/online/online.env --import tsx --test \"test/online/**/*.online.ts\" --test-timeout=120000"
   },
-  "dependencies": {
-    "@huggingface/transformers": "^3.7.0"
-  },
   "devDependencies": {
     "@types/node": "^22.20.1",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
+  },
+  "optionalDependencies": {
+    "@huggingface/transformers": "^3.7.0"
   }
 }

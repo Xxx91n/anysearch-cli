@@ -14,7 +14,7 @@ Accepted — 2026-08-29 (grill round 30, commit pending implementation round).
 
 **D1 (Q1 方向)：引入向量语义臂作为 RRF 第四臂。** 补齐 FTS5 召回缺口；走 hybrid 检索的行业标准路径；与 ADR-0031 条件臂框架同构。
 
-**D2 (Q2 嵌入来源)：transformers.js 本地嵌入，不接远程 API。** 理由：local-first 信任模型（记忆内容不离本机）、fail-open 下远程 API 会把 recall 绑定到网络可用性、原生依赖 onnxruntime-node 有官方 Windows 预编译包（allowBuilds:false 兼容，落地前 spike 验证）。行业对照：Hindsight 默认本地嵌入、Mem0 本地形态 = Ollama 嵌入。
+**D2 (Q2 嵌入来源)：transformers.js 本地嵌入，不接远程 API。** 理由：local-first 信任模型（记忆内容不离本机）、fail-open 下远程 API 会把 recall 绑定到网络可用性、原生依赖 onnxruntime-node 有官方 Windows 预编译包（allowBuilds:false 兼容，落地前 spike 验证）。行业对照：Hindsight 默认本地嵌入、Mem0 本地形态 = Ollama 嵌入。 **（R62 D-002 修订：见 D9——嵌入来源不变，安装形态改为可选。）**
 
 **D3 (Q3 模型选型)：Xenova/multilingual-e5-small（q8 量化，~60MB 常驻内存）。** 118M 参数 / 384d / 100 语种，C-MTEB 中文检索 59.95；`passage:`/`query:` 前缀约束必须收敛进单一 embedder 封装层（调用方不各自为前缀负责）。bge-m3 留档案为 v2 升级位（长记忆或免前缀诉求出现时，模型 ID 配置化切换）。bge-small-en-v1.5 明确否决：英文专用模型，中文记忆语义臂结构性失效。
 
@@ -38,6 +38,23 @@ The 41-case eval exposed a topological conflict D1-D7 did not cover: the vector 
 - B: every hit carries `arms` provenance; a hit present only in the vector arm is weak evidence — the abstain signal for the answer layer (Sufficiency Gate consumers), at zero new dependencies.
 - Runner: `expectAllWeak` asserts the unanswerable slice; `expectMaxCount` counts strong (FTS-armed) hits only; unanswerable-slice metrics exclusion keys off both `expectEmpty` and `expectAllWeak`.
 - Rejected: C (reranker) — violates the zero-new-native-dependency constraint; candidate for v2.
+
+### D9 (decision revision, R62 T3 / ADR-0063): vector arm is optional at install time
+
+R62 实测（q2 调研 + npm 行为矩阵）发现 D2 落地形态与 npm v12 安装脚本默认禁用冲突：
+onnxruntime-node 的 postinstall 下载 ~728MB 运行时，在 npm v12 全局安装下必然失败或挂起——
+基础 CLI 安装被向量臂绑架。修订（不 Supersede，仅收窄 D2 的安装面含义）：
+
+- `@anysearch/embedding`（store 侧）与 `@huggingface/transformers`（embedding 侧）均降为
+  `optionalDependencies`；三个应用包的 bundler external 统一追加 `@anysearch/embedding`。
+- 安装闭包（Install Closure）承诺：`npm i -g @anysearch/cli` 的基础闭包**不含 onnxruntime-node**；
+  install-smoke 以 `--omit=optional` 净装断言该不变量。
+- 缺席语义合法化：embedding 缺席是 supported FTS-only 状态——`embedText ≡ null`、
+  写路径仍 fail-open 记 pendingVectors、`vectorTelemetry().absent === true`、
+  doctor 以 SKIP 行报告（与缺失 provider key 同语义）。守卫模块 `store/src/embedding-arm.ts`
+  是包缺席的唯一入口；`cosineSimilarity` 内联（纯数学，~6 行），解除纯函数对可选包的静态依赖。
+- D2 其余裁决（本地嵌入、不接远程 API、local-first 信任模型）全部保留。
+
 ## Consequences
 
 - `<1ms` 检索延迟目标（千级）成立；首条嵌入冷加载 ~1-2s 一次性成本由长驻进程吸收。

@@ -20,7 +20,9 @@ import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
-import { embedText, embeddingTelemetry as pkgEmbeddingTelemetry, cosineSimilarity, EMBEDDING_MODEL_ID } from "@anysearch/embedding";
+// ADR-0063 (R62 T3): embedding is optional — routed through the guarded arm
+// module (absent package => embedText null / telemetry absent), never imported statically.
+import { embedText, embeddingModelId, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
 import type { NormalizedResult } from "@anysearch/retriever";
 
 // ADR-0023 D4: MemTX-simplified writer adjudication.
@@ -789,9 +791,10 @@ export class SqliteSessionStore implements SessionStore {
     return { ...this.entityTel };
   }
   // ADR-0033 D5/D6: vector arm telemetry + breaker state (report-only).
-  public vectorTelemetry(): { writes: number; pendingVectors: number; armQueries: number; armHits: number; embeds: number; failures: number; circuitOpen: boolean; fromDb: number } {
-    const pkg = pkgEmbeddingTelemetry();
-    return { ...this.embedTel, embeds: pkg.embeds, failures: pkg.failures, circuitOpen: pkg.circuitOpen,
+  // ADR-0063 (R62 T3): async — arm presence requires the optional-import probe.
+  public async vectorTelemetry(): Promise<{ writes: number; pendingVectors: number; armQueries: number; armHits: number; embeds: number; failures: number; circuitOpen: boolean; absent: boolean; fromDb: number }> {
+    const pkg = await armTelemetry();
+    return { ...this.embedTel, embeds: pkg.embeds, failures: pkg.failures, circuitOpen: pkg.circuitOpen, absent: pkg.absent,
       fromDb: (this.db.prepare("SELECT COUNT(*) as n FROM memory_embeddings").get() as { n: number }).n };
   }
 
@@ -803,7 +806,7 @@ export class SqliteSessionStore implements SessionStore {
     if (!v) { this.embedTel.pendingVectors++; return; }
     this.embedTel.writes++;
     this.db.prepare("INSERT OR REPLACE INTO memory_embeddings (memory_id, embedding, model) VALUES (?, ?, ?)")
-      .run(memoryId, Buffer.from(v.buffer, v.byteOffset, v.byteLength), EMBEDDING_MODEL_ID);
+      .run(memoryId, Buffer.from(v.buffer, v.byteOffset, v.byteLength), await embeddingModelId());
   }
 
   // ADR-0033 D4/D5: vector arm — full-scan JS cosine over live, non-quarantined rows. Absent on CB-open.
@@ -842,7 +845,7 @@ export class SqliteSessionStore implements SessionStore {
         const v = await embedText(text, "passage");
         if (!v) { failed++; continue; }
         this.db.prepare("INSERT OR REPLACE INTO memory_embeddings (memory_id, embedding, model) VALUES (?, ?, ?)")
-          .run(r.id, Buffer.from(v.buffer, v.byteOffset, v.byteLength), EMBEDDING_MODEL_ID);
+          .run(r.id, Buffer.from(v.buffer, v.byteOffset, v.byteLength), await embeddingModelId());
         embedded++;
       }
     }

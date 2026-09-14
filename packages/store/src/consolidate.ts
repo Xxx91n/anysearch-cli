@@ -7,7 +7,7 @@
 // -> inserts use lastInsertRowid.
 
 import type Database from "better-sqlite3";
-import { embedText, cosineSimilarity } from "@anysearch/embedding";
+import { embedText, cosineSimilarity } from "./embedding-arm.js";
 import { classifyTier, TAU_TIER } from "./time-decay.js";
 
 export const THETA_DUP = 0.90;           // D4/D7: NOOP boundary; golden boundary case pins <, =, >

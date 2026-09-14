@@ -41,7 +41,7 @@
   },
   "scripts": {
     "build": "pnpm run build:server && pnpm run build:hooks",
-    "build:hooks": "esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --external:better-sqlite3",
+    "build:hooks": "esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --external:better-sqlite3 --external:@anysearch/embedding",
     "build:server": "tsup",
     "dev": "tsx src/server/index.ts",
     "lint": "tsc --noEmit",
@@ -66,5 +66,8 @@
   "files": [
     "dist"
   ],
-  "main": "./dist/index.cjs"
+  "main": "./dist/index.cjs",
+  "optionalDependencies": {
+    "@anysearch/embedding": "workspace:*"
+  }
 }

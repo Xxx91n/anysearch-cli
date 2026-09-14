@@ -36,6 +36,7 @@ export default defineConfig({
     "zod",
     "better-sqlite3",
     "@huggingface/transformers",
+    "@anysearch/embedding",
     "onnxruntime-node",
     "sharp",
   ],

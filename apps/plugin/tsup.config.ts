@@ -32,5 +32,6 @@ export default defineConfig({
   // and would silently externalize if someone re-imported them later).
   external: [
     "better-sqlite3",
+    "@anysearch/embedding",
   ],
 });

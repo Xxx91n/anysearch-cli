@@ -60,6 +60,11 @@ export async function runDoctor(): Promise<number> {
     await store.append(session.id, { role: "user", content: "doctor smoke test" });
     const hits = await store.searchFts5(session.id, "doctor");
     check("  searchFts5", hits.length >= 1, "hits=" + hits.length);
+    // R62 D-002: vector arm is optional — absent is a legal FTS-only state,
+    // surfaced as SKIP (degraded-but-supported), like a missing provider key.
+    const vt = await store.vectorTelemetry();
+    if (vt.absent) skip("  vector arm", "@anysearch/embedding absent — FTS-only (optionalDependency)");
+    else check("  vector arm", true, "present embeds=" + vt.embeds + " failures=" + vt.failures + (vt.circuitOpen ? " circuitOpen" : ""));
     store.close();
   } catch (e: any) {
     check("  SessionStore", false, e.message);

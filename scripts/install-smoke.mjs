@@ -75,9 +75,21 @@ try {
   check("no stale 0.0.0 tarball", tgz.every((f) => !f.includes("0.0.0")), tgz.join(","));
 
   // 2. Clean install into the temp prefix.
-  const inst = sh(`npm install --no-save ${tgz.map((f) => JSON.stringify(join(outDir, f))).join(" ")}`, { cwd: prefix });
+  // R62 D-002: consumer-faithful lean install — the @anysearch/embedding tarball
+  // is NOT passed explicitly (store declares it optionalDependencies, so a real
+  // npm consumer gets it only when the optional subtree resolves; unresolvable
+  // or script-blocked subtrees are skipped). --omit=optional pins the lean path
+  // deterministically on every npm version. The arm-absent guard is exercised
+  // end-to-end below: doctor reports the arm SKIP, closure asserts no onnxruntime.
+  const installTgz = tgz.filter((f) => !f.startsWith("anysearch-embedding-"));
+  check("embedding tarball excluded from lean install", installTgz.length === tgz.length - 1, tgz.join(","));
+  const inst = sh(`npm install --no-save --omit=optional ${installTgz.map((f) => JSON.stringify(join(outDir, f))).join(" ")}`, { cwd: prefix });
   check("npm install clean prefix", inst.code === 0, inst.out);
-  const bin = join(prefix, "node_modules", ".bin", process.platform === "win32" ? "ans.cmd" : "ans");
+  const nm = join(prefix, "node_modules");
+  check("install closure excludes onnxruntime-node", !existsSync(join(nm, "onnxruntime-node")), readdirSync(nm).join(","));
+  check("install closure excludes @huggingface/transformers", !existsSync(join(nm, "@huggingface")), readdirSync(nm).join(","));
+  check("install closure excludes @anysearch/embedding", !existsSync(join(nm, "@anysearch", "embedding")), readdirSync(join(nm, "@anysearch")).join(","));
+  const bin = join(nm, ".bin", process.platform === "win32" ? "ans.cmd" : "ans");
   check("ans bin shim installed", existsSync(bin), bin);
   const ans = (args) => sh(`\"${bin}\" ${args}`, { cwd: prefix });
 
@@ -88,6 +100,8 @@ try {
 
   const d1 = ans("doctor");
   check("installed doctor exit 0", d1.code === 0, d1.out);
+  // R62 D-002: arm-absent telemetry is a doctor-visible SKIP, not a failure.
+  check("doctor reports vector arm status", d1.out.includes("vector arm"), d1.out.slice(-600));
   check("doctor shows [5] Domains", d1.out.includes("[5] Domains"), d1.out.slice(-400));
   check("doctor lists docs domain", d1.out.includes("docs"), d1.out.slice(-400));
 
