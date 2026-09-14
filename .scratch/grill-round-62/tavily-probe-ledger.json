@@ -1,0 +1,81 @@
+{
+  "schema": "anysearch/tavily-domain-probe@1",
+  "ranAt": "2026-09-14T19:11:54.483Z",
+  "key": "set",
+  "arms": [
+    {
+      "id": "A-default-mode",
+      "status": "PASS",
+      "summary": "0/10 results outside include_domains (default mode)",
+      "evidence": {
+        "urls": [
+          "https://pnpm.io/cli/recursive",
+          "https://pnpm.io/ja/blog/releases/11.10",
+          "https://pnpm.io/11.x/cli/recursive",
+          "https://pnpm.io/it/cli/recursive",
+          "https://pnpm.io/ja/cli/recursive",
+          "https://pnpm.io/9.x/configuring",
+          "https://pnpm.io/blog/releases/10.24",
+          "https://pnpm.io/pt/blog/releases/10.24",
+          "https://pnpm.io/fr/blog/releases/10.24",
+          "https://pnpm.io/configuring"
+        ],
+        "leaks": []
+      }
+    },
+    {
+      "id": "B-filter-mode",
+      "status": "PASS",
+      "summary": "0/10 results outside include_domains (filter mode)",
+      "evidence": {
+        "urls": [
+          "https://pnpm.io/cli/recursive",
+          "https://pnpm.io/ja/blog/releases/11.10",
+          "https://pnpm.io/11.x/cli/recursive",
+          "https://pnpm.io/it/cli/recursive",
+          "https://pnpm.io/ja/cli/recursive",
+          "https://pnpm.io/9.x/configuring",
+          "https://pnpm.io/blog/releases/10.24",
+          "https://pnpm.io/pt/blog/releases/10.24",
+          "https://pnpm.io/fr/blog/releases/10.24",
+          "https://pnpm.io/configuring"
+        ],
+        "leaks": []
+      }
+    },
+    {
+      "id": "C-subdomain-direction",
+      "status": "PASS",
+      "summary": "parent hosts=[\"www.typescriptlang.org\"] sub hosts=[\"www.typescriptlang.org\",\"typescriptlang.org\"] parentCoversSub=true subPullsParent=true",
+      "evidence": {
+        "pHosts": [
+          "www.typescriptlang.org"
+        ],
+        "sHosts": [
+          "www.typescriptlang.org",
+          "typescriptlang.org"
+        ],
+        "parentCoversSub": true,
+        "subPullsParent": true
+      }
+    },
+    {
+      "id": "D-research-endpoint",
+      "status": "INCONCLUSIVE",
+      "summary": "0 url fields in /research response (keys: status,input,model,created_at,response_time,request_id) — vacuous, response shape needs review",
+      "evidence": {
+        "urls": [],
+        "leaks": [],
+        "httpStatus": 200,
+        "responseKeys": [
+          "status",
+          "input",
+          "model",
+          "created_at",
+          "response_time",
+          "request_id"
+        ]
+      }
+    }
+  ]
+}
