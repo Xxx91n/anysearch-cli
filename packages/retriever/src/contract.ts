@@ -145,6 +145,10 @@ export interface FusedEnvelope {
       domain?: string;
       preFiltered: number;
       postFiltered: number;
+      // ADR-0062 D3: which stage left the pool empty — "pre" when providers
+      // returned zero arrivals (pre-filter/provider side), "post" when the
+      // authoritative kernel gate dropped every arrival.
+      gate: "pre" | "post";
     };
   };
 

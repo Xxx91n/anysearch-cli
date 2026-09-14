@@ -73,19 +73,23 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
             // ADR-0034 D4: attribution from last round (claim-level evidence linkage).
             ...(mergedAttribution ? { attribution: mergedAttribution } : { attribution: null }),
+            // ADR-0062 D3: abstain marker when the domain gate emptied the pool.
+            abstain: lastEnvelope?.metadata?.abstain ?? null,
           },
           null,
           2,
           );
 
+          // ADR-0062 D3 (T3): structuredContent.abstain, isError absent (false).
+          const lastAbstain = lastEnvelope?.metadata?.abstain;
+          const structuredContent = {
+            ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
+            ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
+            ...(lastAbstain ? { abstain: lastAbstain } : {}),
+          };
           return {
             content: [{ type: "text" as const, text: summary }],
-            ...(lastRoundSufficiency || mergedAttribution
-              ? { structuredContent: {
-                  ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
-                  ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
-                } }
-              : {}),
+            ...(Object.keys(structuredContent).length > 0 ? { structuredContent } : {}),
           };
         } catch (e) {
           return { content: [{ type: "text" as const, text: "research_web error: " + (e instanceof Error ? e.message : String(e)) }] };

@@ -552,7 +552,7 @@ export class RetroaererdEngine {
         // structurally abstain; eval/abstain.ts chain_empty is the sibling rule,
         // shouldBridgeToAbstain is the weak-claims counterpart). Never an error.
         ...(domainActive && allResults.size === 0
-          ? { abstain: { abstain: true as const, reason: "domain_filter_empty" as const, ...(this.domainName ? { domain: this.domainName } : {}), preFiltered: gateIn, postFiltered: 0 } }
+          ? { abstain: { abstain: true as const, reason: "domain_filter_empty" as const, ...(this.domainName ? { domain: this.domainName } : {}), preFiltered: gateIn, postFiltered: 0, gate: gateIn === 0 ? "pre" as const : "post" as const } }
           : {}),
       },
     };

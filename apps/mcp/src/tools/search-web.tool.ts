@@ -42,6 +42,8 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             providersQueried: envelope.metadata?.providersQueried ?? [],
             // ADR-0034 D4: attribution = claim-level evidence linkage report (present iff search ran).
             ...(envelope.attribution ? { attribution: envelope.attribution } : { attribution: null }),
+            // ADR-0062 D3: first-class abstain marker — policy success, not error.
+            abstain: envelope.metadata?.abstain ?? null,
             // ADR-0014 D4: MCP sufficiency annotation — A+ dual-channel.
             ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
           },
@@ -59,18 +61,18 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           }
 
           const attribution = envelope.attribution;
+          const abstain = envelope.metadata?.abstain;
+          // ADR-0062 D3 (T3): abstain surfaces as structuredContent.abstain with
+          // isError absent (false). The block is emitted whenever any of
+          // sufficiency/attribution/abstain is present.
+          const structuredContent = {
+            ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
+            ...(attribution ? { attribution } : {}),
+            ...(abstain ? { abstain } : {}),
+          };
           return {
             content: [{ type: "text" as const, text: summary }],
-            ...(envelope.metadata?.sufficiency
-              ? {
-                  structuredContent: {
-                    ...(envelope.metadata.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
-                    ...(attribution ? { attribution } : {}),
-                  },
-                }
-              : attribution
-                ? { structuredContent: { attribution } }
-                : {}),
+            ...(Object.keys(structuredContent).length > 0 ? { structuredContent } : {}),
           };
         } catch (e) {
           return { content: [{ type: "text" as const, text: "search_web error: " + (e instanceof Error ? e.message : String(e)) }] };

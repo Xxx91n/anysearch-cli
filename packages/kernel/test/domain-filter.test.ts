@@ -71,6 +71,7 @@ async function main() {
   assert(ab?.domain === "docs", "abstain carries domain name");
   assert(ab?.preFiltered === 2, "preFiltered = results that reached the gate (got " + ab?.preFiltered + ")");
   assert(ab?.postFiltered === 0, "postFiltered = survivors (got " + ab?.postFiltered + ")");
+  assert(ab?.gate === "post", "gate=post when post-gate dropped all arrivals (got " + ab?.gate + ")");
 
   // 4. Dual audit events on the caller span: pre (send-down negotiation) + post (gate counts).
   const pre = s3.events.find((e) => e.name === "retrieval.domain_filter.pre");
@@ -118,6 +119,7 @@ async function main() {
   const r8 = await eng8.search({ query: "q", mode: "fast" });
   assert(r8.metadata.abstain?.abstain === true, "cold-domain zero-result => abstain (criterion 4)");
   assert(r8.metadata.abstain?.preFiltered === 0, "cold-domain preFiltered=0");
+  assert(r8.metadata.abstain?.gate === "pre", "cold-domain gate=pre (zero arrivals)");
 
   // 9. span absent -> events skipped silently, abstain marker still set.
   const r9 = await eng3.search({ query: "q", mode: "fast" });

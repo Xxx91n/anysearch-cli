@@ -4,6 +4,8 @@
 import type { Mode } from "@anysearch/retriever";
 import { createPersistentEngine } from "../db";
 
+import { searchExitCode, formatAbstainLine } from "./search-abstain";
+
 export async function runSearch(args: string[]): Promise<number> {
   const query = args.join(" ");
   if (!query) {
@@ -14,6 +16,8 @@ export async function runSearch(args: string[]): Promise<number> {
   // Parse optional --mode flag (default: fast).
   let mode: Mode = "fast";
   const isJson = args.includes("--json");
+  // ADR-0062 D3 (T3): --fail-on-abstain promotes abstain to exit 3.
+  const failOnAbstain = args.includes("--fail-on-abstain");
   const modeIdx = args.indexOf("--mode");
   if (modeIdx >= 0 && args[modeIdx + 1]) {
     const m = args[modeIdx + 1];
@@ -21,7 +25,13 @@ export async function runSearch(args: string[]): Promise<number> {
       mode = m;
     }
   }
-  const queryClean = args.filter(a => !a.startsWith("--mode") && a !== mode).join(" ").trim();
+  // ADR-0062 (T3): drop every --flag token (was only --mode) so --json /
+  // --fail-on-abstain can no longer leak into the provider query string.
+  const queryClean = args.filter(a => !a.startsWith("--") && a !== mode).join(" ").trim();
+  if (!queryClean) {
+    process.stderr.write("ans search <query>\n");
+    return 2;
+  }
 
   // ADR-0006 decision 3A: createEngine factory with domain filtering.
   const domain = process.env.ANS_DOMAIN;
@@ -53,13 +63,28 @@ export async function runSearch(args: string[]): Promise<number> {
         answers: envelope.answers,
         sufficiency: envelope.metadata?.sufficiency ?? null,
         attribution: envelope.attribution ?? null,
+        // ADR-0062 D3: first-class abstain marker is part of the --json contract.
+        abstain: envelope.metadata.abstain ?? null,
       };
       process.stdout.write(JSON.stringify(out, null, 2) + "\n");
-      return envelope.results.length > 0 ? 0 : 1;
+      return searchExitCode({ resultCount: envelope.results.length, abstain: !!envelope.metadata.abstain, failOnAbstain });
     }
 
     console.log("ans search: " + JSON.stringify({ query: queryClean, mode }));
     console.log("---");
+
+    // ADR-0062 D3 (T3): first-class abstain — one structured line, not an error.
+    const abstain = envelope.metadata.abstain;
+    if (abstain) {
+      console.log(formatAbstainLine(abstain));
+      console.log("---");
+      console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
+      if (envelope.metadata.providersFailed.length > 0) {
+        console.log("Providers failed: " + envelope.metadata.providersFailed.join(", "));
+      }
+      console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
+      return searchExitCode({ resultCount: 0, abstain: true, failOnAbstain });
+    }
 
     // Render results.
     for (let i = 0; i < envelope.results.length; i++) {
@@ -102,7 +127,7 @@ export async function runSearch(args: string[]): Promise<number> {
     console.log("Results: " + envelope.results.length);
     console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
 
-    return envelope.results.length > 0 ? 0 : 1;
+    return searchExitCode({ resultCount: envelope.results.length, abstain: false, failOnAbstain });
   } catch (e: any) {
     console.error("ans search error: " + e.message);
     return 1;
