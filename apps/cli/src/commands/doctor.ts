@@ -151,7 +151,10 @@ export async function runDoctor(): Promise<number> {
       }
       // ADR-0061 B3 self-service: every enabled provider without a key is silently
       // dropped from the fan-out — name the key to set or the entry to remove.
-      const KEY_BY_PROVIDER: Record<string, string> = { tavily: "TAVILY_API_KEY", exa: "EXA_API_KEY", anysearch: "ANS_API_KEY" };
+      // ADR-0062 T5: the provider actually reads ANYSEARCH_API_KEY (see
+      // packages/retriever/src/providers/anysearch.ts). ANS_API_KEY here was a
+      // drift bug — doctor advised setting a variable nothing reads.
+      const KEY_BY_PROVIDER: Record<string, string> = { tavily: "TAVILY_API_KEY", exa: "EXA_API_KEY", anysearch: "ANYSEARCH_API_KEY" };
       for (const prov of s.sources.enabled) {
         const key = KEY_BY_PROVIDER[prov];
         if (key) {

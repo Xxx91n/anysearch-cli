@@ -1,27 +1,141 @@
 # anysearch-cli
 
-> **Reader: new contributor / external integrator**
-> **Purpose: orient to repo structure, architecture decisions, and how to build**
+A vertical-domain information-specialist CLI: search + research + memory +
+knowledge in one agent, with time-edge-effect FTS5 recall, multi-source RRF
+fusion, an MCP server that auto-indexes results — and (as of ADR-0062) a
+domain allowlist that actually gates what you get back.
 
-A vertical-domain information-specialist Agent CLI. The anysearch mental model:
-search + research + memory + knowledge in one Agent, with time-edge-effect FTS5
-recall, multi-source RRF fusion, and an MCP server that auto-indexes results.
+**Status: 0.0.1, not yet published to npm.** Install from source below.
 
-## What this is
+## Requirements
 
-- **Kernel** (`packages/kernel`): Retroaererd Engine — bounded budget, sufficiency gate, RRF fusion
-- **Store** (`packages/store`): FTS5 session memory + time-edge-effect decay (bi-temporal, QDF, pinned)
-- **Retriever** (`packages/retriever`): provider contracts (exa/tavily/anysearch) + RRF pure function
-- **MCP server** (`apps/mcp`): 5 MCP tools (search_web, research_web, recall_memory, query_knowledge, ans_chat)
-- **Plugin** (`apps/plugin`): hooks layer + project index + two-stage recall (ADR-0009/0010)
-- **CLI** (`apps/cli`): entry point, `ans` command, composition root forwarder
+- Node.js >= 22 (Node 24 verified)
+- pnpm 11.24.0 exactly (pinned; corepack reads `packageManager` automatically)
+- At least one provider API key for real searches:
+  - `EXA_API_KEY` — Exa (supports domain filtering)
+  - `TAVILY_API_KEY` — Tavily (supports domain filtering)
+  - `ANYSEARCH_API_KEY` — anysearch REST (optional; anonymous tier works, no domain filter)
 
-## Before you explore
+## Quickstart
 
-- Read `CONTEXT.md` at the repo root — the canonical single-context domain glossary.
-- Read `docs/adr/` — the complete numbered ADR record (generated index below).
-- Read `docs/agents/domain.md` for how to consume domain docs.
-- Read `docs/agents/issue-tracker.md` for the local-markdown issue tracker conventions.
+```bash
+git clone <this repo> && cd anysearch-cli
+pnpm install --node-linker=hoisted   # Windows: hoisted avoids better-sqlite3 EPERM
+pnpm build
+
+# self-check: keys, DB path, domain resolution, provider readiness
+node apps/cli/dist/index.js doctor
+
+# first search (full fanout across keyed providers)
+node apps/cli/dist/index.js search "tokio JoinSet rust"
+
+# domain-scoped search: restrict results to the active domain allowlist
+ANS_DOMAIN=docs node apps/cli/dist/index.js search "tokio JoinSet rust"
+
+# machine-readable output (includes sufficiency / attribution / abstain)
+node apps/cli/dist/index.js search "..." --json
+```
+
+The CLI resolves as `ans` when the package is installed globally or linked; in
+repo form, `node apps/cli/dist/index.js` is the same entry point.
+
+## Domains & abstain (ADR-0062)
+
+A *domain* is a TOML file under `domains/` (or `ANS_DOMAINS_DIR`) naming its
+providers and an authoritative `urlAllowlist`. `ANS_DOMAIN` selects it.
+
+Domain filtering runs as two gates:
+
+1. **Pre-filter (capability-negotiated)** — providers that declare domain-
+   filter support receive the allowlist directly (`tavily` gets
+   `include_domains` in hard filter mode; `exa` gets `includeDomains`).
+   Providers without support (e.g. `anysearch`) degrade honestly to
+   post-filter-only — the engine never fakes a filter for them.
+2. **Post-filter (authoritative)** — after providers return, the kernel drops
+   every result whose URL is not in the allowlist *before* fusion/attribution.
+   Deny rules take precedence; allow entries match a host and its subdomains.
+
+When the gate leaves zero results, `ans` **abstains** — a first-class result,
+not an error:
+
+```text
+abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered 0, gate pre)
+```
+
+- Default exit code is **0** (abstention is a successful policy outcome).
+- `--fail-on-abstain` returns dedicated exit **3** for automation.
+- `--json` output carries `abstain: { reason, domain, preFiltered, postFiltered, gate }`.
+- MCP `search_web`/`research_web` surface the same marker as
+  `structuredContent.abstain` with `isError: false`.
+- Two audit events land in the observation trace on every domain-scoped
+  search: `retrieval.domain_filter.pre` (capability + sent/degraded lists)
+  and `retrieval.domain_filter.post` (arrivals, survivors, dropped).
+
+Exit codes: `0` ok/abstain · `1` generic failure or zero results without a
+domain policy · `2` usage error · `3` abstain under `--fail-on-abstain`.
+
+## Provider domain-filter matrix
+
+| provider | pre-filter sent | degrade mode |
+|----------|-----------------|--------------|
+| tavily   | yes (`include_domains`, hard filter mode) | — |
+| exa      | yes (`includeDomains`) | — |
+| anysearch| no (REST API has no domain parameter) | post-filter only |
+
+Provider selection comes from the domain TOML’s `sources.enabled`. Missing
+keys skip that provider instead of crashing (fail-open); if *no* provider can
+register, the search is an error, not an abstain.
+
+## MCP server
+
+```bash
+node apps/mcp/dist/index.cjs                    # stdio transport (default)
+node apps/mcp/dist/index.cjs --transport http --port 3099   # HTTP
+```
+
+Five tools: `search_web`, `research_web`, `recall_memory`, `query_knowledge`,
+`ans_chat`. `ANS_DOMAIN` scopes the server the same way it scopes the CLI.
+Tools never print to stdout; the server keeps the protocol channel pure.
+
+## Known limitations
+
+- **Not on npm yet** — install = clone + `pnpm install` + `pnpm build`.
+- **`anysearch` provider cannot pre-filter** — its REST surface has no domain
+  parameter; under a domain allowlist it is post-filter-only (honest degrade,
+  recorded in the `retrieval.domain_filter.pre` audit event).
+- **Tavily does not forward `AbortSignal`** — provider-side timeouts are not
+  cancelable through the SDK (recorded limitation; the kernel budget guard
+  still bounds wall time).
+- **macOS is outside the blocking matrix** — an exit-time `libc++abi` crash
+  remains unresolved, so `ship-gate` gates on ubuntu+windows while a
+  non-blocking `macos-spillover-probe` job replays a minimal repro each push
+  (promotion rule: ≥5 consecutive green probes before restoring the lane).
+- **Golden executor live assertions are quarantine-prone** — `eval-looks.json`
+  runs a two-layer executor (offline stub replay + live provider checks under
+  `test:online`); 10 of 14 live entries are quarantined for provider-output
+  drift (dated spec paths, versioned/localized doc URLs — ledger:
+  `packages/store/eval-quarantine.json`, 30-day TTL).
+- **Tavily domain-filter probe: live-verified** — `include_domains` held in
+  default + filter modes and subdomain direction is bidirectional
+  (`scripts/probe-tavily-domains.mjs`, ledger in `.scratch/grill-round-62/`;
+  the `/research` endpoint arm is INCONCLUSIVE — async handle, no URL fields).
+- **`ans chat` / `ans llm` need an LLM key** (`OPENAI_API_KEY` etc. via
+  `ans llm`); retrieval itself only needs provider keys.
+
+## For contributors
+
+- `CONTEXT.md` — canonical domain glossary (read first).
+- `docs/adr/` — numbered decision record; the index below is generated by
+  `scripts/gen-adr-index.mjs` (do not edit by hand).
+- `docs/agents/` — domain-doc + local-markdown issue tracker conventions.
+- Repo layout: `packages/kernel` (engine) · `packages/store` (FTS5 memory,
+  observation, URL policy) · `packages/retriever` (provider adapters + RRF) ·
+  `apps/cli` · `apps/mcp` · `apps/plugin` (host hooks).
+- Per-package tests run under `node --import tsx --test`; the full gate is
+  `node scripts/ship-gate.mjs` (clean tree, tests, pack, install verify, MCP
+  initialize, fail-open boot).
+- Governance: `docs/ponytail-debt-ledger.md`, `.scratch/<slug>/` issues,
+  `AGENTS.md`.
 
 ## Architecture decisions
 
@@ -94,30 +208,3 @@ The complete numbered record lives in `docs/adr/` — ADR-0001 through ADR-0063.
 | [0062](docs/adr/0062-architecture-grill-round-61-out-of-domain-abstain-closure-readme.md) | Grill Round 61 — Out-of-Domain Abstain Closure + User-Facing README（docs 域外拒答收口 + 用户向 README 治理） |
 | [0063](docs/adr/0063-architecture-grill-round-62-real-usability-closure.md) | Grill Round 62 — Real-Usability Closure（产品真实可用性收口：安装炸弹拆除 + main tip 止血 + golden 执行器 + 观测第三面） |
 <!-- END ADR-INDEX -->
-
-## Build & test
-
-```bash
-pnpm install --node-linker=hoisted  # Windows: hoisted avoids better-sqlite3 EPERM
-
-# Tests (per package, no global runner):
-cd packages/store && npx tsx test/session-store.test.ts
-cd packages/kernel && npx tsx test/engine.test.ts
-cd packages/retriever && npx tsx test/rrf.test.ts
-cd apps/mcp && npx tsx test/mcp.test.ts
-cd apps/plugin && npx tsx test/plugin.test.ts
-
-# Build:
-cd apps/mcp && npx tsup   # -> dist/index.cjs
-cd apps/cli && npx tsup   # -> dist/index.js
-
-# Server liveness:
-node apps/mcp/dist/index.cjs --transport http --port 3099
-curl http://127.0.0.1:3099/health  # -> {"status":"ok",...}
-```
-
-## Debt & governance
-
-- `docs/ponytail-debt-ledger.md` — tracked technical debt with upgrade triggers
-- `.scratch/<feature-slug>/` — local-markdown issue tracker (not committed to git)
-- `AGENTS.md` — project agent-skill metadata
