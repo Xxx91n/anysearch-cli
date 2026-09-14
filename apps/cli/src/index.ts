@@ -42,6 +42,7 @@ const help = [
   "  llm       Configure LLM providers (via @earendil-works/pi-ai)",
   "  skill     Manage Agent Skills (install / list / remove)",
   "  search    Run a retrieval query through the Retroaererd Engine",
+  "            options: --json (structured envelope) · --fail-on-abstain (exit 3 on abstain)",
   "  chat      Interactive retrieval-augmented chat session",
   "  recommend Get recommendations from the active domain",
   "  domain    Switch Active Domain (cc-persona TOML, ADR-0002)",
