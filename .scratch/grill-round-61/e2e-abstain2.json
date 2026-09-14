@@ -1,0 +1,180 @@
+{
+  "query": "zzqqxx unspellable fribble nonce --json",
+  "mode": "fast",
+  "results": [
+    {
+      "url": "pnpm.io/ja/cli/config",
+      "title": "pnpm config | pnpm",
+      "snippet": "Auth-related settings are hidden from the output; use `pnpm config get <key>` to read them explicitly.\n\n`pnpm config get <key>`\n\nSince v11, `pnpm config get` (without `--json`) no longer prints INI-formatted text. It prints JSON for objects and arrays, and raw strings for strings, numbers, booleans, and nulls. `pnpm config get --json` prints all values as JSON. `pnpm config list` always prints a JSON object.\n\n`pnpm config get`\n`--json`\n`pnpm config get --json`\n`pnpm config list`\n\n## Options [..",
+      "source": "tavily",
+      "extra": {
+        "score": 0.3624957,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "a9e19cd2f4e04f6cb756e00428420050"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "pnpm.io/cli/licenses",
+      "title": "pnpm licenses | pnpm",
+      "snippet": "pnpm licenses | pnpm\n\nOn this page\n\n### list\n\nAliases: `ls`\n\nList licenses for installed packages.\n\nSince v11.20.0, a package resolved from a named registry is reported separately from a package of the same name and version that came from another registry. The registry alias is shown next to the package name in the table output and is exposed as the `registryName` field with `--json`.\n\n### --dev, -D\n\nCheck only \"devDependencies\".\n\n### --json\n\nShow information in JSON format.\n\n### --long\n\nSho",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "a9e19cd2f4e04f6cb756e00428420050"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "pnpm.io/ko/11.x/cli/config",
+      "title": "pnpm config | pnpm",
+      "snippet": "If the $XDG\\_CONFIG\\_HOME env variable is set, then $XDG\\_CONFIG\\_HOME/pnpm/rc\n On Windows: ~/AppData/Local/pnpm/config/rc\n On macOS: ~/Library/Preferences/pnpm/rc\n On Linux: ~/.config/pnpm/rc\n\nYou can also retrieve the path to your global config file by running (added in v10.21.0):\n\n```\n\npnpm config get globalconfig\n\n```\n\n## Commands\n\n### set \n\nConfig key를 제공된 value로 설정하십시오.\n\nWithout the `--json` flag, it parses the value as plain string:\n\n``` [...] 노트\n\nSince v11, `pnpm config get` (without `",
+      "source": "tavily",
+      "extra": {
+        "score": 0.35750076,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "a9e19cd2f4e04f6cb756e00428420050"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "ts.sdk.modelcontextprotocol.io/v2/api/%40modelcontextprotocol/client/client/dpop.html",
+      "title": "client/dpop | MCP TypeScript SDK",
+      "snippet": "client/dpop | MCP TypeScript SDK\n\n### DpopSession \n\nA DPoP signing identity plus the small amount of state RFC 9449 requires across requests: the key pair and, per origin, the most recently server-supplied nonce (RFC 9449 §8/§9).\n\nOne `DpopSession` is meant to live for the lifetime of a single OAuth client registration — the token endpoint and the resource server are different origins and get independent nonce slots, so a nonce challenge from one never leaks into proofs sent to the other.\n\n####",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "a9e19cd2f4e04f6cb756e00428420050"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "pnpm.io/ja/11.x/cli/config",
+      "title": "pnpm config | pnpm",
+      "snippet": "If the $XDG\\_CONFIG\\_HOME env variable is set, then $XDG\\_CONFIG\\_HOME/pnpm/rc\n On Windows: ~/AppData/Local/pnpm/config/rc\n On macOS: ~/Library/Preferences/pnpm/rc\n On Linux: ~/.config/pnpm/rc\n\nYou can also retrieve the path to your global config file by running (added in v10.21.0):\n\n```\n\npnpm config get globalconfig\n\n```\n\n## コマンド\n\n### set \n\n設定キーを指定された値に設定します。\n\nWithout the `--json` flag, it parses the value as plain string:\n\n```\n\npnpm config set --location=project nodeVersion 22.0.0\n\n``` [...]",
+      "source": "tavily",
+      "extra": {
+        "score": 0.34052956,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "a9e19cd2f4e04f6cb756e00428420050"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "pnpm.io/pnpr/endpoints",
+      "title": "HTTP endpoints | pnpm",
+      "snippet": "HTTP endpoints | pnpm\n\n# HTTP endpoints\n\npnpr exposes a set of always-on endpoints (health, user accounts, and tokens) plus three surfaces:\n\n- Registry surface - npm-compatible package, publish, staged-publish, and team endpoints. Served exactly when at least one registry is declared under `registries:`; `--disable-registry` turns it off for one process. On a resolver-only server these routes aren't mounted at all — they answer `404`, not `403`.\n- Resolver surface (`resolver.enabled`) - pnpr ins",
+      "source": "exa",
+      "publishedAt": "2026-07-18T00:00:00.000Z",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "a9e19cd2f4e04f6cb756e00428420050"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "pnpm.io/ja/next/cli/config",
+      "title": "pnpm config | pnpm",
+      "snippet": "pnpm config get catalog.react. pnpm config get --json catalog.react`. The syntax of the property path emulates JavaScript property paths. ### delete <key>. すべての設定を表示します。 Output is a JSON object. Auth-related settings are hidden from the output; use `pnpm config get <key>` to read them explicitly. Since v11, `pnpm config get` (without `--json`) no longer prints INI-formatted text. It prints JSON for objects and arrays, and raw strings for strings, numbers, booleans, and nulls. `pnpm config get [",
+      "source": "tavily",
+      "extra": {
+        "score": 0.32859457,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "a9e19cd2f4e04f6cb756e00428420050"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "pnpm.io/pnpr/cli",
+      "title": "CLI reference | pnpm",
+      "snippet": "CLI reference | pnpm\n\n# CLI reference\n\n```sh\npnpr [OPTIONS]\n```\n\n## Options\n\n| Flag | Description |\n| --- | --- |\n| `-c, --config ` | Path to a YAML config. When omitted, the global `config.yaml` in pnpr's config dir is used if it exists, otherwise the bundled default config. |\n| `--listen ` | Address to bind to. Defaults to `127.0.0.1:7677`. |\n| `--storage ` | Override the storage directory from the loaded config — the source of truth for hosted packages. |\n| `--cache ` | Override the disposab",
+      "source": "exa",
+      "publishedAt": "2026-07-03T00:00:00.000Z",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "a9e19cd2f4e04f6cb756e00428420050"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "pnpm.io/pt/11.x/cli/config",
+      "title": "pnpm config | pnpm",
+      "snippet": "# pnpm config. The local workspace configuration file is located at the root of the project and is named `pnpm-workspace.yaml`. The global YAML configuration file (`config.yaml`) is located at:. The global `rc` file (registry/auth settings only) is at:. You can also retrieve the path to your global config file by running (added in v10.21.0):. ### set <key> <value>. Define a chave da configuração para o valor fornecido. Without the `--json` flag, it parses the value as plain string:. `pnpm [...]",
+      "source": "tavily",
+      "extra": {
+        "score": 0.3238295,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "a9e19cd2f4e04f6cb756e00428420050"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "pnpm.io/pnpr/configuration",
+      "title": "Configuration | pnpm",
+      "snippet": "Configuration | pnpm\n\n# Configuration\n\npnpr uses a YAML config. When you don't pass `-c`, pnpr looks for a global `config.yaml` in its config directory and otherwise falls back to a bundled default (which is shaped for pnpm's own test registry — write your own config for real use).\n\nA minimal config that hosts a private scope locally and routes everything else to the public npm registry:\n\n```yaml\nstorage: ./storageregistries:  local:    type: hosted    packages:      # The names this registry se",
+      "source": "exa",
+      "publishedAt": "2026-07-18T00:00:00.000Z",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "a9e19cd2f4e04f6cb756e00428420050"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    }
+  ],
+  "answers": [],
+  "sufficiency": {
+    "verdict": "ambiguous",
+    "agreement": {
+      "jaccardAtK": 0,
+      "rboAtK": 0
+    },
+    "volume": {
+      "uniqueResults": 19,
+      "uniqueDomains": 3,
+      "successfulProviders": 2
+    },
+    "spread": {
+      "rrfVariance": 0
+    }
+  },
+  "attribution": {
+    "schema": "anysearch/attribution-report@1",
+    "generatedAt": "2026-09-14T10:55:46.394Z",
+    "claims": [],
+    "gaps": [],
+    "supportedCount": 0,
+    "uncertainCount": 0,
+    "unsupportedCount": 0,
+    "judgeEnhanced": false
+  }
+}

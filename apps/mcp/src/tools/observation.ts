@@ -9,7 +9,10 @@ import { currentMcpIdentity } from "../mcp-context.js";
 export function observeTool<T>(
   eng: CompositionResult,
   toolName: string,
-  callback: () => T | Promise<T>,
+  // ADR-0062 D2: the callback receives the recordOperation span so tools can
+  // hand it to retriever.search() — that is how retrieval.domain_filter.* audit
+  // events and the anysearch.outcome dimension land inside the MCP trace.
+  callback: (span: import("@anysearch/kernel").RetrievalObservationSink) => T | Promise<T>,
   attributes?: ObservationAttributes,
 ): Promise<T> {
   const identity = currentMcpIdentity();
@@ -22,6 +25,6 @@ export function observeTool<T>(
       clientId,
       // sessionId deliberately omitted (stays empty -> NULL column on MCP path).
     },
-    callback,
+    (span) => callback(span),
   );
 }

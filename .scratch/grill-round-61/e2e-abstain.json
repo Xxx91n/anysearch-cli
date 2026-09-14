@@ -1,0 +1,177 @@
+{
+  "query": "kubernetes pod eviction policy kubectl drain --json",
+  "mode": "fast",
+  "results": [
+    {
+      "url": "pnpm.io/ko/11.x/cli/config",
+      "title": "pnpm config | pnpm",
+      "snippet": "# pnpm config. pnpm settings are split across two kinds of configuration files:. The local workspace configuration file is located at the root of the project and is named `pnpm-workspace.yaml`. The global YAML configuration file (`config.yaml`) is located at:. The global `rc` file (registry/auth settings only) is at:. You can also retrieve the path to your global config file by running (added in v10.21.0):. ### set <key> <value>. Config key를 제공된 value로 설정하십시오. Without the `--json` flag, it [...",
+      "source": "tavily",
+      "extra": {
+        "score": 0.43395805,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "f1cf36fd80984096b2e867f55ea594ae"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "modelcontextprotocol.io/docs/2026-07-28/tools/inspector/cli",
+      "title": "",
+      "snippet": "> ## Documentation Index\n> \n> Fetch the complete documentation index at: https://modelcontextprotocol.io/llms.txt\n> Use this file to discover all available pages before exploring further.\n\n# CLI client\n\n> Scripting the MCP Inspector: methods, output formats, exit codes, and CI recipes\n\nEach CLI run connects to a server, invokes the single request you name with `--method`, prints the result, and exits. That makes it a good fit for CI pipelines, shell one-liners, and coding agents that need to ver",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "f1cf36fd80984096b2e867f55ea594ae"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "pnpm.io/ja/11.x/cli/config",
+      "title": "pnpm config | pnpm",
+      "snippet": "# pnpm config. pnpm settings are split across two kinds of configuration files:. The local workspace configuration file is located at the root of the project and is named `pnpm-workspace.yaml`. The global YAML configuration file (`config.yaml`) is located at:. The global `rc` file (registry/auth settings only) is at:. You can also retrieve the path to your global config file by running (added in v10.21.0):. ### set <key> <value>. Without the `--json` flag, it parses the value as plain string:. ",
+      "source": "tavily",
+      "extra": {
+        "score": 0.37511167,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "f1cf36fd80984096b2e867f55ea594ae"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "modelcontextprotocol.io/docs/2026-07-28/tools/inspector/configuration",
+      "title": "",
+      "snippet": "> ## Documentation Index\n> \n> Fetch the complete documentation index at: https://modelcontextprotocol.io/llms.txt\n> Use this file to discover all available pages before exploring further.\n\n# Configuration and flags\n\n> Catalog vs. config files, which client owns which flag, and every environment variable\n\nThe `mcp-inspector` binary is a launcher: it reads two flags of its own and forwards every other argument to one of three clients (web, CLI, or TUI). Each client defines its own flags, so a flag",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "f1cf36fd80984096b2e867f55ea594ae"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "pnpm.io/ja/next/cli/config",
+      "title": "pnpm config | pnpm",
+      "snippet": "# pnpm config. pnpm settings are split across two kinds of configuration files:. The local workspace configuration file is located at the root of the project and is named `pnpm-workspace.yaml`. The global YAML configuration file (`config.yaml`) is located at:. The global `rc` file (registry/auth settings only) is at:. You can also retrieve the path to your global config file by running (added in v10.21.0):. ### set <key> <value>. Without the `--json` flag, it parses the value as plain string:. ",
+      "source": "tavily",
+      "extra": {
+        "score": 0.37511167,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "f1cf36fd80984096b2e867f55ea594ae"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "modelcontextprotocol.io/docs/2026-07-28/tools/inspector/recipes",
+      "title": "",
+      "snippet": "> ## Documentation Index\n> \n> Fetch the complete documentation index at: https://modelcontextprotocol.io/llms.txt\n> Use this file to discover all available pages before exploring further.\n\n# Recipes\n\n> Practical guides for transports, importing configs, reviewing MCP Apps, Docker, and network hosting\n\n## Connecting stdio vs. HTTP servers\n\n### stdio\n\nA stdio server is a process the Inspector spawns. Everything positional is the command line:\n\n```bash\nmcp-inspector node build/index.js -- --verbose",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "f1cf36fd80984096b2e867f55ea594ae"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "pnpm.io/ja/cli/config",
+      "title": "pnpm config | pnpm",
+      "snippet": "`rc`\n\nYou can also retrieve the path to your global config file by running (added in v10.21.0):\n\n`pnpm config get globalconfig`\n\n## コマンド\n\n### set <key> <value>\n\n設定キーを指定された値に設定します。\n\nWithout the `--json` flag, it parses the value as plain string:\n\n`--json`\n`pnpm config set --location=project nodeVersion 22.0.0`\n\nWith the `--json` flag, it parses the value as JSON:\n\n`--json`\n`pnpm config set --location=project --json nodeVersion '\"22.0.0\"'` [...] Auth-related settings are hidden from the output; ",
+      "source": "tavily",
+      "extra": {
+        "score": 0.31996062,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "f1cf36fd80984096b2e867f55ea594ae"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "ts.sdk.modelcontextprotocol.io/v2/api/@modelcontextprotocol/client/client/responseCache.html",
+      "title": "client/responseCache | MCP TypeScript SDK",
+      "snippet": "client/responseCache | MCP TypeScript SDK\n\n### ClientResponseCache \n\n`Internal`\n\nThe `Client`'s cache-coordination collaborator.\n\nOwns the per-connection cache state that used to live as five private fields on `Client` — the backing `ResponseCacheStore`, the per-method eviction-generation counter, the user-supplied/default flag, and the stamp-memoized derived indices over the `tools/list` entry. `Client` holds exactly one instance and never reaches past it to the store.\n\nNot exported from the p",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "f1cf36fd80984096b2e867f55ea594ae"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "modelcontextprotocol.io/specification/2025-11-25/basic",
+      "title": "Overview - Model Context Protocol",
+      "snippet": "Overview - Model Context Protocol [...] Title: Overview - Model Context Protocol [...] ##### Base Protocol. ##### Client Features. ##### Server Features. # Overview. ##  Messages. ###  Requests. ###  Responses. ####  Result Responses. ####  Error Responses. ###  Notifications. ##  Auth. ##  Schema. ##  JSON Schema Usage. ###  Schema Dialect. ###  Example Usage. ####  Default dialect (2020-12):. \"age\": { \"type\": \"integer\", \"minimum\": 0 }. ####  Explicit dialect (draft-07):. \"$schema\"",
+      "source": "tavily",
+      "extra": {
+        "score": 0.247301,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "f1cf36fd80984096b2e867f55ea594ae"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "modelcontextprotocol.io/specification/2025-03-26/basic/transports",
+      "title": "",
+      "snippet": "> ## Documentation Index\n> \n> Fetch the complete documentation index at: https://modelcontextprotocol.io/llms.txt\n> Use this file to discover all available pages before exploring further.\n\n# Transports\n\nMCP uses JSON-RPC to encode messages. JSON-RPC messages MUST be UTF-8 encoded.\n\nThe protocol currently defines two standard transport mechanisms for client-server\ncommunication:\n\n1. stdio, communication over standard in and standard out\n2. Streamable HTTP\n\nClients SHOULD support stdio whenever po",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "f1cf36fd80984096b2e867f55ea594ae"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    }
+  ],
+  "answers": [],
+  "sufficiency": {
+    "verdict": "ambiguous",
+    "agreement": {
+      "jaccardAtK": 0,
+      "rboAtK": 0
+    },
+    "volume": {
+      "uniqueResults": 19,
+      "uniqueDomains": 4,
+      "successfulProviders": 2
+    },
+    "spread": {
+      "rrfVariance": 0
+    }
+  },
+  "attribution": {
+    "schema": "anysearch/attribution-report@1",
+    "generatedAt": "2026-09-14T10:55:31.124Z",
+    "claims": [],
+    "gaps": [],
+    "supportedCount": 0,
+    "uncertainCount": 0,
+    "unsupportedCount": 0,
+    "judgeEnhanced": false
+  }
+}

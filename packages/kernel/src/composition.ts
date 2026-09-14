@@ -15,6 +15,9 @@ import {
   SqliteObservationStore,
   SqliteSessionStore,
   readActiveCalibrationBundle,
+  createDomainReloader,
+  domainTomlPath,
+  resolvePolicyFromSchema,
 } from "@anysearch/store";
 import * as path from "node:path";
 import type { AttributionCalibration } from "./calibrate";
@@ -85,19 +88,37 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
   let providers: SearchProvider[] = [];
   let config: DomainConfigPort | undefined;
   let sourceWeights: Record<string, number> | undefined;
+  // ADR-0062 D2 (T2): request-time domain URL policy resolver — wired only when
+  // the domain schema loads. The lazy-mtime reloader refreshes the schema when
+  // the TOML changes; resolvePolicyFromSchema runs on every search() call so
+  // TOML edits and ANS_URL_ALLOWLIST/DENYLIST env overrides take effect without
+  // restart. No cached policy snapshot lives inside the retriever.
+  let urlPolicy: (() => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }) | undefined;
 
   if (domain) {
     try {
       // ADR-0061 B1: resolution chain — caller-supplied domains dirs (builtin package
       // dir etc.) then the ANS_DOMAINS_DIR/CWD defaults. Missing domain stays
       // fail-open full-fanout; schema errors keep today's semantics.
-      const schema = loadDomainByNameIn(domain, opts?.domainsDirs ?? defaultDomainsDirs());
+      const dirs = opts?.domainsDirs ?? defaultDomainsDirs();
+      const schema = loadDomainByNameIn(domain, dirs);
       config = schema as DomainConfigPort;
       const enabled = schema.sources.enabled;
       sourceWeights = schema.sources.weights;
       providers = enabled
         .map((id) => PROVIDER_FACTORIES[id]?.())
         .filter((p): p is SearchProvider => p !== undefined);
+      // ADR-0062 D2: resolve the TOML path through the same chain the loader used
+      // (env -> CWD -> caller-supplied dirs), then hand the engine a reloader that
+      // keeps last-known-good on a bad reload (plugin server reuses this pattern).
+      const tomlPath = domainTomlPath(process.cwd(), domain, dirs);
+      const reload = createDomainReloader(tomlPath);
+      let liveSchema = schema;
+      urlPolicy = () => {
+        const reloaded = reload();
+        if (reloaded) liveSchema = reloaded;
+        return resolvePolicyFromSchema(liveSchema);
+      };
     } catch (e) {
       // ADR-0045 D2: configuration errors fail fast — an invalid sources.weights must not be
       // swallowed by the fail-open full-fanout fallback (which exists for missing domains/keys).
@@ -113,6 +134,8 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
   const engineOpts: ConstructorParameters<typeof RetroaererdEngine>[1] = {
     ...(sourceWeights ? { sourceWeights } : {}),
     ...(attributionCalibration ? { attributionCalibration } : {}),
+    // ADR-0062 D2: domain-name rides with the resolver for audit attributes.
+    ...(urlPolicy ? { urlPolicy, domainName: domain } : {}),
   };
   const retriever: RetrieverPort = new RetroaererdEngine(
     providers,

@@ -1,0 +1,177 @@
+{
+  "query": "tokio::JoinSet 怎么给检索 fanout 做结构化并发 --json",
+  "mode": "fast",
+  "results": [
+    {
+      "url": "pnpm.io/zh/blog/page/3",
+      "title": "博客 | pnpm",
+      "snippet": "博客 | pnpm [...] Title: 博客 | pnpm [...] ## 平铺的结构不是 node\\_modules 的唯一实现方式. Pnpm 的新用户们经常会问我关于 pnpm 创建的奇怪的 `node_modules` 结构。 为什么不是平铺的？ 次级依赖去哪了？.",
+      "source": "tavily",
+      "extra": {
+        "score": 0.09155271,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "fd178fcecb8e4628a6200a4bf5268c93"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "py.sdk.modelcontextprotocol.io/zh/servers/structured-output/",
+      "title": "结构化输出 - MCP Python SDK",
+      "snippet": "结构化输出 - MCP Python SDK\n\n# 结构化输出\n\n译文落后于英文页面\n\n英文页面在本译文生成之后有过改动，因此部分内容可能已过时。如有疑问，请阅读英文页面；翻译页面说明了翻译版文档的运作方式。\n\n返回普通 `str` 的工具会把结果产出两次：一次是 `content` 里的文本，一次是 `structured_content` 里的 `{\"result\": \"...\"}`。\n\n本页讲的就是这第二个通道：它从哪里来、可能有哪些形态，以及 SDK 如何保证它货真价实。\n\n一句话概括：返回类型注解就是输出模式（output schema）。你其实已经写好了。\n\n## 输出模式\n\n```\nfrom mcp.server import MCPServer\n\nmcp = MCPServer(\"Weather\")\n\nREADINGS = {\"London\": 17, \"Cairo\": 34, \"Reykjavik\": 4}\n\n@mcp.tool()\ndef get_temperature(city: str) -> int:\n    \"\"\"Current temperature in",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "fd178fcecb8e4628a6200a4bf5268c93"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "pnpm.io/zh/next/symlinked-node-modules-structure",
+      "title": "基于符号链接的 `node_modules` 结构 | pnpm",
+      "snippet": "基于符号链接的 `node_modules` 结构 | pnpm [...] Title: 基于符号链接的 `node_modules` 结构 | pnpm [...] # 基于符号链接的 `node\\_modules` 结构. 本文仅描述 pnpm 的 `node_modules` 是如何在没有包含对等依赖关系的包时构建的。 对与有对等依赖的更复杂的场景，请看peer 是如何被解决的。. `node_modules` 中每个包的每个文件都是来自内容可寻址存储的硬链接。 假设你安装了依赖于 `bar@1.0.0` 的 `foo@1.0.0`。 pnpm 会将两个包硬链接到 `node_modules` 如下所示：. 这是 `node_modules` 中的唯一的“真实”文件。 一旦所有包都硬链接到 `node_modules`，就会创建符号链接来构建嵌套的依赖关系图结构。. 你可能已经注意到，这两个包都硬链接到一个 `node_modules` 文件夹（`foo@1.0.0/node_modules/foo`）内的子文件夹中。 这是为了：. `import  as package fr",
+      "source": "tavily",
+      "extra": {
+        "score": 0.07887636,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "fd178fcecb8e4628a6200a4bf5268c93"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "py.sdk.modelcontextprotocol.io/zh/client/session-groups/",
+      "title": "会话组 - MCP Python SDK",
+      "snippet": "会话组 - MCP Python SDK\n\n# 会话组\n\n机器翻译\n\n本页由英文文档自动翻译而来，以英文页面为准。如果有读起来不对的地方，翻译页面说明了如何反馈。\n\n一个 `Client` 连接一个服务器。实际应用往往需要好几个（一个搜索服务器、一个数据库服务器、一个内部 API），结果要为每个服务器各管一条连接和一份工具列表。\n\n`ClientSessionGroup` 是一个对象，它持有多条连接，并把它们公开的所有内容合并成一个统一视图。\n\n## 两个服务器\n\n先看两个普通的服务器。它们彼此毫无关联，所以很自然地都把自己的工具命名为 `search`：\n\n```\nfrom mcp.server import MCPServer\n\nmcp = MCPServer(\"Library\")\n\n@mcp.tool()\ndef search(query: str) -> str:\n    \"\"\"Search the library catalog.\"\"\"\n    return f\"3 books match {query!r}.\"\n\n@mcp.resource(\"library://hours",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "fd178fcecb8e4628a6200a4bf5268c93"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "pnpm.io/zh/next/pnpm-vs-npm",
+      "title": "pnpm vs npm | pnpm",
+      "snippet": "pnpm vs npm | pnpm [...] Title: pnpm vs npm | pnpm [...] # pnpm vs npm. ## npm 的平铺目录结构. 从 v3 开始，npm 使用平铺的依赖结构。 这可以减少磁盘空间占用， 但却导致 `node_modules` 目录的混乱。. 另一方面，pnpm 通过使用硬链接和符号链接到全局磁盘内容可寻址存储来管理 `node_modules`。 这将给你带来减少磁盘空间使用的好处，同时也能保持你的`node_modules`整洁。 如果你希望了解更多信息，可以参考存储布局。. pnpm 正确的 `node_modules` 结构的好处在于，它\"有助于避免愚蠢的错误\"，因为它让你无法使用不是 `package.json` 中指定的模块。. ## 安装. pnpm 不允许安装 `package.json` 中没有包含的包。 如果没有参数传递给 `pnpm add`，包将保存为常规依赖项。 与 npm 一样， `--save-dev` 和 `--save-optional` 可以是用于安装包作为开发或可选的依赖。. 由于此限",
+      "source": "tavily",
+      "extra": {
+        "score": 0.06393101,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "fd178fcecb8e4628a6200a4bf5268c93"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "py.sdk.modelcontextprotocol.io/zh/client/",
+      "title": "Client - MCP Python SDK",
+      "snippet": "Client - MCP Python SDK\n\n# Client\n\n机器翻译\n\n本页由英文文档自动翻译而来，以英文页面为准。如果有读起来不对的地方，翻译页面说明了如何反馈。\n\n`Client` 是 Python 程序与 MCP 服务器对话的方式。\n\n它是一个对象，只有一套生命周期：构造它，进入 `async with`，然后调用方法。每个协议动词（列出工具、调用工具、读取资源、渲染提示词）都是它上面的一个 `async` 方法，返回带类型的结果。\n\n## 你的第一个客户端\n\n客户端需要一个可以对话的服务器。本页的每段代码连接的都是这个 Bookshop。把它保存为 `server.py`，让它通过 HTTP 一直运行着：\n\n```\nfrom pydantic import BaseModel\n\nfrom mcp.server import MCPServer\nfrom mcp.server.mcpserver.exceptions import ToolError\nfrom mcp.types import Completion, CompletionArgument, Comple",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "fd178fcecb8e4628a6200a4bf5268c93"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "typescriptlang.org/zh/play/typescript/language/structural-typing.ts.html",
+      "title": "TypeScript: 演练场示例 - Structural Typing",
+      "snippet": "跳转到内容\n\nTypeScript\n\nin En\n\n## Structural Typing [...] TypeScript 是结构化类型系统，结构化类型系统意味着 在比较类型时，TypeScript 仅考虑类型上的成员。 这与标称类型系统可以创建两种类型，但不能将他们互相赋值的行为不同。 查看 example:nominal-typing 以了解更多. 例如，如下两个接口在结构化类型系统中，完全可以互相转移。 ````\ninterface Ball { diameter: number; } interface Sphere { diameter: number; } let ball: Ball = { diameter: 10 }; let sphere: Sphere = { diameter: 20 }; sphere = ball; ball = sphere; \n```` // 如果我们添加了一个包含所有 Ball 和 Sphere 类型成员的类型， 那么它也可以赋值给 ball 或 sphere。 ```` [...] let createBall = (diamet",
+      "source": "tavily",
+      "extra": {
+        "score": 0.043548565,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "fd178fcecb8e4628a6200a4bf5268c93"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "py.sdk.modelcontextprotocol.io/zh/run/deploy/",
+      "title": "部署与扩展 - MCP Python SDK",
+      "snippet": "部署与扩展 - MCP Python SDK\n\n# 部署与扩展\n\n机器翻译\n\n本页由英文文档自动翻译而来，以英文页面为准。如果有读起来不对的地方，翻译页面说明了如何反馈。\n\n你的服务器已经能跑了。现在它需要一个真实的主机名，后面还要挂不止一个 worker。\n\n这些事几乎都不归 MCP 管。ASGI 服务器、进程管理器、负载均衡器都由你自己带。这一页只讲确实归 MCP 管的那几件事：一个卡住所有部署的设置，以及\"不止一个 worker\"会改变 SDK 行为的两个地方。\n\n## 首先：Host 白名单\n\n`streamable_http_app()` 无从知道自己会被放在哪个主机名后面，所以它假设最安全的答案：localhost。没有传 `transport_security=` 时，应用会开启 DNS 重绑定防护，只接受 `Host` 头为 `127.0.0.1: `、`localhost: ` 或 `[::1]: ` 的请求。如果有 `Origin` 头，它必须是同一地址的 `http://` 形式。在你自己的机器上这正合适：它能阻止恶意网页通过一个重绑定到 `127.0.0.1` ",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "fd178fcecb8e4628a6200a4bf5268c93"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "pnpm.io/zh/pnpm-vs-npm",
+      "title": "pnpm vs npm | pnpm",
+      "snippet": "## 安装\n\npnpm 不允许安装 `package.json` 中没有包含的包。 如果没有参数传递给 `pnpm add`，包将保存为常规依赖项。 与 npm 一样， `--save-dev` 和 `--save-optional` 可以是用于安装包作为开发或可选的依赖。\n\n`package.json`\n`pnpm add`\n`--save-dev`\n`--save-optional`\n\n由于此限制，项目在使用 pnpm 时不会有任何无关的包，除非它们删除依赖项并将其保留为孤立的。 这就是为什么 pnpm 的实现的 prune command 不允许你指定包来修剪 - 它总是去除所有多余的和孤儿包。\n\n## 目录依赖\n\n目录依赖以 `file:` 前缀开始，指向文件系统的目录。 与 npm 一样，pnpm 符号链接这些依赖项。 与 npm 不同的是，pnpm 不执行这些文件依赖项的安装。\n\n`file:` [...] # pnpm vs npm\n\n## npm 的平铺目录结构\n\nnpm 从第 3 版开始维护 扁平化依赖关系树。 这可以减少磁盘空间占用， 但却导致 `node_m",
+      "source": "tavily",
+      "extra": {
+        "score": 0.042582717,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "fd178fcecb8e4628a6200a4bf5268c93"
+        },
+        "trustDisposal": "stripped",
+        "trustSuspicious": true
+      }
+    },
+    {
+      "url": "py.sdk.modelcontextprotocol.io/zh/servers/tools/",
+      "title": "工具 - MCP Python SDK",
+      "snippet": "工具 - MCP Python SDK\n\n# 工具\n\n机器翻译\n\n本页由英文文档自动翻译而来，以英文页面为准。如果有读起来不对的地方，翻译页面说明了如何反馈。\n\n工具是模型可以调用的函数。\n\n在一个普通的 Python 函数上加上 `@mcp.tool()`，就声明了一个工具。整个 API 就这些。\n\n## 第一个工具\n\n```\nfrom mcp.server import MCPServer\n\nmcp = MCPServer(\"Bookshop\")\n\n@mcp.tool()\ndef search_books(query: str, limit: int) -> str:\n    \"\"\"Search the catalog by title or author.\"\"\"\n    return f\"Found 3 books matching {query!r} (showing up to {limit}).\"\n\n```\n\n看看刚才写的代码。没有模式、没有 JSON、没有协议，只是一个函数。SDK 从中读出三样东西：\n\n- 工具的名称就是函数名：`search_books`。\n- 模型看",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "fd178fcecb8e4628a6200a4bf5268c93"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    }
+  ],
+  "answers": [],
+  "sufficiency": {
+    "verdict": "ambiguous",
+    "agreement": {
+      "jaccardAtK": 0,
+      "rboAtK": 0
+    },
+    "volume": {
+      "uniqueResults": 20,
+      "uniqueDomains": 3,
+      "successfulProviders": 2
+    },
+    "spread": {
+      "rrfVariance": 0
+    }
+  },
+  "attribution": {
+    "schema": "anysearch/attribution-report@1",
+    "generatedAt": "2026-09-14T10:55:10.483Z",
+    "claims": [],
+    "gaps": [],
+    "supportedCount": 0,
+    "uncertainCount": 0,
+    "unsupportedCount": 0,
+    "judgeEnhanced": false
+  }
+}

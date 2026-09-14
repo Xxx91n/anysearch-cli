@@ -17,7 +17,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
       inputSchema: fromJsonSchema(KernelJsonSchemas.research_web),
     },
     async (args: unknown) => {
-      return observeTool(eng, "research_web", async () => {
+      return observeTool(eng, "research_web", async (span) => {
         const { question, depth } = args as { question: string; depth?: string };
         const d = depth ?? "deep";
         let allResults: any[] = [];
@@ -33,6 +33,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               query: round === 0 ? question : question + " (round " + (round + 1) + ")",
               mode: "deep" as const,
               maxResults: 10,
+              span,
             });
             rounds++;
             // ADR-0023 D1: sufficiency gate — this is the LAST round's sufficiency; earlier rounds tracks but the gate cares about the final state.

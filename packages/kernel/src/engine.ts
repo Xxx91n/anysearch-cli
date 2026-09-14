@@ -5,7 +5,7 @@
 // JS adaptation: Promise.allSettled + AbortController + unique-URL counter early stop.
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope } from "@anysearch/retriever";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved } from "@anysearch/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl } from "@anysearch/retriever";
 import { randomUUID } from "node:crypto";
 import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort } from "./ports";
@@ -188,6 +188,24 @@ function computeVariance(values: number[]): number {
   return values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
 }
 
+// ADR-0062 D2 (T2): post-filter adjudication — reuses shouldAllowUrl so the gate
+// shares the store-level policy semantics (deny evaluated first; an allow entry
+// matches host or subdomain suffix; the user-labelled early-allow branch is
+// irrelevant because the label here is always "retrieved"). Scheme-less
+// normalized URLs get an https:// prefix so URL parsing sees the same host.
+function adjudicateUrlPolicy(
+  url: string,
+  policy: { allow: readonly string[]; deny: readonly string[] },
+): boolean {
+  const withScheme = url.includes("://") ? url : "https://" + url;
+  return shouldAllowUrl(
+    withScheme,
+    { source: "retrieved", traceId: "domain-filter" },
+    policy.allow,
+    policy.deny,
+  ).allowed;
+}
+
 export class RetroaererdEngine {
   private providers: Map<string, SearchProvider> = new Map();
   private ledger?: BudgetLedgerPort;
@@ -201,10 +219,17 @@ export class RetroaererdEngine {
   // ADR-0051 D1: active attribution calibration, injected once by the composition
   // root (which owns the revision-root file I/O). Absent = legacy 0.6 floor.
   private attributionCalibration?: AttributionCalibration;
+  // ADR-0062 D2 (T2): request-time domain URL policy resolver (allow/deny/
+  // policyVersion) + active domain name for audit attributes. Absent resolver or
+  // empty allow = domain filtering inactive (full fanout, legacy behavior). The
+  // resolver is invoked inside every search() — no cached policy snapshot lives
+  // in the retriever (AFR tag-freshness lesson: 9.7% re-leak on stale snapshots).
+  private urlPolicy?: () => { allow: readonly string[]; deny: readonly string[]; policyVersion: string };
+  private domainName?: string;
 
   // ADR-0006 decision 1C: constructor accepts providers array.
   // ADR-0006 decision 2A: optional BudgetLedger + sessionId for per-call billing.
-  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; attributionJudge?: JudgeFn; sourceWeights?: Record<string, number>; attributionCalibration?: AttributionCalibration }) {
+  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; attributionJudge?: JudgeFn; sourceWeights?: Record<string, number>; attributionCalibration?: AttributionCalibration; urlPolicy?: () => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }; domainName?: string }) {
     this.ledger = opts?.ledger;
     this.sessionId = opts?.sessionId;
     this.attributionJudge = opts?.attributionJudge;
@@ -215,6 +240,8 @@ export class RetroaererdEngine {
     this.attributionCalibration = cal
       ? Object.freeze({ params: Object.freeze({ ...cal.params }), thresholds: Object.freeze({ ...cal.thresholds }) })
       : undefined;
+    this.urlPolicy = opts?.urlPolicy;
+    this.domainName = opts?.domainName;
     for (const p of providers) {
       this.providers.set(p.id, p);
     }
@@ -248,6 +275,39 @@ export class RetroaererdEngine {
       throw new Error("No providers registered");
     }
 
+    // ADR-0062 D2 (T2): domain policy resolved per request — the resolver reads
+    // the ADR-0055 single source via a lazy-mtime reloader; nothing is cached in
+    // the retriever. Empty allow = policy inactive (fail-open full fanout).
+    const domainPolicy = this.urlPolicy?.() ?? null;
+    const domainActive = !!domainPolicy && domainPolicy.allow.length > 0;
+    // Capability-negotiated pre-filter: includeDomains is sent only to providers
+    // that declare domainFilterSupported; the rest degrade to post-filter-only
+    // and are named in the pre audit event (no faked filtering).
+    const sentProviders = domainActive
+      ? allProviders.filter((p) => p.domainFilterSupported).map((p) => p.id)
+      : [];
+    const degradedProviders = domainActive
+      ? allProviders.filter((p) => !p.domainFilterSupported).map((p) => p.id)
+      : [];
+    if (domainActive) {
+      q.span?.addEvent("retrieval.domain_filter.pre", {
+        "anysearch.domain": this.domainName ?? "",
+        "anysearch.policy_version": domainPolicy.policyVersion,
+        "anysearch.domain_filter.allow_count": domainPolicy.allow.length,
+        "anysearch.domain_filter.deny_count": domainPolicy.deny.length,
+        "anysearch.domain_filter.sent": sentProviders,
+        "anysearch.domain_filter.degraded": degradedProviders,
+      });
+    }
+    // Provider-facing request carries only SearchRequest fields — kernel-side
+    // Query extras (budget/providers/span) never cross the provider boundary.
+    const providerRequest = (p: SearchProvider): SearchRequest => {
+      const req: SearchRequest = { query: q.query, mode: q.mode };
+      if (q.maxResults !== undefined) req.maxResults = q.maxResults;
+      if (domainActive && p.domainFilterSupported) req.includeDomains = [...domainPolicy.allow];
+      return req;
+    };
+
     // ADR-0006 decision 2C: reserve per-call budget by provider count (MoleAPI pre-consumption).
     const hasLedger = !!(this.ledger && this.sessionId);
     if (hasLedger) {
@@ -278,15 +338,26 @@ export class RetroaererdEngine {
       | { provider: string; status: "rejected"; error: string };
     const out: Array<ProviderOutcome | null> = new Array(allProviders.length).fill(null);
     const uniqueUrls = new Set<string>();
+    // ADR-0062 D2: post-gate counters — gateIn = raw provider results that reached
+    // the authoritative gate (post-pre-filter arrivals); gateDropped counts only
+    // gate removals (dedup collapse must not inflate it); survivors = allResults.size.
+    let gateIn = 0;
+    let gateDropped = 0;
+    let gateSurvivors = 0;
     const needed = Math.max(1, q.maxResults ?? 10);
     let graceResolve: () => void = () => { };
     const graceExpired = new Promise<void>((r) => { graceResolve = r; });
     let graceArmed = false;
     const promises = allProviders.map((p, i) =>
-      p.search(q, controllers[i].signal)
+      p.search(providerRequest(p), controllers[i].signal)
         .then((env) => {
           out[i] = { provider: p.id, status: "fulfilled", envelope: env };
-          for (const r of env.results ?? []) uniqueUrls.add(normalizeUrl(r.url));
+          // Grace-window enough-results counts only what would survive the gate —
+          // otherwise an all-out-of-domain fanout could end the wait early.
+          for (const r of env.results ?? []) {
+            if (domainActive && !adjudicateUrlPolicy(r.url, domainPolicy)) continue;
+            uniqueUrls.add(normalizeUrl(r.url));
+          }
           if (!deepMode && !graceArmed && uniqueUrls.size >= needed) {
             graceArmed = true;
             setTimeout(() => {
@@ -333,6 +404,7 @@ export class RetroaererdEngine {
           const urls: string[] = [];
           const native: Record<string, number> = {};
           for (const original of inner.envelope.results) {
+            gateIn += 1;
             const trusted = sanitizeRetrieved({
               url: original.url,
               title: original.title,
@@ -354,6 +426,11 @@ export class RetroaererdEngine {
                 trustSuspicious: trusted.suspicious,
               },
             };
+            // ADR-0062 D2 (T2): authoritative egress gate — adjudicated on the
+            // sanitized result URL so out-of-domain entries never reach fusion,
+            // MVSS, attribution, or output. Deny wins (shouldAllowUrl order).
+            if (domainActive && !adjudicateUrlPolicy(r.url, domainPolicy)) { gateDropped += 1; continue; }
+            gateSurvivors += 1;
             const norm = normalizeUrl(r.url);
             if (!allResults.has(norm)) {
               allResults.set(norm, { ...r, url: norm }); // store normalized URL as key
@@ -425,6 +502,23 @@ export class RetroaererdEngine {
     // by, the sufficiency/fusion gate.
     const webProviderLedger = buildWebProviderLedger(listedProviderIds, providerLists, nativeScores, providersFailed);
 
+    // ADR-0062 D2/D3 (T2): post-gate audit event + outcome dimension. abstain is
+    // its own outcome value on the span — criterion 6 keeps it out of error counts.
+    if (domainActive) {
+      const outcome = allResults.size === 0 ? "abstain" : "answer";
+      q.span?.addEvent("retrieval.domain_filter.post", {
+        "anysearch.domain": this.domainName ?? "",
+        "anysearch.policy_version": domainPolicy.policyVersion,
+        "anysearch.domain_filter.pre": gateIn,
+        // survivors counted at the gate (pre-dedup) so pre = post + dropped
+        // arithmetically closes; allResults.size stays the fused unique pool.
+        "anysearch.domain_filter.post": gateSurvivors,
+        "anysearch.domain_filter.dropped": gateDropped,
+        "anysearch.outcome": outcome,
+      });
+      q.span?.setAttributes?.({ "anysearch.outcome": outcome });
+    }
+
     const envelope: FusedEnvelope = {
       results: rankedResults,
       answers,
@@ -453,6 +547,13 @@ export class RetroaererdEngine {
           nativeScores,
         },
         observational: { webProviderLedger },
+        // ADR-0062 D3 (T2): first-class abstain marker — domain_filter_empty when
+        // the authoritative gate leaves zero results (empty post-gate pool is
+        // structurally abstain; eval/abstain.ts chain_empty is the sibling rule,
+        // shouldBridgeToAbstain is the weak-claims counterpart). Never an error.
+        ...(domainActive && allResults.size === 0
+          ? { abstain: { abstain: true as const, reason: "domain_filter_empty" as const, ...(this.domainName ? { domain: this.domainName } : {}), preFiltered: gateIn, postFiltered: 0 } }
+          : {}),
       },
     };
     // ADR-0051 D1/D2: claim-level fused confidence is the only calibrated object;

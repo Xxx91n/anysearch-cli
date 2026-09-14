@@ -32,7 +32,10 @@ export function buildServer(engine?: CompositionResult): McpServer {
   } else {
     const dbPath = resolveDbPath();
     mkdirSync(dirname(dbPath), { recursive: true });
-    eng = createEngine(undefined, { dbPath });
+    // ADR-0062 D2/D3: ANS_DOMAIN flows into the engine (same env contract as the
+    // CLI) so the domain post-filter + abstain contract is reachable on MCP.
+    // Unset = full fanout, unchanged legacy behavior.
+    eng = createEngine(process.env.ANS_DOMAIN, { dbPath });
   }
   const server = new McpServer(
     { name: "anysearch", version: PKG_VERSION },

@@ -133,6 +133,19 @@ export interface FusedEnvelope {
     observational?: {
       webProviderLedger?: WebProviderLedger;
     };
+    // ADR-0062 D3 (T2): first-class abstain marker. Set by the kernel post-filter
+    // when a domain allowlist policy is active and zero results survive (including
+    // the cold-domain zero-arrival case). A successful policy execution, never an
+    // error. preFiltered = provider results that reached the authoritative gate;
+    // postFiltered = survivors (0 whenever abstain is set). Consumed by the CLI
+    // one-line message (exit 0) and MCP structuredContent.abstain (isError:false).
+    abstain?: {
+      abstain: true;
+      reason: "domain_filter_empty";
+      domain?: string;
+      preFiltered: number;
+      postFiltered: number;
+    };
   };
 
   // ADR-0034 D4: first-class attribution field — claim-level evidence linkage, orthogonal to verified:false.

@@ -39,7 +39,9 @@ export async function runSearch(args: string[]): Promise<number> {
           "anysearch.source": "retrieved",
         },
       },
-      () => retriever.search({ query: queryClean, mode, maxResults: 10 }),
+      // ADR-0062 D2: span passed through so the kernel can emit the dual
+      // retrieval.domain_filter.* audit events + the anysearch.outcome dimension.
+      (span) => retriever.search({ query: queryClean, mode, maxResults: 10, span }),
     );
 
     // r83 audit F5 / ADR-0034 D4: --json pure — single JSON document on stdout, nothing else.

@@ -12,9 +12,21 @@ export type Budget = {
   timeLimitMs?: number;
 };
 
+// ADR-0062 D2 (T2): per-call observation sink. The engine emits the dual audit
+// events retrieval.domain_filter.pre/post (plus the anysearch.outcome dimension)
+// into the caller's active span. Structural subset of pi-telemetry TelemetrySpan
+// (addEvent/setAttributes); absent = audit events are not recorded, envelope
+// markers still set. Kernel stays free of a pi-telemetry dependency.
+export interface RetrievalObservationSink {
+  addEvent(name: string, attributes?: Record<string, unknown>): void;
+  setAttributes?(attributes: Record<string, unknown>): void;
+}
+
 export type Query = SearchRequest & {
   budget?: Budget;
   providers?: string[]; // restrict to subset of registered providers
+  // ADR-0062 D2: caller-side recordOperation span for the domain-filter audit events.
+  span?: RetrievalObservationSink;
 };
 
 // RetrieverPort: the kernel calls this to search.

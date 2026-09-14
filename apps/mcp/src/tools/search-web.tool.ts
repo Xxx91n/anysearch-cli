@@ -17,11 +17,11 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
       inputSchema: fromJsonSchema(KernelJsonSchemas.search_web),
     },
     async (args: unknown) => {
-      return observeTool(eng, "search_web", async () => {
+      return observeTool(eng, "search_web", async (span) => {
         const { query, mode, maxResults } = args as { query: string; mode?: string; maxResults?: number };
         // ADR-0019 D3: args validated by AJV upstream (fromJsonSchema).
         try {
-          const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", maxResults });
+          const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", maxResults, span });
           const topResults = envelope.results.slice(0, 10);
 
         // ADR-0022 D1: provider answers pass through as first-class fields.

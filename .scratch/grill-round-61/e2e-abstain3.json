@@ -1,0 +1,31 @@
+{
+  "query": "tokio JoinSet rust --json",
+  "mode": "fast",
+  "results": [],
+  "answers": [],
+  "sufficiency": {
+    "verdict": "incorrect",
+    "agreement": {
+      "jaccardAtK": 0,
+      "rboAtK": 0
+    },
+    "volume": {
+      "uniqueResults": 0,
+      "uniqueDomains": 0,
+      "successfulProviders": 1
+    },
+    "spread": {
+      "rrfVariance": 0
+    }
+  },
+  "attribution": {
+    "schema": "anysearch/attribution-report@1",
+    "generatedAt": "2026-09-14T10:57:03.219Z",
+    "claims": [],
+    "gaps": [],
+    "supportedCount": 0,
+    "uncertainCount": 0,
+    "unsupportedCount": 0,
+    "judgeEnhanced": false
+  }
+}

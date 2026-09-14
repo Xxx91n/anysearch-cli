@@ -1,0 +1,18 @@
+# Round-61 e2e fixture: domain whose allowlist host has no real content.
+# Every provider result is out-of-domain -> authoritative gate empties -> abstain.
+name = "cold"
+description = "cold-domain abstain fixture (ADR-0062 criterion 4)"
+
+[settings]
+language = "TypeScript"
+depth = "docs"
+
+[skills]
+active = ["search"]
+
+[sources]
+enabled = ["tavily", "exa"]
+urlAllowlist = ["nonexistent.invalid"]
+
+[rag]
+adapter = "none"
