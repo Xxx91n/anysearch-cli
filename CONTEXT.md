@@ -892,3 +892,14 @@ golden 评测集的自述文件（`eval-looks.coverage.json`）：每个维度�
 
 ## Milestone Serial Slicing（里程碑串行切票）
 walking skeleton 收尾后的首个交付轮遵循 B1→B2→B4→B3 串行票序；每票独立验收，票间依赖即"上票的真实产物"。并行流是假并行（合并成本超线性），单一大票被豁免五判据禁止。G1 治理票挂尾 + sunset，复用 Waiver Quintet。来源：valery.tech lifecycle、mergify TBD、Tricentis big-bang 教训。
+
+## Grill Round 61 — Terms (ADR-0062)
+
+## Dual-Gate Domain Filtering（双闸域过滤）
+域约束分两闸：pre-filter（检索前置，能力协商式——provider 支持 include_domains/includeDomains 就下发，不支持者诚实降级）+ post-filter（engine 层权威出口闸，按 canonicalizeHosts 同一匹配语义裁决最终 host，空即 abstain）。双闸各发 audit 事件（retrieval.domain_filter.pre/post）。policy 请求时从 ADR-0055 单源解析，retriever 不缓存快照（标签漂移 9.7% 教训）。红线：query-rewrite 禁注入 site: 运算符。来源：TrustNLP 2026 AFR、Tavily/Exa 能力矩阵、egress-filtering 纵深防御。
+
+## First-Class Abstain（第一类拒答）
+abstain 是策略成功执行的第一类结果，非 error 非 no-match：CLI 输出结构化一行消息且 exit 0（默认不非零，可编程区分走 --fail-on-abstain）；MCP/plugin 走 isError:false + structuredContent.abstain 契约，让宿主 agent 程序化消费（转域/告知边界）。断言锚定结构化 verdict 字段，关键词 regex 仅 observational；must-abstain 与 must-hit golden 成对防过拒。来源：MCP 规范 isError 双层、ripgrep #2500、inspect_ai content_filter、promptfoo is-refusal。
+
+## Abstain Observability Dimension（拒答观测维度）
+abstain 计数是独立可观测维度（outcome:abstain），绝不混入 error 计数；abstain 率突增 = policy 误配置信号（over-refusal 的运行时镜像）。来源：You.com missing-results 与 request-exceptions 分桶要求、inspect_ai stop_reason 独立槽位。
