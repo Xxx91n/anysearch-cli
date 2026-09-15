@@ -916,4 +916,27 @@ docs-golden 条目的显式执行层归属 stub|live|both——带 mustHit* 的 
 非阻塞 CI 实验腿，验证某修复对同族异 OS 症状的连带效果——三件套：job 名显式实验标注（experiment, non-blocking）+ 崩溃签名进 step summary（区分注册期 segfault vs 退出期 mutex abort）+ TTL（复评点转正或摘除，禁无限期挂）。区别于被禁的工作流级静默跳过：仍执行、仍产出观测、仍上传 artifact。来源：onnxruntime #24579/PR #26445 修复链（1.24.3 实证）、better-sqlite3 #1476/#1514 同族签名、costops 矩阵剪枝+预注册恢复条件、minware quarantine 治理。
 
 ## Install Closure（安装闭包）
-消费者 npm i -g 实际拉入的依赖集合——其内容（如"无 onnxruntime-node"）是可断言的发布面而非实现细节。可选能力走 optionalDependencies + 守卫式动态 import：缺席即降级（向量臂→FTS-only），不拖垮安装。红线：把重型可选运行时放进硬依赖 = 让安装闭包为可能永不启用的能力买单。来源：npm RFC-0000 optionalDependencies 心智模型、esbuild 官方形态、npm cli#7355 optional 非银弹需消费端容错。
+消费者 npm i -g 实际拉入的依赖集合——其内容（如"无 onnxruntime-node"）是可断言的发布面而非实现细节。可选能力走 peer-optional（peerDependenciesMeta.optional：不自动安装、缺席无 warning）+ 守卫式动态 import：缺席即降级（向量臂→FTS-only），不拖垮安装。红线：把重型可选运行时放进硬依赖 = 让安装闭包为可能永不启用的能力买单。来源：npm RFC-0000 optionalDependencies 心智模型、esbuild 官方形态、npm cli#7355 optional 非银弹需消费端容错。
+
+## Grill Round 63 — Terms (ADR-0064)
+
+## Bundled-CLI Publishing（bundle-CLI 发布形态）
+monorepo 发 CLI 的三分形态之一：bundler（tsup noExternal）把私有工作区包吞进 app dist，manifest 中这些包只作 devDependencies 如实声明 build-time 依赖，registry 只发消费面（cli/mcp/plugin）。区别于 publish-everything（内部包作真包发，需其有独立消费者价值+版本机器）与发布期 manifest 剥离（自建改写机器）。_Avoid_: bundled 包留在 dependencies（死声明让 npm 侧拉不存在的包）；为省 registry 面自建 manifest 改写脚本（getlang 破包先例）。来源：LaunchDarkly highlight.run 教程、tsup#1251、jlevy pnpm-monorepo-patterns、changesets#1389 反例。
+
+## Peer-Optional Capability（peer-optional 可选能力）
+重型可选能力（embedding/向量臂）的声明形态：peerDependencies+peerDependenciesMeta.optional——不自动安装、缺席无 warning、用户显式加装即启用（guarded dynamic import 缺席≡null）。区别于 optionalDependencies（默认安装、仅失败时降级 warning——放重运行时=安装炸弹回归）。_Avoid_: 可选重运行时回 optionalDependencies；optionalDep 指向 private 包（每次安装拉注定 404 的声明）。来源：npm RFC 0030（no-install-optional-peer-deps 已 implemented）、npm package.json 官方文档；Install Closure 的机制化修正（R62 optionalDependencies→R63 peer-optional）。
+
+## Canonical Rewrite Exemption（canonical 改写豁免）
+tarball manifest 与仓库 manifest 的合法差异边界：仅当改写由包管理器 canonical 语义执行（pnpm publish 的 workspace:*→实版本）且结果可从仓库 manifest 确定性推导时，豁免于漂移面定义；自建 transformer 不在豁免内。_Avoid_: 默认豁免任何发布期改写（滑坡——剥离方案会借此混入）；豁免扩大到非 canonical 工具。来源：pnpm.io/workspaces 官方 rewrite 语义、pnpm#6941、LYING-Class 漂移定义。
+
+## Quarantine Ratchet（隔离集棘轮）
+隔离集合的机器治理形态——只允许单调改善：entries 相对基线只减不增（新增即红）、renewals 恒 0（续期即红）、过 expiresAt 而无 promote/retire/转长期裁决记录即红；转长期至多一次防续期漏洞。区别于容量预算式绝对数断言（≤10 会误背书当前水位为可接受）。_Avoid_: 绝对数上限当预算背书现状；静默续期；到期无裁决照跑。来源：Chromium unexpected_pass_finder、GitLab quarantine 三档+Cleanup System 自动删除 MR、Datadog 状态机、oneuptime 双闸（cap+deadline）。
+
+## Resolvable Self-Witness（可解析的自证）
+证据信任层级中间档：产出者与裁决对象同源（self-witness），但证据携带可解析锚点（绿 run URL），外部方可独立重放核验（gh run list），hosted runner 提供 SLSA L1-L2 级隔离。位于裸自证之上、密码学外部见证（Sigstore/provenance）之下；收口文档引用须如实标注层级。_Avoid_: 把 CI 自证说成外部见证；手动发布形态下把 CI 绿当发布事件见证（缺席见证——CI 不在现场）。来源：assay 信任阶梯、SLSA provenance 模型、npm provenance 强制 cloud-hosted runner。
+
+## GO WITH CAVEATS（带病放行三态出口）
+go/no-go 第三态：带病项逐条 minuted（owner+期限+关闭判据），关闭判定权显式委托、不必每次重开终审；区别于 GO（干净通过）与 NO-GO（差距清单+复评触发）。复评=事件驱动（可观测条件满足）+日历兜底防静默悬置。_Avoid_: 带病项无 owner/期限/判据的口头放行；no-go 后无复评机制=永久悬置。来源：bettersheepdog 30 年 PM 实践、Chromium ReleaseBlock、GO_NO_GO.md Conditional Go。
+
+## Unpublish Window（unpublish 回滚窗）
+npm 发布的不可逆边界：registry 数据不可变、版本名烧毁不可再注册；发布后 72h 内且无依赖者可 unpublish，超窗只能 deprecate。发布后净机验证须落在窗口内，回滚安全网才有效。_Avoid_: 把 publish 当可回滚默认对待；发布后验证排期超 72h。来源：npm unpublish 政策官方文档。
