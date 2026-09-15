@@ -940,3 +940,29 @@ go/no-go 第三态：带病项逐条 minuted（owner+期限+关闭判据），�
 
 ## Unpublish Window（unpublish 回滚窗）
 npm 发布的不可逆边界：registry 数据不可变、版本名烧毁不可再注册；发布后 72h 内且无依赖者可 unpublish，超窗只能 deprecate。发布后净机验证须落在窗口内，回滚安全网才有效。_Avoid_: 把 publish 当可回滚默认对待；发布后验证排期超 72h。来源：npm unpublish 政策官方文档。
+
+## Grill Round 64 — Terms (ADR-0065)
+
+## Page-Family Assertion（页族断言层 / mustHitPaths）
+live 评测的断言粒度中间层：对结果 pathname 做子串匹配（如 /basic/transports、/settings），容忍 provider 的 locale/version/dated 包装（/zh/、/10.x/、/specification/latest/）但保留页族精度。断言粒度锚定被测方能稳定兑现的承诺——产品承诺是「返回某站点的某页族」，不是字节级路径（provider URL 形态是实现细节）。与 mustHitHosts（宿主级）/mustHitUrls（字节级）构成三级粒度。_Avoid_: 断言粒度超出 provider 稳定承诺（字节级路径对外部站点）；页族断言退化为无断言/纯 host 级（页族回归从此不可见）。来源：contract testing「只断言被依赖承诺」、Pact like() matcher、primitive-bench 三级 ground truth。
+
+## Negative-Pin（负例写死 / mustNotHitPaths）
+片段匹配断言的强制配套：每个页族 pattern 必须显式写死不得命中的无关页面族，防子串过宽命中（如 settings 命中无关页）。_Avoid_: 只有正例无负例的片段断言（过宽命中静默通过）；负例靠 reviewer 记忆而非 schema 字段。来源：atomcode Q2 调研——mustHitPaths 匹配算子业界无直接先例，负例集是自行约束手段。
+
+## Stability Class（stability_class 稳定性分级）
+golden 条目对断言目标上游可控度的显式标注：controlled（自控页）|frozen-spec（冻结 spec/RFC 页）|external（第三方可变页）。字节级 mustHitUrls 只允许锚在 controlled/frozen-spec 类；external 类走 mustHitPaths 或 host 级。_Avoid_: 字节级断言锚在 external 类目标（漂移必然复发）；stability_class 缺失导致棘轮无法按 class 分账。来源：primitive-bench 三级 ground truth（verified-external/authoritative-registry/sentinel-planted）、Zalando @draft、Hermes frozen fixture。
+
+## Failure Class（failure_class 失败归因字段）
+隔离/迁移案例的失败机制标注（如 external-doc-superseded、locale-clustering-suppressed-cross-host）——归因字段驱动不同处置路径，并把「被测方正确工作」与「质量回归」分开记账。_Avoid_: 无归因的裸失败记录（分不清回归 vs 断言过时）；failure_class 与 LYING-class 混淆（前者是外部漂移致期望过期，后者是被测方声称支持却给错结果）。来源：Datadog Flaky Tests broken/flaky 分类驱动处置、primitive-bench classify_miss。
+
+## Migration Provenance（migration 留痕块）
+golden 条目上的结构化出处叙事块：原断言→新断言+provider 漂移证据+裁决日期。promote 物理删除隔离账本条目（entries.filter），故 promote 出口的留痕唯一合法载体是 golden 工件本体；retire 出口的留痕载体是账本内条目（Case Tombstone）。_Avoid_: 把 promote 留痕塞进隔离账本 reviews note（promote 后物理丢失）；把该块命名 tombstone（与 Case Tombstone ADR 语义撞车）。来源：DSpace provenance vs audit-trail 分离、protobuf reserved、GraphQL @deprecated(reason)。
+
+## Quarantine Evidence Mode（隔离证据模式 / quarantined-but-runnable）
+live runner 的 env flag 模式：隔离条目实际执行、逐条输出 EVIDENCE（id/结论/时间戳/run URL 四元组）、仅隔离失败时 exit 0 覆写、连续全红打 RETIRE_CANDIDATE 喂周检。promote 的前置条件「复跑转绿」靠它获得执行通道。_Avoid_: skip 式隔离（不执行=永远收集不到转绿信号=无法有证据地 reinstate——Tuist RFC 点名的死路）；第三份隔离判定副本（判定逻辑必须消费账本单一实现 activeIds()）。来源：Buildkite mute>skip、Tuist RFC 2026-03、Datadog quarantined-running、Trunk exit-override。
+
+## Post-Promote Watch（post-promote watch）
+flaky 类案例 promote 后的观察标记：golden 条目 watch:true；CI corroboration 翻转即经棘轮重入隔离（同 id∈baseline 合法），重入后回既有 TTL 裁决通道不新开裁决。兜住 5 跑证据的统计功效下限。_Avoid_: watch 重入绕过 TTL 裁决（变续期漏洞）；promote 后无观察标记（低功效证据无兜底）。来源：Tenki consecutivePasses 逆命题、Gaffer flip-rate 阈值实证、Datadog quarantine→disable 分档。
+
+## Re-spec Legitimacy（改判合法性充要条件）
+改判 golden expected 是 re-spec 而非作弊的充要条件：现实变化发生在被测方稳定承诺面**之外** ∧ 改判后案例仍断言一个真实产品行为。承诺面内的变化改期望=作弊（破坏 pass-rate delta 可比性）；observational-only 断言遇同类漂移应 retire 非改判。_Avoid_: 把 provider 当前形态重钉为期望（grandfathering）；期望跟随被测方承诺面内的回归（橡皮图章化）。来源：金集=校准物非 ground truth（tianpan.co）、qdrant corpus 变更后重生成 qrels 惯例、pytest xfail(reason) 理由必填传统。
