@@ -25,16 +25,43 @@ export const DOCS_GOLDEN_DIMENSIONS = Object.keys(DOCS_GOLDEN_DIMENSION_VALUES);
 export const DOCS_GOLDEN_PROVENANCE_TYPES = ["internal-dogfood", "external-community"] as const;
 export const DOCS_GOLDEN_VERDICTS = ["answer", "abstain"] as const;
 
+// R64 D-005: four optional fixture fields + eval-looks root schema_version
+// sentinel (additive — no breaking change, hence no schema v2 migration).
+export const DOCS_GOLDEN_TOLERATED_SEGMENTS = ["locale", "version", "dated"] as const;
+export type DocsGoldenToleratedSegment = (typeof DOCS_GOLDEN_TOLERATED_SEGMENTS)[number];
+export const DOCS_GOLDEN_STABILITY_CLASSES = ["controlled", "frozen-spec", "external"] as const;
+export type DocsGoldenStabilityClass = (typeof DOCS_GOLDEN_STABILITY_CLASSES)[number];
+export const EVAL_LOOKS_SCHEMA_VERSION = 1;
+
+// R64 D-002: page-family pattern — pathname substring match on the result set.
+// tolerate is a REQUIRED (possibly empty) explicit declaration of which
+// wrapper-segment classes the pattern forgives: locale (/zh/), version (/10.x/),
+// dated (/specification/2025-06-18/ -> /latest/).
+export interface DocsGoldenPathPattern {
+  path: string;
+  tolerate: DocsGoldenToleratedSegment[];
+}
 export interface DocsGoldenExpected {
   verdict: "answer" | "abstain";
   mustHitHosts?: string[];
   mustHitUrls?: string[];
+  mustHitPaths?: DocsGoldenPathPattern[];
+  mustNotHitPaths?: string[];
   minResults?: number;
 }
 export interface DocsGoldenProvenance {
   type: "internal-dogfood" | "external-community";
   ref: string;         // repo path / .scratch path / external URL — always revisitable
   harvestedAt: string; // ISO date (YYYY-MM-DD)
+}
+// R64 D-005: promote physically deletes the ledger entry, so the provenance
+// record of an assertion migration can only live on the golden entry itself.
+// Named "migration" (not tombstone — that word is taken by Case Tombstone ADR).
+export interface DocsGoldenMigration {
+  from: string;      // original assertion shape (e.g. mustHitUrls:[...])
+  to: string;        // new assertion shape
+  drift: string;     // provider drift evidence observed live
+  decidedAt: string; // ISO date of the ruling
 }
 export interface DocsGoldenEntry {
   id: string;
@@ -45,6 +72,10 @@ export interface DocsGoldenEntry {
   expected: DocsGoldenExpected;
   dimensions: string[]; // "<dimension>:<value>" pairs from DOCS_GOLDEN_DIMENSION_VALUES
   provenance: DocsGoldenProvenance;
+  stability_class?: DocsGoldenStabilityClass; // upstream controllability of the asserted target
+  failure_class?: string;                     // drift attribution (drives disposition path)
+  migration?: DocsGoldenMigration;
+  watch?: boolean;                            // post-promote observation mark (CI flip -> ratchet re-entry)
   notes?: string;
 }
 export interface DocsGoldenSet {
@@ -90,7 +121,31 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
     if (!DOCS_GOLDEN_VERDICTS.includes(exp.verdict as "answer")) p.push("expected.verdict must be answer|abstain");
     if (exp.mustHitHosts !== undefined && (!Array.isArray(exp.mustHitHosts) || exp.mustHitHosts.some((h) => typeof h !== "string"))) p.push("mustHitHosts must be string[]");
     if (exp.mustHitUrls !== undefined && (!Array.isArray(exp.mustHitUrls) || exp.mustHitUrls.some((u) => typeof u !== "string" || !/^https?:\/\//.test(u)))) p.push("mustHitUrls must be http(s) string[]");
-    if (exp.verdict === "abstain" && (exp.mustHitUrls?.length ?? 0) > 0) p.push("abstain entry must not assert mustHitUrls");
+    if (exp.mustHitPaths !== undefined) {
+      if (!Array.isArray(exp.mustHitPaths)) {
+        p.push("mustHitPaths must be {path,tolerate}[]");
+      } else {
+        for (const m of exp.mustHitPaths) {
+          const pm = m as Partial<DocsGoldenPathPattern> | undefined;
+          if (!pm || typeof pm !== "object" || typeof pm.path !== "string" || pm.path.length === 0) {
+            p.push("mustHitPaths pattern requires a non-empty path");
+            continue;
+          }
+          if (!pm.path.startsWith("/")) p.push("mustHitPaths pattern must be a pathname fragment starting with /: " + pm.path);
+          if (!Array.isArray(pm.tolerate)) {
+            p.push("mustHitPaths pattern requires explicit tolerate[] (empty allowed — silence is not a declaration): " + pm.path);
+          } else if (pm.tolerate.some((t) => !DOCS_GOLDEN_TOLERATED_SEGMENTS.includes(t as DocsGoldenToleratedSegment))) {
+            p.push("mustHitPaths tolerate outside locale|version|dated: " + pm.path);
+          }
+        }
+        // R64 D-002 negative-pin: page-family positives REQUIRE written-down
+        // negatives — a bare substring pattern can silently over-hit.
+        if (exp.mustHitPaths.length > 0 && (exp.mustNotHitPaths?.length ?? 0) === 0)
+          p.push("mustHitPaths requires mustNotHitPaths negative pins on the entry");
+      }
+    }
+    if (exp.mustNotHitPaths !== undefined && (!Array.isArray(exp.mustNotHitPaths) || exp.mustNotHitPaths.some((u) => typeof u !== "string" || u.length === 0))) p.push("mustNotHitPaths must be non-empty string[]");
+    if (exp.verdict === "abstain" && ((exp.mustHitUrls?.length ?? 0) > 0 || (exp.mustHitPaths?.length ?? 0) > 0 || (exp.mustNotHitPaths?.length ?? 0) > 0)) p.push("abstain entry must not assert must-hit url/path assertions");
   }
   const tags = Array.isArray(e.dimensions) ? e.dimensions : [];
   if (tags.length === 0) {
@@ -103,6 +158,20 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
     }
     if (!tags.includes("intent:" + e.intent)) p.push("missing intent tag consistent with intent field");
     if (!tags.includes("lang:" + e.questionLang)) p.push("missing lang tag consistent with questionLang");
+  }
+  if (e.stability_class !== undefined && !DOCS_GOLDEN_STABILITY_CLASSES.includes(e.stability_class as DocsGoldenStabilityClass)) p.push("stability_class outside controlled|frozen-spec|external");
+  if (e.failure_class !== undefined && (typeof e.failure_class !== "string" || e.failure_class.length === 0)) p.push("failure_class must be a non-empty string");
+  if (e.watch !== undefined && e.watch !== true) p.push("watch must be true when present");
+  if (e.migration !== undefined) {
+    const m = e.migration as Partial<DocsGoldenMigration> | undefined;
+    if (!m || typeof m !== "object") {
+      p.push("migration must be an object");
+    } else {
+      for (const k of ["from", "to", "drift"] as const) {
+        if (typeof m[k] !== "string" || (m[k] as string).length === 0) p.push("migration." + k + " required");
+      }
+      if (typeof m.decidedAt !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(m.decidedAt)) p.push("migration.decidedAt ISO date required");
+    }
   }
   const prov = e.provenance as Partial<DocsGoldenProvenance> | undefined;
   if (!prov || typeof prov !== "object") {
