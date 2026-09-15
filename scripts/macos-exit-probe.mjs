@@ -38,6 +38,20 @@ for (let i = 1; i <= RUNS; i++) {
   if (!sig.startsWith("clean")) crashes++;
   lines.push("| " + i + " | search | " + String(s.status) + (s.signal ? " (" + s.signal + ")" : "") + " | " + sig + " |");
 }
+// R63 T4/F-5: pin the abstain leg — ANS_DOMAIN=docs makes the out-of-domain
+// ghost query (bc0001's tokio question) exercise the real abstain write path
+// (dual-gate filter -> first-class abstain marker -> exit 0), then teardown.
+{
+  const a = spawnSync(process.execPath, [BIN, "search", "tokio JoinSet rust scheduler internals"], {
+    encoding: "utf8", env: { ...process.env, ANS_DOMAIN: "docs" },
+  });
+  const out = (a.stdout ?? "") + (a.stderr ?? "");
+  const sig = classify(a.status, out + (a.signal ?? ""));
+  const marker = /abstain/i.test(out) ? "abstain-marker" : "NO-ABSTAIN-MARKER";
+  if (!sig.startsWith("clean")) crashes++;
+  lines.push("| - | search --domain docs (abstain leg) | " + String(a.status) + (a.signal ? " (" + a.signal + ")" : "") + " | " + sig + "; " + marker + " |");
+}
+
 {
   const d = spawnSync(process.execPath, [BIN, "doctor"], { encoding: "utf8" });
   const out = (d.stdout ?? "") + (d.stderr ?? "");

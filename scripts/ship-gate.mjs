@@ -528,9 +528,13 @@ function stepStaticAssertions() {
       "console.log('offline coverage ' + r.toFixed(3));"],
       { cwd: path.join(ROOT, "packages", "store"), encoding: "utf8" });
     if (cov.status !== 0) fail("R62 D-005: offline coverage check failed\n" + String(cov.stderr ?? cov.stdout ?? "").trim());
-    // (d) the excluded slice is re-established by the online lane in ci.yml.
-    if (!fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8").includes("test-online"))
-      fail("R62 D-005: ci.yml missing test-online job");
+    // (d) the excluded slice is re-established by the online lane in ci.yml —
+    //     R63 T4/F-2: job+step double assertion (a bare substring match could be
+    //     satisfied by a comment or an orphaned step name while the lane is gone).
+    const ciSrc = fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
+    if (!/^  test-online:/m.test(ciSrc)) fail("R62 D-005: ci.yml missing test-online job key");
+    if (!ciSrc.includes("test:online") || !ciSrc.includes("pnpm -C packages/store test:online"))
+      fail("R62 D-005: ci.yml test-online job missing the 'pnpm -C packages/store test:online' step");
     report("pass", "R62 D-005: offline exclusion governance (whitelist + 0.75 floor + test-online lane)");
   }
 

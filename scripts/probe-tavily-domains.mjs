@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // ADR-0062 D3 criterion 5 (T1): Tavily include_domains leakage probe — INJECT-style
 // deterministic ledger. Re-runnable: TAVILY_API_KEY=tvly-... node scripts/probe-tavily-domains.mjs
-// Output: .scratch/grill-round-61/tavily-probe-ledger.{json,md}
+// Output: .scratch/grill-round-62/tavily-probe-ledger.{json,md}
 // Arms: A default-mode leak / B filter-mode hard / C subdomain directionality /
 // D research-endpoint soft preference (live arm gated by PROBE_TAVILY_RESEARCH=1).
 // SKIPPED is recorded honestly when TAVILY_API_KEY is absent.
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 const NL = String.fromCharCode(10);
-const OUT_DIR = join(process.cwd(), ".scratch", "grill-round-61");
+const OUT_DIR = join(process.cwd(), ".scratch", "grill-round-62"); // R63 T4/F-3: r61 originals are SKIPPED-tagged — a rerun must not overwrite them
 const KEY = process.env.TAVILY_API_KEY;
 const HOST = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ""; } };
 const inDomain = (u, allow) => { const h = HOST(u); return allow.some((e) => h === e || h.endsWith("." + e)); };
