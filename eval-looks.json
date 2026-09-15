@@ -50,7 +50,18 @@
             "modelcontextprotocol.io"
           ],
           "mustHitUrls": [
-            "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+            "https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http"
+          ],
+          "mustHitPaths": [
+            {
+              "path": "/basic/transports",
+              "tolerate": [
+                "dated"
+              ]
+            }
+          ],
+          "mustNotHitPaths": [
+            "/legacy/"
           ],
           "minResults": 1
         },
@@ -67,7 +78,16 @@
           "ref": "docs/adr/0056-architecture-grill-round-56-session-id-propagation-protocol.md",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "ADR-0056 session-id propagation work; apps/plugin propagation.test.ts is the in-repo evidence"
+        "notes": "ADR-0056 session-id propagation work; apps/plugin propagation.test.ts is the in-repo evidence",
+        "stability_class": "frozen-spec",
+        "failure_class": "external-doc-dated-rotation",
+        "migration": {
+          "from": "mustHitUrls:[https://modelcontextprotocol.io/specification/2025-06-18/basic/transports] (byte-exact only)",
+          "to": "mustHitPaths:[/basic/transports tolerate dated] + mustNotHitPaths:[/legacy/] + byte-exact mustHitUrls re-anchored to the frozen 2026-07-28 streamable-http spec snapshot",
+          "drift": "probe-0 live 2026-09-16: modelcontextprotocol.io returned /specification/{2025-06-18,2026-07-28,draft,2025-11-25}/basic/transports* + sdk subdomains — dated spec path rotates, page family stable; leg calibration: 2025-06-18 snapshot present in probe-0/run-01/run-02 then absent runs 03-06 (dated-snapshot coverage rotates) — re-anchored to 2026-07-28 streamable-http, 3/3 recurrence in probe-1",
+          "decidedAt": "2026-09-16"
+        },
+        "watch": true
       },
       {
         "id": "docs-g0002",
@@ -80,8 +100,17 @@
           "mustHitHosts": [
             "pnpm.io"
           ],
-          "mustHitUrls": [
-            "https://pnpm.io/settings"
+          "mustHitPaths": [
+            {
+              "path": "/settings",
+              "tolerate": [
+                "locale",
+                "version"
+              ]
+            }
+          ],
+          "mustNotHitPaths": [
+            "/blog/"
           ],
           "minResults": 1
         },
@@ -98,7 +127,15 @@
           "ref": "docs/adr/0026-architecture-grill-round-23-pnpm-version-pinning-v11-pmonfail-error.md",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "ADR-0026 pinning work; repo package.json devEngines + pnpm-workspace.yaml pmOnFail in-repo"
+        "notes": "ADR-0026 pinning work; repo package.json devEngines + pnpm-workspace.yaml pmOnFail in-repo",
+        "stability_class": "external",
+        "failure_class": "external-doc-locale-version-wrap",
+        "migration": {
+          "from": "mustHitUrls:[https://pnpm.io/settings]",
+          "to": "mustHitPaths:[/settings tolerate locale+version] + mustNotHitPaths:[/blog/]",
+          "drift": "probe-0 live 2026-09-16: pnpm.io returned /settings plus /zh/ /it/ /10.x/ /11.x/ wrapped variants — locale/version wrappers dominate the byte-level path",
+          "decidedAt": "2026-09-16"
+        }
       },
       {
         "id": "docs-g0003",
@@ -111,8 +148,17 @@
           "mustHitHosts": [
             "pnpm.io"
           ],
-          "mustHitUrls": [
-            "https://pnpm.io/settings"
+          "mustHitPaths": [
+            {
+              "path": "/settings",
+              "tolerate": [
+                "locale",
+                "version"
+              ]
+            }
+          ],
+          "mustNotHitPaths": [
+            "/blog/"
           ],
           "minResults": 1
         },
@@ -129,7 +175,15 @@
           "ref": "AGENTS.md",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "AGENTS.md platform note (allowBuilds better-sqlite3) + pnpm-workspace.yaml in-repo"
+        "notes": "AGENTS.md platform note (allowBuilds better-sqlite3) + pnpm-workspace.yaml in-repo",
+        "stability_class": "external",
+        "failure_class": "external-doc-locale-version-wrap",
+        "migration": {
+          "from": "mustHitUrls:[https://pnpm.io/settings]",
+          "to": "mustHitPaths:[/settings tolerate locale+version] + mustNotHitPaths:[/blog/]",
+          "drift": "probe-0 live 2026-09-16: pnpm.io returned /settings plus /zh/ /it/ /10.x/ /11.x/ wrapped variants — locale/version wrappers dominate the byte-level path",
+          "decidedAt": "2026-09-16"
+        }
       },
       {
         "id": "docs-g0004",
@@ -142,8 +196,16 @@
           "mustHitHosts": [
             "www.typescriptlang.org"
           ],
-          "mustHitUrls": [
-            "https://www.typescriptlang.org/tsconfig"
+          "mustHitPaths": [
+            {
+              "path": "/tsconfig",
+              "tolerate": [
+                "locale"
+              ]
+            }
+          ],
+          "mustNotHitPaths": [
+            "/play/"
           ],
           "minResults": 1
         },
@@ -160,7 +222,16 @@
           "ref": "apps/cli/tsconfig.json",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "all 8 repo tsconfigs use moduleResolution Bundler + paths to ../../packages/*/src"
+        "notes": "all 8 repo tsconfigs use moduleResolution Bundler + paths to ../../packages/*/src",
+        "stability_class": "external",
+        "failure_class": "external-doc-path-flaky",
+        "migration": {
+          "from": "mustHitUrls:[https://www.typescriptlang.org/tsconfig]",
+          "to": "mustHitPaths:[/tsconfig tolerate locale] + mustNotHitPaths:[/play/]",
+          "drift": "probe-0 live 2026-09-16: typescriptlang.org returned /tsconfig and /tsconfig/<option>.html variants (ko-localized forms seen) — exact bare path flaky across runs",
+          "decidedAt": "2026-09-16"
+        },
+        "watch": true
       },
       {
         "id": "docs-g0005",
@@ -174,7 +245,18 @@
             "modelcontextprotocol.io"
           ],
           "mustHitUrls": [
-            "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+            "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"
+          ],
+          "mustHitPaths": [
+            {
+              "path": "/basic/transports",
+              "tolerate": [
+                "dated"
+              ]
+            }
+          ],
+          "mustNotHitPaths": [
+            "/legacy/"
           ],
           "minResults": 1
         },
@@ -191,7 +273,16 @@
           "ref": ".github/workflows/conformance.yml",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "repo runs @modelcontextprotocol/conformance weekly; SSE deprecation is a real spec supersede event (2025-03-26)"
+        "notes": "repo runs @modelcontextprotocol/conformance weekly; SSE deprecation is a real spec supersede event (2025-03-26)",
+        "stability_class": "frozen-spec",
+        "failure_class": "external-doc-dated-rotation",
+        "migration": {
+          "from": "mustHitUrls:[https://modelcontextprotocol.io/specification/2025-06-18/basic/transports]",
+          "to": "mustHitPaths:[/basic/transports tolerate dated] + mustNotHitPaths:[/legacy/] + byte-exact mustHitUrls re-anchored to the frozen 2025-11-25 spec snapshot (observed in probe-0)",
+          "drift": "probe-0 live 2026-09-16: modelcontextprotocol.io returned /specification/{2025-06-18,2026-07-28,draft,2025-11-25}/basic/transports* + sdk subdomains — dated spec path rotates, page family stable",
+          "decidedAt": "2026-09-16"
+        },
+        "watch": true
       },
       {
         "id": "docs-g0006",
@@ -204,8 +295,16 @@
           "mustHitHosts": [
             "www.typescriptlang.org"
           ],
-          "mustHitUrls": [
-            "https://www.typescriptlang.org/tsconfig"
+          "mustHitPaths": [
+            {
+              "path": "/tsconfig",
+              "tolerate": [
+                "locale"
+              ]
+            }
+          ],
+          "mustNotHitPaths": [
+            "/play/"
           ],
           "minResults": 1
         },
@@ -222,7 +321,16 @@
           "ref": ".gitignore",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "repo gitignores *.tsbuildinfo across the turbo monorepo"
+        "notes": "repo gitignores *.tsbuildinfo across the turbo monorepo",
+        "stability_class": "external",
+        "failure_class": "external-doc-path-flaky",
+        "migration": {
+          "from": "mustHitUrls:[https://www.typescriptlang.org/tsconfig]",
+          "to": "mustHitPaths:[/tsconfig tolerate locale] + mustNotHitPaths:[/play/]",
+          "drift": "probe-0 live 2026-09-16: typescriptlang.org returned /tsconfig and /tsconfig/<option>.html variants (ko-localized forms seen) — exact bare path flaky across runs",
+          "decidedAt": "2026-09-16"
+        },
+        "watch": true
       },
       {
         "id": "docs-g0007",
@@ -256,8 +364,7 @@
         "expected": {
           "verdict": "answer",
           "mustHitHosts": [
-            "pnpm.io",
-            "www.typescriptlang.org"
+            "pnpm.io"
           ],
           "minResults": 1
         },
@@ -274,7 +381,15 @@
           "ref": "apps/cli/tsconfig.json",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "real config decision embodied by this repo: paths -> ../../packages/*/src under a pnpm workspace"
+        "notes": "real config decision embodied by this repo: paths -> ../../packages/*/src under a pnpm workspace",
+        "stability_class": "external",
+        "failure_class": "locale-clustering-suppressed-cross-host",
+        "migration": {
+          "from": "mustHitHosts:[pnpm.io, www.typescriptlang.org] (paired cross-host)",
+          "to": "mustHitHosts:[pnpm.io] single-host; hops:multi kept as dimensions observation, not an assertion",
+          "drift": "probe-0 live 2026-09-16: 10/10 results were pnpm.io/zh/* — locale clustering suppressed the typescriptlang.org leg entirely",
+          "decidedAt": "2026-09-16"
+        }
       },
       {
         "id": "docs-g0009",
@@ -287,8 +402,16 @@
           "mustHitHosts": [
             "www.typescriptlang.org"
           ],
-          "mustHitUrls": [
-            "https://www.typescriptlang.org/tsconfig"
+          "mustHitPaths": [
+            {
+              "path": "/tsconfig",
+              "tolerate": [
+                "locale"
+              ]
+            }
+          ],
+          "mustNotHitPaths": [
+            "/branding/"
           ],
           "minResults": 1
         },
@@ -305,7 +428,16 @@
           "ref": "https://stackoverflow.com/questions/79923194",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "verbatim SO question title+ask (score 23, answered); fetched via Stack Exchange API 2026-09-14"
+        "notes": "verbatim SO question title+ask (score 23, answered); fetched via Stack Exchange API 2026-09-14",
+        "stability_class": "external",
+        "failure_class": "external-doc-path-flaky",
+        "migration": {
+          "from": "mustHitUrls:[https://www.typescriptlang.org/tsconfig]",
+          "to": "mustHitPaths:[/tsconfig tolerate locale] + mustNotHitPaths:[/branding/]",
+          "drift": "probe-0 live 2026-09-16: typescriptlang.org returned /tsconfig and /tsconfig/<option>.html variants (ko-localized forms seen) — exact bare path flaky across runs (probe-0 also returned /play/ and /docs/handbook/ families)",
+          "decidedAt": "2026-09-16"
+        },
+        "watch": true
       },
       {
         "id": "docs-g0010",
@@ -318,10 +450,21 @@
           "mustHitHosts": [
             "modelcontextprotocol.io"
           ],
-          "mustHitUrls": [
-            "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"
+          "mustHitPaths": [
+            {
+              "path": "/deprecated",
+              "tolerate": [
+                "dated"
+              ]
+            }
           ],
-          "minResults": 1
+          "mustNotHitPaths": [
+            "/quickstart"
+          ],
+          "minResults": 1,
+          "mustHitUrls": [
+            "https://modelcontextprotocol.io/specification/2024-11-05/basic/transports"
+          ]
         },
         "dimensions": [
           "intent:reference",
@@ -336,7 +479,15 @@
           "ref": "https://github.com/modelcontextprotocol/python-sdk/issues/2278",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "verbatim GH issue title; body documents HTTP+SSE → Streamable HTTP supersede (spec 2025-03-26)"
+        "notes": "verbatim GH issue title; body documents HTTP+SSE → Streamable HTTP supersede (spec 2025-03-26)",
+        "stability_class": "frozen-spec",
+        "failure_class": "external-doc-superseded",
+        "migration": {
+          "from": "mustHitUrls:[https://modelcontextprotocol.io/specification/2025-06-18/basic/transports]",
+          "to": "mustHitPaths:[/deprecated tolerate dated] + mustNotHitPaths:[/quickstart] + byte-exact mustHitUrls on the frozen 2024-11-05 spec snapshot (SSE-era spec — directly on-question, 3/3 recurrence in probe-1)",
+          "drift": "probe-0 live 2026-09-16: dated 2025-06-18 spec superseded; answers resumed with /specification/{draft,2026-07-28}/deprecated + 2024-11-05 basic/transports (earlier quarantine was a transient all-off-domain abstain episode); probe-1: answers remained stable across 3 further runs, /deprecated family + 2024-11-05 snapshot recurring 3/3",
+          "decidedAt": "2026-09-16"
+        }
       },
       {
         "id": "docs-g0011",
@@ -349,8 +500,17 @@
           "mustHitHosts": [
             "pnpm.io"
           ],
-          "mustHitUrls": [
-            "https://pnpm.io/settings"
+          "mustHitPaths": [
+            {
+              "path": "/settings",
+              "tolerate": [
+                "locale",
+                "version"
+              ]
+            }
+          ],
+          "mustNotHitPaths": [
+            "/workspaces"
           ],
           "minResults": 1
         },
@@ -367,7 +527,15 @@
           "ref": "https://github.com/pnpm/pnpm/issues/12749",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "verbatim GH issue title; same better-sqlite3 surface as docs-g0003"
+        "notes": "verbatim GH issue title; same better-sqlite3 surface as docs-g0003",
+        "stability_class": "external",
+        "failure_class": "external-doc-locale-version-wrap",
+        "migration": {
+          "from": "mustHitUrls:[https://pnpm.io/settings]",
+          "to": "mustHitPaths:[/settings tolerate locale+version] + mustNotHitPaths:[/workspaces]",
+          "drift": "probe-0 live 2026-09-16: pnpm.io returned /settings plus /zh/ /it/ /10.x/ /11.x/ wrapped variants — locale/version wrappers dominate the byte-level path (probe-0 also returned /pnpm-vs-npm /migration /blog/releases families)",
+          "decidedAt": "2026-09-16"
+        }
       },
       {
         "id": "docs-g0012",
