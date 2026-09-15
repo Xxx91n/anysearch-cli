@@ -4,6 +4,22 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-16 — ADR-0065 r64: 隔离金案例 TTL 裁决收口（mustHitPaths 页族断言 + evidence 模式 + 10 条全量 promote）
+
+### Added
+
+- `eval-looks.json` schema v1 additive fields：`mustHitPaths`（pathname 子串页族断言，mustHitHosts 内作用域）/`mustNotHitPaths`（负例写死）/`stability_class`/`failure_class`/`migration`（promote 留痕载体——promoteEntry 物理删账本条目）/`watch`（post-promote 观测标记）；根 `schema_version: 1` 哨兵。
+- live runner `ANS_EVAL_EVIDENCE=1` 证据模式：隔离条目实跑不跳（quarantined-but-runnable）、EVIDENCE 四元组落 `ANS_EVAL_EVIDENCE_LOG`、仅隔离失败 exit 0 覆写（EVIDENCE-ONLY-FAILURES）、连续全红 RETIRE_CANDIDATE 喂 reviewDue()。
+- `eval-looks-live-parity.test.ts`：runner 隔离分类==isActive()（longterm/expired/retired 组合台账）+ runner 源码无内联判定副本断言。
+- ship-gate §1n R64 锚点：live mustHitUrls 持有者≥2 且限 controlled|frozen-spec、mustHitPaths 持有者≥1、迁移案例 migration 块存在性机器校验。
+
+### Changed
+
+- runner 隔离分类收编到账本 `activeIds()` 单一实现（原内联判定忽略 longterm flag——第二次判定漂移被拆除）。
+- eval-looks 8 条路径漂移案例（g0001/2/3/4/5/6/9/11）迁 mustHitPaths 页族层；g0008 降格单宿主 pnpm.io（locale-clustering-suppressed-cross-host，hops:multi 保留为 dimensions 观察）；g0010 实测恢复 answer 并入路径簇（未走 abstain 改判）；3 条 frozen-spec 字节级腿（g0001→2026-07-28、g0005→2025-11-25、g0010→2024-11-05 dated MCP spec 快照，复现率 3/3·6/6·3/3 校准）。
+- 10 条隔离案例全量 promoteEntry 裁决落账（9 轮 evidence 复跑记录 .scratch/grill-round-64/evidence/；flaky 三条 flip=0；watch:true 标 g0001/4/5/6/9），eval-quarantine.json 棘轮视野清空，TTL 2026-10-14 提前近月收口。
+- README Known Limitations 页级断言条目改写为页族粒度现状。
+
 ## 2026-09-15 — npm scope 改名 + 0.0.3 重发（workspace:* peer 逃逸修复）
 
 ### Fixed
