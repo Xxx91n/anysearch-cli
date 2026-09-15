@@ -5,7 +5,7 @@ knowledge in one agent, with time-edge-effect FTS5 recall, multi-source RRF
 fusion, an MCP server that auto-indexes results — and (as of ADR-0062) a
 domain allowlist that actually gates what you get back.
 
-**Status: 0.0.2 release candidate** — publish pending (manual first release; see [docs/publishing.md](docs/publishing.md)). Once live: `npm i -g @anysearch-cli/cli`.
+**Status: 0.0.3 release candidate** — publish pending (manual first release; see [docs/publishing.md](docs/publishing.md)). Once live: `npm i -g @anysearch-cli/cli`.
 
 ## Requirements
 

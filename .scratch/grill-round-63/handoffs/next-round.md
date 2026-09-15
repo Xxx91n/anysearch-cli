@@ -56,7 +56,7 @@
 
 ### T8 — go/no-go 终审书 + 发布执行（覆盖 D-001/D-006/D-008；殿后）
 - 裁决书逐条对账：Blocker 清零（T1 落地+净机 eval 绿）/ 带病留痕（棘轮断言存在+Known Limitations 全表）/ 前置清障（LICENSE+manifest+形态）。
-- 若 go 的执行序列：注册 @anysearch-cli scope 占名（可先单独做，无论 go/no-go 建议做）→ T1–T7 全落后 main tip ci+ship-gate 绿 run URL → gh workflow dispatch release.yml runPurpose=pre-tag（花 OF look）→ git tag v0.0.2 + push → post-tag 断言绿 → 用户本机 pnpm -r publish（apps×3+embedding）→ 72h unpublish 窗内净机自验（registry 拉取、min-release-age 覆盖、冒烟含 FTS-only 配置）→ registry manifest 复核（versions/dist-tags.latest/access/repository）→ release notes 挂出 → ADR-0064 Closure evidence 回填全部 URL。
+- 若 go 的执行序列：注册 @anysearch-cli scope 占名（可先单独做，无论 go/no-go 建议做）→ T1–T7 全落后 main tip ci+ship-gate 绿 run URL → gh workflow dispatch release.yml runPurpose=pre-tag（花 OF look）→ git tag v0.0.3 + push → post-tag 断言绿 → 用户本机 pnpm -r publish（apps×3+embedding）→ 72h unpublish 窗内净机自验（registry 拉取、min-release-age 覆盖、冒烟含 FTS-only 配置）→ registry manifest 复核（versions/dist-tags.latest/access/repository）→ release notes 挂出 → ADR-0064 Closure evidence 回填全部 URL。
 - 若 no-go：差距清单+事件驱动复评触发（Blocker 修复+main tip 双绿）+30d 日历兜底；带病项逐条 owner+due+关闭判据+判定权委托。
 
 ## 环境/权限备忘

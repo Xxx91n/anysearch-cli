@@ -38,7 +38,7 @@ execution-gated external actions, not defect gates. No release blocker stands.
 | page-level mustHitUrl assertions 0/12 active | maintainer | with quarantine rulings | ≥2 exact-URL legs re-asserted on stable hosts (or explicit longterm) | maintainer |
 | macOS lanes (exit-time libc++abi + registration-seg red @#1) | CI maintainers | ≥5 consecutive green probes | restore macos-latest to blocking matrix | maintainer |
 | abstain exit-code rewrite on Windows teardown | backlog | next round | structured abstain field documented as authoritative (done in README) | maintainer |
-| no npm provenance on 0.0.2 | maintainer | 0.0.3 | trusted publishers configured per package; CI OIDC publish | maintainer |
+| no npm provenance on 0.0.3 | maintainer | 0.0.4 | trusted publishers configured per package; CI OIDC publish | maintainer |
 | FTS-only dedup degrade (Jaccard-only) | by design | — | n/a — documented limitation (README) | n/a |
 
 ## Verification evidence (this workspace, serial stack HEAD 7461f9a)
@@ -58,10 +58,10 @@ execution-gated external actions, not defect gates. No release blocker stands.
 2. Await main-tip `ci` + `ship-gate` double green; record run URLs.
 3. Register/hold `@anysearch-cli` npm scope (already user-owned per D-006 note; verify).
 4. Dispatch `release.yml` with `runPurpose=pre-tag`.
-5. `git tag v0.0.2` + push tag（v0.0.1 已烧：npm 判 ./bin 路径 invalid 自动剔除，版本不可重发）.
+5. `git tag v0.0.3` + push tag（v0.0.1 已发：npm bin ./ 归一化警告初判为剔除，registry 实测 bin 在场；v0.0.3 规范化重发对齐）.
 6. Post-tag checks green.
 7. User runs `pnpm -r publish` for the 4 publish packages.
-8. Within 72h unpublish window: clean-machine `npm i -g @anysearch-cli/cli@0.0.2` (no npm release-age gate exists — exact-version install), `ans doctor`/`search` smoke, FTS-only leg (no
+8. Within 72h unpublish window: clean-machine `npm i -g @anysearch-cli/cli@0.0.3` (no npm release-age gate exists — exact-version install), `ans doctor`/`search` smoke, FTS-only leg (no
    embedding) confirmed; `npm view` registry manifest check (version,
    dist-tags.latest, access, repository).
 9. Publish release notes (docs/release-notes/0.0.1.md).
