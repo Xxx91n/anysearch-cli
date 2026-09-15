@@ -80,6 +80,35 @@ try {
     rmSync(dir, { recursive: true, force: true });
   }
 
+  // R63 release-gate edge: replaySwitchChain on an existing file without chain tables
+  // (observation-layer created the shared durable DB) must return null, not throw.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "ans-r63-obs-"));
+    const dbPath = join(dir, "anysearch.db");
+    const db = new Database(dbPath);
+    db.exec("CREATE TABLE observability_traces(id INTEGER PRIMARY KEY)");
+    db.close();
+    let threw = false;
+    let replayed: unknown = "unset";
+    try { replayed = replaySwitchChain(dbPath); } catch { threw = true; }
+    ok("R63 observation-only DB replays as no-chain (null), not throw", !threw && replayed === null);
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  // R63 corruption half of the same edge: chain tables present but access_events gone
+  // must still fail closed.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "ans-r63-corrupt-"));
+    const dbPath = join(dir, "anysearch.db");
+    const db = new Database(dbPath);
+    db.exec("CREATE TABLE access_chain_anchor(id INTEGER PRIMARY KEY, genesis_hash TEXT); CREATE TABLE switch_events(id INTEGER PRIMARY KEY)");
+    db.close();
+    let corruptThrew = false;
+    try { replaySwitchChain(dbPath); } catch (e) { corruptThrew = String((e as Error).message ?? e).includes("access_events missing"); }
+    ok("R63 chain-tables-without-access_events stays fail-closed", corruptThrew);
+    rmSync(dir, { recursive: true, force: true });
+  }
+
   // D6 mutation: a mutated fixture must diverge the registration digest.
   {
     process.env.ANS_SWITCH_REG_PATH = fixturePath;

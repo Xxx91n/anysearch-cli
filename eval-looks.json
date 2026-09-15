@@ -1,6 +1,15 @@
 {
   "schema": "anysearch/eval-looks@2",
-  "looks": [],
+  "looks": [
+    {
+      "key": "4a529f6fbe2096c8:956d925db2f73115",
+      "at": "2026-09-15T12:24:00.857Z",
+      "look": 1,
+      "verdict": "warn",
+      "exitCode": 0,
+      "integrity": "failed"
+    }
+  ],
   "golden": {
     "schema": "anysearch/docs-golden@1",
     "scopes": {

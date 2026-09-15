@@ -36,7 +36,7 @@ function regPath(): string {
 // only allowed to be compared against it; a mismatch is an integrity failure, not a re-record.
 export const SWITCH_REGISTRATION_HASH_EXPECTATION = "5f06ea1766b5999c3c2213b33cb324c988efc91336553056cb8dcb9faf63d2cb";
 
-export class SwitchRegistrationIntegrityError extends Error {}
+export class SwitchRegistrationIntegrityError extends Error { }
 
 export function loadSwitchRegistration(): { reg: SwitchRegistration; registrationHash: string } {
   const raw = readFileSync(regPath(), "utf8");
@@ -151,6 +151,19 @@ export function replaySwitchChain(dbPath: string): ReplayedSwitchChain | null {
   if (!existsSync(dbPath)) return null;
   const db = new Database(dbPath, { fileMustExist: true });
   try {
+    // R63 release-gate edge (first pre-tag run on a fresh box): the observation layer
+    // creates the shared durable file with only observability_* tables, so a DB can
+    // exist with no chain tables at all — that means "no chain to replay", the same
+    // absent-table convention as readConsumedReadings. But access_events gone while
+    // access_chain_anchor/switch_events survive = chain initialized then corrupted —
+    // keep failing closed.
+    const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((t) => t.name));
+    if (!tables.has("access_events")) {
+      if (tables.has("access_chain_anchor") || tables.has("switch_events")) {
+        throw new Error("integrity-fail-replay: access_events missing but chain tables (access_chain_anchor/switch_events) exist — chain DB corrupted");
+      }
+      return null;
+    }
     ensureAccessChainSourceLabel(db);
     // ADR-0044 D1 + r115 audit C6: legacy r42 event_type values are not in the per-edge
     // closed set and must fail loud (migrations belong to the operator, not the replay
