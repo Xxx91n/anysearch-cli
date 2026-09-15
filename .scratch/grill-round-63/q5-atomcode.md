@@ -1,7 +1,7 @@
 # atomcode 调研 — Q5: npm 发布形态（2026-09-15, grill-round-63）
 
 ## 1) 执行摘要
-**推荐 A（全发7包+peer-optional）为主方案，置信度高（机制层）/中（代价层）；同时挖出候选清单逻辑缺口——第三路 A′**：把已 bundle 的 @anysearch/* 死声明从 dependencies 移到 devDependencies（源码内改动），registry 面缩到 3 包且零漂移。真正的选项空间=**A（发全部）vs A′（bundle-CLI 模式）vs D（不发）**——B/C 是同一错误答案的两个变体（任何含 @anysearch/* 普通 deps 的发布包，出路只有“那些包也在 npm 上”=A 或“发布期删声明”=B 机器；C 想发单包就必须走剥离，机制上退化为 B）。
+**推荐 A（全发7包+peer-optional）为主方案，置信度高（机制层）/中（代价层）；同时挖出候选清单逻辑缺口——第三路 A′**：把已 bundle 的 @anysearch-cli/* 死声明从 dependencies 移到 devDependencies（源码内改动），registry 面缩到 3 包且零漂移。真正的选项空间=**A（发全部）vs A′（bundle-CLI 模式）vs D（不发）**——B/C 是同一错误答案的两个变体（任何含 @anysearch-cli/* 普通 deps 的发布包，出路只有“那些包也在 npm 上”=A 或“发布期删声明”=B 机器；C 想发单包就必须走剥离，机制上退化为 B）。
 
 ## 2) 分点结论
 ### 问题1：monorepo 发 bundled CLI 的三模型
@@ -25,10 +25,10 @@
 - 门序：ship-gate（pack+tarball 离线装验证）→pre-tag 评测门（release.yml）→tag→publish。
 ### 问题5：内部包上公共 registry 的代价
 - 代价：npm 发布基本不可撤销、名字烧毁不可再注册（0.0.1 内部包 API 形状=永久承诺）；公共包=issue 磁铁+token 被盗推送面；**缺 LICENSE/license 字段=法律上保留所有权利，用户无合法使用授权——共享 Blocker 级前置清障**。
-- 收益：@anysearch scope 空闲——先注册占名是零成本防 dependency-confusion（微软 2026-05 记录 33 个攻击包），无论 go/no-go 都建议做；embedding 发布后 peer-optional 的显式加装通道才有 npm 侧实体。
+- 收益：@anysearch-cli scope 空闲——先注册占名是零成本防 dependency-confusion（微软 2026-05 记录 33 个攻击包），无论 go/no-go 都建议做；embedding 发布后 peer-optional 的显式加装通道才有 npm 侧实体。
 
 ## 3) 对比矩阵（要点）
-A：零手术但 registry 7 包、内部包 API 承诺化；A′：bundle-CLI 正确心智、3-4 包、源码改动全可见 review、唯一新增义务=ship-gate 断言 dist 无裸 @anysearch/* require；B：自建改写机器=漂移面本体+getlang 破包先例；C：退化为 B；D：不答 D-001。
+A：零手术但 registry 7 包、内部包 API 承诺化；A′：bundle-CLI 正确心智、3-4 包、源码改动全可见 review、唯一新增义务=ship-gate 断言 dist 无裸 @anysearch-cli/* require；B：自建改写机器=漂移面本体+getlang 破包先例；C：退化为 B；D：不答 D-001。
 
 ## 4) 冲突声明
 - A 与 D-001 无冲突；embedding 改 peer-optional 应作为 D-002 关联项显式记录（Install Closure 的机制化落地，防误读为发版顺手改）。

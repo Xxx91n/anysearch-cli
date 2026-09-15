@@ -1,4 +1,4 @@
-// @anysearch/retriever: search provider contract + RRF fusion
+// @anysearch-cli/retriever: search provider contract + RRF fusion
 export * from "./contract";
 export * from "./rrf";
 export * from "./fusion-registry";

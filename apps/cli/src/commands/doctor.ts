@@ -1,10 +1,10 @@
 // ans doctor: smoke test - provider ping + config check + domain TOML validate.
 // Seam 5 composition root: wires providers + store + engine for diagnostic.
 
-import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch/retriever/providers";
-import { loadDomain, loadDomainFromString, listDomainTomls } from "@anysearch/store";
+import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
+import { loadDomain, loadDomainFromString, listDomainTomls } from "@anysearch-cli/store";
 import { domainSearchDirs } from "../db";
-import { SqliteSessionStore } from "@anysearch/store";
+import { SqliteSessionStore } from "@anysearch-cli/store";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
@@ -63,7 +63,7 @@ export async function runDoctor(): Promise<number> {
     // R62 D-002: vector arm is optional — absent is a legal FTS-only state,
     // surfaced as SKIP (degraded-but-supported), like a missing provider key.
     const vt = await store.vectorTelemetry();
-    if (vt.absent) skip("  vector arm", "@anysearch/embedding absent — FTS-only (optional peer)");
+    if (vt.absent) skip("  vector arm", "@anysearch-cli/embedding absent — FTS-only (optional peer)");
     else check("  vector arm", true, "present embeds=" + vt.embeds + " failures=" + vt.failures + (vt.circuitOpen ? " circuitOpen" : ""));
     store.close();
   } catch (e: any) {
@@ -112,7 +112,7 @@ export async function runDoctor(): Promise<number> {
   {
     // Durable DB writability — created lazily at search time; probe the resolved path now.
     try {
-      const { resolveDbPath } = await import("@anysearch/kernel");
+      const { resolveDbPath } = await import("@anysearch-cli/kernel");
       const dbPath = resolveDbPath();
       const dbDir = path.dirname(dbPath);
       mkdirSync(dbDir, { recursive: true });
@@ -128,7 +128,7 @@ export async function runDoctor(): Promise<number> {
   console.log("[5] Domains:");
   const found = listDomainTomls(domainSearchDirs()); // toml file name -> its domains dir
   if (found.size === 0) {
-    check("  discovery", false, "no domains/*.toml found on the resolution chain — fix: create ./domains/, set ANS_DOMAINS_DIR, or reinstall @anysearch/cli");
+    check("  discovery", false, "no domains/*.toml found on the resolution chain — fix: create ./domains/, set ANS_DOMAINS_DIR, or reinstall @anysearch-cli/cli");
   }
   for (const [f, dir] of found) {
     try {

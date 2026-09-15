@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { canonicalVersion } from "@anysearch/store";
+import { canonicalVersion } from "@anysearch-cli/store";
 import { readPolicy, makePreToolUseDecision } from "../src/hooks/preheat.js";
 
 let passed = 0;

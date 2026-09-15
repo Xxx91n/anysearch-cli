@@ -1,12 +1,12 @@
 // Composition Root: createEngine factory.
 // ADR-0008 D7: lifted from apps/cli/src/composition.ts to packages/kernel.
-// Both apps/cli and apps/mcp import from @anysearch/kernel.
+// Both apps/cli and apps/mcp import from @anysearch-cli/kernel.
 // ADR-0006 decision 3A: pure function, no state, domain-aware provider filtering.
 // ADR-0006 decision 1A: returns RetrieverPort, not concrete RetroaererdEngine.
 // ADR-0006 decision 4A: loads domain from domains/<name>.toml convention directory.
 
-import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch/retriever/providers";
-import type { SearchProvider } from "@anysearch/retriever";
+import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
+import type { SearchProvider } from "@anysearch-cli/retriever";
 import { RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort } from "./ports";
 import {
@@ -18,7 +18,7 @@ import {
   createDomainReloader,
   domainTomlPath,
   resolvePolicyFromSchema,
-} from "@anysearch/store";
+} from "@anysearch-cli/store";
 import * as path from "node:path";
 import type { AttributionCalibration } from "./calibrate";
 

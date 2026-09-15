@@ -11,7 +11,7 @@ PASS（带 findings）。修复轮报告全部硬声明独立复现；双轴评�
 - B（中）README:8 "Status: 0.0.1 on npm" 超前于证据（包未发布）。
 - C/D（低-中）bare-require 守卫格式洞、ratchet 断言3 flag 短路+NaN fail-open——建议硬化。
 - E（低）go-no-go VERDICT 用 GO 而词表新立 GO WITH CAVEATS。
-- @anysearch scope 占名状态未验（npm view 仅证未发布）。
+- @anysearch-cli scope 占名状态未验（npm view 仅证未发布）。
 
 ## 下轮 grill 方向建议
 

@@ -1,4 +1,4 @@
-// ADR-0063 (R62 T3) / R62 D-002 / ADR-0064 (R63 T2): @anysearch/embedding is an
+// ADR-0063 (R62 T3) / R62 D-002 / ADR-0064 (R63 T2): @anysearch-cli/embedding is an
 // OPTIONAL PEER (peerDependencies + peerDependenciesMeta.optional; R62's
 // optionalDependencies form migrated in R63 T2 — npm auto-install of a heavy
 // optional runtime is the bomb regression). The vector arm is a capability, not
@@ -12,7 +12,7 @@
 // cosineSimilarity is pure math — inlined here (dot product over L2-normalized
 // vectors) so scoring never statically depends on the optional package.
 
-type EmbeddingModule = typeof import("@anysearch/embedding");
+type EmbeddingModule = typeof import("@anysearch-cli/embedding");
 
 let modPromise: Promise<EmbeddingModule | null> | undefined;
 let forced: EmbeddingModule | null | undefined; // test seam (__setEmbeddingModuleForTest)
@@ -20,7 +20,7 @@ let forced: EmbeddingModule | null | undefined; // test seam (__setEmbeddingModu
 function loadEmbedding(): Promise<EmbeddingModule | null> {
   if (forced !== undefined) return Promise.resolve(forced);
   if (!modPromise) {
-    modPromise = import("@anysearch/embedding").then(
+    modPromise = import("@anysearch-cli/embedding").then(
       (m) => m,
       () => null, // package absent — arm absent, fail-open
     );
@@ -28,7 +28,7 @@ function loadEmbedding(): Promise<EmbeddingModule | null> {
   return modPromise;
 }
 
-// Same contract as @anysearch/embedding's embedText: null when the arm cannot
+// Same contract as @anysearch-cli/embedding's embedText: null when the arm cannot
 // produce a vector (package absent, transformers missing, circuit open, or
 // empty input). Callers already degrade on null — this wrapper only adds the
 // package-absence branch.
@@ -62,7 +62,7 @@ export async function armTelemetry(): Promise<ArmTelemetry> {
 }
 
 // Dot product over L2-normalized vectors (= cosine for normalized inputs).
-// Mirrors @anysearch/embedding's cosineSimilarity exactly — inlined so callers
+// Mirrors @anysearch-cli/embedding's cosineSimilarity exactly — inlined so callers
 // never import the optional package for pure math.
 export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   const n = Math.min(a.length, b.length);

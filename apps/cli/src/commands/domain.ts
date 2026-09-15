@@ -2,10 +2,10 @@
 // ADR-0006 decision 4A: loads TOML from domains/<name>.toml convention directory.
 // G016: persists domain to ~/.anysearch/config.env for cross-session recall.
 
-import { loadDomainByNameIn, listDomainTomls } from "@anysearch/store";
+import { loadDomainByNameIn, listDomainTomls } from "@anysearch-cli/store";
 import { configPath, readConfig, writeConfig } from "../config-env";
 import { domainSearchDirs } from "../db";
-import type { DomainConfigPort } from "@anysearch/kernel";
+import type { DomainConfigPort } from "@anysearch-cli/kernel";
 
 // Domain names discoverable on the resolution chain (shared lister; one
 // implementation for both call sites).

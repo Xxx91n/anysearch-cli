@@ -64,24 +64,24 @@ the D5c policy; `embedding-arm.ts` header documents the T1 degrade.
 
 ### D5 Bundled-CLI publish shape (ledger D-005; T2/T5)
 
-Publish set = `@anysearch/{cli,mcp,plugin}` + `@anysearch/embedding`
+Publish set = `@anysearch-cli/{cli,mcp,plugin}` + `@anysearch-cli/embedding`
 (4 packages, `publishConfig.access: "public"`, `license: Apache-2.0`,
 `repository` set). Bundled internals move `dependencies` → `devDependencies`
 (honest build-time declarations; kernel/store/retriever never publish).
-`@anysearch/embedding` is `peerDependencies` + `peerDependenciesMeta.optional`
+`@anysearch-cli/embedding` is `peerDependencies` + `peerDependenciesMeta.optional`
 — never `optionalDependencies` (the auto-install bomb) — and is itself
 published so the explicit-install channel exists; a real dist build is added
 (`tsup` ESM) with `publishConfig.exports` rewriting `src` → `dist` at pack
 (dev keeps resolving `src/index.ts`). ship-gate step 5 asserts packed
-manifests carry no `@anysearch/*` in `dependencies`, the peer-optional
+manifests carry no `@anysearch-cli/*` in `dependencies`, the peer-optional
 declaration is present, and `dist` holds no bare `require/import` of bundled
 internals (embedding excluded by design). install-smoke + ship-gate 4b/4c
 verify the consumer-real shape: app tarballs only, internal packages absent
 from the install closure, embedding NOT auto-installed, and the dual-install
 leg (`npm i` cli tarball + embedding tarball) lands both at the shared
-node_modules root with `import('@anysearch/embedding')` resolvable from the
+node_modules root with `import('@anysearch-cli/embedding')` resolvable from the
 installed cli. Recorded measurement (T2 spec artifact): dev-mode `pnpm install`
-auto-links the workspace peer (`@anysearch/embedding: link:` under the app
+auto-links the workspace peer (`@anysearch-cli/embedding: link:` under the app
 importers in pnpm-lock.yaml) — no dev-experience remedy needed.
 
 **Canonical-rewrite exemption criteria** (D-005/D-008): a tarball-vs-repo
@@ -130,7 +130,7 @@ self-witness — circular) and C (no ADR — unanchored) rejected.
 
 - Release-blocking defect cleared (T1); offline eval stays 126/126 green.
 - npm publish set is exactly four packages; the install closure of
-  `npm i -g @anysearch/cli` contains no onnxruntime/transformers and no
+  `npm i -g @anysearch-cli/cli` contains no onnxruntime/transformers and no
   internal packages.
 - Quarantine set is machine-governed (ratchet) — silent expansion, renewal,
   or unruled expiry all fail ship-gate.

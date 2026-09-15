@@ -4,7 +4,7 @@ export default defineConfig({
   // ponytail: two entries — src/index.ts (side-effect-free barrel re-export,
   // referenced by package.json "main"/"exports") and src/server/index.ts
   // (long-running HTTP server, side-effect on import, only used via bin spawn).
-  // Collapsing both into one entry made require('@anysearch/plugin') launch
+  // Collapsing both into one entry made require('@anysearch-cli/plugin') launch
   // an HTTP server and crash on EADDRINUSE.
   entry: ["src/index.ts", "src/server/index.ts"],
   format: ["cjs"],
@@ -20,9 +20,9 @@ export default defineConfig({
     return { js: ".cjs" };
   },
   noExternal: [
-    "@anysearch/kernel",
-    "@anysearch/retriever",
-    "@anysearch/store",
+    "@anysearch-cli/kernel",
+    "@anysearch-cli/retriever",
+    "@anysearch-cli/store",
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
     "@sinclair/typebox",
@@ -32,6 +32,6 @@ export default defineConfig({
   // and would silently externalize if someone re-imported them later).
   external: [
     "better-sqlite3",
-    "@anysearch/embedding",
+    "@anysearch-cli/embedding",
   ],
 });

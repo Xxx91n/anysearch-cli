@@ -1,5 +1,5 @@
 // Self-check for kernel runtime: tool filtering by domain whitelist.
-// Run: pnpm --filter @anysearch/kernel run test
+// Run: pnpm --filter @anysearch-cli/kernel run test
 
 import { filterTools } from "../src/runtime";
 import type { ToolPort, DomainConfigPort } from "../src/ports";

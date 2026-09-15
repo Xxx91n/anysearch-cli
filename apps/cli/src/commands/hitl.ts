@@ -4,9 +4,9 @@
 // it into the active domain's [sources] urlAllowlist and drops matching pending entries.
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWriteFile, canonicalVersion, domainTomlPath, emitConfigChangeAudit, loadDomainByNameIn } from "@anysearch/store";
+import { atomicWriteFile, canonicalVersion, domainTomlPath, emitConfigChangeAudit, loadDomainByNameIn } from "@anysearch-cli/store";
 import { domainSearchDirs } from "../db";
-import { resolveDbPath } from "@anysearch/kernel";
+import { resolveDbPath } from "@anysearch-cli/kernel";
 
 interface HitlEntry {
   url: string;

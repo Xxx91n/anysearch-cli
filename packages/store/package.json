@@ -1,5 +1,5 @@
 {
-  "name": "@anysearch/store",
+  "name": "@anysearch-cli/store",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "test:online": "node --import tsx --test \"test/online/**/*.online.ts\" --test-timeout=180000"
   },
   "dependencies": {
-    "@anysearch/retriever": "workspace:*",
+    "@anysearch-cli/retriever": "workspace:*",
     "@earendil-works/pi-telemetry": "^0.84.2",
     "@sinclair/typebox": "^0.34.52",
     "@types/better-sqlite3": "^9.6.0",
@@ -25,10 +25,10 @@
     "typescript": "^5.6.0"
   },
   "peerDependencies": {
-    "@anysearch/embedding": "workspace:*"
+    "@anysearch-cli/embedding": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@anysearch/embedding": {
+    "@anysearch-cli/embedding": {
       "optional": true
     }
   }

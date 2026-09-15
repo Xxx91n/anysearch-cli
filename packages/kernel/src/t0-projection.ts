@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { SessionStorePort } from "./ports";
-import type { T0PreferenceRow } from "@anysearch/store";
+import type { T0PreferenceRow } from "@anysearch-cli/store";
 
 const MAX_CHARS = 1500;
 const MAX_LINES = 200;

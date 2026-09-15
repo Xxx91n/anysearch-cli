@@ -5,7 +5,7 @@ knowledge in one agent, with time-edge-effect FTS5 recall, multi-source RRF
 fusion, an MCP server that auto-indexes results — and (as of ADR-0062) a
 domain allowlist that actually gates what you get back.
 
-**Status: 0.0.1 release candidate** — publish pending (manual first release; see [docs/publishing.md](docs/publishing.md)). Once live: `npm i -g @anysearch/cli`.
+**Status: 0.0.1 release candidate** — publish pending (manual first release; see [docs/publishing.md](docs/publishing.md)). Once live: `npm i -g @anysearch-cli/cli`.
 
 ## Requirements
 
@@ -19,13 +19,13 @@ domain allowlist that actually gates what you get back.
 ## Quickstart
 
 ```bash
-npm i -g @anysearch/cli
+npm i -g @anysearch-cli/cli
 ans doctor                                          # self-check: keys, DB path, domain resolution, provider readiness
 ans search "tokio JoinSet rust"                     # first search (full fanout across keyed providers)
 ANS_DOMAIN=docs ans search "tokio JoinSet rust"     # domain-scoped search
 
 # optional vector arm (peer-optional — never auto-installed):
-npm i -g @anysearch/embedding
+npm i -g @anysearch-cli/embedding
 ```
 
 From source (contributors):
@@ -135,7 +135,7 @@ Tools never print to stdout; the server keeps the protocol channel pure.
   release; the T6 investigation doc registers the root cause
   (`.scratch/grill-round-63/t6-live-drift-investigation.md`).
 - **FTS-only installs dedupe lexically** — without the optional
-  `@anysearch/embedding` peer, memory consolidation falls back to a Jaccard
+  `@anysearch-cli/embedding` peer, memory consolidation falls back to a Jaccard
   similarity floor (θ=0.80): near-verbatim duplicates still noop, but
   paraphrase-level duplicates are not caught (degraded, counted in
   `ConsolidateReport.embeddingAbsent` — ADR-0064 T1).

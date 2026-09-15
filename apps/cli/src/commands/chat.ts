@@ -5,11 +5,11 @@
 // ADR-0037 D4/A3: optional custom endpoint via ANS_LLM_BASE_URL + ANS_LLM_API (chat|messages|responses).
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession } from "@anysearch/kernel";
-import type { RetrieverPort, DomainConfigPort } from "@anysearch/kernel";
+import { PiAgentRuntime, createLlmSession } from "@anysearch-cli/kernel";
+import type { RetrieverPort, DomainConfigPort } from "@anysearch-cli/kernel";
 import { createEngine } from "../composition";
 import { domainSearchDirs } from "../db";
-import { domainTomlPath, loadDomainByNameIn } from "@anysearch/store";
+import { domainTomlPath, loadDomainByNameIn } from "@anysearch-cli/store";
 import { join } from "node:path";
 
 export async function runChat(args: string[]): Promise<number> {

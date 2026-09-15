@@ -3,11 +3,11 @@
 // ports.ts is the dependency-inversion core; this module stays LLM-seam-free by injecting `llmFn`.
 // Fail-open: if llmFn is absent OR throws, output equals the single-variant [query] — no dead code path.
 
-// qdf: time-sensitive / evergreen hint — keeps QDF tags aligned with @anysearch/store time-decay.ts taxonomy.
+// qdf: time-sensitive / evergreen hint — keeps QDF tags aligned with @anysearch-cli/store time-decay.ts taxonomy.
 export type QdfHint = "time_sensitive" | "evergreen" | "neutral";
 
 // Detect QDF hint synchronously using the same rule sources used by store-side ranking.
-// No re-implementation: re-uses exported classifiers from @anysearch/store via the kernel import surface.
+// No re-implementation: re-uses exported classifiers from @anysearch-cli/store via the kernel import surface.
 export function classifyQdf(query: string, classifier?: { isTimeSensitive: (q: string) => boolean; isEvergreen: (q: string) => boolean }): QdfHint {
   if (classifier) {
     if (classifier.isTimeSensitive(query)) return "time_sensitive";

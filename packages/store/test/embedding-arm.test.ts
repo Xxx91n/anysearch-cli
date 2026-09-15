@@ -1,5 +1,5 @@
 // ADR-0063 (R62 T3) / R62 D-002: guarded optional-embedding arm — when
-// @anysearch/embedding is absent from the install closure the vector arm
+// @anysearch-cli/embedding is absent from the install closure the vector arm
 // degrades to a legal FTS-only state: embedText ≡ null, telemetry reports
 // absent:true with zero counters, writes stay fail-open (pendingVectors
 // accounting), and nothing throws. cosineSimilarity stays inlined pure math.

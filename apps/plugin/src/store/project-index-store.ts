@@ -3,7 +3,7 @@
 // Written by hooks layer via IPC to long-running MCP server (ADR-0009 Decision 1+2).
 
 import Database from "better-sqlite3";
-import { fts5EscapeQuery } from "@anysearch/store";
+import { fts5EscapeQuery } from "@anysearch-cli/store";
 
 export interface ProjectIndexEntry {
   rowid: number;

@@ -6,11 +6,11 @@ import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { KernelJsonSchemas } from "@anysearch/kernel";
-import type { CompositionResult } from "@anysearch/kernel";
-import type { RetrieverPort, Query } from "@anysearch/kernel";
-import type { SessionStore, MemoryHit } from "@anysearch/store";
-import type { FusedEnvelope } from "@anysearch/retriever";
+import { KernelJsonSchemas } from "@anysearch-cli/kernel";
+import type { CompositionResult } from "@anysearch-cli/kernel";
+import type { RetrieverPort, Query } from "@anysearch-cli/kernel";
+import type { SessionStore, MemoryHit } from "@anysearch-cli/store";
+import type { FusedEnvelope } from "@anysearch-cli/retriever";
 
 let passed = 0;
 let failed = 0;

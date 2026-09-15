@@ -19,11 +19,11 @@
 
 ### T2 — 发布形态改造（覆盖 D-005；依赖：无）
 - LICENSE 文件（Apache-2.0，D-007）+ license 字段 + repository 字段 + publishConfig.access:public 写入 4 个发布目标（apps/cli、apps/mcp、apps/plugin、packages/embedding）。
-- 3 个 app 的 manifest：已 bundle 的 @anysearch/* 从 dependencies 移 devDependencies（源码内如实声明 build-time 依赖）。
-- @anysearch/embedding：翻 private:false；在各 app manifest 中从 optionalDependencies 改 peerDependencies+peerDependenciesMeta.optional:true。
-- ship-gate 加断言：dist 无裸 require("@anysearch/（noExternal 保证的回归防）。
+- 3 个 app 的 manifest：已 bundle 的 @anysearch-cli/* 从 dependencies 移 devDependencies（源码内如实声明 build-time 依赖）。
+- @anysearch-cli/embedding：翻 private:false；在各 app manifest 中从 optionalDependencies 改 peerDependencies+peerDependenciesMeta.optional:true。
+- ship-gate 加断言：dist 无裸 require("@anysearch-cli/（noExternal 保证的回归防）。
 - 实测 pnpm workspace 开发期是否自动 link peer（auto-install-peers 行为）；若不链，dev 体验补救写进票说明。
-- 验收锚：pnpm pack 后 app tarball manifest 的 dependencies 无 @anysearch/*；peer-optional 声明在。
+- 验收锚：pnpm pack 后 app tarball manifest 的 dependencies 无 @anysearch-cli/*；peer-optional 声明在。
 
 ### T3 — 隔离集棘轮断言（覆盖 D-003；依赖：无）
 - scripts/ship-gate.mjs 加三断言：eval-quarantine.json entries 相对基线只减不增（新增即红）；renewals 全 0（续期即红）；任一条目过 expiresAt 而无 promote/retire/转长期裁决记录即红。
@@ -49,14 +49,14 @@
 - 与 TTL 2026-10-14 联动：到期前必须有裁决（promote/retire/转长期≤1 次）。
 
 ### T7 — 发布材料收口（覆盖 D-001/D-002/D-003/D-005/D-008；依赖 T1–T5）
-- README：npm 安装主路径（npm i -g @anysearch/cli）+ Known Limitations 全表——macOS 注册段红、页面级精度口径（host 级 12/12、abstain 在线验证过、页面级硬断言 2/12、10 条隔离带 TTL 2026-10-14）、FTS-only 行为变更（T1）。
+- README：npm 安装主路径（npm i -g @anysearch-cli/cli）+ Known Limitations 全表——macOS 注册段红、页面级精度口径（host 级 12/12、abstain 在线验证过、页面级硬断言 2/12、10 条隔离带 TTL 2026-10-14）、FTS-only 行为变更（T1）。
 - release notes 草案：含「0.0.1 手动首发无 npm provenance，系 D-006 已知后果非缺陷」声明。
 - docs/adr/0064-architecture-grill-round-63-*.md：全决策条目化 + canonical-rewrite 豁免判据（仅限包管理器 canonical 语义、禁自建 transformer）+ Closure evidence 四部结构（D-008）+ 引用 R63 术语。
 - CHANGELOG：Apache-2.0 标注、Fixed dedup 降级、Added 发布管线条目。
 
 ### T8 — go/no-go 终审书 + 发布执行（覆盖 D-001/D-006/D-008；殿后）
 - 裁决书逐条对账：Blocker 清零（T1 落地+净机 eval 绿）/ 带病留痕（棘轮断言存在+Known Limitations 全表）/ 前置清障（LICENSE+manifest+形态）。
-- 若 go 的执行序列：注册 @anysearch scope 占名（可先单独做，无论 go/no-go 建议做）→ T1–T7 全落后 main tip ci+ship-gate 绿 run URL → gh workflow dispatch release.yml runPurpose=pre-tag（花 OF look）→ git tag v0.0.1 + push → post-tag 断言绿 → 用户本机 pnpm -r publish（apps×3+embedding）→ 72h unpublish 窗内净机自验（registry 拉取、min-release-age 覆盖、冒烟含 FTS-only 配置）→ registry manifest 复核（versions/dist-tags.latest/access/repository）→ release notes 挂出 → ADR-0064 Closure evidence 回填全部 URL。
+- 若 go 的执行序列：注册 @anysearch-cli scope 占名（可先单独做，无论 go/no-go 建议做）→ T1–T7 全落后 main tip ci+ship-gate 绿 run URL → gh workflow dispatch release.yml runPurpose=pre-tag（花 OF look）→ git tag v0.0.1 + push → post-tag 断言绿 → 用户本机 pnpm -r publish（apps×3+embedding）→ 72h unpublish 窗内净机自验（registry 拉取、min-release-age 覆盖、冒烟含 FTS-only 配置）→ registry manifest 复核（versions/dist-tags.latest/access/repository）→ release notes 挂出 → ADR-0064 Closure evidence 回填全部 URL。
 - 若 no-go：差距清单+事件驱动复评触发（Blocker 修复+main tip 双绿）+30d 日历兜底；带病项逐条 owner+due+关闭判据+判定权委托。
 
 ## 环境/权限备忘

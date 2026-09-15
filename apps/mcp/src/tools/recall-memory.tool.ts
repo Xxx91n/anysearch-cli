@@ -3,8 +3,8 @@
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import type { CompositionResult } from "@anysearch/kernel";
-import { KernelJsonSchemas } from "@anysearch/kernel";
+import type { CompositionResult } from "@anysearch-cli/kernel";
+import { KernelJsonSchemas } from "@anysearch-cli/kernel";
 import { observeTool } from "./observation.js";
 
 export function registerRecallMemory(server: McpServer, eng: CompositionResult): void {
@@ -20,7 +20,7 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
         const { query, limit } = args as { query: string; limit?: number };
         const lim = limit ?? 5;
         // ADR-0008 D3: FTS5 memory recall with time edge effect.
-        const { isTimeSensitive, isEvergreen } = await import("@anysearch/store");
+        const { isTimeSensitive, isEvergreen } = await import("@anysearch-cli/store");
         // ADR-0008 D3: search Research Memory layer (retrieval_results_fts), not messages.
         const hits = await eng.store.searchMemory(query, lim);
         const ts = isTimeSensitive(query);
@@ -31,7 +31,7 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
         let projectHits: Array<{ title: string; url: string; snippet: string; source: string; rank: number; createdAt: string }> = [];
         if (hits.length < lim) {
           try {
-            const { ProjectIndexStore } = await import("@anysearch/plugin");
+            const { ProjectIndexStore } = await import("@anysearch-cli/plugin");
             const dbPath = process.env.ANS_PROJECT_DB || "";
             if (dbPath) {
               const store = new ProjectIndexStore(dbPath);

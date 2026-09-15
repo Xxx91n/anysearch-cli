@@ -152,7 +152,7 @@ jobs:
         run: node -e "const D=require('better-sqlite3'); new D(':memory:'); console.log('sqlite registration OK')"
 
       - name: build cli (bundled artifact is the shipped exit path)
-        run: pnpm --filter @anysearch/cli build
+        run: pnpm --filter @anysearch-cli/cli build
 
       # Signature split B: libc++abi/mutex abort on process exit = F-16 family.
       - name: abstain-path repro + crash-signature summary

@@ -3,7 +3,7 @@
 // ponytail: no test framework, assert-based demo.
 
 import { RetroaererdEngine, DEFAULT_GATE, computeSufficiency } from "../src/engine";
-import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, FusedEnvelope } from "@anysearch/retriever";
+import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, FusedEnvelope } from "@anysearch-cli/retriever";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -114,7 +114,7 @@ async function main() {
 
   // 6b. ADR-0022 D4 (round-47): capability-based answersAvailable — false when no queried provider declares mode:answer.
   // Build a fast-only mock on the spot (mockProvider() declares all modes by default).
-  const fastOnly: import("@anysearch/retriever").SearchProvider = {
+  const fastOnly: import("@anysearch-cli/retriever").SearchProvider = {
     id: "fast-only",
     modes: ["fast"],
     async search() {

@@ -6,8 +6,8 @@
 // Post-write: regenerates MEMORY.md projection (temp+fsync+rename, key-override merge global+project).
 
 import { createPersistentEngine } from "../db";
-import { writeProjection } from "@anysearch/kernel";
-import type { T0PreferenceInput } from "@anysearch/store";
+import { writeProjection } from "@anysearch-cli/kernel";
+import type { T0PreferenceInput } from "@anysearch-cli/store";
 
 function printHelp(): void {
   process.stdout.write(

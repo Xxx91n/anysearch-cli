@@ -7,7 +7,7 @@ import {
   shouldAllowUrl,
   wrapRetrieved,
   type SourceTraceLabel,
-} from "@anysearch/retriever";
+} from "@anysearch-cli/retriever";
 
 export type InjectFamily = "invisible" | "instruction" | "egress" | "memory" | "adaptive";
 

@@ -9,13 +9,13 @@ All notable changes to this project are recorded here. Format follows
 ### Added
 
 - **Apache-2.0 license**：根 LICENSE + 4 发布包目录各一份副本；4 包 manifest 补 license/repository/publishConfig.access:public。
-- 发布管线断言：ship-gate step5 校验打包 manifest（dependencies 无 @anysearch/* 死声明、peer-optional 在场、license/repo/access）+ dist 无裸 require 内部包（embedding 按设计豁免）；隔离集棘轮三断言（scripts/quarantine-ratchet.mjs + eval-quarantine.baseline.json 基线）。
-- peer-optional 双装验证：install-smoke + ship-gate 4c 断言 npm i 双装后 @anysearch/embedding 落共享 node_modules 根、从已装 cli 内解析可达、doctor vector arm 翻 present。
+- 发布管线断言：ship-gate step5 校验打包 manifest（dependencies 无 @anysearch-cli/* 死声明、peer-optional 在场、license/repo/access）+ dist 无裸 require 内部包（embedding 按设计豁免）；隔离集棘轮三断言（scripts/quarantine-ratchet.mjs + eval-quarantine.baseline.json 基线）。
+- peer-optional 双装验证：install-smoke + ship-gate 4c 断言 npm i 双装后 @anysearch-cli/embedding 落共享 node_modules 根、从已装 cli 内解析可达、doctor vector arm 翻 present。
 - docs/publishing.md 发布步骤文档（含 min-release-age=2 自验覆盖方式与 72h unpublish 窗）；docs/release-notes/0.0.1.md；ADR-0064。
 
 ### Changed
 
-- bundled-CLI 发布形态：apps/{cli,mcp,plugin} 的 @anysearch/{kernel,store,retriever,plugin} 从 dependencies 移 devDependencies（已 bundle 入 dist，如实声明 build-time）；@anysearch/embedding 全部 optionalDependencies→peerDependencies+peerDependenciesMeta.optional:true（含真正 import 方 store；npm 自动安装重型 optional runtime 的炸弹回归被拆除）；embedding 移除 private 标记（可发布）+ tsup ESM 构建 + publishConfig.exports 改写（dev 仍解析 src/index.ts，tarball 指 dist/index.js）。
+- bundled-CLI 发布形态：apps/{cli,mcp,plugin} 的 @anysearch-cli/{kernel,store,retriever,plugin} 从 dependencies 移 devDependencies（已 bundle 入 dist，如实声明 build-time）；@anysearch-cli/embedding 全部 optionalDependencies→peerDependencies+peerDependenciesMeta.optional:true（含真正 import 方 store；npm 自动安装重型 optional runtime 的炸弹回归被拆除）；embedding 移除 private 标记（可发布）+ tsup ESM 构建 + publishConfig.exports 改写（dev 仍解析 src/index.ts，tarball 指 dist/index.js）。
 - install-smoke 改消费者真实形态：只装 3 个 app tarball，断言 bundled 内部包与 optional peer 均不在安装闭包内。
 - quarantine-ledger 增 longterm 裁决出口（永久已知问题转换，QUARANTINE_MAX_LONGTERM=1 防续期后门）。
 
@@ -78,7 +78,7 @@ All notable changes to this project are recorded here. Format follows
 - `apps/cli/src/config-env.ts`：config.env 共享读写 + 入口 rehydrate（`ans domain` 持久化从此对全命令生效，显式 env/空串不被覆盖）。
 - `apps/cli/src/db.ts` `domainSearchDirs()`：ANS_DOMAINS_DIR → cwd/domains → 包内建 domains → 仓根 domains 的解析链。
 - `ans doctor` 新增 `[5] Domains` 段：解析链逐目录发现 + 逐 TOML 校验 + 活动域五下游层（sources/skills/hooks/prompts/rag）可见。
-- @anysearch/cli 打包 domains/（files + build 期 sync-domains.mjs 从仓根同步）；测试：eval-docs-golden.test.ts（27 断言）、domain-loader.test.ts 链路用例、e2e doctor [5] 断言。
+- @anysearch-cli/cli 打包 domains/（files + build 期 sync-domains.mjs 从仓根同步）；测试：eval-docs-golden.test.ts（27 断言）、domain-loader.test.ts 链路用例、e2e doctor [5] 断言。
 
 ### Fixed
 
@@ -97,7 +97,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Fixed
 
-- bgnbd/obs-fixtures/switch-run no longer evaluate fileURLToPath(import.meta.url) at module init — the CJS CLI bundle crashed every ans command at boot once @anysearch/store re-exported switch modules.
+- bgnbd/obs-fixtures/switch-run no longer evaluate fileURLToPath(import.meta.url) at module init — the CJS CLI bundle crashed every ans command at boot once @anysearch-cli/store re-exported switch modules.
 ## [Unreleased]
 
 ### Added
@@ -280,7 +280,7 @@ All notable changes to this project are recorded here. Format follows
   idempotent migration; every returned recall hit increments it exactly once, on both
   `searchMemory` and `searchMemoryMulti` paths.
 - ADR-0030 D5: kernel `memory-pipeline.ts` now imports `isTimeSensitive`/`isEvergreen`
-  from `@anysearch/store` (inline regex copy deleted; the QDF regex itself no longer
+  from `@anysearch-cli/store` (inline regex copy deleted; the QDF regex itself no longer
   carries year literals).
 
 ### Removed

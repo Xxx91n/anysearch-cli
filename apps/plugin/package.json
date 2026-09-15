@@ -1,5 +1,5 @@
 {
-  "name": "@anysearch/plugin",
+  "name": "@anysearch-cli/plugin",
   "version": "0.0.1",
   "exports": {
     ".": {
@@ -41,7 +41,7 @@
   },
   "scripts": {
     "build": "pnpm run build:server && pnpm run build:hooks",
-    "build:hooks": "esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --external:better-sqlite3 --external:@anysearch/embedding",
+    "build:hooks": "esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --external:better-sqlite3 --external:@anysearch-cli/embedding",
     "build:server": "tsup",
     "dev": "tsx src/server/index.ts",
     "lint": "tsc --noEmit",
@@ -53,9 +53,9 @@
     "better-sqlite3": "^13.0.3"
   },
   "devDependencies": {
-    "@anysearch/kernel": "workspace:*",
-    "@anysearch/retriever": "workspace:*",
-    "@anysearch/store": "workspace:*",
+    "@anysearch-cli/kernel": "workspace:*",
+    "@anysearch-cli/retriever": "workspace:*",
+    "@anysearch-cli/store": "workspace:*",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.10.0",
     "esbuild": "^0.24.0",
@@ -68,10 +68,10 @@
   ],
   "main": "./dist/index.cjs",
   "peerDependencies": {
-    "@anysearch/embedding": "workspace:*"
+    "@anysearch-cli/embedding": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@anysearch/embedding": {
+    "@anysearch-cli/embedding": {
       "optional": true
     }
   },

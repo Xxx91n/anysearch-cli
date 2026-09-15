@@ -4,8 +4,8 @@
 // 1.5s grace window, abort_all + drain, providers_cancelled distinct state, RRF(k=60) fusion.
 // JS adaptation: Promise.allSettled + AbortController + unique-URL counter early stop.
 
-import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope } from "@anysearch/retriever";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl } from "@anysearch/retriever";
+import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope } from "@anysearch-cli/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl } from "@anysearch-cli/retriever";
 import { randomUUID } from "node:crypto";
 import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort } from "./ports";

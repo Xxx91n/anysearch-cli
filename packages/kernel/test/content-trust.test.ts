@@ -8,7 +8,7 @@ import {
   assertJudgmentInput,
   unwrapRetrieved,
   RetrievalContentSchema,
-} from "@anysearch/retriever";
+} from "@anysearch-cli/retriever";
 import { Value } from "@sinclair/typebox/value";
 
 let passed = 0, failed = 0;

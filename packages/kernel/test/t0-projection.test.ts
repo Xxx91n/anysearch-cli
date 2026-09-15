@@ -5,7 +5,7 @@
 
 import { strict as assert } from "node:assert";
 import { renderMerged, keyOverrideMerge } from "../src/t0-projection";
-import type { T0PreferenceRow } from "@anysearch/store";
+import type { T0PreferenceRow } from "@anysearch-cli/store";
 
 let passed = 0;
 let failed = 0;

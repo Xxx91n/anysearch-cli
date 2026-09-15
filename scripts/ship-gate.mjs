@@ -897,7 +897,7 @@ async function stepPack(tmpDir) {
     await run(PNPM, ["pack", "--pack-destination", outDir], { cwd: pkgDir });
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
     // pnpm pack emits `<scope>-<name>-<ver>.tgz` for scoped packages
-    // (@anysearch/cli -> anysearch-cli-<version>.tgz).
+    // (@anysearch-cli/cli -> anysearch-cli-cli-<version>.tgz).
     const slug = pkg.name.replace(/^@/, "").replace("/", "-");
     const tgz = path.join(outDir, `${slug}-${pkg.version}.tgz`);
     if (!fs.existsSync(tgz)) {
@@ -957,7 +957,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     if (!pkg.version || pkg.version === "0.0.0") {
       fail(`${file}: package.json version=${pkg.version} not pinned`);
     }
-    if (!pkg.name.startsWith("@anysearch/")) {
+    if (!pkg.name.startsWith("@anysearch-cli/")) {
       fail(`${file}: unexpected pkg name ${pkg.name}`);
     }
     // ADR-0057 T3 follow-up: only packages whose manifest points at dist/ are
@@ -973,30 +973,30 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     }
     // R63 T2 (D-005): bundled-CLI publish shape. The three apps + embedding are the publish
     // set; kernel/store/retriever are build-time only (bundled) and must NOT appear in the
-    // packed manifest's install-time fields. @anysearch/embedding rides as an optional peer
+    // packed manifest's install-time fields. @anysearch-cli/embedding rides as an optional peer
     // (peerDependenciesMeta.optional), never optionalDependencies (the 404/auto-install bomb).
     {
-      const PUBLISH_SET = ["@anysearch/cli", "@anysearch/mcp", "@anysearch/plugin", "@anysearch/embedding"];
+      const PUBLISH_SET = ["@anysearch-cli/cli", "@anysearch-cli/mcp", "@anysearch-cli/plugin", "@anysearch-cli/embedding"];
       if (PUBLISH_SET.includes(pkg.name)) {
-        const depKeys = Object.keys(pkg.dependencies ?? {}).filter((d) => d.startsWith("@anysearch/"));
+        const depKeys = Object.keys(pkg.dependencies ?? {}).filter((d) => d.startsWith("@anysearch-cli/"));
         if (depKeys.length) fail(`${file}: publish manifest still declares bundled deps in dependencies: ${depKeys.join(", ")} (D-005: bundled internals are devDependencies)`);
-        if ((pkg.optionalDependencies ?? {})["@anysearch/embedding"]) fail(`${file}: @anysearch/embedding in optionalDependencies — must be peer+optional (D-005 bomb-prevention)`);
-        if (pkg.name !== "@anysearch/embedding") {
-          const peerOk = pkg.peerDependencies && "@anysearch/embedding" in pkg.peerDependencies &&
-            pkg.peerDependenciesMeta && pkg.peerDependenciesMeta["@anysearch/embedding"] && pkg.peerDependenciesMeta["@anysearch/embedding"].optional === true;
-          if (!peerOk) fail(`${file}: @anysearch/embedding missing peerDependencies+peerDependenciesMeta.optional (D-005 peer-optional contract)`);
+        if ((pkg.optionalDependencies ?? {})["@anysearch-cli/embedding"]) fail(`${file}: @anysearch-cli/embedding in optionalDependencies — must be peer+optional (D-005 bomb-prevention)`);
+        if (pkg.name !== "@anysearch-cli/embedding") {
+          const peerOk = pkg.peerDependencies && "@anysearch-cli/embedding" in pkg.peerDependencies &&
+            pkg.peerDependenciesMeta && pkg.peerDependenciesMeta["@anysearch-cli/embedding"] && pkg.peerDependenciesMeta["@anysearch-cli/embedding"].optional === true;
+          if (!peerOk) fail(`${file}: @anysearch-cli/embedding missing peerDependencies+peerDependenciesMeta.optional (D-005 peer-optional contract)`);
         }
         if (pkg.license !== "Apache-2.0") fail(`${file}: license must be Apache-2.0 (D-007)`);
         if (!pkg.repository || !String(pkg.repository.url ?? "").includes("Xxx91n/anysearch-cli")) fail(`${file}: repository field missing/wrong (D-005)`);
-        if (!pkg.publishConfig || pkg.publishConfig.access !== "public") fail(`${file}: publishConfig.access must be public (scoped @anysearch/*)`);
+        if (!pkg.publishConfig || pkg.publishConfig.access !== "public") fail(`${file}: publishConfig.access must be public (scoped @anysearch-cli/*)`);
         // noExternal regression guard: packed dist must not bare-reference bundled
         // internals — covers require()/import() call forms, static and side-effect
-        // imports, and export-from re-exports. @anysearch/embedding is excluded —
+        // imports, and export-from re-exports. @anysearch-cli/embedding is excluded —
         // it is the declared peer-optional external (dynamic import survives
         // bundling by design, ADR-0033).
         const distDir = path.join(pkgDir, "dist");
         if (fs.existsSync(distDir)) {
-          const bare = /(?:(?:require|import)\s*\(\s*|(?:import|export)\b[^'";]*?\bfrom\s*|import\s*)["']@anysearch\/(kernel|store|retriever|plugin)["'/]/;
+          const bare = /(?:(?:require|import)\s*\(\s*|(?:import|export)\b[^'";]*?\bfrom\s*|import\s*)["']@anysearch-cli\/(kernel|store|retriever|plugin)["'/]/;
           const stack = [distDir];
           while (stack.length) {
             const cur = stack.pop();
@@ -1006,7 +1006,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
               if (!/\.(js|cjs|mjs)$/.test(e.name)) continue;
               const src = fs.readFileSync(fp, "utf8");
               const m = src.match(bare);
-              if (m) fail(`${file}: dist contains bare require/import/export of bundled @anysearch/${m[1]} — noExternal regression (D-005)`);
+              if (m) fail(`${file}: dist contains bare require/import/export of bundled @anysearch-cli/${m[1]} — noExternal regression (D-005)`);
             }
           }
         }
@@ -1025,7 +1025,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
 
   // 4b. pnpm verify-ts-release pattern (PR #13061): REAL clean-prefix npm install,
   //     R63 T5 (D-005) consumer-real shape — only the three APP tarballs go in.
-  //     Bundled internals are not on npm at all; @anysearch/embedding is an
+  //     Bundled internals are not on npm at all; @anysearch-cli/embedding is an
   //     optional peer (peerDependenciesMeta.optional) so npm must NOT auto-install
   //     it — its absence here is the assertion, not a defect.
   const installPrefix = path.join(tmpDir, "install-prefix");
@@ -1039,8 +1039,8 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     .readdirSync(tgzDir)
     .filter((f) => f.endsWith(".tgz"))
     .map((f) => path.join(tgzDir, f));
-  const tgzApps = tgzAll.filter((f) => /anysearch-(cli|mcp|plugin)-/.test(f));
-  const tgzEmb = tgzAll.find((f) => /anysearch-embedding-/.test(f));
+  const tgzApps = tgzAll.filter((f) => /anysearch-cli-(cli|mcp|plugin)-/.test(f));
+  const tgzEmb = tgzAll.find((f) => /anysearch-cli-embedding-/.test(f));
   if (tgzApps.length !== 3) fail(`install-prefix: expected 3 app tarballs, got ${tgzApps.length}`);
   const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
   await run(
@@ -1060,12 +1060,12 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
   // Consumer-real install closure: apps present, bundled internals + the
   // optional peer ABSENT (proof the bundling and peer-optional shape hold).
   const nmDir = path.join(installPrefix, "node_modules");
-  for (const sub of ["@anysearch/mcp", "@anysearch/cli", "@anysearch/plugin"]) {
+  for (const sub of ["@anysearch-cli/mcp", "@anysearch-cli/cli", "@anysearch-cli/plugin"]) {
     if (!fs.existsSync(path.join(nmDir, sub))) {
       fail(`install-prefix: ${sub} missing after npm install`);
     }
   }
-  for (const sub of ["@anysearch/kernel", "@anysearch/store", "@anysearch/retriever", "@anysearch/embedding"]) {
+  for (const sub of ["@anysearch-cli/kernel", "@anysearch-cli/store", "@anysearch-cli/retriever", "@anysearch-cli/embedding"]) {
     if (fs.existsSync(path.join(nmDir, sub))) {
       fail(`install-prefix: ${sub} present — bundled internals must not be install-closure members (D-005)`);
     }
@@ -1082,7 +1082,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
 
   // 4c. R63 T5 (D-005): peer-optional dual-install — npm install of the embedding
   //     tarball alongside the apps lands it at the shared node_modules root and
-  //     the bundled import("@anysearch/embedding") in the installed cli resolves.
+  //     the bundled import("@anysearch-cli/embedding") in the installed cli resolves.
   if (!tgzEmb) fail("install-prefix: embedding tarball missing for peer-optional leg");
   await run(
     npmCmd,
@@ -1098,18 +1098,18 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     ],
     { stdio: "pipe" }
   );
-  if (!fs.existsSync(path.join(nmDir, "@anysearch", "embedding", "dist", "index.js"))) {
-    fail("install-prefix: @anysearch/embedding not installed at shared root after explicit peer install");
+  if (!fs.existsSync(path.join(nmDir, "@anysearch-cli", "embedding", "dist", "index.js"))) {
+    fail("install-prefix: @anysearch-cli/embedding not installed at shared root after explicit peer install");
   }
   const peerRes = spawnSync(
     process.execPath,
-    ["--input-type=module", "-e", "import('@anysearch/embedding').then(m=>console.log('PEER_OK',typeof m.embedText)).catch(e=>{console.error('PEER_FAIL',e.message);process.exit(1)})"],
-    { cwd: path.join(nmDir, "@anysearch", "cli"), encoding: "utf8" }
+    ["--input-type=module", "-e", "import('@anysearch-cli/embedding').then(m=>console.log('PEER_OK',typeof m.embedText)).catch(e=>{console.error('PEER_FAIL',e.message);process.exit(1)})"],
+    { cwd: path.join(nmDir, "@anysearch-cli", "cli"), encoding: "utf8" }
   );
   if (peerRes.status !== 0 || !(peerRes.stdout ?? "").includes("PEER_OK")) {
-    fail("install-prefix: import('@anysearch/embedding') not resolvable from installed cli — " + String((peerRes.stderr ?? peerRes.stdout ?? "")).slice(0, 300));
+    fail("install-prefix: import('@anysearch-cli/embedding') not resolvable from installed cli — " + String((peerRes.stderr ?? peerRes.stdout ?? "")).slice(0, 300));
   }
-  report("pass", "peer-optional dual-install ok (@anysearch/embedding at shared root, import resolves from installed cli)");
+  report("pass", "peer-optional dual-install ok (@anysearch-cli/embedding at shared root, import resolves from installed cli)");
 }
 
 

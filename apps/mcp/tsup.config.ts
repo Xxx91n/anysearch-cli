@@ -16,10 +16,10 @@ export default defineConfig({
   },
   // Bundle ESM-only packages into CJS to avoid ERR_PACKAGE_PATH_NOT_EXPORTED.
   noExternal: [
-    "@anysearch/kernel",
-    "@anysearch/plugin",
-    "@anysearch/retriever",
-    "@anysearch/store",
+    "@anysearch-cli/kernel",
+    "@anysearch-cli/plugin",
+    "@anysearch-cli/retriever",
+    "@anysearch-cli/store",
     "@sinclair/typebox",
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
@@ -36,7 +36,7 @@ export default defineConfig({
     "zod",
     "better-sqlite3",
     "@huggingface/transformers",
-    "@anysearch/embedding",
+    "@anysearch-cli/embedding",
     "onnxruntime-node",
     "sharp",
   ],

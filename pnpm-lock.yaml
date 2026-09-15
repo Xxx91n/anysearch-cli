@@ -219,7 +219,7 @@ importers:
 
   apps/cli:
     dependencies:
-      '@anysearch/embedding':
+      '@anysearch-cli/embedding':
         specifier: workspace:*
         version: link:../../packages/embedding
       '@earendil-works/pi-agent-core':
@@ -238,16 +238,16 @@ importers:
         specifier: ^4.18.2
         version: 4.22.2
     devDependencies:
-      '@anysearch/kernel':
+      '@anysearch-cli/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
-      '@anysearch/plugin':
+      '@anysearch-cli/plugin':
         specifier: workspace:*
         version: link:../plugin
-      '@anysearch/retriever':
+      '@anysearch-cli/retriever':
         specifier: workspace:*
         version: link:../../packages/retriever
-      '@anysearch/store':
+      '@anysearch-cli/store':
         specifier: workspace:*
         version: link:../../packages/store
       '@types/better-sqlite3':
@@ -268,7 +268,7 @@ importers:
 
   apps/mcp:
     dependencies:
-      '@anysearch/embedding':
+      '@anysearch-cli/embedding':
         specifier: workspace:*
         version: link:../../packages/embedding
       '@earendil-works/pi-agent-core':
@@ -293,16 +293,16 @@ importers:
         specifier: '>=3.25.28'
         version: 4.4.3
     devDependencies:
-      '@anysearch/kernel':
+      '@anysearch-cli/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
-      '@anysearch/plugin':
+      '@anysearch-cli/plugin':
         specifier: workspace:*
         version: link:../plugin
-      '@anysearch/retriever':
+      '@anysearch-cli/retriever':
         specifier: workspace:*
         version: link:../../packages/retriever
-      '@anysearch/store':
+      '@anysearch-cli/store':
         specifier: workspace:*
         version: link:../../packages/store
       '@types/better-sqlite3':
@@ -326,20 +326,20 @@ importers:
 
   apps/plugin:
     dependencies:
-      '@anysearch/embedding':
+      '@anysearch-cli/embedding':
         specifier: workspace:*
         version: link:../../packages/embedding
       better-sqlite3:
         specifier: ^13.0.3
         version: 13.0.3
     devDependencies:
-      '@anysearch/kernel':
+      '@anysearch-cli/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
-      '@anysearch/retriever':
+      '@anysearch-cli/retriever':
         specifier: workspace:*
         version: link:../../packages/retriever
-      '@anysearch/store':
+      '@anysearch-cli/store':
         specifier: workspace:*
         version: link:../../packages/store
       '@types/better-sqlite3':
@@ -382,10 +382,10 @@ importers:
 
   packages/kernel:
     dependencies:
-      '@anysearch/retriever':
+      '@anysearch-cli/retriever':
         specifier: workspace:*
         version: link:../retriever
-      '@anysearch/store':
+      '@anysearch-cli/store':
         specifier: workspace:*
         version: link:../store
       '@earendil-works/pi-agent-core':
@@ -429,10 +429,10 @@ importers:
 
   packages/store:
     dependencies:
-      '@anysearch/embedding':
+      '@anysearch-cli/embedding':
         specifier: workspace:*
         version: link:../embedding
-      '@anysearch/retriever':
+      '@anysearch-cli/retriever':
         specifier: workspace:*
         version: link:../retriever
       '@earendil-works/pi-telemetry':

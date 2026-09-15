@@ -14,8 +14,8 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RetroaererdEngine } from "../src/engine";
-import { loadDomainByNameIn, resolvePolicyFromSchema, defaultDomainsDirs } from "@anysearch/store";
-import type { SearchProvider, SearchRequest, ProviderEnvelope, NormalizedResult } from "@anysearch/retriever";
+import { loadDomainByNameIn, resolvePolicyFromSchema, defaultDomainsDirs } from "@anysearch-cli/store";
+import type { SearchProvider, SearchRequest, ProviderEnvelope, NormalizedResult } from "@anysearch-cli/retriever";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {

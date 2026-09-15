@@ -1,4 +1,4 @@
-// ADR-0061 B1: ship the repo-root domains/*.toml inside the @anysearch/cli
+// ADR-0061 B1: ship the repo-root domains/*.toml inside the @anysearch-cli/cli
 // tarball so an installed `ans` resolves builtin domains (see db.ts chain).
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";

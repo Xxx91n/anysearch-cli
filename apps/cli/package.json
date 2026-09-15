@@ -1,5 +1,5 @@
 {
-  "name": "@anysearch/cli",
+  "name": "@anysearch-cli/cli",
   "version": "0.0.1",
   "bin": {
     "ans": "./dist/index.js"
@@ -24,10 +24,10 @@
     "express": "^4.18.2"
   },
   "devDependencies": {
-    "@anysearch/kernel": "workspace:*",
-    "@anysearch/plugin": "workspace:*",
-    "@anysearch/retriever": "workspace:*",
-    "@anysearch/store": "workspace:*",
+    "@anysearch-cli/kernel": "workspace:*",
+    "@anysearch-cli/plugin": "workspace:*",
+    "@anysearch-cli/retriever": "workspace:*",
+    "@anysearch-cli/store": "workspace:*",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.10.0",
     "tsup": "^8.3.0",
@@ -39,10 +39,10 @@
   },
   "types": "./dist/index.d.ts",
   "peerDependencies": {
-    "@anysearch/embedding": "workspace:*"
+    "@anysearch-cli/embedding": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@anysearch/embedding": {
+    "@anysearch-cli/embedding": {
       "optional": true
     }
   },

@@ -78,19 +78,19 @@ try {
 
   // 2. Clean install into the temp prefix — R63 T5 (D-005): consumer-real shape.
   // Only the three APP tarballs are installed; bundled internals are not on npm at
-  // all, and @anysearch/embedding is an optional PEER (peerDependenciesMeta.optional)
+  // all, and @anysearch-cli/embedding is an optional PEER (peerDependenciesMeta.optional)
   // so npm does not auto-install it — no --omit=optional knob needed. (No --no-save:
   // deps must land in prefix/package.json or the peer leg's second npm install would
   // prune the apps as extraneous.)
-  const appTgz = tgz.filter((f) => /anysearch-(cli|mcp|plugin)-/.test(f));
+  const appTgz = tgz.filter((f) => /anysearch-cli-(cli|mcp|plugin)-/.test(f));
   check("install set = 3 app tarballs only", appTgz.length === 3, tgz.join(","));
   const inst = sh(`npm install ${appTgz.map((f) => JSON.stringify(join(outDir, f))).join(" ")}`, { cwd: prefix });
   check("npm install clean prefix", inst.code === 0, inst.out);
   const nm = join(prefix, "node_modules");
   check("install closure excludes onnxruntime-node", !existsSync(join(nm, "onnxruntime-node")), readdirSync(nm).join(","));
   check("install closure excludes @huggingface/transformers", !existsSync(join(nm, "@huggingface")), readdirSync(nm).join(","));
-  check("peer-optional: @anysearch/embedding NOT auto-installed", !existsSync(join(nm, "@anysearch", "embedding")), readdirSync(join(nm, "@anysearch")).join(","));
-  check("bundled internals absent from install closure", ["kernel", "store", "retriever"].every((b) => !existsSync(join(nm, "@anysearch", b))), readdirSync(join(nm, "@anysearch")).join(","));
+  check("peer-optional: @anysearch-cli/embedding NOT auto-installed", !existsSync(join(nm, "@anysearch-cli", "embedding")), readdirSync(join(nm, "@anysearch-cli")).join(","));
+  check("bundled internals absent from install closure", ["kernel", "store", "retriever"].every((b) => !existsSync(join(nm, "@anysearch-cli", b))), readdirSync(join(nm, "@anysearch-cli")).join(","));
   const bin = join(nm, ".bin", process.platform === "win32" ? "ans.cmd" : "ans");
   check("ans bin shim installed", existsSync(bin), bin);
   const ans = (args) => sh(`\"${bin}\" ${args}`, { cwd: prefix });
@@ -116,19 +116,19 @@ try {
 
   // 3b. R63 T5 (D-005): peer-optional dual-install — npm i cli + embedding into one
   // prefix lands both under the same node_modules root, and the app's bundled
-  // import("@anysearch/embedding") resolves (ADR-0020 pack+install verification).
-  const embTgz = tgz.find((f) => f.startsWith("anysearch-embedding-"));
+  // import("@anysearch-cli/embedding") resolves (ADR-0020 pack+install verification).
+  const embTgz = tgz.find((f) => f.startsWith("anysearch-cli-embedding-"));
   check("embedding tarball packed for peer leg", !!embTgz, tgz.join(","));
     // --omit=optional skips the heavy transformers/onnxruntime subtree — the peer leg
   // verifies package landing + bare-specifier resolution + arm-present telemetry;
   // the optional subtree itself is npm-side behavior, not ours.
   const inst2 = sh(`npm install --omit=optional ${JSON.stringify(join(outDir, embTgz))}`, { cwd: prefix });
   check("npm install embedding tarball (explicit peer)", inst2.code === 0, inst2.out);
-  check("embedding lands at shared node_modules root", existsSync(join(nm, "@anysearch", "embedding", "dist", "index.js")), "missing dist/index.js");
+  check("embedding lands at shared node_modules root", existsSync(join(nm, "@anysearch-cli", "embedding", "dist", "index.js")), "missing dist/index.js");
   // resolve from the real call-site dir (the bundled store code inside the installed cli)
-  const cliDir = join(nm, "@anysearch", "cli");
-  const res = sh(`node --input-type=module -e "import('@anysearch/embedding').then(m=>console.log('PEER_OK',typeof m.embedText)).catch(e=>{console.error('PEER_FAIL',e.message);process.exit(1)})"`, { cwd: cliDir });
-  check("import('@anysearch/embedding') resolves from installed cli", res.code === 0 && res.out.includes("PEER_OK"), res.out.slice(-300));
+  const cliDir = join(nm, "@anysearch-cli", "cli");
+  const res = sh(`node --input-type=module -e "import('@anysearch-cli/embedding').then(m=>console.log('PEER_OK',typeof m.embedText)).catch(e=>{console.error('PEER_FAIL',e.message);process.exit(1)})"`, { cwd: cliDir });
+  check("import('@anysearch-cli/embedding') resolves from installed cli", res.code === 0 && res.out.includes("PEER_OK"), res.out.slice(-300));
   const d3 = ans("doctor");
   check("doctor shows vector arm present after peer install", d3.code === 0 && !/embedding absent/.test(d3.out), d3.out.slice(-400));
 

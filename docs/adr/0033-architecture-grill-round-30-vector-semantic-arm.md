@@ -45,9 +45,9 @@ R62 实测（q2 调研 + npm 行为矩阵）发现 D2 落地形态与 npm v12 �
 onnxruntime-node 的 postinstall 下载 ~728MB 运行时，在 npm v12 全局安装下必然失败或挂起——
 基础 CLI 安装被向量臂绑架。修订（不 Supersede，仅收窄 D2 的安装面含义）：
 
-- `@anysearch/embedding`（store 侧）与 `@huggingface/transformers`（embedding 侧）均降为
-  `optionalDependencies`；三个应用包的 bundler external 统一追加 `@anysearch/embedding`。
-- 安装闭包（Install Closure）承诺：`npm i -g @anysearch/cli` 的基础闭包**不含 onnxruntime-node**；
+- `@anysearch-cli/embedding`（store 侧）与 `@huggingface/transformers`（embedding 侧）均降为
+  `optionalDependencies`；三个应用包的 bundler external 统一追加 `@anysearch-cli/embedding`。
+- 安装闭包（Install Closure）承诺：`npm i -g @anysearch-cli/cli` 的基础闭包**不含 onnxruntime-node**；
   install-smoke 以 `--omit=optional` 净装断言该不变量。
 - 缺席语义合法化：embedding 缺席是 supported FTS-only 状态——`embedText ≡ null`、
   写路径仍 fail-open 记 pendingVectors、`vectorTelemetry().absent === true`、

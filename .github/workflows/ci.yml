@@ -45,9 +45,9 @@ jobs:
 
       - name: Pack tarballs
         run: |
-          pnpm --filter @anysearch/mcp pack --pack-destination artifacts
-          pnpm --filter @anysearch/cli pack --pack-destination artifacts
-          pnpm --filter @anysearch/plugin pack --pack-destination artifacts
+          pnpm --filter @anysearch-cli/mcp pack --pack-destination artifacts
+          pnpm --filter @anysearch-cli/cli pack --pack-destination artifacts
+          pnpm --filter @anysearch-cli/plugin pack --pack-destination artifacts
         shell: bash
 
       - name: Smoke — apps/mcp --help and protocol handshake

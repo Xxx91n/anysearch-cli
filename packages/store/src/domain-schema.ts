@@ -4,7 +4,7 @@
 //   [prompts], [skills], [sources], [rag], [hooks] = entire section replace
 // ref: atomcode-cc-persona-toml research, ADR-0002.
 
-import { FUSION_REGISTRY } from "@anysearch/retriever";
+import { FUSION_REGISTRY } from "@anysearch-cli/retriever";
 
 export interface DomainSchema {
   name: string;

@@ -6,8 +6,8 @@
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { resolveDbPath } from "@anysearch/kernel";
-import { SqliteSessionStore, accessChainPreview } from "@anysearch/store";
+import { resolveDbPath } from "@anysearch-cli/kernel";
+import { SqliteSessionStore, accessChainPreview } from "@anysearch-cli/store";
 
 export async function runAccessChain(args: string[]): Promise<number> {
   const sub = args[0];

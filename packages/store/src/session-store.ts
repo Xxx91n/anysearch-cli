@@ -16,14 +16,14 @@ import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, ENTITY
 import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_PATTERN_ROWS, RELATION_RULES_VERSION } from "./relation.js";
 import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate } from "./entity.js";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch-cli/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
 // ADR-0063 (R62 T3): embedding is optional — routed through the guarded arm
 // module (absent package => embedText null / telemetry absent), never imported statically.
 import { embedText, embeddingModelId, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
-import type { NormalizedResult } from "@anysearch/retriever";
+import type { NormalizedResult } from "@anysearch-cli/retriever";
 
 // ADR-0023 D4: MemTX-simplified writer adjudication.
 // keyMemories carry the three-check inputs for write-path adjudication (D4, Q3=A).

@@ -5,7 +5,7 @@
 import { SqliteSessionStore } from "../src/session-store";
 import { loadDomainFromString } from "../src/domain-loader";
 import { ROR_WINDOW, ROR_CLIP } from "../src/eval/runner";
-import { FUSION_REGISTRY, rrfRank } from "@anysearch/retriever";
+import { FUSION_REGISTRY, rrfRank } from "@anysearch-cli/retriever";
 
 let passed = 0;
 let failed = 0;

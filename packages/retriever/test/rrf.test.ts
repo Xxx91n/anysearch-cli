@@ -1,5 +1,5 @@
 // Self-check for RRF pure function.
-// Run: pnpm --filter @anysearch/retriever run test
+// Run: pnpm --filter @anysearch-cli/retriever run test
 
 import { rrfScores, rrfRank } from "../src/rrf";
 import { FUSION_REGISTRY } from "../src/fusion-registry";

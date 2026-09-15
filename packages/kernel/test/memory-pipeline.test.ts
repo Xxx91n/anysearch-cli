@@ -7,7 +7,7 @@
 import { MemoryPipeline, distillGap, adjudicateReuseCompress, consolidateState } from "../src/memory-pipeline";
 import { IR_CUSTOM_INSTRUCTIONS, IR_SUMMARY_SECTIONS } from "../src/ir-schema";
 import type { RetrieverPort, DomainConfigPort, Query } from "../src/ports";
-import type { FusedEnvelope } from "@anysearch/retriever";
+import type { FusedEnvelope } from "@anysearch-cli/retriever";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {

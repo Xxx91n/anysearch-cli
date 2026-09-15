@@ -4,8 +4,8 @@
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import type { CompositionResult } from "@anysearch/kernel";
-import { KernelJsonSchemas } from "@anysearch/kernel";
+import type { CompositionResult } from "@anysearch-cli/kernel";
+import { KernelJsonSchemas } from "@anysearch-cli/kernel";
 import { observeTool } from "./observation.js";
 
 export function registerQueryKnowledge(server: McpServer, eng: CompositionResult): void {

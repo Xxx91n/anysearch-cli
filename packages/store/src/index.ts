@@ -1,4 +1,4 @@
-// @anysearch/store: session store + domain schema
+// @anysearch-cli/store: session store + domain schema
 export * from "./domain-schema";
 export * from "./session-store";
 export * from "./budget-ledger";

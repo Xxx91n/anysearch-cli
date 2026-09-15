@@ -12,15 +12,15 @@ export default defineConfig({
     __PACKAGE_VERSION__: JSON.stringify(pkg.version),
   },
   noExternal: [
-    "@anysearch/retriever",
-    "@anysearch/retriever/providers",
-    "@anysearch/store",
-    "@anysearch/kernel",
+    "@anysearch-cli/retriever",
+    "@anysearch-cli/retriever/providers",
+    "@anysearch-cli/store",
+    "@anysearch-cli/kernel",
     "@sinclair/typebox",
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
   ],
   // ADR-0033: native/ESM deps stay external (bundling crashes the onnx runtime binding).
-  external: ["better-sqlite3", "@huggingface/transformers", "onnxruntime-node", "sharp", "@anysearch/embedding"],
+  external: ["better-sqlite3", "@huggingface/transformers", "onnxruntime-node", "sharp", "@anysearch-cli/embedding"],
   target: "es2022",
 });

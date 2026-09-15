@@ -10,13 +10,13 @@ Four packages, all `publishConfig.access: "public"`:
 
 | package | shape |
 |---|---|
-| `@anysearch/cli` | bundled app — `@anysearch/{kernel,store,retriever,plugin}` are devDependencies (bundled into `dist`), `@anysearch/embedding` is an optional peer |
-| `@anysearch/mcp` | same |
-| `@anysearch/plugin` | same |
-| `@anysearch/embedding` | real dist build (`publishConfig.exports` swaps `src` → `dist/index.js` at pack) |
+| `@anysearch-cli/cli` | bundled app — `@anysearch-cli/{kernel,store,retriever,plugin}` are devDependencies (bundled into `dist`), `@anysearch-cli/embedding` is an optional peer |
+| `@anysearch-cli/mcp` | same |
+| `@anysearch-cli/plugin` | same |
+| `@anysearch-cli/embedding` | real dist build (`publishConfig.exports` swaps `src` → `dist/index.js` at pack) |
 
 `kernel`, `store`, `retriever` are never published — bundling makes them
-build-time-only. `@anysearch/embedding` is `peerDependencies` +
+build-time-only. `@anysearch-cli/embedding` is `peerDependencies` +
 `peerDependenciesMeta.optional`: never auto-installed, no warning when absent,
 explicit install enables the vector arm (FTS-only is a supported state).
 
@@ -31,11 +31,11 @@ explicit install enables the vector arm (FTS-only is a supported state).
 
 The npm CLI has **no release-age gate**: `min-release-age` is unknown project
 config to npm 11 (warned about and ignored), so a freshly published
-`@anysearch/cli` is installable immediately. Self-verify inside the unpublish
+`@anysearch-cli/cli` is installable immediately. Self-verify inside the unpublish
 window by installing the exact version:
 
-    npm i -g @anysearch/cli@0.0.1          # exact version — there is no npm age gate to override
-    npm i -g @anysearch/embedding@0.0.1    # optional peer arm
+    npm i -g @anysearch-cli/cli@0.0.1          # exact version — there is no npm age gate to override
+    npm i -g @anysearch-cli/embedding@0.0.1    # optional peer arm
 
 or install the packed tarballs directly (ship-gate step 4b/4c does exactly this).
 Then drive the same surface install-smoke drives:
@@ -53,4 +53,4 @@ in `pnpm-workspace.yaml`. Registry consumers are unaffected either way — a rep
 
 Registry manifest check (versions / dist-tags.latest / access / repository):
 
-    npm view @anysearch/cli@0.0.1 --json | jq '{version,license,repository}'
+    npm view @anysearch-cli/cli@0.0.1 --json | jq '{version,license,repository}'

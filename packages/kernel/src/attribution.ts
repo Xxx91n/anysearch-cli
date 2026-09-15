@@ -18,8 +18,8 @@ import type {
   FusedEnvelope,
   GapRequest,
   NormalizedResult,
-} from "@anysearch/retriever";
-import { assertJudgmentInput } from "@anysearch/retriever";
+} from "@anysearch-cli/retriever";
+import { assertJudgmentInput } from "@anysearch-cli/retriever";
 import {
   betaCalibrate,
   LEGACY_ATTRIBUTION_THRESHOLD,

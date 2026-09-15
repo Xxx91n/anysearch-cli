@@ -14,7 +14,7 @@ r63-t5(327ac27) → r63-t6(47c7e70) → r63-t7(0ae976f,49960bd) → r63-t8(ntl)�
 2. 等 main-tip `ci` + `ship-gate` 双绿 → 记 run URL 入 ADR-0064 Closure (i)。
 3. `release.yml` dispatch runPurpose=pre-tag → `git tag v0.0.1` + push tag。
 4. 用户本机 `pnpm -r publish`（4 发布包，npm 已登录）。
-5. 72h unpublish 窗内净机自验：`npm i -g @anysearch/cli@0.0.1`（npm 无 release-age 门——精确版本装）
+5. 72h unpublish 窗内净机自验：`npm i -g @anysearch-cli/cli@0.0.1`（npm 无 release-age 门——精确版本装）
    + embedding 显式加装腿 + FTS-only 冒烟；`npm view` 复核 manifest
    （version/dist-tags/access/repository）。
 6. 发布 release notes（docs/release-notes/0.0.1.md）；回填 ADR-0064 Closure

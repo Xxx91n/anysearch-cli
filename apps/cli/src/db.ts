@@ -3,8 +3,8 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch/kernel";
-import { defaultDomainsDirs } from "@anysearch/store";
+import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
+import { defaultDomainsDirs } from "@anysearch-cli/store";
 
 // ADR-0061 B1: the domains-dir resolution chain for this CLI.
 //   1. ANS_DOMAINS_DIR env (a dir containing the tomls directly)

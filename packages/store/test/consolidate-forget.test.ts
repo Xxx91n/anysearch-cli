@@ -7,7 +7,7 @@ import Database from "better-sqlite3";
 import { SqliteSessionStore } from "../src/session-store";
 import { decideOp } from "../src/consolidate";
 import { __setEmbeddingModuleForTest } from "../src/embedding-arm";
-import { __setExtractorForTest } from "@anysearch/embedding";
+import { __setExtractorForTest } from "@anysearch-cli/embedding";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error("FAIL: " + msg); process.exit(1); }

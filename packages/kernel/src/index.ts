@@ -1,4 +1,4 @@
-// @anysearch/kernel: Retroaererd Engine ports + agent runtime
+// @anysearch-cli/kernel: Retroaererd Engine ports + agent runtime
 export * from "./ports";
 export * from "./runtime";
 export * from "./engine";
@@ -8,7 +8,7 @@ export * from "./sufficiency-gate";
 export * from "./ir-schema";
 export * from "./tool-schemas";
 export * from "./tool-json-schemas";
-export * from "@anysearch/retriever";
+export * from "@anysearch-cli/retriever";
 
 export * from "./composition";
 export * from "./llm-init";

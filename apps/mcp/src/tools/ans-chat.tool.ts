@@ -4,9 +4,9 @@
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import type { CompositionResult } from "@anysearch/kernel";
-import { createLlmSession, PiAgentRuntime, KernelJsonSchemas, type LlmSession } from "@anysearch/kernel";
-import { domainTomlPath } from "@anysearch/store";
+import type { CompositionResult } from "@anysearch-cli/kernel";
+import { createLlmSession, PiAgentRuntime, KernelJsonSchemas, type LlmSession } from "@anysearch-cli/kernel";
+import { domainTomlPath } from "@anysearch-cli/store";
 import { observeTool } from "./observation.js";
 
 export function registerAnsChat(server: McpServer, eng: CompositionResult): void {

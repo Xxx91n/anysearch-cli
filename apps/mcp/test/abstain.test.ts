@@ -4,9 +4,9 @@
 // ponytail: no test framework, assert-based demo.
 
 import { registerSearchWeb } from "../src/tools/search-web.tool.js";
-import type { CompositionResult, Query } from "@anysearch/kernel";
-import type { FusedEnvelope } from "@anysearch/retriever";
-import type { SessionStore } from "@anysearch/store";
+import type { CompositionResult, Query } from "@anysearch-cli/kernel";
+import type { FusedEnvelope } from "@anysearch-cli/retriever";
+import type { SessionStore } from "@anysearch-cli/store";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {

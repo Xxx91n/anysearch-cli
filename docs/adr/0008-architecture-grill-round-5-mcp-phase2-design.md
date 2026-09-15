@@ -78,7 +78,7 @@ MCP server reuses createEngine() from packages/kernel (lift from apps/cli/compos
 
 ### Decision 7: createEngine() lifted to packages/kernel
 Composition root factory createEngine(domain?) moves from apps/cli/src/composition.ts
-to packages/kernel export. Both apps/cli and apps/mcp import from @anysearch/kernel.
+to packages/kernel export. Both apps/cli and apps/mcp import from @anysearch-cli/kernel.
 Zero duplication — same factory, same engine, same domain config.
 
 ## 备选方案 (Alternatives Considered)

@@ -2,9 +2,9 @@
 // Seam 3 from atomcode-kernel-split-architecture research.
 // Kernel only imports these interfaces; CLI composition root injects implementations.
 
-import type { FusedEnvelope, SearchRequest } from "@anysearch/retriever";
-import type { SessionStore, Message } from "@anysearch/store";
-export type { T0PreferenceRow, T0PreferenceInput } from "@anysearch/store";
+import type { FusedEnvelope, SearchRequest } from "@anysearch-cli/retriever";
+import type { SessionStore, Message } from "@anysearch-cli/store";
+export type { T0PreferenceRow, T0PreferenceInput } from "@anysearch-cli/store";
 
 export type Budget = {
   tokenCap?: number;

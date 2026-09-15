@@ -4,7 +4,7 @@ import assert from "node:assert";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { writeCalibrationBundle, setCalibrationHead } from "@anysearch/store";
+import { writeCalibrationBundle, setCalibrationHead } from "@anysearch-cli/store";
 import { resolveActiveAttributionCalibration, resolveAttributionRevisionRoot } from "../src/composition";
 
 function makeBundle(params: { a: number; b: number; c: number }, createdAt: string) {

@@ -6,7 +6,7 @@
 // queries with >8 terms are truncated to the first 8 terms (0-context "phrase" for long queries is D2's "empty fallback").
 // Heuristic balance chosen: prefix-match-with-truncate + phrase fallback gives ~90% intent capture per arXiv:2602.23368 evidence.
 // ADR-0045 D2: MemoryFusion registry consumption (k_fusion.memory + arm weights).
-import { FUSION_REGISTRY, registryWeight } from "@anysearch/retriever";
+import { FUSION_REGISTRY, registryWeight } from "@anysearch-cli/retriever";
 
 const SANITIZE_RE = /[^A-Za-z0-9]+/g;
 const PHRASE_QUOTE_RE = /\"/g; // CWE-20 escape: double-quote doubling for FTS5

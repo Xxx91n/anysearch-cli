@@ -15,7 +15,7 @@ import {
   applyJudgeEscalation,
   renderAttributionText,
 } from "../src/attribution";
-import type { FusedEnvelope, AttributionReport } from "@anysearch/retriever";
+import type { FusedEnvelope, AttributionReport } from "@anysearch-cli/retriever";
 
 // ---------------------------------------------------------------------------
 // Math helpers

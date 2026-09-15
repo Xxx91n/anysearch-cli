@@ -25,7 +25,7 @@ const DB_PATH = process.env.ANS_PROJECT_DB || join(process.cwd(), ".anysearch", 
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { existsSync } from "node:fs";
-import { domainTomlPath, emitConfigChangeAudit, loadPolicyFromToml, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type UrlPolicy } from "@anysearch/store";
+import { domainTomlPath, emitConfigChangeAudit, loadPolicyFromToml, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type UrlPolicy } from "@anysearch-cli/store";
 // ADR-0056 D-003: parseAndValidateHeaders lives in the hook bundle module so
 // the wire format stays single-source across hook outbound and server inbound.
 import { parseAndValidateHeaders } from "../hooks/propagation.js";

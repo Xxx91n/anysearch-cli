@@ -1,5 +1,5 @@
 {
-  "name": "@anysearch/kernel",
+  "name": "@anysearch-cli/kernel",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -7,8 +7,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@anysearch/retriever": "workspace:*",
-    "@anysearch/store": "workspace:*",
+    "@anysearch-cli/retriever": "workspace:*",
+    "@anysearch-cli/store": "workspace:*",
     "@earendil-works/pi-agent-core": "^0.84.2",
     "@earendil-works/pi-ai": "^0.84.2",
     "@sinclair/typebox": "^0.34.52"

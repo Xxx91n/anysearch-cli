@@ -2,7 +2,7 @@
 // Subcommands: list [--entity N] [--limit N] | backfill-relations [--apply] [--batch N] [--from-id N] [--limit N] [--reprocess]
 
 import { createPersistentEngine } from "../db";
-import type { RelationRow, BackfillRelationsResult } from "@anysearch/store";
+import type { RelationRow, BackfillRelationsResult } from "@anysearch-cli/store";
 
 interface RelationStore {
   listRelations(opts?: { entity?: string; limit?: number }): Promise<RelationRow[]>;

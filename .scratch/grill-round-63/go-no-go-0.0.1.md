@@ -48,7 +48,7 @@ execution-gated external actions, not defect gates. No release blocker stands.
   T0 smoke, memory eval 126/126 (fp 4a529f6fbe2096c8), MCP init, fail-open boot.
 - `node scripts/install-smoke.mjs` — 26/26 (online search leg green with keys).
 - `turbo check` 7/7, `turbo build` green, `turbo test` all green (serial).
-- `pnpm pack` ×4 — manifests carry zero `@anysearch/*` in dependencies,
+- `pnpm pack` ×4 — manifests carry zero `@anysearch-cli/*` in dependencies,
   `peerDependenciesMeta.optional:true` on embedding, Apache-2.0, repository,
   `publishConfig.access: "public"`; embedding tarball resolves `dist/index.js`.
 
@@ -56,12 +56,12 @@ execution-gated external actions, not defect gates. No release blocker stands.
 
 1. Land the serial stack to main (`but land` — user-run) → push.
 2. Await main-tip `ci` + `ship-gate` double green; record run URLs.
-3. Register/hold `@anysearch` npm scope (already user-owned per D-006 note; verify).
+3. Register/hold `@anysearch-cli` npm scope (already user-owned per D-006 note; verify).
 4. Dispatch `release.yml` with `runPurpose=pre-tag`.
 5. `git tag v0.0.1` + push tag.
 6. Post-tag checks green.
 7. User runs `pnpm -r publish` for the 4 publish packages.
-8. Within 72h unpublish window: clean-machine `npm i -g @anysearch/cli@0.0.1` (no npm release-age gate exists — exact-version install), `ans doctor`/`search` smoke, FTS-only leg (no
+8. Within 72h unpublish window: clean-machine `npm i -g @anysearch-cli/cli@0.0.1` (no npm release-age gate exists — exact-version install), `ans doctor`/`search` smoke, FTS-only leg (no
    embedding) confirmed; `npm view` registry manifest check (version,
    dist-tags.latest, access, repository).
 9. Publish release notes (docs/release-notes/0.0.1.md).

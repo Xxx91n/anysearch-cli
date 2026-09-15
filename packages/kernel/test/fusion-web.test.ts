@@ -1,7 +1,7 @@
 // ADR-0045 D2/D3 (r118 impl): WebFusion provenance snapshot + weight consumption mutation pair.
 import { RetroaererdEngine } from "../src/engine";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, assertFusionProvenance } from "@anysearch/retriever";
-import type { SearchProvider, ProviderEnvelope, NormalizedResult } from "@anysearch/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, assertFusionProvenance } from "@anysearch-cli/retriever";
+import type { SearchProvider, ProviderEnvelope, NormalizedResult } from "@anysearch-cli/retriever";
 
 let passed = 0;
 let failed = 0;

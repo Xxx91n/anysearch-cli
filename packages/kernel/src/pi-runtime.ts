@@ -18,8 +18,8 @@ import {
   wrapRetrieved,
   type RetrievalContent,
   type SourceTraceLabel,
-} from "@anysearch/retriever";
-import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveUrlPolicy } from "@anysearch/store";
+} from "@anysearch-cli/retriever";
+import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveUrlPolicy } from "@anysearch-cli/store";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink } from "./ports";
 import type { AgentEvent } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";

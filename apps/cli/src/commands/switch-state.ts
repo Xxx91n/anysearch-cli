@@ -3,8 +3,8 @@
 // cross-checks the ledger's evidenceHash against the access_events chain (chain wins).
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { resolveDbPath } from "@anysearch/kernel";
-import { parseSkipLedger, quarantineSkipLedger, verifySwitchState } from "@anysearch/store";
+import { resolveDbPath } from "@anysearch-cli/kernel";
+import { parseSkipLedger, quarantineSkipLedger, verifySwitchState } from "@anysearch-cli/store";
 
 export async function runSwitchState(args: string[]): Promise<number> {
   if (args.includes("--help") || args.includes("-h")) {

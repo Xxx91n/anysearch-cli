@@ -9,7 +9,7 @@ import Database from "better-sqlite3";
 import { SqliteSessionStore } from "../session-store";
 import { normalizeEntityName } from "../entity";
 import type { AdjudicationResultItem } from "../session-store";
-import { rrfRank, FUSION_REGISTRY } from "@anysearch/retriever";
+import { rrfRank, FUSION_REGISTRY } from "@anysearch-cli/retriever";
 import { ABSTAIN_CASES, assertParaphraseSlice, PARAPHRASE_MAX_LEXICAL_OVERLAP, type CaseSpec, type EvalStage, type EvalGroup } from "./golden-cases";
 import { injectFingerprint, runInjectProbe } from "./inject";
 import { runAbstainProbe } from "./abstain";

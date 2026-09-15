@@ -14,8 +14,8 @@ import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
-import { isTimeSensitive, isEvergreen } from "@anysearch/store"; // ADR-0030 D5: no inline regex copies
-import { assertJudgmentInput, combineLabels, unwrapRetrieved, type SourceTraceLabel } from "@anysearch/retriever";
+import { isTimeSensitive, isEvergreen } from "@anysearch-cli/store"; // ADR-0030 D5: no inline regex copies
+import { assertJudgmentInput, combineLabels, unwrapRetrieved, type SourceTraceLabel } from "@anysearch-cli/retriever";
 import type { LlmRewriteFn } from "./query-rewrite";
 
 export interface TaggedGapResult {
@@ -443,7 +443,7 @@ export class MemoryPipeline {
       const l2Query = searchToolInput?.query || "";
       if (typeof l2Query === "string" && l2Query.length > 3) {
         // ADR-0023 D2 (Q2=B): S1 rewrite + RRF fusion. Fail-open via rewriteQuery when no LLM seam.
-        // QDF hint uses heuristic classifiers from @anysearch/store (no LLM call needed to tag).
+        // QDF hint uses heuristic classifiers from @anysearch-cli/store (no LLM call needed to tag).
         const qdf = classifyQdf(l2Query, { isTimeSensitive, isEvergreen });
         rewriteQuery(l2Query, qdf, this.deps.llmRewriteFn)
           .then((variants) => {

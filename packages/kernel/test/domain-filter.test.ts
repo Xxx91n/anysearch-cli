@@ -5,7 +5,7 @@
 // ponytail: no test framework, assert-based demo.
 
 import { RetroaererdEngine } from "../src/engine";
-import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope } from "@anysearch/retriever";
+import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope } from "@anysearch-cli/retriever";
 import type { RetrievalObservationSink } from "../src/ports";
 
 let passed = 0, failed = 0;

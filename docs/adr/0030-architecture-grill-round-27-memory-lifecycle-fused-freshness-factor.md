@@ -44,7 +44,7 @@ Industry research (Mem0 official docs + blog 2026-05, SurrealDB, Zep/Graphiti, F
 1. `packages/store/src/time-decay.ts`: replace interpolation with fused factor `freshnessFactor(createdAt, lastAccessed, accessCount, tier, {pinned, evergreenQuery})` → [0.3, 1.5]; τ table unchanged; frequency term capped 0.15; QDF regex year literals removed; QDF weight switch (0.25/0.4) retired with interpolation.
 2. SQL surface: `time_decay()` UDF signature extended (or new `freshness_factor()` UDF) receiving last_accessed/access_count; `session-store.ts:218` + `fts5.ts:45` rank expressions updated.
 3. Verify `access_count` write path (exactly-once per recall) via a dedicated test; fix if missing.
-4. `packages/kernel/src/memory-pipeline.ts`: replace inline QDF lambdas with imports from `@anysearch/store`.
+4. `packages/kernel/src/memory-pipeline.ts`: replace inline QDF lambdas with imports from `@anysearch-cli/store`.
 5. Tests: factor boundary at both ends of the band; pinned/evergreen exemptions; fusion monotonicity (fresher accessed > stale untouched at equal BM25); regex contains no 4-digit year; kernel uses store classifiers.
 6. Eval: golden cases keep temporal anchors (21d/90d/365d); rank gate re-baseline reviewed and committed with fingerprint update (ADR-0027 D9 discipline).
 7. Full verification: `turbo check` (6/6), `turbo build`, store tests, ship-gate quick, CLI `--help` alive.

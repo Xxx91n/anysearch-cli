@@ -1,12 +1,12 @@
 // PiAgentRuntime test (G012).
 // Verify construction, event types, domain 5-layer, budget settle.
 // ponytail: no test framework, assert-based demo.
-// Run: pnpm --filter @anysearch/kernel run test
+// Run: pnpm --filter @anysearch-cli/kernel run test
 
 import { PiAgentRuntime } from "../src/pi-runtime";
 import { distillGap, adjudicateReuseCompress } from "../src/memory-pipeline";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
-import type { FusedEnvelope, SufficiencySignal } from "@anysearch/retriever";
+import type { FusedEnvelope, SufficiencySignal } from "@anysearch-cli/retriever";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {

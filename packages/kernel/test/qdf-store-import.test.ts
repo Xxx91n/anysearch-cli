@@ -1,6 +1,6 @@
 // ADR-0030 D5: kernel must use store classifiers — this test locks the drift fix in.
 // Historical bug: memory-pipeline.ts carried an inline QDF/evergreen regex copy that
-// drifted from @anysearch/store (missing forms, hardcoded year literals).
+// drifted from @anysearch-cli/store (missing forms, hardcoded year literals).
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -21,7 +21,7 @@ const src = readFileSync(
 assert(!src.includes("/最新"), "no inline QDF regex replica"); 
 assert(!src.includes("/什么是"), "no inline evergreen regex replica");
 // Classifiers are imported from the store package.
-assert(src.includes('from "@anysearch/store"'), "classifiers imported from @anysearch/store");
+assert(src.includes('from "@anysearch-cli/store"'), "classifiers imported from @anysearch-cli/store");
 assert(/classifyQdf\(l2Query, \{ isTimeSensitive, isEvergreen \}\)/.test(src), "classifyQdf receives store classifiers");
 
 console.log("qdf-store-import tests: " + passed + " passed, " + failed + " failed");

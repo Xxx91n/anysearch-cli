@@ -13,7 +13,7 @@ but its own audit handoff exposed that "the artifacts exist" ≠ "the product is
 provably usable": main tip had three simultaneous CI reds (check-build
 provenance, install-smoke offline leg, macOS libc++abi exit-time crash); the
 install closure pulled `onnxruntime-node` (~728 MB) through store's static
-import of `@anysearch/embedding`; `eval-looks.json` golden entries were
+import of `@anysearch-cli/embedding`; `eval-looks.json` golden entries were
 ledger-verified but never executed (audit F4/F5); the `ans_chat` retrieval
 surface lacked the `retrieval.domain_filter.*` audit events (F3); the Tavily
 domain-filter probe waited on a key (F2). Round-62 turns "artifacts exist"
@@ -31,7 +31,7 @@ injection (F3) as same-round cohesive items (ADR-0029).
 
 ### D2 Embedding → optionalDependencies, fail-open vector arm (ledger D-002; supersedes ADR-0033 D2)
 
-`@anysearch/embedding` and `@huggingface/transformers` move to
+`@anysearch-cli/embedding` and `@huggingface/transformers` move to
 `optionalDependencies` across store/embedding/cli/mcp/plugin. Store's two
 static imports become a guarded dynamic import in the new leaf module
 `embedding-arm.ts`: absent arm ⇒ `embedText ≡ null`, `cosineSimilarity` inlined
@@ -39,7 +39,7 @@ static imports become a guarded dynamic import in the new leaf module
 externalize the package. `doctor` reports `[SKIP] vector arm … FTS-only
 (optionalDependency)`. install-smoke runs a lean install (`--omit=optional`)
 and asserts the closure contains none of `onnxruntime-node`,
-`@huggingface/transformers`, `@anysearch/embedding`. ADR-0033 D2 is marked
+`@huggingface/transformers`, `@anysearch-cli/embedding`. ADR-0033 D2 is marked
 **revised** (amendment D9 appended in-place; the document is not superseded —
 D1/D3–D8 survive).
 
@@ -211,7 +211,7 @@ still-crashing signature, non-blocking by design; the ≥5-green TTL streak
 for matrix promotion starts counting from probe run #1.
 
 Local verification standing in until the runs exist (each re-runnable):
-`pnpm --filter @anysearch/kernel --filter @anysearch/store --filter @anysearch/mcp check`
+`pnpm --filter @anysearch-cli/kernel --filter @anysearch-cli/store --filter @anysearch-cli/mcp check`
 green; kernel `eval-looks-stub.test.ts` 41/41; `pi-runtime-span.test.ts` 8/8;
 store `eval-docs-golden.test.ts` 44/44; `eval-quarantine-sla.test.ts` +
 `eval-quarantine.test.ts` green; `test:online` live executor 8/8 on non-

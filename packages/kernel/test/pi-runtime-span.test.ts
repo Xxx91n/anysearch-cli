@@ -7,7 +7,7 @@
 
 import { RetroaererdEngine } from "../src/engine";
 import { createSearchTool } from "../src/pi-runtime";
-import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope } from "@anysearch/retriever";
+import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope } from "@anysearch-cli/retriever";
 import type { RetrievalObservationSink } from "../src/ports";
 
 let passed = 0, failed = 0;

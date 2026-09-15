@@ -1,5 +1,5 @@
 {
-  "name": "@anysearch/embedding",
+  "name": "@anysearch-cli/embedding",
   "version": "0.0.1",
   "type": "module",
   "exports": {

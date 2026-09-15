@@ -2,12 +2,12 @@
 // ADR-0008 D1: context-management mental model (context-mode style).
 // ADR-0008 D3: 5 MCP tools — search_web / research_web / recall_memory / query_knowledge / ans_chat.
 // ADR-0008 D4: factory pattern, era-agnostic, entry selects transport.
-// ADR-0008 D7: createEngine() from @anysearch/kernel.
+// ADR-0008 D7: createEngine() from @anysearch-cli/kernel.
 // ADR-0019 D1: inputSchema wrapped via fromJsonSchema(KernelToolSchemas[name]) — SDK v2 path.
 // ADR-0019 D2: tools live in apps/mcp/src/tools/*, aggregated by tools/index.ts.
 
 import { McpServer } from "@modelcontextprotocol/server";
-import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch/kernel";
+import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { TOOL_REGISTRY } from "./tools/index.js";

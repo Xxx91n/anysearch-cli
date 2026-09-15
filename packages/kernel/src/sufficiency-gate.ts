@@ -9,7 +9,7 @@
 
 import { computeSufficiency } from "./engine";
 import type { RetrieverPort, DomainConfigPort } from "./ports";
-import { assertJudgmentInput, unwrapRetrieved, type SufficiencySignal, type GapRequest } from "@anysearch/retriever";
+import { assertJudgmentInput, unwrapRetrieved, type SufficiencySignal, type GapRequest } from "@anysearch-cli/retriever";
 
 export interface SufficiencyEvaluatorDeps {
   retriever: RetrieverPort;

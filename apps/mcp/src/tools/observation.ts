@@ -1,6 +1,6 @@
-import type { CompositionResult } from "@anysearch/kernel";
-import type { ObservationAttributes } from "@anysearch/store";
-import { mapMcpClientId } from "@anysearch/store";
+import type { CompositionResult } from "@anysearch-cli/kernel";
+import type { ObservationAttributes } from "@anysearch-cli/store";
+import { mapMcpClientId } from "@anysearch-cli/store";
 import { currentMcpIdentity } from "../mcp-context.js";
 
 // ADR-0056 D-008/D-009: client_id best-effort from _meta clientInfo via Railway
@@ -12,7 +12,7 @@ export function observeTool<T>(
   // ADR-0062 D2: the callback receives the recordOperation span so tools can
   // hand it to retriever.search() — that is how retrieval.domain_filter.* audit
   // events and the anysearch.outcome dimension land inside the MCP trace.
-  callback: (span: import("@anysearch/kernel").RetrievalObservationSink) => T | Promise<T>,
+  callback: (span: import("@anysearch-cli/kernel").RetrievalObservationSink) => T | Promise<T>,
   attributes?: ObservationAttributes,
 ): Promise<T> {
   const identity = currentMcpIdentity();

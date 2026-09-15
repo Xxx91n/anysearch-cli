@@ -1,6 +1,6 @@
 // ADR-0056 D-002/D-003: W3C TraceContext + x-anysearch-session-id propagation.
 // Both build (hook outbound) and parse (server inbound) live here so the wire
-// format is one source of truth and stays dependency-free from @anysearch/store
+// format is one source of truth and stays dependency-free from @anysearch-cli/store
 // (the hook bundle esbuild config forbids the store import path because of
 // native deps; see ADR-0055 audit M4 for the rationale).
 //

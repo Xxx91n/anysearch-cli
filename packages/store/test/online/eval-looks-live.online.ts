@@ -65,7 +65,7 @@ function urlHit(results: any[], url: string): boolean {
 
 function main() {
   if (!existsSync(dist)) {
-    console.log("SKIP eval-looks live: apps/cli/dist/index.js missing (run pnpm --filter @anysearch/cli build)");
+    console.log("SKIP eval-looks live: apps/cli/dist/index.js missing (run pnpm --filter @anysearch-cli/cli build)");
     return;
   }
   if (!keyed) {

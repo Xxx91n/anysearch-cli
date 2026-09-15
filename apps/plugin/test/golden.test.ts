@@ -23,7 +23,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { buildPropagationHeaders, parseAndValidateHeaders, newTraceIdHex, newSpanIdHex } from "../src/hooks/propagation.js";
-import { emitConfigChangeAudit } from "@anysearch/store";
+import { emitConfigChangeAudit } from "@anysearch-cli/store";
 
 let passed = 0;
 let failed = 0;

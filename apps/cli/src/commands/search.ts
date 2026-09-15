@@ -1,7 +1,7 @@
 // ans search: run a retrieval query through the Retroaererd Engine.
 // ADR-0006 decision 3A: uses createEngine() factory, not inline wiring.
 
-import type { Mode } from "@anysearch/retriever";
+import type { Mode } from "@anysearch-cli/retriever";
 import { createPersistentEngine } from "../db";
 
 import { searchExitCode, formatAbstainLine } from "./search-abstain";
@@ -119,7 +119,7 @@ export async function runSearch(args: string[]): Promise<number> {
     }
     // ADR-0034 D4: CLI attribution rendering for TTY (mark/annotated Sources). --json exits earlier.
     if (envelope.attribution) {
-      const { renderAttributionText } = await import("@anysearch/kernel");
+      const { renderAttributionText } = await import("@anysearch-cli/kernel");
       console.log(renderAttributionText(envelope.attribution));
     }
 

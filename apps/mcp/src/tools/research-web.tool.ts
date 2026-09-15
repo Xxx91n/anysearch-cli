@@ -6,7 +6,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { KernelJsonSchemas, type CompositionResult } from "@anysearch/kernel";
+import { KernelJsonSchemas, type CompositionResult } from "@anysearch-cli/kernel";
 import { observeTool } from "./observation.js";
 
 export function registerResearchWeb(server: McpServer, eng: CompositionResult): void {
@@ -53,7 +53,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         // (Last-round-only attribution indexes a per-round list the tool never returns.)
         let mergedAttribution: unknown = null;
         if (lastEnvelope?.attribution) {
-          const { attachAttribution } = await import("@anysearch/kernel");
+          const { attachAttribution } = await import("@anysearch-cli/kernel");
           const merged = { ...lastEnvelope, results: allResults };
           mergedAttribution = attachAttribution(merged, {
             ...(eng.calibration ? { calibration: eng.calibration } : {}),

@@ -2,7 +2,7 @@
 // Subcommands: merge <fromId> <toId> | unmerge <logId> | review [keep|drop <id>]
 
 import { createPersistentEngine } from "../db";
-import type { EntityReviewRow } from "@anysearch/store";
+import type { EntityReviewRow } from "@anysearch-cli/store";
 
 interface EntityStore {
   combineEntities(fromId: number, toId: number): Promise<{ ok: boolean; logId?: number; error?: string }>;

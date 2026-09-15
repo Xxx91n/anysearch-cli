@@ -6,7 +6,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { KernelJsonSchemas, type CompositionResult } from "@anysearch/kernel";
+import { KernelJsonSchemas, type CompositionResult } from "@anysearch-cli/kernel";
 import { observeTool } from "./observation.js";
 
 export function registerSearchWeb(server: McpServer, eng: CompositionResult): void {

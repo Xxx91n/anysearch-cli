@@ -3,7 +3,7 @@
 // ponytail: MVP - register provider, check auth, set default model via env/config.
 
 import { createModels } from "@earendil-works/pi-ai";
-import { PROVIDER_FACTORIES, PROVIDER_NAMES, MODELS, API_KEYS } from "@anysearch/kernel";
+import { PROVIDER_FACTORIES, PROVIDER_NAMES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
 
 export async function runLlm(args: string[]): Promise<number> {
   if (args.length === 0) {

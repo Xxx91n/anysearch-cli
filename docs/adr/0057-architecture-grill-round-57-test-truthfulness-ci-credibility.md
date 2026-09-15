@@ -12,7 +12,7 @@ Round 56/57 push-closure left AC5 (pnpm -r check/test/build clean + ship-gate, C
 
 - store/package.json chained 50+ test files with shell && (1916-char script); first failure aborts all remaining files; eval-switch-state-fixes.test.ts was never on the chain and never executed.
 - Per-file hand-rolled `let passed = 0` counters instead of a real test runner; exit-code correctness manual.
-- ci.yml/ship-gate.yml ran only `pnpm --filter @anysearch/kernel test` — 59/73 test files never ran in CI.
+- ci.yml/ship-gate.yml ran only `pnpm --filter @anysearch-cli/kernel test` — 59/73 test files never ran in CI.
 - domain-loader.test.ts hardcoded "D:/Aworker/anysearch-cli" (3 occurrences) — tests fail on any other machine.
 - packages/embedding tests download the model from HuggingFace on first run — red offline.
 - README claims .scratch/ is not committed to git while 16 files are tracked (base feat/grill-56 tip).
@@ -108,7 +108,7 @@ Per ADR-0029 (undocumented incidental edits are the anti-pattern) this section r
 
 ### A1. Test task now depends on build (F-11)
 
-D1 recorded `test = { "dependsOn": ["^test"], "cache": false }`. The landed configuration is `{ "dependsOn": ["^test", "build"], "cache": false }`. Rationale: the `@anysearch/cli` e2e test spawns `apps/cli/dist/index.js`, so `turbo run test` on a clean tree failed 10 of 11 e2e cases. Making the dependency explicit fixes it at the task-graph level instead of by reordering CI steps. **Supersedes D1 on this point only.**
+D1 recorded `test = { "dependsOn": ["^test"], "cache": false }`. The landed configuration is `{ "dependsOn": ["^test", "build"], "cache": false }`. Rationale: the `@anysearch-cli/cli` e2e test spawns `apps/cli/dist/index.js`, so `turbo run test` on a clean tree failed 10 of 11 e2e cases. Making the dependency explicit fixes it at the task-graph level instead of by reordering CI steps. **Supersedes D1 on this point only.**
 
 ### A2. ship-gate no longer hardcodes `pnpm.cmd` (F-12)
 

@@ -2,8 +2,8 @@
 // LLM summarize seam is assembled here via kernel createLlmSession; fidelity gate via
 // kernel classifyClaim. Fail-open: missing LLM config -> dry-run with llmUnavailable counts.
 
-import { createLlmSession, classifyClaim, resolveDbPath } from "@anysearch/kernel";
-import { SqliteSessionStore, type ConsolidateEvidence, type ConsolidateClaimVerdict } from "@anysearch/store";
+import { createLlmSession, classifyClaim, resolveDbPath } from "@anysearch-cli/kernel";
+import { SqliteSessionStore, type ConsolidateEvidence, type ConsolidateClaimVerdict } from "@anysearch-cli/store";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
