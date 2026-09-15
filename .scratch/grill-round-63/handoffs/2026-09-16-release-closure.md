@@ -31,9 +31,9 @@
 
 ## 待用户收尾
 
-- [ ] unpublish 坏版本（72h 窗内，一次一个 spec + -f）：
-      cli/mcp/plugin 各 @0.0.1 @0.0.2 共 6 条。embedding 的 0.0.1/0.0.2 可装可留。
-      注：需 passkey，我只能给命令不能代跑。
+- [x] unpublish 坏版本——已于 2026-09-15 执行完毕：cli/mcp/plugin 的 @0.0.1@0.0.2
+      共 6 条全部撤销（registry 实测 versions 仅剩 0.0.3）；embedding 的 0.0.1/0.0.2
+      可正常安装，按用户选择保留在册。
 
 ## 下轮（Round-64）方向指示
 
