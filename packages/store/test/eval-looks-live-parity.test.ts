@@ -17,6 +17,7 @@ import {
   type QuarantineEntry,
   type QuarantineLedger,
 } from "../src/eval/quarantine-ledger";
+import { EVAL_LOOKS_SCHEMA_VERSION } from "../src/eval/docs-golden";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..", "..", "..");
@@ -85,7 +86,7 @@ assert(runnerSrc.includes("WATCH "), "runner surfaces the post-promote watch mar
 // sub-schema unchanged (additive change, no v2 migration).
 const looks = JSON.parse(fs.readFileSync(path.join(root, "eval-looks.json"), "utf8"));
 assert(looks.schema === "anysearch/eval-looks@2", "eval-looks.json keeps schema anysearch/eval-looks@2");
-assert(looks.schema_version === 1, "eval-looks.json root carries the schema_version:1 sentinel");
+assert(looks.schema_version === EVAL_LOOKS_SCHEMA_VERSION, "eval-looks.json root carries the schema_version sentinel matching EVAL_LOOKS_SCHEMA_VERSION");
 assert(looks.golden?.schema === "anysearch/docs-golden@1", "golden sub-schema unchanged");
 
 console.log("eval-looks-live-parity: " + passed + " passed, " + failed + " failed");
