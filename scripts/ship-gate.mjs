@@ -26,6 +26,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
+import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -531,6 +532,23 @@ function stepStaticAssertions() {
     if (!fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8").includes("test-online"))
       fail("R62 D-005: ci.yml missing test-online job");
     report("pass", "R62 D-005: offline exclusion governance (whitelist + 0.75 floor + test-online lane)");
+  }
+
+  // 1r. R63 T3 (D-003): quarantine ratchet — the live-drift quarantine set is shrink-only.
+  //     entries ⊆ baseline ids (new = red); renewals stay 0 (renewal = red); an entry past
+  //     expiresAt without a promote/retire/longterm ruling is red (TTL expiry forces a ruling);
+  //     longterm exits capped at 1. Baseline is a separate reviewable file (diff-visible).
+  {
+    const qPath = path.join(ROOT, "packages", "store", "eval-quarantine.json");
+    const bPath = path.join(ROOT, "packages", "store", "eval-quarantine.baseline.json");
+    if (!fs.existsSync(bPath)) fail("R63 T3: eval-quarantine.baseline.json missing — ratchet has no floor");
+    const qLedger = JSON.parse(fs.readFileSync(qPath, "utf8"));
+    const qBase = JSON.parse(fs.readFileSync(bPath, "utf8"));
+    if (qBase.schema !== "anysearch/eval-quarantine-baseline@1" || !Array.isArray(qBase.ids) || qBase.ids.length === 0)
+      fail("R63 T3: eval-quarantine.baseline.json schema/ids invalid");
+    const ratchetErrors = checkQuarantineRatchet(qLedger, qBase.ids);
+    for (const e of ratchetErrors) fail("R63 T3 quarantine ratchet: " + e);
+    report("pass", "R63 T3: quarantine ratchet green (entries shrink-only vs baseline[" + qBase.ids.length + "], renewals=0, no unruled expiry, longterm<=1)");
   }
 
   // 1n. ADR-0052 D2-D5: local observation representation, SQLite store, export

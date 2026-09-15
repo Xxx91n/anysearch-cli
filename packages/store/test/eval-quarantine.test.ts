@@ -8,6 +8,7 @@ import {
   emptyQuarantine,
   expiredEntries,
   isActive,
+  longtermEntry,
   plusDays,
   promoteEntry,
   QUARANTINE_MAX_RENEWALS,
@@ -81,6 +82,28 @@ assert(emptyQuarantine().entries.length === 0, "emptyQuarantine has no entries")
   assert(p.entries.length === 0, "promote removes the case from quarantine (gated again)");
   const r = retireEntry({ schema: QUARANTINE_SCHEMA, entries: [entry("b", T0)] }, "b", plusDays(T0, 91), "never fixed");
   assert(r.entries[0]!.retired === true && activeIds(r, plusDays(T0, 1)).length === 0, "retire keeps the audit row but deactivates it");
+}
+
+// --- 4b. longterm one-time exit (R63 T3 / D-003) ---------------------------
+{
+  let threw = false;
+  try {
+    longtermEntry({ schema: QUARANTINE_SCHEMA, entries: [entry("a", T0)] }, "ghost", plusDays(T0, 31), "x");
+  } catch {
+    threw = true;
+  }
+  assert(threw, "longterm on an unknown id throws");
+  const q: QuarantineLedger = { schema: QUARANTINE_SCHEMA, entries: [entry("a", T0), entry("b", T0)] };
+  longtermEntry(q, "a", plusDays(T0, 31), "permanent known-issue");
+  assert(q.entries[0]!.longterm === true, "longterm sets the entry flag");
+  assert(q.entries[0]!.reviews.some((r) => r.decision === "longterm"), "longterm appends the review record");
+  threw = false;
+  try {
+    longtermEntry(q, "b", plusDays(T0, 31), "second exit");
+  } catch {
+    threw = true;
+  }
+  assert(threw, "second longterm conversion throws (QUARANTINE_MAX_LONGTERM cap)");
 }
 
 // --- 5. corrupt / missing files degrade to empty ---------------------------

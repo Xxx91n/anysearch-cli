@@ -15,10 +15,13 @@ export const QUARANTINE_SCHEMA = "anysearch/eval-quarantine@1";
 export const QUARANTINE_TTL_DAYS = 30;
 export const QUARANTINE_REVIEW_INTERVAL_DAYS = 7;
 export const QUARANTINE_MAX_RENEWALS = 2;
+// R63 T3 (D-003): permanent known-issue conversion is a one-time exit — the ratchet
+// asserts longterm is used at most once across the ledger (infinite-deferral backdoor guard).
+export const QUARANTINE_MAX_LONGTERM = 1;
 
 export interface QuarantineReview {
   at: string;
-  decision: "renew" | "promote" | "retire";
+  decision: "renew" | "promote" | "retire" | "longterm";
   note: string;
 }
 
@@ -33,6 +36,8 @@ export interface QuarantineEntry {
   issueUrl?: string;
   reviews: QuarantineReview[];
   retired?: boolean;
+  // R63 T3 (D-003): longterm = permanently excluded known-issue (never expires, never gates).
+  longterm?: boolean;
 }
 
 export interface QuarantineLedger {
@@ -68,21 +73,21 @@ export function writeQuarantine(file: string, q: QuarantineLedger): void {
 // Active = quarantined, not retired, and not past its TTL.
 export function isActive(q: QuarantineLedger, id: string, now: string): boolean {
   const e = q.entries.find((x) => x.id === id);
-  return !!e && !e.retired && Date.parse(e.expiresAt) > Date.parse(now);
+  return !!e && !e.retired && (e.longterm === true || Date.parse(e.expiresAt) > Date.parse(now));
 }
 
 export function activeIds(q: QuarantineLedger, now: string): string[] {
-  return q.entries.filter((e) => !e.retired && Date.parse(e.expiresAt) > Date.parse(now)).map((e) => e.id);
+  return q.entries.filter((e) => !e.retired && (e.longterm === true || Date.parse(e.expiresAt) > Date.parse(now))).map((e) => e.id);
 }
 
 export function expiredEntries(q: QuarantineLedger, now: string): QuarantineEntry[] {
-  return q.entries.filter((e) => !e.retired && Date.parse(e.expiresAt) <= Date.parse(now));
+  return q.entries.filter((e) => !e.retired && !e.longterm && Date.parse(e.expiresAt) <= Date.parse(now));
 }
 
 // Weekly review clock: due when the last review is older than the interval (or never reviewed).
 export function reviewDue(q: QuarantineLedger, now: string): QuarantineEntry[] {
   return q.entries.filter((e) => {
-    if (e.retired) return false;
+    if (e.retired || e.longterm) return false;
     const last = e.reviews.length ? e.reviews[e.reviews.length - 1]!.at : e.quarantinedAt;
     return Date.parse(now) - Date.parse(last) >= QUARANTINE_REVIEW_INTERVAL_DAYS * DAY_MS;
   });
@@ -116,5 +121,21 @@ export function retireEntry(q: QuarantineLedger, id: string, at: string, note: s
   if (!e) throw new Error("retire: unknown quarantined case " + id);
   e.reviews.push({ at, decision: "retire", note });
   e.retired = true;
+  return q;
+}
+
+// longterm (R63 T3, D-003): convert to a permanent known-issue — stays excluded forever,
+// capped at QUARANTINE_MAX_LONGTERM across the whole ledger. The exit exists so an expired
+// entry has a legal third ruling beyond promote/retire; the cap keeps it from becoming an
+// infinite-deferral backdoor.
+export function longtermEntry(q: QuarantineLedger, id: string, at: string, note: string): QuarantineLedger {
+  const e = q.entries.find((x) => x.id === id);
+  if (!e) throw new Error("longterm: unknown quarantined case " + id);
+  const used = q.entries.filter((x) => x.longterm === true).length;
+  if (used >= QUARANTINE_MAX_LONGTERM) {
+    throw new Error("longterm: cap " + QUARANTINE_MAX_LONGTERM + " already used — promote or retire instead");
+  }
+  e.reviews.push({ at, decision: "longterm", note });
+  e.longterm = true;
   return q;
 }

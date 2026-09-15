@@ -1,0 +1,17 @@
+{
+  "schema": "anysearch/eval-quarantine-baseline@1",
+  "ratchetedAt": "2026-09-15T00:00:00.000Z",
+  "note": "R63 T3 (D-003) ratchet floor: the 10 live-drift quarantines established 2026-09-14 (eval-looks-live). The set is shrink-only — promote removes, retire marks, longterm converts at most once. New ids, renewals, and unruled expiries fail ship-gate.",
+  "ids": [
+    "docs-g0001",
+    "docs-g0002",
+    "docs-g0003",
+    "docs-g0004",
+    "docs-g0005",
+    "docs-g0006",
+    "docs-g0008",
+    "docs-g0009",
+    "docs-g0010",
+    "docs-g0011"
+  ]
+}
