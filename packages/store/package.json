@@ -24,7 +24,12 @@
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },
-  "optionalDependencies": {
+  "peerDependencies": {
     "@anysearch/embedding": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@anysearch/embedding": {
+      "optional": true
+    }
   }
 }

@@ -21,28 +21,42 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.84.2",
+    "@earendil-works/pi-ai": "^0.84.2",
+    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "better-sqlite3": "^13.0.3",
+    "express": "^4.21.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
     "@anysearch/kernel": "workspace:*",
     "@anysearch/plugin": "workspace:*",
     "@anysearch/retriever": "workspace:*",
     "@anysearch/store": "workspace:*",
-    "express": "^4.21.0",
-    "zod": "^4.2.0",
-    "better-sqlite3": "^13.0.3",
-    "@earendil-works/pi-ai": "^0.84.2",
-    "@earendil-works/pi-agent-core": "^0.84.2",
-    "@modelcontextprotocol/node": "^2.0.0",
-    "@modelcontextprotocol/server": "^2.0.0"
-  },
-  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.0",
     "tsup": "^8.3.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0",
-    "@types/better-sqlite3": "^9.6.0"
+    "typescript": "^5.6.0"
   },
   "types": "./dist/index.d.cts",
-  "optionalDependencies": {
+  "peerDependencies": {
     "@anysearch/embedding": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@anysearch/embedding": {
+      "optional": true
+    }
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Xxx91n/anysearch-cli.git",
+    "directory": "apps/mcp"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -219,18 +219,9 @@ importers:
 
   apps/cli:
     dependencies:
-      '@anysearch/kernel':
+      '@anysearch/embedding':
         specifier: workspace:*
-        version: link:../../packages/kernel
-      '@anysearch/plugin':
-        specifier: workspace:*
-        version: link:../plugin
-      '@anysearch/retriever':
-        specifier: workspace:*
-        version: link:../../packages/retriever
-      '@anysearch/store':
-        specifier: workspace:*
-        version: link:../../packages/store
+        version: link:../../packages/embedding
       '@earendil-works/pi-agent-core':
         specifier: ^0.84.2
         version: 0.84.2(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
@@ -247,6 +238,18 @@ importers:
         specifier: ^4.18.2
         version: 4.22.2
     devDependencies:
+      '@anysearch/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@anysearch/plugin':
+        specifier: workspace:*
+        version: link:../plugin
+      '@anysearch/retriever':
+        specifier: workspace:*
+        version: link:../../packages/retriever
+      '@anysearch/store':
+        specifier: workspace:*
+        version: link:../../packages/store
       '@types/better-sqlite3':
         specifier: ^9.6.0
         version: 9.6.0
@@ -262,25 +265,12 @@ importers:
       typescript:
         specifier: ^5.6.0
         version: 5.6.2
-    optionalDependencies:
-      '@anysearch/embedding':
-        specifier: workspace:*
-        version: link:../../packages/embedding
 
   apps/mcp:
     dependencies:
-      '@anysearch/kernel':
+      '@anysearch/embedding':
         specifier: workspace:*
-        version: link:../../packages/kernel
-      '@anysearch/plugin':
-        specifier: workspace:*
-        version: link:../plugin
-      '@anysearch/retriever':
-        specifier: workspace:*
-        version: link:../../packages/retriever
-      '@anysearch/store':
-        specifier: workspace:*
-        version: link:../../packages/store
+        version: link:../../packages/embedding
       '@earendil-works/pi-agent-core':
         specifier: ^0.84.2
         version: 0.84.2(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
@@ -303,6 +293,18 @@ importers:
         specifier: '>=3.25.28'
         version: 4.4.3
     devDependencies:
+      '@anysearch/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@anysearch/plugin':
+        specifier: workspace:*
+        version: link:../plugin
+      '@anysearch/retriever':
+        specifier: workspace:*
+        version: link:../../packages/retriever
+      '@anysearch/store':
+        specifier: workspace:*
+        version: link:../../packages/store
       '@types/better-sqlite3':
         specifier: ^9.6.0
         version: 9.6.0
@@ -321,13 +323,16 @@ importers:
       typescript:
         specifier: ^5.6.0
         version: 5.6.2
-    optionalDependencies:
-      '@anysearch/embedding':
-        specifier: workspace:*
-        version: link:../../packages/embedding
 
   apps/plugin:
     dependencies:
+      '@anysearch/embedding':
+        specifier: workspace:*
+        version: link:../../packages/embedding
+      better-sqlite3:
+        specifier: ^13.0.3
+        version: 13.0.3
+    devDependencies:
       '@anysearch/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -337,10 +342,6 @@ importers:
       '@anysearch/store':
         specifier: workspace:*
         version: link:../../packages/store
-      better-sqlite3:
-        specifier: ^13.0.3
-        version: 13.0.3
-    devDependencies:
       '@types/better-sqlite3':
         specifier: ^9.6.0
         version: 9.6.0
@@ -359,16 +360,15 @@ importers:
       typescript:
         specifier: ^5.6.0
         version: 5.6.2
-    optionalDependencies:
-      '@anysearch/embedding':
-        specifier: workspace:*
-        version: link:../../packages/embedding
 
   packages/embedding:
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
         version: 22.20.1
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(tsx@4.23.12)(typescript@5.6.2)(yaml@2.9.0)
       tsx:
         specifier: ^4.19.0
         version: 4.23.12
@@ -429,6 +429,9 @@ importers:
 
   packages/store:
     dependencies:
+      '@anysearch/embedding':
+        specifier: workspace:*
+        version: link:../embedding
       '@anysearch/retriever':
         specifier: workspace:*
         version: link:../retriever
@@ -454,10 +457,6 @@ importers:
       typescript:
         specifier: ^5.6.0
         version: 5.6.2
-    optionalDependencies:
-      '@anysearch/embedding':
-        specifier: workspace:*
-        version: link:../embedding
 
 packages:
 

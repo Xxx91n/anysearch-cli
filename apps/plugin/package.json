@@ -50,14 +50,14 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
-    "@anysearch/kernel": "workspace:*",
-    "@anysearch/retriever": "workspace:*",
-    "@anysearch/store": "workspace:*",
     "better-sqlite3": "^13.0.3"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
+    "@anysearch/kernel": "workspace:*",
+    "@anysearch/retriever": "workspace:*",
+    "@anysearch/store": "workspace:*",
     "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^22.10.0",
     "esbuild": "^0.24.0",
     "tsup": "^8.3.0",
     "tsx": "^4.19.0",
@@ -67,7 +67,21 @@
     "dist"
   ],
   "main": "./dist/index.cjs",
-  "optionalDependencies": {
+  "peerDependencies": {
     "@anysearch/embedding": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@anysearch/embedding": {
+      "optional": true
+    }
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Xxx91n/anysearch-cli.git",
+    "directory": "apps/plugin"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

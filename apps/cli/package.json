@@ -17,17 +17,17 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
-    "@anysearch/kernel": "workspace:*",
-    "@anysearch/retriever": "workspace:*",
-    "@anysearch/store": "workspace:*",
+    "@earendil-works/pi-agent-core": "^0.84.2",
     "@earendil-works/pi-ai": "^0.84.2",
     "@sinclair/typebox": "^0.34.52",
     "better-sqlite3": "^13.0.3",
-    "@earendil-works/pi-agent-core": "^0.84.2",
-    "@anysearch/plugin": "workspace:*",
     "express": "^4.18.2"
   },
   "devDependencies": {
+    "@anysearch/kernel": "workspace:*",
+    "@anysearch/plugin": "workspace:*",
+    "@anysearch/retriever": "workspace:*",
+    "@anysearch/store": "workspace:*",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.10.0",
     "tsup": "^8.3.0",
@@ -38,7 +38,21 @@
     ".": "./dist/index.js"
   },
   "types": "./dist/index.d.ts",
-  "optionalDependencies": {
+  "peerDependencies": {
     "@anysearch/embedding": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@anysearch/embedding": {
+      "optional": true
+    }
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Xxx91n/anysearch-cli.git",
+    "directory": "apps/cli"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -1,22 +1,44 @@
 {
   "name": "@anysearch/embedding",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
+    "build": "tsup",
+    "prepack": "pnpm run build",
     "check": "tsc --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\" \"test/**/*.test.mjs\" --test-timeout=30000",
     "test:online": "node --env-file=test/online/online.env --import tsx --test \"test/online/**/*.online.ts\" --test-timeout=120000"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
+    "tsup": "^8.3.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },
   "optionalDependencies": {
     "@huggingface/transformers": "^3.7.0"
-  }
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Xxx91n/anysearch-cli.git",
+    "directory": "packages/embedding"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
+  "files": [
+    "dist"
+  ]
 }

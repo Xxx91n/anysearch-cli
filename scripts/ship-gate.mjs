@@ -949,6 +949,48 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     if (declaresDist && !fs.existsSync(path.join(pkgDir, "dist"))) {
       fail(`${file}: dist/ declared in manifest but missing in tarball`);
     }
+    // R63 T2 (D-005): bundled-CLI publish shape. The three apps + embedding are the publish
+    // set; kernel/store/retriever are build-time only (bundled) and must NOT appear in the
+    // packed manifest's install-time fields. @anysearch/embedding rides as an optional peer
+    // (peerDependenciesMeta.optional), never optionalDependencies (the 404/auto-install bomb).
+    {
+      const PUBLISH_SET = ["@anysearch/cli", "@anysearch/mcp", "@anysearch/plugin", "@anysearch/embedding"];
+      if (PUBLISH_SET.includes(pkg.name)) {
+        const depKeys = Object.keys(pkg.dependencies ?? {}).filter((d) => d.startsWith("@anysearch/"));
+        if (depKeys.length) fail(`${file}: publish manifest still declares bundled deps in dependencies: ${depKeys.join(", ")} (D-005: bundled internals are devDependencies)`);
+        if ((pkg.optionalDependencies ?? {})["@anysearch/embedding"]) fail(`${file}: @anysearch/embedding in optionalDependencies — must be peer+optional (D-005 bomb-prevention)`);
+        if (pkg.name !== "@anysearch/embedding") {
+          const peerOk = pkg.peerDependencies && "@anysearch/embedding" in pkg.peerDependencies &&
+            pkg.peerDependenciesMeta && pkg.peerDependenciesMeta["@anysearch/embedding"] && pkg.peerDependenciesMeta["@anysearch/embedding"].optional === true;
+          if (!peerOk) fail(`${file}: @anysearch/embedding missing peerDependencies+peerDependenciesMeta.optional (D-005 peer-optional contract)`);
+        }
+        if (pkg.license !== "Apache-2.0") fail(`${file}: license must be Apache-2.0 (D-007)`);
+        if (!pkg.repository || !String(pkg.repository.url ?? "").includes("Xxx91n/anysearch-cli")) fail(`${file}: repository field missing/wrong (D-005)`);
+        if (!pkg.publishConfig || pkg.publishConfig.access !== "public") fail(`${file}: publishConfig.access must be public (scoped @anysearch/*)`);
+        // noExternal regression guard: packed dist must not bare-reference bundled
+        // internals — covers require()/import() call forms, static and side-effect
+        // imports, and export-from re-exports. @anysearch/embedding is excluded —
+        // it is the declared peer-optional external (dynamic import survives
+        // bundling by design, ADR-0033).
+        const distDir = path.join(pkgDir, "dist");
+        if (fs.existsSync(distDir)) {
+          const bare = /(?:(?:require|import)\s*\(\s*|(?:import|export)\b[^'";]*?\bfrom\s*|import\s*)["']@anysearch\/(kernel|store|retriever|plugin)["'/]/;
+          const stack = [distDir];
+          while (stack.length) {
+            const cur = stack.pop();
+            for (const e of fs.readdirSync(cur, { withFileTypes: true })) {
+              const fp = path.join(cur, e.name);
+              if (e.isDirectory()) { stack.push(fp); continue; }
+              if (!/\.(js|cjs|mjs)$/.test(e.name)) continue;
+              const src = fs.readFileSync(fp, "utf8");
+              const m = src.match(bare);
+              if (m) fail(`${file}: dist contains bare require/import/export of bundled @anysearch/${m[1]} — noExternal regression (D-005)`);
+            }
+          }
+        }
+        report("pass", `${pkg.name} publish shape ok (deps clean / peer-optional embedding / license+repo+access / no bare internal require/import/export)`);
+      }
+    }
     if (pkg.bin && Object.keys(pkg.bin).length > 0) {
       const first = String(Object.values(pkg.bin)[0]);
       const bin = path.join(pkgDir, first);
