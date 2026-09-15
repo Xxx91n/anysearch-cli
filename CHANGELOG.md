@@ -4,6 +4,21 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-15 — ADR-0064 r63: npm 0.0.1 发布形态与验证面（T2/T3/T5，D-005/D-003）
+
+### Added
+
+- **Apache-2.0 license**：根 LICENSE + 4 发布包目录各一份副本；4 包 manifest 补 license/repository/publishConfig.access:public。
+- 发布管线断言：ship-gate step5 校验打包 manifest（dependencies 无 @anysearch/* 死声明、peer-optional 在场、license/repo/access）+ dist 无裸 require 内部包（embedding 按设计豁免）；隔离集棘轮三断言（scripts/quarantine-ratchet.mjs + eval-quarantine.baseline.json 基线）。
+- peer-optional 双装验证：install-smoke + ship-gate 4c 断言 npm i 双装后 @anysearch/embedding 落共享 node_modules 根、从已装 cli 内解析可达、doctor vector arm 翻 present。
+- docs/publishing.md 发布步骤文档（含 min-release-age=2 自验覆盖方式与 72h unpublish 窗）；docs/release-notes/0.0.1.md；ADR-0064。
+
+### Changed
+
+- bundled-CLI 发布形态：apps/{cli,mcp,plugin} 的 @anysearch/{kernel,store,retriever,plugin} 从 dependencies 移 devDependencies（已 bundle 入 dist，如实声明 build-time）；@anysearch/embedding 全部 optionalDependencies→peerDependencies+peerDependenciesMeta.optional:true（含真正 import 方 store；npm 自动安装重型 optional runtime 的炸弹回归被拆除）；embedding 移除 private 标记（可发布）+ tsup ESM 构建 + publishConfig.exports 改写（dev 仍解析 src/index.ts，tarball 指 dist/index.js）。
+- install-smoke 改消费者真实形态：只装 3 个 app tarball，断言 bundled 内部包与 optional peer 均不在安装闭包内。
+- quarantine-ledger 增 longterm 裁决出口（永久已知问题转换，QUARANTINE_MAX_LONGTERM=1 防续期后门）。
+
 ## 2026-09-15 — ADR-0064 r63: T1 con_add_then_noop 修复（D-002 Blocker）
 
 ### Fixed
