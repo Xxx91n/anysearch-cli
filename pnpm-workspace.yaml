@@ -5,6 +5,11 @@ packages:
 # 不自动下载/改写 lockfile。本地放行: pnpm_config_pm_on_fail=download (CLI>env>yaml)。
 pmOnFail: error
 
+# R63 audit fix: 发布龄门禁的可用形态。.npmrc 的 min-release-age=2 对 npm
+# (unknown config) 与 pnpm v11 (.npmrc 仅 auth/registry) 均不生效；可用的
+# pnpm key 在此，单位分钟（2880 = 2 天）。
+minimumReleaseAge: 2880
+
 allowBuilds:
   '@google/genai': true
   better-sqlite3: false

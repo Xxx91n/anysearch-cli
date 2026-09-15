@@ -1,6 +1,9 @@
-// ADR-0061 B2/T2: real install-to-use lane — pack every workspace package to tgz,
-// npm-install them into a clean temp prefix, then drive the INSTALLED `ans` bin
-// through --version / doctor / domain docs / doctor / search.
+// ADR-0061 B2/T2 + ADR-0064 (R63 T5): real install-to-use lane — pack the PUBLISHED
+// packages (3 apps + the peer-optional embedding), npm-install the APP tarballs only
+// into a clean temp prefix (consumer-real: bundled internals never ship), then drive
+// the INSTALLED `ans` bin through --version / doctor / domain docs / doctor / search.
+// A second leg co-installs the embedding tarball and asserts peer resolution + the
+// doctor vector-arm line flipping from absent-SKIP to present (D-005).
 //
 // Online leg: when EXA_API_KEY or TAVILY_API_KEY is set, the script hard-asserts
 // that a real search returns >=1 result AND that at least one result URL lands on
@@ -30,14 +33,13 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
+// R63 T5 (D-005): the publish set. kernel/store/retriever are bundled into the apps'
+// dist (build-time devDependencies) and are never published or installed.
 const PACK_DIRS = [
-  "packages/kernel",
-  "packages/embedding",
-  "packages/store",
-  "packages/retriever",
   "apps/cli",
   "apps/mcp",
   "apps/plugin",
+  "packages/embedding",
 ];
 const ALLOWLIST = ["modelcontextprotocol.io", "typescriptlang.org", "pnpm.io"];
 
@@ -74,21 +76,21 @@ try {
   check("pack produced " + PACK_DIRS.length + " tarballs", tgz.length === PACK_DIRS.length, tgz.join(","));
   check("no stale 0.0.0 tarball", tgz.every((f) => !f.includes("0.0.0")), tgz.join(","));
 
-  // 2. Clean install into the temp prefix.
-  // R62 D-002: consumer-faithful lean install — the @anysearch/embedding tarball
-  // is NOT passed explicitly (store declares it optionalDependencies, so a real
-  // npm consumer gets it only when the optional subtree resolves; unresolvable
-  // or script-blocked subtrees are skipped). --omit=optional pins the lean path
-  // deterministically on every npm version. The arm-absent guard is exercised
-  // end-to-end below: doctor reports the arm SKIP, closure asserts no onnxruntime.
-  const installTgz = tgz.filter((f) => !f.startsWith("anysearch-embedding-"));
-  check("embedding tarball excluded from lean install", installTgz.length === tgz.length - 1, tgz.join(","));
-  const inst = sh(`npm install --no-save --omit=optional ${installTgz.map((f) => JSON.stringify(join(outDir, f))).join(" ")}`, { cwd: prefix });
+  // 2. Clean install into the temp prefix — R63 T5 (D-005): consumer-real shape.
+  // Only the three APP tarballs are installed; bundled internals are not on npm at
+  // all, and @anysearch/embedding is an optional PEER (peerDependenciesMeta.optional)
+  // so npm does not auto-install it — no --omit=optional knob needed. (No --no-save:
+  // deps must land in prefix/package.json or the peer leg's second npm install would
+  // prune the apps as extraneous.)
+  const appTgz = tgz.filter((f) => /anysearch-(cli|mcp|plugin)-/.test(f));
+  check("install set = 3 app tarballs only", appTgz.length === 3, tgz.join(","));
+  const inst = sh(`npm install ${appTgz.map((f) => JSON.stringify(join(outDir, f))).join(" ")}`, { cwd: prefix });
   check("npm install clean prefix", inst.code === 0, inst.out);
   const nm = join(prefix, "node_modules");
   check("install closure excludes onnxruntime-node", !existsSync(join(nm, "onnxruntime-node")), readdirSync(nm).join(","));
   check("install closure excludes @huggingface/transformers", !existsSync(join(nm, "@huggingface")), readdirSync(nm).join(","));
-  check("install closure excludes @anysearch/embedding", !existsSync(join(nm, "@anysearch", "embedding")), readdirSync(join(nm, "@anysearch")).join(","));
+  check("peer-optional: @anysearch/embedding NOT auto-installed", !existsSync(join(nm, "@anysearch", "embedding")), readdirSync(join(nm, "@anysearch")).join(","));
+  check("bundled internals absent from install closure", ["kernel", "store", "retriever"].every((b) => !existsSync(join(nm, "@anysearch", b))), readdirSync(join(nm, "@anysearch")).join(","));
   const bin = join(nm, ".bin", process.platform === "win32" ? "ans.cmd" : "ans");
   check("ans bin shim installed", existsSync(bin), bin);
   const ans = (args) => sh(`\"${bin}\" ${args}`, { cwd: prefix });
@@ -111,6 +113,24 @@ try {
 
   const d2 = ans("doctor");
   check("doctor shows active domain docs", d2.out.includes("active: docs"), d2.out.slice(-400));
+
+  // 3b. R63 T5 (D-005): peer-optional dual-install — npm i cli + embedding into one
+  // prefix lands both under the same node_modules root, and the app's bundled
+  // import("@anysearch/embedding") resolves (ADR-0020 pack+install verification).
+  const embTgz = tgz.find((f) => f.startsWith("anysearch-embedding-"));
+  check("embedding tarball packed for peer leg", !!embTgz, tgz.join(","));
+    // --omit=optional skips the heavy transformers/onnxruntime subtree — the peer leg
+  // verifies package landing + bare-specifier resolution + arm-present telemetry;
+  // the optional subtree itself is npm-side behavior, not ours.
+  const inst2 = sh(`npm install --omit=optional ${JSON.stringify(join(outDir, embTgz))}`, { cwd: prefix });
+  check("npm install embedding tarball (explicit peer)", inst2.code === 0, inst2.out);
+  check("embedding lands at shared node_modules root", existsSync(join(nm, "@anysearch", "embedding", "dist", "index.js")), "missing dist/index.js");
+  // resolve from the real call-site dir (the bundled store code inside the installed cli)
+  const cliDir = join(nm, "@anysearch", "cli");
+  const res = sh(`node --input-type=module -e "import('@anysearch/embedding').then(m=>console.log('PEER_OK',typeof m.embedText)).catch(e=>{console.error('PEER_FAIL',e.message);process.exit(1)})"`, { cwd: cliDir });
+  check("import('@anysearch/embedding') resolves from installed cli", res.code === 0 && res.out.includes("PEER_OK"), res.out.slice(-300));
+  const d3 = ans("doctor");
+  check("doctor shows vector arm present after peer install", d3.code === 0 && !/embedding absent/.test(d3.out), d3.out.slice(-400));
 
   // 4. Search leg — online hard assertion or offline abstain contract.
   const online = Boolean(process.env.EXA_API_KEY || process.env.TAVILY_API_KEY);

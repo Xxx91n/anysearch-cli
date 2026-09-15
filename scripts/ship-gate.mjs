@@ -1023,10 +1023,11 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     }
   }
 
-  // 4b. pnpm verify-ts-release pattern (PR #13061): do a REAL clean-prefix
-  // npm install of all seven tgz, so pnpm-baked workspace deps resolve
-  // (pnpm pack rewrites "workspace:*" to the packed version; npm then needs every
-  // @anysearch/* present in the install set to resolve relatively).
+  // 4b. pnpm verify-ts-release pattern (PR #13061): REAL clean-prefix npm install,
+  //     R63 T5 (D-005) consumer-real shape — only the three APP tarballs go in.
+  //     Bundled internals are not on npm at all; @anysearch/embedding is an
+  //     optional peer (peerDependenciesMeta.optional) so npm must NOT auto-install
+  //     it — its absence here is the assertion, not a defect.
   const installPrefix = path.join(tmpDir, "install-prefix");
   fs.mkdirSync(installPrefix, { recursive: true });
   fs.writeFileSync(
@@ -1038,6 +1039,9 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     .readdirSync(tgzDir)
     .filter((f) => f.endsWith(".tgz"))
     .map((f) => path.join(tgzDir, f));
+  const tgzApps = tgzAll.filter((f) => /anysearch-(cli|mcp|plugin)-/.test(f));
+  const tgzEmb = tgzAll.find((f) => /anysearch-embedding-/.test(f));
+  if (tgzApps.length !== 3) fail(`install-prefix: expected 3 app tarballs, got ${tgzApps.length}`);
   const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
   await run(
     npmCmd,
@@ -1049,16 +1053,21 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
       "--no-audit",
       "--no-fund",
       "--no-package-lock",
-      ...tgzAll,
+      ...tgzApps,
     ],
     { stdio: "pipe" }
   );
-  // After real install, kernel/mcp/cli/plugin must all be resolvable AND the
-  // ans/ans-mcp bins must land on disk (bin-links created by npm).
+  // Consumer-real install closure: apps present, bundled internals + the
+  // optional peer ABSENT (proof the bundling and peer-optional shape hold).
   const nmDir = path.join(installPrefix, "node_modules");
-  for (const sub of ["@anysearch/kernel", "@anysearch/mcp", "@anysearch/cli", "@anysearch/plugin", "@anysearch/store", "@anysearch/retriever", "@anysearch/embedding"]) {
+  for (const sub of ["@anysearch/mcp", "@anysearch/cli", "@anysearch/plugin"]) {
     if (!fs.existsSync(path.join(nmDir, sub))) {
       fail(`install-prefix: ${sub} missing after npm install`);
+    }
+  }
+  for (const sub of ["@anysearch/kernel", "@anysearch/store", "@anysearch/retriever", "@anysearch/embedding"]) {
+    if (fs.existsSync(path.join(nmDir, sub))) {
+      fail(`install-prefix: ${sub} present — bundled internals must not be install-closure members (D-005)`);
     }
   }
   // bin links land in <prefix>/node_modules/.bin/
@@ -1069,7 +1078,38 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
       fail(`install-prefix: bin ${b} missing after npm install`);
     }
   }
-  report("pass", "npm install --prefix smoke ok (7 workspace pkgs resolvable, bins linked)");
+  report("pass", "npm install --prefix smoke ok (3 apps resolvable, bundled internals + optional peer correctly absent, bins linked)");
+
+  // 4c. R63 T5 (D-005): peer-optional dual-install — npm install of the embedding
+  //     tarball alongside the apps lands it at the shared node_modules root and
+  //     the bundled import("@anysearch/embedding") in the installed cli resolves.
+  if (!tgzEmb) fail("install-prefix: embedding tarball missing for peer-optional leg");
+  await run(
+    npmCmd,
+    [
+      "install",
+      "--prefix",
+      installPrefix,
+      "--ignore-scripts=false",
+      "--no-audit",
+      "--no-fund",
+      "--no-package-lock",
+      tgzEmb,
+    ],
+    { stdio: "pipe" }
+  );
+  if (!fs.existsSync(path.join(nmDir, "@anysearch", "embedding", "dist", "index.js"))) {
+    fail("install-prefix: @anysearch/embedding not installed at shared root after explicit peer install");
+  }
+  const peerRes = spawnSync(
+    process.execPath,
+    ["--input-type=module", "-e", "import('@anysearch/embedding').then(m=>console.log('PEER_OK',typeof m.embedText)).catch(e=>{console.error('PEER_FAIL',e.message);process.exit(1)})"],
+    { cwd: path.join(nmDir, "@anysearch", "cli"), encoding: "utf8" }
+  );
+  if (peerRes.status !== 0 || !(peerRes.stdout ?? "").includes("PEER_OK")) {
+    fail("install-prefix: import('@anysearch/embedding') not resolvable from installed cli — " + String((peerRes.stderr ?? peerRes.stdout ?? "")).slice(0, 300));
+  }
+  report("pass", "peer-optional dual-install ok (@anysearch/embedding at shared root, import resolves from installed cli)");
 }
 
 
