@@ -1,9 +1,13 @@
-// ADR-0063 (R62 T3) / R62 D-002: @anysearch/embedding is an optionalDependency —
-// the vector arm is a capability, not a requirement. When the package is absent
-// from the install closure (optional subtree skipped: --omit=optional, or npm
-// refusing a blocked install script), the arm is absent: embedText ≡ null,
-// telemetry all-zero + absent:true — a legal FTS-only state, never a throw.
+// ADR-0063 (R62 T3) / R62 D-002 / ADR-0064 (R63 T2): @anysearch/embedding is an
+// OPTIONAL PEER (peerDependencies + peerDependenciesMeta.optional; R62's
+// optionalDependencies form migrated in R63 T2 — npm auto-install of a heavy
+// optional runtime is the bomb regression). The vector arm is a capability, not
+// a requirement. When the package is absent from the install closure (peer not
+// installed), the arm is absent: embedText ≡ null, telemetry all-zero +
+// absent:true — a legal FTS-only state, never a throw.
 // ADR-0033 D4/D5 fail-open semantics are preserved end-to-end.
+// R63 T1: consolidate dedup degrades to jaccard-only (decideOp null-cos branch,
+// THETA_JAC=0.80) when this arm is absent — see packages/store/src/consolidate.ts.
 //
 // cosineSimilarity is pure math — inlined here (dot product over L2-normalized
 // vectors) so scoring never statically depends on the optional package.

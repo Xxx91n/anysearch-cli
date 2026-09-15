@@ -896,27 +896,27 @@ walking skeleton 收尾后的首个交付轮遵循 B1→B2→B4→B3 串行票�
 ## Grill Round 61 — Terms (ADR-0062)
 
 ## Dual-Gate Domain Filtering（双闸域过滤）
-域约束分两闸：pre-filter（检索前置，能力协商式——provider 支持 include_domains/includeDomains 就下发，不支持者诚实降级）+ post-filter（engine 层权威出口闸，按 canonicalizeHosts 同一匹配语义裁决最终 host，空即 abstain）。双闸各发 audit 事件（retrieval.domain_filter.pre/post）。policy 请求时从 ADR-0055 单源解析，retriever 不缓存快照（标签漂移 9.7% 教训）。红线：query-rewrite 禁注入 site: 运算符。来源：TrustNLP 2026 AFR、Tavily/Exa 能力矩阵、egress-filtering 纵深防御。
+域约束分两闸：pre-filter（检索前置，能力协商式——provider 支持 include_domains/includeDomains 就下发，不支持者诚实降级）+ post-filter（engine 层权威出口闸，按 canonicalizeHosts 同一匹配语义裁决最终 host，空即 abstain）。双闸各发 audit 事件（retrieval.domain_filter.pre/post）。policy 请求时从 ADR-0055 单源解析，retriever 不缓存快照（标签漂移 9.7% 教训）。红线：query-rewrite 禁注入 site: 运算符。_Avoid_: post-filter 单闸省 pre-filter（无能力协商→全量召回再砍，精度口径劣化）；retriever 侧缓存 policy 快照（标签漂移先例）；断言靠关键词 regex 而非结构化 verdict。来源：TrustNLP 2026 AFR、Tavily/Exa 能力矩阵、egress-filtering 纵深防御。
 
 ## First-Class Abstain（第一类拒答）
-abstain 是策略成功执行的第一类结果，非 error 非 no-match：CLI 输出结构化一行消息且 exit 0（默认不非零，可编程区分走 --fail-on-abstain）；MCP/plugin 走 isError:false + structuredContent.abstain 契约，让宿主 agent 程序化消费（转域/告知边界）。断言锚定结构化 verdict 字段，关键词 regex 仅 observational；must-abstain 与 must-hit golden 成对防过拒。来源：MCP 规范 isError 双层、ripgrep #2500、inspect_ai content_filter、promptfoo is-refusal。
+abstain 是策略成功执行的第一类结果，非 error 非 no-match：CLI 输出结构化一行消息且 exit 0（默认不非零，可编程区分走 --fail-on-abstain）；MCP/plugin 走 isError:false + structuredContent.abstain 契约，让宿主 agent 程序化消费（转域/告知边界）。断言锚定结构化 verdict 字段，关键词 regex 仅 observational；must-abstain 与 must-hit golden 成对防过拒。_Avoid_: abstain 默认非零 exit（自动化无法区分策略成功与真失败）；MCP 侧用 isError:true 表达拒答；断言只锚关键词 regex。来源：MCP 规范 isError 双层、ripgrep #2500、inspect_ai content_filter、promptfoo is-refusal。
 
 ## Abstain Observability Dimension（拒答观测维度）
-abstain 计数是独立可观测维度（outcome:abstain），绝不混入 error 计数；abstain 率突增 = policy 误配置信号（over-refusal 的运行时镜像）。来源：You.com missing-results 与 request-exceptions 分桶要求、inspect_ai stop_reason 独立槽位。
+abstain 计数是独立可观测维度（outcome:abstain），绝不混入 error 计数；abstain 率突增 = policy 误配置信号（over-refusal 的运行时镜像）。_Avoid_: abstain 混入 error 计数（误配置信号被稀释）；拒答无独立维度导致过拒无运行时镜像。来源：You.com missing-results 与 request-exceptions 分桶要求、inspect_ai stop_reason 独立槽位。
 
 ## Grill Round 62 — Terms (ADR-0063)
 
 ## Declared Exclusion（声明式排除）
-eval 运行中被编译期常量（OFFLINE_EXCLUDED_GROUPS）显式排除的用例组——verdict 上是 warn/hold/skip 而非 failure，与 Data-Absent Skip（结构性缺数）是两个类目：排除是声明过的边界，缺席是数据事故。治理走静态断言（存在性 + 白名单精确匹配 + 离线覆盖下界），不走运行时配额——排除面是 diff 可见的常量，配额无感知对象。红线：排除面扩容必须撞红强制 review 自知，禁静默扩大。来源：Kayenta Nodata/NodataFailMetric 二分、Chromium TestExpectations 声明式治理、pytest skip 语义、coverage.py 集中排除声明。
+eval 运行中被编译期常量（OFFLINE_EXCLUDED_GROUPS）显式排除的用例组——verdict 上是 warn/hold/skip 而非 failure，与 Data-Absent Skip（结构性缺数）是两个类目：排除是声明过的边界，缺席是数据事故。治理走静态断言（存在性 + 白名单精确匹配 + 离线覆盖下界），不走运行时配额——排除面是 diff 可见的常量，配额无感知对象。红线：排除面扩容必须撞红强制 review 自知，禁静默扩大。_Avoid_: 运行时配额当排除面治理（无感知对象、不可 diff 审）；排除与 Data-Absent 混记；扩容不撞红。来源：Kayenta Nodata/NodataFailMetric 二分、Chromium TestExpectations 声明式治理、pytest skip 语义、coverage.py 集中排除声明。
 
 ## Golden Entry Scope（golden 条目 scope 标记）
-docs-golden 条目的显式执行层归属 stub|live|both——带 mustHit* 的 answer 条目强制显式声明，无默认兜底（默认值即漂移入口）。离线 stub 层证管道契约（provider 给 X 则 verdict 必须 Y；夹具独立于 expected、取自 badcase observed 现场），在线层证现场真实性（真 provider + URL 硬断言）。来源：pytest-test-categories 显式分类哲学、Langfuse/Inngest offline-online 双层模型、Speedscale《Your Mock Is Lying》自证预言批判。
+docs-golden 条目的显式执行层归属 stub|live|both——带 mustHit* 的 answer 条目强制显式声明，无默认兜底（默认值即漂移入口）。离线 stub 层证管道契约（provider 给 X 则 verdict 必须 Y；夹具独立于 expected、取自 badcase observed 现场），在线层证现场真实性（真 provider + URL 硬断言）。_Avoid_: scope 缺省兜底（默认值即漂移入口）；stub 夹具取自 expected 而非 badcase observed 现场（循环论证自证）；live 层无 mustHit* 硬锚。来源：pytest-test-categories 显式分类哲学、Langfuse/Inngest offline-online 双层模型、Speedscale《Your Mock Is Lying》自证预言批判。
 
 ## Spillover Probe（连带探针臂）
-非阻塞 CI 实验腿，验证某修复对同族异 OS 症状的连带效果——三件套：job 名显式实验标注（experiment, non-blocking）+ 崩溃签名进 step summary（区分注册期 segfault vs 退出期 mutex abort）+ TTL（复评点转正或摘除，禁无限期挂）。区别于被禁的工作流级静默跳过：仍执行、仍产出观测、仍上传 artifact。来源：onnxruntime #24579/PR #26445 修复链（1.24.3 实证）、better-sqlite3 #1476/#1514 同族签名、costops 矩阵剪枝+预注册恢复条件、minware quarantine 治理。
+非阻塞 CI 实验腿，验证某修复对同族异 OS 症状的连带效果——三件套：job 名显式实验标注（experiment, non-blocking）+ 崩溃签名进 step summary（区分注册期 segfault vs 退出期 mutex abort）+ TTL（复评点转正或摘除，禁无限期挂）。区别于被禁的工作流级静默跳过：仍执行、仍产出观测、仍上传 artifact。_Avoid_: 工作流级静默跳过当实验（零观测产出）；探针无 TTL 无限期挂；崩溃签名不进 step summary（崩溃相位不可分）。来源：onnxruntime #24579/PR #26445 修复链（1.24.3 实证）、better-sqlite3 #1476/#1514 同族签名、costops 矩阵剪枝+预注册恢复条件、minware quarantine 治理。
 
 ## Install Closure（安装闭包）
-消费者 npm i -g 实际拉入的依赖集合——其内容（如"无 onnxruntime-node"）是可断言的发布面而非实现细节。可选能力走 peer-optional（peerDependenciesMeta.optional：不自动安装、缺席无 warning）+ 守卫式动态 import：缺席即降级（向量臂→FTS-only），不拖垮安装。红线：把重型可选运行时放进硬依赖 = 让安装闭包为可能永不启用的能力买单。来源：npm RFC-0000 optionalDependencies 心智模型、esbuild 官方形态、npm cli#7355 optional 非银弹需消费端容错。
+消费者 npm i -g 实际拉入的依赖集合——其内容（如"无 onnxruntime-node"）是可断言的发布面而非实现细节。可选能力走 peer-optional（peerDependenciesMeta.optional：不自动安装、缺席无 warning）+ 守卫式动态 import：缺席即降级（向量臂→FTS-only），不拖垮安装。红线：把重型可选运行时放进硬依赖 = 让安装闭包为可能永不启用的能力买单。_Avoid_: 安装闭包当不可断言的实现细节；可选能力回 optionalDependencies（R63 T2 已迁 peer-optional，见 Peer-Optional Capability）；守卫式 import 缺席时 throw 而非降级。来源：npm RFC-0000 optionalDependencies 心智模型、esbuild 官方形态、npm cli#7355 optional 非银弹需消费端容错。
 
 ## Grill Round 63 — Terms (ADR-0064)
 

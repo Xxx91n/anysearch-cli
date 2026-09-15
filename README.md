@@ -110,6 +110,14 @@ Tools never print to stdout; the server keeps the protocol channel pure.
   remains unresolved, so `ship-gate` gates on ubuntu+windows while a
   non-blocking `macos-spillover-probe` job replays a minimal repro each push
   (promotion rule: ≥5 consecutive green probes before restoring the lane).
+- **Exit-time `libc++abi` can overwrite the abstain exit code** — observed on
+  Windows: the teardown crash may replace the `3` that `--fail-on-abstain`
+  produced. Automation must read the structured abstain marker (`--json`
+  `abstain` field / MCP `structuredContent.abstain`), not the exit code alone.
+- **macOS probe data point #1 is a registration-segment red** — the first
+  non-blocking probe run (34927388026) failed at the `better-sqlite3`
+  registration check (load-time family, distinct from the exit-time family
+  under probe). The ≥5-consecutive-green promotion clock counts from #1.
 - **Golden executor live assertions are quarantine-prone** — `eval-looks.json`
   runs a two-layer executor (offline stub replay + live provider checks under
   `test:online`); 10 of 14 live entries are quarantined for provider-output

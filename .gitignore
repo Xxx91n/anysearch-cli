@@ -38,7 +38,9 @@ apps/cli/domains/
 # runtime policy cache (ADR-0055)
 .anysearch-cli/
 
-# local-markdown issue tracker / round artifacts (README: not committed)
+# local-markdown issue tracker / round artifacts — D5c: .scratch is ignored by default,
+# but per-round governance products (ledger/handoff/reports) are un-ignored via !rules below
+# and DO get committed with their ticket.
 .scratch/*
 # ADR-0061: round-60 账本/任务书/报告属治理产物随票入版本（D5c: tracked 必须 not-ignored；
 # 须 .scratch/* 而非 .scratch/——父目录整体排除后子路径无法再纳回）。
