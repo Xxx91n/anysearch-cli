@@ -1,0 +1,30 @@
+EVIDENCE-RUN docs-g0001 (quarantined — executing for evidence)
+EVIDENCE docs-g0001 pass 2026-09-15T18:28:36.858Z local:2026-09-15T18:28:33.967Z p=5 f=0
+EVIDENCE-RUN docs-g0002 (quarantined — executing for evidence)
+EVIDENCE docs-g0002 pass 2026-09-15T18:28:39.511Z local:2026-09-15T18:28:33.967Z p=5 f=0
+EVIDENCE-RUN docs-g0003 (quarantined — executing for evidence)
+FAIL: docs-g0003 mustHitUrl https://pnpm.io/settings present in results
+EVIDENCE docs-g0003 fail 2026-09-15T18:28:42.349Z local:2026-09-15T18:28:33.967Z p=4 f=1
+EVIDENCE-RUN docs-g0004 (quarantined — executing for evidence)
+EVIDENCE docs-g0004 pass 2026-09-15T18:28:45.209Z local:2026-09-15T18:28:33.967Z p=5 f=0
+EVIDENCE-RUN docs-g0005 (quarantined — executing for evidence)
+FAIL: docs-g0005 mustHitUrl https://modelcontextprotocol.io/specification/2025-06-18/basic/transports present in results
+EVIDENCE docs-g0005 fail 2026-09-15T18:28:49.121Z local:2026-09-15T18:28:33.967Z p=4 f=1
+EVIDENCE-RUN docs-g0006 (quarantined — executing for evidence)
+FAIL: docs-g0006 mustHitUrl https://www.typescriptlang.org/tsconfig present in results
+EVIDENCE docs-g0006 fail 2026-09-15T18:28:52.070Z local:2026-09-15T18:28:33.967Z p=4 f=1
+EVIDENCE-RUN docs-g0008 (quarantined — executing for evidence)
+FAIL: docs-g0008 mustHitHost www.typescriptlang.org present in results
+EVIDENCE docs-g0008 fail 2026-09-15T18:29:02.691Z local:2026-09-15T18:28:33.967Z p=4 f=1
+EVIDENCE-RUN docs-g0009 (quarantined — executing for evidence)
+EVIDENCE docs-g0009 pass 2026-09-15T18:29:05.881Z local:2026-09-15T18:28:33.967Z p=5 f=0
+EVIDENCE-RUN docs-g0010 (quarantined — executing for evidence)
+FAIL: docs-g0010 mustHitUrl https://modelcontextprotocol.io/specification/2025-06-18/basic/transports present in results
+EVIDENCE docs-g0010 fail 2026-09-15T18:29:08.643Z local:2026-09-15T18:28:33.967Z p=4 f=1
+EVIDENCE-RUN docs-g0011 (quarantined — executing for evidence)
+FAIL: docs-g0011 mustHitUrl https://pnpm.io/settings present in results
+EVIDENCE docs-g0011 fail 2026-09-15T18:29:11.544Z local:2026-09-15T18:28:33.967Z p=4 f=1
+EVIDENCE docs-g0012 pass 2026-09-15T18:29:14.191Z local:2026-09-15T18:28:33.967Z p=4 f=0
+EVIDENCE docs-g0014 pass 2026-09-15T18:29:17.456Z local:2026-09-15T18:28:33.967Z p=3 f=0
+--- eval-looks live executor: 52 passed, 6 failed ---
+EVIDENCE-ONLY-FAILURES: every red assertion belongs to a quarantined entry — exit overridden to 0 (R64 D-004)

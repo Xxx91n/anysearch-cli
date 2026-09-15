@@ -1,0 +1,133 @@
+docs-g0001 n=10 abstain=null
+   ts.sdk.modelcontextprotocol.io/v2/api/@modelcontextprotocol/node/streamableHttp.html
+   modelcontextprotocol.io/specification/2025-06-18/basic/transports
+   modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http
+   blog.modelcontextprotocol.io/posts/2025-12-19-mcp-transport-future
+   csharp.sdk.modelcontextprotocol.io/v2/concepts/stateless/stateless.html
+   py.sdk.modelcontextprotocol.io/api/mcp/server/streamable_http_manager
+   py.sdk.modelcontextprotocol.io/v2/api/mcp/server/streamable_http_manager
+   ts.sdk.modelcontextprotocol.io/v2/serving/sessions-state-scaling.md
+   py.sdk.modelcontextprotocol.io/v2/api/mcp/server/streamable_http_manager/
+   csharp.sdk.modelcontextprotocol.io/v1/concepts/transports/transports.html
+docs-g0002 n=10 abstain=null
+   pnpm.io/package_json
+   pnpm.io/it/settings/cli
+   pnpm.io/zh/package_json
+   pnpm.io/10.x/package_json
+   pnpm.io/zh/11.x/package_json
+   pnpm.io/settings
+   pnpm.io/it/11.x/settings/cli
+   pnpm.io/zh/settings
+   pnpm.io/zh/10.x/package_json
+   pnpm.io/zh/11.x/settings/cli
+docs-g0003 n=10 abstain=null
+   pnpm.io/zh/cli/run
+   pnpm.io/zh/settings/build
+   pnpm.io/zh/11.x/cli/run
+   pnpm.io/zh/cli/approve-builds
+   pnpm.io/zh/next/cli/run
+   pnpm.io/zh/pnpmfile
+   pnpm.io/zh/10.x/cli/run
+   pnpm.io/zh/supply-chain-security
+   pnpm.io/zh/9.x/cli/run
+   pnpm.io/zh/10.x/pnpmfile
+docs-g0004 n=10 abstain=null
+   typescriptlang.org/tsconfig/resolvePackageJsonExports.html
+   typescriptlang.org/tsconfig/customConditions.html
+   typescriptlang.org/tsconfig/allowArbitraryExtensions.html
+   typescriptlang.org/tsconfig/moduleResolution.html
+   typescriptlang.org/tsconfig/moduleResolution
+   typescriptlang.org/ko/tsconfig
+   typescriptlang.org/tsconfig
+   typescriptlang.org/docs/handbook/modules/guides/choosing-compiler-options.html
+   typescriptlang.org/tsconfig/module.html
+   typescriptlang.org/tsconfig/module
+docs-g0005 n=10 abstain=null
+   modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http
+   modelcontextprotocol.io/specification/draft/basic/transports/streamable-http
+   py.sdk.modelcontextprotocol.io/zh/run
+   py.sdk.modelcontextprotocol.io/zh/client/transports
+   py.sdk.modelcontextprotocol.io/zh/run/
+   java.sdk.modelcontextprotocol.io/latest
+   ts.sdk.modelcontextprotocol.io/
+   modelcontextprotocol.io/specification/2025-11-25/basic/transports
+   ts.sdk.modelcontextprotocol.io/index.html
+   csharp.sdk.modelcontextprotocol.io/v2/concepts/transports/transports.html
+docs-g0006 n=10 abstain=null
+   typescriptlang.org/docs/handbook/release-notes/typescript-3-4.html
+   typescriptlang.org/tsconfig/incremental.html
+   typescriptlang.org/docs/handbook/release-notes/typescript-3-4
+   typescriptlang.org/tsconfig/tsBuildInfoFile.html
+   typescriptlang.org/tsconfig/outDir.html
+   typescriptlang.org/docs/handbook/release-notes/typescript-5-6.html
+   typescriptlang.org/ko/docs/handbook/compiler-options.html
+   typescriptlang.org/tsconfig/rootDir.html
+   typescriptlang.org/docs/handbook/compiler-options.html
+   typescriptlang.org/tsconfig/composite.html
+docs-g0008 n=10 abstain=null
+   pnpm.io/zh/workspaces
+   pnpm.io/zh/10.x/workspaces
+   pnpm.io/zh/typescript
+   pnpm.io/zh/11.x/package-sources
+   pnpm.io/zh/settings/node-modules
+   pnpm.io/zh/next/workspaces
+   pnpm.io/zh/10.x/typescript
+   pnpm.io/zh/cli/recursive
+   pnpm.io/zh/settings
+   pnpm.io/zh/next/cli/recursive
+docs-g0009 n=10 abstain=null
+   typescriptlang.org/tsconfig/baseUrl.html
+   typescriptlang.org/tsconfig/paths.html
+   typescriptlang.org/docs/handbook/release-notes/typescript-5-4.html
+   typescriptlang.org/tsconfig/
+   typescriptlang.org/tsconfig/moduleResolution
+   typescriptlang.org/docs/handbook/modules/guides/choosing-compiler-options.html
+   typescriptlang.org/tsconfig/module.html
+   typescriptlang.org/tsconfig/module
+   typescriptlang.org/play/4-0/new-js-features/jsdoc-deprecated.ts.html
+   typescriptlang.org/docs/handbook/2/modules.html
+docs-g0010 n=10 abstain=null
+   modelcontextprotocol.io/specification/draft/deprecated
+   ts.sdk.modelcontextprotocol.io/v2/api/@modelcontextprotocol/server-legacy/sse/sse.html
+   modelcontextprotocol.io/specification/2026-07-28/deprecated
+   ts.sdk.modelcontextprotocol.io/v2/api/%40modelcontextprotocol/client/client/sse.html
+   modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http
+   modelcontextprotocol.io/specification/2026-07-28/deprecated.md
+   csharp.sdk.modelcontextprotocol.io/v2/concepts/transports/transports.html
+   modelcontextprotocol.io/legacy/concepts/transports
+   ts.sdk.modelcontextprotocol.io/v2/api/@modelcontextprotocol/server-legacy/
+   modelcontextprotocol.io/specification/2024-11-05/basic/transports
+docs-g0011 n=10 abstain=null
+   pnpm.io/11.x/pnpm-vs-npm
+   pnpm.io/tr/blog/releases/10.26
+   pnpm.io/pnpm-vs-npm
+   pnpm.io/migration
+   pnpm.io/10.x/pnpm-vs-npm
+   pnpm.io/blog/releases/11.0
+   pnpm.io/id/11.x/pnpm-vs-npm
+   pnpm.io/cli/approve-builds
+   pnpm.io/ko/cli/install
+   pnpm.io/settings/build
+docs-g0012 n=10 abstain=null
+   pnpm.io/zh/settings
+   pnpm.io/zh/10.x/settings
+   pnpm.io/zh/cli/approve-builds
+   pnpm.io/zh/blog/releases/10.26
+   pnpm.io/zh/10.x/cli/approve-builds
+   pnpm.io/zh/next/cli/config
+   pnpm.io/zh/settings/build
+   pnpm.io/zh/blog/releases/10.19
+   pnpm.io/zh/supply-chain-security
+   pnpm.io/settings/build
+docs-g0014 n=10 abstain=null
+   kubernetes.io/blog/2023/01/06/unhealthy-pod-eviction-policy-for-pdbs
+   kubernetes.io/docs/reference/kubectl/generated/kubectl_drain/
+   kubernetes.io/docs/tasks/administer-cluster/safely-drain-node/
+   v1-31.docs.kubernetes.io/blog/2023/01/06/unhealthy-pod-eviction-policy-for-pdbs
+   kubernetes.io/docs/concepts/scheduling-eviction/api-eviction/
+   k8s.io/blog/2023/01/06/unhealthy-pod-eviction-policy-for-pdbs
+   dev.to/thegm26/k8s-node-maintenance-eviction-1mkm
+   plural.sh/blog/kubectl-drain-node-guide/
+   v1-35.kubernetes.ac.cn/blog/2023/01/06/unhealthy-pod-eviction-policy-for-pdbs
+   plural.sh/blog/kubernetes-evicted-pods-causes-and-prevention/
+WROTE probe-0.json

@@ -1,0 +1,25 @@
+EVIDENCE-RUN docs-g0001 (quarantined — executing for evidence)
+FAIL: docs-g0001 mustHitUrl https://modelcontextprotocol.io/specification/2025-06-18/basic/transports present in results
+EVIDENCE docs-g0001 fail 2026-09-15T18:31:58.145Z local:2026-09-15T18:31:56.014Z p=6 f=1
+EVIDENCE-RUN docs-g0002 (quarantined — executing for evidence)
+EVIDENCE docs-g0002 pass 2026-09-15T18:32:00.312Z local:2026-09-15T18:31:56.014Z p=6 f=0
+EVIDENCE-RUN docs-g0003 (quarantined — executing for evidence)
+EVIDENCE docs-g0003 pass 2026-09-15T18:32:03.203Z local:2026-09-15T18:31:56.014Z p=6 f=0
+EVIDENCE-RUN docs-g0004 (quarantined — executing for evidence)
+EVIDENCE docs-g0004 pass 2026-09-15T18:32:05.408Z local:2026-09-15T18:31:56.014Z p=6 f=0
+EVIDENCE-RUN docs-g0005 (quarantined — executing for evidence)
+EVIDENCE docs-g0005 pass 2026-09-15T18:32:08.366Z local:2026-09-15T18:31:56.014Z p=7 f=0
+EVIDENCE-RUN docs-g0006 (quarantined — executing for evidence)
+EVIDENCE docs-g0006 pass 2026-09-15T18:32:12.608Z local:2026-09-15T18:31:56.014Z p=6 f=0
+EVIDENCE-RUN docs-g0008 (quarantined — executing for evidence)
+EVIDENCE docs-g0008 pass 2026-09-15T18:32:15.077Z local:2026-09-15T18:31:56.014Z p=4 f=0
+EVIDENCE-RUN docs-g0009 (quarantined — executing for evidence)
+EVIDENCE docs-g0009 pass 2026-09-15T18:32:17.231Z local:2026-09-15T18:31:56.014Z p=6 f=0
+EVIDENCE-RUN docs-g0010 (quarantined — executing for evidence)
+EVIDENCE docs-g0010 pass 2026-09-15T18:32:19.296Z local:2026-09-15T18:31:56.014Z p=6 f=0
+EVIDENCE-RUN docs-g0011 (quarantined — executing for evidence)
+EVIDENCE docs-g0011 pass 2026-09-15T18:32:21.392Z local:2026-09-15T18:31:56.014Z p=6 f=0
+EVIDENCE docs-g0012 pass 2026-09-15T18:32:23.478Z local:2026-09-15T18:31:56.014Z p=4 f=0
+EVIDENCE docs-g0014 pass 2026-09-15T18:32:25.657Z local:2026-09-15T18:31:56.014Z p=3 f=0
+--- eval-looks live executor: 67 passed, 1 failed ---
+EVIDENCE-ONLY-FAILURES: every red assertion belongs to a quarantined entry — exit overridden to 0 (R64 D-004)

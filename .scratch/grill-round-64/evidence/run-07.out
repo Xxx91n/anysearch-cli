@@ -1,0 +1,29 @@
+EVIDENCE-RUN docs-g0001 (quarantined — executing for evidence)
+EVIDENCE docs-g0001 pass 2026-09-15T18:37:33.362Z local:2026-09-15T18:37:31.170Z p=7 f=0
+EVIDENCE-RUN docs-g0002 (quarantined — executing for evidence)
+EVIDENCE docs-g0002 pass 2026-09-15T18:37:35.581Z local:2026-09-15T18:37:31.170Z p=6 f=0
+EVIDENCE-RUN docs-g0003 (quarantined — executing for evidence)
+EVIDENCE docs-g0003 pass 2026-09-15T18:37:37.637Z local:2026-09-15T18:37:31.170Z p=6 f=0
+EVIDENCE-RUN docs-g0004 (quarantined — executing for evidence)
+EVIDENCE docs-g0004 pass 2026-09-15T18:37:39.697Z local:2026-09-15T18:37:31.170Z p=6 f=0
+EVIDENCE-RUN docs-g0005 (quarantined — executing for evidence)
+FAIL: docs-g0005 answer verdict has no abstain marker
+FAIL: docs-g0005 minResults 1 (got 0)
+FAIL: docs-g0005 mustHitHost modelcontextprotocol.io present in results
+FAIL: docs-g0005 mustHitUrl https://modelcontextprotocol.io/specification/2025-11-25/basic/transports present in results
+FAIL: docs-g0005 mustHitPath /basic/transports present in results (tolerate dated)
+EVIDENCE docs-g0005 fail 2026-09-15T18:37:50.764Z local:2026-09-15T18:37:31.170Z p=2 f=5
+EVIDENCE-RUN docs-g0006 (quarantined — executing for evidence)
+EVIDENCE docs-g0006 pass 2026-09-15T18:37:52.804Z local:2026-09-15T18:37:31.170Z p=6 f=0
+EVIDENCE-RUN docs-g0008 (quarantined — executing for evidence)
+EVIDENCE docs-g0008 pass 2026-09-15T18:37:54.909Z local:2026-09-15T18:37:31.170Z p=4 f=0
+EVIDENCE-RUN docs-g0009 (quarantined — executing for evidence)
+EVIDENCE docs-g0009 pass 2026-09-15T18:37:57.065Z local:2026-09-15T18:37:31.170Z p=6 f=0
+EVIDENCE-RUN docs-g0010 (quarantined — executing for evidence)
+EVIDENCE docs-g0010 pass 2026-09-15T18:38:00.201Z local:2026-09-15T18:37:31.170Z p=7 f=0
+EVIDENCE-RUN docs-g0011 (quarantined — executing for evidence)
+EVIDENCE docs-g0011 pass 2026-09-15T18:38:02.539Z local:2026-09-15T18:37:31.170Z p=6 f=0
+EVIDENCE docs-g0012 pass 2026-09-15T18:38:04.749Z local:2026-09-15T18:37:31.170Z p=4 f=0
+EVIDENCE docs-g0014 pass 2026-09-15T18:38:07.001Z local:2026-09-15T18:37:31.170Z p=3 f=0
+--- eval-looks live executor: 64 passed, 5 failed ---
+EVIDENCE-ONLY-FAILURES: every red assertion belongs to a quarantined entry — exit overridden to 0 (R64 D-004)

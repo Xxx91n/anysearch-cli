@@ -1,0 +1,230 @@
+{
+  "docs-g0001": {
+    "id": "docs-g0001",
+    "question": "MCP 的 session id 在 Streamable HTTP transport 里怎么传播？",
+    "abstain": null,
+    "n": 10,
+    "urls": [
+      "ts.sdk.modelcontextprotocol.io/v2/api/@modelcontextprotocol/node/streamableHttp.html",
+      "modelcontextprotocol.io/specification/2025-06-18/basic/transports",
+      "modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http",
+      "blog.modelcontextprotocol.io/posts/2025-12-19-mcp-transport-future",
+      "csharp.sdk.modelcontextprotocol.io/v2/concepts/stateless/stateless.html",
+      "py.sdk.modelcontextprotocol.io/api/mcp/server/streamable_http_manager",
+      "py.sdk.modelcontextprotocol.io/v2/api/mcp/server/streamable_http_manager",
+      "ts.sdk.modelcontextprotocol.io/v2/serving/sessions-state-scaling.md",
+      "py.sdk.modelcontextprotocol.io/v2/api/mcp/server/streamable_http_manager/",
+      "csharp.sdk.modelcontextprotocol.io/v1/concepts/transports/transports.html"
+    ],
+    "err": null
+  },
+  "docs-g0002": {
+    "id": "docs-g0002",
+    "question": "pnpm-workspace.yaml 的 pmOnFail 和 package.json 的 devEngines.packageManager 怎么配合钉死 pnpm 版本？",
+    "abstain": null,
+    "n": 10,
+    "urls": [
+      "pnpm.io/package_json",
+      "pnpm.io/it/settings/cli",
+      "pnpm.io/zh/package_json",
+      "pnpm.io/10.x/package_json",
+      "pnpm.io/zh/11.x/package_json",
+      "pnpm.io/settings",
+      "pnpm.io/it/11.x/settings/cli",
+      "pnpm.io/zh/settings",
+      "pnpm.io/zh/10.x/package_json",
+      "pnpm.io/zh/11.x/settings/cli"
+    ],
+    "err": null
+  },
+  "docs-g0003": {
+    "id": "docs-g0003",
+    "question": "better-sqlite3 不想跑 node-gyp，pnpm 怎么只放行它的 prebuild、不跑安装脚本？",
+    "abstain": null,
+    "n": 10,
+    "urls": [
+      "pnpm.io/zh/cli/run",
+      "pnpm.io/zh/settings/build",
+      "pnpm.io/zh/11.x/cli/run",
+      "pnpm.io/zh/cli/approve-builds",
+      "pnpm.io/zh/next/cli/run",
+      "pnpm.io/zh/pnpmfile",
+      "pnpm.io/zh/10.x/cli/run",
+      "pnpm.io/zh/supply-chain-security",
+      "pnpm.io/zh/9.x/cli/run",
+      "pnpm.io/zh/10.x/pnpmfile"
+    ],
+    "err": null
+  },
+  "docs-g0004": {
+    "id": "docs-g0004",
+    "question": "tsconfig 的 moduleResolution \"bundler\" 和 \"nodenext\" 区别是什么？",
+    "abstain": null,
+    "n": 10,
+    "urls": [
+      "typescriptlang.org/tsconfig/resolvePackageJsonExports.html",
+      "typescriptlang.org/tsconfig/customConditions.html",
+      "typescriptlang.org/tsconfig/allowArbitraryExtensions.html",
+      "typescriptlang.org/tsconfig/moduleResolution.html",
+      "typescriptlang.org/tsconfig/moduleResolution",
+      "typescriptlang.org/ko/tsconfig",
+      "typescriptlang.org/tsconfig",
+      "typescriptlang.org/docs/handbook/modules/guides/choosing-compiler-options.html",
+      "typescriptlang.org/tsconfig/module.html",
+      "typescriptlang.org/tsconfig/module"
+    ],
+    "err": null
+  },
+  "docs-g0005": {
+    "id": "docs-g0005",
+    "question": "MCP 规范里 HTTP+SSE transport 是不是已经被 Streamable HTTP 取代了？",
+    "abstain": null,
+    "n": 10,
+    "urls": [
+      "modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http",
+      "modelcontextprotocol.io/specification/draft/basic/transports/streamable-http",
+      "py.sdk.modelcontextprotocol.io/zh/run",
+      "py.sdk.modelcontextprotocol.io/zh/client/transports",
+      "py.sdk.modelcontextprotocol.io/zh/run/",
+      "java.sdk.modelcontextprotocol.io/latest",
+      "ts.sdk.modelcontextprotocol.io/",
+      "modelcontextprotocol.io/specification/2025-11-25/basic/transports",
+      "ts.sdk.modelcontextprotocol.io/index.html",
+      "csharp.sdk.modelcontextprotocol.io/v2/concepts/transports/transports.html"
+    ],
+    "err": null
+  },
+  "docs-g0006": {
+    "id": "docs-g0006",
+    "question": "Where does tsc write the .tsbuildinfo file when incremental is true?",
+    "abstain": null,
+    "n": 10,
+    "urls": [
+      "typescriptlang.org/docs/handbook/release-notes/typescript-3-4.html",
+      "typescriptlang.org/tsconfig/incremental.html",
+      "typescriptlang.org/docs/handbook/release-notes/typescript-3-4",
+      "typescriptlang.org/tsconfig/tsBuildInfoFile.html",
+      "typescriptlang.org/tsconfig/outDir.html",
+      "typescriptlang.org/docs/handbook/release-notes/typescript-5-6.html",
+      "typescriptlang.org/ko/docs/handbook/compiler-options.html",
+      "typescriptlang.org/tsconfig/rootDir.html",
+      "typescriptlang.org/docs/handbook/compiler-options.html",
+      "typescriptlang.org/tsconfig/composite.html"
+    ],
+    "err": null
+  },
+  "docs-g0008": {
+    "id": "docs-g0008",
+    "question": "pnpm monorepo 里子包 tsconfig 用 paths 指到 workspace 包源码时，moduleResolution 该配什么？",
+    "abstain": null,
+    "n": 10,
+    "urls": [
+      "pnpm.io/zh/workspaces",
+      "pnpm.io/zh/10.x/workspaces",
+      "pnpm.io/zh/typescript",
+      "pnpm.io/zh/11.x/package-sources",
+      "pnpm.io/zh/settings/node-modules",
+      "pnpm.io/zh/next/workspaces",
+      "pnpm.io/zh/10.x/typescript",
+      "pnpm.io/zh/cli/recursive",
+      "pnpm.io/zh/settings",
+      "pnpm.io/zh/next/cli/recursive"
+    ],
+    "err": null
+  },
+  "docs-g0009": {
+    "id": "docs-g0009",
+    "question": "Option 'baseUrl' is deprecated and will stop functioning in TypeScript 7 — How can I fix this error?",
+    "abstain": null,
+    "n": 10,
+    "urls": [
+      "typescriptlang.org/tsconfig/baseUrl.html",
+      "typescriptlang.org/tsconfig/paths.html",
+      "typescriptlang.org/docs/handbook/release-notes/typescript-5-4.html",
+      "typescriptlang.org/tsconfig/",
+      "typescriptlang.org/tsconfig/moduleResolution",
+      "typescriptlang.org/docs/handbook/modules/guides/choosing-compiler-options.html",
+      "typescriptlang.org/tsconfig/module.html",
+      "typescriptlang.org/tsconfig/module",
+      "typescriptlang.org/play/4-0/new-js-features/jsdoc-deprecated.ts.html",
+      "typescriptlang.org/docs/handbook/2/modules.html"
+    ],
+    "err": null
+  },
+  "docs-g0010": {
+    "id": "docs-g0010",
+    "question": "Mark SSE transport as deprecated",
+    "abstain": null,
+    "n": 10,
+    "urls": [
+      "modelcontextprotocol.io/specification/draft/deprecated",
+      "ts.sdk.modelcontextprotocol.io/v2/api/@modelcontextprotocol/server-legacy/sse/sse.html",
+      "modelcontextprotocol.io/specification/2026-07-28/deprecated",
+      "ts.sdk.modelcontextprotocol.io/v2/api/%40modelcontextprotocol/client/client/sse.html",
+      "modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http",
+      "modelcontextprotocol.io/specification/2026-07-28/deprecated.md",
+      "csharp.sdk.modelcontextprotocol.io/v2/concepts/transports/transports.html",
+      "modelcontextprotocol.io/legacy/concepts/transports",
+      "ts.sdk.modelcontextprotocol.io/v2/api/@modelcontextprotocol/server-legacy/",
+      "modelcontextprotocol.io/specification/2024-11-05/basic/transports"
+    ],
+    "err": null
+  },
+  "docs-g0011": {
+    "id": "docs-g0011",
+    "question": "npm→pnpm migration: silent breakage when pnpm.onlyBuiltDependencies allowlist is removed (native modules like better-sqlite3 stop building without warning)",
+    "abstain": null,
+    "n": 10,
+    "urls": [
+      "pnpm.io/11.x/pnpm-vs-npm",
+      "pnpm.io/tr/blog/releases/10.26",
+      "pnpm.io/pnpm-vs-npm",
+      "pnpm.io/migration",
+      "pnpm.io/10.x/pnpm-vs-npm",
+      "pnpm.io/blog/releases/11.0",
+      "pnpm.io/id/11.x/pnpm-vs-npm",
+      "pnpm.io/cli/approve-builds",
+      "pnpm.io/ko/cli/install",
+      "pnpm.io/settings/build"
+    ],
+    "err": null
+  },
+  "docs-g0012": {
+    "id": "docs-g0012",
+    "question": "pnpm-workspace.yaml 的 onlyBuiltDependencies 白名单怎么放行 better-sqlite3 的 prebuild 又禁掉安装脚本？",
+    "abstain": null,
+    "n": 10,
+    "urls": [
+      "pnpm.io/zh/settings",
+      "pnpm.io/zh/10.x/settings",
+      "pnpm.io/zh/cli/approve-builds",
+      "pnpm.io/zh/blog/releases/10.26",
+      "pnpm.io/zh/10.x/cli/approve-builds",
+      "pnpm.io/zh/next/cli/config",
+      "pnpm.io/zh/settings/build",
+      "pnpm.io/zh/blog/releases/10.19",
+      "pnpm.io/zh/supply-chain-security",
+      "pnpm.io/settings/build"
+    ],
+    "err": null
+  },
+  "docs-g0014": {
+    "id": "docs-g0014",
+    "question": "kubernetes pod eviction policy kubectl drain",
+    "abstain": null,
+    "n": 10,
+    "urls": [
+      "kubernetes.io/blog/2023/01/06/unhealthy-pod-eviction-policy-for-pdbs",
+      "kubernetes.io/docs/reference/kubectl/generated/kubectl_drain/",
+      "kubernetes.io/docs/tasks/administer-cluster/safely-drain-node/",
+      "v1-31.docs.kubernetes.io/blog/2023/01/06/unhealthy-pod-eviction-policy-for-pdbs",
+      "kubernetes.io/docs/concepts/scheduling-eviction/api-eviction/",
+      "k8s.io/blog/2023/01/06/unhealthy-pod-eviction-policy-for-pdbs",
+      "dev.to/thegm26/k8s-node-maintenance-eviction-1mkm",
+      "plural.sh/blog/kubectl-drain-node-guide/",
+      "v1-35.kubernetes.ac.cn/blog/2023/01/06/unhealthy-pod-eviction-policy-for-pdbs",
+      "plural.sh/blog/kubernetes-evicted-pods-causes-and-prevention/"
+    ],
+    "err": null
+  }
+}
