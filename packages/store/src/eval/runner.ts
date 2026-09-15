@@ -513,7 +513,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
             if (op.expectNoop !== undefined && rep.noop !== op.expectNoop) fails.push("noop " + rep.noop + " != " + op.expectNoop);
             if (op.expectRejected !== undefined && rep.gateRejected !== op.expectRejected) fails.push("gateRejected " + rep.gateRejected + " != " + op.expectRejected);
             if (op.expectLlmUnavailable !== undefined && rep.llmUnavailable !== op.expectLlmUnavailable) fails.push("llmUnavailable " + rep.llmUnavailable + " != " + op.expectLlmUnavailable);
-            mark({ op: opIndex, kind: op.op, stage: op.stage, ok: fails.length === 0, detail: fails.length ? fails.join("; ") : "add=" + rep.add + " noop=" + rep.noop + " rejected=" + rep.gateRejected + " unavailable=" + rep.llmUnavailable });
+            mark({ op: opIndex, kind: op.op, stage: op.stage, ok: fails.length === 0, detail: fails.length ? fails.join("; ") : "add=" + rep.add + " noop=" + rep.noop + " rejected=" + rep.gateRejected + " unavailable=" + rep.llmUnavailable + " embAbsent=" + rep.embeddingAbsent });
             break;
           }
           case "archive": {

@@ -4,6 +4,12 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-15 — ADR-0064 r63: T1 con_add_then_noop 修复（D-002 Blocker）
+
+### Fixed
+
+- consolidate 去重在 embedding 缺席时曾整体失效：`decideOp` 只认 cosine>0.90，arm 缺席（FTS-only 安装/离线）下 bestCos 恒 0，重复记忆一律判 add——`con_add_then_noop` 在无网环境必红。现加降级分支：无 cosine 可算时 bestJac>θ_jac（0.80，golden 校准：相异 stub=0.000/同一 rerun=1.000/矛盾对上限=0.714）判 noop。行为变更：无-embedding 环境下近逐字重复记忆开始判 noop（有损降级，抓不到 paraphrase 级重复），降级决策计入 `ConsolidateReport.embeddingAbsent`（不再 silent，ADR-0060 D7）。
+
 ## 2026-09-14 — ADR-0061 r60: 审计修复（audit F1–F3 + F5，reports/2026-09-14-audit.md）
 
 ### Fixed

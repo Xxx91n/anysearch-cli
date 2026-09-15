@@ -11,6 +11,14 @@ import { embedText, cosineSimilarity } from "./embedding-arm.js";
 import { classifyTier, TAU_TIER } from "./time-decay.js";
 
 export const THETA_DUP = 0.90;           // D4/D7: NOOP boundary; golden boundary case pins <, =, >
+// R63 T1 (D-002): NOOP boundary for the jaccard-only degraded path (embedding absent).
+// Calibrated on the golden dataset 2026-09-15: distinct stub summaries jac=0.000, identical
+// rerun=1.000, contradiction-pair ceiling=0.714 (update path must stay reachable). 0.80 sits
+// inside the D-002 conservative band 0.7-0.85 with margin over the 0.714 ceiling.
+// NOT the 0.4 update gate: update = bestJac>0.4 AND contradiction; noop-jac = bestJac>0.80
+// alone (near-verbatim dup). Lossy by construction — catches lexical dups, misses paraphrase;
+// the embedding path remains the dedup authority when present.
+export const THETA_JAC = 0.80;
 export const LOW_CONFIDENCE = 0.2;       // fidelity-gate absent or uncertain claims
 export const CLUSTER_MIN = 3;            // D2: minimum episodes per entity cluster
 export const ARCHIVE_AGE_FACTOR = 3;     // D5: age > 3 * tier tau AND access_count = 0 AND stale last_accessed
@@ -51,6 +59,9 @@ export interface ConsolidateReport {
   add: number;
   noop: number;
   update: number;
+  // R63 T1 (D-002): dedup decisions made on the jaccard-only degraded path (no cosine
+  // computable — arm absent or no live row carries an embedding). Never silent (ADR-0060 D7).
+  embeddingAbsent: number;
   semanticIds: number[];
 }
 
@@ -107,8 +118,12 @@ export type ConsolidateOp = "add" | "noop" | "update";
 
 // D4/D7 ops-quadruple decision as a pure function so the 0.90 boundary is unit-testable without
 // float32 cosine noise (integration covers the real cosine end-to-end).
-export function decideOp(bestCos: number, bestJac: number, contradiction: boolean, theta = THETA_DUP): ConsolidateOp {
-  if (bestCos > theta) return "noop";
+// R63 T1 (D-002): bestCos === null marks the degraded path — no cosine was computable (embedding
+// arm absent, or no live row carries an embedding). Jaccard becomes the sole dedup signal and
+// bestJac > thetaJac decides noop. Ordering mirrors the cosine path: noop before update, so a
+// near-verbatim contradiction is still a noop (the 0.714 ceiling is why thetaJac > 0.72).
+export function decideOp(bestCos: number | null, bestJac: number, contradiction: boolean, theta = THETA_DUP, thetaJac = THETA_JAC): ConsolidateOp {
+  if (bestCos === null ? bestJac > thetaJac : bestCos > theta) return "noop";
   if (bestJac > 0.4 && contradiction) return "update";
   return "add";
 }
@@ -129,7 +144,7 @@ export async function consolidateMemoryRun(
   const theta = opts.thetaDup ?? THETA_DUP;
   const report: ConsolidateReport = {
     dryRun, clustersScanned: 0, clustersTriggered: 0, llmUnavailable: 0,
-    gateRejected: 0, add: 0, noop: 0, update: 0, semanticIds: [],
+    gateRejected: 0, add: 0, noop: 0, update: 0, embeddingAbsent: 0, semanticIds: [],
   };
 
   // r94 audit A11: plan phase (scan + LLM summarize + classify + dedup) runs WITHOUT the
@@ -197,7 +212,8 @@ export async function consolidateMemoryRun(
         confidence = uncertain ? LOW_CONFIDENCE : minConf;
       }
 
-      // Embedding seam (fail-open): NULL embedding still inserts; dedup falls back to jaccard.
+      // Embedding seam (fail-open): NULL embedding still inserts; dedup falls back to jaccard
+      // (R63 T1: that fallback now decides noop via THETA_JAC — see decideOp).
       const emb = await embedText(summary, "passage");
       const embBuf = emb ? Buffer.from(emb.buffer, emb.byteOffset, emb.byteLength) : null;
 
@@ -207,15 +223,18 @@ export async function consolidateMemoryRun(
       let best: SemanticRow | null = null;
       let bestCos = 0;
       let bestJac = 0;
+      let sawCos = false; // R63 T1: at least one cosine actually computed this scan
       const sumTokens = tokenize(summary);
       for (const l of lives) {
         const jac = jaccard(sumTokens, tokenize(l.content));
         let cos = 0;
-        if (emb && l.embedding) cos = cosineSimilarity(emb, blobToFloat32(l.embedding));
+        if (emb && l.embedding) { cos = cosineSimilarity(emb, blobToFloat32(l.embedding)); sawCos = true; }
         if (cos > bestCos || (cos === bestCos && jac > bestJac)) {
           best = l; bestCos = cos; bestJac = jac;
         }
       }
+      // Degraded-path accounting: a dedup decision ran without any cosine signal.
+      if (!sawCos && lives.length > 0) report.embeddingAbsent++;
 
       const salience = Math.min(1, 0.4 + 0.1 * eps.length);
       const epsIds = eps.map((e) => e.id);
@@ -227,7 +246,7 @@ export async function consolidateMemoryRun(
         report.semanticIds.push(Number(info.lastInsertRowid));
       };
 
-      const op = best ? decideOp(bestCos, bestJac, CONTRADICTION_RE.test(summary) || CONTRADICTION_RE.test(best.content), theta) : "add";
+      const op = best ? decideOp(sawCos ? bestCos : null, bestJac, CONTRADICTION_RE.test(summary) || CONTRADICTION_RE.test(best.content), theta) : "add";
       if (best && op === "noop") {
         // D4 NOOP: touch only; the row is a stable anchor for idempotent reruns.
         const row = best;

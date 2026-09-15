@@ -6,6 +6,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { SqliteSessionStore } from "../src/session-store";
 import { decideOp } from "../src/consolidate";
+import { __setEmbeddingModuleForTest } from "../src/embedding-arm";
 import { __setExtractorForTest } from "@anysearch/embedding";
 
 function assert(cond: boolean, msg: string): void {
@@ -45,6 +46,17 @@ assert(decideOp(0.899999, 0, false) === "add", "cos just below theta -> add");
 assert(decideOp(0.5, 0.5, true) === "update", "high-overlap contradiction -> update");
 assert(decideOp(0.5, 0.5, false) === "add", "high overlap without contradiction -> add");
 assert(decideOp(0.5, 0.39, true) === "add", "contradiction below jac 0.4 -> add");
+
+// --- R63 T1 (D-002): degraded path — bestCos === null means no cosine was computable ---
+// theta_jac = 0.80 boundary (strict >), calibrated on golden dataset: distinct summaries
+// jac=0.000, identical rerun=1.000, contradiction-pair ceiling=0.714 (update stays reachable).
+assert(decideOp(null, 0.81, false) === "noop", "degraded: jac above theta_jac -> noop");
+assert(decideOp(null, 1.0, false) === "noop", "degraded: verbatim rerun -> noop");
+assert(decideOp(null, 0.8, false) === "add", "degraded: jac exactly 0.80 is NOT noop (strict boundary)");
+assert(decideOp(null, 0.72, true) === "update", "degraded: contradiction pair at 0.714 ceiling still updates, not noop");
+assert(decideOp(null, 0.5, true) === "update", "degraded: update path unchanged (jac>0.4 + contradiction)");
+assert(decideOp(null, 0.9, true) === "noop", "degraded: noop precedence over update mirrors cosine path");
+assert(decideOp(null, 0.5, false) === "add", "degraded: mid-jac without contradiction -> add");
 
 // --- consolidation integration ---
 const SUMMARY_A = "Alpha service uses Beta library for builds. Release cadence is weekly.";
@@ -184,6 +196,39 @@ assert(store.undoArchive(arep.logIds[0]).ok === false, "undo is idempotent (seco
 // --- r94 audit A7: pinned exemption enforced at the force point on the explicit-ids path ---
 const prep = store.applyArchive([pinId]);
 assert(prep.archived === 0 && prep.skipped === 1, "explicit pinned id refused at apply (r94 A7)");
+
+// --- R63 T1 (D-002) integration: embedding arm absent -> jaccard-only dedup ---
+// Reproduces the con_add_then_noop offline regression: first consolidate ADDs, the rerun
+// near-verbatim summary NOOPs via theta_jac — and the degraded decision is counted.
+{
+  const dir2 = mkdtempSync(join(tmpdir(), "ans-cons-absent-"));
+  const dbPath2 = join(dir2, "absent.db");
+  __setEmbeddingModuleForTest(null); // package absent: embedText === null
+  try {
+    const storeA = new SqliteSessionStore(dbPath2, {
+      consolidateSummarize: async () => "pnpm pins prevent lockfile drift; corepack enforces packageManager",
+      consolidateClassify: () => ({ label: "supported" as const, confidence: 0.95 }),
+    });
+    const sess2 = await storeA.createSession("eval");
+    for (let i = 1; i <= 3; i++) {
+      await storeA.adjudicateMemory(sess2.id, [
+        { url: "https://ex.com/pn" + i, title: "pnpm note v" + i, snippet: "pin drift note revision " + i, source: "exa", evidence: 0.9, entity: "PnpmPinning" },
+      ]);
+    }
+    const repA1 = await storeA.consolidateMemory();
+    assert(repA1.add === 1 && repA1.noop === 0, "absent arm: first consolidate adds (got add=" + repA1.add + " noop=" + repA1.noop + ")");
+    assert(repA1.embeddingAbsent === 0, "absent arm: no live rows yet -> no degraded decision counted");
+    const repA2 = await storeA.consolidateMemory();
+    assert(repA2.noop === 1 && repA2.add === 0, "absent arm: verbatim rerun noops via theta_jac (got add=" + repA2.add + " noop=" + repA2.noop + ")");
+    assert(repA2.embeddingAbsent === 1, "absent arm: degraded dedup decision counted (embeddingAbsent=" + repA2.embeddingAbsent + ")");
+    const semRowsA = (() => { const d = new Database(dbPath2, { readonly: true }); const rows = d.prepare("SELECT COUNT(*) c FROM semantic_memories").get() as { c: number }; d.close(); return rows.c; })();
+    assert(semRowsA === 1, "absent arm: noop wrote no duplicate row (semantic_memories=" + semRowsA + ")");
+    storeA.close();
+  } finally {
+    __setEmbeddingModuleForTest("auto");
+    rmSync(dir2, { recursive: true, force: true });
+  }
+}
 
 for (const st of [store, store2, store3, store4, store5]) st.close();
 rmSync(dir, { recursive: true, force: true });
