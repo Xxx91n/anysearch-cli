@@ -502,7 +502,29 @@ function stepStaticAssertions() {
     if (!fs.readFileSync(path.join(ROOT, "scripts/ship-gate.mjs"), "utf8").includes("stepOverrideGovernance")) {
       fail("ADR-0047 ship-gate missing stepOverrideGovernance");
     }
-    report("pass", "ADR-0046/0047 source gates + ADR-0062 dual-gate abstain contracts + criterion anchors");
+    // R64 D-005 criterion anchors (machine-checked, not doc-level caveats):
+    //  (a) >=2 live entries carry byte-exact mustHitUrls (R63 caveat close-out);
+    //  (b) byte-exact legs may only anchor controlled|frozen-spec targets;
+    //  (c) >=1 live entry carries the mustHitPaths page-family layer;
+    //  (d) every R64 migrated case keeps its migration provenance block
+    //      (promote physically deletes ledger entries — the golden entry is
+    //      the only durable carrier).
+    const liveIds = new Set(Object.entries(evalLooks.golden?.scopes ?? {}).filter(([, sc]) => sc === "live" || sc === "both").map(([id]) => id));
+    const liveEntries = ge.filter((e) => liveIds.has(e.id));
+    const exactHolders = liveEntries.filter((e) => (e.expected?.mustHitUrls?.length ?? 0) > 0);
+    if (exactHolders.length < 2)
+      fail("R64 D-005: live entries carrying byte-exact mustHitUrls < 2 (R63 caveat close-out criterion not met)");
+    for (const e of exactHolders)
+      if (e.stability_class !== "controlled" && e.stability_class !== "frozen-spec")
+        fail("R64 D-005: " + e.id + " anchors byte-exact mustHitUrls on stability_class=" + (e.stability_class ?? "missing") + " (only controlled|frozen-spec allowed)");
+    if (!liveEntries.some((e) => (e.expected?.mustHitPaths?.length ?? 0) > 0))
+      fail("R64 D-005: no live entry carries the mustHitPaths page-family layer");
+    for (const id of ["docs-g0001", "docs-g0002", "docs-g0003", "docs-g0004", "docs-g0005", "docs-g0006", "docs-g0008", "docs-g0009", "docs-g0010", "docs-g0011"]) {
+      const e = ge.find((x) => x.id === id);
+      if (!e?.migration?.from || !e?.migration?.to || !e?.migration?.decidedAt)
+        fail("R64 D-005: migrated case " + id + " missing migration provenance block (from/to/decidedAt required)");
+    }
+    report("pass", "ADR-0046/0047 source gates + ADR-0062 dual-gate abstain contracts + criterion anchors + R64 D-005 migration anchors (exact>=2 frozen-only, paths>=1, migration blocks)");
   }
 
   // 1q. R62 D-005 (T5): offline-eval governance — Declared Exclusion is a
