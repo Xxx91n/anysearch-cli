@@ -1,8 +1,8 @@
 {
   "name": "@anysearch-cli/cli",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "bin": {
-    "ans": "./dist/index.js"
+    "ans": "dist/index.js"
   },
   "files": [
     "dist",

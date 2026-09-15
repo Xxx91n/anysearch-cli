@@ -1,9 +1,9 @@
 {
   "name": "@anysearch-cli/mcp",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "bin": {
-    "ans-mcp": "./dist/index.cjs"
+    "ans-mcp": "dist/index.cjs"
   },
   "files": [
     "dist"

@@ -1,6 +1,6 @@
 # Publishing (manual first release — D-006)
 
-npm `0.0.1` is a **manual** first release: no `release.yml` provenance is emitted
+npm `0.0.2` is a **manual** first release: no `release.yml` provenance is emitted
 (ADR-0064 D-006; this is a known consequence, not a defect — provenance requires
 a cloud-hosted runner which manual `pnpm publish` does not have).
 
@@ -25,7 +25,7 @@ explicit install enables the vector arm (FTS-only is a supported state).
 1. `pnpm install && pnpm build` (turbo builds all; embedding's `prepack` rebuilds dist).
 2. `pnpm -r publish` on the publish set — **user-authorized only** (irreversible:
    registry data is immutable; see CONTEXT.md — Unpublish Window).
-3. Post-tag checks run via `release.yml` after `git tag v0.0.1` (user-run).
+3. Post-tag checks run via `release.yml` after `git tag v0.0.2` (user-run).
 
 ## Install verification (within the 72h unpublish window)
 
@@ -34,8 +34,8 @@ config to npm 11 (warned about and ignored), so a freshly published
 `@anysearch-cli/cli` is installable immediately. Self-verify inside the unpublish
 window by installing the exact version:
 
-    npm i -g @anysearch-cli/cli@0.0.1          # exact version — there is no npm age gate to override
-    npm i -g @anysearch-cli/embedding@0.0.1    # optional peer arm
+    npm i -g @anysearch-cli/cli@0.0.2          # exact version — there is no npm age gate to override
+    npm i -g @anysearch-cli/embedding@0.0.2    # optional peer arm
 
 or install the packed tarballs directly (ship-gate step 4b/4c does exactly this).
 Then drive the same surface install-smoke drives:
@@ -53,4 +53,4 @@ in `pnpm-workspace.yaml`. Registry consumers are unaffected either way — a rep
 
 Registry manifest check (versions / dist-tags.latest / access / repository):
 
-    npm view @anysearch-cli/cli@0.0.1 --json | jq '{version,license,repository}'
+    npm view @anysearch-cli/cli@0.0.2 --json | jq '{version,license,repository}'

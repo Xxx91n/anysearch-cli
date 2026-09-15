@@ -4,6 +4,13 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-15 — npm scope 改名 + 0.0.2 重发（bin 修正）
+
+### Fixed
+
+- npm scope @anysearch → @anysearch-cli（org anysearch 被空壳蹲占不可注册；用户建成 anysearch-cli org）。全仓 100 文件机械替换：包名/import/tsconfig/tsup/ship-gate+install-smoke 断言/workflows/docs。
+- 0.0.1 发布事故：npm publish 自动剔除 bin 字段（"./dist/index.js" 的 ./ 前缀在 publish 时判 invalid——本地 pnpm pack 不校验故 install-smoke 绿）。npm 版本烧损规则禁止重发同号 → 0.0.1 作废，改发 0.0.2（cli/mcp bin 改无前缀路径）。
+
 ## 2026-09-15 — ADR-0064 r63: npm 0.0.1 发布形态与验证面（T2/T3/T5，D-005/D-003）
 
 ### Added
