@@ -142,7 +142,9 @@ Filled by T8 at adjudication time (four-part structure per D8):
 
 | leg | anchor | status |
 |---|---|---|
-| T1–T7 landed + main-tip double green | ci/ship-gate run URLs | pending |
-| go/no-go adjudication document | `.scratch/grill-round-63/` verdict doc | pending |
-| GO: registry + tag + clean-install evidence | `npm view`, tag URL, smoke output | pending |
-| carried items minuted | owner/due/criterion table | pending |
+| T1–T7 landed + main-tip double green | main `48db4cf` — ci/ship-gate/native-smoke 全绿（gh run list）| done |
+| go/no-go adjudication document | `.scratch/grill-round-63/go-no-go-0.0.1.md`（GO WITH CAVEATS）| done |
+| GO: registry + tag + clean-install evidence | `npm view @anysearch-cli/*` latest=0.0.3 四包在册；tag `v0.0.3`→48db4cf post-tag assert 绿；净机 npm i -g → ans --version=0.0.3 / doctor 22p-0f / search 实返 | done |
+| carried items minuted | owner/due/criterion table | done（provenance caveat 顺延 0.0.4）|
+
+实际发布版本 0.0.3：0.0.1/0.0.2 因 npm publish <dir> 不改写 workspace:* peer 烧损作废（见 CHANGELOG）；scope 改 @anysearch-cli（anysearch org 被蹲占）；发布通道=pnpm pack tarball + npm publish <tgz>（passkey-2FA 下 pnpm 无 WebAuthn 通道）。
