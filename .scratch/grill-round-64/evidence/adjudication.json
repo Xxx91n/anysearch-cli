@@ -1,0 +1,68 @@
+{
+  "at": "2026-09-15T18:47:50.459Z",
+  "report": {
+    "docs-g0002": {
+      "tier": "stable",
+      "runs": 8,
+      "green": 8,
+      "ok": true
+    },
+    "docs-g0003": {
+      "tier": "stable",
+      "runs": 8,
+      "green": 8,
+      "ok": true
+    },
+    "docs-g0005": {
+      "tier": "stable",
+      "runs": 8,
+      "green": 7,
+      "ok": true
+    },
+    "docs-g0011": {
+      "tier": "stable",
+      "runs": 8,
+      "green": 8,
+      "ok": true
+    },
+    "docs-g0004": {
+      "tier": "flaky",
+      "runs": 8,
+      "green": 8,
+      "flip": 0,
+      "ok": true
+    },
+    "docs-g0006": {
+      "tier": "flaky",
+      "runs": 8,
+      "green": 8,
+      "flip": 0,
+      "ok": true
+    },
+    "docs-g0009": {
+      "tier": "flaky",
+      "runs": 8,
+      "green": 8,
+      "flip": 0,
+      "ok": true
+    },
+    "docs-g0001": {
+      "tier": "stable(re-anchored leg)",
+      "runs": 3,
+      "green": 3,
+      "ok": true
+    },
+    "docs-g0008": {
+      "tier": "host-downgrade",
+      "runs": 8,
+      "green": 8,
+      "ok": true
+    },
+    "docs-g0010": {
+      "tier": "respec-fallback->paths",
+      "runs": 8,
+      "green": 8,
+      "ok": true
+    }
+  }
+}

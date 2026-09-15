@@ -1,0 +1,23 @@
+EVIDENCE-RUN docs-g0001 (quarantined — executing for evidence)
+EVIDENCE docs-g0001 pass 2026-09-15T18:38:09.705Z local:2026-09-15T18:38:07.558Z p=7 f=0
+EVIDENCE-RUN docs-g0002 (quarantined — executing for evidence)
+EVIDENCE docs-g0002 pass 2026-09-15T18:38:11.779Z local:2026-09-15T18:38:07.558Z p=6 f=0
+EVIDENCE-RUN docs-g0003 (quarantined — executing for evidence)
+EVIDENCE docs-g0003 pass 2026-09-15T18:38:13.913Z local:2026-09-15T18:38:07.558Z p=6 f=0
+EVIDENCE-RUN docs-g0004 (quarantined — executing for evidence)
+EVIDENCE docs-g0004 pass 2026-09-15T18:38:16.111Z local:2026-09-15T18:38:07.558Z p=6 f=0
+EVIDENCE-RUN docs-g0005 (quarantined — executing for evidence)
+EVIDENCE docs-g0005 pass 2026-09-15T18:38:18.220Z local:2026-09-15T18:38:07.558Z p=7 f=0
+EVIDENCE-RUN docs-g0006 (quarantined — executing for evidence)
+EVIDENCE docs-g0006 pass 2026-09-15T18:38:20.328Z local:2026-09-15T18:38:07.558Z p=6 f=0
+EVIDENCE-RUN docs-g0008 (quarantined — executing for evidence)
+EVIDENCE docs-g0008 pass 2026-09-15T18:38:22.399Z local:2026-09-15T18:38:07.558Z p=4 f=0
+EVIDENCE-RUN docs-g0009 (quarantined — executing for evidence)
+EVIDENCE docs-g0009 pass 2026-09-15T18:38:24.596Z local:2026-09-15T18:38:07.558Z p=6 f=0
+EVIDENCE-RUN docs-g0010 (quarantined — executing for evidence)
+EVIDENCE docs-g0010 pass 2026-09-15T18:38:26.649Z local:2026-09-15T18:38:07.558Z p=7 f=0
+EVIDENCE-RUN docs-g0011 (quarantined — executing for evidence)
+EVIDENCE docs-g0011 pass 2026-09-15T18:38:28.829Z local:2026-09-15T18:38:07.558Z p=6 f=0
+EVIDENCE docs-g0012 pass 2026-09-15T18:38:30.854Z local:2026-09-15T18:38:07.558Z p=4 f=0
+EVIDENCE docs-g0014 pass 2026-09-15T18:38:32.983Z local:2026-09-15T18:38:07.558Z p=3 f=0
+--- eval-looks live executor: 69 passed, 0 failed ---
