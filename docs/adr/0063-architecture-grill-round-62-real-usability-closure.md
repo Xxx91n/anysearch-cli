@@ -195,9 +195,20 @@ frames.
 
 | workflow | run URL | status |
 |---|---|---|
-| ci (all jobs) | PENDING — r62 stack unpushed at ADR write time | pending |
-| ship-gate (ubuntu+windows blocking) | PENDING — r62 stack unpushed at ADR write time | pending |
-| ship-gate macos-spillover-probe (non-blocking) | PENDING — first probe run lands with next push | pending |
+| ci (all jobs) | https://github.com/Xxx91n/anysearch-cli/actions/runs/34926366576 | green (main tip 38a1489) |
+| ship-gate (ubuntu+windows blocking) | https://github.com/Xxx91n/anysearch-cli/actions/runs/34926366596 | green (main tip 38a1489) |
+| native-smoke | https://github.com/Xxx91n/anysearch-cli/actions/runs/34926366564 | green (main tip 38a1489) |
+| ship-gate macos-spillover-probe (non-blocking) | run 34926366596, job conclusion=failure | probe data point #1 (red; TTL streak 0/5, see D4) |
+
+Landing note: the r62 stack was landed to main on 2026-09-15 (16 parallel
+stacks, `but land` serial; first integrated run on adf2559 surfaced a real
+T5 defect — the D-005 coverage spawn resolved `tsx` from ROOT where it is
+not declared (`ERR_MODULE_NOT_FOUND` under clean CI install; local green had
+been masked by a stale root `node_modules/tsx` symlink). Fixed in 38a1489 by
+running the spawn under `packages/store` (the same pattern as the
+chain-gate fixture spawn). The macOS probe's first data point is red —
+still-crashing signature, non-blocking by design; the ≥5-green TTL streak
+for matrix promotion starts counting from probe run #1.
 
 Local verification standing in until the runs exist (each re-runnable):
 `pnpm --filter @anysearch/kernel --filter @anysearch/store --filter @anysearch/mcp check`
