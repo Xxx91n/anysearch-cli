@@ -57,3 +57,6 @@ apps/cli/domains/
 !.scratch/grill-round-63/**
 # 构建产物/安装前缀仍忽略（pack 输出 + 干净装 node_modules 不入库）
 .scratch/grill-round-60/t1-pack/
+# ADR-0065: round-64 账本/任务书/调研报告同规随票入版本。
+!.scratch/grill-round-64/
+!.scratch/grill-round-64/**
