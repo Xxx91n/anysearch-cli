@@ -521,12 +521,12 @@ function stepStaticAssertions() {
       fail("R62 D-005: OFFLINE_EXCLUDED_GROUPS must be exactly [VECTOR_ARM_GROUP], got [" + exclToks.join(",") + "]");
     // (c) offline coverage floor, computed on the real dataset — 0.75 minimum.
     const cov = spawnSync(process.execPath, ["--import", "tsx", "-e",
-      "import { GOLDEN_CASES, offlineCases } from './packages/store/src/eval/golden-cases.ts';" +
+      "import { GOLDEN_CASES, offlineCases } from './src/eval/golden-cases.ts';" +
       "const r = offlineCases().length / GOLDEN_CASES.length;" +
       "if (!(r >= 0.75)) { console.error('offline coverage ' + r.toFixed(3) + ' < 0.75'); process.exit(1); }" +
       "console.log('offline coverage ' + r.toFixed(3));"],
-      { cwd: ROOT, encoding: "utf8" });
-    if (cov.status !== 0) fail("R62 D-005: offline coverage below 0.75\n" + String(cov.stderr ?? cov.stdout ?? "").trim());
+      { cwd: path.join(ROOT, "packages", "store"), encoding: "utf8" });
+    if (cov.status !== 0) fail("R62 D-005: offline coverage check failed\n" + String(cov.stderr ?? cov.stdout ?? "").trim());
     // (d) the excluded slice is re-established by the online lane in ci.yml.
     if (!fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8").includes("test-online"))
       fail("R62 D-005: ci.yml missing test-online job");
