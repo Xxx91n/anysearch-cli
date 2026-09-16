@@ -37,11 +37,15 @@
     "./hooks/adapters/antigravity": {
       "types": "./src/hooks/adapters/antigravity.ts",
       "default": "./dist/hooks/adapters/antigravity.cjs"
+    },
+    "./hooks/adapters/codebuddy": {
+      "types": "./src/hooks/adapters/codebuddy.ts",
+      "default": "./dist/hooks/adapters/codebuddy.cjs"
     }
   },
   "scripts": {
     "build": "pnpm run build:server && pnpm run build:hooks",
-    "build:hooks": "esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --external:better-sqlite3 --external:@anysearch-cli/embedding",
+    "build:hooks": "esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts src/hooks/adapters/codebuddy.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --external:better-sqlite3 --external:@anysearch-cli/embedding",
     "build:server": "tsup",
     "dev": "tsx src/server/index.ts",
     "lint": "tsc --noEmit",
@@ -64,7 +68,8 @@
     "typescript": "^5.6.0"
   },
   "files": [
-    "dist"
+    "dist",
+    "configs"
   ],
   "main": "./dist/index.cjs",
   "peerDependencies": {
@@ -83,5 +88,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "bin": {
+    "ans-plugin-server": "dist/server/index.cjs"
   }
 }

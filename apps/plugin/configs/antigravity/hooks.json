@@ -5,7 +5,7 @@
         "name": "anysearch-preheat",
         "command": "node",
         "args": [
-          "${ANTIGRAVITY_PLUGIN_DIR}/../dist/hooks/preheat.cjs"
+          "${ANTIGRAVITY_PLUGIN_DIR}/../dist/hooks/adapters/antigravity.cjs"
         ],
         "timeout": 5
       }
@@ -15,7 +15,7 @@
         "name": "anysearch-distill",
         "command": "node",
         "args": [
-          "${ANTIGRAVITY_PLUGIN_DIR}/../dist/hooks/distill.cjs"
+          "${ANTIGRAVITY_PLUGIN_DIR}/../dist/hooks/adapters/antigravity.cjs"
         ],
         "timeout": 10
       }

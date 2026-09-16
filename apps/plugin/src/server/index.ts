@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Anysearch Plugin Server: long-running process for hooks IPC.
 // ADR-0009 Decision 1: hooks core handler不碰SQLite. 写库收敛到长驻server进程.
 // Endpoints:

@@ -12,6 +12,8 @@ import { join, dirname } from "node:path";
 import { DEFAULT_ROUTING_CARD as ROUTING_CARD, MDC_CONTENT, loadRoutingCard } from "./routing-card.js";
 
 interface SessionStartStdin {
+  // ADR-0066: real hosts inject hook_event_name; event kept as legacy fallback.
+  hook_event_name?: string;
   event?: string;
   cwd?: string;
   session_id?: string;
@@ -43,7 +45,8 @@ async function main(): Promise<void> {
   catch { process.exit(0); }
 
   // Only handle SessionStart event.
-  if (stdin.event !== "SessionStart" && stdin.event !== "session_start" && stdin.event !== "sessionStart") {
+  const event = stdin.hook_event_name ?? stdin.event;
+  if (event !== "SessionStart" && event !== "session_start" && event !== "sessionStart") {
     process.exit(0);
   }
 

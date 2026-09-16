@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "search_web|research_web|recall_memory|query_knowledge|ans_chat",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(npm root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "search_web|research_web|recall_memory|query_knowledge|ans_chat",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(npm root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(npm root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

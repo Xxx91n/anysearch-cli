@@ -16,6 +16,8 @@ import { writeFileSync, existsSync, readFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 interface AntigravityHookStdin {
+  // ADR-0066: prefer the real host field hook_event_name; event kept as fallback.
+  hook_event_name?: string;
   event?: string;
   tool_name?: string;
   tool_input?: Record<string, unknown>;
@@ -51,7 +53,7 @@ async function main(): Promise<void> {
   try { stdin = JSON.parse(input); }
   catch { process.exit(0); }
 
-  const event = stdin.event || "";
+  const event = stdin.hook_event_name ?? stdin.event ?? "";
   const toolName = stdin.tool_name || "";
   const cwd = stdin.cwd || process.cwd();
 

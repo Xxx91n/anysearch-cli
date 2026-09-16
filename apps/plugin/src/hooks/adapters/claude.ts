@@ -13,6 +13,8 @@ import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 
 interface ClaudeHookStdin {
+  // ADR-0066: real Claude Code injects hook_event_name; keep event as legacy fallback.
+  hook_event_name?: string;
   event: string;
   tool_name?: string;
   tool_input?: Record<string, unknown>;
@@ -35,7 +37,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const event = stdin.event || "";
+  const event = stdin.hook_event_name ?? stdin.event ?? "";
   const toolName = stdin.tool_name || "";
   const cwd = stdin.cwd || process.cwd();
 

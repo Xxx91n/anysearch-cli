@@ -1,0 +1,17 @@
+[synthetic] adapter: D:/Aworker/anysearch-cli/apps/plugin/dist/hooks/adapters/codebuddy.cjs
+{
+  "recall_before": 2,
+  "real_host_field": {
+    "exit": 0,
+    "stdout": "{\"hookSpecificOutput\":{\"updatedToolOutput\":\"{\\\"tool\\\":\\\"mcp__anysearch__search_web\\\",\\\"query\\\":\\\"synthetic-r65-probe\\\",\\\"resultCount\\\":2,\\\"topResults\\\":[{\\\"title\\\":\\\"synthetic-r65-probe alpha mu3srfxd\\\",\\\"url\\\":\\\"https://example.com/a-mu3srfxd\\\"},{\\\"title\\\":\\\"synthetic-r65-probe beta mu3srfxd\\\",\\\"url\\\":\\\"https://example.com/b-mu3srfxd\\\"}]}\"}}",
+    "recall_after": 4,
+    "indexed": 2
+  },
+  "legacy_field": {
+    "exit": 0,
+    "stdout": "{\"hookSpecificOutput\":{\"updatedToolOutput\":\"{\\\"tool\\\":\\\"mcp__anysearch__search_web\\\",\\\"query\\\":\\\"synthetic-r65-probe\\\",\\\"resultCount\\\":2,\\\"topResults\\\":[{\\\"title\\\":\\\"synthetic-r65-probe alpha mu3srfxd\\\",\\\"url\\\":\\\"https://example.com/a-mu3srfxd\\\"},{\\\"title\\\":\\\"synthetic-r65-probe beta mu3srfxd\\\",\\\"url\\\":\\\"https://example.com/b-mu3srfxd\\\"}]}\"}}",
+    "recall_after": 4,
+    "indexed": 0
+  },
+  "verdict": "GREEN: hook_event_name honored (indexes), legacy field also works, dedup-safe"
+}
