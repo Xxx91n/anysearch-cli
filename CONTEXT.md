@@ -989,3 +989,26 @@ README 中如实列出真正端到端跑通过的 agent 宿主清单（宿主名
 
 ## E2E Scratch Site（仓库外 e2e 现场）
 真实宿主实测的运行目录纪律：e2e 现场放仓库外 scratch 目录，防宿主 agent 加载仓库 AGENTS.md/CODEBUDDY.md 规则污染被测上下文；现场可弃，证据 transcript 拷回 .scratch 入库。_Avoid_: 在 repo 内跑 e2e（宿主读到项目规则=测试被自身规则挟持）；现场与证据混放。来源：R65 D-003。
+
+## Grill Round 66 — Terms (ADR-0067)
+
+## Dual-Track Probe Evidence（双轨探针证据）
+真实宿主验证的诚实双轨：published 发布物（0.0.3）轻量基线探针回答“陌生人今天装到什么”，本地 tarball（main=下一发布候选体）全量矩阵回答“修好后什么样”——两轨证据分档存放、互不冒充。_Avoid_: 拿 tarball 绿结论覆盖发布物红事实（verified 不等于 shipped）；把 0.0.3 基线跑成全矩阵（已知缺陷重红无信息增益）。来源：R66 D-002。
+
+## Invariant/Variable Sub-Assertion（不变量/变量子断言）
+跨宿主移植探针矩阵的断言分层：每条探针拆为不变量子断言（跨宿主必须全绿，红=移植缺陷）与变量子断言（照跑、记录、按宿主建独立基线），而非整条裁剪；裁剪合法理由仅二——宿主表面物理不存在（skip-with-reason）或成本与已被覆盖的风险不成比例。_Avoid_: 把宿主变量探针整条删掉（等于假设差异不存在）；对变量项做跨宿主等值断言（预期值须按宿主重定基线）。来源：atomcode R66-Q4 调研（SEP-2484/Pact/pytest-xfail/NIST 四源共性法则）。
+
+## Expected-Red Ledger（expected-red 四态分类账）
+预期失败探针的诚实记账形态：四态 not-scored / pending / xfail-strict / skip-with-reason，每条挂编号理由+failure_class；strict xfail 的 XPASS=红，宿主修复后自动逼摘标记转正。_Avoid_: expected red 不写编号理由（无锚点即不存在）；把 not-scored 当 not-measured（跑不了=调用坏了而非豁免）。来源：atomcode R66-Q4（pytest strict xfail/Pact pending_pacts/MCP divergence ledger）。
+
+## Probe Tag Gating（探针 tag 分层门禁）
+探针矩阵内证据等级与门禁语义的分离：core（跨宿主必绿）/ host-variable（记录建基线）/ host-specific（条件化）/ experimental（不挡门）四 tag——增补探针不混入 core 门禁。_Avoid_: experimental 探针红了挡发布（语义错位）；core 里混入变量断言（制造假红）。来源：atomcode R66-Q4 推荐+R66 D-004。
+
+## Plugin Skeleton Channel（plugin 骨架通道）
+Claude Code 部署的进阶分发面：随包提供 .claude-plugin/plugin.json+同构 hooks/hooks.json+.mcp.json 骨架（构建期单一源生成防漂移），标 experimental——只做 claude plugin validate 与 --plugin-dir 加载级验证，不作 verified-hosts 主结论。升格为默认路径须满足判据>=2 条：高频发版/企业管控/MCP 生命周期托管/marketplace 发现性/低 Windows 占比或 CLAUDE_PLUGIN_ROOT bug 修复。_Avoid_: plugin 路径标 verified（CLAUDE_PLUGIN_ROOT Windows bug 链 #16116/#11984/#15481/#26389 未修，官方 workaround 即退回 settings.json）；两份配置手工漂移（须单源生成）。来源：atomcode R66-Q3 调研+R66 D-003。
+
+## Trusted Publishing Pipeline（OIDC trusted publishing 通道）
+npm 发布的免长效密钥形态：GitHub Actions publish job 持 id-token:write 经 npm OIDC 握手免 NPM_TOKEN 发布+自动 sigstore provenance；前置=npmjs.com 每包 trusted publisher 配置（repo+workflow+约束）。R66 兑现 R63 D-006“包成立后逐包配 TP、CI OIDC+provenance”欠条（due 0.0.4）。_Avoid_: 在 CI 存 NPM_TOKEN 长效密钥（OIDC 要消灭的恰是此面）；把 OIDC 握手当可 dry-run 验证（只能真发验，72h unpublish 窗兜底）。来源：R63 D-006 欠条+R66 D-005。
+
+## Per-Host Effect Delta（单宿主效果增量）
+P9 类效果对照跨宿主重跑的结论边界：表述为“该宿主下工具有效性增量”，不做跨宿主绝对值比较；单次双跑是抽样，须重复或记录方差。_Avoid_: 用 A 宿主对照数字断言 B 宿主效果；单次结果当断言（无方差记录即轶事）。来源：atomcode R66-Q4（MCPJam per-host eval/Signadot 四层模型/Berkeley null-agent 消融）。
