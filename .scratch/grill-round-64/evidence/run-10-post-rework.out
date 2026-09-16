@@ -1,0 +1,20 @@
+WATCH docs-g0001 (post-promote watch — a CI flip re-enters quarantine via the ratchet)
+EVIDENCE docs-g0001 pass 2026-09-16T04:32:21.691Z local:2026-09-16T04:32:18.590Z p=7 f=0
+EVIDENCE docs-g0002 pass 2026-09-16T04:32:25.438Z local:2026-09-16T04:32:18.590Z p=6 f=0
+EVIDENCE docs-g0003 pass 2026-09-16T04:32:29.545Z local:2026-09-16T04:32:18.590Z p=6 f=0
+WATCH docs-g0004 (post-promote watch — a CI flip re-enters quarantine via the ratchet)
+EVIDENCE docs-g0004 pass 2026-09-16T04:32:32.744Z local:2026-09-16T04:32:18.590Z p=6 f=0
+WATCH docs-g0005 (post-promote watch — a CI flip re-enters quarantine via the ratchet)
+EVIDENCE docs-g0005 pass 2026-09-16T04:32:35.648Z local:2026-09-16T04:32:18.590Z p=7 f=0
+WATCH docs-g0006 (post-promote watch — a CI flip re-enters quarantine via the ratchet)
+EVIDENCE docs-g0006 pass 2026-09-16T04:32:38.499Z local:2026-09-16T04:32:18.590Z p=6 f=0
+EVIDENCE docs-g0008 pass 2026-09-16T04:32:41.331Z local:2026-09-16T04:32:18.590Z p=4 f=0
+WATCH docs-g0009 (post-promote watch — a CI flip re-enters quarantine via the ratchet)
+EVIDENCE docs-g0009 pass 2026-09-16T04:32:44.085Z local:2026-09-16T04:32:18.590Z p=6 f=0
+WATCH docs-g0010 (post-promote watch — a CI flip re-enters quarantine via the ratchet)
+FAIL: docs-g0010 mustHitUrl https://modelcontextprotocol.io/specification/2024-11-05/basic/transports present in results
+EVIDENCE docs-g0010 fail 2026-09-16T04:32:47.766Z local:2026-09-16T04:32:18.590Z p=6 f=1
+EVIDENCE docs-g0011 pass 2026-09-16T04:32:52.137Z local:2026-09-16T04:32:18.590Z p=6 f=0
+EVIDENCE docs-g0012 pass 2026-09-16T04:32:55.046Z local:2026-09-16T04:32:18.590Z p=4 f=0
+EVIDENCE docs-g0014 pass 2026-09-16T04:32:58.228Z local:2026-09-16T04:32:18.590Z p=3 f=0
+--- eval-looks live executor: 68 passed, 1 failed ---

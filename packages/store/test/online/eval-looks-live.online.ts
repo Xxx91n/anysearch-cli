@@ -107,13 +107,16 @@ function pathMiss(results: any[], pattern: string, hosts: string[]): boolean {
   });
 }
 
-// Last recorded evidence verdict per id — consecutive-red detection input.
-function lastEvidenceVerdicts(file: string): Map<string, string> {
-  const last = new Map<string, string>();
+// Last recorded evidence record per id — consecutive-all-red detection
+// input. allRed means the previous run failed every assertion (f>0 && p=0);
+// a partial fail is not "全红" (audit F3).
+interface EvidenceRecord { verdict: string; allRed: boolean }
+function lastEvidenceVerdicts(file: string): Map<string, EvidenceRecord> {
+  const last = new Map<string, EvidenceRecord>();
   if (!existsSync(file)) return last;
   for (const line of readFileSync(file, "utf8").split("\n")) {
-    const m = /^EVIDENCE (\S+) (pass|fail) /.exec(line);
-    if (m) last.set(m[1] as string, m[2] as string);
+    const m = /^EVIDENCE (\S+) (pass|fail) \S+ \S+ p=(\d+) f=(\d+)/.exec(line);
+    if (m) last.set(m[1] as string, { verdict: m[2] as string, allRed: +(m[4] as string) > 0 && +(m[3] as string) === 0 });
   }
   return last;
 }
@@ -139,7 +142,7 @@ function main() {
   // eval-quarantine.json. Classification = the ledger's single implementation.
   const qPath = join(root, "packages", "store", "eval-quarantine.json");
   const quarantined = new Set<string>(activeIds(readQuarantine(qPath), new Date().toISOString()));
-  const priorVerdicts = evidenceMode ? lastEvidenceVerdicts(evidenceLog) : new Map<string, string>();
+  const priorVerdicts = evidenceMode ? lastEvidenceVerdicts(evidenceLog) : new Map<string, EvidenceRecord>();
 
   // Cold-domain fixture dir for entries whose domain has no shipped toml.
   const coldDir = mkdtempSync(join(tmpdir(), "ans-looks-cold-"));
@@ -189,10 +192,11 @@ function main() {
       } catch (err) {
         console.error("evidence log append failed: " + String(err));
       }
-      // Consecutive all-red → retire candidate for reviewDue(): this run fully
-      // red (zero assertions passed) AND the previous evidence record for this
-      // id was already a fail.
-      if (eFail > 0 && ePass === 0 && priorVerdicts.get(e.id) === "fail")
+      // Consecutive all-red → retire candidate for reviewDue(): BOTH this run
+      // and the previous evidence record must be fully red (zero assertions
+      // passed) — a partial fail is not "全红". Quarantined entries only.
+      const prior = priorVerdicts.get(e.id);
+      if (isQuar && eFail > 0 && ePass === 0 && prior?.allRed === true)
         console.log("RETIRE_CANDIDATE " + e.id + " (consecutive all-red evidence runs)");
     }
     if (!isQuar && eFail > 0) nonQuarFailed += eFail;

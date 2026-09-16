@@ -24,10 +24,13 @@ const notes = {
   "docs-g0006": "promote: flaky tier, 8 runs flip=0; watch:true armed per D-004",
   "docs-g0008": "promote: host-downgrade, 8/8 green after mustHitHosts->[pnpm.io] (failure_class locale-clustering-suppressed-cross-host)",
   "docs-g0009": "promote: flaky tier, 8 runs flip=0; watch:true armed per D-004",
-  "docs-g0010": "promote: re-spec fallback path taken — live answers resumed (8/8 green on /deprecated family + frozen 2024-11-05 leg); merged into mustHitPaths cluster per D-003",
+  "docs-g0010": "promote: re-spec fallback path taken — live answers resumed (8/8 green on /deprecated family + frozen 2024-11-05 leg); merged into mustHitPaths cluster per D-003; watch:true armed post-audit (F4: leg flipped in audit window)",
   "docs-g0011": "promote: stable tier, 8/8 green post-migration",
 };
-const WATCH = new Set(["docs-g0001", "docs-g0004", "docs-g0005", "docs-g0006", "docs-g0009"]);
+// docs-g0010 watch added post-audit (F4 rework): its frozen-spec leg
+// flipped fail,fail,pass inside the audit window — same rotation-risk
+// class that motivated watch on the flaky three.
+const WATCH = new Set(["docs-g0001", "docs-g0004", "docs-g0005", "docs-g0006", "docs-g0009", "docs-g0010"]);
 
 let q = readQuarantine(qPath);
 const before = q.entries.length;
