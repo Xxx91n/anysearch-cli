@@ -45,3 +45,23 @@
 ## 键位纪律
 
 所有证据文件不含键值；token 文件 0600 仅被脚本读取未打印；mcp.json env 空块靠继承。
+
+## T2/T4 live 探针矩阵（CodeBuddy 2.151.0 headless，model=fast-model，e2e=D:\Aworker\e2e-r65-codebuddy）
+
+跑器：`node scripts/probe.mjs <label> "<prompt>" [--nomcp] [--maxturns N] [--model M]`（自动注入 User 级 env，值不落盘）；直调 `node scripts/mcp-call-tool.mjs <tool> '<args>'`。
+
+| 探针 | 结果 | 证据 |
+|------|------|------|
+| P1 注册 | init.mcp_servers=[anysearch:connected] + 5 工具 | t2-p1-tools.stream.jsonl |
+| P2 域内 | typescriptlang.org 实答；索引 6→16 | t2-p2b-indomain-fixed.* |
+| P3 OOD | 修复前通用食谱结果 → 修复后全 modelcontextprotocol.io | t2-p3-ood-abstain.* / t2-p3b-ood-domain.* |
+| P4 ans_chat | v1/chat step 模型真实回答 | t2-p4d-ans-chat.*（红证据 p4/p4b/p4c 同前缀） |
+| P5 recall | 10 条跨 3 sessionId | t2-p5-recall.* |
+| P6 hooks | SessionStart 卡入 context/Pre+Post exit0/信封合法 | ~/.codebuddy/debug/<sid>.txt（不落库，宿主侧文件） |
+| P7 fail-open | server 死→search 正常+hooks exit0+distill 仍产出 | t2-p7-failopen.* |
+| P8 组合 | research 执行；query_knowledge adapter=none 诚实 | t2-p8-research-knowledge.* |
+| P9 对照 | 无工具错引 vs 有工具 pnpm.io/settings/node-modules 真页 | t2-p9a-nomcp / t2-p9b-withtools |
+
+## F-09..F-12 live 抓出缺陷（详 defect-ledger.md，全部已修）
+
+F-09 数组 tool_response→distill 0 假绿 / F-10 mcp 不 ship domains→域向全灭 / F-11 ans_chat 不读 LLM 端点三件套 / F-12 pi-runtime 等不存在 "text" 事件→空正文。
