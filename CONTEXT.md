@@ -966,3 +966,26 @@ flaky 类案例 promote 后的观察标记：golden 条目 watch:true；CI corro
 
 ## Re-spec Legitimacy（改判合法性充要条件）
 改判 golden expected 是 re-spec 而非作弊的充要条件：现实变化发生在被测方稳定承诺面**之外** ∧ 改判后案例仍断言一个真实产品行为。承诺面内的变化改期望=作弊（破坏 pass-rate delta 可比性）；observational-only 断言遇同类漂移应 retire 非改判。_Avoid_: 把 provider 当前形态重钉为期望（grandfathering）；期望跟随被测方承诺面内的回归（橡皮图章化）。来源：金集=校准物非 ground truth（tianpan.co）、qdrant corpus 变更后重生成 qrels 惯例、pytest xfail(reason) 理由必填传统。
+
+## Grill Round 65 — Terms (ADR-0066)
+
+## Real-Host Verification（真宿主验证）
+产品面在真实宿主 agent（如 CodeBuddy Code）上的端到端验证——与单测/shim 模拟对立。R65 实证动因：四个 hooks 适配器读 stdin.event 而真实宿主注入 hook_event_name，部署即静默 no-op——单测全绿不能替代真宿主验证。_Avoid_: 把 MCP initialize 握手绿当全链路绿；把单测模拟 stdin 当宿主真实契约。来源：R65 CodeBuddy 部署——hook_event_name 契约差在单测视野外。
+
+## Hooks Contract Parity（hooks 契约对齐）
+hooks 适配器对宿主 stdin/stdout 契约的字段级对齐义务：stdin 事件字段名（hook_event_name）、tool_name/tool_input/tool_response、session_id/cwd；stdout 经 hookSpecificOutput 信封（permissionDecision/additionalContext/updatedToolOutput）；配置块按宿主 schema（CodeBuddy={matcher,hooks:[{type:command,command}]}，Windows 强制 Git Bash）。_Avoid_: 只读一个字段名不做 || 兜底（hook_event_name||event）；假设宿主间契约逐字相同而不实测。来源：CodeBuddy hooks 官方文档 vs apps/plugin claude 适配器逐字段比对。
+
+## Headless Probe Matrix（无头探针矩阵）
+真实宿主实测的证据形态：agent CLI headless 模式（codebuddy -p --output-format stream-json --mcp-config/--strict-mcp-config -d api,hooks）跑一组各断言一个产品行为的脚本化探针，transcript 全量留痕；每探针独立 mcp.json 隔离。_Avoid_: 交互手测当主证据（不可复跑，只能作抽验）；探针共享配置（隔离失效）；调用了当有效（须验返回内容）。来源：CodeBuddy -p/stream-json/mcp-config 能力面+R65 D-003。
+
+## Effect Contrast Probe（效果对照探针 / P9）
+实测效果的半定量证据：同一研究题跑两遍（有/无 anysearch 工具），stream-json 对照引用质量、拒答行为、工具调用轨迹——把有用从轶事变成可对账证据对。_Avoid_: 只证能跑不证有用；对照组不同题或不同条件（不可比）。来源：R65 D-006(iv)；A/B 对照评估惯例。
+
+## Deployment Gap Fork-Fix（部署缺口分叉修）
+实测对象与修复对象的诚实分离：published 发布物按现状实测（缺口如实记录为可用性发现），同一缺口在 repo 内修复累积进下一发布——实测报告的是发布物现状，修复进 main 不回溯改写实测结论。_Avoid_: 为演示顺滑切 repo build 当实测对象（测的就不是发布物）；缺口绕过不修留给下个陌生人再撞。来源：R65 D-004——plugin server 无 bin 的处置。
+
+## Verified Hosts Table（verified-hosts 表）
+README 中如实列出真正端到端跑通过的 agent 宿主清单（宿主名+版本+日期+验证范围），与理论兼容严格区分。CodeBuddy=首个真宿主 verified。_Avoid_: 把契约同构应该能用写成已验证；漏列验证范围（验过哪些面、没验哪些面）。来源：R65 D-006(iv)。
+
+## E2E Scratch Site（仓库外 e2e 现场）
+真实宿主实测的运行目录纪律：e2e 现场放仓库外 scratch 目录，防宿主 agent 加载仓库 AGENTS.md/CODEBUDDY.md 规则污染被测上下文；现场可弃，证据 transcript 拷回 .scratch 入库。_Avoid_: 在 repo 内跑 e2e（宿主读到项目规则=测试被自身规则挟持）；现场与证据混放。来源：R65 D-003。
