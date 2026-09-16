@@ -5,7 +5,7 @@
         "name": "anysearch-preheat",
         "command": "node",
         "args": [
-          "${CURSOR_PLUGIN_DIR}/../dist/hooks/preheat.cjs"
+          "${CURSOR_PLUGIN_DIR}/../dist/hooks/adapters/cursor.cjs"
         ],
         "timeout": 5
       }
@@ -15,7 +15,7 @@
         "name": "anysearch-distill",
         "command": "node",
         "args": [
-          "${CURSOR_PLUGIN_DIR}/../dist/hooks/distill.cjs"
+          "${CURSOR_PLUGIN_DIR}/../dist/hooks/adapters/cursor.cjs"
         ],
         "timeout": 10
       }

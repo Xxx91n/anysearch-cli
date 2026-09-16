@@ -7,6 +7,7 @@ import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import { createLlmSession, PiAgentRuntime, KernelJsonSchemas, type LlmSession } from "@anysearch-cli/kernel";
 import { domainTomlPath } from "@anysearch-cli/store";
+import { createHash } from "node:crypto";
 import { observeTool } from "./observation.js";
 
 export function registerAnsChat(server: McpServer, eng: CompositionResult): void {
@@ -24,7 +25,13 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     const baseUrl = process.env.ANS_LLM_BASE_URL;
     const apiRaw = process.env.ANS_LLM_API;
     const api = apiRaw === "chat" || apiRaw === "messages" || apiRaw === "responses" ? apiRaw : undefined;
-    const key = providerName + "/" + modelName + "/" + (baseUrl ?? "") + "/" + (api ?? "");
+    // F-A4: the key signature must include a digest of ANS_LLM_API_KEY so a key
+    // rotation on a long-lived MCP server rebuilds the session — never embed
+    // the raw key in the cache key.
+    const keyHash = process.env.ANS_LLM_API_KEY
+      ? createHash("sha256").update(process.env.ANS_LLM_API_KEY).digest("hex").slice(0, 12)
+      : "";
+    const key = providerName + "/" + modelName + "/" + (baseUrl ?? "") + "/" + (api ?? "") + "/" + keyHash;
     if (llmSession && llmSessionKey === key) return llmSession;
     if (baseUrl && !api) {
       throw new Error("ANS_LLM_BASE_URL requires ANS_LLM_API=chat|messages|responses");

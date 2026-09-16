@@ -212,6 +212,79 @@ testAsync("session-start: hook_event_name SessionStart honored", async () => {
   assert.ok(JSON.parse(stdout).additionalContext?.includes("[anysearch plugin active]"));
 });
 
+// === R65 rework F-A5: array-of-blocks tolerance on the other adapters ===
+// Same F-09 class: codex(tool_response)/cursor+antigravity(tool_output) now
+// route through unwrapToolResponse — array shapes must distill, not zero out.
+const BLOCKS = [{ type: "text", text: TOOL_RESP }];
+
+testAsync("codex PostToolUse: array-of-blocks tool_response distills", async () => {
+  const p = join(process.cwd(), "dist", "hooks", "adapters", "codex.cjs");
+  if (!existsSync(p)) { console.log("    SKIP: codex.cjs not built"); return; }
+  const { stdout } = await runHook(p, JSON.stringify({
+    hook_event_name: "PostToolUse", tool_name: "search_web",
+    tool_input: { query: "cb" }, tool_response: BLOCKS, cwd: "/tmp/cb",
+  }));
+  const d = JSON.parse(JSON.parse(stdout).additionalContext);
+  assert.equal(d.resultCount, 2);
+});
+
+testAsync("cursor PostToolUse: array-of-blocks tool_output distills", async () => {
+  const p = join(process.cwd(), "dist", "hooks", "adapters", "cursor.cjs");
+  if (!existsSync(p)) { console.log("    SKIP: cursor.cjs not built"); return; }
+  const { stdout } = await runHook(p, JSON.stringify({
+    hook_event_name: "postToolUse", tool_name: "search_web",
+    tool_input: { query: "cb" }, tool_output: BLOCKS, cwd: "/tmp/cb",
+  }));
+  const d = JSON.parse(JSON.parse(stdout).updated_mcp_tool_output);
+  assert.equal(d.resultCount, 2);
+});
+
+testAsync("antigravity PostToolUse: array-of-blocks tool_output distills", async () => {
+  const p = join(process.cwd(), "dist", "hooks", "adapters", "antigravity.cjs");
+  if (!existsSync(p)) { console.log("    SKIP: antigravity.cjs not built"); return; }
+  const { stdout } = await runHook(p, JSON.stringify({
+    hook_event_name: "PostToolUse", tool_name: "search_web",
+    tool_input: { query: "cb" }, tool_output: BLOCKS, cwd: "/tmp/cb",
+  }));
+  const d = JSON.parse(JSON.parse(stdout).additionalContext);
+  assert.equal(d.resultCount, 2);
+});
+
+// === R65 rework F-A1: template-target executability ===
+// Blind spot closed: earlier tests asserted templates merely HAVE preToolUse
+// keys; nobody checked the target file is a real stdin-reading entrypoint —
+// that's how configs/cursor/hooks.json kept pointing at library files
+// (preheat.cjs/distill.cjs export functions, never read stdin) while three
+// docs claimed "all four platforms fixed".
+testAsync("all configs/*/hooks.json targets resolve to stdin-reading entrypoints", async () => {
+  const { readdirSync, readFileSync } = await import("node:fs");
+  const configsDir = join(process.cwd(), "configs");
+  for (const host of readdirSync(configsDir)) {
+    const cfgPath = join(configsDir, host, "hooks.json");
+    if (!existsSync(cfgPath)) continue;
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+    const targets: string[] = [];
+    const walk = (v: unknown): void => {
+      if (typeof v === "string") {
+        const m = v.match(/dist[\\/]hooks[\\/][\w./-]+\.cjs/);
+        if (m) targets.push(m[0]);
+      } else if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === "object") Object.values(v).forEach(walk);
+    };
+    walk(cfg);
+    assert.ok(targets.length >= 3, host + ": expected >=3 dist/hooks targets, got " + targets.length);
+    for (const t of targets) {
+      const p = join(process.cwd(), ...t.split(/[\\/]/));
+      assert.ok(existsSync(p), host + " target missing from dist build: " + t);
+      const src = readFileSync(p, "utf8");
+      assert.ok(
+        src.includes("process.stdin"),
+        host + " target is not a stdin-reading entrypoint (points at a library file): " + t,
+      );
+    }
+  }
+});
+
 process.on("exit", () => {
   console.log("  codebuddy-contract: " + passed + " passed, " + failed + " failed");
   if (failed > 0) process.exitCode = 1;

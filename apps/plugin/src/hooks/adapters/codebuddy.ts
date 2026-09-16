@@ -67,12 +67,11 @@ async function main(): Promise<void> {
         projectPath: cwd,
         sessionId: stdin.session_id || "",
       });
-      // ponytail: the envelope carries only the three CodeBuddy-documented keys;
-      // Claude's hookEventName is deliberately omitted pending live-host verification
-      // (documented CodeBuddy shape is {permissionDecision|additionalContext|updatedToolOutput}).
+      // The envelope carries only the CodeBuddy-documented keys; live probe
+      // (R65) confirmed no hookEventName field is required. updatedInput is
+      // deliberately NOT emitted — not in the documented shape.
       const hookSpecificOutput: Record<string, unknown> = {};
       if (decision.additionalContext) hookSpecificOutput.additionalContext = decision.additionalContext;
-      if (decision.updatedInput) hookSpecificOutput.updatedInput = decision.updatedInput;
       if (decision.permission) {
         hookSpecificOutput.permissionDecision = decision.permission;
         if (decision.permissionReason) hookSpecificOutput.permissionDecisionReason = decision.permissionReason;

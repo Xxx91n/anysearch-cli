@@ -9,7 +9,7 @@
 // Cursor hook stdin/stdout contract: JSON in, JSON out, exit 0/2/other (fail-open default).
 // Cursor postToolUse supports updated_mcp_tool_output for MCP tools.
 
-import { isAnsTool, callServer } from "../core.js";
+import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
 // ADR-0059 D7 (T-6.3): resolve the shared server token (env or the 0600 token file).
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
@@ -84,11 +84,19 @@ async function main(): Promise<void> {
       }
       process.exit(0);
     } else if (event === "posttooluse") {
+      // R65 F-A5: same array-of-blocks tolerance as CodeBuddy/Claude (F-09 class).
+      const un = unwrapToolResponse(stdin.tool_output);
+      let toolOutput: Record<string, unknown> = {};
+      if (un.kind === "string") {
+        try { toolOutput = JSON.parse(un.text!); } catch { toolOutput = { text: un.text }; }
+      } else if (un.kind === "object") {
+        toolOutput = un.object!;
+      }
       const decision = makePostToolUseDecision({
         event: "PostToolUse",
         toolName,
         toolInput: stdin.tool_input || {},
-        toolOutput: stdin.tool_output || {},
+        toolOutput,
         projectPath: cwd,
         sessionId: stdin.session_id || "",
       });
