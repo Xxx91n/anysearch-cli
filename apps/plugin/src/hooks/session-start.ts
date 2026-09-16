@@ -56,9 +56,16 @@ async function main(): Promise<void> {
   ensureMdc(cwd);
 
   // Output routing card as additionalContext for the host agent.
-  // Claude format: { additionalContext: "..." }
-  // Codex format: { additionalContext: "..." }
-  process.stdout.write(JSON.stringify({ additionalContext: ROUTING_CARD }));
+  // Claude Code (verified 2.1.251, R66): the field only takes effect inside the
+  // hookSpecificOutput envelope — a bare top-level additionalContext is
+  // silently ignored by the host. Codex still accepts the bare shape, but the
+  // envelope is the forward path; other adapters keep their own shapes.
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "SessionStart",
+      additionalContext: ROUTING_CARD,
+    },
+  }));
   process.exit(0);
 }
 

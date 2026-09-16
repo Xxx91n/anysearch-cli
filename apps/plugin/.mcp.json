@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "anysearch": {
+      "command": "ans-mcp"
+    }
+  }
+}
