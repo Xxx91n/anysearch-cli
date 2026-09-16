@@ -1,7 +1,11 @@
 // R64 T2 calibration probe: run the real bundled bin for every live-scoped
 // golden entry (quarantined included) and dump the actual result URLs so
 // mustHitPaths fragments can be chosen from live returns, not guessed.
-// Also probes self-controlled sentinel candidates (repo GitHub URL).
+// (Audit F2 fix: this script only probes existing entries — the
+// sentinel-first preference from D-002 had no attachable target: no golden
+// question returns the repo GitHub URL and the 14-entry shelf gate blocks
+// new entries, so the frozen-spec fallback was taken directly; recorded
+// in ADR-0065 D2.)
 import { readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
