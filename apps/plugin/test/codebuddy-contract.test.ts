@@ -35,10 +35,12 @@ function runHook(cjsPath: string, stdinPayload: string): Promise<{ code: number;
   });
 }
 
-const TOOL_RESP = JSON.stringify({ results: [
-  { title: "cb alpha", url: "https://example.com/a", snippet: "doc alpha", source: "synthetic" },
-  { title: "cb beta", url: "https://example.com/b", snippet: "doc beta", source: "synthetic" },
-] });
+const TOOL_RESP = JSON.stringify({
+  results: [
+    { title: "cb alpha", url: "https://example.com/a", snippet: "doc alpha", source: "synthetic" },
+    { title: "cb beta", url: "https://example.com/b", snippet: "doc beta", source: "synthetic" },
+  ]
+});
 
 // === codebuddy.cjs: SessionStart raw-text contract ===
 testAsync("codebuddy SessionStart: hook_event_name -> raw routing card on stdout", async () => {
@@ -138,6 +140,48 @@ testAsync("claude PostToolUse: legacy event field preserved", async () => {
     tool_input: { query: "cb" }, tool_response: TOOL_RESP, cwd: "/tmp/cb",
   }));
   assert.ok(JSON.parse(stdout).updatedToolOutput);
+});
+
+// === Per-platform hook_event_name closure (ADR-0066 field fix, every adapter) ===
+// Each adapter must honor hook_event_name on its own stdin/output shape.
+testAsync("codex PostToolUse: hook_event_name -> top-level additionalContext", async () => {
+  const p = join(process.cwd(), "dist", "hooks", "adapters", "codex.cjs");
+  if (!existsSync(p)) { console.log("    SKIP: codex.cjs not built"); return; }
+  const { stdout } = await runHook(p, JSON.stringify({
+    hook_event_name: "PostToolUse", tool_name: "search_web",
+    tool_input: { query: "cb" }, tool_response: { results: [{ title: "t", url: "https://x.dev", snippet: "s", source: "x" }] },
+    cwd: "/tmp/cb",
+  }));
+  assert.ok(JSON.parse(stdout).additionalContext, "codex adapter must act on hook_event_name");
+});
+
+testAsync("cursor postToolUse: hook_event_name -> updated_mcp_tool_output (snake_case)", async () => {
+  const p = join(process.cwd(), "dist", "hooks", "adapters", "cursor.cjs");
+  if (!existsSync(p)) { console.log("    SKIP: cursor.cjs not built"); return; }
+  const { stdout } = await runHook(p, JSON.stringify({
+    hook_event_name: "postToolUse", tool_name: "search_web",
+    tool_input: { query: "cb" }, tool_output: { results: [{ title: "t", url: "https://x.dev", snippet: "s", source: "x" }] },
+    cwd: "/tmp/cb",
+  }));
+  assert.ok(JSON.parse(stdout).updated_mcp_tool_output, "cursor adapter must act on hook_event_name");
+});
+
+testAsync("antigravity PostToolUse: hook_event_name -> top-level additionalContext", async () => {
+  const p = join(process.cwd(), "dist", "hooks", "adapters", "antigravity.cjs");
+  if (!existsSync(p)) { console.log("    SKIP: antigravity.cjs not built"); return; }
+  const { stdout } = await runHook(p, JSON.stringify({
+    hook_event_name: "PostToolUse", tool_name: "search_web",
+    tool_input: { query: "cb" }, tool_output: { results: [{ title: "t", url: "https://x.dev", snippet: "s", source: "x" }] },
+    cwd: "/tmp/cb",
+  }));
+  assert.ok(JSON.parse(stdout).additionalContext, "antigravity adapter must act on hook_event_name");
+});
+
+testAsync("session-start: hook_event_name SessionStart honored", async () => {
+  const p = join(process.cwd(), "dist", "hooks", "session-start.cjs");
+  if (!existsSync(p)) { console.log("    SKIP: session-start.cjs not built"); return; }
+  const { stdout } = await runHook(p, JSON.stringify({ hook_event_name: "SessionStart", cwd: "/tmp/cb" }));
+  assert.ok(JSON.parse(stdout).additionalContext?.includes("[anysearch plugin active]"));
 });
 
 process.on("exit", () => {
