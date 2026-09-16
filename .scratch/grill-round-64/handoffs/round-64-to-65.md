@@ -8,7 +8,7 @@ Stack (primary key = GitButler change-ids; SHAs are time-lagged):
 
 - T1–T6 全落地。机制：runner 判定归一 `activeIds()`；`ANS_EVAL_EVIDENCE=1` 证据模式（EVIDENCE 四元组 / 仅隔离失败 exit0 / RETIRE_CANDIDATE）；`mustHitPaths`/`mustNotHitPaths` 页族层；schema 四字段+`schema_version:1`。
 - Fixture：8 条路径漂移迁移 + g0008 降格单宿主 + g0010 并入路径簇（未改判 abstain——实测恢复 answer）；3 条 frozen-spec 字节级腿（g0001→2026-07-28 / g0005→2025-11-25 / g0010→2024-11-05）；migration 块+双 class 全配。
-- 裁决：9 轮 evidence 复跑（flaky flip=0；g0005 一次瞬时 abstain），10 条全量 promoteEntry，账本清空，watch:true 标 g0001/4/5/6/9。
+- 裁决：9 轮 evidence 复跑（flaky flip=0；g0005 一次瞬时 abstain），10 条全量 promoteEntry，账本清空，watch:true 标 g0001/4/5/6/9/10（g0010 审计窗口补标 F4）。
 - 闸门：ship-gate §1n R64 锚点（exact≥2 frozen-only / paths≥1 / migration 块）9/9 步全绿。
 - 文档：ADR-0065（含四成文义务+closure 回填）、README 页族条目、CHANGELOG、ADR 索引 65 条。
 - 验证：check 干净；store test 62 文件全绿；ship-gate 9/9；test:online eval-looks 69/0 + semantic 4/0（Windows 本机）。
@@ -24,7 +24,7 @@ PENDING — stack unpushed。本地自证可复跑：
 ## 下一轮候选
 
 - push r64-impl + 走 CI（ubuntu+windows ship-gate 双绿 corroboration URL 回填 ADR-0065 gaps 行）。
-- watch 观测期：g0001/4/5/6/9 任一 CI 翻转 → 走既有 TTL 通道重入隔离（同 baseline id 合法，renewals=0）。
+- watch 观测期：g0001/4/5/6/9/10 任一 CI 翻转 → 走既有 TTL 通道重入隔离（同 baseline id 合法，renewals=0）。
 - npm 0.0.4 发布议题（含 OIDC trusted publishing——本轮明确不并入）。
 - 英文双宿主新案例 harvest（账本独立任务，未在本轮范围）。
 

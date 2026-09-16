@@ -48,7 +48,10 @@ assertions was explicitly not allowed. Byte-exact `mustHitUrls` legs survive
 only anchored to `controlled|frozen-spec` targets — landed three, all on
 frozen dated MCP spec snapshots verified by recurrence probes
 (g0001→2026-07-28 streamable-http 3/3, g0005→2025-11-25 transports 6/6,
-g0010→2024-11-05 transports 3/3). The initial 2025-06-18 leg on g0001 rotated
+g0010→2024-11-05 transports 3/3). The sentinel-first preference was
+evaluated and found unattached: no golden question returns this repo's GitHub
+URL and the 14-entry shelf gate blocks new entries, so the frozen-spec
+fallback was taken directly (audit F2 record). The initial 2025-06-18 leg on g0001 rotated
 out mid-round (present probe-0/run-01/run-02, absent runs 03–06) and was
 re-anchored — dated-snapshot coverage rotates even when the page itself is
 frozen; post-promote watch is the armed mitigation for that residual risk,
@@ -92,7 +95,8 @@ Adjudication tiers applied (all met): stable tier ≥1 green; flaky tier
 post-downgrade. Observed across 8 post-migration runs: every entry green on
 the new granularity except g0001's initial leg (re-anchored, then 3/3 green)
 and one transient g0005 abstain flip — those plus the flaky three carry
-`watch:true`.
+`watch:true`; docs-g0010 was armed post-audit (F4: its frozen-spec leg
+flipped fail,fail,pass inside the audit window).
 
 ### D5 Schema fields, migration provenance, gate anchors, watch circuit (ledger D-005; T1/T4)
 
@@ -157,7 +161,7 @@ risk.
   the R63 "0/12 page precision" caveat is closed.
 - A second classification predicate can no longer silently drift — the
   parity test fails if the runner stops calling `activeIds()`.
-- Watch-marked entries (g0001/4/5/6/9) re-enter quarantine through normal
+- Watch-marked entries (g0001/4/5/6/9/10) re-enter quarantine through normal
   TTL governance on any CI flip — statistical-power debt is carried by the
   loop, not hidden.
 - `eval-looks.json` stays schema v1 (`schema_version: 1` sentinel);
@@ -171,5 +175,5 @@ Backfilled at T6 (four-part per D7):
 |---|---|---|
 | code | `pnpm -C packages/store check` clean; `pnpm -C packages/store test` 62 files pass incl. eval-looks-live-parity 22/22 | done |
 | adjudication | `.scratch/grill-round-64/evidence/` (probe-0/1 + runs 01–09 + evidence.log + adjudication.json); promoteEntry ×10 → eval-quarantine.json entries:[]; watch:true on g0001/4/5/6/9 | done |
-| gate | `node scripts/ship-gate.mjs` 9/9 steps pass incl. R64 anchors (exact≥2 frozen-only / paths≥1 / migration blocks); `pnpm -C packages/store test:online` eval-looks 69/0 + semantic 4/0 | done |
-| gaps/limitations | resolvable self-witness only — no external attestation; dated-snapshot leg coverage can rotate (watch armed, re-entry via TTL path); g0005 saw one transient abstain flip (run-07); CI corroboration URL PENDING — stack unpushed | done |
+| gate | `node scripts/ship-gate.mjs` 9/9 steps pass incl. R64 anchors (exact≥2 frozen-only / paths≥1 / migration blocks); `pnpm -C packages/store test:online` eval-looks 69/0 + semantic 4/0 | done (local); CI URL pending push |
+| gaps/limitations | resolvable self-witness only — no external attestation; dated-snapshot leg coverage can rotate (watch armed, re-entry via TTL path; g0010 leg flipped inside the audit window and was armed post-audit F4); g0005 saw one transient abstain flip (run-07); CI corroboration URL PENDING — stack unpushed | done |
