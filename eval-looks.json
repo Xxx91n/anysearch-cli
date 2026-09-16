@@ -485,9 +485,10 @@
         "migration": {
           "from": "mustHitUrls:[https://modelcontextprotocol.io/specification/2025-06-18/basic/transports]",
           "to": "mustHitPaths:[/deprecated tolerate dated] + mustNotHitPaths:[/quickstart] + byte-exact mustHitUrls on the frozen 2024-11-05 spec snapshot (SSE-era spec — directly on-question, 3/3 recurrence in probe-1)",
-          "drift": "probe-0 live 2026-09-16: dated 2025-06-18 spec superseded; answers resumed with /specification/{draft,2026-07-28}/deprecated + 2024-11-05 basic/transports (earlier quarantine was a transient all-off-domain abstain episode); probe-1: answers remained stable across 3 further runs, /deprecated family + 2024-11-05 snapshot recurring 3/3",
+          "drift": "probe-0 live 2026-09-16: dated 2025-06-18 spec superseded; answers resumed with /specification/{draft,2026-07-28}/deprecated + 2024-11-05 basic/transports (earlier quarantine was a transient all-off-domain abstain episode); probe-1: answers remained stable across 3 further runs, /deprecated family + 2024-11-05 snapshot recurring 3/3; audit-window flip observed on the 2024-11-05 leg (fail,fail,pass across 3 runs) — watch:true added in the F4 rework window",
           "decidedAt": "2026-09-16"
-        }
+        },
+        "watch": true
       },
       {
         "id": "docs-g0011",

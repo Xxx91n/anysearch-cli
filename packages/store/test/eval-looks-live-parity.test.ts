@@ -78,6 +78,8 @@ assert(!/!e.retired && Date.parse(e.expiresAt)/.test(runnerSrc), "runner carries
 assert(runnerSrc.includes("ANS_EVAL_EVIDENCE"), "runner exposes the evidence-mode env flag");
 assert(runnerSrc.includes("EVIDENCE "), "runner emits EVIDENCE quadruple lines");
 assert(runnerSrc.includes("RETIRE_CANDIDATE"), "runner flags consecutive all-red entries");
+assert(runnerSrc.includes("allRed"), "runner parses p/f counts so the PRIOR record all-red state is decidable (audit F3)");
+assert(/isQuar && eFail > 0 && ePass === 0 && prior\?\.allRed === true/.test(runnerSrc), "RETIRE_CANDIDATE fires only for quarantined entries all-red on consecutive runs (audit F3)");
 assert(runnerSrc.includes("mustHitPaths"), "runner consumes the mustHitPaths page-family layer");
 assert(runnerSrc.includes("mustNotHitPaths"), "runner consumes the mustNotHitPaths negative pins");
 assert(runnerSrc.includes("WATCH "), "runner surfaces the post-promote watch mark");
