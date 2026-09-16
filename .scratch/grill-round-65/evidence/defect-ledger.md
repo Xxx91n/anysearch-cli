@@ -21,7 +21,7 @@
 | ID | 修复 | 先红证据 | 后绿证据 |
 |----|------|----------|----------|
 | F-01 | package.json 加 `bin.ans-plugin-server→dist/server/index.cjs` + server/index.ts 补 shebang | bin=null（t1 实物） | `pnpm build` → dist/server/index.cjs 首行 `#!/usr/bin/env node`；bin 注册待 T4 tarball 验证 |
-| F-02 | 四平台 configs/*/hooks.json Pre/Post 改指 `adapters/<host>.cjs`（单入口双事件）；新增 configs/codebuddy/hooks.json（matcher+command schema，`$(npm root -g)` 解析陌生人路径）；`files` 加 `configs`（模板随包发布——原 files:["dist"] 根本不 ship 模板） | tail dist/hooks/preheat.cjs=纯库无 main | 模板实物 + codebuddy-contract 10/10 |
+| F-02 | configs/{claude,codex,antigravity}/hooks.json Pre/Post 改指 `adapters/<host>.cjs`（单入口双事件）；新增 configs/codebuddy/hooks.json（matcher+command schema，`$(npm root -g)` 解析陌生人路径）；`files` 加 `configs`（模板随包发布——原 files:["dist"] 根本不 ship 模板）。**cursor 漏修——F-A1 审计返工补齐** | tail dist/hooks/preheat.cjs=纯库无 main | 模板实物 + codebuddy-contract 20/20（含模板-target 可执行断言） |
 | F-03 | 四适配器 + session-start 改 `hook_event_name ?? event`；新 codebuddy.ts 适配器（hook_event_name+hookSpecificOutput 信封+SessionStart 原文） | t1-synthetic-stdin-red.log：hook_event_name→0 索引空输出；event→2 索引 | t3-synthetic-green-{codebuddy,claude}.log：两适配器 hook_event_name 各 +2 索引+正确信封；test/codebuddy-contract.test.ts 10/10 |
 | F-04 | codebuddy.ts 决策全进 `hookSpecificOutput{permissionDecision\|additionalContext\|updatedToolOutput}`（顶层零泄漏有测试断言） | claude.ts 源码顶层写字段（t1） | codebuddy-contract.test.ts「decision keys must NOT leak to top level」断言绿 |
 
@@ -43,7 +43,19 @@
 | P3 OOD 域向 | ✅ 修复前通用结果→修复后全 modelcontextprotocol.io（与 CLI 一致） | t2-p3-ood-abstain.* / t2-p3b-ood-domain.* |
 | P4 ans_chat | ✅ v1/chat 上游（model=step）真实一句话回答 | t2-p4d-ans-chat.* |
 | P5 recall 往返 | ✅ 10 条召回跨 3 sessionId | t2-p5-recall.* |
-| P6 hooks 三事件 | ✅ debug 实物：SessionStart 卡片入 context + PreToolUse(exit0) + PostToolUse 信封 distill | `.codebuddy/debug/<sid>.txt` 各会话 |
+| P6 hooks 三事件 | ✅ debug 实物：SessionStart 卡片入 context + PreToolUse(exit0) + PostToolUse 信封 distill | t2-p6-hooks-debug.log（返工 F-A2 拷回，原物在 `~/.codebuddy/debug/<sid>.txt`） |
 | P7 断连 fail-open | ✅ server 杀掉后 search 正常、hooks 全 exit 0、distill 仍产出（index 静默跳过） | t2-p7-failopen.* + debug |
 | P8 research+knowledge | ✅ research_web 执行；query_knowledge 诚实 stub | t2-p8-research-knowledge.* |
 | P9 对照 | ✅ 无工具猜 `pnpm.io/npmrc#node-linker`（错）→ 有工具实检 `pnpm.io/settings/node-modules`（真官方页+更深细节） | t2-p9a/p9b.* |
+
+## 审计返工发现（2026-09-16 审计窗口打回，reports/2026-09-16-audit.md）
+
+| ID | 级别 | 发现 | 处置 | 验证 |
+|----|------|------|------|------|
+| F-A1 | 高 | `configs/cursor/hooks.json` 仍指 `dist/hooks/{preheat,distill}.cjs` 库文件——T3"四平台"声明虚报（实际 3+codebuddy）；git log 证实 r65 从未碰该文件。测试盲区：原契约测试只断言模板有 preToolUse 键 | **fixed**：模板改指 `adapters/cursor.cjs`；契约测试新增"所有 configs/*/hooks.json target 必须存在且读 stdin"断言堵同类盲区 | codebuddy-contract 20/20（新增断言在 cursor 修复前先红） |
+| F-A2 | 中 | P6 hooks debug 摘录未拷回 evidence/（实物留 `~/.codebuddy/debug/`），违 D-006(ii) 证据归档口径 | **fixed**：三会话 executeHooks/Hook input/exit0 摘录落 `t2-p6-hooks-debug.log`（61 行、6 次 hook 调用、0 密钥模式命中） | evidence 实物 |
+| F-A3 | 低 | `codebuddy.ts` 信封发 `updatedInput`——超契约三键、与自身注释矛盾、死码 | **fixed**：删除该键 + 注释订正 | tsc 0 错 + 契约测试绿 |
+| F-A4 | 低 | `ans-chat.tool.ts` llmSessionKey 不含 ANS_LLM_API_KEY——长驻 MCP 换 key 不重建 session | **fixed**：key 追加 `sha256(ANS_LLM_API_KEY)[:12]`（永不嵌原值） | check 绿；旋转后 session 必然重建（key 不同） |
+| F-A5 | 登记 | `unwrapToolResponse` 仅 codebuddy+claude 接入，codex/cursor/antigravity 遇数组形状复现 F-09 | **fixed**：三适配器 PostToolUse 全接入解包；各加数组形状契约用例 | codebuddy-contract 20/20 |
+| F-A6 | 低 | 文档漂移：契约测试数 10/14/16 三处不一；ponytail-ledger 未补记；CHANGELOG `### Verified` 非标节名 | **fixed**：统一 20/20；ledger 补 2 条（codebuddy.ts:49、ans-chat.tool.ts:71）；Verified 并入 Changed 单条 | 本文件 + git diff |
+| F-A7 | 观察 | D-003"末尾 interactive 抽验"未做 | **deferred**：报告已如实列未验证面；D-006(iv) 明列可挂 | — |

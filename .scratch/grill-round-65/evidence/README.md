@@ -34,7 +34,7 @@
 |------|------|------|----------|
 | 合成绿 codebuddy | `ANS_ADAPTER=<repo>/dist/hooks/adapters/codebuddy.cjs node scripts/synthetic-stdin-red.mjs` | hook_event_name→hookSpecificOutput 信封 + +2 索引；event 兜底同绿 | t3-synthetic-green-codebuddy.log |
 | 合成绿 claude(修复) | 同上 ANS_ADAPTER=claude.cjs | hook_event_name→顶层 updatedToolOutput + +2 索引 | t3-synthetic-green-claude.log |
-| 契约单测 | `pnpm --filter @anysearch-cli/plugin test` | codebuddy-contract 14/14（五平台入口各覆盖） | pnpm test 输出 |
+| 契约单测 | `pnpm --filter @anysearch-cli/plugin test` | codebuddy-contract 20/20（五平台入口+数组形状+模板target断言） | pnpm test 输出 |
 | pnpm pack | `pnpm --filter @anysearch-cli/plugin pack` | tgz 含 configs/5 平台 + codebuddy.cjs + server/index.cjs | ship-gate pack 清单 |
 | tarball 装 | `npm i -g ./anysearch-cli-plugin-0.0.3.tgz` | changed 3 packages；configs+codebuddy.cjs 落 npm-global | 会话记录 |
 | bin 测活 | `ans-plugin-server`（cwd=e2e） | /health 401→200，复用 0600 token | 会话记录 |
