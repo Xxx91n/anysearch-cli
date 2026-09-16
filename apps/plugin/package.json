@@ -44,8 +44,9 @@
     }
   },
   "scripts": {
-    "build": "pnpm run build:server && pnpm run build:hooks",
-    "build:hooks": "esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts src/hooks/adapters/codebuddy.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --external:better-sqlite3 --external:@anysearch-cli/embedding",
+    "build": "pnpm run gen:configs && pnpm run build:server && pnpm run build:hooks",
+    "gen:configs": "node scripts/gen-claude-configs.mjs",
+    "build:hooks": "esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts src/hooks/adapters/codebuddy.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --banner:js=\"#!/usr/bin/env node\" --external:better-sqlite3 --external:@anysearch-cli/embedding",
     "build:server": "tsup",
     "dev": "tsx src/server/index.ts",
     "lint": "tsc --noEmit",
@@ -69,7 +70,10 @@
   },
   "files": [
     "dist",
-    "configs"
+    "configs",
+    "hooks",
+    ".claude-plugin",
+    ".mcp.json"
   ],
   "main": "./dist/index.cjs",
   "peerDependencies": {
@@ -90,6 +94,8 @@
     "access": "public"
   },
   "bin": {
-    "ans-plugin-server": "dist/server/index.cjs"
+    "ans-plugin-server": "dist/server/index.cjs",
+    "ans-hook-claude": "dist/hooks/adapters/claude.cjs",
+    "ans-hook-session-start": "dist/hooks/session-start.cjs"
   }
 }

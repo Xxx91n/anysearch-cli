@@ -1,9 +1,12 @@
 // Claude Code hooks adapter.
 // Claude Code hooks: stdin JSON, stdout JSON, exit 0/2/other.
-// PreToolUse: event=PreToolUse, tool_name, tool_input, cwd, session_id
-// PostToolUse: event=PostToolUse, tool_name, tool_input, tool_response, cwd, session_id
-// JSON output: { permissionDecision: "allow"|"deny"|"ask", additionalContext, updatedInput }
-// PostToolUse: { updatedToolOutput } or distilled summary
+// PreToolUse: hook_event_name=PreToolUse, tool_name, tool_input, cwd, session_id
+// PostToolUse: hook_event_name=PostToolUse, tool_name, tool_input, tool_response, cwd, session_id
+// JSON output (ADR-0066 R66, verified on Claude Code 2.1.251): ALL decision keys
+// must sit inside the hookSpecificOutput envelope — bare top-level
+// additionalContext/updatedToolOutput/permissionDecision are silently dropped
+// by the host (proven by deny-sentinels: envelope + legacy decision:block both
+// block, top-level permissionDecision executes anyway).
 // ADR-0009 Q5: only intercept ans_* tools.
 
 import { isAnsTool, callServer, unwrapToolResponse, type HookDecision } from "../core.js";
@@ -55,19 +58,18 @@ async function main(): Promise<void> {
         projectPath: cwd,
         sessionId: stdin.session_id || "",
       });
-      const output: Record<string, unknown> = {};
-      if (decision.additionalContext) output.additionalContext = decision.additionalContext;
-      if (decision.updatedInput) output.updatedInput = decision.updatedInput;
-      // ADR-0054 D4: surface ask/allow/deny through Claude's hookSpecificOutput envelope.
+      // ADR-0054 D4 + R66 ER-2: every PreToolUse decision key goes inside the
+      // hookSpecificOutput envelope (official names: additionalContext,
+      // updatedToolInput, permissionDecision, permissionDecisionReason).
+      const hookSpecificOutput: Record<string, unknown> = { hookEventName: "PreToolUse" };
+      if (decision.additionalContext) hookSpecificOutput.additionalContext = decision.additionalContext;
+      if (decision.updatedInput) hookSpecificOutput.updatedToolInput = decision.updatedInput;
       if (decision.permission) {
-        output.hookSpecificOutput = {
-          hookEventName: "PreToolUse",
-          permissionDecision: decision.permission,
-          ...(decision.permissionReason ? { permissionDecisionReason: decision.permissionReason } : {}),
-        };
+        hookSpecificOutput.permissionDecision = decision.permission;
+        if (decision.permissionReason) hookSpecificOutput.permissionDecisionReason = decision.permissionReason;
       }
-      if (Object.keys(output).length > 0) {
-        process.stdout.write(JSON.stringify(output));
+      if (Object.keys(hookSpecificOutput).length > 1) {
+        process.stdout.write(JSON.stringify({ hookSpecificOutput }));
       }
       process.exit(0);
     } else if (event === "PostToolUse") {
@@ -101,9 +103,17 @@ async function main(): Promise<void> {
         }, { sessionId: stdin.session_id || "" }).catch(() => null);
       }
 
-      // Return distilled output to Claude.
+      // Return distilled output to Claude. PostToolUse has no output-rewrite
+      // field on Claude — the only honored channel is
+      // hookSpecificOutput.additionalContext (R66 ER-2: top-level
+      // updatedToolOutput is dropped), so the distilled summary goes there.
       if (decision.distilledOutput) {
-        process.stdout.write(JSON.stringify({ updatedToolOutput: decision.distilledOutput }));
+        process.stdout.write(JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PostToolUse",
+            additionalContext: decision.distilledOutput,
+          },
+        }));
       }
       process.exit(0);
     }

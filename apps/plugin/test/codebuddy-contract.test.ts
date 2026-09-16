@@ -129,7 +129,7 @@ testAsync("claude PostToolUse: array-of-blocks tool_response tolerated too", asy
     tool_input: { query: "cb" }, tool_response: [{ type: "text", text: TOOL_RESP }], cwd: "/tmp/cb",
   }));
   const parsed = JSON.parse(stdout);
-  const distilled = JSON.parse(parsed.updatedToolOutput || "{}");
+  const distilled = JSON.parse(parsed.hookSpecificOutput?.additionalContext || "{}");
   assert.equal(distilled.resultCount, 2);
 });
 
@@ -151,14 +151,19 @@ testAsync("codebuddy: unparseable stdin -> silent exit 0", async () => {
 });
 
 // === claude.cjs regression: hook_event_name fix lands on real Claude shape ===
-testAsync("claude PostToolUse: hook_event_name now honored (top-level updatedToolOutput)", async () => {
+// R66 ER-2 (live-verified on Claude Code 2.1.251): the host drops every bare
+// top-level decision key — output MUST sit inside hookSpecificOutput.
+testAsync("claude PostToolUse: hook_event_name -> hookSpecificOutput.additionalContext", async () => {
   if (!existsSync(CLAUDE_ADAPTER)) { console.log("    SKIP: dist/hooks/adapters/claude.cjs not built yet"); return; }
   const { stdout } = await runHook(CLAUDE_ADAPTER, JSON.stringify({
     hook_event_name: "PostToolUse", tool_name: "search_web",
     tool_input: { query: "cb" }, tool_response: TOOL_RESP, cwd: "/tmp/cb",
   }));
   const parsed = JSON.parse(stdout);
-  assert.ok(parsed.updatedToolOutput, "claude adapter must act on hook_event_name (was silent no-op)");
+  assert.ok(parsed.hookSpecificOutput?.additionalContext, "claude adapter must emit the hookSpecificOutput envelope");
+  assert.ok(!("updatedToolOutput" in parsed), "top-level updatedToolOutput is dropped by the host — must not be emitted");
+  const distilled = JSON.parse(parsed.hookSpecificOutput.additionalContext);
+  assert.equal(distilled.resultCount, 2);
 });
 
 testAsync("claude PostToolUse: legacy event field preserved", async () => {
@@ -167,7 +172,7 @@ testAsync("claude PostToolUse: legacy event field preserved", async () => {
     event: "PostToolUse", tool_name: "search_web",
     tool_input: { query: "cb" }, tool_response: TOOL_RESP, cwd: "/tmp/cb",
   }));
-  assert.ok(JSON.parse(stdout).updatedToolOutput);
+  assert.ok(JSON.parse(stdout).hookSpecificOutput?.additionalContext);
 });
 
 // === Per-platform hook_event_name closure (ADR-0066 field fix, every adapter) ===
@@ -209,7 +214,7 @@ testAsync("session-start: hook_event_name SessionStart honored", async () => {
   const p = join(process.cwd(), "dist", "hooks", "session-start.cjs");
   if (!existsSync(p)) { console.log("    SKIP: session-start.cjs not built"); return; }
   const { stdout } = await runHook(p, JSON.stringify({ hook_event_name: "SessionStart", cwd: "/tmp/cb" }));
-  assert.ok(JSON.parse(stdout).additionalContext?.includes("[anysearch plugin active]"));
+  assert.ok(JSON.parse(stdout).hookSpecificOutput?.additionalContext?.includes("[anysearch plugin active]"));
 });
 
 // === R65 rework F-A5: array-of-blocks tolerance on the other adapters ===
@@ -263,11 +268,14 @@ testAsync("all configs/*/hooks.json targets resolve to stdin-reading entrypoints
     const cfgPath = join(configsDir, host, "hooks.json");
     if (!existsSync(cfgPath)) continue;
     const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
     const targets: string[] = [];
     const walk = (v: unknown): void => {
       if (typeof v === "string") {
         const m = v.match(/dist[\\/]hooks[\\/][\w./-]+\.cjs/);
         if (m) targets.push(m[0]);
+        // R66: bin-named commands (ans-hook-*) resolve through package.json bin.
+        else if (/^ans-[\w-]+$/.test(v) && pkg.bin?.[v]) targets.push(pkg.bin[v]);
       } else if (Array.isArray(v)) v.forEach(walk);
       else if (v && typeof v === "object") Object.values(v).forEach(walk);
     };

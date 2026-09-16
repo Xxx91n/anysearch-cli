@@ -91,10 +91,12 @@ test("makePostToolUseDecision: returns indexEntries for indexing", () => {
   const decision = makePostToolUseDecision({
     event: "PostToolUse", toolName: "ans_research_web",
     toolInput: { query: "TypeScript" },
-    toolOutput: { results: [
-      { title: "TS", url: "https://ts.dev", snippet: "TypeScript guide", source: "tavily" },
-      { title: "TS2", url: "https://ts2.dev", snippet: "Another guide", source: "anysearch" },
-    ] },
+    toolOutput: {
+      results: [
+        { title: "TS", url: "https://ts.dev", snippet: "TypeScript guide", source: "tavily" },
+        { title: "TS2", url: "https://ts2.dev", snippet: "Another guide", source: "anysearch" },
+      ]
+    },
     projectPath: "/test", sessionId: "s1",
   });
   assert.ok(decision.distilledOutput);
@@ -125,10 +127,13 @@ testAsync("E2E: session-start.cjs outputs valid JSON for SessionStart event", as
   });
 
   const parsed = JSON.parse(result);
-  assert.ok(parsed.additionalContext, "should have additionalContext field");
-  assert.ok(parsed.additionalContext.includes("anysearch plugin active"), "routing card should be present");
-  assert.ok(parsed.additionalContext.includes("search_web"), "should mention search_web");
-  assert.ok(parsed.additionalContext.includes("Fail-open"), "should mention fail-open");
+  // R66 ER-2: Claude Code honors additionalContext only inside the
+  // hookSpecificOutput envelope — top-level fields are silently dropped.
+  const ctx = parsed.hookSpecificOutput?.additionalContext;
+  assert.ok(ctx, "should have hookSpecificOutput.additionalContext");
+  assert.ok(ctx.includes("anysearch plugin active"), "routing card should be present");
+  assert.ok(ctx.includes("search_web"), "should mention search_web");
+  assert.ok(ctx.includes("Fail-open"), "should mention fail-open");
 });
 
 testAsync("E2E: session-start.cjs exits silently for non-SessionStart events", async () => {

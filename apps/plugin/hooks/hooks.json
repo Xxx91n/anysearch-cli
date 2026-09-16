@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "ans-hook-claude",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/adapters/claude.cjs\"",
             "timeout": 5
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "ans-hook-claude",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/adapters/claude.cjs\"",
             "timeout": 10
           }
         ]
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "ans-hook-session-start",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/session-start.cjs\"",
             "timeout": 5
           }
         ]
