@@ -75,3 +75,27 @@ export async function callServer(
 }
 
 export { ANS_TOOL_PATTERN };
+
+// Hosts wrap MCP tool output differently: CodeBuddy sends an ARRAY of content
+// blocks [{type:"text",text:"<json>"}] (verified live in R65 — see defect
+// ledger F-09), Claude Code sends {content:[{type:"text",text}]} or a raw
+// object/string. Unwrap to the innermost text payload so adapters can
+// JSON.parse the real tool output instead of distilling an empty result set.
+export function unwrapToolResponse(
+  tr: unknown,
+): { kind: "string" | "object" | "none"; text?: string; object?: Record<string, unknown> } {
+  if (typeof tr === "string") return { kind: "string", text: tr };
+  const blocks = Array.isArray(tr)
+    ? tr
+    : (tr as { content?: unknown } | null)?.content;
+  if (Array.isArray(blocks)) {
+    const hit = blocks.find(
+      b => b && typeof b === "object" && typeof (b as { text?: unknown }).text === "string",
+    ) as { text: string } | undefined;
+    if (hit) return { kind: "string", text: hit.text };
+  }
+  if (tr && typeof tr === "object" && !Array.isArray(tr)) {
+    return { kind: "object", object: tr as Record<string, unknown> };
+  }
+  return { kind: "none" };
+}

@@ -105,6 +105,34 @@ testAsync("codebuddy PostToolUse: object-shaped tool_response also parsed", asyn
   assert.ok(parsed.hookSpecificOutput?.updatedToolOutput, "object tool_response should distill too");
 });
 
+// R65 F-09: live CodeBuddy 2.151 sends tool_response as an ARRAY of content
+// blocks — [{type:"text",text:"<json>"}] — not a string nor {content:[...]}.
+// Before the fix this silently distilled to resultCount:0 and indexed nothing.
+testAsync("codebuddy PostToolUse: array-of-content-blocks tool_response (live shape)", async () => {
+  if (!existsSync(CB_ADAPTER)) { console.log("    SKIP: not built"); return; }
+  const { stdout } = await runHook(CB_ADAPTER, JSON.stringify({
+    hook_event_name: "PostToolUse", tool_name: "mcp__anysearch__search_web",
+    tool_input: { query: "cb" },
+    tool_response: [{ type: "text", text: TOOL_RESP }],
+    session_id: "s1", cwd: "/tmp/cb",
+  }));
+  const parsed = JSON.parse(stdout);
+  const distilled = JSON.parse(parsed.hookSpecificOutput?.updatedToolOutput || "{}");
+  assert.equal(distilled.resultCount, 2, "array-of-blocks tool_response must unwrap to real results");
+  assert.equal(distilled.topResults[0].url, "https://example.com/a");
+});
+
+testAsync("claude PostToolUse: array-of-blocks tool_response tolerated too", async () => {
+  if (!existsSync(CLAUDE_ADAPTER)) { console.log("    SKIP: claude adapter not built"); return; }
+  const { stdout } = await runHook(CLAUDE_ADAPTER, JSON.stringify({
+    hook_event_name: "PostToolUse", tool_name: "search_web",
+    tool_input: { query: "cb" }, tool_response: [{ type: "text", text: TOOL_RESP }], cwd: "/tmp/cb",
+  }));
+  const parsed = JSON.parse(stdout);
+  const distilled = JSON.parse(parsed.updatedToolOutput || "{}");
+  assert.equal(distilled.resultCount, 2);
+});
+
 testAsync("codebuddy PostToolUse: legacy event field fallback", async () => {
   if (!existsSync(CB_ADAPTER)) { console.log("    SKIP: not built"); return; }
   const { stdout } = await runHook(CB_ADAPTER, JSON.stringify({

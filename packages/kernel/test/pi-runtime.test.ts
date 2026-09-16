@@ -3,7 +3,7 @@
 // ponytail: no test framework, assert-based demo.
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
-import { PiAgentRuntime } from "../src/pi-runtime";
+import { PiAgentRuntime, mapAssistantMessageEvent } from "../src/pi-runtime";
 import { distillGap, adjudicateReuseCompress } from "../src/memory-pipeline";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
 import type { FusedEnvelope, SufficiencySignal } from "@anysearch-cli/retriever";
@@ -46,9 +46,9 @@ class MockLedger implements BudgetLedgerPort {
   reserveCalls(_s: string, count: number): boolean { this.reserved += count; return true; }
   settleCalls(_s: string, _r: number, actual: number): void { this.settled += actual; }
   reserveTokens(_s: string, _a: number): boolean { return true; }
-  settleTokens(): void {}
+  settleTokens(): void { }
   reserveUsd(_s: string, _a: number): boolean { return true; }
-  settleUsd(): void {}
+  settleUsd(): void { }
 }
 
 // Mock streamFn: returns a faux assistant message stream.
@@ -129,7 +129,7 @@ test: {
       searchFts5() { return []; }
       searchMemory() { return []; }
       saveResults() { return Promise.resolve(); }
-      close() {}
+      close() { }
     })() as any,
     sessionId: "test-adr0012",
   });
@@ -192,29 +192,59 @@ test: {
 
 console.log("---");
 
-  // ADR-0014 D2/D5/D1: sufficiency gate tests.
-  // 23. DomainConfigPort compaction.sufficiencyMaxRerounds field exists.
-  const domain23: DomainConfigPort = {
-    sources: { enabled: ["tavily", "exa"] },
-    prompts: [],
-    skills: { active: ["search"] },
-    hooks: { toolWhitelist: ["search"] },
-    rag: { adapter: "none" },
-    compaction: { model: "test-model", sufficiencyMaxRerounds: 3 },
-  };
-  assert(domain23.compaction?.sufficiencyMaxRerounds === 3, "D6: sufficiencyMaxRerounds = 3");
+// ADR-0014 D2/D5/D1: sufficiency gate tests.
+// 23. DomainConfigPort compaction.sufficiencyMaxRerounds field exists.
+const domain23: DomainConfigPort = {
+  sources: { enabled: ["tavily", "exa"] },
+  prompts: [],
+  skills: { active: ["search"] },
+  hooks: { toolWhitelist: ["search"] },
+  rag: { adapter: "none" },
+  compaction: { model: "test-model", sufficiencyMaxRerounds: 3 },
+};
+assert(domain23.compaction?.sufficiencyMaxRerounds === 3, "D6: sufficiencyMaxRerounds = 3");
 
-  // 24. SufficiencySignal type has four segments.
-  const mockSuff: SufficiencySignal = {
-    verdict: "ambiguous",
-    agreement: { jaccardAtK: 0.5, rboAtK: 0.3 },
-    volume: { uniqueResults: 3, uniqueDomains: 2, successfulProviders: 2 },
-    spread: { rrfVariance: 0.1 },
-  };
-  assert(mockSuff.verdict === "ambiguous", "D3: verdict field accessible");
-  assert(mockSuff.agreement.jaccardAtK === 0.5, "D3: agreement.jaccardAtK accessible");
-  assert(mockSuff.volume.uniqueResults === 3, "D3: volume.uniqueResults accessible");
-  assert(mockSuff.spread.rrfVariance === 0.1, "D3: spread.rrfVariance accessible");
+// 24. SufficiencySignal type has four segments.
+const mockSuff: SufficiencySignal = {
+  verdict: "ambiguous",
+  agreement: { jaccardAtK: 0.5, rboAtK: 0.3 },
+  volume: { uniqueResults: 3, uniqueDomains: 2, successfulProviders: 2 },
+  spread: { rrfVariance: 0.1 },
+};
+assert(mockSuff.verdict === "ambiguous", "D3: verdict field accessible");
+assert(mockSuff.agreement.jaccardAtK === 0.5, "D3: agreement.jaccardAtK accessible");
+assert(mockSuff.volume.uniqueResults === 3, "D3: volume.uniqueResults accessible");
+assert(mockSuff.spread.rrfVariance === 0.1, "D3: spread.rrfVariance accessible");
+
+// === R65 F-12: mapAssistantMessageEvent contract tests ===
+// Live evidence: ans_chat via MCP returned bare "Agent completed" because
+// pi-ai AssistantMessageEvent has no "text" type — text streams as
+// text_delta.delta / text_end.content. The old inline check dropped all text.
+{
+  // text_delta chunks surface as text events.
+  const st = { textSeen: false };
+  const e1 = mapAssistantMessageEvent({ type: "text_delta", delta: "Hello" }, st);
+  const e2 = mapAssistantMessageEvent({ type: "text_delta", delta: " world" }, st);
+  assert(e1?.type === "text" && (e1 as any).content === "Hello", "F-12: text_delta -> text event");
+  assert((e2 as any)?.content === " world", "F-12: second delta surfaces");
+
+  // text_end is a fallback only when no deltas arrived — no double-emit.
+  const e3 = mapAssistantMessageEvent({ type: "text_end", content: "Hello world" }, st);
+  assert(e3 === null, "F-12: text_end suppressed after deltas (no dup)");
+  const st2 = { textSeen: false };
+  const e4 = mapAssistantMessageEvent({ type: "text_end", content: "mono reply" }, st2);
+  assert((e4 as any)?.content === "mono reply", "F-12: text_end fills in when no deltas");
+
+  // thinking_delta / toolcall_* / start never produce text events.
+  const st3 = { textSeen: false };
+  assert(mapAssistantMessageEvent({ type: "thinking_delta", delta: "hmm" }, st3) === null, "F-12: thinking not surfaced as text");
+  assert(mapAssistantMessageEvent({ type: "toolcall_delta", delta: "{}" }, st3) === null, "F-12: toolcall not surfaced as text");
+  assert(mapAssistantMessageEvent({ type: "start" }, st3) === null, "F-12: start not surfaced as text");
+
+  // Legacy monolithic "text" event still honored (defensive).
+  const st4 = { textSeen: false };
+  assert((mapAssistantMessageEvent({ type: "text", text: "legacy" }, st4) as any)?.content === "legacy", "F-12: legacy text event tolerated");
+}
 
 console.log(`PiAgentRuntime tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -18,10 +18,22 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
   async function getLlmSession(): Promise<LlmSession> {
     const providerName = process.env.ANS_LLM_PROVIDER ?? "";
     const modelName = process.env.ANS_LLM_MODEL ?? "";
-    const key = providerName + "/" + modelName;
+    // R65 F-11: thread the custom-endpoint env trio like apps/cli chat.ts:40-47 —
+    // ANS_LLM_BASE_URL/ANS_LLM_API/ANS_LLM_API_KEY must reach createLlmSession on
+    // the MCP path too, else the configured v1/chat upstream is unreachable.
+    const baseUrl = process.env.ANS_LLM_BASE_URL;
+    const apiRaw = process.env.ANS_LLM_API;
+    const api = apiRaw === "chat" || apiRaw === "messages" || apiRaw === "responses" ? apiRaw : undefined;
+    const key = providerName + "/" + modelName + "/" + (baseUrl ?? "") + "/" + (api ?? "");
     if (llmSession && llmSessionKey === key) return llmSession;
+    if (baseUrl && !api) {
+      throw new Error("ANS_LLM_BASE_URL requires ANS_LLM_API=chat|messages|responses");
+    }
     // Lazy init: create on first call or when env changed.
-    llmSession = await createLlmSession({ provider: providerName, model: modelName });
+    llmSession = await createLlmSession({
+      provider: providerName, model: modelName, baseUrl, api,
+      apiKey: baseUrl ? process.env.ANS_LLM_API_KEY : undefined,
+    });
     llmSessionKey = key;
     return llmSession;
   }

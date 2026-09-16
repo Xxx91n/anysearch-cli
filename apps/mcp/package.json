@@ -6,14 +6,15 @@
     "ans-mcp": "dist/index.cjs"
   },
   "files": [
-    "dist"
+    "dist",
+    "domains"
   ],
   "exports": {
     ".": "./dist/index.cjs",
     "./server": "./dist/index.cjs"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "node scripts/sync-domains.mjs && tsup",
     "dev": "tsx src/index.ts",
     "lint": "tsc --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\" \"test/**/*.test.mjs\" --test-timeout=30000",

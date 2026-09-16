@@ -6,7 +6,7 @@
 // PostToolUse: { updatedToolOutput } or distilled summary
 // ADR-0009 Q5: only intercept ans_* tools.
 
-import { isAnsTool, callServer, type HookDecision } from "../core.js";
+import { isAnsTool, callServer, unwrapToolResponse, type HookDecision } from "../core.js";
 // ADR-0059 D7 (T-6.3): resolve the shared server token (env or the 0600 token file).
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
@@ -71,12 +71,14 @@ async function main(): Promise<void> {
       }
       process.exit(0);
     } else if (event === "PostToolUse") {
-      // Parse tool response from Claude format.
+      // Parse tool response — unwrap content-block envelopes (shared with
+      // CodeBuddy's array-of-blocks shape, R65 F-09).
       let toolOutput: Record<string, unknown> = {};
-      if (typeof stdin.tool_response === "string") {
-        try { toolOutput = JSON.parse(stdin.tool_response); } catch { toolOutput = { text: stdin.tool_response }; }
-      } else if (stdin.tool_response?.content?.[0]?.text) {
-        try { toolOutput = JSON.parse(stdin.tool_response.content[0].text); } catch { toolOutput = { text: stdin.tool_response.content[0].text }; }
+      const un = unwrapToolResponse(stdin.tool_response);
+      if (un.kind === "string") {
+        try { toolOutput = JSON.parse(un.text!); } catch { toolOutput = { text: un.text }; }
+      } else if (un.kind === "object") {
+        toolOutput = un.object!;
       }
 
       const decision = makePostToolUseDecision({

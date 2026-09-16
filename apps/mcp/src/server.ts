@@ -8,8 +8,10 @@
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
+import { defaultDomainsDirs } from "@anysearch-cli/store";
 import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { TOOL_REGISTRY } from "./tools/index.js";
 
 // ponytail: single source of truth for server version. Tsup substitutes
@@ -35,7 +37,13 @@ export function buildServer(engine?: CompositionResult): McpServer {
     // ADR-0062 D2/D3: ANS_DOMAIN flows into the engine (same env contract as the
     // CLI) so the domain post-filter + abstain contract is reachable on MCP.
     // Unset = full fanout, unchanged legacy behavior.
-    eng = createEngine(process.env.ANS_DOMAIN, { dbPath });
+    // R65 F-10: mirror the CLI's domains-dir chain — an installed ans-mcp must
+    // resolve the builtin TOMLs shipped inside its own package, not only
+    // <cwd>/domains (a host project's cwd never has one).
+    const self = typeof __dirname !== "undefined" ? __dirname : dirname(fileURLToPath(import.meta.url));
+    const domainsDirs = defaultDomainsDirs();
+    domainsDirs.push(join(self, "..", "domains"));
+    eng = createEngine(process.env.ANS_DOMAIN, { dbPath, domainsDirs });
   }
   const server = new McpServer(
     { name: "anysearch", version: PKG_VERSION },

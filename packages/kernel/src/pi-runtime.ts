@@ -152,6 +152,30 @@ export interface PiAgentRuntimeOptions {
   span?: RetrievalObservationSink;
 }
 
+// R65 F-12: pure event mapping extracted for tests — pi-ai's
+// AssistantMessageEvent union has NO "text" type; text streams as
+// text_delta.delta chunks (+ text_end.content as non-streamed fallback).
+// state.textSeen resets per message_start so a final text_end only fills in
+// when no deltas arrived.
+export function mapAssistantMessageEvent(
+  ame: { type?: string; delta?: unknown; content?: unknown; text?: unknown } | undefined,
+  state: { textSeen: boolean },
+): AgentEvent | null {
+  if (ame?.type === "text_delta" && typeof ame.delta === "string") {
+    state.textSeen = true;
+    return { type: "text", content: ame.delta };
+  }
+  if (ame?.type === "text_end" && !state.textSeen && typeof ame.content === "string" && ame.content) {
+    return { type: "text", content: ame.content };
+  }
+  if (ame?.type === "text" && typeof ame.text === "string" && ame.text) {
+    // Defensive: some pi-ai versions emitted a monolithic "text" event.
+    state.textSeen = true;
+    return { type: "text", content: ame.text };
+  }
+  return null;
+}
+
 export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
   private readonly domainReloader: (() => unknown) | null;
@@ -298,22 +322,27 @@ export class PiAgentRuntime {
             const env = await this.gate.evaluate(messages);
             const enriched = this.gate.applyTo(messages, env);
             await this.pipeline.consolidate(enriched, totalTokens, env.hasRetrievalEvidence || hasSearchTurn);
-          } catch {}
+          } catch { }
         } else if (this.pipeline) {
-          try { await this.pipeline.consolidate(messages, totalTokens, hasSearchTurn); } catch {}
+          try { await this.pipeline.consolidate(messages, totalTokens, hasSearchTurn); } catch { }
         }
         return false;
       },
     });
 
     // ADR-0007 decision 3: subscribe() 9 events -> our 7 AgentEvent types.
+    // R65 F-12: text mapping delegated to mapAssistantMessageEvent (pure, tested).
+    const mapState = { textSeen: false };
     agent.subscribe((event: any, _signal?: AbortSignal) => {
       switch (event.type) {
-        case "message_update":
-          if (event.assistantMessageEvent?.type === "text") {
-            eventBuffer.push({ type: "text", content: event.assistantMessageEvent.text });
-          }
+        case "message_start":
+          mapState.textSeen = false;
           break;
+        case "message_update": {
+          const mapped = mapAssistantMessageEvent(event.assistantMessageEvent, mapState);
+          if (mapped) eventBuffer.push(mapped);
+          break;
+        }
         case "tool_execution_start":
           eventBuffer.push({
             type: "tool_call",
@@ -334,10 +363,10 @@ export class PiAgentRuntime {
             eventBuffer.push({ type: "search_result", envelope: event.result });
           }
           break;
-       case "agent_end":
-         agentDone = true;
-         // ADR-0010 D1: rolling summary moved to shouldStopAfterTurn cold path.
-         break;
+        case "agent_end":
+          agentDone = true;
+          // ADR-0010 D1: rolling summary moved to shouldStopAfterTurn cold path.
+          break;
         case "error":
           agentError = event.error?.message || String(event.error || "Unknown error");
           break;
@@ -397,7 +426,7 @@ export class PiAgentRuntime {
       try {
         const messages = (agent as any).state?.messages || [];
         for (const msg of messages) {
-this.opts.store.append(sessionId || "default", {
+          this.opts.store.append(sessionId || "default", {
             role: msg.role || "assistant",
             content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
             timestamp: Date.now(),

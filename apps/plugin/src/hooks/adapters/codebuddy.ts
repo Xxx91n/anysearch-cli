@@ -9,7 +9,7 @@
 // ADR-0009 Q5: only intercept ans_* tools. ADR-0009 D6: fail-open — exit 0 on any error.
 // ADR-0066: `hook_event_name ?? event` fallback so a legacy `event`-shaped host still works.
 
-import { isAnsTool, callServer } from "../core.js";
+import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
 // ADR-0059 D7 (T-6.3): resolve the shared server token (env or the 0600 token file).
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
@@ -82,19 +82,15 @@ async function main(): Promise<void> {
       }
       process.exit(0);
     } else if (event === "PostToolUse") {
-      // Parse tool response — CodeBuddy sends an object; accept the Claude
-      // content-block shape and a plain JSON string too (contract drift tolerance).
+      // CodeBuddy sends tool_response as an ARRAY of content blocks
+      // [{type:"text",text:"<json>"}] (verified live, R65 F-09); accept the
+      // Claude object/string shapes too via the shared unwrapper.
       let toolOutput: Record<string, unknown> = {};
-      const tr = stdin.tool_response;
-      if (typeof tr === "string") {
-        try { toolOutput = JSON.parse(tr); } catch { toolOutput = { text: tr }; }
-      } else if (tr && typeof tr === "object") {
-        const text = (tr as { content?: Array<{ text?: string }> }).content?.[0]?.text;
-        if (typeof text === "string") {
-          try { toolOutput = JSON.parse(text); } catch { toolOutput = { text }; }
-        } else {
-          toolOutput = tr as Record<string, unknown>;
-        }
+      const un = unwrapToolResponse(stdin.tool_response);
+      if (un.kind === "string") {
+        try { toolOutput = JSON.parse(un.text!); } catch { toolOutput = { text: un.text }; }
+      } else if (un.kind === "object") {
+        toolOutput = un.object!;
       }
 
       const decision = makePostToolUseDecision({

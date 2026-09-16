@@ -1,0 +1,23 @@
+# Docs domain — technical-docs retrieval wedge (ADR-0061 B1, spec .scratch/grill-round-60/spec-b1.md).
+# Corpus anchored on first-party docs the team depends on daily (D-004 inclusion rule).
+# urlAllowlist gates URL *consumption* (policy/HITL), not search ranking.
+name = "docs"
+description = "Technical-docs retrieval: MCP spec / TypeScript tsconfig / pnpm settings (first-party corpus)"
+
+[settings]
+language = "TypeScript"
+depth = "docs"
+
+[skills]
+active = ["search", "doctor"]
+
+[sources]
+enabled = ["tavily", "exa", "anysearch"]
+# First-party corpus (D-004 first-batch instance, bare hostnames only).
+urlAllowlist = ["modelcontextprotocol.io", "typescriptlang.org", "www.typescriptlang.org", "pnpm.io"]
+
+[rag]
+adapter = "none"
+
+[hooks]
+toolWhitelist = ["ctx_execute", "ctx_search", "ctx_batch_execute"]
