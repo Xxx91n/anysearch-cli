@@ -4,6 +4,28 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-16 — ADR-0066 r65: 真实宿主部署开门轮（CodeBuddy 三件套 + hooks 契约对齐修复）
+
+### Added
+
+- `apps/plugin` 新适配器 `hooks/adapters/codebuddy.ts`：CodeBuddy Code 2.149.0 契约——stdin `hook_event_name`（兼容 `event` 兜底）、stdout 决策入 `hookSpecificOutput{permissionDecision|additionalContext|updatedToolOutput}` 信封、SessionStart 路由卡原文直出（CodeBuddy 把 stdout 原文注入上下文）；单入口内部按事件分发三事件。
+- `apps/plugin` 新 bin `ans-plugin-server`（→ `dist/server/index.cjs`，server/index.ts 补 `#!/usr/bin/env node`）——0.0.3 陌生人手拉 server 的部署缺口闭合。
+- `configs/codebuddy/hooks.json` 模板：`{matcher, hooks:[{type:"command",command}]}` schema，命令用 `$(npm root -g)` 解析全局安装路径（Git Bash 兼容）。
+- `test/codebuddy-contract.test.ts`：10 条合成 stdin 契约测试（CodeBuddy 真实形状逐事件 + legacy 兜底 + claude 回归）。
+- `docs/codebuddy-integration.md`：陌生人面向的 CodeBuddy 接线文档（install/keys/server/mcp.json/settings.json/fail-open）。
+- README 新增 Verified agent hosts 表（CodeBuddy=首个真宿主条目，含验证范围与状态列）。
+
+### Fixed
+
+- **hooks 假绿（潜伏缺陷）**：四个适配器 + session-start.ts 读 `stdin.event`，真实宿主注入 `hook_event_name` → 部署即静默 no-op。统一改 `hook_event_name ?? event`；合成 stdin 红绿证据对见 `.scratch/grill-round-65/evidence/`。
+- **hooks 模板指向库文件**：四平台 configs/*/hooks.json 的 Pre/PostToolUse 原指 `dist/hooks/{preheat,distill}.cjs`（纯库无 main）——照模板接线永远静默 no-op；改指 `adapters/<host>.cjs`。
+- **`configs/` 不随包发布**：`files:["dist"]` 导致模板根本不在 npm tarball 里；`files` 补 `configs`，模板 0.0.4 起随包。
+- **plugin server 无启动入口**：package.json 原无 bin；补 `ans-plugin-server`。
+
+### Changed
+
+- README Known Limitations：删 stale「Not on npm yet」，补三条 0.0.3 部署缺口口径（server 手拉/模板指库/字段名假绿），各标修复落点 ADR-0066。
+
 ## 2026-09-16 — ADR-0065 r64: 隔离金案例 TTL 裁决收口（mustHitPaths 页族断言 + evidence 模式 + 10 条全量 promote）
 
 ### Added

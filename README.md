@@ -102,9 +102,33 @@ Five tools: `search_web`, `research_web`, `recall_memory`, `query_knowledge`,
 `ans_chat`. `ANS_DOMAIN` scopes the server the same way it scopes the CLI.
 Tools never print to stdout; the server keeps the protocol channel pure.
 
+## Verified agent hosts
+
+| Host | Version | Date | Scope | Status |
+|------|---------|------|-------|--------|
+| CodeBuddy Code | 2.149.0 | 2026-09-16 | `mcp.json` registration (`ans-mcp`, 5 tools via tools/list) · `.codebuddy/settings.json` hooks (`hook_event_name` contract, `hookSpecificOutput` envelope) · `ans-plugin-server` bin | contract-verified; live headless probe pending |
+
+"Verified" means an end-to-end transcript captured on the real host
+(`stream-json`), not contract isomorphism. See
+`docs/codebuddy-integration.md` for the CodeBuddy wiring and ADR-0066 for
+the round-65 evidence set.
+
 ## Known limitations
 
-- **Not on npm yet** — install = clone + `pnpm install` + `pnpm build`.
+- **0.0.3 plugin server needs a manual launch** — `@anysearch-cli/plugin@0.0.3`
+  ships no bin; run
+  `node "$(npm root -g)/@anysearch-cli/plugin/dist/server/index.cjs"` once per
+  machine (fixed in-tree as `ans-plugin-server`, lands with the next
+  release — ADR-0066).
+- **0.0.3 hook templates point at library files** — `configs/*/hooks.json`
+  Pre/PostToolUse entries reference `dist/hooks/{preheat,distill}.cjs`
+  (decision libraries, no stdin main) instead of `adapters/<host>.cjs`; wire
+  hooks per `docs/codebuddy-integration.md` / the fixed templates in the
+  next release (ADR-0066).
+- **Hook adapters before this fix read `stdin.event`** — real hosts inject
+  `hook_event_name`; on ≤0.0.3 the hooks deploy but silently no-op
+  (false-green). Fixed in-tree via `hook_event_name ?? event` on all four
+  adapters + session-start (ADR-0066).
 - **`anysearch` provider cannot pre-filter** — its REST surface has no domain
   parameter; under a domain allowlist it is post-filter-only (honest degrade,
   recorded in the `retrieval.domain_filter.pre` audit event).
