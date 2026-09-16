@@ -1,6 +1,8 @@
 # CodeBuddy Code integration
 
-Verified host: **CodeBuddy Code 2.149.0** (Windows 11, Git Bash hooks).
+Verified host: **CodeBuddy Code 2.151.0** (Windows 11, Git Bash hooks) —
+live-verified by the headless P1–P9 probe matrix (stream-json transcripts
+in `.scratch/grill-round-65/evidence/t2-*.stream.jsonl`).
 Contract source: ADR-0066 + `.scratch/grill-round-65/evidence/`.
 
 CodeBuddy hooks run commands through Git Bash on Windows, inject
@@ -23,6 +25,9 @@ Set at OS/user level — never written into config files:
 - `ANYSEARCH_API_KEY` — internal anysearch service
 - `ANS_LLM_BASE_URL` + `ANS_LLM_API=chat` + `ANS_LLM_API_KEY` — upstream
   OpenAI-compatible `v1/chat` endpoint (for `ans_chat`)
+- `ANS_LLM_PROVIDER` + `ANS_LLM_MODEL` — required by `ans_chat`; for a
+  custom endpoint the provider id is arbitrary (`custom` works) and the
+  model must be an id the upstream serves (check `GET <base>/models`)
 - `EXA_API_KEY` / `TAVILY_API_KEY` — retrieval providers
 
 ## 3. Plugin server (once per machine)

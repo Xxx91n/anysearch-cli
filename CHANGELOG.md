@@ -11,9 +11,11 @@ All notable changes to this project are recorded here. Format follows
 - `apps/plugin` 新适配器 `hooks/adapters/codebuddy.ts`：CodeBuddy Code 2.149.0 契约——stdin `hook_event_name`（兼容 `event` 兜底）、stdout 决策入 `hookSpecificOutput{permissionDecision|additionalContext|updatedToolOutput}` 信封、SessionStart 路由卡原文直出（CodeBuddy 把 stdout 原文注入上下文）；单入口内部按事件分发三事件。
 - `apps/plugin` 新 bin `ans-plugin-server`（→ `dist/server/index.cjs`，server/index.ts 补 `#!/usr/bin/env node`）——0.0.3 陌生人手拉 server 的部署缺口闭合。
 - `configs/codebuddy/hooks.json` 模板：`{matcher, hooks:[{type:"command",command}]}` schema，命令用 `$(npm root -g)` 解析全局安装路径（Git Bash 兼容）。
-- `test/codebuddy-contract.test.ts`：10 条合成 stdin 契约测试（CodeBuddy 真实形状逐事件 + legacy 兜底 + claude 回归）。
+- `test/codebuddy-contract.test.ts`：16 条合成 stdin 契约测试（CodeBuddy 真实形状逐事件 + 数组 tool_response 实物形状 + legacy 兜底 + claude 回归）。
 - `docs/codebuddy-integration.md`：陌生人面向的 CodeBuddy 接线文档（install/keys/server/mcp.json/settings.json/fail-open）。
 - README 新增 Verified agent hosts 表（CodeBuddy=首个真宿主条目，含验证范围与状态列）。
+- `apps/mcp` 新增 `scripts/sync-domains.mjs` + `files+domains`：domains/*.toml 随 mcp tarball 发布（镜像 cli 的 ADR-0061 B1 机制）。
+- `packages/kernel` 导出 `mapAssistantMessageEvent` 纯函数（pi-ai AssistantMessageEvent→AgentEvent 文本映射，可测）。
 
 ### Fixed
 
@@ -21,10 +23,27 @@ All notable changes to this project are recorded here. Format follows
 - **hooks 模板指向库文件**：四平台 configs/*/hooks.json 的 Pre/PostToolUse 原指 `dist/hooks/{preheat,distill}.cjs`（纯库无 main）——照模板接线永远静默 no-op；改指 `adapters/<host>.cjs`。
 - **`configs/` 不随包发布**：`files:["dist"]` 导致模板根本不在 npm tarball 里；`files` 补 `configs`，模板 0.0.4 起随包。
 - **plugin server 无启动入口**：package.json 原无 bin；补 `ans-plugin-server`。
+- **CodeBuddy tool_response 形状（live 抓出）**：真实宿主送数组 content blocks `[{type:"text",text:"<json>"}]`，适配器只认 string/{content:[]}/object → distill `resultCount:0` 假绿。新增 `core.unwrapToolResponse` 共享解包（codebuddy+claude 接入）。
+- **ans-mcp 域向全灭（live 抓出）**：`domains/` 不在 mcp tarball 且 `createEngine` 未传 `domainsDirs` → 默认链只有 `<cwd>/domains`（宿主 cwd 永远没有）→ `ANS_DOMAIN` 在 MCP 路径静默无效。补包内域链回退。
+- **ans_chat 上游不可达（live 抓出）**：MCP 工具只读 `ANS_LLM_PROVIDER/MODEL`，不线程化 `ANS_LLM_BASE_URL/API/API_KEY`（cli chat.ts 有此逻辑）→ v1/chat 自定义上游永远打不到。补齐 env 三件套。
+- **ans_chat 永远空正文（live 抓出）**：pi-runtime 等 `assistantMessageEvent.type==="text"`——pi-ai union 无此类型（真实：`text_delta.delta`/`text_end.content`）→ 所有助手文本被静默丢弃，工具恒返回裸 "Agent completed"。修 `mapAssistantMessageEvent` + 6 断言。
 
 ### Changed
 
 - README Known Limitations：删 stale「Not on npm yet」，补三条 0.0.3 部署缺口口径（server 手拉/模板指库/字段名假绿），各标修复落点 ADR-0066。
+- README Verified agent hosts：CodeBuddy 2.151.0 状态从 contract-verified 翻正 **live-verified**（headless P1–P9 探针矩阵全绿，含 with/without-tool P9 对照）。
+
+### Verified（live probe matrix, CodeBuddy 2.151.0 headless）
+
+- P1 MCP 注册：init.mcp_servers=[anysearch:connected]，5 工具 `mcp__anysearch__*` 全列。
+- P2 域内检索：typescriptlang.org 实答 + PostToolUse 索引 +10。
+- P3 OOD 域向：cookie 查询全落 modelcontextprotocol.io（与 `ans search` 直调一致）。
+- P4 ans_chat：v1/chat 上游（model=step）真实回答。
+- P5 recall_memory：10 条召回跨 3 sessionId。
+- P6 hooks 三事件：SessionStart 卡片入 context / Pre+Post 命中 adapter / exit0 / 信封合法。
+- P7 fail-open：杀 server 后检索正常、hooks exit0、index 静默跳过。
+- P8 research_web 执行 + query_knowledge 诚实 `adapter=none`。
+- P9 对照：无工具错引 `pnpm.io/npmrc#node-linker` → 有工具实检 `pnpm.io/settings/node-modules`。
 
 ## 2026-09-16 — ADR-0065 r64: 隔离金案例 TTL 裁决收口（mustHitPaths 页族断言 + evidence 模式 + 10 条全量 promote）
 

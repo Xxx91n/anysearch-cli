@@ -106,7 +106,7 @@ Tools never print to stdout; the server keeps the protocol channel pure.
 
 | Host | Version | Date | Scope | Status |
 |------|---------|------|-------|--------|
-| CodeBuddy Code | 2.149.0 | 2026-09-16 | `mcp.json` registration (`ans-mcp`, 5 tools via tools/list) · `.codebuddy/settings.json` hooks (`hook_event_name` contract, `hookSpecificOutput` envelope) · `ans-plugin-server` bin | contract-verified; live headless probe pending |
+| CodeBuddy Code | 2.151.0 | 2026-09-16 | `mcp.json` registration (`ans-mcp`, 5 tools) · `.codebuddy/settings.json` hooks (`hook_event_name` contract, `hookSpecificOutput` envelope) · `ans-plugin-server` bin | live-verified: headless P1–P9 probe matrix green (search/recall/ans_chat/research + 3-event hooks + fail-open + with/without-tool contrast) |
 
 "Verified" means an end-to-end transcript captured on the real host
 (`stream-json`), not contract isomorphism. See

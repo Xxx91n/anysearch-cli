@@ -115,19 +115,30 @@ stranger cwd) → `ans domain docs` persisted → `ans-mcp` tools/list 5 tools
 CodeBuddy (`allServers=[anysearch:connecting]`). Re-runnable log set:
 `evidence/README.md` table.
 
-(ii) Probe transcripts: P0/P1 green headless-free; **P2–P8 + P9 pending
-host credentials** (CodeBuddy account login + ANYSEARCH_API_KEY/ANS_LLM_*
-user env — see defect ledger F-06/F-07). Contract-level red→green already
-landed for hooks (synthetic stdin pair).
+(ii) Probe transcripts: **P1–P9 all green on live CodeBuddy 2.151.0**
+(headless `stream-json`, model=fast-model; transcripts under
+`evidence/t2-*.stream.jsonl`, host hook execution under
+`~/.codebuddy/debug/<session>.txt`). Live probing surfaced four defects
+invisible to synthetic tests — F-09 (tool_response array-of-blocks →
+`unwrapToolResponse`), F-10 (`ans-mcp` couldn't resolve shipped domain
+TOMLs → domain steering dead on MCP path), F-11 (`ans_chat` ignored
+ANS_LLM_BASE_URL/API/API_KEY), F-12 (pi-runtime waited for a nonexistent
+`"text"` event → bare "Agent completed"). All four fixed and re-verified
+live (index rows 6→16→66 across probes; OOD query returns
+modelcontextprotocol.io-only results identical to direct CLI).
 
-(iii) Defect ledger: `evidence/defect-ledger.md` — F-01..F-04 fixed with
-red→green pairs; F-05 query_knowledge stub deferred (recorded); F-06/F-07
-credential gates; F-08 (configs not shipped) folded into F-02 fix.
+(iii) Defect ledger: `evidence/defect-ledger.md` — F-01..F-04 + F-09..F-12
+fixed with red→green pairs; F-05 query_knowledge stub deferred (live probe
+confirms honest `adapter=none` surfacing); F-06/F-07 credential gates
+resolved by user; deferred list keeps: internal anysearch provider
+returned 0 successes under query (fail-open held), recall_memory
+projectIndex/store-root split, real Claude Code/Cursor/Codex/Antigravity
+hosts, interactive TUI, embedding arm, cross-OS matrix (CI).
 
 (iv) Product surface: README verified-hosts table lists CodeBuddy Code
-2.149.0 as the first real host — status column marks contract-verified
-until live probes land. Unverified surfaces to list at closure: real
-Claude Code host, interactive TUI, embedding arm.
+2.151.0 as **live-verified** (headless P1–P9 green, including the
+with/without-tool P9 contrast: no-tool answer cited a wrong doc URL,
+tool-equipped answer cited the real pnpm.io/settings page).
 
 ## Consequences
 
@@ -141,7 +152,15 @@ Claude Code host, interactive TUI, embedding arm.
   hosts (`.mdc` fallback semantics unchanged).
 - CodeBuddy SessionStart emits raw card text (stdout→context verbatim),
   NOT a JSON envelope — host-specific by design.
-- Remaining unverified assumption for live probe: whether CodeBuddy's
-  `hookSpecificOutput` envelope also requires Claude's `hookEventName`
-  field inside it — deliberately omitted per the documented three-key
-  shape; T4 live probe adjudicates.
+- Live probe adjudicated the open assumption: `hookSpecificOutput` does
+  NOT require a `hookEventName` field — SessionStart/PreToolUse/
+  PostToolUse all executed and CodeBuddy consumed the envelopes (see
+  `~/.codebuddy/debug/<session>.txt` hook stdout records).
+- New hard-won contract facts (live-verified, now pinned by tests):
+  CodeBuddy `tool_response` arrives as an ARRAY of content blocks
+  (`[{type:"text",text:"<json>"}]`) — handled by `unwrapToolResponse`;
+  `ans-mcp` must carry `domains/` in its tarball and append the package
+  dir to the domains chain or ANS_DOMAIN silently no-ops; `ans_chat`
+  requires the ANS_LLM_* endpoint trio threaded into createLlmSession;
+  pi-ai AssistantMessageEvent exposes `text_delta`/`text_end`, never
+  `text`.
