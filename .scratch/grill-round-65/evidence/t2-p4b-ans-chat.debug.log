@@ -1,0 +1,4 @@
+[CliMemWatch] pid=22028 heapUsed=112MB heapTotal=116MB rss=186MB external=4MB cpuPercent=13.5
+[CliMemWatch] pid=22028 heapUsed=112MB heapTotal=117MB rss=186MB external=4MB cpuPercent=0.1
+[CliMemWatch] pid=22028 heapUsed=112MB heapTotal=117MB rss=187MB external=4MB cpuPercent=0.0
+[CliMemWatch] pid=22028 heapUsed=112MB heapTotal=117MB rss=187MB external=4MB cpuPercent=0.0

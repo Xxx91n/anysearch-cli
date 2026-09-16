@@ -10,7 +10,11 @@
 | F-04 | CodeBuddy stdout 契约要求决策经 `hookSpecificOutput{permissionDecision\|additionalContext\|updatedToolOutput}` 信封；claude 适配器把 additionalContext/updatedInput/updatedToolOutput 写**顶层**（仅 permission 进信封） | t1: claude.ts 源码比对 vs CONTEXT.md Hooks Contract Parity | 中 | T3 修（新 codebuddy 适配器） |
 | F-05 | `query_knowledge` 是 stub（返回 adapter=none） | grill 实录（D-003 登记不拦探针） | 低 | deferred——实录为发现 |
 | F-06 | CodeBuddy headless 须先账号登录（`Authentication required. Please use /login`），mcp.json 已被拾取（日志 `allServers=[anysearch:connecting]`） | t1: cb-p1-tools.log result.error；logs/2026-09-16 | 阻塞 | 待用户登录（凭证门） |
-| F-07 | 键位未供：`ANYSEARCH_API_KEY`/`ANS_LLM_BASE_URL`/`ANS_LLM_API`/`ANS_LLM_API_KEY` shell+User+Machine 三层 unset；`EXA_API_KEY` USER-SET | t1: env 存在性检查（值未印） | 阻塞 | 待用户供（凭证门，D-004） |
+| F-07 | 键位未供：`ANYSEARCH_API_KEY`/`ANS_LLM_BASE_URL`/`ANS_LLM_API`/`ANS_LLM_API_KEY` shell+User+Machine 三层 unset；`EXA_API_KEY` USER-SET | t1: env 存在性检查（值未印） | 阻塞 | 已解除——用户供齐 User 级键（t2） |
+| F-09 | CodeBuddy 真实 `tool_response` 是**数组 content blocks** `[{type:"text",text:"<json>"}]`，适配器只认 string/{content:[]}/object → 落到原样 object → distill `resultCount:0`，PostToolUse 假绿（exit 0、信封合法、0 索引） | t2: p2 会话 debug `01a0a963-...txt` 抓实物 stdin + hook stdout `resultCount:0`；db 6→6 | 高 | 已修：`core.unwrapToolResponse` 共享解包（数组→text block→JSON.parse），codebuddy+claude 适配器接入；契约测试 +2（数组形状）；live 复跑 db 6→16 |
+| F-10 | `ans-mcp` 不随包 ship `domains/`，且 `createEngine(ANS_DOMAIN)` 不传 `domainsDirs` → 默认链只有 `<cwd>/domains`（宿主 cwd 永远没有）→ **域向在 MCP 路径全灭**，OOD 查询返回通用结果（Pinterest/Allrecipes）而非 docs 域结果 | t2: p3 实探针 19 条通用食谱结果 vs 同 query 直调 `ans search` 全 modelcontextprotocol.io/typescriptlang.org | 高 | 已修：mcp `files+=domains` + `scripts/sync-domains.mjs`（镜像 cli）+ `server.ts` 域链补 `<pkg>/domains`；live 复跑 OOD 全 MCP 域结果 |
+| F-11 | `ans_chat` MCP 工具只读 `ANS_LLM_PROVIDER/MODEL`，不读 `ANS_LLM_BASE_URL/API/API_KEY` → 用户配置的 v1/chat 上游在 MCP 路径不可达（cli chat.ts:40-47 有此逻辑，mcp 漏） | t2: p4 探针报 `LLM not configured`，直调确认上游 /v1/models 200 | 高 | 已修：ans-chat.tool.ts 补齐 env 三件套线程化（session key 含 baseUrl/api；baseUrl 无 api → 显式报错） |
+| F-12 | `PiAgentRuntime` 等 `assistantMessageEvent.type==="text"`——pi-ai 根本没有该类型（真实 union：`text_delta.delta`/`text_end.content`）→ **所有 ans_chat 输出静默归零**，返回裸 "Agent completed"；测试从未 run() 驱动事件映射所以全绿假绿 | t2: p4c 直调 ans_chat 返回 `\nAgent completed`；pi-ai types.d.ts:388-435 union 实物；step 模型直出 content 证明上游无恙 | 高 | 已修：`mapAssistantMessageEvent` 纯函数（text_delta→text、text_end 兜底、message_start 重置、thinking/toolcall 不吞）；pi-runtime.test +6 断言；直调+live 复跑出真实正文 |
 
 ## fixed
 
@@ -23,5 +27,23 @@
 
 ## deferred
 
-- F-05 query_knowledge stub：如实入账，不修（D-003 登记）。
+- F-05 query_knowledge stub：如实入账，不修（D-003 登记）。t2 live 实证：`query_knowledge → "adapter=none (not yet implemented)"`，宿主如实转述为环境缺口而非工具故障。
+- F-06 CodeBuddy 登录门：已解除（用户完成 /login；`apiKeySource: www.codebuddy.ai`，model 调用实通）。注意 CodeBuddy 在会话间自升级 2.149.0→2.151.0。
 - OIDC trusted publishing：欠条 due 0.0.4，范围外（D-001）。
+- `recall_memory` 的 projectIndex 字段在 live 探针中返回空——plugin server 写 `<e2e>/.anysearch-cli/project-index.db`（cwd 锚定），MCP recall 读 `~/.anysearch` 引擎库，两库不同根；是否应汇合是设计问题，非本轮修（如实登记）。
+- `search_web` 的 internal `anysearch` provider 在 live 探针中 queried 但 successfulProviders=2/3——内部服务侧未成功返回（凭证已供），fail-open 生效未阻探针；需服务端排查，登记 deferred。
+- 真 Claude Code / Cursor / Codex / Antigravity 宿主未实机验证（契约级 + 合成 stdin 绿；CodeBuddy 已 live 绿）。
+
+## T2/T4 live 探针矩阵结论（CodeBuddy 2.151.0，model=fast-model，e2e 现场 D:\Aworker\e2e-r65-codebuddy）
+
+| 探针 | 结果 | 证据 |
+|------|------|------|
+| P1 MCP 注册 | ✅ `mcp_servers:[{anysearch:connected}]` + 5 工具 `mcp__anysearch__*` 全注册 | t2-p1-tools.stream.jsonl init 事件 |
+| P2 域内检索 | ✅ typescriptlang.org 实答 + PostToolUse 索引 6→16 | t2-p2b-indomain-fixed.* |
+| P3 OOD 域向 | ✅ 修复前通用结果→修复后全 modelcontextprotocol.io（与 CLI 一致） | t2-p3-ood-abstain.* / t2-p3b-ood-domain.* |
+| P4 ans_chat | ✅ v1/chat 上游（model=step）真实一句话回答 | t2-p4d-ans-chat.* |
+| P5 recall 往返 | ✅ 10 条召回跨 3 sessionId | t2-p5-recall.* |
+| P6 hooks 三事件 | ✅ debug 实物：SessionStart 卡片入 context + PreToolUse(exit0) + PostToolUse 信封 distill | `.codebuddy/debug/<sid>.txt` 各会话 |
+| P7 断连 fail-open | ✅ server 杀掉后 search 正常、hooks 全 exit 0、distill 仍产出（index 静默跳过） | t2-p7-failopen.* + debug |
+| P8 research+knowledge | ✅ research_web 执行；query_knowledge 诚实 stub | t2-p8-research-knowledge.* |
+| P9 对照 | ✅ 无工具猜 `pnpm.io/npmrc#node-linker`（错）→ 有工具实检 `pnpm.io/settings/node-modules`（真官方页+更深细节） | t2-p9a/p9b.* |
