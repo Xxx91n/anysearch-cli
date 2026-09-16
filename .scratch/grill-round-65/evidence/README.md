@@ -28,6 +28,20 @@
 6. CodeBuddy 须先登录（F-06 凭证门）
 7. ANYSEARCH_API_KEY/ANS_LLM_* 未供（F-07 凭证门）
 
+## T3 修复后绿证据 + T4 ship 通道 + T6 门禁（同日补录）
+
+| 步骤 | 命令 | 结果 | 证据文件 |
+|------|------|------|----------|
+| 合成绿 codebuddy | `ANS_ADAPTER=<repo>/dist/hooks/adapters/codebuddy.cjs node scripts/synthetic-stdin-red.mjs` | hook_event_name→hookSpecificOutput 信封 + +2 索引；event 兜底同绿 | t3-synthetic-green-codebuddy.log |
+| 合成绿 claude(修复) | 同上 ANS_ADAPTER=claude.cjs | hook_event_name→顶层 updatedToolOutput + +2 索引 | t3-synthetic-green-claude.log |
+| 契约单测 | `pnpm --filter @anysearch-cli/plugin test` | codebuddy-contract 14/14（五平台入口各覆盖） | pnpm test 输出 |
+| pnpm pack | `pnpm --filter @anysearch-cli/plugin pack` | tgz 含 configs/5 平台 + codebuddy.cjs + server/index.cjs | ship-gate pack 清单 |
+| tarball 装 | `npm i -g ./anysearch-cli-plugin-0.0.3.tgz` | changed 3 packages；configs+codebuddy.cjs 落 npm-global | 会话记录 |
+| bin 测活 | `ans-plugin-server`（cwd=e2e） | /health 401→200，复用 0600 token | 会话记录 |
+| ship-gate | `node scripts/ship-gate.mjs --skip-matrix` | 9/9 步全 pass（memory-eval 126/126、MCP init、fail-open boot） | t6-ship-gate.log |
+| CLI 实检索 | `ans search "modelcontextprotocol specification" --json`（EXA） | 结果全落 docs 域 allowlist 宿主 | t1-ans-search-exa.log |
+| OOD 观察 | `ans search "cookie recipe" --json` | 10 结果全 allowlist + abstain=null + sufficiency=ambiguous（域过滤≠主题 abstain，P3 再验） | t1-ans-search-abstain.log |
+
 ## 键位纪律
 
 所有证据文件不含键值；token 文件 0600 仅被脚本读取未打印；mcp.json env 空块靠继承。

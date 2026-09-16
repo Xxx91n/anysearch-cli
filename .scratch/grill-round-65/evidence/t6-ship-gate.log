@@ -1,0 +1,73 @@
+[info] step 0/9: permanent invariants (ADR-0059 D5)
+[pass] check-workflows: OK (6 files)
+[pass] clean-tree invariant: git status --porcelain is empty
+[pass] gitignore-drift invariant: no tracked-but-ignored files
+[pass] task parity: check/test implemented in all packages
+[info] step 1/9: task parity + static rg assertions (version pin + ADR invariants)
+[pass] all 7 packages pinned at 0.0.3
+[pass] tool registry wires 5 ans_* tools
+[pass] no console.log | stdout.write in apps/mcp/src + packages/kernel/src
+[pass] tool-schemas.ts has 5 additionalProperties:false closers
+[pass] attribution module exports present
+[pass] attribution TypeBox schema parity (4 additionalProperties closers + enums present)
+[pass] FusedEnvelope.attribution declared
+[pass] MCP search/research dual-channel attribution (content + structuredContent)
+[pass] ADR-0045 fusion-registry wiring: k split registered, no implicit default
+[pass] ADR-0045 score_kind discipline: no bare fused score on NormalizedResult
+[pass] ADR-0035 KG-lite layer: relation module + edges schema + store hooks + fifth-arm label + CLI present
+[pass] ADR-0037 consolidation/forgetting layer: schema + consolidate module + store wiring + kernel 3-endpoint init present
+[pass] ADR-0037 Phase-3 CLI: consolidate + forget + durable DB path present
+[pass] CLI --json pure structural output, glyphs confined to kernel renderer
+[pass] attribution renderer dedupes source URLs
+[pass] access-events chain verified (object=consumed, exit 0 + verdict PASSED): {"verdict":"PASSED","dbPath":"C:\\Users\\Administrator\\.anysearch\\anysearch.db","legacyRows":0,"chainedRows":0,"digest":"e3b0c44298fc1c149afbf4c8996fb92427ae4
+[pass] ADR-0046/0047 source gates + ADR-0062 dual-gate abstain contracts + criterion anchors + R64 D-005 migration anchors (exact>=2 frozen-only, paths>=1, migration blocks)
+[pass] R62 D-005: offline exclusion governance (whitelist + 0.75 floor + test-online lane)
+[pass] R63 T3: quarantine ratchet green (entries shrink-only vs baseline[10], renewals=0, no unruled expiry, longterm<=1)
+[pass] ADR-0052 observation representation/store/export boundary and eval isolation present
+[pass] ADR-0053 content trust boundary + inject probes present
+[info] step 1b/9: README ADR index freshness (ADR-0059 D6)
+[pass] gen-adr-index: README ADR index up to date (66 ADRs at HEAD)
+[info] step 1c/9: engine grace-window wiring assertion (ADR-0059 D7 / ADR-0061 G1)
+[pass] engine grace window wired; CONTEXT.md consistent (ADR-0061 G1)
+[info] step 1d/9: ADR supersession integrity (ADR-0060 D1)
+[pass] supersession-integrity: 1 supersession pointer(s) resolve with a back-reference
+[info] step 1e/9: CONTEXT.md term wiring (ADR-0060 D3)
+[pass] CONTEXT.md Retroaererd term wiring: L1 numeric + L2 symbols + L3 negative over-claim green (ADR-0060 D3)
+[info] step 1f/9: ADR evidence-anchor resolvability (ADR-0060 D5)
+[pass] evidence-anchor: 5 resolvable 40-hex reference(s), 3 external permalink(s), 0 [squashed]-whitelisted
+[info] step 2/9: validate domains/*.toml compaction guards
+[pass] default.toml OK
+[pass] docs.toml OK
+[pass] research.toml OK
+[pass] validate-domains green (3 file(s))
+[pass] domains/*.toml compaction guards green
+[info] step 3/9: turbo check / test / build
+[pass] turbo run check
+[pass] turbo run test
+[pass] turbo run build
+[info] step 4/9: pnpm pack into temp dir
+[pass] packed @anysearch-cli/kernel@0.0.3
+[pass] packed @anysearch-cli/embedding@0.0.3
+[pass] packed @anysearch-cli/store@0.0.3
+[pass] packed @anysearch-cli/retriever@0.0.3
+[pass] packed @anysearch-cli/cli@0.0.3
+[pass] packed @anysearch-cli/mcp@0.0.3
+[pass] packed @anysearch-cli/plugin@0.0.3
+[info] step 6/9: T0 smoke probe (ADR-0024)
+[pass] T0 smoke probe: pref --help alive, <user_preferences> wrapper documented
+[pass] memory-pipeline.ts Stage-1 <user_preferences> injection present
+[info] step 7/9: memory eval harness gate (ADR-0027)
+[pass] memory-eval attribution zone present (zero-state observation period)
+[pass] memory-eval relation zone present (noEdge=10 hop=39)
+[pass] memory-eval semantic serve + forget zones present (sem queries=79 forget archives=1)
+[pass] memory-eval observational zone present (ADR-0039; values never gated, D7 streak ledger watched)
+[pass] eval fingerprint matches baseline (4a529f6fbe2096c8)
+[pass] gain gate GREEN (look 3/5, spent alpha 0.003808)
+[pass] memory-eval: 126/126 cases PASS, fingerprint=4a529f6fbe2096c8, passRate=1
+[info] step 7b/9: emergency ship override verifier (ADR-0047)
+[info] step 8/9: spawn plugin MCP over stdio, assert initialize result
+[pass] MCP initialize: server=anysearch v0.0.3
+[info] step 8b/9: packaged CLI/MCP observation smoke (ADR-0052)
+[pass] packaged CLI/MCP observation trace round-trip green
+[info] step 9/9: spawn MCP with scrubbed env, assert fail-open boot
+[pass] fail-open boot ok: env scrubbed -> initialize green + stderr notice (server=anysearch v0.0.3)

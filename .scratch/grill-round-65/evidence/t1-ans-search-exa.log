@@ -1,0 +1,82 @@
+{
+  "query": "modelcontextprotocol specification",
+  "mode": "fast",
+  "results": [
+    {
+      "url": "spec.modelcontextprotocol.io/specification/2024-11-05",
+      "title": "Modelcontextprotocol Model Context Protocol specification – Model Context Protocol Specification",
+      "snippet": "1. User Consent and Control  Users must explicitly consent to and understand all data access and operations  Users must retain control over what data is shared and what actions are taken  Implementors should provide clear UIs for reviewing and authorizing activities  Hosts must obtain explicit user consent before exposing user data to servers  Hosts must not transmit resource data elsewhere without user consent  User data should be protected with appropriate access controls  Tools represent [...",
+      "source": "tavily",
+      "extra": {
+        "score": 0.82895297,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "6d36e4f0e409423bb0cfa1a8e0fd6e6f"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "spec.modelcontextprotocol.io/specification/",
+      "title": "",
+      "snippet": "Specification –Model Context Protocol Specification\nCTRL K\n* [Specification](https://spec.modelcontextprotocol.io/specification/)\n* [Specification (Draft)](https://spec.modelcontextprotocol.io/specification/draft/)\n* [Architecture](https://spec.modelcontextprotocol.io/specification/draft/architecture/)\n* [Base Protocol](https://spec.modelcontextprotocol.io/specification/draft/basic/)\n* [Transports](https://spec.modelcontextprotocol.io/specification/draft/basic/transports/)\n* [Authorization](http",
+      "source": "exa",
+      "publishedAt": "2025-01-08T14:31:44.000Z",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "6d36e4f0e409423bb0cfa1a8e0fd6e6f"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "spec.modelcontextprotocol.io/specification/2024-11-05/basic",
+      "title": "Modelcontextprotocol Base Protocol – Model Context Protocol Specification",
+      "snippet": "structure, while errors must include an error code and message at minimum. The Model Context Protocol consists of several key components that work together:  Base Protocol: Core JSON-RPC message types  Lifecycle Management: Connection initialization, capability negotiation, and session control  Server Features: Resources, prompts, and tools exposed by servers  Client Features: Sampling and root directory lists provided by clients  Utilities: Cross-cutting concerns like logging and argument [...]",
+      "source": "tavily",
+      "extra": {
+        "score": 0.8020137,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "6d36e4f0e409423bb0cfa1a8e0fd6e6f"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "modelcontextprotocol.io/specification/2026-07-28/basic/index",
+      "title": "",
+      "snippet": "> ## Documentation Index\n> \n> Fetch the complete documentation index at: https://modelcontextprotocol.io/llms.txt\n> Use this file to discover all available pages before exploring further.\n\n# Overview\n\nThe Model Context Protocol consists of several key components that work together:\n\n- Base Protocol: Core JSON-RPC message types\n- Versioning and Compatibility: Protocol version negotiation, extension negotiation, and interoperability with earlier protocol revisions\n- Message Patterns: Messaging pat",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "6d36e4f0e409423bb0cfa1a8e0fd6e6f"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "spec.modelcontextprotocol.io/specification/server/resources",
+      "title": "Modelcontextprotocol Resources – Model Context Protocol Specification",
+      "snippet": "Resources – Model Context Protocol Specification. : Model Context Protocol Specification : Model Context Protocol SpecificationSpecification Resources. The Model Context Protocol (MCP) provides a standardized way for servers to expose resources to clients. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Each resource is uniquely identified by a URI. Resources in MCP are designed to be [...] are ",
+      "source": "tavily",
+      "extra": {
+        "score": 0.7900289,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "6d36e4f0e409423bb0cfa1a8e0fd6e6f"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "modelcontextprotocol.io/specification/draft.md",
+      "title": "",
+      "snippet": "> ## Documentation Index\n> \n> Fetch the complete documentation index at: https://modelcontextprotocol.io/llms.txt\n> Use this file to discover all available pages before exploring furth

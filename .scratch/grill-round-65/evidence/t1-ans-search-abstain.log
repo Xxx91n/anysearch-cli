@@ -1,0 +1,181 @@
+{
+  "query": "best chocolate chip cookie recipe",
+  "mode": "fast",
+  "results": [
+    {
+      "url": "modelcontextprotocol.io/docs/2025-06-18/tutorials/security/security_best_practices",
+      "title": "Security Best Practices - Model Context Protocol",
+      "snippet": "Generate a cryptographically secure random `state` value for each authorization request\n Store the `state` value server-side (in a secure session store or encrypted cookie) only after consent has been explicitly approved\n Set the `state` tracking cookie/session immediately before redirecting to the third-party identity provider (not before consent approval) [...] 1. A user authenticates normally through the MCP proxy server to access the third-party API\n2. During this flow, the third-party autho",
+      "source": "tavily",
+      "extra": {
+        "score": 0.17912845,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "8bc5ad1779e84b5884ca37883f6f29b0"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "modelcontextprotocol.io/docs/2026-07-28/tools/inspector/recipes",
+      "title": "",
+      "snippet": "> ## Documentation Index\n> \n> Fetch the complete documentation index at: https://modelcontextprotocol.io/llms.txt\n> Use this file to discover all available pages before exploring further.\n\n# Recipes\n\n> Practical guides for transports, importing configs, reviewing MCP Apps, Docker, and network hosting\n\n## Connecting stdio vs. HTTP servers\n\n### stdio\n\nA stdio server is a process the Inspector spawns. Everything positional is the command line:\n\n```bash\nmcp-inspector node build/index.js -- --verbose",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "8bc5ad1779e84b5884ca37883f6f29b0"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "modelcontextprotocol.io/specification/2026-07-28/basic/security_best_practices",
+      "title": "Security Best Practices - Model Context Protocol",
+      "snippet": "Generate a cryptographically secure random `state` value for each authorization request\n Store the `state` value server-side (in a secure session store or encrypted cookie) only after consent has been explicitly approved\n Set the `state` tracking cookie/session immediately before redirecting to the third-party identity provider (not before consent approval) [...] 1. A user authenticates normally through the MCP proxy server to access the third-party API\n2. During this flow, the third-party autho",
+      "source": "tavily",
+      "extra": {
+        "score": 0.17912845,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "8bc5ad1779e84b5884ca37883f6f29b0"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "typescriptlang.org/docs/handbook/typescript-in-5-minutes.html",
+      "title": "TypeScript: Documentation - TypeScript for JavaScript Programmers",
+      "snippet": "TypeScript: Documentation - TypeScript for JavaScript Programmers\n\n# TypeScript for JavaScript Programmers\n\nTypeScript stands in an unusual relationship to JavaScript. TypeScript offers all of JavaScript’s features, and an additional layer on top of these: TypeScript’s type system.\n\nFor example, JavaScript provides language primitives like `string` and `number`, but it doesn’t check that you’ve consistently assigned these. TypeScript does.\n\nThis means that your existing working JavaScript code i",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "8bc5ad1779e84b5884ca37883f6f29b0"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "modelcontextprotocol.io/docs/tutorials/security/security_best_practices?x=1",
+      "title": "Security Best Practices - Model Context Protocol",
+      "snippet": "Generate a cryptographically secure random `state` value for each authorization request\n Store the `state` value server-side (in a secure session store or encrypted cookie) only after consent has been explicitly approved\n Set the `state` tracking cookie/session immediately before redirecting to the third-party identity provider (not before consent approval) [...] 1. A user authenticates normally through the MCP proxy server to access the third-party API\n2. During this flow, the third-party autho",
+      "source": "tavily",
+      "extra": {
+        "score": 0.17912845,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "8bc5ad1779e84b5884ca37883f6f29b0"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "typescriptlang.org/index.html",
+      "title": "TypeScript: JavaScript With Syntax For Types.",
+      "snippet": "TypeScript: JavaScript With Syntax For Types.\n\n# TypeScript is JavaScript with syntax for types.\n\nTypeScript is a strongly typed programming language that builds on JavaScript, giving you better tooling at any scale.\n\nconst \n\nuser\n\n = {\n\nfirstName\n\n: \"Angela\",\n\nlastName\n\n: \"Davis\",\n\nrole\n\n: \"Professor\",\n\n}\n\nconsole\n\nlog\n\nuser\n\nProperty 'name' does not exist on type '{ firstName: string; lastName: string; role: string; }'. 2339 Property 'name' does not exist on type '{ firstName: string; lastName",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "8bc5ad1779e84b5884ca37883f6f29b0"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "modelcontextprotocol.io/docs/2025-11-25/tutorials/security/security_best_practices",
+      "title": "Security Best Practices - Model Context Protocol",
+      "snippet": "Generate a cryptographically secure random `state` value for each authorization request\n Store the `state` value server-side (in a secure session store or encrypted cookie) only after consent has been explicitly approved\n Set the `state` tracking cookie/session immediately before redirecting to the third-party identity provider (not before consent approval) [...] 1. A user authenticates normally through the MCP proxy server to access the third-party API\n2. During this flow, the third-party autho",
+      "source": "tavily",
+      "extra": {
+        "score": 0.17912845,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "8bc5ad1779e84b5884ca37883f6f29b0"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "modelcontextprotocol.io/docs/2026-07-28/tools/inspector",
+      "title": "",
+      "snippet": "> ## Documentation Index\n> \n> Fetch the complete documentation index at: https://modelcontextprotocol.io/llms.txt\n> Use this file to discover all available pages before exploring further.\n\n# MCP Inspector\n\n> Interactive developer tooling for testing and debugging MCP servers, in the browser, on the command line, and in the terminal\n\nThe MCP Inspector is the reference developer tool for testing and debugging MCP servers. It ships as a single package, `@modelcontextprotocol/inspector`, providing t",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "8bc5ad1779e84b5884ca37883f6f29b0"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "modelcontextprotocol.io/docs/2025-03-26/tutorials/security/security_best_practices",
+      "title": "Security Best Practices - Model Context Protocol",
+      "snippet": "after the first authorization.  MCP proxy server does not implement proper per-client consent before forwarding to third-party authorization. When an MCP proxy server uses a static client ID to authenticate with a third-party authorization server, the following attack becomes possible:. 1. A user authenticates normally through the MCP proxy server to access the third-party API. 2. During this flow, the third-party authorization server sets a cookie on the user agent indicating consent for the [.",
+      "source": "tavily",
+      "extra": {
+        "score": 0.11311854,
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "8bc5ad1779e84b5884ca37883f6f29b0"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    },
+    {
+      "url": "typescriptlang.org/docs/handbook/typescript-from-scratch.html",
+      "title": "TypeScript: Documentation - TypeScript for the New Programmer",
+      "snippet": "TypeScript: Documentation - TypeScript for the New Programmer\n\n# TypeScript for the New Programmer\n\nCongratulations on choosing TypeScript as one of your first languages — you’re already making good decisions!\n\nYou’ve probably already heard that TypeScript is a “flavor” or “variant” of JavaScript. The relationship between TypeScript (TS) and JavaScript (JS) is rather unique among modern programming languages, so learning more about this relationship will help you understand how TypeScript adds t",
+      "source": "exa",
+      "extra": {
+        "trustLabel": {
+          "source": "retrieved",
+          "traceId": "8bc5ad1779e84b5884ca37883f6f29b0"
+        },
+        "trustDisposal": "accepted",
+        "trustSuspicious": false
+      }
+    }
+  ],
+  "providersFailed": [
+    "anysearch"
+  ],
+  "answers": [],
+  "sufficiency": {
+    "verdict": "ambiguous",
+    "agreement": {
+      "jaccardAtK": 0,
+      "rboAtK": 0
+    },
+    "volume": {
+      "uniqueResults": 18,
+      "uniqueDomains": 3,
+      "successfulProviders": 2
+    },
+    "spread": {
+      "rrfVariance": 0
+    }
+  },
+  "attribution": {
+    "schema": "anysearch/attribution-report@1",
+    "generatedAt": "2026-09-16T08:09:51.838Z",
+    "claims": [],
+    "gaps": [],
+    "supportedCount": 0,
+    "uncertainCount": 0,
+    "unsupportedCount": 0,
+    "judgeEnhanced": false
+  },
+  "abstain": null
+}
