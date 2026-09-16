@@ -23,6 +23,8 @@ const NOMCP = rawFlags.has('--nomcp');
 const SETTINGS = arg('settings', null);
 const PLUGINDIR = arg('plugindir', null);
 const MCPCONFIG = arg('mcpconfig', 'mcp.json');
+const ALLOWED = arg('allowedtools', null);
+const NOSKIP = rawFlags.has('--noskip');
 
 // --- env injection: read User-scope vars via powershell, merge into child env ---
 const KEYS = ['ANYSEARCH_API_KEY', 'ANYSEARCH_ENDPOINT', 'ANS_LLM_BASE_URL', 'ANS_LLM_API', 'ANS_LLM_API_KEY', 'EXA_API_KEY', 'TAVILY_API_KEY', 'ANS_LLM_PROVIDER', 'ANS_LLM_MODEL'];
@@ -37,7 +39,7 @@ for (const k of KEYS) {
 env.ANS_DOMAIN = env.ANS_DOMAIN || 'docs';
 
 // --- project-index.db row delta (better-sqlite3 via repo install) ---
-const dbPath = join(E2E, '.anysearch-cli', 'project-index.db');
+const dbPath = join(E2E, '.anysearch', 'project-index.db');
 let dbRows = () => -1;
 try {
   const req = createRequire('D:/Aworker/anysearch-cli/apps/plugin/package.json');
@@ -50,7 +52,9 @@ try {
 const rowsBefore = dbRows();
 
 const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose',
-  '--max-turns', MAXTURNS, '--dangerously-skip-permissions'];
+  '--max-turns', MAXTURNS];
+if (!NOSKIP) args.push('--dangerously-skip-permissions');
+if (ALLOWED) args.push('--allowedTools', ALLOWED);
 if (!NOMCP) args.push('--mcp-config', MCPCONFIG, '--strict-mcp-config');
 if (SETTINGS) args.push('--settings', SETTINGS);
 if (PLUGINDIR) args.push('--plugin-dir', PLUGINDIR);

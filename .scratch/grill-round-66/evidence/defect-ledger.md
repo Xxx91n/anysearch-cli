@@ -36,3 +36,38 @@
 - query_knowledge stub（承 R65 F-05，登记不修）
 - internal anysearch provider 服务端排查（承 R65，successfulProviders 2/3 面）
 - 宿主模型工具调用倾向：deepseekpro 代理模型对泛化 prompt 倾向凭记忆直答（t1-p2/p2b/p2d 零 toolCalls），冷门 query 才触发实调（t1-p2e）——host-variable 观察项，P9 结论须按此校准
+
+## T2 首轮全矩阵（tarball=main 代码，npm-global 安装）补账
+
+### expected-red 复验
+
+| ER | tarball 复验结果 | 证据 |
+|----|------------------|------|
+| ER-1 模板 schema | **确认红**：tarball 的 configs/claude/hooks.json 同形原样接入 → 0 anysearch hook_started | t2-p6-template.stream.jsonl |
+| ER-2 顶层信封 | **确认红→改判**：P6x deny 三腿——envelope `hookSpecificOutput.permissionDecision:deny`→真实 Bash 调用被拦(permission_denials+tool_result=reason)；legacy `decision:block`→拦；**顶层 `permissionDecision`→真实 `ls -la` 照常执行=被忽略**。adapter 的 additionalContext/updatedToolOutput 写顶层→同理被宿主丢弃 | t2-p6x-env2/t2-p6x-leg2/t2-p6x-toplevel |
+| ER-3 plugin 骨架 | **确认红**：`claude plugin validate <npm-global>/plugin`→"No manifest found: Expected .claude-plugin/{marketplace,plugin}.json"；`--plugin-dir`/`--plugin-url` flag 存在可用 | t2-p11-plugin 输出 |
+
+### found（T2 新增）
+
+| ID | 发现 | 证据 | 处置 |
+|----|------|------|------|
+| R66-B04 | search_web 真实响应存在两形态：全量 `{query,totalResults,results[]}`（直拉/域内命中）vs 瘦身 `{sufficiency,attribution,claims:[]}`（claims 空时）；adapter distill 依赖 `.results`→瘦身响应**正确跳过索引**（非缺陷，但 P5 宿主侧 /index 依赖有结果的响应；契约单测应钉两形态） | t2-p5-realcall tool_result 380ch；synthetic /index 2→4 行 | T3：契约测试钉死两形态；文档说明 |
+| R66-B05 | stream-json 只发 SessionStart 的 hook_started/hook_response；Pre/PostToolUse 钩子**运行但零事件**（marker 实证）；输入校验失败(`{}`调用)先于钩子→不触发 | t2-p6x-marker3 | 宿主观测事实→P6 判词口径=副作用而非事件流 |
+| R66-B06 | type:"http" settings 钩子静默丢弃（0 hook_started）→2.1.251 上 http hooks 不可行，command 型唯一通路 | t2-p10-http | 文档注明；P10 终结论 |
+| R66-B07 | 宿主代理模型行为噪声：首 call 常空 `{}`→InputValidationError 后自愈；WebSearch 402 缺 opencode key；WebFetch 可用；泛化 prompt 凭记忆直答 | 多 transcript | host-variable，不属产品缺陷；探针 prompt 工程注记 |
+
+### T2 探针判定汇总
+
+| 探针 | 判定 | 证据 |
+|------|------|------|
+| P1 tools/list | 绿（connected+5 工具，真宿主+直拉双腿） | t2-p6-official / mcp-tools-list |
+| P2 域内 | 绿（F-10 已修：域内全 allowlist；vs 0.0.3 域灭对照成立） | t2-p2-indomain-direct |
+| P3 OOD | 绿（域外 query 被收入 allowlist 语料=域楔工作；abstain=null 为产品行为注记） | t2-p3-ood-direct |
+| P4 ans_chat | 绿（真实上游返回 "Agent completed"，isError=null） | t2-p4-anschat |
+| P5 recall | 条件绿：协议面 hits 正常；宿主 PostToolUse→/index 链路=合成+marker 双侧证（真跑但瘦身响应合法跳过） | recall / synthetic-post / marker3 |
+| P6 三事件 | 部分绿：SessionStart 真注入✓；Pre/Post 钩子真跑（marker）✓但输出信封被丢（ER-2 红） | t2-p6-official / marker3 / p6x 三腿 |
+| P7 fail-open | 绿（杀 server 后 session ok，4 钩全 exit=0） | t2-p7-failopen |
+| P8 research+qk | 绿（research 真答；qk honest stub deferred） | t2-p8-* |
+| P9 对照 | 观测：双腿均答对 0.0.3；宿主自带 Bash/WebFetch/内建浏览可替代版本查询——MCP 差分弱，T4 双跑方差按此校准 | t2-p9a/b |
+| P10 http hooks | 终结论：settings http 型静默丢→不可行，command 型唯一 | t2-p10-http |
+| P11 plugin | 红确认：无 .claude-plugin manifest；--plugin-dir 可用待骨架 | t2-p11-plugin |
