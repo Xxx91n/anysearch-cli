@@ -173,7 +173,7 @@ Backfilled at T6 (four-part per D7):
 
 | leg | anchor | status |
 |---|---|---|
-| code | `pnpm -C packages/store check` clean; `pnpm -C packages/store test` 62 files pass incl. eval-looks-live-parity 22/22 | done |
-| adjudication | `.scratch/grill-round-64/evidence/` (probe-0/1 + runs 01–09 + evidence.log + adjudication.json); promoteEntry ×10 → eval-quarantine.json entries:[]; watch:true on g0001/4/5/6/9 | done |
-| gate | `node scripts/ship-gate.mjs` 9/9 steps pass incl. R64 anchors (exact≥2 frozen-only / paths≥1 / migration blocks); `pnpm -C packages/store test:online` eval-looks 69/0 + semantic 4/0 | done (local); CI URL pending push |
-| gaps/limitations | resolvable self-witness only — no external attestation; dated-snapshot leg coverage can rotate (watch armed, re-entry via TTL path; g0010 leg flipped inside the audit window and was armed post-audit F4); g0005 saw one transient abstain flip (run-07); CI corroboration URL PENDING — stack unpushed | done |
+| code | `pnpm -C packages/store check` clean; `pnpm -C packages/store test` 62 files pass incl. eval-looks-live-parity 24/24 | done |
+| adjudication | `.scratch/grill-round-64/evidence/` (probe-0/1 + runs 01–09 + run-10 post-rework + evidence.log + adjudication.json); promoteEntry ×10 → eval-quarantine.json entries:[]; watch:true on g0001/4/5/6/9/10 | done |
+| gate | `node scripts/ship-gate.mjs` 9/9 steps pass incl. R64 anchors (exact≥2 frozen-only / paths≥1 / migration blocks); `pnpm -C packages/store test:online` eval-looks 69/0 + semantic 4/0 | done (local + CI: PR #5 run 35059477108 — ship-gate ubuntu 2m50s / windows 7m21s green) |
+| gaps/limitations | resolvable self-witness only — no external attestation; dated-snapshot leg coverage can rotate (watch armed, re-entry via TTL path; g0010 leg flipped inside the audit window and was armed post-audit F4); g0005 saw one transient abstain flip (run-07); CI corroboration landed — stacks rebase-merged to main @ 52b4ec4 (PRs #5/#6/#7) | done |
