@@ -1,0 +1,16 @@
+{
+  "recall_before": 0,
+  "real_host_field": {
+    "exit": 0,
+    "stdout": "(empty)",
+    "recall_after": 0,
+    "indexed": 0
+  },
+  "legacy_field": {
+    "exit": 0,
+    "stdout": "{\"updatedToolOutput\":\"{\\\"tool\\\":\\\"mcp__anysearch__search_web\\\",\\\"query\\\":\\\"synthetic-r65-probe\\\",\\\"resultCount\\\":2,\\\"topResults\\\":[{\\\"title\\\":\\\"synthetic-r65-probe alpha\\\",\\\"url\\\":\\\"https://example.com/a\\\"},{\\\"title\\\":\\\"synthetic-r65-probe beta\\\",\\\"url\\\":\\\"https://example.com/b\\\"}]}\"}",
+    "recall_after": 2,
+    "indexed": 2
+  },
+  "verdict": "RED CONFIRMED: hook_event_name silently ignored; event field works (contract defect isolated to field name)"
+}

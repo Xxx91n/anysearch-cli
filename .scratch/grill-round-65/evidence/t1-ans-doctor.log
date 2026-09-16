@@ -1,0 +1,36 @@
+ans doctor v0.0.3
+---
+[1] Provider registry:
+[OK]   tavily modes=fast|index|deep|answer
+[OK]   exa modes=fast|index|deep|answer
+[OK]   anysearch modes=fast|index|deep
+[2] SessionStore (in-memory):
+[OK]   createSession
+[OK]   searchFts5 (hits=1)
+[SKIP]   vector arm (@anysearch-cli/embedding absent — FTS-only (optional peer))
+[3] Domain TOML parse + validate:
+[OK]   parseDomainToml
+[OK]   validate
+[OK]   skills.active
+[4] Environment config:
+[OK]   TAVILY_API_KEY (not set (optional))
+[OK]   EXA_API_KEY (set)
+[OK]   ANS_DOMAIN (docs)
+[OK]   ANS_DOMAINS_DIR (not set (resolution chain in [5]))
+[OK]   durable DB path (C:\Users\Administrator\.anysearch\anysearch.db)
+[5] Domains:
+[OK]   default (D:\Aworker\anysearch-cli\domains)
+[OK]   docs (D:\Aworker\anysearch-cli\domains)
+[OK]   research (D:\Aworker\anysearch-cli\domains)
+  active: docs  (resolved from D:\Aworker\anysearch-cli\domains)
+[OK]     sources.enabled (tavily,exa,anysearch)
+[OK]     skills.active (search,doctor)
+[OK]     hooks.toolWhitelist (3 tools)
+[OK]     prompts (0 entries)
+[OK]     rag.adapter (none)
+    urlAllowlist: modelcontextprotocol.io, typescriptlang.org, www.typescriptlang.org, pnpm.io
+[SKIP]     provider tavily key (TAVILY_API_KEY unset -> provider skipped at search; set the key or drop 'tavily' from sources.enabled)
+[OK]     provider exa key (set)
+[SKIP]     provider anysearch key (ANYSEARCH_API_KEY unset -> provider skipped at search; set the key or drop 'anysearch' from sources.enabled)
+---
+Result: 22 passed, 3 skipped, 0 failed

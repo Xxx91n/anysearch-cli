@@ -1,0 +1,8 @@
+Switching Active Domain to: docs
+  [persisted] C:\Users\Administrator\.anysearch\config.env
+  sources: tavily, exa, anysearch
+  skills: search, doctor
+  hooks: ctx_execute, ctx_search, ctx_batch_execute
+  rag: none
+
+Domain will persist across sessions via C:\Users\Administrator\.anysearch\config.env.
