@@ -66,14 +66,19 @@ Fixes landed:
 - `claude|cursor|codex|antigravity.ts` + `session-start.ts`:
   `hook_event_name ?? event` — one-line field fallback benefiting every
   host that sends the real field (including real Claude Code).
-- `configs/{claude,cursor,codex,antigravity}/hooks.json`: Pre/PostToolUse
-  repointed from library files to `adapters/<host>.cjs`.
+- `configs/{claude,codex,antigravity}/hooks.json`: Pre/PostToolUse
+  repointed from library files to `adapters/<host>.cjs`. Audit rework
+  (F-A1): `configs/cursor/hooks.json` was missed in this pass — repointed
+  to `adapters/cursor.cjs` in the rework commit; the "four platforms
+  fixed" wording here and in CHANGELOG was overclaimed.
 - `configs/codebuddy/hooks.json` (new): `{matcher, hooks:[{type:"command",
   command}]}` schema; the command resolves the global install via
   `node "$(npm root -g)/@anysearch-cli/plugin/dist/hooks/adapters/codebuddy.cjs"`
   — Git-Bash-compatible on Windows (CodeBuddy forces Git Bash for hooks).
 - `test/codebuddy-contract.test.ts`: 10 synthetic-stdin contract tests
-  (real CodeBuddy shapes per event + legacy fallback + claude regression).
+  (real CodeBuddy shapes per event + legacy fallback + claude regression);
+  rework grew the file to 20/20 (array tool_response per platform,
+  template-target executability sweep).
 - `build:hooks` / `exports` gained the codebuddy entry.
 
 ### D3 Probe matrix protocol (ledger D-003; T2/T4)

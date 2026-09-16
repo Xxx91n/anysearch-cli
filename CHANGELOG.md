@@ -20,7 +20,7 @@ All notable changes to this project are recorded here. Format follows
 ### Fixed
 
 - **hooks 假绿（潜伏缺陷）**：四个适配器 + session-start.ts 读 `stdin.event`，真实宿主注入 `hook_event_name` → 部署即静默 no-op。统一改 `hook_event_name ?? event`；合成 stdin 红绿证据对见 `.scratch/grill-round-65/evidence/`。
-- **hooks 模板指向库文件**：四平台 configs/*/hooks.json 的 Pre/PostToolUse 原指 `dist/hooks/{preheat,distill}.cjs`（纯库无 main）——照模板接线永远静默 no-op；改指 `adapters/<host>.cjs`。
+- **hooks 模板指向库文件**：configs/*/hooks.json 的 Pre/PostToolUse 原指 `dist/hooks/{preheat,distill}.cjs`（纯库无 main）——照模板接线永远静默 no-op；T3 修 claude/codex/antigravity + 新增 codebuddy，cursor 漏修由审计返工（F-A1）补齐，并加模板-target 可执行断言堵盲区。
 - **`configs/` 不随包发布**：`files:["dist"]` 导致模板根本不在 npm tarball 里；`files` 补 `configs`，模板 0.0.4 起随包。
 - **plugin server 无启动入口**：package.json 原无 bin；补 `ans-plugin-server`。
 - **CodeBuddy tool_response 形状（live 抓出）**：真实宿主送数组 content blocks `[{type:"text",text:"<json>"}]`，适配器只认 string/{content:[]}/object → distill `resultCount:0` 假绿。新增 `core.unwrapToolResponse` 共享解包（codebuddy+claude 接入）。
@@ -31,19 +31,7 @@ All notable changes to this project are recorded here. Format follows
 ### Changed
 
 - README Known Limitations：删 stale「Not on npm yet」，补三条 0.0.3 部署缺口口径（server 手拉/模板指库/字段名假绿），各标修复落点 ADR-0066。
-- README Verified agent hosts：CodeBuddy 2.151.0 状态从 contract-verified 翻正 **live-verified**（headless P1–P9 探针矩阵全绿，含 with/without-tool P9 对照）。
-
-### Verified（live probe matrix, CodeBuddy 2.151.0 headless）
-
-- P1 MCP 注册：init.mcp_servers=[anysearch:connected]，5 工具 `mcp__anysearch__*` 全列。
-- P2 域内检索：typescriptlang.org 实答 + PostToolUse 索引 +10。
-- P3 OOD 域向：cookie 查询全落 modelcontextprotocol.io（与 `ans search` 直调一致）。
-- P4 ans_chat：v1/chat 上游（model=step）真实回答。
-- P5 recall_memory：10 条召回跨 3 sessionId。
-- P6 hooks 三事件：SessionStart 卡片入 context / Pre+Post 命中 adapter / exit0 / 信封合法。
-- P7 fail-open：杀 server 后检索正常、hooks exit0、index 静默跳过。
-- P8 research_web 执行 + query_knowledge 诚实 `adapter=none`。
-- P9 对照：无工具错引 `pnpm.io/npmrc#node-linker` → 有工具实检 `pnpm.io/settings/node-modules`。
+- README Verified agent hosts：CodeBuddy 2.151.0 状态从 contract-verified 翻正 **live-verified**（headless P1–P9 探针矩阵全绿，含 with/without-tool P9 对照）。实测要点：MCP 注册 `anysearch:connected` + 5 工具全列；域内检索 typescriptlang.org 实答 + PostToolUse 索引 +10；OOD 查询全落 modelcontextprotocol.io（与 `ans search` 直调一致）；ans_chat 走 v1/chat 上游出真实回答；recall_memory 10 条跨 3 sessionId；hooks 三事件全命中（SessionStart 卡入 context、Pre/Post exit0、信封合法）；杀 server 后 fail-open 正常；research_web 执行 + query_knowledge 诚实 `adapter=none`；P9 对照——无工具错引 `pnpm.io/npmrc#node-linker` → 有工具实检 `pnpm.io/settings/node-modules`。
 
 ## 2026-09-16 — ADR-0065 r64: 隔离金案例 TTL 裁决收口（mustHitPaths 页族断言 + evidence 模式 + 10 条全量 promote）
 
