@@ -85,6 +85,7 @@ git tag v0.0.5+push（当场授权）→release-gate post-tag 绿+publish job ru
 - **T4 ✅** 修复后全绿：shipped 配置端到端 SessionStart 回显 / deny 端到端拦阻（mcpCalls=0）/ PostToolUse→index +19+10 / turbo 11/11；PostToolUse ctx 同-turn 回声 0/2 记 skip-with-reason
 - **T5 ✅** commits `5ae26dd`+`23ae397`：ADR-0068 / codex-integration.md / README 行+缺口条目 / CHANGELOG 0.0.5 / CONTEXT+AGENTS 钉入 / ADR 索引 regen
 - **T6 ✅** commit `aeb2276`：7 包 bump 0.0.5 + ship-gate 钉同步 + pack×4 演练 + **ship-gate 全绿**（`C:\Users\ADMINI~1\AppData\Local\Temp\ansclean` 净 clone——F-01a 双根/GitButler index 幻影按范围外登记口径绕行）
+- **AUDIT ✅→FIX ✅**：审计窗口 PASS（`D:\Aworker\anysearch-cli\.scratch\grill-round-67\handoffs\round-67-audit-closeout.md`）；F-01..F-06 经修复 commit `llk`（r67-grill）收口并同套验收复绿——AGENTS.md 说明块随包/README 未验证面/台账 ER 编号/绝对路径回写/注释修正/t2-p8 补档/codex.ts 哨兵显式化。
 - **T7 ⏸ 当场授权点**：路线候选 A) push r67-grill + PR merge 到 main → main 上 tag v0.0.5 + push；B) 本地 merge 后 tag push。release-gate post-tag assert + publish job(OIDC TP+provenance) 链已实证（0.0.4 同通道）。
 - 报告：`D:\Aworker\anysearch-cli\.scratch\grill-round-67\reports\2026-09-17-report.md`
 - 遗留：query_knowledge=adapter none stub；OOD abstain=null；PostToolUse ctx 同-turn 变量；hooks.state hash 生成路径未 headless 实证（范围外登记已含）。
