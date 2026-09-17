@@ -1,6 +1,6 @@
 {
   "name": "anysearch",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "AnySearch hooks + MCP integration for Claude Code (experimental)",
   "author": {
     "name": "Xxx91n"
