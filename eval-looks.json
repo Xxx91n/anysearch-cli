@@ -1,6 +1,5 @@
 {
   "schema": "anysearch/eval-looks@2",
-  "schema_version": 1,
   "looks": [
     {
       "key": "4a529f6fbe2096c8:956d925db2f73115",
@@ -14,6 +13,14 @@
       "key": "4a529f6fbe2096c8:956d925db2f73115",
       "at": "2026-09-15T12:40:53.412Z",
       "look": 2,
+      "verdict": "warn",
+      "exitCode": 0,
+      "integrity": "pass"
+    },
+    {
+      "key": "4a529f6fbe2096c8:956d925db2f73115",
+      "at": "2026-09-17T10:34:30.043Z",
+      "look": 3,
       "verdict": "warn",
       "exitCode": 0,
       "integrity": "pass"
