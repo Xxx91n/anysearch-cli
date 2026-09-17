@@ -107,11 +107,12 @@ Tools never print to stdout; the server keeps the protocol channel pure.
 | Host | Version | Date | Scope | Status |
 |------|---------|------|-------|--------|
 | CodeBuddy Code | 2.151.0 | 2026-09-16 | `mcp.json` registration (`ans-mcp`, 5 tools) · `.codebuddy/settings.json` hooks (`hook_event_name` contract, `hookSpecificOutput` envelope) · `ans-plugin-server` bin | live-verified: headless P1–P9 probe matrix green (search/recall/ans_chat/research + 3-event hooks + fail-open + with/without-tool contrast) |
+| Claude Code | 2.1.251 | 2026-09-17 | `mcp.json` registration (`ans-mcp`, 5 tools) · `.claude/settings.json` hooks (official schema, `ans-hook-*` bins, `hookSpecificOutput` envelope) · `ans-plugin-server` bin · plugin skeleton (`.claude-plugin/` + `hooks/` + `.mcp.json`; experimental — `CLAUDE_PLUGIN_ROOT` expansion broken on Windows, upstream #16116) | live-verified (settings path): MCP connect + 5 tools + live `search_web`, SessionStart routing-card injection via envelope, Pre/PostToolUse hook execution marker-verified, deny/envelope contract sentinel-proven, fail-open, `claude plugin validate` passed |
 
 "Verified" means an end-to-end transcript captured on the real host
 (`stream-json`), not contract isomorphism. See
-`docs/codebuddy-integration.md` for the CodeBuddy wiring and ADR-0066 for
-the round-65 evidence set.
+`docs/codebuddy-integration.md` / `docs/claude-integration.md` for the
+wiring and ADR-0066 / ADR-0067 for the evidence sets.
 
 ## Known limitations
 
@@ -129,6 +130,16 @@ the round-65 evidence set.
   `hook_event_name`; on ≤0.0.3 the hooks deploy but silently no-op
   (false-green). Fixed in-tree via `hook_event_name ?? event` on all four
   adapters + session-start (ADR-0066).
+- **0.0.3 Claude output keys are dropped by the host** — `claude.ts` and
+  `session-start.ts` emitted `additionalContext` / `updatedToolOutput` at top
+  level; Claude Code drops every bare top-level decision key (sentinel-proven
+  on 2.1.251). Fixed in-tree: all keys sit inside `hookSpecificOutput`
+  (ADR-0067).
+- **0.0.3 Claude hook template uses a non-schema shape** — `configs/claude/
+  hooks.json` `{name,command,args}` entries silently poison the whole event
+  column on Claude Code (0 hooks fire, no error). Fixed in-tree: official
+  `{matcher, hooks:[{type:"command", command}]}` + `ans-hook-*` bin commands
+  (ADR-0067).
 - **`anysearch` provider cannot pre-filter** — its REST surface has no domain
   parameter; under a domain allowlist it is post-filter-only (honest degrade,
   recorded in the `retrieval.domain_filter.pre` audit event).
@@ -257,4 +268,5 @@ The complete numbered record lives in `docs/adr/` — ADR-0001 through ADR-0066.
 | [0064](docs/adr/0064-architecture-grill-round-63-npm-001-go-no-go-release-adjudication.md) | Grill Round 63 — npm 0.0.1 Go/No-Go Release Adjudication（发布终审：阻塞清零/带病留痕/前置清障） |
 | [0065](docs/adr/0065-architecture-grill-round-64-quarantine-ttl-adjudication-assertion-granularity.md) | Grill Round 64 — Quarantined Golden TTL Adjudication + Assertion-Granularity Re-anchor（隔离金案例裁决收口/页族断言层/证据模式） |
 | [0066](docs/adr/0066-architecture-grill-round-65-real-host-deployment-codebuddy-hooks-contract.md) | Grill Round 65 — Real-Host Deployment: CodeBuddy 全栈三件套 + Hooks 契约对齐（开门轮） |
+| [0067](docs/adr/0067-architecture-grill-round-66-claude-code-host-contract-release-channel.md) | Grill Round 66 — Claude Code 真宿主契约对齐（信封/schema/骨架）+ OIDC 发布通道 |
 <!-- END ADR-INDEX -->
