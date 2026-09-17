@@ -108,11 +108,13 @@ Tools never print to stdout; the server keeps the protocol channel pure.
 |------|---------|------|-------|--------|
 | CodeBuddy Code | 2.151.0 | 2026-09-16 | `mcp.json` registration (`ans-mcp`, 5 tools) · `.codebuddy/settings.json` hooks (`hook_event_name` contract, `hookSpecificOutput` envelope) · `ans-plugin-server` bin | live-verified: headless P1–P9 probe matrix green (search/recall/ans_chat/research + 3-event hooks + fail-open + with/without-tool contrast) |
 | Claude Code | 2.1.251 | 2026-09-17 | `mcp.json` registration (`ans-mcp`, 5 tools) · `.claude/settings.json` hooks (official schema, `ans-hook-*` bins, `hookSpecificOutput` envelope) · `ans-plugin-server` bin · plugin skeleton (`.claude-plugin/` + `hooks/` + `.mcp.json`; experimental — `CLAUDE_PLUGIN_ROOT` expansion broken on Windows, upstream #16116) | live-verified (settings path): MCP connect + 5 tools + live `search_web`, SessionStart routing-card injection via envelope, Pre/PostToolUse hook execution marker-verified, deny/envelope contract sentinel-proven, fail-open, `claude plugin validate` passed |
+| Codex CLI | 0.142.5 | 2026-09-17 | `config.toml` `[mcp_servers.anysearch]` (`ans-mcp`, 5 tools) · hooks via `.codex/hooks.json` (project) or `[[hooks.*]]` config.toml sections — official `{matcher, hooks:[{type,command,timeout}]}` schema, `ans-hook-codex` / `ans-hook-session-start --envelope` bins | live-verified: SessionStart routing-card envelope delivered, PostToolUse → `/index` accumulates real results, URL-policy deny blocks end-to-end, fail-open preserved; PostToolUse ctx injection is same-turn-variable |
 
 "Verified" means an end-to-end transcript captured on the real host
 (`stream-json`), not contract isomorphism. See
-`docs/codebuddy-integration.md` / `docs/claude-integration.md` for the
-wiring and ADR-0066 / ADR-0067 for the evidence sets.
+`docs/codebuddy-integration.md` / `docs/claude-integration.md` /
+`docs/codex-integration.md` for the wiring and ADR-0066 / ADR-0067 /
+ADR-0068 for the evidence sets.
 
 ## Known limitations
 
@@ -139,12 +141,21 @@ wiring and ADR-0066 / ADR-0067 for the evidence sets.
   column on Claude Code (0 hooks fire, no error). Fixed in 0.0.4: official
   `{matcher, hooks:[{type:"command", command}]}` + `ans-hook-*` bin commands
   (ADR-0067).
-- **0.0.4 session-start emits the Claude envelope unconditionally** — published
-  0.0.4 `session-start.cjs` writes `hookSpecificOutput` for every host, which
-  breaks the codex/cursor/antigravity bare-`additionalContext` contract
-  (Cursor/Antigravity still get the `.mdc` fallback). Fixed in-tree via the
-  `--envelope` opt-in flag — Claude configs pass it, other hosts keep the bare
-  shape; lands with the next release (R66 audit F-03).
+- **0.0.4 session-start default output is Codex-unsafe** — published 0.0.4
+  `session-start.cjs` emits bare top-level `additionalContext` unless
+  `--envelope` is passed; codex 0.142.5 drops the bare form ~80% of the time
+  (measured). Fixed in 0.0.5: the shipped Codex config passes `--envelope`
+  (ADR-0068).
+- **≤0.0.4 Codex hook config is a dead file** — `configs/codex/hooks.json`
+  used `{name,command,args}` entries; Codex registers zero hooks from that
+  shape (no error). Fixed in 0.0.5: official schema + `ans-hook-codex` /
+  `ans-hook-session-start --envelope` bin commands, generated single-source by
+  `scripts/gen-claude-configs.mjs` (ADR-0068).
+- **≤0.0.4 Codex adapter output is dropped/dropped-silently** — bare top-level
+  `additionalContext` lands ~20% of the time on codex 0.142.5 and
+  `decision.permission` was never emitted, so URL-policy denies executed the
+  tool anyway. Fixed in 0.0.5: all output inside `hookSpecificOutput`,
+  `permissionDecision(Reason)` passthrough (ADR-0068).
 - **`anysearch` provider cannot pre-filter** — its REST surface has no domain
   parameter; under a domain allowlist it is post-filter-only (honest degrade,
   recorded in the `retrieval.domain_filter.pre` audit event).

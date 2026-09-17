@@ -54,3 +54,10 @@ One grill round = one themed topic. Cohesive engineering items in the same subsy
 ## Deliverable path discipline
 
 Deliverable documents (task books, handoffs, decision ledgers, plans, evidence manifests) must be written with **absolute paths**, and must be *referenced by absolute path* in reports and handoffs — both inside the document body and when pointing a user or the next agent at the file. Repo-relative paths (`docs/x.md`, `.scratch/...`) are not acceptable for deliverables. Applies from grill-round-67 onward.
+
+## Codex host notes (ADR-0068)
+
+- Hooks config = official schema `{ "<Event>": [{ matcher, hooks: [{type:"command", command, timeout}] }] }`; `{name,command,args}` registers zero hooks. Matchers are FULL-MATCH regexes.
+- Hook stdout contract = `hookSpecificOutput` envelope only: bare top-level `additionalContext` is ~80%-dropped, bare `permissionDecision` never blocks, exit 2 doesn't block. Adapter + session-start (`--envelope`) emit the envelope.
+- `codex -c` cannot inject hooks (values are strings, not TOML) — wire via `config.toml` `[[hooks.*]]` or project `.codex/hooks.json`.
+- `required = true` MCP servers hard-exit codex on startup failure.

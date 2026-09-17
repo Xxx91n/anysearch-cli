@@ -4,6 +4,27 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 0.0.5 — 2026-09-17 — ADR-0068 r67: Codex 0.142.5 真宿主契约对齐
+
+### Added
+
+- `apps/plugin` 新 bin `ans-hook-codex`（→ `dist/hooks/adapters/codex.cjs`）——Codex hooks 命令经 PATH 解析全局安装，与 claude 通路同构。
+- `test/codex-contract.test.ts`（11 条）：官方 schema 校验、bin→entrypoint 解析、matcher 全匹配覆盖、SessionStart --envelope 断言、生成器漂移守卫（codex 配置纳入）、信封输出形状、hook_event_name 优先+legacy 兜底、fail-closed ask、非 ans 静默、畸形 stdin fail-open。
+- `docs/codex-integration.md`：Codex 接线文档（config.toml 双配置层 + MCP + hooks + 实测宿主事实清单 + fail-open）。
+
+### Fixed
+
+- **configs/codex/hooks.json 是死文件（live 抓出）**：0.0.4 用 `{name,command,args}` 条目——Codex 严格态报 unknown-field、宽松态静默注册零 hooks。重写为官方 `{matcher,hooks:[{type:"command",command}]}` schema，纳入 `scripts/gen-claude-configs.mjs` 单源生成+漂移守卫。
+- **codex 适配器裸输出被宿主丢弃（live 裁决）**：`adapters/codex.ts` PreToolUse/PostToolUse 原写顶层 `additionalContext`——codex 0.142.5 实测 ~80% 丢弃（合成桩 1/8、实物 1/3）。全部改入 `hookSpecificOutput{hookEventName,...}` 信封。
+- **URL 策略 deny 在 Codex 上完全失效**：适配器原只发 additionalContext、丢弃 `decision.permission`——deny 决策零输出、工具照跑。现 `permissionDecision`/`permissionDecisionReason` 透传，真宿主端到端拦阻实测通过（router: `Tool call blocked by PreToolUse hook`）。
+- **SessionStart 裸输出在 Codex 上不可靠**：shipped codex 配置改传 `--envelope`，路由卡经信封投递实测成功。
+- **matcher 非全匹配**：`mcp__anysearch__` 不命中 `mcp__anysearch__search_web`（全匹配 regex）——shipped matcher 改后缀锚定 `.*(search_web|research_web|recall_memory|query_knowledge|ans_chat)$`，namespace 无关。
+
+### Changed
+
+- 宿主实测事实（钉入 ADR-0068/docs）：codex `-c` 无法表达 hooks（值按字符串解析）；hooks 须走 config 文件层（config.toml `[[hooks.*]]` 或项目 `.codex/hooks.json`）；required=true MCP 硬退出；hook trust=[hooks.state] sha256 持久化；PostToolUse ctx 注入为同 turn 边界可变量，索引副作用是持久价值。
+- README Verified agent hosts：新增 Codex CLI 0.142.5 行；Known Limitations 补 0.0.4 Codex 三项缺口。
+
 ## 2026-09-17 — ADR-0067 r66: Claude Code 真宿主契约对齐（信封/schema/骨架）+ OIDC 发布通道
 
 ### Added

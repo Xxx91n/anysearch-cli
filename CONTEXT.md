@@ -1035,3 +1035,9 @@ published 轨的 smoke 切法：不按探针数量而按输出契约形态——
 
 ## Backup-Before-Mutation（改前备份前置）
 实施纪律：修改任何现有文件前先做可回滚备份（文件级副本或可还原快照），修复跑偏/失败可无损还原。_Avoid_: 直接改后靠记忆还原；备份混进提交物。来源：R67 D-003 用户显式约束。
+
+## Full-Match Matcher（全匹配匹配器）
+Codex hooks 的 matcher 是全匹配正则（^...$ 语义）：`mcp__anysearch__` 不命中 `mcp__anysearch__search_web`，`.*` 与后缀锚定 `.*(tool_name)$` 命中。shipped 配置的 matcher 必须按全匹配口径写。_Avoid_: 按"前缀匹配"直觉写 matcher（半串静默零触发）；跨宿主照抄 matcher 语义假设。来源：R67 T2 实物腿裁决（env-dump 仪器腿）。
+
+## Non-TOML `-c` Values（`-c` 非 TOML 解析）
+codex `-c key=value` 的值不经过 TOML 解析——数组/表值按字符串处理，报 "expected a sequence"。hooks 等结构化配置必须落 config 文件层（config.toml `[[hooks.*]]` / 项目 `.codex/hooks.json`），探针注入轨用 CODEX_HOME 重定向而非 -c 拼接。_Avoid_: 用 `-c` 拼 hooks 数组（形态进不了 schema）；Windows argv 引号折叠二次放大失败面。来源：R67 T2 注入轨实测。
