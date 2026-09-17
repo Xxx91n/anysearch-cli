@@ -5,7 +5,7 @@ knowledge in one agent, with time-edge-effect FTS5 recall, multi-source RRF
 fusion, an MCP server that auto-indexes results — and (as of ADR-0062) a
 domain allowlist that actually gates what you get back.
 
-**Status: 0.0.3 on npm** — `npm i -g @anysearch-cli/cli`（首个公开版本；0.0.1/0.0.2 因 workspace:* peer 逃逸作废，详见 CHANGELOG）。
+**Status: 0.0.4 on npm** — `npm i -g @anysearch-cli/cli`（0.0.4 起经 npm OIDC trusted publishing 发布，含 sigstore provenance；0.0.1/0.0.2 因 workspace:* peer 逃逸作废，详见 CHANGELOG）。
 
 ## Requirements
 
@@ -116,30 +116,35 @@ wiring and ADR-0066 / ADR-0067 for the evidence sets.
 
 ## Known limitations
 
-- **0.0.3 plugin server needs a manual launch** — `@anysearch-cli/plugin@0.0.3`
+- **≤0.0.3 plugin server needs a manual launch** — `@anysearch-cli/plugin@0.0.3`
   ships no bin; run
   `node "$(npm root -g)/@anysearch-cli/plugin/dist/server/index.cjs"` once per
-  machine (fixed in-tree as `ans-plugin-server`, lands with the next
-  release — ADR-0066).
-- **0.0.3 hook templates point at library files** — `configs/*/hooks.json`
+  machine. Fixed in 0.0.4 as the `ans-plugin-server` bin (ADR-0066).
+- **≤0.0.3 hook templates point at library files** — `configs/*/hooks.json`
   Pre/PostToolUse entries reference `dist/hooks/{preheat,distill}.cjs`
   (decision libraries, no stdin main) instead of `adapters/<host>.cjs`; wire
-  hooks per `docs/codebuddy-integration.md` / the fixed templates in the
-  next release (ADR-0066).
+  hooks per `docs/codebuddy-integration.md` / `docs/claude-integration.md`.
+  Fixed in 0.0.4 (ADR-0066/0067).
 - **Hook adapters before this fix read `stdin.event`** — real hosts inject
   `hook_event_name`; on ≤0.0.3 the hooks deploy but silently no-op
-  (false-green). Fixed in-tree via `hook_event_name ?? event` on all four
+  (false-green). Fixed in 0.0.4 via `hook_event_name ?? event` on all four
   adapters + session-start (ADR-0066).
-- **0.0.3 Claude output keys are dropped by the host** — `claude.ts` and
+- **≤0.0.3 Claude output keys are dropped by the host** — `claude.ts` and
   `session-start.ts` emitted `additionalContext` / `updatedToolOutput` at top
   level; Claude Code drops every bare top-level decision key (sentinel-proven
-  on 2.1.251). Fixed in-tree: all keys sit inside `hookSpecificOutput`
+  on 2.1.251). Fixed in 0.0.4: all keys sit inside `hookSpecificOutput`
   (ADR-0067).
-- **0.0.3 Claude hook template uses a non-schema shape** — `configs/claude/
+- **≤0.0.3 Claude hook template uses a non-schema shape** — `configs/claude/
   hooks.json` `{name,command,args}` entries silently poison the whole event
-  column on Claude Code (0 hooks fire, no error). Fixed in-tree: official
+  column on Claude Code (0 hooks fire, no error). Fixed in 0.0.4: official
   `{matcher, hooks:[{type:"command", command}]}` + `ans-hook-*` bin commands
   (ADR-0067).
+- **0.0.4 session-start emits the Claude envelope unconditionally** — published
+  0.0.4 `session-start.cjs` writes `hookSpecificOutput` for every host, which
+  breaks the codex/cursor/antigravity bare-`additionalContext` contract
+  (Cursor/Antigravity still get the `.mdc` fallback). Fixed in-tree via the
+  `--envelope` opt-in flag — Claude configs pass it, other hosts keep the bare
+  shape; lands with the next release (R66 audit F-03).
 - **`anysearch` provider cannot pre-filter** — its REST surface has no domain
   parameter; under a domain allowlist it is post-filter-only (honest degrade,
   recorded in the `retrieval.domain_filter.pre` audit event).

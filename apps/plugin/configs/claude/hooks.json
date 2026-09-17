@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "ans-hook-session-start",
+            "command": "ans-hook-session-start --envelope",
             "timeout": 5
           }
         ]

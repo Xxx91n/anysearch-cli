@@ -114,8 +114,8 @@ testAsync("E2E: session-start.cjs outputs valid JSON for SessionStart event", as
   }
 
   const stdinPayload = JSON.stringify({ event: "SessionStart", cwd: "/tmp/test" });
-  const result = await new Promise<string>((resolve, reject) => {
-    const proc = spawn("node", [cjsPath], { stdio: ["pipe", "pipe", "pipe"] });
+  const run = (args: string[] = []) => new Promise<string>((resolve, reject) => {
+    const proc = spawn("node", [cjsPath, ...args], { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     proc.stdout.on("data", d => stdout += d);
     proc.on("close", (code) => {
@@ -126,12 +126,18 @@ testAsync("E2E: session-start.cjs outputs valid JSON for SessionStart event", as
     proc.stdin.end();
   });
 
-  const parsed = JSON.parse(result);
-  // R66 ER-2: Claude Code honors additionalContext only inside the
-  // hookSpecificOutput envelope — top-level fields are silently dropped.
-  const ctx = parsed.hookSpecificOutput?.additionalContext;
-  assert.ok(ctx, "should have hookSpecificOutput.additionalContext");
-  assert.ok(ctx.includes("anysearch plugin active"), "routing card should be present");
+  // R66 audit F-03: host contract split — bare top-level additionalContext is
+  // the codex/cursor/antigravity shape; Claude Code drops it and needs the
+  // hookSpecificOutput envelope (opt-in via --envelope in generated configs).
+  const bare = JSON.parse(await run());
+  assert.ok(bare.additionalContext, "default shape: top-level additionalContext");
+  assert.ok(!("hookSpecificOutput" in bare), "default shape must not carry the envelope");
+  assert.ok(bare.additionalContext.includes("anysearch plugin active"), "routing card should be present");
+
+  const env = JSON.parse(await run(["--envelope"]));
+  const ctx = env.hookSpecificOutput?.additionalContext;
+  assert.ok(ctx, "envelope shape: hookSpecificOutput.additionalContext");
+  assert.ok(!("additionalContext" in env), "envelope shape must not leak a bare top-level key");
   assert.ok(ctx.includes("search_web"), "should mention search_web");
   assert.ok(ctx.includes("Fail-open"), "should mention fail-open");
 });

@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/session-start.cjs\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/session-start.cjs\" --envelope",
             "timeout": 5
           }
         ]

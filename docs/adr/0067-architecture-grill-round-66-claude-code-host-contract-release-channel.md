@@ -57,8 +57,10 @@ output never stands in for shipped behavior.
   permissionDecision, permissionDecisionReason}`; PostToolUse distilled output
   goes to `hookSpecificOutput.additionalContext` (Claude's PostToolUse has no
   output-rewrite field — `updatedToolOutput` is a CodeBuddy-ism).
-- `session-start.ts`: routing card inside
-  `hookSpecificOutput{hookEventName:"SessionStart",additionalContext}`.
+- `session-start.ts`: host-split via `--envelope` flag (R66 audit F-03 rework) —
+  the generated Claude configs pass it and get
+  `hookSpecificOutput{hookEventName:"SessionStart",additionalContext}`; the
+  default stays bare `{additionalContext}` for codex/cursor/antigravity.
 - `configs/claude/hooks.json`: rewritten to the official settings schema;
   commands are the package's own global bins `ans-hook-claude` /
   `ans-hook-session-start` (new `bin` entries) — resolvable via PATH on every

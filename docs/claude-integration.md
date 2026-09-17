@@ -80,7 +80,7 @@ Shipped template: `@anysearch-cli/plugin/configs/claude/hooks.json`
     "PostToolUse": [{ "matcher": ".*",
       "hooks": [{ "type": "command", "command": "ans-hook-claude", "timeout": 10 }] }],
     "SessionStart": [{ "matcher": "startup",
-      "hooks": [{ "type": "command", "command": "ans-hook-session-start", "timeout": 5 }] }]
+      "hooks": [{ "type": "command", "command": "ans-hook-session-start --envelope", "timeout": 5 }] }]
   }
 }
 ```

@@ -28,7 +28,9 @@ const pkg = JSON.parse(readFileSync(join(PLUGIN_ROOT, "package.json"), "utf8"));
 const HOOKS_SPEC = [
   { event: "PreToolUse", matcher: ".*", target: "dist/hooks/adapters/claude.cjs", bin: "ans-hook-claude", timeout: 5 },
   { event: "PostToolUse", matcher: ".*", target: "dist/hooks/adapters/claude.cjs", bin: "ans-hook-claude", timeout: 10 },
-  { event: "SessionStart", matcher: "startup", target: "dist/hooks/session-start.cjs", bin: "ans-hook-session-start", timeout: 5 },
+  // --envelope selects the hookSpecificOutput output shape in session-start.cjs
+  // (Claude-only; the bare shape stays the default for codex/cursor/antigravity).
+  { event: "SessionStart", matcher: "startup", target: "dist/hooks/session-start.cjs", bin: "ans-hook-session-start", args: "--envelope", timeout: 5 },
 ];
 const MCP_SERVER_NAME = "anysearch";
 const MCP_COMMAND = "ans-mcp"; // global bin of @anysearch-cli/mcp
@@ -39,7 +41,7 @@ function settingsHooks() {
   for (const h of HOOKS_SPEC) {
     (hooks[h.event] ??= []).push({
       matcher: h.matcher,
-      hooks: [{ type: "command", command: h.bin, timeout: h.timeout }],
+      hooks: [{ type: "command", command: h.args ? `${h.bin} ${h.args}` : h.bin, timeout: h.timeout }],
     });
   }
   return { hooks };
@@ -52,7 +54,7 @@ function pluginHooks() {
       matcher: h.matcher,
       hooks: [{
         type: "command",
-        command: `node "\${CLAUDE_PLUGIN_ROOT}/${h.target}"`,
+        command: `node "\${CLAUDE_PLUGIN_ROOT}/${h.target}"${h.args ? ` ${h.args}` : ""}`,
         timeout: h.timeout,
       }],
     });
@@ -79,6 +81,10 @@ function pluginMcp() {
 }
 
 // ---- write -------------------------------------------------------------------
+// ANS_GEN_OUT overrides the write root (used by the drift-guard contract test —
+// it regenerates into a tmp dir and compares against the checked-in files
+// without touching the source tree).
+const OUT_ROOT = process.env.ANS_GEN_OUT || PLUGIN_ROOT;
 const out = [
   ["configs/claude/hooks.json", settingsHooks()],
   ["hooks/hooks.json", pluginHooks()],
@@ -86,7 +92,7 @@ const out = [
   [".mcp.json", pluginMcp()],
 ];
 for (const [rel, obj] of out) {
-  const p = join(PLUGIN_ROOT, rel);
+  const p = join(OUT_ROOT, rel);
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, JSON.stringify(obj, null, 2) + "\n", "utf8");
   console.log("wrote " + rel);

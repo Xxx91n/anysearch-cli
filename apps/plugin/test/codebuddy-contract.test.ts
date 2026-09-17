@@ -214,7 +214,9 @@ testAsync("session-start: hook_event_name SessionStart honored", async () => {
   const p = join(process.cwd(), "dist", "hooks", "session-start.cjs");
   if (!existsSync(p)) { console.log("    SKIP: session-start.cjs not built"); return; }
   const { stdout } = await runHook(p, JSON.stringify({ hook_event_name: "SessionStart", cwd: "/tmp/cb" }));
-  assert.ok(JSON.parse(stdout).hookSpecificOutput?.additionalContext?.includes("[anysearch plugin active]"));
+  // R66 audit F-03: bare top-level additionalContext is the shared-host default;
+  // Claude gets the envelope only via the generated configs' --envelope flag.
+  assert.ok(JSON.parse(stdout).additionalContext?.includes("[anysearch plugin active]"));
 });
 
 // === R65 rework F-A5: array-of-blocks tolerance on the other adapters ===
@@ -274,8 +276,12 @@ testAsync("all configs/*/hooks.json targets resolve to stdin-reading entrypoints
       if (typeof v === "string") {
         const m = v.match(/dist[\\/]hooks[\\/][\w./-]+\.cjs/);
         if (m) targets.push(m[0]);
-        // R66: bin-named commands (ans-hook-*) resolve through package.json bin.
-        else if (/^ans-[\w-]+$/.test(v) && pkg.bin?.[v]) targets.push(pkg.bin[v]);
+        // R66: bin-named commands (ans-hook-*) resolve through package.json bin;
+        // commands may carry args (e.g. "ans-hook-session-start --envelope").
+        else {
+          const binName = v.split(" ")[0];
+          if (/^ans-[\w-]+$/.test(binName) && pkg.bin?.[binName]) targets.push(pkg.bin[binName]);
+        }
       } else if (Array.isArray(v)) v.forEach(walk);
       else if (v && typeof v === "object") Object.values(v).forEach(walk);
     };

@@ -211,13 +211,14 @@ function stepStaticAssertions() {
     const pkg = JSON.parse(
       fs.readFileSync(path.join(ROOT, rel, "package.json"), "utf8")
     );
-    // R62 due-chore: hard pin — every workspace package must be exactly 0.0.1
-    // (the release candidate), not merely "not 0.0.0".
-    if (pkg.version !== "0.0.3") {
-      fail(`${rel}/package.json not pinned at 0.0.3 (got ${pkg.version}) — release pin (D-006 patch-start)`);
+    // R62 due-chore: hard pin — every workspace package must be exactly the
+    // release version (the release candidate), not merely "not 0.0.0".
+    // Bump this pin in the same commit as the package version bump (R66 audit F-01).
+    if (pkg.version !== "0.0.4") {
+      fail(`${rel}/package.json not pinned at 0.0.4 (got ${pkg.version}) — release pin (D-006 patch-start)`);
     }
   }
-  report("pass", `all ${PKG_DIRS.length} packages pinned at 0.0.3`);
+  report("pass", `all ${PKG_DIRS.length} packages pinned at 0.0.4`);
 
   // 1b. ADR-0017 dual-era: kernel and retriever must both export (ADR-0017)
   const kernelExports = JSON.parse(
@@ -1007,13 +1008,13 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
           const peerOk = pkg.peerDependencies && "@anysearch-cli/embedding" in pkg.peerDependencies &&
             pkg.peerDependenciesMeta && pkg.peerDependenciesMeta["@anysearch-cli/embedding"] && pkg.peerDependenciesMeta["@anysearch-cli/embedding"].optional === true;
           if (!peerOk) fail(`${file}: @anysearch-cli/embedding missing peerDependencies+peerDependenciesMeta.optional (D-005 peer-optional contract)`);
-        // R63 publish incident: npm publish <dir> bypasses pnpm workspace:* rewrite —
-        // packed manifest must carry NO workspace: protocol in any dep field.
-        for (const [depField, depSet] of Object.entries(pkg).filter(([k]) => /[Dd]ependencies$/.test(k))) {
-          for (const [dn, dv] of Object.entries(depSet ?? {})) {
-            if (String(dv).startsWith("workspace:")) fail(file + ": " + depField + "." + dn + " still workspace: (" + dv + ") — publish via pnpm pack tarball, not npm publish dir");
+          // R63 publish incident: npm publish <dir> bypasses pnpm workspace:* rewrite —
+          // packed manifest must carry NO workspace: protocol in any dep field.
+          for (const [depField, depSet] of Object.entries(pkg).filter(([k]) => /[Dd]ependencies$/.test(k))) {
+            for (const [dn, dv] of Object.entries(depSet ?? {})) {
+              if (String(dv).startsWith("workspace:")) fail(file + ": " + depField + "." + dn + " still workspace: (" + dv + ") — publish via pnpm pack tarball, not npm publish dir");
+            }
           }
-        }
         }
         if (pkg.license !== "Apache-2.0") fail(`${file}: license must be Apache-2.0 (D-007)`);
         if (!pkg.repository || !String(pkg.repository.url ?? "").includes("Xxx91n/anysearch-cli")) fail(`${file}: repository field missing/wrong (D-005)`);

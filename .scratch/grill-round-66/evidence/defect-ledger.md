@@ -97,3 +97,19 @@
 | 额外 live 发现 | **PreToolUse URL 策略真拦**：host 内 WebFetch 域名外 URL 被 anysearch hook 拒（`URL not on allowlist … ans hitl review --allow-url`）——B01 之后的正向实证 | t4-p5-realcall3 transcript |
 | 宿主模型观测 | deepseekpro 存在"叙述调用而非实发"行为（t4-p5-realcall2 口述 service error 但 transcript 零 tool_use）——prompt 须强制 tool_use 实证 | 同上 |
 | ans_chat 空正文 | host 上 ans_chat 返回 "Agent completed"——ANS_LLM_* 上游在本环境未供可用端点（env 缺）——记录为环境项非产品红 | t4-p5-realcall6 |
+
+## R66 审计返工（2026-09-17，post-release）
+
+| 编号 | 发现 | 修复 | 证据 |
+|------|------|------|------|
+| F-01 | ship-gate.mjs 版本钉仍 `!== "0.0.3"`——0.0.4 bump 未同步，合 main 即红 | 钉改 `0.0.4`+注释补"版本 bump 与钉同 commit"纪律 | scripts/ship-gate.mjs:214 |
+| F-02 | claude-contract 漂移守卫先 regen 再快照→永不能发现手改，且写源树 | 生成器加 `ANS_GEN_OUT` 输出根；测试改 快照→regen 到 tmp→对比（不动源树） | gen-claude-configs.mjs、claude-contract.test.ts |
+| F-03 | session-start.cjs 五宿主共享，改信封后 Codex/Cursor/Antigravity 裸 `additionalContext` 契约被破（已随 0.0.4 发布=已发布缺陷） | `--envelope` 旗标分流：Claude 生成配置带旗→信封；默认回裸形；contract 双形断言 | session-start.ts、hooks.test.ts、claude-contract.test.ts；README 已记 0.0.4 已发布缺陷 |
+| F-04 | README banner/Known Limitations 仍 0.0.3 口径 | banner→0.0.4；五条 ≤0.0.3 项标"fixed in 0.0.4"；新增 0.0.4 session-start 缺陷条目 | README.md |
+| F-05 | 报告 vitest 命令名不实 | 改 `pnpm test`（node --test） | reports/2026-09-17-report.md |
+
+### 返工 live 复验
+
+- 发现链：首轮复验真宿主裸形输出→追出 npm prefix 双根（`D:\nodejs` vs `Roaming\npm`，脚本锚定后者而 `npm i -g` 落前者）——装包须 `--prefix` 钉 Roaming。
+- 修正装包+server 重启后：`ans-hook-session-start --envelope` 经 shim 真发信封（hook_response `hookSpecificOutput` 头）+模型逐字引第二条 trigger rule——t4-rework-p6b.stream.jsonl。
+- `pnpm test` 8/8 套全绿（codebuddy-contract 修 bin 带参解析+session-start 裸形断言两处）；tsc/lint clean；repack tarball 验证 SessionStart 命令=`ans-hook-session-start --envelope`。
