@@ -2,32 +2,38 @@
   "hooks": {
     "PreToolUse": [
       {
-        "name": "anysearch-preheat",
-        "command": "node",
-        "args": [
-          "${CODEX_PLUGIN_DIR}/../dist/hooks/adapters/codex.cjs"
-        ],
-        "timeout": 5
+        "matcher": ".*(search_web|research_web|recall_memory|query_knowledge|ans_chat)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ans-hook-codex",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUse": [
       {
-        "name": "anysearch-distill",
-        "command": "node",
-        "args": [
-          "${CODEX_PLUGIN_DIR}/../dist/hooks/adapters/codex.cjs"
-        ],
-        "timeout": 10
+        "matcher": ".*(search_web|research_web|recall_memory|query_knowledge|ans_chat)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ans-hook-codex",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SessionStart": [
       {
-        "name": "anysearch-session-start",
-        "command": "node",
-        "args": [
-          "${CODEX_PLUGIN_DIR}/../dist/hooks/session-start.cjs"
-        ],
-        "timeout": 5
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ans-hook-session-start --envelope",
+            "timeout": 5
+          }
+        ]
       }
     ]
   }

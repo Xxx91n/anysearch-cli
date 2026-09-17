@@ -177,7 +177,7 @@ testAsync("claude PostToolUse: legacy event field preserved", async () => {
 
 // === Per-platform hook_event_name closure (ADR-0066 field fix, every adapter) ===
 // Each adapter must honor hook_event_name on its own stdin/output shape.
-testAsync("codex PostToolUse: hook_event_name -> top-level additionalContext", async () => {
+testAsync("codex PostToolUse: hook_event_name -> envelope additionalContext", async () => {
   const p = join(process.cwd(), "dist", "hooks", "adapters", "codex.cjs");
   if (!existsSync(p)) { console.log("    SKIP: codex.cjs not built"); return; }
   const { stdout } = await runHook(p, JSON.stringify({
@@ -185,7 +185,8 @@ testAsync("codex PostToolUse: hook_event_name -> top-level additionalContext", a
     tool_input: { query: "cb" }, tool_response: { results: [{ title: "t", url: "https://x.dev", snippet: "s", source: "x" }] },
     cwd: "/tmp/cb",
   }));
-  assert.ok(JSON.parse(stdout).additionalContext, "codex adapter must act on hook_event_name");
+  // R67 T1: codex 0.142.5 drops bare top-level additionalContext — envelope required.
+  assert.ok(JSON.parse(stdout).hookSpecificOutput?.additionalContext, "codex adapter must emit the envelope on hook_event_name");
 });
 
 testAsync("cursor postToolUse: hook_event_name -> updated_mcp_tool_output (snake_case)", async () => {
@@ -231,7 +232,7 @@ testAsync("codex PostToolUse: array-of-blocks tool_response distills", async () 
     hook_event_name: "PostToolUse", tool_name: "search_web",
     tool_input: { query: "cb" }, tool_response: BLOCKS, cwd: "/tmp/cb",
   }));
-  const d = JSON.parse(JSON.parse(stdout).additionalContext);
+  const d = JSON.parse(JSON.parse(stdout).hookSpecificOutput.additionalContext);
   assert.equal(d.resultCount, 2);
 });
 

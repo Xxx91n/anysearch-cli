@@ -29,16 +29,31 @@ const HOOKS_SPEC = [
   { event: "PreToolUse", matcher: ".*", target: "dist/hooks/adapters/claude.cjs", bin: "ans-hook-claude", timeout: 5 },
   { event: "PostToolUse", matcher: ".*", target: "dist/hooks/adapters/claude.cjs", bin: "ans-hook-claude", timeout: 10 },
   // --envelope selects the hookSpecificOutput output shape in session-start.cjs
-  // (Claude-only; the bare shape stays the default for codex/cursor/antigravity).
+  // (Claude + Codex both require the envelope; bare stays default for
+  // cursor/antigravity).
   { event: "SessionStart", matcher: "startup", target: "dist/hooks/session-start.cjs", bin: "ans-hook-session-start", args: "--envelope", timeout: 5 },
+];
+
+// Codex hooks spec — R67 T1 verified on codex-cli 0.142.5:
+//   * official schema { "<Event>": [{ matcher, hooks: [{type,command,timeout}] }] }
+//     (the old {name,command,args} shape silently registers zero hooks).
+//   * matcher is a FULL-MATCH regex — "mcp__anysearch__" never matches
+//     "mcp__anysearch__search_web"; use a suffix-anchored pattern.
+//   * commands resolve via global bin shims (ans-hook-codex /
+//     ans-hook-session-start); ${CODEX_PLUGIN_DIR} does not exist.
+const CODEX_ANS_MATCHER = ".*(search_web|research_web|recall_memory|query_knowledge|ans_chat)$";
+const CODEX_HOOKS_SPEC = [
+  { event: "PreToolUse", matcher: CODEX_ANS_MATCHER, bin: "ans-hook-codex", timeout: 5 },
+  { event: "PostToolUse", matcher: CODEX_ANS_MATCHER, bin: "ans-hook-codex", timeout: 10 },
+  { event: "SessionStart", matcher: "startup", bin: "ans-hook-session-start", args: "--envelope", timeout: 5 },
 ];
 const MCP_SERVER_NAME = "anysearch";
 const MCP_COMMAND = "ans-mcp"; // global bin of @anysearch-cli/mcp
 
 // ---- emitters ---------------------------------------------------------------
-function settingsHooks() {
+function settingsHooks(spec = HOOKS_SPEC) {
   const hooks = {};
-  for (const h of HOOKS_SPEC) {
+  for (const h of spec) {
     (hooks[h.event] ??= []).push({
       matcher: h.matcher,
       hooks: [{ type: "command", command: h.args ? `${h.bin} ${h.args}` : h.bin, timeout: h.timeout }],
@@ -87,6 +102,7 @@ function pluginMcp() {
 const OUT_ROOT = process.env.ANS_GEN_OUT || PLUGIN_ROOT;
 const out = [
   ["configs/claude/hooks.json", settingsHooks()],
+  ["configs/codex/hooks.json", settingsHooks(CODEX_HOOKS_SPEC)],
   ["hooks/hooks.json", pluginHooks()],
   [".claude-plugin/plugin.json", pluginManifest()],
   [".mcp.json", pluginMcp()],

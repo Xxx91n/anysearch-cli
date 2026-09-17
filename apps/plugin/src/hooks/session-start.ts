@@ -56,11 +56,11 @@ async function main(): Promise<void> {
   ensureMdc(cwd);
 
   // Output routing card as additionalContext for the host agent.
-  // Host contract split (R66 audit F-03): Claude Code (verified 2.1.251) drops
-  // bare top-level decision keys — it needs the hookSpecificOutput envelope,
-  // requested via `--envelope` (the generated Claude configs pass it). Codex /
-  // Cursor / Antigravity keep the bare { additionalContext } shape; Cursor and
-  // Antigravity primarily rely on the .mdc fallback written above.
+  // Host contract split (R66 F-03 + R67 T1): both Claude Code and Codex require
+  // the hookSpecificOutput envelope — Codex drops bare { additionalContext }
+  // ~80% of the time on the real host (verified 0.142.5). `--envelope` is
+  // passed by the generated Claude and Codex configs. Cursor / Antigravity keep
+  // the bare shape and primarily rely on the .mdc fallback written above.
   if (process.argv.includes("--envelope")) {
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {

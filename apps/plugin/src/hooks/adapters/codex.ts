@@ -1,7 +1,10 @@
 // Codex CLI hooks adapter.
-// Codex CLI hooks: similar JSON stdin/stdout contract.
-// Exit 0=pass, 2=block (stderr as reason), other=fail-open.
-// PreToolUse and PostToolUse supported.
+// Verified on codex-cli 0.142.5 (R67 T1): Codex only honors the
+// hookSpecificOutput envelope — bare top-level { additionalContext } is dropped
+// ~80% of the time, bare { permissionDecision } never blocks, and exit code 2
+// does NOT block tool calls. Deny must go through the envelope.
+// PreToolUse and PostToolUse supported; SessionStart is session-start.ts with
+// the --envelope flag (generated codex config passes it).
 
 import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
 // ADR-0059 D7 (T-6.3): resolve the shared server token (env or the 0600 token file).
@@ -43,8 +46,19 @@ async function main(): Promise<void> {
         projectPath: cwd,
         sessionId: stdin.session_id || "",
       });
-      if (decision.additionalContext) {
-        process.stdout.write(JSON.stringify({ additionalContext: decision.additionalContext }));
+      // R67 T1: single envelope carrying every PreToolUse key — Codex honors
+      // hookSpecificOutput.{additionalContext, permissionDecision,
+      // permissionDecisionReason}; bare top-level fields are ignored.
+      const hookSpecificOutput: Record<string, unknown> = { hookEventName: "PreToolUse" };
+      if (decision.additionalContext) hookSpecificOutput.additionalContext = decision.additionalContext;
+      if (decision.permission) {
+        // Envelope deny verified on codex 0.142.5 (T1-B); bare fields and
+        // exit code 2 do not block. ask passes through; codex resolves it.
+        hookSpecificOutput.permissionDecision = decision.permission;
+        if (decision.permissionReason) hookSpecificOutput.permissionDecisionReason = decision.permissionReason;
+      }
+      if (Object.keys(hookSpecificOutput).length > 1) {
+        process.stdout.write(JSON.stringify({ hookSpecificOutput }));
       }
       process.exit(0);
     } else if (event === "PostToolUse") {
@@ -74,10 +88,15 @@ async function main(): Promise<void> {
         }, { sessionId: stdin.session_id || "" }).catch(() => null);
       }
 
-      // Codex: updatedMCPToolOutput parsed but not yet effective per atomcode research.
-      // Use distilled output as context injection instead.
+      // R67 T1: PostToolUse context injection requires the envelope too —
+      // bare { additionalContext } was dropped on the real host.
       if (decision.distilledOutput) {
-        process.stdout.write(JSON.stringify({ additionalContext: decision.distilledOutput }));
+        process.stdout.write(JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PostToolUse",
+            additionalContext: decision.distilledOutput,
+          },
+        }));
       }
       process.exit(0);
     }
