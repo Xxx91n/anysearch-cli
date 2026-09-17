@@ -70,3 +70,5 @@ apps/cli/domains/
 # round-67 账本/任务书/调研报告同规随票入版本（ADR 号定稿后回填）。
 !.scratch/grill-round-67/
 !.scratch/grill-round-67/**
+!.scratch/grill-round-68/
+!.scratch/grill-round-68/**

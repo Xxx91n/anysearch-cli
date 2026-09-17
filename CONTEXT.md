@@ -1041,3 +1041,29 @@ Codex hooks 的 matcher 是全匹配正则（^...$ 语义）：`mcp__anysearch__
 
 ## Non-TOML `-c` Values（`-c` 非 TOML 解析）
 codex `-c key=value` 的值不经过 TOML 解析——数组/表值按字符串处理，报 "expected a sequence"。hooks 等结构化配置必须落 config 文件层（config.toml `[[hooks.*]]` / 项目 `.codex/hooks.json`），探针注入轨用 CODEX_HOME 重定向而非 -c 拼接。_Avoid_: 用 `-c` 拼 hooks 数组（形态进不了 schema）；Windows argv 引号折叠二次放大失败面。来源：R67 T2 注入轨实测。
+
+## Grill Round 68 — Terms (ADR-0069)
+
+## Repo-Writer Gate（写仓者门禁）
+凡向仓库写提交的自动化（release-bot/CI workflow）必须与人类贡献者受同一套门禁约束——bot 不因身份豁免；pre-tag bot commit 后须自等其 SHA 的 ci+ship-gate 绿才算完成，publish 前须断言 tagged SHA 检查绿。_Avoid_: 让写仓的手活在测试外（哨兵全在测试里、写仓者在测试外=本轮事故形态）；把平台 required-checks 当直推防线（只评 PR merge，不拦直接 push）。来源：R68 D-001/D-002+atomcode R68-Q2。
+
+## Two-Phase Check Polling（两段轮询）
+等待下游检查的纪律形态：先轮 check“出现”（discovery ~60-120s——push 后 check-run 尚未创建的空窗是最高频坑，lewagon issue #137 一手记录），再轮“完成”（conclusion，15-20min 硬超时 fail-closed，间隔≥15-30s，同名 check 取最新且全终态）。_Avoid_: 单段轮询把“还没创建”误判“不存在=失败”或“不存在=绿”；按 heads/main 等移动 ref 轮询（等待窗内新 push 会跟跑——必须按固定 SHA）。来源：atomcode R68-Q2+R68 D-002。
+
+## Alert-and-Block（告警即阻断）
+红态处置形态：job-failure（唯一自带阻断力、自动短路 needs 链）+step summary（留痕）+失败自动开 issue（低频管线补偿）+可选 commit-status（commit 页可见）；共享 main 上不做自动 revert（递归震荡/与人工热修竞态/只回滚代码不回滚环境），revert 留给人。_Avoid_: 把“auto-rollback or alert”当二选一（成熟答案是先验证后落盘，回滚只是兜底）；用 summary 当主告警通道（没人主动翻）。来源：atomcode R68-Q1/Q2+R68 D-002。
+
+## Preserve-Unknown-Fields Round-Trip（未知字段保留往返）
+单写者单文件存储的读写纪律（Tolerant Reader）：读端保留原始 JSON 的全部字段 merge-back 而非按已知 schema 逐字段重建；配套契约测试断言未知字段【字节级】保留（rename 漂移也会被宽容读端掩盖，所以不能只断言“能读”）。_Avoid_: teach-each-field 逐字段重建（每加字段漏改即静默丢——F-17/9a466b9 成因）；为单文件上 schema-registry 级机制（过度）。来源：atomcode R68-Q4+R68 D-004。
+
+## Bug-Class Sweep（同类清扫）
+修一个 bug 实例必须顺手扫其同类（bug is a class not an instance）：结构化搜索（ast-grep/semgrep）找同型代码管线+数据驱动 diff（磁盘字段集 vs writer 构造字段集）+消费链回溯；范围按 scope-discipline 限定相关管线，预写“N>1 处→并入同票不扩轮”规则。_Avoid_: 修一处不查同类（同型第二个活口遗留）；借清扫之名全仓库扩散（违 scope discipline）。来源：atomcode R68-Q4+R68 D-004。
+
+## Partial-Verification Boundary（部分验证边界）
+演练证据的诚实口径：rehearsal/dry-run ≠ live——“首跑即验收”是惯例而非妥协，但在首次真实执行前不得宣称 fully verified，验证边界必须显式写入 ADR/台账而非隐含。_Avoid_: 拿 dry-run 证据冒充 live 验证；为求“全真”而烧生产预算做演练（OF look 不可烧）。来源：atomcode R68-Q4+R68 D-004。
+
+## Spike-Gated Ticket（spike 门控票）
+外部不确定性高的票以有序硬门控腿前置（s0 可获得性→s1 配置面→s2 契约裁决→s3 端到端面）：任一环断即整票降级为宿主/环境限制证据文档并记断点环号，不虚标不硬闯。_Avoid_: 跳过门控直接按假设契约上线（错形契约+fail-open=静默失效，expected-red 要防的恰是此）；spike 腿序乱排（契约裁决必须早于适配器修复）。来源：R68 D-003+atomcode R68-Q3。
+
+## Per-Surface Verification Label（分表面验证标注）
+宿主 verified 声明必须按执行表面拆分标注（Antigravity CLI=可验表面 / Antigravity IDE=hooks 不执行表面只能 rules-fallback）；reduced matrix 配 SEP-2484 式 exclusion ledger（每腿 passed/excluded(reason)）使裁剪验证诚实成立。_Avoid_: 裸写“X verified”不标表面（IDE 永不触发 hooks，裸标即虚标）；reduced matrix 无 exclusion ledger 直标 verified。来源：atomcode R68-Q3+R68 D-003。
