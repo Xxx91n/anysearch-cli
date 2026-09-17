@@ -28,6 +28,23 @@ All notable changes to this project are recorded here. Format follows
 
 T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da / 红 d7bed91 / 无信号 4833833），wait-action 腿未实跑；首次真 pre-tag dispatch 前不得宣称 fully verified。
 
+### Added (T3 — Antigravity spike 验收通过)
+
+- `ans-hook-antigravity` bin（→ `dist/hooks/adapters/antigravity.cjs`）——agy hooks 命令经 PATH 解析 + argv 传事件名。
+- `test/antigravity-contract.test.ts`（11 条）：named-hook schema 校验、bin+argv 事件断言、PreToolUse 恒 `allow`/绝不 `{}`、PostToolUse `{}`、PreInvocation inv0 注入 routing card、pending 暂存/flush、fail-open、mdc 兜底、Stop protojson 安全。
+
+### Fixed (T3 — agy 1.2.5 实测契约重写)
+
+- **configs/antigravity/hooks.json 是死文件**：Gemini-legacy `{hooks:{...}}` 包装被 agy 拒绝（`command hook must specify 'command'`）——重写为官方 named-hook map，五事件全挂。
+- **adapter 读错字段**：stdin 实发 camelCase（`conversationId`/`toolCall{name,args}`/`workspacePaths`）且无 `hook_event_name`——改 argv[2] 主源 + camelCase 映射 + `call_mcp_tool` 内层工具名解包。
+- **输出形在真宿主全废**：`additionalContext` 等非 proto 字段 protojson 拒收并 ERROR 工具调用；`{}` 在 PreToolUse = DENY。重写为：PreToolUse 恒 `{decision:"allow"}`、PostToolUse 恒 `{}`、Pre/PostInvocation `injectSteps[].ephemeralMessage` 注入、Stop `{}`。
+- **PostToolUse 无工具输出**：宿主不投递 output——preheat/distill 产出暂存 `<artifactDirectoryPath>/anysearch-pending.jsonl`，下次 invocation 以 ephemeralMessage flush（真机 e2e 证 routing card 进 transcript）。
+
+### 降级声明
+
+- Antigravity **IDE**（2.12.2）：不执行 hooks——`.antigravity/rules/anysearch.mdc` rules 兜底为唯一支持面（README per-surface 拆分）。
+- ans MCP 工具链腿 excluded（probe 沙箱无 ans server；契约测试覆盖 call_mcp_tool 解包+isAnsTool+pending）；`agy -p` 在用户 MCP 配置下会被挂起 server 阻塞 turn（probe 用隔离 HOME 绕过）。
+
 ## 0.0.5 — 2026-09-17 — ADR-0068 r67: Codex 0.142.5 真宿主契约对齐
 
 ### Added

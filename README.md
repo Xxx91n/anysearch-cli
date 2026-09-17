@@ -109,12 +109,14 @@ Tools never print to stdout; the server keeps the protocol channel pure.
 | CodeBuddy Code | 2.151.0 | 2026-09-16 | `mcp.json` registration (`ans-mcp`, 5 tools) · `.codebuddy/settings.json` hooks (`hook_event_name` contract, `hookSpecificOutput` envelope) · `ans-plugin-server` bin | live-verified: headless P1–P9 probe matrix green (search/recall/ans_chat/research + 3-event hooks + fail-open + with/without-tool contrast) |
 | Claude Code | 2.1.251 | 2026-09-17 | `mcp.json` registration (`ans-mcp`, 5 tools) · `.claude/settings.json` hooks (official schema, `ans-hook-*` bins, `hookSpecificOutput` envelope) · `ans-plugin-server` bin · plugin skeleton (`.claude-plugin/` + `hooks/` + `.mcp.json`; experimental — `CLAUDE_PLUGIN_ROOT` expansion broken on Windows, upstream #16116) | live-verified (settings path): MCP connect + 5 tools + live `search_web`, SessionStart routing-card injection via envelope, Pre/PostToolUse hook execution marker-verified, deny/envelope contract sentinel-proven, fail-open, `claude plugin validate` passed |
 | Codex CLI | 0.142.5 | 2026-09-17 | `config.toml` `[mcp_servers.anysearch]` (`ans-mcp`, 5 tools) · hooks via `.codex/hooks.json` (project) or `[[hooks.*]]` config.toml sections — official `{matcher, hooks:[{type,command,timeout}]}` schema, `ans-hook-codex` / `ans-hook-session-start --envelope` bins | live-verified: SessionStart routing-card envelope delivered, PostToolUse → `/index` accumulates real results, URL-policy deny blocks end-to-end, fail-open preserved; PostToolUse ctx injection is same-turn-variable |
+| Antigravity CLI (`agy`) | 1.2.5 | 2026-09-17 | hooks via `~/.gemini/antigravity-cli/hooks.json` or `~/.gemini/config/hooks.json` — named-hook map `{ "<name>": { "<Event>": [{matcher, hooks:[{type:"command",command,timeout}]}] } }`, event passed via argv (`ans-hook-antigravity <Event>` bin) | live-verified (reduced matrix): headless `agy -p` fires all five events; strict protojson contract sentinel-proven (`{}` = DENY on PreToolUse, empty = allow, `{decision,reason}` blocks/permits, `permissionOverrides`); `injectSteps[].ephemeralMessage` reaches the transcript (routing-card injected end-to-end); PostToolUse stdin has NO tool output — distill stages to pending → next invocation flushes; evidence `.scratch/grill-round-68/evidence/t3-*` + SEP-2484 ledger |
+| Antigravity IDE | 2.12.2 | 2026-09-17 | `.antigravity/rules/anysearch.mdc` (rules fallback, written on first hook invocation) | hooks not executed by the IDE host (reproduced); the .mdc rules fallback is the supported surface — do not wire `configs/antigravity/hooks.json` into IDE settings |
 
 "Verified" means an end-to-end transcript captured on the real host
 (`stream-json`), not contract isomorphism. See
 `docs/codebuddy-integration.md` / `docs/claude-integration.md` /
 `docs/codex-integration.md` for the wiring and ADR-0066 / ADR-0067 /
-ADR-0068 for the evidence sets.
+ADR-0068 / ADR-0069 for the evidence sets.
 
 ## Known limitations
 
@@ -156,6 +158,20 @@ ADR-0068 for the evidence sets.
   `decision.permission` was never emitted, so URL-policy denies executed the
   tool anyway. Fixed in 0.0.5: all output inside `hookSpecificOutput`,
   `permissionDecision(Reason)` passthrough (ADR-0068).
+- **≤0.0.5 Antigravity hook config + adapter are dead on real agy** —
+  `configs/antigravity/hooks.json` used the Gemini-legacy `{hooks:{...}}`
+  wrapper which agy rejects (`command hook must specify 'command'` → zero
+  hooks load), and the adapter read snake_case fields agy never sends
+  (`tool_name`/`session_id`/`hook_event_name` — real payload is camelCase
+  `toolCall`/`conversationId`, event via argv). Any `additionalContext` it
+  emitted would protojson-reject and ERROR the tool call. Fixed in 0.0.6:
+  named-hook schema + `ans-hook-antigravity <Event>` + camelCase mapping +
+  `{decision:"allow"}`/`{}`/injectSteps outputs (ADR-0069).
+- **Antigravity PostToolUse delivers no tool output (0.0.6)** — the host
+  stdin carries `toolCall{name,args}` + `error` only, so distill sees args
+  but not results on this host; `/index` still accumulates server-side and
+  distilled context rides `injectSteps.ephemeralMessage` via a per-
+  conversation pending file (ADR-0069 D4).
 - **Codex unverified surfaces (0.0.5)** — PostToolUse `additionalContext`
   injection is same-turn-variable on codex 0.142.5 (the `/index` side
   effect is the durable path); `[hooks.state]` trust-hash persistence is

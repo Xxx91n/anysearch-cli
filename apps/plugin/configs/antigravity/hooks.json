@@ -1,32 +1,47 @@
 {
-  "hooks": {
+  "anysearch": {
     "PreToolUse": [
       {
-        "name": "anysearch-preheat",
-        "command": "node",
-        "args": [
-          "${ANTIGRAVITY_PLUGIN_DIR}/../dist/hooks/adapters/antigravity.cjs"
-        ],
-        "timeout": 5
+        "matcher": "call_mcp_tool|.*ans_.*|.*search_web|.*research_web|.*recall_memory|.*query_knowledge",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ans-hook-antigravity PreToolUse",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUse": [
       {
-        "name": "anysearch-distill",
-        "command": "node",
-        "args": [
-          "${ANTIGRAVITY_PLUGIN_DIR}/../dist/hooks/adapters/antigravity.cjs"
-        ],
+        "matcher": "call_mcp_tool|.*ans_.*|.*search_web|.*research_web|.*recall_memory|.*query_knowledge",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ans-hook-antigravity PostToolUse",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "ans-hook-antigravity PreInvocation",
+        "timeout": 5
+      }
+    ],
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "ans-hook-antigravity PostInvocation",
         "timeout": 10
       }
     ],
-    "SessionStart": [
+    "Stop": [
       {
-        "name": "anysearch-session-start",
-        "command": "node",
-        "args": [
-          "${ANTIGRAVITY_PLUGIN_DIR}/../dist/hooks/session-start.cjs"
-        ],
+        "type": "command",
+        "command": "ans-hook-antigravity Stop",
         "timeout": 5
       }
     ]

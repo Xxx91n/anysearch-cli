@@ -61,3 +61,11 @@ Deliverable documents (task books, handoffs, decision ledgers, plans, evidence m
 - Hook stdout contract = `hookSpecificOutput` envelope only: bare top-level `additionalContext` is ~80%-dropped, bare `permissionDecision` never blocks, exit 2 doesn't block. Adapter + session-start (`--envelope`) emit the envelope.
 - `codex -c` cannot inject hooks (values are strings, not TOML) — wire via `config.toml` `[[hooks.*]]` or project `.codex/hooks.json`.
 - `required = true` MCP servers hard-exit codex on startup failure.
+
+## Antigravity (agy) host notes (ADR-0069)
+
+- Hooks config = named-hook map `{ "<name>": { "<Event>": [{matcher, hooks:[{type:"command", command, timeout}]}] } }`; the Gemini-legacy `{hooks:{...}}` wrapper fails to parse (`command hook must specify 'command'`). Non-tool events take flat handlers; tool events take matcher-groups. Read from `~/.gemini/config/hooks.json` AND `~/.gemini/antigravity-cli/hooks.json` (same name deduped).
+- stdin is camelCase: `conversationId`/`toolCall{name,args}`/`workspacePaths`/`transcriptPath`/`artifactDirectoryPath`/`stepIdx`. No `hook_event_name` — event travels via argv (`ans-hook-antigravity <Event>`). PostToolUse carries `toolCall`+`error`, NO tool output.
+- stdout is strict protojson: PreToolUse `{}` = DENY (decision required), empty stdout = allow, `{decision:allow|deny|ask|force_ask|deny_unless_prior_grant, reason?, permissionOverrides?}`; PostToolUse = `{}` only; context injection = `Pre/PostInvocation injectSteps[].ephemeralMessage`; non-zero exit = tool-level ERROR (blocks).
+- `agy -p` headless hangs if a configured MCP server never finishes connecting (observed: `1mcp`) — sandbox `HOME` or fix the server; OAuth token lives in Windows Credential Manager, survives a sandboxed HOME.
+- Antigravity IDE does NOT execute hooks — `.antigravity/rules/anysearch.mdc` is the supported surface there.
