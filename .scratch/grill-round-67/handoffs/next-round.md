@@ -76,3 +76,15 @@ git tag v0.0.5+push（当场授权）→release-gate post-tag 绿+publish job ru
 - 每腿单层配置注入；--dangerously-bypass-hook-trust 不进主轨；SessionStart 探针不假设独占 stdout
 - 实测对象=published 0.0.4 或 pnpm pack tarball；不用 repo build 冒充发布物
 - exec 负载中不写连续反斜杠对（源码里的 \\ 会被传输层折叠成 \）——源码用前斜杠路径+String.fromCharCode(92) 运行时转换
+
+## 当前状态（2026-09-17 晚更新 — 修复/开发子 Agent 交接续页）
+
+- **T1 ✅** `evidence\t1-defect-ledger.md` 全裁决落账（信封 4/4 / 裸字段 1/8+1/3 不可靠 / plain 3/3 / deny×4 哨兵 / required MCP 硬退出 / hook_event_name 实证 / -c 非 TOML / env 传递实证 / matcher 全匹配）
+- **T2 ✅** tarball 净装 `D:\Aworker\e2e-r67-codex\pkg-t` P1-P9 + 宿主重判（envdump9 三事件全触发记录 + realpost-tb3 +9 行索引）
+- **T3 ✅** commit `3e5087a`：官方 schema 化 codex hooks.json（入生成器单源）+ codex.ts 全信封+permissionDecision 透传 + session-start --envelope 口径 + ans-hook-codex bin + codex-contract.test.ts 11 断言（备份 `backups\t3\`）
+- **T4 ✅** 修复后全绿：shipped 配置端到端 SessionStart 回显 / deny 端到端拦阻（mcpCalls=0）/ PostToolUse→index +19+10 / turbo 11/11；PostToolUse ctx 同-turn 回声 0/2 记 skip-with-reason
+- **T5 ✅** commits `5ae26dd`+`23ae397`：ADR-0068 / codex-integration.md / README 行+缺口条目 / CHANGELOG 0.0.5 / CONTEXT+AGENTS 钉入 / ADR 索引 regen
+- **T6 ✅** commit `aeb2276`：7 包 bump 0.0.5 + ship-gate 钉同步 + pack×4 演练 + **ship-gate 全绿**（`/tmp/ansclean` 净 clone——F-01a 双根/GitButler index 幻影按范围外登记口径绕行）
+- **T7 ⏸ 当场授权点**：路线候选 A) push r67-grill + PR merge 到 main → main 上 tag v0.0.5 + push；B) 本地 merge 后 tag push。release-gate post-tag assert + publish job(OIDC TP+provenance) 链已实证（0.0.4 同通道）。
+- 报告：`D:\Aworker\anysearch-cli\.scratch\grill-round-67\reports\2026-09-17-report.md`
+- 遗留：query_knowledge=adapter none stub；OOD abstain=null；PostToolUse ctx 同-turn 变量；hooks.state hash 生成路径未 headless 实证（范围外登记已含）。
