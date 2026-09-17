@@ -273,5 +273,5 @@ The complete numbered record lives in `docs/adr/` — ADR-0001 through ADR-0067.
 | [0064](docs/adr/0064-architecture-grill-round-63-npm-001-go-no-go-release-adjudication.md) | Grill Round 63 — npm 0.0.1 Go/No-Go Release Adjudication（发布终审：阻塞清零/带病留痕/前置清障） |
 | [0065](docs/adr/0065-architecture-grill-round-64-quarantine-ttl-adjudication-assertion-granularity.md) | Grill Round 64 — Quarantined Golden TTL Adjudication + Assertion-Granularity Re-anchor（隔离金案例裁决收口/页族断言层/证据模式） |
 | [0066](docs/adr/0066-architecture-grill-round-65-real-host-deployment-codebuddy-hooks-contract.md) | Grill Round 65 — Real-Host Deployment: CodeBuddy 全栈三件套 + Hooks 契约对齐（开门轮） |
-| [0067](docs/adr/0067-architecture-grill-round-66-claude-code-host-contract-release-channel.md) | Grill Round 66 — Claude Code 真宿主契约对齐（信封/schema/骨架）+ OIDC 发布通道 |
+| [0067](docs/adr/0067-architecture-grill-round-66-claude-code-host-contract-release-channel.md) | Grill Round 66 — Claude Code 真宿主契约对齐 + Plugin 骨架 + OIDC 发布通道 |
 <!-- END ADR-INDEX -->
