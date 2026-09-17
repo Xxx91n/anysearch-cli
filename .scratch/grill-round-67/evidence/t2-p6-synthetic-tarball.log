@@ -1,0 +1,17 @@
+[synthetic] adapter: D:/Aworker/e2e-r67-codex/pkg-t/node_modules/@anysearch-cli/plugin/dist/hooks/adapters/codex.cjs
+{
+  "recall_before": 2,
+  "real_host_field": {
+    "exit": 0,
+    "stdout": "{\"additionalContext\":\"{\\\"tool\\\":\\\"mcp__anysearch__search_web\\\",\\\"query\\\":\\\"synthetic-r67-probe\\\",\\\"resultCount\\\":2,\\\"topResults\\\":[{\\\"title\\\":\\\"synthetic-r67-probe alpha mu5725y0\\\",\\\"url\\\":\\\"https://example.com/a-mu5725y0\\\"},{\\\"title\\\":\\\"synthetic-r67-probe beta mu5725y0\\\",\\\"url\\\":\\\"https://example.com/b-mu5725y0\\\"}]}\"}",
+    "recall_after": 4,
+    "indexed": 2
+  },
+  "legacy_field": {
+    "exit": 0,
+    "stdout": "{\"additionalContext\":\"{\\\"tool\\\":\\\"mcp__anysearch__search_web\\\",\\\"query\\\":\\\"synthetic-r67-probe\\\",\\\"resultCount\\\":2,\\\"topResults\\\":[{\\\"title\\\":\\\"synthetic-r67-probe alpha mu5725y0\\\",\\\"url\\\":\\\"https://example.com/a-mu5725y0\\\"},{\\\"title\\\":\\\"synthetic-r67-probe beta mu5725y0\\\",\\\"url\\\":\\\"https://example.com/b-mu5725y0\\\"}]}\"}",
+    "recall_after": 4,
+    "indexed": 0
+  },
+  "verdict": "GREEN-input: hook_event_name honored by codex adapter (indexed +2)"
+}

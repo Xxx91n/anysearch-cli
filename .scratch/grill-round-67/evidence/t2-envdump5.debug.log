@@ -1,0 +1,7 @@
+Reading additional input from stdin...
+2026-09-17T08:10:45.174144Z ERROR codex_core::tools::router: error=resources/read failed: failed to get client: MCP startup failed: timed out handshaking with MCP server after 119.9999926s
+2026-09-17T08:11:04.843907Z ERROR codex_core::tools::router: error=Exit code: 124
+Wall time: 10 seconds
+Output:
+command timed out after 10035 milliseconds
+

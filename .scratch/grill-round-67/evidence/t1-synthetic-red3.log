@@ -1,0 +1,17 @@
+[synthetic] adapter: D:\nodejs\node_modules/@anysearch-cli/plugin/dist/hooks/adapters/codex.cjs
+{
+  "recall_before": 0,
+  "real_host_field": {
+    "exit": 0,
+    "stdout": "{\"additionalContext\":\"{\\\"tool\\\":\\\"mcp__anysearch__search_web\\\",\\\"query\\\":\\\"synthetic-r67-probe\\\",\\\"resultCount\\\":2,\\\"topResults\\\":[{\\\"title\\\":\\\"synthetic-r67-probe alpha mu56eq52\\\",\\\"url\\\":\\\"https://example.com/a-mu56eq52\\\"},{\\\"title\\\":\\\"synthetic-r67-probe beta mu56eq52\\\",\\\"url\\\":\\\"https://example.com/b-mu56eq52\\\"}]}\"}",
+    "recall_after": 2,
+    "indexed": 2
+  },
+  "legacy_field": {
+    "exit": 0,
+    "stdout": "{\"additionalContext\":\"{\\\"tool\\\":\\\"mcp__anysearch__search_web\\\",\\\"query\\\":\\\"synthetic-r67-probe\\\",\\\"resultCount\\\":2,\\\"topResults\\\":[{\\\"title\\\":\\\"synthetic-r67-probe alpha mu56eq52\\\",\\\"url\\\":\\\"https://example.com/a-mu56eq52\\\"},{\\\"title\\\":\\\"synthetic-r67-probe beta mu56eq52\\\",\\\"url\\\":\\\"https://example.com/b-mu56eq52\\\"}]}\"}",
+    "recall_after": 2,
+    "indexed": 0
+  },
+  "verdict": "GREEN-input: hook_event_name honored by codex adapter (indexed +2)"
+}

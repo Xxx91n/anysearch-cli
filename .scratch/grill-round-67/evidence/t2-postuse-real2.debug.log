@@ -1,0 +1,12 @@
+Reading additional input from stdin...
+2026-09-17T08:01:17.685421Z ERROR codex_core::tools::router: error=resources/read failed: failed to get client: MCP startup failed: timed out handshaking with MCP server after 119.9999946s
+2026-09-17T08:01:33.092224Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 3.4 seconds
+Output:
+[31;1mctx_fetch_and_index: [0m
+[31;1m[36;1mLine |[0m
+[31;1m[36;1m[36;1m   2 | [0m [36;1mctx_fetch_and_index[0m --url "https://www.google.com/search?q=sodium+ion …[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m ~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mThe term 'ctx_fetch_and_index' is not recognized as a name of a cmdlet, function, script file, or executable program.[0m
+[31;1m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1mCheck the spelling of the name, or if a path was included, verify that the path is correct and try again.[0m
+

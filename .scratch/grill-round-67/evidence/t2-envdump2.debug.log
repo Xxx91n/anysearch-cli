@@ -1,0 +1,3 @@
+Error loading config.toml: unknown variant `\"trusted\`, expected `trusted` or `untrusted`
+in `projects.d:\\aworker\\e2e-r67-codex.trust_level`
+

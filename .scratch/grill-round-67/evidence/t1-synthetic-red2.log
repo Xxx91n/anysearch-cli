@@ -1,0 +1,17 @@
+[synthetic] adapter: D:\nodejs\node_modules/@anysearch-cli/plugin/dist/hooks/adapters/codex.cjs
+{
+  "recall_before": 0,
+  "real_host_field": {
+    "exit": 0,
+    "stdout": "{\"additionalContext\":\"{\\\"tool\\\":\\\"mcp__anysearch__search_web\\\",\\\"query\\\":\\\"synthetic-r67-probe\\\",\\\"resultCount\\\":2,\\\"topResults\\\":[{\\\"title\\\":\\\"synthetic-r67-probe alpha mu56d7fe\\\",\\\"url\\\":\\\"https://example.com/a-mu56d7fe\\\"},{\\\"title\\\":\\\"synthetic-r67-probe beta mu56d7fe\\\",\\\"url\\\":\\\"https://example.com/b-mu56d7fe\\\"}]}\"}",
+    "recall_after": 0,
+    "indexed": 0
+  },
+  "legacy_field": {
+    "exit": 0,
+    "stdout": "{\"additionalContext\":\"{\\\"tool\\\":\\\"mcp__anysearch__search_web\\\",\\\"query\\\":\\\"synthetic-r67-probe\\\",\\\"resultCount\\\":2,\\\"topResults\\\":[{\\\"title\\\":\\\"synthetic-r67-probe alpha mu56d7fe\\\",\\\"url\\\":\\\"https://example.com/a-mu56d7fe\\\"},{\\\"title\\\":\\\"synthetic-r67-probe beta mu56d7fe\\\",\\\"url\\\":\\\"https://example.com/b-mu56d7fe\\\"}]}\"}",
+    "recall_after": 0,
+    "indexed": 0
+  },
+  "verdict": "unexpected - inspect raw stdout/exit"
+}

@@ -1,0 +1,3 @@
+Error loading config.toml: invalid type: string "[{matcher:\".*\",hooks:[{type:\"command\",command:\"node D:/Aworker/anysearch-cli/.scratch/grill-round-67/scripts/env-dump.cjs\",timeout:10}]}]", expected a sequence
+in `hooks`
+

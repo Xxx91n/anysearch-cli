@@ -1,0 +1,8 @@
+Reading additional input from stdin...
+2026-09-17T07:40:21.952411Z ERROR codex_core::tools::router: error=failed to parse tool_search arguments: missing field `query`
+2026-09-17T07:40:21.968075Z ERROR codex_core::util: Orphan function call output for call id: 
+2026-09-17T07:40:38.241140Z ERROR codex_core::util: Orphan function call output for call id: 
+2026-09-17T07:40:50.212029Z ERROR codex_core::util: Orphan function call output for call id: 
+2026-09-17T07:40:57.680541Z ERROR codex_core::tools::router: error=resources/read failed: failed to get client: MCP startup failed: timed out handshaking with MCP server after 119.9999952s
+2026-09-17T07:40:57.682272Z ERROR codex_core::util: Orphan function call output for call id: 
+2026-09-17T07:41:11.239899Z ERROR codex_core::util: Orphan function call output for call id: 

@@ -1,0 +1,56 @@
+Reading additional input from stdin...
+2026-09-17T07:52:02.431016Z ERROR codex_core::tools::router: error=failed to parse function arguments: missing field `command` at line 1 column 2
+2026-09-17T07:52:15.590213Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 2.4 seconds
+Output:
+❌ Error: Unknown arguments: query, search_web
+
+index.js run <tool>
+
+Run an MCP tool against a running 1MCP serve instance
+
+Positionals:
+  tool  Tool reference in the format <server>/<tool>         [string] [required]
+
+Options:
+  -c, -c, --config              Path to the config file (env: ONE_MCP_CONFIG)
+                                                                        [string]
+  -d, -d, --config-dir          Path to the config directory (env:
+                                ONE_MCP_CONFIG_DIR)                     [string]
+      --cli-session-cache-path  Path template for the run/inspect CLI session
+                                cache file, supports {pid} and {scope} (env:
+                                ONE_MCP_CLI_SESSION_CACHE_PATH)         [string]
+      --log-level               Set the log level (debug, info, warn, error)
+                                (env: ONE_MCP_LOG_LEVEL)
+   [string] [choices: "debug", "info", "warn", "error", "debug", "info", "warn",
+                                                                        "error"]
+      --log-file                Write logs to a file in addition to console
+                                (env: ONE_MCP_LOG_FILE)                 [string]
+      --version                 Show version number                    [boolean]
+  -h, --help                    Show help                              [boolean]
+  -u, --url                     Override auto-detected 1MCP server URL  [string]
+      --context                 Use a named Runtime Target Context      [string]
+  -p, --preset                  Use a preset when calling the running 1MCP
+                                server                                  [string]
+  -f, --tag-filter              Apply an advanced tag filter expression [string]
+      --tags                    Apply simple comma-separated tags        [array]
+      --args                    Tool arguments as a JSON object         [string]
+      --format                  Output format
+                           [string] [choices: "toon", "json", "text", "compact"]
+      --raw                     Alias for --format json
+                                                      [boolean] [default: false]
+      --max-chars               Maximum characters for compact output
+                                                        [number] [default: 2000]
+
+Examples:
+  index.js run filesystem/read_file --args  Call a tool with explicit JSON
+  '{"path":"./foo.txt"}'                    arguments
+  index.js run summarizer/summarize <       Pipe raw stdin into the first
+  README.md                                 required string argument
+  index.js run --preset development         Call through a preset
+  validator/validate --args
+  '{"path":"./schema.json"}'
+
+This command requires a running `1mcp serve` instance. For pipe-friendly usage,
+stdout is reserved for tool output and errors are sent to stderr.
+

@@ -1,0 +1,8 @@
+{"type":"thread.started","thread_id":"01a0ae92-4d7e-73c0-a74f-d407cd408216"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"item.completed","item":{"id":"item_1","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"item.completed","item":{"id":"item_2","type":"error","message":"Model metadata for `deepseekpro` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."}}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_3","type":"error","message":"Skill descriptions were shortened to fit the 2% skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest."}}
+{"type":"item.completed","item":{"id":"item_4","type":"agent_message","text":"The tool call to `mcp__ansprobe__search_web` with query `fetch https://evil-r67.invalid/malware` was blocked by a **PreToolUse hook**. The rejection reason:\n\n> **URL host on denylist:** `https://evil-r67.invalid/malware`\n\nSo the tool did **not** execute — the hook intercepted and denied it before it could reach the anysearch backend."}}
+{"type":"turn.completed","usage":{"input_tokens":33612,"cached_input_tokens":0,"output_tokens":214,"reasoning_output_tokens":0}}

@@ -1,0 +1,34 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "name": "anysearch-preheat",
+        "command": "node",
+        "args": [
+          "${CODEX_PLUGIN_DIR}/../dist/hooks/adapters/codex.cjs"
+        ],
+        "timeout": 5
+      }
+    ],
+    "PostToolUse": [
+      {
+        "name": "anysearch-distill",
+        "command": "node",
+        "args": [
+          "${CODEX_PLUGIN_DIR}/../dist/hooks/adapters/codex.cjs"
+        ],
+        "timeout": 10
+      }
+    ],
+    "SessionStart": [
+      {
+        "name": "anysearch-session-start",
+        "command": "node",
+        "args": [
+          "${CODEX_PLUGIN_DIR}/../dist/hooks/session-start.cjs"
+        ],
+        "timeout": 5
+      }
+    ]
+  }
+}
