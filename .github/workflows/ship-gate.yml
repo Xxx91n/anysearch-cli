@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: read
+  actions: read # handoff-lint liveness leg resolves cited actions/runs via gh api (ADR-0069)
 
 concurrency:
   group: ship-gate-${{ github.ref }}
@@ -57,6 +58,10 @@ jobs:
         env:
           CI: "true"
           NODE_OPTIONS: "--test-reporter=spec"
+          # ADR-0069: handoff-lint liveness leg — gh api resolves cited
+          # actions/runs/<id>; unauthenticated gh fails closed, so give it the
+          # job token explicitly.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ADR-0021 D4 — Layer-2 artifact upload, runs even when ship-gate fails.
       - name: upload ship-gate report

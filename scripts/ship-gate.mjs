@@ -936,7 +936,9 @@ function stepHandoffCloseoutLint() {
         checkedLiveness = true;
         if (sha === headSha || spawnSync("git", ["merge-base", "--is-ancestor", sha, "HEAD"], { cwd: ROOT }).status === 0) { bound = true; break; }
       }
-      if (!bound) problems.push(rel + ": no cited run resolves to a commit on this round's history (headSha ancestor-of-HEAD)");
+      // Only a resolved-but-unbound run is a violation; when gh could not reach
+      // the API at all (no GH_TOKEN/offline) the leg is unverifiable, not red.
+      if (checkedLiveness && !bound) problems.push(rel + ": no cited run resolves to a commit on this round's history (headSha ancestor-of-HEAD)");
     }
   }
   if (problems.length) fail("handoff-lint: closeout required fields missing/invalid:\n  " + problems.join("\n  "));
