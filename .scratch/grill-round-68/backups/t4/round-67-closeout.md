@@ -1,9 +1,6 @@
 # R67 closeout handoff — 2026-09-17
 
-Stack (primary key = GitButler change-ids; SHAs are time-lagged):
-  r67-audit → ddaf4b0 @ 2026-09-17（landed, 分支已自动清除）→ r67-grill → be14bb6..2cb2a8c @ 2026-09-17（9 笔 landed）→ main `2b9e6e8`（main tip at closeout）
-
-接棒人下一轮（R68 或续跑）从这里开始。完整报告（已入库、git-committed，绝对路径）：`D:\Aworker\anysearch-cli\.scratch\grill-round-67\reports\2026-09-17-report.md`；审计交接：`D:\Aworker\anysearch-cli\.scratch\grill-round-67\handoffs\round-67-audit-closeout.md`；任务书：`D:\Aworker\anysearch-cli\.scratch\grill-round-67\handoffs\next-round.md`。
+接棒人下一轮（R68 或续跑）从这里开始。完整报告：`D:\Aworker\anysearch-cli\.scratch\grill-round-67\reports\2026-09-17-report.md`；审计交接：`D:\Aworker\anysearch-cli\.scratch\grill-round-67\handoffs\round-67-audit-closeout.md`；任务书：`D:\Aworker\anysearch-cli\.scratch\grill-round-67\handoffs\next-round.md`。
 
 ## 一句话状态
 
@@ -12,22 +9,13 @@ Stack (primary key = GitButler change-ids; SHAs are time-lagged):
 ## 已完成的票
 
 - **T1 真宿主裁决**（base `1dbcf63`，published 0.0.4 @ codex 0.142.5）：旧 `{name,command,args}` hooks 配置注册零钩；裸 `additionalContext` ~80% 丢；裸 `permissionDecision` 不拦；exit2 不拦；`hook_event_name` 为真实 stdin 字段；`required=true` MCP 硬退；matcher 全匹配语义；`-c` 不能表达 hooks。
-- **T2 tarball 矩阵**：P1–P9 + CODEX_HOME 注入轨 + env 传递实证，全量已入库（git-committed）于 `D:\Aworker\anysearch-cli\.scratch\grill-round-67\evidence\`。
-- **T3 修复**（commit `6faa3f8`，改前备份已入库于 `D:\Aworker\anysearch-cli\.scratch\grill-round-67\backups\t3\`）：官方 hooks schema + `hookSpecificOutput` 信封化 + `permissionDecision` 透传 + `ans-hook-codex` bin + suffix-anchored matcher + `--envelope` SessionStart + 11 条契约测试。
+- **T2 tarball 矩阵**：P1–P9 + CODEX_HOME 注入轨 + env 传递实证，全量在 `D:\Aworker\anysearch-cli\.scratch\grill-round-67\evidence\`。
+- **T3 修复**（commit `6faa3f8`，改前备份在 `D:\Aworker\anysearch-cli\.scratch\grill-round-67\backups\t3\`）：官方 hooks schema + `hookSpecificOutput` 信封化 + `permissionDecision` 透传 + `ans-hook-codex` bin + suffix-anchored matcher + `--envelope` SessionStart + 11 条契约测试。
 - **T4 复验**：shipped 配置端到端 SessionStart 信封回显、URL deny 端到端拦阻（mcpCalls=0）、PostToolUse→index +19/+10 真实蒸馏行。
 - **T5 文档**：ADR-0068、codex-integration.md、README verified-hosts Codex 行、CHANGELOG 0.0.5、CONTEXT/AGENTS 钉入。
 - **T6 发布准备**：7 包 bump 0.0.5 + ship-gate 钉同步；ship-gate 净 clone 全绿。
 - **审计+修复轮**：审计 PASS（F-01..F-06 经 `ebc22a8` 收口）；`but land` 双段落 main→`2cb2a8c`。
 - **T7 发布**：pre-tag run `35211150217`（账本回写 `9a466b9`）→ `git tag v0.0.5`+push → tag run `35211259312` 全绿（gate 14s + publish 1m19s）→ 四包 registry live + 净机 `C:\Users\Administrator\AppData\Local\Temp\r67clean` 冒烟 → ADR-0068 Closure(iv)+报告/任务书回填（`2b9e6e8`）。
-
-## 绿色 run URL（必填）
-
-- ci（land `2cb2a8c`，success）：https://github.com/Xxx91n/anysearch-cli/actions/runs/35210635315
-- ship-gate（land `2cb2a8c`，success）：https://github.com/Xxx91n/anysearch-cli/actions/runs/35210635308
-- release pre-tag（`2cb2a8c`，success，OF look 回写 `9a466b9`）：https://github.com/Xxx91n/anysearch-cli/actions/runs/35211150217
-- release tag `v0.0.5`（`9a466b9`，success，gate+publish 全绿）：https://github.com/Xxx91n/anysearch-cli/actions/runs/35211259312
-
-（R68 T4 回填段：原 closeout 缺本必填栏+Stack 行；所引 run 的 headSha 均为本轮历史祖先，ship-gate handoff-lint 可复验。）
 
 ## 下一个 grill 方向指示（按建议优先级）
 
