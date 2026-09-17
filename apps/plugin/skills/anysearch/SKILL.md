@@ -1,3 +1,8 @@
+---
+name: anysearch
+description: Real-time web search, deep research, session-memory recall and knowledge retrieval via the anysearch ans_* tools.
+---
+
 # Anysearch — Information-Specialized Agent
 
 Research and retrieve information across multiple sources with persistent memory.
