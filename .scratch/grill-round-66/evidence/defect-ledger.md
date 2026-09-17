@@ -86,3 +86,14 @@
 - template 注入→模型引用路由卡（injection→awareness 闭环最后一环）
 - 真实 search_web 成功调用→PostToolUse→projectIndex 行增量（t2-p5-realcall 形态为瘦身响应、合法跳过索引；须结果承载形）
 - P9 双跑方差第二跑
+
+## T4 复跑收尾（代理恢复后）
+
+| 项 | 结果 | 证据 |
+|----|------|------|
+| 注入→模型引用闭环 | **转绿**：template 接线后模型逐字引用路由卡首条 trigger rule（`"- Fresh facts / current events -> search_web"`） | t4-p6-template.stream.jsonl result |
+| 真实 search→index 增量 | **host-variable 结论**：宿主路径真实 search_web/research_web/ans_chat 调用均执行；本环境 sufficiency gate 恒 `ambiguous`（crossEngineVerify agreement jaccard=0）→ 瘦身响应无 results[]→PostToolUse 合法跳过索引。索引代码路径已由 T2 合成 stdin +/index round-trip + 契约测覆盖 | t4-p5-realcall3/4/5/6 |
+| P9 第二跑（方差） | **完成**：t4-p9b2-mcp 工具腿真实调用 search_web+ans_chat 答对 0.0.3；双腿跨跑一致性=均正确 | t4-p9b2-mcp.stream.jsonl |
+| 额外 live 发现 | **PreToolUse URL 策略真拦**：host 内 WebFetch 域名外 URL 被 anysearch hook 拒（`URL not on allowlist … ans hitl review --allow-url`）——B01 之后的正向实证 | t4-p5-realcall3 transcript |
+| 宿主模型观测 | deepseekpro 存在"叙述调用而非实发"行为（t4-p5-realcall2 口述 service error 但 transcript 零 tool_use）——prompt 须强制 tool_use 实证 | 同上 |
+| ans_chat 空正文 | host 上 ans_chat 返回 "Agent completed"——ANS_LLM_* 上游在本环境未供可用端点（env 缺）——记录为环境项非产品红 | t4-p5-realcall6 |
