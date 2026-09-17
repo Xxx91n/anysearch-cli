@@ -65,8 +65,10 @@ function pluginManifest() {
     name: "anysearch",
     version: pkg.version,
     description: "AnySearch hooks + MCP integration for Claude Code (experimental)",
+    author: { name: "Xxx91n" },
     license: "Apache-2.0",
-    repository: pkg.repository,
+    // claude plugin validate requires a STRING here (npm's {type,url} object fails).
+    repository: typeof pkg.repository === "string" ? pkg.repository : pkg.repository?.url,
     hooks: "./hooks/hooks.json",
     mcpServers: "./.mcp.json",
   };

@@ -55,9 +55,9 @@ const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose',
   '--max-turns', MAXTURNS];
 if (!NOSKIP) args.push('--dangerously-skip-permissions');
 if (ALLOWED) args.push('--allowedTools', ALLOWED);
+if (PLUGINDIR) args.push('--plugin-dir', PLUGINDIR);
 if (!NOMCP) args.push('--mcp-config', MCPCONFIG, '--strict-mcp-config');
 if (SETTINGS) args.push('--settings', SETTINGS);
-if (PLUGINDIR) args.push('--plugin-dir', PLUGINDIR);
 
 const transcriptPath = join(EVID, label + '.stream.jsonl');
 const debugPath = join(EVID, label + '.debug.log');

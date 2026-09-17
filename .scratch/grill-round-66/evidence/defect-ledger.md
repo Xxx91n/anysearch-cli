@@ -71,3 +71,18 @@
 | P9 对照 | 观测：双腿均答对 0.0.3；宿主自带 Bash/WebFetch/内建浏览可替代版本查询——MCP 差分弱，T4 双跑方差按此校准 | t2-p9a/b |
 | P10 http hooks | 终结论：settings http 型静默丢→不可行，command 型唯一 | t2-p10-http |
 | P11 plugin | 红确认：无 .claude-plugin manifest；--plugin-dir 可用待骨架 | t2-p11-plugin |
+
+## T4 修复后复跑（t3-pack tarball，npm-global）
+
+| 项 | 结果 | 证据 |
+|----|------|------|
+| ER-1 模板 schema | **转绿**：出厂 template（官方 schema + `ans-hook-*` bin）→ anysearch SessionStart 钩子真实触发，hook_response 收到完整路由卡 | t4-p5-realcall.stream.jsonl hook_response |
+| ER-2 顶层信封 | **转绿**：session-start 实发 `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"[anysearch plugin active]..."}}` | 同上；126 单测含信封断言 |
+| ER-3 plugin 骨架 | **转绿**：`claude plugin validate` repo+installed 均 pass（0 warn）；`--plugin-dir` 实测加载——init `plugin:anysearch:anysearch:connected` + plugin SessionStart 钩子真触发（`${CLAUDE_PLUGIN_ROOT}` 本机展开正常） | t4-p11-plugindir.stream.jsonl |
+| 新增：validate 字段 | `plugin.json` repository 须 string（npm 对象形态报错）；SKILL.md 须 frontmatter——已修 | validate 输出 |
+| host 观测 | Claude `-p` 模型调用前 init/hook 链路完整产出（api_retry 循环=模型代理 127.0.0.1:15721 宕机所致，与产品无关） | api_retry 事件 |
+
+### T4 待补（模型代理恢复后）
+- template 注入→模型引用路由卡（injection→awareness 闭环最后一环）
+- 真实 search_web 成功调用→PostToolUse→projectIndex 行增量（t2-p5-realcall 形态为瘦身响应、合法跳过索引；须结果承载形）
+- P9 双跑方差第二跑
