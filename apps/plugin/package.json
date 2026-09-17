@@ -1,6 +1,6 @@
 {
   "name": "@anysearch-cli/plugin",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -73,7 +73,8 @@
     "configs",
     "hooks",
     ".claude-plugin",
-    ".mcp.json"
+    ".mcp.json",
+    "skills"
   ],
   "main": "./dist/index.cjs",
   "peerDependencies": {

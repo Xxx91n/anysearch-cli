@@ -64,3 +64,60 @@ jobs:
           git add eval-looks.json
           git commit -m "chore(release): record OF look ledger peek (ADR-0059 D2)"
           git push
+
+  # ADR-0067 D4 (R66 T6): publish via npm OIDC trusted publishing — the job holds
+  # id-token:write and npm 11.5.1+ performs the OIDC handshake itself; there is no
+  # NPM_TOKEN anywhere. Runs only on tag push, after release-gate is green.
+  # Maintainer prerequisite (one-time, per package): npmjs.com → package →
+  # Settings → Trusted Publisher → GitHub Actions —
+  #   repository owner: Xxx91n
+  #   repository name : anysearch-cli
+  #   workflow filename: release.yml
+  #   environment     : (none)
+  # See docs/publishing.md for the verbatim setup checklist.
+  publish:
+    name: publish to npm (OIDC trusted publishing)
+    needs: release-gate
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # npm OIDC trusted publishing
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: pnpm/setup@v2
+        with: { install: false }
+
+      - uses: actions/setup-node@v5
+        with: { node-version: 22, cache: pnpm }
+
+      - name: npm CLI >= 11.5.1 (required for trusted publishing)
+        run: npm i -g npm@11.6.1
+
+      - name: install (no scripts — better-sqlite3 prebuilt, see pnpm-workspace allowBuilds)
+        run: pnpm install --ignore-scripts
+
+      - name: build
+        run: pnpm build
+
+      - name: pack the publishable set (embedding first — others peer-dep it)
+        run: |
+          mkdir -p .release/pack
+          for p in packages/embedding apps/cli apps/mcp apps/plugin; do
+            (cd "$p" && pnpm pack --pack-destination "$OLDPWD/.release/pack")
+          done
+          ls -la .release/pack
+
+      - name: npm publish (trusted publishing + sigstore provenance)
+        run: |
+          set -euo pipefail
+          for tgz in \
+            .release/pack/anysearch-cli-embedding-*.tgz \
+            .release/pack/anysearch-cli-cli-*.tgz \
+            .release/pack/anysearch-cli-mcp-*.tgz \
+            .release/pack/anysearch-cli-plugin-*.tgz; do
+            echo "==> npm publish $tgz"
+            npm publish "$tgz" --provenance --access public
+          done
