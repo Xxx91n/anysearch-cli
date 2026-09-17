@@ -2,6 +2,7 @@
 // Usage: node mcp-call-tool.mjs <toolName> '<jsonArgs>' [timeoutSec]
 // Injects User-level env (never printed). Prints the tool's text content.
 import { spawn, execSync } from 'node:child_process';
+import fs from 'node:fs';
 
 const toolName = process.argv[2];
 const toolArgs = JSON.parse(process.argv[3] || '{}');
@@ -21,8 +22,9 @@ env.ANS_DOMAIN = env.ANS_DOMAIN || 'docs';
 env.ANS_LLM_PROVIDER = env.ANS_LLM_PROVIDER || 'custom';
 env.ANS_LLM_MODEL = env.ANS_LLM_MODEL || 'glm1';
 
-const npmRoot = execSync('npm root -g', { encoding: 'utf8' }).trim();
-const dist = npmRoot + '/@anysearch-cli/mcp/dist/index.cjs';
+let npmRoot = execSync('npm root -g', { encoding: 'utf8' }).trim();
+let dist = npmRoot + '/@anysearch-cli/mcp/dist/index.cjs';
+if (!fs.existsSync(dist)) dist = 'C:/Users/Administrator/AppData/Roaming/npm/node_modules/@anysearch-cli/mcp/dist/index.cjs';
 const child = spawn(process.execPath, [dist], { stdio: ['pipe', 'pipe', 'pipe'], env });
 
 let buf = '';

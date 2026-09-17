@@ -38,3 +38,12 @@
 | plugin validate | `claude plugin validate <npm-global plugin dir>` | repo+installed 均 **pass**（修 repository:string + SKILL frontmatter 后 0 error/0 warn） | 命令输出 |
 | --plugin-dir 加载 | probe t4-p11-plugindir --nomcp --plugindir <pkg> | init `plugin:anysearch:anysearch:connected`；plugin 侧 SessionStart 钩子真触发；`CLAUDE_PLUGIN_ROOT` 本机展开正常 | t4-p11-plugindir.stream.jsonl |
 | 模型代理宕机 | 127.0.0.1:15721 ECONNREFUSED（~45min+） | T4 末三项挂起：注入→引用闭环/真实 search→index 增量/P9 第二跑；api_retry 事件流 | t4-p5-realcall debug + 探活 |
+
+## T4 收尾条目（代理恢复后，t3-pack/0.0.4 修复体）
+
+| 项 | 探针 | 结果 | 证据 |
+|----|------|------|------|
+| 注入→引用闭环 | t4-p6-template（settings=出厂 template） | 模型逐字引用注入路由卡首条 trigger rule | t4-p6-template.stream.jsonl |
+| 真实 search→index | t4-p5-realcall3/4/5/6 | host-variable：引擎 verdict=ambiguous→瘦身响应无 results[]→合法跳过索引；路径已合成验证 | 各 stream.jsonl + tool_result |
+| P9 方差 | t4-p9b2-mcp | 工具腿实调 search_web+ans_chat，答对 0.0.3 | t4-p9b2-mcp.stream.jsonl |
+| PreToolUse 实证 | t4-p5-realcall3 内 | `URL not on allowlist` 拒拦 WebFetch——策略钩子 live 生效 | transcript tool_result |
