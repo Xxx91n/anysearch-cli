@@ -102,11 +102,18 @@ R67 B 段（Codex 0.142.5 真宿主契约对齐）+ A 段发布工程审计**通
 
 ## 审计结论
 
-**PASS**：代码面与发布工程面经审计窗口独立重跑全绿，报告 14 条关键声明抽查全数坐实、无夸大；F-01..F-06 经修复轮 `llk` 收口并同套验收复绿。**分支可 push**；T7（merge→tag v0.0.5→push→publish）等用户当场授权序列启动。
+**PASS**：代码面与发布工程面经审计窗口独立重跑全绿，报告 14 条关键声明抽查全数坐实、无夸大；F-01..F-06 经修复轮 `llk` 收口并同套验收复绿。**分支已落地**；T7 已按用户授权执行完毕（见文末补记）。
+
+## T7 执行补记（2026-09-17，授权后执行）
+
+- `but land` 双段直推：r67-audit `ddaf4b0` + r67-grill 9 笔（rebase `be14bb6..2cb2a8c`）→ origin/main；r67-\* 分支自动移除。
+- pre-tag run `35211150217` 绿（OF look+账本回写 `9a466b9`）→ `git tag v0.0.5 9a466b9`+push → tag run `35211259312` 全绿（gate 14s + publish 1m19s，OIDC TP+provenance）。
+- 四包 `0.0.5` 全部 latest + SLSA v1 attestations；净机 `C:\Users\Administrator\AppData\Local\Temp\r67clean` 注册表实装冒烟：bins 含 `ans-hook-codex`、doctor 24/1/0、MCP `anysearch 0.0.5`、SessionStart/PreToolUse 信封与 permission 透传、legacy `event` 回退全过。
+- ADR-0068 Closure(iv) + 报告 T7 段 + 任务书 T7 行已回填；R67 全轮闭环。
 
 ## 移交下一轮（候选 grill 方向，按建议优先级）
 
-1. **T7 执行**（非 grill，当场授权序列）：merge 路线（A: push r67-grill+PR merge / B: 本地 merge）→ `git tag v0.0.5` + `git push`（F-07 灰区）→ release-gate post-tag assert + publish job（OIDC TP+provenance，0.0.4 已实证通道）→ `npm view` 四包 0.0.5 + `dist.attestations` + 净机 `npm i -g` 冒烟 → ADR-0068 Closure(ii) 实填 + 报告 T7 段回填。
+1. ~~**T7 执行**~~（已完成，见 T7 执行补记）。
 2. **F-01/F-02/F-03 顺修小轮**（若选修）：AGENTS.md snippet 随包化+doc 可选步骤+绝对路径回写+README 未验证面补齐——可并入 R68 due-chore。
 3. **既有 deferred 池**（沿用）：provider 服务端排查、projectIndex 双库裁决、interactive TUI、embedding arm、跨 OS matrix、**Cursor/Antigravity 真宿主验证**（契约族覆盖下一族——cursor/antigravity 仍是裸契约未验面）、plugin 升格默认路径、F-01a ship-gate×GitButler clean-tree、watch 观测窗。
 4. **观测项**：query_knowledge adapter=none stub 实装候选；OOD abstain 形状；PostToolUse ctx 同-turn 可靠性跨宿主基线。

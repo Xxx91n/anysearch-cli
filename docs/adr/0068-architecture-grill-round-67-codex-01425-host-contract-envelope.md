@@ -109,9 +109,20 @@ each leg single-layer. Bypass legs explicitly labeled.
      `D:\Aworker\anysearch-cli\.scratch\grill-round-67\evidence\t1-defect-ledger.md`
      — all xfail-strict items closed: config schema, bare output shape,
      permission drop, matcher full-match, `-c` non-TOML.
-(iv) Product surface: `docs/codex-integration.md`, README verified-hosts
-     Codex row, `0.0.5` publish record (registry versions + provenance +
-     clean-install smoke) — filled at T7.
+(iv) Product surface (T7, 2026-09-17): `v0.0.5` shipped via the proven
+     OIDC trusted-publishing channel — pre-tag OF look run 35211150217
+     (green, ledger committed as `9a466b9`), tag run 35211259312
+     (release-gate post-tag assert 14s + publish job 1m19s); registry
+     live `@anysearch-cli/{cli,mcp,plugin,embedding}@0.0.5` all `latest`
+     with SLSA v1 provenance attestations on all four; clean-machine
+     npm-install smoke at `C:\Users\Administrator\AppData\Local\Temp\
+     r67clean`: full bin surface incl. `ans-hook-codex`, `ans doctor`
+     24 passed/1 skipped/0 failed, MCP initialize `anysearch 0.0.5`,
+     SessionStart `--envelope` emits `hookSpecificOutput`, PreToolUse
+     off-allowlist URL emits envelope `permissionDecision:"ask"`
+     (fail-open semantics), legacy `event` field fallback works.
+     `docs/codex-integration.md` + README verified-hosts Codex row
+     shipped in the same release.
 
 ## Consequences
 
