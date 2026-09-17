@@ -1,0 +1,18 @@
+# T1 dry-run transcript — 2026-09-17T14:40:35Z
+
+## green leg (14514da, T0 commit, concluded)
+[assert-checks poll 1] 14514da matched=8 ok=8 pending=0 bad=0
+[assert-checks] GREEN: all 8 ci/ship-gate checks terminal+allowed on 14514da
+exit=0
+
+## red leg (d7bed91, pre-fix red tip, concluded)
+[assert-checks poll 1] d7bed91 matched=8 ok=3 pending=0 bad=5
+[assert-checks] RED: check-build (ubuntu-latest)=failure; test:online (online-gated: store vector-arm + embedding, network required)=failure; check-build (windows-latest)=failure; ship-gate (windows-latest)=failure; ship-gate (ubuntu-latest)=failure
+exit=1
+
+## no-signal leg (4833833, no ci/ship-gate checks)
+[assert-checks poll 1] 4833833 matched=0 ok=0 pending=0 bad=0 missing-families=check-build,install-smoke,test:online,ship-gate,memory-eval
+[assert-checks] discovery window — no ci/ship-gate checks yet on 4833833
+[assert-checks poll 2] 4833833 matched=0 ok=0 pending=0 bad=0 missing-families=check-build,install-smoke,test:online,ship-gate,memory-eval
+[assert-checks] FAIL-CLOSED: no ci/ship-gate check-runs on 4833833 after 3s discovery
+exit=2

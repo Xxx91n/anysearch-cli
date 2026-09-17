@@ -4,6 +4,30 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-17 — ADR-0069 r68: release gate 双层化 + 收口必填栏 lint（写仓自动化守门）
+
+### Added
+
+- `scripts/assert-checks-green.mjs` — post-tag 前置断言器：固定 SHA 上轮询 check-runs（ci+ship-gate 五 job 族），全绿放行 / 红 fail-fast exit 1 / in-progress ≤10min 短轮询 / 无信号 fail-closed exit 2；同名 check 取最新 started_at。
+- release.yml pre-tag 自等腿：账本 commit+push 后 `lewagon/wait-on-check-action@v1.9.1`（pin `36976907`）等固定 SHA 的 ci+ship-gate 全绿——discovery 120s 空窗 + step `timeout-minutes:20` 硬超时 fail-closed。
+- release.yml 告警腿：gate 红 → blocking job failure + step summary + 自动开 issue + `release-gate` commit-status（failure）打账本 commit。
+- ship-gate step 1g：`.scratch/*/handoffs/` 收口文档必填栏 lint——「绿色 run URL」段 + Stack 行 + `actions/runs/<id>` URL + gh 可用时校验至少一条 run 的 headSha 是本轮历史祖先。作用域=diff 触碰 ∪ 最新收口文档（历史收口 grandfathered）。
+
+### Fixed
+
+- **`eval-looks.json` 丢 `schema_version: 1`（main 双红根因）**：release-bot 回写管线 read→normalize→write 逐字段重建剥未知字段。`looks-ledger.ts` 改 Tolerant Reader（根/行索引签名+spread 保留）；`cli.ts` calibrate-reset 同型修复——F-17 sweep 同类 N=2 并修。`eval-docs-golden.test.ts` 增字节级 round-trip 契约断言。
+- **`eval-abstain.test.ts` 裸 `runAll(GOLDEN_CASES)`**：semantic/vector-arm 组须归 `test:online`（ADR-0060 D7）——补 `excludeGroups: OFFLINE_EXCLUDED_GROUPS`。
+- **release.yml 双盲发布通道（v0.0.5 红树发布根因）**：pre-tag 不等 push 触发的检查、publish 不查 tagged SHA——双层门禁关闭。
+
+### Changed
+
+- `concurrency` 组 `release-${{ github.ref }}` → `release`：pre-tag dispatch 与 tag push 不再交错。
+- 治理入档：`but land` 直推 main 判定为 grill 轮次合规通道（ADR-0069 D5）；future direction=PR-mode + required checks + tag ruleset/environment reviewers。
+
+### 验证边界
+
+T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da / 红 d7bed91 / 无信号 4833833），wait-action 腿未实跑；首次真 pre-tag dispatch 前不得宣称 fully verified。
+
 ## 0.0.5 — 2026-09-17 — ADR-0068 r67: Codex 0.142.5 真宿主契约对齐
 
 ### Added
