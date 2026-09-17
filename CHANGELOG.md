@@ -9,6 +9,7 @@ All notable changes to this project are recorded here. Format follows
 ### Added
 
 - `apps/plugin` 新 bin `ans-hook-codex`（→ `dist/hooks/adapters/codex.cjs`）——Codex hooks 命令经 PATH 解析全局安装，与 claude 通路同构。
+- `apps/plugin/AGENTS.md` 随包分发（`files[]` 收录）——ans_* 白名单+fail-open+namespace 说明块，供贴入项目 AGENTS.md（可选步骤见 `docs/codex-integration.md`，ADR-0068/D-003③）。
 - `test/codex-contract.test.ts`（11 条）：官方 schema 校验、bin→entrypoint 解析、matcher 全匹配覆盖、SessionStart --envelope 断言、生成器漂移守卫（codex 配置纳入）、信封输出形状、hook_event_name 优先+legacy 兜底、fail-closed ask、非 ans 静默、畸形 stdin fail-open。
 - `docs/codex-integration.md`：Codex 接线文档（config.toml 双配置层 + MCP + hooks + 实测宿主事实清单 + fail-open）。
 

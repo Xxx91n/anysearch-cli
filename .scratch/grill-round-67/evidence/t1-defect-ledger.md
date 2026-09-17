@@ -36,7 +36,7 @@ Evidence: t1-deny-{env,legacy,toplevel,exit2}.stream.jsonl — DENYTAG lines in 
 
 ## D. Config-schema red (shipped 0.0.4)
 
-- `configs/codex/hooks.json` uses Claude-style entries (`{name,command,args}`); Codex registers ZERO commands — silent no-op both with and without `--enable hooks` + bypass (t1-shippedcfg, t1-shippedcfg-en; contrast: top-level `description` field DID parse-error — root is strict, entries are not).
+- `D:\Aworker\anysearch-cli\apps\plugin\configs\codex\hooks.json` uses Claude-style entries (`{name,command,args}`); Codex registers ZERO commands — silent no-op both with and without `--enable hooks` + bypass (t1-shippedcfg, t1-shippedcfg-en; contrast: top-level `description` field DID parse-error — root is strict, entries are not).
 - Config references `${CODEX_PLUGIN_DIR}` — no such expansion exists in Codex → even schema-fixed, paths must be resolved at install time.
 - Adapter output shape: codex.cjs emits bare `{additionalContext}` at top level for BOTH PreToolUse (L240) and PostToolUse (distilled output). Real-host: mostly/neither consumed → dead output.
 - Adapter drops `decision.permission` entirely — makePreToolUseDecision may return deny/ask (URL policy, preheat.ts L79-94); adapter writes nothing → **URL-policy deny silently inert on Codex** (real-host: envelope deny verified working).
@@ -91,3 +91,22 @@ Object = pnpm pack tarballs installed to D:/Aworker/e2e-r67-codex/pkg-t (npm --n
 - All T1 xfail-strict items reproduce identically on tarball (config schema, bare output, deny drop, CODEX_PLUGIN_DIR).
 - NEW: hook matchers in any shipped config must be full-match-safe (mcp__anysearch__.* not prefix).
 - NEW: -c cannot express hooks (string-typed) → install must write config file, not rely on -c.
+
+---
+
+# Numbered index (R67 audit F-04 closeout — same items, formal IDs + failure_class)
+
+| ID | Item | failure_class | Disposition | Closure pointer |
+|----|------|---------------|-------------|-----------------|
+| ER-01 | codex-config-schema ({name,command,args} → zero hooks) | product-defect | xfail-strict → **fixed** (3e5087a) | D:\Aworker\anysearch-cli\.scratch\grill-round-67\evidence\t4-shippedcfg.* |
+| ER-02 | codex-adapter-output-bare (Pre/Post/SessionStart top-level) | product-defect | xfail-strict → **fixed** (3e5087a) | envelope t4 legs + codex-contract.test.ts |
+| ER-03 | codex-adapter-deny-dropped (decision.permission lost) | product-defect | xfail-strict → **fixed** (3e5087a) | D:\Aworker\anysearch-cli\.scratch\grill-round-67\evidence\t4-deny.* |
+| ER-04 | CODEX_PLUGIN_DIR resolution (no such var) | product-defect | xfail-strict → **fixed** (bin-name commands) | shipped config + tarball bin map |
+| ER-05 | matcher full-match semantics (prefix ≠ match) | host-fact → product-defect | xfail-strict → **fixed** (suffix-anchored) | shipped config matcher + contract test |
+| ER-06 | PreToolUse additionalContext muted by host | host-variable | skip-with-reason | §C (0/1 both forms; envelope still emitted, harmless) |
+| ER-07 | bare-form racy delivery (~12-33%) | host-variable | skip-with-reason (documented; product emits envelope) | §A L2/L2R legs |
+| ER-08 | exit code 2 is not a deny on Codex | host-fact | skip-with-reason (documented) | §B deny sentinels |
+| ER-09 | hook trust = [hooks.state] sha256; headless gate | host-variable | skip-with-reason (bypass legs labeled) | §F W4/W6 NOFIRE |
+| ER-10 | -c cannot express hooks (string-typed values) | host-fact | skip-with-reason (documented) | §B3 + t2-bisectC2/t2-envdump8 |
+| ER-11 | required=true MCP hard-exit | host-fact | closed-green (matches docs) | t1-mcp-required-fail.* |
+| ER-12 | input fields / MCP wiring / synthetic /index delta / OOD connectivity | — | closed-green | §E/§F + t2 legs |

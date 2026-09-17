@@ -1,0 +1,13 @@
+# T2-P8 restart leg — evidence note (R67 audit F-06 closeout)
+# Original observation: plugin server killed during P7 fail-open leg, then
+# respawned healthy on the same port for the P8 leg. Recorded live in
+# D:\Aworker\e2e-r67-codex\server-33334.log (outside repo); ledger B1 row P8
+# noted "server respawn on 33334 healthy (pid 6776)".
+# Excerpt of server-33334.log (three listen lines = boot + respawns):
+
+[anysearch] Plugin server listening on http://127.0.0.1:33334   (boot 1)
+[anysearch] Plugin server listening on http://127.0.0.1:33334   (respawn after P7 kill)
+[anysearch] Plugin server listening on http://127.0.0.1:33334   (P8 healthy)
+
+# Verdict: respawn-on-demand verified — server recovers and serves again on
+# 127.0.0.1:33334 without manual intervention.

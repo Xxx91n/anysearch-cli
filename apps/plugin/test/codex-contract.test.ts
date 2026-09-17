@@ -1,4 +1,4 @@
-// Codex CLI contract tests — R67 (T3 fix / ADR-0067 candidate).
+// Codex CLI contract tests — R67 (T3 fix / ADR-0068).
 // Live-verified against codex-cli 0.142.5 headless probes (evidence:
 // .scratch/grill-round-67/evidence/t1-*, t2-*):
 //   * Real stdin event field is hook_event_name (adapter falls back to event).

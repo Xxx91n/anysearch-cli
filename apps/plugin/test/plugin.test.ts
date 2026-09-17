@@ -171,6 +171,10 @@ test("AGENTS.md: minimal and has required sections", () => {
   assert.ok(agentsContent.includes("ans_*"), "AGENTS.md should mention ans_* prefix");
   const lineCount = agentsContent.split("\n").length;
   assert.ok(lineCount < 200, "AGENTS.md should be < 200 lines, got " + lineCount);
+  // R67 D-003③: the snippet must ride the npm package so users can paste it
+  // into their project AGENTS.md (optional step in docs/codex-integration.md).
+  const pkgFiles = JSON.parse(fs.readFileSync(join(process.cwd(), "package.json"), "utf8")).files || [];
+  assert.ok(pkgFiles.includes("AGENTS.md"), "AGENTS.md must be listed in package.json files[] to ship");
 });
 
 

@@ -122,6 +122,13 @@ What each hook does:
   project FTS5 index (verified +N rows per call), and emits the distilled
   summary as `additionalContext` for the next turn.
 
+**Optional — project `AGENTS.md` hint.** The plugin ships a ready-made
+anysearch block (`ans_*` tool whitelist + fail-open semantics + namespace
+conventions) at
+`$(npm root -g)/@anysearch-cli/plugin/AGENTS.md`. Paste it into your
+project's `AGENTS.md` so the host agent recognizes the `ans_*` tools and
+knows hook/server failures degrade gracefully.
+
 ## 6. Fail-open
 
 Server down → tools fall back to direct providers, hooks exit 0, sessions

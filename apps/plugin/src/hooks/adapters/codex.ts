@@ -57,7 +57,7 @@ async function main(): Promise<void> {
         hookSpecificOutput.permissionDecision = decision.permission;
         if (decision.permissionReason) hookSpecificOutput.permissionDecisionReason = decision.permissionReason;
       }
-      if (Object.keys(hookSpecificOutput).length > 1) {
+      if (decision.additionalContext || decision.permission) {
         process.stdout.write(JSON.stringify({ hookSpecificOutput }));
       }
       process.exit(0);

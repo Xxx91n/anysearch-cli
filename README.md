@@ -156,6 +156,12 @@ ADR-0068 for the evidence sets.
   `decision.permission` was never emitted, so URL-policy denies executed the
   tool anyway. Fixed in 0.0.5: all output inside `hookSpecificOutput`,
   `permissionDecision(Reason)` passthrough (ADR-0068).
+- **Codex unverified surfaces (0.0.5)** — PostToolUse `additionalContext`
+  injection is same-turn-variable on codex 0.142.5 (the `/index` side
+  effect is the durable path); `[hooks.state]` trust-hash persistence is
+  not headless-verified; `query_knowledge` returns the `adapter=none` stub
+  (pre-existing, not a Codex regression); OOD `abstain=null` shape noted
+  under allowlist routing (ADR-0068).
 - **`anysearch` provider cannot pre-filter** — its REST surface has no domain
   parameter; under a domain allowlist it is post-filter-only (honest degrade,
   recorded in the `retrieval.domain_filter.pre` audit event).
