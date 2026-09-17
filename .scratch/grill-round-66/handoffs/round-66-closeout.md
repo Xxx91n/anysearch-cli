@@ -4,7 +4,7 @@
 
 ## 一句话状态
 
-T1–T6 完成；T7 停在授权点。**唯一外部阻塞：Claude 模型代理 127.0.0.1:15721 宕机（ECONNREFUSED ≥45min，用户侧托管进程）**——恢复后 10–15min 可补齐 T4 末三项探针。
+T1–T6 完成；**T4 已全绿（代理恢复后补跑完成）**；T7 停在授权点等用户。
 
 ## 已完成的票（分支 r66-t1..t6）
 
@@ -17,12 +17,8 @@ T1–T6 完成；T7 停在授权点。**唯一外部阻塞：Claude 模型代理
 
 ## 待办（按序）
 
-1. **恢复代理 127.0.0.1:15721**（用户侧）。验证：`curl http://127.0.0.1:15721/`
-2. 补 T4 末三项（probe-claude.mjs 即可）：
-   - `t4-p6-template`：prompt 要求引用注入的路由卡首行 trigger rule
-   - `t4-p5-realcall`：真实 search_web 成功调用→`rowsBefore/rowsAfter` 行增量
-   - `t4-p9b`：P9 第二跑方差
-   - （可选）plugindir 模型级会话重验
+1. ~~恢复代理 127.0.0.1:15721~~ **已完成**（用户恢复，T4 补跑全绿）
+2. ~~补 T4 末三项~~ **已完成**：注入→引用闭环绿；P9 方差第二跑绿；P5 index 增量判 host-variable（引擎 verdict=ambiguous→瘦身响应→合法跳过；合成路径已覆盖）
 3. T7 授权点：npmjs.com 四包 trusted publisher（`docs/publishing.md` §OIDC 逐字照抄）→ 用户当场授权 tag `v0.0.4` + push → gate → publish → `npm view`+provenance+净机冒烟 → ADR-0067 Closure 四段回填
 
 ## 关键事实（勿重查）

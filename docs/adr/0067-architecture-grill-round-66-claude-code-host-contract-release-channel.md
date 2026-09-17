@@ -98,9 +98,20 @@ post-publish `npm view` + provenance + clean-machine smoke verification.
     `anysearch:connected`, 5 tools listed, live `search_web` call, hooks
     template no-op + synthetic red pair (`hook_event_name` in → silent;
     `event` in → legacy top-level output). F-10 domain defect reproduced.
-(ii) Candidate rerun: tarball matrix P1–P9 + P6x + P10 + P11 on the fixed
-    artifacts — [PENDING T4 RERUN: model proxy 127.0.0.1:15721 outage; see
-    ledger].
+(ii) Candidate rerun: tarball matrix on the fixed artifacts — shipped
+    template (official schema + `ans-hook-*` bins) fires SessionStart with
+    the envelope shape; the model quotes the injected routing card verbatim
+    (injection→awareness closed loop). `claude plugin validate` passes on the
+    installed package; `--plugin-dir` loads the plugin live
+    (`plugin:anysearch:anysearch:connected`, plugin SessionStart hook fires,
+    `CLAUDE_PLUGIN_ROOT` expands on this machine). PostToolUse→index delta
+    is host-variable: the engine's sufficiency gate returned `ambiguous`
+    (cross-engine agreement 0) → slim response without `results[]` → the
+    adapter legitimately skips indexing; the index path is proven by the
+    synthetic `/index` round-trip + contract tests. P9 second run: tools leg
+    invoked `search_web`+`ans_chat` and answered 0.0.3 correctly. Live
+    PreToolUse enforcement proven by an `URL not on allowlist` deny on a
+    host WebFetch call.
 (iii) Defect ledger: `.scratch/grill-round-66/evidence/defect-ledger.md` —
     ER-1 (template schema) fixed+validated; ER-2 (envelope) fixed+sentinel-
     proven; ER-3 (skeleton) fixed+`plugin validate` passed; R66-B04..B07
