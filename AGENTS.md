@@ -50,3 +50,7 @@ CI uses `pnpm/setup@v2` (the v11+ successor of `pnpm/action-setup`), which reads
 ## Scope discipline (ADR-0029)
 
 One grill round = one themed topic. Cohesive engineering items in the same subsystem may land in the ADR as formal Decision entries; due chores ship as separate refactor commits + CHANGELOG Removed entries; rejections stay explicit in the ADR. The anti-pattern is undocumented while-you're-at-it edits — audit-checklist.md enforces diff-size thresholds and the found/fixed/deferred triplet.
+
+## Deliverable path discipline
+
+Deliverable documents (task books, handoffs, decision ledgers, plans, evidence manifests) must be written with **absolute paths**, and must be *referenced by absolute path* in reports and handoffs — both inside the document body and when pointing a user or the next agent at the file. Repo-relative paths (`docs/x.md`, `.scratch/...`) are not acceptable for deliverables. Applies from grill-round-67 onward.

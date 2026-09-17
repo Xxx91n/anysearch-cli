@@ -1012,3 +1012,26 @@ npm 发布的免长效密钥形态：GitHub Actions publish job 持 id-token:wri
 
 ## Per-Host Effect Delta（单宿主效果增量）
 P9 类效果对照跨宿主重跑的结论边界：表述为“该宿主下工具有效性增量”，不做跨宿主绝对值比较；单次双跑是抽样，须重复或记录方差。_Avoid_: 用 A 宿主对照数字断言 B 宿主效果；单次结果当断言（无方差记录即轶事）。来源：atomcode R66-Q4（MCPJam per-host eval/Signadot 四层模型/Berkeley null-agent 消融）。
+
+## Grill Round 67 — Terms (ADR-0068)
+
+## Contract-Family Coverage（契约族覆盖）
+宿主验证“够不够”的判据：不按宿主数量计，按契约族计——每套互不相同的 hooks/注入 schema 是一个独立验证单元；“够”=两类信封形态（envelope 型 hookSpecificOutput 与裸顶层字段）各至少一个真宿主实证。_Avoid_: 以宿主数量自证充分（同族重复验证无信息增益）；把“某族已验一宿主”误推全族（族内宿主仍可分歧）。来源：atomcode R67-Q1+R67 D-001。
+
+## Artifact-Authoritative Track（工件权威轨）
+双轨证据的权威归属：published 发布物是用户实际拿到的字节，契约形态 smoke 证据以它为准；tarball=候选体回归轨，dev-iteration 快跑不进证据档案。_Avoid_: 拿 tarball 证据冒充发布物证据（ER-1 artifact drift 类缺陷只有 published 轨能堵）；published 轨跑成“三探针轻基线”浅尝辄止（smoke 应按契约形态切）。来源：atomcode R67-Q2+R67 D-002。
+
+## Contract-Shape Smoke（契约形态冒烟）
+published 轨的 smoke 切法：不按探针数量而按输出契约形态——每种输出形态一腿（envelope/顶层裸字段/plain-text/exit-code），每腿有独立判别力，直对本仓库缺陷高发面（输出契约）。_Avoid_: 按探针数量切 smoke（数量≠覆盖契约面）；漏掉“宿主解析器对未知顶层字段的宽容边界”这一判别维度。来源：atomcode R67-Q2+R67 D-002。
+
+## Envelope Adjudication Legs（信封裁决腿）
+判定宿主吃哪种输出契约的对照实验形态：同一 stub hook 只换 stdout 载荷——L0 空基线排假阳性、L1 信封、L2 顶层裸字段（裁决腿）、L3 plain-text（防误诊腿）、L1′ 混合载荷画宽容边界；判读依据=marker 是否进入下一 turn 模型指令流而非仅 hook fired 事件。_Avoid_: 无 L0 基线（AGENTS.md 注入可污染判读，marker 须随机 nonce）；把“hook 触发”当“上下文入指令流”（两事件必须区分）。来源：atomcode R67-Q2+R67 D-002。
+
+## Single-Layer Config Injection（单层配置注入）
+探针隔离的归因纪律：每条探针腿只走一层配置来源（--ignore-user-config+-c / 项目级 .codex/ / 用户级 / profile 各自单独成腿），同命令混两层即无法归因；profile 层可被 trusted project 静默遮蔽，不当主轨。_Avoid_: 混层注入后把绿归因到错误的层；--dangerously-bypass-hook-trust 进主轨（绕过 trust 恰是绕过被验对象）。来源：atomcode R67-Q2+R67 D-002。
+
+## Host-Expectation Rejudgment（宿主预期重判）
+探针矩阵跨宿主移植的预期值纪律：fail-open、输出形态、触发顺序等预期按目标宿主契约重判而非照抄——Codex 侧 required MCP 初始化失败=硬退出（非 fail-open）、hooks 输出第三形态 exit-2+stderr、hooks 并发触发无顺序保证、Pre/PostToolUse 覆盖 apply_patch/MCP 调用。_Avoid_: 把 A 宿主的预期断言直接搬进 B 宿主探针（预期错误=假红假绿）；假设 hooks 串行有序。来源：atomcode R67-Q2+R67 D-002。
+
+## Backup-Before-Mutation（改前备份前置）
+实施纪律：修改任何现有文件前先做可回滚备份（文件级副本或可还原快照），修复跑偏/失败可无损还原。_Avoid_: 直接改后靠记忆还原；备份混进提交物。来源：R67 D-003 用户显式约束。
