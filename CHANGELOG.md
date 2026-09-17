@@ -4,6 +4,26 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-17 — ADR-0067 r66: Claude Code 真宿主契约对齐（信封/schema/骨架）+ OIDC 发布通道
+
+### Added
+
+- `apps/plugin` 新 bin `ans-hook-claude` / `ans-hook-session-start`——hooks 命令经 PATH 解析全局安装，模板不再含绝对路径或 `${CLAUDE_PLUGIN_*}` 变量。
+- Claude Code plugin 骨架：`.claude-plugin/plugin.json` + `hooks/hooks.json` + `.mcp.json`，由 `scripts/gen-claude-configs.mjs` 单源生成（settings 模板同出自它）；`claude plugin validate` 在已安装包上通过。标记 **experimental**（`CLAUDE_PLUGIN_ROOT` Windows 展开上游 bug #16116）。
+- `test/claude-contract.test.ts`（10 条）：信封形状断言、官方 schema 校验、bin→entrypoint 解析、骨架存在性、生成器漂移守卫、fail-closed ask、全量/瘦身两种 tool_response 形态。
+- `docs/claude-integration.md`：Claude Code 接线文档（settings 通路 + plugin 实验通路 + 实测宿主事实清单）。
+
+### Fixed
+
+- **Claude 决策键被宿主静默丢弃（live 抓出，ER-2）**：`adapters/claude.ts`/`session-start.ts` 原把 `additionalContext`/`updatedToolOutput`/`permissionDecision` 写顶层——Claude Code 2.1.251 哨兵实测：顶层 `permissionDecision` 不拦工具执行，信封 `hookSpecificOutput.permissionDecision:"deny"` 与 legacy `decision:"block"` 均拦。全部决策键改入 `hookSpecificOutput{hookEventName,...}`；PostToolUse 蒸馏摘要走 `additionalContext`（Claude 无输出改写字段）。
+- **configs/claude/hooks.json 非官方 schema（live 抓出，ER-1）**：`{name,command,args}` 形状被静默接受但毒害整个事件列（混入的合法 sentinel 同被丢）。重写为 `{matcher,hooks:[{type:"command",command}]}`。
+- **plugin 骨架缺失（ER-3）**：`claude plugin validate` 原报 "No manifest found"；骨架补齐后通过。
+
+### Changed
+
+- README Verified agent hosts：新增 Claude Code 2.1.251 行（settings 通路 live-verified；plugin 通路标 experimental）。Known Limitations 补两条 0.0.3 Claude 缺口口径。
+- 宿主实测事实（钉入文档/测试）：Pre/PostToolUse 钩子 headless 下真跑但 stream-json 零事件（副作用观测）；输入校验失败先于钩子分发；`type:"http"` settings 钩子被静默丢弃；MCP 工具调用触发钩子正常。
+
 ## 2026-09-16 — ADR-0066 r65: 真实宿主部署开门轮（CodeBuddy 三件套 + hooks 契约对齐修复）
 
 ### Added
