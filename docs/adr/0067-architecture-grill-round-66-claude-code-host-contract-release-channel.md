@@ -117,7 +117,13 @@ post-publish `npm view` + provenance + clean-machine smoke verification.
     proven; ER-3 (skeleton) fixed+`plugin validate` passed; R66-B04..B07
     recorded as contract/observability facts.
 (iv) Product surface: `docs/claude-integration.md`, README verified-hosts
-    row, `0.0.4` published via OIDC TP — [PENDING T7].
+    row, `0.0.4` **published via OIDC trusted publishing** — tag `v0.0.4`
+    pushed → `release-gate` post-tag assert green → `publish` job
+    (id-token:write, no NPM_TOKEN) packed+published all four packages with
+    sigstore provenance (`dist.attestations` → slsa.dev/provenance/v1,
+    transparency log index 2871163168+). Clean-install smoke:
+    `npm i -g @anysearch-cli/{cli,mcp,plugin,embedding}@0.0.4` →
+    `ans --version`=0.0.4, `ans doctor` 25/0/0.
 
 ## Consequences
 

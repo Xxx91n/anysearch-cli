@@ -4,7 +4,7 @@
 
 ## 一句话状态
 
-T1–T6 完成；**T4 已全绿（代理恢复后补跑完成）**；T7 停在授权点等用户。
+**R66 全闭环**：T1–T7 全部完成——0.0.4 经 OIDC trusted publishing 发布（四包 latest=0.0.4 + sigstore provenance + 净机冒烟 25/0/0）。
 
 ## 已完成的票（分支 r66-t1..t6）
 
@@ -17,9 +17,11 @@ T1–T6 完成；**T4 已全绿（代理恢复后补跑完成）**；T7 停在�
 
 ## 待办（按序）
 
-1. ~~恢复代理 127.0.0.1:15721~~ **已完成**（用户恢复，T4 补跑全绿）
-2. ~~补 T4 末三项~~ **已完成**：注入→引用闭环绿；P9 方差第二跑绿；P5 index 增量判 host-variable（引擎 verdict=ambiguous→瘦身响应→合法跳过；合成路径已覆盖）
-3. T7 授权点：npmjs.com 四包 trusted publisher（`docs/publishing.md` §OIDC 逐字照抄）→ 用户当场授权 tag `v0.0.4` + push → gate → publish → `npm view`+provenance+净机冒烟 → ADR-0067 Closure 四段回填
+1. ~~恢复代理 127.0.0.1:15721~~ 已完成
+2. ~~T4 末三项补跑~~ 已完成（全绿/host-variable 结论）
+3. ~~T7 授权点~~ **已执行**：TP 配好 → `but move r66-t5-docs --above r66-t6-release` 归并 → `but push` 6 分支 → `git tag v0.0.4 0d86db6` + push → gate 18s 绿 → publish job 1m11s（OIDC TP 首发成功）→ 四包 latest=0.0.4 + provenance + 冒烟 25/0/0 → ADR-0067 Closure 已回填
+
+**遗留观察项**（下轮可选）：ans_chat 空正文（本环境 ANS_LLM_* 上游缺端点——环境项）；引擎 verdict 恒 ambiguous 时 PostToolUse 合法跳索引（机制已验）。
 
 ## 关键事实（勿重查）
 
