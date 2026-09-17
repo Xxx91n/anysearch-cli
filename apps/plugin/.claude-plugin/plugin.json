@@ -1,13 +1,12 @@
 {
   "name": "anysearch",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "AnySearch hooks + MCP integration for Claude Code (experimental)",
-  "license": "Apache-2.0",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Xxx91n/anysearch-cli.git",
-    "directory": "apps/plugin"
+  "author": {
+    "name": "Xxx91n"
   },
+  "license": "Apache-2.0",
+  "repository": "git+https://github.com/Xxx91n/anysearch-cli.git",
   "hooks": "./hooks/hooks.json",
   "mcpServers": "./.mcp.json"
 }

@@ -1,4 +1,49 @@
-# Publishing (manual first release — D-006)
+# Publishing
+
+## OIDC trusted publishing (0.0.4+, ADR-0067 D4)
+
+`release.yml` carries a `publish` job that runs on tag push after
+`release-gate` is green. It holds `id-token: write`; npm ≥11.5.1 performs the
+OIDC handshake itself and emits sigstore provenance — **no `NPM_TOKEN` exists
+anywhere**.
+
+### Maintainer setup (one-time, verbatim)
+
+For EACH of the four publishable packages
+(`@anysearch-cli/cli`, `@anysearch-cli/mcp`, `@anysearch-cli/plugin`,
+`@anysearch-cli/embedding`):
+
+1. npmjs.com → package page → **Settings** → **Publishing access** →
+   **Trusted Publisher** → **GitHub Actions**.
+2. Fill exactly:
+   - Repository owner: `Xxx91n`
+   - Repository name: `anysearch-cli`
+   - Workflow filename: `release.yml`
+   - Environment: *(leave empty — the job has no environment)*
+3. Save. The package must exist already (it does — published manually at 0.0.3).
+
+Then the release sequence is:
+
+```bash
+# 1. spend the OF look (decision-grade gate)
+gh workflow run release.yml -f runPurpose=pre-tag
+# 2. when green: tag + push (authorized step)
+git tag v0.0.4 && git push origin v0.0.4
+# 3. tag push → gate re-asserts → publish job runs → npm + provenance
+```
+
+Verify afterwards:
+
+```bash
+npm view @anysearch-cli/cli@0.0.4 --json | jq '{version,license,dist}'
+npm view @anysearch-cli/cli@0.0.4 dist.attestations --json   # sigstore provenance
+npm i -g @anysearch-cli/cli@0.0.4 && ans --version && ans doctor
+```
+
+If a publish goes wrong inside the 72h unpublish window:
+`npm unpublish @anysearch-cli/<pkg>@0.0.4` per package.
+
+## Manual first release (0.0.3 — historical, D-006)
 
 npm `0.0.3` is a **manual** first release: no `release.yml` provenance is emitted
 (ADR-0064 D-006; this is a known consequence, not a defect — provenance requires
