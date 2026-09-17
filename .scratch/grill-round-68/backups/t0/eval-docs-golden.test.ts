@@ -98,26 +98,6 @@ const appended = appendLook(ledger, { key: "t:t", at: "2026-09-14T00:00:00.000Z"
 assert(appended.golden !== undefined, "appendLook preserves golden through the look append");
 fs.rmSync(tmp, { force: true });
 
-// --- 7b. ADR-0069 (F-17): Tolerant Reader — unknown ROOT fields survive a
-// read->append->write cycle byte-for-byte, not merely "readable". The R64
-// schema_version:1 sentinel was stripped once by a field-by-field rebuild.
-{
-  const KNOWN_ROOT = new Set(["schema", "looks", "compaction", "golden"]);
-  const unknownKeys = Object.keys(raw).filter((k) => !KNOWN_ROOT.has(k));
-  assert(unknownKeys.length >= 1, "eval-looks.json carries unmanaged root fields (schema_version)");
-  const tmp2 = path.join(os.tmpdir(), "ans-f17-looks-" + process.pid + ".json");
-  writeLooksLedger(tmp2, appended);
-  const outText = fs.readFileSync(tmp2, "utf8");
-  const out = JSON.parse(outText);
-  for (const k of unknownKeys) {
-    assert(k in out, "unknown root field " + k + " is still present after append+write");
-    assert(JSON.stringify(out[k]) === JSON.stringify(raw[k]), "unknown root field " + k + " round-trips byte-for-byte");
-  }
-  assert(/"schema_version":\s*1/.test(outText), "written file literally carries the schema_version:1 sentinel");
-  assert(Object.keys(out).indexOf("schema_version") === Object.keys(raw).indexOf("schema_version"), "schema_version keeps its original key position (no reordering)");
-  fs.rmSync(tmp2, { force: true });
-}
-
 // --- 8. loadDomainByNameIn resolution chain ----------------------------------
 const viaChain = loadDomainByNameIn("docs", [path.join(root, "domains")]);
 assert(viaChain.name === "docs", "loadDomainByNameIn resolves docs from an explicit dir");

@@ -19,7 +19,7 @@ import { SqliteObservationStore } from "../observation";
 
 function repoRoot(): string {
   let d = dirname(fileURLToPath(import.meta.url));
-  for (; ;) {
+  for (;;) {
     if (existsSync(join(d, "turbo.json"))) return d;
     const p = dirname(d);
     if (p === d) throw new Error("turbo.json not found walking up from " + d);
@@ -55,7 +55,7 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
     `| mrr (rank-of-relevant) | ${m.mrr.toFixed(3)} |`,
     `| answerableFalseRefusalRate | ${m.answerableFalseRefusalRate.toFixed(3)} |`,
     // r74 audit E1: entity-arm telemetry (report-only; D2 <0.5 advisory, never gated)
-    ...(m.entityArm ? [`| entity rule-hitRate | ${m.entityArm.hitRate.toFixed(3)} |`, `| entity activationRate | ${m.entityArm.activationRate.toFixed(3)} |`, `| entity avgArmHits | ${m.entityArm.avgArmHits.toFixed(2)} |`] : []),
+    ...(m.entityArm ? [`| entity rule-hitRate | ${m.entityArm.hitRate.toFixed(3)} |`,`| entity activationRate | ${m.entityArm.activationRate.toFixed(3)} |`,`| entity avgArmHits | ${m.entityArm.avgArmHits.toFixed(2)} |`] : []),
     // ADR-0032 D5: merge/review telemetry — report-only, NEVER gated (Goodhart clause).
     ...(m.entityMerge ? [
       '| entity auto_merged | ' + m.entityMerge.auto_merged + ' |',
@@ -234,11 +234,7 @@ async function main(): Promise<number> {
     // ADR-0061 D2: the reset must not destroy the docs-domain golden batch that
     // shares this file — read-then-write preserves the golden collection.
     const priorLooks = readLooksLedger(LOOKS_LEDGER_PATH);
-    // ADR-0069 (F-17): the reset drops `looks` and the now-orphaned `compaction`
-    // only — every other root field (golden, schema_version, future unknowns)
-    // rides through the spread instead of being rebuilt away.
-    const { looks: _droppedRows, compaction: _droppedCompaction, ...preserved } = priorLooks;
-    writeLooksLedger(LOOKS_LEDGER_PATH, { ...preserved, ...emptyLooksLedger() });
+    writeLooksLedger(LOOKS_LEDGER_PATH, { ...emptyLooksLedger(), ...(priorLooks.golden ? { golden: priorLooks.golden } : {}) });
     console.log(`[eval:calibrate] baseline written: fingerprint=${next.fingerprint} allowance sup<=${next.allowance.supersessionFails} qfp<=${next.allowance.quarantineFp} relationGain sigmaDU=${next.relationGain!.sigmaDU} lockedN=${next.relationGain!.lockedN} (rawN=${next.relationGain!.rawN}, pilot n=${pilotDeltas.length})`);
     return 0;
   }
@@ -404,7 +400,7 @@ async function main(): Promise<number> {
 
   console.log(
     `[eval] cases ${report.totals.passed}/${report.totals.cases} pass, fingerprint=${report.datasetFingerprint}, ` +
-    `passRate=${report.metrics.passRate.toFixed(3)} supFails=${report.metrics.counts.supExpected - report.metrics.counts.supPassed} qfp=${report.metrics.counts.fpCount} mrr=${report.metrics.mrr.toFixed(3)} verdict=${g.verdict} exit=${exitCode}`
+      `passRate=${report.metrics.passRate.toFixed(3)} supFails=${report.metrics.counts.supExpected - report.metrics.counts.supPassed} qfp=${report.metrics.counts.fpCount} mrr=${report.metrics.mrr.toFixed(3)} verdict=${g.verdict} exit=${exitCode}`
   );
   console.log("[eval] note: allowance band advisory at current n (allowance/n < MDE) — hard gate is passRate==1 (ADR-0028 D1)");
   for (const w of g.warnings) console.warn("[eval] WARN: " + w);

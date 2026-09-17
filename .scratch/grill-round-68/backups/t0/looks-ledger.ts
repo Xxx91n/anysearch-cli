@@ -39,10 +39,6 @@ export interface LooksLedger {
   // ADR-0061 D2: the docs-domain golden batch shares this file as a top-level
   // collection. Writers must round-trip it — dropping it is silent data loss.
   golden?: import("./docs-golden").DocsGoldenSet;
-  // ADR-0069 (F-17): Tolerant Reader — unknown root fields ride on the object
-  // verbatim so a read->modify->write cycle never strips fields the writer does
-  // not model (the R64 schema_version:1 sentinel was lost exactly this way).
-  [key: string]: unknown;
 }
 
 export function emptyLooksLedger(): LooksLedger {
@@ -62,31 +58,26 @@ export function readLooksLedger(file: string): LooksLedger {
   } catch {
     return emptyLooksLedger();
   }
-  const j = parsed as Record<string, unknown>;
+  const j = parsed as { schema?: unknown; looks?: unknown; compaction?: unknown; golden?: unknown };
   if (!j || typeof j !== "object" || !Array.isArray(j.looks)) return emptyLooksLedger();
   const looks: LooksLedgerEntry[] = [];
   for (const raw of j.looks as Array<Record<string, unknown>>) {
     if (!raw || typeof raw.key !== "string" || typeof raw.at !== "string") continue;
-    // Row-level Tolerant Reader: fields the normalizer does not model ride
-    // through the spread instead of being rebuilt away.
     looks.push({
-      ...raw,
       key: raw.key,
       at: raw.at,
       look: typeof raw.look === "number" ? raw.look : 0,
       verdict: typeof raw.verdict === "string" ? raw.verdict : "unknown",
       exitCode: typeof raw.exitCode === "number" ? raw.exitCode : -1,
-    } as LooksLedgerEntry);
+      ...(typeof raw.integrity === "string" ? { integrity: raw.integrity } : {}),
+    });
   }
-  // Spread the parsed object first so every unknown root field keeps its
-  // original position, then override the managed keys with normalized values.
   return {
-    ...j,
     schema: typeof j.schema === "string" ? j.schema : LOOKS_LEDGER_LEGACY_SCHEMA,
     looks,
     ...(j.compaction && typeof j.compaction === "object" ? { compaction: j.compaction as LooksLedgerCompaction } : {}),
     ...(j.golden && typeof j.golden === "object" ? { golden: j.golden as import("./docs-golden").DocsGoldenSet } : {}),
-  } as LooksLedger;
+  };
 }
 
 export function nextLook(ledger: LooksLedger, key: string): number {
@@ -96,19 +87,19 @@ export function nextLook(ledger: LooksLedger, key: string): number {
 // Append one peek row; compact when the cap is exceeded, preserving the pre-compaction hash.
 export function appendLook(ledger: LooksLedger, entry: LooksLedgerEntry, now: string): LooksLedger {
   const rows = [...ledger.looks, entry];
-  // ADR-0061 D2 + ADR-0069 (F-17): the spread carries the golden batch AND every
-  // unknown root field through the write — rebuilding the object field-by-field
-  // is how the schema_version:1 sentinel got stripped.
+  // ADR-0061 D2: the docs-domain golden batch shares this file — carry it through
+  // every write or appendLook becomes silent data loss.
+  const carry = ledger.golden ? { golden: ledger.golden } : {};
   if (rows.length <= LOOKS_LEDGER_MAX_ROWS) {
-    return { ...ledger, schema: LOOKS_LEDGER_SCHEMA, looks: rows };
+    return { schema: LOOKS_LEDGER_SCHEMA, looks: rows, ...(ledger.compaction ? { compaction: ledger.compaction } : {}), ...carry };
   }
   const preCompactionHash = hashRows(rows);
   const dropped = rows.length - LOOKS_LEDGER_MAX_ROWS;
   return {
-    ...ledger,
     schema: LOOKS_LEDGER_SCHEMA,
     looks: rows.slice(-LOOKS_LEDGER_MAX_ROWS),
     compaction: { at: now, droppedRows: dropped, preCompactionHash, cap: LOOKS_LEDGER_MAX_ROWS },
+    ...carry,
   };
 }
 
