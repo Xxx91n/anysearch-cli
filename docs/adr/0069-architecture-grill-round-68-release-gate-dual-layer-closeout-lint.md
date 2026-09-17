@@ -47,7 +47,8 @@ Doc-side (T2): the R67 closeout landed without the handoff-template's required
 
 - **Layer 1 — pre-tag self-wait.** After the ledger commit+push, the
   release-gate job polls check-runs on the FIXED pushed SHA via
-  `lewagon/wait-on-check-action@369769072fe522a3a8a85c03c96af1e5242a1994`
+  lewagon/wait-on-check-action pinned at
+  https://github.com/lewagon/wait-on-check-action/commit/369769072fe522a3a8a85c03c96af1e5242a1994
   (v1.9.1): `checks-discovery-timeout: 120` covers the empty window until
   push-run checks appear; `wait-interval: 30`; `wait-for-duplicates: false`
   keeps the latest run per check name; `check-regexp` covers the ci and
