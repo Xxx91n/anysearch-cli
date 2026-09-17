@@ -28,3 +28,13 @@
 ## 键位纪律
 
 证据零键值；token 仅脚本读不打印；User env 经 powershell 读长度不落盘。
+
+## T4 复跑条目（t3-pack tarball，0.0.3 修复体）
+
+| 项 | 命令/探针 | 结果 | 证据 |
+|----|-----------|------|------|
+| 出厂 template 接线 | write-settings.mjs template（=安装包 configs/claude/hooks.json 原文） | 官方 schema + `ans-hook-*` bin；anysearch SessionStart hook_response 实收完整路由卡 | t4-p5-realcall.stream.jsonl |
+| 信封实发 | 同上 transcript | `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"[anysearch plugin active]…"}}` | 同上 hook_response 第4条 |
+| plugin validate | `claude plugin validate <npm-global plugin dir>` | repo+installed 均 **pass**（修 repository:string + SKILL frontmatter 后 0 error/0 warn） | 命令输出 |
+| --plugin-dir 加载 | probe t4-p11-plugindir --nomcp --plugindir <pkg> | init `plugin:anysearch:anysearch:connected`；plugin 侧 SessionStart 钩子真触发；`CLAUDE_PLUGIN_ROOT` 本机展开正常 | t4-p11-plugindir.stream.jsonl |
+| 模型代理宕机 | 127.0.0.1:15721 ECONNREFUSED（~45min+） | T4 末三项挂起：注入→引用闭环/真实 search→index 增量/P9 第二跑；api_retry 事件流 | t4-p5-realcall debug + 探活 |
