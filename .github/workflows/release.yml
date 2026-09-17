@@ -21,7 +21,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  # ADR-0069 (R68 T1): a fixed group serializes every release run — a pre-tag
+  # dispatch and a tag push must never interleave their gate state.
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -30,6 +32,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # pre-tag commits the updated eval-looks.json ledger back
+      checks: read     # wait-on-check-action polls the Checks API
+      statuses: write  # red ledger commit gets a release-gate/failed status
+      issues: write    # red gate auto-opens an issue
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -52,18 +57,87 @@ jobs:
         run: node scripts/release-gate.mjs --post-tag
 
       - name: commit the updated OF look ledger (pre-tag only)
+        id: ledger_commit
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}
         shell: bash
         run: |
           if git diff --quiet -- eval-looks.json; then
             echo "eval-looks.json unchanged"
-            exit 0
+          else
+            git config user.name "anysearch-release-bot"
+            git config user.email "release-bot@users.noreply.github.com"
+            git add eval-looks.json
+            git commit -m "chore(release): record OF look ledger peek (ADR-0059 D2)"
+            git push
           fi
-          git config user.name "anysearch-release-bot"
-          git config user.email "release-bot@users.noreply.github.com"
-          git add eval-looks.json
-          git commit -m "chore(release): record OF look ledger peek (ADR-0059 D2)"
-          git push
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # ADR-0069 (R68 T1, layer 1): the pre-tag job now self-waits — after the
+      # ledger commit lands on main it must carry green ci+ship-gate before the
+      # operator may tag. wait-on-check-action supplies the two-phase contract:
+      # checks-discovery-timeout covers the empty window until the push-run
+      # checks appear, then it polls to terminal. The step-level
+      # timeout-minutes is the fail-closed hard bound (the action has no
+      # timeout input). Same-name checks dedupe to the latest run per name
+      # (wait-for-duplicates=false). macos-spillover-probe (EXPERIMENT,
+      # non-blocking) and native-smoke stay outside the gate by regexp design.
+      - name: wait for ci + ship-gate on the ledger commit (pre-tag only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}
+        uses: lewagon/wait-on-check-action@369769072fe522a3a8a85c03c96af1e5242a1994 # v1.9.1
+        timeout-minutes: 20
+        with:
+          ref: ${{ steps.ledger_commit.outputs.sha }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          check-regexp: '^(check-build|install-smoke|test:online|ship-gate|memory-eval)\b'
+          wait-interval: 30
+          checks-discovery-timeout: 120
+          wait-for-duplicates: false
+          running-workflow-name: release
+          fail-on-no-checks: true
+          verbose: true
+
+      # ADR-0069 (R68 T1, layer 2): publish's needs:release-gate now asserts the
+      # TAGGED sha carries all-green ci+ship-gate — the bug this closes: v0.0.5
+      # shipped from a red tree because publish never re-checked the tag's base.
+      # Red -> fail-fast exit 1; in-progress -> short poll bounded at 10 min;
+      # no matching checks after discovery -> fail-closed exit 2.
+      - name: tagged SHA carries green ci + ship-gate (post-tag only)
+        if: ${{ github.event_name == 'push' || inputs.runPurpose == 'post-tag' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/assert-checks-green.mjs --sha "${{ github.sha }}" --repo "${{ github.repository }}" --timeout-min 10 --discovery-sec 120 --interval-sec 20
+
+      # ADR-0069 (R68 T1): alert-and-block — on any gate red, leave a step
+      # summary, auto-open an issue, and stamp the ledger commit with a
+      # release-gate/failed status when one exists (pre-tag leg). No auto-revert.
+      - name: alert on gate red
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LEDGER_SHA: ${{ steps.ledger_commit.outputs.sha }}
+        shell: bash
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          {
+            echo "## release-gate RED"
+            echo "- run: $RUN_URL"
+            echo "- sha: ${{ github.sha }}"
+            echo "- purpose: ${{ github.event_name == 'push' && 'tag-push' || inputs.runPurpose }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          gh issue create \
+            --title "release-gate red on ${{ github.sha }}" \
+            --body "ci+ship-gate assertion failed. Run: $RUN_URL" \
+            --label release-gate \
+          || gh issue create \
+            --title "release-gate red on ${{ github.sha }}" \
+            --body "ci+ship-gate assertion failed. Run: $RUN_URL" \
+          || echo "issue create failed (non-blocking)"
+          if [ -n "${LEDGER_SHA:-}" ]; then
+            gh api "repos/${{ github.repository }}/statuses/$LEDGER_SHA" \
+              -f state=failure -f context=release-gate \
+              -f description="ci+ship-gate red on the ledger commit" \
+              -f target_url="$RUN_URL" || echo "commit status failed (non-blocking)"
+          fi
 
   # ADR-0067 D4 (R66 T6): publish via npm OIDC trusted publishing — the job holds
   # id-token:write and npm 11.5.1+ performs the OIDC handshake itself; there is no

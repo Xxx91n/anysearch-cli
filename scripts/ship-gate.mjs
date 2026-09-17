@@ -848,6 +848,101 @@ function stepEvidenceAnchors() {
   report("pass", "evidence-anchor: " + resolved + " resolvable 40-hex reference(s), " + external + " external permalink(s), " + whitelisted + " [squashed]-whitelisted");
 }
 
+// ADR-0069 (R68 T2): closeout handoff required-field lint. The R67 closeout
+// shipped without the handoff-template's mandatory "绿色 run URL" section and
+// Stack line — a doc-level omission no gate caught. Scope = closeout-shaped
+// docs (round-NN-* / *closeout* / *closure* under .scratch/*/handoffs/;
+// audit-only docs and next-round task books excluded) that are EITHER touched
+// by this diff OR the newest closeout on disk. Older untouched closeouts are
+// grandfathered — the rule postdates them.
+function stepHandoffCloseoutLint() {
+  report("info", "step 1g/9: closeout handoff required-field lint (ADR-0069)");
+  const scratchDir = path.join(ROOT, ".scratch");
+  const isCloseout = (name) =>
+    (/^round-\d+/i.test(name) || /closeout|closure/i.test(name)) &&
+    !/audit/i.test(name) && !/^next/i.test(name) && name.endsWith(".md");
+  const targets = new Set();
+
+  // (a) closeout docs touched by this diff — the forward-going enforcement leg.
+  // Range mirrors ship-gate.yml's memory-eval filter: pushed range, else
+  // branch-vs-default-branch, else HEAD's own file list. Working-tree edits
+  // count too (a doc being written right now must comply before commit).
+  const diffSources = [
+    ["diff", "--name-only", "origin/main...HEAD"],
+    ["show", "--pretty=format:", "--name-only", "HEAD"],
+    ["diff", "--name-only", "HEAD"],
+    ["diff", "--name-only", "--cached"],
+  ];
+  for (const args of diffSources) {
+    const d = spawnSync("git", args, { cwd: ROOT, encoding: "utf8" });
+    if (d.status !== 0) continue;
+    for (const f of (d.stdout ?? "").split("\n").map((s) => s.trim()).filter(Boolean)) {
+      const norm = f.replace(/\\/g, "/");
+      const base = path.posix.basename(norm);
+      if (norm.startsWith(".scratch/") && norm.includes("/handoffs/") && isCloseout(base)) targets.add(norm);
+    }
+  }
+
+  // (b) the newest closeout on disk — the standing leg that catches a round
+  // whose closeout landed non-compliant in an earlier diff.
+  if (fs.existsSync(scratchDir)) {
+    const roundDirs = fs.readdirSync(scratchDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && /^grill-round-(\d+)/i.test(d.name))
+      .map((d) => ({ name: d.name, n: Number(d.name.match(/^grill-round-(\d+)/i)[1]) }))
+      .sort((a, b) => b.n - a.n);
+    for (const dir of roundDirs) {
+      const hd = path.join(scratchDir, dir.name, "handoffs");
+      if (!fs.existsSync(hd)) continue;
+      const closeouts = fs.readdirSync(hd).filter(isCloseout);
+      if (closeouts.length === 0) continue;
+      for (const c of closeouts) targets.add((".scratch/" + dir.name + "/handoffs/" + c).replace(/\\/g, "/"));
+      break; // newest round dir with closeouts only
+    }
+  }
+
+  if (targets.size === 0) { report("skip", "handoff-lint: no closeout docs in scope (diff-clean and none on disk)"); return; }
+
+  // Liveness leg needs gh + network; degrade to an explicit skip (never silent)
+  // when unavailable — the shape legs below still run unconditionally.
+  const ghOk = spawnSync("gh", ["--version"], { encoding: "utf8" }).status === 0;
+  let repo = process.env.GITHUB_REPOSITORY || "";
+  if (!repo) {
+    const remote = spawnSync("git", ["remote", "get-url", "origin"], { cwd: ROOT, encoding: "utf8" });
+    const m = (remote.stdout ?? "").trim().match(/github\.com[/:]([\w.-]+\/[\w.-]+?)(\.git)?$/);
+    if (m) repo = m[1];
+  }
+  const headSha = String(spawnSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" }).stdout ?? "").trim();
+
+  const problems = [];
+  let checkedLiveness = false;
+  for (const rel of [...targets].sort()) {
+    const file = path.join(ROOT, rel);
+    if (!fs.existsSync(file)) continue; // renamed/deleted since diff — nothing to lint
+    const s = fs.readFileSync(file, "utf8");
+    if (!/^##\s*.*绿色\s*run\s*URL/m.test(s)) problems.push(rel + ": missing the required 「绿色 run URL」 section");
+    if (!/Stack\b/m.test(s)) problems.push(rel + ": missing the required Stack header line");
+    const ids = [...s.matchAll(/actions\/runs\/(\d+)/g)].map((m) => m[1]);
+    if (ids.length === 0) { problems.push(rel + ": no actions/runs/<id> URL cited"); continue; }
+    // "指向本轮 run": at least one cited run must resolve to a run whose headSha
+    // is an ancestor-or-self of HEAD — a URL that points at another round's (or
+    // an invented) run does not satisfy the field.
+    if (ghOk && repo) {
+      let bound = false;
+      for (const id of new Set(ids)) {
+        const r = spawnSync("gh", ["api", "repos/" + repo + "/actions/runs/" + id, "--jq", ".head_sha"], { encoding: "utf8" });
+        if (r.status !== 0) continue;
+        const sha = (r.stdout ?? "").trim();
+        if (!/^[0-9a-f]{40}$/.test(sha)) continue;
+        checkedLiveness = true;
+        if (sha === headSha || spawnSync("git", ["merge-base", "--is-ancestor", sha, "HEAD"], { cwd: ROOT }).status === 0) { bound = true; break; }
+      }
+      if (!bound) problems.push(rel + ": no cited run resolves to a commit on this round's history (headSha ancestor-of-HEAD)");
+    }
+  }
+  if (problems.length) fail("handoff-lint: closeout required fields missing/invalid:\n  " + problems.join("\n  "));
+  report("pass", "handoff-lint: " + targets.size + " closeout doc(s) carry 绿色 run URL + Stack" + (checkedLiveness ? " and cite a run on this round's history" : " (liveness leg skipped: gh/repo unavailable)"));
+}
+
 // ADR-0059 D5 (T-4): three permanent invariants run FIRST, including under --quick, so a release
 // verdict can never be produced from a broken workflow file, a dirty tree, or a drifted ignore set.
 // NOTE on (c): the ledger wrote the command as `git ls-files -z --ignored --exclude-standard`,
@@ -1583,6 +1678,7 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
   stepSupersessionIntegrity();
   stepContextWiring();
   stepEvidenceAnchors();
+  stepHandoffCloseoutLint();
   await stepValidateDomains();
   if (!quick) { reportStep("step_2_turbo"); await stepBuildAndTest(); }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-ship-gate-"));

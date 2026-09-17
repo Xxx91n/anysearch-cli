@@ -1,0 +1,123 @@
+# ADR-0059 D2 (T-1 / F-15): the release-grade eval gate.
+#
+# Regular CI (ci.yml, ship-gate.yml) runs observational and never spends a preregistered OF look.
+# The decision-grade peek happens here, exactly once per release, via a pre-tag dispatch. A tag
+# push only asserts the recorded verdict is still fresh — it never spends a new look (no OF
+# double-spend). The updated eval-looks.json ledger is committed back by the pre-tag job.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      runPurpose:
+        description: "pre-tag = spend the OF look and record the verdict; post-tag = assert only"
+        type: choice
+        options: [pre-tag, post-tag]
+        default: pre-tag
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-gate:
+    name: release gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # pre-tag commits the updated eval-looks.json ledger back
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: pnpm/setup@v2 # ADR-0026 D6: reads packageManager (11.24.0) automatically
+        with: { install: false }
+
+      - uses: actions/setup-node@v5
+        with: { node-version: 22, cache: pnpm }
+
+      - name: install (no scripts — better-sqlite3 prebuilt, see pnpm-workspace allowBuilds)
+        run: pnpm install --ignore-scripts
+
+      - name: pre-tag — decision-grade peek (spends one OF look)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}
+        run: node scripts/release-gate.mjs --pre-tag
+
+      - name: post-tag — assert the recorded verdict is unexpired (no look spent)
+        if: ${{ github.event_name == 'push' || inputs.runPurpose == 'post-tag' }}
+        run: node scripts/release-gate.mjs --post-tag
+
+      - name: commit the updated OF look ledger (pre-tag only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}
+        shell: bash
+        run: |
+          if git diff --quiet -- eval-looks.json; then
+            echo "eval-looks.json unchanged"
+            exit 0
+          fi
+          git config user.name "anysearch-release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          git add eval-looks.json
+          git commit -m "chore(release): record OF look ledger peek (ADR-0059 D2)"
+          git push
+
+  # ADR-0067 D4 (R66 T6): publish via npm OIDC trusted publishing — the job holds
+  # id-token:write and npm 11.5.1+ performs the OIDC handshake itself; there is no
+  # NPM_TOKEN anywhere. Runs only on tag push, after release-gate is green.
+  # Maintainer prerequisite (one-time, per package): npmjs.com → package →
+  # Settings → Trusted Publisher → GitHub Actions —
+  #   repository owner: Xxx91n
+  #   repository name : anysearch-cli
+  #   workflow filename: release.yml
+  #   environment     : (none)
+  # See docs/publishing.md for the verbatim setup checklist.
+  publish:
+    name: publish to npm (OIDC trusted publishing)
+    needs: release-gate
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # npm OIDC trusted publishing
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: pnpm/setup@v2
+        with: { install: false }
+
+      - uses: actions/setup-node@v5
+        with: { node-version: 22, cache: pnpm }
+
+      - name: npm CLI >= 11.5.1 (required for trusted publishing)
+        run: npm i -g npm@11.6.1
+
+      - name: install (no scripts — better-sqlite3 prebuilt, see pnpm-workspace allowBuilds)
+        run: pnpm install --ignore-scripts
+
+      - name: build
+        run: pnpm build
+
+      - name: pack the publishable set (embedding first — others peer-dep it)
+        run: |
+          mkdir -p .release/pack
+          for p in packages/embedding apps/cli apps/mcp apps/plugin; do
+            (cd "$p" && pnpm pack --pack-destination "$OLDPWD/.release/pack")
+          done
+          ls -la .release/pack
+
+      - name: npm publish (trusted publishing + sigstore provenance)
+        run: |
+          set -euo pipefail
+          for tgz in \
+            .release/pack/anysearch-cli-embedding-*.tgz \
+            .release/pack/anysearch-cli-cli-*.tgz \
+            .release/pack/anysearch-cli-mcp-*.tgz \
+            .release/pack/anysearch-cli-plugin-*.tgz; do
+            echo "==> npm publish $tgz"
+            npm publish "$tgz" --provenance --access public
+          done
