@@ -4,6 +4,27 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-18 — ADR-0071 r70: 验证层时序语义硬化（assert-checks-green 严格两段式 + spawnSync 抖动处置）
+
+### Added
+
+- `.scratch/grill-round-70/fixture/` — assert-checks-green ESM-loader 夹具常驻化（acg-hooks/acg-cp-stub/acg-register/run-legs 四件，`node:child_process` 定向拦截注入脚本化 gh check-runs 响应；7 腿断言：全绿/stale 完成段/空信号/partial→全到齐/family 永不注册/发现段红/完成段红）。
+
+### Changed
+
+- `scripts/assert-checks-green.mjs` — 严格两段式时序（ADR-0071 D1/D2）：Phase 1 discovery 要求全 5 required family 在 --discovery-sec 内各注册 >=1 check-run，过期 fail-closed exit 2 且错误行点名 missing-families/present-families；Phase 2 completion 沿用进程启动绝对锚（不 re-anchor）；terminal 非允许 conclusion（failure/cancelled/timed_out/startup_failure/action_required）两段内即时 exit 1；未建模 conclusion（如 stale）在完成段按 not-allowed fail-closed；--once 快照与 exit 10 语义不变；release.yml 调用 flag 未漂移。
+
+### Fixed
+
+- **store spawnSync 型测试负载抖动（R70 T1，签名=spawnSync 子进程 CPU 饿死）**：裸 .mjs 测试文件不受 --test-timeout 约束且同步阻塞不可抢占——4 件测试内层 spawnSync 全部加显式 timeout（eval-calibrate --boot 200 judgeRun 180s，其余 60s）+ ETIMEDOUT 描述性抛出；同载实测转绿（66s/94s），断言与 --boot 规模未动。
+
+### Deferred
+
+- ship-gate(windows) check 耗时 p99=740s > assert 绝对界 600s（ADR-0071 D4 尾部侵蚀呈报，C 升格触发器已武装）——最直接缓解=release.yml 调 timeout-min 上调，显式记档 deferred 不静默吸收。
+- R68/R69 方向指示沿用 deferred：真 release 摘 partial 帽 / agy ans-MCP P7 真链 / PR-mode required-checks 治理。
+- deferred 大项池沿用：cursor / F-01a / npm provider / projectIndex / TUI / embedding / cross-OS / plugin / watch。
+
+
 ## 2026-09-18 — ADR-0070 r69: GitHub 门面双语化 + T0 火线修红（README 登录页 IA + 双语 parity 常驻门）
 
 ### Added

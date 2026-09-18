@@ -1113,3 +1113,5 @@ lint 形状腿应按语义关键词定界文档类型（closeout|closure），�
 
 ## Upgrade Trigger Record（升格触发器留档）
 否决富选项（如第三旗 --completion-min）为 YAGNI 时，必须把可观测的再评估触发条件写进 ADR（例：discovery 常态>30s 或 completion 预算真实吃紧事故→升格 Temporal 式双预算）——否决不是删除，是带触发器的挂起。_Avoid_: 无触发器的静默否决（条件成熟时无人记得回来）；触发器未写进 ADR 只活对话里。来源：atomcode R70-Q2+R70 D-002。
+## SpawnSync Starvation Bound（同步子进程饿死界）
+spawnSync 型测试的可用界必须挂在子进程自己身上（spawnSync timeout 选项）而非依赖 --test-timeout：同步阻塞期间 runner 计时器无法 fire，裸 .mjs 测试文件（无 test() 包裹）根本不受其约束——内层 timeout 把饿死从不可杀挂死变成 ETIMEDOUT 签名的有界快败。_Avoid_: 指望 --test-timeout 管同步 spawnSync（计时器被事件循环阻塞饿死）；为消抖放宽断言或删 --boot 规模（签名是时序不是覆盖）。来源：R70 T1 spike+ADR-0071 D5。

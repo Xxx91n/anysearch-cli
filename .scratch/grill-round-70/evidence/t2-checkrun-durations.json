@@ -1,0 +1,1194 @@
+{
+  "generated": "2026-09-18T13:22:49.310Z",
+  "note": "release-run head_shas + pushed main tips; dur=completed_at-started_at seconds",
+  "relShas": [
+    "9a466b94",
+    "2cb2a8ca",
+    "0d86db6f",
+    "48db4cfa",
+    "7eb1f027",
+    "769d1b5d",
+    "48338332",
+    "3213783e",
+    "43f076f9"
+  ],
+  "pushShas": [
+    "3b78b8359dc9c7e040a69cb8c510afde66cdcde7",
+    "72495cb33c6fda17e253851ffd31ec04f14d2fc4",
+    "2f6d990ac5ca45d9cfd99eb803940c562fe3f7e3",
+    "3a9d4578",
+    "01f8d7ff",
+    "6c801678"
+  ],
+  "rows": [
+    {
+      "kind": "release",
+      "sha": "9a466b94",
+      "name": "publish to npm (OIDC trusted publishing)",
+      "dur": 79,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "9a466b94",
+      "name": "release gate",
+      "dur": 14,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "publish to npm (OIDC trusted publishing)",
+      "dur": 0,
+      "concl": "skipped"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "release gate",
+      "dur": 33,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (ubuntu-latest)",
+      "dur": 70,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (windows-latest)",
+      "dur": 190,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "test:online (online-gated: store vector-arm + embedding, network required)",
+      "dur": 38,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "check-build (windows-latest)",
+      "dur": 221,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "check-build (ubuntu-latest)",
+      "dur": 170,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "ship-gate (ubuntu-latest)",
+      "dur": 166,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)",
+      "dur": 31,
+      "concl": "failure"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "ship-gate (windows-latest)",
+      "dur": 464,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "memory-eval (golden, path-filtered ADR-0029 D5)",
+      "dur": 35,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "native smoke (ubuntu-24.04-arm)",
+      "dur": 19,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "native smoke (ubuntu-latest)",
+      "dur": 19,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "native smoke (windows-latest)",
+      "dur": 38,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "2cb2a8ca",
+      "name": "native smoke (macos-latest)",
+      "dur": 25,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "0d86db6f",
+      "name": "publish to npm (OIDC trusted publishing)",
+      "dur": 71,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "0d86db6f",
+      "name": "release gate",
+      "dur": 18,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "release gate",
+      "dur": 17,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "check-build (windows-latest)",
+      "dur": 233,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (ubuntu-latest)",
+      "dur": 71,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "check-build (ubuntu-latest)",
+      "dur": 186,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (windows-latest)",
+      "dur": 259,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "memory-eval (golden, path-filtered ADR-0029 D5)",
+      "dur": 39,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "ship-gate (ubuntu-latest)",
+      "dur": 246,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "test:online (online-gated: store vector-arm + embedding, network required)",
+      "dur": 39,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)",
+      "dur": 31,
+      "concl": "failure"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "ship-gate (windows-latest)",
+      "dur": 427,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "native smoke (windows-latest)",
+      "dur": 45,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "native smoke (ubuntu-latest)",
+      "dur": 17,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "native smoke (ubuntu-24.04-arm)",
+      "dur": 16,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48db4cfa",
+      "name": "native smoke (macos-latest)",
+      "dur": 29,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "release gate",
+      "dur": 17,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "check-build (ubuntu-latest)",
+      "dur": 168,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "ship-gate (ubuntu-latest)",
+      "dur": 221,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "test:online (online-gated: store vector-arm + embedding, network required)",
+      "dur": 36,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "check-build (windows-latest)",
+      "dur": 236,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (windows-latest)",
+      "dur": 205,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)",
+      "dur": 26,
+      "concl": "failure"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "ship-gate (windows-latest)",
+      "dur": 611,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "native smoke (macos-latest)",
+      "dur": 34,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "native smoke (windows-latest)",
+      "dur": 40,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "native smoke (ubuntu-latest)",
+      "dur": 14,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (ubuntu-latest)",
+      "dur": 59,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "memory-eval (golden, path-filtered ADR-0029 D5)",
+      "dur": 47,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "7eb1f027",
+      "name": "native smoke (ubuntu-24.04-arm)",
+      "dur": 13,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "release gate",
+      "dur": 17,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "test:online (online-gated: store vector-arm + embedding, network required)",
+      "dur": 40,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (ubuntu-latest)",
+      "dur": 74,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (windows-latest)",
+      "dur": 388,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "check-build (ubuntu-latest)",
+      "dur": 178,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "memory-eval (golden, path-filtered ADR-0029 D5)",
+      "dur": 37,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "check-build (windows-latest)",
+      "dur": 245,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "ship-gate (ubuntu-latest)",
+      "dur": 231,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)",
+      "dur": 29,
+      "concl": "failure"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "native smoke (macos-latest)",
+      "dur": 35,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "ship-gate (windows-latest)",
+      "dur": 450,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "native smoke (ubuntu-24.04-arm)",
+      "dur": 20,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "native smoke (ubuntu-latest)",
+      "dur": 18,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "769d1b5d",
+      "name": "native smoke (windows-latest)",
+      "dur": 39,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "48338332",
+      "name": "release gate",
+      "dur": 16,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "release gate",
+      "dur": 37,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "ship-gate (windows-latest)",
+      "dur": 492,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "memory-eval (golden, path-filtered ADR-0029 D5)",
+      "dur": 30,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "ship-gate (ubuntu-latest)",
+      "dur": 184,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)",
+      "dur": 29,
+      "concl": "failure"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "test:online (online-gated: store vector-arm + embedding, network required)",
+      "dur": 37,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "check-build (windows-latest)",
+      "dur": 275,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "check-build (ubuntu-latest)",
+      "dur": 151,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (ubuntu-latest)",
+      "dur": 71,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "native smoke (ubuntu-latest)",
+      "dur": 17,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "native smoke (macos-latest)",
+      "dur": 39,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (windows-latest)",
+      "dur": 380,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "native smoke (windows-latest)",
+      "dur": 41,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "3213783e",
+      "name": "native smoke (ubuntu-24.04-arm)",
+      "dur": 18,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "release gate",
+      "dur": 34,
+      "concl": "failure"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "memory-eval (golden, path-filtered ADR-0029 D5)",
+      "dur": 6,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)",
+      "dur": 29,
+      "concl": "failure"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "ship-gate (windows-latest)",
+      "dur": 343,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "ship-gate (ubuntu-latest)",
+      "dur": 203,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "native smoke (ubuntu-24.04-arm)",
+      "dur": 18,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "native smoke (ubuntu-latest)",
+      "dur": 18,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "native smoke (windows-latest)",
+      "dur": 35,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "native smoke (macos-latest)",
+      "dur": 41,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (ubuntu-latest)",
+      "dur": 79,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "test:online (online-gated: store vector-arm + embedding, network required)",
+      "dur": 44,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "check-build (windows-latest)",
+      "dur": 209,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (windows-latest)",
+      "dur": 212,
+      "concl": "success"
+    },
+    {
+      "kind": "release",
+      "sha": "43f076f9",
+      "name": "check-build (ubuntu-latest)",
+      "dur": 193,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3b78b835",
+      "name": "native smoke (ubuntu-24.04-arm)",
+      "dur": 18,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3b78b835",
+      "name": "native smoke (macos-latest)",
+      "dur": 33,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3b78b835",
+      "name": "native smoke (ubuntu-latest)",
+      "dur": 20,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3b78b835",
+      "name": "ship-gate (ubuntu-latest)",
+      "dur": 243,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3b78b835",
+      "name": "macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)",
+      "dur": 30,
+      "concl": "failure"
+    },
+    {
+      "kind": "push",
+      "sha": "3b78b835",
+      "name": "memory-eval (golden, path-filtered ADR-0029 D5)",
+      "dur": 42,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3b78b835",
+      "name": "native smoke (windows-latest)",
+      "dur": 37,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3b78b835",
+      "name": "check-build (ubuntu-latest)",
+      "dur": 202,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3b78b835",
+      "name": "test:online (online-gated: store vector-arm + embedding, network required)",
+      "dur": 31,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3b78b835",
+      "name": "check-build (windows-latest)",
+      "dur": 319,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3b78b835",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (windows-latest)",
+      "dur": 262,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3b78b835",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (ubuntu-latest)",
+      "dur": 69,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "72495cb3",
+      "name": "check-build (windows-latest)",
+      "dur": 257,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "72495cb3",
+      "name": "test:online (online-gated: store vector-arm + embedding, network required)",
+      "dur": 42,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "72495cb3",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (windows-latest)",
+      "dur": 243,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "72495cb3",
+      "name": "check-build (ubuntu-latest)",
+      "dur": 191,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "72495cb3",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (ubuntu-latest)",
+      "dur": 73,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "72495cb3",
+      "name": "memory-eval (golden, path-filtered ADR-0029 D5)",
+      "dur": 7,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "72495cb3",
+      "name": "ship-gate (ubuntu-latest)",
+      "dur": 242,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "72495cb3",
+      "name": "ship-gate (windows-latest)",
+      "dur": 412,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "72495cb3",
+      "name": "native smoke (ubuntu-latest)",
+      "dur": 20,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "72495cb3",
+      "name": "native smoke (ubuntu-24.04-arm)",
+      "dur": 15,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "72495cb3",
+      "name": "native smoke (macos-latest)",
+      "dur": 29,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "72495cb3",
+      "name": "macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)",
+      "dur": 26,
+      "concl": "failure"
+    },
+    {
+      "kind": "push",
+      "sha": "72495cb3",
+      "name": "native smoke (windows-latest)",
+      "dur": 36,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "2f6d990a",
+      "name": "check-build (windows-latest)",
+      "dur": 273,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "2f6d990a",
+      "name": "check-build (ubuntu-latest)",
+      "dur": 203,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "2f6d990a",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (windows-latest)",
+      "dur": 205,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "2f6d990a",
+      "name": "test:online (online-gated: store vector-arm + embedding, network required)",
+      "dur": 37,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "2f6d990a",
+      "name": "ship-gate (windows-latest)",
+      "dur": 457,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "2f6d990a",
+      "name": "macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)",
+      "dur": 38,
+      "concl": "failure"
+    },
+    {
+      "kind": "push",
+      "sha": "2f6d990a",
+      "name": "ship-gate (ubuntu-latest)",
+      "dur": 248,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "2f6d990a",
+      "name": "memory-eval (golden, path-filtered ADR-0029 D5)",
+      "dur": 8,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "2f6d990a",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (ubuntu-latest)",
+      "dur": 73,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "2f6d990a",
+      "name": "native smoke (ubuntu-24.04-arm)",
+      "dur": 19,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "2f6d990a",
+      "name": "native smoke (windows-latest)",
+      "dur": 34,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "2f6d990a",
+      "name": "native smoke (ubuntu-latest)",
+      "dur": 14,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "2f6d990a",
+      "name": "native smoke (macos-latest)",
+      "dur": 35,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3a9d4578",
+      "name": "check-build (windows-latest)",
+      "dur": 246,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3a9d4578",
+      "name": "ship-gate (windows-latest)",
+      "dur": 740,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3a9d4578",
+      "name": "ship-gate (ubuntu-latest)",
+      "dur": 247,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3a9d4578",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (windows-latest)",
+      "dur": 215,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3a9d4578",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (ubuntu-latest)",
+      "dur": 53,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3a9d4578",
+      "name": "memory-eval (golden, path-filtered ADR-0029 D5)",
+      "dur": 6,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3a9d4578",
+      "name": "test:online (online-gated: store vector-arm + embedding, network required)",
+      "dur": 35,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3a9d4578",
+      "name": "macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)",
+      "dur": 26,
+      "concl": "failure"
+    },
+    {
+      "kind": "push",
+      "sha": "3a9d4578",
+      "name": "check-build (ubuntu-latest)",
+      "dur": 134,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3a9d4578",
+      "name": "native smoke (macos-latest)",
+      "dur": 43,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3a9d4578",
+      "name": "native smoke (windows-latest)",
+      "dur": 42,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3a9d4578",
+      "name": "native smoke (ubuntu-latest)",
+      "dur": 20,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "3a9d4578",
+      "name": "native smoke (ubuntu-24.04-arm)",
+      "dur": 13,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "01f8d7ff",
+      "name": "ship-gate (windows-latest)",
+      "dur": 462,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "01f8d7ff",
+      "name": "memory-eval (golden, path-filtered ADR-0029 D5)",
+      "dur": 7,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "01f8d7ff",
+      "name": "ship-gate (ubuntu-latest)",
+      "dur": 175,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "01f8d7ff",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (windows-latest)",
+      "dur": 206,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "01f8d7ff",
+      "name": "native smoke (ubuntu-latest)",
+      "dur": 17,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "01f8d7ff",
+      "name": "native smoke (macos-latest)",
+      "dur": 30,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "01f8d7ff",
+      "name": "check-build (ubuntu-latest)",
+      "dur": 204,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "01f8d7ff",
+      "name": "macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)",
+      "dur": 36,
+      "concl": "failure"
+    },
+    {
+      "kind": "push",
+      "sha": "01f8d7ff",
+      "name": "native smoke (windows-latest)",
+      "dur": 49,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "01f8d7ff",
+      "name": "native smoke (ubuntu-24.04-arm)",
+      "dur": 16,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "01f8d7ff",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (ubuntu-latest)",
+      "dur": 77,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "01f8d7ff",
+      "name": "check-build (windows-latest)",
+      "dur": 238,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "01f8d7ff",
+      "name": "test:online (online-gated: store vector-arm + embedding, network required)",
+      "dur": 36,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "6c801678",
+      "name": "ship-gate (windows-latest)",
+      "dur": 444,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "6c801678",
+      "name": "ship-gate (ubuntu-latest)",
+      "dur": 178,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "6c801678",
+      "name": "memory-eval (golden, path-filtered ADR-0029 D5)",
+      "dur": 38,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "6c801678",
+      "name": "macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)",
+      "dur": 28,
+      "concl": "failure"
+    },
+    {
+      "kind": "push",
+      "sha": "6c801678",
+      "name": "native smoke (ubuntu-24.04-arm)",
+      "dur": 17,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "6c801678",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (ubuntu-latest)",
+      "dur": 65,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "6c801678",
+      "name": "native smoke (ubuntu-latest)",
+      "dur": 16,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "6c801678",
+      "name": "native smoke (windows-latest)",
+      "dur": 37,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "6c801678",
+      "name": "check-build (ubuntu-latest)",
+      "dur": 190,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "6c801678",
+      "name": "native smoke (macos-latest)",
+      "dur": 27,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "6c801678",
+      "name": "install-smoke (ADR-0061 B2: pack -> clean install -> doctor -> domain -> search) (windows-latest)",
+      "dur": 209,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "6c801678",
+      "name": "check-build (windows-latest)",
+      "dur": 251,
+      "concl": "success"
+    },
+    {
+      "kind": "push",
+      "sha": "6c801678",
+      "name": "test:online (online-gated: store vector-arm + embedding, network required)",
+      "dur": 37,
+      "concl": "success"
+    }
+  ]
+}
