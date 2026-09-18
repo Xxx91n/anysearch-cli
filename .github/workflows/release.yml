@@ -104,8 +104,10 @@ jobs:
       # ADR-0069 (R68 T1, layer 2): publish's needs:release-gate now asserts the
       # TAGGED sha carries all-green ci+ship-gate — the bug this closes: v0.0.5
       # shipped from a red tree because publish never re-checked the tag's base.
-      # Red -> fail-fast exit 1; in-progress -> short poll bounded at 10 min;
-      # no matching checks after discovery -> fail-closed exit 2.
+      # ADR-0071 (R70 T0) strict two-phase: Red -> fail-fast exit 1 in either
+      # phase; every required family must register within --discovery-sec, else
+      # fail-closed exit 2 (phase=discovery); remaining completion is bounded
+      # by the absolute --timeout-min, else exit 2 (phase=completion).
       - name: tagged SHA carries green ci + ship-gate (post-tag only)
         if: ${{ github.event_name == 'push' || inputs.runPurpose == 'post-tag' }}
         env:

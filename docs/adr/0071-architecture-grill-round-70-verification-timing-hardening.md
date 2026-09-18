@@ -152,7 +152,7 @@ load jitter — spike reproduced the signature before disposition.
   (`D:\Aworker\anysearch-cli\.scratch\grill-round-70\evidence\t0-real-sha-once.txt`).
 - (ii) jitter: spike signature = spawnSync-child CPU starvation on bare
   .mjs files; disposition (b) inner timeouts landed (land 3b78b835;
-  ci 35349185022 / ship-gate 35349185004 / native 35349184977 all green);
+  ci 35349184977 / ship-gate 35349185004 / native 35349185022 all green);
   transcripts t1-jitter-spike.txt + t1-fix-verify.txt.
 - (iii) duty: install-smoke 26/26 and ship-gate --quick 57x[pass] on the
   committed clean tree (t3 transcripts); release.yml flags untouched.

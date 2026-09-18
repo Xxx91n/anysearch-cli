@@ -15,6 +15,8 @@ const repoRoot = path.resolve(here, "..", "..", "..");
 const labelsCli = path.join(repoRoot, "scripts", "eval-labels.mjs");
 const revisionsCli = path.join(repoRoot, "scripts", "eval-revisions.mjs");
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "ans-calibration-revisions-"));
+// R70 audit F6: an ETIMEDOUT throw skips the tail rmSync — clean on exit instead.
+process.on("exit", () => { try { fs.rmSync(temp, { recursive: true, force: true }); } catch { } });
 const oldLabels = path.join(temp, "calibration-labels.jsonl");
 const oldManifest = path.join(temp, "calibration-manifest.json");
 const revisionRoot = path.join(temp, "revisions");

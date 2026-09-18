@@ -12,6 +12,8 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const script = path.join(repoRoot, "scripts", "eval-calibrate-fixture.mjs");
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "ans-calibration-fixture-"));
+// R70 audit F6: an ETIMEDOUT throw skips the tail rmSync — clean on exit instead.
+process.on("exit", () => { try { fs.rmSync(temp, { recursive: true, force: true }); } catch { } });
 const fixture = path.join(temp, "fixture.json");
 const out = path.join(temp, "report.json");
 const gold = path.join(temp, "gold.json");

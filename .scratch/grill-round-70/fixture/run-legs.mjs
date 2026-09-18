@@ -5,9 +5,10 @@
 // Exit 0 iff every leg's assertions pass; transcript (full output) written to argv[2].
 import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const REPO = "D:/Aworker/anysearch-cli";
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const SCRIPT = REPO + "/scripts/assert-checks-green.mjs";
 const REGISTER = "./.scratch/grill-round-70/fixture/acg-register.mjs";
 
@@ -73,7 +74,7 @@ for (const leg of legs) {
   const env = { ...process.env, ACG_FIXTURE: JSON.stringify(leg.polls) };
   const args = ["--import", REGISTER, SCRIPT, "--sha", "0123456789abcdef", "--repo", "fixture/repo",
     "--discovery-sec", f.discovery, "--interval-sec", f.interval, "--timeout-min", f.timeout];
-  const r = spawnSync("node", args, { env, encoding: "utf8", timeout: 60000, cwd: REPO });
+  const r = spawnSync(process.execPath, args, { env, encoding: "utf8", timeout: 60000, cwd: REPO });
   const text = (r.stdout || "") + (r.stderr || "");
   const lines = text.split("\n");
   const results = [];
