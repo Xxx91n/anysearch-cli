@@ -1,0 +1,545 @@
+[info] step 0/9: permanent invariants (ADR-0059 D5)
+[pass] check-workflows: OK (6 files)
+[pass] clean-tree invariant: git status --porcelain is empty
+[pass] gitignore-drift invariant: no tracked-but-ignored files
+[task-parity] ok: 7 packages implement check/test (exemptions: none)
+[pass] task parity: check/test implemented in all packages
+[info] step 1/9: task parity + static rg assertions (version pin + ADR invariants)
+[pass] all 7 packages pinned at 0.0.5
+[pass] tool registry wires 5 ans_* tools
+[pass] no console.log | stdout.write in apps/mcp/src + packages/kernel/src
+[pass] tool-schemas.ts has 5 additionalProperties:false closers
+[pass] attribution module exports present
+[pass] attribution TypeBox schema parity (4 additionalProperties closers + enums present)
+[pass] FusedEnvelope.attribution declared
+[pass] MCP search/research dual-channel attribution (content + structuredContent)
+[pass] ADR-0045 fusion-registry wiring: k split registered, no implicit default
+[pass] ADR-0045 score_kind discipline: no bare fused score on NormalizedResult
+[pass] ADR-0035 KG-lite layer: relation module + edges schema + store hooks + fifth-arm label + CLI present
+[pass] ADR-0037 consolidation/forgetting layer: schema + consolidate module + store wiring + kernel 3-endpoint init present
+[pass] ADR-0037 Phase-3 CLI: consolidate + forget + durable DB path present
+[pass] CLI --json pure structural output, glyphs confined to kernel renderer
+[pass] attribution renderer dedupes source URLs
+[pass] access-events chain verified (object=consumed, exit 0 + verdict PASSED): {"verdict":"PASSED","dbPath":"C:\\Users\\Administrator\\.anysearch\\anysearch.db","legacyRows":0,"chainedRows":32,"digest":"e3b0c44298fc1c149afbf4c8996fb92427ae
+[pass] ADR-0046/0047 source gates + ADR-0062 dual-gate abstain contracts + criterion anchors + R64 D-005 migration anchors (exact>=2 frozen-only, paths>=1, migration blocks)
+[pass] R62 D-005: offline exclusion governance (whitelist + 0.75 floor + test-online lane)
+[pass] R63 T3: quarantine ratchet green (entries shrink-only vs baseline[10], renewals=0, no unruled expiry, longterm<=1)
+[pass] ADR-0052 observation representation/store/export boundary and eval isolation present
+[pass] ADR-0053 content trust boundary + inject probes present
+[info] step 1b/9: ADR index freshness (docs/adr/index.md, ADR-0059 D6)
+[pass] gen-adr-index: docs/adr/index.md up to date (70 ADRs at HEAD)
+[info] step 1c/9: engine grace-window wiring assertion (ADR-0059 D7 / ADR-0061 G1)
+[pass] engine grace window wired; CONTEXT.md consistent (ADR-0061 G1)
+[info] step 1d/9: ADR supersession integrity (ADR-0060 D1)
+[pass] supersession-integrity: 1 supersession pointer(s) resolve with a back-reference
+[info] step 1e/9: CONTEXT.md term wiring (ADR-0060 D3)
+[pass] CONTEXT.md Retroaererd term wiring: L1 numeric + L2 symbols + L3 negative over-claim green (ADR-0060 D3)
+[info] step 1f/9: ADR evidence-anchor resolvability (ADR-0060 D5)
+[pass] evidence-anchor: 5 resolvable 40-hex reference(s), 3 external permalink(s), 0 [squashed]-whitelisted
+[info] step 1g/9: closeout handoff required-field lint (ADR-0069)
+[pass] handoff-lint: 1 closeout doc(s) carry 绿色 run URL + Stack and cite a run on this round's history
+[info] step 1h/9: bilingual README parity + limitations pointer (R69 D-007)
+[pass] readme-parity: heading 1:1 + 4 code block(s) + 8 link(s) byte-identical; limitations pointer live
+[info] step 2/9: validate domains/*.toml compaction guards
+(node:13432) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[pass] default.toml OK
+[pass] docs.toml OK
+[pass] research.toml OK
+[pass] validate-domains green (3 file(s))
+[pass] domains/*.toml compaction guards green
+[info] step 4/9: pnpm pack into temp dir
+package: @anysearch-cli/kernel@0.0.5
+Tarball Contents
+LICENSE
+package.json
+src/attribution-schema.ts
+src/attribution.ts
+src/calibrate.ts
+src/composition.ts
+src/engine.ts
+src/index.ts
+src/ir-schema.ts
+src/llm-init.ts
+src/memory-pipeline.ts
+src/pi-runtime.ts
+src/ports.ts
+src/query-rewrite.ts
+src/runtime.ts
+src/sufficiency-gate.ts
+src/t0-projection.ts
+src/tool-json-schemas.ts
+src/tool-schemas.ts
+test/attribution.test.ts
+test/calibrate.test.ts
+test/composition-calibration.test.ts
+test/content-trust.test.ts
+test/domain-filter.test.ts
+test/engine.test.ts
+test/eval-looks-stub.test.ts
+test/fusion-web.test.ts
+test/llm-init.test.ts
+test/memory-pipeline.test.ts
+test/pi-runtime-span.test.ts
+test/pi-runtime.test.ts
+test/qdf-store-import.test.ts
+test/query-rewrite.test.ts
+test/runtime.test.ts
+test/t0-projection.test.ts
+test/tool-schemas.test.ts
+tsconfig.json
+Tarball Details
+C:\Users\ADMINI~1\AppData\Local\Temp\anysearch-ship-gate-ggrpQn\pack\anysearch-cli-kernel-0.0.5.tgz
+[pass] packed @anysearch-cli/kernel@0.0.5
+$ pnpm run build
+$ tsup
+[34mCLI[39m Building entry: src/index.ts
+[34mCLI[39m Using tsconfig: tsconfig.json
+[34mCLI[39m tsup v8.5.1
+[34mCLI[39m Using tsup config: D:\Aworker\anysearch-cli\packages\embedding\tsup.config.ts
+[34mCLI[39m Target: es2022
+[34mCLI[39m Cleaning output folder
+[34mESM[39m Build start
+[32mESM[39m [1mdist\index.js [22m[32m2.23 KB[39m
+[32mESM[39m ⚡️ Build success in 16ms
+[34mDTS[39m Build start
+[32mDTS[39m ⚡️ Build success in 1970ms
+[32mDTS[39m [1mdist\index.d.ts [22m[32m868.00 B[39m
+package: @anysearch-cli/embedding@0.0.5
+Tarball Contents
+dist/index.d.ts
+dist/index.js
+LICENSE
+package.json
+Tarball Details
+C:\Users\ADMINI~1\AppData\Local\Temp\anysearch-ship-gate-ggrpQn\pack\anysearch-cli-embedding-0.0.5.tgz
+[pass] packed @anysearch-cli/embedding@0.0.5
+package: @anysearch-cli/store@0.0.5
+Tarball Contents
+calibration-labels.jsonl
+calibration-manifest.json
+eval-baseline.json
+eval-quarantine.baseline.json
+eval-quarantine.json
+fixtures/obs-feed/MANIFEST.json
+fixtures/obs-feed/pass-stable.json
+fixtures/obs-feed/t1-fail.json
+fixtures/obs-feed/t2-fail.json
+fixtures/obs-feed/t3-fail.json
+fixtures/switch-registration.json
+LICENSE
+package.json
+src/access-chain.ts
+src/budget-ledger.ts
+src/consolidate.ts
+src/domain-loader.ts
+src/domain-schema.ts
+src/embedding-arm.ts
+src/entity.ts
+src/eval/abstain.ts
+src/eval/attribution-calibration.ts
+src/eval/attribution-gold.ts
+src/eval/attribution-instance-report.ts
+src/eval/bgnbd.ts
+src/eval/calibration-cases.ts
+src/eval/calibration-labels-schema.ts
+src/eval/calibration-labels.ts
+src/eval/cli.ts
+src/eval/day-buckets.ts
+src/eval/docs-golden.ts
+src/eval/explicit-skip.ts
+src/eval/gate.ts
+src/eval/golden-cases.ts
+src/eval/holdout.ts
+src/eval/inject.ts
+src/eval/integrity-contract.ts
+src/eval/looks-ledger.ts
+src/eval/obs-fixtures.ts
+src/eval/override-core.ts
+src/eval/override-ledger.ts
+src/eval/override-verifier.ts
+src/eval/quarantine-ledger.ts
+src/eval/relevance-review.json
+src/eval/revision-core.ts
+src/eval/runner.ts
+src/eval/skip-ledger.ts
+src/eval/switch-machine.ts
+src/eval/switch-run.ts
+src/eval/tau-scan-cli.ts
+src/eval/tau-scan.ts
+src/fts5.ts
+src/index.ts
+src/observation.ts
+src/relation.ts
+src/schema-content.ts
+src/schema.sql
+src/secret.ts
+src/session-id.ts
+src/session-store.ts
+src/time-decay.ts
+src/url-policy.ts
+test/access-chain-bootstrap-spawn.test.ts
+test/access-chain-fixtures.ts
+test/access-chain-golden.test.ts
+test/access-chain-nodb.test.mjs
+test/access-chain-schema.test.ts
+test/access-chain-telemetry.test.ts
+test/access-chain-verify.test.ts
+test/access-count.test.ts
+test/adjudication.test.ts
+test/adr-index.test.mjs
+test/attribution-calibration.test.ts
+test/attribution-gold.test.ts
+test/attribution-instance-report.test.ts
+test/bgnbd-spawn.test.ts
+test/budget-ledger.test.ts
+test/calibration-labels.test.ts
+test/consolidate-forget.test.ts
+test/day-buckets.test.ts
+test/domain-loader.test.ts
+test/domain-schema.test.ts
+test/embedding-arm.test.ts
+test/entity-link.test.ts
+test/entity-merge.test.ts
+test/eval-abstain.test.ts
+test/eval-calibrate.test.mjs
+test/eval-docs-golden.test.ts
+test/eval-gate.test.ts
+test/eval-holdout-gate.test.ts
+test/eval-judge.test.mjs
+test/eval-labels.integration.test.mjs
+test/eval-looks-live-parity.test.ts
+test/eval-mutation.test.ts
+test/eval-override.test.ts
+test/eval-quarantine-ratchet.test.mjs
+test/eval-quarantine-sla.test.ts
+test/eval-quarantine.test.ts
+test/eval-relation-gain.test.ts
+test/eval-release-layering.test.ts
+test/eval-runner.test.ts
+test/eval-ship-gate-integrity.test.mjs
+test/eval-ship-gate-override.test.ts
+test/eval-skip.test.ts
+test/eval-switch-state-fixes.test.ts
+test/eval-switch-state.test.ts
+test/fts5-tokenize.test.ts
+test/fusion-registry-memory.test.ts
+test/gain-ledger.test.mjs
+test/obs-fixtures.test.ts
+test/observation.test.ts
+test/online/eval-looks-live.online.ts
+test/online/eval-semantic.online.ts
+test/quarantine-review.test.ts
+test/relation-edges.test.ts
+test/revision-cli.integration.test.mjs
+test/revision-core.test.ts
+test/revision-fixture.integration.test.mjs
+test/secret-guard.test.ts
+test/session-id-propagation.test.ts
+test/session-store.test.ts
+test/stale-probe.test.ts
+test/stubs/access-chain-bootstrap-child.ts
+test/stubs/bgnbd-exit2.mjs
+test/stubs/bgnbd-garbage.mjs
+test/stubs/bgnbd-nonconverge.mjs
+test/stubs/bgnbd-notok.mjs
+test/stubs/bgnbd-ok.mjs
+test/stubs/bgnbd-slow.mjs
+test/t0-preferences.test.ts
+test/t6-hostile-cuts.test.mjs
+test/tau-scan.test.ts
+test/time-decay.test.ts
+test/types/eval-integrity-contract.d.ts
+test/url-policy.test.ts
+tsconfig.json
+Tarball Details
+C:\Users\ADMINI~1\AppData\Local\Temp\anysearch-ship-gate-ggrpQn\pack\anysearch-cli-store-0.0.5.tgz
+[pass] packed @anysearch-cli/store@0.0.5
+package: @anysearch-cli/retriever@0.0.5
+Tarball Contents
+LICENSE
+package.json
+src/attribution.ts
+src/content-trust.ts
+src/contract.ts
+src/fusion-registry.ts
+src/index.ts
+src/providers/anysearch.ts
+src/providers/exa.ts
+src/providers/index.ts
+src/providers/tavily.ts
+src/rrf.ts
+test/anysearch.test.ts
+test/content-trust-deny.test.ts
+test/domain-filter.test.ts
+test/exa.test.ts
+test/fusion-registry.test.ts
+test/rrf.test.ts
+test/tavily.test.ts
+tsconfig.json
+Tarball Details
+C:\Users\ADMINI~1\AppData\Local\Temp\anysearch-ship-gate-ggrpQn\pack\anysearch-cli-retriever-0.0.5.tgz
+[pass] packed @anysearch-cli/retriever@0.0.5
+$ pnpm run build
+$ node scripts/sync-domains.mjs && tsup
+sync-domains: 3 toml(s) -> D:\Aworker\anysearch-cli\apps\cli\domains
+[34mCLI[39m Building entry: src/index.ts
+[34mCLI[39m Using tsconfig: tsconfig.json
+[34mCLI[39m tsup v8.5.1
+[34mCLI[39m Using tsup config: D:\Aworker\anysearch-cli\apps\cli\tsup.config.ts
+[34mCLI[39m Target: es2022
+[34mCJS[39m Build start
+[34mDTS[39m Build start
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/db.ts:18:84:
+[37m      18 │ ..."undefined" ? __dirname : dirname(fileURLToPath([32mimport.meta[37m.url));
+         ╵                                                    [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    ../../packages/store/src/eval/bgnbd.ts:95:73:
+[37m      95 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "..", ...
+         ╵                              [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    ../../packages/store/src/eval/obs-fixtures.ts:19:66:
+[37m      19 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+         ╵                              [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    ../../packages/store/src/eval/switch-run.ts:30:36:
+[37m      30 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+         ╵                              [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+[32mCJS[39m [1mdist\index.js [22m[32m10.66 MB[39m
+[32mCJS[39m ⚡️ Build success in 1198ms
+[32mDTS[39m ⚡️ Build success in 11500ms
+[32mDTS[39m [1mdist\index.d.ts [22m[32m20.00 B[39m
+package: @anysearch-cli/cli@0.0.5
+Tarball Contents
+dist/index.d.ts
+dist/index.js
+domains/default.toml
+domains/docs.toml
+domains/research.toml
+LICENSE
+package.json
+Tarball Details
+C:\Users\ADMINI~1\AppData\Local\Temp\anysearch-ship-gate-ggrpQn\pack\anysearch-cli-cli-0.0.5.tgz
+[pass] packed @anysearch-cli/cli@0.0.5
+$ pnpm run build
+$ node scripts/sync-domains.mjs && tsup
+sync-domains: 3 toml(s) -> D:\Aworker\anysearch-cli\apps\mcp\domains
+[34mCLI[39m Building entry: src/index.ts
+[34mCLI[39m Using tsconfig: tsconfig.json
+[34mCLI[39m tsup v8.5.1
+[34mCLI[39m Using tsup config: D:\Aworker\anysearch-cli\apps\mcp\tsup.config.ts
+[34mCLI[39m Target: es2022
+[34mCLI[39m Cleaning output folder
+[34mCJS[39m Build start
+[34mDTS[39m Build start
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/server.ts:43:86:
+[37m      43 │ ..."undefined" ? __dirname : dirname(fileURLToPath([32mimport.meta[37m.url));
+         ╵                                                    [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    ../../packages/store/src/eval/bgnbd.ts:95:73:
+[37m      95 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "..", ...
+         ╵                              [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    ../../packages/store/src/eval/obs-fixtures.ts:19:66:
+[37m      19 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+         ╵                              [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    ../../packages/store/src/eval/switch-run.ts:30:36:
+[37m      30 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+         ╵                              [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+[32mCJS[39m [1mdist\index.cjs [22m[32m10.61 MB[39m
+[32mCJS[39m ⚡️ Build success in 1166ms
+[32mDTS[39m ⚡️ Build success in 12448ms
+[32mDTS[39m [1mdist\index.d.cts [22m[32m20.00 B[39m
+package: @anysearch-cli/mcp@0.0.5
+Tarball Contents
+dist/index.cjs
+dist/index.d.cts
+domains/default.toml
+domains/docs.toml
+domains/research.toml
+LICENSE
+package.json
+Tarball Details
+C:\Users\ADMINI~1\AppData\Local\Temp\anysearch-ship-gate-ggrpQn\pack\anysearch-cli-mcp-0.0.5.tgz
+[pass] packed @anysearch-cli/mcp@0.0.5
+$ pnpm run build
+$ pnpm run gen:configs && pnpm run build:server && pnpm run build:hooks
+$ node scripts/gen-claude-configs.mjs
+wrote configs/claude/hooks.json
+wrote configs/codex/hooks.json
+wrote hooks/hooks.json
+wrote .claude-plugin/plugin.json
+wrote .mcp.json
+$ tsup
+[34mCLI[39m Building entry: src/index.ts, src/server/index.ts
+[34mCLI[39m Using tsconfig: tsconfig.json
+[34mCLI[39m tsup v8.5.1
+[34mCLI[39m Using tsup config: D:\Aworker\anysearch-cli\apps\plugin\tsup.config.ts
+[34mCLI[39m Target: es2022
+[34mCLI[39m Cleaning output folder
+[34mCJS[39m Build start
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    ../../packages/store/src/eval/bgnbd.ts:95:73:
+[37m      95 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "..", ...
+         ╵                              [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    ../../packages/store/src/eval/obs-fixtures.ts:19:66:
+[37m      19 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+         ╵                              [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+[43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    ../../packages/store/src/eval/switch-run.ts:30:36:
+[37m      30 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+         ╵                              [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+[32mCJS[39m [1mdist\index.cjs        [22m[32m151.07 KB[39m
+[32mCJS[39m [1mdist\server\index.cjs [22m[32m332.12 KB[39m
+[32mCJS[39m ⚡️ Build success in 202ms
+$ esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts src/hooks/adapters/codebuddy.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --banner:js="#!/usr/bin/env node" --external:better-sqlite3 --external:@anysearch-cli/embedding
+
+  dist\hooks\adapters\antigravity.cjs  13.6kb
+  dist\hooks\adapters\cursor.cjs       11.7kb
+  dist\hooks\adapters\codebuddy.cjs    11.4kb
+  dist\hooks\adapters\claude.cjs       10.3kb
+  dist\hooks\adapters\codex.cjs        10.2kb
+  ...and 4 more output files...
+
+Done in 38ms
+package: @anysearch-cli/plugin@0.0.5
+Tarball Contents
+.claude-plugin/plugin.json
+.mcp.json
+AGENTS.md
+configs/antigravity/hooks.json
+configs/claude/hooks.json
+configs/codebuddy/hooks.json
+configs/codex/hooks.json
+configs/cursor/hooks.json
+dist/hooks/adapters/antigravity.cjs
+dist/hooks/adapters/claude.cjs
+dist/hooks/adapters/codebuddy.cjs
+dist/hooks/adapters/codex.cjs
+dist/hooks/adapters/cursor.cjs
+dist/hooks/core.cjs
+dist/hooks/distill.cjs
+dist/hooks/preheat.cjs
+dist/hooks/session-start.cjs
+dist/index.cjs
+dist/server/index.cjs
+hooks/hooks.json
+LICENSE
+package.json
+skills/anysearch/SKILL.md
+Tarball Details
+C:\Users\ADMINI~1\AppData\Local\Temp\anysearch-ship-gate-ggrpQn\pack\anysearch-cli-plugin-0.0.5.tgz
+[pass] packed @anysearch-cli/plugin@0.0.5
+[info] step 6/9: T0 smoke probe (ADR-0024)
+[pass] T0 smoke probe: pref --help alive, <user_preferences> wrapper documented
+[pass] memory-pipeline.ts Stage-1 <user_preferences> injection present
+[info] step 7/9: memory eval harness gate (ADR-0027)
+[info] memory-eval integrity contract: verdict=pass runPurpose=observational
+[pass] memory-eval attribution zone present (zero-state observation period)
+[pass] memory-eval relation zone present (noEdge=10 hop=39)
+[pass] memory-eval semantic serve + forget zones present (sem queries=79 forget archives=1)
+[pass] memory-eval observational zone present (ADR-0039; values never gated, D7 streak ledger watched)
+[info] switch-state: phase S0
+[pass] eval fingerprint matches baseline (4a529f6fbe2096c8)
+[pass] gain gate GREEN (look 4/5, spent alpha 0.012212)
+[pass] memory-eval: 126/126 cases PASS, fingerprint=4a529f6fbe2096c8, passRate=1
+[info] step 7b/9: emergency ship override verifier (ADR-0047)
+{
+  "schema": "anysearch/ship-override-ledger@1",
+  "revision": 0,
+  "entries": 0,
+  "outstandingLate": 0
+}
+[info] override ledger status valid; no override action requested
+[info] step 8/9: spawn plugin MCP over stdio, assert initialize result
+(node:14548) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+anysearch MCP server: stdio transport ready
+[pass] MCP initialize: server=anysearch v0.0.5
+[info] step 8b/9: packaged CLI/MCP observation smoke (ADR-0052)
+[pass] packaged CLI/MCP observation trace round-trip green
+[info] step 9/9: spawn MCP with scrubbed env, assert fail-open boot
+[pass] fail-open boot ok: env scrubbed -> initialize green + stderr notice (server=anysearch v0.0.5)
+[info] cross-OS native loading covered by CI native-smoke.yml 4-job matrix (ADR-0025 D1)
+[pass] ship gate green — ready to tag the next release
