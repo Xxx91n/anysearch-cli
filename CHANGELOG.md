@@ -4,6 +4,41 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-18 — ADR-0070 r69: GitHub 门面双语化 + T0 火线修红（README 登录页 IA + 双语 parity 常驻门）
+
+### Added
+
+- `README.zh-CN.md` — 中文伴生件：顶部翻译件声明（规范以 README.md 为准）+ 互链 switcher；heading 结构 1:1 + 代码块/链接 byte-identical。
+- `docs/limitations.md` — Known limitations 全录（20 条，自 README 逐字迁入）。
+- `docs/adr/index.md` — ADR 索引独立生成件（`scripts/gen-adr-index.mjs` 自 README 内嵌段重指向；行内相对链接；index.md 自排除）。
+- ship-gate step 1h — 双语 parity standing fail-closed：heading 骨架 1:1 + 代码块逐块 byte-identical + 链接多重集（减互链 switcher）一致 + docs/limitations.md 指针可达；漂移持续 = 持续红。
+- README 徽章 ×3（npm version / ci workflow / license——全动态可验证端点）+ 顶部 switcher。
+
+### Fixed
+
+- **main tip ship-gate 红（e265667）**：`isCloseout` 裸 `^round-\d+` 前缀误伤 `round-69-direction.md`——收窄为要求 `closeout|closure` 关键词（双向验证：direction 脱靶 + round-67/68-closeout 仍命中）；方向文档补 Stack 头 +「绿色 run URL」段引六条实证 run（主张-引证教义）。
+- **`LICENSE` 实为变体 Apache-2.0**：专利反制/再分发条款被改写 → GitHub 判 Other 属实；换 canonical Apache-2.0 全文（根 + 4 发布目录副本）对齐 package.json 声明意图。
+- **verify-observation step-8b 抖动**：响应后异步 trace 落库可遭硬杀丢写——stdin EOF 优雅退出（3s 兜底 kill）+ 落库重试窗（20×250ms）。
+- L-1：report L43 相对路径 → 绝对路径。
+
+### Changed
+
+- `README.md` 重构为登录页 IA（312 → 159 行）：迁出 limitations 全文与 ADR 索引段，机器路径清零，Known limitations 摘 top-3 摘要表 + 指针，ADR 目录段改 Design rationale 三句 + docs/adr/index.md 指针。
+- `scripts/gen-adr-index.mjs` 靶从 README 改 `docs/adr/index.md`（generate-and-diff 纪律不变）；ship-gate step 1b 同步改靶；`readme-adr-index.test.mjs` → `adr-index.test.mjs`。
+- `isCloseout` 定界 = 语义关键词非文件名形状（见 Fixed）。
+- `release.yml` `gh issue create` 双写回退补注释（无 label 兜底语义明文化）。
+- 仓库元数据：`gh repo edit` description 改产品向一句 EN + topics ×9（settings 面变更，命令 + 前后 JSON 入证据）。
+
+### Deferred
+
+- F-S4：`assert-checks-green.mjs` 严格两段式 discovery/completion 截止另开票；现 timeout-min 兜底沿用。
+- R68 方向指示三线沿用 deferred：真 release 摘 partial 帽 / agy ans-MCP P7 真链 / PR-mode required-checks 治理。
+- deferred 大项池沿用：cursor / F-01a / npm provider / projectIndex / TUI / embedding / cross-OS / plugin / watch。
+
+### 过程违规自报
+
+- R69 grill Q2 曾被跳过未问（D-002 空号保留作跳号证据）——以 Q6 补问，流程违规如实入账不追认。
+
 ## 2026-09-17 — ADR-0069 r68: release gate 双层化 + 收口必填栏 lint（写仓自动化守门）
 
 ### Added
