@@ -1,0 +1,5 @@
+cmd: node scripts/assert-checks-green.mjs --sha 2f6d990ac5ca45d9cfd99eb803940c562fe3f7e3 --repo Xxx91n/anysearch-cli --once
+exit: 0
+--- output ---
+[assert-checks poll 1] 2f6d990a phase=completion matched=8 ok=8 pending=0 bad=0
+[assert-checks] GREEN: all 8 ci/ship-gate checks terminal+allowed on 2f6d990ac5ca45d9cfd99eb803940c562fe3f7e3

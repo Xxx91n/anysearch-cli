@@ -7,29 +7,20 @@
 // harness):
 //   - check-runs fetched on the FIXED sha — never heads/main (racing window)
 //   - same-name checks dedupe to the latest started_at run
-//   - strict two-phase deadlines (R70 T0 / F-S4, ADR-0071):
-//       Phase 1 discovery — EVERY one of the five check families (check-build,
-//         install-smoke, test:online, ship-gate, memory-eval) must register >=1
-//         check-run within --discovery-sec (default 120). Strictness rests on
-//         the repo's stub-registration invariant: every required family is
-//         guaranteed a check-run by workflow design (conditional-step stubs —
-//         never native `paths:` filtering, which creates no check-run at all).
-//         On expiry with families still missing -> fail-closed exit 2, error
-//         line tagged phase=discovery naming missing AND present families.
-//       Phase 2 completion — once all five families are present, poll latest
-//         runs to terminal. --timeout-min remains an ABSOLUTE deadline anchored
-//         at process start (never re-anchored at the phase transition); on
-//         expiry -> fail-closed exit 2, error line tagged phase=completion
-//         naming the pending checks.
+//   - all five check families must be represented (check-build, install-smoke,
+//     test:online, ship-gate, memory-eval); macos-spillover-probe (EXPERIMENT,
+//     non-blocking) and native-smoke are deliberately outside the gate
 //   - terminal non-allowed conclusions (failure/cancelled/timed_out/...) ->
-//     fail-fast exit 1 inside EITHER phase.
+//     fail-fast exit 1; in-progress -> short poll bounded by --timeout-min;
+//     no matching checks after the discovery window -> fail-closed exit 2.
 //   - GREEN requires EVERY matched check completed with an allowed conclusion
 //     (okCount === latest.size): a completed check carrying an unmodelled
 //     conclusion (e.g. "stale") is neither bad nor pending, and must NOT be
-//     counted as green — it converges to the fail-closed completion-timeout
-//     leg instead (R68 audit F-S1).
-//   - macos-spillover-probe (EXPERIMENT, non-blocking) and native-smoke are
-//     deliberately outside the gate.
+//     counted as green — it converges to the fail-closed timeout leg instead
+//     (R68 audit F-S1).
+//   - The discovery window only applies while ZERO checks match; a partial
+//     match (some families present, others still absent) is bounded by
+//     --timeout-min alone (R68 audit F-S4, documented behaviour).
 //
 // Usage: node scripts/assert-checks-green.mjs --sha <sha> [--once]
 //        [--timeout-min 10] [--discovery-sec 120] [--interval-sec 20]
@@ -77,8 +68,6 @@ function latestPerName(runs) {
   return m;
 }
 
-// --timeout-min is anchored ONCE at process start and covers the whole run
-// (discovery + completion); it is never re-anchored at the phase transition.
 const deadline = Date.now() + timeoutMin * 60_000;
 const discoveryDeadline = Date.now() + discoverySec * 1000;
 let poll = 0;
@@ -91,17 +80,14 @@ for (; ;) {
   const missingFamilies = FAMILIES.filter((f) => !presentFamilies.has(f));
   const bad = [...latest.values()].filter((r) => r.status === "completed" && TERMINAL_BAD.has(r.conclusion ?? ""));
   const pending = [...latest.values()].filter((r) => r.status !== "completed");
-  const notAllowed = [...latest.values()].filter((r) => r.status === "completed" && !TERMINAL_OK.has(r.conclusion ?? "") && !TERMINAL_BAD.has(r.conclusion ?? ""));
   const okCount = [...latest.values()].filter((r) => r.status === "completed" && TERMINAL_OK.has(r.conclusion ?? "")).length;
-  const phase = missingFamilies.length ? "discovery" : "completion";
 
   console.log(
-    "[assert-checks poll " + poll + "] " + sha.slice(0, 8) + " phase=" + phase +
-    " matched=" + names.length + " ok=" + okCount + " pending=" + pending.length + " bad=" + bad.length +
+    "[assert-checks poll " + poll + "] " + sha.slice(0, 8) + " matched=" + names.length +
+    " ok=" + okCount + " pending=" + pending.length + " bad=" + bad.length +
     (missingFamilies.length ? " missing-families=" + missingFamilies.join(",") : ""),
   );
 
-  // RED short-circuits immediately inside EITHER phase.
   if (bad.length) {
     console.error("[assert-checks] RED: " + bad.map((r) => r.name + "=" + r.conclusion).join("; "));
     process.exit(1);
@@ -118,19 +104,15 @@ for (; ;) {
     console.log("[assert-checks] --once snapshot: " + names.map((n) => n + ":" + (latest.get(n).status) + "/" + (latest.get(n).conclusion ?? "-")).join(" | "));
     process.exit(10);
   }
-
-  const presentList = FAMILIES.filter((f) => presentFamilies.has(f)).join(",") || "none";
-  if (phase === "discovery") {
-    if (Date.now() >= discoveryDeadline) {
-      console.error("[assert-checks] FAIL-CLOSED (phase=discovery): discovery window " + discoverySec + "s expired — missing-families=" + missingFamilies.join(",") + " present-families=" + presentList);
-      process.exit(2);
-    }
-    if (Date.now() >= deadline) {
-      console.error("[assert-checks] FAIL-CLOSED (phase=discovery): absolute deadline " + timeoutMin + "min reached — missing-families=" + missingFamilies.join(",") + " present-families=" + presentList);
+  if (names.length === 0) {
+    if (Date.now() < discoveryDeadline) {
+      console.log("[assert-checks] discovery window — no ci/ship-gate checks yet on " + sha.slice(0, 8));
+    } else {
+      console.error("[assert-checks] FAIL-CLOSED: no ci/ship-gate check-runs on " + sha + " after " + discoverySec + "s discovery");
       process.exit(2);
     }
   } else if (Date.now() >= deadline) {
-    console.error("[assert-checks] FAIL-CLOSED (phase=completion): timeout " + timeoutMin + "min — pending=" + (pending.map((r) => r.name).join(";") || "none") + " not-allowed=" + (notAllowed.map((r) => r.name + "=" + r.conclusion).join(";") || "none"));
+    console.error("[assert-checks] FAIL-CLOSED: timeout " + timeoutMin + "min — pending=" + pending.map((r) => r.name).join(";") + " missing=" + missingFamilies.join(","));
     process.exit(2);
   }
   await new Promise((r) => setTimeout(r, intervalSec * 1000));
