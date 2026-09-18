@@ -54,6 +54,22 @@ node apps/cli/dist/index.js search "..." --json
 The CLI resolves as `ans` when the package is installed globally or linked; in
 repo form, `node apps/cli/dist/index.js` is the same entry point.
 
+## Post-install: vector arm
+
+`@anysearch-cli/embedding` is peer-optional — the CLI runs FTS-only without it.
+After a global install (npm or pnpm), verify activation and embed existing rows:
+
+```bash
+ans doctor                    # "vector arm (present ...)" confirms activation
+ans memory backfill-vectors   # embeds stored rows; first run downloads the model (~130 MB)
+```
+
+The model downloads from huggingface.co on first use and is cached at
+`~/.anysearch/models` (override: `ANYSEARCH_MODEL_CACHE`). On an offline host,
+copy a populated cache dir in from a connected machine. Removing the package
+returns the CLI to FTS-only mode — no crash, `ans doctor` reports the arm as
+SKIP.
+
 ## Domains & abstain (ADR-0062)
 
 A *domain* is a TOML file under `domains/` (or `ANS_DOMAINS_DIR`) naming its

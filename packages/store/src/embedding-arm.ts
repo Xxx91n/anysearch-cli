@@ -12,6 +12,11 @@
 // cosineSimilarity is pure math — inlined here (dot product over L2-normalized
 // vectors) so scoring never statically depends on the optional package.
 
+import { createRequire } from "node:module";
+import { readdirSync } from "node:fs";
+import { dirname, join, resolve as resolvePath } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
 type EmbeddingModule = typeof import("@anysearch-cli/embedding");
 
 let modPromise: Promise<EmbeddingModule | null> | undefined;
@@ -20,12 +25,65 @@ let forced: EmbeddingModule | null | undefined; // test seam (__setEmbeddingModu
 function loadEmbedding(): Promise<EmbeddingModule | null> {
   if (forced !== undefined) return Promise.resolve(forced);
   if (!modPromise) {
-    modPromise = import("@anysearch-cli/embedding").then(
-      (m) => m,
-      () => null, // package absent — arm absent, fail-open
-    );
+    modPromise = (async () => {
+      try {
+        return await import("@anysearch-cli/embedding");
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException | undefined)?.code;
+        // R71 T1 (ADR-0072): only a NOT-FOUND falls through to sibling-root
+        // probing — a present-but-broken package stays absent (fail-open),
+        // never masked by a stray copy elsewhere on disk.
+        if (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND") {
+          return await importEmbeddingFallback();
+        }
+        return null;
+      }
+    })();
   }
   return modPromise;
+}
+
+// R71 T1 (ADR-0072): sibling-root fallback for isolated global layouts.
+// pnpm add -g installs each top-level package in its own
+// <prefix>/global/v11/<hash>/node_modules tree — the embedding package exists
+// on disk but is unreachable by bare-specifier resolution from the cli's tree
+// (npm's flat shared node_modules resolves it; npm arm green in the spike
+// transcript). When the plain import misses, anchor at the invoked entry
+// (argv[1] — the bin shim target preserves the install-layout path) and at
+// this module, then walk ancestors: each level tries a normal require-resolve
+// (covers ancestor node_modules, incl. npm flat layouts) followed by a scan of
+// child */node_modules roots (covers pnpm's sibling hash dirs).
+function embeddingAnchorFiles(): string[] {
+  const files: string[] = [];
+  if (process.argv[1]) files.push(resolvePath(process.argv[1]));
+  try { files.push(fileURLToPath(import.meta.url)); } catch { /* CJS bundle: import.meta empty */ }
+  try { if (typeof __filename !== "undefined") files.push(__filename); } catch { /* ESM: no __filename */ }
+  return files;
+}
+
+function resolveEmbeddingFrom(dir: string): string | undefined {
+  try { return createRequire(join(dir, "__anchor__.cjs")).resolve("@anysearch-cli/embedding"); }
+  catch { return undefined; }
+}
+
+function childDirNames(dir: string): string[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch { return []; }
+}
+
+async function importEmbeddingFallback(anchors: string[] = embeddingAnchorFiles()): Promise<EmbeddingModule | null> {
+  for (const anchor of anchors) {
+    for (let dir = dirname(anchor), prev = ""; dir !== prev && dir.length > 0; prev = dir, dir = dirname(dir)) {
+      const direct = resolveEmbeddingFrom(dir);
+      if (direct) return (await import(pathToFileURL(direct).href)) as EmbeddingModule;
+      for (const child of childDirNames(dir)) {
+        const sib = resolveEmbeddingFrom(join(dir, child, "node_modules"));
+        if (sib) return (await import(pathToFileURL(sib).href)) as EmbeddingModule;
+      }
+    }
+  }
+  return null;
 }
 
 // Same contract as @anysearch-cli/embedding's embedText: null when the arm cannot
@@ -76,4 +134,10 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 export function __setEmbeddingModuleForTest(m: EmbeddingModule | null | "auto"): void {
   forced = m === "auto" ? undefined : m;
   modPromise = undefined;
+}
+
+// ponytail: test-only seam — resolve the sibling-root fallback against explicit
+// anchor files (synthetic global layouts) instead of argv[1]/self.
+export function __importEmbeddingFallbackForTest(anchors: string[]): Promise<EmbeddingModule | null> {
+  return importEmbeddingFallback(anchors);
 }

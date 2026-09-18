@@ -379,6 +379,9 @@ importers:
       '@huggingface/transformers':
         specifier: ^3.7.0
         version: 3.8.1
+      onnxruntime-common:
+        specifier: 1.21.0
+        version: 1.21.0
 
   packages/kernel:
     dependencies:

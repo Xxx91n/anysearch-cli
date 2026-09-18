@@ -4,10 +4,10 @@
 // absent:true with zero counters, writes stay fail-open (pendingVectors
 // accounting), and nothing throws. cosineSimilarity stays inlined pure math.
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { embedText, embeddingModelId, armTelemetry, cosineSimilarity, __setEmbeddingModuleForTest } from "../src/embedding-arm";
+import { embedText, embeddingModelId, armTelemetry, cosineSimilarity, __setEmbeddingModuleForTest, __importEmbeddingFallbackForTest } from "../src/embedding-arm";
 import { SqliteSessionStore } from "../src/session-store";
 
 let passed = 0, failed = 0;
@@ -55,7 +55,36 @@ async function main() {
   assert((await armTelemetry()).absent === false && (await armTelemetry()).embeds === 1, "present arm telemetry passthrough");
   assert((await embeddingModelId()) === "test-model", "model id passthrough");
 
-  // 5. cosineSimilarity — inlined pure math, no package dependency.
+  // 5. R71 T1 (ADR-0072): sibling-root fallback — pnpm-style isolated global
+  // node_modules roots. <tmp>/global/v11/<hashA>/node_modules/@anysearch-cli/cli
+  // holds the invoked entry; <hashB>/node_modules/@anysearch-cli/embedding is the
+  // sibling package that bare-specifier resolution cannot reach.
+  const g = join(dir, "global", "v11");
+  const cliDist = join(g, "aaaaaaaa", "node_modules", "@anysearch-cli", "cli", "dist");
+  const embDir = join(g, "bbbbbbbb", "node_modules", "@anysearch-cli", "embedding");
+  mkdirSync(cliDist, { recursive: true });
+  mkdirSync(join(embDir, "dist"), { recursive: true });
+  writeFileSync(join(cliDist, "index.js"), "// cli entry (argv[1] anchor)");
+  writeFileSync(join(embDir, "package.json"), JSON.stringify({
+    name: "@anysearch-cli/embedding", version: "0.0.5", type: "module",
+    exports: { ".": "./dist/index.js" },
+  }));
+  writeFileSync(join(embDir, "dist", "index.js"),
+    'export const EMBEDDING_MODEL_ID = "stub-e5";\n' +
+    'export function embedText() { return Promise.resolve(new Float32Array(3).fill(1)); }\n' +
+    'export function embeddingTelemetry() { return { loads: 1, embeds: 1, failures: 0, circuitOpen: false }; }\n' +
+    'export function cosineSimilarity() { return 1; }\n');
+  const fb = await __importEmbeddingFallbackForTest([join(cliDist, "index.js")]);
+  assert(fb !== null && (fb.EMBEDDING_MODEL_ID as string) === "stub-e5",
+    "sibling-root fallback resolves the stub embedding package");
+  // Negative: an anchor with no embedding in its ancestor chain must not return
+  // the stub (a real embedding elsewhere on this box is a legal resolve — the
+  // contract is 'any reachable copy', never 'the stub specifically').
+  const fb2 = await __importEmbeddingFallbackForTest([join(dir, "lonely", "index.js")]);
+  assert(fb2 === null || (fb2.EMBEDDING_MODEL_ID as string) !== "stub-e5",
+    "empty anchor does not resolve the synthetic stub");
+
+  // 6. cosineSimilarity — inlined pure math, no package dependency.
   const a = new Float32Array([1, 0, 0]);
   assert(cosineSimilarity(a, a) === 1, "cosine identical = 1");
   assert(cosineSimilarity(a, new Float32Array([0, 1, 0])) === 0, "cosine orthogonal = 0");

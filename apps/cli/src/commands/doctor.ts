@@ -63,7 +63,10 @@ export async function runDoctor(): Promise<number> {
     // R62 D-002: vector arm is optional — absent is a legal FTS-only state,
     // surfaced as SKIP (degraded-but-supported), like a missing provider key.
     const vt = await store.vectorTelemetry();
-    if (vt.absent) skip("  vector arm", "@anysearch-cli/embedding absent — FTS-only (optional peer)");
+    // R71 T1 (ADR-0072): SKIP text is executable — copy/paste enable path
+    // (spike evidence: npm+pnpm global installs resolve via sibling-root
+    // fallback; first embed downloads the model, then rows backfill).
+    if (vt.absent) skip("  vector arm", "@anysearch-cli/embedding absent — FTS-only; enable: npm i -g @anysearch-cli/embedding && ans memory backfill-vectors");
     else check("  vector arm", true, "present embeds=" + vt.embeds + " failures=" + vt.failures + (vt.circuitOpen ? " circuitOpen" : ""));
     store.close();
   } catch (e: any) {

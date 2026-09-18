@@ -5,14 +5,49 @@
 
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
+import Module from "node:module";
 
-// Transformers.js loads via dynamic import inside getExtractor(): (a) tsup CJS bundles crash
+// Transformers.js loads lazily inside getExtractor(): (a) tsup CJS bundles crash
 // when native/ESM deps are statically bundled; (b) fail-open: unresolved package = arm absent.
 type TransformersModule = typeof import("@huggingface/transformers");
 let transformersPromise: Promise<TransformersModule> | null = null;
 let envConfigured = false;
+
+// R71 T1 (ADR-0072): transformers@3.x ships transformers.node.cjs with
+// require("onnxruntime-common") as an UNDECLARED external — npm's flat hoisting
+// masks it; pnpm's isolated per-package scopes expose it (spike: pnpm-global
+// arm failed "Cannot find module 'onnxruntime-common'"). Two moves repair it
+// without upstream surgery: (a) we declare onnxruntime-common@1.21.0 ourselves
+// (optionalDependencies — matches the onnxruntime-node@1.21.0 exact pin in
+// transformers 3.8.x); (b) a scoped _resolveFilename patch — only that
+// specifier, only from @huggingface/transformers parents — aliases the miss to
+// our copy. The require() entry (transformers.node.cjs) is what the patch can
+// reach; the .mjs path uses the ESM resolver which cannot be scoped without
+// loader hooks. Patch is process-global but idempotent + single-callsite.
+let resolverPatched = false;
+function patchOnnxruntimeCommonResolve(): void {
+  if (resolverPatched) return;
+  resolverPatched = true;
+  const selfRequire = createRequire(import.meta.url);
+  const M = Module as unknown as { _resolveFilename: Function };
+  const orig = M._resolveFilename as (request: string, parent: { filename?: string } | undefined, ...rest: unknown[]) => string;
+  M._resolveFilename = function (this: unknown, request: string, parent: { filename?: string } | undefined, ...rest: unknown[]): string {
+    // Windows parents use backslashes — normalize before the scope check.
+    if (request === "onnxruntime-common" && typeof parent?.filename === "string" && parent.filename.replace(/\\/g, "/").includes("@huggingface/transformers")) {
+      try { return orig.call(this, request, parent, ...rest); }
+      catch { return selfRequire.resolve("onnxruntime-common"); }
+    }
+    return orig.call(this, request, parent, ...rest);
+  };
+}
+
 function loadTransformers(): Promise<TransformersModule> {
-  if (!transformersPromise) transformersPromise = import("@huggingface/transformers");
+  if (!transformersPromise) {
+    patchOnnxruntimeCommonResolve();
+    const req = createRequire(import.meta.url);
+    transformersPromise = Promise.resolve().then(() => req("@huggingface/transformers") as TransformersModule);
+  }
   return transformersPromise;
 }
 function configureEnv(mod: TransformersModule): void {

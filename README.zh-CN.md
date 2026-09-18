@@ -53,6 +53,21 @@ node apps/cli/dist/index.js search "..." --json
 CLI 在全局安装或 link 后解析为 `ans`；仓库形态下
 `node apps/cli/dist/index.js` 是同一入口。
 
+## 安装后：向量臂
+
+`@anysearch-cli/embedding` 是 peer-optional —— 未安装时 CLI 以 FTS-only 运行。
+全局安装后（npm 或 pnpm），验证激活并为存量记录补向量：
+
+```bash
+ans doctor                    # "vector arm (present ...)" confirms activation
+ans memory backfill-vectors   # embeds stored rows; first run downloads the model (~130 MB)
+```
+
+模型首次使用时从 huggingface.co 下载，缓存于
+`~/.anysearch/models`（可用 `ANYSEARCH_MODEL_CACHE` 覆盖）。离线主机可从联网
+机器拷贝已填充的缓存目录。卸载该包后 CLI 退回 FTS-only 模式 —— 不崩溃，
+`ans doctor` 将该臂报为 SKIP。
+
 ## 域名与弃权（ADR-0062）
 
 *域名（domain）*是 `domains/`（或 `ANS_DOMAINS_DIR`）下的一个 TOML 文件，

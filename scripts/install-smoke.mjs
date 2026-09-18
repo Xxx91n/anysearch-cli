@@ -26,6 +26,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -131,6 +132,36 @@ try {
   check("import('@anysearch-cli/embedding') resolves from installed cli", res.code === 0 && res.out.includes("PEER_OK"), res.out.slice(-300));
   const d3 = ans("doctor");
   check("doctor shows vector arm present after peer install", d3.code === 0 && !/embedding absent/.test(d3.out), d3.out.slice(-400));
+
+  // 3c. R71 T1 (ADR-0072): pnpm-layout leg — isolated sibling node_modules
+  // roots. pnpm add -g installs each top-level package in its own
+  // <prefix>/global/v11/<hash>/node_modules tree, so the bundled
+  // import("@anysearch-cli/embedding") cannot reach the sibling package — the
+  // sibling-root fallback (embedding-arm.ts) anchors at argv[1] and scans
+  // v11/*/node_modules. Simulate the layout: hashA holds junctions to every
+  // installed package except embedding; hashB holds embedding alone;
+  // --preserve-symlinks keeps resolution logical so the plain import misses
+  // and the fallback is what finds it (spike: pnpm arm was red pre-fallback).
+  const v11 = join(dir, "pnpm-global", "v11");
+  const hashA = join(v11, "aaaaaaaa", "node_modules");
+  const hashB = join(v11, "bbbbbbbb", "node_modules");
+  mkdirSync(join(hashA, "@anysearch-cli"), { recursive: true });
+  mkdirSync(join(hashB, "@anysearch-cli"), { recursive: true });
+  for (const e of readdirSync(nm, { withFileTypes: true })) {
+    if (!e.isDirectory()) continue;
+    if (e.name === "@anysearch-cli") {
+      for (const sub of readdirSync(join(nm, "@anysearch-cli"))) {
+        if (sub === "embedding") continue;
+        symlinkSync(join(nm, "@anysearch-cli", sub), join(hashA, "@anysearch-cli", sub), "junction");
+      }
+    } else if (e.name !== ".bin") {
+      symlinkSync(join(nm, e.name), join(hashA, e.name), "junction");
+    }
+  }
+  symlinkSync(join(nm, "@anysearch-cli", "embedding"), join(hashB, "@anysearch-cli", "embedding"), "junction");
+  const pd = sh(`node --preserve-symlinks --preserve-symlinks-main ${JSON.stringify(join(hashA, "@anysearch-cli", "cli", "dist", "index.js"))} doctor`, { cwd: prefix });
+  check("pnpm-layout: doctor runs under isolated roots", pd.code === 0, pd.out.slice(-500));
+  check("pnpm-layout: sibling-root fallback reports vector arm present", /vector arm \(present/.test(pd.out), pd.out.slice(-500));
 
   // 4. Search leg — online hard assertion or offline abstain contract.
   const online = Boolean(process.env.EXA_API_KEY || process.env.TAVILY_API_KEY);

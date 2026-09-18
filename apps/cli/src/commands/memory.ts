@@ -49,7 +49,19 @@ export async function runMemory(args: string[]): Promise<number> {
       return 0;
     }
     process.stdout.write("backfilled " + r.embedded + "/" + r.scanned + " vector(s)" + (r.failed > 0 ? " (" + r.failed + " failed)" : "") + "\n");
-    return r.failed > 0 ? 1 : 0;
+    // R71 T1 (ADR-0072, spike finding d): a failed row means the embedding arm
+    // could not produce a vector — first use downloads the model, so the cause
+    // is almost always reachability. Point at the actionable knobs instead of
+    // leaving a bare count (npm arm transcript: raw ENOTDIR gave no guidance).
+    if (r.failed > 0) {
+      process.stderr.write(
+        "hint: embedding failed — the model downloads on first use; check huggingface.co reachability " +
+        "and any proxy/firewall, or pre-seed the cache dir (ANYSEARCH_MODEL_CACHE, default ~/.anysearch/models) " +
+        "from a connected host; run ans doctor to confirm the vector arm is present.\n"
+      );
+      return 1;
+    }
+    return 0;
   }
 
 

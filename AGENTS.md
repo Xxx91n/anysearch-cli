@@ -38,9 +38,7 @@ better-sqlite3@13 ships prebuilds for win32/darwin/linux (x64 + arm64 + musl). R
 
 ## Package manager pinning (ADR-0026)
 
-Pinned pnpm version: **11.24.0**, declared twice and kept in sync:
-- `packageManager: "pnpm@11.24.0"` (top-level, read by corepack)
-- `devEngines.packageManager: { name: "pnpm", version: "11.24.0" }` (object form, enforced by pnpm itself)
+Pinned pnpm version: **11.24.0**, declared once: `packageManager: "pnpm@11.24.0"` (top-level). Corepack uses it to select the binary; pnpm itself validates the running version against it under `pmOnFail: error` (empirically: `npx pnpm@11.7.0` in-repo fails with ERR_PNPM_BAD_PM_VERSION). `devEngines` was removed in R71 (ADR-0072): it is redundant for pinning and makes npm emit EBADDEVENGINES warnings on every in-repo command; published tarballs never carried it.
 
 `pnpm-workspace.yaml` sets `pmOnFail: error`: any pnpm whose version does not match fails immediately with `ERR_PNPM_BAD_PM_VERSION` instead of auto-downloading and rewriting the lockfile. Local developers may override once via `pnpm_config_pm_on_fail=download` (precedence CLI > env > workspace yaml).
 
