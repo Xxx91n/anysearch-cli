@@ -1,0 +1,24 @@
+t1 fix verification — inner spawnSync timeout disposition
+
+BASELINE eval-labels.integration.test.mjs exit=0 25964ms
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 25855.2272
+
+---
+BASELINE revision-cli.integration.test.mjs exit=0 35771ms
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 35705.8571
+
+---
+=== LOAD re-test (8 busy workers) ===
+LOAD eval-labels.integration.test.mjs exit=0 65757ms sig=(none)
+  tail: ℹ fail 0
+LOAD revision-cli.integration.test.mjs exit=0 93781ms sig=(none)
+  tail: ℹ fail 0
+=== done ===
+BASELINE revision-fixture.integration.test.mjs exit=0 3102ms
+ℹ todo 0 | ℹ duration_ms 3036.6293 | 
+BASELINE access-chain-nodb.test.mjs exit=0 472ms
+ℹ todo 0 | ℹ duration_ms 403.3569 | 

@@ -1,9 +1,6 @@
 // ADR-0040 D5/D7 item 4: no-database run -> verifier exit 2 ("no input"); ship-gate maps it to
 // an explicit skip + WARN ledger with 3-streak escalation. Verifier behavior is asserted by
 // process spawn; gate mapping is asserted as a wiring contract over scripts/ship-gate.mjs.
-// R70 T1 (jitter spike): spawnSync carries an explicit timeout — a
-// CPU-starved child fails fast with an ETIMEDOUT signature instead of an
-// unbounded synchronous hang (--test-timeout cannot preempt spawnSync).
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,8 +19,7 @@ const VERIFIER = join(ROOT, "scripts", "verify-access-events.mjs");
 
 const noDb = join(mkdtempSync(join(tmpdir(), "ans-chain-nodb-")), "missing.db");
 try {
-  const r = spawnSync(process.execPath, [VERIFIER, noDb], { cwd: ROOT, encoding: "utf8", timeout: 60_000 });
-  if (r.error && r.error.code === "ETIMEDOUT") throw new Error("spawnSync timeout (60s): " + VERIFIER);
+  const r = spawnSync(process.execPath, [VERIFIER, noDb], { cwd: ROOT, encoding: "utf8" });
   assert(r.status === 2, "no-db -> exit 2 (got " + r.status + ")");
   assert(String(r.stdout ?? "").includes("NO_DATABASE"), "no-db verdict JSON carries NO_DATABASE");
 
@@ -34,8 +30,7 @@ try {
   assert(gate.includes("consecutiveWarn >= 3"), "3-streak escalation wired");
 
   // Also: default-path resolution (no argv) hits NO_DATABASE via ANS_DB_PATH override.
-  const r2 = spawnSync(process.execPath, [VERIFIER], { cwd: ROOT, encoding: "utf8", timeout: 60_000, env: { ...process.env, ANS_DB_PATH: noDb } });
-  if (r2.error && r2.error.code === "ETIMEDOUT") throw new Error("spawnSync timeout (60s): " + VERIFIER);
+  const r2 = spawnSync(process.execPath, [VERIFIER], { cwd: ROOT, encoding: "utf8", env: { ...process.env, ANS_DB_PATH: noDb } });
   assert(r2.status === 2, "ANS_DB_PATH honored for db resolution");
 } finally { try { rmSync(join(noDb, ".."), { recursive: true, force: true }); } catch {} }
 

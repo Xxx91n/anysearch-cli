@@ -1,0 +1,44 @@
+t1 jitter spike — spawnSync-type .mjs tests under CPU load
+start: 2026-09-18T12:53:25.758Z
+cpus: 8
+
+=== PHASE A baseline (no load) ===
+A eval-labels.integration.test.mjs exit=0 pass=1 fail=0 26016ms
+A revision-cli.integration.test.mjs exit=0 pass=1 fail=0 36157ms
+A revision-fixture.integration.test.mjs exit=0 pass=1 fail=0 3354ms
+A access-chain-nodb.test.mjs exit=0 pass=1 fail=0 525ms
+=== PHASE B load (8 busy workers), 5 rounds ===
+B1 eval-labels.integration.test.mjs exit=null pass=? fail=? 59976ms SIG:exitnull
+  --- tail ---
+
+  ---
+B1 revision-cli.integration.test.mjs exit=null pass=? fail=? 60034ms SIG:exitnull
+  --- tail ---
+
+  ---
+B1 revision-fixture.integration.test.mjs exit=0 pass=1 fail=0 12539ms
+B1 access-chain-nodb.test.mjs exit=0 pass=1 fail=0 1984ms
+B2 eval-labels.integration.test.mjs exit=null pass=? fail=? 60033ms SIG:exitnull
+  --- tail ---
+
+  ---
+B2 revision-cli.integration.test.mjs exit=null pass=? fail=? 60054ms SIG:exitnull
+  --- tail ---
+
+  ---
+B2 revision-fixture.integration.test.mjs exit=0 pass=1 fail=0 16451ms
+B2 access-chain-nodb.test.mjs exit=0 pass=1 fail=0 1537ms
+B3 eval-labels.integration.test.mjs exit=null pass=? fail=? 60057ms SIG:exitnull
+  --- tail ---
+
+  ---
+B3 revision-cli.integration.test.mjs exit=null pass=? fail=? 60030ms SIG:exitnull
+  --- tail ---
+
+  ---
+B3 revision-fixture.integration.test.mjs exit=0 pass=1 fail=0 14370ms
+B3 access-chain-nodb.test.mjs exit=0 pass=1 fail=0 1821ms
+B4 eval-labels.integration.test.mjs exit=null pass=? fail=? 60057ms SIG:exitnull
+  --- tail ---
+
+  ---

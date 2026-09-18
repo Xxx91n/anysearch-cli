@@ -1,7 +1,4 @@
 // ADR-0049 D11: deterministic recorded-pairs fixture judge + unknown-schema fail + gold diff.
-// R70 T1 (jitter spike): spawnSync carries an explicit timeout — a
-// CPU-starved child fails fast with an ETIMEDOUT signature instead of an
-// unbounded synchronous hang (--test-timeout cannot preempt spawnSync).
 import assert from "node:assert";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -24,9 +21,7 @@ fs.writeFileSync(fixture, JSON.stringify({
 }), "utf8");
 
 function run(args) {
-  const r = spawnSync(process.execPath, [script, ...args], { encoding: "utf8", timeout: 60_000 });
-  if (r.error && r.error.code === "ETIMEDOUT") throw new Error("spawnSync timeout (60s): " + script + " " + args.join(" "));
-  return r;
+  return spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
 }
 
 assert.equal(run(["--fixture", fixture, "--out", out]).status, 0, "fixture judge passes");

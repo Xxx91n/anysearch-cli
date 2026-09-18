@@ -1,10 +1,6 @@
 // ADR-0048 D6: synthetic human/judge integration test. It drives the real
 // CLI against a temp label/manifest pair, then runs eval-calibrate's
 // deterministic synthetic judge path. No OF looks or local DB are touched.
-// R70 T1 (jitter spike): every spawnSync carries an explicit timeout — a
-// CPU-starved child now fails fast with an ETIMEDOUT signature instead of
-// hanging the event loop (spawnSync is synchronous; --test-timeout cannot
-// preempt it, and this bare .mjs file is not bound by it anyway).
 import assert from "node:assert";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -41,7 +37,7 @@ function writeInitial(overrides = {}) {
 }
 
 function runCli(args, env = {}) {
-  const r = spawnSync(process.execPath, [cli, ...args], {
+  return spawnSync(process.execPath, [cli, ...args], {
     env: {
       ...process.env,
       ANS_CALIBRATION_LABELS_PATH: labelsPath,
@@ -49,10 +45,7 @@ function runCli(args, env = {}) {
       ...env,
     },
     encoding: "utf8",
-    timeout: 60_000,
   });
-  if (r.error && r.error.code === "ETIMEDOUT") throw new Error("spawnSync timeout (60s): eval-labels.mjs " + args.join(" "));
-  return r;
 }
 
 const ids = [
@@ -107,8 +100,7 @@ const judgeRun = spawnSync(process.execPath, [
   "--judge", "1,0,1,0,1,0,1,0,1,0",
   "--boot", "200",
   "--out", reportPath,
-], { encoding: "utf8", timeout: 180_000 });
-if (judgeRun.error && judgeRun.error.code === "ETIMEDOUT") throw new Error("spawnSync timeout (180s): eval-calibrate.mjs --boot 200");
+], { encoding: "utf8" });
 assert.equal(judgeRun.status, 0, "synthetic perfect agreement passes the deterministic judge path");
 assert.ok(fs.existsSync(reportPath), "calibration report is written");
 

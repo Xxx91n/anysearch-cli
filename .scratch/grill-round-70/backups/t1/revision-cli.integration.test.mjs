@@ -1,8 +1,4 @@
 // ADR-0049 D5/D8/D9 drills: migrate -> open/commit/promote -> rollback -> prune -> crash recovery.
-// R70 T1 (jitter spike): every spawnSync carries an explicit timeout — a
-// CPU-starved child now fails fast with an ETIMEDOUT signature instead of
-// hanging the event loop (spawnSync is synchronous; --test-timeout cannot
-// preempt it, and this bare .mjs file is not bound by it anyway).
 import assert from "node:assert";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -20,13 +16,10 @@ const oldManifest = path.join(temp, "calibration-manifest.json");
 const revisionRoot = path.join(temp, "revisions");
 
 function run(file, args, env = {}) {
-  const r = spawnSync(process.execPath, [file, ...args], {
+  return spawnSync(process.execPath, [file, ...args], {
     env: { ...process.env, ANS_CALIBRATION_REVISION_ROOT: revisionRoot, ANS_CALIBRATION_LABELS_PATH: oldLabels, ANS_CALIBRATION_MANIFEST_PATH: oldManifest, ...env },
     encoding: "utf8",
-    timeout: 60_000,
   });
-  if (r.error && r.error.code === "ETIMEDOUT") throw new Error("spawnSync timeout (60s): " + file + " " + args.join(" "));
-  return r;
 }
 
 function old(args) { return run(labelsCli, args); }
