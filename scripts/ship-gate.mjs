@@ -953,6 +953,50 @@ function stepHandoffCloseoutLint() {
   report("pass", "handoff-lint: " + targets.size + " closeout doc(s) carry 绿色 run URL + Stack" + (checkedLiveness ? " and cite a run on this round's history" : " (liveness leg skipped: gh/repo unavailable)"));
 }
 
+// R69 D-007 (T4): standing bilingual parity gate — README.md (canonical EN) and
+// README.zh-CN.md (derived translation) must not drift. An EN-only edit that
+// forgets the companion is a *persistent* red, not a per-diff warning: both
+// files are read from disk every run, so drift stays red until fixed. Legs:
+//   (i) heading skeleton 1:1 (level sequence, code-fence aware — translated
+//       heading TEXT is fine, structure is the contract);
+//   (ii) fenced code blocks byte-identical, pairwise in order;
+//   (iii) markdown links byte-identical as multisets, minus the reciprocal
+//         switcher pair (README.md <-> README.zh-CN.md);
+//   (iv) docs/limitations.md exists AND README.md links to it (D-004 moved the
+//        full record off the landing page — the pointer must not rot).
+function stepReadmeParity() {
+  report("info", "step 1h/9: bilingual README parity + limitations pointer (R69 D-007)");
+  const enPath = path.join(ROOT, "README.md");
+  const zhPath = path.join(ROOT, "README.zh-CN.md");
+  if (!fs.existsSync(zhPath)) fail("readme-parity: README.zh-CN.md is missing (D-003 companion doc required)");
+  const en = fs.readFileSync(enPath, "utf8");
+  const zh = fs.readFileSync(zhPath, "utf8");
+  const scan = (s) => {
+    const heads = [], code = [], links = [];
+    let inCode = false, cur = null;
+    for (const l of s.split("\n")) {
+      if (/^```/.test(l)) { if (inCode) { code.push(cur.join("\n")); cur = null; } else { cur = []; } inCode = !inCode; continue; }
+      if (inCode) { cur.push(l); continue; }
+      const h = l.match(/^(#{1,6})\s/); if (h) heads.push(h[1].length);
+      for (const m of l.matchAll(/\]\(([^)\s]+)\)/g)) links.push(m[1]);
+    }
+    return { heads, code, links };
+  };
+  const E = scan(en), Z = scan(zh);
+  const problems = [];
+  if (E.heads.join(",") !== Z.heads.join(",")) problems.push("heading skeleton drift (EN [" + E.heads.join(",") + "] vs ZH [" + Z.heads.join(",") + "])");
+  if (E.code.length !== Z.code.length) problems.push("code block count drift (EN " + E.code.length + " vs ZH " + Z.code.length + ")");
+  else for (let i = 0; i < E.code.length; i++) if (E.code[i] !== Z.code[i]) { problems.push("code block #" + (i + 1) + " not byte-identical"); break; }
+  const dropSwitcher = (ls) => ls.filter((x) => x !== "README.md" && x !== "README.zh-CN.md").sort();
+  const el = dropSwitcher(E.links), zl = dropSwitcher(Z.links);
+  if (JSON.stringify(el) !== JSON.stringify(zl)) problems.push("link set drift (sans reciprocal README switcher)");
+  const lim = path.join(ROOT, "docs", "limitations.md");
+  if (!fs.existsSync(lim)) problems.push("docs/limitations.md missing (D-004 full record)");
+  else if (!/\(docs\/limitations\.md\)/.test(en)) problems.push("README.md lost the docs/limitations.md pointer");
+  if (problems.length) fail("readme-parity: " + problems.join("; "));
+  report("pass", "readme-parity: heading 1:1 + " + E.code.length + " code block(s) + " + el.length + " link(s) byte-identical; limitations pointer live");
+}
+
 // ADR-0059 D5 (T-4): three permanent invariants run FIRST, including under --quick, so a release
 // verdict can never be produced from a broken workflow file, a dirty tree, or a drifted ignore set.
 // NOTE on (c): the ledger wrote the command as `git ls-files -z --ignored --exclude-standard`,
@@ -1689,6 +1733,7 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
   stepContextWiring();
   stepEvidenceAnchors();
   stepHandoffCloseoutLint();
+  stepReadmeParity();
   await stepValidateDomains();
   if (!quick) { reportStep("step_2_turbo"); await stepBuildAndTest(); }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-ship-gate-"));
