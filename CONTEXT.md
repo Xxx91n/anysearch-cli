@@ -1093,3 +1093,23 @@ lint 形状腿应按语义关键词定界文档类型（closeout|closure），�
 
 ## Derived-Artifact Retarget（派生件重指向）
 生成型索引/清单迁移的正确操作=重指向新目标文件并保留 generate-and-diff 纪律（gen-adr-index 从 README 改指 docs/adr/index），非废弃检查也非双写。_Avoid_: 迁走内嵌段忘改 ship-gate 靶（step 1b 自红）；迁移即废弃 freshness 检查（ADR-0059 D6 纪律丢失）。来源：R69 D-004/D-007。
+
+## Grill Round 70 — Terms (ADR-0071)
+
+## Strict Discovery Predicate（严格发现谓词）
+发布前置 check 闸门的发现段谓词=全部 required family 在 discovery-sec 内各注册 >=1 个 check-run，非「任一出现即转段」：部分到齐仍属发现未完成，missing family 是发现失败非完成超时。_Avoid_: 零匹配才走 discovery 窗（partial match 烧穿全程=F-S4 成因）；把 missing 与 pending 压进同一时钟同一报错行。来源：atomcode R70-Q2+R70 D-002。
+
+## Nested Fast-Fail Window（嵌套快败子窗）
+两段式轮询的正确预算结构=发现窗作为嵌套在绝对总 deadline 内的快败子窗（lewagon 契约实证：discovery-timeout 是唯一时间输入，completion 靠外层 job 总钟兜底），非两段各自独立的累加预算。_Avoid_: re-anchor completion 钟到发现完成点（B=移动锚反模式+唯一偏离 lewagon 契约）；为尾部场景预加第三旗 --completion-min（YAGNI，升格条件见 Upgrade Trigger Record）。来源：atomcode R70-Q2+R70 D-002。
+
+## Absolute Deadline Anchor（绝对 deadline 锚）
+嵌套等待语义的外层界=从进程启动起算的绝对 deadline（pvk.ca/NILUS 纪律：外层绝对 deadline+内层嵌套阶段预算）；「事件发生时重置锚点」是反模式——它让中间流逝的时间逃出核算并静默放宽对外承诺（10min 变 12.2min）。_Avoid_: timeout 在事件点重锚；以「文档写 in-progress bounded」为由改 flag 语义（行为契约先于措辞）。来源：atomcode R70-Q2+R70 D-002。
+
+## Stub-Registration Invariant（壳注册不变量）
+严格发现谓词成立的架构前提（仓库自选不变量）：每个 required check family 必须有恒注册的壳 job/workflow——步级条件跳过可、原生 paths: 过滤禁（被跳过的 workflow 根本不建 check-run，required check 永 pending=monorepo 痛点 community #44490；标准解法=N+1 stub workflow，本仓 memory-eval 步级过滤即此模式）。_Avoid_: 对 required family 用原生 paths: 过滤（严格 discovery 立即 false-fail）；把「注册」当 GitHub 自然行为而非须守护的不变量。来源：atomcode R70-Q2+R70 D-002。
+
+## Missing-vs-Pending Split（缺失/待定分列诊断）
+轮询失败的诊断输出必须按 phase 分列：发现失败点名 missing families+present families；完成超时点名 pending checks——两类故障时标与根因不同（注册秒级 vs 跑完分钟级），混排一行即丢失诊断。_Avoid_: 单行 pending=... missing=... 混排（F-S4 原缺陷）；为「统一 exit code」牺牲可诊断性（exit 2 可同码、消息必须分相）。来源：R70 D-002+atomcode R70-Q2。
+
+## Upgrade Trigger Record（升格触发器留档）
+否决富选项（如第三旗 --completion-min）为 YAGNI 时，必须把可观测的再评估触发条件写进 ADR（例：discovery 常态>30s 或 completion 预算真实吃紧事故→升格 Temporal 式双预算）——否决不是删除，是带触发器的挂起。_Avoid_: 无触发器的静默否决（条件成熟时无人记得回来）；触发器未写进 ADR 只活对话里。来源：atomcode R70-Q2+R70 D-002。
