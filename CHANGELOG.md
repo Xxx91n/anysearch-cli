@@ -4,6 +4,33 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 0.0.6 — 2026-09-19 — ADR-0072 r71: 上架首航——路径治理门禁 + embedding 双臂可达 + 首个双层门真发布
+
+### Added
+
+- `scripts/ship-gate.mjs` step 1i/9 — machine-local path discipline lint（fail-closed，config `scripts/ship-gate-pathlint.config.json`）：Stack/locator 行裸绝对路径合法；库内绝对 target 强制 repo-relative（marker 不豁免）；库外绝对路径须带 `<!-- machine-local: <reason> @ <YYYY-MM-DD> -->` 治理声明；声明紧贴 fenced block 覆盖整段；文档目录显式注册（.scratch 轮根/handoffs/reports/evidence/backups）。历史机械扫 317 处库内引用转相对 + 93 声明标记，先红（330 violations）后绿（224 docs clean）。
+- `packages/store/src/embedding-arm.ts` sibling-root fallback —— pnpm-global 把每个顶层包装进 `<prefix>/global/v11/<hash>/node_modules` 孤立树，optional peer 裸 specifier 不可达；fallback 以 argv[1]（bin shim 保住布局路径）+模块自址为锚，上溯祖先并扫 `*/node_modules/@anysearch-cli/embedding` 姊妹根。单测合成布局 + install-smoke leg 3c（junction+--preserve-symlinks 模拟）双证。
+- `scripts/install-smoke.mjs` leg 3c —— pnpm 孤立根布局模拟腿，断言 fallback 使 doctor 报 vector arm present。
+- README/README.zh-CN `## Post-install` 双语段 —— 激活验证 + backfill 命令、模型缓存位、离线预置法、FTS-only 降级说明。
+- `ans memory backfill-vectors` 失败 hint —— failed>0 时输出可达性/缓存/doctor 可行动指引（替代裸计数）。
+- R68-R70 随版件：release gate 双层化（ADR-0069，pre-tag 烧 look+ledger commit / post-tag 纯断言+publish）、收口必填栏 lint、README 双语化+parity 常驻门 1h、docs/limitations.md+ADR index 生成器、assert-checks-green 严格两段式、spawnSync 测试抖动处置、LICENSE canonical Apache-2.0 修复、F2-F6 文档级修复。
+
+### Changed
+
+- `packages/embedding` —— lazy load 改 `createRequire().require()`（CJS 入口）+ scoped `Module._resolveFilename` 补丁（仅 `onnxruntime-common`+仅 `@huggingface/transformers` 父域）；声明 `onnxruntime-common@1.21.0` optional dep —— 修复 transformers@3.8.1 未声明外部在 pnpm 孤立 scope 下的 MODULE_NOT_FOUND（npm hoisting 掩盖）。
+- doctor vector-arm SKIP 文案 → 可执行 enable 路径（install+backfill 两步 copy/paste）。
+- release.yml assert-checks-green timeout 10→15min（ADR-0071 p90=740s>600s 尾部侵蚀）。
+- AGENTS.md 路径教义 → 用途三分（locator/库内/库外）；pnpm 钉版说明改单 `packageManager` 声明。
+
+### Fixed
+
+- **EBADDEVENGINES 根治** —— root `devEngines` 删除：对钉版冗余（packageManager+pmOnFail 实证 pnpm@11.7.0 仍 ERR_PNPM_BAD_PM_VERSION）且令仓内一切 npm 命令告警；发布 tarball 从未携带。
+- R70 审计 Temp transcript 入库 `.scratch/grill-round-70/evidence/r70-audit-temp/`（默认提交裁决）。
+
+### Deferred
+
+- 1g 覆盖缺口 / macOS spillover 探针 / provider 服务端排查 / deferred 大池（cursor / F-01a / npm provider / projectIndex / TUI / cross-OS / plugin / watch）。
+
 ## 2026-09-18 — ADR-0071 r70: 验证层时序语义硬化（assert-checks-green 严格两段式 + spawnSync 抖动处置）
 
 ### Added
