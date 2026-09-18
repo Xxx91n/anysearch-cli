@@ -57,6 +57,46 @@
       "status": "open",
       "evidence": "20 local fixed-input runs (docs/eval/quarantine-audit-2026-09-12.md) and 4 post-fix CI memory-eval runs are all 128/128 (mrr 0.548). The single historical 126/128 (mrr 0.524) was produced by the memory-eval job, which uploads no artifact - and the main ship-gate artifacts from that run are 128/128 with integrity.verdict=failed/runPurpose=decision (the F-15 signature), so the two case ids are not recoverable from any artifact. Reproduction procedure: run the memory-eval job repeatedly, one ref per run (same-ref dispatches cancel via the ship-gate concurrency group), and read '[eval] failed cases: <id>(<stage>)' from the job log; then add the entries to packages/store/eval-quarantine.json. The SLA enforcement point (packages/store/test/eval-quarantine-sla.test.ts) is already in place.",
       "monitoring_channel": "monthly CI re-run of the memory-eval job"
+    },
+    {
+      "id": "defer-r71-shipgate-1g-coverage",
+      "type": "deferred-with-deadline",
+      "title": "ship-gate closeout-required leg coverage gap (R70 F1 successor): fallback picks latest round dir containing a closeout, silently masking a missing one",
+      "source_adr": "docs/adr/0072-architecture-grill-round-71-first-release-path-governance-embedding-reachability.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-19",
+      "deadline": "2026-12-31",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "evidence": "R70 audit F1 proved the fallback semantics (latest-round-dir-with-closeout); R71 D-001 explicitly scoped it out again — the gap survives two consecutive rounds and must not silently persist a third.",
+      "monitoring_channel": "next grill round task-book triage; do not re-defer without an explicit ledger entry"
+    },
+    {
+      "id": "defer-r71-transformers-undeclared-dep",
+      "type": "deferred-with-deadline",
+      "title": "transformers.js undeclared external (onnxruntime-common) — remove the scoped Module._resolveFilename patch when upstream declares it",
+      "source_adr": "docs/adr/0072-architecture-grill-round-71-first-release-path-governance-embedding-reachability.md",
+      "owner": "anysearch-embedding",
+      "opened_at": "2026-09-19",
+      "deadline": "2027-03-31",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "upstream_issue": "workaround shipped in packages/embedding@0.0.6 (scoped patch + optional dep); upstream @huggingface/transformers@3.8.1",
+      "evidence": "pnpm-arm spike 2026-09-19: require('onnxruntime-common') from transformers.node.cjs fails under pnpm isolated scopes (npm hoisting masks it). Patch is scoped to (specifier, parent-package) and is the documented suspension — deletion condition = upstream release declaring the dep.",
+      "monitoring_channel": "watch @huggingface/transformers releases >3.8.1 for a declared onnxruntime-common"
+    },
+    {
+      "id": "defer-r71-provider-serverside",
+      "type": "deferred-with-deadline",
+      "title": "provider server-side investigation (search endpoint 000 during R71 spike)",
+      "source_adr": "docs/adr/0072-architecture-grill-round-71-first-release-path-governance-embedding-reachability.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-19",
+      "deadline": "2026-12-31",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "evidence": "R71 T1.2 spike: provider endpoint returned 000 for live search — memory rows were seeded directly for the backfill assertion instead. Server-side cause un-investigated.",
+      "monitoring_channel": "next grill round task-book triage"
     }
   ]
 }

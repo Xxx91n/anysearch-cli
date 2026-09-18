@@ -1132,7 +1132,16 @@ lint 豁免的健全形态=显式声明行 `<!-- machine-local: 事由 @ 日期 
 包管理器行为验证的最小证据形态=npm+pnpm 各一臂 clean install（pnpm 全局隔离结构与 npm 树不同且无权威文档背书）；断言面=激活报告+存量回填+降级回归+失败报错质量。_Avoid_: 单臂外推（npm 过不代表 pnpm 过）；只测快乐路径（卸载后 Jaccard 降级回归、代理/离线报错质量同属断点面）。来源：atomcode R71-Q3+R71 D-003。
 
 ## Publish-Time Field Strip（发布时字段剥离）
-开发者侧声明字段（devEngines.packageManager=pnpm 锁定）不得随发布件出厂——npm v10+ 消费端读到对 npm 用户直接 EBADDEVENGINES 硬错误（JetBrains 工单：连自愈命令都被阻断）；剥离在 publish 前（prepublishOnly/pack 过滤），锁定功能保留在 pnpm-workspace.yaml+packageManager（corepack 语义消费者不读）。_Avoid_: 源仓库删字段（开发侧锁定一并丢失）；当 cosmetic 噪音处置（消费端是硬错误非警告）。来源：atomcode R71-Q3+R71 D-003。
+开发者侧声明字段不得随发布件出厂——npm v10+ 消费端读到 devEngines 直接 EBADDEVENGINES。R71 spike 实证修正原处方：pnpm pack/publish 本就剥 devEngines（发布 tarball 从未携带），真正的毒源是字段留在 root package.json 使仓内一切 npm 命令告警+对钉版冗余（packageManager+pmOnFail 实证自锁）——故修法=源头删除而非 publish 前过滤。_Avoid_: 发布面剥离当源字段保留（仓内告警照发+双声明漂移）；当 cosmetic 噪音处置。来源：atomcode R71-Q3+R71 T1.1 实证修正。
 
 ## Armed Trigger Discharge（武装触发器兑现）
 升格触发器一旦测得条件为真即应兑现，不等真实事故触发：ADR-0071 分位数自证 ship-gate-win 740s>600s 锚，timeout-min 上调是兑现武装状态非新设计。「等它误伤触发后再修」与 fail-closed 文化相悖。_Avoid_: 武装触发器当摆设（测到阈值还等事故）；把「近乎不可达」当不修理由（旧 SHA/跳 pre-tag 路径仍可达）。来源：锐评第六轮刀二+R71 D-001。
+
+## Sibling-Root Resolution（姊妹根解析）
+pnpm add -g 把每个顶层包放进各自 <prefix>/global/v11/<hash>/node_modules 孤立树——optional peer 裸 specifier 跨根永不可达（preserve-symlinks 也救不了，包在别的 hash 根）；修法=not-found 时以 argv[1]（bin shim 保住布局路径）+自址为锚上溯扫 */node_modules 姊妹根。_Avoid_: 假设全局安装共 root（npm 心智模型外推）；用 fallback 掩盖非 not-found 错误（present-but-broken 须 fail-open 原样暴露）。来源：R71 T1.2 pnpm 臂实证。
+
+## Undeclared External Under Isolation（隔离布局下未声明外部）
+bundler external（webpack `require("onnxruntime-common")`）未列进 dependencies 时，npm 扁平 hoisting 永远掩盖、pnpm 孤立 scope 必暴露——上游缺陷的可用修法=自声明该 dep+scoped Module._resolveFilename 别名（仅该 specifier+仅该父包域），或 loader hooks（ESM 侧唯一钩子）。_Avoid_: 把 transitive 可达当契约（npm hoisting 是行为非承诺）；为掩它换大版本/重写加载面（scoped 别名两行即可）。来源：R71 T1.2 pnpm 臂实证（transformers@3.8.1 onnxruntime-common）。
+
+## Token Cascade Blindness（令牌级联盲区）
+GITHUB_TOKEN 的 push 按 GitHub 递归守卫永不触发 workflow run——依赖「bot push 的 commit 自动带 check-run」的门禁是结构性必死（R71 pre-tag run 35385345425 实证 FAIL_ON_NO_CHECKS 必败）；修法=显式自 dispatch 到钉 sha 的 temp ref，让真 check-run 落在被断言的 sha 上。_Avoid_: 假设 push 即触发（v0.0.5 时代无此腿故缺陷潜伏至首个真客）；assertion 降级绕行（换断言对象而非让被断言对象带检查）。来源：R71 T2 首个真客实证。

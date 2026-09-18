@@ -1,6 +1,6 @@
 # R71 Goal
 
-状态：grill 已 finalized（账本对账通过，4 条 current 全有去向）。
+状态：**已落地收口**（2026-09-19）。0.0.6 真发布经双层门完成：pre-tag#2 GREEN run 35386495456（look 5 入账 `6c289397`）→ post-tag assert+publish GREEN run 35387286412 → npm registry `0.0.6 ×4` 实证。首个真客暴露并修复 release-gate GITHUB_TOKEN cascade 结构性断点（自 dispatch temp ref）。收口件：ADR-0072 + closeout handoff + 四段证据。
 
 ## 主题
 
