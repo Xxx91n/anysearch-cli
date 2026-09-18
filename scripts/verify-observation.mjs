@@ -88,8 +88,20 @@ async function main() {
     }) + "\n");
     await readLineStream(child, 2, 10_000);
   } finally {
-    child.kill();
-    await new Promise((resolve) => child.once("exit", resolve));
+    // L-2 (R69 T5): graceful shutdown before the trace read — a hard kill can
+    // drop the async observation write that lands just after the JSON-RPC
+    // response (Windows kill = TerminateProcess, no cleanup handlers run).
+    // stdin EOF lets the server exit on its own and flush; kill only as a
+    // bounded fallback.
+    child.stdin.end();
+    const exited = await Promise.race([
+      new Promise((resolve) => child.once("exit", () => resolve(true))),
+      new Promise((resolve) => setTimeout(() => resolve(false), 3_000)),
+    ]);
+    if (!exited) {
+      child.kill();
+      await new Promise((resolve) => child.once("exit", resolve));
+    }
   }
 
   const db = new Database(dbPath, { readonly: true });
@@ -98,8 +110,16 @@ async function main() {
     for (const table of ["observability_traces", "observability_spans", "observability_evaluations", "observability_scores"]) {
       if (!tables.includes(table)) fail("missing table " + table);
     }
-    const traces = db.prepare("SELECT run_id, operation, status FROM observability_traces ORDER BY rowid").all();
-    const operations = new Set(traces.map((row) => row.operation));
+    // L-2 (R69 T5): retry window — trace persistence may still be landing
+    // when this point is reached even after a graceful exit (WAL flush).
+    let traces = [];
+    let operations = new Set();
+    for (let attempt = 0; attempt < 20; attempt++) {
+      traces = db.prepare("SELECT run_id, operation, status FROM observability_traces ORDER BY rowid").all();
+      operations = new Set(traces.map((row) => row.operation));
+      if (operations.has("ans.search") && operations.has("search_web")) break;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+    }
     if (!operations.has("ans.search")) fail("CLI trace missing");
     if (!operations.has("search_web")) fail("MCP trace missing");
     const payloadRow = db.prepare("SELECT payload_json FROM observability_traces WHERE operation = 'ans.search'").get();

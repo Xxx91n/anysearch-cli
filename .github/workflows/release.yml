@@ -129,6 +129,8 @@ jobs:
             echo "- sha: ${{ github.sha }}"
             echo "- purpose: ${{ github.event_name == 'push' && 'tag-push' || inputs.runPurpose }}"
           } >> "$GITHUB_STEP_SUMMARY"
+          # dual-write fallback: --label fails when the label is absent on the
+          # repo; retry bare rather than lose the alert. Non-blocking either way.
           gh issue create \
             --title "release-gate red on ${{ github.sha }}" \
             --body "ci+ship-gate assertion failed. Run: $RUN_URL" \
