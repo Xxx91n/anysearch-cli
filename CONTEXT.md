@@ -1116,3 +1116,23 @@ lint 形状腿应按语义关键词定界文档类型（closeout|closure），�
 
 ## SpawnSync Starvation Bound（同步子进程饿死界）
 spawnSync 型测试的可用界必须挂在子进程自己身上（spawnSync timeout 选项）而非依赖 --test-timeout：同步阻塞期间 runner 计时器无法 fire，裸 .mjs 测试文件（无 test() 包裹）根本不受其约束——内层 timeout 把饿死从不可杀挂死变成 ETIMEDOUT 签名的有界快败。_Avoid_: 指望 --test-timeout 管同步 spawnSync（计时器被事件循环阻塞饿死）；为消抖放宽断言或删 --boot 规模（签名是时序不是覆盖）。来源：R70 T1 spike+ADR-0071 D5。
+
+## Grill Round 71 — Terms (ADR-0072)
+
+## Reference-Purpose Path Discipline（按引用用途路径纪律）
+路径书写规则的正确切分轴=引用用途非文档类型：deliverable 定位器/Stack=绝对路径；库内目标的内容引用=repo-relative；库外目标=绝对路径+治理型声明。一刀切禁绝对路径误杀定位器正业，原教义「全绝对」则把机器本地指针推进公共文档（锐评刀一复发形态）。_Avoid_: 按文档类型豁免（.scratch 恰是 D:\ 密度最高处）；绝对路径作库内内容唯一引用（broken-link 变体）。来源：atomcode R71-Q2+R71 D-002。
+
+## Governed Exemption Marker（治理型豁免标记）
+lint 豁免的健全形态=显式声明行 `<!-- machine-local: 事由 @ 日期 -->`——豁免本身是被 lint+review 看见的 artifact（gitleaks baseline 同款），裸声明=违规，未关闭声明定期审计。_Avoid_: 静默豁免行（loophole 定义）；无 owner/日期/关闭标准的豁免（bypass debt）。来源：atomcode R71-Q2+R71 D-002。
+
+## Verified-Reachable Bar（可达性实证标准）
+「已上架能力」的诚实标准=干净环境端到端实测可达，非「文档写了安装命令」（esbuild#1621 教训：依赖包管理器边角行为未验证踩坑后重写整个安装策略）。npm 官方文档对 global peer 放置无保证+optional peer 有 open bug（npm/cli#8416）——文档化路径可能是真断的。_Avoid_: documented=shipped（README 有 npm i -g 行≠用户可达）；推断代替实测（sibling 同 root 可解析是心智模型非契约）。来源：atomcode R71-Q3+R71 D-003。
+
+## Dual-Arm Install Spike（双臂安装 spike）
+包管理器行为验证的最小证据形态=npm+pnpm 各一臂 clean install（pnpm 全局隔离结构与 npm 树不同且无权威文档背书）；断言面=激活报告+存量回填+降级回归+失败报错质量。_Avoid_: 单臂外推（npm 过不代表 pnpm 过）；只测快乐路径（卸载后 Jaccard 降级回归、代理/离线报错质量同属断点面）。来源：atomcode R71-Q3+R71 D-003。
+
+## Publish-Time Field Strip（发布时字段剥离）
+开发者侧声明字段（devEngines.packageManager=pnpm 锁定）不得随发布件出厂——npm v10+ 消费端读到对 npm 用户直接 EBADDEVENGINES 硬错误（JetBrains 工单：连自愈命令都被阻断）；剥离在 publish 前（prepublishOnly/pack 过滤），锁定功能保留在 pnpm-workspace.yaml+packageManager（corepack 语义消费者不读）。_Avoid_: 源仓库删字段（开发侧锁定一并丢失）；当 cosmetic 噪音处置（消费端是硬错误非警告）。来源：atomcode R71-Q3+R71 D-003。
+
+## Armed Trigger Discharge（武装触发器兑现）
+升格触发器一旦测得条件为真即应兑现，不等真实事故触发：ADR-0071 分位数自证 ship-gate-win 740s>600s 锚，timeout-min 上调是兑现武装状态非新设计。「等它误伤触发后再修」与 fail-closed 文化相悖。_Avoid_: 武装触发器当摆设（测到阈值还等事故）；把「近乎不可达」当不修理由（旧 SHA/跳 pre-tag 路径仍可达）。来源：锐评第六轮刀二+R71 D-001。
