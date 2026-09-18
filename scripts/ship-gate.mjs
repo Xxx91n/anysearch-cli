@@ -652,14 +652,15 @@ function stepStaticAssertions() {
 // ---------------------------------------------------------------------------
 // Step 2 — domain schema validation (ADR-0021 D3, blocking)
 // ---------------------------------------------------------------------------
-// ADR-0059 D6 (T-5): the README ADR index is a derived artifact — regenerate-and-diff so it can
-// never silently lag behind docs/adr/ (round-57 failure mode: claimed 0001-0046 while 59 existed).
+// ADR-0059 D6 (T-5): the ADR index (docs/adr/index.md) is a derived artifact — regenerate-and-diff
+// so it can never silently lag behind docs/adr/ (round-57 failure mode: claimed 0001-0046 while 59
+// existed). R69 T1: the artifact moved from README.md into docs/adr/ — same discipline, new target.
 function stepAdrIndex() {
-  report("info", "step 1b/9: README ADR index freshness (ADR-0059 D6)");
+  report("info", "step 1b/9: ADR index freshness (docs/adr/index.md, ADR-0059 D6)");
   const res = spawnSync(process.execPath, [path.join("scripts", "gen-adr-index.mjs"), "--check"], { cwd: ROOT, encoding: "utf8" });
   const out = ((res.stdout ?? "") + (res.stderr ?? "")).trim();
-  if (res.status !== 0) fail("README ADR index is stale (ADR-0059 D6): " + out);
-  report("pass", out || "README ADR index up to date");
+  if (res.status !== 0) fail("ADR index (docs/adr/index.md) is stale (ADR-0059 D6): " + out);
+  report("pass", out || "ADR index up to date");
 }
 
 // ADR-0059 D7 (T-6.1) / ADR-0061 G1: the grace window is WIRED now — the invariant
