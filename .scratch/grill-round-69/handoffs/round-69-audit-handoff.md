@@ -47,3 +47,7 @@ R69 审计 **PASS（带返工票）**：报告全部关键声明经审计亲跑+
 ## Suggested skills
 
 handoff（已用）、gitbutler（产物提交）、code-review（修复后复审）、tdd（F-S4 设计票）、neat-freak（返工票清理）、diagnosing-bugs（store flake 如立项）。
+
+## LOOP2 重审补记（2026-09-18 第二轮）
+
+返工窗已核销 F-A1~F-A6 全票（land d8a90f02→4c6a4295→3a9d4578，tip 三绿 ci 35331384641/ship-gate 35331384726/native-smoke 35331384673）。LOOP2 重审 PASS 无新票，报告：`D:\Aworker\anysearch-cli\.scratch\grill-round-69\reports\2026-09-18-audit-loop2.md`。上述「移交修复窗的返工票」节自此仅作历史记录。
