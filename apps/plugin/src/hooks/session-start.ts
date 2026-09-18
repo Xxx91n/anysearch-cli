@@ -5,11 +5,8 @@
 // ADR-0011 D6: do NOT modify host AGENTS.md, inject via hook/.mdc only.
 // Cross-platform: Claude/Codex have SessionStart; Cursor/Antigravity fall back to .mdc.
 
-import { writeFileSync, existsSync, readFileSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
-
 // ADR-0012 D14: routing card + MDC content imported from shared routing-card.ts module.
-import { DEFAULT_ROUTING_CARD as ROUTING_CARD, MDC_CONTENT, loadRoutingCard } from "./routing-card.js";
+import { DEFAULT_ROUTING_CARD as ROUTING_CARD, ensureMdc } from "./routing-card.js";
 
 interface SessionStartStdin {
   // ADR-0066: real hosts inject hook_event_name; event kept as legacy fallback.
@@ -17,23 +14,6 @@ interface SessionStartStdin {
   event?: string;
   cwd?: string;
   session_id?: string;
-}
-
-// ADR-0011 D5: dynamically generate .mdc rule file at runtime.
-// Check if .cursor/rules/anysearch.mdc exists and is up-to-date; write if not.
-function ensureMdc(cwd: string): void {
-  const rulesDir = join(cwd, ".cursor", "rules");
-  const mdcPath = join(rulesDir, "anysearch.mdc");
-  try {
-    if (existsSync(mdcPath)) {
-      const existing = readFileSync(mdcPath, "utf8");
-      if (existing === MDC_CONTENT) return; // Up-to-date, skip.
-    }
-    mkdirSync(rulesDir, { recursive: true });
-    writeFileSync(mdcPath, MDC_CONTENT, "utf8");
-  } catch {
-    // Fail-open: .mdc write failure is non-fatal.
-  }
 }
 
 async function main(): Promise<void> {
@@ -53,7 +33,7 @@ async function main(): Promise<void> {
   const cwd = stdin.cwd || process.cwd();
 
   // ADR-0011 D5: generate .mdc rule file for Cursor/Antigravity fallback.
-  ensureMdc(cwd);
+  ensureMdc(cwd, ".cursor");
 
   // Output routing card as additionalContext for the host agent.
   // Host contract split (R66 F-03 + R67 T1): both Claude Code and Codex require

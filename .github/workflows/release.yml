@@ -91,6 +91,11 @@ jobs:
           check-regexp: '^(check-build|install-smoke|test:online|ship-gate|memory-eval)\b'
           wait-interval: 30
           checks-discovery-timeout: 120
+          # R68 audit F-S2: keep layer-1's allowed set identical to layer-2's
+          # (assert-checks-green.mjs TERMINAL_OK = success/skipped/neutral) —
+          # an asymmetric default would let a "neutral" check pass post-tag
+          # while blocking pre-tag on the same conclusion.
+          allowed-conclusions: 'success,skipped,neutral'
           wait-for-duplicates: false
           running-workflow-name: release
           fail-on-no-checks: true

@@ -14,8 +14,6 @@ import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
-import { writeFileSync, existsSync, readFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
 
 interface CursorHookStdin {
   // ADR-0066: prefer the real host field hook_event_name; event kept as fallback.
@@ -29,22 +27,7 @@ interface CursorHookStdin {
 }
 
 // ADR-0012 D14: routing card + MDC content imported from shared routing-card.ts module.
-import { DEFAULT_ROUTING_CARD as ROUTING_CARD, MDC_CONTENT, loadRoutingCard } from "../routing-card.js";
-
-function ensureMdc(cwd: string): void {
-  const rulesDir = join(cwd, ".cursor", "rules");
-  const mdcPath = join(rulesDir, "anysearch.mdc");
-  try {
-    if (existsSync(mdcPath)) {
-      const existing = readFileSync(mdcPath, "utf8");
-      if (existing === MDC_CONTENT) return;
-    }
-    mkdirSync(rulesDir, { recursive: true });
-    writeFileSync(mdcPath, MDC_CONTENT, "utf8");
-  } catch {
-    // Fail-open: .mdc write failure is non-fatal.
-  }
-}
+import { DEFAULT_ROUTING_CARD as ROUTING_CARD, ensureMdc } from "../routing-card.js";
 
 async function main(): Promise<void> {
   let input = "";
@@ -60,7 +43,7 @@ async function main(): Promise<void> {
 
   // ADR-0011 D4: Cursor sessionStart — emit additional_context (snake_case) + ensure .mdc.
   if (event === "sessionstart" || event === "session_start") {
-    ensureMdc(cwd);
+    ensureMdc(cwd, ".cursor");
     // ADR-0011 D4: snake_case field name (official confirmation).
     process.stdout.write(JSON.stringify({ additional_context: ROUTING_CARD }));
     process.exit(0);

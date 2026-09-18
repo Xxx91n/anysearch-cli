@@ -8,7 +8,7 @@
 | red | d7bed91 (pre-fix red tip, concluded) | 5 bad (check-build×2, test:online, ship-gate×2), fail-fast | 1 |
 | no-signal | 4833833 (no ci/ship-gate checks) | discovery window → fail-closed | 2 |
 
-Transcript: \D:\Aworker\anysearch-cli\.scratch\grill-round-68\evidence\t1-dryrun-transcript.txt\。
+Transcript: D:\Aworker\anysearch-cli\.scratch\grill-round-68\evidence\t1-dryrun-transcript.txt。
 未烧 OF look；wait-on-check-action 腿未实跑 → **partially verified**，首次真 pre-tag dispatch 前不宣称 fully verified。
 
 ## lessons

@@ -40,15 +40,23 @@ async function testAsync(name: string, fn: () => Promise<void>) {
 const PLUGIN_ROOT = join(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 const AGY_ADAPTER = join(PLUGIN_ROOT, "dist", "hooks", "adapters", "antigravity.cjs");
 
-function runHook(stdinPayload: string, args: string[] = [], env?: Record<string, string>): Promise<{ code: number; stdout: string }> {
+// R68 audit F-A2: the hook's cwd fallback (workspacePaths[0] -> stdin.cwd ->
+// process.cwd()) writes .antigravity/rules/anysearch.mdc. Spawning without an
+// explicit cwd made payloads lacking workspacePaths (e.g. "{}") drop the .mdc
+// into apps/plugin and poison the clean-tree gate. Every spawn now runs in a
+// tmp dir unless the caller passes one; caller-owned dirs are left alone.
+function runHook(stdinPayload: string, args: string[] = [], env?: Record<string, string>, cwd?: string): Promise<{ code: number; stdout: string }> {
   return new Promise((resolve, reject) => {
+    const ownCwd = cwd ?? mkdtempSync(join(tmpdir(), "agy-cwd-"));
     const proc = spawn("node", [AGY_ADAPTER, ...args], {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, ...(env ?? {}) },
+      cwd: ownCwd,
     });
     let stdout = "";
     proc.stdout.on("data", d => stdout += d);
     proc.on("close", (code) => {
+      if (!cwd) rmSync(ownCwd, { recursive: true, force: true });
       if (code !== 0) reject(new Error("exit " + code + " stdout=" + stdout.slice(0, 200)));
       else resolve({ code: code ?? -1, stdout });
     });
@@ -208,6 +216,55 @@ testAsync(".mdc fallback: any invocation writes .antigravity/rules/anysearch.mdc
       ...COMMON, artifactDirectoryPath: dir, workspacePaths: [dir], invocationNum: 0, initialNumSteps: 1,
     }), ["PreInvocation"]);
     assert.ok(existsSync(join(dir, ".antigravity", "rules", "anysearch.mdc")), ".mdc must be written into workspace");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// === moved from codebuddy-contract.test.ts (R68 audit nit: agy cases belong
+// in the agy file) ===
+const TOOL_RESP = JSON.stringify({
+  results: [
+    { title: "cb alpha", url: "https://example.com/a", snippet: "doc alpha", source: "synthetic" },
+    { title: "cb beta", url: "https://example.com/b", snippet: "doc beta", source: "synthetic" },
+  ]
+});
+const BLOCKS = [{ type: "text", text: TOOL_RESP }];
+
+testAsync("PostToolUse {} stdout + distilled output staged to pending (R68 verified contract)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agypost-"));
+  try {
+    // R68 T3 live verdict (agy 1.2.5): PostToolUse stdout MUST be exactly {} —
+    // additionalContext/context are not proto fields; distill output stages to
+    // <artifactDirectoryPath>/anysearch-pending.jsonl for invocation-side flush.
+    const { stdout } = await runHook(JSON.stringify({
+      conversationId: "cb-1", workspacePaths: [dir], artifactDirectoryPath: dir,
+      toolCall: { name: "call_mcp_tool", args: { toolName: "mcp__anysearch__search_web", query: "cb" } },
+      stepIdx: 1, error: "",
+    }), ["PostToolUse"]);
+    assert.equal(stdout.trim(), "{}", "agy PostToolUse must emit {} only");
+    const pending = join(dir, "anysearch-pending.jsonl");
+    if (existsSync(pending)) {
+      const first = JSON.parse(readFileSync(pending, "utf8").split("\n")[0]);
+      assert.ok(typeof first.text === "string" && first.text.length > 0, "pending stages distilled text");
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+testAsync("PostToolUse: array-of-blocks tool_output distills into pending ({} stdout)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agyblocks-"));
+  try {
+    // Legacy fallback path still accepts snake_case tool_output (array-of-blocks
+    // tolerance); the distilled result must stage to pending, not stdout —
+    // agy PostToolUse protojson accepts {} only (verified agy 1.2.5).
+    const { stdout } = await runHook(JSON.stringify({
+      hook_event_name: "PostToolUse", tool_name: "search_web",
+      tool_input: { query: "cb" }, tool_output: BLOCKS, cwd: dir,
+      artifactDirectoryPath: dir,
+    }), ["PostToolUse"]);
+    assert.equal(stdout.trim(), "{}");
+    const pending = join(dir, "anysearch-pending.jsonl");
+    assert.ok(existsSync(pending), "distilled output must stage to pending file");
+    const d = JSON.parse(JSON.parse(readFileSync(pending, "utf8").split("\n")[0]).text);
+    assert.equal(d.resultCount, 2);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

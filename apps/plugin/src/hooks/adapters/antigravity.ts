@@ -33,11 +33,11 @@ import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
-import { writeFileSync, existsSync, readFileSync, mkdirSync, appendFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, appendFileSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 
 // ADR-0012 D14: routing card + MDC content imported from shared routing-card.ts module.
-import { DEFAULT_ROUTING_CARD as ROUTING_CARD, MDC_CONTENT, loadRoutingCard } from "../routing-card.js";
+import { DEFAULT_ROUTING_CARD as ROUTING_CARD, ensureMdc } from "../routing-card.js";
 
 interface AntigravityToolCall {
   name?: string;
@@ -68,22 +68,6 @@ interface AntigravityHookStdin {
   tool_output?: Record<string, unknown>;
   cwd?: string;
   session_id?: string;
-}
-
-function ensureMdc(cwd: string): void {
-  // Antigravity uses .antigravity/rules/ (parallel to Cursor's .cursor/rules/).
-  const rulesDir = join(cwd, ".antigravity", "rules");
-  const mdcPath = join(rulesDir, "anysearch.mdc");
-  try {
-    if (existsSync(mdcPath)) {
-      const existing = readFileSync(mdcPath, "utf8");
-      if (existing === MDC_CONTENT) return;
-    }
-    mkdirSync(rulesDir, { recursive: true });
-    writeFileSync(mdcPath, MDC_CONTENT, "utf8");
-  } catch {
-    // Fail-open: .mdc write failure is non-fatal.
-  }
 }
 
 // Pending-context staging: tool-event hooks cannot inject context on this
@@ -151,8 +135,9 @@ async function main(): Promise<void> {
   const cwd = stdin.workspacePaths?.[0] || stdin.cwd || process.cwd();
 
   // ADR-0011 D8: generate .mdc on any hook invocation as fallback
-  // (SessionStart does not exist on this host).
-  ensureMdc(cwd);
+  // (SessionStart does not exist on this host). Antigravity rules live under
+  // .antigravity/rules/ (parallel to Cursor's .cursor/rules/).
+  ensureMdc(cwd, ".antigravity");
 
   try {
     if (event === "PreToolUse") {

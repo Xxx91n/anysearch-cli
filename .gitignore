@@ -38,6 +38,10 @@ apps/cli/domains/
 # runtime policy cache (ADR-0055)
 .anysearch-cli/
 
+# R68 audit F-A2: agy adapter writes .antigravity/rules/anysearch.mdc into the
+# hook cwd as a runtime fallback — never a repo artifact.
+.antigravity/
+
 # local-markdown issue tracker / round artifacts — D5c: .scratch is ignored by default,
 # but per-round governance products (ledger/handoff/reports) are un-ignored via !rules below
 # and DO get committed with their ticket.

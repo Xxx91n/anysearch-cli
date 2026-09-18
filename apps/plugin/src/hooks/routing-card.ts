@@ -1,7 +1,7 @@
 // ADR-0012 D14: Routing card shared constants — one source, many outputs.
 // Extracted from session-start.ts, cursor.ts, antigravity.ts (debt ledger trigger met: 4 platforms).
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 export const DEFAULT_ROUTING_CARD = [
@@ -38,6 +38,24 @@ export const MDC_CONTENT = [
   "Do not edit manually. Changes will be overwritten on next hook run.",
   "---",
 ].join("\n");
+
+// R68 audit (ensureMdc×3): single implementation shared by session-start,
+// cursor, and antigravity — the only difference was the rules root
+// (".cursor" vs ".antigravity"). Fail-open by contract (ADR-0011).
+export function ensureMdc(cwd: string, rulesRoot: string): void {
+  const rulesDir = join(cwd, rulesRoot, "rules");
+  const mdcPath = join(rulesDir, "anysearch.mdc");
+  try {
+    if (existsSync(mdcPath)) {
+      const existing = readFileSync(mdcPath, "utf8");
+      if (existing === MDC_CONTENT) return;
+    }
+    mkdirSync(rulesDir, { recursive: true });
+    writeFileSync(mdcPath, MDC_CONTENT, "utf8");
+  } catch {
+    // Fail-open: .mdc write failure is non-fatal.
+  }
+}
 
 // ADR-0012 D14: high-user override via .anysearch/routing-card.json (fail-open).
 export function loadRoutingCard(cwd: string): string {

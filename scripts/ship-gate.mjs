@@ -883,8 +883,8 @@ function stepHandoffCloseoutLint() {
     }
   }
 
-  // (b) the newest closeout on disk — the standing leg that catches a round
-  // whose closeout landed non-compliant in an earlier diff.
+  // (b) the newest round's closeout docs on disk — the standing leg that
+  // catches a round whose closeout landed non-compliant in an earlier diff.
   if (fs.existsSync(scratchDir)) {
     const roundDirs = fs.readdirSync(scratchDir, { withFileTypes: true })
       .filter((d) => d.isDirectory() && /^grill-round-(\d+)/i.test(d.name))
@@ -928,17 +928,22 @@ function stepHandoffCloseoutLint() {
     // an invented) run does not satisfy the field.
     if (ghOk && repo) {
       let bound = false;
+      // R68 audit F-S3: per-file resolution flag — a global flag leaks file A's
+      // successful resolution into file B's "all gh calls failed" case and would
+      // mark an unverifiable doc as a violation.
+      let resolved = false;
       for (const id of new Set(ids)) {
         const r = spawnSync("gh", ["api", "repos/" + repo + "/actions/runs/" + id, "--jq", ".head_sha"], { encoding: "utf8" });
         if (r.status !== 0) continue;
         const sha = (r.stdout ?? "").trim();
         if (!/^[0-9a-f]{40}$/.test(sha)) continue;
+        resolved = true;
         checkedLiveness = true;
         if (sha === headSha || spawnSync("git", ["merge-base", "--is-ancestor", sha, "HEAD"], { cwd: ROOT }).status === 0) { bound = true; break; }
       }
       // Only a resolved-but-unbound run is a violation; when gh could not reach
       // the API at all (no GH_TOKEN/offline) the leg is unverifiable, not red.
-      if (checkedLiveness && !bound) problems.push(rel + ": no cited run resolves to a commit on this round's history (headSha ancestor-of-HEAD)");
+      if (resolved && !bound) problems.push(rel + ": no cited run resolves to a commit on this round's history (headSha ancestor-of-HEAD)");
     }
   }
   if (problems.length) fail("handoff-lint: closeout required fields missing/invalid:\n  " + problems.join("\n  "));

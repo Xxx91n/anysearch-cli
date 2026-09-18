@@ -198,12 +198,15 @@ test("ADR-0011: antigravity.ts has .mdc fallback", () => {
 
 test("ADR-0011: session-start.ts has .mdc generation logic", () => {
   const sessionStartSrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "session-start.ts"), "utf8");
-  assert.ok(sessionStartSrc.includes("ensureMdc"), "session-start.ts should have ensureMdc function");
+  assert.ok(sessionStartSrc.includes("ensureMdc"), "session-start.ts should call ensureMdc");
   assert.ok(sessionStartSrc.includes("routing-card"), "session-start.ts should import from routing-card.ts");
-  assert.ok(sessionStartSrc.includes("MDC_CONTENT"), "session-start.ts should use MDC_CONTENT");
   assert.ok(sessionStartSrc.includes("ROUTING_CARD"), "session-start.ts should use ROUTING_CARD");
-  assert.ok(sessionStartSrc.includes("writeFileSync"), "session-start.ts should write .mdc file");
-  assert.ok(sessionStartSrc.includes("existsSync"), "session-start.ts should check if .mdc exists before writing");
+  // R68 audit (ensureMdc×3): the write/exists/MDC_CONTENT logic was deduplicated
+  // into the shared routing-card.ts ensureMdc(cwd, rulesRoot) — assert it there.
+  const rcSrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "routing-card.ts"), "utf8");
+  assert.ok(rcSrc.includes("MDC_CONTENT"), "routing-card.ts ensureMdc should use MDC_CONTENT");
+  assert.ok(rcSrc.includes("writeFileSync"), "routing-card.ts ensureMdc should write .mdc file");
+  assert.ok(rcSrc.includes("existsSync"), "routing-card.ts ensureMdc should check if .mdc exists before writing");
 });
 
 test("ADR-0011: cursor hooks.json has no _degradation_note", () => {

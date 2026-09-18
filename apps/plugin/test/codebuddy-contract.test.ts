@@ -201,27 +201,6 @@ testAsync("cursor postToolUse: hook_event_name -> updated_mcp_tool_output (snake
   assert.ok(JSON.parse(stdout).updated_mcp_tool_output, "cursor adapter must act on hook_event_name");
 });
 
-testAsync("antigravity PostToolUse: {} stdout + distilled output staged to pending (R68 verified contract)", async () => {
-  const p = join(process.cwd(), "dist", "hooks", "adapters", "antigravity.cjs");
-  if (!existsSync(p)) { console.log("    SKIP: antigravity.cjs not built"); return; }
-  const dir = mkdtempSync(join(tmpdir(), "agypost-"));
-  // R68 T3 live verdict (agy 1.2.5): PostToolUse stdout MUST be exactly {} —
-  // additionalContext/context are not proto fields; distill output stages to
-  // <artifactDirectoryPath>/anysearch-pending.jsonl for invocation-side flush.
-  const { stdout } = await runHook(p, JSON.stringify({
-    conversationId: "cb-1", workspacePaths: [dir], artifactDirectoryPath: dir,
-    toolCall: { name: "call_mcp_tool", args: { toolName: "mcp__anysearch__search_web", query: "cb" } },
-    stepIdx: 1, error: "",
-  }), ["PostToolUse"]);
-  assert.equal(stdout.trim(), "{}", "agy PostToolUse must emit {} only");
-  const pending = join(dir, "anysearch-pending.jsonl");
-  if (existsSync(pending)) {
-    const first = JSON.parse(readFileSync(pending, "utf8").split("\n")[0]);
-    assert.ok(typeof first.text === "string" && first.text.length > 0, "pending stages distilled text");
-  }
-  rmSync(dir, { recursive: true, force: true });
-});
-
 testAsync("session-start: hook_event_name SessionStart honored", async () => {
   const p = join(process.cwd(), "dist", "hooks", "session-start.cjs");
   if (!existsSync(p)) { console.log("    SKIP: session-start.cjs not built"); return; }
@@ -232,8 +211,10 @@ testAsync("session-start: hook_event_name SessionStart honored", async () => {
 });
 
 // === R65 rework F-A5: array-of-blocks tolerance on the other adapters ===
-// Same F-09 class: codex(tool_response)/cursor+antigravity(tool_output) now
-// route through unwrapToolResponse — array shapes must distill, not zero out.
+// Same F-09 class: codex(tool_response)/cursor(tool_output) now route through
+// unwrapToolResponse — array shapes must distill, not zero out. The agy leg of
+// this class lives in antigravity-contract.test.ts (R68 audit nit: keep host
+// cases in their own file).
 const BLOCKS = [{ type: "text", text: TOOL_RESP }];
 
 testAsync("codex PostToolUse: array-of-blocks tool_response distills", async () => {
@@ -256,26 +237,6 @@ testAsync("cursor PostToolUse: array-of-blocks tool_output distills", async () =
   }));
   const d = JSON.parse(JSON.parse(stdout).updated_mcp_tool_output);
   assert.equal(d.resultCount, 2);
-});
-
-testAsync("antigravity PostToolUse: array-of-blocks tool_output distills into pending ({} stdout)", async () => {
-  const p = join(process.cwd(), "dist", "hooks", "adapters", "antigravity.cjs");
-  if (!existsSync(p)) { console.log("    SKIP: antigravity.cjs not built"); return; }
-  const dir = mkdtempSync(join(tmpdir(), "agyblocks-"));
-  // Legacy fallback path still accepts snake_case tool_output (array-of-blocks
-  // tolerance); the distilled result must stage to pending, not stdout —
-  // agy PostToolUse protojson accepts {} only (verified agy 1.2.5).
-  const { stdout } = await runHook(p, JSON.stringify({
-    hook_event_name: "PostToolUse", tool_name: "search_web",
-    tool_input: { query: "cb" }, tool_output: BLOCKS, cwd: dir,
-    artifactDirectoryPath: dir,
-  }), ["PostToolUse"]);
-  assert.equal(stdout.trim(), "{}");
-  const pending = join(dir, "anysearch-pending.jsonl");
-  assert.ok(existsSync(pending), "distilled output must stage to pending file");
-  const d = JSON.parse(JSON.parse(readFileSync(pending, "utf8").split("\n")[0]).text);
-  assert.equal(d.resultCount, 2);
-  rmSync(dir, { recursive: true, force: true });
 });
 
 // === R65 rework F-A1: template-target executability ===
