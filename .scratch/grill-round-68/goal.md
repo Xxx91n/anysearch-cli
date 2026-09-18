@@ -6,9 +6,9 @@
 
 票序：T0 火线修红（含 F-17 sweep）→ T1 双层门禁 → T2 收口 lint → T3 antigravity → T4 文书 → T5 收口。
 
-任务书：D:\Aworker\anysearch-cli\.scratch\grill-round-68\handoffs\next-round.md
+任务书：.scratch/grill-round-68/handoffs/next-round.md
 
-收口证据：D:\Aworker\anysearch-cli\.scratch\grill-round-68\handoffs\round-68-closeout.md（四段：修红/门禁/antigravity/文书）+ D:/Aworker/anysearch-cli/.scratch/grill-round-68/reports/2026-09-17-report.md。
+收口证据：.scratch/grill-round-68/handoffs/round-68-closeout.md（四段：修红/门禁/antigravity/文书）+ .scratch/grill-round-68/reports/2026-09-17-report.md。
 
 关键落地：
 - T0 修红：14514da（ci 35232698557 + ship-gate 35232698560 双绿）

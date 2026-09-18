@@ -110,6 +110,6 @@
 
 ### 返工 live 复验
 
-- 发现链：首轮复验真宿主裸形输出→追出 npm prefix 双根（`D:\nodejs` vs `Roaming\npm`，脚本锚定后者而 `npm i -g` 落前者）——装包须 `--prefix` 钉 Roaming。
+- 发现链：首轮复验真宿主裸形输出→追出 npm prefix 双根（`D:\nodejs` vs `Roaming\npm`，脚本锚定后者而 `npm i -g` 落前者）——装包须 `--prefix` 钉 Roaming。 <!-- machine-local: user-level agent/tooling config path on build host @ 2026-09-19 -->
 - 修正装包+server 重启后：`ans-hook-session-start --envelope` 经 shim 真发信封（hook_response `hookSpecificOutput` 头）+模型逐字引第二条 trigger rule——t4-rework-p6b.stream.jsonl。
 - `pnpm test` 8/8 套全绿（codebuddy-contract 修 bin 带参解析+session-start 裸形断言两处）；tsc/lint clean；repack tarball 验证 SessionStart 命令=`ans-hook-session-start --envelope`。

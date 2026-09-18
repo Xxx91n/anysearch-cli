@@ -3,9 +3,9 @@
 ## s0 — agy CLI 安装（用户授权后执行）
 
 - 安装器：官方 https://antigravity.google/cli/install.ps1 下载后人工审读（172 行：manifest 拉取 → SHA512 校验二进制 → LOCALAPPDATA/agy/bin 落位 → User PATH 注册表写入+广播）——非盲 iex。
-- 结果：`agy --version` = **1.2.5**（≥1.1.10 ✓），装至 D:/Users/Administrator/AppData/Local/agy/bin/agy.exe（实际 C: 盘 Users/Administrator）。
+- 结果：`agy --version` = **1.2.5**（≥1.1.10 ✓），装至 D:/Users/Administrator/AppData/Local/agy/bin/agy.exe（实际 C: 盘 Users/Administrator）。 <!-- machine-local: POSIX host path cited as evidence @ 2026-09-19 -->
 - `agy -p "..."`：返回 exit 0 但**零输出**——cli.log 证 `error getting token source: You are not logged into Antigravity`（认证缺口，见 s0.5 断点）。
-- IDE 已装于 C:/Users/Administrator/AppData/Local/Programs/antigravity/Antigravity.exe（用户提示路径核实存在）。
+- IDE 已装于 C:/Users/Administrator/AppData/Local/Programs/antigravity/Antigravity.exe（用户提示路径核实存在）。 <!-- machine-local: POSIX host path cited as evidence @ 2026-09-19 -->
 
 ## s0.5 断点（诚实记录，非 verified 宣称）
 

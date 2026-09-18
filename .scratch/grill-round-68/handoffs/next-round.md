@@ -1,27 +1,27 @@
 # R68 常驻任务书 — grill-round-68 → next-round
 
 生成：2026-09-17（grill-round-68 定稿，账本 5 条 current）。
-账本：D:\Aworker/anysearch-cli/.scratch/grill-round-68/decision-ledger.md（D-001~D-005 全 current）。
-调研存档：D:\Aworker/anysearch-cli/.scratch/grill-round-68/q1-atomcode.md、q2-atomcode.md、q3-atomcode.md、q4-atomcode.md。
+账本：.scratch/grill-round-68/decision-ledger.md（D-001~D-005 全 current）。
+调研存档：.scratch/grill-round-68/q1-atomcode.md、q2-atomcode.md、q3-atomcode.md、q4-atomcode.md。
 执行环境：ctx_batch_execute=bash；写文件用 node.js（源码一律前斜杠+String.fromCharCode(92) 转反斜杠——传输层折叠两个反斜杠为一个、JS 字符串非法转义静默丢字）；VC 写一律 but；atomcode 串行；交付文档一律绝对路径。
 
 ## 开工前硬事实（勿重查）
 
 - main tip 红：d7bed91 与 2b9e6e8 上 ci+ship-gate 双 FAILURE（runs 35212667972/35212668001/35211959627/35211959694）。机制：9a466b9（release-bot pre-tag commit+push 回写 eval-looks.json）的 read→modify→write 剥掉根 schema_version:1，parity 测试红。
-- 第二红点：D:\Aworker/anysearch-cli/packages/store/test/eval-abstain.test.ts:32 裸 runAll(GOLDEN_CASES) 无 excludeGroups，semantic 组须 test:online（ADR-0060 D7 边界）。
-- R67 closeout（D:\Aworker/anysearch-cli/.scratch/grill-round-67/handoffs/round-67-closeout.md）缺 handoff-template 必填「绿色 run URL」段+无 Stack 行；「D:\Aworker 全量 evidence」措辞×4（文件实际已入库）。
-- release.yml（D:\Aworker/anysearch-cli/.github/workflows/release.yml）：pre-tag（workflow_dispatch）contents:write 直推 main 不等检查；publish needs:release-gate（OF look 断言）从不查 tagged SHA 的 ci/ship-gate——v0.0.5 从红树发布。
-- agy CLI 未装（独立安装器 antigravity.google/cli/install.ps1 → ~/AppData/Local/agy/bin，装=系统变更须用户授权）；Antigravity IDE 不执行 hooks（两独立复现）；agy 不注入 hook_event_name（须 argv 传回）、字段 camelCase；官方契约顶层 {decision:allow|deny|ask|force_ask|deny_unless_prior_grant, reason?}；无 SessionStart（5 事件）；Gemini CLI 已被取代。
+- 第二红点：packages/store/test/eval-abstain.test.ts:32 裸 runAll(GOLDEN_CASES) 无 excludeGroups，semantic 组须 test:online（ADR-0060 D7 边界）。
+- R67 closeout（.scratch/grill-round-67/handoffs/round-67-closeout.md）缺 handoff-template 必填「绿色 run URL」段+无 Stack 行；「D:\Aworker 全量 evidence」措辞×4（文件实际已入库）。 <!-- machine-local: machine-local path cited in committed doc @ 2026-09-19 -->
+- release.yml（.github/workflows/release.yml）：pre-tag（workflow_dispatch）contents:write 直推 main 不等检查；publish needs:release-gate（OF look 断言）从不查 tagged SHA 的 ci/ship-gate——v0.0.5 从红树发布。
+- agy CLI 未装（独立安装器 antigravity.google/cli/install.ps1 → ~/AppData/Local/agy/bin，装=系统变更须用户授权）；Antigravity IDE 不执行 hooks（两独立复现）；agy 不注入 hook_event_name（须 argv 传回）、字段 camelCase；官方契约顶层 {decision:allow|deny|ask|force_ask|deny_unless_prior_grant, reason?}；无 SessionStart（5 事件）；Gemini CLI 已被取代。 <!-- machine-local: machine-local path cited in committed doc @ 2026-09-19 -->
 - ADR 下一号=0069；CONTEXT「Grill Round 68 — Terms (ADR-0069)」8 词已落盘。
 - pnpm 钉 11.24.0；better-sqlite3 allowBuilds=false 勿动；ans_* 前缀+fail-open 硬契约。
 
 ## T0 — 火线修红（覆盖 D-001, D-004）
 
-- 文件：D:\Aworker/anysearch-cli/packages/store/src/eval/looks-ledger.ts、D:\Aworker/anysearch-cli/packages/store/test/eval-abstain.test.ts:32、D:\Aworker/anysearch-cli/eval-looks.json（补回 schema_version:1）。
+- 文件：packages/store/src/eval/looks-ledger.ts、packages/store/test/eval-abstain.test.ts:32、eval-looks.json（补回 schema_version:1）。
 - 修法=preserve-unknown-fields（Tolerant Reader）：读端保留原始 JSON 未知字段 merge-back，勿逐字段重建；写 round-trip 契约测试断言未知字段【字节级】保留（不只“能读”）。
 - abstain 补 excludeGroups（对齐 ADR-0060 D7：semantic/vector-arm 归 test:online）。
 - F-17 sweep 入完成定义：ast-grep/semgrep 找 JSON.parse→对象重建→writeFile 管线；diff 磁盘字段集 vs writer 构造字段集；excludeGroups 消费链回溯；范围限 eval-looks/golden 读写管线+测试加载链。预写规则：N>1 处→并入 T0 不扩轮。
-- 验收锚：T0 commit 上 ci+ship-gate 真实双绿 run URL；eval-looks.json 根 schema_version 回在；sweep 台账落 D:\Aworker/anysearch-cli/.scratch/grill-round-68/evidence/。
+- 验收锚：T0 commit 上 ci+ship-gate 真实双绿 run URL；eval-looks.json 根 schema_version 回在；sweep 台账落 .scratch/grill-round-68/evidence/。
 - suggested skills：$implement、tdd、diagnosing-bugs。
 
 ## T1 — 双层门禁（覆盖 D-001, D-002, D-004）
@@ -45,15 +45,15 @@
 - s1：双探 ~/.gemini/config/hooks.json 与 ~/.gemini/antigravity-cli/hooks.json + 项目 .agents/hooks.json；transcriptPath 的 antigravity-cli/brain 证执行表面=CLI；顺手复测 IDE 2.5.5 hooks（一腿成本）。
 - s2：L0-L3 裁决重排=L-empty→L-decision（官方顶层形）→L-allow_tool（legacy）→L-plain-text（exit 语义）；adapter 审计点=hook_event_name 不注入须 argv 传回、camelCase 字段、exit-0-only 语义。
 - s3：agy -p headless hooks 触发+输出可观测。任一环断→降级宿主限制证据记断点环号。
-- 过则：adapter 修复（改前备份至 D:\Aworker/anysearch-cli/.scratch/grill-round-68/backups/t3/）+契约测试+验收 6 腿（契约端到端/session_id 传播/fail-open/PostToolUse {} 合规/SessionStart 不存在性复核+mdc 兜底/variance 可选）+SEP-2484 exclusion ledger。
+- 过则：adapter 修复（改前备份至 .scratch/grill-round-68/backups/t3/）+契约测试+验收 6 腿（契约端到端/session_id 传播/fail-open/PostToolUse {} 合规/SessionStart 不存在性复核+mdc 兜底/variance 可选）+SEP-2484 exclusion ledger。
 - README per-surface：Antigravity CLI (agy)—verified (reduced matrix, ledger:<绝对路径>)；IDE 并列「hooks not executed by host; rules fallback only」。
 - suggested skills：$implement、tdd、atomcode-research。
 
 ## T4 — 文书（覆盖 D-002, D-004, D-005）
 
-- R67 closeout 回填「绿色 run URL」段=真实复绿 run URL（T0 产出）+Stack 行；「D:\Aworker 全量 evidence」×4 改为指向库内已提交证据+其绝对路径（deliverable 绝对路径纪律与锐评修正两兼容）。
+- R67 closeout 回填「绿色 run URL」段=真实复绿 run URL（T0 产出）+Stack 行；「D:\Aworker 全量 evidence」×4 改为指向库内已提交证据+其绝对路径（deliverable 绝对路径纪律与锐评修正两兼容）。 <!-- machine-local: machine-local path cited in committed doc @ 2026-09-19 -->
 - but-land 侧门治理票：直推 main 绕 PR 的政策裁决入档。
-- ADR-0069（D:\Aworker/anysearch-cli/docs/adr/0069-*.md）：主题+D-002/D-003 决策条目+T1 验证边界显式声明+future direction（PR-mode/required-checks）+关联发现（tag ruleset/environment）。
+- ADR-0069（docs/adr/0069-*.md）：主题+D-002/D-003 决策条目+T1 验证边界显式声明+future direction（PR-mode/required-checks）+关联发现（tag ruleset/environment）。
 - CHANGELOG 更新；lesson log=T1 dry-run 结果入档。
 - suggested skills：$handoff、domain-modeling。
 

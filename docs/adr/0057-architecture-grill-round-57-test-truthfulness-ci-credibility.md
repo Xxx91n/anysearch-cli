@@ -13,7 +13,7 @@ Round 56/57 push-closure left AC5 (pnpm -r check/test/build clean + ship-gate, C
 - store/package.json chained 50+ test files with shell && (1916-char script); first failure aborts all remaining files; eval-switch-state-fixes.test.ts was never on the chain and never executed.
 - Per-file hand-rolled `let passed = 0` counters instead of a real test runner; exit-code correctness manual.
 - ci.yml/ship-gate.yml ran only `pnpm --filter @anysearch-cli/kernel test` — 59/73 test files never ran in CI.
-- domain-loader.test.ts hardcoded "D:/Aworker/anysearch-cli" (3 occurrences) — tests fail on any other machine.
+- domain-loader.test.ts hardcoded "D:/Aworker/anysearch-cli" (3 occurrences) — tests fail on any other machine. <!-- machine-local: repo location on the authoring host @ 2026-09-19 -->
 - packages/embedding tests download the model from HuggingFace on first run — red offline.
 - README claims .scratch/ is not committed to git while 16 files are tracked (base feat/grill-56 tip).
 
@@ -56,7 +56,7 @@ README states .scratch/ is not committed; 16 files are tracked at the base tip. 
 
 ### E1. Incidental fix: pnpm pack --pack-destination resolves against the invocation cwd (ledger D-002/D-003; audit F-5)
 
-Discovered while making the CI test job trustworthy. `pnpm --filter X pack --pack-destination ../../artifacts` was intended to land tarballs in `<repo>/artifacts`, but a relative `--pack-destination` is resolved against the **invocation** cwd (the workspace root), not the package directory, so the tarballs landed in `D:/artifacts/` outside the workspace. `actions/upload-artifact@v4` uses `path: artifacts/*.tgz` with `if-no-files-found: error`, so the CI pack step would fail on both OSes. Fix: `--pack-destination artifacts` (commit `cb2518a0510eec52f32bf24e7e31f61ffa4caba3`). Decisive probe: `--pack-destination zz-probe-out` run from the repo root produced `zz-probe-out/` at the repo root and nothing under `apps/mcp/`. A CI-credibility defect, in scope for this round; not an out-of-scope review cut.
+Discovered while making the CI test job trustworthy. `pnpm --filter X pack --pack-destination ../../artifacts` was intended to land tarballs in `<repo>/artifacts`, but a relative `--pack-destination` is resolved against the **invocation** cwd (the workspace root), not the package directory, so the tarballs landed in `D:/artifacts/` outside the workspace. `actions/upload-artifact@v4` uses `path: artifacts/*.tgz` with `if-no-files-found: error`, so the CI pack step would fail on both OSes. Fix: `--pack-destination artifacts` (commit `cb2518a0510eec52f32bf24e7e31f61ffa4caba3`). Decisive probe: `--pack-destination zz-probe-out` run from the repo root produced `zz-probe-out/` at the repo root and nothing under `apps/mcp/`. A CI-credibility defect, in scope for this round; not an out-of-scope review cut. <!-- machine-local: toolchain install prefix on build host @ 2026-09-19 -->
 
 ### E2. Incidental fix: ship-gate step 5 dist assertion made conditional on the manifest (ledger D-002; audit F-5)
 

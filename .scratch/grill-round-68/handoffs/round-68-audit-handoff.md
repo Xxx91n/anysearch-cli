@@ -3,8 +3,8 @@
 Stack (primary key = GitButler change-ids; SHAs are time-lagged):
   r68-gate → tnq/ouz/xmz → r68-fix → lkv(ee54479) → r68-fix2 → nqm(f8a9c43) → r68-t3 → 3d346ed → dc39717 (main tip, landed+pushed) → 审计产物挂 r68-audit 分支
 
-审计报告（git-committed，绝对路径）：`D:\Aworker\anysearch-cli\.scratch\grill-round-68\reports\2026-09-17-audit.md`。
-被审交付物：报告 `D:\Aworker\anysearch-cli\.scratch\grill-round-68\reports\2026-09-17-report.md`；closeout `D:\Aworker\anysearch-cli\.scratch\grill-round-68\handoffs\round-68-closeout.md`；任务书 `D:\Aworker\anysearch-cli\.scratch\grill-round-68\handoffs\next-round.md`；账本 `D:\Aworker\anysearch-cli\.scratch\grill-round-68\decision-ledger.md`。
+审计报告（git-committed，绝对路径）：`.scratch/grill-round-68/reports/2026-09-17-audit.md`。
+被审交付物：报告 `.scratch/grill-round-68/reports/2026-09-17-report.md`；closeout `.scratch/grill-round-68/handoffs/round-68-closeout.md`；任务书 `.scratch/grill-round-68/handoffs/next-round.md`；账本 `.scratch/grill-round-68/decision-ledger.md`。
 
 ## 一句话状态
 

@@ -1,8 +1,8 @@
 # T3 收口证据 — s2 契约裁决 + s3 真机验收 + SEP-2484 exclusion ledger
 
-宿主：agy 1.2.5 (C:/Users/Administrator/AppData/Local/agy/bin/agy.exe)，
+宿主：agy 1.2.5 (C:/Users/Administrator/AppData/Local/agy/bin/agy.exe)， <!-- machine-local: POSIX host path cited as evidence @ 2026-09-19 -->
 认证：OAuth 已登录（applyAuthResult: jinxi2410@gmail.com，cli-20260917_234334.log）。
-探针环境：HOME=D:/Aworker/agy-sandbox 隔离（绕开用户 1mcp MCP 挂起——会阻塞 turn 初始化）。
+探针环境：HOME=D:/Aworker/agy-sandbox 隔离（绕开用户 1mcp MCP 挂起——会阻塞 turn 初始化）。 <!-- machine-local: machine-local path cited in committed doc @ 2026-09-19 -->
 探针法：sentinel hook dump stdin+argv（spike/dump-hook.cjs）+ 决策/输出形变腿（decide-*/plain/exit2/ctx-*/sysmsg/inject/empty/brace）+ 真 adapter 端到端。
 
 ## s2 — L 序裁决结果（agy 1.2.5 实测）

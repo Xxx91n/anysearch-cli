@@ -2,7 +2,7 @@
 
 Stack：分支 `r70-grill`（GitButler 栈，top `497a1ae9`，集成提交 `75ae9dff`），base `2f6d990a`（main tip）。审计交付物另立 `r70-audit` 分支并行，互不影响。
 
-产出方说明：本件为 spec T3(iv) 必录交付物，实施轮遗漏，由 R70 审计窗口按 $handoff 规定动作补录（审计报告 F1 在案：`D:\Aworker\anysearch-cli\.scratch\grill-round-70\reports\2026-09-18-audit.md`）。
+产出方说明：本件为 spec T3(iv) 必录交付物，实施轮遗漏，由 R70 审计窗口按 $handoff 规定动作补录（审计报告 F1 在案：`.scratch/grill-round-70/reports/2026-09-18-audit.md`）。
 
 ## 绿色 run URL
 
@@ -13,11 +13,11 @@ Stack：分支 `r70-grill`（GitButler 栈，top `497a1ae9`，集成提交 `75ae
 
 ## 本轮落地（详见各锚点，不重复内容）
 
-- 实施报告：`D:\Aworker\anysearch-cli\.scratch\grill-round-70\reports\2026-09-18-report.md`
-- 审计报告（声明→证据→结论对照+F1-F6 发现清单）：`D:\Aworker\anysearch-cli\.scratch\grill-round-70\reports\2026-09-18-audit.md`
-- 裁决账本：`D:\Aworker\anysearch-cli\.scratch\grill-round-70\decision-ledger.md`（D-001~D-004）
-- ADR：`D:\Aworker\anysearch-cli\docs\adr\0071-architecture-grill-round-70-verification-timing-hardening.md`
-- 审计亲跑 transcript：`C:\Users\Administrator\AppData\Local\Temp\r70-audit\`（fixture 7/7、build 4/4、store 62/62、plugin 10/10、ship-gate 57×pass、install-smoke 26/26 全复现）
+- 实施报告：`.scratch/grill-round-70/reports/2026-09-18-report.md`
+- 审计报告（声明→证据→结论对照+F1-F6 发现清单）：`.scratch/grill-round-70/reports/2026-09-18-audit.md`
+- 裁决账本：`.scratch/grill-round-70/decision-ledger.md`（D-001~D-004）
+- ADR：`docs/adr/0071-architecture-grill-round-70-verification-timing-hardening.md`
+- 审计亲跑 transcript：`.scratch/grill-round-70/evidence/r70-audit-temp/`（fixture 7/7、build 4/4、store 62/62、plugin 10/10、ship-gate 57×pass、install-smoke 26/26 全复现；R71 T0 由 build-host Temp 副本 `C:\Users\Administrator\AppData\Local\Temp\r70-audit\` 入库，D-002(iv) 默认提交裁决） <!-- machine-local: build-host temp path cited as evidence @ 2026-09-19 -->
 
 ## 审计结论
 

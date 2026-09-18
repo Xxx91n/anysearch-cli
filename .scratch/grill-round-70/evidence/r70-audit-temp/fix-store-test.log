@@ -1,0 +1,182 @@
+$ node --import tsx --test "test/**/*.test.ts" "test/**/*.test.mjs" --test-concurrency=1 --test-timeout=30000
+access-chain-bootstrap-spawn: 6 passed, 0 failed
+✔ test\access-chain-bootstrap-spawn.test.ts (2096.836ms)
+access-chain-golden: 18 passed, 0 failed
+✔ test\access-chain-golden.test.ts (687.3764ms)
+access-chain-nodb: 7 passed, 0 failed
+✔ test\access-chain-nodb.test.mjs (1169.048ms)
+[perf] verify 10000 rows: fixture built in 194ms, verified in 347ms (~28818 rows/s) — report-only, never gated
+[perf] verify 100000 rows: fixture built in 1896ms, verified in 1984ms (~50403 rows/s) — report-only, never gated
+access-chain-schema: 5 passed, 0 failed
+✔ test\access-chain-schema.test.ts (7601.395ms)
+access-chain-telemetry: 7 passed, 0 failed
+✔ test\access-chain-telemetry.test.ts (6061.1148ms)
+access-chain-verify: 12 passed, 0 failed
+✔ test\access-chain-verify.test.ts (8638.1248ms)
+access-count tests: 17 passed, 0 failed
+✔ test\access-count.test.ts (8961.7375ms)
+adjudication.test.ts: 11 passed, 0 failed
+✔ test\adjudication.test.ts (8562.4711ms)
+adr-index.test: ok
+✔ test\adr-index.test.mjs (5870.9351ms)
+attribution-calibration.test: ok
+✔ test\attribution-calibration.test.ts (1674.9072ms)
+attribution-gold.test: ok
+attribution-gold.test ADR-0051 D4 assertions: ok
+✔ test\attribution-gold.test.ts (1800.876ms)
+attribution-instance-report.test: ok
+✔ test\attribution-instance-report.test.ts (974.5933ms)
+bgnbd-spawn tests: 25 passed, 0 failed
+✔ test\bgnbd-spawn.test.ts (2599.0871ms)
+--- BudgetLedger tests: 24 passed, 0 failed ---
+✔ test\budget-ledger.test.ts (2125.3814ms)
+calibration-labels.test: ok
+✔ test\calibration-labels.test.ts (1880.0494ms)
+consolidate-forget: all assertions passed
+✔ test\consolidate-forget.test.ts (2388.2461ms)
+day-buckets tests: 30 passed, 0 failed
+✔ test\day-buckets.test.ts (631.7813ms)
+--- loadDomainByName tests done ---
+--- Domain Loader tests: 32 passed, 0 failed ---
+✔ test\domain-loader.test.ts (2050.1772ms)
+Domain schema tests: 12 passed, 0 failed
+✔ test\domain-schema.test.ts (2006.5329ms)
+--- embedding-arm tests: 14 passed, 0 failed ---
+✔ test\embedding-arm.test.ts (2067.2385ms)
+step2 schema idempotent + 9 tables: OK
+step3 rule extraction channels: OK
+step4 LLM backfill fail-open: OK
+step5 three-tier dedup + type gate + reversible merge: OK
+step6 RRF entity arm + step7 telemetry: OK
+step8 r74 audit fixes (E2 alias pass-through / E5 drop unlink + rank): OK
+entity-link.test.ts ALL PASS
+✔ test\entity-link.test.ts (9885.1463ms)
+step1 combine redirect+snapshot: OK
+step2 unmerge bounded+override: OK
+step3 type gate: OK
+step4a review keep: OK
+step4b review drop: OK
+step5 hit_count escalation: OK
+step6 G4 double-link roundtrip: OK
+step8 G1 override no-auto-remerge: OK
+step7 G2/G3 guard branches: OK
+entity-merge.test.ts: all steps OK
+✔ test\entity-merge.test.ts (9686.1853ms)
+eval-abstain: 13 passed, 0 failed
+✔ test\eval-abstain.test.ts (71767.72ms)
+timeout self-check exit=124 stderr has TIMEOUT: ok
+invalid EVAL_TIMEOUT_MS -> exit 2: ok
+degenerate all-same-label cohort -> exit 1 fail: ok
+eval-calibrate tests ok; timeout exit=124
+✔ test\eval-calibrate.test.mjs (8493.9764ms)
+eval-docs-golden.test.ts: 49 passed, 0 failed
+✔ test\eval-docs-golden.test.ts (2113.1706ms)
+eval-gate.test.ts: 23 passed, 0 failed
+✔ test\eval-gate.test.ts (77519.6676ms)
+  H0 FWER sim: 18/600 = 0.0300 (track alpha 0.025)
+eval-holdout-gate.test.ts: 31 passed, 0 failed
+✔ test\eval-holdout-gate.test.ts (9190.0107ms)
+eval-judge.test.mjs: 5 passed, 0 failed
+✔ test\eval-judge.test.mjs (1311.842ms)
+eval-labels.integration.test: ok
+✔ test\eval-labels.integration.test.mjs (135470.7668ms)
+eval-looks-live-parity: 24 passed, 0 failed
+✔ test\eval-looks-live-parity.test.ts (883.2922ms)
+eval-mutation.test.ts: 6 passed, 0 failed
+✔ test\eval-mutation.test.ts (20173.4417ms)
+eval-override.test.ts: 13 passed, 0 failed
+✔ test\eval-override.test.ts (1103.8534ms)
+eval-quarantine-ratchet.test: 12 passed, 0 failed
+✔ test\eval-quarantine-ratchet.test.mjs (1301.2421ms)
+eval-quarantine-sla.test.ts: 2 passed, 0 failed
+✔ test\eval-quarantine-sla.test.ts (1363.8983ms)
+eval-quarantine.test.ts: 24 passed, 0 failed
+✔ test\eval-quarantine.test.ts (1314.9427ms)
+eval-relation-gain.test.ts: 21 passed, 0 failed
+✔ test\eval-relation-gain.test.ts (14085.5814ms)
+eval-release-layering.test.ts: 20 passed, 0 failed
+✔ test\eval-release-layering.test.ts (1460.8177ms)
+eval-runner.test.ts: 23 passed, 0 failed
+✔ test\eval-runner.test.ts (79090.1911ms)
+eval-ship-gate-integrity.test: 7 passed, 0 failed
+✔ test\eval-ship-gate-integrity.test.mjs (1405.3598ms)
+eval-ship-gate-override.test.ts: 14 passed, 0 failed
+✔ test\eval-ship-gate-override.test.ts (10707.3018ms)
+eval-skip tests: 38 passed, 0 failed
+✔ test\eval-skip.test.ts (2157.8502ms)
+eval-switch-state-fixes.test: 8 passed, 0 failed
+✔ test\eval-switch-state-fixes.test.ts (4953.3241ms)
+eval-switch-state.test: 68 passed, 0 failed
+✔ test\eval-switch-state.test.ts (5860.348ms)
+fts5-tokenize.test.ts: 8 passed, 0 failed
+✔ test\fts5-tokenize.test.ts (44177.9365ms)
+fusion-registry-memory tests: 14 passed, 0 failed
+✔ test\fusion-registry-memory.test.ts (12574.3283ms)
+gain-ledger.test.mjs: all checks passed
+✔ test\gain-ledger.test.mjs (2586.3634ms)
+obs-fixtures chain: 27 passed, 0 failed
+✔ test\obs-fixtures.test.ts (4858.6271ms)
+observation trace/eval round-trip: OK
+✔ test\observation.test.ts (5338.3113ms)
+quarantine-review.test.ts: 14 passed, 0 failed
+✔ test\quarantine-review.test.ts (39608.6131ms)
+relation-edges.test.ts: all assertions passed
+✔ test\relation-edges.test.ts (50207.0403ms)
+revision-cli.integration.test: ok
+✔ test\revision-cli.integration.test.mjs (91494.2557ms)
+revision-core.test: ok
+✔ test\revision-core.test.ts (5208.6686ms)
+revision-fixture.integration.test: ok
+✔ test\revision-fixture.integration.test.mjs (25183.1616ms)
+secret-guard.test.ts: all assertions passed
+✔ test\secret-guard.test.ts (1711.0115ms)
+  PASS fresh user_version = OBSERVATION_USER_VERSION
+  PASS fresh includes injected_trace_id column
+  PASS fresh includes session_id column
+  PASS fresh includes client_id column
+  PASS fresh includes idx_observability_traces_injected_trace
+  PASS fresh includes idx_observability_traces_session (partial)
+  PASS fresh includes idx_observability_traces_client (partial)
+  PASS migrated user_version = OBSERVATION_USER_VERSION
+  PASS migrated has same columns as fresh
+  PASS migrated has same indexes as fresh
+  PASS OBSERVATION_SCHEMA_VERSION = 2
+  PASS OBSERVATION_USER_VERSION = 2
+  PASS trace_id round-trip equality
+  PASS session_id round-trip equality
+  PASS client_id round-trip equality
+  PASS golden store: caller trace_id persisted
+  PASS golden store: injected_trace_id matches caller trace_id
+  PASS golden store: session_id read from ANS_SESSION_ID env
+  PASS T9(a): envelope not null
+  PASS T9(a): allow list persisted
+  PASS T9(a): deny list persisted
+  PASS T9(a): policy_version persisted
+  PASS T9(a): materialized_at is ISO-8601
+  PASS T9(b): missing cache envelope -> null
+  PASS T9(c): old-shape cache (no materialized_at) -> null
+
+session-id-propagation tests: 25 passed, 0 failed
+✔ test\session-id-propagation.test.ts (4887.5682ms)
+--- SessionStore tests: 18 passed, 0 failed ---
+✔ test\session-store.test.ts (30706.9118ms)
+stale-probe.test.ts: 9 passed, 0 failed
+✔ test\stale-probe.test.ts (28091.5422ms)
+passed=21 failed=0
+✔ test\t0-preferences.test.ts (5029.1289ms)
+t6-hostile-cuts.test: 18 passed, 0 failed
+✔ test\t6-hostile-cuts.test.mjs (2136.9412ms)
+tau-scan tests: 20 passed, 0 failed
+✔ test\tau-scan.test.ts (2292.1546ms)
+time-decay tests: 9474 passed, 0 failed
+✔ test\time-decay.test.ts (1987.5084ms)
+url-policy tests: 23 passed, 0 failed
+✔ test\url-policy.test.ts (4718.3405ms)
+ℹ tests 62
+ℹ suites 0
+ℹ pass 62
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 172587.9225

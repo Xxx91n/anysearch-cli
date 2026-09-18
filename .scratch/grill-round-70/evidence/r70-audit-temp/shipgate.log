@@ -1,0 +1,4 @@
+[info] step 0/9: permanent invariants (ADR-0059 D5)
+[pass] check-workflows: OK (6 files)
+[fail] clean-tree invariant violated (ADR-0059 D5b): git status --porcelain is not empty:
+?? .scratch/grill-round-70/audit/

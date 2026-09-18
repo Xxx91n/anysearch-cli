@@ -1,0 +1,27 @@
+[OK] pack produced 4 tarballs
+[OK] no stale 0.0.0 tarball
+[OK] install set = 3 app tarballs only
+[OK] npm install clean prefix
+[OK] install closure excludes onnxruntime-node
+[OK] install closure excludes @huggingface/transformers
+[OK] peer-optional: @anysearch-cli/embedding NOT auto-installed
+[OK] bundled internals absent from install closure
+[OK] ans bin shim installed
+[OK] ans --version exit 0
+[OK] version is real (not 0.0.0)
+[OK] installed doctor exit 0
+[OK] doctor reports vector arm status
+[OK] doctor shows [5] Domains
+[OK] doctor lists docs domain
+[OK] ans domain docs exit 0
+[OK] domain switch resolves shipped toml
+[OK] doctor shows active domain docs
+[OK] embedding tarball packed for peer leg
+[OK] npm install embedding tarball (explicit peer)
+[OK] embedding lands at shared node_modules root
+[OK] import('@anysearch-cli/embedding') resolves from installed cli
+[OK] doctor shows vector arm present after peer install
+[OK] search exit 0 with provider key
+[OK] search returns results
+[OK] a result lands on the docs urlAllowlist
+install-smoke: 26 passed, 0 failed

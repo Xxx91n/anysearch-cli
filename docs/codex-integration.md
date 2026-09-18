@@ -69,6 +69,7 @@ policy fallback) and serves `/preheat` `/recall` `/index` `/policy`.
 
 `config.toml` (`$CODEX_HOME/config.toml`, default `~/.codex/config.toml`):
 
+<!-- machine-local: illustrative placeholder path in doc example @ 2026-09-19 -->
 ```toml
 [mcp_servers.anysearch]
 command = "ans-mcp"

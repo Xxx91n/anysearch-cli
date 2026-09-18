@@ -6,7 +6,7 @@
 
 验证层时序语义硬化（D-001）：主线=F-S4 assert-checks-green 严格两段式；次级=store integration 抖动 Spike-Gated 处置。
 
-## 裁决摘要（详见 `D:\Aworker\anysearch-cli\.scratch\grill-round-70\decision-ledger.md`）
+## 裁决摘要（详见 `.scratch/grill-round-70/decision-ledger.md`）
 
 - D-001 主题定界：F-S4 主线+jitter 次级；三线+deferred 池显式范围外
 - D-002 F-S4 设计：严格两段式+全程锚+phase 错误拆分+ADR-0071 三件必录

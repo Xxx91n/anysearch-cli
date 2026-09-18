@@ -288,6 +288,7 @@ $ cd /d/Aworker/anysearch-cli && atomcode -p "Research round 4 for the anysearch
 
 🏁 Script executed:
 
+<!-- machine-local: build-host temp path cited as evidence @ 2026-09-19 -->
 ```shell
 printf '%s\n' 'Repository convention scopes:'
 find /tmp/coderabbit-repo-knowledge/1mcp-app-agent-17562aa1 -type f -name '*.md' -print

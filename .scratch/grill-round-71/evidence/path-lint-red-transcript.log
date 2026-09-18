@@ -1,0 +1,47 @@
+# R71 T0 先红证据 — path-lint leg (step 1i/9) against pre-sweep tree
+# captured: 2026-09-18T18:00:02.515Z via standalone harness (leg fn extracted verbatim from scripts/ship-gate.mjs)
+# clean-tree invariant blocks in-gate red on dirty tree; harness runs the identical function
+[info] step 1i/9: machine-local path discipline lint (ADR-0072)
+[fail] path-lint: 330 machine-local path violation(s):
+  .scratch/grill-round-62/q6-atomcode.md:58 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: 我先定位仓库并读取账本、ADR 与 golden 集相关实物，再进入外部调研。仓库在 `D:/Aworker/anysearch-cli`。先看目录结构定位全部目标文件。继续读取 golden 集实物
+  .scratch/grill-round-63/reports/2026-09-15-report.md:23 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: D:/Aworker/anysearch-snapshots/{20260915092816,20260915095851}（manifest.json 含 sha256）。
+  .scratch/grill-round-65/evidence/README.md:9 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\domains
+  .scratch/grill-round-65/evidence/README.md:10 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: | doctor(stranger cwd) | `cd D:\Aworker\e2e-r65-codebuddy && ans doctor` | 22/3/0；domains 解析到 `<npm-
+  .scratch/grill-round-65/evidence/README.md:17 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: | e2e 现场 | `D:\Aworker\e2e-r65-codebuddy\` 建 `.codebuddy/settings.json`（claude 适配器试接）+ `mcp.json`（en
+  .scratch/grill-round-65/evidence/README.md:49 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: ## T2/T4 live 探针矩阵（CodeBuddy 2.151.0 headless，model=fast-model，e2e=D:\Aworker\e2e-r65-codebuddy）
+  .scratch/grill-round-65/evidence/defect-ledger.md:37 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: ## T2/T4 live 探针矩阵结论（CodeBuddy 2.151.0，model=fast-model，e2e 现场 D:\Aworker\e2e-r65-codebuddy）
+  .scratch/grill-round-65/handoffs/next-grill-r66.md:23 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: - e2e 现场 D:\Aworker\e2e-r65-codebuddy\ 可复用（mcp.json/settings.json/server-token/project-index.db 在）；探
+  .scratch/grill-round-65/handoffs/next-round.md:14 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: - CodeBuddy Code 2.149.0 已装本机：`~/AppData/Roaming/npm/codebuddy`；家目录 `~/.codebuddy/`（settings.json 现=
+  .scratch/grill-round-65/handoffs/resume-impl.md:26 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: - e2e 现场 `D:\Aworker\e2e-r65-codebuddy\`：`.codebuddy/settings.json`（codebuddy 适配器，$(npm root -g) 路径）
+  .scratch/grill-round-65/reports/2026-09-16-report.md:5 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: 宿主实测：CodeBuddy 2.151.0（会话间自 2.149.0 自升级）· model=fast-model · e2e 现场 `D:\Aworker\e2e-r65-codebuddy\`
+  .scratch/grill-round-65/reports/2026-09-16-report.md:25 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: - e2e 现场 `D:\Aworker\e2e-r65-codebuddy\`（仓外）：`.codebuddy/settings.json` + `mcp.json`（env 空块=继承，无明文键）
+  .scratch/grill-round-65/reports/2026-09-16-report.md:35 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: - 复跑：`cd D:\Aworker\e2e-r65-codebuddy && ANS_ADAPTER=<path> node <repo>/.scratch/grill-round-65/scri
+  .scratch/grill-round-65/reports/2026-09-16-report.md:51 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: 复跑：`cd D:\Aworker\e2e-r65-codebuddy && node <repo>/.scratch/grill-round-65/scripts/probe.mjs <label>
+  .scratch/grill-round-66/evidence/README.md:3 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: > e2e 现场 D:\Aworker\e2e-r66-claude（仓外）；runner=scripts/probe-claude.mjs（spawn claude.exe 直启，User env 
+  .scratch/grill-round-66/evidence/defect-ledger.md:113 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: - 发现链：首轮复验真宿主裸形输出→追出 npm prefix 双根（`D:\nodejs` vs `Roaming\npm`，脚本锚定后者而 `npm i -g` 落前者）——装包须 `--pref
+  .scratch/grill-round-66/handoffs/next-round.md:4 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: R66=串行双主题轮（D-001）：**先 B**=真 Claude Code 宿主验证（R65 探针矩阵全移植+增补+方法论升级）；**后 A**=0.0.4 发布工程（OIDC trusted p
+  .scratch/grill-round-66/handoffs/next-round.md:7 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\.scratch\grill-round-66\decision-ledger.md
+  .scratch/grill-round-66/handoffs/next-round.md:8 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\.scratch\grill-round-66\q3-atomcode.md
+  .scratch/grill-round-66/handoffs/next-round.md:9 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\.scratch\grill-round-66\q4-atomcode.md
+  .scratch/grill-round-66/handoffs/next-round.md:10 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\.scratch\grill-round-65\scripts\probe.mjs, D:\Aworker\anysearch-cli\.scratch\grill-round-65\scripts\mcp-call-tool.mjs
+  .scratch/grill-round-66/handoffs/next-round.md:11 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\docs\adr\0067-*.md
+  .scratch/grill-round-66/handoffs/next-round.md:14 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: - Claude Code **2.1.251** @ C:\Users\Administrator\.local\bin\claude；本地代理 http://127.0.0.1:15721 鉴权（
+  .scratch/grill-round-66/handoffs/next-round.md:16 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: - hooks 实证：stream-json 见 system/hook_started|hook_response 事件；全局 context-mode SessionStart hook 真注入 
+  .scratch/grill-round-66/handoffs/next-round.md:17 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\AGENTS.md
+  .scratch/grill-round-66/handoffs/next-round.md:19 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\.github\workflows\release.yml
+  .scratch/grill-round-66/handoffs/next-round.md:22 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\apps\plugin\configs\claude\hooks.json
+  .scratch/grill-round-66/handoffs/next-round.md:23 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\apps\plugin\src\hooks\adapters\claude.ts, D:\Aworker\anysearch-cli\apps\plugin\src\hooks\session-start.ts
+  .scratch/grill-round-66/handoffs/next-round.md:24 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\apps\plugin\.claude-plugin\
+  .scratch/grill-round-66/handoffs/next-round.md:28 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\.scratch\grill-round-66\evidence\
+  .scratch/grill-round-66/handoffs/next-round.md:33 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\.scratch\grill-round-66\evidence\
+  .scratch/grill-round-66/handoffs/next-round.md:41 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\apps\plugin\configs\claude\hooks.json, D:\Aworker\anysearch-cli\apps\plugin\src\hooks\adapters\claude.ts, D:\Aworker\anysearch-cli\apps\plugin\src\hooks\session-start.ts
+  .scratch/grill-round-66/handoffs/next-round.md:49 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\docs\adr\0067-*.md, D:\Aworker\anysearch-cli\README.md, D:\Aworker\anysearch-cli\CHANGELOG.md+D:\Aworker\anysearch-cli\CONTEXT.md
+  .scratch/grill-round-66/handoffs/next-round.md:53 in-repo target reference must be repo-relative: D:\Aworker\anysearch-cli\apps\cli\package.json、D:\Aworker\anysearch-cli\apps\mcp\package.json、D:\Aworker\anysearch-cli\apps\plugin\package.json、D:\Aworker\anysearch-cli\packages\embedding\package.json, D:\Aworker\anysearch-cli\.github\workflows\release.yml
+  .scratch/grill-round-66/handoffs/round-66-audit-closeout.md:17 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: 3. **npm prefix 双根部署陷阱**（返工抓出）：npm i -g 默认落 D:/nodejs，e2e 脚本+旧 shim 锚定 Roaming/npm——跨机/跨前缀安装须 --pref
+  .scratch/grill-round-66/q3-atomcode.md:120 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: - **Windows 可靠性：不可靠，有确凿 bug 链**。已读 [issue #16116](https://github.com/anthropics/claude-code/issues/1
+  .scratch/grill-round-66/reports/2026-09-17-audit.md:53 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: - AppData\Roaming\npm 残留 T4 tarball 装的 plugin@0.0.3 全局副本，与 D:\nodejs 0.0.4 双前缀并存；环境注记。
+  .scratch/grill-round-66/reports/2026-09-17-report.md:21 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: | `claude plugin validate` repo+installed 全过 | `claude plugin validate "C:/Users/Administrator/AppDa
+  .scratch/grill-round-66/reports/2026-09-17-report.md:94 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: 返工真宿主闭环：t4-rework-p6b——信封实发+模型逐字引用 trigger rule。另抓出 npm prefix 双根部署陷阱（`npm i -g` 默认落 `D:\nodejs`，e2e
+  .scratch/grill-round-67/evidence/t1-defect-ledger.md:3 machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->: Track A object = npm-global published 0.0.4 (D:/nodejs/node_modules/@anysearch-cli/*).
+  ... and 290 more
+RESULT: RED

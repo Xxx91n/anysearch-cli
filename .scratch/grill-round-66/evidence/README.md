@@ -1,6 +1,6 @@
 # R66 evidence 索引
 
-> e2e 现场 D:\Aworker\e2e-r66-claude（仓外）；runner=scripts/probe-claude.mjs（spawn claude.exe 直启，User env 注入不落盘）。
+> e2e 现场 D:\Aworker\e2e-r66-claude（仓外）；runner=scripts/probe-claude.mjs（spawn claude.exe 直启，User env 注入不落盘）。 <!-- machine-local: sibling e2e checkout on build host @ 2026-09-19 -->
 > 基线=published 0.0.3（registry）；候选体=T2+ pnpm pack tarball。证据命名 t<票>-<探针>.{stream.jsonl,debug.log}。
 
 ## T1 部署腿 + 0.0.3 基线（D-002）

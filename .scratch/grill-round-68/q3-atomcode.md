@@ -42,7 +42,7 @@ Executed 1 commands (97 lines, 12.7KB). Indexed 10 sections. Searched 4 queries.
 
 **(a) agy CLI 事实**
 
-1. **独立安装，非 IDE 内置，非 npm 包**。官方安装器：`irm https://antigravity.google/cli/install.ps1 | iex`，Windows 二进制落在 `C:\Users\<user>\AppData\Local\agy\bin`（[官方 Getting Started](https://antigravity.google/docs/cli/getting-started/)，已读原文）。这与本机 `agy` 不在 PATH、无 `~/.gemini/antigravity-cli/` 完全一致——**s0 的预期结果是"CLI 未装，需先跑官方安装器"**，且装好后 config 根目录才会出现 `~/.gemini/antigravity-cli/`。
+1. **独立安装，非 IDE 内置，非 npm 包**。官方安装器：`irm https://antigravity.google/cli/install.ps1 | iex`，Windows 二进制落在 `C:\Users\<user>\AppData\Local\agy\bin`（[官方 Getting Started](https://antigravity.google/docs/cli/getting-started/)，已读原文）。这与本机 `agy` 不在 PATH、无 `~/.gemini/antigravity-cli/` 完全一致——**s0 的预期结果是"CLI 未装，需先跑官方安装器"**，且装好后 config 根目录才会出现 `~/.gemini/antigravity-cli/`。 <!-- machine-local: user-level agent/tooling config path on build host @ 2026-09-19 -->
 2. **hooks.json 位置存在真实分歧，s1 必须实测**（这正是提议设计的价值）：
    - 官方 docs + Atamel 博客（7/16，已读原文）：workspace `.agents/hooks.json` + global `~/.gemini/config/hooks.json` + plugin 目录，三 flavors（AGY/CLI/IDE）通用；
    - Medium/Tanaike 指南（6/26，已读原文）：global 是 `~/.gemini/antigravity-cli/hooks.json`；
@@ -71,7 +71,7 @@ $ cd /d/Aworker/anysearch-cli && atomcode -p "Research round 3 for the anysearch
 
 **(a) agy CLI 事实**
 
-1. **独立安装，非 IDE 内置，非 npm 包**。官方安装器：`irm https://antigravity.google/cli/install.ps1 | iex`，Windows 二进制落在 `C:\Users\<user>\AppData\Local\agy\bin`（[官方 Getting Started](https://antigravity.google/docs/cli/getting-started/)，已读原文）。这与本机 `agy` 不在 PATH、无 `~/.gemini/antigravity-cli/` 完全一致——**s0 的预期结果是"CLI 未装，需先跑官方安装器"**，且装好后 config 根目录才会出现 `~/.gemini/antigravity-cli/`。
+1. **独立安装，非 IDE 内置，非 npm 包**。官方安装器：`irm https://antigravity.google/cli/install.ps1 | iex`，Windows 二进制落在 `C:\Users\<user>\AppData\Local\agy\bin`（[官方 Getting Started](https://antigravity.google/docs/cli/getting-started/)，已读原文）。这与本机 `agy` 不在 PATH、无 `~/.gemini/antigravity-cli/` 完全一致——**s0 的预期结果是"CLI 未装，需先跑官方安装器"**，且装好后 config 根目录才会出现 `~/.gemini/antigravity-cli/`。 <!-- machine-local: user-level agent/tooling config path on build host @ 2026-09-19 -->
 2. **hooks.json 位置存在真实分歧，s1 必须实测**（这正是提议设计的价值）：
    - 官方 docs + Atamel 博客（7/16，已读原文）：workspace `.agents/hooks.json` + global `~/.gemini/config/hooks.json` + plugin 目录，三 flavors（AGY/CLI/IDE）通用；
    - Medium/Tanaike 指南（6/26，已读原文）：global 是 `~/.gemini/antigravity-cli/hooks.json`；

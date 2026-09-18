@@ -14,7 +14,7 @@ R66 全闭环且审计通过：0.0.4 已 OIDC TP 发布（registry+provenance+�
 
 1. **0.0.5 发布**（建议下轮 A 段或独立小轮）：published 0.0.4 仍带 session-start 无旗标=信封-only 缺陷（Codex 裸契约破，README 已如实入账）——in-tree 修复需下次发布才送达用户。
 2. **合 main**：r66 六分支+audit-rework 已推未合；首个 main push 将首跑新版 ship-gate（step1a=0.0.4 钉已就位）。遗留观察 F-01a：ship-gate step0 clean-tree 读 git status --porcelain，GitButler workspace 下恒脏（索引工件）——本地跑 ship-gate 须净克隆或豁免，未修。
-3. **npm prefix 双根部署陷阱**（返工抓出）：npm i -g 默认落 D:/nodejs，e2e 脚本+旧 shim 锚定 Roaming/npm——跨机/跨前缀安装须 --prefix 显式钉或脚本自检 npm prefix -g，否则复验误打旧 shim。
+3. **npm prefix 双根部署陷阱**（返工抓出）：npm i -g 默认落 D:/nodejs，e2e 脚本+旧 shim 锚定 Roaming/npm——跨机/跨前缀安装须 --prefix 显式钉或脚本自检 npm prefix -g，否则复验误打旧 shim。 <!-- machine-local: user-level agent/tooling config path on build host @ 2026-09-19 -->
 4. **既有 deferred 池**（沿用）：provider 服务端排查、projectIndex 双库裁决、interactive TUI、embedding arm、跨 OS matrix、Cursor/Codex/Antigravity 真宿主、plugin 升格默认路径（判据>=2）、watch 观测窗值守。
 5. 观测项：ans_chat 空正文（ANS_LLM_* 上游端点缺=环境项）；引擎 verdict 恒 ambiguous 时 PostToolUse 合法跳索引（机制已验）。
 

@@ -6,15 +6,15 @@
 |------|------|------|----------|
 | 安装 | `npm i -g @anysearch-cli/cli@0.0.3 @anysearch-cli/mcp@0.0.3 @anysearch-cli/plugin@0.0.3` | added 340 packages, 0 err | t1-npm-install.log |
 | 版本 | `ans --version` | `0.0.3` | t1-ans-version.log |
-| doctor(repo cwd) | `ans doctor` | 22 pass/3 skip/0 fail；domains 解析到 `D:\Aworker\anysearch-cli\domains`（cwd 链） | t1-ans-doctor.log |
-| doctor(stranger cwd) | `cd D:\Aworker\e2e-r65-codebuddy && ans doctor` | 22/3/0；domains 解析到 `<npm-global>\@anysearch-cli\cli\domains`（包装域随包） | t1-ans-doctor-stranger.log |
+| doctor(repo cwd) | `ans doctor` | 22 pass/3 skip/0 fail；domains 解析到 `domains`（cwd 链） | t1-ans-doctor.log |
+| doctor(stranger cwd) | `cd D:\Aworker\e2e-r65-codebuddy && ans doctor` | 22/3/0；domains 解析到 `<npm-global>\@anysearch-cli\cli\domains`（包装域随包） | t1-ans-doctor-stranger.log | <!-- machine-local: sibling e2e checkout on build host @ 2026-09-19 -->
 | 演示域 | `ans domain docs` | persisted → `~/.anysearch/config.env`；sources=tavily,exa,anysearch | t1-domain-docs.log |
 | env 键存在性 | ctx node 三层查（shell/User/Machine） | EXA_API_KEY=USER-SET；ANYSEARCH_API_KEY、ANS_LLM_* 全 unset（值未印） | 会话记录 |
 | MCP tools/list | `node scripts/mcp-tools-list.mjs`（spawn node+dist 直拉） | initOk；5 工具 search_web/research_web/recall_memory/query_knowledge/ans_chat；serverInfo anysearch@0.0.3 | t1-ans-mcp-tools-list.log |
 | plugin server 手拉 | `node <npm-global>/@anysearch-cli/plugin/dist/server/index.cjs`（cwd=e2e） | listen 127.0.0.1:33333；token 0600 落 `<cwd>/.anysearch-cli/server-token` | server-stderr.log |
 | /health 无 token | `curl :33333/health` | HTTP 401 unauthorized | 会话记录 |
 | /health +Bearer | ctx node http | HTTP 200 `{"status":"ok"}` | 会话记录 |
-| e2e 现场 | `D:\Aworker\e2e-r65-codebuddy\` 建 `.codebuddy/settings.json`（claude 适配器试接）+ `mcp.json`（env 空块=子进程继承） | 文件落盘 | e2e 现场 |
+| e2e 现场 | `D:\Aworker\e2e-r65-codebuddy\` 建 `.codebuddy/settings.json`（claude 适配器试接）+ `mcp.json`（env 空块=子进程继承） | 文件落盘 | e2e 现场 | <!-- machine-local: sibling e2e checkout on build host @ 2026-09-19 -->
 | CodeBuddy headless 探路 | `codebuddy -p ... --output-format stream-json --mcp-config mcp.json --strict-mcp-config` | mcp.json 拾取（`allServers=[anysearch:connecting]`）；**Authentication required** 中止 | cb-p1-tools.log |
 | 合成 stdin 红绿对照 | `node scripts/synthetic-stdin-red.mjs`（cwd=e2e，server 活） | **RED 实证**：`hook_event_name`→exit0/空 stdout/0 索引；`event`→distilled 输出/2 索引 | t1-synthetic-stdin-red.log |
 
@@ -46,7 +46,7 @@
 
 所有证据文件不含键值；token 文件 0600 仅被脚本读取未打印；mcp.json env 空块靠继承。
 
-## T2/T4 live 探针矩阵（CodeBuddy 2.151.0 headless，model=fast-model，e2e=D:\Aworker\e2e-r65-codebuddy）
+## T2/T4 live 探针矩阵（CodeBuddy 2.151.0 headless，model=fast-model，e2e=D:\Aworker\e2e-r65-codebuddy） <!-- machine-local: sibling e2e checkout on build host @ 2026-09-19 -->
 
 跑器：`node scripts/probe.mjs <label> "<prompt>" [--nomcp] [--maxturns N] [--model M]`（自动注入 User 级 env，值不落盘）；直调 `node scripts/mcp-call-tool.mjs <tool> '<args>'`。
 

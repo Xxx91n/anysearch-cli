@@ -11,7 +11,7 @@
 ## 机制事实（grill 期实物核实）
 
 - 部署单元：apps/cli → bin `ans`（dist/index.js）；apps/mcp → bin `ans-mcp`（dist/index.cjs，stdio 默认 / --transport http --port，5 工具 search_web/research_web/recall_memory/query_knowledge/ans_chat）；apps/plugin → hooks（dist/hooks/{preheat,distill,session-start}.cjs + adapters/{claude,cursor,codex,antigravity}.cjs）+ plugin server（dist/server/index.cjs，127.0.0.1:33333 bearer token，/recall /index /health /purge——**无 bin，启动缺口已登记 T3**）。
-- CodeBuddy Code 2.149.0 已装本机：`~/AppData/Roaming/npm/codebuddy`；家目录 `~/.codebuddy/`（settings.json 现={trustedDirectories,language:简体中文,model:glm-5.3}）。
+- CodeBuddy Code 2.149.0 已装本机：`~/AppData/Roaming/npm/codebuddy`；家目录 `~/.codebuddy/`（settings.json 现={trustedDirectories,language:简体中文,model:glm-5.3}）。 <!-- machine-local: user-level agent/tooling config path on build host @ 2026-09-19 -->
 - CodeBuddy hooks 契约：stdin 注入 `hook_event_name`（非 event）+tool_name/tool_input/tool_response/session_id/cwd；stdout 决策经 `hookSpecificOutput`{permissionDecision|additionalContext|updatedToolOutput}；SessionStart 的 stdout 原文进上下文；settings schema={matcher,hooks:[{type:"command",command:<bash 字符串>}]}；Windows 上 hook 命令强制 Git Bash；文档标 Beta（≥v1.16.0）。
 - CodeBuddy headless：`codebuddy -p --output-format stream-json --mcp-config <file|string> --strict-mcp-config -d api,hooks --max-turns <n>`——实测协议全可脚本化；`-y/--dangerously-skip-permissions` 或 `--permission-mode` 供非交互跑。
 - 潜伏假绿（T1 预期实证）：apps/plugin/src/hooks/adapters/claude.ts 读 `stdin.event`——真实宿主发 `hook_event_name` → event="" → 静默 exit 0 → hooks 部署了但什么都不做。T3 修 `hook_event_name ?? event`（真实 Claude Code 同发 hook_event_name，修正全体受益）。

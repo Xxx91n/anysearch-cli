@@ -34,7 +34,7 @@
 - `search_web` 的 internal `anysearch` provider 在 live 探针中 queried 但 successfulProviders=2/3——内部服务侧未成功返回（凭证已供），fail-open 生效未阻探针；需服务端排查，登记 deferred。
 - 真 Claude Code / Cursor / Codex / Antigravity 宿主未实机验证（契约级 + 合成 stdin 绿；CodeBuddy 已 live 绿）。
 
-## T2/T4 live 探针矩阵结论（CodeBuddy 2.151.0，model=fast-model，e2e 现场 D:\Aworker\e2e-r65-codebuddy）
+## T2/T4 live 探针矩阵结论（CodeBuddy 2.151.0，model=fast-model，e2e 现场 D:\Aworker\e2e-r65-codebuddy） <!-- machine-local: sibling e2e checkout on build host @ 2026-09-19 -->
 
 | 探针 | 结果 | 证据 |
 |------|------|------|

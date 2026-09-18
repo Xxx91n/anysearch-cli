@@ -14,4 +14,4 @@
 
 ## 数据源
 
-唯一源: D:\Aworker\anysearch-cli\.scratch\grill-round-69\decision-ledger.md
+唯一源: .scratch/grill-round-69/decision-ledger.md

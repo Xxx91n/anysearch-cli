@@ -2,7 +2,7 @@ Executed 1 commands (80 lines, 11.8KB). Indexed 8 sections. Searched 5 queries.
 
 ## Commands
 
-- atomcode-q4: `atomcode -p "背景：D:\\Aworker\\anysearch-cli（信息专精 Agent CLI，npm latest=0.0.5，5 个真实宿主验证，69 篇 ADR）。本轮 R69=GitHub 门面/README 双语化主题，已裁决：双语形态=README.md 英文主件+README.zh-CN.md 中文伴生互链（决策账本 D:\\Aworker\\anysearch-cli\\.scratch\\grill-round-69\\decision-ledger.md 的 D-001~D-003）。当前 README 312 行，其中 56% 是工程审计内容（Known limitations 节约 100 行、Architecture decisions 节约 76 行 ADR 目录），且公共文档泄漏机器本地证据路径（D:/Aworker/...）。待裁决问题=README 信息架构选型：A=重构（limitations 全文迁 docs/limitations.md 仅留 top-3 摘要、ADR 目录改为指针、清机器路径）/B=全保留仅重排/C=极简重写…`
+- atomcode-q4: `atomcode -p "背景：D:\\Aworker\\anysearch-cli（信息专精 Agent CLI，npm latest=0.0.5，5 个真实宿主验证，69 篇 ADR）。本轮 R69=GitHub 门面/README 双语化主题，已裁决：双语形态=README.md 英文主件+README.zh-CN.md 中文伴生互链（决策账本 .scratch/grill-round-69/decision-ledger.md 的 D-001~D-003）。当前 README 312 行，其中 56% 是工程审计内容（Known limitations 节约 100 行、Architecture decisions 节约 76 行 ADR 目录），且公共文档泄漏机器本地证据路径（D:/Aworker/...）。待裁决问题=README 信息架构选型：A=重构（limitations 全文迁 docs/limitations.md 仅留 top-3 摘要、ADR 目录改为指针、清机器路径）/B=全保留仅重排/C=极简重写…` <!-- machine-local: repo location on the authoring host @ 2026-09-19 -->
 
 ## Indexed Sections
 
@@ -29,12 +29,12 @@ Executed 1 commands (80 lines, 11.8KB). Indexed 8 sections. Searched 5 queries.
 
 **结论 3：ADR 目录的工业惯例是“docs/adr/ 自带 index，README 一行指针”**（Confidence 高）。ADR 实践文献（hidekazu-konishi ADR 运维文、architectviewmaster、MADR 官方）一致惯例：`docs/adr/` 下维护 index（README.md 或 index.md），供工程师扫描；主 README 与 ADR 的关系是**链接可达**，不是目录复制。README 里 76 行 ADR 目录是双重维护负担（与 `docs/adr/` index 漂移），且对这个规模的目录，"Architecture decisions: see [docs/adr/](docs/adr/) — 69 ADRs, indexed" 一行即可。A 方案"改为指针"与惯例完全一致；B 方案保留目录是维护负债。
 
-**结论 4：机器本地证据路径泄漏是硬伤，任何方案都必须清**（Confidence 高，无需外部佐证）。`D;C:\Program Files\Git\Aworker\...` 这类路径泄漏对公共文档是纯负资产（信息泄漏 + 渲染破碎 + 不可复现证据的伪诚实）。GitHub Docs 对相对链接的惯例（"Relative links are easier for users who clone; absolute links may not work in clones"）直接支持改用仓库相对路径或删除机器特定证据。这不是 A/B/C 的分歧点，是共识项。
+**结论 4：机器本地证据路径泄漏是硬伤，任何方案都必须清**（Confidence 高，无需外部佐证）。`D;C:\Program Files\Git\Aworker\...` 这类路径泄漏对公共文档是纯负资产（信息泄漏 + 渲染破碎 + 不可复现证据的伪诚实）。GitHub Docs 对相对链接的惯例（"Relative links are easier for users who clone; absolute links may not work in clones"）直接支持改用仓库相对路径或删除机器特定证据。这不是 A/B/C 的分歧点，是共识项。 <!-- machine-local: machine-local path cited in committed doc @ 2026-09-19 -->
 
 ### atomcode-q4
 # atomcode-q4
 
-$ atomcode -p "背景：D:\\Aworker\\anysearch-cli（信息专精 Agent CLI，npm latest=0.0.5，5 个真实宿主验证，69 篇 ADR）。本轮 R69=GitHub 门面/README 双语化主题，已裁决：双语形态=README.md 英文主件+README.zh-CN.md 中文伴生互链（决策账本 D:\\Aworker\\anysearch-cli\\.scratch\\grill-round-69\\decision-ledger.md 的 D-001~D-003）。当前 README 312 行，其中 56% 是工程审计内容（Known limitations 节约 100 行、Architecture decisions 节约 76 行 ADR 目录），且公共文档泄漏机器本地证据路径（D:/Aworker/...）。待裁决问题=README 信息架构选型：A=重构（limitations 全文迁 docs/limitations.md 仅留 top-3 摘要、ADR 目录改为指针、清机器路径）/B=全保留仅重排/C=极简重写…
+$ atomcode -p "背景：D:\\Aworker\\anysearch-cli（信息专精 Agent CLI，npm latest=0.0.5，5 个真实宿主验证，69 篇 ADR）。本轮 R69=GitHub 门面/README 双语化主题，已裁决：双语形态=README.md 英文主件+README.zh-CN.md 中文伴生互链（决策账本 .scratch/grill-round-69/decision-ledger.md 的 D-001~D-003）。当前 README 312 行，其中 56% 是工程审计内容（Known limitations 节约 100 行、Architecture decisions 节约 76 行 ADR 目录），且公共文档泄漏机器本地证据路径（D:/Aworker/...）。待裁决问题=README 信息架构选型：A=重构（limitations 全文迁 docs/limitations.md 仅留 top-3 摘要、ADR 目录改为指针、清机器路径）/B=全保留仅重排/C=极简重写… <!-- machine-local: repo location on the authoring host @ 2026-09-19 -->
 
 先读本地材料：账本 current 记录、ADR 0062、CONTEXT.md 词表。本地材料已读完（账本 D-001/D-003、ADR-0062 D4、CONTEXT.md 词表）。先召回知识库，同时启动三引擎多角度检索。继续第二阶段：定点补搜双语惯例、ADR 呈现惯例、徽章惯例，并抓原文验证。第三阶段：定点深挖，打开高价值原文核验（GitHub 官方 README 指南、art-of-readme、双语 README 先例、ADR 索引惯例、翻译 SSOT 实践、徽章惯例）。补齐深挖：art-of-readme 原文（换源）、翻译 SSOT 实践文、ADR 索引惯例文、README 章节最佳实践文。配额已达标（searches: 7 | angles: Official / Comparative / Criticism / Community | full reads: 6 | gaps: 成熟项目 README 长度统计缺一手数据，用 GitHub 官方文档 + 多源惯例弥补）。综合输出如下。
 
@@ -85,7 +85,7 @@ $ atomcode -p "背景：D:\\Aworker\\anysearch-cli（信息专精 Agent CLI，np
 
 **结论 3：ADR 目录的工业惯例是“docs/adr/ 自带 index，README 一行指针”**（Confidence 高）。ADR 实践文献（hidekazu-konishi ADR 运维文、architectviewmaster、MADR 官方）一致惯例：`docs/adr/` 下维护 index（README.md 或 index.md），供工程师扫描；主 README 与 ADR 的关系是**链接可达**，不是目录复制。README 里 76 行 ADR 目录是双重维护负担（与 `docs/adr/` index 漂移），且对这个规模的目录，"Architecture decisions: see [docs/adr/](docs/adr/) — 69 ADRs, indexed" 一行即可。A 方案"改为指针"与惯例完全一致；B 方案保留目录是维护负债。
 
-**结论 4：机器本地证据路径泄漏是硬伤，任何方案都必须清**（Confidence 高，无需外部佐证）。`D;C:\Program Files\Git\Aworker\...` 这类路径泄漏对公共文档是纯负资产（信息泄漏 + 渲染破碎 + 不可复现证据的伪诚实）。GitHub Docs 对相对链接的惯例（"Relative links are easier for users who clone; absolute links may not work in clones"）直接支持改用仓库相对路径或删除机器特定证据。这不是 A/B/C 的分歧点，是共识项。
+**结论 4：机器本地证据路径泄漏是硬伤，任何方案都必须清**（Confidence 高，无需外部佐证）。`D;C:\Program Files\Git\Aworker\...` 这类路径泄漏对公共文档是纯负资产（信息泄漏 + 渲染破碎 + 不可复现证据的伪诚实）。GitHub Docs 对相对链接的惯例（"Relative links are easier for users who clone; absolute links may not work in clones"）直接支持改用仓库相对路径或删除机器特定证据。这不是 A/B/C 的分歧点，是共识项。 <!-- machine-local: machine-local path cited in committed doc @ 2026-09-19 -->
 
 ## bilingual README maintenance pattern
 
@@ -117,7 +117,7 @@ $ atomcode -p "背景：D:\\Aworker\\anysearch-cli（信息专精 Agent CLI，np
 ### atomcode-q4
 # atomcode-q4
 
-$ atomcode -p "背景：D:\\Aworker\\anysearch-cli（信息专精 Agent CLI，npm latest=0.0.5，5 个真实宿主验证，69 篇 ADR）。本轮 R69=GitHub 门面/README 双语化主题，已裁决：双语形态=README.md 英文主件+README.zh-CN.md 中文伴生互链（决策账本 D:\\Aworker\\anysearch-cli\\.scratch\\grill-round-69\\decision-ledger.md 的 D-001~D-003）。当前 README 312 行，其中 56% 是工程审计内容（Known limitations 节约 100 行、Architecture decisions 节约 76 行 ADR 目录），且公共文档泄漏机器本地证据路径（D:/Aworker/...）。待裁决问题=README 信息架构选型：A=重构（limitations 全文迁 docs/limitations.md 仅留 top-3 摘要、ADR 目录改为指针、清机器路径）/B=全保留仅重排/C=极简重写…
+$ atomcode -p "背景：D:\\Aworker\\anysearch-cli（信息专精 Agent CLI，npm latest=0.0.5，5 个真实宿主验证，69 篇 ADR）。本轮 R69=GitHub 门面/README 双语化主题，已裁决：双语形态=README.md 英文主件+README.zh-CN.md 中文伴生互链（决策账本 .scratch/grill-round-69/decision-ledger.md 的 D-001~D-003）。当前 README 312 行，其中 56% 是工程审计内容（Known limitations 节约 100 行、Architecture decisions 节约 76 行 ADR 目录），且公共文档泄漏机器本地证据路径（D:/Aworker/...）。待裁决问题=README 信息架构选型：A=重构（limitations 全文迁 docs/limitations.md 仅留 top-3 摘要、ADR 目录改为指针、清机器路径）/B=全保留仅重排/C=极简重写… <!-- machine-local: repo location on the authoring host @ 2026-09-19 -->
 
 先读本地材料：账本 current 记录、ADR 0062、CONTEXT.md 词表。本地材料已读完（账本 D-001/D-003、ADR-0062 D4、CONTEXT.md 词表）。先召回知识库，同时启动三引擎多角度检索。继续第二阶段：定点补搜双语惯例、ADR 呈现惯例、徽章惯例，并抓原文验证。第三阶段：定点深挖，打开高价值原文核验（GitHub 官方 README 指南、art-of-readme、双语 README 先例、ADR 索引惯例、翻译 SSOT 实践、徽章惯例）。补齐深挖：art-of-readme 原文（换源）、翻译 SSOT 实践文、ADR 索引惯例文、README 章节最佳实践文。配额已达标（searches: 7 | angles: Official / Comparative / Criticism / Community | full reads: 6 | gaps: 成熟项目 README 长度统计缺一手数据，用 GitHub 官方文档 + 多源惯例弥补）。综合输出如下。
 
@@ -135,7 +135,7 @@ $ atomcode -p "背景：D:\\Aworker\\anysearch-cli（信息专精 Agent CLI，np
 
 **结论 3：ADR 目录的工业惯例是“docs/adr/ 自带 index，README 一行指针”**（Confidence 高）。ADR 实践文献（hidekazu-konishi ADR 运维文、architectviewmaster、MADR 官方）一致惯例：`docs/adr/` 下维护 index（README.md 或 index.md），供工程师扫描；主 README 与 ADR 的关系是**链接可达**，不是目录复制。README 里 76 行 ADR 目录是双重维护负担（与 `docs/adr/` index 漂移），且对这个规模的目录，"Architecture decisions: see [docs/adr/](docs/adr/) — 69 ADRs, indexed" 一行即可。A 方案"改为指针"与惯例完全一致；B 方案保留目录是维护负债。
 
-**结论 4：机器本地证据路径泄漏是硬伤，任何方案都必须清**（Confidence 高，无需外部佐证）。`D;C:\Program Files\Git\Aworker\...` 这类路径泄漏对公共文档是纯负资产（信息泄漏 + 渲染破碎 + 不可复现证据的伪诚实）。GitHub Docs 对相对链接的惯例（"Relative links are easier for users who clone; absolute links may not work in clones"）直接支持改用仓库相对路径或删除机器特定证据。这不是 A/B/C 的分歧点，是共识项。
+**结论 4：机器本地证据路径泄漏是硬伤，任何方案都必须清**（Confidence 高，无需外部佐证）。`D;C:\Program Files\Git\Aworker\...` 这类路径泄漏对公共文档是纯负资产（信息泄漏 + 渲染破碎 + 不可复现证据的伪诚实）。GitHub Docs 对相对链接的惯例（"Relative links are easier for users who clone; absolute links may not work in clones"）直接支持改用仓库相对路径或删除机器特定证据。这不是 A/B/C 的分歧点，是共识项。 <!-- machine-local: machine-local path cited in committed doc @ 2026-09-19 -->
 
 ## badges verified hosts presentation
 

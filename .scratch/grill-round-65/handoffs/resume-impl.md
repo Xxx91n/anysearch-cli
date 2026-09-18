@@ -23,7 +23,7 @@
 ## 环境实物状态
 
 - 全局 npm：cli/mcp/plugin 均为**本地 tarball 0.0.3**（含全部修复；published 0.0.3 无这些修复——发版时须 bump）。
-- e2e 现场 `D:\Aworker\e2e-r65-codebuddy\`：`.codebuddy/settings.json`（codebuddy 适配器，$(npm root -g) 路径）/ `mcp.json`（env 空块继承）/ `.anysearch-cli/server-token`（0600）/ `.anysearch/project-index.db`（66 行实证）。
+- e2e 现场 `D:\Aworker\e2e-r65-codebuddy\`：`.codebuddy/settings.json`（codebuddy 适配器，$(npm root -g) 路径）/ `mcp.json`（env 空块继承）/ `.anysearch-cli/server-token`（0600）/ `.anysearch/project-index.db`（66 行实证）。 <!-- machine-local: sibling e2e checkout on build host @ 2026-09-19 -->
 - plugin server：`ans-plugin-server` bin 直拉，127.0.0.1:33333 bearer。
 - CodeBuddy：2.151.0（会话间自 2.149.0 自升级），已登录，headless 用 `--model fast-model`（gemini-3.5-flash 网关 429）。
 - 上游 v1/chat：可用模型经 `GET <base>/models` 实测——`step`(5s content 直出)/`glm1`(reasoning 模型)/`nvdia`(26s)；`deepseek`/`gpt`/`qwen`/`meituan`/`claude`/`ces` 当前 5xx 或超时；ans_chat 需 `ANS_LLM_PROVIDER=custom`+`ANS_LLM_MODEL=<上游id>`。

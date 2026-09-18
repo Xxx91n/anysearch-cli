@@ -1,0 +1,112 @@
+===== L1 all-ok (kept) =====
+args: --import ./.scratch/grill-round-70/fixture/acg-register.mjs D:\Aworker\anysearch-cli/scripts/assert-checks-green.mjs --sha 0123456789abcdef --repo fixture/repo --discovery-sec 1 --interval-sec 0.1 --timeout-min 0.05
+poll-lines: 1
+PASS exit 0 (want 0)
+PASS /GREEN/
+PASS /phase=completion/
+--- output ---
+[assert-checks poll 1] 01234567 phase=completion matched=5 ok=5 pending=0 bad=0
+[assert-checks] GREEN: all 5 ci/ship-gate checks terminal+allowed on 0123456789abcdef
+
+[assert-checks poll 1] 01234567 phase=completion matched=5 ok=5 pending=0 bad=0
+[assert-checks] GREEN: all 5 ci/ship-gate checks terminal+allowed on 0123456789abcdef
+
+
+===== L2 stale-in-completion (kept leg, phase assertion) =====
+args: --import ./.scratch/grill-round-70/fixture/acg-register.mjs D:\Aworker\anysearch-cli/scripts/assert-checks-green.mjs --sha 0123456789abcdef --repo fixture/repo --discovery-sec 1 --interval-sec 0.1 --timeout-min 0.02
+poll-lines: 12
+PASS exit 2 (want 2)
+PASS /FAIL-CLOSED \(phase=completion\)/
+PASS /memory-eval/
+--- output ---
+[assert-checks poll 1] 01234567 phase=completion matched=5 ok=4 pending=0 bad=0
+[assert-checks poll 2] 01234567 phase=completion matched=5 ok=4 pending=0 bad=0
+[assert-checks poll 3] 01234567 phase=completion matched=5 ok=4 pending=0 bad=0
+[assert-checks poll 4] 01234567 phase=completion matched=5 ok=4 pending=0 bad=0
+... (6 lines elided) ...
+[assert-checks poll 11] 01234567 phase=completion matched=5 ok=4 pending=0 bad=0
+[assert-checks poll 12] 01234567 phase=completion matched=5 ok=4 pending=0 bad=0
+[assert-checks] FAIL-CLOSED (phase=completion): timeout 0.02min — pending=none not-allowed=memory-eval=stale
+
+
+===== L3 empty (kept leg, strict discovery) =====
+args: --import ./.scratch/grill-round-70/fixture/acg-register.mjs D:\Aworker\anysearch-cli/scripts/assert-checks-green.mjs --sha 0123456789abcdef --repo fixture/repo --discovery-sec 1 --interval-sec 0.1 --timeout-min 0.05
+poll-lines: 11
+PASS exit 2 (want 2)
+PASS /FAIL-CLOSED \(phase=discovery\)/
+PASS /missing-families=check-build,install-smoke,test:online,ship-gate,memory-eval/
+PASS /present-families=none/
+--- output ---
+[assert-checks poll 1] 01234567 phase=discovery matched=0 ok=0 pending=0 bad=0 missing-families=check-build,install-smoke,test:online,ship-gate,memory-eval
+[assert-checks poll 2] 01234567 phase=discovery matched=0 ok=0 pending=0 bad=0 missing-families=check-build,install-smoke,test:online,ship-gate,memory-eval
+[assert-checks poll 3] 01234567 phase=discovery matched=0 ok=0 pending=0 bad=0 missing-families=check-build,install-smoke,test:online,ship-gate,memory-eval
+[assert-checks poll 4] 01234567 phase=discovery matched=0 ok=0 pending=0 bad=0 missing-families=check-build,install-smoke,test:online,ship-gate,memory-eval
+... (5 lines elided) ...
+[assert-checks poll 10] 01234567 phase=discovery matched=0 ok=0 pending=0 bad=0 missing-families=check-build,install-smoke,test:online,ship-gate,memory-eval
+[assert-checks poll 11] 01234567 phase=discovery matched=0 ok=0 pending=0 bad=0 missing-families=check-build,install-smoke,test:online,ship-gate,memory-eval
+[assert-checks] FAIL-CLOSED (phase=discovery): discovery window 1s expired — missing-families=check-build,install-smoke,test:online,ship-gate,memory-eval present-families=none
+
+
+===== L4 partial-to-all (new leg) =====
+args: --import ./.scratch/grill-round-70/fixture/acg-register.mjs D:\Aworker\anysearch-cli/scripts/assert-checks-green.mjs --sha 0123456789abcdef --repo fixture/repo --discovery-sec 1 --interval-sec 0.1 --timeout-min 0.05
+poll-lines: 3
+PASS exit 0 (want 0)
+PASS /phase=discovery/
+PASS /phase=completion/
+PASS /GREEN/
+--- output ---
+[assert-checks poll 1] 01234567 phase=discovery matched=3 ok=0 pending=3 bad=0 missing-families=ship-gate,memory-eval
+[assert-checks poll 2] 01234567 phase=completion matched=5 ok=0 pending=5 bad=0
+[assert-checks poll 3] 01234567 phase=completion matched=5 ok=5 pending=0 bad=0
+[assert-checks] GREEN: all 5 ci/ship-gate checks terminal+allowed on 0123456789abcdef
+[assert-checks poll 2] 01234567 phase=completion matched=5 ok=0 pending=5 bad=0
+[assert-checks poll 3] 01234567 phase=completion matched=5 ok=5 pending=0 bad=0
+[assert-checks] GREEN: all 5 ci/ship-gate checks terminal+allowed on 0123456789abcdef
+
+
+===== L5 never-appears (new leg) =====
+args: --import ./.scratch/grill-round-70/fixture/acg-register.mjs D:\Aworker\anysearch-cli/scripts/assert-checks-green.mjs --sha 0123456789abcdef --repo fixture/repo --discovery-sec 1 --interval-sec 0.1 --timeout-min 0.05
+poll-lines: 10
+PASS exit 2 (want 2)
+PASS /FAIL-CLOSED \(phase=discovery\)/
+PASS /missing-families=memory-eval/
+PASS /present-families=check-build,install-smoke,test:online,ship-gate/
+--- output ---
+[assert-checks poll 1] 01234567 phase=discovery matched=4 ok=2 pending=2 bad=0 missing-families=memory-eval
+[assert-checks poll 2] 01234567 phase=discovery matched=4 ok=2 pending=2 bad=0 missing-families=memory-eval
+[assert-checks poll 3] 01234567 phase=discovery matched=4 ok=2 pending=2 bad=0 missing-families=memory-eval
+[assert-checks poll 4] 01234567 phase=discovery matched=4 ok=2 pending=2 bad=0 missing-families=memory-eval
+... (4 lines elided) ...
+[assert-checks poll 9] 01234567 phase=discovery matched=4 ok=2 pending=2 bad=0 missing-families=memory-eval
+[assert-checks poll 10] 01234567 phase=discovery matched=4 ok=2 pending=2 bad=0 missing-families=memory-eval
+[assert-checks] FAIL-CLOSED (phase=discovery): discovery window 1s expired — missing-families=memory-eval present-families=check-build,install-smoke,test:online,ship-gate
+
+
+===== L6 red-in-discovery (new leg) =====
+args: --import ./.scratch/grill-round-70/fixture/acg-register.mjs D:\Aworker\anysearch-cli/scripts/assert-checks-green.mjs --sha 0123456789abcdef --repo fixture/repo --discovery-sec 1 --interval-sec 0.1 --timeout-min 0.05
+poll-lines: 1
+PASS exit 1 (want 1)
+PASS /RED/
+--- output ---
+[assert-checks poll 1] 01234567 phase=discovery matched=3 ok=0 pending=2 bad=1 missing-families=ship-gate,memory-eval
+[assert-checks] RED: check-build=failure
+
+[assert-checks poll 1] 01234567 phase=discovery matched=3 ok=0 pending=2 bad=1 missing-families=ship-gate,memory-eval
+[assert-checks] RED: check-build=failure
+
+
+===== L7 red-in-completion (new leg) =====
+args: --import ./.scratch/grill-round-70/fixture/acg-register.mjs D:\Aworker\anysearch-cli/scripts/assert-checks-green.mjs --sha 0123456789abcdef --repo fixture/repo --discovery-sec 1 --interval-sec 0.1 --timeout-min 0.05
+poll-lines: 1
+PASS exit 1 (want 1)
+PASS /RED/
+--- output ---
+[assert-checks poll 1] 01234567 phase=completion matched=5 ok=4 pending=0 bad=1
+[assert-checks] RED: check-build=failure
+
+[assert-checks poll 1] 01234567 phase=completion matched=5 ok=4 pending=0 bad=1
+[assert-checks] RED: check-build=failure
+
+
+RESULT: 7 leg(s) pass, 0 fail
+transcript -> (none)

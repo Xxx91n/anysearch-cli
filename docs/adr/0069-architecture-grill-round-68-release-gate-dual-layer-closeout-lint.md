@@ -4,9 +4,9 @@
 
 Accepted (implementation round r68). Records the round-68 decisions per the
 serial ticket plan T0–T5. Ledger:
-`D:\Aworker\anysearch-cli\.scratch\grill-round-68\decision-ledger.md`
+`.scratch/grill-round-68/decision-ledger.md`
 (D-001..D-005). Evidence root:
-`D:\Aworker\anysearch-cli\.scratch\grill-round-68\evidence\`.
+`.scratch/grill-round-68/evidence/`.
 
 ## Context
 
@@ -72,7 +72,7 @@ Doc-side (T2): the R67 closeout landed without the handoff-template's required
   SHAs only — green leg `14514da` (8/8 ok, exit 0), red leg `d7bed91`
   (5 bad, exit 1 fail-fast), no-signal leg `4833833` (discovery → fail-closed
   exit 2). Transcript:
-  `D:\Aworker\anysearch-cli\.scratch\grill-round-68\evidence\t1-dryrun-transcript.txt`.
+  `.scratch/grill-round-68/evidence/t1-dryrun-transcript.txt`.
   The Layer-1 wait action itself is NOT exercised by the dry-run — no OF look
   was spent on rehearsals. The gate is **partially verified** until the first
   real pre-tag dispatch; "fully verified" claims before that are invalid.

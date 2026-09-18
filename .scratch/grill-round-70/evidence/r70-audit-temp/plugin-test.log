@@ -1,0 +1,164 @@
+$ node --import tsx --test "test/**/*.test.ts" "test/**/*.test.mjs" --test-timeout=30000
+  PASS configs/antigravity/hooks.json uses the official named-hook schema
+  PASS antigravity config commands resolve via package bins and pass the event via argv
+
+antigravity-contract: 2 passed, 0 failed
+  PASS argv-driven PreToolUse emits {decision:allow} on the real camelCase payload
+  PASS PreInvocation injects the routing card as ephemeralMessage on invocationNum=0
+  PASS PostToolUse emits {} exactly and accepts toolCall-less-of-output payloads
+  PASS PreInvocation with invocationNum>0 emits {} (no card spam)
+  PASS .mdc fallback: any invocation writes .antigravity/rules/anysearch.mdc in cwd workspace
+  PASS staged preheat context flushes through the next invocation as injectSteps
+  PASS fail-open: malformed stdin exits 0
+  PASS Stop emits a protojson-safe object (never plain text)
+  PASS PostToolUse {} stdout + distilled output staged to pending (R68 verified contract)
+  PASS PostToolUse: array-of-blocks tool_output distills into pending ({} stdout)
+  PASS PreToolUse never emits {} ({} = deny on this host)
+  antigravity-contract: 13 passed, 0 failed
+✔ test\antigravity-contract.test.ts (2192.9493ms)
+  PASS configs/claude/hooks.json uses the official settings schema
+  PASS settings template commands resolve via package bins (no absolute paths)
+  PASS bin entries point at stdin-reading hook entrypoints
+  PASS plugin skeleton: .claude-plugin/plugin.json + hooks/hooks.json + .mcp.json
+  PASS single-source: regenerating configs is byte-identical (no drift)
+  PASS session-start --envelope: additionalContext inside hookSpecificOutput
+  PASS claude PreToolUse: non-ans tool -> silent exit
+  PASS claude PostToolUse: slim abstain response -> silent (nothing indexable)
+  PASS claude PostToolUse: results response -> envelope additionalContext
+  PASS claude PreToolUse: URL on unreachable server -> hookSpecificOutput ask (fail-closed)
+  claude-contract: 10 passed, 0 failed
+✔ test\claude-contract.test.ts (2062.8413ms)
+  PASS all configs/*/hooks.json targets resolve to stdin-reading entrypoints
+  PASS codebuddy SessionStart: hook_event_name -> raw routing card on stdout
+  PASS codebuddy SessionStart: legacy event field still works
+  PASS codebuddy PreToolUse: non-ans tool -> silent exit 0
+  PASS codebuddy PostToolUse: hook_event_name -> hookSpecificOutput.updatedToolOutput
+  PASS codebuddy PreToolUse: ans tool -> envelope or silent (no index yet)
+  PASS codebuddy: unparseable stdin -> silent exit 0
+  PASS codebuddy PostToolUse: object-shaped tool_response also parsed
+  PASS cursor postToolUse: hook_event_name -> updated_mcp_tool_output (snake_case)
+  PASS cursor PostToolUse: array-of-blocks tool_output distills
+  PASS codebuddy PostToolUse: array-of-content-blocks tool_response (live shape)
+  PASS claude PostToolUse: legacy event field preserved
+  PASS claude PostToolUse: array-of-blocks tool_response tolerated too
+  PASS session-start: hook_event_name SessionStart honored
+  PASS codebuddy PostToolUse: legacy event field fallback
+  PASS claude PostToolUse: hook_event_name -> hookSpecificOutput.additionalContext
+  PASS codex PostToolUse: hook_event_name -> envelope additionalContext
+  PASS codex PostToolUse: array-of-blocks tool_response distills
+  codebuddy-contract: 18 passed, 0 failed
+✔ test\codebuddy-contract.test.ts (2067.8558ms)
+  PASS configs/codex/hooks.json uses the official Codex hooks schema
+  PASS codex config commands resolve via package bins (no absolute paths, no fake vars)
+  PASS codex config matchers full-match ans tool names
+  PASS codex config SessionStart passes --envelope (bare shape is dropped by codex)
+  PASS bin entry ans-hook-codex exists and reads stdin
+  PASS single-source: regenerating configs is byte-identical (no drift)
+  PASS codex PreToolUse: non-ans tool -> silent exit
+  PASS codex adapter: malformed stdin -> silent exit 0 (fail-open)
+  PASS codex PreToolUse: URL on unreachable server -> envelope ask (fail-closed)
+  PASS codex PostToolUse: results response -> envelope additionalContext
+  PASS codex adapter reads hook_event_name (real codex stdin field)
+  codex-contract: 11 passed, 0 failed
+✔ test\codex-contract.test.ts (2468.2175ms)
+  PASS server reachable: HTTP 200
+  PASS SELECT: row exists
+  PASS SELECT: trace_id matches hook-supplied
+  PASS SELECT: injected_trace_id matches trace_id
+  PASS SELECT: session_id matches host stdin
+  PASS SELECT: client_id is NULL (plugin server path has no MCP client)
+  PASS OPA closure: re-parse trace_id matches
+  PASS OPA closure: re-parse session_id matches
+
+golden tests: 8 passed, 0 failed
+✔ test\golden.test.ts (3387.3028ms)
+  PASS isAnsTool: matches all 5 ans tools
+  PASS isAnsTool: matches with platform prefixes
+  PASS isAnsTool: rejects non-ans tools
+  PASS distillOutput: extracts results array
+  PASS distillOutput: handles non-JSON output
+  PASS distillOutput: empty results not indexed
+  PASS makePostToolUseDecision: returns indexEntries for indexing
+  PASS E2E: session-start.cjs generates .mdc file in cwd
+  PASS E2E: session-start.cjs exits silently for non-SessionStart events
+  PASS E2E: session-start.cjs outputs valid JSON for SessionStart event
+
+Hooks tests: 10 passed, 0 failed
+✔ test\hooks.test.ts (3415.1553ms)
+plugin-security.test: 11 passed, 0 failed
+✔ test\plugin-security.test.mjs (4126.4684ms)
+  PASS ProjectIndexStore: create and search
+  PASS ProjectIndexStore: dedup by content_hash
+  PASS ProjectIndexStore: purge project
+  PASS isAnsTool: matches ans_* tools with various prefixes
+  PASS distillOutput: extracts results from MCP tool output
+  PASS distillOutput: non-ans tool returns empty
+  PASS distillOutput: non-JSON output gets truncated
+  PASS makePostToolUseDecision: returns distilledOutput + indexEntries
+  PASS SessionStart: routing card has required content
+  PASS SKILL.md: exists and has trigger words
+  PASS AGENTS.md: minimal and has required sections
+  PASS ADR-0011: cursor.ts uses additional_context (snake_case)
+  PASS ADR-0011: antigravity.ts has .mdc fallback
+  PASS ADR-0011: session-start.ts has .mdc generation logic
+  PASS ADR-0011: cursor hooks.json has no _degradation_note
+  PASS ADR-0012: routing card 4-block structure in shared module
+  PASS Server: /health endpoint returns 200
+
+Plugin tests: 17 passed, 0 failed
+✔ test\plugin.test.ts (6687.3644ms)
+[anysearch] GET /policy returned HTTP 500; falling back to cached policy
+plugin policy tests: 9 passed, 0 failed
+✔ test\policy.test.ts (2097.1809ms)
+  PASS HEADER_TRACEPARENT = traceparent
+  PASS HEADER_SESSION_ID = x-anysearch-session-id
+  PASS build: traceparent format 00-<32hex>-<16hex>-01
+  PASS build: x-anysearch-session-id propagated
+  PASS build: trace_id in traceparent is 32 hex
+  PASS build: span_id in traceparent is 16 hex
+  PASS parse: trace_id recovered
+  PASS parse: span_id recovered
+  PASS parse: session_id recovered
+  PASS parse: traceparentValid true
+  PASS invalid (empty) -> traceparentValid false
+  PASS invalid (empty) -> fresh 32-hex trace_id
+  PASS invalid (empty) -> session_id preserved
+  PASS invalid (non-w3c) -> traceparentValid false
+  PASS invalid (non-w3c) -> fresh 32-hex trace_id
+  PASS invalid (non-w3c) -> session_id preserved
+  PASS invalid (short trace_id) -> traceparentValid false
+  PASS invalid (short trace_id) -> fresh 32-hex trace_id
+  PASS invalid (short trace_id) -> session_id preserved
+  PASS invalid (non-hex chars) -> traceparentValid false
+  PASS invalid (non-hex chars) -> fresh 32-hex trace_id
+  PASS invalid (non-hex chars) -> session_id preserved
+  PASS invalid (wrong version) -> traceparentValid false
+  PASS invalid (wrong version) -> fresh 32-hex trace_id
+  PASS invalid (wrong version) -> session_id preserved
+  PASS invalid (missing flags) -> traceparentValid false
+  PASS invalid (missing flags) -> fresh 32-hex trace_id
+  PASS invalid (missing flags) -> session_id preserved
+  PASS no headers -> traceparentValid false
+  PASS no headers -> fresh trace_id
+  PASS no headers -> session_id empty
+  PASS empty x-anysearch-session-id -> session_id ''
+  PASS empty x-anysearch-session-id -> traceparentValid true
+  PASS build: empty sessionId omits x-anysearch-session-id
+  PASS build: traceparent still present
+  PASS newTraceIdHex -> 32-hex
+  PASS newSpanIdHex -> 16-hex
+  PASS round-trip: trace_id preserved
+  PASS round-trip: span_id preserved
+  PASS round-trip: session_id preserved
+  PASS round-trip: traceparentValid true
+
+propagation tests: 41 passed, 0 failed
+✔ test\propagation.test.ts (911.9818ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8774.1139

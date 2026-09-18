@@ -4,9 +4,9 @@
 
 Accepted (implementation round r69). Records the round-69 decisions per the
 serial ticket plan T0–T7. Ledger:
-`D:\Aworker\anysearch-cli\.scratch\grill-round-69\decision-ledger.md`
+`.scratch/grill-round-69/decision-ledger.md`
 (D-001/D-003~D-009; D-002 空号 = Q2 跳号证据，已自报). Evidence root:
-`D:\Aworker\anysearch-cli\.scratch\grill-round-69\evidence\`.
+`.scratch/grill-round-69/evidence/`.
 
 ## Context
 
@@ -60,7 +60,7 @@ was accurate, not a detection bug.
   Verified agent hosts (Proof zone kept), a faithful top-3 limitations
   summary + pointer, three-line Design rationale + `docs/adr/index.md`
   pointer, condensed contributors. Machine-local paths scrubbed to
-  repo-relative (zero `D:/` hits).
+  repo-relative (zero `D:/` hits). <!-- machine-local: machine-local path cited in committed doc @ 2026-09-19 -->
 - `README.zh-CN.md` is the derived translation: top declaration
   "翻译件，规范以 README.md 为准" + reciprocal switcher; heading skeleton
   1:1 (translated text, identical level sequence); code blocks and links
@@ -111,7 +111,7 @@ Four-segment evidence (ledger D-009):
    closeout-lint narrowing was verified bidirectionally
    (`round-69-direction.md` de-scoped, `round-67-closeout.md` still matches);
    local `ship-gate --quick` 56×pass committed at
-   `D:\Aworker\anysearch-cli\.scratch\grill-round-69\evidence\r69-t0-shipgate-transcript.txt`;
+   `.scratch/grill-round-69/evidence/r69-t0-shipgate-transcript.txt`;
    remote triple-green on `ee3600c` — ci run 35317461733 / ship-gate
    35317461823 / native-smoke 35317461732.
 2. **Facade** — README pair landed (EN 312→159 lines + ZH companion); zero
@@ -121,9 +121,9 @@ Four-segment evidence (ledger D-009):
    (description + 9 topics); LICENSE → canonical Apache-2.0 —
    `licenseInfo` now reports `apache-2.0`.
 3. **Standing guard** — parity red→green pair:
-   `D:\Aworker\anysearch-cli\.scratch\grill-round-69\evidence\r69-t4-parity-red.txt`
+   `.scratch/grill-round-69/evidence/r69-t4-parity-red.txt`
    (step 1h heading-skeleton drift, exit 1) and
-   `D:\Aworker\anysearch-cli\.scratch\grill-round-69\evidence\r69-t4-parity-green.txt`
+   `.scratch/grill-round-69/evidence/r69-t4-parity-green.txt`
    (full green). Generator retarget proof: step 1b passes on
    `docs/adr/index.md` and the 69→70 regen followed the ADR-0070 commit —
    the diff discipline itself was exercised.

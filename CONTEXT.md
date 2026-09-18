@@ -1120,7 +1120,7 @@ spawnSync 型测试的可用界必须挂在子进程自己身上（spawnSync tim
 ## Grill Round 71 — Terms (ADR-0072)
 
 ## Reference-Purpose Path Discipline（按引用用途路径纪律）
-路径书写规则的正确切分轴=引用用途非文档类型：deliverable 定位器/Stack=绝对路径；库内目标的内容引用=repo-relative；库外目标=绝对路径+治理型声明。一刀切禁绝对路径误杀定位器正业，原教义「全绝对」则把机器本地指针推进公共文档（锐评刀一复发形态）。_Avoid_: 按文档类型豁免（.scratch 恰是 D:\ 密度最高处）；绝对路径作库内内容唯一引用（broken-link 变体）。来源：atomcode R71-Q2+R71 D-002。
+路径书写规则的正确切分轴=引用用途非文档类型：deliverable 定位器/Stack=绝对路径；库内目标的内容引用=repo-relative；库外目标=绝对路径+治理型声明。一刀切禁绝对路径误杀定位器正业，原教义「全绝对」则把机器本地指针推进公共文档（锐评刀一复发形态）。_Avoid_: 按文档类型豁免（.scratch 恰是 D:\ 密度最高处）；绝对路径作库内内容唯一引用（broken-link 变体）。来源：atomcode R71-Q2+R71 D-002。 <!-- machine-local: machine-local path cited in committed doc @ 2026-09-19 -->
 
 ## Governed Exemption Marker（治理型豁免标记）
 lint 豁免的健全形态=显式声明行 `<!-- machine-local: 事由 @ 日期 -->`——豁免本身是被 lint+review 看见的 artifact（gitleaks baseline 同款），裸声明=违规，未关闭声明定期审计。_Avoid_: 静默豁免行（loophole 定义）；无 owner/日期/关闭标准的豁免（bypass debt）。来源：atomcode R71-Q2+R71 D-002。

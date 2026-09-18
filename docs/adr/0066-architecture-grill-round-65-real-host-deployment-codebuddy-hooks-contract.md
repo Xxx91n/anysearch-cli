@@ -92,7 +92,7 @@ P9 (D-006 iv): same-question A/B with and without the tools, stream-json
 both runs, comparing citation quality / refusal behavior / tool traces.
 
 Evidence discipline: e2e site lives outside the repo
-(`D:\Aworker\e2e-r65-codebuddy`) so the host never reads this repo's
+(`D:\Aworker\e2e-r65-codebuddy`) so the host never reads this repo's <!-- machine-local: sibling e2e checkout on build host @ 2026-09-19 -->
 AGENTS.md; transcripts + server logs + project-index.db row deltas copy
 back to `evidence/`; defects track found/fixed/deferred triples in
 `evidence/defect-ledger.md`.

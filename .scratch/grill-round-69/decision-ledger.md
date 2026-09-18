@@ -24,7 +24,7 @@
 
 - **原问题**: README 信息架构选型——A 重构迁出 / B 全保留重排 / C 极简全砍（atomcode 调研后呈 A′）。
 - **用户原回答原文**: 「A′」
-- **规范化需求**: README=登录页非工程档案。Known limitations 全文迁 D:\Aworker\anysearch-cli\docs\limitations.md，README 留 top-3 摘要表+链接（ADR-0062 D4 忠实执行）；Architecture decisions 76 行目录删，改 Design rationale 段（垂直领域/abstain-first/fail-open 三句）+docs/adr/ 一行指针，ADR index SSOT 归 docs/adr/；机器本地证据路径清零（改仓库相对路径或删）；verified-hosts 表/badges/Quickstart 保留（Proof 区）；README.md 声明 canonical，zh-CN 标派生。
+- **规范化需求**: README=登录页非工程档案。Known limitations 全文迁 docs/limitations.md，README 留 top-3 摘要表+链接（ADR-0062 D4 忠实执行）；Architecture decisions 76 行目录删，改 Design rationale 段（垂直领域/abstain-first/fail-open 三句）+docs/adr/ 一行指针，ADR index SSOT 归 docs/adr/；机器本地证据路径清零（改仓库相对路径或删）；verified-hosts 表/badges/Quickstart 保留（Proof 区）；README.md 声明 canonical，zh-CN 标派生。
 - **显式约束/负向需求**: docs/limitations.md 纳入 ship-gate 文档同步检查（防迁出遗忘——B 的合理内核以此缓解非塞回）；双语同步验收=heading 结构 1:1+链接/代码块 byte-identical（spec-kit PR #3740 判据）；徽章只放动态可验证（npm version/CI/license），Evidence Integrity 测试。
 - **状态**: current
 - **记录时间**: 2026-09-18
@@ -42,7 +42,7 @@
 
 - **原问题**: T0 修形——A 只修文档 / B 只修 lint / C 双修 / D 改名绕 lint。（编号注：Q2 曾被跳过未问，本题以 Q6 补问；D-002 空号保留作跳号证据。）
 - **用户原回答原文**: 「C」
-- **规范化需求**: 双修——(i) 文档侧：D:\Aworker\anysearch-cli\.scratch\grill-round-68\handoffs\round-69-direction.md 补「绿色 run URL」段+Stack 头+三条三绿 run URL（35302952077/35302952056/35302952093，head_sha=6acc53c 为 HEAD 祖先，liveness 腿可过），其「双 land 远端三绿」主张获得引证；(ii) lint 侧：scripts/ship-gate.mjs isCloseout 收窄至要求 closeout|closure 关键词（^round-\d+ 裸前缀不再单独命中），direction/task 类新文档不再被形状腿误伤，round-67-closeout 等真收口件仍命中。
+- **规范化需求**: 双修——(i) 文档侧：.scratch/grill-round-68/handoffs/round-69-direction.md 补「绿色 run URL」段+Stack 头+三条三绿 run URL（35302952077/35302952056/35302952093，head_sha=6acc53c 为 HEAD 祖先，liveness 腿可过），其「双 land 远端三绿」主张获得引证；(ii) lint 侧：scripts/ship-gate.mjs isCloseout 收窄至要求 closeout|closure 关键词（^round-\d+ 裸前缀不再单独命中），direction/task 类新文档不再被形状腿误伤，round-67-closeout 等真收口件仍命中。
 - **显式约束/负向需求**: 不改名绕 lint；不删 lint；收窄后须验证既有收口件仍被 lint（防过度收窄）+方向文档脱靶（形状腿不再命中）；main 复绿需 ci+ship-gate 真实 run URL。
 - **状态**: current
 - **记录时间**: 2026-09-18

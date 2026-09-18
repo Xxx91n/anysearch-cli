@@ -1,7 +1,7 @@
 # R70 任务书 — 验证层时序语义硬化（next-round）
 
-生成依据：`D:\Aworker\anysearch-cli\.scratch\grill-round-70\decision-ledger.md`（唯一数据源，4 条 current：D-001/D-002/D-003/D-004，无断号）。
-调研存档：`D:\Aworker\anysearch-cli\.scratch\grill-round-70\q2-atomcode.md`。
+生成依据：`.scratch/grill-round-70/decision-ledger.md`（唯一数据源，4 条 current：D-001/D-002/D-003/D-004，无断号）。
+调研存档：`.scratch/grill-round-70/q2-atomcode.md`。
 
 Stack：分支 `r70-grill`，base `2f6d990a`（main tip，三绿：ci 35333789515 / native-smoke 35333789487 / ship-gate 35333789476）。GitButler 提交；与其他分支并行互不影响。
 
@@ -16,7 +16,7 @@ Stack：分支 `r70-grill`，base `2f6d990a`（main tip，三绿：ci 3533378951
 
 ## T0 — F-S4 落地（覆盖 D-002 主、D-001 主线、D-003）
 
-标的：`D:\Aworker\anysearch-cli\scripts\assert-checks-green.mjs`
+标的：`scripts/assert-checks-green.mjs`
 
 必改：
 1. **Phase 1 discovery 严格谓词**：全部 5 family（check-build/install-smoke/test:online/ship-gate/memory-eval）在 `--discovery-sec`（默认 120）内各注册 >=1 check-run；到期未齐 → exit 2，错误行点名 missing families 与 present families（phase=discovery 标注）。
@@ -25,7 +25,7 @@ Stack：分支 `r70-grill`，base `2f6d990a`（main tip，三绿：ci 3533378951
 4. **错误行按 phase 拆分**：discovery 失败=missing/present 分列；completion 超时=pending checks 点名；exit code 沿用（2=fail-closed 两相可同码，消息必须分相）。
 5. **头注更新**：现行「discovery window only applies while ZERO checks match」段改两段式语义+F-S4 溯源；release.yml 调用点 flag 不变（--timeout-min 10 --discovery-sec 120 --interval-sec 20）。
 6. **ESM 夹具新腿**（先红后绿证据对）：partial→all 到齐转 completion；family 永不出现→exit 2 点名 missing/present；stale conclusion 落 completion 段（不误判为 discovery 失败）；保留原四腿（all-ok/stale/empty/真 SHA）。夹具位置随既有 harness（R68/R69 审计跑过的同一套）。
-7. **真 SHA `--once` 干跑 transcript**：对当前 main tip 实跑一次存档 `D:\Aworker\anysearch-cli\.scratch\grill-round-70\evidence\`。
+7. **真 SHA `--once` 干跑 transcript**：对当前 main tip 实跑一次存档 `.scratch/grill-round-70/evidence/`。
 
 红线：禁 re-anchor timeout-min；禁加 --completion-min；禁 --once/exit 10 行为改动；禁动 release.yml flag 值（语义不变）。
 
@@ -35,11 +35,11 @@ Suggested skills：tdd（夹具先红后绿）、implement、diagnosing-bugs（�
 
 ## T1 — jitter 处置（覆盖 D-001 次级、D-003）
 
-标的：`D:\Aworker\anysearch-cli\packages\store\test\*.integration.test.mjs`（4 件 spawnSync 型）。
+标的：`packages/store/test/*.integration.test.mjs`（4 件 spawnSync 型）。
 
 Spike-Gated 两段：
-- **Spike**：负载下复现——定位哪 2 个测试败+失败签名（timeout? spawnSync 资源? 端口争用?），transcript 存 `D:\Aworker\anysearch-cli\.scratch\grill-round-70\evidence\`。
-- **处置三裁一**（按签名定）：(a) 挂 Flaky Case Quarantine 既有机器（ADR-0027/0065：隔离+SLA+ratchet）；(b) test 级 retry/timeout 调整（现 --test-timeout=30000）；(c) `D:\Aworker\anysearch-cli\docs\limitations.md` 记档。
+- **Spike**：负载下复现——定位哪 2 个测试败+失败签名（timeout? spawnSync 资源? 端口争用?），transcript 存 `.scratch/grill-round-70/evidence/`。
+- **处置三裁一**（按签名定）：(a) 挂 Flaky Case Quarantine 既有机器（ADR-0027/0065：隔离+SLA+ratchet）；(b) test 级 retry/timeout 调整（现 --test-timeout=30000）；(c) `docs/limitations.md` 记档。
 - **复现不了**：诚实记档 limitations+本票 spike transcript 引用，不虚标 fixed。
 
 红线：禁为消抖放宽断言；禁把 quarantine 用在非 golden 件上而不评机制适配性（golden 机器是否适配 integration 测试是票内裁决点）。
@@ -50,7 +50,7 @@ Suggested skills：diagnosing-bugs（复现+签名定位）、tdd（如落 retry
 
 ## T2 — 文书（覆盖 D-002 ADR 三件、D-001、D-004(iv) 部）
 
-1. **ADR-0071**（`D:\Aworker\anysearch-cli\docs\adr\0071-architecture-grill-round-70-*.md`）三件必录：
+1. **ADR-0071**（`docs/adr/0071-architecture-grill-round-70-*.md`）三件必录：
    - Stub-Registration Invariant（每个 required family 必有壳保证注册，禁改原生 paths: 过滤——community #44490 拓扑痛点）；
    - C 升格触发器（discovery 常态>30s 或 completion 吃紧事故→Temporal 式双预算）；
    - 近 30 次发布 check 耗时分位数证据（gh api 实查近期 run，佐证「注册秒级」内部事实——若 p99 接近 8min 须呈报重新评估 A″ 尾部侵蚀）。

@@ -6,7 +6,7 @@ Stack (primary key = GitButler change-ids; SHAs are time-lagged):
 ## 已完成
 
 - **T0 火线修红**：`isCloseout` 收窄要求 `closeout|closure` 语义关键词（`^round-\d+` 裸前缀不再单独命中）——双向验证：`round-69-direction.md` 脱靶、`round-67-closeout.md`/`round-68-closeout.md` 仍命中；方向文档补 Stack 头+「绿色 run URL」段引六条实证 run（主张-引证教义）。main 复绿（T0 tip 三绿）。
-- **T1 迁移地基**：`D:\Aworker\anysearch-cli\docs\limitations.md`（20 条逐字迁入）；`D:\Aworker\anysearch-cli\docs\adr\index.md` 独立生成件（`gen-adr-index.mjs` 重指向：index.md 自排除 + 行内相对链接 + `--check` fail-closed）；ship-gate step 1b 改靶；`adr-index.test.mjs` 改名重指。
+- **T1 迁移地基**：`docs/limitations.md`（20 条逐字迁入）；`docs/adr/index.md` 独立生成件（`gen-adr-index.mjs` 重指向：index.md 自排除 + 行内相对链接 + `--check` fail-closed）；ship-gate step 1b 改靶；`adr-index.test.mjs` 改名重指。
 - **T2 README EN 登录页**：312→159 行；switcher+badges×3（npm/ci/license 动态端点全 200）+3 秒主张+Requirements+Quickstart+Domains&abstain+Provider matrix+MCP+verified hosts（Proof 区保留）+limitations top-3 表+docs/limitations.md 指针+Design rationale 三句+docs/adr/index.md 指针；机器路径清零。
 - **T3 README.zh-CN.md 伴生件**：顶部翻译件声明（规范以 README.md 为准）+互链 switcher；heading 结构 1:1（levels [1,2×9]）+3 代码块+链接 byte-identical（机验通过）。
 - **T4 standing parity 门**：ship-gate step 1h `stepReadmeParity` fail-closed——heading 骨架 1:1（code-fence 感知）+代码块逐块 byte-identical+链接多重集（减互链 switcher）一致+docs/limitations.md 存在且 README 指针可达。红→绿证据对入库。

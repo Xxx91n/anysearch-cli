@@ -1,0 +1,205 @@
+$ turbo run build
+• turbo 2.10.11
+
+   • Packages in scope: @anysearch-cli/cli, @anysearch-cli/embedding, @anysearch-cli/kernel, @anysearch-cli/mcp, @anysearch-cli/plugin, @anysearch-cli/retriever, @anysearch-cli/store
+   • Running build in 7 packages
+   • Remote caching disabled
+
+@anysearch-cli/plugin:build: cache miss, executing c22f68fccc85e8d7
+@anysearch-cli/embedding:build: cache hit, replaying logs 65cecc4e8be23697
+@anysearch-cli/embedding:build: $ tsup
+@anysearch-cli/embedding:build: CLI Building entry: src/index.ts
+@anysearch-cli/embedding:build: CLI Using tsconfig: tsconfig.json
+@anysearch-cli/embedding:build: CLI tsup v8.5.1
+@anysearch-cli/embedding:build: CLI Using tsup config: D:\Aworker\anysearch-cli\packages\embedding\tsup.config.ts
+@anysearch-cli/embedding:build: CLI Target: es2022
+@anysearch-cli/embedding:build: CLI Cleaning output folder
+@anysearch-cli/embedding:build: ESM Build start
+@anysearch-cli/embedding:build: ESM dist\index.js 2.23 KB
+@anysearch-cli/embedding:build: ESM ⚡️ Build success in 20ms
+@anysearch-cli/embedding:build: DTS Build start
+@anysearch-cli/embedding:build: DTS ⚡️ Build success in 2209ms
+@anysearch-cli/embedding:build: DTS dist\index.d.ts 868.00 B
+@anysearch-cli/plugin:build: $ pnpm run gen:configs && pnpm run build:server && pnpm run build:hooks
+@anysearch-cli/plugin:build: $ node scripts/gen-claude-configs.mjs
+@anysearch-cli/plugin:build: wrote configs/claude/hooks.json
+@anysearch-cli/plugin:build: wrote configs/codex/hooks.json
+@anysearch-cli/plugin:build: wrote hooks/hooks.json
+@anysearch-cli/plugin:build: wrote .claude-plugin/plugin.json
+@anysearch-cli/plugin:build: wrote .mcp.json
+@anysearch-cli/plugin:build: $ tsup
+@anysearch-cli/plugin:build: [34mCLI[39m Building entry: src/index.ts, src/server/index.ts
+@anysearch-cli/plugin:build: [34mCLI[39m Using tsconfig: tsconfig.json
+@anysearch-cli/plugin:build: [34mCLI[39m tsup v8.5.1
+@anysearch-cli/plugin:build: [34mCLI[39m Using tsup config: D:\Aworker\anysearch-cli\apps\plugin\tsup.config.ts
+@anysearch-cli/plugin:build: [34mCLI[39m Target: es2022
+@anysearch-cli/plugin:build: [34mCLI[39m Cleaning output folder
+@anysearch-cli/plugin:build: [34mCJS[39m Build start
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: [43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:     ../../packages/store/src/eval/bgnbd.ts:95:73:
+@anysearch-cli/plugin:build: [37m      95 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "..", ...
+@anysearch-cli/plugin:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: [43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:     ../../packages/store/src/eval/obs-fixtures.ts:19:66:
+@anysearch-cli/plugin:build: [37m      19 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+@anysearch-cli/plugin:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: [43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:     ../../packages/store/src/eval/switch-run.ts:30:36:
+@anysearch-cli/plugin:build: [37m      30 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+@anysearch-cli/plugin:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: [32mCJS[39m [1mdist\index.cjs        [22m[32m151.07 KB[39m
+@anysearch-cli/plugin:build: [32mCJS[39m [1mdist\server\index.cjs [22m[32m332.12 KB[39m
+@anysearch-cli/plugin:build: [32mCJS[39m ⚡️ Build success in 147ms
+@anysearch-cli/plugin:build: $ esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts src/hooks/adapters/codebuddy.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --banner:js="#!/usr/bin/env node" --external:better-sqlite3 --external:@anysearch-cli/embedding
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:   dist\hooks\adapters\antigravity.cjs  13.6kb
+@anysearch-cli/plugin:build:   dist\hooks\adapters\cursor.cjs       11.7kb
+@anysearch-cli/plugin:build:   dist\hooks\adapters\codebuddy.cjs    11.4kb
+@anysearch-cli/plugin:build:   dist\hooks\adapters\claude.cjs       10.3kb
+@anysearch-cli/plugin:build:   dist\hooks\adapters\codex.cjs        10.2kb
+@anysearch-cli/plugin:build:   ...and 4 more output files...
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: Done in 9ms
+@anysearch-cli/mcp:build: cache miss, executing 4542d287efc4a6aa
+@anysearch-cli/cli:build: cache miss, executing 8f9a870b492a59ae
+@anysearch-cli/mcp:build: $ node scripts/sync-domains.mjs && tsup
+@anysearch-cli/cli:build: $ node scripts/sync-domains.mjs && tsup
+@anysearch-cli/mcp:build: sync-domains: 3 toml(s) -> D:\Aworker\anysearch-cli\apps\mcp\domains
+@anysearch-cli/cli:build: sync-domains: 3 toml(s) -> D:\Aworker\anysearch-cli\apps\cli\domains
+@anysearch-cli/mcp:build: [34mCLI[39m Building entry: src/index.ts
+@anysearch-cli/mcp:build: [34mCLI[39m Using tsconfig: tsconfig.json
+@anysearch-cli/mcp:build: [34mCLI[39m tsup v8.5.1
+@anysearch-cli/mcp:build: [34mCLI[39m Using tsup config: D:\Aworker\anysearch-cli\apps\mcp\tsup.config.ts
+@anysearch-cli/mcp:build: [34mCLI[39m Target: es2022
+@anysearch-cli/mcp:build: [34mCLI[39m Cleaning output folder
+@anysearch-cli/mcp:build: [34mCJS[39m Build start
+@anysearch-cli/cli:build: [34mCLI[39m Building entry: src/index.ts
+@anysearch-cli/cli:build: [34mCLI[39m Using tsconfig: tsconfig.json
+@anysearch-cli/cli:build: [34mCLI[39m tsup v8.5.1
+@anysearch-cli/cli:build: [34mCLI[39m Using tsup config: D:\Aworker\anysearch-cli\apps\cli\tsup.config.ts
+@anysearch-cli/cli:build: [34mCLI[39m Target: es2022
+@anysearch-cli/cli:build: [34mCJS[39m Build start
+@anysearch-cli/cli:build: [34mDTS[39m Build start
+@anysearch-cli/mcp:build: [34mDTS[39m Build start
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: [43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:     src/server.ts:43:86:
+@anysearch-cli/mcp:build: [37m      43 │ ..."undefined" ? __dirname : dirname(fileURLToPath([32mimport.meta[37m.url));
+@anysearch-cli/mcp:build:          ╵                                                    [32m~~~~~~~~~~~[0m
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: [43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:     ../../packages/store/src/eval/bgnbd.ts:95:73:
+@anysearch-cli/mcp:build: [37m      95 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "..", ...
+@anysearch-cli/mcp:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: [43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:     ../../packages/store/src/eval/obs-fixtures.ts:19:66:
+@anysearch-cli/mcp:build: [37m      19 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+@anysearch-cli/mcp:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: [43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:     ../../packages/store/src/eval/switch-run.ts:30:36:
+@anysearch-cli/mcp:build: [37m      30 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+@anysearch-cli/mcp:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: [43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:     src/db.ts:18:84:
+@anysearch-cli/cli:build: [37m      18 │ ..."undefined" ? __dirname : dirname(fileURLToPath([32mimport.meta[37m.url));
+@anysearch-cli/cli:build:          ╵                                                    [32m~~~~~~~~~~~[0m
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: [43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:     ../../packages/store/src/eval/bgnbd.ts:95:73:
+@anysearch-cli/cli:build: [37m      95 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "..", ...
+@anysearch-cli/cli:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: [43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:     ../../packages/store/src/eval/obs-fixtures.ts:19:66:
+@anysearch-cli/cli:build: [37m      19 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+@anysearch-cli/cli:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: [43m[30m WARN [39m[49m [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:     ../../packages/store/src/eval/switch-run.ts:30:36:
+@anysearch-cli/cli:build: [37m      30 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+@anysearch-cli/cli:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/mcp:build: [32mCJS[39m [1mdist\index.cjs [22m[32m10.61 MB[39m
+@anysearch-cli/mcp:build: [32mCJS[39m ⚡️ Build success in 1779ms
+@anysearch-cli/cli:build: [32mCJS[39m [1mdist\index.js [22m[32m10.66 MB[39m
+@anysearch-cli/cli:build: [32mCJS[39m ⚡️ Build success in 1756ms
+@anysearch-cli/cli:build: [32mDTS[39m ⚡️ Build success in 12011ms
+@anysearch-cli/cli:build: [32mDTS[39m [1mdist\index.d.ts [22m[32m20.00 B[39m
+@anysearch-cli/mcp:build: [32mDTS[39m ⚡️ Build success in 12128ms
+@anysearch-cli/mcp:build: [32mDTS[39m [1mdist\index.d.cts [22m[32m20.00 B[39m
+
+ Tasks:    4 successful, 4 total
+Cached:    1 cached, 4 total
+  Time:    18.659s 
+

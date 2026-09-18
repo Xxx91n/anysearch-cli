@@ -4,9 +4,9 @@
 
 Accepted (implementation round r67). Records the round-67 decisions per the
 serial ticket plan T1–T7. Ledger:
-`D:\Aworker\anysearch-cli\.scratch\grill-round-67\evidence\t1-defect-ledger.md`
+`.scratch/grill-round-67/evidence/t1-defect-ledger.md`
 (four-state dispositions). Evidence root:
-`D:\Aworker\anysearch-cli\.scratch\grill-round-67\evidence\`.
+`.scratch/grill-round-67/evidence/`.
 
 ## Context
 
@@ -106,7 +106,7 @@ each leg single-layer. Bypass legs explicitly labeled.
      PostToolUse context echo is host-variable at the same-turn boundary
      (channel proven by stub legs; shape contract-tested).
 (iii) Defect ledger:
-     `D:\Aworker\anysearch-cli\.scratch\grill-round-67\evidence\t1-defect-ledger.md`
+     `.scratch/grill-round-67/evidence/t1-defect-ledger.md`
      — all xfail-strict items closed: config schema, bare output shape,
      permission drop, matcher full-match, `-c` non-TOML.
 (iv) Product surface (T7, 2026-09-17): `v0.0.5` shipped via the proven
@@ -115,7 +115,7 @@ each leg single-layer. Bypass legs explicitly labeled.
      (release-gate post-tag assert 14s + publish job 1m19s); registry
      live `@anysearch-cli/{cli,mcp,plugin,embedding}@0.0.5` all `latest`
      with SLSA v1 provenance attestations on all four; clean-machine
-     npm-install smoke at `C:\Users\Administrator\AppData\Local\Temp\
+     npm-install smoke at `C:\Users\Administrator\AppData\Local\Temp\ <!-- machine-local: build-host temp path cited as evidence @ 2026-09-19 -->
      r67clean`: full bin surface incl. `ans-hook-codex`, `ans doctor`
      24 passed/1 skipped/0 failed, MCP initialize `anysearch 0.0.5`,
      SessionStart `--envelope` emits `hookSpecificOutput`, PreToolUse

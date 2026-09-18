@@ -3,8 +3,8 @@
 Stack (primary key = GitButler change-ids; SHAs are time-lagged):
   r69-grill 已 land 消化至 origin/main：dba42e1f+ee3600c3(T0) → 950f35ea(T1) → bbb3ba73(T2) → b61fa73e(T3) → 8086ce25+4c6b2a1d(T4) → 105b67ef(T5) → 89b4fe93+86596433(T6) → 6c801678(T7) → 01f8d7ff(收口四件, main tip)。审计产物挂 r69-audit 分支。
 
-审计报告（git-committed，绝对路径）：`D:\Aworker\anysearch-cli\.scratch\grill-round-69\reports\2026-09-18-audit.md`。
-被审交付物：报告 `D:\Aworker\anysearch-cli\.scratch\grill-round-69\reports\2026-09-18-report.md`；closeout `D:\Aworker\anysearch-cli\.scratch\grill-round-69\handoffs\round-69-closeout.md`；任务书 `D:\Aworker\anysearch-cli\.scratch\grill-round-69\handoffs\next-round.md`；账本 `D:\Aworker\anysearch-cli\.scratch\grill-round-69\decision-ledger.md`；ADR `D:\Aworker\anysearch-cli\docs\adr\0070-architecture-grill-round-69-github-facade-bilingual-readme.md`。
+审计报告（git-committed，绝对路径）：`.scratch/grill-round-69/reports/2026-09-18-audit.md`。
+被审交付物：报告 `.scratch/grill-round-69/reports/2026-09-18-report.md`；closeout `.scratch/grill-round-69/handoffs/round-69-closeout.md`；任务书 `.scratch/grill-round-69/handoffs/next-round.md`；账本 `.scratch/grill-round-69/decision-ledger.md`；ADR `docs/adr/0070-architecture-grill-round-69-github-facade-bilingual-readme.md`。
 
 ## 一句话状态
 
@@ -50,4 +50,4 @@ handoff（已用）、gitbutler（产物提交）、code-review（修复后复�
 
 ## LOOP2 重审补记（2026-09-18 第二轮）
 
-返工窗已核销 F-A1~F-A6 全票（land d8a90f02→4c6a4295→3a9d4578，tip 三绿 ci 35331384641/ship-gate 35331384726/native-smoke 35331384673）。LOOP2 重审 PASS 无新票，报告：`D:\Aworker\anysearch-cli\.scratch\grill-round-69\reports\2026-09-18-audit-loop2.md`。上述「移交修复窗的返工票」节自此仅作历史记录。
+返工窗已核销 F-A1~F-A6 全票（land d8a90f02→4c6a4295→3a9d4578，tip 三绿 ci 35331384641/ship-gate 35331384726/native-smoke 35331384673）。LOOP2 重审 PASS 无新票，报告：`.scratch/grill-round-69/reports/2026-09-18-audit-loop2.md`。上述「移交修复窗的返工票」节自此仅作历史记录。

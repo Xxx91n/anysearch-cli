@@ -1,6 +1,6 @@
 # R67-T1 expected-red ledger — Codex CLI 0.142.5 (real host, published 0.0.4)
 
-Track A object = npm-global published 0.0.4 (D:/nodejs/node_modules/@anysearch-cli/*).
+Track A object = npm-global published 0.0.4 (D:/nodejs/node_modules/@anysearch-cli/*). <!-- machine-local: toolchain install prefix on build host @ 2026-09-19 -->
 Host = codex 0.142.5 via `codex exec --json --ephemeral --skip-git-repo-check` + `--ignore-user-config` + `-c` provider reinjection (auth via CODEX_HOME auth.json). Hook legs additionally carry `--enable hooks` + `--dangerously-bypass-hook-trust` (labeled trust-bypass vehicle; the trust GATE itself is separately evidenced by W4/W6 NOFIRE legs) and tool-call legs add `--dangerously-bypass-approvals-and-sandbox`.
 Primary observable = marker propagation into agent_message / observable side effect (marker file, .mdc write, /index db delta, mcp_tool_call presence). Plugin server on 127.0.0.1:33334 (token via env, never persisted to evidence).
 
@@ -36,7 +36,7 @@ Evidence: t1-deny-{env,legacy,toplevel,exit2}.stream.jsonl — DENYTAG lines in 
 
 ## D. Config-schema red (shipped 0.0.4)
 
-- `D:\Aworker\anysearch-cli\apps\plugin\configs\codex\hooks.json` uses Claude-style entries (`{name,command,args}`); Codex registers ZERO commands — silent no-op both with and without `--enable hooks` + bypass (t1-shippedcfg, t1-shippedcfg-en; contrast: top-level `description` field DID parse-error — root is strict, entries are not).
+- `apps/plugin/configs/codex/hooks.json` uses Claude-style entries (`{name,command,args}`); Codex registers ZERO commands — silent no-op both with and without `--enable hooks` + bypass (t1-shippedcfg, t1-shippedcfg-en; contrast: top-level `description` field DID parse-error — root is strict, entries are not).
 - Config references `${CODEX_PLUGIN_DIR}` — no such expansion exists in Codex → even schema-fixed, paths must be resolved at install time.
 - Adapter output shape: codex.cjs emits bare `{additionalContext}` at top level for BOTH PreToolUse (L240) and PostToolUse (distilled output). Real-host: mostly/neither consumed → dead output.
 - Adapter drops `decision.permission` entirely — makePreToolUseDecision may return deny/ask (URL policy, preheat.ts L79-94); adapter writes nothing → **URL-policy deny silently inert on Codex** (real-host: envelope deny verified working).
@@ -65,7 +65,7 @@ Evidence: t1-synthetic-red3.log
 
 # R67-T2 Track B ledger — tarball candidates (clean-install pkg-t, 0.0.4 content)
 
-Object = pnpm pack tarballs installed to D:/Aworker/e2e-r67-codex/pkg-t (npm --no-save). Host = codex 0.142.5, isolation via CODEX_HOME=D:/Aworker/e2e-r67-codex/.codex-home (config.toml mirrors user's real form: model_provider custom @127.0.0.1:20128, features.hooks=true, [[hooks.*]] entries, mcp_servers.ansprobe). Trust: --dangerously-bypass-hook-trust for headless (labeled); project-file layer separately proven.
+Object = pnpm pack tarballs installed to D:/Aworker/e2e-r67-codex/pkg-t (npm --no-save). Host = codex 0.142.5, isolation via CODEX_HOME=D:/Aworker/e2e-r67-codex/.codex-home (config.toml mirrors user's real form: model_provider custom @127.0.0.1:20128, features.hooks=true, [[hooks.*]] entries, mcp_servers.ansprobe). Trust: --dangerously-bypass-hook-trust for headless (labeled); project-file layer separately proven. <!-- machine-local: sibling e2e checkout on build host @ 2026-09-19 -->
 
 ## B1. stdio matrix on tarball MCP
 | Leg | Result |
@@ -98,9 +98,9 @@ Object = pnpm pack tarballs installed to D:/Aworker/e2e-r67-codex/pkg-t (npm --n
 
 | ID | Item | failure_class | Disposition | Closure pointer |
 |----|------|---------------|-------------|-----------------|
-| ER-01 | codex-config-schema ({name,command,args} → zero hooks) | product-defect | xfail-strict → **fixed** (3e5087a) | D:\Aworker\anysearch-cli\.scratch\grill-round-67\evidence\t4-shippedcfg.* |
+| ER-01 | codex-config-schema ({name,command,args} → zero hooks) | product-defect | xfail-strict → **fixed** (3e5087a) | .scratch/grill-round-67/evidence/t4-shippedcfg.* |
 | ER-02 | codex-adapter-output-bare (Pre/Post/SessionStart top-level) | product-defect | xfail-strict → **fixed** (3e5087a) | envelope t4 legs + codex-contract.test.ts |
-| ER-03 | codex-adapter-deny-dropped (decision.permission lost) | product-defect | xfail-strict → **fixed** (3e5087a) | D:\Aworker\anysearch-cli\.scratch\grill-round-67\evidence\t4-deny.* |
+| ER-03 | codex-adapter-deny-dropped (decision.permission lost) | product-defect | xfail-strict → **fixed** (3e5087a) | .scratch/grill-round-67/evidence/t4-deny.* |
 | ER-04 | CODEX_PLUGIN_DIR resolution (no such var) | product-defect | xfail-strict → **fixed** (bin-name commands) | shipped config + tarball bin map |
 | ER-05 | matcher full-match semantics (prefix ≠ match) | host-fact → product-defect | xfail-strict → **fixed** (suffix-anchored) | shipped config matcher + contract test |
 | ER-06 | PreToolUse additionalContext muted by host | host-variable | skip-with-reason | §C (0/1 both forms; envelope still emitted, harmless) |

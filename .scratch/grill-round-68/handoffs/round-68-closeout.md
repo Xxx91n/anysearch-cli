@@ -3,7 +3,7 @@
 Stack (primary key = GitButler change-ids; SHAs are time-lagged):
   r68-grill → tnq/ouz/xmz @ 2026-09-17（r68-gate landed → e752254/3c3729f/af8a855）→ r68-fix → lkv（ee54479）→ r68-fix2 → nqm（f8a9c43）→ r68-t3 → 3d346ed（main tip at closeout）
 
-接棒人下一轮（R69 或续跑）从这里开始。完整报告（git-committed，绝对路径）：`D:/Aworker/anysearch-cli/.scratch/grill-round-68/reports/2026-09-17-report.md`；任务书：`D:/Aworker/anysearch-cli/.scratch/grill-round-68/handoffs/next-round.md`；goal：`D:/Aworker/anysearch-cli/.scratch/grill-round-68/goal.md`。
+接棒人下一轮（R69 或续跑）从这里开始。完整报告（git-committed，绝对路径）：`.scratch/grill-round-68/reports/2026-09-17-report.md`；任务书：`.scratch/grill-round-68/handoffs/next-round.md`；goal：`.scratch/grill-round-68/goal.md`。
 
 ## 一句话状态
 
@@ -33,9 +33,9 @@ Stack (primary key = GitButler change-ids; SHAs are time-lagged):
 
 ## 四段收口证据（机器可复验）
 
-(i) 修红：commit 14514da + 双绿 run（35232698557/35232698560）+ eval-looks.json schema_version 回在 + round-trip 字节级断言（eval-docs-golden.test.ts §7）+ abstain 绿 + F-17 台账 D:/Aworker/anysearch-cli/.scratch/grill-round-68/evidence/f17-sweep-ledger.md。
-(ii) 门禁：release.yml diff 全要素 + dry-run transcript D:/Aworker/anysearch-cli/.scratch/grill-round-68/evidence/t1-dryrun-transcript.txt（绿 14514da exit0 / 红 d7bed91 exit1 / 无信号 4833833 exit2）+ **部分验证声明**（首次真 pre-tag dispatch 前不称 fully verified）+ T2 lint 先红（R67 三违规检出）后绿（35240541694 全 4 job 绿，CI 内 liveness 腿真跑）。
-(iii) antigravity：spike s0-s3 transcript 全量 D:/Aworker/anysearch-cli/.scratch/grill-round-68/evidence/t3-s0s1-probe.md + t3-s2s3-verdict.md；6 腿验收（5 passed + session 传播 contract-level + variance excluded-optional）+ exclusion ledger（P7 ans-MCP excluded、P8 -c excluded、P9 IDE excluded-宿主不执行）+ adapter 修复 commit 3d346ed + 契约测试 11 条 + README per-surface 拆分。
+(i) 修红：commit 14514da + 双绿 run（35232698557/35232698560）+ eval-looks.json schema_version 回在 + round-trip 字节级断言（eval-docs-golden.test.ts §7）+ abstain 绿 + F-17 台账 .scratch/grill-round-68/evidence/f17-sweep-ledger.md。
+(ii) 门禁：release.yml diff 全要素 + dry-run transcript .scratch/grill-round-68/evidence/t1-dryrun-transcript.txt（绿 14514da exit0 / 红 d7bed91 exit1 / 无信号 4833833 exit2）+ **部分验证声明**（首次真 pre-tag dispatch 前不称 fully verified）+ T2 lint 先红（R67 三违规检出）后绿（35240541694 全 4 job 绿，CI 内 liveness 腿真跑）。
+(iii) antigravity：spike s0-s3 transcript 全量 .scratch/grill-round-68/evidence/t3-s0s1-probe.md + t3-s2s3-verdict.md；6 腿验收（5 passed + session 传播 contract-level + variance excluded-optional）+ exclusion ledger（P7 ans-MCP excluded、P8 -c excluded、P9 IDE excluded-宿主不执行）+ adapter 修复 commit 3d346ed + 契约测试 11 条 + README per-surface 拆分。
 (iv) 文书+收口：R67 closeout 回填（35210635315/35210635308/35211150217/35211259312 真实 URL）+ but-land 治理裁决入 ADR-0069 D5 + lesson-log + 本文件 lint 自验。
 
 ## found/fixed/deferred 三元组
@@ -58,7 +58,7 @@ Stack (primary key = GitButler change-ids; SHAs are time-lagged):
 - agy -p 挂起陷阱：配置的 MCP server 连不上会阻塞 turn 初始化（1mcp 实测）；隔离 HOME 可绕。OAuth token 在 Windows Credential Manager，与 HOME 无关。
 - release.yml 门禁：check 族=check-build/install-smoke/test:online/ship-gate/memory-eval；native-smoke+macos-spillover-probe 在门外（实验腿）。
 - VC：but land 直推 main=本轮惯例（ADR-0069 D5 已裁决+记录 future direction）；hook 进程 cwd=hooks.json 所在目录（workspacePaths 空时 mdc 兜底落点会偏）。
-- 探针沙箱：D:/Aworker/agy-sandbox（仓外，含 hooks.json 实验配置+spike 脚本+dump 全量）。
+- 探针沙箱：D:/Aworker/agy-sandbox（仓外，含 hooks.json 实验配置+spike 脚本+dump 全量）。 <!-- machine-local: machine-local path cited in committed doc @ 2026-09-19 -->
 
 ## Suggested skills
 

@@ -997,6 +997,93 @@ function stepReadmeParity() {
   report("pass", "readme-parity: heading 1:1 + " + E.code.length + " code block(s) + " + el.length + " link(s) byte-identical; limitations pointer live");
 }
 
+
+// ADR-0072 (R71 T0 / D-002): machine-local path discipline lint. Docs cite
+// machine paths for three different purposes and the doctrine now prices them
+// separately (AGENTS.md "Deliverable path discipline"): locators (Stack lines)
+// may stay absolute; in-repo target references must be repo-relative; every
+// other machine-local path needs a governed declaration marker
+// <!-- machine-local: <reason> @ <YYYY-MM-DD> --> on the same line — or on the
+// line directly before a ``` fence, which covers the fenced block (transcript
+// excerpts). Bare paths, bare markers (no reason/date), and unregistered
+// .scratch doc dirs are all violations. Sweep scope is the registered list in
+// scripts/ship-gate-pathlint.config.json — a new document type lands only by
+// editing that file (explicit registration, q2 correction 3).
+function stepPathLint() {
+  report("info", "step 1i/9: machine-local path discipline lint (ADR-0072)");
+  const cfgPath = path.join(ROOT, "scripts", "ship-gate-pathlint.config.json");
+  if (!fs.existsSync(cfgPath)) fail("path-lint: scripts/ship-gate-pathlint.config.json missing — the sweep registration is the leg's contract (fail-closed)");
+  let cfg;
+  try { cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8")); }
+  catch (e) { fail("path-lint: config unparseable: " + e.message); }
+  if (!Array.isArray(cfg.roots) || !Array.isArray(cfg.scratchDocDirs)) fail("path-lint: config needs roots[] + scratchDocDirs[]");
+
+  // Enumerate committed docs plus untracked-but-not-ignored new files in scope
+  // (a doc being written right now must comply before commit — same posture as
+  // the closeout lint's working-tree leg).
+  const ls = (a) => {
+    const r = spawnSync("git", a, { cwd: ROOT, encoding: "utf8" });
+    if (r.status !== 0) fail("path-lint: git " + a.join(" ") + " failed — cannot enumerate the registered sweep (fail-closed): " + String(r.stderr || "").trim().slice(0, 200));
+    return (r.stdout || "").split("\n").map((x) => x.trim()).filter(Boolean);
+  };
+  const files = [...new Set([...ls(["ls-files"]), ...ls(["ls-files", "-o", "--exclude-standard"])])].filter((f) => f.endsWith(".md"));
+  const globOk = (f) => cfg.roots.some((g) => {
+    if (g === "*.md") return !f.includes("/");
+    const m = g.match(/^(.+)\/\*\*\/\*\.md$/);
+    if (m) return f.startsWith(m[1] + "/");
+    return f === g;
+  });
+  const inScope = files.filter(globOk);
+
+  const problems = [];
+  // Registration check: every .scratch doc must sit in a registered dir —
+  // <round>/ file (depth-2, "" entry) or <round>/<dir>/ (first segment entry).
+  for (const f of inScope) {
+    if (!f.startsWith(".scratch/")) continue;
+    const parts = f.slice(".scratch/".length).split("/");
+    if (parts.length === 2) { if (!cfg.scratchDocDirs.includes("")) problems.push(f + ": .scratch round-root doc not covered by a registered dir (empty-string entry removed)"); }
+    else if (parts.length > 2) { if (!cfg.scratchDocDirs.includes(parts[1])) problems.push(f + ": unregistered .scratch doc dir '" + parts[1] + "' — register it in scripts/ship-gate-pathlint.config.json or move the doc"); }
+    else problems.push(f + ": .scratch top-level doc — unregistered document type");
+  }
+
+  const PATH_RE = /(?:^|[^A-Za-z0-9])(?:[A-Za-z]:[\\\/]|\/(?:Users|home)\/|\/tmp\/|AppData[\\\/])/;
+  const TOKEN_RE = /[A-Za-z]:[\\\/][^\s"'`\)><\]:+,，、。；：（）【】《》|&]*|\/(?:Users|home|tmp)\/[^\s"'`\)><\]:+,，、。；：（）【】《》|&]*|[^\s"'`\)><\]:+,，、。；：（）【】《》|&]*AppData[\\\/][^\s"'`\)><\]:+,，、。；：（）【】《》|&]*/g;
+  const MARKER_OK = /<!--\s*machine-local\s*:\s*[^@<>\s][^@<>]*?@\s*\d{4}-\d{2}-\d{2}\s*-->/;
+  const MARKER_ANY = /<!--\s*machine-local/i;
+  const locators = (cfg.locatorLinePatterns || []).map((x) => new RegExp(x));
+  const rootAbs = ROOT.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
+  const inRepo = (tok) => { const t = tok.replace(/\\/g, "/").toLowerCase(); if (!t.startsWith(rootAbs + "/")) return false; const rel = t.slice(rootAbs.length + 1); return /^[a-z0-9._~*{?%$]/.test(rel); }; // a repo-ROOT ref (no path tail) is a locator, not a target ref — marker class
+
+  let scanned = 0;
+  for (const rel of inScope) {
+    const file = path.join(ROOT, rel);
+    if (!fs.existsSync(file)) continue;
+    scanned++;
+    const lines = fs.readFileSync(file, "utf8").split("\n");
+    let fenced = false, fenceMarked = false, prevMarked = false;
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (/^\s*```/.test(l)) {
+        if (!fenced) fenceMarked = prevMarked || MARKER_OK.test(l); // marker on the preceding line or the fence line covers the block
+        else fenceMarked = false;
+        fenced = !fenced;
+        prevMarked = false;
+        continue;
+      }
+      if (locators.some((re) => re.test(l))) { prevMarked = MARKER_OK.test(l); continue; } // locator class: absolute is the feature
+      if (PATH_RE.test(l) && !fenceMarked) {
+        const toks = l.match(TOKEN_RE) || [];
+        const bad = toks.filter(inRepo);
+        if (bad.length) problems.push(rel + ":" + (i + 1) + " in-repo target reference must be repo-relative (markers do not exempt in-repo refs): " + [...new Set(bad)].slice(0, 3).join(", "));
+        else if (!MARKER_OK.test(l)) problems.push(rel + ":" + (i + 1) + (MARKER_ANY.test(l) ? " malformed machine-local marker (needs non-empty reason + @ YYYY-MM-DD)" : " machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->") + ": " + l.trim().slice(0, 100));
+      }
+      prevMarked = MARKER_OK.test(l);
+    }
+  }
+  if (problems.length) fail("path-lint: " + problems.length + " machine-local path violation(s):\n  " + problems.slice(0, 40).join("\n  ") + (problems.length > 40 ? "\n  ... and " + (problems.length - 40) + " more" : ""));
+  report("pass", "path-lint: " + scanned + " registered doc(s) clean (in-repo refs repo-relative; machine-local paths declared)");
+}
+
 // ADR-0059 D5 (T-4): three permanent invariants run FIRST, including under --quick, so a release
 // verdict can never be produced from a broken workflow file, a dirty tree, or a drifted ignore set.
 // NOTE on (c): the ledger wrote the command as `git ls-files -z --ignored --exclude-standard`,
@@ -1734,6 +1821,7 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
   stepEvidenceAnchors();
   stepHandoffCloseoutLint();
   stepReadmeParity();
+  stepPathLint();
   await stepValidateDomains();
   if (!quick) { reportStep("step_2_turbo"); await stepBuildAndTest(); }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-ship-gate-"));

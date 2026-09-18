@@ -112,7 +112,7 @@ jobs:
         if: ${{ github.event_name == 'push' || inputs.runPurpose == 'post-tag' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/assert-checks-green.mjs --sha "${{ github.sha }}" --repo "${{ github.repository }}" --timeout-min 10 --discovery-sec 120 --interval-sec 20
+        run: node scripts/assert-checks-green.mjs --sha "${{ github.sha }}" --repo "${{ github.repository }}" --timeout-min 15 --discovery-sec 120 --interval-sec 20
 
       # ADR-0069 (R68 T1): alert-and-block — on any gate red, leave a step
       # summary, auto-open an issue, and stamp the ledger commit with a

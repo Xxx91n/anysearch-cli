@@ -1,6 +1,6 @@
 # R67 closeout handoff — 2026-09-17
 
-接棒人下一轮（R68 或续跑）从这里开始。完整报告：`D:\Aworker\anysearch-cli\.scratch\grill-round-67\reports\2026-09-17-report.md`；审计交接：`D:\Aworker\anysearch-cli\.scratch\grill-round-67\handoffs\round-67-audit-closeout.md`；任务书：`D:\Aworker\anysearch-cli\.scratch\grill-round-67\handoffs\next-round.md`。
+接棒人下一轮（R68 或续跑）从这里开始。完整报告：`.scratch/grill-round-67/reports/2026-09-17-report.md`；审计交接：`.scratch/grill-round-67/handoffs/round-67-audit-closeout.md`；任务书：`.scratch/grill-round-67/handoffs/next-round.md`。
 
 ## 一句话状态
 
@@ -9,13 +9,13 @@
 ## 已完成的票
 
 - **T1 真宿主裁决**（base `1dbcf63`，published 0.0.4 @ codex 0.142.5）：旧 `{name,command,args}` hooks 配置注册零钩；裸 `additionalContext` ~80% 丢；裸 `permissionDecision` 不拦；exit2 不拦；`hook_event_name` 为真实 stdin 字段；`required=true` MCP 硬退；matcher 全匹配语义；`-c` 不能表达 hooks。
-- **T2 tarball 矩阵**：P1–P9 + CODEX_HOME 注入轨 + env 传递实证，全量在 `D:\Aworker\anysearch-cli\.scratch\grill-round-67\evidence\`。
-- **T3 修复**（commit `6faa3f8`，改前备份在 `D:\Aworker\anysearch-cli\.scratch\grill-round-67\backups\t3\`）：官方 hooks schema + `hookSpecificOutput` 信封化 + `permissionDecision` 透传 + `ans-hook-codex` bin + suffix-anchored matcher + `--envelope` SessionStart + 11 条契约测试。
+- **T2 tarball 矩阵**：P1–P9 + CODEX_HOME 注入轨 + env 传递实证，全量在 `.scratch/grill-round-67/evidence/`。
+- **T3 修复**（commit `6faa3f8`，改前备份在 `.scratch/grill-round-67/backups/t3/`）：官方 hooks schema + `hookSpecificOutput` 信封化 + `permissionDecision` 透传 + `ans-hook-codex` bin + suffix-anchored matcher + `--envelope` SessionStart + 11 条契约测试。
 - **T4 复验**：shipped 配置端到端 SessionStart 信封回显、URL deny 端到端拦阻（mcpCalls=0）、PostToolUse→index +19/+10 真实蒸馏行。
 - **T5 文档**：ADR-0068、codex-integration.md、README verified-hosts Codex 行、CHANGELOG 0.0.5、CONTEXT/AGENTS 钉入。
 - **T6 发布准备**：7 包 bump 0.0.5 + ship-gate 钉同步；ship-gate 净 clone 全绿。
 - **审计+修复轮**：审计 PASS（F-01..F-06 经 `ebc22a8` 收口）；`but land` 双段落 main→`2cb2a8c`。
-- **T7 发布**：pre-tag run `35211150217`（账本回写 `9a466b9`）→ `git tag v0.0.5`+push → tag run `35211259312` 全绿（gate 14s + publish 1m19s）→ 四包 registry live + 净机 `C:\Users\Administrator\AppData\Local\Temp\r67clean` 冒烟 → ADR-0068 Closure(iv)+报告/任务书回填（`2b9e6e8`）。
+- **T7 发布**：pre-tag run `35211150217`（账本回写 `9a466b9`）→ `git tag v0.0.5`+push → tag run `35211259312` 全绿（gate 14s + publish 1m19s）→ 四包 registry live + 净机 `C:\Users\Administrator\AppData\Local\Temp\r67clean` 冒烟 → ADR-0068 Closure(iv)+报告/任务书回填（`2b9e6e8`）。 <!-- machine-local: build-host temp path cited as evidence @ 2026-09-19 -->
 
 ## 下一个 grill 方向指示（按建议优先级）
 
@@ -29,7 +29,7 @@
 - Codex 0.142.5 契约（ADR-0068）：stdin `hook_event_name`（`event` 回退保留）；stdout 仅 `hookSpecificOutput` 信封有效；hooks 须官方 `{matcher,hooks:[{type,command,timeout}]}`；matcher 全匹配 regex；`-c` 不能表达 hooks；required=true MCP 硬退；hook 进程继承 codex env；PostToolUse 耐久行为=/index 副作用，同-turn 注入为宿主变量。
 - 发布面：`v0.0.5` 已发（tag 在 `9a466b9`）；release.yml 双段=pre-tag dispatch 花 OF look+回写账本 → tag push assert+publish；npm 侧零 token（OIDC TP）；main HEAD=`2b9e6e8`。
 - VC：`but` 无 tag 子命令（R66/R67 灰区口径：tag+push 用 git）；`but land` 直推 main 会绕 PR——已两次使用；r67-\* 分支已全部清除。
-- e2e 现场在仓外 `D:\Aworker\e2e-r67-codex`（含未提交 token，勿入库）；净 gate clone `C:\Users\Administrator\AppData\Local\Temp\ansclean`。
+- e2e 现场在仓外 `D:\Aworker\e2e-r67-codex`（含未提交 token，勿入库）；净 gate clone `C:\Users\Administrator\AppData\Local\Temp\ansclean`。 <!-- machine-local: build-host temp path cited as evidence @ 2026-09-19 -->
 
 ## Suggested skills
 

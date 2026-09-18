@@ -20,7 +20,7 @@ r65-grill → r65-t1-deploy → r65-t6-closure → r65-t3-codebuddy-hooks → r6
 
 - CodeBuddy 契约已实证：hook_event_name + hookSpecificOutput 信封 + tool_response 数组 blocks + SessionStart 原文卡 + Git Bash 强制。
 - 5 适配器全支持 hook_event_name??event + unwrapToolResponse 数组形状；模板-target 可执行断言堵死库文件误指。
-- e2e 现场 D:\Aworker\e2e-r65-codebuddy\ 可复用（mcp.json/settings.json/server-token/project-index.db 在）；探针跑器 .scratch/grill-round-65/scripts/probe.mjs + mcp-call-tool.mjs。
+- e2e 现场 D:\Aworker\e2e-r65-codebuddy\ 可复用（mcp.json/settings.json/server-token/project-index.db 在）；探针跑器 .scratch/grill-round-65/scripts/probe.mjs + mcp-call-tool.mjs。 <!-- machine-local: sibling e2e checkout on build host @ 2026-09-19 -->
 - plugin server=ans-plugin-server bin；127.0.0.1:33333 bearer；token <cwd>/.anysearch-cli/server-token 0600。
 
 ## 下一 grill 方向指示（deferred 池按优先级排序）

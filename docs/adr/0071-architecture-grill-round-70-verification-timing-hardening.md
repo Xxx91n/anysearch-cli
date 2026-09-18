@@ -4,9 +4,9 @@
 
 Accepted (implementation round r70). Records the round-70 decisions per the
 serial ticket plan T0–T3. Ledger:
-`D:\Aworker\anysearch-cli\.scratch\grill-round-70\decision-ledger.md`
+`.scratch/grill-round-70/decision-ledger.md`
 (D-001~D-004, 无断号). Evidence root:
-`D:\Aworker\anysearch-cli\.scratch\grill-round-70\evidence\`.
+`.scratch/grill-round-70/evidence/`.
 
 ## Context
 
@@ -21,7 +21,7 @@ discipline, NILUS deadline propagation, Temporal timers) adjudicated A″:
 strict two-phase with an absolute outer anchor — discovery as a nested
 fast-fail sub-window inside the process-start deadline, phase-split error
 lines, no third flag (an upgrade trigger is recorded instead). Research
-archive: `D:\Aworker\anysearch-cli\.scratch\grill-round-70\q2-atomcode.md`.
+archive: `.scratch/grill-round-70/q2-atomcode.md`.
 Secondary thread (ledger D-001): store `*.integration.test.mjs` Windows
 load jitter — spike reproduced the signature before disposition.
 
@@ -85,7 +85,7 @@ load jitter — spike reproduced the signature before disposition.
   34990675633/34987961772/34981241843/34970372081/34970221257/34968562955)
   + 6 pushed main tips (2f6d990a, 3a9d4578, 01f8d7ff, 6c801678, 72495cb3,
   3b78b835) — 167 completed check-runs. Raw dump:
-  `D:\Aworker\anysearch-cli\.scratch\grill-round-70\evidence\t2-checkrun-durations.json`.
+  `.scratch/grill-round-70/evidence/t2-checkrun-durations.json`.
 
   | family | n | p50 | p90 | p99/max (s) |
   |---|---|---|---|---|
@@ -119,7 +119,7 @@ load jitter — spike reproduced the signature before disposition.
 ### D5 Jitter disposition: bound the synchronous child, keep the suite (ledger D-001; T1)
 
 - Spike (8-worker CPU saturation; transcript
-  `D:\Aworker\anysearch-cli\.scratch\grill-round-70\evidence\t1-jitter-spike.txt`):
+  `.scratch/grill-round-70/evidence/t1-jitter-spike.txt`):
   `eval-labels.integration.test.mjs` + `revision-cli.integration.test.mjs`
   exceeded a 60s observation bound every round; `revision-fixture` +
   `access-chain-nodb` slowed but passed. Signature = spawnSync-child CPU
@@ -132,7 +132,7 @@ load jitter — spike reproduced the signature before disposition.
   judge run) and throws a descriptive ETIMEDOUT error — a starved child
   fails fast with a real signature instead of an unbounded hang. Same-load
   re-run: both tests completed green (66s / 94s; verify transcript
-  `D:\Aworker\anysearch-cli\.scratch\grill-round-70\evidence\t1-fix-verify.txt`).
+  `.scratch/grill-round-70/evidence/t1-fix-verify.txt`).
 - Rejected: (a) Flaky Case Quarantine — the golden-case machine
   (ADR-0027/0065: ledger + SLA + ratchet) adjudicates labelled eval
   cases, not binary integration processes; fitting it here is a
@@ -147,9 +147,9 @@ load jitter — spike reproduced the signature before disposition.
   (land 72495cb3; ci run 35346930128 + ship-gate run 35346930060 +
   native-smoke run 35346929991 all required-green); ESM fixture 7/7
   red->green pair at
-  `D:\Aworker\anysearch-cli\.scratch\grill-round-70\evidence\t0-fixture-{red,green}.txt`;
+  `.scratch/grill-round-70/evidence/t0-fixture-{red,green}.txt`;
   real-SHA --once probe GREEN exit 0
-  (`D:\Aworker\anysearch-cli\.scratch\grill-round-70\evidence\t0-real-sha-once.txt`).
+  (`.scratch/grill-round-70/evidence/t0-real-sha-once.txt`).
 - (ii) jitter: spike signature = spawnSync-child CPU starvation on bare
   .mjs files; disposition (b) inner timeouts landed (land 3b78b835;
   ci 35349184977 / ship-gate 35349185004 / native 35349185022 all green);
@@ -159,7 +159,7 @@ load jitter — spike reproduced the signature before disposition.
 - (iv) docs/closeout: this ADR + CONTEXT term (SpawnSync Starvation
   Bound) + CHANGELOG r70 entry + ledger 落地对账 + goal finalized;
   round report
-  `D:\Aworker\anysearch-cli\.scratch\grill-round-70\reports\2026-09-18-report.md`;
+  `.scratch/grill-round-70/reports/2026-09-18-report.md`;
   final land 6736aaae — ci run 35350962475 + ship-gate run 35350962449 +
   native-smoke run 35350962481 all required-green (macos-spillover-probe
   EXPERIMENT failure, non-blocking, deferred).
