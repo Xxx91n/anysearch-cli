@@ -24,6 +24,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Fixed
 
+- **release-gate pre-tag 结构性断点（首个真客暴露）** —— 账本 commit 由 GITHUB_TOKEN push，GitHub 递归守卫使其永不触发 workflow run → ledger sha 无 check-run → `FAIL_ON_NO_CHECKS` 必败（run 35385345425）。修复：release-gate 在 ledger sha 上自 dispatch ci+ship-gate（temp ref `release-gate-ledger` 确定性钉 sha，wait 后清理）——assertion 不减，所需权限 `actions: write`。
 - **EBADDEVENGINES 根治** —— root `devEngines` 删除：对钉版冗余（packageManager+pmOnFail 实证 pnpm@11.7.0 仍 ERR_PNPM_BAD_PM_VERSION）且令仓内一切 npm 命令告警；发布 tarball 从未携带。
 - R70 审计 Temp transcript 入库 `.scratch/grill-round-70/evidence/r70-audit-temp/`（默认提交裁决）。
 

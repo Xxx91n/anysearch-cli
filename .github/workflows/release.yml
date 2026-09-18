@@ -32,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # pre-tag commits the updated eval-looks.json ledger back
+      actions: write  # ADR-0072: self-dispatch ci+ship-gate on the ledger sha (GITHUB_TOKEN pushes never cascade-trigger)
       checks: read     # wait-on-check-action polls the Checks API
       statuses: write  # red ledger commit gets a release-gate/failed status
       issues: write    # red gate auto-opens an issue
@@ -72,6 +73,27 @@ jobs:
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      # ADR-0072 (R71 T2, first real guest): the ledger commit is pushed by
+      # this job's GITHUB_TOKEN — and GITHUB_TOKEN pushes never cascade-trigger
+      # workflow runs (GitHub's recursion guard), so the ledger sha carries ZERO
+      # check-runs and wait-on-check-action's FAIL_ON_NO_CHECKS always fails at
+      # discovery (run 35385345425). Repair without weakening the assertion:
+      # self-dispatch the two check-producing workflows on a temp ref pinned at
+      # the ledger sha, so the wait below sees REAL check-runs (ci:
+      # check-build/install-smoke/test:online; ship-gate.yml:
+      # ship-gate/memory-eval — memory-eval always registers; its path filter
+      # only gates the eval steps). The temp ref pins the sha deterministically
+      # (a --ref main race could land checks on a newer tip).
+      - name: trigger ci + ship-gate on the ledger commit (pre-tag only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LEDGER_SHA: ${{ steps.ledger_commit.outputs.sha }}
+        run: |
+          git push -f origin "$LEDGER_SHA:refs/heads/release-gate-ledger"
+          gh workflow run ci.yml --ref release-gate-ledger
+          gh workflow run ship-gate.yml --ref release-gate-ledger
+
       # ADR-0069 (R68 T1, layer 1): the pre-tag job now self-waits — after the
       # ledger commit lands on main it must carry green ci+ship-gate before the
       # operator may tag. wait-on-check-action supplies the two-phase contract:
@@ -100,6 +122,14 @@ jobs:
           running-workflow-name: release
           fail-on-no-checks: true
           verbose: true
+
+      # Cleanup runs after the wait (dispatched runs reference the temp ref at
+      # checkout — deleting it mid-run would strand not-yet-started jobs; the
+      # wait returning means the checks are terminal). || true keeps cleanup
+      # non-blocking; the ref is force-overwritten on the next pre-tag anyway.
+      - name: clean the ledger temp ref (pre-tag only)
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}
+        run: git push origin --delete refs/heads/release-gate-ledger || true
 
       # ADR-0069 (R68 T1, layer 2): publish's needs:release-gate now asserts the
       # TAGGED sha carries all-green ci+ship-gate — the bug this closes: v0.0.5
