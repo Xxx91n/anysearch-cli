@@ -2,16 +2,18 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
+> This document is canonical; [README.zh-CN.md](README.zh-CN.md) is the derived translation.
+
 [![npm](https://img.shields.io/npm/v/@anysearch-cli/cli)](https://www.npmjs.com/package/@anysearch-cli/cli)
 [![ci](https://github.com/Xxx91n/anysearch-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Xxx91n/anysearch-cli/actions/workflows/ci.yml)
-[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![license](https://img.shields.io/github/license/Xxx91n/anysearch-cli)](LICENSE)
 
 A vertical-domain information-specialist CLI: search + research + memory +
 knowledge in one agent — FTS5 recall, multi-source RRF fusion, an MCP server
 that auto-indexes results, and a domain allowlist that actually gates what
 comes back.
 
-**Status: 0.0.4 on npm** — `npm i -g @anysearch-cli/cli` (npm OIDC trusted
+**Status: published on npm** — `npm i -g @anysearch-cli/cli` (npm OIDC trusted
 publishing with sigstore provenance since 0.0.4; 0.0.1/0.0.2 were revoked over
 a `workspace:*` peer escape — see CHANGELOG).
 

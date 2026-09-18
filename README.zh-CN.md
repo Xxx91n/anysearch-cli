@@ -6,13 +6,13 @@
 
 [![npm](https://img.shields.io/npm/v/@anysearch-cli/cli)](https://www.npmjs.com/package/@anysearch-cli/cli)
 [![ci](https://github.com/Xxx91n/anysearch-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Xxx91n/anysearch-cli/actions/workflows/ci.yml)
-[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![license](https://img.shields.io/github/license/Xxx91n/anysearch-cli)](LICENSE)
 
 垂直领域信息专家 CLI：search + research + memory + knowledge 合于一个
 agent——FTS5 召回、多路 RRF 融合、自动索引结果的 MCP server，以及一道
 真正拦得住返回内容的域名 allowlist。
 
-**状态：npm 上 0.0.4** — `npm i -g @anysearch-cli/cli`（自 0.0.4 起经 npm
+**状态：已发布 npm** — `npm i -g @anysearch-cli/cli`（自 0.0.4 起经 npm
 OIDC trusted publishing 发布，含 sigstore provenance；0.0.1/0.0.2 因
 `workspace:*` peer 逃逸作废——见 CHANGELOG）。
 
