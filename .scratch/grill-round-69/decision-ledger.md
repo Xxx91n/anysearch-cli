@@ -74,3 +74,17 @@
 - **状态**: current
 - **记录时间**: 2026-09-18
 
+
+## 落地对账（T7 实施收尾追加，2026-09-18）
+
+| D | 处置 | 锚点 |
+|---|---|---|
+| D-001 立项/范围 | 落地 | 票序 T0-T7 执行完毕 |
+| D-002 （空号） | 跳号证据 | Q2 曾被跳过未问，Q6 补问 D-006——过程违规自报，不追认 |
+| D-003 双语形态 | 落地 | README.md canonical + README.zh-CN.md 派生互链 |
+| D-004 README IA | 落地 | 登录页 159 行+docs/limitations.md+docs/adr/index.md+机器路径清零 |
+| D-005 门面边界 | 落地 | gh repo edit（desc+topics×9）+LICENSE canonical；无 .github 基建无图像资产 |
+| D-006 T0 修形 | 落地 | C 双修+双向验证+main 三绿 |
+| D-007 值守形态 | 落地 | ship-gate step1h standing fail-closed+红绿证据对 |
+| D-008 票序 | 落地 | A 七票串行 |
+| D-009 收口判据 | 落地 | A 四段证据+final tip 三绿 |

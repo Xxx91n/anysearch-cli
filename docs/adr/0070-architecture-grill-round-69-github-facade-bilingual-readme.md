@@ -105,4 +105,34 @@ was accurate, not a detection bug.
 
 ## Closure (回填位 — completed at T7)
 
-(filled at round close)
+Four-segment evidence (ledger D-009):
+
+1. **Repair** — T0 landed `dba42e1` + `ee3600c` on origin/main; the
+   closeout-lint narrowing was verified bidirectionally
+   (`round-69-direction.md` de-scoped, `round-67-closeout.md` still matches);
+   local `ship-gate --quick` 56×pass committed at
+   `D:\Aworker\anysearch-cli\.scratch\grill-round-69\evidence\r69-t0-shipgate-transcript.txt`;
+   remote triple-green on `ee3600c` — ci run 35317461733 / ship-gate
+   35317461823 / native-smoke 35317461732.
+2. **Facade** — README pair landed (EN 312→159 lines + ZH companion); zero
+   machine-local paths; three badge endpoints return 200;
+   `docs/limitations.md` (20 verbatim entries) and `docs/adr/index.md`
+   (70 rows) exist; `gh repo view` before/after JSON on record
+   (description + 9 topics); LICENSE → canonical Apache-2.0 —
+   `licenseInfo` now reports `apache-2.0`.
+3. **Standing guard** — parity red→green pair:
+   `D:\Aworker\anysearch-cli\.scratch\grill-round-69\evidence\r69-t4-parity-red.txt`
+   (step 1h heading-skeleton drift, exit 1) and
+   `D:\Aworker\anysearch-cli\.scratch\grill-round-69\evidence\r69-t4-parity-green.txt`
+   (full green). Generator retarget proof: step 1b passes on
+   `docs/adr/index.md` and the 69→70 regen followed the ADR-0070 commit —
+   the diff discipline itself was exercised.
+4. **Documentation** — this ADR; CONTEXT.md R69 词块 (8 terms, pre-ledgered,
+   no new implementation coinage); CHANGELOG r69 entry; found/fixed/deferred
+   triplets in the round report + closeout (incl. the D-002 skip-gap
+   self-report, the LICENSE-Other disposition, and per-chore L-1/L-2/F-S4/
+   comment dispositions).
+
+Final land `6c801678` triple-green: ci run 35321041577 / ship-gate
+35321041623 / native-smoke 35321041706 (macos-spillover-probe red is the
+documented EXPERIMENT non-blocking job, outside the gate).
