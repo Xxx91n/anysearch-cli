@@ -143,4 +143,23 @@ load jitter — spike reproduced the signature before disposition.
 
 ## Closure (回填位 — completed at T3)
 
-- (reserved — T3 四段收口证据回填)
+- (i) F-S4: strict two-phase shipped in `scripts/assert-checks-green.mjs`
+  (land 72495cb3; ci run 35346930128 + ship-gate run 35346930060 +
+  native-smoke run 35346929991 all required-green); ESM fixture 7/7
+  red->green pair at
+  `D:\Aworker\anysearch-cli\.scratch\grill-round-70\evidence\t0-fixture-{red,green}.txt`;
+  real-SHA --once probe GREEN exit 0
+  (`D:\Aworker\anysearch-cli\.scratch\grill-round-70\evidence\t0-real-sha-once.txt`).
+- (ii) jitter: spike signature = spawnSync-child CPU starvation on bare
+  .mjs files; disposition (b) inner timeouts landed (land 3b78b835;
+  ci 35349185022 / ship-gate 35349185004 / native 35349184977 all green);
+  transcripts t1-jitter-spike.txt + t1-fix-verify.txt.
+- (iii) duty: install-smoke 26/26 and ship-gate --quick 57x[pass] on the
+  committed clean tree (t3 transcripts); release.yml flags untouched.
+- (iv) docs/closeout: this ADR + CONTEXT term (SpawnSync Starvation
+  Bound) + CHANGELOG r70 entry + ledger 落地对账 + goal finalized;
+  round report
+  `D:\Aworker\anysearch-cli\.scratch\grill-round-70\reports\2026-09-18-report.md`;
+  final land 6736aaae — ci run 35350962475 + ship-gate run 35350962449 +
+  native-smoke run 35350962481 all required-green (macos-spillover-probe
+  EXPERIMENT failure, non-blocking, deferred).
