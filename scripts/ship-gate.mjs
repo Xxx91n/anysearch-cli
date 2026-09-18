@@ -851,15 +851,17 @@ function stepEvidenceAnchors() {
 // ADR-0069 (R68 T2): closeout handoff required-field lint. The R67 closeout
 // shipped without the handoff-template's mandatory "绿色 run URL" section and
 // Stack line — a doc-level omission no gate caught. Scope = closeout-shaped
-// docs (round-NN-* / *closeout* / *closure* under .scratch/*/handoffs/;
+// docs (*closeout* / *closure* filename keyword under .scratch/*/handoffs/;
 // audit-only docs and next-round task books excluded) that are EITHER touched
 // by this diff OR the newest closeout on disk. Older untouched closeouts are
 // grandfathered — the rule postdates them.
+// R69 T0: the bare round-NN-* shape leg was removed — direction/task docs
+// (e.g. round-69-direction.md) are not closeouts and were false-positive hits.
 function stepHandoffCloseoutLint() {
   report("info", "step 1g/9: closeout handoff required-field lint (ADR-0069)");
   const scratchDir = path.join(ROOT, ".scratch");
   const isCloseout = (name) =>
-    (/^round-\d+/i.test(name) || /closeout|closure/i.test(name)) &&
+    /closeout|closure/i.test(name) &&
     !/audit/i.test(name) && !/^next/i.test(name) && name.endsWith(".md");
   const targets = new Set();
 

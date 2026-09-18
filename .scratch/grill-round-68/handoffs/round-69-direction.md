@@ -1,5 +1,8 @@
 # R69 方向指示 — 2026-09-18（audit window 收口，交给下一个 grill round）
 
+Stack (primary key = GitButler change-ids; SHAs are time-lagged):
+  r68 系全 landed → 20c5813（审计收口交接）→ 898d3d7（返工票全项核销）→ 6acc53c（rework transcript 补证，三绿 headSha）→ e265667（本方向指示件，main tip @ 2026-09-18）
+
 上一棒：R68 审计 LOOP 重审 PASS，返工票全项核销，双 land 远端三绿。本文档为 R69 任务书种子。
 
 ## 本轮终态锚点（全部已 land 于 main，origin/main=6acc53c+）
@@ -10,6 +13,17 @@
 - 返工 transcript：D:\Aworker\anysearch-cli\.scratch\grill-round-68\evidence\r68-rework-shipgate-transcript.txt（P-V2 补证范式，下轮沿用）
 - 决策账本：D:\Aworker\anysearch-cli\.scratch\grill-round-68\decision-ledger.md（D-001~D-005）
 - ADR：D:\Aworker\anysearch-cli\docs\adr\0069-architecture-grill-round-68-release-gate-dual-layer-closeout-lint.md
+
+## 绿色 run URL
+
+「双 land 远端三绿」引证——tip land 6acc53c（head_sha 为 HEAD 祖先）三 workflow 全 success；前棒 land 20c5813 亦三绿（loop2 报告实证）：
+
+- ci（6acc53c，success）：https://github.com/Xxx91n/anysearch-cli/actions/runs/35302952077
+- ship-gate（6acc53c，success）：https://github.com/Xxx91n/anysearch-cli/actions/runs/35302952056
+- native-smoke（6acc53c，success）：https://github.com/Xxx91n/anysearch-cli/actions/runs/35302952093
+- ci（20c5813，success）：https://github.com/Xxx91n/anysearch-cli/actions/runs/35302112200
+- ship-gate（20c5813，success）：https://github.com/Xxx91n/anysearch-cli/actions/runs/35302112181
+- native-smoke（20c5813，success）：https://github.com/Xxx91n/anysearch-cli/actions/runs/35302112253
 
 ## R69 首推主线（按优先级）
 
