@@ -1067,3 +1067,29 @@ codex `-c key=value` 的值不经过 TOML 解析——数组/表值按字符串�
 
 ## Per-Surface Verification Label（分表面验证标注）
 宿主 verified 声明必须按执行表面拆分标注（Antigravity CLI=可验表面 / Antigravity IDE=hooks 不执行表面只能 rules-fallback）；reduced matrix 配 SEP-2484 式 exclusion ledger（每腿 passed/excluded(reason)）使裁剪验证诚实成立。_Avoid_: 裸写“X verified”不标表面（IDE 永不触发 hooks，裸标即虚标）；reduced matrix 无 exclusion ledger 直标 verified。来源：atomcode R68-Q3+R68 D-003。
+
+## Grill Round 69 — Terms (ADR-0070)
+
+## Landing-Page README（登录页 README）
+README 的角色=仓库登录页/认知漏斗顶端，只放"上手必需"信息（GitHub 官方定义），长文档归 docs/。诊断尺度是比例不是存在：56% 工程审计内容即违例，无论内容多诚实。_Avoid_: 把 README 当工程档案馆（用户三秒测试被稀释）；把"整洁"当纯排版问题（病灶在信息架构）。来源：atomcode R69-Q4+R69 D-004。
+
+## Summary-and-Pointer Honesty（摘要+指针式诚实）
+工程诚实性在公共文档的正确形态=可见的摘要+可达的指针，非全文内联：limitations 留 top-3 摘要表+docs/limitations.md 链接，ADR 留 Design rationale+docs/adr/ 指针。诚实性轴（gaps surfaced）与渐进披露轴（各受众各取所需）同时成立。_Avoid_: 全文内联（违渐进披露）；全砍（违 ADR-0062 D4 不粉饰未发布态——C 方案死穴）。来源：atomcode R69-Q4+R69 D-004。
+
+## Canonical/Translation Pair（规范件/翻译件对）
+双语文档维护形态：README.md=canonical SSOT，README.zh-CN.md=派生翻译件——伴生件顶部声明"翻译件，以 README.md 为准"，双件顶部 switcher 互链（spec-kit PR #3740 官方仓先例）。_Avoid_: 无 canonical 声明的双件（读者不知信谁）；单文件互排（双受众扫读俱损）；CN 主件倒置 npm 惯例。来源：atomcode R69-Q4+R69 D-003。
+
+## Byte-Identical Parity（字节级对等判据）
+双语同步的机器验收判据：两文件 heading 结构 1:1+代码块/链接 byte-identical，仅 prose 可译。把"内容等价同步"从形容词变成可机检判据。_Avoid_: "内容等价"无判据（漂移无从检出）；全文 byte-identical（prose 本应不同——判据过宽即误报）。来源：atomcode R69-Q4+R69 D-003/D-007。
+
+## Doc-Type Shape Gate（文档类型形状门）
+lint 形状腿应按语义关键词定界文档类型（closeout|closure），不按文件名裸前缀（round-\d+）：新文档类型（direction/task）出现后，前缀型定界即过界误伤。收窄须双向验证：误伤件脱靶+真目标件仍命中。_Avoid_: 裸前缀当类型判据（round-69-direction 误伤成因）；靠改名绕 lint（教义问题未解决）。来源：R69 D-006。
+
+## Claim-Citation Doctrine（主张-引证教义）
+任何文档做出绿色主张（"三绿""PASS""全绿"）必须引 run URL 为证——教义挂在主张上不挂文档类型上：方向文档主张"双 land 远端三绿"同样须引证。_Avoid_: 教义只管 closeout 形文档（非收口件的绿色主张免检=教义留洞）；文档补栏而主张无引证（形式合规实质空栏）。来源：R69 D-006。
+
+## Standing Parity Check（常驻对等检查）
+同步/迁出类风险的值守形态=ship-gate standing fail-closed 步：漂移持续=持续红（alert-and-block 教义沿用），非仅当次 diff 命中。迁出文档须纳入同步检查防"迁出即遗忘"（arXiv 研究：outdated docs 是 README 最高频痛点）。_Avoid_: 一次性票内验收（漂移回归无防）；warn-only（告警疲劳=变相无检）；canonical 声明即止。来源：R69 D-007+atomcode R69-Q4。
+
+## Derived-Artifact Retarget（派生件重指向）
+生成型索引/清单迁移的正确操作=重指向新目标文件并保留 generate-and-diff 纪律（gen-adr-index 从 README 改指 docs/adr/index），非废弃检查也非双写。_Avoid_: 迁走内嵌段忘改 ship-gate 靶（step 1b 自红）；迁移即废弃 freshness 检查（ADR-0059 D6 纪律丢失）。来源：R69 D-004/D-007。
