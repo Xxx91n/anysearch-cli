@@ -1145,3 +1145,29 @@ bundler external（webpack `require("onnxruntime-common")`）未列进 dependenc
 
 ## Token Cascade Blindness（令牌级联盲区）
 GITHUB_TOKEN 的 push 按 GitHub 递归守卫永不触发 workflow run——依赖「bot push 的 commit 自动带 check-run」的门禁是结构性必死（R71 pre-tag run 35385345425 实证 FAIL_ON_NO_CHECKS 必败）；修法=显式自 dispatch 到钉 sha 的 temp ref，让真 check-run 落在被断言的 sha 上。_Avoid_: 假设 push 即触发（v0.0.5 时代无此腿故缺陷潜伏至首个真客）；assertion 降级绕行（换断言对象而非让被断言对象带检查）。来源：R71 T2 首个真客实证。
+
+## Grill Round 72 — Terms (ADR-0073)
+
+## Two-Phase Host Integration（两阶段宿主集成）
+宿主适配的成熟分层=工具面走最稳定的标准化协议（官方 MCP 桥产出 `mcp__server__tool`，与 Claude Code/Codex 命名同形），差异化价值（记忆注入/预热/蒸馏/URL 策略）走必须 in-process 才能实现的薄原生插件——工具契约不暴露在 preview breaking-change 区，hooks 层薄到一次 breaking rewrite 后可低成本重写。_Avoid_: 全量原生注册押 churn 区换工具层边际增量；MCP-only 当完整宿主（官方桥只桥 tools，hooks 结构性不可达=残缺非减配）。来源：atomcode R72-Q1+R72 D-001。
+
+## Thin In-Process Adapter（薄进程内适配层）
+dsh hooks 适配器=`ans-hook-*` 的第五个兄弟，载体从子进程 bin 变 in-process Cordis 插件——只做事件挂载，业务逻辑全留 127.0.0.1 HTTP IPC 子进程。in-process 面最小化是信任义务：安装的宿主插件跑在 workspace sandbox 之外。_Avoid_: 业务逻辑进宿主进程（检索/RAG 重逻辑、密钥、DB 直连一律进程外）；把适配层写厚（进程内代码越大，churn 重写成本越高+沙箱外攻击面越大）。来源：atomcode R72-Q1+R72 D-001/D-002。
+
+## Blocking Spike Item（阻塞型 spike 项）
+spike 项不平权：被已确认决策核心声明所押的项=blocking（本轮=bundle patch 能否配 mcp-client 行，一步装全靠它），其余=informational。产出形=每项 PASS/FAIL/RESHAPE 且 RESHAPE 必须带重形机制名回流下一票票文——T1 不消费 spike 报告则 spike 成仪式。_Avoid_: 各项等重列清单（blocking 项红=整个下游设计假设塌）；RESHAPE 只进报告不进票文。来源：atomcode R72-Q3+R72 D-003。
+
+## Probe Three-Bucket Taxonomy（探针三分桶）
+探针矩阵跨宿主模型移植必须显式分桶：宿主不变量（声明+机制不变：5 工具可见可调/fail-open/对照）·宿主变量（同声明新机制：inject/preheat/URL deny/distill/启动税）·宿主新增（旧模型无对应：装拆重装幂等/patch 层组合/HMR reload）。桶分类写进票文=重形可审计，非可选。_Avoid_: 静默重形探针（同名探针换了断言机制无人知）；宿主新增桶欠规格（漏掉新模型独有的腐化面）。来源：atomcode R72-Q3+R72 D-003。
+
+## Compile-Time Churn Alarm（编译期 churn 报警器）
+preview 期宿主依赖的断裂报警=把宿主类型仅置 devDeps——tsc 对事件 map 的 declaration merging 在宿主升级时编译期即断（比运行时炸早且定位准）；且报警器必须被行使成控件：lint/grep 步对「@deepseek-ai/* import 泄入 runtime 非 devDep 路径」fail——不行使的报警器是注释非控件。_Avoid_: 宿主类型进 runtime deps（失去报警+安装面变重）；只钉版本不配重验程序（preview 钉死必要不充分——升级 diff 演练记录须含 rc bump 重验清单）。来源：atomcode R72-Q2/Q3+R72 D-002/D-003。
+
+## Whole-Row Patch Replacement（整行替换 patch 语义）
+cordis patch 按 id **整行替换**配置值非深合并：bundle patch 配其他插件行=官方设计内操作（dsh-web-app 正是如此 override dsh-base 行），但必须复述该行所需每一个 key；层序 later wins（用户 profile 层在 bundle 层后=用户覆盖优先是正确方向）。_Avoid_: 假设深合并（漏 key=行被清）；不文档化用户覆盖方向与「宿主未来内置同行→升级 diff --dump-config」指引。来源：atomcode R72-Q2+R72 D-002/D-003。
+
+## Publish-Shape Verification（发布形态验证）
+private 包的验证必须对齐其发布形态：`pnpm pack` tarball→`dsh plugin add <tgz>`→`--dump-config` 层核对+package.json 预发布 lint（name/dsh.bundle/files/type:module）——下轮 publish=改一个字段非考古；源码目录 link 当验证会把 files 漏配/编译产物缺失藏到发布才炸（git 装需 prepare 脚本+allowBuilds 坑，tarball/npm 装零权限=目标形态）。_Avoid_: link 源码目录当安装验证；private 当「永远不必查发布形态」的借口。来源：atomcode R72-Q2+R72 D-002。
+
+## Named Re-Entry Ticket（具名重返票）
+fallback 降档不是终点：spike 红走 Phase-1-only 时必须另出一票据名「什么改变会让我们重启 Phase-2」（宿主版本/API 稳定信号/桥接层不足的具体缺），deferred 须可行动否则挂起成遗忘。_Avoid_: 无触发器的 deferred（与 Upgrade Trigger Record 同族——否决/降级必须带重返条件）；把降档当「已交付」汇报。来源：atomcode R72-Q3+R72 D-003。
