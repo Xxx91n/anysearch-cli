@@ -1,0 +1,6 @@
+(node:8644) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+anysearch MCP server: stdio transport ready
+dsh web: http://127.0.0.1:3080/?token=JmaX0l2D11HXQJRdNUoz9qzxFC2gc16pDVo7aSHxxDg
+dsh web: opening the default browser; pass --no-open to disable
+PROBE_TURN_COMPLETE

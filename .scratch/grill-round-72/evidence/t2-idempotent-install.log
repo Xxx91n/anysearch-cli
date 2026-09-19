@@ -1,0 +1,20 @@
+### dsh plugin remove
+- @anysearch-cli/dsh-plugin file:D:/Aworker/dsh-r72-spike/anysearch-cli-dsh-plugin-0.0.6.tgz
+
+Already up to date
+Done in 861ms using pnpm v11.24.0
+### package.json dsh-plugin refs after remove:
+0
+### dsh plugin add 0.0.6 tarball
+  Content-addressable store is at: D:\.pnpm-store\v11
+  Virtual store is at:             node_modules/.pnpm
+Progress: resolved 1, reused 1, downloaded 0, added 1, done
+Done in 869ms using pnpm v11.24.0
+### package.json refs:
+9:        "@anysearch-cli/dsh-plugin"
+15:    "@anysearch-cli/dsh-plugin": "file:D:/Aworker/dsh-r72-spike/anysearch-cli-dsh-plugin-0.0.6.tgz"
+### re-add same tarball (idempotent no-op)
+
+Already up to date
+Progress: resolved 1, reused 1, downloaded 0, added 0, done
+Done in 884ms using pnpm v11.24.0

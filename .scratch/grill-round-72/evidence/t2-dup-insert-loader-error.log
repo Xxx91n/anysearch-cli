@@ -1,0 +1,17 @@
+file:///C:/Users/Administrator/AppData/Local/npm-cache/_npx/c40503fdf38a82ea/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:1545
+		throw new Error(`${binName}: ${stage}: ${detail}${stack}`, { cause });
+		      ^
+
+Error: dsh: plugin tree failed to load: failed to apply loader entry include (cordis:include): duplicate loader entry id: mcp-anysearch
+TypeError: duplicate loader entry id: mcp-anysearch
+    at EntryGroup.update (file:///C:/Users/Administrator/AppData/Local/npm-cache/_npx/c40503fdf38a82ea/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:91:28)
+    at Include._apply (file:///C:/Users/Administrator/AppData/Local/npm-cache/_npx/c40503fdf38a82ea/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:240:19)
+    at file:///C:/Users/Administrator/AppData/Local/npm-cache/_npx/c40503fdf38a82ea/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:236:34
+    at boot (file:///C:/Users/Administrator/AppData/Local/npm-cache/_npx/c40503fdf38a82ea/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:1545:9)
+    at async runProfile (file:///C:/Users/Administrator/AppData/Local/npm-cache/_npx/c40503fdf38a82ea/node_modules/@deepseek-ai/dsh/lib/profile-boot-Dk-7KqJc.js:311:14)
+    at async runCli (file:///C:/Users/Administrator/AppData/Local/npm-cache/_npx/c40503fdf38a82ea/node_modules/@deepseek-ai/dsh/lib/bin.js:146:4)
+    at async file:///C:/Users/Administrator/AppData/Local/npm-cache/_npx/c40503fdf38a82ea/node_modules/@deepseek-ai/dsh/lib/bin.js:168:23 {
+  [cause]: Error: failed to apply loader entry include (cordis:include): duplicate loader entry id: mcp-anysearch
+      at updateError (file:///C:/Users/Administrator/AppData/Local/npm-cache/_npx/c40503fdf38a82ea/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:309:9)
+      at Entry._init (file:///C:/Users/Administrator/AppData/Local/npm-cache/_npx/c40503fdf38a82ea/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:529:10)
+      at async Entry.init (file:///C:/Users/Administrator/AppData/Local/npm-cache/_npx/c40503fdf38a82
