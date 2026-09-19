@@ -1177,3 +1177,23 @@ fallback 降档不是终点：spike 红走 Phase-1-only 时必须另出一票据
 
 ## ESM Bundle createRequire Shim（ESM 打包 createRequire 桥）
 零依赖 bundle 要打进 CJS 形态的上游产物（@anysearch-cli/plugin 的 dist/*.cjs hook 件）时，esbuild `--format=esm` 把内联 require() 变 `__require` 动态调用——纯 ESM 运行时炸 `Dynamic require of "node:*" is not supported`（Cordis loader 实证）；修法=`--banner:js` 注入 `import{createRequire}from'node:module';const require=createRequire(import.meta.url);`，产物只 import node:* 内件。_Avoid_: 假设 ESM bundle 可无缝混 CJS dep；把 createRequire 告警当可忽略。来源：r72 T1 boot5 实证。
+
+## Grill Round 73 — Terms (ADR-0074)
+
+## Upstream Family Pin（上游家族钉版）
+preview 期上游依赖族的防漂移钉法=pnpm.overrides 逐名枚举全族包（直接+传递）——pnpm 选择器仅 pkg/pkg@range/parent>child 三形无通配，枚举不可免；直接 devDeps 同时脱 ^ 使 package.json spec 自证「不接受漂移」。overrides 只能写 root pnpm-workspace.yaml（package.json 字段 pnpm 11 静默忽略不报错），作用域 repo-wide。_Avoid_: 仅钉直接依赖（传递包内部仍声明 ^，lockfile regen 即漂——F7 实证爆炸点）；仅信 committed lockfile（任何 pnpm up/regen 即炸）；pnpmfile 程序化改写（可审计性差于声明式）。来源：atomcode R73-Q2+R73 D-002。
+
+## Single-Point Catalog（单点版本 catalog）
+家族钉版的版本号收敛=catalog: 块单点定义，package.json 与 overrides 同写 catalog: 引用——升级只改一处，消除双写漂移风险。_Avoid_: package.json 与 overrides 双处各写版本号（钉版方案的唯一实质操作风险）；把 catalog 当通配机制（它只是单点维护，逐名枚举仍在）。来源：atomcode R73-Q2+R73 D-002。
+
+## Rehearse-Adopt Split（预演/采纳分离）
+对 preview 上游的两个独立决策轨：预演=每上游发布的义务（升级演练期望 RED=churn 警报确认，只产 post-mortem 不施工）；采纳=触发条件驱动的显式决策（目标 RC/stable 发布、桥接功能缺口或弃用窗口）。_Avoid_: 预演漂移成半采纳（演练顺手把迁移也做了）；追每个 alpha（上游 alpha 积压→rc 一次性吸收的节奏=alpha 采纳大概率 rc 时再付一次迁移成本）；忽略 npm latest 标签故意落后 next 的稳定面语义。来源：atomcode R73-Q3+R73 D-003。
+
+## Upgrade Ledger（升级账本）
+预演的产出工件=checklist 非 patch 工件：rename map（agent/session-start→agent/created）+守卫伪代码（durable 注入仅 source=fresh 防 resume/clear/compaction 重复注入）+payload diff+预期 RED 符号清单+过期条款（目标版本实发后账本先对账上游 changelog 再施工）。type-only devDeps 无 pnpm patch 操作面，账本是「预写迁移」的正确形态。_Avoid_: 预写未应用 patch 文件（无操作对象且腐化成死件）；账本无过期条款（k8s pluto 须对目标版本扫描的教训——账本本身会 rot）。来源：atomcode R73-Q3+R73 D-003。
+
+## Compat Shim Alarm Bypass（兼容 shim 击穿告警）
+对上游改名挂双名监听 shim=三重反模式：rename 不再让 tsc 变红（编译期 churn 报警器被静默失效）+过渡期双事件源叠加使去重问题复杂化一层+上游删旧名后 shim 成永死代码（shim rot 经典技术债）。_Avoid_: 为「向前兼容」挂双名 shim；把 break-loudly 设计降级为运行期隐患。来源：atomcode R73-Q3+R73 D-003。
+
+## Sequential Stack Landing（顺序栈合流）
+多栈合流 main 的顺序按因果序而非便利序：修复层（r71-audit→ADR-0072 域）先于功能栈（r72-grill+r72-audit→ADR-0073 域）；沿用直落 main 线性史先例（无 merge commit）+push 换 CI 绿 run URL 回填审计 handoff 必填 PENDING 项。_Avoid_: 栈长期悬不合（门面与 main 事实漂移复利）；合后不取 run URL 实证（handoff 必填字段裸奔）；逆因果序落地（0073 先于 0072 修复层进 main）。来源：R73 D-004/D-007。
