@@ -41,12 +41,20 @@
     "./hooks/adapters/codebuddy": {
       "types": "./src/hooks/adapters/codebuddy.ts",
       "default": "./dist/hooks/adapters/codebuddy.cjs"
+    },
+    "./hooks/routing-card": {
+      "types": "./src/hooks/routing-card.ts",
+      "default": "./dist/hooks/routing-card.cjs"
+    },
+    "./hooks/server-token": {
+      "types": "./src/hooks/server-token.ts",
+      "default": "./dist/hooks/server-token.cjs"
     }
   },
   "scripts": {
     "build": "pnpm run gen:configs && pnpm run build:server && pnpm run build:hooks",
     "gen:configs": "node scripts/gen-claude-configs.mjs",
-    "build:hooks": "esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts src/hooks/adapters/codebuddy.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --banner:js=\"#!/usr/bin/env node\" --external:better-sqlite3 --external:@anysearch-cli/embedding",
+    "build:hooks": "esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/routing-card.ts src/hooks/server-token.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts src/hooks/adapters/codebuddy.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --banner:js=\"#!/usr/bin/env node\" --external:better-sqlite3 --external:@anysearch-cli/embedding",
     "build:server": "tsup",
     "dev": "tsx src/server/index.ts",
     "lint": "tsc --noEmit",

@@ -1,0 +1,23 @@
+# @anysearch-cli/dsh-plugin bundle patch (R72 D-001/D-002).
+# insert-not-merge: adds the hooks-layer plugin row and the MCP bridge row.
+# The mcp-anysearch row is a WHOLE-ROW declaration — every required key is
+# restated explicitly; a later patch layer replacing this row's config must
+# restate all keys again (config replaces whole-row, it does not merge).
+- insert:
+    - id: anysearch-dsh-plugin
+      name: '@anysearch-cli/dsh-plugin'
+
+    - id: mcp-anysearch
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: anysearch
+        transport: stdio
+        command: ans-mcp
+        args: []
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+          initialDelayMs: 500
+          maxDelayMs: 30000
+          maxAttempts: 10

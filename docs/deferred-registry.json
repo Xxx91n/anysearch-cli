@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-09-12",
+  "updated": "2026-09-19",
   "note": "Machine-checkable registry of deferred work items and carried-over acceptance criteria. Discipline is isomorphic to .ship-gate/skip-ledger.json (schema @3) and the ADR-0020 conformance expected-failures ledger: every deferral is an explicit, traceable record, never a silent drop. ADR-0057 D5 / D-006 requires one entry per carried-over acceptance criterion, marked closed-by the ADR that closes it. Old ADR bodies are never edited; the pointer line lives in the old ADR and the record lives here (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). Additive only: new entries are appended, existing ids are never reused or renumbered.",
   "entries": [
     {
@@ -96,6 +96,45 @@
       "review_cadence": "quarterly",
       "status": "open",
       "evidence": "R71 T1.2 spike: provider endpoint returned 000 for live search — memory rows were seeded directly for the backfill assertion instead. Server-side cause un-investigated.",
+      "monitoring_channel": "next grill round task-book triage"
+    },
+    {
+      "id": "defer-r72-dsh-plugin-npm-publish",
+      "type": "deferred-with-deadline",
+      "title": "@anysearch-cli/dsh-plugin npm publish — flip private + publishConfig when the release track takes it",
+      "source_adr": "docs/adr/0073-architecture-grill-round-72-deepseek-harness-host-adaptation.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-19",
+      "deadline": "2027-03-31",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "evidence": "R72 verified the publish shape end-to-end (pnpm pack tarball → dsh plugin add → --dump-config layer check); private:true is a one-field change, not archaeology. npm keyword dsh-plugin auto-joins the official directory once published.",
+      "monitoring_channel": "next release round task-book triage"
+    },
+    {
+      "id": "defer-r72-dsh-native-tools",
+      "type": "deferred-with-deadline",
+      "title": "native ctx.tools registration of the five ans_* tools inside dsh (bypasses mcp__anysearch__* bridge namespace)",
+      "source_adr": "docs/adr/0073-architecture-grill-round-72-deepseek-harness-host-adaptation.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-19",
+      "deadline": "2027-03-31",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "evidence": "R72 chose the official mcp-client bridge (zero product code for the tool surface). Revisit triggers: bridge shows insufficiency for ans_chat/research_web latency, or the tool-registration API stabilizes upstream.",
+      "monitoring_channel": "watch @deepseek-ai/dsh-mcp-client + dsh-tools releases"
+    },
+    {
+      "id": "defer-r72-dsh-web-interactive-matrix",
+      "type": "deferred-with-deadline",
+      "title": "dsh web-profile interactive matrix — browser-driven turn, live patch reload (patchReload:live), approval-channel surfaces",
+      "source_adr": "docs/adr/0073-architecture-grill-round-72-deepseek-harness-host-adaptation.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-19",
+      "deadline": "2027-03-31",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "evidence": "R72 covered the two named web probes (inject transcript + preheat marker) inside a web-profile composition driven headlessly. Interactive UI turn + live-edit reload + approval-channel behaviour are preview-round scope.",
       "monitoring_channel": "next grill round task-book triage"
     }
   ]

@@ -134,12 +134,14 @@ Tools never print to stdout; the server keeps the protocol channel pure.
 | Codex CLI | 0.142.5 | 2026-09-17 | `config.toml` `[mcp_servers.anysearch]` (`ans-mcp`, 5 tools) · hooks via `.codex/hooks.json` (project) or `[[hooks.*]]` config.toml sections — official `{matcher, hooks:[{type,command,timeout}]}` schema, `ans-hook-codex` / `ans-hook-session-start --envelope` bins | live-verified: SessionStart routing-card envelope delivered, PostToolUse → `/index` accumulates real results, URL-policy deny blocks end-to-end, fail-open preserved; PostToolUse ctx injection is same-turn-variable |
 | Antigravity CLI (`agy`) | 1.2.5 | 2026-09-17 | hooks via `~/.gemini/antigravity-cli/hooks.json` or `~/.gemini/config/hooks.json` — named-hook map `{ "<name>": { "<Event>": [{matcher, hooks:[{type:"command",command,timeout}]}] } }`, event passed via argv (`ans-hook-antigravity <Event>` bin) | live-verified (reduced matrix): headless `agy -p` fires all five events; strict protojson contract sentinel-proven (`{}` = DENY on PreToolUse, empty = allow, `{decision,reason}` blocks/permits, `permissionOverrides`); `injectSteps[].ephemeralMessage` reaches the transcript (routing-card injected end-to-end); PostToolUse stdin has NO tool output — distill stages to pending → next invocation flushes; evidence `.scratch/grill-round-68/evidence/t3-*` + SEP-2484 ledger |
 | Antigravity IDE | 2.12.2 | 2026-09-17 | `.antigravity/rules/anysearch.mdc` (rules fallback, written on first hook invocation) | hooks not executed by the IDE host (reproduced); the .mdc rules fallback is the supported surface — do not wire `configs/antigravity/hooks.json` into IDE settings |
+| DeepSeek Harness (`dsh`) | 0.1.5-rc.2 | 2026-09-19 | Phase 1: user-patch `- insert:` row `@deepseek-ai/dsh-mcp-client` (`serverName: anysearch`, stdio `ans-mcp`, 5 tools `mcp__anysearch__*`) · Phase 2: `@anysearch-cli/dsh-plugin` Cordis bundle (`dsh plugin add`, thin hooks only — `agent/session-start` routing-card inject, `tools/pre-execute` URL-policy deny/ask + recall preheat, `tools/post-execute` distill context, `tools/result` `/index` IPC, all via 127.0.0.1:33333 fail-open) | live-verified (headless + web-profile composition): `dsh --profile headless` one-shot turn green — bundle patch inserts plugin + bridge rows (`--dump-config` layer checked), tarball install + remove + re-add idempotent, URL deny end-to-end (`requires approval` tool error), distill + `/index` over real IPC with session propagation, server-down fail-open (URL calls fail-closed by contract), duplicate-insert id collision documented; web composition booted (`:3080` serving) with headless-driven turn — inject + preheat markers on the wire; interactive web UI untested |
 
 "Verified" means an end-to-end transcript captured on the real host
 (`stream-json`), not contract isomorphism. See
 `docs/codebuddy-integration.md` / `docs/claude-integration.md` /
-`docs/codex-integration.md` for the wiring and ADR-0066 / ADR-0067 /
-ADR-0068 / ADR-0069 for the evidence sets.
+`docs/codex-integration.md` / `docs/deepseek-harness-integration.md` for
+the wiring and ADR-0066 / ADR-0067 / ADR-0068 / ADR-0069 / ADR-0073 for
+the evidence sets.
 
 ## Known limitations
 

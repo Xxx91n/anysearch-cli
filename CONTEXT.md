@@ -1171,3 +1171,9 @@ private 包的验证必须对齐其发布形态：`pnpm pack` tarball→`dsh plu
 
 ## Named Re-Entry Ticket（具名重返票）
 fallback 降档不是终点：spike 红走 Phase-1-only 时必须另出一票据名「什么改变会让我们重启 Phase-2」（宿主版本/API 稳定信号/桥接层不足的具体缺），deferred 须可行动否则挂起成遗忘。_Avoid_: 无触发器的 deferred（与 Upgrade Trigger Record 同族——否决/降级必须带重返条件）；把降档当「已交付」汇报。来源：atomcode R72-Q3+R72 D-003。
+
+## Cordis Patch Loader Rules（cordis patch loader 三律）
+真 loader 三律（dsh@0.1.5-rc.2 实测）：(a) `- insert:` 同 id 重复（bundle 层+用户层或两 bundle 间）=`duplicate loader entry id` 硬错——bundle 拥有行 id，用户覆盖只能 `- id:` 打靶不可再 insert；(b) `- id:` 打缺失行仅告警 `patch: entry ... not found` 不建行；(c) bundle 间共享行（如 code-runtime）不可双 insert——混合 profile 组合同受此约束（web-app+headless 直拼即撞）。_Avoid_: Phase-1 手写行与 Phase-2 bundle 并存同 id；以为 `- id:` 能建行；跨 bundle 复用行不查撞名。来源：r72 T2 boot8/boot10 实证。
+
+## ESM Bundle createRequire Shim（ESM 打包 createRequire 桥）
+零依赖 bundle 要打进 CJS 形态的上游产物（@anysearch-cli/plugin 的 dist/*.cjs hook 件）时，esbuild `--format=esm` 把内联 require() 变 `__require` 动态调用——纯 ESM 运行时炸 `Dynamic require of "node:*" is not supported`（Cordis loader 实证）；修法=`--banner:js` 注入 `import{createRequire}from'node:module';const require=createRequire(import.meta.url);`，产物只 import node:* 内件。_Avoid_: 假设 ESM bundle 可无缝混 CJS dep；把 createRequire 告警当可忽略。来源：r72 T1 boot5 实证。

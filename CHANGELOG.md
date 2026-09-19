@@ -4,6 +4,20 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 2026-09-19 — ADR-0073 r72: DeepSeek Harness 宿主适配（两阶段 C：Phase-1 MCP 桥 + Phase-2 薄 bundle，verified-hosts 第 6 行）
+
+### Added
+
+- `apps/dsh-plugin`（`@anysearch-cli/dsh-plugin`，private 零运行时依赖 Cordis bundle）——首个 in-process 宿主适配器：只做五面 hooks（`agent/session-start` routing-card `agent.inject()`、`ctx.systemPrompt` `anysearch:routing-card` section、`tools/pre-execute` URL 策略 deny/ask + recall 预热注入、`tools/post-execute` 蒸馏 `additionalContexts`、`tools/result` `/index` IPC），业务逻辑全留 127.0.0.1:33333 HTTP IPC（fail-open；URL 门按 ADR-0054/0055 fail-closed）。`@deepseek-ai/*` 仅 devDep `import type` = 编译期 churn 报警器；`dsh.bundle.patch` → 自带 `cordis.patch.yml` 整行复述插入插件行 + `mcp-anysearch` 桥行（`dsh plugin add` 一步装双阶段）。共享 hook 逻辑复用 `@anysearch-cli/plugin` 并 esbuild 打包进 `lib/index.js`（`createRequire` banner——CJS dep 在纯 ESM 下 `Dynamic require of "node:crypto"` 真 loader 实证修复）。
+- `apps/plugin` 新窄口子导出 `./hooks/routing-card` + `./hooks/server-token`（esbuild entries + exports map）——dsh bundle 复用 routing card 与 server token resolver 的单一事实源。
+- `scripts/ship-gate.mjs` step 1s——dsh-plugin churn lint（fail-closed）：`@deepseek-ai/*` 泄入任何 runtime dep 字段即红；private:true/type:module/dsh.bundle.patch/cordis.patch.yml 关键键位断言。PKG_DIRS 加 `apps/dsh-plugin`（0.0.6 钉版+打包腿覆盖）。
+- `docs/deepseek-harness-integration.md`——Phase-1 手写 MCP 桥行 + Phase-2 bundle 安装指引 + 层序三律（config 整行替换非合并 / `- insert:` 新增 vs `- id:` 打靶 / 同 id 双 insert=loader 硬错）+ 升级 diff 检查 + 限制记档。
+- README/README.zh-CN verified-hosts 第 6 行（DeepSeek Harness 0.1.5-rc.2）。
+
+### Fixed
+
+- 真实 loader 三处语义修正落档：`- insert:` 同 id 重复= `duplicate loader entry id` 硬错（Phase-1 手写行与 bundle 行不得并存）；`- id:` 打缺失行仅告警（`patch: entry ... not found`）；CJS dep 经 ESM bundle 需 `createRequire` banner。
+
 ## 0.0.6 — 2026-09-19 — ADR-0072 r71: 上架首航——路径治理门禁 + embedding 双臂可达 + 首个双层门真发布
 
 ### Added

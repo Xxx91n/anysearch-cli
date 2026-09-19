@@ -48,6 +48,7 @@ const PKG_DIRS = [
   "apps/cli",
   "apps/mcp",
   "apps/plugin",
+  "apps/dsh-plugin",
 ];
 
 // MCP server entry (ans-mcp bin). Step 5 spawns this over stdio.
@@ -447,6 +448,33 @@ function stepStaticAssertions() {
   //     exit 1 -> ship red; exit 2 (no database) -> explicit skip + WARN ledger
   //     (3-streak escalation reuses the ADR-0039 D7 discipline).
   stepAccessChainVerify();
+
+  // 1s. ADR-0073 D-002/D-003 (R72): dsh thin-bundle churn lint. The hooks
+  //     adapter is a zero-runtime-dep private bundle — @deepseek-ai/* may live
+  //     ONLY in devDependencies (type-level compile-time churn alarm). Any
+  //     @deepseek-ai/* leaking into a runtime dep field = fail-closed. The
+  //     bundle contract fields are asserted too: private:true, type:module,
+  //     dsh.bundle.patch declaration, and a cordis.patch.yml that inserts the
+  //     plugin row + the mcp-anysearch bridge row with every key restated.
+  {
+    const pkgPath = path.join(ROOT, "apps", "dsh-plugin", "package.json");
+    if (!fs.existsSync(pkgPath)) fail("ADR-0073: apps/dsh-plugin/package.json missing");
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+      const leaked = Object.keys(pkg[field] ?? {}).filter((d) => d.startsWith("@deepseek-ai/"));
+      if (leaked.length) {
+        fail("ADR-0073 churn lint: @deepseek-ai/* in " + field + ": " + leaked.join(", ") + " — runtime deps stay zero; types live in devDependencies only");
+      }
+    }
+    if (pkg.private !== true) fail("ADR-0073: apps/dsh-plugin must stay private:true this round");
+    if (pkg.type !== "module") fail("ADR-0073: apps/dsh-plugin must ship type:module (ESM lib)");
+    if (pkg.dsh?.bundle?.patch !== "./cordis.patch.yml") fail("ADR-0073: package.json dsh.bundle.patch must point at ./cordis.patch.yml");
+    const patch = fs.readFileSync(path.join(ROOT, "apps", "dsh-plugin", "cordis.patch.yml"), "utf8");
+    for (const tok of ["insert:", "anysearch-dsh-plugin", "mcp-anysearch", "@deepseek-ai/dsh-mcp-client", "serverName: anysearch", "transport: stdio"]) {
+      if (!patch.includes(tok)) fail("ADR-0073: cordis.patch.yml missing " + tok);
+    }
+    report("pass", "ADR-0073 dsh-plugin churn lint: zero runtime deps, private ESM bundle, patch rows declared");
+  }
 
   // 1m. ADR-0046 D1/D2/D5/D7 + ADR-0047 D1/D4/D5: fusion ablation, paraphrase
   //     fixture contract, web provider ledger, and override governance must

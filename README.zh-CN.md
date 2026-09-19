@@ -131,11 +131,13 @@ node apps/mcp/dist/index.cjs --transport http --port 3099   # HTTP
 | Codex CLI | 0.142.5 | 2026-09-17 | `config.toml` `[mcp_servers.anysearch]`（`ans-mcp`，5 工具）· hooks 经 `.codex/hooks.json`（项目）或 `[[hooks.*]]` config.toml 段——官方 `{matcher, hooks:[{type,command,timeout}]}` schema，`ans-hook-codex` / `ans-hook-session-start --envelope` bins | 实机验证：SessionStart routing-card 信封送达，PostToolUse → `/index` 累积真实结果，URL-policy deny 端到端阻断，fail-open 保持；PostToolUse ctx 注入为同轮可变 |
 | Antigravity CLI（`agy`） | 1.2.5 | 2026-09-17 | hooks 经 `~/.gemini/antigravity-cli/hooks.json` 或 `~/.gemini/config/hooks.json`——named-hook map `{ "<name>": { "<Event>": [{matcher, hooks:[{type:"command",command,timeout}]}] } }`，事件经 argv 传入（`ans-hook-antigravity <Event>` bin） | 实机验证（裁剪矩阵）：headless `agy -p` 五事件全触发；严格 protojson 契约哨兵实证（PreToolUse `{}` = DENY、空 = allow、`{decision,reason}` 放行/阻断、`permissionOverrides`）；`injectSteps[].ephemeralMessage` 抵达 transcript（routing-card 端到端注入）；PostToolUse stdin 无工具输出——distill 暂存 pending → 下一 invocation flush；证据 `.scratch/grill-round-68/evidence/t3-*` + SEP-2484 ledger |
 | Antigravity IDE | 2.12.2 | 2026-09-17 | `.antigravity/rules/anysearch.mdc`（rules 兜底，首次 hook 调用时写入） | IDE 宿主不执行 hooks（已复现）；.mdc rules 兜底是受支持的面——不要把 `configs/antigravity/hooks.json` 接进 IDE 设置 |
+| DeepSeek Harness（`dsh`） | 0.1.5-rc.2 | 2026-09-19 | Phase 1：用户 patch `- insert:` 行 `@deepseek-ai/dsh-mcp-client`（`serverName: anysearch`，stdio `ans-mcp`，5 工具 `mcp__anysearch__*`）· Phase 2：`@anysearch-cli/dsh-plugin` Cordis bundle（`dsh plugin add`，只做薄 hooks——`agent/session-start` routing-card 注入、`tools/pre-execute` URL 策略 deny/ask + recall 预热、`tools/post-execute` 蒸馏上下文、`tools/result` `/index` IPC，全走 127.0.0.1:33333 fail-open） | 实机验证（headless + web profile 组合体）：`dsh --profile headless` 一次性 turn 全绿——bundle patch 插入插件+桥两行（`--dump-config` 层核对），tarball 安装+移除+重装幂等，URL deny 端到端（`requires approval` 工具错误），蒸馏+`/index` 走真 IPC 带 session 传播，server 挂 fail-open（URL 调用按契约 fail-closed），同 id 重复 insert 冲突已记档；web 组合体已起（`:3080` 服务中）驱动 turn——inject+preheat 标记上线路；交互式 web UI 未测 |
 
 "已验证"指在真实宿主上捕获端到端 transcript（`stream-json`），而非契约
 同构。接线方式见 `docs/codebuddy-integration.md` /
-`docs/claude-integration.md` / `docs/codex-integration.md`；证据集见
-ADR-0066 / ADR-0067 / ADR-0068 / ADR-0069。
+`docs/claude-integration.md` / `docs/codex-integration.md` /
+`docs/deepseek-harness-integration.md`；证据集见 ADR-0066 / ADR-0067 /
+ADR-0068 / ADR-0069 / ADR-0073。
 
 ## 已知限制
 
