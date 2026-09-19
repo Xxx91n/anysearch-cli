@@ -20,3 +20,42 @@ allowBuilds:
 
 overrides:
   zod: ">=3.25.28"
+  '@deepseek-ai/cordis': 'catalog:'
+  '@deepseek-ai/dsh-agent': 'catalog:'
+  '@deepseek-ai/dsh-brand': 'catalog:'
+  '@deepseek-ai/dsh-code-runtime': 'catalog:'
+  '@deepseek-ai/dsh-invariants': 'catalog:'
+  '@deepseek-ai/dsh-llm': 'catalog:'
+  '@deepseek-ai/dsh-scope': 'catalog:'
+  '@deepseek-ai/dsh-session': 'catalog:'
+  '@deepseek-ai/dsh-session-projection': 'catalog:'
+  '@deepseek-ai/dsh-system-prompt': 'catalog:'
+  '@deepseek-ai/dsh-timeout': 'catalog:'
+  '@deepseek-ai/dsh-tools': 'catalog:'
+  '@deepseek-ai/dsh-typert-protocol': 'catalog:'
+  '@deepseek-ai/dsh-user-approval': 'catalog:'
+  '@deepseek-ai/dsh-util-crypto': 'catalog:'
+  '@deepseek-ai/dsh-util-values': 'catalog:'
+
+# R73 T1 / ADR-0074: dsh 上游依赖族钉版——catalog 单点承载版本号，overrides 逐名枚举
+# 把全树（直接+传递）强制收敛到 catalog 值。直接依赖在 apps/dsh-plugin 用 catalog: 引用。
+# 锁 15 个 @deepseek-ai/dsh-*=0.1.5-rc.2 + cordis=4.0.2（Events declaration-merging 宿主面）。
+# 解锁条件：上游发布 0.1.6 稳定/rc 线且 changelog 经审阅、或功能桥接缺口/废弃窗口要求时，
+# 删除下方 overrides 枚举并恢复 range；每次升级先跑升级演练（.scratch/grill-round-73/upgrade-ledger.md）。
+catalog:
+  '@deepseek-ai/cordis': 4.0.2
+  '@deepseek-ai/dsh-agent': 0.1.5-rc.2
+  '@deepseek-ai/dsh-brand': 0.1.5-rc.2
+  '@deepseek-ai/dsh-code-runtime': 0.1.5-rc.2
+  '@deepseek-ai/dsh-invariants': 0.1.5-rc.2
+  '@deepseek-ai/dsh-llm': 0.1.5-rc.2
+  '@deepseek-ai/dsh-scope': 0.1.5-rc.2
+  '@deepseek-ai/dsh-session': 0.1.5-rc.2
+  '@deepseek-ai/dsh-session-projection': 0.1.5-rc.2
+  '@deepseek-ai/dsh-system-prompt': 0.1.5-rc.2
+  '@deepseek-ai/dsh-timeout': 0.1.5-rc.2
+  '@deepseek-ai/dsh-tools': 0.1.5-rc.2
+  '@deepseek-ai/dsh-typert-protocol': 0.1.5-rc.2
+  '@deepseek-ai/dsh-user-approval': 0.1.5-rc.2
+  '@deepseek-ai/dsh-util-crypto': 0.1.5-rc.2
+  '@deepseek-ai/dsh-util-values': 0.1.5-rc.2
