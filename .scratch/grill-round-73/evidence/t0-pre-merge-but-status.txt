@@ -1,0 +1,29 @@
+╭┄ zz [uncommitted]
+┊   xm A .scratch/grill-round-73/evidence/t0-pre-merge-but-status.txt
+┊
+┊╭┄ r7 [r72-audit]
+┊●   unw fix(r72-audit): F1-F6审计发现修复+修复轮新证据——F1 integration.md tarball安装形+patchReload-live降档EXPECTED,F2 ship-gate 1s补name/files断言,F3 surface-3阻塞语义注释显式化,F4升级diff演练实跑(alpha.1撞真上游断:agent/session-start移出Events;alpha.2被minimumReleaseAge拦截;repin混版漂发现F7)+doctor腿transcript,F5 traceparent上线抓包(/recall+/index两笔W3C形),F6注释five-hook-surfaces+dependencies{}字面化+Stack行but-id+SHA+date+zmu补齐+tsconfig覆盖test(新增tsconfig.build.json保emit)+turbo outputs+lib/**+postHookInput去重+files+AGENTS.md(tgz五件→六件)——修后同套验收:turbo check 8/8+dsh-plugin 13/13+pack六件+doctor 25/0/0全绿——审计报告§8修复轮明细+handoff转已修复+F7 deferred(精确钉版或overrides+事件名迁移)
+┊●   lzr docs(r72-audit): 审计报告+审计交接+独立重跑transcript——硬验收10/10亲跑复现(turbo check 8/8,dsh-plugin 13/13,turbo test 13任务,pack五件,ship-gate绿,doctor 25/0/0,真宿主PROBE_TURN_COMPLETE+真搜索10条/index+三IPC sess传播+幂等add+dump-config层核对),声明→证据→结论全表,D-001~D-004全落地,双轴评审(Standards 2小违例+Spec F1-F6次级),过程呈报P1-P7——裁决:通过附次级发现
+┊│
+┊├┄ gr [r73-grill]
+┊●   uur docs(r73): grill 定稿整理——账本7裁决(上游跟进与栈合流:F7双层锁catalog钉版+预演采纳分离升级账本+三栈顺序合流push换CI佐证+0.0.7 patch发布)+T0-T4任务书+CONTEXT R73词块6条(Upstream-Family-Pin/Single-Point-Catalog/Rehearse-Adopt-Split/Upgrade-Ledger/Compat-Shim-Alarm-Bypass/Sequential-Stack-Landing)+goal定稿+q2/q3-atomcode调研存档
+┊│
+┊├┄ ri [r72-grill]
+┊●   zmu test(r72-t2t3): 真宿主证据全量入库+收口文档——t2幂等安装(remove/re-add/Already-up-to-date)+dump-config层核对(bundle层+patched-by)+duplicate-insert boot硬错实录(dump-config容忍/boot激活炸)+phase1-only对照+双server-down+tarball turn+web复跑三transcript(全IPC:policy+recall+index带sess传播+五marker上线)+stub源码+webprobe-driver——round-72实施报告(D-004四段对账+found6/fixed6/deferred3+复跑指引)+closeout交接(Stack+绿色runURL+下轮指示)
+┊●   nnn fix(r72-t3): next-round.md Stack 行去粗体对齐 locator 惯例（纯 Stack：形才匹配 locatorLinePatterns）
+┊●   pxv chore(r72-t1): gitignore apps/dsh-plugin/lib 构建产物（同 apps/plugin/dist 惯例）
+┊●   uyt chore(r72-t3): adr index regen——73 ADRs（0073 dsh宿主适配入账）
+┊●   yxo feat(r72-t1t2): apps/dsh-plugin零依赖薄bundle落地+真宿主全桶验证——五面hooks(session-start注入/systemPrompt section/pre-execute URL策略+预热/post-execute蒸馏additionalContexts/result /index IPC)全走127.0.0.1:33333 fail-open,mock-ctx单测13/13绿——cordis.patch.yml insert插件行+mcp-anysearch桥行(dsh plugin add一步装双阶段)——真loader三律实证(同id双insert=duplicate loader entry硬错/-id:打缺失行仅告警/config整行替换复述全key),bundle装拆重装幂等+tarball形态验证+URL deny端到端(blocked.example→requires approval)+蒸馏索引真IPC带session传播+server-down fail-open(URL调用fail-closed按契约)+web组合体起:3080驱动turn(inject+preheat上线路)+升级diff演练(rc.2→0.1.6-alpha.2 tsc绿回钉)——plugin包routing-card+server-token窄口子导出+esbuild createRequire banner修CJS-ESM混打+ship-gate 1s churn lint控件+PKG_DIRS第8包+verified-hosts第6行+ADR-0073+CONTEXT两词块+deferred 3条+integration doc
+┊●   tqq test(r72-t0): dsh宿主契约spike九探针全PASS——阻断项#8实证通过(bundle cordis.patch.yml insert mcp-anysearch行→真ans-mcp桥接+model调mcp__anysearch__search_web端到端真搜索10条回),Phase-2 GO——waterfall异步序列化(pre-execute await 400ms deny生效)/agent.inject()落durable user/message并进下条request/systemPrompt section+context+variable入线/mcp__anysearch__*五工具全过ANS_TOOL_PATTERN/plugin add自动登记bundles/patchReload=startup——evidence四boot transcript+wire请求体+zstd session事件+probe包源码+spike-report
+┊●   uzt docs(r72): grill 定稿整理——账本4裁决(dsh宿主适配:两阶段C=Phase1-MCP桥行+Phase2-薄bundle只做hooks层/apps-dsh-plugin零依赖一步装devDep-churn报警器/private+tarball形态验证)+T0-T3任务书(9项spike#8-blocking/三桶探针/web具名腿/幂等+doctor+churn-lint控件)+CONTEXT R72词块8条+goal定稿+q1-q3-atomcode调研存档(否证全量原生/官方publish.md实锤pendingBuilds审批流/7处票形修正)
+├╯
+┊
+┊╭┄ au [r71-audit]
+┊●   tkv docs(r71-audit): F1-F6修复落地补记——审计报告§8修复明细(tryImport guard+测试5b/config marker接线/globOk fail-closed/cosmetic组)+修后同套验收全绿实录(store62 build4 smoke28 gate绿230docs)+handoff转已修复+下轮指示更新(修复件landed决策项)
+┊●   yut fix(r71-audit): F1-F6审计发现同票修复——F1 embedding-arm fallback两处await import无保护(resolve-ok+import-fail组合→modPromise永久拒绝→embedText/armTelemetry全周期抛错,search/write/backfill/doctor四路径无catch,违fail-open契约),tryImport逐候选guard+continue(不中止其余锚点)+测试5b补resolved-but-broken用例(00000000序先扫到坏包仍得stub-e5,纯坏布局null不抛),断言16→18;F2 doctor enable补pnpm add -g行(断的正是pnpm臂);F4 pathlint config marker字段接线(校验占位符+MARKER_ANY由配置stem派生);F5 globOk不支持glob形fail-closed(原静默零扫);F6 fixture 0.0.6+evidence/正斜杠+deferred-registry尾换行+TOKEN_RE字符类提取+selfRequire模块级复用+ResolveFilename签名收紧
+┊●   vxs docs(r71-audit): 审计报告+审计交接——声明→证据→结论对照表(硬验收8/8亲跑复现+run URL经gh独立实证,D-001~D-004逐条对账)+双轴评审+F1 fail-open泄漏缺陷呈报(fallback未守embedText≡null契约,四路径无catch)+F2-F6次级发现+处置选项待裁决
+├╯
+┊
+┴ c4ced36a (common base) 2026-09-19 chore(r71-t3): adr index regen——72 ADRs…
+
+Hint: run `but diff` to see uncommitted changes and `but commit -b <branch> -m "message" <id>` to commit them
