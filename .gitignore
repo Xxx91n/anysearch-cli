@@ -29,6 +29,7 @@ Thumbs.db
 
 .anysearch/
 apps/plugin/dist/
+apps/dsh-plugin/lib/
 *.tgz
 apps/cli/domains/
 .codex-tmp/
