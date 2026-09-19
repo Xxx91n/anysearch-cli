@@ -73,13 +73,26 @@ function childDirNames(dir: string): string[] {
 }
 
 async function importEmbeddingFallback(anchors: string[] = embeddingAnchorFiles()): Promise<EmbeddingModule | null> {
+  // R71-audit F1: a resolved-but-broken copy (truncated dist, missing chunk,
+  // top-level throw) must stay absent, not throw — an unguarded rejection
+  // would poison modPromise for the process lifetime and veto every caller's
+  // null-degrade contract. Each candidate is guarded so a bad copy also
+  // cannot veto the remaining anchors/candidates.
+  const tryImport = async (resolved: string | undefined): Promise<EmbeddingModule | null> => {
+    if (!resolved) return null;
+    try {
+      return (await import(pathToFileURL(resolved).href)) as EmbeddingModule;
+    } catch {
+      return null;
+    }
+  };
   for (const anchor of anchors) {
     for (let dir = dirname(anchor), prev = ""; dir !== prev && dir.length > 0; prev = dir, dir = dirname(dir)) {
-      const direct = resolveEmbeddingFrom(dir);
-      if (direct) return (await import(pathToFileURL(direct).href)) as EmbeddingModule;
+      const direct = await tryImport(resolveEmbeddingFrom(dir));
+      if (direct) return direct;
       for (const child of childDirNames(dir)) {
-        const sib = resolveEmbeddingFrom(join(dir, child, "node_modules"));
-        if (sib) return (await import(pathToFileURL(sib).href)) as EmbeddingModule;
+        const sib = await tryImport(resolveEmbeddingFrom(join(dir, child, "node_modules")));
+        if (sib) return sib;
       }
     }
   }

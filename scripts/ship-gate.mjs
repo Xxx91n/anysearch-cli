@@ -1017,6 +1017,17 @@ function stepPathLint() {
   try { cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8")); }
   catch (e) { fail("path-lint: config unparseable: " + e.message); }
   if (!Array.isArray(cfg.roots) || !Array.isArray(cfg.scratchDocDirs)) fail("path-lint: config needs roots[] + scratchDocDirs[]");
+  // R71-audit F4: the declared marker template is the leg's contract — validate
+  // its placeholders and derive the loose detector from its literal stem, so a
+  // renamed marker follows the config instead of drifting against a hardcode.
+  if (typeof cfg.marker !== "string" || !cfg.marker.includes("<reason>") || !cfg.marker.includes("<YYYY-MM-DD>"))
+    fail("path-lint: config marker template malformed — needs <reason> + <YYYY-MM-DD> placeholders");
+  for (const g of cfg.roots) {
+    // R71-audit F5: an unsupported glob silently scans nothing inside a
+    // fail-closed leg — allowed forms only: "*.md", "<dir>/**/*.md", literal.
+    if (g.includes("*") && g !== "*.md" && !/^[^*]+\/\*\*\/\*\.md$/.test(g))
+      fail("path-lint: unsupported roots pattern " + JSON.stringify(g) + " — allowed: '*.md', '<dir>/**/*.md', or a literal path");
+  }
 
   // Enumerate committed docs plus untracked-but-not-ignored new files in scope
   // (a doc being written right now must comply before commit — same posture as
@@ -1047,9 +1058,10 @@ function stepPathLint() {
   }
 
   const PATH_RE = /(?:^|[^A-Za-z0-9])(?:[A-Za-z]:[\\\/]|\/(?:Users|home)\/|\/tmp\/|AppData[\\\/])/;
-  const TOKEN_RE = /[A-Za-z]:[\\\/][^\s"'`\)><\]:+,，、。；：（）【】《》|&]*|\/(?:Users|home|tmp)\/[^\s"'`\)><\]:+,，、。；：（）【】《》|&]*|[^\s"'`\)><\]:+,，、。；：（）【】《》|&]*AppData[\\\/][^\s"'`\)><\]:+,，、。；：（）【】《》|&]*/g;
+  const TOK_CLS = "[^\\s\"'`\\)><\\]:+,，、。；：（）【】《》|&]*";
+  const TOKEN_RE = new RegExp("[A-Za-z]:[\\\\/]" + TOK_CLS + "|\\/(?:Users|home|tmp)\\/" + TOK_CLS + "|" + TOK_CLS + "AppData[\\\\/]" + TOK_CLS, "g");
   const MARKER_OK = /<!--\s*machine-local\s*:\s*[^@<>\s][^@<>]*?@\s*\d{4}-\d{2}-\d{2}\s*-->/;
-  const MARKER_ANY = /<!--\s*machine-local/i;
+  const MARKER_ANY = new RegExp(cfg.marker.slice(0, cfg.marker.indexOf("<reason>")).trimEnd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"), "i");
   const locators = (cfg.locatorLinePatterns || []).map((x) => new RegExp(x));
   const rootAbs = ROOT.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
   const inRepo = (tok) => { const t = tok.replace(/\\/g, "/").toLowerCase(); if (!t.startsWith(rootAbs + "/")) return false; const rel = t.slice(rootAbs.length + 1); return /^[a-z0-9._~*{?%$]/.test(rel); }; // a repo-ROOT ref (no path tail) is a locator, not a target ref — marker class

@@ -14,7 +14,7 @@ Stack：分支 `r71-grill`（GitButler 栈），base `448b5f91`。轮内 4 提�
 - 实施报告：`.scratch/grill-round-71/reports/2026-09-19-report.md`
 - 裁决账本：`.scratch/grill-round-71/decision-ledger.md`（D-001~D-004 全落地）
 - ADR：`docs/adr/0072-architecture-grill-round-71-first-release-path-governance-embedding-reachability.md`
-- 证据根：`.scratch/grill-round-71/evidence\`——path-lint 红/绿 transcript 对、t1 双臂 spike 实录、t2 发布流实录、ship-gate t1/t2 绿 transcript
+- 证据根：`.scratch/grill-round-71/evidence/`——path-lint 红/绿 transcript 对、t1 双臂 spike 实录、t2 发布流实录、ship-gate t1/t2 绿 transcript
 - 发布件：`@anysearch-cli/{cli,mcp,plugin,embedding}@0.0.6` registry 四包全量（npm view 实证），trusted publishing + sigstore provenance
 - OF look：4（`114da320`）+5（`6c289397`）两次正业消耗均入 eval-looks.json，verdict warn+integrity pass
 

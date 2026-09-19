@@ -66,7 +66,7 @@ async function main() {
   mkdirSync(join(embDir, "dist"), { recursive: true });
   writeFileSync(join(cliDist, "index.js"), "// cli entry (argv[1] anchor)");
   writeFileSync(join(embDir, "package.json"), JSON.stringify({
-    name: "@anysearch-cli/embedding", version: "0.0.5", type: "module",
+    name: "@anysearch-cli/embedding", version: "0.0.6", type: "module",
     exports: { ".": "./dist/index.js" },
   }));
   writeFileSync(join(embDir, "dist", "index.js"),
@@ -83,6 +83,35 @@ async function main() {
   const fb2 = await __importEmbeddingFallbackForTest([join(dir, "lonely", "index.js")]);
   assert(fb2 === null || (fb2.EMBEDDING_MODEL_ID as string) !== "stub-e5",
     "empty anchor does not resolve the synthetic stub");
+
+  // 5b. R71-audit F1: a resolved-but-broken sibling copy must stay absent,
+  // not throw — and must not veto the next candidate. "00000000" sorts
+  // before "bbbbbbbb" in the child-dir scan, so the broken copy is hit first.
+  const brokenDir = join(g, "00000000", "node_modules", "@anysearch-cli", "embedding");
+  mkdirSync(join(brokenDir, "dist"), { recursive: true });
+  writeFileSync(join(brokenDir, "package.json"), JSON.stringify({
+    name: "@anysearch-cli/embedding", version: "0.0.6", type: "module",
+    exports: { ".": "./dist/index.js" },
+  }));
+  writeFileSync(join(brokenDir, "dist", "index.js"), 'throw new Error("corrupt dist");\n');
+  const fb3 = await __importEmbeddingFallbackForTest([join(cliDist, "index.js")]);
+  assert(fb3 !== null && (fb3.EMBEDDING_MODEL_ID as string) === "stub-e5",
+    "broken sibling skipped — fallback continues to the healthy copy");
+  // Broken-only layout: no healthy sibling anywhere — resolves null, never throws.
+  const bw = join(dir, "broken-world", "v11");
+  const bwCli = join(bw, "dddddddd", "node_modules", "@anysearch-cli", "cli", "dist");
+  const bwEmb = join(bw, "cccccccc", "node_modules", "@anysearch-cli", "embedding");
+  mkdirSync(bwCli, { recursive: true });
+  mkdirSync(join(bwEmb, "dist"), { recursive: true });
+  writeFileSync(join(bwCli, "index.js"), "// cli entry (anchor)");
+  writeFileSync(join(bwEmb, "package.json"), JSON.stringify({
+    name: "@anysearch-cli/embedding", version: "0.0.6", type: "module",
+    exports: { ".": "./dist/index.js" },
+  }));
+  writeFileSync(join(bwEmb, "dist", "index.js"), 'throw new Error("corrupt dist");\n');
+  const fb4 = await __importEmbeddingFallbackForTest([join(bwCli, "index.js")]);
+  assert(fb4 === null || (fb4.EMBEDDING_MODEL_ID as string) !== "stub-e5",
+    "broken-only layout stays absent — no throw (a real copy elsewhere is legal)");
 
   // 6. cosineSimilarity — inlined pure math, no package dependency.
   const a = new Float32Array([1, 0, 0]);

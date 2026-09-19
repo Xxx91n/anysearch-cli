@@ -25,13 +25,14 @@ let envConfigured = false;
 // our copy. The require() entry (transformers.node.cjs) is what the patch can
 // reach; the .mjs path uses the ESM resolver which cannot be scoped without
 // loader hooks. Patch is process-global but idempotent + single-callsite.
+type ResolveFilename = (request: string, parent: { filename?: string } | undefined, ...rest: unknown[]) => string;
+const selfRequire = createRequire(import.meta.url);
 let resolverPatched = false;
 function patchOnnxruntimeCommonResolve(): void {
   if (resolverPatched) return;
   resolverPatched = true;
-  const selfRequire = createRequire(import.meta.url);
-  const M = Module as unknown as { _resolveFilename: Function };
-  const orig = M._resolveFilename as (request: string, parent: { filename?: string } | undefined, ...rest: unknown[]) => string;
+  const M = Module as unknown as { _resolveFilename: ResolveFilename };
+  const orig = M._resolveFilename;
   M._resolveFilename = function (this: unknown, request: string, parent: { filename?: string } | undefined, ...rest: unknown[]): string {
     // Windows parents use backslashes — normalize before the scope check.
     if (request === "onnxruntime-common" && typeof parent?.filename === "string" && parent.filename.replace(/\\/g, "/").includes("@huggingface/transformers")) {
@@ -45,8 +46,7 @@ function patchOnnxruntimeCommonResolve(): void {
 function loadTransformers(): Promise<TransformersModule> {
   if (!transformersPromise) {
     patchOnnxruntimeCommonResolve();
-    const req = createRequire(import.meta.url);
-    transformersPromise = Promise.resolve().then(() => req("@huggingface/transformers") as TransformersModule);
+    transformersPromise = Promise.resolve().then(() => selfRequire("@huggingface/transformers") as TransformersModule);
   }
   return transformersPromise;
 }
