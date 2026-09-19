@@ -6,17 +6,12 @@ Stack：审计件落 `r71-audit` 分支（GitButler，与实施栈 `r71-grill` �
 
 实施报告全部关键声明经亲跑/独立实证成立：**硬验收 8/8 复现**（build 4/4、store 62、plugin 10、ship-gate 58×pass 含 1i/9 path-lint 228 docs clean、install-smoke 28/28 含 pnpm-layout 腿、registry 0.0.6 ×4、tag 绑定）；**3 条 run URL 经 `gh run view` 独立实证**（35387286412 success@6c289397 / 35386495456 success / 35385345425 failure=门缺陷红证）；**D-001~D-004 全落地**，deferred 范围零触碰。
 
-**未结项 1 件 — F1（must-fix 级）**：`packages/store/src/embedding-arm.ts:79,82` 姊妹根 fallback 两处 `await import()` 无保护——resolve 成功但 import 失败 → `modPromise` 永久缓存拒绝态 → `embedText`/`armTelemetry`/`embeddingModelId` 全周期抛错 → search(:614)/write(:740,757)/backfill(:845)/doctor(:796) 四路径无 catch 全炸，且中止其余锚点。违 fail-open 铁律（本文件头契约 + ADR-0033/0063 + CONTEXT.md）。测试 16 断言无「resolved-but-broken」用例。**不影响已发布件功能面**（install-smoke 实测 arm present；触发需 resolve-ok+import-fail 组合），但为合同违约。
+**F1 — 已修复**（裁决：本窗口修；commit `yut` on `r71-audit`）：`tryImport` 逐候选 guard——resolve-ok+import-fail 归 absent 不抛，不污染 `modPromise`、不中止其余锚点；测试 5b 补「resolved-but-broken」两用例，断言 16→18。**F2-F6 随票同修**（doctor pnpm 行 / config marker 接线 / globOk fail-closed / cosmetic 组）。修后同套验收全绿：store 62/0 fail（arm 18/18）、build 4/4、install-smoke 28/28、ship-gate green exit 0（1i 230 docs clean）。详见审计报告 §8。
 
-处置待裁决（3 选项详见审计报告 §7）：返工窗口修 / 本窗口经批准后修 / 登记 deferred。最小修复=每候选 `try{…}catch{continue}` + 测试补该用例；重跑清单=`pnpm -C packages/store test` + `pnpm build` + `node scripts/install-smoke.mjs` + `node scripts/ship-gate.mjs --quick`。
+## 次级发现处置
 
-## 次级发现（随 F1 一并或下轮）
-
-- F2：`apps/cli/src/commands/doctor.ts:69` enable 指引仅 npm——补 `pnpm add -g` 行（断的正是 pnpm 臂）。
-- F3：`inRepo()` 机器相对——他机绝对库内引用归 out-of-repo，弱化 in-repo 强制；建议 ADR-0072 Consequences 注记固有缘。
-- F4：`ship-gate-pathlint.config.json` `marker` 字段死配（MARKER_OK/ANY 硬编码）——接线或删。
-- F5：`globOk` 不支持 glob 形静默零扫——fail-closed 腿内建议 `fail()` 于不可解析 pattern。
-- F6 cosmetic 组：口径漂移/fixture 版本/`evidence\` 反斜杠/尾换行/TOKEN_RE×3/createRequire×2。
+- F2/F4/F5/F6：**已随 F1 同票修复**（commit `yut`，明细见审计报告 §8）。
+- F3（留档未修）：`inRepo()` 机器相对——他机绝对库内引用归 out-of-repo，弱化 in-repo 强制；固有缘，建议 ADR-0072 Consequences 注记或下轮议题。
 
 ## 锚点（内容不重复）
 
@@ -26,11 +21,11 @@ Stack：审计件落 `r71-audit` 分支（GitButler，与实施栈 `r71-grill` �
 
 ## 下一个 grill 方向指示
 
-1. **F1 处置**（本轮未结项，优先）；F2-F6 随票或清扫票。
+1. F1-F6 修复的 landed 决策：`r71-audit` 栈（vxs 审计件 + yut 修复件）并入 main；0.0.6 已发布，F1 修复是否随 0.0.7 patch 走 release 流程由当轮裁。
 2. ship-gate 1g 门槛覆盖缺口（`defer-r71-shipgate-1g-coverage`，R70 首推已连续两轮 deferred）。
 3. macos-spillover-probe EXPERIMENT 红因追查（账本 sha 上仍 failure，门外件）。
 4. transformers 上游 undeclared-dep 跟进（上游修复版发布后撤 scoped patch，ADR-0072 挂起条件）。
-5. release-gate temp ref 生命周期 + look 计数语义（重试消耗是否计入预算审计）——发布后小活。
+5. F3 留档：`inRepo()` 机器相对固有缘 ADR 注记；release-gate temp ref 生命周期 + look 计数语义。
 
 ## Suggested skills
 
