@@ -3,7 +3,7 @@
 > 常驻任务书：任意子 Agent 可零记忆接手。唯一裁决源=`.scratch/grill-round-72/decision-ledger.md`（D-001~D-004 current，无断号）；调研存档=`q1/q2/q3-atomcode.md`（同目）。
 > 路径纪律（ADR-0072 现役）：本文件 Stack/定位器行可绝对路径；库内内容引用一律 repo-relative。
 
-**Stack**：repo `D:\Aworker\anysearch-cli`（Git Bash；写文件用 node.js 防嵌套断连）；branch `r72-grill`（GitButler 新建，与 r71-audit 等栈并行互不写）；base main tip `c4ced36a`（R71 后 ci/native-smoke/ship-gate 三绿）；环境实证 Node v24.11.0 / pnpm 11.24.0 / `@deepseek-ai/dsh@0.1.5-rc.2` npm 可达。
+Stack：repo `D:\Aworker\anysearch-cli`（Git Bash；写文件用 node.js 防嵌套断连）；branch `r72-grill`（GitButler 新建，与 r71-audit 等栈并行互不写）；base main tip `c4ced36a`（R71 后 ci/native-smoke/ship-gate 三绿）；环境实证 Node v24.11.0 / pnpm 11.24.0 / `@deepseek-ai/dsh@0.1.5-rc.2` npm 可达。
 
 **北极星**：verified-hosts 表第 6 行=DeepSeek Harness——首个 in-process 事件 waterfall 宿主。工具面走官方 MCP 桥（`mcp__anysearch__*`），hooks 层走薄 Cordis bundle（事件挂载、业务逻辑全留 127.0.0.1:33333 HTTP IPC）。
 
