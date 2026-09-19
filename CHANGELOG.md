@@ -4,7 +4,7 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
-## 2026-09-19 — ADR-0073 r72: DeepSeek Harness 宿主适配（两阶段 C：Phase-1 MCP 桥 + Phase-2 薄 bundle，verified-hosts 第 6 行）
+## 0.0.7 — 2026-09-19 — ADR-0073/0074 r72+r73: DeepSeek Harness 宿主适配（两阶段 C：Phase-1 MCP 桥 + Phase-2 薄 bundle）+ 上游依赖族钉版
 
 ### Added
 
@@ -17,6 +17,13 @@ All notable changes to this project are recorded here. Format follows
 ### Fixed
 
 - 真实 loader 三处语义修正落档：`- insert:` 同 id 重复= `duplicate loader entry id` 硬错（Phase-1 手写行与 bundle 行不得并存）；`- id:` 打缺失行仅告警（`patch: entry ... not found`）；CJS dep 经 ESM bundle 需 `createRequire` banner。
+- R71 审计修复包（F1-F6）：`tryImport` 逐候选 guard（resolve-ok+import-fail 归 absent 不抛、不污染 modPromise）、doctor pnpm 行、config marker 接线、globOk fail-closed、cosmetic 组——同套验收全绿后随本版上架。
+- 升级 diff 预演的 alpha 兼容警报定档：上游 0.1.6 将 `agent/session-start` 移出 Events（改名 `agent/created`，载荷增 `source`/`signal`）——本轮钉版不迁移，迁移账本见 `.scratch/grill-round-73/upgrade-ledger.md`。
+
+
+### Changed
+
+- `pnpm-workspace.yaml` —— dsh 上游依赖族钉版（ADR-0074）：新增 `catalog:` 单点块（15 个 `@deepseek-ai/dsh-*`=0.1.5-rc.2 + `@deepseek-ai/cordis`=4.0.2），`overrides:` 逐名枚举→`catalog:` 全树收敛；`apps/dsh-plugin` 5 个 deepseek devDeps 改 `catalog:` 引用（`dependencies:{}`/`private:true` 不动）。修复 R72 审计 F7——caret range 放任传递依赖漂 0.1.6-alpha 混版树。
 
 ## 0.0.6 — 2026-09-19 — ADR-0072 r71: 上架首航——路径治理门禁 + embedding 双臂可达 + 首个双层门真发布
 
