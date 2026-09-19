@@ -1,0 +1,16 @@
+# T2 升级预演 transcript — catalog→0.1.6-alpha.2 预跑（2026-09-19）
+
+## 步骤实录
+
+1. catalog 块 15×dsh-* 值 0.1.5-rc.2→0.1.6-alpha.2（overrides 仍 `catalog:` 指向，自动跟随；cordis 不动）
+2. `pnpm install` → exit 0, 7.2s, +17 -15（alpha.2 全族齐装上树）
+3. 锁文件 dsh 版本枚举 → **17 个 dsh-* 包全部 0.1.6-alpha.2**，新增 3 个传递包：dsh-ptc-runtime / dsh-sandbox / dsh-sandbox-policy（不在 15 名枚举内——靠父依赖 range 落到 alpha.2）
+4. `pnpm -F @anysearch-cli/dsh-plugin exec tsc --noEmit` → **预期 RED**：
+   `src/index.ts(87,10): error TS2345: Argument of type '"agent/session-start"' is not assignable to parameter of type 'keyof Events'.`
+   ——上游 0.1.6 把 agent/session-start 移出 Events 映射（改名 agent/created）。
+   仅此一错——同族全树收敛 alpha.2 后，R72 预演里混版树的 UserMessage/MessageId branded-type 级联消失。
+5. catalog 值全量回钉 0.1.5-rc.2 → `pnpm install` 10s → 锁内 0.1.6 计数=0、全族回 rc.2 → tsc 复绿 exit 0。
+
+## 结论
+
+预期 RED 确认 = 兼容性警报成立（Compat-Shim-Alarm）：事件面已断，须按升级账本迁移后方能采纳 alpha/rc 线。当前钉版 rc.2 不动。
