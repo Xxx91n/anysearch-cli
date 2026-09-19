@@ -1,0 +1,22 @@
+{
+  "name": "@probe/dsh-plugin",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "R72 spike probe bundle: four event mounts + self-test, zero runtime deps",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "lib/index.js",
+    "cordis.patch.yml"
+  ],
+  "license": "Apache-2.0",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

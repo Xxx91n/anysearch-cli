@@ -1,0 +1,19 @@
+# R72 spike probe bundle patch: inserts the probe row plus the mcp-anysearch
+# bridge row (whole-row restatement of every needed key; insert-not-merge).
+- insert:
+    - id: probe-dsh-plugin
+      name: '@probe/dsh-plugin'
+    - id: mcp-anysearch
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: anysearch
+        transport: stdio
+        command: node
+        args: ['D:/Aworker/anysearch-cli/apps/mcp/dist/index.cjs']
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+          initialDelayMs: 500
+          maxDelayMs: 30000
+          maxAttempts: 10

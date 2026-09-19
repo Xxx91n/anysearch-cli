@@ -1,0 +1,27 @@
+PROBE|{"t":1789795490134,"probe":"apply-enter","inject":"tools+systemPrompt+agents"}
+PROBE|{"t":1789795490136,"probe":"systemPrompt-register","ok":true,"disposers":["function","function","function"]}
+PROBE|{"t":1789795490138,"probe":"tool-registered","name":"probe_deny"}
+PROBE|{"t":1789795490139,"probe":"tool-registered","name":"probe_allow"}
+PROBE|{"t":1789795490140,"probe":"tool-registered","name":"probe_replace"}
+PROBE|{"t":1789795490545,"probe":"pre-execute-enter","name":"probe_deny"}
+PROBE|{"t":1789795490949,"probe":"pre-execute-async-settled"}
+PROBE|{"t":1789795490951,"probe":"result-observed","name":"probe_deny","isError":true,"contentText":"Error: PROBE_DENY_AFTER_400MS"}
+PROBE|{"t":1789795490952,"probe":"exec-deny","isError":true,"error":"PROBE_DENY_AFTER_400MS","contentText":"Error: PROBE_DENY_AFTER_400MS","verdict":"PASS-async-serialized"}
+PROBE|{"t":1789795490957,"probe":"result-observed","name":"probe_allow","isError":false,"contentText":"PROBE_TOOL_OK_probe_allow"}
+PROBE|{"t":1789795490957,"probe":"exec-allow","isError":false,"contentText":"PROBE_TOOL_OK_probe_allow","verdict":"PASS"}
+PROBE|{"t":1789795491013,"probe":"result-observed","name":"probe_replace","isError":false,"contentText":"PROBE_POST_REPLACED"}
+PROBE|{"t":1789795491013,"probe":"exec-replace","isError":false,"contentText":"PROBE_POST_REPLACED","verdict":"PASS-post-replaced"}
+PROBE|{"t":1789795491016,"probe":"systemPrompt-assemble","sectionHit":true,"contextHit":true,"varHit":true,"sectionCount":18,"contextCount":3}
+PROBE|{"t":1789795491019,"probe":"tool-naming","total":28,"anysearch":[],"ansPatternHit":[]}
+(node:5216) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+anysearch MCP server: stdio transport ready
+PROBE|{"t":1789795491329,"probe":"agent-created","sessionSeq":3}
+PROBE|{"t":1789795491331,"probe":"session-start","injected":true,"agentId":"unknown"}
+PROBE|{"t":1789795491634,"probe":"agents-list","count":1,"waitedRounds":0}
+PROBE|{"t":1789795491635,"probe":"session-dump","agentId":"?","seq":18,"hasInjectMarker":false,"eventTypes":["permission/preset","sandbox/mode","approval/policy","agent/inbox/spliced","agent/inbox/spliced","turn/start","agent/inbox/spliced","agent/inbox/spliced","step/start","system/message","user/message","user/message","user/message","user/message","request/header","request/context","session/title","session/title-llm-request"],"markerTexts":[]}
+PROBE|{"t":1789795491637,"probe":"late-inject","ok":true}
+PROBE|{"t":1789795493640,"probe":"tool-naming-late","round":0,"total":33,"anysearch":["mcp__anysearch__search_web","mcp__anysearch__research_web","mcp__anysearch__recall_memory","mcp__anysearch__query_knowledge","mcp__anysearch__ans_chat"],"ansPatternHit":["mcp__anysearch__search_web","mcp__anysearch__research_web","mcp__anysearch__recall_memory","mcp__anysearch__query_knowledge","mcp__anysearch__ans_chat"]}
+PROBE|{"t":1789795493641,"probe":"PROBE_DONE"}
+PROBE|{"t":1789795494534,"probe":"result-observed","name":"mcp__anysearch__search_web","isError":false,"contentText":"{\n  \"query\": \"anysearch r72 probe\",\n  \"totalResults\": 10,\n  \"showing\": 10,\n  \"results\": [\n    {\n      \"url\": \"github.com"}
+PROBE_TURN_COMPLETE
