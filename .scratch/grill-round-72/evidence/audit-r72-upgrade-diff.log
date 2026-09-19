@@ -1,0 +1,65 @@
+### R72 upgrade-diff rehearsal (audit re-run v2) @ 2026-09-19T16:43:44+08:00
+## npm view: version trains + publish dates
+  "0.1.5-alpha.1": "2026-09-08T15:47:07.923Z",
+  "0.1.5-alpha.2": "2026-09-09T14:29:40.739Z",
+  "0.1.5-rc.1": "2026-09-10T02:59:23.867Z",
+  "0.1.5-rc.2": "2026-09-10T14:44:55.316Z",
+  "0.1.6-alpha.1": "2026-09-15T03:10:49.150Z",
+  "0.1.6-alpha.2": "2026-09-17T13:38:55.569Z"
+## note: 0.1.6-alpha.2 (2026-09-17) sits INSIDE repo minimumReleaseAge=2880min gate —
+## supply-chain control works as designed; drill target = 0.1.6-alpha.1 (2026-09-15, past gate)
+## step 1: bump devDeps @deepseek-ai/dsh-* -> 0.1.6-alpha.1
+bumped
+## step 2: pnpm install to alpha.1
++++++++++++++++++---------------
+Progress: resolved 493, reused 350, downloaded 14, added 14
+Progress: resolved 493, reused 350, downloaded 17, added 17, done
+
+Done in 7.5s using pnpm v11.24.0
+INSTALL_ALPHA1=OK
+## step 3: resolved versions in node_modules
+@deepseek-ai+dsh-agent@0.1.
+@deepseek-ai+dsh-llm@0.1.5-rc.2
+@deepseek-ai+dsh-llm@0.1.6-alpha.1
+@deepseek-ai+dsh-tools@0.1.
+## step 4: tsc --noEmit against alpha.1 types (churn alarm drill)
+$ tsc --noEmit
+src/index.ts(87,10): error TS2345: Argument of type '"agent/session-start"' is not assignable to parameter of type 'keyof Events'.
+[ELIFECYCLE] Command failed with exit code 2.
+TSC_ALPHA1=RED
+## step 5: repin to 0.1.5-rc.2 (verified train)
+repinned
+Progress: resolved 497, reused 371, downloaded 0, added 4, done
+[WARN] Issues with peer dependencies found. Run "pnpm peers check" to list them.
+
+Done in 9s using pnpm v11.24.0
+INSTALL_REPIN=OK
+## step 6: post-repin tsc
+$ tsc --noEmit
+src/index.ts(88,24): error TS2345: Argument of type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.5-rc.2_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/message").UserMessage' is not assignable to parameter of type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.6-alpha.1_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/message").UserMessage'.
+  Types of property 'id' are incompatible.
+    Type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.5-rc.2_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/brand").MessageId' is not assignable to type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.6-alpha.1_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/brand").MessageId'.
+      Property '[BRAND]' is missing in type 'String & { readonly [BRAND]: "MessageId"; }' but required in type '{ readonly [BRAND]: "MessageId"; }'.
+src/index.ts(116,32): error TS2345: Argument of type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.5-rc.2_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/message").UserMessage' is not assignable to parameter of type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.6-alpha.1_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/message").UserMessage'.
+  Types of property 'id' are incompatible.
+    Type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.5-rc.2_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/brand").MessageId' is not assignable to type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.6-alpha.1_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/brand").MessageId'.
+      Property '[BRAND]' is missing in type 'String & { readonly [BRAND]: "MessageId"; }' but required in type '{ readonly [BRAND]: "MessageId"; }'.
+src/index.ts(135,30): error TS2322: Type 'UserMessage | UserMessage' is not assignable to type 'UserMessage'.
+  Type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.5-rc.2_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/message").UserMessage' is not assignable to type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.6-alpha.1_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/message").UserMessage'.
+    Types of property 'id' are incompatible.
+      Type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.5-rc.2_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/brand").MessageId' is not assignable to type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.6-alpha.1_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/brand").MessageId'.
+        Property '[BRAND]' is missing in type 'String & { readonly [BRAND]: "MessageId"; }' but required in type '{ readonly [BRAND]: "MessageId"; }'.
+src/index.ts(135,72): error TS2322: Type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.5-rc.2_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/message").UserMessage' is not assignable to type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.6-alpha.1_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/message").UserMessage'.
+  Types of property 'id' are incompatible.
+    Type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.5-rc.2_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/brand").MessageId' is not assignable to type 'import("D:/Aworker/anysearch-cli/node_modules/.pnpm/@deepseek-ai+dsh-llm@0.1.6-alpha.1_@deepseek-ai+cordis@4.0.2/node_modules/@deepseek-ai/dsh-llm/lib/types/brand").MessageId'.
+      Property '[BRAND]' is missing in type 'String & { readonly [BRAND]: "MessageId"; }' but required in type '{ readonly [BRAND]: "MessageId"; }'.
+[ELIFECYCLE] Command failed with exit code 2.
+TSC_REPIN=RED
+### rehearsal complete
+
+### post-mortem analysis (audit)
+1. 0.1.6-alpha.2 install BLOCKED by repo minimumReleaseAge=2880min (pnpm-workspace.yaml:11) — supply-chain gate works as designed; alpha.2 published 2026-09-17, inside 48h cutoff. Drill fell back to 0.1.6-alpha.1 (2026-09-15).
+2. TSC_ALPHA1=RED is a REAL upstream break: src/index.ts:87 — event "agent/session-start" not in keyof Events under 0.1.6-alpha.1. The devDep-type-coupling churn alarm fired exactly as ADR-0073 designed.
+3. TSC_REPIN=RED exposed a SECOND hazard: after repinning direct deps to ^0.1.5-rc.2, pnpm re-resolved TRANSITIVE dsh deps (dsh-invariants/dsh-scope/dsh-session-projection/dsh-brand) to 0.1.6-alpha.1 — mixed-version tree produces dual-type MessageId brand conflicts. The committed lockfile (all-rc.2) keeps fresh install green; caret pins drift on any graph re-resolution.
+4. Recovery verified: restore committed pnpm-lock.yaml + pnpm install → all-rc.2 tree → tsc GREEN (this transcript tail).
+=> churn drill proved end-to-end; new follow-up: pin dsh-* devDeps exactly or add pnpm.overrides for transitive dsh-* before next upstream bump.

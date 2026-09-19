@@ -15,7 +15,8 @@
   },
   "files": [
     "lib",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "AGENTS.md"
   ],
   "keywords": [
     "anysearch",
@@ -36,11 +37,12 @@
     }
   },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=lib/index.js --external:@deepseek-ai/* --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\" && tsc --declaration --emitDeclarationOnly --noEmit false --outDir lib",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=lib/index.js --external:@deepseek-ai/* --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\" && tsc -p tsconfig.build.json --declaration --emitDeclarationOnly --noEmit false --outDir lib --rootDir src",
     "lint": "tsc --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\" --test-timeout=30000",
     "check": "tsc --noEmit"
   },
+  "dependencies": {},
   "devDependencies": {
     "@anysearch-cli/plugin": "workspace:*",
     "@deepseek-ai/cordis": "^4.0.2",

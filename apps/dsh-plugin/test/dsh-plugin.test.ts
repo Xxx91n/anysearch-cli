@@ -1,6 +1,6 @@
 /**
  * apps/dsh-plugin mock-context unit tests (R72 T1 exit gate).
- * Exercises the four hook surfaces against a hand-built Cordis-like ctx and a
+ * Exercises the five hook surfaces against a hand-built Cordis-like ctx and a
  * real localhost stand-in for the anysearch server — no dsh process needed.
  */
 import test from 'node:test';
@@ -56,9 +56,9 @@ function mockCtx(): MockCtx {
       listeners.set(event, arr);
     },
     systemPrompt: {
-      section(s) { sections.push(s); return () => {}; },
-      context(c) { contexts.push(c); return () => {}; },
-      variable() { return () => {}; },
+      section(s) { sections.push(s); return () => { }; },
+      context(c) { contexts.push(c); return () => { }; },
+      variable() { return () => { }; },
     },
     tools: {},
   };
@@ -100,7 +100,7 @@ test('exports: stable name + inject service list', () => {
   assert.deepEqual([...inject].sort(), ['systemPrompt', 'tools']);
 });
 
-test('apply: mounts all four hook surfaces + routing-card section', () => {
+test('apply: mounts all five hook surfaces + routing-card section', () => {
   const ctx = mockCtx();
   apply(ctx as unknown as Context);
   for (const ev of ['agent/session-start', 'tools/pre-execute', 'tools/post-execute', 'tools/result']) {
@@ -226,7 +226,7 @@ test('tools/post-execute: ans result gains a distilled additionalContexts messag
   assert.equal(out.kind, 'accept');
   const msgs = out.additionalContexts ?? [];
   assert.equal(msgs.length, 1);
-  const distilled = JSON.parse(msgs[0].content[0].text ?? '{}');
+  const distilled = JSON.parse((msgs[0].content[0] as { text?: string }).text ?? '{}');
   assert.equal(distilled.tool, 'mcp__anysearch__search_web');
   assert.equal(distilled.resultCount, 1);
 });

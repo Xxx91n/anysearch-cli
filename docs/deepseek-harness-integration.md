@@ -55,7 +55,9 @@ Phase-1 semantics (verified):
 ## Phase 2 — hooks bundle (recommended)
 
 ```sh
-dsh plugin --profile <name> add @anysearch-cli/dsh-plugin
+pnpm pack --pack-destination <tmp>          # in apps/dsh-plugin
+dsh plugin --profile <name> add <tmp>/anysearch-cli-dsh-plugin-0.0.6.tgz
+# post-publish equivalent: dsh plugin --profile <name> add @anysearch-cli/dsh-plugin
 ```
 
 `dsh plugin add` installs the package into the profile (zero runtime deps →
@@ -88,9 +90,11 @@ Server endpoints used: `GET /policy`, `POST /recall`, `POST /index` on
   last → user overrides win.
 - Override a bundle row with `- id: <row-id>` entries (patch the fields you
   need; for `config` restate every key — whole-row replacement).
-- `patchReload: "startup"` (headless) applies patches on next boot;
-  `patchReload: "live"` (web) reloads the patch layer live — our listeners
-  are fiber-scoped Cordis effects and dispose cleanly on reload.
+- `patchReload: "startup"` (headless, verified) applies patches on next boot;
+  `patchReload: "live"` (web) is expected to reload the patch layer live — our
+  listeners are fiber-scoped Cordis effects that should dispose cleanly on
+  reload — EXPECTED, not yet verified (see
+  defer-r72-dsh-web-interactive-matrix).
 - Upgrade check: after bumping `@deepseek-ai/dsh`, diff
   `--dump-default-config` to confirm the bundle rows still land — a future
   dsh release that ships its own `mcp-anysearch` id would collide (the

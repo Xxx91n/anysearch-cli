@@ -1,6 +1,6 @@
 # Round-72 Closeout Handoff — DeepSeek Harness（dsh）宿主适配（verified-hosts 第 6 行）
 
-Stack：分支 `r72-grill`（GitButler 栈，与 `r71-audit` 等栈并行互不写），base `c4ced36a`（main tip）。轮内提交：`uzt` grill定稿 → `tqq` T0 spike 九探针 → `yxo` T1/T2 实施+真宿主全桶验证 → `uyt` ADR index regen → `pxv` gitignore → `nnn` Stack 行 locator 修复 → 收口文档提交。未集成 main、未 push、未开 PR（GitButler 协议内交付）。
+Stack：分支 `r72-grill`（GitButler 栈，与 `r71-audit` 等栈并行互不写），base `c4ced36a`（main tip）。轮内提交：`uzt` (d72b1e97 @ 2026-09-19) grill定稿 → `tqq` (ebf7feb3) T0 spike → `yxo` (ee5bbbc7) T1/T2 实施+验证 → `uyt` (20a05b70) ADR index → `pxv` (019466b3) gitignore → `nnn` (2009b3ad) Stack行修复 → `zmu` (5494c91b) T2证据+收口文档。未集成 main、未 push、未开 PR（GitButler 协议内交付）。
 
 ## 绿色 run URL
 

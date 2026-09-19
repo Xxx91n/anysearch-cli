@@ -469,6 +469,10 @@ function stepStaticAssertions() {
     if (pkg.private !== true) fail("ADR-0073: apps/dsh-plugin must stay private:true this round");
     if (pkg.type !== "module") fail("ADR-0073: apps/dsh-plugin must ship type:module (ESM lib)");
     if (pkg.dsh?.bundle?.patch !== "./cordis.patch.yml") fail("ADR-0073: package.json dsh.bundle.patch must point at ./cordis.patch.yml");
+    if (pkg.name !== "@anysearch-cli/dsh-plugin") fail("ADR-0073: package.json name must stay @anysearch-cli/dsh-plugin");
+    for (const f of ["lib", "cordis.patch.yml"]) {
+      if (!(pkg.files ?? []).includes(f)) fail("ADR-0073: package.json files must include " + f);
+    }
     const patch = fs.readFileSync(path.join(ROOT, "apps", "dsh-plugin", "cordis.patch.yml"), "utf8");
     for (const tok of ["insert:", "anysearch-dsh-plugin", "mcp-anysearch", "@deepseek-ai/dsh-mcp-client", "serverName: anysearch", "transport: stdio"]) {
       if (!patch.includes(tok)) fail("ADR-0073: cordis.patch.yml missing " + tok);

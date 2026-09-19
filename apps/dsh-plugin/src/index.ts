@@ -8,7 +8,7 @@
  * (fail-open by contract); anysearch capability is re-used from
  * @anysearch-cli/plugin hook modules bundled into lib/index.js at build time.
  *
- * Four hook responsibilities:
+ * Five hook surfaces:
  *   agent/session-start → agent.inject() routing card (durable next-step msg)
  *   systemPrompt        → 'anysearch:routing-card' section registration
  *   tools/pre-execute   → URL-policy deny/ask + preheat recall injection
@@ -25,7 +25,7 @@ import type {
   ToolExecutionResult,
 } from '@deepseek-ai/dsh-tools';
 import { randomUUID } from 'node:crypto';
-import { isAnsTool, callServer, unwrapToolResponse, type HookDecision } from '@anysearch-cli/plugin/hooks/core';
+import { isAnsTool, callServer, unwrapToolResponse, type HookDecision, type HookInput } from '@anysearch-cli/plugin/hooks/core';
 import { makePreToolUseDecision } from '@anysearch-cli/plugin/hooks/preheat';
 import { makePostToolUseDecision } from '@anysearch-cli/plugin/hooks/distill';
 import { DEFAULT_ROUTING_CARD } from '@anysearch-cli/plugin/hooks/routing-card';
@@ -63,6 +63,18 @@ function toolOutputOf(result: Readonly<ToolExecutionResult>): Record<string, unk
   return {};
 }
 
+/** Shared PostToolUse HookInput for the post-execute + result surfaces. */
+function postHookInput(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): HookInput {
+  return {
+    event: 'PostToolUse',
+    toolName: exec.name,
+    toolInput: (exec.arguments ?? {}) as Record<string, unknown>,
+    toolOutput: toolOutputOf(result),
+    projectPath: process.cwd(),
+    sessionId: sessionIdOf(exec.agent),
+  };
+}
+
 export function apply(ctx: Context): void {
   // -- surface 2: system-prompt section (renders in every request) ----------
   ctx.systemPrompt.section({
@@ -76,7 +88,7 @@ export function apply(ctx: Context): void {
     try { agent.inject(contextMessage(DEFAULT_ROUTING_CARD)); } catch { /* fail-open */ }
   });
 
-  // -- surface 3: pre-execute — URL policy gate + preheat recall -------------
+  // -- surface 3: pre-execute — URL policy gate + preheat recall (recall leg awaited by design: the deny gate must block per fail-closed contract, and awaiting lands preheat durable before the gated call completes; bounded by IPC timeouts) ---
   ctx.on('tools/pre-execute', async (
     exec: ToolExecution,
     next: () => Promise<PreToolDecision>,
@@ -115,14 +127,7 @@ export function apply(ctx: Context): void {
     if (!isAnsTool(exec.name)) return next();
     const downstream = await next();
     try {
-      const d = makePostToolUseDecision({
-        event: 'PostToolUse',
-        toolName: exec.name,
-        toolInput: (exec.arguments ?? {}) as Record<string, unknown>,
-        toolOutput: toolOutputOf(result),
-        projectPath: process.cwd(),
-        sessionId: sessionIdOf(exec.agent),
-      });
+      const d = makePostToolUseDecision(postHookInput(exec, result));
       if (!d.distilledOutput) return downstream;
       const injected = contextMessage(d.distilledOutput);
       return {
@@ -138,14 +143,7 @@ export function apply(ctx: Context): void {
   ctx.on('tools/result', (exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) => {
     if (!isAnsTool(exec.name) || result.isError) return;
     try {
-      const d = makePostToolUseDecision({
-        event: 'PostToolUse',
-        toolName: exec.name,
-        toolInput: (exec.arguments ?? {}) as Record<string, unknown>,
-        toolOutput: toolOutputOf(result),
-        projectPath: process.cwd(),
-        sessionId: sessionIdOf(exec.agent),
-      });
+      const d = makePostToolUseDecision(postHookInput(exec, result));
       if (d.shouldIndex && d.indexEntries && d.indexEntries.length > 0) {
         void callServer(serverUrl() + '/index', resolveServerToken().token, {
           projectPath: process.cwd(),

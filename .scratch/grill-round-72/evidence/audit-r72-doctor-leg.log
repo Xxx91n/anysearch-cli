@@ -1,0 +1,14 @@
+### R72 dsh-doctor leg (audit) @ 2026-09-19T16:50:16+08:00
+## dsh --version
+0.1.5-rc.2
+## dsh --profile headless --dump-config: bundle layer + mcp row + patched-by
+44:# == @deepseek-ai/dsh-base, patched by D:\Aworker\dsh-r72-spike\home\profiles\headless\cordis.patch.yml
+59:# == @deepseek-ai/dsh-base, patched by D:\Aworker\dsh-r72-spike\home\profiles\headless\cordis.patch.yml
+334:# == @deepseek-ai/dsh-base, patched by @deepseek-ai/dsh-headless
+364:# == @anysearch-cli/dsh-plugin
+366:  name: '@anysearch-cli/dsh-plugin'
+367:# == @anysearch-cli/dsh-plugin, patched by D:\Aworker\dsh-r72-spike\home\profiles\headless\cordis.patch.yml
+368:- id: mcp-anysearch
+371:    serverName: anysearch
+## MCP 可达: see audit-r72-llm-wire.log 'anysearch MCP server: stdio transport ready' + 10-result search + 3-IPC sess propagation
+### leg complete

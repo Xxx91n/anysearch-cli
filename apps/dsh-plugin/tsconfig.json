@@ -7,14 +7,14 @@
     "strict": true,
     "skipLibCheck": true,
     "outDir": "./lib",
-    "rootDir": "./src",
     "declaration": true,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "test/**/*.ts"
   ],
   "exclude": [
     "node_modules",
