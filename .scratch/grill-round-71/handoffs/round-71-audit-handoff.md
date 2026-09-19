@@ -13,6 +13,10 @@ Stack：审计件落 `r71-audit` 分支（GitButler，与实施栈 `r71-grill` �
 - F2/F4/F5/F6：**已随 F1 同票修复**（commit `yut`，明细见审计报告 §8）。
 - F3（留档未修）：`inRepo()` 机器相对——他机绝对库内引用归 out-of-repo，弱化 in-repo 强制；固有缘，建议 ADR-0072 Consequences 注记或下轮议题。
 
+## 绿色 run URL（必填）
+
+LANDED @ 2026-09-19（R73 T0）— `r71-audit` 栈（vxs 审计件 + yut F1-F6 修复件 + tkv 修复补记）经 `but land` 直落 main（线性史，tip `3028a4a9`）。绿 run：ci `35448195039` success / ship-gate `35448195038` success / native-smoke `35448195040` success。run URL：https://github.com/Xxx91n/anysearch-cli/actions/runs/35448195039 · https://github.com/Xxx91n/anysearch-cli/actions/runs/35448195038 · https://github.com/Xxx91n/anysearch-cli/actions/runs/35448195040（`gh run list --branch main` 实证）。落地间隙本地门证：`pnpm install --frozen-lockfile`+`turbo check`+`turbo test`+`ship-gate --quick` 全绿。
+
 ## 锚点（内容不重复）
 
 - 审计报告：`.scratch/grill-round-71/reports/2026-09-19-audit.md`（声明→证据→结论全表 + D-001~D-004 对账 + 双轴评审汇总 + 过程呈报）

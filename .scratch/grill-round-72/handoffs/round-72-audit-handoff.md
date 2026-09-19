@@ -10,7 +10,7 @@ Stack：审计件落 `r72-audit` 分支（GitButler，初版与实施栈平行�
 
 ## 绿色 run URL（必填）
 
-PENDING — stack unpushed。本轮为 GitButler 本地栈（r72-grill + r72-audit 均未 push），无 CI run；本地门证 `node scripts/ship-gate.mjs --quick` exit 0（审计亲跑 2026-09-19），turbo check/test 手动全绿。实施 closeout 引用的祖先 run（`86fe753d`/`6c289397` 系）见 `.scratch/grill-round-72/handoffs/round-72-closeout.md`。
+LANDED @ 2026-09-19（R73 T0）— `r72-grill`（7 commits）+`r72-audit`（2 commits，堆叠其上）经 `but land` 顺序直落 main（线性史，无 merge commit；落地 tip `5f16c8e3`）。绿 run：ci `35449008756` success（attempt 2——attempt 1 windows install-smoke runner 挂起无日志，cancel+rerun --failed 复绿）/ ship-gate `35449008684` success / native-smoke `35449008674` success。run URL：https://github.com/Xxx91n/anysearch-cli/actions/runs/35449008756 · https://github.com/Xxx91n/anysearch-cli/actions/runs/35449008684 · https://github.com/Xxx91n/anysearch-cli/actions/runs/35449008674（`gh run list --branch main` 实证）。落地间隙本地门证：`pnpm install --frozen-lockfile`+`turbo check` 8/8+`turbo test` 13/13+`node scripts/ship-gate.mjs --quick` exit 0（transcript：`.scratch/grill-round-73/evidence/t0-gate-after-r72-audit.log`）。实施 closeout 引用的祖先 run（`86fe753d`/`6c289397` 系）见 `.scratch/grill-round-72/handoffs/round-72-closeout.md`。
 
 ## 锚点（内容不重复）
 
