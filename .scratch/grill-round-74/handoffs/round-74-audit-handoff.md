@@ -12,14 +12,11 @@ Stack (primary key = GitButler change-ids; SHAs are time-lagged):
 
 ## 绿色 run URL
 
-本栈未推——**本轮 run `PENDING — stack unpushed`**（本地 `node scripts/ship-gate.mjs --quick` 9/9 绿）。
-本历史最新绿 run（r73-audit landed 栈，head_sha `d8090887` = HEAD 祖先，全 success）：
+本栈已 `but land` 落 main（landed head `4d2de686`；推前本地 `node scripts/ship-gate.mjs --quick` 9/9 绿）——本轮 run 全 success：
 
-- ci: https://github.com/Xxx91n/anysearch-cli/actions/runs/35483715645
-- ship-gate: https://github.com/Xxx91n/anysearch-cli/actions/runs/35483715664
-- native-smoke: https://github.com/Xxx91n/anysearch-cli/actions/runs/35483715643
-
-push 后回填本轮 run URL。
+- ci: https://github.com/Xxx91n/anysearch-cli/actions/runs/35512481666
+- ship-gate: https://github.com/Xxx91n/anysearch-cli/actions/runs/35512481780
+- native-smoke: https://github.com/Xxx91n/anysearch-cli/actions/runs/35512481663
 
 ## 下一轮候选（grill 方向指示）
 
