@@ -10,7 +10,7 @@ Stack：审计件落 `r73-audit` 分支（GitButler，与已合 main 的各栈�
 
 ## 绿色 run URL（必填）
 
-PENDING——`r73-audit` 审计栈本机已提交，未推 origin（按 GitButler 协议不自行 push）；落地后由下轮/合流执行者回填 ci+ship-gate run URL（沿用 R73 T0 先例）。
+LANDED @ 2026-09-20 — `r73-audit` 栈（`227e8b5e` 审计件 + `d8090887` F1-F5 修复件）经 `but land` 直落 main（线性史，落地 tip `d8090887`）。绿 run：ci `35483715645` success · ship-gate `35483715664` success · native-smoke `35483715643` success。run URL：https://github.com/Xxx91n/anysearch-cli/actions/runs/35483715645 · https://github.com/Xxx91n/anysearch-cli/actions/runs/35483715664 · https://github.com/Xxx91n/anysearch-cli/actions/runs/35483715643（`gh run list --branch main` 实证）。落地前本地门证：`node scripts/ship-gate.mjs --quick` 60 pass / 0 fail / exit 0。
 
 ## 锚点（内容不重复）
 
