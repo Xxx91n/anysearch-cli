@@ -93,8 +93,9 @@ including step 1h parity and step 1i pathlint (263 docs clean).
   and abstain wording can drift upstream; re-capture if the output
   contract changes. The SVG mark would be the source for any future
   bitmap matrix (see deferred entry).
-- Watch items: `origin/r71-grill` remains a listed-only cleanup
-  candidate — nothing deleted without user confirmation.
+- Watch items: the `origin/r71-grill` cleanup listing is moot —
+  `git ls-remote` shows the remote branch no longer exists (only
+  `main` remains); nothing was deleted this round.
 
 ## Closure evidence (ledger D-006 four segments)
 

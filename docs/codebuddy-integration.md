@@ -1,8 +1,10 @@
 # CodeBuddy Code integration
 
 Verified host: **CodeBuddy Code 2.151.0** (Windows 11, Git Bash hooks) —
-live-verified by the headless P1–P9 probe matrix (stream-json transcripts
-in `.scratch/grill-round-65/evidence/t2-*.stream.jsonl`).
+live-verified **2026-09-16** by the headless P1–P9 probe matrix:
+search/recall/ans_chat/research + 3-event hooks + fail-open +
+with/without-tool contrast (stream-json transcripts in
+`.scratch/grill-round-65/evidence/t2-*.stream.jsonl`).
 Contract source: ADR-0066 + `.scratch/grill-round-65/evidence/`.
 
 CodeBuddy hooks run commands through Git Bash on Windows, inject
