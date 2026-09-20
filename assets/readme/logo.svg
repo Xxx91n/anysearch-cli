@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="t d">
+  <title id="t">anysearch-cli logo — domain gate mark</title>
+  <desc id="d">Dark rounded tile holding a square domain boundary open at the left edge; three provider rays fan in toward two cyan gate bars; a cyan dot lands inside the gate while a gray ray is stopped by an amber cross outside it.</desc>
+
+  <!-- app-icon tile: own background keeps the mark identical on light and dark themes -->
+  <rect width="256" height="256" rx="40" fill="#0B1120"/>
+
+  <!-- domain boundary (TOML policy border), left edge open as the fan-in window -->
+  <path d="M64 92 V56 H200 V200 H64 V164" fill="none" stroke="#E8EEF4"
+        stroke-width="14" stroke-linejoin="miter"/>
+
+  <!-- provider fanout: exa / tavily pass the gate; the gray ray is stopped (abstain) -->
+  <g stroke-linecap="round" fill="none">
+    <path d="M26 90  L112 104" stroke="#94A3B8" stroke-width="11"/>
+    <path d="M26 126 L112 122" stroke="#94A3B8" stroke-width="11"/>
+    <path d="M26 160 L84 141"  stroke="#475569" stroke-width="11"/>
+  </g>
+
+  <!-- abstain stop: amber cross at the blocked ray's end, outside the gate -->
+  <g stroke="#F59E0B" stroke-width="9" stroke-linecap="round">
+    <path d="M88 135 L100 147"/>
+    <path d="M100 135 L88 147"/>
+  </g>
+
+  <!-- the domain gate itself: pre-filter + post-filter as twin bars -->
+  <rect x="118" y="76" width="15" height="104" fill="#22D3EE"/>
+  <rect x="141" y="76" width="15" height="104" fill="#22D3EE"/>
+
+  <!-- fused clean result landing inside the gate -->
+  <circle cx="177" cy="128" r="16" fill="#22D3EE"/>
+</svg>

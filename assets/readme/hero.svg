@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="t d">
+  <title id="t">anysearch-cli — agent search gated by a domain allowlist</title>
+  <desc id="d">Left: the domain-gate logo mark beside the anysearch-cli wordmark, a plain-language value line and the install command. Right: a domain-gate schematic — three provider rays fan into a TOML domain boundary, twin cyan gate bars admit fused results that land as rows, and one gray ray is stopped by an amber cross that drops to an abstain card outside the boundary.</desc>
+  <rect width="1200" height="360" rx="26" fill="#0B1120"/>
+
+  <!-- left: identity — logo mark (same geometry as assets/readme/logo.svg) -->
+  <g transform="translate(56 56) scale(0.28)">
+    <rect width="256" height="256" rx="40" fill="#101A2E"/>
+    <path d="M64 92 V56 H200 V200 H64 V164" fill="none" stroke="#E8EEF4"
+          stroke-width="14" stroke-linejoin="miter"/>
+    <g stroke-linecap="round" fill="none">
+      <path d="M26 90  L112 104" stroke="#94A3B8" stroke-width="11"/>
+      <path d="M26 126 L112 122" stroke="#94A3B8" stroke-width="11"/>
+      <path d="M26 160 L84 141"  stroke="#475569" stroke-width="11"/>
+    </g>
+    <g stroke="#F59E0B" stroke-width="9" stroke-linecap="round">
+      <path d="M88 135 L100 147"/>
+      <path d="M100 135 L88 147"/>
+    </g>
+    <rect x="118" y="76" width="15" height="104" fill="#22D3EE"/>
+    <rect x="141" y="76" width="15" height="104" fill="#22D3EE"/>
+    <circle cx="177" cy="128" r="16" fill="#22D3EE"/>
+  </g>
+
+  <text x="152" y="122" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif"
+        font-size="56" font-weight="700" fill="#E8EEF4">anysearch-cli</text>
+
+  <text x="56" y="182" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif"
+        font-size="27" fill="#B8C4D6">Search, research and memory for agents —</text>
+  <text x="56" y="218" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif"
+        font-size="27" fill="#B8C4D6">gated by a domain allowlist that holds.</text>
+
+  <text x="56" y="266" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+        font-size="20" fill="#94A3B8"><tspan fill="#22D3EE">$</tspan> npm i -g @anysearch-cli/cli</text>
+  <text x="56" y="300" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+        font-size="18" fill="#64748B">MIT license · Node.js &gt;= 22</text>
+
+  <!-- divider -->
+  <path d="M640 48 V312" stroke="#1E293B" stroke-width="2"/>
+
+  <!-- right: domain-gate schematic -->
+  <text x="668" y="84" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+        font-size="17" fill="#64748B">domain gate · urlAllowlist</text>
+
+  <!-- provider labels -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18"
+     fill="#94A3B8" text-anchor="end">
+    <text x="756" y="157">exa</text>
+    <text x="756" y="197">tavily</text>
+    <text x="756" y="237">anysearch</text>
+  </g>
+
+  <!-- domain boundary, left edge open for fan-in -->
+  <path d="M800 150 V110 H1000 V270 H800 V224" fill="none" stroke="#E8EEF4"
+        stroke-width="8" stroke-linejoin="miter"/>
+
+  <!-- rays: exa/tavily pass; anysearch ray is stopped at the gate -->
+  <g stroke-linecap="round" fill="none">
+    <path d="M768 152 L800 156" stroke="#94A3B8" stroke-width="8"/>
+    <path d="M768 192 L800 192" stroke="#94A3B8" stroke-width="8"/>
+    <path d="M768 232 L822 214" stroke="#475569" stroke-width="8"/>
+  </g>
+
+  <!-- abstain stop + drop to card outside the boundary -->
+  <g stroke="#F59E0B" stroke-width="7" stroke-linecap="round">
+    <path d="M830 208 L842 220"/>
+    <path d="M842 208 L830 220"/>
+  </g>
+  <path d="M836 224 V282" stroke="#475569" stroke-width="5" stroke-dasharray="7 7"/>
+
+  <!-- twin gate bars: pre-filter + post-filter -->
+  <rect x="852" y="130" width="12" height="120" fill="#22D3EE"/>
+  <rect x="874" y="130" width="12" height="120" fill="#22D3EE"/>
+
+  <!-- fused results landing as rows inside the domain -->
+  <g>
+    <circle cx="918" cy="158" r="5.5" fill="#22D3EE"/>
+    <rect x="930" y="152" width="52" height="13" rx="3" fill="#22304A"/>
+    <circle cx="918" cy="194" r="5.5" fill="#22D3EE"/>
+    <rect x="930" y="188" width="52" height="13" rx="3" fill="#22304A"/>
+    <circle cx="918" cy="230" r="5.5" fill="#22D3EE"/>
+    <rect x="930" y="224" width="52" height="13" rx="3" fill="#22304A"/>
+  </g>
+
+  <!-- abstain card outside the domain boundary -->
+  <rect x="700" y="288" width="420" height="42" rx="9" fill="#17110A" stroke="#F59E0B" stroke-width="2"/>
+  <text x="910" y="315" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+        font-size="16" fill="#F59E0B" text-anchor="middle">abstain: no results within allowed domain(s)</text>
+</svg>
