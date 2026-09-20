@@ -1197,3 +1197,23 @@ preview 期上游依赖族的防漂移钉法=pnpm.overrides 逐名枚举全族�
 
 ## Sequential Stack Landing（顺序栈合流）
 多栈合流 main 的顺序按因果序而非便利序：修复层（r71-audit→ADR-0072 域）先于功能栈（r72-grill+r72-audit→ADR-0073 域）；沿用直落 main 线性史先例（无 merge commit）+push 换 CI 绿 run URL 回填审计 handoff 必填 PENDING 项。_Avoid_: 栈长期悬不合（门面与 main 事实漂移复利）；合后不取 run URL 实证（handoff 必填字段裸奔）；逆因果序落地（0073 先于 0072 修复层进 main）。来源：R73 D-004/D-007。
+
+## Grill Round 74 — Terms (ADR-0075)
+
+## Surgical Polish Scope（surgical 打磨范围）
+README 打磨的合法改动面=保留信息架构与证据脊柱、只替换弱或缺席的呈现（视觉层/输出证明块/表格密度）——推倒重写失去已验证的诚实文案资产，装饰化不解决内容债。_Avoid_: 把「打磨」执行成全文重写；为加视觉而牺牲已验证文案。来源：R74 D-001。
+
+## Project-Native Motif（项目原生母题）
+视觉资产的母题必须从产品真实差异化派生（本项目=域门：urlAllowlist 内核闸门+abstain-first），图元映射真实系统模块——「移除项目名后 hero 可复用于无关项目」即失败判据。_Avoid_: 通用模板（黄网格/渐变球/抽象悬浮块）；测试报告当产品故事（探针矩阵是第二屏验证证据非首屏母题）。来源：beautify-github-readme+R74 D-003。
+
+## Proof Block（真实输出证明块）
+「show don't tell」的落点=真实命令输出的实物摘录（ans search/abstain transcript）放在 status 之后、抽象声明之前——读序上证据先于承诺。_Avoid_: 输出块写成假想样例（证据阶梯禁编造）；把 proof 埋在长解释之后。来源：readme-crafter 证据阶梯+R74 D-003。
+
+## Visual Anatomy Discipline（视觉解剖纪律）
+logo/mark 的概念阶段硬门：每个图元必须标注映射的系统模块（执行端/焦点端/层级端/闭环端）+16px 缩略可辨论证，文字概念提案经用户选定后才手写——无映射的装饰图形禁止过审。_Avoid_: 先生成再倒推概念；AI 糖精反模式（紫蓝渐变/塑料圆角/无意义碎块）。来源：repo-logo Phase3+R74 D-002。
+
+## Evidence-Migration Precondition（证据迁移前置）
+表格/文档瘦身的前置=被移除证据必须先有新居所落盘（本轮=docs/antigravity-integration.md 先于表格瘦身提交）——瘦身提交本身不得携带证据净丢失。_Avoid_: 先瘦身后补文档（中间态=证据悬空）；把 evidence 细节直接删弃（verdict 瘦身≠证据销毁）。来源：R74 D-004。
+
+## Lockstep Edit（双语锁步编辑）
+canonical/translation 对下的合法编辑形态=EN 与 zh-CN 同票同 commit 同步改动，parity 四腿（heading skeleton 1:1/code block 逐字/link multiset/limitations 指针）为判官——双语分票会让腿在两票间持久红。_Avoid_: EN 先行 zh 后补的跨票漂移；新增小节只进单语。来源：ship-gate 1h 实读+R74 D-005。
