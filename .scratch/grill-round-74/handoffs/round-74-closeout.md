@@ -1,7 +1,8 @@
 # Round-74 → next-round 交接
 
 Stack (primary key = GitButler change-ids; SHAs are time-lagged):
-`r74-grill` → `zwu` (9690c9cd @ 2026-09-20) → `plo` (7d78bb19) → `ort` (f1b95acc) → `szz` (d4a67e02) → `xst` (45fac87f) → `tyu` (ADR-0075+deferred-registry+CHANGELOG) → `qks`（index regen+report+本交接）
+`r74-grill` → `zwu` (9690c9cd @ 2026-09-20) → `plo` (7d78bb19) → `ort` (f1b95acc) → `szz` (d4a67e02) → `xst` (45fac87f) → `tyu` (ADR-0075+deferred-registry+CHANGELOG) → `qks`（index regen+report+本交接） → `slx`（审计返工 F1-F10，详见报告"审计返工记录"节）
+并行栈 `r74-audit` → `krv`（审计报告+返工交接）→ `pws`（audit.md pathlint marker）
 
 主题：README 打磨单轮——从零视觉资产态升级为「域门 hero + 真实输出 proof 块 + 可扫读证据脊」landing page（surgical 范围，诚实文案脊柱未动）。
 
