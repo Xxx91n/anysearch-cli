@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updated": "2026-09-19",
+ "updated": "2026-09-20",
  "note": "Machine-checkable registry of deferred work items and carried-over acceptance criteria. Discipline is isomorphic to .ship-gate/skip-ledger.json (schema @3) and the ADR-0020 conformance expected-failures ledger: every deferral is an explicit, traceable record, never a silent drop. ADR-0057 D5 / D-006 requires one entry per carried-over acceptance criterion, marked closed-by the ADR that closes it. Old ADR bodies are never edited; the pointer line lives in the old ADR and the record lives here (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). Additive only: new entries are appended, existing ids are never reused or renumbered.",
  "entries": [
   {
@@ -149,6 +149,19 @@
    "status": "open",
    "evidence": "R73 T2 预演实证：catalog→0.1.6-alpha.2 全族齐装后 tsc 单点 RED（src/index.ts:87 TS2345 session-start 移出 Events）。迁移蓝图+触发器（0.1.6-rc.1/功能缺口/弃用窗口）+source-guard 伪码见 .scratch/grill-round-73/upgrade-ledger.md；采纳时 override 枚举须按新锁文件重推导（alpha.2 家族已扩至 17 包）。",
    "monitoring_channel": "upstream @deepseek-ai/dsh-* release watch + upgrade rehearsal post-mortem"
+  },
+  {
+   "id": "defer-r74-logo-bitmap-matrix",
+   "type": "deferred-with-deadline",
+   "title": "logo 位图衍生矩阵（favicon/social-preview 等 PNG/WebP 导出）——repo-logo Phase4 位图管线依赖的 imagegen 工具本会话不存在，R74 仅交付纯 SVG mark",
+   "source_adr": "docs/adr/0075-architecture-grill-round-74-readme-visual-layer-antigravity-integration.md",
+   "owner": "anysearch-platform",
+   "opened_at": "2026-09-20",
+   "deadline": "2027-03-31",
+   "review_cadence": "quarterly",
+   "status": "open",
+   "evidence": "R74 D-002：位图矩阵阶段因 imagegen 不可用整体延期；纯 SVG mark 已落地 assets/readme/logo.svg（深色芯片底、深浅主题双安全、16px 可辨，核验见 .scratch/grill-round-74/evidence/t1-render-verification.md）。采纳时以 logo.svg 为源件导出 PNG/WebP 衍生。",
+   "monitoring_channel": "manual"
   }
  ]
 }

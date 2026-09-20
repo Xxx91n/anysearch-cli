@@ -4,6 +4,24 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0075 r74: README 视觉层 + Antigravity 集成专文（docs-only round）
+
+### Added
+
+- `assets/readme/logo.svg` — 项目原生「域门」纯 SVG mark（256² 深色芯片底=深浅主题双安全；图元映射真实模块：三 provider 射线扇入 / pre+post 双竖闸 / TOML 域界框 / 融合落格点 / abstain 截停×；16px 可辨）。概念闸：3 案文字提案（视觉解剖+图元-模块对照表）经用户选定概念 1。
+- `assets/readme/hero.svg` — `1200`-unit viewBox 域门首屏：左=字标+一句话价值+install 元数据+logo mark，右=扇出→`urlAllowlist` 闸门→门内落格行+门外 abstain 卡。自含（无 foreignObject/脚本/远程资源/被剥离 CSS）；Playwright 渲染核验 900px/360px/深浅底/16px 全过。
+- README/README.zh-CN `## How it works` 双语新节——Mermaid 管线图（`ans`/`ans-mcp` → fanout → tavily/exa/anysearch → domain gate pre+post `urlAllowlist` → RRF fusion + attribution → FTS5 memory + observation store；kept/dropped/zero-kept→abstain 三分支），置于 Verified agent hosts 前。
+- README/README.zh-CN 真实输出 proof 块（status 段后）——`ANS_DOMAIN=docs ans search "model context protocol"` 亲跑摘录（返回 URL 全在 allowlist 内）+ canonical abstain 行，证据先于承诺；双语逐字同（parity 腿 ii）。
+- `docs/antigravity-integration.md` —— agy 双宿主专文（CLI 1.2.5 + IDE 2.12.2）：named-hook map 契约 / camelCase stdin / 严格 protojson（`{}`=DENY、空=allow）/ argv 传事件 / 五事件无 SessionStart / `call_mcp_tool` 伞 / pending 暂存→injectSteps 注入 / IDE 不执行 hooks 的 `.mdc` 兜底 / 隔离 HOME 探针法。承接 verified-hosts 表 agy 证据迁移（先于瘦身提交）。
+
+### Changed
+
+- README/README.zh-CN `Verified agent hosts` 表瘦身——5 列段落级长文压为 4 列可扫读（Host / Version / Verified scope / Status=verdict 短语+专文指针）；Date 列与探针细节迁入各宿主专文，证据零净丢失；表下指针段补 `docs/antigravity-integration.md`。
+
+### Deferred
+
+- `defer-r74-logo-bitmap-matrix` —— logo 位图衍生矩阵（PNG/WebP 导出）延期：repo-logo 位图管线依赖的 imagegen 工具不存在；本轮纯 SVG mark 落地，采纳时以 `assets/readme/logo.svg` 为源件。
+
 ## 0.0.7 — 2026-09-19 — ADR-0073/0074 r72+r73: DeepSeek Harness 宿主适配（两阶段 C：Phase-1 MCP 桥 + Phase-2 薄 bundle）+ 上游依赖族钉版
 
 ### Added
