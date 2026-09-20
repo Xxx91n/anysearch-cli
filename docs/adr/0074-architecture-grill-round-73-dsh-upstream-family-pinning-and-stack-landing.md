@@ -121,3 +121,42 @@ state and both audit handoffs carrying a PENDING "绿色 run URL" field.
   selectors); CI runner flakes observed this round (windows
   install-smoke hang → cancel+rerun; pnpm/setup ECONNRESET → rerun)
   are infrastructure noise, not gate defects.
+
+## Closure evidence
+
+D-007 four-segment backfill (full reconciliation table:
+`.scratch/grill-round-73/reports/2026-09-19-report.md`):
+
+- **(i) Stack landing**: causal order r71-audit→`3028a4a9`,
+  r72-grill→`409723a7`, r72-audit→`5f16c8e3`, r73-grill→`dff7539b`
+  (linear history, zero merge commits). Between-lands gate logs:
+  `.scratch/grill-round-73/evidence/t0-gate-*.log` (60 pass each) +
+  `t0-test-before-r73-land.log` (13/13). Green runs — r71:
+  `35448195039/35448195038/35448195040`; r72:
+  `35449008756/35449008684/35449008674`; r73-grill:
+  `35451319160/35451319130/35451319161`. Audit-handoff PENDING
+  backfilled in `9d4259a4`. Landing transcript:
+  `evidence/t0-merge-transcript.md`; cleanup candidates listed only
+  (`origin/r71-grill` proven merged via merge-base).
+- **(ii) F7 disposal**: pin diff `1137ce67` (catalog single point +
+  16-name override enumeration + unlock-condition comment + same-commit
+  lockfile regen). Frozen install green; forced cold regen → zero
+  `0.1.6` in lockfile, whole family converged on `0.1.5-rc.2`/`4.0.2`
+  (`evidence/t1-pinning.md`). alpha.2 rehearsal transcript
+  `evidence/t2-alpha2-rehearsal.log` (17 packages uniform → single
+  expected RED → repin green). Upgrade ledger `upgrade-ledger.md`
+  (rename map / source-guard / payload diff / expected-RED list /
+  staleness clause / three triggers).
+- **(iii) Release**: tag `v0.0.7`→`dbe52e7c`; post-tag run
+  `35453100400` success (pre-tag `35452475915` externally cancelled in
+  the wait section — ledger commit and green checks already complete);
+  `npm view` = `0.0.7` for all four publishable packages
+  (embedding/cli/mcp/plugin, OIDC provenance); CHANGELOG `0.0.7`
+  section; 9 manifests + ship-gate pin in one commit `2ff74bb8`;
+  dsh-plugin stays private.
+- **(iv) Documentation closeout**: this ADR + index regen (74 ADRs);
+  CONTEXT.md six R73 term blocks (:1183-1199); deferred-registry
+  `defer-r73-dsh-event-rename` appended (11 entries);
+  found/fixed/deferred closed in the round report; pathlint covers
+  round-73 via the existing `.scratch/**/*.md` glob; working tree
+  clean.

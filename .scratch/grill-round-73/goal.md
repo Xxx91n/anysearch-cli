@@ -1,6 +1,6 @@
 # Round 73 Goal — 上游跟进与栈合流治理（定稿）
 
-**Status**: finalized @ 2026-09-19 — grill 收口，等 T0 开工令。
+**Status**: implemented @ 2026-09-19 — T0~T4 全落地（main tip `b16de7a3`，v0.0.7 已发布），审计 PASS 附次级发现（F1-F5 已修）。
 **Ledger**: `.scratch/grill-round-73/decision-ledger.md`（D-001~D-007 全 current，唯一数据源）。
 
 ## 一句话目标

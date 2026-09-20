@@ -20,10 +20,13 @@ All notable changes to this project are recorded here. Format follows
 - R71 审计修复包（F1-F6）：`tryImport` 逐候选 guard（resolve-ok+import-fail 归 absent 不抛、不污染 modPromise）、doctor pnpm 行、config marker 接线、globOk fail-closed、cosmetic 组——同套验收全绿后随本版上架。
 - 升级 diff 预演的 alpha 兼容警报定档：上游 0.1.6 将 `agent/session-start` 移出 Events（改名 `agent/created`，载荷增 `source`/`signal`）——本轮钉版不迁移，迁移账本见 `.scratch/grill-round-73/upgrade-ledger.md`。
 
-
 ### Changed
 
 - `pnpm-workspace.yaml` —— dsh 上游依赖族钉版（ADR-0074）：新增 `catalog:` 单点块（15 个 `@deepseek-ai/dsh-*`=0.1.5-rc.2 + `@deepseek-ai/cordis`=4.0.2），`overrides:` 逐名枚举→`catalog:` 全树收敛；`apps/dsh-plugin` 5 个 deepseek devDeps 改 `catalog:` 引用（`dependencies:{}`/`private:true` 不动）。修复 R72 审计 F7——caret range 放任传递依赖漂 0.1.6-alpha 混版树。
+
+### Deferred
+
+- `defer-r73-dsh-event-rename` —— dsh 0.1.6 事件改名迁移（`agent/session-start`→`agent/created`，payload 增 `source`/`signal`；durable 路由卡仅 `source=fresh` 注入）。采纳触发器与迁移蓝图见 `.scratch/grill-round-73/upgrade-ledger.md`。
 
 ## 0.0.6 — 2026-09-19 — ADR-0072 r71: 上架首航——路径治理门禁 + embedding 双臂可达 + 首个双层门真发布
 

@@ -41,7 +41,7 @@ overrides:
 # 把全树（直接+传递）强制收敛到 catalog 值。直接依赖在 apps/dsh-plugin 用 catalog: 引用。
 # 锁 15 个 @deepseek-ai/dsh-*=0.1.5-rc.2 + cordis=4.0.2（Events declaration-merging 宿主面）。
 # 解锁条件：上游发布 0.1.6 稳定/rc 线且 changelog 经审阅、或功能桥接缺口/废弃窗口要求时，
-# 删除下方 overrides 枚举并恢复 range；每次升级先跑升级演练（.scratch/grill-round-73/upgrade-ledger.md）。
+# 删除上方 overrides 枚举并恢复 range；每次升级先跑升级演练（.scratch/grill-round-73/upgrade-ledger.md）。
 catalog:
   '@deepseek-ai/cordis': 4.0.2
   '@deepseek-ai/dsh-agent': 0.1.5-rc.2

@@ -82,4 +82,4 @@ Stack：本任务书落 `r73-grill` 分支（GitButler）；实施栈 `r73` 自�
 
 ## Deferred 承接清单（下一轮可见，不改名）
 
-`defer-r72-dsh-web-interactive-matrix` · `defer-r72-dsh-plugin-npm-publish` · `defer-r72-dsh-native-tools` · `defer-r71-shipgate-1g-coverage` · macos-spillover-probe 红因 · transformers 上游 · `defer-r71-provider-serverside` · **新增**：`defer-r73-dsh-016-adoption`（0.1.6 迁移采纳——触发器见升级账本）。
+`defer-r72-dsh-web-interactive-matrix` · `defer-r72-dsh-plugin-npm-publish` · `defer-r72-dsh-native-tools` · `defer-r71-shipgate-1g-coverage` · macos-spillover-probe 红因 · transformers 上游 · `defer-r71-provider-serverside` · **新增**：`defer-r73-dsh-event-rename`（0.1.6 迁移采纳——触发器见升级账本；落账定名，原拟名 `defer-r73-dsh-016-adoption`）。
