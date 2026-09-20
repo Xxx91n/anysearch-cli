@@ -2,7 +2,7 @@
 
 Stack (primary key = GitButler change-ids; SHAs are time-lagged):
 `r74-grill` → `zwu`(9690c9cd)→`plo`(7d78bb19)→`ort`(f1b95acc)→`szz`(d4a67e02)→`xst`(45fac87f)→`tyu`(b842bc96)→`qks`(c8d32940)→`slx`(80d02c16 返工)→`oyl`(ceb9ab2e 回填)→`smt`(b26172a9 pathlint)
-并行栈 `r74-audit` → `krv`(5024f809 首轮审计)→`pws`(55273ab1 marker)→本轮复审件（报告+本交接）
+并行栈 `r74-audit` → `krv`(5024f809 首轮审计)→`pws`(55273ab1 marker)→`suk`(d2732109 复审报告+本交接)
 
 ## 审计裁决链
 
