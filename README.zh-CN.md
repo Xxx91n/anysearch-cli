@@ -1,5 +1,9 @@
 # anysearch-cli
 
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%" alt="anysearch-cli —— 面向 agent 的搜索、调研与记忆，由一道守得住的域名 allowlist 把关">
+</p>
+
 [English](README.md) | **简体中文**
 
 > 本文档为翻译件，规范以 [README.md](README.md) 为准。
@@ -15,6 +19,23 @@ agent——FTS5 召回、多路 RRF 融合、自动索引结果的 MCP server，
 **状态：已发布 npm** — `npm i -g @anysearch-cli/cli`（自 0.0.4 起经 npm
 OIDC trusted publishing 发布，含 sigstore provenance；0.0.1/0.0.2 因
 `workspace:*` peer 逃逸作废——见 CHANGELOG）。
+
+域门限定搜索的真实输出——返回的每个 URL 都在该域 `urlAllowlist` 内；
+闸门后为空则是一等公民弃权：
+
+```text
+$ ANS_DOMAIN=docs ans search "model context protocol"
+1. [tavily] What is the Model Context Protocol (MCP)? - Model Context Protocol
+   modelcontextprotocol.io/
+2. [exa]
+   modelcontextprotocol.io/specification/2026-07-28/basic
+3. [exa]
+   modelcontextprotocol.io/specification/2026%2D07%2D28
+   …
+
+# when the gate leaves zero results — a first-class abstain, not an error:
+abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered 0, gate pre)
+```
 
 ## 环境要求
 
@@ -122,22 +143,37 @@ node apps/mcp/dist/index.cjs --transport http --port 3099   # HTTP
 `ans_chat`。`ANS_DOMAIN` 以与 CLI 相同的方式限定 server 范围。
 工具绝不向 stdout 输出；server 保持协议通道纯净。
 
+## 工作原理
+
+一次检索的管线——providers 扇出、域门过滤、结果融合并落库：
+
+```mermaid
+flowchart LR
+    U["ans CLI · ans-mcp"] --> Q["fanout"]
+    Q --> T["tavily"]
+    Q --> E["exa"]
+    Q --> A["anysearch"]
+    T & E & A --> G{"domain gate<br/>pre + post urlAllowlist"}
+    G -->|"kept"| F["RRF fusion + attribution"]
+    G -->|"dropped"| X["off-list URLs"]
+    G -->|"zero kept"| Z["abstain — first-class"]
+    F --> S[("store<br/>FTS5 memory + observation")]
+```
+
 ## 已验证 Agent 宿主
 
-| 宿主 | 版本 | 日期 | 范围 | 状态 |
-|------|---------|------|-------|--------|
-| CodeBuddy Code | 2.151.0 | 2026-09-16 | `mcp.json` 注册（`ans-mcp`，5 工具）· `.codebuddy/settings.json` hooks（`hook_event_name` 契约，`hookSpecificOutput` 信封）· `ans-plugin-server` bin | 实机验证：headless P1–P9 探针矩阵全绿（search/recall/ans_chat/research + 3 事件 hooks + fail-open + 有/无工具对照） |
-| Claude Code | 2.1.251 | 2026-09-17 | `mcp.json` 注册（`ans-mcp`，5 工具）· `.claude/settings.json` hooks（官方 schema，`ans-hook-*` bins，`hookSpecificOutput` 信封）· `ans-plugin-server` bin · plugin 骨架（`.claude-plugin/` + `hooks/` + `.mcp.json`；实验性——`CLAUDE_PLUGIN_ROOT` 在 Windows 展开失灵，upstream #16116） | 实机验证（settings 路径）：MCP 连接 + 5 工具 + 真发 `search_web`，SessionStart routing-card 经信封注入，Pre/PostToolUse hook 执行标记实证，deny/envelope 契约哨兵实证，fail-open，`claude plugin validate` 通过 |
-| Codex CLI | 0.142.5 | 2026-09-17 | `config.toml` `[mcp_servers.anysearch]`（`ans-mcp`，5 工具）· hooks 经 `.codex/hooks.json`（项目）或 `[[hooks.*]]` config.toml 段——官方 `{matcher, hooks:[{type,command,timeout}]}` schema，`ans-hook-codex` / `ans-hook-session-start --envelope` bins | 实机验证：SessionStart routing-card 信封送达，PostToolUse → `/index` 累积真实结果，URL-policy deny 端到端阻断，fail-open 保持；PostToolUse ctx 注入为同轮可变 |
-| Antigravity CLI（`agy`） | 1.2.5 | 2026-09-17 | hooks 经 `~/.gemini/antigravity-cli/hooks.json` 或 `~/.gemini/config/hooks.json`——named-hook map `{ "<name>": { "<Event>": [{matcher, hooks:[{type:"command",command,timeout}]}] } }`，事件经 argv 传入（`ans-hook-antigravity <Event>` bin） | 实机验证（裁剪矩阵）：headless `agy -p` 五事件全触发；严格 protojson 契约哨兵实证（PreToolUse `{}` = DENY、空 = allow、`{decision,reason}` 放行/阻断、`permissionOverrides`）；`injectSteps[].ephemeralMessage` 抵达 transcript（routing-card 端到端注入）；PostToolUse stdin 无工具输出——distill 暂存 pending → 下一 invocation flush；证据 `.scratch/grill-round-68/evidence/t3-*` + SEP-2484 ledger |
-| Antigravity IDE | 2.12.2 | 2026-09-17 | `.antigravity/rules/anysearch.mdc`（rules 兜底，首次 hook 调用时写入） | IDE 宿主不执行 hooks（已复现）；.mdc rules 兜底是受支持的面——不要把 `configs/antigravity/hooks.json` 接进 IDE 设置 |
-| DeepSeek Harness（`dsh`） | 0.1.5-rc.2 | 2026-09-19 | Phase 1：用户 patch `- insert:` 行 `@deepseek-ai/dsh-mcp-client`（`serverName: anysearch`，stdio `ans-mcp`，5 工具 `mcp__anysearch__*`）· Phase 2：`@anysearch-cli/dsh-plugin` Cordis bundle（`dsh plugin add`，只做薄 hooks——`agent/session-start` routing-card 注入、`tools/pre-execute` URL 策略 deny/ask + recall 预热、`tools/post-execute` 蒸馏上下文、`tools/result` `/index` IPC，全走 127.0.0.1:33333 fail-open） | 实机验证（headless + web profile 组合体）：`dsh --profile headless` 一次性 turn 全绿——bundle patch 插入插件+桥两行（`--dump-config` 层核对），tarball 安装+移除+重装幂等，URL deny 端到端（`requires approval` 工具错误），蒸馏+`/index` 走真 IPC 带 session 传播，server 挂 fail-open（URL 调用按契约 fail-closed），同 id 重复 insert 冲突已记档；web 组合体已起（`:3080` 服务中）驱动 turn——inject+preheat 标记上线路；交互式 web UI 未测 |
+| 宿主 | 版本 | 已验证范围 | 状态 |
+|------|---------|----------------|--------|
+| CodeBuddy Code | 2.151.0 | `mcp.json` 注册 + `.codebuddy/settings.json` hooks | 实机验证 · [专文](docs/codebuddy-integration.md) |
+| Claude Code | 2.1.251 | `mcp.json` 注册 + `.claude/settings.json` hooks + plugin 骨架 | 实机验证 · [专文](docs/claude-integration.md) |
+| Codex CLI | 0.142.5 | `config.toml` MCP 注册 + `.codex/hooks.json` hooks | 实机验证 · [专文](docs/codex-integration.md) |
+| Antigravity CLI（`agy`） | 1.2.5 | named-hook map `hooks.json`（5 事件经 argv 传入） | 实机验证（裁剪矩阵） · [专文](docs/antigravity-integration.md) |
+| Antigravity IDE | 2.12.2 | `.antigravity/rules/anysearch.mdc` 兜底 | IDE 宿主不执行 hooks（已复现） · [专文](docs/antigravity-integration.md) |
+| DeepSeek Harness（`dsh`） | 0.1.5-rc.2 | MCP 桥 patch + `dsh-plugin` Cordis bundle | 实机验证（headless + web profile） · [专文](docs/deepseek-harness-integration.md) |
 
 "已验证"指在真实宿主上捕获端到端 transcript（`stream-json`），而非契约
-同构。接线方式见 `docs/codebuddy-integration.md` /
-`docs/claude-integration.md` / `docs/codex-integration.md` /
-`docs/deepseek-harness-integration.md`；证据集见 ADR-0066 / ADR-0067 /
-ADR-0068 / ADR-0069 / ADR-0073。
+同构——完整范围、日期与探针证据见各专文链接；证据集见 ADR-0066 /
+ADR-0067 / ADR-0068 / ADR-0069 / ADR-0073。
 
 ## 已知限制
 
