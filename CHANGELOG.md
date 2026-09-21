@@ -4,6 +4,23 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0076 r75: transformers ghost-dep 判定性清算（无发布态代码增量，不 bump）
+
+### Added
+
+- `packages/embedding/test/transformers-ghost-dep.test.ts` — 静态护栏双件（ADR-0076 D3）：(a) `src/` 全树禁裸引 `@huggingface/transformers`（import/from/export-from/import() 全禁，唯一合法入口 = `createRequire().require()`；注释与 `typeof import(…)` 类型查询豁免）；(b) 版本配对断言——自声明 `optionalDependencies.onnxruntime-common` ≡ effective `onnxruntime-node` 内嵌版本（当前 1.21.0 ≡ 1.21.0），双反例均自证红（`.scratch/grill-round-75/evidence/t2-guardrails-selfproof.log`）。
+- `.scratch/grill-round-75/drafts/` — 上游申报文稿（用户审阅闸，Agent 不代发）：`pr-1764-comment.md`（4.3.0 pnpm 隔离 scope 运行时复现 + published 消费者裸奔 + 下游 ≥4 项目造轮子清单）+ `issue-1087-comment.md`（检索者指路短评）。
+- `.scratch/grill-round-75/evidence/` — T0 运行时实证 transcript：4.3.0 在 `hoist:false` 下 `Cannot find module 'onnxruntime-common'`@`transformers.node.cjs:13520`；3.8.1 无 patch 同红、带 patch 绿；默认 virtual-store hoist 掩盖面注记。
+
+### Changed
+
+- `docs/deferred-registry.json` — `defer-r71-transformers-undeclared-dep` 证据刷新（4.3.0 解剖 + 运行时复现 + 配对纪律 + watch 改 >4.3.0 + #1764 链接），status 续 open（#1764 未 merge 条件未达成）。
+- `scripts/ship-gate-pathlint.config.json` — `scratchDocDirs` 登记 `drafts`（新文档类型落地唯一入口）。
+
+### Deferred
+
+- `defer-r75-registerhooks-esm-arm`（新条目）— ESM 臂 registerHooks 具名重返票，三重返触发器：(a) src 出现 ESM import 加载路径（护栏断言红）；(b) #1764 merge 且发布版携带声明（patch 整体退役）；(c) Node 地板 ≥22.15 且出现真实 ESM 消费者（按 GitNexus#2069 姿势 fail-open+动态配对）。落选债原名续 deferred：shipgate-1g / provider-000 / dsh 三件套 / bitmap / f16 / f17 / domain-ownership。
+
 ## Unreleased — ADR-0075 r74: README 视觉层 + Antigravity 集成专文（docs-only round）
 
 ### Added
