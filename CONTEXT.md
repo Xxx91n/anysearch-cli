@@ -1217,3 +1217,20 @@ logo/mark 的概念阶段硬门：每个图元必须标注映射的系统模块�
 
 ## Lockstep Edit（双语锁步编辑）
 canonical/translation 对下的合法编辑形态=EN 与 zh-CN 同票同 commit 同步改动，parity 四腿（heading skeleton 1:1/code block 逐字/link multiset/limitations 指针）为判官——双语分票会让腿在两票间持久红。_Avoid_: EN 先行 zh 后补的跨票漂移；新增小节只进单语。来源：ship-gate 1h 实读+R74 D-005。
+
+## Grill Round 75 — Terms (ADR-0076)
+
+## Half-Fired Trigger（半响触发器）
+上游部分修复了问题面（声明了壳依赖 onnxruntime-node）但真正被顶层 require 的 specifier（onnxruntime-common）仍裸奔时，删除条件判定=未达成——「上游动了」≠「条件响了」，判定必须落到目标 specifier 的 manifest 声明上。_Avoid_: 把大版本发布当条件达成信号而不解剖目标文件；看到 deps 列表出现 onnxruntime-* 字样即推断修复（声明错位：声明了 A，裸奔的是 B）。来源：R75 4.3.0 tarball 解剖+atomcode Q2。
+
+## Travelling Guardrail（随行护栏）
+对已发布 npm 包消费者的修复机制里，只有打进 tarball 的（运行时 patch）才随包旅行到消费者侧——packageExtensions/patchedDependencies 都是消费侧 workspace 配置不旅行，fork 是末路。选型第一问=「该机制是否随发布包旅行」。_Avoid_: 用 workspace 级机制冒充消费者保护（你自己仓库绿≠消费者绿）；为「更干净」换不旅行的机制。来源：atomcode R75-Q2+R75 D-002。
+
+## Static Invariant Guard（静态不变量护栏）
+对零可达面的风险路径，正解=静态断言守住产生该风险的不变量（如「transformers 只经 createRequire 加载」→禁裸引断言），而非给不可达路径写运行时防御码——运行时 shim 只配给「真实可达且无法静态约束」的缺陷（上游 dist 黑盒属之，自己 src 白盒不属）。_Avoid_: 为零可达面引入 experimental API（registerHooks Stability 1.1+link-time 税+自有 loader 下失效）；静态护栏写成注释而非被行使的断言。来源：atomcode R75-Q3+R75 D-003。
+
+## Version-Pairing Contract（版本配对契约）
+ghost-dep 自声明副本的版本必须 ≡ effective 宿主包内嵌依赖版本（onnxruntime-common 钉版须对齐 onnxruntime-node 实际加载版本）——错位=Tensor 类双实例/行为漂移；手工同步的隐式契约须升级为配对断言单测变成 CI 事实。_Avoid_: 升宿主包忘刷配对版（最易忘的恰是这条）；把钉版当永久事实写死不复验。来源：atomcode R75-Q2/Q3+R75 D-002/D-003。
+
+## Advocate In-Flight Fix（在飞修复倡导）
+上游修复已被维护者亲手写进 OPEN PR 时，最高杠杆贡献=在该 PR 落证据评论推合并优先级（附本端复现+下游轮子成本清单），非重交重复 PR/新开 issue——重复提交是噪声不是助力。_Avoid_: 不看既有 PR 状态就自交一行修（本项目实证：#1764 已含同款 hunk）；在 closed issue 单评论当主申报（能见度低）。来源：R75 Q4 上游战场 gh 实证+R75 D-004。

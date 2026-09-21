@@ -1,0 +1,7 @@
+背景：已发布 npm 包 @anysearch-cli/embedding（type:module）用 transformers.js@3.8.1 做本地嵌入。上游 ghost-dep：transformers.node.cjs 顶层 require("onnxruntime-common") 未声明，pnpm 严格隔离下 load-time 崩。我们的修法=optionalDependencies 自声明 onnxruntime-common@1.21.0 + scoped Module._resolveFilename patch（仅该 specifier、仅 @huggingface/transformers 父包、仅 miss 时生效，fail-open）。关键设计：包内唯一加载点刻意走 createRequire().require("@huggingface/transformers")（CJS 道），因为 patch 只能拦 CJS require。
+
+新发现缺口：transformers.node.mjs（ESM 入口）同样裸 import "onnxruntime-common"——若任何代码路径以 ESM import 加载 transformers（未来顺手重构/外部消费者绕过我们包直接 import 内部 dep/ESM-only 运行时），Node ESM resolver 不查 _resolveFilename→pnpm 下崩。今天事实上零调用面可达此路径（唯一加载点=createRequire）。Node 承诺面 >=22；module.registerHooks 需 >=22.15——地板内 22.0~22.14 无声缺防。
+
+候选姿势：A=现在就加 module.registerHooks ESM 臂（Node>=22.15 条件启用、fail-open、从 effective onnxruntime-node 目录动态 resolve 配对版本——GitNexus#2069 有参考实现）堵残余洞；B=显式 deferred+轻量源码护栏（ship-gate/单测断言 embedding src 禁止裸 import/from @huggingface/transformers，守住「唯一入口=createRequire」不变量）+缺口与重返触发器记文档；C=仅文档记录不立项。
+
+问题：对「不变量形态」的加载路径防护，工业界成熟心智模型是什么？给当前零可达面的路径写防御码 vs 用源码级静态断言守住不变量（lint/grep-guard/test）各自的适用边界与先例？module.registerHooks（Node>=22.15 的 ESM 解析钩子）的成熟度、与 _resolveFilename patch 叠加的语义、与 tsx/jest/vitest 等 loader 生态的兼容性如何？支持面含 <22.15 时「条件启用的防御」是否比没有更糟（静默无防护 vs 显式不设防的语义差别）？以及版本配对纪律：patch 的自声明副本应与 effective onnxruntime-node 内嵌版本动态配对（防 Tensor 双实例）还是固定钉版？给推荐姿势与理由。

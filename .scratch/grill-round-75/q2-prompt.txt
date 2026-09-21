@@ -1,0 +1,7 @@
+背景：我们的已发布 npm CLI 包 @anysearch-cli/embedding 用 transformers.js 本地推理做向量嵌入（Xenova/multilingual-e5-small q8, 384维, pipeline("feature-extraction", id, {dtype:"q8"}) + env.cacheDir）。transformers@3.x 的 node 入口 transformers.node.cjs 顶层 require("onnxruntime-common") 但未在 dependencies 声明——npm 扁平 hoisting 掩盖、pnpm 严格隔离 scope 下 load-time 崩溃（Cannot find module）。现行修法双件：(a) 自声明 onnxruntime-common@1.21.0 进 optionalDependencies（对齐 transformers 3.8.x 内嵌 onnxruntime-node@1.21.0）；(b) scoped Module._resolveFilename patch——仅该 specifier、仅 @huggingface/transformers 父包——把 miss 别名到我们副本。消费者装我们包时在 pnpm 下靠这个运行时 patch 才能加载。
+
+新事实（tarball 解剖实证非文档转述）：transformers@4.3.0 已发布（3.x 止于 3.8.1）。4.x 把 onnxruntime-node@1.30.0 收进直接 dependencies（onnxruntime-node 自身声明 onnxruntime-common@1.30.0），但 transformers.node.cjs 顶层仍 require("onnxruntime-common") 且 transformers 自身 manifest 仍未声明该 specifier——pnpm 孤立 scope 下同样 load-time 崩溃。同时 4.x 新增 sharp 为直接依赖且 node 入口顶层 eager require（纯文本场景白吃 libvips 原生装载）。
+
+待裁决姿势：A=判定上游删除条件未达成→patch 续存+主动向上游申报 issue/PR（scoped-patch 实证为弹药）+留 3.8.1+登记簿证据刷新，迁移剥离为独立决策；B=迁 4.x+patch 重定向（onnxruntime-common→1.30.0）+接受 sharp eager-load+npm/pnpm 双臂复验；C=A+B 双轨；D=纯证据刷新续债不申报。
+
+问题：对已发布 npm 包内的「上游未声明外部依赖」运行时 patch，当上游大版本只修了一半（壳依赖声明了、真正被顶层 require 的 specifier 仍裸奔）时，工业界成熟的心智模型与先例是什么？上游申报（issue/PR 一行修）vs 跟随大版本迁移（新 runtime+维护线 vs sharp eager-load+major churn 风险）vs 维持现状的取舍框架？scoped Module._resolveFilename 运行时 patch 的长期维护风险与替代机制（pnpm packageExtensions、pnpm patch 文件、fork）各自适用边界（尤其：补丁须随发布包保护 pnpm 消费者，packageExtensions 不随包旅行）？给推荐姿势与理由。
