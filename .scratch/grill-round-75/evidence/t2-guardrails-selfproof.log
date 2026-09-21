@@ -1,0 +1,65 @@
+# T2 self-proof — the two guards actually go red on violation
+# date: 2026-09-22 | host: win32 | runner: node --import tsx --test
+
+## Probe A — bare static import injected as packages/embedding/src/__guard_probe.ts
+#   import { pipeline } from "@huggingface/transformers";
+$ pnpm exec node --import tsx --test test/transformers-ghost-dep.test.ts
+
+AssertionError [ERR_ASSERTION]: packages\embedding\src\__guard_probe.ts: bare
+import/export … from "@huggingface/transformers" is forbidden — the only legal
+entry is createRequire().require() (ADR-0076)
+ℹ pass 0 / ℹ fail 1
+
+probe file deleted -> rerun: ✔ pass 1 fail 0
+
+
+## Probe B — package.json optionalDependencies["onnxruntime-common"] -> "0.0.0-WRONG"
+$ pnpm exec node --import tsx --test test/transformers-ghost-dep.test.ts
+
+AssertionError [ERR_ASSERTION]: version-pairing contract broken:
+optionalDependencies['onnxruntime-common']=0.0.0-WRONG but the effective
+onnxruntime-node embeds onnxruntime-common@1.21.0 — re-pin to match (ADR-0076)
+ℹ pass 0 / ℹ fail 1
+
+manifest restored to "1.21.0" -> rerun: ✔ pass 1 fail 0
+git diff packages/embedding/package.json: empty (byte-identical restore)
+
+
+## Green state (full embedding suite)
+$ pnpm -C packages/embedding test
+embedding.test: all assertions passed (stubbed, offline-hermetic)
+ghost-dep guard (a): 1 src file(s) clean — @huggingface/transformers reachable only via createRequire().require()
+ghost-dep guard (b): declared 1.21.0 ≡ effective onnxruntime-node embedded 1.21.0
+transformers-ghost-dep.test: all assertions passed
+ℹ tests 2  ℹ pass 2  ℹ fail 0
+
+## R75-audit rework (F-3/F-4/F-5/F-6) — 2026-09-22
+
+Audit probe found three escape paths, all closed and now covered by a permanent
+in-test corpus (runs every `turbo test`, not a one-off):
+- template-literal specifier: import(`…`) — quote class gained the backtick
+- subpath specifier: from "…/sub" / import("…/node") — tail accepts "/" now
+- "//" inside a same-line string masking a trailing import — documented as an
+  accepted blind spot (regex-literal ambiguity needs a real tokenizer)
+F-4 cleanup: dead statSync import removed, SPEC escaping hoisted, redundant
+export-* pattern dropped (the `from` leg covers it).
+F-5 documented: `import type` goes red deliberately (strictness > "code path"
+wording; the exempted `typeof import(…)` query is the sanctioned type channel).
+F-6 documented: .pnpm first-match nondeterminism / ≤6 walk-up bound / single
+SKIP line for three absent-causes — all recorded in test comments.
+
+$ pnpm exec node --import tsx --test test/transformers-ghost-dep.test.ts
+ghost-dep guard (a): 1 src file(s) clean — @huggingface/transformers reachable only via createRequire().require()
+ghost-dep guard (a′): 9 violation samples flagged, 5 legal forms clean
+ghost-dep guard (b): declared 1.21.0 ≡ effective onnxruntime-node embedded 1.21.0
+transformers-ghost-dep.test: all assertions passed
+ℹ pass 1  ℹ fail 0
+
+## Workspace note (empirical)
+pnpm 11 does not materialize a workspace package's optionalDependencies into its
+own node_modules in this repo: lockfile importer records @huggingface/transformers
++ onnxruntime-common, node_modules/.pnpm carries them (hoisted), but
+packages/embedding/node_modules lacks the link — resolve() from the package anchor
+fails. The guard therefore resolves the effective copy via the .pnpm store scan
+fallback (same scope the runtime patch aliases into). Fail-open arm semantics mean
+this never broke tests; the guard is the first consumer that cares.

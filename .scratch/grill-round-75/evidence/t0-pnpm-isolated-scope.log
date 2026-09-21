@@ -1,0 +1,113 @@
+# T0 transcript — pnpm isolated-scope fixture (hoist:false)
+date: 2026-09-21T17:07:22Z | host: win32 Git Bash | node v24.11.0 | pnpm 11.24.0
+fixture root: machine temp r75-fixture (not committed)
+
+===== LEG A: transformers@4.3.0, isolated scope, bare consumer =====
+--- f430/package.json:
+{"name":"f430","private":true,"version":"0.0.0","dependencies":{"@huggingface/transformers":"4.3.0"}}
+--- f430/pnpm-workspace.yaml:
+allowBuilds:
+  onnxruntime-node: set this to true or false
+  protobufjs: set this to true or false
+hoist: false
+--- virtual-store hoist entries: 0
+$ (cd f430 && node -e "require('@huggingface/transformers')")
+node:internal/modules/cjs/loader:1423
+  throw err;
+  ^
+
+Error: Cannot find module 'onnxruntime-common'
+Require stack:
+- C:\Users\Administrator\AppData\Local\Temp\r75-fixture\f430\node_modules\.pnpm\@huggingface+transformers@4.3.0_@types+node@26.6.2\node_modules\@huggingface\transformers\dist\transformers.node.cjs
+- C:\Users\Administrator\AppData\Local\Temp\r75-fixture\f430\[eval]
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1420:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1058:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1063:22)
+    at Module._load (node:internal/modules/cjs/loader:1226:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:244:24)
+    at Module.require (node:internal/modules/cjs/loader:1503:12)
+    at require (node:internal/modules/helpers:152:16)
+    at Object.<anonymous> (C:\Users\Administrator\AppData\Local\Temp\r75-fixture\f430\node_modules\.pnpm\@huggingface+transformers@4.3.0_@types+node@26.6.2\node_modules\@huggingface\transformers\dist\transformers.node.cjs:13520:33)
+    at Module._compile (node:internal/modules/cjs/loader:1760:14) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    'C:\\Users\\Administrator\\AppData\\Local\\Temp\\r75-fixture\\f430\\node_modules\\.pnpm\\@huggingface+transformers@4.3.0_@types+node@26.6.2\\node_modules\\@huggingface\\transformers\\dist\\transformers.node.cjs',
+    'C:\\Users\\Administrator\\AppData\\Local\\Temp\\r75-fixture\\f430\\[eval]'
+node-exit=1
+
+===== LEG B: transformers@3.8.1, isolated scope, NO patch, NO self-declared dep (negative control) =====
+--- f381-nopatch/package.json:
+{"name":"f381-nopatch","private":true,"version":"0.0.0","dependencies":{"@huggingface/transformers":"3.8.1"}}
+--- f381-nopatch/pnpm-workspace.yaml:
+allowBuilds:
+  onnxruntime-node: set this to true or false
+  protobufjs: set this to true or false
+  sharp: set this to true or false
+hoist: false
+--- virtual-store hoist entries: 0
+$ (cd f381-nopatch && node -e "require('@huggingface/transformers')")
+node:internal/modules/cjs/loader:1423
+  throw err;
+  ^
+
+Error: Cannot find module 'onnxruntime-common'
+Require stack:
+- C:\Users\Administrator\AppData\Local\Temp\r75-fixture\f381-nopatch\node_modules\.pnpm\@huggingface+transformers@3.8.1\node_modules\@huggingface\transformers\dist\transformers.node.cjs
+- C:\Users\Administrator\AppData\Local\Temp\r75-fixture\f381-nopatch\[eval]
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1420:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1058:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1063:22)
+    at Module._load (node:internal/modules/cjs/loader:1226:37)
+node-exit=1
+
+===== LEG C: transformers@3.8.1, isolated scope, + declared onnxruntime-common@1.21.0 + verbatim scoped patch =====
+--- f381-patched/package.json:
+{"name":"f381-patched","private":true,"version":"0.0.0","dependencies":{"@huggingface/transformers":"3.8.1","onnxruntime-common":"1.21.0"}}
+--- f381-patched/pnpm-workspace.yaml:
+allowBuilds:
+  onnxruntime-node: set this to true or false
+  protobufjs: set this to true or false
+  sharp: set this to true or false
+hoist: false
+--- virtual-store hoist entries: 0
+--- harness.cjs (verbatim CJS port of packages/embedding/src/index.ts patch):
+// Verbatim CJS port of packages/embedding/src/index.ts patchOnnxruntimeCommonResolve
+// (R71 T1 / ADR-0072): scoped Module._resolveFilename patch — only the specifier
+// "onnxruntime-common", only from @huggingface/transformers parents — aliasing the
+// miss to this package's own declared copy (fixture dep onnxruntime-common@1.21.0).
+const Module = require("node:module");
+const selfRequire = require("node:module").createRequire(__filename);
+let resolverPatched = false;
+function patchOnnxruntimeCommonResolve() {
+  if (resolverPatched) return;
+  resolverPatched = true;
+  const orig = Module._resolveFilename;
+  Module._resolveFilename = function (request, parent, ...rest) {
+    // Windows parents use backslashes — normalize before the scope check.
+    if (request === "onnxruntime-common" && typeof parent?.filename === "string" && parent.filename.replace(/\\/g, "/").includes("@huggingface/transformers")) {
+      try { return orig.call(this, request, parent, ...rest); }
+      catch { return selfRequire.resolve("onnxruntime-common"); }
+    }
+    return orig.call(this, request, parent, ...rest);
+  };
+}
+patchOnnxruntimeCommonResolve();
+const t = require("@huggingface/transformers");
+console.log("REQUIRE-SUCCEEDED | patched scope resolved onnxruntime-common ->", selfRequire.resolve("onnxruntime-common"));
+$ (cd f381-patched && node harness.cjs)
+REQUIRE-SUCCEEDED | patched scope resolved onnxruntime-common -> C:\Users\Administrator\AppData\Local\Temp\r75-fixture\f381-patched\node_modules\.pnpm\onnxruntime-common@1.21.0\node_modules\onnxruntime-common\dist\cjs\index.js
+node-exit=0
+
+===== LEG D (nuance): transformers@4.3.0, DEFAULT pnpm config (virtual-store hoist active) =====
+--- f430-defaulthoist/package.json:
+{"name":"f430-defaulthoist","private":true,"version":"0.0.0","dependencies":{"@huggingface/transformers":"4.3.0"}}
+--- no pnpm-workspace.yaml hoist override (defaults apply)
+--- virtual-store hoist entries: 30 (incl. onnxruntime-common)
+$ (cd f430-defaulthoist && node -e "require('@huggingface/transformers')")
+REQUIRE-SUCCEEDED
+node-exit=0
+
+READ: default pnpm virtual-store hoist (.pnpm/node_modules) MASKS the ghost dep —
+the break surfaces under isolated scopes (hoist:false / strict monorepos), pnpm dlx,
+and global-style installs (R71 spike arm) where no shared hoist dir is reachable.
