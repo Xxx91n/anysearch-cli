@@ -11,7 +11,8 @@
     "handoffs",
     "reports",
     "evidence",
-    "backups"
+    "backups",
+    "drafts"
   ],
   "locatorLinePatterns": [
     "^\\s*(?:[-*]\\s*)?(?:\\*\\*)?Stack\\b[\\s：:]"

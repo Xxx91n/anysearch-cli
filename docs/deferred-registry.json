@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updated": "2026-09-20",
+ "updated": "2026-09-22",
  "note": "Machine-checkable registry of deferred work items and carried-over acceptance criteria. Discipline is isomorphic to .ship-gate/skip-ledger.json (schema @3) and the ADR-0020 conformance expected-failures ledger: every deferral is an explicit, traceable record, never a silent drop. ADR-0057 D5 / D-006 requires one entry per carried-over acceptance criterion, marked closed-by the ADR that closes it. Old ADR bodies are never edited; the pointer line lives in the old ADR and the record lives here (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). Additive only: new entries are appended, existing ids are never reused or renumbered.",
  "entries": [
   {
@@ -81,9 +81,9 @@
    "deadline": "2027-03-31",
    "review_cadence": "quarterly",
    "status": "open",
-   "upstream_issue": "workaround shipped in packages/embedding@0.0.6 (scoped patch + optional dep); upstream @huggingface/transformers@3.8.1",
-   "evidence": "pnpm-arm spike 2026-09-19: require('onnxruntime-common') from transformers.node.cjs fails under pnpm isolated scopes (npm hoisting masks it). Patch is scoped to (specifier, parent-package) and is the documented suspension — deletion condition = upstream release declaring the dep.",
-   "monitoring_channel": "watch @huggingface/transformers releases >3.8.1 for a declared onnxruntime-common"
+   "upstream_issue": "https://github.com/huggingface/transformers.js/issues/1087 (CLOSED unresolved — maintainer's repo-internal publicHoistPattern does not cover published consumers); fix in flight: https://github.com/huggingface/transformers.js/pull/1764 (OPEN, maintainer-authored, contains the manifest declaration hunk)",
+   "evidence": "R75 judgement sweep 2026-09-22: deletion condition still unmet (Half-Fired Trigger — upstream declared onnxruntime-node/web, not the specifier actually required). 4.3.0 tarball dissection: dist/transformers.node.cjs top-level bare require('onnxruntime-common') at ~line 13520, manifest still undeclared. Runtime repro on pnpm isolated scope (hoist:false): 'Cannot find module onnxruntime-common' from transformers.node.cjs:13520 (transcript .scratch/grill-round-75/evidence/t0-pnpm-isolated-scope.log); 3.8.1 identical without patch, green with the shipped scoped _resolveFilename patch + self-declared copy. Nuance: pnpm default virtual-store hoist masks it; breaks under hoist:false / pnpm dlx / global-style installs; npm flat hoist masks until a version conflict (episodic-memory#105). Version-pairing discipline: self-declared onnxruntime-common must equal the effective onnxruntime-node embedded dep (currently 1.21.0 ≡ 1.21.0) — now a CI fact via packages/embedding/test/transformers-ghost-dep.test.ts (ADR-0076). Patch stays: fail-open, auto no-ops once upstream declares, and is the only mechanism that travels inside the published tarball.",
+   "monitoring_channel": "watch @huggingface/transformers releases >4.3.0 for a declared onnxruntime-common + watch PR #1764 merge; deletion condition = a released version whose manifest declares it (then verify the bare require is gone)"
   },
   {
    "id": "defer-r71-provider-serverside",
@@ -162,6 +162,19 @@
    "status": "open",
    "evidence": "R74 D-002：位图矩阵阶段因 imagegen 不可用整体延期；纯 SVG mark 已落地 assets/readme/logo.svg（深色芯片底、深浅主题双安全、16px 可辨，核验见 .scratch/grill-round-74/evidence/t1-render-verification.md）。采纳时以 logo.svg 为源件导出 PNG/WebP 衍生。",
    "monitoring_channel": "manual"
+  },
+  {
+   "id": "defer-r75-registerhooks-esm-arm",
+   "type": "deferred-with-deadline",
+   "title": "ESM arm for the transformers ghost-dep patch — module.registerHooks resolve fallback (named return ticket)",
+   "source_adr": "docs/adr/0076-architecture-grill-round-75-transformers-ghost-dep-judgement.md",
+   "owner": "anysearch-embedding",
+   "opened_at": "2026-09-22",
+   "deadline": "2027-03-31",
+   "review_cadence": "trigger-driven (three re-entry triggers below) + quarterly",
+   "status": "open",
+   "evidence": "R75 D-003 (B+): the shipped Module._resolveFilename patch only covers the CJS entry (transformers.node.cjs via createRequire().require()); a consumer reaching transformers.node.mjs through import()/import would bypass it — the ESM resolver cannot be scoped without module.registerHooks. Not adopted now: registerHooks is Stability 1.2 experimental, process-global, needs Node >=22.15 (repo floor >=22), is inert under jest/vitest loaders, and our reachable ESM surface is zero — runtime defense code for an unreachable path is negative value (Static Invariant Guard doctrine). The guard test transformers-ghost-dep.test.ts asserts the invariant instead. Re-entry triggers: (a) any src code path starts loading @huggingface/transformers via ESM import (guard goes red — by construction); (b) upstream merges #1764 and a release declares onnxruntime-common (patch + this ticket retire wholesale); (c) Node floor rises to >=22.15 AND a real ESM consumer exists — then implement registerHooks per GitNexus#2069 posture: fail-open, resolving onnxruntime-common from the effective onnxruntime-node copy (dynamic version pairing, no pin drift).",
+   "monitoring_channel": "guard test red = trigger (a); watch PR #1764 + releases >4.3.0 for trigger (b); Node floor changes for trigger (c)"
   }
  ]
 }
