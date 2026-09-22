@@ -37,7 +37,10 @@ export function isCloseoutName(name) {
   return /^round-\d+-.*closeout/i.test(name) && !/audit/i.test(name) && !/^next/i.test(name) && name.endsWith(".md");
 }
 
-const ROUND_DIR_RE = /^grill-round-(\d+)/i;
+// Whole-name match: `grill-round-7x` must NOT alias round 7 — a digit-prefix
+// read hides drift twice over (bogus dir counted as the round AND the bogus
+// dir never surfaced). Exact shape: grill-round-<digits>, nothing else.
+const ROUND_DIR_RE = /^grill-round-(\d+)$/i;
 
 // Parse Grill Round N registrations out of the generated index block.
 // Fail-loud on unknown line shapes — a parser that skips what it does not
@@ -58,8 +61,10 @@ export function parseRegisteredRounds(indexText) {
     if (!line) continue;
     // Non-tabular lines (the generator's prose preamble etc.) cannot carry a
     // registration row — skipping them keeps the parser decoupled from the
-    // render's wording (R76 audit F-5⑥). If the generator ever stops emitting
-    // table rows, rounds stays empty and the caller's empty-derivation
+    // render's wording (R76 audit F-5⑥; mutual annotation added R77 T1 — the
+    // row shape contract lives on the renderer side at
+    // scripts/gen-adr-index.mjs renderBlock). If the generator ever stops
+    // emitting table rows, rounds stays empty and the caller's empty-derivation
     // assertion goes red — the fail-loud contract is preserved.
     if (!line.startsWith("|")) continue;
     if (line === "| ADR | Title |") continue; // table header
@@ -70,10 +75,11 @@ export function parseRegisteredRounds(indexText) {
       continue;
     }
     const fileRound = (row[2].match(/grill-round-(\d+)/i) ?? [])[1];
-    // "Grill Round N —" (number followed by the title's em-dash separator) is
-    // the registration title convention; a mid-sentence mention of a round in
-    // a non-round ADR's title must NOT register it (R76 audit residual).
-    const titleRound = (row[3].match(/Grill\s*Round\s*(\d+)\s*[—–-]/i) ?? [])[1];
+    // "Grill Round N —" anchored at the START of the title cell is the
+    // registration convention; a round mention anywhere mid-title — even with
+    // the trailing dash — must NOT register (R76 audit residual: the loose
+    // unanchored regex registered on mere mentions).
+    const titleRound = (row[3].match(/^\s*Grill\s*Round\s*(\d+)\s*[—–-]/i) ?? [])[1];
     if (fileRound && titleRound && Number(fileRound) !== Number(titleRound)) {
       problems.push("ADR " + row[1] + " registers conflicting round numbers (file=round " + fileRound + ", title=round " + titleRound + ")");
       continue;

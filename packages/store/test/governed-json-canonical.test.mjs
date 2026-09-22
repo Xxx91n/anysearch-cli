@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { canonicalJsonBytes, firstDifferingLine, normalizeCommand, governedJsonViolation } from "../../../scripts/governed-json.mjs";
+import { canonicalJsonBytes, firstDifferingLine, normalizeCommand, governedJsonViolation, governedListViolation } from "../../../scripts/governed-json.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..", "..", "..");
@@ -49,6 +49,22 @@ assert(canonicalJsonBytes('{"b":1,"a":2}').toString().startsWith('{\n "b": 1,'),
 const v3 = governedJsonViolation("f.json", Buffer.from("{ not json"));
 assert(v3 !== null && v3.includes("not valid JSON"), "invalid JSON is red");
 assert(!v3.includes("normalize:"), "invalid JSON does not print the normalize pointer");
+
+// R77 backlog F-6: a UTF-8 BOM is not formatting drift — the message must name
+// the byte signature and hand a BOM-strip command, NOT the normalize pointer
+// (normalize reads the file as utf8 and JSON.parse still fails on the BOM).
+const bommed = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), canon]);
+const vb = governedJsonViolation("f.json", bommed);
+assert(vb !== null && vb.includes("BOM") && vb.includes("EF BB BF"), "BOM'd input is red and names the byte signature");
+assert(vb.includes("node -e") && vb.includes("subarray"), "BOM failure hands a paste-able strip command");
+assert(!vb.includes("normalize:"), "BOM failure does not print the normalize pointer (it cannot fix a BOM)");
+
+// R77 backlog: the governed list itself must fail closed when empty — a byte
+// lock with nothing to check reporting green is the same vacuous-pass class as
+// the banned empty scope set in closeout-coverage.
+assert(typeof governedListViolation === "function", "governedListViolation is exported");
+assert(governedListViolation([]) !== null && governedListViolation([]).includes("empty"), "empty governed list is a violation");
+assert(governedListViolation(["docs/deferred-registry.json"]) === null, "non-empty list passes");
 
 // --- the real governed file is canonical right now ---------------------------
 const real = fs.readFileSync(path.join(root, "docs", "deferred-registry.json"));

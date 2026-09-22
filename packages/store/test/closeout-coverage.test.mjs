@@ -73,6 +73,16 @@ assert(parseRegisteredRounds(mini2).problems.length === 0 && parseRegisteredRoun
 // round — the registration convention is "Grill Round N —" (dash after N).
 const mention = mini.replace("| [0001](0001-x.md) | Something |", "| [0001](0001-x.md) | Notes per Grill Round 70 decision |");
 assert(parseRegisteredRounds(mention).rounds.size === 1 && parseRegisteredRounds(mention).problems.length === 0, "mid-title round mention does not register");
+// R77 backlog (spec residual): the mention above lacked the trailing dash, so it
+// passed under the loose regex too. The exact line shape is a title that STARTS
+// with "Grill Round N —" — a mid-title occurrence WITH the dash must still not
+// register (fail-loud direction stays: a false registration is drift).
+const mentionDash = mini.replace("| [0001](0001-x.md) | Something |", "| [0001](0001-x.md) | Follow-ups to Grill Round 70 — cleanup |");
+assert(parseRegisteredRounds(mentionDash).rounds.size === 1 && parseRegisteredRounds(mentionDash).problems.length === 0, "mid-title 'Grill Round N —' mention does not register (title must start with the convention)");
+// leading whitespace in the title cell is tolerated; the convention itself must
+// still lead the title text.
+const padded = mini.replace("| Grill Round 76 — Y |", "|  Grill Round 76 — Y |");
+assert(parseRegisteredRounds(padded).rounds.has(76), "leading-whitespace title still registers round 76");
 
 // --- assessCloseoutCoverage fixtures -------------------------------------------
 const D = (n, hasCloseout) => ({ name: "grill-round-" + n, n, hasCloseout, closeouts: hasCloseout ? ["round-" + n + "-closeout.md"] : [] });
@@ -121,6 +131,12 @@ assert(cov.problems.some((e) => e.includes("nothing to check")), "scoped-empty d
 // grill-round-<non-digit> dir: visible and flagged, never silently filtered
 cov = assessCloseoutCoverage({ dirs: [{ name: "grill-round-x", n: null, hasCloseout: false, closeouts: [] }, D(76, true)], indexText: IDX([76]) });
 assert(cov.problems.some((e) => e.includes("grill-round-x") && e.includes("does not match")), "non-digit round dir is flagged as drift surface");
+// R77 backlog (spec residual): a PARTIAL-digit name must not alias a real round
+// — "grill-round-7x" is not round 7, and silently reading it as such hides drift
+// in BOTH directions (bogus dir counted as the round AND the bogus dir never
+// surfaced). The dir-name shape is exact: grill-round-<digits>, whole name.
+cov = assessCloseoutCoverage({ dirs: [{ name: "grill-round-7x", n: null, hasCloseout: false, closeouts: [] }, D(76, true)], indexText: IDX([76]) });
+assert(cov.problems.some((e) => e.includes("grill-round-7x") && e.includes("does not match")), "partial-digit dir (grill-round-7x) is flagged, not aliased to round 7");
 
 // --- scanRoundDirs against a fixture tree --------------------------------------
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "r76-cov-"));
@@ -131,9 +147,13 @@ try {
   fs.mkdirSync(path.join(tmp, "not-a-round", "handoffs"), { recursive: true });
   fs.writeFileSync(path.join(tmp, "grill-round-75", "handoffs", "round-75-closeout.md"), "# x");
   fs.writeFileSync(path.join(tmp, "grill-round-76", "handoffs", "next-round.md"), "# x");
+  fs.mkdirSync(path.join(tmp, "grill-round-7x", "handoffs"), { recursive: true });
   const dirs = scanRoundDirs(tmp);
-  assert(dirs.length === 3 && dirs[0].n === 76 && dirs[1].n === 75 && dirs[2].n === null, "scanRoundDirs keeps grill-round-<non-digit> dirs (n=null, sorted last), still excludes non-round dirs");
+  assert(dirs.length === 4 && dirs[0].n === 76 && dirs[1].n === 75 && dirs[2].n === null && dirs[3].n === null, "scanRoundDirs keeps grill-round-<non-digit> dirs (n=null, sorted last), still excludes non-round dirs");
   assert(dirs[1].hasCloseout && !dirs[0].hasCloseout, "hasCloseout reflects handoffs/ closeout docs only");
+  // R77 backlog: exact dir-name shape — a trailing-junk name never parses digits
+  const d7x = dirs.find((d) => d.name === "grill-round-7x");
+  assert(d7x && d7x.n === null, "grill-round-7x yields n=null (no digit-prefix aliasing)");
 } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 
 // --- the leg is wired into ship-gate (a dropped assertion = a dropped gate) ----
@@ -141,6 +161,17 @@ const sg = fs.readFileSync(path.join(root, "scripts", "ship-gate.mjs"), "utf8");
 assert(sg.includes("assessCloseoutCoverage") && sg.includes("scanRoundDirs"), "ship-gate wires the coverage module");
 assert(sg.includes("awaiting closeout: round "), "ship-gate prints the structured exemption line");
 assert(sg.includes("CLOSEOUT_COVERAGE_FLOOR"), "ship-gate reports the floor in the coverage count line");
+// R77 backlog (ordering): under a mixed red state the leg-(a) lint diagnostics
+// must still print — coverage violations go out as a [fail] report line while
+// the exit defers to exitIfCoverageRed AFTER the lint block. Assert the source
+// order: coverage report -> handoff-lint fail -> deferred coverage exit.
+const iCovFail = sg.indexOf('report("fail", "closeout-coverage:');
+const iLintFail = sg.indexOf('problems.length) fail("handoff-lint');
+const iDeferExit = sg.indexOf("exitIfCoverageRed();\n}");
+assert(iCovFail > 0 && iLintFail > iCovFail && iDeferExit > iLintFail, "coverage red reports before lint and exits only after lint diagnostics (mixed red stays diagnosable)");
+// R77 backlog (F-5⑥): renderer carries the mutual annotation naming the parser
+const gen = fs.readFileSync(path.join(root, "scripts", "gen-adr-index.mjs"), "utf8");
+assert(gen.includes("parseRegisteredRounds") && gen.includes("closeout-coverage.mjs"), "gen-adr-index renderBlock names the consuming parser (mutual annotation)");
 
 console.log("closeout-coverage.test: " + passed + " passed, " + failed + " failed");
 process.exit(failed === 0 ? 0 : 1);

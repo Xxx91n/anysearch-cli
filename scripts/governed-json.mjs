@@ -39,20 +39,41 @@ export function normalizeCommand(rel) {
   return "node -e \"const f='" + rel + "';const fs=require('fs');fs.writeFileSync(f,JSON.stringify(JSON.parse(fs.readFileSync(f,'utf8')),null,1)+'\\n')\"";
 }
 
+// Paste-able BOM-strip command. A UTF-8 BOM breaks JSON.parse AND survives
+// normalization (fs.readFileSync utf8 keeps the BOM codepoint) — normalize
+// cannot fix it, so the failure message must hand a strip command instead.
+export function stripBomCommand(rel) {
+  return "node -e \"const f='" + rel + "';const fs=require('fs');const b=fs.readFileSync(f);if(b[0]===0xEF&&b[1]===0xBB&&b[2]===0xBF)fs.writeFileSync(f,b.subarray(3))\"";
+}
+
+// The governed list itself is a checked invariant: an empty list would iterate
+// zero files and report green — a byte-lock with nothing to check is a failure
+// (same vacuous-pass class as the empty scope set banned in closeout-coverage).
+export function governedListViolation(files) {
+  if (!Array.isArray(files) || files.length === 0) {
+    return "CANONICAL_JSON_FILES is empty — a canonical-lock leg with nothing to check is a failure (ADR-0077); restore the governed list in scripts/ship-gate.mjs";
+  }
+  return null;
+}
+
 // null when src is already canonical; otherwise a fail-ready message.
 // Invalid JSON reports on its own — the normalize pointer only appears for
 // parseable-but-non-canonical bytes (normalize cannot fix a syntax error).
 export function governedJsonViolation(rel, src) {
+  const bytes = Buffer.isBuffer(src) ? src : Buffer.from(src);
+  // R77 T1 (F-6): a UTF-8 BOM is a dedicated failure class — it breaks
+  // JSON.parse (so the file is not even parseable) and normalization cannot
+  // repair it (the BOM round-trips through utf8 read+write). The message names
+  // the byte signature and hands a strip command, never the normalize pointer.
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return rel + " starts with a UTF-8 BOM (EF BB BF) — JSON.parse rejects BOM'd input and canonical normalization cannot repair it; strip the BOM first: " + stripBomCommand(rel);
+  }
   let canon;
   try {
-    canon = canonicalJsonBytes(src);
+    canon = canonicalJsonBytes(bytes);
   } catch (e) {
-    // Known limitation (R76 rework F-6): a UTF-8-BOM'd file lands here — the BOM
-    // breaks JSON.parse, so it reports "not valid JSON" though the payload is
-    // fine; normalize cannot fix BOM bytes either (strip U+FEFF first).
     return rel + " is not valid JSON (" + (e && e.message) + ") — fix the syntax first; canonical normalization only applies to parseable JSON";
   }
-  const bytes = Buffer.isBuffer(src) ? src : Buffer.from(src);
   if (bytes.equals(canon)) return null;
   return rel + " is not in canonical form (first differs at line " + firstDifferingLine(bytes, canon) + ") — normalize: " + normalizeCommand(rel) + " — governed list: CANONICAL_JSON_FILES in scripts/ship-gate.mjs (ADR-0077)";
 }

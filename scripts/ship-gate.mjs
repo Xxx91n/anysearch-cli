@@ -27,7 +27,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
-import { governedJsonViolation } from "./governed-json.mjs";
+import { governedJsonViolation, governedListViolation } from "./governed-json.mjs";
 import { CLOSEOUT_COVERAGE_FLOOR, isCloseoutName, scanRoundDirs, assessCloseoutCoverage } from "./closeout-coverage.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -203,6 +203,10 @@ const CANONICAL_JSON_FILES = ["docs/deferred-registry.json"];
 // can't orphan the list (list-rot guard). No autofix — the gate reports, the
 // human normalizes ("committed != reviewed" doctrine, ADR-0077).
 function stepGovernedJsonCanonical() {
+  // R77 T1: the list itself is governed — an empty CANONICAL_JSON_FILES iterates
+  // zero files and would report a vacuous green (fail-closed existence doctrine).
+  const listProblem = governedListViolation(CANONICAL_JSON_FILES);
+  if (listProblem) fail("canonical-json: " + listProblem);
   for (const rel of CANONICAL_JSON_FILES) {
     const p = path.join(ROOT, rel);
     if (!fs.existsSync(p)) fail("canonical-json: governed file missing: " + rel + " — update CANONICAL_JSON_FILES in scripts/ship-gate.mjs");

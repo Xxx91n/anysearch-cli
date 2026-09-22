@@ -52,6 +52,12 @@ export function adrEntries(ref = "HEAD") {
 }
 
 export function renderBlock(entries) {
+  // R77 T1 (F-5⑥ mutual annotation): the row shape rendered here is consumed by
+  // parseRegisteredRounds in scripts/closeout-coverage.mjs — the contract is
+  //   `| [NNNN](file) | <title> |` data rows, the literal `| ADR | Title |`
+  //   header, the `|---|` separator, and the BEGIN/END markers. The parser is
+  //   deliberately decoupled from this prose wording, but NOT from the row
+  //   shape: changing either side without the other breaks step 1g fail-loud.
   const first = entries[0] ? entries[0].num : "0000";
   const last = entries[entries.length - 1] ? entries[entries.length - 1].num : "0000";
   const lines = [

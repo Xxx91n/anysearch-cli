@@ -264,6 +264,8 @@
    "owner": "anysearch-platform",
    "opened_by": "grill-round-76",
    "opened_at": "2026-09-22",
+   "deadline": "2026-12-31",
+   "review_cadence": "quarterly",
    "status": "closed",
    "closed_by": "ADR-0077",
    "closed_by_adr_path": "docs/adr/0077-architecture-grill-round-76-silent-drift-governance-liquidation.md",
