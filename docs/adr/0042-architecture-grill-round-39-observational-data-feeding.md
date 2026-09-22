@@ -108,4 +108,4 @@ Acceptance closed-loop (implementation round):
 - WSC17 OFAT — one-factor-at-a-time minimal falsification design.
 - Martin Fowler — test pyramid (unit vs end-to-end scoping).
 
-Full source list preserved at %TEMP%/atomcode-r39-sources.txt.
+Full source list preserved at %TEMP%/atomcode-r39-sources.txt. <!-- machine-local: Windows env-var 路径引用（存量合规化） @ 2026-09-22 -->

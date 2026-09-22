@@ -26,17 +26,17 @@ $ cd /d/Aworker/anysearch-cli && atomcode -p "$(cat .scratch/grill-round-78/q3-p
 | 形态 | 正则特征 | 误报源 | 现有先例的做法 |
 |---|---|---|---|
 | Windows env-var `%VAR%` | `%([A-Za-z_][A-Za-z0-9_]*)%` | 百分号字面量（URL 编码、markdown 强调）、未闭合 `%` | ManageEngine 应用控制规则直接把 `%APPDATA%`、`%TEMP%` 等当作合法路径 token；regexguide 提醒该模式「不锚定、非全量校验」 |
-| POSIX env-var `$VAR` / `${VAR}` | `\$[A-Za-z_][A-Za-z0-9_]*` | 散文中指代变量本身（"the `$HOME` variable"）、shell 语法 | spectralint 对 `~/` 做「inline code 内跳过 + 已知良性目录白名单」双重豁免 |
-| tilde `~/`、`~user/` | `~/` 或 `~[a-z0-9_-]+/` | git 对比行首 `~`、音乐/语义用法、inline code 中的示例 | **SC2088 的核心判定就是「tilde 后随路径段」**——tilde 只有在作为路径前缀时才有意义，这正是你问的启发式的 shellcheck 先例 |
-| UNC `\\host\share` | `\\\\[^\\\/]+\\` | markdown 转义、示例文本 | 现有正则清单完全未覆盖 |
-| 盘符 `C:\` | `[A-Za-z]:[\\\/]` | `https://` 中的 `s:`（R71 存档已踩过：需锚定或配非路径字符判断） | path-guard.mjs 要求引号包裹（`['"`]C:\\\\`）才命中，即「路径 token 必须出现在路径使用位置」 |
+| POSIX env-var `$VAR` / `${VAR}` | `\$[A-Za-z_][A-Za-z0-9_]*` | 散文中指代变量本身（"the `$HOME` variable"）、shell 语法 | spectralint 对 `~/` 做「inline code 内跳过 + 已知良性目录白名单」双重豁免 | <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+| tilde `~/`、`~user/` | `~/` 或 `~[a-z0-9_-]+/` | git 对比行首 `~`、音乐/语义用法、inline code 中的示例 | **SC2088 的核心判定就是「tilde 后随路径段」**——tilde 只有在作为路径前缀时才有意义，这正是你问的启发式的 shellcheck 先例 | <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+| UNC `\\host\share` | `\\\\[^\\\/]+\\` | markdown 转义、示例文本 | 现有正则清单完全未覆盖 | <!-- machine-local: UNC 路径引用（存量合规化） @ 2026-09-22 -->
+| 盘符 `C:\` | `[A-Za-z]:[\\\/]` | `https://` 中的 `s:`（R71 存档已踩过：需锚定或配非路径字符判断） | path-guard.mjs 要求引号包裹（`['"`]C:\\\\`）才命中，即「路径 token 必须出现在路径使用位置」 | <!-- machine-local: 机器绝对路径引用（存量合规化） @ 2026-09-22 -->
 
 **「env-var 后随分隔符才算 locator」的先例判定：有强类比先例，无逐字同构先例。**
 
 - **shellcheck SC2088/SC2147**：tilde 只有作为路径展开前缀时才被判定——「tilde/变量 + 分隔符 = 路径引用」是 shell 静态分析的既定启发式（已读 SC2088 wiki 原文）。
 - **spectralint（docs.rs 已读源码）**：`/(?:home|Users|root)/[a-zA-Z0-9_.-]+` 要求人名段跟在目录词后，同样是「token + 后随内容」的复合判定，而非裸 token。
 - **path-guard.mjs（github 已读）**：硬编码路径必须带引号才算（`['"`]\/tmp\//`），把「使用位置」编码进正则——这正是区分「散文提及」与「路径引用」的工业做法。
-- **ManageEngine 文档**：在路径规则语境里 `%USERPROFILE%\Downloads` 的书写形就是「变量 + 分隔符 + 子路径」——厂商把 env-var+分隔符定义为路径形态的合成单元。
+- **ManageEngine 文档**：在路径规则语境里 `%USERPROFILE%\Downloads` 的书写形就是「变量 + 分隔符 + 子路径」——厂商把 env-var+分隔符定义为路径形态的合成单元。 <!-- machine-local: Windows env-var 路径引用（存量合规化） @ 2026-09-22 -->
 
 **误报处理惯例**：散文中提及环境变量名 vs 用作路径引用的区分，工业惯例有三层递进——①要求分隔符后缀（shellcheck 路线）；②排除 inline code（spectralint 的 `insid…
 
@@ -74,7 +74,7 @@ $ cd /d/Aworker/anysearch-cli && atomcode -p "$(cat .scratch/grill-round-78/q3-p
 - **semgrep 规则测试**生态：规则 YAML 内嵌 `testdata` 正反样例是社区规则仓库的提交规范（gitleaks 仓库同样有 `testdata/` 目录）。
 - gitleaks README 的输出示例本身就是红向 fixture 的产物形态（Finding/RuleID/File/Line 四元组）。
 
-**对你们的含义**：两个实证逃逸实例（`%TEMP%/x`、`/c/Users/...`）应当直接固化为红向 fixture——每个新形态 token 一条红向用例（必须命中 + 必须被标记豁免时放行），外加绿向用例（散文提及 `$HOME` 变量名不命中、`https://` URL 不命中、inline code 中示例不命中）。这不是可选的锦上添花，是 lint 规则的可测性下限——**没有红向 fixture 的 fail-closed 规则，其「closed」是未经证的**。
+**对你们的含义**：两个实证逃逸实例（`%TEMP%/x`、`/c/Users/...`）应当直接固化为红向 fixture——每个新形态 token 一条红向用例（必须命中 + 必须被标记豁免时放行），外加绿向用例（散文提及 `$HOME` 变量名不命中、`https://` URL 不命中、inline code 中示例不命中）。这不是可选的锦上添花，是 lint 规则的可测性下限——**没有红向 fixture 的 fail-closed 规则，其「closed」是未经证的**。 <!-- machine-local: Windows env-var 路径引用（存量合规化） @ 2026-09-22 -->
 
 ### Q4：分层报告 severity
 
@@ -96,9 +96,9 @@ $ cd /d/Aworker/anysearch-cli && atomcode -p "$(cat .scratch/grill-round-78/q3-p
 
 ## 3) 推荐修复形态（综合）
 
-**规则层**：token 检出器 + 分隔符后缀判定，四类 token（`%VAR%`、`$VAR`/`${VAR}`、`~`、`\\host\`）+ 分隔符 → **硬拦**；单段 POSIX 根形（`/x`，无已知前缀）→ **surfaced-skip**（info 级列出但不 fail），避免误报面失控。散文提及（无分隔符后缀）→ 不报。
+**规则层**：token 检出器 + 分隔符后缀判定，四类 token（`%VAR%`、`$VAR`/`${VAR}`、`~`、`\\host\`）+ 分隔符 → **硬拦**；单段 POSIX 根形（`/x`，无已知前缀）→ **surfaced-skip**（info 级列出但不 fail），避免误报面失控。散文提及（无分隔符后缀）→ 不报。 <!-- machine-local: UNC 路径引用（存量合规化） @ 2026-09-22 -->
 
-**存量层**：先 warn 模式全量扫拿命中数 → 机械可修的（有确定性转换规则的，如 `%TEMP%/x` → `$TMP/x` 或仓库相对形）retro-fix → 不可机械修的逐条加现有 `<!-- machine-local: ... @ date -->` 标记 → 翻 fail-closed。**不引入集中 baseline 文件**——标记即豁免，且标记必须可被棘轮审计（定期扫「标记存在但该行已不再命中」的失效标记并要求清除，对应 rubocop `--report-unused-todo-entries` 的单向收缩语义）。
+**存量层**：先 warn 模式全量扫拿命中数 → 机械可修的（有确定性转换规则的，如 `%TEMP%/x` → `$TMP/x` 或仓库相对形）retro-fix → 不可机械修的逐条加现有 `machine-local` marker 注释（模板见 config） → 翻 fail-closed。**不引入集中 baseline 文件**——标记即豁免，且标记必须可被棘轮审计（定期扫「标记存在但该行已不再命中」的失效标记并要求清除，对应 rubocop `--report-unused-todo-entries` 的单向收缩语义）。 <!-- machine-local: Windows env-var 路径引用（存量合规化） @ 2026-09-22 -->
 
 **测试层**：两个实证逃逸实例 + 每类新 token 的红向 fixture（必须命中）+ 绿向 fixture（散文提及、URL、inline code、已标记豁免行）——红绿成对，ShipLint/INCOSE 模式。
 

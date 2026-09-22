@@ -123,7 +123,7 @@ CodeBuddy (`allServers=[anysearch:connecting]`). Re-runnable log set:
 (ii) Probe transcripts: **P1–P9 all green on live CodeBuddy 2.151.0**
 (headless `stream-json`, model=fast-model; transcripts under
 `evidence/t2-*.stream.jsonl`, host hook execution under
-`~/.codebuddy/debug/<session>.txt`). Live probing surfaced four defects
+`~/.codebuddy/debug/<session>.txt`). Live probing surfaced four defects <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 invisible to synthetic tests — F-09 (tool_response array-of-blocks →
 `unwrapToolResponse`), F-10 (`ans-mcp` couldn't resolve shipped domain
 TOMLs → domain steering dead on MCP path), F-11 (`ans_chat` ignored
@@ -160,7 +160,7 @@ tool-equipped answer cited the real pnpm.io/settings page).
 - Live probe adjudicated the open assumption: `hookSpecificOutput` does
   NOT require a `hookEventName` field — SessionStart/PreToolUse/
   PostToolUse all executed and CodeBuddy consumed the envelopes (see
-  `~/.codebuddy/debug/<session>.txt` hook stdout records).
+  `~/.codebuddy/debug/<session>.txt` hook stdout records). <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 - New hard-won contract facts (live-verified, now pinned by tests):
   CodeBuddy `tool_response` arrives as an ARRAY of content blocks
   (`[{type:"text",text:"<json>"}]`) — handled by `unwrapToolResponse`;

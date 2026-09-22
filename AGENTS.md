@@ -68,7 +68,7 @@ Sweep scope (registered in the config — a new document type lands only by edit
 
 ## Antigravity (agy) host notes (ADR-0069)
 
-- Hooks config = named-hook map `{ "<name>": { "<Event>": [{matcher, hooks:[{type:"command", command, timeout}]}] } }`; the Gemini-legacy `{hooks:{...}}` wrapper fails to parse (`command hook must specify 'command'`). Non-tool events take flat handlers; tool events take matcher-groups. Read from `~/.gemini/config/hooks.json` AND `~/.gemini/antigravity-cli/hooks.json` (same name deduped).
+- Hooks config = named-hook map `{ "<name>": { "<Event>": [{matcher, hooks:[{type:"command", command, timeout}]}] } }`; the Gemini-legacy `{hooks:{...}}` wrapper fails to parse (`command hook must specify 'command'`). Non-tool events take flat handlers; tool events take matcher-groups. Read from `~/.gemini/config/hooks.json` AND `~/.gemini/antigravity-cli/hooks.json` (same name deduped). <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 - stdin is camelCase: `conversationId`/`toolCall{name,args}`/`workspacePaths`/`transcriptPath`/`artifactDirectoryPath`/`stepIdx`. No `hook_event_name` — event travels via argv (`ans-hook-antigravity <Event>`). PostToolUse carries `toolCall`+`error`, NO tool output.
 - stdout is strict protojson: PreToolUse `{}` = DENY (decision required), empty stdout = allow, `{decision:allow|deny|ask|force_ask|deny_unless_prior_grant, reason?, permissionOverrides?}`; PostToolUse = `{}` only; context injection = `Pre/PostInvocation injectSteps[].ephemeralMessage`; non-zero exit = tool-level ERROR (blocks).
 - `agy -p` headless hangs if a configured MCP server never finishes connecting (observed: `1mcp`) — sandbox `HOME` or fix the server; OAuth token lives in Windows Credential Manager, survives a sandboxed HOME.

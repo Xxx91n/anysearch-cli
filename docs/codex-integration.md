@@ -27,7 +27,7 @@ Hard-won host facts (live-verified on 0.142.5 — do not guess these):
   ("expected a sequence"). Hook definitions must be materialized into a
   config file layer.
 - **Config layers**: `[features] hooks = true` + `[[hooks.<Event>]]`
-  sections in `$CODEX_HOME/config.toml`, or project `.codex/hooks.json`
+  sections in `$CODEX_HOME/config.toml`, or project `.codex/hooks.json` <!-- machine-local: POSIX env-var 路径引用（存量合规化） @ 2026-09-22 -->
   (fires when the project is trusted via `[projects.'<path>']` in the user
   config; hook trust itself is persisted as `[hooks.state."<key>"]
   trusted_hash = "sha256:..."` entries — headless probes use
@@ -68,7 +68,7 @@ policy fallback) and serves `/preheat` `/recall` `/index` `/policy`.
 
 ## 4. MCP server
 
-`config.toml` (`$CODEX_HOME/config.toml`, default `~/.codex/config.toml`):
+`config.toml` (`$CODEX_HOME/config.toml`, default `~/.codex/config.toml`): <!-- machine-local: POSIX env-var 路径引用（存量合规化） @ 2026-09-22 -->
 
 <!-- machine-local: illustrative placeholder path in doc example @ 2026-09-19 -->
 ```toml
@@ -93,7 +93,7 @@ is intended — Codex exits when a required MCP fails.
 the project to be trusted (`[projects.'<path>'] trust_level = "trusted"` in
 user config) and the hook trust prompt accepted once per definition.
 
-**Option B — user layer** (`$CODEX_HOME/config.toml`):
+**Option B — user layer** (`$CODEX_HOME/config.toml`): <!-- machine-local: POSIX env-var 路径引用（存量合规化） @ 2026-09-22 -->
 
 ```toml
 [features]

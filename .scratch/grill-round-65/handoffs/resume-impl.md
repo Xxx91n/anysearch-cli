@@ -36,7 +36,7 @@
 ## 仍 deferred（如实）
 
 - internal anysearch provider live 查询 0 成功（fail-open 未阻；需服务端排查）。
-- recall_memory projectIndex 与 session 库不同根（cwd 锚定 vs ~/.anysearch 引擎库）——设计问题。
+- recall_memory projectIndex 与 session 库不同根（cwd 锚定 vs ~/.anysearch 引擎库）——设计问题。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 - 真 Claude Code/Cursor/Codex/Antigravity 宿主未实机；interactive TUI 未验；embedding arm 未验；跨 OS 委派 CI matrix。
 - OIDC trusted publishing 欠条 due 0.0.4。
 

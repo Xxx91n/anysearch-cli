@@ -30,7 +30,7 @@ Executed 1 commands (97 lines, 12.7KB). Indexed 10 sections. Searched 4 queries.
 
 - **Spike exit（全过才进 acceptance；任一失败 → ticket 降级为 host-limitation 证据，ADR 记 D-entry）**
   - s0: agy 经官方 install.ps1 可安装、`agy --version` ≥1.1.10、`agy -p` 能返回。
-  - s1: 实测 hooks 配置生效位置（`.agents/hooks.json` vs `~/.gemini/config/` vs `~/.gemini/antigravity-cli/`），以 transcriptPath 目录（`antigravity-cli/brain`）证明执行表面为 CLI。
+  - s1: 实测 hooks 配置生效位置（`.agents/hooks.json` vs `~/.gemini/config/` vs `~/.gemini/antigravity-cli/`），以 transcriptPath 目录（`antigravity-cli/brain`）证明执行表面为 CLI。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
   - s2: L0-L3 四腿裁决，L-envelope 主腿为顶层 `{"decision":"allow"}`，L-bare 测 `{"allow_tool":false}` legacy 形状，记录 exit-code fallback 语义；结论与官方 docs 冲突处写成显式 finding。
   - s3: `agy -p` 下 hooks 触发 + 输出可观测。
 - **Acceptance（reduced matrix，6 腿）**：契约端到端（in-domain search 放行 + OOD abstain 经 `{"decision":"deny"/"ask"}` 生效）、session_id 传播（`conversationId`→header）、fail-open（server 不可达时 `{}`/allow 不挂 agent）、PostToolUse 输出 `{}` 合规、SessionStart 不存在性 re-verification + mdc fallback 仍必要、variance double-run（可选，时间允许）。
@@ -44,10 +44,10 @@ Executed 1 commands (97 lines, 12.7KB). Indexed 10 sections. Searched 4 queries.
 
 1. **独立安装，非 IDE 内置，非 npm 包**。官方安装器：`irm https://antigravity.google/cli/install.ps1 | iex`，Windows 二进制落在 `C:\Users\<user>\AppData\Local\agy\bin`（[官方 Getting Started](https://antigravity.google/docs/cli/getting-started/)，已读原文）。这与本机 `agy` 不在 PATH、无 `~/.gemini/antigravity-cli/` 完全一致——**s0 的预期结果是"CLI 未装，需先跑官方安装器"**，且装好后 config 根目录才会出现 `~/.gemini/antigravity-cli/`。 <!-- machine-local: user-level agent/tooling config path on build host @ 2026-09-19 -->
 2. **hooks.json 位置存在真实分歧，s1 必须实测**（这正是提议设计的价值）：
-   - 官方 docs + Atamel 博客（7/16，已读原文）：workspace `.agents/hooks.json` + global `~/.gemini/config/hooks.json` + plugin 目录，三 flavors（AGY/CLI/IDE）通用；
-   - Medium/Tanaike 指南（6/26，已读原文）：global 是 `~/.gemini/antigravity-cli/hooks.json`；
-   - GitHub issue #49 独立佐证：CLI 实际把 hooks 配置写到 `~/.gemini/antigravity-cli/hooks.json`（官方定性为 path misalignment bug）。
-   - → **s1 的 empirical 裁决腿是对的，且要同时探测 `~/.gemini/config/hooks.json` 和 `~/.gemini/antigravity-cli/hooks.json` 两个候选全局位置**。IDE 与 CLI **不共享** session 数据目录（`antigravity-ide/brain` vs `antigravity-cli/brain`），hooks 消息里的 `transcriptPath` 按表面区分目录——这是 s1 判定"哪个表面在执行 hook"的现成探针。
+   - 官方 docs + Atamel 博客（7/16，已读原文）：workspace `.agents/hooks.json` + global `~/.gemini/config/hooks.json` + plugin 目录，三 flavors（AGY/CLI/IDE）通用； <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+   - Medium/Tanaike 指南（6/26，已读原文）：global 是 `~/.gemini/antigravity-cli/hooks.json`； <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+   - GitHub issue #49 独立佐证：CLI 实际把 hooks 配置写到 `~/.gemini/antigravity-cli/hooks.json`（官方定性为 path misalignment bug）。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+   - → **s1 的 empirical 裁决腿是对的，且要同时探测 `~/.gemini/config/hooks.json` 和 `~/.gemini/antigravity-cli/hooks.json` 两个候选全局位置**。IDE 与 CLI **不共享** session 数据目录（`antigravity-ide/brain` vs `antigravity-cli/brain`），hooks 消息里的 `transcriptPath` 按表面区分目录——这是 s1 判定"哪个表面在执行 hook"的现成探针。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 3. **事件列表：官方 5 事件，无 SessionStart**。官方 Hooks 文档（已读全文）明确只有 PreToolUse/PostToolUse/PreInvocation/PostInvocation/Stop，字段 camelCase（`conversationId`/`transcriptPath`/`toolCall.args`），**且不注入 `hook_event_name`**（Atamel 独立证实，需从 argv 传回）。ADR-0011 D8 的"无 SessionStart 等价物"结论截至 2026-07 官方文档仍然成立——**验收矩阵里的"SessionStart re-verification"腿应改为"确认 SessionStart 仍不存在 + .antigravity/rules/anysearch.mdc fallback 仍必要"，是证据腿而非通过腿**。
 4. **stdout 契约两源冲突（最重要的裁决点）**：
    - 官方 docs（权威）：PreToolUse 输出顶层 `{"decision": "allow"|"deny"|"ask"|"force_ask"|"deny_unless_prior_grant", "reason"?, "permissionOverrides"?}`；PostToolUse 输出 `{}`；PreInvocation 可输出 `injectSteps`；Stop 输出 `{"decision": "continue"}`。AI Dev Forum 的受控复现里 `{"decision":"deny"}` 在 CLI 上实测 hard-block 生效——支持官方形状。
@@ -73,10 +73,10 @@ $ cd /d/Aworker/anysearch-cli && atomcode -p "Research round 3 for the anysearch
 
 1. **独立安装，非 IDE 内置，非 npm 包**。官方安装器：`irm https://antigravity.google/cli/install.ps1 | iex`，Windows 二进制落在 `C:\Users\<user>\AppData\Local\agy\bin`（[官方 Getting Started](https://antigravity.google/docs/cli/getting-started/)，已读原文）。这与本机 `agy` 不在 PATH、无 `~/.gemini/antigravity-cli/` 完全一致——**s0 的预期结果是"CLI 未装，需先跑官方安装器"**，且装好后 config 根目录才会出现 `~/.gemini/antigravity-cli/`。 <!-- machine-local: user-level agent/tooling config path on build host @ 2026-09-19 -->
 2. **hooks.json 位置存在真实分歧，s1 必须实测**（这正是提议设计的价值）：
-   - 官方 docs + Atamel 博客（7/16，已读原文）：workspace `.agents/hooks.json` + global `~/.gemini/config/hooks.json` + plugin 目录，三 flavors（AGY/CLI/IDE）通用；
-   - Medium/Tanaike 指南（6/26，已读原文）：global 是 `~/.gemini/antigravity-cli/hooks.json`；
-   - GitHub issue #49 独立佐证：CLI 实际把 hooks 配置写到 `~/.gemini/antigravity-cli/hooks.json`（官方定性为 path misalignment bug）。
-   - → **s1 的 empirical 裁决腿是对的，且要同时探测 `~/.gemini/config/hooks.json` 和 `~/.gemini/antigravity-cli/hooks.json` 两个候选全局位置**。IDE 与 CLI **不共享** session 数据目录（`antigravity-ide/brain` vs `antigravity-cli/brain`），hooks 消息里的 `transcriptPath` 按表面区分目录——这是 s1 判定"哪个表面在执行 hook"的现成探针。
+   - 官方 docs + Atamel 博客（7/16，已读原文）：workspace `.agents/hooks.json` + global `~/.gemini/config/hooks.json` + plugin 目录，三 flavors（AGY/CLI/IDE）通用； <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+   - Medium/Tanaike 指南（6/26，已读原文）：global 是 `~/.gemini/antigravity-cli/hooks.json`； <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+   - GitHub issue #49 独立佐证：CLI 实际把 hooks 配置写到 `~/.gemini/antigravity-cli/hooks.json`（官方定性为 path misalignment bug）。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+   - → **s1 的 empirical 裁决腿是对的，且要同时探测 `~/.gemini/config/hooks.json` 和 `~/.gemini/antigravity-cli/hooks.json` 两个候选全局位置**。IDE 与 CLI **不共享** session 数据目录（`antigravity-ide/brain` vs `antigravity-cli/brain`），hooks 消息里的 `transcriptPath` 按表面区分目录——这是 s1 判定"哪个表面在执行 hook"的现成探针。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 3. **事件列表：官方 5 事件，无 SessionStart**。官方 Hooks 文档（已读全文）明确只有 PreToolUse/PostToolUse/PreInvocation/PostInvocation/Stop，字段 camelCase（`conversationId`/`transcriptPath`/`toolCall.args`），**且不注入 `hook_event_name`**（Atamel 独立证实，需从 argv 传回）。ADR-0011 D8 的"无 SessionStart 等价物"结论截至 2026-07 官方文档仍然成立——**验收矩阵里的"SessionStart re-verification"腿应改为"确认 SessionStart 仍不存在 + .antigravity/rules/anysearch.mdc fallback 仍必要"，是证据腿而非通过腿**。
 4. **stdout 契约两源冲突（最重要的裁决点）**：
    - 官方 docs（权威）：PreToolUse 输出顶层 `{"decision": "allow"|"deny"|"ask"|"force_ask"|"deny_unless_prior_grant", "reason"?, "permissionOverrides"?}`；PostToolUse 输出 `{}`；PreInvocation 可输出 `injectSteps`；Stop 输出 `{"decision": "continue"}`。AI Dev Forum 的受控复现里 `{"decision":"deny"}` 在 CLI 上实测 hard-block 生效——支持官方形状。
@@ -105,7 +105,7 @@ $ cd /d/Aworker/anysearch-cli && atomcode -p "Research round 3 for the anysearch
 
 - **Spike exit（全过才进 acceptance；任一失败 → ticket 降级为 host-limitation 证据，ADR 记 D-entry）**
   - s0: agy 经官方 install.ps1 可安装、`agy --version` ≥1.1.10、`agy -p` 能返回。
-  - s1: 实测 hooks 配置生效位置（`.agents/hooks.json` vs `~/.gemini/config/` vs `~/.gemini/antigravity-cli/`），以 transcriptPath 目录（`antigravity-cli/brain`）证明执行表面为 CLI。
+  - s1: 实测 hooks 配置生效位置（`.agents/hooks.json` vs `~/.gemini/config/` vs `~/.gemini/antigravity-cli/`），以 transcriptPath 目录（`antigravity-cli/brain`）证明执行表面为 CLI。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
   - s2: L0-L3 四腿裁决，L-envelope 主腿为顶层 `{"decision":"allow"}`，L-bare 测 `{"allow_tool":false}` legacy 形状，记录 exit-code fallback 语义；结论与官方 docs 冲突处写成显式 finding。
   - s3: `agy -p` 下 hooks 触发 + 输出可观测。
 - **Acceptance（reduced matrix，6 腿）**：契约端到端（in-domain search 放行 + OOD abstain 经 `{"decision":"deny"/"ask"}` 生效）、session_id 传播（`conversationId`→header）、fail-open（server 不可达时 `{}`/allow 不挂 agent）、PostToolUse 输出 `{}` 合规、SessionStart 不存在性 re-verification + mdc fallback 仍必要、variance double-run（可选，时间允许）。

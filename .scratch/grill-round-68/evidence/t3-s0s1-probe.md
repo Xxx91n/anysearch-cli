@@ -15,11 +15,11 @@ agy 无 auth 子命令、无 --api-key 旗标；无头认证两路：交互式 O
 
 | 探针 | 结果 |
 |---|---|
-| ~/.gemini/config/hooks.json | **存在**——Gemini 形制 {hooks:{PreToolUse:[{matcher,hooks:[{type:command,command}]}]}}，已挂 context-mode 三钩（pretooluse/posttooluse/stop，matcher=run_command|view_file|grep_search|web_fetch|read_url_content） |
-| ~/.gemini/antigravity-cli/hooks.json | 首跑前不存在；**首次 agy 运行后 ~/.gemini/antigravity-cli/ 目录被创建**（cli.log/log/brain/cache/conversations/installation_id 等）——CLI 自己的数据根确立 |
+| ~/.gemini/config/hooks.json | **存在**——Gemini 形制 {hooks:{PreToolUse:[{matcher,hooks:[{type:command,command}]}]}}，已挂 context-mode 三钩（pretooluse/posttooluse/stop，matcher=run_command|view_file|grep_search|web_fetch|read_url_content） | <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+| ~/.gemini/antigravity-cli/hooks.json | 首跑前不存在；**首次 agy 运行后 ~/.gemini/antigravity-cli/ 目录被创建**（cli.log/log/brain/cache/conversations/installation_id 等）——CLI 自己的数据根确立 | <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 | 项目 .agents/hooks.json | 仓库根无 .agents/ 目录、无项目级 hooks.json（repo 内仅 apps/plugin 分发用 configs/） |
 | hooks 装载实证 | agy 日志 hooks_manager.go:53 loaded 1 named hooks from 1 hooks.json file(s)——**agy CLI 进程内确有 hooks 加载面**（与「IDE 不执行 hooks」既有裁决不矛盾：这是 CLI 宿主自己的加载器） |
-| transcriptPath/brain | ~/.gemini/antigravity-cli/brain/ 存在（CLI session 转录根）；IDE 侧 ~/.gemini/antigravity/brain/ 另有 20+ session 目录——两宿主数据根分离 |
+| transcriptPath/brain | ~/.gemini/antigravity-cli/brain/ 存在（CLI session 转录根）；IDE 侧 ~/.gemini/antigravity/brain/ 另有 20+ session 目录——两宿主数据根分离 | <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 | IDE 复测 | IDE 2.5.5 hooks 腿待复测（顺手腿，认证后在 s3 窗口做） |
 
 ## 待办（认证后）

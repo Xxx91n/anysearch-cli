@@ -54,7 +54,7 @@ Stack (primary key = GitButler change-ids; SHAs are time-lagged):
 ## 关键事实（勿重查）
 
 - agy 1.2.5 契约（ADR-0069 D4）：stdin camelCase（conversationId/toolCall{name,args}/workspacePaths），无 hook_event_name（argv 传事件）；stdout 严格 protojson——PreToolUse {}=DENY、空=allow、{decision,reason,permissionOverrides}；PostToolUse 只收 {}；context 注入=Pre/PostInvocation injectSteps[].ephemeralMessage；PostToolUse 无 tool 输出；非零退出=工具 ERROR。
-- agy hooks 双读面：~/.gemini/config/hooks.json + ~/.gemini/antigravity-cli/hooks.json 均装载；named-hook map 才过解析；非工具事件扁平 handler、工具事件 matcher-group。
+- agy hooks 双读面：~/.gemini/config/hooks.json + ~/.gemini/antigravity-cli/hooks.json 均装载；named-hook map 才过解析；非工具事件扁平 handler、工具事件 matcher-group。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 - agy -p 挂起陷阱：配置的 MCP server 连不上会阻塞 turn 初始化（1mcp 实测）；隔离 HOME 可绕。OAuth token 在 Windows Credential Manager，与 HOME 无关。
 - release.yml 门禁：check 族=check-build/install-smoke/test:online/ship-gate/memory-eval；native-smoke+macos-spillover-probe 在门外（实验腿）。
 - VC：but land 直推 main=本轮惯例（ADR-0069 D5 已裁决+记录 future direction）；hook 进程 cwd=hooks.json 所在目录（workspacePaths 空时 mdc 兜底落点会偏）。

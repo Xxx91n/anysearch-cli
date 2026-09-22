@@ -28,7 +28,7 @@ Stack (primary key = GitButler change-ids; SHAs are time-lagged):
 - **外发闸**（用户亲手发）：`.scratch/grill-round-75/drafts/pr-1764-comment.md` + `issue-1087-comment.md` 仍待用户审发；发后回录 drafts 头部 Status 行。
 - canonical 锁翻案哨兵：`CANONICAL_JSON_FILES` 扩到 n≥5 且含多类型+全仓格式化需求 → 按 ADR-0077 D5 翻案条件迁注册制+prettier。
 - **repin 拦截实验**（r77-audit F-2 落锚，原仅 q2-atomcode.md:48 记档）：pnpm minimumReleaseAge 对 catalog repin 的确切拦截行为未实测——动钉版面前先做一次受控实验坐实「L1 探针=闸内唯一合法探测层」的边界（详见 upgrade-ledger v2 待校准项）。
-- **pathlint env-var 盲区**（r77-audit F-5，`defer-r77-pathlint-envvar-blindspot`）：PATH_RE 扩 env-var 形（`%TEMP%`/`$HOME`/`~/`）或直接修 PATH_RE+补红向测试。
+- **pathlint env-var 盲区**（r77-audit F-5，`defer-r77-pathlint-envvar-blindspot`）：PATH_RE 扩 env-var 形（`%TEMP%`/`$HOME`/`~/`）或直接修 PATH_RE+补红向测试。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 
 ## Known risks / deferred
 

@@ -7,7 +7,7 @@ Date: 2026-09-22. 账本 `.scratch/grill-round-78/decision-ledger.md`（D-001~D-
 - main tip=`7030118c`（workspace commit，基 `d564ba20`），R77 三栈全落，工作区干净；registry 15 条=3 closed+12 open（本轮清算 `defer-r77-pathlint-envvar-blindspot`）。
 - **时敏事实**：`@deepseek-ai/dsh-agent` 0.1.5-rc.3/0.1.7-alpha.1 在 48h 龄期闸内，**出闸 ≈2026-09-24 06:0xZ**——T0 实验的闸内标本窗口，错过要等下次上游发版。
 - pnpm 配置面：`pnpm-workspace.yaml` 仅 `minimumReleaseAge: 2880`，`IgnoreMissingTime`/`Strict`/`trustLockfile`/`Exclude` 全 unset=默认态。
-- pathlint 现状：`ship-gate.mjs:1138` PATH_RE=`/(?:^|[^A-Za-z0-9])(?:[A-Za-z]:[\\/]|\/(?:Users|home)\/|\/tmp\/|AppData[\\/])/`；config=`scripts/ship-gate-pathlint.config.json`；存量逃逸实例=`docs/adr/0042-architecture-grill-round-39-observational-data-feeding.md:111`（`%TEMP%/atomcode-r39-sources.txt` 无 marker）。
+- pathlint 现状：`ship-gate.mjs:1138` PATH_RE=`/(?:^|[^A-Za-z0-9])(?:[A-Za-z]:[\\/]|\/(?:Users|home)\/|\/tmp\/|AppData[\\/])/`；config=`scripts/ship-gate-pathlint.config.json`；存量逃逸实例=`docs/adr/0042-architecture-grill-round-39-observational-data-feeding.md:111`（`%TEMP%/atomcode-r39-sources.txt` 无 marker）。 <!-- machine-local: Windows env-var 路径引用（存量合规化） @ 2026-09-22 -->
 - registry 债条 `defer-r77-pathlint-envvar-blindspot`（deadline 2026-12-31，type=deferred-with-deadline）。
 
 ## T0 — repin 拦截实验（覆盖 D-002+D-005(i)；纯证据零提交，**时敏最前**）

@@ -101,7 +101,7 @@ Confidence：**高**（Codex hooks/config 机制有官方文档 + 两个独立�
 | 位置 | 真实用户采用度 | 信任机制 | 对验证的含义 |
 |---|---|---|---|
 | 项目级 `.codex/hooks.json` | **最高**——面向 repo 的插件（你们属此类）自然落位；trust 随项目信任一次性完成 | hash 信任 + project trust 前置 | **主验证位置** |
-| 用户级 `~/.codex/hooks.json` | 高——全局治理类工具（ACP 安装器默认写这里） | 纯 hash 信任 | 旁证：验证加性合并不冲突 |
+| 用户级 `~/.codex/hooks.json` | 高——全局治理类工具（ACP 安装器默认写这里） | 纯 hash 信任 | 旁证：验证加性合并不冲突 | <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 | plugin 捆绑 | 低——Codex plugin 生态较新 | 同样 trust-review，无特权 | 覆盖一次即可（信封一致性同源，探针可复用） |
 | requirements.toml managed | 企业场景 | policy 信任、不可禁用 | 超范围，不验 |
 

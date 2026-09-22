@@ -30,7 +30,7 @@
 - F-05 query_knowledge stub：如实入账，不修（D-003 登记）。t2 live 实证：`query_knowledge → "adapter=none (not yet implemented)"`，宿主如实转述为环境缺口而非工具故障。
 - F-06 CodeBuddy 登录门：已解除（用户完成 /login；`apiKeySource: www.codebuddy.ai`，model 调用实通）。注意 CodeBuddy 在会话间自升级 2.149.0→2.151.0。
 - OIDC trusted publishing：欠条 due 0.0.4，范围外（D-001）。
-- `recall_memory` 的 projectIndex 字段在 live 探针中返回空——plugin server 写 `<e2e>/.anysearch-cli/project-index.db`（cwd 锚定），MCP recall 读 `~/.anysearch` 引擎库，两库不同根；是否应汇合是设计问题，非本轮修（如实登记）。
+- `recall_memory` 的 projectIndex 字段在 live 探针中返回空——plugin server 写 `<e2e>/.anysearch-cli/project-index.db`（cwd 锚定），MCP recall 读 `~/.anysearch` 引擎库，两库不同根；是否应汇合是设计问题，非本轮修（如实登记）。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 - `search_web` 的 internal `anysearch` provider 在 live 探针中 queried 但 successfulProviders=2/3——内部服务侧未成功返回（凭证已供），fail-open 生效未阻探针；需服务端排查，登记 deferred。
 - 真 Claude Code / Cursor / Codex / Antigravity 宿主未实机验证（契约级 + 合成 stdin 绿；CodeBuddy 已 live 绿）。
 
@@ -43,7 +43,7 @@
 | P3 OOD 域向 | ✅ 修复前通用结果→修复后全 modelcontextprotocol.io（与 CLI 一致） | t2-p3-ood-abstain.* / t2-p3b-ood-domain.* |
 | P4 ans_chat | ✅ v1/chat 上游（model=step）真实一句话回答 | t2-p4d-ans-chat.* |
 | P5 recall 往返 | ✅ 10 条召回跨 3 sessionId | t2-p5-recall.* |
-| P6 hooks 三事件 | ✅ debug 实物：SessionStart 卡片入 context + PreToolUse(exit0) + PostToolUse 信封 distill | t2-p6-hooks-debug.log（返工 F-A2 拷回，原物在 `~/.codebuddy/debug/<sid>.txt`） |
+| P6 hooks 三事件 | ✅ debug 实物：SessionStart 卡片入 context + PreToolUse(exit0) + PostToolUse 信封 distill | t2-p6-hooks-debug.log（返工 F-A2 拷回，原物在 `~/.codebuddy/debug/<sid>.txt`） | <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 | P7 断连 fail-open | ✅ server 杀掉后 search 正常、hooks 全 exit 0、distill 仍产出（index 静默跳过） | t2-p7-failopen.* + debug |
 | P8 research+knowledge | ✅ research_web 执行；query_knowledge 诚实 stub | t2-p8-research-knowledge.* |
 | P9 对照 | ✅ 无工具猜 `pnpm.io/npmrc#node-linker`（错）→ 有工具实检 `pnpm.io/settings/node-modules`（真官方页+更深细节） | t2-p9a/p9b.* |
@@ -53,7 +53,7 @@
 | ID | 级别 | 发现 | 处置 | 验证 |
 |----|------|------|------|------|
 | F-A1 | 高 | `configs/cursor/hooks.json` 仍指 `dist/hooks/{preheat,distill}.cjs` 库文件——T3"四平台"声明虚报（实际 3+codebuddy）；git log 证实 r65 从未碰该文件。测试盲区：原契约测试只断言模板有 preToolUse 键 | **fixed**：模板改指 `adapters/cursor.cjs`；契约测试新增"所有 configs/*/hooks.json target 必须存在且读 stdin"断言堵同类盲区 | codebuddy-contract 20/20（新增断言在 cursor 修复前先红） |
-| F-A2 | 中 | P6 hooks debug 摘录未拷回 evidence/（实物留 `~/.codebuddy/debug/`），违 D-006(ii) 证据归档口径 | **fixed**：三会话 executeHooks/Hook input/exit0 摘录落 `t2-p6-hooks-debug.log`（61 行、6 次 hook 调用、0 密钥模式命中） | evidence 实物 |
+| F-A2 | 中 | P6 hooks debug 摘录未拷回 evidence/（实物留 `~/.codebuddy/debug/`），违 D-006(ii) 证据归档口径 | **fixed**：三会话 executeHooks/Hook input/exit0 摘录落 `t2-p6-hooks-debug.log`（61 行、6 次 hook 调用、0 密钥模式命中） | evidence 实物 | <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 | F-A3 | 低 | `codebuddy.ts` 信封发 `updatedInput`——超契约三键、与自身注释矛盾、死码 | **fixed**：删除该键 + 注释订正 | tsc 0 错 + 契约测试绿 |
 | F-A4 | 低 | `ans-chat.tool.ts` llmSessionKey 不含 ANS_LLM_API_KEY——长驻 MCP 换 key 不重建 session | **fixed**：key 追加 `sha256(ANS_LLM_API_KEY)[:12]`（永不嵌原值） | check 绿；旋转后 session 必然重建（key 不同） |
 | F-A5 | 登记 | `unwrapToolResponse` 仅 codebuddy+claude 接入，codex/cursor/antigravity 遇数组形状复现 F-09 | **fixed**：三适配器 PostToolUse 全接入解包；各加数组形状契约用例 | codebuddy-contract 20/20 |

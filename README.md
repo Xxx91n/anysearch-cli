@@ -86,7 +86,7 @@ ans memory backfill-vectors   # embeds stored rows; first run downloads the mode
 ```
 
 The model downloads from huggingface.co on first use and is cached at
-`~/.anysearch/models` (override: `ANYSEARCH_MODEL_CACHE`). On an offline host,
+`~/.anysearch/models` (override: `ANYSEARCH_MODEL_CACHE`). On an offline host, <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 copy a populated cache dir in from a connected machine. Removing the package
 returns the CLI to FTS-only mode — no crash, `ans doctor` reports the arm as
 SKIP.

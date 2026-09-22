@@ -72,7 +72,7 @@ $ atomcode -p "调研任务：Claude Code 官方 plugin 系统能力边界与成
 - **本地加载**：`--plugin-dir ./my-plugin`（即装即用，不进缓存，不参与“未使用”追踪）；或 `claude plugin validate` 校验。
 - **Marketplace**：自建 marketplace = 一个仓库根放 `.claude-plugin/marketplace.json`（必填 `name` + `owner` + `plugins[]`，每项必填 `name` + `source`）。用户两步：`/plugin marketplace add owner/repo` → `/plugin install name@marketplace`。官方保留名清单（claude-plugins-official 等 18 个）禁止第三方使用，仿冒名也会被拒——**官方 marketplace（claude-plugins-official）由 Anthropic 人工策展，收录完全由其裁量**，应用内提交表单只能进 community marketplace。
 - **source 类型**：相对路径 / github / url(git) / git-subdir / npm（支持 `version` 范围 + 自定义 registry）/ **archive（zip + 可选 sha256 完整性 pin，HTTPS 强制，≤256MiB，需 v2.1.224+）** / command（每 session 重跑生成，v2.1.229+）。git 源支持 ref+sha 精确 pin。
-- **版本与升级**：`version` 字段即更新信号——bump 了才推送更新给用户；否则一直用缓存副本。安装即复制进 `~/.claude/plugins/cache`（本地相对路径源除外，原地加载）。
+- **版本与升级**：`version` 字段即更新信号——bump 了才推送更新给用户；否则一直用缓存副本。安装即复制进 `~/.claude/plugins/cache`（本地相对路径源除外，原地加载）。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 - **签名/审核**：无第三方强制签名；可选完整性手段是 archive 的 `sha256` pin 和企业 managed settings 限制（strictKnownMarketplaces 白名单、只允许 private/internal 仓库做 org 分发、可只允许 managed hooks）。
 - **企业通道**：Team/Enterprise 的 Organization settings > Plugins 或 managed settings 里 `extraKnownMarketplaces` + `enabledPlugins`（[issue #45323](https://github.com/anthropics/claude-code/issues/45323) 指出 CLI 侧 org 托管插件的自动安装仍有摩擦，截至该 issue 未完全解决）。
 
@@ -97,7 +97,7 @@ $ atomcode -p "调研任务：Claude Code 官方 plugin 系统能力边界与成
 
 **理由链**：
 
-1. **默认路径继续 settings.json 直挂，但修模板为官方 schema**。你们模板已经用 matcher+hooks type command 的官方 schema（正确），剩余风险在：(a) Windows 上不要依赖 `${CLAUDE_PLUGIN_ROOT}`（settings.json 里本来就没有这个变量，天然免疫 #16116）；(b) node 绝对路径指向全局 npm 目录在 Windows 有空格/反斜杠风险——建议模板用 `node "%APPDATA%/npm/..."` 或安装器生成时用正斜杠绝对路径；(c) 已知边界：VS Code 扩展宿主中 settings.json hooks 不触发（[issue #21736](https://github.com/anthropics/claude-code/issues/21736)，closed as duplicate，属已知缺口）——需在文档标注。
+1. **默认路径继续 settings.json 直挂，但修模板为官方 schema**。你们模板已经用 matcher+hooks type command 的官方 schema（正确），剩余风险在：(a) Windows 上不要依赖 `${CLAUDE_PLUGIN_ROOT}`（settings.json 里本来就没有这个变量，天然免疫 #16116）；(b) node 绝对路径指向全局 npm 目录在 Windows 有空格/反斜杠风险——建议模板用 `node "%APPDATA%/npm/..."` 或安装器生成时用正斜杠绝对路径；(c) 已知边界：VS Code 扩展宿主中 settings.json hooks 不触发（[issue #21736](https://github.com/anthropics/claude-code/issues/21736)，closed as duplicate，属已知缺口）——需在文档标注。 <!-- machine-local: Windows env-var 路径引用（存量合规化） @ 2026-09-22 -->
 2. **plugin 完整体作为“进阶分发”通道并行提供**，不是替代：plugin.json（name/version/mcpServers/hooks 三件套 + npm 元数据共存）+ hooks/hooks.json（从 settings.json 块逐字复制）+ 根 `.mcp.json`。发到自建 marketplace（npm 或 git 源，version bump 管升级）。成本主要在：工具名作用域化、Windows `${CLAUDE_PLUGIN_ROOT}` 风险（可用 archive+sha256 缓解分发信任，但运行时变量仍需测）、以及保持两份配置不漂移（用构建脚本从单一源生成，知识库里此前调研的“双 manifest 防漂移”经验同样适用）。
 3. **plugin 收益盖过成本的判据条件**（满足任两条即值得把 plugin 提为默认路径）：
    - 用户量大且更新频繁（>周级 release，直挂的合并成本显著）；
@@ -124,7 +124,7 @@ $ atomcode -p "调研任务：Claude Code 官方 plugin 系统能力边界与成
 
 **理由链**：
 
-1. **默认路径继续 settings.json 直挂，但修模板为官方 schema**。你们模板已经用 matcher+hooks type command 的官方 schema（正确），剩余风险在：(a) Windows 上不要依赖 `${CLAUDE_PLUGIN_ROOT}`（settings.json 里本来就没有这个变量，天然免疫 #16116）；(b) node 绝对路径指向全局 npm 目录在 Windows 有空格/反斜杠风险——建议模板用 `node "%APPDATA%/npm/..."` 或安装器生成时用正斜杠绝对路径；(c) 已知边界：VS Code 扩展宿主中 settings.json hooks 不触发（[issue #21736](https://github.com/anthropics/claude-code/issues/21736)，closed as duplicate，属已知缺口）——需在文档标注。
+1. **默认路径继续 settings.json 直挂，但修模板为官方 schema**。你们模板已经用 matcher+hooks type command 的官方 schema（正确），剩余风险在：(a) Windows 上不要依赖 `${CLAUDE_PLUGIN_ROOT}`（settings.json 里本来就没有这个变量，天然免疫 #16116）；(b) node 绝对路径指向全局 npm 目录在 Windows 有空格/反斜杠风险——建议模板用 `node "%APPDATA%/npm/..."` 或安装器生成时用正斜杠绝对路径；(c) 已知边界：VS Code 扩展宿主中 settings.json hooks 不触发（[issue #21736](https://github.com/anthropics/claude-code/issues/21736)，closed as duplicate，属已知缺口）——需在文档标注。 <!-- machine-local: Windows env-var 路径引用（存量合规化） @ 2026-09-22 -->
 2. **plugin 完整体作为“进阶分发”通道并行提供**，不是替代：plugin.json（name/version/mcpServers/hooks 三件套 + npm 元数据共存）+ hooks/hooks.json（从 settings.json 块逐字复制）+ 根 `.mcp.json`。发到自建 marketplace（npm 或 git 源，version bump 管升级）。成本主要在：工具名作用域化、Windows `${CLAUDE_PLUGIN_ROOT}` 风险（可用 archive+sha256 缓解分发信任，但运行时变量仍需测）、以及保持两份配置不漂移（用构建脚本从单一源生成，知识库里此前调研的“双 manifest 防漂移”经验同样适用）。
 3. **plugin 收益盖过成本的判据条件**（满足任两条即值得把 plugin 提为默认路径）：
    - 用户量大且更新频繁（>周级 release，直挂的合并成本显著）；
@@ -151,7 +151,7 @@ $ atomcode -p "调研任务：Claude Code 官方 plugin 系统能力边界与成
 
 **理由链**：
 
-1. **默认路径继续 settings.json 直挂，但修模板为官方 schema**。你们模板已经用 matcher+hooks type command 的官方 schema（正确），剩余风险在：(a) Windows 上不要依赖 `${CLAUDE_PLUGIN_ROOT}`（settings.json 里本来就没有这个变量，天然免疫 #16116）；(b) node 绝对路径指向全局 npm 目录在 Windows 有空格/反斜杠风险——建议模板用 `node "%APPDATA%/npm/..."` 或安装器生成时用正斜杠绝对路径；(c) 已知边界：VS Code 扩展宿主中 settings.json hooks 不触发（[issue #21736](https://github.com/anthropics/claude-code/issues/21736)，closed as duplicate，属已知缺口）——需在文档标注。
+1. **默认路径继续 settings.json 直挂，但修模板为官方 schema**。你们模板已经用 matcher+hooks type command 的官方 schema（正确），剩余风险在：(a) Windows 上不要依赖 `${CLAUDE_PLUGIN_ROOT}`（settings.json 里本来就没有这个变量，天然免疫 #16116）；(b) node 绝对路径指向全局 npm 目录在 Windows 有空格/反斜杠风险——建议模板用 `node "%APPDATA%/npm/..."` 或安装器生成时用正斜杠绝对路径；(c) 已知边界：VS Code 扩展宿主中 settings.json hooks 不触发（[issue #21736](https://github.com/anthropics/claude-code/issues/21736)，closed as duplicate，属已知缺口）——需在文档标注。 <!-- machine-local: Windows env-var 路径引用（存量合规化） @ 2026-09-22 -->
 2. **plugin 完整体作为“进阶分发”通道并行提供**，不是替代：plugin.json（name/version/mcpServers/hooks 三件套 + npm 元数据共存）+ hooks/hooks.json（从 settings.json 块逐字复制）+ 根 `.mcp.json`。发到自建 marketplace（npm 或 git 源，version bump 管升级）。成本主要在：工具名作用域化、Windows `${CLAUDE_PLUGIN_ROOT}` 风险（可用 archive+sha256 缓解分发信任，但运行时变量仍需测）、以及保持两份配置不漂移（用构建脚本从单一源生成，知识库里此前调研的“双 manifest 防漂移”经验同样适用）。
 3. **plugin 收益盖过成本的判据条件**（满足任两条即值得把 plugin 提为默认路径）：
    - 用户量大且更新频繁（>周级 release，直挂的合并成本显著）；

@@ -8,7 +8,7 @@
 | 版本 | `ans --version` | `0.0.3` | t1-ans-version.log |
 | doctor(repo cwd) | `ans doctor` | 22 pass/3 skip/0 fail；domains 解析到 `domains`（cwd 链） | t1-ans-doctor.log |
 | doctor(stranger cwd) | `cd D:\Aworker\e2e-r65-codebuddy && ans doctor` | 22/3/0；domains 解析到 `<npm-global>\@anysearch-cli\cli\domains`（包装域随包） | t1-ans-doctor-stranger.log | <!-- machine-local: sibling e2e checkout on build host @ 2026-09-19 -->
-| 演示域 | `ans domain docs` | persisted → `~/.anysearch/config.env`；sources=tavily,exa,anysearch | t1-domain-docs.log |
+| 演示域 | `ans domain docs` | persisted → `~/.anysearch/config.env`；sources=tavily,exa,anysearch | t1-domain-docs.log | <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 | env 键存在性 | ctx node 三层查（shell/User/Machine） | EXA_API_KEY=USER-SET；ANYSEARCH_API_KEY、ANS_LLM_* 全 unset（值未印） | 会话记录 |
 | MCP tools/list | `node scripts/mcp-tools-list.mjs`（spawn node+dist 直拉） | initOk；5 工具 search_web/research_web/recall_memory/query_knowledge/ans_chat；serverInfo anysearch@0.0.3 | t1-ans-mcp-tools-list.log |
 | plugin server 手拉 | `node <npm-global>/@anysearch-cli/plugin/dist/server/index.cjs`（cwd=e2e） | listen 127.0.0.1:33333；token 0600 落 `<cwd>/.anysearch-cli/server-token` | server-stderr.log |
@@ -57,7 +57,7 @@
 | P3 OOD | 修复前通用食谱结果 → 修复后全 modelcontextprotocol.io | t2-p3-ood-abstain.* / t2-p3b-ood-domain.* |
 | P4 ans_chat | v1/chat step 模型真实回答 | t2-p4d-ans-chat.*（红证据 p4/p4b/p4c 同前缀） |
 | P5 recall | 10 条跨 3 sessionId | t2-p5-recall.* |
-| P6 hooks | SessionStart 卡入 context/Pre+Post exit0/信封合法 | ~/.codebuddy/debug/<sid>.txt（不落库，宿主侧文件） |
+| P6 hooks | SessionStart 卡入 context/Pre+Post exit0/信封合法 | ~/.codebuddy/debug/<sid>.txt（不落库，宿主侧文件） | <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 | P7 fail-open | server 死→search 正常+hooks exit0+distill 仍产出 | t2-p7-failopen.* |
 | P8 组合 | research 执行；query_knowledge adapter=none 诚实 | t2-p8-research-knowledge.* |
 | P9 对照 | 无工具错引 vs 有工具 pnpm.io/settings/node-modules 真页 | t2-p9a-nomcp / t2-p9b-withtools |

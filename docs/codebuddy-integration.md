@@ -17,7 +17,7 @@ context verbatim.
 ```bash
 npm i -g @anysearch-cli/cli @anysearch-cli/mcp @anysearch-cli/plugin
 ans doctor            # 22 pass expected; keys/providers/domains self-check
-ans domain docs       # optional: pin the demo domain (persists to ~/.anysearch/config.env)
+ans domain docs       # optional: pin the demo domain (persists to ~/.anysearch/config.env) <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 ```
 
 ## 2. Keys

@@ -28,7 +28,7 @@ PASS（带 findings）。修复轮报告全部硬声明独立复现；双轴评�
 
 node scripts/ship-gate.mjs；node scripts/install-smoke.mjs；turbo check/build --force；
 ratchet 独立调用见审计报告复跑清单。审计产物：.scratch/grill-round-63/audit/ 已移至
-%TEMP%/r63-audit/（避免触发 step0 clean-tree——治理产物若入库请走 ! 规则路径并提交）。
+%TEMP%/r63-audit/（避免触发 step0 clean-tree——治理产物若入库请走 ! 规则路径并提交）。 <!-- machine-local: Windows env-var 路径引用（存量合规化） @ 2026-09-22 -->
 
 ## Suggested skills
 

@@ -15,7 +15,7 @@ web-profile composition), 2026-09-19. Evidence:
 
 Register the official MCP client bridge in the profile's user patch so the
 five `mcp__anysearch__*` tools appear on `ctx.tools`. Edit
-`$DSH_HOME/profiles/<name>/cordis.patch.yml`:
+`$DSH_HOME/profiles/<name>/cordis.patch.yml`: <!-- machine-local: POSIX env-var 路径引用（存量合规化） @ 2026-09-22 -->
 
 ```yaml
 - insert:

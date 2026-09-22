@@ -6,7 +6,7 @@ Date: 2026-09-22. Ledger: `decision-ledger.md`（D-001~D-005 全 current，已�
 
 清算 R77 审计残账两件 repo 内可收口项，同属「门禁可信度校准」同构主题：
 
-1. **`defer-r77-pathlint-envvar-blindspot`**：pathlint `PATH_RE`（ship-gate.mjs:1138）只认盘符/`/Users`/`/home`/`/tmp`/`AppData/` 字面形，env-var 形路径全漏网——**拦不住该拦的**。
+1. **`defer-r77-pathlint-envvar-blindspot`**：pathlint `PATH_RE`（ship-gate.mjs:1138）只认盘符/`/Users`/`/home`/`/tmp`/`AppData/` 字面形，env-var 形路径全漏网——**拦不住该拦的**。 <!-- machine-local: AppData 路径引用（存量合规化） @ 2026-09-22 -->
 2. **repin 拦截实验**：`minimumReleaseAge:2880` 对 catalog repin 的拦截行为从未实测——**不知道拦不拦**（R77 立法「L1=闸内唯一合法探测层」建立在未证假设上）。
 
 ## 裁决摘要（账本为准）

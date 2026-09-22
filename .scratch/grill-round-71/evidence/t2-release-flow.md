@@ -35,7 +35,7 @@ Date: 2026-09-19. First real guest through the R68 dual-layer release gate.
 
 - `npm view @anysearch-cli/{cli,mcp,plugin,embedding} version` → **0.0.6 ×4**
   (after ~4min registry propagation; `+ pkg@0.0.6` confirmations in publish log).
-- `npm i -g --prefix $TMP/r71-verify006 @anysearch-cli/cli@0.0.6
+- `npm i -g --prefix $TMP/r71-verify006 @anysearch-cli/cli@0.0.6 <!-- machine-local: POSIX env-var 路径引用（存量合规化） @ 2026-09-22 -->
   @anysearch-cli/embedding@0.0.6` → `added 220 packages`, exit 0, **zero
   EBADDEVENGINES** (devEngines removal verified on the real artifact).
 - Registry tarball LICENSE: `npm pack @anysearch-cli/cli@0.0.6` →

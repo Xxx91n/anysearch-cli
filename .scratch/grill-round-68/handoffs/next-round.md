@@ -42,7 +42,7 @@
 ## T3 — antigravity spike→验收（覆盖 D-001, D-003, D-004）
 
 - s0：跑官方 install.ps1 装 agy（系统变更须用户授权）→agy --version≥1.1.10、agy -p 返回。
-- s1：双探 ~/.gemini/config/hooks.json 与 ~/.gemini/antigravity-cli/hooks.json + 项目 .agents/hooks.json；transcriptPath 的 antigravity-cli/brain 证执行表面=CLI；顺手复测 IDE 2.5.5 hooks（一腿成本）。
+- s1：双探 ~/.gemini/config/hooks.json 与 ~/.gemini/antigravity-cli/hooks.json + 项目 .agents/hooks.json；transcriptPath 的 antigravity-cli/brain 证执行表面=CLI；顺手复测 IDE 2.5.5 hooks（一腿成本）。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 - s2：L0-L3 裁决重排=L-empty→L-decision（官方顶层形）→L-allow_tool（legacy）→L-plain-text（exit 语义）；adapter 审计点=hook_event_name 不注入须 argv 传回、camelCase 字段、exit-0-only 语义。
 - s3：agy -p headless hooks 触发+输出可观测。任一环断→降级宿主限制证据记断点环号。
 - 过则：adapter 修复（改前备份至 .scratch/grill-round-68/backups/t3/）+契约测试+验收 6 腿（契约端到端/session_id 传播/fail-open/PostToolUse {} 合规/SessionStart 不存在性复核+mdc 兜底/variance 可选）+SEP-2484 exclusion ledger。

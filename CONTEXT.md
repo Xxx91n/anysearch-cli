@@ -378,7 +378,7 @@ T0 偏好条目的双通道确定性闸门：任一满足即提升——(1) 用�
 _Avoid_: auto-promote, confidence threshold, LLM-judged promotion
 
 ## Key-Level Override Merge（键级覆写合并）
-双层 MEMORY.md 的确定性合并规则：每条 T0 偏好有键名（SQLite PK），项目 `<repo>/.anysearch/MEMORY.md` 与全局 `~/.anysearch/MEMORY.md` 同键时取项目值，异键合并，与 git config 双层模型同构。投影产物为单份合并文件，非两份。分支级隔离显式拒绝。ADR-0024 D6。
+双层 MEMORY.md 的确定性合并规则：每条 T0 偏好有键名（SQLite PK），项目 `<repo>/.anysearch/MEMORY.md` 与全局 `~/.anysearch/MEMORY.md` 同键时取项目值，异键合并，与 git config 双层模型同构。投影产物为单份合并文件，非两份。分支级隔离显式拒绝。ADR-0024 D6。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 _Avoid_: layered merge, cascading config, branch-scoped memory
 
 ## Package Manager Version Pinning（包管理器版本钉死）
@@ -520,7 +520,7 @@ _Avoid_: hard DELETE, archiving semantic/entity/edge rows, LLM making the forget
 LLM 使能一律走 pi-ai 缝 + createProvider 自定义端点（其 0.84.2 原生覆盖 openai-completions / openai-responses / anthropic-messages / google 四种 wire 协议）；配置 = ANS_LLM_BASE_URL + ANS_LLM_API（chat|messages|responses 显式声明，业界共识不做协议 sniff）+ ANS_LLM_MODEL；零自研 wire 适配代码。ADR-0037 D4(Q7)。
 _Avoid_: endpoint protocol sniffing/auto-detect, hand-rolled wire adapters, a second LLM client library alongside pi-ai
 ## Durable Maintenance DB (ANS_DB_PATH)（持久维护库路径）
-维护型命令（ans consolidate / memory forget / backfill / backfill-relations / entity merge）一律落持久化 SQLite：ANS_DB_PATH 显式覆盖，缺省 ~/.anysearch/anysearch.db（t0-projection 的全局 .anysearch 目录惯例）；kernel resolveDbPath 是唯一解析点，apps/cli 的 db.ts 负责 mkdir -p。搜索/聊天路径仍 :memory: 不受影响。ADR-0037 D6 Phase-3。
+维护型命令（ans consolidate / memory forget / backfill / backfill-relations / entity merge）一律落持久化 SQLite：ANS_DB_PATH 显式覆盖，缺省 ~/.anysearch/anysearch.db（t0-projection 的全局 .anysearch 目录惯例）；kernel resolveDbPath 是唯一解析点，apps/cli 的 db.ts 负责 mkdir -p。搜索/聊天路径仍 :memory: 不受影响。ADR-0037 D6 Phase-3。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 _Avoid_: in-memory-only maintenance commands that silently do nothing, per-command ad-hoc db path flags, env sniffing inside packages/store
 ## Three-Tier Gain Gate（三档增益门禁）
 gain 升级为独立 gate 结论字段（不合并单一 exit code）。绿=全量预注册规则通过且 holdout 无矛盾；WARN=holdout 功效不足 / 排除率>20% / 全量过但 holdout 未过（可能含过拟合）；红=holdout 配对检出退化或全量规则失败。“未显著为正”永不为红。ADR-0038 D2/D6。_Avoid_: hard fail-closed on unproven-positive, merging gain into one exit code。
@@ -817,7 +817,7 @@ _Avoid_: 静默忽略安全配置、审计不带策略版本与 trace_id、每�
 
 
 ## Session Identity File（会话身份文件）
-`~/.anysearch-cli/session` — session_id 的唯一磁盘主源。对标 systemd machine-id(5)：生成一次、原子写回、用户级作用域（跨项目复用）。session_id 是写时唯一引用、永不回读做身份判定的值；trace store 侧为 write-only 派生引用。环境变量 ANS_SESSION_ID 可覆盖文件值用于 CI/调试（不写回文件）。ADR-0056 D3。
+`~/.anysearch-cli/session` — session_id 的唯一磁盘主源。对标 systemd machine-id(5)：生成一次、原子写回、用户级作用域（跨项目复用）。session_id 是写时唯一引用、永不回读做身份判定的值；trace store 侧为 write-only 派生引用。环境变量 ANS_SESSION_ID 可覆盖文件值用于 CI/调试（不写回文件）。ADR-0056 D3。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 
 ## Session ID Propagation（会话 ID 贯通协议）
 跨 CLI hook MCP server 三层透传 session_id/trace_id 的契约——包括 traceparent (W3C 32hex trace_id) 与 x-anysearch-session-id (自定义 header，本地 loopback 仅用于跨层透传、绝不上游转发)。MCP 的 session_id 保持置空（SEP-2567 已移除协议级 session 概念）；client_id 从 _meta clientInfo.name 按 Railway 映射表尽力提取并引入可索引归因列。ADR-0056 D2/D3/D4/D5。
@@ -1284,7 +1284,7 @@ alarm 跟随发布走（alpha 可响=早期警报），adoption 跟随稳定性�
 ## Grill Round 78 — Terms (ADR-0079)
 
 ## Token-Separator Locator Judgment（token+分隔符 locator 判定）
-机器本地路径 lint 的判定形状=token 检出（env-var 形 `%VAR%`/`$VAR`/`${VAR}`、tilde 形 `~/`、UNC 形 `\host\`、盘符等字面形）后，必须紧跟路径分隔符才算 locator 命中→硬拦；裸 token 散文提及（如「设置 %PATH%」）不报——非 locator 报则永久噪音（shellcheck SC2088「tilde 仅作路径前缀才有意义」/spectralint 复合判定/path-guard 位置感知先例；无逐字同构先例=本仓原创须实测误报率）。_Avoid_: token 出现即拦（散文变量名全逼上 marker=过拦）；inline code 豁免（locator 常居 code span，豁免即掏空 lint）。来源：atomcode R78-Q3+R78 D-003。
+机器本地路径 lint 的判定形状=token 检出（env-var 形 `%VAR%`/`$VAR`/`${VAR}`、tilde 形 `~/`、UNC 形 `\host\`、盘符等字面形）后，必须紧跟路径分隔符才算 locator 命中→硬拦；裸 token 散文提及（如「设置 %PATH%」）不报——非 locator 报则永久噪音（shellcheck SC2088「tilde 仅作路径前缀才有意义」/spectralint 复合判定/path-guard 位置感知先例；无逐字同构先例=本仓原创须实测误报率）。_Avoid_: token 出现即拦（散文变量名全逼上 marker=过拦）；inline code 豁免（locator 常居 code span，豁免即掏空 lint）。来源：atomcode R78-Q3+R78 D-003。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 
 ## Surfaced-Skip Tier（surfaced-skip 可见不阻断层）
 「不能确定命中问题」的形态（单段 POSIX 根形 `/x` 等）→info 级列出但不 fail——severity 分层消化误报而非放宽规则（ESLint warn 语义/Vale MinAlertLevel/GitLab「CI 只拦 error」先例）。_Avoid_: warn 当常驻态（堆积的 warn=被忽略的 warn，终局须升级或关闭）；为躲误报把硬拦放宽（secret scanner 教训：高误报规则会被整条关闭）。来源：atomcode R78-Q3+R78 D-003。

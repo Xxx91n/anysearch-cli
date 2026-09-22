@@ -27,8 +27,8 @@ Hard-won host facts (live-verified on agy 1.2.5 — do not guess these):
   PostToolUse accepts only `{}`. Context injection =
   `injectSteps[].ephemeralMessage` on Pre/PostInvocation. A non-zero exit
   is a tool-level ERROR (stderr surfaces to the agent).
-- **Two hook files both load** — `~/.gemini/antigravity-cli/hooks.json` and
-  `~/.gemini/config/hooks.json` (same-named entries deduped).
+- **Two hook files both load** — `~/.gemini/antigravity-cli/hooks.json` and <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+  `~/.gemini/config/hooks.json` (same-named entries deduped). <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 - **No SessionStart event** — the five events are PreToolUse / PostToolUse /
   PreInvocation / PostInvocation / Stop. The routing card rides
   `PreInvocation` with `invocationNum === 0` instead.
@@ -79,8 +79,8 @@ Caveat: a configured-but-hung MCP server stalls headless turns.
 
 ## 5. Hooks — user-level `hooks.json`
 
-Both files are read: `~/.gemini/antigravity-cli/hooks.json` (preferred) and
-`~/.gemini/config/hooks.json`. Copy the shipped template
+Both files are read: `~/.gemini/antigravity-cli/hooks.json` (preferred) and <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+`~/.gemini/config/hooks.json`. Copy the shipped template <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 `$(npm root -g)/@anysearch-cli/plugin/configs/antigravity/hooks.json` into
 one of them — the top-level key (`"anysearch"`) is an arbitrary hook-group
 name, merge under your own names if the file already exists:

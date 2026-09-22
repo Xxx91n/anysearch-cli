@@ -37,7 +37,7 @@
 ## 4. 产品缺口与修复（walking skeleton 实走暴露，全部属正文行）
 
 1. **域不可送达**：`loadDomainByName` 仅 CWD 相对且 `domains/` 不在任何包 `files` 内 → 干净装后 `ANS_DOMAIN=docs` 静默 full-fanout（Domain-not-found 被吞）。修：域目录解析链 = `ANS_DOMAINS_DIR` env → `cwd/domains` → 内建 `<pkg>/domains`（@anysearch/cli 打包 `files+domains` + build 期 `scripts/sync-cli-domains.mjs` 从仓根同步）→ dev 兜底仓根 `domains`。`createEngine` 增 `opts.domainsDirs`；Domain-not-found 沿链逐一尝试，其余错误语义不变（sources.weights 仍 fail-fast，其余仍 fail-open fanout）。
-2. **域持久化 write-only**：`ans domain <name>` 写 `~/.anysearch/config.env` 但仅 runDomain 自读，search/chat 等不生效。修：cli 入口在 `process.env.ANS_DOMAIN === undefined` 时从 config.env rehydrate（`??=` 语义；显式空串与已有 env 不被覆盖，保 `verify-observation.mjs` 的 env-scrub 语义）。config.env 读写移入 `apps/cli/src/config-env.ts` 共享。
+2. **域持久化 write-only**：`ans domain <name>` 写 `~/.anysearch/config.env` 但仅 runDomain 自读，search/chat 等不生效。修：cli 入口在 `process.env.ANS_DOMAIN === undefined` 时从 config.env rehydrate（`??=` 语义；显式空串与已有 env 不被覆盖，保 `verify-observation.mjs` 的 env-scrub 语义）。config.env 读写移入 `apps/cli/src/config-env.ts` 共享。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 3. **五端联动 doctor 不可见**：doctor 只校验内联 fixture，不读真实 `domains/*.toml`。修：doctor 新增 `[5] Domains` 段——按解析链列出发现目录与逐 TOML 校验结果；对活动域显示五下游层（sources.enabled / skills.active / hooks.toolWhitelist / prompts / rag.adapter），缺域时显式 FAIL 而非静默。
 4. **policy 路径同病**：`domainTomlPath()`（url-policy.ts:107，plugin server / hitl / chat / ans-chat 共用）同改走解析链，保持与 loader 一致。
 

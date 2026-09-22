@@ -10,7 +10,7 @@
 ## 决策 (Decision)
 
 采用 **cc-persona 的"一份 TOML + 一条 `use <name>` 命令同时联动四到五端"模式**作为实现模型：
-- `~/.config/anysearch/domains/<name>.toml` 一份文件，含 `[settings]` / `[prompts]` / `[skills active=[...]]` / `[sources enabled=[...]]` / `[rag] adapter=<id>` / `[hooks] tool-whitelist=[...]`。
+- `~/.config/anysearch/domains/<name>.toml` 一份文件，含 `[settings]` / `[prompts]` / `[skills active=[...]]` / `[sources enabled=[...]]` / `[rag] adapter=<id>` / `[hooks] tool-whitelist=[...]`。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 - 切换命令 `ans domain use <name>` 一条命令同时完成深合并、软链切换、enable/disable 模式切换、漂移检测、快照备份（按 cc-persona README 与 v0.2.0 commit 的 spec 移植）。
 
 协议层术语：MCP `Tools / Resources / Prompts` 三原语正好对应"工具白名单 / 信息源+RAG / 预置提示词"；`MCP server-per-domain`（AWS Prescriptive Guidance 官方推荐）+ `Agent Skills`（Anthropic 2025-10-16 发布、2025-12-18 开放为 agentskills.io 跨平台标准）+ Persona/Profile 配置层，三者组合是该问题的成熟工业术语答案。

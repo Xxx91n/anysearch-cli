@@ -1,7 +1,7 @@
 # R75 T0 — transformers ghost-dep runtime reproduction (pnpm isolated scope)
 
 Date: 2026-09-21/22. Host: Windows 11, Git Bash, Node v24.11.0, pnpm 11.24.0.
-Fixture: three throwaway pnpm projects in a machine temp dir (`$TEMP/r75-fixture`,
+Fixture: three throwaway pnpm projects in a machine temp dir (`$TEMP/r75-fixture`, <!-- machine-local: POSIX env-var 路径引用（存量合规化） @ 2026-09-22 -->
 not committed — transcripts are the artifact). `hoist: false` in each fixture's
 `pnpm-workspace.yaml` gives the isolated-scope layout (`node_modules/.pnpm/node_modules`
 stays empty: verified 0 entries). Raw verbatim transcript:

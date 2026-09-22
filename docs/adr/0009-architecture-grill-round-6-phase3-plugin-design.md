@@ -99,7 +99,7 @@ wshobson/agents 38.9k stars 互证）。
 
 内部开发阶段（不公开）用各平台原生本地目录加载：
 - Claude Code: claude --plugin-dir ./apps/plugin/configs/claude
-- Cursor: ~/.cursor/plugins/local
+- Cursor: ~/.cursor/plugins/local <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 - Codex: codex plugin marketplace add ./local-marketplace-root
 - npm link 仅在验证 npm 渠道时才用
 

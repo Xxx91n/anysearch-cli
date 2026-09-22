@@ -28,7 +28,7 @@ r65-grill → r65-t1-deploy → r65-t6-closure → r65-t3-codebuddy-hooks → r6
 1. **OIDC trusted publishing（欠条 due 0.0.4，紧邻下轮候选，D-001 明列）**——发布工程轮：npm OIDC 免长效 token、版本 bump 通道、0.0.4 发布 rehearse。前置依赖：publish 权限须用户当场授权。
 2. **真 Claude Code 宿主验证**——与 CodeBuddy 同构的第二真宿主轮：claude.cjs 适配器+configs/claude 模板已契约级绿但未实机；复用 R65 探针矩阵协议可直接移植。
 3. **internal anysearch provider 服务端排查**——live 探针中 queried 但 0 成功（凭证已供，fail-open 未阻）；属服务端议题，需用户侧排查窗口。
-4. **projectIndex 双库不同根设计问题**——plugin server 写 cwd 锚定库 vs MCP recall 读 ~/.anysearch 引擎库；是否汇合是架构裁决，宜作 grill 主题而非顺手修。
+4. **projectIndex 双库不同根设计问题**——plugin server 写 cwd 锚定库 vs MCP recall 读 ~/.anysearch 引擎库；是否汇合是架构裁决，宜作 grill 主题而非顺手修。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 5. interactive TUI 抽验 / embedding arm 实测 / 跨 OS matrix（CI 委派）——散件，可并入任一上述轮的验收清单。
 
 ## Suggested skills

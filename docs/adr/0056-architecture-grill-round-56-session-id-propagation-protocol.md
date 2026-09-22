@@ -44,7 +44,7 @@ session_id MUST NOT use the tracestate header (32-key truncation risk). A custom
 
 ### D3 — session_id Persistence: .anysearch-cli/session File as Sole Primary Source
 
-The .anysearch-cli/session file is the single source of truth for session_id. Mirrors systemd /etc/machine-id: generate once, atomic write-back, user-scoped base directory (~/.anysearch-cli/), not project-cwd—session identity spans projects.
+The .anysearch-cli/session file is the single source of truth for session_id. Mirrors systemd /etc/machine-id: generate once, atomic write-back, user-scoped base directory (~/.anysearch-cli/), not project-cwd—session identity spans projects. <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 
 The trace store stores session_id as a write-only derived reference (via recordOperation / emitConfigChangeAudit writes); it never reads session_id back for identity determination.
 

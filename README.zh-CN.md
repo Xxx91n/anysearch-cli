@@ -85,7 +85,7 @@ ans memory backfill-vectors   # embeds stored rows; first run downloads the mode
 ```
 
 模型首次使用时从 huggingface.co 下载，缓存于
-`~/.anysearch/models`（可用 `ANYSEARCH_MODEL_CACHE` 覆盖）。离线主机可从联网
+`~/.anysearch/models`（可用 `ANYSEARCH_MODEL_CACHE` 覆盖）。离线主机可从联网 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 机器拷贝已填充的缓存目录。卸载该包后 CLI 退回 FTS-only 模式 —— 不崩溃，
 `ans doctor` 将该臂报为 SKIP。
 

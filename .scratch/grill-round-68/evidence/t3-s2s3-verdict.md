@@ -67,4 +67,4 @@
 ## 已知形变
 
 - workspacePaths 可为空数组（probe 会话未挂 workspace）→ mdc 落 hook 进程 cwd。生产形态下 IDE/CLI 项目会话应有值；记为 best-effort。
-- hooks 双读面：~/.gemini/config/hooks.json 与 ~/.gemini/antigravity-cli/hooks.json 均装载（同名去重）。
+- hooks 双读面：~/.gemini/config/hooks.json 与 ~/.gemini/antigravity-cli/hooks.json 均装载（同名去重）。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->

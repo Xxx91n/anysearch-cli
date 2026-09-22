@@ -35,7 +35,6 @@ Blocking probe #8 passed at both config and runtime level. All nine probes PASS;
 
 Reproduction (sandbox layout; replace the first path if rebuilt elsewhere):
 
-<!-- machine-local: R72 spike sandbox on this host @ 2026-09-19 -->
 ```bash
 export DSH_HOME=/d/Aworker/dsh-r72-spike/home
 export PROBE_STUB_KEY=probekey

@@ -49,8 +49,8 @@ in-repo → ERR_PNPM_BAD_PM_VERSION). AGENTS.md pinning note updated.
 
 ## Raw command anchors
 
-- npm arm install: `npm i -g --prefix $TMP/r71-arm-npm @anysearch-cli/cli@0.0.5 @anysearch-cli/embedding@0.0.5` → 220 pkgs, exit 0, no EBADDEVENGINES.
-- pnpm arm install: `PNPM_HOME=$TMP/r71-arm-pnpm pnpm add -g --dir $TMP/r71-arm-pnpm …` → +54 pkgs, exit 0.
+- npm arm install: `npm i -g --prefix $TMP/r71-arm-npm @anysearch-cli/cli@0.0.5 @anysearch-cli/embedding@0.0.5` → 220 pkgs, exit 0, no EBADDEVENGINES. <!-- machine-local: POSIX env-var 路径引用（存量合规化） @ 2026-09-22 -->
+- pnpm arm install: `PNPM_HOME=$TMP/r71-arm-pnpm pnpm add -g --dir $TMP/r71-arm-pnpm …` → +54 pkgs, exit 0. <!-- machine-local: POSIX env-var 路径引用（存量合规化） @ 2026-09-22 -->
 - Pre-fix pnpm doctor: `[SKIP] vector arm (@anysearch-cli/embedding absent — FTS-only (optional peer))`.
 - Pre-fix pnpm backfill: `backfilled 0/1 vector(s) (1 failed)` exit 1.
 - Failure sim: `ANYSEARCH_MODEL_CACHE=<file-not-dir>` → `Unable to add response to browser cache: ENOTDIR` → `backfilled 0/1 (1 failed)` exit 1. (Node fetch ignores `HTTP(S)_PROXY`; `HF_HUB_OFFLINE`/`HF_ENDPOINT` are Python-Hub env vars, ignored by transformers.js — dead-proxy and env-flag sims were inert; cache-dir fault injection is the honest first-use failure.)

@@ -29,7 +29,7 @@ Date: 2026-09-22. 审计报告全文（声明→证据→结论对照表、双�
 - **F-1**：`pnpm-workspace.yaml:43` 残留版本锚触发措辞（「上游发布 0.1.6 稳定/rc 线」）+指向 r73 v1 ledger——D-002 触发器无版本号教义的漏改第二面。建议小返工（注释级）或用户豁免。
 - **F-2**：repin 拦截实验项仅 q2-atomcode.md 记档，未入 ADR/registry/handoff 锚点。
 - **F-3/F-4**：报告数字失准两处（pathlint 300→实 304；closeout 基线 41→实 40）。
-- **F-5**：`%TEMP%/r77-scratch-snap-20260922-172728` 裸路径两处（report:59/closeout:35）无 `machine-local` marker；`PATH_RE` 不识别 env-var 形路径=lint 盲区（扩 PATH_RE 属新 backlog 题，超本轮 mandate）。
+- **F-5**：`%TEMP%/r77-scratch-snap-20260922-172728` 裸路径两处（report:59/closeout:35）无 `machine-local` marker；`PATH_RE` 不识别 env-var 形路径=lint 盲区（扩 PATH_RE 属新 backlog 题，超本轮 mandate）。 <!-- machine-local: Windows env-var 路径引用（存量合规化） @ 2026-09-22 -->
 - 任何修复落地后须重跑：`node scripts/ship-gate.mjs --skip-matrix` + `git status --porcelain` 零脏（轻量重跑清单，见审计报告 §六）。
 
 ## 下一个 grill 方向指示（R78 候选）
