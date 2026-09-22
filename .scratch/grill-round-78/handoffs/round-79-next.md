@@ -15,10 +15,10 @@ Stack：r78 全栈（r78-grill kok + r78-impl nkv→zun→ryr→qqy→ovm→zrz�
 ## 绿色 run URL
 
 - 本地：`pnpm install --frozen-lockfile` 绿 / `turbo check` 8/8 / `turbo test` 13/13 / `ship-gate --skip-matrix` 全绿（pathlint 319 文档净）/ CLI 0.0.7 + doctor 23-0-2
-- CI（main push 5757e0ae 触发，交接书写时 in_progress）：
-  - ci: https://github.com/Xxx91n/anysearch-cli/actions/runs/35749823276
-  - ship-gate: https://github.com/Xxx91n/anysearch-cli/actions/runs/35749823305
-  - native-smoke: https://github.com/Xxx91n/anysearch-cli/actions/runs/35749823340
+- CI（main tip `b3159773` 三腿全绿；首批 5757e0ae 的 ci/ship-gate 被 concurrency 顶销属正常 supersede）：
+  - ci: https://github.com/Xxx91n/anysearch-cli/actions/runs/35750029039（success 5m32s）
+  - ship-gate: https://github.com/Xxx91n/anysearch-cli/actions/runs/35750028930（success 9m37s）
+  - native-smoke: https://github.com/Xxx91n/anysearch-cli/actions/runs/35750028919（success 1m18s）
 
 ## 下一轮候选（按紧迫度排序）
 
