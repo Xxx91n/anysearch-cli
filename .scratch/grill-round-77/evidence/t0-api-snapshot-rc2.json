@@ -1,0 +1,217 @@
+{
+ "schema": "r77/t0-api-snapshot@1",
+ "generated_at": "2026-09-22T09:02:53.189Z",
+ "pinned": "0.1.5-rc.2 (+cordis 4.0.2)",
+ "extraction_root": "node_modules/.pnpm/@deepseek-ai+* instances bucketed by name@version (deduped; rc.2 + cordis 4.0.2)",
+ "consumer": {
+  "file": "apps/dsh-plugin/src/index.ts",
+  "events_consumed": [
+   "agent/session-start",
+   "tools/pre-execute",
+   "tools/post-execute",
+   "tools/result"
+  ],
+  "session_start_payload_fields_consumed": [
+   "agent"
+  ],
+  "note": "ctx.on('agent/session-start', ({ agent }: { agent: Agent }) => ...) at index.ts:87 — payload destructures only `agent`."
+ },
+ "family": {
+  "cordis": {
+   "version": "4.0.2",
+   "dts_files": 9,
+   "events_keys": [
+    "internal/config",
+    "internal/dispatch",
+    "internal/get",
+    "internal/listener",
+    "internal/plugin",
+    "internal/service",
+    "internal/set",
+    "internal/status",
+    "internal/update"
+   ]
+  },
+  "dsh-agent": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 8,
+   "events_keys": [
+    "agent/assistant-stream",
+    "agent/created",
+    "agent/disposed",
+    "agent/error",
+    "agent/inbox/claimed",
+    "agent/inbox/discarded",
+    "agent/inbox/inserted",
+    "agent/pre-step",
+    "agent/request",
+    "agent/request-error",
+    "agent/session-start",
+    "agent/status",
+    "agent/turn-stopping"
+   ]
+  },
+  "dsh-invariants": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 1,
+   "events_keys": []
+  },
+  "dsh-llm": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 16,
+   "events_keys": [
+    "llm/adapters-updated",
+    "llm/stream"
+   ]
+  },
+  "dsh-scope": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 4,
+   "events_keys": []
+  },
+  "dsh-session": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 9,
+   "events_keys": [
+    "session/created",
+    "session/disposed",
+    "session/event",
+    "session/flush"
+   ]
+  },
+  "dsh-session-projection": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 2,
+   "events_keys": []
+  },
+  "dsh-system-prompt": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 2,
+   "events_keys": [
+    "system-prompt/assemble",
+    "system-prompt/change"
+   ]
+  },
+  "dsh-typert-protocol": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 3,
+   "events_keys": []
+  },
+  "dsh-util-values": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 1,
+   "events_keys": []
+  },
+  "dsh-brand": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 1,
+   "events_keys": []
+  },
+  "dsh-code-runtime": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 2,
+   "events_keys": []
+  },
+  "dsh-timeout": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 1,
+   "events_keys": []
+  },
+  "dsh-util-crypto": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 1,
+   "events_keys": []
+  },
+  "dsh-tools": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 10,
+   "events_keys": [
+    "tools/change",
+    "tools/execute",
+    "tools/post-execute",
+    "tools/pre-execute",
+    "tools/ptc-dispatch-log",
+    "tools/result"
+   ]
+  },
+  "dsh-user-approval": {
+   "version": "0.1.5-rc.2",
+   "dts_files": 3,
+   "events_keys": [
+    "approval/request"
+   ]
+  }
+ },
+ "events_union_keys": [
+  "agent/assistant-stream",
+  "agent/created",
+  "agent/disposed",
+  "agent/error",
+  "agent/inbox/claimed",
+  "agent/inbox/discarded",
+  "agent/inbox/inserted",
+  "agent/pre-step",
+  "agent/request",
+  "agent/request-error",
+  "agent/session-start",
+  "agent/status",
+  "agent/turn-stopping",
+  "approval/request",
+  "internal/config",
+  "internal/dispatch",
+  "internal/get",
+  "internal/listener",
+  "internal/plugin",
+  "internal/service",
+  "internal/set",
+  "internal/status",
+  "internal/update",
+  "llm/adapters-updated",
+  "llm/stream",
+  "session/created",
+  "session/disposed",
+  "session/event",
+  "session/flush",
+  "system-prompt/assemble",
+  "system-prompt/change",
+  "tools/change",
+  "tools/execute",
+  "tools/post-execute",
+  "tools/pre-execute",
+  "tools/ptc-dispatch-log",
+  "tools/result"
+ ],
+ "events_by_package": {},
+ "session_start_block": {
+  "pkg": "dsh-agent",
+  "file": "dsh-agent/lib/types/runtime-types.d.ts",
+  "block": "interface Events {\n        /**\n         * A fully configured agent and live session were published. Setup is\n         * composition-only; `agent/session-start` is the first startup-driving extension point.\n         * Synchronous listener failure vetoes publication, while returned-promise\n         * rejection is reported. Detach requested during dispatch waits until every\n         * creation listener has observed the stable entry.\n         * @param payload.agent - the newly registered agent with its live session and completed setup.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.\n         * @mode emit\n         */\n        'agent/created'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n        }): void;\n        /**\n         * An agent left the registry; AgentLoop emits this after driver quiescence\n         * and scoped-registration unwind, but before session detachment. Custom\n         * registry users own their driver-ordering contract.\n         * @param payload.agent - the exact agent removed from the registry.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.\n         * @mode emit\n         */\n        'agent/disposed'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n        }): void;\n        /**\n         * Agent status changed (`idle` ⇄ `running`). A waking delivery enters\n         * `running` synchronously after reserving cancellation; `idle` means no\n         * driver remains scheduled or active.\n         * @param payload.agent - the agent whose status flipped.\n         * @param payload.status - the status just entered (the transition's destination).\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.\n         * @mode emit\n         */\n        'agent/status'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n            status: AgentStatus;\n        }): void;\n        /**\n         * One message entered the live inbox.\n         * @param payload.agent - the agent whose inbox changed.\n         * @param payload.message - the inserted message.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.\n         * @mode emit\n         */\n        'agent/inbox/inserted'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n            message: UserMessage;\n        }): void;\n        /**\n         * One message left the inbox inside its open turn. If the proposed step\n         * is rejected, the claimed message ends here: it is neither discarded nor\n         * re-emitted as a user/message, and the turn closes without a step.\n         * @param payload.agent - the agent whose inbox changed.\n         * @param payload.message - the claimed message.\n         * @param payload.turn - the owning turn.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.\n         * @mode emit\n         */\n        'agent/inbox/claimed'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n            message: UserMessage;\n            turn: number;\n        }): void;\n        /**\n         * One message was discarded from the live inbox.\n         * @param payload.agent - the agent whose inbox changed.\n         * @param payload.message - the discarded message.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.\n         * @mode emit\n         */\n        'agent/inbox/discarded'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n            message: UserMessage;\n        }): void;\n        /**\n         * The session lifecycle began, once before the first turn. Use\n         * `agent.inject()` to seed model-facing context. This is a notification, not\n         * a veto; disposal requested by a lifecycle owner is rechecked before the\n         * driver starts.\n         * @param payload.agent - the agent whose session lifecycle began.\n         * @param payload.source - why the session started (fresh startup, resume, …).\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.\n         * @mode emit\n         */\n        'agent/session-start'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n            source: SessionStartSource;\n        }): void;\n        /**\n         * Reject a proposed step or replace the messages that enter it. Calling\n         * `next()` preserves the current messages.\n         * @param payload.agent - the agent proposing the step.\n         * @param payload.messages - messages removed from the inbox for this step.\n         * @param payload.turn - the turn that will own the step.\n         * @param payload.step - the step proposed by the loop.\n         * @param payload.signal - the current turn's cancellation signal.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.\n         * @mode waterfall\n         */\n        'agent/pre-step'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n            messages: UserMessage[];\n            turn: number;\n            step: number;\n            signal: AbortSignal;\n        }, next: () => Promise<PreStepDecision>): Promise<PreStepDecision>;\n        /**\n         * Replace the frozen call configuration. `await next()` yields the config\n         * the machine would use (agent options on the first request, the logged\n         * header afterwards); return a replacement to switch. On step admission,\n         * this runs after assembly and `step/start`, before the system prompt and\n         * accepted user batch are committed. Cancellation here or during subsequent\n         * `prepareCall()` resolution commits neither. The prepared call capability\n         * governs prompt admission. Model-visible content must use logged channels;\n         * this waterfall cannot mutate messages.\n         * @param payload.agent - the agent making the model call.\n         * @param payload.turn - the open turn number.\n         * @param payload.step - the step whose request this is.\n         * @param payload.signal - the current turn's explicit abort signal.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.\n         * @mode waterfall\n        */\n        'agent/request'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n            turn: number;\n            step: number;\n            signal: AbortSignal;\n        }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>;\n        /**\n         * Handle one failed model-request attempt before the loop retries or closes\n         * its step. A listener returns `{ kind: 'retry' }` without calling `next()`\n         * when it owns recovery, or calls `next()` to delegate. The default\n         * `undefined` leaves the failure terminal.\n         * @param payload.agent - the agent whose request failed.\n         * @param payload.turn - the turn containing the failed request.\n         * @param payload.step - the step containing the failed request attempt.\n         * @param payload.provider - the provider selected for the failed request.\n         * @param payload.failure - serializable facts normalized at the final adapter boundary.\n         * @param payload.retryPolicy - the policy of the adapter registration that served the failed request.\n         * @param payload.signal - the turn abort signal.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.\n         * @mode waterfall\n         */\n        'agent/request-error'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n            turn: number;\n            step: number;\n            provider: string;\n            failure: LlmFailure;\n            retryPolicy: ResolvedRetryPolicy | undefined;\n            signal: AbortSignal;\n        }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>;\n        /**\n         * Process-local assistant-stream publication. Chunk frames are transient;\n         * the loop appends one final v2 `assistant/message` or `assistant/attempt`\n         * with the same stream before a committed end frame.\n         * @param payload.agent - the agent whose attempt produced the frame.\n         * @param payload.frame - one ordered start, chunk, or end publication.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.\n         * @mode emit\n         */\n        'agent/assistant-stream'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n            frame: AssistantStreamFrame;\n        }): void;\n        /**\n         * The turn is about to close: the model owes no response (no live tool\n         * calls, no fresh steering). Awaited before the boundary commits — a\n         * listener that objects steers (`agent.steer(...)`) and the machine\n         * re-reads its inbox: fresh steering runs another step, none closes the\n         * turn. Data decides, so listener order cannot change the outcome. The\n         * inverse control (stop a tool loop early) is data too: a tool result\n         * carrying `concludesTurn` ends the turn at its step. The conclusion\n         * never short-circuits already-submitted next-step work: same-step\n         * `additionalContexts` or racing steering still runs, and the turn\n         * closes only when that inbox drains.\n         * @param payload.agent - the agent whose turn is at its stop boundary.\n         * @param payload.turn - the turn about to close.\n         * @param payload.signal - the current turn's explicit abort signal.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.\n         * @mode serial\n         */\n        'agent/turn-stopping'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n            turn: number;\n            signal: AbortSignal;\n        }): Promise<void> | void;\n        /**\n         * A step or turn errored. The machine reports a failure here even when\n         * the error has no in-turn position for a durable record.\n         * @param payload.agent - the agent whose turn errored.\n         * @param payload.turn - the turn in which the failure surfaced.\n         * @param payload.step - the step at which the failure surfaced.\n         * @param payload.error - the failure, verbatim.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.\n         * @mode emit\n         */\n        'agent/error'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n            turn: number;\n            step: number;\n            error: unknown;\n        }): void;\n    }"
+ },
+ "consumed_signatures": {
+  "agent/session-start": {
+   "pkg": "dsh-agent",
+   "file": "lib/types/runtime-types.d.ts",
+   "signature": "'agent/session-start'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n            source: SessionStartSource;\n        }):"
+  },
+  "agent/created": {
+   "pkg": "dsh-agent",
+   "file": "lib/types/runtime-types.d.ts",
+   "signature": "'agent/created'(this: Scoped<Agent>, payload: {\n            agent: Agent;\n        }):"
+  },
+  "tools/pre-execute": {
+   "pkg": "dsh-tools",
+   "file": "lib/types/index.d.ts",
+   "signature": "'tools/pre-execute'(this: Scoped<ToolRuntime>, exec: ToolExecution, next: () => Promise<PreToolDecision>): Promise<PreToolDecision>;\n        /**\n         * Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns\n         * a normalized result; wrappers may change only `exec.signal`, while call\n         * identity remains immutable. The registry re-fuses the original caller\n         * signal before the body, so replacement cannot detach caller cancellation;\n         * wrappers must still restore their signal and reach quiescence.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent's calls.\n         * @param exec - the allowed call about to dispatch (name, parsed arguments, caller agent, signal).\n         * @mode waterfall\n         */\n        'tools/execute'(this: Scoped<ToolRuntime>, exec: ToolDispatchExecution, next: () => Promise<ToolExecutionResult>): Promise<ToolExecutionResult>;\n        /**\n         * Accept, replace, enrich, or block a normalized dispatch result. `next()`\n         * accepts it unchanged; thrown tools still reach this waterfall as errors. Async\n         * listeners must observe `exec.signal`; after they settle, caller\n         * cancellation replaces only a successful accepted outcome with the code\n         * selected by whether the tool body was invoked.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent's calls.\n         * @param exec - the call that just ran (name, parsed arguments, caller agent).\n         * @param result - the dispatch outcome a listener may accept, replace, or block.\n         * @mode waterfall\n         */\n        'tools/post-execute'(this: Scoped<ToolRuntime>, exec: ToolExecution, result: Readonly<ToolExecutionResult>, next: () => Promise<PostToolDecision>): Promise<PostToolDecision>;\n        /**\n         * Allow a listener to replace content in the DURABLE LOG COPY of one\n         * `run_code` sub-dispatch outcome before the bridge appends its\n         * `tool/ptc-dispatch` event. `next()` keeps the\n         * content unchanged; a listener may return replacement blocks (e.g. the\n         * spill policy's preview + locator for an oversized text result). Only the\n         * logged copy is affected — the program already received the complete\n         * value, and the model sees neither. A throwing listener is contained:\n         * the bridge falls back to logging the original settled content.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent's dispatches.\n         * @param dispatch - the parent execution, sub-call identity, and the settled content to log.\n         * @mode waterfall\n         */\n        'tools/ptc-dispatch-log'(this: Scoped<ToolRuntime>, dispatch: PtcDispatchLog, next: () => Promise<ContentBlock[]>): Promise<ContentBlock[]>;\n        /**\n         * Observe the frozen, lossless-JSON final outcome. Listener failures are contained.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): keyed by `exec.agent`.\n         * @param exec - the execution object that traversed the pipeline.\n         * @param result - a deep-frozen snapshot of the final returned result.\n         * @mode emit\n         */\n        'tools/result'(this: Scoped<ToolRuntime>, exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): undefined;\n        /**\n         * A tool was registered or unregistered, or a scoped restriction changed\n         * (the available tool set changed — possibly for one scope only). An\n         * UNFILTERED registry-subject notification, deliberately not scope-filtered\n         * dispatch: a global change concerns every agent's next assembly, so a\n         * scoped listener subscribing here sees every change, not just its own\n         * scope's.\n         * @mode emit\n         */\n        'tools/change'(): void;\n    }\n}\n/** Tool-owned canonical output contract used after the body returns a JSON value. */\nexport interface ToolOutputDefinition {\n    /** Raw supported JSON Schema enforced against every successful canonical value. */\n    readonly schema: JsonSchemaNode;\n    /** Pure projection from validated arguments and value to Native/model content. */\n    render(args: unknown, value: JsonValue): ContentBlock[];\n    /** Pure replayable presentation projection, computed only for top-level calls. */\n    presentationMeta?(args: unknown, value: JsonValue): JsonValue;\n}\n/** A registered tool: its schema plus the execution function. */\nexport interface ToolDefinition extends ToolSchema {\n    /** Mandatory canonical output declaration. */\n    readonly output: ToolOutputDefinition;\n    /**\n     * Run one accepted call and return only its canonical lossless-JSON value.\n     * Async work must observe or forward `exec.signal` and settle only after its\n     * owned work reaches quiescence. The registry preserves caller cancellation\n     * through around-dispatch signal replacement and does not abandon this\n     * promise, but it cannot hard-kill same-process code.\n     * @param args - losslessly snapshotted, frozen model arguments.\n     * @param exec - execution identity, cancellation signal, and context deferral.\n     * @returns the canonical value declared by `output.schema`.\n     */\n    execute(args: unknown, exec: ToolRunContext): Promise<unknown>;\n    /**\n     * Synchronous last-mile transform for model-facing content. The registry\n     * snapshots this callback when execution starts and invokes it exactly once\n     * for every normalized outcome, including pipeline failures that bypass\n     * `tools/post-execute`, immediately before lossless materialization.\n     * Returning `undefined` preserves the content; every other result field\n     * remains registry-owned. The callback must be total and must not throw.\n     * @param exec - immutable execution identity and arguments.\n     * @param result - complete normalized outcome before materialization.\n     * @returns replacement content, or `undefined` to preserve it.\n     */\n    finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    /**\n     * Cooperative tool-call timeout budget in milliseconds. Omit for no deadline.\n     * Enforced by `@deepseek-ai/dsh-tool-call-timeout-policy` (a `tools/execute` wrapper); it\n     * is NEVER sent to the model — `schemas()` whitelists only name/description/\n     * parameters. Declaring it asserts this tool forwards `exec.signal` to a\n     * cooperative implementation that can reach quiescence when the signal aborts.\n     */\n    timeoutMs?: number;\n    /**\n     * Pure synchronous classifier for overlap with sibling tool calls. Only\n     * `true` opts in; omission, exceptions, non-`true` returns, and invalid\n     * `defineTool` arguments are exclusive. This metadata is never model-visible.\n     *\n     * Opted-in executions must not mutate parent-owned state. Shared state must\n     * tolerate concurrent dispatch; recorder races are permitted only when they\n     * commute or fail closed. See the\n     * [parallel-tool-call Agent Note](../../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.md)\n     * for the full contract.\n     * @param args - parsed arguments; `defineTool` validates before calling.\n     * @returns Whether this call may join a parallel group.\n     */\n    isConcurrencySafe?(args: unknown): boolean;\n    /**\n     * Optional: how to present the PENDING state of one call in a UI, derived from\n     * the call's `args` (parsed arguments, `unknown` — the tool validates/narrows\n     * its own input). Returns a {@link ToolCallView} (a `card`-tagged render intent),\n     * or `undefined` (or omit the method) to fall back to a generic presentation\n     * (title = tool name, raw args as input). Pure and side-effect-free: a UI may\n     * call it during live streaming AND a session-log replay, so it must depend\n     * only on `args`.\n     */\n    presentCall?(args: unknown): ToolCallView | undefined;\n    /**\n     * Optional: how to present the COMPLETED state, given the same `args` and the\n     * durable result projection (`content`, failure state, and optional `meta`). Returns a\n     * {@link ToolResultView}, or `undefined` (or omit the method) to keep the\n     * pending title and render the raw result content. Pure and side-effect-free\n     * for the same replay reason.\n     */\n    presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;\n}\n/** The completed outcome handed to {@link ToolDefinition.presentResult}. */\nexport interface ToolResult {\n    /** The final model-facing content (or the rendered error text on failure). */\n    content: ContentBlock[];\n    /** Whether the call failed. */\n    isError: boolean;\n    /**\n     * The tool-private presentation payload projected by its output declaration.\n     * It is persisted verbatim on `tool/result` for Host presenters and Client\n     * renderers to narrow independently. Absent when the tool declared no\n     * projector or the call was nested under a composite transport.\n     */\n    meta?: JsonValue;\n}\ndeclare const toolExecutionTokenBrand: unique symbol;\n/** Opaque call identity that permits correlation without exposing mutable execution state. */\nexport type ToolExecutionToken = symbol & {\n    readonly [toolExecutionTokenBrand]: true;\n};"
+  },
+  "tools/post-execute": {
+   "pkg": "dsh-tools",
+   "file": "lib/types/index.d.ts",
+   "signature": "'tools/post-execute'(this: Scoped<ToolRuntime>, exec: ToolExecution, result: Readonly<ToolExecutionResult>, next: () => Promise<PostToolDecision>): Promise<PostToolDecision>;\n        /**\n         * Allow a listener to replace content in the DURABLE LOG COPY of one\n         * `run_code` sub-dispatch outcome before the bridge appends its\n         * `tool/ptc-dispatch` event. `next()` keeps the\n         * content unchanged; a listener may return replacement blocks (e.g. the\n         * spill policy's preview + locator for an oversized text result). Only the\n         * logged copy is affected — the program already received the complete\n         * value, and the model sees neither. A throwing listener is contained:\n         * the bridge falls back to logging the original settled content.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent's dispatches.\n         * @param dispatch - the parent execution, sub-call identity, and the settled content to log.\n         * @mode waterfall\n         */\n        'tools/ptc-dispatch-log'(this: Scoped<ToolRuntime>, dispatch: PtcDispatchLog, next: () => Promise<ContentBlock[]>): Promise<ContentBlock[]>;\n        /**\n         * Observe the frozen, lossless-JSON final outcome. Listener failures are contained.\n         * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): keyed by `exec.agent`.\n         * @param exec - the execution object that traversed the pipeline.\n         * @param result - a deep-frozen snapshot of the final returned result.\n         * @mode emit\n         */\n        'tools/result'(this: Scoped<ToolRuntime>, exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): undefined;\n        /**\n         * A tool was registered or unregistered, or a scoped restriction changed\n         * (the available tool set changed — possibly for one scope only). An\n         * UNFILTERED registry-subject notification, deliberately not scope-filtered\n         * dispatch: a global change concerns every agent's next assembly, so a\n         * scoped listener subscribing here sees every change, not just its own\n         * scope's.\n         * @mode emit\n         */\n        'tools/change'(): void;\n    }\n}\n/** Tool-owned canonical output contract used after the body returns a JSON value. */\nexport interface ToolOutputDefinition {\n    /** Raw supported JSON Schema enforced against every successful canonical value. */\n    readonly schema: JsonSchemaNode;\n    /** Pure projection from validated arguments and value to Native/model content. */\n    render(args: unknown, value: JsonValue): ContentBlock[];\n    /** Pure replayable presentation projection, computed only for top-level calls. */\n    presentationMeta?(args: unknown, value: JsonValue): JsonValue;\n}\n/** A registered tool: its schema plus the execution function. */\nexport interface ToolDefinition extends ToolSchema {\n    /** Mandatory canonical output declaration. */\n    readonly output: ToolOutputDefinition;\n    /**\n     * Run one accepted call and return only its canonical lossless-JSON value.\n     * Async work must observe or forward `exec.signal` and settle only after its\n     * owned work reaches quiescence. The registry preserves caller cancellation\n     * through around-dispatch signal replacement and does not abandon this\n     * promise, but it cannot hard-kill same-process code.\n     * @param args - losslessly snapshotted, frozen model arguments.\n     * @param exec - execution identity, cancellation signal, and context deferral.\n     * @returns the canonical value declared by `output.schema`.\n     */\n    execute(args: unknown, exec: ToolRunContext): Promise<unknown>;\n    /**\n     * Synchronous last-mile transform for model-facing content. The registry\n     * snapshots this callback when execution starts and invokes it exactly once\n     * for every normalized outcome, including pipeline failures that bypass\n     * `tools/post-execute`, immediately before lossless materialization.\n     * Returning `undefined` preserves the content; every other result field\n     * remains registry-owned. The callback must be total and must not throw.\n     * @param exec - immutable execution identity and arguments.\n     * @param result - complete normalized outcome before materialization.\n     * @returns replacement content, or `undefined` to preserve it.\n     */\n    finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    /**\n     * Cooperative tool-call timeout budget in milliseconds. Omit for no deadline.\n     * Enforced by `@deepseek-ai/dsh-tool-call-timeout-policy` (a `tools/execute` wrapper); it\n     * is NEVER sent to the model — `schemas()` whitelists only name/description/\n     * parameters. Declaring it asserts this tool forwards `exec.signal` to a\n     * cooperative implementation that can reach quiescence when the signal aborts.\n     */\n    timeoutMs?: number;\n    /**\n     * Pure synchronous classifier for overlap with sibling tool calls. Only\n     * `true` opts in; omission, exceptions, non-`true` returns, and invalid\n     * `defineTool` arguments are exclusive. This metadata is never model-visible.\n     *\n     * Opted-in executions must not mutate parent-owned state. Shared state must\n     * tolerate concurrent dispatch; recorder races are permitted only when they\n     * commute or fail closed. See the\n     * [parallel-tool-call Agent Note](../../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.md)\n     * for the full contract.\n     * @param args - parsed arguments; `defineTool` validates before calling.\n     * @returns Whether this call may join a parallel group.\n     */\n    isConcurrencySafe?(args: unknown): boolean;\n    /**\n     * Optional: how to present the PENDING state of one call in a UI, derived from\n     * the call's `args` (parsed arguments, `unknown` — the tool validates/narrows\n     * its own input). Returns a {@link ToolCallView} (a `card`-tagged render intent),\n     * or `undefined` (or omit the method) to fall back to a generic presentation\n     * (title = tool name, raw args as input). Pure and side-effect-free: a UI may\n     * call it during live streaming AND a session-log replay, so it must depend\n     * only on `args`.\n     */\n    presentCall?(args: unknown): ToolCallView | undefined;\n    /**\n     * Optional: how to present the COMPLETED state, given the same `args` and the\n     * durable result projection (`content`, failure state, and optional `meta`). Returns a\n     * {@link ToolResultView}, or `undefined` (or omit the method) to keep the\n     * pending title and render the raw result content. Pure and side-effect-free\n     * for the same replay reason.\n     */\n    presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;\n}\n/** The completed outcome handed to {@link ToolDefinition.presentResult}. */\nexport interface ToolResult {\n    /** The final model-facing content (or the rendered error text on failure). */\n    content: ContentBlock[];\n    /** Whether the call failed. */\n    isError: boolean;\n    /**\n     * The tool-private presentation payload projected by its output declaration.\n     * It is persisted verbatim on `tool/result` for Host presenters and Client\n     * renderers to narrow independently. Absent when the tool declared no\n     * projector or the call was nested under a composite transport.\n     */\n    meta?: JsonValue;\n}\ndeclare const toolExecutionTokenBrand: unique symbol;\n/** Opaque call identity that permits correlation without exposing mutable execution state. */\nexport type ToolExecutionToken = symbol & {\n    readonly [toolExecutionTokenBrand]: true;\n};"
+  },
+  "tools/result": {
+   "pkg": "dsh-tools",
+   "file": "lib/types/index.d.ts",
+   "signature": "'tools/result'(this: Scoped<ToolRuntime>, exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): undefined;\n        /**\n         * A tool was registered or unregistered, or a scoped restriction changed\n         * (the available tool set changed — possibly for one scope only). An\n         * UNFILTERED registry-subject notification, deliberately not scope-filtered\n         * dispatch: a global change concerns every agent's next assembly, so a\n         * scoped listener subscribing here sees every change, not just its own\n         * scope's.\n         * @mode emit\n         */\n        'tools/change'(): void;\n    }\n}\n/** Tool-owned canonical output contract used after the body returns a JSON value. */\nexport interface ToolOutputDefinition {\n    /** Raw supported JSON Schema enforced against every successful canonical value. */\n    readonly schema: JsonSchemaNode;\n    /** Pure projection from validated arguments and value to Native/model content. */\n    render(args: unknown, value: JsonValue): ContentBlock[];\n    /** Pure replayable presentation projection, computed only for top-level calls. */\n    presentationMeta?(args: unknown, value: JsonValue): JsonValue;\n}\n/** A registered tool: its schema plus the execution function. */\nexport interface ToolDefinition extends ToolSchema {\n    /** Mandatory canonical output declaration. */\n    readonly output: ToolOutputDefinition;\n    /**\n     * Run one accepted call and return only its canonical lossless-JSON value.\n     * Async work must observe or forward `exec.signal` and settle only after its\n     * owned work reaches quiescence. The registry preserves caller cancellation\n     * through around-dispatch signal replacement and does not abandon this\n     * promise, but it cannot hard-kill same-process code.\n     * @param args - losslessly snapshotted, frozen model arguments.\n     * @param exec - execution identity, cancellation signal, and context deferral.\n     * @returns the canonical value declared by `output.schema`.\n     */\n    execute(args: unknown, exec: ToolRunContext): Promise<unknown>;\n    /**\n     * Synchronous last-mile transform for model-facing content. The registry\n     * snapshots this callback when execution starts and invokes it exactly once\n     * for every normalized outcome, including pipeline failures that bypass\n     * `tools/post-execute`, immediately before lossless materialization.\n     * Returning `undefined` preserves the content; every other result field\n     * remains registry-owned. The callback must be total and must not throw.\n     * @param exec - immutable execution identity and arguments.\n     * @param result - complete normalized outcome before materialization.\n     * @returns replacement content, or `undefined` to preserve it.\n     */\n    finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;\n    /**\n     * Cooperative tool-call timeout budget in milliseconds. Omit for no deadline.\n     * Enforced by `@deepseek-ai/dsh-tool-call-timeout-policy` (a `tools/execute` wrapper); it\n     * is NEVER sent to the model — `schemas()` whitelists only name/description/\n     * parameters. Declaring it asserts this tool forwards `exec.signal` to a\n     * cooperative implementation that can reach quiescence when the signal aborts.\n     */\n    timeoutMs?: number;\n    /**\n     * Pure synchronous classifier for overlap with sibling tool calls. Only\n     * `true` opts in; omission, exceptions, non-`true` returns, and invalid\n     * `defineTool` arguments are exclusive. This metadata is never model-visible.\n     *\n     * Opted-in executions must not mutate parent-owned state. Shared state must\n     * tolerate concurrent dispatch; recorder races are permitted only when they\n     * commute or fail closed. See the\n     * [parallel-tool-call Agent Note](../../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.md)\n     * for the full contract.\n     * @param args - parsed arguments; `defineTool` validates before calling.\n     * @returns Whether this call may join a parallel group.\n     */\n    isConcurrencySafe?(args: unknown): boolean;\n    /**\n     * Optional: how to present the PENDING state of one call in a UI, derived from\n     * the call's `args` (parsed arguments, `unknown` — the tool validates/narrows\n     * its own input). Returns a {@link ToolCallView} (a `card`-tagged render intent),\n     * or `undefined` (or omit the method) to fall back to a generic presentation\n     * (title = tool name, raw args as input). Pure and side-effect-free: a UI may\n     * call it during live streaming AND a session-log replay, so it must depend\n     * only on `args`.\n     */\n    presentCall?(args: unknown): ToolCallView | undefined;\n    /**\n     * Optional: how to present the COMPLETED state, given the same `args` and the\n     * durable result projection (`content`, failure state, and optional `meta`). Returns a\n     * {@link ToolResultView}, or `undefined` (or omit the method) to keep the\n     * pending title and render the raw result content. Pure and side-effect-free\n     * for the same replay reason.\n     */\n    presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;\n}\n/** The completed outcome handed to {@link ToolDefinition.presentResult}. */\nexport interface ToolResult {\n    /** The final model-facing content (or the rendered error text on failure). */\n    content: ContentBlock[];\n    /** Whether the call failed. */\n    isError: boolean;\n    /**\n     * The tool-private presentation payload projected by its output declaration.\n     * It is persisted verbatim on `tool/result` for Host presenters and Client\n     * renderers to narrow independently. Absent when the tool declared no\n     * projector or the call was nested under a composite transport.\n     */\n    meta?: JsonValue;\n}\ndeclare const toolExecutionTokenBrand: unique symbol;\n/** Opaque call identity that permits correlation without exposing mutable execution state. */\nexport type ToolExecutionToken = symbol & {\n    readonly [toolExecutionTokenBrand]: true;\n};"
+  }
+ }
+}
