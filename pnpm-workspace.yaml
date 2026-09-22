@@ -40,8 +40,11 @@ overrides:
 # R73 T1 / ADR-0074: dsh 上游依赖族钉版——catalog 单点承载版本号，overrides 逐名枚举
 # 把全树（直接+传递）强制收敛到 catalog 值。直接依赖在 apps/dsh-plugin 用 catalog: 引用。
 # 锁 15 个 @deepseek-ai/dsh-*=0.1.5-rc.2 + cordis=4.0.2（Events declaration-merging 宿主面）。
-# 解锁条件：上游发布 0.1.6 稳定/rc 线且 changelog 经审阅、或功能桥接缺口/废弃窗口要求时，
-# 删除上方 overrides 枚举并恢复 range；每次升级先跑升级演练（.scratch/grill-round-73/upgrade-ledger.md）。
+# 解锁条件（ADR-0078 D2 特征+稳定性双锚，版本号不进触发逻辑）：特征锚=候选 tarball
+# .d.ts 中 agent/created 携 source(/signal) 且 agent/session-start 缺席；稳定锚=发布位于
+# rc-or-stable 线且 changelog 经审阅；另保留功能桥接缺口/废弃窗口。满足后删除上方
+# overrides 枚举并恢复 range；采纳时枚举按新锁文件重推导（升级账本：
+# .scratch/grill-round-73/upgrade-ledger.md + v2 .scratch/grill-round-77/upgrade-ledger.md）。
 catalog:
   '@deepseek-ai/cordis': 4.0.2
   '@deepseek-ai/dsh-agent': 0.1.5-rc.2

@@ -21,6 +21,7 @@ All notable changes to this project are recorded here. Format follows
 ### Deferred
 
 - L2 合格候选本轮不存在（no-qualifying-candidate 显式结论）：rc.3 无 ALARM、alpha 线稳定锚不响；下一合格候选出现按 latest-only 直接彩排，跳线版本只补墓碑。落选债原名续 deferred（carried_log 记）：transformers(#1764 未 merge) / provider-serverside / dsh 三件套 / bitmap / registerhooks / f16 / f17 / domain-ownership。
+- `defer-r77-pathlint-envvar-blindspot`（审计返工新立项）——ship-gate step 1i PATH_RE 不识别 env-var 形机器路径（`%TEMP%`/`$HOME`/`~/`），ADR-0072 意图级盲区；修复向=PATH_RE 扩形态+红向 fixture。
 
 ## Unreleased — ADR-0077 r76: 治理面静默漂移清算（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
 

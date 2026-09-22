@@ -341,6 +341,20 @@
    "closed_at": "2026-09-22",
    "evidence": "ship-gate stepGovernedJsonCanonical leg (CANONICAL_JSON_FILES in scripts/ship-gate.mjs, logic in scripts/governed-json.mjs) byte-locks this file to JSON.stringify(JSON.parse(src),null,1)+\"\\n\"; injection probe red at \"first differs at line 2\" with paste-able normalize command (evidence/t0-canonical-inject.log); normalize command verified to restore canonical bytes. Born-closed record — documents the lock itself, not deferred work.",
    "monitoring_channel": "ship-gate step 1 canonical-json leg (fail-closed every run); reversal per ADR-0077 D5 (n>=5 multi-type -> registered config + prettier)"
+  },
+  {
+   "id": "defer-r77-pathlint-envvar-blindspot",
+   "type": "deferred-with-deadline",
+   "title": "pathlint PATH_RE 不识别 env-var 形机器路径（%TEMP%/$HOME/~/）——ADR-0072 意图级盲区",
+   "source_adr": "docs/adr/0078-architecture-grill-round-77-dsh-upstream-watch-funnel-and-governance-backlog-liquidation.md",
+   "owner": "anysearch-platform",
+   "opened_at": "2026-09-22",
+   "deadline": "2026-12-31",
+   "review_cadence": "next pathlint leg touch + quarterly",
+   "status": "open",
+   "evidence": "r77-audit F-5：report/closeout 两处 %TEMP% 裸引用过闸未拦（PATH_RE 只识别盘符/Users|home|tmp/AppData 字面形）；先例漏网：docs/adr/0042-architecture-grill-round-39-observational-data-feeding.md:111（%TEMP%/atomcode-r39-sources.txt 存量同款）。修复向=PATH_RE 扩 env-var 形态+红向 fixture 实测；本轮两处已人工补 marker 兜底不算核销。",
+   "monitoring_channel": "ship-gate step 1i 下一触点复审 + 每季 marker 声明审计顺手扫 env-var 形",
+   "carried_log": []
   }
  ]
 }

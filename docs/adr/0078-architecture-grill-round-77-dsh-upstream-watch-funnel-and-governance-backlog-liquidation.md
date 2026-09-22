@@ -109,6 +109,9 @@ L2 仅合格候选。本轮实证：alpha 线三连发（0.1.6-alpha.1/alpha.2/
 
 - watch 义务降层后可持续：每版 L0+L1 几分钟可归档，L2 只对真正采纳候选；
   触发器不再能被上游跳版本号证伪。
+- 已知待校准（落锚于 upgrade-ledger v2「待校准项」）：pnpm
+  minimumReleaseAge 对 catalog repin 的确切拦截行为未实测——L1 tarball
+  探针的闸内合法性依赖该拦截生效，属本地实验项非盲区沉默。
 - 七项 backlog 全清且每项有红方向实证；治理机器的 silent-drift 面再缩：
   行首锚定杀误登记、全名匹配杀别名归并、空清单判红杀 vacuous green、
   BOM 报错杀误导性 normalize 指针。
@@ -123,12 +126,12 @@ L2 仅合格候选。本轮实证：alpha 线三连发（0.1.6-alpha.1/alpha.2/
   alpha.1 点探（改名最早落地版）；三问全答（改名未上稳定线/alpha 线内
   payload 零再变/0.1.7 家族扩至 21）；git status 零脏（无 lockfile/
   workspace/源码改动）。
-- **(ii) 轨二段**：七项全行使——模块红→绿（closeout-coverage 41→46、
+- **(ii) 轨二段**：七项全行使——模块红→绿（closeout-coverage 40→46、
   governed-json 19→25）+ 真门探针两条（item3 混合红双诊断、item4 空
   清单判红）；`pnpm run check` 8/8、`pnpm run test` 13/13、
   `node scripts/ship-gate.mjs --skip-matrix` 65 pass/0 fail 全绿。
 - **(iii) 文书段**：registry defer-r73 触发器双锚改写+墓碑字段+落选债
-  10 条显式续债（canonical normalize+字节锁验证）+ 本 ADR + index
+  10 条显式续债+审计返工新立项 `defer-r77-pathlint-envvar-blindspot`（canonical normalize+字节锁验证）+ 本 ADR + index
   regen（78 条）+ upgrade-ledger v2 + handoff（#1764 哨+外发闸+
   no-qualifying-candidate 结论）+ pathlint 自证（round-77 文档全在
   已登记 doc dirs）+ but commit 干净。

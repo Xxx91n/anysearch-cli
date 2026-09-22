@@ -55,6 +55,10 @@ transcript：`evidence/t0-l1-0.1.5-rc.3.md` / `t0-l1-0.1.6-alpha.2.md` / `t0-l1-
 - 合格候选判定 = ALARM + 过龄期闸 + rc-or-stable。本轮三版本：rc.3 无 ALARM；alpha.1/alpha.2/0.1.7-alpha.1 皆 alpha 线（稳定锚不响）。
 - **显式结论：本轮无 L2 合格候选（no-qualifying-candidate）**——非吊死等闸非口头悬债；下一合格候选出现时按 latest-only 直接彩排，中间被跳线版本只补墓碑。
 
+## 待校准项（落锚，防静默丢——r77-audit F-2）
+
+- **pnpm minimumReleaseAge 对 catalog repin 的确切拦截行为 = 本地实验项**（q2-atomcode.md:48 之四）：npm 侧 `--before`/ETARGET 边缘行为有 Renovate 文档佐证，pnpm 实现对 catalog 引用的拦截路径未覆盖——本账本「L1 tarball 探针是闸内唯一合法探测层」的结论依赖该拦截确实生效；下一轮若动钉版面先做一次受控 repin 拦截实验坐实边界。
+
 ## 家族规模警戒
 
 - 0.1.7-alpha.1 dep-closure = **21 个 dsh-***（rc.2 基线 15 名缺 6：+ptc-runtime/sandbox/sandbox-policy/session-persistence/storage/storage-domain/workspace——alpha.2 相对 rc.2 另退出 dsh-code-runtime）。采纳时 pnpm-workspace overrides 枚举必须按新锁文件重推导，现行 15 名清单不足覆盖。
