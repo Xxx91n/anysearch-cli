@@ -42,6 +42,14 @@ test("red fixture: inline code is not exempt", () => {
 test("green fixture: zero violations", () => {
   const { violations } = scanLines(greenLines, env);
   assert.deepEqual(violations, [], "green fixture must produce no violations: " + JSON.stringify(violations));
+  // F-2 audit fix: the marked UNC + AppData green lines are exercised explicitly —
+  // located dynamically via marker text, never hardcoded line numbers.
+  for (const needle of ["\\\\host\\share", "AppData\\Roaming"]) {
+    const n = greenLines.findIndex((l) => l.includes(needle) && l.includes("machine-local: green fixture marker")) + 1;
+    assert.ok(n > 0, `green fixture must contain a marked line carrying ${needle}`);
+    assert.ok(detectHits(greenLines[n - 1]).length > 0, `line ${n} must carry a real detector hit (the marker is what keeps it green)`);
+    assert.equal(violations.filter((v) => v.line === n).length, 0, `marked line ${n} must produce zero violations`);
+  }
 });
 
 test("green fixture: /etc produces info surfaced-skip only", () => {

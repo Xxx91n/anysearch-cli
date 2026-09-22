@@ -18,3 +18,5 @@ Marker-free fence with no paths:
 ```text
 plain code block, nothing local
 ```
+Marked UNC \\host\share\x <!-- machine-local: green fixture marker @ 2026-09-22 -->
+Marked AppData AppData\Roaming\x <!-- machine-local: green fixture marker @ 2026-09-22 -->

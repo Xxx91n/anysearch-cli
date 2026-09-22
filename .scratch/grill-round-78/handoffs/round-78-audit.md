@@ -73,3 +73,12 @@ Date: 2026-09-22。审计对象 = r78-grill(kok)+r78-impl(nkv→zun→ryr→qqy�
 - F-3/F-4 建议立登记债（下轮裁决），不阻塞本轮。
 
 绿色 run URL：栈未 push，PENDING（同 closeout 口径）。
+
+## 裁决执行实录（2026-09-22 用户裁定后补记）
+
+- 用户裁定：小问题子代理直修，大问题留下一轮 grill。执行结果——
+  - **F-1 fixed**：CHANGELOG.md 顶部补 `## Unreleased — ADR-0079 r78` 段（Added/Changed/Deferred 三段式，落选债原名全列）。
+  - **F-2 fixed**：green.md 补 UNC+AppData 两条已标记绿向行；测试动态定位断言（不硬编行号），仍 9 cases 全绿。
+  - **F-3/F-4 → 下一轮 grill 议题**（见 `round-79-next.md` 候选清单）。
+- 修后重跑（审计窗亲跑）：pathlint 直跑 9/9 绿；ship-gate --skip-matrix 全绿；变更文件 detector 自扫 0 违例。
+- 返工 commit：`fix(r78-audit)` 与本审计批同栈 r78-audit。

@@ -4,6 +4,28 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0079 r78: 门禁可信度校准——pathlint token+分隔符组合判定器 + minimumReleaseAge 拦截边界实测（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
+
+### Added
+
+- `scripts/ship-gate-pathlint-detect.mjs` —— pathlint 判定器抽为共享纯函数模块（ADR-0079 D-003），ship-gate step 1i 与 warn-sweep driver（`.scratch/grill-round-78/evidence/t1-warn-sweep.driver.mjs`）同一实现双消费：「token+后随分隔符=locator」组合判定，新增四类 token 形——win-envvar `%VAR%` / posix-envvar `$VAR`、`${VAR}` / tilde `~` / UNC `\\host` 形——与既有字面形（drive / posix-home / appdata）统一收口；裸 env-var 散文永不命中；单段 POSIX 根 `/x` 降 info surfaced-skip（可见不阻断）；失效标记棘轮腿（marker 行不再命中即报 stale-marker，标记只减不增）；inline code 不豁免。
+- `packages/store/fixtures/pathlint/{red,green}.md` + `packages/store/test/ship-gate-pathlint.test.mjs`（9 cases）——红绿成对 fixture 固化判定器契约：红向全 token 类+两例真实逃逸+inline code+失效/畸形标记必拦；绿向散文提及、URL 边界、已标记行、locator 行、已标记 fence 全放，随 `turbo test` 行使。
+- `docs/adr/0079-architecture-grill-round-78-gate-calibration-pathlint-detector-and-repin-matrix.md`（第 79 号 ADR）——组合判定器+豁免三层心智模型（marker=受审 artifact/只减不增/baseline≠规则后门）+棘轮审计+E1–E7 判决矩阵实录+断言收窄文本+`minimumReleaseAgeIgnoreMissingTime` 加固理由+不 bump 判定。
+
+### Changed
+
+- `scripts/ship-gate.mjs` —— step 1i PATH_RE inline 块整体替换为 detect 模块 import（`enumerateScopedMarkdown`/`buildEnv`/`scanLines`），fail-closed 语义不变。
+- `pnpm-workspace.yaml` —— 新增 `minimumReleaseAgeIgnoreMissingTime: false`：缺 time 元数据的源由默认跳过（豁免面）收紧为 fail-closed；npmjs 恒带 time，对现状无破坏（E7 记档态向量）。
+- 存量违例机械化清算——warn-first 全量扫 313 篇登记文档实录 96 命中 → 97 处置动作/52 文件行尾补受治理 machine-local 标记（`docs/adr/0042-…:111` 等）→ 复扫 0 后翻转 fail-closed（证据 `.scratch/grill-round-78/evidence/`：`t1-warn-sweep.md` + `t1-remediate.md`，driver 幂等可复跑）。
+- `docs/deferred-registry.json` —— `defer-r77-pathlint-envvar-blindspot` 核销 closed（closed_by ADR-0079）；11 条 open 债 `carried_log` r78 显式续记。
+- `.scratch/grill-round-77/upgrade-ledger.md` v2 待校准项消解——断言收窄落锚：minimumReleaseAge 闸只拦新鲜解析路径（catalog/range 重解析），lockfile 回放不执法龄期闸；E6 格证伪如实记档（闸内版手写进 lockfile + frozen/fetch 五变体全放行，`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` 在 11.24.0 不触发——与 #11583 调研结论矛盾，按实测为准）。
+
+### Deferred
+
+- 落选债 11 条原名续 deferred（`carried_log` r78 显式记）：`defer-anysearch-domain-ownership` / `defer-f16-macos-native-crash` / `defer-f17-quarantine-ids` / `defer-r71-provider-serverside` / `defer-r71-transformers-undeclared-dep` / `defer-r72-dsh-plugin-npm-publish` / `defer-r72-dsh-native-tools` / `defer-r72-dsh-web-interactive-matrix` / `defer-r73-dsh-event-rename`（L2 排程中）/ `defer-r74-logo-bitmap-matrix` / `defer-r75-registerhooks-esm-arm`。
+- E6 证伪后果挂账——携带在闸版本的 lockfile 不在龄期闸执法面内（frozen 回放静默放行），该向量由 lockfile review 纪律兜底，不指望闸覆盖。
+- pathlint 残余盲区挂账——多段未知根 POSIX 路径（gitbash `/d/` 盘形等）判定器不命中不报，维持沉默待后续轮次评估。
+
 ## Unreleased — ADR-0078 r77: dsh 上游观测哨分层漏斗 + R76 治理 backlog 七项清算（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
 
 ### Added
