@@ -1,0 +1,15 @@
+const fs=require('fs');
+const b4=fs.readFileSync('C:/Users/ADMINI~1/AppData/Local/Temp/devin.exe-overflows/b4aeefc0/content.txt','utf8');
+const e3=fs.readFileSync('C:/Users/ADMINI~1/AppData/Local/Temp/devin.exe-overflows/e3fdd3bf/content.txt','utf8');
+const grab=(src,re)=>{const m=src.match(re);return m?m[0].trim():''};
+const q1=grab(e3,/### Q1：路径形态识别[\s\S]*?(?=--- \[current-session)/);
+const q2=grab(b4,/### Q2：存量违规处置[\s\S]*?(?=### atomcode)/);
+const q3=grab(e3,/### Q3：fail-closed[\s\S]*?(?=--- \[current-session)/);
+const q4=grab(e3,/### Q4：分层报告[\s\S]*?(?=--- \[current-session)/);
+const execSum=grab(e3,/## 1\) 执行摘要[\s\S]*?(?=--- \[current-session)/);
+const rec=grab(b4,/## 3\) 推荐修复形态[\s\S]*?(?=\n> \*\*Tip|\n## 推荐|$)/);
+const gaps=grab(b4,/## 5\) 信息缺口[\s\S]*?(?=\n## 误报|$)/);
+const log=grab(b4,/# atomcode[\s\S]*?(?=### 路径形态识别 lint 修复设计：工业界先例调研报告 > 5)/);
+const doc=['# R78 Q3 — atomcode 深调研存档（PATH_RE env-var 盲区修复形态）','','Date: 2026-09-22. Prompt: ./q3-prompt.txt','','## 调研日志','',log,'',execSum,'',q1,'',q2,'',q3,'',q4,'',rec,'',gaps,''].join('\n');
+fs.writeFileSync('.scratch/grill-round-78/q3-atomcode.md',doc);
+console.log('archived',fs.statSync('.scratch/grill-round-78/q3-atomcode.md').size,'bytes; sections found:',[q1,q2,q3,q4,execSum,rec,gaps].filter(Boolean).length+'/7');

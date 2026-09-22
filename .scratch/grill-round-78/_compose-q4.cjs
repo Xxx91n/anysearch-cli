@@ -1,0 +1,12 @@
+const fs=require('fs');
+const src=fs.readFileSync('C:/Users/ADMINI~1/AppData/Local/Temp/devin.exe-overflows/7898283a/content.txt','utf8');
+const grab=(re)=>{const m=src.match(re);return m?m[0].trim():''};
+const execSum=grab(/## 1\) 执行摘要[\s\S]*?(?=### atomcode|## expedite)/);
+const points1=grab(/## 2\) 分点结论\n\n\*\*① WSJF[\s\S]*?(?=### 推荐排序|## expedite)/);
+const points2=grab(/\*\*⑤ 票据粒度[\s\S]*?(?=\n## 排序)/);
+const matrix=grab(/## 3\) 对比矩阵[\s\S]*?(?=\n## 推荐)/);
+const sources=grab(/## 4\) 来源清单[\s\S]*?(?=### 推荐排序)/);
+const log=grab(/# atomcode[\s\S]*?(?=### 推荐排序：A)/);
+const doc=['# R78 Q4 — atomcode 深调研存档（票序设计）','','Date: 2026-09-22. Prompt: ./q4-prompt.txt','','## 调研日志','',log,'',execSum,'',points1,'',points2,'',matrix,'',sources,''].join('\n');
+fs.writeFileSync('.scratch/grill-round-78/q4-atomcode.md',doc);
+console.log('archived',fs.statSync('.scratch/grill-round-78/q4-atomcode.md').size,'bytes; sections:',[execSum,points1,points2,matrix,sources,log].filter(Boolean).length+'/6');

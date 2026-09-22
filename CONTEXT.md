@@ -1280,3 +1280,26 @@ alarm 跟随发布走（alpha 可响=早期警报），adoption 跟随稳定性�
 
 ## Dated Scheduled Obligation（带期排程义务）
 合格 L2 候选（ALARM+过闸+rc-or-stable）在闸未出时的合法终态=带日期+latest-at-exit 规则的排程义务落锚点（registry/ledger/handoff），非吊死等闸也非口头悬债；「无合格候选」显式结论同样是合法终态。_Avoid_: 把收口押在 L2 实跑上（pending 是合法终态）；排程义务只写日期不写规则（latest-only 下候选可能再被跳线）。来源：atomcode R77-Q2(d)+R77 D-005。
+
+## Grill Round 78 — Terms (ADR-0079)
+
+## Token-Separator Locator Judgment（token+分隔符 locator 判定）
+机器本地路径 lint 的判定形状=token 检出（env-var 形 `%VAR%`/`$VAR`/`${VAR}`、tilde 形 `~/`、UNC 形 `\host\`、盘符等字面形）后，必须紧跟路径分隔符才算 locator 命中→硬拦；裸 token 散文提及（如「设置 %PATH%」）不报——非 locator 报则永久噪音（shellcheck SC2088「tilde 仅作路径前缀才有意义」/spectralint 复合判定/path-guard 位置感知先例；无逐字同构先例=本仓原创须实测误报率）。_Avoid_: token 出现即拦（散文变量名全逼上 marker=过拦）；inline code 豁免（locator 常居 code span，豁免即掏空 lint）。来源：atomcode R78-Q3+R78 D-003。
+
+## Surfaced-Skip Tier（surfaced-skip 可见不阻断层）
+「不能确定命中问题」的形态（单段 POSIX 根形 `/x` 等）→info 级列出但不 fail——severity 分层消化误报而非放宽规则（ESLint warn 语义/Vale MinAlertLevel/GitLab「CI 只拦 error」先例）。_Avoid_: warn 当常驻态（堆积的 warn=被忽略的 warn，终局须升级或关闭）；为躲误报把硬拦放宽（secret scanner 教训：高误报规则会被整条关闭）。来源：atomcode R78-Q3+R78 D-003。
+
+## Stale-Marker Ratchet（失效标记棘轮）
+豁免 marker 是内联进 diff 的受审 artifact，须只减不增：marker 存在但该行已不再命中 PATH_RE→失效标记被检出要求清除（rubocop `--report-unused-todo-entries` 单向收缩/betterer results 精确一致先例）。_Avoid_: 集中 baseline 文件先例（detect-secrets 哲学=承认存量+阻增量，但须显式 artifact 非规则后门）；失效标记永久滞留（豁免面只增不减）。来源：atomcode R78-Q3+R78 D-003。
+
+## Pre-Registered Verdict Matrix（预登记判决矩阵）
+受控实验前把每格预期结果（含预期错误码）写死、实测逐格比对——防事后合理化；必含正对照格（证环境 sane，否则失败无法归因闸执法 vs 环境坏）。_Avoid_: 先跑后对结果编解释（判决后登记=合理化窗口）；省略正对照（假阴性无法与真拦截区分）。来源：atomcode R78-Q2+R78 D-002。
+
+## Qualified Assertion（限定断言）
+门禁拦截断言必须带前提清单（公网 registry 带 time 字段+无 exclude+strict 默认+trustLockfile 未开）——裸「任何解析都被拦」可被豁免面单点证伪（E3 strict:false/E7 无 time 源=合法证伪向量），限定了反而立法更稳固。_Avoid_: 无前提绝对断言；前提配置漂移不复核断言（豁免键被加即断言失效）。来源：atomcode R78-Q2+R78 D-002。
+
+## Falsification-Safe Closure（证伪安全收口）
+实测≠预期=证伪信号呈报+如实归档+断言按实测收窄/翻案入档——收口产物是真相非确认书，证伪结果同样是合法收口形态。_Avoid_: 实测不符时静默改向或掩盖不一致格；把「实验证实」当收口前置。来源：R78 D-005。
+
+## Evidence Window（取证窗口）
+依赖外部时效条件的受控实验（如闸内版本标本）有硬截止窗口，错过=标本「毕业」、验证延期到下个窗口——时敏项按 WSJF（TC 高+RR/OE 高+Size 小）/Kanban Fixed-date（悬崖型 CoD）排最前。_Avoid_: 时敏实验后置（窗口关闭价值归零非递减）；窗口错过伪造结果（诚实记档「错过」）。来源：atomcode R78-Q4+R78 D-002/D-004。

@@ -1,0 +1,9 @@
+背景：某仓库的文档治理 lint（ship-gate 一步骤）用正则识别 markdown 中的机器本地路径，要求这类路径必须携带治理豁免标记（行内 HTML 注释声明理由与日期），否则 fail。现有正则只识别盘符字面形（C:\）、/Users/、/home/、/tmp/、AppData/，导致环境变量形路径（%TEMP%/x、/c/Users/Administrator/.foo、/x、~/x）全部漏网——已有两个实证逃逸实例。需要设计修复。
+
+研究问题：
+1. lint/静态检查工具中「路径形态识别」的成熟做法：Windows env-var 形（%VAR%）、POSIX env-var 形（ 与 ）、tilde 形（~/、~user/）、UNC（\hostshare）各自的正则特征与误报边界是什么？「env-var 后随路径分隔符才算 locator」这个启发式在工业界 linter（如 secret scanner、path linter、文档 linter）里有没有先例？误报处理惯例（散文中提及环境变量名 vs 用作路径引用如何区分）？
+2. 「存量违规处置」的成熟心智模型：lint 规则收紧后存量违例的两条路线——retro-fix（逐条修掉）vs grandfather/baseline（如 rubocop --auto-gen-config 的 todo 文件、eslint 的 baseline、betterer 的 results 文件、semgrep 的 baseline scan）——工业界各自适用条件、知名先例与反模式是什么？「不开豁免机制先例」这条治理直觉是否站得住？
+3. lint 规则的 fail-closed 设计：新规则上线时「先全量扫枚举命中数再翻转」的迁移惯例（rollout/dark-launch 模式在静态检查领域的对应物），以及红向 fixture（故意注入违规验证 linter 真的会拦）的实践先例？
+4. 分层报告（硬拦 fail vs info 级 surfaced-skip）在 lint 工具里的惯例：哪些形态适合「可见不阻断」，哪些必须阻断？ severity 分级的设计先例（eslint warn/error、semgrep severity、vale 的 suggestion/warning/error）？
+
+请给出推荐的修复形态与理由，重点放在工业界成熟落地的心智模型与可引用先例。

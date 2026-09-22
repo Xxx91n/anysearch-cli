@@ -1,0 +1,9 @@
+背景：某 pnpm 11.24.0 monorepo 在 pnpm-workspace.yaml 设 minimumReleaseAge: 2880（48 小时发布龄期闸），全部外部依赖经 catalog 协议在 pnpm-workspace.yaml 集中钉精确版本号。有一条治理断言待验证：「任何 pnpm 驱动的版本解析在龄期闸内都被拦截」，即把 catalog 改钉到一个发布未满 48 小时的版本后 pnpm install 必然失败——该断言支撑着「npm pack tarball 静态探针是闸内唯一合法的未检疫版本探测手段」这条既有立法，若断言证伪则立法需翻案。
+
+研究问题：
+1. pnpm minimumReleaseAge 的确切作用机制：它拦截的是 resolution 阶段（版本元数据选择）还是 download/install 阶段？对 catalog 精确钉死的版本号（非 range、非 dist-tag）同样生效吗？对应报错形态是什么（hard error 及其错误码、静默回退选满足条件的旧版、还是仅 warning）？
+2. lockfile 在场是否改变行为：已有 pnpm-lock.yaml 的仓库内把 catalog 改钉到闸内版本再 install，是重新解析从而触发闸，还是 lockfile 短路复用导致绕过？--frozen-lockfile 与非 frozen 有何差别？minimumReleaseAgeExclude 之类的豁免面有哪些？
+3. 工业界验证「执法机制确实在执法」的成熟心智模型：安全控制有效性验证（security control validation）、负向测试/故障注入、policy-as-code 的 conformance testing、供应链门禁（如 Dependabot/Renovate 冷却期、in-toto/SLSA 类供应链控制）的实测惯例有哪些？「只配置不验证」被证伪的知名先例？
+4. 受控实验设计惯例：scratch 最小环境 vs 真身环境对照实验、判决矩阵（verdict matrix）预先写死、可证伪性前置——工具链验证场景的标准做法是什么？
+
+请给出推荐的实验设计与理由，重点放在工业界成熟落地的心智模型与可引用的实证先例。
