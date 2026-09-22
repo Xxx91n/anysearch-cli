@@ -1,0 +1,15 @@
+调研问题（verbatim）：
+
+我们的 monorepo 自研 ship-gate 脚本（scripts/ship-gate.mjs，Node ESM）里有一条「closeout handoff 必填字段 lint」腿（ADR-0069 落地）。它的 standing-leg 逻辑是：扫描 .scratch/grill-round-*/ 目录按 round 号倒序，取第一个含有 closeout 文档的目录做字段 lint 然后 break。已证实缺陷（内部审计 R70 F1）：如果最新一轮根本没产 closeout 文档，这条腿会静默回退到上一轮的 closeout 检查并全绿——「缺失」被 fallback 掩盖，没有任何断言声明「已完成的 round 必须产出 closeout」。
+
+修复的语义设计难点：如何区分「在飞 round 尚无 closeout（合法豁免）」与「已完成 round 漏产 closeout（必须报红）」。候选方案：
+A. 完成信号驱动——以 docs/adr/index.md 中是否已登记「Grill Round N」条目作为「该 round 已完成」的确定性信号（本项目每轮 grill 收口必产一篇 ADR）；凡已登记且 N≥祖父 floor 的 round dir 必须含 closeout，缺即 fail-closed；未登记 ADR 的最新 dir 视为在飞豁免。
+B. 仅 contiguity——除最新目录外所有 round dir 都必须有 closeout；实现最简但终端情形（最后一轮漏产且不再开新轮）永久静默。
+C. 全量重 lint——所有 ≥floor 的 closeout 都重跑字段+远端活性校验，成本高且翻祖父旧账。
+
+请围绕以下要点做工业界心智模型调研：
+1. CI/lint gate 中「latest-X fallback 掩盖缺失产物」这一类 silent-masking 失效模的成熟处置模式（fail-closed 存在性断言、coverage 断言、explicit exemption 记录等）；
+2. 区分「在飞工作」与「已完成工作」的成熟信号选型惯例——用「产物登记（registry/index 落盘）」vs「目录存在」vs「git 分支/tag」哪个更被主流采纳，各自的失败模式；
+3. 祖父条款（grandfathering）在 fail-closed lint 中的标准做法——floor 锚定到规则生日还是首个连续合规点；
+4. 类似场景（release notes 必须存在、changelog 条目断言、per-PR 必备文档检查、required status checks 的 fallback 陷阱）下工业界的落地先例；
+5. 我们倾向 A，请辩证审查 A 的薄弱点（ADR 登记作为完成信号的盲区、index.md 解析脆弱性、与 GitButler workspace 分支模型的耦合度），给出你的最终推荐与理由。

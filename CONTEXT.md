@@ -1234,3 +1234,23 @@ ghost-dep 自声明副本的版本必须 ≡ effective 宿主包内嵌依赖版�
 
 ## Advocate In-Flight Fix（在飞修复倡导）
 上游修复已被维护者亲手写进 OPEN PR 时，最高杠杆贡献=在该 PR 落证据评论推合并优先级（附本端复现+下游轮子成本清单），非重交重复 PR/新开 issue——重复提交是噪声不是助力。_Avoid_: 不看既有 PR 状态就自交一行修（本项目实证：#1764 已含同款 hunk）；在 closed issue 单评论当主申报（能见度低）。来源：R75 Q4 上游战场 gh 实证+R75 D-004。
+
+## Grill Round 76 — Terms (ADR-0077)
+
+## Silent-Drift Governance（治理静默漂移）
+治理机器自身的 silent-drift 失效模：gate fallback 静默掩盖缺失产物、外部工具静默重排受治理文件——失效不产声息，正是 gate 要打破的那种静默。同构清算原则：凡「推导对象/读入文件」的治理环节，静默都是 bug 面。_Avoid_: 把 fallback 命中旧产物当通过（找到≠该有）；让受治理文件的 byte 形态游离于断言之外。来源：R76 D-001+atomcode aiArch《Validating the Validator》。
+
+## Completion Signal Registration（完成信号登记制）
+区分「在飞」与「已完成」工作的主流信号=产物登记表随代码落盘（ADR index 条目、changelog 条目），而非目录存在（存在≠完成）或 git 态（宿主分支模型耦合）。登记即完成：信号源写入纪律=先产物后登记，倒置即瞬态红。_Avoid_: 用目录存在/分支名推断完成态（GitButler 虚拟 workspace commit 下尤脆）；登记了却允许缺产物（信号漂移回静默面）。来源：atomcode R76-Q2+R76 D-002。
+
+## Fail-Closed Existence Assertion（fail-closed 存在性断言）
+「nothing to check」=失败而非通过。对「从别处推导检查对象」的腿，三断言成套：该有而没有→红、登记↔实体双向漂移→红、推导集合为空/不可解析→红。_Avoid_: 推导为空时 skip/silent-pass（fail 必须向「未完成」侧——PlayMolecule 假 COMPLETED 判例）；语义级断言替代字节级（重排缩进语义不变恰是要拦的）。来源：atomcode R76-Q2/Q3+R76 D-002/D-003。
+
+## Rule-Birthday Floor（规则生日锚定）
+「事件必须发生」类断言的祖父 floor 锚定到规则自身落地轮（N_rule），不锚「首个连续合规点」——ratchet baseline 语义是「值可以旧」，存在性断言没有 baseline 文件可挂也没有廉价伪造面。floor 值写入 ADR、调整走显式 review（ratchet 腐坏模式①：baseline 可被随手重写）。_Avoid_: floor 隐式推导或脚本里随手改；用 floor 回溯规则生日之前的旧账。来源：atomcode R76-Q2 要点 3+R76 D-002。
+
+## Explicit Exemption Conclusion（显式豁免结论）
+豁免必须有载体、有理由、可观测——在飞豁免打印结构化结论行（round 号+awaiting closeout/ADR not yet registered），不许隐式 break。永不报告的必需检查与显式豁免的执行是两种不同失效（GitHub required-checks 先例）。_Avoid_: gate 自己决定跳过且不留痕；豁免理由只活在代码注释里（ao-kernel：豁免须 label+rationale 式载体）。来源：atomcode R76-Q2 要点 4+R76 D-002。
+
+## Canonical Byte Lock（canonical 字节锁）
+受治理文件的形态锁=CI 字节全等断言（`JSON.stringify(JSON.parse(f),null,1)+'\n'`），verify-don't-regenerate：gate 只报错附 normalize 指令不自修（「提交内容≠审阅内容」反模式），受锁文件用顶层数据字段自文档声明锁定事实防误修。_Avoid_: 语义级比较（漏报重排）；gate 自动改写（jyn.dev/Lobsters 反模式）；hook/.gitattributes 充当锁（GitButler 下 hook 静默失效、gitattributes 管不了内容字节）。来源：atomcode R76-Q3+R76 D-003。

@@ -1,0 +1,15 @@
+调研问题（verbatim）：
+
+我们的 monorepo（pnpm workspace + 自研 Node ESM ship-gate 脚本）有一个受治理 JSON 文件 docs/deferred-registry.json（延期工作项登记簿），已被外部进程/编辑工具两次整文件重排版（1空格→8空格→4空格缩进），每次都要人工恢复最小 diff。文件当前的规范形态已实证为 JSON.stringify(JSON.parse(file), null, 1) + '\n'（1 空格缩进 + 末尾换行）。项目无 prettier/formatter，.gitattributes 已存在但只管 eol/diff driver。
+
+候选格式锁方案：
+A. ship-gate 新腿 canonical-JSON 断言——新增一个 fail-closed 检查步骤：断言登记文件字节 === JSON.stringify(JSON.parse(file), null, 1) + '\n'；目标文件清单以常量形式硬编码于 gate 脚本并注 ADR 编号（当前 n=1）；报错文案附 normalize 指引。
+B. 并入既有注册制 lint config（一个 schema 化的 JSON config 登记受治理文件清单）——治理形态一致但属 off-label 扩展。
+C. .gitattributes + 文档约定——管不了内容字节。
+D. pre-commit hook / 编辑器侧配置——GitButler 提交可能不走 hook，编辑器侧仅 advisory。
+
+请围绕以下要点做工业界心智模型调研：
+1. 「受治理文件被外部工具静默重排」这一类 drift 的成熟防御模式——CI canonical-form 断言 vs formatter 统一 vs .gitattributes vs hook 的真实防御力对比；工业界对「generated/normalized 文件的一致性校验」惯例（如 lockfile integrity、generated-code staleness check、「run codegen && git diff --exit-code」模式）；
+2. canonical 断言的实现细节选型：字节级全等 vs 语义级（parse 后深比较）vs 容错（容忍无意义空白差异）；断言失败时的 autofix 约定（gate 自修 vs 仅报错+指引）；
+3. 登记清单的治理形态：硬编码常量 vs 注册制 config 文件 vs 文件名约定（如 .canonical 后缀/marker 注释头）——各先例；
+4. 我们倾向 A，请辩证审查 A 的薄弱点（例如：1 空格缩进 canonical 形态的长期可维护性、是否应该顺手把 prettier 引进来统一、JSON 键序稳定性、被锁文件需要人写注释尾注时 JSON 不支持注释的问题），给出最终推荐与理由。
