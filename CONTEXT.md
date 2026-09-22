@@ -1257,3 +1257,26 @@ ghost-dep 自声明副本的版本必须 ≡ effective 宿主包内嵌依赖版�
 
 ## Carried Log（显式续债条）
 落选续债的 registry 记法=条目级 `carried_log` 数组，每轮追加 {at, round, note} 显式续债记录（落选≠飘过：每条写本轮不处置的理由）——区别于「status 原样不动」的默认漂移。_Avoid_: 落选债项靠 status=open 默认飘过（无轮次痕迹=静默漂移）；把续债条写成新 entry（重复 id 违反 append-only）。来源：R76 任务书 T2+D-001。
+
+## Grill Round 77 — Terms (ADR-0078)
+
+## Watch Funnel（哨戒漏斗 L0/L1/L2）
+上游 watch 管线的三层职责分离：L0 元数据（npm view versions+publish timestamp 喂龄期闸日历）→L1 静态探针（npm pack tarball 解包 .d.ts 与消费面快照 diff——不 install 故不归 pnpm 龄期闸管，是闸内唯一合法探测闸门外版本的层）→L2 安装彩排（repin→install→tsc 期望 RED=权威终裁，只给采纳候选）。_Avoid_: 把「每版跑 L2」当 cadence（正确收缩=降层非减少）；用 L1 diff 冒充编译级判定（类型体操误报/无运行时面）。来源：atomcode R77-Q2+R77 D-002。
+
+## Feature-Anchored Trigger（特征锚定触发器）
+采纳/重入触发器锚定「特征在发布物中存在」（候选 .d.ts 含 agent/created 事件且 payload 带 source/signal）而非版本号——版本号只作 transcript 记录字段永不进触发逻辑；版本锚定已被 leapfrog 证伪（0.1.6-rc.1 若永不发布=死锁，0.1.7 直接出 rc=漏接）。_Avoid_: 把具体版本号写进触发条件；把「上游发了新版」当特征已落地（须 L1 diff 实证）。来源：atomcode R77-Q2(c)+R77 D-002。
+
+## Adoption Stability Gate（采纳稳定度闸）
+alarm 跟随发布走（alpha 可响=早期警报），adoption 跟随稳定性走（只对 rc-or-stable+changelog 审通过响应）——两个判定分层不可合并（Renovate ignoreUnstable/Dependabot 冷却只管 version updates 同构）。_Avoid_: alpha 面目击特征即启动采纳（alpha 波动期蓝图必变）；把稳定度闸当特征探测的替代（闸管时机不管存在性）。来源：atomcode R77-Q2(c)+R77 D-002。
+
+## Respect-and-Schedule（尊重并排程）
+龄期闸交互唯一合法模式：闸内持续观察+归档（L0/L1 照跑），动作延迟到出闸自动触发（Renovate pending→passing 状态机同构）——信息流动≠动作。_Avoid_: scratch-dir 绕闸（实质提前消费未检疫版本，doctrine 连贯性>单次信息收益）；per-dependency 豁免（fail-open-with-exceptions，Dependabot exclude 是例外非通道）。来源：atomcode R77-Q2(b)+R77 D-002。
+
+## Consumer API Snapshot（消费面 API 快照）
+兼容警报的证据基元=对自己 pin 版的消费面提取 API 期望快照（Events 键+实际消费的 payload 字段），对候选 tarball .d.ts 同法提取后 diff——diff 即候选破坏面证据预览，可归档 evidence 并先验预测 L2 的 expected-RED（API Extractor/Azure apiguard 先例）。_Avoid_: 整包 API 全量对比（噪声大于信号）；只存 diff 结论不存快照本体（下轮无对照基）。来源：atomcode R77-Q2(a)+R77 D-002/D-005。
+
+## Tombstone Entry（墓碑条目）
+被龄期闸窗口+发布节奏跳过的版本不欠逐个 L2 彩排（latest-only），但欠一条记录：version+superseded-by+L1 diff 摘要——Y 彩排 GREEN 时 X 兼容性被传递证明，Y RED 时 X 的 L1 快照即归因证据。_Avoid_: 跳窗版本完全不记（破坏面归因断链）；把墓碑当彩排替代补跑 L2（义务错位）。来源：atomcode R77-Q2(d)+R77 D-002。
+
+## Dated Scheduled Obligation（带期排程义务）
+合格 L2 候选（ALARM+过闸+rc-or-stable）在闸未出时的合法终态=带日期+latest-at-exit 规则的排程义务落锚点（registry/ledger/handoff），非吊死等闸也非口头悬债；「无合格候选」显式结论同样是合法终态。_Avoid_: 把收口押在 L2 实跑上（pending 是合法终态）；排程义务只写日期不写规则（latest-only 下候选可能再被跳线）。来源：atomcode R77-Q2(d)+R77 D-005。
