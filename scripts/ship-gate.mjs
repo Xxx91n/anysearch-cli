@@ -958,10 +958,15 @@ function stepHandoffCloseoutLint() {
   const cov = assessCloseoutCoverage({ dirs: roundDirs, indexText });
   // Rework F-3: the exemption line prints BEFORE the fail — under a mixed red
   // state (violations AND an in-flight round) the exemption must stay
-  // observable, otherwise the one signal you need to diagnose the red goes silent.
+  // observable, otherwise the one signal you need to diagnose the red goes
+  // silent. Rework-2 (r76-audit residual): coverage violations print as a
+  // [fail] line but the exit is deferred until after the field-lint below —
+  // a coverage red must not suppress lint diagnostics, nor lint a coverage red.
   if (cov.awaiting !== null) report("skip", "awaiting closeout: round " + cov.awaiting + " (ADR not yet registered)");
-  if (cov.problems.length) fail("closeout-coverage: " + cov.problems.length + " violation(s) (ADR-0077):\n  " + cov.problems.join("\n  "));
-  report("pass", "closeout-coverage: " + cov.registeredCount + " registered / " + cov.completedCount + " completed round(s) at floor " + CLOSEOUT_COVERAGE_FLOOR);
+  const covRed = cov.problems.length > 0;
+  const exitIfCoverageRed = () => { if (covRed) { flushReportEntries("fail"); process.exit(1); } };
+  if (covRed) report("fail", "closeout-coverage: " + cov.problems.length + " violation(s) (ADR-0077):\n  " + cov.problems.join("\n  "));
+  else report("pass", "closeout-coverage: " + cov.registeredCount + " registered / " + cov.completedCount + " completed round(s) at floor " + CLOSEOUT_COVERAGE_FLOOR);
 
   // Field-lint surface unchanged (bounds the gh-liveness cost): only the
   // newest round dir WITH closeouts on disk is linted.
@@ -971,7 +976,7 @@ function stepHandoffCloseoutLint() {
     break; // newest round dir with closeouts only
   }
 
-  if (targets.size === 0) { report("skip", "handoff-lint: no closeout docs in scope (diff-clean and none on disk)"); return; }
+  if (targets.size === 0) { report("skip", "handoff-lint: no closeout docs in scope (diff-clean and none on disk)"); exitIfCoverageRed(); return; }
 
   // Liveness leg needs gh + network; degrade to an explicit skip (never silent)
   // when unavailable — the shape legs below still run unconditionally.
@@ -1019,6 +1024,7 @@ function stepHandoffCloseoutLint() {
   }
   if (problems.length) fail("handoff-lint: closeout required fields missing/invalid:\n  " + problems.join("\n  "));
   report("pass", "handoff-lint: " + targets.size + " closeout doc(s) carry 绿色 run URL + Stack" + (checkedLiveness ? " and cite a run on this round's history" : " (liveness leg skipped: gh/repo unavailable)"));
+  exitIfCoverageRed();
 }
 
 // R69 D-007 (T4): standing bilingual parity gate — README.md (canonical EN) and

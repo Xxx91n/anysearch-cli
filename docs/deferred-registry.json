@@ -89,7 +89,7 @@
    "deadline": "2026-12-31",
    "review_cadence": "quarterly",
    "status": "closed",
-   "evidence": "Ship-gate step 1g leg-b rewritten (scripts/closeout-coverage.mjs + assessCloseoutCoverage): completion signal = ADR index Grill Round N registration; fail-closed 3 assertions (registered-no-closeout red / index↔.scratch bidirectional drift red / empty-or-unparseable derivation red); floor=76 rule birthday; explicit in-flight exemption line; coverage counts on pass. All three assertions exercised red at the real gate (evidence/t1-* logs) + 36/36 fixture tests (audit rework added F-2/F-4 regression assertions; original landing was 26).",
+   "evidence": "Ship-gate step 1g leg-b rewritten (scripts/closeout-coverage.mjs + assessCloseoutCoverage): completion signal = ADR index Grill Round N registration; fail-closed 3 assertions (registered-no-closeout red / index↔.scratch bidirectional drift red / empty-or-unparseable derivation red); floor=76 rule birthday; explicit in-flight exemption line; coverage counts on pass. All three assertions exercised red at the real gate (evidence/t1-* logs) + 40/40 fixture tests (audit rework added F-2/F-4 + residual-cleanup regression assertions; original landing was 26).",
    "monitoring_channel": "next grill round task-book triage; do not re-defer without an explicit ledger entry",
    "closed_by": "ADR-0077",
    "closed_by_adr_path": "docs/adr/0077-architecture-grill-round-76-silent-drift-governance-liquidation.md",
@@ -259,12 +259,17 @@
   {
    "id": "gov-r76-registry-canonical-lock",
    "type": "governance-record",
-   "status": "closed",
+   "title": "governed-JSON canonical byte lock for docs/deferred-registry.json (ship-gate stepGovernedJsonCanonical)",
+   "source_adr": "docs/adr/0077-architecture-grill-round-76-silent-drift-governance-liquidation.md",
+   "owner": "anysearch-platform",
    "opened_by": "grill-round-76",
+   "opened_at": "2026-09-22",
+   "status": "closed",
    "closed_by": "ADR-0077",
    "closed_by_adr_path": "docs/adr/0077-architecture-grill-round-76-silent-drift-governance-liquidation.md",
    "closed_at": "2026-09-22",
-   "evidence": "ship-gate stepGovernedJsonCanonical leg (CANONICAL_JSON_FILES in scripts/ship-gate.mjs, logic in scripts/governed-json.mjs) byte-locks this file to JSON.stringify(JSON.parse(src),null,1)+\"\\n\"; injection probe red at \"first differs at line 2\" with paste-able normalize command (evidence/t0-canonical-inject.log); normalize command verified to restore canonical bytes. Born-closed record — documents the lock itself, not deferred work."
+   "evidence": "ship-gate stepGovernedJsonCanonical leg (CANONICAL_JSON_FILES in scripts/ship-gate.mjs, logic in scripts/governed-json.mjs) byte-locks this file to JSON.stringify(JSON.parse(src),null,1)+\"\\n\"; injection probe red at \"first differs at line 2\" with paste-able normalize command (evidence/t0-canonical-inject.log); normalize command verified to restore canonical bytes. Born-closed record — documents the lock itself, not deferred work.",
+   "monitoring_channel": "ship-gate step 1 canonical-json leg (fail-closed every run); reversal per ADR-0077 D5 (n>=5 multi-type -> registered config + prettier)"
   }
  ]
 }

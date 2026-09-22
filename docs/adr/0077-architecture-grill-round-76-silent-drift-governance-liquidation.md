@@ -54,7 +54,13 @@ closeout 的 dir（控 gh liveness 成本）。
 冒充 round closeout 恰是本 ADR 要杀的静默掩盖形态，round-63 实物文件
 作回归用例）；豁免行先于 violation `fail()` 打印，混合红态下仍可观测
 （F-3）；scoped 空集——floor 以上既无登记也无 round dir——显式判红，
-「nothing to check」不留 vacuous green 出口（F-4）。
+「nothing to check」不留 vacuous green 出口（F-4）。二批小修（backlog
+顺手核销）：titleRound 须匹配 `Grill Round N —` 惯例（N 后跟破折号），
+非 round ADR 标题句中提及不登记；`grill-round-<非数字>` dir 不再被
+regex 静默滤除，显式判红；coverage 违例先打印 [fail] 再 defer-exit 到
+字段 lint 之后，coverage 红与 lint 红互不压对方诊断；index parser 与
+gen-adr-index render 措辞解耦（非 `|` 行结构性跳过，row 形态仍
+fail-loud）。
 
 ### D3 floor=76 规则生日锚定（ledger D-002）
 

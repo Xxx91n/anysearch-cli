@@ -56,7 +56,12 @@ export function parseRegisteredRounds(indexText) {
   for (const raw of block.split("\n")) {
     const line = raw.trim();
     if (!line) continue;
-    if (line.startsWith("The complete numbered record lives in")) continue;
+    // Non-tabular lines (the generator's prose preamble etc.) cannot carry a
+    // registration row — skipping them keeps the parser decoupled from the
+    // render's wording (R76 audit F-5⑥). If the generator ever stops emitting
+    // table rows, rounds stays empty and the caller's empty-derivation
+    // assertion goes red — the fail-loud contract is preserved.
+    if (!line.startsWith("|")) continue;
     if (line === "| ADR | Title |") continue; // table header
     if (/^\|[\s-|]+\|$/.test(line)) continue; // separator row
     const row = line.match(/^\|\s*\[(\d{3,4})\]\(([^)\s]+)\)\s*\|(.*)\|\s*$/);
@@ -65,7 +70,10 @@ export function parseRegisteredRounds(indexText) {
       continue;
     }
     const fileRound = (row[2].match(/grill-round-(\d+)/i) ?? [])[1];
-    const titleRound = (row[3].match(/grill\s*round\s*(\d+)/i) ?? [])[1];
+    // "Grill Round N —" (number followed by the title's em-dash separator) is
+    // the registration title convention; a mid-sentence mention of a round in
+    // a non-round ADR's title must NOT register it (R76 audit residual).
+    const titleRound = (row[3].match(/Grill\s*Round\s*(\d+)\s*[—–-]/i) ?? [])[1];
     if (fileRound && titleRound && Number(fileRound) !== Number(titleRound)) {
       problems.push("ADR " + row[1] + " registers conflicting round numbers (file=round " + fileRound + ", title=round " + titleRound + ")");
       continue;
@@ -84,14 +92,19 @@ export function parseRegisteredRounds(indexText) {
 export function scanRoundDirs(scratchDir) {
   if (!fs.existsSync(scratchDir)) return [];
   return fs.readdirSync(scratchDir, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && ROUND_DIR_RE.test(d.name))
+    // Every grill-round-* dir is scanned — a `grill-round-<non-digit>` dir
+    // sorts last with n=null and is flagged by assessCloseoutCoverage; a round
+    // dir the ordering cannot see is itself a silent-drift surface (R76 audit
+    // residual). Non-round dirs stay excluded.
+    .filter((d) => d.isDirectory() && /^grill-round-/i.test(d.name))
     .map((d) => {
-      const n = Number(d.name.match(ROUND_DIR_RE)[1]);
+      const m = d.name.match(ROUND_DIR_RE);
+      const n = m ? Number(m[1]) : null;
       const hd = path.join(scratchDir, d.name, "handoffs");
       const closeouts = fs.existsSync(hd) ? fs.readdirSync(hd).filter(isCloseoutName) : [];
       return { name: d.name, n, hasCloseout: closeouts.length > 0, closeouts };
     })
-    .sort((a, b) => b.n - a.n);
+    .sort((a, b) => (b.n ?? -1) - (a.n ?? -1));
 }
 
 // Cross-check the registered set against the on-disk dirs at or above floor.
@@ -104,8 +117,13 @@ export function assessCloseoutCoverage({ dirs, indexText, floor = CLOSEOUT_COVER
   if (parsed.problems.length === 0 && parsed.rounds.size === 0) {
     problems.push("derived zero Grill Round registrations from docs/adr/index.md — a gate with nothing to check is a failure (ADR-0077)");
   }
+  for (const d of dirs) {
+    if (d.n === null) {
+      problems.push(".scratch/" + d.name + "/ does not match the grill-round-<N> convention — a round dir invisible to the coverage ordering is a silent-drift surface (rename or remove it; ADR-0077)");
+    }
+  }
   const scoped = new Set([...parsed.rounds].filter((n) => n >= floor));
-  const scopedDirs = dirs.filter((d) => d.n >= floor).sort((a, b) => b.n - a.n);
+  const scopedDirs = dirs.filter((d) => d.n !== null && d.n >= floor).sort((a, b) => b.n - a.n);
   // F-4 (R76 rework): a scoped-empty derivation — nothing registered and no
   // round dirs at or above floor — is a vacuous green; per this leg's own
   // doctrine ("nothing to check" = failure) it is red, not pass.
