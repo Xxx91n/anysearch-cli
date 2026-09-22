@@ -35,6 +35,7 @@ Stack (primary key = GitButler change-ids; SHAs are time-lagged):
 - 残余面：canonical 锁断言「文件字节≡canonicalize(文件)」——键序被重排成 canonical 形态不在检测面（ADR-0077 D5 显式接受：两次事故形态均为整文件缩进重排）。
 - (c) 空推导断言在真 gate 被 1b（index regenerate-and-diff）结构先行拦截——模块层 probe 行使 + 接线断言兜底，非腿级实测（报告记档）。
 - 外发闸：r75 drafts 两件用户审后亲手发；发布链接后补入 drafts 头部。
+- 审计返工 backlog（r76-audit 判「可留」项，显式记档非飘过）：F-5⑥ parser 非 marker 行形状与 gen-adr-index render 措辞耦合（render 改措辞=shotgun-surgery 点，解耦或互注待做）；F-5⑦ `gov-r76-registry-canonical-lock` 条目缺 sibling 字段（title/source_adr/opened_at 等，补须走 normalize 流程）；spec 轴残余观察：`titleRound` 对任意含 "Grill Round N" 文字的非 round ADR 标题误登记（fail-loud 向）、`grill-round-<非数字>` dir 被 scanRoundDirs regex 静默滤除、coverage `fail()` 先于 leg-(a) lint 压诊断序。
 
 ## Suggested skills
 
