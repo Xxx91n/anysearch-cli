@@ -33,6 +33,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { enumerateScopedMarkdown, buildEnv, scanLines } from "./ship-gate-pathlint-detect.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -1110,19 +1111,9 @@ function stepPathLint() {
   // Enumerate committed docs plus untracked-but-not-ignored new files in scope
   // (a doc being written right now must comply before commit — same posture as
   // the closeout lint's working-tree leg).
-  const ls = (a) => {
-    const r = spawnSync("git", a, { cwd: ROOT, encoding: "utf8" });
-    if (r.status !== 0) fail("path-lint: git " + a.join(" ") + " failed — cannot enumerate the registered sweep (fail-closed): " + String(r.stderr || "").trim().slice(0, 200));
-    return (r.stdout || "").split("\n").map((x) => x.trim()).filter(Boolean);
-  };
-  const files = [...new Set([...ls(["ls-files"]), ...ls(["ls-files", "-o", "--exclude-standard"])])].filter((f) => f.endsWith(".md"));
-  const globOk = (f) => cfg.roots.some((g) => {
-    if (g === "*.md") return !f.includes("/");
-    const m = g.match(/^(.+)\/\*\*\/\*\.md$/);
-    if (m) return f.startsWith(m[1] + "/");
-    return f === g;
-  });
-  const inScope = files.filter(globOk);
+  let inScope;
+  try { inScope = enumerateScopedMarkdown(cfg, ROOT); }
+  catch (e) { fail("path-lint: " + e.message); }
 
   const problems = [];
   // Registration check: every .scratch doc must sit in a registered dir —
@@ -1135,40 +1126,21 @@ function stepPathLint() {
     else problems.push(f + ": .scratch top-level doc — unregistered document type");
   }
 
-  const PATH_RE = /(?:^|[^A-Za-z0-9])(?:[A-Za-z]:[\\\/]|\/(?:Users|home)\/|\/tmp\/|AppData[\\\/])/;
-  const TOK_CLS = "[^\\s\"'`\\)><\\]:+,，、。；：（）【】《》|&]*";
-  const TOKEN_RE = new RegExp("[A-Za-z]:[\\\\/]" + TOK_CLS + "|\\/(?:Users|home|tmp)\\/" + TOK_CLS + "|" + TOK_CLS + "AppData[\\\\/]" + TOK_CLS, "g");
-  const MARKER_OK = /<!--\s*machine-local\s*:\s*[^@<>\s][^@<>]*?@\s*\d{4}-\d{2}-\d{2}\s*-->/;
-  const MARKER_ANY = new RegExp(cfg.marker.slice(0, cfg.marker.indexOf("<reason>")).trimEnd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"), "i");
-  const locators = (cfg.locatorLinePatterns || []).map((x) => new RegExp(x));
-  const rootAbs = ROOT.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
-  const inRepo = (tok) => { const t = tok.replace(/\\/g, "/").toLowerCase(); if (!t.startsWith(rootAbs + "/")) return false; const rel = t.slice(rootAbs.length + 1); return /^[a-z0-9._~*{?%$]/.test(rel); }; // a repo-ROOT ref (no path tail) is a locator, not a target ref — marker class
+  // R78 D-003 (A++): token+separator classifier — a locator is a token followed
+  // by a path separator. Bare env-var/tilde prose (%PATH%, $HOME, ~) never
+  // fires; single-segment POSIX roots surface as info; markers ratchet (a marker
+  // guarding nothing is itself a violation). Detector lives in
+  // scripts/ship-gate-pathlint-detect.mjs, shared with the warn-sweep driver.
+  const env = buildEnv(cfg, ROOT);
 
   let scanned = 0;
   for (const rel of inScope) {
     const file = path.join(ROOT, rel);
     if (!fs.existsSync(file)) continue;
     scanned++;
-    const lines = fs.readFileSync(file, "utf8").split("\n");
-    let fenced = false, fenceMarked = false, prevMarked = false;
-    for (let i = 0; i < lines.length; i++) {
-      const l = lines[i];
-      if (/^\s*```/.test(l)) {
-        if (!fenced) fenceMarked = prevMarked || MARKER_OK.test(l); // marker on the preceding line or the fence line covers the block
-        else fenceMarked = false;
-        fenced = !fenced;
-        prevMarked = false;
-        continue;
-      }
-      if (locators.some((re) => re.test(l))) { prevMarked = MARKER_OK.test(l); continue; } // locator class: absolute is the feature
-      if (PATH_RE.test(l) && !fenceMarked) {
-        const toks = l.match(TOKEN_RE) || [];
-        const bad = toks.filter(inRepo);
-        if (bad.length) problems.push(rel + ":" + (i + 1) + " in-repo target reference must be repo-relative (markers do not exempt in-repo refs): " + [...new Set(bad)].slice(0, 3).join(", "));
-        else if (!MARKER_OK.test(l)) problems.push(rel + ":" + (i + 1) + (MARKER_ANY.test(l) ? " malformed machine-local marker (needs non-empty reason + @ YYYY-MM-DD)" : " machine-local path requires a governed marker <!-- machine-local: <reason> @ <YYYY-MM-DD> -->") + ": " + l.trim().slice(0, 100));
-      }
-      prevMarked = MARKER_OK.test(l);
-    }
+    const { violations, infos } = scanLines(fs.readFileSync(file, "utf8").split("\n"), env);
+    for (const v of violations) problems.push(rel + ":" + v.line + " " + v.detail);
+    for (const inf of infos) report("info", "path-lint surfaced-skip " + rel + ":" + inf.line + " " + inf.detail);
   }
   if (problems.length) fail("path-lint: " + problems.length + " machine-local path violation(s):\n  " + problems.slice(0, 40).join("\n  ") + (problems.length > 40 ? "\n  ... and " + (problems.length - 40) + " more" : ""));
   report("pass", "path-lint: " + scanned + " registered doc(s) clean (in-repo refs repo-relative; machine-local paths declared)");
