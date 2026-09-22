@@ -57,7 +57,8 @@ transcript：`evidence/t0-l1-0.1.5-rc.3.md` / `t0-l1-0.1.6-alpha.2.md` / `t0-l1-
 
 ## 待校准项（落锚，防静默丢——r77-audit F-2）
 
-- **pnpm minimumReleaseAge 对 catalog repin 的确切拦截行为 = 本地实验项**（q2-atomcode.md:48 之四）：npm 侧 `--before`/ETARGET 边缘行为有 Renovate 文档佐证，pnpm 实现对 catalog 引用的拦截路径未覆盖——本账本「L1 tarball 探针是闸内唯一合法探测层」的结论依赖该拦截确实生效；下一轮若动钉版面先做一次受控 repin 拦截实验坐实边界。
+- ~~**pnpm minimumReleaseAge 对 catalog repin 的确切拦截行为 = 本地实验项**~~ **已消解（R78 T0，2026-09-22）**：7 格预登记判决矩阵实跑（`.scratch/grill-round-78/evidence/t0-repin-matrix.md`）——E1/E2/E3/E4 一致、E5 语义一致（`ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`）、**E6 证伪**：lockfile 携闸内版 + frozen/fetch 五变体全放行，`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` 在 11.24.0 不触发。#11583「lockfile 复核通道」调研结论与本机实测矛盾，按实测为准。
+- **断言收窄落锚**：本账本「L1 tarball 探针是闸内唯一合法探测层」维持——npm pack 不过 pnpm resolver 事实不变；但依据收窄为「闸拦截新鲜解析路径（catalog/range 重解析），**lockfile 回放不执法龄期闸**」。闸内版一旦进入 lockfile，frozen install 静默放行——lockfile 携带内容的评审责任由 review 纪律承担，不能指望闸兜底。详见 ADR-0079 D3。
 
 ## 家族规模警戒
 

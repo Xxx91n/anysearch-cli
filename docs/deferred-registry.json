@@ -37,6 +37,11 @@
      "at": "2026-09-22",
      "round": 77,
      "note": "R77 双轨域外——显式续债（落选≠飘过）：本轮=轨一dsh观测哨+轨二R76治理backlog，ownership议题未入轨"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 78,
+     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
     }
    ]
   },
@@ -65,6 +70,11 @@
      "at": "2026-09-22",
      "round": 77,
      "note": "R77 双轨域外——显式续债：macOS原生崩溃监视维持月度CI+上游issue watch，本轮无处置动作"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 78,
+     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
     }
    ]
   },
@@ -91,6 +101,11 @@
      "at": "2026-09-22",
      "round": 77,
      "note": "R77 双轨域外——显式续债：quarantine id工作未入本轮轨"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 78,
+     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
     }
    ]
   },
@@ -133,6 +148,11 @@
      "at": "2026-09-22",
      "round": 77,
      "note": "R77 双轨域外——显式续债：上游#1764仍open（截至2026-09-22），删除条件未达（半响触发器教义），watch面不变"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 78,
+     "note": "R78 域外显式续债：上游 #1764 仍 OPEN（截至 2026-09-22），删除触发器未响，patch 维持（ADR-0076 verdict）"
     }
    ]
   },
@@ -158,6 +178,11 @@
      "at": "2026-09-22",
      "round": 77,
      "note": "R77 双轨域外——显式续债：provider serverside议题未入本轮轨"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 78,
+     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
     }
    ]
   },
@@ -183,6 +208,11 @@
      "at": "2026-09-22",
      "round": 77,
      "note": "R77 双轨域外——显式续债：dsh-plugin npm发布议题未入本轮轨"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 78,
+     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
     }
    ]
   },
@@ -208,6 +238,11 @@
      "at": "2026-09-22",
      "round": 77,
      "note": "R77 双轨域外——显式续债：native tools议题未入本轮轨"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 78,
+     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
     }
    ]
   },
@@ -233,6 +268,11 @@
      "at": "2026-09-22",
      "round": 77,
      "note": "R77 双轨域外——显式续债：web interactive matrix议题未入本轮轨"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 78,
+     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
     }
    ]
   },
@@ -258,6 +298,11 @@
      "at": "2026-09-22",
      "round": 77,
      "note": "R77 轨一处置——L0/L1 探针取证完成：rc.3 无alarm；alpha.1/alpha.2/0.1.7-alpha.1 全 ALARM 但皆 alpha 线→无 L2 合格候选（no-qualifying-candidate 显式结论）；触发器改写为特征+稳定性双锚（版本号退出触发逻辑）；0.1.6-alpha.* 跳线→墓碑入 tombstones 字段+upgrade-ledger v2"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 78,
+     "note": "R78 域外显式续债：L2 排程义务临近——闸内标本 ≈2026-09-24 06:0xZ 出闸，下轮或即触发；双锚触发器仍守版本号退出逻辑"
     }
    ],
    "tombstones": [
@@ -297,6 +342,11 @@
      "at": "2026-09-22",
      "round": 77,
      "note": "R77 双轨域外——显式续债：logo位图矩阵未入本轮轨"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 78,
+     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
     }
    ]
   },
@@ -322,6 +372,11 @@
      "at": "2026-09-22",
      "round": 77,
      "note": "R77 双轨域外——显式续债：registerHooks ESM臂三重触发器未响，watch面不变"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 78,
+     "note": "R78 域外显式续债：repo 无 Node floor 声明+无真实 ESM 消费者=仍半响，三重触发器未响"
     }
    ]
   },
@@ -351,10 +406,19 @@
    "opened_at": "2026-09-22",
    "deadline": "2026-12-31",
    "review_cadence": "next pathlint leg touch + quarterly",
-   "status": "open",
-   "evidence": "r77-audit F-5：report/closeout 两处 %TEMP% 裸引用过闸未拦（PATH_RE 只识别盘符/Users|home|tmp/AppData 字面形）；先例漏网：docs/adr/0042-architecture-grill-round-39-observational-data-feeding.md:111（%TEMP%/atomcode-r39-sources.txt 存量同款）。修复向=PATH_RE 扩 env-var 形态+红向 fixture 实测；本轮两处已人工补 marker 兜底不算核销。",
+   "status": "closed",
+   "evidence": "R78 T1 落地：PATH_RE→token+分隔符组合判定器（scripts/ship-gate-pathlint-detect.mjs），四类新 token（%VAR%/$VAR|${VAR}/~/UNC）+字面形统一后随分隔符=locator；warn-first 全量扫 313 文档 96 违例实录（evidence/t1-warn-sweep.md）→97 动作/52 文件处置（evidence/t1-remediate.md）→复扫 0 翻 fail-closed；失效标记棘轮腿+红绿成对 fixture 9 断言（packages/store/test/ship-gate-pathlint.test.mjs）；0042:111 存量逃逸已补 marker。",
    "monitoring_channel": "ship-gate step 1i 下一触点复审 + 每季 marker 声明审计顺手扫 env-var 形",
-   "carried_log": []
+   "carried_log": [
+    {
+     "at": "2026-09-22",
+     "round": 78,
+     "note": "R78 轨内处置完成核销：盲区闭合+棘轮腿上线，非续债"
+    }
+   ],
+   "closed_by": "ADR-0079",
+   "closed_by_adr_path": "docs/adr/0079-architecture-grill-round-78-gate-calibration-pathlint-detector-and-repin-matrix.md",
+   "closed_at": "2026-09-22"
   }
  ]
 }

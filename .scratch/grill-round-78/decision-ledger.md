@@ -37,3 +37,10 @@
 - **规范化需求**：三段收口——(i) 实验段：E1~E6 逐格与预登记预期比对（一致/不一致逐格显式）；E7 无 npmjs 标本则「配置面向量」记档；transcript 归档 .scratch/grill-round-78/evidence/；真身实验后 catalog/lockfile 恢复零脏实证；证伪处置预先合法化——任一格实测≠预期=断言被证伪呈报信号，处置=如实归档+断言文本按实测收窄/翻案入档（收口产物是真相非确认书）；滑过 09-24 窗口则记「窗口错过」诚实结论不伪造。(ii) pathlint 段：判定器重构落地+warn-first 全量扫命中数实录（blast radius 可审计）+retro-fix/marker 逐条处置+翻 fail-closed+棘轮腿红向实测（注入失效标记断言被检出）+每 token 类红绿 fixture 成对行使（红必拦绿必放）+inline code 不豁免断言+turbo check/test+ship-gate 绿+pnpm install 绿（IgnoreMissingTime:false 无破坏实证）。(iii) 文书段：ADR-0079（组合判定器+豁免三层模型+棘轮审计+判决矩阵实录+断言收窄文本+加固理由+不 bump 判定）+registry（defer-r77-pathlint-envvar-blindspot→closed 走 canonical normalize+落选债 carried_log r78）+upgrade-ledger v2 待校准项消解+CONTEXT 新词+handoff（#1764 哨/外发闸/L2 出闸临近态）+pathlint 登记 round-78+but 干净。
 - **显式约束/负向需求**：三段缺一段不收口；红方向必须实测行使；判决矩阵不一致格如实记录不掩盖；证伪结果同样是合法收口产物；不 bump 判定须显式入 ADR 非默认跳过；窗口错过须诚实记档不可补跑伪造。
 - **状态**：current
+
+## D-006 — T0 实测结果落档（E6 证伪）
+
+- **实测结论**：E1~E4 与预登记一致；E5 语义一致（实录错误码 ERR_PNPM_LOCKFILE_CONFIG_MISMATCH，执法点=config 一致性检查非龄期闸）；**E6 证伪**——lockfile 携闸内版 + frozen（温/冷 store、显式 strict:true）+ pnpm fetch 五变体全静默放行，ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION 在 pnpm 11.24.0 不触发。q2 调研所载 #11583 lockfile 复核结论与本机实测直接矛盾，以实测为准。
+- **处置**（D-005 预合法化路径）：断言收窄为「闸只拦新鲜版本解析路径；lockfile 回放通道不执法龄期闸」；L1=闸内唯一合法探测层立法维持（依据收窄不翻案）；安全后果与 lockfile 评审责任入 ADR-0079 D3；upgrade-ledger v2 待校准项已消解。
+- **E7**：npmjs 恒带 time 字段无标本——按预登记记「配置面向量」不跑；加固项 minimumReleaseAgeIgnoreMissingTime:false 已落 pnpm-workspace.yaml 并 install 绿。
+- **状态**：current（实验实录，transcript=evidence/t0-repin-matrix.md）
