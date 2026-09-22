@@ -27,6 +27,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
+import { governedJsonViolation } from "./governed-json.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -189,6 +190,25 @@ function stepAccessChainVerify() {
     return;
   }
   fail("access-events chain verification failed (object " + object + ", exit " + res.status + (res.status === 0 ? ", verdict " + (parsed && parsed.verdict) : "") + "): " + out + (res.stderr ? " stderr: " + String(res.stderr).trim().slice(0, 300) : ""));
+}
+
+// ADR-0077 (R76 T0 / D-003): governed-JSON canonical lock — the governed
+// file list is a hardcoded constant (n=1 today). Migrate to a registered config
+// when the list reaches n>=5 or packages need self-service registration.
+const CANONICAL_JSON_FILES = ["docs/deferred-registry.json"];
+
+// Byte-identical assertion per governed file; the failure message carries the
+// paste-able normalize command and this constant's location so a renamed file
+// can't orphan the list (list-rot guard). No autofix — the gate reports, the
+// human normalizes ("committed != reviewed" doctrine, ADR-0077).
+function stepGovernedJsonCanonical() {
+  for (const rel of CANONICAL_JSON_FILES) {
+    const p = path.join(ROOT, rel);
+    if (!fs.existsSync(p)) fail("canonical-json: governed file missing: " + rel + " — update CANONICAL_JSON_FILES in scripts/ship-gate.mjs");
+    const violation = governedJsonViolation(rel, fs.readFileSync(p));
+    if (violation) fail("canonical-json: " + violation);
+  }
+  report("pass", "canonical-json: " + CANONICAL_JSON_FILES.length + " governed file(s) byte-identical to canonical form (ADR-0077)");
 }
 
 // ---------------------------------------------------------------------------
@@ -678,6 +698,10 @@ function stepStaticAssertions() {
     if (!cliSearch.includes('"anysearch.source": "retrieved"')) fail("ADR-0053 1o: anysearch.source OTLP emission missing");
     report("pass", "ADR-0053 content trust boundary + inject probes present");
   }
+
+  // 1t. ADR-0077 (R76 T0): governed-JSON canonical lock — governed files must
+  //     byte-equal their canonical serialization (see scripts/governed-json.mjs).
+  stepGovernedJsonCanonical();
 
 }
 
