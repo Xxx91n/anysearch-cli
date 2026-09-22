@@ -26,7 +26,14 @@
    "review_cadence": "quarterly",
    "status": "open",
    "monitoring_channel": "quarterly review + certificate-transparency/expiry watch",
-   "evidence": "Domain verified live at round 58: CloudFront CNAME; Amazon wildcard cert valid to 2026-12-03; fresh status subdomain cert. Annotation block in packages/retriever/src/providers/anysearch.ts (endpoint, CNAME, confirmation date, fail-open note)."
+   "evidence": "Domain verified live at round 58: CloudFront CNAME; Amazon wildcard cert valid to 2026-12-03; fresh status subdomain cert. Annotation block in packages/retriever/src/providers/anysearch.ts (endpoint, CNAME, confirmation date, fail-open note).",
+   "carried_log": [
+    {
+     "at": "2026-09-22",
+     "round": 76,
+     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): standing record — deadline + quarterly review cadence holds (t6-hostile-cuts)"
+    }
+   ]
   },
   {
    "id": "defer-f16-macos-native-crash",
@@ -42,7 +49,14 @@
    "upstream_issue": "https://github.com/WiseLibs/better-sqlite3/issues/1514",
    "ci_evidence": "https://github.com/Xxx91n/anysearch-cli/actions/runs/34700329763 (macos-latest job 103570831306): libc++abi: terminating due to uncaught exception of type std::__1::system_error: mutex lock failed: Invalid argument - hit in the packages/store test step AND the eval CLI spawn, on Node 22.23.2 arm64",
    "decision_chain_state": "ADR-0059 D4 gate 1 probe DONE (crash = better-sqlite3, darwin-arm64); gate 2 Node 22 alignment applied by T-1 and did NOT fix it; gate 3 onnxruntime not implicated; exits 4 (subprocess isolation + sentinel exit code) and 5 (this ledger) remain. The workflow does NOT silently skip - the macos ship-gate job is honestly red.",
-   "monitoring_channel": "monthly CI re-run of the macos ship-gate job + upstream better-sqlite3 issue watch"
+   "monitoring_channel": "monthly CI re-run of the macos ship-gate job + upstream better-sqlite3 issue watch",
+   "carried_log": [
+    {
+     "at": "2026-09-22",
+     "round": 76,
+     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream preview blocker unchanged; quarterly cadence holds"
+    }
+   ]
   },
   {
    "id": "defer-f17-quarantine-ids",
@@ -56,7 +70,14 @@
    "review_cadence": "monthly",
    "status": "open",
    "evidence": "20 local fixed-input runs (docs/eval/quarantine-audit-2026-09-12.md) and 4 post-fix CI memory-eval runs are all 128/128 (mrr 0.548). The single historical 126/128 (mrr 0.524) was produced by the memory-eval job, which uploads no artifact - and the main ship-gate artifacts from that run are 128/128 with integrity.verdict=failed/runPurpose=decision (the F-15 signature), so the two case ids are not recoverable from any artifact. Reproduction procedure: run the memory-eval job repeatedly, one ref per run (same-ref dispatches cancel via the ship-gate concurrency group), and read '[eval] failed cases: <id>(<stage>)' from the job log; then add the entries to packages/store/eval-quarantine.json. The SLA enforcement point (packages/store/test/eval-quarantine-sla.test.ts) is already in place.",
-   "monitoring_channel": "monthly CI re-run of the memory-eval job"
+   "monitoring_channel": "monthly CI re-run of the memory-eval job",
+   "carried_log": [
+    {
+     "at": "2026-09-22",
+     "round": 76,
+     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream preview blocker unchanged; quarterly cadence holds"
+    }
+   ]
   },
   {
    "id": "defer-r71-shipgate-1g-coverage",
@@ -67,9 +88,12 @@
    "opened_at": "2026-09-19",
    "deadline": "2026-12-31",
    "review_cadence": "quarterly",
-   "status": "open",
-   "evidence": "R70 audit F1 proved the fallback semantics (latest-round-dir-with-closeout); R71 D-001 explicitly scoped it out again — the gap survives two consecutive rounds and must not silently persist a third.",
-   "monitoring_channel": "next grill round task-book triage; do not re-defer without an explicit ledger entry"
+   "status": "closed",
+   "evidence": "Ship-gate step 1g leg-b rewritten (scripts/closeout-coverage.mjs + assessCloseoutCoverage): completion signal = ADR index Grill Round N registration; fail-closed 3 assertions (registered-no-closeout red / index↔.scratch bidirectional drift red / empty-or-unparseable derivation red); floor=76 rule birthday; explicit in-flight exemption line; coverage counts on pass. All three assertions exercised red at the real gate (evidence/t1-* logs) + 27/27 fixture tests.",
+   "monitoring_channel": "next grill round task-book triage; do not re-defer without an explicit ledger entry",
+   "closed_by": "ADR-0077",
+   "closed_by_adr_path": "docs/adr/0077-architecture-grill-round-76-silent-drift-governance-liquidation.md",
+   "closed_at": "2026-09-22"
   },
   {
    "id": "defer-r71-transformers-undeclared-dep",
@@ -83,7 +107,14 @@
    "status": "open",
    "upstream_issue": "https://github.com/huggingface/transformers.js/issues/1087 (CLOSED unresolved — maintainer's repo-internal publicHoistPattern does not cover published consumers); fix in flight: https://github.com/huggingface/transformers.js/pull/1764 (OPEN, maintainer-authored, contains the manifest declaration hunk)",
    "evidence": "R75 judgement sweep 2026-09-22: deletion condition still unmet (Half-Fired Trigger — upstream declared onnxruntime-node/web, not the specifier actually required). 4.3.0 tarball dissection: dist/transformers.node.cjs top-level bare require('onnxruntime-common') at ~line 13520, manifest still undeclared. Runtime repro on pnpm isolated scope (hoist:false): 'Cannot find module onnxruntime-common' from transformers.node.cjs:13520 (transcript .scratch/grill-round-75/evidence/t0-pnpm-isolated-scope.log); 3.8.1 identical without patch, green with the shipped scoped _resolveFilename patch + self-declared copy. Nuance: pnpm default virtual-store hoist masks it; breaks under hoist:false / pnpm dlx / global-style installs; npm flat hoist masks until a version conflict (episodic-memory#105). Version-pairing discipline: self-declared onnxruntime-common must equal the effective onnxruntime-node embedded dep (currently 1.21.0 ≡ 1.21.0) — now a CI fact via packages/embedding/test/transformers-ghost-dep.test.ts (ADR-0076). Patch stays: fail-open, auto no-ops once upstream declares, and is the only mechanism that travels inside the published tarball.",
-   "monitoring_channel": "watch @huggingface/transformers releases >4.3.0 for a declared onnxruntime-common + watch PR #1764 merge; deletion condition = a released version whose manifest declares it (then verify the bare require is gone)"
+   "monitoring_channel": "watch @huggingface/transformers releases >4.3.0 for a declared onnxruntime-common + watch PR #1764 merge; deletion condition = a released version whose manifest declares it (then verify the bare require is gone)",
+   "carried_log": [
+    {
+     "at": "2026-09-22",
+     "round": 76,
+     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream #1764 still OPEN — deletion trigger not fired; patch stays (ADR-0076 verdict)"
+    }
+   ]
   },
   {
    "id": "defer-r71-provider-serverside",
@@ -96,7 +127,14 @@
    "review_cadence": "quarterly",
    "status": "open",
    "evidence": "R71 T1.2 spike: provider endpoint returned 000 for live search — memory rows were seeded directly for the backfill assertion instead. Server-side cause un-investigated.",
-   "monitoring_channel": "next grill round task-book triage"
+   "monitoring_channel": "next grill round task-book triage",
+   "carried_log": [
+    {
+     "at": "2026-09-22",
+     "round": 76,
+     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): deferred scope — no owner pull this round"
+    }
+   ]
   },
   {
    "id": "defer-r72-dsh-plugin-npm-publish",
@@ -109,7 +147,14 @@
    "review_cadence": "quarterly",
    "status": "open",
    "evidence": "R72 verified the publish shape end-to-end (pnpm pack tarball → dsh plugin add → --dump-config layer check); private:true is a one-field change, not archaeology. npm keyword dsh-plugin auto-joins the official directory once published.",
-   "monitoring_channel": "next release round task-book triage"
+   "monitoring_channel": "next release round task-book triage",
+   "carried_log": [
+    {
+     "at": "2026-09-22",
+     "round": 76,
+     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): r74 stack landed; publish-adoption gate unmet"
+    }
+   ]
   },
   {
    "id": "defer-r72-dsh-native-tools",
@@ -122,7 +167,14 @@
    "review_cadence": "quarterly",
    "status": "open",
    "evidence": "R72 chose the official mcp-client bridge (zero product code for the tool surface). Revisit triggers: bridge shows insufficiency for ans_chat/research_web latency, or the tool-registration API stabilizes upstream.",
-   "monitoring_channel": "watch @deepseek-ai/dsh-mcp-client + dsh-tools releases"
+   "monitoring_channel": "watch @deepseek-ai/dsh-mcp-client + dsh-tools releases",
+   "carried_log": [
+    {
+     "at": "2026-09-22",
+     "round": 76,
+     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): r74 stack landed; native-tools gate unmet"
+    }
+   ]
   },
   {
    "id": "defer-r72-dsh-web-interactive-matrix",
@@ -135,7 +187,14 @@
    "review_cadence": "quarterly",
    "status": "open",
    "evidence": "R72 covered the two named web probes (inject transcript + preheat marker) inside a web-profile composition driven headlessly. Interactive UI turn + live-edit reload + approval-channel behaviour are preview-round scope.",
-   "monitoring_channel": "next grill round task-book triage"
+   "monitoring_channel": "next grill round task-book triage",
+   "carried_log": [
+    {
+     "at": "2026-09-22",
+     "round": 76,
+     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): r74 stack landed; web-interactive matrix gate unmet"
+    }
+   ]
   },
   {
    "id": "defer-r73-dsh-event-rename",
@@ -148,7 +207,14 @@
    "review_cadence": "per upstream release (rehearsal each time) + quarterly",
    "status": "open",
    "evidence": "R73 T2 预演实证：catalog→0.1.6-alpha.2 全族齐装后 tsc 单点 RED（src/index.ts:87 TS2345 session-start 移出 Events）。迁移蓝图+触发器（0.1.6-rc.1/功能缺口/弃用窗口）+source-guard 伪码见 .scratch/grill-round-73/upgrade-ledger.md；采纳时 override 枚举须按新锁文件重推导（alpha.2 家族已扩至 17 包）。",
-   "monitoring_channel": "upstream @deepseek-ai/dsh-* release watch + upgrade rehearsal post-mortem"
+   "monitoring_channel": "upstream @deepseek-ai/dsh-* release watch + upgrade rehearsal post-mortem",
+   "carried_log": [
+    {
+     "at": "2026-09-22",
+     "round": 76,
+     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream event rename unshipped — adoption trigger not fired"
+    }
+   ]
   },
   {
    "id": "defer-r74-logo-bitmap-matrix",
@@ -161,7 +227,14 @@
    "review_cadence": "quarterly",
    "status": "open",
    "evidence": "R74 D-002：位图矩阵阶段因 imagegen 不可用整体延期；纯 SVG mark 已落地 assets/readme/logo.svg（深色芯片底、深浅主题双安全、16px 可辨，核验见 .scratch/grill-round-74/evidence/t1-render-verification.md）。采纳时以 logo.svg 为源件导出 PNG/WebP 衍生。",
-   "monitoring_channel": "manual"
+   "monitoring_channel": "manual",
+   "carried_log": [
+    {
+     "at": "2026-09-22",
+     "round": 76,
+     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): imagegen tooling absent; SVG mark landed r74; matrix deferred until tooling exists"
+    }
+   ]
   },
   {
    "id": "defer-r75-registerhooks-esm-arm",
@@ -174,7 +247,24 @@
    "review_cadence": "trigger-driven (three re-entry triggers below) + quarterly",
    "status": "open",
    "evidence": "R75 D-003 (B+): the shipped Module._resolveFilename patch only covers the CJS entry (transformers.node.cjs via createRequire().require()); a consumer reaching transformers.node.mjs through import()/import would bypass it — the ESM resolver cannot be scoped without module.registerHooks. Not adopted now: registerHooks is Stability 1.2 experimental, process-global, needs Node >=22.15 (repo floor >=22), is inert under jest/vitest loaders, and our reachable ESM surface is zero — runtime defense code for an unreachable path is negative value (Static Invariant Guard doctrine). The guard test transformers-ghost-dep.test.ts asserts the invariant instead. Re-entry triggers: (a) any src code path starts loading @huggingface/transformers via ESM import (guard goes red — by construction); (b) upstream merges #1764 and a release declares onnxruntime-common (patch + this ticket retire wholesale); (c) Node floor rises to >=22.15 AND a real ESM consumer exists — then implement registerHooks per GitNexus#2069 posture: fail-open, resolving onnxruntime-common from the effective onnxruntime-node copy (dynamic version pairing, no pin drift).",
-   "monitoring_channel": "guard test red = trigger (a); watch PR #1764 + releases >4.3.0 for trigger (b); Node floor changes for trigger (c)"
+   "monitoring_channel": "guard test red = trigger (a); watch PR #1764 + releases >4.3.0 for trigger (b); Node floor changes for trigger (c)",
+   "carried_log": [
+    {
+     "at": "2026-09-22",
+     "round": 76,
+     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): no ESM consumer; three named re-entry triggers (r75) unchanged"
+    }
+   ]
+  },
+  {
+   "id": "gov-r76-registry-canonical-lock",
+   "type": "governance-record",
+   "status": "closed",
+   "opened_by": "grill-round-76",
+   "closed_by": "ADR-0077",
+   "closed_by_adr_path": "docs/adr/0077-architecture-grill-round-76-silent-drift-governance-liquidation.md",
+   "closed_at": "2026-09-22",
+   "evidence": "ship-gate stepGovernedJsonCanonical leg (CANONICAL_JSON_FILES in scripts/ship-gate.mjs, logic in scripts/governed-json.mjs) byte-locks this file to JSON.stringify(JSON.parse(src),null,1)+\"\\n\"; injection probe red at \"first differs at line 2\" with paste-able normalize command (evidence/t0-canonical-inject.log); normalize command verified to restore canonical bytes. Born-closed record — documents the lock itself, not deferred work."
   }
  ]
 }

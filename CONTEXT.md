@@ -1254,3 +1254,6 @@ ghost-dep 自声明副本的版本必须 ≡ effective 宿主包内嵌依赖版�
 
 ## Canonical Byte Lock（canonical 字节锁）
 受治理文件的形态锁=CI 字节全等断言（`JSON.stringify(JSON.parse(f),null,1)+'\n'`），verify-don't-regenerate：gate 只报错附 normalize 指令不自修（「提交内容≠审阅内容」反模式），受锁文件用顶层数据字段自文档声明锁定事实防误修。_Avoid_: 语义级比较（漏报重排）；gate 自动改写（jyn.dev/Lobsters 反模式）；hook/.gitattributes 充当锁（GitButler 下 hook 静默失效、gitattributes 管不了内容字节）。来源：atomcode R76-Q3+R76 D-003。
+
+## Carried Log（显式续债条）
+落选续债的 registry 记法=条目级 `carried_log` 数组，每轮追加 {at, round, note} 显式续债记录（落选≠飘过：每条写本轮不处置的理由）——区别于「status 原样不动」的默认漂移。_Avoid_: 落选债项靠 status=open 默认飘过（无轮次痕迹=静默漂移）；把续债条写成新 entry（重复 id 违反 append-only）。来源：R76 任务书 T2+D-001。
