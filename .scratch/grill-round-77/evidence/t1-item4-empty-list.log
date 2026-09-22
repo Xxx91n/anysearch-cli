@@ -1,0 +1,30 @@
+[info] step 0/9: permanent invariants (ADR-0059 D5)
+[pass] check-workflows: OK (6 files)
+[pass] clean-tree invariant: git status --porcelain is empty
+[pass] gitignore-drift invariant: no tracked-but-ignored files
+[task-parity] ok: 8 packages implement check/test (exemptions: none)
+[pass] task parity: check/test implemented in all packages
+[info] step 1/9: task parity + static rg assertions (version pin + ADR invariants)
+[pass] all 8 packages pinned at 0.0.7
+[pass] tool registry wires 5 ans_* tools
+[pass] no console.log | stdout.write in apps/mcp/src + packages/kernel/src
+[pass] tool-schemas.ts has 5 additionalProperties:false closers
+[pass] attribution module exports present
+[pass] attribution TypeBox schema parity (4 additionalProperties closers + enums present)
+[pass] FusedEnvelope.attribution declared
+[pass] MCP search/research dual-channel attribution (content + structuredContent)
+[pass] ADR-0045 fusion-registry wiring: k split registered, no implicit default
+[pass] ADR-0045 score_kind discipline: no bare fused score on NormalizedResult
+[pass] ADR-0035 KG-lite layer: relation module + edges schema + store hooks + fifth-arm label + CLI present
+[pass] ADR-0037 consolidation/forgetting layer: schema + consolidate module + store wiring + kernel 3-endpoint init present
+[pass] ADR-0037 Phase-3 CLI: consolidate + forget + durable DB path present
+[pass] CLI --json pure structural output, glyphs confined to kernel renderer
+[pass] attribution renderer dedupes source URLs
+[pass] access-events chain verified (object=consumed, exit 0 + verdict PASSED): {"verdict":"PASSED","dbPath":"C:\\Users\\Administrator\\.anysearch\\anysearch.db","legacyRows":0,"chainedRows":32,"digest":"e3b0c44298fc1c149afbf4c8996fb92427ae
+[pass] ADR-0073 dsh-plugin churn lint: zero runtime deps, private ESM bundle, patch rows declared
+[pass] ADR-0046/0047 source gates + ADR-0062 dual-gate abstain contracts + criterion anchors + R64 D-005 migration anchors (exact>=2 frozen-only, paths>=1, migration blocks)
+[pass] R62 D-005: offline exclusion governance (whitelist + 0.75 floor + test-online lane)
+[pass] R63 T3: quarantine ratchet green (entries shrink-only vs baseline[10], renewals=0, no unruled expiry, longterm<=1)
+[pass] ADR-0052 observation representation/store/export boundary and eval isolation present
+[pass] ADR-0053 content trust boundary + inject probes present
+[fail] canonical-json: CANONICAL_JSON_FILES is empty — a canonical-lock leg with nothing to check is a failure (ADR-0077); restore the governed list in scripts/ship-gate.mjs

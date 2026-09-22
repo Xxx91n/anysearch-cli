@@ -1,7 +1,7 @@
 # Round-77 → next-round 交接
 
 Stack (primary key = GitButler change-ids; SHAs are time-lagged):
-`r77-grill` → `zry`（账本/任务书定稿+CONTEXT七词+调研存档+round-77白名单）；`r77-impl`（叠于其上）→ `pqr`（T0 轨一探针取证 evidence 三件+三 transcript）→ `nwr`（T1 轨二 backlog 七项清算+测试）→ `<T2 文书批+index regen+收口>`
+`r77-grill` → `zry`（账本/任务书定稿+CONTEXT七词+调研存档+round-77白名单）；`r77-impl`（叠于其上）→ `pqr`（T0 轨一探针取证 evidence 三件+三 transcript）→ `nwr`（T1 轨二 backlog 七项清算+测试）→ `wvu`（T2 文书批：ADR-0078+registry 双锚改写+ledger v2+CHANGELOG+本 closeout 初稿）→ `pmt`（index regen 78 条）→ 收口批（报告+探针行使日志+本行定稿，change-id 见 `but status`）
 
 主题：双轨「治理残账清算」——轨一 dsh 上游观测哨分层漏斗落地（L0 元数据哨/L1 tarball 静态探针/L2 安装彩排仅合格候选）+特征/稳定性双锚触发器（版本号退出触发逻辑）+latest-only 墓碑制；轨二 R76 审计 backlog 七项全清。
 
