@@ -32,6 +32,11 @@
      "at": "2026-09-22",
      "round": 76,
      "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): standing record — deadline + quarterly review cadence holds (t6-hostile-cuts)"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 77,
+     "note": "R77 双轨域外——显式续债（落选≠飘过）：本轮=轨一dsh观测哨+轨二R76治理backlog，ownership议题未入轨"
     }
    ]
   },
@@ -55,6 +60,11 @@
      "at": "2026-09-22",
      "round": 76,
      "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream preview blocker unchanged; quarterly cadence holds"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 77,
+     "note": "R77 双轨域外——显式续债：macOS原生崩溃监视维持月度CI+上游issue watch，本轮无处置动作"
     }
    ]
   },
@@ -76,6 +86,11 @@
      "at": "2026-09-22",
      "round": 76,
      "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream preview blocker unchanged; quarterly cadence holds"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 77,
+     "note": "R77 双轨域外——显式续债：quarantine id工作未入本轮轨"
     }
    ]
   },
@@ -113,6 +128,11 @@
      "at": "2026-09-22",
      "round": 76,
      "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream #1764 still OPEN — deletion trigger not fired; patch stays (ADR-0076 verdict)"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 77,
+     "note": "R77 双轨域外——显式续债：上游#1764仍open（截至2026-09-22），删除条件未达（半响触发器教义），watch面不变"
     }
    ]
   },
@@ -133,6 +153,11 @@
      "at": "2026-09-22",
      "round": 76,
      "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): deferred scope — no owner pull this round"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 77,
+     "note": "R77 双轨域外——显式续债：provider serverside议题未入本轮轨"
     }
    ]
   },
@@ -153,6 +178,11 @@
      "at": "2026-09-22",
      "round": 76,
      "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): r74 stack landed; publish-adoption gate unmet"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 77,
+     "note": "R77 双轨域外——显式续债：dsh-plugin npm发布议题未入本轮轨"
     }
    ]
   },
@@ -173,6 +203,11 @@
      "at": "2026-09-22",
      "round": 76,
      "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): r74 stack landed; native-tools gate unmet"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 77,
+     "note": "R77 双轨域外——显式续债：native tools议题未入本轮轨"
     }
    ]
   },
@@ -193,6 +228,11 @@
      "at": "2026-09-22",
      "round": 76,
      "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): r74 stack landed; web-interactive matrix gate unmet"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 77,
+     "note": "R77 双轨域外——显式续债：web interactive matrix议题未入本轮轨"
     }
    ]
   },
@@ -204,15 +244,34 @@
    "owner": "anysearch-platform",
    "opened_at": "2026-09-19",
    "deadline": "2027-03-31",
-   "review_cadence": "per upstream release (rehearsal each time) + quarterly",
+   "review_cadence": "per upstream release — L0 每版 npm view 快照+L1 每版 tarball 消费面 diff；L2 仅对合格候选（双锚全响） + quarterly",
    "status": "open",
-   "evidence": "R73 T2 预演实证：catalog→0.1.6-alpha.2 全族齐装后 tsc 单点 RED（src/index.ts:87 TS2345 session-start 移出 Events）。迁移蓝图+触发器（0.1.6-rc.1/功能缺口/弃用窗口）+source-guard 伪码见 .scratch/grill-round-73/upgrade-ledger.md；采纳时 override 枚举须按新锁文件重推导（alpha.2 家族已扩至 17 包）。",
-   "monitoring_channel": "upstream @deepseek-ai/dsh-* release watch + upgrade rehearsal post-mortem",
+   "evidence": "R77 T0 实证（evidence/t0-l0-watch.json + t0-api-snapshot-rc2.json + t0-l1-*.md）：改名特征已在 alpha 线全落地——0.1.6-alpha.1 起 agent/session-start 键自 Events 移除、agent/created payload 变 {agent,source:SessionStartSource,signal?:AbortSignal}（rc.2 起两键并存、source 原挂 session-start）；rc/next 线 0.1.5-rc.3 Events 面 ≡ rc.2 零漂移（无 alarm）。迁移蓝图：.scratch/grill-round-73/upgrade-ledger.md + R77 v2（.scratch/grill-round-77/upgrade-ledger.md）；采纳时 override 枚举按新锁文件重推导（0.1.7-alpha.1 dep-closure 已扩至 21 个 dsh-*：+session-persistence/storage/storage-domain/workspace）。",
+   "monitoring_channel": "upstream @deepseek-ai/dsh-* release watch（L0/L1/L2 漏斗）——触发器=双锚：特征锚（候选 .d.ts 中 agent/created 携 source/signal 且 agent/session-start 缺席）AND 稳定锚（发布在 rc-or-stable 线，alpha/beta 不采纳）+过 minimumReleaseAge 龄期闸；latest-only 彩排，被跳线版本写墓碑非补演",
    "carried_log": [
     {
      "at": "2026-09-22",
      "round": 76,
      "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream event rename unshipped — adoption trigger not fired"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 77,
+     "note": "R77 轨一处置——L0/L1 探针取证完成：rc.3 无alarm；alpha.1/alpha.2/0.1.7-alpha.1 全 ALARM 但皆 alpha 线→无 L2 合格候选（no-qualifying-candidate 显式结论）；触发器改写为特征+稳定性双锚（版本号退出触发逻辑）；0.1.6-alpha.* 跳线→墓碑入 tombstones 字段+upgrade-ledger v2"
+    }
+   ],
+   "tombstones": [
+    {
+     "version": "0.1.6-alpha.1",
+     "superseded_by": "0.1.7-alpha.1",
+     "l1_summary": "改名特征已落地（session-start ABSENT, created 携 source/signal）；alpha 线从未是 L2 候选",
+     "at": "2026-09-22"
+    },
+    {
+     "version": "0.1.6-alpha.2",
+     "superseded_by": "0.1.7-alpha.1",
+     "l1_summary": "R73 install 彩排实证单错 RED + R77 L1 复核（session-start ABSENT, created 携 source/signal）；alpha 线从未是 L2 候选",
+     "at": "2026-09-22"
     }
    ]
   },
@@ -233,6 +292,11 @@
      "at": "2026-09-22",
      "round": 76,
      "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): imagegen tooling absent; SVG mark landed r74; matrix deferred until tooling exists"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 77,
+     "note": "R77 双轨域外——显式续债：logo位图矩阵未入本轮轨"
     }
    ]
   },
@@ -253,6 +317,11 @@
      "at": "2026-09-22",
      "round": 76,
      "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): no ESM consumer; three named re-entry triggers (r75) unchanged"
+    },
+    {
+     "at": "2026-09-22",
+     "round": 77,
+     "note": "R77 双轨域外——显式续债：registerHooks ESM臂三重触发器未响，watch面不变"
     }
    ]
   },

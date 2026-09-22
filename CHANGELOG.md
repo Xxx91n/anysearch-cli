@@ -4,6 +4,24 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0078 r77: dsh 上游观测哨分层漏斗 + R76 治理 backlog 七项清算（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
+
+### Added
+
+- `scripts/governed-json.mjs` 新增 `governedListViolation` + `stripBomCommand`（ADR-0078 D5）——`CANONICAL_JSON_FILES` 空清单 fail-closed（真门探针实测 `[fail] canonical-json: ... is empty`）；UTF-8 BOM 专门报错（EF BB BF 签名 + `subarray(3)` strip 命令，不发 normalize 指针）。
+- `.scratch/grill-round-77/evidence/` —— T0 轨一探针取证：`t0-l0-watch.json`（23 名全族 npm view 快照）、`t0-api-snapshot-rc2.json`（pin 版消费面 API 快照）、三份 L1 transcript（rc.3 无 alarm / alpha.2 锚复核 ALARM / 0.1.7-alpha.1 ALARM+家族扩至 21 dsh-*）。
+- `.scratch/grill-round-77/upgrade-ledger.md` v2 —— L0/L1/L2 漏斗重排 + 改名映射纠偏（rc.2 session-start 本携 source）+ 墓碑表 + no-qualifying-candidate 显式结论。
+
+### Changed
+
+- `scripts/closeout-coverage.mjs`（ADR-0078 D5）——`titleRound` 锚定 title 行首（句中「Grill Round N —」提及不误登记）；`ROUND_DIR_RE` 改全名匹配 `/^grill-round-(\d+)$/i`（`grill-round-7x` 不再别名 round 7）。
+- `scripts/gen-adr-index.mjs` —— renderBlock 互注点名消费方 parser（F-5⑥ 双向契约）。
+- `docs/deferred-registry.json` —— `defer-r73-dsh-event-rename` 触发器双锚改写（特征+稳定性，版本号退出触发逻辑）+ `tombstones` 字段（0.1.6-alpha.* superseded-by 0.1.7-alpha.1）+ `gov-r76-registry-canonical-lock` 补 `deadline`/`review_cadence` + 10 条 open 债 carried_log r77 显式续债（canonical normalize+字节锁自证）。
+
+### Deferred
+
+- L2 合格候选本轮不存在（no-qualifying-candidate 显式结论）：rc.3 无 ALARM、alpha 线稳定锚不响；下一合格候选出现按 latest-only 直接彩排，跳线版本只补墓碑。落选债原名续 deferred（carried_log 记）：transformers(#1764 未 merge) / provider-serverside / dsh 三件套 / bitmap / registerhooks / f16 / f17 / domain-ownership。
+
 ## Unreleased — ADR-0077 r76: 治理面静默漂移清算（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
 
 ### Added
