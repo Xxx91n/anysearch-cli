@@ -28,6 +28,7 @@ import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, 
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
 import { governedJsonViolation } from "./governed-json.mjs";
+import { CLOSEOUT_COVERAGE_FLOOR, isCloseoutName, scanRoundDirs, assessCloseoutCoverage } from "./closeout-coverage.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -917,9 +918,7 @@ function stepEvidenceAnchors() {
 function stepHandoffCloseoutLint() {
   report("info", "step 1g/9: closeout handoff required-field lint (ADR-0069)");
   const scratchDir = path.join(ROOT, ".scratch");
-  const isCloseout = (name) =>
-    /closeout|closure/i.test(name) &&
-    !/audit/i.test(name) && !/^next/i.test(name) && name.endsWith(".md");
+  const isCloseout = isCloseoutName;
   const targets = new Set();
 
   // (a) closeout docs touched by this diff — the forward-going enforcement leg.
@@ -942,21 +941,32 @@ function stepHandoffCloseoutLint() {
     }
   }
 
-  // (b) the newest round's closeout docs on disk — the standing leg that
-  // catches a round whose closeout landed non-compliant in an earlier diff.
-  if (fs.existsSync(scratchDir)) {
-    const roundDirs = fs.readdirSync(scratchDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory() && /^grill-round-(\d+)/i.test(d.name))
-      .map((d) => ({ name: d.name, n: Number(d.name.match(/^grill-round-(\d+)/i)[1]) }))
-      .sort((a, b) => b.n - a.n);
-    for (const dir of roundDirs) {
-      const hd = path.join(scratchDir, dir.name, "handoffs");
-      if (!fs.existsSync(hd)) continue;
-      const closeouts = fs.readdirSync(hd).filter(isCloseout);
-      if (closeouts.length === 0) continue;
-      for (const c of closeouts) targets.add((".scratch/" + dir.name + "/handoffs/" + c).replace(/\\/g, "/"));
-      break; // newest round dir with closeouts only
-    }
+  // (b) closeout coverage (ADR-0077, R76 T1): "round complete" = a registered
+  //     Grill Round N row in docs/adr/index.md, not directory existence. The
+  //     old fallback walked back to the newest dir WITH a closeout and silently
+  //     masked a missing one (R70 F1 — four rounds green on the previous doc).
+  //     Fail-closed assertions live in scripts/closeout-coverage.mjs:
+  //     registered-without-closeout / index<->.scratch drift / empty-or-
+  //     unparseable derivation all go red; the newest dir still in flight
+  //     prints a structured exemption line, never an implicit break.
+  const roundDirs = scanRoundDirs(scratchDir);
+  let indexText = "";
+  try {
+    indexText = fs.readFileSync(path.join(ROOT, "docs", "adr", "index.md"), "utf8");
+  } catch (e) {
+    fail("closeout-coverage: cannot read docs/adr/index.md (" + (e && e.message) + ") — the derivation must not run blind (ADR-0077)");
+  }
+  const cov = assessCloseoutCoverage({ dirs: roundDirs, indexText });
+  if (cov.problems.length) fail("closeout-coverage: " + cov.problems.length + " violation(s) (ADR-0077):\n  " + cov.problems.join("\n  "));
+  if (cov.awaiting !== null) report("skip", "awaiting closeout: round " + cov.awaiting + " (ADR not yet registered)");
+  report("pass", "closeout-coverage: " + cov.registeredCount + " registered / " + cov.completedCount + " completed round(s) at floor " + CLOSEOUT_COVERAGE_FLOOR);
+
+  // Field-lint surface unchanged (bounds the gh-liveness cost): only the
+  // newest round dir WITH closeouts on disk is linted.
+  for (const dir of roundDirs) {
+    if (!dir.hasCloseout) continue;
+    for (const c of dir.closeouts) targets.add((".scratch/" + dir.name + "/handoffs/" + c).replace(/\\/g, "/"));
+    break; // newest round dir with closeouts only
   }
 
   if (targets.size === 0) { report("skip", "handoff-lint: no closeout docs in scope (diff-clean and none on disk)"); return; }
