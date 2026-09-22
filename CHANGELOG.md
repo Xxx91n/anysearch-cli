@@ -10,7 +10,7 @@ All notable changes to this project are recorded here. Format follows
 
 - `scripts/governed-json.mjs` + ship-gate step 1 `stepGovernedJsonCanonical` 腿（ADR-0077 D4/D5）——受治理 JSON 的字节锁：`CANONICAL_JSON_FILES = ["docs/deferred-registry.json"]` 逐文件断言字节 ≡ `JSON.stringify(JSON.parse(src),null,1)+'\n'`；非法 JSON 独立报错；非 canonical 报 `first differs at line N` + 可粘贴 normalize 指令 + 清单常量位置；gate 不自修（committed≠reviewed）。
 - `scripts/closeout-coverage.mjs` + ship-gate step 1g leg-b 重写（ADR-0077 D1–D3）——完成信号改为 ADR index `Grill Round N` 登记（登记即完成），fail-closed 三断言（已登记无 closeout→红 / index↔.scratch 双向漂移→红 / 推导集合为空或不可解析→红），floor=76 规则生日锚定，在飞豁免打结构化行 `awaiting closeout: round N (ADR not yet registered)`，成功输出带覆盖计数；字段 lint 面不动（仍只 lint 最新含 closeout dir）。
-- `packages/store/test/governed-json-canonical.test.mjs`（19 断言）+ `closeout-coverage.test.mjs`（27 断言）——known-bad fixture 层常态化红绿双证，随 `turbo test` 行使。
+- `packages/store/test/governed-json-canonical.test.mjs`（19 断言）+ `closeout-coverage.test.mjs`（36 断言，含审计返工 F-2/F-4 回归用例）——known-bad fixture 层常态化红绿双证，随 `turbo test` 行使。
 
 ### Changed
 

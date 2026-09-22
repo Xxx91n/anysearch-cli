@@ -918,7 +918,6 @@ function stepEvidenceAnchors() {
 function stepHandoffCloseoutLint() {
   report("info", "step 1g/9: closeout handoff required-field lint (ADR-0069)");
   const scratchDir = path.join(ROOT, ".scratch");
-  const isCloseout = isCloseoutName;
   const targets = new Set();
 
   // (a) closeout docs touched by this diff — the forward-going enforcement leg.
@@ -937,7 +936,7 @@ function stepHandoffCloseoutLint() {
     for (const f of (d.stdout ?? "").split("\n").map((s) => s.trim()).filter(Boolean)) {
       const norm = f.replace(/\\/g, "/");
       const base = path.posix.basename(norm);
-      if (norm.startsWith(".scratch/") && norm.includes("/handoffs/") && isCloseout(base)) targets.add(norm);
+      if (norm.startsWith(".scratch/") && norm.includes("/handoffs/") && isCloseoutName(base)) targets.add(norm);
     }
   }
 
@@ -950,15 +949,18 @@ function stepHandoffCloseoutLint() {
   //     unparseable derivation all go red; the newest dir still in flight
   //     prints a structured exemption line, never an implicit break.
   const roundDirs = scanRoundDirs(scratchDir);
-  let indexText = "";
+  let indexText;
   try {
     indexText = fs.readFileSync(path.join(ROOT, "docs", "adr", "index.md"), "utf8");
   } catch (e) {
     fail("closeout-coverage: cannot read docs/adr/index.md (" + (e && e.message) + ") — the derivation must not run blind (ADR-0077)");
   }
   const cov = assessCloseoutCoverage({ dirs: roundDirs, indexText });
-  if (cov.problems.length) fail("closeout-coverage: " + cov.problems.length + " violation(s) (ADR-0077):\n  " + cov.problems.join("\n  "));
+  // Rework F-3: the exemption line prints BEFORE the fail — under a mixed red
+  // state (violations AND an in-flight round) the exemption must stay
+  // observable, otherwise the one signal you need to diagnose the red goes silent.
   if (cov.awaiting !== null) report("skip", "awaiting closeout: round " + cov.awaiting + " (ADR not yet registered)");
+  if (cov.problems.length) fail("closeout-coverage: " + cov.problems.length + " violation(s) (ADR-0077):\n  " + cov.problems.join("\n  "));
   report("pass", "closeout-coverage: " + cov.registeredCount + " registered / " + cov.completedCount + " completed round(s) at floor " + CLOSEOUT_COVERAGE_FLOOR);
 
   // Field-lint surface unchanged (bounds the gh-liveness cost): only the

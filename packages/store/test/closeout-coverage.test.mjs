@@ -23,6 +23,17 @@ assert(isCloseoutName("round-76-closeout.md"), "closeout filename recognized");
 assert(!isCloseoutName("next-round.md"), "next-round task book is not a closeout");
 assert(!isCloseoutName("round-76-audit.md"), "audit doc is not a closeout");
 assert(!isCloseoutName("round-69-direction.md"), "direction doc is not a closeout (R69 T0)");
+// Rework F-2: "closure"-suffixed docs must NOT count — the live counterexample
+// was .scratch/grill-round-63/handoffs/2026-09-16-release-closure.md, a release
+// record masquerading as a round closeout (the silent-mask shape this leg bans).
+assert(!isCloseoutName("2026-09-16-release-closure.md"), "release-closure is not a round closeout (F-2 regression)");
+assert(!isCloseoutName("2026-09-13-round58-closure-handoff.md"), "closure-handoff is not a round closeout");
+assert(!isCloseoutName("round-57-closure-audit-handoff.md"), "closure-audit-handoff is not a round closeout");
+assert(!isCloseoutName("disclosure.md"), "disclosure contains 'closure' only — not a closeout");
+assert(!isCloseoutName("enclosure.md"), "enclosure contains 'closure' only — not a closeout");
+assert(!isCloseoutName("round-77-closure.md"), "closure (not closeout) is off-convention — fail closed");
+assert(!isCloseoutName("round-66-audit-closeout.md"), "audit closeout doc stays excluded by the audit rule");
+assert(isCloseoutName("round-77-closeout.md"), "convention-shaped closeout still recognized");
 
 // --- parseRegisteredRounds on the real index ----------------------------------
 const realIndex = fs.readFileSync(path.join(root, "docs", "adr", "index.md"), "utf8");
@@ -42,6 +53,7 @@ const ok = parseRegisteredRounds(mini);
 assert(ok.problems.length === 0 && ok.rounds.has(76) && ok.rounds.size === 1, "mini index parses round 76 (non-round row contributes nothing)");
 assert(parseRegisteredRounds(mini.replace("| [0001]", "| BAD-ROW |")).problems.some((e) => e.includes("unparseable line")), "malformed row fails loud");
 assert(parseRegisteredRounds(mini.replace("Grill Round 76 — Y", "Grill Round 75 — Y")).problems.some((e) => e.includes("conflicting round")), "file/title round conflict fails loud");
+assert(parseRegisteredRounds(mini.replace("grill-round-76-y", "grill-round-076-y")).problems.length === 0, "leading-zero round number is a numeric-equal, not a conflict (F-5③)");
 assert(parseRegisteredRounds(mini + "\n| [0099](0099-architecture-grill-round-76-dup.md) | Grill Round 76 dup |\n").problems.length === 0, "row after END marker is out of block scope");
 const dup = mini.replace("<!-- END ADR-INDEX -->", "| [0099](0099-architecture-grill-round-76-dup.md) | Grill Round 76 dup |\n<!-- END ADR-INDEX -->");
 assert(parseRegisteredRounds(dup).problems.some((e) => e.includes("twice")), "duplicate round registration fails loud");
@@ -85,6 +97,11 @@ assert(cov.problems.some((e) => e.includes("zero Grill Round registrations")), "
 // floor grandfathering: pre-floor rounds are out of scope in both directions
 cov = assessCloseoutCoverage({ dirs: [D(50, false), D(75, true), D(76, false)], indexText: IDX([75]) });
 assert(cov.problems.length === 0 && cov.awaiting === 76, "pre-floor dirs never produce violations");
+
+// rework F-4: scoped-empty derivation — nothing registered and no dirs at or
+// above floor — is a vacuous green; the leg reds instead of passing silently.
+cov = assessCloseoutCoverage({ dirs: [D(75, true)], indexText: IDX([75]) });
+assert(cov.problems.some((e) => e.includes("nothing to check")), "scoped-empty derivation is red (F-4: no vacuous green)");
 
 // --- scanRoundDirs against a fixture tree --------------------------------------
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "r76-cov-"));

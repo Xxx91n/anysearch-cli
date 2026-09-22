@@ -89,7 +89,7 @@
    "deadline": "2026-12-31",
    "review_cadence": "quarterly",
    "status": "closed",
-   "evidence": "Ship-gate step 1g leg-b rewritten (scripts/closeout-coverage.mjs + assessCloseoutCoverage): completion signal = ADR index Grill Round N registration; fail-closed 3 assertions (registered-no-closeout red / index↔.scratch bidirectional drift red / empty-or-unparseable derivation red); floor=76 rule birthday; explicit in-flight exemption line; coverage counts on pass. All three assertions exercised red at the real gate (evidence/t1-* logs) + 27/27 fixture tests.",
+   "evidence": "Ship-gate step 1g leg-b rewritten (scripts/closeout-coverage.mjs + assessCloseoutCoverage): completion signal = ADR index Grill Round N registration; fail-closed 3 assertions (registered-no-closeout red / index↔.scratch bidirectional drift red / empty-or-unparseable derivation red); floor=76 rule birthday; explicit in-flight exemption line; coverage counts on pass. All three assertions exercised red at the real gate (evidence/t1-* logs) + 36/36 fixture tests (audit rework added F-2/F-4 regression assertions; original landing was 26).",
    "monitoring_channel": "next grill round task-book triage; do not re-defer without an explicit ledger entry",
    "closed_by": "ADR-0077",
    "closed_by_adr_path": "docs/adr/0077-architecture-grill-round-76-silent-drift-governance-liquidation.md",

@@ -26,11 +26,18 @@ import { BEGIN, END } from "./gen-adr-index.mjs";
 // review, not an edit here (ratchet-corruption guard).
 export const CLOSEOUT_COVERAGE_FLOOR = 76;
 
-// Closeout-shaped doc: *closeout*/*closure* filename under handoffs/; audit-only
-// docs and next-round task books excluded (R69 T0 shape kept verbatim).
+// Closeout-shaped doc: the round-closeout naming convention `round-NN-*closeout*.md`
+// under handoffs/; audit-only docs and next-round task books excluded (R69 T0
+// shape tightened R76 rework F-2 — "closure"-suffixed docs like
+// `2026-09-16-release-closure.md` must NOT count: a release-closure file
+// masquerading as a round closeout is exactly the silent-mask path this leg
+// exists to kill). Non-conventional names fail closed: registered round whose
+// closeout is named off-convention reads as "no closeout" -> red.
 export function isCloseoutName(name) {
-  return /closeout|closure/i.test(name) && !/audit/i.test(name) && !/^next/i.test(name) && name.endsWith(".md");
+  return /^round-\d+-.*closeout/i.test(name) && !/audit/i.test(name) && !/^next/i.test(name) && name.endsWith(".md");
 }
+
+const ROUND_DIR_RE = /^grill-round-(\d+)/i;
 
 // Parse Grill Round N registrations out of the generated index block.
 // Fail-loud on unknown line shapes — a parser that skips what it does not
@@ -59,7 +66,7 @@ export function parseRegisteredRounds(indexText) {
     }
     const fileRound = (row[2].match(/grill-round-(\d+)/i) ?? [])[1];
     const titleRound = (row[3].match(/grill\s*round\s*(\d+)/i) ?? [])[1];
-    if (fileRound && titleRound && fileRound !== titleRound) {
+    if (fileRound && titleRound && Number(fileRound) !== Number(titleRound)) {
       problems.push("ADR " + row[1] + " registers conflicting round numbers (file=round " + fileRound + ", title=round " + titleRound + ")");
       continue;
     }
@@ -77,9 +84,9 @@ export function parseRegisteredRounds(indexText) {
 export function scanRoundDirs(scratchDir) {
   if (!fs.existsSync(scratchDir)) return [];
   return fs.readdirSync(scratchDir, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && /^grill-round-(\d+)/i.test(d.name))
+    .filter((d) => d.isDirectory() && ROUND_DIR_RE.test(d.name))
     .map((d) => {
-      const n = Number(d.name.match(/^grill-round-(\d+)/i)[1]);
+      const n = Number(d.name.match(ROUND_DIR_RE)[1]);
       const hd = path.join(scratchDir, d.name, "handoffs");
       const closeouts = fs.existsSync(hd) ? fs.readdirSync(hd).filter(isCloseoutName) : [];
       return { name: d.name, n, hasCloseout: closeouts.length > 0, closeouts };
@@ -99,6 +106,12 @@ export function assessCloseoutCoverage({ dirs, indexText, floor = CLOSEOUT_COVER
   }
   const scoped = new Set([...parsed.rounds].filter((n) => n >= floor));
   const scopedDirs = dirs.filter((d) => d.n >= floor).sort((a, b) => b.n - a.n);
+  // F-4 (R76 rework): a scoped-empty derivation — nothing registered and no
+  // round dirs at or above floor — is a vacuous green; per this leg's own
+  // doctrine ("nothing to check" = failure) it is red, not pass.
+  if (parsed.problems.length === 0 && scoped.size === 0 && scopedDirs.length === 0) {
+    problems.push("zero rounds in scope at floor " + floor + " (no registrations, no round dirs) — a coverage leg with nothing to check is a failure (ADR-0077)");
+  }
   const latest = scopedDirs.length ? scopedDirs[0].n : null; // dirs sorted desc
   let awaiting = null;
   for (const d of scopedDirs) {

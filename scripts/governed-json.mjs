@@ -18,8 +18,10 @@ export function canonicalJsonBytes(src) {
   return Buffer.from(JSON.stringify(JSON.parse(String(src)), null, 1) + "\n");
 }
 
+const LF = 0x0a; // '\n' byte — canonical form's line ending and terminator
+
 // 1-based line number of the first differing byte — the alint-style
-// "first differs at line N" UX. Counts '\n' occurrences before the divergence.
+// "first differs at line N" UX. Counts LF occurrences before the divergence.
 export function firstDifferingLine(a, b) {
   const ab = Buffer.isBuffer(a) ? a : Buffer.from(a);
   const bb = Buffer.isBuffer(b) ? b : Buffer.from(b);
@@ -27,7 +29,7 @@ export function firstDifferingLine(a, b) {
   let i = 0;
   while (i < n && ab[i] === bb[i]) i++;
   let line = 1;
-  for (let k = 0; k < i; k++) if (ab[k] === 0x0a) line++;
+  for (let k = 0; k < i; k++) if (ab[k] === LF) line++;
   return line;
 }
 
@@ -45,6 +47,9 @@ export function governedJsonViolation(rel, src) {
   try {
     canon = canonicalJsonBytes(src);
   } catch (e) {
+    // Known limitation (R76 rework F-6): a UTF-8-BOM'd file lands here — the BOM
+    // breaks JSON.parse, so it reports "not valid JSON" though the payload is
+    // fine; normalize cannot fix BOM bytes either (strip U+FEFF first).
     return rel + " is not valid JSON (" + (e && e.message) + ") — fix the syntax first; canonical normalization only applies to parseable JSON";
   }
   const bytes = Buffer.isBuffer(src) ? src : Buffer.from(src);

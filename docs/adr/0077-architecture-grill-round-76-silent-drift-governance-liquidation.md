@@ -48,6 +48,14 @@ leg-b 重写为 `scripts/closeout-coverage.mjs` 推导 + `assessCloseoutCoverage
 缩减变成读者会注意的东西。leg-b 字段 lint 面不动：仍只 lint 最新含
 closeout 的 dir（控 gh liveness 成本）。
 
+返工加固（r76-audit 复审核销）：closeout 判定锚定命名惯例
+`round-NN-*closeout*.md`——`release-closure`/`disclosure`/`enclosure`
+类仅含 "closure" 的文件不再计入 hasCloseout（F-2：`release-closure`
+冒充 round closeout 恰是本 ADR 要杀的静默掩盖形态，round-63 实物文件
+作回归用例）；豁免行先于 violation `fail()` 打印，混合红态下仍可观测
+（F-3）；scoped 空集——floor 以上既无登记也无 round dir——显式判红，
+「nothing to check」不留 vacuous green 出口（F-4）。
+
 ### D3 floor=76 规则生日锚定（ledger D-002）
 
 `CLOSEOUT_COVERAGE_FLOOR = 76`（`scripts/closeout-coverage.mjs`）。ratchet
