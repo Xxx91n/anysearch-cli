@@ -1,0 +1,50 @@
+# rework final ship-gate --skip-matrix (post r76-audit F-1..F-6 fixes) — 2026-09-22
+# command: node scripts/ship-gate.mjs --skip-matrix
+# exit: 0 — 9/9 steps, 64 [pass] lines
+
+[info] step 0/9: permanent invariants (ADR-0059 D5)
+[pass] clean-tree invariant: git status --porcelain is empty
+[info] step 1/9: task parity + static rg assertions (version pin + ADR invariants)
+[pass] canonical-json: 1 governed file(s) byte-identical to canonical form (ADR-0077)
+[info] step 1b/9: ADR index freshness (docs/adr/index.md, ADR-0059 D6)
+[pass] gen-adr-index: docs/adr/index.md up to date (77 ADRs at HEAD)
+[info] step 1c/9: engine grace-window wiring assertion (ADR-0059 D7 / ADR-0061 G1)
+[info] step 1d/9: ADR supersession integrity (ADR-0060 D1)
+[info] step 1e/9: CONTEXT.md term wiring (ADR-0060 D3)
+[info] step 1f/9: ADR evidence-anchor resolvability (ADR-0060 D5)
+[info] step 1g/9: closeout handoff required-field lint (ADR-0069)
+[pass] closeout-coverage: 1 registered / 1 completed round(s) at floor 76
+[pass] handoff-lint: 1 closeout doc(s) carry 绿色 run URL + Stack and cite a run on this round's history
+[info] step 1h/9: bilingual README parity + limitations pointer (R69 D-007)
+[info] step 1i/9: machine-local path discipline lint (ADR-0072)
+[pass] path-lint: 292 registered doc(s) clean (in-repo refs repo-relative; machine-local paths declared)
+[info] step 2/9: validate domains/*.toml compaction guards
+[info] step 3/9: turbo check / test / build
+[pass] turbo run check
+[pass] turbo run test
+[pass] turbo run build
+[info] step 4/9: pnpm pack into temp dir
+[pass] packed @anysearch-cli/kernel@0.0.7
+[pass] packed @anysearch-cli/embedding@0.0.7
+[pass] packed @anysearch-cli/store@0.0.7
+[pass] packed @anysearch-cli/retriever@0.0.7
+[pass] packed @anysearch-cli/cli@0.0.7
+[pass] packed @anysearch-cli/mcp@0.0.7
+[pass] packed @anysearch-cli/plugin@0.0.7
+[pass] packed @anysearch-cli/dsh-plugin@0.0.7
+[skip] step 5/9: cross-OS matrix install (delegated to CI matrix)
+[info] step 6/9: T0 smoke probe (ADR-0024)
+[info] step 7/9: memory eval harness gate (ADR-0027)
+[pass] memory-eval: 126/126 cases PASS, fingerprint=4a529f6fbe2096c8, passRate=1
+[info] step 7b/9: emergency ship override verifier (ADR-0047)
+[info] step 8/9: spawn plugin MCP over stdio, assert initialize result
+[pass] MCP initialize: server=anysearch v0.0.7
+[info] step 8b/9: packaged CLI/MCP observation smoke (ADR-0052)
+[info] step 9/9: spawn MCP with scrubbed env, assert fail-open boot
+[pass] fail-open boot ok: env scrubbed -> initialize green + stderr notice (server=anysearch v0.0.7)
+
+# process liveness: node apps/cli/dist/index.js --version -> 0.0.7; doctor -> 25 passed, 0 skipped, 0 failed
+# direct tests: closeout-coverage.test 36/36; governed-json-canonical.test 19/19
+# F-2 probe: isCloseoutName('2026-09-16-release-closure.md')=false, 'round-76-closeout.md'=true, 'disclosure.md'=false, 'enclosure.md'=false, 'round-77-closure.md'=false, '2026-09-13-round58-closure-handoff.md'=false
+# scanRoundDirs('.scratch'): round-63 hasCloseout=false (release-closure no longer counts), round-76 hasCloseout=true
+# registry canonical after F-1 evidence-field edit: governedJsonViolation=null (18960B)
