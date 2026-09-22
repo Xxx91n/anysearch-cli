@@ -9,6 +9,9 @@ pmOnFail: error
 # (unknown config) 与 pnpm v11 (.npmrc 仅 auth/registry) 均不生效；可用的
 # pnpm key 在此，单位分钟（2880 = 2 天）。
 minimumReleaseAge: 2880
+# R78 D-002 加固：缺 time 字段的源默认跳过龄期检查（true）——置 false 收紧为 fail-closed，
+# 堵「无 time 元数据」豁免面向量（E7 记档态；npmjs 恒带 time，对现状无破坏）。
+minimumReleaseAgeIgnoreMissingTime: false
 
 allowBuilds:
   '@google/genai': true
