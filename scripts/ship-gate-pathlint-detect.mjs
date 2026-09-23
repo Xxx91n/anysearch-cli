@@ -35,7 +35,7 @@ export function enumerateScopedMarkdown(cfg, ROOT) {
 // ---------------------------------------------------------------------------
 // Boundary: a token preceded by an alphanumeric is mid-word (URL host/path,
 // identifier) and does not count — same guard the legacy PATH_RE applied.
-const WORD_CHAR = /[A-Za-z0-9]/;
+const WORD_CHAR = /[A-Za-z0-9_]/;
 
 // Hard-hit classes. Env-var and tilde forms bake the REQUIRED trailing separator
 // into the token regex; literal forms (drive, /Users|home|tmp/, AppData\) carry

@@ -33,3 +33,4 @@ Neighbor control: unmarked fence with in-repo ref still violates (fence not cove
 ```text
 D:/Repo/Root/docs/x.md inside unmarked fence
 ```
+Neighbor control: bare drive C:\x tail still violates

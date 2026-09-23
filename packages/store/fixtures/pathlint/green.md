@@ -31,3 +31,4 @@ plain excerpt with /tmp verbatim
 ```
 Exemption domain: locator line exempts in-repo ref and /x info:
 Stack: D:/Repo/Root/docs/x.md /etc @ abc1234
+Identifier-glued drive token foo_C:\x is mid-word prose, not a locator

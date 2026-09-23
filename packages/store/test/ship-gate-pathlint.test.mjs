@@ -39,6 +39,16 @@ test("red fixture: inline code is not exempt", () => {
   assert.equal(v.kind, "missing-marker");
 });
 
+test("exemption pair: foo_C:\\x green vs bare C:\\x red (WORD_CHAR _)", () => {
+  const gv = scanLines(greenLines, env).violations;
+  const gn = greenLines.findIndex((l) => l.includes("foo_C:")) + 1;
+  assert.ok(gn > 0, "green fixture must carry the foo_C bait line");
+  assert.equal(gv.filter((v) => v.line === gn).length, 0, "foo_C must produce zero violations post-fix");
+  const rv = scanLines(redLines, env).violations;
+  const rn = redLines.findIndex((l) => l.includes("bare drive C:")) + 1;
+  assert.ok(rn > 0, "red fixture must carry the bare drive neighbor");
+  assert.equal(rv.filter((v) => v.line === rn).length, 1, "bare drive must still violate exactly once");
+});
 test("green fixture: zero violations", () => {
   const { violations } = scanLines(greenLines, env);
   assert.deepEqual(violations, [], "green fixture must produce no violations: " + JSON.stringify(violations));
@@ -111,6 +121,9 @@ test("unit: boundary guard kills URL/identifier false positives", () => {
   assert.equal(detectHits("https://host/Users/u/x").length, 0);
   assert.equal(detectHits("wordC:\\x").length, 0);
   assert.ok(detectHits("(C:\\x)").length > 0);
+  assert.equal(detectHits("foo_C:\\x").length, 0, "underscore-glued drive token must not hit (WORD_CHAR _)");
+  assert.ok(detectHits("bare C:\\x here").length > 0, "bare drive still hits (neighbor)");
+
 });
 
 test("unit: /x info surfaced-skip boundaries", () => {
