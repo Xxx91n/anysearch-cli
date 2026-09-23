@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updated": "2026-09-22",
+ "updated": "2026-09-23",
  "note": "Machine-checkable registry of deferred work items and carried-over acceptance criteria. Discipline is isomorphic to .ship-gate/skip-ledger.json (schema @3) and the ADR-0020 conformance expected-failures ledger: every deferral is an explicit, traceable record, never a silent drop. ADR-0057 D5 / D-006 requires one entry per carried-over acceptance criterion, marked closed-by the ADR that closes it. Old ADR bodies are never edited; the pointer line lives in the old ADR and the record lives here (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). Additive only: new entries are appended, existing ids are never reused or renumbered. Canonical form locked by ship-gate stepGovernedJsonCanonical (ADR-0077): this file must byte-equal JSON.stringify(JSON.parse(src),null,1)+'\\n'. To normalize: node -e \"const f='docs/deferred-registry.json';const fs=require('fs');fs.writeFileSync(f,JSON.stringify(JSON.parse(fs.readFileSync(f,'utf8')),null,1)+'\\n')\"",
  "entries": [
   {
@@ -42,6 +42,11 @@
      "at": "2026-09-22",
      "round": 78,
      "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 79,
+     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
     }
    ]
   },
@@ -75,6 +80,11 @@
      "at": "2026-09-22",
      "round": 78,
      "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 79,
+     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
     }
    ]
   },
@@ -106,6 +116,11 @@
      "at": "2026-09-22",
      "round": 78,
      "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 79,
+     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
     }
    ]
   },
@@ -153,6 +168,11 @@
      "at": "2026-09-22",
      "round": 78,
      "note": "R78 域外显式续债：上游 #1764 仍 OPEN（截至 2026-09-22），删除触发器未响，patch 维持（ADR-0076 verdict）"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 79,
+     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
     }
    ]
   },
@@ -183,6 +203,11 @@
      "at": "2026-09-22",
      "round": 78,
      "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 79,
+     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
     }
    ]
   },
@@ -213,6 +238,11 @@
      "at": "2026-09-22",
      "round": 78,
      "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 79,
+     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
     }
    ]
   },
@@ -243,6 +273,11 @@
      "at": "2026-09-22",
      "round": 78,
      "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 79,
+     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
     }
    ]
   },
@@ -273,6 +308,11 @@
      "at": "2026-09-22",
      "round": 78,
      "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 79,
+     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
     }
    ]
   },
@@ -303,6 +343,11 @@
      "at": "2026-09-22",
      "round": 78,
      "note": "R78 域外显式续债：L2 排程义务临近——闸内标本 ≈2026-09-24 06:0xZ 出闸，下轮或即触发；双锚触发器仍守版本号退出逻辑"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 79,
+     "note": "R79 T0 哨戒实录：dsh 0.1.7-alpha.2 L0/L1 取证——特征锚在位（agent/created 携 source/signal、agent/session-start 缺席）、Events union 27≡alpha.1、发版面 21 dsh-*（code-runtime 缺席）+cordis ~4.0.4 线；alpha 线稳定锚不响→非 L2 候选，action=none required；rc.3/alpha.1 仍闸内（≈09-24 05:39/06:04Z 出闸）"
     }
    ],
    "tombstones": [
@@ -347,6 +392,11 @@
      "at": "2026-09-22",
      "round": 78,
      "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 79,
+     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
     }
    ]
   },
@@ -377,6 +427,11 @@
      "at": "2026-09-22",
      "round": 78,
      "note": "R78 域外显式续债：repo 无 Node floor 声明+无真实 ESM 消费者=仍半响，三重触发器未响"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 79,
+     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
     }
    ]
   },
@@ -419,6 +474,26 @@
    "closed_by": "ADR-0079",
    "closed_by_adr_path": "docs/adr/0079-architecture-grill-round-78-gate-calibration-pathlint-detector-and-repin-matrix.md",
    "closed_at": "2026-09-22"
+  },
+  {
+   "id": "defer-r79-lockfile-agegate-replay",
+   "type": "deferred-with-deadline",
+   "title": "E6 lockfile 龄期闸执法空白——pnpm trustLockfile 在钉版 11.24.0 的实证复核 + 护栏选型（R80 候选主题）",
+   "source_adr": "docs/adr/0080-architecture-grill-round-79-pathlint-exemption-domain-contract-convergence.md",
+   "owner": "anysearch-platform",
+   "opened_at": "2026-09-23",
+   "deadline": "2027-03-31",
+   "review_cadence": "next round candidate — R80 发布龄期闸 lockfile 执法轮主题候选 + upstream pnpm release watch",
+   "status": "open",
+   "evidence": "R78 E6 证伪实录（ADR-0079 D3 判决矩阵）：lockfile 携闸内版本时 frozen/fetch 静默放行 minimumReleaseAge 拦截；pnpm 调研文档级断言（trustLockfile 应验证）与本仓 E6 实证存在张力——R80 先在钉版 pnpm 11.24.0 实测 trustLockfile 验证腿是否天然覆盖（empirically verify, not doc-trust），再定自建护栏/引用上游/显式记档三选一。",
+   "monitoring_channel": "R80 轮次候选立案 + pnpm 上游 trustLockfile/verifyDepsBeforeRun 行为变更观察",
+   "carried_log": [
+    {
+     "at": "2026-09-23",
+     "round": 79,
+     "note": "R79 D-001 范围裁决：E6 后果显式拆出本轮（不混入契约批）——立案为 R80 候选主题；先在钉版实测 trustLockfile 腿，再定护栏路径"
+    }
+   ]
   }
  ]
 }

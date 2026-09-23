@@ -4,6 +4,15 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0080 r79: pathlint 豁免域契约收敛——三豁免域显式立法（covered-fence/locator 行/`/x` 散文面限定）+ WORD_CHAR 边界修复（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
+
+### Changed
+
+- `scripts/ship-gate-pathlint-detect.mjs` —— 豁免域契约收敛（ADR-0080 D1）：`/x` surfaced-skip 产出移序至 fence/locator 判定之后——所有 fence（marker 覆盖与否）与 `Stack:` locator 行不再产 info，散文面照旧；`WORD_CHAR` 补 `_`——`foo_C:\x` 形标识符粘连盘符不再误报，裸 `C:\x` 仍拦。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
+- `packages/store/fixtures/pathlint/{red,green}.md` + `ship-gate-pathlint.test.mjs`（9→14 cases）——豁免域近邻成对断言：covered-fence in-repo 放行↔unmarked-fence 仍拦、locator in-repo 放行↔非 locator 同款仍拦、fence/locator 内 `/x` 零 info↔散文仍产、`foo_C:\x` 零违例↔裸 `C:\x` 仍拦；ADR-0072↔AGENTS.md 镜像一致性机器断言新增。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
+- `docs/adr/0072` D1 amendment + `AGENTS.md` 镜像段 + `docs/adr/0080`（第 80 号 ADR）——豁免域三条款立法+drift 归因（文本侧未审视/实现侧有意图）+rejected alternatives（Revert=毁 transcript 保真、逐面混裁=立法负担相当内聚更差）+豁免扩大风险三重缓解（一致性测试/stale-marker 棘轮/季度审计）+结构性同构先例标注+不 bump 判定。
+- 文书面次生效应（dogfooding 实录）：WORD_CHAR 修复使 r78/r79 文书内仅靠 `foo_C:\x` FP 撑活的 5 个 marker 翻转 stale 并按棘轮移除；任务书 2 行裸 `C:\x` 字面量补 marker；全仓 markdown 扫描 0 违例（333 文档）。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
+
 ## Unreleased — ADR-0079 r78: 门禁可信度校准——pathlint token+分隔符组合判定器 + minimumReleaseAge 拦截边界实测（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
 
 ### Added
