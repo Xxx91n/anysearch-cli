@@ -70,7 +70,7 @@ function reportStep(name) {
   reportEntries.push({ step: name, started_at: new Date().toISOString(), results: [] });
 }
 
-/** @param {"pass"|"fail"|"skip"|"info"} kind @param {string} msg */
+/** @param {"pass"|"fail"|"skip"|"warn"|"info"} kind @param {string} msg */
 function report(kind, msg) {
   if (currentStep) {
     const top = reportEntries[reportEntries.length - 1];
@@ -708,8 +708,6 @@ function stepStaticAssertions() {
     report("pass", "ADR-0053 content trust boundary + inject probes present");
   }
 
-  // 1t. ADR-0077 (R76 T0): governed-JSON canonical lock — governed files must
-  //     byte-equal their canonical serialization (see scripts/governed-json.mjs).
   // 1u. ADR-0081 (R80 D-004): derived-artifact freshness leg — current-round
   //     CHANGELOG presence (fail) + 'no-changelog-entry: <reason>' structured
   //     exemption + closeout-claims.json registration surface re-derivation.
@@ -771,13 +769,19 @@ function stepStaticAssertions() {
             verified++;
           } else if (c.kind === "symbol") {
             if (!c.file || !Array.isArray(c.tokens) || !c.tokens.length) fail('ADR-0081 D-004: ' + tag + ' needs file + non-empty tokens');
-            const text = fs.readFileSync(path.join(ROOT, c.file), "utf8");
+            const fp = path.join(ROOT, c.file);
+            if (!fs.existsSync(fp)) fail('ADR-0081 D-004: ' + tag + ' file missing: ' + c.file);
+            const text = fs.readFileSync(fp, "utf8");
             const miss = c.tokens.filter((t) => !text.includes(t));
             if (miss.length) fail('ADR-0081 D-004: ' + tag + ' token(s) absent in ' + c.file + ': ' + miss.join(", "));
             verified++;
           } else if (c.kind === "field") {
             if (!c.file || !c.field) fail('ADR-0081 D-004: ' + tag + ' needs file + field');
-            const obj = JSON.parse(fs.readFileSync(path.join(ROOT, c.file), "utf8"));
+            const jfp = path.join(ROOT, c.file);
+            if (!fs.existsSync(jfp)) fail('ADR-0081 D-004: ' + tag + ' file missing: ' + c.file);
+            let obj;
+            try { obj = JSON.parse(fs.readFileSync(jfp, "utf8")); }
+            catch (e) { fail('ADR-0081 D-004: ' + tag + ' ' + c.file + ' is not valid JSON: ' + e.message); }
             const got = String(c.field).split(".").reduce((o, k) => (o == null ? o : o[k]), obj);
             if (JSON.stringify(got) !== JSON.stringify(c.expect)) fail('ADR-0081 D-004: ' + tag + ' ' + c.field + '=' + JSON.stringify(got) + ' != declared ' + JSON.stringify(c.expect));
             verified++;
@@ -801,15 +805,41 @@ function stepStaticAssertions() {
   //     .scratch/grill-round-80/evidence/e6-matrix.md — verdict-cache
   //     contamination is the residual same-machine edge, CI always re-verifies).
   {
+    // r80-audit F-B: comment/quote-normalized scan — 'k: v # note', quoted
+    // scalars, and comment lines inside the exclude list all escaped the
+    // naive regexes. Strip yaml comments (whole-line + ' #' inline) first,
+    // then require literal unquoted scalar forms — anything else fails closed.
     const wsYaml = fs.readFileSync(path.join(ROOT, "pnpm-workspace.yaml"), "utf8");
-    if (/^trustLockfile\s*:\s*true\s*$/m.test(wsYaml)) fail("ADR-0081 E6: trustLockfile:true disables lockfile policy re-verification — reopens the replay vector");
-    if (/^minimumReleaseAgeStrict\s*:\s*false\s*$/m.test(wsYaml)) fail("ADR-0081 E6: minimumReleaseAgeStrict:false demotes age violations to warnings — the loose-write blessing path (e6-matrix A-write/A1)");
-    if (/^minimumReleaseAgeIgnoreMissingTime\s*:\s*true\s*$/m.test(wsYaml)) fail("ADR-0081 E6: minimumReleaseAgeIgnoreMissingTime:true lets no-time packages bypass the age gate");
-    const excl = /^minimumReleaseAgeExclude\s*:\s*([^\n]*)\n?((?:[ \t]+-[ \t]*\S[^\n]*\n?)*)/m.exec(wsYaml);
-    if (excl && ((excl[1].trim() !== "" && excl[1].trim() !== "[]") || excl[2].trim() !== "")) fail("ADR-0081 E6: non-empty minimumReleaseAgeExclude launders gated versions into the lockfile — remove entries or record an ADR-visible exception");
+    const ylines = wsYaml.split("\n").map((l) => l.replace(/(^|\s)#.*$/, ""));
+    const scalar = (key) => {
+      const re = new RegExp("^" + key + "\\s*:\\s*(\\S+)");
+      const m = ylines.map((l) => re.exec(l)).find(Boolean);
+      return m ? m[1] : null;
+    };
+    const tl = scalar("trustLockfile");
+    if (tl !== null && tl !== "false") fail('ADR-0081 E6: trustLockfile must be unset or literal false (got ' + tl + ') — anything else disables lockfile policy re-verification');
+    const st = scalar("minimumReleaseAgeStrict");
+    if (st !== null && st !== "true") fail('ADR-0081 E6: minimumReleaseAgeStrict must be unset or literal true (got ' + st + ') — the loose-write blessing path (e6-matrix A-write/A1)');
+    const mt = scalar("minimumReleaseAgeIgnoreMissingTime");
+    if (mt !== null && mt !== "false") fail('ADR-0081 E6: minimumReleaseAgeIgnoreMissingTime must be unset or literal false (got ' + mt + ') — lets no-time packages bypass the age gate');
+    const exi = ylines.findIndex((l) => /^minimumReleaseAgeExclude\s*:/.test(l));
+    if (exi >= 0) {
+      const inline = ylines[exi].replace(/^minimumReleaseAgeExclude\s*:/, "").trim();
+      let bad = inline !== "" && inline !== "[]";
+      const ind = (ylines[exi].match(/^\s*/) ?? [""])[0].length;
+      for (let j = exi + 1; j < ylines.length && !bad; j++) {
+        const l = ylines[j];
+        if (!l.trim()) continue;
+        if ((l.match(/^\s*/) ?? [""])[0].length <= ind) break;
+        bad = true; // any deeper non-comment line = a list entry
+      }
+      if (bad) fail("ADR-0081 E6: non-empty minimumReleaseAgeExclude launders gated versions into the lockfile — remove entries or record an ADR-visible exception");
+    }
     report("pass", "E6 gate invariants: trustLockfile default(false), strict on, missing-time strict, zero age-excludes — upstream verify leg enforced");
   }
 
+  // 1t. ADR-0077 (R76 T0): governed-JSON canonical lock — governed files must
+  //     byte-equal their canonical serialization (see scripts/governed-json.mjs).
   stepGovernedJsonCanonical();
 
 }
@@ -1400,12 +1430,16 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     // packed manifest's install-time fields. @anysearch-cli/embedding rides as an optional peer
     // (peerDependenciesMeta.optional), never optionalDependencies (the 404/auto-install bomb).
     {
-      const PUBLISH_SET = ["@anysearch-cli/cli", "@anysearch-cli/mcp", "@anysearch-cli/plugin", "@anysearch-cli/embedding"];
+      // r80-audit O4: dsh-plugin joins the publish set (license/repo/access/workspace:/bundled-deps
+      // asserted on its packed manifest too); the peer-optional embedding contract applies only to
+      // the three consumers — dsh-plugin carries zero runtime deps by invariant (1s leg).
+      const PUBLISH_SET = ["@anysearch-cli/cli", "@anysearch-cli/mcp", "@anysearch-cli/plugin", "@anysearch-cli/embedding", "@anysearch-cli/dsh-plugin"];
+      const EMBEDDING_CONSUMERS = ["@anysearch-cli/cli", "@anysearch-cli/mcp", "@anysearch-cli/plugin"];
       if (PUBLISH_SET.includes(pkg.name)) {
         const depKeys = Object.keys(pkg.dependencies ?? {}).filter((d) => d.startsWith("@anysearch-cli/"));
         if (depKeys.length) fail(`${file}: publish manifest still declares bundled deps in dependencies: ${depKeys.join(", ")} (D-005: bundled internals are devDependencies)`);
         if ((pkg.optionalDependencies ?? {})["@anysearch-cli/embedding"]) fail(`${file}: @anysearch-cli/embedding in optionalDependencies — must be peer+optional (D-005 bomb-prevention)`);
-        if (pkg.name !== "@anysearch-cli/embedding") {
+        if (EMBEDDING_CONSUMERS.includes(pkg.name)) {
           const peerOk = pkg.peerDependencies && "@anysearch-cli/embedding" in pkg.peerDependencies &&
             pkg.peerDependenciesMeta && pkg.peerDependenciesMeta["@anysearch-cli/embedding"] && pkg.peerDependenciesMeta["@anysearch-cli/embedding"].optional === true;
           if (!peerOk) fail(`${file}: @anysearch-cli/embedding missing peerDependencies+peerDependenciesMeta.optional (D-005 peer-optional contract)`);
@@ -1425,8 +1459,8 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
         // imports, and export-from re-exports. @anysearch-cli/embedding is excluded —
         // it is the declared peer-optional external (dynamic import survives
         // bundling by design, ADR-0033).
-        const distDir = path.join(pkgDir, "dist");
-        if (fs.existsSync(distDir)) {
+        const distDir = ["dist", "lib"].map((d) => path.join(pkgDir, d)).find((d) => fs.existsSync(d));
+        if (distDir) {
           const bare = /(?:(?:require|import)\s*\(\s*|(?:import|export)\b[^'";]*?\bfrom\s*|import\s*)["']@anysearch-cli\/(kernel|store|retriever|plugin)["'/]/;
           const stack = [distDir];
           while (stack.length) {
