@@ -1303,3 +1303,26 @@ alarm 跟随发布走（alpha 可响=早期警报），adoption 跟随稳定性�
 
 ## Evidence Window（取证窗口）
 依赖外部时效条件的受控实验（如闸内版本标本）有硬截止窗口，错过=标本「毕业」、验证延期到下个窗口——时敏项按 WSJF（TC 高+RR/OE 高+Size 小）/Kanban Fixed-date（悬崖型 CoD）排最前。_Avoid_: 时敏实验后置（窗口关闭价值归零非递减）；窗口错过伪造结果（诚实记档「错过」）。来源：atomcode R78-Q4+R78 D-002/D-004。
+
+## Grill Round 79 — Terms (ADR-0080)
+
+## Cohesion Tri-Test（内聚三判据）
+审计/残账成批的凝聚轴=同文件或子系统+同决策类型+共享验收面三判据；「同一次审计产出」不是凝聚轴——按来源打包=杂物筐反模式（CloudBase 批处理规则集/CIS/Packetlabs 先例）。_Avoid_: 按报告来源混批（立法裁决与护栏设计互相稀释）；极端拆分（每发现一轮=浪费轮次违 scope discipline 批量效率）。来源：atomcode R79-Q1+R79 D-001。
+
+## Exemption-Domain Contract（豁免域契约）
+lint 豁免域必须显式立法开列边界（本仓=marker 覆盖 fence 内全部检查跳过+locator 行内 in-repo 豁免），声明豁免模型=marker 覆盖是「声明该块为逐字摘录」的前提非无条件豁免（markdownlint disable→fence→restore/gitleaks 受审 artifact 先例）。_Avoid_: 豁免边界只活实现里（drift 再发）；无条件豁免（unmarked fence 仍执法——声明是豁免前提）。来源：atomcode R79-Q2+R79 D-002。
+
+## Drift Attribution（漂移归因）
+实现↔文本张力处置第一步是归因——问哪侧是被明确裁决过的意图、哪侧是未审视的笼统字面，再选 Revert（现实改回声明）或 Codify（意图写回文本）；AWS/Firefly/Pulumi 三源一致「不了解成因就 revert 可能重新引入问题」。_Avoid_: 不归因默认改实现；静默追认（必须显式立法+一致性测试钉死）。来源：atomcode R79-Q2+R79 D-002。
+
+## Neighbor-Paired Assertion（近邻成对断言）
+豁免/放行类断言须携「一线之差非豁免对照」——只断言放行=对判定器整体失效不设防（Stryker `return true` 突变体绿色假象教训）；红态须可被近邻区分，不可区分者显式标注 equivalent 并附理由。_Avoid_: 单侧放行断言（防不了「坏了所以全放行」）；改前不红不标 equivalent 直接放行。来源：atomcode R79-Q4+R79 D-004。
+
+## Zero-Finding Conclusion（零发现结论行）
+例行观测回合「无异常」须产格式化显式结论行+观测窗口「截至」时间戳——沉默通过不是值守产出（SRE actionable-output 教义/Renovate Dependency Dashboard/on-call「watch items 空也列入」先例）。_Avoid_: 零发现即无输出；结论行无时间戳（下轮无法判快照新鲜度）。来源：atomcode R79-Q4+R79 D-004。
+
+## Evidence Mapping（判据证据映射）
+收口判据每条↔佐证产物（文件/commit/run URL）一一映射表——compliance closeout 的 evidence-mapping 惯例，缺了收口无法被事后审计；配套一行度量回写（豁免域数/红绿对数/存量基线数，KRI 惯例）供跨轮趋势对比。_Avoid_: 判据只声明不挂证据；度量回写膨胀成指标工程（一行即止）。来源：atomcode R79-Q4+R79 D-004。
+
+## Mirror Consistency Assertion（镜像一致性断言）
+契约存在两载体时（ADR 正文+AGENTS.md 镜像段），一致性须机械断言双在位（豁免域关键词 grep 级断言入 CI/fixture），不靠人肉同步——双载体漂移是立法级风险。_Avoid_: 只改一处忘镜像；镜像漂移靠记忆发现。来源：atomcode R79-Q4+R79 D-004。

@@ -1,0 +1,22 @@
+背景：仓库自研 lint「machine-local path lint」检查提交的 Markdown 中裸写的本机绝对路径。规则契约（ADR-0072）：①locator/Stack: 定位行可裸写绝对路径（职责=指地点）；②指向仓库内目标的绝对路径必须改写成 repo-relative，治理标记（machine-local marker）不豁免此类；③仓外目标保留绝对路径但必须同行挂治理标记；④标记行紧邻代码围栏则覆盖整块。
+
+审计发现实现与文本存在既往张力（旧码搬移遗留）。实测确认的四张曲面：
+(a) 被 marker 覆盖的代码围栏内：实现整段跳过全部检查→仓内绝对路径豁免（ADR 文本未开列此豁免域，张力面）；
+(b) 未覆盖围栏内：仓内路径照常执法（一致）；
+(c) Stack: locator 行：实现整行跳过→仓内绝对路径豁免（ADR 未开列，张力面；且有活体实例——交接文档 Stack: 行以绝对路径命名仓根本身，仓根无法用 repo-relative 表达）；
+(d) info 级「单段未知根 POSIX 路径（/x）」提示：实现在围栏内与 locator 行也照样产出（非阻断噪音）。
+
+存量扫描：围栏内仓内绝对路径实例=0；locator 行仓内路径≥1（仓根命名）。
+
+备选裁决方向：
+A（Codify）=修订 ADR 文本显式承认豁免域（covered fence 内+locator 行内仓内路径豁免，理由分别为 transcript 证据保真与 locator 指地点语义；`/x` info 在围栏与 locator 行静默）；每条款钉一致性测试防再漂移；诚实披露「豁免域扩大」风险。
+B（Revert）=收紧实现穿透覆盖围栏与 locator 行执法仓内路径：零存量负担但活体仓根命名实例须改、未来 transcript 证据改写路径即失真。
+C=逐面混裁。
+
+研究问题：
+1. lint/静态检查工具的「豁免域契约」先例：markdownlint/Vale/textlint/ESLint 系对「代码围栏内内容」「行级豁免注释」「引用/转录块」的豁免契约如何定义？豁免是否需要显式声明机制（如 marker 覆盖）还是默认豁免？豁免域扩大的风险登记惯例？
+2. 「文档向实现收敛（Codify）」vs「实现向文档收敛（Revert）」的裁决判据：当实现行为有正当理由（transcript 保真、locator 语义）而文本是未审视的笼统字面时，业界如何判哪侧是 drift？以显式立法追认实现行为（而非静默追认）的纪律惯例？
+3. transcript/证据保真 vs 规则纯净的张力先例：lint 工具对「日志/命令输出摘录块」内内容的处理惯例——逐字摘录块内的路径/密钥/模式是否豁免或降权？（如 detect-secrets/gitleaks 对 fixture、test 数据、文档摘录的处理）
+4. info/warn 级非阻断提示在「豁免上下文」（围栏/locator 行）内继续产出的惯例：ESLint 的 reportUnusedDisableDirectives、markdownlint 对 code block 内规则的处理——非阻断层在豁免域内应静默还是保留可见？
+
+请给出收敛方向推荐与理由，重点在工业界成熟落地的心智模型与可引用先例。
