@@ -92,3 +92,26 @@ missing/partial：F-3（外发闸）、F-4（#1774 出处）、F-5（329/330）�
 绿色 run URL：栈未 push；且当前 HEAD 若推 CI 必红（adr-index），**勿推**。
 
 审计驱动脚本（本会留证）：r79-audit-scan.mjs / r79-audit-scan2.mjs / r79-audit-scan3.mjs / r79-stack.diff 于机内 Temp 目录，不入库。
+
+## 复审实录（2026-09-23 返修后同套验收重跑）
+
+修复窗处置经审计窗逐条复核 + 同套验收重跑，全数坐实：
+
+| 发现 | 处置证据（亲验） | 结论 |
+|---|---|---|
+| F-1 index.md stale | `gen-adr-index --check` → `up to date (80 ADRs at HEAD)`；index 0080 行=ADR H1 派生（旧后缀已除）；ship-gate 1b `[pass]`；store:test `adr-index.test` ✔ | 闭合 |
+| F-2 交接必填段缺失 | `round-80-next.md` 已重写：Stack 行（but-id 主键）+「绿色 run URL」段 `PENDING — stack unpushed`；ship-gate 1g `handoff-lint` pass | 闭合 |
+| F-3 外发闸丢失 | `round-80-next.md` + `round-79-closeout.md` 双载 `.scratch/grill-round-75/drafts/` 两份 draft 用户动作项 | 闭合 |
+| F-4 #1774 出处失实 | `round-80-next.md` 零 1774 残留；closeout 实录如实记「出处未核实」 | 闭合 |
+| F-5 计数口径不一 | report/CHANGELOG/closeout 统一 333；审计+closeout 入库后终态枚举=334（活枚举时点口径，ship-gate 1i 实测 `334 registered doc(s) clean`） | 闭合 |
+| F-6 镜像断言弱腿 | 断言加 `exemption domain` 新词 + `toLowerCase` 大小写不敏双载体校验；14 具名用例全绿——返修记「15 cases」为计数漂移（断言强度提升而非用例数），记 P-8 注记不挡门 | 闭合 |
+| F-7 旧句字面张力 | ADR-0072 补 `outside the codified exemption domain`；AGENTS.md 补 `outside the exemption domain codified below` | 闭合 |
+| 返修自捕获 | step 1g `round-NN-*closeout*` 命名缺口 → `round-79-closeout.md` 新建（Stack/已完成/绿色 run URL/下一轮候选/risks/skills 全段）；coverage 4/4 pass | 闭合 |
+
+同套验收重跑（亲跑，非转述）：`pnpm install` Already up to date；`pnpm run check` 8/8；`pnpm run test` 13/13（store 78/78 含 adr-index + pathlint 14）；pathlint 直扫 SCANNED=334 / VIOLATIONS=0 / INFOS=766；`ship-gate --skip-matrix` 全绿至 step 9 `ship gate green`（1b index fresh、1g coverage 4/4+handoff-lint、1i path-lint 334 clean、pack×8、T0 smoke、memory-eval 126/126、MCP initialize、8b packaged smoke、fail-open boot 全行使）；CLI 0.0.7 + doctor 23-0-2；`git status --porcelain` 空。
+
+栈序终态（first-parent DAG）：`nxx`→`rmm`→`skq`→`ylk`→`run`(r79-audit)→`lxs`→`sql`——返修 amend 使审计 commit 物理落于 `ylk`↔`lxs` 之间（位置注记，内容与归属不受影响）。
+
+观测注记：复审期 `ship-gate` 内嵌 test 腿曾瞬时红一次（kernel `llm-init.test.ts` SSE stub 竞态，并行负载下 flake），直跑与 turbo 复跑均绿——不计缺陷，挂 R80 watch。
+
+**终裁：审计通过（返修后复审）。** 首轮 8 项发现全数闭合（F-6 附计数注记）；门禁终态全绿。移交载体：`round-79-closeout.md`（本轮收口实录+下一轮候选）+ `round-80-next.md`（R80 方向）已就位；审计窗自身交接见 `round-79-audit-closeout.md`。
