@@ -47,6 +47,11 @@
      "at": "2026-09-23",
      "round": 79,
      "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 80,
+     "note": "R80 域外显式续债（carried, not silent）"
     }
    ]
   },
@@ -85,6 +90,11 @@
      "at": "2026-09-23",
      "round": 79,
      "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 80,
+     "note": "R80 域外显式续债（carried, not silent）"
     }
    ]
   },
@@ -121,6 +131,11 @@
      "at": "2026-09-23",
      "round": 79,
      "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 80,
+     "note": "R80 域外显式续债（carried, not silent）"
     }
    ]
   },
@@ -173,6 +188,11 @@
      "at": "2026-09-23",
      "round": 79,
      "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 80,
+     "note": "R80 域外显式续债（carried, not silent）"
     }
    ]
   },
@@ -208,6 +228,11 @@
      "at": "2026-09-23",
      "round": 79,
      "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 80,
+     "note": "R80 域外显式续债（carried, not silent）"
     }
    ]
   },
@@ -221,7 +246,7 @@
    "deadline": "2027-03-31",
    "review_cadence": "quarterly",
    "status": "open",
-   "evidence": "R72 verified the publish shape end-to-end (pnpm pack tarball → dsh plugin add → --dump-config layer check); private:true is a one-field change, not archaeology. npm keyword dsh-plugin auto-joins the official directory once published.",
+   "evidence": "R80 T2 备货完成：private:false + publishConfig{access:public,provenance:true} + release.yml 第五包接入 + pack/dsh plugin add/dump-config 复验通过（evidence/t2-pack-verify.log）；预首发四步立法见 docs/publishing.md 首发节+ADR-0081 D-003。npm keyword dsh-plugin auto-joins the official directory once published.",
    "monitoring_channel": "next release round task-book triage",
    "carried_log": [
     {
@@ -243,6 +268,11 @@
      "at": "2026-09-23",
      "round": 79,
      "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 80,
+     "note": "R80 T2 更态=就绪待用户扳机：包内全部就绪，剩三项用户动作（手发 0.0.7→npmjs TP 四字段+allowed actions 勾选→推 v0.0.8 tag）——外发/发布均为用户扳机不代行"
     }
    ]
   },
@@ -278,6 +308,11 @@
      "at": "2026-09-23",
      "round": 79,
      "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 80,
+     "note": "R80 域外显式续债（carried, not silent）"
     }
    ]
   },
@@ -313,6 +348,11 @@
      "at": "2026-09-23",
      "round": 79,
      "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 80,
+     "note": "R80 域外显式续债（carried, not silent）"
     }
    ]
   },
@@ -348,6 +388,11 @@
      "at": "2026-09-23",
      "round": 79,
      "note": "R79 T0 哨戒实录：dsh 0.1.7-alpha.2 L0/L1 取证——特征锚在位（agent/created 携 source/signal、agent/session-start 缺席）、Events union 27≡alpha.1、发版面 21 dsh-*（code-runtime 缺席）+cordis ~4.0.4 线；alpha 线稳定锚不响→非 L2 候选，action=none required；rc.3/alpha.1 仍闸内（≈09-24 05:39/06:04Z 出闸）"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 80,
+     "note": "R80 T0 哨戒实录：alpha.2 携特征锚（agent/created 携 source/signal、session-start 缺席）但稳定锚缺（alpha 线+changelog 未审）→非 L2 合格候选 action=none；rc.3/alpha.1/alpha.2 全闸内 ≈09-24 出闸续哨"
     }
    ],
    "tombstones": [
@@ -397,6 +442,11 @@
      "at": "2026-09-23",
      "round": 79,
      "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 80,
+     "note": "R80 域外显式续债（carried, not silent）"
     }
    ]
   },
@@ -432,6 +482,11 @@
      "at": "2026-09-23",
      "round": 79,
      "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 80,
+     "note": "R80 域外显式续债（carried, not silent）"
     }
    ]
   },
@@ -484,16 +539,24 @@
    "opened_at": "2026-09-23",
    "deadline": "2027-03-31",
    "review_cadence": "next round candidate — R80 发布龄期闸 lockfile 执法轮主题候选 + upstream pnpm release watch",
-   "status": "open",
-   "evidence": "R78 E6 证伪实录（ADR-0079 D3 判决矩阵）：lockfile 携闸内版本时 frozen/fetch 静默放行 minimumReleaseAge 拦截；pnpm 调研文档级断言（trustLockfile 应验证）与本仓 E6 实证存在张力——R80 先在钉版 pnpm 11.24.0 实测 trustLockfile 验证腿是否天然覆盖（empirically verify, not doc-trust），再定自建护栏/引用上游/显式记档三选一。",
+   "status": "closed",
+   "evidence": "R78 E6 证伪实录（ADR-0079 D3 判决矩阵）：lockfile 携闸内版本时 frozen/fetch 静默放行 minimumReleaseAge 拦截；pnpm 调研文档级断言（trustLockfile 应验证）与本仓 E6 实证存在张力——R80 先在钉版 pnpm 11.24.0 实测 trustLockfile 验证腿是否天然覆盖（empirically verify, not doc-trust），再定自建护栏/引用上游/显式记档三选一。 | R80 T1 裁决（e6-matrix.md）：上游 verifyLockfileResolutions 腿在钉版 11.24.0 实测闭合（frozen/install/fetch/vdbr-install 四路 ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION exit 1）；R78 证伪按实测 revised——五变体放行=lockfile-verified.jsonl 判定缓存污染（宽松写入 warn-pass 沿用），非缺腿；残余边界（同机宽松沿用/trustLockfile:true opt-out/no-op 短路）由 ship-gate 1v CI 断言依赖声明兜底；γ 三条件全未命中→不阻塞 0.0.8。",
    "monitoring_channel": "R80 轮次候选立案 + pnpm 上游 trustLockfile/verifyDepsBeforeRun 行为变更观察",
    "carried_log": [
     {
      "at": "2026-09-23",
      "round": 79,
      "note": "R79 D-001 范围裁决：E6 后果显式拆出本轮（不混入契约批）——立案为 R80 候选主题；先在钉版实测 trustLockfile 腿，再定护栏路径"
+    },
+    {
+     "at": "2026-09-23",
+     "round": 80,
+     "note": "R80 T1 核销：三选一裁决取 (b) 引用上游（机器腿闭合）——γ 未触发；R78 E6 revised 记档；CI 断言依赖声明落地为 ship-gate 1v 三禁项+IgnoreMissingTime"
     }
-   ]
+   ],
+   "closed_by": "ADR-0081",
+   "closed_at": "2026-09-23",
+   "closed_by_adr_path": "docs/adr/0081-architecture-grill-round-80-release-readiness-dsh-plugin-e6-freshness.md"
   }
  ]
 }
