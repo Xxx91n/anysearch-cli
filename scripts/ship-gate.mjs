@@ -82,7 +82,8 @@ function report(kind, msg) {
     kind === "pass" ? `${ANSI.green}[pass]${ANSI.reset}`
       : kind === "fail" ? `${ANSI.red}[fail]${ANSI.reset}`
         : kind === "skip" ? `${ANSI.yellow}[skip]${ANSI.reset}`
-          : `${ANSI.yellow}[info]${ANSI.reset}`;
+          : kind === "warn" ? `${ANSI.yellow}[warn]${ANSI.reset}`
+            : `${ANSI.yellow}[info]${ANSI.reset}`;
   process.stdout.write(`${badge} ${msg}\n`);
 }
 
@@ -709,6 +710,106 @@ function stepStaticAssertions() {
 
   // 1t. ADR-0077 (R76 T0): governed-JSON canonical lock — governed files must
   //     byte-equal their canonical serialization (see scripts/governed-json.mjs).
+  // 1u. ADR-0081 (R80 D-004): derived-artifact freshness leg — current-round
+  //     CHANGELOG presence (fail) + 'no-changelog-entry: <reason>' structured
+  //     exemption + closeout-claims.json registration surface re-derivation.
+  //     Objective kinds fail-closed; narrative proxies warn-first (promotion
+  //     schedule recorded in ADR-0081). Only the newest grill-round dir is
+  //     asserted — older rounds are historical, not ratcheted retroactively.
+  {
+    const scratchDir = path.join(ROOT, ".scratch");
+    const roundNums = fs.existsSync(scratchDir)
+      ? fs.readdirSync(scratchDir).map((d) => (/^grill-round-(\d+)$/.exec(d) ?? [])[1]).filter(Boolean).map(Number)
+      : [];
+    const maxRound = roundNums.length ? Math.max(...roundNums) : null;
+    if (maxRound == null) {
+      report("skip", "freshness leg: no .scratch/grill-round-* dir — nothing to assert");
+    } else {
+      const roundRel = '.scratch/grill-round-' + maxRound;
+      const goalPath = path.join(ROOT, roundRel, "goal.md");
+      const goal = fs.existsSync(goalPath) ? fs.readFileSync(goalPath, "utf8") : "";
+      const exempt = /^no-changelog-entry\s*:\s*(.*)$/m.exec(goal);
+      const hasEntry = new RegExp('^## .*\\br' + maxRound + '\\b', "m").test(fs.readFileSync(path.join(ROOT, "CHANGELOG.md"), "utf8"));
+      if (exempt) {
+        const reason = exempt[1].trim();
+        if (!reason) fail('ADR-0081 D-004: ' + roundRel + "/goal.md 'no-changelog-entry:' exemption carries an empty reason");
+        report("pass", 'freshness leg: CHANGELOG entry exempted for r' + maxRound + ' (no-changelog-entry: ' + reason.slice(0, 80) + ')');
+      } else if (!hasEntry) {
+        fail("ADR-0081 D-004: CHANGELOG.md has no '## ' entry referencing r" + maxRound + " — current round is " + roundRel + "; add the round entry or declare 'no-changelog-entry: <reason>' in goal.md");
+      } else {
+        report("pass", 'freshness leg: CHANGELOG carries a current-round (r' + maxRound + ') entry');
+      }
+      const claimsPath = path.join(ROOT, roundRel, "closeout-claims.json");
+      if (!fs.existsSync(claimsPath)) {
+        report("warn", 'freshness leg: ' + roundRel + '/closeout-claims.json absent — registration surface expected from r80 onward (pre-registration rounds stay warn)');
+      } else {
+        let reg;
+        try { reg = JSON.parse(fs.readFileSync(claimsPath, "utf8")); }
+        catch (e) { fail('ADR-0081 D-004: ' + roundRel + '/closeout-claims.json is not valid JSON: ' + e.message); }
+        if (reg.schema !== "anysearch/closeout-claims@1") fail('ADR-0081 D-004: closeout-claims.json schema must be anysearch/closeout-claims@1 (got ' + reg.schema + ')');
+        if (reg.round !== maxRound) fail('ADR-0081 D-004: closeout-claims.json round=' + reg.round + ' but newest round dir is r' + maxRound);
+        const claims = Array.isArray(reg.claims) ? reg.claims : [];
+        if (!claims.length) fail("ADR-0081 D-004: closeout-claims.json registers zero claims — surface must be non-vacuous");
+        let verified = 0;
+        for (const c of claims) {
+          if (!c.id || !c.kind || !c.claim) fail('ADR-0081 D-004: claim missing id/kind/claim: ' + JSON.stringify(c).slice(0, 120));
+          const tag = 'closeout-claim ' + c.id + ' (' + c.kind + ')';
+          if (c.kind === "count") {
+            if (typeof c.command !== "string" || !c.command.trim()) fail('ADR-0081 D-004: ' + tag + ' lacks a derivation command — declaration and command land in the same diff');
+            // closeout-claims.json is a tracked repo file reviewed in the same diff as
+            // its declarations — shell:true runs its curated node -e one-liners on
+            // win32/posix alike (same trust boundary as this gate script itself).
+            const r = spawnSync(c.command, { cwd: ROOT, encoding: "utf8", shell: true, timeout: 30000 });
+            const got = Number((r.stdout ?? "").trim());
+            if (r.status !== 0 || !Number.isFinite(got)) fail('ADR-0081 D-004: ' + tag + ' derivation failed (exit ' + r.status + '): ' + String(r.stderr ?? r.stdout ?? "").slice(0, 160));
+            if (got !== c.expect) fail('ADR-0081 D-004: ' + tag + ' re-derived ' + got + ' != declared ' + c.expect + ' — stale closeout number');
+            verified++;
+          } else if (c.kind === "path") {
+            if (!Array.isArray(c.paths) || !c.paths.length) fail('ADR-0081 D-004: ' + tag + ' carries empty paths');
+            const miss = c.paths.filter((rel) => !fs.existsSync(path.join(ROOT, rel)));
+            if (miss.length) fail('ADR-0081 D-004: ' + tag + ' path(s) missing: ' + miss.join(", "));
+            verified++;
+          } else if (c.kind === "symbol") {
+            if (!c.file || !Array.isArray(c.tokens) || !c.tokens.length) fail('ADR-0081 D-004: ' + tag + ' needs file + non-empty tokens');
+            const text = fs.readFileSync(path.join(ROOT, c.file), "utf8");
+            const miss = c.tokens.filter((t) => !text.includes(t));
+            if (miss.length) fail('ADR-0081 D-004: ' + tag + ' token(s) absent in ' + c.file + ': ' + miss.join(", "));
+            verified++;
+          } else if (c.kind === "field") {
+            if (!c.file || !c.field) fail('ADR-0081 D-004: ' + tag + ' needs file + field');
+            const obj = JSON.parse(fs.readFileSync(path.join(ROOT, c.file), "utf8"));
+            const got = String(c.field).split(".").reduce((o, k) => (o == null ? o : o[k]), obj);
+            if (JSON.stringify(got) !== JSON.stringify(c.expect)) fail('ADR-0081 D-004: ' + tag + ' ' + c.field + '=' + JSON.stringify(got) + ' != declared ' + JSON.stringify(c.expect));
+            verified++;
+          } else if (c.kind === "narrative") {
+            const text = c.file && fs.existsSync(path.join(ROOT, c.file)) ? fs.readFileSync(path.join(ROOT, c.file), "utf8") : "";
+            const miss = (c.tokens ?? []).filter((t) => !text.includes(t));
+            if (miss.length) report("warn", 'freshness leg narrative proxy: ' + tag + ' token(s) absent in ' + (c.file ?? "<none>") + ': ' + miss.join(", "));
+            else verified++;
+          } else {
+            fail('ADR-0081 D-004: unknown claim kind ' + c.kind + ' (' + c.id + ')');
+          }
+        }
+        report("pass", 'closeout-claims r' + maxRound + ': ' + verified + '/' + claims.length + ' registered claims re-derived green');
+      }
+    }
+  }
+
+  // 1v. ADR-0081 (R80 T1): E6 supply-chain gate invariants — pnpm 11.1.3+
+  //     verifyLockfileResolutions re-checks minimumReleaseAge on lockfile
+  //     replay only while the workspace never opts out (evidence:
+  //     .scratch/grill-round-80/evidence/e6-matrix.md — verdict-cache
+  //     contamination is the residual same-machine edge, CI always re-verifies).
+  {
+    const wsYaml = fs.readFileSync(path.join(ROOT, "pnpm-workspace.yaml"), "utf8");
+    if (/^trustLockfile\s*:\s*true\s*$/m.test(wsYaml)) fail("ADR-0081 E6: trustLockfile:true disables lockfile policy re-verification — reopens the replay vector");
+    if (/^minimumReleaseAgeStrict\s*:\s*false\s*$/m.test(wsYaml)) fail("ADR-0081 E6: minimumReleaseAgeStrict:false demotes age violations to warnings — the loose-write blessing path (e6-matrix A-write/A1)");
+    if (/^minimumReleaseAgeIgnoreMissingTime\s*:\s*true\s*$/m.test(wsYaml)) fail("ADR-0081 E6: minimumReleaseAgeIgnoreMissingTime:true lets no-time packages bypass the age gate");
+    const excl = /^minimumReleaseAgeExclude\s*:\s*([^\n]*)\n?((?:[ \t]+-[ \t]*\S[^\n]*\n?)*)/m.exec(wsYaml);
+    if (excl && ((excl[1].trim() !== "" && excl[1].trim() !== "[]") || excl[2].trim() !== "")) fail("ADR-0081 E6: non-empty minimumReleaseAgeExclude launders gated versions into the lockfile — remove entries or record an ADR-visible exception");
+    report("pass", "E6 gate invariants: trustLockfile default(false), strict on, missing-time strict, zero age-excludes — upstream verify leg enforced");
+  }
+
   stepGovernedJsonCanonical();
 
 }

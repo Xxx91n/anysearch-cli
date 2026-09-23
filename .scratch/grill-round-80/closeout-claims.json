@@ -1,0 +1,76 @@
+{
+  "schema": "anysearch/closeout-claims@1",
+  "round": 80,
+  "note": "Objective kinds (count/path/symbol/field) fail-closed; narrative kind warns first (promotion to fail scheduled in ADR-0081). Declarations and their derivation commands change in the same diff.",
+  "claims": [
+    {
+      "id": "workspace-pin-0.0.8",
+      "kind": "count",
+      "claim": "all 8 workspace package.json manifests are pinned at 0.0.8",
+      "command": "node -e \"const fs=require('fs');const dirs=['apps/cli','apps/mcp','apps/plugin','apps/dsh-plugin','packages/embedding','packages/kernel','packages/store','packages/retriever'];console.log(dirs.filter(d=>JSON.parse(fs.readFileSync(d+'/package.json','utf8')).version==='0.0.8').length)\"",
+      "expect": 8
+    },
+    {
+      "id": "release-publish-globs",
+      "kind": "count",
+      "claim": "release.yml npm-publish loop carries 5 package tarball globs (4 to 5 after dsh-plugin onboard)",
+      "command": "node -e \"const s=require('fs').readFileSync('.github/workflows/release.yml','utf8');console.log((s.match(/anysearch-cli-[a-z-]+-\\*\\.tgz/g)||[]).length)\"",
+      "expect": 5
+    },
+    {
+      "id": "dsh-plugin-private-false",
+      "kind": "field",
+      "claim": "apps/dsh-plugin private flag flipped for publication",
+      "file": "apps/dsh-plugin/package.json",
+      "field": "private",
+      "expect": false
+    },
+    {
+      "id": "dsh-plugin-publish-access",
+      "kind": "field",
+      "claim": "publishConfig.access is public",
+      "file": "apps/dsh-plugin/package.json",
+      "field": "publishConfig.access",
+      "expect": "public"
+    },
+    {
+      "id": "dsh-plugin-provenance",
+      "kind": "field",
+      "claim": "publishConfig.provenance is true",
+      "file": "apps/dsh-plugin/package.json",
+      "field": "publishConfig.provenance",
+      "expect": true
+    },
+    {
+      "id": "e6-matrix-evidence",
+      "kind": "path",
+      "claim": "T1 E6 matrix transcript and T0 watch evidence archived",
+      "paths": [
+        ".scratch/grill-round-80/evidence/e6-matrix.md",
+        ".scratch/grill-round-80/evidence/t0-watch.json",
+        ".scratch/grill-round-80/evidence/t2-pack-verify.log"
+      ]
+    },
+    {
+      "id": "e6-verdict-tokens",
+      "kind": "symbol",
+      "claim": "E6 matrix records upstream-leg-closed verdict with gamma not triggered",
+      "file": ".scratch/grill-round-80/evidence/e6-matrix.md",
+      "tokens": [
+        "ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION",
+        "gamma=NOT-TRIGGERED",
+        "decision=(b)"
+      ]
+    },
+    {
+      "id": "t0-observation-date",
+      "kind": "narrative",
+      "claim": "T0 watch evidence carries the 2026-09-23 observation window",
+      "file": ".scratch/grill-round-80/evidence/t0-watch-rc3-alpha1.md",
+      "tokens": [
+        "2026-09-23",
+        "watch @"
+      ]
+    }
+  ]
+}
