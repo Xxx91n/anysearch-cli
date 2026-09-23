@@ -29,11 +29,13 @@ Stack (primary key = GitButler change-ids; SHAs are time-lagged @ 2026-09-23):
 - **dsh 观测哨续班**：rc.3/alpha.1/alpha.2 ≈2026-09-24 05:39/06:04/15:50Z 出闸——下轮首轮 npm view 复检；双锚同响才进 L2 彩排。
 - **narrative warn→fail 升级评审**（ADR-0081 定 r82）：新鲜度腿 narrative 代理稳定一轮后评审升 fail。
 - **pathlint 残余盲区**（承继）：多段未知根 POSIX 路径不报、/x 仅单段 info——两轮未扩域。
+- **#1764 merge-watch 续哨**（r80-audit O5 补项）：非仅外发面——merge 且发布版携 onnxruntime-common 声明才关 defer-r71-transformers-undeclared-dep；绪僵超一季度→评审降级为低频哨。
+- **CI flake-watch 升级线**（r80-audit O5 补项）：1v 新断言+claims 重推导上线后首轮 CI 若抖，flake 观察窗升级评审（频率超阈值即钉死诊断非放行）。
 - **外发闸**（用户亲手发）：#1764 评论草稿+gate draft 续挂用户动作项。
 
 ## Known risks / deferred
 
-- 落选续债 11 条（carried_log r80 显式记）：defer-anysearch-domain-ownership / defer-f16-macos-native-crash / defer-f17-quarantine-ids / defer-r71-provider-serverside / defer-r71-transformers-undeclared-dep（#1764 哨）/ defer-r72-dsh-plugin-npm-publish（就绪待扳机）/ defer-r72-dsh-native-tools / defer-r72-dsh-web-interactive-matrix / defer-r73-dsh-event-rename / defer-r74-logo-bitmap-matrix / defer-r75-registerhooks-esm-arm。E6 债已核销（closed_by ADR-0081）。
+- 落选续债 10 条 + 更态 1 条（口径修正，r80-audit O5；carried_log r80 显式记）：defer-anysearch-domain-ownership / defer-f16-macos-native-crash / defer-f17-quarantine-ids / defer-r71-provider-serverside / defer-r71-transformers-undeclared-dep（#1764 哨）/ defer-r72-dsh-plugin-npm-publish（就绪待扳机）/ defer-r72-dsh-native-tools / defer-r72-dsh-web-interactive-matrix / defer-r73-dsh-event-rename / defer-r74-logo-bitmap-matrix / defer-r75-registerhooks-esm-arm。E6 债已核销（closed_by ADR-0081）。
 - E6 残余边界三态如实记档：同机宽松写入沿用（verdict 缓存指纹不含 strict）/ trustLockfile:true opt-out / Already-up-to-date 零作业短路——配置面由 1v 兜底，物理面无上策为已知残余。
 - 新鲜度腿仅锚最新轮（历史轮不回溯）；注册面缺席 warn（pre-r80 宽容期）——下轮起新轮缺 closeout-claims.json 仍 warn，r82 评审升级。
 - WORKFLOW.md §4.2 缺位第 8 次核销——GitButler skill+全局 but 协议等价覆盖。

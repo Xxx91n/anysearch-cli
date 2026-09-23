@@ -108,6 +108,17 @@ documentation（文档即测试）的**推理级组合**，非任一成熟规则
 结构同构先例有 docs-as-tests / ADR fitness functions，本仓细则
 （轮次锚/豁免字段/分层分档）为自有立法。
 
+**审计红 commit 工序例外注记**（任务书 T4.5(iii) 要求项；r80-audit F-A
+补录）：红向 fixture 的合法载体=`临时 commit → 真门跑 → but undo`——
+fixture 变异必须以 commit 形态进树（clean-tree 不变量不接受脏树跑门），
+再用 `but undo` 撤出演示 commit 不留史。**锚点勘误**：任务书所引
+`ADR-0074 rewrite-map` 经全文核对不存在（q5 调研夸大断言，atomcode
+取证信任边界案例——外部调研结论一律实物复核后落文）；真实先例锚=
+r72/r78 轮红向实录与本伦 `evidence/freshness-leg-dogfood.md` 七格
+（F1–F4 初轮 + F5–F7 审计逃逸形）。该工序为例外许可：仅限 fixture
+红向验证场景，产物须随证据归档，undo 后 `git status --porcelain`
+必须回零——其余场景修=另 commit 的红线不变。
+
 **棘轮表述**：豁免基线**只缩不增**——新增豁免形态（新豁免字段/新 warn
 类）须 ADR 修订方可引入；注册面信号一旦注册不得静默摘除（摘除=声明
 失配 fail）；回归破津贴（断言从 fail 降 warn/豁免域扩大）=stop-everything

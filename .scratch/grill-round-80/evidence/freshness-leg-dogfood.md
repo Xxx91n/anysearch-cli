@@ -22,6 +22,16 @@ Date: 2026-09-23. 方法 = r72/r78 先例：临时 commit 造红 → 真门跑 �
 
 撤销方式：`but undo` 逐 fixture 回退 + node 复写原值；`git status --porcelain` 终态空。栈形修正一并记档：fixture commit 初遭 `but move r80-impl --above r80-grill` 提示——实施栈误建为并行 lane，`but move` 已修正为叠加栈（r80-grill ← r80-impl，合任务书拓扑）。
 
+## 审计逃逸形追补（r80-audit F-B，修后红向复测）
+
+| fixture | 逃逸形态 | 修前 | 修后（commit vuy 正则→注释剥除+字面标量+缩进感知块扫描） |
+|---|---|---|---|
+| F5 | `trustLockfile: true # opt out for speed`（行尾注释） | 穿透（\s*$ 锚死行尾） | `[fail] ADR-0081 E6: trustLockfile must be unset or literal false (got true)`，exit 1 |
+| F6 | `trustLockfile: "true"`（引号标量） | 穿透 | `[fail] ... (got \"true\")`，exit 1 |
+| F7 | `minimumReleaseAgeExclude:\n  # comment\n  - left-pad`（列表夹注释行） | 穿透（注释行截断块正则） | `[fail] ... non-empty minimumReleaseAgeExclude ...`，exit 1 |
+
+撤销同法（but undo+node 复原，终态 porcelain 空）。随修观察项 O1–O4：report() JSDoc 补 warn；1t 注释归位至调用紧邻；symbol/field kind 缺文件/坏 JSON 走 fail() 干净闸报；PUBLISH_SET 4→5（dsh-plugin 入 packed-manifest 形状断言，peer-optional 限 embedding 消费三包，noExternal 扫 dist→dist/lib 双目录）。
+
 ## dogfooding 发现（先记档再修）
 
 1. **pathlint 命中本轮自有产物**（既有腿，非新腿）：e6-matrix.md 两处 `%TEMP%`/`%LOCALAPPDATA%` 环境变量路径缺 governed marker → `[fail] machine-local path requires a governed marker` ×2。处置：同 line 补 governed marker，amend 回 ntl（证据文件自身 commit）。**绿复验**：ship-gate 全绿 transcript 见本节首块。
