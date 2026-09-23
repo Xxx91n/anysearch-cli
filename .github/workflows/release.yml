@@ -218,7 +218,7 @@ jobs:
       - name: pack the publishable set (embedding first — others peer-dep it)
         run: |
           mkdir -p .release/pack
-          for p in packages/embedding apps/cli apps/mcp apps/plugin; do
+          for p in packages/embedding apps/cli apps/mcp apps/plugin apps/dsh-plugin; do
             (cd "$p" && pnpm pack --pack-destination "$OLDPWD/.release/pack")
           done
           ls -la .release/pack
@@ -230,7 +230,8 @@ jobs:
             .release/pack/anysearch-cli-embedding-*.tgz \
             .release/pack/anysearch-cli-cli-*.tgz \
             .release/pack/anysearch-cli-mcp-*.tgz \
-            .release/pack/anysearch-cli-plugin-*.tgz; do
+            .release/pack/anysearch-cli-plugin-*.tgz \
+            .release/pack/anysearch-cli-dsh-plugin-*.tgz; do
             echo "==> npm publish $tgz"
             npm publish "$tgz" --provenance --access public
           done

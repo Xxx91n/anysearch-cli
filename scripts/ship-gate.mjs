@@ -492,7 +492,9 @@ function stepStaticAssertions() {
         fail("ADR-0073 churn lint: @deepseek-ai/* in " + field + ": " + leaked.join(", ") + " — runtime deps stay zero; types live in devDependencies only");
       }
     }
-    if (pkg.private !== true) fail("ADR-0073: apps/dsh-plugin must stay private:true this round");
+    if (pkg.private !== false) fail("ADR-0073/ADR-0081: apps/dsh-plugin must be publish-ready (private:false)");
+    const pubCfg = pkg.publishConfig ?? {};
+    if (pubCfg.access !== "public" || pubCfg.provenance !== true) fail("ADR-0081: apps/dsh-plugin publishConfig must be {access:public, provenance:true} — pre-publish path (D-003)");
     if (pkg.type !== "module") fail("ADR-0073: apps/dsh-plugin must ship type:module (ESM lib)");
     if (pkg.dsh?.bundle?.patch !== "./cordis.patch.yml") fail("ADR-0073: package.json dsh.bundle.patch must point at ./cordis.patch.yml");
     if (pkg.name !== "@anysearch-cli/dsh-plugin") fail("ADR-0073: package.json name must stay @anysearch-cli/dsh-plugin");
@@ -503,7 +505,7 @@ function stepStaticAssertions() {
     for (const tok of ["insert:", "anysearch-dsh-plugin", "mcp-anysearch", "@deepseek-ai/dsh-mcp-client", "serverName: anysearch", "transport: stdio"]) {
       if (!patch.includes(tok)) fail("ADR-0073: cordis.patch.yml missing " + tok);
     }
-    report("pass", "ADR-0073 dsh-plugin churn lint: zero runtime deps, private ESM bundle, patch rows declared");
+    report("pass", "ADR-0073/ADR-0081 dsh-plugin churn lint: zero runtime deps, publish-ready ESM bundle, patch rows declared");
   }
 
   // 1m. ADR-0046 D1/D2/D5/D7 + ADR-0047 D1/D4/D5: fusion ablation, paraphrase

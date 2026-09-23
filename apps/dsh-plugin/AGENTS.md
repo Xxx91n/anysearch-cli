@@ -10,8 +10,10 @@ server at `127.0.0.1:33333` (HTTP IPC, fail-open).
 - `dependencies` must stay `{}` — every `@deepseek-ai/*` package is a
   type-only devDependency (the compile-time churn alarm). ship-gate step 1s
   fails on any runtime-dep leak.
-- `private: true` — verify the publish shape anyway: `pnpm pack` →
-  `dsh plugin add <tgz>` → `dsh --dump-config` layer check.
+- `private: false` + `publishConfig {access:public, provenance:true}` —
+  publish-ready since R80 (ADR-0081 D-003 pre-publish path); verify the
+  publish shape anyway: `pnpm pack` → `dsh plugin add <tgz>` →
+  `dsh --dump-config` layer check.
 - `lib/index.js` is a self-contained ESM bundle (esbuild + `createRequire`
   banner — bundled CJS hook modules carry `require()` calls that pure ESM
   rejects). External imports must stay `node:*` builtins only.

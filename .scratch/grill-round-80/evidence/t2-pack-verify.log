@@ -1,0 +1,32 @@
+### pack files
+/tmp/r80-e6/pack/x/package/AGENTS.md
+/tmp/r80-e6/pack/x/package/LICENSE
+/tmp/r80-e6/pack/x/package/cordis.patch.yml
+/tmp/r80-e6/pack/x/package/lib/index.d.ts
+/tmp/r80-e6/pack/x/package/lib/index.js
+/tmp/r80-e6/pack/x/package/package.json
+
+### packed manifest
+{}
+
+### dsh plugin add transcript
+✓ Lockfile passes supply-chain policies (verified 30s ago)
+.../r80-e6/dsh-home/profiles/headless    | Progress: resolved 0, reused 1, downloaded 0, added 0
+
+.../r80-e6/dsh-home/profiles/headless    | Progress: resolved 1, reused 1, downloaded 0, added 0, done
+Done in 812ms using pnpm v11.24.0
+
+### dump-config layer check
+# == @anysearch-cli/dsh-plugin
+- id: anysearch-dsh-plugin
+  name: '@anysearch-cli/dsh-plugin'
+- id: mcp-anysearch
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: anysearch
+    transport: stdio
+    command: ans-mcp
+    args: []
+    toolCallTimeoutMs: 60000
+    failOnStartupError: false
+    reconnect:

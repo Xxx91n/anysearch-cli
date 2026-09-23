@@ -1,7 +1,11 @@
 {
   "name": "@anysearch-cli/dsh-plugin",
   "version": "0.0.7",
-  "private": true,
+  "private": false,
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "type": "module",
   "description": "DeepSeek Harness (dsh) host adapter for anysearch: thin Cordis bundle — hooks layer only, all business logic stays in the anysearch server over 127.0.0.1 HTTP IPC",
   "main": "lib/index.js",
