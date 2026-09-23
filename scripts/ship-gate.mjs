@@ -241,11 +241,11 @@ function stepStaticAssertions() {
     // R62 due-chore: hard pin — every workspace package must be exactly the
     // release version (the release candidate), not merely "not 0.0.0".
     // Bump this pin in the same commit as the package version bump (R66 audit F-01).
-    if (pkg.version !== "0.0.7") {
-      fail(`${rel}/package.json not pinned at 0.0.7 (got ${pkg.version}) — release pin (D-006 patch-start)`);
+    if (pkg.version !== "0.0.8") {
+      fail(`${rel}/package.json not pinned at 0.0.8 (got ${pkg.version}) — release pin (D-006 patch-start)`);
     }
   }
-  report("pass", `all ${PKG_DIRS.length} packages pinned at 0.0.7`);
+  report("pass", `all ${PKG_DIRS.length} packages pinned at 0.0.8`);
 
   // 1b. ADR-0017 dual-era: kernel and retriever must both export (ADR-0017)
   const kernelExports = JSON.parse(

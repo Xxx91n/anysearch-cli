@@ -4,6 +4,26 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 0.0.8 — 2026-09-23 — ADR-0081 r80: 发布就绪轮——dsh-plugin 上架备货 + E6 lockfile 复核腿实证收口 + 派生件新鲜度腿 + 上游哨戒
+
+### Added
+
+- `@anysearch-cli/dsh-plugin` 发布就绪（ADR-0081 D-003 预首发路径）：`private:false` + `publishConfig {access:public, provenance:true}`；release.yml pack/publish 清单接入第五包——v0.0.8 tag 起五包统一 OIDC+sigstore provenance（tag 前置=用户手发 0.0.7 + npmjs Trusted Publisher 四字段配置完成，未就绪→顺延不拆清单）。
+- ship-gate 派生件新鲜度腿（ADR-0081 D-004）：CHANGELOG 当前轮条目在场断言（fail-closed）+ `no-changelog-entry: <理由>` 结构化豁免字段 + 可机验声明注册面（计数类/符号·路径存在性/日期·轮次号——声明与推导命令同一 diff 变更）+ 叙述一致性 warn 起步分档。
+- `.scratch/grill-round-80/evidence/` —— T0 哨戒实录（npm/gh 快照 + rc.3/alpha.1/alpha.2 三版闸态 + 双锚裁决）+ T1 E6 实测矩阵（frozen/install/fetch/vdbr-install 四路全拦 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` + verdict 缓存污染机制）+ T2 pack/dsh plugin add/dump-config 复验 transcript。
+
+### Changed
+
+- `scripts/ship-gate.mjs` —— step 1s 断言同构更新（private:true→publish-ready 形状：private:false + publishConfig.access:public + provenance:true，ADR-0081）；step 1a 版本钉 0.0.7→0.0.8 同 commit 同步。
+- `apps/dsh-plugin/AGENTS.md` —— invariant 行同步发布就绪态。
+- `docs/publishing.md` —— 新增「新包首发」节（预首发四步 + provenance 边界声明：证明 origin 非 integrity + no-go 分支顺延不拆清单）；publish set 4→5。
+- E6 闸内执法裁决（ADR-0081）：pnpm 11.1.3+ `verifyLockfileResolutions` 复核腿在钉版 11.24.0 实测闭合（`trustLockfile` 默认 false=复核开）；R78「lockfile 回放绕过龄期闸」证伪按实测 revised——当年五变体放行=`lockfile-verified.jsonl` 判定缓存污染（宽松写入 warn-pass 沿用），非缺腿；放行依据=上游机器腿闭合 + CI 断言依赖声明（ws yaml 禁 `trustLockfile:true`/`minimumReleaseAgeStrict:false`/非空 `minimumReleaseAgeExclude`）。
+
+### Deferred
+
+- `defer-r72-dsh-plugin-npm-publish` 更态=就绪待用户扳机（手发 0.0.7→npmjs TP 配置→推 v0.0.8 tag）；`defer-r79-lockfile-agegate-replay` 记裁决=上游机器腿闭合核销（残余边界=同机宽松写入沿用+`trustLockfile:true` opt-out+no-op 短路，CI 断言依赖声明兜底）。
+- 落选债 10 条原名续 deferred（`carried_log` r80 显式记）：`defer-anysearch-domain-ownership` / `defer-f16-macos-native-crash` / `defer-f17-quarantine-ids` / `defer-r71-provider-serverside` / `defer-r71-transformers-undeclared-dep` / `defer-r72-dsh-native-tools` / `defer-r72-dsh-web-interactive-matrix` / `defer-r73-dsh-event-rename`（alpha.2 特征锚已齐、稳定锚缺=alpha 线+changelog 未审，L2 候选哨戒续挂）/ `defer-r74-logo-bitmap-matrix` / `defer-r75-registerhooks-esm-arm`。
+
 ## Unreleased — ADR-0080 r79: pathlint 豁免域契约收敛——三豁免域显式立法（covered-fence/locator 行/`/x` 散文面限定）+ WORD_CHAR 边界修复（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
 
 ### Changed

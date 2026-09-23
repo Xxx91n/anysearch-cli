@@ -9,9 +9,10 @@ anywhere**.
 
 ### Maintainer setup (one-time, verbatim)
 
-For EACH of the four publishable packages
-(`@anysearch-cli/cli`, `@anysearch-cli/mcp`, `@anysearch-cli/plugin`,
-`@anysearch-cli/embedding`):
+For EACH of the five publishable packages (`@anysearch-cli/cli`,
+`@anysearch-cli/mcp`, `@anysearch-cli/plugin`, `@anysearch-cli/embedding`,
+`@anysearch-cli/dsh-plugin` — see "First publish of a NEW package" below
+before its trusted-publisher row can be saved):
 
 1. npmjs.com → package page → **Settings** → **Publishing access** →
    **Trusted Publisher** → **GitHub Actions**.
@@ -51,7 +52,8 @@ a cloud-hosted runner which manual `pnpm publish` does not have).
 
 ## Publish set
 
-Four packages, all `publishConfig.access: "public"`:
+Five packages, all `publishConfig.access: "public"`
+(`@anysearch-cli/dsh-plugin` additionally declares `provenance: true`):
 
 | package | shape |
 |---|---|
@@ -59,11 +61,53 @@ Four packages, all `publishConfig.access: "public"`:
 | `@anysearch-cli/mcp` | same |
 | `@anysearch-cli/plugin` | same |
 | `@anysearch-cli/embedding` | real dist build (`publishConfig.exports` swaps `src` → `dist/index.js` at pack) |
+| `@anysearch-cli/dsh-plugin` | esbuild ESM bundle (`lib/index.js` + `cordis.patch.yml` + `AGENTS.md`; `@deepseek-ai/*` external — host-provided at runtime, never bundled) |
 
 `kernel`, `store`, `retriever` are never published — bundling makes them
 build-time-only. `@anysearch-cli/embedding` is `peerDependencies` +
 `peerDependenciesMeta.optional`: never auto-installed, no warning when absent,
 explicit install enables the vector arm (FTS-only is a supported state).
+
+## First publish of a NEW package (pre-publish path, ADR-0081 D-003)
+
+OIDC trusted publishing requires the package to EXIST on npm already —
+the trusted-publisher row attaches to an existing package page. A brand-new
+package therefore takes a four-step pre-publish path (0.0.3 manual-first
+precedent, now codified for dsh-plugin@0.0.8):
+
+1. **Manual first publish (user action)** — check out a commit where the
+   package is publish-ready at the pre-bump version (for dsh-plugin:
+   private:false + publishConfig + `version: 0.0.7`), then
+   `cd apps/dsh-plugin && pnpm publish` (or `npm publish <packaged tgz>`
+   against the verified tarball). The published artifact is the REAL
+   package — never a placeholder shell. No provenance is emitted by a
+   local manual publish (ADR-0064 D-006 consequence class, recorded).
+2. **Configure the Trusted Publisher on npmjs** — package page →
+   Settings → Publishing access → Trusted Publisher → GitHub Actions:
+   repository owner `Xxx91n`, repository name `anysearch-cli`,
+   workflow filename `release.yml`, environment *(empty)*.
+   **Since 2026-05-20 npm also requires an explicit allowed-actions
+   selection — tick `npm publish`** or the OIDC exchange is rejected.
+   (TP slots: up to 10 per package.)
+3. **Tag the train** — `git tag v0.0.8 && git push origin v0.0.8` (user
+   action) once steps 1–2 are confirmed. The publish job then ships all
+   five packages via OIDC + sigstore provenance; dsh-plugin's provenance
+   coverage starts at 0.0.8 (the manual 0.0.7 carries none).
+4. **Verify** — `npm view @anysearch-cli/dsh-plugin dist.attestations`
+   + install-and-run smoke on the published version.
+
+**No-go branch — do NOT ship a partial manifest.** If step 1 or 2 is not
+ready, the v0.0.8 tag SLIPS (`顺延`) rather than temporarily dropping
+dsh-plugin from the pack list — a tag whose OIDC leg hits ENEEDAUTH on a
+new package is a red release run, and ad-hoc list surgery under time
+pressure is exactly how manifests drift.
+
+**Provenance boundary note (Miasma lesson).** Sigstore provenance attests
+**origin** — which repo/workflow/ref produced the artifact — NOT
+**integrity**: it does not prove the source tree was unmodified or the
+deployed artifact bit-identical to a reviewed one. Treat provenance as a
+supply-chain *attribution* signal, not a tamper seal; integrity assurance
+still lives in review + the gates above.
 
 ## Sequence
 

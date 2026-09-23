@@ -1,0 +1,13 @@
+### T2 revalidation @ 0.0.8 (post-bump final artifact)
+$ pnpm pack --pack-destination /tmp/r80-e6/pack8   (apps/dsh-plugin)
+-> anysearch-cli-dsh-plugin-0.0.8.tgz
+$ dsh plugin add --profile headless <tgz>          (DSH_HOME=isolated temp)
+-> + @anysearch-cli/dsh-plugin file:...0.0.8.tgz; pnpm v11.24.0 Done in 925ms
+$ dsh --profile headless --dump-config
+# == @anysearch-cli/dsh-plugin
+- id: anysearch-dsh-plugin
+  name: '@anysearch-cli/dsh-plugin'
+- id: mcp-anysearch
+  name: '@deepseek-ai/dsh-mcp-client'
+  config: {serverName: anysearch, transport: stdio, command: ans-mcp, args: [], toolCallTimeoutMs: 60000}
+$ dsh --version -> 0.1.5-rc.2
