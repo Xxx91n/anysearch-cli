@@ -1,0 +1,18 @@
+# R80 Q5 — 发布就绪轮收口判据（三段式定制）
+
+## 账本状态（R80 current 全量）
+
+- D-001：R80=「发布就绪轮」，凝聚轴=0.0.8 发布事件同一 pass/fail 验收面。四腿：产品备货/E6 闸内执法（实验+三选一决策记档）/派生件新鲜度腿/T0 ride-along（dsh rc.3+alpha.1 出闸复检+#1764 哨）。npm publish/tag=用户扳机。
+- D-002：票序 T0→T1 E6→T2 产品→T3 新鲜度腿→T4 文书；E6 阻塞语义=γ 条件阻塞（可核验触发条件三件：在册闸内版/回放投毒构建/trustLockfile 不覆盖）+time-bound exception 五要件（policy 引用/justification/已验证补偿控制/具名 acceptor/到期 ≤90 天+复验触发+续期须新轮立项）。
+- D-003：dsh-plugin 预首发——用户手发 0.0.7→配 TP（勾 npm publish allowed action）→T2 落 private 翻转+publishConfig+pack 清单接入+0.0.8 sync-bump+publishing.md 扩节→tag 后五包 OIDC+provenance；v0.0.8 tag 前置=首发+TP 已就绪，否则顺延不拆清单。
+- D-004：新鲜度腿=ship-gate step 1 家族扩面——CHANGELOG 轮次条目在场断言（fail）+no-changelog-entry 豁免字段+可机验声明注册面（计数/符号存在性/日期轮次）接入 closeout-coverage+叙述一致性先 warn 后 fail；声明与推导命令同 diff。
+
+## 收口判据草案（A 案三段）
+
+(i) 取证段：T0 实录+E6 实验 transcript 归档+格式化结论行+观测窗口截至戳+三选一裁决落 ADR（例外放行则五要件齐）。
+(ii) 就绪段：dsh-plugin 翻转+publishConfig+release.yml 接入+pnpm pack 拆验+dsh plugin add 复验+0.0.8 sync-bump+publishing.md 新包首发节+新鲜度腿落地（绿树绿/陈旧 fixture 红）+dogfooding（本轮收口过新闸）+turbo check/test+ship-gate 全绿+install 无脏。
+(iii) 文书段：ADR-0081（含 rejected alternatives）+registry 更新+CONTEXT 新词+handoff+判据↔证据映射表+度量单行+.gitignore 白名单+pathlint 豁免域冻结宣告+审计红 commit 工序例外注记+用户动作清单+but 干净。
+
+## 调研问题
+
+工业界成熟落地心智模型下：(1) 发布就绪/release-readiness 类迭代的 Definition of Done 与验收证据链有哪些成熟框架（release readiness checklist、DoD 分层、证据可审计性 audit trail、sign-off 记录形态）？(2) 对「闸的豁免/例外放行」随附的记档与复验机制（time-bound exception register、expiry tracking、re-verification triggers）成熟形态如何落到迭代收口判据里？(3) 对本仓三段草案给出充分性评估——漏项/过度项识别，含对「dogfooding 本轮收口过新闸」「pathlint 冻结宣告」「审计红 commit 例外注记」三个非标项的业界同构实践判定，给出推荐与理由。

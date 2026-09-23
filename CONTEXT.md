@@ -1326,3 +1326,29 @@ lint 豁免域必须显式立法开列边界（本仓=marker 覆盖 fence 内全
 
 ## Mirror Consistency Assertion（镜像一致性断言）
 契约存在两载体时（ADR 正文+AGENTS.md 镜像段），一致性须机械断言双在位（豁免域关键词 grep 级断言入 CI/fixture），不靠人肉同步——双载体漂移是立法级风险。_Avoid_: 只改一处忘镜像；镜像漂移靠记忆发现。来源：atomcode R79-Q4+R79 D-004。
+
+## Grill Round 80 — Terms (ADR-0081)
+
+### Release Readiness Round（发布就绪轮）
+一轮以「单个发布事件的同一 pass/fail 验收面」为凝聚轴的轮次——多腿合法当且仅当每腿结论都决定同一放行结果；不共享验收面的工程须拆轮。_Avoid_: 以「两条轨都重要」为名混装不同验收面（杂物筐）；把发布先决执法判给发布之后（时序倒置）。来源：atomcode R80-Q1+R80 D-001。
+
+### Shared Pass-Fail Event（共享放行事件）
+多腿同轮的合法性判据：两腿是否共享同一个 pass/fail 事件（本仓=0.0.8 发布闸）。共享→同轮合法；不共享→拆轮。_Avoid_: 把「同轮」误作「同批 commit」；验收面不同却强行同轮。来源：atomcode R80-Q1+R80 D-001。
+
+### Conditional Gate-Blocking (γ)（γ 条件阻塞）
+闸裁决对发布的阻塞语义：仅当可核验触发条件（非裁量清单）命中才阻塞；未命中按带期例外放行；「gate verdict」与「gate improvement 整改」是并列输出——整改进 backlog 不拦发布。_Avoid_: 无条件阻塞（换气轮被工程吞掉）；纯不阻塞无到期（undeclared policy change 失败模式）。来源：atomcode R80-Q2+R80 D-002。
+
+### Time-Bound Exception（带期例外记档）
+例外放行的记档形态：五要件=policy 精确引用+justification+已验证补偿控制+具名 acceptor+固定到期（≤90 天），附复验触发事件+续期须新轮立项；例外条目与取证 transcript/闸记录双链（Linked_Incidents 等价）。_Avoid_: 记档无到期；续期口头化；例外与证据断链。来源：atomcode R80-Q2/Q5+R80 D-002/D-005。
+
+### Pre-Publish（预首发）
+新包进 OIDC/trusted-publishing 发布面的前置路径：真实版本手动首发→npmjs 配置 TP（显式勾 allowed actions 含 npm publish）→后续版本走 OIDC+provenance；首发版无 provenance 属记档后果非缺陷。_Avoid_: tag 含未首发包（ENEEDAUTH+版本号作废）；占位壳首发；幂等跳过绕路。来源：atomcode R80-Q3+R80 D-003。
+
+### No-Go Branch（顺延分支）
+收口判据中的显式否决分支：可核验失败条件（pack 拆验失败/install 脏/前置未就绪）→顺延不拆清单，须写成判据文本条目非隐含语义。_Avoid_: no-go 靠临场裁量；不可变发布（npm unpublish 受限）无回滚预案条目。来源：atomcode R80-Q5+R80 D-005。
+
+### Derived-Artifact Freshness（派生件新鲜度）
+入库生成件/派生件的保鲜机制：权威落点=CI/merge 闸内「再生成→diff→exit-code」fail-closed；pre-commit 仅便利层；scheduled job 仅兜底；覆盖缺口（有闸未注册）与无闸同败。_Avoid_: 非闸化自律脚本（复刻「check 存在没人跑」）；挂 release 闸（病发面是每次收口）。来源：atomcode R80-Q4+R80 D-004。
+
+### Machine-Verifiable Claim（可机验声明）
+有客观推导命令的文档声明（计数/符号·路径存在性/日期·轮次号/结构化字段）——须注册进 closeout-coverage 信号面随收口重推导比对；声明与推导命令同一次 diff 变更（golden-file 原则）。叙述因果/人审裁定/外部事实留人验。_Avoid_: 可机验声明不注册靠记忆；叙述断言直接 fail 诱发 token edits（先 warn 后升）。来源：atomcode R80-Q4+R80 D-004。

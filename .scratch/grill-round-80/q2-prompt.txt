@@ -1,0 +1,27 @@
+# R80 Q2 — 票序结构 + E6 裁决对发布事件的阻塞语义
+
+## 账本状态（R80 已立账，current 记录）
+
+- D-001（current）：R80=「发布就绪轮」，凝聚轴=0.0.8 发布事件同一 pass/fail 验收面。四腿：①产品备货（dsh-plugin 发布就绪+0.0.8 列车，扳机留用户）②E6 闸内执法（trustLockfile 钉版实测+三选一决策记档，自建护栏工程递延 R81）③派生件新鲜度腿（随车机验）④T0 ride-along（dsh rc.3/alpha.1 出闸复检+#1764 哨）。约束：npm publish/tag 用户扳机；禁止静默改向。
+
+## 仓库机械面（实物核实）
+
+- release.yml：pre-tag workflow_dispatch（release-gate.mjs --pre-tag=OF peek+eval-looks.json 账本回写+自派发 ci/ship-gate 等绿）→ tag push v* → publish job=npm OIDC trusted publishing；pack 清单硬编码 packages/embedding apps/cli apps/mcp apps/plugin（dsh-plugin 缺席，接入=workflow 编辑）。
+- OIDC trusted publishing 需包已在 npmjs 存在→dsh-plugin 首发实质=用户手动 npm publish（或首发后配 trusted publisher），文档 docs/publishing.md 有 checklist。
+- 版本全仓同步 0.0.7（9 包）；公开集 embedding/cli/mcp/plugin 带 publishConfig.access=public。
+- 派生件机验基建半在：gen-adr-index.mjs --check（stale exit 1）+closeout-coverage.mjs（ship-gate step 1g 注册信号推导）——R79 审计 F-1 之伤=check 存在但收口未跑。
+- E6 实证：pnpm 11.24.0 lockfile 携闸内版时 frozen/fetch 静默放行 minimumReleaseAge；补偿控制=lockfile review 纪律已记档。GHSA-q6j5-fjx5-2mc3（CVSS 6.8 Moderate）确认此类缺口在已记档补偿控制下属业界可接受过渡态。
+- R79 审计复审观测项：kernel llm-init.test.ts SSE stub 并行竞态 flake（R80 watch）。
+
+## 待裁问题
+
+Q2a 票序：T0 取证 → T1 E6 闸内执法（实验+决策）→ T2 产品备货一票 → T3 新鲜度腿工程 commit → T4 文书收口。备选：产品先行（先货后闸）/ 合票 / 其他结构。
+
+Q2b 阻塞语义（关键立法点）：若 E6 三选一裁决=「自建护栏」，0.0.8 是否阻塞等待 R81 护栏落地？
+- 选项α（不阻塞）：按已记档补偿控制放行 0.0.8，护栏工程归 R81——换气轮不被吞。
+- 选项β（阻塞）：verification-first 严格解，0.0.8 等护栏——货架可能再空一轮。
+- 选项γ（条件阻塞）：仅当实测发现新风险（如 lockfile 已有闸内版本在册/回放可投毒构建产物）才阻塞，否则记档放行。
+
+## 调研问题
+
+工业界成熟心智模型下：(1) 发布列车的登车判据中，「供应链安全闸的验证结论」与「该闸的加固工程建设」是否应区分阻塞性？即「gate verdict」阻塞 vs 「gate improvement」不阻塞的分界实践（release readiness/risk acceptance/补偿控制框架，如 NIST SP 800-53B compensating controls、SLSA、安全例外/expiry 实践）。(2) 冲刺/迭代内任务排序的业界判据——风险优先（risk-first）vs 价值优先（value-first）在「发布就绪轮」这类混合冲刺中的选择依据。(3) 对本仓 Q2a/Q2b 给出推荐与理由，含被否选项否决理由。

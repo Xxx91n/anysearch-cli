@@ -1,0 +1,25 @@
+# R80 Q3 — @anysearch-cli/dsh-plugin 首发路径（npm trusted publishing 新包 chicken-and-egg）
+
+## 账本状态（R80 current 记录）
+
+- D-001：R80=「发布就绪轮」，凝聚轴=0.0.8 发布事件同一 pass/fail 验收面；产品腿=dsh-plugin 发布就绪全链路+0.0.8 列车备货；npm publish/tag=用户扳机。
+- D-002：票序 T0 取证→T1 E6 闸内执法→T2 产品备货一票→T3 新鲜度腿→T4 文书；E6 阻塞语义=γ 条件阻塞+五要件例外记档；自建护栏工程归 R81。
+
+## 仓库机械面（实物核实）
+
+- apps/dsh-plugin=@anysearch-cli/dsh-plugin@0.0.7，private:true 无 publishConfig，files=[lib,cordis.patch.yml,AGENTS.md]，keyword dsh-plugin 已就位（发布后自动入 dsh 官方目录）。
+- release.yml publish job=npm OIDC trusted publishing（id-token:write，无 NPM_TOKEN）；pack 清单硬编码 packages/embedding apps/cli apps/mcp apps/plugin 四包。
+- docs/publishing.md 明文先例：「The package must exist already (it does — published manually at 0.0.3)」——0.0.3 为用户手动首发（无 sigstore provenance，ADR-0064 D-006 记档为已知后果非缺陷）；trusted publisher 须包存在后逐包配置（npmjs Settings→Publishing access→GitHub Actions，repo/workflow/environment 三字段）。
+- 全仓 9 包版本同步 0.0.7，发布惯例=sync-bump 全仓同号。
+- dsh 宿主为 alpha/rc 高频线（插件钉 dsh 0.1.5-rc.2 验证过），公开发布即接兼容性追踪义务。
+
+## 待裁问题
+
+首发路径三选项：
+- A 预首发：用户即刻手动 npm publish @anysearch-cli/dsh-plugin@0.0.7 → 配 trusted publisher → R80 落 pack 清单接入+0.0.8 sync-bump → tag v0.0.8 五包统一 OIDC（0.0.8 起带 provenance）。
+- B 随车首发：v0.0.8 tag 直接含 dsh-plugin——需 publish 腿幂等跳过（npm view 判存在）或首发走例外路径，版本碰撞风险。
+- C 仅手发本轮：pack 清单接入递延 R81，v0.0.8 自动化面不含 dsh-plugin。
+
+## 调研问题
+
+工业界成熟落地心智模型下：(1) npm OIDC trusted publishing 对「尚不存在的包」的行为边界——npmjs 官方文档对 first publish / new package / trusted publisher 预配置的准确语义是什么？新包首发有哪些被官方支持的自动化路径（granular access token / OIDC / 手动），各自的 provenance 与安全后果？(2) monorepo 中新成员包加入既有 release train 的成熟模式——预首发（pre-publish）vs 幂等 publish step（skip-if-exists）vs 单独首发轨，业界（changesets/pnpm publish -r/手搓 workflow）惯用哪种，踩坑点是什么？(3) 对本仓 A/B/C 给出推荐与理由，含被否选项否决理由；同时评估「预首发 0.0.7 无 provenance」的后果等级（对照 0.0.3 先例与 sigstore 覆盖起点惯例）。

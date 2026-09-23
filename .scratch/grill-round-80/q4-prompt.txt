@@ -1,0 +1,25 @@
+# R80 Q4 — 派生件新鲜度腿的闸落点与覆盖面（「记录的记录」打回类根治）
+
+## 账本状态（R80 current 记录）
+
+- D-001：R80=「发布就绪轮」，凝聚轴=0.0.8 发布事件同一 pass/fail 验收面；四腿含派生件新鲜度腿（随车机验）。
+- D-002：票序 T0→T1 E6→T2 产品→T3 新鲜度腿工程 commit→T4 文书；γ 条件阻塞+五要件例外记档。
+- D-003：dsh-plugin 预首发路径（用户手发 0.0.7→配 TP→0.0.8 随车五包 OIDC）。
+
+## 仓库实物（已核实）
+
+- 外部评审（七轮锐评）坐实：9 场独立审计 4 场裁决不通过，全部同类=「记录的记录」（派生件新鲜度）——R74-F2 日期列迁移半截+伪述入库；R75-F1 ADR 写 no CHANGELOG entry 与实物 Unreleased 节矛盾；R76-F1 27/27 计数失真扩散 4 处永久记录；R79-F1 index.md stale 致 test+ship-gate 红。处方=pre-closeout 派生件新鲜度腿：index regen check+CHANGELOG 轮次条目在场+声明计数重推导。
+- ship-gate.mjs step 1 家族现状（fail-closed 同构字母序列）：1b=ADR index freshness（stepAdrIndex，gen-adr-index.mjs --check 语义）、1g=closeout handoff 必填字段 lint（closeout-coverage.mjs 注册信号推导，ADR-0077）、另有 stepGovernedJsonCanonical、1h README parity、1i pathlint。
+- 关键诊断：R79-F1 时 step 1b 已存在且正确翻红——缺口是「覆盖面」非「闸存在」：CHANGELOG 轮次条目与文档声明计数无闸；且审计报告 commit 落 main 自带红是工序内置例外（报告的就是那颗红灯），非闸可根治。
+- 脚本基建：gen-adr-index.mjs（--check exit 1 if stale）、closeout-coverage.mjs（注册信号推导）、governed-json.mjs 均在位。
+
+## 待裁问题
+
+新鲜度腿落点三选项：
+- A：扩展 ship-gate step 1 家族新增断言（新子步 1j/9 或并入 1g 家族，粒度票内定）——CHANGELOG 当前轮 ADR 条目在场断言+可重推导声明注册面（有机验命令的声明须注册进 closeout-coverage 信号面），fail-closed 同构。
+- B：挂进 release-gate.mjs pre-tag 腿——发布专属闸。
+- C：独立 closeout 脚本（非闸化，agent 收口自律运行）。
+
+## 调研问题
+
+工业界成熟落地心智模型下：(1) 生成件/派生件入库仓库的新鲜度执法（generated-file freshness / codegen drift detection / golden-file / docs-as-code 声明核验）的成熟落点模式是什么——pre-commit hook vs CI gate vs 专职 freshness job 的分工与失效模式？(2) CHANGELOG 轮次条目在场性（release-notes presence lint）与「文档中可机验声明的重推导」（claims re-derivation/executable docs/literate testing 族）有哪些成熟工具形态与先例（changesets/release-please 生态、docs tests、fitness function 族）？(3) 对本仓 A/B/C 给出推荐与理由，含被否选项否决理由；另评估「声明计数重推导」的可行粒度边界（哪些声明值得机验化，哪些只能留人验）。

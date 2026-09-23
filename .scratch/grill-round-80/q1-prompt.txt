@@ -1,0 +1,30 @@
+# R80 Q1 — 主题定界：产品换气 vs lockfile 执法 vs 双轨同轮（锐评张力裁决）
+
+## 调研背景（仓库实物）
+
+本仓 anysearch-cli：信息专精 Agent CLI（垂直领域理念），monorepo=4 packages（embedding/kernel/retriever/store）+3 apps（cli/mcp/plugin）+1 host adapter（apps/dsh-plugin=@anysearch-cli/dsh-plugin@0.0.7, private:true）。npm 已发 0.0.3→0.0.7 五版（latest=0.0.7）。治理方法=grill 轮次制：一轮一主题（ADR-0029 立法），R79 新增「内聚三判据」（同文件/子系统+同决策类型+共享验收面，ADR-0080/CONTEXT）。
+
+## 锐评输入（第七轮外部评审，事实面已亲验坐实）
+
+- R76→R79 连续四轮 CHANGELOG 全标「无发布态代码增量，不 bump」——治理机器自催化，货架四轮零进货。
+- registry 挂现成产品货：defer-r72-dsh-plugin-npm-publish（apps/dsh-plugin 发布形状 R72 已端到端验证：pnpm pack→dsh plugin add→dump-config；private 单字段翻转+publishConfig 即就绪；npm keyword dsh-plugin 自动入官方目录）。
+- 9 场审计 4 场打回全为同类「记录的记录」（派生件新鲜度：adr-index regen/CHANGELOG 轮次条目/计数重推导未跑机验）。
+- 锐评处方：R80 换气（lockfile 轮与 dsh-plugin publish 对调+带 0.0.8）；派生件新鲜度腿杀打回类；pathlint 冻结宣告。
+
+## 待裁张力（用户倾向 C，需调研证实/证伪）
+
+- A=换气轮：dsh-plugin npm 发布就绪+0.0.8 发布列车备货（publish/tag 为用户扳机）；T0 ride-along=dsh rc.3/alpha.1 出闸复检+E6 trustLockfile 钉版实测仅实验腿（护栏决策递延 R81）；可带派生件新鲜度工程 commit。
+- B=交接原案：E6 lockfile 执法整轮（钉版 pnpm 11.24.0 实测 trustLockfile→自建护栏/引用上游/记档三选一→若自建则落地）；dsh-plugin 续债。
+- C=A+B 双轨同轮：产品发布与 lockfile 执法全做。
+- D=纯治理收尾（新鲜度腿+pathlint 冻结+审计红 commit 备注）=锐评警告的第五轮治理。
+
+## 关键约束与风险
+
+- npm publish/tag=外部生产动作，本仓惯例 tag 触发 release 工作流，代理备货到扳机前。
+- dsh 宿主为 alpha/rc 高频线（0.1.7-alpha.2 于 09-22 发布），对 rc 线宿主发公开插件=接兼容性追踪义务。
+- E6 实证在案：pnpm 11.24.0 frozen/fetch 回放 lockfile 内闸内版静默放行（与官方文档 trustLockfile:false 逐条重放断言存在张力）；补偿控制=lockfile review 纪律已记档。
+- 一轮一主题教义下 C 的双轨是否构成杂物筐，或「发布就绪」本就是含供应链闸的统一验收面（release engineering 同构），须业界模型裁断。
+
+## 调研问题
+
+工业界成熟心智模型下：(1) 发布轮（release train）与供应链安全执法（lockfile 完整性/最小发布龄期回放校验）是否常被合并为同一迭代的「发布就绪」验收面？SLSA/release-readiness/release-gating 实践中二者的关系如何界定？(2) 迭代/冲刺范围划分的凝聚性判据（cohesion criteria）如何处理「一个产品发布+一项同发布强相关的安全闸强化」的组合——何时算合理同轨，何时算 scope creep？(3) 对本仓具体情境（4 轮零产品后换气需求 vs 已记档有兜底的安全缺口）给出推荐与理由，含被否选项的否决理由。
