@@ -29,3 +29,7 @@ Unmarked fence:
 ```text
 %TEMP%/unmarked-fence-hit.txt
 ```
+Neighbor control: unmarked fence with in-repo ref still violates (fence not covered):
+```text
+D:/Repo/Root/docs/x.md inside unmarked fence
+```

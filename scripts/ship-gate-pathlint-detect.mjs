@@ -139,7 +139,6 @@ export function scanLines(lines, env) {
       continue;
     }
     const hits = detectHits(l);
-    for (const inf of detectSurfacedSkips(l)) infos.push({ line: i + 1, kind: "posix-root", detail: "single-segment POSIX root " + JSON.stringify(inf.text) + " — surfaced-skip (cannot determine; not blocking)" });
     if (fenced) {
       if (hits.length) {
         fenceHadHit = true;
@@ -148,6 +147,10 @@ export function scanLines(lines, env) {
       continue;
     }
     const isLocator = env.locators.some((re) => re.test(l));
+    // R79 exemption-domain contract (ADR-0072 amendment): surfaced-skip /x info
+    // is a prose-face signal — silent on locator lines; fenced lines already
+    // returned above via continue (verbatim excerpt surface, covered or not).
+    if (!isLocator) for (const inf of detectSurfacedSkips(l)) infos.push({ line: i + 1, kind: "posix-root", detail: "single-segment POSIX root " + JSON.stringify(inf.text) + " — surfaced-skip (cannot determine; not blocking)" });
     if (hits.length && !isLocator) { const v = hitViolation(l, i, env); if (v) violations.push(v); }
     // Ratchet leg: a marker on a line with no locator token is dead weight —
     // unless it directly precedes a ``` fence (evaluated at block close above).

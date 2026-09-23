@@ -20,3 +20,14 @@ plain code block, nothing local
 ```
 Marked UNC \\host\share\x <!-- machine-local: green fixture marker @ 2026-09-22 -->
 Marked AppData AppData\Roaming\x <!-- machine-local: green fixture marker @ 2026-09-22 -->
+Exemption domain: marker-covered fence skips ALL checks (in-repo abs path + /x inside):
+<!-- machine-local: covered transcript excerpt @ 2026-09-23 -->
+```text
+%TEMP%/covered-hit.txt plus /etc and D:/Repo/Root/docs/x.md verbatim
+```
+Exemption domain: /x info also silent inside UNMARKED fence (content is verbatim excerpt):
+```text
+plain excerpt with /tmp verbatim
+```
+Exemption domain: locator line exempts in-repo ref and /x info:
+Stack: D:/Repo/Root/docs/x.md /etc @ abc1234

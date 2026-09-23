@@ -52,6 +52,36 @@ test("green fixture: zero violations", () => {
   }
 });
 
+test("red fixture: unmarked-fence in-repo ref still violates (neighbor control)", () => {
+  const { violations } = scanLines(redLines, env);
+  const n = redLines.findIndex((l) => l.includes("inside unmarked fence")) + 1;
+  assert.ok(n > 0, "red fixture must carry the unmarked-fence in-repo line");
+  assert.equal(violations.filter((v) => v.line === n)[0]?.kind, "in-repo", "uncovered fence keeps in-repo enforcement");
+});
+
+test("exemption domain: /x info silent on every fence + locator line (A2)", () => {
+  const { infos } = scanLines(greenLines, env);
+  let fenced = false;
+  const exempt = new Set();
+  greenLines.forEach((l, idx) => {
+    if (/^\s*```/.test(l)) { fenced = !fenced; return; }
+    if (fenced || env.locators.some((re) => re.test(l))) exempt.add(idx + 1);
+  });
+  const baits = [...exempt].filter((n) => detectSurfacedSkips(greenLines[n - 1]).length > 0);
+  assert.ok(baits.length >= 3, "expected >=3 exempt-surface /x bait lines, got " + baits.length + ": " + JSON.stringify(baits));
+  for (const i of infos) assert.ok(!exempt.has(i.line), "surfaced-skip must be silent on exempt line " + i.line + ": " + JSON.stringify(greenLines[i.line - 1]));
+  assert.ok(infos.some((i) => i.detail.includes("/etc")), "prose /etc info must remain");
+});
+
+test("exemption domain: covered fence skips in-repo check; locator line exempts in-repo", () => {
+  const { violations } = scanLines(greenLines, env);
+  const cov = greenLines.findIndex((l) => l.includes("covered transcript excerpt")) + 1;
+  const covHit = greenLines.findIndex((l) => l.includes("D:/Repo/Root/docs/x.md verbatim")) + 1;
+  const loc = greenLines.findIndex((l) => /^\s*Stack\b/.test(l) && l.includes("D:/Repo/Root")) + 1;
+  assert.ok(cov > 0 && covHit > 0 && loc > 0, "fixture must carry covered-fence + locator in-repo lines cov=" + cov + " hit=" + covHit + " loc=" + loc);
+  assert.equal(violations.filter((v) => v.line === covHit).length, 0, "covered-fence in-repo ref must be exempt");
+  assert.equal(violations.filter((v) => v.line === loc).length, 0, "locator in-repo ref must be exempt");
+});
 test("green fixture: /etc produces info surfaced-skip only", () => {
   const { infos } = scanLines(greenLines, env);
   assert.ok(infos.some((i) => i.line === 12 && i.detail.includes("/etc")), "single-segment /etc must surface at info level");
