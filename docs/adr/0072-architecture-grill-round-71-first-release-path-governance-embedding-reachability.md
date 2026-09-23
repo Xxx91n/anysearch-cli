@@ -30,11 +30,25 @@ requirement + EBADDEVENGINES adjudication).
 
 - Three-way classification replaces any blanket rule: **locator/Stack lines**
   may cite bare absolute paths (they name places, not targets); **in-repo
-  targets** must be repo-relative — a governed marker does NOT exempt them;
+  targets** must be repo-relative — a governed marker does NOT exempt them outside the codified exemption domain (amendment below);
   **out-of-repo targets** keep absolute paths AND require a governed
   declaration `<!-- machine-local: <reason> @ <YYYY-MM-DD> -->` with non-empty
   reason + ISO date (bare/malformed declarations are violations — q2
   correction 1). A marker immediately before a fenced block covers the block.
+- **Amendment (grill-round-79, ADR-0080)** — the exemption domain is codified
+  explicitly; three exempt surfaces inside the marker/fence machinery:
+  (i) **covered fence** — a valid `machine-local` marker on the line directly
+  before a `````` fence exempts *all* checks inside the fenced block
+  (transcript excerpts must stay verbatim; rewriting paths destroys evidence
+  fidelity); (ii) **locator line** — `Stack:`-class lines may carry in-repo
+  absolute paths (place-naming semantics; the repo root is not always
+  repo-relative representable); (iii) **`/x` surfaced-skip** — informational
+  output is silent inside every fence (covered or not) and on locator lines
+  (it is a prose-face signal, not excerpt content). Non-exempt neighbors stay
+  enforced: in-repo absolute paths in unmarked fences and non-locator prose
+  still fail; `/x` in ordinary prose still surfaces; bare `C:\x` still <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
+  fails while identifier-glued `foo_C:\x` is not a hit (`WORD_CHAR`
+  includes `_`).
 - `scripts/ship-gate.mjs` step 1i/9 implements it fail-closed; the scan
   surface (roots + registered `.scratch` doc dirs) lives in
   `scripts/ship-gate-pathlint.config.json` — new doc types must be explicitly

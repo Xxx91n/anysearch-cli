@@ -140,3 +140,12 @@ test("unit: in-repo detection uses literal tokens only", () => {
   const w = scanLines(["ref %ROOT%/scripts/x.mjs here"], env).violations;
   assert.equal(w[0]?.kind, "missing-marker");
 });
+test("ADR-0072 <-> AGENTS.md exemption-domain mirror consistency", () => {
+  const adr = fs.readFileSync(path.join(ROOT, "docs/adr/0072-architecture-grill-round-71-first-release-path-governance-embedding-reachability.md"), "utf8");
+  const agents = fs.readFileSync(path.join(ROOT, "AGENTS.md"), "utf8");
+  const adrL = adr.toLowerCase(), agentsL = agents.toLowerCase();
+  for (const kw of ["exemption domain", "covered fence", "locator", "surfaced-skip"]) {
+    assert.ok(adrL.includes(kw), "ADR-0072 missing exemption-domain keyword " + JSON.stringify(kw));
+    assert.ok(agentsL.includes(kw), "AGENTS.md missing exemption-domain keyword " + JSON.stringify(kw));
+  }
+});

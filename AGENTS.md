@@ -54,8 +54,16 @@ One grill round = one themed topic. Cohesive engineering items in the same subsy
 Machine-local paths in committed markdown are linted **by usage class** — ship-gate step 1i (`scripts/ship-gate.mjs`; sweep registration in `scripts/ship-gate-pathlint.config.json`) enforces this section fail-closed. A blanket ban is wrong on purpose: a locator's job is machine precision, so absolute paths survive in exactly one class.
 
 - **Locators / Stack lines** — a line whose role is locating (the `Stack:` header field) may keep an absolute path bare. This is the only bare-absolute class.
-- **In-repo target references** — a path resolving inside this repo (e.g. an absolute path to `scripts/...`, `docs/...`, `.scratch/...` on the author's machine) must be **repo-relative**. Machine-local absolute paths to in-repo targets are violations; markers do not exempt them.
+- **In-repo target references** — a path resolving inside this repo (e.g. an absolute path to `scripts/...`, `docs/...`, `.scratch/...` on the author's machine) must be **repo-relative**. Machine-local absolute paths to in-repo targets are violations; markers do not exempt them outside the exemption domain codified below.
 - **Out-of-repo targets** — Temp dirs, sibling checkouts, user-level config, CI runner workspaces, other hosts' paths: keep the absolute path AND declare it with a governed marker on the same line: `<!-- machine-local: <reason> @ <YYYY-MM-DD> -->`. A marker missing reason or date is itself a violation. A valid marker on the line directly before a `````` fence covers the whole fenced block (transcript excerpts). Open declarations are audited quarterly.
+- **Exemption domain (R79 codification, ADR-0080)** — three exempt surfaces:
+  covered fence (valid marker directly before the fence) exempts all checks
+  inside the block; `Stack:` locator lines may carry in-repo absolute paths;
+  `/x` surfaced-skip info is silent inside every fence and on locator lines.
+  Non-exempt neighbors stay enforced: unmarked-fence in-repo refs and
+  non-locator prose in-repo refs still fail; prose `/x` still surfaces; bare
+  `C:\x` still fails while identifier-glued `foo_C:\x` is not a hit <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
+  (`WORD_CHAR` includes `_`).
 
 Sweep scope (registered in the config — a new document type lands only by editing it): `*.md`, `docs/**/*.md`, and every tracked markdown file under `.scratch/` in a registered doc dir. Applies from grill-round-67 onward (locator class) and grill-round-71 onward (three-class refinement + fail-closed leg).
 

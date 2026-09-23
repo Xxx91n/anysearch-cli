@@ -62,7 +62,7 @@ Date: 2026-09-22。审计对象 = r78-grill(kok)+r78-impl(nkv→zun→ryr→qqy�
 - **P-3** nkv commit message 分类数（93+2+1）与 transcript（94 append+2 剥行+1 strip-inline=97）措辞漂移；总数 97 一致。
 - **P-4** T0 过程事故（node -e `$` 展开啃坏 ws yaml→快照恢复）已双处如实记档（transcript:54+报告偏差段），非隐瞒。
 - **P-5** ship-gate 扫描计数漂移（317→318/754→757）属活枚举良性。
-- **P-6** Standards 轴 judgement 级气味（不阻）：detect.mjs:38 WORD_CHAR 缺 `_` 边缘 FP（`foo_C:\x` 会报） <!-- machine-local: 判定器边界用例引用（审计文书） @ 2026-09-22 -->；markerAny 同语句双测；evidence 三 driver 头部样板重复；buildEnv 信任 cfg 字段（校验只在 ship-gate 侧，driver 直跑崩溃式 fail）；remediate driver 取首命中类作 reason 且 malformed 场景留旧 marker 在行内。
+- **P-6** Standards 轴 judgement 级气味（不阻）：detect.mjs:38 WORD_CHAR 缺 `_` 边缘 FP（`foo_C:\x` 会报）；markerAny 同语句双测；evidence 三 driver 头部样板重复；buildEnv 信任 cfg 字段（校验只在 ship-gate 侧，driver 直跑崩溃式 fail）；remediate driver 取首命中类作 reason 且 malformed 场景留旧 marker 在行内。
 
 ## 裁决建议
 

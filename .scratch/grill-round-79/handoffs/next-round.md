@@ -25,9 +25,9 @@ Date: 2026-09-23. 账本 `.scratch/grill-round-79/decision-ledger.md`（D-001~D-
 文件面：`scripts/ship-gate-pathlint-detect.mjs`+`packages/store/fixtures/pathlint/{red,green}.md`+`docs/adr/0072-*.md`+`AGENTS.md`（「Deliverable path discipline」镜像段）+镜像一致性断言载体（ship-gate 或 fixture 断言，实现时定）。
 
 1. **`fix(pathlint):` `/x` surfaced-skip 静默范围**=`detectSurfacedSkips` 产出移序到 fence/locator 判定之后——所有 fence 内（覆盖与否）+locator 行不再产 info；散文面照旧。红向：新增断言「fence 内 `/x` 零 info」改前实测失败（现态产 info）留输出片段→改后绿；近邻对照「散文 `/x` 仍产 info」不动；
-2. **`fix(pathlint):` WORD_CHAR 补 `_`**（detect.mjs `WORD_CHAR` 字符集）——`foo_C:\x` 绿向 fixture（改前误报=红）↔裸 `C:\x` 红向仍拦（近邻对照）；
+2. **`fix(pathlint):` WORD_CHAR 补 `_`**（detect.mjs `WORD_CHAR` 字符集）——`foo_C:\x` 绿向 fixture（改前误报=红）↔裸 `C:\x` 红向仍拦（近邻对照）； <!-- machine-local: 判定器用例字面量（裸盘符散文引用） @ 2026-09-23 -->
 3. **`docs:` ADR-0072 豁免域条款修订+AGENTS.md 镜像同步**（契约文本与同票 impl 同批落地防再漂）——显式开列三豁免域各附 rationale（NIST tailoring 纪律）：①marker 覆盖 fence 内全部检查跳过（transcript 证据保真——摘录内容非交付引用，改写即失真）；②locator（Stack:）行内 in-repo 豁免（指地点语义+仓根无法 repo-relative）；③`/x` info 在所有 fence+locator 行静默（摘录/定位上下文非散文面）；**镜像一致性断言**=三豁免域关键词两载体（ADR-0072+AGENTS.md）双在位的 grep 级断言（挂 ship-gate step 或 fixture 断言，实现时定但必须有机器腿）。
-- **近邻成对纪律**（D-004 补丁）：每个豁免断言携一线之差非豁免对照——covered-fence in-repo 放行↔unmarked-fence in-repo 仍拦；locator in-repo 放行↔非 locator 行同款仍拦；fence 内 `/x` 无 info↔散文 `/x` 仍产；`foo_C:\x` 不报↔裸 `C:\x` 仍拦。红态改前实测失败且失败原因与条款语义一致；不可区分者显式标 equivalent+理由呈报。
+- **近邻成对纪律**（D-004 补丁）：每个豁免断言携一线之差非豁免对照——covered-fence in-repo 放行↔unmarked-fence in-repo 仍拦；locator in-repo 放行↔非 locator 行同款仍拦；fence 内 `/x` 无 info↔散文 `/x` 仍产；`foo_C:\x` 不报↔裸 `C:\x` 仍拦。红态改前实测失败且失败原因与条款语义一致；不可区分者显式标 equivalent+理由呈报。 <!-- machine-local: 判定器用例字面量（裸盘符散文引用） @ 2026-09-23 -->
 - **回归面**：stale-marker 棘轮不受影响（含 covered-fence-stale-marker 案回归）；存量文档扫描零新增违例（现态 319 文档净为基线）；inline code 不豁免断言不破。
 - **验收**：红向改前实测（含原因语义核对）→改后绿；`pnpm run check`、`pnpm run test`、pathlint 腿直跑、`node scripts/ship-gate.mjs --skip-matrix`、`pnpm install` 全绿。
 

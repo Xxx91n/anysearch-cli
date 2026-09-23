@@ -31,7 +31,7 @@ Stack：r78 全栈（r78-grill kok + r78-impl nkv→zun→ryr→qqy→ovm→zrz�
 
 ## Known risks / deferred
 
-- WORD_CHAR 缺 `_` 边缘 FP（`foo_C:\x` 形会报）、buildEnv 信任 cfg（driver 直跑崩溃式 fail）、evidence 三 driver 头部样板重复——judgement 级气味，见审计报告 P-6。 <!-- machine-local: 判定器边界用例引用（交接文书） @ 2026-09-22 -->
+- WORD_CHAR 缺 `_` 边缘 FP（`foo_C:\x` 形会报）、buildEnv 信任 cfg（driver 直跑崩溃式 fail）、evidence 三 driver 头部样板重复——judgement 级气味，见审计报告 P-6。
 - WORKFLOW.md 依旧缺位（六次先例核销：R60/R70/R75/R77/R78/audit）。
 - pathlint 残余盲区：多段未知根 POSIX 路径不报（ADR-0079 Consequences 诚实登记）。
 
