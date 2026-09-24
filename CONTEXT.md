@@ -1352,3 +1352,38 @@ lint 豁免域必须显式立法开列边界（本仓=marker 覆盖 fence 内全
 
 ### Machine-Verifiable Claim（可机验声明）
 有客观推导命令的文档声明（计数/符号·路径存在性/日期·轮次号/结构化字段）——须注册进 closeout-coverage 信号面随收口重推导比对；声明与推导命令同一次 diff 变更（golden-file 原则）。叙述因果/人审裁定/外部事实留人验。_Avoid_: 可机验声明不注册靠记忆；叙述断言直接 fail 诱发 token edits（先 warn 后升）。来源：atomcode R80-Q4+R80 D-004。
+
+## Grill Round 81 — Terms (ADR-0082)
+
+### Product-Ingestion Round（产品吸气轮）
+以「registry 在册产品形债吸气」为凝聚轴的轮次——主轴=一条可执行产品债（本轮=provider-serverside 诊断 spike）；发布执行不立轮腿而降级为插曲协议。_Avoid_: 把「等用户扳机」当轮内容（等待期须由主轴填充）；为凑轮强行多轴并行（违内聚三判据）。来源：R81 D-001。
+
+### Release Interlude Protocol（发布插曲协议）
+发布执行的合法形态：用户扳机（手发/TP 配置/推 tag）触发→轮暂停→跑发布后 checklist+分级失败语义→每事件 transcript 落档→归位续票；触发即 preempt 但等待期不构成空转理由。_Avoid_: 发布执行升级为轮腿（验收面不共享）；插曲现场即兴定失败语义（预案须先立法）。来源：R81 D-001/D-004。
+
+### Three-Branch Recommendation（三分支推荐）
+诊断型 spike 的输出契约：端点复活→去种子化立项 / 死但可修→修复路线 / 死且外部不可控→如实降级宣称或换 provider；三出口均核销债或修正宣称，无空轮。_Avoid_: 双分支（漏「外部不可控」支逼出假修复承诺）；spike 产物直接当裁决（裁决权归收口 ADR）。来源：atomcode R81-Q2+R81 D-002。
+
+### Hypothesis Ledger（假设清单）
+侦察阶段的书面 exit criteria：≥3 个互斥假设各带 Supports/Conflicts/Test 三字段；降级收口时未测假设须携原 H# 编号+Test 字段随具名票转移=「无损续接」的可操作定义。_Avoid_: 假设只在脑中（头号失败=findings 未捕获）；降级票丢 Test 字段（下轮须考古重推）。来源：atomcode R81-Q3/Q5+R81 D-003/D-005。
+
+### Differential Probe Matrix（判别探针矩阵）
+活体实验的纪律形态：每格必须区分≥2 假设否则裁掉；必含预期推翻偏爱假设的格子（反 favorite-cause-itis）；最小充分集≈5 探针半天级，不重演业务流量。_Avoid_: 重复性 replay 堆证据不区分假设；只跑支持偏爱假设的格。来源：atomcode R81-Q3+R81 D-003。
+
+### Environment Constant（环境常量）
+诊断期间不可切的环境面：本机 fake-ip DNS（198.18.0.x 段=Clash/mihomo 特征）先测值再恒定——中途切代理使前后探针不可比、归因面污染。_Avoid_: 把代理配置当实验变量中途调整；不记录常量值就下结论。来源：atomcode R81-Q3+R81 D-003。
+
+### Version-Burned Version（版本号烧毁）
+npm `package@version` 一经发布永久不可复用——unpublish 后亦然；恢复路径只有 patch-forward（新版本号），deprecate 只是警告标记非版本回收。_Avoid_: 把 unpublish 当版本回收工具；部分发布后指望同版本号补发已落包。来源：atomcode R81-Q4+R81 D-004。
+
+### Idempotent Publish Skip（幂等发布跳过）
+发布腿的幂等形态：每包 publish 前 precondition-check（`npm view <pkg>@<version>` 存在→skip 记录），或将 E403 "cannot publish over" 视为 skip 非 fail——npm 无内建开关（rfcs#387），前置检查是唯一通行解；缺此环则同 tag 复跑对已落包二次失败。_Avoid_: 裸 `set -e` for 循环直接复跑（C1 空转）；用 `--dry-run` 充当验证（不验认证/版本）。来源：atomcode R81-Q4/Q5+R81 D-004。
+
+### Decision–Recommendation Split（裁决/推荐分离）
+诊断轮的权限边界：诊断书只产 Recommendation（含三分支+证据），收口 ADR 持 Decision；ADR 的 Options Considered 必须引用诊断书分支，不得另立未经验证的选项。_Avoid_: spike 报告自封裁决；ADR 选项脱离已验证集现场发明。来源：atomcode R81-Q5+R81 D-003/D-005。
+
+### Degraded Closeout（降级收口）
+timebox 超时的合法终态：已证伪集+未测假设+阻塞证据书面化→剩余假设变下轮具名门控票；降级本身是书面决定（续投/转窄/接受不确定性三选一）非默认拖延。_Avoid_: 「Never deciding」（timebox 到点无决定继续漂）；降级产物缺 Test 字段断续接。来源：atomcode R81-Q5+R81 D-003/D-005。
+
+### Named Follow-Up Ticket（具名跟进票）
+收口交接的载体要求：每条 RESHAPE 宣称/未测假设对应一个具名票（票文名+验收面），非一条描述行——「spike ends with backlog changes」的可核验形态。_Avoid_: 结论埋报告待发现；票文无验收面成许愿单。来源：atomcode R81-Q5+R81 D-005。

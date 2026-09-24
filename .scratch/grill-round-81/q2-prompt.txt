@@ -1,0 +1,17 @@
+背景：pnpm monorepo 的「信息专精 Agent CLI」anysearch-cli（9 包，npm 发 @anysearch-cli/* 五包；宿主覆盖 cli/mcp/plugin/codebuddy/codex/antigravity/dsh 六宿主，全部 fail-open 降级）。治理方法=每轮 grill 定界单一主题+ADR+决策账本+延期登记表（deferred-registry.json，16 条记录 11 open）。
+
+当前处境：刚完成发布就绪轮（v0.0.8 备货完毕，等用户手动首发+tag 扳机）。外部评审第七轮指出 R76–R80 连续五轮零产品代码（packages/ 无增量），「治理机器自催化」——要求下一轮必须「进货」（真产品工作）。R81 已裁决主题=产品吸气轮（发布执行降级为触发即插的插曲协议，非轮腿）。
+
+待裁决问题：从 deferred-registry 挑哪一条产品形债作为 R81 唯一主轴？候选：
+
+A. defer-r71-provider-serverside（已挂 5 轮，deadline 2026-12-31 全场最近）：R71 spike 时 provider 检索端点对 live search 返回 HTTP 000，当时改为直接种子 memory 行绕过验证，server 侧病因至今未调查。这是核心检索面的真伪未知——若端点仍死，产品一直在发布「本地种子记忆」体验而非真检索。注意耦合：api.anysearch.com 域名 ownership 确认本身也是一条开放债（legal/ops 类）。出口谱系：端点复活→live 验证+去种子化+核销债；端点仍死→诊断书+路线裁决（如实记种子态/换 provider/撤宣称）。
+B. defer-r72-dsh-native-tools：在第六宿主 dsh 内原生注册五个 ans_* 工具（绕过官方 mcp-client 桥命名空间）。触发器=上游工具注册 API 稳定化 OR 证 bridge 对 ans_chat/research_web 延迟不足；触发器状态未知须先探。风险：探完未响→续债，主轴塌空。该债在 R73 曾以「触发条件未出现纯前瞻」被否决评估。
+C. defer-r72-dsh-web-interactive-matrix：dsh web-profile 交互矩阵（浏览器驱动回合、patchReload:live、approval-channel 面）。R72 只盖了两枚无头 web 探针。属验证面扩张非用户面新货。
+D. defer-f17-quarantine-ids：memory-eval 两条 env-flaky golden case 命名入库——须反复重跑复现，flaky 本性使命名不稳；测试卫生非产品货。
+已排除（触发器/依赖不在场）：dsh-event-rename（双锚缺稳定锚）、registerhooks-esm-arm（三触发器未响）、logo-bitmap（imagegen 工具缺席）、f16-macos-crash（无 darwin 机）、transformers-undeclared-dep（上游 #1764 未 merge）、domain-ownership（legal/ops 用户域）。
+
+请调研并给出推荐：
+1. 工业界成熟心智模型中，「带不确定出口的核心路径调查（spike/diagnosis）」vs「触发器待验的上游耦合工作」vs「验证矩阵扩张」vs「测试卫生」，在「产品断粮被点名、必须出货」约束下如何排序？重点：spike 类工作在 XP/agile、risk-driven backlog、WSJF/cost-of-delay 框架下的地位——「诊断可能只产知识不产码」算不算进货？
+2. 触发器门控债（trigger-gated debt）的成熟处理模式：先验触发再干 vs 选无条件工作——业界怎么避免「探完触发器未响=轮空」？
+3. A 的特殊风险：端点外部性（域名 ownership 未确认属另一条债）——外部不可控依赖下的调查是升值（求真）还是贬值（不可修）？
+4. 结合以上给出推荐排序与理由；若推荐非 A，说明 A 的哪个判断不成立。

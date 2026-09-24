@@ -1,0 +1,12 @@
+背景：pnpm monorepo「信息专精 Agent CLI」anysearch-cli。R81 已裁决：主题=产品吸气轮（D-001：发布执行降级为用户扳机触发即插的插曲协议，非轮腿）；主轴=defer-r71-provider-serverside（D-002：诊断 provider 检索端点 R71 时返回 HTTP 000 的病因，spike 纪律=硬 timebox 2-3 天+DoD 诊断书+三分支裁决+修复码出本轮域归 R82）。
+
+实物现状（刚取证）：provider 臂=packages/retriever/src/providers/anysearch.ts，端点 https://api.anysearch.com/v1/search，是融合信封三臂之一（exa/tavily/anysearch），fail-open=臂死不伤信封。刚实测 GET /v1/search?q=test → HTTP 404（TLS 握手 2.1s 成功，服务在但文档化路由不响应）；R58 实录该端点=CloudFront CNAME+Amazon wildcard cert 至 2026-12-03+status 子域 cert=非死设施。本机 DNS 是 fake-ip 代理环境（api.anysearch.com→198.18.0.34，RFC2544 段=Clash/mihomo 特征）——R71 的 000 可能是环境病理（我们的路不通）而非服务病理（服务死了），两者必须分离。同后端在本会话有 MCP 镜像（anysearch server：search/get_sub_domains/batch_search/extract），可作对照组仪器。ANYSEARCH_ENDPOINT env override 在案（install-smoke offline 腿用它做死端注入）。R71 时的绕过=直接种子 memory 行通过 backfill 断言。
+
+待裁决问题（Q3）：spike 作战方案的票序与验收形态。提案 A 四段式：T0 哨戒续班（dsh 出闸复检+#1764+flake+dsh-native-tools 触发器检查，骑缝非腿）→T1 侦察臂（端点现状测绘：证书/DNS/路由面/文档面/status 子域对照 R58 活体记录+本机 fake-ip 代理环境审计+代码考古：arm 接线 doctor/install-smoke/000 路径/种子化位置与现存宣称核对）→T2 活体重演矩阵（真 CLI 调用走 anysearch 臂 × 网络面变量（本机代理/直连/CI）× MCP 镜像对照组）→T3 裁决书（诊断+三分支推荐：复活去种子化/死但可修/死且外部不可控→降级宣称或换 provider——分支裁决权归轮收口 ADR，spike 只产推荐）→T4 文书收口。timebox：T1–T3 ≤2.5 天等效。备选：B 单票突击（失检查点）/C 先裁决后侦察（倒置）。
+
+请调研并给出推荐：
+1. 工业界成熟的根因诊断/spike 作战形态（hypothesis-driven diagnosis、differential diagnosis、fault-tree、SRE incident-debugging 心智、5-whys 边界）对「侦察→重演矩阵→裁决」三段结构的评价——漏了什么腿？（比如：种子化留下的存量宣称审计是否该单列；MCP 镜像作对照组是否合规仪器；环境矩阵是否必须）
+2. spike 的分支裁决权归属：诊断产物给「推荐」还是直接「裁决」？业界对 spike 产出的 decision hand-off（谁拍板、何时拍板、记在哪）有何惯例？
+3. timebox 检查点设计：2-3 天上限内分段的业界时间盒惯例（timebox checkpoints/exit criteria per stage），超时升级路径怎么写才不丢已产证据？
+4. 网络病理 vs 服务病理分离的最小充分环境矩阵：代理/直连/CI 三面够不够？fake-ip DNS 这类中间层污染在诊断纪律里如何处理（对照组设计）？
+5. 结合以上给出对提案 A 的修订意见与推荐；若有更优票序形态给出并说明理由。

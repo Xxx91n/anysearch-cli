@@ -1,0 +1,21 @@
+R81 grill round for anysearch-cli（信息专精 Agent CLI 仓库）。本轮已裁决的 decision-ledger current 记录（D-001~D-004，实物在 .scratch/grill-round-81/decision-ledger.md）：
+
+- D-001：R81=产品吸气轮；发布执行=触发即插的插曲协议（用户扳机：手发 dsh-plugin@0.0.7→npm Trusted Publishing 配置→推 v0.0.8 tag→轮暂停跑发布后 checklist→归位续票）；主轴=registry 在册产品债一条。
+- D-002：主轴=defer-r71-provider-serverside——诊断 R71 时 provider 检索端点对 live search 返回 HTTP 000 的 server 侧病因；硬 timebox 2-3 天；DoD=诊断书+三分支推荐（复活去种子化/死但可修/死且外部不可控→降级宣称或换 provider）；修复码出本轮域（Lacey 规则）。
+- D-003：spike 五段式——T0 哨戒续班（dsh rc/alpha 出闸复检+#1764+flake-watch+dsh-native-tools 触发器检查）；T1a 网络/设施侦察（端点测绘 vs R58 活体记录+本机 fake-ip 代理审计+CI 存档核查+假设清单 H1-H4 书面化各带 Supports/Conflicts/Test）；T1b 存量宣称审计（种子化 grep+每条宣称 PASS/FAIL/RESHAPE）；T2 判别实验矩阵（每格区分≥2 假设+必含预期推翻格+4 列×3 行约 5 必测探针+fake-ip 为环境常量+MCP 对照组结论限「后端+本机出口面活着」）；T3+T4 裁决书+文书（诊断书已证伪集+三分支推荐→ADR-0082+registry+宣称修正+R82 立项）；timebox 2.5d（.25/.75/1/.5），超时降级收口（已证伪集+未测假设+阻塞证据→下轮门控票）。
+- D-004：发布插曲协议分级语义+R1-R4——R1=release.yml publish 腿补幂等跳过（npm view 已存在则 skip 或 E403 视为 skip），插曲就绪小票轮内落；三扳机验收（npm view 存在性/TP 三件=用户声明+OIDC run 绿+dist.attestations/装跑冒烟+run URL 回填）；失败分级 C1 零发布→修因+同 tag 复跑（前提 R1）、C2a 基础设施因→修因+复跑补全 0.0.8、C2b 已落内容坏→0.0.9 patch-forward+有害才 deprecate、C3 全发冒烟败→deprecate+0.0.9、unpublish 仅灾难+自保句；首发 run 独盯 dsh-plugin 步；每事件 transcript+中断先写诊断书+未触发诚实记。
+
+仓库既有心智模型（须回顾实物）：docs/adr/ 下 ADR-0065~0081（尤其 ADR-0081 R80 发布就绪轮收口判据三段式先例：取证段/就绪段/文书段+Time-Bound Exception 五要件+no-go 显式分支+dogfooding 产证据+棘轮表述）、CONTEXT.md 词表（Release Readiness Round/Shared Pass-Fail Event/Machine-Verifiable Claim/Derived-Artifact Freshness/Time-Bound Exception/No-Go Branch/Quarantine Ratchet 等）、docs/deferred-registry.json、docs/publishing.md、.github/workflows/release.yml、scripts/ship-gate.mjs（含 1u 新鲜度腿+closeout-claims 注册面）。
+
+待裁决问题（Q5）——R81 收口判据，提案 A「三段收口（产品吸气轮形态）」：
+(i) 取证段：T0 哨戒实录四线结论行+插曲证据（触发→interlude transcript 齐；未触发→如实记「未触发」）+T1a 实录（假设清单+端点测绘+fake-ip 常量值+CI 存档核查结论）+T1b 逐条判定表+T2 探针 transcript（~5 格含预期推翻格）+T3 诊断书（已证伪集+剩余假设+三分支推荐）；
+(ii) 就绪段：R1 skip 补丁落地+验收锚（对已发包实测 check→skip；对未发包不误判）+turbo check/test 绿+ship-gate 全绿（1u 新鲜度承袭——新声明须注册 closeout-claims）+install 无脏；
+(iii) 文书段：ADR-0082（三分支裁决+Options Considered 引 spike 推荐+rejected alternatives）+registry 核销/更态+宣称修正落实（RESHAPE→回流票文名或文档修正）+CONTEXT 新词+handoffs/next-round.md（R82 立项项：修复码/宣称修正执行/剩余假设门控票）+判据↔证据映射表+but 提交干净；
+兜底：timebox 超时→降级收口（已证伪集+未测假设+阻塞证据→下轮 spike 门控票）；不可达验收项→如实记「未验」非豁免。
+
+调研问题：
+1. 工业界对「研究/诊断型工作」（spike、RCA、技术调研）的收口判据与 DoD 有哪些成熟心智模型？与功能型工作的 DoD 有何结构性差异？
+2. 「取证段/就绪段/文书段」三段收口结构用于诊断型轮次是否充分？业界实践还强调哪些收口要素（知识沉淀/后续工单交接质量/决策与推荐分离/no-go 与降级形态）？
+3. 验收「幂等跳过补丁」而不真实发包的业界成熟做法是什么（对已发版实测 skip 分支/模拟 registry/dry-run 边界）？
+4. timebox 超时「降级收口」的业界先例——一次「未决 spike」必须保存哪些产物，下一轮才可无损续接？
+5. 提案 A 与上述账本决策（D-001~D-004）及仓库既有心智模型有无冲突或漏项？给出推荐与理由。

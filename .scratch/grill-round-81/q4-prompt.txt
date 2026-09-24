@@ -1,0 +1,12 @@
+背景：pnpm monorepo「信息专精 Agent CLI」anysearch-cli，npm 发 @anysearch-cli/* 五包（embedding/cli/mcp/plugin/dsh-plugin）。发布路径：pre-tag dispatch 门禁→用户推 tag→release.yml publish 腿 OIDC trusted publishing（无 NPM_TOKEN）+sigstore provenance。publish 腿机械形态=`set -euo pipefail` 顺序五连发 for 循环（embedding→cli→mcp→plugin→dsh-plugin）——第 N 个失败时前 N-1 个已落地=部分发布态，失败包的该版本号永久作废（npm 不允同版重发）。dsh-plugin 首发走预首发：用户手发 0.0.7→npmjs 配 Trusted Publisher（四字段+勾 npm publish allowed action）→v0.0.8 tag 起五包 OIDC。publishing.md 现有失败后段只有一句钝刀「72h unpublish 窗口内 npm unpublish per package」，无分级语义。
+
+治理语境：R81=产品吸气轮（spike 主轴），发布执行=触发即插的插曲协议（interrupt protocol）——用户扣扳机时轮暂停跑发布后 checklist 再归位。已决：spike 产物=推荐不裁决、分支裁决归轮收口 ADR、修复码出本轮域。
+
+待裁决问题（Q4）：发布插曲协议细则。提案 A 分级协议：(i) 三扳机各配验收检查——手发 0.0.7 后 npm view 验证存在性+license；TP 配置外部不可验（npm 不公开展 TP 配置）以用户声明+tag run 结果为据；推 tag 后盯 run+npm view 五包 {version,attestations}+装跑冒烟（npm i -g cli+ans doctor+dsh plugin add 对已发布包）+CI 矩阵绿+run URL 回填；(ii) 失败分级语义——C1 零发布失败（registry 未污染）→修配置+gh run rerun 同 tag 复跑不删 tag；C2 部分发布→已落地版本作废→npm deprecate 已发子集+0.0.9 patch-forward 不拆清单；C3 全发但冒烟失败→deprecate+0.0.9；unpublish 保留边界=仅灾难性事故+数小时内（依赖者≈0 且工件有害）非默认工具；(iii) 插曲证据面=每触发事件一份 transcript（时间戳+npm view+attestations JSON+冒烟+run URL+结论行）；中断点规则=探针中途被扳机打断先把当前态写进诊断书再切换；(iv) 未触发诚实记录。备选：B unpublish-first（简单但违 npm 惯例）/C 不立语义当场即兴。
+
+请调研并给出推荐：
+1. 工业界对 npm 发布失败分级的成熟心智（unpublish vs deprecate vs patch-forward 的正确使用面；72h 窗口的真实约束与社区判词；version-burned 语义下 patch-forward 是否标准答案）。
+2. 顺序多包发布的原子性问题：monorepo 多包 npm publish 部分失败的业界处理惯例（changesets/lerna/pnpm -r 的失败语义；有无「先 dry-run 全量再真发」模式；CI 复跑同 tag 是否可行/惯例）。
+3. 可信发布（trusted publishing/OIDC）语境下的特殊失败模式：ENEEDAUTH、allowed-actions 漏勾、包不存在——首发场景的 fail-fast 设计惯例（先验证集小步确认再全量？）。
+4. 「插曲协议」式中断驱动工作流在业界的对应物（release captain/incident-style interlude oncall）——中断点证据保全与恢复的成熟做法。
+5. 对提案 A 的修订意见与推荐；特别关注：deprecate+patch-forward vs unpublish 的分界线是否划对；C1 复跑同 tag 的惯例依据；TP 配置外部不可验这点有无业界验证惯例（npm view 有无泄露 TP 配置的字段）。
