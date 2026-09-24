@@ -12,7 +12,8 @@
     "reports",
     "evidence",
     "backups",
-    "drafts"
+    "drafts",
+    "issues"
   ],
   "locatorLinePatterns": [
     "^\\s*(?:[-*]\\s*)?(?:\\*\\*)?Stack\\b[\\s：:]"
