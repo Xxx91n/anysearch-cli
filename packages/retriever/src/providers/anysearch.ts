@@ -8,8 +8,13 @@
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope } from "../contract";
 
 // ADR-0059 D7 (T-6.4) DEFERRED-WITH-DEADLINE: ownership of api.anysearch.com is an internal
-// confirmation item (legal/ops), not a code decision. Verified live at round 58: CloudFront CNAME,
-// Amazon wildcard cert valid to 2026-12-03, fresh status subdomain cert - NOT dead infrastructure.
+// confirmation item (legal/ops), not a code decision. Round-58 verification surface was the
+// infrastructure layer only (CloudFront CNAME + cert + status subdomain) — never the /v1/search
+// route. R81 re-verified (ADR-0082): cert rotated 2026-09-22, now valid to 2027-04-07 (Amazon RSA
+// 2048 M04, SAN *.anysearch.com+anysearch.com); /health 200, apex/status 200 — infrastructure
+// alive. But GET /v1/search = 404 (route-level dead) while POST /mcp is a live MCP Streamable
+// HTTP endpoint (initialize/tools-list/tools-call green). The REST arm below is currently
+// non-functional; the MCP migration is tracked as fix-r82-anysearch-rest-contract.
 // Fail-open: an unreachable endpoint degrades the anysearch arm, never the fused envelope.
 // Owner: anysearch-retriever (docs/deferred-registry.json: defer-anysearch-domain-ownership).
 // Review: quarterly cadence (ADR-0010 precedent); CT/expiry monitoring tracks the cert renewal.
