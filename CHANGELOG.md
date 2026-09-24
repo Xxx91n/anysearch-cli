@@ -4,6 +4,25 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0083 r82: 迁移落地轮——AnySearchProvider REST→MCP-over-HTTP
+
+### Changed
+
+- `@anysearch-cli/retriever` AnySearchProvider 传输面迁移（ADR-0082 分支 b 执行，fix-r82-anysearch-mcp-migration）：GET /v1/search（REST，404 死路由）→ POST /mcp（MCP Streamable HTTP，initialize→notifications/initialized→tools/call search 薄 JSON-RPC，不引 @modelcontextprotocol/sdk——eventsource-parser 为唯一新增 dep ~2KB）。Accept 双类型+MCP-Protocol-Version 每 POST+协商版本回写+Mcp-Session-Id 捕获回显+session 404 重初始化；fail-first 映射（structuredContent 优先→markdown 信封容错解析→isError/错形/意外 Content-Type 一律降级该臂，错形不吞零）。ANYSEARCH_ENDPOINT 以 /v1/search 结尾→剥至 base+/mcp+warn 一次。`max_results` 名义上限由 REST 时代宣称 20 修正为 MCP schema 实证上限 **10**（静默 clamp）。`domainFilterSupported` 保持 false——MCP domain=垂域路由枚举非 host allowlist（垂域贯通立 defer-r83-anysearch-vertical-domain-passthrough）。
+
+### Added
+
+- `packages/retriever/test/online/anysearch-mcp.online.ts` + `test:online` 脚本 + ci.yml `test-online-anysearch` 非阻断 job（continue-on-error）——provider live-search 的 CI 探针面补课（R81 分水岭诊断的修法）。
+- `.scratch/grill-round-82/evidence/` —— T0 哨戒（dsh rc.2 龄期闸 ETARGET 实测+特征锚 tarball 复验+#1764 OPEN 趋僵+双锚未齐判定）+ T1 wire/R2 对照/R3 谓词/垂域腿实录。
+
+### Removed
+
+- AnySearchProvider 的 REST /v1/search 调用路径与 data.results 映射（随 MCP 迁移整体移除）。
+
+### Deferred
+
+- `defer-r81-provider-shape-validation` 收口（fail-first 映射+错形测试面）；`defer-r81-anysearch-rest-route-removed` 续守 quarterly 监控；`defer-r73-dsh-event-rename` 双锚未齐续债（rc.2 特征锚复验齐/稳定锚未齐，合格候选未出现）；新增 `defer-r83-anysearch-vertical-domain-passthrough`；ADR-0082 残余 R1–R5 四分诊全落位（registry residual-triage 五卡）。
+
 ## Unreleased — ADR-0082 r81: 产品吸气轮——provider-serverside spike 诊断 + release.yml R1 幂等跳过 + 发布插曲协议立法
 
 ### Added

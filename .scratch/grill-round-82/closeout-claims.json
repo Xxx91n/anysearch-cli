@@ -1,0 +1,108 @@
+{
+ "schema": "anysearch/closeout-claims@1",
+ "round": 82,
+ "claims": [
+  {
+   "id": "r82-c1-endpoint-mcp",
+   "kind": "symbol",
+   "claim": "C-1 修正落点：provider 端点常量与契约注释为 MCP 面（非 REST）",
+   "file": "packages/retriever/src/providers/anysearch.ts",
+   "tokens": [
+    "https://api.anysearch.com/mcp",
+    "MCP-Protocol-Version",
+    "tools/call",
+    "LEGACY_REST_SUFFIX"
+   ]
+  },
+  {
+   "id": "r82-c1-rest-url-absent",
+   "kind": "count",
+   "claim": "C-1 修正落点：provider 源码中 REST 全量 URL 出现 0 次（尾径剥壳仅保留后缀字面量）",
+   "command": "node -e \"const s=require('fs').readFileSync('packages/retriever/src/providers/anysearch.ts','utf8');console.log((s.match(/api.anysearch.com\\/v1\\/search/g)||[]).length)\"",
+   "expect": 0
+  },
+  {
+   "id": "r82-c2-fail-first",
+   "kind": "symbol",
+   "claim": "C-2 修正落点：响应映射为 fail-first MCP 形（structuredContent 优先/markdown 容错/isError+错形降级）",
+   "file": "packages/retriever/src/providers/anysearch.ts",
+   "tokens": [
+    "isError === true",
+    "structuredContent",
+    "##\\s+Search Results",
+    "unexpected Content-Type"
+   ]
+  },
+  {
+   "id": "r82-c13-mcp-fixtures",
+   "kind": "symbol",
+   "claim": "C-13 修正落点：测试面为 MCP 形 fixture（握手序列+SSE 帧+错形样本），非 REST data.results mock",
+   "file": "packages/retriever/test/anysearch.test.ts",
+   "tokens": [
+    "notifications/initialized",
+    "tools/call",
+    "text/event-stream",
+    "MCP-Protocol-Version",
+    "mcp-session-id"
+   ]
+  },
+  {
+   "id": "r82-max-results-clamp",
+   "kind": "symbol",
+   "claim": "max_results 名义 20 宣称核对修正：MCP 上限 10 静默 clamp",
+   "file": "packages/retriever/src/providers/anysearch.ts",
+   "tokens": [
+    "Math.min(Math.max(req.maxResults ?? 10, 1), 10)"
+   ]
+  },
+  {
+   "id": "r82-no-mcp-sdk-dep",
+   "kind": "count",
+   "claim": "迁移增量仅 eventsource-parser——retriever 直依赖零 @modelcontextprotocol/sdk",
+   "command": "node -e \"const p=require('./packages/retriever/package.json');console.log(Object.keys(p.dependencies).filter(d=>d.includes('modelcontextprotocol')).length)\"",
+   "expect": 0
+  },
+  {
+   "id": "r82-eventsource-dep",
+   "kind": "field",
+   "claim": "eventsource-parser 为 retriever 直依赖（SSE 解析不手搓状态机）",
+   "file": "packages/retriever/package.json",
+   "field": "dependencies.eventsource-parser",
+   "expect": "^4.1.1"
+  },
+  {
+   "id": "r82-live-probe-ci",
+   "kind": "symbol",
+   "claim": "live 探针两层：CI test-online-anysearch 非阻断 job 在场",
+   "file": ".github/workflows/ci.yml",
+   "tokens": [
+    "test-online-anysearch",
+    "continue-on-error: true",
+    "retriever test:online"
+   ]
+  },
+  {
+   "id": "r82-evidence-paths",
+   "kind": "path",
+   "claim": "T0/T1 取证面在档",
+   "paths": [
+    ".scratch/grill-round-82/evidence/t0-watch-2026-09-24.md",
+    ".scratch/grill-round-82/evidence/t1-wire-probes.md",
+    ".scratch/grill-round-82/evidence/t1-r3-predicates.md",
+    ".scratch/grill-round-82/evidence/t1-domain-leg.md",
+    ".scratch/grill-round-82/issues/01-fix-r82-anysearch-mcp-migration.md"
+   ]
+  },
+  {
+   "id": "r82-online-probe-file",
+   "kind": "path",
+   "claim": "live 探针文件+票面在场",
+   "paths": [
+    "packages/retriever/test/online/anysearch-mcp.online.ts",
+    "docs/adr/0083-architecture-grill-round-82-anysearch-mcp-migration.md",
+    ".scratch/grill-round-82/reports/2026-09-24-report.md",
+    ".scratch/grill-round-82/handoffs/next-round-r83.md"
+   ]
+  }
+ ]
+}

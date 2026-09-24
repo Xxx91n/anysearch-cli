@@ -45,7 +45,7 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
 - At least one provider API key for real searches:
   - `EXA_API_KEY` — Exa (supports domain filtering)
   - `TAVILY_API_KEY` — Tavily (supports domain filtering)
-  - `ANYSEARCH_API_KEY` — anysearch REST (optional; anonymous tier works, no domain filter)
+  - `ANYSEARCH_API_KEY` — anysearch MCP (optional; anonymous tier works, no domain filter)
 
 ## Quickstart
 
@@ -129,7 +129,7 @@ domain policy · `2` usage error · `3` abstain under `--fail-on-abstain`.
 |----------|-----------------|--------------|
 | tavily   | yes (`include_domains`, hard filter mode) | — |
 | exa      | yes (`includeDomains`) | — |
-| anysearch| no (REST API has no domain parameter) | post-filter only |
+| anysearch| no (MCP `domain` is a vertical-routing enum, not a host allowlist) | post-filter only |
 
 Provider selection comes from the domain TOML's `sources.enabled`. Missing
 keys skip that provider instead of crashing (fail-open); if *no* provider can
@@ -185,7 +185,7 @@ ADR-0068 / ADR-0069 / ADR-0073 carry the evidence sets.
 | Limitation | Why it matters |
 |------------|----------------|
 | macOS is outside the blocking matrix | an unresolved exit-time `libc++abi` crash keeps `ship-gate` gated on ubuntu+windows; macOS runs as a non-blocking probe lane |
-| `anysearch` provider cannot pre-filter | its REST surface has no domain parameter — under a domain allowlist it degrades honestly to post-filter only |
+| `anysearch` provider cannot pre-filter | its MCP `domain` param is a vertical-routing enum (not a host allowlist) — under a domain allowlist it degrades honestly to post-filter only |
 | exit-time `libc++abi` may overwrite the abstain exit code | automation must read the structured abstain marker (`--json` / `structuredContent.abstain`), not the exit code alone |
 
 Full record: [docs/limitations.md](docs/limitations.md).

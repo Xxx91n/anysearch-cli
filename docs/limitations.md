@@ -58,9 +58,11 @@
   not headless-verified; `query_knowledge` returns the `adapter=none` stub
   (pre-existing, not a Codex regression); OOD `abstain=null` shape noted
   under allowlist routing (ADR-0068).
-- **`anysearch` provider cannot pre-filter** — its REST surface has no domain
-  parameter; under a domain allowlist it is post-filter-only (honest degrade,
-  recorded in the `retrieval.domain_filter.pre` audit event).
+- **`anysearch` provider cannot pre-filter** — its MCP `domain` param is a
+  vertical-routing enum (academic..travel), not a hostname allowlist, so
+  `includeDomains` cannot ride it; under a domain allowlist the arm stays
+  post-filter-only (honest degrade, recorded in the `retrieval.domain_filter.pre`
+  audit event). Vertical passthrough is a contract-surface change (R83 ticket).
 - **Tavily does not forward `AbortSignal`** — provider-side timeouts are not
   cancelable through the SDK (recorded limitation; the kernel budget guard
   still bounds wall time).

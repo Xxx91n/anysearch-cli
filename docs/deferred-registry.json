@@ -439,6 +439,11 @@
      "at": "2026-09-24",
      "round": 81,
      "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+    },
+    {
+     "at": "2026-09-24",
+     "round": 82,
+     "note": "R82 T0 哨戒（evidence/t0-watch-2026-09-24.md）：rc.2 新发（09-24T14:02Z）特征锚复验齐（agent/created 携 source/signal、session-start 缺席）但龄期闸内至 09-26T14:02Z+changelog 审面缺席→双锚未齐，合格候选未出现（D-003 §4 如实记）。修正点：SessionStartSource 实测枚举=startup|resume|clear|compact（无 fresh）——采纳时 guard 按 source!=='startup' 落字"
     }
    ],
    "tombstones": [
@@ -622,9 +627,19 @@
    "owner": "anysearch-retriever",
    "opened_at": "2026-09-24",
    "review_cadence": "next-round",
-   "status": "open",
+   "status": "closed",
    "evidence": "R81 T2 P-B 实测：ANYSEARCH_ENDPOINT 指向 OmniRoute 时 /v1/search 返 200 application/json 但为 provider 枚举形（{object:list,data:[search_provider...]}），body.data?.results ?? [] 使其退化为静默零结果 envelope——「活但错形」比 000 更隐蔽。处置=R82 票 fix-r82-provider-shape-validation（响应形校验：非协议形按 fail 处理），与 fix-r82-anysearch-mcp-migration 同捆",
-   "monitoring_channel": "R82 票验收"
+   "monitoring_channel": "R82 票验收",
+   "carried_log": [
+    {
+     "at": "2026-09-24",
+     "round": 82,
+     "note": "R82 T1 处置完成：MCP 迁移票内 fail-first 映射落地——isError:true/无 ## Search Results 信封头/非预期 Content-Type/无 result 对象一律 throw 降级该臂（错形不吞零）；test/anysearch.test.ts 错形样本 4 条（OmniRoute 枚举形/无信封头文本/非预期 CT/无 content）全红→绿实测"
+    }
+   ],
+   "closed_by": "ADR-0083",
+   "closed_at": "2026-09-24",
+   "closed_by_adr_path": "docs/adr/0083-architecture-grill-round-82-anysearch-mcp-migration.md"
   },
   {
    "id": "defer-r81-anysearch-rest-route-removed",
@@ -637,7 +652,87 @@
    "review_cadence": "quarterly",
    "status": "open",
    "monitoring_channel": "quarterly probe GET /v1/search（非 404 即复路由，重评 REST 面）",
-   "evidence": "R81 T2 P-A：GET /v1/search 双列 404（fake-ip+真 IP 同形，CF X-Amz-Cf-Pop NRT20-P9）；同域 /health 200 + POST /mcp 全活——REST 面被下线而非服务死。若路由复活可重评 REST 臂"
+   "evidence": "R81 T2 P-A：GET /v1/search 双列 404（fake-ip+真 IP 同形，CF X-Amz-Cf-Pop NRT20-P9）；同域 /health 200 + POST /mcp 全活——REST 面被下线而非服务死。若路由复活可重评 REST 臂",
+   "carried_log": [
+    {
+     "at": "2026-09-24",
+     "round": 82,
+     "note": "R82 T1：迁移已落地（provider 仅说 MCP），REST 复活监控续守 quarterly 探针——R5 即销卡另档（registry 残余分诊节）"
+    }
+   ]
+  },
+  {
+   "id": "defer-r83-anysearch-vertical-domain-passthrough",
+   "type": "deferred-with-deadline",
+   "title": "anysearch MCP 垂域贯通：domain/sub_domain/sub_domain_params 通路（≠includeDomains host 过滤）",
+   "source_adr": "docs/adr/0083-architecture-grill-round-82-anysearch-mcp-migration.md",
+   "owner": "anysearch-retriever",
+   "opened_at": "2026-09-24",
+   "deadline": "2027-03-31",
+   "review_cadence": "next-round",
+   "status": "open",
+   "evidence": "R82 T1 垂域评估腿（evidence/t1-domain-leg.md）：MCP domain=17 值垂域路由枚举（academic..travel），语义≠SearchRequest.includeDomains（host allowlist）；真贯通需新契约面+引擎路由+审计语义扩展——半径超迁移票，具名转 R83。provider 侧 domainFilterSupported=false 保持，post-filter 仍为唯一权威闸",
+   "monitoring_channel": "R83 task-book triage"
+  },
+  {
+   "id": "residual-r82-R1-port-state",
+   "type": "residual-triage",
+   "title": "R1 即销卡：R71 时刻 api.anysearch.com:443 端口监听态",
+   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+   "owner": "anysearch-retriever",
+   "opened_at": "2026-09-24",
+   "status": "closed",
+   "closed_by": "ADR-0083",
+   "closed_at": "2026-09-24",
+   "evidence": "五字段即销卡——残余陈述：R71 观测窗 443 端口监听态未验；本体性不可回溯：历史时刻的网络监听态无观测面留存（cannot 非 won't——不可重建非不愿查）；收敛证据指针：R81 T1a/T2 收敛（cert 轮换+health 200+双列 404+/mcp 活）+R82 wire 实录（initialize/tools-call 全绿）——历史端口态对当前裁决无影响；重开触发器：HTTP 000 复现（对真端点）即重开；决策人/日期：R82 修复子 Agent / 2026-09-24"
+  },
+  {
+   "id": "residual-r82-R2-anon-credential",
+   "type": "residual-triage",
+   "title": "R2 折入验收锚：/mcp 匿名凭据/限流面对照",
+   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+   "owner": "anysearch-retriever",
+   "opened_at": "2026-09-24",
+   "status": "closed",
+   "closed_by": "ADR-0083",
+   "closed_at": "2026-09-24",
+   "evidence": "折入 T1 谓词锚判定=PASS：anon tools/call 200 真结果（847ms），「anon 可用→继续」分支成立；authed 对照=无效 Bearer→isError:true invalid_api_key（fail-first 降级，非 401/429→未触发 stop-gate）。实录 evidence/t1-wire-probes.md §2"
+  },
+  {
+   "id": "residual-r82-R3-transport-spec",
+   "type": "residual-triage",
+   "title": "R3 折入验收锚：Streamable HTTP transport 细节谓词核验",
+   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+   "owner": "anysearch-retriever",
+   "opened_at": "2026-09-24",
+   "status": "closed",
+   "closed_by": "ADR-0083",
+   "closed_at": "2026-09-24",
+   "evidence": "折入 T1 谓词锚判定=PASS：2025-11-25 spec 14 条谓词逐条机械判定——MUST 级全过（POST/Accept 双类型/单消息/202 通知/SSE+JSON 双 CT/session-id 回显/404 重初始化/协议头）；SHOULD 级 2 条明示弃（Last-Event-ID 重放/DELETE session）记档。实录 evidence/t1-r3-predicates.md"
+  },
+  {
+   "id": "residual-r82-R4-user-endpoint",
+   "type": "residual-triage",
+   "title": "R4 域外即销：ANYSEARCH_ENDPOINT 用户本地语义",
+   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+   "owner": "anysearch-retriever",
+   "opened_at": "2026-09-24",
+   "status": "closed",
+   "closed_by": "ADR-0083",
+   "closed_at": "2026-09-24",
+   "evidence": "closed-by-scope 一行闭合：用户个人配置域——值不记档不代改（本机 env 指向 OmniRoute 属用户主权面）；重开触发器=配置治理权变更（如团队级托管配置策略引入）。决策人/日期：R82 修复子 Agent / 2026-09-24"
+  },
+  {
+   "id": "residual-r82-R5-rest-shutdown-timing",
+   "type": "residual-triage",
+   "title": "R5 即销卡：REST /v1/search 下线时点",
+   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+   "owner": "anysearch-retriever",
+   "opened_at": "2026-09-24",
+   "status": "closed",
+   "closed_by": "ADR-0083",
+   "closed_at": "2026-09-24",
+   "evidence": "五字段即销卡——残余陈述：REST 路由下线的精确时点/发布记录未定位；本体性不可回溯：外部服务的部署历史我方无观测面（git log/发布记录已穷举——本仓无任何 REST 面 commit 痕迹可查时点）；收敛证据指针：R81 T2 P-A 双列 404+R82 wire 实录——「已下线」事实充分，时点不影响修复路径；重开触发器：REST 面复活的官方声明/实测 200 复路由；决策人/日期：R82 修复子 Agent / 2026-09-24"
   }
  ]
 }
