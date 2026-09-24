@@ -41,8 +41,10 @@ npm view @anysearch-cli/cli@0.0.4 dist.attestations --json   # sigstore provenan
 npm i -g @anysearch-cli/cli@0.0.4 && ans --version && ans doctor
 ```
 
-If a publish goes wrong inside the 72h unpublish window:
-`npm unpublish @anysearch-cli/<pkg>@0.0.4` per package.
+If a publish goes wrong, do not reach for `npm unpublish` — classify the
+failure per "Publish failure classification" below (C1/C2a/C2b/C3) and
+patch-forward. `npm unpublish @anysearch-cli/<pkg>@<ver>` inside the 72h
+window is reserved for catastrophic accidents only.
 
 ## Manual first release (0.0.3 — historical, D-006)
 

@@ -14,7 +14,7 @@ import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope 
 // 2048 M04, SAN *.anysearch.com+anysearch.com); /health 200, apex/status 200 — infrastructure
 // alive. But GET /v1/search = 404 (route-level dead) while POST /mcp is a live MCP Streamable
 // HTTP endpoint (initialize/tools-list/tools-call green). The REST arm below is currently
-// non-functional; the MCP migration is tracked as fix-r82-anysearch-rest-contract.
+// non-functional; the MCP migration is tracked as fix-r82-anysearch-mcp-migration.
 // Fail-open: an unreachable endpoint degrades the anysearch arm, never the fused envelope.
 // Owner: anysearch-retriever (docs/deferred-registry.json: defer-anysearch-domain-ownership).
 // Review: quarterly cadence (ADR-0010 precedent); CT/expiry monitoring tracks the cert renewal.
