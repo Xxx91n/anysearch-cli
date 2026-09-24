@@ -223,15 +223,41 @@ jobs:
           done
           ls -la .release/pack
 
+      # ADR-0082 (R81 TI, D-004 R1): idempotent skip — before each npm publish,
+      # `npm view <name>@<version>` already-existing => skip with a logged notice
+      # (npm has no built-in skip flag: rfcs#387; precondition-check is the
+      # accepted pattern). E403 "cannot publish over" is also treated as skip,
+      # not fail, covering the check/publish TOCTOU race. This makes C1
+      # `gh run rerun` on the same tag a no-op for already-landed packages.
       - name: npm publish (trusted publishing + sigstore provenance)
         run: |
           set -euo pipefail
+          spec_of() {
+            tar -xzf "$1" -O package/package.json | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const j=JSON.parse(d);console.log(j.name+'@'+j.version)})"
+          }
+          publish_one() {
+            local tgz="$1" spec out
+            spec="$(spec_of "$tgz")"
+            if npm view "$spec" version >/dev/null 2>&1; then
+              echo "::notice::skip $spec — already published"
+              return 0
+            fi
+            echo "==> npm publish $tgz ($spec)"
+            if ! out="$(npm publish "$tgz" --provenance --access public 2>&1)"; then
+              if printf '%s' "$out" | grep -qiE 'cannot publish over|EPUBLISHCONFLICT|already published'; then
+                echo "::notice::skip $spec — registry reports already published"
+                return 0
+              fi
+              printf '%s\n' "$out" >&2
+              return 1
+            fi
+            printf '%s\n' "$out"
+          }
           for tgz in \
             .release/pack/anysearch-cli-embedding-*.tgz \
             .release/pack/anysearch-cli-cli-*.tgz \
             .release/pack/anysearch-cli-mcp-*.tgz \
             .release/pack/anysearch-cli-plugin-*.tgz \
             .release/pack/anysearch-cli-dsh-plugin-*.tgz; do
-            echo "==> npm publish $tgz"
-            npm publish "$tgz" --provenance --access public
+            publish_one "$tgz"
           done
