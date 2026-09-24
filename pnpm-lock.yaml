@@ -465,6 +465,9 @@ importers:
       '@tavily/core':
         specifier: ^0.7.7
         version: 0.7.7(debug@4.4.3)
+      eventsource-parser:
+        specifier: ^4.1.1
+        version: 4.1.1
       exa-js:
         specifier: ^2.18.1
         version: 2.18.1(ws@8.21.3)
@@ -2030,6 +2033,10 @@ packages:
   eventsource-parser@3.1.1:
     resolution: {integrity: sha512-EKN1vKAMcZ8MlYMpaNuxN6R9yakzH6uajHcHVTqWJzvu5pWw9DyhbP35HH8MVBQ+dZjAfDxk+A8NiR9KWaXiyQ==}
     engines: {node: '>=18.0.0'}
+
+  eventsource-parser@4.1.1:
+    resolution: {integrity: sha512-zaWNqeSLeyzEAAt2Q6aDBRDRk/VnPmsKqvToyGvv6aahvLv71A4Jw7jG93Hckf11zXurbqgsffvpSgKPoeU1Qw==}
+    engines: {node: '>=22.12'}
 
   eventsource@3.0.2:
     resolution: {integrity: sha512-YolzkJNxsTL3tCJMWFxpxtG2sCjbZ4LQUBUrkdaJK0ub0p6lmJt+2+1SwhKjLc652lpH9L/79Ptez972H9tphw==}
@@ -4188,6 +4195,8 @@ snapshots:
 
   eventsource-parser@3.1.1:
     optional: true
+
+  eventsource-parser@4.1.1: {}
 
   eventsource@3.0.2:
     dependencies:

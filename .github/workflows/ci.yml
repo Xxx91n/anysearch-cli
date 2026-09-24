@@ -127,3 +127,25 @@ jobs:
         run: pnpm -C packages/embedding test:online
         env:
           NODE_OPTIONS: "--test-reporter=spec"
+
+  # R82 T1 (ADR-0082 branch b): provider live-search probe — the watershed the
+  # R81 diagnosis exposed (no CI surface ever touched api.anysearch.com). This
+  # job is continue-on-error by contract: an external endpoint must never gate
+  # the pipeline (D-002 §5, live 探针两层之 live-path; fail-path stays in
+  # install-smoke via the dead-port injection).
+  test-online-anysearch:
+    name: "test:online anysearch /mcp live probe (non-blocking)"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/setup@v2
+        with: { install: false }
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --ignore-scripts
+      - name: anysearch MCP live probe (retriever test:online)
+        run: pnpm -C packages/retriever test:online

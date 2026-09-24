@@ -9,7 +9,8 @@
   },
   "scripts": {
     "test": "node --import tsx --test \"test/**/*.test.ts\" \"test/**/*.test.mjs\" --test-timeout=30000",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test:online": "node --import tsx --test \"test/online/**/*.online.ts\" --test-timeout=60000"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
@@ -17,8 +18,9 @@
     "typescript": "^5.6.0"
   },
   "dependencies": {
+    "@sinclair/typebox": "^0.34.52",
     "@tavily/core": "^0.7.7",
-    "exa-js": "^2.18.1",
-    "@sinclair/typebox": "^0.34.52"
+    "eventsource-parser": "^4.1.1",
+    "exa-js": "^2.18.1"
   }
 }
