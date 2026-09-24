@@ -89,15 +89,14 @@ async function readSseJsonRpc(resp: Response, id: number, method: string): Promi
   return match;
 }
 
+function toResult(url: string, title: string, snippet: string): NormalizedResult {
+  return { url, title: title || url, snippet: snippet.slice(0, 500), source: "anysearch" };
+}
+
 function mapStructuredResults(list: Array<{ title?: string; url?: string; snippet?: string; content?: string }>): NormalizedResult[] {
   return list
     .filter((r) => typeof r?.url === "string" && r.url.length > 0)
-    .map((r) => ({
-      url: r.url!,
-      title: r.title ?? r.url!,
-      snippet: (r.snippet ?? r.content ?? "").slice(0, 500),
-      source: "anysearch",
-    }));
+    .map((r) => toResult(r.url!, r.title ?? "", r.snippet ?? r.content ?? ""));
 }
 
 // ## Search Results (N results, Tms) envelope → blocks of ### N. title +
@@ -118,9 +117,8 @@ function parseSearchMarkdown(md: string): { results: NormalizedResult[]; elapsed
       .slice(urlIdx + 1)
       .map((l) => l.trim().replace(/^-\s*/, ""))
       .filter(Boolean)
-      .join(" ")
-      .slice(0, 500);
-    results.push({ url: urlLine[1], title: title || urlLine[1], snippet, source: "anysearch" });
+      .join(" ");
+    results.push(toResult(urlLine[1], title, snippet));
   }
   const em = /\(\d+\s*results?,\s*(\d+)\s*ms\)/.exec(md);
   return { results, elapsedMs: em ? Number(em[1]) : undefined };
@@ -231,7 +229,7 @@ export class AnySearchProvider implements SearchProvider {
 
   private async rpc(method: string, params: unknown, signal: AbortSignal): Promise<Record<string, unknown>> {
     const id = this.nextId++;
-    const msg = await this.post({ jsonrpc: "2.0", id, method, params }, signal, id);
+    const msg = await this.post({ jsonrpc: "2.0", id, method, params }, signal);
     if (!msg || typeof msg.result !== "object" || msg.result === null) {
       throw new Error("AnySearch MCP " + method + " malformed reply (no result object)");
     }
@@ -239,10 +237,10 @@ export class AnySearchProvider implements SearchProvider {
   }
 
   private async notify(method: string, signal: AbortSignal): Promise<void> {
-    await this.post({ jsonrpc: "2.0", method }, signal, undefined);
+    await this.post({ jsonrpc: "2.0", method }, signal);
   }
 
-  private async post(payload: Record<string, unknown>, signal: AbortSignal, id: number | undefined): Promise<JsonRpcMessage | undefined> {
+  private async post(payload: Record<string, unknown>, signal: AbortSignal): Promise<JsonRpcMessage | undefined> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       // spec MUST: both media types on Accept.
@@ -264,6 +262,7 @@ export class AnySearchProvider implements SearchProvider {
     if (resp.status === 404 && this.sessionId) {
       throw new SessionExpiredError("AnySearch MCP " + String(payload.method) + " HTTP 404 (session terminated)");
     }
+    const id = payload.id as number | undefined;
     if (id === undefined) {
       // notification — 202 with an empty body is the normal answer.
       if (!resp.ok) throw new Error("AnySearch MCP " + String(payload.method) + " HTTP " + resp.status);
@@ -275,9 +274,14 @@ export class AnySearchProvider implements SearchProvider {
     const ct = (resp.headers.get("content-type") ?? "").toLowerCase();
     let msg: JsonRpcMessage;
     if (ct.includes("text/event-stream")) {
-      msg = await readSseJsonRpc(resp, id as number, String(payload.method));
+      msg = await readSseJsonRpc(resp, id, String(payload.method));
     } else if (ct.includes("application/json")) {
       msg = JSON.parse(await resp.text()) as JsonRpcMessage;
+      // spec MUST: the response id echoes the request id — a mismatched
+      // JSON reply is as malformed as a missing one.
+      if (msg.id !== undefined && msg.id !== null && String(msg.id) !== String(id)) {
+        throw new Error("AnySearch MCP " + String(payload.method) + " reply id mismatch (expected " + id + ", got " + String(msg.id) + ")");
+      }
     } else {
       throw new Error("AnySearch MCP " + String(payload.method) + " unexpected Content-Type: " + (ct || "(none)"));
     }

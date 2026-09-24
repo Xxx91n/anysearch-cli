@@ -131,7 +131,7 @@ jobs:
   # R82 T1 (ADR-0082 branch b): provider live-search probe — the watershed the
   # R81 diagnosis exposed (no CI surface ever touched api.anysearch.com). This
   # job is continue-on-error by contract: an external endpoint must never gate
-  # the pipeline (D-002 §5, live 探针两层之 live-path; fail-path stays in
+  # the pipeline (D-002 §5 two-layer probes, live-path; the fail-path stays in
   # install-smoke via the dead-port injection).
   test-online-anysearch:
     name: "test:online anysearch /mcp live probe (non-blocking)"
@@ -149,3 +149,5 @@ jobs:
       - run: pnpm install --ignore-scripts
       - name: anysearch MCP live probe (retriever test:online)
         run: pnpm -C packages/retriever test:online
+        env:
+          NODE_OPTIONS: "--test-reporter=spec"

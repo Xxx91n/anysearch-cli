@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updated": "2026-09-24",
+ "updated": "2026-09-25",
  "note": "Machine-checkable registry of deferred work items and carried-over acceptance criteria. Discipline is isomorphic to .ship-gate/skip-ledger.json (schema @3) and the ADR-0020 conformance expected-failures ledger: every deferral is an explicit, traceable record, never a silent drop. ADR-0057 D5 / D-006 requires one entry per carried-over acceptance criterion, marked closed-by the ADR that closes it. Old ADR bodies are never edited; the pointer line lives in the old ADR and the record lives here (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). Additive only: new entries are appended, existing ids are never reused or renumbered. Canonical form locked by ship-gate stepGovernedJsonCanonical (ADR-0077): this file must byte-equal JSON.stringify(JSON.parse(src),null,1)+'\\n'. To normalize: node -e \"const f='docs/deferred-registry.json';const fs=require('fs');fs.writeFileSync(f,JSON.stringify(JSON.parse(fs.readFileSync(f,'utf8')),null,1)+'\\n')\"",
  "entries": [
   {
@@ -57,6 +57,11 @@
      "at": "2026-09-24",
      "round": 81,
      "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+    },
+    {
+     "at": "2026-09-25",
+     "round": 82,
+     "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=AnySearch REST→MCP 迁移+TE1 条件辅轴+残余分诊，ownership 议题未入轨"
     }
    ]
   },
@@ -105,6 +110,11 @@
      "at": "2026-09-24",
      "round": 81,
      "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+    },
+    {
+     "at": "2026-09-25",
+     "round": 82,
+     "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，macOS native crash 修复未入轨（native-smoke 覆盖腿存续）"
     }
    ]
   },
@@ -151,6 +161,11 @@
      "at": "2026-09-24",
      "round": 81,
      "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+    },
+    {
+     "at": "2026-09-25",
+     "round": 82,
+     "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，quarantine IDs 未入轨"
     }
    ]
   },
@@ -213,6 +228,11 @@
      "at": "2026-09-24",
      "round": 81,
      "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+    },
+    {
+     "at": "2026-09-25",
+     "round": 82,
+     "note": "R82 域外显式续债（落选≠飘过）：T0 哨戒续班实测 transformers.js PR #1764 仍 OPEN（stagnant），本体修复未入轨"
     }
    ]
   },
@@ -349,6 +369,11 @@
      "at": "2026-09-24",
      "round": 81,
      "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+    },
+    {
+     "at": "2026-09-25",
+     "round": 82,
+     "note": "R82 域外显式续债（落选≠飘过）：T0 哨戒续班含 dsh-native-tools watch 线（观测在档），本体整改未入轨"
     }
    ]
   },
@@ -394,6 +419,11 @@
      "at": "2026-09-24",
      "round": 81,
      "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+    },
+    {
+     "at": "2026-09-25",
+     "round": 82,
+     "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，web-interactive matrix 未入轨"
     }
    ]
   },
@@ -503,6 +533,11 @@
      "at": "2026-09-24",
      "round": 81,
      "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+    },
+    {
+     "at": "2026-09-25",
+     "round": 82,
+     "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，logo bitmap matrix 未入轨"
     }
    ]
   },
@@ -548,6 +583,11 @@
      "at": "2026-09-24",
      "round": 81,
      "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+    },
+    {
+     "at": "2026-09-25",
+     "round": 82,
+     "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，registerhooks ESM arm 未入轨"
     }
    ]
   },
