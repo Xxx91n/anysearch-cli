@@ -116,6 +116,33 @@ still lives in review + the gates above.
    registry data is immutable; see CONTEXT.md — Unpublish Window).
 3. Post-tag checks run via `release.yml` after `git tag v0.0.3` (user-run).
 
+## Publish failure classification (ADR-0082 D-004)
+
+The release workflow publishes five tarballs sequentially; npm has no
+multi-package atomic publish, so a mid-loop failure leaves a partially
+landed set. Classify before acting:
+
+- **C1 — zero packages landed** (e.g. OIDC/trusted-publishing failure on
+  the first package): fix the cause, then `gh run rerun` on the same tag.
+  The R1 idempotent skip makes rerun a no-op for anything already landed.
+- **C2a — partial set, infrastructure cause** (runner/network failure
+  after N packages): fix the cause, rerun — landed packages skip via R1,
+  the remainder publishes; the set self-heals.
+- **C2b — partial set, published content bad** (e.g. a broken tarball
+  landed): **patch-forward, never unpublish** — fix in-tree, bump to the
+  next patch version, tag, republish. The bad version stays in registry
+  history by design.
+- **C3 — all five landed, install/smoke fails**: `npm deprecate` the bad
+  version with a pointer message, then patch-forward. Deprecation warns
+  installers without rewriting history.
+
+**Unpublish boundary** — `npm unpublish` is reserved for catastrophic
+accidents only (credential leak, wrong-package publish, license
+violation). It is never a first response to a failed or partial release:
+it rewrites registry history, breaks lockfiles that already resolved the
+version, and the 72h window makes it fragile under pressure. Default =
+patch-forward.
+
 ## Install verification (within the 72h unpublish window)
 
 The npm CLI has **no release-age gate**: `min-release-age` is unknown project

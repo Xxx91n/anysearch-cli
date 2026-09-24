@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updated": "2026-09-23",
+ "updated": "2026-09-24",
  "note": "Machine-checkable registry of deferred work items and carried-over acceptance criteria. Discipline is isomorphic to .ship-gate/skip-ledger.json (schema @3) and the ADR-0020 conformance expected-failures ledger: every deferral is an explicit, traceable record, never a silent drop. ADR-0057 D5 / D-006 requires one entry per carried-over acceptance criterion, marked closed-by the ADR that closes it. Old ADR bodies are never edited; the pointer line lives in the old ADR and the record lives here (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). Additive only: new entries are appended, existing ids are never reused or renumbered. Canonical form locked by ship-gate stepGovernedJsonCanonical (ADR-0077): this file must byte-equal JSON.stringify(JSON.parse(src),null,1)+'\\n'. To normalize: node -e \"const f='docs/deferred-registry.json';const fs=require('fs');fs.writeFileSync(f,JSON.stringify(JSON.parse(fs.readFileSync(f,'utf8')),null,1)+'\\n')\"",
  "entries": [
   {
@@ -52,6 +52,11 @@
      "at": "2026-09-23",
      "round": 80,
      "note": "R80 域外显式续债（carried, not silent）"
+    },
+    {
+     "at": "2026-09-24",
+     "round": 81,
+     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
     }
    ]
   },
@@ -95,6 +100,11 @@
      "at": "2026-09-23",
      "round": 80,
      "note": "R80 域外显式续债（carried, not silent）"
+    },
+    {
+     "at": "2026-09-24",
+     "round": 81,
+     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
     }
    ]
   },
@@ -136,6 +146,11 @@
      "at": "2026-09-23",
      "round": 80,
      "note": "R80 域外显式续债（carried, not silent）"
+    },
+    {
+     "at": "2026-09-24",
+     "round": 81,
+     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
     }
    ]
   },
@@ -193,6 +208,11 @@
      "at": "2026-09-23",
      "round": 80,
      "note": "R80 域外显式续债（carried, not silent）"
+    },
+    {
+     "at": "2026-09-24",
+     "round": 81,
+     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
     }
    ]
   },
@@ -205,8 +225,8 @@
    "opened_at": "2026-09-19",
    "deadline": "2026-12-31",
    "review_cadence": "quarterly",
-   "status": "open",
-   "evidence": "R71 T1.2 spike: provider endpoint returned 000 for live search — memory rows were seeded directly for the backfill assertion instead. Server-side cause un-investigated.",
+   "status": "closed",
+   "evidence": "R81 T1a/T2/T3 诊断收口：000 观测归因收窄至本机 ANYSEARCH_ENDPOINT env 重定向（User 级 127.0.0.1:20128，dead-port→connection refused 复现，T2 P-C）；api.anysearch.com 基础设施活（新 cert 2027-04-07/health 200/apex+status 200）但 REST /v1/search 路由级 404（双列一致）；POST /mcp 为活 MCP Streamable HTTP 端点（initialize/tools-list/tools-call 全绿 867ms 真结果）→ 裁决=分支 b（死但可修：迁 MCP-over-HTTP，R82 票 fix-r82-anysearch-mcp-migration）。证据 .scratch/grill-round-81/{evidence/t1a-recon,evidence/t2-matrix,t3-diagnosis}.md",
    "monitoring_channel": "next grill round task-book triage",
    "carried_log": [
     {
@@ -233,8 +253,16 @@
      "at": "2026-09-23",
      "round": 80,
      "note": "R80 域外显式续债（carried, not silent）"
+    },
+    {
+     "at": "2026-09-24",
+     "round": 81,
+     "note": "R81 主轴处置完成：诊断收口+ADR-0082 裁决分支 b；残余未验 R1-R5（含 R71 时刻端口态不可回溯、/mcp anon 凭据面、transport 细节）携入 R82 票"
     }
-   ]
+   ],
+   "closed_by": "ADR-0082",
+   "closed_at": "2026-09-24",
+   "closed_by_adr_path": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md"
   },
   {
    "id": "defer-r72-dsh-plugin-npm-publish",
@@ -245,8 +273,8 @@
    "opened_at": "2026-09-19",
    "deadline": "2027-03-31",
    "review_cadence": "quarterly",
-   "status": "open",
-   "evidence": "R80 T2 备货完成：private:false + publishConfig{access:public,provenance:true} + release.yml 第五包接入 + pack/dsh plugin add/dump-config 复验通过（evidence/t2-pack-verify.log）；预首发四步立法见 docs/publishing.md 首发节+ADR-0081 D-003。npm keyword dsh-plugin auto-joins the official directory once published.",
+   "status": "closed",
+   "evidence": "插曲事件 1 三扳机全扣实证：手发 dsh-plugin@0.0.7 落 registry（2026-09-23T17:02:41Z, Apache-2.0）；v0.0.8 tag run 35894640525 success——五包 0.0.8 全落 + SLSA provenance attestations 非空 + 无 ENEEDAUTH/E403；装跑冒烟 npm i-g cli@0.0.8 + ans doctor + dsh plugin add @0.0.8（隔离 DSH_HOME）+ dump-config 层核对全绿。证据 .scratch/grill-round-81/evidence/release-interlude-1.md",
    "monitoring_channel": "next release round task-book triage",
    "carried_log": [
     {
@@ -274,7 +302,10 @@
      "round": 80,
      "note": "R80 T2 更态=就绪待用户扳机：包内全部就绪，剩三项用户动作（手发 0.0.7→npmjs TP 四字段+allowed actions 勾选→推 v0.0.8 tag）——外发/发布均为用户扳机不代行"
     }
-   ]
+   ],
+   "closed_by": "ADR-0082",
+   "closed_at": "2026-09-24",
+   "closed_by_adr_path": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md"
   },
   {
    "id": "defer-r72-dsh-native-tools",
@@ -313,6 +344,11 @@
      "at": "2026-09-23",
      "round": 80,
      "note": "R80 域外显式续债（carried, not silent）"
+    },
+    {
+     "at": "2026-09-24",
+     "round": 81,
+     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
     }
    ]
   },
@@ -353,6 +389,11 @@
      "at": "2026-09-23",
      "round": 80,
      "note": "R80 域外显式续债（carried, not silent）"
+    },
+    {
+     "at": "2026-09-24",
+     "round": 81,
+     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
     }
    ]
   },
@@ -393,6 +434,11 @@
      "at": "2026-09-23",
      "round": 80,
      "note": "R80 T0 哨戒实录：alpha.2 携特征锚（agent/created 携 source/signal、session-start 缺席）但稳定锚缺（alpha 线+changelog 未审）→非 L2 合格候选 action=none；rc.3/alpha.1/alpha.2 全闸内 ≈09-24 出闸续哨"
+    },
+    {
+     "at": "2026-09-24",
+     "round": 81,
+     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
     }
    ],
    "tombstones": [
@@ -447,6 +493,11 @@
      "at": "2026-09-23",
      "round": 80,
      "note": "R80 域外显式续债（carried, not silent）"
+    },
+    {
+     "at": "2026-09-24",
+     "round": 81,
+     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
     }
    ]
   },
@@ -487,6 +538,11 @@
      "at": "2026-09-23",
      "round": 80,
      "note": "R80 域外显式续债（carried, not silent）"
+    },
+    {
+     "at": "2026-09-24",
+     "round": 81,
+     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
     }
    ]
   },
@@ -557,6 +613,31 @@
    "closed_by": "ADR-0081",
    "closed_at": "2026-09-23",
    "closed_by_adr_path": "docs/adr/0081-architecture-grill-round-80-release-readiness-dsh-plugin-e6-freshness.md"
+  },
+  {
+   "id": "defer-r81-provider-shape-validation",
+   "type": "bugfix-deferred",
+   "title": "AnySearchProvider 对 200-错形响应静默吞零结果（OmniRoute 错形静默面）",
+   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+   "owner": "anysearch-retriever",
+   "opened_at": "2026-09-24",
+   "review_cadence": "next-round",
+   "status": "open",
+   "evidence": "R81 T2 P-B 实测：ANYSEARCH_ENDPOINT 指向 OmniRoute 时 /v1/search 返 200 application/json 但为 provider 枚举形（{object:list,data:[search_provider...]}），body.data?.results ?? [] 使其退化为静默零结果 envelope——「活但错形」比 000 更隐蔽。处置=R82 票 fix-r82-provider-shape-validation（响应形校验：非协议形按 fail 处理），与 fix-r82-anysearch-mcp-migration 同捆",
+   "monitoring_channel": "R82 票验收"
+  },
+  {
+   "id": "defer-r81-anysearch-rest-route-removed",
+   "type": "deferred-with-deadline",
+   "title": "api.anysearch.com REST /v1/search 路由下线事实记录与复活监控",
+   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+   "owner": "anysearch-retriever",
+   "opened_at": "2026-09-24",
+   "deadline": "2027-06-30",
+   "review_cadence": "quarterly",
+   "status": "open",
+   "monitoring_channel": "quarterly probe GET /v1/search（非 404 即复路由，重评 REST 面）",
+   "evidence": "R81 T2 P-A：GET /v1/search 双列 404（fake-ip+真 IP 同形，CF X-Amz-Cf-Pop NRT20-P9）；同域 /health 200 + POST /mcp 全活——REST 面被下线而非服务死。若路由复活可重评 REST 臂"
   }
  ]
 }

@@ -62,6 +62,72 @@
     "watch @",
     "0.1.7-rc.1"
    ]
+  },
+  {
+   "id": "t1-t3-evidence-files",
+   "kind": "path",
+   "claim": "T1a recon / T1b claims audit / T2 matrix / T3 diagnosis all archived",
+   "paths": [
+    ".scratch/grill-round-81/evidence/t1a-recon-2026-09-24.md",
+    ".scratch/grill-round-81/evidence/t1b-claims-audit.md",
+    ".scratch/grill-round-81/evidence/t2-matrix.md",
+    ".scratch/grill-round-81/t3-diagnosis.md"
+   ]
+  },
+  {
+   "id": "adr-0082-registered",
+   "kind": "symbol",
+   "claim": "ADR-0082 present and carries the branch-b verdict + failure classification",
+   "file": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+   "tokens": [
+    "ADR-0082",
+    "采纳分支 b",
+    "C1",
+    "C2a",
+    "C2b",
+    "C3",
+    "unpublish",
+    "defer-r71-provider-serverside"
+   ]
+  },
+  {
+   "id": "registry-reshape",
+   "kind": "symbol",
+   "claim": "deferred-registry closes provider-serverside + dsh-plugin-publish and records the r81 carried_log",
+   "file": "docs/deferred-registry.json",
+   "tokens": [
+    "defer-r81-provider-shape-validation",
+    "defer-r81-anysearch-rest-route-removed",
+    "closed_by",
+    "ADR-0082",
+    "fix-r82-anysearch-mcp-migration"
+   ]
+  },
+  {
+   "id": "publishing-grading",
+   "kind": "symbol",
+   "claim": "publishing.md carries the C1/C2a/C2b/C3 classification + unpublish boundary",
+   "file": "docs/publishing.md",
+   "tokens": [
+    "Publish failure classification",
+    "patch-forward",
+    "npm deprecate",
+    "72h"
+   ]
+  },
+  {
+   "id": "next-round-tickets",
+   "kind": "symbol",
+   "claim": "next-round handoff carries the named R82 tickets",
+   "file": ".scratch/grill-round-81/handoffs/next-round-r82.md",
+   "tokens": [
+    "fix-r82-anysearch-mcp-migration",
+    "fix-r82-anysearch-rest-contract",
+    "fix-r82-provider-shape-validation",
+    "R2",
+    "R3",
+    "R4"
+   ]
   }
  ]
 }
