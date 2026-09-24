@@ -4,6 +4,22 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0082 r81: 产品吸气轮——provider-serverside spike 诊断 + release.yml R1 幂等跳过 + 发布插曲协议立法
+
+### Added
+
+- `.github/workflows/release.yml` publish 腿幂等跳过（ADR-0082 D-004 R1）：每包 `npm publish` 前 `npm view <name>@<version>` 已存在→`::notice::` skip 记录（npm 无内建开关，rfcs#387，precondition-check 为通行解）+ E403 "cannot publish over"/EPUBLISHCONFLICT 容错兜底（check/publish TOCTOU 竞态）——同 tag `gh run rerun` 对已落包零副作用，C1 复跑前提落地。
+- `.scratch/grill-round-81/evidence/` —— T0 哨戒实录（dsh 0.1.7-rc.1 特征锚入 rc 线但龄期闸内/原生工具注册面 rc.2≡rc.1 零漂移触发器未响/llm-init flake 未复现/#1764 趋僵 21d）+ 插曲事件 1 取证（v0.0.8 三扳机全扣：五包发布+SLSA provenance attestations+装跑冒烟 npm i-g/ans doctor/dsh plugin add 全绿+CI 矩阵绿）。
+- `.scratch/grill-round-81/` spike 产物——端点测绘+fake-ip 审计+宣称审计判定表+判别实验矩阵+诊断书（T1a/T1b/T2/T3 实录，裁决权归 ADR-0082）。
+
+### Changed
+
+- `docs/publishing.md` —— 失败分级节立法（C1 零发布→修因+同 tag rerun；C2a 基础设施因→修因+复跑补全；C2b 已落内容坏→0.0.9 patch-forward；C3 全发冒烟败→deprecate+0.0.9；unpublish 仅灾难性事故边界）。
+
+### Deferred
+
+- `defer-r71-provider-serverside` 本轮主轴处置（spike 诊断→三分支推荐→ADR-0082 裁决）；`defer-r72-dsh-plugin-npm-publish` 更态=已发布落地（三扳机实证，evidence/release-interlude-1.md）；其余 open 债 carried_log r81 显式续记。
+
 ## 0.0.8 — 2026-09-23 — ADR-0081 r80: 发布就绪轮——dsh-plugin 上架备货 + E6 lockfile 复核腿实证收口 + 派生件新鲜度腿 + 上游哨戒
 
 ### Added

@@ -1,0 +1,67 @@
+{
+ "schema": "anysearch/closeout-claims@1",
+ "round": 81,
+ "note": "R81 registration surface — objective kinds fail-closed; declarations and derivation commands land in the same diff (ADR-0081 D-004, r81 carry-over).",
+ "claims": [
+  {
+   "id": "workspace-pin-0.0.8",
+   "kind": "count",
+   "claim": "all 8 workspace package.json manifests pinned at 0.0.8",
+   "command": "node -e \"const fs=require('fs');const dirs=['apps/cli','apps/mcp','apps/plugin','apps/dsh-plugin','packages/embedding','packages/kernel','packages/store','packages/retriever'];console.log(dirs.filter(d=>JSON.parse(fs.readFileSync(d+'/package.json','utf8')).version==='0.0.8').length)\"",
+   "expect": 8
+  },
+  {
+   "id": "release-publish-globs",
+   "kind": "count",
+   "claim": "release.yml npm-publish loop carries 5 package tarball globs (R1 patch preserves the set)",
+   "command": "node -e \"const s=require('fs').readFileSync('.github/workflows/release.yml','utf8');console.log((s.match(/anysearch-cli-[a-z-]+-\\*\\.tgz/g)||[]).length)\"",
+   "expect": 5
+  },
+  {
+   "id": "r1-skip-symbols",
+   "kind": "symbol",
+   "claim": "release.yml publish leg carries the R1 idempotent-skip implementation",
+   "file": ".github/workflows/release.yml",
+   "tokens": [
+    "publish_one",
+    "spec_of",
+    "npm view \"$spec\" version",
+    "already published",
+    "EPUBLISHCONFLICT",
+    "cannot publish over"
+   ]
+  },
+  {
+   "id": "t0-evidence-files",
+   "kind": "path",
+   "claim": "T0 watch transcript + release-interlude-1 evidence archived",
+   "paths": [
+    ".scratch/grill-round-81/evidence/t0-watch-2026-09-24.md",
+    ".scratch/grill-round-81/evidence/release-interlude-1.md"
+   ]
+  },
+  {
+   "id": "interlude-landed-tokens",
+   "kind": "symbol",
+   "claim": "interlude-1 records all five 0.0.8 publishes incl. dsh-plugin + run id",
+   "file": ".scratch/grill-round-81/evidence/release-interlude-1.md",
+   "tokens": [
+    "+ @anysearch-cli/dsh-plugin@0.0.8",
+    "35894640525",
+    "slsa.dev/provenance/v1",
+    "Apache-2.0"
+   ]
+  },
+  {
+   "id": "t0-watch-tokens",
+   "kind": "narrative",
+   "claim": "T0 watch evidence carries the 2026-09-24 observation window and conclusion line",
+   "file": ".scratch/grill-round-81/evidence/t0-watch-2026-09-24.md",
+   "tokens": [
+    "2026-09-24",
+    "watch @",
+    "0.1.7-rc.1"
+   ]
+  }
+ ]
+}
