@@ -21,7 +21,9 @@ Stack (primary key = GitButler change-ids; SHAs are time-lagged @ 2026-09-24):
 
 ## 绿色 run URL
 
-本栈未 push（规则：不 push 不 PR）——**PENDING — stack unpushed**。验收全为本地实录（命令+输出摘要见 reports/2026-09-24-report.md 映射表）。
+本栈未 push（规则：不 push 不 PR）——**PENDING — stack unpushed**。验收全为本地实录（命令+输出摘要见 reports/2026-09-24-report.md 映射表）。本轮历史相关 run（承继基线绿面）：
+
+- release（tag v0.0.8 push）: https://github.com/Xxx91n/anysearch-cli/actions/runs/35894640525 —— success，五包 0.0.8+SLSA attestations 全落（本栈 base ec020b7e 祖先面）
 
 ## 下一轮候选（详见 handoffs/next-round-r83.md）
 
