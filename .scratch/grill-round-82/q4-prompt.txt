@@ -1,0 +1,3 @@
+anysearch-cli R82 实施轮。主轴=AnySearchProvider REST→MCP-over-HTTP 迁移票（手写薄 JSON-RPC 已定：initialize→initialized→tools/call+SSE 帧解析+错形 fail）。背景：R81 spike 诊断书留下 5 条残余假设/未验面：R1=历史时刻某端口监听态不可回溯（000 真因的直接确认不可得，已有收敛性解释证据）；R2=/mcp 端点 anonymous 凭据与限流政策未验（可做 authed vs anon 对照实测，若 anon 被封须回退备选分支）；R3=MCP transport 细节（session/SSE/重连）——已被 2026-07-28 spec stateless 修订大幅收敛，残余=实施时按 spec 全验；R4=用户侧环境配置语义——已裁决为用户个人配置域不记档不代改；R5=REST 路由下线时点不可精确回溯。
+
+问题：spike/诊断/事故调查收尾时，残余未验项的处置心智模型——哪些该即销（not-traceable 如实记）、哪些折入实施票验收锚、哪些独立成票、哪些转下轮——工业界成熟做法是什么（incident postmortem action items 管理、spike residual handling、risk burndown、investigation closure criteria）？特别回答两点：把「验收面相关残余」折入实施票验收锚 vs 独立 gate 票的业界先例与判据边界；「不可回溯即销」的诚实记档形态（怎么写才不算逃避）。给推荐与理由。

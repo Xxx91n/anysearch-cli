@@ -1,0 +1,5 @@
+anysearch-cli R82 实施轮进行中。主轴已定=AnySearchProvider REST→MCP-over-HTTP 迁移票（fix-r82-anysearch-mcp-migration）。背景：该仓有「一轮一主轴」内聚立法（内聚三判据=同验收面/同子系统/同回滚单元）；同时建有 dsh 上游观测哨漏斗（L0 元数据哨→L1 tarball 消费面 diff→L2 安装彩排），采纳触发器=双锚（特征锚=agent/created 携 source/signal 且 session-start 缺席；稳定锚=rc-or-stable 线+过 minimumReleaseAge 龄期闸+changelog 审阅）。
+
+现况：dsh 0.1.7-rc.1 将于 ~2026-09-25T13:25Z 出闸——特征锚已在 rc 线实证，是漏斗建立以来首个 L2 合格候选；E1 消费票蓝图已备（apps/dsh-plugin/src/index.ts:87 单点 ctx.on(session-start)→agent/created+source!==fresh guard+dep-closure repin 重推导）。上一轮外部锐评点名「瞭望塔精密但扳机在用户手里生锈」——预登记触发器不兑现被视为治理病理。
+
+问题：当 sprint/轮次进行中预注册触发器兑现（合格候选出现），工业界成熟的 scope 处置心智模型是什么？三候选：A 条件辅轴预注册（具名票即时写成+执行序钉死在主轴落地后+未动则转下轮候选如实记）；B 单轴不破一律转下轮；C 触发即无条件插入。请按敏捷/迭代纪律的成熟做法（sprint scope change、interrupt buffer、expedite lane、pre-registered trigger 处理）给推荐与理由；同时回答：预注册条件票「写好但排后」与「触发才写票」哪种更符合可追溯性；以及若采纳条件辅轴，须配哪些护栏防止它吞轮（时间盒/回退线/完成定义）。

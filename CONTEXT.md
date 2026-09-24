@@ -1387,3 +1387,38 @@ timebox 超时的合法终态：已证伪集+未测假设+阻塞证据书面化�
 
 ### Named Follow-Up Ticket（具名跟进票）
 收口交接的载体要求：每条 RESHAPE 宣称/未测假设对应一个具名票（票文名+验收面），非一条描述行——「spike ends with backlog changes」的可核验形态。_Avoid_: 结论埋报告待发现；票文无验收面成许愿单。来源：atomcode R81-Q5+R81 D-005。
+
+## Grill Round 82 — Terms (ADR-0083)
+
+### Migration-Landing Round（迁移落地轮）
+以「已裁决方向的可运行迁移」为凝聚轴的轮次——spike 产物（三分支裁决）在本轮换码落地，不再重裁方向。_Avoid_: 重开已裁决的方向题；把新能力顺手捆成同票主轴。来源：R82 D-001。
+
+### Vertical-Domain Evaluation Leg（垂域评估腿）
+迁移票内一条只产「半径判定」的子腿：实测垂域参数贯通+翻转成本——小则同票落，大则立具名票，腿本身只产推荐不裁决。_Avoid_: 无评估直接出域（摸到门把手不押后）；评估腿膨胀成第二主轴。来源：R82 D-001。
+
+### Thin JSON-RPC Adapter（薄 JSON-RPC 适配器）
+对 stateless MCP-over-HTTP 端点的手写直连实现（initialize→initialized→tools/call），不引全功能 SDK——2026-07-28 协议修订删协议级 session 后 SDK 重件全成死重。_Avoid_: 为「标准」名头引入 session/重连/OAuth 死重；手写 SSE 状态机（用 eventsource-parser）。来源：atomcode R82-Q2+R82 D-002。
+
+### Tail-Strip Normalization（剥尾规范化）
+env 端点兼容策略：ANYSEARCH_ENDPOINT 以旧 REST 尾径结尾→剥至 base+/mcp+warn 一次；无尾径原样直打；错形 200 仍按 fail 兜底——旧值不暴毙与不吞零的唯一兼容组合。_Avoid_: 原样直打让旧值静默 404；或把错形 200 吞成空结果。来源：atomcode R82-Q2+R82 D-002。
+
+### Fail-First Response Mapping（混合容错映射）
+MCP 响应解析序：structuredContent 优先（前向兼容）→content[].text markdown 容错解析→isError/200-错形/Content-Type 非预期一律 fail 降级该臂。_Avoid_: structuredContent 缺席时直接判死（实测后端只返 markdown）；或错形吞零（OmniRoute 静默面）。来源：atomcode R82-Q2+R82 D-002。
+
+### Conditional Auxiliary Track（条件辅轴）
+预注册触发器兑现后成立的第二轴：双锚判据齐→具名票即时写成，执行序钉死主轴落地后，以「已预约」身份排队非回候选池重新竞争。_Avoid_: 无条件插入抢主轴（文献一致反模式）；合格候选回候选池重竞（坐实「扳机生锈」）。来源：atomcode R82-Q3+R82 D-003。
+
+### Expedite Guardrails（急行护栏五件套）
+条件辅轴防吞轮的五条立法：时间盒≤主轴 20%+回退线入口即写（出闸晚于 DoD 冻结点/L2 彩排败→记「错过窗口」转下轮）+DoD 独立不稀释+动主轴容量须具名换出项+频度熔断（连续触发→回溯漏斗节奏）。_Avoid_: 触发即无约束执行；错过窗口伪造完成。来源：atomcode R82-Q3+R82 D-003。
+
+### Residual Quad-Triage（残余四分诊）
+spike/诊断收尾的强制分诊：每项残余显式落到「已消解/折入下游验收锚/独立成票/诚实记档接受」四格之一，不存在第五格「挂着不管」。_Avoid_: 被动腐烂当默认出口；即销格混写本体性与资源性声明。来源：atomcode R82-Q4+R82 D-004。
+
+### Predicate Acceptance Anchor（谓词验收锚）
+折入验收锚的充要条件：验收时存在可机械判定的通过/失败谓词（「返回帧符合 spec X 节」可，「应该没问题」不可）；写不出谓词→独立票或即销。_Avoid_: 愿望式锚文；把「现在就能测」伪装成「实施时才可测」逃当轮验证。来源：atomcode R82-Q4+R82 D-004。
+
+### Closure Card（即销卡）
+不可回溯即销的合格记档=五字段一行卡：残余陈述+本体性不可回溯声明（cannot 非 won't）+已有替代证据指针+重开触发器+决策人/日期。_Avoid_: 「没时间查」冒充不可回溯；即销卡无重开触发器（=宣布永远不查）。来源：atomcode R82-Q4+R82 D-004。
+
+### Closed-by-Scope（域外即销）
+显式记「不在本系统治理域内」的一行闭合：归属≠要做事——记域边界+重开触发器即完成闭合（用户个人配置域用例）。_Avoid_: 不记档造成静默漏洞；把用户配置域当待办写进票。来源：atomcode R82-Q4+R82 D-004。
