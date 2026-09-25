@@ -436,8 +436,8 @@
    "opened_at": "2026-09-19",
    "deadline": "2027-03-31",
    "review_cadence": "per upstream release — L0 每版 npm view 快照+L1 每版 tarball 消费面 diff；L2 仅对合格候选（双锚全响） + quarterly",
-   "status": "open",
-   "evidence": "R77 T0 实证（evidence/t0-l0-watch.json + t0-api-snapshot-rc2.json + t0-l1-*.md）：改名特征已在 alpha 线全落地——0.1.6-alpha.1 起 agent/session-start 键自 Events 移除、agent/created payload 变 {agent,source:SessionStartSource,signal?:AbortSignal}（rc.2 起两键并存、source 原挂 session-start）；rc/next 线 0.1.5-rc.3 Events 面 ≡ rc.2 零漂移（无 alarm）。迁移蓝图：.scratch/grill-round-73/upgrade-ledger.md + R77 v2（.scratch/grill-round-77/upgrade-ledger.md）；采纳时 override 枚举按新锁文件重推导（0.1.7-alpha.1 dep-closure 已扩至 21 个 dsh-*：+session-persistence/storage/storage-domain/workspace）。",
+   "status": "closed",
+   "evidence": "R77 T0 实证（evidence/t0-l0-watch.json + t0-api-snapshot-rc2.json + t0-l1-*.md）：改名特征已在 alpha 线全落地——0.1.6-alpha.1 起 agent/session-start 键自 Events 移除、agent/created payload 变 {agent,source:SessionStartSource,signal?:AbortSignal}（rc.2 起两键并存、source 原挂 session-start）；rc/next 线 0.1.5-rc.3 Events 面 ≡ rc.2 零漂移（无 alarm）。迁移蓝图：.scratch/grill-round-73/upgrade-ledger.md + R77 v2（.scratch/grill-round-77/upgrade-ledger.md）；采纳时 override 枚举按新锁文件重推导（0.1.7-alpha.1 dep-closure 已扩至 21 个 dsh-*：+session-persistence/storage/storage-domain/workspace）。 | R83 TE1 双锚齐当日消费 rc.1（commit rot, branch r83-te1）：agent/session-start→agent/created + source==='startup' guard；repin 全族 0.1.7-rc.1+cordis 4.0.4；测试 14/14+L2 彩排（install/dump-config/幂等）绿；实录 .scratch/grill-round-83/evidence/te1-event-migration.md",
    "monitoring_channel": "upstream @deepseek-ai/dsh-* release watch（L0/L1/L2 漏斗）——触发器=双锚：特征锚（候选 .d.ts 中 agent/created 携 source/signal 且 agent/session-start 缺席）AND 稳定锚（发布在 rc-or-stable 线，alpha/beta 不采纳）+过 minimumReleaseAge 龄期闸；latest-only 彩排，被跳线版本写墓碑非补演",
    "carried_log": [
     {
@@ -489,7 +489,9 @@
      "l1_summary": "R73 install 彩排实证单错 RED + R77 L1 复核（session-start ABSENT, created 携 source/signal）；alpha 线从未是 L2 候选",
      "at": "2026-09-22"
     }
-   ]
+   ],
+   "closed_by": "ADR-0084",
+   "closed_at": "2026-09-25"
   },
   {
    "id": "defer-r74-logo-bitmap-matrix",
@@ -710,9 +712,11 @@
    "opened_at": "2026-09-24",
    "deadline": "2027-03-31",
    "review_cadence": "next-round",
-   "status": "open",
-   "evidence": "R82 T1 垂域评估腿（evidence/t1-domain-leg.md）：MCP domain=17 值垂域路由枚举（academic..travel），语义≠SearchRequest.includeDomains（host allowlist）；真贯通需新契约面+引擎路由+审计语义扩展——半径超迁移票，具名转 R83。provider 侧 domainFilterSupported=false 保持，post-filter 仍为唯一权威闸",
-   "monitoring_channel": "R83 task-book triage"
+   "status": "closed",
+   "evidence": "R82 T1 垂域评估腿（evidence/t1-domain-leg.md）：MCP domain=17 值垂域路由枚举（academic..travel），语义≠SearchRequest.includeDomains（host allowlist）；真贯通需新契约面+引擎路由+审计语义扩展——半径超迁移票，具名转 R83。provider 侧 domainFilterSupported=false 保持，post-filter 仍为唯一权威闸 | R83 T1 落地（commit puz, branch r83-t1）：contract.vertical+verticalDomainSupported 能力位+engine 协商路由+retrieval.vertical.pre（params_keys 不落值）+DomainSchema sources.vertical+三注入面（工具 arg/CLI flag/TOML）+wire 映射+extra.vertical 标记；上游实测矩阵+17 词表快照见 .scratch/grill-round-83/evidence/t1-vertical-domain.md",
+   "monitoring_channel": "R83 task-book triage",
+   "closed_by": "ADR-0084",
+   "closed_at": "2026-09-25"
   },
   {
    "id": "residual-r82-R1-port-state",
@@ -773,6 +777,18 @@
    "closed_by": "ADR-0083",
    "closed_at": "2026-09-24",
    "evidence": "五字段即销卡——残余陈述：REST 路由下线的精确时点/发布记录未定位；本体性不可回溯：外部服务的部署历史我方无观测面（git log/发布记录已穷举——本仓无任何 REST 面 commit 痕迹可查时点）；收敛证据指针：R81 T2 P-A 双列 404+R82 wire 实录——「已下线」事实充分，时点不影响修复路径；重开触发器：REST 面复活的官方声明/实测 200 复路由；决策人/日期：R82 修复子 Agent / 2026-09-24"
+  },
+  {
+   "id": "defer-r83-prefer-capable-weighting",
+   "type": "deferred-with-deadline",
+   "title": "prefer-capable 加权调参：垂域能力位声明者在融合/路由中的权重倾斜评估（eval 数据驱动，非契约职责）",
+   "source_adr": "docs/adr/0084-architecture-grill-round-83-vertical-domain-passthrough.md",
+   "owner": "anysearch-eval",
+   "opened_at": "2026-09-25",
+   "deadline": "2027-03-31",
+   "review_cadence": "next-round candidate + quarterly",
+   "status": "open",
+   "evidence": "R83 D-004 §4 显式范围外：能力位只决定 wire 下发与否，不做权重倾斜；若要做，需 eval 数据证明垂域臂召回质量差异，属评估轮职责非契约轮。"
   }
  ]
 }
