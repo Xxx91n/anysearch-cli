@@ -103,7 +103,7 @@ test('exports: stable name + inject service list', () => {
 test('apply: mounts all five hook surfaces + routing-card section', () => {
   const ctx = mockCtx();
   apply(ctx as unknown as Context);
-  for (const ev of ['agent/session-start', 'tools/pre-execute', 'tools/post-execute', 'tools/result']) {
+  for (const ev of ['agent/created', 'tools/pre-execute', 'tools/post-execute', 'tools/result']) {
     assert.ok((ctx.listeners.get(ev) ?? []).length >= 1, 'missing listener for ' + ev);
   }
   const sec = ctx.sections.find((s) => s.name === 'anysearch:routing-card');
@@ -111,14 +111,23 @@ test('apply: mounts all five hook surfaces + routing-card section', () => {
   assert.match(String(sec!.text), /ans_* prefix|search_web/);
 });
 
-test('agent/session-start: injects the routing card as a durable user message', () => {
+test('agent/created: startup injects the routing card as a durable user message', () => {
   const ctx = mockCtx();
   apply(ctx as unknown as Context);
   const agent = mockAgent();
-  const fn = ctx.listeners.get('agent/session-start')![0] as (p: { agent: unknown }) => void;
-  fn({ agent });
+  const fn = ctx.listeners.get('agent/created')![0] as (p: { agent: unknown; source: string }) => void;
+  fn({ agent, source: 'startup' });
   assert.equal(agent.injected.length, 1);
   assert.match(agent.injected[0].content[0].text ?? '', /anysearch plugin active/);
+});
+
+test('agent/created: resume/clear/compact do not re-inject the routing card', () => {
+  const ctx = mockCtx();
+  apply(ctx as unknown as Context);
+  const agent = mockAgent();
+  const fn = ctx.listeners.get('agent/created')![0] as (p: { agent: unknown; source: string }) => void;
+  for (const source of ['resume', 'clear', 'compact']) fn({ agent, source });
+  assert.equal(agent.injected.length, 0);
 });
 
 test('tools/pre-execute: non-ans tool passes through untouched', async () => {
@@ -270,5 +279,7 @@ test('contextMessage: produces a durable user message with plugin provenance', (
   const m = contextMessage('hello');
   assert.equal(m.role, 'user');
   assert.equal(m.content[0].type, 'text');
-  assert.equal((m as { source: { kind: string; plugin: string } }).source.plugin, '@anysearch-cli/dsh-plugin');
+  const src = (m as { source: { kind: string; plugin: string } }).source;
+  assert.equal(src.kind, 'anysearch-plugin');
+  assert.equal(src.plugin, '@anysearch-cli/dsh-plugin');
 });

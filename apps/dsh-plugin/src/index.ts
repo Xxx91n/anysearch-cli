@@ -9,15 +9,15 @@
  * @anysearch-cli/plugin hook modules bundled into lib/index.js at build time.
  *
  * Five hook surfaces:
- *   agent/session-start → agent.inject() routing card (durable next-step msg)
+ *   agent/created       → agent.inject() routing card (durable next-step msg; source!=='startup' guard)
  *   systemPrompt        → 'anysearch:routing-card' section registration
  *   tools/pre-execute   → URL-policy deny/ask + preheat recall injection
  *   tools/post-execute  → distilled summary via additionalContexts
  *   tools/result        → /index IPC on the final frozen outcome
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { Agent } from '@deepseek-ai/dsh-agent';
-import type { UserMessage } from '@deepseek-ai/dsh-llm';
+import type { Agent, SessionStartSource } from '@deepseek-ai/dsh-agent';
+import type { MessageId, UserMessage } from '@deepseek-ai/dsh-llm';
 import type {
   PostToolDecision,
   PreToolDecision,
@@ -31,6 +31,17 @@ import { makePostToolUseDecision } from '@anysearch-cli/plugin/hooks/distill';
 import { DEFAULT_ROUTING_CARD } from '@anysearch-cli/plugin/hooks/routing-card';
 import { resolveServerToken } from '@anysearch-cli/plugin/hooks/server-token';
 
+/**
+ * anysearch plugin producer kind for injected user messages (0.1.7 contract:
+ * MessageSourceMap is merge-extensible — each producer declares its own kind
+ * in its own module; there is no shared catch-all 'plugin' kind).
+ */
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'anysearch-plugin': { kind: 'anysearch-plugin'; plugin: string };
+  }
+}
+
 /** Stable Cordis plugin name. */
 export const name = 'anysearch-dsh-plugin';
 /** Services required before apply(): tools pipeline + prompt registry. */
@@ -41,10 +52,10 @@ const serverUrl = (): string => process.env.ANS_SERVER_URL || 'http://127.0.0.1:
 /** Hand-rolled UserMessage — a zero-dep plugin cannot import dsh-llm at runtime. */
 export function contextMessage(text: string): UserMessage {
   return {
-    id: randomUUID(),
+    id: randomUUID() as unknown as MessageId, // type-only dep: brand by cast (MessageId() ctor is runtime)
     role: 'user',
     content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: '@anysearch-cli/dsh-plugin' },
+    source: { kind: 'anysearch-plugin', plugin: '@anysearch-cli/dsh-plugin' },
   } as UserMessage;
 }
 
@@ -83,9 +94,15 @@ export function apply(ctx: Context): void {
     text: DEFAULT_ROUTING_CARD,
   });
 
-  // -- surface 1: session-start → durable next-step routing card ------------
-  ctx.on('agent/session-start', ({ agent }: { agent: Agent }) => {
-    try { agent.inject(contextMessage(DEFAULT_ROUTING_CARD)); } catch { /* fail-open */ }
+  // -- surface 1: agent/created → durable next-step routing card ----------
+  // agent/created also fires on resume/clear/compact (SessionStartSource); the
+  // routing card is durable, so only 'startup' may inject — other sources would
+  // duplicate the card into the session.
+  ctx.on('agent/created', ({ agent, source }: { agent: Agent; source: SessionStartSource }): undefined => {
+    if (source === 'startup') {
+      try { agent.inject(contextMessage(DEFAULT_ROUTING_CARD)); } catch { /* fail-open */ }
+    }
+    return undefined;
   });
 
   // -- surface 3: pre-execute — URL policy gate + preheat recall (recall leg awaited by design: the deny gate must block per fail-closed contract, and awaiting lands preheat durable before the gated call completes; bounded by IPC timeouts) ---
