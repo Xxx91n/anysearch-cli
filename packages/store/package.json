@@ -31,5 +31,8 @@
     "@anysearch-cli/embedding": {
       "optional": true
     }
+  },
+  "engines": {
+    "node": ">=22.0.0"
   }
 }

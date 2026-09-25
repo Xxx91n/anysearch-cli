@@ -20,5 +20,8 @@
   "scripts": {
     "test": "node --import tsx --test \"test/**/*.test.ts\" \"test/**/*.test.mjs\" --test-timeout=30000",
     "check": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   }
 }

@@ -304,9 +304,10 @@ export class AnySearchProvider implements SearchProvider {
       msg = await readSseJsonRpc(resp, id, String(payload.method));
     } else if (ct.includes("application/json")) {
       msg = JSON.parse(await resp.text()) as JsonRpcMessage;
-      // spec MUST: the response id echoes the request id — a mismatched
-      // JSON reply is as malformed as a missing one.
-      if (msg.id !== undefined && msg.id !== null && String(msg.id) !== String(id)) {
+      // spec MUST: the response id echoes the request id — R83 nit fix:
+      // symmetric with the SSE path, a missing id is as malformed as a
+      // mismatched one.
+      if (msg.id === undefined || msg.id === null || String(msg.id) !== String(id)) {
         throw new Error("AnySearch MCP " + String(payload.method) + " reply id mismatch (expected " + id + ", got " + String(msg.id) + ")");
       }
     } else {

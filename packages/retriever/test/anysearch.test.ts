@@ -336,6 +336,17 @@ async function main() {
     } finally { f.restore(); }
   }
 
+  // 14. R83 nit: clientInfo.version drift-guard — the initialize literal
+  //     must track packages/retriever/package.json version (hard-pinned 0.0.8).
+  {
+    const { readFileSync } = await import("node:fs");
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    const src = readFileSync(new URL("../src/providers/anysearch.ts", import.meta.url), "utf8");
+    const m = /clientInfo: { name: "anysearch-cli", version: "([^"]+)" }/.exec(src);
+    assert(!!m, "clientInfo.version literal locatable in source");
+    assert(m![1] === pkg.version, "clientInfo.version matches package.json version (" + pkg.version + ")");
+  }
+
   console.log("--- AnySearchProvider tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);
 }

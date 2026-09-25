@@ -109,5 +109,8 @@
     "ans-hook-session-start": "dist/hooks/session-start.cjs",
     "ans-hook-codex": "dist/hooks/adapters/codex.cjs",
     "ans-hook-antigravity": "dist/hooks/adapters/antigravity.cjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   }
 }
