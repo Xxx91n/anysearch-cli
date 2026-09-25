@@ -132,6 +132,51 @@ Provider 选择来自域名 TOML 的 `sources.enabled`。缺 key 的 provider �
 跳过而非崩溃（fail-open）；若*没有任何* provider 能注册，搜索是错误
 而非弃权。
 
+## AnySearch 垂域（ADR-0084）
+
+anysearch provider 另有一根正交轴：服务端**垂域路由**。可按查询（CLI 旗标
+或 MCP 工具参数）或按域名 TOML 设置——它不是 hostname allowlist，与
+`urlAllowlist` 完全不相干。
+
+- 查询级参数（整体替换 TOML 默认，绝不深合并）：`search_web` 与
+  `research_web` 上的 `verticalDomain` / `verticalSubDomain` /
+  `verticalParams`；CLI `--vertical-domain` / `--vertical-sub-domain` /
+  `--vertical-params '{"k":"v"}'`。
+- 仓级默认：域名 TOML 里 `[sources] vertical = { domain = "finance", sub_domain = "calendar" }`
+  （只放静态亲和——symbol 这类动态值走查询级）。
+- 能力协商：仅声明 `verticalDomainSupported` 的 provider（当前只有
+  anysearch）收 wire 字段 `domain` / `sub_domain` / `sub_domain_params`；
+  其余走 general 扇出并记入 `retrieval.vertical.pre` 审计事件的
+  `anysearch.vertical.degraded` 名单（丢的是提示，绝不弃权）。
+- 审计：每次垂域检索落一条 `retrieval.vertical.pre`——
+  属性 `anysearch.vertical.domain` / `.sub_domain` / `.params_keys`
+  （只记键名，值绝不进审计）/ `.source`（repo|query）/ `.sent` /
+  `.degraded`。垂域命中在每条 NormalizedResult 上携 `extra.vertical`
+  机读标记。
+
+以下词表与约束为**带日期快照**——活权威是上游 `get_sub_domains` 工具
+（2026-09-25 查询 `https://api.anysearch.com/mcp`）；客户端刻意不内嵌
+枚举副本。本地校验只做形状（非空字符串/Record）——非法 `sub_domain`
+或缺必需 `sub_domain_params` 由上游回 `isError`，anysearch 臂据此
+fail-first 降级（绝不静默返回零结果信封）。
+
+17 个顶层 domain 值（`search.domain` 的 enum）：
+
+`academic` `agriculture` `business` `code` `energy` `environment`
+`film` `finance` `gaming` `general` `health` `ip` `legal` `resource`
+`security` `social_media` `travel`
+
+上游实测语义（2026-09-25 live 探针）：
+
+- `sub_domain` 值（如 `finance.calendar` / `finance.fundamental`）连同
+  每个 tag 的 params 约束表出自 `get_sub_domains(domain=<d>)`（如
+  `finance.calendar` 必需 `type` ∈ earnings|dividends|ipos|economic；
+  `finance.fundamental` 必需 `type` 并按 type 要 `symbol` 或 `cn_code`）。
+- 枚举外 `domain` 值上游静默容忍（退回 general 风格结果集）——拒收压力
+  集中在 sub_domain 与 params 侧，而非 domain 枚举本身。
+- 只给 `domain` 不带 `sub_domain` 也能返回结果；文档称 required 但服务
+  不强制。
+
 ## MCP 服务器
 
 ```bash
