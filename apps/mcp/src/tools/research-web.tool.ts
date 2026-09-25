@@ -18,7 +18,15 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
     },
     async (args: unknown) => {
       return observeTool(eng, "research_web", async (span) => {
-        const { question, depth } = args as { question: string; depth?: string };
+        const { question, depth, verticalDomain, verticalSubDomain, verticalParams } = args as { question: string; depth?: string; verticalDomain?: string; verticalSubDomain?: string; verticalParams?: Record<string, unknown> };
+        // R83 T1 / ADR-0084 D-003/D-006: same shape guard as search_web —
+        // sub_domain/params require a domain (AJV cannot express it).
+        if (verticalDomain === undefined && (verticalSubDomain !== undefined || verticalParams !== undefined)) {
+          return { content: [{ type: "text" as const, text: "research_web error: verticalSubDomain/verticalParams require verticalDomain" }] };
+        }
+        const vertical = verticalDomain !== undefined
+          ? { domain: verticalDomain, ...(verticalSubDomain ? { subDomain: verticalSubDomain } : {}), ...(verticalParams ? { params: verticalParams } : {}) }
+          : undefined;
         const d = depth ?? "deep";
         let allResults: any[] = [];
         let lastRoundSufficiency: Record<string, unknown> | undefined;
@@ -33,6 +41,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               query: round === 0 ? question : question + " (round " + (round + 1) + ")",
               mode: "deep" as const,
               maxResults: 10,
+              ...(vertical ? { vertical } : {}),
               span,
             });
             rounds++;
@@ -75,6 +84,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             ...(mergedAttribution ? { attribution: mergedAttribution } : { attribution: null }),
             // ADR-0062 D3: abstain marker when the domain gate emptied the pool.
             abstain: lastEnvelope?.metadata?.abstain ?? null,
+            // R83 T1: resolved vertical routing (query-level spec, applied to every round).
+            vertical: vertical ?? null,
           },
           null,
           2,

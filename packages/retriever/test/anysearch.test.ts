@@ -278,8 +278,62 @@ async function main() {
     const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
     assert(p.id === "anysearch", "id = anysearch");
     assert(p.domainFilterSupported === false, "domainFilterSupported stays false (MCP domain is a vertical enum, not a host allowlist)");
+    assert(p.verticalDomainSupported === true, "verticalDomainSupported declared (R83 T1)");
     assert(!p.modes.includes("answer"), "modes still exclude answer");
     assert((await p.usage()) === undefined, "usage() stays undefined");
+  }
+
+  // 13. R83 T1 / ADR-0084 D-003: vertical wire mapping — internal vertical*
+  //     fields map to MCP domain/sub_domain/sub_domain_params arguments.
+  {
+    const f = installFetch(stdHandler);
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      const env = await p.search({ query: "q", mode: "fast", vertical: { domain: "finance", subDomain: "calendar", params: { symbol: "MSFT" } } }, SIG);
+      const args = f.calls[2].body.params.arguments;
+      assert(args.domain === "finance", "wire arg domain mapped from vertical.domain");
+      assert(args.sub_domain === "calendar", "wire arg sub_domain mapped from vertical.subDomain");
+      assert(args.sub_domain_params?.symbol === "MSFT", "wire arg sub_domain_params mapped from vertical.params");
+      assert(env.results.every(r => (r.extra?.vertical as any)?.domain === "finance"), "every result carries extra.vertical marker");
+      assert((env.results[0].extra?.vertical as any)?.subDomain === "calendar", "marker carries subDomain");
+    } finally { f.restore(); }
+  }
+
+  // 13b. no vertical -> all three wire args absent (no empty-string defaults)
+  {
+    const f = installFetch(stdHandler);
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      const env = await p.search(REQ, SIG);
+      const args = f.calls[2].body.params.arguments;
+      assert(!("domain" in args) && !("sub_domain" in args) && !("sub_domain_params" in args), "no vertical -> domain/sub_domain/sub_domain_params all absent");
+      assert(env.results.every(r => r.extra?.vertical === undefined), "no vertical -> no marker");
+    } finally { f.restore(); }
+  }
+
+  // 13c. domain-only vertical (no subDomain/params) -> only domain is sent
+  {
+    const f = installFetch(stdHandler);
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      await p.search({ query: "q", mode: "fast", vertical: { domain: "it_tech" } }, SIG);
+      const args = f.calls[2].body.params.arguments;
+      assert(args.domain === "it_tech" && !("sub_domain" in args) && !("sub_domain_params" in args), "domain-only vertical sends domain alone");
+    } finally { f.restore(); }
+  }
+
+  // 13d. upstream rejects an illegal vertical combination (isError) ->
+  //      fail-first throw (the arm degrades; never a silent zero envelope).
+  {
+    const errBody = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text: "invalid domain/sub_domain combination" }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: errBody(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      let threw = false;
+      try { await p.search({ query: "q", mode: "fast", vertical: { domain: "finance", subDomain: "bogus_sub" } }, SIG); }
+      catch (e) { threw = /isError/.test(String(e)); }
+      assert(threw, "illegal vertical combination -> isError -> fail-first throw");
+    } finally { f.restore(); }
   }
 
   console.log("--- AnySearchProvider tests: " + passed + " passed, " + failed + " failed ---");

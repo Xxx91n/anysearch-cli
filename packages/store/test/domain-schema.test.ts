@@ -92,5 +92,34 @@ let goodOk = true;
 try { validate(goodHosts); } catch { goodOk = false; }
 assert("valid hostnames pass (case tolerated, canonicalized downstream)", goodOk);
 
+// R83 T1 / ADR-0084 D-003/D-006: sources.vertical — parse + resolve chain
+// + shape-only validation (no vocabulary enum; unknown values NOT rejected).
+
+// Inheritance: derived restates the whole vertical (section-replace semantics).
+const vBase: RawDomain = { name: "vb", rag: { adapter: "x" }, sources: { enabled: [], vertical: { domain: "finance", sub_domain: "calendar" } } };
+const vDerived: RawDomain = { name: "vd", base: "vb", rag: { adapter: "x" }, sources: { enabled: [], vertical: { domain: "it_tech" } } };
+const vResult = resolve(vDerived, (n) => n === "vb" ? vBase : undefined);
+assert("vertical resolved from derived (whole-object replace — base sub_domain does NOT merge)",
+  vResult.sources.vertical?.domain === "it_tech" && vResult.sources.vertical?.sub_domain === undefined);
+const vInherit = resolve({ name: "vi", base: "vb", rag: { adapter: "x" }, sources: { enabled: [] } } as RawDomain, (n) => n === "vb" ? vBase : undefined);
+assert("vertical inherits from base when derived omits it",
+  vInherit.sources.vertical?.domain === "finance" && vInherit.sources.vertical?.sub_domain === "calendar");
+
+// Shape checks: empty domain / empty sub_domain rejected; unknown vocab allowed.
+const vEmpty = resolve({ name: "ve", rag: { adapter: "x" }, sources: { enabled: [], vertical: { domain: "" } } } as unknown as RawDomain, () => undefined);
+let vEmptyThrew = "";
+try { validate(vEmpty); } catch (e) { vEmptyThrew = (e as Error).message; }
+assert("vertical.domain empty string rejected at load", vEmptyThrew.includes("vertical.domain"));
+
+const vBadSub = resolve({ name: "vs", rag: { adapter: "x" }, sources: { enabled: [], vertical: { domain: "finance", sub_domain: "" } } } as unknown as RawDomain, () => undefined);
+let vSubThrew = "";
+try { validate(vBadSub); } catch (e) { vSubThrew = (e as Error).message; }
+assert("vertical.sub_domain empty string rejected", vSubThrew.includes("vertical.sub_domain"));
+
+const vUnknown = resolve({ name: "vu", rag: { adapter: "x" }, sources: { enabled: [], vertical: { domain: "not_a_real_vocab_word" } } } as unknown as RawDomain, () => undefined);
+let vUnknownOk = true;
+try { validate(vUnknown); } catch { vUnknownOk = false; }
+assert("unknown vocabulary NOT rejected locally (upstream is the wordlist authority)", vUnknownOk);
+
 console.log(`Domain schema tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

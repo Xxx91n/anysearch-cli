@@ -150,11 +150,14 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
 
 export class AnySearchProvider implements SearchProvider {
   readonly id = "anysearch";
-  // R82 T1 eval leg: the MCP domain param is a vertical-routing enum
-  // (academic..travel, 17 values) — NOT a hostname allowlist, so it cannot
-  // carry SearchRequest.includeDomains. This arm stays post-filter-only;
-  // vertical passthrough is a contract-surface change tracked for R83.
+  // R82 T1 eval leg / R83 T1: the MCP domain param is a vertical-routing
+  // enum (academic..travel, 17 values) — NOT a hostname allowlist, so it cannot
+  // carry SearchRequest.includeDomains. This arm stays post-filter-only on the
+  // host axis; the orthogonal vertical axis is served by verticalDomainSupported.
   readonly domainFilterSupported = false;
+  // R83 T1 / ADR-0084 D-004: declared — SearchRequest.vertical maps to the MCP
+  // search tool's domain/sub_domain/sub_domain_params arguments in callSearch.
+  readonly verticalDomainSupported = true;
   readonly modes: readonly ("fast" | "index" | "deep" | "answer")[] = ["fast", "index", "deep"];
   // ponytail: AnySearch has no answer mode like Tavily/Exa; the wire schema
   // has no mode param at all (additionalProperties risk), so req.mode is never
@@ -188,6 +191,20 @@ export class AnySearchProvider implements SearchProvider {
       result = await this.callSearch(req, signal);
     }
     const mapped = mapToolsCallResult(result);
+    // R83 T1 / ADR-0084 D-004: vertical-hit marker — machine-readable stamp on
+    // every result routed through a vertical domain (audit + fusion layers can
+    // read NormalizedResult.extra.vertical; fusion preserves extra).
+    if (req.vertical) {
+      for (const r of mapped.results) {
+        r.extra = {
+          ...(r.extra ?? {}),
+          vertical: {
+            domain: req.vertical.domain,
+            ...(req.vertical.subDomain ? { subDomain: req.vertical.subDomain } : {}),
+          },
+        };
+      }
+    }
     return {
       provider: "anysearch",
       results: mapped.results,
@@ -205,6 +222,16 @@ export class AnySearchProvider implements SearchProvider {
         query: req.query,
         // MCP schema: max_results maximum 10 — silent clamp (D-002 §4).
         max_results: Math.min(Math.max(req.maxResults ?? 10, 1), 10),
+        // R83 T1 / ADR-0084 D-003: wire layer — internal vertical* fields map to
+        // the MCP domain/sub_domain/sub_domain_params argument names. Absent
+        // vertical → all three keys stay absent (no empty-string defaults).
+        ...(req.vertical
+          ? {
+              domain: req.vertical.domain,
+              ...(req.vertical.subDomain ? { sub_domain: req.vertical.subDomain } : {}),
+              ...(req.vertical.params ? { sub_domain_params: req.vertical.params } : {}),
+            }
+          : {}),
       },
     }, signal);
   }

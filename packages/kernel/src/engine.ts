@@ -226,10 +226,14 @@ export class RetroaererdEngine {
   // in the retriever (AFR tag-freshness lesson: 9.7% re-leak on stale snapshots).
   private urlPolicy?: () => { allow: readonly string[]; deny: readonly string[]; policyVersion: string };
   private domainName?: string;
+  // R83 T1 / ADR-0084 D-003/D-004: repo-level vertical default resolver (domain
+  // TOML sources.vertical), consulted per request like urlPolicy. Query-level
+  // q.vertical replaces it wholesale (no deep-merge).
+  private repoVertical?: () => SearchRequest["vertical"];
 
   // ADR-0006 decision 1C: constructor accepts providers array.
   // ADR-0006 decision 2A: optional BudgetLedger + sessionId for per-call billing.
-  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; attributionJudge?: JudgeFn; sourceWeights?: Record<string, number>; attributionCalibration?: AttributionCalibration; urlPolicy?: () => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }; domainName?: string }) {
+  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; attributionJudge?: JudgeFn; sourceWeights?: Record<string, number>; attributionCalibration?: AttributionCalibration; urlPolicy?: () => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }; domainName?: string; repoVertical?: () => SearchRequest["vertical"] }) {
     this.ledger = opts?.ledger;
     this.sessionId = opts?.sessionId;
     this.attributionJudge = opts?.attributionJudge;
@@ -242,6 +246,7 @@ export class RetroaererdEngine {
       : undefined;
     this.urlPolicy = opts?.urlPolicy;
     this.domainName = opts?.domainName;
+    this.repoVertical = opts?.repoVertical;
     for (const p of providers) {
       this.providers.set(p.id, p);
     }
@@ -299,12 +304,40 @@ export class RetroaererdEngine {
         "anysearch.domain_filter.degraded": degradedProviders,
       });
     }
+    // R83 T1 / ADR-0084 D-003/D-004/D-005: vertical resolution — query-level
+    // q.vertical replaces the repo default wholesale (no deep-merge). The
+    // retrieval.vertical.pre audit event fires when the resolved spec is
+    // non-empty, independently of domainActive (the two axes are orthogonal).
+    const repoV = this.repoVertical?.();
+    const resolvedVertical = q.vertical ?? repoV;
+    const verticalActive = !!resolvedVertical && typeof resolvedVertical.domain === "string" && resolvedVertical.domain.length > 0;
+    const verticalSent = verticalActive
+      ? allProviders.filter((p) => p.verticalDomainSupported).map((p) => p.id)
+      : [];
+    const verticalDegraded = verticalActive
+      ? allProviders.filter((p) => !p.verticalDomainSupported).map((p) => p.id)
+      : [];
+    if (verticalActive) {
+      q.span?.addEvent("retrieval.vertical.pre", {
+        "anysearch.domain": this.domainName ?? "",
+        "anysearch.vertical.domain": resolvedVertical.domain,
+        "anysearch.vertical.sub_domain": resolvedVertical.subDomain ?? "",
+        // params_keys carries the key list only — param values never enter audit.
+        "anysearch.vertical.params_keys": Object.keys(resolvedVertical.params ?? {}),
+        "anysearch.vertical.source": q.vertical ? "query" : "repo",
+        "anysearch.vertical.sent": verticalSent,
+        "anysearch.vertical.degraded": verticalDegraded,
+      });
+    }
     // Provider-facing request carries only SearchRequest fields — kernel-side
     // Query extras (budget/providers/span) never cross the provider boundary.
     const providerRequest = (p: SearchProvider): SearchRequest => {
       const req: SearchRequest = { query: q.query, mode: q.mode };
       if (q.maxResults !== undefined) req.maxResults = q.maxResults;
       if (domainActive && p.domainFilterSupported) req.includeDomains = [...domainPolicy.allow];
+      // Capability-negotiated vertical passthrough: non-declaring providers keep
+      // the general fanout (hint semantics — a lost hint never kills the arm).
+      if (verticalActive && p.verticalDomainSupported) req.vertical = resolvedVertical;
       return req;
     };
 

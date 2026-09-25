@@ -13,7 +13,7 @@ export interface DomainSchema {
   settings: Record<string, unknown>;
   prompts: PromptEntry[];
   skills: { active: string[] };
-  sources: { enabled: string[]; weights?: Record<string, number>; urlAllowlist?: string[]; urlDenylist?: string[] };
+  sources: { enabled: string[]; weights?: Record<string, number>; urlAllowlist?: string[]; urlDenylist?: string[]; vertical?: { domain: string; sub_domain?: string } };
   rag: { adapter: string; config?: Record<string, unknown> };
   hooks: { toolWhitelist: string[] };
   compaction?: CompactionConfig;
@@ -42,7 +42,7 @@ export interface RawDomain {
   settings?: Record<string, unknown>;
   prompts?: PromptEntry[];
   skills?: { active?: string[] };
-  sources?: { enabled?: string[]; weights?: Record<string, number>; urlAllowlist?: string[]; urlDenylist?: string[] };
+  sources?: { enabled?: string[]; weights?: Record<string, number>; urlAllowlist?: string[]; urlDenylist?: string[]; vertical?: { domain: string; sub_domain?: string } };
   rag?: { adapter?: string; config?: Record<string, unknown> };
   hooks?: { toolWhitelist?: string[] };
   compaction?: CompactionConfig;
@@ -108,6 +108,7 @@ export function resolve(
   let sourcesWeights: Record<string, number> | undefined;
   let sourcesUrlAllowlist: string[] | undefined;
   let sourcesUrlDenylist: string[] | undefined;
+  let sourcesVertical: { domain: string; sub_domain?: string } | undefined;
   let ragAdapter = "";
   let ragConfig: Record<string, unknown> | undefined;
   let hooksWhitelist: string[] = [];
@@ -128,6 +129,9 @@ export function resolve(
     if (d.sources?.weights) sourcesWeights = d.sources.weights;
     if (d.sources?.urlAllowlist) sourcesUrlAllowlist = d.sources.urlAllowlist;
     if (d.sources?.urlDenylist) sourcesUrlDenylist = d.sources.urlDenylist;
+    // R83 T1 / ADR-0084 D-003: sources.vertical — section-replace like the other
+    // sources fields (a derived TOML restates the whole vertical declaration).
+    if (d.sources?.vertical) sourcesVertical = d.sources.vertical;
     if (d.rag?.adapter) { ragAdapter = d.rag.adapter; ragConfig = d.rag.config; }
     if (d.hooks?.toolWhitelist) hooksWhitelist = d.hooks.toolWhitelist;
     if (d.compaction) compaction = d.compaction;
@@ -141,7 +145,7 @@ export function resolve(
     settings,
     prompts,
     skills: { active: skillsActive },
-    sources: { enabled: sourcesEnabled, ...(sourcesWeights ? { weights: sourcesWeights } : {}), ...(sourcesUrlAllowlist ? { urlAllowlist: sourcesUrlAllowlist } : {}), ...(sourcesUrlDenylist ? { urlDenylist: sourcesUrlDenylist } : {}) },
+    sources: { enabled: sourcesEnabled, ...(sourcesWeights ? { weights: sourcesWeights } : {}), ...(sourcesUrlAllowlist ? { urlAllowlist: sourcesUrlAllowlist } : {}), ...(sourcesUrlDenylist ? { urlDenylist: sourcesUrlDenylist } : {}), ...(sourcesVertical ? { vertical: sourcesVertical } : {}) },
     rag: { adapter: ragAdapter, config: ragConfig },
     hooks: { toolWhitelist: hooksWhitelist },
     compaction,
@@ -183,6 +187,19 @@ export function validate(schema: DomainSchema): void {
   if (schema.sources.urlAllowlist !== undefined) assertHostnameList(schema.sources.urlAllowlist, "urlAllowlist");
   // ADR-0055 D2: deny channel — first-class, evaluated last, never merged into allow.
   if (schema.sources.urlDenylist !== undefined) assertHostnameList(schema.sources.urlDenylist, "urlDenylist");
+  // R83 T1 / ADR-0084 D-006: sources.vertical — shape check only. domain must be a
+  // non-empty string; sub_domain when present must be a non-empty string. The
+  // domain vocabulary itself stays upstream-owned (unknown values are NOT
+  // rejected here — the provider isError + fail-first degrade handles them).
+  const v = schema.sources.vertical;
+  if (v !== undefined) {
+    if (typeof v !== "object" || v === null || Array.isArray(v))
+      throw new Error("Domain schema: sources.vertical must be a Record { domain, sub_domain? }");
+    if (typeof v.domain !== "string" || v.domain.trim().length === 0)
+      throw new Error("Domain schema: sources.vertical.domain must be a non-empty string");
+    if (v.sub_domain !== undefined && (typeof v.sub_domain !== "string" || v.sub_domain.trim().length === 0))
+      throw new Error("Domain schema: sources.vertical.sub_domain must be a non-empty string when present");
+  }
   if (!Array.isArray(schema.hooks.toolWhitelist))
     throw new Error("Domain schema: hooks.toolWhitelist must be an array");
   // ADR-0021 D1: compaction guards — fail-fast on out-of-range.

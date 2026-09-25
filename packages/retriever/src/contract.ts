@@ -15,6 +15,16 @@ export interface SearchRequest {
   // The provider parameter is an entry-convergence hint, never the authority —
   // the kernel post-filter remains the fail-closed egress gate.
   includeDomains?: string[];
+  // R83 T1 / ADR-0084 D-003: vertical-domain routing spec — orthogonal to
+  // includeDomains (host allowlist axis ≠ provider-side vertical route enum).
+  // Internal field is vertical*; the wire mapping to MCP domain/sub_domain/
+  // sub_domain_params happens only inside the anysearch provider adapter.
+  // Query-level callers set this wholesale (no deep-merge with repo defaults).
+  vertical?: {
+    domain: string;
+    subDomain?: string;
+    params?: Record<string, unknown>;
+  };
 }
 
 export interface NormalizedResult {
@@ -55,6 +65,12 @@ export interface SearchProvider {
   // false = unsupported; the engine degrades that provider to post-filter-only
   // and records it in the retrieval.domain_filter.pre audit event.
   readonly domainFilterSupported?: boolean;
+  // R83 T1 / ADR-0084 D-004: vertical-domain capability bit — same shape as
+  // domainFilterSupported. true = the adapter maps SearchRequest.vertical to
+  // provider-side domain/sub_domain/sub_domain_params. Absent/false = the
+  // provider fans out on the general axis and is named in the
+  // retrieval.vertical.pre audit event's degraded list (a hint, never abstain).
+  readonly verticalDomainSupported?: boolean;
   search(req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope>;
   usage?(): Promise<UsageInfo | undefined>;
 }

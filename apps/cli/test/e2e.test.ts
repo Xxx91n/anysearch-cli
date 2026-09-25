@@ -13,9 +13,9 @@ const DIST = path.resolve(here, "..", "dist", "index.js");
 let passed = 0;
 let failed = 0;
 
-async function run(args: string[]): Promise<{ code: number; out: string }> {
+async function run(args: string[], env?: NodeJS.ProcessEnv): Promise<{ code: number; out: string }> {
   return new Promise((resolve, reject) => {
-    const p = spawn(process.execPath, [DIST, ...args], { stdio: ["ignore", "pipe", "pipe"] });
+    const p = spawn(process.execPath, [DIST, ...args], { stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}) });
     let out = "";
     p.stdout.on("data", (d) => (out += d));
     p.stderr.on("data", (d) => (out += d));
@@ -89,7 +89,12 @@ async function t(name: string, fn: () => Promise<void>) {
   });
 
   await t("chat without LLM env exits 3", async () => {
-    const r = await run(["chat", "hello"]);
+    // R83 nit fix: sanitize ambient ANS_LLM_* — the test asserts the
+    // no-LLM-env behavior, so a developer machine with a configured provider
+    // must not leak it into the child process.
+    const cleanEnv = { ...process.env };
+    for (const k of Object.keys(cleanEnv)) if (k.startsWith("ANS_LLM_")) delete cleanEnv[k];
+    const r = await run(["chat", "hello"], cleanEnv);
     assert.equal(r.code, 3);
     assert.match(r.out, /LLM provider not configured|ANS_LLM_PROVIDER/);
   });

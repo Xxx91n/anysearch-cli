@@ -6,7 +6,7 @@
 // ADR-0006 decision 4A: loads domain from domains/<name>.toml convention directory.
 
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
-import type { SearchProvider } from "@anysearch-cli/retriever";
+import type { SearchProvider, SearchRequest } from "@anysearch-cli/retriever";
 import { RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort } from "./ports";
 import {
@@ -94,6 +94,10 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
   // TOML edits and ANS_URL_ALLOWLIST/DENYLIST env overrides take effect without
   // restart. No cached policy snapshot lives inside the retriever.
   let urlPolicy: (() => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }) | undefined;
+  // R83 T1 / ADR-0084 D-003: repo-level vertical default — lazy resolver over the
+  // same liveSchema the urlPolicy reloader maintains (TOML edits take effect
+  // without restart); absent vertical returns undefined.
+  let repoVertical: (() => SearchRequest["vertical"]) | undefined;
 
   if (domain) {
     try {
@@ -114,10 +118,17 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
       const tomlPath = domainTomlPath(process.cwd(), domain, dirs);
       const reload = createDomainReloader(tomlPath);
       let liveSchema = schema;
-      urlPolicy = () => {
+      const live = () => {
         const reloaded = reload();
         if (reloaded) liveSchema = reloaded;
-        return resolvePolicyFromSchema(liveSchema);
+        return liveSchema;
+      };
+      urlPolicy = () => resolvePolicyFromSchema(live());
+      // Internal field is sub_domain in TOML (wire-adjacent declaration);
+      // mapped to subDomain at this boundary so the kernel stays vertical*.
+      repoVertical = () => {
+        const v = live().sources.vertical;
+        return v ? { domain: v.domain, ...(v.sub_domain ? { subDomain: v.sub_domain } : {}) } : undefined;
       };
     } catch (e) {
       // ADR-0045 D2: configuration errors fail fast — an invalid sources.weights must not be
@@ -136,6 +147,7 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
     ...(attributionCalibration ? { attributionCalibration } : {}),
     // ADR-0062 D2: domain-name rides with the resolver for audit attributes.
     ...(urlPolicy ? { urlPolicy, domainName: domain } : {}),
+    ...(repoVertical ? { repoVertical } : {}),
   };
   const retriever: RetrieverPort = new RetroaererdEngine(
     providers,

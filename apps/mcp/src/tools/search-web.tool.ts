@@ -18,10 +18,20 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
     },
     async (args: unknown) => {
       return observeTool(eng, "search_web", async (span) => {
-        const { query, mode, maxResults } = args as { query: string; mode?: string; maxResults?: number };
+        const { query, mode, maxResults, verticalDomain, verticalSubDomain, verticalParams } = args as { query: string; mode?: string; maxResults?: number; verticalDomain?: string; verticalSubDomain?: string; verticalParams?: Record<string, unknown> };
         // ADR-0019 D3: args validated by AJV upstream (fromJsonSchema).
+        // R83 T1 / ADR-0084 D-003/D-006: query-level vertical — whole-replace spec.
+        // Shape check: sub_domain/params are meaningless without a domain
+        // (AJV cannot express the dependency) — fail fast instead of silently
+        // dropping the caller's intent.
+        if (verticalDomain === undefined && (verticalSubDomain !== undefined || verticalParams !== undefined)) {
+          return { content: [{ type: "text" as const, text: "search_web error: verticalSubDomain/verticalParams require verticalDomain" }] };
+        }
+        const vertical = verticalDomain !== undefined
+          ? { domain: verticalDomain, ...(verticalSubDomain ? { subDomain: verticalSubDomain } : {}), ...(verticalParams ? { params: verticalParams } : {}) }
+          : undefined;
         try {
-          const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", maxResults, span });
+          const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", maxResults, ...(vertical ? { vertical } : {}), span });
           const topResults = envelope.results.slice(0, 10);
 
         // ADR-0022 D1: provider answers pass through as first-class fields.
@@ -44,6 +54,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             ...(envelope.attribution ? { attribution: envelope.attribution } : { attribution: null }),
             // ADR-0062 D3: first-class abstain marker — policy success, not error.
             abstain: envelope.metadata?.abstain ?? null,
+            // R83 T1: resolved vertical routing (query-level args; repo-level
+            // defaults surface via the retrieval.vertical.pre audit event).
+            vertical: vertical ?? null,
             // ADR-0014 D4: MCP sufficiency annotation — A+ dual-channel.
             ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
           },

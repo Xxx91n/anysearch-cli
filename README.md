@@ -135,6 +135,57 @@ Provider selection comes from the domain TOML's `sources.enabled`. Missing
 keys skip that provider instead of crashing (fail-open); if *no* provider can
 register, the search is an error, not an abstain.
 
+## AnySearch vertical domains (ADR-0084)
+
+The anysearch provider also exposes an orthogonal axis: a server-side
+**vertical-domain router**. Set it per query — CLI flags or MCP tool args —
+or per domain TOML; it is NOT a hostname allowlist and does not interact
+with `urlAllowlist` at all.
+
+- Query-level args (whole-replace the TOML default, never deep-merged):
+  `verticalDomain` / `verticalSubDomain` / `verticalParams` on
+  `search_web` + `research_web`; CLI `--vertical-domain` /
+  `--vertical-sub-domain` / `--vertical-params '{"k":"v"}'`.
+- Repo default: `[sources] vertical = { domain = "finance", sub_domain = "calendar" }`
+  in the domain TOML (static affinity only — dynamic values like tickers
+  stay query-level).
+- Capability-negotiated: only providers declaring `verticalDomainSupported`
+  (currently just anysearch) receive the wire fields `domain` /
+  `sub_domain` / `sub_domain_params`; others fan out on the general axis
+  and are named in the `retrieval.vertical.pre` audit event's
+  `anysearch.vertical.degraded` list (a lost hint, never an abstain).
+- Audit: one `retrieval.vertical.pre` event per vertical search —
+  attributes `anysearch.vertical.domain` / `.sub_domain` / `.params_keys`
+  (key *names* only, values never enter audit) / `.source` (repo|query) /
+  `.sent` / `.degraded`. Vertical hits carry a machine-readable
+  `extra.vertical` marker on each NormalizedResult.
+
+Vocabulary + constraint notes below are a **dated snapshot** — the live
+authority is the upstream `get_sub_domains` tool (queried
+2026-09-25, `https://api.anysearch.com/mcp`); the client intentionally
+ships no enum copy. Local validation checks *shape only* (non-empty
+strings / Record) — invalid `sub_domain` or missing required
+`sub_domain_params` come back as upstream `isError`, which degrades the
+anysearch arm fail-first (never a silent zero-result envelope).
+
+The 17 top-level domain values (enum on `search.domain`):
+
+`academic` `agriculture` `business` `code` `energy` `environment`
+`film` `finance` `gaming` `general` `health` `ip` `legal` `resource`
+`security` `social_media` `travel`
+
+Observed upstream semantics (live probe 2026-09-25):
+
+- `sub_domain` values like `finance.calendar` / `finance.fundamental` come
+  from `get_sub_domains(domain=<d>)` output along with per-tag param tables
+  (e.g. `finance.calendar` requires `type` ∈ earnings|dividends|ipos|economic;
+  `finance.fundamental` requires `type` plus `symbol` or `cn_code` per type).
+- An out-of-enum `domain` is silently tolerated upstream (falls back to a
+  general-style result set) — rejection pressure lives on the sub_domain and
+  params side, not the domain enum itself.
+- `domain` alone (no `sub_domain`) returns results; docs call sub_domain
+  "required" but the server does not enforce it.
+
 ## MCP server
 
 ```bash
