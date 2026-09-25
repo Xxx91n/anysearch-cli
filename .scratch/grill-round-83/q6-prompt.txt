@@ -1,0 +1,7 @@
+R83 垂域参数校验与发现策略裁决——anysearch-cli grill-round-83 第六题。
+
+背景：上游 anysearch MCP 服务支持垂域路由参数（domain=17 个垂域枚举/sub_domain/sub_domain_params——逐 sub_domain 有 typed params 约束表含 required 字段，如 finance.quote{symbol,period}）；词表是活面由 get_sub_domains 工具返回（独立 tools/call 往返）。本仓契约已裁（账本 D-001~D-005 全 current）：双层注入（仓 TOML 亲和默认+查询级覆盖）、能力协商 hint 扇出、新审计事件 retrieval.vertical.pre、R82 已落地 fail-first 映射（上游 isError/错形 200→该臂降级如实记不吞零）。
+
+待裁三案（vertical 三参合法性谁负责查）：A=形状校验+服务端真理——本地只验形状（domain/sub_domain=非空字符串、params=Record），词表合法性全权交上游，非法组合→isError 按 fail-first 降级；不内置枚举副本、get_sub_domains 不进运行时路径；B=运行时 get_sub_domains 校验——查询前查词表（直查=每查询+1 往返延迟；TTL 缓存=staleness 窗口+新状态面）；C=静态内置枚举——词表硬编码进 schema/validate（上游加域即漂移）。
+
+问题：垂域参数校验策略选哪个？请回顾工业界成熟落地的心智模型（重点：客户端校验 vs 服务端真理的边界惯例——如 JSON Schema 枚举同步漂移问题、API client 的 forward-compat 设计、gRPC/protobuf 未知枚举值处理纪律、fail-fast local vs fail-remote 的代价模型），评估三案真实代价（含：本地枚举副本漂移成本、运行时发现的延迟/缓存复杂度、盲透传的错误反馈延迟），给出推荐与理由。

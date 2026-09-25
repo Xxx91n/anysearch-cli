@@ -1,0 +1,7 @@
+R83 垂域审计事件形态裁决——anysearch-cli grill-round-83 第五题。
+
+背景：kernel engine 已有审计事件 retrieval.domain_filter.pre（仅当 host allowlist 策略激活时发射，attrs=domain/policy_version/allow_count/deny_count/sent/degraded 名单）与 retrieval.domain_filter.post（gate 计数+outcome=answer|abstain）。新增能力：垂域路由（provider 声明 verticalDomainSupported 收 vertical{domain,sub_domain,params} 参数——账本 D-001~D-004 已裁：双层注入、查询级整体覆盖仓级、能力协商 hint 扇出不变、垂域命中标记票内落）。实物约束：垂域路由可以在无 host 策略时发生（两轴正交），不能搭便车于现有事件触发条件。
+
+待裁三案：A=新独立事件 retrieval.vertical.pre——vertical resolved 值非空时发射，attrs=生效值+来源层(repo|query)+verticalSent/verticalDegraded 名单，与 domain_filter.pre 同构；B=扩展现有 domain_filter.pre——触发条件改为 domainActive 或 verticalSet，加 vertical attrs，一个事件记所有 pre-filter 轴；C=不立新事件——vertical 只进 span attributes。
+
+问题：垂域审计事件形态选哪个？请回顾工业界成熟落地的心智模型（重点：OTel/结构化日志的事件粒度惯例——一事件一轴 vs 聚合事件；既有遥测契约的演化纪律——扩展 attrs vs 改触发条件 vs 新事件名；审计消费者向后兼容判据），评估三案真实代价（含：改既有事件触发条件对下游消费者的影响面、新事件的命名爆炸风险、span attr 与 event 的语义分层惯例），给出推荐与理由。

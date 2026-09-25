@@ -1,0 +1,9 @@
+R83 主轴候选裁决——anysearch-cli 仓库 grill-round-83 的第一题。
+
+背景：这是一台有治理仪器的开发机器。已完成 82 轮 grill（每轮一主题一账本，决策留痕）。R82 刚把 AnySearchProvider 从死掉的 REST GET /v1/search 迁到 MCP-over-HTTP POST /mcp（手写薄 JSON-RPC，无 SDK），并通过独立审计。上轮评估腿实测：MCP search 工具支持 domain/sub_domain/sub_domain_params 垂域路由参数（17 个垂域枚举），与本仓现有 includeDomains（host allowlist 过滤）语义不同轴；垂域真贯通牵动契约面+引擎路由+审计语义三面，评估腿推荐立 R83 具名票（registry: defer-r83-anysearch-vertical-domain-passthrough，open）。
+
+承继决策面（R82 账本 D-001~D-005 全 current）：单轮一主题；条件辅轴预注册机制（双锚齐→具名票即时成立+执行序钉死主轴后+五护栏含时间盒≤20%主轴）；残余四分诊；三段收口判据；fail-open 语义不动；锐评第七轮处方核销态=货架连续进货（R80 出货→R81 吸气→R82 迁移落地）。
+
+候选：A=垂域贯通主轴（使命核心：信息专精 Agent CLI 遵循垂直领域理念；registry 票已立）；B=TE1 兑现（dsh 上游事件改名迁移 agent/session-start→agent/created，预注册票在池，rc.1 龄期闸今天约 13:25Z 出闸、rc.2 明天约 14:02Z，票域中小=repin 依赖族+一行 listener 改事件+guard+测试+彩排）；C=落选池征集（11 个 open 项多为监控/隔离/上游依赖型续债）。
+
+问题：R83 主轴应选哪个？请回顾工业界成熟落地的心智模型（重点：backlog 优先级排序、WSJF/时间窗敏感性权衡、单一焦点 vs 并发辅轴、mission-alignment vs opportunistic work 的取舍），评估 A/B/C 各自的真实代价与收益（含：TE1 若不本轮消费则再递一轮的漏斗空转成本；垂域贯通三面牵动是否足够一票体量；两工作流并行的治理先例），给出推荐与理由。

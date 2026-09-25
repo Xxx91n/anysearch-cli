@@ -1,0 +1,9 @@
+R83 垂域贯通契约面形态裁决——anysearch-cli grill-round-83 第三题。
+
+背景：仓库是仓（domain）中心架构——每个查询在某个命名知识域下运行，仓配置=domains/<name>.toml（DomainSchema：sources{enabled,weights,urlAllowlist,urlDenylist}+base 继承链深合并）。检索契约 SearchRequest={query,mode,maxResults,includeDomains?}——includeDomains 是 capability-negotiated 的 host allowlist 提示（provider 声明 domainFilterSupported 才收），kernel post-filter 是唯一权威闸。MCP 上游 anysearch 服务支持 domain（17 个垂域路由枚举）/sub_domain/sub_domain_params（结构化参数如 finance.quote{symbol,period}、code.doc{library}）——与本仓 includeDomains 不同轴（垂域路由 vs host 过滤）。
+
+账本 current 决策：D-001=本轮主轴=垂域贯通票（契约面扩展+引擎路由+审计语义三面贯通）；D-002=TE1 辅轴闸开先行（与本题无关）。R82 承继：fail-open（服务不可达降级不阻断）、能力协商位模式（domainFilterSupported）、审计事件 domain_filter.pre/post 已有。命名纪律：kernel 的 domain 已是仓名占用词，内部字段拟统一 vertical*，wire 层才映射 MCP domain 命名。
+
+待裁三案：A=双层贯通——仓 TOML sources.vertical 声明垂域亲和默认（domain+可选 sub_domain 静态枚举值）+工具 arg per-query 覆盖（verticalDomain/verticalSubDomain/verticalParams 全参可传），优先级=查询级覆盖仓级；B=仅工具 arg——search_web/research_web inputSchema 加垂域参数直通，仓理念不表达；C=仅仓 TOML——仓级默认唯一入口，sub_domain_params 查询级值无处可去。
+
+问题：垂域参数注入点应选哪个？请回顾工业界成熟落地的心智模型（重点：配置默认 vs 运行时覆盖的双层先例——如 HTTP client baseURL+per-request header、k8s namespace default+annotation override；API 分层设计中参数归属判据；declarative config vs imperative param 的边界惯例），评估三案真实代价（含：双层优先级冲突面、TOML 静态声明对动态 params 的不适配性、仅工具 arg 是否使仓沦为摆设），给出推荐与理由。

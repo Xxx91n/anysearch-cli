@@ -1,0 +1,9 @@
+R83 垂域路由扇出语义裁决——anysearch-cli grill-round-83 第四题。
+
+背景：多 provider 聚合检索引擎（amalgamation+fusion+MVSS 充分性门是核心价值主张）。现有先例 ADR-0062 D2：includeDomains 是 capability-negotiated 提示——provider 声明 domainFilterSupported 才收 host allowlist，未声明的照常扇出并在审计事件具名降级，kernel post-filter 是唯一权威闸。新需求：anysearch MCP 支持垂域路由参数（domain 17 枚举/sub_domain/sub_domain_params）；其他 provider 垂域词表各自为政（Exa=category 自有枚举、Tavily=topic）——能力位本轮实质只有 anysearch 可声明，跨家词表映射已显式出域。
+
+账本 current：D-001=主轴垂域贯通票；D-002=TE1 辅轴闸开先行；D-003=双层贯通契约（仓 TOML 亲和默认+查询级覆盖+vertical* 命名纪律+审计记生效值与来源层）。承继：fail-open 语义不动；能力协商位模式。
+
+待裁三案（vertical 字段生效时的 provider 边界）：A=能力协商 hint 扇出不变——新能力位 verticalDomainSupported，anysearch 声明 true 收三参，未声明 provider 照常扇出 general 由融合层归并，审计记 sent/degraded 名单，post-filter 不动；B=垂域限定路由——vertical 生效只打能力位 provider 其余跳过（「垂域意图=只搜垂域引擎」强语义）；C=硬路由+缺能力即 abstain——vertical 必须路由，无能力 provider 时整臂 abstain。
+
+问题：vertical 生效时的 provider 边界应选哪个？请回顾工业界成熟落地的心智模型（重点：capability negotiation/feature detection 先例、multi-provider fanout 聚合引擎的路由语义、能力缺失时的 degrade 惯例——如 DNS EDNS 扩展、gRPC 能力协商、搜索联邦的 selective routing vs broadcast），评估三案真实代价（含：单源化对聚合价值的侵蚀、hint 语义稀释垂域意图的风险、abstain 被垂域绑架的脆性），给出推荐与理由。

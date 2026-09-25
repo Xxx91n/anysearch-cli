@@ -1422,3 +1422,37 @@ spike/诊断收尾的强制分诊：每项残余显式落到「已消解/折入�
 
 ### Closed-by-Scope（域外即销）
 显式记「不在本系统治理域内」的一行闭合：归属≠要做事——记域边界+重开触发器即完成闭合（用户个人配置域用例）。_Avoid_: 不记档造成静默漏洞；把用户配置域当待办写进票。来源：atomcode R82-Q4+R82 D-004。
+## Grill Round 83 — Terms (ADR-0084)
+
+### Vertical-Domain Passthrough（垂域贯通）
+仓 TOML/工具 arg 的垂域参数经契约、路由、审计三面贯通至 anysearch MCP domain/sub_domain/sub_domain_params 的能力——host allowlist 与垂域路由枚举不同轴，新字段非复用 includeDomains。_Avoid_: 硬翻 domainFilterSupported（host 列表无处可去=假声明）；垂域贯通降级为纯透传票（三面是承诺非装饰）。来源：R82 评估腿+R83 D-001。
+
+### Dual-Layer Passthrough（双层贯通）
+垂域参数双注入面：仓 TOML sources.vertical{domain,sub_domain?} 声明静态亲和默认（可 review 的稳定知识主张）+工具 arg verticalDomain/verticalSubDomain/verticalParams 查询级整体替换仓级（axios data 语义——动态值如 symbol/library 只走请求级）。_Avoid_: 仅单层（仓理念不表达或动态 params 无处可去）；深合并（优先级语义模糊化）。来源：atomcode R83-Q3+R83 D-003。
+
+### Gate-Open-First Aux（闸开先行）
+条件辅轴在「双锚齐且主轴未启动」的轮次边界先行消费的执行序——Fixed-Date CoD 在窗口关闭后跳变，边界打断成本≪主轴中段打断。_Avoid_: 常态化（次次闸开先打辅轴=滑坡，频度熔断检视）；无限期前置（闸开当日硬界）。来源：atomcode R83-Q2+R83 D-002。
+
+### Boundary Conditions（论证边界三条件）
+闸开先行不援引自动成立的三条成立条件：①双锚判据成立②时间盒≤主轴 20%③闸开当日消费——缺一规则回到「主轴落地后」默认序，下次适用须重新过判据。_Avoid_: 援引先例跳过判据（先例侵蚀的制度性回应）。来源：atomcode R83-Q2+R83 D-002。
+
+### Capability-Negotiated Hint（能力协商提示）
+provider 声明能力位才收 hint 参数的扇出协商形态（ADR-0062 D2 includeDomains 同构）：verticalDomainSupported 位，anysearch 声明收三参，未声明照常扇出由融合归并+审计具名降级。_Avoid_: 垂域限定路由（单源化侵蚀融合）；缺能力即 abstain（提示参数绑架可用性）。来源：atomcode R83-Q4+R83 D-004。
+
+### Vertical Hit Marker（垂域命中标记）
+anysearch 垂域路由结果在 extra/metadata 携 vertical 标记——审计与融合层可读的意图保真载体。_Avoid_: 命中无痕（垂域意图被 general 结果淹没且不可观测）。来源：R83 D-004。
+
+### Prefer-Capable Weighting（偏好能力加权）
+EDNS prefer-capable-servers 同构的融合层加权：对声明能力位 provider 的垂域命中提位——意图保真靠加权不靠剪枝（可逆按源评分非请求级硬排他）。_Avoid_: 无 eval 数据支撑硬编码权重（加权数值须数据驱动非契约职责——本轮具名跟进项）。来源：atomcode R83-Q4+R83 D-004。
+
+### Shape Validation（形状校验）
+本地校验=非空字符串/Record 形状唯一——arc42 判据「验提取值的类型/范围/不变量，不验外围文档结构」；词表合法性全权上游（非法组合→isError→fail-first 臂级降级=fail loudly 不静默吞零）。_Avoid_: 内置枚举副本（ADP-768 点名反模式——上游加域即漂移）；复制上游 schema 语义。来源：atomcode R83-Q6+R83 D-006。
+
+### Server-Side Truth（服务端真理）
+活词表权威唯一归上游：get_sub_domains 不进运行时路径（无每查询往返/TTL 缓存状态面），客户端不复制权威（SSoT）；合法词表写人读档非代码枚举。_Avoid_: TTL 缓存伪真理（为少数路径快一跳引入全路径状态机）。来源：atomcode R83-Q6+R83 D-006。
+
+### Nit Two-Tier Rule（nit 两档规则）
+审计残余处置的分档：修复<半天→就地修+证据入取证段；否则→registry 三态登记（closed/defer-with-ticket/accepted-as-documented）。_Avoid_: 不登记去向=替未来轮次伪造「干净」状态（违兜底精神）。来源：atomcode R83-Q7+R83 D-007。
+
+### Goodhart Symmetric Watch（Goodhart 对称警惕）
+收口映射表的反向自检：某行说不出「该证据启用何判定」=仪式化残留→删行非补证——防「artifacts 存在但未被用于决策」的合规剧场。_Avoid_: 为 checkbox 补证。来源：atomcode R83-Q7+R83 D-007。
