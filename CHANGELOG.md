@@ -4,6 +4,27 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0084 r83: 垂域贯通轮——AnySearch vertical-domain passthrough + TE1 dsh 事件迁移
+
+### Added
+
+- `SearchRequest.vertical{domain,subDomain?,params?}` + `SearchProvider.verticalDomainSupported` 能力位（ADR-0084 D-003/D-004）：仓 TOML `[sources] vertical={domain,sub_domain?}` 静态亲和默认 + 工具 arg `verticalDomain/verticalSubDomain/verticalParams` + CLI `--vertical-domain/--vertical-sub-domain/--vertical-params` 三注入面；查询级整体替换仓级（无深合并）；能力协商下仅声明者收 wire 字段 `domain/sub_domain/sub_domain_params`，未声明者 general 扇出并入 degraded 名单（hint 非 abstain）。
+- `retrieval.vertical.pre` 审计事件（D-005）：attrs=anysearch.domain+vertical.domain+vertical.sub_domain+vertical.params_keys（仅键名不落值）+vertical.source(repo|query)+vertical.sent+vertical.degraded；与 domain_filter.pre 同构镜像、独立触发；无 vertical.post。垂域命中结果携 `NormalizedResult.extra.vertical` 机读标记（fusion 保活）。
+- `packages/kernel/test/vertical-domain.test.ts`（28 断言）+ store domain-schema 垂域断言 + retriever anysearch wire 映射用例 13/13b/13c/13d；README §AnySearch vertical domains 词表+约束表（17 值枚举快照+params 约束示例+上游拒收语义，标注 2026-09-25 日期源）。
+- `.scratch/grill-round-83/evidence/` —— T0 哨戒（dsh 双锚齐判定+rc.1 龄期闸实测+#1764 OPEN 趋僵 22d+CI 观测窗）+ TE1 迁移实录（三条件+repin 枚举重推导+L2 彩排）+ T1 垂域贯通证据（上游非法组合实测矩阵+CLI e2e）。
+
+### Changed
+
+- `@anysearch-cli/dsh-plugin` 事件面迁移（TE1，fix-r82-dsh-event-created-consumption 闸开兑现）：`ctx.on('agent/session-start')` → `ctx.on('agent/created')` + `source === 'startup'` guard（resume/clear/compact 不重注入）；@deepseek-ai/* 全族 repin 0.1.5-rc.2 → 0.1.7-rc.1（catalog+overrides 枚举重推导 21 名；新增 workspace/storage/storage-domain/session-persistence/sandbox/sandbox-policy/ptc-runtime，退役 code-runtime/util-crypto）+ cordis 4.0.2 → 4.0.4；contextMessage 适配新契约（MessageId brand + 自有 anysearch-plugin MessageSourceMap 增扩）。旧宿主（<0.1.7）下 payload 无 source → guard 自然不注入=静默降级。
+
+### Fixed
+
+- `apps/cli/test/e2e.test.ts` hermetic 修：chat 无 LLM 用例剥离环境 `ANS_LLM_*`（run() 增 env 参）——配置了 LLM 的开发机上不再假败。
+
+### Deferred
+
+- `defer-r83-anysearch-vertical-domain-passthrough` 收口（本轮落地）；`defer-r73-dsh-event-rename` 双锚齐消费完毕核销；新增 prefer-capable 加权调参跟进项（D-004 §4，eval 数据驱动非契约职责）；R82 审计残余 nit 两档处置（e2e hermetic 即修落地；度量行自指/JSON id 不对称/clientInfo.version 硬编码/engines 地板缺席逐项登记——见 ADR-0084）。
+
 ## Unreleased — ADR-0083 r82: 迁移落地轮——AnySearchProvider REST→MCP-over-HTTP
 
 ### Changed
