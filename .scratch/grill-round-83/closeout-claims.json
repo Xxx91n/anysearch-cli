@@ -1,0 +1,110 @@
+{
+  "schema": "anysearch/closeout-claims@1",
+  "round": 83,
+  "claims": [
+    {
+      "id": "r83-t1-contract-vertical",
+      "kind": "symbol",
+      "claim": "契约面：SearchRequest.vertical 三字段 + SearchProvider.verticalDomainSupported 能力位",
+      "file": "packages/retriever/src/contract.ts",
+      "tokens": [
+        "vertical?:",
+        "verticalDomainSupported?:",
+        "Record<string, unknown>"
+      ]
+    },
+    {
+      "id": "r83-t1-engine-pre-event",
+      "kind": "symbol",
+      "claim": "路由面：engine 发 retrieval.vertical.pre 且携五键 attrs（params_keys 非值）",
+      "file": "packages/kernel/src/engine.ts",
+      "tokens": [
+        "retrieval.vertical.pre",
+        "anysearch.vertical.domain",
+        "anysearch.vertical.params_keys",
+        "anysearch.vertical.sent",
+        "anysearch.vertical.degraded",
+        "anysearch.vertical.source"
+      ]
+    },
+    {
+      "id": "r83-t1-no-vertical-post",
+      "kind": "count",
+      "claim": "审计面：源码面 retrieval.vertical.post 零出现（D-005 否决 post 事件）",
+      "command": "node -e \"const fs=require('fs'),path=require('path');let n=0;const walk=(d)=>{for(const f of fs.readdirSync(d,{withFileTypes:true})){const fp=path.join(d,f.name);if(f.isDirectory()){if(f.name!=='test'&&f.name!=='node_modules'&&f.name!=='dist')walk(fp)}else if(f.name.endsWith('.ts')&&fs.readFileSync(fp,'utf8').includes('retrieval.vertical.post'))n++}};for(const d of ['packages','apps'])for(const s of fs.readdirSync(d))walk(path.join(d,s));console.log(n)\"",
+      "expect": 0
+    },
+    {
+      "id": "r83-t1-wire-mapping",
+      "kind": "symbol",
+      "claim": "wire 映射：adapter 把 vertical.domain/subDomain/params 翻为 domain/sub_domain/sub_domain_params",
+      "file": "packages/retriever/src/providers/anysearch.ts",
+      "tokens": [
+        "verticalDomainSupported = true",
+        "sub_domain: req.vertical.subDomain",
+        "sub_domain_params: req.vertical.params",
+        "domain: req.vertical.domain",
+        "extra"
+      ]
+    },
+    {
+      "id": "r83-t1-schema-vertical",
+      "kind": "symbol",
+      "claim": "DomainSchema sources.vertical TOML 支持+形状校验（非空字符串）",
+      "file": "packages/store/src/domain-schema.ts",
+      "tokens": [
+        "vertical?: { domain: string; sub_domain?: string }",
+        "sources.vertical.domain must be a non-empty string",
+        "sources.vertical.sub_domain"
+      ]
+    },
+    {
+      "id": "r83-t1-tool-args",
+      "kind": "symbol",
+      "claim": "工具 arg 三参注册（search_web/research_web：verticalDomain/verticalSubDomain/verticalParams）",
+      "file": "packages/kernel/src/tool-schemas.ts",
+      "tokens": [
+        "verticalDomain",
+        "verticalSubDomain",
+        "verticalParams"
+      ]
+    },
+    {
+      "id": "r83-te1-event-created",
+      "kind": "symbol",
+      "claim": "TE1：dsh-plugin 监听 agent/created + startup guard",
+      "file": "apps/dsh-plugin/src/index.ts",
+      "tokens": [
+        "ctx.on('agent/created'",
+        "source === 'startup'",
+        "anysearch-plugin"
+      ]
+    },
+    {
+      "id": "r83-te1-no-session-start",
+      "kind": "count",
+      "claim": "TE1：dsh-plugin src 中 agent/session-start 零残留",
+      "command": "node -e \"const s=require('fs').readFileSync('apps/dsh-plugin/src/index.ts','utf8');console.log(s.split('agent/session-start').length-1)\"",
+      "expect": 0
+    },
+    {
+      "id": "r83-t4-readme-vertical",
+      "kind": "symbol",
+      "claim": "README 垂域节+17 词表快照+日期源注记",
+      "file": "README.md",
+      "tokens": [
+        "AnySearch vertical domains",
+        "2026-09-25",
+        "get_sub_domains",
+        "academic"
+      ]
+    },
+    {
+      "id": "r83-t4-engines-floor",
+      "kind": "count",
+      "claim": "nit④：engines.node>=22.0.0 地板声明落 8 包",
+      "command": "node -e \"const fs=require('fs');const d=['packages/retriever','packages/store','packages/kernel','packages/embedding','apps/cli','apps/mcp','apps/plugin','apps/dsh-plugin'];let n=0;for(const x of d){const j=JSON.parse(fs.readFileSync(x+'/package.json','utf8'));if(j.engines&&j.engines.node==='>=22.0.0')n++}console.log(n)\"",
+      "expect": 8
+    }
+  ]
+}
