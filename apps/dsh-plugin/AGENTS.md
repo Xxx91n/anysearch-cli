@@ -25,7 +25,9 @@ server at `127.0.0.1:33333` (HTTP IPC, fail-open).
 
 ## Hook surfaces
 
-`agent/session-start` → routing-card `agent.inject()`; `ctx.systemPrompt`
+`agent/created` (fires for all session sources; this plugin only acts
+when `source === 'startup'` — resume/clear/compact skip) → routing-card
+`agent.inject()`; `ctx.systemPrompt`
 → `anysearch:routing-card` section; `tools/pre-execute` → URL-policy
 deny/ask + recall preheat inject; `tools/post-execute` → distilled
 `additionalContexts`; `tools/result` → `/index` IPC (fire-and-forget).
