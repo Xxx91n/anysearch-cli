@@ -788,7 +788,73 @@
    "deadline": "2027-03-31",
    "review_cadence": "next-round candidate + quarterly",
    "status": "open",
-   "evidence": "R83 D-004 §4 显式范围外：能力位只决定 wire 下发与否，不做权重倾斜；若要做，需 eval 数据证明垂域臂召回质量差异，属评估轮职责非契约轮。"
+   "evidence": "R83 D-004 §4 显式范围外：能力位只决定 wire 下发与否，不做权重倾斜；若要做，需 eval 数据证明垂域臂召回质量差异，属评估轮职责非契约轮。 | R84 更新：证据机制在役等数据——双臂配对 delta 腿已落地（packages/store/test/online/eval-looks-vertical.online.ts → .scratch/vertical-eval/delta.json，首轮受匿名配额限部分降格，重跑条件见 ADR-0085 D8/defer-r84-delta-quota-rerun）。数据读出前保持 open。"
+  },
+  {
+   "id": "defer-r84-anysearch-empty-endpoint-env",
+   "type": "deferred-with-ticket",
+   "title": "ANYSEARCH_ENDPOINT=\"\" 空串经 ?? 落到空 endpoint（POSIX 空≈未设应回落默认）——R84 live 腿实测暴露",
+   "source_adr": "docs/adr/0085-architecture-grill-round-84-vertical-eval-leg.md",
+   "owner": "anysearch-retriever",
+   "opened_at": "2026-09-26",
+   "review_cadence": "next-round candidate",
+   "status": "open",
+   "evidence": "R84 T3 实跑：env -u 前手动置空 ANYSEARCH_ENDPOINT= 触发 endpoint=\"\" fetch 失败（臂级 fail 静默进 providersFailed）。修法=constructor 端点解析把空串视同 undefined。"
+  },
+  {
+   "id": "defer-r84-ip-fifth-domain",
+   "type": "deferred-with-condition",
+   "title": "ip 第五域语料建集（触发条件=上游为 ip 子域补结构化参数词表）",
+   "source_adr": "docs/adr/0085-architecture-grill-round-84-vertical-eval-leg.md",
+   "owner": "anysearch-eval",
+   "opened_at": "2026-09-26",
+   "review_cadence": "quarterly + upstream vocab watch",
+   "status": "open",
+   "evidence": "R84 D-006/D3：四域先行（finance/academic/code/health）；ip 域当前无可断言的结构化 sub_domain params，建集=低评审合成条目违账本禁项。"
+  },
+  {
+   "id": "defer-r84-delta-quota-rerun",
+   "type": "deferred-with-condition",
+   "title": "首轮 vertical-delta 部分降格重跑（触发=公网有效 ANYSEARCH_API_KEY 就位或匿名额度恢复）",
+   "source_adr": "docs/adr/0085-architecture-grill-round-84-vertical-eval-leg.md",
+   "owner": "anysearch-eval",
+   "opened_at": "2026-09-26",
+   "review_cadence": "next-round candidate",
+   "status": "open",
+   "evidence": "R84 T3：57 条 corpus×4 趟跑通，前几条获真臂数据（fmp 命中+marked 标记在），其后匿名额度耗尽两臂归零——机制链绿、覆盖受配额限。证据档 .scratch/grill-round-84/evidence/t3-vertical-delta.md。 附：盘上存量 delta.json 为早期 runner schema（缺 providersFailedIsoOn/IsoOff/armInFanout/armOnSample 字段）——重跑产出覆盖即闭合存量漂移（审计 F3）。"
+  },
+  {
+   "id": "defer-r83-a03-flagvalueset-swallow",
+   "type": "deferred-with-ticket",
+   "title": "A-03：CLI flagValueSet 吞词——查询词与旗值同形时被剔除（search.ts 旗值剔除启发式扩至三新旗值）",
+   "source_adr": "docs/adr/0084-architecture-grill-round-83-vertical-domain-passthrough.md",
+   "owner": "anysearch-cli",
+   "opened_at": "2026-09-26",
+   "review_cadence": "cleanup-round candidate",
+   "status": "open",
+   "evidence": "R83 审计 §三 A-03（nit，pre-existing）：ans search --vertical-domain finance finance 中第二个 finance 被吞。修法=位置化旗值解析替代值集合剔除。R84 D-007(iii) 明令登记。"
+  },
+  {
+   "id": "defer-r83-a06-vertical-assembly-dup",
+   "type": "deferred-with-ticket",
+   "title": "A-06：垂域组装+require-domain guard 三处近重复（cli/search.ts、mcp/search-web、mcp/research-web）+TypeBox 三参块+Raw/解析面 vertical? 双写——建议共享 buildVerticalSpec",
+   "source_adr": "docs/adr/0084-architecture-grill-round-83-vertical-domain-passthrough.md",
+   "owner": "anysearch-cli",
+   "opened_at": "2026-09-26",
+   "review_cadence": "cleanup-round candidate",
+   "status": "open",
+   "evidence": "R83 审计 §三 A-06（smell·judgement）。三入口各自构造 vertical 对象+依赖 guard——错形处理已立法一致（A-02），组装重复仍属清障素材。R84 D-007(iii) 明令登记。"
+  },
+  {
+   "id": "defer-r83-a08-dead-maxresults",
+   "type": "deferred-with-ticket",
+   "title": "A-08：search-web.tool.ts 解构 maxResults 但 inputSchema additionalProperties:false 未含该键——dead param（pre-existing 非本轮引入）",
+   "source_adr": "docs/adr/0084-architecture-grill-round-83-vertical-domain-passthrough.md",
+   "owner": "anysearch-cli",
+   "opened_at": "2026-09-26",
+   "review_cadence": "cleanup-round candidate",
+   "status": "open",
+   "evidence": "R83 审计 §三 A-08（pre-existing）。修=schema 增键或删解构，二选一须与 MCP 工具面 contract 复核后定。R84 D-007(iii) 明令登记。"
   }
  ]
 }

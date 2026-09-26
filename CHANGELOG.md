@@ -4,6 +4,26 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0085 r84: 垂域评测证据腿——契约断言 + 金标语料 + 双臂配对 delta
+
+### Added
+
+- 垂域评测双层扩展（ADR-0085 D2）：`eval-looks.json` 金标账册扩 `expected.vertical{role,domain,sub_domain,paramsKeys,paramsSent,hit,degraded,hitHosts,hitPaths}` 断言面；`vert-*`/`ctrl-*` id 族 + `stratum:`/`vdomain:` 独立维度词表（不触碰 docs 八维计数闸）；57 条 live-scoped 垂域语料（finance/academic/code/health × parameterized/semantic）+ 对照类一等断言条目；provenance 全字段 + 建集期活词表快照（get_sub_domains 仅人工探查不进运行时）。
+- 配对 delta live 腿 `packages/store/test/online/eval-looks-vertical.online.ts`（D-002 证据层/D-004/D-005）：同 query 同期盼集 vertical-on/off 四趟（隔离 `ANS_PROVIDERS=anysearch` 臂级主证 + 全扇出融合级副列），产 `anysearch/vertical-delta@1` 证据件（datasetFingerprint + 臂标识 + 显式 n + better/worse/tied/unknown + providersFailed 四面 + 臂采样 URL）；不可测格记 null/unknown 非 0。
+- CLI eval 面 env 门控：`ANS_ARM_SNAPSHOT=1`（`--json` 透出 `metadata.fusion{labels,lists}`）+ `ANS_PROVIDERS=a,b`（provider 子集过滤走 `Query.providers`）。
+
+### Changed
+
+- 三入口错形统一 fail-fast（A-02 立法）：CLI/TOML 对齐 MCP 拒收报错——bare/subordinate flag 无 domain、空串 domain/subDomain、非法 JSON `--vertical-params` 一律显式报错；`canonicalizeVertical`（contract.ts）为 params:{}≡absent 单点规范化（A-04），engine 审计事件与 anysearch wire 边界共用。
+
+### Fixed
+
+- 测量容错：delta runner 的 host 解析容忍上游 schemeless URL；hitHosts 池后缀域匹配（site.financialmodelingprep.com ↔ financialmodelingprep.com）。
+
+### Deferred
+
+- `defer-r83-prefer-capable-weighting` 注记更新为「证据机制在役等数据」（open，未核销）；新增 `defer-r84-ip-fifth-domain`（上游补 ip 结构化参数再建集）/ `defer-r84-delta-quota-rerun`（匿名配额耗尽后首轮部分降格，持有效 key 重跑）/ `defer-r84-anysearch-empty-endpoint-env`（ANYSEARCH_ENDPOINT 空串应视同未设）。
+
 ## Unreleased — ADR-0084 r83: 垂域贯通轮——AnySearch vertical-domain passthrough + TE1 dsh 事件迁移
 
 ### Added
