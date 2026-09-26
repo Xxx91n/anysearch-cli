@@ -1,0 +1,129 @@
+{
+ "schema": "anysearch/closeout-claims@1",
+ "round": 84,
+ "claims": [
+  {
+   "id": "r84-t1-canonicalize",
+   "kind": "symbol",
+   "claim": "contract.ts canonicalizeVertical 单点规范化在（A-04 params:{}≡absent 真理源）",
+   "file": "packages/retriever/src/contract.ts",
+   "tokens": [
+    "canonicalizeVertical",
+    "export function canonicalizeVertical"
+   ]
+  },
+  {
+   "id": "r84-t1-pre-event",
+   "kind": "symbol",
+   "claim": "engine retrieval.vertical.pre 七键审计事件在（domain/sub_domain/params_keys/source/sent/degraded）",
+   "file": "packages/kernel/src/engine.ts",
+   "tokens": [
+    "retrieval.vertical.pre",
+    "anysearch.vertical.domain",
+    "anysearch.vertical.params_keys",
+    "anysearch.vertical.source",
+    "anysearch.vertical.sent",
+    "anysearch.vertical.degraded"
+   ]
+  },
+  {
+   "id": "r84-t1-schema-keys",
+   "kind": "symbol",
+   "claim": "docs-golden.ts 垂域断言 schema 在（DocsGoldenVerticalExpectation+paramsKeys+hitHosts+role+general-fallback）",
+   "file": "packages/store/src/eval/docs-golden.ts",
+   "tokens": [
+    "DocsGoldenVerticalExpectation",
+    "paramsKeys",
+    "hitHosts",
+    "general-fallback"
+   ]
+  },
+  {
+   "id": "r84-t2-vertical-family-count",
+   "kind": "count",
+   "claim": "语料面：eval-looks.json 垂域家族条目（vert-*/ctrl-*）共 62 条（57 live 生成+5 stub 钉）",
+   "command": "node -e \"const d=require('./eval-looks.json');console.log(d.golden.entries.filter(e=>/^(vert-|ctrl-)/.test(e.id)).length)\"",
+   "expect": 62
+  },
+  {
+   "id": "r84-t2-live-scoped-count",
+   "kind": "count",
+   "claim": "语料面：live/both-scoped 且 expected.vertical 在列条目=57",
+   "command": "node -e \"const d=require('./eval-looks.json');const s=d.golden.scopes||{};console.log(d.golden.entries.filter(e=>(s[e.id]==='live'||s[e.id]==='both')&&e.expected&&e.expected.vertical!==undefined).length)\"",
+   "expect": 57
+  },
+  {
+   "id": "r84-t3-runner-present",
+   "kind": "path",
+   "claim": "证据腿：配对 delta runner 在场",
+   "paths": [
+    "packages/store/test/online/eval-looks-vertical.online.ts"
+   ]
+  },
+  {
+   "id": "r84-t3-runner-anchors",
+   "kind": "symbol",
+   "claim": "证据腿：runner 携 delta@1 schema+指纹+臂标识+unknown 诚实格",
+   "file": "packages/store/test/online/eval-looks-vertical.online.ts",
+   "tokens": [
+    "anysearch/vertical-delta@1",
+    "datasetFingerprint",
+    "ANS_PROVIDERS",
+    "ANS_ARM_SNAPSHOT",
+    "armOnSample",
+    "unknown"
+   ]
+  },
+  {
+   "id": "r84-t3-cli-eval-env",
+   "kind": "symbol",
+   "claim": "CLI eval 面：ANS_ARM_SNAPSHOT+ANS_PROVIDERS env 门控在",
+   "file": "apps/cli/src/commands/search.ts",
+   "tokens": [
+    "ANS_ARM_SNAPSHOT",
+    "ANS_PROVIDERS"
+   ]
+  },
+  {
+   "id": "r84-t4-adr-registered",
+   "kind": "path",
+   "claim": "收口面：ADR-0085 在册",
+   "paths": [
+    "docs/adr/0085-architecture-grill-round-84-vertical-eval-leg.md"
+   ]
+  },
+  {
+   "id": "r84-t4-registry-entries",
+   "kind": "symbol",
+   "claim": "收口面：registry 新增 r84 三联（空串 endpoint/ip 第五域/配额重跑）",
+   "file": "docs/deferred-registry.json",
+   "tokens": [
+    "defer-r84-anysearch-empty-endpoint-env",
+    "defer-r84-ip-fifth-domain",
+    "defer-r84-delta-quota-rerun",
+    "证据机制在役等数据",
+    "defer-r83-a03-flagvalueset-swallow",
+    "defer-r83-a06-vertical-assembly-dup",
+    "defer-r83-a08-dead-maxresults"
+   ]
+  },
+  {
+   "id": "r84-f1-composition-failfast",
+   "kind": "symbol",
+   "claim": "返修 F1：composition catch 放行 Domain schema: 族错（错形 TOML 不再静默全扇出）",
+   "file": "packages/kernel/src/composition.ts",
+   "tokens": [
+    "Domain schema:",
+    "must not be"
+   ]
+  },
+  {
+   "id": "r84-f1-negative-tests",
+   "kind": "path",
+   "claim": "返修 F1：composition 级负径测试在场",
+   "paths": [
+    "packages/kernel/test/composition-vertical.test.ts"
+   ]
+  }
+ ]
+}
