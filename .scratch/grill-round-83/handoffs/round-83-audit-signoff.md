@@ -1,16 +1,16 @@
-# Round-83 Audit Signoff — 审计签字交接（PASSED·附 1 返工项）
+# Round-83 Audit Signoff — 审计签字交接（PASSED·返工闭合）
 
-Date: 2026-09-26。审计窗独立复核一轮：硬验收亲跑全绿+声明逐条实物对照+双轴评审。本件=签字交接；事实细节不复制——读 `reports/2026-09-26-audit.md`（硬验收实录+声明→证据→结论对照表+发现 A-01~A-08+过程违规 P-1/P-2）、`reports/2026-09-25-report.md`、`handoffs/round-83-closeout.md`、`handoffs/next-round-r84.md`、ADR-0084、decision-ledger.md（D-001~D-007）。
+Date: 2026-09-26。审计窗独立复核两轮：初审通过附 1 返工项→返修→复核闭合（audit 报告 §七）。本件=签字交接；事实细节不复制——读 `reports/2026-09-26-audit.md`（硬验收实录+声明→证据→结论对照表+发现 A-01~A-08+过程违规 P-1/P-2）、`reports/2026-09-25-report.md`、`handoffs/round-83-closeout.md`、`handoffs/next-round-r84.md`、ADR-0084、decision-ledger.md（D-001~D-007）。
 
 ## 栈终态（GitButler，未 push，树净）
 
-`r83-grill`(upx) ← `r83-te1`(rot) ← `r83-t1`(puz) ← `r83-t4`(mqp→muk→ykl→wss→mmk→xqu)。common base `17e9c3f2`。
+`r83-grill`(upx) ← `r83-te1`(rot) ← `r83-t1`(puz) ← `r83-t4`(mqp→muk→ykl→wss→mmk→xqu) ← `r83-audit`(yzn 审计签字+wmu A-01 返工)。common base `17e9c3f2`。
 
 ## 审计结论线
 
 - 硬验收亲跑全绿：check 8/8、test 13/13、build 5/5、ship-gate exit 0（9 步含 pack×8+publish shape+install smoke+memory-eval 126/126+MCP stdio initialize server=anysearch v0.0.8+观测回写+fail-open boot）；CLI 形状闸实测 exit 2；dsh-plugin pack+`dsh plugin --profile headless add ./<tgz>`+dump-config 幂等线复跑绿。
 - 声明对照：D-001~D-007 映射表+验收原文+nit 两档逐条亲验全部成立；closeout-claims 10 条 ship-gate 重推导绿+抽查一致；T0 外部锚本窗实证（npm view rc.1/rc.2 时戳逐字对上；实装 rc.1 类型锚 agent/created+SessionStartSource+session-start 计 0；#1764 OPEN updatedAt 09-03）。
-- **必修返工 A-01**：`apps/dsh-plugin/AGENTS.md` Hook surfaces 仍记 `agent/session-start`，与已迁 `agent/created` 漂移且随包外发——即修档，返修复窗口或呈报批准；修后重跑 `pnpm pack`+`ship-gate --quick` 即足。
+- **A-01 已闭合（返工 wmu）**：`apps/dsh-plugin/AGENTS.md` Hook surfaces 更正为 `agent/created`+`source==='startup'` guard 语义；tarball 复核载新文案；`ship-gate --quick` 复跑 exit 0。
 - 登记建议 A-02~A-08（形状校验三入口不匀/flagValueSet 吞词/sub_domain_params:{}/第 7 键漂移已披露/三处重复/evidence 命令 `add` 须 `./` 前缀/dead maxResults）——详见 audit 报告 §三，转 R84 征集素材不阻断收口。
 - 双轴：Standards 硬违反=A-01 独项；Spec 否决项全守（无 vertical.post/无深合并/无运行时 get_sub_domains/无枚举副本/无跨 provider 映射/params 值不落审计/prefer-capable 未实施）。
 
@@ -22,7 +22,7 @@ Date: 2026-09-26。审计窗独立复核一轮：硬验收亲跑全绿+声明逐
 - **候选 B**：dsh ≥0.1.7 宿主侧 live 验收——解锁 `unverified-at-host` 挂账（本机宿主实测 0.1.5-rc.2）；需用户侧升级或垫 0.1.7 沙箱。
 - **候选 C**：征集下轮主题。
 - **常驻哨戒承继**：dsh rc.2 出闸点 ≈2026-09-26T14:02Z——下轮开局 `npm view` 时戳+tarball 特征锚复验（rc.2 同形性当时已验，出闸后再核）；rc.3+ 版本线续 watch；#1764 OPEN 趋僵 23d+（用户侧不代发）；llm-init SSE flake watch；test-online-anysearch 观测续班。
-- **A-01 落地优先级**：若 R84 立项前无修复窗口，建议在 R84 开局票序先消费（shipped doc 漂移不宜久挂）。
+- A-01 已于本轮返工闭合（wmu），无遗留必修项。
 
 ## Suggested skills（下轮会话）
 
