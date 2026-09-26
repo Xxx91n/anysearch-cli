@@ -72,7 +72,64 @@
       "vert-f0002": "stub",
       "vert-f0003": "stub",
       "ctrl-0001": "stub",
-      "ctrl-0002": "stub"
+      "ctrl-0002": "stub",
+      "vert-f1101": "live",
+      "vert-f1102": "live",
+      "vert-f1103": "live",
+      "vert-f1104": "live",
+      "vert-f1105": "live",
+      "vert-f1106": "live",
+      "vert-f1201": "live",
+      "vert-f1202": "live",
+      "vert-f1203": "live",
+      "vert-f1204": "live",
+      "vert-f1205": "live",
+      "vert-a1101": "live",
+      "vert-a1102": "live",
+      "vert-a1103": "live",
+      "vert-a1104": "live",
+      "vert-a1105": "live",
+      "vert-a1201": "live",
+      "vert-a1202": "live",
+      "vert-a1203": "live",
+      "vert-a1204": "live",
+      "vert-a1205": "live",
+      "vert-c1101": "live",
+      "vert-c1102": "live",
+      "vert-c1103": "live",
+      "vert-c1104": "live",
+      "vert-c1105": "live",
+      "vert-c1201": "live",
+      "vert-c1202": "live",
+      "vert-c1203": "live",
+      "vert-c1204": "live",
+      "vert-c1205": "live",
+      "vert-h1101": "live",
+      "vert-h1102": "live",
+      "vert-h1103": "live",
+      "vert-h1104": "live",
+      "vert-h1105": "live",
+      "vert-h1201": "live",
+      "vert-h1202": "live",
+      "vert-h1203": "live",
+      "vert-h1204": "live",
+      "vert-h1205": "live",
+      "ctrl-f101": "live",
+      "ctrl-f102": "live",
+      "ctrl-f103": "live",
+      "ctrl-f104": "live",
+      "ctrl-a101": "live",
+      "ctrl-a102": "live",
+      "ctrl-a103": "live",
+      "ctrl-a104": "live",
+      "ctrl-c101": "live",
+      "ctrl-c102": "live",
+      "ctrl-c103": "live",
+      "ctrl-c104": "live",
+      "ctrl-h101": "live",
+      "ctrl-h102": "live",
+      "ctrl-h103": "live",
+      "ctrl-h104": "live"
     },
     "entries": [
       {
@@ -821,6 +878,2135 @@
           "reviewer": "r84-fixer"
         },
         "notes": "对照钉：枚举外 sub_domain——上游实测（2026-09-25）isError 'Invalid tag: finance.bogus_sub_xyz'。stub 复现拒收面：垂域臂 fail-first 入 providersFailed+泛网臂应答=general-fallback。"
+      },
+      {
+        "id": "vert-f1101",
+        "domain": "default",
+        "question": "NVDA next earnings date this quarter",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "finance",
+          "subDomain": "calendar",
+          "params": {
+            "type": "earnings"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "finance",
+            "hit": true,
+            "sub_domain": "calendar",
+            "paramsKeys": [
+              "type"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "financialmodelingprep.com",
+              "finance.yahoo.com",
+              "nasdaq.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "finance.calendar type=earnings（词表 required 参数齐）。"
+      },
+      {
+        "id": "vert-f1102",
+        "domain": "default",
+        "question": "US CPI year-over-year latest release",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "finance",
+          "subDomain": "macro",
+          "params": {
+            "type": "cpi"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "finance",
+            "hit": true,
+            "sub_domain": "macro",
+            "paramsKeys": [
+              "type"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "financialmodelingprep.com",
+              "tradingeconomics.com",
+              "bls.gov"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "finance.macro type=cpi。"
+      },
+      {
+        "id": "vert-f1103",
+        "domain": "default",
+        "question": "AAPL real-time stock price",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "finance",
+          "subDomain": "quote",
+          "params": {
+            "type": "stock",
+            "symbol": "AAPL"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "finance",
+            "hit": true,
+            "sub_domain": "quote",
+            "paramsKeys": [
+              "symbol",
+              "type"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "finance.yahoo.com",
+              "nasdaq.com",
+              "marketwatch.com",
+              "investing.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "finance.quote type=stock+symbol。"
+      },
+      {
+        "id": "vert-f1104",
+        "domain": "default",
+        "question": "贵州茅台最新股价",
+        "questionLang": "zh",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "finance",
+          "subDomain": "quote",
+          "params": {
+            "type": "stock",
+            "cn_code": "600519.SH"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "finance",
+            "hit": true,
+            "sub_domain": "quote",
+            "paramsKeys": [
+              "cn_code",
+              "type"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "eastmoney.com",
+              "10jqka.com.cn",
+              "sina.com.cn",
+              "xueqiu.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "finance.quote type=stock+cn_code（A 股通道）。"
+      },
+      {
+        "id": "vert-f1105",
+        "domain": "default",
+        "question": "MSFT analyst ratings and target price overview",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "finance",
+          "subDomain": "fundamental",
+          "params": {
+            "type": "overview",
+            "symbol": "MSFT"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "finance",
+            "hit": true,
+            "sub_domain": "fundamental",
+            "paramsKeys": [
+              "symbol",
+              "type"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "financialmodelingprep.com",
+              "finance.yahoo.com",
+              "marketbeat.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "finance.fundamental type=overview+symbol。"
+      },
+      {
+        "id": "vert-f1106",
+        "domain": "default",
+        "question": "technology sector US stocks screening",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "finance",
+          "subDomain": "screen",
+          "params": {
+            "type": "stock",
+            "sector": "Technology",
+            "country": "US"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "finance",
+            "hit": true,
+            "sub_domain": "screen",
+            "paramsKeys": [
+              "country",
+              "sector",
+              "type"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "finance.yahoo.com",
+              "finviz.com",
+              "tradingview.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "finance.screen type=stock+sector+country。"
+      },
+      {
+        "id": "vert-f1201",
+        "domain": "default",
+        "question": "hedge fund positioning in mega-cap technology stocks",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "finance"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "finance",
+            "hit": true,
+            "hitHosts": [
+              "finance.yahoo.com",
+              "bloomberg.com",
+              "reuters.com",
+              "ft.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "finance domain-only 语义查询。"
+      },
+      {
+        "id": "vert-f1202",
+        "domain": "default",
+        "question": "央行降准对债券市场的影响",
+        "questionLang": "zh",
+        "intent": "reference",
+        "vertical": {
+          "domain": "finance"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "finance",
+            "hit": true,
+            "hitHosts": [
+              "eastmoney.com",
+              "cls.cn",
+              "yicai.com",
+              "sina.com.cn",
+              "pbc.gov.cn"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "中文财经语义查询。"
+      },
+      {
+        "id": "vert-f1203",
+        "domain": "default",
+        "question": "treasury yield curve inversion as recession signal",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "finance"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "finance",
+            "hit": true,
+            "hitHosts": [
+              "finance.yahoo.com",
+              "federalreserve.gov",
+              "tradingeconomics.com",
+              "treasury.gov"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "宏观语义查询。"
+      },
+      {
+        "id": "vert-f1204",
+        "domain": "default",
+        "question": "dividend yield versus buyback yield comparison",
+        "questionLang": "en",
+        "intent": "comparison",
+        "vertical": {
+          "domain": "finance"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "finance",
+            "hit": true,
+            "hitHosts": [
+              "finance.yahoo.com",
+              "investopedia.com",
+              "morningstar.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "对比型金融语义。"
+      },
+      {
+        "id": "vert-f1205",
+        "domain": "default",
+        "question": "美联储下次利率决议时间",
+        "questionLang": "zh",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "finance"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "finance",
+            "hit": true,
+            "hitHosts": [
+              "federalreserve.gov",
+              "cls.cn",
+              "finance.yahoo.com",
+              "reuters.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "中文时点查询。"
+      },
+      {
+        "id": "vert-a1101",
+        "domain": "default",
+        "question": "retrieval augmented generation evaluation benchmark",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "academic",
+          "subDomain": "preprint",
+          "params": {
+            "year_from": "2024",
+            "sort": "relevance"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "academic",
+            "hit": true,
+            "sub_domain": "preprint",
+            "paramsKeys": [
+              "sort",
+              "year_from"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "arxiv.org",
+              "semanticscholar.org",
+              "openreview.net"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "academic.preprint year_from+sort。"
+      },
+      {
+        "id": "vert-a1102",
+        "domain": "default",
+        "question": "large language model survey papers",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "academic",
+          "subDomain": "search",
+          "params": {
+            "type": "review",
+            "year_from": "2023"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "academic",
+            "hit": true,
+            "sub_domain": "search",
+            "paramsKeys": [
+              "type",
+              "year_from"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "arxiv.org",
+              "semanticscholar.org",
+              "doi.org",
+              "nature.com",
+              "openalex.org"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "academic.search type=review+year_from。"
+      },
+      {
+        "id": "vert-a1103",
+        "domain": "default",
+        "question": "CRISPR off-target effects clinical assessment",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "academic",
+          "subDomain": "biomedical",
+          "params": {
+            "source": "MED",
+            "field": "tiab"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "academic",
+            "hit": true,
+            "sub_domain": "biomedical",
+            "paramsKeys": [
+              "field",
+              "source"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "pubmed.ncbi.nlm.nih.gov",
+              "ncbi.nlm.nih.gov",
+              "nih.gov"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "academic.biomedical source=MED。"
+      },
+      {
+        "id": "vert-a1104",
+        "domain": "default",
+        "question": "attention is all you need citation count",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "academic",
+          "subDomain": "citation",
+          "params": {
+            "id": "10.48550/arXiv.1706.03762",
+            "op": "citation-count"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "academic",
+            "hit": true,
+            "sub_domain": "citation",
+            "paramsKeys": [
+              "id",
+              "op"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "api.crossref.org",
+              "crossref.org",
+              "semanticscholar.org",
+              "opencitations.net"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "academic.citation id+op=citation-count（required id 携带）。"
+      },
+      {
+        "id": "vert-a1105",
+        "domain": "default",
+        "question": "climate modeling open research datasets",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "academic",
+          "subDomain": "dataset",
+          "params": {
+            "resource_type": "Dataset"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "academic",
+            "hit": true,
+            "sub_domain": "dataset",
+            "paramsKeys": [
+              "resource_type"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "zenodo.org",
+              "figshare.com",
+              "datadryad.org",
+              "dryad.org"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "academic.dataset resource_type=Dataset。"
+      },
+      {
+        "id": "vert-a1201",
+        "domain": "default",
+        "question": "recent advances in sparse mixture of experts architectures",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "academic"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "academic",
+            "hit": true,
+            "hitHosts": [
+              "arxiv.org",
+              "semanticscholar.org",
+              "openreview.net"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-a1202",
+        "domain": "default",
+        "question": "蛋白质结构预测最新进展",
+        "questionLang": "zh",
+        "intent": "reference",
+        "vertical": {
+          "domain": "academic"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "academic",
+            "hit": true,
+            "hitHosts": [
+              "nature.com",
+              "science.org",
+              "pubmed.ncbi.nlm.nih.gov",
+              "biorxiv.org"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-a1203",
+        "domain": "default",
+        "question": "reinforcement learning from human feedback methods survey",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "academic"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "academic",
+            "hit": true,
+            "hitHosts": [
+              "arxiv.org",
+              "semanticscholar.org",
+              "openreview.net",
+              "proceedings.neurips.cc"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-a1204",
+        "domain": "default",
+        "question": "graph neural networks for drug discovery review",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "academic"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "academic",
+            "hit": true,
+            "hitHosts": [
+              "arxiv.org",
+              "pubmed.ncbi.nlm.nih.gov",
+              "nature.com",
+              "sciencedirect.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-a1205",
+        "domain": "default",
+        "question": "量子纠错码容错阈值研究",
+        "questionLang": "zh",
+        "intent": "reference",
+        "vertical": {
+          "domain": "academic"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "academic",
+            "hit": true,
+            "hitHosts": [
+              "arxiv.org",
+              "nature.com",
+              "phys.org",
+              "aps.org"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-c1101",
+        "domain": "default",
+        "question": "react server components documentation",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "code",
+          "subDomain": "doc",
+          "params": {
+            "library": "react"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "code",
+            "hit": true,
+            "sub_domain": "doc",
+            "paramsKeys": [
+              "library"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "react.dev",
+              "npmjs.com",
+              "github.com"
+            ],
+            "hitPaths": [
+              "/reference",
+              "/learn"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "code.doc library=react（required）。"
+      },
+      {
+        "id": "vert-c1102",
+        "domain": "default",
+        "question": "express error handling middleware",
+        "questionLang": "en",
+        "intent": "howto",
+        "vertical": {
+          "domain": "code",
+          "subDomain": "doc",
+          "params": {
+            "library": "express"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "code",
+            "hit": true,
+            "sub_domain": "doc",
+            "paramsKeys": [
+              "library"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "expressjs.com",
+              "npmjs.com",
+              "github.com"
+            ],
+            "hitPaths": [
+              "/en/guide",
+              "/en/4x"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "code.doc library=express。"
+      },
+      {
+        "id": "vert-c1103",
+        "domain": "default",
+        "question": "tokio runtime spawn tutorial",
+        "questionLang": "en",
+        "intent": "howto",
+        "vertical": {
+          "domain": "code",
+          "subDomain": "doc",
+          "params": {
+            "library": "tokio"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "code",
+            "hit": true,
+            "sub_domain": "doc",
+            "paramsKeys": [
+              "library"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "tokio.rs",
+              "docs.rs",
+              "github.com"
+            ],
+            "hitPaths": [
+              "/tk/",
+              "/tokio/"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "code.doc library=tokio。"
+      },
+      {
+        "id": "vert-c1104",
+        "domain": "default",
+        "question": "useState custom hook implementation typescript",
+        "questionLang": "en",
+        "intent": "howto",
+        "vertical": {
+          "domain": "code",
+          "subDomain": "snippet",
+          "params": {
+            "lang": "TypeScript"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "code",
+            "hit": true,
+            "sub_domain": "snippet",
+            "paramsKeys": [
+              "lang"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "github.com"
+            ],
+            "hitPaths": [
+              "/blob/",
+              "/tree/"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "code.snippet lang=TypeScript。"
+      },
+      {
+        "id": "vert-c1105",
+        "domain": "default",
+        "question": "pandas dataframe merge operation",
+        "questionLang": "en",
+        "intent": "howto",
+        "vertical": {
+          "domain": "code",
+          "subDomain": "snippet",
+          "params": {
+            "lang": "Python",
+            "repo": "pandas-dev/pandas"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "code",
+            "hit": true,
+            "sub_domain": "snippet",
+            "paramsKeys": [
+              "lang",
+              "repo"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "github.com"
+            ],
+            "hitPaths": [
+              "/pandas-dev/pandas"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "code.snippet lang+repo 过滤。"
+      },
+      {
+        "id": "vert-c1201",
+        "domain": "default",
+        "question": "python asyncio versus threading performance",
+        "questionLang": "en",
+        "intent": "comparison",
+        "vertical": {
+          "domain": "code"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "code",
+            "hit": true,
+            "hitHosts": [
+              "docs.python.org",
+              "realpython.com",
+              "stackoverflow.com",
+              "github.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-c1202",
+        "domain": "default",
+        "question": "kubernetes pod eviction policy configuration",
+        "questionLang": "en",
+        "intent": "howto",
+        "vertical": {
+          "domain": "code"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "code",
+            "hit": true,
+            "hitHosts": [
+              "kubernetes.io",
+              "github.com",
+              "stackoverflow.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-c1203",
+        "domain": "default",
+        "question": "rust ownership and borrow checker guide",
+        "questionLang": "en",
+        "intent": "howto",
+        "vertical": {
+          "domain": "code"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "code",
+            "hit": true,
+            "hitHosts": [
+              "doc.rust-lang.org",
+              "rust-lang.org",
+              "github.com",
+              "stackoverflow.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-c1204",
+        "domain": "default",
+        "question": "typescript generics conditional types explained",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "code"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "code",
+            "hit": true,
+            "hitHosts": [
+              "typescriptlang.org",
+              "stackoverflow.com",
+              "github.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-c1205",
+        "domain": "default",
+        "question": "redis 缓存穿透解决方案",
+        "questionLang": "zh",
+        "intent": "howto",
+        "vertical": {
+          "domain": "code"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "code",
+            "hit": true,
+            "hitHosts": [
+              "redis.io",
+              "github.com",
+              "juejin.cn",
+              "csdn.net",
+              "cnblogs.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-h1101",
+        "domain": "default",
+        "question": "aspirin drug label adverse reactions",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "health",
+          "subDomain": "drug",
+          "params": {
+            "type": "name"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "health",
+            "hit": true,
+            "sub_domain": "drug",
+            "paramsKeys": [
+              "type"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "dailymed.nlm.nih.gov",
+              "fda.gov",
+              "drugs.com",
+              "nih.gov"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "health.drug type=name。"
+      },
+      {
+        "id": "vert-h1102",
+        "domain": "default",
+        "question": "metformin phase 3 clinical trials",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "health",
+          "subDomain": "trial"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "health",
+            "hit": true,
+            "sub_domain": "trial",
+            "paramsKeys": [],
+            "paramsSent": false,
+            "hitHosts": [
+              "clinicaltrials.gov",
+              "trialsearch.who.int"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "health.trial 无 params（词表未列参数）——paramsSent:false 钉 wire 缺席。"
+      },
+      {
+        "id": "vert-h1103",
+        "domain": "default",
+        "question": "diabetes prevalence statistics by country",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "health",
+          "subDomain": "stats"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "health",
+            "hit": true,
+            "sub_domain": "stats",
+            "paramsKeys": [],
+            "paramsSent": false,
+            "hitHosts": [
+              "who.int",
+              "ourworldindata.org",
+              "cdc.gov"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "health.stats 无 params。"
+      },
+      {
+        "id": "vert-h1104",
+        "domain": "default",
+        "question": "amoxicillin drug interactions warnings",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "health",
+          "subDomain": "drug",
+          "params": {
+            "type": "name"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "health",
+            "hit": true,
+            "sub_domain": "drug",
+            "paramsKeys": [
+              "type"
+            ],
+            "paramsSent": true,
+            "hitHosts": [
+              "dailymed.nlm.nih.gov",
+              "drugs.com",
+              "fda.gov",
+              "medlineplus.gov"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "health.drug 第二条目——子域内多样本。"
+      },
+      {
+        "id": "vert-h1105",
+        "domain": "default",
+        "question": "alzheimer disease clinical trial recruitment",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "health",
+          "subDomain": "trial"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "health",
+            "hit": true,
+            "sub_domain": "trial",
+            "paramsKeys": [],
+            "paramsSent": false,
+            "hitHosts": [
+              "clinicaltrials.gov",
+              "alzheimers.gov",
+              "nia.nih.gov"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "health.trial 第二条目。"
+      },
+      {
+        "id": "vert-h1201",
+        "domain": "default",
+        "question": "mRNA vaccine adverse event profile review",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "health"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "health",
+            "hit": true,
+            "hitHosts": [
+              "cdc.gov",
+              "fda.gov",
+              "who.int",
+              "pubmed.ncbi.nlm.nih.gov",
+              "nih.gov"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-h1202",
+        "domain": "default",
+        "question": "高血压用药相互作用注意事项",
+        "questionLang": "zh",
+        "intent": "howto",
+        "vertical": {
+          "domain": "health"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "health",
+            "hit": true,
+            "hitHosts": [
+              "dailymed.nlm.nih.gov",
+              "drugs.com",
+              "medlineplus.gov",
+              "nhs.uk"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-h1203",
+        "domain": "default",
+        "question": "childhood vaccination schedule comparison",
+        "questionLang": "en",
+        "intent": "comparison",
+        "vertical": {
+          "domain": "health"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "health",
+            "hit": true,
+            "hitHosts": [
+              "cdc.gov",
+              "who.int",
+              "nice.org.uk"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-h1204",
+        "domain": "default",
+        "question": "antibiotic resistance surveillance data",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "health"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "health",
+            "hit": true,
+            "hitHosts": [
+              "who.int",
+              "cdc.gov",
+              "ecdc.europa.eu",
+              "nih.gov"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "vert-h1205",
+        "domain": "default",
+        "question": "GLP-1 受体激动剂副作用",
+        "questionLang": "zh",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "health"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "health",
+            "hit": true,
+            "hitHosts": [
+              "fda.gov",
+              "drugs.com",
+              "pubmed.ncbi.nlm.nih.gov",
+              "nejm.org"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": null
+      },
+      {
+        "id": "ctrl-f101",
+        "domain": "default",
+        "question": "how to cook pasta carbonara properly",
+        "questionLang": "en",
+        "intent": "howto",
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "hit": false
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "域外对照：无 spec 下禁出现 vertical 标记（防误标钉）。"
+      },
+      {
+        "id": "ctrl-f102",
+        "domain": "default",
+        "question": "chocolate cake recipe ingredients",
+        "questionLang": "en",
+        "intent": "howto",
+        "vertical": {
+          "domain": "finance"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "错配 spec：finance spec + 烹饪问题——上游静默回退面存在性断言（对照臂失败走 degraded 名单）。"
+      },
+      {
+        "id": "ctrl-f103",
+        "domain": "default",
+        "question": "upcoming earnings calendar this week",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "finance",
+          "subDomain": "bogus_sched"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "bogus sub_domain：上游 isError 拒收面 live 钉（对照 2026-09-25 实测矩阵）。"
+      },
+      {
+        "id": "ctrl-f104",
+        "domain": "default",
+        "question": "apple price",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "finance",
+          "subDomain": "quote",
+          "params": {
+            "type": "stock"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "歧义查询：apple（水果/股票）+finance spec——消歧质量 delta 基线，存在性断言。"
+      },
+      {
+        "id": "ctrl-a101",
+        "domain": "default",
+        "question": "best coffee brewing temperature guide",
+        "questionLang": "en",
+        "intent": "howto",
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "hit": false
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "域外对照。"
+      },
+      {
+        "id": "ctrl-a102",
+        "domain": "default",
+        "question": "pizza dough hydration calculator",
+        "questionLang": "en",
+        "intent": "howto",
+        "vertical": {
+          "domain": "academic"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "错配 spec。"
+      },
+      {
+        "id": "ctrl-a103",
+        "domain": "default",
+        "question": "recent papers on neural network pruning",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "academic",
+          "subDomain": "bogus_papers"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "bogus sub_domain 拒收面。"
+      },
+      {
+        "id": "ctrl-a104",
+        "domain": "default",
+        "question": "mercury element facts",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "academic"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "歧义查询（行星/元素/神祇）。"
+      },
+      {
+        "id": "ctrl-c101",
+        "domain": "default",
+        "question": "italian pasta sauce comparison",
+        "questionLang": "en",
+        "intent": "comparison",
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "hit": false
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "域外对照。"
+      },
+      {
+        "id": "ctrl-c102",
+        "domain": "default",
+        "question": "garden irrigation system setup guide",
+        "questionLang": "en",
+        "intent": "howto",
+        "vertical": {
+          "domain": "code"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "错配 spec。"
+      },
+      {
+        "id": "ctrl-c103",
+        "domain": "default",
+        "question": "python list comprehension examples",
+        "questionLang": "en",
+        "intent": "howto",
+        "vertical": {
+          "domain": "code",
+          "subDomain": "bogus_module"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "bogus sub_domain 拒收面。"
+      },
+      {
+        "id": "ctrl-c104",
+        "domain": "default",
+        "question": "java language basics",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "code"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:code"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "歧义查询（语言/岛屿/咖啡）。"
+      },
+      {
+        "id": "ctrl-h101",
+        "domain": "default",
+        "question": "how to change a car tire step by step",
+        "questionLang": "en",
+        "intent": "howto",
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "hit": false
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "域外对照。"
+      },
+      {
+        "id": "ctrl-h102",
+        "domain": "default",
+        "question": "chocolate chip cookie baking time",
+        "questionLang": "en",
+        "intent": "howto",
+        "vertical": {
+          "domain": "health"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "错配 spec。"
+      },
+      {
+        "id": "ctrl-h103",
+        "domain": "default",
+        "question": "vitamin D dosage guidelines",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "health",
+          "subDomain": "bogus_nutri"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "bogus sub_domain 拒收面。"
+      },
+      {
+        "id": "ctrl-h104",
+        "domain": "default",
+        "question": "cold or flu difference",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "health"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:health"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "歧义查询（温度/感冒）。"
       }
     ]
   }

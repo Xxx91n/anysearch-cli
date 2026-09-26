@@ -61,6 +61,14 @@ export interface DocsGoldenVerticalExpectation {
   paramsSent?: boolean;
   hit?: boolean;
   degraded?: string[] | "general-fallback";
+  // R84 T2 / D-004(iv): measurement pool — ANY-of candidate hosts the delta
+  // runner scores against (host-hit / host+path strong-hit rates). This is a
+  // measurement surface, NOT a hard gate: the live leg never fails an entry on
+  // hitHosts (small-n drift on upstream host mix is evidence, not breakage).
+  hitHosts?: string[];
+  // Same shape for page-family strong hits: path prefixes to match under any
+  // pool host (e.g. "/r/", "/en/latest/"). Feeds the two-tier rate's second leg.
+  hitPaths?: string[];
 }
 
 // Query-level vertical spec the executors inject (CLI --vertical-* flags in the
@@ -164,7 +172,7 @@ export interface CoverageManifest {
 // R84 T1 / ADR-0085 draft: id families — docs-gNNNN (docs batch),
 // vert-<d>NNNN (vertical subject entries, <d> = vdomain letter),
 // ctrl-NNNN (control-class entries asserting the silent-fallback surface).
-export const DOCS_GOLDEN_ID_RE = /^(docs-g\d{4}|vert-[a-z]\d{4}|ctrl-\d{4})$/;
+export const DOCS_GOLDEN_ID_RE = /^(docs-g\d{4}|vert-[a-z]\d{4}|ctrl-[a-z]?\d{3,4})$/;
 
 export function validateDocsGoldenEntry(raw: unknown): string[] {
   const p: string[] = [];
@@ -247,6 +255,8 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
           if (JSON.stringify(actual) !== JSON.stringify(want)) p.push("expected.vertical.paramsKeys " + JSON.stringify(want) + " != injected spec keys " + JSON.stringify(actual));
         }
         if (vexp.paramsSent === true && vexp.paramsKeys !== undefined && vexp.paramsKeys.length === 0) p.push("paramsSent:true contradicts paramsKeys:[]");
+        if (vexp.hitHosts !== undefined && (!Array.isArray(vexp.hitHosts) || vexp.hitHosts.length === 0 || vexp.hitHosts.some((h) => typeof h !== "string" || !/^[a-z0-9.-]+$/.test(h)))) p.push("expected.vertical.hitHosts must be a non-empty hostname string[]");
+        if (vexp.hitPaths !== undefined && (!Array.isArray(vexp.hitPaths) || vexp.hitPaths.some((x) => typeof x !== "string" || !x.startsWith("/")))) p.push("expected.vertical.hitPaths must be absolute-path string[]");
       }
     }
   }
