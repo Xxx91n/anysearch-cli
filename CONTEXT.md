@@ -1456,3 +1456,35 @@ EDNS prefer-capable-servers 同构的融合层加权：对声明能力位 provid
 
 ### Goodhart Symmetric Watch（Goodhart 对称警惕）
 收口映射表的反向自检：某行说不出「该证据启用何判定」=仪式化残留→删行非补证——防「artifacts 存在但未被用于决策」的合规剧场。_Avoid_: 为 checkbox 补证。来源：atomcode R83-Q7+R83 D-007。
+
+## Grill Round 84 — Terms (ADR-0085)
+
+### Vertical Eval Leg（垂域评测腿）
+R84 主轴：垂域召回质量评测面——query 侧事实收集先行（消费自家 retrieval.vertical.pre 审计数据）+垂域金标集+双臂质量差证据产出，直接对象=prefer-capable 挂账前置。_Avoid_: 把它当 prefer-capable 调参本身（它是前置证据机制非调参）；无数据调权。来源：atomcode R84-Q1+R84 D-001。
+
+### Two-Layer Eval Extension（评测双层扩展）
+垂域评测不新建第二账册而扩展现有族谱：契约层=looks 账册垂域断言键（expected.vertical{domain,sub_domain,paramsKeys}+verticalHit+degraded+role）offline 确定性；证据层=golden.entries live-scoped 双臂配对 delta 携 fingerprint+臂标识。_Avoid_: 第二账册（双 fingerprint/双棘轮对账=静默腐烂点翻倍）；无指纹报告腿（不可复现不可归因）。来源：atomcode R84-Q2+R84 D-002。
+
+### Contrast Case（对照条目）
+一等断言类非查询配角：域外/歧义查询以 expected.vertical.role:"control" 独立断言键承载（expected.vertical=null/mustNotHit/degraded=general-fallback 形制），直测上游静默回退行为；对照臂失败走 degraded 名单非红门——存在性一等断言，通过性不是。_Avoid_: 与垂域条目共用断言通道（特异性失败被 verticalHit 通过掩盖）。来源：atomcode R84-Q3/R84-Q4+R84 D-003/D-004。
+
+### Paired Delta（配对差分）
+delta 证据件形制：同 query 同期盼集双臂 on/off 配对（query difficulty cancels），per-stratum 分列 hit-rate 两档（host 命中率+host+页族强命中率）+expectRankOf 整数差+better/worse/tied+fingerprint+臂标识+n 显式标注。证据件非门禁项，CI 字段位留 schema 不设阈值。_Avoid_: 小样本设显著性门禁（~60-70 条规模检出 +0.01 需 3671 条=达不到）；无 n 标注的 delta 读数。来源：atomcode R84-Q4+R84 D-004。
+
+### Proposition-Level Mapping（命题→层级映射）
+消融测量层级由被门禁的命题决定：融合贡献命题→融合级 primary（ADR-0046 drop-arm 先例）；臂能力命题→臂级 primary（本轮 prefer-capable 前置）。主从排序随命题而变非固定属性。_Avoid_: 固定层级排序当教条；融合级 delta 作臂能力前置（三重混杂：臂质差×他臂稀释×融合归并，无法区分无增益与代偿遮蔽）。来源：atomcode R84-Q5+R84 D-005。
+
+### Axis Coverage（轴覆盖选域）
+垂域选域心智模型：每入选域独立承载一条失败模式轴（BEIR 四因子；Jaccard 词重叠=差似然形式化）——finance=参数面/academic=差似然面/code=画像面/health=风险面。_Avoid_: 单维排序取 top-k；剔除唯一轴承载域（health 缺位=效度漏洞非覆盖缺口，系统性高估泛网回退可接受度）。来源：atomcode R84-Q6+R84 D-006。
+
+### Conditional Fifth Domain（条件性第五域）
+ip 域的入册门槛：上游补齐 ip 子域结构化参数时升第五覆盖域，本轮仅落 ADR/registry 标注不作裁决（现轴重叠：参数靠 finance、画像靠 code）。_Avoid_: 无条件提前纳入；触发条件未达成即动工。来源：atomcode R84-Q6+R84 D-006。
+
+### Distortion Criterion（失真判据）
+审计发现分流的单句判据：「该发现不修，主票验收标准是否失真？」失真→前置并入主票；不失真但同文件收口→复核行；完全不影响→清障轮（AppSec reachability 分流同构：可达性非严重度才是分流轴）。_Avoid_: 按严重度整批一刀切（Orca 两失败模式：fix everything/defer remediation）。来源：atomcode R84-Q7+R84 D-007。
+
+### Legislated-Before-Asserted（断言前先立法）
+golden 断言只许落在已立法的承诺行为上，未定义行为不得成为断言对象（Pact Golden Rule：只断言消费方真正依赖的承诺）；语义歧义在断言固化前先收紧（Pact V3 先严后松——反向代价高）。_Avoid_: 断言冻结偶然行为（TDD tautological/implementation-coupled 反模式，回归信号从此失真）。来源：atomcode R84-Q7+R84 D-007。
+
+### Evidence-Artifact Honesty（证据件诚实记）
+delta 证据件两补：unknown/未达量字段记 null/unknown 非 0（0 会被读成「测了且失败」——agent-axiom 铁律防 Goodhart）；分层稀薄记 coverage 缺口不删层。_Avoid_: 为齐整填 0 或删稀薄层=开 Goodhart 通道。来源：atomcode R84-Q8+R84 D-008。

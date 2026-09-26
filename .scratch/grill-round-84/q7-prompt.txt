@@ -1,0 +1,7 @@
+背景（R84 审计返工批次去向裁决调研）：信息专精 Agent CLI 仓库（TypeScript monorepo），R84 已定六决——主轴=垂域召回质量评测面（D-001）；落点=双层扩展现有 eval 族谱（D-002：契约层断言键 expected.vertical{domain,sub_domain,paramsKeys}+verticalHit+degraded 走 offline 确定性，证据层条目入 eval-looks.json golden.entries live-scoped）；语料=分层子集+构建式 3-4 域（D-003）；断言形制=分层断言+配对 delta（D-004）；测量范围=双层臂级主证+融合级副列（D-005）；覆盖域=finance+academic+code+health 四轴各一域（D-006，ip 记条件性第五域）。
+
+仓内实物：R83 审计产出 7 项登记建议（A-02~A-08）。按与 eval 腿的耦合度分三类——【前置语义立法类】A-02 形状校验覆盖不匀（空串 domain 三入口三行为：MCP TypeBox AJV 拒收/CLI 静默忽略/TOML 错形被 composition.ts catch 吞入 fail-open 致整个 domain 配置静默丢失而非仅 vertical，建议评估援 sources.weights 重抛例）；A-04 sub_domain_params:{} 空对象仍上 wire（eval 的 params_keys 断言要求空参语义先定义）。【收口复核类】A-05 审计事件第 7 键 anysearch.domain（ADR-0084 已披露，复核即可）；A-07 evidence 文档命令须 ./ 前缀。【无耦合清障类】A-03 flagValueSet 吞词（CLI flag 解析启发式，eval 走结构化输入不经 CLI 解析）；A-06 三处垂域组装近重复（重构 smell，eval 测行为非结构）；A-08 dead maxResults（pre-existing，自注归清障轮）。
+
+待裁决问题（R84-Q7 audit-rework 批次去向）：(A) 耦合分流——A-02+A-04 升入主票作语义前置（eval 断言前先立法错形/空参语义+对齐实现），A-05+A-07 折进收口清单复核行，A-03+A-06+A-08 落 registry 归清障轮，无独立辅轴；(B) TE 式条件辅轴整批——七项挂辅轴票；(C) 整批 defer R85——全部挂账（代价：A-02/A-04 语义空洞留在断言面下=断言冻结偶然行为）；(D) 另取舍。
+
+调研问题：工业界评测驱动开发的成熟心智模型——评测断言与被测系统语义空洞的先后关系（「断言面下不得有未立法语义」类实践：contract testing 中 provider 行为未定义时的处理惯例）、审计发现的 triage 分型（按「与本轮工作耦合度」分流 vs 整批入池 vs 整批延后的成熟先例）、以及「前置语义修复并入主票」vs「辅轴/延后」的边界判据。请给出推荐与理由。

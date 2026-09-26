@@ -1,0 +1,7 @@
+背景（R84 断言形制裁决调研）：信息专精 Agent CLI 仓库（TypeScript monorepo），R84 已定三决——主轴=垂域召回质量评测面（D-001）；落点=双层扩展现有 eval 族谱（D-002：契约层 looks 账册新增 expected.vertical{domain,sub_domain,paramsKeys}+verticalHit+degraded 断言键 offline 确定性；证据层垂域质量差条目入 eval-looks.json golden.entries live-scoped 双臂共享同一批 query 分别断言+delta 证据件携 fingerprint+臂标识溯源）；语料=分层子集+构建式（D-003：3-4 域四判据分层选、总盘 ~60-70 含对照类一等断言类 >=12-15、查询三类分层 per-stratum 核算、构建式 silver→gold+采集通道常驻+跨家族 LLM 辅助+provenance constructed/llm-assisted+reviewer+audit trail+harvestedAt）。
+
+仓内实物：eval-looks.json 金标条目断言惯例=expected{verdict:answer|abstain,mustHitHosts,mustHitUrls 字节级,mustHitPaths 页族 tolerate,mustNotHitPaths,minResults}+dimensions+provenance+stability_class+migration；live 条目经 test/online/*.online.ts 惯例执行（eval-looks-live.online.ts 已在）；端点=arg ?? ANYSEARCH_ENDPOINT env ?? 默认公网端点（env 为用户配置域不录不代改，默认端点可用）；offline 降格按 ADR-0060 D7 先例如实记；LLM judge 已定只进建集辅助与报告不进确定性门禁；delta 本轮不定门禁阈值（证据件非门禁项）。
+
+待裁决问题（R84-Q4 断言计分形制与 delta 证据件形态）：(A) 分层断言制+同判据双臂 delta——参数化查询携 curated mustHitHosts/mustHitPaths（域典型 host 粒度，垂域内容轮转不押字节级 URL）、语义垂域查询同粒度更宽期望面、对照条目独立断言键；delta 证据件=同 query 同期望下双臂 per-arm hit-rate+rank 位置差 per-stratum 分列+fingerprint+臂标识+judge 评语仅附报告；(B) 纯判定式 delta——条目不携期望，judge 给双臂打分出报告；(C) 弱结构断言——只断言垂域臂非空/marker 在/degraded 名单正确；(D) 另取舍。
+
+调研问题：工业界检索评测断言形制的成熟心智模型——期望断言的粒度分层（host 级 vs URL 字节级 vs 页族级）在内容轮转场景下的成熟实践与权衡、对比型 delta 证据件的成熟形态（hit-rate/rank 差/MRR/NDCG 在同判据双臂对照下的汇报形制）、curated 期望 vs judge 打分在「可归因质量证据」上的证据等级差异、以及垂域评测中「域典型 host 断言」的先例与已知陷阱（host 断言是否足以区分垂域臂与通用臂的质量差）。请给出推荐与理由。

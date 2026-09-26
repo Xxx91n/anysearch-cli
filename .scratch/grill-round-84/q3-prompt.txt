@@ -1,0 +1,7 @@
+背景（R84 语料构建裁决调研）：信息专精 Agent CLI 仓库（TypeScript monorepo），R84 主轴已定=垂域召回质量评测面；评测腿落点已定=双层扩展现有族谱（契约层 looks 账册新增 expected.vertical{domain,sub_domain,paramsKeys}+verticalHit+degraded 断言键 offline 确定性跑；证据层垂域质量差条目入 eval-looks.json golden.entries：live-scoped、domain 打标、任务类分层、双臂共享同一批 query 分别断言、delta 证据件携 dataset fingerprint+臂标识溯源；incident-derived 条目 append-mostly；LLM judge 只进建集辅助与报告不进确定性门禁；delta 不定门禁阈值）。
+
+上游垂直领域词表实物（17 域枚举）：academic agriculture business code energy environment film finance gaming general health ip legal resource security social_media travel。已实测上游语义：出枚举 domain 静默容错回退 general 式结果（拒绝压力全在 sub_domain/params 侧）；sub_domain 如 finance.calendar{type∈earnings|dividends|ipos|economic}、finance.fundamental{type+symbol 或 cn_code}；domain 单独可用。仓内既有金标惯例：eval-looks.json 条目带 provenance{type:internal-dogfood,ref,harvestedAt}+stability_class+dimensions[] 分层打标+mustHitHosts/mustHitPaths 期望断言；query 侧事实收集步已如实记为「首窗稀薄」（垂域功能落地<48h+上游端点为用户配置域）。
+
+待裁决问题（R84-Q3 语料构建法）：垂域金标语料的覆盖域+查询源+分层形态？(A) 分层子集+构建式语料——3-4 域按三判据（参数结构丰富度×垂域差似然×agent-CLI 用户画像贴合）分层选，每域 12-17 条凑 >=50，查询三类分层（参数化垂域查询/语义垂域查询/对照查询测特异性），源=撰写+LLM 辅助草稿人工抽审+真 dogfood 有则采，query 分布复检列为常驻观测项；(B) 全 17 域薄铺 ~3 条/域；(C) 单域深挖 finance ~50；(D) 纯 dogfood 等待真实垂域流量；(E) 另取舍。
+
+调研问题：工业界垂域评测语料构建的成熟心智模型——覆盖域选择的成熟实践（分层选域判据：参数/结构丰富度、差似然、用户画像）、对照查询（control/contrast queries，测特异性与无误伤）在金标集中的地位与形制、构建式语料（authored/LLM-assisted+人工抽审）与采集式语料（dogfood/log-harvested）的成熟混合法与 provenance 标注惯例、最小有效样本量在域分层下的分配实践。请给出推荐与理由。

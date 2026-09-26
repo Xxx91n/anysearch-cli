@@ -1,0 +1,7 @@
+背景（R84 覆盖域圈选裁决调研）：信息专精 Agent CLI 仓库（TypeScript monorepo），R84 已定五决——主轴=垂域召回质量评测面（D-001）；落点=双层扩展现有 eval 族谱（D-002）；语料=分层子集+构建式（D-003：3-4 域按四判据分层选——参数结构丰富度×垂域差似然×agent-CLI 用户画像贴合×上游已知风险点，总盘 ~60-70 含对照类一等断言类 >=12-15、查询三类分层 per-stratum 核算、构建式 silver→gold+采集通道常驻、跨家族 LLM 辅助+人工抽审、provenance 全字段）；断言形制=分层断言+配对 delta（D-004）；测量范围=双层臂级主证+融合级副列（D-005）。
+
+上游垂域词表（17 域）：academic agriculture business code energy environment film finance gaming general health ip legal resource security social_media travel；已实测行为：finance 子域参数最丰（calendar{type∈earnings|dividends|ipos|economic}、fundamental{type+symbol|cn_code}）、出枚举 domain 上游静默容错回退 general 式结果、拒绝压力全在 sub_domain/params 侧、domain-only 亦可返回结果。
+
+待裁决问题（R84-Q6 覆盖域具体圈选）：(A) 四域=finance+academic+code+health——finance 参数面代表、academic 差似然面代表（arxiv/semanticscholar vs 泛网语义隔离度最大）、code 画像面代表（agent-CLI 天然垂域）、health 风险点面代表（高风险垂域子域词表严校验动机最强）；(B) 三域=finance+academic+code（每域 ~20 条省一域期望面维护、health 风险面缺位）；(C) 换 health→ip（画像更贴但差似然+风险点双降）；(D) 另指组合。
+
+调研问题：工业界垂域检索评测的域选择成熟心智模型——垂直评测集构建时「选哪些垂域」的成熟实践（高风险域优先？参数丰富域优先？用户画像优先？差似然代理判据的有效性）、BEIR/RTEB/MTEB 类多域评测集的域构成逻辑（域多样性 vs 域深度的取舍先例）、以及「评测域选择」对下游质量归因结论外推效度的已知影响（选偏科域是否系统性高估/低估垂域增益）。请给出推荐与理由。

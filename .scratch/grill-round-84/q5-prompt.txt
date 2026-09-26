@@ -1,0 +1,7 @@
+背景（R84 测量范围裁决调研）：信息专精 Agent CLI 仓库（TypeScript monorepo），R84 已定四决——主轴=垂域召回质量评测面（D-001）；落点=双层扩展现有 eval 族谱（D-002）；语料=分层子集+构建式（D-003：3-4 域四判据分层选、总盘 ~60-70 含对照类一等断言类、对照条目独立断言键 expected.vertical.role:"control"）；断言形制=分层断言+配对 delta（D-004：参数化查询锚 mustHitHosts+mustHitPaths 页族、字节级 URL 仅限 frozen-spec、delta=per-stratum 配对差分 per-arm hit-rate 两档+expectRankOf 整数差+better/worse/tied+小样本 n 显式标注不设门禁、judge 评语附报告、live 腿落 test/online 惯例面）。
+
+架构实物：引擎对多 provider 扇出+融合层归并；垂域请求时 anysearch 臂（verticalDomainSupported 位声明者）收 domain/sub_domain/sub_domain_params 三元组，其余 provider 照常 general 扇出并具名 degraded；per-entry 评测可同 query 跑两遍（vertical on / vertical off）。下游动机器：prefer-capable 加权调参的挂账前置=「eval 数据证明垂域臂召回质量差异」——融合层对能力位 provider 权重倾斜须先有臂级质量差证据。
+
+待裁决问题（R84-Q5 delta 测量范围/臂定义）：同一批 query 的 on/off 对照在哪一层测量出证据？(A) 双层测量臂级为主证——臂级隔离 delta（anysearch 臂 vertical-on vs vertical-off，同 query 同期盼集）为 prefer-capable 前置的直接证据+融合级 delta（最终融合列表 on/off）为副列报告（回答「融合自然浮出率多高、加权收益上限」）；一次 run 两层断言顺带产出；(B) 仅臂级——干净归因但丢弃融合面信号；(C) 仅融合级——最终用户所见但归因噪音大（其余 provider 两臂都在场、融合稀释无法区分垂域臂差与融合未抬）；(D) 另取舍。
+
+调研问题：工业界消融/归因评测的成熟心智模型——多组件系统质量归因中「组件级隔离测量 vs 端到端测量」的成熟实践与权衡（ablation/component-isolated evaluation vs end-to-end）、联邦检索/聚合搜索里「单源臂质量」与「融合后质量」分别测量的先例、以及「前置证据该证明组件级差异还是端到端差异」在权重调参/资源选择决策前的成熟判据。请给出推荐与理由。
