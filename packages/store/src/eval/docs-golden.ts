@@ -22,8 +22,56 @@ export const DOCS_GOLDEN_DIMENSION_VALUES: Record<string, readonly string[]> = {
   adversarial: ["injection"],
 };
 export const DOCS_GOLDEN_DIMENSIONS = Object.keys(DOCS_GOLDEN_DIMENSION_VALUES);
-export const DOCS_GOLDEN_PROVENANCE_TYPES = ["internal-dogfood", "external-community"] as const;
+export const DOCS_GOLDEN_PROVENANCE_TYPES = ["internal-dogfood", "external-community", "constructed", "llm-assisted"] as const;
 export const DOCS_GOLDEN_VERDICTS = ["answer", "abstain"] as const;
+
+// R84 T1 / ADR-0085 draft: vertical-eval strata vocabulary. Kept in a SEPARATE
+// map from DOCS_GOLDEN_DIMENSION_VALUES — the coverage manifest asserts exact
+// tag-count equality for the eight docs dimensions, so vertical entries must
+// never carry docs-dimension tags; their slice accounting rides on these two.
+export const VERTICAL_DIMENSION_VALUES: Record<string, readonly string[]> = {
+  stratum: ["parameterized", "semantic", "control"],
+  vdomain: ["finance", "academic", "code", "health", "cross"],
+};
+export const VERTICAL_DIMENSIONS = Object.keys(VERTICAL_DIMENSION_VALUES);
+
+// R84 T1 / ADR-0085 draft: expected.vertical assertion keys — legislated in
+// .scratch/grill-round-84/evidence/t1-semantics-legislation.md (A-02/A-04)
+// before any assertion consumed them (Pact Golden Rule).
+//   role "subject"  — the entry is a vertical query under test; domain required.
+//   role "control"  — off-domain/ambiguous/upstream-reject surface; existence is
+//                     a first-class assertion, pass/fail is soft (live leg
+//                     records control failures to the degraded list, never the
+//                     red gate — D-004 iii).
+//   hit             — subject: >=1 fused result carries extra.vertical marker
+//                     with domain === asserted domain; control:false asserts
+//                     NO result carries the marker (silent-fallback surface).
+//   paramsKeys      — expected Object.keys() of the canonicalized params sent
+//                     on the wire (post A-04 canonicalization truth source).
+//   paramsSent      — false pins wire-absence of sub_domain_params (A-04).
+//   degraded        — subject: exact degraded-arm id list from the
+//                     retrieval.vertical.pre event; control: the string
+//                     "general-fallback" asserts the vertical arm degraded to
+//                     the general fanout surface.
+export interface DocsGoldenVerticalExpectation {
+  role: "subject" | "control";
+  domain?: string;
+  sub_domain?: string;
+  paramsKeys?: string[];
+  paramsSent?: boolean;
+  hit?: boolean;
+  degraded?: string[] | "general-fallback";
+}
+
+// Query-level vertical spec the executors inject (CLI --vertical-* flags in the
+// live leg; engine.search({vertical}) in the stub leg). Internal camelCase
+// naming mirrors SearchRequest.vertical — the wire mapping happens in the
+// anysearch adapter, not here.
+export interface DocsGoldenVerticalSpec {
+  domain: string;
+  subDomain?: string;
+  params?: Record<string, unknown>;
+}
 
 // R64 D-005: four optional fixture fields + eval-looks root schema_version
 // sentinel (additive — no breaking change, hence no schema v2 migration).
@@ -48,11 +96,19 @@ export interface DocsGoldenExpected {
   mustHitPaths?: DocsGoldenPathPattern[];
   mustNotHitPaths?: string[];
   minResults?: number;
+  // R84 T1 / ADR-0085 draft: vertical assertion block. Present only on entries
+  // in the vertical-eval family (vert-* / ctrl-* ids); absent on docs-g* rows.
+  vertical?: DocsGoldenVerticalExpectation;
 }
 export interface DocsGoldenProvenance {
-  type: "internal-dogfood" | "external-community";
+  type: "internal-dogfood" | "external-community" | "constructed" | "llm-assisted";
   ref: string;         // repo path / .scratch path / external URL — always revisitable
   harvestedAt: string; // ISO date (YYYY-MM-DD)
+  // R84 T1 / D-003(vi): constructed/llm-assisted entries carry the reviewer and
+  // audit trail — LLM-assisted drafts are cross-family models only (never the
+  // family under test or its upstream) and human-reviewed to gold bar.
+  reviewer?: string;
+  audit?: string;
 }
 // R64 D-005: promote physically deletes the ledger entry, so the provenance
 // record of an assertion migration can only live on the golden entry itself.
@@ -66,12 +122,20 @@ export interface DocsGoldenMigration {
 export interface DocsGoldenEntry {
   id: string;
   domain: string;
-  question: string;     // verbatim real question text — never synthetic (D-005)
+  // docs-g* rows: verbatim real question text — never synthetic (D-005).
+  // vert-*/ctrl-* rows: constructed or llm-assisted-and-reviewed text — the
+  // honesty marker lives in provenance.type, not in the question field (R84).
+  question: string;
   questionLang: "zh" | "en";
   intent: DocsGoldenIntent;
   expected: DocsGoldenExpected;
-  dimensions: string[]; // "<dimension>:<value>" pairs from DOCS_GOLDEN_DIMENSION_VALUES
+  dimensions: string[]; // "<dimension>:<value>" pairs — docs-g* rows use DOCS_GOLDEN_DIMENSION_VALUES, vert-*/ctrl-* rows use VERTICAL_DIMENSION_VALUES
   provenance: DocsGoldenProvenance;
+  // R84 T1 / ADR-0085 draft: query-level vertical spec injected by the
+  // executors (live leg -> --vertical-* CLI flags; stub leg -> engine search
+  // request). Subject entries carry it; control entries may carry a bogus or
+  // domain-only spec to pin the silent-fallback / reject surface.
+  vertical?: DocsGoldenVerticalSpec;
   stability_class?: DocsGoldenStabilityClass; // upstream controllability of the asserted target
   failure_class?: string;                     // drift attribution (drives disposition path)
   migration?: DocsGoldenMigration;
@@ -97,18 +161,27 @@ export interface CoverageManifest {
   dimensions: CoverageDimension[];
 }
 
+// R84 T1 / ADR-0085 draft: id families — docs-gNNNN (docs batch),
+// vert-<d>NNNN (vertical subject entries, <d> = vdomain letter),
+// ctrl-NNNN (control-class entries asserting the silent-fallback surface).
+export const DOCS_GOLDEN_ID_RE = /^(docs-g\d{4}|vert-[a-z]\d{4}|ctrl-\d{4})$/;
+
 export function validateDocsGoldenEntry(raw: unknown): string[] {
   const p: string[] = [];
   const e = raw as Partial<DocsGoldenEntry> | undefined;
   if (!e || typeof e !== "object") return ["entry is not an object"];
-  if (typeof e.id !== "string" || !/^docs-g\d{4}$/.test(e.id)) p.push("id must match docs-gNNNN");
+  if (typeof e.id !== "string" || !DOCS_GOLDEN_ID_RE.test(e.id)) p.push("id must match docs-gNNNN|vert-<d>NNNN|ctrl-NNNN");
+  const isVerticalEntry = e.vertical !== undefined || (e.expected as { vertical?: unknown } | undefined)?.vertical !== undefined;
   // ADR-0062 (T4): the collection is still the docs-golden batch (docs-gNNNN
   // ids), but ADR-0062 criterion 4 needs a cold-domain abstain entry — a
   // narrow-allowlist fixture domain where zero results can ever survive.
   // Non-docs domains are allowed only as abstain-only records: they may
   // assert "the gate blocks everything", never mustHit hits.
+  // R84 T1: vertical-eval entries (vert-*/ctrl-*) run under non-docs TOML
+  // domains (e.g. "default") and may assert verdict=answer — the abstain-only
+  // cold-domain rule applies to non-vertical entries only.
   if (typeof e.domain !== "string" || !/^[a-z][a-z0-9-]{0,63}$/.test(e.domain)) p.push("domain must be a lowercase domain slug");
-  if (typeof e.domain === "string" && e.domain !== "docs" && (e.expected as { verdict?: string } | undefined)?.verdict !== "abstain") {
+  if (typeof e.domain === "string" && e.domain !== "docs" && !isVerticalEntry && (e.expected as { verdict?: string } | undefined)?.verdict !== "abstain") {
     p.push("non-docs (cold-domain) entries may only assert verdict=abstain");
   }
   if (typeof e.question !== "string" || e.question.trim().length < 8) p.push("question must be verbatim text (>=8 chars)");
@@ -146,10 +219,65 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
     }
     if (exp.mustNotHitPaths !== undefined && (!Array.isArray(exp.mustNotHitPaths) || exp.mustNotHitPaths.some((u) => typeof u !== "string" || u.length === 0))) p.push("mustNotHitPaths must be non-empty string[]");
     if (exp.verdict === "abstain" && ((exp.mustHitUrls?.length ?? 0) > 0 || (exp.mustHitPaths?.length ?? 0) > 0 || (exp.mustNotHitPaths?.length ?? 0) > 0)) p.push("abstain entry must not assert must-hit url/path assertions");
+    // R84 T1 / ADR-0085 draft: expected.vertical assertion block validation.
+    const vexp = exp.vertical as Partial<DocsGoldenVerticalExpectation> | undefined;
+    if (vexp !== undefined) {
+      if (typeof vexp !== "object" || vexp === null || Array.isArray(vexp)) {
+        p.push("expected.vertical must be an object");
+      } else {
+        if (vexp.role !== "subject" && vexp.role !== "control") p.push("expected.vertical.role must be subject|control");
+        if (vexp.role === "subject") {
+          if (typeof vexp.domain !== "string" || vexp.domain.trim().length === 0) p.push("expected.vertical.subject requires domain (the asserted wire route)");
+          if (e.vertical === undefined) p.push("subject entry requires the entry-level vertical spec (executors inject it)");
+        }
+        if (vexp.role === "control") {
+          // Controls pin the silent-fallback surface: never a positive hit.
+          if (vexp.hit === true) p.push("control entries may not assert hit:true (existence is the assertion, passing is not)");
+          if (vexp.domain !== undefined) p.push("control entries do not assert a routed domain");
+        }
+        if (vexp.sub_domain !== undefined && (typeof vexp.sub_domain !== "string" || vexp.sub_domain.length === 0)) p.push("expected.vertical.sub_domain must be a non-empty string");
+        if (vexp.paramsKeys !== undefined && (!Array.isArray(vexp.paramsKeys) || vexp.paramsKeys.some((k) => typeof k !== "string"))) p.push("expected.vertical.paramsKeys must be string[]");
+        if (vexp.paramsSent !== undefined && typeof vexp.paramsSent !== "boolean") p.push("expected.vertical.paramsSent must be boolean");
+        if (vexp.hit !== undefined && typeof vexp.hit !== "boolean") p.push("expected.vertical.hit must be boolean");
+        if (vexp.degraded !== undefined && !(vexp.degraded === "general-fallback" || (Array.isArray(vexp.degraded) && vexp.degraded.every((d) => typeof d === "string")))) p.push("expected.vertical.degraded must be string[] | \"general-fallback\"");
+        // Consistency: asserted paramsKeys must equal the injected spec's keys.
+        if (vexp.role === "subject" && vexp.paramsKeys !== undefined && e.vertical !== undefined) {
+          const actual = Object.keys(e.vertical.params ?? {}).sort();
+          const want = [...vexp.paramsKeys].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(want)) p.push("expected.vertical.paramsKeys " + JSON.stringify(want) + " != injected spec keys " + JSON.stringify(actual));
+        }
+        if (vexp.paramsSent === true && vexp.paramsKeys !== undefined && vexp.paramsKeys.length === 0) p.push("paramsSent:true contradicts paramsKeys:[]");
+      }
+    }
+  }
+  // R84 T1 / ADR-0085 draft: entry-level vertical spec (executor injection).
+  const vspec = e.vertical as Partial<DocsGoldenVerticalSpec> | undefined;
+  if (vspec !== undefined) {
+    if (typeof vspec !== "object" || vspec === null || Array.isArray(vspec)) {
+      p.push("vertical spec must be an object");
+    } else {
+      if (typeof vspec.domain !== "string" || vspec.domain.trim().length === 0) p.push("vertical.domain must be a non-empty string");
+      if (vspec.subDomain !== undefined && (typeof vspec.subDomain !== "string" || vspec.subDomain.trim().length === 0)) p.push("vertical.subDomain must be a non-empty string when present");
+      if (vspec.params !== undefined && (typeof vspec.params !== "object" || vspec.params === null || Array.isArray(vspec.params))) p.push("vertical.params must be a Record (empty {} allowed — A-04 canonicalizes it to absent)");
+    }
   }
   const tags = Array.isArray(e.dimensions) ? e.dimensions : [];
   if (tags.length === 0) {
     p.push("dimensions must be a non-empty string[]");
+  } else if (isVerticalEntry) {
+    // R84: vertical-family entries use the vertical slice vocabulary ONLY —
+    // the coverage manifest asserts exact tag-count equality on the eight
+    // docs dimensions, so vertical entries must not carry docs-dim tags.
+    for (const d of tags) {
+      const [dim, val] = String(d).split(":");
+      const allowed = VERTICAL_DIMENSION_VALUES[dim ?? ""];
+      if (!allowed || !allowed.includes(val ?? "")) p.push("vertical entry dimension tag outside stratum|vdomain vocabulary: " + d);
+    }
+    if (!tags.some((d) => String(d).startsWith("stratum:"))) p.push("vertical entry missing stratum: tag");
+    if (!tags.some((d) => String(d).startsWith("vdomain:"))) p.push("vertical entry missing vdomain: tag");
+    const vexp = e.expected?.vertical;
+    if (vexp?.role === "control" && !tags.includes("stratum:control")) p.push("control entry must carry stratum:control tag");
+    if (vexp?.role === "subject" && tags.includes("stratum:control")) p.push("subject entry may not carry stratum:control tag");
   } else {
     for (const d of tags) {
       const [dim, val] = String(d).split(":");
@@ -177,9 +305,18 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
   if (!prov || typeof prov !== "object") {
     p.push("provenance block required");
   } else {
-    if (!DOCS_GOLDEN_PROVENANCE_TYPES.includes(prov.type as "internal-dogfood")) p.push("provenance.type must be internal-dogfood|external-community");
+    if (!DOCS_GOLDEN_PROVENANCE_TYPES.includes(prov.type as "internal-dogfood")) p.push("provenance.type must be internal-dogfood|external-community|constructed|llm-assisted");
     if (typeof prov.ref !== "string" || prov.ref.length < 4) p.push("provenance.ref required");
     if (prov.type === "external-community" && !/^https?:\/\//.test(prov.ref ?? "")) p.push("external-community ref must be a URL");
+    // R84 T1 / D-003(vi): built corpus carries reviewer + audit trail.
+    // constructed  = human-authored -> reviewer required (reviewer = author id).
+    // llm-assisted = cross-family LLM draft, human-reviewed -> reviewer AND
+    //                audit trail ref both required (the draft session/model
+    //                must be revisitable).
+    if (prov.type === "constructed" || prov.type === "llm-assisted") {
+      if (typeof prov.reviewer !== "string" || prov.reviewer.length === 0) p.push("provenance.reviewer required for " + prov.type + " entries");
+    }
+    if (prov.type === "llm-assisted" && (typeof prov.audit !== "string" || prov.audit.length < 4)) p.push("provenance.audit (trail ref) required for llm-assisted entries");
     if (typeof prov.harvestedAt !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(prov.harvestedAt)) p.push("provenance.harvestedAt ISO date required");
   }
   return p;

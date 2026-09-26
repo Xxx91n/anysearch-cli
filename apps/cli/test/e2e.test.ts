@@ -115,6 +115,72 @@ async function t(name: string, fn: () => Promise<void>) {
     assert.equal(r.code, 1);
   });
 
+  // R84 T1 / A-02: malformed vertical input is fail-fast at the CLI boundary —
+  // aligned with the MCP schema-rejection direction (ADR-0085 draft).
+  await t("search --vertical-domain '' exits 2 (empty domain)", async () => {
+    const r = await run(["search", "q", "--vertical-domain", ""]);
+    assert.equal(r.code, 2);
+    assert.match(r.out, /non-empty string/);
+  });
+
+  await t("search --vertical-domain (bare, no value) exits 2", async () => {
+    const r = await run(["search", "q", "--vertical-domain"]);
+    assert.equal(r.code, 2);
+    assert.match(r.out, /requires a value/);
+  });
+
+  await t("search --vertical-domain --json exits 2 (flag-as-value)", async () => {
+    const r = await run(["search", "q", "--vertical-domain", "--json"]);
+    assert.equal(r.code, 2);
+    assert.match(r.out, /requires a value/);
+  });
+
+  await t("search --vertical-sub-domain '' exits 2 (empty sub)", async () => {
+    const r = await run(["search", "q", "--vertical-domain", "finance", "--vertical-sub-domain", ""]);
+    assert.equal(r.code, 2);
+    assert.match(r.out, /non-empty string/);
+  });
+
+  await t("search --vertical-params '[1]' exits 2 (non-Record)", async () => {
+    const r = await run(["search", "q", "--vertical-domain", "finance", "--vertical-params", "[1]"]);
+    assert.equal(r.code, 2);
+    assert.match(r.out, /must be a JSON object/);
+  });
+
+  await t("search --vertical-params without --vertical-domain exits 2", async () => {
+    const r = await run(["search", "q", "--vertical-params", "{\"type\":\"earnings\"}"]);
+    assert.equal(r.code, 2);
+    assert.match(r.out, /require --vertical-domain/);
+  });
+
+  // R84 rework (audit F1 / ADR-0085 D6 addendum): the TOML leg of A-02 —
+  // a domain file with a malformed sources.vertical must fail fast at the
+  // user surface (explicit error, non-zero exit), not silently fall back to
+  // full-fanout with the whole domain dropped.
+  await t("search with malformed sources.vertical TOML fails fast", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-badtoml-"));
+    try {
+      fs.writeFileSync(path.join(dir, "badvert.toml"), [
+        'name = "badvert"',
+        '[sources]',
+        'enabled = ["anysearch"]',
+        '[sources.vertical]',
+        'domain = "finance"',
+        'bogus_key = "x"',
+        '[rag]',
+        'adapter = "none"',
+        "",
+      ].join("\n"), "utf8");
+      const r = await run(["search", "q", "--json"], { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "badvert" });
+      assert.notEqual(r.code, 0);
+      assert.match(r.out, /sources\.vertical|Domain schema/i);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   console.log("---");
   console.log("CLI e2e: " + passed + " passed, " + failed + " failed");
   process.exit(failed === 0 ? 0 : 1);

@@ -50,8 +50,16 @@ const evidenceMode = process.env.ANS_EVAL_EVIDENCE === "1";
 const runRef = process.env.ANS_EVAL_RUN_URL ?? "local:" + new Date().toISOString();
 const evidenceLog = process.env.ANS_EVAL_EVIDENCE_LOG ?? join(root, ".scratch", "eval-evidence.log");
 
-function searchJson(question: string, env: NodeJS.ProcessEnv): any {
-  const r = spawnSync(process.execPath, [dist, "search", question, "--json"], { env, encoding: "utf8", timeout: 60000 });
+function searchJson(question: string, env: NodeJS.ProcessEnv, vertical?: { domain: string; subDomain?: string; params?: Record<string, unknown> }): any {
+  const args = [dist, "search", question, "--json"];
+  // R84 T1 / ADR-0085 draft: vertical entries ride the real --vertical-* flags —
+  // the live leg exercises the same config boundary a user types at.
+  if (vertical) {
+    args.push("--vertical-domain", vertical.domain);
+    if (vertical.subDomain) args.push("--vertical-sub-domain", vertical.subDomain);
+    if (vertical.params !== undefined) args.push("--vertical-params", JSON.stringify(vertical.params));
+  }
+  const r = spawnSync(process.execPath, args, { env, encoding: "utf8", timeout: 60000 });
   if (r.error) return { __error: String(r.error) };
   try { return JSON.parse(r.stdout); } catch { return { __error: "unparseable stdout", __raw: (r.stdout ?? "").slice(-300), __code: r.status }; }
 }
@@ -162,7 +170,7 @@ function main() {
     const p0 = passed, f0 = failed;
     const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAIN: e.domain };
     if (e.domain === "cold") env.ANS_DOMAINS_DIR = coldDir;
-    const j = searchJson(e.question, env);
+    const j = searchJson(e.question, env, e.vertical);
     assert(!j.__error, e.id + " ran (" + (j.__error ?? "ok") + ")");
     if (!j.__error) {
       if (e.expected.verdict === "abstain") {
@@ -181,8 +189,39 @@ function main() {
         for (const n of e.expected.mustNotHitPaths ?? [])
           assert(pathMiss(j.results, n, hosts), e.id + " mustNotHitPath " + n + " absent from results");
       }
+      // R84 T1 / ADR-0085 draft: expected.vertical assertion surface (live leg).
+      // hit rides on the fused results' extra.vertical marker; control entries
+      // pin the silent-fallback surface — see degraded handling below.
+      const vexp = e.expected?.vertical;
+      if (vexp !== undefined) {
+        const marked = j.results.filter((r: any) => r.extra?.vertical !== undefined);
+        if (vexp.role === "subject") {
+          if (vexp.hit === true) {
+            assert(marked.some((r: any) => r.extra.vertical.domain === vexp.domain), e.id + " verticalHit: result carries extra.vertical.domain=" + vexp.domain);
+            if (vexp.sub_domain !== undefined) {
+              assert(marked.some((r: any) => r.extra.vertical.subDomain === vexp.sub_domain), e.id + " verticalHit: marker carries subDomain=" + vexp.sub_domain);
+            }
+          }
+        }
+        if (vexp.hit === false) {
+          assert(marked.length === 0, e.id + " no result carries extra.vertical (silent-fallback surface stays clean)");
+        }
+        if (vexp.degraded === "general-fallback") {
+          // The vertical arm produced no marked results; the general fanout
+          // still answers. Existence is the assertion (D-004 iii).
+          assert(j.results.length >= 1, e.id + " general-fallback: results exist");
+        }
+      }
     }
     const ePass = passed - p0, eFail = failed - f0;
+    // R84 T1 / D-004 iii: control entries' failures walk the degraded list,
+    // never the red gate — existence is a first-class assertion, passing is
+    // not. Failures are reclassified out of the red counter and logged.
+    const isControl = e.expected?.vertical?.role === "control";
+    if (isControl && eFail > 0) {
+      failed -= eFail;
+      console.log("CONTROL-DEGRADED " + e.id + " (control arm assertions failed -> degraded list, not the red gate; f=" + eFail + ")");
+    }
     if (evidenceMode) {
       const line = "EVIDENCE " + e.id + " " + (eFail > 0 ? "fail" : "pass") + " " + new Date().toISOString() + " " + runRef + " p=" + ePass + " f=" + eFail;
       console.log(line);

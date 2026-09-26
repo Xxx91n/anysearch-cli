@@ -121,5 +121,13 @@ let vUnknownOk = true;
 try { validate(vUnknown); } catch { vUnknownOk = false; }
 assert("unknown vocabulary NOT rejected locally (upstream is the wordlist authority)", vUnknownOk);
 
+// R84 T1 / A-02: unknown keys inside sources.vertical are fail-fast at load —
+// a silently dropped key (e.g. a params subtable the TOML surface does not
+// carry) is the malformed-silence class the legislation exists to kill.
+const vExtraKey = resolve({ name: "vk", rag: { adapter: "x" }, sources: { enabled: [], vertical: { domain: "finance", params: { type: "earnings" } } } } as unknown as RawDomain, () => undefined);
+let vKeyThrew = "";
+try { validate(vExtraKey); } catch (e) { vKeyThrew = (e as Error).message; }
+assert("unknown key in sources.vertical rejected naming the key", vKeyThrew.includes("unknown key") && vKeyThrew.includes("params"));
+
 console.log(`Domain schema tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

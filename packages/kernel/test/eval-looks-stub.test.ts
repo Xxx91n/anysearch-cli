@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { RetroaererdEngine } from "../src/engine";
 import { loadDomainByNameIn, resolvePolicyFromSchema, defaultDomainsDirs } from "@anysearch-cli/store";
 import type { SearchProvider, SearchRequest, ProviderEnvelope, NormalizedResult } from "@anysearch-cli/retriever";
+import type { RetrievalObservationSink } from "../src/ports";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -61,6 +62,62 @@ const coldPolicy = (): UrlPolicy => ({ allow: ["nonexistent.invalid"], deny: [],
 // Off-domain host pool for replays (all outside every shipped allowlist).
 const OFFDOMAIN = ["zhihu.com", "www.cnblogs.com", "csdn.net", "tokio.rs", "kubernetes.io", "stackoverflow.com"];
 
+// --- R84 T1 / ADR-0085 draft: vertical-eval stub layer -----------------------
+// Vertical entries (vert-*/ctrl-* ids) replay the legislated wire/marker/
+// degraded semantics through stub providers — the OFFLINE truth layer for
+// expected.vertical{domain,sub_domain,paramsKeys,paramsSent,hit,degraded}.
+// The capable stub mirrors the anysearch adapter contract: it stamps
+// extra.vertical{domain,subDomain?} on every result when req.vertical is set.
+// Control entries simulate the two upstream surfaces observed 2026-09-25:
+// bogus domain -> silent general fallback (HTTP 200, unmarked results);
+// bogus sub_domain -> isError reject (fail-first -> providersFailed).
+function fakeSink() {
+  const events: Array<{ name: string; attributes: any }> = [];
+  const sink: RetrievalObservationSink = {
+    addEvent: (name: string, attributes: any) => { events.push({ name, attributes }); },
+    setAttributes: () => { },
+  };
+  return { sink, events };
+}
+
+function verticalCapableProvider(id: string, mode: "hit" | "fallback" | "reject"): SearchProvider {
+  const p: SearchProvider = {
+    id,
+    modes: ["fast"],
+    verticalDomainSupported: true,
+    async search(req: SearchRequest): Promise<ProviderEnvelope> {
+      (p as any).lastReq = req;
+      if (mode === "reject") throw new Error(id + " upstream isError (invalid vertical combination)");
+      const marked = mode === "hit" && !!req.vertical;
+      const results: NormalizedResult[] = ["https://fmp.example/earnings", "https://fmp.example/calendar"].map((url, i) => ({
+        url, title: id + " v" + i, snippet: "s" + i, source: id,
+        ...(marked ? { extra: { vertical: { domain: req.vertical!.domain, ...(req.vertical!.subDomain ? { subDomain: req.vertical!.subDomain } : {}) } } } : {}),
+      }));
+      return { provider: id, results, answers: [], elapsedMs: 5 };
+    },
+  };
+  return p;
+}
+
+// Scenario for a vertical entry. The capable arm's upstream mode is driven by
+// the entry's asserted surface: role:subject -> hit (stamped results);
+// role:control + subDomain present -> reject (bogus sub_domain surface);
+// role:control + domain only -> fallback (bogus domain silent-fallback surface).
+function verticalScenarioFor(e: any): Scenario | null {
+  if (e.vertical === undefined && e.expected?.vertical === undefined) return null;
+  const vexp = e.expected?.vertical ?? {};
+  const capMode = vexp.role === "control" ? (e.vertical?.subDomain ? "reject" : "fallback") : "hit";
+  return {
+    // No urlPolicy: the vertical axis is orthogonal to the host gate —
+    // domain:"default" entries carry no allowlist.
+    policy: () => ({ allow: [], deny: [], policyVersion: "vertical-stub-r84" }),
+    providers: [
+      verticalCapableProvider("vcap", capMode),
+      stubProvider("vincap", ["https://zhihu.com/p/gen-1", "https://stackoverflow.com/q/gen-2"], false),
+    ],
+  };
+}
+
 // Build the observed-scene fixture for one entry. Badcase-anchored entries replay
 // observed.results count with observed.topHost first; scene-documented entries
 // use their recorded provider topology.
@@ -98,7 +155,7 @@ function scenarioFor(e: any): Scenario | null {
       providers: [stubProvider("tavily", ["https://kubernetes.io/docs/concepts/scheduling-eviction/pod-eviction/"], true)],
     };
   }
-  return null;
+  return verticalScenarioFor(e);
 }
 
 async function main() {
@@ -125,8 +182,11 @@ async function main() {
     const sc = scenarioFor(e);
     assert(!!sc, e.id + " has a resolvable observed-scene fixture");
     if (!sc) continue;
+    const { sink, events } = fakeSink();
     const eng = new RetroaererdEngine(sc.providers, { urlPolicy: sc.policy, domainName: e.domain });
-    const env = await eng.search({ query: e.question, mode: "fast" });
+    // R84 T1: vertical entries inject their spec at the query level — same
+    // surface as the CLI --vertical-* flags.
+    const env = await eng.search({ query: e.question, mode: "fast", ...(e.vertical ? { vertical: e.vertical } : {}), span: sink });
     if (e.expected.verdict === "abstain") {
       const ab = env.metadata.abstain;
       assert(ab?.abstain === true, e.id + " => abstain marker");
@@ -136,6 +196,55 @@ async function main() {
     } else {
       assert(env.metadata.abstain === undefined, e.id + " answer verdict has no abstain marker");
       assert(env.results.length >= (e.expected.minResults ?? 1), e.id + " meets minResults structure");
+    }
+    // R84 T1 / ADR-0085 draft: expected.vertical assertion surface. Offline the
+    // semantics are deterministic — control entries assert hard here too (the
+    // soft/degraded treatment is live-leg only, where upstream can drift).
+    const vexp = e.expected?.vertical;
+    if (vexp !== undefined) {
+      const capProvider = sc.providers.find((p) => p.id === "vcap") as any;
+      const incapProvider = sc.providers.find((p) => p.id === "vincap") as any;
+      const pre = events.find((ev) => ev.name === "retrieval.vertical.pre");
+      if (vexp.role === "subject") {
+        assert(!!pre, e.id + " vertical.pre event emitted");
+        assert(pre?.attributes["anysearch.vertical.domain"] === vexp.domain, e.id + " event domain " + vexp.domain);
+        assert(pre?.attributes["anysearch.vertical.sub_domain"] === (vexp.sub_domain ?? ""), e.id + " event sub_domain");
+        const pk = pre?.attributes["anysearch.vertical.params_keys"] ?? null;
+        assert(Array.isArray(pk) && JSON.stringify([...pk].sort()) === JSON.stringify([...(vexp.paramsKeys ?? [])].sort()), e.id + " event params_keys " + JSON.stringify(pk));
+        // Wire truth on the capable arm.
+        const vreq = capProvider?.lastReq?.vertical;
+        assert(vreq?.domain === vexp.domain, e.id + " wire domain " + vexp.domain);
+        assert(vreq?.subDomain === vexp.sub_domain, e.id + " wire subDomain " + String(vexp.sub_domain));
+        if (vexp.paramsKeys !== undefined) {
+          const sentKeys = Object.keys(vreq?.params ?? {}).sort();
+          assert(JSON.stringify(sentKeys) === JSON.stringify([...vexp.paramsKeys].sort()), e.id + " wire params keys " + JSON.stringify(sentKeys));
+        }
+        if (vexp.paramsSent === false) assert(vreq !== undefined && vreq.params === undefined, e.id + " A-04: params key absent on wire (empty {} never serializes)");
+        if (vexp.paramsSent === true) assert(vreq?.params !== undefined, e.id + " params present on wire");
+        // Degraded arm received NO vertical spec (capability negotiation).
+        assert(incapProvider?.lastReq?.vertical === undefined, e.id + " degraded arm received no vertical spec");
+        if (Array.isArray(vexp.degraded)) {
+          assert(JSON.stringify(pre?.attributes["anysearch.vertical.degraded"]) === JSON.stringify(vexp.degraded), e.id + " event degraded " + JSON.stringify(vexp.degraded));
+        }
+      } else if (vexp.role === "control") {
+        assert(!!pre === !!e.vertical, e.id + " control: vertical.pre presence matches spec injection");
+        // Observed upstream surfaces (matrix 2026-09-25): a bogus sub_domain is
+        // rejected upstream (isError) -> the vertical arm lands in
+        // providersFailed; a bogus domain silently falls back to general.
+        if (e.vertical?.subDomain !== undefined) {
+          assert(env.metadata.providersFailed.includes("vcap"), e.id + " reject surface: capable arm in providersFailed");
+        }
+      }
+      if (vexp.hit === true) {
+        assert(env.results.some((r: any) => r.extra?.vertical?.domain === vexp.domain), e.id + " verticalHit marker on results (extra.vertical.domain=" + vexp.domain + ")");
+      } else if (vexp.hit === false) {
+        assert(!env.results.some((r: any) => r.extra?.vertical !== undefined), e.id + " no result carries the vertical marker");
+      }
+      if (vexp.degraded === "general-fallback") {
+        // The vertical arm did not produce marked results; the general fanout
+        // answered. Existence asserted — pass/fail handled per leg.
+        assert(env.results.length >= 1, e.id + " general-fallback: results exist");
+      }
     }
   }
 

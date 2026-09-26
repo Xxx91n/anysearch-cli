@@ -7,6 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, type CompositionResult } from "@anysearch-cli/kernel";
+import { canonicalizeVertical } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 
 export function registerSearchWeb(server: McpServer, eng: CompositionResult): void {
@@ -27,41 +28,43 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
         if (verticalDomain === undefined && (verticalSubDomain !== undefined || verticalParams !== undefined)) {
           return { content: [{ type: "text" as const, text: "search_web error: verticalSubDomain/verticalParams require verticalDomain" }] };
         }
+        // R84 T1 / A-04 (ADR-0085 draft): canonicalize — params:{} ≡ absent,
+        // the echoed spec is the canonical form actually sent on the wire.
         const vertical = verticalDomain !== undefined
-          ? { domain: verticalDomain, ...(verticalSubDomain ? { subDomain: verticalSubDomain } : {}), ...(verticalParams ? { params: verticalParams } : {}) }
+          ? canonicalizeVertical({ domain: verticalDomain, ...(verticalSubDomain ? { subDomain: verticalSubDomain } : {}), ...(verticalParams ? { params: verticalParams } : {}) })
           : undefined;
         try {
           const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", maxResults, ...(vertical ? { vertical } : {}), span });
           const topResults = envelope.results.slice(0, 10);
 
-        // ADR-0022 D1: provider answers pass through as first-class fields.
-        // ADR-0034 D4: attribution attached to envelope by engine.attachAttribution().
+          // ADR-0022 D1: provider answers pass through as first-class fields.
+          // ADR-0034 D4: attribution attached to envelope by engine.attachAttribution().
           const summary = JSON.stringify(
-          {
-            query,
-            totalResults: envelope.results.length,
-            showing: topResults.length,
-            results: topResults,
-            // ADR-0022 D1/D2/D3: first-class answers marked providerGenerated+unverified.
-            // Round-47 fix: stable output shape — always emit answers / answersAvailable / providerAnswers
-            // (key presence no longer conditional; aligns with SEP-1624 stable structured schema).
-            // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
-            answers: envelope.answers ?? [],
-            answersAvailable: envelope.metadata?.answersAvailable ?? false,
-            providerAnswers: envelope.metadata?.providerAnswers ?? [],
-            providersQueried: envelope.metadata?.providersQueried ?? [],
-            // ADR-0034 D4: attribution = claim-level evidence linkage report (present iff search ran).
-            ...(envelope.attribution ? { attribution: envelope.attribution } : { attribution: null }),
-            // ADR-0062 D3: first-class abstain marker — policy success, not error.
-            abstain: envelope.metadata?.abstain ?? null,
-            // R83 T1: resolved vertical routing (query-level args; repo-level
-            // defaults surface via the retrieval.vertical.pre audit event).
-            vertical: vertical ?? null,
-            // ADR-0014 D4: MCP sufficiency annotation — A+ dual-channel.
-            ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
-          },
-          null,
-          2,
+            {
+              query,
+              totalResults: envelope.results.length,
+              showing: topResults.length,
+              results: topResults,
+              // ADR-0022 D1/D2/D3: first-class answers marked providerGenerated+unverified.
+              // Round-47 fix: stable output shape — always emit answers / answersAvailable / providerAnswers
+              // (key presence no longer conditional; aligns with SEP-1624 stable structured schema).
+              // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
+              answers: envelope.answers ?? [],
+              answersAvailable: envelope.metadata?.answersAvailable ?? false,
+              providerAnswers: envelope.metadata?.providerAnswers ?? [],
+              providersQueried: envelope.metadata?.providersQueried ?? [],
+              // ADR-0034 D4: attribution = claim-level evidence linkage report (present iff search ran).
+              ...(envelope.attribution ? { attribution: envelope.attribution } : { attribution: null }),
+              // ADR-0062 D3: first-class abstain marker — policy success, not error.
+              abstain: envelope.metadata?.abstain ?? null,
+              // R83 T1: resolved vertical routing (query-level args; repo-level
+              // defaults surface via the retrieval.vertical.pre audit event).
+              vertical: vertical ?? null,
+              // ADR-0014 D4: MCP sufficiency annotation — A+ dual-channel.
+              ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
+            },
+            null,
+            2,
           );
 
           // Auto-index into session store (best-effort, fail-open).

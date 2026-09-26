@@ -7,6 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, type CompositionResult } from "@anysearch-cli/kernel";
+import { canonicalizeVertical } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 
 export function registerResearchWeb(server: McpServer, eng: CompositionResult): void {
@@ -24,8 +25,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         if (verticalDomain === undefined && (verticalSubDomain !== undefined || verticalParams !== undefined)) {
           return { content: [{ type: "text" as const, text: "research_web error: verticalSubDomain/verticalParams require verticalDomain" }] };
         }
+        // R84 T1 / A-04 (ADR-0085 draft): canonicalize — params:{} ≡ absent.
         const vertical = verticalDomain !== undefined
-          ? { domain: verticalDomain, ...(verticalSubDomain ? { subDomain: verticalSubDomain } : {}), ...(verticalParams ? { params: verticalParams } : {}) }
+          ? canonicalizeVertical({ domain: verticalDomain, ...(verticalSubDomain ? { subDomain: verticalSubDomain } : {}), ...(verticalParams ? { params: verticalParams } : {}) })
           : undefined;
         const d = depth ?? "deep";
         let allResults: any[] = [];
@@ -57,38 +59,38 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             if (envelope.metadata?.sufficiency?.verdict === "correct") break;
           }
 
-        // r83 audit F11: re-derive attribution over the MERGED result set so claim
-        // evidence sourceKeys point into the same results array this tool returns.
-        // (Last-round-only attribution indexes a per-round list the tool never returns.)
-        let mergedAttribution: unknown = null;
-        if (lastEnvelope?.attribution) {
-          const { attachAttribution } = await import("@anysearch-cli/kernel");
-          const merged = { ...lastEnvelope, results: allResults };
-          mergedAttribution = attachAttribution(merged, {
-            ...(eng.calibration ? { calibration: eng.calibration } : {}),
-          });
-        }
+          // r83 audit F11: re-derive attribution over the MERGED result set so claim
+          // evidence sourceKeys point into the same results array this tool returns.
+          // (Last-round-only attribution indexes a per-round list the tool never returns.)
+          let mergedAttribution: unknown = null;
+          if (lastEnvelope?.attribution) {
+            const { attachAttribution } = await import("@anysearch-cli/kernel");
+            const merged = { ...lastEnvelope, results: allResults };
+            mergedAttribution = attachAttribution(merged, {
+              ...(eng.calibration ? { calibration: eng.calibration } : {}),
+            });
+          }
           const lastRound = allResults.slice(-10);
           const summary = JSON.stringify(
-          {
-            question,
-            depth: d,
-            rounds,
-            totalResults: allResults.length,
-            results: lastRound.slice(0, 10),
-            citations: allResults.slice(0, 5).map((r: any) => ({ title: r.title, url: r.url, source: r.source })),
-            // ADR-0022 D1/D2/D3: provider answers pass through unmodified.
-            // Round-47 fix: stable output shape.
-            ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
-            // ADR-0034 D4: attribution from last round (claim-level evidence linkage).
-            ...(mergedAttribution ? { attribution: mergedAttribution } : { attribution: null }),
-            // ADR-0062 D3: abstain marker when the domain gate emptied the pool.
-            abstain: lastEnvelope?.metadata?.abstain ?? null,
-            // R83 T1: resolved vertical routing (query-level spec, applied to every round).
-            vertical: vertical ?? null,
-          },
-          null,
-          2,
+            {
+              question,
+              depth: d,
+              rounds,
+              totalResults: allResults.length,
+              results: lastRound.slice(0, 10),
+              citations: allResults.slice(0, 5).map((r: any) => ({ title: r.title, url: r.url, source: r.source })),
+              // ADR-0022 D1/D2/D3: provider answers pass through unmodified.
+              // Round-47 fix: stable output shape.
+              ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
+              // ADR-0034 D4: attribution from last round (claim-level evidence linkage).
+              ...(mergedAttribution ? { attribution: mergedAttribution } : { attribution: null }),
+              // ADR-0062 D3: abstain marker when the domain gate emptied the pool.
+              abstain: lastEnvelope?.metadata?.abstain ?? null,
+              // R83 T1: resolved vertical routing (query-level spec, applied to every round).
+              vertical: vertical ?? null,
+            },
+            null,
+            2,
           );
 
           // ADR-0062 D3 (T3): structuredContent.abstain, isError absent (false).

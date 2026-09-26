@@ -191,10 +191,17 @@ export function validate(schema: DomainSchema): void {
   // non-empty string; sub_domain when present must be a non-empty string. The
   // domain vocabulary itself stays upstream-owned (unknown values are NOT
   // rejected here — the provider isError + fail-first degrade handles them).
+  // R84 T1 / A-02 (ADR-0085 draft): unknown keys inside sources.vertical are
+  // fail-fast at load (aligned with the MCP schema rejection direction) — a
+  // silently dropped key (e.g. a `params` subtable the TOML surface does not
+  // carry) is exactly the malformed-silence class this rule exists to kill.
   const v = schema.sources.vertical;
   if (v !== undefined) {
     if (typeof v !== "object" || v === null || Array.isArray(v))
       throw new Error("Domain schema: sources.vertical must be a Record { domain, sub_domain? }");
+    const unknownKeys = Object.keys(v as Record<string, unknown>).filter((k) => k !== "domain" && k !== "sub_domain");
+    if (unknownKeys.length > 0)
+      throw new Error("Domain schema: sources.vertical unknown key(s) " + unknownKeys.map((k) => JSON.stringify(k)).join(", ") + " — supported keys: domain, sub_domain (params live on query-level channels, not TOML)");
     if (typeof v.domain !== "string" || v.domain.trim().length === 0)
       throw new Error("Domain schema: sources.vertical.domain must be a non-empty string");
     if (v.sub_domain !== undefined && (typeof v.sub_domain !== "string" || v.sub_domain.trim().length === 0))

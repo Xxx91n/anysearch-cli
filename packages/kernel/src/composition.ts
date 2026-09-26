@@ -133,7 +133,13 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
     } catch (e) {
       // ADR-0045 D2: configuration errors fail fast — an invalid sources.weights must not be
       // swallowed by the fail-open full-fanout fallback (which exists for missing domains/keys).
-      if (e instanceof Error && e.message.includes("sources.weights")) throw e;
+      // R84 rework (audit F1 / ADR-0085 D6 addendum): the predicate is the whole
+      // "Domain schema:" family, not a single field — a malformed sources.vertical
+      // (or urlAllowlist/compaction/…) is the same silent-drop class: the domain
+      // is configured but broken, so swallowing it would discard the operator's
+      // explicit policy (incl. the URL allowlist trust boundary). "Domain not
+      // found" stays fail-open — absent domain ≠ broken domain.
+      if (e instanceof Error && e.message.includes("Domain schema:")) throw e;
       providers = Object.values(PROVIDER_FACTORIES).map((f) => f()).filter((p): p is SearchProvider => p !== undefined);
     }
   } else {

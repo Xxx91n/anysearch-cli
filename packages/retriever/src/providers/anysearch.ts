@@ -14,6 +14,7 @@
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope } from "../contract";
+import { canonicalizeVertical } from "../contract";
 
 // ADR-0059 D7 (T-6.4) DEFERRED-WITH-DEADLINE: ownership of api.anysearch.com is an internal
 // confirmation item (legal/ops), not a code decision. Round-58 verification surface was the
@@ -225,12 +226,17 @@ export class AnySearchProvider implements SearchProvider {
         // R83 T1 / ADR-0084 D-003: wire layer — internal vertical* fields map to
         // the MCP domain/sub_domain/sub_domain_params argument names. Absent
         // vertical → all three keys stay absent (no empty-string defaults).
+        // R84 T1 / A-04: canonicalized at the wire edge too — params:{} ≡ absent
+        // (single truth source: canonicalizeVertical in contract.ts).
         ...(req.vertical
-          ? {
-              domain: req.vertical.domain,
-              ...(req.vertical.subDomain ? { sub_domain: req.vertical.subDomain } : {}),
-              ...(req.vertical.params ? { sub_domain_params: req.vertical.params } : {}),
-            }
+          ? (() => {
+            const v = canonicalizeVertical(req.vertical);
+            return {
+              domain: v.domain,
+              ...(v.subDomain ? { sub_domain: v.subDomain } : {}),
+              ...(v.params ? { sub_domain_params: v.params } : {}),
+            };
+          })()
           : {}),
       },
     }, signal);

@@ -112,6 +112,25 @@ async function main() {
   const pre5 = s5.events.find(e => e.name === "retrieval.vertical.pre");
   assert(!!pre5, "vertical.pre still emitted (audit records the attempt)");
 
+  // 6b. R84 T1 / A-04: params:{} canonicalizes to absent at the shared engine
+  //     choke — wire carries no sub_domain_params, params_keys=[].
+  const cap6b = mockProvider("cap", ["https://x.com/1"], true);
+  const eng6b = new RetroaererdEngine([cap6b], { repoVertical: () => ({ domain: "finance", subDomain: "calendar", params: {} }) });
+  const s6b = fakeSink();
+  await eng6b.search({ query: "q", mode: "fast", span: s6b.sink });
+  const req6b = (cap6b as any).lastReq;
+  assert(req6b?.vertical?.domain === "finance", "6b domain routes");
+  assert(req6b?.vertical?.subDomain === "calendar", "6b subDomain routes");
+  assert(req6b?.vertical !== undefined && req6b.vertical.params === undefined, "6b params:{} -> absent on wire (A-04)");
+  const pre6b = s6b.events.find(e => e.name === "retrieval.vertical.pre");
+  assert(JSON.stringify(pre6b?.attributes["anysearch.vertical.params_keys"]) === "[]", "6b params_keys=[] after canonicalization");
+  // non-object params (programmatic caller bypassing entry validation) also drop.
+  const cap6c = mockProvider("cap", ["https://x.com/1"], true);
+  const eng6c = new RetroaererdEngine([cap6c]);
+  const s6c = fakeSink();
+  await eng6c.search({ query: "q", mode: "fast", span: s6c.sink, vertical: { domain: "finance", params: "oops" as unknown as Record<string, unknown> } });
+  assert((cap6c as any).lastReq?.vertical?.params === undefined, "6c non-object params -> absent on wire (A-04)");
+
   // 6. domain_filter.pre trigger unchanged: vertical active WITHOUT a url
   //    policy => only the vertical event fires (independent trigger).
   const s6 = fakeSink();

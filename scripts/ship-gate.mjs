@@ -586,7 +586,24 @@ function stepStaticAssertions() {
       if (!e?.migration?.from || !e?.migration?.to || !e?.migration?.decidedAt)
         fail("R64 D-005: migrated case " + id + " missing migration provenance block (from/to/decidedAt required)");
     }
-    report("pass", "ADR-0046/0047 source gates + ADR-0062 dual-gate abstain contracts + criterion anchors + R64 D-005 migration anchors (exact>=2 frozen-only, paths>=1, migration blocks)");
+    // R84 T1 / ADR-0085 draft: vertical-eval assertion surface presence — the
+    // golden ledger must carry subject pins (wire/marker/degraded semantics)
+    // and control pins (silent-fallback surface); the contract layer tokens
+    // pin the A-02/A-04 legislation in source.
+    const vertEntries = ge.filter((e) => /^vert-/.test(e.id));
+    const ctrlEntries = ge.filter((e) => /^ctrl-/.test(e.id));
+    if (!vertEntries.some((e) => e.expected?.vertical?.role === "subject" && typeof e.vertical?.domain === "string"))
+      fail("R84: no vert-* subject golden entry carrying expected.vertical.role=subject");
+    if (!ctrlEntries.some((e) => e.expected?.vertical?.role === "control"))
+      fail("R84: no ctrl-* control golden entry carrying expected.vertical.role=control");
+    if (!vertEntries.some((e) => e.expected?.vertical?.paramsSent === false))
+      fail("R84: no entry pins the A-04 params:{} == absent wire semantics (paramsSent:false)");
+    const contractSrc84 = fs.readFileSync(path.join(ROOT, "packages/retriever/src/contract.ts"), "utf8");
+    if (!contractSrc84.includes("canonicalizeVertical")) fail("R84: contract.ts missing canonicalizeVertical (A-04 canonicalization)");
+    const dgSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/docs-golden.ts"), "utf8");
+    for (const tok of ["DocsGoldenVerticalExpectation", "paramsKeys", "general-fallback", "stratum", "vdomain"])
+      if (!dgSrc.includes(tok)) fail("R84: docs-golden.ts vertical schema missing " + tok);
+    report("pass", "ADR-0046/0047 source gates + ADR-0062 dual-gate abstain contracts + criterion anchors + R64 D-005 migration anchors + R84 vertical-eval assertion surface");
   }
 
   // 1q. R62 D-005 (T5): offline-eval governance — Declared Exclusion is a

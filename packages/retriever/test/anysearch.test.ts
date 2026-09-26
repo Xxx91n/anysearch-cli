@@ -322,6 +322,19 @@ async function main() {
     } finally { f.restore(); }
   }
 
+  // 13e. R84 T1 / A-04: params:{} canonicalizes to absent — sub_domain_params
+  //      never serializes an empty object on the wire.
+  {
+    const f = installFetch(stdHandler);
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      await p.search({ query: "q", mode: "fast", vertical: { domain: "finance", params: {} } }, SIG);
+      const args = f.calls[2].body.params.arguments;
+      assert(args.domain === "finance", "13e domain still sent");
+      assert(!("sub_domain_params" in args), "13e params:{} -> sub_domain_params absent on wire");
+    } finally { f.restore(); }
+  }
+
   // 13d. upstream rejects an illegal vertical combination (isError) ->
   //      fail-first throw (the arm degrades; never a silent zero envelope).
   {

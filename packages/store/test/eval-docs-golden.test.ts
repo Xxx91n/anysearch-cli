@@ -43,7 +43,14 @@ assert(raw.schema === "anysearch/eval-looks@2", "eval-looks.json keeps schema an
 assert(Array.isArray(raw.looks), "looks[] ledger rows intact");
 assert(raw.golden && typeof raw.golden === "object", "golden top-level collection present");
 const golden = raw.golden as DocsGoldenSet;
-assert(golden.entries.length >= 8 && golden.entries.length <= 14, "first batch size in the 8-14 shelf gate (got " + golden.entries.length + ")");
+const docsBatch = golden.entries.filter((e) => e.id.startsWith("docs-g"));
+const vertBatch = golden.entries.filter((e) => e.id.startsWith("vert-"));
+const ctrlBatch = golden.entries.filter((e) => e.id.startsWith("ctrl-"));
+assert(docsBatch.length >= 8 && docsBatch.length <= 14, "docs first-batch size in the 8-14 shelf gate (got " + docsBatch.length + ")");
+// R84 T1: vertical-eval contract pins landed (subject + control); T2 grows the
+// live-scoped corpus — bound asserts the contract pins exist, not the corpus size.
+assert(vertBatch.length >= 3, "vertical subject contract pins exist (got " + vertBatch.length + ")");
+assert(ctrlBatch.length >= 2, "control-class pins exist (got " + ctrlBatch.length + ")");
 
 // --- 2. every entry validates against the entry schema ----------------------
 const entryProblems = validateDocsGoldenSet(golden);

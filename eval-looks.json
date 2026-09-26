@@ -67,7 +67,12 @@
       "docs-g0011": "live",
       "docs-g0012": "live",
       "docs-g0013": "stub",
-      "docs-g0014": "both"
+      "docs-g0014": "both",
+      "vert-f0001": "stub",
+      "vert-f0002": "stub",
+      "vert-f0003": "stub",
+      "ctrl-0001": "stub",
+      "ctrl-0002": "stub"
     },
     "entries": [
       {
@@ -642,6 +647,180 @@
           "harvestedAt": "2026-09-14"
         },
         "notes": "ADR-0062 判据4 冷门域 0 结果——cold.toml allowlist 仅 nonexistent.invalid，任何到达均被闸，零幸存者即弃答；端到端臂见 apps/cli/test/abstain.test.ts live arm。"
+      },
+      {
+        "id": "vert-f0001",
+        "domain": "default",
+        "question": "earnings call schedule for AAPL this quarter",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "finance",
+          "subDomain": "calendar",
+          "params": {
+            "type": "earnings"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 3,
+          "vertical": {
+            "role": "subject",
+            "domain": "finance",
+            "sub_domain": "calendar",
+            "paramsKeys": [
+              "type"
+            ],
+            "paramsSent": true,
+            "hit": true,
+            "degraded": [
+              "vincap"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/t1-semantics-legislation.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "R84 T1 契约钉：参数化垂域 spec 全键下发（domain+sub_domain+paramsKeys）+extra.vertical 标记 +degraded 臂名单（incapable stub 收 general 扇出不收 vertical）。"
+      },
+      {
+        "id": "vert-f0002",
+        "domain": "default",
+        "question": "latest macro print for CPI year over year",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "finance",
+          "params": {}
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 3,
+          "vertical": {
+            "role": "subject",
+            "domain": "finance",
+            "paramsKeys": [],
+            "paramsSent": false,
+            "hit": true,
+            "degraded": [
+              "vincap"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/t1-semantics-legislation.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "R84 T1 A-04 钉：params:{} ≡ 缺席——canonicalize 后 wire 键不下发、params_keys=[]、domain 仍路由。"
+      },
+      {
+        "id": "vert-f0003",
+        "domain": "default",
+        "question": "recent preprints on retrieval augmented generation evaluation",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "academic"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 3,
+          "vertical": {
+            "role": "subject",
+            "domain": "academic",
+            "paramsKeys": [],
+            "paramsSent": false,
+            "hit": true,
+            "degraded": [
+              "vincap"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:academic"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/t1-semantics-legislation.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "R84 T1 契约钉：domain-only 垂域 spec（无 sub_domain/params）——wire 只发 domain，sub_domain 键缺席。"
+      },
+      {
+        "id": "ctrl-0001",
+        "domain": "default",
+        "question": "earnings call schedule for AAPL this quarter",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "bogus_domain_xx"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "hit": false,
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-83/evidence/t1-vertical-domain.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "对照钉：枚举外 domain——上游实测（2026-09-25）HTTP 200 静默退回 general（非 isError）。stub 复现静默回退面：垂域标记缺席+泛网结果在场=general-fallback。"
+      },
+      {
+        "id": "ctrl-0002",
+        "domain": "default",
+        "question": "earnings call schedule for AAPL this quarter",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "finance",
+          "subDomain": "bogus_sub_xyz"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "hit": false,
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-83/evidence/t1-vertical-domain.md",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "对照钉：枚举外 sub_domain——上游实测（2026-09-25）isError 'Invalid tag: finance.bogus_sub_xyz'。stub 复现拒收面：垂域臂 fail-first 入 providersFailed+泛网臂应答=general-fallback。"
       }
     ]
   }

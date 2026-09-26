@@ -2,6 +2,7 @@
 // ADR-0006 decision 3A: uses createEngine() factory, not inline wiring.
 
 import type { Mode } from "@anysearch-cli/retriever";
+import { canonicalizeVertical } from "@anysearch-cli/retriever";
 import { createPersistentEngine } from "../db";
 
 import { searchExitCode, formatAbstainLine } from "./search-abstain";
@@ -32,9 +33,25 @@ export async function runSearch(args: string[]): Promise<number> {
     const i = args.indexOf(name);
     return i >= 0 ? args[i + 1] : undefined;
   };
+  // R84 T1 / A-02 (ADR-0085 draft): malformed vertical input is fail-fast —
+  // reject-with-error at every entry boundary (aligned with the MCP schema
+  // rejection direction). A present flag with no value, a value that is
+  // another --flag, or an empty string are all malformed, never silently
+  // dropped.
+  const flagSeen = (name: string): boolean => args.includes(name);
   const verticalDomain = flagVal("--vertical-domain");
   const verticalSubDomain = flagVal("--vertical-sub-domain");
   const verticalParamsRaw = flagVal("--vertical-params");
+  for (const [name, val] of [["--vertical-domain", verticalDomain], ["--vertical-sub-domain", verticalSubDomain], ["--vertical-params", verticalParamsRaw]] as const) {
+    if (flagSeen(name) && (val === undefined || val.startsWith("--"))) {
+      process.stderr.write("ans search: " + name + " requires a value\n");
+      return 2;
+    }
+    if (val !== undefined && val.trim().length === 0) {
+      process.stderr.write("ans search: " + name + " must be a non-empty string\n");
+      return 2;
+    }
+  }
   if (verticalDomain === undefined && (verticalSubDomain !== undefined || verticalParamsRaw !== undefined)) {
     process.stderr.write("ans search: --vertical-sub-domain/--vertical-params require --vertical-domain\n");
     return 2;
@@ -50,8 +67,10 @@ export async function runSearch(args: string[]): Promise<number> {
       return 2;
     }
   }
+  // A-04 canonicalization: params:{} (or any empty/non-object params) == absent —
+  // the echoed spec below is the canonical form actually routed to providers.
   const vertical = verticalDomain !== undefined
-    ? { domain: verticalDomain, ...(verticalSubDomain ? { subDomain: verticalSubDomain } : {}), ...(verticalParams ? { params: verticalParams } : {}) }
+    ? canonicalizeVertical({ domain: verticalDomain, ...(verticalSubDomain ? { subDomain: verticalSubDomain } : {}), ...(verticalParams ? { params: verticalParams } : {}) })
     : undefined;
 
   // ADR-0062 (T3): drop every --flag token (was only --mode) so --json /

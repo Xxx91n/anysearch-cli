@@ -27,6 +27,31 @@ export interface SearchRequest {
   };
 }
 
+export type VerticalSpec = NonNullable<SearchRequest["vertical"]>;
+
+// R84 T1 / A-04 (ADR-0085 draft): canonical vertical spec — the single truth
+// source for wire semantics. sub_domain_params serializes only when params is
+// a non-empty Record: an empty object, a non-object, or an array all
+// canonicalize to ABSENT (empty carries no signal; protobuf/JSON API
+// convention: empty map ≈ unset). params_keys audit attrs read the
+// canonicalized spec, so [] and wire-absent are the same truth.
+// Entry surfaces (CLI flags / MCP tool args / engine resolution) all converge
+// through this function so the echoed spec IS the sent spec.
+export function canonicalizeVertical(v: VerticalSpec): VerticalSpec {
+  const params = v.params;
+  const paramsOk =
+    params !== undefined &&
+    typeof params === "object" &&
+    params !== null &&
+    !Array.isArray(params) &&
+    Object.keys(params).length > 0;
+  return {
+    domain: v.domain,
+    ...(v.subDomain !== undefined ? { subDomain: v.subDomain } : {}),
+    ...(paramsOk ? { params } : {}),
+  };
+}
+
 export interface NormalizedResult {
   url: string;
   title: string;

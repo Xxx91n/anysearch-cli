@@ -5,7 +5,7 @@
 // JS adaptation: Promise.allSettled + AbortController + unique-URL counter early stop.
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope } from "@anysearch-cli/retriever";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl } from "@anysearch-cli/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical } from "@anysearch-cli/retriever";
 import { randomUUID } from "node:crypto";
 import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort } from "./ports";
@@ -309,7 +309,12 @@ export class RetroaererdEngine {
     // retrieval.vertical.pre audit event fires when the resolved spec is
     // non-empty, independently of domainActive (the two axes are orthogonal).
     const repoV = this.repoVertical?.();
-    const resolvedVertical = q.vertical ?? repoV;
+    // R84 T1 / A-04 (ADR-0085 draft): canonicalize at the shared choke — empty
+    // or non-object params never reach the wire, the audit event, or the
+    // result marker (empty params ≡ absent; sub_domain_params serializes only
+    // for a non-empty Record). One normalization point covers all three entry
+    // surfaces (CLI flags / MCP tool args / TOML repo default).
+    const resolvedVertical = (q.vertical ?? repoV) ? canonicalizeVertical(q.vertical ?? repoV!) : undefined;
     const verticalActive = !!resolvedVertical && typeof resolvedVertical.domain === "string" && resolvedVertical.domain.length > 0;
     const verticalSent = verticalActive
       ? allProviders.filter((p) => p.verticalDomainSupported).map((p) => p.id)
