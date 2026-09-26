@@ -86,6 +86,11 @@ export async function runSearch(args: string[]): Promise<number> {
 
   // ADR-0006 decision 3A: createEngine factory with domain filtering.
   const domain = process.env.ANS_DOMAIN;
+  // R84 T3 / ADR-0085 draft: ANS_PROVIDERS env-gated provider subset filter —
+  // eval channel for arm-isolated measurement (the paired delta runner runs
+  // ANS_PROVIDERS=anysearch so a slow vertical arm is not cancelled by faster
+  // arms inside the engine grace window). Absent = full fanout, unchanged.
+  const providersSel = process.env.ANS_PROVIDERS?.split(",").map((s) => s.trim()).filter(Boolean);
   const { retriever, observation } = createPersistentEngine(domain);
 
   try {
@@ -102,7 +107,7 @@ export async function runSearch(args: string[]): Promise<number> {
       },
       // ADR-0062 D2: span passed through so the kernel can emit the dual
       // retrieval.domain_filter.* audit events + the anysearch.outcome dimension.
-      (span) => retriever.search({ query: queryClean, mode, maxResults: 10, ...(vertical ? { vertical } : {}), span }),
+      (span) => retriever.search({ query: queryClean, mode, maxResults: 10, ...(vertical ? { vertical } : {}), ...(providersSel?.length ? { providers: providersSel } : {}), span }),
     );
 
     // r83 audit F5 / ADR-0034 D4: --json pure — single JSON document on stdout, nothing else.
@@ -122,6 +127,12 @@ export async function runSearch(args: string[]): Promise<number> {
         // R83 T1: resolved query-level vertical spec (repo defaults ride on the
         // retrieval.vertical.pre audit event).
         vertical: vertical ?? null,
+        // R84 T3 / ADR-0085 draft: arm-level provenance snapshot — env-gated
+        // (ANS_ARM_SNAPSHOT=1) because it is eval-channel data, not the
+        // default --json contract. The paired delta runner reads
+        // fusion.labels/lists for per-arm result sets (pre-truncation,
+        // post-gate) instead of reverse-engineering arms out of fused rows.
+        ...(process.env.ANS_ARM_SNAPSHOT === "1" ? { fusion: envelope.metadata?.fusion ?? null } : {}),
       };
       process.stdout.write(JSON.stringify(out, null, 2) + "\n");
       return searchExitCode({ resultCount: envelope.results.length, abstain: !!envelope.metadata.abstain, failOnAbstain });

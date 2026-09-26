@@ -603,7 +603,18 @@ function stepStaticAssertions() {
     const dgSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/docs-golden.ts"), "utf8");
     for (const tok of ["DocsGoldenVerticalExpectation", "paramsKeys", "general-fallback", "stratum", "vdomain"])
       if (!dgSrc.includes(tok)) fail("R84: docs-golden.ts vertical schema missing " + tok);
-    report("pass", "ADR-0046/0047 source gates + ADR-0062 dual-gate abstain contracts + criterion anchors + R64 D-005 migration anchors + R84 vertical-eval assertion surface");
+    // R84 T3 / ADR-0085 draft: paired-delta runner presence + arm-primary /
+    // fused-secondary disclosure anchors — the runner is the live evidence
+    // leg; deleting it without a replacement breaks the D-002 evidence chain.
+    const vdPath = path.join(ROOT, "packages/store/test/online/eval-looks-vertical.online.ts");
+    if (!fs.existsSync(vdPath)) fail("R84: paired vertical-delta runner missing (packages/store/test/online/eval-looks-vertical.online.ts)");
+    const vdSrc = fs.readFileSync(vdPath, "utf8");
+    for (const tok of ["ANS_ARM_SNAPSHOT", "ANS_PROVIDERS", "anysearch/vertical-delta@1", "datasetFingerprint", "unknown", "armOnSample"])
+      if (!vdSrc.includes(tok)) fail("R84: vertical-delta runner missing anchor " + tok);
+    const cliSrc84 = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/search.ts"), "utf8");
+    if (!cliSrc84.includes("ANS_ARM_SNAPSHOT") || !cliSrc84.includes("ANS_PROVIDERS"))
+      fail("R84: search.ts missing env-gated eval surfaces (ANS_ARM_SNAPSHOT/ANS_PROVIDERS)");
+    report("pass", "ADR-0046/0047 source gates + ADR-0062 dual-gate abstain contracts + criterion anchors + R64 D-005 migration anchors + R84 vertical-eval assertion surface + paired-delta runner");
   }
 
   // 1q. R62 D-005 (T5): offline-eval governance — Declared Exclusion is a
