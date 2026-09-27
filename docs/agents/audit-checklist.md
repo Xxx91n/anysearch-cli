@@ -18,6 +18,10 @@
 
 仲裁序：ADR > AGENTS.md > skill 当前实现 > 个人偏好。多个 skill 结论冲突时立即停手问用户，不许自行取舍。
 
+## 5. 审计签字硬项（R86 T1 立法）
+
+- [ ] **签字 commit 上 `node scripts/ship-gate.mjs --quick` exit 0**——签认 commit 的当次工作树必须实测 quick 门绿；「gate 跑了但没人等它」属失守模式（审计窗踩红签认先例），签字即对签认时点 gate 状态负责。
+
 ## ADR-0034 Answer Attribution Layer
 
 - [x] 纯逻辑验证全绿（packages/kernel/test/attribution.test.ts 30+ cases）

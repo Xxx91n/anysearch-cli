@@ -95,9 +95,9 @@
         {
             "id": "r85-t2-degraded-archived",
             "kind": "path",
-            "claim": "存量降格件归档保留不删",
+            "claim": "存量降格件经指纹清单入库归档（原件驻留机器本地 gitignore 通道，断言对象=清单在库且自洽）",
             "paths": [
-                ".scratch/vertical-eval/delta-2026-09-26.degraded.json"
+                ".scratch/grill-round-85/evidence-manifest.json"
             ]
         },
         {

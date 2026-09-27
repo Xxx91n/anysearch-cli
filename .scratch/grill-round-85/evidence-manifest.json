@@ -1,0 +1,37 @@
+{
+    "schema": "anysearch/evidence-manifest@1",
+    "round": 85,
+    "purpose": "机器本地证据通道（.scratch/vertical-eval/，.gitignore 库外通道）驻留原件的指纹清单：库内只驻本清单，断言对象=清单在库且自洽，非原件在场。",
+    "judgeConfig": {
+        "script": ".scratch/grill-round-85/readout-delta.mjs",
+        "scriptSha256": "5ec448bc0f60ea8c8f5411d19dca643601f4913a89247d09e6c520f2660d8218",
+        "scriptBytes": 19373,
+        "preregMatrix": ".scratch/grill-round-85/prereg-matrix.md",
+        "preregMatrixSha256": "bd85ecb64e019e82a20b1847513e733720e1703ee3fa26e7338f4a569d973c05",
+        "preregMatrixBytes": 7745,
+        "inputFingerprintAsserted": "7ac0a48e55cd7954"
+    },
+    "captureEnvironment": {
+        "os": "win32",
+        "arch": "x64",
+        "node": "v24.11.0",
+        "pnpm": "11.24.0",
+        "runner": "packages/store/test/online/eval-looks-vertical.online.ts",
+        "secretDomain": "ANYSEARCH_API_KEY/ANYSEARCH_ENDPOINT 仅记存在性约定，值不入档"
+    },
+    "evidence": [
+        {
+            "id": "r85-delta-2026-09-26-degraded",
+            "closesClaim": "r85-t2-degraded-archived",
+            "path": ".scratch/vertical-eval/delta-2026-09-26.degraded.json",
+            "pathLocality": "machine-local-gitignored",
+            "marker": "<!-- machine-local: R85 降格 delta 原件驻留机器本地证据通道（gitignore，不入库） @ 2026-09-26 -->",
+            "sha256": "2cad386377567e9707d17dcba1c8f3334fc530eae54d3eff5211505bace4a676",
+            "bytes": 57094,
+            "artifactSchema": "anysearch/vertical-delta@1",
+            "producerCommit": "acaaccb32d54220b2d7ef63c668f6b9c61c47288",
+            "producerNote": "该 commit 为原件内部 generatedAt 字段时点上的 HEAD（git log --before 实证）；清单本体不记裸 generatedAt",
+            "disposition": "archived-retained"
+        }
+    ]
+}

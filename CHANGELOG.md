@@ -4,6 +4,16 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — r86 绿门装船轮（进行中）：红门修复 → defer-r85 根因判别 → 全绿臂复跑 → v0.1.0
+
+### Fixed
+
+- ship-gate freshness leg 双平台红修复（ADR-0081 D-004 / R86 T1）：`r85-t2-degraded-archived` claim 的 kind:path 断言原指向 gitignore 机器本地证据通道 `.scratch/vertical-eval/`（CI 双平台 path-miss）；改指入库指纹清单 `.scratch/grill-round-85/evidence-manifest.json`——每件机器本地证据记 path+sha256+size+来源 commit+判读器配置 hash+环境指纹，断言对象=清单在库自洽，非原件在场。
+
+### Changed
+
+- `docs/agents/audit-checklist.md` 审计签字 checklist 增硬项：签字 commit 上 `node scripts/ship-gate.mjs --quick` exit 0（防「gate 跑了但没人等它」失守模式复发）。
+
 ## Unreleased — ADR-0086 r85: delta 腿全量重跑 + prefer-capable 预注册判读（NO-GO 终局）
 
 ### Added
