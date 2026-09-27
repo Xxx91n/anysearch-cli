@@ -115,20 +115,53 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
   const entries = LIMIT > 0 ? all.slice(0, LIMIT) : all;
   if (entries.length === 0) { console.log("SKIP: no live-scoped vertical entries"); process.exit(0); }
 
+  // R85 T2 / D-003 T2 + D-004(1): instrument-health ordering, no sampling-
+  // protocol change — same entries, same legs per entry, only the schedule
+  // differs. Control stratum runs first as the instrument-health probe (a
+  // raised flag early-stops the batch before subject quota is spent); subject
+  // entries interleave round-robin across vdomain×stratum buckets so quota
+  // truncation leaves null cells evenly spread (MAR approximation; unfinished
+  // cells = structural missing → unknown per the R85 prereg matrix).
+  const dimTag = (e: any, p: string) =>
+    (e.dimensions ?? []).find((t: string) => String(t).startsWith(p + ":"))?.split(":")[1] ?? "unknown";
+  const isControl = (e: any) => e.expected.vertical.role === "control";
+  const controls = entries.filter(isControl);
+  const subjects = entries.filter((e: any) => !isControl(e));
+  const bucketKeys = [...new Set(subjects.map((e: any) => dimTag(e, "vdomain") + "|" + dimTag(e, "stratum")))].sort();
+  const slotOf: Record<string, number> = {};
+  const subjectsRR = subjects
+    .map((e: any) => {
+      const k = dimTag(e, "vdomain") + "|" + dimTag(e, "stratum");
+      const slot = (slotOf[k] = (slotOf[k] ?? 0) + 1);
+      return { e, slot, k: bucketKeys.indexOf(k) };
+    })
+    .sort((a: { slot: number; k: number }, b: { slot: number; k: number }) => a.slot - b.slot || a.k - b.k)
+    .map((x: { e: any }) => x.e);
+
   // Dataset fingerprint over the vertical slice actually measured (id+spec+
   // expectation+scope), sorted — changes to corpus content flip it.
   const fpSrc = entries.map((e: any) => ({ id: e.id, v: e.vertical ?? null, x: e.expected.vertical, s: scopes[e.id] }))
     .sort((a: any, b: any) => String(a.id).localeCompare(b.id));
   const fingerprint = createHash("sha256").update(JSON.stringify(fpSrc)).digest("hex").slice(0, 16);
 
+  // ANS_VERTICAL_DELTA_PLAN=1: scheduling rehearsal — prints the exact
+  // execution order + fingerprint and exits before any upstream call or
+  // artifact write. Lets the ordering change be verified without quota.
+  if (process.env.ANS_VERTICAL_DELTA_PLAN === "1") {
+    console.log("PLAN fingerprint=" + fingerprint + " controls=" + controls.length + " subjects=" + subjectsRR.length + " concurrency=" + CONCURRENCY);
+    controls.forEach((e: any) => console.log("  ctl " + e.id + " spec=" + !!e.vertical));
+    subjectsRR.forEach((e: any) => console.log("  sub " + e.id + " " + dimTag(e, "vdomain") + "/" + dimTag(e, "stratum")));
+    return;
+  }
+
   const baseEnv = { ...process.env, ANS_DOMAIN: "default", ANS_ARM_SNAPSHOT: "1" };
   const rows: any[] = [];
   let controlDegraded = 0;
 
-  await pool(entries, CONCURRENCY, async (e: any) => {
+  const runOne = async (e: any) => {
     const vexp = e.expected.vertical;
-    const stratum = (e.dimensions ?? []).find((t: string) => String(t).startsWith("stratum:"))?.split(":")[1] ?? "unknown";
-    const vdom = (e.dimensions ?? []).find((t: string) => String(t).startsWith("vdomain:"))?.split(":")[1] ?? "unknown";
+    const stratum = dimTag(e, "stratum");
+    const vdom = dimTag(e, "vdomain");
     const hosts: string[] = vexp.hitHosts ?? [];
     const paths: string[] = vexp.hitPaths ?? [];
 
@@ -152,6 +185,10 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
 
     const row: any = {
       id: e.id, stratum, vdomain: vdom, role: vexp.role,
+      // Whether the corpus entry carried an injected spec — instrument
+      // accounting anchor (a no-spec control's null armOn is structural, not
+      // a leg failure); readout-delta.mjs resolves measured cells off it.
+      hadVerticalSpec: !!e.vertical,
       arm: "anysearch",
       armOn: aOn === null ? null : {
         n: aOn.length,
@@ -198,7 +235,24 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
     };
     if (vexp.role === "control" && ((on !== null && on.__error) || off.__error || isoOff.__error || (isoOn !== null && isoOn.__error))) controlDegraded++;
     rows.push(row);
-  });
+  };
+
+  // Phase 1: control stratum first (instrument-health probe).
+  await pool(controls, CONCURRENCY, runOne);
+  // Prereg G1 mirror — >8/16 control cells unmeasured or >=4/16 non-tied
+  // flags the instrument; authoritative adjudication stays in
+  // .scratch/grill-round-85/readout-delta.mjs (this predicate only stops
+  // spending subject quota).
+  const cRows = rows.filter((r) => r.role === "control");
+  const cUnmeasured = cRows.filter((r) => (r.hadVerticalSpec ? r.armOn === null || r.armOff === null : r.armOff === null)).length;
+  const cNonTied = cRows.filter((r) => r.delta.verdict === "better" || r.delta.verdict === "worse").length;
+  const instrumentFlag = cUnmeasured > 8 || cNonTied >= 4;
+  if (instrumentFlag) {
+    console.log("INSTRUMENT FLAG: controls unmeasured=" + cUnmeasured + "/16 nonTied=" + cNonTied + "/16 -> early stop before subjects (INCONCLUSIVE path)");
+  } else {
+    // Phase 2: subjects, round-robin across vdomain×stratum buckets.
+    await pool(subjectsRR, CONCURRENCY, runOne);
+  }
 
   // Per-stratum aggregates — arm level is PRIMARY; fused level is the
   // secondary observational column (D-005, never a weighting-gain argument).
@@ -233,6 +287,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
     arms: { on: "vertical-on (entry spec via --vertical-*)", off: "vertical-off (no spec)", measured: "anysearch arm raw list via metadata.fusion" },
     n: rows.length,
     controlDegraded,
+    instrumentFlag,
     primary: "arm-level delta (anysearch arm)", secondary: "fused-level delta (observational only — never weighting-gain proof)",
     byStratum, byDomain, rows,
   };
