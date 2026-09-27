@@ -1544,3 +1544,27 @@ INCONCLUSIVE 的 registry 形态：显式 hold 状态+量化锚触发条件（�
 
 ### Known-Issue Disclosure Placement（已知降级披露位置纪律）
 带已知降级态装船时的披露位置惯例：写进用户会撞到的地方（README/release notes Known Issues 节/装船判词），配 workaround+影响范围+修复状态——Ubuntu/Debian/VS 发行版级先例；fail-open 降级态=kill-switch 型永久 flag（Unleash 分类）。_Avoid_: 只埋变更列表不显著呈现；因上游死而押后正确性修复发布（可用性问题转嫁正确性阻塞）。来源：atomcode R86-Q5+R86 D-005。
+
+
+## Grill Round 87 — Terms (ADR-0088)
+
+### Release Closeout Round（发布收口轮）
+轮次形态：把已审计钉版产物运出码头的发布轮——授权→tag+publish→发布后实物验证→deprecate 止血→记账收口；外发动作与记账件按「进制品/不进制品」分时序。_Avoid_: staged-not-shipped 库存滞留（无 flag 隐藏的公开毒药）；发布轮混排工程项（release execution 直线段）。来源：atomcode R87-Q1+R87 D-001。
+
+### Direction-Verdict vs Release-Gate（方向裁决/发布闸分离）
+「实验裁决线」与「发布准入门」是两道独立的闸：NO-GO 否决的是方向投入（prefer-capable 不加权），不否决装船（工程就绪度）；NO-GO 反而构成尽快发布的理由（送测量基础设施产物出闸=next experiment 干净基线）。_Avoid_: 把裁决线信号误读为发布阻断（healthy NO-GO 后反而扣货）；把发布门绿误读为方向背书。来源：atomcode R87-Q1+R87 D-001。
+
+### Last-Inch Signature（最后一寸签名）
+发布执行授权边界：agent 自动化全部可编码判定（dispatch/门绿等待/只读验证），唯一不可逆署名外发动作（git push tag=问责签名）留在用户手里——人只碰一次扳机，其余全程自动化。_Avoid_: agent 全权执行外发署名（无成熟先例+外发闸红线自证）；给单人仓加仪式性审批 UI（Environment reviewers 留作多人化迁移目标）。来源：atomcode R87-Q2+R87 D-002。
+
+### Artifact-Bound / Housekeeping Split（进制品/不进制品二元时序）
+发布轮文档时序判据：随制品出闸的内容（CHANGELOG 版本段/版本号/CI 从 tagged tree 读的 release notes）必须 tag 前 commit；不进制品的记账件（勘误脚注/defer 注记/下轮登记/验证记录）=post-release housekeeping 一律 publish 后落。_Avoid_: 记账先行致 tag 与 tip 分叉+「dispatch 验证的树≠tagged 树」缝隙；tag 前写预测态发布记录（被结果打脸的最糟路径）。来源：atomcode R87-Q3+R87 D-003。
+
+### Zero-Divergence Tagging（零分叉 tag 纪律）
+tag 挂载点纪律：tag=当前 tip=已审计 SHA——pre-tag dispatch 验证的树与 tagged 树必须同一；tag 挂非 tip SHA 的合法理由只有「排除性」（特意不要 tip 上某些东西），无排除收益的分叉直接避免。_Avoid_: 无收益 tag 分叉；tag 挂未审计 SHA。来源：atomcode R87-Q3+R87 D-002/D-003。
+
+### Deprecation Precision（deprecate 最小正确范围）
+止血范围纪律：deprecate 只标实物含缺陷的版本/包（range 写法 @pkg@<fixversion 优于枚举）；不含缺陷的包不标（假警报面+整包 deprecate 会从 npm 搜索抹掉可见性）；时序=fix 确认在架后标。_Avoid_: 统一信号式超范围 deprecate；文案狼来了式措辞（security 一词留给真安全问题）。来源：atomcode R87-Q2+R87 D-002。
+
+### Two-Piece Bleed Kit（止血两件套）
+已发布功能缺陷的止血配方=deprecate（精准 range+点名修复版本）+release notes/CHANGELOG 已知缺陷段；Security Advisory 保留给真安全漏洞（功能缺陷走 advisory 会触发 Dependabot 假警报+占用严肃通道）。_Avoid_: 功能缺陷发 Security Advisory；只做一件（deprecate 无 changelog 段=缺审计叙事，changelog 无 deprecate=pin 住的人收不到警告）。来源：atomcode R87-Q2+R87 D-002。

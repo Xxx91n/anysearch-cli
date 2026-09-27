@@ -1,0 +1,41 @@
+你是一个为软件仓库「anysearch-cli」（TypeScript/pnpm monorepo，信息专精 Agent CLI，遵循 AnySearch 垂直领域理念）做深度调研的研究者。请围绕下面的裁决问题做多源调研，重点放在【工业界成熟落地的心智模型】上，给出推荐选项与理由。
+
+## 仓库上下文（已核实的实物状态）
+
+这是一个用「grill round」节奏推进的项目：每轮一次主题化工作+独立审计+决策账本（decision-ledger）+ADR+CONTEXT.md 词表。已连续 86 轮、87 部 ADR、9 轮独立审计（4 场打回）。外部锐评者每几轮做一次独立验收评审，刚完成第 7、8 轮锐评。
+
+上一轮（R86「绿门装船轮」）已完成并经三轮审计 LOOP PASS：
+- 修复了 CI 红门（closeout-claim 合约错配→证据指纹清单 evidence-manifest 模式）
+- 根因判别出 anysearch provider 臂全灭=环境变量层双重缺陷（endpoint 指 loopback 死路由+失效 key；上游匿名 auto-provisioning 实测存活）
+- 判读器语义修正（providersFailed→unknown/instrument-flag）+历史判词降级 indeterminate
+- 全量 57 条配对 delta 复跑产出【真测量版 NO-GO】：P(better>worse)=0.0378、净胜率-0.125、41 对中 b5/w10/t25/u1
+- v0.1.0 全包钉版就位（8 包），CI 双平台绿、ship-gate --quick EXIT=0
+- **但 v0.1.0 tag 未推、npm publish 未发**——外部生产动作有意停在边界内等用户授权
+- npm registry 现役 latest=0.0.8，其 tarball 内含已测绘证明 404 死路由的 /v1/search 端点（0.0.3→0.0.8 全部已发布版都带死端点）
+
+锐评核账结论：第七轮锐评 4 处方全闭；第八轮锐评仅剩一个未闭伤口=「包装好的解药还在码头，货架上的还是毒药」——v0.1.0 待发布授权。
+
+## 现行账本中全 current 决策（R86 ledger D-001~D-005，不可与之冲突）
+
+- D-001 绿门装船轮主轴：andon 红门前置/根因判别=发布准入/原子集治理五项/范围外清单
+- D-002 红门修法：指纹清单+claim 改指+审计 checklist「签字前门绿」硬项
+- D-003 判别探针矩阵：两批微分探针+错误分类层+5/5 复活判据+敏感值不入档
+- D-004 复跑认识论：健康闸/裁决线分离、判词降级不溯改、新数据不回写裁决、prefer-capable 具名重开条件（|ΔarmHostHit|≳0.4 或显著偏斜→fresh prereg）
+- D-005 票序与边界：T0-T6 票序/B1 不可复活预案/v0.1.0 版本号/切版双条件=全绿臂复跑+双平台门绿
+
+## 待裁问题（R87 Q1 — 下一轮主轴）
+
+四个候选：
+
+A【发布收口轮】（我倾向推荐）：主线=用户授权→v0.1.0 tag push+npm publish→发布后实物验证（npm 拉真实 tarball 拆包验 /mcp 端点在列、dsh-plugin 陌生人安装路径、install-smoke 对已发布件）→registry/CHANGELOG/ADR 收口。同轮顺收：F-3 判据裁量（R86 审计遗留：iso providersFailed=∅ 字面判据未达 vs 装置性失败=∅+覆盖 97.6% 语义判据达成——改判据表述/语料解冻后复测/维持记账三选一，属记账语义决策）+defer-r86 两票去向注记。
+B【裁量清障轮】：只做 F-3 判据裁量+F-6 refactor 候场（探针代码一致化/sanitize 对称/版本字面量护栏/CHANGELOG 归位）+defer 三联处置，发布继续等授权或下轮——但货架上的毒药继续留架。
+C【战略方向轮】：prefer-capable 双倍死亡（旧 tied 假数据作废+新真测量 direction-negative）后，重议「垂直领域理念」的产品方向（信息专精 Agent CLI 的下一步往哪走）——在货未出码头时重开航线图。
+D 另指。
+
+## 调研要求
+
+1. 调研工业界成熟做法：发布授权/发布前 gate（release readiness checklist、promotion pipeline、last-mile verification）、发布后验证（post-release smoke、canary、registry 实物验证、拆包验证惯例）、「staged but not shipped」风险（fix-packaged-not-published 的库存风险）、发布与治理任务同轮的边界惯例、以及「测量结果否决了功能方向后产品路线怎么办」的成熟心智模型（killed-experiment→roadmap 的先例）。
+2. 对每个候选 A/B/C 给出工业界判据下的评估与推荐。
+3. 明确列出调研结论与上述 D-001~D-005 是否有冲突；若有冲突指出具体条款。
+4. 给出最终推荐（可以是某个候选的修订版）与理由，区分「调研支持的结论」与「你的推理」。
+5. 附上来源清单。

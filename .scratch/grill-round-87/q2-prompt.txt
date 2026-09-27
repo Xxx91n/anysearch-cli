@@ -1,0 +1,39 @@
+你是为「anysearch-cli」（TypeScript/pnpm monorepo 信息专精 Agent CLI）做深度调研的研究者。围绕下面裁决问题做多源调研，重点【工业界成熟落地的心智模型】，给出推荐与理由。
+
+## 实物状态（已核实）
+
+项目用 grill-round 节奏推进（87 轮、87 ADR、独立审计+决策账本）。R87=发布收口轮（已定 D-001）：把 v0.1.0 装船 npm。
+
+发布流水线（.github/workflows/release.yml，由 ADR-0059/0067/0069/0072 立法）：
+1. workflow_dispatch pre-tag：release-gate 花一次「OF look」（decision-grade 评估窥视额度，预注册纪律）+账本回写+自派发 ci+ship-gate 在账本 sha 上等绿（GITHUB_TOKEN pushes 不级联触发，故自派发）
+2. git push tag v0.1.0：post-tag 断言记录判词未过期 + tagged SHA 双腿绿断言（assert-checks-green.mjs）→ 通过则 publish job 自动跑 npm OIDC trusted publishing（无 NPM_TOKEN，npmjs.com 已配 trusted publisher）发 5 个 publishable 包（cli/mcp/plugin/dsh-plugin/embedding）
+3. 门红则 fail-closed+自动开 issue+打 failed status
+
+已验证执行环境：gh CLI 已认证（仓库 owner 账号）；本地 git 可推 tag；npm 发布无人机交互面（纯 CI OIDC）。
+
+npm 现状：latest=0.0.8；0.0.3–0.0.8 全部已发布版 cli tarball 内含已测绘证明 404 死路由的 anysearch provider 默认端点（/v1/search；上游 REST 路由已下线，正确端点=/mcp）。死路径载体=cli 打包 dist（retriever 包未发布）；mcp/plugin/dsh-plugin/embedding 四包不含死路径。
+
+## 账本 current 决策（不可冲突）
+
+- R87-D-001 发布收口轮：授权已给→tag+publish→发布后实物验证（npm 拉 tarball 验 /mcp、陌生人安装、npm view 复核）→收口；npm deprecate 止血已随票采纳（范围文案未定）；发布轮不混排工程项；钉版不动包。
+- R86-D-001~D-005：andon 红门前置/指纹清单/判别探针矩阵/健康闸-裁决线分离+判词不溯改+具名重开条件/T0-T6 票序+B1 预案+v0.1.0 切版双条件（已达）。
+
+## 待裁问题（R87 Q2 — 发布执行授权边界 + deprecate 范围文案）
+
+Q2a【执行边界】：
+- A agent 端到端：agent 跑 pre-tag dispatch→等绿→git push tag→等 publish→发布后验证→报告（用户在成品态复核）；
+- B agent 跑到 tag push 前停手，最后一步 git push origin v0.1.0 用户手动（外发闸红线——扳机在用户手里）；
+- C 另指。
+
+Q2b【deprecate 范围+文案】：
+- D1 只 deprecate @anysearch-cli/cli@0.0.3–0.0.8（毒药本体只在 cli dist；其余 4 包不含死路径）；
+- D2 deprecate 全部 5 个 publishable 包 ≤0.0.8（统一信号）；
+- D3 不 deprecate（回退随票）。
+文案草案：Deprecated: bundled anysearch provider used a dead endpoint (route 404). Upgrade to >=0.1.0.
+
+## 调研要求
+
+1. 工业界成熟心智模型：自动化发布流水线的授权边界（human-in-the-loop 放在哪一层——审批闸 vs 最后一寸手动 vs 全委托）、npm deprecate 的成熟用法（范围精度惯例——只标受影响包 vs 整族标记；文案惯例；deprecate vs unpublish vs dist-tag 移动的选择树）、已发布缺陷版本的止血惯例（deprecate/security advisory/release notes 三件套用法）、AI agent 执行生产发布的授权惯例（如果有先例：何种动作可委托何种保留人工）。
+2. 对每个选项给评估+推荐，区分「调研支持的结论」与「你的推理」。
+3. 明确列出与账本 D-001~D-005（R86）及 R87-D-001 的冲突；有冲突指出具体条款。
+4. 附来源清单。

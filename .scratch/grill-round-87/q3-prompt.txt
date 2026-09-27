@@ -1,0 +1,33 @@
+你是为「anysearch-cli」（TS/pnpm monorepo 信息专精 Agent CLI）做深度调研的研究者。围绕下面裁决问题做多源调研，重点【工业界成熟落地的心智模型】，给出推荐与理由。
+
+## 实物状态（已核实）
+
+项目用 grill-round 节奏推进（87 轮、87 ADR、审计+决策账本 decision-ledger）。R87=发布收口轮（D-001 已定）：装船 v0.1.0 到 npm。执行边界已定（D-002）：agent 跑 pre-tag dispatch→等绿→停手→用户手动 git push origin v0.1.0（tag 挂审计 tip cfb0fff7）→publish OIDC 自动→agent 恢复发布后实物验证→deprecate→收口。
+
+发布流水线两段式（ADR-0059/0067/0069/0072）：pre-tag dispatch 花 OF look+账本回写+自派发 ci+ship-gate 等绿；tag push 断言判词未过期+tagged SHA 双腿绿→publish job npm OIDC trusted publishing 自动发 5 包。
+
+待办的随行事项：
+- F-3 判据裁量（R86 审计遗留）：iso providersFailed=∅ 字面判据未达 vs 装置性失败=∅+覆盖 97.6% 语义判据达成——已定改判据表述（D-001），落点=decision-record/registry 勘误脚注不溯改（Scoreboard Honesty Correction 惯例）
+- defer-r86 两票去向注记（corpus-param-contract 语料冻结期等解冻；anon-quota-nudge 用户侧 env 修正）
+- R88 候选登记（F-6 refactor 候场+垂域方向重议题——prefer-capable 具名重开条件未达故顺延）
+- 锐评完成度核账归档（本轮答卷：两份外部锐评的逐条核销报告入 reports/）
+- deprecate 止血（D-002 D1′ 已定：验证绿后收口前，cli@<0.1.0 精准版）
+
+## 账本 current 决策
+
+- R87-D-001 发布收口轮：授权→tag+publish→发布后验证→收口；deprecate 随票；不混排工程项；钉版不动包；NO-GO 是裁决线非发布阻断。
+- R87-D-002 执行边界 B′+deprecate D1′：agent 不碰 tag push；tag 挂 cfb0fff7；deprecate 排在验证绿后收口前；只标 cli；不发 Security Advisory。
+- R86-D-001~D-005：andon 前置/指纹清单/判别矩阵/健康闸-裁决线分离+不溯改+具名重开/T0-T6 票序/v0.1.0 切版双条件（已达）。
+
+## 待裁问题（R87 Q3 — 轮结构票序）
+
+A【发布先行，记账随收口】（我推荐）：T0 哨戒续班（watch+CI 观测+锐评核账归档）→T1 pre-tag dispatch→T2 用户 tag push（tag 挂 cfb0fff7=当前 tip，tip 即审计 SHA 零分叉）→T3 发布后实物验证→T4 deprecate→T5 记账件批（F-3 勘误+defer 注记+R88 登记）→T6 收口（registry+ADR-0088+claims+CHANGELOG 缺陷段+任务书）。理由：tag=tip 零分叉叙事最干净；记账件如实记「发布已完成」终态非预测态。
+B【记账先行】：T0→T1 记账件批→T2 pre-tag→T3 用户 tag（仍挂 cfb0fff7——与 tip 分叉一行）→T4 验证→T5 deprecate→T6 收口。理由：先清旧账再开新事——但 tag 与 tip 分叉无收益。
+C 另排。
+
+## 调研要求
+
+1. 工业界心智模型：发布轮内部工序排序惯例（docs/bookkeeping 与外发动作的先后——cut-then-record vs record-then-cut；release checklist 中 retrospective/changelog/errata 落点的时序惯例）、「tag 挂非 tip SHA」的成熟做法评价（release branching/tag-on-sha vs tag-on-tip）、发布轮与文档收尾分离惯例、immutable-artifact 语义下「发布 SHA 之后继续落 docs commit」是否正常。
+2. 对 A/B 给出评估+推荐，区分调研结论与你的推理。
+3. 明确列出与账本各 D 的冲突。
+4. 附来源清单。
