@@ -1,0 +1,217 @@
+{
+  "matrix": "grill-round-85/prereg-matrix@2",
+  "schema": "anysearch/vertical-delta@1",
+  "fingerprint": "7ac0a48e55cd7954",
+  "verdict": "NO-GO",
+  "exit": "direction-negative",
+  "gates": [
+    {
+      "gate": "G0-input-integrity",
+      "pass": true,
+      "schema": "anysearch/vertical-delta@1",
+      "fingerprint": "7ac0a48e55cd7954",
+      "expected": "7ac0a48e55cd7954"
+    },
+    {
+      "gate": "G1-instrument-flag",
+      "pass": true,
+      "artifactFlag": false,
+      "unmeasured": 4,
+      "nonTied": 0,
+      "n": 16,
+      "unmeasuredIds": [
+        "ctrl-f103",
+        "ctrl-a103",
+        "ctrl-c103",
+        "ctrl-h103"
+      ],
+      "nonTiedIds": []
+    },
+    {
+      "gate": "G1b-instrument-providers",
+      "pass": true,
+      "instrumentDown": 1,
+      "n": 41,
+      "maxDown": 12,
+      "downIds": [
+        "vert-f1105"
+      ]
+    },
+    {
+      "gate": "G2-coverage",
+      "pass": true,
+      "n": 41,
+      "nPaired": 40,
+      "unknown": 1,
+      "needPaired": 29,
+      "maxUnknown": 12
+    },
+    {
+      "gate": "G3-negative-2of4",
+      "pass": true,
+      "reversals": [
+        "finance"
+      ],
+      "detail": {
+        "academic": {
+          "better": 2,
+          "worse": 2,
+          "tied": 6,
+          "unknown": 0
+        },
+        "code": {
+          "better": 1,
+          "worse": 1,
+          "tied": 8,
+          "unknown": 0
+        },
+        "finance": {
+          "better": 2,
+          "worse": 5,
+          "tied": 3,
+          "unknown": 1
+        },
+        "health": {
+          "better": 0,
+          "worse": 2,
+          "tied": 8,
+          "unknown": 0
+        }
+      }
+    },
+    {
+      "gate": "G4-direction",
+      "pass": true,
+      "better": 5,
+      "worse": 10,
+      "P": 0.03779873936662563,
+      "pooledOn": 0.675,
+      "pooledOff": 0.825,
+      "pooledDelta": -0.1499999999999999
+    }
+  ],
+  "fields": {
+    "netWinRate": -0.125,
+    "P_better_gt_worse": 0.03779873936662563,
+    "expectedLoss": 0.29669294817619885,
+    "rankDiffMedian": 0
+  },
+  "control": {
+    "n": 16,
+    "measured": 12,
+    "unmeasured": 4,
+    "nonTied": 0
+  },
+  "coverage": {
+    "n": 41,
+    "nPaired": 40,
+    "unknown": 1
+  },
+  "perDomain": {
+    "finance": {
+      "better": 2,
+      "worse": 5,
+      "tied": 3,
+      "unknown": 1,
+      "nPaired": 10,
+      "expected": 11,
+      "armHostHit": {
+        "on": 0.4,
+        "off": 0.9
+      }
+    },
+    "academic": {
+      "better": 2,
+      "worse": 2,
+      "tied": 6,
+      "unknown": 0,
+      "nPaired": 10,
+      "expected": 10,
+      "armHostHit": {
+        "on": 0.7,
+        "off": 0.7
+      }
+    },
+    "code": {
+      "better": 1,
+      "worse": 1,
+      "tied": 8,
+      "unknown": 0,
+      "nPaired": 10,
+      "expected": 10,
+      "armHostHit": {
+        "on": 0.9,
+        "off": 0.9
+      }
+    },
+    "health": {
+      "better": 0,
+      "worse": 2,
+      "tied": 8,
+      "unknown": 0,
+      "nPaired": 10,
+      "expected": 10,
+      "armHostHit": {
+        "on": 0.7,
+        "off": 0.8
+      }
+    }
+  },
+  "perStratum": {
+    "parameterized": {
+      "better": 4,
+      "worse": 8,
+      "tied": 8,
+      "unknown": 1,
+      "nPaired": 20,
+      "expected": 21,
+      "armHostHit": {
+        "on": 0.7,
+        "off": 0.9
+      }
+    },
+    "semantic": {
+      "better": 1,
+      "worse": 2,
+      "tied": 17,
+      "unknown": 0,
+      "nPaired": 20,
+      "expected": 20,
+      "armHostHit": {
+        "on": 0.65,
+        "off": 0.75
+      }
+    }
+  },
+  "truncation": {
+    "academic": {
+      "paired": 10,
+      "expected": 10,
+      "missing": 0
+    },
+    "code": {
+      "paired": 10,
+      "expected": 10,
+      "missing": 0
+    },
+    "finance": {
+      "paired": 10,
+      "expected": 11,
+      "missing": 0
+    },
+    "health": {
+      "paired": 10,
+      "expected": 10,
+      "missing": 0
+    }
+  },
+  "mnarSuspect": [],
+  "armInFanoutSurvival": {
+    "on": 0.24390243902439024,
+    "off": 0.24390243902439024
+  },
+  "artifact": ".scratch\\vertical-eval\\delta.json",
+  "nRowsArtifact": 57,
+  "controlDegraded": 0,
+  "earlyStopped": false
+}

@@ -8,6 +8,7 @@
 // ponytail: no test framework, assert-based demo (same style as pre-R82).
 
 import { AnySearchProvider } from "../src/providers/anysearch";
+import { classifyProviderError } from "../src/contract";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -358,6 +359,34 @@ async function main() {
     const m = /clientInfo: { name: "anysearch-cli", version: "([^"]+)" }/.exec(src);
     assert(!!m, "clientInfo.version literal locatable in source");
     assert(m![1] === pkg.version, "clientInfo.version matches package.json version (" + pkg.version + ")");
+  }
+
+  // 15. R86 T3 / defer-r84 closure: ANYSEARCH_ENDPOINT="" behaves as unset
+  //     (POSIX empty==unset) — falls back to the public default endpoint.
+  {
+    const f = installFetch(stdHandler);
+    const prev = process.env.ANYSEARCH_ENDPOINT;
+    process.env.ANYSEARCH_ENDPOINT = "";
+    try {
+      const p = new AnySearchProvider("");
+      const env = await p.search(REQ, SIG);
+      assert(env.provider === "anysearch" && env.results.length > 0, "empty endpoint env falls back to default (results=" + env.results.length + ")");
+      assert(f.calls.every((c) => c.url === "https://api.anysearch.com/mcp"), "empty env -> default endpoint hit");
+    } finally { f.restore(); if (prev === undefined) delete process.env.ANYSEARCH_ENDPOINT; else process.env.ANYSEARCH_ENDPOINT = prev; }
+  }
+
+  // 16. R86 T3: anonymous quota-boundary provisioning reply -> named
+  //     quota/auth nudge (classifies permanent-auth), not malformed-text.
+  {
+    const nudge = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "Your account and API key have been automatically generated. Use the API key below to continue.\napi_key=as_sk_test" }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: nudge(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("quota/auth nudge"), "provisioning reply -> quota/auth nudge (got " + msg.slice(0, 80) + ")");
+      assert(classifyProviderError(msg) === "permanent-auth", "nudge classifies permanent-auth");
+    } finally { f.restore(); }
   }
 
   console.log("--- AnySearchProvider tests: " + passed + " passed, " + failed + " failed ---");

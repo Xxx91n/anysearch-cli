@@ -180,11 +180,16 @@ export class AnySearchProvider implements SearchProvider {
   private nextId = 1;
 
   constructor(apiKey?: string, endpoint?: string) {
-    this.apiKey = apiKey ?? process.env.ANYSEARCH_API_KEY;
+    // R86 T3: same empty-string treatment for the key — "" would send a
+    // bare "Authorization: Bearer " header, worse than anonymous.
+    this.apiKey = apiKey ?? (process.env.ANYSEARCH_API_KEY || undefined);
     // ADR-0063 (R62 T2) + R82 D-002 §3: ANYSEARCH_ENDPOINT env override —
     // dead-port fault injection keeps the install-smoke offline leg hermetic;
     // a retired /v1/search tail is normalized to base+/mcp. Explicit arg wins.
-    this.endpoint = normalizeEndpoint(endpoint ?? process.env.ANYSEARCH_ENDPOINT ?? ANYSEARCH_ENDPOINT);
+    // R86 T3 / defer-r84 closure: POSIX empty-string env == unset — ""
+    // is a value for ?? (not nullish), so the chain used to fall to an
+    // empty endpoint and every call failed into providersFailed.
+    this.endpoint = normalizeEndpoint(endpoint ?? (process.env.ANYSEARCH_ENDPOINT || undefined) ?? ANYSEARCH_ENDPOINT);
   }
 
   async search(req: SearchRequest, signal: AbortSignal): Promise<ProviderEnvelope> {

@@ -798,8 +798,10 @@
    "owner": "anysearch-retriever",
    "opened_at": "2026-09-26",
    "review_cadence": "next-round candidate",
-   "status": "open",
-   "evidence": "R84 T3 实跑：env -u 前手动置空 ANYSEARCH_ENDPOINT= 触发 endpoint=\"\" fetch 失败（臂级 fail 静默进 providersFailed）。修法=constructor 端点解析把空串视同 undefined。"
+   "status": "closed",
+   "evidence": "R84 T3 实跑：env -u 前手动置空 ANYSEARCH_ENDPOINT= 触发 endpoint=\"\" fetch 失败（臂级 fail 静默进 providersFailed）。修法=constructor 端点解析把空串视同 undefined。 | R86 T3 核销：endpoint/key 双字段空串→||undefined POSIX 语义修复落 provider 构造器（\"\"不再落空 endpoint 亦不产生裸 Bearer 头）；回归用例入 anysearch.test.ts。",
+   "closed_by": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
+   "closed_at": "2026-09-27"
   },
   {
    "id": "defer-r84-ip-fifth-domain",
@@ -864,8 +866,32 @@
    "owner": "anysearch-retriever",
    "opened_at": "2026-09-27",
    "review_cadence": "cleanup-round candidate + quarterly",
+   "status": "closed",
+   "evidence": "R85 T3：.scratch/vertical-eval/delta.json 全 57 格 providersFailedIsoOn/Off=[anysearch]、armInFanout*=false、armOn/off.n=0；对照层 16/16 同病；fused 命中（param on=0.33/off=0.29、sem 0.45/0.45）由其余 provider 承载。判读记录 .scratch/grill-round-85/decision-record.md。 | R86 T2/T3 归因与复活实证：探针矩阵（.scratch/grill-round-86/reports/probe-matrix.md）三类判别——env 端点 loopback 死路由（initialize→404，permanent-protocol）+ env key invalid_api_key（permanent-auth）+ 公网默认端点匿名存活；iso 臂声明式测量环境下 5/5 providersFailed=∅。代码路径无缺陷。残余=用户侧 env 修正（端点指向/key 轮换，agent 不代办）+ T5 全绿臂复跑证据。 | R86 核销：根因=env 层双重缺陷（loopback 死路由端点+invalid key，probe-matrix 钉版）；臂经声明式测量环境复活（iso 5/5 providersFailed=∅ + T5 全量复跑 97.6% 覆盖）；判读器 matrix@2 修复 device-zero-as-measured 失真。残余类=确定性上游契约拒收（设计内负向格+语料欠参数），已分账 defer-r86-anysearch-corpus-param-contract。",
+   "closed_by": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
+   "closed_at": "2026-09-27"
+  },
+  {
+   "id": "defer-r86-anysearch-corpus-param-contract",
+   "type": "deferred-with-ticket",
+   "title": "语料格 vert-f1105 欠上游 tag 契约必填参数（finance.fundamental 需 cn_code）——矩阵@2 判 unmeasured 如实记账；语料冻结期不可修",
+   "source_adr": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
+   "owner": "anysearch-eval",
+   "opened_at": "2026-09-27",
+   "review_cadence": "next matrix revision",
    "status": "open",
-   "evidence": "R85 T3：.scratch/vertical-eval/delta.json 全 57 格 providersFailedIsoOn/Off=[anysearch]、armInFanout*=false、armOn/off.n=0；对照层 16/16 同病；fused 命中（param on=0.33/off=0.29、sem 0.45/0.45）由其余 provider 承载。判读记录 .scratch/grill-round-85/decision-record.md。 | R86 T2/T3 归因与复活实证：探针矩阵（.scratch/grill-round-86/reports/probe-matrix.md）三类判别——env 端点 loopback 死路由（initialize→404，permanent-protocol）+ env key invalid_api_key（permanent-auth）+ 公网默认端点匿名存活；iso 臂声明式测量环境下 5/5 providersFailed=∅。代码路径无缺陷。残余=用户侧 env 修正（端点指向/key 轮换，agent 不代办）+ T5 全绿臂复跑证据。"
+   "evidence": "R86 T5 实证：vert-f1105 isoOn 腿上游 isError \"Missing required params for tag finance.fundamental: cn_code\"（两轮复跑确定性重合）。语料指纹 7ac0a48e55cd7954 冻结=>改格即 G0 漂移，本矩阵期不可修；修订候选=下一矩阵期补 cn_code 或降格该格。同类 bogus-sub_domain 对照格（*-103 ×4）为设计内负向拒收，非缺陷。"
+  },
+  {
+   "id": "defer-r86-anysearch-anon-quota-nudge",
+   "type": "deferred-with-ticket",
+   "title": "上游匿名配额边界形态=auto-provisioning 凭证签发文本（200+isError:null+非结果正文）；provider 已具名归类 permanent-auth；env/key 修正归用户侧",
+   "source_adr": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
+   "owner": "anysearch-retriever",
+   "opened_at": "2026-09-27",
+   "review_cadence": "quarterly",
+   "status": "open",
+   "evidence": "R86 T2 P2 raw 探针实测：匿名大跑中段上游改发 provisioning 文本而非结果信封（quota 边界邀请鉴权）。provider 检出后抛 quota/auth nudge→errorClass=permanent-auth。残余=用户侧 env 修正（endpoint 指向/key 轮换，agent 不代办）。"
   }
  ]
 }

@@ -45,3 +45,19 @@
 
 - 端点/key 值未入档；P0 的 stderr 由 provider 自身打印端点归一化提示（运行时行为，非文档记录）。
 - env 修复归用户侧；本轮测量环境声明式覆盖（endpoint=仓库源码公开默认值、匿名）。
+
+## 第二批探针（P2 raw MCP — 大跑残余失败归因）
+
+| 探针 | 命令 | 结果 | 类别 |
+|---|---|---|---|
+| P2a | `probe-anysearch-mcp-raw.ts --default-endpoint --nokey` | HTTP 200 + isError:null + 文本体=**auto-provisioning 凭证签发**（"account automatically generated…api_key=as_sk_…"，值不入档） | 配额边界（非协议漂移/非死） |
+| P2b | 同上带签发 key，×6 | 6/6 "## Search Results (10 results)"，服务端 ~1.1-1.4s | alive（签发凭证道真实可用） |
+| P2c | raw tools/call 携 ctrl-a103 bogus 参数 | isError "Invalid tag: academic.bogus_papers." | **设计内负向拒收**（对照格按预期工作） |
+| P2d | raw tools/call 携 vert-f1105 参数 | isError "Missing required params for tag 'finance.fundamental': cn_code" | **语料欠参数**（上游 tag 契约必填项缺位） |
+
+### 修正后的归因图
+
+- R85 全军覆没 = env 层双重缺陷（loopback 死路由端点 + 失效 key）——已钉。
+- 声明式环境（公开默认端点+匿名）下大跑残余失败 = **匿名配额边界**：上游以 provisioning 文本应答（200+isError:null），provider 原先判 malformed/permanent-protocol；R86 T3 改为具名 "quota/auth nudge"→permanent-auth（凭证边界，非协议漂移）。
+- 上游自签发凭证武装后残余失败（5 腿/两轮重合）：**确定性上游契约拒收**——4×bogus sub_domain 对照格（设计内）+1×语料欠参数（vert-f1105 缺 cn_code，语料指纹冻结不可改）。零装置性失败。
+- ∅ 判据字面不可达=语料内含设计内负向格之结构性结果；判据语义达成：装置性失败∅（0 transient/quota/env），契约拒收 5 腿如实记账。
