@@ -1,6 +1,6 @@
 # DRAFT — comment for huggingface/transformers.js PR #1764 ("Added knip to the test pipeline")
 
-> Status: drafted 2026-09-22, pending user review. To be posted by the user under their own GitHub account. Do NOT post via agent/gh.
+> Status: **sent by user**（R86 T4 翻面记账：gh 观测 PR #1764 updatedAt 2026-09-27T06:38Z——用户已实际外发；agent 未代发，仅翻面记账）。原始起草行：drafted 2026-09-22, pending user review. To be posted by the user under their own GitHub account.
 
 ---
 

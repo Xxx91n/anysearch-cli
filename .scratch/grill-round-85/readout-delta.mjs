@@ -14,6 +14,13 @@
 // Post-round audit revision (additive — gates G0..G4 unchanged): report-level
 // side columns armHostHit/armInFanoutSurvival per prereg §2; artifact path
 // emitted repo-relative. The locked r85 read stays readout-output.json (wws).
+//
+// R86 T4 revision — this adjudicator now executes prereg-matrix@2 (registered
+// in §10 BEFORE the T5 rerun read): a leg whose providersFailed carries the
+// measured arm is instrument absence (cell unmeasured/unknown), never a
+// measured zero; systematic subject-layer provider failure (>30% of cells)
+// exits INCONCLUSIVE/instrument-flag via new gate G1b (instrument family,
+// ordered between G1 and G2). The locked r85 read stays readout-output.json.
 
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -29,6 +36,7 @@ const COVERAGE_MIN_PAIRED = 0.7;   // nPaired/n >= 70%
 const COVERAGE_MAX_UNKNOWN = 0.3;  // unknown/n  <= 30%
 const CONTROL_MAX_UNMEASURED = 8;  // > 8/16 -> instrument flag
 const CONTROL_MAX_NONTIED = 4;     // >= 4/16 -> instrument flag
+const SUBJECT_INSTRUMENT_MAX_SHARE = 0.3; // R86 T4: provider-failed iso legs over this share -> instrument-flag
 const GO_P = 0.8, NOGO_P = 0.5;    // flat-prior posterior thresholds
 const REVERSAL_MARGIN = 3, REVERSAL_LIMIT = 2; // 2-of-4 hard gate
 const GRID = 8192;                 // fixed quadrature nodes (deterministic)
@@ -133,21 +141,33 @@ export function adjudicate(artifact, corpus) {
   // cells over the corpus expectation set — artifact-missing = structural missing
   const subjectCell = (m) => {
     const r = rowsById.get(m.id);
-    if (!r) return { id: m.id, m, verdict: "unknown", paired: false, missing: true, rankDiff: null, hOn: null, hOff: null, fanOn: null, fanOff: null };
-    const paired = r.armOn !== null && r.armOff !== null;
+    if (!r) return { id: m.id, m, verdict: "unknown", paired: false, missing: true, rankDiff: null, hOn: null, hOff: null, fanOn: null, fanOff: null, instrumentDown: false };
+    // R86 T4 (matrix@2): a leg whose providersFailed carries the measured arm
+    // is instrument absence — the arm never produced a list; counting its
+    // empty output as a measured zero was the r85 scoreboard defect.
+    const isoOnFailed = (r.providersFailedIsoOn ?? []).includes("anysearch");
+    const isoOffFailed = (r.providersFailedIsoOff ?? []).includes("anysearch");
+    const armOnOk = r.armOn !== null && !isoOnFailed;
+    const armOffOk = r.armOff !== null && !isoOffFailed;
+    const paired = armOnOk && armOffOk;
     return {
-      id: m.id, m, verdict: r.delta?.verdict ?? "unknown", paired, missing: false,
-      rankDiff: r.delta?.rankDiff ?? null,
-      hOn: paired ? r.armOn?.hostHit ?? null : null, hOff: paired ? r.armOff?.hostHit ?? null : null,
-      fanOn: r.armInFanoutOn ?? null, fanOff: r.armInFanoutOff ?? null
+      id: m.id, m, verdict: paired ? (r.delta?.verdict ?? "unknown") : "unknown", paired, missing: false,
+      rankDiff: paired ? (r.delta?.rankDiff ?? null) : null,
+      hOn: armOnOk ? (r.armOn?.hostHit ?? null) : null, hOff: armOffOk ? (r.armOff?.hostHit ?? null) : null,
+      fanOn: r.armInFanoutOn ?? null, fanOff: r.armInFanoutOff ?? null,
+      instrumentDown: isoOnFailed || isoOffFailed
     };
   };
   const controlCell = (m) => {
     const r = rowsById.get(m.id);
     if (!r) return { id: m.id, m, measured: false, missing: true, nonTied: false };
     const spec = r.hadVerticalSpec ?? m.spec;
-    const measured = spec ? (r.armOn !== null && r.armOff !== null) : r.armOff !== null;
-    const v = r.delta?.verdict ?? "unknown";
+    // R86 T4 (matrix@2): provider-failed iso legs are unmeasured — same rule
+    // as the subject layer (a failed arm is not a measured control cell).
+    const onFailed = (r.providersFailedIsoOn ?? []).includes("anysearch");
+    const offFailed = (r.providersFailedIsoOff ?? []).includes("anysearch");
+    const measured = spec ? (r.armOn !== null && !onFailed && r.armOff !== null && !offFailed) : (r.armOff !== null && !offFailed);
+    const v = measured ? (r.delta?.verdict ?? "unknown") : "unknown";
     return { id: m.id, m, measured, missing: false, nonTied: v === "better" || v === "worse", verdict: v };
   };
   const S = corpus.subjects.map(subjectCell);
@@ -181,6 +201,15 @@ export function adjudicate(artifact, corpus) {
     nonTiedIds: C.filter((c) => c.nonTied).map((c) => c.id),
   });
   if (flag) return finish("INCONCLUSIVE", "instrument-flag", trace, artifact, corpus, S, C, dirStats);
+
+  // G1b subject-layer provider failure (R86 T4 / matrix@2): the instrument
+  // check the r85 matrix lacked — provider-failed iso legs mark cells
+  // instrumentDown; systematic failure (>30% of subject cells) exits
+  // instrument-flag instead of degrading silently into coverage/direction.
+  const sDown = S.filter((c) => c.instrumentDown);
+  const sFlag = S.length > 0 && sDown.length / S.length > SUBJECT_INSTRUMENT_MAX_SHARE;
+  gate("G1b-instrument-providers", !sFlag, { instrumentDown: sDown.length, n: S.length, maxDown: Math.floor(S.length * SUBJECT_INSTRUMENT_MAX_SHARE), downIds: sDown.map((c) => c.id) });
+  if (sFlag) return finish("INCONCLUSIVE", "instrument-flag", trace, artifact, corpus, S, C, dirStats);
 
   // G2 coverage (processing layer)
   const n = S.length, nPaired = S.filter((c) => c.paired).length;
@@ -220,7 +249,7 @@ export function adjudicate(artifact, corpus) {
 
 function finish(verdict, exit, trace, artifact, corpus, S, C, dir = null) {
   const out = {
-    matrix: "grill-round-85/prereg-matrix@1",
+    matrix: "grill-round-85/prereg-matrix@2",
     schema: artifact?.schema ?? null, fingerprint: artifact?.datasetFingerprint ?? null,
     verdict, exit, gates: trace,
     fields: null, control: null, coverage: null, perDomain: null, perStratum: null, truncation: null,
@@ -296,6 +325,8 @@ function synthArtifact(corpus, spec) {
       id: m.id, role: "control", vdomain: m.vdomain, stratum: "control", hadVerticalSpec: m.spec,
       armOn: m.spec && c.measured ? { n: 5, hostHit: null } : null,
       armOff: c.measured ? { n: 5, hostHit: null } : null,
+      providersFailedIsoOn: c.pf && m.spec ? ["anysearch"] : null,
+      providersFailedIsoOff: c.pf ? ["anysearch"] : null,
       delta: { verdict: "unknown", rankDiff: null },
     });
   }
@@ -307,6 +338,8 @@ function synthArtifact(corpus, spec) {
       id: m.id, role: "subject", vdomain: m.vdomain, stratum: m.stratum, hadVerticalSpec: true,
       armOn: paired ? { n: 5, hostHit: s.hOn ?? true } : null,
       armOff: paired ? { n: 5, hostHit: s.hOff ?? false } : null,
+      providersFailedIsoOn: s.pf ? ["anysearch"] : null,
+      providersFailedIsoOff: s.pf ? ["anysearch"] : null,
       delta: { verdict: s.verdict, rankDiff: s.rankDiff ?? null },
     });
   }
@@ -318,6 +351,10 @@ function selftest() {
     ["healthy-positive -> GO/direction-positive", "GO/direction-positive", { subject: (m) => ({ verdict: m.vdomain === "health" ? "tied" : "better", hOn: true, hOff: false, rankDiff: 2 }) }],
     ["instrument-dead (10 unmeasured) -> INCONCLUSIVE/instrument-flag", "INCONCLUSIVE/instrument-flag",
       { control: (m, i) => ({ measured: i < 10 ? false : true }) }],
+    // matrix@2 lock: provider-failed legs carrying fake-tied cells must NOT
+    // read as direction evidence — systematic failure exits instrument-flag.
+    ["all-arms provider-failed (fake-tied cells) -> INCONCLUSIVE/instrument-flag", "INCONCLUSIVE/instrument-flag",
+      { subject: () => ({ verdict: "tied", hOn: false, hOff: false, pf: true }) }],
     ["indeterminate direction -> INCONCLUSIVE/direction-indeterminate", "INCONCLUSIVE/direction-indeterminate",
       { subject: (m, i) => ({ verdict: i % 7 === 0 ? "better" : i % 8 === 0 ? "worse" : "tied", hOn: true, hOff: false }) }],
     ["two domain reversals -> NO-GO/negative-hard-gate", "NO-GO/negative-hard-gate",

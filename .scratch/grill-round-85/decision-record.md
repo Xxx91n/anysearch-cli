@@ -73,3 +73,10 @@ truncation 注记：无——四域完成格率 100%，MNAR 疑面空集，对�
 - **CI 区间勘误**（审计 finding ⑤）：D-001(3)「效应量+CI 区间」与 D-002(4) 四字段（净胜率/P/EL/rankDiff 中位，无 CI）为账本内部歧义——判读权威归 T1 先于读数落盘的矩阵（D-002），本轮实现从后者；且全 tied（b=w=0）下区间估计本就退化。登记为账本措辞勘误项；若下轮要区间，须先修订矩阵注册字段再进判读器。
 - **纹理精度勘误**（审计 finding）：上文「providersFailed=["anysearch"] 全格命中」精确形——`providersFailedIsoOff=["anysearch"]` 57/57 格；`providersFailedIsoOn=["anysearch"]` 53/53 排定格（4 无 spec 对照格 iso-on 腿结构性不排定，值为 null）；`armInFanoutOn/Off=false` 同为排定格口径 53/53。臂级零数据实质结论不变（57/57 格 armOn.n=armOff.n=0）。
 - **G1 诊断序说明**（审计 finding ⑥）：旗标本轮未触发（unmeasuredIds/nonTiedIds 均空列表即为「unknown 缺失模式」步的记录形）；「方向一致性→对称噪音」归因序为旗标触发后的判别序，非缺陷。
+
+## 勘误（R86 T4，2026-09-27）
+
+- **判词再分类**：程序性裁决仍锁定（矩阵字面 NO-GO、单次终读纪律不溯改），但语义判词由「无可观测增益」修正为 **indeterminate — instrument down**。
+- **归因**：R86 T2 探针矩阵（`.scratch/grill-round-86/reports/probe-matrix.md`）实证根因=env 配置层双重缺陷——ANYSEARCH_ENDPOINT 指向 loopback 上无 MCP 路由的服务（initialize→HTTP 404）+ ANYSEARCH_API_KEY 上游实测 invalid_api_key；公网默认端点匿名调用实测存活（3 结果/970ms）。即装置级零数据，非测得零增益。
+- **效应量字段重读**：b=0/w=0、P=0.500、池化 Δ=0 全部产自失败臂——不构成增益证据；四字段仅保留为判读轨迹事实，不撤回。
+- **判读器修正**：readout-delta.mjs 修订为 matrix@2 执行体（provider-failure 格→unmeasured/unknown + G1b 装置闸 + selftest 假平格回归锁），登记先于 T5 复跑终读。

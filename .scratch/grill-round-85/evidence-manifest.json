@@ -32,6 +32,25 @@
             "producerCommit": "acaaccb32d54220b2d7ef63c668f6b9c61c47288",
             "producerNote": "该 commit 为原件内部 generatedAt 字段时点上的 HEAD（git log --before 实证）；清单本体不记裸 generatedAt",
             "disposition": "archived-retained"
+        },
+        {
+            "id": "r85-delta-full-rerun",
+            "role": "R85 全量复跑 delta 证据原件（decision-record 的底层数据面）",
+            "path": ".scratch/vertical-eval/delta.json",
+            "pathLocality": "machine-local-gitignored",
+            "marker": "<!-- machine-local: R85 全量 delta 原件驻留机器本地证据通道（gitignore，不入库） @ 2026-09-27 -->",
+            "originalSha256": "4b8a080b809b8980345d8e60da709b7603f1a1ce584f5ae68efd2bf4a108957a",
+            "originalBytes": 65657,
+            "producerCommit": "03ba1b5abb1c41d22da0f666a6820900c0095cf4",
+            "producerNote": "原件内部 generatedAt=2026-09-27T04:53:21Z（decision-record 记）；producerCommit=该时点 HEAD（git log --before 实证）",
+            "disposition": "overwritten-by-r86-smoke",
+            "disclosure": "原件字节于 2026-09-27 被 R86 T2 冒烟（未设 ANS_VERTICAL_DELTA_OUT）覆盖；originalSha256 为覆盖前实测留存锚，字节同一性不再主张。T5 复跑产出新原件另登记。",
+            "currentSha256": "d78c717828d2b8a42104a078acaae4ef9184276054074c478e25d79cc7aa0b0d",
+            "currentBytes": 2870,
+            "currentNote": "当前字节=R86 LIMIT=1 冒烟件（非 R85 原件）"
         }
+    ],
+    "notes": [
+        "judgeConfig 记 R85 时点判读器指纹（matrix@1 执行体）；R86 T4 修订为 matrix@2 执行体，新版 hash 由 T5 复跑档登记。"
     ]
 }

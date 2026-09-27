@@ -65,3 +65,5 @@ ADR-0085 把垂域评测证据腿建成在役（契约断言 + 金标语料 + �
 - 判读矩阵（prereg-matrix@1）+确定性判读器入库可复用：下一轮任何 delta 判读以同形态起跳，修订点已知（声明#4）
 - 残余观察位（不动工只记录）：defer-r84-ip-fifth-domain；清障轮候场新增 isolated-arm provider-failure 面
 - 若复活路径兑现：下轮=prefer-capable 加权设计轮（本决策记录为输入）
+
+> **勘误（R86 T4，2026-09-27）**：D4 判词的语义解释修正——「无信号」不应读作「测得零增益」。R86 T2 探针矩阵（`.scratch/grill-round-86/reports/probe-matrix.md`）将 providersFailed 全程非空归因为 **env 配置层双重缺陷**（loopback 死路由端点 initialize→404 + 失效 key permanent-auth；公网默认端点匿名实测存活），属装置级零数据——判词语义判 **indeterminate — instrument down**。程序性 NO-GO 按单次终读纪律保持锁定；判读器已修订为 matrix@2（声明#4 残余限制兑现），复跑走 R86 T5 判据（iso providersFailed=∅ + 非空覆盖≥70%）。

@@ -83,3 +83,11 @@ G0 输入完整闸 → G1 对照层装置闸 → G2 覆盖闸 → G3 负向硬�
 - NO-GO → 挂账核销附判词；立 ADR-0086
 - INCONCLUSIVE → registry 显式 hold 态+具名触发量化锚；不立 ADR，报告全字段
 - `defer-r84-delta-quota-rerun` 按重跑实绩核销或转 hold
+
+## 10. 修订登记（matrix@2 — R86 T4，先于 T5 复跑终读）
+
+- **触发**：声明#4 已知残余限制兑现——provider 级失败（providersFailed 非空）在 R85 全程产生「装置级零数据被判成测得值」的记分簿失真（空臂列表计 tied）。
+- **修订内容**：iso 腿 providersFailed 含被测臂 → 该侧 unmeasured（armOn/armOff 等效 null）→ 格 paired=false、verdict=unknown；subject 层 instrumentDown 占比 >30% → INCONCLUSIVE（exit=instrument-flag），新增闸 G1b（装置健康族，序=G1 之后 G2 之前）。
+- **runner 侧同步**：捕获层不再把失败腿落成空列表——providersFailed 含 anysearch 的 iso 腿直接记 armOn/armOff=null。
+- **生效范围**：自 T5 复跑起的判读执行；R85 锁定读数（readout-output.json）不溯改，语义判词由 decision-record/ADR-0086 勘误承担。
+- **生效时点**：本登记 commit 先于 T5 复跑终读——预注册纪律保持（先声明后读数）。
