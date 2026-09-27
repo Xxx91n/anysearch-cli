@@ -1,0 +1,10 @@
+# atomcode research Q5 (grill-round-86)
+
+背景：anysearch-cli 仓库（npm 发布的多包 monorepo，pnpm+tsup+GitHub release workflow+双层 release-gate/ship-gate）。R86 已定稿四裁决：D-001 绿门装船轮（原子集五项：红门修复/defer-r85 根因判别/NO-GO 判词修正/阴性证据最小入库/Status 翻面；铁序=判别→臂复活→全绿臂复跑→双平台门绿→v0.0.9 切版）；D-002 红门修法=指纹清单入库+claim 改指+审计 checklist 加签字前门绿硬项；D-003 defer-r85 根因判别=两批微分探针（P0 provider 直调取证+P3 dist 新鲜度断言第一批，P1 env 三分离+P2 raw MCP 探针按需）；D-004 复跑口径=健康闸验收（iso providersFailed=∅+臂非空覆盖≥70%）+R85 判词诚实化降级 indeterminate+NO-GO 不回写+registry 具名跟进条件。
+
+待裁决问题（轮结构票序+装船边界+不可复活预案）：
+- 方案 A 七票序：T0 哨戒续班+锐评核账归档 → T1 红门修复（门绿实证才推进）→ T2 判别实验 → T3 修复+臂复活（5/5 判据）→ T4 判读器语义修正+记分簿诚实化 → T5 全绿臂复跑 → T6 收口装船（registry 三联+ADR-0087+closeout-claims+v0.0.9 全包钉版）。
+- 不可复活预案分支：若根因=上游长期死/端点不可达不可修复——B1 仍发 0.0.9（MCP 迁移是对死路由的正确性修复，与上游健康正交；anysearch 臂维持 fail-open 一等降级态；装船条件「全绿臂复跑」降级为「根因落档+修复正确性实证」）；B2 押后发布等上游恢复；B3 另定。
+- C 票序另排 / D 另指。
+
+请调研工业界成熟心智模型并给出推荐+理由，重点评估：release 工序排序惯例（门修复→根因→验证→发布的顺序是否是标准 pipeline 形态，T4 文档修正放在复跑前还是后）；「ship with known issue / known-degraded component」的发布先例与 release notes 披露惯例（Linux发行版/框架的 known issues 节、feature flag 化降级组件）；单包 CLI 的发布节奏惯例（patch vs minor 语义化版本对「修复死端点+垂域贯通」的归类）；健康闸证据降级时的发布合法性边界（什么程度的「无法验证」仍可发布：upstream dependency dead 时下游包的正确性修复该不该等）；批次风险——六轮积压（MCP 迁移+垂域贯通+dsh repin+R84 评测基建+R85 判读器修正）一次装船的回滚预案惯例。

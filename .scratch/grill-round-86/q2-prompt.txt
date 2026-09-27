@@ -1,0 +1,15 @@
+# atomcode research Q2 (grill-round-86)
+
+背景：anysearch-cli 仓库有 ship-gate 收口声明机制 closeout-claims.json（ADR-0081 D-004 立法）：每条声明含 id/kind/claim，kind 现有四种——count（跑命令重推导计数）、path（fs.existsSync 查库内路径存在）、symbol（查文件含 token）、field（查 JSON 字段）。本轮发现合约错配：R85 注册了一条 kind:path 声明断言 .scratch/vertical-eval/delta-2026-09-26.degraded.json（57KB 跑批降格件归档）存在——但该路径按既有约定（R85 D-004 驻留分级）驻留 gitignore 的机器本地通道，作者机有文件故本地绿、CI/净检出必红，main tip 双平台红。
+
+同时仓库已有 machine-local 治理词汇先例：ADR-0072 pathlint 步骤用 <!-- machine-local: <reason> @ <date> --> 标记声明「有意机器本地的路径引用」。
+
+待裁决问题（红门修法）：
+- 方案 A：建证据指纹清单入库（.scratch/grill-round-85/ 下小 JSON：delta.json+降格件的 sha256/size/generatedAt/判读器配置 hash/运行环境指纹），claim 改指该清单文件——合约面零扩展，同时充当「阴性结果原始证据最小入库」的首件。
+- 方案 B：claims schema 扩第五种 kind:machine-local（必填 paths+reason，只验声明形状不验存在性——机器本地文件 CI 上本就不可验）。
+- 方案 C：claim 重述为 symbol kind 指向 decision-record.md 中文件名 token（断言对象=归档事实有记录，近恒真）。
+- 方案 D：降格件连 gitignore 白名单一起入库（推翻驻留分级，开跑批产物入库先例）。
+- 方案 E：删该 claim（覆盖归零）。
+- 随票项：审计签字 checklist 增加硬项「签字 commit 上 ship-gate --quick exit 0」是否随本轮同落（同属「审计窗踩红签字」受体面），还是留清障轮。
+
+请调研工业界成熟心智模型并给出推荐+理由，重点评估：artifact attestation/出处证明实践（SLSA provenance、in-toto、SBOM 哈希清单、sigstore）；校验和清单（checksum manifest）作为「大文件不入库但可复核」惯例的成熟度（如 sha256sum -c、包管理器 lockfile、release checksums.txt）；质量门合约扩展 vs 断言重述的取舍先例；CI 中「机器本地产物断言」的正确形态；审计/签核 checklist 中「签字前验证门绿」类防呆项的工业先例（如 release checklist gating、SRE launch review）。

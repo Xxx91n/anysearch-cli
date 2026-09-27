@@ -1,0 +1,14 @@
+# atomcode research Q4 (grill-round-86)
+
+背景：anysearch-cli 仓库。R85 已立项目首份预注册 NO-GO（判读矩阵预注册先于读数、单次终读、P=0.5/Δ=0/41 对全 tied → prefer-capable 挂账核销附判词）。R86=绿门装船轮：defer-r85 根因判别→臂复活→复跑一条全绿臂→双平台门绿→v0.0.9 切版。
+
+新侦证发现：R85 的 41 对「全 tied」实际数据形态是 armOn={n:0,hostHit:false} vs armOff={n:0}——**死臂的空表对空表按构造记 tied**（providersFailed=[anysearch] 时臂返回零结果，判读器把 0-vs-0 评成 tied 而非 unknown/instrument-flag）。即 NO-GO 实测语义=「装置全灭下测不出信号」，非「测出无差异」。
+
+待裁决问题（复跑口径与认识论地位）：
+- 方案 A：全量复跑（57 条原协议原指纹）+健康闸语义（iso 腿 providersFailed=∅ 且臂结果表非空覆盖率≥70%）+新数据如实报告但 NO-GO 不重开、prefer-capable 维持核销——若现方向信号则 registry 记具名跟进条件（fresh prereg 下轮重开）。
+- 方案 B：缩容冒烟（LIMIT 抽样 12-16 条）省配额快验证。
+- 方案 C：全量复跑+直接重判读改裁决（新数据推翻 NO-GO）。
+- 方案 D：其他。
+- 随票项：runner/判读器「臂全灭记 tied」的评分语义修正为 providersFailed 非空→记 unknown/instrument-flag（诚实计损），是否随本轮同落（注意：影响 R85 已读数据语义一致性——若改须注明旧件不复算），还是仅登记清障候选。
+
+请调研工业界成熟心智模型并给出推荐+理由，重点评估：健康检查 vs 判读裁决的分离惯例（release qualification testing vs experiment decision——装船前「能飞」验收线该不该回写实验结论）；预注册终局性 vs 装置失效作废——临床试验/计量学中「measurement instrument failed → data invalid」的既定处置（数据作废重测是否构成 peeking）；paired design 中 tie vs missing/invalid 的语义区分先例（sign test 处理 ties 的惯例：丢弃 ties 还是计负）；fail-open 设计中「provider 失败返回空列表」导致「无结果」与「零结果」混淆的已知陷阱；release qualification 中 smoke test vs full regression 的取舍门槛（什么时候全量才算证据）。

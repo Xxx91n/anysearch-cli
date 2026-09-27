@@ -1,0 +1,13 @@
+# atomcode research Q3 (grill-round-86)
+
+背景：anysearch-cli 仓库（TypeScript/pnpm monorepo）。R85 全量配对评测跑批中 anysearch provider 臂全程失败（providersFailed=[anysearch]：隔离腿 57/57 全灭、全扇出腿也 56/57 全灭——失败不特异于隔离路径，是 provider 级失败），而 R82 时期的探针曾 verified live。失败面未知细节：provider 通过 MCP-over-HTTP 调上游 endpoint，可能 throw 类别包括 HTTP 非 2xx、SessionExpiredError（404 session 重试一次）、SSE 无应答、应答格式 malformed（缺 '## Search Results' 头）、fetch 网络错。runner 以子进程跑 dist/index.js（缺失即 SKIP 不自动重建），delta.json 证据件只记 providersFailed 旗标不记错误文本。
+
+侦证后候选根因集：①上游/端点当日失效（含 env 重定向的本地端点 down 或官方端点故障/限流）；②wire schema 漂移（MCP 应答格式变更→每调用 malformed throw）；③stale dist（跑批 dist 为迁移前旧构建→全打已死路由 404）；④Bearer auth/携钥失效（匿名本可用但坏 key 会 4xx）；⑤ANS_PROVIDERS 名义匹配（基本排除——全扇出同样全灭）。
+
+待裁决问题（根因判别实验设计）：
+- 方案 A 四步微分探针矩阵（先取证后动手）：P0=provider 直调取证脚本一次调用捕 e.name+message 错误类别 + 今日 ans search --json 态；P1=env 三分离（原 env / ANYSEARCH_ENDPOINT 置空回默认 / KEY 置空匿名）；P2=raw 传输探针（绕过应答解析直发 MCP initialize+tools/call）；P3=构建新鲜度断言入复跑前置工序。臂复活判据=错误类别归因落档 + iso 探针连续 5/5 providersFailed 空；若根因=上游 transient 已恢复→零代码修直接核销票据。
+- 方案 B：直接全量复跑赌上游已恢复。
+- 方案 C：只跑 P0 单探针。
+- 方案 D：其他。
+
+请调研工业界成熟心智模型并给出推荐+理由，重点评估：故障根因判别的最小探针集设计（binary search / differential diagnosis / 单变量隔离实验的科学方法在 SRE 调试中的落地）；「先取证后修复」vs「重启赌恢复」的事故处理先例（debugging cookbook、SRE book 的 diagnosis 章节）；探针取证中 error 分类学（把异常按 error class 归因）的成熟做法；MCP/JSON-RPC 客户端与上游 wire-schema 漂移的防御性测试惯例（contract test、schema 探针）；CI/评测系统中「构建产物新鲜度断言」（stale artifact 防护）的惯例；以及 transient failure 核销的证据门槛（多少次连续绿可判恢复）。

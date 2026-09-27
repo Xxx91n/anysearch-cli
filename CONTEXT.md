@@ -1514,3 +1514,33 @@ boy-scout 搭车边界操作化：同面=本轮改动 hunk 所在文件内、与
 
 ### Named-Trigger Hold（具名触发 hold 态）
 INCONCLUSIVE 的 registry 形态：显式 hold 状态+量化锚触发条件（功效注记 |Δ|≳0.4+n 条件）作下轮入口检查项——AWS ADR 惯例「rejected 也记 reason 防重复讨论」+ozimmer「无选择无 decision record」。_Avoid_: INCONCLUSIVE 静默遗忘（无状态迁移=默认丢失）；裸触发条件无量化锚。来源：atomcode R85-Q3+R85 D-003。
+
+
+## Grill Round 86 — Terms (ADR-0087)
+
+### Green-Gate Shipping Round（绿门装船轮）
+轮次形态：把 main 上积压的正确性修复运出码头的发布轮——切版双条件=全绿臂复跑+双平台门绿（green head 切 RC 惯例）；红 CI/红 ship-gate 时一切新工作冻结（andon）。_Avoid_: 红门上叠加提交；治理轮无限顺延装船（WIP 库存批次膨胀——MinQueueWeight 1/cost-of-delay 判据）。来源：atomcode R86-Q1+R86 D-001。
+
+### Evidence Manifest（证据指纹清单）
+机器本地证据件的入库断言形态：小 JSON 记 path+sha256+size+来源 commit+配置 hash+环境指纹，断言对象=清单在库+自洽而非原件存在——checksum manifest 惯例同构（lockfile/SHA256SUMS/SBOM/SRI manifest）；阴性证据的最小入库件。_Avoid_: 原件入库（跑批产物混级）；增只验形状不验存在的不可验断言 kind（fail-closed 语义反向失守）；裸 generatedAt 破坏 diff。来源：atomcode R86-Q2+R86 D-002。
+
+### Andon Precedence（andon 前置）
+红门（CI/ship-gate fail）时的铁序：修复先于一切新工作、签字与切版以门绿为前置——Build Cop 放下手头一切先修+a quality gate that can be skipped is not a gate。_Avoid_: 红门上排期再修（DevLead 不绕过不排期两 rule）；审计窗在红灯下签 PASS（签字须绑定 binary evidence）。来源：atomcode R86-Q1/Q2+R86 D-001/D-002。
+
+### Instrument-Down Indeterminate（装置失效不定判）
+装置失效期间判读终局的记分形态：判词=indeterminate/instrument-flag 而非方向性裁决——FDA protocol-deviation 惯例：未校准设备产出数据=无效读数作废不追溯；GMP 事后校准不证明当时适用。_Avoid_: 把 instrument failure 伪装成有效 tied/empty（failure 洗成无差异假证据污染引用链）；追溯复算旧件（只加脚注不溯改）。来源：atomcode R86-Q4+R86 D-004。
+
+### Qualification-Decision Split（验收/裁决两闸分离）
+能飞验收线（health gate）与实验裁决线（verdict readout）是两个独立闸门：健康闸只答装置可信吗、不回写实验结论；装置失效后重测合法因 data-independent，非 peeking（peeking=results-dependent selection）。_Avoid_: 健康闸绿即写回裁决；用新数据直接改判旧裁决（裁决重开必须 fresh preregistration）。来源：atomcode R86-Q4+R86 D-004。
+
+### Retryable-Permanent Error Taxonomy（retryable/permanent 错误分类层）
+错误按可否重试两分的契约标注：5xx/429→transient、401/403→permanent-auth、malformed 协议漂移→permanent（重试无意义）、404+session→半永久——AWS/Airbnb 分类入响应契约惯例；判别探针的归因落档单位。_Avoid_: 只记失败旗标不记错误文本（generic error wrapping 丢根因上下文）；对 permanent 类错误无谓重试。来源：atomcode R86-Q3+R86 D-003。
+
+### Dist Freshness Assertion（构建产物新鲜度断言）
+跑批前置断言：dist 构建 hash（或 git describe 嵌入）与工作区 HEAD 比对，不匹配→FAIL 提示重建——产物与源码绑定惯例（GitLab artifact 传递/hashed-key）：stale 硬失败非静默跑。_Avoid_: 存在即跑的 SKIP-not-rebuild 反向缺口（存在但 stale 静默跑=按旧代码测）；事后排查而非前置 gate。来源：atomcode R86-Q3+R86 D-003。
+
+### Scoreboard Honesty Correction（记分簿诚实化）
+既发判词/记录的口径修正形态：不溯改正文只加勘误脚注+registry 注明——Lakens deviation-reporting 惯例：偏离透明报告不追溯改判。_Avoid_: 原地改写历史记录冒充从未错；修正依赖未发生的新数据（诚实化本身不依赖复跑结果）。来源：atomcode R86-Q4+R86 D-004。
+
+### Known-Issue Disclosure Placement（已知降级披露位置纪律）
+带已知降级态装船时的披露位置惯例：写进用户会撞到的地方（README/release notes Known Issues 节/装船判词），配 workaround+影响范围+修复状态——Ubuntu/Debian/VS 发行版级先例；fail-open 降级态=kill-switch 型永久 flag（Unleash 分类）。_Avoid_: 只埋变更列表不显著呈现；因上游死而押后正确性修复发布（可用性问题转嫁正确性阻塞）。来源：atomcode R86-Q5+R86 D-005。

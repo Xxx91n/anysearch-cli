@@ -1,0 +1,17 @@
+# atomcode research Q1 (grill-round-86)
+
+背景：anysearch-cli 仓库（pnpm monorepo，TypeScript）。连续六轮（R80-R85）已落地 main（tip 527c817）：dsh-plugin 上架 npm 0.0.8、provider 服务端诊断（证伪）、AnySearch REST→MCP 迁移、垂域贯通、垂域评测腿、R85 预注册判读矩阵得出项目首份 NO-GO（P=0.5、Δ=0、41 对全 tied，prefer-capable 挂账已核销）。
+
+当前冲突面（第八轮外部评审亲测核实）：
+1. 已发布 npm 包 0.0.3–0.0.8 的 anysearch 默认端点指向已被自家测绘判死的 GET /v1/search（404 route-level dead）；修复（MCP 迁移）已在 main 躺了五轮未发布。
+2. main tip 的 ship-gate 双平台红：closeout-claims.json 把一条 kind:path 声明指向 gitignore 的机器本地文件——注册合约错配（claims 现有 count/path/symbol/field 四种 kind，无 machine-local）。
+3. R85 全量跑批中 anysearch 臂 providersFailed=[anysearch] 全程失败（defer-r85-anysearch-arm-providersfailed，三候选根因：携钥隔离路径 / ANS_PROVIDERS 名义匹配 / 上游当日失效）——R82 探针期 verified live 与全量跑批期全程失败之间有落差。
+4. 悬挂治理项：NO-GO 裁决行缺 provider-failure 限定语、阴性结果原始证据件未入库（第三方无法复核判读器输入）、已外发草稿 Status 行 stale、若干旧 defer 清障项。
+
+待裁决问题（R86 一轮一主题，ADR-0029 一轮一主题纪律）：
+- 方案 A：主轴=defer-r85 根因判别 → anysearch 臂复活 → 用配对评测腿复跑一条全绿臂 → 发布 v0.0.9（把 MCP 迁移+垂域贯通+dsh repin 五轮积压装船）；门红修复作为装船前置纳入本轮 T0。
+- 方案 B：主轴=纯治理修复轮（claims 合约 kind 补 machine-local 或降格件入库、审计签字 checklist 加「签字 commit 门绿」硬项、NO-GO 措辞从句、阴性证据最小 schema、Status 翻面、旧 smell 清障）。
+- 方案 C：A+B 复合一轮做完。
+- 方案 D：其他方向。
+
+请调研工业界成熟心智模型并给出推荐+理由，重点评估：release train/发布节奏与「修复在 main 上睡五轮未发布」的库存风险（lean/WIP 视角）；红门/红 CI 的处置惯例（andon/stop-the-line、broken trunk 修复优先级）；根因分析先行再发布 vs 先发后查的利弊（本例修复本身可能带病：探针期 live 但全量跑批期失败）；一轮一主题 vs 复合轮的节奏治理先例；阴性结果/失败实验的原始证据归档惯例（科研数据管理、A/B 平台 artifact 留存）。
