@@ -4,6 +4,17 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0086 r85: delta 腿全量重跑 + prefer-capable 预注册判读（NO-GO 终局）
+
+### Added
+
+- 预注册判读矩阵 `.scratch/grill-round-85/prereg-matrix.md` + 确定性判读器 `.scratch/grill-round-85/readout-delta.mjs`（ADR-0086 D2）：G0–G4 固定闸序（输入完整→对照层装置闸→覆盖闸→2-of-4 负向硬闸→方向轴）+ `Beta(1+b,1+w)` flat 后验（P/EL 精确数值积分、固定网格无 RNG）+ 效应量四字段 + 单次终读条款；`assert-corpus | selftest | readout` 三模式——判读器自身携离线 fixture 测试面，判读先于读数落盘 commit。
+- delta runner instrument-health ordering（sampling 协议不变）：对照层前置探针 + G1 旗标早停 + 处理层 vdomain×stratum 轮询交错（配额截断近似 MAR）+ `ANS_VERTICAL_DELTA_PLAN=1` 零配额排演面 + `hadVerticalSpec` 记账锚字段。
+
+### Deferred
+
+- `defer-r83-prefer-capable-weighting` **核销（NO-GO 判词附纹理）**：全量重跑完成（57/57 格腿全活、覆盖 41/41、指纹 7ac0a48e55cd7954），注册矩阵单次终读裁决 NO-GO——但「无信号」实为 anysearch 臂全程 provider-failure 空列（装置级零数据非测得零增益），纹理如实披露于 decision-record；复活前置=新挂 `defer-r85-anysearch-arm-providersfailed`（清障候选，owner anysearch-retriever）。`defer-r84-delta-quota-rerun` 核销（触发条件满足+全量重跑实绩+降格件归档 `delta-2026-09-26.degraded.json` 不删）。
+
 ## Unreleased — ADR-0085 r84: 垂域评测证据腿——契约断言 + 金标语料 + 双臂配对 delta
 
 ### Added

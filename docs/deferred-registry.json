@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updated": "2026-09-25",
+ "updated": "2026-09-27",
  "note": "Machine-checkable registry of deferred work items and carried-over acceptance criteria. Discipline is isomorphic to .ship-gate/skip-ledger.json (schema @3) and the ADR-0020 conformance expected-failures ledger: every deferral is an explicit, traceable record, never a silent drop. ADR-0057 D5 / D-006 requires one entry per carried-over acceptance criterion, marked closed-by the ADR that closes it. Old ADR bodies are never edited; the pointer line lives in the old ADR and the record lives here (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). Additive only: new entries are appended, existing ids are never reused or renumbered. Canonical form locked by ship-gate stepGovernedJsonCanonical (ADR-0077): this file must byte-equal JSON.stringify(JSON.parse(src),null,1)+'\\n'. To normalize: node -e \"const f='docs/deferred-registry.json';const fs=require('fs');fs.writeFileSync(f,JSON.stringify(JSON.parse(fs.readFileSync(f,'utf8')),null,1)+'\\n')\"",
  "entries": [
   {
@@ -787,8 +787,8 @@
    "opened_at": "2026-09-25",
    "deadline": "2027-03-31",
    "review_cadence": "next-round candidate + quarterly",
-   "status": "open",
-   "evidence": "R83 D-004 §4 显式范围外：能力位只决定 wire 下发与否，不做权重倾斜；若要做，需 eval 数据证明垂域臂召回质量差异，属评估轮职责非契约轮。 | R84 更新：证据机制在役等数据——双臂配对 delta 腿已落地（packages/store/test/online/eval-looks-vertical.online.ts → .scratch/vertical-eval/delta.json，首轮受匿名配额限部分降格，重跑条件见 ADR-0085 D8/defer-r84-delta-quota-rerun）。数据读出前保持 open。"
+   "status": "closed",
+   "evidence": "R83 D-004 §4 显式范围外：能力位只决定 wire 下发与否，不做权重倾斜；若要做，需 eval 数据证明垂域臂召回质量差异，属评估轮职责非契约轮。 | R84 更新：证据机制在役等数据——双臂配对 delta 腿已落地（packages/store/test/online/eval-looks-vertical.online.ts → .scratch/vertical-eval/delta.json，首轮受匿名配额限部分降格，重跑条件见 ADR-0085 D8/defer-r84-delta-quota-rerun）。数据读出前保持 open。 | R85 核销（NO-GO）：delta 腿全量重跑完成（57/57 格腿全活，指纹 7ac0a48e55cd7954），预注册矩阵单次终读裁决 NO-GO/direction-negative——better/worse=0/0、P(better>worse)=0.500、池化 armHostHit Δ=0、EL=0.1667、rankDiff 中位 null。判词附注：「无信号」纹理实为 anysearch 臂全程 provider-failure 空列（装置级零数据，非测得零增益）；判读矩阵声明#4 已登记此操作化残余限制。证据 .scratch/grill-round-85/decision-record.md + readout-output.json。加权问按注册程序关闭；复活前置=解 defer-r85-anysearch-arm-providersfailed（属新票）。"
   },
   {
    "id": "defer-r84-anysearch-empty-endpoint-env",
@@ -820,8 +820,8 @@
    "owner": "anysearch-eval",
    "opened_at": "2026-09-26",
    "review_cadence": "next-round candidate",
-   "status": "open",
-   "evidence": "R84 T3：57 条 corpus×4 趟跑通，前几条获真臂数据（fmp 命中+marked 标记在），其后匿名额度耗尽两臂归零——机制链绿、覆盖受配额限。证据档 .scratch/grill-round-84/evidence/t3-vertical-delta.md。 附：盘上存量 delta.json 为早期 runner schema（缺 providersFailedIsoOn/IsoOff/armInFanout/armOnSample 字段）——重跑产出覆盖即闭合存量漂移（审计 F3）。"
+   "status": "closed",
+   "evidence": "R84 T3：57 条 corpus×4 趟跑通，前几条获真臂数据（fmp 命中+marked 标记在），其后匿名额度耗尽两臂归零——机制链绿、覆盖受配额限。证据档 .scratch/grill-round-84/evidence/t3-vertical-delta.md。 附：盘上存量 delta.json 为早期 runner schema（缺 providersFailedIsoOn/IsoOff/armInFanout/armOnSample 字段）——重跑产出覆盖即闭合存量漂移（审计 F3）。 | R85 核销：触发条件（有效 ANYSEARCH_API_KEY+live 探针 2026-09-27）成立，全量重跑完成——57 格腿全活、subject 覆盖 41/41、controlDegraded=0、装置探针未触发无早停；新 artifact .scratch/vertical-eval/delta.json 覆盖存量漂移（指纹同 7ac0a48e55cd7954，@1 schema 字段齐含 providersFailedIso*/armInFanout*/armOnSample/hadVerticalSpec）；存量降格件归档 delta-2026-09-26.degraded.json 不删。"
   },
   {
    "id": "defer-r83-a03-flagvalueset-swallow",
@@ -855,6 +855,17 @@
    "review_cadence": "cleanup-round candidate",
    "status": "open",
    "evidence": "R83 审计 §三 A-08（pre-existing）。修=schema 增键或删解构，二选一须与 MCP 工具面 contract 复核后定。R84 D-007(iii) 明令登记。"
+  },
+  {
+   "id": "defer-r85-anysearch-arm-providersfailed",
+   "type": "deferred-with-ticket",
+   "title": "anysearch 臂 isolated+fanout 全程 providersFailed=[anysearch]（空列 n=0, armInFanout=false）——R85 delta 重跑实证；疑携钥 iso 路径或上游当日失效，修复后 delta 腿才可测真臂数据",
+   "source_adr": "docs/adr/0086-architecture-grill-round-85-delta-rerun-prereg-readout-nogo.md",
+   "owner": "anysearch-retriever",
+   "opened_at": "2026-09-27",
+   "review_cadence": "cleanup-round candidate + quarterly",
+   "status": "open",
+   "evidence": "R85 T3：.scratch/vertical-eval/delta.json 全 57 格 providersFailedIsoOn/Off=[anysearch]、armInFanout*=false、armOn/off.n=0；对照层 16/16 同病；fused 命中（param on=0.33/off=0.29、sem 0.45/0.45）由其余 provider 承载。判读记录 .scratch/grill-round-85/decision-record.md。"
   }
  ]
 }

@@ -1,0 +1,104 @@
+{
+    "schema": "anysearch/closeout-claims@1",
+    "round": 85,
+    "claims": [
+        {
+            "id": "r85-t1-prereg-matrix",
+            "kind": "path",
+            "claim": "预注册判读矩阵+确定性判读器+指纹断言在场（commit 先于任何读数）",
+            "paths": [
+                ".scratch/grill-round-85/prereg-matrix.md",
+                ".scratch/grill-round-85/readout-delta.mjs"
+            ]
+        },
+        {
+            "id": "r85-t1-fingerprint-pin",
+            "kind": "symbol",
+            "claim": "输入指纹断言钉版 7ac0a48e55cd7954",
+            "file": ".scratch/grill-round-85/readout-delta.mjs",
+            "tokens": [
+                "7ac0a48e55cd7954",
+                "assert-corpus",
+                "readout",
+                "selftest"
+            ]
+        },
+        {
+            "id": "r85-t2-runner-ordering",
+            "kind": "symbol",
+            "claim": "runner instrument-health ordering 在：对照层前置探针+G1旗标早停+vdomain×stratum轮询+PLAN排演面+hadVerticalSpec",
+            "file": "packages/store/test/online/eval-looks-vertical.online.ts",
+            "tokens": [
+                "instrument-health ordering",
+                "INSTRUMENT FLAG",
+                "ANS_VERTICAL_DELTA_PLAN",
+                "hadVerticalSpec",
+                "subjectsRR",
+                "instrumentFlag"
+            ]
+        },
+        {
+            "id": "r85-t2-fingerprint-verify",
+            "kind": "count",
+            "claim": "语料指纹实测=注册值（判读器 assert-corpus 前置闸 PASS→1，漂移→exit 2 派生失败）",
+            "command": "node -e \"const{execFileSync}=require('child_process');const o=execFileSync('node',['.scratch/grill-round-85/readout-delta.mjs','assert-corpus'],{encoding:'utf8'});console.log(/PASS/.test(o)?1:0)\"",
+            "expect": 1
+        },
+        {
+            "id": "r85-t3-decision-record",
+            "kind": "path",
+            "claim": "决策记录+判读器原始输出落档（单次终读）",
+            "paths": [
+                ".scratch/grill-round-85/decision-record.md",
+                ".scratch/grill-round-85/readout-output.json"
+            ]
+        },
+        {
+            "id": "r85-t3-verdict-nogo",
+            "kind": "symbol",
+            "claim": "裁决=NO-GO/direction-negative（P=0.500、池化Δ=0 双肢同中）",
+            "file": ".scratch/grill-round-85/readout-output.json",
+            "tokens": [
+                "\"verdict\": \"NO-GO\"",
+                "direction-negative",
+                "0.5"
+            ]
+        },
+        {
+            "id": "r85-t4-registry-trio",
+            "kind": "symbol",
+            "claim": "registry 三联：defer-r83 核销（NO-GO判词）+defer-r84 核销（重跑实绩）+defer-r85 新挂（provider-failure 清障候选）",
+            "file": "docs/deferred-registry.json",
+            "tokens": [
+                "defer-r83-prefer-capable-weighting",
+                "defer-r84-delta-quota-rerun",
+                "defer-r85-anysearch-arm-providersfailed"
+            ]
+        },
+        {
+            "id": "r85-t4-adr0086",
+            "kind": "path",
+            "claim": "NO-GO 终局立 ADR-0086 并入册 index",
+            "paths": [
+                "docs/adr/0086-architecture-grill-round-85-delta-rerun-prereg-readout-nogo.md",
+                "docs/adr/index.md"
+            ]
+        },
+        {
+            "id": "r85-t0-sentinel-archive",
+            "kind": "path",
+            "claim": "T0 哨戒实录+锐评第七轮核账归档在 reports/",
+            "paths": [
+                ".scratch/grill-round-85/reports/2026-09-27-t0-watch.md"
+            ]
+        },
+        {
+            "id": "r85-t2-degraded-archived",
+            "kind": "path",
+            "claim": "存量降格件归档保留不删",
+            "paths": [
+                ".scratch/vertical-eval/delta-2026-09-26.degraded.json"
+            ]
+        }
+    ]
+}
