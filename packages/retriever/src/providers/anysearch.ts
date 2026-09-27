@@ -143,6 +143,14 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
   const md = texts.join("\n");
   if (!md.trim()) throw new Error("AnySearch MCP tools/call returned no text content");
   if (!/##\s+Search Results/.test(md)) {
+    // R86 T3: quota/auth boundary nudge — upstream answers anonymous calls at
+    // the quota boundary with an auto-provisioning payload ("account ...
+    // automatically generated ... api_key=...") instead of a results envelope.
+    // That is a credential boundary, not protocol drift — name it so the
+    // error-class channel reads permanent-auth, not permanent-protocol.
+    if (/automatically generated|api_key *=|rate limit|quota/i.test(md)) {
+      throw new Error("AnySearch MCP tools/call quota/auth nudge: upstream issued a provisioning reply instead of results (anonymous quota boundary — set ANYSEARCH_API_KEY)");
+    }
     // Alive-but-wrong-shape (the OmniRoute enumeration family is one) — fail.
     throw new Error("AnySearch MCP tools/call malformed text (no '## Search Results' header)");
   }

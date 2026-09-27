@@ -18,6 +18,7 @@ const cases: Array<[string, string]> = [
   ["Error: AnySearch MCP initialize HTTP 401 Unauthorized", "permanent-auth"],
   ["Error: AnySearch MCP tools/call HTTP 403 Forbidden", "permanent-auth"],
   ["Error: AnySearch MCP tools/call isError: invalid_api_key", "permanent-auth"],
+  ["Error: AnySearch MCP tools/call quota/auth nudge: upstream issued a provisioning reply instead of results (anonymous quota boundary — set ANYSEARCH_API_KEY)", "permanent-auth"],
   ["SessionExpiredError: AnySearch MCP tools/call HTTP 404 (session terminated)", "session-expired"],
   ["Error: AnySearch MCP tools/call malformed text (no '## Search Results' header)", "permanent-protocol"],
   ["Error: AnySearch MCP initialize malformed reply (no result object)", "permanent-protocol"],

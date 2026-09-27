@@ -178,7 +178,7 @@ export function classifyProviderError(errText: string): ProviderErrorClass {
   const t = String(errText);
   const http = (code: string) => t.includes("HTTP " + code);
   if (/SessionExpiredError|session terminated/i.test(t)) return "session-expired";
-  if (http("401") || http("403") || /invalid_api_key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
+  if (http("401") || http("403") || t.includes("quota/auth nudge") || /invalid_api_key|unauthorized|forbidden/i.test(t)) return "permanent-auth";
   if (/HTTP 5[0-9][0-9]/.test(t) || http("429") || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|timed? ?out|socket hang up/i.test(t)) return "transient";
   if (/malformed|Search Results|unexpected Content-Type|no result object|reply id mismatch|isError|no text content/i.test(t)) return "permanent-protocol";
   if (/HTTP 4[0-9][0-9]/.test(t)) return "permanent-protocol";
