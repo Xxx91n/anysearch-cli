@@ -1488,3 +1488,29 @@ golden 断言只许落在已立法的承诺行为上，未定义行为不得成�
 
 ### Evidence-Artifact Honesty（证据件诚实记）
 delta 证据件两补：unknown/未达量字段记 null/unknown 非 0（0 会被读成「测了且失败」——agent-axiom 铁律防 Goodhart）；分层稀薄记 coverage 缺口不删层。_Avoid_: 为齐整填 0 或删稀薄层=开 Goodhart 通道。来源：atomcode R84-Q8+R84 D-008。
+
+## Grill Round 85 — Terms (ADR-0086)
+
+### Evidence-Only Round（证据轮）
+轮次形态：只产证据件+判读裁决+registry 状态迁移，不含行为实施——stage-gate Gate 3（Investment Decision）先例：不产工件只出 go/kill/hold；last-responsible-moment 四维判据（可回滚/具名信息增量/延迟成本/显式触发）。_Avoid_: 读数无结论收场（decision laundering——「团队说没决定但数据已在替它决定」）；把实施塞进读数轮。来源：atomcode R85-Q1+R85 D-001。
+
+### Pre-Registered Readout Matrix（预注册判读矩阵）
+判读前全量落盘的裁决表：覆盖闸+对照层独立闸+方向轴阈值+负向硬闸+封闭域列表+早停规则本体+生效条件——SAP 先于 database-lock 时序先例；commit 先于任何读数否则矩阵作废。_Avoid_: 读数后定输赢线（Gelman-Loken 分叉路径自由度，事后合理化窗口）；矩阵与重跑并票（commit 时序不可证）。来源：atomcode R85-Q2/Q3+R85 D-002/D-003。
+
+### Instrumentation Flag（装置旗标）
+对照层健康判据失败的标记：control non-tied≥4/16 或 unknown>8/16→整轮 INCONCLUSIVE 并挂旗标——阴性对照先例（JAMA）：期望 tied 的对照出系统性非 tied=仪器失真（选择/测量/对称噪音三类归因按序判别），非被测对象信号。_Avoid_: 对照层失败静默放行处理层判读；把装置问题记成信号。来源：atomcode R85-Q2+R85 D-002。
+
+### Single-Terminal Read（单次终读）
+判读矩阵生效前提：一轮只读一次数，发生二次读取/peek 矩阵作废——后验阈值被批评的全部前提是 peeking（实测 peek 停阈 null 误报率→80%）；单读恰好移除全部批评前提。_Avoid_: 跑批中途「看一眼」再续跑；peek 后仍按原矩阵裁决。来源：atomcode R85-Q2+R85 D-002。
+
+### Domain Round-Robin（域轮询交错）
+受限配额下处理层调度序：vdomain×stratum 轮转非语料原序——截断时 null 格均布四域（近 MAR）保 per-domain 副列与 2-of-4 否决闸可判性；SRR 公平排队先例+优先级序需已注册先验（预注册轮禁）⇒轮询是唯一中性默认。_Avoid_: 语料原序（某域系统性排后=结构性 MNAR）；未注册先验驱动的优先级序。来源：atomcode R85-Q4+R85 D-004。
+
+### Structural Missing（结构性缺失格）
+截断轮未完成域的格记法：计为 structural missing 并入 unknown 不作有效格——缺失与域相关=MNAR 不可判读，与域无关=MAR 可保留已格进判读（truncation 注记各域完成格数）。_Avoid_: 把排后域的缺失当普通 null 进分母；截断数据不记各域完成格数。来源：atomcode R85-Q4+R85 D-004。
+
+### Hunk-Adjacent Surface（hunk 邻接同面）
+boy-scout 搭车边界操作化：同面=本轮改动 hunk 所在文件内、与改动函数有直接调用/定义邻接关系的 smell；跨文件同目录也不算；搭车修独立 commit（BSR 式可 cherry-pick）。_Avoid_: 按文件/目录放宽（park 级越界）；清理与行为变更混 commit（review 不可裁量不可单独回滚）。来源：atomcode R85-Q4+R85 D-004。
+
+### Named-Trigger Hold（具名触发 hold 态）
+INCONCLUSIVE 的 registry 形态：显式 hold 状态+量化锚触发条件（功效注记 |Δ|≳0.4+n 条件）作下轮入口检查项——AWS ADR 惯例「rejected 也记 reason 防重复讨论」+ozimmer「无选择无 decision record」。_Avoid_: INCONCLUSIVE 静默遗忘（无状态迁移=默认丢失）；裸触发条件无量化锚。来源：atomcode R85-Q3+R85 D-003。
