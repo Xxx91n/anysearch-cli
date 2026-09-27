@@ -4,15 +4,27 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
-## Unreleased — r86 绿门装船轮（进行中）：红门修复 → defer-r85 根因判别 → 全绿臂复跑 → v0.1.0
+## 0.1.0 — 2026-09-27 (r86 green-gate ship)
+
+绿门装船轮：修红门根因 + provider-failure 判别实验 + 判读器语义修正 + 真测量版复跑 + 全包钉版。
+
+### Added
+
+- `ProviderErrorClass` 契约层错误分类（transient / permanent-auth / permanent-protocol / session-expired / unknown）+ `classifyProviderError`；engine `metadata.providerErrorClasses`（id→类别）贯通 `ans search --json` 与 delta 证据行（providerErrorClasses{On,Off,IsoOn,IsoOff}）——失败从此记类别不记裸旗标。
+- `scripts/probe-anysearch-provider.ts` + `scripts/probe-anysearch-mcp-raw.ts`——provider 直调取证探针与 raw MCP 原文探针（长期 fixture；env 值只录存在性类别）。
+- `apps/cli/scripts/stamp-dist.mjs` 构建戳（anysearch/build-stamp@1：commit+dirty）+ eval runner 的 dist 新鲜度断言（stale→FAIL，缺 dist→SKIP 保 CI 无构建腿）。
 
 ### Fixed
 
-- ship-gate freshness leg 双平台红修复（ADR-0081 D-004 / R86 T1）：`r85-t2-degraded-archived` claim 的 kind:path 断言原指向 gitignore 机器本地证据通道 `.scratch/vertical-eval/`（CI 双平台 path-miss）；改指入库指纹清单 `.scratch/grill-round-85/evidence-manifest.json`——每件机器本地证据记 path+sha256+size+来源 commit+判读器配置 hash+环境指纹，断言对象=清单在库自洽，非原件在场。
+- **ship-gate 红门**：R85 closeout claim 的 kind:path 指向 gitignore 机器本地证据件（CI 双平台必红）——改指入库指纹清单 `.scratch/grill-round-85/evidence-manifest.json`（path+sha256+size+来源commit+判读器hash+环境指纹）。
+- **判读器记分簿失真（matrix@2）**：provider-failed iso 腿不再被读成「测得零增益」——格判 unmeasured/unknown；subject 层 instrumentDown>30% 触发 instrument-flag（新闸 G1b）；runner 捕获层失败腿不再落成空列表。
+- **defer-r84-anysearch-empty-endpoint-env**：ANYSEARCH_ENDPOINT/ANYSEARCH_API_KEY 空串按 POSIX 空≈未设回落（\s*||undefined\s*），不再落空端点/裸 Bearer 头。
+- **quota/auth nudge 归因**：上游匿名配额边界的 auto-provisioning 回复具名识别，归 permanent-auth（不再落 malformed/permanent-protocol 桶）。
 
 ### Changed
 
-- `docs/agents/audit-checklist.md` 审计签字 checklist 增硬项：签字 commit 上 `node scripts/ship-gate.mjs --quick` exit 0（防「gate 跑了但没人等它」失守模式复发）。
+- R85 NO-GO 判词语义勘误为 indeterminate—instrument down（程序性裁决锁定不溯改）；matrix@2 先登记后读数，T5 原指纹复跑实测 **NO-GO/direction-negative**（P=0.0378、净胜率 −0.125）——垂域臂 armHostHit 轴实测负效应。
+- docs/deferred-registry.json：r85-arm / r84-env 核销；新增 defer-r86-anysearch-corpus-param-contract 与 defer-r86-anysearch-anon-quota-nudge。
 
 ## Unreleased — ADR-0086 r85: delta 腿全量重跑 + prefer-capable 预注册判读（NO-GO 终局）
 

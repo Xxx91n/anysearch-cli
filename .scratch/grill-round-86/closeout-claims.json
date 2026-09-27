@@ -1,0 +1,205 @@
+{
+    "schema": "anysearch/closeout-claims@1",
+    "round": 86,
+    "claims": [
+        {
+            "id": "r86-t0-watch-archive",
+            "kind": "path",
+            "claim": "T0 哨戒实录归档在案",
+            "paths": [
+                ".scratch/grill-round-86/reports/t0-watch-2026-09-27.md"
+            ]
+        },
+        {
+            "id": "r86-t1-evidence-manifest",
+            "kind": "path",
+            "claim": "T1 红门修复：r85 机器本地证据件经指纹清单入库断言（path+sha256+size+来源commit+判读器hash+环境指纹）",
+            "paths": [
+                ".scratch/grill-round-85/evidence-manifest.json",
+                ".scratch/grill-round-85/closeout-claims.json",
+                "docs/agents/audit-checklist.md"
+            ]
+        },
+        {
+            "id": "r86-t2-error-class-channel",
+            "kind": "symbol",
+            "claim": "ProviderErrorClass 分类层贯通：contract 分类器→engine metadata.providerErrorClasses→cli --json→runner 四列",
+            "file": "packages/retriever/src/contract.ts",
+            "tokens": [
+                "ProviderErrorClass",
+                "classifyProviderError",
+                "providerErrorClasses",
+                "permanent-auth",
+                "session-expired"
+            ]
+        },
+        {
+            "id": "r86-t2-engine-classes",
+            "kind": "symbol",
+            "claim": "engine metadata 载 providerErrorClasses（类别非原文）",
+            "file": "packages/kernel/src/engine.ts",
+            "tokens": [
+                "providerErrorClasses",
+                "classifyProviderError"
+            ]
+        },
+        {
+            "id": "r86-t2-cli-json-classes",
+            "kind": "symbol",
+            "claim": "cli --json 输出 providerErrorClasses 字段",
+            "file": "apps/cli/src/commands/search.ts",
+            "tokens": [
+                "providerErrorClasses"
+            ]
+        },
+        {
+            "id": "r86-t2-probe-fixtures",
+            "kind": "path",
+            "claim": "P0 provider 直调探针 + P2 raw MCP 探针长期 fixture 在场",
+            "paths": [
+                "scripts/probe-anysearch-provider.ts",
+                "scripts/probe-anysearch-mcp-raw.ts",
+                ".scratch/grill-round-86/reports/probe-matrix.md"
+            ]
+        },
+        {
+            "id": "r86-t2-dist-freshness",
+            "kind": "symbol",
+            "claim": "P3 dist 新鲜度断言：构建戳 vs HEAD+src mtime，stale→FAIL 非静默",
+            "file": "packages/store/test/online/eval-looks-vertical.online.ts",
+            "tokens": [
+                ".build-stamp.json",
+                "stale dist",
+                "run pnpm -C apps/cli build"
+            ]
+        },
+        {
+            "id": "r86-t2-stamp-script",
+            "kind": "path",
+            "claim": "构建戳脚本接入 apps/cli build",
+            "paths": [
+                "apps/cli/scripts/stamp-dist.mjs",
+                "apps/cli/package.json"
+            ]
+        },
+        {
+            "id": "r86-t2-classifier-tests",
+            "kind": "path",
+            "claim": "分类器表驱动单测+引擎传播用例在场",
+            "paths": [
+                "packages/retriever/test/provider-error-class.test.ts",
+                "packages/kernel/test/engine.test.ts"
+            ]
+        },
+        {
+            "id": "r86-t3-quota-nudge",
+            "kind": "symbol",
+            "claim": "上游匿名配额边界 provisioning 回复具名识别为 quota/auth nudge（归 permanent-auth）",
+            "file": "packages/retriever/src/providers/anysearch.ts",
+            "tokens": [
+                "quota/auth nudge",
+                "provisioning reply"
+            ]
+        },
+        {
+            "id": "r86-t3-env-posix-empty",
+            "kind": "symbol",
+            "claim": "defer-r84 空串 POSIX 语义修复：endpoint/key 空串回落 unset",
+            "file": "packages/retriever/src/providers/anysearch.ts",
+            "tokens": [
+                "process.env.ANYSEARCH_ENDPOINT || undefined",
+                "process.env.ANYSEARCH_API_KEY || undefined"
+            ]
+        },
+        {
+            "id": "r86-t4-matrix2",
+            "kind": "symbol",
+            "claim": "判读器升 matrix@2 执行体：G1b 装置闸+provider-failure 格 unmeasured",
+            "file": ".scratch/grill-round-85/readout-delta.mjs",
+            "tokens": [
+                "G1b-instrument-providers",
+                "SUBJECT_INSTRUMENT_MAX_SHARE",
+                "instrumentDown",
+                "prereg-matrix@2"
+            ]
+        },
+        {
+            "id": "r86-t4-matrix-registered",
+            "kind": "symbol",
+            "claim": "matrix@2 修订先于 T5 终读登记（§10）",
+            "file": ".scratch/grill-round-85/prereg-matrix.md",
+            "tokens": [
+                "matrix@2",
+                "G1b",
+                "instrumentDown"
+            ]
+        },
+        {
+            "id": "r86-t4-scoreboard-errata",
+            "kind": "symbol",
+            "claim": "decision-record/ADR-0086 勘误：判词语义 indeterminate—instrument down，程序裁决不溯改",
+            "file": ".scratch/grill-round-85/decision-record.md",
+            "tokens": [
+                "勘误",
+                "indeterminate",
+                "instrument down"
+            ]
+        },
+        {
+            "id": "r86-t5-readout-output",
+            "kind": "symbol",
+            "claim": "T5 单次终读留档：NO-GO/direction-negative（matrix@2、paired 40/41）",
+            "file": ".scratch/grill-round-86/readout-output.json",
+            "tokens": [
+                "\"verdict\": \"NO-GO\"",
+                "direction-negative",
+                "G1b-instrument-providers"
+            ]
+        },
+        {
+            "id": "r86-t5-decision-record",
+            "kind": "path",
+            "claim": "R86 决策记录落档（四字段+闸序轨迹+判据如实记账）",
+            "paths": [
+                ".scratch/grill-round-86/decision-record.md"
+            ]
+        },
+        {
+            "id": "r86-t6-registry-quad",
+            "kind": "symbol",
+            "claim": "registry 收口：r85-arm+r84-env 核销、新增 corpus-param-contract+anon-quota-nudge",
+            "file": "docs/deferred-registry.json",
+            "tokens": [
+                "defer-r86-anysearch-corpus-param-contract",
+                "defer-r86-anysearch-anon-quota-nudge"
+            ]
+        },
+        {
+            "id": "r86-t6-adr0087",
+            "kind": "path",
+            "claim": "ADR-0087 立并入册 index",
+            "paths": [
+                "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
+                "docs/adr/index.md"
+            ]
+        },
+        {
+            "id": "r86-t6-version-pin",
+            "kind": "symbol",
+            "claim": "v0.1.0 全包钉版（9 package.json+plugin.json+ship-gate pin 同步）",
+            "file": "scripts/ship-gate.mjs",
+            "tokens": [
+                "pkg.version !== \"0.1.0\"",
+                "pinned at 0.1.0"
+            ]
+        },
+        {
+            "id": "r86-t6-report",
+            "kind": "path",
+            "claim": "R86 报告落档",
+            "paths": [
+                ".scratch/grill-round-86/reports/2026-09-27-report.md"
+            ]
+        }
+    ]
+}

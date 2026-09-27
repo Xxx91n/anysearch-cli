@@ -91,4 +91,5 @@ The complete numbered record lives in `docs/adr/` — ADR-0001 through ADR-0086.
 | [0084](0084-architecture-grill-round-83-vertical-domain-passthrough.md) | Grill Round 83 — 垂域贯通轮（AnySearch vertical-domain passthrough + TE1 dsh 事件迁移兑现） |
 | [0085](0085-architecture-grill-round-84-vertical-eval-leg.md) | Grill Round 84 — 垂域评测证据腿（vertical-eval leg：契约断言 + 金标语料 + 双臂配对 delta） |
 | [0086](0086-architecture-grill-round-85-delta-rerun-prereg-readout-nogo.md) | Grill Round 85 — delta 腿全量重跑 + prefer-capable 预注册判读（NO-GO 终局） |
+| [0087](0087-architecture-grill-round-86-green-gate-ship.md) | Grill Round 86 — 绿门装船轮（红门修复 + provider-failure 判别实验 + matrix@2 真测量版 NO-GO + v0.1.0 钉版） |
 <!-- END ADR-INDEX -->

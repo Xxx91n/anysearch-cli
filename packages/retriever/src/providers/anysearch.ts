@@ -263,7 +263,7 @@ export class AnySearchProvider implements SearchProvider {
       const res = await this.rpc("initialize", {
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: "anysearch-cli", version: "0.0.8" },
+        clientInfo: { name: "anysearch-cli", version: "0.1.0" },
       }, signal);
       const negotiated = res["protocolVersion"];
       if (typeof negotiated === "string" && negotiated) this.protocolVersion = negotiated;

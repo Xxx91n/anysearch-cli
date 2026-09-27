@@ -351,7 +351,7 @@ async function main() {
   }
 
   // 14. R83 nit: clientInfo.version drift-guard — the initialize literal
-  //     must track packages/retriever/package.json version (hard-pinned 0.0.8).
+  //     must track packages/retriever/package.json version (hard-pinned to package.json version).
   {
     const { readFileSync } = await import("node:fs");
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
