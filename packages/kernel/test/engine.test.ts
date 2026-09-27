@@ -308,6 +308,19 @@ function slowProvider(id: string, delayMs: number, urls: string[], aborted: {v:b
   assert(r3.metadata.providersCancelled.length === 0, "under-limit: all providers awaited");
 }
 
+  // 12. R86 T2 / D-003: rejected providers carry an error CLASS parallel to
+  // providersFailed — enum-only additive field, absent when nothing failed.
+  const engine12 = new RetroaererdEngine([
+    mockProvider("okx", ["https://okx.com/a"]),
+    { id: "boom-transient", modes: ["fast"], async search(): Promise<ProviderEnvelope> { throw new Error("AnySearch MCP tools/call HTTP 503 Service Unavailable"); } },
+    { id: "boom-auth", modes: ["fast"], async search(): Promise<ProviderEnvelope> { throw new Error("AnySearch MCP initialize HTTP 401 Unauthorized"); } },
+  ]);
+  const r12 = await engine12.search({ query: "t", mode: "fast" });
+  assert(r12.metadata.providersFailed.length === 2, "12: two providers failed");
+  assert(r12.metadata.providerErrorClasses?.["boom-transient"] === "transient", "12: HTTP 503 classified transient");
+  assert(r12.metadata.providerErrorClasses?.["boom-auth"] === "permanent-auth", "12: HTTP 401 classified permanent-auth");
+  assert(result1.metadata.providerErrorClasses === undefined, "12: field absent when nothing failed");
+
 console.log("--- RetroaererdEngine tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);
 }

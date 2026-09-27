@@ -119,6 +119,8 @@ export async function runSearch(args: string[]): Promise<number> {
         // ADR-0063 (R62 T2): providersFailed exposed so the install-smoke offline
         // leg anchors a structured field instead of exit codes/regexes.
         providersFailed: envelope.metadata?.providersFailed ?? [],
+        // R86 T2 / D-003: error-class channel next to the flag (additive).
+        providerErrorClasses: envelope.metadata?.providerErrorClasses ?? {},
         answers: envelope.answers,
         sufficiency: envelope.metadata?.sufficiency ?? null,
         attribution: envelope.attribution ?? null,

@@ -14,8 +14,8 @@
 // ANS_VERTICAL_DELTA_LIMIT=N caps the corpus slice for smoke runs.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn, execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,6 +62,7 @@ interface JsonOut {
   results?: Array<{ url: string; extra?: { vertical?: { domain?: string } } }>;
   fusion?: { labels: string[]; lists: string[][] } | null;
   providersFailed?: string[];
+  providerErrorClasses?: Record<string, string>;
   abstain?: unknown;
 }
 function searchJson(question: string, env: NodeJS.ProcessEnv, vertical: any | undefined): Promise<JsonOut> {
@@ -154,6 +155,37 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
     return;
   }
 
+  // R86 T2 P3 / D-003: dist freshness assert — FAIL semantics, never a silent
+  // run against a stale binary (stale dist was candidate root cause #3 in the
+  // r85 wipeout triage). A MISSING dist still skips (CI test-online has no
+  // build step); a PRESENT-but-stale dist fails with a rebuild hint. A dist
+  // without .build-stamp.json predates the stamp mechanism = stale.
+  const distMtime = statSync(dist).mtimeMs;
+  const headCommit = (() => { try { return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(); } catch { return null; } })();
+  const stampPath = join(root, "apps", "cli", ".build-stamp.json");
+  const stamp = existsSync(stampPath) ? (JSON.parse(readFileSync(stampPath, "utf8")) as { commit?: string }) : null;
+  if (headCommit !== null) {
+    assert(stamp?.commit === headCommit, "stale dist: .build-stamp.json commit=" + (stamp?.commit ?? "absent") + " vs HEAD=" + headCommit.slice(0, 12) + " — run pnpm -C apps/cli build");
+  } else {
+    console.log("WARN: git unavailable — HEAD freshness skipped; mtime guard still applies");
+  }
+  const srcRoots = ["apps/cli/src", "packages/kernel/src", "packages/retriever/src", "packages/store/src", "packages/embedding/src"];
+  let newestSrc = 0, newestSrcFile = "";
+  for (const rel of srcRoots) {
+    const dir = join(root, rel);
+    if (!existsSync(dir)) continue;
+    const stack = [dir];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      for (const ent of readdirSync(cur, { withFileTypes: true })) {
+        const p = join(cur, ent.name);
+        if (ent.isDirectory()) stack.push(p);
+        else if (/\.(ts|mts|cts|tsx)$/.test(ent.name)) { const m = statSync(p).mtimeMs; if (m > newestSrc) { newestSrc = m; newestSrcFile = p; } }
+      }
+    }
+  }
+  assert(newestSrc <= distMtime, "dist older than source file " + newestSrcFile + " — run pnpm -C apps/cli build");
+
   const baseEnv = { ...process.env, ANS_DOMAIN: "default", ANS_ARM_SNAPSHOT: "1" };
   const rows: any[] = [];
   let controlDegraded = 0;
@@ -217,6 +249,12 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
       // failures on the primary measurement leg must be named.
       providersFailedIsoOn: isoOn?.providersFailed ?? null,
       providersFailedIsoOff: isoOff.providersFailed ?? null,
+      // R86 T2 / D-003: error classes ride next to every failed-providers
+      // flag — delta evidence records a category, never only a flag.
+      providerErrorClassesOn: on?.providerErrorClasses ?? null,
+      providerErrorClassesOff: off.providerErrorClasses ?? null,
+      providerErrorClassesIsoOn: isoOn?.providerErrorClasses ?? null,
+      providerErrorClassesIsoOff: isoOff.providerErrorClasses ?? null,
       // First-3 URL samples per arm — audit-trail anchor so reviewers can
       // re-check hosts/paths against hitPools without rerunning the leg.
       armOnSample: (aOn ?? []).slice(0, 3),

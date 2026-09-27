@@ -121,3 +121,6 @@ apps/cli/domains/
 !.scratch/grill-round-85/**
 !.scratch/grill-round-86/
 !.scratch/grill-round-86/**
+
+# R86 T2: build provenance stamp (generated artifact)
+apps/cli/.build-stamp.json

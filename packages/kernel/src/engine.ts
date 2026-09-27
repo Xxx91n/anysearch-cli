@@ -4,8 +4,8 @@
 // 1.5s grace window, abort_all + drain, providers_cancelled distinct state, RRF(k=60) fusion.
 // JS adaptation: Promise.allSettled + AbortController + unique-URL counter early stop.
 
-import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope } from "@anysearch-cli/retriever";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical } from "@anysearch-cli/retriever";
+import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope, ProviderErrorClass } from "@anysearch-cli/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError } from "@anysearch-cli/retriever";
 import { randomUUID } from "node:crypto";
 import type { Budget, Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort } from "./ports";
@@ -423,6 +423,7 @@ export class RetroaererdEngine {
     const allResults = new Map<string, NormalizedResult>(); // keyed by normalized URL
     const providersQueried: string[] = [];
     const providersFailed: string[] = [];
+    const providerErrorClasses: Record<string, ProviderErrorClass> = {};
     const providersCancelled: string[] = [];
     const answers: string[] = [];
     // ADR-0022 D3: per-provider attribution in metadata, not in answers[].
@@ -495,6 +496,10 @@ export class RetroaererdEngine {
           }
         } else if (inner.status === "rejected") {
           providersFailed.push(providerIds[i]);
+          // R86 T2 / D-003: keep the captured error's CLASS beside the flag —
+          // the "flag without error text" generic-wrapping defect ends here
+          // (enum only; forensic name+message stays with the probe channel).
+          providerErrorClasses[providerIds[i]] = classifyProviderError(inner.error);
         }
       }
     }
@@ -564,6 +569,7 @@ export class RetroaererdEngine {
         providersQueried,
         providersFailed,
         providersCancelled,
+        ...(providersFailed.length > 0 ? { providerErrorClasses } : {}),
         elapsedMs: Date.now() - start,
         // ADR-0014 D3: MVSS four-segment sufficiency signal.
         sufficiency: suff.mvs,
