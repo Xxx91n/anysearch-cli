@@ -1,0 +1,172 @@
+{
+  "matrix": "grill-round-85/prereg-matrix@1",
+  "schema": "anysearch/vertical-delta@1",
+  "fingerprint": "7ac0a48e55cd7954",
+  "verdict": "NO-GO",
+  "exit": "direction-negative",
+  "gates": [
+    {
+      "gate": "G0-input-integrity",
+      "pass": true,
+      "schema": "anysearch/vertical-delta@1",
+      "fingerprint": "7ac0a48e55cd7954",
+      "expected": "7ac0a48e55cd7954"
+    },
+    {
+      "gate": "G1-instrument-flag",
+      "pass": true,
+      "artifactFlag": false,
+      "unmeasured": 0,
+      "nonTied": 0,
+      "n": 16,
+      "unmeasuredIds": [],
+      "nonTiedIds": []
+    },
+    {
+      "gate": "G2-coverage",
+      "pass": true,
+      "n": 41,
+      "nPaired": 41,
+      "unknown": 0,
+      "needPaired": 29,
+      "maxUnknown": 12
+    },
+    {
+      "gate": "G3-negative-2of4",
+      "pass": true,
+      "reversals": [],
+      "detail": {
+        "academic": {
+          "better": 0,
+          "worse": 0,
+          "tied": 10,
+          "unknown": 0
+        },
+        "code": {
+          "better": 0,
+          "worse": 0,
+          "tied": 10,
+          "unknown": 0
+        },
+        "finance": {
+          "better": 0,
+          "worse": 0,
+          "tied": 11,
+          "unknown": 0
+        },
+        "health": {
+          "better": 0,
+          "worse": 0,
+          "tied": 10,
+          "unknown": 0
+        }
+      }
+    },
+    {
+      "gate": "G4-direction",
+      "pass": true,
+      "better": 0,
+      "worse": 0,
+      "P": 0.5,
+      "pooledOn": 0,
+      "pooledOff": 0,
+      "pooledDelta": 0
+    }
+  ],
+  "fields": {
+    "netWinRate": 0,
+    "P_better_gt_worse": 0.5,
+    "expectedLoss": 0.1666666679084301,
+    "rankDiffMedian": null
+  },
+  "control": {
+    "n": 16,
+    "measured": 16,
+    "unmeasured": 0,
+    "nonTied": 0
+  },
+  "coverage": {
+    "n": 41,
+    "nPaired": 41,
+    "unknown": 0
+  },
+  "perDomain": {
+    "finance": {
+      "better": 0,
+      "worse": 0,
+      "tied": 11,
+      "unknown": 0,
+      "nPaired": 11,
+      "expected": 11
+    },
+    "academic": {
+      "better": 0,
+      "worse": 0,
+      "tied": 10,
+      "unknown": 0,
+      "nPaired": 10,
+      "expected": 10
+    },
+    "code": {
+      "better": 0,
+      "worse": 0,
+      "tied": 10,
+      "unknown": 0,
+      "nPaired": 10,
+      "expected": 10
+    },
+    "health": {
+      "better": 0,
+      "worse": 0,
+      "tied": 10,
+      "unknown": 0,
+      "nPaired": 10,
+      "expected": 10
+    }
+  },
+  "perStratum": {
+    "parameterized": {
+      "better": 0,
+      "worse": 0,
+      "tied": 21,
+      "unknown": 0,
+      "nPaired": 21,
+      "expected": 21
+    },
+    "semantic": {
+      "better": 0,
+      "worse": 0,
+      "tied": 20,
+      "unknown": 0,
+      "nPaired": 20,
+      "expected": 20
+    }
+  },
+  "truncation": {
+    "academic": {
+      "paired": 10,
+      "expected": 10,
+      "missing": 0
+    },
+    "code": {
+      "paired": 10,
+      "expected": 10,
+      "missing": 0
+    },
+    "finance": {
+      "paired": 11,
+      "expected": 11,
+      "missing": 0
+    },
+    "health": {
+      "paired": 10,
+      "expected": 10,
+      "missing": 0
+    }
+  },
+  "mnarSuspect": [],
+  "artifact": "D:\\Aworker\\anysearch-cli\\.scratch\\vertical-eval\\delta.json",
+  "nRowsArtifact": 57,
+  "controlDegraded": 0,
+  "earlyStopped": false
+}
