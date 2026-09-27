@@ -38,5 +38,21 @@ R85 全灭 = **env 层双重缺陷**（ANYSEARCH_ENDPOINT 指 loopback 死路由
 
 - ci: https://github.com/Xxx91n/anysearch-cli/actions/runs/36321125532（T5 后终态推送 sha 26712823，dispatch）
 - ship-gate: https://github.com/Xxx91n/anysearch-cli/actions/runs/36321221663（终态 sha 16f22aff：ubuntu-latest✓ + windows-latest✓ 双腿绿；首轮 36321121603 因本文件缺位主动取消不重报）
+- 终审推送后复核 run：ci https://github.com/Xxx91n/anysearch-cli/actions/runs/36323694503 / ship-gate https://github.com/Xxx91n/anysearch-cli/actions/runs/36323691083（sha c7c1d62d：ubuntu-latest✓ + windows-latest✓ 双腿绿）
 - 早期 T1 态绿证：ci 36316042170 / ship-gate 36316038577（sha ff273624）
 - 本机全量：node scripts/ship-gate.mjs --quick EXIT=0（win32）
+
+## 下一轮候选
+
+1. **F-3 判据裁量待办**：iso providersFailed=∅ 字面判据未达 vs 语义判据（装置性失败=∅）——改判据表述 / 语料解冻后复测 / 维持记账，三选一呈用户裁定
+2. **F-6 refactor 候场**（独立 refactor commit，遵 ADR-0029）：probe-anysearch-mcp-raw.ts `??`→`|| undefined` 一致化+sanitize 对称遮 endpoint；探针版本字面量漂移护栏
+3. **发布授权**：v0.1.0 tag push / npm publish——外部生产动作待授权（release.yml：tag v* 或 workflow_dispatch pre-tag）
+4. **defer 跟进**：defer-r86-anysearch-corpus-param-contract（语料解冻期修 cn_code）；defer-r86-anysearch-anon-quota-nudge（用户侧 env 修正回执核销）
+
+## Suggested skills
+
+- $implement——下一轮候选执行
+- grilling——F-3 判据裁量与过程违规裁量
+- domain-modeling——指纹登记/判读器术语一致性
+- neat-freak——F-6 refactor 候场清障（独立 commit）
+- $handoff——下轮收口

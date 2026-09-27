@@ -11,6 +11,16 @@
         "preregMatrixBytes": 7745,
         "inputFingerprintAsserted": "7ac0a48e55cd7954"
     },
+    "judgeConfigCurrent": {
+        "registeredBy": ".scratch/grill-round-86/reports/rerun-2026-09-27.md",
+        "script": ".scratch/grill-round-85/readout-delta.mjs",
+        "scriptSha256": "e86f903e1650c29c2de75f226139d957c5727013b16c18cb7849e15eb8f7eb47",
+        "scriptBytes": 22245,
+        "preregMatrix": ".scratch/grill-round-85/prereg-matrix.md",
+        "preregMatrixSha256": "51a7dea8dc4546aa0781ab7171b655a63bc2e3148f63abe88c0690364d5973f6",
+        "preregMatrixBytes": 8750,
+        "note": "matrix@2 执行体（R86 T4 修订）当前指纹；judgeConfig 保留 R85 时点 matrix@1 锚，两组并存属预期"
+    },
     "captureEnvironment": {
         "os": "win32",
         "arch": "x64",
@@ -45,12 +55,12 @@
             "producerNote": "原件内部 generatedAt=2026-09-27T04:53:21Z（decision-record 记）；producerCommit=该时点 HEAD（git log --before 实证）",
             "disposition": "overwritten-by-r86-smoke",
             "disclosure": "原件字节于 2026-09-27 被 R86 T2 冒烟（未设 ANS_VERTICAL_DELTA_OUT）覆盖；originalSha256 为覆盖前实测留存锚，字节同一性不再主张。T5 复跑产出新原件另登记。",
-            "currentSha256": "d78c717828d2b8a42104a078acaae4ef9184276054074c478e25d79cc7aa0b0d",
-            "currentBytes": 2870,
-            "currentNote": "当前字节=R86 LIMIT=1 冒烟件（非 R85 原件）"
+            "currentSha256": "4dcff270325ddc65b62fe8e129bdbf42b00e6833c34c920b2f89f6e9ef243462",
+            "currentBytes": 89107,
+            "currentNote": "当前字节=R86 T5 全量复跑原件（attempt-2，paired 40/41）；指纹登记见 .scratch/grill-round-86/reports/rerun-2026-09-27.md"
         }
     ],
     "notes": [
-        "judgeConfig 记 R85 时点判读器指纹（matrix@1 执行体）；R86 T4 修订为 matrix@2 执行体，新版 hash 由 T5 复跑档登记。"
+        "judgeConfig 记 R85 时点判读器指纹（matrix@1 执行体）；R86 T4 修订为 matrix@2 执行体，新版 hash 已登记于 judgeConfigCurrent 与 .scratch/grill-round-86/reports/rerun-2026-09-27.md。"
     ]
 }
