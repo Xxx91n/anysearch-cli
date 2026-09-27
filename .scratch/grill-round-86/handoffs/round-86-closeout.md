@@ -37,6 +37,6 @@ R85 全灭 = **env 层双重缺陷**（ANYSEARCH_ENDPOINT 指 loopback 死路由
 ## 绿色 run URL
 
 - ci: https://github.com/Xxx91n/anysearch-cli/actions/runs/36321125532（T5 后终态推送 sha 26712823，dispatch）
-- ship-gate: https://github.com/Xxx91n/anysearch-cli/actions/runs/<pending-final>（closeout 落库后重 dispatch——首轮 36321121603 因本文件缺位主动取消）
+- ship-gate: https://github.com/Xxx91n/anysearch-cli/actions/runs/36321221663（终态 sha 16f22aff：ubuntu-latest✓ + windows-latest✓ 双腿绿；首轮 36321121603 因本文件缺位主动取消不重报）
 - 早期 T1 态绿证：ci 36316042170 / ship-gate 36316038577（sha ff273624）
 - 本机全量：node scripts/ship-gate.mjs --quick EXIT=0（win32）
