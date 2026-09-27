@@ -37,10 +37,15 @@ Stack (primary key = GitButler change-ids; branch `r85-grill`, base `7c94622f`):
 
 ## 一致但不可独立证明（如实呈报）
 - 「单次终读/无 peek」：时间链一致、无重读痕迹，属制度性声明。
-- decision-record `verified-by` 仍 `pending human audit sign-off`——人签认位，非 agent 代签。
+- decision-record `verified-by` 已签：**Xxx91n**（2026-09-27，审计 PASS 后用户明示授权代签）。
 
 ## 过程违规检查
-零发现：commit 先于读数/无 p 值/INCONCLUSIVE 路径未启用（NO-GO 终局立 ADR 合规）/工件分级正确（决策件入库、delta.json+降格件 gitignore 本地通道）/ANYSEARCH_ENDPOINT 未录未代改/#1764 未代发/加权未碰/清障离面未碰/boy-scout 零搭车。
+零发现：commit 先于读数/无 p 值/INCONCLUSIVE 路径未启用（NO-GO 终局立 ADR 合规）/工件分级正确（决策件入库、delta.json+降格件 gitignore 本地通道）/ANYSEARCH_ENDPOINT 未录未代改/加权未碰/清障离面未碰/boy-scout 零搭车。
+
+## 审计后授权动作（用户「你就是 xxx91n」授权，2026-09-27）
+- `#1764` 评论已外发（多年挂账核销）：https://github.com/huggingface/transformers.js/pull/1764#issuecomment-5853454028 —— 内容=r75 预存草稿 `pr-1764-comment.md` 原文（4.3.0 pnpm 隔离复现+下游造轮子清单+merge 优先级 ask）。
+- 配套指路短评 `issue-1087-comment.md` 已发于 CLOSED issue #1087（向后续检索者指向 #1764）：https://github.com/huggingface/transformers.js/issues/1087#issuecomment-5853454997 —— 两稿债务清零。
+- `verified-by` 签认落档（见上节）。
 
 ## 下一个 grill 方向指示
 

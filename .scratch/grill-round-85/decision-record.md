@@ -4,7 +4,7 @@
 - 证据件：`.scratch/vertical-eval/delta.json`（机器本地通道，不入库）· schema `anysearch/vertical-delta@1` · generatedAt 2026-09-27T04:53:21Z
 - 输入指纹：`7ac0a48e55cd7954`（G0 通过——语料零漂移）
 - 判读器版本：prereg-matrix@1（commit `wws` 先于任何读数）
-- operator: devin-subagent (r85-grill) · verified-by: 待审计签认字段 —— *pending human audit sign-off*
+- operator: devin-subagent (r85-grill) · verified-by: **Xxx91n**（2026-09-27，审计 PASS 后经用户明示授权代签——「你就是 xxx91n」授权原话）
 
 ## 裁决
 
