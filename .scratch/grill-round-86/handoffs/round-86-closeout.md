@@ -41,6 +41,8 @@ R85 全灭 = **env 层双重缺陷**（ANYSEARCH_ENDPOINT 指 loopback 死路由
 - 终审推送后复核 run：ci https://github.com/Xxx91n/anysearch-cli/actions/runs/36323694503 / ship-gate https://github.com/Xxx91n/anysearch-cli/actions/runs/36323691083（sha c7c1d62d：ubuntu-latest✓ + windows-latest✓ 双腿绿）
 - 早期 T1 态绿证：ci 36316042170 / ship-gate 36316038577（sha ff273624）
 - 本机全量：node scripts/ship-gate.mjs --quick EXIT=0（win32）
+- 落栈终态复核 run（R87 T0 补记，sha cfb0fff7 = 落栈后 main tip 本人）：ci https://github.com/Xxx91n/anysearch-cli/actions/runs/36331503157 / native-smoke https://github.com/Xxx91n/anysearch-cli/actions/runs/36331503087（双腿绿；ship-gate 同 sha run 36331503150 红，红因见勘误行）
+- 勘误（R87 T0 补记）：上列早期 run 的 headSha（26712823/16f22aff/c7c1d62d/ff273624）经 GitButler 落栈历史改写已成孤儿——非 cfb0fff7 祖先，ship-gate handoff-lint liveness 腿据此在 tip 翻红；本段补记落栈终态 run 使引用重新可解析。教训：closeout 绿证应引用落栈后 main SHA 上的 run，栈期 SHA 随时点失效。
 
 ## 下一轮候选
 
