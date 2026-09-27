@@ -65,3 +65,11 @@ truncation 注记：无——四域完成格率 100%，MNAR 疑面空集，对�
 2. 2-of-4 否决为误否决率控制插值（无直接文献先例）
 3. per-domain 副列+2-of-4 为仓内首创
 4. 对照层闸操作化以「腿级 JSON 可达性」定义 measured——provider 级数据失败（空列+providersFailed 具名）为未注册第三形态，本轮实证暴露；登记为判读矩阵下一修订候选，不作本轮追溯改判依据
+
+## 审计勘误补录（r85 audit findings 响应——post-verdict report-level 提取，未回流改判）
+
+- **副列注册项补齐**（prereg §2，审计 finding ①②）：per-domain `armHostHit on·off` 四域全 0（finance on=0/11 off=0/11；academic/code/health 各 on=0/10 off=0/10，率 0.000）；per-stratum 同（parameterized 0/21、semantic 0/20）。`armInFanout` 存活率：处理层 on=0/41、off=0/41；含对照层 on=0/53、off=0/57（4 无 spec 对照格 `armInFanoutOn=null` 为结构性缺席非失败）；`controlDegraded`=0。数值由独立于判读器的提取脚本在裁决后计算，同纹理披露纪律。wws 版判读器未产此二字段属注册缺漏——判读器已按注册项补齐副列输出（审计修订，仅供下轮复用；本轮权威读件仍为 `readout-output.json`）。
+- **功效注记补录**（D-002(6) 要求「写入记录」，审计 finding ③）：本轮 n=41 下只可分辨 |ΔarmHostHit|≳0.4——小于此的效应即使存在亦不可判；INCONCLUSIVE 不丢人、伪 GO 丢人。
+- **CI 区间勘误**（审计 finding ⑤）：D-001(3)「效应量+CI 区间」与 D-002(4) 四字段（净胜率/P/EL/rankDiff 中位，无 CI）为账本内部歧义——判读权威归 T1 先于读数落盘的矩阵（D-002），本轮实现从后者；且全 tied（b=w=0）下区间估计本就退化。登记为账本措辞勘误项；若下轮要区间，须先修订矩阵注册字段再进判读器。
+- **纹理精度勘误**（审计 finding）：上文「providersFailed=["anysearch"] 全格命中」精确形——`providersFailedIsoOff=["anysearch"]` 57/57 格；`providersFailedIsoOn=["anysearch"]` 53/53 排定格（4 无 spec 对照格 iso-on 腿结构性不排定，值为 null）；`armInFanoutOn/Off=false` 同为排定格口径 53/53。臂级零数据实质结论不变（57/57 格 armOn.n=armOff.n=0）。
+- **G1 诊断序说明**（审计 finding ⑥）：旗标本轮未触发（unmeasuredIds/nonTiedIds 均空列表即为「unknown 缺失模式」步的记录形）；「方向一致性→对称噪音」归因序为旗标触发后的判别序，非缺陷。

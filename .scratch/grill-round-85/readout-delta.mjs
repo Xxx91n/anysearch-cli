@@ -10,12 +10,15 @@
 //   node readout-delta.mjs readout [delta.json] single terminal read (ONCE)
 //
 // Deterministic: no RNG, no Date, fixed-grid quadrature. Same input -> same output.
+//
+// Post-round audit revision (additive — gates G0..G4 unchanged): report-level
+// side columns armHostHit/armInFanoutSurvival per prereg §2; artifact path
+// emitted repo-relative. The locked r85 read stays readout-output.json (wws).
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join, dirname } from "node:path";
+import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tmpdir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -130,12 +133,13 @@ export function adjudicate(artifact, corpus) {
   // cells over the corpus expectation set — artifact-missing = structural missing
   const subjectCell = (m) => {
     const r = rowsById.get(m.id);
-    if (!r) return { id: m.id, m, verdict: "unknown", paired: false, missing: true, rankDiff: null, hOn: null, hOff: null };
+    if (!r) return { id: m.id, m, verdict: "unknown", paired: false, missing: true, rankDiff: null, hOn: null, hOff: null, fanOn: null, fanOff: null };
     const paired = r.armOn !== null && r.armOff !== null;
     return {
       id: m.id, m, verdict: r.delta?.verdict ?? "unknown", paired, missing: false,
       rankDiff: r.delta?.rankDiff ?? null,
-      hOn: paired ? r.armOn?.hostHit ?? null : null, hOff: paired ? r.armOff?.hostHit ?? null : null
+      hOn: paired ? r.armOn?.hostHit ?? null : null, hOff: paired ? r.armOff?.hostHit ?? null : null,
+      fanOn: r.armInFanoutOn ?? null, fanOff: r.armInFanoutOff ?? null
     };
   };
   const controlCell = (m) => {
@@ -240,8 +244,17 @@ function finish(verdict, exit, trace, artifact, corpus, S, C, dir = null) {
       const o = {};
       for (const c of S) {
         const k = keyfn(c.m);
-        (o[k] ??= { better: 0, worse: 0, tied: 0, unknown: 0, nPaired: 0, expected: 0 });
-        o[k][c.verdict]++; o[k].expected++; if (c.paired) o[k].nPaired++;
+        const b = (o[k] ??= { better: 0, worse: 0, tied: 0, unknown: 0, nPaired: 0, expected: 0, hOnN: 0, hOnT: 0, hOffN: 0, hOffT: 0 });
+        b[c.verdict]++; b.expected++;
+        if (c.paired) {
+          b.nPaired++;
+          if (c.hOn !== null) { b.hOnN++; if (c.hOn) b.hOnT++; }
+          if (c.hOff !== null) { b.hOffN++; if (c.hOff) b.hOffT++; }
+        }
+      }
+      for (const b of Object.values(o)) {
+        b.armHostHit = { on: b.hOnN ? b.hOnT / b.hOnN : null, off: b.hOffN ? b.hOffT / b.hOffN : null };
+        delete b.hOnN; delete b.hOnT; delete b.hOffN; delete b.hOffT;
       }
       return o;
     };
@@ -252,7 +265,14 @@ function finish(verdict, exit, trace, artifact, corpus, S, C, dir = null) {
       return [d, { paired: cells.filter((c) => c.paired).length, expected: cells.length, missing: cells.filter((c) => c.missing).length }];
     }));
     // MNAR marker: domain whose cells are systematically absent (missing clusters)
+    // — unregistered operationalization (>=50% missing); the matrix registers the
+    // marking duty, not this threshold. Tune at next matrix revision.
     out.mnarSuspect = DOMAINS.filter((d) => out.truncation[d].missing >= 0.5 * out.truncation[d].expected && out.truncation[d].expected > 0);
+    // armInFanout survival (prereg §2 side column): share of scheduled cells
+    // where the arm produced a list inside fanout. null fan legs (e.g. no-spec
+    // control armOn) are structural absence, excluded from the denominator.
+    const fan = (pick) => { const v = S.map(pick).filter((x) => x !== null); return v.length ? v.filter(Boolean).length / v.length : null; };
+    out.armInFanoutSurvival = { on: fan((c) => c.fanOn), off: fan((c) => c.fanOff) };
   }
   return out;
 }
@@ -331,7 +351,7 @@ function readout(path) {
   const artifact = JSON.parse(readFileSync(deltaPath, "utf8"));
   const corpus = loadCorpus();
   const out = adjudicate(artifact, corpus);
-  out.artifact = deltaPath;
+  out.artifact = relative(ROOT, deltaPath);
   out.nRowsArtifact = artifact.rows?.length ?? 0;
   out.controlDegraded = artifact.controlDegraded ?? null;
   out.earlyStopped = artifact.instrumentFlag === true;

@@ -99,6 +99,39 @@
             "paths": [
                 ".scratch/vertical-eval/delta-2026-09-26.degraded.json"
             ]
+        },
+        {
+            "id": "r85-t1-matrix-thresholds-prereg",
+            "kind": "symbol",
+            "claim": "判读矩阵阈值常量在预注册件钉版（G4 0.8/0.5、G2 70%/30%、G3 ≥3/≥2、G1 >8/16·≥4/16、功效锚 |Δ|≳0.4）",
+            "file": ".scratch/grill-round-85/prereg-matrix.md",
+            "tokens": [
+                "P ≥ 0.8",
+                "P ≤ 0.5",
+                "nPaired/41 ≥ 70%",
+                "unknown/41 ≤ 30%",
+                "worse−better ≥ 3",
+                "反向域 ≥2",
+                "> 8/16",
+                "≥ 4/16",
+                "|ΔarmHostHit|≳0.4"
+            ]
+        },
+        {
+            "id": "r85-t1-matrix-thresholds-impl",
+            "kind": "symbol",
+            "claim": "判读器实现侧阈值常量与预注册矩阵一致（钉版防漂移）",
+            "file": ".scratch/grill-round-85/readout-delta.mjs",
+            "tokens": [
+                "GO_P = 0.8",
+                "NOGO_P = 0.5",
+                "COVERAGE_MIN_PAIRED = 0.7",
+                "COVERAGE_MAX_UNKNOWN = 0.3",
+                "REVERSAL_MARGIN = 3",
+                "REVERSAL_LIMIT = 2",
+                "CONTROL_MAX_UNMEASURED = 8",
+                "CONTROL_MAX_NONTIED = 4"
+            ]
         }
     ]
 }
