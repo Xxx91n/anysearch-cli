@@ -1591,3 +1591,6 @@ tag 挂载点纪律：tag=当前 tip=已审计 SHA——pre-tag dispatch 验证�
 
 ### Ticket Fuse（票级熔断）
 轮体量失控的 stop-loss 规则：单票门禁失败就地修重跑；同票连续 2 轮 LOOP 修复失败→回退该票 commit（一票一 commit 粒度已备）+挂回 registry+其余票推进——缩轮不整轮挂起，缩轮事件回呈用户。_Avoid_: 有回滚手段无回滚决策规则；某票修不干净拖死整轮。来源：atomcode R88-Q5+R88 D-005。
+
+### Vertical Spec Authority（垂域组装单一权威）
+VerticalSpec 守卫+组装的唯一权威落点=`buildVerticalSpec`/`verticalSpecReject`（packages/retriever/src/contract.ts；判别联合 {ok,vertical}|{ok:false,reason:"missing-domain"}），三入口（cli/search、search_web、research_web）共享运行面、kernel `verticalSpecProps` 共享 schema 面——错文案归各 surface 渲染且 byte-frozen 有 golden 断言在案。_Avoid_: 三站各自重写守卫漂移；判别联合降级为 boolean（reason 信息丢，surface 无从渲染差异化文案）。来源：R88 T3 / ADR-0089 D1-D2。

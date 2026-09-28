@@ -61,3 +61,16 @@
 - 审计/收口：-freak（T5 一致性核对）。
 - 版本控制：（but 全程，一票一 commit）。
 - 调研（若施工中遇意外复杂面）：-research。
+
+---
+
+## 终态戳（R88 执行完毕回填）
+
+- T0 基线快照：reports/baseline-2026-09-28.md（check/test 绿；ship-gate --quick 仅 freshness 腿红=预期中态，T5 落 CHANGELOG r88 段后复绿）。
+- T1 a08：refactor commit（search-web.tool.ts 删 dead maxResults 解构 + kernel 契约拒收断言）。
+- T2 a03：fix commit（位置化旗值消费；e2e 吞词回归先红后绿）。
+- T3 a06：refactor commit（buildVerticalSpec/verticalSpecReject 归 retriever/contract.ts + verticalSpecProps 片段 + 三站接线 + golden 断言；byte-identical 实证）。
+- T4 F-6：refactor commit（探针卫生四项 + CHANGELOG 旧段归位）。
+- T5：本文件 commit=收口件批（ADR-0089+CONTEXT 词块+CHANGELOG r88 段+registry 四票核销+closeout-claims+baseline 入库）。
+- T6：门禁+审计 LOOP——结果回填于 reports/2026-09-28-report.md。
+- 轮状态：**执行完毕待 T6 终审**（终态判定以轮报为准）。

@@ -4,6 +4,18 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0089 r88: 搜索面卫生轮（a06 双层归并 + a03 吞词修复 + a08 死参清除 + F-6 探针卫生）
+
+### Fixed
+
+- **defer-r83-a03-flagvalueset-swallow**：`ans search --vertical-domain finance finance` 吞词修复——旗值改按位置消费（已知值旗的 i+1 位为值位），查询词与旗值同形不再被剔（回归测试先红后绿在案）。
+- **defer-r83-a08-dead-maxresults**：search_web 移除 dead `maxResults` 解构——schema `additionalProperties:false` 从不放行该键，行为零变化；kernel 契约测试显式断言拒收 `maxResults`（暴露它是特性决策而非卫生项）。
+
+### Changed
+
+- **defer-r83-a06-vertical-assembly-dup**：垂域组装+require-domain 守卫归并为 `buildVerticalSpec`/`verticalSpecReject`（packages/retriever/src/contract.ts，判别联合 {ok,vertical}|{ok:false,reason:"missing-domain"}）——cli/search、search_web、research_web 三站共享组装+守卫语义、各渲各的错文案（错误输出 byte-identical，golden 断言在案）；kernel `verticalSpecProps` TypeBox 片段共享，`additionalProperties:false` 保持。
+- **r88-candidate-f6-refactor-round**：scripts/probe-anysearch-mcp-raw.ts 卫生——env 读 POSIX 空串≈未设（`||` 一致化）、sanitize 对称遮 endpoint（`<endpoint>`/`<key>` 与 provider 探针同形）、UA/clientInfo 版本字面量钉根 package.json；CHANGELOG r81–r85 五个存量 `## Unreleased` 段归位为 `## 0.1.0 —`。
+
 ## 0.1.0 — 2026-09-27 (r86 green-gate ship)
 
 绿门装船轮：修红门根因 + provider-failure 判别实验 + 判读器语义修正 + 真测量版复跑 + 全包钉版。

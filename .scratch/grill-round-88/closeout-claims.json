@@ -1,0 +1,121 @@
+{
+  "schema": "anysearch/closeout-claims@1",
+  "round": 88,
+  "claims": [
+    {
+      "id": "r88-t1-a08-src",
+      "kind": "symbol",
+      "claim": "a08：search_web dead maxResults 解构已删（注释注记+契约占位在案）",
+      "file": "apps/mcp/src/tools/search-web.tool.ts",
+      "tokens": [
+        "ADR-0089 D-003",
+        "buildVerticalSpec"
+      ]
+    },
+    {
+      "id": "r88-t1-a08-test",
+      "kind": "symbol",
+      "claim": "kernel 契约测试显式拒收 maxResults 键",
+      "file": "packages/kernel/test/tool-schemas.test.ts",
+      "tokens": [
+        "maxResults",
+        "Value.Check",
+        "33 structural asserts"
+      ]
+    },
+    {
+      "id": "r88-t2-a03",
+      "kind": "symbol",
+      "claim": "a03：位置化旗值消费在案（valueFlags+consumed 位置集，R88 T2 注记）",
+      "file": "apps/cli/src/commands/search.ts",
+      "tokens": [
+        "valueFlags",
+        "consumed",
+        "R88 T2"
+      ]
+    },
+    {
+      "id": "r88-t3-builder",
+      "kind": "symbol",
+      "claim": "a06 运行面：buildVerticalSpec+verticalSpecReject 归 retriever/contract.ts（missing-domain 短码）",
+      "file": "packages/retriever/src/contract.ts",
+      "tokens": [
+        "buildVerticalSpec",
+        "verticalSpecReject",
+        "missing-domain"
+      ]
+    },
+    {
+      "id": "r88-t3-schema",
+      "kind": "symbol",
+      "claim": "a06 schema 面：verticalSpecProps 片段共享，闭合保持",
+      "file": "packages/kernel/src/tool-schemas.ts",
+      "tokens": [
+        "verticalSpecProps",
+        "additionalProperties: false"
+      ]
+    },
+    {
+      "id": "r88-t3-golden",
+      "kind": "symbol",
+      "claim": "三 surface 错误文案 byte-identical 的 golden 断言在案",
+      "file": "apps/mcp/test/vertical-guard.test.ts",
+      "tokens": [
+        "require verticalDomain",
+        "vertical-guard golden"
+      ]
+    },
+    {
+      "id": "r88-t4-f6",
+      "kind": "symbol",
+      "claim": "F-6 探针卫生：POSIX || 一致化+对称遮+版本钉版",
+      "file": "scripts/probe-anysearch-mcp-raw.ts",
+      "tokens": [
+        "PROBE_VERSION",
+        "<endpoint>",
+        "empty env ≡ unset"
+      ]
+    },
+    {
+      "id": "r88-changelog",
+      "kind": "symbol",
+      "claim": "CHANGELOG r88 Unreleased 段在案+r81–r85 旧段归位",
+      "file": "CHANGELOG.md",
+      "tokens": [
+        "ADR-0089 r88",
+        "## 0.1.0 — ADR-0086 r85"
+      ]
+    },
+    {
+      "id": "r88-registry-closed",
+      "kind": "count",
+      "claim": "本轮四票核销：a03/a06/a08/r88-f6 全 closed",
+      "command": "node -e \"const j=require('./docs/deferred-registry.json');console.log(j.entries.filter(e=>['defer-r83-a03-flagvalueset-swallow','defer-r83-a06-vertical-assembly-dup','defer-r83-a08-dead-maxresults','r88-candidate-f6-refactor-round'].includes(e.id)&&e.status==='closed').length)\"",
+      "expect": 4
+    },
+    {
+      "id": "r88-adr",
+      "kind": "path",
+      "claim": "ADR-0089 立法在案",
+      "paths": [
+        "docs/adr/0089-architecture-grill-round-88-search-surface-hygiene.md"
+      ]
+    },
+    {
+      "id": "r88-baseline",
+      "kind": "path",
+      "claim": "T0 基线快照在案（dsh watch+CI+门禁当前态）",
+      "paths": [
+        ".scratch/grill-round-88/reports/baseline-2026-09-28.md"
+      ]
+    },
+    {
+      "id": "r88-report",
+      "kind": "path",
+      "claim": "轮报在案（门禁证据逐项可复跑）",
+      "paths": [
+        ".scratch/grill-round-88/reports/2026-09-28-report.md"
+      ]
+    }
+  ]
+}

@@ -833,8 +833,11 @@
    "owner": "anysearch-cli",
    "opened_at": "2026-09-26",
    "review_cadence": "cleanup-round candidate",
-   "status": "open",
-   "evidence": "R83 审计 §三 A-03（nit，pre-existing）：ans search --vertical-domain finance finance 中第二个 finance 被吞。修法=位置化旗值解析替代值集合剔除。R84 D-007(iii) 明令登记。"
+   "status": "closed",
+   "evidence": "R83 审计 §三 A-03（nit，pre-existing）：ans search --vertical-domain finance finance 中第二个 finance 被吞。修法=位置化旗值解析替代值集合剔除。R84 D-007(iii) 明令登记。 | R88 T2 核销：位置化旗值消费落地（apps/cli/src/commands/search.ts）；回归锁=--vertical-domain finance/--mode deep 同形查询词留存用例（e2e.test.ts 红→绿实证）。fix commit 在 r88-hygiene 栈。",
+   "closed_by": "ADR-0089",
+   "closed_at": "2026-09-28",
+   "closed_by_adr_path": "docs/adr/0089-architecture-grill-round-88-search-surface-hygiene.md"
   },
   {
    "id": "defer-r83-a06-vertical-assembly-dup",
@@ -844,8 +847,11 @@
    "owner": "anysearch-cli",
    "opened_at": "2026-09-26",
    "review_cadence": "cleanup-round candidate",
-   "status": "open",
-   "evidence": "R83 审计 §三 A-06（smell·judgement）。三入口各自构造 vertical 对象+依赖 guard——错形处理已立法一致（A-02），组装重复仍属清障素材。R84 D-007(iii) 明令登记。"
+   "status": "closed",
+   "evidence": "R83 审计 §三 A-06（smell·judgement）。三入口各自构造 vertical 对象+依赖 guard——错形处理已立法一致（A-02），组装重复仍属清障素材。R84 D-007(iii) 明令登记。 | R88 T3 核销：buildVerticalSpec/verticalSpecReject 归 packages/retriever/src/contract.ts（判别联合+missing-domain 短码）；三站共享组装+守卫、错文案 byte-identical（golden 断言）；kernel verticalSpecProps 片段共享。ADR-0089 D1-D2 立法。",
+   "closed_by": "ADR-0089",
+   "closed_at": "2026-09-28",
+   "closed_by_adr_path": "docs/adr/0089-architecture-grill-round-88-search-surface-hygiene.md"
   },
   {
    "id": "defer-r83-a08-dead-maxresults",
@@ -855,8 +861,11 @@
    "owner": "anysearch-cli",
    "opened_at": "2026-09-26",
    "review_cadence": "cleanup-round candidate",
-   "status": "open",
-   "evidence": "R83 审计 §三 A-08（pre-existing）。修=schema 增键或删解构，二选一须与 MCP 工具面 contract 复核后定。R84 D-007(iii) 明令登记。"
+   "status": "closed",
+   "evidence": "R83 审计 §三 A-08（pre-existing）。修=schema 增键或删解构，二选一须与 MCP 工具面 contract 复核后定。R84 D-007(iii) 明令登记。 | R88 T1 核销：dead maxResults 解构已删（schema 从不放行，行为零变化）；kernel tool-schemas 测试显式拒收 maxResults 键。暴露=特性决策（ADR-0089 D3 注记）。",
+   "closed_by": "ADR-0089",
+   "closed_at": "2026-09-28",
+   "closed_by_adr_path": "docs/adr/0089-architecture-grill-round-88-search-surface-hygiene.md"
   },
   {
    "id": "defer-r85-anysearch-arm-providersfailed",
@@ -928,8 +937,11 @@
    "owner": "anysearch-cli",
    "opened_at": "2026-09-28",
    "review_cadence": "next grill round",
-   "status": "open",
-   "evidence": "R86 下一轮候选第 2 项+R87 审计承继；发布轮不混排工程项故出列立项"
+   "status": "closed",
+   "evidence": "R86 下一轮候选第 2 项+R87 审计承继；发布轮不混排工程项故出列立项 | R88 T4 核销：F-6 全项落地——env || POSIX 一致化、sanitize 对称遮（<endpoint>/<key>）、版本字面量钉根 package.json、CHANGELOG r81–r85 旧段归位为 ## 0.1.0。",
+   "closed_by": "ADR-0089",
+   "closed_at": "2026-09-28",
+   "closed_by_adr_path": "docs/adr/0089-architecture-grill-round-88-search-surface-hygiene.md"
   },
   {
    "id": "r88-candidate-vertical-direction-redeliberation",

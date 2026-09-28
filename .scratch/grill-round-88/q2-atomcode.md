@@ -69,7 +69,7 @@ JSON Schema 官方 structuring 文档明文：“把 schema 结构化成可复�
 | Don't use the Rule of Three blindly（understandlegacycode.com） | https://understandlegacycode.com/blog/refactoring-rule-of-three/ | Community/Criticism | 无日期 | 第三次击发即重构；“叫得出清晰名字才抽”的补充阈值 |
 | Structuring a Bun Monorepo with Shared Packages（sergiodxa） | https://sergiodxa.com/articles/structuring-a-bun-monorepo-with-shared-packages | Currency | 2026-07-23 | “packages 不该知道哪些 app 存在” → 支持判别联合渲染留 surface；少抽取警告及其在 A1 下不成立的原因 |
 | How To Structure Shared Libraries In A Node.js Monorepo（nazarboyko） | https://www.nazarboyko.com/articles/structuring-shared-libraries-nodejs-monorepos | Comparative | 2024-03-19 | 按 capability 划边界、一句话无 "and" 检验 → 否决 A3 劈能力两包 |
-| Modular JSON Schema combination（json-schema.org 官方） | https://json-schema.org/understanding-json-schema/structuring | Official | 现行文档 | $defs/$ref 复用子 schema 的正典惯例 → 支撑 verticalSpecProps 片段抽取 |
+| Modular JSON Schema combination（json-schema.org 官方） | https://json-schema.org/understanding-json-schema/structuring | Official | 现行文档 | `$defs`/`$ref` 复用子 schema 的正典惯例 → 支撑 verticalSpecProps 片段抽取 |
 | 99 Bottles/I Spent 3 Days with Sandi Metz（jackhoy.com） | https://www.jackhoy.com/web-applications/2014/08/20/i-spent-3-days-with-sandi-metz-heres-what-i-learned.html | Community | 2014-08-20 | 摘要级佐证：duplication 先行、抽象在理解后——辅助检验 A1 非仓促抽象 |
 | Result Pattern/DU 社区讨论（Reddit r/csharp 等，摘要级） | https://www.reddit.com/r/csharp/comments/1qvybyr/ | Community | 2026 | 仅用于确认 Result-pattern 是跨语言成熟惯例，非关键结论支柱 |
 | TypeBox（GitHub 官方 README） | https://github.com/sinclairzx81/typebox | Official | 现行 | “TypeBox types 是 JSON Schema 片段”——片段复用是设计意图 |
