@@ -28,7 +28,9 @@ Accepted (grill round r88; 主轴票 search-surface-hygiene). Records T0–T6 pe
 
 | reason | 语义 |
 |---|---|
-| `missing-domain` | subDomain/params 存在而 domain 缺席（含空串视同缺席——空值不携信号，与 params:{}≡absent 同一惯例；各 surface 的更早校验使该分支仅作防御性兜底） |
+| `missing-domain` | subDomain/params 存在而 domain 缺席（**空串或仅空白**视同缺席——空值不携信号，与 params:{}≡absent 同一惯例；各 surface 的更早校验使该分支仅作防御性兜底） |
+
+（R88 审计 addendum：审计呈报 F-a——实现以 `trim()` 把仅空白 domain 亦判 absent，超出本条原立法「空串」字面；审计裁决采纳为防御性加固并据此追认立法，golden 断言增补在案。）
 
 ② **各 surface 文案映射表**（错形冻结对象的唯一真理源）：
 

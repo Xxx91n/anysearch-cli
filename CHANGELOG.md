@@ -9,6 +9,9 @@ All notable changes to this project are recorded here. Format follows
 ### Fixed
 
 - **defer-r83-a03-flagvalueset-swallow**：`ans search --vertical-domain finance finance` 吞词修复——旗值改按位置消费（已知值旗的 i+1 位为值位），查询词与旗值同形不再被剔（回归测试先红后绿在案）。
+
+### Removed
+
 - **defer-r83-a08-dead-maxresults**：search_web 移除 dead `maxResults` 解构——schema `additionalProperties:false` 从不放行该键，行为零变化；kernel 契约测试显式断言拒收 `maxResults`（暴露它是特性决策而非卫生项）。
 
 ### Changed

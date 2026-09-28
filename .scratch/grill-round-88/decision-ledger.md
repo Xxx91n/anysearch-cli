@@ -26,7 +26,7 @@
 - **用户原回答原文**：采纳
 - **规范化需求**：
   - 运行面：buildVerticalSpec({domain?,subDomain?,params?}) 归 packages/retriever/src/contract.ts（与 canonicalizeVertical 同址=VerticalSpec 语义单一权威），返回判别联合 {ok:true,vertical}|{ok:false,reason:结构化短码枚举}——cli/search.ts、search-web.tool.ts、research-web.tool.ts 三站共享组装+require-domain 守卫语义；
-  - 错误通道各 surface 自行渲染（CLI→stderr+exit(1)、MCP→tool error text），**人话文案归各 surface、结构化 reason 归共享函数**（与仓内 IpcError 模式同构：typed error enum+i18n_key，surface 渲染）；
+  - 错误通道各 surface 自行渲染（CLI→stderr+exit(2)、MCP→tool error text），**人话文案归各 surface、结构化 reason 归共享函数**（与仓内 IpcError 模式同构：typed error enum+i18n_key，surface 渲染）；
   - schema 面：kernel/tool-schemas.ts 抽共享 verticalSpecProps TypeBox 片段供 SearchWebInput/ResearchWebInput 复用，additionalProperties:false 与注释随片段走。
   - 验收判据预注册（写入 ADR-0089）：①reason 短码枚举集+各 surface 文案映射表；②错误输出形状与现状 byte-identical（ADR-0084 D-006 错形不许改的镜像）；③tsc --noEmit 级验证 TypeBox Static 推断命名一致性。
 - **显式约束/负向需求**：错误语义本身不许改（ADR-0084 D-006/A-02 已立法 fail-fast——只归并重复代码）；共享函数不得识调用方（零 caller 条件分支、零参数分歧——差异全在渲染层）；A2 否（留语义发源地 CLI 在共享面外）、A3 否（kernel 持运行变换语义=分层倒置）、不归并否（知识重复非巧合重复，Rule of Three+已立法双条件击发）。
