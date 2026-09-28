@@ -153,6 +153,20 @@ async function t(name: string, fn: () => Promise<void>) {
     assert.match(r.out, /require --vertical-domain/);
   });
 
+  // R88 T2 / ADR-0089 (a03): positional flag-value consumption — a query term
+  // identical to a flag value must survive; the old flagValueSet heuristic
+  // swallowed it via set-membership removal. --json echoes the cleaned query.
+  await t("search q finance --vertical-domain finance keeps the query word (a03 no-swallow)", async () => {
+    const r = await run(["search", "q", "finance", "--vertical-domain", "finance", "--json"]);
+    assert.match(r.out, /"query": "q finance"/);
+  });
+
+  await t("search q deep --mode deep keeps the query word (a03 no-swallow)", async () => {
+    const r = await run(["search", "q", "deep", "--mode", "deep", "--json"]);
+    assert.match(r.out, /"query": "q deep"/);
+    assert.match(r.out, /"mode": "deep"/);
+  });
+
   // R84 rework (audit F1 / ADR-0085 D6 addendum): the TOML leg of A-02 —
   // a domain file with a malformed sources.vertical must fail fast at the
   // user surface (explicit error, non-zero exit), not silently fall back to

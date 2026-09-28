@@ -77,8 +77,16 @@ export async function runSearch(args: string[]): Promise<number> {
   // --fail-on-abstain can no longer leak into the provider query string.
   // R83 T1: flag VALUES are also dropped so --vertical-* arguments don't leak
   // into the query string either.
-  const flagValueSet = new Set([mode, verticalDomain, verticalSubDomain, verticalParamsRaw].filter((v): v is string => v !== undefined));
-  const queryClean = args.filter(a => !a.startsWith("--") && !flagValueSet.has(a)).join(" ").trim();
+  // R88 T2 / ADR-0089 (a03): flag values are consumed POSITIONALLY — the slot
+  // immediately after a known value-flag is the value position. A query term
+  // identical to a flag value survives (the old value-set heuristic swallowed
+  // it: "--vertical-domain finance finance" collapsed to an empty query).
+  const valueFlags = new Set(["--mode", "--vertical-domain", "--vertical-sub-domain", "--vertical-params"]);
+  const consumed = new Set<number>();
+  args.forEach((a, i) => {
+    if (valueFlags.has(a) && i + 1 < args.length) consumed.add(i + 1);
+  });
+  const queryClean = args.filter((a, i) => !a.startsWith("--") && !consumed.has(i)).join(" ").trim();
   if (!queryClean) {
     process.stderr.write("ans search <query>\n");
     return 2;
