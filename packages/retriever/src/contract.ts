@@ -57,9 +57,11 @@ export function canonicalizeVertical(v: VerticalSpec): VerticalSpec {
 // share this layer; the guard verdict travels as a structured reason and
 // each surface renders its own copy (IpcError-pattern: the enum travels,
 // the surface renders — the reason→copy map is legislated in ADR-0089 D2②).
-// "domain absent" covers undefined AND "" — empty carries no signal (same
-// convention as params:{} ≡ absent); entry surfaces reject empty domains
-// earlier, so the "" leg here is a defensive floor only.
+// "domain absent" covers undefined AND empty/whitespace-only — empty carries
+// no signal (same convention as params:{} ≡ absent); entry surfaces reject
+// empty domains earlier (CLI non-empty-string check, schema minLength:1), so
+// the whitespace leg here is a defensive floor only — it can fire only on an
+// MCP surface passing a whitespace-only domain past minLength:1.
 export type VerticalSpecRejectReason = "missing-domain";
 
 // Guard predicate alone — surfaces that must render the rejection before

@@ -183,6 +183,13 @@ async function t(name: string, fn: () => Promise<void>) {
     assert.match(r.out, /"mode": "deep"/);
   });
 
+  // R88 audit: the spec's literal case — lone word identical to the flag value
+  // collapses under the old heuristic (query would be empty), survives now.
+  await t("search --vertical-domain finance finance keeps the lone identical word (a03 spec case)", async () => {
+    const r = await run(["search", "--vertical-domain", "finance", "finance", "--json"]);
+    assert.match(r.out, /"query": "finance"/);
+  });
+
   // R84 rework (audit F1 / ADR-0085 D6 addendum): the TOML leg of A-02 —
   // a domain file with a malformed sources.vertical must fail fast at the
   // user surface (explicit error, non-zero exit), not silently fall back to
