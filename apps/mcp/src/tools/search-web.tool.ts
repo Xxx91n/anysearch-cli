@@ -19,7 +19,11 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
     },
     async (args: unknown) => {
       return observeTool(eng, "search_web", async (span) => {
-        const { query, mode, maxResults, verticalDomain, verticalSubDomain, verticalParams } = args as { query: string; mode?: string; maxResults?: number; verticalDomain?: string; verticalSubDomain?: string; verticalParams?: Record<string, unknown> };
+        // R88 T1 / ADR-0089 D-003: maxResults is intentionally absent from the
+        // public schema (additionalProperties:false) — exposing it is a feature
+        // decision, not hygiene; the dead destructure is removed, engine
+        // default (10) rules uniformly across surfaces.
+        const { query, mode, verticalDomain, verticalSubDomain, verticalParams } = args as { query: string; mode?: string; verticalDomain?: string; verticalSubDomain?: string; verticalParams?: Record<string, unknown> };
         // ADR-0019 D3: args validated by AJV upstream (fromJsonSchema).
         // R83 T1 / ADR-0084 D-003/D-006: query-level vertical — whole-replace spec.
         // Shape check: sub_domain/params are meaningless without a domain
@@ -34,7 +38,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           ? canonicalizeVertical({ domain: verticalDomain, ...(verticalSubDomain ? { subDomain: verticalSubDomain } : {}), ...(verticalParams ? { params: verticalParams } : {}) })
           : undefined;
         try {
-          const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", maxResults, ...(vertical ? { vertical } : {}), span });
+          const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", ...(vertical ? { vertical } : {}), span });
           const topResults = envelope.results.slice(0, 10);
 
           // ADR-0022 D1: provider answers pass through as first-class fields.

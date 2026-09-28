@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert/strict";
+import { Value } from "@sinclair/typebox/value";
 import {
   KernelJsonSchemas
 } from "../src/tool-json-schemas";
@@ -82,4 +83,15 @@ assert.equal(rm.limit, 5);
 assert.equal(qk.query, "q");
 assert.equal(ac.message, "m");
 
-console.log("tool-schemas: 31 structural asserts OK");
+// 9. R88 T1 / ADR-0089 D-003: maxResults contract rejection — the key is not
+// in the schema and additionalProperties:false makes the check hard-fail.
+// Exposing it is a feature decision; this assert is the CI counterpart so a
+// schema-entropy regression cannot silently reopen the surface.
+assert.equal(Value.Check(SearchWebInput, { query: "x" }), true, "search_web accepts minimal input");
+assert.equal(
+  Value.Check(SearchWebInput, { query: "x", maxResults: 5 }),
+  false,
+  "search_web rejects maxResults key (additionalProperties:false)",
+);
+
+console.log("tool-schemas: 33 structural asserts OK");
