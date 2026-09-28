@@ -7,7 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, type CompositionResult } from "@anysearch-cli/kernel";
-import { canonicalizeVertical } from "@anysearch-cli/retriever";
+import { buildVerticalSpec } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 
 export function registerResearchWeb(server: McpServer, eng: CompositionResult): void {
@@ -20,15 +20,14 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
     async (args: unknown) => {
       return observeTool(eng, "research_web", async (span) => {
         const { question, depth, verticalDomain, verticalSubDomain, verticalParams } = args as { question: string; depth?: string; verticalDomain?: string; verticalSubDomain?: string; verticalParams?: Record<string, unknown> };
-        // R83 T1 / ADR-0084 D-003/D-006: same shape guard as search_web —
-        // sub_domain/params require a domain (AJV cannot express it).
-        if (verticalDomain === undefined && (verticalSubDomain !== undefined || verticalParams !== undefined)) {
+        // R83 T1 / ADR-0084 D-003/D-006 + R88 T3 / ADR-0089 (a06): shared
+        // guard + assembly; error copy is this surface's rendering of the
+        // legislated missing-domain reason (byte-frozen).
+        const built = buildVerticalSpec({ domain: verticalDomain, subDomain: verticalSubDomain, params: verticalParams });
+        if (!built.ok) {
           return { content: [{ type: "text" as const, text: "research_web error: verticalSubDomain/verticalParams require verticalDomain" }] };
         }
-        // R84 T1 / A-04 (ADR-0085 draft): canonicalize — params:{} ≡ absent.
-        const vertical = verticalDomain !== undefined
-          ? canonicalizeVertical({ domain: verticalDomain, ...(verticalSubDomain ? { subDomain: verticalSubDomain } : {}), ...(verticalParams ? { params: verticalParams } : {}) })
-          : undefined;
+        const vertical = built.vertical;
         const d = depth ?? "deep";
         let allResults: any[] = [];
         let lastRoundSufficiency: Record<string, unknown> | undefined;

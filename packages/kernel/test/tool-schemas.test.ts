@@ -94,4 +94,13 @@ assert.equal(
   "search_web rejects maxResults key (additionalProperties:false)",
 );
 
+// 10. R88 T3 / ADR-0089 D2⑤: Static inference must equal the declared
+// aliases — naming consistency between the schema and its TS surface is
+// enforced at the tsc level (mutual assignability, both directions).
+type StaticEq<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+const _searchWebStaticEq: StaticEq<typeof SearchWebInput.static, SearchWebInput> = true;
+const _researchWebStaticEq: StaticEq<typeof ResearchWebInput.static, ResearchWebInput> = true;
+void _searchWebStaticEq;
+void _researchWebStaticEq;
+
 console.log("tool-schemas: 33 structural asserts OK");

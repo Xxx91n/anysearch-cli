@@ -7,6 +7,25 @@
 
 import { Type } from "@sinclair/typebox";
 
+// R83 T1 / ADR-0084 D-003: query-level vertical — when verticalDomain is
+// present the three args form a complete spec that REPLACES the repo-level
+// sources.vertical default wholesale (no deep-merge). Shape check only —
+// the domain/sub_domain vocabulary is upstream truth (no enum embedded).
+// R88 T3 / ADR-0089 (a06): shared prop fragment for both retrieval tools —
+// the closed-shape closer stays on each consuming Type.Object (that is the
+// tool's own contract; the fragment carries only the props).
+const verticalSpecProps = {
+  verticalDomain: Type.Optional(
+    Type.String({ minLength: 1, description: "Vertical domain id routed provider-side (e.g. academic, finance, it_tech); replaces the domain TOML sources.vertical default wholesale" })
+  ),
+  verticalSubDomain: Type.Optional(
+    Type.String({ minLength: 1, description: "Vertical sub-domain within verticalDomain (requires verticalDomain)" })
+  ),
+  verticalParams: Type.Optional(
+    Type.Record(Type.String(), Type.Unknown(), { description: "Vertical sub_domain_params key/value map (requires verticalDomain)" })
+  ),
+};
+
 export const SearchWebInput = Type.Object({
   query: Type.String({ minLength: 1, description: "The search query" }),
   mode: Type.Optional(
@@ -17,19 +36,9 @@ export const SearchWebInput = Type.Object({
       Type.Literal("answer"),
     ], { description: "Search mode: fast (default), index, deep (more sources), answer (provider-generated answer, available only when provider supports it; not synthesized locally per ADR-0022 D4)" })
   ),
-  // R83 T1 / ADR-0084 D-003: query-level vertical — when verticalDomain is
-  // present the three args form a complete spec that REPLACES the repo-level
-  // sources.vertical default wholesale (no deep-merge). Shape check only —
-  // the domain/sub_domain vocabulary is upstream truth (no enum embedded).
-  verticalDomain: Type.Optional(
-    Type.String({ minLength: 1, description: "Vertical domain id routed provider-side (e.g. academic, finance, it_tech); replaces the domain TOML sources.vertical default wholesale" })
-  ),
-  verticalSubDomain: Type.Optional(
-    Type.String({ minLength: 1, description: "Vertical sub-domain within verticalDomain (requires verticalDomain)" })
-  ),
-  verticalParams: Type.Optional(
-    Type.Record(Type.String(), Type.Unknown(), { description: "Vertical sub_domain_params key/value map (requires verticalDomain)" })
-  ),
+  // R88 T3 / ADR-0089 (a06): the vertical-spec arg block is the shared
+  // verticalSpecProps fragment (legislated once, consumed by both tools).
+  ...verticalSpecProps,
 }, { additionalProperties: false });
 export type SearchWebInput = {
   query: string;
@@ -48,19 +57,8 @@ export const ResearchWebInput = Type.Object({
       Type.Literal("deep"),
     ], { description: "Research depth: brief (1 round), standard (2 rounds), deep (3 rounds)" })
   ),
-  // R83 T1 / ADR-0084 D-003: query-level vertical — when verticalDomain is
-  // present the three args form a complete spec that REPLACES the repo-level
-  // sources.vertical default wholesale (no deep-merge). Shape check only —
-  // the domain/sub_domain vocabulary is upstream truth (no enum embedded).
-  verticalDomain: Type.Optional(
-    Type.String({ minLength: 1, description: "Vertical domain id routed provider-side (e.g. academic, finance, it_tech); replaces the domain TOML sources.vertical default wholesale" })
-  ),
-  verticalSubDomain: Type.Optional(
-    Type.String({ minLength: 1, description: "Vertical sub-domain within verticalDomain (requires verticalDomain)" })
-  ),
-  verticalParams: Type.Optional(
-    Type.Record(Type.String(), Type.Unknown(), { description: "Vertical sub_domain_params key/value map (requires verticalDomain)" })
-  ),
+  // Same shared fragment as search_web (R88 T3 / ADR-0089 a06).
+  ...verticalSpecProps,
 }, { additionalProperties: false });
 export type ResearchWebInput = {
   question: string;

@@ -52,6 +52,53 @@ export function canonicalizeVertical(v: VerticalSpec): VerticalSpec {
   };
 }
 
+// R88 T3 / ADR-0089 D1-D2 (a06): single authority for vertical-spec guard +
+// assembly. The three entry surfaces (CLI flags, search_web, research_web)
+// share this layer; the guard verdict travels as a structured reason and
+// each surface renders its own copy (IpcError-pattern: the enum travels,
+// the surface renders — the reason→copy map is legislated in ADR-0089 D2②).
+// "domain absent" covers undefined AND "" — empty carries no signal (same
+// convention as params:{} ≡ absent); entry surfaces reject empty domains
+// earlier, so the "" leg here is a defensive floor only.
+export type VerticalSpecRejectReason = "missing-domain";
+
+// Guard predicate alone — surfaces that must render the rejection before
+// decoding the params payload (CLI flag path) take the verdict from here;
+// params is accepted as unknown so a not-yet-parsed value still counts as
+// present.
+export function verticalSpecReject(input: {
+  domain?: string;
+  subDomain?: string;
+  params?: unknown;
+}): VerticalSpecRejectReason | null {
+  const domainAbsent = input.domain === undefined || input.domain.trim() === "";
+  return domainAbsent && (input.subDomain !== undefined || input.params !== undefined)
+    ? "missing-domain"
+    : null;
+}
+
+export type BuildVerticalSpecResult =
+  | { ok: true; vertical: VerticalSpec | undefined }
+  | { ok: false; reason: VerticalSpecRejectReason };
+
+export function buildVerticalSpec(input: {
+  domain?: string;
+  subDomain?: string;
+  params?: Record<string, unknown>;
+}): BuildVerticalSpecResult {
+  const reason = verticalSpecReject(input);
+  if (reason !== null) return { ok: false, reason };
+  if (input.domain === undefined || input.domain.trim() === "") return { ok: true, vertical: undefined };
+  return {
+    ok: true,
+    vertical: canonicalizeVertical({
+      domain: input.domain,
+      ...(input.subDomain !== undefined ? { subDomain: input.subDomain } : {}),
+      ...(input.params !== undefined ? { params: input.params } : {}),
+    }),
+  };
+}
+
 export interface NormalizedResult {
   url: string;
   title: string;

@@ -2,7 +2,7 @@
 // ADR-0006 decision 3A: uses createEngine() factory, not inline wiring.
 
 import type { Mode } from "@anysearch-cli/retriever";
-import { canonicalizeVertical } from "@anysearch-cli/retriever";
+import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
 import { createPersistentEngine } from "../db";
 
 import { searchExitCode, formatAbstainLine } from "./search-abstain";
@@ -52,7 +52,11 @@ export async function runSearch(args: string[]): Promise<number> {
       return 2;
     }
   }
-  if (verticalDomain === undefined && (verticalSubDomain !== undefined || verticalParamsRaw !== undefined)) {
+  // R88 T3 / ADR-0089 (a06): the require-domain verdict comes from the
+  // shared guard layer — the raw params string stands in for the payload
+  // (presence is all the guard checks; JSON decoding errors still fire
+  // below, preserving the established check order byte-for-byte).
+  if (verticalSpecReject({ domain: verticalDomain, subDomain: verticalSubDomain, params: verticalParamsRaw }) !== null) {
     process.stderr.write("ans search: --vertical-sub-domain/--vertical-params require --vertical-domain\n");
     return 2;
   }
@@ -67,11 +71,16 @@ export async function runSearch(args: string[]): Promise<number> {
       return 2;
     }
   }
-  // A-04 canonicalization: params:{} (or any empty/non-object params) == absent —
+  // A-04 canonicalization rides inside buildVerticalSpec (params:{} ≡ absent) —
   // the echoed spec below is the canonical form actually routed to providers.
-  const vertical = verticalDomain !== undefined
-    ? canonicalizeVertical({ domain: verticalDomain, ...(verticalSubDomain ? { subDomain: verticalSubDomain } : {}), ...(verticalParams ? { params: verticalParams } : {}) })
-    : undefined;
+  // The guard already ran above; a rejection here is unreachable but rendered
+  // identically rather than dropped silently.
+  const built = buildVerticalSpec({ domain: verticalDomain, subDomain: verticalSubDomain, params: verticalParams });
+  if (!built.ok) {
+    process.stderr.write("ans search: --vertical-sub-domain/--vertical-params require --vertical-domain\n");
+    return 2;
+  }
+  const vertical = built.vertical;
 
   // ADR-0062 (T3): drop every --flag token (was only --mode) so --json /
   // --fail-on-abstain can no longer leak into the provider query string.

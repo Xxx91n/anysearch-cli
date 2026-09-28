@@ -7,7 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, type CompositionResult } from "@anysearch-cli/kernel";
-import { canonicalizeVertical } from "@anysearch-cli/retriever";
+import { buildVerticalSpec } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 
 export function registerSearchWeb(server: McpServer, eng: CompositionResult): void {
@@ -25,18 +25,14 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
         // default (10) rules uniformly across surfaces.
         const { query, mode, verticalDomain, verticalSubDomain, verticalParams } = args as { query: string; mode?: string; verticalDomain?: string; verticalSubDomain?: string; verticalParams?: Record<string, unknown> };
         // ADR-0019 D3: args validated by AJV upstream (fromJsonSchema).
-        // R83 T1 / ADR-0084 D-003/D-006: query-level vertical — whole-replace spec.
-        // Shape check: sub_domain/params are meaningless without a domain
-        // (AJV cannot express the dependency) — fail fast instead of silently
-        // dropping the caller's intent.
-        if (verticalDomain === undefined && (verticalSubDomain !== undefined || verticalParams !== undefined)) {
+        // R83 T1 / ADR-0084 D-003/D-006 + R88 T3 / ADR-0089 (a06): guard +
+        // assembly share buildVerticalSpec — the copy below is this surface's
+        // rendering of the legislated missing-domain reason (byte-frozen).
+        const built = buildVerticalSpec({ domain: verticalDomain, subDomain: verticalSubDomain, params: verticalParams });
+        if (!built.ok) {
           return { content: [{ type: "text" as const, text: "search_web error: verticalSubDomain/verticalParams require verticalDomain" }] };
         }
-        // R84 T1 / A-04 (ADR-0085 draft): canonicalize — params:{} ≡ absent,
-        // the echoed spec is the canonical form actually sent on the wire.
-        const vertical = verticalDomain !== undefined
-          ? canonicalizeVertical({ domain: verticalDomain, ...(verticalSubDomain ? { subDomain: verticalSubDomain } : {}), ...(verticalParams ? { params: verticalParams } : {}) })
-          : undefined;
+        const vertical = built.vertical;
         try {
           const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", ...(vertical ? { vertical } : {}), span });
           const topResults = envelope.results.slice(0, 10);

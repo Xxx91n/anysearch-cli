@@ -151,6 +151,22 @@ async function t(name: string, fn: () => Promise<void>) {
     const r = await run(["search", "q", "--vertical-params", "{\"type\":\"earnings\"}"]);
     assert.equal(r.code, 2);
     assert.match(r.out, /require --vertical-domain/);
+    // R88 T3 / ADR-0089 D2③: golden — the require-domain error line is
+    // byte-identical across the a06 consolidation (assertion carrier for
+    // the frozen error shape; exact line, not a regex window).
+    assert.ok(
+      r.out.split("\n").includes("ans search: --vertical-sub-domain/--vertical-params require --vertical-domain"),
+      "byte-identical golden: require-domain stderr line",
+    );
+  });
+
+  await t("search --vertical-sub-domain without --vertical-domain exits 2 (golden)", async () => {
+    const r = await run(["search", "q", "--vertical-sub-domain", "earnings"]);
+    assert.equal(r.code, 2);
+    assert.ok(
+      r.out.split("\n").includes("ans search: --vertical-sub-domain/--vertical-params require --vertical-domain"),
+      "byte-identical golden: require-domain stderr line",
+    );
   });
 
   // R88 T2 / ADR-0089 (a03): positional flag-value consumption — a query term
