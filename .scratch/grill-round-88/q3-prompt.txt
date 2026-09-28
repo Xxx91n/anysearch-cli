@@ -1,0 +1,29 @@
+你是一个为软件仓库「anysearch-cli」（TypeScript/pnpm monorepo，信息专精 Agent CLI）做深度调研的研究者。请围绕下面的裁决问题做多源调研，重点放在【工业界成熟落地的心智模型】上，给出推荐选项与理由。
+
+## 仓库上下文
+
+R88=「搜索面卫生轮」（D-001 current）：F-6 refactor+a03/a06/a08 四票。本题=a08 dead param 去向。
+
+## a08 实物测绘（已核实）
+
+- apps/mcp/src/tools/search-web.tool.ts:22 解构 maxResults 并在 :37 传给 retriever.search；
+- 但 packages/kernel/src/tool-schemas.ts 的 SearchWebInput schema 无 maxResults 键且 additionalProperties:false——MCP 客户端传入会被 AJV 上游拒绝（ADR-0019 D3：args 由 AJV 校验），故解构恒为 undefined、引擎走 ?? 10 默认——纯死参数；
+- 引擎全支持：retriever/contract.ts:11 maxResults?:number；engine.ts:341 透传、:385 needed=Math.max(1,q.maxResults ?? 10)、:536-537 slice；
+- 对照面：cli/search.ts:110 硬编 maxResults:10（无 --max-results 旗）；research-web.tool.ts:45 硬编 10。即当前全网三入口无一暴露 maxResults，实际行为=统一默认 10；
+- MCP 契约已随 v0.1.0 发布在架（npm latest=0.1.0）；10 的默认值是 engine graceWindow/needed 逻辑调参过的设计值；
+- registry 原注：「修=schema 增键或删解构，二选一须与 MCP 工具面 contract 复核后定」。
+
+## 现行账本 current 决策（不可冲突）
+
+- R88 D-001 卫生轮主轴（单主题、不混排）；D-002 a06 双层归并（判别联合+错形 byte-identical 冻结+schema 片段归 kernel）。
+- R87 D-001 发布准入与产品方向两道门分离；ADR-0029 一轮一主题、due chores 走独立 refactor commit；ADR-0019 D3 AJV 上游校验；ADR-0084 D-006 错形 fail-fast。
+
+## 待裁问题（R88 Q3 — a08 dead maxResults 去向）
+
+A【删解构】（我倾向推荐）：移除 search-web.tool.ts maxResults 解构——零行为变化（AJV 现状已拒收），与另两入口对齐「全表面不暴露=默认 10」；ADR 注记「暴露 maxResults 是特性决策非卫生项」（若未来有需求须特性轮正式设计：Integer 边界/NaN/负值/三入口一致性）。
+
+B【schema 增键】：SearchWebInput 加 maxResults（连带 Integer minimum/maximum/default 设计）本轮顺带交付——代价：单方面扩大已发布 MCP 公共契约+只单口暴露与 CLI/research_web 不一致（要么扩三口体量膨胀要么留不一致新债）。
+
+C【另指】。
+
+请给出：推荐选项、理由、工业界心智模型依据（如 API 契约扩张纪律/Hyrum 定律/dead code vs latent feature 区分/schema-first contract 变更窗口/semver minor 契约扩面的发布叙事、以及「死参数复活 vs 删除」的判例），并对 A 做辩证检验（含最强反对论据——例如「引擎已支持、检索参数暴露是检索 API 惯例，删除是把已设计好的能力砍掉」）。

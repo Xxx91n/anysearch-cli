@@ -1,0 +1,28 @@
+你是一个为软件仓库「anysearch-cli」（TypeScript/pnpm monorepo，信息专精 Agent CLI）做深度调研的研究者。这是一个 grill-round 决策完备性审查任务：下面给出 R88 已裁决的四条决策全文与覆盖率自评，请用工业界成熟心智模型做【盲区审计】——判断决策树是否已遍历完（frontier 是否为空），并指出任何被静默假设掉的分支。
+
+## R88 已裁决决策（全 current，decision-ledger 实物）
+
+【D-001 主轴】R88=搜索面卫生轮：F-6 refactor（scripts/probe-anysearch-mcp-raw.ts 89 行探针：??/|| 一致化+sanitize 对称遮 endpoint+版本字面量护栏+CHANGELOG 归位）+同域纳编 registry 三票 a03（CLI flagValueSet 吞词：--vertical-domain finance finance 吞第二个 finance，修法已定=位置化旗值消费）/a06（垂域组装+require-domain guard 三处近重复）/a08（search_web dead maxResults）。范围外：垂域方向重议（重开条件未达）、广义清债、上游触发债、常驻背景债×8、外发动作。
+
+【D-002 a06 归并】双层归并：运行面 buildVerticalSpec({domain?,subDomain?,params?}) 归 retriever/contract.ts 返判别联合 {ok,vertical}|{ok:false,reason:短码枚举}，错误通道各 surface 渲染且输出形状 byte-identical 冻结（ADR-0084 D-006 镜像）；schema 面 kernel 抽 verticalSpecProps TypeBox 片段（additionalProperties:false+注释随片段）+tsc --noEmit 验证。预注册验收判据：reason 短码集+文案映射表+错形不变。
+
+【D-003 a08】删解构+契约测试：移除 search-web.tool.ts maxResults 解构/传参（AJV 硬拒=零行为变化）+单测断言 SearchWebInput 拒收 maxResults+ADR 注记「暴露=特性决策」。
+
+【D-004 票序】七票序：T0 哨戒+基线快照→T1 a08→T2 a03（先补吞词回归测试锁行为再修）→T3 a06（搬已修复形态）→T4 F-6→T5 收口件（ADR-0089+CONTEXT+CHANGELOG+registry 四票核销+claims+任务书）→T6 门禁+审计 LOOP（pnpm -r check/test+ship-gate --quick）。一票一 commit、type 纪律 a03=fix 其余=refactor。
+
+## 仓库机制背景
+
+- grill round 惯例：账本决策→整理环节（CONTEXT 词块+ADR+任务书）→执行轮→审计 LOOP→收口。版本控制 GitButler（but）。无外发动作轮=纯仓内改动，落 main 经 merge。
+- 门禁：pnpm -r check（8 包 tsc/lint）+pnpm -r test+ship-gate --quick+handoff-lint+pathlint。
+- 现存 open 债 17 项均具名触发/维持挂账。dsh 哨戒续班为背景义务。
+
+## 自评覆盖率
+
+主轴/归并边界/死参去向/票序四面全裁；四题均经调研交叉；与 R87 账本+ADR 谱系零冲突。剩余项（reason 短码枚举、a03 位置化实现细节、F-6 护栏措辞、CHANGELOG 文案）判定为票内实施细节。
+
+## 待审问题
+
+1. 上述四条决策是否已覆盖本轮所有必须用户裁决的面？有无被静默假设掉的决策分支（例如：测试策略的授权面、refactor 期间发现新债的处置闸、commit 粒度与 review 边界、回滚预案、轮体量失控的熔断条件）？
+2. 用工业界心智模型检验：决策树遍历完备性（如 decision-tree completeness、pre-mortem/premortem 惯例、change-freeze 边界、 blast-radius 控制、stop-the-line 条件）是否有本轮该立而未立的规矩？
+3. 若判定 frontier 非空，列出缺失分支与建议提问形态；若判定已空，给出确认与理由。
+4. 辩证检验：对我「剩余项均属实施细节」的判定找最强反例。

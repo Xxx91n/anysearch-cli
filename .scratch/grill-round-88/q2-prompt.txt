@@ -1,0 +1,35 @@
+你是一个为软件仓库「anysearch-cli」（TypeScript/pnpm monorepo，信息专精 Agent CLI）做深度调研的研究者。请围绕下面的裁决问题做多源调研，重点放在【工业界成熟落地的心智模型】上，给出推荐选项与理由。
+
+## 仓库上下文（本轮已裁决）
+
+R88=「搜索面卫生轮」刚裁决（D-001 current）：正题=F-6 refactor（scripts/probe-anysearch-mcp-raw.ts ??/|| 一致化+sanitize 对称遮 endpoint+版本字面量护栏+CHANGELOG 归位）+同域纳编 registry 三票：a03（CLI flagValueSet 吞词——查询词与旗值同形被剔除，修法已定=位置化旗值解析替代值集合剔除）、a06（垂域组装+require-domain guard 三处近重复）、a08（search_web dead maxResults——schema 未含该键但 tool 解构）。预注册条款：a06 归并边界必须写入 ADR 验收判据再动工。
+
+## a06 重复面实物测绘（已核实）
+
+三个 call site 各做同一两步：①require-domain guard（verticalDomain===undefined 且 subDomain/params 存在→报错）②canonicalizeVertical({domain,...subDomain,...params}) 组装（whole-replace 语义，ADR-0084 D-003 立法）：
+- apps/cli/src/commands/search.ts:55-77——输入=CLI flag 字符串（params 需 JSON.parse），错误通道=stderr 文案+exit(1)
+- apps/mcp/src/tools/search-web.tool.ts:28-35——输入=AJV 已校验的类型化 args，错误通道=MCP tool error text 返回
+- apps/mcp/src/tools/research-web.tool.ts:25-32——同上逐字同构
+
+schema 面：packages/kernel/src/tool-schemas.ts 中 verticalDomain/verticalSubDomain/verticalParams 三参 TypeBox 块+注释逐字复制两份（SearchWebInput:20-33、ResearchWebInput:51-64），均 additionalProperties:false。
+canonicalizeVertical 本体在 packages/retriever/src/contract.ts:40，三站均已从 @anysearch-cli/retriever 导入——依赖边零新增可行。kernel engine.ts 已消费 retriever 的 VerticalSpec 类型与 provider.verticalDomainSupported。
+
+registry 原始建议：「建议共享 buildVerticalSpec」。
+
+## 现行账本 current 决策（不可冲突）
+
+- R88 D-001 搜索面卫生轮主轴（上述）。
+- R87 D-001~D-004 发布收口轮全程（已闭环；相关继承：ADR-0029 一轮一主题、不混排、due chores 走独立 refactor commit+CHANGELOG）。
+- ADR-0084 D-003/D-006：query-level vertical whole-replace 语义+错形 fail-fast（A-02 已立法一致——错误语义本身不许改，只许归并重复代码）。
+
+## 待裁问题（R88 Q2 — a06 归并边界，将写入 ADR-0089 验收判据）
+
+A1【双层归并】（我倾向推荐）：运行面 buildVerticalSpec({domain?,subDomain?,params?}) 归 packages/retriever/src/contract.ts（与 canonicalizeVertical 同址=VerticalSpec 语义单一权威），返回判别联合 {ok:true,vertical}|{ok:false}——三站共享组装+守卫语义，错误通道各 surface 自行映射（CLI→stderr+exit、MCP→tool text）；schema 面 kernel 抽共享 verticalSpecProps TypeBox 片段供 SearchWebInput/ResearchWebInput 复用。
+
+A2【仅归并 MCP 双站】：apps/mcp 内部共享模块收两站（逐字同构段），CLI 自留——理由：CLI 输入通道本异（flag string→JSON.parse vs 类型化 args）；代价：守卫语义仍两处维护，whole-replace 语义发源地的 CLI 站被留在共享面之外。
+
+A3【kernel 大一统】：schema 片段+运行组装都归 kernel——疑虑：kernel 将持有 retriever 类型的运行变换语义，分层方向可疑；但 kernel 已是 schema 权威+engine 消费方，或也可辩为「输入合约层」。
+
+A4【另指】：你认为更优的归并边界（含「不归并、维持现状」选项的评估）。
+
+请给出：推荐选项、理由、工业界心智模型依据（如 DRY vs WET/Rule of Three、shared kernel vs duplication 的界限、AHA programming、wrong abstraction 代价、跨 monorepo 包分层纪律、schema-first 契约面的 dedupe 惯例）、以及对 A1 的辩证检验（含最强反对论据——例如「判别联合返回 vs 各 surface 原生错误通道」是否过度设计、或三站 only-3 是否未到 Rule of Three 阈值）。

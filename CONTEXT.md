@@ -1568,3 +1568,26 @@ tag 挂载点纪律：tag=当前 tip=已审计 SHA——pre-tag dispatch 验证�
 
 ### Two-Piece Bleed Kit（止血两件套）
 已发布功能缺陷的止血配方=deprecate（精准 range+点名修复版本）+release notes/CHANGELOG 已知缺陷段；Security Advisory 保留给真安全漏洞（功能缺陷走 advisory 会触发 Dependabot 假警报+占用严肃通道）。_Avoid_: 功能缺陷发 Security Advisory；只做一件（deprecate 无 changelog 段=缺审计叙事，changelog 无 deprecate=pin 住的人收不到警告）。来源：atomcode R87-Q2+R87 D-002。
+
+## Grill Round 88 — Terms (ADR-0089)
+
+### Search-Surface Hygiene Round（搜索面卫生轮）
+轮次形态：发布收口后的批次化清债轮——同落 search/tooling 面的多张defer票+脚本卫生按「利息在位置不在行数」判据整批纳编一单主题。_Avoid_: 卫生轮混排契约扩张/特性面；把债按日历清而不按利息清。来源：atomcode R88-Q1+R88 D-001。
+
+### Fix-Before-Merge Ordering（修在前并随后序）
+票序纪律：先补 characterization 回归测试锁行为、修 bug，再做归并/refactor——归并搬入的必须是已修复形态（搬 bug 进新边界=把未定行为固化成契约）。_Avoid_: preparatory refactoring 误用（含 bug 代码当 no-op baseline 搬）；refactor 与 behavior fix 混 commit（违 Conventional Commits refactor 定义）。来源：atomcode R88-Q4+R88 D-004。
+
+### Discriminated-Union Builder（判别联合归并器）
+跨 surface 共享语义归并形态：共享函数返判别联合 {ok,value}|{ok:false,reason:短码}，人话文案归各 surface 渲染（与仓内 IpcError 模式同构）——领域结果共享、渲染留 adapter，共享函数不识调用方。_Avoid_: 共享函数抛异常跨包逃逸或只返 boolean 致文案三份漂移；为共享长出 caller 条件分支/options 参数。来源：atomcode R88-Q2+R88 D-002。
+
+### Byte-Identical Freeze（字节级冻结）
+归并类 refactor 的输出保真判据：三 surface 错误输出形状与归并前 byte-identical，且须先立 golden/快照断言作真理源再动工——tsc/门禁只证类型不证字节。_Avoid_: 无断言载体空谈冻结（验收形同虚设）；错形语义暗改（ADR-0084 D-006 镜像违反）。来源：atomcode R88-Q5+R88 D-002/D-005。
+
+### Contract-Enum Prelegislation（契约枚举前置立法）
+契约面枚举（reason 短码集/schema 键集）=预注册立法项非实现随行——枚举值须写入 ADR 验收判据，施工只许在立法集内取值。_Avoid_: 把契约枚举留给实现自定（Pact Golden Rule 违反）；实现先行的枚举事后追认。来源：atomcode R88-Q5+R88 D-005。
+
+### Distortion-Triage Inheritance（失真判据显式继承）
+轮内新债处置闸的继承纪律：前轮已立法判据（R84 D-007 三向：失真→并入主票/同文件→复核行/无关→清障轮）须显式接线引用，非默认延续；发现者无权就地扩票。_Avoid_: 静默假设机制自动生效（stop-the-line 惯例要求显式授权）；就地私修顺手扩票。来源：atomcode R88-Q5+R88 D-005。
+
+### Ticket Fuse（票级熔断）
+轮体量失控的 stop-loss 规则：单票门禁失败就地修重跑；同票连续 2 轮 LOOP 修复失败→回退该票 commit（一票一 commit 粒度已备）+挂回 registry+其余票推进——缩轮不整轮挂起，缩轮事件回呈用户。_Avoid_: 有回滚手段无回滚决策规则；某票修不干净拖死整轮。来源：atomcode R88-Q5+R88 D-005。

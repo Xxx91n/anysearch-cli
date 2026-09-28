@@ -1,0 +1,24 @@
+你是一个为软件仓库「anysearch-cli」（TypeScript/pnpm monorepo，信息专精 Agent CLI）做深度调研的研究者。请围绕下面的裁决问题做多源调研，重点放在【工业界成熟落地的心智模型】上，给出推荐选项与理由。
+
+## 仓库上下文（本轮已裁决，全 current）
+
+R88=「搜索面卫生轮」：
+- D-001 主轴：F-6 refactor（scripts/probe-anysearch-mcp-raw.ts 89 行：??/|| 一致化+sanitize 对称遮 endpoint+版本字面量护栏+CHANGELOG 归位）+同域纳编 r83-a03/a06/a08 三票，预注册条款=a06 归并边界写入验收判据。
+- D-002 a06 双层归并（A1′）：运行面 buildVerticalSpec({domain?,subDomain?,params?}) 归 packages/retriever/src/contract.ts（与 canonicalizeVertical 同址），判别联合 {ok,vertical}|{ok:false,reason:短码枚举}，错误通道各 surface 渲染且输出形状 byte-identical 冻结；schema 面 kernel/tool-schemas.ts 抽 verticalSpecProps 片段（additionalProperties:false+注释随片段）+tsc --noEmit 验证。
+- D-003 a08 删解构+契约测试加固：移除 search-web.tool.ts maxResults 解构/传参（AJV 已硬拒=零行为变化），ADR 注记「暴露=特性决策」，验收判据=单测断言 SearchWebInput 拒收 maxResults。
+
+## 票内实物约束（已测绘）
+
+- a03 修复点：apps/cli/src/commands/search.ts 的 queryClean 按值剔除（flagValueSet 吞词 bug：--vertical-domain finance finance 吞第二个 finance），修法已定=位置化旗值消费；该段与 a06 要抽的守卫+组装块在同函数不同段（a03 动 args→旗值消费，a06 动 parsed values→vertical 组装），交叠可控但不零。
+- ADR-0029 纪律：一轮一主题、due chores 独立 refactor commit+CHANGELOG；working agreement：cleanup/refactor 前先写清理计划+回归测试锁行为。
+- 门：pnpm -r check（8 包）+pnpm -r test+ship-gate --quick+惯例审计 LOOP+handoff-lint。
+
+## 待裁问题（R88 Q4 — 轮内票序+commit 结构）
+
+A【修在前、并随收口，一票一 commit】（我倾向推荐）：T0 哨戒续班+基线快照→T1 a08 删解构+契约测试→T2 a03 位置化旗值+回归测试（先补吞词测试锁行为再修）→T3 a06 双层归并（在 a03 落定后归并，搬的是已修复形态）→T4 F-6 probe 卫生（独立文件最后做）→T5 收口件（ADR-0089+CONTEXT+CHANGELOG+registry 四票核销+claims+任务书，单文档 commit）→T6 门禁+审计 LOOP。T1-T4 各一 commit、T5 一 commit。
+
+B【归并先行】：a06 先抽共享再修 a03——疑虑：把未修复的守卫/组装搬进新边界，a03 的旗值消费 fix 落在新边界外仍要改旧区，或被迫在新边界内修=refactor 与 behavior fix 混 commit。
+
+C【另排】。
+
+请给出：推荐选项、理由、工业界心智模型依据（如 fix-before-refactor/lock-behavior-with-tests 纪律、small-batch commit 节奏、refactor 与 behavior change 不混 commit 的评审惯例、dependency-ordered ticket sequencing、Michael Feathers/Working Effectively with Legacy Code 的 characterization test、以及「先修后并」vs「先并后修」的判例），并对 A 做辩证检验（含最强反对论据——例如 a06 先行能否反而简化 a03 的修法、或六票序里哪张是虚票）。

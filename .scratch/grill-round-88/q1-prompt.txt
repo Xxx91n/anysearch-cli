@@ -1,0 +1,38 @@
+你是一个为软件仓库「anysearch-cli」（TypeScript/pnpm monorepo，信息专精 Agent CLI，遵循 AnySearch 垂直领域理念）做深度调研的研究者。请围绕下面的裁决问题做多源调研，重点放在【工业界成熟落地的心智模型】上，给出推荐选项与理由。
+
+## 仓库上下文（已核实的实物状态）
+
+这是一个用「grill round」节奏推进的项目：每轮一次主题化工作+独立审计+决策账本+ADR+CONTEXT.md 词表。已连续 87 轮、88 部 ADR、多轮独立审计。外部锐评者已完成第 7、8 轮锐评，且两轮锐评的全部处方/小刀均已核销闭环。
+
+上两轮：
+- R86「绿门装船轮」：真测量版 NO-GO（prefer-capable 垂域路由假设被预注册实验判负，P(better>worse)=0.0378、净胜率-0.125）；v0.1.0 钉版。
+- R87「发布收口轮」刚闭环：v0.1.0 tag 挂 8292071c、OIDC trusted publish 全绿、5 包 npm latest=0.1.0、旧版 cli@<0.1.0 已 deprecate（0.0.5/0.0.8 红标实测生效）、发布后实物验证全绿（tarball /mcp 在列、陌生人安装绿）、F-3 判据勘误+defer 注记+R88 候选登记全部入库。
+
+当前 registry open=17 项，分组：
+（1）R88 已登记候选×2：r88-candidate-f6-refactor-round（F-6 refactor 施工：scripts/probe-anysearch-mcp-raw.ts 89 行探针脚本的 ??/|| 一致化+sanitize 对称遮 endpoint+版本字面量护栏+CHANGELOG 归位——R87 收口推荐的正题）；r88-candidate-vertical-direction-redeliberation（垂域方向重议候审：prefer-capable 具名重开条件 |ΔarmHostHit|≳0.4 未达，作候选不复活）。
+（2）同表面 deferred-with-ticket×3（R83 挂账漂了 5 轮）：a03 CLI flagValueSet 吞词（查询词与旗值同形被剔除）、a06 垂域组装+require-domain guard 三处近重复（cli/search.ts、mcp/search-web、mcp/research-web）、a08 search-web.tool.ts dead maxResults 参数。三者与 F-6 同落 search/tooling 代码面。
+（3）上游触发债×4：r86-corpus-param-contract（等上游 tag 契约）、r86-anon-quota-nudge（等用户 env 修正回执）、r81-rest-route-tombstone、r84-ip-fifth-domain（等上游补 ip 子域参数词表）——均具名触发条件，不可主动推进。
+（4）常驻背景债×8：domain-ownership（法务/季度审）、f16-macos-crash（上游 better-sqlite3 issue watch）、f17-quarantine、r71-transformers ghost-dep、r72-dsh×2、r74-logo、r75-esm-arm。dsh 哨戒续班（rc.1 钉版在役）。
+
+## 现行账本中全 current 决策（R87 ledger D-001~D-004，不可与之冲突）
+
+- D-001 发布收口轮主轴：发布准入与产品方向裁决是两道独立的门；发布轮不混排工程项；F-6 refactor 出列立项 R88 候选；C 战略方向重议顺延 R88（重开条件未达=goalposts 移动反模式）；钉版不再动包。
+- D-002 执行边界+deprecate 精准：署名外发动作=用户问责签名面（本轮经 D-004 授权下放）；deprecate 最小正确范围；不发 Security Advisory；止血两件套。
+- D-003 票序：进制品/不进制品二元时序；零分叉打标；OIDC 首版日志显式核验。
+- D-004 tag 锚重钉+授权下放：tag=pre-tag 完成后 main tip；tag push 本轮授权 agent（仅本轮）。
+
+## 已确立心智模型（CONTEXT.md 词表 32 轮+ADR 88 部，枚举要点）
+
+ADR-0029 Scope discipline：一轮一主题，同子系统内聚工程项可并 ADR 条目，due chores 走独立 refactor commit+CHANGELOG，反模式=顺手 undocumented 修改。ADR-0059/0067/0069/0072 发布两段式。ADR-0088 发布收口术语集（最后一寸签名/零分叉/deprecate 精准/两件套）。关键词：Direction-Verdict vs Release-Gate（方向裁决与发布门分离）、Artifact-Bound-Housekeeping Split（进制品/不进制品分流）。
+
+## 待裁问题（R88 Q1 — 下一轮主轴）
+
+A【搜索面卫生轮】（我倾向推荐）：正题=F-6 refactor 施工，同域纳编 r83-a03/a06/a08 三票——五件同落 search/tooling 面（probe 脚本+cli/search.ts+mcp 两 tool），一单 ADR-0029 合规主题。理由：R87 收口已推荐 F-6 为下轮正题；r83 三票漂 5 轮同域打包一次清；轮体量适中、全仓内可控、无外发动作。
+
+B【垂域方向重议轮】：prefer-capable 双倍死亡后重议信息专精叙事。辩证保留：具名重开条件未达、0.1.0 刚上架无新证据，此刻重议=无新数据空谈风险；但「产品已发布、方向假设已死」后不问方向也可能累积漂移。
+
+C【广义清债轮】：17 open 逐票分诊。疑虑：范围过散或违 ADR-0029 单主题纪律；但债龄结构本身可能值得一次系统性检视。
+
+D【另指】：你认为更优的下一轮主轴。
+
+请给出：推荐选项、理由、各选项的工业界心智模型依据（如 post-release hygiene/cooldown 惯例、technical debt triage cadence、strategic review 触发条件、refactor 批次化纪律等）、以及对我倾向 A 的辩证检验（含反对 A 的最强论据）。
