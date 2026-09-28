@@ -113,6 +113,10 @@ All notable changes to this project are recorded here. Format follows
 
 - `defer-r71-provider-serverside` 本轮主轴处置（spike 诊断→三分支推荐→ADR-0082 裁决）；`defer-r72-dsh-plugin-npm-publish` 更态=已发布落地（三扳机实证，evidence/release-interlude-1.md）；其余 open 债 carried_log r81 显式续记。
 
+### Known Issues
+
+- `@anysearch-cli/cli@<0.1.0`（0.0.3–0.0.8）内置默认端点指向已退休的 `/v1/search` REST 路由——安装即报 route 404。0.1.0 起默认走 `/mcp`（旧值被守卫自动改写）；旧版本停用处置=deprecate 处方（ADR-0088 D4，执行态见轮次收口档）。升级：`npm i -g @anysearch-cli/cli@latest`。
+
 ## 0.0.8 — 2026-09-23 — ADR-0081 r80: 发布就绪轮——dsh-plugin 上架备货 + E6 lockfile 复核腿实证收口 + 派生件新鲜度腿 + 上游哨戒
 
 ### Added

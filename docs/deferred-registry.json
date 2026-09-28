@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updated": "2026-09-27",
+ "updated": "2026-09-28",
  "note": "Machine-checkable registry of deferred work items and carried-over acceptance criteria. Discipline is isomorphic to .ship-gate/skip-ledger.json (schema @3) and the ADR-0020 conformance expected-failures ledger: every deferral is an explicit, traceable record, never a silent drop. ADR-0057 D5 / D-006 requires one entry per carried-over acceptance criterion, marked closed-by the ADR that closes it. Old ADR bodies are never edited; the pointer line lives in the old ADR and the record lives here (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). Additive only: new entries are appended, existing ids are never reused or renumbered. Canonical form locked by ship-gate stepGovernedJsonCanonical (ADR-0077): this file must byte-equal JSON.stringify(JSON.parse(src),null,1)+'\\n'. To normalize: node -e \"const f='docs/deferred-registry.json';const fs=require('fs');fs.writeFileSync(f,JSON.stringify(JSON.parse(fs.readFileSync(f,'utf8')),null,1)+'\\n')\"",
  "entries": [
   {
@@ -880,7 +880,14 @@
    "opened_at": "2026-09-27",
    "review_cadence": "next matrix revision",
    "status": "open",
-   "evidence": "R86 T5 实证：vert-f1105 isoOn 腿上游 isError \"Missing required params for tag finance.fundamental: cn_code\"（两轮复跑确定性重合）。语料指纹 7ac0a48e55cd7954 冻结=>改格即 G0 漂移，本矩阵期不可修；修订候选=下一矩阵期补 cn_code 或降格该格。同类 bogus-sub_domain 对照格（*-103 ×4）为设计内负向拒收，非缺陷。"
+   "evidence": "R86 T5 实证：vert-f1105 isoOn 腿上游 isError \"Missing required params for tag finance.fundamental: cn_code\"（两轮复跑确定性重合）。语料指纹 7ac0a48e55cd7954 冻结=>改格即 G0 漂移，本矩阵期不可修；修订候选=下一矩阵期补 cn_code 或降格该格。同类 bogus-sub_domain 对照格（*-103 ×4）为设计内负向拒收，非缺陷。",
+   "carried_log": [
+    {
+     "at": "2026-09-28",
+     "round": 87,
+     "note": "R87 T5 去向注记：维持 open——语料指纹冻结期内不可修，具名触发=下一矩阵期（补 cn_code 或降格该格）；R87 发布轮未解冻语料，无动作"
+    }
+   ]
   },
   {
    "id": "defer-r86-anysearch-anon-quota-nudge",
@@ -891,7 +898,49 @@
    "opened_at": "2026-09-27",
    "review_cadence": "quarterly",
    "status": "open",
-   "evidence": "R86 T2 P2 raw 探针实测：匿名大跑中段上游改发 provisioning 文本而非结果信封（quota 边界邀请鉴权）。provider 检出后抛 quota/auth nudge→errorClass=permanent-auth。残余=用户侧 env 修正（endpoint 指向/key 轮换，agent 不代办）。"
+   "evidence": "R86 T2 P2 raw 探针实测：匿名大跑中段上游改发 provisioning 文本而非结果信封（quota 边界邀请鉴权）。provider 检出后抛 quota/auth nudge→errorClass=permanent-auth。残余=用户侧 env 修正（endpoint 指向/key 轮换，agent 不代办）。",
+   "carried_log": [
+    {
+     "at": "2026-09-28",
+     "round": 87,
+     "note": "R87 T5 去向注记：维持 open——用户侧 env 修正（endpoint 指向/key 轮换）回执核销，agent 不代办；季度 review cadence 不变"
+    }
+   ]
+  },
+  {
+   "id": "r87-f3-criterion-errata",
+   "type": "governance-record",
+   "title": "F-3 判据表述勘误（R87 T5）：iso providersFailed=∅ 字面判据改写为等价表述「装置性失败=∅ 且非空覆盖≥70%」——语义已达成、不溯改 R86 正文、不留永久脚注",
+   "source_adr": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
+   "owner": "anysearch-eval",
+   "opened_at": "2026-09-28",
+   "status": "closed",
+   "closed_by": "ADR-0088",
+   "closed_at": "2026-09-28",
+   "closed_by_adr_path": "docs/adr/0088-architecture-grill-round-87-release-closeout-ship.md",
+   "evidence": "勘误脚注落于 .scratch/grill-round-86/decision-record.md「勘误（R87 T5 补记）」段；字面值未达 vs 装置性失败=∅+覆盖 97.6% 达成，判读结论（NO-GO）不受影响"
+  },
+  {
+   "id": "r88-candidate-f6-refactor-round",
+   "type": "deferred-with-ticket",
+   "title": "R88 候选：F-6 refactor 施工轮——probe-anysearch-mcp-raw.ts ??/|| 一致化+sanitize 对称遮 endpoint+版本字面量护栏+CHANGELOG 归位（独立 refactor commit，遵 ADR-0029）",
+   "source_adr": "docs/adr/0088-architecture-grill-round-87-release-closeout-ship.md",
+   "owner": "anysearch-cli",
+   "opened_at": "2026-09-28",
+   "review_cadence": "next grill round",
+   "status": "open",
+   "evidence": "R86 下一轮候选第 2 项+R87 审计承继；发布轮不混排工程项故出列立项"
+  },
+  {
+   "id": "r88-candidate-vertical-direction-redeliberation",
+   "type": "deferred-with-ticket",
+   "title": "R88 候选：垂域方向重议轮——prefer-capable 具名重开条件 |ΔarmHostHit|≳0.4 未达，作正题候选候审（不复活加权问）",
+   "source_adr": "docs/adr/0088-architecture-grill-round-87-release-closeout-ship.md",
+   "owner": "anysearch-eval",
+   "opened_at": "2026-09-28",
+   "review_cadence": "next grill round",
+   "status": "open",
+   "evidence": "R86 decision-record 具名重开条件未达；R87 goal 显式范围外登记候场"
   }
  ]
 }
