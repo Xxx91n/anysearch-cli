@@ -10,17 +10,32 @@
 // Exit 0 = results-shaped reply; 2 = transport/tool failure; 3 = non-results
 // text shape (the discriminating case this probe exists for).
 
+import { readFileSync } from "node:fs";
+
 const DEFAULT_ENDPOINT = "https://api.anysearch.com/mcp";
+// R88 T4 / F-6: version literals are pinned to the workspace package version —
+// the probe speaks as the CLI client; a hand-maintained literal would drift on
+// every release. Single read at module load; failure is fatal by design (the
+// probe must never misreport which build it ran).
+const PROBE_VERSION = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version;
 const ARGS = process.argv.slice(2);
 const ENDPOINT = ARGS.includes("--default-endpoint") ? DEFAULT_ENDPOINT
-  : (process.env.ANYSEARCH_ENDPOINT ?? DEFAULT_ENDPOINT);
-const KEY = ARGS.includes("--nokey") ? "" : (process.env.ANYSEARCH_API_KEY ?? "");
-const QUERY = process.env.ANS_PROBE_QUERY ?? "cloudflare workers";
-const UA = "anysearch-cli-raw-probe/0.1";
+  : (process.env.ANYSEARCH_ENDPOINT || DEFAULT_ENDPOINT); // POSIX: empty env ≡ unset
+const KEY = ARGS.includes("--nokey") ? "" : (process.env.ANYSEARCH_API_KEY || ""); // POSIX: empty env ≡ unset
+const QUERY = process.env.ANS_PROBE_QUERY || "cloudflare workers"; // POSIX: empty env ≡ unset
+const UA = "anysearch-cli-raw-probe/" + PROBE_VERSION;
 
 function sanitize(s: string): string {
-  if (!KEY) return s; // empty KEY would split per-char — guard first
-  return s.split(KEY).join("***"); // never echo the key even if upstream reflects it
+  // R88 T4 / F-6: symmetric masking — the env-provided endpoint may carry an
+  // internal hostname, so it is masked like the key. Placeholders match
+  // probe-anysearch-provider.ts scrub() (<endpoint>/<key>) so redaction reads
+  // identically across both probes. Guards first: empty values would split
+  // per-character.
+  let t = s;
+  const ep = process.env.ANYSEARCH_ENDPOINT;
+  if (ep) t = t.split(ep).join("<endpoint>");
+  if (KEY) t = t.split(KEY).join("<key>"); // never echo the key even if upstream reflects it
+  return t;
 }
 
 async function post(body: unknown, sessionId: string | null, protocolVersion: string | null) {
@@ -55,7 +70,7 @@ const out: Record<string, unknown> = {
 try {
   const init = await post({
     jsonrpc: "2.0", id: 1, method: "initialize",
-    params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "anysearch-raw-probe", version: "0.1.0" } },
+    params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "anysearch-raw-probe", version: PROBE_VERSION } },
   }, null, null);
   if (init.status !== 200) { out.ok = false; out.stage = "initialize"; out.httpStatus = init.status; console.log(JSON.stringify(out)); process.exit(2); }
   const initBody = parseRpc(init.text);

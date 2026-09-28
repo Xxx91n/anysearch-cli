@@ -26,7 +26,7 @@ All notable changes to this project are recorded here. Format follows
 - R85 NO-GO 判词语义勘误为 indeterminate—instrument down（程序性裁决锁定不溯改）；matrix@2 先登记后读数，T5 原指纹复跑实测 **NO-GO/direction-negative**（P=0.0378、净胜率 −0.125）——垂域臂 armHostHit 轴实测负效应。
 - docs/deferred-registry.json：r85-arm / r84-env 核销；新增 defer-r86-anysearch-corpus-param-contract 与 defer-r86-anysearch-anon-quota-nudge。
 
-## Unreleased — ADR-0086 r85: delta 腿全量重跑 + prefer-capable 预注册判读（NO-GO 终局）
+## 0.1.0 — ADR-0086 r85: delta 腿全量重跑 + prefer-capable 预注册判读（NO-GO 终局）
 
 ### Added
 
@@ -37,7 +37,7 @@ All notable changes to this project are recorded here. Format follows
 
 - `defer-r83-prefer-capable-weighting` **核销（NO-GO 判词附纹理）**：全量重跑完成（57/57 格腿全活、覆盖 41/41、指纹 7ac0a48e55cd7954），注册矩阵单次终读裁决 NO-GO——但「无信号」实为 anysearch 臂全程 provider-failure 空列（装置级零数据非测得零增益），纹理如实披露于 decision-record；复活前置=新挂 `defer-r85-anysearch-arm-providersfailed`（清障候选，owner anysearch-retriever）。`defer-r84-delta-quota-rerun` 核销（触发条件满足+全量重跑实绩+降格件归档 `delta-2026-09-26.degraded.json` 不删）。
 
-## Unreleased — ADR-0085 r84: 垂域评测证据腿——契约断言 + 金标语料 + 双臂配对 delta
+## 0.1.0 — ADR-0085 r84: 垂域评测证据腿——契约断言 + 金标语料 + 双臂配对 delta
 
 ### Added
 
@@ -57,7 +57,7 @@ All notable changes to this project are recorded here. Format follows
 
 - `defer-r83-prefer-capable-weighting` 注记更新为「证据机制在役等数据」（open，未核销）；新增 `defer-r84-ip-fifth-domain`（上游补 ip 结构化参数再建集）/ `defer-r84-delta-quota-rerun`（匿名配额耗尽后首轮部分降格，持有效 key 重跑）/ `defer-r84-anysearch-empty-endpoint-env`（ANYSEARCH_ENDPOINT 空串应视同未设）。
 
-## Unreleased — ADR-0084 r83: 垂域贯通轮——AnySearch vertical-domain passthrough + TE1 dsh 事件迁移
+## 0.1.0 — ADR-0084 r83: 垂域贯通轮——AnySearch vertical-domain passthrough + TE1 dsh 事件迁移
 
 ### Added
 
@@ -78,7 +78,7 @@ All notable changes to this project are recorded here. Format follows
 
 - `defer-r83-anysearch-vertical-domain-passthrough` 收口（本轮落地）；`defer-r73-dsh-event-rename` 双锚齐消费完毕核销；新增 prefer-capable 加权调参跟进项（D-004 §4，eval 数据驱动非契约职责）；R82 审计残余 nit 两档处置（e2e hermetic 即修落地；度量行自指/JSON id 不对称/clientInfo.version 硬编码/engines 地板缺席逐项登记——见 ADR-0084）。
 
-## Unreleased — ADR-0083 r82: 迁移落地轮——AnySearchProvider REST→MCP-over-HTTP
+## 0.1.0 — ADR-0083 r82: 迁移落地轮——AnySearchProvider REST→MCP-over-HTTP
 
 ### Changed
 
@@ -97,7 +97,7 @@ All notable changes to this project are recorded here. Format follows
 
 - `defer-r81-provider-shape-validation` 收口（fail-first 映射+错形测试面）；`defer-r81-anysearch-rest-route-removed` 续守 quarterly 监控；`defer-r73-dsh-event-rename` 双锚未齐续债（rc.2 特征锚复验齐/稳定锚未齐，合格候选未出现）；新增 `defer-r83-anysearch-vertical-domain-passthrough`；ADR-0082 残余 R1–R5 四分诊全落位（registry residual-triage 五卡）。
 
-## Unreleased — ADR-0082 r81: 产品吸气轮——provider-serverside spike 诊断 + release.yml R1 幂等跳过 + 发布插曲协议立法
+## 0.1.0 — ADR-0082 r81: 产品吸气轮——provider-serverside spike 诊断 + release.yml R1 幂等跳过 + 发布插曲协议立法
 
 ### Added
 
