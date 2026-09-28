@@ -67,3 +67,7 @@ F-6 refactor 施工（R88）/方向重议（具名重开条件未达）/Security
 
 ## 汇报纪律
 单任务隔离报；敏感值遮蔽；发布状态分层（draft→PR→merged→deployed→live-verified→knowledge-closed→cleaned 如实标位）；「已发布」仅当 npm view 实物复核后落档；deprecate 前后都要 npm view 实证。
+
+## 终态戳（2026-09-28 收口补记）
+
+T0–T3、T5、T6 完成；**T4 deprecate 挂账**（EOTP 用户侧闸，处方与核销路径见 `handoffs/round-87-closeout.md`）。发布本体已 live-verified：npm latest=0.1.0 ×5、tag v0.1.0@8292071c、release run 36373586142 全绿。收口档：`.scratch/grill-round-87/handoffs/round-87-closeout.md`；R88 候选已 registry 登记（r88-candidate-*）。

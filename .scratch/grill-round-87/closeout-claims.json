@@ -1,0 +1,69 @@
+{
+ "schema": "anysearch/closeout-claims@1",
+ "round": 87,
+ "claims": [
+  {
+   "id": "r87-t0-watch-archive",
+   "kind": "path",
+   "claim": "T0 哨戒实录与 T0-fix 审计实录归档在案（记账件收口批入库）",
+   "paths": [
+    ".scratch/grill-round-87/reports/t0-watch-2026-09-28.md",
+    ".scratch/grill-round-87/reports/r87-t0fix-audit-2026-09-28.md",
+    ".scratch/grill-round-87/reports/post-release-verify-2026-09-28.md"
+   ]
+  },
+  {
+   "id": "r87-t3-version-pin",
+   "kind": "field",
+   "claim": "v0.1.0 钉版在仓（五包版本字段=0.1.0，发布件与仓内一致）",
+   "file": "apps/cli/package.json",
+   "field": "version",
+   "expect": "0.1.0"
+  },
+  {
+   "id": "r87-t3-legacy-route-guard",
+   "kind": "symbol",
+   "claim": "死路由退休守卫在源码：LEGACY_REST_SUFFIX=/v1/search 仅作检测常量，命中即改写 /mcp",
+   "file": "packages/retriever/src/providers/anysearch.ts",
+   "tokens": ["LEGACY_REST_SUFFIX", "/v1/search", "/mcp"]
+  },
+  {
+   "id": "r87-t5-f3-errata",
+   "kind": "symbol",
+   "claim": "F-3 判据表述勘误落档（不溯改正文）",
+   "file": ".scratch/grill-round-86/decision-record.md",
+   "tokens": ["勘误（R87 T5 补记", "装置性失败"]
+  },
+  {
+   "id": "r87-registry-updated",
+   "kind": "field",
+   "claim": "deferred-registry 收口注记更新（去向注记+R88 候选+F-3 errata 入库）",
+   "file": "docs/deferred-registry.json",
+   "field": "updated",
+   "expect": "2026-09-28"
+  },
+  {
+   "id": "r87-registry-entries",
+   "kind": "count",
+   "claim": "registry 新增条目=3（r87-f3-criterion-errata + r88-candidate×2）",
+   "command": "node -e \"const j=require('./docs/deferred-registry.json');console.log(j.entries.filter(e=>e.id.startsWith('r87-')||e.id.startsWith('r88-candidate')).length)\"",
+   "expect": 3
+  },
+  {
+   "id": "r87-t4-deprecate-status",
+   "kind": "narrative",
+   "claim": "deprecate 处方执行态记账（EOTP 挂账/核销回执）",
+   "file": ".scratch/grill-round-87/handoffs/round-87-closeout.md",
+   "tokens": ["deprecate", "EOTP"]
+  },
+  {
+   "id": "r87-t6-closeout-doc",
+   "kind": "path",
+   "claim": "收口交接档在案（Stack+绿证 run+下一次 grill 方向）",
+   "paths": [
+    ".scratch/grill-round-87/handoffs/round-87-closeout.md",
+    ".scratch/grill-round-87/handoffs/r87-t0fix-audit-handoff.md"
+   ]
+  }
+ ]
+}
