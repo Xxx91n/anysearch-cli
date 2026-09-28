@@ -26,7 +26,7 @@ pre-tag → tag → 验证 → deprecate → 收口，账本 sha 与 tag push �
 
 ### D4 deprecate 处方（D-002 D1′）
 
-`npm deprecate "@anysearch-cli/cli@<0.1.0>" "…dead endpoint (route 404). Fixed in 0.1.0 — upgrade."`——范围只 cli 不扩 4 包（其余包不含 bundled 端点配置面）；不发 Security Advisory（功能缺陷非安全漏洞）；时机=T3 全绿实证后、收口前。**执行态如实记账**：命令迭代范围正确（0.0.3–0.0.8）但命中 npm 账户写操作 OTP 闸（EOTP），零写入半残留——本项挂账待用户 OTP/自执，核销即 closeout-claims 翻 green。
+`npm deprecate "@anysearch-cli/cli@<0.1.0>" "…dead endpoint (route 404). Fixed in 0.1.0 — upgrade."`——范围只 cli 不扩 4 包（其余包不含 bundled 端点配置面）；不发 Security Advisory（功能缺陷非安全漏洞）；时机=T3 全绿实证后、收口前。**执行态如实记账**：命令迭代范围正确（0.0.3–0.0.8）但命中 npm 账户写操作 OTP 闸（EOTP），零写入半残留——本项挂账待用户 OTP/自执，核销即 closeout-claims 翻 green。**核销回执（同日补记）**：用户经浏览器认证路径执行成功，`npm view @anysearch-cli/cli@0.0.5/0.0.8 deprecated` 红标生效、`@0.1.0` 无 deprecated 字段。
 
 ### D5 发布后实物验证（T3 全绿实证）
 

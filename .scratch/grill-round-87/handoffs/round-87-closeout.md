@@ -17,7 +17,7 @@ Stack: r87-release-closeout + r87-grill（已 land，均不存）→ main；tag 
 | T1 pre-tag | ✅ | run 36372963603；账本 sha 8292071c 落 main |
 | T2 tag 外发 | ✅ | v0.1.0 挂 8292071c（D-004 语义锚）；release run 36373586142 全绿 |
 | T3 发布验证 | ✅ 全绿 | post-release-verify-2026-09-28.md：5 包 latest=0.1.0 / integrity 逐字节 / tarball `/mcp` 在列 `/v1/search` 仅存守卫常量 / 净机 `ans --version`=0.1.0 / dsh-plugin 陌生人安装绿 / OIDC provenance logIndex 显式核验 / gh release 无对象=设计内 |
-| T4 deprecate | ⏳ **挂账** | `npm deprecate @anysearch-cli/cli@<0.1.0` 迭代范围正确（0.0.3–0.0.8）但命中账户写操作 **EOTP** 闸，零写入半残留——待用户 OTP/自执，核销回执补记本档 |
+| T4 deprecate | ✅ **核销** | `npm deprecate @anysearch-cli/cli@<0.1.0` 命中账户写操作 **EOTP** 闸后转用户侧执行（浏览器认证路径），2026-09-28 核销回执：`npm view cli@0.0.5/0.0.8 deprecated` 红标生效、`cli@0.1.0` 干净未误伤 |
 | T5 记账件批 | ✅ | F-3 判据勘误脚注（r86 decision-record 追加段 + registry r87-f3-criterion-errata closed-by ADR-0088）；defer-r86×2 去向注记（carried_log 各具名触发维持 open）；R88 候选×2 入库（r88-candidate-f6-refactor-round / r88-candidate-vertical-direction-redeliberation）；锐评核账收尾并入本批 |
 | T6 收口 | ✅ | 本档 + ADR-0088 + closeout-claims.json + CHANGELOG 已知缺陷段 + registry 注记 + 记账批入库 |
 
@@ -29,7 +29,7 @@ Stack: r87-release-closeout + r87-grill（已 land，均不存）→ main；tag 
 
 ## 挂账（下轮/用户侧）
 
-- **T4 deprecate**：待 OTP。用户二选一：①自执 `npm deprecate "@anysearch-cli/cli@<0.1.0>" "Deprecated: bundled anysearch provider used a dead endpoint (route 404). Fixed in 0.1.0 — upgrade."`；②供 OTP 由 agent 带 `--otp` 执行。核销后 `npm view @anysearch-cli/cli@0.0.8 deprecated` 应见红标，回本档补一行核销回执。
+- ~~T4 deprecate~~ ——已核销（2026-09-28 用户浏览器认证执行；agent 侧 `npm view` 复核：0.0.5/0.0.8 deprecated 红标在、0.1.0 无 deprecated 字段）。
 - defer-r86×2：corpus-param-contract（下一矩阵期补 cn_code 或降格）/ anon-quota-nudge（用户侧 env 修正回执核销）——维持 open。
 - dsh 哨戒：钉版 rc.1 在役，next=rc.2 候选越 48h 闸合格，无 rc.3；续班移交 R88。
 
