@@ -1,0 +1,11 @@
+=== R90 T3 bundle hygiene sweep (2026-09-29T07:30:59.286Z) ===
+cmd: pnpm build in apps/dsh-plugin (esbuild --bundle --external:@deepseek-ai/*) then import/require scan of lib/index.js
+
+external imports found: node:crypto, node:fs, node:module, node:path
+bundle bytes: 152251
+better-sqlite3 leaked: false
+kernel subpath content bundled (MVSS description): true
+native tool names present: ans_search_web=true, ans_research_web=true, ans_recall_memory=true, ans_query_knowledge=true, ans_ans_chat=true
+ctx.tools.register site present: true
+tools/call wire string present: true
+KernelJsonSchemas/KernelToolDescriptions references inlined: true

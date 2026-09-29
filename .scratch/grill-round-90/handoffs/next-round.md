@@ -93,3 +93,12 @@
 ## 终态戳（执行轮填）
 
 - 判词/票态：____ | commit 序列：____ | 门禁：____ | 审计：____
+
+---
+
+## 终态戳（round-90 收口）
+
+- T0 chore 6b2bd509 / T1 docs b255bf64 / T2 test 67b42dad / T3 fix dba410b6 / T4 refactor 32ea8763 / T5 docs c56e1d34 / T6 docs（本批）
+- TC 未触发（无 0.2.0 stable 晋升目击）
+- defer-r72-dsh-native-tools → closed；defer-r72-dsh-web-interactive-matrix 收窄 defer；新增 defer-r72-dsh-approval-channel
+- T7 门禁全绿实录见 reports/2026-09-29-report.md

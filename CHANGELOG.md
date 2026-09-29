@@ -4,6 +4,21 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0091 r90: dsh 原生工具面实施轮（五 ans_* 原生注册 + 桥退役 + approval-channel 拆票）
+
+### Fixed
+
+- **defer-r72-dsh-native-tools 解除**：五 ans_* 工具（search_web/research_web/recall_memory/query_knowledge/ans_chat）经 `ctx.tools.register` 原生注册于 apps/dsh-plugin `apply()`；裸 ToolDefinition（非 defineTool——零依赖契约凌驾 DSL 方便性），parameters=KernelJsonSchemas 逐字投影，execute=纯传输（MCP tools/call→ans-mcp HTTP /mcp，传播三头+fail-open 空结果）。测试 21/21 绿（expected-RED 先行留证）。
+
+### Added
+
+- **kernel `./tool-json-schemas` 子路径导出** + KernelToolDescriptions SSOT（apps/mcp 五 .tool.ts 描述文案收敛单源）。
+- **callServer 加性槽位**：headers/timeoutMs/signal + 空体 2xx→{}（同一契约延展，非新通道）。
+
+### Removed
+
+- **mcp-anysearch 桥行**自 cordis.patch.yml 退役（独票 refactor；rollback=revert）。注册表 native-tools→closed；approval-channel 拆为独立条目 defer-r72-dsh-approval-channel。
+
 ## Unreleased — ADR-0090 r89: dsh 上游线轮（0.2.0-rc.1 调研 + repin 判词 soak-until-stable + r72 两票定形）
 
 ### Changed

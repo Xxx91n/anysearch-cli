@@ -1,0 +1,95 @@
+{
+ "schema": "anysearch/closeout-claims@1",
+ "round": 90,
+ "claims": [
+  {
+   "id": "r90-t0-watch",
+   "kind": "symbol",
+   "claim": "dist-tags 复观：next=0.2.0-rc.1 无 stable 晋升→TC 不启；cordis 4.0.4 未动；dsh-approval npm 404",
+   "file": ".scratch/grill-round-90/evidence/t0-dist-tags.json",
+   "tokens": [
+    "0.2.0-rc.1",
+    "next",
+    "@deepseek-ai/dsh"
+   ]
+  },
+  {
+   "id": "r90-t0-baseline",
+   "kind": "symbol",
+   "claim": "基线：check 8/8 + test 全绿 + ship-gate --quick 仅 clean-tree 中态红（evidence 工件预期）",
+   "file": ".scratch/grill-round-90/evidence/t0-baseline.log",
+   "tokens": [
+    "check_exit=0",
+    "test_exit=0",
+    "clean-tree",
+    "eventsource-parser"
+   ]
+  },
+  {
+   "id": "r90-t1-adr-addendum",
+   "kind": "symbol",
+   "claim": "ADR-0090 补 pending-repin 第四行 + 版本轴/消费轴正交立法",
+   "file": "docs/adr/0090-architecture-grill-round-89-dsh-upstream-line.md",
+   "tokens": [
+    "pending-repin",
+    "版本轴",
+    "消费轴"
+   ]
+  },
+  {
+   "id": "r90-t2-red",
+   "kind": "symbol",
+   "claim": "expected-RED：六断言腿 15 pass/6 fail 预实施留证",
+   "file": ".scratch/grill-round-90/evidence/t2-expected-red.log",
+   "tokens": [
+    "pass 15",
+    "fail 6",
+    "ans_search_web"
+   ]
+  },
+  {
+   "id": "r90-t3-native",
+   "kind": "symbol",
+   "claim": "五 ans_* 原生注册 ctx.tools.register 裸 ToolDefinition；KernelJsonSchemas 逐字投影；execute=callServer→ans-mcp /mcp 握手缓存+三头+fail-open；21/21 绿",
+   "file": ".scratch/grill-round-90/evidence/t3-green.log",
+   "tokens": [
+    "pass 21",
+    "fail 0",
+    "tools/call"
+   ]
+  },
+  {
+   "id": "r90-t4-retire",
+   "kind": "symbol",
+   "claim": "mcp-anysearch 桥行退役：cordis.patch.yml 插件行独存；活动引用面清零；rollback=revert",
+   "file": "apps/dsh-plugin/cordis.patch.yml",
+   "tokens": [
+    "anysearch-dsh-plugin",
+    "insert:"
+   ]
+  },
+  {
+   "id": "r90-t5-split",
+   "kind": "symbol",
+   "claim": "approval-channel 拆票（dsh-user-approval@0.1.7-rc.1 键面复验）；matrix 收窄；native-tools→closed",
+   "file": ".scratch/grill-round-90/evidence/t5-approval-surface.log",
+   "tokens": [
+    "approval/request",
+    "defer-r72-dsh-approval-channel",
+    "0.1.7-rc.1"
+   ]
+  },
+  {
+   "id": "r90-bundle-hygiene",
+   "kind": "symbol",
+   "claim": "lib/index.js 外部导入仅 node:* builtin；better-sqlite3 零泄漏（子路径导出旁路 barrel）",
+   "file": ".scratch/grill-round-90/evidence/t3-bundle-hygiene.log",
+   "tokens": [
+    "external imports found",
+    "node:crypto",
+    "tools/call",
+    "ans_search_web"
+   ]
+  }
+ ]
+}

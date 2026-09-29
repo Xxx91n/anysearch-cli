@@ -1637,3 +1637,9 @@ repin-to-rc 收口义务的延展形态：上游 stable 晋升时收口探针除
 ### Bridge-Retirement Ticket（桥退役独票）
 迁移类变更的 commit 粒度纪律：新路径实施与旧路径退役是两个独立可回滚风险单元，退役独票（rollback=revert 本 commit）；实施失败不连坐退役、退役出问题不连坐实施。_Avoid_: 实施+拆桥同 commit（revert 粒度变粗）；退役无独立回滚单元。来源：atomcode R90-Q2+R90 D-002。
 
+### Literal-Definition over DSL Wrapper（字面定义压 DSL 包装）
+零运行时依赖包的宿主 API 消费原则：上游 convenience wrapper（defineTool）若是运行时值，导入即破 dependencies:{} 契约；裸数据字面量（ToolDefinition）消费同一注册契约（register 只查 output.schema，parameters 直通投影）且零损保真——DSL 投影丢关键字（additionalProperties/minLength）。_Avoid_: 为 DSL 语法糖引运行时依赖；为绕开契约把上游 wrapper 拷进 bundle（冻结拷贝废搅动告警）。来源：R90 T3 实物裁决。
+
+### Leaf-Export Bypass（子路径叶导出旁路 barrel）
+单源模块消费≠ barrel 导入：barrel 牵重 dep（kernel→better-sqlite3）进零依赖 bundle；exports 加叶件子路径（./tool-json-schemas→src/*.ts）供消费方精准取件，依赖子图最小（typebox-only）。_Avoid_: 为取一个 const 导 barrel（传递依赖污染零依赖包）；为躲 barrel 手抄常量（SSOT 漂移）。来源：R90 D-001 实施。
+
