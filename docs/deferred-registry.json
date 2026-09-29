@@ -336,8 +336,11 @@
    "opened_at": "2026-09-19",
    "deadline": "2027-03-31",
    "review_cadence": "quarterly",
-   "status": "open",
+   "status": "closed",
    "evidence": "R72 chose the official mcp-client bridge (zero product code for the tool surface). Revisit triggers: bridge shows insufficiency for ans_chat/research_web latency, or the tool-registration API stabilizes upstream.",
+   "closed_by": "round-90 T3 (commit 1bc7b84d (restacked; pre-move sha dba410b6)): five ans_* tools register natively via ctx.tools.register in apps/dsh-plugin/src/index.ts; execute = MCP tools/call over ans-mcp HTTP transport; bridge row retired in T4 (commit b41469e1, restacked; pre-move sha 32ea8763)",
+   "closed_at": "2026-09-29",
+   "closed_by_adr_path": "docs/adr/0091-architecture-grill-round-90-dsh-native-tool-plane.md",
    "monitoring_channel": "watch @deepseek-ai/dsh-mcp-client + dsh-tools releases",
    "carried_log": [
     {
@@ -379,13 +382,18 @@
      "at": "2026-09-29",
      "round": 89,
      "note": "R89 T4 定形在案（.scratch/grill-round-89/r72-shaping.md）：L1 实测 ctx.tools 注册面（ToolRuntime.register/restrict/defineTool）自 ≥0.1.5-rc.2 三代签名逐字相同——「工具注册 API 上游稳定化」触发器实质已响（从严读=待 0.2.0 stable）；判词 soak-until-stable，维持 defer 不实现"
+    },
+    {
+     "at": "2026-09-29",
+     "round": 90,
+     "note": "R90 实施闭环：T2 expected-RED（15p/6f）→T3 fix dba410b6（ctx.tools.register 裸 ToolDefinition+KernelJsonSchemas 逐字投影+callServer→ans-mcp /mcp+三头+fail-open）21/21 绿→T4 refactor 32ea8763 桥行退役；偏离记档=defineTool→literal ToolDefinition（零依赖契约凌驾 DSL 方便性）"
     }
    ]
   },
   {
    "id": "defer-r72-dsh-web-interactive-matrix",
    "type": "deferred-with-deadline",
-   "title": "dsh web-profile interactive matrix — browser-driven turn, live patch reload (patchReload:live), approval-channel surfaces",
+   "title": "dsh web-profile interactive matrix — browser-driven turn, live patch reload (patchReload:live) [approval-channel split out at R90 → defer-r72-dsh-approval-channel]",
    "source_adr": "docs/adr/0073-architecture-grill-round-72-deepseek-harness-host-adaptation.md",
    "owner": "anysearch-platform",
    "opened_at": "2026-09-19",
@@ -434,6 +442,31 @@
      "at": "2026-09-29",
      "round": 89,
      "note": "R89 T4 定形在案：approval-channel 分项依赖已解除（dsh-user-approval 在架同形）；patchReload:live/browser-turn 上游 .d.ts 双版缺席——维持 defer，依赖状态分项写明"
+    },
+    {
+     "at": "2026-09-29",
+     "round": 90,
+     "note": "R90 T5 复核裁决=拆：approval-channel 拆为独立条目 defer-r72-dsh-approval-channel（0.1.7-rc.1 tarball 复验：approval/request+asked+decided+policy+invariant 事件面在架——唯一依赖已解除的分项，可独立前置）；本条目收窄为 patchReload:live+browser-turn，维持 defer（上游 0.1.7-rc.1/0.2.0-rc.1 .d.ts 键面缺席复核不变）"
+    }
+   ]
+  },
+  {
+   "id": "defer-r72-dsh-approval-channel",
+   "type": "deferred-with-deadline",
+   "title": "dsh approval-channel surface verification — approval/request waterfall + ApprovalOutcome end-to-end behaviour on the interactive path (split out of defer-r72-dsh-web-interactive-matrix at R90)",
+   "source_adr": "docs/adr/0073-architecture-grill-round-72-deepseek-harness-host-adaptation.md",
+   "owner": "anysearch-platform",
+   "opened_at": "2026-09-29",
+   "deadline": "2027-03-31",
+   "review_cadence": "quarterly",
+   "status": "open",
+   "evidence": "Split ruling (R90 T5): this is the ONE sub-item of the R72 web matrix whose upstream dependency is fulfilled — @deepseek-ai/dsh-user-approval@0.1.7-rc.1 tarball exposes approval/policy + approval/invariant + approval/types + approval/asked + approval/decided + approval/request event keys (verified .d.ts sweep, evidence .scratch/grill-round-90/evidence/t5-approval-surface.log). Independently pullable; verification still needs a live interactive session (approval prompt rendering + outcome routing) which R90 does not cover.",
+   "monitoring_channel": "next grill round task-book triage (upstream dependency already landed — scheduling gate only)",
+   "carried_log": [
+    {
+     "at": "2026-09-29",
+     "round": 90,
+     "note": "拆出自 defer-r72-dsh-web-interactive-matrix：上游依赖已解除（dsh-user-approval 在架同形），剩余阻碍=交互会话实测成本，非上游缺席"
     }
    ]
   },

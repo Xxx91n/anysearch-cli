@@ -1,0 +1,14 @@
+=== R90 T5 approval-channel / patchReload / browser-turn surface re-verification (2026-09-29T07:17:25.363Z) ===
+Rerun: npm pack @deepseek-ai/dsh-user-approval@0.1.7-rc.1 @deepseek-ai/dsh@0.1.7-rc.1; tar xzf; sweep lib/**/*.d.ts for event/key strings.
+
+@deepseek-ai/dsh-user-approval@0.1.7-rc.1 .d.ts event keys found:
+  approval/policy, approval/invariant, approval/types, approval/asked, approval/decided, approval/request
+  -> approval-channel upstream surface IS on the pinned line (dependency fulfilled; R89 claim re-verified).
+
+@deepseek-ai/dsh@0.1.7-rc.1 .d.ts: no approval/* keys, no patchReload, no browser keys.
+patchReload: absent in both tarballs (consistent with R89 double-version absence finding).
+browser: only incidental string hit inside dsh-user-approval (doc-comment level), no browser-turn API surface.
+
+Also re-verified: npm dist-tags @deepseek-ai/dsh-user-approval { latest 0.0.1-rc.1, alpha 0.1.7-alpha.2, next 0.2.0-rc.1 } — rc line carries 0.1.7-rc.1 (npm view ok).
+
+Ruling: SPLIT — defer-r72-dsh-approval-channel carved out of defer-r72-dsh-web-interactive-matrix; matrix entry narrows to patchReload:live + browser-turn (still deferred, upstream absent).
