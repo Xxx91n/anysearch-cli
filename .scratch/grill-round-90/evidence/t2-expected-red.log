@@ -1,0 +1,133 @@
+=== t2 expected-RED run 2026-09-29T06:44:41Z
+✔ exports: stable name + inject service list (1.793ms)
+✔ apply: mounts all five hook surfaces + routing-card section (0.6209ms)
+✔ agent/created: startup injects the routing card as a durable user message (0.2941ms)
+✔ agent/created: resume/clear/compact do not re-inject the routing card (0.1675ms)
+✔ tools/pre-execute: non-ans tool passes through untouched (0.4352ms)
+✔ tools/pre-execute: denied URL on ans tool returns deny (48.5115ms)
+✔ tools/pre-execute: unallowlisted URL returns ask (12.4953ms)
+✔ tools/pre-execute: recall hits are injected via agent.inject and the call is allowed (14.0395ms)
+✔ tools/pre-execute: server down fails open to allow (1.8174ms)
+✔ tools/post-execute: non-ans tool passes through (0.5026ms)
+✔ tools/post-execute: ans result gains a distilled additionalContexts message (1.2865ms)
+✔ tools/result: indexes successful ans results over IPC (317.5785ms)
+✔ tools/result: error results and non-ans tools are skipped (203.8672ms)
+✔ contextMessage: produces a durable user message with plugin provenance (0.3893ms)
+✖ apply: registers all five ans_* tools natively on ctx.tools (4.5475ms)
+✖ native tools: parameters projected verbatim from the kernel schema source (0.4473ms)
+✖ native execute: MCP tools/call to /mcp carries kernel tool name + propagation trio (2.3004ms)
+✖ native execute: server unreachable fails open to empty content (no throw) (0.5197ms)
+✖ native execute: upstream isError materializes as a thrown tool error (2.1454ms)
+✖ native execute: JSON-RPC session error re-handshakes once then succeeds (2.2032ms)
+✔ hook compatibility: bare ans_* names still hit all four hook surfaces (221.5683ms)
+ℹ tests 21
+ℹ suites 0
+ℹ pass 15
+ℹ fail 6
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1370.2171
+
+✖ failing tests:
+
+test at test\dsh-plugin.test.ts:1:9276
+✖ apply: registers all five ans_* tools natively on ctx.tools (4.5475ms)
+  AssertionError [ERR_ASSERTION]: missing native registration for ans_search_web
+      at TestContext.<anonymous> (D:\Aworker\anysearch-cli\apps\dsh-plugin\test\dsh-plugin.test.ts:329:12)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test\dsh-plugin.test.ts:1:9480
+✖ native tools: parameters projected verbatim from the kernel schema source (0.4473ms)
+  AssertionError [ERR_ASSERTION]: ans_search_web not registered
+      at TestContext.<anonymous> (D:\Aworker\anysearch-cli\apps\dsh-plugin\test\dsh-plugin.test.ts:337:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test\dsh-plugin.test.ts:1:10131
+✖ native execute: MCP tools/call to /mcp carries kernel tool name + propagation trio (2.3004ms)
+  AssertionError [ERR_ASSERTION]: ans_search_web not registered
+      at TestContext.<anonymous> (D:\Aworker\anysearch-cli\apps\dsh-plugin\test\dsh-plugin.test.ts:357:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test\dsh-plugin.test.ts:1:11400
+✖ native execute: server unreachable fails open to empty content (no throw) (0.5197ms)
+  AssertionError [ERR_ASSERTION]: ans_recall_memory not registered
+      at TestContext.<anonymous> (D:\Aworker\anysearch-cli\apps\dsh-plugin\test\dsh-plugin.test.ts:382:12)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test\dsh-plugin.test.ts:1:11798
+✖ native execute: upstream isError materializes as a thrown tool error (2.1454ms)
+  AssertionError [ERR_ASSERTION]: ans_search_web not registered
+      at TestContext.<anonymous> (D:\Aworker\anysearch-cli\apps\dsh-plugin\test\dsh-plugin.test.ts:395:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test\dsh-plugin.test.ts:1:12269
+✖ native execute: JSON-RPC session error re-handshakes once then succeeds (2.2032ms)
+  AssertionError [ERR_ASSERTION]: ans_query_knowledge not registered
+      at TestContext.<anonymous> (D:\Aworker\anysearch-cli\apps\dsh-plugin\test\dsh-plugin.test.ts:420:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+t2_exit=1
