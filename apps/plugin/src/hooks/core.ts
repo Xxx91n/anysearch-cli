@@ -51,24 +51,40 @@ export async function callServer(
   serverUrl: string,
   bearerToken: string,
   payload: Record<string, unknown>,
-  opts?: { sessionId?: string; traceId?: string; spanId?: string },
+  opts?: {
+    sessionId?: string;
+    traceId?: string;
+    spanId?: string;
+    /** Extra outbound headers merged after the propagation trio (R90: MCP
+     * transport needs Accept: application/json, text/event-stream). */
+    headers?: Record<string, string>;
+    /** Override the 5s default IPC budget (tool executions can run minutes). */
+    timeoutMs?: number;
+    /** Caller cancellation forwarded into the fetch signal. */
+    signal?: AbortSignal;
+  },
 ): Promise<Record<string, unknown> | null> {
   // ADR-0009 D2: single narrow IPC channel to long-running MCP server.
   // Fail-open: server unreachable = return null, caller放行 raw output.
   try {
     const headers = buildPropagationHeaders(opts ?? {});
+    const timeout = AbortSignal.timeout(opts?.timeoutMs ?? 5000);
     const response = await fetch(serverUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": "Bearer " + bearerToken,
         ...headers,
+        ...(opts?.headers ?? {}),
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(5000),
+      signal: opts?.signal ? AbortSignal.any([timeout, opts.signal]) : timeout,
     });
     if (!response.ok) return null;
-    return await response.json() as Record<string, unknown>;
+    // R90: bodyless 2xx (e.g. MCP notifications/initialized 202) yields {} —
+    // the JSON.parse throw used to collapse that success into null.
+    const text = await response.text();
+    return (text ? JSON.parse(text) : {}) as Record<string, unknown>;
   } catch {
     return null;
   }

@@ -1,0 +1,32 @@
+=== t3 green rerun 2026-09-29T06:56:57Z
+$ node --import tsx --test "test/**/*.test.ts" --test-timeout=30000
+✔ exports: stable name + inject service list (2.7057ms)
+✔ apply: mounts all five hook surfaces + routing-card section (0.8047ms)
+✔ agent/created: startup injects the routing card as a durable user message (0.4776ms)
+✔ agent/created: resume/clear/compact do not re-inject the routing card (0.3918ms)
+✔ tools/pre-execute: non-ans tool passes through untouched (1.1152ms)
+✔ tools/pre-execute: denied URL on ans tool returns deny (62.9953ms)
+✔ tools/pre-execute: unallowlisted URL returns ask (21.2621ms)
+✔ tools/pre-execute: recall hits are injected via agent.inject and the call is allowed (19.2665ms)
+✔ tools/pre-execute: server down fails open to allow (2.9741ms)
+✔ tools/post-execute: non-ans tool passes through (1.0413ms)
+✔ tools/post-execute: ans result gains a distilled additionalContexts message (1.6196ms)
+✔ tools/result: indexes successful ans results over IPC (309.1572ms)
+✔ tools/result: error results and non-ans tools are skipped (212.3308ms)
+✔ contextMessage: produces a durable user message with plugin provenance (0.6556ms)
+✔ apply: registers all five ans_* tools natively on ctx.tools (0.577ms)
+✔ native tools: parameters projected verbatim from the kernel schema source (0.3991ms)
+✔ native execute: MCP tools/call to /mcp carries kernel tool name + propagation trio (22.6109ms)
+✔ native execute: server unreachable fails open to empty content (no throw) (1.4183ms)
+✔ native execute: upstream isError materializes as a thrown tool error (22.7625ms)
+✔ native execute: JSON-RPC session error re-handshakes once then succeeds (32.3672ms)
+✔ hook compatibility: bare ans_* names still hit all four hook surfaces (224.2918ms)
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1858.8876
+t3_exit=0

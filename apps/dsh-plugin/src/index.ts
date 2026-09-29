@@ -1,12 +1,13 @@
 /**
  * @anysearch-cli/dsh-plugin — DeepSeek Harness host adapter (R72 D-001/D-002).
  *
- * Thin Cordis bundle: hooks layer only. Zero runtime deps; @deepseek-ai/*
- * packages are devDep TYPE-ONLY imports (the compile-time churn alarm — an
- * upstream contract change breaks this build, which is the point). All
- * business logic stays in the anysearch server at 127.0.0.1 over HTTP IPC
- * (fail-open by contract); anysearch capability is re-used from
- * @anysearch-cli/plugin hook modules bundled into lib/index.js at build time.
+ * Thin Cordis bundle: hooks layer + native tool plane (R90 D-001). Zero
+ * runtime deps; @deepseek-ai/* packages are devDep TYPE-ONLY imports (the
+ * compile-time churn alarm — an upstream contract change breaks this build,
+ * which is the point). All business logic stays in the anysearch server at
+ * 127.0.0.1 over HTTP IPC (fail-open by contract); anysearch capability is
+ * re-used from @anysearch-cli/plugin hook modules bundled into lib/index.js
+ * at build time.
  *
  * Five hook surfaces:
  *   agent/created       → agent.inject() routing card (durable next-step msg; source!=='startup' guard)
@@ -14,6 +15,9 @@
  *   tools/pre-execute   → URL-policy deny/ask + preheat recall injection
  *   tools/post-execute  → distilled summary via additionalContexts
  *   tools/result        → /index IPC on the final frozen outcome
+ * Tool plane:
+ *   ctx.tools.register  → five native ans_* tools; execute = MCP tools/call
+ *                         over the ans-mcp HTTP endpoint (zero business logic)
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent, SessionStartSource } from '@deepseek-ai/dsh-agent';
@@ -21,10 +25,14 @@ import type { MessageId, UserMessage } from '@deepseek-ai/dsh-llm';
 import type {
   PostToolDecision,
   PreToolDecision,
+  ToolDefinition,
   ToolExecution,
   ToolExecutionResult,
+  ToolRunContext,
 } from '@deepseek-ai/dsh-tools';
+import type { ContentBlock } from '@deepseek-ai/dsh-llm';
 import { randomUUID } from 'node:crypto';
+import { KernelJsonSchemas, KernelToolDescriptions, type KernelToolName } from '@anysearch-cli/kernel/tool-json-schemas';
 import { isAnsTool, callServer, unwrapToolResponse, type HookDecision, type HookInput } from '@anysearch-cli/plugin/hooks/core';
 import { makePreToolUseDecision } from '@anysearch-cli/plugin/hooks/preheat';
 import { makePostToolUseDecision } from '@anysearch-cli/plugin/hooks/distill';
@@ -86,7 +94,128 @@ function postHookInput(exec: Readonly<ToolExecution>, result: Readonly<ToolExecu
   };
 }
 
+// -- R90 D-001: native ans_* tool plane ------------------------------------
+// ctx.tools.register() is consumed with literal ToolDefinitions, NOT
+// defineTool(): defineTool is a runtime VALUE in @deepseek-ai/dsh-tools — a
+// runtime import violates this package's zero-dep contract (dependencies:{},
+// external=node:* builtins only), and bundling it would freeze an upstream
+// copy, defeating the compile-time churn alarm. The literal consumes the
+// identical ToolRuntime.register contract and keeps KernelJsonSchemas
+// VERBATIM — a ParameterSchemaSpec/DSL projection cannot express
+// additionalProperties:false / minLength / minimum, so the raw JSON Schema
+// object is the zero-loss single-source channel.
+
+interface AnsNativeTool {
+  /** Model-facing name inside dsh (bare ans_* name; isAnsTool already matches). */
+  readonly dsh: string;
+  /** Wire name on the ans-mcp server (kernel key). */
+  readonly wire: KernelToolName;
+  /** Per-tool IPC budget — retrieval/research/chat far exceed the 5s hook budget. */
+  readonly timeoutMs: number;
+}
+
+const ANS_NATIVE_TOOLS: readonly AnsNativeTool[] = [
+  { dsh: 'ans_search_web', wire: 'search_web', timeoutMs: 30_000 },
+  { dsh: 'ans_research_web', wire: 'research_web', timeoutMs: 300_000 },
+  { dsh: 'ans_recall_memory', wire: 'recall_memory', timeoutMs: 15_000 },
+  { dsh: 'ans_query_knowledge', wire: 'query_knowledge', timeoutMs: 60_000 },
+  { dsh: 'ans_ans_chat', wire: 'ans_chat', timeoutMs: 300_000 },
+];
+
+/** ans-mcp HTTP transport base (POST {base}/mcp); `ans mcp --transport http` serves it. */
+const mcpBaseUrl = (): string => process.env.ANS_MCP_URL || 'http://127.0.0.1:3001';
+/** Bearer for the MCP endpoint: ANS_MCP_KEY when the server enforces auth, else the server token. */
+const mcpBearer = (): string => process.env.ANS_MCP_KEY || resolveServerToken().token;
+const MCP_ACCEPT = 'application/json, text/event-stream';
+const MCP_DEFAULT_VERSION = '2025-03-26';
+
+let rpcSeq = 0;
+interface McpChannel { version: string }
+/** One MCP initialize/initialized handshake per (base,token); cleared on failure. */
+const channels = new Map<string, Promise<McpChannel | null>>();
+
+async function mcpHandshake(base: string, token: string): Promise<McpChannel | null> {
+  const init = await callServer(base + '/mcp', token, {
+    jsonrpc: '2.0', id: ++rpcSeq, method: 'initialize',
+    params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'anysearch-dsh-plugin', version: '0.1.0' } },
+  }, { headers: { Accept: MCP_ACCEPT }, timeoutMs: 15_000 });
+  const negotiated = (init?.result as { protocolVersion?: unknown } | undefined)?.protocolVersion;
+  if (typeof negotiated !== 'string' || negotiated.length === 0) return null;
+  const ack = await callServer(base + '/mcp', token, {
+    jsonrpc: '2.0', method: 'notifications/initialized',
+  }, { headers: { Accept: MCP_ACCEPT, 'MCP-Protocol-Version': negotiated }, timeoutMs: 15_000 });
+  if (ack === null) return null;
+  return { version: negotiated };
+}
+
+function mcpChannel(base: string, token: string): Promise<McpChannel | null> {
+  const key = base + '|' + token;
+  let p = channels.get(key);
+  if (!p) { p = mcpHandshake(base, token); channels.set(key, p); }
+  return p;
+}
+
+/**
+ * execute body: MCP tools/call through the shared callServer contract
+ * (Bearer + propagation trio + fail-open). Reachable-but-erroring calls
+ * materialize as thrown tool errors; transport failure degrades to the
+ * canonical empty value (the AGENTS.md "empty results" contract).
+ */
+async function callAnsTool(wire: KernelToolName, args: Record<string, unknown>, exec: ToolRunContext, timeoutMs: number): Promise<{ content: ContentBlock[] }> {
+  const base = mcpBaseUrl();
+  const token = mcpBearer();
+  const key = base + '|' + token;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const ch = await mcpChannel(base, token);
+    if (!ch) return { content: [] }; // fail-open: endpoint down/misconfigured
+    const resp = await callServer(base + '/mcp', token, {
+      jsonrpc: '2.0', id: ++rpcSeq, method: 'tools/call',
+      params: { name: wire, arguments: args },
+    }, {
+      sessionId: sessionIdOf(exec.agent),
+      headers: { Accept: MCP_ACCEPT, 'MCP-Protocol-Version': ch.version },
+      timeoutMs,
+      signal: exec.signal,
+    });
+    if (resp === null) { // transport failure: re-handshake once, then empty degrade
+      channels.delete(key);
+      if (attempt === 0) continue;
+      return { content: [] };
+    }
+    const rpcError = resp.error as { code?: number; message?: string } | undefined;
+    if (rpcError) {
+      // session/not-initialized errors re-handshake once; other RPC errors surface.
+      if ((rpcError.code === -32001 || rpcError.code === -32600) && attempt === 0) { channels.delete(key); continue; }
+      throw new Error('ans-mcp tools/call ' + wire + ': ' + (rpcError.message ?? 'rpc error'));
+    }
+    const result = resp.result as { content?: ContentBlock[]; isError?: boolean } | undefined;
+    if (result?.isError) {
+      const text = (result.content ?? []).map((b) => (b as { text?: string }).text ?? '').filter(Boolean).join('\n');
+      throw new Error(text || 'ans tool ' + wire + ' failed upstream');
+    }
+    return { content: result?.content ?? [] };
+  }
+  return { content: [] };
+}
+
 export function apply(ctx: Context): void {
+  // -- surface 5: native ans_* tool registrations (R90 D-001) ---------------
+  // description+parameters come from the kernel single-source module verbatim
+  // (KernelToolDescriptions + KernelJsonSchemas); execute is transport only.
+  for (const t of ANS_NATIVE_TOOLS) {
+    const definition: ToolDefinition = {
+      name: t.dsh,
+      description: KernelToolDescriptions[t.wire],
+      parameters: KernelJsonSchemas[t.wire],
+      output: {
+        schema: { type: 'object', properties: { content: { type: 'array' } }, required: ['content'], additionalProperties: true },
+        render: (_args, value) => ((value as unknown as { content: ContentBlock[] }).content),
+      },
+      execute: (args, exec) => callAnsTool(t.wire, (args ?? {}) as Record<string, unknown>, exec, t.timeoutMs),
+    };
+    ctx.tools.register(definition);
+  }
+
   // -- surface 2: system-prompt section (renders in every request) ----------
   ctx.systemPrompt.section({
     name: 'anysearch:routing-card',

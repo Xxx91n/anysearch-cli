@@ -33,6 +33,13 @@ function toPlainJsonSchema(schema: unknown): JsonSchemaType {
   return JSON.parse(JSON.stringify(schema));
 }
 
+// R90: the native-registration subpath surface (@anysearch-cli/kernel/
+// tool-json-schemas) also carries the tool copy + name vocabulary so host
+// adapters consume the tool identity through one leaf without pulling the
+// kernel barrel (store/retriever/native deps stay out of zero-dep bundles).
+export { KernelToolDescriptions } from "./tool-schemas";
+export type { KernelToolName };
+
 export const KernelJsonSchemas: Record<KernelToolName, JsonSchemaType> = {
   search_web: toPlainJsonSchema(SearchWebInput),
   research_web: toPlainJsonSchema(ResearchWebInput),

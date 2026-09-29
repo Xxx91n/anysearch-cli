@@ -5,14 +5,14 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import { KernelJsonSchemas } from "@anysearch-cli/kernel";
+import { KernelJsonSchemas, KernelToolDescriptions } from "@anysearch-cli/kernel";
 import { observeTool } from "./observation.js";
 
 export function registerQueryKnowledge(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
     "query_knowledge",
     {
-      description: "Query domain-specific knowledge base via RAG adapter. Dispatches to configured rag.adapter in domain config.",
+      description: KernelToolDescriptions.query_knowledge,
       inputSchema: fromJsonSchema(KernelJsonSchemas.query_knowledge),
     },
     async (_args: unknown) => {

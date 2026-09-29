@@ -104,3 +104,15 @@ export const KernelToolSchemas = {
 } as const;
 
 export type KernelToolName = keyof typeof KernelToolSchemas;
+
+// KernelToolDescriptions: model-facing tool copy — the second half of the tool
+// identity single-source (R90 D-001). Consumed verbatim by apps/mcp
+// registerTool() descriptions AND by the dsh-plugin native ToolRuntime
+// registrations, so the model sees one canonical surface on every host.
+export const KernelToolDescriptions = {
+  search_web: "Search the web via anysearch provider amalgamation. Returns results with MVSS sufficiency signal.",
+  research_web: "Run a deep research query: multiple retrieval rounds fused via RRF, returns sufficiency signal and top citations.",
+  recall_memory: "Search the Research Memory layer (FTS5) for previously indexed research results. Applies time edge effect: decay, bi-temporal invalidation, QDF classification.",
+  query_knowledge: "Query domain-specific knowledge base via RAG adapter. Dispatches to configured rag.adapter in domain config.",
+  ans_chat: "Run the anysearch agent loop: retrieval-augmented chat with LLM. Uses PiAgentRuntime with domain-aware tool filtering.",
+} as const satisfies Record<KernelToolName, string>;

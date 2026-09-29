@@ -5,7 +5,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import { createLlmSession, PiAgentRuntime, KernelJsonSchemas, type LlmSession } from "@anysearch-cli/kernel";
+import { createLlmSession, PiAgentRuntime, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
 import { domainTomlPath } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import { observeTool } from "./observation.js";
@@ -48,7 +48,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
   server.registerTool(
     "ans_chat",
     {
-      description: "Run the anysearch agent loop: retrieval-augmented chat with LLM. Uses PiAgentRuntime with domain-aware tool filtering.",
+      description: KernelToolDescriptions.ans_chat,
       inputSchema: fromJsonSchema(KernelJsonSchemas.ans_chat),
     },
     async (args: unknown) => {

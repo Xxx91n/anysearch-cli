@@ -6,7 +6,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { KernelJsonSchemas, type CompositionResult } from "@anysearch-cli/kernel";
+import { KernelJsonSchemas, KernelToolDescriptions, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 
@@ -14,7 +14,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
   server.registerTool(
     "search_web",
     {
-      description: "Search the web via anysearch provider amalgamation. Returns results with MVSS sufficiency signal.",
+      description: KernelToolDescriptions.search_web,
       inputSchema: fromJsonSchema(KernelJsonSchemas.search_web),
     },
     async (args: unknown) => {

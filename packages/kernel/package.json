@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./tool-json-schemas": {
+      "types": "./src/tool-json-schemas.ts",
+      "default": "./src/tool-json-schemas.ts"
+    }
   },
   "dependencies": {
     "@anysearch-cli/retriever": "workspace:*",

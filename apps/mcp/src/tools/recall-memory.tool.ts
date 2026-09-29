@@ -4,14 +4,14 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import { KernelJsonSchemas } from "@anysearch-cli/kernel";
+import { KernelJsonSchemas, KernelToolDescriptions } from "@anysearch-cli/kernel";
 import { observeTool } from "./observation.js";
 
 export function registerRecallMemory(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
     "recall_memory",
     {
-      description: "Search the Research Memory layer (FTS5) for previously indexed research results. Applies time edge effect: decay, bi-temporal invalidation, QDF classification.",
+      description: KernelToolDescriptions.recall_memory,
       inputSchema: fromJsonSchema(KernelJsonSchemas.recall_memory),
     },
     async (args: unknown) => {

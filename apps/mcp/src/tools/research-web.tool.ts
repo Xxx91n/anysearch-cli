@@ -6,7 +6,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { KernelJsonSchemas, type CompositionResult } from "@anysearch-cli/kernel";
+import { KernelJsonSchemas, KernelToolDescriptions, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 
@@ -14,7 +14,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
   server.registerTool(
     "research_web",
     {
-      description: "Run a deep research query: multiple retrieval rounds fused via RRF, returns sufficiency signal and top citations.",
+      description: KernelToolDescriptions.research_web,
       inputSchema: fromJsonSchema(KernelJsonSchemas.research_web),
     },
     async (args: unknown) => {

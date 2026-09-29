@@ -289,6 +289,9 @@ importers:
 
   apps/dsh-plugin:
     devDependencies:
+      '@anysearch-cli/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
       '@anysearch-cli/plugin':
         specifier: workspace:*
         version: link:../plugin

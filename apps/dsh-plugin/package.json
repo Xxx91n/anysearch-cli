@@ -48,6 +48,7 @@
   },
   "dependencies": {},
   "devDependencies": {
+    "@anysearch-cli/kernel": "workspace:*",
     "@anysearch-cli/plugin": "workspace:*",
     "@deepseek-ai/cordis": "catalog:",
     "@deepseek-ai/dsh-agent": "catalog:",
