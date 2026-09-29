@@ -1,0 +1,44 @@
+你是一个为软件仓库「anysearch-cli」（TypeScript/pnpm monorepo，信息专精 Agent CLI，遵循 AnySearch 垂直领域理念）做深度调研的研究者。请围绕下面的裁决问题做多源调研，重点放在【工业界成熟落地的心智模型】上，给出推荐选项与理由。
+
+## 仓库上下文（已核实的实物状态）
+
+这是一个用「grill round」节奏推进的项目：每轮一次主题化工作+独立审计+决策账本+ADR+CONTEXT.md 词表。已连续 89 轮、90 部 ADR、多轮独立审计。
+
+上四轮：
+- R86「绿门装船轮」：真测量版 NO-GO（prefer-capable 垂域路由假设被预注册实验判负）；v0.1.0 钉版。
+- R87「发布收口轮」：v0.1.0 tag+OIDC publish 全绿、npm latest=0.1.0。
+- R88「搜索面卫生轮」：四票全落+审计 PASS，origin/main 推进。
+- R89「dsh 上游线轮」刚闭环并 land（origin/main=7b938d7e）：对上游 @deepseek-ai/dsh-* 家族 0.2.0-rc.1 候选做了 L1 探针（41 tarball 解包、消费子集 .d.ts diff、三代同形亲验）+三锚判词立法；判词=soak-until-stable（兼容锚 TRUE、拉力锚零、稳定锚龄期 802min<2880min 未过）；T3 repin 条件票按真值表不启不留痕；审计 PASS+LOOP-2/3 全绿。
+
+当前 registry open=13 项，分组：
+（1）R89 挂账移交×3：①真值表稳定锚否决行立法（spec gap——D-002 真值表三行只覆盖拉力/兼容轴，「字面拉力=TRUE+龄期闸未过」落未定义态，审计裁决 A-3 呈报待立法）；②r72-native-tools 实施票（五 ans_* 工具 dsh 原生 ctx.tools 注册，绕过 mcp__anysearch_ MCP 间接层——触发器「tool-registration API stabilizes upstream」经审计 A-2 亲验实质已响：register/restrict/defineTool 在 0.1.5-rc.2/0.1.7-rc.1/0.2.0-rc.1 三代签名逐字相同，且 API 在现钉 0.1.7-rc.1 上即在架可消费，实施零 repin 依赖；从严读法=待 0.2.0 stable；先决=L2 安装彩排 expected-RED 闸）；③0.2.0 stable 晋升目击→closing probe 收口（本会话亲测 next 仍=0.2.0-rc.1、无 rc.2、无 stable，未响；rc.1 龄期 994min 仍未过 2880min 闸）。
+（2）r72-web-matrix 维持 defer（patchReload/browser-turn 上游面两版皆缺席；approval-channel 分项已解可拆）。
+（3）候审候选×1：r88-candidate-vertical-direction-redeliberation（重开条件 |ΔarmHostHit|≳0.4 未达）。
+（4）评测面×1：defer-f17-quarantine-ids（空 quarantine 账+两环境抖动 golden 用例待具名）。
+（5）上游触发债×4+常驻背景债×5：r81/r84/r86×2 具名触发冻结；domain-ownership/f16/r71/r74/r75 维持挂账。
+（6）观察项：ANS_PROBE_QUERY ?? vs || 探针读法不对称；libuv 退出断言=平台噪声。
+
+## 现行账本中全 current 决策（R89 ledger D-001~D-003 为项目法，不可冲突）
+
+- D-001 R89 轮裁决：dsh 上游线轮=调研+时机裁决+r72 两票只定形不实现；显式范围外=评测面顺延/垂域重议候审/上游触发债/常驻债/钉版不动/无外发。
+- D-002 三锚判词·加固版（已入 ADR-0090）：兼容锚=已消费子集零破坏漂移（未消费键漂移≠破坏）；拉力锚=枚举化证据（r72 具名 API 候选 .d.ts 出现且签名稳定、或安全/正确性修复，不收泛化成熟化——审计 A-1 已补「候选特异性」权威读法：先于候选已存的 API 不构成候选迁移引力）；稳定锚=rc 在架+2880min 龄期闸+changelog 不可核验→tarball diff 自证；真值表：拉力∧兼容→repin-now、兼容∧零拉力→soak-until-stable（默认兜底）、兼容破坏→hold，无第三态；repin-to-rc 附收口义务=stable 晋升再验一次封账不随 rc.N 滚动；rc→rc 跨 minor 平移标类推非先例。
+- D-003 七票序+条件票+一票一 commit：T0 哨戒续班/T1 L1 探针/T2 判词/T3 条件 repin 执行/T4 r72 定形/T5 收口件/T6 门禁审计。
+- 治理闸承继（R84 D-007+R88 D-005）：新债三向失真判据/断言载体预注册/票级熔断/一票一 commit type 纪律，本轮原样继承。
+
+## 已确立心智模型（CONTEXT.md 词表 34 轮+ADR 90 部，枚举要点）
+
+ADR-0029 一轮一主题；ADR-0074 dsh 钉版 catalog 单点+overrides 枚举；R83 TE1 闸开先行双锚齐；ADR-0084~0086 评测立法系（预注册/判别探针/诚实化）；ADR-0087 绿门装船/ADR-0088 最后一寸签名；ADR-0089 判别联合归并器+字节冻结+契约枚举前置立法+票级熔断；ADR-0090 上游线轮+三锚判词+soak-by-default+收口探针义务+条件票。CONTEXT R89 7 词同前。
+
+## 待裁问题（R90 Q1 — 下一轮主轴）
+
+A【dsh 原生注册实施轮】（我倾向推荐）：正题=解除 r72-native-tools defer + 实施（先过 L2 安装彩排 expected-RED 闸；实施=r72-shaping 既有解法案：五 ans_* 工具经 ctx.tools/defineTool 原生注册于 apps/dsh-plugin、mcp__anysearch_ 桥退役或留回滚位随票裁、mock-Cordis 测试闭环、execute 体零业务逻辑走 HTTP IPC 同 hooks 契约）。同域纳编：真值表稳定锚否决行立法（ADR-0090 spec gap 补行，docs 票）+r72-web-matrix 维持 defer 复核（approval 分项是否拆出前置随票裁）。核心逻辑：触发器实响所证的是「现钉版本上 API 已稳定」——实施=消费已钉 0.1.7-rc.1 的在架 API，不消费 0.2.0 任何东西，「等 0.2.0 stable」把 repin 采纳纪律错套到 API 消费面上；这是 registry 唯一触发器实响的实质实施项。辩证保留：从严读法非无道理（上游若 stable 改 API 面则 rc 上工作可能返工——但三代同形使该风险低）；轮体量含真实施工+测试+生命周期裁决，非薄轮。
+
+B【立法+哨戒轻轮】：只做 spec-gap 否决行立法+stable watch 续班+观察项（ANS_PROBE_QUERY 不对称）收编——r72 维持 defer 等 stable 从严线，轮体量薄。
+
+C【评测/清债轮】：f17 具名填充+语料复核+观察项——无新触发体量薄。
+
+D【垂域方向重议】：具名重开条件未达不复活。
+
+E【另指】：你认为更优的下一轮主轴。
+
+请给出：推荐选项、理由、各选项的工业界心智模型依据（重点：库消费方的 API 稳定性判定惯例——「API 在已钉版本上多代同形」是否足以解除 defer；prerelease 依赖上做开发 vs 等 stable 的工业先例；feature work 与 dependency-upgrade 决策的正交性；L2/彩排式 expected-RED 验证闸惯例；以及「实施不依赖候选版本」时 repin 判词对实施票的约束力边界）、以及对我倾向 A 的辩证检验（含反对 A 的最强论据——如 rc 面上开发是否赌上游走向、三代同形是否是充分的稳定化证据）。

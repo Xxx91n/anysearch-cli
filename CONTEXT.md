@@ -1617,3 +1617,23 @@ repin 至 rc 附随的义务：上游 stable 晋升时只再验一次收口探�
 
 ### Conditional Ticket（条件票）
 以具名闸启停的票：判词=repin-now 才启 repin 执行票（repin+L2 彩排+迁移+回归），判词≠repin-now 则票不启不留痕——R83 TE1 in-round 先例的显式化。_Avoid_: 判词未出先执行；票未启留空痕。来源：R83 TE1+R89 D-003。
+## Grill Round 90 — Terms (ADR-0091)
+
+### Version-Consumption Orthogonality（版本轴/消费轴正交）
+repin 采纳判词与 API 消费决策分属两轴：三锚判词管「版本指针何时移动」，实施票管「指针不动时消费所指版本的在架能力」——钉版本身（overrides 枚举）即对 rc 内容的采纳授权。_Avoid_: 把 repin 纪律错套到消费面（「等 stable」对在架稳定 API 是范畴错误）；两轴混淆致 repin 阻塞实施或实施触发 repin 义务。来源：atomcode R90-Q1+R90 D-001。
+
+### Pending-Repin Row（pending-repin 兜底行）
+三锚真值表第四行（ADR-0090 spec gap 补行）：字面拉力=TRUE+稳定龄期闸未过→repin 延后但消费放行——已钉版本上的消费决策独立裁决，不随候选起落悬置。_Avoid_: 真值表留未定义态（高频象限不产出决定=悬置分支）；把「延后 repin」读成「延后消费」。来源：atomcode R90-Q1+R89 审计 A-3+R90 D-001②/D-002。
+
+### Consumed-Subset Closing Extension（消费子集收口延展）
+repin-to-rc 收口义务的延展形态：上游 stable 晋升时收口探针除再验 repin 判词外，顺带对已实施消费的 API 子集做 .d.ts 再 diff+回归测试闭环——剩余风险从隐性赌注转为显式收口义务。_Avoid_: 实施产物游离于收口义务外；stable 晋升只验判词不验消费面。来源：atomcode R90-Q1+R90 D-001③。
+
+### Criterion-Based Cutover（判据型切换）
+旧路径退役的判据形态：布尔条件集（测试绿+引用面清零+rollback 单元闭合）而非时间窗口——时间型 soak 只服务有真实流量统计的场景，配置行退役适用判据型 cutover，分钟级同批验证即够。_Avoid_: 给无统计量可积累的透传路径设人工 soak 期；把时间当判据替代布尔条件。来源：atomcode R90-Q2+R90 D-002。
+
+### Zero-Signal Parallel（零信号并行）
+双写/双注册的适用判据=并行期有可比对的信息增量；新旧路径同一后端字节恒等时并行零信号纯成本（工具面膨胀+消费路径歧义）——临时基建无人追踪即成永久。_Avoid_: 为透传同后端路径设双注册过渡期；把「保守」当不设退出判据的并行理由。来源：atomcode R90-Q2+R90 D-002。
+
+### Bridge-Retirement Ticket（桥退役独票）
+迁移类变更的 commit 粒度纪律：新路径实施与旧路径退役是两个独立可回滚风险单元，退役独票（rollback=revert 本 commit）；实施失败不连坐退役、退役出问题不连坐实施。_Avoid_: 实施+拆桥同 commit（revert 粒度变粗）；退役无独立回滚单元。来源：atomcode R90-Q2+R90 D-002。
+

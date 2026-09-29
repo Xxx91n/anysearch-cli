@@ -1,0 +1,37 @@
+你是一个为软件仓库「anysearch-cli」（TypeScript/pnpm monorepo，信息专精 Agent CLI）做深度调研的研究者。请围绕下面的裁决问题做多源调研，重点放在【工业界成熟落地的心智模型】上，给出推荐选项与理由。
+
+## 仓库上下文（已核实实物状态）
+
+R90 轮已定主轴（D-001 current）：dsh 原生注册实施轮——解除 defer-r72-dsh-native-tools 并实施：五 ans_* 工具（ans_search_web/ans_research_web/ans_recall_memory/ans_query_knowledge/ans_ans_chat）经 ctx.tools ToolRuntime.register+defineTool 原生注册于 apps/dsh-plugin，execute 体零业务逻辑走 HTTP IPC（callServer+三头+fail-open，同 hooks 层契约），parameters 从 apps/mcp tool-schemas.ts 单源投影，mock-Cordis ctx 测试闭环；先决=L2 安装彩排 expected-RED 闸。
+
+实物事实：
+- 现状路径=cordis.patch.yml 两处（probe 层+正式层）各有一行 mcp-anysearch 桥（@deepseek-ai/dsh-mcp-client → ans-mcp stdio），将 apps/mcp 的五工具以 mcp__anysearch__<tool> 命名空间暴露给宿主。apps/mcp server 本体仅含这五工具（TOOL_REGISTRY 无 resources/prompts）——桥退役不损失其他面。
+- 原生注册落地后工具以裸名 ans_* 出现；isAnsTool 后缀匹配正则已覆盖裸名，hooks 层（URL-policy/preheat/distill/index 四面）不改。
+- 钉版维持 0.1.7-rc.1 不动；上游 next=0.2.0-rc.1 在架（无 rc.2/无 stable，龄期 ~994min<2880min 闸）；R89 判词 soak-until-stable。
+- R89 审计呈报 spec gap：三锚真值表缺稳定锚否决行（字面拉力=TRUE+龄期未过=未定义态）；调研已给出补行措辞=「repin 延后但消费放行（pending-repin）」。
+- R89 收口义务：0.2.0 stable 晋升时收口探针再验一次封账；D-001 已将该义务延展到本轮实施产物（stable 晋升时对 r72 消费 API 子集再 diff+回归）。
+
+## 治理法（R88/R89 current 决策，不可冲突）
+
+一票一 commit+type 纪律（fix/refactor/docs 不混）；新债三向失真判据（失真→并入主票/同文件→复核行/无关→清障轮）；断言载体预注册；票级熔断（同票连续 2 轮 LOOP 失败→回退该票 commit 挂回 registry、其余票推进、缩轮呈报）；条件票机制（判词不满足不启不留痕，R89 T3 先例）；无外发动作。
+
+## 待裁问题（R90 Q2 — 轮内票序+commit 结构+桥处置票位+条件票）
+
+A【我倾向推荐】八票序：
+T0 哨戒续班（dist-tags 复观+CI/check/test/ship-gate 基线快照）→
+T1 spec-gap 立法（ADR-0090 addendum：真值表第四行 pending-repin+版本轴/消费轴正交措辞，docs commit）→
+T2 L2 expected-RED 闸（mock-Cordis 测试先行：五工具注册存在性+执行路径+fail-open 断言，预实施跑必红留证——验证测试装置捕失效能力）→
+T3 实施（五 ans_* defineTool+register，schema 投影，execute=callServer；测试转绿，fix commit）→
+T4 桥退役（cordis.patch.yml 两处 mcp-anysearch 行删除+mcp__anysearch_ 引用面清理；rollback=revert 本 commit；独 commit 保 revert 粒度、双注册零窗口期）→
+T5 r72-web-matrix 复核（approval-channel 分项拆/留裁决+registry 两票状态更新，docs）→
+T6 收口件批（ADR-0091+CONTEXT 词块+closeout-claims+报告+任务书，docs）→
+T7 门禁+审计 LOOP。
+条件票 TC：轮内目击 0.2.0 stable 晋升→closing probe（消费子集+r72 实施面 .d.ts 再 diff+判词封账）；未目击不启不留痕。
+
+B【桥留激活并行】：双注册过渡期（ans_*+mcp__anysearch__ans_* 同列）——工具面膨胀+宿主路径歧义。
+
+C【桥退役并入 T3】：实施+拆桥同 commit——revert 粒度变粗（回滚连实施一起拆）。
+
+D【另排】：你认为更优的票序/结构。
+
+请给出：推荐选项、理由、各选项的工业界心智模型依据（重点：cutover/退役旧路径的工业惯例——strangler-fig 并行期 vs 直接 cutover+revert 的取舍判据；feature flag/桥接退役期的最佳实践；迁移类变更的 commit 粒度与回滚单元设计；test-first/expected-RED 闸的实施序惯例；「观察期双写/双注册」模式何时值得用）、以及对我倾向 A 的辩证检验（含反对 A 的最强论据——如桥退役是否应先观察一个 soak 期再拆、T1 立法是否该挪到收口件里、T4 与 T3 间的验证窗口多长才够）。
