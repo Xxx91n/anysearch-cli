@@ -1,0 +1,4 @@
+registered: ans_search_web, ans_research_web, ans_recall_memory, ans_query_knowledge, ans_ans_chat
+recall_memory OK — content blocks: 1 | head: {   "query": "mcp",   "qdfClassification": "standard",   "decayActive": true,   "hitsCount": 5,   "internal": [     {       "role": "MCP Tra
+search_web OK — content blocks: 1 | head: {   "query": "test",   "totalResults": 0,   "showing": 0,   "results": [],   "answers": [],   "answersAvailable": true,   "providerAnswers":
+{"status":"ok","server":"anysearch-mcp","version":"0.1.0"}

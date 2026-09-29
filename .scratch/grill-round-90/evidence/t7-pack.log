@@ -1,0 +1,13 @@
+=== R90 T7 pack verification (2026-09-29T07:28:05.344Z) ===
+cmd: cd apps/dsh-plugin && pnpm pack --pack-destination <tmp>
+result: anysearch-cli-dsh-plugin-0.1.0.tgz produced OK
+
+tar tzf listing:
+package/lib/index.js
+package/package.json
+package/AGENTS.md
+package/lib/index.d.ts
+package/cordis.patch.yml
+package/LICENSE
+
+note: tarball moved out of the committed surface to %TEMP% (binary artifact; R60 precedent keeps pack outputs uncommitted). lib/index.js = 148.7KB ESM bundle, external imports = node:* only (verified post-T3).
