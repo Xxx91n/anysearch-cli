@@ -1,0 +1,18 @@
+{
+  "round": "r91",
+  "ticket": "T2",
+  "timestamp": "2026-09-29T18:54+08:00",
+  "dsh_version": "0.1.7-rc.2",
+  "plugin_version": "0.1.0",
+  "L3a": "established",
+  "L3b": "not-established",
+  "L3c-min": "not-established",
+  "L3c-full": "not-established",
+  "branch": "C",
+  "verdict": "F-bug",
+  "root_cause": "DEEPSEEK_API_KEY missing from all credential stores",
+  "root_cause_type": "environmental",
+  "mechanism_failure": false,
+  "t3_admission": "blocked (verdict < grade-B)",
+  "pending": "User must provide DEEPSEEK_API_KEY to run L3b/L3c-min"
+}
