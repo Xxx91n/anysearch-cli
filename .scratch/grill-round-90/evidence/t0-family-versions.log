@@ -1,0 +1,5 @@
+@deepseek-ai/dsh-tools tail: 0.1.7-alpha.2, 0.1.7-rc.1, 0.1.7-rc.2, 0.2.0-rc.1
+@deepseek-ai/dsh-agent tail: 0.1.7-alpha.2, 0.1.7-rc.1, 0.1.7-rc.2, 0.2.0-rc.1
+@deepseek-ai/dsh-llm tail: 0.1.7-alpha.2, 0.1.7-rc.1, 0.1.7-rc.2, 0.2.0-rc.1
+@deepseek-ai/dsh-system-prompt tail: 0.1.7-alpha.2, 0.1.7-rc.1, 0.1.7-rc.2, 0.2.0-rc.1
+@deepseek-ai/dsh-mcp-client tail: 0.1.7-alpha.2, 0.1.7-rc.1, 0.1.7-rc.2, 0.2.0-rc.1

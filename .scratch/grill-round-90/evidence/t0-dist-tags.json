@@ -1,0 +1,56 @@
+{
+ "ts": "2026-09-29T06:27:32.845Z",
+ "packages": {
+  "@deepseek-ai/dsh": {
+   "alpha": "0.1.7-alpha.2",
+   "latest": "0.1.7-rc.2",
+   "next": "0.2.0-rc.1"
+  },
+  "@deepseek-ai/dsh-tools": {
+   "latest": "0.0.1-rc.1",
+   "alpha": "0.1.7-alpha.2",
+   "next": "0.2.0-rc.1"
+  },
+  "@deepseek-ai/dsh-agent": {
+   "latest": "0.1.0-rc.6",
+   "alpha": "0.1.7-alpha.2",
+   "next": "0.2.0-rc.1"
+  },
+  "@deepseek-ai/dsh-llm": {
+   "latest": "0.0.1-rc.1",
+   "alpha": "0.1.7-alpha.2",
+   "next": "0.2.0-rc.1"
+  },
+  "@deepseek-ai/dsh-system-prompt": {
+   "latest": "0.0.1-rc.1",
+   "alpha": "0.1.7-alpha.2",
+   "next": "0.2.0-rc.1"
+  },
+  "@deepseek-ai/dsh-mcp-client": {
+   "latest": "0.0.1-rc.1",
+   "alpha": "0.1.7-alpha.2",
+   "next": "0.2.0-rc.1"
+  },
+  "@deepseek-ai/dsh-hooks-claude-code": {
+   "latest": "0.0.1-rc.5",
+   "alpha": "0.1.7-alpha.2",
+   "next": "0.2.0-rc.1"
+  },
+  "@deepseek-ai/dsh-scope": {
+   "latest": "0.0.1-rc.1",
+   "alpha": "0.1.7-alpha.2",
+   "next": "0.2.0-rc.1"
+  },
+  "@deepseek-ai/dsh-approval": {
+   "error": "Command failed: npm view @deepseek-ai/dsh-approval dist-tags --json\nnpm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/@deepseek-ai%2fdsh-approval - Not found\nnpm error 404\nn"
+  },
+  "@deepseek-ai/cordis": {
+   "next": "4.0.1-rc.4",
+   "latest": "4.0.4"
+  },
+  "cordis": {
+   "next": "4.0.0-beta.5",
+   "latest": "4.0.0-rc.10"
+  }
+ }
+}
