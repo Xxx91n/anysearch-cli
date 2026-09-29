@@ -1,0 +1,614 @@
+{
+ "schema": "r89/t1-api-snapshot@1",
+ "generated_at": "2026-09-29T01:58:11.551Z",
+ "candidate": "0.2.0-rc.1 (dist-tag next, published 2026-09-28T12:13~12:16Z)",
+ "baseline": "0.1.7-rc.1 (pinned, R83 TE1) + cordis 4.0.4",
+ "extraction_root": "npm pack tarballs -> tar extract (D:\\Aworker\\r89-l1\\x\\deepseek-ai-<name>-<ver>\\package)",
+ "consumer": {
+  "file": "apps/dsh-plugin/src/index.ts",
+  "events_consumed": [
+   "agent/created",
+   "tools/pre-execute",
+   "tools/post-execute",
+   "tools/result"
+  ],
+  "agent_created_payload_fields_consumed": [
+   "agent",
+   "source"
+  ],
+  "surfaces": [
+   "ctx.systemPrompt.section({name,order,text})",
+   "inject=[tools,systemPrompt]"
+  ],
+  "note": "consumed subset per D-002 compat anchor"
+ },
+ "family": {
+  "cordis:4.0.4": {
+   "version": "4.0.4",
+   "dts_files": 9,
+   "events_keys": [
+    "internal/config",
+    "internal/dispatch",
+    "internal/get",
+    "internal/listener",
+    "internal/plugin",
+    "internal/service",
+    "internal/set",
+    "internal/status",
+    "internal/update"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis-plugin-include",
+    "@deepseek-ai/cordis-plugin-loader",
+    "@deepseek-ai/cosmokit"
+   ]
+  },
+  "dsh-agent:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 9,
+   "events_keys": [
+    "agent/assistant-stream",
+    "agent/created",
+    "agent/disposed",
+    "agent/error",
+    "agent/pre-step",
+    "agent/request",
+    "agent/request-error",
+    "agent/status",
+    "agent/turn-stopping"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-llm",
+    "@deepseek-ai/dsh-scope",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-session-projection",
+    "@deepseek-ai/dsh-system-prompt",
+    "@deepseek-ai/dsh-typert-protocol",
+    "@deepseek-ai/dsh-util-values",
+    "@deepseek-ai/dsh-workspace"
+   ]
+  },
+  "dsh-agent:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 9,
+   "events_keys": [
+    "agent/assistant-stream",
+    "agent/created",
+    "agent/disposed",
+    "agent/error",
+    "agent/pre-step",
+    "agent/request",
+    "agent/request-error",
+    "agent/status",
+    "agent/turn-stopping"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-llm",
+    "@deepseek-ai/dsh-scope",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-session-projection",
+    "@deepseek-ai/dsh-system-prompt",
+    "@deepseek-ai/dsh-typert-protocol",
+    "@deepseek-ai/dsh-util-values",
+    "@deepseek-ai/dsh-workspace"
+   ]
+  },
+  "dsh-brand:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 1,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis"
+   ]
+  },
+  "dsh-brand:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 1,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis"
+   ]
+  },
+  "dsh-invariants:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 1,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-invariants:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 1,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-llm:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 16,
+   "events_keys": [
+    "llm/adapters-updated",
+    "llm/stream"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-brand",
+    "@deepseek-ai/dsh-timeout",
+    "@deepseek-ai/dsh-typert-protocol",
+    "@deepseek-ai/dsh-util-crypto",
+    "@deepseek-ai/dsh-util-values",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-llm:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 16,
+   "events_keys": [
+    "llm/adapters-updated",
+    "llm/stream"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-brand",
+    "@deepseek-ai/dsh-timeout",
+    "@deepseek-ai/dsh-typert-protocol",
+    "@deepseek-ai/dsh-util-crypto",
+    "@deepseek-ai/dsh-util-values",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-ptc-runtime:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 2,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-sandbox"
+   ]
+  },
+  "dsh-ptc-runtime:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 2,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-sandbox"
+   ]
+  },
+  "dsh-sandbox:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 4,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-llm",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-util-values"
+   ]
+  },
+  "dsh-sandbox:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 4,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-llm",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-util-values"
+   ]
+  },
+  "dsh-sandbox-policy:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 3,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-agent",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-sandbox",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-session-projection",
+    "@deepseek-ai/dsh-system-prompt",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-sandbox-policy:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 3,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-agent",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-sandbox",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-session-projection",
+    "@deepseek-ai/dsh-system-prompt",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-scope:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 4,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-invariants"
+   ]
+  },
+  "dsh-scope:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 4,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-invariants"
+   ]
+  },
+  "dsh-session:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 10,
+   "events_keys": [
+    "session/created",
+    "session/disposed",
+    "session/event",
+    "session/flush"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-brand",
+    "@deepseek-ai/dsh-llm",
+    "@deepseek-ai/dsh-scope",
+    "@deepseek-ai/dsh-util-values"
+   ]
+  },
+  "dsh-session:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 11,
+   "events_keys": [
+    "session/created",
+    "session/disposed",
+    "session/event",
+    "session/flush"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-brand",
+    "@deepseek-ai/dsh-llm",
+    "@deepseek-ai/dsh-scope",
+    "@deepseek-ai/dsh-util-values"
+   ]
+  },
+  "dsh-session-persistence:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 5,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-brand",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-timeout",
+    "@deepseek-ai/dsh-util-values"
+   ]
+  },
+  "dsh-session-persistence:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 5,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-brand",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-timeout",
+    "@deepseek-ai/dsh-util-values"
+   ]
+  },
+  "dsh-session-projection:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 2,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-session"
+   ]
+  },
+  "dsh-session-projection:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 2,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-session"
+   ]
+  },
+  "dsh-storage:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 4,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis"
+   ]
+  },
+  "dsh-storage:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 4,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis"
+   ]
+  },
+  "dsh-storage-domain:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 6,
+   "events_keys": [
+    "domain/changed"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-storage",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-storage-domain:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 6,
+   "events_keys": [
+    "domain/changed"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-storage",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-system-prompt:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 2,
+   "events_keys": [
+    "system-prompt/assemble",
+    "system-prompt/change"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-llm",
+    "@deepseek-ai/dsh-scope",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-system-prompt:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 2,
+   "events_keys": [
+    "system-prompt/assemble",
+    "system-prompt/change"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-llm",
+    "@deepseek-ai/dsh-scope",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-timeout:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 1,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis"
+   ]
+  },
+  "dsh-timeout:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 1,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis"
+   ]
+  },
+  "dsh-tools:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 10,
+   "events_keys": [
+    "tools/change",
+    "tools/execute",
+    "tools/post-execute",
+    "tools/pre-execute",
+    "tools/ptc-dispatch-log",
+    "tools/result"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-agent",
+    "@deepseek-ai/dsh-brand",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-llm",
+    "@deepseek-ai/dsh-ptc-runtime",
+    "@deepseek-ai/dsh-sandbox",
+    "@deepseek-ai/dsh-sandbox-policy",
+    "@deepseek-ai/dsh-scope",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-system-prompt",
+    "@deepseek-ai/dsh-user-approval",
+    "@deepseek-ai/dsh-util-values",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-tools:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 10,
+   "events_keys": [
+    "tools/change",
+    "tools/execute",
+    "tools/post-execute",
+    "tools/pre-execute",
+    "tools/ptc-dispatch-log",
+    "tools/result"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-agent",
+    "@deepseek-ai/dsh-brand",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-llm",
+    "@deepseek-ai/dsh-ptc-runtime",
+    "@deepseek-ai/dsh-sandbox",
+    "@deepseek-ai/dsh-sandbox-policy",
+    "@deepseek-ai/dsh-scope",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-system-prompt",
+    "@deepseek-ai/dsh-user-approval",
+    "@deepseek-ai/dsh-util-values",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-typert-protocol:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 5,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-brand"
+   ]
+  },
+  "dsh-typert-protocol:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 5,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-brand"
+   ]
+  },
+  "dsh-user-approval:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 3,
+   "events_keys": [
+    "approval/request"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-agent",
+    "@deepseek-ai/dsh-brand",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-llm",
+    "@deepseek-ai/dsh-scope",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-system-prompt",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-user-approval:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 3,
+   "events_keys": [
+    "approval/request"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-agent",
+    "@deepseek-ai/dsh-brand",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-llm",
+    "@deepseek-ai/dsh-scope",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-system-prompt",
+    "@deepseek-ai/schemastery"
+   ]
+  },
+  "dsh-util-values:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 1,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis"
+   ]
+  },
+  "dsh-util-values:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 1,
+   "events_keys": [],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis"
+   ]
+  },
+  "dsh-workspace:0.1.7-rc.1": {
+   "version": "0.1.7-rc.1",
+   "dts_files": 6,
+   "events_keys": [
+    "workspace/session-activity",
+    "workspace/session-stop"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-brand",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-session-persistence",
+    "@deepseek-ai/dsh-storage",
+    "@deepseek-ai/dsh-storage-domain",
+    "@deepseek-ai/dsh-typert-protocol"
+   ]
+  },
+  "dsh-workspace:0.2.0-rc.1": {
+   "version": "0.2.0-rc.1",
+   "dts_files": 6,
+   "events_keys": [
+    "workspace/session-activity",
+    "workspace/session-stop"
+   ],
+   "deepseekai_deps": [
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-brand",
+    "@deepseek-ai/dsh-invariants",
+    "@deepseek-ai/dsh-session",
+    "@deepseek-ai/dsh-session-persistence",
+    "@deepseek-ai/dsh-storage",
+    "@deepseek-ai/dsh-storage-domain",
+    "@deepseek-ai/dsh-typert-protocol"
+   ]
+  }
+ },
+ "consumed_surface_diff": {
+  "verdict": "IDENTICAL (normalized) on all 6 checks",
+  "checks": {
+   "dsh-agent 'agent/created'": "identical: {agent:Agent; source:SessionStartSource; signal?:AbortSignal} -> undefined|Promise<undefined>",
+   "dsh-tools 'tools/pre-execute'": "identical: (exec:ToolExecution, next:()=>Promise<PreToolDecision>)=>Promise<PreToolDecision>",
+   "dsh-tools 'tools/post-execute'": "identical: (exec:ToolExecution, result:Readonly<ToolExecutionResult>, next:()=>Promise<PostToolDecision>)=>Promise<PostToolDecision>",
+   "dsh-tools 'tools/result'": "identical: (exec:Readonly<ToolExecution>, result:Readonly<ToolExecutionResult>)=>undefined",
+   "dsh-system-prompt section()": "identical: section(section:PromptSection)=>()=>void",
+   "cordis Context head": "identical (cordis 4.0.4 both sides)"
+  },
+  "field_level": "12/12 IDENTICAL: Agent, SessionStartSource('startup'|resume|clear|compact), Agent.inject, Agent.session, ToolExecution, ToolExecutionResult, PreToolDecision, PostToolDecision, PromptSection, UserMessage, MessageSourceMap, MessageId"
+ },
+ "non_consumed_drift": [
+  "dsh-tools: PreToolDecision 'ask' variant +optional displayReason {en,[locale]} (additive; consumed {kind,reason?} unbroken)",
+  "dsh-user-approval: ApprovalRequestEvent +optional displayReason (additive)",
+  "dsh-llm: +5 exports ProjectedToolUpdates/projectToolUpdates/ACCOUNT_QUOTA_EXCEEDED_CODE/ToolUpdate/ToolHistory (additive)",
+  "dsh-session: +ToolCallRecovery +ToolHistoryProjection (+tool-history.d.ts) (additive)",
+  "dsh-sandbox: +sandboxPermissionsDescription (additive)",
+  "dsh-workspace: initializeDefault resolveDirectory return {path,title}->string (NARROWING, unconsumed) +delete(id) (additive)",
+  "14/20 packages fully identical normalized; 0 event-key add/remove anywhere"
+ ],
+ "pull_anchor_scan": {
+  "tool-registration (ctx.tools register/defineTool/restrict)": "present in 0.2.0-rc.1, signature IDENTICAL to 0.1.7-rc.1 and present since >=0.1.5-rc.2 (installed .pnpm verified) — no candidate-specific delta",
+  "web-interactive (patchReload/approval-channel/browser-turn)": "patchReload:live ABSENT in both; approval-channel=dsh-user-approval present identical (only +optional displayReason); browser-turn surface ABSENT (browser hits are doc comments only)",
+  "security/correctness fix evidence": "none identifiable in .d.ts diff"
+ },
+ "dep_closure": {
+  "0.1.7-rc.1": "21 dsh-* (20 pinned + dsh-util-crypto transitive-unpinned) + cordis + cosmokit/schemastery/cordis-plugin-* transitives",
+  "0.2.0-rc.1": "identical set — zero family adds/drops",
+  "delta": "none"
+ }
+}
