@@ -511,7 +511,7 @@ function stepStaticAssertions() {
     // R90 T4: the bridge row is retired — a live mcp-anysearch row returning
     // is a regression (comment-level mentions documenting the retirement are ok).
     {
-      const bridgeRowLive = patch.split("\n").some((l) => l.trimStart().startsWith("- id: mcp-anysearch") || /^\s*id:s*mcp-anysearch/.test(l));
+      const bridgeRowLive = patch.split("\n").some((l) => l.trimStart().startsWith("- id: mcp-anysearch") || /^\s*id:\s*mcp-anysearch/.test(l));
       if (bridgeRowLive) fail("ADR-0091: cordis.patch.yml re-introduced a live mcp-anysearch row — bridge retired in R90 T4");
       const idx = fs.readFileSync(path.join(ROOT, "apps", "dsh-plugin", "src", "index.ts"), "utf8");
       for (const tok of ["ans_search_web", "ans_research_web", "ans_recall_memory", "ans_query_knowledge", "ans_ans_chat", "ctx.tools.register", "KernelJsonSchemas", "KernelToolDescriptions"]) {
