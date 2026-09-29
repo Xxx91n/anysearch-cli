@@ -160,7 +160,7 @@ test('tools/pre-execute: denied URL on ans tool returns deny', async () => {
     const fn = ctx.listeners.get('tools/pre-execute')![0] as (
       e: unknown, n: () => Promise<PreToolDecision>,
     ) => Promise<PreToolDecision>;
-    const out = await fn(exec('mcp__anysearch__search_web', { query: 'see https://bad.example/x' }, mockAgent()), allow);
+    const out = await fn(exec('ans_search_web', { query: 'see https://bad.example/x' }, mockAgent()), allow);
     assert.equal(out.kind, 'deny');
     if (out.kind === 'deny') assert.match(out.reason, /bad.example|denylist/);
   } finally { srv.close(); delete process.env.ANS_SERVER_URL; }
@@ -178,7 +178,7 @@ test('tools/pre-execute: unallowlisted URL returns ask', async () => {
     const fn = ctx.listeners.get('tools/pre-execute')![0] as (
       e: unknown, n: () => Promise<PreToolDecision>,
     ) => Promise<PreToolDecision>;
-    const out = await fn(exec('mcp__anysearch__search_web', { query: 'see https://unknown.example/x' }, mockAgent()), allow);
+    const out = await fn(exec('ans_search_web', { query: 'see https://unknown.example/x' }, mockAgent()), allow);
     assert.equal(out.kind, 'ask');
   } finally { srv.close(); delete process.env.ANS_SERVER_URL; }
 });
@@ -196,7 +196,7 @@ test('tools/pre-execute: recall hits are injected via agent.inject and the call 
       e: unknown, n: () => Promise<PreToolDecision>,
     ) => Promise<PreToolDecision>;
     const agent = mockAgent();
-    const out = await fn(exec('mcp__anysearch__search_web', { query: 'anything' }, agent), allow);
+    const out = await fn(exec('ans_search_web', { query: 'anything' }, agent), allow);
     assert.equal(out.kind, 'allow');
     assert.equal(agent.injected.length, 1);
     assert.match(agent.injected[0].content[0].text ?? '', /anysearch preheat|Prior result/);
@@ -212,7 +212,7 @@ test('tools/pre-execute: server down fails open to allow', async () => {
       e: unknown, n: () => Promise<PreToolDecision>,
     ) => Promise<PreToolDecision>;
     const agent = mockAgent();
-    const out = await fn(exec('mcp__anysearch__search_web', { query: 'x' }, agent), allow);
+    const out = await fn(exec('ans_search_web', { query: 'x' }, agent), allow);
     assert.equal(out.kind, 'allow');
     assert.equal(agent.injected.length, 0);
   } finally { delete process.env.ANS_SERVER_URL; }
@@ -239,12 +239,12 @@ test('tools/post-execute: ans result gains a distilled additionalContexts messag
     isError: false,
     content: [{ type: 'text', text: JSON.stringify({ results: [{ title: 'T', url: 'u1', snippet: 's', source: 'exa' }] }) }],
   };
-  const out = await fn(exec('mcp__anysearch__search_web', { query: 'q' }, mockAgent()), result, accept);
+  const out = await fn(exec('ans_search_web', { query: 'q' }, mockAgent()), result, accept);
   assert.equal(out.kind, 'accept');
   const msgs = out.additionalContexts ?? [];
   assert.equal(msgs.length, 1);
   const distilled = JSON.parse((msgs[0].content[0] as { text?: string }).text ?? '{}');
-  assert.equal(distilled.tool, 'mcp__anysearch__search_web');
+  assert.equal(distilled.tool, 'ans_search_web');
   assert.equal(distilled.resultCount, 1);
 });
 
@@ -256,7 +256,7 @@ test('tools/result: indexes successful ans results over IPC', async () => {
     const ctx = mockCtx();
     apply(ctx as unknown as Context);
     const fn = ctx.listeners.get('tools/result')![0] as (e: unknown, r: unknown) => void;
-    fn(exec('mcp__anysearch__search_web', { query: 'q' }, mockAgent()), {
+    fn(exec('ans_search_web', { query: 'q' }, mockAgent()), {
       isError: false,
       content: [{ type: 'text', text: JSON.stringify({ results: [{ title: 'T', url: 'u1', snippet: 's', source: 'exa' }] }) }],
     });
@@ -264,7 +264,7 @@ test('tools/result: indexes successful ans results over IPC', async () => {
     const idx = reqs.filter((r) => r.url === '/index');
     assert.equal(idx.length, 1);
     const body = JSON.parse(idx[0].body);
-    assert.equal(body.toolName, 'mcp__anysearch__search_web');
+    assert.equal(body.toolName, 'ans_search_web');
     assert.equal(body.entries.length, 1);
   } finally { srv.close(); delete process.env.ANS_SERVER_URL; }
 });
@@ -276,7 +276,7 @@ test('tools/result: error results and non-ans tools are skipped', async () => {
     const ctx = mockCtx();
     apply(ctx as unknown as Context);
     const fn = ctx.listeners.get('tools/result')![0] as (e: unknown, r: unknown) => void;
-    fn(exec('mcp__anysearch__search_web', {}, mockAgent()), { isError: true, error: { message: 'x' }, content: [] });
+    fn(exec('ans_search_web', {}, mockAgent()), { isError: true, error: { message: 'x' }, content: [] });
     fn(exec('read_file', {}, mockAgent()), { isError: false, content: [] });
     await new Promise((r) => setTimeout(r, 200));
     assert.equal(reqs.filter((r) => r.url === '/index').length, 0);

@@ -476,13 +476,15 @@ function stepStaticAssertions() {
   //     (3-streak escalation reuses the ADR-0039 D7 discipline).
   stepAccessChainVerify();
 
-  // 1s. ADR-0073 D-002/D-003 (R72): dsh thin-bundle churn lint. The hooks
-  //     adapter is a zero-runtime-dep private bundle — @deepseek-ai/* may live
-  //     ONLY in devDependencies (type-level compile-time churn alarm). Any
-  //     @deepseek-ai/* leaking into a runtime dep field = fail-closed. The
-  //     bundle contract fields are asserted too: private:true, type:module,
-  //     dsh.bundle.patch declaration, and a cordis.patch.yml that inserts the
-  //     plugin row + the mcp-anysearch bridge row with every key restated.
+  // 1s. ADR-0073 D-002/D-003 (R72) + ADR-0091 D1/D5 (R90): dsh thin-bundle
+  //     churn lint. The adapter is a zero-runtime-dep bundle — @deepseek-ai/*
+  //     may live ONLY in devDependencies (type-level compile-time churn
+  //     alarm). Any @deepseek-ai/* leaking into a runtime dep field =
+  //     fail-closed. Bundle contract fields asserted too: publish-ready ESM,
+  //     dsh.bundle.patch declaration. R90 topology: cordis.patch.yml inserts
+  //     the plugin row ONLY (the mcp-anysearch bridge row is retired — its
+  //     presence is a regression), and src/index.ts carries the native tool
+  //     plane (five ans_* names + ctx.tools.register + kernel schema SSOT).
   {
     const pkgPath = path.join(ROOT, "apps", "dsh-plugin", "package.json");
     if (!fs.existsSync(pkgPath)) fail("ADR-0073: apps/dsh-plugin/package.json missing");
@@ -503,10 +505,20 @@ function stepStaticAssertions() {
       if (!(pkg.files ?? []).includes(f)) fail("ADR-0073: package.json files must include " + f);
     }
     const patch = fs.readFileSync(path.join(ROOT, "apps", "dsh-plugin", "cordis.patch.yml"), "utf8");
-    for (const tok of ["insert:", "anysearch-dsh-plugin", "mcp-anysearch", "@deepseek-ai/dsh-mcp-client", "serverName: anysearch", "transport: stdio"]) {
+    for (const tok of ["insert:", "anysearch-dsh-plugin"]) {
       if (!patch.includes(tok)) fail("ADR-0073: cordis.patch.yml missing " + tok);
     }
-    report("pass", "ADR-0073/ADR-0081 dsh-plugin churn lint: zero runtime deps, publish-ready ESM bundle, patch rows declared");
+    // R90 T4: the bridge row is retired — a live mcp-anysearch row returning
+    // is a regression (comment-level mentions documenting the retirement are ok).
+    {
+      const bridgeRowLive = patch.split("\n").some((l) => l.trimStart().startsWith("- id: mcp-anysearch") || /^\s*id:s*mcp-anysearch/.test(l));
+      if (bridgeRowLive) fail("ADR-0091: cordis.patch.yml re-introduced a live mcp-anysearch row — bridge retired in R90 T4");
+      const idx = fs.readFileSync(path.join(ROOT, "apps", "dsh-plugin", "src", "index.ts"), "utf8");
+      for (const tok of ["ans_search_web", "ans_research_web", "ans_recall_memory", "ans_query_knowledge", "ans_ans_chat", "ctx.tools.register", "KernelJsonSchemas", "KernelToolDescriptions"]) {
+        if (!idx.includes(tok)) fail("ADR-0091: dsh-plugin native tool plane missing " + tok + " in src/index.ts");
+      }
+    }
+    report("pass", "ADR-0073/ADR-0091 dsh-plugin churn lint: zero runtime deps, publish-ready ESM bundle, plugin-only patch row, native ans_* plane wired");
   }
 
   // 1m. ADR-0046 D1/D2/D5/D7 + ADR-0047 D1/D4/D5: fusion ablation, paraphrase
