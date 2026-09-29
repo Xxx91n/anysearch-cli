@@ -2,7 +2,7 @@
 
 ## 状态
 
-R90 实施轮 + 独立审计均收口：审计通过，无返工项。GitButler 车道 r90-audit 单 commit 叠于 r90 之上（未 push/未 land），公共基 7b938d7e（r89-audit），工作树净。审计 commit 稳定锚=but id mwq（sha 31abfa81；amend 下 sha 滚动以 git log 为准）。硬验收四腿审计窗亲跑全绿（check/build exit0、pack tgz+listing 六项、双进程 /health/401+真链路 hitsCount=5、dsh-plugin 21/21+全仓 test exit0、ship-gate 65/0）。
+R90 实施轮 + 独立审计均收口：审计通过，无返工项。终态=全部车道已 land+push：origin/main @ 6a34ccb3（含 r90-grill 立项 + r90 十票 T0-T7/收口/轮报 + 审计 commit cdeb9d7a；落地时 reconcile 重写栈内 sha——closeout/report 文内旧 sha 为当时值锚，以 main git log 为准）。硬验收四腿审计窗亲跑全绿（check/build exit0、pack tgz+listing 六项、双进程 /health/401+真链路 hitsCount=5、dsh-plugin 21/21+全仓 test exit0、ship-gate 65/0）。
 
 ## 关键产物（按路径引用，勿复读）
 
