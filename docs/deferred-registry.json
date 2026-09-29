@@ -447,6 +447,11 @@
      "at": "2026-09-29",
      "round": 90,
      "note": "R90 T5 复核裁决=拆：approval-channel 拆为独立条目 defer-r72-dsh-approval-channel（0.1.7-rc.1 tarball 复验：approval/request+asked+decided+policy+invariant 事件面在架——唯一依赖已解除的分项，可独立前置）；本条目收窄为 patchReload:live+browser-turn，维持 defer（上游 0.1.7-rc.1/0.2.0-rc.1 .d.ts 键面缺席复核不变）"
+    },
+    {
+     "at": "2026-09-29",
+     "round": 91,
+     "note": "R91 域外显式续债（carried, not silent）：本轮为主轴 dsh L3 冒烟售后验收轮，web-interactive matrix 主体维持 defer"
     }
    ]
   },
@@ -467,6 +472,11 @@
      "at": "2026-09-29",
      "round": 90,
      "note": "拆出自 defer-r72-dsh-web-interactive-matrix：上游依赖已解除（dsh-user-approval 在架同形），剩余阻碍=交互会话实测成本，非上游缺席"
+    },
+    {
+     "at": "2026-09-29",
+     "round": 91,
+     "note": "R91 T4c headless 可行性探测（.scratch/grill-round-91/evidence/t4c-approval-channel.md）：dsh-headless 未导入亦未注册 ApprovalAnswerer，缺失交互响应通道，调用将触发 fail-closed 降级；实证 headless 下交互审批不可行，维持 defer 挂账"
     }
    ]
   },

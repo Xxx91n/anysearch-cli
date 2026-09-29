@@ -4,6 +4,22 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0092 r91: dsh L3 冒烟验收 + 售后收口轮（L3 判据立法 + 宿主升版 0.1.7-rc.2 + README 行对齐 + 小修批）
+
+### Changed
+
+- **dsh 售后验收轮**：宿主升至 `@deepseek-ai/dsh@0.1.7-rc.2`（测=记=钉三版收敛）；门判据三腿（L3a 装册绿/L3b 枚举绿/L3c-min 执行绿）立法于 ADR-0092；L3 实机冒烟实证 L3a 成立（dump-config 单行注册在位）；因环境缺失 `DEEPSEEK_API_KEY`，L3b 取证通道证实可直达端点但 tools 载荷无法确认，判词如实落分支 C（F-bug），T3 条件票锁定不留痕。
+
+### Fixed
+
+- **ship-gate.mjs 正则修补（T4a）**：修复 `/id:s*mcp-anysearch/` 为 `/id:\s*mcp-anysearch/`，防止缺失反斜杠导致任意选言误判。
+- **弃用文案双空格核实（T4b）**：枚举 `@anysearch-cli/cli@0.0.3~0.0.8` 双空格文案，备准修复命令；尝试执行遇 E401/权限闸，按 R87 D4 执行态如实记账。
+- **WORKFLOW.md §4.2 终审 ADR 判死（T4d）**：ADR-0092 D3 明确 supersede 语义——由 GitButler skill + 全局 `but` 协议等价覆盖，10+ 轮缺位核销审计正式封口。
+
+### Deferred
+
+- **defer-r72-dsh-approval-channel**：经 T4c 探测，`dsh-headless` 缺失交互式 ApprovalAnswerer，调用触发 fail-closed 降级，维持 open/defer。
+
 ## Unreleased — ADR-0091 r90: dsh 原生工具面实施轮（五 ans_* 原生注册 + 桥退役 + approval-channel 拆票）
 
 ### Fixed

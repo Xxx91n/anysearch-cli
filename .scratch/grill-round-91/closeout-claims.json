@@ -1,0 +1,87 @@
+{
+  "schema": "anysearch/closeout-claims@1",
+  "round": 91,
+  "claims": [
+    {
+      "id": "r91-t0-watch",
+      "kind": "symbol",
+      "claim": "T0 dist-tags 复观：next=0.2.0-rc.2/latest=0.1.7-rc.2，无 0.2.0 stable 晋升→TC 窗口一次定死不启；dsh 本机升级 0.1.7-rc.2 实测通过",
+      "file": ".scratch/grill-round-91/evidence/t0-baseline.md",
+      "tokens": [
+        "0.1.7-rc.2",
+        "TC 不启",
+        "0.2.0-rc.2"
+      ]
+    },
+    {
+      "id": "r91-t1-adr",
+      "kind": "symbol",
+      "claim": "ADR-0092 L3 判据立法：门三腿（L3a/L3b/L3c-min）+三分支判词+established/not-established 词汇表+D3 WORKFLOW §4.2 判死+D4 readme-token claims 立法",
+      "file": "docs/adr/0092-architecture-grill-round-91-dsh-l3-smoke-closeout.md",
+      "tokens": [
+        "L3a 装册绿",
+        "L3b 枚举绿",
+        "L3c-min 执行绿",
+        "WORKFLOW.md §4.2"
+      ]
+    },
+    {
+      "id": "r91-t2-l3a",
+      "kind": "field",
+      "claim": "T2 L3a 装册绿：dsh --profile headless --dump-config bundle 层单行可见，状态为 established",
+      "file": ".scratch/grill-round-91/evidence/t2-verdict.json",
+      "field": "L3a",
+      "expect": "established"
+    },
+    {
+      "id": "r91-t2-verdict",
+      "kind": "field",
+      "claim": "T2 L3 冒烟判词：DEEPSEEK_API_KEY 环境缺位导致 L3b/L3c-min 不可确认，如实出判词 F-bug（分支 C），T3 条件票锁定",
+      "file": ".scratch/grill-round-91/evidence/t2-verdict.json",
+      "field": "verdict",
+      "expect": "F-bug"
+    },
+    {
+      "id": "r91-t4a-shipgate-regex",
+      "kind": "symbol",
+      "claim": "T4a ship-gate.mjs 正则修复：/id:s*mcp-anysearch/ -> /id:\\s*mcp-anysearch/ 独票 fix，双选言验证均活",
+      "file": "scripts/ship-gate.mjs",
+      "tokens": [
+        "id:\\s*mcp-anysearch"
+      ]
+    },
+    {
+      "id": "r91-t4b-deprecate",
+      "kind": "symbol",
+      "claim": "T4b 弃用文案双空格：枚举 0.0.3~0.0.8 双空格并备准命令清单；E401/权限受限按 R87 D4 执行态如实记账",
+      "file": ".scratch/grill-round-91/evidence/t4b-deprecate.md",
+      "tokens": [
+        "0.1.0  upgrade.",
+        "0.1.0 upgrade.",
+        "执行态如实记账"
+      ]
+    },
+    {
+      "id": "r91-t4c-approval",
+      "kind": "symbol",
+      "claim": "T4c approval-channel 可行性探测：实证 headless 模式无交互 answerer，调用将 fail-closed 降级；维持 defer-r72-dsh-approval-channel 挂账",
+      "file": ".scratch/grill-round-91/evidence/t4c-approval-channel.md",
+      "tokens": [
+        "fail-closed",
+        "defer-r72-dsh-approval-channel",
+        "dsh-headless"
+      ]
+    },
+    {
+      "id": "r91-t5-readme-token-claim",
+      "kind": "narrative",
+      "claim": "T5 readme-token claims 立法：两拍节奏，断言检查器接线，机检首跑显式登记 R92 候选票",
+      "file": "docs/adr/0092-architecture-grill-round-91-dsh-l3-smoke-closeout.md",
+      "tokens": [
+        "readme-token-pin",
+        "两拍节奏",
+        "R92 候选票"
+      ]
+    }
+  ]
+}

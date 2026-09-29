@@ -23,7 +23,7 @@ R90（ADR-0091）完成五 ans_* 工具原生注册，退役 mcp-anysearch 桥�
 
 - **L3b 枚举绿**（stream-json transcript 取证通道存在性为前置义务）:
   headless turn 产出的 stream-json transcript 中，model-request tools 载荷
-  含五个 ans_* 裸名（ans_search/ans_recall/ans_knowledge/ans_research/ans_chat）+ inputSchema 字段。
+  含五个 ans_* 裸名（实名：ans_search_web/ans_recall_memory/ans_query_knowledge/ans_research_web/ans_chat）+ inputSchema 字段。
   **前置义务**：跑 L3b 前须先实证 transcript 取证通道存在（=T1 entry criterion probe；
   通道证伪→L3b 不可判定→判词直落 F-bug 分支，不带缺执行）。
 
@@ -38,10 +38,10 @@ R90（ADR-0091）完成五 ans_* 工具原生注册，退役 mcp-anysearch 桥�
 - **L3c-full 五工具诱导矩阵**（evidence-only，入 verdict 宽窄但不阻塞）:
   逐 ans_* 工具一条诱导句，检查 transcript 中该工具是否被调起并完成往返。
   诱导措辞表（跑前定死）:
-  - ans_search: 「请帮我搜索一下 deepseek dsh plugin 的最新功能」
-  - ans_recall: 「请从记忆中回忆我之前问过哪些关于 dsh 插件的问题」
-  - ans_knowledge: 「请查询我的知识库中关于 anysearch 的相关内容」
-  - ans_research: 「请深入研究 deepseek dsh 的 headless 模式工作原理」
+  - ans_search_web: 「请帮我搜索一下 deepseek dsh plugin 的最新功能」
+  - ans_recall_memory: 「请从记忆中回忆我之前问过哪些关于 dsh 插件的问题」
+  - ans_query_knowledge: 「请查询我的知识库中关于 anysearch 的相关内容」
+  - ans_research_web: 「请深入研究 deepseek dsh 的 headless 模式工作原理」
   - ans_chat: 「请直接回答：anysearch cli 的主要功能是什么」
 
 **非判据（顺验/免测，明文标注，防误读为门槛）**:
@@ -122,8 +122,8 @@ WORKFLOW.md §4.2「版本控制外部承诺」自本 ADR 生效起，由以下�
 
 新 claim kind `readme-token-pin`：
 - 断言对象：README.md dsh 行的版本字段（catalog 声明版本 vs 实测宿主版本）
-- 检查器接线：T5 收口时执行首次机检，结果登记为 R92 候选票（本轮 evidence-only）
-- 机检首跑：`node scripts/ship-gate.mjs --quick` 中 readme-token 腿不在本轮启用（两拍节奏）
+- 立法与定义：本轮完成定义，并在 T5 closeout-claims 8 项中以 narrative 形式纳入收口范围
+- 检查器接线：`scripts/ship-gate.mjs` 专属机检断言检查器接入登记为 R92 候选票（两拍节奏，本轮不跑专属机器腿）
 
 ## Consequences
 
@@ -145,4 +145,18 @@ WORKFLOW.md §4.2「版本控制外部承诺」自本 ADR 生效起，由以下�
 
 ## 票序节（逐票 sha+but-id 双锚）
 
-（待 T6 收口后填写）
+| 票 | commit (sha + but-id) | 类型 | 判定/结果 | 实证索引 |
+|---|---|---|---|---|
+| T0 哨戒+宿主备版 | f40f227b (kmv) | chore | ✅ 完成 | `.scratch/grill-round-91/evidence/t0-baseline.md` (dist-tags 快照/dsh 升 0.1.7-rc.2/pnpm check+test 全绿) |
+| T1 判据立法 | b74fe057 (wpr) | docs | ✅ 完成 | `docs/adr/0092-*` + `docs/adr/index.md` 0092 行 |
+| T1 取证通道探针 | a5ec8eeb (ssl) | chore | ✅ 完成 | `.scratch/grill-round-91/evidence/t1-entry-criterion-probe.md` + `t1-verdict.json` |
+| T2 L3 冒烟执行 | 5b6a397f (otk) | chore | ⚠️ F-bug (分支 C) | `.scratch/grill-round-91/evidence/t2-l3-smoke.md` + `t2-verdict.json` (L3a established, L3b not-established 因 key 缺位) |
+| T3 README 对齐 | — | docs | ⏭ 条件未达未启 | 判词为 F-bug (< 降格档)，条件票纯度守则：未启不留痕 |
+| T4a ship-gate 修复 | fcf97e32 (lvx) | fix | ✅ 完成 | `scripts/ship-gate.mjs` (正则 /id:s*mcp-anysearch/ -> /id:\s*mcp-anysearch/ 独票修复) |
+| T4b/c 顺验与证据 | 144015a2 (ppu) | chore | ✅ 完成 | `.scratch/grill-round-91/evidence/t4b-deprecate.md` + `t4c-approval-channel.md` |
+| T4d WORKFLOW 判死 | 随 T1 (b74fe057) 落地 | docs | ✅ 完成 | D3 判死立法随 T1 落地，票序节由 T5 补记；D-003 四件实落三 commit (T4a 独票, T4b+c 合票, T4d 随 T1) |
+| T5 收口件批 | 本批 (uts) | docs | ✅ 完成 | CONTEXT 7 词锚 + registry 更态 + closeout-claims 8 项 + 轮报 + 终态戳 + CHANGELOG |
+| T6 门禁复核 | — | — | ✅ 完成 | pnpm -r check exit 0 / pnpm -r test exit 0 / ship-gate --quick [pass]×65 [fail]×0 全闭环 |
+| TC 条件票 | — | — | ⏭ 未触发 | T0 目击无 0.2.0 stable 晋升 |
+
+注：but-id 列（kmv/wpr/ssl/otk/lvx/ppu/uts）为唯一稳定锚；sha 锚已统一对齐至 landed 祖先链真实 git 对象。
