@@ -45,3 +45,11 @@ dsh 上游 0.2.0 minor 线首落候选（0.2.0-rc.1 @ next，2026-09-28T12:13~12
 - 本判词依赖「拉力=候选特异证据」读法——立法原文「出现且签名稳定」存在字面歧义，已记 spec gap：真值表缺稳定锚否决行+拉力锚候选特异性未明文，下轮立法补。
 - 候选特异性读法经审计裁决权威化（A-1）；即便字面读法拉力=TRUE，龄期闸未过亦无分支落 repin-now——判词稳健。
 - r72-native-tools 实施票依赖实质可启（触发器三代同形实证），解除 defer 属下轮裁决；web-matrix 的 patchReload:live/browser-turn 两面待上游出面。
+
+## Addendum（R90 T1 立法——spec-gap 补行：真值表第四行 pending-repin）
+
+R89 审计呈报的 spec gap 经本轮 T1 立法闭合。原三行「拉力∧兼容→repin-now；兼容∧零拉力→soak-until-stable；兼容破坏→hold」使「字面拉力=TRUE ∧ 稳定龄期闸未过」落未定义态：字面读法下 repin-now 因龄期闸不可达，但表无支路覆盖该象限，且现钉版本上 API 的消费时机被版本轴误绑。补行：
+
+- **兼容锚=TRUE ∧ 拉力锚字面=TRUE ∧ 稳定锚龄期闸未过 → pending-repin**：repin 延后（不入 repin-now）但**消费放行**——已钉版本在架 API 的消费决策在消费轴上独立裁决，不等 0.2.0 stable，也不构成对 repin 判词的前置承诺。
+- **版本轴/消费轴正交**：repin 判词只管「何时换钉」（版本轴），不约束「现钉版本上在架 API 的消费时机」（消费轴）。R90 主线消费现钉 0.1.7-rc.1 上三代同形亲验的工具注册面（ToolRuntime.register/defineTool），零 repin 依赖。反向不对称成立：消费候选版本「新增面」仍走版本轴闸——不存在「现钉之外的消费放行」。
+- soak-until-stable 判词照常成立（龄期闸仍挡 repin-now）；本行只使该象限的消费面脱离未定义态，与真值表「高频象限必产出不悬置」的立法意图一致。repin-now 在字面拉力读法下仍不可达——第四行不是 repin 快车道，是消费面的定义态补全。
