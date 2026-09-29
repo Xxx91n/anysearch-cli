@@ -1,0 +1,37 @@
+你是一个为软件仓库「anysearch-cli」（TypeScript/pnpm monorepo，信息专精 Agent CLI，遵循 AnySearch 垂直领域理念）做深度调研的研究者。请围绕下面的裁决问题做多源调研，重点放在【工业界成熟落地的心智模型】上，给出推荐选项与理由。
+
+## 仓库上下文（已核实的实物状态）
+
+本项目以「grill round」推进（每轮一主题+独立审计+决策账本+ADR+CONTEXT.md），已连续 88 轮、89 部 ADR。R88「搜索面卫生轮」刚 land（origin/main=846b2eb6），npm latest=0.1.0。
+
+本仓对上游 @deepseek-ai/dsh-* 族（20 包+cordis）的依赖治理已有立法化设施（ADR-0074+R73/R77/R83 历轮立法）：
+- 钉版形态：pnpm-workspace.yaml catalog 单点承载版本号+overrides 逐名枚举；现役=20 个 dsh-*=0.1.7-rc.1+cordis=4.0.2（R83 TE1 采纳，双锚齐立法）。
+- 升级账本（upgrade-ledger，R77 v2 在 `.scratch/grill-round-77/upgrade-ledger.md`）：L0 元数据哨（npm view）→ L1 静态探针（npm pack tarball .d.ts 消费面 diff，闸内合法探针，不归 minimumReleaseAge 管辖）→ L2 安装彩排（repin→install→tsc expected-RED，只给采纳候选）。「alarm 跟随发布、adoption 跟随稳定性」。
+- 采纳触发器（R77 双锚，版本号退出触发逻辑）：①特征锚（候选 tarball .d.ts 中 agent/created payload 携 source/signal 且 agent/session-start 缺席）；②稳定锚（发布位于 rc-or-stable 线+changelog 审阅）；两锚全响+2880min 龄期闸→才进 L2 实施轮。
+- 消费面实物（apps/dsh-plugin/src/index.ts，173 行）：ctx.on(agent/created) 携 {agent,source:SessionStartSource}（source!=='startup' guard）；ctx.on(tools/pre-execute|post-execute|result) 三事件；ctx.systemPrompt.section('anysearch:routing-card')；inject=['tools','systemPrompt'] 声明。即 R77 特征锚所等的改名特征**已被消费**（agent/created 在役）。
+
+当前信号：npm dist-tag next=0.2.0-rc.1 首目击 2026-09-28T12:14Z（0.1.7→0.2.0 大版本线跳）。0.2.0-rc.1 的 changelog/.d.ts diff 公网不可核验（私有上游），只能由仓内 L1 探针补齐。
+
+## 现行账本中全 current 决策（R89 ledger）
+
+- D-001 R89 主轴=dsh 上游线轮（已定稿）：正题=0.2.0 线 breaking-surface 调研+repin 时机裁决（交付物=L1 探针 transcript+迁移面 diff+时机判词），同域纳编 r72 两票（defer-r72-dsh-native-tools/defer-r72-dsh-web-interactive-matrix）只定形不实现——若裁为提前实现须走 L2 安装彩排 expected-RED 闸；repin-rc-vs-stable=票内裁决点。负向：评测面顺延/垂域重议候审不复活/上游触发债不动/常驻债挂账/钉版 0.1.0 不动/无外发/观察项不扩票。
+
+治理闸（R88 立法原样承继）：R84 D-007 三向失真判据显式继承；断言载体预注册；票级熔断（同票连续 2 轮 LOOP 失败→回退挂回 registry+缩轮呈报）；一票一 commit+type 纪律；契约枚举前置立法。
+
+## 已确立心智模型（枚举要点）
+
+ADR-0029 Scope discipline（一轮一主题）；ADR-0074 dsh 钉版（catalog 单点+overrides 枚举+升级账本）；R77 Adoption Stability Gate/Respect-and-Schedule（alarm 跟发布、adoption 跟稳定度分层）；ADR-0084~0086 评测立法（预注册矩阵/判别探针/记分簿诚实化）；ADR-0088 发布收口（最后一寸签名/零分叉/deprecate 精准）；ADR-0089 搜索面卫生（判别联合归并器/字节级冻结/契约枚举前置立法/票级熔断/失真判据显式继承）。
+
+## 待裁问题（R89 Q2 — repin 时机裁决判据预注册）
+
+要求：判据在 L1 探针跑之前立法（预注册文化镜像，防事后 goalpost-shift），写入 ADR-0090 验收判据。
+
+A【三锚判词】（我倾向推荐）：repin 至 0.2.0-rc.1 iff 三锚齐响——①兼容锚：L1 探针证已消费子集零破坏漂移（agent/created payload+tools/* 三事件+systemPrompt.section+inject 声明在 0.2.0-rc.1 .d.ts 全在且签名同构；未消费键漂移≠兼容破坏）；②拉力锚：0.2.0 交付有消费意愿的东西（r72-native-tools 所需工具注册 API 稳定化/web 交互面成熟化探针证其一即响）或安全/正确性修复；零拉力+兼容锚响=「可 repin 但不必须」（soak 亦可，终裁给用户）；零拉力+兼容破坏=hold；③稳定锚：rc 线在架+2880min 龄期闸+changelog 不可公网核验→降级为 tarball diff 自证并如实记缺口。判词形态=三锚真值表→repin-now/soak-until-stable/hold。
+
+B【简化判词】：大版本线跳一律等 stable（Renovate :ignoreUnstable 最严读法）——最省事但放弃 rc→rc 平移合法先例通道；且「现役钉版本就是 rc」意味着等 stable=0.1.7-rc.1 长期驻留，与仓内已采纳 rc 的事实张力大。
+
+C【双锚复用】：原样沿用 R77 特征锚+稳定锚——特征锚语义已失效（改名特征已被消费），复用=判据空转。
+
+D【另指】。
+
+请给出：推荐选项、理由、各选项的工业界心智模型依据（如 adoption-gate/adoption-criteria 预注册惯例、SemVer 0.x major-line 迁移判据、rc-vs-stable 采纳决策表形态、consumed-surface subset diff vs full-API diff 的分层哲学、feature-anchored vs compatibility-anchored adoption 判据演进等）、以及对我倾向 A 的辩证检验（含反对 A 的最强论据）。

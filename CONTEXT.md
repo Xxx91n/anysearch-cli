@@ -1594,3 +1594,26 @@ tag 挂载点纪律：tag=当前 tip=已审计 SHA——pre-tag dispatch 验证�
 
 ### Vertical Spec Authority（垂域组装单一权威）
 VerticalSpec 守卫+组装的唯一权威落点=`buildVerticalSpec`/`verticalSpecReject`（packages/retriever/src/contract.ts；判别联合 {ok,vertical}|{ok:false,reason:"missing-domain"}），三入口（cli/search、search_web、research_web）共享运行面、kernel `verticalSpecProps` 共享 schema 面——错文案归各 surface 渲染且 byte-frozen 有 golden 断言在案。_Avoid_: 三站各自重写守卫漂移；判别联合降级为 boolean（reason 信息丢，surface 无从渲染差异化文案）。来源：R88 T3 / ADR-0089 D1-D2。
+
+## Grill Round 89 — Terms (ADR-0090)
+
+### Upstream-Line Round（上游线轮）
+信号触发型轮次：上游大版本线首目击即开调研窗口、采纳动作分层延后——交付物=调研件（L1 探针 transcript+迁移面 diff+时机判词），采纳决策随稳定度。_Avoid_: 信号当日即采纳；把调研轮做成 repin 轮。来源：atomcode R89-Q1+R89 D-001。
+
+### Three-Anchor Adoption Verdict（三锚采纳判词）
+repin 时机判据真值表：兼容锚∧拉力锚→repin-now；兼容锚∧零拉力→soak-until-stable（默认兜底）；兼容破坏→hold。无第三态——高频象限必产出决定。_Avoid_: 「兼容没拉力也可 repin」悬置分支（goalpost-shift 延迟而非防止）。来源：atomcode R89-Q2+R89 D-002。
+
+### Consumed-Subset Compat Anchor（已消费子集兼容锚）
+兼容性只在实际消费的 API 子集上度量（本仓=agent/created payload+tools/* 三事件+systemPrompt.section+inject 声明），未消费键漂移≠破坏——consumer contract 优先于 spec contract 分层。_Avoid_: 全量 .d.ts diff 把上游一切变更当破坏。来源：R89 D-002。
+
+### Enumerated Pull Evidence（拉力证据枚举化）
+拉力锚只收预注册枚举形态的证据：票面具名 API 在候选 .d.ts 出现且签名稳定、或安全/正确性修复——不收泛化「成熟化」主观解读。_Avoid_: 探针者主观解读 tarball 当拉力证据（失真温床）。来源：atomcode R89-Q2+R89 D-002。
+
+### Soak-by-Default（零拉力默认浸润）
+兼容但零拉力的候选默认判 soak-until-stable，不开放自由裁量 repin——工业默认（ignoreUnstable/Tuist soak/Dependabot cooldown）一致指向 rc 期只浸润不迁移。_Avoid_: 「反正没破坏随手 repin」。来源：atomcode R89-Q2+R89 D-002。
+
+### Closing-Probe Obligation（收口探针义务）
+repin 至 rc 附随的义务：上游 stable 晋升时只再验一次收口探针即封账，不跟随 rc.N 递增滚动——防账本从事件驱动退化为跟随上游滚动。_Avoid_: 每个 rc.N 都重开一轮 L1。来源：atomcode R89-Q2+R89 D-002。
+
+### Conditional Ticket（条件票）
+以具名闸启停的票：判词=repin-now 才启 repin 执行票（repin+L2 彩排+迁移+回归），判词≠repin-now 则票不启不留痕——R83 TE1 in-round 先例的显式化。_Avoid_: 判词未出先执行；票未启留空痕。来源：R83 TE1+R89 D-003。

@@ -1,0 +1,42 @@
+你是一个为软件仓库「anysearch-cli」（TypeScript/pnpm monorepo，信息专精 Agent CLI，遵循 AnySearch 垂直领域理念）做深度调研的研究者。请围绕下面的裁决问题做多源调研，重点放在【工业界成熟落地的心智模型】上，给出推荐选项与理由。
+
+## 仓库上下文（已核实的实物状态）
+
+这是一个用「grill round」节奏推进的项目：每轮一次主题化工作+独立审计+决策账本+ADR+CONTEXT.md 词表。已连续 88 轮、89 部 ADR、多轮独立审计。
+
+上三轮：
+- R86「绿门装船轮」：真测量版 NO-GO（prefer-capable 垂域路由假设被预注册实验判负）；v0.1.0 钉版。
+- R87「发布收口轮」：v0.1.0 tag+OIDC publish 全绿、npm latest=0.1.0、旧版 deprecate 止血核销。
+- R88「搜索面卫生轮」刚闭环并 land：四票全落（a08 dead maxResults 删解构+契约拒收测试/a03 位置化旗值消费 fix/a06 双层归并 buildVerticalSpec+verticalSpecProps/F-6 探针脚本卫生），审计 PASS（F-a~F-e 修复终态在案：空白串视同缺席 addendum 入 ADR-0089）；origin/main=846b2eb6。搜索面债务清零。
+
+当前 registry open=13 项，分组：
+（1）R88 候审候选×1：r88-candidate-vertical-direction-redeliberation（垂域方向重议：prefer-capable 具名重开条件 |ΔarmHostHit|≳0.4 未达，候审不复活）。
+（2）dsh 集成面×2+repin 挂起裁决：defer-r72-dsh-native-tools（五 ans_* 工具 dsh 原生 ctx.tools 注册，绕过 mcp__anysearch_ 间接层）、defer-r72-dsh-web-interactive-matrix（dsh web-profile 交互矩阵：浏览器驱动 turn+live patch reload）；钉版现状=pnpm-workspace.yaml catalog 单点锁 20 个 @deepseek-ai/dsh-*=0.1.7-rc.1（R73 T1/ADR-0074 立法：catalog 单点承载版本号+overrides 逐名枚举，R83 TE1 双锚齐）；上游信号=npm next=0.2.0-rc.1 首目击 2026-09-28T12:14Z（0.1.7→0.2.0 大版本线跳），repin 裁决被 R88 两份收口文档明示「哨戒域外挂起」。
+（3）评测面×1：defer-f17-quarantine-ids（两个环境抖动 golden 用例待具名+填充 eval-quarantine.json——基建全备：quarantine-ledger.ts/quarantine-ratchet.mjs/SLA tests/ADR-0065，实物账=entries:[] 空）。
+（4）上游触发债×4：r81 REST 路由 tombstone / r84 ip 第五域语料（等上游参数词表）/ r86×2（corpus param contract 等上游 tag 契约、anon quota nudge 等 env 修正回执）——具名触发不可主动推进。
+（5）常驻背景债×5：domain-ownership（法务）/ f16-macos-crash（上游 better-sqlite3 watch）/ r71-transformers ghost-dep / r74-logo 位图 / r75-registerHooks ESM arm。
+（6）R88 残余观察项：provider 探针 ANS_PROBE_QUERY 仍 ?? 读法 vs mcp-raw 探针 ||（POSIX 空串≈未设）——残余不对称实物坐实但 R88 票外登记；探针退出期 libuv 断言=Windows/Node24 平台存量噪声。
+
+## 现行账本中全 current 决策（R88 ledger D-001~D-005 为项目法，不可冲突）
+
+- D-001 卫生轮范围外条款：垂域方向重议候审不复活（重开条件未达）；广义清债否（违单主题纪律）；上游触发债维持具名触发；常驻背景债维持挂账+触发条件；钉版产物不动。
+- D-002 归并边界：判别联合+byte-identical 冻结+reason 枚举前置立法。
+- D-003 契约面纪律：不静默扩公共契约（maxResults 暴露=特性决策非卫生项）+契约拒收测试。
+- D-004 票序：修在前并随后+一票一 commit+type 纪律（fix/refactor 不混）。
+- D-005 治理闸：R84 D-007 三向失真判据显式继承（失真→并入主票/同文件→复核行/无关→清障轮）；断言载体预注册；票级熔断（同票连续 2 轮 LOOP 失败→回退挂回 registry+缩轮呈报）。
+
+## 已确立心智模型（CONTEXT.md 词表 33 轮+ADR 89 部，枚举要点）
+
+ADR-0029 Scope discipline：一轮一主题。ADR-0074 dsh 钉版：catalog 单点+overrides 枚举+升级账本。R83 TE1：闸开先行+双锚齐立法。ADR-0084/0085/0086：评测立法（预注册矩阵/判别探针/蒸馏新鲜度断言/记分簿诚实化）。ADR-0087 绿门装船 / ADR-0088 发布收口（最后一寸签名/零分叉/deprecate 精准）/ ADR-0089 搜索面卫生（判别联合归并器/字节级冻结/契约枚举前置立法/票级熔断/失真判据显式继承）。CONTEXT R88 8 词同前。
+
+## 待裁问题（R89 Q1 — 下一轮主轴）
+
+A【dsh 上游线轮】（我倾向推荐）：正题=0.2.0 线 repin 裁决（信号触发型：rc.1 昨日首目击在架），同域纳编 r72 两票（native-tools 注册/web 交互矩阵）——三者同落「dsh 集成面」一单主题。逻辑：0.2.0 可能改变工具注册面，r72 债的解法随 repin 裁决而变——先裁线再清债是正确序；rc 期间做 breaking-surface 调研正是窗口期。辩证保留：repin 至 rc 还是等 stable 是票内裁决；若 0.2.0 变化面小轮体量偏薄。
+
+B【评测面轮】：f17 quarantine 具名填充+语料面复核+探针 ??/|| 残余不对称收编。体量薄（f17 单票小）+语料债上游冻结，撑主轴勉强。
+
+C【垂域方向重议】：具名重开条件未达、0.1.0 无新证据——候审不复活（与 R88 D-001 同款判据）。
+
+D【另指】：你认为更优的下一轮主轴。
+
+请给出：推荐选项、理由、各选项的工业界心智模型依据（如 dependency-upgrade cadence/rc-vs-stable 采纳判据/upstream signal-triggered work/pin 策略/SemVer 大版本线迁移惯例/Dependabot-Renovate 类自动化升级的工业先例等）、以及对我倾向 A 的辩证检验（含反对 A 的最强论据）。
