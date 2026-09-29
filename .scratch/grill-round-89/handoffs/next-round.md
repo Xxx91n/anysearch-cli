@@ -73,4 +73,16 @@
 
 ## 终态戳（R89 执行完毕回填）
 
-（待 T0–T6 执行后回填）
+**终态（2026-09-29）**：判词=**soak-until-stable**（D-002 真值表兼容∧零拉力分支机械产出）；钉版 0.1.7-rc.1+cordis 4.0.4 不动。
+
+| 票 | 终态 | commit |
+|---|---|---|
+| T0 哨戒+基线 | 完成（watch 快照+基线报告在档） | nyx |
+| T1 L1 探针 | 完成（transcript+snapshot，消费子集全等） | ruw |
+| T2 判词 | soak-until-stable（ledger v3） | uxp |
+| T3 repin | **不启不留痕**（判词≠repin-now） | — |
+| T4 r72 定形 | 完成（r72-shaping.md，不实现） | owu |
+| T5 收口批 | 完成（ADR-0090+index+registry+claims+终态戳+CHANGELOG+r89 closeout） | 本 commit |
+| T6 门禁+审计 | 轮报末节回填为准 | — |
+
+挂账移交：0.2.0-rc.1 龄期 802min<2880min 未过闸（快照时点）；再评估触发点=0.2.0 stable 晋升目击。拉力锚判读差异（候选特异性读法 vs 在架字面读法）已呈报用户裁决。

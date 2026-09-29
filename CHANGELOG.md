@@ -4,6 +4,13 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0090 r89: dsh 上游线轮（0.2.0-rc.1 调研 + repin 判词 soak-until-stable + r72 两票定形）
+
+### Changed
+
+- **dsh 上游线调研轮**：0.2.0-rc.1（next，2026-09-28T12:14Z 全族同发）L1 tarball 探针——消费子集 .d.ts diff 全等（12/12 字段级 IDENTICAL）、Events 键面零增删、dep-closure 同集零 delta；三锚判词=**soak-until-stable**，钉版 0.1.7-rc.1 + cordis 4.0.4 不动；证据 .scratch/grill-round-89/（upgrade-ledger v3 + t1 transcript/snapshot）。
+- **r72 两票定形（不实现）**：native-tools 依赖触发器实质已响（注册 API 三代同形）；web-interactive-matrix 分项——approval-channel 解除、patchReload:live/browser-turn 上游缺席维持 defer。
+
 ## Unreleased — ADR-0089 r88: 搜索面卫生轮（a06 双层归并 + a03 吞词修复 + a08 死参清除 + F-6 探针卫生）
 
 ### Fixed

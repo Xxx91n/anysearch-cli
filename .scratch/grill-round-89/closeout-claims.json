@@ -1,0 +1,118 @@
+{
+ "schema": "anysearch/closeout-claims@1",
+ "round": 89,
+ "claims": [
+  {
+   "id": "r89-t0-watch",
+   "kind": "symbol",
+   "claim": "L0 watch snapshot：next=0.2.0-rc.1 全族在架、无 rc.2、无 stable 晋升、cordis 未随跳",
+   "file": ".scratch/grill-round-89/evidence/t0-l0-watch.json",
+   "tokens": [
+    "r89/t0-l0-watch@1",
+    "0.2.0-rc.1",
+    "cordis"
+   ]
+  },
+  {
+   "id": "r89-t0-baseline",
+   "kind": "symbol",
+   "claim": "基线快照：check/test 绿、ship-gate 仅 freshness 红（预期中态）",
+   "file": ".scratch/grill-round-89/reports/baseline-2026-09-29.md",
+   "tokens": [
+    "pnpm -r check",
+    "ship-gate"
+   ]
+  },
+  {
+   "id": "r89-t1-transcript",
+   "kind": "symbol",
+   "claim": "L1 探针 transcript：41 tarball 全取件、消费子集零破坏、拉力零、closure 零 delta、缺口记档",
+   "file": ".scratch/grill-round-89/evidence/t1-l1-0.2.0-rc.1.md",
+   "tokens": [
+    "41/41",
+    "兼容锚结论",
+    "拉力锚结论",
+    "dep-closure"
+   ]
+  },
+  {
+   "id": "r89-t1-snapshot",
+   "kind": "symbol",
+   "claim": "API snapshot JSON：consumed_surface_diff 6 键 IDENTICAL + pull_anchor_scan 实录",
+   "file": ".scratch/grill-round-89/evidence/t1-api-snapshot-0.2.0-rc.1.json",
+   "tokens": [
+    "r89/t1-api-snapshot@1",
+    "consumed_surface_diff",
+    "pull_anchor_scan",
+    "dep_closure"
+   ]
+  },
+  {
+   "id": "r89-t2-verdict",
+   "kind": "symbol",
+   "claim": "判词=soak-until-stable，upgrade-ledger v3 三锚真值表机械产出",
+   "file": ".scratch/grill-round-89/upgrade-ledger.md",
+   "tokens": [
+    "soak-until-stable",
+    "兼容锚 = TRUE",
+    "拉力锚 = 零",
+    "候选特异性"
+   ]
+  },
+  {
+   "id": "r89-t4-shaping",
+   "kind": "symbol",
+   "claim": "r72 两票定形：解法案+落点+依赖解除状态写明（不实现）",
+   "file": ".scratch/grill-round-89/r72-shaping.md",
+   "tokens": [
+    "defer-r72-dsh-native-tools",
+    "defer-r72-dsh-web-interactive-matrix",
+    "依赖解除状态",
+    "不实现"
+   ]
+  },
+  {
+   "id": "r89-t5-adr",
+   "kind": "symbol",
+   "claim": "ADR-0090 落成：三锚判词+真值表+收口义务+类推标注+条件票制",
+   "file": "docs/adr/0090-architecture-grill-round-89-dsh-upstream-line.md",
+   "tokens": [
+    "ADR-0090",
+    "soak-until-stable",
+    "无第三态",
+    "收口义务",
+    "类推非先例"
+   ]
+  },
+  {
+   "id": "r89-t5-registry",
+   "kind": "symbol",
+   "claim": "registry r72 两票 carried_log 追记 round 89 定形+依赖状态",
+   "file": "docs/deferred-registry.json",
+   "tokens": [
+    "defer-r72-dsh-native-tools",
+    "defer-r72-dsh-web-interactive-matrix",
+    "\"round\": 89"
+   ]
+  },
+  {
+   "id": "r89-t5-changelog",
+   "kind": "symbol",
+   "claim": "CHANGELOG r89 段落补齐 freshness 腿",
+   "file": "CHANGELOG.md",
+   "tokens": [
+    "ADR-0090 r89"
+   ]
+  },
+  {
+   "id": "r89-terminal-stamp",
+   "kind": "symbol",
+   "claim": "任务书终态戳回填",
+   "file": ".scratch/grill-round-89/handoffs/next-round.md",
+   "tokens": [
+    "终态戳",
+    "soak-until-stable"
+   ]
+  }
+ ]
+}
