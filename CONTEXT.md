@@ -1643,3 +1643,25 @@ repin-to-rc 收口义务的延展形态：上游 stable 晋升时收口探针除
 ### Leaf-Export Bypass（子路径叶导出旁路 barrel）
 单源模块消费≠ barrel 导入：barrel 牵重 dep（kernel→better-sqlite3）进零依赖 bundle；exports 加叶件子路径（./tool-json-schemas→src/*.ts）供消费方精准取件，依赖子图最小（typebox-only）。_Avoid_: 为取一个 const 导 barrel（传递依赖污染零依赖包）；为躲 barrel 手抄常量（SSOT 漂移）。来源：R90 D-001 实施。
 
+## Grill Round 91 — Terms (ADR-0092)
+
+### After-Sales Acceptance Round（售后验收轮）
+轮型：已发布物的公开声明（README verified 行/包文案/元数据）追上已发生架构后的真实性收口——发布物声明超出证据覆盖时，把声明降回证据支持的水平，而不是继续挂「live-verified」图章。_Avoid_: 把「包已发布」当验证完成的替代；让 parity 检查替内容真实性背书。来源：锐评第九轮刀一刀二+R91 D-001。
+
+### Silent First-Turn Tool Loss（首回合静默工具丢失）
+失败品类：server 正常+工具注册成功，但真客户端 turn-1 组包时工具不在场——无 error、无 warning、任何日志无迹。契约测试与 mock 全绿不能排除；唯一可靠检测=wire 级载荷取证（真实 model-request 的 tools 数组）+双工件对质。_Avoid_: 用宿主 UI/日志自述当枚举绿证据；mock 通过即宣布注册面验证完毕。来源：atomcode R91-Q2（mcp-smoke）+R91 D-002。
+
+### Entry-Criterion Probe（准入判据探针）
+探针的硬前置形态：取证通道本身存在性须先于主探针实证（本例=stream-json transcript 是否含 model-request tools 载荷）；通道被证伪→主判据腿不可判定→判词直落失败分支而非带缺执行——确认探针是下游票的 entry criterion 非并列 evidence。_Avoid_: 不验通道先跑主探针（绿了也可能是取证幻觉）；通道缺失时自行降格判据继续。来源：atomcode R91-Q3+R91 D-002/D-003。
+
+### Established/Not-Established List（已证/未证清单）
+降格声明措辞规范：判词未达全绿档时不二值化 claim，改发「established 清单/not-established 清单」——降格措辞仍上线，只收窄 claim 范围，清单同时是 claims 机检的字段词汇源（取值须与判词词汇表一字不差）。_Avoid_: 部分绿时要么全绿措辞要么不改行的二值化；机检字段与判词词汇漂移。来源：atomcode R91-Q2（zimster）+R91 D-002/D-003。
+
+### Exact-Build Claim（精确构建声明）
+验证声明与被测版本一致性原则：「Only observations against that exact build are current claims」——测哪版记哪版（版本号+日期+verification level），使测=记=钉三版收敛；rc 快速漂移线上测旧版的绿保质期已过期。_Avoid_: 测 A 版记 B 版；as-is 顺手版冒充目标支持版；双版本冒烟当常态（rc 生态维护税）。来源：atomcode R91-Q2（zimster/hermes-qvac）+R91 D-002。
+
+### Conditional-Ticket Purity（条件票纯度）
+条件票内容纪律：条件票只携带门后内容——无条件工作骑进条件票会在「未启不留痕」时连带空窗（本例=claims 立法若绑 README 门，判词不达时立法连带不做）；判定窗口同时一次定死（T0 定 TC 启停，主票启动后不再复观，防被判定对象轮中漂移）。_Avoid_: 条件票塞无条件立法；判词窗口滚动复观改票内既定选型。来源：atomcode R91-Q3+R91 D-003。
+
+### Readme-Token Claim（README 令牌声明钉）
+声明钉的机器腿形态：把 facade 表（verified-hosts 行）中的版本令牌作为 claims 断言对象钉向 catalog/实测证据值——补 parity 闸的设计边界（step1h 锁「双镜互相同意」，本钉锁「镜子照的是现役」）；首跑可挂账次轮（两拍节奏）。_Avoid_: 声明表与 catalog 漂移只靠人眼发现；为让机检本轮即绿而把立法绑进条件票。来源：锐评第九轮刀二+atomcode R91-Q3+R91 D-001/D-003。

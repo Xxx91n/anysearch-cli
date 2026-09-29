@@ -1,0 +1,28 @@
+[调研任务] 为 anysearch-cli 仓库第 91 轮 grill（R91）的 Q3 裁决做深度调研并给出推荐+理由。辩证看待，结论须可辩护。
+
+[项目背景]
+anysearch-cli=信息专精 Agent CLI（Node.js/pnpm monorepo/Windows，GitButler but 版本控制，一轮 grill=一个主题的纪律 ADR-0029）。R91=售后验收轮（D-001 已裁）：正题=dsh 原生工具面 L3 实机冒烟→绿了才动 README verified-hosts 表 dsh 行+readme-token claims 机腿立法；同域纳编=WORKFLOW.md 终审/弃用文案修正/ship-gate 正则修补/approval-channel 顺验（票内裁）。
+
+[decision-ledger 全部 current 记录]
+- D-001：R91 主轴=售后验收轮（全文如上）。
+- D-002：L3 冒烟验收判据已预注册（A″）：宿主升 @deepseek-ai/dsh@0.1.7-rc.2 单版本；门判据三腿=L3a 装册绿（plugin add+--dump-config）/L3b 枚举绿（stream-json transcript model-request tools 载荷含五 ans_* 裸名+inputSchema，前置=跑前先实证 transcript 取证通道存在）/L3c-min 执行绿（≥1 ans_* 真实调起并完成 ans-mcp /mcp 往返，诱导任务措辞跑前定死+N=3 重试上限）；增强判据 L3c-full 五工具诱导矩阵（不阻塞改行只定 claim 宽窄）；非判据=L3d fail-open 顺验项+L3e hooks 免测引用 R72 证据；判词三分支=全绿解锁 README 改行/仅 a+b 降格措辞+established/not-established 清单+呈报/a 或 b 败→F-bug 立项（含 as-is 对照补跑诊断）。
+- 治理惯例（承继多轮）：一票一 commit；commit 类型不混（fix/refactor/docs/chore 分票）；票级熔断=同票连续 2 LOOP 失败回退缩轮呈报；「规则先于行为」=判据立法票必须排在探针执行票之前；条件票机制（未触发不启不留痕）；TC 惯例=上游 stable 目击收口探针；断言载体预注册。
+
+[实物约束]
+- approval-channel（registry defer-r72-dsh-approval-channel）：上游依赖已解除（dsh-user-approval@0.1.7-rc.1 tarball 六键在架），剩交互会话实测成本；审批通道活在交互路径而 L3 台架=headless 单 turn——大概率不可同 rig 验证，拟降为「可行性探测」非判据顺验项。
+- 弃用文案双空格（npm 上 @anysearch-cli/cli@0.0.x deprecate 文案 "Fixed in 0.1.0  upgrade."）：npm deprecate 重写元数据=外发动作；R87 时 EOTP 闸转用户本人浏览器执行；本轮拟备准命令+尝试+失败呈报。
+- WORKFLOW.md §4.2=外部承诺补件（非仓内缺失文件）：10+ 轮审计「缺位核销」先例（gitbutler SKILL+全局 but 协议等价覆盖）；锐评要求终审——写它或 ADR 判死；拟 ADR 判死（写件=给等价覆盖造第二真源违单源原则）。
+- ship-gate.mjs 正则 /id:s*mcp-anysearch/ 笔误（s*应为\s*）——第二选言永不命中，第一选言仍兜真实格式；轻微 fix。
+- README.md:227/README.zh-CN.md:217 dsh 行=0.1.5-rc.2|MCP bridge patch+Cordis bundle|live-verified，落后现役三代；readme-token claims=新 claim kind 把 README 版本串钉 catalog/实测值接断言检查器（既有 closeout-claims kind:symbol 先例）。
+- 上游新信号：next=0.2.0-rc.2（tools/agent）、meta latest=0.1.7-rc.2、仍无 stable→TC 条件票惯例沿用。
+
+[Q3 题面——裁决轮内票序+commit 结构+纳编边界]
+A 方案（我倾向）八票序+TC：T0 哨戒+宿主升版+基线快照→T1 L3 判据立法（ADR-0092）+transcript 取证通道确认探针（evidence-only）→T2 L3 冒烟执行（pack→add→dump-config→诱导 turns→双工件→判词）→T3 README 行对齐【条件票，判词≥降格档启】+readme-token claims 立法→T4 WORKFLOW.md 终审（ADR 判死 D-条）→T5 小修+顺验批（ship-gate 正则 fix 独票/deprecate 外发备准/approval-channel 可行性探测非判据）→T6 收口件批→T7 门禁+审计 LOOP；TC=0.2.0 stable 目击→closing probe。
+B 方案：approval-channel 升门禁票（headless 大概率不触交互审批，污染主轴）。
+C 方案：判据立法并入 T2（先跑后补判据违预注册）。
+D 另排。
+
+[调研要求]
+- 回顾上述 ledger/ADR/CONTEXT；
+- 重点工业界心智模型：冒烟验证轮的票序编排（验收类 ticket 的 gate ordering：立法→通道确认→执行→文档对齐→小修批→收口）、条件票/conditional ticket 惯例（journey 判据满足才执行的票粒度）、单一主题轮内「主线验收票+同域小修批」编排是否违 cohesion、外发动作（registry 元数据修正）在发布流程中的位置（先修文案再发 vs 随时可修）、「可行性探测」作为非门禁项的编排先例、文档终审（write-vs-deprecate ADR）处置惯例；
+- 给出明确推荐（A/B/C 或修订形态）+理由+最强反对论据；指出票序中隐藏依赖或我未见的合并/拆分点。

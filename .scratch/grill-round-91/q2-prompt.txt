@@ -1,0 +1,31 @@
+[调研任务] 为 anysearch-cli 仓库第 91 轮 grill（R91）的 Q2 裁决做深度调研并给出推荐+理由。辩证看待，结论须可辩护。
+
+[项目背景]
+anysearch-cli=信息专精 Agent CLI（Node.js/pnpm monorepo/Windows）。宿主适配面之一=DeepSeek Harness (dsh) Cordis 插件 `apps/dsh-plugin`：5 个 ans_* 工具（ans_search_web/ans_research_web/ans_recall_memory/ans_query_knowledge/ans_ans_chat）经 `ctx.tools.register` 裸名原生注册进宿主工具面；execute=纯 HTTP JSON-RPC 传输到本机 ans-mcp 服务（POST /mcp，握手缓存、fail-open 空结果、isError 物化为 tool error）；hooks 面（agent/session-start、ctx.systemPrompt、tools/pre-execute|post-execute|result）经 HTTP IPC 到 plugin server(33333)，全部 fail-open。
+
+[decision-ledger 全部 current 记录]
+- D-001（R91 主轴，刚裁决）：R91=售后验收轮。正题=dsh 原生工具面 L3 实机冒烟（--profile headless 真宿主跑通五 ans_* 工具调用链，stream-json transcript 取证）；冒烟绿才动 README.md:227/README.zh-CN.md:217（版本+拓扑对齐现役）+integration 专文同步+readme-token claims 机腿立法。同域纳编：WORKFLOW.md 终审（写或 ADR 判死）、弃用文案双空格、ship-gate 正则修补、approval-channel 同台架顺验（票内裁）。范围外：repin/垂域重议（明文排期下轮候选）/web-matrix 主体。
+
+[相关 ADR/CONTEXT 既有条目]
+- ADR-0073 dsh host adaptation（R72：L3 真宿主方法论+transcript 取证）；ADR-0054/0055 URL gating fail-closed 契约；ADR-0091 dsh-native-tool-plane（裸 ToolDefinition 压 defineTool、零依赖契约、fail-open 延展、桥退役独票）；
+- CONTEXT：Zero-Signal Parallel、Criterion-Based Cutover、Bridge-Retirement Ticket、Live-verified 定义（README 表下自注：verified=真宿主端到端 transcript stream-json 捕获，非契约同构）；
+- Registry：defer-r72-dsh-approval-channel（上游已解除剩交互实测成本）、r88-candidate-vertical-direction-redeliberation（候审排期下轮）。
+
+[实物事实（本会话亲验）]
+- 本机 dsh=0.1.5-rc.3 全局在装；npm：@deepseek-ai/dsh latest=0.1.7-rc.2（陌生人今日 npm i -g 所得）、next=0.2.0-rc.2；仓内 dsh-* 库钉版=0.1.7-rc.1（repin 不做）。ctx.tools.register/restrict/defineTool API 已在 0.1.5-rc.2/0.1.7-rc.1/0.2.0-rc.1 三代字节级同形实证。
+- README:227/zh:217 记 dsh 行=0.1.5-rc.2|MCP bridge patch+Cordis bundle|live-verified——落后现役三代（桥已退役+原生注册+0.1.7 线）；integration 专文已同步现役。
+- mock-Cordis 注册路径（21/21 单测）+真 ans-mcp HTTP 链路（execute 实命中）已双端实证；中间层=真 Cordis 对 register 的实际吞法（命名/枚举/schema 投影/超时）零实机执行——R65 历史恰在真宿主探针收割 F-09..F-12 四个契约全绿的真 bug。
+- 既有 L3 方法（文档化可复跑）：pnpm pack→dsh plugin --profile headless add tgz→--dump-config 验 bundle 层→dsh --profile headless "<task>" 单 turn 退出；R72 transcript 已实证 routing-card/systemPrompt/preheat/URL-deny 等 hooks 面。
+- npm 上 @anysearch-cli/dsh-plugin@0.1.0 已发布，README 卖点=原生五工具——「已发布+未实机」组合被外部锐评点名（核心指控：live-verified 图章对应零次真宿主执行）。
+
+[Q2 题面——裁决两项]
+1) L3 冒烟验收判据预注册（探针跑前立法什么算绿）：
+   A 方案（我倾向）五层判据：L3a 装册绿（plugin add+--dump-config 见 bundle 层单行，确定性）；L3b 枚举绿（五 ans_* 裸名入真实 model-request 的 tools 载荷，确定性，中层证明）；L3c 执行绿（≥1 个 ans_* 被宿主真实调起并完成 ans-mcp /mcp 往返回，content/isError 皆算；模型选型相关→任务工程化诱导+限次重试，不触发如实报不谎报）；L3d fail-open 抽查（ans-mcp 死亡下 turn 不阻塞）；L3e hooks 面免测（R72 wire 实证未改面）。判词：a+b+c 全绿→README 改行解锁；仅 a+b→如实改行但 status 降格备选措辞呈报；a/b 败→F-bug 立项。
+   B 方案：本机 0.1.5-rc.3 as-is 冒烟（省事但验证的是无人新装的旧宿主）。
+   C 方案：全层含 hooks 复验（R72 证据未失效，无信息增量）。
+2) 宿主版本选型：升 0.1.7-rc.2（陌生人今日所得+钉版同线，我倾向）vs as-is 0.1.5-rc.3 vs 双版本。
+
+[调研要求]
+- 回顾上述 ledger/ADR/CONTEXT（已附全文要点，可径行引用）；
+- 重点找工业界成熟落地心智模型：发布前/后 smoke test 验收判据分层（确定性 vs 模型/环境相关判据的分层处理惯例）、插件/工具注册面在真宿主上的验证方法学、验收判据预注册（pre-registered acceptance criteria）惯例、验证声明（verified claims）与被测版本一致性原则（测哪版记哪版/测最新可得版的理由）、失败时「降级声明 vs 阻塞修复」的处置先例；
+- 给出明确推荐（A/B/C 或修订形态）+理由+最强反对论据；指出我方案中的盲点或过度设计。
