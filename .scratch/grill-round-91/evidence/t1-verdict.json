@@ -1,0 +1,14 @@
+{
+  "round": "r91",
+  "ticket": "T1",
+  "timestamp": "2026-09-29T18:51+08:00",
+  "dsh_version": "0.1.7-rc.2",
+  "plugin_version": "0.1.0",
+  "L3a_bundle": "established",
+  "channel_mechanism": "established",
+  "channel_tools_payload": "not-established",
+  "reason": "DEEPSEEK_API_KEY missing from all credential stores; model-request not reached; channel mechanism verified via AUTH error with request_id",
+  "entry_criterion": "pass",
+  "t2_admission": "proceed",
+  "risk": "DEEPSEEK_API_KEY required for L3b/L3c-min execution"
+}
