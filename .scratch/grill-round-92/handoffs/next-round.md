@@ -66,8 +66,8 @@ repin（0.2.0-rc.2 仅哨戒记档）；垂域死刑复核（r88-candidate 明�
 
 ## 终态戳
 
-- [ ] T0~T7 票序走完或熔断呈报
-- [ ] 判词工件 + 双工件落盘
-- [ ] T3 条件票状态（启/未启）记录
-- [ ] closeout-claims 全绿或双态记账
-- [ ] 本文件终态戳位填写
+- [x] T0~T7 票序走完或熔断呈报：T0（chore）、T1（docs）、T2（chore）、T3（未启纯跳过）、T4（fix）、T5（chore）、T6（docs）、T7（门禁全绿）；TC（未触发）
+- [x] 判词工件 + 双工件落盘：t2-l3-smoke.md、t2-verdict.json（判词分支 C F-bug）、t2-transcript.jsonl、t2-stderr.log 全落盘
+- [x] T3 条件票状态（启/未启）记录：未启（纯未启不留痕；因 T2 判词落分支 C F-bug < 分支 B）
+- [x] closeout-claims 全绿或双态记账：7 项 claims 全绿（含 t5-deprecate 双态措辞与 shadow dry-run 验证）
+- [x] 本文件终态戳位填写：全票序归档闭环，双锚（sha + but-id）对齐，进入 T7 门禁复核

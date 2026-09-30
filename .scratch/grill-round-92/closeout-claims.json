@@ -1,0 +1,77 @@
+{
+  "schema": "anysearch/closeout-claims@1",
+  "round": 92,
+  "claims": [
+    {
+      "id": "r92-t0-watch",
+      "kind": "symbol",
+      "claim": "T0 dist-tags 复观：next=0.2.0-rc.2/latest=0.2.0-rc.2，无 0.2.0 stable 晋升→TC 窗口一次定死不启；五件探针证据归档，check/test/ship-gate 快照完备",
+      "file": ".scratch/grill-round-92/evidence/t0-baseline.md",
+      "tokens": [
+        "0.2.0-rc.2",
+        "TC 不启",
+        "dist-tags"
+      ]
+    },
+    {
+      "id": "r92-t1-adr",
+      "kind": "symbol",
+      "claim": "ADR-0093 featherless T2 复跑立法：判据复用与 L3b 修订/冻结项/凭证卫生/双版措辞预注册/F-bug 机制预注册",
+      "file": "docs/adr/0093-architecture-grill-round-92-featherless-t2-smoke-closeout.md",
+      "tokens": [
+        "L3a 装册绿",
+        "L3b 枚举绿",
+        "L3c-min 执行绿",
+        "established-via-fallback",
+        "Qwen/Qwen3-32B"
+      ]
+    },
+    {
+      "id": "r92-t2-l3a",
+      "kind": "field",
+      "claim": "T2 L3a 装册绿：dsh --profile r92-smoke --dump-config bundle 层单行可见，状态为 established",
+      "file": ".scratch/grill-round-92/evidence/t2-verdict.json",
+      "field": "L3a",
+      "expect": "established"
+    },
+    {
+      "id": "r92-t2-verdict",
+      "kind": "field",
+      "claim": "T2 L3 冒烟判词：Featherless 上游模型响应异常触 max-tokens 且 server_error 无 tool_calls，出判词 F-bug（分支 C），T3 条件票锁定",
+      "file": ".scratch/grill-round-92/evidence/t2-verdict.json",
+      "field": "verdict",
+      "expect": "F-bug"
+    },
+    {
+      "id": "r92-t4-shipgate-checker",
+      "kind": "symbol",
+      "claim": "T4 readme-token-pin 检查器接线 scripts/ship-gate.mjs（两拍节奏第二拍），shadow dry-run 验证通过，首跑专属机器腿显性挂账 R93",
+      "file": "scripts/ship-gate.mjs",
+      "tokens": [
+        "readme-token-pin",
+        "declaredVer"
+      ]
+    },
+    {
+      "id": "r92-t4-shadow-dryrun",
+      "kind": "readme-token-pin",
+      "claim": "T4 readme-token-pin shadow dry-run：断言 README.md 宿主版本与本地安装版本一致（shadow 模式非阻塞）",
+      "file": "README.md",
+      "host": "DeepSeek Harness",
+      "shadow": true,
+      "expect": "0.1.7-rc.2"
+    },
+    {
+      "id": "r92-t5-deprecate",
+      "kind": "symbol",
+      "claim": "T5 弃用文案双空格：枚举 0.0.3~0.0.8 双空格并执行尝试；E401/E404 权限受限如实记账，双态措辞预注册",
+      "file": ".scratch/grill-round-92/evidence/t5-deprecate.md",
+      "tokens": [
+        "Fixed in 0.1.0  upgrade.",
+        "Fixed in 0.1.0 upgrade.",
+        "E401",
+        "权限受限"
+      ]
+    }
+  ]
+}

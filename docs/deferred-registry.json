@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updated": "2026-09-29",
+ "updated": "2026-09-30",
  "note": "Machine-checkable registry of deferred work items and carried-over acceptance criteria. Discipline is isomorphic to .ship-gate/skip-ledger.json (schema @3) and the ADR-0020 conformance expected-failures ledger: every deferral is an explicit, traceable record, never a silent drop. ADR-0057 D5 / D-006 requires one entry per carried-over acceptance criterion, marked closed-by the ADR that closes it. Old ADR bodies are never edited; the pointer line lives in the old ADR and the record lives here (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). Additive only: new entries are appended, existing ids are never reused or renumbered. Canonical form locked by ship-gate stepGovernedJsonCanonical (ADR-0077): this file must byte-equal JSON.stringify(JSON.parse(src),null,1)+'\\n'. To normalize: node -e \"const f='docs/deferred-registry.json';const fs=require('fs');fs.writeFileSync(f,JSON.stringify(JSON.parse(fs.readFileSync(f,'utf8')),null,1)+'\\n')\"",
  "entries": [
   {
@@ -452,6 +452,11 @@
      "at": "2026-09-29",
      "round": 91,
      "note": "R91 域外显式续债（carried, not silent）：本轮为主轴 dsh L3 冒烟售后验收轮，web-interactive matrix 主体维持 defer"
+    },
+    {
+     "at": "2026-09-30",
+     "round": 92,
+     "note": "R92 域外显式续债（carried, not silent）：本轮为主轴 featherless T2 复跑售后验收轮，web-interactive matrix 主体维持 defer"
     }
    ]
   },
@@ -477,6 +482,11 @@
      "at": "2026-09-29",
      "round": 91,
      "note": "R91 T4c headless 可行性探测（.scratch/grill-round-91/evidence/t4c-approval-channel.md）：dsh-headless 未导入亦未注册 ApprovalAnswerer，缺失交互响应通道，调用将触发 fail-closed 降级；实证 headless 下交互审批不可行，维持 defer 挂账"
+    },
+    {
+     "at": "2026-09-30",
+     "round": 92,
+     "note": "R92 域外显式续债（carried, not silent）：headless 无 answerer 实证（R91 T4c）维持生效，审批交互通道维持 defer 挂账"
     }
    ]
   },
@@ -1006,6 +1016,28 @@
    "review_cadence": "next grill round",
    "status": "open",
    "evidence": "R86 decision-record 具名重开条件未达；R87 goal 显式范围外登记候场"
+  },
+  {
+   "id": "defer-r92-t2-featherless-upstream-f-bug",
+   "type": "deferred-with-ticket",
+   "title": "T2 复跑 Featherless 上游模型响应异常 (F-bug 分支 C)：Qwen/Qwen3-32B 触 4096 max-tokens 且报 server_error: no_response 无 tool_calls",
+   "source_adr": "docs/adr/0093-architecture-grill-round-92-featherless-t2-smoke-closeout.md",
+   "owner": "anysearch-dsh",
+   "opened_at": "2026-09-30",
+   "review_cadence": "next grill round",
+   "status": "open",
+   "evidence": ".scratch/grill-round-92/evidence/t2-l3-smoke.md + t2-verdict.json (L3a established, L3b not-established 因上游异常, L3c-min not-established)"
+  },
+  {
+   "id": "defer-r92-readme-token-pin-machine-leg",
+   "type": "deferred-with-ticket",
+   "title": "readme-token-pin 专属机器腿首跑执行（两拍节奏第二拍完成接线与 shadow，首跑挂账 R93）",
+   "source_adr": "docs/adr/0093-architecture-grill-round-92-featherless-t2-smoke-closeout.md",
+   "owner": "anysearch-devops",
+   "opened_at": "2026-09-30",
+   "review_cadence": "next grill round",
+   "status": "open",
+   "evidence": ".scratch/grill-round-92/evidence/t4-shadow-dryrun.md + scripts/ship-gate.mjs"
   }
  ]
 }

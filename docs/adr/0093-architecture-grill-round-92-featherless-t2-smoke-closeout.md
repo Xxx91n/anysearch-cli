@@ -118,12 +118,14 @@ established-via-fallback: [L3b]
 
 | 票 | commit (sha + but-id) | 类型 | 判定/结果 | 实证索引 |
 |---|---|---|---|---|
-| T0 哨戒+基线+探针 | f2be8015 (wst) | chore | ✅ 完成 | `.scratch/grill-round-92/evidence/t0-baseline.md` + `t0-probes.md` |
-| T1 判据立法 | 待填 | docs | 待填 | `docs/adr/0093-*` + `docs/adr/index.md` 0093 行 |
-| T2 复跑执行 | 待填 | chore | 待填 | `.scratch/grill-round-92/evidence/t2-l3-smoke.md` + `t2-verdict.json` |
-| T3 README 对齐 | 待填 | docs | 待填 | `README.md` + `README.zh-CN.md` |
-| T4 readme-token 接线 | 待填 | fix | 待填 | `scripts/ship-gate.mjs` + evidence |
-| T5 deprecate 尝试 | 待填 | chore | 待填 | `.scratch/grill-round-92/evidence/t5-deprecate.md` |
-| T6 收口件批 | 待填 | docs | 待填 | CONTEXT + registry + claims + 轮报 + CHANGELOG |
-| T7 门禁+审计 | — | — | 待填 | check + test + ship-gate 全绿 |
+| T0 哨戒+基线+探针 | f2be8015 (wst) | chore | ✅ 完成 | `.scratch/grill-round-92/evidence/t0-baseline.md` + `t0-probes.md` (dist-tags 快照/dsh 维持 0.1.7-rc.2/check+test 全绿/五件探针) |
+| T1 判据立法 | e7a4a5c0 (xww) | docs | ✅ 完成 | `docs/adr/0093-*` + `docs/adr/index.md` 0093 行 (ADR-0093 立法完成) |
+| T2 复跑执行 | 7db133f8 (ynl) | chore | ⚠️ F-bug (分支 C) | `.scratch/grill-round-92/evidence/t2-l3-smoke.md` + `t2-verdict.json` + `t2-transcript.jsonl` + `t2-stderr.log` (L3a established, L3b not-established 因上游异常, L3c-min not-established, 泄漏探针 passed) |
+| T3 README 对齐 | — | docs | ⏭ 条件未达未启 | 判词为 F-bug (< 降格档)，条件票纯度守则：未启不留痕 (README.md / README.zh-CN.md 维持原样) |
+| T4 readme-token 接线 | c105f9e6 (vwo) | fix | ✅ 完成 | `scripts/ship-gate.mjs` (readme-token-pin 接线 stepDocClaims) + `.scratch/grill-round-92/evidence/t4-shadow-dryrun.md` (shadow dry-run 记档, 机器腿挂账 R93) |
+| T5 deprecate 尝试 | 5f9ab5e5 (kuw) | chore | ℹ️ 尝试完毕 / 权限受限 | `.scratch/grill-round-92/evidence/t5-deprecate.md` (6 版本枚举+单空格目标, E401/E404 如实记账, closeout-claims 双态措辞预注册) |
+| T6 收口件批 | 本批 | docs | ✅ 完成 | CONTEXT 5 词锚 + registry 更态 + closeout-claims 7 项 + 轮报 + 终态戳 + CHANGELOG |
+| T7 门禁+审计 | — | — | 待执行 (门禁无独立 commit) | check + test + ship-gate 全绿 |
 | TC 条件票 | — | — | ⏭ 未触发 | T0 目击无 0.2.0 stable 晋升 |
+
+注：but-id 列（wst/xww/ynl/vwo/kuw）为唯一稳定锚；sha 锚已统一对齐至 landed 祖先链真实 git 对象。

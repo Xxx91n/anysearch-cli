@@ -4,6 +4,23 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0093 r92: featherless 自定义上游 T2 复跑 + 售后收口轮（判据复用与 L3b 修订 + 凭证卫生 + readme-token 检查器接线 + 小修批）
+
+### Changed
+
+- **dsh 售后复跑轮**：通过 User-scope 安全注入 `DEEPSEEK_API_KEY`（len=67，SHA-256 前缀 `64a88ea6`），配置自定义上游 Featherless（`api.featherless.ai/v1`，模型 `Qwen/Qwen3-32B`）。L3 实机冒烟实证 L3a 成立（`cordis.patch.yml` 注入 `id: llm-pi-ai` 与 `id: agent-default-model`，`dump-config` 证实 bundle 层及 patch 覆写生效）；因 Featherless 上游服务异常（响应触 4096 max-tokens 且报 `server_error: no_response`，未产出 `tool_calls`），判词落分支 C（F-bug），T3 条件票锁定未启不留痕。泄漏探针经 SHA-256 前缀检测全绿 passed。
+
+### Fixed
+
+- **readme-token-pin 检查器接线（T4）**：在 `scripts/ship-gate.mjs` stepDocClaims 中正式接入 `readme-token-pin` 声明断言检查器（两拍节奏第二拍），执行 shadow dry-run 并归档证据，首跑专属机器腿挂账 R93。
+- **弃用文案双空格核实（T5）**：执行 `@anysearch-cli/cli@0.0.3~0.0.8` 双空格文案修复尝试（单空格目标）；遇 E401/E404 权限闸如实记账，closeout-claims 双态措辞随本票预注册。
+
+### Deferred
+
+- **defer-r92-t2-featherless-upstream-f-bug**：T2 实机复跑因 Featherless 上游模型服务异常挂起 F-bug 登记，转下轮修复与模型源排查。
+- **defer-r92-readme-token-pin-machine-leg**：readme-token-pin 检查器专属机器腿首跑显性挂账至 R93。
+- **常驻债×5 显式续债**：web-interactive matrix 主体、approval-channel（headless 无 answerer 维持生效）等常驻条目显式续期。
+
 ## Unreleased — ADR-0092 r91: dsh L3 冒烟验收 + 售后收口轮（L3 判据立法 + 宿主升版 0.1.7-rc.2 + README 行对齐 + 小修批）
 
 ### Changed
