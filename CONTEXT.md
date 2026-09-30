@@ -1713,7 +1713,7 @@ fallback 链执行期的取证义务：换臂事实必须写入 transcript（whi
 外发动作受阻时的记账字段枚举：权限缺口分 credential-scope / maintainer / org-owner 三型，每型含 fallback 行为字段——让「权限受限」的下轮接手者知道缺的是哪一层，而非笼统「权限闸」。_Avoid_: 记账只写 E401/E404 不分型；为跑通而借他人凭证绕权限闸。来源：atomcode R93-Q3（AWS kill-switch 立法惯例）+R92 T5 E401/E404 实测+R93 D-002/D-003。
 
 ### Advisory-vs-Blocking Evidence（证据效力两态）
-门禁证据的效力口径：本机门禁产出（check/test/ship-gate 本机跑）默认 advisory 非 blocking——CI-only 强制令缺席裁定的保守默认+显式登记下轮复核；规则制定不混入收口票。_Avoid_: 口径未定就带着模糊跑取证票；静默默认不登记。来源：R92 审计呈报项+atomcode R93-Q3（挂项处置惯例）+R93 D-003。
+门禁证据的效力口径：本机门禁分级明确——ship-gate 为 blocking 合入门禁（失败即硬阻断不可合入），check 与 test 为 advisory 反馈环（防 flaky 噪声硬阻断）；CI-only 强制令在本地由 ship-gate 严格复证；规则制定不混入收口票。_Avoid_: 混淆合入门禁与内部反馈环效力；口径未定就带着模糊跑取证票；静默默认不登记。来源：R92 审计呈报项+atomcode R93-Q3（挂项处置惯例）+R93 D-003+R94 D6。
 
 
 ## Grill Round 94 — Terms (ADR-0095)

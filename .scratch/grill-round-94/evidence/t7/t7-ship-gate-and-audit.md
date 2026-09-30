@@ -13,10 +13,10 @@
 | **启动并测活软件进程** | Plugin (port 33333) + MCP (port 3001) | ✅ 双进程测活通过 | \`.scratch/grill-round-94/evidence/t7/process-liveness.log\` |
 | **类型检查通过** | \`pnpm run check\` | ✅ exit 0（8/8 total） | \`.scratch/grill-round-94/evidence/t7/check.log\` |
 | **测试闭环** | \`pnpm run test\` | ✅ exit 0（13/13 tasks） | \`.scratch/grill-round-94/evidence/t7/test.log\` |
-| **门禁全链（blocking 首秀）** | \`node scripts/ship-gate.mjs\` | ✅ exit 0（step 0~9 全绿） | \`.scratch/grill-round-94/evidence/t7/ship-gate.log\` |
+| **门禁全链（效力复核）** | \`node scripts/ship-gate.mjs\` | ✅ exit 0（step 0/9 至 9/9 全通） | \`.scratch/grill-round-94/evidence/t7/ship-gate.log\` |
 | **ADR index 验证** | \`node scripts/gen-adr-index.mjs --check\` | ✅ exit 0（95 ADRs at HEAD） | ship-gate step 1b 判定绿 |
 | **claims 机械比对** | ship-gate closeout-claims 腿 | ✅ 11/11 全绿 | \`closeout-claims r94: 11/11 registered claims re-derived green\` |
-| **pathlint 全仓扫描** | ship-gate step 1i 腿 | ✅ 0 violations | \`path-lint: 19 registered doc(s) clean\` |
+| **pathlint 全仓扫描** | ship-gate step 1i 腿 | ✅ 0 violations | \`path-lint: 578 registered doc(s) clean\`（全仓零机外裸路径） |
 
 ## 2. 软件进程测活细节摘要
 

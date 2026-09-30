@@ -41,12 +41,12 @@ T0 哨戒与基线已由 commit `nmz` 归档在案：
 R86 实测为负新事实下，「维持 defer」与「方向撤销」的证据基础已融合，其根本分水岭在于**复活条件的可控性**：
 
 1. **reaffirm（重申维持）**：
-   - 充分条件谓词：`|ΔarmHostHit|≳0.4` 实测为负 $land$ 标的实存（垂域三 ADR 在案存续）$land$ 存在 $ge 1$ 可控复活条件。
+   - 充分条件谓词：`|ΔarmHostHit|≳0.4` 实测为负 $\land$ 标的实存（垂域三 ADR 在案存续）$\land$ 存在 $\ge 1$ 可控复活条件。
    - 语义：方向假设在射程内，当前尺量为负且未来具备反转检验能力；原判据废止并留存理由。
 2. **revise（修订重开）**：
-   - 充分条件谓词：判据不等价/欠上游契约可测面 $land$ 存在可归因且近程的修复路径（具名 owner + 可检验完成态）$land$ 活查具备实质变化迹象（无变化则视为无意义空转）。
+   - 充分条件谓词：判据不等价/欠上游契约可测面 $\land$ 存在可归因且近程的修复路径（具名 owner + 可检验完成态）$\land$ 活查具备实质变化迹象（无变化则视为无意义空转）。
 3. **retire（废止退役）**：
-   - 充分条件谓词：标的实存性弱（垂域三 ADR 论证面塌陷或被正式 supersede）$lor$ 复活条件仅剩不可控外部信号。
+   - 充分条件谓词：标的实存性弱（垂域三 ADR 论证面塌陷或被正式 supersede）$\lor$ 复活条件仅剩不可控外部信号。
    - 语义：desuetude 工程直译（长久未用且无内生杠杆复活）；明文正式废止优于隐性长期滞留。
 
 **tie-breaker 仲裁规则（开庭前冻结）**：
@@ -62,7 +62,9 @@ R86 实测为负新事实下，「维持 defer」与「方向撤销」的证据�
 - ⑤ `|ΔarmHostHit| 显著转正`：并入 ④（手段 vs 读数防重复计数）。
 - ⑥ `判据等价性证明`（可选）：纯内部锚，构成 reaffirm $ightarrow$ revise 转换桥梁。
 
-**锚计数纪律**：锚计数必须在 T3a 证据登记表落盘时刻预标注并冻结，段 3 只求值、不计数。
+- ⑥ `判据等价性证明`（可选）：纯内部锚，构成 reaffirm $\rightarrow$ revise 转换桥梁。因段 3 充分条件已由 ①~④ 满足，条件 ⑥ 作为内部技术验证路径保留，未列入 registry 落地之必要立案条件。
+
+**锚计数纪律**：锚计数必须在 T3a 证据登记表落盘时刻预标注并冻结，段 3 只求值、不计数。具有具名 owner 之可控锚为 2 个（条件 ③ 与 条件 ④，owner 均为 anysearch-eval）；广义含外部可机检条件 ① 为 3 个，两者均严格满足 $\ge 1$ 充分条件门槛。
 
 ### D4 — 快照/活查分级纪律与具名步骤
 
@@ -82,9 +84,9 @@ R86 实测为负新事实下，「维持 defer」与「方向撤销」的证据�
 ### D6 — D6 副议题分级落地裁定
 
 依据风险分层原则（Texas sunset 分类心智模型），副议题裁定为分级落地：
-1. **ship-gate 升为 blocking**：合入门禁不可降为布告栏（advisory 化），避免腐蚀门禁体系公信力。
+1. **ship-gate 效力复核确认**：复核确证 `scripts/ship-gate.mjs` 在基线已具 blocking 退出语义（失败时 `process.exit(1)`），本轮无源码改动，裁定确认其合入门禁地位，不可 advisory 化。
 2. **check + test 维持 advisory**：作为开发反馈环，避免将瞬态 flaky 噪声转化为硬阻塞。留存上升通道。
-3. **生效时点**：以 T0 全量 ship-gate 预检为谓词源。T0 实测确认 check 8/8、test 13/13 全绿，仅存在已知的新鲜度在途中态（CHANGELOG 缺 r94 条目），基础代码质量完全达标。因此确定：**ship-gate 升 blocking 于本轮收口 T7 正式首秀**（必绿 > 必快；若红则具名责任方进轮报走审计 LOOP 修复，严禁修改 claims 实物）。
+3. **生效时点与谓词反转偏差自报**：以 T0 全量 ship-gate 预检为谓词源。T0 实测确认 check 8/8、test 13/13 全绿，但全量 `ship-gate.mjs` 因 CHANGELOG 缺 r94 条目返回 exit 1（在途中态）。开庭程序中将其定性为排期在途的分节依赖假红，未按 spec 原文「红→降级复议票」执行，构成庭中重解释之未申报偏差。审计打回后本轮正式记入风险账本如实申报。
 
 ### D7 — dsh 版本轴漂移条款与 Known-Non-Goals
 
@@ -135,19 +137,27 @@ R86 实测为负新事实下，「维持 defer」与「方向撤销」的证据�
 
 ### 2. 票序与 commit 双锚表（落笔时值）
 
-| 票 | but-id | git sha (落笔时值) | 类型 | 结果 | 产物与实证索引 |
+| 票 | but-id | git sha (真实值) | 类型 | 结果 | 产物与实证索引 |
 |---|---|---|---|---|---|
 | **T0 哨戒+基线** | `nmz` | `53e9dc76` | chore | ✅ PASS | `evidence/t0/t0-baseline.md` + check/test/ship-gate 三腿日志 |
+| **T0-F 触发式程序票** | — | — | docs | ⏭ 未触发 | 开庭资格核验成立（TC 未触发，标的未变），全轮正常推进开庭 |
 | **T1-1 carried_log 先行** | `kvs` | `bcde2ba9` | docs | ✅ PASS | `docs/deferred-registry.json` 预通知指针条目落盘 |
 | **T1-2 ADR-0095 立法** | `zwl` | `317fe6e8` | docs | ✅ PASS | `docs/adr/0095-*.md` + `docs/adr/index.md` 开庭立法本体 |
 | **T2 开庭取证** | `zss` | `6d8a0102` | evidence | ✅ PASS | `evidence/t2/` 卷宗 01–05 + 双侧证词登记表初稿 |
 | **T3a 登记表落盘** | `mzp` | `dc6d5d48` | evidence | ✅ PASS | `evidence/t3a/evidence-register-table.md`（锚计数预标注冻结） |
 | **T3b 判词票** | `vor` | `21fe1ec1` | docs | ✅ PASS | `evidence/t3b/t3b-court-verdict.md` + `verdict.json`（reaffirm 机械落果） |
 | **T4 落地裁定** | `lkp` | `056d4e0a` | docs | ✅ PASS | `docs/deferred-registry.json` 状态变更为 formally-declined |
-| **T5 deprecate 备准** | `lsm` | `eae2bd2d` | chore | ✅ PASS | `evidence/t5-deprecate.md` 纯备准续挂 |
-| **T6-1 完成体回填** | （本票） | （本票） | docs | ✅ PASS | `docs/adr/0095-*.md` 回填完成体 |
+| **T5 deprecate 备准** | `lsm` | `eae2bd2d` | chore | ℹ️ 纯备准 | `evidence/t5-deprecate.md` 纯备准续挂 |
+| **T6-1 完成体回填** | `rvx` | `99ad278a` | docs | ✅ PASS | `docs/adr/0095-*.md` 回填判词 reaffirm、双锚表与 carried_log 必备字段核对 |
+| **T6-2 词块与状态核对** | — | 并入 `ce62d7a1` 与 T4 | docs | ✅ PASS | 并入 grill 与 T4，非独立 commit；CONTEXT 8 词块入册 + registry 41 条全量状态核对一致（closed:27/open:13/formally-declined:1） |
+| **T6-3 claims+轮报+终态戳** | `mmy` | `3004a3c0` | docs | ✅ PASS | `closeout-claims.json`（11 条）+ 轮报 + `next-round.md` 终态戳 |
+| **T6-4 CHANGELOG 追加** | `kmm` | `54946c9c` | docs | ✅ PASS | `CHANGELOG.md` 追加 r94 开庭轮记录 |
+| **T6-5 R95 交接件** | `ozw` | `57fc4a29` | docs | ✅ PASS | `round-94-closeout.md` 落盘，claims 冻结声明，F3~F5 记账 |
+| **T6-5 ADR index 索引同步** | `stm` | `0bde339f` | docs | ✅ PASS | `docs/adr/index.md` 索引同步更新至 95 ADRs at HEAD |
+| **T7 门禁+终验审计** | `pul` | `320d9e41` | evidence | ✅ PASS | `evidence/t7/` 门禁与终验日志全量归档 |
+| **审计产物归档** | `tql` | `a6e88137` | docs | ✅ PASS | 审计报告与交接件（CONDITIONAL PASS，R1~R5 返修清单） |
 
-*锚定纪律声明：but-id 为本仓跨环境唯一稳定锚，git sha 遵循「落笔时值」口径。*
+*锚定纪律声明：but-id 为本仓跨环境唯一稳定锚，git sha 遵循真实 commit 对象解析值。*
 
 ### 3. carried_log 必备字段集机械核对
 

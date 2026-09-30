@@ -4,17 +4,17 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
-## Unreleased — ADR-0095 r94: r88-candidate 垂域死刑复核【开庭轮】（五段议程 + B3 混合制判词 reaffirm 机械落果 + formally-declined 落地裁定 + 四项具名复活条件立案 + D6 ship-gate blocking 首秀）
+## Unreleased — ADR-0095 r94: r88-candidate 垂域死刑复核【开庭轮】（五段议程 + B3 混合制判词 reaffirm 机械落果 + formally-declined 落地裁定 + 四项具名复活条件立案 + D6 门禁证据效力裁定复核确认）
 
 ### Changed
 
 - **r88-candidate 落地裁定（T4）**：经五段开庭审理（段 0 资格核验四要素全在位、段 1 调档与实测为负序列登记、段 2 判据合法性先审废止原 |ΔarmHostHit|≳0.4 重开门槛、段 3 B3 充分条件谓词求值命中机械落果为 `reaffirm`），`docs/deferred-registry.json` 中 `r88-candidate-vertical-direction-redeliberation` 状态变更为 `formally-declined`，终结 5 轮以来的无限期 rolling 候审态。确立四项具名复活条件（dsh stable 晋升、上游补参数词表、cn_code 契约补齐、新评测矩阵修订版读数），严格按可控性分类归档，后续由 owner `anysearch-eval` 重新立案。
-- **D6 门禁分级落地（T0/T7）**：D6 证据效力分级正式生效，`scripts/ship-gate.mjs` 升级为 blocking 合入门禁（红即阻塞不可收口），`check` 与 `test` 维持 advisory 反馈环，提升合入门禁权威性与鲁棒性。
+- **D6 门禁分级裁定（T0/T7）**：本轮复核确认 `scripts/ship-gate.mjs` 在基线已具 blocking 合入门禁效力，本轮无源码改动；`check` 与 `test` 维持 advisory 反馈环；澄清了证据效力口径。同时如实记账 T0 预检因 CHANGELOG 在途排期出现 exit 1 属在途分节假红，未触发降级复议票之未申报偏差。
 
 ### Added
 
 - **ADR-0095 开庭立法（T1）**：D1 议程五段式结构与程序出口（0资格核验→1证据面陈述→2判据先审→3判词表决→4落地裁定，T0-F 复议轮降级出口）；D2 B3 混合判词归属与 exploratory 区机制（充分条件谓词命中机械落果，未命中入暂存区由用户拍板，拍板不可达出路为 pending-user-verdict 挂账）；D3 三果谓词加固与复活条件集可控性分类（可控锚≥1→reaffirm 优先，可控锚=0→retire，锚计数取证时刻预标注冻结）；D4 快照/活查分级纪律与具名步骤（判据快照不重跑 delta，契约现状串行活查）；D5 开庭即预通知与 carried_log 双动作时序（carried_log 追加先行 commit 自证时序，ADR 固化随后 commit）；D6 D6 副议题分级落地；D7 dsh 漂移条款与 Known-Non-Goals；D8 claims 冻结纪律；D9 判词词汇与落地态预注册冻结。
-- **开庭取证与文书归档（T2/T3）**：五面卷宗落盘于 `.scratch/grill-round-94/evidence/t2/`；双侧证词全文与锚计数预标注冻结（可控锚=3）落盘于 `evidence/t3a/`；终审判词文书与 `verdict.json` 机械落果归档于 `evidence/t3b/`。
+- **开庭取证与文书归档（T2/T3）**：五面卷宗落盘于 `.scratch/grill-round-94/evidence/t2/`；双侧证词全文与锚计数预标注冻结（可控锚=2，具名 owner 可控锚 2 个：条件 ③ 与 ④；广义含外部可机检条件 ① 为 3 个，均满足 $\ge 1$ 充分下界）落盘于 `evidence/t3a/`；终审判词文书与 `verdict.json` 机械落果归档于 `evidence/t3b/`。
 
 ### Deferred
 
