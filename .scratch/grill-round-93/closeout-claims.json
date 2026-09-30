@@ -1,0 +1,123 @@
+{
+  "schema": "anysearch/closeout-claims@1",
+  "round": 93,
+  "claims": [
+    {
+      "id": "r93-t0-watch",
+      "kind": "symbol",
+      "claim": "T0 哨戒：@deepseek-ai/dsh dist-tags 复观 latest=next=0.2.0-rc.2 无 stable→TC 一次定死不启；check/test 全绿，ship-gate 单 fail 归因 T6 CHANGELOG 分节",
+      "file": ".scratch/grill-round-93/evidence/t0/t0-baseline.md",
+      "tokens": [
+        "0.2.0-rc.2",
+        "TC 不启",
+        "dist-tags"
+      ]
+    },
+    {
+      "id": "r93-t0-probes",
+      "kind": "symbol",
+      "claim": "T0 五件探针：0905 tool_calls 200 / max_tokens=8 触发 length 据此钉预算下限 2048 / B1 二臂 preflight 过 / Qwen3-32B R92 签名复现 / 托管目录 32768 双臂 / r92-smoke 两处硬编零触碰",
+      "file": ".scratch/grill-round-93/evidence/t0/t0-probes.md",
+      "tokens": [
+        "finish_reason=tool_calls",
+        "contextWindow=32768",
+        "r92-smoke",
+        "预算下限"
+      ]
+    },
+    {
+      "id": "r93-t1-adr",
+      "kind": "symbol",
+      "claim": "ADR-0094 立法：D1 执行设计全包（隔离 profile/B1 单链硬顶/诱导句冻结/32768/签名族三形态/max-tokens 下限/L3c ans_* 收窄/换臂三义务/凭证卫生）+ D2 判词门控转向票 + D3 README 措辞承继与四列形态调和 + D4 r88 sunset 硬截止 + D5 权限缺口三型 + D6 证据效力 advisory + D8 Known-Non-Goals",
+      "file": "docs/adr/0094-architecture-grill-round-93-kimi-l3-rerun-verdict-gated-pivot.md",
+      "tokens": [
+        "L3c-min 判词收窄条款",
+        "B1 预注册单链",
+        "诱导轮 `max_tokens` 下限 = 2048",
+        "Verdict-Gated",
+        "权限缺口分型",
+        "证据效力"
+      ]
+    },
+    {
+      "id": "r93-t2-l3a",
+      "kind": "field",
+      "claim": "T2 L3a 装册绿：r93-kimi profile dump-config 8/8 断言 PASS（bundle 行 + providers.featherless + agent-default-model + contextWindow 32768）",
+      "file": ".scratch/grill-round-93/evidence/t2/t2-verdict.json",
+      "field": "L3a",
+      "expect": "established"
+    },
+    {
+      "id": "r93-t2-l3b",
+      "kind": "field",
+      "claim": "T2 L3b 枚举绿：主判据缺席（stream 无 tools 枚举）→ fallback 判据达成（三跑各 1 个 ans_* tool_call）",
+      "file": ".scratch/grill-round-93/evidence/t2/t2-verdict.json",
+      "field": "L3b",
+      "expect": "established-via-fallback"
+    },
+    {
+      "id": "r93-t2-l3cmin",
+      "kind": "field",
+      "claim": "T2 L3c-min 执行绿（ans_* 收窄判据）：三跑各 1 个 ans_search_web 往返，tool_result completed + 8177B 真实检索载荷，无未声明工具幻觉",
+      "file": ".scratch/grill-round-93/evidence/t2/t2-verdict.json",
+      "field": "L3c-min",
+      "expect": "established"
+    },
+    {
+      "id": "r93-t2-verdict",
+      "kind": "field",
+      "claim": "T2 L3 冒烟判词：branch_label=A（L3c-min 达成，README 解锁不锁），verdict=established-via-fallback（L3b 走 fallback 通道）",
+      "file": ".scratch/grill-round-93/evidence/t2/t2-verdict.json",
+      "field": "verdict",
+      "expect": "established-via-fallback"
+    },
+    {
+      "id": "r93-t2-leak",
+      "kind": "field",
+      "claim": "T2 凭证泄漏探针双查（原文 + SHA-256 前缀）零命中，凭证卫生闭环",
+      "file": ".scratch/grill-round-93/evidence/t2/t2-verdict.json",
+      "field": "leak_probe",
+      "expect": "passed (raw key: 0 files; sha256 prefix 64a88ea6: 0 files across the whole evidence tree)"
+    },
+    {
+      "id": "r93-t3-readme",
+      "kind": "symbol",
+      "claim": "T3 README 双语行对齐：按 ADR-0094 D3 誊抄措辞版本 B，版本 token 对齐 0.1.7-rc.2，机制列改 native registration (ctx.tools)，状态列嵌入 established-via-fallback: [L3b]",
+      "file": "README.md",
+      "tokens": [
+        "established-via-fallback: [L3b]",
+        "native registration (`ctx.tools`)",
+        "0.1.7-rc.2"
+      ]
+    },
+    {
+      "id": "r93-t3-readme-zh",
+      "kind": "symbol",
+      "claim": "T3 README.zh-CN 行对齐：中文版同档措辞，字节级对等（双语文档锁步纪律）",
+      "file": "README.zh-CN.md",
+      "tokens": [
+        "established-via-fallback: [L3b]",
+        "原生注册（`ctx.tools`）",
+        "0.1.7-rc.2"
+      ]
+    },
+    {
+      "id": "r93-t4-machine-leg",
+      "kind": "readme-token-pin",
+      "claim": "T4 readme-token-pin 机器腿首跑（非 shadow，真实断言）：README.md 声明版本与 dsh --version 实测一致",
+      "file": "README.md",
+      "host": "DeepSeek Harness",
+      "expect": "0.1.7-rc.2",
+      "command": "dsh --version"
+    },
+    {
+      "id": "r93-t4-machine-leg-zh",
+      "kind": "readme-token-pin",
+      "claim": "T4 readme-token-pin 机器腿首跑（非 shadow，真实断言）：README.zh-CN.md 声明版本与 dsh --version 实测一致",
+      "file": "README.zh-CN.md",
+      "host": "DeepSeek Harness",
+      "expect": "0.1.7-rc.2",
+      "command": "dsh --version"
+    }
+  ]
+}
