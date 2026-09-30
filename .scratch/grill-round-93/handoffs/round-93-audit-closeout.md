@@ -5,9 +5,8 @@
 
 ## 审计判词
 
-**打回返修（HOLD）** — 硬验收亲跑全绿、判词一致、D-001~D-003 / ADR D1–D8 主规格均满足；
-但 F1+F2 两项中等发现经用户裁定**打回原修复窗口返工**（2026-09-30）。
-handoff **扣发**，待返修核销 + 同一套硬验收重跑全绿后方可签发（仿 R92 先例）。
+**审计通过（PASS）** — 硬验收亲跑全绿、判词一致、D-001~D-003 / ADR D1–D8 主规格均满足；
+F1+F2 经打回返修后 **LOOP2 复审核销**（2026-09-30）。handoff 已签发。
 
 ## 1. 硬验收重跑（审计员亲跑，不信报告自述）
 
@@ -119,3 +118,57 @@ R93 自报 3 项 + 审计员独立发现 2 项，**均不在审计窗口内消�
 2. 重跑 `node scripts/ship-gate.mjs`，归档日志使 closeout-claims 腿输出 **14/14**；
    或若认定第 14 条登记于门禁之后属合法，则须在轮报/收口件显式记账并补一次门禁复证。
 3. 同一套硬验收重跑全绿后，在本文件追加「返修核销」节，审计窗复审放行 handoff。
+
+## 10. 返修核销（LOOP2 复审，审计窗亲验）
+
+**复审结论：F1 / F2 均核销成立。审计通过。**
+
+### F1 — claims 实物/归档脱节 → 核销
+
+| 核验项 | 复审结果 |
+|---|---|
+| 归档 ship-gate.log claims 行 | `closeout-claims r93: 14/14 registered claims re-derived green` ✅ |
+| 归档 ship-gate 标记计数 | `pass=83 fail=0 warn=0` ✅ |
+| claims on disk | 14 条（schema/round 合规）✅ |
+| 14 条 token 亲验 | 0 missing ✅ |
+| 根因认定 | 收口时序缺陷（第 14 条登记于门禁后、14/14 输出未归档）— 审计发现成立，返修对症 |
+
+**F1 ACCEPTED: YES**
+
+### F2 — 票序节待补 → 核销
+
+| 核验项 | 复审结果 |
+|---|---|
+| 票序节活锚点 | 12 行全部带真实 but-id：T0 `trm` · T1 `xrw`/`qom` · T2 `pzv` · T3 `qpu` · T4 `zln`+`sss`+`syr` · T5 `rsr` · T6-2 `zqq` · T6-4 `pqu` · T6-1 `zus` · T6 轮报 `pwx` · T7 `syy`+`klw` ✅ |
+| 未回填单元（`\| 待补 \|`） | 0 ✅ |
+| 「待补」残留 | 仅 `### 审计返修` 节 F2 行引述审计原话，非活锚点，保留正确 ✅ |
+| T4 计数时间线 | 已补注 12/12 → 13 → 14/14 ✅ |
+
+**F2 ACCEPTED: YES**
+
+### 返修后硬验收（审计窗亲跑，同一套）
+
+| 腿 | 结果 |
+|---|---|
+| `pnpm run build` | ✅ 5/5 |
+| `npm pack` | ✅ shasum `89b160dcd53a4788d61328ba5ce9b989c6834f7e` |
+| 启动测活 | ✅ initialize 200 / tools/list 200，5 工具全带 inputSchema |
+| claims token 复验 | ✅ 0 miss / 14 |
+| `gen-adr-index --check` | ✅ 94 ADRs at HEAD |
+| 判词 | ✅ `established-via-fallback` / `branch_label=A`（t2-verdict.json 零改动） |
+| 工作区 | ✅ clean；未 land / 未 push（AHEAD 23） |
+
+### 返修自伤 3 处（如实记账，均已复原 — 不追认）
+
+| # | 自伤 | 恢复 | 审计意见 |
+|---|---|---|---|
+| S1 | 门禁输出重定向进仓内 → 弄脏工作区 + 覆盖 13/13 日志 | checkout 复原；改「临时目录→拷入」 | 操作序错误，已复原，呈报知悉 |
+| S2 | but commit 未指定文件 = 提交全部，裹入审计窗产物 | but uncommit 拆 `mwr`（仅归档审计件）+ `wym`（仅 F2） | 越界已主动纠正，呈报知悉 |
+| S3 | 恢复暂存时路径拼接出错 → 嵌套 .scratch/ 误删测活日志 | 删嵌套后按实跑重建，纳入返修证据 | 操作序错误，已复原，呈报知悉 |
+
+### 终态
+
+- **审计判词：PASS**
+- F1/F2 核销；F3/F4/F5 维持呈报不改写（见 §4）
+- P1–P6 过程违规维持呈报不追认
+- **handoff 解除扣发并签发**（见 `handoffs/round-93-audit-handoff.md`）
