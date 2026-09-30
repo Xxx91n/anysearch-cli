@@ -1665,3 +1665,26 @@ repin-to-rc 收口义务的延展形态：上游 stable 晋升时收口探针除
 
 ### Readme-Token Claim（README 令牌声明钉）
 声明钉的机器腿形态：把 facade 表（verified-hosts 行）中的版本令牌作为 claims 断言对象钉向 catalog/实测证据值——补 parity 闸的设计边界（step1h 锁「双镜互相同意」，本钉锁「镜子照的是现役」）；首跑可挂账次轮（两拍节奏）。_Avoid_: 声明表与 catalog 漂移只靠人眼发现；为让机检本轮即绿而把立法绑进条件票。来源：锐评第九轮刀二+atomcode R91-Q3+R91 D-001/D-003+ADR-0092 D4。
+
+## Grill Round 92 — Terms (ADR-0093)
+
+### Dormant-Route Activation（dormant 路由激活）
+dsh 上游注入的官方面形态：dsh-base 把 dsh-llm-pi-ai dormant 挂载——profile patch 层供 config.providers.<name>={apiKeyEnv, api, baseURL, models[]} 即注册活路由；apiKeyEnv 经 credential seam 按名解析，凭证值不落配置文件。_Avoid_: 改 deepseek-official 的 DEEPSEEK_BASE_URL env 覆写端点（该路由锁 Messages 协议，OpenAI-completions 面上游不可达且全局污染默认路由）。来源：dsh-llm-pi-ai README 实测+atomcode R92-Q2+R92 D-002。
+
+### Established-Via-Fallback（fallback 通道证绿）
+判词降格档位（ADR-0092 D1 revised-in-part）：L3b 主判据=model-request tools 载荷显性可见保留；载荷不可见但 transcript 现 ≥1 个 ans_* tool_call 事件（实名+arguments）→记 established-via-fallback——枚举发生的充分不必要条件，README claim 措辞相应收窄。_Avoid_: 载荷不可见时把枚举直判绿；通道缺失永久惩罚机制本身；fallback 措辞现场拟（须 T1 预注册）。来源：atomcode R92-Q2+R92 D-002+ADR-0093。
+
+### Mechanism-Unavailable Branch（机制不可用分支）
+预注册判词分支：patch 层 providers 覆写在目标宿主上若无支持（dump-config 无自定义路由痕迹）→判词直落 F-bug 分支记 not-established: [L3a]——机制不可达是证据不是 LOOP 借口，防现场发明分支与熔断失控。_Avoid_: 机制未验通就反复重试消耗票级熔断；把「覆写不支持」归因为上游凭证失败。来源：atomcode R92-Q3 隐藏依赖#1+R92 D-003。
+
+### Dual-Wording Preregistration（双版措辞预注册）
+条件票文案纪律的强化形态：README 行措辞的 established 版与 established-via-fallback 收窄版两版文案在立法票（T1 ADR-0093）内预注册，条件票（T3）只做选择与誊抄——条件票携带立法即触 Conditional-Ticket Purity 红线。_Avoid_: 判词落地后现场拟对外声明措辞；把「怎么写」的裁量留给条件票执行者。来源：atomcode R92-Q3 隐藏依赖#2+R92 D-003。
+
+### User-Scope Credential Lift（User-scope 凭证提升）
+Windows 凭证注入模式：进程 env 是启动快照，后置的用户级变量不回流——持久层经 User-scope 读取（[Environment]::GetEnvironmentVariable(name,'User')）注入子进程 launch env，值不落盘不落上下文不落 transcript（收尾以 SHA-256 前缀 grep 验泄漏）。_Avoid_: 在已运行进程内找新设 env 变量；把 key 值写进 profile patch/日志/判词。来源：R92 实测（DEEPSEEK_API_KEY User-scope len=67 实证 200）+atomcode R92-Q2+R92 D-002。
+
+### Leak Probe（泄漏探针）
+凭证卫生闭环的检查器形态：T2 收尾对 transcript/工件全文 grep key 的 SHA-256 前缀（非 key 本体），确认「值不落盘不落上下文」承诺无破口；env 凭证的经典风险=崩溃转储/日志整环境外泄，探针以最小成本闭环。_Avoid_: 只立法不验证；在探针里打印 key 值本身取证。来源：atomcode R92-Q2（SO env-secrets 批评面）+R92 D-002。
+
+### Shadow Dry-Run（影子干跑）
+检测器接线票的取证形态：新检查器合入 ship-gate 时票内跑一次非阻塞 dry-run（只读、输出归档 evidence、不入判词、不阻塞门禁），evidence 写明 shadow 性质——防「什么都没跑」的静默接线把脚本 bug 潜伏到下一轮；同时防止 dry-run 被审计误读为「跑了专属机器腿」破两拍节奏。_Avoid_: 纯静默接线；把 shadow run 当正式首跑计入判词。来源：atomcode R92-Q3（CircleCI/Harness shadow 惯例）+R92 D-003。

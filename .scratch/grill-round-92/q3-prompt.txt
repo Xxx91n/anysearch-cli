@@ -1,0 +1,30 @@
+# R92 Q3 调研题面 — 票序+commit 结构+条件票边界
+
+## 背景
+
+anysearch-cli 项目 R92「售后收口续轮」。R91 已在真宿主 dsh 0.1.7-rc.2 跑 L3 冒烟出 F-bug（DEEPSEEK_API_KEY 缺失=环境缺位）。R92 已裁决注入机制与宿主（见账本 D-002）：pi-ai 自定义路由+隔离 profile r92-smoke+featherless https://api.featherless.ai/v1+User-scope DEEPSEEK_API_KEY（已实证 200）+模型 Qwen/Qwen3-32B+L3b established-via-fallback 词汇增补（ADR-0092 D1 相关段 revised-in-part）。
+
+## 账本 current 决策（不得静默改向）
+
+- R92 D-001：主轴=售后收口续轮完整版：T2 复跑→达标启 README 双语行对齐+readme-token claims 检查器接线（ADR-0092 D4 两拍第二拍）+deprecate 双空格执行尝试；一票一 commit 类型不混；票级熔断 2-LOOP；pathlint 冻结；范围外=repin/垂域复核（r88-candidate，明文排期下轮主轴候选）/web-matrix 主体/评测面/常驻债；无 tag/push/publish。
+- R92 D-002：T2 复跑全方案（机制/宿主/凭证卫生/L3b 修订/冻结项/执行序），细节如上。
+
+## 承继纪律（已立法词汇，直接引用）
+
+- Conditional-Ticket Purity（ADR-0092）：条件票只携带门后内容，无条件立法不骑进条件票；判定窗口一次定死。
+- Entry-Criterion Probe（ADR-0092）：取证通道存在性须先于主探针实证（本轮通道机制已证，tools 载荷可见性待 T2 实测）。
+- 规则先于行为：判据立法票必须先于执行票。
+- Ticket Fuse：同票连续 2 轮 LOOP 修复失败→回退该票 commit+挂回 registry+缩轮呈报。
+- 一票一 commit 类型不混（docs/fix/chore/evidence 分票）。
+- ADR 修订不原地涂改：新 ADR 载明修订+标记旧段 revised-in-part（R90 addendum 先例）。
+- Readme-Token Claim（ADR-0092 D4）：kind=readme-token-pin 已立法，检查器接线=本轮无条件票。
+
+## 待裁问题
+
+Q：R92 票序+commit 结构。我拟 A 案八票序+TC：T0 哨戒+基线（dist-tags 复观/stable 目击检查定 TC/基线快照/探针证据归档）→T1 立法（ADR-0093：判据+冻结项+L3b 词汇增补+rejected 路径+凭证卫生）→T2 执行（preflight tool_calls→建 r92-smoke→plugin add 冷启 L3a→dump-config→诱导 turns→双工件→判词→泄漏探针）→T3【条件票】README 双语行对齐（判词达标才启，fallback 路径收窄措辞）→T4 readme-token 检查器接线（无条件；README 未改则首跑登记 R93）→T5 deprecate 执行尝试（外发，EOTP 呈报）→T6 收口件批（ADR 完成体+CONTEXT+registry+closeout-claims+轮报+任务书戳+CHANGELOG）→T7 门禁+审计 LOOP；TC=T0 目击 0.2.0 stable→closing probe。备选 B=T4 并 T6；C=readme-token 推 R93；D 另排。
+
+请裁决：票序编排与工业界成熟心智模型（gate ordering/acceptance criteria/条件票纯度/票粒度/收口件批/审计 LOOP 节奏）的符合度；隐藏依赖与反对论据；尤其：①L3b 词汇增补的立法落点（新 ADR-0093 载明+标 ADR-0092 D1 revised-in-part vs ADR-0092 addendum）；②T2 内 preflight tool_calls 探针应属 T2 票内前置还是 T1 立法票的一部分；③deprecate 外发动作在轮内的最佳票位；④T4 首跑（README 未改场景）登记方式。
+
+## 调研范围要求
+
+回顾 decision-ledger 全部 current 记录（D-001~D-002）、docs/adr 与 CONTEXT.md 既有条目（ADR-0090 真值表/addendum、ADR-0091 原生工具面、ADR-0092 D1-D4 与词块）；工业界成熟落地模型优先（验收判据排序、条件票/门禁纯度、发布就绪闸、审计 LOOP 节奏、外发动作权限记账）。辩证看待，指出 A 案隐藏依赖与反对论据。
