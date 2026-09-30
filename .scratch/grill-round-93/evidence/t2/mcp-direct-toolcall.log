@@ -1,0 +1,4 @@
+tools/call status=200 bytes=11687
+isError=undefined contentBlocks=1
+content head={   "query": "deepseek dsh plugin",   "totalResults": 10,   "showing": 10,   "results": [     {       "url": "dsh-plugin.org/plugins/edgetype/dsh-better-deepseek",       "title": "dsh-better-deepseek: Bridge Plugin for Better DeepSeek Extension | DSH Plugin",       "snippet": "dsh-better-deepseek is
+parsed: totalResults=10 results=10 firstUrl=dsh-plugin.org/plugins/edgetype/dsh-better-deepseek

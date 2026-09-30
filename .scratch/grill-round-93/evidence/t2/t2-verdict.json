@@ -1,0 +1,58 @@
+{
+  "round": "r93",
+  "ticket": "T2",
+  "timestamp": "2026-09-30",
+  "dsh_version": "0.1.7-rc.2",
+  "plugin_version": "0.1.0",
+  "profile": "r93-kimi",
+  "arm": "A1 moonshotai/Kimi-K2-Instruct-0905",
+  "arm_switches": 0,
+  "contextWindow": 32768,
+  "max_tokens_floor": 2048,
+  "preflight_tool_calls": "passed (bare POST /v1/chat/completions 200 + finish_reason=tool_calls + ans_search_web payload; T0 probe 1)",
+  "turns_run": 3,
+  "turns_green": 3,
+  "turn_exit_codes": [
+    0,
+    0,
+    0
+  ],
+  "env_violations": 0,
+  "L3a": "established",
+  "L3b": "established-via-fallback",
+  "L3c-min": "established",
+  "L3c-full": "not-established",
+  "L3d": "not-established",
+  "L3e": "not-established",
+  "ans_tool_call_events": 3,
+  "tool_round_trip": "POST http://127.0.0.1:3001/mcp 200; content present (8177B truncated search payload, totalResults=10, 10 results)",
+  "l3b_primary_criterion": "ABSENT — the dsh stream-json channel does not expose the model-request tools enumeration (0 occurrences of model-request / \"tools\" / inputSchema across all 3 turns)",
+  "l3b_fallback_criterion": "SATISFIED x3 — >=1 ans_* tool_call event per turn",
+  "l3c_min_scope": "ans_* only (ADR-0094 D1.2 narrowing; a non-ans_* hallucinated call would NOT count as green)",
+  "root_cause": null,
+  "mechanism_failure": false,
+  "fbug_review_gate": "not-armed (0 arm switches; ADR-0094 D1.6 arms the gate at >=2)",
+  "leak_probe": "passed (raw key: 0 files; sha256 prefix 64a88ea6: 0 files across the whole evidence tree)",
+  "branch_label": "A",
+  "branch_label_meaning": "ADR-0093 D2 branch A = README unlock unblocked (L3c-min reached, so branch B's L3c-min-miss condition is false)",
+  "verdict": "established-via-fallback",
+  "verdict_field_rationale": "ADR-0093 D2 wording-version-B trigger is \"branch B OR fallback path\". L3b resolved on the fallback path, so the fallback marker is carried on the top-line verdict while branch_label stays A. established-via-fallback belongs to the L3b bucket in the ADR-0093 vocabulary table, not to a separate top-level branch.",
+  "established": [
+    "L3a",
+    "L3c-min"
+  ],
+  "established-via-fallback": [
+    "L3b"
+  ],
+  "not-established": [
+    "L3c-full",
+    "L3d",
+    "L3e"
+  ],
+  "readme_wording_version": "B (ADR-0093 D2 version B / ADR-0094 D3)",
+  "t_b_triggered": false,
+  "t_b_predicate_evaluation": "predicate = (verdict == \"F-bug\"); actual verdict = \"established-via-fallback\" -> FALSE, T-B not enabled (content whitelist + court agenda stay untouched)",
+  "t3_predicate_evaluation": "predicate = (verdict in {established, established-via-fallback}) AND (T-B not enabled) -> TRUE, T3 enabled",
+  "t4_predicate_evaluation": "predicate = (T3 changed README) -> TRUE, T4 runs the REAL machine leg (not shadow)",
+  "tc": "not enabled (T0 sighted no 0.2.0 stable; latest = next = 0.2.0-rc.2)"
+}

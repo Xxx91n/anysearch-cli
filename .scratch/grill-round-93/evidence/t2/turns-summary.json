@@ -1,0 +1,35 @@
+[
+ {
+  "n": 1,
+  "exit": 0,
+  "ms": 72148,
+  "bytes": 13077,
+  "events": 12,
+  "names": [
+   "ans_search_web"
+  ],
+  "ansToolEvents": 1
+ },
+ {
+  "n": 2,
+  "exit": 0,
+  "ms": 68147,
+  "bytes": 13117,
+  "events": 12,
+  "names": [
+   "ans_search_web"
+  ],
+  "ansToolEvents": 1
+ },
+ {
+  "n": 3,
+  "exit": 0,
+  "ms": 54342,
+  "bytes": 12221,
+  "events": 12,
+  "names": [
+   "ans_search_web"
+  ],
+  "ansToolEvents": 1
+ }
+]
