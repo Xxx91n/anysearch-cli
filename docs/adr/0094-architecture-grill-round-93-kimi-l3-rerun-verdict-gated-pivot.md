@@ -247,17 +247,30 @@ ADR-0093 的预注册行是三列（`| DeepSeek Harness | 0.1.7-rc.2 | native re
 
 ## 票序节（逐票 but-id 双锚）
 
-> 本节由 T6 分节①补记（ADR 完成体）。文内 sha 均为**落笔时值**；but-id 为唯一稳定锚；land 后以 main `git log` 为准。
+> 文内 sha 一律为**落笔时值**；but-id 为唯一稳定锚；land 后以 main `git log` 为准。
+> 「落笔时值」口径：sha 在每次 amend 后即失效，故本 ADR 不写 sha 作为可核锚点，只写 but-id。
 
 | 票 | but-id | 类型 | 判定/结果 | 实证索引 |
 |---|---|---|---|---|
-| T0 | `trm` | chore+evidence | ✅ 完成 | `.scratch/grill-round-93/evidence/t0/`（baseline + probes + 三腿日志） |
-| T1 | 待补 | docs | ✅ 完成 | `docs/adr/0094-*` + `docs/adr/index.md` 0094 行 |
-| T2 | 待补 | evidence | 待补 | 待补 |
-| T-B | — | docs | 待补 | 待补 |
-| T3 | — | docs | 待补 | 待补 |
-| T4 | — | evidence | 待补 | 待补 |
-| T5 | — | chore | 待补 | 待补 |
-| T6 | — | docs | 待补 | 待补 |
-| T7 | — | — | 待补 | 待补 |
-| TC | — | — | ⏭ 未触发 | T0 目击无 `0.2.0` stable 晋升（`latest`=  `next` = `0.2.0-rc.2`） |
+| T0 哨戒+基线+探针 | `trm` | chore+evidence | ✅ 完成 | `evidence/t0/t0-baseline.md` + `t0-probes.md` + `check.log`/`test.log`/`ship-gate-quick.log` |
+| T1 ADR 立法 | `xrw` | docs | ✅ 完成 | `docs/adr/0094-*`（D1–D8 完成体） |
+| T1 ADR index 更态 | `qom` | docs | ✅ 完成 | `docs/adr/index.md` 0094 行（`gen-adr-index --write`，94 ADRs at HEAD，`--check` 绿） |
+| T2 三跑执行 | `pzv` | evidence | ✅ **established-via-fallback**（branch_label=A） | `evidence/t2/t2-verdict.json` + `t2-transcript.md` + `t2-transcript.jsonl` + `turn1..3.jsonl` + `dump-config.log` + `mcp-direct-toolcall.log` |
+| T-B 转向票 | — | docs | ⏭ **未启**（谓词 `verdict == "F-bug"` 为假） | 判词为 `established-via-fallback`；内容白名单与开庭议程均未触碰 |
+| T3 README 双语行对齐 | `qpu` | docs | ✅ 完成 | `README.md:227` + `README.zh-CN.md:217`（措辞版本 B 誊抄） |
+| T4 机器腿首跑 | `zln`+`sss`+`syr` | evidence | ✅ 完成（12/12 green） | `closeout-claims.json` 登记与 token 校正 + `evidence/t4/t4-machine-leg.md` + `ship-gate-machine-leg.log` |
+| T5 deprecate | `rsr` | chore | ℹ️ 纯备准（`credential-scope` 权限缺口） | `evidence/t5-deprecate.md` + `t5-deprecate-probe.json` |
+| T6-2 registry 更态 | `zqq` | docs | ✅ 完成 | `docs/deferred-registry.json`（defer-r92 两项核销 + r88 sunset 条款 + r93 deprecate 条目） |
+| T6-4 CHANGELOG | `pqu` | docs | ✅ 完成 | `CHANGELOG.md` r93 条目 |
+| T6-1 ADR 完成体 | 本 commit | docs | ✅ 完成 | 本节（逐票 but-id 补记） |
+| T6 轮报+终态戳 | 待补 | docs | 待补 | 待补 |
+| T7 门禁+审计 | — | — | 待补 | 待补 |
+| TC 条件票 | — | — | ⏭ **未触发** | T0 目击无 `0.2.0` stable（`latest` = `next` = `0.2.0-rc.2`），窗口一次定死 |
+
+### 执行期票序调整（如实记账）
+
+**T6④ CHANGELOG 条目前置于 T4 机器腿。**
+原因：`scripts/ship-gate.mjs:776` 的 CHANGELOG 检查 `fail()` 即退，
+而 `closeout-claims` 腿在 780 行之后 —— 当轮 CHANGELOG 条目缺失时，T4 的机器腿**在门禁内永不可达**。
+这不是绕过，是门禁顺序的真实依赖。故 T6④ 提前落笔（but-id `pqu`），T4 机器腿随后可跑。
+该依赖已写入 `evidence/t4/t4-machine-leg.md` §2。
