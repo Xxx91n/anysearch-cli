@@ -1024,6 +1024,13 @@
      "at": "2026-09-30",
      "round": 93,
      "note": "R93 T1 ADR-0094 D4 sunset 条款写入：R95 前强制开庭 + R94 收口批预通知义务（registry 挂账 + owner 点名 anysearch-eval）。本轮仅立法，开庭主体在 R94/R95。"
+    },
+    {
+     "at": "2026-09-30",
+     "round": 94,
+     "owner": "anysearch-eval",
+     "trigger_rule": "ADR-0094 D4",
+     "note": "R94 T1 预通知指针条目（先行 commit）：履行 ADR-0094 D4 预通知义务，具名 owner anysearch-eval，自证时序角色先于开庭立法本体，固化规则见 ADR-0095。"
     }
    ]
   },
