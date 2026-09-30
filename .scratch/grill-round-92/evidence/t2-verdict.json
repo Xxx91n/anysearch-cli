@@ -1,0 +1,21 @@
+{
+  "round": "r92",
+  "ticket": "T2",
+  "timestamp": "2026-09-30T09:10+08:00",
+  "dsh_version": "0.1.7-rc.2",
+  "plugin_version": "0.1.0",
+  "profile": "r92-smoke",
+  "preflight_tool_calls": "failed (upstream server_error + malformed JSON, no tool_calls)",
+  "L3a": "established",
+  "L3b": "not-established",
+  "L3c-min": "not-established",
+  "L3c-full": "not-established",
+  "leak_probe": "passed (SHA-256 prefix 64a88ea6 not found, raw key not found)",
+  "branch": "C",
+  "verdict": "F-bug",
+  "root_cause": "Featherless upstream completion service returned corrupted stream/exclamation marks and server_error, failed to produce tool_calls for Qwen/Qwen3-32B",
+  "root_cause_type": "upstream-provider-failure",
+  "mechanism_failure": false,
+  "t3_admission": "blocked (verdict < grade-B)",
+  "pending": "Registry records F-bug; T3 remains unstarted and leaves no trace"
+}
