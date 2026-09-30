@@ -1,0 +1,30 @@
+你是 R93 grill 轮的外部调研顾问。项目：anysearch-cli（Windows 仓），目标=构建信息专精 Agent CLI（遵循 AnySearch 垂直领域理念）。本题为 R93 票序+commit 结构调研（R93 Q3）。
+
+【decision-ledger 全部 current 记录（R93 账本，必须回顾）】
+- D-001（current）：主轴=L3 修复续轮【换模三跑】。T2 三跑（冻结模型 moonshotai/Kimi-K2-Instruct-0905；N<=3 严格串行）→达标启 README 双语行对齐→readme-token 机器腿首跑+deprecate 再尝试。四条预注册：①kill criteria——R92 签名（server_error/no_response/零 tool_calls）计入 N，N 尽不绿就地 F-bug+轮内启动 B（r88-candidate 垂域死刑复核）开庭议程；②新建 r93-kimi profile；③429=环境违规不计 N；④rider 链条件化。B 处置=r88-candidate sunset 条款（R95 前强制开庭）。
+- D-002（current）：T2 执行设计全包——r93-kimi profile 参数冻结（contextWindow=32768 托管目录值+preflight 超长探针实证）；B1 预注册单链 [0905→Kimi-K2-Instruct]（每臂 N=3+链级 F-bug 硬顶+换臂 transcript 审计+换臂前先 preflight 验 tool_calls）；诱导句复用冻结句+全灭后诊断探针句豁免（非 verdict）；r92-smoke 证据工件冻结零触碰；deprecate 权限缺口三型枚举（credential-scope/maintainer/org-owner）无权限纯备准；签名族三形态（length+空/stop+纯文本/零 tool_calls）+length 计 N 前先钉 max-tokens 预算；L3c 收窄=ans_* tool_call（~24% 未声明工具幻觉率）；多轮 ID 污染 Known-Non-Goals；>=2 换臂复盘闸。
+
+【docs/adr 与 CONTEXT.md 相关条目】
+- ADR-0092：L3 判据三腿+D2 票序+D4 readme-token 两拍（第二拍已接线）；ADR-0093：R92 复跑立法+README 双版预注册措辞（established 版/established-via-fallback 版，模型无关只含宿主版本 0.1.7-rc.2——但措辞为三列简版而现表为四列含 doc 链接）+票序节；ADR-0090 repin 真值表；ADR-0091 零依赖契约。CONTEXT.md 词块至 R92。
+- registry：defer-r92-t2-featherless-upstream-f-bug（open）、defer-r92-readme-token-pin-machine-leg（open 首跑挂 R93）、r88-candidate-vertical-direction-redeliberation（open 候审四轮+sunset 条款待落）、defer-r86-anysearch-corpus-param-contract 等。
+- R92 审计挂账另四项：锚定纪律立法（ADR-0092 L162+R91 三文书 sha 已对齐病句→落笔时值口径）、常驻债词汇归一（goal.md 枚举/CHANGELOG 命名对齐）、CI-only 强制令与本机门禁证据效力口径（待用户裁定项）、deprecate 权限。
+
+【本仓既有票序范式（R92 已验证骨架）】
+T0 哨戒+基线→T1 立法（ADR）→T2 执行（evidence）→T3【条件】README→T4 接线/取证→T5 deprecate→T6 收口批→T7 门禁+审计 LOOP→TC 条件票。纪律：一票一 commit 类型不混；条件票纯度（不带立法不现场拟措辞）；T1 立法先于 T2 行为；判词词汇一字不差；票级熔断 2-LOOP；TC 窗口 T0 一次定死。
+
+【R93 提案票序（待裁决）】
+- T0 哨戒+基线（dsh dist-tags 复观定 TC+基线快照+grill 期五件探针归档）；chore+evidence
+- T1 立法=新 ADR-0094（判据全包+B1 链+签名族+max-tokens 预算+L3c 收窄+换臂复盘闸+ID 污染 Known-Non-Goals+机制不可用→F-bug+429 条款+kill criteria 轮内转向机制+README 措辞承继与四列表格调和+r88-candidate sunset 条款+deprecate 三型枚举+凭证卫生）；docs
+- T2 执行（票内前置串行 preflight：0905 tool_calls 复验+32768 超长探针+units/plan 核查→建 r93-kimi→冷启装册→dump-config→诱导 turns→双工件→泄漏探针→判词；链尽→F-bug 熔断 T-B 启）；evidence
+- T-B【条件转向票】链尽触发：F-bug 登记+轮内开 r88-candidate 开庭议程；docs
+- T3【条件】README 双语行对齐（誊抄承继措辞）；docs
+- T4【条件】readme-token 机器腿首跑取证（README 真改动=天然标的；README 未改顺延挂账）；evidence
+- T5 deprecate（权限到位执行尝试，否则纯备准+三型枚举字段）；chore
+- T6 收口批（ADR-0094 完成体+CONTEXT 词块+registry 更态+closeout-claims+轮报+终态戳+CHANGELOG+锚定纪律立法修复并入 docs+常驻债词汇归一）；docs
+- T7 门禁+审计 LOOP；TC=T0 目击 0.2.0 stable 才启
+- 挂项 d5：deprecate 权限本轮到位否（未答默认纯备准）；d7：CI-only 强制令 vs 本机门禁证据效力口径（本轮裁定 or 顺延）
+
+【调研要求】
+1. 重点检索工业界成熟落地心智模型：pipeline/workflow 中条件分支与熔断转向的结构先例（circuit-breaker 触发替代路径 vs 终止）；kill-switch/failover 触发时「就地降级+议程转向」的 incident-management 惯例；conditional job/step 依赖图（GitHub Actions/Azure gates 的 condition 语义）；release train 中「修复主线失败即切换备选议题」的排期护栏；sunset 条款的执行机制（hard deadline enforcement、rolling deadline 反例）。
+2. 辩证评估：T-B 条件转向票的结构是否干净（是否违反条件票纯度——它本身是「条件+转向」双态，会不会变成隐藏无条件工作）；T4 机器腿取证独立票 vs 并入 T3/T6 的取舍；锚定纪律修复并入 T6 是否会稀释收口票焦点；d5/d7 挂项处置惯例。
+3. 逐项明确推荐+理由+反驳论据+信息缺口。

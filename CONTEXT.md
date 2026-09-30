@@ -1688,3 +1688,29 @@ Windows 凭证注入模式：进程 env 是启动快照，后置的用户级变�
 
 ### Shadow Dry-Run（影子干跑）
 检测器接线票的取证形态：新检查器合入 ship-gate 时票内跑一次非阻塞 dry-run（只读、输出归档 evidence、不入判词、不阻塞门禁），evidence 写明 shadow 性质——防「什么都没跑」的静默接线把脚本 bug 潜伏到下一轮；同时防止 dry-run 被审计误读为「跑了专属机器腿」破两拍节奏。_Avoid_: 纯静默接线；把 shadow run 当正式首跑计入判词。来源：atomcode R92-Q3（CircleCI/Harness shadow 惯例）+R92 D-003。
+
+## Grill Round 93 — Terms (ADR-0094)
+
+### Fallback Chain Hard-Top（链级硬顶）
+预注册备份模型链的判词纪律：链上每臂获独立 N=3 诱导预算，但两臂共享「全灭→F-bug+B 议程」链级硬顶——单臂失败换臂是标准 failover，链耗尽才是判词事件；防「无限换臂稀释 kill criteria」与「单点故障当 kill criteria」两种极端。_Avoid_: 换臂后宣告重新开始不设总顶；单臂灭即 F-bug 把托管目录抖动归因为机制失败。来源：atomcode R93-Q2（Inworld/TrueFoundry fallback 链规范）+R93 D-002。
+
+### Arm-Switch Audit Trail（换臂审计轨迹）
+fallback 链执行期的取证义务：换臂事实必须写入 transcript（which model handled the request + why the switch occurred），禁止静默降级到第二臂后仍声称在测第一臂。_Avoid_: transcript 不含换臂记录；用第二臂的成功冒充 primary 的判词。来源：atomcode R93-Q2（nhimg fallback 审计三件套）+R93 D-002。
+
+### Hosted Context Window（托管窗口值）
+上游 contextWindow 声明的取值纪律：取 serving runtime/托管目录公布值（featherless 模型页 Context Size=32k），不取模型原生能力值（256K）——runtime>provider>native 解析序；声明错误的真实后果=宿主按不存在的窗口预算致静默截断。_Avoid_: 把 HF/营销页的原生 256K 写进 pi-ai models 段；目录值未实证就当真值（preflight 超长探针兜底）。来源：featherless 模型页+atomcode R93-Q2（Inference-Gateway 解析序/Tinker #296/Kilocode #5568）+R93 D-002。
+
+### Failure-Signature Family（签名族）
+上游模型层失败的归因谓词集合：R92 签名扩充为三形态——finish_reason=length+空 content（reasoning 形态吞预算）/ stop+纯文本续写 / 零 tool_calls；length 计入 N 前须先在 preflight 钉死 max-tokens 预算判据以区分「预算设小」与「模型不行」。_Avoid_: 预算不足产生的 length 误算入模型失败；三形态之外现场发明新签名。来源：atomcode R93-Q2（Together/Kimi 官方 reasoning 共享预算文档/vLLM 调试博客）+R93 D-002。
+
+### Verdict-Gated Pivot Ticket（判词门控转向票）
+熔断转向票的双态记账结构：T-B 仅在「链尽判词」显式成立时触发（非「T2 未绿」——429/环境违规不触发），内容白名单=F-bug 登记+开庭议程引预注册条款，禁任何实施工作；与成功路径条件票（T3/T4）在同一上游上互斥求值（succeeded/failed 同构）。_Avoid_: failure-handler 变垃圾桶塞顺手工作；触发谓词写成「未绿」使环境违规误启转向。来源：atomcode R93-Q3（GH Actions needs/if+Azure failed()/succeeded()+circuit-breaker 预定义 fallback）+R93 D-003。
+
+### Sunset Hard-Deadline（sunset 硬截止）
+候审项的处置时间盒：r88-candidate 写入 R95 前必须开庭的硬截止+R94 收口批预通知义务（registry 挂账+点名 owner）——rolling 复审的反例是橡皮图章化（存续率~100%）；开庭≠翻案，reaffirm/revise/retire 三果皆合法判词。_Avoid_: 每轮「下轮再审」式滚动候审；sunset 无 owner 无预通知静默到期。来源：atomcode R93-Q3（Wikipedia+Ballotpedia sunset 反例+regulatorycouncil 最佳实践）+R93 D-001/D-003。
+
+### Permission-Gap Typology（权限缺口分型）
+外发动作受阻时的记账字段枚举：权限缺口分 credential-scope / maintainer / org-owner 三型，每型含 fallback 行为字段——让「权限受限」的下轮接手者知道缺的是哪一层，而非笼统「权限闸」。_Avoid_: 记账只写 E401/E404 不分型；为跑通而借他人凭证绕权限闸。来源：atomcode R93-Q3（AWS kill-switch 立法惯例）+R92 T5 E401/E404 实测+R93 D-002/D-003。
+
+### Advisory-vs-Blocking Evidence（证据效力两态）
+门禁证据的效力口径：本机门禁产出（check/test/ship-gate 本机跑）默认 advisory 非 blocking——CI-only 强制令缺席裁定的保守默认+显式登记下轮复核；规则制定不混入收口票。_Avoid_: 口径未定就带着模糊跑取证票；静默默认不登记。来源：R92 审计呈报项+atomcode R93-Q3（挂项处置惯例）+R93 D-003。

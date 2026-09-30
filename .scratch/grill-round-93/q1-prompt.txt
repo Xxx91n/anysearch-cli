@@ -1,0 +1,27 @@
+你是 R93 grill 轮的外部调研顾问。项目：anysearch-cli（Windows 仓），目标=构建信息专精 Agent CLI（遵循 AnySearch 垂直领域理念）。本题为 R93 主轴裁决调研。
+
+【必须回顾的已确立心智模型（仓库实物）】
+- R93 decision-ledger 尚空（本题是第一问，无 current 记录）；前轮账本 .scratch/grill-round-92/decision-ledger.md D-001~D-003 为背景。
+- docs/adr 共 93 部：ADR-0093（R92 featherless T2 复跑立法：判据复用/L3b established-via-fallback 词汇修订/冻结项/凭证卫生/README 双版措辞预注册/机制不可用→F-bug 预注册/DEEPSEEK_BASE_URL rejected）；ADR-0092（dsh L3 冒烟验收轮：D1 判据三腿 L3a 装册/L3b 枚举/L3c-min 执行、D2 票序、D3 WORKFLOW.md 判死、D4 readme-token claims 两拍节奏）；ADR-0090（repin 真值表+版本轴/消费轴正交）；ADR-0091（原生注册零依赖契约）。
+- CONTEXT.md 领域词汇表至 R92（Dormant-Route Activation/Established-Via-Fallback/Mechanism-Unavailable Branch/Dual-Wording Preregistration/User-Scope Credential Lift/Leak Probe/Shadow Dry-Run 等）。
+
+【已实证事实（调研应在其上展开，勿推翻）】
+1. dsh 宿主侧 L3 冒烟连续两轮未绿：R91 判词 F-bug 根因=DEEPSEEK_API_KEY 环境缺失；R92 判词 F-bug 根因=featherless 上游 Qwen/Qwen3-32B 服务异常（4096 max-tokens+server_error:no_response+零 tool_calls）。机制面 L3a 装册绿已两轮独立复证（dsh-llm-pi-ai 自定义路由+隔离 profile r92-smoke+dump-config 单行可见）。
+2. grill 期裸探针新实证（2026-09-30，本日）：Qwen/Qwen3-32B 在 featherless 为 reasoning 形态（finish_reason=length、全程只产 reasoning 字段、延迟 45s+）=R92 故障签名复现，非瞬态；moonshotai/Kimi-K2-Instruct-0905 与 Kimi-K2-Instruct 同凭证直连均 200，其中 0905 实测 finish_reason=tool_calls 且正确产出函数调用载荷；featherless 官方明示仅 Kimi-K2 与 Qwen3 家族原生 tool-calling。
+3. 上游配额约束：feather_pro_plus 计划并发上限 4 units，Kimi-K2 单请求耗 4 units→preflight 与诱导轮必须严格串行，并发即 429。
+4. README.md:227 / README.zh-CN.md:217 的 dsh 行仍标 0.1.5-rc.2 + MCP bridge patch——落后现役三代（R83 repin 0.1.7-rc.1，R90 原生裸名注册且桥退役为 rollback 手册）；live-verified 图章的项目内定义=必须对应一次真实转写，该图章已连续三轮悬空。
+5. readme-token-pin 检查器已接线 ship-gate.mjs 且 shadow dry-run+fail-closed 闭环验证完毕；专属机器腿首跑挂账至 R93。
+6. npm deprecate 双空格（0.0.3~0.0.8 六版本）备准命令齐，执行遇 E401/E404 权限闸如实记账，需用户亲触+EOTP。
+7. registry 候审面：r88-candidate-vertical-direction-redeliberation（R89 起连续四轮挂下轮主轴候选；起诉书=垂直臂实测净胜率 -0.125/P=0.0378 direction-negative 真阴性）；defer-r92-t2-featherless-upstream-f-bug；defer-r92-readme-token-pin-machine-leg；defer-r86-anysearch-corpus-param-contract（语料格欠 cn_code 必填参数）；常驻债若干。
+8. dsh 宿主 npm dist-tags 复观：latest=0.2.0-rc.2/next=0.2.0-rc.2 无 stable 晋升；本仓已发布包 cli/dsh-plugin 均 latest=0.1.0。
+
+【候选主轴（需裁决）】
+A. L3 修复续轮【换模三跑】：正题=T2 三跑（冻结模型改为 moonshotai/Kimi-K2-Instruct-0905，上游 tool_calls 已裸探针实证；判据沿用 ADR-0092/0093 已立法全套，N≤3 且严格串行；profile 复用 r92-smoke vs 新建另裁）→判词达标启 README 双语行对齐（按 ADR-0093 预注册 established 版措辞誊抄）→readme-token 机器腿首跑顺带核销（README 真改动=天然首跑标的）+deprecate 再尝试（若用户权限到位）。
+B. 垂域死刑复核轮：r88-candidate 开庭（opt-in 留任/默认关闭/移除三选一判决）+顺带 corpus-param-contract 修格。零外部凭证依赖；负面=live-verified 图章继续悬空一轮。
+C. 轻收口轮：readme-token 机器腿首跑（若无 README 改动则为合成标的）+锚定纪律立法（sha 已对齐病句→落笔时值口径）+deprecate 再试；T2 三跑降为纯条件票。
+D. 其他组合。
+
+【调研要求】
+1. 重点检索工业界成熟落地心智模型：发布后验证债（post-release verification debt）vs 战略方向复审债的排期取舍框架；已发布产物宣称（marketing/README claim）与实物验证漂移的治理模式；retry-with-different-backend / model failover / canary probe 的可靠性工程先例与「同一目标三次尝试」的 sunk-cost 判据；feature 留任/默认关闭/移除三态判决框架（如 GitHub/Stripe/Vercel 特性日落实践、ADR 驱动 sunset）。
+2. 辩证评估各候选真实成本、风险、机会成本：A 是否陷入 sunk-cost 三连复跑陷阱（注意本轮与前两轮根因不同且已实证解除）；B 再拖一轮的累积代价（已四轮候审）；C 的渐进收口是否反而拖长两条债的半衰期。
+3. 给出明确推荐、理由、反驳论据、信息缺口清单。

@@ -1,0 +1,31 @@
+你是 R93 grill 轮的外部调研顾问。项目：anysearch-cli（Windows 仓），目标=构建信息专精 Agent CLI（遵循 AnySearch 垂直领域理念）。本题为 T2 三跑执行设计调研（R93 Q2）。
+
+【decision-ledger 全部 current 记录（R93 账本，必须回顾）】
+- D-001（current）：R93 主轴=L3 修复续轮【换模三跑】。正题=T2 三跑（冻结模型 moonshotai/Kimi-K2-Instruct-0905；判据沿用 ADR-0092/0093；N<=3 严格串行）→判词达标启 README 双语行对齐（ADR-0093 预注册 established 版措辞誊抄）→readme-token 机器腿首跑+deprecate 再尝试（记账增权限缺口类型字段）。四条预注册结构：①kill criteria——任一跑复现 R92 签名（server_error/no_response/零 tool_calls）计入 N，N 尽不绿就地落 F-bug+轮内启动 B（r88-candidate 垂域死刑复核）开庭议程；②新建隔离 profile r93-kimi（不复用 r92-smoke——硬编旧模型且属 R92 证据工件）；③串行纪律入判词前置——429 一律判环境违规重跑不计入 N（feather_pro_plus 上限 4 units，Kimi-K2 实测 4 units/req）；④rider 链条件化——A 不绿则全顺延。B 处置=r88-candidate 写 sunset 条款（R95 前强制开庭）。
+
+【docs/adr 与 CONTEXT.md 相关条目】
+- ADR-0092：dsh L3 冒烟验收轮判据源——D1 三腿判据（L3a 装册绿=dump-config 单行可见/L3b 枚举绿=模型请求含 ans_* 工具载荷/L3c-min 执行绿=至少一次真调用）、D2 票序、D4 readme-token 两拍。
+- ADR-0093：R92 复跑立法——L3b 增补 established-via-fallback 词汇（transcript 现 >=1 个 ans_* tool_call 事件即证枚举发生）、冻结项（诱导句+模型 id+contextWindow+N<=3）、README 双版措辞预注册（established 版/fallback 收窄版）、机制不可用→F-bug 预注册、DEEPSEEK_BASE_URL rejected、凭证卫生（User-scope 注入/apiKeyEnv 名引用/泄漏探针=SHA-256 前缀 grep）。
+- ADR-0090：版本轴/消费轴正交+repin 真值表。CONTEXT.md 词块至 R92（Dormant-Route Activation/Established-Via-Fallback/Mechanism-Unavailable Branch/Dual-Wording Preregistration/User-Scope Credential Lift/Leak Probe/Shadow Dry-Run/Exact-Build Claim/Conditional-Ticket Purity/Readme-Token Claim 等）。
+
+【已实证事实（调研应在其上展开）】
+1. featherless 官方模型页（featherless.ai/models/moonshotai/Kimi-K2-Instruct-0905）明示：Context Size=32k（托管 SKU 截断窗，非原生 256K）、Concurrent Unit Cost=4、Tool Calling=Supported、FP8、in$0.6/out$2.5。Moonshot HF 原生 Context Length=256K（262144）——托管目录值与原生值不一致，须取托管值。
+2. 裸探针已证：Kimi-K2-Instruct-0905 直连→200+finish_reason=tool_calls+正确函数载荷；Kimi-K2-Instruct（非 0905）亦 200 应答（tool_calls 未专测）；Qwen/Qwen3-32B 为 reasoning 形态烧光预算零产出（R92 F-bug 签名复现非瞬态）。
+3. r92-smoke profile 的 cordis.patch.yml 两处硬编 Qwen/Qwen3-32B（providers.models+agent-default-model），该 profile 是 R92 证据工件。
+4. R91/R92 诱导句均为「请帮我搜索一下 deepseek dsh plugin 的最新功能」，目标工具=ans_* 搜索面（ans_search_web/ans_research_web 等五工具）。
+5. 机制面已两轮 established：dsh-llm-pi-ai dormant 路由被 profile providers 段激活+dump-config 单行可见；plugin add 冷启动装册链路已实证。
+6. R92 T2 的 transcript 通道：stream-json 机制 ESTABLISHED 但 model-request tools 载荷可见性从未实证（R91 T1 遗产）——L3b 主判据大概率走 fallback 通道。
+
+【待裁决子题（Q2 打包）】
+a. profile 构建参数确认：r93-kimi + providers.featherless={apiKeyEnv: DEEPSEEK_API_KEY, api: openai-completions, baseURL: https://api.featherless.ai/v1, models:[{id:'moonshotai/Kimi-K2-Instruct-0905', contextWindow:32768}]}+agent-default-model 覆写。
+b. 备份模型链：B1=预注册单链 [0905→Kimi-K2-Instruct]（0905 耗尽 N 后 preflight 验 Instruct tool_calls 再进诱导，N 重置；全灭→F-bug）vs B2=单模型死锁（0905 灭即 F-bug+B 议程）。
+c. 诱导句：复用 R91/R92 冻结句 vs 更换（跨轮 transcript 可比性 vs 句型对 Kimi 的适配）。
+d. contextWindow=32768（托管目录值）。
+e. r92-smoke 处置：冻结为证据工件零触碰。
+f. deprecate：记账增权限缺口类型字段——本轮若无权限则纯备准核销。
+g. R92 签名族扩充：finish_reason=length+content 空+零 tool_calls 计入同一签名（reasoning 形态等价表现）→计入 N。
+
+【调研要求】
+1. 重点检索工业界成熟落地心智模型：LLM failover 的 fallback 链设计（primary/secondary model chain、预注册 vs 现场发明的边界）；hosted-inference 托管 SKU 与原生模型能力差异的契约处理（contextWindow 取托管值的先例）；smoke test 的探针序列设计（preflight→install→config-dump→induce→verify 各段判据分工）；eval/smoke 中诱导提示词冻结与跨轮可比性的工程惯例；LLM 网关多模型配置中 contextWindow 声明错误的真实后果。
+2. 辩证评估 B1 vs B2（备份链是免疫抖动还是稀释 kill criteria 纪律）；诱导句复用 vs 适配新模型风格；以及任何我未列出的隐藏风险。
+3. 给出逐项明确推荐+理由+反驳论据+信息缺口。
