@@ -4,6 +4,27 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0094 r93: L3 修复续轮【换模三跑】（Kimi-K2-Instruct-0905 冻结臂 + README 双语行对齐 + readme-token 机器腿首跑）
+
+### Changed
+
+- **dsh L3 换模三跑（T2）**：冻结模型由 `Qwen/Qwen3-32B`（reasoning 形态吞 `max_tokens` 预算，R92 F-bug 签名）换为 `moonshotai/Kimi-K2-Instruct-0905`（上游裸探针实证 `200 + finish_reason=tool_calls + ans_search_web` 载荷）。新建隔离 profile `r93-kimi`（不复用 `r92-smoke`——其 patch 硬编 `Qwen/Qwen3-32B` 且属 R92 证据工件，冻结零触碰），patch 层注入 `providers.featherless`（`contextWindow: 32768` 取托管目录值）+ `agent-default-model` 覆写。三跑严格串行、N=3 全绿：L3a `established`（dump-config 8/8 断言）、L3b `established-via-fallback`（宿主 stream 通道不暴露 tools 枚举载荷，3 跑各 1 个 `ans_*` tool_call 侧证）、L3c-min `established`（`ans_search_web` 往返完成，result 为 8177B 真实检索载荷 `totalResults:10`；收窄判据下无未声明工具幻觉）。判词 `branch_label=A` / `verdict=established-via-fallback`，换臂 0 次。凭证泄漏探针双查（原文 + SHA-256 前缀）零命中。
+- **README 双语行对齐（T3）**：verified-hosts 表 dsh 行按预注册措辞版本 B 誊抄——版本 token `0.1.5-rc.2 → 0.1.7-rc.2` 对齐实测宿主，机制列更新为 R90 后的实际形态 `native registration (ctx.tools)`，状态列嵌入 `established-via-fallback: [L3b]` 判词与 `tool_call` 侧证注。中英双版锁步。
+
+### Fixed
+
+- **readme-token-pin 机器腿首跑（T4）**：`readme-token-pin` 断言检查器的专属机器腿由 shadow 模式转为**真实非 shadow 断言**首跑（`closeout-claims.json` 两条 `command: dsh --version` 实测比对，README.md / README.zh-CN.md 双份）——R92 显式挂账项核销。
+
+### Added
+
+- **ADR-0094 立法（T1）**：D1 T2 执行设计全包（隔离 profile 注入面 / B1 预注册单链与链级硬顶 / 诱导句与 N 预算 / max-tokens 预算下限判据 / 签名族三形态闭集 / L3c-min 判词收窄为「`ans_*` tool_call」/ 换臂三义务 / 凭证卫生）；D2 判词门控转向票（触发谓词 = 链尽判词显式成立，非「T2 未绿」；429 与环境违规不触发；内容白名单 = F-bug 登记 + 开庭议程；T-B/T3/T4 三条件票互斥求值谓词显式声明）；D3 README 措辞承继与四列表格形态调和；D4 `r88-candidate` sunset 硬截止（R95 前必须开庭 + R94 预通知义务 + owner 点名）；D5 deprecate 权限缺口三型枚举（`credential-scope` / `maintainer` / `org-owner`，每型含 fallback 行为字段）；D6 证据效力口径（本机门禁 advisory 非 blocking，登记 R94 复核）；D7 票序与 commit 结构；D8 Known-Non-Goals（多轮 tool_call ID 污染）。
+- **max-tokens 预算下限判据**：诱导轮 `max_tokens` 下限钉为 2048——T0 探针实证 `max_tokens: 8` 即触发 `finish_reason=length` 且 content 截断，证明极小预算下 `length` 形态与模型能力无关，故低于下限的 `length` 判环境违规不计 N。
+
+### Deferred
+
+- **r88-candidate 垂域死刑复核**：写入 sunset 条款——R95 前强制开庭，R94 收口批须在 registry `carried_log` 追加预通知并点名 owner `anysearch-eval`；开庭 ≠ 翻案（`reaffirm` / `revise` / `retire` 三果皆合法），结束无期限 rolling 候审。开庭主体在 R94/R95，本轮仅立法。
+- **常驻债续期**：`defer-r72-dsh-web-interactive-matrix` 主体维持 defer（patchReload:live + browser-turn 上游 `.d.ts` 键面仍缺席）；评测面（`defer-f17` 等）与常驻债清理维持本轮显式范围外。
+
 ## Unreleased — ADR-0093 r92: featherless 自定义上游 T2 复跑 + 售后收口轮（判据复用与 L3b 修订 + 凭证卫生 + readme-token 检查器接线）
 
 ### Changed
