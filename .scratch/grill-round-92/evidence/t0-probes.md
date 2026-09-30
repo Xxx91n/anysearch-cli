@@ -27,6 +27,9 @@
   - 状态: `401 Unauthorized`
   - 结论: 端点认证生效，伪造或缺位 Key 返回 401。
 
+> [!NOTE] 调和注记（端点状态与事实底账差异，覆盖 P4）
+> 决策账本 D-002 执行序段历史记录了前期草案假设（`/v1/models 404 Gone 双态`）；但在本轮 T0 现场实测中，Featherless 官方 API 已上线标准 OpenAI 兼容的 `/v1/models` 端点并返回 `200 OK`。从该端点返回的官方模型目录中，`Qwen/Qwen3-32B` 的元数据明确包含 `context_length: 32768` 与 `features.tool_use: true`。这构成了 ADR-0093 将 `contextWindow` 冻结为 `32768` 的直接实测依据，成功调和了账本历史记述与当前真实端点行为的漂移。
+
 ## 探针 4 — key 直连 200 实测
 - 目标端点: `POST https://api.featherless.ai/v1/chat/completions`
 - 目标模型: `Qwen/Qwen3-32B`

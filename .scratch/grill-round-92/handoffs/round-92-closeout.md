@@ -14,15 +14,15 @@ Stack: r92-grill on top of common base ad1c38b8 → main @ 49766cab
 |---|---|---|---|
 | T0 哨戒+基线快照 | f2be8015 (wst) chore | ✅ | dist-tags 快照（next=0.2.0-rc.2/latest=0.2.0-rc.2 无 stable→TC 不启）+ 五件探针归档 + 基线 check/test/ship-gate 三份快照 |
 | T1 判据立法 | e7a4a5c0 (xww) docs | ✅ | ADR-0093 立法（判据复用、L3b 修订、冻结项、双版措辞预注册、凭证卫生条款）+ adr/index 0093 行 |
-| T2 复跑执行 | 7db133f8 (ynl) chore | ⚠️ F-bug (分支 C) | L3a established（dump-config 单行与 patch 路由在架）；L3b 与 L3c-min 因上游服务异常 not-established；泄漏探针 passed；双工件落盘 |
+| T2 复跑执行 | 4e5ff6c5 (ynl) chore | ⚠️ F-bug (分支 C) | L3a established（dump-config 单行与 patch 路由在架）；L3b 与 L3c-min 因上游服务异常 not-established；泄漏探针 passed；双工件落盘 |
 | T3 README 对齐 | — docs | ⏭ 条件未达未启 | 判词为 F-bug（未达分支 B/降格档），依条件票纯度守则：未启不留痕（README 维持现状） |
-| T4 readme-token 接线 | c105f9e6 (vwo) fix | ✅ | `scripts/ship-gate.mjs` 接线 `readme-token-pin` 检查器（两拍节奏第二拍）+ shadow dry-run 验证与证据归档 |
-| T5 deprecate 尝试 | 5f9ab5e5 (kuw) chore | ℹ️ 尝试完毕 / 权限受限 | 6 版本枚举+单空格目标执行尝试；遇 E401/E404 权限闸如实记账；closeout-claims 双态措辞预注册 |
-| T6 收口件批 | 5bbc58ad (smr) docs | ✅ | ADR-0093 完成体 + CONTEXT 5 词引用锚 + registry 更态 + closeout-claims 7 项 + 轮报 + 终态戳 + CHANGELOG |
-| T7 门禁+审计 | — | ✅ | pnpm -r check exit 0 / pnpm -r test exit 0 / ship-gate --quick 全闭环 |
+| T4 readme-token 接线 | 4e475d4f (vwo) fix | ✅ | `scripts/ship-gate.mjs` 接线 `readme-token-pin` 检查器（两拍节奏第二拍）+ shadow dry-run 验证与证据归档 |
+| T5 deprecate 尝试 | 45637db6 (kuw) chore | ℹ️ 尝试完毕 / 权限受限 | 6 版本枚举+单空格目标执行尝试；遇 E401/E404 权限闸如实记账；closeout-claims 双态措辞预注册 |
+| T6 收口件批 | eaa2fe7e (smr) docs | ✅ | ADR-0093 完成体 + CONTEXT 7 词锚确认（词块已于 grill 票 wwm:69d37287 落地）+ registry 更态 + closeout-claims 7 项 + 轮报 + 终态戳 + CHANGELOG |
+| T7 门禁+审计 | — | ✅ | pnpm -r check exit 0 / pnpm -r test exit 0 / ship-gate --quick 全闭环；独立审计复跑复证六腿全绿 |
 | TC 条件票 | — | ⏭ 未触发 | T0 观测无 0.2.0 stable 晋升，一次定死不启 |
 
-注：but-id 列（wst/xww/ynl/vwo/kuw/smr）为唯一稳定锚；sha 锚已统一对齐至 landed 祖先链真实 git 对象。
+注：文内 sha 均为落笔时值；but-id（wst/xww/ynl/vwo/kuw/smr）为唯一稳定锚；land 后以 main git log 为准。
 
 ## 已核验的关键事实
 

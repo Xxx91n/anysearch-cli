@@ -846,11 +846,15 @@ function stepStaticAssertions() {
               const r = spawnSync(c.command, { cwd: ROOT, encoding: "utf8", shell: true, timeout: 10000 });
               expectedVer = (r.stdout ?? "").trim();
             }
+            if (!c.shadow && !expectedVer) {
+              fail('ADR-0092 D4: ' + tag + ' cannot resolve expected version (fail-closed)');
+            }
             if (c.shadow) {
-              report("info", 'readme-token-pin shadow dry-run (' + tag + '): declared=' + declaredVer + ', expected=' + expectedVer + ' (non-blocking)');
+              const matchState = (expectedVer && declaredVer === expectedVer) ? "MATCH" : "MISMATCH";
+              report("info", 'readme-token-pin shadow dry-run (' + tag + '): declared=' + declaredVer + ', expected=' + expectedVer + ' (' + matchState + ', non-blocking)');
               verified++;
             } else {
-              if (expectedVer && declaredVer !== expectedVer) {
+              if (declaredVer !== expectedVer) {
                 fail('ADR-0092 D4: ' + tag + ' declared version ' + declaredVer + ' != expected ' + expectedVer);
               }
               verified++;

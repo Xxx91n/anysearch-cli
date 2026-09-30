@@ -4,7 +4,7 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
-## Unreleased — ADR-0093 r92: featherless 自定义上游 T2 复跑 + 售后收口轮（判据复用与 L3b 修订 + 凭证卫生 + readme-token 检查器接线 + 小修批）
+## Unreleased — ADR-0093 r92: featherless 自定义上游 T2 复跑 + 售后收口轮（判据复用与 L3b 修订 + 凭证卫生 + readme-token 检查器接线）
 
 ### Changed
 
@@ -19,7 +19,7 @@ All notable changes to this project are recorded here. Format follows
 
 - **defer-r92-t2-featherless-upstream-f-bug**：T2 实机复跑因 Featherless 上游模型服务异常挂起 F-bug 登记，转下轮修复与模型源排查。
 - **defer-r92-readme-token-pin-machine-leg**：readme-token-pin 检查器专属机器腿首跑显性挂账至 R93。
-- **常驻债×5 显式续债**：web-interactive matrix 主体、approval-channel（headless 无 answerer 维持生效）等常驻条目显式续期。
+- **常驻债续期**：登记表显式续录 2 条在册条目（web-interactive matrix 主体、approval-channel headless 维持生效）carried_log；其余 3 项（domain-ownership、f16、f17）维持 open。
 
 ## Unreleased — ADR-0092 r91: dsh L3 冒烟验收 + 售后收口轮（L3 判据立法 + 宿主升版 0.1.7-rc.2 + README 行对齐 + 小修批）
 

@@ -37,7 +37,7 @@ R91（ADR-0092）完成 dsh L3 判据立法与冒烟尝试，产出 F-bug 判词
 
 **模型与环境冻结项**:
 - 模型 ID：`Qwen/Qwen3-32B`（featherless 官方点名原生支持 tool-calling 家族）。
-- 上下文窗口：`contextWindow: 32768`（按官方目录 /v1/models 声明字段）。
+- 上下文窗口：`contextWindow: 32768`（按实测官方目录 `GET /v1/models` 实返 `context_length: 32768` 字段冻结；调和注记：调和了决策账本 D-002 执行序段历史记录的 `/v1/models 404 Gone` 前期草案假设，以 T0 现场实测 200 OK 真实元数据为准）。
 - 上游路由：`https://api.featherless.ai/v1`，协议 `openai-completions`。
 - `DEEPSEEK_BASE_URL` rejected 条款：featherless 官方仅暴露 OpenAI 面，无 Anthropic Messages 面；env 覆写存在翻译层断点与全局污染副作用，显式记录为 Rejected，不作为备选方案。
 
@@ -84,7 +84,7 @@ established-via-fallback: [L3b]
 | T3【条件票】 | README 双语行对齐（仅判词达标启用，按预注册誊抄） | D-001/D-003 | docs |
 | T4 | readme-token 检查器接线 + shadow dry-run（无条件票） | D-001/D-003 | fix |
 | T5 | deprecate 双空格执行尝试（外发，EOTP 记账） | D-001 | chore |
-| T6 | 收口件批（ADR 完成体+CONTEXT+claims+轮报+终态戳+CHANGELOG） | D-001~D-003 | docs |
+| T6 | 收口件批（ADR 完成体+CONTEXT 7 词确认+claims+轮报+终态戳+CHANGELOG） | D-001~D-003 | docs |
 | T7 | 门禁+审计 LOOP（check/test/ship-gate 全闭环） | D-003 | — |
 | TC | 0.2.0 stable 目击（T0 一次定死未目击，不启不留痕） | D-001 | — |
 
@@ -120,12 +120,12 @@ established-via-fallback: [L3b]
 |---|---|---|---|---|
 | T0 哨戒+基线+探针 | f2be8015 (wst) | chore | ✅ 完成 | `.scratch/grill-round-92/evidence/t0-baseline.md` + `t0-probes.md` (dist-tags 快照/dsh 维持 0.1.7-rc.2/check+test 全绿/五件探针) |
 | T1 判据立法 | e7a4a5c0 (xww) | docs | ✅ 完成 | `docs/adr/0093-*` + `docs/adr/index.md` 0093 行 (ADR-0093 立法完成) |
-| T2 复跑执行 | 7db133f8 (ynl) | chore | ⚠️ F-bug (分支 C) | `.scratch/grill-round-92/evidence/t2-l3-smoke.md` + `t2-verdict.json` + `t2-transcript.jsonl` + `t2-stderr.log` (L3a established, L3b not-established 因上游异常, L3c-min not-established, 泄漏探针 passed) |
+| T2 复跑执行 | 4e5ff6c5 (ynl) | chore | ⚠️ F-bug (分支 C) | `.scratch/grill-round-92/evidence/t2-l3-smoke.md` + `t2-verdict.json` + `t2-transcript.jsonl` + `t2-stderr.log` (L3a established, L3b not-established 因上游异常, L3c-min not-established, 泄漏探针 passed) |
 | T3 README 对齐 | — | docs | ⏭ 条件未达未启 | 判词为 F-bug (< 降格档)，条件票纯度守则：未启不留痕 (README.md / README.zh-CN.md 维持原样) |
-| T4 readme-token 接线 | c105f9e6 (vwo) | fix | ✅ 完成 | `scripts/ship-gate.mjs` (readme-token-pin 接线 stepDocClaims) + `.scratch/grill-round-92/evidence/t4-shadow-dryrun.md` (shadow dry-run 记档, 机器腿挂账 R93) |
-| T5 deprecate 尝试 | 5f9ab5e5 (kuw) | chore | ℹ️ 尝试完毕 / 权限受限 | `.scratch/grill-round-92/evidence/t5-deprecate.md` (6 版本枚举+单空格目标, E401/E404 如实记账, closeout-claims 双态措辞预注册) |
-| T6 收口件批 | 本批 | docs | ✅ 完成 | CONTEXT 5 词锚 + registry 更态 + closeout-claims 7 项 + 轮报 + 终态戳 + CHANGELOG |
-| T7 门禁+审计 | — | — | 待执行 (门禁无独立 commit) | check + test + ship-gate 全绿 |
+| T4 readme-token 接线 | 4e475d4f (vwo) | fix | ✅ 完成 | `scripts/ship-gate.mjs` (readme-token-pin 接线 stepDocClaims) + `.scratch/grill-round-92/evidence/t4-shadow-dryrun.md` (shadow dry-run 记档, 机器腿挂账 R93) |
+| T5 deprecate 尝试 | 45637db6 (kuw) | chore | ℹ️ 尝试完毕 / 权限受限 | `.scratch/grill-round-92/evidence/t5-deprecate.md` (6 版本枚举+单空格目标, E401/E404 如实记账, closeout-claims 双态措辞预注册) |
+| T6 收口件批 | eaa2fe7e (smr) | docs | ✅ 完成 | CONTEXT 7 词锚确认（词块已于 grill 票 wwm:69d37287 落地）+ registry 更态 + closeout-claims 7 项 + 轮报 + 终态戳 + CHANGELOG |
+| T7 门禁+审计 | — | — | ✅ 已执行（门禁无独立 commit） | check 0 / test 0 / ship-gate 65-0 全闭环；独立审计复跑复证六腿全绿 |
 | TC 条件票 | — | — | ⏭ 未触发 | T0 目击无 0.2.0 stable 晋升 |
 
-注：but-id 列（wst/xww/ynl/vwo/kuw）为唯一稳定锚；sha 锚已统一对齐至 landed 祖先链真实 git 对象。
+注：文内 sha 均为落笔时值；but-id（wst/xww/ynl/vwo/kuw/smr）为唯一稳定锚；land 后以 main git log 为准。
