@@ -259,14 +259,24 @@ ADR-0093 的预注册行是三列（`| DeepSeek Harness | 0.1.7-rc.2 | native re
 | T2 三跑执行 | `pzv` | evidence | ✅ **established-via-fallback**（branch_label=A） | `evidence/t2/t2-verdict.json` + `t2-transcript.md` + `t2-transcript.jsonl` + `turn1..3.jsonl` + `dump-config.log` + `mcp-direct-toolcall.log` |
 | T-B 转向票 | — | docs | ⏭ **未启**（谓词 `verdict == "F-bug"` 为假） | 判词为 `established-via-fallback`；内容白名单与开庭议程均未触碰 |
 | T3 README 双语行对齐 | `qpu` | docs | ✅ 完成 | `README.md:227` + `README.zh-CN.md:217`（措辞版本 B 誊抄） |
-| T4 机器腿首跑 | `zln`+`sss`+`syr` | evidence | ✅ 完成（12/12 green） | `closeout-claims.json` 登记与 token 校正 + `evidence/t4/t4-machine-leg.md` + `ship-gate-machine-leg.log` |
+| T4 机器腿首跑 | `zln`+`sss`+`syr` | evidence | ✅ 完成（T4 时点 12/12 green；T5 增第 13 条、轮报增第 14 条，终态 14/14） | `closeout-claims.json` 登记与 token 校正 + `evidence/t4/t4-machine-leg.md` + `ship-gate-machine-leg.log` |
 | T5 deprecate | `rsr` | chore | ℹ️ 纯备准（`credential-scope` 权限缺口） | `evidence/t5-deprecate.md` + `t5-deprecate-probe.json` |
 | T6-2 registry 更态 | `zqq` | docs | ✅ 完成 | `docs/deferred-registry.json`（defer-r92 两项核销 + r88 sunset 条款 + r93 deprecate 条目） |
 | T6-4 CHANGELOG | `pqu` | docs | ✅ 完成 | `CHANGELOG.md` r93 条目 |
-| T6-1 ADR 完成体 | 本 commit | docs | ✅ 完成 | 本节（逐票 but-id 补记） |
-| T6 轮报+终态戳 | 待补 | docs | 待补 | 待补 |
-| T7 门禁+审计 | — | — | 待补 | 待补 |
+| T6-1 ADR 完成体 | `zus` | docs | ✅ 完成 | 本节（逐票 but-id 补记）+ 收口交接件 `handoffs/round-93-closeout.md` |
+| T6 轮报+终态戳 | `pwx` | docs | ✅ 完成 | `reports/2026-09-30-report.md`（终态戳落轮报与本节；**未写** `handoffs/next-round.md` —— 该文件归属 `r93-grill` lane in-flight commit `wsy`，追加需重排他 lane，见「执行期偏差」§2） |
+| T7 门禁+审计 | `syy`+`klw` | evidence | ✅ **83 pass / 0 fail / 0 warn**（exit 0） | `evidence/t7/ship-gate.log` + `check.log` + `test.log`；`syy`=path-lint 机外路径 marker 补齐，`klw`=门禁全链日志归档 |
 | TC 条件票 | — | — | ⏭ **未触发** | T0 目击无 `0.2.0` stable（`latest` = `next` = `0.2.0-rc.2`），窗口一次定死 |
+
+### 审计返修（round-93-audit-closeout 打回 F1 / F2）
+
+| ID | 发现 | 根因 | 返修 |
+|---|---|---|---|
+| F1 | claims 实物 14 条，已归档门禁仅 13/13 | 收口时序缺陷：第 14 条 claim（`r93-report-closeout`）在**最后一次门禁跑之后**才登记，而那次跑的输出**未归档** —— 归档的 `evidence/t7/ship-gate.log` 是更早的 13/13 那次。声明 14/14 与归档证据脱节 | 重跑门禁并归档，使归档日志本身承载 `closeout-claims r93: 14/14` |
+| F2 | 票序节 T6 / T7 仍「待补」，T6-1 写「本 commit」 | 收口批分层时 ADR 完成体先于轮报与门禁落盘，票序节写完即冻结，后续票的回填未做 | 回填 `zus`（T6-1）/`pwx`（T6 轮报+终态戳）/`syy`+`klw`（T7），并补 T4 计数时间线 |
+
+**返修不改变判词。** 判词仍为 `established-via-fallback` / `branch_label=A`，逐字引自 `evidence/t2/t2-verdict.json`。
+F1/F2 均为**记账面**缺陷（非判词面、非机制面）：F1 是证据归档时序，F2 是文书回填。
 
 ### 执行期票序调整（如实记账）
 
