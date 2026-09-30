@@ -1,0 +1,66 @@
+{
+  "schema": "anysearch/court-verdict@1",
+  "round": 94,
+  "target": "r88-candidate-vertical-direction-redeliberation",
+  "owner": "anysearch-eval",
+  "evaluated_at": "2026-09-30",
+  "preregistered_adr": "docs/adr/0095-architecture-grill-round-94-r88-candidate-vertical-direction-court-session.md",
+  "stage_2_protocol": "Nature Registered Reports (B3 hybrid)",
+  "predicates": {
+    "reaffirm": {
+      "metric_negative": true,
+      "subject_exists": true,
+      "controllable_anchor_count": 2,
+      "has_controllable_anchor": true,
+      "result": true
+    },
+    "revise": {
+      "criterion_incommensurate": true,
+      "repair_path_attributable": true,
+      "substantive_progress_on_live_check": false,
+      "result": false
+    },
+    "retire": {
+      "subject_weak_or_superseded": false,
+      "only_uncontrollable_external_signals": false,
+      "result": false
+    }
+  },
+  "tie_breaker": {
+    "rule": "controllable_anchors >= 1 -> reaffirm; == 0 -> retire",
+    "anchors_count": 2,
+    "verdict": "reaffirm"
+  },
+  "final_verdict": "reaffirm",
+  "disposition": "mechanical-outcome",
+  "registry_target_status": "formally-declined",
+  "resurrection_conditions": [
+    {
+      "id": 1,
+      "name": "dsh stable 晋升",
+      "controllability": "semi-controllable",
+      "verifier": "npm view @deepseek-ai/dsh dist-tags --json"
+    },
+    {
+      "id": 2,
+      "name": "上游补垂域参数词表",
+      "controllability": "external-uncontrollable",
+      "verifier": "upstream contract notice"
+    },
+    {
+      "id": 3,
+      "name": "cn_code 契约补齐",
+      "controllability": "semi-controllable",
+      "owner": "anysearch-eval",
+      "verifier": "next matrix revision (corpus unfreezing)"
+    },
+    {
+      "id": 4,
+      "name": "新评测矩阵修订版读数",
+      "controllability": "pure-internal-controllable",
+      "owner": "anysearch-eval",
+      "verifier": "readout-delta.mjs matrix revision"
+    }
+  ],
+  "reason": "R86 实测负读数（P=0.0378、净 −0.125）确凿；垂域三 ADR 代码与评测链路在案存续；存在内部纯可控复活锚（条件 ④），满足 reaffirm 充分条件。依据 tie-breaker 仲裁及 B3 机制机械落果，裁定为 reaffirm，registry 落地形态转为 formally-declined，废止原 |ΔarmHostHit|≳0.4 判据并留存历史原由。"
+}
