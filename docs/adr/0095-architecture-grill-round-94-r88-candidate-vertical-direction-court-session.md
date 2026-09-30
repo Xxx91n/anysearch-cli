@@ -120,3 +120,40 @@ R86 实测为负新事实下，「维持 defer」与「方向撤销」的证据�
 - 终结 r88-candidate 候审项长期以来的无限期候审态，使 sunset 机制具有可执行的程序闭环。
 - 确立「快照/活查分级」与「开庭即预通知」双动作规范，为后续类似候审标的提供标准化立法先例。
 - ship-gate 升级为 blocking，本轮 T7 将接受合入门禁的严格考验。
+
+## Execution Record & Verdict Completion
+
+### 1. 终审判词与落果结果
+- **开庭审理判词**：`reaffirm`（充分条件谓词全命中，机械落果）
+- **registry 落地态**：`formally-declined`
+- **原裁判尺状态**：`|ΔarmHostHit|≳0.4` 废止（留存历史原由说明）
+- **具名复活条件集**：
+  1. 条件 ①：dsh stable 晋升（半可控，npm registry tags 机检）
+  2. 条件 ②：上游补垂域参数词表（纯外部不可控）
+  3. 条件 ③：cn_code 契约补齐（半可控，owner: anysearch-eval）
+  4. 条件 ④：新评测矩阵修订版读数（纯内部纯可控，owner: anysearch-eval）
+
+### 2. 票序与 commit 双锚表（落笔时值）
+
+| 票 | but-id | git sha (落笔时值) | 类型 | 结果 | 产物与实证索引 |
+|---|---|---|---|---|---|
+| **T0 哨戒+基线** | `nmz` | `53e9dc76` | chore | ✅ PASS | `evidence/t0/t0-baseline.md` + check/test/ship-gate 三腿日志 |
+| **T1-1 carried_log 先行** | `kvs` | `bcde2ba9` | docs | ✅ PASS | `docs/deferred-registry.json` 预通知指针条目落盘 |
+| **T1-2 ADR-0095 立法** | `zwl` | `317fe6e8` | docs | ✅ PASS | `docs/adr/0095-*.md` + `docs/adr/index.md` 开庭立法本体 |
+| **T2 开庭取证** | `zss` | `6d8a0102` | evidence | ✅ PASS | `evidence/t2/` 卷宗 01–05 + 双侧证词登记表初稿 |
+| **T3a 登记表落盘** | `mzp` | `dc6d5d48` | evidence | ✅ PASS | `evidence/t3a/evidence-register-table.md`（锚计数预标注冻结） |
+| **T3b 判词票** | `vor` | `21fe1ec1` | docs | ✅ PASS | `evidence/t3b/t3b-court-verdict.md` + `verdict.json`（reaffirm 机械落果） |
+| **T4 落地裁定** | `lkp` | `056d4e0a` | docs | ✅ PASS | `docs/deferred-registry.json` 状态变更为 formally-declined |
+| **T5 deprecate 备准** | `lsm` | `eae2bd2d` | chore | ✅ PASS | `evidence/t5-deprecate.md` 纯备准续挂 |
+| **T6-1 完成体回填** | （本票） | （本票） | docs | ✅ PASS | `docs/adr/0095-*.md` 回填完成体 |
+
+*锚定纪律声明：but-id 为本仓跨环境唯一稳定锚，git sha 遵循「落笔时值」口径。*
+
+### 3. carried_log 必备字段集机械核对
+
+经对 `docs/deferred-registry.json` 中 `r88-candidate-vertical-direction-redeliberation` 的 carried_log 数组进行机械核对：
+- **条目（id）**：`r88-candidate-vertical-direction-redeliberation` 吻合
+- **责任主体（owner）**：`anysearch-eval` 吻合
+- **触发规则（trigger_rule）**：`ADR-0094 D4` 与 `ADR-0095 D9` 吻合
+- **时间戳（at）**：`2026-09-30` 吻合
+- **JSON 规范性**：严格通过 `node scripts/governed-json.mjs` 单空格缩进与 LF 校验。
