@@ -1014,7 +1014,7 @@
    "owner": "anysearch-eval",
    "opened_at": "2026-09-28",
    "review_cadence": "hard-deadline: must convene before R95",
-   "status": "open",
+   "status": "formally-declined",
    "evidence": "R86 decision-record 具名重开条件未达；R87 goal 显式范围外登记候场",
    "deadline": "2026-09-30 (R95 之前必须开庭)",
    "pre_notification_obligation": "R94 收口批须在 carried_log 追加预通知条目并点名 owner anysearch-eval，不得静默到期",
@@ -1031,6 +1031,47 @@
      "owner": "anysearch-eval",
      "trigger_rule": "ADR-0094 D4",
      "note": "R94 T1 预通知指针条目（先行 commit）：履行 ADR-0094 D4 预通知义务，具名 owner anysearch-eval，自证时序角色先于开庭立法本体，固化规则见 ADR-0095。"
+    },
+    {
+     "at": "2026-09-30",
+     "round": 94,
+     "owner": "anysearch-eval",
+     "trigger_rule": "ADR-0095 D9",
+     "note": "R94 T4 落地裁定：按开庭判词 reaffirm 机械落果，状态变更为 formally-declined，原判据废止留理由，正式确立四项具名复活条件。"
+    }
+   ],
+   "closed_by": "ADR-0095",
+   "closed_at": "2026-09-30",
+   "closed_by_adr_path": "docs/adr/0095-architecture-grill-round-94-r88-candidate-vertical-direction-court-session.md",
+   "verdict": "reaffirm",
+   "former_criterion_status": "repealed",
+   "former_criterion_repeal_reason": "原重开门槛 |ΔarmHostHit|≳0.4 宣告废止：R86 洁净测量实测确证负效应（净 −0.125、P=0.0378）；L3b primary stream-json 枚举腿结构性死亡不可观测；未来重开转向以新评测矩阵修订版读数及等价性论证为基础的复活条款。",
+   "resurrection_conditions": [
+    {
+     "id": 1,
+     "condition": "dsh stable 晋升",
+     "controllability": "semi-controllable",
+     "verifier": "npm view @deepseek-ai/dsh dist-tags --json"
+    },
+    {
+     "id": 2,
+     "condition": "上游补垂域参数词表",
+     "controllability": "external-uncontrollable",
+     "verifier": "upstream contract notice"
+    },
+    {
+     "id": 3,
+     "condition": "cn_code 契约补齐",
+     "controllability": "semi-controllable",
+     "owner": "anysearch-eval",
+     "verifier": "next matrix revision (corpus unfreezing)"
+    },
+    {
+     "id": 4,
+     "condition": "新评测矩阵修订版读数",
+     "controllability": "pure-internal-controllable",
+     "owner": "anysearch-eval",
+     "verifier": "readout-delta.mjs matrix revision"
     }
    ]
   },
