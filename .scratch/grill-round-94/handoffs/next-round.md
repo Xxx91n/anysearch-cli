@@ -73,3 +73,5 @@ repin / 垂域语料修复票主体（r86 两项仅作证据）/ web-matrix 主�
 ## 终态戳位
 
 收口完成后在本文件尾追加：「R94 终态 — 开庭判词:___（reaffirm/revise/retire/pending-user-verdict/复议轮降级）| 票序完成:___ | 挂账移交:___」
+
+R94 终态 — 开庭判词: reaffirm（充分条件谓词命中，机械落果） | 票序完成: T0 T1 T2 T3a T3b T4 T5 T6 T7（T0-F/TC 未触发） | 挂账移交: defer-r93-deprecate-credential-scope（6 条备准命令纯备准续挂待用户亲触）· 垂域方向四项复活条件集（owner: anysearch-eval）

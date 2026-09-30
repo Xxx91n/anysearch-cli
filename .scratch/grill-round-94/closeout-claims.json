@@ -1,0 +1,129 @@
+{
+  "schema": "anysearch/closeout-claims@1",
+  "round": 94,
+  "claims": [
+    {
+      "id": "r94-t0-watch",
+      "kind": "symbol",
+      "claim": "T0 哨戒：dsh dist-tags 复观 latest=next=0.2.0-rc.2 无 stable，TC 未启；check/test 全绿；全量 ship-gate 预检",
+      "file": ".scratch/grill-round-94/evidence/t0/t0-baseline.md",
+      "tokens": [
+        "0.2.0-rc.2",
+        "dist-tags",
+        "TC 谓词未触发"
+      ]
+    },
+    {
+      "id": "r94-t1-carried-log",
+      "kind": "symbol",
+      "claim": "T1-1 carried_log 先行：docs/deferred-registry.json 追加预通知指针条目，自证时序先于立法，具名 owner anysearch-eval",
+      "file": "docs/adr/0095-architecture-grill-round-94-r88-candidate-vertical-direction-court-session.md",
+      "tokens": [
+        "carried_log 必备字段集机械核对",
+        "anysearch-eval",
+        "ADR-0094 D4"
+      ]
+    },
+    {
+      "id": "r94-t1-adr",
+      "kind": "symbol",
+      "claim": "T1-2 ADR-0095 开庭立法：议程五段+B3 判词归属+三果谓词可控性+tie-breaker+快照/活查分级+cn_code 具名步骤+stream-json 版本指纹",
+      "file": "docs/adr/0095-architecture-grill-round-94-r88-candidate-vertical-direction-court-session.md",
+      "tokens": [
+        "议程五段式结构与程序出口",
+        "B3 混合判词归属与 exploratory 区机制",
+        "快照/活查分级纪律与具名步骤",
+        "tie-breaker"
+      ]
+    },
+    {
+      "id": "r94-t2-evidence",
+      "kind": "path",
+      "claim": "T2 开庭取证：五面卷宗落盘，段 0 资格核验+段 1 五面取证文档全在位",
+      "paths": [
+        ".scratch/grill-round-94/evidence/t2/01-adr0088-rejection-archive.md",
+        ".scratch/grill-round-94/evidence/t2/02-vertical-three-adrs-inventory.md",
+        ".scratch/grill-round-94/evidence/t2/03-stream-json-dist-inspection.md",
+        ".scratch/grill-round-94/evidence/t2/04-r86-deferred-and-cn-code-live-check.md",
+        ".scratch/grill-round-94/evidence/t2/05-dsh-environment-tags.md",
+        ".scratch/grill-round-94/evidence/t2/t2-court-evidence-dossier.md"
+      ]
+    },
+    {
+      "id": "r94-t3a-register",
+      "kind": "symbol",
+      "claim": "T3a 证据登记表落盘：双侧证词全文+未命中条目全文+锚计数预标注冻结（可控锚>=1）",
+      "file": ".scratch/grill-round-94/evidence/t3a/evidence-register-table.md",
+      "tokens": [
+        "T3a 证据登记表全文",
+        "锚计数取证时刻预标注（冻结）",
+        "锚计数冻结声明"
+      ]
+    },
+    {
+      "id": "r94-t3b-verdict-json",
+      "kind": "field",
+      "claim": "T3b 终审判词落果：verdict.json 记录机械落果 reaffirm",
+      "file": ".scratch/grill-round-94/evidence/t3b/verdict.json",
+      "field": "final_verdict",
+      "expect": "reaffirm"
+    },
+    {
+      "id": "r94-t3b-verdict-doc",
+      "kind": "symbol",
+      "claim": "T3b 判词文书：段 2 判据先审确权，段 3 充分条件谓词求值命中，机械落果 reaffirm",
+      "file": ".scratch/grill-round-94/evidence/t3b/t3b-court-verdict.md",
+      "tokens": [
+        "T3b 开庭判词文书",
+        "机械落果",
+        "判据先审裁定"
+      ]
+    },
+    {
+      "id": "r94-t4-registry",
+      "kind": "symbol",
+      "claim": "T4 落地裁定：deferred-registry.json 中 r88 状态变更为 formally-declined，确立四项具名复活条件",
+      "file": "docs/deferred-registry.json",
+      "tokens": [
+        "formally-declined",
+        "r88-candidate-vertical-direction-redeliberation",
+        "dsh stable 晋升",
+        "新评测矩阵修订版读数"
+      ]
+    },
+    {
+      "id": "r94-t5-deprecate",
+      "kind": "symbol",
+      "claim": "T5 deprecate 备准：权限缺口分型 credential-scope（npm whoami E401），6 版本命令清单纯备准续挂，EOTP 待用户亲触",
+      "file": ".scratch/grill-round-94/evidence/t5-deprecate.md",
+      "tokens": [
+        "credential-scope",
+        "纯备准续挂",
+        "EOTP 待用户亲触"
+      ]
+    },
+    {
+      "id": "r94-t6-adr-completion",
+      "kind": "symbol",
+      "claim": "T6-1 ADR-0095 完成体回填：判词 reaffirm、票序 but-id 双锚表与 carried_log 必备字段集机械核对",
+      "file": "docs/adr/0095-architecture-grill-round-94-r88-candidate-vertical-direction-court-session.md",
+      "tokens": [
+        "Execution Record & Verdict Completion",
+        "终审判词与落果结果",
+        "票序与 commit 双锚表"
+      ]
+    },
+    {
+      "id": "r94-t6-report",
+      "kind": "symbol",
+      "claim": "T6-3 轮报落盘：开庭判词 reaffirm、验收标准逐项对照、逐票终态与可复跑证据摘要、终态戳",
+      "file": ".scratch/grill-round-94/reports/2026-09-30-report.md",
+      "tokens": [
+        "reaffirm",
+        "启动并测活软件进程",
+        "各平台 test 闭环",
+        "终态戳"
+      ]
+    }
+  ]
+}
