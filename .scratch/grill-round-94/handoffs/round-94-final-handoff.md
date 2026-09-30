@@ -61,3 +61,14 @@
 ## 建议调用的 skills（下一 Agent）
 
 `$grill-me` / `$grill-with-docs`（开新轮质询）· `$to-spec` / `$to-tickets`（落票）· `$implement`（实施）· `$code-review`（双轴复审）· `$handoff`（收口交接）· `$but`（版本控制）。
+
+---
+
+## 合入主线与分支清理（LOOP3 收尾）
+
+- `but land r94-court-session --whole-stack` → 整栈（含 `r94-grill`）已直落 `origin/main`。
+- `origin/main` 现为 `bfe9645c`（`docs(r94-audit-loop3)`）；本地 `main` 已同步同 commit。
+- R94 全部提交此前从未外发，本次为该轮首次且唯一一次 push。
+- LOOP3 修复后硬验收重跑：build 5/5 · check 8/8 · pack exit 0 · test 13/13 · ship-gate **83 pass / 0 fail / 0 warn**（path-lint 585 篇 clean、claims 11/11、95 ADRs、19/19 rounds、gitignore-drift clean）。
+- GitButler 已自动清理落地分支；本地仅余 `main`、`gitbutler/workspace`、`gitbutler/target`（后两者为 GitButler 机制分支，属正常常驻）。
+- 远程仅 `origin/main`；无遗留远程分支。tags 为历史发布标签（v0.1.0 等），未新增。
