@@ -42,7 +42,7 @@ L3a `established` · L3b `established-via-fallback` · L3c-min `established` · 
 
 ## 坑位警告（R93 实际踩到 + 返修教训，下轮直接绕开）
 
-继承 `%TEMP%\r93-handoff-next-round.md` 全部 14 条（含返修新增 3 条），要点：
+继承 `%TEMP%\r93-handoff-next-round.md` 全部 14 条（含返修新增 3 条），要点：<!-- machine-local: %TEMP% 环境变量路径为机外路径 @ 2026-09-30 -->
 
 1. `dsh plugin add` 必须**绝对路径**（相对路径以 profile 目录为基准 → ENOENT）。
 2. ship-gate step 0 要求工作区干净；跑门禁前挪走未提交产物。
@@ -82,7 +82,7 @@ repin / 垂域死刑复核主体（例外=sunset 预通知+开庭）/ r72 web-ma
 | 判词 | `.scratch/grill-round-93/evidence/t2/t2-verdict.json` |
 | 门禁登记 | `.scratch/grill-round-93/closeout-claims.json`（14 条） |
 | 挂账 | `docs/deferred-registry.json` |
-| 坑位全集 | `%TEMP%\r93-handoff-next-round.md`（14 条） |
+| 坑位全集 | `%TEMP%\r93-handoff-next-round.md`（14 条） |<!-- machine-local: %TEMP% 环境变量路径为机外路径 @ 2026-09-30 -->
 
 ## Suggested skills
 

@@ -19,7 +19,7 @@
 - defer-r86 两项 open：corpus-param-contract（vert-f1105 缺 cn_code）/anon-quota-nudge（permanent）——开庭吸收为证据非议题。
 - defer-r93-deprecate-credential-scope open：6 条备准命令在 .scratch/grill-round-93/evidence/t5-deprecate.md §3（EOTP 用户亲触，不代跑）。
 - profiles 残留：r92-smoke（R92 证据工件冻结）+r93-kimi（R93 工件）——本轮均零触碰。
-- R93 审计坑位全集 14 条：%TEMP%93-handoff-next-round.md（含返修 3 条：门禁输出勿重定向进仓/but commit 显式点名文件/暂存路径拼接核对）。<!-- machine-local: %TEMP% 环境变量路径为机外路径 @ 2026-09-30 -->
+- R93 审计坑位全集 14 条：%TEMP%\93-handoff-next-round.md（含返修 3 条：门禁输出勿重定向进仓/but commit 显式点名文件/暂存路径拼接核对）。<!-- machine-local: %TEMP% 环境变量路径为机外路径 @ 2026-09-30 -->
 
 ## 票序（逐票声明 D-xxx 覆盖）
 
