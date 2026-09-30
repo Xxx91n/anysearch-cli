@@ -1,0 +1,36 @@
+你是调研顾问。项目=anysearch-cli（信息专精 Agent CLI，遵循 AnySearch 垂直领域理念），pnpm monorepo，发布面=@anysearch-cli/cli@0.1.0+@anysearch-cli/dsh-plugin@0.1.0，宿主面=dsh（@deepseek-ai/dsh 0.1.7-rc.2）。工作流=烤问轮（R90~R93 各轮=grill→决策账本 D-xxx→计划 T0~T7→ADR 立法→执行→审计收口）。
+
+【decision-ledger 全部 current 记录】
+R94 账本当前为空（本轮首问）。承上 R93 账本（仍具约束力的结论）：
+- R93 D-001: 主轴=L3 修复续轮换模三跑（Kimi-K2-Instruct-0905），r88-candidate 写 sunset 条款（R95 前必须开庭+R94 预通知义务），显式范围外含垂域复核主体/tag/push/publish/pathlint 解冻。
+- R93 D-002: T2 执行设计（r93-kimi profile、B1 链、L3c 收窄 ans_* only、签名族三形态、429=环境违规、≥2 换臂复盘闸）。
+- R93 D-003: 票序 T0~T7+T-B+TC；d5 deprecate 默认纯备准；d7 保守默认=本机门禁证据 advisory 非 blocking+下轮复核登记。
+以上全部已执行完毕：判词 established-via-fallback/branch A，审计 PASS，已 land+push 至 origin/main（85403a20）。
+
+【docs/adr 与 CONTEXT.md 现有条目】
+ADR 94 部+index。最新 ADR-0094（R93 立法）：D4=r88 sunset 条款（R95 前必须开庭，预通知=R94 收口批在 registry carried_log 追加+点名 owner anysearch-eval，不得静默到期；开庭≠翻案，reaffirm/revise/retire 三果合法，维持 defer 不再是无期限默认态）；D6=证据效力口径（本机门禁=advisory 非 blocking，R94 须复核是否升 blocking）。相关上游：ADR-0088（R87 发布收口轮，r88 候选立项来源）、ADR-0084（垂域贯通）、ADR-0085（vertical-eval leg）、ADR-0059 D7（domain-ownership）。
+CONTEXT.md 词块至 R93（8 词：Fallback Chain Hard-Top/Arm-Switch Audit Trail/Hosted Context Window/Failure-Signature Family/Verdict-Gated Pivot Ticket/Sunset Hard-Deadline/Permission-Gap Typology/Advisory-vs-Blocking Evidence）。更早词块含 Established-Via-Fallback/Mechanism-Unavailable Branch/Shadow Dry-Run/Leak Probe 等。
+
+【registry open=14】
+① r88-candidate-vertical-direction-redeliberation【正题候选，候审 5 轮】：prefer-capable 具名重开条件 |ΔarmHostHit|≳0.4 未达，作正题候选候审（不复活加权问）；sunset 条款已写入（deadline R95、owner anysearch-eval、carried_log R93 条）。
+② defer-r93-deprecate-credential-scope：deprecate 双空格 6 版本（@anysearch-cli/cli@0.0.3~0.0.8）单空格修正，6 条备准命令待用户亲触 EOTP。
+③ defer-r86-anysearch-corpus-param-contract：语料格 vert-f1105 欠上游 tag 契约必填参数（finance.fundamental 需 cn_code），矩阵@2 判 unmeasured。
+④ defer-r86-anysearch-anon-quota-nudge：上游匿名配额边界形态已查明（auto-provisioning 凭证签发文本），provider 归类 permanent。
+⑤ defer-r84-ip-fifth-domain：ip 第五域语料建集（触发=上游为 ip 子域补结构化参数词表）。
+⑥ defer-f17-quarantine-ids：eval-quarantine 金样两例命名未落。
+⑦ defer-r81-anysearch-rest-route-removed：REST /v1/search 下线记录与复活监控。
+⑧ 常驻债：defer-anysearch-domain-ownership（法律）、f16-macos 崩溃、r72 web-matrix、r72 approval-channel、r74 logo 位图、r75 esm-arm、r71 transformers 幽灵依赖。
+
+【R93 后新事实】
+- L3b primary 判据结构性不可观测：dsh stream-json channel 不暴露 model-request tools 枚举（3 轮 0 出现），判词靠 fallback 判据（每轮≥1 ans_* tool_call）成立——枚举腿在该宿主永远无法直接取证（可作挂账或上游诉求）。
+- README 双语行已落地 established-via-fallback 措辞；readme-token-pin 机器腿 14/14 真跑通过。
+- 审计 LOOP2 PASS；返修自伤 3 处已复原记账（门禁输出勿重定向进仓/ but commit 显式点名文件/暂存路径拼接）。
+- dsh dist-tags：latest=0.2.0-rc.2 仍无 stable 晋升。
+
+【待裁问题 Q1——R94 主轴裁决】
+选项 A（我倾向）：垂域死刑复核开庭轮——r88-candidate 作 R94 正题开庭：取证（重开条件未达的实物依据+垂域架构现状+|ΔarmHostHit| 数据来源核查）→开庭判词（reaffirm/revise/retire）→ADR-0095 立法。sunset 提前一轮兑现，开庭本身即最强预通知；可顺带吸收垂域近邻挂账（r86 两项）作开庭证据。创立痛点=信息专精垂域 Agent CLI，L3/release 轴已绿窗口干净。代价：判词可能 retire/reaffirm 而非翻案。
+选项 B：轻收口轮——R94 纯规则+记账（r88 预通知条目+D6 裁定+deprecate EOTP+F3/F4/F5），开庭压到 R95 最后合法窗。
+选项 C：评测/语料轮——f17 quarantine+r86 垂域语料对+r84 ip 域，垂域相邻但不构成开庭。
+选项 D：另指。
+
+请给：①推荐选项+理由（用 sunset/deferred-review/垂域架构决策/治理节律的工业界成熟心智模型——如 ADR 驱动的 architecture decision review、GitHub deprecation policy、Wikipedia/Ballotpedia sunset 失效模式、design review board 开庭议程设计、decision record lifecycle 等）②开庭轮的议程设计与取证清单（若荐 A：开庭需要什么证据面、判词谓词、三果各自的落地形态、近邻挂账吸收边界）③风险与反方论据（开庭过早/证据不足判词质量劣化/应再养一轮）④信息缺口。中英混合回答均可，要可执行。

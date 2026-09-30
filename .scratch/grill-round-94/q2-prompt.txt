@@ -1,0 +1,27 @@
+你是调研顾问。项目=anysearch-cli（信息专精 Agent CLI，AnySearch 垂直领域理念）。工作流=烤问轮：grill→决策账本→计划票→ADR 立法→执行→审计。
+
+【decision-ledger 全部 current 记录】
+- R94 D-001（current）：R94 主轴=r88-candidate 垂域死刑复核开庭轮。议程五段=0 开庭资格核验→1 证据面陈述→2 判据合法性先审（先裁尺子后裁方向，revise 判据≠revise 方向拆票）→3 判词表决（三果一果一录）→4 落地裁定（registry 变更）；立法载体=ADR-0095。取证五面：①ADR-0088 拒绝理由原文+|ΔarmHostHit| 序列 ②垂域三 ADR 实存性（0084/0085/0059）③判据死亡证明（stream-json 字段面+fallback 等价性）④r86 两项吸收为证据非议题 ⑤dsh 无 stable 环境辩护词。三果落地：reaffirm→formally-declined+复活条件+原判据废止留理由；revise→改判据+新观察窗；retire→明文废止+复活条款。「开庭即预通知」裁定替代 D4 carried_log 义务写 ADR-0095。副议题=D6 证据效力复核挂副位。约束：三果皆合法且各强制附复活条款；r84/f17/常驻债不吸收；一票一 commit；pathlint 冻结；无 tag/push/publish；判词词汇预注册冻结。
+（R93 D-001~D-003 已执行闭环：判词 established-via-fallback/审计 PASS/已 land+push。）
+
+【关键调档新实证（修正 Q1 调研一处混淆）】
+- |ΔarmHostHit| 序列实测存在且为负：R85（ADR-0086）delta 重跑=indeterminate—instrument down（anysearch 臂 41/41 格 providersFailed，env 双重缺陷：loopback 死路由+失效 key；程序性 NO-GO 锁定）；R86（ADR-0087）同指纹 57 格声明式环境复跑 paired 40/41 装置失败∅→matrix@2 终读 NO-GO/direction-negative（P=0.0378、净胜率 −0.125、EL=0.297、rankDiff 中位 0）。
+- 重开条件出处=ADR-0087 D4：R86 负读数后 registry prefer-capable 条目才附「|ΔarmHostHit|≳0.4」具名重开条件——已知负读数前提下立的未来反转门槛。
+- Q1 调研混淆修正：armHostHit 判据尺是活的（vertical-delta runner 对 live API 实测）；死的是 L3b/dsh 集成枚举腿（stream-json channel 不暴露 model-request tools 枚举，3 轮 0 出现）——两轴不同。开庭证据面从「没测过」升级为「测了为负+装置已修复」。
+- defer-r85-anysearch-arm-providersfailed 已核销（env 双重缺陷诊断）；defer-r86-corpus-param-contract（vert-f1105 缺 cn_code）与 defer-r86-anon-quota-nudge（permanent）现存 open。
+- dsh 安装实物：C:UsersAdministratorAppDataRoaming
+pm
+ode_modules@deepseek-aidsh@0.1.7-rc.2（本机可只读勘查）。
+- 评测纪律：单次终读（二次读取/peek 即作废）；matrix@2 执行体在 .scratch/grill-round-85/readout-delta.mjs；delta.json 驻机器本地 .scratch/vertical-eval/。
+- 补充心智模型项：R86 判词 NO-GO/direction-negative 已含 defer-r83 核销获第一次真实数据背书。
+
+【待裁问题 Q2——开庭执行设计（七子题）】
+a. 判词归属：B3 混合制（三果充分条件谓词预注册，命中=机械落果，未命中=证据登记表+推荐果由用户收口窗拍板）/B2 纯呈判（全部判词用户拍）/B1 纯谓词（机械落果无人判位）。我推荐 B3。
+b. 三果谓词语义骨架：reaffirm=重开判据实测为负∧标的实存∧无短期可归因修复路径；revise=判据不等价/欠上游契约可测面但存在可归因修复路径→重写重开条件+新观察窗；retire=标的实存性弱∧复活仅剩外部不可控信号。复活条件候选集：①dsh stable 晋升②上游补垂域结构化参数词表③cn_code 契约补齐④新评测矩阵修订版读数⑤新增 |ΔarmHostHit| 实测显著转正。
+c. stream-json 结构证据=本机 dsh dist 包只读勘查字段面+必要时 GitHub 源码辅证。
+d. 取证边界：不重跑 delta 评测（R86 干净读数在案+单次终读纪律）；例外裁量=是否加一次串行只读上游复观（finance.fundamental sub_domain_params 看 cn_code 是否已变，开庭证据面4 需要当前事实非快照）。
+e. D6 副议题（ADR-0094 挂 R94 复核「本机门禁 advisory→blocking？」）：①维持 advisory②升 blocking③分级（ship-gate 升/check+test 维持）。
+f. 预通知形态：carried_log 追加「开庭即预通知」条目 vs 开庭事实自代。
+g. 无 T-B/F-bug 票确认：开庭轮失败形态=「证据不足→Proposed+具名 action points」本身是合法判词。
+
+请给：①逐子题推荐+理由（用成熟心智模型：architecture decision review 判词归属、预注册实验判读（prereg/registered report）、sunset/desuetude 法理、证据分级（snapshot vs live）等）②三果谓词语义骨架的加固或反驳（尤其：在「实测为负」新事实下 reaffirm 与 retire 的边界谓词）③复活条件候选集的裁剪/补充（哪些是不可控外部信号哪些是可控锚）④风险与信息缺口。中英混合均可，要可执行。

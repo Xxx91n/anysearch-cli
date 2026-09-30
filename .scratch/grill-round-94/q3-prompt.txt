@@ -1,0 +1,28 @@
+你是调研顾问。项目=anysearch-cli，烤问轮工作流（grill→账本→票序→ADR→执行→审计收口）。R94=开庭轮已裁（D-001/D-002 current）。
+
+【decision-ledger 全部 current 记录】
+- D-001：主轴=r88-candidate 垂域死刑复核开庭轮。议程五段（0 资格核验/1 证据面/2 判据先审/3 判词表决/4 落地裁定），ADR-0095 立法。取证五面、三果落地形态（reaffirm=formally-declined+复活条件/revise=改判据+新观察窗/retire=明文废止+复活条款）、开庭即预通知裁定、D6 副议题挂副位。约束：三果皆合法各附复活条款；r84/f17/常驻债不吸收；一票一commit；pathlint 冻结；无 tag/push/publish；判词词汇预注册冻结。
+- D-002：执行设计。B3 混合制判词归属（谓词命中机械落果/未命中=证据登记表+推荐果用户收口窗拍板，收口窗须见未命中登记表全文）；三果谓词加固（reaffirm=实测为负∧标的实存∧≥1可控锚；revise=判据不等价∧可归因近程修复路径∧活查有实质变化；retire=标的实存性弱∨复活仅剩不可控外部；tie-breaker=可控锚≥1→reaffirm/=0→retire 预注册开庭前冻结）；stream-json 本机勘查+版本指纹绑 0.1.7-rc.2；快照/活查分级（读数用快照/契约现状用活查），cn_code 复观=段1 具名步骤；D6=ship-gate 升 blocking+check+test 维持 advisory；carried_log 追加指针条目（先行 commit）+ADR-0095 固化开庭即预通知（随后 commit 两票同轮）；无 T-B/F-bug（证据不足→Proposed+action points 合法判词）；复活条件集可控性分类（①dsh stable 半控/②上游词表纯外部标 retire 侧/③cn_code 半控 revise 主锚/④新评测读数纯可控 reaffirm 主锚/⑤并④/⑥判据等价性证明内部桥；每条件须挂 owner 或可机检信号）。
+- 风险登记：自动化偏倚/tie-breaker 残余裁量/dsh 版本轴漂移/carried_log 双写时序。
+（R93 D-001~D-003 已闭环：established-via-fallback、审计 PASS、已 land+push。）
+
+【已立相关法/惯例】
+- 一票一 commit 类型不混（docs/evidence/chore）；票级熔断 2-LOOP；条件票谓词互斥显式声明（ADR-0094 D7）；T-B 双态记账票先例；收口批内部分节多 commit（R93 T6 先例：①ADR 完成体②词块+registry③claims+轮报+戳④CHANGELOG⑤杂项）；审计 LOOP 独立审计窗（LOOP1 打回→返修→LOOP2 核销先例）；closeout-claims 挂账登记+ship-gate 复证闭环（R93 F1 教训：登记时序与门禁归档须一致）；终态戳落轮报+ADR 不落 he-lane 文件。
+- R93 F1/F2 打回教训：closeout-claims 实物 14 vs 归档门禁 13/13 脱节（第 14 条登记于门禁后）；ADR 票序节「待补」残留——R94 须在票序设计里预防同型缺陷（claims 全量登记先于门禁终跑；票序节终态回填不出 T7）。
+- D6 分级裁定新问题：ship-gate 升 blocking 后**本轮 T7 即首秀**——gate 红=轮次真阻塞（新后果形态，此前 advisory 期无此风险）。
+- 证据工件惯例：.scratch/grill-round-NN/evidence/**、轮报 reports/YYYY-MM-DD-report.md、收口 round-NN-closeout.md（closeout-coverage 要求文件名含 closeout 且不以 next/audit 开头）。
+
+【待裁问题 Q3——R94 票序+commit 结构】
+T0 哨戒+基线（dsh dist-tags 复观=TC 谓词见 stable+check/test/ship-gate --quick 基线+grill 期事实归档：|ΔarmHostHit| 两读数/重开条件出处 ADR-0087 D4/混淆修正/dsh 勘查路径；chore+evidence）。
+T1 立法批【内两 docs commits 顺序：①carried_log 指针追加（先行）②ADR-0095（议程五段+B3+三果谓词+tie-breaker+复活条件集+快照/活查分级+具名步骤+版本指纹+判词冻结+D6 分级落地+开庭即预通知+Known-Non-Goals+dsh 漂移条款）】；docs。
+T2 开庭取证（段0 资格核验+段1 五面取证含 cn_code 活查具名步骤+stream-json 勘查；证据登记表双侧证词格式；evidence）。
+T3 判据先审+判词（段2 重开尺/枚举腿死亡证明/fallback 等价论证+段3 谓词求值→命中机械落果/未命中→登记表全文+推荐果→用户收口窗拍板【票内含用户判词子窗口】；docs+evidence）。
+T4 落地裁定（registry 状态变更按果落地；docs）。
+T5 deprecate（EOTP 权限尝试/纯备准；chore）。
+T6 收口批（内分节多 commit：①ADR-0095 完成体回填②CONTEXT 词块+registry 更态③claims+轮报+终态戳④CHANGELOG⑤R95 交接+F3/F4/F5 处置记账；docs）。
+T7 门禁+审计 LOOP（ship-gate blocking 首秀）。
+TC【条件票】T0 目击 stable 才启（字段面重绑指纹+复活条件①注入判词）。
+T-B 不设立。
+四个挂项：d3a T3 用户判词子窗口形态=票内暂停待拍【荐】vs 推荐果先落 T4 照走收口窗统一追认；d3b D6 生效时点=T1 立法即生效 T7 首秀【荐】vs 下轮生效；d3c F3/F4/F5 低项=T6 记账处置【荐】vs 移 R95；d3d deprecate 权限到位否（默认纯备准）。
+
+请给：①票序整体评价+必要的顺序调整（尤其 T1 内两 commit 顺序、T3 判词子窗口与 T4 的依赖关系、D6 生效时点与 T7 的咬合、claims 登记时序预防 R93-F1 同型缺陷）②四挂项逐项推荐 ③是否有缺票（如开庭资格核验若失败的程序票、用户判词窗的形态）④风险与信息缺口（心智模型：pipeline gate sequencing、Registered Reports 流程、kanban WIP 限制、R93 审计先例的适用性）。中英混合均可，要可执行。
