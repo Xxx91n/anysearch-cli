@@ -1,0 +1,16 @@
+Starting process liveness test...
+Plugin process spawned with PID 17380
+MCP process spawned with PID 21840
+Testing MCP /health endpoint...
+health HTTP status: 200, body: {"status":"ok","server":"anysearch-mcp","version":"0.1.0"}
+Testing MCP initialize RPC at /mcp...
+initialize HTTP status: 200, result: {"name":"anysearch","version":"0.1.0"}
+Testing MCP tools/list RPC at /mcp...
+tools/list HTTP status: 200, tools returned: 5
+ - Tool: search_web, has inputSchema: true
+ - Tool: research_web, has inputSchema: true
+ - Tool: recall_memory, has inputSchema: true
+ - Tool: query_knowledge, has inputSchema: true
+ - Tool: ans_chat, has inputSchema: true
+Liveness test PASSED! Both processes listening and answering RPCs correctly.
+Tearing down spawned test processes...
