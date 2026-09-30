@@ -30,10 +30,11 @@ T0 已完成哨戒与五件探针（but-id `trm`），关键事实：
 
 #### D1.1 隔离 profile 与注入面
 
-新建隔离 profile `r93-kimi`（`~/.dsh/profiles/r93-kimi/`，机外路径）。**不复用 `r92-smoke`**——其 `cordis.patch.yml` 两处硬编 `Qwen/Qwen3-32B`（探针 6 只读勘查确认，行 11/16）且属 R92 证据工件，冻结零触碰；证据链须独立可归因。
+新建隔离 profile `r93-kimi`（`~/.dsh/profiles/r93-kimi/`，机外路径）。 <!-- machine-local: 用户级 dsh home 机外路径 @ 2026-09-30 -->**不复用 `r92-smoke`**——其 `cordis.patch.yml` 两处硬编 `Qwen/Qwen3-32B`（探针 6 只读勘查确认，行 11/16）且属 R92 证据工件，冻结零触碰；证据链须独立可归因。
 
 注入面 = dsh-llm-pi-ai dormant 路由激活（承 ADR-0093 D1）：
 
+<!-- machine-local: 用户级 dsh home 机外路径 @ 2026-09-30 -->
 ```yaml
 # ~/.dsh/profiles/r93-kimi/cordis.patch.yml（跑前冻结，跑中不换）
 llm-pi-ai:

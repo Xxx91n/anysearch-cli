@@ -21,7 +21,7 @@ $ dsh plugin --profile r93-kimi list    # @anysearch-cli/dsh-plugin@0.1.0, 1 pac
 #   注：相对路径 add 会以 profile 目录为基准解析而 ENOENT（exit 38），必须绝对路径
 
 # 3. patch 层冻结注入（ADR-0094 D1.1 冻结件，跑中不换）
-#    ~/.dsh/profiles/r93-kimi/cordis.patch.yml ← providers.featherless + agent-default-model
+#    ~/.dsh/profiles/r93-kimi/cordis.patch.yml ← providers.featherless + agent-default-model  <!-- machine-local: 用户级 dsh home 机外路径 @ 2026-09-30 -->
 
 # 4. L3a 装册绿取证
 $ dsh --profile r93-kimi --dump-config    # exit 0, 8/8 断言 PASS → L3a established

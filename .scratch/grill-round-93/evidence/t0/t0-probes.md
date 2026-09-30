@@ -83,6 +83,7 @@ catalog total=22078  kimi hits=2
 
 ## 探针 6 — `r92-smoke` profile 硬编勘查（冻结零触碰前置校验）
 
+<!-- machine-local: 用户级 dsh home 机外路径 @ 2026-09-30 -->
 ```bash
 $ grep -rn "Qwen/Qwen3-32B" ~/.dsh/profiles/r92-smoke/
 .../r92-smoke/cordis.patch.yml:11:          - id: Qwen/Qwen3-32B
