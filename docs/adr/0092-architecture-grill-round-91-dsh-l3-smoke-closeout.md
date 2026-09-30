@@ -159,4 +159,4 @@ WORKFLOW.md §4.2「版本控制外部承诺」自本 ADR 生效起，由以下�
 | T6 门禁复核 | — | — | ✅ 完成 | pnpm -r check exit 0 / pnpm -r test exit 0 / ship-gate --quick [pass]×65 [fail]×0 全闭环 |
 | TC 条件票 | — | — | ⏭ 未触发 | T0 目击无 0.2.0 stable 晋升 |
 
-注：but-id 列（kmv/wpr/ssl/otk/lvx/ppu/uts）为唯一稳定锚；sha 锚已统一对齐至 landed 祖先链真实 git 对象。
+注：but-id 列（kmv/wpr/ssl/otk/lvx/ppu/uts）为唯一稳定锚；文内 sha 均为**落笔时值**——每次 amend 后即失效，不可作为可核锚点；land 后以 main `git log` 为准。

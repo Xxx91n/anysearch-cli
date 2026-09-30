@@ -24,7 +24,7 @@ Stack: r91-agy stacked above r91-grill（GitButler lanes，未 land）→ main @
 | T6 门禁复核 | — | ✅ | pnpm -r check exit 0 / pnpm -r test exit 0 / ship-gate --quick [pass]×65 [fail]×0 全闭环 |
 | TC 条件票 | — | ⏭ 未触发 | T0 观测无 0.2.0 stable 晋升，一次定死不启 |
 
-注：but-id 列（kmv/wpr/ssl/otk/lvx/ppu/uts）为唯一稳定锚；sha 锚已统一对齐至 landed 祖先链真实 git 对象。
+注：but-id 列（kmv/wpr/ssl/otk/lvx/ppu/uts）为唯一稳定锚；文内 sha 均为**落笔时值**——每次 amend 后即失效，不可作为可核锚点；land 后以 main `git log` 为准。
 
 ## 已核验的关键事实
 
