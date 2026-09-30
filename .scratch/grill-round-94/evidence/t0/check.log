@@ -1,0 +1,42 @@
+
+   • Packages in scope: @anysearch-cli/cli, @anysearch-cli/dsh-plugin, @anysearch-cli/embedding, @anysearch-cli/kernel, @anysearch-cli/mcp, @anysearch-cli/plugin, @anysearch-cli/retriever, @anysearch-cli/store
+   • Running check in 8 packages
+   • Remote caching disabled
+
+@anysearch-cli/plugin:check: cache hit, replaying logs f912de0c46b6b242
+@anysearch-cli/plugin:check: $ tsc --noEmit
+@anysearch-cli/plugin:check: __CM_FS__:11893697
+@anysearch-cli/plugin:check: __CM_FS__:13773645
+@anysearch-cli/kernel:check: cache hit, replaying logs f56519c9b7a3828d
+@anysearch-cli/cli:check: cache hit, replaying logs f1680db0f4864945
+@anysearch-cli/retriever:check: cache hit, replaying logs e099b19dea9f5c27
+@anysearch-cli/store:check: cache hit, replaying logs ddca3132689904f1
+@anysearch-cli/mcp:check: cache hit, replaying logs bbba2f706218a2f3
+@anysearch-cli/kernel:check: $ tsc --noEmit
+@anysearch-cli/kernel:check: __CM_FS__:19391391
+@anysearch-cli/kernel:check: __CM_FS__:13773645
+@anysearch-cli/cli:check: $ tsc --noEmit
+@anysearch-cli/cli:check: __CM_FS__:17525875
+@anysearch-cli/cli:check: __CM_FS__:13773645
+@anysearch-cli/retriever:check: $ tsc --noEmit
+@anysearch-cli/retriever:check: __CM_FS__:11362911
+@anysearch-cli/embedding:check: cache hit, replaying logs 88dcc207224f4bda
+@anysearch-cli/retriever:check: __CM_FS__:13773645
+@anysearch-cli/mcp:check: $ tsc --noEmit
+@anysearch-cli/mcp:check: __CM_FS__:19721446
+@anysearch-cli/mcp:check: __CM_FS__:13773645
+@anysearch-cli/embedding:check: $ tsc --noEmit
+@anysearch-cli/embedding:check: __CM_FS__:11212499
+@anysearch-cli/embedding:check: __CM_FS__:13773645
+@anysearch-cli/store:check: $ tsc --noEmit
+@anysearch-cli/store:check: __CM_FS__:12654776
+@anysearch-cli/store:check: __CM_FS__:13773645
+@anysearch-cli/dsh-plugin:check: cache hit, replaying logs 3c66e29809734542
+@anysearch-cli/dsh-plugin:check: $ tsc --noEmit
+@anysearch-cli/dsh-plugin:check: __CM_FS__:11274692
+@anysearch-cli/dsh-plugin:check: __CM_FS__:13773645
+
+ Tasks:    8 successful, 8 total
+Cached:    8 cached, 8 total
+  Time:    68ms >>> FULL TURBO
+

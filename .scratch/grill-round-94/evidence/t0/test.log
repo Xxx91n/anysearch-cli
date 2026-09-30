@@ -1,0 +1,875 @@
+$ turbo run test
+• turbo 2.10.11
+
+   • Packages in scope: @anysearch-cli/cli, @anysearch-cli/dsh-plugin, @anysearch-cli/embedding, @anysearch-cli/kernel, @anysearch-cli/mcp, @anysearch-cli/plugin, @anysearch-cli/retriever, @anysearch-cli/store
+   • Running test in 8 packages
+   • Remote caching disabled
+
+@anysearch-cli/retriever:test: cache bypass, force executing a843ed33739b5777
+@anysearch-cli/embedding:build: cache hit, replaying logs 13cdc5c00201d6bc
+@anysearch-cli/embedding:build: $ tsup
+@anysearch-cli/embedding:build: CLI Building entry: src/index.ts
+@anysearch-cli/embedding:build: CLI Using tsconfig: tsconfig.json
+@anysearch-cli/embedding:build: CLI tsup v8.5.1
+@anysearch-cli/embedding:build: CLI Using tsup config: D:\Aworker\anysearch-cli\packages\embedding\tsup.config.ts
+@anysearch-cli/embedding:build: CLI Target: es2022
+@anysearch-cli/embedding:build: CLI Cleaning output folder
+@anysearch-cli/embedding:build: ESM Build start
+@anysearch-cli/embedding:build: ESM dist\index.js 3.04 KB
+@anysearch-cli/embedding:build: ESM ⚡️ Build success in 23ms
+@anysearch-cli/embedding:build: DTS Build start
+@anysearch-cli/embedding:build: DTS ⚡️ Build success in 2682ms
+@anysearch-cli/embedding:build: DTS dist\index.d.ts 868.00 B
+@anysearch-cli/embedding:build: __CM_FS__:10605538
+@anysearch-cli/embedding:build: __CM_FS__:13773645
+@anysearch-cli/embedding:test: cache bypass, force executing 6188d211b604571b
+@anysearch-cli/plugin:build: cache hit, replaying logs 116b545f54bb540d
+@anysearch-cli/plugin:build: $ pnpm run gen:configs && pnpm run build:server && pnpm run build:hooks
+@anysearch-cli/plugin:build: $ node scripts/gen-claude-configs.mjs
+@anysearch-cli/plugin:build: wrote configs/claude/hooks.json
+@anysearch-cli/plugin:build: wrote configs/codex/hooks.json
+@anysearch-cli/plugin:build: wrote hooks/hooks.json
+@anysearch-cli/plugin:build: wrote .claude-plugin/plugin.json
+@anysearch-cli/plugin:build: wrote .mcp.json
+@anysearch-cli/plugin:build: __CM_FS__:9134
+@anysearch-cli/plugin:build: __CM_FS__:13773645
+@anysearch-cli/plugin:build: $ tsup
+@anysearch-cli/plugin:build: CLI Building entry: src/index.ts, src/server/index.ts
+@anysearch-cli/plugin:build: CLI Using tsconfig: tsconfig.json
+@anysearch-cli/plugin:build: CLI tsup v8.5.1
+@anysearch-cli/plugin:build: CLI Using tsup config: D:\Aworker\anysearch-cli\apps\plugin\tsup.config.ts
+@anysearch-cli/plugin:build: CLI Target: es2022
+@anysearch-cli/plugin:build: CLI Cleaning output folder
+@anysearch-cli/plugin:build: CJS Build start
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:  WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:     ../../packages/store/src/eval/bgnbd.ts:95:73:
+@anysearch-cli/plugin:build: [37m      95 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "..", ...
+@anysearch-cli/plugin:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:  WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:     ../../packages/store/src/eval/obs-fixtures.ts:19:66:
+@anysearch-cli/plugin:build: [37m      19 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+@anysearch-cli/plugin:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:  WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:     ../../packages/store/src/eval/switch-run.ts:30:36:
+@anysearch-cli/plugin:build: [37m      30 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+@anysearch-cli/plugin:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: CJS dist\index.cjs        151.46 KB
+@anysearch-cli/plugin:build: CJS dist\server\index.cjs 333.40 KB
+@anysearch-cli/plugin:build: CJS ⚡️ Build success in 3572ms
+@anysearch-cli/plugin:build: __CM_FS__:10611671
+@anysearch-cli/plugin:build: __CM_FS__:13773645
+@anysearch-cli/plugin:build: $ esbuild src/hooks/core.ts src/hooks/distill.ts src/hooks/preheat.ts src/hooks/session-start.ts src/hooks/routing-card.ts src/hooks/server-token.ts src/hooks/adapters/claude.ts src/hooks/adapters/cursor.ts src/hooks/adapters/codex.ts src/hooks/adapters/antigravity.ts src/hooks/adapters/codebuddy.ts --bundle --platform=node --format=cjs --outdir=dist/hooks --outbase=src/hooks --out-extension:.js=.cjs --banner:js="#!/usr/bin/env node" --external:better-sqlite3 --external:@anysearch-cli/embedding
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build:   dist\hooks\adapters\antigravity.cjs  13.8kb
+@anysearch-cli/plugin:build:   dist\hooks\adapters\cursor.cjs       11.9kb
+@anysearch-cli/plugin:build:   dist\hooks\adapters\codebuddy.cjs    11.6kb
+@anysearch-cli/plugin:build:   dist\hooks\adapters\claude.cjs       10.5kb
+@anysearch-cli/plugin:build:   dist\hooks\adapters\codex.cjs        10.3kb
+@anysearch-cli/plugin:build:   ...and 6 more output files...
+@anysearch-cli/plugin:build: 
+@anysearch-cli/plugin:build: Done in 280ms
+@anysearch-cli/plugin:build: __CM_FS__:9248
+@anysearch-cli/plugin:build: __CM_FS__:13773645
+@anysearch-cli/plugin:build: __CM_FS__:13773645
+@anysearch-cli/cli:build: cache hit, replaying logs 1ff8dcde42d85d39
+@anysearch-cli/mcp:build: cache hit, replaying logs b0b47248de385f07
+@anysearch-cli/dsh-plugin:build: cache hit, replaying logs 90d590580fe496d9
+@anysearch-cli/dsh-plugin:build: $ esbuild src/index.ts --bundle --platform=node --format=esm --outfile=lib/index.js --external:@deepseek-ai/* --banner:js="import{createRequire}from'node:module';const require=createRequire(import.meta.url);" && tsc -p tsconfig.build.json --declaration --emitDeclarationOnly --noEmit false --outDir lib --rootDir src
+@anysearch-cli/dsh-plugin:build: 
+@anysearch-cli/dsh-plugin:build:   lib\index.js  148.7kb
+@anysearch-cli/dsh-plugin:build: 
+@anysearch-cli/dsh-plugin:build: Done in 260ms
+@anysearch-cli/dsh-plugin:build: __CM_FS__:9248
+@anysearch-cli/dsh-plugin:build: __CM_FS__:11252774
+@anysearch-cli/dsh-plugin:build: __CM_FS__:13773645
+@anysearch-cli/cli:build: $ node scripts/sync-domains.mjs && tsup && node scripts/stamp-dist.mjs
+@anysearch-cli/cli:build: sync-domains: 3 toml(s) -> D:\Aworker\anysearch-cli\apps\cli\domains
+@anysearch-cli/cli:build: __CM_FS__:849
+@anysearch-cli/cli:build: CLI Building entry: src/index.ts
+@anysearch-cli/cli:build: CLI Using tsconfig: tsconfig.json
+@anysearch-cli/cli:build: CLI tsup v8.5.1
+@anysearch-cli/cli:build: CLI Using tsup config: D:\Aworker\anysearch-cli\apps\cli\tsup.config.ts
+@anysearch-cli/cli:build: CLI Target: es2022
+@anysearch-cli/cli:build: CJS Build start
+@anysearch-cli/cli:build: DTS Build start
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:  WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:     src/db.ts:18:84:
+@anysearch-cli/cli:build: [37m      18 │ ..."undefined" ? __dirname : dirname(fileURLToPath([32mimport.meta[37m.url));
+@anysearch-cli/cli:build:          ╵                                                    [32m~~~~~~~~~~~[0m
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:  WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:     ../../packages/store/src/eval/bgnbd.ts:95:73:
+@anysearch-cli/cli:build: [37m      95 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "..", ...
+@anysearch-cli/cli:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/mcp:build: $ node scripts/sync-domains.mjs && tsup
+@anysearch-cli/mcp:build: sync-domains: 3 toml(s) -> D:\Aworker\anysearch-cli\apps\mcp\domains
+@anysearch-cli/cli:build:  WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:     ../../packages/store/src/eval/obs-fixtures.ts:19:66:
+@anysearch-cli/cli:build: [37m      19 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+@anysearch-cli/mcp:build: __CM_FS__:900
+@anysearch-cli/mcp:build: CLI Building entry: src/index.ts
+@anysearch-cli/cli:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:  WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:     ../../packages/store/src/eval/switch-run.ts:30:36:
+@anysearch-cli/cli:build: [37m      30 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+@anysearch-cli/mcp:build: CLI Using tsconfig: tsconfig.json
+@anysearch-cli/mcp:build: CLI tsup v8.5.1
+@anysearch-cli/mcp:build: CLI Using tsup config: D:\Aworker\anysearch-cli\apps\mcp\tsup.config.ts
+@anysearch-cli/cli:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/mcp:build: CLI Target: es2022
+@anysearch-cli/mcp:build: CLI Cleaning output folder
+@anysearch-cli/mcp:build: CJS Build start
+@anysearch-cli/mcp:build: DTS Build start
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: 
+@anysearch-cli/cli:build: CJS dist\index.js 10.69 MB
+@anysearch-cli/cli:build: CJS ⚡️ Build success in 9574ms
+@anysearch-cli/cli:build: DTS ⚡️ Build success in 24862ms
+@anysearch-cli/cli:build: DTS dist\index.d.ts 20.00 B
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:  WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/mcp:build: 
+@anysearch-cli/cli:build: __CM_FS__:10609480
+@anysearch-cli/cli:build: [stamp-dist] .build-stamp.json commit=788018bd dirty=false
+@anysearch-cli/mcp:build:     src/server.ts:43:86:
+@anysearch-cli/cli:build: __CM_FS__:1113
+@anysearch-cli/mcp:build: [37m      43 │ ..."undefined" ? __dirname : dirname(fileURLToPath([32mimport.meta[37m.url));
+@anysearch-cli/cli:build: __CM_FS__:13773645
+@anysearch-cli/mcp:build:          ╵                                                    [32m~~~~~~~~~~~[0m
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:  WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:     ../../packages/store/src/eval/bgnbd.ts:95:73:
+@anysearch-cli/mcp:build: [37m      95 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "..", ...
+@anysearch-cli/mcp:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:  WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:     ../../packages/store/src/eval/obs-fixtures.ts:19:66:
+@anysearch-cli/mcp:build: [37m      19 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+@anysearch-cli/mcp:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:  WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:     ../../packages/store/src/eval/switch-run.ts:30:36:
+@anysearch-cli/mcp:build: [37m      30 │ ...oin(dirname(fileURLToPath([32mimport.meta[37m.url)), "..", "..", "fixtu...
+@anysearch-cli/mcp:build:          ╵                              [32m~~~~~~~~~~~[0m
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build:   You need to set the output format to "esm" for "import.meta" to work correctly.
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: 
+@anysearch-cli/mcp:build: CJS dist\index.cjs 10.64 MB
+@anysearch-cli/mcp:build: CJS ⚡️ Build success in 9682ms
+@anysearch-cli/mcp:build: DTS ⚡️ Build success in 24557ms
+@anysearch-cli/mcp:build: DTS dist\index.d.cts 20.00 B
+@anysearch-cli/mcp:build: __CM_FS__:10611089
+@anysearch-cli/mcp:build: __CM_FS__:13773645
+@anysearch-cli/retriever:test: $ node --import tsx --test "test/**/*.test.ts" "test/**/*.test.mjs" --test-timeout=30000
+@anysearch-cli/embedding:test: $ node --import tsx --test "test/**/*.test.ts" "test/**/*.test.mjs" --test-timeout=30000
+@anysearch-cli/embedding:test: embedding.test: all assertions passed (stubbed, offline-hermetic)
+@anysearch-cli/embedding:test: ✔ test\embedding.test.ts (1176.7748ms)
+@anysearch-cli/embedding:test: ghost-dep guard (a): 1 src file(s) clean — @huggingface/transformers reachable only via createRequire().require()
+@anysearch-cli/embedding:test: ghost-dep guard (a′): 9 violation samples flagged, 5 legal forms clean
+@anysearch-cli/embedding:test: ghost-dep guard (b): declared 1.21.0 ≡ effective onnxruntime-node embedded 1.21.0
+@anysearch-cli/embedding:test: transformers-ghost-dep.test: all assertions passed
+@anysearch-cli/embedding:test: ✔ test\transformers-ghost-dep.test.ts (1167.8303ms)
+@anysearch-cli/embedding:test: ℹ tests 2
+@anysearch-cli/embedding:test: ℹ suites 0
+@anysearch-cli/embedding:test: ℹ pass 2
+@anysearch-cli/embedding:test: ℹ fail 0
+@anysearch-cli/embedding:test: ℹ cancelled 0
+@anysearch-cli/embedding:test: ℹ skipped 0
+@anysearch-cli/embedding:test: ℹ todo 0
+@anysearch-cli/embedding:test: ℹ duration_ms 1217.7199
+@anysearch-cli/retriever:test: [anysearch] endpoint ends with /v1/search — REST route is retired (ADR-0082); rewritten to https://api.anysearch.com/mcp
+@anysearch-cli/retriever:test: --- AnySearchProvider tests: 55 passed, 0 failed ---
+@anysearch-cli/retriever:test: ✔ test\anysearch.test.ts (1459.7717ms)
+@anysearch-cli/retriever:test: content-trust deny tests: 8 passed, 0 failed
+@anysearch-cli/retriever:test: ✔ test\content-trust-deny.test.ts (2450.5397ms)
+@anysearch-cli/retriever:test: --- domain-filter adapter tests: 11 passed, 0 failed ---
+@anysearch-cli/retriever:test: ✔ test\domain-filter.test.ts (2659.8751ms)
+@anysearch-cli/retriever:test: --- ExaProvider mapping tests: 19 passed, 0 failed ---
+@anysearch-cli/retriever:test: ✔ test\exa.test.ts (1216.8934ms)
+@anysearch-cli/retriever:test: fusion-registry tests: 23 passed, 0 failed
+@anysearch-cli/retriever:test: ✔ test\fusion-registry.test.ts (1234.4163ms)
+@anysearch-cli/retriever:test: --- provider-error-class: 18 passed, 0 failed ---
+@anysearch-cli/retriever:test: ✔ test\provider-error-class.test.ts (1177.7567ms)
+@anysearch-cli/retriever:test: RRF tests: 8 passed, 0 failed
+@anysearch-cli/retriever:test: ✔ test\rrf.test.ts (1195.4465ms)
+@anysearch-cli/retriever:test: --- TavilyProvider tests: 19 passed, 0 failed ---
+@anysearch-cli/retriever:test: ✔ test\tavily.test.ts (1396.7154ms)
+@anysearch-cli/retriever:test: ℹ tests 8
+@anysearch-cli/retriever:test: ℹ suites 0
+@anysearch-cli/retriever:test: ℹ pass 8
+@anysearch-cli/retriever:test: ℹ fail 0
+@anysearch-cli/retriever:test: ℹ cancelled 0
+@anysearch-cli/retriever:test: ℹ skipped 0
+@anysearch-cli/retriever:test: ℹ todo 0
+@anysearch-cli/retriever:test: ℹ duration_ms 2709.4114
+@anysearch-cli/store:test: cache bypass, force executing f3c5fd7823bceea2
+@anysearch-cli/store:test: $ node --import tsx --test "test/**/*.test.ts" "test/**/*.test.mjs" --test-concurrency=1 --test-timeout=30000
+@anysearch-cli/store:test: access-chain-bootstrap-spawn: 6 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\access-chain-bootstrap-spawn.test.ts (2836.9093ms)
+@anysearch-cli/store:test: access-chain-golden: 18 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\access-chain-golden.test.ts (890.002ms)
+@anysearch-cli/store:test: access-chain-nodb: 7 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\access-chain-nodb.test.mjs (1796.1913ms)
+@anysearch-cli/store:test: [perf] verify 10000 rows: fixture built in 219ms, verified in 680ms (~14706 rows/s) — report-only, never gated
+@anysearch-cli/store:test: [perf] verify 100000 rows: fixture built in 2147ms, verified in 2311ms (~43271 rows/s) — report-only, never gated
+@anysearch-cli/store:test: access-chain-schema: 5 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\access-chain-schema.test.ts (9494.8707ms)
+@anysearch-cli/store:test: access-chain-telemetry: 7 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\access-chain-telemetry.test.ts (8024.2802ms)
+@anysearch-cli/store:test: access-chain-verify: 12 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\access-chain-verify.test.ts (11058.6357ms)
+@anysearch-cli/store:test: access-count tests: 17 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\access-count.test.ts (21285.0447ms)
+@anysearch-cli/store:test: adjudication.test.ts: 11 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\adjudication.test.ts (23089.3181ms)
+@anysearch-cli/store:test: adr-index.test: ok
+@anysearch-cli/store:test: ✔ test\adr-index.test.mjs (29776.7528ms)
+@anysearch-cli/store:test: attribution-calibration.test: ok
+@anysearch-cli/store:test: ✔ test\attribution-calibration.test.ts (2894.3358ms)
+@anysearch-cli/store:test: attribution-gold.test: ok
+@anysearch-cli/store:test: attribution-gold.test ADR-0051 D4 assertions: ok
+@anysearch-cli/store:test: ✔ test\attribution-gold.test.ts (3235.6313ms)
+@anysearch-cli/store:test: attribution-instance-report.test: ok
+@anysearch-cli/store:test: ✔ test\attribution-instance-report.test.ts (1151.7711ms)
+@anysearch-cli/store:test: bgnbd-spawn tests: 25 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\bgnbd-spawn.test.ts (4429.6361ms)
+@anysearch-cli/store:test: --- BudgetLedger tests: 24 passed, 0 failed ---
+@anysearch-cli/store:test: ✔ test\budget-ledger.test.ts (2954.1277ms)
+@anysearch-cli/store:test: calibration-labels.test: ok
+@anysearch-cli/store:test: ✔ test\calibration-labels.test.ts (2905.376ms)
+@anysearch-cli/store:test: closeout-coverage.test: 46 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\closeout-coverage.test.mjs (2031.4505ms)
+@anysearch-cli/store:test: consolidate-forget: all assertions passed
+@anysearch-cli/store:test: ✔ test\consolidate-forget.test.ts (6233.1281ms)
+@anysearch-cli/store:test: day-buckets tests: 30 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\day-buckets.test.ts (2104.0548ms)
+@anysearch-cli/store:test: --- loadDomainByName tests done ---
+@anysearch-cli/store:test: --- Domain Loader tests: 32 passed, 0 failed ---
+@anysearch-cli/store:test: ✔ test\domain-loader.test.ts (6761.7897ms)
+@anysearch-cli/store:test: Domain schema tests: 18 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\domain-schema.test.ts (5499.0201ms)
+@anysearch-cli/store:test: --- embedding-arm tests: 18 passed, 0 failed ---
+@anysearch-cli/store:test: ✔ test\embedding-arm.test.ts (82635.6808ms)
+@anysearch-cli/store:test: step2 schema idempotent + 9 tables: OK
+@anysearch-cli/store:test: step3 rule extraction channels: OK
+@anysearch-cli/store:test: step4 LLM backfill fail-open: OK
+@anysearch-cli/store:test: step5 three-tier dedup + type gate + reversible merge: OK
+@anysearch-cli/store:test: step6 RRF entity arm + step7 telemetry: OK
+@anysearch-cli/store:test: step8 r74 audit fixes (E2 alias pass-through / E5 drop unlink + rank): OK
+@anysearch-cli/store:test: entity-link.test.ts ALL PASS
+@anysearch-cli/store:test: ✔ test\entity-link.test.ts (25084.3284ms)
+@anysearch-cli/store:test: step1 combine redirect+snapshot: OK
+@anysearch-cli/store:test: step2 unmerge bounded+override: OK
+@anysearch-cli/store:test: step3 type gate: OK
+@anysearch-cli/store:test: step4a review keep: OK
+@anysearch-cli/store:test: step4b review drop: OK
+@anysearch-cli/store:test: step5 hit_count escalation: OK
+@anysearch-cli/store:test: step6 G4 double-link roundtrip: OK
+@anysearch-cli/store:test: step8 G1 override no-auto-remerge: OK
+@anysearch-cli/store:test: step7 G2/G3 guard branches: OK
+@anysearch-cli/store:test: entity-merge.test.ts: all steps OK
+@anysearch-cli/store:test: ✔ test\entity-merge.test.ts (23381.0703ms)
+@anysearch-cli/store:test: eval-abstain: 13 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-abstain.test.ts (89876.1692ms)
+@anysearch-cli/store:test: timeout self-check exit=124 stderr has TIMEOUT: ok
+@anysearch-cli/store:test: invalid EVAL_TIMEOUT_MS -> exit 2: ok
+@anysearch-cli/store:test: degenerate all-same-label cohort -> exit 1 fail: ok
+@anysearch-cli/store:test: eval-calibrate tests ok; timeout exit=124
+@anysearch-cli/store:test: ✔ test\eval-calibrate.test.mjs (19200.0399ms)
+@anysearch-cli/store:test: eval-docs-golden.test.ts: 113 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-docs-golden.test.ts (6451.7608ms)
+@anysearch-cli/store:test: eval-gate.test.ts: 23 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-gate.test.ts (90422.7729ms)
+@anysearch-cli/store:test:   H0 FWER sim: 18/600 = 0.0300 (track alpha 0.025)
+@anysearch-cli/store:test: eval-holdout-gate.test.ts: 31 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-holdout-gate.test.ts (11026.7225ms)
+@anysearch-cli/store:test: eval-judge.test.mjs: 5 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-judge.test.mjs (2578.5398ms)
+@anysearch-cli/store:test: eval-labels.integration.test: ok
+@anysearch-cli/store:test: ✔ test\eval-labels.integration.test.mjs (124630.0929ms)
+@anysearch-cli/store:test: eval-looks-live-parity: 24 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-looks-live-parity.test.ts (1120.7016ms)
+@anysearch-cli/store:test: eval-mutation.test.ts: 6 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-mutation.test.ts (51139.3029ms)
+@anysearch-cli/store:test: eval-override.test.ts: 13 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-override.test.ts (1578.465ms)
+@anysearch-cli/store:test: eval-quarantine-ratchet.test: 12 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-quarantine-ratchet.test.mjs (1575.9452ms)
+@anysearch-cli/store:test: eval-quarantine-sla.test.ts: 2 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-quarantine-sla.test.ts (1944.8564ms)
+@anysearch-cli/store:test: eval-quarantine.test.ts: 24 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-quarantine.test.ts (1869.97ms)
+@anysearch-cli/store:test: eval-relation-gain.test.ts: 21 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-relation-gain.test.ts (48286.0179ms)
+@anysearch-cli/store:test: eval-release-layering.test.ts: 20 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-release-layering.test.ts (1287.406ms)
+@anysearch-cli/store:test: eval-runner.test.ts: 23 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-runner.test.ts (84249.9459ms)
+@anysearch-cli/store:test: eval-ship-gate-integrity.test: 7 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-ship-gate-integrity.test.mjs (2440.1362ms)
+@anysearch-cli/store:test: eval-ship-gate-override.test.ts: 14 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-ship-gate-override.test.ts (18812.6528ms)
+@anysearch-cli/store:test: eval-skip tests: 38 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-skip.test.ts (2023.0151ms)
+@anysearch-cli/store:test: eval-switch-state-fixes.test: 8 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-switch-state-fixes.test.ts (4776.5419ms)
+@anysearch-cli/store:test: eval-switch-state.test: 68 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\eval-switch-state.test.ts (5866.7027ms)
+@anysearch-cli/store:test: fts5-tokenize.test.ts: 8 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\fts5-tokenize.test.ts (25269.5035ms)
+@anysearch-cli/store:test: fusion-registry-memory tests: 14 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\fusion-registry-memory.test.ts (10448.9427ms)
+@anysearch-cli/store:test: gain-ledger.test.mjs: all checks passed
+@anysearch-cli/store:test: ✔ test\gain-ledger.test.mjs (1715.1075ms)
+@anysearch-cli/store:test: governed-json-canonical.test: 25 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\governed-json-canonical.test.mjs (2218.0482ms)
+@anysearch-cli/store:test: obs-fixtures chain: 27 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\obs-fixtures.test.ts (2630.6175ms)
+@anysearch-cli/store:test: observation trace/eval round-trip: OK
+@anysearch-cli/store:test: ✔ test\observation.test.ts (3937.5336ms)
+@anysearch-cli/store:test: quarantine-review.test.ts: 14 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\quarantine-review.test.ts (13887.2471ms)
+@anysearch-cli/store:test: relation-edges.test.ts: all assertions passed
+@anysearch-cli/store:test: ✔ test\relation-edges.test.ts (22062.9973ms)
+@anysearch-cli/store:test: revision-cli.integration.test: ok
+@anysearch-cli/store:test: ✔ test\revision-cli.integration.test.mjs (74430.0933ms)
+@anysearch-cli/store:test: revision-core.test: ok
+@anysearch-cli/store:test: ✔ test\revision-core.test.ts (3579.7848ms)
+@anysearch-cli/store:test: revision-fixture.integration.test: ok
+@anysearch-cli/store:test: ✔ test\revision-fixture.integration.test.mjs (13005.8711ms)
+@anysearch-cli/store:test: secret-guard.test.ts: all assertions passed
+@anysearch-cli/store:test: ✔ test\secret-guard.test.ts (875.6493ms)
+@anysearch-cli/store:test:   PASS fresh user_version = OBSERVATION_USER_VERSION
+@anysearch-cli/store:test:   PASS fresh includes injected_trace_id column
+@anysearch-cli/store:test:   PASS fresh includes session_id column
+@anysearch-cli/store:test:   PASS fresh includes client_id column
+@anysearch-cli/store:test:   PASS fresh includes idx_observability_traces_injected_trace
+@anysearch-cli/store:test:   PASS fresh includes idx_observability_traces_session (partial)
+@anysearch-cli/store:test:   PASS fresh includes idx_observability_traces_client (partial)
+@anysearch-cli/store:test:   PASS migrated user_version = OBSERVATION_USER_VERSION
+@anysearch-cli/store:test:   PASS migrated has same columns as fresh
+@anysearch-cli/store:test:   PASS migrated has same indexes as fresh
+@anysearch-cli/store:test:   PASS OBSERVATION_SCHEMA_VERSION = 2
+@anysearch-cli/store:test:   PASS OBSERVATION_USER_VERSION = 2
+@anysearch-cli/store:test:   PASS trace_id round-trip equality
+@anysearch-cli/store:test:   PASS session_id round-trip equality
+@anysearch-cli/store:test:   PASS client_id round-trip equality
+@anysearch-cli/store:test:   PASS golden store: caller trace_id persisted
+@anysearch-cli/store:test:   PASS golden store: injected_trace_id matches caller trace_id
+@anysearch-cli/store:test:   PASS golden store: session_id read from ANS_SESSION_ID env
+@anysearch-cli/store:test:   PASS T9(a): envelope not null
+@anysearch-cli/store:test:   PASS T9(a): allow list persisted
+@anysearch-cli/store:test:   PASS T9(a): deny list persisted
+@anysearch-cli/store:test:   PASS T9(a): policy_version persisted
+@anysearch-cli/store:test:   PASS T9(a): materialized_at is ISO-8601
+@anysearch-cli/store:test:   PASS T9(b): missing cache envelope -> null
+@anysearch-cli/store:test:   PASS T9(c): old-shape cache (no materialized_at) -> null
+@anysearch-cli/store:test: 
+@anysearch-cli/store:test: session-id-propagation tests: 25 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\session-id-propagation.test.ts (2991.6821ms)
+@anysearch-cli/store:test: --- SessionStore tests: 18 passed, 0 failed ---
+@anysearch-cli/store:test: ✔ test\session-store.test.ts (10303.3742ms)
+@anysearch-cli/store:test: ✔ red fixture: every path-bearing line violates (13.3305ms)
+@anysearch-cli/store:test: ✔ red fixture: inline code is not exempt (1.8449ms)
+@anysearch-cli/store:test: ✔ exemption pair: foo_C:\x green vs bare C:\x red (WORD_CHAR _) (10.9963ms)
+@anysearch-cli/store:test: ✔ green fixture: zero violations (5.7051ms)
+@anysearch-cli/store:test: ✔ red fixture: unmarked-fence in-repo ref still violates (neighbor control) (1.694ms)
+@anysearch-cli/store:test: ✔ exemption domain: /x info silent on every fence + locator line (A2) (1.6993ms)
+@anysearch-cli/store:test: ✔ exemption domain: covered fence skips in-repo check; locator line exempts in-repo (1.4632ms)
+@anysearch-cli/store:test: ✔ green fixture: /etc produces info surfaced-skip only (1.3237ms)
+@anysearch-cli/store:test: ✔ unit: prose mentions never fire (0.9785ms)
+@anysearch-cli/store:test: ✔ unit: tokens need a following separator (5.6689ms)
+@anysearch-cli/store:test: ✔ unit: boundary guard kills URL/identifier false positives (0.4749ms)
+@anysearch-cli/store:test: ✔ unit: /x info surfaced-skip boundaries (1.3846ms)
+@anysearch-cli/store:test: ✔ unit: in-repo detection uses literal tokens only (1.0676ms)
+@anysearch-cli/store:test: ✔ ADR-0072 <-> AGENTS.md exemption-domain mirror consistency (4.151ms)
+@anysearch-cli/store:test: stale-probe.test.ts: 9 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\stale-probe.test.ts (7800.4657ms)
+@anysearch-cli/store:test: passed=21 failed=0
+@anysearch-cli/store:test: ✔ test\t0-preferences.test.ts (3110.6245ms)
+@anysearch-cli/store:test: t6-hostile-cuts.test: 18 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\t6-hostile-cuts.test.mjs (923.1594ms)
+@anysearch-cli/store:test: tau-scan tests: 20 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\tau-scan.test.ts (1102.8784ms)
+@anysearch-cli/store:test: time-decay tests: 9474 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\time-decay.test.ts (1088.0429ms)
+@anysearch-cli/store:test: url-policy tests: 23 passed, 0 failed
+@anysearch-cli/store:test: ✔ test\url-policy.test.ts (2195.5071ms)
+@anysearch-cli/store:test: ℹ tests 78
+@anysearch-cli/store:test: ℹ suites 0
+@anysearch-cli/store:test: ℹ pass 78
+@anysearch-cli/store:test: ℹ fail 0
+@anysearch-cli/store:test: ℹ cancelled 0
+@anysearch-cli/store:test: ℹ skipped 0
+@anysearch-cli/store:test: ℹ todo 0
+@anysearch-cli/store:test: ℹ duration_ms 192511.03
+@anysearch-cli/kernel:test: cache bypass, force executing 8ecbc306f32b203a
+@anysearch-cli/kernel:test: $ node --import tsx --test "test/**/*.test.ts" "test/**/*.test.mjs" --test-timeout=30000
+@anysearch-cli/kernel:test: ▶ tokenize
+@anysearch-cli/kernel:test:   ✔ extracts alphanumeric tokens case-insensitively (3.3177ms)
+@anysearch-cli/kernel:test:   ✔ handles CJK (1.2599ms)
+@anysearch-cli/kernel:test: ✔ tokenize (6.6698ms)
+@anysearch-cli/kernel:test: ▶ jaccard
+@anysearch-cli/kernel:test:   ✔ returns 0 for empty inputs (0.9048ms)
+@anysearch-cli/kernel:test:   ✔ returns 1 for identical sets (0.4645ms)
+@anysearch-cli/kernel:test:   ✔ computes U(AB)/|A∪B| correctly (0.8358ms)
+@anysearch-cli/kernel:test: ✔ jaccard (2.925ms)
+@anysearch-cli/kernel:test: ▶ cosine
+@anysearch-cli/kernel:test:   ✔ returns 0 for zero-length arrays (0.9527ms)
+@anysearch-cli/kernel:test:   ✔ returns 0 for orthogonal vectors (0.4817ms)
+@anysearch-cli/kernel:test:   ✔ returns 1 for identical direction (0.5085ms)
+@anysearch-cli/kernel:test: ✔ cosine (2.6497ms)
+@anysearch-cli/kernel:test: ▶ splitSentences
+@anysearch-cli/kernel:test:   ✔ splits simple English sentences (26.8224ms)
+@anysearch-cli/kernel:test:   ✔ merges segments split by abbreviation whitelist (0.9937ms)
+@anysearch-cli/kernel:test:   ✔ handles e.g. correctly (0.5785ms)
+@anysearch-cli/kernel:test:   ✔ CJK sentences split correctly (1.0699ms)
+@anysearch-cli/kernel:test: ✔ splitSentences (31.8114ms)
+@anysearch-cli/kernel:test: ▶ detectFragments
+@anysearch-cli/kernel:test:   ✔ no signals on simple short sentence (1.6033ms)
+@anysearch-cli/kernel:test:   ✔ flags connector (0.7336ms)
+@anysearch-cli/kernel:test:   ✔ flags enumeration (0.385ms)
+@anysearch-cli/kernel:test:   ✔ flags comma density (1.1021ms)
+@anysearch-cli/kernel:test:   ✔ flags high entity density (0.5052ms)
+@anysearch-cli/kernel:test: ✔ detectFragments (4.8679ms)
+@anysearch-cli/kernel:test: ▶ classifyClaim — supported path
+@anysearch-cli/kernel:test:   ✔ frequent overlap produces uncertain (no enough evidence) (2.2475ms)
+@anysearch-cli/kernel:test: ✔ classifyClaim — supported path (2.5953ms)
+@anysearch-cli/kernel:test: ▶ classifyClaim — contradiction detect
+@anysearch-cli/kernel:test:   ✔ high overlap + negation keyword produces unsupported (0.6605ms)
+@anysearch-cli/kernel:test: ✔ classifyClaim — contradiction detect (0.9451ms)
+@anysearch-cli/kernel:test: ▶ classifyClaim — no evidence handles honestly
+@anysearch-cli/kernel:test:   ✔ no results → uncertain, not unsupported (ADR-0034 D4) (0.5737ms)
+@anysearch-cli/kernel:test: ✔ classifyClaim — no evidence handles honestly (0.807ms)
+@anysearch-cli/kernel:test: ▶ buildAttributionReport
+@anysearch-cli/kernel:test:   ✔ produces a valid AttributionReport schema id (3.9539ms)
+@anysearch-cli/kernel:test:   ✔ counts claims by label (0.8763ms)
+@anysearch-cli/kernel:test:   ✔ caps claims at maxClaims (0.9267ms)
+@anysearch-cli/kernel:test:   ✔ uses answers when empty for providerAnswers fallback (0.7614ms)
+@anysearch-cli/kernel:test:   ✔ judgeEnhanced is false when no judge ran (9.8557ms)
+@anysearch-cli/kernel:test:   ✔ record includes fragment rationale when fragment signals fire (0.7809ms)
+@anysearch-cli/kernel:test: ✔ buildAttributionReport (17.7471ms)
+@anysearch-cli/kernel:test: ▶ deriveGapRequests
+@anysearch-cli/kernel:test:   ✔ only generates gaps for unsupported or no-evidence uncertain claims (0.4519ms)
+@anysearch-cli/kernel:test:   ✔ gapQuery wraps the assertion text (0.3746ms)
+@anysearch-cli/kernel:test: ✔ deriveGapRequests (1.0824ms)
+@anysearch-cli/kernel:test: ▶ shouldBridgeToAbstain
+@anysearch-cli/kernel:test:   ✔ false when no claims (0.5917ms)
+@anysearch-cli/kernel:test:   ✔ true when all claims weak (unsupported contradicts carry evidence) + incorrect sufficiency (0.457ms)
+@anysearch-cli/kernel:test:   ✔ false when verdict is not incorrect (0.5823ms)
+@anysearch-cli/kernel:test:   ✔ false for supported claims (0.6025ms)
+@anysearch-cli/kernel:test: ✔ shouldBridgeToAbstain (2.7083ms)
+@anysearch-cli/kernel:test: ▶ shouldEscalateToJudge
+@anysearch-cli/kernel:test:   ✔ uncertain with evidence → true (0.4954ms)
+@anysearch-cli/kernel:test:   ✔ uncertain without evidence → false (no evidence to judge) (0.3196ms)
+@anysearch-cli/kernel:test:   ✔ supported → false (0.3058ms)
+@anysearch-cli/kernel:test: ✔ shouldEscalateToJudge (1.4237ms)
+@anysearch-cli/kernel:test: ▶ renderAttributionText
+@anysearch-cli/kernel:test:   ✔ empty claims produce empty string (0.7124ms)
+@anysearch-cli/kernel:test:   ✔ contains supported/uncertain/unsupported summary (0.5812ms)
+@anysearch-cli/kernel:test:   ✔ every claim line starts with label character (0.5164ms)
+@anysearch-cli/kernel:test:   ✔ source list included when evidence exists (0.7619ms)
+@anysearch-cli/kernel:test: ✔ renderAttributionText (3.129ms)
+@anysearch-cli/kernel:test: ▶ detectFragments — r83 audit additions
+@anysearch-cli/kernel:test:   ✔ flags mixed-script / abbreviation signal (F10 混排缩写) (0.8061ms)
+@anysearch-cli/kernel:test:   ✔ flags long sentence (0.4799ms)
+@anysearch-cli/kernel:test:   ✔ connector regex includes bare 且 (F10) (0.3582ms)
+@anysearch-cli/kernel:test: ✔ detectFragments — r83 audit additions (1.9322ms)
+@anysearch-cli/kernel:test: ▶ classifyClaim — Chinese single-character negation (F13)
+@anysearch-cli/kernel:test:   ✔ 无/没/非 negate high-overlap snippets into unsupported (0.9737ms)
+@anysearch-cli/kernel:test: ✔ classifyClaim — Chinese single-character negation (F13) (1.2037ms)
+@anysearch-cli/kernel:test: ▶ deriveGapRequests — partial_evidence (F12)
+@anysearch-cli/kernel:test:   ✔ uncertain claim with evidence yields partial_evidence gap (0.6338ms)
+@anysearch-cli/kernel:test: ✔ deriveGapRequests — partial_evidence (F12) (0.9498ms)
+@anysearch-cli/kernel:test: ▶ applyJudgeEscalation — host-injected judge (F2)
+@anysearch-cli/kernel:test:   ✔ escalates only uncertain+evidence claims, bounded by maxCalls, honest judgeEnhanced (10.9244ms)
+@anysearch-cli/kernel:test:   ✔ judgeEnhanced stays false when no escalation actually ran (0.4048ms)
+@anysearch-cli/kernel:test: ✔ applyJudgeEscalation — host-injected judge (F2) (11.6626ms)
+@anysearch-cli/kernel:test: ▶ classifyClaim — calibrated dual thresholds (ADR-0050 D5)
+@anysearch-cli/kernel:test:   ✔ exact-overlap evidence -> supported (1.547ms)
+@anysearch-cli/kernel:test:   ✔ very low fused score -> unsupported via lower threshold (1.1467ms)
+@anysearch-cli/kernel:test:   ✔ degraded calibration falls back to legacy 0.6 floor (1.0833ms)
+@anysearch-cli/kernel:test: ✔ classifyClaim — calibrated dual thresholds (ADR-0050 D5) (4.2303ms)
+@anysearch-cli/kernel:test: calibrate.test: ok
+@anysearch-cli/kernel:test: ✔ test\calibrate.test.ts (1062.2975ms)
+@anysearch-cli/kernel:test: composition-calibration.test: ok
+@anysearch-cli/kernel:test: ✔ test\composition-calibration.test.ts (4078.8568ms)
+@anysearch-cli/kernel:test: composition-vertical.test: ok
+@anysearch-cli/kernel:test: ✔ test\composition-vertical.test.ts (4087.8169ms)
+@anysearch-cli/kernel:test: content-trust: 18 passed, 0 failed
+@anysearch-cli/kernel:test: ✔ test\content-trust.test.ts (2590.7424ms)
+@anysearch-cli/kernel:test: --- domain-filter engine tests: 31 passed, 0 failed ---
+@anysearch-cli/kernel:test: ✔ test\domain-filter.test.ts (2850.1238ms)
+@anysearch-cli/kernel:test: --- RetroaererdEngine tests: 71 passed, 0 failed ---
+@anysearch-cli/kernel:test: ✔ test\engine.test.ts (2854.5441ms)
+@anysearch-cli/kernel:test: --- eval-looks stub executor: 158 passed, 0 failed ---
+@anysearch-cli/kernel:test: ✔ test\eval-looks-stub.test.ts (3431.4571ms)
+@anysearch-cli/kernel:test: fusion-web tests: 20 passed, 0 failed
+@anysearch-cli/kernel:test: ✔ test\fusion-web.test.ts (2715.8419ms)
+@anysearch-cli/kernel:test: llm-init tests: 21 passed, endpoints OK
+@anysearch-cli/kernel:test: ✔ test\llm-init.test.ts (6244.1987ms)
+@anysearch-cli/kernel:test: ---
+@anysearch-cli/kernel:test: MemoryPipeline tests: 38 passed, 0 failed
+@anysearch-cli/kernel:test: consolidateState pure function tests: 58 assertions passed, 0 failed
+@anysearch-cli/kernel:test: ✔ test\memory-pipeline.test.ts (6966.1745ms)
+@anysearch-cli/kernel:test: --- pi-runtime span pass-through: 8 passed, 0 failed ---
+@anysearch-cli/kernel:test: ✔ test\pi-runtime-span.test.ts (6309.1859ms)
+@anysearch-cli/kernel:test: ---
+@anysearch-cli/kernel:test: PiAgentRuntime tests: 35 passed, 0 failed
+@anysearch-cli/kernel:test: ---
+@anysearch-cli/kernel:test: ADR-0013 tests: 60 passed, 0 failed
+@anysearch-cli/kernel:test: ✔ test\pi-runtime.test.ts (5562.8095ms)
+@anysearch-cli/kernel:test: qdf-store-import tests: 4 passed, 0 failed
+@anysearch-cli/kernel:test: ✔ test\qdf-store-import.test.ts (1299.0415ms)
+@anysearch-cli/kernel:test: query-rewrite.test.ts: 13 passed, 0 failed
+@anysearch-cli/kernel:test: ✔ test\query-rewrite.test.ts (1037.7886ms)
+@anysearch-cli/kernel:test: Kernel runtime tests: 5 passed, 0 failed
+@anysearch-cli/kernel:test: ✔ test\runtime.test.ts (1538.7661ms)
+@anysearch-cli/kernel:test:   [ok] keyOverrideMerge: project wins on same key
+@anysearch-cli/kernel:test:   [ok] under cap: warned=false
+@anysearch-cli/kernel:test:   [ok] under cap: no WARNING marker
+@anysearch-cli/kernel:test:   [ok] under cap: contains both keys
+@anysearch-cli/kernel:test:   [ok] char cap: warned=true
+@anysearch-cli/kernel:test:   [ok] char cap: WARNING marker present
+@anysearch-cli/kernel:test:   [ok] char cap: output does not silently drop content (marker cites cap)
+@anysearch-cli/kernel:test:   [ok] line cap: warned=true
+@anysearch-cli/kernel:test:   [ok] line cap: WARNING marker present
+@anysearch-cli/kernel:test:   [ok] line cap: marker cites 200
+@anysearch-cli/kernel:test: 
+@anysearch-cli/kernel:test: passed=10 failed=0
+@anysearch-cli/kernel:test: ✔ test\t0-projection.test.ts (1503.1974ms)
+@anysearch-cli/kernel:test: tool-schemas: 33 structural asserts OK
+@anysearch-cli/kernel:test: ✔ test\tool-schemas.test.ts (2762.0404ms)
+@anysearch-cli/kernel:test: --- vertical-domain engine tests: 33 passed, 0 failed ---
+@anysearch-cli/kernel:test: ✔ test\vertical-domain.test.ts (2375.198ms)
+@anysearch-cli/kernel:test: ℹ tests 67
+@anysearch-cli/kernel:test: ℹ suites 18
+@anysearch-cli/kernel:test: ℹ pass 67
+@anysearch-cli/kernel:test: ℹ fail 0
+@anysearch-cli/kernel:test: ℹ cancelled 0
+@anysearch-cli/kernel:test: ℹ skipped 0
+@anysearch-cli/kernel:test: ℹ todo 0
+@anysearch-cli/kernel:test: ℹ duration_ms 9877.1418
+@anysearch-cli/plugin:test: cache bypass, force executing 998772ce4e45f0d2
+@anysearch-cli/plugin:test: $ node --import tsx --test "test/**/*.test.ts" "test/**/*.test.mjs" --test-timeout=30000
+@anysearch-cli/plugin:test:   PASS configs/antigravity/hooks.json uses the official named-hook schema
+@anysearch-cli/plugin:test:   PASS antigravity config commands resolve via package bins and pass the event via argv
+@anysearch-cli/plugin:test: 
+@anysearch-cli/plugin:test: antigravity-contract: 2 passed, 0 failed
+@anysearch-cli/plugin:test:   PASS argv-driven PreToolUse emits {decision:allow} on the real camelCase payload
+@anysearch-cli/plugin:test:   PASS PostToolUse {} stdout + distilled output staged to pending (R68 verified contract)
+@anysearch-cli/plugin:test:   PASS .mdc fallback: any invocation writes .antigravity/rules/anysearch.mdc in cwd workspace
+@anysearch-cli/plugin:test:   PASS PreInvocation injects the routing card as ephemeralMessage on invocationNum=0
+@anysearch-cli/plugin:test:   PASS PostToolUse emits {} exactly and accepts toolCall-less-of-output payloads
+@anysearch-cli/plugin:test:   PASS staged preheat context flushes through the next invocation as injectSteps
+@anysearch-cli/plugin:test:   PASS PreInvocation with invocationNum>0 emits {} (no card spam)
+@anysearch-cli/plugin:test:   PASS Stop emits a protojson-safe object (never plain text)
+@anysearch-cli/plugin:test:   PASS fail-open: malformed stdin exits 0
+@anysearch-cli/plugin:test:   PASS PostToolUse: array-of-blocks tool_output distills into pending ({} stdout)
+@anysearch-cli/plugin:test:   PASS PreToolUse never emits {} ({} = deny on this host)
+@anysearch-cli/plugin:test:   antigravity-contract: 13 passed, 0 failed
+@anysearch-cli/plugin:test: ✔ test\antigravity-contract.test.ts (2342.5258ms)
+@anysearch-cli/plugin:test:   PASS configs/claude/hooks.json uses the official settings schema
+@anysearch-cli/plugin:test:   PASS settings template commands resolve via package bins (no absolute paths)
+@anysearch-cli/plugin:test:   PASS bin entries point at stdin-reading hook entrypoints
+@anysearch-cli/plugin:test:   PASS plugin skeleton: .claude-plugin/plugin.json + hooks/hooks.json + .mcp.json
+@anysearch-cli/plugin:test:   PASS single-source: regenerating configs is byte-identical (no drift)
+@anysearch-cli/plugin:test:   PASS claude PreToolUse: non-ans tool -> silent exit
+@anysearch-cli/plugin:test:   PASS claude PostToolUse: slim abstain response -> silent (nothing indexable)
+@anysearch-cli/plugin:test:   PASS session-start --envelope: additionalContext inside hookSpecificOutput
+@anysearch-cli/plugin:test:   PASS claude PostToolUse: results response -> envelope additionalContext
+@anysearch-cli/plugin:test:   PASS claude PreToolUse: URL on unreachable server -> hookSpecificOutput ask (fail-closed)
+@anysearch-cli/plugin:test:   claude-contract: 10 passed, 0 failed
+@anysearch-cli/plugin:test: ✔ test\claude-contract.test.ts (2373.6932ms)
+@anysearch-cli/plugin:test:   PASS all configs/*/hooks.json targets resolve to stdin-reading entrypoints
+@anysearch-cli/plugin:test:   PASS codebuddy SessionStart: hook_event_name -> raw routing card on stdout
+@anysearch-cli/plugin:test:   PASS codebuddy SessionStart: legacy event field still works
+@anysearch-cli/plugin:test:   PASS claude PostToolUse: array-of-blocks tool_response tolerated too
+@anysearch-cli/plugin:test:   PASS codebuddy PostToolUse: array-of-content-blocks tool_response (live shape)
+@anysearch-cli/plugin:test:   PASS codebuddy PostToolUse: hook_event_name -> hookSpecificOutput.updatedToolOutput
+@anysearch-cli/plugin:test:   PASS codebuddy PreToolUse: non-ans tool -> silent exit 0
+@anysearch-cli/plugin:test:   PASS claude PostToolUse: hook_event_name -> hookSpecificOutput.additionalContext
+@anysearch-cli/plugin:test:   PASS codebuddy PostToolUse: legacy event field fallback
+@anysearch-cli/plugin:test:   PASS codebuddy PostToolUse: object-shaped tool_response also parsed
+@anysearch-cli/plugin:test:   PASS cursor PostToolUse: array-of-blocks tool_output distills
+@anysearch-cli/plugin:test:   PASS codebuddy PreToolUse: ans tool -> envelope or silent (no index yet)
+@anysearch-cli/plugin:test:   PASS session-start: hook_event_name SessionStart honored
+@anysearch-cli/plugin:test:   PASS codex PostToolUse: hook_event_name -> envelope additionalContext
+@anysearch-cli/plugin:test:   PASS codebuddy: unparseable stdin -> silent exit 0
+@anysearch-cli/plugin:test:   PASS codex PostToolUse: array-of-blocks tool_response distills
+@anysearch-cli/plugin:test:   PASS claude PostToolUse: legacy event field preserved
+@anysearch-cli/plugin:test:   PASS cursor postToolUse: hook_event_name -> updated_mcp_tool_output (snake_case)
+@anysearch-cli/plugin:test:   codebuddy-contract: 18 passed, 0 failed
+@anysearch-cli/plugin:test: ✔ test\codebuddy-contract.test.ts (1940.8755ms)
+@anysearch-cli/plugin:test:   PASS configs/codex/hooks.json uses the official Codex hooks schema
+@anysearch-cli/plugin:test:   PASS codex config commands resolve via package bins (no absolute paths, no fake vars)
+@anysearch-cli/plugin:test:   PASS codex config matchers full-match ans tool names
+@anysearch-cli/plugin:test:   PASS codex config SessionStart passes --envelope (bare shape is dropped by codex)
+@anysearch-cli/plugin:test:   PASS bin entry ans-hook-codex exists and reads stdin
+@anysearch-cli/plugin:test:   PASS single-source: regenerating configs is byte-identical (no drift)
+@anysearch-cli/plugin:test:   PASS codex PreToolUse: non-ans tool -> silent exit
+@anysearch-cli/plugin:test:   PASS codex PreToolUse: URL on unreachable server -> envelope ask (fail-closed)
+@anysearch-cli/plugin:test:   PASS codex adapter: malformed stdin -> silent exit 0 (fail-open)
+@anysearch-cli/plugin:test:   PASS codex PostToolUse: results response -> envelope additionalContext
+@anysearch-cli/plugin:test:   PASS codex adapter reads hook_event_name (real codex stdin field)
+@anysearch-cli/plugin:test:   codex-contract: 11 passed, 0 failed
+@anysearch-cli/plugin:test: ✔ test\codex-contract.test.ts (2373.765ms)
+@anysearch-cli/plugin:test:   PASS server reachable: HTTP 200
+@anysearch-cli/plugin:test:   PASS SELECT: row exists
+@anysearch-cli/plugin:test:   PASS SELECT: trace_id matches hook-supplied
+@anysearch-cli/plugin:test:   PASS SELECT: injected_trace_id matches trace_id
+@anysearch-cli/plugin:test:   PASS SELECT: session_id matches host stdin
+@anysearch-cli/plugin:test:   PASS SELECT: client_id is NULL (plugin server path has no MCP client)
+@anysearch-cli/plugin:test:   PASS OPA closure: re-parse trace_id matches
+@anysearch-cli/plugin:test:   PASS OPA closure: re-parse session_id matches
+@anysearch-cli/plugin:test: 
+@anysearch-cli/plugin:test: golden tests: 8 passed, 0 failed
+@anysearch-cli/plugin:test: ✔ test\golden.test.ts (3112.2051ms)
+@anysearch-cli/plugin:test:   PASS isAnsTool: matches all 5 ans tools
+@anysearch-cli/plugin:test:   PASS isAnsTool: matches with platform prefixes
+@anysearch-cli/plugin:test:   PASS isAnsTool: rejects non-ans tools
+@anysearch-cli/plugin:test:   PASS distillOutput: extracts results array
+@anysearch-cli/plugin:test:   PASS distillOutput: handles non-JSON output
+@anysearch-cli/plugin:test:   PASS distillOutput: empty results not indexed
+@anysearch-cli/plugin:test:   PASS makePostToolUseDecision: returns indexEntries for indexing
+@anysearch-cli/plugin:test:   PASS E2E: session-start.cjs exits silently for non-SessionStart events
+@anysearch-cli/plugin:test:   PASS E2E: session-start.cjs generates .mdc file in cwd
+@anysearch-cli/plugin:test:   PASS E2E: session-start.cjs outputs valid JSON for SessionStart event
+@anysearch-cli/plugin:test: 
+@anysearch-cli/plugin:test: Hooks tests: 10 passed, 0 failed
+@anysearch-cli/plugin:test: ✔ test\hooks.test.ts (3183.711ms)
+@anysearch-cli/plugin:test: plugin-security.test: 11 passed, 0 failed
+@anysearch-cli/plugin:test: ✔ test\plugin-security.test.mjs (4005.2633ms)
+@anysearch-cli/plugin:test:   PASS ProjectIndexStore: create and search
+@anysearch-cli/plugin:test:   PASS ProjectIndexStore: dedup by content_hash
+@anysearch-cli/plugin:test:   PASS ProjectIndexStore: purge project
+@anysearch-cli/plugin:test:   PASS isAnsTool: matches ans_* tools with various prefixes
+@anysearch-cli/plugin:test:   PASS distillOutput: extracts results from MCP tool output
+@anysearch-cli/plugin:test:   PASS distillOutput: non-ans tool returns empty
+@anysearch-cli/plugin:test:   PASS distillOutput: non-JSON output gets truncated
+@anysearch-cli/plugin:test:   PASS makePostToolUseDecision: returns distilledOutput + indexEntries
+@anysearch-cli/plugin:test:   PASS SessionStart: routing card has required content
+@anysearch-cli/plugin:test:   PASS SKILL.md: exists and has trigger words
+@anysearch-cli/plugin:test:   PASS AGENTS.md: minimal and has required sections
+@anysearch-cli/plugin:test:   PASS ADR-0011: cursor.ts uses additional_context (snake_case)
+@anysearch-cli/plugin:test:   PASS ADR-0011: antigravity.ts has .mdc fallback
+@anysearch-cli/plugin:test:   PASS ADR-0011: session-start.ts has .mdc generation logic
+@anysearch-cli/plugin:test:   PASS ADR-0011: cursor hooks.json has no _degradation_note
+@anysearch-cli/plugin:test:   PASS ADR-0012: routing card 4-block structure in shared module
+@anysearch-cli/plugin:test:   PASS Server: /health endpoint returns 200
+@anysearch-cli/plugin:test: 
+@anysearch-cli/plugin:test: Plugin tests: 17 passed, 0 failed
+@anysearch-cli/plugin:test: ✔ test\plugin.test.ts (6112.6328ms)
+@anysearch-cli/plugin:test: [anysearch] GET /policy returned HTTP 500; falling back to cached policy
+@anysearch-cli/plugin:test: plugin policy tests: 9 passed, 0 failed
+@anysearch-cli/plugin:test: ✔ test\policy.test.ts (1620.4019ms)
+@anysearch-cli/plugin:test:   PASS HEADER_TRACEPARENT = traceparent
+@anysearch-cli/plugin:test:   PASS HEADER_SESSION_ID = x-anysearch-session-id
+@anysearch-cli/plugin:test:   PASS build: traceparent format 00-<32hex>-<16hex>-01
+@anysearch-cli/plugin:test:   PASS build: x-anysearch-session-id propagated
+@anysearch-cli/plugin:test:   PASS build: trace_id in traceparent is 32 hex
+@anysearch-cli/plugin:test:   PASS build: span_id in traceparent is 16 hex
+@anysearch-cli/plugin:test:   PASS parse: trace_id recovered
+@anysearch-cli/plugin:test:   PASS parse: span_id recovered
+@anysearch-cli/plugin:test:   PASS parse: session_id recovered
+@anysearch-cli/plugin:test:   PASS parse: traceparentValid true
+@anysearch-cli/plugin:test:   PASS invalid (empty) -> traceparentValid false
+@anysearch-cli/plugin:test:   PASS invalid (empty) -> fresh 32-hex trace_id
+@anysearch-cli/plugin:test:   PASS invalid (empty) -> session_id preserved
+@anysearch-cli/plugin:test:   PASS invalid (non-w3c) -> traceparentValid false
+@anysearch-cli/plugin:test:   PASS invalid (non-w3c) -> fresh 32-hex trace_id
+@anysearch-cli/plugin:test:   PASS invalid (non-w3c) -> session_id preserved
+@anysearch-cli/plugin:test:   PASS invalid (short trace_id) -> traceparentValid false
+@anysearch-cli/plugin:test:   PASS invalid (short trace_id) -> fresh 32-hex trace_id
+@anysearch-cli/plugin:test:   PASS invalid (short trace_id) -> session_id preserved
+@anysearch-cli/plugin:test:   PASS invalid (non-hex chars) -> traceparentValid false
+@anysearch-cli/plugin:test:   PASS invalid (non-hex chars) -> fresh 32-hex trace_id
+@anysearch-cli/plugin:test:   PASS invalid (non-hex chars) -> session_id preserved
+@anysearch-cli/plugin:test:   PASS invalid (wrong version) -> traceparentValid false
+@anysearch-cli/plugin:test:   PASS invalid (wrong version) -> fresh 32-hex trace_id
+@anysearch-cli/plugin:test:   PASS invalid (wrong version) -> session_id preserved
+@anysearch-cli/plugin:test:   PASS invalid (missing flags) -> traceparentValid false
+@anysearch-cli/plugin:test:   PASS invalid (missing flags) -> fresh 32-hex trace_id
+@anysearch-cli/plugin:test:   PASS invalid (missing flags) -> session_id preserved
+@anysearch-cli/plugin:test:   PASS no headers -> traceparentValid false
+@anysearch-cli/plugin:test:   PASS no headers -> fresh trace_id
+@anysearch-cli/plugin:test:   PASS no headers -> session_id empty
+@anysearch-cli/plugin:test:   PASS empty x-anysearch-session-id -> session_id ''
+@anysearch-cli/plugin:test:   PASS empty x-anysearch-session-id -> traceparentValid true
+@anysearch-cli/plugin:test:   PASS build: empty sessionId omits x-anysearch-session-id
+@anysearch-cli/plugin:test:   PASS build: traceparent still present
+@anysearch-cli/plugin:test:   PASS newTraceIdHex -> 32-hex
+@anysearch-cli/plugin:test:   PASS newSpanIdHex -> 16-hex
+@anysearch-cli/plugin:test:   PASS round-trip: trace_id preserved
+@anysearch-cli/plugin:test:   PASS round-trip: span_id preserved
+@anysearch-cli/plugin:test:   PASS round-trip: session_id preserved
+@anysearch-cli/plugin:test:   PASS round-trip: traceparentValid true
+@anysearch-cli/plugin:test: 
+@anysearch-cli/plugin:test: propagation tests: 41 passed, 0 failed
+@anysearch-cli/plugin:test: ✔ test\propagation.test.ts (826.2996ms)
+@anysearch-cli/plugin:test: ℹ tests 10
+@anysearch-cli/plugin:test: ℹ suites 0
+@anysearch-cli/plugin:test: ℹ pass 10
+@anysearch-cli/plugin:test: ℹ fail 0
+@anysearch-cli/plugin:test: ℹ cancelled 0
+@anysearch-cli/plugin:test: ℹ skipped 0
+@anysearch-cli/plugin:test: ℹ todo 0
+@anysearch-cli/plugin:test: ℹ duration_ms 8087.737
+@anysearch-cli/cli:test: cache bypass, force executing f0e1fde20576012c
+@anysearch-cli/mcp:test: cache bypass, force executing 3104ab533bafeb7e
+@anysearch-cli/dsh-plugin:test: cache bypass, force executing c127e28d1b11842b
+@anysearch-cli/cli:test: $ node --import tsx --test "test/**/*.test.ts" "test/**/*.test.mjs" --test-timeout=30000
+@anysearch-cli/mcp:test: $ node --import tsx --test "test/**/*.test.ts" "test/**/*.test.mjs" --test-timeout=30000
+@anysearch-cli/dsh-plugin:test: $ node --import tsx --test "test/**/*.test.ts" --test-timeout=30000
+@anysearch-cli/cli:test: SKIP live arm: dist or provider key absent (run pnpm build + set EXA_API_KEY to enable)
+@anysearch-cli/cli:test: --- cli abstain tests: 12 passed, 0 failed ---
+@anysearch-cli/cli:test: ✔ test\abstain.test.ts (744.6569ms)
+@anysearch-cli/cli:test: ok - --help exits 0 and lists all 9 commands
+@anysearch-cli/dsh-plugin:test: ✔ exports: stable name + inject service list (4.0114ms)
+@anysearch-cli/dsh-plugin:test: ✔ apply: mounts all five hook surfaces + routing-card section (10.6025ms)
+@anysearch-cli/dsh-plugin:test: ✔ agent/created: startup injects the routing card as a durable user message (0.8842ms)
+@anysearch-cli/dsh-plugin:test: ✔ agent/created: resume/clear/compact do not re-inject the routing card (0.7599ms)
+@anysearch-cli/dsh-plugin:test: ✔ tools/pre-execute: non-ans tool passes through untouched (1.0464ms)
+@anysearch-cli/dsh-plugin:test: ✔ tools/pre-execute: denied URL on ans tool returns deny (153.0944ms)
+@anysearch-cli/dsh-plugin:test: ✔ tools/pre-execute: unallowlisted URL returns ask (30.5855ms)
+@anysearch-cli/dsh-plugin:test: ✔ tools/pre-execute: recall hits are injected via agent.inject and the call is allowed (27.4598ms)
+@anysearch-cli/dsh-plugin:test: ✔ tools/pre-execute: server down fails open to allow (2.227ms)
+@anysearch-cli/dsh-plugin:test: ✔ tools/post-execute: non-ans tool passes through (0.8303ms)
+@anysearch-cli/dsh-plugin:test: ✔ tools/post-execute: ans result gains a distilled additionalContexts message (1.7562ms)
+@anysearch-cli/cli:test: ok - --version prints pinned version (not 0.0.0)
+@anysearch-cli/dsh-plugin:test: ✔ tools/result: indexes successful ans results over IPC (325.3003ms)
+@anysearch-cli/dsh-plugin:test: ✔ tools/result: error results and non-ans tools are skipped (210.5022ms)
+@anysearch-cli/dsh-plugin:test: ✔ contextMessage: produces a durable user message with plugin provenance (0.4234ms)
+@anysearch-cli/dsh-plugin:test: ✔ apply: registers all five ans_* tools natively on ctx.tools (3.4172ms)
+@anysearch-cli/dsh-plugin:test: ✔ native tools: parameters projected verbatim from the kernel schema source (0.7487ms)
+@anysearch-cli/dsh-plugin:test: ✔ native execute: MCP tools/call to /mcp carries kernel tool name + propagation trio (31.6478ms)
+@anysearch-cli/dsh-plugin:test: ✔ native execute: server unreachable fails open to empty content (no throw) (3.5029ms)
+@anysearch-cli/dsh-plugin:test: ✔ native execute: upstream isError materializes as a thrown tool error (59.8679ms)
+@anysearch-cli/dsh-plugin:test: ✔ native execute: JSON-RPC session error re-handshakes once then succeeds (44.2427ms)
+@anysearch-cli/dsh-plugin:test: ✔ hook compatibility: bare ans_* names still hit all four hook surfaces (224.4566ms)
+@anysearch-cli/cli:test: ok - unknown command exits 2 with error message
+@anysearch-cli/dsh-plugin:test: ℹ tests 21
+@anysearch-cli/dsh-plugin:test: ℹ suites 0
+@anysearch-cli/dsh-plugin:test: ℹ pass 21
+@anysearch-cli/dsh-plugin:test: ℹ fail 0
+@anysearch-cli/dsh-plugin:test: ℹ cancelled 0
+@anysearch-cli/dsh-plugin:test: ℹ skipped 0
+@anysearch-cli/dsh-plugin:test: ℹ todo 0
+@anysearch-cli/dsh-plugin:test: ℹ duration_ms 3048.6856
+@anysearch-cli/cli:test: ok - doctor runs smoke suite and exits 0
+@anysearch-cli/cli:test: ok - llm (no args) prints provider list, exit 0
+@anysearch-cli/cli:test: ok - llm bogus subcommand exits 2
+@anysearch-cli/mcp:test: --- mcp abstain contract tests: 9 passed, 0 failed ---
+@anysearch-cli/mcp:test: ✔ test\abstain.test.ts (5386.2248ms)
+@anysearch-cli/mcp:test: --- MCP server tests: 14 passed, 0 failed ---
+@anysearch-cli/mcp:test: ✔ test\server.test.ts (5512.7145ms)
+@anysearch-cli/mcp:test: --- mcp vertical-guard golden tests: 11 passed, 0 failed ---
+@anysearch-cli/mcp:test: ✔ test\vertical-guard.test.ts (5401.796ms)
+@anysearch-cli/mcp:test: ℹ tests 3
+@anysearch-cli/mcp:test: ℹ suites 0
+@anysearch-cli/mcp:test: ℹ pass 3
+@anysearch-cli/mcp:test: ℹ fail 0
+@anysearch-cli/mcp:test: ℹ cancelled 0
+@anysearch-cli/mcp:test: ℹ skipped 0
+@anysearch-cli/mcp:test: ℹ todo 0
+@anysearch-cli/mcp:test: ℹ duration_ms 5545.3403
+@anysearch-cli/cli:test: ok - llm models openai lists models
+@anysearch-cli/cli:test: ok - chat without LLM env exits 3
+@anysearch-cli/cli:test: ok - mcp --help exits 0 (mcp subcommand dependency smoke)
+@anysearch-cli/cli:test: ok - pref review lists quarantine state, exit 0
+@anysearch-cli/cli:test: ok - pref review --keep unknown id exits 1
+@anysearch-cli/cli:test: ok - search --vertical-domain '' exits 2 (empty domain)
+@anysearch-cli/cli:test: ok - search --vertical-domain (bare, no value) exits 2
+@anysearch-cli/cli:test: ok - search --vertical-domain --json exits 2 (flag-as-value)
+@anysearch-cli/cli:test: ok - search --vertical-sub-domain '' exits 2 (empty sub)
+@anysearch-cli/cli:test: ok - search --vertical-params '[1]' exits 2 (non-Record)
+@anysearch-cli/cli:test: ok - search --vertical-params without --vertical-domain exits 2
+@anysearch-cli/cli:test: ok - search --vertical-sub-domain without --vertical-domain exits 2 (golden)
+@anysearch-cli/cli:test: ok - search q finance --vertical-domain finance keeps the query word (a03 no-swallow)
+@anysearch-cli/cli:test: ok - search q deep --mode deep keeps the query word (a03 no-swallow)
+@anysearch-cli/cli:test: ok - search --vertical-domain finance finance keeps the lone identical word (a03 spec case)
+@anysearch-cli/cli:test: ok - search with malformed sources.vertical TOML fails fast
+@anysearch-cli/cli:test: ---
+@anysearch-cli/cli:test: CLI e2e: 22 passed, 0 failed
+@anysearch-cli/cli:test: ✔ test\e2e.test.ts (25461.9346ms)
+@anysearch-cli/cli:test: --- teardown tests: 3 passed, 0 failed ---
+@anysearch-cli/cli:test: ✔ test\teardown.test.ts (741.0015ms)
+@anysearch-cli/cli:test: ℹ tests 3
+@anysearch-cli/cli:test: ℹ suites 0
+@anysearch-cli/cli:test: ℹ pass 3
+@anysearch-cli/cli:test: ℹ fail 0
+@anysearch-cli/cli:test: ℹ cancelled 0
+@anysearch-cli/cli:test: ℹ skipped 0
+@anysearch-cli/cli:test: ℹ todo 0
+@anysearch-cli/cli:test: ℹ duration_ms 25486.6471
+
+ Tasks:    13 successful, 13 total
+Cached:    5 cached, 13 total
+  Time:    4m3.772s 
+
