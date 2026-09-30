@@ -118,6 +118,18 @@
       "host": "DeepSeek Harness",
       "expect": "0.1.7-rc.2",
       "command": "dsh --version"
+    },
+    {
+      "id": "r93-t5-deprecate",
+      "kind": "symbol",
+      "claim": "T5 deprecate 权限缺口分型为 credential-scope（npm whoami E401，无有效身份）；6 版本双空格只读复核确认；外发未执行，纯备准核销待用户亲触",
+      "file": ".scratch/grill-round-93/evidence/t5-deprecate.md",
+      "tokens": [
+        "credential-scope",
+        "Fixed in 0.1.0␣␣upgrade.",
+        "纯备准核销",
+        "外发未执行"
+      ]
     }
   ]
 }
