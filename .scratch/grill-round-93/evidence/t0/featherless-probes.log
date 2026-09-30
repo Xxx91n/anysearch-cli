@@ -1,0 +1,10 @@
+key_len=67 sha_prefix=64a88ea6
+P1 status=200
+P1 finish_reason=tool_calls tool_calls=1 names=["ans_search_web"] ids=["functions.ans_search_web:0"] content_len=33 usage={"prompt_tokens":59,"completion_tokens":40,"total_tokens":99,"cached_tokens":0}
+P1 rate_hdr={}
+P2 status=200 hdrs={}
+P2 body_head={"id":"56b17f77-9a23-4834-b8d2-6232a063a99d","object":"chat.completion","created":1790756226,"model":"moonshotai/Kimi-K2-Instruct-0905","choices":[{"index":0,"message":{"role":"assistant","content":"Pong! 🏓\n\nThe"},"finish_reason":"length"}],"system_fingerprint":"fp1-ort-nov","usage":{"prompt_toke
+P3 status=200
+P3 finish_reason=tool_calls tool_calls=1 names=["ans_search_web"]
+P4 status=200
+P4 parse_err=Unexpected non-whitespace character after JSON at position 3129 (line 1 column 3130) raw_head={"id":"d9549d1a-336b-4a43-9487-552e8b8ee49a","object":"chat.completion","created":1790756232,"model":"Qwen/Qwen3-32B","choices":[{"index":0,"message":{"role":"assistant","reasoning":"!!!!!!!!!!!!!!!!!
