@@ -830,6 +830,31 @@ function stepStaticAssertions() {
             const miss = (c.tokens ?? []).filter((t) => !text.includes(t));
             if (miss.length) report("warn", 'freshness leg narrative proxy: ' + tag + ' token(s) absent in ' + (c.file ?? "<none>") + ': ' + miss.join(", "));
             else verified++;
+          } else if (c.kind === "readme-token-pin") {
+            // ADR-0092 D4 + ADR-0093 D4: assert README declared host version token against expected/installed version
+            const fp = path.join(ROOT, c.file || "README.md");
+            if (!fs.existsSync(fp)) fail('ADR-0092 D4: ' + tag + ' file missing: ' + c.file);
+            const text = fs.readFileSync(fp, "utf8");
+            const host = c.host || "DeepSeek Harness";
+            const hostLine = text.split("\n").find((l) => l.includes(host));
+            if (!hostLine) fail('ADR-0092 D4: ' + tag + ' cannot find host row for "' + host + '" in ' + c.file);
+            const m = hostLine.match(/\|\s*[^|]+\|\s*([^|\s]+)\s*\|/);
+            const declaredVer = m ? m[1].trim() : null;
+            if (!declaredVer) fail('ADR-0092 D4: ' + tag + ' cannot parse version token from row: ' + hostLine);
+            let expectedVer = c.expect;
+            if (!expectedVer && c.command) {
+              const r = spawnSync(c.command, { cwd: ROOT, encoding: "utf8", shell: true, timeout: 10000 });
+              expectedVer = (r.stdout ?? "").trim();
+            }
+            if (c.shadow) {
+              report("info", 'readme-token-pin shadow dry-run (' + tag + '): declared=' + declaredVer + ', expected=' + expectedVer + ' (non-blocking)');
+              verified++;
+            } else {
+              if (expectedVer && declaredVer !== expectedVer) {
+                fail('ADR-0092 D4: ' + tag + ' declared version ' + declaredVer + ' != expected ' + expectedVer);
+              }
+              verified++;
+            }
           } else {
             fail('ADR-0081 D-004: unknown claim kind ' + c.kind + ' (' + c.id + ')');
           }
