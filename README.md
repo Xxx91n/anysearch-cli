@@ -224,7 +224,7 @@ flowchart LR
 | Codex CLI | 0.142.5 | `config.toml` MCP registration + `.codex/hooks.json` hooks | live-verified · [doc](docs/codex-integration.md) |
 | Antigravity CLI (`agy`) | 1.2.5 | named-hook map `hooks.json` (5 events via argv) | live-verified (reduced matrix) · [doc](docs/antigravity-integration.md) |
 | Antigravity IDE | 2.12.2 | `.antigravity/rules/anysearch.mdc` fallback | hooks not executed (reproduced) · [doc](docs/antigravity-integration.md) |
-| DeepSeek Harness (`dsh`) | 0.1.5-rc.2 | MCP bridge patch + `dsh-plugin` Cordis bundle | live-verified (headless + web profile) · [doc](docs/deepseek-harness-integration.md) |
+| DeepSeek Harness (`dsh`) | 0.1.7-rc.2 | native registration (`ctx.tools`) + `dsh-plugin` Cordis bundle | live-verified (established-via-fallback: [L3b]) <!-- enumeration side-verified via tool_call --> · [doc](docs/deepseek-harness-integration.md) |
 
 "Verified" means an end-to-end transcript captured on the real host
 (`stream-json`), not contract isomorphism — full scope, dates and probe

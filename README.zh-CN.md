@@ -214,7 +214,7 @@ flowchart LR
 | Codex CLI | 0.142.5 | `config.toml` MCP 注册 + `.codex/hooks.json` hooks | 实机验证 · [专文](docs/codex-integration.md) |
 | Antigravity CLI（`agy`） | 1.2.5 | named-hook map `hooks.json`（5 事件经 argv 传入） | 实机验证（裁剪矩阵） · [专文](docs/antigravity-integration.md) |
 | Antigravity IDE | 2.12.2 | `.antigravity/rules/anysearch.mdc` 兜底 | IDE 宿主不执行 hooks（已复现） · [专文](docs/antigravity-integration.md) |
-| DeepSeek Harness（`dsh`） | 0.1.5-rc.2 | MCP 桥 patch + `dsh-plugin` Cordis bundle | 实机验证（headless + web profile） · [专文](docs/deepseek-harness-integration.md) |
+| DeepSeek Harness（`dsh`） | 0.1.7-rc.2 | 原生注册（`ctx.tools`）+ `dsh-plugin` Cordis bundle | 实机验证（established-via-fallback: [L3b]） <!-- 枚举经 tool_call 侧证 --> · [专文](docs/deepseek-harness-integration.md) |
 
 "已验证"指在真实宿主上捕获端到端 transcript（`stream-json`），而非契约
 同构——完整范围、日期与探针证据见各专文链接；证据集见 ADR-0066 /
