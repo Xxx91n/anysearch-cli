@@ -1013,9 +1013,19 @@
    "source_adr": "docs/adr/0088-architecture-grill-round-87-release-closeout-ship.md",
    "owner": "anysearch-eval",
    "opened_at": "2026-09-28",
-   "review_cadence": "next grill round",
+   "review_cadence": "hard-deadline: must convene before R95",
    "status": "open",
-   "evidence": "R86 decision-record 具名重开条件未达；R87 goal 显式范围外登记候场"
+   "evidence": "R86 decision-record 具名重开条件未达；R87 goal 显式范围外登记候场",
+   "deadline": "2026-09-30 (R95 之前必须开庭)",
+   "pre_notification_obligation": "R94 收口批须在 carried_log 追加预通知条目并点名 owner anysearch-eval，不得静默到期",
+   "sunset_clause": "ADR-0094 D4：硬截止 sunset。rolling 复审的橡皮图章化（存续率 ~100%）是本条款针对的失效模式。开庭 ≠ 翻案——reaffirm / revise / retire 三果皆为合法判词；「维持 defer」不再是无期限默认态。",
+   "carried_log": [
+    {
+     "at": "2026-09-30",
+     "round": 93,
+     "note": "R93 T1 ADR-0094 D4 sunset 条款写入：R95 前强制开庭 + R94 收口批预通知义务（registry 挂账 + owner 点名 anysearch-eval）。本轮仅立法，开庭主体在 R94/R95。"
+    }
+   ]
   },
   {
    "id": "defer-r92-t2-featherless-upstream-f-bug",
@@ -1025,8 +1035,11 @@
    "owner": "anysearch-dsh",
    "opened_at": "2026-09-30",
    "review_cadence": "next grill round",
-   "status": "open",
-   "evidence": ".scratch/grill-round-92/evidence/t2-l3-smoke.md + t2-verdict.json (L3a established, L3b not-established 因上游异常, L3c-min not-established)"
+   "status": "closed",
+   "evidence": ".scratch/grill-round-92/evidence/t2-l3-smoke.md + t2-verdict.json (L3a established, L3b not-established 因上游异常, L3c-min not-established) | R93 T2 核销：换模 moonshotai/Kimi-K2-Instruct-0905 后三跑全绿（L3a established + L3b established-via-fallback + L3c-min established，ans_* 收窄判据下无幻觉调用），F-bug 归因（Qwen3-32B reasoning 吞预算）不再适用于冻结臂",
+   "closed_by": "ADR-0094",
+   "closed_at": "2026-09-30",
+   "closed_by_adr_path": "docs/adr/0094-architecture-grill-round-93-kimi-l3-rerun-verdict-gated-pivot.md"
   },
   {
    "id": "defer-r92-readme-token-pin-machine-leg",
@@ -1036,8 +1049,24 @@
    "owner": "anysearch-devops",
    "opened_at": "2026-09-30",
    "review_cadence": "next grill round",
+   "status": "closed",
+   "evidence": ".scratch/grill-round-92/evidence/t4-shadow-dryrun.md + scripts/ship-gate.mjs | R93 T4 核销：机器腿由 shadow 转真实非 shadow 断言首跑——closeout-claims.json 两条 readme-token-pin 声明（README.md + README.zh-CN.md，command=dsh --version），门禁 closeout-claims r93 12/12 re-derived green",
+   "closed_by": "ADR-0094",
+   "closed_at": "2026-09-30",
+   "closed_by_adr_path": "docs/adr/0094-architecture-grill-round-93-kimi-l3-rerun-verdict-gated-pivot.md"
+  },
+  {
+   "id": "defer-r93-deprecate-credential-scope",
+   "type": "deferred-with-ticket",
+   "title": "deprecate 双空格 6 版本（@anysearch-cli/cli@0.0.3~0.0.8）单空格修正重发 — 权限缺口 credential-scope，6 条备准命令备妥待用户亲触",
+   "source_adr": "docs/adr/0094-architecture-grill-round-93-kimi-l3-rerun-verdict-gated-pivot.md",
+   "owner": "anysearch-dsh",
+   "opened_at": "2026-09-30",
+   "review_cadence": "next grill round",
    "status": "open",
-   "evidence": ".scratch/grill-round-92/evidence/t4-shadow-dryrun.md + scripts/ship-gate.mjs"
+   "permission_gap_type": "credential-scope",
+   "permission_gap_fallback": "纯备准核销 + EOTP 呈报待用户亲触自执；不代跑、不借他人凭证绕闸",
+   "evidence": ".scratch/grill-round-93/evidence/t5-deprecate.md + t5-deprecate-probe.json（npm whoami E401；6/6 双空格只读复核确认；0.1.0 不在弃用范围）"
   }
  ]
 }
