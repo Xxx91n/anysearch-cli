@@ -130,6 +130,18 @@
         "纯备准核销",
         "外发未执行"
       ]
+    },
+    {
+      "id": "r93-report-closeout",
+      "kind": "symbol",
+      "claim": "R93 轮报落盘：判词 established-via-fallback、验收标准逐项对照（编译/打包/启动测活/test 闭环）、逐票终态、过程违规自报 3 项、挂账移交 4 项",
+      "file": ".scratch/grill-round-93/reports/2026-09-30-report.md",
+      "tokens": [
+        "established-via-fallback",
+        "启动并测活软件进程",
+        "83 pass / 0 fail / 0 warn",
+        "终态戳"
+      ]
     }
   ]
 }
