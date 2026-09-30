@@ -1,0 +1,16 @@
+# 返修后终验 — 进程测活（实跑记录）
+# 时间: 2026-09-30 | 宿主 dsh 0.1.7-rc.2 | 插件 @anysearch-cli/dsh-plugin 0.1.0
+
+$ node apps/plugin/dist/server/index.cjs     # pid 13792
+port 33333: TCP 127.0.0.1:33333  0.0.0.0:0  LISTENING  13792
+$ node apps/mcp/dist/index.cjs --transport http --port 3001   # pid 15848
+port 3001:  TCP 127.0.0.1:3001   0.0.0.0:0  LISTENING  15848
+
+# MCP JSON-RPC 实测
+initialize status=200
+tools/list status=200 count=5 allHaveInputSchema=true
+names=search_web,research_web,recall_memory,query_knowledge,ans_chat
+
+# 收尾清理
+after cleanup port 3001: closed
+after cleanup port 33333: closed
