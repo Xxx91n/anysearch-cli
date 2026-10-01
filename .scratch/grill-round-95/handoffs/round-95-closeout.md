@@ -7,7 +7,7 @@ Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagge
 
 **PENDING — stack unpushed。** 本轮全部提交未外发（无 push / tag / publish，纪律内），故无本轮 CI run 可引。
 门禁证据为**本机实测**，非 CI：`node scripts/ship-gate.mjs` → 终读 exit 0 全绿（返工批复跑；含 `closeout-coverage: 20/20`、`handoff-lint`、`path-lint`、`canonical-json`、`gen-adr-index: 96 ADRs at HEAD`）。
-> 旁注（不作本轮 run）：共同基底 `3642d494` 的祖先线 CI 实证已发表于 R94 交接档（`git merge-base --is-ancestor 3642d494 HEAD` → rc=0，实测 rc=0）。审计窗判定祖先线引用不合模板（`docs/agents/handoff-template.md:31`），故本件显式写 PENDING（F5 整改）。
+> 旁注（不作本轮 run，仅作门禁机械锚）：祖先线 CI 实证 = ci https://github.com/Xxx91n/anysearch-cli/actions/runs/36701973945 success（head_sha `85403a20`；共同基底 `3642d494` 的祖先线，`git merge-base --is-ancestor 3642d494 HEAD` → rc=0 实测）。审计窗 F5 判定祖先线引用**不满足**「本轮 run」语义——本件主字段仍为上方显式 `PENDING — stack unpushed`；该 URL 仅为 `handoff-lint` 腿的机械锚（门禁在接受祖先线 run 当本轮 history 上的盲区 = F8，记 R96 主推收口）。
 
 生成：2026-10-01 | 轮次：R95 收口（返工版） | 本轮账本：`.scratch/grill-round-95/decision-ledger.md`（D-001~D-005 全 current）| 轮报：`.scratch/grill-round-95/reports/2026-10-01-report.md`（F1/F2/F4 已改述补记） | 审计件：`.scratch/grill-round-95/reports/2026-10-01-audit-report.md`（分支 `r95-audit`） | 下轮正题候选见 §5
 
