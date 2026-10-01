@@ -22,6 +22,13 @@
 // exits INCONCLUSIVE/instrument-flag via new gate G1b (instrument family,
 // ordered between G1 and G2). The locked r85 read stays readout-output.json.
 
+// R95 T2/T3 revision — this adjudicator now executes prereg-matrix@3
+// (.scratch/grill-round-95/prereg-matrix.md), registered BEFORE any T4 probe or
+// T5 run: EXPECTED_FP rolled with the T1 corpus revision (vert-f1105 tombstoned
+// → 57→56 slice) and the matrix stamp moved @2 → @3. The mechanical surface
+// (gate order G0–G4 incl. G1b, flat-prior posterior, four effect fields, early
+// stop, single terminal read) is unchanged verbatim.
+
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, dirname, relative } from "node:path";
@@ -29,7 +36,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
-const EXPECTED_FP = "7ac0a48e55cd7954"; // input fingerprint — drift voids the matrix
+const EXPECTED_FP = "8da3e482b98f8cba"; // input fingerprint (matrix@3) — drift voids the matrix
 const SCHEMA = "anysearch/vertical-delta@1";
 const DOMAINS = ["academic", "code", "finance", "health"]; // closed list (D-002-3)
 const COVERAGE_MIN_PAIRED = 0.7;   // nPaired/n >= 70%
@@ -249,7 +256,7 @@ export function adjudicate(artifact, corpus) {
 
 function finish(verdict, exit, trace, artifact, corpus, S, C, dir = null) {
   const out = {
-    matrix: "grill-round-85/prereg-matrix@2",
+    matrix: "grill-round-95/prereg-matrix@3",
     schema: artifact?.schema ?? null, fingerprint: artifact?.datasetFingerprint ?? null,
     verdict, exit, gates: trace,
     fields: null, control: null, coverage: null, perDomain: null, perStratum: null, truncation: null,
@@ -355,8 +362,11 @@ function selftest() {
     // read as direction evidence — systematic failure exits instrument-flag.
     ["all-arms provider-failed (fake-tied cells) -> INCONCLUSIVE/instrument-flag", "INCONCLUSIVE/instrument-flag",
       { subject: () => ({ verdict: "tied", hOn: false, hOff: false, pf: true }) }],
+    // R95 T3: corpus n 41→40 (T1 tombstone) — index-driven fixture re-tuned so
+    // the case keeps exercising the indeterminate band (intent unchanged:
+    // balanced-ish but not decisive). Gate constants/order untouched.
     ["indeterminate direction -> INCONCLUSIVE/direction-indeterminate", "INCONCLUSIVE/direction-indeterminate",
-      { subject: (m, i) => ({ verdict: i % 7 === 0 ? "better" : i % 8 === 0 ? "worse" : "tied", hOn: true, hOff: false }) }],
+      { subject: (m, i) => ({ verdict: i % 7 === 0 ? "better" : i % 9 === 2 ? "worse" : "tied", hOn: true, hOff: false }) }],
     ["two domain reversals -> NO-GO/negative-hard-gate", "NO-GO/negative-hard-gate",
       { subject: (m) => ((m.vdomain === "finance" || m.vdomain === "code") ? { verdict: "worse", hOn: false, hOff: true } : { verdict: "better", hOn: true, hOff: false }) }],
     ["coverage fail (20 unknown) -> INCONCLUSIVE/coverage", "INCONCLUSIVE/coverage",
