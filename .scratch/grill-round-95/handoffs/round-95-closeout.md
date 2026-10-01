@@ -1,5 +1,13 @@
 # Handoff — Grill Round 95 → R96（执行轮收口交接）
 
+Stack: `r95-exec` on top of common base `3642d494` → main（未 land，未 push —— 纪律内）
+
+## 绿色 run URL（祖先线实证）
+
+- 本轮共同基底 `3642d494` CI 跑实证全绿（本轮全部提交建立在其上，`git merge-base --is-ancestor 3642d494 HEAD` → rc=0，实测 rc=0）：
+  - ci https://github.com/Xxx91n/anysearch-cli/actions/runs/36701973945 success（head_sha `85403a20`，R94 交接档实证；`3642d494`=R94 审计收尾合入主线，`85403a20` 其祖先线）<!-- machine-local: CI run URL 引用 R94 已发表祖先线实证，非本轮新跑 @ 2026-10-01 -->
+- 本轮提交未外发（无 push / tag / publish —— 纪律内）；本机门禁终态见 `.scratch/grill-round-95/reports/2026-10-01-report.md` §4（check/build/test/install-smoke/`pnpm test` 全绿；ship-gate 补记后复跑即绿）。
+
 生成：2026-10-01 | 轮次：R95 收口 | 本轮账本：`.scratch/grill-round-95/decision-ledger.md`（D-001~D-005 全 current）| 轮报：`.scratch/grill-round-95/reports/2026-10-01-report.md` | 下轮正题候选见 §5
 
 ## 0. 本轮终态（一句话）
