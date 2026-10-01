@@ -1,0 +1,3369 @@
+{
+  "schema": "anysearch/vertical-delta@1",
+  "generatedAt": "2026-09-27T12:48:40.362Z",
+  "datasetFingerprint": "7ac0a48e55cd7954",
+  "arms": {
+    "on": "vertical-on (entry spec via --vertical-*)",
+    "off": "vertical-off (no spec)",
+    "measured": "anysearch arm raw list via metadata.fusion"
+  },
+  "n": 57,
+  "controlDegraded": 0,
+  "instrumentFlag": false,
+  "primary": "arm-level delta (anysearch arm)",
+  "secondary": "fused-level delta (observational only — never weighting-gain proof)",
+  "byStratum": {
+    "control": {
+      "n": 16,
+      "nPaired": 8,
+      "armHostHit": {
+        "on": null,
+        "off": null
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": null,
+        "off": null
+      },
+      "expectRankOfMeanDiff": null,
+      "verdicts": {
+        "better": 0,
+        "worse": 0,
+        "tied": 0,
+        "unknown": 16
+      },
+      "ci": null
+    },
+    "parameterized": {
+      "n": 21,
+      "nPaired": 20,
+      "armHostHit": {
+        "on": 0.7,
+        "off": 0.9
+      },
+      "armStrongHit": {
+        "on": 0.6,
+        "off": 0.4
+      },
+      "fusedHostHit": {
+        "on": 0.45,
+        "off": 0.45
+      },
+      "expectRankOfMeanDiff": 0.5,
+      "verdicts": {
+        "better": 4,
+        "worse": 8,
+        "tied": 8,
+        "unknown": 1
+      },
+      "ci": null
+    },
+    "semantic": {
+      "n": 20,
+      "nPaired": 20,
+      "armHostHit": {
+        "on": 0.65,
+        "off": 0.75
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": 0.5,
+        "off": 0.5
+      },
+      "expectRankOfMeanDiff": 0.23076923076923078,
+      "verdicts": {
+        "better": 1,
+        "worse": 2,
+        "tied": 17,
+        "unknown": 0
+      },
+      "ci": null
+    }
+  },
+  "byDomain": {
+    "academic": {
+      "n": 14,
+      "nPaired": 12,
+      "armHostHit": {
+        "on": 0.7,
+        "off": 0.7
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": 0.5,
+        "off": 0.5
+      },
+      "expectRankOfMeanDiff": 0,
+      "verdicts": {
+        "better": 2,
+        "worse": 2,
+        "tied": 6,
+        "unknown": 4
+      },
+      "ci": null
+    },
+    "code": {
+      "n": 14,
+      "nPaired": 12,
+      "armHostHit": {
+        "on": 0.9,
+        "off": 0.9
+      },
+      "armStrongHit": {
+        "on": 0.6,
+        "off": 0.4
+      },
+      "fusedHostHit": {
+        "on": 0.6,
+        "off": 0.5
+      },
+      "expectRankOfMeanDiff": 0,
+      "verdicts": {
+        "better": 1,
+        "worse": 1,
+        "tied": 8,
+        "unknown": 4
+      },
+      "ci": null
+    },
+    "finance": {
+      "n": 15,
+      "nPaired": 12,
+      "armHostHit": {
+        "on": 0.4,
+        "off": 0.9
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": 0.3,
+        "off": 0.4
+      },
+      "expectRankOfMeanDiff": 2.5,
+      "verdicts": {
+        "better": 2,
+        "worse": 5,
+        "tied": 3,
+        "unknown": 5
+      },
+      "ci": null
+    },
+    "health": {
+      "n": 14,
+      "nPaired": 12,
+      "armHostHit": {
+        "on": 0.7,
+        "off": 0.8
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": 0.5,
+        "off": 0.5
+      },
+      "expectRankOfMeanDiff": -0.14285714285714285,
+      "verdicts": {
+        "better": 0,
+        "worse": 2,
+        "tied": 8,
+        "unknown": 4
+      },
+      "ci": null
+    }
+  },
+  "rows": [
+    {
+      "id": "ctrl-f101",
+      "stratum": "control",
+      "vdomain": "finance",
+      "role": "control",
+      "hadVerticalSpec": false,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": null
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": null,
+      "armInFanoutOff": true,
+      "providersFailedOn": null,
+      "providersFailedOff": [],
+      "providersFailedIsoOn": null,
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": null,
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": null,
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "recipetineats.com/carbonara/",
+        "reddit.com/r/Cooking/comments/10uef5d/the_proper_way_to_make_pasta_carbonara/",
+        "youtube.com/watch?v=VCiCqjhfUOg"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-f103",
+      "stratum": "control",
+      "vdomain": "finance",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 8,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "anysearch"
+      ],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "nasdaq.com/market-activity/earnings",
+        "finance.yahoo.com/calendar/earnings/",
+        "earningshub.com/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-f102",
+      "stratum": "control",
+      "vdomain": "finance",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "allrecipes.com/recipe/17981/one-bowl-chocolate-cake-iii/",
+        "addapinch.com/the-best-chocolate-cake-recipe-ever/",
+        "recipetineats.com/chocolate-cake/"
+      ],
+      "armOffSample": [
+        "allrecipes.com/recipe/17981/one-bowl-chocolate-cake-iii/",
+        "addapinch.com/the-best-chocolate-cake-recipe-ever/",
+        "recipetineats.com/chocolate-cake/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-f104",
+      "stratum": "control",
+      "vdomain": "finance",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "investor.apple.com/stock-price/default.aspx",
+        "finance.yahoo.com/quote/AAPL/",
+        "apple.com/store"
+      ],
+      "armOffSample": [
+        "investor.apple.com/stock-price/default.aspx",
+        "finance.yahoo.com/quote/AAPL/",
+        "apple.com/store"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-a101",
+      "stratum": "control",
+      "vdomain": "academic",
+      "role": "control",
+      "hadVerticalSpec": false,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": null
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": null,
+      "armInFanoutOff": false,
+      "providersFailedOn": null,
+      "providersFailedOff": [],
+      "providersFailedIsoOn": null,
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": null,
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": null,
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "reddit.com/r/Coffee/comments/g21exs/what_temperature_to_you_use_for_your_coffee/",
+        "home-barista.com/brewing/brew-temperature-180-vs-200-t21200.html",
+        "verenastreet.com/blogs/all-about-coffee/coffee-temperature?srsltid=AU7gw4V1wuGZNSQrT9yUet_2Psoc_DZDOm5SN2DbredXrIjZCjaHixXw"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-c101",
+      "stratum": "control",
+      "vdomain": "code",
+      "role": "control",
+      "hadVerticalSpec": false,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": null
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": null,
+      "armInFanoutOff": true,
+      "providersFailedOn": null,
+      "providersFailedOff": [],
+      "providersFailedIsoOn": null,
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": null,
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": null,
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "eathealthy365.com/italian-sauces-for-pasta-recipe-comparison/",
+        "vincenzosplate.com/italian-pasta-sauces/",
+        "mangiawithnonna.com/the-10-most-famous-italian-pasta-sauces/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-a103",
+      "stratum": "control",
+      "vdomain": "academic",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "anysearch"
+      ],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "ieeexplore.ieee.org/document/10643325/",
+        "arxiv.org/pdf/2308.06767",
+        "sciencedirect.com/science/article/pii/S0031320321000868"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-a102",
+      "stratum": "control",
+      "vdomain": "academic",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "stadlermade.com/pizza-calculator/?srsltid=AU7gw4VTWLeIir5ZoFZ_7Ltg0U3grxUoMCv5sTTmRtfXAUgCQrdc8tW0",
+        "pizza-calculator.the-bread-code.io/",
+        "flourwise.com/pizza-calculator/"
+      ],
+      "armOffSample": [
+        "stadlermade.com/pizza-calculator/?srsltid=AU7gw4V72M8Dqt3JRlur1ZV1AxaqnvUx1LZPAhOlSv_NpVgBAoySpT-i",
+        "pizza-calculator.the-bread-code.io/",
+        "flourwise.com/pizza-calculator/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-a104",
+      "stratum": "control",
+      "vdomain": "academic",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 5
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "epa.gov/mercury/basic-information-about-mercury",
+        "britannica.com/science/mercury-chemical-element",
+        "livescience.com/39232-facts-about-mercury.html"
+      ],
+      "armOffSample": [
+        "epa.gov/mercury/basic-information-about-mercury",
+        "envchemgroup.com/mercury-history-facts-and-concerns.html",
+        "britannica.com/science/mercury-chemical-element"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-h101",
+      "stratum": "control",
+      "vdomain": "health",
+      "role": "control",
+      "hadVerticalSpec": false,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 9,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": null
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": null,
+      "armInFanoutOff": true,
+      "providersFailedOn": null,
+      "providersFailedOff": [],
+      "providersFailedIsoOn": null,
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": null,
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": null,
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "youtube.com/shorts/bInihYJPtEU",
+        "allstate.com/resources/car-insurance/how-to-change-a-flat-tire",
+        "reddit.com/r/selfreliance/comments/iuliat/how_to_change_a_car_tire/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-c103",
+      "stratum": "control",
+      "vdomain": "code",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "w3schools.com/python/python_lists_comprehension.asp",
+        "medium.com/data-science/lets-learn-list-comprehension-with-a-lots-of-examples-efficient-python-programming-98fb41813d7",
+        "geeksforgeeks.org/python/python-list-comprehension/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-c104",
+      "stratum": "control",
+      "vdomain": "code",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "dev.java/learn/language-basics/",
+        "w3schools.com/java/",
+        "youtube.com/watch?v=eIrMbAQSU34"
+      ],
+      "armOffSample": [
+        "dev.java/learn/language-basics/",
+        "w3schools.com/java/",
+        "youtube.com/watch?v=eIrMbAQSU34"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-c102",
+      "stratum": "control",
+      "vdomain": "code",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "youtube.com/watch?v=tmEj3MQPlTY",
+        "rainbird.com/homeowners/blog/get-started-with-drip-irrigation-in-your-garden",
+        "homedepot.com/c/ah/how-to-install-drip-irrigation/9ba683603be9fa5395fab90f2267c99"
+      ],
+      "armOffSample": [
+        "youtube.com/watch?v=tmEj3MQPlTY",
+        "rainbird.com/homeowners/blog/get-started-with-drip-irrigation-in-your-garden",
+        "homedepot.com/c/ah/how-to-install-drip-irrigation/9ba683603be9fa5395fab90f2267c99"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-h102",
+      "stratum": "control",
+      "vdomain": "health",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "joyfoodsunshine.com/the-most-amazing-chocolate-chip-cookies/",
+        "pinchofyum.com/the-best-soft-chocolate-chip-cookies",
+        "sallysbakingaddiction.com/chewy-chocolate-chip-cookies/"
+      ],
+      "armOffSample": [
+        "joyfoodsunshine.com/the-most-amazing-chocolate-chip-cookies/",
+        "pinchofyum.com/the-best-soft-chocolate-chip-cookies",
+        "sallysbakingaddiction.com/chewy-chocolate-chip-cookies/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-h103",
+      "stratum": "control",
+      "vdomain": "health",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 8,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "anysearch"
+      ],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "pmc.ncbi.nlm.nih.gov/articles/PMC8709011/",
+        "mayoclinic.org/drugs-supplements-vitamin-d/art-20363792",
+        "health.harvard.edu/diet-and-nutrition/taking-too-much-vitamin-d-can-cloud-its-benefits-and-create-health-risks"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-h104",
+      "stratum": "control",
+      "vdomain": "health",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "cdc.gov/flu/about/coldflu.html",
+        "tylenol.com/adult-relief/cold-flu/cold-or-flu",
+        "namcshoals.com/news/2025/11/26/is-it-a-cold--the-flu--or-something-else--how-to-tell-the-difference"
+      ],
+      "armOffSample": [
+        "cdc.gov/flu/about/coldflu.html",
+        "tylenol.com/adult-relief/cold-flu/cold-or-flu",
+        "namcshoals.com/news/2025/11/26/is-it-a-cold--the-flu--or-something-else--how-to-tell-the-difference"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-c1201",
+      "stratum": "semantic",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 2,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 2
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 4,
+        "marked": 5
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 4
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "reddit.com/r/Python/comments/sxovwp/async_io_tasks_vs_threads/",
+        "stackoverflow.com/questions/27435284/multiprocessing-vs-multithreading-vs-asyncio",
+        "geeksforgeeks.org/python/asyncio-vs-threading-in-python/"
+      ],
+      "armOffSample": [
+        "reddit.com/r/Python/comments/sxovwp/async_io_tasks_vs_threads/",
+        "stackoverflow.com/questions/27435284/multiprocessing-vs-multithreading-vs-asyncio",
+        "geeksforgeeks.org/python/asyncio-vs-threading-in-python/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-c1101",
+      "stratum": "parameterized",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": true,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": true,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "react.dev/reference/rsc/server-components",
+        "reddit.com/r/nextjs/comments/1aezfrs/explain_me_react_server_components_like_i_am_10/",
+        "joshwcomeau.com/react/server-components/"
+      ],
+      "armOffSample": [
+        "react.dev/reference/rsc/server-components",
+        "reddit.com/r/nextjs/comments/1aezfrs/explain_me_react_server_components_like_i_am_10/",
+        "joshwcomeau.com/react/server-components/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-a1201",
+      "stratum": "semantic",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 9,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 9
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "arxiv.org/abs/2602.08019",
+        "emergentmind.com/topics/sparse-mixture-of-experts-architecture",
+        "en.wikipedia.org/wiki/Mixture_of_experts"
+      ],
+      "armOffSample": [
+        "arxiv.org/html/2507.11181v2",
+        "zylos.ai/research/2026-03-20-sparse-mixture-of-experts-ai-agent-systems/",
+        "sciencedirect.com/science/article/pii/S1566253525007365"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-a1101",
+      "stratum": "parameterized",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 2,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 3
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "doi.org/10.1609/aaai.v38i16.29728",
+        "arxiv.org/abs/2402.07688",
+        "doi.org/10.18653/v1/2024.findings-acl.372"
+      ],
+      "armOffSample": [
+        "ieeexplore.ieee.org/document/10683437/?arnumber=10683437",
+        "evidentlyai.com/blog/rag-benchmarks",
+        "arxiv.org/abs/2407.11005"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 1,
+        "verdict": "better"
+      }
+    },
+    {
+      "id": "vert-h1101",
+      "stratum": "parameterized",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 2,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 2
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm=1191",
+        "mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm=1154070"
+      ],
+      "armOffSample": [
+        "accessdata.fda.gov/drugsatfda_docs/label/2015/200671s000lbl.pdf",
+        "medlineplus.gov/druginfo/meds/a682878.html",
+        "dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=d8b5d5b4-44d2-4f8f-8c11-e4fc96504f59"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-f1101",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 1,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 1
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 8
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "site.financialmodelingprep.com/"
+      ],
+      "armOffSample": [
+        "marketbeat.com/stocks/NASDAQ/NVDA/earnings/",
+        "zacks.com/stock/research/NVDA/earnings-calendar",
+        "tradingkey.com/markets/stocks/nvda/earnings"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 7,
+        "verdict": "better"
+      }
+    },
+    {
+      "id": "vert-h1201",
+      "stratum": "semantic",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 3,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 3
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "pmc.ncbi.nlm.nih.gov/articles/PMC9206826/",
+        "frontiersin.org/journals/medicine/articles/10.3389/fmed.2025.1501921/full",
+        "cdc.gov/vaccine-safety/vaccines/covid-19.html"
+      ],
+      "armOffSample": [
+        "pmc.ncbi.nlm.nih.gov/articles/PMC9148928/",
+        "sciencedirect.com/science/article/pii/S0141813025055631",
+        "thelancet.com/journals/laninf/article/piis1473-3099(22)00054-8/fulltext"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-f1201",
+      "stratum": "semantic",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 7
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 9,
+        "marked": 5
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 9
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "marketwatch.com/story/hedge-funds-are-doubling-down-on-big-tech-even-after-summer-volatility-triggered-a-massive-portfolio-cleanup-57dbbf8a",
+        "facebook.com/61563661054752/posts/hedge-funds-are-selling-tech-at-a-record-pace-hedge-funds-have-reduced-their-exp/122205510806455368/",
+        "goldmansachs.com/insights/the-markets/are-hedge-funds-still-bullish-on-ai-stocks"
+      ],
+      "armOffSample": [
+        "hedgeweek.com/mega-cap-tech-stocks-continue-to-dominate-hedge-fund-equity-investment-portfolios/",
+        "openthemagazine.com/business/hedge-funds-double-down-on-ai-stocks-as-chipmakers-become-wall-streets-biggest-bet",
+        "linkedin.com/pulse/mega-cap-tech-stocks-continue-dominate-hedge-fund-acide"
+      ],
+      "delta": {
+        "hostFlip": "worse",
+        "rankDiff": null,
+        "verdict": "worse"
+      }
+    },
+    {
+      "id": "vert-a1102",
+      "stratum": "parameterized",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 9,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 9
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "arxiv.org/abs/2308.10620",
+        "doi.org/10.1038/s41398-023-02592-2",
+        "doi.org/10.1146/annurev-economics-091622-010157"
+      ],
+      "armOffSample": [
+        "arxiv.org/abs/2303.18223",
+        "link.springer.com/article/10.1007/s11704-026-60308-3",
+        "github.com/rucaibox/llmsurvey"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-a1202",
+      "stratum": "semantic",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "pibb.ac.cn/pibbcn/article/html/20230152?st=top_view",
+        "actamicro.ijournals.cn/cjbcn/article/html/gc24051406?st=article_issue",
+        "novopro.cn/tools/secondary-structure-prediction.html"
+      ],
+      "armOffSample": [
+        "ncsti.gov.cn/kjdt/kjrd/202605/t20260529_248225.html",
+        "zhuanlan.zhihu.com/p/19998465892",
+        "pibb.ac.cn/pibbcn/article/html/20230152?st=top_view"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-c1102",
+      "stratum": "parameterized",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 3,
+        "hostHit": true,
+        "strongHit": false,
+        "rankOf": 1,
+        "marked": 3
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": false,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 2,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": true,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "github.com/expressjs/express/blob/master/_autodocs/README.md",
+        "github.com/expressjs/express/blob/master/_autodocs/errors.md",
+        "github.com/expressjs/express/blob/master/_autodocs/api-reference/middleware.md"
+      ],
+      "armOffSample": [
+        "expressjs.com/en/5x/guide/error-handling/",
+        "reddit.com/r/node/comments/18ukkyc/whats_the_best_way_to_handle_errors_in_expressjs/",
+        "geeksforgeeks.org/node-js/explain-error-handling-in-express-js-using-an-example/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-c1202",
+      "stratum": "semantic",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1,
+        "marked": 5
+      },
+      "fusedOff": {
+        "n": 8,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {
+        "anysearch": "transient"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "gist.github.com/abhioncbr/e433ebfd28c0da6788cc3ced85f80738",
+        "v1-32.docs.kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/",
+        "devops.stackexchange.com/questions/14692/kubernetes-pod-eviction-and-traffic-draining-for-to-be-evicted-pod"
+      ],
+      "armOffSample": [
+        "kubernetes.io/docs/concepts/scheduling-eviction/",
+        "sysdig.com/blog/kubernetes-pod-evicted",
+        "discuss.kubernetes.io/t/pod-eviction-policy-query-understanding-kubernetes-eviction-behavior/27655"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-f1102",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 1,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 1
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 9,
+        "hostHit": true,
+        "rankOf": 2,
+        "marked": 1
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 2
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "site.financialmodelingprep.com/"
+      ],
+      "armOffSample": [
+        "bls.gov/charts/consumer-price-index/consumer-price-index-by-category-line-chart.htm",
+        "minneapolisfed.org/about-us/monetary-policy/inflation-calculator/consumer-price-index-1913-",
+        "tradingeconomics.com/united-states/inflation-cpi"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-f1202",
+      "stratum": "semantic",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 7
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 2,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 2
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "reuters.com/jp/article/markets/12-idUSL4S0XG09H/",
+        "finance.people.com.cn/n1/2021/1208/c1004-32302348.html",
+        "baike.baidu.com/item/%E9%99%8D%E5%87%86/2701054"
+      ],
+      "armOffSample": [
+        "reuters.com/jp/article/markets/12-idUSL4S0XG09H/",
+        "jr.jl.gov.cn/jrzx/zyjrxxzz/gj/202112/t20211208_603610.html",
+        "baike.baidu.com/item/%E9%99%8D%E5%87%86/2701054"
+      ],
+      "delta": {
+        "hostFlip": "worse",
+        "rankDiff": null,
+        "verdict": "worse"
+      }
+    },
+    {
+      "id": "vert-h1102",
+      "stratum": "parameterized",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "clinicaltrials.gov/study/NCT07628985",
+        "clinicaltrials.gov/study/NCT04667143",
+        "clinicaltrials.gov/study/NCT01364350"
+      ],
+      "armOffSample": [
+        "clinicaltrials.gov/study/NCT01101438",
+        "thelancet.com/journals/lancet/article/PIIS0140-6736(26)00202-3/fulltext",
+        "nejm.org/doi/full/10.1056/NEJMoa2201662"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-h1202",
+      "stratum": "semantic",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "drugoffice.gov.hk/gb/unigb/www.drugoffice.gov.hk/eps/do/tc/consumer/news_informations/dm_04.html",
+        "e.dxy.cn/wisdom/front/zhihuihao/2985",
+        "msn.sgs.com/News/HIS/2549"
+      ],
+      "armOffSample": [
+        "drugoffice.gov.hk/gb/unigb/www.drugoffice.gov.hk/eps/do/tc/consumer/news_informations/dm_04.html",
+        "medsci.cn/article/show_article.do?id=37569424009c",
+        "mayoclinic.org/zh-hans/diseases-conditions/high-blood-pressure/in-depth/blood-pressure/art-20045245"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-a1103",
+      "stratum": "parameterized",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 2,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "europepmc.org/article/PMC/13583639",
+        "pubmed.ncbi.nlm.nih.gov/42716927/",
+        "pubmed.ncbi.nlm.nih.gov/32198625/"
+      ],
+      "armOffSample": [
+        "pmc.ncbi.nlm.nih.gov/articles/PMC10883050/",
+        "synthego.com/blog/crispr-off-target-editing/",
+        "cd-genomics.com/crispr-off-target-validation.html"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": -1,
+        "verdict": "worse"
+      }
+    },
+    {
+      "id": "vert-a1203",
+      "stratum": "semantic",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "arxiv.org/abs/2312.14925",
+        "openreview.net/forum?id=f7OkIurx4b",
+        "mcml.ai/publications/kwb+25a/"
+      ],
+      "armOffSample": [
+        "arxiv.org/abs/2312.14925",
+        "openreview.net/forum?id=f7OkIurx4b",
+        "dl.acm.org/doi/10.1145/3743127"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-c1103",
+      "stratum": "parameterized",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": true,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": true,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "tokio.rs/tokio/tutorial/spawning",
+        "github.com/tokio-rs/tokio/discussions/3858",
+        "users.rust-lang.org/t/how-to-make-tokio-spawn-execute-asynchronously/96628"
+      ],
+      "armOffSample": [
+        "tokio.rs/tokio/tutorial/spawning",
+        "users.rust-lang.org/t/how-to-make-tokio-spawn-execute-asynchronously/96628",
+        "github.com/tokio-rs/tokio/discussions/3858"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-c1203",
+      "stratum": "semantic",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "doc.rust-lang.org/book/ch04-00-understanding-ownership.html",
+        "rustify.rs/articles/rust-ownership-borrowing-explained",
+        "blog.logrocket.com/introducing-rust-borrow-checker/"
+      ],
+      "armOffSample": [
+        "doc.rust-lang.org/book/ch04-00-understanding-ownership.html",
+        "rustify.rs/articles/rust-ownership-borrowing-explained",
+        "reddit.com/r/rust/comments/15lr1do/is_the_rust_borrow_checker_really_that_challenging/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-f1103",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 1,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 1
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 1
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 2
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "site.financialmodelingprep.com/"
+      ],
+      "armOffSample": [
+        "finance.yahoo.com/quote/AAPL/",
+        "nasdaq.com/market-activity/stocks/aapl",
+        "robinhood.com/us/en/stocks/AAPL/"
+      ],
+      "delta": {
+        "hostFlip": "worse",
+        "rankDiff": null,
+        "verdict": "worse"
+      }
+    },
+    {
+      "id": "vert-f1203",
+      "stratum": "semantic",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 5
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "chicagofed.org/publications/chicago-fed-letter/2018/404",
+        "investopedia.com/terms/i/invertedyieldcurve.asp",
+        "reddit.com/r/AskEconomics/comments/1jlbkye/why_is_an_inverted_yield_curve_sometimes_seen_as/"
+      ],
+      "armOffSample": [
+        "chicagofed.org/publications/chicago-fed-letter/2018/404",
+        "investopedia.com/terms/i/invertedyieldcurve.asp",
+        "reddit.com/r/AskEconomics/comments/1jlbkye/why_is_an_inverted_yield_curve_sometimes_seen_as/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-h1103",
+      "stratum": "parameterized",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 5,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 4
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "worldpopulationreview.com/country-rankings/diabetes-rates-by-country",
+        "ncbi.nlm.nih.gov/books/NBK581940/",
+        "data.worldbank.org/indicator/SH.STA.DIAB.ZS"
+      ],
+      "armOffSample": [
+        "diabetesatlas.org/data-by-location/country/",
+        "worldpopulationreview.com/country-rankings/diabetes-rates-by-country",
+        "worldmetrics.org/diabetes-prevalence-statistics/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": -1,
+        "verdict": "worse"
+      }
+    },
+    {
+      "id": "vert-a1104",
+      "stratum": "parameterized",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 10
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "link.springer.com/10.1007/978-3-031-84300-6_13",
+        "doi.org/10.48550/arXiv.1706.03762",
+        "ssrn.com/abstract=4993784"
+      ],
+      "armOffSample": [
+        "scholar.google.com/citations?user=oR9sCGYAAAAJ&hl=en",
+        "en.wikipedia.org/wiki/Attention_Is_All_You_Need",
+        "arxiv.org/abs/1706.03762"
+      ],
+      "delta": {
+        "hostFlip": "worse",
+        "rankDiff": null,
+        "verdict": "worse"
+      }
+    },
+    {
+      "id": "vert-h1203",
+      "stratum": "semantic",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 2,
+        "marked": 5
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 2
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "cdc.gov/vaccines/hcp/imz-schedules/child-adolescent-age.html",
+        "illinoisaap.org/global-vaccine-schedule-comparison-chart/",
+        "healthychildren.org/English/safety-prevention/immunizations/Pages/Recommended-Immunization-Schedules.aspx"
+      ],
+      "armOffSample": [
+        "cdc.gov/vaccines/hcp/imz-schedules/child-adolescent-age.html",
+        "illinoisaap.org/global-vaccine-schedule-comparison-chart/",
+        "healthychildren.org/English/safety-prevention/immunizations/Pages/Recommended-Immunization-Schedules.aspx"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-a1204",
+      "stratum": "semantic",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 4,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 4
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "arxiv.org/html/2509.07887v1",
+        "sciencedirect.com/science/article/pii/S2095177925003259",
+        "pubs.acs.org/doi/full/10.1021/acs.chemrev.5c00461"
+      ],
+      "armOffSample": [
+        "sciencedirect.com/science/article/pii/S2211383525006884",
+        "arxiv.org/html/2506.01302v1",
+        "pubmed.ncbi.nlm.nih.gov/40959983/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-c1204",
+      "stratum": "semantic",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "typescriptlang.org/docs/handbook/2/conditional-types.html",
+        "stackoverflow.com/questions/61541059/conditional-types-with-generics-in-typescript",
+        "learntypescript.dev/09/l1-conditional-type"
+      ],
+      "armOffSample": [
+        "typescriptlang.org/docs/handbook/2/conditional-types.html",
+        "stackoverflow.com/questions/61541059/conditional-types-with-generics-in-typescript",
+        "learntypescript.dev/09/l1-conditional-type"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-c1104",
+      "stratum": "parameterized",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": false,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": false,
+        "rankOf": 9
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "react.dev/learn/reusing-logic-with-custom-hooks",
+        "stackoverflow.com/questions/76705113/recreating-usestate-custom-hook-in-react",
+        "dev.to/filippofilip95/i-replaced-usestate-hook-with-custom-one-3dn1"
+      ],
+      "armOffSample": [
+        "reintech.io/blog/typescript-react-hooks-typing-usestate-useeffect-custom-hooks",
+        "stackoverflow.com/questions/53650468/set-types-on-usestate-react-hook-with-typescript",
+        "generalistprogrammer.com/tutorials/react-custom-hooks-complete-guide"
+      ],
+      "delta": {
+        "hostFlip": "worse",
+        "rankDiff": null,
+        "verdict": "worse"
+      }
+    },
+    {
+      "id": "vert-f1104",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 0,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "xueqiu.com/S/SH600519",
+        "wap.eastmoney.com/quote/stock/1.600519.html",
+        "hk.finance.yahoo.com/quote/600519.SS/"
+      ],
+      "delta": {
+        "hostFlip": "worse",
+        "rankDiff": null,
+        "verdict": "worse"
+      }
+    },
+    {
+      "id": "vert-f1204",
+      "stratum": "semantic",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 4
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "morningstar.com/stocks/why-total-shareholder-yield-matters-more-than-dividends",
+        "dividend.com/dividend-education/dividends-vs-share-buybacks-its-a-no-brainer/",
+        "msci.com/research-and-insights/blog-post/how-a-shift-toward-buybacks-affected-yield-strategies"
+      ],
+      "armOffSample": [
+        "strasmore.com/blog/dividends-vs-buybacks-shareholder-yield",
+        "dividendranks.com/learn/strategy/dividend-vs-buyback",
+        "geminiq.com/blog/shareholder-yield-dividends-buybacks-explained"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 3,
+        "verdict": "better"
+      }
+    },
+    {
+      "id": "vert-h1104",
+      "stratum": "parameterized",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 2,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 2
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 9,
+        "hostHit": true,
+        "rankOf": 3,
+        "marked": 2
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 3
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm=723",
+        "mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm=1152901"
+      ],
+      "armOffSample": [
+        "drugs.com/drug-interactions/amoxicillin.html",
+        "goodrx.com/amoxicillin/interactions?srsltid=AU7gw4XgMYv2SdyTbyxQV8lAPei3oam2ooFZDvjKti3DQjTCj2BW7QWr",
+        "medicalnewstoday.com/articles/drugs-amoxicillin-tablet-interactions"
+      ],
+      "delta": {
+        "hostFlip": "worse",
+        "rankDiff": null,
+        "verdict": "worse"
+      }
+    },
+    {
+      "id": "vert-a1105",
+      "stratum": "parameterized",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 4,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "data.mendeley.com/datasets/nkg2rdzgbs/1",
+        "sciencebase.gov/catalog/item/57067bb3e4b032f77a8a4271",
+        "mexico.climateverse.net/citation?persistentId=doi%3A10.71646%2FNDYMW1"
+      ],
+      "armOffSample": [
+        "berkeleyearth.org/climate-model-synthesis-announcement/",
+        "ncdc.noaa.gov/cdo-web/datasets",
+        "wise.web.unc.edu/teaching/data-sources/"
+      ],
+      "delta": {
+        "hostFlip": "better",
+        "rankDiff": null,
+        "verdict": "better"
+      }
+    },
+    {
+      "id": "vert-a1205",
+      "stratum": "semantic",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "phys.tsinghua.edu.cn/info/1268/6322.htm",
+        "zh.wikipedia.org/zh-hans/%E9%87%8F%E5%AD%90%E7%BA%A0%E9%94%99",
+        "cas.cn/syky/202505/t20250526_5069999.shtml"
+      ],
+      "armOffSample": [
+        "phys.tsinghua.edu.cn/info/1268/6322.htm",
+        "zh.wikipedia.org/zh-hans/%E9%87%8F%E5%AD%90%E7%BA%A0%E9%94%99",
+        "cas.cn/syky/202505/t20250526_5069999.shtml"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-h1204",
+      "stratum": "semantic",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 6,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 6
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "who.int/initiatives/glass",
+        "cdc.gov/antimicrobial-resistance/data-research/facts-stats/index.html",
+        "pmc.ncbi.nlm.nih.gov/articles/PMC11953028/"
+      ],
+      "armOffSample": [
+        "who.int/initiatives/glass",
+        "cdc.gov/antimicrobial-resistance/data-research/facts-stats/index.html",
+        "pmc.ncbi.nlm.nih.gov/articles/PMC11953028/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-c1205",
+      "stratum": "semantic",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "juejin.cn/post/7423244722812469300",
+        "cnblogs.com/kangssssh/p/17201454.html",
+        "xiaolincoding.com/redis/cluster/cache_problem.html"
+      ],
+      "armOffSample": [
+        "blog.csdn.net/qq_41840843/article/details/161823605",
+        "bedhere.github.io/2026/05/21/Redis%E7%BC%93%E5%AD%98%E5%AE%9E%E6%88%98-%E7%A9%BF%E9%80%8F%E5%87%BB%E7%A9%BF%E9%9B%AA%E5%B4%A9/index.html",
+        "redis.com.cn/topics/redis-cache-problems.html"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-f1205",
+      "stratum": "semantic",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 7,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 7
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "bank.fx678.com/",
+        "zhuanlan.zhihu.com/p/676937863",
+        "cn.investing.com/economic-calendar/fed-interest-rate-decision-168"
+      ],
+      "armOffSample": [
+        "bank.fx678.com/",
+        "zhuanlan.zhihu.com/p/676937863",
+        "cn.investing.com/economic-calendar/fed-interest-rate-decision-168"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-c1105",
+      "stratum": "parameterized",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 2,
+        "hostHit": true,
+        "strongHit": true,
+        "rankOf": 1,
+        "marked": 2
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": false,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 2,
+        "marked": 2
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "github.com/pandas-dev/pandas/blob/7aac4015369fe20bde6641276fc2fd1b11ca554b/pandas/errors/__init__.py",
+        "github.com/pandas-dev/pandas/blob/7aac4015369fe20bde6641276fc2fd1b11ca554b/pandas/__init__.py"
+      ],
+      "armOffSample": [
+        "pandas.pydata.org/docs/reference/api/pandas.DataFrame.merge.html",
+        "w3schools.com/python/pandas/ref_df_merge.asp",
+        "geeksforgeeks.org/pandas/pandas-merge-dataframe/"
+      ],
+      "delta": {
+        "hostFlip": "better",
+        "rankDiff": null,
+        "verdict": "better"
+      }
+    },
+    {
+      "id": "vert-f1105",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 3
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "wsj.com/market-data/quotes/MSFT/research-ratings",
+        "chartmill.com/stock/quote/MSFT/analyst-ratings",
+        "marketbeat.com/stocks/NASDAQ/MSFT/forecast/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-h1205",
+      "stratum": "semantic",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "apsf.org/zh-hans/article/%E7%B4%A2%E9%A9%AC%E9%B2%81%E8%82%BD%E5%92%8C%E5%85%B6%E4%BB%96-glp-1-%E6%BF%80%E5%8A%A8%E5%89%82%E7%9A%84%E4%B8%A5%E9%87%8D%E9%BA%BB%E9%86%89%E9%A3%8E%E9%99%A9%E6%98%AF%E5%90%A6%E8%A2%AB%E4%BD%8E/",
+        "mayoclinic.org/zh-hans/diseases-conditions/type-2-diabetes/expert-answers/byetta/faq-20057955",
+        "ouraring.com/blog/zh_CN/what-are-glp-1s/?srsltid=AU7gw4VhmhGMX4DrczH5ZoCB6pmHG_LMxvyukWROMxmtlIOEB6MlEk0c"
+      ],
+      "armOffSample": [
+        "apsf.org/zh-hans/article/%E7%B4%A2%E9%A9%AC%E9%B2%81%E8%82%BD%E5%92%8C%E5%85%B6%E4%BB%96-glp-1-%E6%BF%80%E5%8A%A8%E5%89%82%E7%9A%84%E4%B8%A5%E9%87%8D%E9%BA%BB%E9%86%89%E9%A3%8E%E9%99%A9%E6%98%AF%E5%90%A6%E8%A2%AB%E4%BD%8E/",
+        "mayoclinic.org/zh-hans/diseases-conditions/type-2-diabetes/expert-answers/byetta/faq-20057955",
+        "ouraring.com/blog/zh_CN/what-are-glp-1s/?srsltid=AU7gw4WaKPrIe9TMokBO0IC31SZyw85OilwzfEKrdFiR9MYmIekDY0nK"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-h1105",
+      "stratum": "parameterized",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "clinicaltrials.gov/study/NCT02564692",
+        "clinicaltrials.gov/study/NCT07425769",
+        "clinicaltrials.gov/study/NCT05173922"
+      ],
+      "armOffSample": [
+        "nia.nih.gov/research/alzheimers-dementia-outreach-recruitment-engagement-resources/recruitment-methods-and",
+        "atrinews.usc.edu/resources/early-stage-alzheimer-disease-trials",
+        "brightfocus.org/grant/improving-recruitment-to-prodromal-alzheimers-disease-clinical-trials/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-f1106",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 1,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 1
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 3
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 1
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {},
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "site.financialmodelingprep.com/"
+      ],
+      "armOffSample": [
+        "investing.com/stock-screener/united-states/technology",
+        "stockeducation.com/us-stock-screener/",
+        "finance.yahoo.com/sectors/technology/?fr=sycsrp_catchall"
+      ],
+      "delta": {
+        "hostFlip": "worse",
+        "rankDiff": null,
+        "verdict": "worse"
+      }
+    }
+  ]
+}

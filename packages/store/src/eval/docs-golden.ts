@@ -355,6 +355,23 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
       if (t.prior_expected_vertical !== undefined && (typeof t.prior_expected_vertical !== "object" || t.prior_expected_vertical === null)) p.push("tombstone.prior_expected_vertical must be an object when present");
       if (e.vertical !== undefined) p.push("tombstoned entry must not carry an injected vertical spec (the prior spec lives in tombstone.prior_spec)");
       if ((e.expected as { vertical?: unknown } | undefined)?.vertical !== undefined) p.push("tombstoned entry must not carry expected.vertical (no live route)");
+      // R95-audit F3 (b) / ADR-0096 §Addendum-A: the tombstone row's expected
+      // block is a dormant declaration ("this cell asserted answer in general"),
+      // never a live promise: NO lane selects a tombstoned row (no scope), so
+      // per-clause expectations that only lanes can produce are banned here.
+      // Allowed keys stay frozen to {verdict, minResults} (the shape emitted by
+      // gen-corpus.mjs tombstone()); mustHit*/mustNotHit*/mustHitPaths and any
+      // other per-lane assertion key are rejected as run-time-nonexistent
+      // semantics under Pact Golden Rule (D-002, vertical-face reading).
+      const liveOnlyKeys = ["mustHitHosts", "mustHitUrls", "mustHitPaths", "mustNotHitPaths"];
+      for (const k of liveOnlyKeys) {
+        if ((e.expected as Record<string, unknown> | undefined)?.[k] !== undefined)
+          p.push("tombstoned entry must not carry expected." + k + " (unproducible without a lane)");
+      }
+      for (const k of Object.keys((e.expected as Record<string, unknown> | undefined) ?? {})) {
+        if (k !== "verdict" && k !== "minResults" && !liveOnlyKeys.includes(k))
+          p.push("tombstoned entry expected carries unknown assertion key " + k + " (frozen to verdict|minResults)");
+      }
     }
   }
   const prov = e.provenance as Partial<DocsGoldenProvenance> | undefined;

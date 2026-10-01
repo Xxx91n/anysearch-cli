@@ -87,3 +87,18 @@ Tombstone Reason Code / Evidence-Role Annotation / Matrix Version Stamp / Probe-
 - 语料可测集 57→56 为冻结事实：任何 lane 不得再选 vert-f1105（无 scope）；未来 lane 须跳过 tombstone 行。
 - 受控词表单一源头确立后，同类降格沿用，不得另立平行载体。
 - 读数角色条款成为未来轮次的引用锚（方向裁定权在 owner，不在读数）。
+
+## Addendum-A — R95-audit 返工裁定（F1~F8，2026-10-01，本体不动，仅追加）
+
+审计窗结论：CONDITIONAL FAIL（审计件 `.scratch/grill-round-95/reports/2026-10-01-audit-report.md` + 交接 `handoffs/round-95-audit-handoff.md`，分支 `r95-audit`）。工程实质成立、硬验收全绿无造假；失效面在报告真实性与证据可核性。返工裁定如下（F3 取方案 (b)：改约束 + 加 validator 断言，**不动语料字节**，无指纹悬崖）：
+
+- **F1（未申报偏差）**：承认。`729e3c36` 时 pathlint 腿确红（空挂 marker），经 `7a540900` 返工转绿；返工轮报 §6 补列该条。裁定：一票一 commit 遇返工时允许异常 commit，但须在轮报 §6 具名申报（申报不否决，未申报才否决；RR Stage 2 纪律）。
+- **F2（T3 改动计数）**：承认。`readout-delta.mjs` 非注释改动为**三处**（EXPECTED_FP、`out.matrix`、selftest fixture `i % 9 === 2` 分布重调——意图保持、P=0.658 已复核；另 +1 空行）。轮报 §2 T3 与 prereg §10 改述为三处具名；prereg 正文因 SAP 冻结（见下）以本附录为准。
+- **F3（墓碑体 `expected`）**：D-002 该条负向约束改述为**垂直面读法**——「垂直面禁落运行期不存在的语义（本轮 anc 解释）」：`expected.vertical` + 全部按 clause 断言键（`mustHitHosts`/`mustHitUrls`/`mustHitPaths`/`mustNotHitPaths` 及未来新增断言键，冻结白名单仅 `{verdict, minResults}`）为运行期不可产生语义，墓碑行一律禁携（`validateDocsGoldenEntry` 已加两条断言固化）；`{verdict, minResults}` 为休眠声明（dormant declaration），非运行期承诺——该格语料字节维持原样（无指纹悬崖），语料生成器 `tombstone()` 注释同步该读法。
+- **F4（R86 保全件可核）**：保全件复制入 `.scratch/grill-round-95/evidence/delta-r86-locked-2026-09-27.json`（同字节，sha256 `4dcff270325ddc65b62fe8e129bdbf42b00e6833c34c920b2f89f6e9ef243462`）随返工 commit 入 diff；轮报 §2 T5 补仓内路径。
+- **F5（交接模板字段）**：交接档 Stack 行改写为模板式（but-id 链 + `@ <iso-date>` + `PENDING — stack unpushed`，祖先线 run 移作旁注；范式见审计交接件）。
+- **F6（一票一 commit 破例）**：裁定=承认返工例外（F1 同理）：返工 commit（`wzw` 等）是允许的异常，但必须在轮报 §6 具名申报；不做 amend 归并（历史已发表，改写失稳）。
+- **F7（closeout-claims 缺位）**：裁定=**补登记**（不停用）。R95 起补 `.scratch/grill-round-95/closeout-claims.json`（冻结声明随收口规则落在返工 commit 内）；Claims Freeze Point 继续行使。
+- **F8（handoff-lint 假绿）**：裁定=本轮不修门禁（治理工具改动属独立轮次范畴）。记为 `defer` 型 backlog 项入 R96 主推（审计建议采纳：门禁假绿收口轮）；CONTEXT 不新增词条（避免平行真相），以本附录 + 交接档为唯一记录。
+
+prereg-matrix.md 正文 §53/§10 因 SAP-先于-database-lock 冻结**不改字**（审计报告对照表 #15、#12 记载的即时值为准）；凡与本附录不一致处，以本附录为准。

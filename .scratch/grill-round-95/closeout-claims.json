@@ -1,0 +1,71 @@
+{
+  "schema": "anysearch/closeout-claims@1",
+  "round": 95,
+  "claims": [
+    {
+      "id": "r95-t1-corpus",
+      "kind": "symbol",
+      "claim": "T1 语料修订：vert-f1105 原位降格 unmeasured-by-design（墓碑理由码受控 upstream-validator-vs-doc-mismatch + prior 载荷留档 + scopes 除名）；可测集 57→56，指纹 7ac0a48e55cd7954→8da3e482b98f8cba；语料 diff 仅 f1105 一格",
+      "file": "eval-looks.json",
+      "tokens": ["tombstone", "upstream-validator-vs-doc-mismatch", "prior_expected_vertical", "unmeasured-by-design"]
+    },
+    {
+      "id": "r95-t1-machine-check",
+      "kind": "symbol",
+      "claim": "T1 机检载体：TOMBSTONE_REASON_CODES 常量 + validateDocsGoldenEntry 交叉规则（含 F3(b) 休眠键冻结：墓碑行 expected 仅 verdict|minResults）+ kernel 作用域豁免 + store 负例（自由文本理由码被拒）",
+      "file": "packages/store/src/eval/docs-golden.ts",
+      "tokens": ["TOMBSTONE_REASON_CODES", "tombstoned entry must not carry", "frozen to verdict|minResults"]
+    },
+    {
+      "id": "r95-t2-prereg",
+      "kind": "symbol",
+      "claim": "T2 预注册矩阵 matrix@3 先于任何跑数落账（parent 时序自证含 T1 diff）；新指纹 + 读数=复活条件③④输入证据非方向裁定 + G1b 谓词锚（>30%→INCONCLUSIVE-instrument）+ 单次终读纪律 + 57→56 可比性边界",
+      "file": ".scratch/grill-round-95/prereg-matrix.md",
+      "tokens": ["matrix@3", "8da3e482b98f8cba", "单次终读", "可比性边界"]
+    },
+    {
+      "id": "r95-t3-readout",
+      "kind": "symbol",
+      "claim": "T3 判读器升 matrix@3：EXPECTED_FP 滚动 + out.matrix 指向 prereg-matrix@3；G0–G4/β后验/四字段/早停/单读逐字不变；selftest fixture 一处 n 漂移重调（indeterminate P=0.658）7/7 全绿",
+      "file": ".scratch/grill-round-85/readout-delta.mjs",
+      "tokens": ["EXPECTED_FP", "prereg-matrix@3", "i % 9 === 2", "indeterminate direction"]
+    },
+    {
+      "id": "r95-t4-probe",
+      "kind": "symbol",
+      "claim": "T4 匿名层容量探针：attempt2 n=4/paired=4 零 nudge（16 调用 84s，约5.25s/腿）；attempt1 端点误配 404 根因（裸 origin 须补 /mcp）；登记为容量测量非判读输入",
+      "file": ".scratch/grill-round-95/evidence/t4-probe-readings.md",
+      "tokens": ["probe-limit4-delta", "paired=4", "/mcp", "容量测量"]
+    },
+    {
+      "id": "r95-t5-terminal",
+      "kind": "path",
+      "claim": "T5 终读档：56 格×4 腿=224 调用 351s；permanent-auth 122 腿（匿名配额边界，中段系统性）+ permanent-protocol 4 腿（设计内 bogus 对照）+ transient 2；主体层 instrumentDown 30/40=G1b 命中",
+      "paths": [
+        ".scratch/grill-round-95/evidence/vertical-delta-r95-terminal.json",
+        ".scratch/grill-round-95/evidence/t5-nudge-attribution.md"
+      ]
+    },
+    {
+      "id": "r95-t6-readout",
+      "kind": "symbol",
+      "claim": "T6 matrix@3 单次终读 INCONCLUSIVE/instrument-flag（G0 过/G1 过/G1b 30/40>30% 截断；四字段仅报告 netWinRate 0.1/P 0.7164/EL 0.0451/rankDiff 中位 0）；二次读取/peek 作废",
+      "file": ".scratch/grill-round-95/readout-output.json",
+      "tokens": ["INCONCLUSIVE", "instrument-flag", "instrumentDown", "prereg-matrix@3"]
+    },
+    {
+      "id": "r95-t7-registry",
+      "kind": "symbol",
+      "claim": "T7 台账三记账：defer-r86-corpus-param-contract→closed（r87-f3 字段集，closed_by=ADR-0096）+ 新 finding 独立 id（type:finding，机检信号 verify-validator-vs-doc.ts）+ r88 仅 carried_log（status 不动）",
+      "file": "docs/deferred-registry.json",
+      "tokens": ["defer-r86-anysearch-corpus-param-contract", "finding-r95-upstream-validator-vs-doc-vocab-mismatch", "formally-declined"]
+    },
+    {
+      "id": "r95-t8-closeout",
+      "kind": "symbol",
+      "claim": "T8 收口：ADR-0096（D1–D6 + Known-Risks 预写三项 + Addendum-A 返工裁定 F1~F8）+ CONTEXT 七词条区 + CHANGELOG r95 段 + index 同步 96 ADRs",
+      "file": "docs/adr/0096-architecture-grill-round-95-eval-matrix-revision-closeout.md",
+      "tokens": ["Addendum-A", "Known-Risks", "Finding-vs-Disposition Separation", "Machine-Checkable Verification Signal"]
+    }
+  ]
+}

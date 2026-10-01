@@ -26,16 +26,20 @@ const VEXP = (domain, extra) => ({ role: "subject", domain, hit: true, ...extra 
 const CTRL_NO = { role: "control", hit: false };                      // no spec injected
 const CTRL_FB = { role: "control", degraded: "general-fallback" };    // spec injected, fallback/reject surface
 
-// R95 T1 / ADR-0096: cell tombstones — an in-place demotion (same id, same
-// array position) whose measurement route is retired entirely: no scope, no
-// expected.vertical, no injected spec. The prior payload is preserved in the
-// tombstone block; the reason code is a controlled-vocabulary value
-// (TOMBSTONE_REASON_CODES in packages/store/src/eval/docs-golden.ts), never
-// free text.
+// R95 T1 / ADR-0096 + Addendum-A (R95-audit F3, constraint rule (b)):
+// cell tombstones — an in-place demotion (same id, same array position) whose
+// measurement route is retired entirely: no scope, no expected.vertical, no
+// injected spec. The tombstone row keeps a DORMANT general expectation block
+// ({verdict, minResults} only — frozen; no lane can select a tombstoned row,
+// so per-lane assertion keys would be run-time-nonexistent semantics under
+// Pact Golden Rule D-002, vertical-face reading). The prior payload is
+// preserved in the tombstone block; the reason code is a controlled-vocabulary
+// value (TOMBSTONE_REASON_CODES in packages/store/src/eval/docs-golden.ts),
+// never free text.
 const tombstone = (id, q, lang, intent, vdom, stratum, priorSpec, priorVexp, priorScope, reasonCode, notes) =>
   E.push({
     id, domain: "default", question: q, questionLang: lang, intent,
-    expected: { verdict: "answer", minResults: 1 }, // dormant general expectation — no lane selects a tombstoned row (no scope)
+    expected: { verdict: "answer", minResults: 1 }, // dormant (frozen keys) — no lane selects a tombstoned row (no scope)
     dimensions: ["stratum:" + stratum, "vdomain:" + vdom],
     provenance: PROV_VOCAB,
     notes,
