@@ -1,7 +1,7 @@
 # Handoff — Grill Round 95 → R96（执行轮收口交接，返工版）
 
 Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：
-  r95-exec → trx (`4a73758b` @ 2026-10-01) → pnw (`a9f2088e` @ 2026-10-01) → rsk (`04cdce5e` @ 2026-10-01) → lyz (`aee54914` @ 2026-10-01) → xut (`0ae0c92b` @ 2026-10-01) → znn (`4b9a1824` @ 2026-10-01) → oql (`3063f957` @ 2026-10-01) → umy (`bb4ec7e1` @ 2026-10-01) → ouz (`f20fe391` @ 2026-10-01) → zpv → szw (`9454a182` @ 2026-10-01) → xlu (`729e3c36` @ 2026-10-01) → wzw (`7a540900` @ 2026-10-01) → （返工 commit 见轮报 §6；本件随其同批落盘）—— 即 `r95-exec` tip，未 land、未 push
+  r95-exec → trx (`4a73758b` @ 2026-10-01) → pnw (`a9f2088e` @ 2026-10-01) → rsk (`04cdce5e` @ 2026-10-01) → lyz (`aee54914` @ 2026-10-01) → xut (`0ae0c92b` @ 2026-10-01) → znn (`4b9a1824` @ 2026-10-01) → oql (`3063f957` @ 2026-10-01) → umy (`bb4ec7e1` @ 2026-10-01) → ouz (`f20fe391` @ 2026-10-01) → zpv → szw (`9454a182` @ 2026-10-01) → xlu (`729e3c36` @ 2026-10-01) → wzw (`7a540900` @ 2026-10-01) → `qyv` (`a24684de` @ 2026-10-01) → `lxn` (`199f3e72` @ 2026-10-01) → `umt` (`1b7bc809` @ 2026-10-01) → `ulo` (`9cac80c1` @ 2026-10-01) → `xtv`（自引用收尾 commit；SHA time-lagged 故不写入，以 `but log` 为准）—— 即 `r95-exec` tip，未 land、未 push
 
 ## 绿色 run URL（必填）
 
@@ -32,8 +32,8 @@ R95 评测矩阵修订轮按 T1→T8 全票执行完毕：vert-f1105 原位降�
 
 1. **门禁假绿收口（审计主推，F8）**：`handoff-lint` 接受祖先线 run URL + 无 but-id Stack 行仍判绿——治理工具缺陷值得独立一轮（审计窗 §5 建议）。R95 侧以 ADR-0096 §Addendum-A + 本件 PENDING 写法为唯一记录，CONTEXT 不新增词条。
 2. **用户侧 B 路径兑现检查**（声明式）：私有端点 `127.0.0.1:20128` 或有效 key 若兑现 → 干净全量跑（判据同 R86 T5）→ 条件④升级为洁净读数。未兑现 → 维持 INCONCLUSIVE-instrument（探针锚在档）。
-2. **上游渠道跟进**（owner 侧）：finding 的机检信号 `--live` 重跑（配额恢复后）；若 exit 1（未复现=上游已修）→ owner 复核 + registry 更新。
-3. **backlog 候选立案**（独立轮次）：`fundamental×cn_code` 新格（须新 id）与全语料契约体检（R95 vert-f1105 案为动机证据）。
+3. **上游渠道跟进**（owner 侧）：finding 的机检信号 `--live` 重跑（配额恢复后）；若 exit 1（未复现=上游已修）→ owner 复核 + registry 更新。
+4. **backlog 候选立案**（独立轮次）：`fundamental×cn_code` 新格（须新 id）与全语料契约体检（R95 vert-f1105 案为动机证据）。
 
 ## 4. 已知坑位（接手先读）
 
