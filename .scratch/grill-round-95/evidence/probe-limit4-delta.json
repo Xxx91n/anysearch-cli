@@ -1,0 +1,321 @@
+{
+  "schema": "anysearch/vertical-delta@1",
+  "generatedAt": "2026-10-01T02:33:24.984Z",
+  "datasetFingerprint": "8bba68ae56f8cdb0",
+  "arms": {
+    "on": "vertical-on (entry spec via --vertical-*)",
+    "off": "vertical-off (no spec)",
+    "measured": "anysearch arm raw list via metadata.fusion"
+  },
+  "n": 4,
+  "controlDegraded": 0,
+  "instrumentFlag": false,
+  "primary": "arm-level delta (anysearch arm)",
+  "secondary": "fused-level delta (observational only — never weighting-gain proof)",
+  "byStratum": {
+    "parameterized": {
+      "n": 4,
+      "nPaired": 4,
+      "armHostHit": {
+        "on": 0.5,
+        "off": 1
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": 0.25,
+        "off": 1
+      },
+      "expectRankOfMeanDiff": 2,
+      "verdicts": {
+        "better": 1,
+        "worse": 2,
+        "tied": 1,
+        "unknown": 0
+      },
+      "ci": null
+    }
+  },
+  "byDomain": {
+    "finance": {
+      "n": 4,
+      "nPaired": 4,
+      "armHostHit": {
+        "on": 0.5,
+        "off": 1
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": 0.25,
+        "off": 1
+      },
+      "expectRankOfMeanDiff": 2,
+      "verdicts": {
+        "better": 1,
+        "worse": 2,
+        "tied": 1,
+        "unknown": 0
+      },
+      "ci": null
+    }
+  },
+  "rows": [
+    {
+      "id": "vert-f1103",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 1,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 1
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 1,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 1
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "site.financialmodelingprep.com/"
+      ],
+      "armOffSample": [
+        "marketwatch.com/investing/stock/aapl",
+        "finance.yahoo.com/quote/AAPL/",
+        "robinhood.com/us/en/stocks/AAPL/"
+      ],
+      "delta": {
+        "hostFlip": "worse",
+        "rankDiff": null,
+        "verdict": "worse"
+      }
+    },
+    {
+      "id": "vert-f1102",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 1,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 1
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 1,
+        "hostHit": true,
+        "rankOf": 1,
+        "marked": 1
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "site.financialmodelingprep.com/"
+      ],
+      "armOffSample": [
+        "bls.gov/charts/consumer-price-index/consumer-price-index-by-category-line-chart.htm",
+        "minneapolisfed.org/about-us/monetary-policy/inflation-calculator/consumer-price-index-1913-",
+        "tradingeconomics.com/united-states/inflation-cpi"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-f1104",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 0,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "wap.eastmoney.com/quote/stock/1.600519.html",
+        "xueqiu.com/S/SH600519",
+        "hk.finance.yahoo.com/quote/600519.SS/"
+      ],
+      "delta": {
+        "hostFlip": "worse",
+        "rankDiff": null,
+        "verdict": "worse"
+      }
+    },
+    {
+      "id": "vert-f1101",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 1,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 1
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 5
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 5
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "transient"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "site.financialmodelingprep.com/"
+      ],
+      "armOffSample": [
+        "wallstreethorizon.com/nvidia-earnings-calendar",
+        "investor.nvidia.com/events-and-presentations/events-and-presentations/default.aspx",
+        "zacks.com/stock/research/NVDA/earnings-calendar"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 4,
+        "verdict": "better"
+      }
+    }
+  ]
+}

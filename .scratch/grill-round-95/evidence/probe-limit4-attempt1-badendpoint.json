@@ -1,0 +1,287 @@
+{
+  "schema": "anysearch/vertical-delta@1",
+  "generatedAt": "2026-10-01T02:30:58.971Z",
+  "datasetFingerprint": "8bba68ae56f8cdb0",
+  "arms": {
+    "on": "vertical-on (entry spec via --vertical-*)",
+    "off": "vertical-off (no spec)",
+    "measured": "anysearch arm raw list via metadata.fusion"
+  },
+  "n": 4,
+  "controlDegraded": 0,
+  "instrumentFlag": false,
+  "primary": "arm-level delta (anysearch arm)",
+  "secondary": "fused-level delta (observational only — never weighting-gain proof)",
+  "byStratum": {
+    "parameterized": {
+      "n": 4,
+      "nPaired": 0,
+      "armHostHit": {
+        "on": null,
+        "off": null
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": null,
+        "off": null
+      },
+      "expectRankOfMeanDiff": null,
+      "verdicts": {
+        "better": 0,
+        "worse": 0,
+        "tied": 0,
+        "unknown": 4
+      },
+      "ci": null
+    }
+  },
+  "byDomain": {
+    "finance": {
+      "n": 4,
+      "nPaired": 0,
+      "armHostHit": {
+        "on": null,
+        "off": null
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": null,
+        "off": null
+      },
+      "expectRankOfMeanDiff": null,
+      "verdicts": {
+        "better": 0,
+        "worse": 0,
+        "tied": 0,
+        "unknown": 4
+      },
+      "ci": null
+    }
+  },
+  "rows": [
+    {
+      "id": "vert-f1101",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 9,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 9,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesOff": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-protocol"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-f1104",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 5,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 5
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesOff": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-protocol"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-f1102",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesOff": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-protocol"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-f1103",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 8,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "transient",
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-protocol"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    }
+  ]
+}
