@@ -26,6 +26,25 @@ const VEXP = (domain, extra) => ({ role: "subject", domain, hit: true, ...extra 
 const CTRL_NO = { role: "control", hit: false };                      // no spec injected
 const CTRL_FB = { role: "control", degraded: "general-fallback" };    // spec injected, fallback/reject surface
 
+// R95 T1 / ADR-0096: cell tombstones — an in-place demotion (same id, same
+// array position) whose measurement route is retired entirely: no scope, no
+// expected.vertical, no injected spec. The prior payload is preserved in the
+// tombstone block; the reason code is a controlled-vocabulary value
+// (TOMBSTONE_REASON_CODES in packages/store/src/eval/docs-golden.ts), never
+// free text.
+const tombstone = (id, q, lang, intent, vdom, stratum, priorSpec, priorVexp, priorScope, reasonCode, notes) =>
+  E.push({
+    id, domain: "default", question: q, questionLang: lang, intent,
+    expected: { verdict: "answer", minResults: 1 }, // dormant general expectation — no lane selects a tombstoned row (no scope)
+    dimensions: ["stratum:" + stratum, "vdomain:" + vdom],
+    provenance: PROV_VOCAB,
+    notes,
+    tombstone: {
+      reason_code: reasonCode, demoted_at: "2026-10-01", round: 95, decided_by: "ADR-0096",
+      prior_scope: priorScope, prior_spec: priorSpec, prior_expected_vertical: priorVexp,
+    },
+  });
+
 // ---------------- finance ----------------
 sub("vert-f1101", "NVDA next earnings date this quarter", "en", "factoid", FIN, "parameterized",
   { domain: "finance", subDomain: "calendar", params: { type: "earnings" } },
@@ -43,10 +62,17 @@ sub("vert-f1104", "贵州茅台最新股价", "zh", "factoid", FIN, "parameteriz
   { domain: "finance", subDomain: "quote", params: { type: "stock", cn_code: "600519.SH" } },
   VEXP("finance", { sub_domain: "quote", paramsKeys: ["cn_code", "type"], paramsSent: true, hitHosts: ["eastmoney.com", "10jqka.com.cn", "sina.com.cn", "xueqiu.com"] }),
   "finance.quote type=stock+cn_code（A 股通道）。");
-sub("vert-f1105", "MSFT analyst ratings and target price overview", "en", "factoid", FIN, "parameterized",
+// vert-f1105 demoted IN PLACE (R95 T1 / ADR-0096): the upstream validator
+// demands cn_code at the tag level for finance.fundamental while the
+// sub_domains vocabulary doc describes the per-type rule — a documented-vs-
+// validator mismatch (R95 Q2 live replay 2026-10-01 still rejects). The cell
+// leaves the measurable set (57→56); a fundamental×cn_code cell needs a NEW id
+// in a future corpus round (never an in-place re-chip).
+tombstone("vert-f1105", "MSFT analyst ratings and target price overview", "en", "factoid", FIN, "parameterized",
   { domain: "finance", subDomain: "fundamental", params: { type: "overview", symbol: "MSFT" } },
   VEXP("finance", { sub_domain: "fundamental", paramsKeys: ["symbol", "type"], paramsSent: true, hitHosts: ["financialmodelingprep.com", "finance.yahoo.com", "marketbeat.com"] }),
-  "finance.fundamental type=overview+symbol。");
+  "live", "upstream-validator-vs-doc-mismatch",
+  "finance.fundamental type=overview+symbol——上游 validator 按 tag 级索 cn_code 与词表文档 per-type 规则不一致（2026-10-01 活查复放仍拒收）；原位降格为 unmeasured-by-design，墓碑理由码受控。");
 sub("vert-f1106", "technology sector US stocks screening", "en", "reference", FIN, "parameterized",
   { domain: "finance", subDomain: "screen", params: { type: "stock", sector: "Technology", country: "US" } },
   VEXP("finance", { sub_domain: "screen", paramsKeys: ["country", "sector", "type"], paramsSent: true, hitHosts: ["finance.yahoo.com", "finviz.com", "tradingview.com"] }),
@@ -201,8 +227,14 @@ ctrl("ctrl-h104", "cold or flu difference", "en", "factoid", HEA, { domain: "hea
 const data = JSON.parse(readFileSync(FILE, "utf8"));
 const keep = (id) => !/^vert-[fach]1\d{3}$/.test(id) && !/^ctrl-[fach]1\d{2}$/.test(id);
 data.golden.entries = data.golden.entries.filter((e) => keep(e.id));
-for (const e of E) { data.golden.entries.push(e); data.golden.scopes[e.id] = "live"; }
+// R95 T1: tombstoned rows carry no scope — delete any stale mapping so a
+// re-run cannot leave the demoted cell silently selectable.
+for (const e of E) {
+  data.golden.entries.push(e);
+  if (e.tombstone === undefined) data.golden.scopes[e.id] = "live";
+  else delete data.golden.scopes[e.id];
+}
 writeFileSync(FILE, JSON.stringify(data, null, 2) + "\n", "utf8");
-console.log("wrote " + E.length + " corpus entries; totals: golden=" + data.golden.entries.length +
-  " vert-subjects=" + E.filter(e => e.expected.vertical.role === "subject").length +
-  " ctrl=" + E.filter(e => e.expected.vertical.role === "control").length);
+console.log("wrote " + E.length + " corpus entries (tombstoned=" + E.filter(e => e.tombstone !== undefined).length + "); totals: golden=" + data.golden.entries.length +
+  " vert-subjects=" + E.filter(e => e.expected?.vertical?.role === "subject").length +
+  " ctrl=" + E.filter(e => e.expected?.vertical?.role === "control").length);

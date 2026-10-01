@@ -163,10 +163,17 @@ async function main() {
 
   // Schema: explicit scope on every entry — no default fallback (D-006).
   // golden.scopes is a sidecar map (entry-id -> scope): explicit per-entry scope
-  // without interleaving into r61-owned entry lines.
+  // without interleaving into r61-owned entry lines. R95 T1 / ADR-0096: a
+  // tombstoned cell left the measurable set by design — it holds NO scope (the
+  // stable "out of the measurable set" marker is scope absence + the tombstone
+  // block; a stale scope would silently keep the cell selectable).
   const scopes: Record<string, string> = looks.golden.scopes ?? {};
   const SCOPES = new Set(["stub", "live", "both"]);
   for (const e of entries) {
+    if (e.tombstone !== undefined) {
+      assert(scopes[e.id] === undefined, e.id + " tombstoned entry must not carry a scope (out of the measurable set by design)");
+      continue;
+    }
     assert(SCOPES.has(scopes[e.id]), e.id + " scope must be explicit stub|live|both in golden.scopes (got " + scopes[e.id] + ")");
   }
   const mustHit = (e: any) => (e.expected?.mustHitHosts?.length ?? 0) > 0 || (e.expected?.mustHitUrls?.length ?? 0) > 0;

@@ -89,6 +89,15 @@ export const DOCS_GOLDEN_STABILITY_CLASSES = ["controlled", "frozen-spec", "exte
 export type DocsGoldenStabilityClass = (typeof DOCS_GOLDEN_STABILITY_CLASSES)[number];
 export const EVAL_LOOKS_SCHEMA_VERSION = 1;
 
+// R95 T1 / ADR-0096: controlled vocabulary for cell tombstones (the `tombstone`
+// block on a demoted entry). Demotion is an explicit declaration, never a
+// silent removal — the reason code names WHY the cell left the measurable set,
+// and the list is closed so free text cannot drift (spelling drift is the
+// failure mode the closed list exists to stop). Extending the list is a
+// corpus-governance act (ADR + registry), not an inline edit.
+export const TOMBSTONE_REASON_CODES = ["upstream-validator-vs-doc-mismatch"] as const;
+export type TombstoneReasonCode = (typeof TOMBSTONE_REASON_CODES)[number];
+
 // R64 D-002: page-family pattern — pathname substring match on the result set.
 // tolerate is a REQUIRED (possibly empty) explicit declaration of which
 // wrapper-segment classes the pattern forgives: locale (/zh/), version (/10.x/),
@@ -127,6 +136,20 @@ export interface DocsGoldenMigration {
   drift: string;     // provider drift evidence observed live
   decidedAt: string; // ISO date of the ruling
 }
+// R95 T1 / ADR-0096: cell tombstone — a cell demoted in place (same id, per the
+// data-version governance rule: a semantic rewrite needs a NEW id plus old-cell
+// deprecation, never an in-place re-chip). A tombstoned entry carries no live
+// route: no scope in golden.scopes, no expected.vertical, no injected spec.
+// The prior payload is preserved here verbatim for the historical record.
+export interface DocsGoldenTombstone {
+  reason_code: TombstoneReasonCode; // controlled vocabulary (TOMBSTONE_REASON_CODES)
+  demoted_at: string;               // ISO date of the ruling
+  round: number;                    // grill round that ruled
+  decided_by: string;               // ADR id carrying the decision
+  prior_scope: string;              // scope the cell held before demotion
+  prior_spec?: DocsGoldenVerticalSpec;             // verbatim prior entry-level spec
+  prior_expected_vertical?: Record<string, unknown>; // verbatim prior expected.vertical block
+}
 export interface DocsGoldenEntry {
   id: string;
   domain: string;
@@ -148,6 +171,9 @@ export interface DocsGoldenEntry {
   failure_class?: string;                     // drift attribution (drives disposition path)
   migration?: DocsGoldenMigration;
   watch?: boolean;                            // post-promote observation mark (CI flip -> ratchet re-entry)
+  // R95 T1 / ADR-0096: present when the cell was demoted in place (out of the
+  // measurable set by design). A tombstoned row asserts no vertical route.
+  tombstone?: DocsGoldenTombstone;
   notes?: string;
 }
 export interface DocsGoldenSet {
@@ -179,7 +205,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
   const e = raw as Partial<DocsGoldenEntry> | undefined;
   if (!e || typeof e !== "object") return ["entry is not an object"];
   if (typeof e.id !== "string" || !DOCS_GOLDEN_ID_RE.test(e.id)) p.push("id must match docs-gNNNN|vert-<d>NNNN|ctrl-NNNN");
-  const isVerticalEntry = e.vertical !== undefined || (e.expected as { vertical?: unknown } | undefined)?.vertical !== undefined;
+  const isVerticalEntry = e.tombstone !== undefined || e.vertical !== undefined || (e.expected as { vertical?: unknown } | undefined)?.vertical !== undefined;
   // ADR-0062 (T4): the collection is still the docs-golden batch (docs-gNNNN
   // ids), but ADR-0062 criterion 4 needs a cold-domain abstain entry — a
   // narrow-allowlist fixture domain where zero results can ever survive.
@@ -309,6 +335,26 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
         if (typeof m[k] !== "string" || (m[k] as string).length === 0) p.push("migration." + k + " required");
       }
       if (typeof m.decidedAt !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(m.decidedAt)) p.push("migration.decidedAt ISO date required");
+    }
+  }
+  // R95 T1 / ADR-0096: cell tombstone — the demotion must be explicit and
+  // machine-checkable, and must actually retire the live route (a tombstoned
+  // row that still carries a vertical expectation or an injected spec would
+  // read as a live cell with a decorative label).
+  if (e.tombstone !== undefined) {
+    const t = e.tombstone as Partial<DocsGoldenTombstone> | undefined;
+    if (!t || typeof t !== "object" || Array.isArray(t)) {
+      p.push("tombstone must be an object");
+    } else {
+      if (!TOMBSTONE_REASON_CODES.includes(t.reason_code as TombstoneReasonCode)) p.push("tombstone.reason_code outside the controlled vocabulary: " + String(t.reason_code));
+      if (typeof t.demoted_at !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(t.demoted_at)) p.push("tombstone.demoted_at ISO date required");
+      if (typeof t.round !== "number" || !Number.isInteger(t.round) || t.round < 1) p.push("tombstone.round must be a positive integer");
+      if (typeof t.decided_by !== "string" || t.decided_by.length === 0) p.push("tombstone.decided_by required");
+      if (typeof t.prior_scope !== "string" || t.prior_scope.length === 0) p.push("tombstone.prior_scope required");
+      if (t.prior_spec !== undefined && (typeof t.prior_spec !== "object" || t.prior_spec === null)) p.push("tombstone.prior_spec must be an object when present");
+      if (t.prior_expected_vertical !== undefined && (typeof t.prior_expected_vertical !== "object" || t.prior_expected_vertical === null)) p.push("tombstone.prior_expected_vertical must be an object when present");
+      if (e.vertical !== undefined) p.push("tombstoned entry must not carry an injected vertical spec (the prior spec lives in tombstone.prior_spec)");
+      if ((e.expected as { vertical?: unknown } | undefined)?.vertical !== undefined) p.push("tombstoned entry must not carry expected.vertical (no live route)");
     }
   }
   const prov = e.provenance as Partial<DocsGoldenProvenance> | undefined;

@@ -85,7 +85,6 @@
       "vert-f1102": "live",
       "vert-f1103": "live",
       "vert-f1104": "live",
-      "vert-f1105": "live",
       "vert-f1106": "live",
       "vert-f1201": "live",
       "vert-f1202": "live",
@@ -1075,18 +1074,36 @@
         "question": "MSFT analyst ratings and target price overview",
         "questionLang": "en",
         "intent": "factoid",
-        "vertical": {
-          "domain": "finance",
-          "subDomain": "fundamental",
-          "params": {
-            "type": "overview",
-            "symbol": "MSFT"
-          }
-        },
         "expected": {
           "verdict": "answer",
-          "minResults": 1,
-          "vertical": {
+          "minResults": 1
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:finance"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "harvestedAt": "2026-09-26",
+          "reviewer": "r84-fixer"
+        },
+        "notes": "finance.fundamental type=overview+symbol——上游 validator 按 tag 级索 cn_code 与词表文档 per-type 规则不一致（2026-10-01 活查复放仍拒收）；原位降格为 unmeasured-by-design，墓碑理由码受控。",
+        "tombstone": {
+          "reason_code": "upstream-validator-vs-doc-mismatch",
+          "demoted_at": "2026-10-01",
+          "round": 95,
+          "decided_by": "ADR-0096",
+          "prior_scope": "live",
+          "prior_spec": {
+            "domain": "finance",
+            "subDomain": "fundamental",
+            "params": {
+              "type": "overview",
+              "symbol": "MSFT"
+            }
+          },
+          "prior_expected_vertical": {
             "role": "subject",
             "domain": "finance",
             "hit": true,
@@ -1102,18 +1119,7 @@
               "marketbeat.com"
             ]
           }
-        },
-        "dimensions": [
-          "stratum:parameterized",
-          "vdomain:finance"
-        ],
-        "provenance": {
-          "type": "constructed",
-          "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
-          "harvestedAt": "2026-09-26",
-          "reviewer": "r84-fixer"
-        },
-        "notes": "finance.fundamental type=overview+symbol。"
+        }
       },
       {
         "id": "vert-f1106",

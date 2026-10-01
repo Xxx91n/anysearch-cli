@@ -15,7 +15,9 @@ import {
 } from "../src/eval/looks-ledger";
 import {
   DOCS_GOLDEN_DIMENSIONS,
+  TOMBSTONE_REASON_CODES,
   validateCoverageManifest,
+  validateDocsGoldenEntry,
   validateDocsGoldenSet,
   crossCheckDocsGolden,
   type DocsGoldenSet,
@@ -83,6 +85,33 @@ const allowlist = docs.sources.urlAllowlist ?? [];
 assert(allowlist.length >= 3, "docs.toml urlAllowlist has the D-004 first-party hosts");
 const crossProblems = crossCheckDocsGolden(golden, manifest, allowlist);
 assert(crossProblems.length === 0, "entries vs manifest vs allowlist consistent: " + crossProblems.join(" | "));
+
+// --- 5b. R95 T1 / ADR-0096: cell tombstones are explicit + machine-checked ---
+// A demoted cell leaves the measurable set by design: it holds no scope, no
+// expected.vertical and no injected spec, and its reason code must come from
+// the closed vocabulary. The negative direction (a free-text code) must be
+// REJECTED — the closed list is a guard, not a convention.
+{
+  const tombstoned = golden.entries.filter((e) => e.tombstone !== undefined);
+  assert(tombstoned.length >= 1, "at least one tombstoned cell exists (demotion is an explicit declaration)");
+  for (const t of tombstoned) {
+    assert(!Object.hasOwn(raw.golden?.scopes ?? {}, t.id), t.id + ": tombstoned entry holds no scope (out of the measurable set by design)");
+    assert(
+      TOMBSTONE_REASON_CODES.includes(t.tombstone!.reason_code),
+      t.id + ": tombstone reason_code inside the controlled vocabulary (got " + String(t.tombstone!.reason_code) + ")"
+    );
+  }
+  const sample = tombstoned[0];
+  if (sample) {
+    const bad = JSON.parse(JSON.stringify(sample));
+    bad.tombstone.reason_code = "free-text-drift-typo";
+    const problems = validateDocsGoldenEntry(bad);
+    assert(
+      problems.some((x) => x.includes("tombstone.reason_code")),
+      "validator rejects a free-text tombstone reason code (" + problems.join(" | ") + ")"
+    );
+  }
+}
 
 // --- 6. deferred dimensions carry named entry triggers -----------------------
 const deferred = manifest.dimensions.filter((d) => d.status === "deferred");
