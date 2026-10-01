@@ -1,0 +1,3556 @@
+{
+  "schema": "anysearch/vertical-delta@1",
+  "generatedAt": "2026-10-01T02:39:25.438Z",
+  "datasetFingerprint": "8da3e482b98f8cba",
+  "arms": {
+    "on": "vertical-on (entry spec via --vertical-*)",
+    "off": "vertical-off (no spec)",
+    "measured": "anysearch arm raw list via metadata.fusion"
+  },
+  "n": 56,
+  "controlDegraded": 0,
+  "instrumentFlag": false,
+  "primary": "arm-level delta (anysearch arm)",
+  "secondary": "fused-level delta (observational only — never weighting-gain proof)",
+  "byStratum": {
+    "control": {
+      "n": 16,
+      "nPaired": 8,
+      "armHostHit": {
+        "on": null,
+        "off": null
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": null,
+        "off": null
+      },
+      "expectRankOfMeanDiff": null,
+      "verdicts": {
+        "better": 0,
+        "worse": 0,
+        "tied": 0,
+        "unknown": 16
+      },
+      "ci": null
+    },
+    "parameterized": {
+      "n": 20,
+      "nPaired": 5,
+      "armHostHit": {
+        "on": 0.8,
+        "off": 1
+      },
+      "armStrongHit": {
+        "on": 0,
+        "off": 1
+      },
+      "fusedHostHit": {
+        "on": 0.6,
+        "off": 0.8
+      },
+      "expectRankOfMeanDiff": 0.5,
+      "verdicts": {
+        "better": 1,
+        "worse": 1,
+        "tied": 3,
+        "unknown": 15
+      },
+      "ci": null
+    },
+    "semantic": {
+      "n": 20,
+      "nPaired": 5,
+      "armHostHit": {
+        "on": 0.6,
+        "off": 0.6
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": 0.6,
+        "off": 0.6
+      },
+      "expectRankOfMeanDiff": 3,
+      "verdicts": {
+        "better": 2,
+        "worse": 1,
+        "tied": 2,
+        "unknown": 15
+      },
+      "ci": null
+    }
+  },
+  "byDomain": {
+    "academic": {
+      "n": 14,
+      "nPaired": 6,
+      "armHostHit": {
+        "on": 0.5,
+        "off": 0.75
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": 0.25,
+        "off": 0.5
+      },
+      "expectRankOfMeanDiff": 3,
+      "verdicts": {
+        "better": 1,
+        "worse": 1,
+        "tied": 2,
+        "unknown": 10
+      },
+      "ci": null
+    },
+    "code": {
+      "n": 14,
+      "nPaired": 4,
+      "armHostHit": {
+        "on": 1,
+        "off": 1
+      },
+      "armStrongHit": {
+        "on": 0,
+        "off": 1
+      },
+      "fusedHostHit": {
+        "on": 1,
+        "off": 1
+      },
+      "expectRankOfMeanDiff": 0,
+      "verdicts": {
+        "better": 0,
+        "worse": 0,
+        "tied": 2,
+        "unknown": 12
+      },
+      "ci": null
+    },
+    "finance": {
+      "n": 14,
+      "nPaired": 4,
+      "armHostHit": {
+        "on": 0.5,
+        "off": 1
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": 0.5,
+        "off": 0.5
+      },
+      "expectRankOfMeanDiff": 2,
+      "verdicts": {
+        "better": 1,
+        "worse": 1,
+        "tied": 0,
+        "unknown": 12
+      },
+      "ci": null
+    },
+    "health": {
+      "n": 14,
+      "nPaired": 4,
+      "armHostHit": {
+        "on": 1,
+        "off": 0.5
+      },
+      "armStrongHit": {
+        "on": null,
+        "off": null
+      },
+      "fusedHostHit": {
+        "on": 1,
+        "off": 1
+      },
+      "expectRankOfMeanDiff": 0,
+      "verdicts": {
+        "better": 1,
+        "worse": 0,
+        "tied": 1,
+        "unknown": 12
+      },
+      "ci": null
+    }
+  },
+  "rows": [
+    {
+      "id": "ctrl-f101",
+      "stratum": "control",
+      "vdomain": "finance",
+      "role": "control",
+      "hadVerticalSpec": false,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": null
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": null,
+      "armInFanoutOff": true,
+      "providersFailedOn": null,
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": null,
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": null,
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": null,
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "recipetineats.com/carbonara/",
+        "reddit.com/r/Cooking/comments/10uef5d/the_proper_way_to_make_pasta_carbonara/",
+        "lucasitaly.com/2017/10/16/cooking-carbonara-the-right-way-recipe/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-f103",
+      "stratum": "control",
+      "vdomain": "finance",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "nasdaq.com/market-activity/earnings",
+        "finance.yahoo.com/calendar/earnings/",
+        "earningshub.com/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-f102",
+      "stratum": "control",
+      "vdomain": "finance",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "addapinch.com/the-best-chocolate-cake-recipe-ever/",
+        "allrecipes.com/recipe/17981/one-bowl-chocolate-cake-iii/",
+        "recipetineats.com/chocolate-cake/"
+      ],
+      "armOffSample": [
+        "addapinch.com/the-best-chocolate-cake-recipe-ever/",
+        "allrecipes.com/recipe/17981/one-bowl-chocolate-cake-iii/",
+        "recipetineats.com/chocolate-cake/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-a101",
+      "stratum": "control",
+      "vdomain": "academic",
+      "role": "control",
+      "hadVerticalSpec": false,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": null
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": null,
+      "armInFanoutOff": true,
+      "providersFailedOn": null,
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": null,
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": null,
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": null,
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "reddit.com/r/Coffee/comments/g21exs/what_temperature_to_you_use_for_your_coffee/",
+        "home-barista.com/brewing/brew-temperature-180-vs-200-t21200.html",
+        "verenastreet.com/blogs/all-about-coffee/coffee-temperature?srsltid=AU7gw4Uz91oKno4PoJ9vVyFxwQWOiVjmw4oFgx8yoTc-A_Rd4YQ87_se"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-f104",
+      "stratum": "control",
+      "vdomain": "finance",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "transient"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "finance.yahoo.com/quote/AAPL/",
+        "investor.apple.com/stock-price/default.aspx",
+        "apple.com/shop/buy-iphone"
+      ],
+      "armOffSample": [
+        "finance.yahoo.com/quote/AAPL/",
+        "apple.com/shop/buy-iphone",
+        "investor.apple.com/stock-price/default.aspx"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-a102",
+      "stratum": "control",
+      "vdomain": "academic",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "stadlermade.com/pizza-calculator/?srsltid=AU7gw4WjjcEzk-Cq-xUbThTGHOvT1PdatDHGT6SriW7ebjB6WL7d7dNo",
+        "pizza-calculator.the-bread-code.io/",
+        "flourwise.com/pizza-calculator/"
+      ],
+      "armOffSample": [
+        "stadlermade.com/pizza-calculator/?srsltid=AU7gw4U0qe4gWI2RwXujsJJJTYkZ4et69-C6KHS-37pULykj9qjrKhNk",
+        "pizza-calculator.the-bread-code.io/",
+        "flourwise.com/pizza-calculator/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-c101",
+      "stratum": "control",
+      "vdomain": "code",
+      "role": "control",
+      "hadVerticalSpec": false,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": null
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": null,
+      "armInFanoutOff": true,
+      "providersFailedOn": null,
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": null,
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": null,
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": null,
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "tastingtable.com/821292/pasta-sauce-brands-ranked-worst-to-best/",
+        "allrecipes.com/store-bought-marinara-sauce-taste-test-11703739",
+        "youtube.com/watch?v=T_tvrXfM058&vl=en"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-a103",
+      "stratum": "control",
+      "vdomain": "academic",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "arxiv.org/pdf/2308.06767",
+        "ieeexplore.ieee.org/document/10643325/",
+        "sciencedirect.com/science/article/pii/S0031320321000868"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-a104",
+      "stratum": "control",
+      "vdomain": "academic",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "epa.gov/mercury/basic-information-about-mercury",
+        "envchemgroup.com/mercury-history-facts-and-concerns.html",
+        "britannica.com/science/mercury-chemical-element"
+      ],
+      "armOffSample": [
+        "epa.gov/mercury/basic-information-about-mercury",
+        "envchemgroup.com/mercury-history-facts-and-concerns.html",
+        "britannica.com/science/mercury-chemical-element"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-h101",
+      "stratum": "control",
+      "vdomain": "health",
+      "role": "control",
+      "hadVerticalSpec": false,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 9,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": null
+      },
+      "fusedOff": {
+        "n": 9,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": null,
+      "armInFanoutOff": true,
+      "providersFailedOn": null,
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": null,
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": null,
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": null,
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "youtube.com/shorts/bInihYJPtEU",
+        "allstate.com/resources/car-insurance/how-to-change-a-flat-tire",
+        "reddit.com/r/selfreliance/comments/iuliat/how_to_change_a_car_tire/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-c103",
+      "stratum": "control",
+      "vdomain": "code",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "w3schools.com/python/python_lists_comprehension.asp",
+        "medium.com/data-science/lets-learn-list-comprehension-with-a-lots-of-examples-efficient-python-programming-98fb41813d7",
+        "geeksforgeeks.org/python/python-list-comprehension/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-c104",
+      "stratum": "control",
+      "vdomain": "code",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "dev.java/learn/language-basics/",
+        "geeksforgeeks.org/java/java-programming-basics/",
+        "w3schools.com/java/"
+      ],
+      "armOffSample": [
+        "dev.java/learn/language-basics/",
+        "w3schools.com/java/",
+        "geeksforgeeks.org/java/java-programming-basics/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-c102",
+      "stratum": "control",
+      "vdomain": "code",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "youtube.com/watch?v=SqPf4B9oD4U",
+        "homedepot.com/c/ah/how-to-install-drip-irrigation/9ba683603be9fa5395fab90f2267c99",
+        "rainbird.com/homeowners/blog/get-started-with-drip-irrigation-in-your-garden"
+      ],
+      "armOffSample": [
+        "homedepot.com/c/ah/how-to-install-drip-irrigation/9ba683603be9fa5395fab90f2267c99",
+        "rainbird.com/homeowners/blog/get-started-with-drip-irrigation-in-your-garden",
+        "lowes.com/n/how-to/how-to-install-drip-irrigation"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-h103",
+      "stratum": "control",
+      "vdomain": "health",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-protocol"
+      },
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [],
+      "armOffSample": [
+        "pmc.ncbi.nlm.nih.gov/articles/PMC8709011/",
+        "mayoclinic.org/drugs-supplements-vitamin-d/art-20363792",
+        "health.harvard.edu/diet-and-nutrition/taking-too-much-vitamin-d-can-cloud-its-benefits-and-create-health-risks"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-h102",
+      "stratum": "control",
+      "vdomain": "health",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "joyfoodsunshine.com/the-most-amazing-chocolate-chip-cookies/",
+        "pinchofyum.com/the-best-soft-chocolate-chip-cookies",
+        "sallysbakingaddiction.com/chewy-chocolate-chip-cookies/"
+      ],
+      "armOffSample": [
+        "joyfoodsunshine.com/the-most-amazing-chocolate-chip-cookies/",
+        "pinchofyum.com/the-best-soft-chocolate-chip-cookies",
+        "sallysbakingaddiction.com/chewy-chocolate-chip-cookies/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "ctrl-h104",
+      "stratum": "control",
+      "vdomain": "health",
+      "role": "control",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": null,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": null,
+        "rankOf": null
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {},
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "cdc.gov/flu/about/coldflu.html",
+        "tylenol.com/adult-relief/cold-flu/cold-or-flu",
+        "namcshoals.com/news/2025/11/26/is-it-a-cold--the-flu--or-something-else--how-to-tell-the-difference"
+      ],
+      "armOffSample": [
+        "cdc.gov/flu/about/coldflu.html",
+        "tylenol.com/adult-relief/cold-flu/cold-or-flu",
+        "namcshoals.com/news/2025/11/26/is-it-a-cold--the-flu--or-something-else--how-to-tell-the-difference"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-c1201",
+      "stratum": "semantic",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 2,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 2
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 2,
+        "marked": 10
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 2
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "reddit.com/r/Python/comments/sxovwp/async_io_tasks_vs_threads/",
+        "stackoverflow.com/questions/27435284/multiprocessing-vs-multithreading-vs-asyncio",
+        "geeksforgeeks.org/python/asyncio-vs-threading-in-python/"
+      ],
+      "armOffSample": [
+        "reddit.com/r/Python/comments/sxovwp/async_io_tasks_vs_threads/",
+        "stackoverflow.com/questions/27435284/multiprocessing-vs-multithreading-vs-asyncio",
+        "geeksforgeeks.org/python/asyncio-vs-threading-in-python/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-c1101",
+      "stratum": "parameterized",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 5,
+        "hostHit": true,
+        "strongHit": false,
+        "rankOf": 1,
+        "marked": 5
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": true,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 5,
+        "hostHit": true,
+        "rankOf": 1,
+        "marked": 5
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "github.com/reactjs/react.dev/blob/main/src/content/learn/rsc-sandbox-test.md",
+        "github.com/reactjs/react.dev/blob/main/src/content/reference/rsc/server-functions.md",
+        "github.com/reactjs/react.dev/blob/main/src/content/reference/rsc/server-components.md"
+      ],
+      "armOffSample": [
+        "react.dev/reference/rsc/server-components",
+        "joshwcomeau.com/react/server-components/",
+        "reddit.com/r/nextjs/comments/1aezfrs/explain_me_react_server_components_like_i_am_10/"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-a1101",
+      "stratum": "parameterized",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 10
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 4
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "doi.org/10.1609/aaai.v38i16.29728",
+        "doi.org/10.18653/v1/2024.findings-acl.372",
+        "doi.org/10.1109/csr61664.2024.10679494"
+      ],
+      "armOffSample": [
+        "arxiv.org/abs/2405.07437",
+        "link.springer.com/article/10.1007/s42979-026-05134-x",
+        "geeksforgeeks.org/nlp/evaluation-metrics-for-retrieval-augmented-generation-rag-systems/"
+      ],
+      "delta": {
+        "hostFlip": "worse",
+        "rankDiff": null,
+        "verdict": "worse"
+      }
+    },
+    {
+      "id": "vert-a1201",
+      "stratum": "semantic",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 7
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "arxiv.org/abs/2602.08019",
+        "emergentmind.com/topics/sparse-mixture-of-experts-architecture",
+        "en.wikipedia.org/wiki/Mixture_of_experts"
+      ],
+      "armOffSample": [
+        "uplatz.com/blog/sparse-mixture-of-experts-moe-architecture-advancements-and-future-directions/",
+        "alphaxiv.org/abs/2502.19261",
+        "emergentmind.com/topics/sparse-mixture-of-experts-moe-layers"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 6,
+        "verdict": "better"
+      }
+    },
+    {
+      "id": "vert-f1101",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 1,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 1
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 3
+      },
+      "fusedOn": {
+        "n": 1,
+        "hostHit": true,
+        "rankOf": 1,
+        "marked": 1
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 4
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "site.financialmodelingprep.com/"
+      ],
+      "armOffSample": [
+        "wallstreethorizon.com/nvidia-earnings-calendar",
+        "investor.nvidia.com/events-and-presentations/events-and-presentations/default.aspx",
+        "nasdaq.com/market-activity/stocks/nvda/earnings"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 2,
+        "verdict": "better"
+      }
+    },
+    {
+      "id": "vert-h1101",
+      "stratum": "parameterized",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 2,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 2
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 2,
+        "hostHit": true,
+        "rankOf": 1,
+        "marked": 2
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm=1191",
+        "mor.nlm.nih.gov/RxNav/search?searchBy=RXCUI&searchTerm=1154070"
+      ],
+      "armOffSample": [
+        "accessdata.fda.gov/drugsatfda_docs/label/2015/200671s000lbl.pdf",
+        "medlineplus.gov/druginfo/meds/a682878.html",
+        "dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=d8b5d5b4-44d2-4f8f-8c11-e4fc96504f59"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-f1201",
+      "stratum": "semantic",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 2
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 10
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "marketwatch.com/story/hedge-funds-are-doubling-down-on-big-tech-even-after-summer-volatility-triggered-a-massive-portfolio-cleanup-57dbbf8a",
+        "facebook.com/61563661054752/posts/hedge-funds-are-selling-tech-at-a-record-pace-hedge-funds-have-reduced-their-exp/122205510806455368/",
+        "hedgeco.net/news/05/2026/hedge-funds-pile-back-into-ai-and-tech-stocks.html"
+      ],
+      "armOffSample": [
+        "hedgeweek.com/hedge-funds-maintained-crowded-tech-positions-through-2025-says-hazeltree/",
+        "au.finance.yahoo.com/news/3-ai-stocks-bought-both-113213385.html",
+        "kalkine.com/news/premium/hedge-funds-cut-us-technology-stocks-as-magnificent-seven-exposure-falls?srsltid=AU7gw4VLC0Pnq02NHTYbJSY4t6-gGAwyNtoh2aqU9dF-wo85GM4Abpz7"
+      ],
+      "delta": {
+        "hostFlip": "worse",
+        "rankDiff": null,
+        "verdict": "worse"
+      }
+    },
+    {
+      "id": "vert-h1201",
+      "stratum": "semantic",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 2,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 7,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "fusedOff": {
+        "n": 10,
+        "hostHit": true,
+        "rankOf": 1
+      },
+      "armInFanoutOn": true,
+      "armInFanoutOff": true,
+      "providersFailedOn": [
+        "tavily"
+      ],
+      "providersFailedOff": [
+        "tavily"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "trial.medpath.com/news/lancet-review-mrna-vaccines-94-effective-against-covid-19-death-serious-adverse-events-remain-rare-across-billions-of-doses",
+        "pubmed.ncbi.nlm.nih.gov/34809772/",
+        "immunizecolorado.org/large-study-confirms-most-mrna-covid-19-vaccine-side-effects-are-mild-and-temporary/"
+      ],
+      "armOffSample": [
+        "sciencedirect.com/science/article/pii/S0141813025055631",
+        "med.upenn.edu/CEP/assets/user-content/documents/covid-reports/mrna-vaccine-review-final.pdf",
+        "thelancet.com/journals/laninf/article/piis1473-3099(22)00054-8/fulltext"
+      ],
+      "delta": {
+        "hostFlip": "better",
+        "rankDiff": null,
+        "verdict": "better"
+      }
+    },
+    {
+      "id": "vert-a1202",
+      "stratum": "semantic",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": false,
+        "strongHit": null,
+        "rankOf": null
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "actamicro.ijournals.cn/cjbcn/article/html/gc24051406?st=article_issue",
+        "novopro.cn/tools/secondary-structure-prediction.html",
+        "zhuanlan.zhihu.com/p/19998465892"
+      ],
+      "armOffSample": [
+        "pibb.ac.cn/pibbcn/article/html/20230152?st=top_view",
+        "actamicro.ijournals.cn/cjbcn/article/html/gc24051406?st=article_issue",
+        "zhuanlan.zhihu.com/p/19998465892"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-c1202",
+      "stratum": "semantic",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-c1102",
+      "stratum": "parameterized",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 4,
+        "hostHit": true,
+        "strongHit": false,
+        "rankOf": 1,
+        "marked": 4
+      },
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {
+        "anysearch": "transient"
+      },
+      "armOnSample": [
+        "github.com/expressjs/express/blob/master/_autodocs/types.md",
+        "github.com/expressjs/express/blob/master/_autodocs/endpoints.md",
+        "github.com/expressjs/express/blob/master/_autodocs/api-reference/application.md"
+      ],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-f1102",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-a1102",
+      "stratum": "parameterized",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1,
+        "marked": 10
+      },
+      "armOff": {
+        "n": 10,
+        "hostHit": true,
+        "strongHit": null,
+        "rankOf": 1
+      },
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [],
+      "providersFailedIsoOff": [],
+      "providerErrorClassesOn": {
+        "tavily": "transient",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {},
+      "providerErrorClassesIsoOff": {},
+      "armOnSample": [
+        "arxiv.org/abs/2308.10620",
+        "doi.org/10.1038/s41398-023-02592-2",
+        "doi.org/10.1146/annurev-economics-091622-010157"
+      ],
+      "armOffSample": [
+        "arxiv.org/abs/2303.18223",
+        "link.springer.com/article/10.1007/s11704-026-60308-3",
+        "github.com/rucaibox/llmsurvey"
+      ],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": 0,
+        "verdict": "tied"
+      }
+    },
+    {
+      "id": "vert-f1202",
+      "stratum": "semantic",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-h1102",
+      "stratum": "parameterized",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-h1202",
+      "stratum": "semantic",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-a1103",
+      "stratum": "parameterized",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-a1203",
+      "stratum": "semantic",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-c1103",
+      "stratum": "parameterized",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-c1203",
+      "stratum": "semantic",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-f1103",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-f1203",
+      "stratum": "semantic",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-h1103",
+      "stratum": "parameterized",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-h1203",
+      "stratum": "semantic",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-a1104",
+      "stratum": "parameterized",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-a1204",
+      "stratum": "semantic",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-c1104",
+      "stratum": "parameterized",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-c1204",
+      "stratum": "semantic",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-f1104",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-f1204",
+      "stratum": "semantic",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-h1104",
+      "stratum": "parameterized",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-h1204",
+      "stratum": "semantic",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-a1105",
+      "stratum": "parameterized",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-a1205",
+      "stratum": "semantic",
+      "vdomain": "academic",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-c1105",
+      "stratum": "parameterized",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-c1205",
+      "stratum": "semantic",
+      "vdomain": "code",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-f1106",
+      "stratum": "parameterized",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-f1205",
+      "stratum": "semantic",
+      "vdomain": "finance",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-h1105",
+      "stratum": "parameterized",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    },
+    {
+      "id": "vert-h1205",
+      "stratum": "semantic",
+      "vdomain": "health",
+      "role": "subject",
+      "hadVerticalSpec": true,
+      "arm": "anysearch",
+      "armOn": null,
+      "armOff": null,
+      "fusedOn": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null,
+        "marked": 0
+      },
+      "fusedOff": {
+        "n": 0,
+        "hostHit": false,
+        "rankOf": null
+      },
+      "armInFanoutOn": false,
+      "armInFanoutOff": false,
+      "providersFailedOn": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedOff": [
+        "tavily",
+        "anysearch"
+      ],
+      "providersFailedIsoOn": [
+        "anysearch"
+      ],
+      "providersFailedIsoOff": [
+        "anysearch"
+      ],
+      "providerErrorClassesOn": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesOff": {
+        "tavily": "unknown",
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOn": {
+        "anysearch": "permanent-auth"
+      },
+      "providerErrorClassesIsoOff": {
+        "anysearch": "permanent-auth"
+      },
+      "armOnSample": [],
+      "armOffSample": [],
+      "delta": {
+        "hostFlip": null,
+        "rankDiff": null,
+        "verdict": "unknown"
+      }
+    }
+  ]
+}
