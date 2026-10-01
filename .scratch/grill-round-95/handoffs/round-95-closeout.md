@@ -1,13 +1,13 @@
 # Handoff — Grill Round 95 → R96（执行轮收口交接，返工版）
 
 Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：
-  r95-exec → trx (`4a73758b` @ 2026-10-01) → pnw (`a9f2088e` @ 2026-10-01) → rsk (`04cdce5e` @ 2026-10-01) → lyz (`aee54914` @ 2026-10-01) → xut (`0ae0c92b` @ 2026-10-01) → znn (`4b9a1824` @ 2026-10-01) → oql (`3063f957` @ 2026-10-01) → umy (`bb4ec7e1` @ 2026-10-01) → ouz (`f20fe391` @ 2026-10-01) → zpv → szw (`9454a182` @ 2026-10-01) → xlu (`729e3c36` @ 2026-10-01) → wzw (`7a540900` @ 2026-10-01) → `qyv` (`a24684de` @ 2026-10-01) → `lxn` (`199f3e72` @ 2026-10-01) → `umt` (`1b7bc809` @ 2026-10-01) → `ulo` (`9cac80c1` @ 2026-10-01) → `xtv`（自引用收尾 commit；SHA time-lagged 故不写入，以 `but log` 为准）—— 即 `r95-exec` tip，未 land、未 push
+  r95-exec → trx (`4a73758b` @ 2026-10-01) → pnw (`a9f2088e` @ 2026-10-01) → rsk (`04cdce5e` @ 2026-10-01) → lyz (`aee54914` @ 2026-10-01) → xut (`0ae0c92b` @ 2026-10-01) → znn (`4b9a1824` @ 2026-10-01) → oql (`3063f957` @ 2026-10-01) → umy (`bb4ec7e1` @ 2026-10-01) → ouz (`f20fe391` @ 2026-10-01) → zpv → szw (`9454a182` @ 2026-10-01) → xlu (`729e3c36` @ 2026-10-01) → wzw (`7a540900` @ 2026-10-01) → `qyv` (`a24684de` @ 2026-10-01) → `lxn` (`199f3e72` @ 2026-10-01) → `umt` (`1b7bc809` @ 2026-10-01) → `ulo` (`9cac80c1` @ 2026-10-01) → `xtv`（自引用收尾 commit；SHA time-lagged 故不写入，以 `but log` 为准）—— 即 `r95-exec` tip；已 push 至 `origin/r95-exec`（tip 以 `git rev-parse origin/r95-exec` 为准；本行 capture 时值 `a5af1140` @ 2026-10-01），未 land、未 tag、未 publish
 
 ## 绿色 run URL（必填）
 
-**PENDING — stack unpushed。** 本轮全部提交未外发（无 push / tag / publish，纪律内），故无本轮 CI run 可引。
-门禁证据为**本机实测**，非 CI：`node scripts/ship-gate.mjs` → 终读 exit 0 全绿（返工批复跑；含 `closeout-coverage: 20/20`、`handoff-lint`、`path-lint`、`canonical-json`、`gen-adr-index: 96 ADRs at HEAD`）。
-> 旁注（不作本轮 run，仅作门禁机械锚）：祖先线 CI 实证 = ci https://github.com/Xxx91n/anysearch-cli/actions/runs/36701973945 success（head_sha `85403a20`；共同基底 `3642d494` 的祖先线，`git merge-base --is-ancestor 3642d494 HEAD` → rc=0 实测）。审计窗 F5 判定祖先线引用**不满足**「本轮 run」语义——本件主字段仍为上方显式 `PENDING — stack unpushed`；该 URL 仅为 `handoff-lint` 腿的机械锚（门禁在接受祖先线 run 当本轮 history 上的盲区 = F8，记 R96 主推收口）。
+**PENDING — 已 push，但本仓 CI 拓扑不产出特性分支 run。** 本栈已 push 至 `origin/r95-exec`（tip 以 `git rev-parse origin/r95-exec` 为准）；`.github/workflows/` 的 `ci.yml` / `ship-gate.yml` / `native-smoke.yml` 触发条件均为 `push: branches: [main]` 或 `pull_request` 或 `workflow_dispatch`，故**特性分支 push 不产生任何 run**（`gh run list --branch r95-exec` → 空，实测）。取得本轮 CI run 须二选一：land 到 `main`，或开 PR 触发 `pull_request`。
+本机门禁证据（**非 CI**，审计窗 LOOP3 独立复跑）：`node scripts/ship-gate.mjs` → **exit 0 零 fail 腿**（含 `closeout-claims r95: 9/9 re-derived green`、`handoff-lint` pass、`closeout-coverage: 20/20`、`canonical-json` 绿、`path-lint` 零 fail、`clean-tree` 空）；`pnpm turbo run check/build --force` 8/8 + 5/5；`pnpm test` 13/13。
+> 旁注（基底线 run，非本分支 run；亦为 `handoff-lint` 腿的机械锚）：共同基底 `3642d494`（= `main` HEAD）三条绿 run 实测存在——ci https://github.com/Xxx91n/anysearch-cli/actions/runs/36741517719 success、ship-gate https://github.com/Xxx91n/anysearch-cli/actions/runs/36741517755 success、native-smoke https://github.com/Xxx91n/anysearch-cli/actions/runs/36741517873 success（均 head_sha `3642d494`，`gh run list` 实测）。审计窗 F5 判定「祖先/基底线 run 不满足本轮 run 语义」——主字段如上；此处 URL 性质已具名。`handoff-lint` 在非本轮 run 上仍判绿 = F8 盲区，记 R96 主推收口。
 
 生成：2026-10-01 | 轮次：R95 收口（返工版） | 本轮账本：`.scratch/grill-round-95/decision-ledger.md`（D-001~D-005 全 current）| 轮报：`.scratch/grill-round-95/reports/2026-10-01-report.md`（F1/F2/F4 已改述补记） | 审计件：`.scratch/grill-round-95/reports/2026-10-01-audit-report.md`（分支 `r95-audit`） | 下轮正题候选见 §5
 
