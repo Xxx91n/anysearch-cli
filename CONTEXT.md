@@ -1741,3 +1741,26 @@ reaffirm 与 retire 的边界谓词：证据基础融合时（同一负读数支
 
 ### Claims Freeze Point（claims 冻结点）
 closeout-claims 的登记时序不变量：收口批内「claims+轮报+终态戳」commit 是最后一个可增改 claims 的 commit，此后发现只能进下轮交接不得追写；配套冻结声明（计数+状态）供门禁机械比对；门禁为只读复证——修复 commit 不改 claims 实物，差异以「申报的偏差」落账。_Avoid_: 门禁后补写 claims（R93-F1 同型缺陷）；未申报偏差当正常。来源：R93 审计 F1 教训+RR Stage 2 纪律（偏差本身不否决未申报才否决）+atomcode R94-Q3+R94 D-003。
+
+## Grill Round 95 — Terms (ADR-0096)
+
+### Tombstone Reason Code（墓碑理由码受控词表）
+语料格降格的显式声明载体：理由码取自封闭词表（常量源 `TOMBSTONE_REASON_CODES`，单源；扩展=语料治理行为须 ADR+registry，非内联编辑），不得自由文本（防拼写漂移）。四层机检：常量+`validateDocsGoldenEntry` 交叉规则（墓碑行不得携 `expected.vertical`/注入 spec）+kernel 作用域豁免断言+store 测试负例（自由文本理由码被拒）。_Avoid_: 静默移除格子；reason_code 写散文；绕开词表另立平行载体。来源：R95 D-002+R95 T1+T7 finding 机检信号。
+
+### Evidence-Role Annotation（读数=证据非裁定的角色标注）
+评测读数的法律角色标注：本轮读数是复活条件③④的**输入证据**，对 prefer-capable 加权轴无裁决权；即使 Δ 转正，重议仍走 owner `anysearch-eval` 未来轮次立案。标注须先于读数存在（预注册进 T2），禁读数后追认。_Avoid_: 读数被当方向裁定引用；转正自动复活的单边宣称。来源：R95 D-003/D-005 + prereg §3。
+
+### Matrix Version Stamp（matrix@N 版本戳进位）
+判读器执行体的预注册版本戳：`EXPECTED_FP` 滚动 + `out.matrix` 指向对应 prereg 文档（`matrix@2`=R86 G1b 修订体，`matrix@3`=R95）。机械面（闸序/后验/四字段/早停/单读）逐字不变时仅此两处非注释改动；fixture 随 n 漂移重调须披露意图保持。_Avoid_: 无版本戳的判读器改动；指纹与戳不同步。来源：R95 D-003+T3 selftest 判例。
+
+### Probe-vs-Terminal Tiering（探针/终读二分）
+跑数二分：容量探针=容量测量（TPM 形态与配额余量），非判读输入、不入 G 系闸；终读档是唯一判读输入（单次终读，二次读取/peek 作废）。探针件指纹结构性不等、走独立路径，天然不可被误读。_Avoid_: 探针读数入判读；终读档补跑/跨日合并。来源：R95 D-004/D-005 + prereg §3/§5。
+
+### Protocol Amendment Ordering（语料修订先于预注册的合法时序）
+修订先行、预注册随后的合法时序：语料修订 commit（T1）须在预注册 commit（T2）的 parent 链内（时序自证条款），任何 delta 跑数不得先于 T2。_Avoid_: 先跑后注册；HARKing 窗口临场拟谓词（G1b 谓词锚须写进 T2）。来源：R95 D-005 + ADR-0095 D5 先例。
+
+### Finding-vs-Disposition Separation（发现与处置分离记账）
+上游缺陷的发现与本轮处置分开记账：发现立独立 finding id（禁并入旧条 reopen；本轮 `finding-r95-upstream-validator-vs-doc-vocab-mismatch`），处置走既有条目 closed/carried_log（`defer-r86`→closed；r88-candidate 只追加 carried_log，status 不动）。_Avoid_: 发现并入处置条目湮灭；为处置改写 finding。来源：R95 D-002/D-005 + R64 migration 载体先例。
+
+### Machine-Checkable Verification Signal（finding 必备机检信号）
+finding 的 evidence 必须带可复放断言：`verify-validator-vs-doc.ts`（离线断言文档侧 per-type 规则 + `--live` 复放断言上游仍拒收；exit 0=不一致复现 / 1=未复现须复核 / 2=环境性失败无判词）——防不可控锚橡皮图章。_Avoid_: 纯文字 evidence 的 finding；exit 2 当证伪；agent 代发上游。来源：R95 D-005/T7 + R94 Snapshot-vs-Live 分级。

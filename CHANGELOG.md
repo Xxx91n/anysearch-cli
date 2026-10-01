@@ -4,6 +4,25 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0096 r95: 评测矩阵修订轮【语料解冻 + matrix@3 读数】（vert-f1105 原位降格墓碑 + 判读器指纹版本戳滚动 + 匿名层终读档单次终读 INCONCLUSIVE-instrument-flag）
+
+### Changed
+
+- **语料修订（T1）**：`vert-f1105` 原位降格为 `unmeasured-by-design`（墓碑理由码受控 `upstream-validator-vs-doc-mismatch` + prior 载荷留档 + `golden.scopes` 除名），可测集 57→56，指纹 `7ac0a48e55cd7954`→`8da3e482b98f8cba`；语料 diff 仅此一格。机检载体：`TOMBSTONE_REASON_CODES` 常量 + `validateDocsGoldenEntry` 交叉规则 + kernel 作用域豁免 + store 负例（自由文本理由码被拒）。
+- **判读器升 matrix@3（T3）**：`EXPECTED_FP` 滚动 + `out.matrix` 指向 `grill-round-95/prereg-matrix@3`；G0–G4 闸序/β 后验/四字段/早停/单次终读逐字不变；selftest fixture 一处 n 漂移重调（indeterminate 判例 P=0.658）7/7 全绿。
+- **台账落账（T7）**：`defer-r86-anysearch-corpus-param-contract`→closed（字段集照 r87-f3 先例）；新 finding `finding-r95-upstream-validator-vs-doc-vocab-mismatch`（type:finding，owner anysearch-eval，evidence 带可机检验证信号 `evidence/verify-validator-vs-doc.ts`）；`r88-candidate-vertical-direction-redeliberation` 仅追加 carried_log（条件③④ verifier 工件快照路径），status=`formally-declined` 不动。
+
+### Added
+
+- **matrix@3 预注册（T2）**：先于任何跑数落账（parent 时序自证含 T1 diff）；含新指纹、「读数=复活条件③④输入证据非方向裁定」条款、G1b 谓词锚（>30%→INCONCLUSIVE-instrument）、单次终读纪律、57→56 可比性边界（prereg §7）。
+- **ADR-0096 立法 + CONTEXT 词条区**：D1 语料墓碑形态 / D2 判读器修订幅度 / D3 读数法律角色 / D4 匿名层执行裁量 / D5 三记账 / D6 收口形态；Known-Risks 预写三项（可比性边界先于读数/墓碑词表/G1b 谓词锚）；CONTEXT `Grill Round 95 — Terms` 七词条。
+- **匿名层终读路（T4–T6）**：容量探针登记为测量非判读输入（执行级修正：board 速记端点值须补完整 MCP 路径 `/mcp`）；终读档（56 格×4 腿=224 调用，351s）中段起系统性 `permanent-auth`（匿名配额边界，122 腿），兑现预注册分支→单次终读 `INCONCLUSIVE/instrument-flag`（G1b：instrumentDown 30/40；探针读数作量化锚）。
+
+### Deferred
+
+- **B 升级路径（用户侧）**：复活私有端点 `127.0.0.1:20128` 或供有效 key → 兑现后声明式环境一次干净全量跑（判据同 R86 T5：装置性失败=∅ + 覆盖≥70%）；agent 不代修 env、不代持凭证。
+- **backlog 候选（不入本轮 diff）**：`fundamental×cn_code` 新格立案（同 id 换芯禁令→须新 id，下一语料轮）；全语料契约一致性体检（独立轮次）。
+
 ## Unreleased — ADR-0095 r94: r88-candidate 垂域死刑复核【开庭轮】（五段议程 + B3 混合制判词 reaffirm 机械落果 + formally-declined 落地裁定 + 四项具名复活条件立案 + D6 门禁证据效力裁定复核确认）
 
 ### Changed

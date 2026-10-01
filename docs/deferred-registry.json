@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updated": "2026-09-30",
+ "updated": "2026-10-01",
  "note": "Machine-checkable registry of deferred work items and carried-over acceptance criteria. Discipline is isomorphic to .ship-gate/skip-ledger.json (schema @3) and the ADR-0020 conformance expected-failures ledger: every deferral is an explicit, traceable record, never a silent drop. ADR-0057 D5 / D-006 requires one entry per carried-over acceptance criterion, marked closed-by the ADR that closes it. Old ADR bodies are never edited; the pointer line lives in the old ADR and the record lives here (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). Additive only: new entries are appended, existing ids are never reused or renumbered. Canonical form locked by ship-gate stepGovernedJsonCanonical (ADR-0077): this file must byte-equal JSON.stringify(JSON.parse(src),null,1)+'\\n'. To normalize: node -e \"const f='docs/deferred-registry.json';const fs=require('fs');fs.writeFileSync(f,JSON.stringify(JSON.parse(fs.readFileSync(f,'utf8')),null,1)+'\\n')\"",
  "entries": [
   {
@@ -951,15 +951,23 @@
    "owner": "anysearch-eval",
    "opened_at": "2026-09-27",
    "review_cadence": "next matrix revision",
-   "status": "open",
-   "evidence": "R86 T5 实证：vert-f1105 isoOn 腿上游 isError \"Missing required params for tag finance.fundamental: cn_code\"（两轮复跑确定性重合）。语料指纹 7ac0a48e55cd7954 冻结=>改格即 G0 漂移，本矩阵期不可修；修订候选=下一矩阵期补 cn_code 或降格该格。同类 bogus-sub_domain 对照格（*-103 ×4）为设计内负向拒收，非缺陷。",
+   "status": "closed",
+   "evidence": "R86 T5 实证：vert-f1105 isoOn 腿上游 isError \"Missing required params for tag finance.fundamental: cn_code\"（两轮复跑确定性重合）。语料指纹 7ac0a48e55cd7954 冻结=>改格即 G0 漂移，本矩阵期不可修；修订候选=下一矩阵期补 cn_code 或降格该格。同类 bogus-sub_domain 对照格（*-103 ×4）为设计内负向拒收，非缺陷。 | R95 T7 核销：vert-f1105 已按 D-002 原位降格为 unmeasured-by-design（墓碑理由码 `upstream-validator-vs-doc-mismatch`，指纹 7ac0a48e55cd7954→8da3e482b98f8cba，语料 57→56；上游「文档词表 vs validator」不一致独立立 finding 另册（本轮新 finding id）；fundamental×cn_code 新格与全语料契约体检登记为 backlog 候选（不入本轮 diff）。T8 ADR-0096 + CONTEXT 词条区同轮闭环。判读证据：.scratch/grill-round-95/readout-output.json（matrix@3 单次终读 INCONCLUSIVE/instrument-flag）+ evidence/vertical-delta-r95-terminal.json。",
    "carried_log": [
     {
      "at": "2026-09-28",
      "round": 87,
      "note": "R87 T5 去向注记：维持 open——语料指纹冻结期内不可修，具名触发=下一矩阵期（补 cn_code 或降格该格）；R87 发布轮未解冻语料，无动作"
+    },
+    {
+     "at": "2026-10-01",
+     "round": 95,
+     "note": "R95 T7 收口注记：本条 closed，兑现记录已追加于 evidence；语料 tombstone + finding 另册，详 ADR-0096"
     }
-   ]
+   ],
+   "closed_by": "ADR-0096",
+   "closed_by_adr_path": "docs/adr/0096-architecture-grill-round-95-eval-matrix-revision-closeout.md",
+   "closed_at": "2026-10-01"
   },
   {
    "id": "defer-r86-anysearch-anon-quota-nudge",
@@ -1038,6 +1046,14 @@
      "owner": "anysearch-eval",
      "trigger_rule": "ADR-0095 D9",
      "note": "R94 T4 落地裁定：按开庭判词 reaffirm 机械落果，状态变更为 formally-declined，原判据废止留理由，正式确立四项具名复活条件。"
+    },
+    {
+     "id": "r88-candidate-vertical-direction-redeliberation",
+     "owner": "anysearch-eval",
+     "trigger_rule": "ADR-0095 D9 复活条件 ③④ 供证（R95 T7）",
+     "at": "2026-10-01",
+     "round": 95,
+     "note": "R95 读数落账：matrix@3 单次终读 INCONCLUSIVE/instrument-flag（G1b，主体层 instrumentDown 30/40）。条件③ verifier 工件：eval-looks.json vert-f1105 tombstone（prior_scope=live，墓碑理由码受控）+ defer-r86-anysearch-corpus-param-contract→closed（本轮）。条件④ verifier 工件：.scratch/grill-round-95/evidence/vertical-delta-r95-terminal.json（sha256 28f509fb345923633de0fd67e20f60978a95828491648295305f746570eada0b）+ .scratch/grill-round-95/readout-output.json（out.matrix=grill-round-95/prereg-matrix@3）。status=formally-declined 不动，解释权属 owner 未来轮次。"
     }
    ],
    "closed_by": "ADR-0095",
@@ -1115,6 +1131,18 @@
    "permission_gap_type": "credential-scope",
    "permission_gap_fallback": "纯备准核销 + EOTP 呈报待用户亲触自执；不代跑、不借他人凭证绕闸",
    "evidence": ".scratch/grill-round-93/evidence/t5-deprecate.md + t5-deprecate-probe.json（npm whoami E401；6/6 双空格只读复核确认；0.1.0 不在弃用范围）"
+  },
+  {
+   "id": "finding-r95-upstream-validator-vs-doc-vocab-mismatch",
+   "type": "finding",
+   "title": "上游 finance.fundamental 的 validator 按 tag 级索要 cn_code，与 sub_domains 词表文档的 per-type 规则不一致（vert-f1105 格降格根因）",
+   "source_adr": "docs/adr/0096-architecture-grill-round-95-eval-matrix-revision-closeout.md",
+   "owner": "anysearch-eval",
+   "opened_at": "2026-10-01",
+   "review_cadence": "next upstream contract notice + quarterly",
+   "status": "open",
+   "upstream_channel": "pending — agent 不代修不代发，供 owner 走上游渠道",
+   "evidence": "R95 Q2 具名活查（2026-10-01，匿名层）：tools/call {domain:finance, sub_domain:fundamental, sub_domain_params:{type:overview, symbol:MSFT}} → HTTP 200 isError=true `Missing required params for tag 'finance.fundamental': cn_code`。同日 get_sub_domains 词表与 2026-09-26 存档（.scratch/grill-round-84/evidence/sub-domains-vocab.json）逐字一致（漂移在校验层、非文档层）。可机检验证信号：.scratch/grill-round-95/evidence/verify-validator-vs-doc.ts（离线断言文档侧 per-type 规则合法性 + --live 复放断言上游仍拒收；exit 0=不一致复现 / exit 1=未复现须 owner 复核 / exit 2=环境性失败无判词）；2026-10-01 实测：离线 exit 0，--live exit 2（当日匿名配额已耗尽，属环境判词、非 finding 证伪）。"
   }
  ]
 }
