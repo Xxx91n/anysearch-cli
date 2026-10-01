@@ -1,0 +1,194 @@
+{
+  "matrix": "grill-round-95/prereg-matrix@3",
+  "schema": "anysearch/vertical-delta@1",
+  "fingerprint": "8da3e482b98f8cba",
+  "verdict": "INCONCLUSIVE",
+  "exit": "instrument-flag",
+  "gates": [
+    {
+      "gate": "G0-input-integrity",
+      "pass": true,
+      "schema": "anysearch/vertical-delta@1",
+      "fingerprint": "8da3e482b98f8cba",
+      "expected": "8da3e482b98f8cba"
+    },
+    {
+      "gate": "G1-instrument-flag",
+      "pass": true,
+      "artifactFlag": false,
+      "unmeasured": 4,
+      "nonTied": 0,
+      "n": 16,
+      "unmeasuredIds": [
+        "ctrl-f103",
+        "ctrl-a103",
+        "ctrl-c103",
+        "ctrl-h103"
+      ],
+      "nonTiedIds": []
+    },
+    {
+      "gate": "G1b-instrument-providers",
+      "pass": false,
+      "instrumentDown": 30,
+      "n": 40,
+      "maxDown": 12,
+      "downIds": [
+        "vert-f1102",
+        "vert-f1103",
+        "vert-f1104",
+        "vert-f1106",
+        "vert-f1202",
+        "vert-f1203",
+        "vert-f1204",
+        "vert-f1205",
+        "vert-a1103",
+        "vert-a1104",
+        "vert-a1105",
+        "vert-a1203",
+        "vert-a1204",
+        "vert-a1205",
+        "vert-c1102",
+        "vert-c1103",
+        "vert-c1104",
+        "vert-c1105",
+        "vert-c1202",
+        "vert-c1203",
+        "vert-c1204",
+        "vert-c1205",
+        "vert-h1102",
+        "vert-h1103",
+        "vert-h1104",
+        "vert-h1105",
+        "vert-h1202",
+        "vert-h1203",
+        "vert-h1204",
+        "vert-h1205"
+      ]
+    }
+  ],
+  "fields": {
+    "netWinRate": 0.1,
+    "P_better_gt_worse": 0.716450216450219,
+    "expectedLoss": 0.04512154512154523,
+    "rankDiffMedian": 0
+  },
+  "control": {
+    "n": 16,
+    "measured": 12,
+    "unmeasured": 4,
+    "nonTied": 0
+  },
+  "coverage": {
+    "n": 40,
+    "nPaired": 10,
+    "unknown": 30
+  },
+  "perDomain": {
+    "finance": {
+      "better": 1,
+      "worse": 1,
+      "tied": 0,
+      "unknown": 8,
+      "nPaired": 2,
+      "expected": 10,
+      "armHostHit": {
+        "on": 0.5,
+        "off": 1
+      }
+    },
+    "academic": {
+      "better": 1,
+      "worse": 1,
+      "tied": 2,
+      "unknown": 6,
+      "nPaired": 4,
+      "expected": 10,
+      "armHostHit": {
+        "on": 0.5,
+        "off": 0.75
+      }
+    },
+    "code": {
+      "better": 0,
+      "worse": 0,
+      "tied": 2,
+      "unknown": 8,
+      "nPaired": 2,
+      "expected": 10,
+      "armHostHit": {
+        "on": 1,
+        "off": 1
+      }
+    },
+    "health": {
+      "better": 1,
+      "worse": 0,
+      "tied": 1,
+      "unknown": 8,
+      "nPaired": 2,
+      "expected": 10,
+      "armHostHit": {
+        "on": 1,
+        "off": 0.5
+      }
+    }
+  },
+  "perStratum": {
+    "parameterized": {
+      "better": 1,
+      "worse": 1,
+      "tied": 3,
+      "unknown": 15,
+      "nPaired": 5,
+      "expected": 20,
+      "armHostHit": {
+        "on": 0.8,
+        "off": 1
+      }
+    },
+    "semantic": {
+      "better": 2,
+      "worse": 1,
+      "tied": 2,
+      "unknown": 15,
+      "nPaired": 5,
+      "expected": 20,
+      "armHostHit": {
+        "on": 0.6,
+        "off": 0.6
+      }
+    }
+  },
+  "truncation": {
+    "academic": {
+      "paired": 4,
+      "expected": 10,
+      "missing": 0
+    },
+    "code": {
+      "paired": 2,
+      "expected": 10,
+      "missing": 0
+    },
+    "finance": {
+      "paired": 2,
+      "expected": 10,
+      "missing": 0
+    },
+    "health": {
+      "paired": 2,
+      "expected": 10,
+      "missing": 0
+    }
+  },
+  "mnarSuspect": [],
+  "armInFanoutSurvival": {
+    "on": 0.2,
+    "off": 0.2
+  },
+  "artifact": ".scratch\\vertical-eval\\delta.json",
+  "nRowsArtifact": 56,
+  "controlDegraded": 0,
+  "earlyStopped": false
+}
