@@ -29,6 +29,7 @@ import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
 import { governedJsonViolation, governedListViolation } from "./governed-json.mjs";
 import { CLOSEOUT_COVERAGE_FLOOR, isCloseoutName, scanRoundDirs, assessCloseoutCoverage } from "./closeout-coverage.mjs";
+import { runHandoffLint } from "./handoff-lint-shell.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -1122,6 +1123,12 @@ function stepEvidenceAnchors() {
 // grandfathered — the rule postdates them.
 // R69 T0: the bare round-NN-* shape leg was removed — direction/task docs
 // (e.g. round-69-direction.md) are not closeouts and were false-positive hits.
+//
+// R96 T2 (ADR-0097): the field legs were replaced by the three-state verdict
+// core. This function is now a thin shell - it selects the target docs, hands
+// them to runHandoffLint (collect -> transmit -> report), and maps the shell's
+// lines onto gate output. No verdict branch is written here; ancestry-as-
+// identity, the bare rev-parse HEAD target and the silent liveness fold are gone.
 function stepHandoffCloseoutLint() {
   report("info", "step 1g/9: closeout handoff required-field lint (ADR-0069)");
   const scratchDir = path.join(ROOT, ".scratch");
@@ -1185,52 +1192,22 @@ function stepHandoffCloseoutLint() {
 
   if (targets.size === 0) { report("skip", "handoff-lint: no closeout docs in scope (diff-clean and none on disk)"); exitIfCoverageRed(); return; }
 
-  // Liveness leg needs gh + network; degrade to an explicit skip (never silent)
-  // when unavailable — the shape legs below still run unconditionally.
-  const ghOk = spawnSync("gh", ["--version"], { encoding: "utf8" }).status === 0;
-  let repo = process.env.GITHUB_REPOSITORY || "";
-  if (!repo) {
-    const remote = spawnSync("git", ["remote", "get-url", "origin"], { cwd: ROOT, encoding: "utf8" });
-    const m = (remote.stdout ?? "").trim().match(/github\.com[/:]([\w.-]+\/[\w.-]+?)(\.git)?$/);
-    if (m) repo = m[1];
-  }
-  const headSha = String(spawnSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" }).stdout ?? "").trim();
-
-  const problems = [];
-  let checkedLiveness = false;
+  // ADR-0097 D1/D2: the verdict itself lives in scripts/handoff-lint-verdict.mjs
+  // (pure) behind scripts/handoff-lint-shell.mjs (collect -> transmit -> report).
+  // This leg only selects the target docs and maps the shell's lines to gate
+  // output; no verdict branch is written here.
+  const documents = [];
   for (const rel of [...targets].sort()) {
     const file = path.join(ROOT, rel);
-    if (!fs.existsSync(file)) continue; // renamed/deleted since diff — nothing to lint
-    const s = fs.readFileSync(file, "utf8");
-    if (!/^##\s*.*绿色\s*run\s*URL/m.test(s)) problems.push(rel + ": missing the required 「绿色 run URL」 section");
-    if (!/Stack\b/m.test(s)) problems.push(rel + ": missing the required Stack header line");
-    const ids = [...s.matchAll(/actions\/runs\/(\d+)/g)].map((m) => m[1]);
-    if (ids.length === 0) { problems.push(rel + ": no actions/runs/<id> URL cited"); continue; }
-    // "指向本轮 run": at least one cited run must resolve to a run whose headSha
-    // is an ancestor-or-self of HEAD — a URL that points at another round's (or
-    // an invented) run does not satisfy the field.
-    if (ghOk && repo) {
-      let bound = false;
-      // R68 audit F-S3: per-file resolution flag — a global flag leaks file A's
-      // successful resolution into file B's "all gh calls failed" case and would
-      // mark an unverifiable doc as a violation.
-      let resolved = false;
-      for (const id of new Set(ids)) {
-        const r = spawnSync("gh", ["api", "repos/" + repo + "/actions/runs/" + id, "--jq", ".head_sha"], { encoding: "utf8" });
-        if (r.status !== 0) continue;
-        const sha = (r.stdout ?? "").trim();
-        if (!/^[0-9a-f]{40}$/.test(sha)) continue;
-        resolved = true;
-        checkedLiveness = true;
-        if (sha === headSha || spawnSync("git", ["merge-base", "--is-ancestor", sha, "HEAD"], { cwd: ROOT }).status === 0) { bound = true; break; }
-      }
-      // Only a resolved-but-unbound run is a violation; when gh could not reach
-      // the API at all (no GH_TOKEN/offline) the leg is unverifiable, not red.
-      if (resolved && !bound) problems.push(rel + ": no cited run resolves to a commit on this round's history (headSha ancestor-of-HEAD)");
-    }
+    if (!fs.existsSync(file)) continue; // renamed/deleted since diff - nothing to lint
+    documents.push({ rel, name: path.posix.basename(rel), text: fs.readFileSync(file, "utf8") });
   }
-  if (problems.length) fail("handoff-lint: closeout required fields missing/invalid:\n  " + problems.join("\n  "));
-  report("pass", "handoff-lint: " + targets.size + " closeout doc(s) carry 绿色 run URL + Stack" + (checkedLiveness ? " and cite a run on this round's history" : " (liveness leg skipped: gh/repo unavailable)"));
+
+  const result = runHandoffLint({ root: ROOT, documents });
+  for (const line of result.lines) if (line.kind !== "fail") report(line.kind, line.msg);
+  const problems = result.lines.filter((l) => l.kind === "fail").map((l) => l.msg);
+  if (problems.length) fail("handoff-lint: closeout required fields missing/invalid (ADR-0097 three-state):\n  " + problems.join("\n  "));
+  report("pass", "handoff-lint: " + result.counts.green + " GREEN / " + result.counts.pending + " PENDING across " + documents.length + " closeout doc(s) (ADR-0097 three-state)");
   exitIfCoverageRed();
 }
 
