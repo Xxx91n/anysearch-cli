@@ -144,3 +144,5 @@ apps/cli/.build-stamp.json
 !.scratch/grill-round-94/**
 !.scratch/grill-round-95/
 !.scratch/grill-round-95/**
+!.scratch/grill-round-96/
+!.scratch/grill-round-96/**
