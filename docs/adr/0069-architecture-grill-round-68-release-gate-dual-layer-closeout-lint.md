@@ -8,6 +8,12 @@ serial ticket plan T0–T5. Ledger:
 (D-001..D-005). Evidence root:
 `.scratch/grill-round-68/evidence/`.
 
+Pointer (R96 / ADR-0097, 2026-10-03): D3's "existence + ancestry" closeout
+field rule is REPLACED by ADR-0097's three-state exit semantics
+(`docs/adr/0097-architecture-grill-round-96-handoff-lint-three-state-exit-semantics.md`);
+the required-field list and the section/Stack shape legs are unchanged. This body
+stays unmodified (bidirectional-pointer convention, ADR-0057 D-006).
+
 ## Context
 
 The v0.0.5 release shipped from a red tree: the release-bot pre-tag job

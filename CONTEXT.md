@@ -1764,3 +1764,20 @@ closeout-claims 的登记时序不变量：收口批内「claims+轮报+终态�
 
 ### Machine-Checkable Verification Signal（finding 必备机检信号）
 finding 的 evidence 必须带可复放断言：`verify-validator-vs-doc.ts`（离线断言文档侧 per-type 规则 + `--live` 复放断言上游仍拒收；exit 0=不一致复现 / 1=未复现须复核 / 2=环境性失败无判词）——防不可控锚橡皮图章。_Avoid_: 纯文字 evidence 的 finding；exit 2 当证伪；agent 代发上游。来源：R95 D-005/T7 + R94 Snapshot-vs-Live 分级。
+
+## Grill Round 96 — Terms (ADR-0097)
+
+### Three-State Exit Semantics（三态受控出口语义）
+交接件必填字段的出口取值封闭为 GREEN / PENDING{封闭理由码} / RED：GREEN 只在事实可核验且成立时给出；PENDING 承接「无法证实」但必须携带封闭词表内的理由码（作者声明且门禁离线自证，或门禁可证的环境降级）；RED 只在声明与事实冲突、理由码越表、字段不可解析或缺失时给出。**不设第四态**：pass-with-degraded 标注被否——它破坏可辩护性，PENDING 已承接一切无法证实。_Avoid_: 把「不可证实」与「已证实为假」混为一谈（F8 根因）；加 waived/time-boxed/doc-only 等人为豁免码（词表封闭，扩展须改门禁代码）。来源：R96 D-002 + ADR-0035 D6 反模式。
+
+### Verified-vs-Environment PENDING（可证实 vs 环境性 PENDING）
+PENDING 的两个亚种必须分流标注：verified-PENDING = 作者声明的理由码经门禁离线谓词证实（如 `stack-unpushed` 确无 origin ref）；env-PENDING = 门禁可证其**无法核验**（`gh` 缺失、repo 不可解析、API 全败、无 `but`、ref 未 fetch、浅克隆）。前者是合法出口，后者是**非阻断但显式标注**的降级（CI 恒无 `but`，阻断即恒红）。两者共用单一 skip 文案即缺陷。_Avoid_: 静默折叠为 pass（F8-b）；env-PENDING 阻断 CI。来源：R96 D-002/D-003 + CONTEXT「Observable Fail-Open」。
+
+### Effective-Scope Boundary（生效域边界）
+规则迁移只准「按可机检判据划定生效域」形态：新三态语法适用 round >= 96 的 closeout，round < 96 按旧 presence-only 评；判据=轮次号（文件名可机检），不是内容匹配。与豁免严格区隔：豁免给流程（一次性、判据化、不自动续），grandfathering 给内容（本仓非法）。lint 靶位=最新含 closeout 的轮目录，故生效域自消退、零残留。_Avoid_: 别名映射；改写已审计件；轮内红窗；把生效域写成内容白名单。来源：R96 D-005 + CONTEXT「No-Grandfathering」。
+
+### Ancestry-vs-Membership Identity（祖先性 vs 成员性判等）
+「这条 run 属于本轮吗」的判等口径：合法口径是**栈内成员性**（`head_sha ∈ git rev-list origin/main..origin/<branch>`），不是**祖先性**（`merge-base --is-ancestor`）也不是 **tip 等值**。祖先性会把 main 基线 run 误纳（F8-b 的假绿本体）；tip 等值会把晚跑新增 commit 误红（F5R 的假红本体）。GitButler 下裸 `rev-parse HEAD` 是 workspace 合成 commit，作等值目标即自指悖论。_Avoid_: 用 `merge-base --is-ancestor` 判「本轮」；用裸 `rev-parse HEAD` 作等值目标；把「已 push」当作「有本轮 run」。来源：R96 D-002/D-003 + R95 F5R/F8 实证。
+
+### Degradation-Cause Splitting（降级成因分流）
+每一条降级必须具名其成因码，禁共用单一 skip 文案：run-URL 腿 `verification-unavailable:{gh-missing|repo-parse|api-failed}`，Stack 腿 `stack-unavailable` / `ref-unavailable` / `shallow-clone`。成因分流使「为什么没核验」可被机械统计（监控锚），也是把「降级成了常态出口」这一反向风险暴露出来的唯一手段。_Avoid_: 单一 skip 文案；把成因写进散文而不用码。来源：R96 D-002④/D-003② + ADR-0097 Known-Risk 2。

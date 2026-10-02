@@ -4,6 +4,30 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0097 r96: handoff-lint 门禁假绿收口【三态受控出口语义】（模板↔门禁 PENDING 冲突 + 祖先性冒充/静默折叠 + CI 拓扑不可满足三缺陷闭环）
+
+### Changed
+
+- **ship-gate handoff-lint 腿改薄壳（T2）**：判定从「必填 URL 存在性 + 活体祖先性」重构为三态受控判定；腿内只做「采集环境快照 → 调判定核 → 报出口」三步，判定分支全部移出。祖先性冒充（`merge-base --is-ancestor`）、裸 `rev-parse HEAD` 等值目标（GitButler workspace 合成 commit 自指悖论）、`gh` 不可用时的静默 pass 三处一并根除。
+- **handoff-template 三态语法同步（T3）**：run-URL 字段改为 `GREEN: <url>` / `PENDING: <code>` 显式状态行（散文/旁注 URL 不再满足字段）；Stack 行三要素契约、降级标注格式、生效域边界（>=96 新语法 / <96 旧 presence-only）同轮同语法——模板与门禁同源，F8-a 根因消除。
+
+### Added
+
+- **判定核纯模块 `scripts/handoff-lint-verdict.mjs`（T1）**：输入=交接件文本 + 注入环境快照，输出=三态+理由码+标注；核内禁 `spawnSync` / `fs` / `Date.now()` / `process.env`，故真值表可在无仓库/无网络/无时钟下穷举。
+- **薄壳 `scripts/handoff-lint-shell.mjs`（T2）**：采集（git/gh/but/workflow 触发器）→传递→出口三步；快照形状冻结，E2E 以同形状注入。
+- **真值表单测 + E2E 冒烟 + 共用 fixtures（T1/T2）**：`packages/store/test/handoff-lint-verdict.test.mjs`（OPA 允许+拒绝成对 / Stack 三要素 8 格 / 词表外必报错 / 空缺超长边界）、`packages/store/test/handoff-lint-e2e.test.mjs`（同套 fixtures 走完整壳层路径）、`packages/store/test/fixtures/handoff-lint/`；fail-on-empty 红线。
+- **ADR-0097 + CONTEXT 词条区**：D1 三态语义 / D2 Stack 三要素分级 + 环境分级降级 / D3 回归锁形态 / D4 生效域迁移边界 / D5 同轮闭环 / D6 收口件三态预注册；Known-Risks 预写五项；CONTEXT `Grill Round 96 — Terms` 五词条。
+
+### Fixed
+
+- **F8-a 模板↔门禁 PENDING 冲突**：模板的诚实 PENDING 写法与门禁的必填 URL 要求互斥（诚实者恒红、不诚实者恒绿）——三态语法 + PENDING 封闭词表 + 门禁离线谓词自证闭环。
+- **F8-b liveness 静默折叠 + 祖先性冒充**：`gh` / repo 不可用时不再静默 pass（改 env-PENDING + 具名降级码）；「本轮 run」判等由祖先性升为栈内成员性，main 基线 run 不再满足主字段。
+- **F8-c CI 拓扑不可满足**：特性分支 push 恒无 run 这一可机检状态，现由 `PENDING: pushed-no-branch-runs`（谓词=无 workflow 的 `on.push` 覆盖该分支）承接，不再是无解死结。
+
+### Deferred
+
+- 无。F8 由 ADR-0097 同轮闭环（`docs/deferred-registry.json` F8 行 status=closed）。
+
 ## Unreleased — ADR-0096 r95: 评测矩阵修订轮【语料解冻 + matrix@3 读数】（vert-f1105 原位降格墓碑 + 判读器指纹版本戳滚动 + 匿名层终读档单次终读 INCONCLUSIVE-instrument-flag）
 
 ### Changed
