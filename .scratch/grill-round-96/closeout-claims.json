@@ -1,0 +1,225 @@
+{
+ "schema": "anysearch/closeout-claims@1",
+ "round": 96,
+ "claims": [
+  {
+   "id": "r96-t1-verdict-core",
+   "kind": "symbol",
+   "claim": "T1 判定核纯模块：三态受控判定 + Stack 三要素分级校验 + 封闭理由码词表 + 生效域常量",
+   "file": "scripts/handoff-lint-verdict.mjs",
+   "tokens": [
+    "EFFECTIVE_SCOPE_FLOOR = 96",
+    "STACK_CAPTURE_MAX_AGE_DAYS = 45",
+    "PENDING_REASON_CODES",
+    "green-claim-falsified",
+    "chain-tail-not-in-branch"
+   ]
+  },
+  {
+   "id": "r96-t1-core-purity-imports",
+   "kind": "count",
+   "claim": "T1 核内禁模块导入：handoff-lint-verdict.mjs 零 node: 引用（采集全在壳层）",
+   "command": "node -e \"const s=require('fs').readFileSync('scripts/handoff-lint-verdict.mjs','utf8');console.log(s.split('node:').length-1)\"",
+   "expect": 0
+  },
+  {
+   "id": "r96-t1-core-purity-io",
+   "kind": "count",
+   "claim": "T1 核内禁采集副作用：零 spawnSync / 零 process.env / 零 fs. 调用",
+   "command": "node -e \"const s=require('fs').readFileSync('scripts/handoff-lint-verdict.mjs','utf8');console.log(s.split('spawnSync').length-1+s.split('process.env').length-1+s.split('fs.').length-1)\"",
+   "expect": 0
+  },
+  {
+   "id": "r96-t1-regression-lock",
+   "kind": "path",
+   "claim": "T1/T2 回归锁：真值表单测 + E2E 冒烟 + 共用 fixtures 目录均落地",
+   "paths": [
+    "packages/store/test/handoff-lint-verdict.test.mjs",
+    "packages/store/test/handoff-lint-e2e.test.mjs",
+    "packages/store/test/fixtures/handoff-lint"
+   ]
+  },
+  {
+   "id": "r96-t1-fixtures-count",
+   "kind": "count",
+   "claim": "T1 共用 fixtures 非空：单测与 E2E 共享的 fixture 集 = 27 个场景（含 R1/R2 与 4 个零覆盖 RED 码）",
+   "command": "node -e \"console.log(require('fs').readdirSync('packages/store/test/fixtures/handoff-lint').length)\"",
+   "expect": 27
+  },
+  {
+   "id": "r96-t2-thin-shell",
+   "kind": "symbol",
+   "claim": "T2 薄壳：采→传→出口三步入口 + but status 解析契约 + workflow 触发器采集 + 栈成员集",
+   "file": "scripts/handoff-lint-shell.mjs",
+   "tokens": [
+    "export function runHandoffLint",
+    "export function parseButStatusIds",
+    "export function collectWorkflowTriggers",
+    "stackBranchMembers",
+    "export function buildHandoffLintReport"
+   ]
+  },
+  {
+   "id": "r96-t2-shipgate-wiring",
+   "kind": "symbol",
+   "claim": "T2 ship-gate 腿改薄壳：导入壳层 + 以冻结参数形状调用 + 报出口标三态",
+   "file": "scripts/ship-gate.mjs",
+   "tokens": [
+    "handoff-lint-shell.mjs",
+    "runHandoffLint({ root: ROOT, documents })",
+    "ADR-0097 three-state"
+   ]
+  },
+  {
+   "id": "r96-t2-ancestry-hack-removed",
+   "kind": "count",
+   "claim": "T2 F8-b 根除：ship-gate 内祖先性冒充谓词（merge-base --is-ancestor）计数为零",
+   "command": "node -e \"const s=require('fs').readFileSync('scripts/ship-gate.mjs','utf8');console.log(s.split('is-ancestor').length-1)\"",
+   "expect": 0
+  },
+  {
+   "id": "r96-t2-revparse-head-removed",
+   "kind": "count",
+   "claim": "T2 F8-b 根除：ship-gate 内裸 rev-parse HEAD 等值目标（GitButler workspace 合成 commit 自指）计数为零",
+   "command": "node -e \"const s=require('fs').readFileSync('scripts/ship-gate.mjs','utf8');console.log(s.split('rev-parse\\\", \\\"HEAD').length-1)\"",
+   "expect": 0
+  },
+  {
+   "id": "r96-t3-template-grammar",
+   "kind": "symbol",
+   "claim": "T3 模板三态语法同步：状态行语法 + 封闭词表 + 生效域边界 + RED 口径",
+   "file": "docs/agents/handoff-template.md",
+   "tokens": [
+    "PENDING: stack-unpushed",
+    "pushed-no-branch-runs",
+    "round >= 96",
+    "green-claim-falsified",
+    "Effective scope"
+   ]
+  },
+  {
+   "id": "r96-t5-adr-legislation",
+   "kind": "symbol",
+   "claim": "T5 ADR-0097 立法：三态语义 / Stack 三要素 / 生效域迁移边界 / Known-Risks 预写",
+   "file": "docs/adr/0097-architecture-grill-round-96-handoff-lint-three-state-exit-semantics.md",
+   "tokens": [
+    "EFFECTIVE_SCOPE_FLOOR = 96",
+    "Ancestry-vs-Membership",
+    "No-Grandfathering",
+    "Known-Risks"
+   ]
+  },
+  {
+   "id": "r96-t5-registry-f8-closed",
+   "kind": "count",
+   "claim": "T5 F8 台账：defer-r95-handoff-lint-false-green 登记且 status=closed、closed_by=ADR-0097",
+   "command": "node -e \"const j=require('./docs/deferred-registry.json');console.log(j.entries.filter(function(e){return e.id==='defer-r95-handoff-lint-false-green' && e.status==='closed' && e.closed_by==='ADR-0097'}).length)\"",
+   "expect": 1
+  },
+  {
+   "id": "r96-t5-context-terms",
+   "kind": "symbol",
+   "claim": "T5 CONTEXT 词条区：Grill Round 96 — Terms (ADR-0097) 五词条",
+   "file": "CONTEXT.md",
+   "tokens": [
+    "Grill Round 96 — Terms (ADR-0097)",
+    "Three-State Exit Semantics",
+    "Verified-vs-Environment PENDING",
+    "Ancestry-vs-Membership Identity",
+    "Degradation-Cause Splitting"
+   ]
+  },
+  {
+   "id": "r96-t5-adr-index-registration",
+   "kind": "symbol",
+   "claim": "T5 ADR index 注册：0097 行存在且标题以 Grill Round 96 开头（closeout-coverage 生效域依据）",
+   "file": "docs/adr/index.md",
+   "tokens": [
+    "[0097](0097-architecture-grill-round-96",
+    "Grill Round 96"
+   ]
+  },
+  {
+   "id": "r96-t6-closeout-artifacts",
+   "kind": "path",
+   "claim": "T6 收口件：轮报 + 收口交接件（新三态语法）",
+   "paths": [
+    ".scratch/grill-round-96/reports/2026-10-02-report.md",
+    ".scratch/grill-round-96/handoffs/round-96-closeout.md"
+   ]
+  },
+  {
+   "id": "r96-t1-code-guard",
+   "kind": "symbol",
+   "claim": "R3 词表守卫：所有码经 emitCode 发出（词表外即抛）+ CODE_GROUPS 注册 + isKnownCode",
+   "file": "scripts/handoff-lint-verdict.mjs",
+   "tokens": [
+    "export const CODE_GROUPS",
+    "export function emitCode",
+    "export function isKnownCode",
+    "is not in its vocabulary",
+    "export const STACK_ADVISORY_CODES"
+   ]
+  },
+  {
+   "id": "r96-t1-b1b2-guards",
+   "kind": "symbol",
+   "claim": "R1/R2 环境健康度守卫：run-URL 腿读 env.git.ok 与 env.workflows.ok，事实图缺失一律降级",
+   "file": "scripts/handoff-lint-verdict.mjs",
+   "tokens": [
+    "env.git.ok === true",
+    "env.workflows.ok === true",
+    "!env.git.commitObjects",
+    "Array.isArray(env.but.ids)"
+   ]
+  },
+  {
+   "id": "r96-t5-template-vocabulary-lock",
+   "kind": "symbol",
+   "claim": "R5 词表双向锁：模板机器可读块与判定核 CODE_GROUPS 集相等（E2E I 组断言）",
+   "file": "docs/agents/handoff-template.md",
+   "tokens": [
+    "HANDOFF-LINT-VOCABULARY",
+    "run-url-red: run-url-section-missing",
+    "stack-advisory: stale-capture",
+    "verification-unavailable: gh-missing | repo-parse | api-failed | ref-unavailable",
+    "pending-reason: stack-unpushed | pushed-no-branch-runs"
+   ]
+  },
+  {
+   "id": "r96-t5-adr-addendum-a",
+   "kind": "symbol",
+   "claim": "R5/R9 ADR-0097 Addendum A：RED 枚举补全 + 成因拆分 + 基线锚纠正",
+   "file": "docs/adr/0097-architecture-grill-round-96-handoff-lint-three-state-exit-semantics.md",
+   "tokens": [
+    "## Addendum A",
+    "Anchor caveat",
+    "ref-unavailable",
+    "stale-capture",
+    "no two-tree diff isolates a single round"
+   ]
+  },
+  {
+   "id": "r96-t6-adr0069-pointer",
+   "kind": "symbol",
+   "claim": "R7 ADR-0069 双向指针行指向 ADR-0097",
+   "file": "docs/adr/0069-architecture-grill-round-68-release-gate-dual-layer-closeout-lint.md",
+   "tokens": [
+    "Pointer (R96 / ADR-0097",
+    "bidirectional-pointer convention"
+   ]
+  },
+  {
+   "id": "r96-t6-closeout-skeleton",
+   "kind": "symbol",
+   "claim": "R6 收口件与模板 Required header 骨架逐项一致",
+   "file": ".scratch/grill-round-96/handoffs/round-96-closeout.md",
+   "tokens": [
+    "## 已完成",
+    "## 绿色 run URL（必填）",
+    "## 下一轮候选",
+    "## Known risks / deferred"
+   ]
+  }
+ ]
+}
