@@ -1,0 +1,64 @@
+{
+ "name": "pending-pushed-no-branch-runs-verified",
+ "round": 96,
+ "description": "F8-c: PENDING{pushed-no-branch-runs} verified offline - ref exists, no workflow push trigger covers the branch.",
+ "doc": "# Handoff — Grill Round 96 → R97（夹具）\n\nStack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：\n  r96-handoff-lint → aaa (`aaaaaaa1` @ 2026-10-02) → bbb (`bbbbbbb2` @ 2026-10-02)\n\n## 绿色 run URL（必填）\n\nPENDING: pushed-no-branch-runs — 特性分支 push 不产出 run（夹具）\n\n## 下一轮候选\n\n- n/a\n",
+ "env": {
+  "now": "2026-10-02",
+  "repo": "Xxx91n/anysearch-cli",
+  "git": {
+   "ok": true,
+   "shallow": false,
+   "branchRefs": {
+    "r96-handoff-lint": "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"
+   },
+   "stackBranchMembers": {
+    "r96-handoff-lint": [
+     "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+     "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+    ]
+   },
+   "commitObjects": {
+    "aaaaaaa1": "commit",
+    "bbbbbbb2": "commit"
+   },
+   "resolveSha": {
+    "aaaaaaa1": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "bbbbbbb2": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   }
+  },
+  "gh": {
+   "ok": true,
+   "runs": {
+    "1001": {
+     "head_sha": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+     "conclusion": "success",
+     "workflow": "ci",
+     "repo": "Xxx91n/anysearch-cli"
+    }
+   }
+  },
+  "but": {
+   "ok": true,
+   "ids": [
+    "aaa",
+    "bbb"
+   ]
+  },
+  "workflows": {
+   "ok": true,
+   "pushBranches": [
+    "main"
+   ],
+   "pushAllBranches": false
+  }
+ },
+ "expect": {
+  "verdict": "PENDING",
+  "scope": "three-state",
+  "runUrlState": "PENDING",
+  "stackState": "GREEN",
+  "redCodes": [],
+  "annotations": []
+ }
+}

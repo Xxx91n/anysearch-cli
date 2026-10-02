@@ -1,0 +1,55 @@
+{
+ "name": "pending-stack-unpushed-git-down",
+ "round": 96,
+ "description": "R1/B1 regression: git unreadable -> PENDING{stack-unpushed} must be UNVERIFIED with a named degradation code, never verifiedPending.",
+ "doc": "# Handoff — Grill Round 96 → R97（夹具）\n\nStack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：\n  r96-handoff-lint → aaa (`aaaaaaa1` @ 2026-10-02) → bbb (`bbbbbbb2` @ 2026-10-02)\n\n## 绿色 run URL（必填）\n\nPENDING: stack-unpushed — 本栈尚未 push（夹具）\n\n## 下一轮候选\n\n- n/a\n",
+ "env": {
+  "now": "2026-10-02",
+  "repo": "Xxx91n/anysearch-cli",
+  "git": {
+   "ok": false,
+   "shallow": false,
+   "branchRefs": {},
+   "stackBranchMembers": {},
+   "commitObjects": {},
+   "resolveSha": {}
+  },
+  "gh": {
+   "ok": true,
+   "runs": {
+    "1001": {
+     "head_sha": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+     "conclusion": "success",
+     "workflow": "ci",
+     "repo": "Xxx91n/anysearch-cli"
+    }
+   }
+  },
+  "but": {
+   "ok": true,
+   "ids": [
+    "aaa",
+    "bbb"
+   ]
+  },
+  "workflows": {
+   "ok": true,
+   "pushBranches": [
+    "main"
+   ],
+   "pushAllBranches": false
+  }
+ },
+ "expect": {
+  "verdict": "PENDING",
+  "scope": "three-state",
+  "runUrlState": "PENDING",
+  "stackState": "PENDING",
+  "redCodes": [],
+  "annotations": [
+   "run-url:verification-unavailable:ref-unavailable",
+   "stack:ref-unavailable"
+  ],
+  "runUrlVerifiedPending": false
+ }
+}
