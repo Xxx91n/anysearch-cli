@@ -17,6 +17,8 @@ import {
   parseWorkflowTriggers,
   deriveWorkflowName,
   collectWorkflowTriggers,
+  newestCloseoutTargets,
+  buildReportOnlyScan,
 } from "../../../scripts/handoff-lint-shell.mjs";
 import { CODE_GROUPS, parseStackLine } from "../../../scripts/handoff-lint-verdict.mjs";
 
@@ -208,6 +210,9 @@ const REQUIRED_RED_COVERAGE = [
   "but-id-not-resolved",
   "sha-not-commit",
   "chain-tail-not-in-branch",
+  "state-marker-unparseable",
+  "state-predicate-out-of-vocabulary",
+  "bare-word-violation",
 ];
 const exercisedRedCodes = new Set();
 for (const f of fixtureFiles) {
@@ -258,6 +263,20 @@ const repoOverride = runHandoffLint({
 });
 eq(repoOverride.perDoc[0].verdict.runUrl.state, "RED", "a deps.repo override reaches the core and fails the repo conjunct");
 eq(repoOverride.exitKind, "fail", "the deps.repo override also flips the exit kind");
+// --- K. self-moving target + report-only split (ADR-0098 D3) -------------------
+eq(newestCloseoutTargets([]), [], "no round dirs is an explicit empty pick");
+eq(newestCloseoutTargets([{ name: "grill-round-97", n: 97, hasCloseout: false, closeouts: [] }]), [], "a round without closeouts is skipped");
+eq(newestCloseoutTargets([
+  { name: "grill-round-97", n: 97, hasCloseout: false, closeouts: [] },
+  { name: "grill-round-96", n: 96, hasCloseout: true, closeouts: ["round-96-closeout.md"] },
+]), [".scratch/grill-round-96/handoffs/round-96-closeout.md"], "the newest dir WITH closeouts wins (self-moving target)");
+{
+  const red = JSON.parse(fs.readFileSync(path.join(FIXDIR, "stack-line-missing.json"), "utf8"));
+  const ro = buildReportOnlyScan({ documents: [{ rel: "round-96-closeout.md", name: "round-96-closeout.md", text: red.doc }], snapshot: red.env });
+  assert(ro.lines.length > 0 && ro.lines.every((l) => l.kind === "info"), "the report-only sweep never fails, even on a RED doc");
+  eq(ro.counts.red, 1, "the report-only sweep still counts the RED doc");
+}
+
 // --- fail-on-empty red line ---------------------------------------------------
 assert(passed > 160, "fail-on-empty: the E2E smoke actually executed (" + passed + " assertions)");
 

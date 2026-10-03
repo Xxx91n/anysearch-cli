@@ -29,7 +29,7 @@ import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
 import { governedJsonViolation, governedListViolation } from "./governed-json.mjs";
 import { CLOSEOUT_COVERAGE_FLOOR, isCloseoutName, scanRoundDirs, assessCloseoutCoverage } from "./closeout-coverage.mjs";
-import { runHandoffLint } from "./handoff-lint-shell.mjs";
+import { runHandoffLint, newestCloseoutTargets, buildReportOnlyScan } from "./handoff-lint-shell.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -1184,11 +1184,7 @@ function stepHandoffCloseoutLint() {
 
   // Field-lint surface unchanged (bounds the gh-liveness cost): only the
   // newest round dir WITH closeouts on disk is linted.
-  for (const dir of roundDirs) {
-    if (!dir.hasCloseout) continue;
-    for (const c of dir.closeouts) targets.add((".scratch/" + dir.name + "/handoffs/" + c).replace(/\\/g, "/"));
-    break; // newest round dir with closeouts only
-  }
+  for (const rel of newestCloseoutTargets(roundDirs)) targets.add(rel);
 
   if (targets.size === 0) { report("skip", "handoff-lint: no closeout docs in scope (diff-clean and none on disk)"); exitIfCoverageRed(); return; }
 
@@ -1204,6 +1200,19 @@ function stepHandoffCloseoutLint() {
   }
 
   const result = runHandoffLint({ root: ROOT, documents });
+  // ADR-0098 D3 two-speed split: the report-only full sweep reuses the gate
+  // snapshot (pure re-evaluation, no new subprocess) and never fails.
+  const allDocs = [];
+  for (const dir of roundDirs) {
+    if (!dir || !dir.hasCloseout) continue;
+    for (const c of dir.closeouts || []) {
+      const rel = (".scratch/" + dir.name + "/handoffs/" + c).replace(/\\/g, "/");
+      const file = path.join(ROOT, rel);
+      if (!fs.existsSync(file)) continue;
+      allDocs.push({ rel, name: path.posix.basename(rel), text: fs.readFileSync(file, "utf8") });
+    }
+  }
+  for (const line of buildReportOnlyScan({ documents: allDocs, snapshot: result.snapshot }).lines) report(line.kind, line.msg);
   for (const line of result.lines) if (line.kind !== "fail") report(line.kind, line.msg);
   const problems = result.lines.filter((l) => l.kind === "fail").map((l) => l.msg);
   if (problems.length) fail("handoff-lint: closeout required fields missing/invalid (ADR-0097 three-state):\n  " + problems.join("\n  "));

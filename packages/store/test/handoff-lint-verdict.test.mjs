@@ -30,6 +30,8 @@ import {
   parseRunUrlSection,
   parseStackLine,
   parseRoundFromName,
+  parseStateMarkers,
+  assessStateLeg,
   assessRunUrlLeg,
   assessStackLeg,
   assessHandoffLint,
@@ -351,7 +353,7 @@ assert(emittedChecked > 20, "the closure sweep actually inspected emitted codes 
 // Every RED code constant must be reachable from at least one fixture (R4: a
 // zero-coverage rejection branch is indistinguishable from a dead one).
 const fixtureRedCodes = new Set(fixtureResults.flatMap((e) => e.r.redCodes));
-for (const c of [...RUN_URL_RED_CODES, ...STACK_RED_CODES, ...STACK_STRUCTURAL_RED_CODES]) {
+for (const c of [...RUN_URL_RED_CODES, ...STACK_RED_CODES, ...STACK_STRUCTURAL_RED_CODES, ...STATE_RED_CODES]) {
   assert(fixtureRedCodes.has(c), "RED code " + c + " is exercised by at least one fixture");
 }
 
@@ -373,6 +375,10 @@ const rejectionCases = [
   ["but-id-not-resolved", () => assessHandoffLint({ text: docOf("GREEN: " + RUN(1001), stackOf(["aaa (aaaaaaa1 @ 2026-10-02)", "zzz (bbbbbbb2 @ 2026-10-02)"])), round: 96, env: baseEnv() })],
   ["sha-not-commit", () => { const e = baseEnv(); e.git.commitObjects.aaaaaaa1 = "tree"; return assessHandoffLint({ text: docOf("GREEN: " + RUN(1001)), round: 96, env: e }); }],
   ["chain-tail-not-in-branch", () => { const e = baseEnv(); e.git.resolveSha.bbbbbbb2 = SHA.outside; return assessHandoffLint({ text: docOf("GREEN: " + RUN(1001)), round: 96, env: e }); }],
+  ["state-marker-unparseable", () => assessHandoffLint({ text: docOf("GREEN: " + RUN(1001)) + "<!-- state: unpushed --x @ 2026-10-02 -->\n", round: 96, env: baseEnv() })],
+  ["state-predicate-out-of-vocabulary", () => assessHandoffLint({ text: docOf("GREEN: " + RUN(1001)) + "<!-- state: no-pr r96-handoff-lint @ 2026-10-02 -->\n", round: 96, env: baseEnv() })],
+  ["bare-word-violation", () => assessHandoffLint({ text: docOf("GREEN: " + RUN(1001)) + "The tip is still unlanded.\n", round: 96, env: baseEnv() })],
+  ["declaration-fact-conflict", () => assessHandoffLint({ text: docOf("GREEN: " + RUN(1001)) + "<!-- state: unpushed r96-handoff-lint @ 2026-10-02 -->\n", round: 96, env: baseEnv() })],
 ];
 for (const [code, run] of rejectionCases) {
   const r = run();
@@ -383,6 +389,47 @@ for (const [code, run] of rejectionCases) {
     const ac = annotationCode(a);
     assert(ac !== null && isKnownCode(ac), "rejection case " + code + " annotation " + a + " is governed");
   }
+}
+
+// --- P. state leg (ADR-0098 D3): markers, placeholders, bare words ------------
+eq(parseStateMarkers("<!-- state: unpushed foo @ 2026-10-02 -->\n").markers, [{ predicate: "unpushed", args: "foo", date: "2026-10-02", line: 1 }], "one well-formed marker parses whole");
+eq(parseStateMarkers("<!-- state: unpushed foo @ 2026-10-02 -->\n<!-- state: unlanded bar @ 2026-10-03 -->\n").markers.length, 2, "two markers parse");
+eq(parseStateMarkers("<!-- state: oops -->\n").malformed.length, 1, "a truncated marker is malformed, never skipped");
+eq(parseStateMarkers("```\n<!-- state: unpushed foo @ 2026-10-02 -->\n```\n").markers.length, 0, "a fenced marker is quoted text, not a declaration");
+eq(parseStateMarkers("quoting `<!-- state: unpushed foo @ 2026-10-02 -->` here\n").markers.length, 0, "an inline-span marker is quoted text, not a declaration");
+eq(parseStateMarkers("note <!-- state: unpushed foo @ 2026-10-02 --> here\n").malformed.length, 1, "an inline marker violates the standalone-line grammar");
+{
+  const t = docOf("GREEN: " + RUN(1001)) + "<!-- state: unlanded stack @ 2026-10-02 -->\n";
+  eq(assessStateLeg(t, parseStackLine(t), baseEnv()).state, "GREEN", "`stack` placeholder resolves the Stack line branch");
+  const u = docOf("GREEN: " + RUN(1001), null) + "<!-- state: unlanded stack @ 2026-10-02 -->\n";
+  const lu = assessStateLeg(u, parseStackLine(u), baseEnv());
+  assert(lu.state === "RED" && lu.redCodes.includes("state-marker-unparseable"), "`stack` placeholder with no Stack line is unparseable");
+}
+{
+  const t = docOf("GREEN: " + RUN(1001)) + "handling of stack-unpushed and pushed-no-branch-runs codes\n";
+  eq(assessStateLeg(t, parseStackLine(t), baseEnv()).state, "GREEN", "hyphenated compounds are old-vocabulary codes, never bare words");
+}
+{
+  const t = docOf("GREEN: " + RUN(1001)) + "分支尚未合并\n";
+  const l = assessStateLeg(t, parseStackLine(t), baseEnv());
+  assert(l.state === "GREEN", "unregistered prose is not a bare word (got " + l.state + ")");
+  const t2 = docOf("GREEN: " + RUN(1001)) + "分支未推送\n";
+  const l2 = assessStateLeg(t2, parseStackLine(t2), baseEnv());
+  assert(l2.state === "RED" && l2.redCodes.includes("bare-word-violation"), "a registered Chinese phrase without a marker violates");
+}
+{
+  const t = docOf("GREEN: " + RUN(1001)) + "<!-- state: unpushed r97-probe @ 2099-01-01 -->\n";
+  const l = assessStateLeg(t, parseStackLine(t), baseEnv());
+  assert(l.state === "RED" && l.redCodes.includes("state-marker-unparseable"), "a future marker date is unparseable");
+  const t2 = docOf("GREEN: " + RUN(1001)) + "<!-- state: unpushed r97-probe @ 2026-13-99 -->\n";
+  const l2 = assessStateLeg(t2, parseStackLine(t2), baseEnv());
+  assert(l2.state === "RED" && l2.redCodes.includes("state-marker-unparseable"), "a non-calendar date is unparseable");
+}
+{
+  const e = baseEnv(); e.git.ok = false;
+  const t = docOf("GREEN: " + RUN(1001)) + "<!-- state: unpushed r97-probe @ 2026-10-02 -->\n";
+  const l = assessStateLeg(t, parseStackLine(t), e);
+  assert(l.state === "PENDING" && l.annotations.includes("ref-unavailable"), "unreadable git facts degrade to env-PENDING, never verified");
 }
 
 // --- O. report summaries are produced once, by the core (N7) -----------------

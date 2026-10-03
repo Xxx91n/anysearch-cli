@@ -266,6 +266,84 @@ export function parseRoundFromName(name) {
   return Number.isFinite(n) ? n : null;
 }
 
+// --- state markers (ADR-0098 D3: morphology one) ----------------------------
+//
+// A `<!-- state: <predicate> <args> @ <iso-date> -->` marker is a machine-
+// checkable declaration. One overall regex parses predicate + args + date
+// together; a `state:` opener that fails it is a syntax violation
+// (fail-closed), never silently skipped. Fenced blocks are not HTML comments
+// and inline spans are code, not prose: both are invisible here and to the
+// bare-word scan (this round's artifacts necessarily quote predicate
+// vocabulary, so quotations must not become declarations).
+export const STATE_MARKER_RE = /^[ \t]*<!--[ \t]*state:[ \t]*([A-Za-z][A-Za-z0-9_-]*)[ \t]+([^\n]*?)[ \t]*@[ \t]*(\d{4}-\d{2}-\d{2})[ \t]*-->[ \t]*$/;
+const STATE_OPENER_RE = /<!--[ \t]*state:/i;
+const STATE_BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+
+function stripCodeSpansAndFences(text) {
+  const lines = String(text ?? "").split(/\r?\n/);
+  const out = [];
+  let inFence = false;
+  for (const raw of lines) {
+    if (/^[ \t]*(`{3,}|~{3,})/.test(raw)) { inFence = !inFence; out.push(""); continue; }
+    if (inFence) { out.push(""); continue; }
+    out.push(String(raw).replace(/`[^`]*`/g, ""));
+  }
+  return out;
+}
+
+export function parseStateMarkers(text) {
+  const lines = stripCodeSpansAndFences(text);
+  const markers = [];
+  const malformed = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!STATE_OPENER_RE.test(line)) continue;
+    const m = STATE_MARKER_RE.exec(line);
+    if (!m) { malformed.push({ line: i + 1, raw: line.trim().slice(0, 120) }); continue; }
+    markers.push({ predicate: m[1], args: m[2].trim(), date: m[3], line: i + 1 });
+  }
+  return { markers, malformed };
+}
+
+function isCalendarDate(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? ""));
+  if (!m) return false;
+  const y = Number(m[1]); const mo = Number(m[2]); const d = Number(m[3]);
+  if (mo < 1 || mo > 12 || d < 1) return false;
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  return d <= [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1];
+}
+
+// Hyphen-aware boundaries: `stack-unpushed` / `pushed-no-branch-runs` are the
+// older run-URL vocabulary, not bare state words. A hyphen-adjacent hit is a
+// compound code, never a bare word.
+const STATE_BARE_RES = [
+  { predicate: "unpushed", re: /(?<![A-Za-z-])unpushed(?![A-Za-z-])/ },
+  { predicate: "unlanded", re: /(?<![A-Za-z-])unlanded(?![A-Za-z-])/ },
+  { predicate: "no-branch-runs", re: /(?<![A-Za-z-])no-branch-runs(?![A-Za-z-])/ },
+];
+
+function collectBareWords(text, skipLines) {
+  const lines = stripCodeSpansAndFences(text);
+  const hits = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (skipLines.has(i + 1)) continue;
+    const listStripped = lines[i].replace(/^\s*(?:[-*+]\s+)?/, "").trim();
+    if (STATE_LINE_RE.test(listStripped)) continue; // run-URL state lines are not prose
+    for (const e of STATE_BARE_RES) {
+      if (e.re.test(lines[i])) { hits.push({ predicate: e.predicate, line: i + 1 }); break; }
+    }
+    if (hits.length > 0 && hits[hits.length - 1].line === i + 1) continue;
+    for (const pred of STATE_PREDICATES) {
+      for (const phrase of STATE_BARE_WORD_PHRASES[pred] || []) {
+        if (lines[i].includes(phrase)) { hits.push({ predicate: pred, line: i + 1 }); break; }
+      }
+      if (hits.length > 0 && hits[hits.length - 1].line === i + 1) break;
+    }
+  }
+  return hits;
+}
+
 // --- legs -------------------------------------------------------------------
 
 export function assessRunUrlLeg(section, stack, env) {
@@ -474,6 +552,102 @@ export function assessStackLeg(parsed, env) {
   return { state, redCodes: uniq(redCodes), problems, annotations: uniq(annotations), links };
 }
 
+// Offline predicate check for one resolved marker. Returns true when the
+// declaration still holds at gate time, a contradiction detail when its
+// invalidation trigger has fired, or null when the facts could not be read
+// (env-PENDING, never a silent verified).
+function checkStatePredicate(predicate, branch, env) {
+  if (predicate === "no-branch-runs") {
+    const wfOk = !!(env && env.workflows && env.workflows.ok === true);
+    const wf = wfOk ? env.workflows : null;
+    if (wf === null || !Array.isArray(wf.pushBranches)) return null;
+    if (wf.pushAllBranches === true || wf.pushBranches.includes(branch)) {
+      return "a workflow push trigger covers origin/" + branch;
+    }
+    return true;
+  }
+  const refsOk = !!(env && env.git && env.git.ok === true);
+  if (predicate === "unpushed") {
+    const refs = refsOk && env.git.branchRefs ? env.git.branchRefs : null;
+    if (refs === null) return null;
+    if (Object.prototype.hasOwnProperty.call(refs, branch)) {
+      return "origin/" + branch + " exists";
+    }
+    return true;
+  }
+  const members = refsOk && env.git.stackBranchMembers ? (env.git.stackBranchMembers[branch] ?? null) : null;
+  if (members === null) return null;
+  if (members.length > 0) return true;
+  return "origin/main..origin/" + branch + " is empty";
+}
+
+export function assessStateLeg(text, stackParsed, env) {
+  const redCodes = [];
+  const problems = [];
+  const annotations = [];
+  const parsed = parseStateMarkers(text);
+  for (const m of parsed.malformed) {
+    redCodes.push(emitCode(STATE_RED_CODES, "state-marker-unparseable"));
+    problems.push("state-marker-unparseable: line " + m.line + " opens a state marker but does not parse as `<!-- state: <predicate> <args> @ <date> -->`: " + m.raw);
+  }
+  const skip = new Set([...parsed.markers.map((m) => m.line), ...parsed.malformed.map((m) => m.line)]);
+  let legal = 0;
+  const nowDay = toEpochDay(String((env && env.now) ?? "").slice(0, 10));
+  for (const m of parsed.markers) {
+    if (m.args.includes("--")) {
+      redCodes.push(emitCode(STATE_RED_CODES, "state-marker-unparseable"));
+      problems.push("state-marker-unparseable: line " + m.line + " args carries `--` (CommonMark comment strictness)");
+      continue;
+    }
+    if (!STATE_PREDICATES.includes(m.predicate)) {
+      redCodes.push(emitCode(STATE_RED_CODES, "state-predicate-out-of-vocabulary"));
+      problems.push("state-predicate-out-of-vocabulary: `" + m.predicate + "` is outside {" + STATE_PREDICATES.join(", ") + "} (live predicates ride the extension ticket, never the prose)");
+      continue;
+    }
+    legal++;
+    let branch = m.args;
+    if (branch === "stack") {
+      branch = stackParsed && stackParsed.present ? stackParsed.branch : null;
+      if (!branch) {
+        redCodes.push(emitCode(STATE_RED_CODES, "state-marker-unparseable"));
+        problems.push("state-marker-unparseable: line " + m.line + " `stack` placeholder names no Stack line branch");
+        continue;
+      }
+    }
+    if (!STATE_BRANCH_RE.test(branch)) {
+      redCodes.push(emitCode(STATE_RED_CODES, "state-marker-unparseable"));
+      problems.push("state-marker-unparseable: line " + m.line + " args is not a branch name: `" + m.args + "`");
+      continue;
+    }
+    if (!isCalendarDate(m.date)) {
+      redCodes.push(emitCode(STATE_RED_CODES, "state-marker-unparseable"));
+      problems.push("state-marker-unparseable: line " + m.line + " date is not a calendar date: `" + m.date + "`");
+      continue;
+    }
+    const day = toEpochDay(m.date);
+    if (nowDay !== null && day > nowDay) {
+      redCodes.push(emitCode(STATE_RED_CODES, "state-marker-unparseable"));
+      problems.push("state-marker-unparseable: line " + m.line + " date " + m.date + " is in the future (a declaration cannot be true when written yet)");
+      continue;
+    }
+    const checked = checkStatePredicate(m.predicate, branch, env);
+    if (checked === null) {
+      annotations.push(emitCode(STACK_ENV_CODES, "ref-unavailable"));
+    } else if (checked !== true) {
+      redCodes.push(emitCode(RUN_URL_RED_CODES, "declaration-fact-conflict"));
+      problems.push("declaration-fact-conflict: `<!-- state: " + m.predicate + " " + m.args + " -->` contradicted: " + checked);
+    }
+  }
+  const bare = collectBareWords(text, skip);
+  if (bare.length > 0 && legal === 0) {
+    redCodes.push(emitCode(STATE_RED_CODES, "bare-word-violation"));
+    const shown = bare.slice(0, 3).map((b) => "`" + b.predicate + "` (line " + b.line + ")").join(", ");
+    problems.push("bare-word-violation: predicate word(s) in prose with no legal state marker in the file: " + shown + " - prose is subordinate to markers, never the reverse");
+  }
+  const state = redCodes.length > 0 ? "RED" : annotations.length > 0 ? "PENDING" : "GREEN";
+  return { state, redCodes: uniq(redCodes), problems, annotations: uniq(annotations), markers: parsed.markers.length };
+}
+
 // --- top level --------------------------------------------------------------
 
 // Assess one handoff document. `input` = { text, round, env }.
@@ -508,14 +682,16 @@ export function assessHandoffLint(input) {
 
   const stack = assessStackLeg(stackParsed, env);
   const runUrl = assessRunUrlLeg(runSection, stackParsed, env);
-  const problems = [...runUrl.problems, ...stack.problems];
+  const state = assessStateLeg(text, stackParsed, env);
+  const problems = [...runUrl.problems, ...stack.problems, ...state.problems];
   // N7: the leg annotations are prefixed ONCE here; the report layer consumes
   // these summaries instead of re-projecting the legs (one source of truth).
   const annotations = [
     ...runUrl.annotations.map((a) => "run-url:" + a),
     ...stack.annotations.map((a) => "stack:" + a),
+    ...state.annotations.map((a) => "state:" + a),
   ];
-  const redCodes = uniq([...runUrl.redCodes, ...stack.redCodes]);
+  const redCodes = uniq([...runUrl.redCodes, ...stack.redCodes, ...state.redCodes]);
   // The declared code AND any degradation annotation: when a declared PENDING
   // could not be verified, the report line must say so (R1/R2 - the degradation
   // is the whole signal; folding it away would re-create the silent fold).
@@ -527,11 +703,12 @@ export function assessHandoffLint(input) {
     pendingSummary.push("run-url:" + (parts.length > 0 ? parts.join(",") : "unverified"));
   }
   if (stack.state === "PENDING") pendingSummary.push("stack:" + (stack.annotations.join(",") || "unverified"));
+  if (state.state === "PENDING") pendingSummary.push("state:" + (state.annotations.join(",") || "unverified"));
   const verdict =
-    runUrl.state === "RED" || stack.state === "RED"
+    runUrl.state === "RED" || stack.state === "RED" || state.state === "RED"
       ? "RED"
-      : runUrl.state === "PENDING" || stack.state === "PENDING"
+      : runUrl.state === "PENDING" || stack.state === "PENDING" || state.state === "PENDING"
         ? "PENDING"
         : "GREEN";
-  return { scope: "three-state", round, verdict, problems, annotations, redCodes, pendingSummary, runUrl, stack };
+  return { scope: "three-state", round, verdict, problems, annotations, redCodes, pendingSummary, runUrl, stack, state };
 }

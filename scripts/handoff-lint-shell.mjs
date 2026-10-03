@@ -15,7 +15,7 @@
 import { spawnSync as nodeSpawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { assessHandoffLint, parseStackLine, parseRoundFromName, parseRunUrlSection, uniq } from "./handoff-lint-verdict.mjs";
+import { assessHandoffLint, parseStackLine, parseRoundFromName, parseRunUrlSection, parseStateMarkers, uniq } from "./handoff-lint-verdict.mjs";
 
 // One observational command. Returns trimmed stdout, or null when the command
 // could not run / exited non-zero (both mean "no fact", never "false").
@@ -256,6 +256,38 @@ export function evaluateHandoffLintDocuments({ documents, snapshot }) {
   return { perDoc, snapshot };
 }
 
+// --- target selection (ADR-0098 D3: self-moving target / automatic ratchet) --
+//
+// The gate lints the newest round dir WITH closeouts on disk: the target moves
+// itself as rounds close, so the effective scope retires without a baseline
+// file. An empty pick is an explicit no-op the caller logs, never a silent skip.
+export function newestCloseoutTargets(dirs) {
+  for (const dir of dirs || []) {
+    if (dir && dir.hasCloseout && Array.isArray(dir.closeouts) && dir.closeouts.length > 0) {
+      return dir.closeouts.map((c) => (".scratch/" + dir.name + "/handoffs/" + c).replace(/\\/g, "/"));
+    }
+  }
+  return [];
+}
+
+// Report-only full sweep (ADR-0098 D3 two-speed split): every closeout on disk
+// is evaluated against the gate snapshot, but the lines are always informational
+// and never fail. The gate leg stays incremental; this leg only reports.
+export function buildReportOnlyScan({ documents, snapshot }) {
+  const evaluated = evaluateHandoffLintDocuments({ documents: documents || [], snapshot: snapshot || {} });
+  const lines = [];
+  let red = 0; let pending = 0; let green = 0;
+  for (const p of evaluated.perDoc) {
+    const v = p.verdict;
+    if (v.verdict === "RED") red++;
+    else if (v.verdict === "PENDING") pending++;
+    else green++;
+    lines.push({ kind: "info", msg: "report-only full scan: " + p.rel + " [" + v.scope + "] " + v.verdict });
+  }
+  lines.push({ kind: "info", msg: "report-only full scan: " + green + " GREEN / " + pending + " PENDING / " + red + " RED across " + evaluated.perDoc.length + " closeout doc(s) (non-blocking)" });
+  return { lines, counts: { red, pending, green } };
+}
+
 // --- 3. report --------------------------------------------------------------
 
 // Mechanical mapping: verdict -> report lines + an exit kind. No verdict ifs.
@@ -283,7 +315,13 @@ export function buildHandoffLintReport({ perDoc }) {
 // The full shell path: collect -> transmit -> report.
 export function runHandoffLint({ root, documents, deps = {} }) {
   const stacks = documents.map((d) => parseStackLine(d.text));
-  const branches = uniq(stacks.map((s) => s.branch).filter(Boolean));
+  const stackBranches = stacks.map((s) => s.branch).filter(Boolean);
+  // State markers may name branches outside the Stack chain (e.g. a probe for
+  // `unpushed`); collect observes them too, or every such marker would
+  // degrade to env-PENDING for lack of facts. `stack` placeholders resolve
+  // in the core from the Stack branch already collected here.
+  const markerBranches = documents.flatMap((d) => parseStateMarkers(d.text).markers.map((m) => m.args).filter((a) => a && a !== "stack"));
+  const branches = uniq([...stackBranches, ...markerBranches]);
   const shas = uniq(stacks.flatMap((s) => s.entries.map((e) => e.sha).filter(Boolean)));
   const runIds = uniq(
     documents.flatMap((d) => {
