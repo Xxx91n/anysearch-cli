@@ -1,0 +1,40 @@
+{
+ "version": 1,
+ "anchors": [
+  {
+   "id": "anchor:predicate-registry",
+   "subject": "STATE_PREDICATE_REGISTRY",
+   "constraint": "STATE_PREDICATE_REGISTRY is the live predicate vocabulary; a marker for a struck entry is RED",
+   "probe": "probePredicateRegistry",
+   "invalidate": "a marker for a struck registry entry is not rejected"
+  },
+  {
+   "id": "anchor:reuse-pointer",
+   "subject": "resolveReuse",
+   "constraint": "registry `reuse` pointers wire the env sources by name; an unresolvable spec degrades the source",
+   "probe": "probeReusePointer",
+   "invalidate": "an unresolvable reuse spec leaves the env source alive"
+  },
+  {
+   "id": "anchor:bare-word-single-source",
+   "subject": "STATE_BARE_RES",
+   "constraint": "the bare-word scan derives from the live predicate set; a struck predicate escapes the scan",
+   "probe": "probeBareWordSingleSource",
+   "invalidate": "a struck predicate still flags in prose (second hard-coded list)"
+  },
+  {
+   "id": "anchor:vocab-guards",
+   "subject": "CODE_GROUPS",
+   "constraint": "every exported `*_CODES` vocabulary is registered in CODE_GROUPS",
+   "probe": "probeVocabGuards",
+   "invalidate": "an unregistered `*_CODES` export goes undetected"
+  },
+  {
+   "id": "anchor:ratchet-recount",
+   "subject": "checkVerbatimClaim",
+   "constraint": "verbatim `reauthored` is a recount of `reanchor_log`, not a flag",
+   "probe": "probeRatchetRecount",
+   "invalidate": "a declared recount mismatching reanchor_log passes the claims leg"
+  }
+ ]
+}

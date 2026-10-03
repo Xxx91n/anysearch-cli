@@ -1187,6 +1187,21 @@
     "no-pr",
     "unpublished"
    ]
+  },
+  {
+   "id": "defer-r98-anchor-ratchet-recount-seat",
+   "type": "deferred-with-review",
+   "title": "锚 PENDING 位: anchor:ratchet-recount 坐席（ratchet 类首发锚）",
+   "source_adr": "docs/adr/0099-architecture-grill-round-98-fifth-morphology.md",
+   "owner": "anysearch-platform",
+   "opened_at": "2026-10-03",
+   "review_cadence": "next enforcement-anchor leg touch + quarterly",
+   "status": "open",
+   "evidence": "D-002/D-003 裁定：ratchet 类锚与形态二同构——先 PENDING 坐席后 ratchet 升 RED。pending_anchors 字段挂接锚 PENDING 位：enforcement-anchor 腿对坐席锚仍执行探针但输出 skip 而非 fail；本票关闭即锚升全量 kill 判定（ratchet 语义）。",
+   "monitoring_channel": "ship-gate enforcement-anchors leg + quarterly",
+   "pending_anchors": [
+    "anchor:ratchet-recount"
+   ]
   }
  ]
 }

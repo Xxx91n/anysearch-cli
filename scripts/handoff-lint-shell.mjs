@@ -206,9 +206,10 @@ export function collectDeferred(root) {
     const open = (Array.isArray(reg.entries) ? reg.entries : []).filter((e) => e && e.status === "open");
     const covers = open.flatMap((e) => (Array.isArray(e.covers) ? e.covers : []));
     const pendingPredicates = open.flatMap((e) => (Array.isArray(e.pending_predicates) ? e.pending_predicates : []));
-    return { ok: true, covers: uniq(covers), pendingPredicates: uniq(pendingPredicates) };
+    const pendingAnchors = open.flatMap((e) => (Array.isArray(e.pending_anchors) ? e.pending_anchors : []));
+    return { ok: true, covers: uniq(covers), pendingPredicates: uniq(pendingPredicates), pendingAnchors: uniq(pendingAnchors) };
   } catch {
-    return { ok: false, covers: [], pendingPredicates: [] };
+    return { ok: false, covers: [], pendingPredicates: [], pendingAnchors: [] };
   }
 }
 

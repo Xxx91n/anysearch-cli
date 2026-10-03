@@ -30,6 +30,8 @@ import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
 import { governedJsonViolation, governedListViolation } from "./governed-json.mjs";
 import { CLOSEOUT_COVERAGE_FLOOR, isCloseoutName, scanRoundDirs, assessCloseoutCoverage } from "./closeout-coverage.mjs";
 import { runHandoffLint, newestCloseoutTargets, buildReportOnlyScan } from "./handoff-lint-shell.mjs";
+import { checkVerbatimClaim } from "./claims-verbatim.mjs";
+import { runEnforcementAnchors } from "./enforcement-anchors.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -868,25 +870,13 @@ function stepStaticAssertions() {
             // (reason + audit record + visible recount) reddens here instead of
             // drifting silently. Ritual companion: reason is mandatory so the
             // anchor stays reviewable; reauthored counts ritual passes.
-            if (!c.file || typeof c.text !== "string" || !c.text) fail('ADR-0098 D4: ' + tag + ' needs file + non-empty text');
-            if (typeof c.reason !== "string" || !c.reason.trim()) fail('ADR-0098 D4: ' + tag + ' needs a non-empty reason (re-anchor ritual)');
-            if (!Number.isInteger(c.reauthored) || c.reauthored < 0) fail('ADR-0098 D4: ' + tag + ' needs a non-negative integer reauthored count');
-            // R5 (P-6 rework): the ratchet is a RECOUNT, not a flag. reauthored
-            // must equal the length of `reanchor_log`, and every entry carries
-            // the ritual pair (reason + audit pointer). The recount is
-            // surfaced in the pass line instead of silently integer-checked.
-            const rlog = Array.isArray(c.reanchor_log) ? c.reanchor_log : [];
-            if (rlog.length !== c.reauthored) fail('ADR-0098 D4: ' + tag + ' declares reauthored=' + c.reauthored + ' but reanchor_log carries ' + rlog.length + ' entr(ies) — the ratchet is a recount, not a flag');
-            for (let li = 0; li < rlog.length; li++) {
-              const le = rlog[li];
-              if (!le || typeof le.reason !== "string" || !le.reason.trim()) fail('ADR-0098 D4: ' + tag + ' reanchor_log[' + li + '] lacks a non-empty reason (ritual)');
-              if (typeof le.audit !== "string" || !le.audit.trim()) fail('ADR-0098 D4: ' + tag + ' reanchor_log[' + li + '] lacks an audit pointer (ritual)');
-            }
-            reauthoredTotal += rlog.length;
-            const fp = path.join(ROOT, c.file);
-            if (!fs.existsSync(fp)) fail('ADR-0098 D4: ' + tag + ' file missing: ' + c.file);
-            const text = fs.readFileSync(fp, "utf8");
-            if (!text.includes(c.text)) fail('ADR-0098 D4: ' + tag + ' verbatim sentence absent — rewritten without the re-anchor ritual');
+            // R5 (P-6 rework): the ratchet is a RECOUNT, not a flag - the check
+            // lives in scripts/claims-verbatim.mjs so the anchor:ratchet-recount
+            // probe consumes the SAME code path the gate runs (single consumer
+            // of record, never a divergent copy).
+            const problems = checkVerbatimClaim(c, { root: ROOT });
+            for (const p of problems) fail('ADR-0098 D4: ' + p);
+            reauthoredTotal += Array.isArray(c.reanchor_log) ? c.reanchor_log.length : 0;
             verified++;
           } else {
             fail('ADR-0081 D-004: unknown claim kind ' + c.kind + ' (' + c.id + ')');
@@ -1246,6 +1236,17 @@ function stepHandoffCloseoutLint() {
   if (problems.length) fail("handoff-lint: closeout required fields missing/invalid (ADR-0097 three-state):\n  " + problems.join("\n  "));
   report("pass", "handoff-lint: " + result.counts.green + " GREEN / " + result.counts.pending + " PENDING across " + documents.length + " closeout doc(s) (ADR-0097 three-state)");
   exitIfCoverageRed();
+}
+
+// 1h. ADR-0099 (R98 D-002/D-003): enforcement-anchor selfcheck — the fifth
+//     morphology detector. The anchors declare machine constraints on GATE
+//     CODE (not closeout docs), so the leg lives parallel to the lint legs:
+//     the shell runs each anchor's falsification probe and reports
+//     kill/no-kill; the registry file and a missing probe are fail-closed.
+{
+  const anchorRes = runEnforcementAnchors({ root: ROOT });
+  for (const l of anchorRes.lines) report(l.kind, l.msg);
+  if (anchorRes.exitKind === "fail") fail("enforcement-anchors: declared machine constraint(s) lack a live consumer (ADR-0099 fifth morphology)");
 }
 
 // R69 D-007 (T4): standing bilingual parity gate — README.md (canonical EN) and

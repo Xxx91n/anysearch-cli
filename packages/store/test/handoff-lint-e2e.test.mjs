@@ -24,6 +24,7 @@ import {
   collectSnapshot,
   evaluateHandoffLintDocuments,
 } from "../../../scripts/handoff-lint-shell.mjs";
+import { runEnforcementAnchors } from "../../../scripts/enforcement-anchors.mjs";
 import { CODE_GROUPS, parseStackLine } from "../../../scripts/handoff-lint-verdict.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -365,6 +366,39 @@ eq(newestCloseoutTargets([
   const def = collectDeferred(root);
   eq(def.ok, true, "the real deferred registry parses");
   assert(def.pendingPredicates.includes("no-pr") && def.pendingPredicates.includes("unpublished"), "R7: the real registry seats no-pr/unpublished as pending predicates");
+}
+
+// --- N. enforcement anchors: the detector itself must fail closed -------------
+{
+  const r = runEnforcementAnchors({ root });
+  assert(r.exitKind === "pass" && r.counts.anchors === 5 && r.counts.killed === 5, "the real anchor table is 5/5 consumer-verified");
+  // nail ①: an anchor without a runnable fixture is unkillable, never admitted
+  const regless = runEnforcementAnchors({ root, deps: { registry: { ok: true, anchors: [{ id: "anchor:ghost", probe: "probeDoesNotExist" }] } } });
+  eq(regless.exitKind, "fail", "an anchor with an unresolvable probe is RED (unkillable mutant)");
+  assert(regless.lines.some((l) => l.kind === "fail" && l.msg.includes("anchor-unresolvable")), "the unkillable anchor is reported by name");
+  assert(regless.lines[regless.lines.length - 1].msg.includes("anchor-not-consumed"), "the summary line carries the fail-closed count");
+  // a probe that does not kill = decorative declaration = RED (nail ②: the
+  // expected kill is the only mechanical boundary - a probe starved of its
+  // fixture facts must not silently pass)
+  const dead = runEnforcementAnchors({
+    root: path.join(root, "nonexistent-root-dir"),
+    deps: { registry: { ok: true, anchors: [{ id: "anchor:dead", probe: "probeRatchetRecount" }] } },
+  });
+  eq(dead.exitKind, "fail", "a probe that cannot kill on the distorted surface is anchor-not-consumed RED");
+  assert(dead.lines.some((l) => l.kind === "fail" && l.msg.includes("anchor-not-consumed")), "the decorative declaration is named anchor-not-consumed");
+  // seated anchor: observed, never blocking
+  const seated = runEnforcementAnchors({
+    root,
+    deps: {
+      registry: { ok: true, anchors: [{ id: "anchor:ratchet-recount", probe: "probeRatchetRecount" }] },
+      deferred: { ok: true, pendingAnchors: ["anchor:ratchet-recount"], covers: [], pendingPredicates: [] },
+    },
+  });
+  eq(seated.exitKind, "pass", "a seated anchor never blocks");
+  assert(seated.lines.some((l) => l.msg.includes("pending-seat") || l.msg.includes("pending-anchor")), "the seat is surfaced in the report");
+  // an unreadable registry file is fail-closed
+  const broken = runEnforcementAnchors({ root, deps: { registry: { ok: false, anchors: [] } } });
+  eq(broken.exitKind, "fail", "an unreadable anchor registry is fail-closed");
 }
 
 // --- fail-on-empty red line ---------------------------------------------------
