@@ -15,6 +15,10 @@ PENDING: pushed-no-branch-runs — 本审计窗的四个栈（`r96-handoff-lint`
 
 > **本行的失效史（本身就是 R97 正题的活证据）**：本件初版写的是 `PENDING: stack-unpushed`（push 前为真），并预置了一个警告框说「push 后本行立即失效」。push 执行后，收口件的同型声明**被门禁以 `declaration-fact-conflict` 当场抓出**（`PENDING{stack-unpushed} contradicted: origin/r96-handoff-lint exists`），同一次调用还抓出 Stack 行链尾 SHA 因 amend 失效（`chain-tail-not-in-branch: 92abd9ee (zlr)`）——即 ADR-0097 D-002③ 的机械杀手在真实数据上开了一枪。四处声明（本件 + LOOP1 + LOOP2 + 收口件）随后按 R95 F5R 纪律逐条改述。**这是三次同族缺陷里第一次被机器抓到，而非人工审计。**
 
+### 4b. 顺带坐实：一条 N5 实现缺陷（见 Known risks）
+
+抓 `chain-tail-not-in-branch` 的同一次探查里，还暴露了一个**至今未修**的实现缺陷：`parseButStatusIds` 只认 `●`/`◉` 两种 commit 标记，漏了 GitButler 对「有未 push 改动」的 commit 发的 `◐`（U+25D0），导致 amend 后未 push 的 commit 被**静默丢行**、Stack 腿误报 `but-id-not-resolved` 假红。**失效方向 fail-closed，故不阻断 land，但门禁在「tip 未 push」的常态下不可用**，且 ADR-0097 Known-Risk 1 预登记的失效方向（→ env-PENDING 非误红）与实测（→ 硬 RED）不符。详见 Known risks 的 N5 条。
+
 > 旁注（非本轮 run，不满足本字段）：共同基底 `3642d494` 的三条绿 run 仍是 main 基线 run，head_sha 不在栈成员集内 —— ADR-0097 三态语法下只作旁注。
 
 ## 已完成
@@ -84,7 +88,8 @@ B1~~B4 四项阻断真修复（LOOP2 逐条回读源码复核）；N1~~N4/N7/R5~
 
 ### 继承项（两轮复核后仍成立）
 
-- **`but status -fv` 行形是解析契约**（ADR-0097 Known-Risk 1）：but 升级改行形会退化为 `stack-unavailable`（env-PENDING，非误红），须在下次 but 升级时复核。冻结样本锚在 `packages/store/test/handoff-lint-e2e.test.mjs`。
+- **🔴 N5（本轮新发现，LOOP 3 实证，**未修，待 R97 或专项票**）：`parseButStatusIds` 的行形契约漏了一种 GitButler 标记 —— 解析正则只接受 `\u25cf`（●）与 `\u25c9`（◉）两种 commit 标记，而 GitButler 对**「有未 push 的改动」的 commit 发 `\u25d0`（◐）**。故 amend 后未再 push 的 commit 会被**静默丢行** → Stack 腿误报 `but-id-not-resolved` **RED**（本轮实测：收口件 Stack 行如实写着 7 个 but-id 全部存在，仍被判红）。**失效方向 fail-closed（假红非假绿），故不阻断；但它让门禁在「作者正在写、tip 未 push」这一常态下不可用** —— 而这恰是 F8-a「门禁逼作者写不诚实的东西」的同类压力。**且与 ADR-0097 Known-Risk 1 的预测方向不符**：该风险预登记为「行形变化 → 退化为 `stack-unavailable`（env-PENDING，非误红）」，实测却是**硬 RED**（解析器逐行丢行，而非整体解析失败）。修法方向：标记类放宽为「非空白非制表符的单个符号」，并把 Known-Risk 1 的预测方向按实测更正。**这是本轮唯一一条落在实现里、审计窗未修的发现。**
+- **`but status -fv` 行形是解析契约**（ADR-0097 Known-Risk 1）：but 升级改行形会退化为 `stack-unavailable`（env-PENDING，非误红），须在下次 but 升级时复核。冻结样本锚在 `packages/store/test/handoff-lint-e2e.test.mjs` —— **但该冻结样本只含 `●` 一种标记，故 N5 恰好落在回归网的盲区里**（与 §10.3 那次 claim 断裂同型：机器锚覆盖了「有标记」却没覆盖「标记有几种」）。
 - **CI 恒为 env-PENDING 是设计内非阻断**；监控锚＝`[skip]` 行计数异常升高。
 - **`EFFECTIVE_SCOPE_FLOOR = 96` 是棘轮**：下调即整体退回 legacy，改动须 ADR。
 - **写 markdown/JSON 禁 `String.raw` 携 `\uXXXX` 转义序列**（R96 事故，轮报 §6.2.3）。
