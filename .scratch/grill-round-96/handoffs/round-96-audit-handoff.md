@@ -2,7 +2,7 @@
 
 Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：
 `r96-audit` → zky（自引用收尾 commit：审计报告 + 本件；SHA 为自引用值，按 handoff-template「SHA time-lagged，以 but log 为准」不写入）
-被审计对象栈（未改动，原样保留）：`r96-handoff-lint` → mwp (`e77b35ef`) → lqv (`8c8dd48d`) → svk (`8e2c86c0`) → lsp (`03c6bd31`) → ksz (`55699a4b`) → zlr (`92abd9ee`) → lpu（自引用收尾，以 `but log` 为准）——该栈叠于 `r95-exec` 之上（未 push、未 PR、未 tag）
+被审计对象栈（LOOP 1 捕获值；**SHA 已于返工 amend 后全部失准 —— 现 tip 为 `b734f25d` / `842478ed` / `68bd1634` …，权威值以 `but log r96-handoff-lint` 为准**）：`r96-handoff-lint` → mwp → lqv → svk → lsp → ksz → zlr → lpu（自引用收尾）——but-id 链为主键，7 个 commit 的**顺序与归属未变**；该栈叠于 `r95-exec` 之上（未 push、未 PR、未 tag）
 
 ## 绿色 run URL（必填）
 
