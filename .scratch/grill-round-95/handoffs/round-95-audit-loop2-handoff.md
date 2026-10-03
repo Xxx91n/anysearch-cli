@@ -8,6 +8,7 @@ Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagge
 ## 绿色 run URL（必填）
 
 **PENDING — stack unpushed。** R95 全部提交（含返工 4 commit）未外发（无 push / tag / publish，纪律内），故无本轮 CI run 可引。
+<!-- re-anchor: 2026-10-03 B 轨逐栈 land 后，「未外发 / stack unpushed」整体失效——r95 全部提交已 ff-land 上 main；本行为写作时值，已不合事实。 -->
 门禁证据为**本机实测**，非 CI：`node scripts/ship-gate.mjs` → **exit 0 零 fail 腿**（LOOP2 审计窗独立复跑；含 `closeout-claims r95: 9/9 registered claims re-derived green`、`handoff-lint` pass、`closeout-coverage: 20/20`、`canonical-json` 绿、`path-lint: 598 registered doc(s) clean`、`clean-tree` 空）。
 > 旁注（不作本轮 run）：祖先线 CI 实证已发表于 `.scratch/grill-round-95/handoffs/round-95-closeout.md`，该件同时记录了「模板 PENDING 出口 vs gate 强制 run URL」冲突的本机实证（F8）。
 

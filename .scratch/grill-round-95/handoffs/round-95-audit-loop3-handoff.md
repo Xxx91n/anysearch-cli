@@ -7,6 +7,7 @@ Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagge
   **交付栈** `r95-exec` → `trx` … `wzw` → `qyv` … `ulo` → `xtv`（F5R+N1 修复）→ `ttz`（push 后失效声明订正）—— 已 push，tip 以 `git rev-parse origin/r95-exec` 为准
   **审计栈** `r95-audit`（LOOP1，`kqq`）· `r95-audit-loop2`（LOOP2 `lus` + LOOP3 `ktq`）—— 已 push
   本件所在分支：`r95-audit-loop2`，tip 以 `git rev-parse origin/r95-audit-loop2` 为准（自引用，故不写死值）
+<!-- re-anchor: 2026-10-03 B 轨逐栈 land，r95-exec 随 r97-audit-reanchor --whole-stack ff-land 上 main（ref 已删）；r95-audit / r95-audit-loop2 为 rebase-landed 副本（ref 仍存）。上方「已 push」陈述为写作时值，栈内容已全部合流。 -->
 
 ## 绿色 run URL（必填）
 

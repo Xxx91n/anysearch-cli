@@ -1,7 +1,7 @@
 # Handoff — Grill Round 96 → R97（执行轮收口交接；ADR-0097 三态语法首件）
 
 Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：
-r96-handoff-lint → mwp (`e77b35ef` @ 2026-10-03) → lqv (`6335a5c4` @ 2026-10-03) → svk (`f9bd4ce7` @ 2026-10-03) → lsp (`c9614157` @ 2026-10-03) → ksz (`513d7d51` @ 2026-10-03) → zlr (`3ccf3f00` @ 2026-10-03) → lpu（自引用收尾 commit；SHA time-lagged 故不写入，以 `but log` 为准）—— 本栈叠于 `r95-exec` 之上（**已 push 至 `origin/r96-handoff-lint`，2026-10-03；未 land、未 PR、未 tag**）；返工与残留修复均已 amend 回各自提交（未增新 commit），故上方 SHA 为 amend 后 capture 时值，与提交消息中的历史 SHA 不同——权威值以 `but log r96-handoff-lint` 为准
+r96-handoff-lint → mwp (`e77b35ef` @ 2026-10-03) → lqv (`6335a5c4` @ 2026-10-03) → svk (`f9bd4ce7` @ 2026-10-03) → lsp (`c9614157` @ 2026-10-03) → ksz (`513d7d51` @ 2026-10-03) → zlr (`3ccf3f00` @ 2026-10-03) → lpu（自引用收尾 commit；SHA time-lagged 故不写入，以 `but log` 为准）—— 本栈叠于 `r95-exec` 之上（**已 ff-land 上 `origin/main`，2026-10-03 `but land r97-audit-reanchor --whole-stack` 顺带收编，land 即删 `origin/r96-handoff-lint` ref；未 PR、未 tag**）；返工与残留修复均已 amend 回各自提交（未增新 commit），故上方 SHA 为 amend 后 capture 时值，与提交消息中的历史 SHA 不同——权威值以 `but log` 为准
 
 ## 已完成
 
@@ -19,7 +19,7 @@ F8 三缺陷在**三态骨架层面**闭环，且审计 B1/B2 同型残留已补
 
 ## 绿色 run URL（必填）
 
-PENDING: pushed-no-branch-runs — `origin/r96-handoff-lint` 的 ref **存在**（`git rev-parse --verify refs/remotes/origin/r96-handoff-lint` 返回 sha，2026-10-03 push 后实测），但本仓 `.github/workflows` 的 `on.push` 仅覆盖 `main`（ci.yml / ship-gate.yml / native-smoke.yml），特性分支 push 不产出任何 run —— 故「本轮 run URL」在特性分支上物理不可得（ADR-0097 F8-c 谓词，门禁离线自证）。取得本轮 run 须 land 到 `main` 或开 PR。**本行原为 `PENDING: stack-unpushed`，2026-10-03 push 后立即失效并按 R95 F5R 纪律改述**——该失效由门禁以 `declaration-fact-conflict` 当场抓出，非人工发现。
+PENDING: stack-unpushed — 2026-10-03 owner 授权 B 轨逐栈 land，本栈随 `r97-audit-reanchor` `--whole-stack` ff-land 上 `origin/main`，land 即删 `origin/r96-handoff-lint` ref —— 「无 origin ref」实测为真。GREEN 仍物理不可兑现：ff-land 后 `origin/main..origin/r96-handoff-lint` 为空，栈内 commit 集为空（ADR-0098 Known-Risk 5 边界），真 GREEN 兑现待 PR 拓扑。改述史：`stack-unpushed` →（2026-10-03 push）`pushed-no-branch-runs` →（2026-10-03 land，ref 删）回本码。**该失效同样由门禁以 `declaration-fact-conflict` 当场抓出**（land 后首次运行即报 `origin/r96-handoff-lint does not exist`）。
 
 > 旁注（非本轮 run，**不满足本字段**）：共同基底 `3642d494`（= `main` HEAD）三条绿 run 实测存在——ci https://github.com/Xxx91n/anysearch-cli/actions/runs/36741517719 success、ship-gate https://github.com/Xxx91n/anysearch-cli/actions/runs/36741517755 success、native-smoke https://github.com/Xxx91n/anysearch-cli/actions/runs/36741517873 success（均 head_sha `3642d494`）。F8 修复前这类基线 run 会满足主字段（F8-b 假绿本体）；ADR-0097 三态语法下它们只是旁注。本仓 CI 拓扑另使特性分支 push 不产出 run（F8-c）。
 

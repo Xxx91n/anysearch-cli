@@ -6,6 +6,7 @@ Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagge
 ## 绿色 run URL（必填）
 
 **PENDING — 已 push，但本仓 CI 拓扑不产出特性分支 run。** 本栈已 push 至 `origin/r95-exec`（tip 以 `git rev-parse origin/r95-exec` 为准）；`.github/workflows/` 的 `ci.yml` / `ship-gate.yml` / `native-smoke.yml` 触发条件均为 `push: branches: [main]` 或 `pull_request` 或 `workflow_dispatch`，故**特性分支 push 不产生任何 run**（`gh run list --branch r95-exec` → 空，实测）。取得本轮 CI run 须二选一：land 到 `main`，或开 PR 触发 `pull_request`。
+<!-- re-anchor: 2026-10-03 B 轨逐栈 land，r95-exec 随 r97-audit-reanchor --whole-stack ff-land 上 main，origin/r95-exec ref 已删；本段「已 push / 未 land」陈述随 land 失效（栈内容已合流、ref 不存在）。 -->
 本机门禁证据（**非 CI**，审计窗 LOOP3 独立复跑）：`node scripts/ship-gate.mjs` → **exit 0 零 fail 腿**（含 `closeout-claims r95: 9/9 re-derived green`、`handoff-lint` pass、`closeout-coverage: 20/20`、`canonical-json` 绿、`path-lint` 零 fail、`clean-tree` 空）；`pnpm turbo run check/build --force` 8/8 + 5/5；`pnpm test` 13/13。
 > 旁注（基底线 run，非本分支 run；亦为 `handoff-lint` 腿的机械锚）：共同基底 `3642d494`（= `main` HEAD）三条绿 run 实测存在——ci https://github.com/Xxx91n/anysearch-cli/actions/runs/36741517719 success、ship-gate https://github.com/Xxx91n/anysearch-cli/actions/runs/36741517755 success、native-smoke https://github.com/Xxx91n/anysearch-cli/actions/runs/36741517873 success（均 head_sha `3642d494`，`gh run list` 实测）。审计窗 F5 判定「祖先/基底线 run 不满足本轮 run 语义」——主字段如上；此处 URL 性质已具名。`handoff-lint` 在非本轮 run 上仍判绿 = F8 盲区，记 R96 主推收口。
 

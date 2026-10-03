@@ -6,6 +6,7 @@ Stack: `r95-exec` but-id 链（旧→新）`trx`(`4a73758b` @ 2026-10-01) → `p
 ## 绿色 run URL（必填）
 
 **PENDING — stack unpushed。** 本轮全部提交未外发（无 push / tag / publish，纪律内），故无本轮 CI run 可引。
+<!-- re-anchor: 2026-10-03 B 轨逐栈 land 后，「未外发 / stack unpushed」整体失效——r95 全部提交已 ff-land 上 main；本行为写作时值，已不合事实。 -->
 门禁证据为**本机实测**，非 CI：`node scripts/ship-gate.mjs` → **exit 0**（审计窗独立复跑，全绿；含 `closeout-coverage: 20/20`、`handoff-lint`、`path-lint: 596 registered doc(s) clean`、`canonical-json`、`gen-adr-index: 96 ADRs at HEAD`）。
 > 旁注（不作本轮 run）：`r95-exec` 的共同基底 `3642d494` 的祖先线 CI 实证已发表于 `.scratch/grill-round-95/handoffs/round-95-closeout.md`。审计窗**判定该引用不合模板**（`docs/agents/handoff-template.md:31` 要求未推送即写 PENDING），见 F5。
 

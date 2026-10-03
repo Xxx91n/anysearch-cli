@@ -14,6 +14,8 @@ Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagge
 PENDING: pushed-no-branch-runs — 本审计窗的四个栈（`r96-handoff-lint` / `r96-grill-docs` / `r96-audit` / `r96-audit-loop2`）的 `origin/<branch>` ref 于 2026-10-03 由 owner 授权 push 后**全部存在**（逐个 `git ls-remote --heads` 实测），但本仓 `.github/workflows` 的 `on.push` 仅覆盖 `main`（ci.yml / ship-gate.yml / native-smoke.yml），特性分支 push 不产出任何 run —— 故无本轮 run（ADR-0097 F8-c 谓词，门禁离线自证）。未 land、未 PR、未 tag。
 
 > **本行的失效史（本身就是 R97 正题的活证据）**：本件初版写的是 `PENDING: stack-unpushed`（push 前为真），并预置了一个警告框说「push 后本行立即失效」。push 执行后，收口件的同型声明**被门禁以 `declaration-fact-conflict` 当场抓出**（`PENDING{stack-unpushed} contradicted: origin/r96-handoff-lint exists`），同一次调用还抓出 Stack 行链尾 SHA 因 amend 失效（`chain-tail-not-in-branch: 92abd9ee (zlr)`）——即 ADR-0097 D-002③ 的机械杀手在真实数据上开了一枪。四处声明（本件 + LOOP1 + LOOP2 + 收口件）随后按 R95 F5R 纪律逐条改述。**这是三次同族缺陷里第一次被机器抓到，而非人工审计。**
+>
+> **re-anchor 注记（2026-10-03）**：B 轨逐栈 land 后，上段「四个栈 ref 全部存在」中 `r96-handoff-lint` 的 origin ref 已被 land 删除（其内容已 ff 上 main）；其余 `r96-grill-docs` / `r96-audit` / `r96-audit-loop2` 为 rebase-landed 副本、ref 仍存。本件 `PENDING: pushed-no-branch-runs`（对应 Stack 分支 `r96-audit-loop2`）谓词实测仍为真，码不改述。
 
 ### 4b. 顺带坐实：一条 N5 实现缺陷（见 Known risks）
 

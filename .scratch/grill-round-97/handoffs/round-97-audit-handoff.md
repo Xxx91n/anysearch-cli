@@ -1,10 +1,11 @@
 # Handoff — Grill Round 97 审计窗 → R98（审计结论 + 下一轮 grill 方向指示）
 
-Stack（未 push、未 land；审计窗只出报告，未改任何实现文件）：
+Stack（已 ff-land 上 `origin/main`——2026-10-03 `but land r97-audit-reanchor --whole-stack`，land 即删 `origin/r97-selfcheckable` ref；审计窗只出报告，未改任何实现文件）：
   r97-selfcheckable → upo (`b67ddbc8`) → pnq (`f923be49`) → spu (`5280704f`) → vrt (`7b28eca7`) → xvw (`fe87e8a4`) → lop (`fb312b97`) → lsz (`f2776a0f`) → krl (`1aedaee3`) → sqp (`a6c22612`)
   另注：仓库 HEAD `91f5b173` = GitButler 工作区合并 commit（5 parents），非 R97 实现面。审计新增未跟踪文件 `.scratch/grill-round-97/reports/2026-10-03-audit-report.md`（+ `.scratch/audit-r97/*.log` 证据），**未提交**——提交与否待 owner。
 
-<!-- state: unlanded stack @ 2026-10-03 -->
+<!-- state: no-branch-runs r97-selfcheckable @ 2026-10-03 -->
+<!-- re-anchor: 2026-10-03 owner 授权 B 轨逐栈 land，r97-selfcheckable 随 r97-audit-reanchor 栈 ff-land 上 main，land 即删其 origin ref，`unlanded` 谓词随之不可评估（成员集不可读 → env-PENDING）且语义不成立（栈已合流）；改述为 `no-branch-runs`（谓词实测为真：全仓 `on.push` 仅覆盖 `main`）。reauthored=1。 -->
 
 ## 审计结论（详见 2026-10-03-audit-report.md）
 

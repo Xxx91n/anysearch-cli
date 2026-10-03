@@ -1,10 +1,11 @@
 # Handoff — Grill Round 97 → R98（执行轮收口交接；ADR-0098 可机检类别首件）
 
 Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：
-r97-selfcheckable → upo (`b67ddbc8` @ 2026-10-03) → pnq (`f923be49` @ 2026-10-03) → spu (`5280704f` @ 2026-10-03) → vrt (`7b28eca7` @ 2026-10-03) → xvw (`fe87e8a4` @ 2026-10-03) → lop (`fb312b97` @ 2026-10-03) → lsz (`f2776a0f` @ 2026-10-03) → krl (`1aedaee3` @ 2026-10-03) —— 本栈叠于 `r96-handoff-lint` 之上（R96 实现栈顶）；**已 push、未 land、未 PR、未 tag**（owner 授权后 2026-10-03 push，`origin/r97-selfcheckable` = `a6c22612` 实测存在）；8 个 commit 无 amend，SHA 为初写时值；权威值以 `but log r97-selfcheckable` 为准
+r97-selfcheckable → upo (`b67ddbc8` @ 2026-10-03) → pnq (`f923be49` @ 2026-10-03) → spu (`5280704f` @ 2026-10-03) → vrt (`7b28eca7` @ 2026-10-03) → xvw (`fe87e8a4` @ 2026-10-03) → lop (`fb312b97` @ 2026-10-03) → lsz (`f2776a0f` @ 2026-10-03) → krl (`1aedaee3` @ 2026-10-03) —— 本栈叠于 `r96-handoff-lint` 之上（R96 实现栈顶）；**已 ff-land 上 `origin/main`（2026-10-03 `but land r97-audit-reanchor --whole-stack`，land 即删 `origin/r97-selfcheckable` ref）、未 PR、未 tag**；8 个 commit 无 amend，SHA 为初写时值（capture 期 but-id 链，land 后不再出现于 `but status`）；权威值以 `but log` 为准
 
-<!-- state: unlanded stack @ 2026-10-03 -->
+<!-- state: no-branch-runs r97-selfcheckable @ 2026-10-03 -->
 <!-- re-anchor: 2026-10-03 owner 授权 push 后，原标记 `state: unpushed r97-selfcheckable` 立即失效（R95 F5R 纪律）。ref 已存在，故原谓词不再为真；按重锚仪式改述为「未 land」谓词（unlanded），该谓词当前仍为真：origin/main..origin/r97-selfcheckable 非空（36 commits 实测）。reauthored=1。 -->
+<!-- re-anchor: 2026-10-03 owner 授权 B 轨逐栈 land，本栈随 r97-audit-reanchor 栈 ff-land 上 main，land 即删 `origin/r97-selfcheckable` ref。两处声明当场失效：①`unlanded` 标记——ref 删除使成员集不可读（env-PENDING），且谓词语义上已不成立（栈已合流），改述为 `no-branch-runs`（谓词实测为真：全仓 `on.push` 仅覆盖 `main`，该分支无 `pull_request`/`workflow_dispatch` 之外的可达 run 面）；②run-URL 码 `pushed-no-branch-runs`——ref 不存在即 `declaration-fact-conflict`，改述为 `stack-unpushed`（谓词实测为真：origin 无此 ref）。reauthored=2。 -->
 
 ## 已完成
 
@@ -22,11 +23,11 @@ R97 正题 A（自造失效声明可机检类别）实现闭环，B 轨（分支
 
 ## 绿色 run URL（必填）
 
-PENDING: pushed-no-branch-runs — `origin/r97-selfcheckable` 的 ref **存在**（owner 授权后 2026-10-03 push，`git rev-parse --verify refs/remotes/origin/r97-selfcheckable` = `a6c22612` 实测），但本仓 `.github/workflows` 的 `on.push` 仅覆盖 `main`（ci.yml / ship-gate.yml / native-smoke.yml / release.yml / tau-python.yml 均为 `branches: [main]`），特性分支 push 不产出任何 run —— 故「本轮 run URL」在特性分支上物理不可得（ADR-0097 F8-c 谓词，门禁离线自证）。取得本轮 run 须 land 到 `main` 或开 PR。**本行原为 `PENDING: stack-unpushed`（审计窗当时未 push），push 后立即失效并按 R95 F5R 纪律改述**——与 R96 四处改述同型。
+PENDING: stack-unpushed — 2026-10-03 owner 授权 B 轨逐栈 land，本栈随 `r97-audit-reanchor` `--whole-stack` ff-land 上 `origin/main`，land 即删 `origin/r97-selfcheckable` ref —— 「无 origin ref」实测为真。GREEN 仍物理不可兑现：ff-land 后 `origin/main..origin/r97-selfcheckable` 为空，栈内 commit 集为空，任何被引 run 的 `head_sha` 成员检查不可满足（ADR-0098 Known-Risk 5；R98 goal.md 风险②），真 GREEN 兑现待 PR 拓扑。改述史：本行最初为 `PENDING: stack-unpushed`（未 push）→ push 后改述 `pushed-no-branch-runs` → land 后再次改述回本码（ref 已删、谓词实测为真）。
 
 ## 下一轮候选
 
-1. **B 轨清算（owner）**：5 栈现状下 `but land r96-audit-loop2 --whole-stack` 只收单栈；全栈 land 顺序与 `r95-rework` 回收须 owner 重裁。land 后本件两处声明同时失效，须改述。
+1. **B 轨清算（owner）**：5 栈现状下 `but land r96-audit-loop2 --whole-stack` 只收单栈；全栈 land 顺序与 `r95-rework` 回收须 owner 重裁。land 后本件两处声明同时失效，须改述。（已于 2026-10-03 执行：六段按授权序全 land，两处声明按重锚仪式改述，见文首 re-anchor 注记 #2。）
 2. **GREEN 兑现观察**：三态 GREEN 仍无真实施跑证据；首个 land 后 closeout 应以 `GREEN:` 引用真 run。
 3. **扩表示范票**（deferred 在册）：`no-pr`/`unpublished` 首张扩表即闭环验收。
 4. **形态二 ratchet**（deferred 在册）：PENDING 位收敛后升 RED。
