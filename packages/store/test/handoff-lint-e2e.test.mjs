@@ -181,16 +181,30 @@ const verbose = [
   "\u250A\u256D\u2504 au [r95-audit]",
   "\u250A\u25CF kqq Euiop1 2026-10-01 13:39:56 +0800 (sha e9190d9a)",
 ].join("\n");
-eq(parseButStatusIds(verbose), ["nvu", "ktq", "kqq"], "verbose but status yields the CLI id column");
+eq(parseButStatusIds(verbose).ids, ["nvu", "ktq", "kqq"], "verbose but status yields the CLI id column");
+eq(parseButStatusIds(verbose).degraded, false, "verbose sample carries no unknown marker");
 const compact = [
   "\u256D\u2504 zz [uncommitted] (no changes)",
   "\u250A",
   "\u250A\u256D\u2504 r9 [r96-handoff-lint]",
   "\u250A\u25CF   mwp docs(r96-t0): x",
 ].join("\n");
-eq(parseButStatusIds(compact), ["mwp"], "compact but status yields the CLI id column too");
-eq(parseButStatusIds(""), [], "an empty but status yields no ids");
-eq(parseButStatusIds("\u256D\u2504 zz [uncommitted] (no changes)"), [], "a header-only but status yields no ids");
+eq(parseButStatusIds(compact).ids, ["mwp"], "compact but status yields the CLI id column too");
+eq(parseButStatusIds("").ids, [], "an empty but status yields no ids");
+eq(parseButStatusIds("\u256D\u2504 zz [uncommitted] (no changes)").ids, [], "a header-only but status yields no ids");
+// N5 systematic glyph sweep: every observed but marker parses, unknown shapes degrade whole (never swallow)
+const glyphs = [
+  "\u256D\u2504 zz [uncommitted] (no changes)",
+  "\u250A",
+  "\u250A\u256D\u2504 r9 [r97-probe]",
+  "\u250A\u25CF aaa Euiop1 2026-10-03 00:00:00 +0800 (sha 11111111)",
+  "\u250A\u25C9 bbb Euiop1 2026-10-03 00:00:00 +0800 (sha 22222222)",
+  "\u250A\u25D0 ccc Euiop1 2026-10-03 00:00:00 +0800 (sha 33333333)",
+  "\u250A\u2502     docs(x): y",
+].join("\n");
+eq(parseButStatusIds(glyphs).ids, ["aaa", "bbb", "ccc"], "all three observed glyphs parse and detail lines yield no phantom ids");
+eq(parseButStatusIds(glyphs).degraded, false, "the full glyph set does not degrade");
+eq(parseButStatusIds("\u250A\u25CF\n").degraded, true, "a bullet with no id degrades the whole parse");
 
 // --- F. workflow identity ----------------------------------------------------
 eq(deriveWorkflowName({ path: ".github/workflows/ci.yml", name: "CI" }), "ci", "workflow identity prefers the file stem");

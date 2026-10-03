@@ -34,13 +34,23 @@ function observe(spawnSync, cmd, args, cwd) {
 // bullet, and the first token after it is the CLI id. The change-id column may
 // be absent (upstream-only commits lead with a sha prefix) - that absence is
 // informational, never RED by itself. The `(sha ...)` suffix is informational.
+// N5 (ADR-0097 errata 2026-10-03): the marker class is widened to one
+// non-blank non-tab symbol - upstream publishes no marker enumeration, so
+// widening is the honest fix. A commit-bullet line that still fails to parse
+// degrades the WHOLE parse (degraded: true; the caller treats but as
+// unavailable / env-PENDING) instead of dropping the row silently.
 export function parseButStatusIds(stdout) {
   const ids = [];
+  let degraded = false;
   for (const raw of String(stdout ?? "").split(/\r?\n/)) {
-    const m = /^[\s\u2502\u250a\u251c\u256f\u256d\u2504\u25cf\u25c9|]*[\u25cf\u25c9]\s+([A-Za-z0-9][A-Za-z0-9_-]{0,9})\b/.exec(raw);
-    if (m) ids.push(m[1]);
+    const t = raw.replace(/^[\s\u2500-\u257F|]+/, "");
+    if (!t) continue;
+    if (/^[A-Za-z0-9]/.test(t)) continue;
+    const m = /^([^\s\t])[ \t]+([A-Za-z0-9][A-Za-z0-9_-]{0,9})\b/.exec(t);
+    if (m) ids.push(m[2]);
+    else degraded = true;
   }
-  return uniq(ids);
+  return { ids: uniq(ids), degraded };
 }
 
 // Structural parse of a workflow's `on:` triggers. Node stdlib only: this is
@@ -191,7 +201,9 @@ export function collectSnapshot({ root, branches = [], shas = [], runIds = [], d
 
   const butOut = observe(spawnSync, "but", ["status", "-fv"], root);
   let butOk = butOut !== null;
-  let butIds = butOk ? parseButStatusIds(butOut) : [];
+  const parsedBut = butOk ? parseButStatusIds(butOut) : { ids: [], degraded: false };
+  if (parsedBut.degraded) butOk = false;
+  let butIds = butOk ? parsedBut.ids : [];
   if (butOk && branches.length > 0 && !branches.some((b) => butOut.includes(b))) {
     // but answered, but its workspace names none of this document's branches ->
     // the but workspace is not this repo's. Degrade, never red.
