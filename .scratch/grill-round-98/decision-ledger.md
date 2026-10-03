@@ -25,3 +25,13 @@
   - **观察者最小化 + 失效域隔离**：判定核纯净维持（零 spawnSync/fs/Date.now/process.env，时钟 env.now 注入），证伪 fixture 执行路径不经过被验代码的自身配置。
 - **显式约束·负向需求**：①禁裸「零引用 → RED」（A 仅前检分流不出 RED）；②禁消费方登记契约（位点漂移+位点自变装饰=问题转移非解决）；③禁 ADR 文本自动发现宣称约束（D-004 禁 NLP/散文近似）；④禁「只在新增时检查」（grandfathering 变体，违 R97 D-003 bitemporal）；⑤禁通用死代码检测（封闭注册表 schema 面之外不扫）；⑥首批锚=审计点名的四个实例（注册表常量 / reuse 指针 / ratchet 计数-PENDING 位 / 裸词枚举单源）+门禁自身关键常量，清单终稿留落地参数裁定。
 - **状态**：current
+## D-003 — 检测器落地参数（ship-gate 自检腿 / 注册表参数化注入 / 5 锚首发）
+
+- **原问题**：检测器落地参数三子项——(a) 宿主面（ship-gate 独立自检腿 / 并入 handoff-lint / 只挂单测套件）；(b) 注入机制（注册表参数化 / monkeypatch / 复制源码双源）；(c) 首批锚清单（5 锚含 B3 词表守卫 / 4 锚 / 开放面）。
+- **用户原回答原文**：「采纳」（atomcode 深调呈报+三处精化并入后确认）
+- **规范化需求**：
+  - **宿主面**：ship-gate 独立自检腿（与 state 腿 / run-URL 腿平级注册）——锚指向门禁代码自身非 closeout 文档（代码面不是文档面，与「docs/adr 不入形态一靶」同一逻辑）；薄壳执行各锚证伪 fixture（对纯核注入失真→断言期望 kill），核只判 kill/no-kill；观察者同告警链但独立故障域；成本 O(锚数) 常数级可入每次 run（手工策展封闭锚条目≠全量变异）。
+  - **注入机制**：注册表参数化 `env.registry ?? STATE_PREDICATE_REGISTRY`（默认回退生产表）——env.workflows/env.git/env.now 既定注入模式第五实例，`Object.freeze` 纪律不动；参数化根治 S-5（腿必须以参数接收注册表→「唯一引用即自声明」在签名层面不再可能）；失真表测试须兼覆盖「缺省=生产表」路径=第 6 个隐式 fixture；「传永远 GREEN 表绕过」威胁由自指钉②兜底。
+  - **首批锚（5 锚，各配证伪 fixture 方准入表）**：①`anchor:predicate-registry`（S-5，fixture=注入失真表断言 state 腿出 RED）②`anchor:reuse-pointer`（P-9，reuse 字段须被解析消费）③`anchor:ratchet-recount`（P-6，PENDING 类首发锚，挂封闭 PENDING 码进 deferred registry）④`anchor:bare-word-single-source`（P-8，fixture=注入缺词表断言裸词漏报）⑤`anchor:vocab-guards`（R96 审计 B3 词表守卫常量各仅 1 次出现——不收则首次扩表即复现同型装饰）。
+- **显式约束·负向需求**：①禁并入 handoff-lint（文档面与代码面混管，违 R97 D-004 两速分权与靶位边界）；②禁只挂单测套件（watcher shares fate with observed——测试被删/跳过即装饰回归无闸；单测失败与门禁 RED 是不同账本条目，破坏失效语义机械唯一性）；③禁 monkeypatch（可变导出与 frozen 注册表+fail-closed 语义正交冲突，还原失败=跨测试污染）；④禁复制判定核源码改注册表（双源维护=锚自变装饰，P-8 同型）；⑤禁 4 锚漏 vocab-guards（同型豁免，违 D-001⑤精神）；⑥合法重构未走重锚仪式时双红（锚 RED+消费缺失 RED）为 fail-closed 设计意图——首次触发的重锚成本须写进 ADR Consequences 防误读 flaky；⑦开放面检测仍禁（D-001 既定），未来扩表走封闭通道，开放面留作 ADR Known-Risk。
+- **状态**：current
