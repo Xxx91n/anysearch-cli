@@ -36,6 +36,29 @@ export const REQUIRED_WORKFLOWS = Object.freeze(["ci", "ship-gate"]);
 // code change to this gate - no waived / time-boxed / doc-only escape hatches.
 export const PENDING_REASON_CODES = Object.freeze(["stack-unpushed", "pushed-no-branch-runs"]);
 
+// R97 (ADR-0098 D1/D2): self-checkable declaration vocabulary. Three offline
+// predicates only; live predicates (no-pr/unpublished) are deferred to the
+// first registry-extension ticket. Each entry carries {verify, invalidate,
+// env, reuse}: extension requires touching this constant AND ADR-0098, and
+// the extension PR itself is subject to the three-state gate (self-reference
+// convergence). Bare-word Chinese equivalents are closed here, not NLP.
+export const STATE_PREDICATES = Object.freeze(["unpushed", "unlanded", "no-branch-runs"]);
+export const STATE_PREDICATE_REGISTRY = Object.freeze({
+  unpushed: Object.freeze({ verify: "origin/<branch> ref absent", invalidate: "origin ref appears", env: "git", reuse: null }),
+  unlanded: Object.freeze({ verify: "git rev-list origin/main..origin/<branch> non-empty", invalidate: "member set becomes empty", env: "git", reuse: null }),
+  "no-branch-runs": Object.freeze({ verify: "no workflow on.push covers the branch", invalidate: "pushBranches covers the branch", env: "workflows", reuse: "parseWorkflowTriggers/collectWorkflowTriggers" }),
+});
+export const STATE_BARE_WORD_PHRASES = Object.freeze({
+  unpushed: Object.freeze(["\u672a\u63a8\u9001"]),
+  unlanded: Object.freeze(["\u672a\u5408\u6d41"]),
+  "no-branch-runs": Object.freeze(["\u65e0\u5206\u652f\u8986\u76d6"]),
+});
+export const STATE_RED_CODES = Object.freeze([
+  "state-marker-unparseable",
+  "state-predicate-out-of-vocabulary",
+  "bare-word-violation",
+]);
+
 // Environment-degradation codes for the run-URL leg (D-002; `ref-unavailable`
 // added by ADR-0097 Addendum A so each degradation cause keeps its own code
 // instead of being folded into `api-failed` - D-002 item 5 forbids one shared
@@ -85,6 +108,7 @@ export const CODE_GROUPS = Object.freeze({
   stackAdvisory: STACK_ADVISORY_CODES,
   verificationUnavailable: VERIFICATION_UNAVAILABLE_CODES,
   pendingReason: PENDING_REASON_CODES,
+  stateRed: STATE_RED_CODES,
 });
 
 // The single emission gate. An out-of-vocabulary code is a programming error
@@ -92,7 +116,7 @@ export const CODE_GROUPS = Object.freeze({
 export function emitCode(vocabulary, code) {
   if (!vocabulary.includes(code)) {
     throw new Error(
-      "handoff-lint-verdict: `" + code + "` is not in its vocabulary - add it to the constant AND to ADR-0097 before emitting it"
+      "handoff-lint-verdict: `" + code + "` is not in its vocabulary - add it to the constant AND to ADR-0097/0098 before emitting it"
     );
   }
   return code;

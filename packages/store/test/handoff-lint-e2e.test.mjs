@@ -233,9 +233,10 @@ const GROUP_MAP = {
   "stack-advisory": "stackAdvisory",
   "verification-unavailable": "verificationUnavailable",
   "pending-reason": "pendingReason",
+  "state-red": "stateRed",
 };
 const tplText = fs.readFileSync(path.join(root, "docs", "agents", "handoff-template.md"), "utf8");
-const vocabLines = tplText.split("\n").filter((l) => /^(run-url-red|stack-red|stack-structural-red|stack-env|stack-advisory|verification-unavailable|pending-reason):/.test(l));
+const vocabLines = tplText.split("\n").filter((l) => /^(run-url-red|stack-red|stack-structural-red|stack-env|stack-advisory|verification-unavailable|pending-reason|state-red):/.test(l));
 eq(vocabLines.length, Object.keys(GROUP_MAP).length, "the template declares every governed vocabulary group");
 for (const line of vocabLines) {
   const idx = line.indexOf(":");

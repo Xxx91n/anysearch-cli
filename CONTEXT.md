@@ -1781,3 +1781,35 @@ PENDING 的两个亚种必须分流标注：verified-PENDING = 作者声明的�
 
 ### Degradation-Cause Splitting（降级成因分流）
 每一条降级必须具名其成因码，禁共用单一 skip 文案：run-URL 腿 `verification-unavailable:{gh-missing|repo-parse|api-failed}`，Stack 腿 `stack-unavailable` / `ref-unavailable` / `shallow-clone`。成因分流使「为什么没核验」可被机械统计（监控锚），也是把「降级成了常态出口」这一反向风险暴露出来的唯一手段。_Avoid_: 单一 skip 文案；把成因写进散文而不用码。来源：R96 D-002④/D-003② + ADR-0097 Known-Risk 2。
+
+## Grill Round 97 — Terms (ADR-0098)
+
+### Self-Made Invalid Declaration（自造失效声明）
+作者写入时即有事实可证伪、运行时仍可复核的状态声明三元组 `{词表项, 机械核验谓词, 失效触发谓词}`。机检须同答写入真与运行真。_Avoid_: 自证式散文声明；写入真但运行假仍称有效。来源：R97 D-003 + R96 LOOP3 declaration-fact-conflict 实证。
+
+### Predicate Registry（谓词注册表）
+封闭注册表 `STATE_PREDICATE_REGISTRY`：每词表项 `{核验谓词, 失效触发, 环境需求, reuse 指针}`；扩表须改门禁代码且扩表 PR 自身受门禁约束。_Avoid_: 文档扩词表不改码；注册表成后门。来源：R97 D-003/D-004。
+
+### State Marker（状态标记）
+单行 HTML 注释 `<!-- state: <predicate> <args> @ <iso-date> -->`，单正则整体可解析；args 禁 `--`；`stack` 占位解 Stack 具名分支。_Avoid_: 多行注释；标记散文并存。来源：R97 D-004（markdownlint #832 实证）。
+
+### Invalidation Predicate（失效触发谓词）
+词表项的 valid-time 属性（如 `unpushed` 失效条件 = origin ref 出现）。_Avoid_: 只验写入真不验运行真。来源：R97 D-003 bitemporal。
+
+### Bare-Word Violation（裸词违例规则）
+词表英文 token + 登记中文短语（未推送/未合流/无分支覆盖）封闭枚举字面匹配；span/fence 豁免；散文从属于标记。_Avoid_: NLP 近似；散文反向定义标记。来源：R97 D-004。
+
+### Verbatim Anchor（verbatim 锚）
+整句字节级锁，token 存活但语义改写即破锚；防 `count` 同数换位盲区。_Avoid_: 脱离重锚仪式单独立字节锁。来源：R97 D-003。
+
+### Re-anchor Ritual（重锚仪式）
+改写须携变更理由 + 落审计 + ratchet 可见重批计数。_Avoid_: 静默改写不断锚。来源：R97 D-003。
+
+### Anchor Coverage Gap（锚覆盖缺口）
+锚覆盖有标记未覆盖标记有几种（N5：`●/◉` 枚举漏 `◐` 致逐行丢行硬 RED）。修法 = 标记类放宽 + glyph 全扫 + errata 原条注记。_Avoid_: 个案补丁。来源：R97 D-005。
+
+### Two-Speed Scan（两速扫分权）
+报告级全量扫只出报告不开门禁；门禁级增量扫（diff-touch + 最新轮）开门禁。_Avoid_: 全量回溯门禁化。来源：R97 D-004。
+
+### Closeout Clearing Obligation（收口清算义务）
+轮收口机械条目「栈空 ∨ deferred 在册」；一句话条款不配细则。_Avoid_: 栈残留无登记。来源：R97 D-006。

@@ -22,6 +22,7 @@ import {
   STACK_STRUCTURAL_RED_CODES,
   STACK_ENV_CODES,
   STACK_ADVISORY_CODES,
+  STATE_RED_CODES,
   RUN_URL_RED_CODES,
   CODE_GROUPS,
   emitCode,
@@ -110,9 +111,10 @@ eq(STACK_RED_CODES, ["but-id-not-resolved", "sha-not-commit", "chain-tail-not-in
 eq(STACK_STRUCTURAL_RED_CODES, ["stack-line-missing", "stack-chain-empty"], "Stack structural RED codes are exactly two");
 eq(STACK_ENV_CODES, ["stack-unavailable", "ref-unavailable", "shallow-clone"], "Stack env-degradation codes are exactly three");
 eq(STACK_ADVISORY_CODES, ["stale-capture"], "the advisory vocabulary is exactly stale-capture");
+  eq(STATE_RED_CODES, ["state-marker-unparseable", "state-predicate-out-of-vocabulary", "bare-word-violation"], "state RED codes are exactly three (ADR-0098 D3)");
 assert(REQUIRED_WORKFLOWS.includes("ci") && REQUIRED_WORKFLOWS.includes("ship-gate"), "required workflow set carries the blocking gates");
 assert(!REQUIRED_WORKFLOWS.includes("native-smoke"), "native-smoke is not a required gate (load-only matrix)");
-eq(Object.keys(CODE_GROUPS).sort(), ["pendingReason", "runUrlRed", "stackAdvisory", "stackEnv", "stackRed", "stackStructuralRed", "verificationUnavailable"], "every governed vocabulary is registered in CODE_GROUPS (no orphan constant)");
+eq(Object.keys(CODE_GROUPS).sort(), ["pendingReason", "runUrlRed", "stackAdvisory", "stackEnv", "stackRed", "stackStructuralRed", "stateRed", "verificationUnavailable"], "every governed vocabulary is registered in CODE_GROUPS (no orphan constant)");
 for (const k of Object.keys(CODE_GROUPS)) {
   assert(Array.isArray(CODE_GROUPS[k]) && CODE_GROUPS[k].length > 0, "CODE_GROUPS." + k + " is a non-empty array");
   for (const c of CODE_GROUPS[k]) assert(isKnownCode(c), "isKnownCode(" + c + ") is true");
@@ -327,6 +329,8 @@ function annotationCode(a) {
   const m3 = /^stack:(stale-capture):/.exec(a);
   if (m3) return m3[1];
   const m2 = /^stack:([a-z-]+)$/.exec(a);
+  const m4 = /^state:([a-z-]+)$/.exec(a);
+  if (m4) return m4[1];
   if (m2) return m2[1];
   return null;
 }

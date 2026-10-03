@@ -143,6 +143,7 @@ stack-env: stack-unavailable | ref-unavailable | shallow-clone
 stack-advisory: stale-capture
 verification-unavailable: gh-missing | repo-parse | api-failed | ref-unavailable
 pending-reason: stack-unpushed | pushed-no-branch-runs
+state-red: state-marker-unparseable | state-predicate-out-of-vocabulary | bare-word-violation
 ```
 
 ### Redaction
