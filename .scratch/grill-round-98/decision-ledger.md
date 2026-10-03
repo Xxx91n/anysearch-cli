@@ -35,3 +35,17 @@
   - **首批锚（5 锚，各配证伪 fixture 方准入表）**：①`anchor:predicate-registry`（S-5，fixture=注入失真表断言 state 腿出 RED）②`anchor:reuse-pointer`（P-9，reuse 字段须被解析消费）③`anchor:ratchet-recount`（P-6，PENDING 类首发锚，挂封闭 PENDING 码进 deferred registry）④`anchor:bare-word-single-source`（P-8，fixture=注入缺词表断言裸词漏报）⑤`anchor:vocab-guards`（R96 审计 B3 词表守卫常量各仅 1 次出现——不收则首次扩表即复现同型装饰）。
 - **显式约束·负向需求**：①禁并入 handoff-lint（文档面与代码面混管，违 R97 D-004 两速分权与靶位边界）；②禁只挂单测套件（watcher shares fate with observed——测试被删/跳过即装饰回归无闸；单测失败与门禁 RED 是不同账本条目，破坏失效语义机械唯一性）；③禁 monkeypatch（可变导出与 frozen 注册表+fail-closed 语义正交冲突，还原失败=跨测试污染）；④禁复制判定核源码改注册表（双源维护=锚自变装饰，P-8 同型）；⑤禁 4 锚漏 vocab-guards（同型豁免，违 D-001⑤精神）；⑥合法重构未走重锚仪式时双红（锚 RED+消费缺失 RED）为 fail-closed 设计意图——首次触发的重锚成本须写进 ADR Consequences 防误读 flaky；⑦开放面检测仍禁（D-001 既定），未来扩表走封闭通道，开放面留作 ADR Known-Risk。
 - **状态**：current
+## D-004 — R98 票序与簿记结构（T0 land→T1 返工→T2 立法→T3 检测器→T4 簿记→T5 收口）
+
+- **原问题**：R98 票序与簿记——六票结构（goal 定锚+land 执行窗 / 返工前置轨 / 立法包 / 检测器实现 / 簿记 / 收口）与簿记载体（ADR-0099 单件 / 词条区 / deferred 票 / 实现分支形态）。
+- **用户原回答原文**：「采纳」
+- **规范化需求**：
+  - **T0 定锚+land 执行窗**：`.scratch/grill-round-98/goal.md`（三轨名义+范围外清单+风险登记三件=CI 首红 / run-URL PENDING 边界 / land 绕过 review 的替代保证）；owner 授权窗内执行——前置闸门 `node scripts/ship-gate.mjs` 复跑（已由裁量升为必做）→ `but land r97-audit-reanchor --whole-stack`（ff）→ `but pull` → 依次 land 余栈（grill-docs 栈含本账本 / r97-audit-ledger / r96-audit-loop2 / r95-audit-loop2 / r95-audit）→ 每次 land 后失效声明按重锚仪式改述 → 观测首次真实 CI run。
+  - **T1 前置义务轨（返工 R1~R8/R10）**：先于一切新立法/新实现——方向性修复先行（R1 S-1 假绿方向 / R8 P-7 降级方向），随后 R3 P-8 单源化 / R4 P-9 reuse 保障 / R5 P-6 recount / R6 P-2 清算义务补码 / R7 P-3 形态二 PENDING 挂接 / R2 S-2 断言补网；R10 CHANGELOG 分行随簿记件。修完重跑同一套验收电池（check 8/8、build 5/5、test 13/13、真值表 357/0、E2E 270/0、8 包 tgz、ship-gate exit 0+green、CLI/MCP 测活、5 面适配器断言、memory-eval 126/126），断言数只升不降。R3/R4/R5 修复产物=5 锚中 3 锚的真实消费方（dogfooding）。
+  - **T2 立法包**：ADR-0099 单件（第五形态判据+锚注册表 schema+两枚自指钉+参数化注入+双红后果入 Consequences+开放面入 Known-Risk）+ CONTEXT「Grill Round 98 Terms」词条区（~8 条）+ 锚注册表数据结构 + 首批证伪 fixture 骨架。
+  - **T3 检测器实现**：判定核 `env.registry` 参数化 + ship-gate 自检腿薄壳（壳执行 fixture / 核判 kill·no-kill）+ 静态前检分流（永不独立出 RED）+ ratchet 类封闭 PENDING 码注册 + 单测增量（断言只升）。
+  - **T4 簿记**：CHANGELOG r98 节（feat/fix/docs 分行=R10 合规自证）+ deferred registry 两新票（ratchet-recount 升 RED 排程 / 开放面扩展示范）+ `no-pr`/`unpublished` 既有 deferred 沿账不动 + ADR-0099 Consequences/Known-Risks 回填 + ADR index 再生成。
+  - **T5 收口**：轮报 + closeout（claims 用 verbatim kind 自证）+ next-round.md 轮回覆写 R98→R99 + 三态骨架（全绿/降格/F-bug 承接）+ land 后声明重锚核验（收口清算义务「栈空∨deferred 在册」本轮首次机检兑现=R6 修复验收场）。
+  - **簿记裁定**：ADR-0099 单件；词条区 ~8 条；deferred 两新票；实现分支单支 `r98-anchor-detector`（land 后干净 main 上开栈，返工 commit 在前 feat commit 在后）。
+- **显式约束·负向需求**：①返工轨必须先于正题立法/实现（先修后检——检测器上线瞬间存量违规为零或显式 baseline）；②Land 先于一切 R98 实现 commit（D-001 承接 R97 D-002 时序顺延）；③断言数只升不降（R96 P5 教训）；④grill 期不动源码——T0~T5 全属实现期；⑤轮报/交接件中的状态声明须用 R97 立法的 state 标记语法（形态一自 dogfood）；⑥范围外沿用 D-001⑥ 清单。
+- **状态**：current
