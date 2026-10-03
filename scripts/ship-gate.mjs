@@ -860,6 +860,21 @@ function stepStaticAssertions() {
               }
               verified++;
             }
+          } else if (c.kind === "verbatim") {
+            // ADR-0098 D4: whole-sentence byte anchor against the count-transposition
+            // blind spot (same count, rewritten meaning, silently green). The text
+            // must occur byte-identically; a rewrite without the re-anchor ritual
+            // (reason + audit record + visible recount) reddens here instead of
+            // drifting silently. Ritual companion: reason is mandatory so the
+            // anchor stays reviewable; reauthored counts ritual passes.
+            if (!c.file || typeof c.text !== "string" || !c.text) fail('ADR-0098 D4: ' + tag + ' needs file + non-empty text');
+            if (typeof c.reason !== "string" || !c.reason.trim()) fail('ADR-0098 D4: ' + tag + ' needs a non-empty reason (re-anchor ritual)');
+            if (!Number.isInteger(c.reauthored) || c.reauthored < 0) fail('ADR-0098 D4: ' + tag + ' needs a non-negative integer reauthored count');
+            const fp = path.join(ROOT, c.file);
+            if (!fs.existsSync(fp)) fail('ADR-0098 D4: ' + tag + ' file missing: ' + c.file);
+            const text = fs.readFileSync(fp, "utf8");
+            if (!text.includes(c.text)) fail('ADR-0098 D4: ' + tag + ' verbatim sentence absent — rewritten without the re-anchor ritual');
+            verified++;
           } else {
             fail('ADR-0081 D-004: unknown claim kind ' + c.kind + ' (' + c.id + ')');
           }

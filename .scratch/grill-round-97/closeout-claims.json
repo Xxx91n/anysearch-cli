@@ -1,0 +1,24 @@
+{
+ "schema": "anysearch/closeout-claims@1",
+ "round": 97,
+ "claims": [
+  {
+   "id": "r97-t3-adr-title",
+   "kind": "verbatim",
+   "claim": "ADR-0098 title sentence byte anchor",
+   "file": "docs/adr/0098-architecture-grill-round-97-selfcheckable-declarations.md",
+   "text": "# ADR-0098: Grill Round 97 — 自造失效声明可机检类别（统一立法 + 形态一/三实现 + 形态二先立规则）",
+   "reason": "initial-anchor: category legislation title; audit in .scratch/grill-round-97/reports/2026-10-03-report.md",
+   "reauthored": 0
+  },
+  {
+   "id": "r97-t3-context-terms",
+   "kind": "verbatim",
+   "claim": "CONTEXT R97 terms zone heading byte anchor",
+   "file": "CONTEXT.md",
+   "text": "## Grill Round 97 — Terms (ADR-0098)",
+   "reason": "initial-anchor: glossary zone heading; audit in .scratch/grill-round-97/reports/2026-10-03-report.md",
+   "reauthored": 0
+  }
+ ]
+}
