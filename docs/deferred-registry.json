@@ -1202,6 +1202,18 @@
    "pending_anchors": [
     "anchor:ratchet-recount"
    ]
+  },
+  {
+   "id": "defer-r98-anchor-open-surface-demo",
+   "type": "deferred-with-review",
+   "title": "锚扩表示范票: 开放面检测首张扩表演示",
+   "source_adr": "docs/adr/0099-architecture-grill-round-98-fifth-morphology.md",
+   "owner": "anysearch-platform",
+   "opened_at": "2026-10-03",
+   "review_cadence": "next enforcement-anchor leg touch + quarterly",
+   "status": "open",
+   "evidence": "ADR-0099 Known-Risk 1：开放面外约束逃逸——闭表只覆盖已登记锚。未来扩表须走封闭通道：新锚携证伪 fixture 方准入表（自指钉①），本票为首张扩表的闭环验收场景（扩表实现未做，首张扩表即演示）。",
+   "monitoring_channel": "ship-gate enforcement-anchors leg + quarterly"
   }
  ]
 }

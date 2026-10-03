@@ -1813,3 +1813,32 @@ PENDING 的两个亚种必须分流标注：verified-PENDING = 作者声明的�
 
 ### Closeout Clearing Obligation（收口清算义务）
 轮收口机械条目「栈空 ∨ deferred 在册」；一句话条款不配细则。_Avoid_: 栈残留无登记。来源：R97 D-006。
+
+## Grill Round 98 — Terms (ADR-0099)
+
+### Fifth Morphology（第五形态）
+ADR 宣称机器约束 ∧ 实现零消费 → RED。同族缺陷最深一层：约束本身可以没有消费方（声明可机检 ≠ 约束被消费）。_Avoid_: 注册表声明但不读；字段是字符串不解析。来源：R98 D-001(a) + R97 审计四实例实证。
+
+### Enforcement Anchor（执行锚）
+锚注册表条目 `{id, subject, constraint, probe, invalidate}`：锚 ID / 宣称的机器约束 / 证伪 fixture 指针 / 失效触发。扩表须改门禁代码 fail-closed。_Avoid_: 无 fixture 的锚条目（不可杀变异体）；ADR 文本自动发现。来源：R98 D-002。
+
+### Falsification Probe（证伪探针）
+对真消费方注入失真锚条目并断言预期 RED 的探针函数（`enforcement-anchor-probes.mjs` 导出）。注入失真→消费方不红=装饰实锤。_Avoid_: monkeypatch；复制判定核源码改注册表。来源：R98 D-002 判定核。
+
+### Kill / No-Kill Verdict（杀/未杀判定）
+锚判定两值域：注入失真后消费方产出预期 RED = killed；无反应 = anchor-not-consumed RED。重构/绕行唯一机械判据=fixture 是否仍产出预期 RED。_Avoid_: 语义等价判断；裸零引用→RED。来源：R98 D-002 四族先例（mutation RIP/chaos/dead-man's/Pact）。
+
+### Unkillable Mutant（不可杀变异体）
+无可运行 fixture 的锚条目——等价于 mutation testing 中不可杀变异体，不准入表（probe 名不可解析即 anchor-unresolvable RED）。_Avoid_: 先准入表后补 fixture。来源：R98 D-002 自指钉①。
+
+### Seated Anchor（锚 PENDING 坐席）
+deferred registry `pending_anchors` 字段挂接锚 ID：runner 仍执行探针（观察不缺席）但输出 skip 非 fail；关闭票即自动升全量 kill 判定。_Avoid_: 坐席即豁免不执行；第二升降通道。来源：R98 D-003 + 形态二 ratchet 同构。
+
+### Registry Parameterization（注册表参数化）
+`env.registry ?? STATE_PREDICATE_REGISTRY`——判定核签名级注入面，「唯一引用即自声明」在签名层面不再可能；缺省=生产表路径=隐式 fixture。_Avoid_: 核内硬引用注册表常量。来源：R98 D-003(b) S-5 根治。
+
+### Anchor-Not-Consumed（装饰实锤码）
+探针失真注入后消费方未产出预期 RED 的封闭 RED 码——装饰声明的机器判词。_Avoid_: info 级标注；报告不开门禁。来源：R98 D-002。
+
+### Dissolved Stack（溶栈声明）
+Stack 行 land 后变体：GitButler 元素已不可解的分支以 dissolved 形态登记——ref 缺失即核验 GREEN，ref 复活即 declaration-fact-conflict，ref 在但空=非溶栈。_Avoid_: 残留 but-id 假核验；空 ref 冒认 dissolved。来源：R98 T1 语法面。

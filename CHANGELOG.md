@@ -4,6 +4,35 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0099 r98: 第五形态【装饰性机器约束检测】+ R97 审计返工（R1~R8/R10）
+
+### Added
+
+- **enforcement-anchors 自检腿（T3）**：ship-gate 新增与 handoff-lint 平级的 `enforcement-anchors` 腿（`scripts/enforcement-anchors.mjs`）——读 `docs/enforcement-anchors.json` 闭锚注册表，逐条执行证伪探针判 kill/no-kill；`anchor-unresolvable`（无 fixture 不准入表）/ `anchor-not-consumed`（不杀即红）两枚自指钉 fail-closed；注册表文件不可读即 RED。
+- **五证伪探针（T3）**：`scripts/enforcement-anchor-probes.mjs`——`anchor:predicate-registry` / `anchor:reuse-pointer` / `anchor:bare-word-single-source` / `anchor:vocab-guards` / `anchor:ratchet-recount`；探针经模块导出自指解析，名实漂移不可达稳态。
+- **注册表参数化（T3/R1 配套）**：判定核 `env.registry ?? STATE_PREDICATE_REGISTRY`——「唯一引用即自声明」在签名层面不再可能（S-5 根治），缺省=生产表路径兼作隐式 fixture。
+- **dissolved 栈声明语法（T1）**：Stack 行 land 后变体——ref 缺失即 GREEN、ref 复活即 `declaration-fact-conflict`、ref 在但空=非溶栈；模板语法家同轮登记；3 fixture（verified/contradicted/uncollected）。
+- **清算腿机检（T1/R6）**：`assessClearingLeg`——收口清算义务「栈空 ∨ deferred 在册」首次机器兑现；`clearing:` 注解面 + `clearingRed`/`clearingEnv` 两新治理组。
+- **claims-verbatim 抽取（T1/R5 配套）**：`scripts/claims-verbatim.mjs`——verbatim claim 检查成可注入模块；`reauthored` 与 `reanchor_log` recount 比对并上表面（P-6「ratchet 可见的重批计数」兑现）。
+- **deferred registry `pending_predicates` / `pending_anchors` 字段（T1/R7）**：形态二 PENDING 位与锚 PENDING 坐席统一挂点——marker 点名 seat 谓词→surfaced PENDING 非 OOV RED；坐席锚执行探针但 skip 非 fail，关票即自动升级。
+- **E2E/真值表扩网（T1/R2）**：未采集分支显式 env-PENDING 对、清算三态、deferrd-PENDING 位、词表双向锁、检测器自身四格失效（unresolvable/不杀/坐席/注册表不可读）；真值表 357→444 / E2E 270→360 断言只升。
+
+### Fixed
+
+- **S-1 未采集≠缺失方向反转（R1）**：分支事实未采集（git/but 不可用）从静默 GREEN 改显式 env-PENDING——fail-open 方向根除，缺失观察不再折叠成空事实。
+- **P-7 误降级方向收窄（R8）**：`parseButStatusIds` 符号开头 detail 行不再整体降级 `butOk=false`——detail 行收窄为逐行丢弃，Stack 元素只在 but 真不可用时 env-PENDING。
+- **P-9 reuse 指针消费（R4）**：`resolveReuse` 将注册表 `reuse` 字符串解析为薄壳导出函数实参——不可解析 spec 即源降级，`no-branch-runs` 的 env 源按名接线非硬编码。
+- **P-8 裸词单源化（R3）**：`STATE_BARE_RES` 从 `STATE_PREDICATES` 派生——删谓词即裸词漏报逃逸（双源实锤面消除），扩表漏改即漏扫不再可能。
+- **P-5 CHANGELOG 分行（R10）**：本节及 R97 节按 feat/fix/docs(errata) 分行——errata 从 Fixed 条内析出 Docs 类。
+- **P-2 清算义务补码（R6）**：见 Added 清算腿（降格方案放弃，防 D-002 账本连锁改写）。
+
+### Docs
+
+- **ADR-0099**：第五形态立法——行为消费验证为主+静态前检永不独立出 RED / 闭锚注册表 schema + 两枚自指钉 / 参数化注入 / ratchet 类 PENDING 坐席 / 双红设计意图入 Consequences / 开放面入 Known-Risk。
+- **CONTEXT `Grill Round 98 — Terms` 九词条**：第五形态 / 执行锚 / 证伪探针 / kill-no-kill / 不可杀变异体 / 锚坐席 / 注册表参数化 / anchor-not-consumed / 溶栈声明。
+- **handoff-template 同步**：dissolved 语法家 + state-PENDING/clearing-RED/clearing-env 词表行——模板↔CODE_GROUPS 双向等集。
+- **deferred 两新票**：`defer-r98-anchor-ratchet-recount-seat`（ratchet 类锚坐席）+ 开放面扩展示范票。
+
 ## Unreleased — ADR-0098 r97: 自造失效声明可机检类别【统一立法 + 形态一/三实现 + 形态二先立规则】
 
 ### Added
@@ -14,7 +43,11 @@ All notable changes to this project are recorded here. Format follows
 
 ### Fixed
 
-- **N5 锚覆盖缺口（T4）**：`parseButStatusIds` 标记类放宽为单个非空白非制表符号 + 未知形状整体解析降级（but 视为不可用 / env-PENDING）+ E2E 冻结样本三 glyph 全集 + ADR-0097 Known-Risk 1 errata 原条目注记。
+- **N5 锚覆盖缺口（T4）**：`parseButStatusIds` 标记类放宽为单个非空白非制表符号 + 未知形状整体解析降级（but 视为不可用 / env-PENDING）+ E2E 冻结样本三 glyph 全集。
+
+### Docs
+
+- **ADR-0097 Known-Risk 1 errata 原条目注记（T4）**：N5 修复对应的 errata 注记从 Fixed 条内析出（R98 R10/P-5 分行合规回填）。
 
 ### Deferred
 
