@@ -110,6 +110,21 @@ The closed RED codes are:
   `green-claim-falsified`
 - Stack leg: `stack-line-missing` / `stack-chain-empty` / `but-id-not-resolved` /
   `sha-not-commit` / `chain-tail-not-in-branch`
+- State leg: `state-marker-unparseable` / `state-predicate-out-of-vocabulary` /
+  `bare-word-violation` (plus reused `declaration-fact-conflict`)
+
+### State markers
+
+Self-made state declarations ride single-line HTML comment markers (the grammar owner); the run-URL `PENDING{code}` is the precedent shape:
+
+```
+<!-- state: unpushed <branch> @ <iso-date> -->
+<!-- state: unlanded stack @ <iso-date> -->
+```
+
+- Closed predicates: `unpushed` (no `origin/<branch>` ref) / `unlanded` (`origin/main..origin/<branch>` non-empty) / `no-branch-runs` (no workflow `on.push` covers the branch). Live `no-pr` / `unpublished` ride the extension ticket, never the prose (writing one is `state-predicate-out-of-vocabulary`).
+- `args` is a branch name, or `stack` (resolves the Stack line branch); no `--`; the date is the writing day and must not be in the future; the marker owns its line.
+- A predicate word in prose needs a legal marker in the same file (bare-word violation); code spans / fences are not scanned; a fact contradiction is `declaration-fact-conflict`; unreadable facts are `state:ref-unavailable` (PENDING).
 
 ### Degradation annotations（降级标注格式）
 
@@ -121,6 +136,7 @@ with an explicit annotation instead of a silent pass:
   (`ref-unavailable` = the origin-ref facts could not be READ; a fact that was
   never read is not an empty fact, so the gate never reports it as verified)
 - Stack leg: `stack-unavailable` / `ref-unavailable` / `shallow-clone`
+- State leg: `state:ref-unavailable`
 - Stack leg, advisory only (never blocking): `stale-capture:<but-id>:<days>d`
 
 These are non-blocking by design (CI has no `but` and no `origin/<branch>`
@@ -166,4 +182,5 @@ The handoff-lint leg prints one line per closeout doc; the fixture truth table
 and the E2E smoke live in `packages/store/test/handoff-lint-verdict.test.mjs`
 and `packages/store/test/handoff-lint-e2e.test.mjs`, sharing
 `packages/store/test/fixtures/handoff-lint/`. The legislative record is
-`docs/adr/0097-architecture-grill-round-96-handoff-lint-three-state-exit-semantics.md`.
+`docs/adr/0097-architecture-grill-round-96-handoff-lint-three-state-exit-semantics.md`
+and `docs/adr/0098-architecture-grill-round-97-selfcheckable-declarations.md`.

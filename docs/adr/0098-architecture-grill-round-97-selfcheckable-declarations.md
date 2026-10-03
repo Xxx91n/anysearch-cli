@@ -47,6 +47,8 @@ Accepted (grill round r97; 票序 T0→T7 per `.scratch/grill-round-97/handoffs/
 
 - 权威文档（ADR/CHANGELOG/轮报）实测数值须同段挂复现命令或治理型 marker 锚（借 `<!-- machine-local: ... -->` 标记语法族）。
 - 机检入 lint 先落 PENDING 位（surfaced 非阻断），ratchet 收敛后升 RED。deferred：形态二 ratchet→RED 排程票（见 deferred-registry）。
+- 实测值定义：运行复现命令在注记树上产出的数字（命令 + 树 + 时间三要素同段）；手工计数、估算、转述不算实测值，不得以实测口吻陈述。
+- marker 示例沿 `machine-local` 语法族：`<!-- machine-local: <reason> @ <YYYY-MM-DD> -->`；机检腿以 PENDING 位挂接（surfaced 标注先行），ratchet 收敛后升 RED，排程见 T6 登记的 deferred 票。
 - 存量声明过渡期豁免 = 流程豁免（No-Grandfathering 合规）；新声明自立法日起须过机检。
 
 ### D6 生效域边界
