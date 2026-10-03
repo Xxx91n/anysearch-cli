@@ -7,7 +7,7 @@ LOOP 1 栈：`r96-audit` → zky（审计报告 + LOOP1 交接件）
 
 ## 绿色 run URL（必填）
 
-PENDING: stack-unpushed — `origin/r96-audit-loop2` 无 ref（本审计窗未 push、未开 PR，符合「不 push 不 PR」纪律）；谓词可离线自证：`git rev-parse --verify --quiet refs/remotes/origin/r96-audit-loop2` 非零。
+PENDING: pushed-no-branch-runs — `origin/r96-audit-loop2` 的 ref **存在**（2026-10-03 由 owner 授权 push 后实测），但本仓 `.github/workflows` 的 `on.push` 仅覆盖 `main`，特性分支 push 不产出任何 run，故本审计窗无本轮 run（ADR-0097 F8-c 谓词，门禁离线自证）。未 land、未 PR、未 tag。**本行原为 `PENDING: stack-unpushed`（审计窗当时未 push），push 后按 R95 F5R 纪律改述。**
 
 > 旁注（非本轮 run，不满足本字段）：共同基底 `3642d494` 的三条绿 run 仍是 main 基线 run，head_sha 不在栈成员集内 —— ADR-0097 三态语法下只作旁注。
 

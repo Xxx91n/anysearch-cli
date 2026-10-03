@@ -11,9 +11,9 @@ Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagge
 
 ## 绿色 run URL（必填）
 
-PENDING: stack-unpushed — 本审计窗的三个栈（`r96-audit-loop2` / `r96-audit` / `r96-handoff-lint` / `r96-grill-docs`）在写下本行时均无 `origin/<branch>` ref，谓词可离线自证：`git rev-parse --verify --quiet refs/remotes/origin/r96-audit-loop2` 非零。
+PENDING: pushed-no-branch-runs — 本审计窗的四个栈（`r96-handoff-lint` / `r96-grill-docs` / `r96-audit` / `r96-audit-loop2`）的 `origin/<branch>` ref 于 2026-10-03 由 owner 授权 push 后**全部存在**（逐个 `git ls-remote --heads` 实测），但本仓 `.github/workflows` 的 `on.push` 仅覆盖 `main`（ci.yml / ship-gate.yml / native-smoke.yml），特性分支 push 不产出任何 run —— 故无本轮 run（ADR-0097 F8-c 谓词，门禁离线自证）。未 land、未 PR、未 tag。
 
-> ⚠️ **push 后本行立即失效**：若本审计窗执行了 push，本行须按门禁可自证的谓词改述为 `PENDING: pushed-no-branch-runs`（ref 存在 ∧ 无 workflow 的 `on.push` 覆盖特性分支）。**这正是 R95 F5R 教训与 R97 候选正题本身。**
+> **本行的失效史（本身就是 R97 正题的活证据）**：本件初版写的是 `PENDING: stack-unpushed`（push 前为真），并预置了一个警告框说「push 后本行立即失效」。push 执行后，收口件的同型声明**被门禁以 `declaration-fact-conflict` 当场抓出**（`PENDING{stack-unpushed} contradicted: origin/r96-handoff-lint exists`），同一次调用还抓出 Stack 行链尾 SHA 因 amend 失效（`chain-tail-not-in-branch: 92abd9ee (zlr)`）——即 ADR-0097 D-002③ 的机械杀手在真实数据上开了一枪。四处声明（本件 + LOOP1 + LOOP2 + 收口件）随后按 R95 F5R 纪律逐条改述。**这是三次同族缺陷里第一次被机器抓到，而非人工审计。**
 
 > 旁注（非本轮 run，不满足本字段）：共同基底 `3642d494` 的三条绿 run 仍是 main 基线 run，head_sha 不在栈成员集内 —— ADR-0097 三态语法下只作旁注。
 
@@ -74,7 +74,7 @@ B1~~B4 四项阻断真修复（LOOP2 逐条回读源码复核）；N1~~N4/N7/R5~
 - **R96 未 land**：origin/main 仍在合并基点 `3642d494`，R96 的 7 个 commit 未进主线。
 - **`r96-handoff-lint` 叠在 `r95-exec` 之上**（19 commit 未 land），R96 自身相对 `r95-exec` 独有 7 commit。**直接 land R96 会连带 R95 的 19 个 commit** —— 应先 `r95-exec` land main，再对本栈 `but pull` 重基。
 - **「已合并分支」集合为空**：实测 `origin/main` 自合并基点以来新增 0 commit，**没有任何 R95/R96 分支已合并进 main**。故不存在可安全删除的已合并分支。语义上冗余但**未合并**的候选只有一个：`r95-rework`（相对 `r95-exec` 独有 0 commit，但相对 main 独有 13 commit）—— R95 LOOP3 已实测该分支在 GitButler 工具面下**不可安全删除**（`but uncommit` 报 merge conflicts 拒绝；`but move --unstack` 会在 `r95-exec` 上留 conflict，已 undo 回退）。风险为零但需 owner 决定，处置选项见 R95 LOOP3 交接件。
-- **push 会使交接件的 `PENDING: stack-unpushed` 立即失效** —— 改述规则见本件「绿色 run URL」节的警告框。这是 F5R 同族，**不要留给下一个接手者发现**。
+- **push 已执行（2026-10-03，owner 授权）**：`r96-handoff-lint` / `r96-grill-docs` / `r96-audit-loop2`（连带 `r96-audit`）三个栈顶各推一次，四个 `origin/<branch>` ref 全部建立。**push 立即使四处交接件的 `PENDING: stack-unpushed` 失效**，其中收口件那一条**被门禁以 `declaration-fact-conflict` 当场抓出**（同一次调用另抓出 Stack 行链尾 SHA 因 amend 失效的 `chain-tail-not-in-branch`）。四处已逐条改述为 `PENDING: pushed-no-branch-runs`。**这次是机器抓到的，不是人工审计抓到的** —— 与 R95 F5R、R96 P5/F1 两次形成对照。
 
 ### 本审计窗自身失误（三起，均已当场自纠并记账）
 
