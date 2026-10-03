@@ -67,3 +67,4 @@ Accepted (grill round r97; 票序 T0→T7 per `.scratch/grill-round-97/handoffs/
 2. 活体谓词 flaky：`no-pr`/`unpublished` 入表即 flaky 假红风险，故延后扩表。
 3. 标记散文并存 intent 漂移：裸词规则 + 单正则解析为栏；frontmatter 只剥离不校验已否。
 4. 全量回溯海啸：禁全量回溯门禁化；报告级只读。
+5. GREEN 兑现边界：ff-land 后 origin/main..origin/<branch> 为空，栈内 commit 集为空，run-URL 字段仍只能 PENDING；GREEN 真兑现待 PR 拓扑。

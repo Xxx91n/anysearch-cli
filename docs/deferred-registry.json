@@ -1159,6 +1159,30 @@
    "closed_by": "ADR-0097",
    "closed_by_adr_path": "docs/adr/0097-architecture-grill-round-96-handoff-lint-three-state-exit-semantics.md",
    "closed_at": "2026-10-02"
+  },
+  {
+   "id": "defer-r97-morphology-two-ratchet",
+   "type": "deferred-with-review",
+   "title": "形态二机检腿 ratchet 排程: PENDING 位收敛后升 RED",
+   "source_adr": "docs/adr/0098-architecture-grill-round-97-selfcheckable-declarations.md",
+   "owner": "anysearch-platform",
+   "opened_at": "2026-10-03",
+   "review_cadence": "next handoff-lint leg touch + quarterly",
+   "status": "open",
+   "evidence": "R97 T1/T5 立法先行(ADR-0098 D5 全文+CONTEXT词条)；机检实现未做，PENDING 位无挂接代码，收敛后升RED。",
+   "monitoring_channel": "ship-gate handoff-lint leg + quarterly"
+  },
+  {
+   "id": "defer-r97-registry-extension-demo",
+   "type": "deferred-with-review",
+   "title": "扩表示范票: no-pr/unpublished 活体谓词首张扩表",
+   "source_adr": "docs/adr/0098-architecture-grill-round-97-selfcheckable-declarations.md",
+   "owner": "anysearch-platform",
+   "opened_at": "2026-10-03",
+   "review_cadence": "next handoff-lint leg touch + quarterly",
+   "status": "open",
+   "evidence": "R97 T1 封闭注册表+OOV fixture锁死活体词表外；扩表实现未做，首张扩表即闭环验收场景。",
+   "monitoring_channel": "ship-gate handoff-lint leg + quarterly"
   }
  ]
 }

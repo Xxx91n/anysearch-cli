@@ -35,6 +35,8 @@ Stack (primary key = GitButler change-ids; SHAs are time-lagged):
 ## Known risks / deferred
 ```
 
+Closeout clearing rule: 轮收口时栈须空，否则残留分支须在 docs/deferred-registry.json 在册。
+
 ## Field rules
 
 ### Stack line — three machine-checked elements

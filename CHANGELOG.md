@@ -4,6 +4,22 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0098 r97: 自造失效声明可机检类别【统一立法 + 形态一/三实现 + 形态二先立规则】
+
+### Added
+
+- **形态一状态腿（T2）**：单行 `state:` 标记解析 + 裸词违例扫描 + `unpushed`/`unlanded`/`no-branch-runs` 三离线谓词 + 判定集成；封闭注册表常量 + 10 成对 fixtures；真值表 310→357 / E2E 207→270（复现：`node packages/store/test/handoff-lint-verdict.test.mjs` / `node packages/store/test/handoff-lint-e2e.test.mjs`）；自移靶位 + 报告/门禁两速分权。
+- **形态三 verbatim 锚（T3）**：claims schema 新增 `verbatim` kind（整句字节级）+ 重锚仪式（理由 + 审计 + 重批计数）+ R97 首批 dogfood 锚。
+- **模板状态声明位（T5）**：handoff-template 标记语法节 + ADR-0098 形态二内容规则全文（实测值定义/marker 示例/PENDING 位挂接与 ratchet 排程引用）。
+
+### Fixed
+
+- **N5 锚覆盖缺口（T4）**：`parseButStatusIds` 标记类放宽为单个非空白非制表符号 + 未知形状整体解析降级（but 视为不可用 / env-PENDING）+ E2E 冻结样本三 glyph 全集 + ADR-0097 Known-Risk 1 errata 原条目注记。
+
+### Deferred
+
+- 形态二 ratchet→RED 排程票 + 扩表示范票（`no-pr`/`unpublished`）见 `docs/deferred-registry.json`（R97 T6 登记）。
+
 ## Unreleased — ADR-0097 r96: handoff-lint 门禁假绿收口【三态受控出口语义】（模板↔门禁 PENDING 冲突 + 祖先性冒充/静默折叠 + CI 拓扑不可满足三缺陷闭环）
 
 ### Changed
