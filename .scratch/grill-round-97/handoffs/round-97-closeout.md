@@ -1,9 +1,10 @@
 # Handoff — Grill Round 97 → R98（执行轮收口交接；ADR-0098 可机检类别首件）
 
 Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：
-r97-selfcheckable → upo (`b67ddbc8` @ 2026-10-03) → pnq (`f923be49` @ 2026-10-03) → spu (`5280704f` @ 2026-10-03) → vrt (`7b28eca7` @ 2026-10-03) → xvw (`fe87e8a4` @ 2026-10-03) → lop (`fb312b97` @ 2026-10-03) → lsz (`f2776a0f` @ 2026-10-03) → krl (`1aedaee3` @ 2026-10-03) —— 本栈叠于 `r96-handoff-lint` 之上（R96 实现栈顶；本分支从未 push，`origin/r97-selfcheckable` 无 ref，2026-10-03 实测）；8 个 commit 无 amend，SHA 为初写时值；权威值以 `but log r97-selfcheckable` 为准
+r97-selfcheckable → upo (`b67ddbc8` @ 2026-10-03) → pnq (`f923be49` @ 2026-10-03) → spu (`5280704f` @ 2026-10-03) → vrt (`7b28eca7` @ 2026-10-03) → xvw (`fe87e8a4` @ 2026-10-03) → lop (`fb312b97` @ 2026-10-03) → lsz (`f2776a0f` @ 2026-10-03) → krl (`1aedaee3` @ 2026-10-03) —— 本栈叠于 `r96-handoff-lint` 之上（R96 实现栈顶）；**已 push、未 land、未 PR、未 tag**（owner 授权后 2026-10-03 push，`origin/r97-selfcheckable` = `a6c22612` 实测存在）；8 个 commit 无 amend，SHA 为初写时值；权威值以 `but log r97-selfcheckable` 为准
 
-<!-- state: unpushed r97-selfcheckable @ 2026-10-03 -->
+<!-- state: unlanded stack @ 2026-10-03 -->
+<!-- re-anchor: 2026-10-03 owner 授权 push 后，原标记 `state: unpushed r97-selfcheckable` 立即失效（R95 F5R 纪律）。ref 已存在，故原谓词不再为真；按重锚仪式改述为「未 land」谓词（unlanded），该谓词当前仍为真：origin/main..origin/r97-selfcheckable 非空（36 commits 实测）。reauthored=1。 -->
 
 ## 已完成
 
@@ -21,7 +22,7 @@ R97 正题 A（自造失效声明可机检类别）实现闭环，B 轨（分支
 
 ## 绿色 run URL（必填）
 
-PENDING: stack-unpushed — `origin/r97-selfcheckable` 的 ref 不存在（本分支从未 push；2026-10-03 实测 `git rev-parse --verify refs/remotes/origin/r97-selfcheckable` 为空）。取得本轮 run 须 push + land 到 `main` 或开 PR。**land/push 后本行与文首标记同时失效**（R95 F5R 纪律），须按重锚仪式改述，不许静默留旧。
+PENDING: pushed-no-branch-runs — `origin/r97-selfcheckable` 的 ref **存在**（owner 授权后 2026-10-03 push，`git rev-parse --verify refs/remotes/origin/r97-selfcheckable` = `a6c22612` 实测），但本仓 `.github/workflows` 的 `on.push` 仅覆盖 `main`（ci.yml / ship-gate.yml / native-smoke.yml / release.yml / tau-python.yml 均为 `branches: [main]`），特性分支 push 不产出任何 run —— 故「本轮 run URL」在特性分支上物理不可得（ADR-0097 F8-c 谓词，门禁离线自证）。取得本轮 run 须 land 到 `main` 或开 PR。**本行原为 `PENDING: stack-unpushed`（审计窗当时未 push），push 后立即失效并按 R95 F5R 纪律改述**——与 R96 四处改述同型。
 
 ## 下一轮候选
 
