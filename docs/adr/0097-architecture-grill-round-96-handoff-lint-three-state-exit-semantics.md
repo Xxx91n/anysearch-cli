@@ -89,6 +89,8 @@ T6 收口交接按下列三态之一落笔，措辞取本件预注册文本（�
 ## Known-Risks（轮前预写，均先于实现落地）
 
 1. **`but status` 解析契约钉死 but 版本**：解析依赖 `but status -fv` 的行形（bullet + CLI id 首 token + change-id/date 列）。but 版本升级若改行形，元素 (i) 会退化为 `stack-unavailable`（env-PENDING，非误红）而非静默假绿——失效方向安全，但须在下次 but 升级时复核；契约测试（E2E §E）以冻结行文样本锚定。
+
+   > Errata 2026-10-03 (R97 N5 LOOP3实证): 本条预测方向更正——行形变化实测退化为逐行丢行硬RED，而非预言的 stack-unavailable (env-PENDING)。根因: 旧解析器标记类只接受两种commit标记并静默丢行，而非整体解析失败。修法(R97 T4): 标记类放宽为单个非空白非制表符号 + 未知标记形状整体解析降级(but视为不可用/env-PENDING) + E2E冻结样本系统性覆盖三glyph全集。本注记为原条目内更正，不 supersede。
 2. **env-PENDING 非阻断政策**：CI 无 `but`、PR checkout 无 `origin/<branch>`，故环境降级在 CI 恒发生。政策=非阻断但**显式标注**（Observable Fail-Open）；反向风险是「降级成了常态出口」，监控锚=每次运行的 `[skip]` 行计数，异常升高须人工复核。
 3. **新鲜度界初值**：`STACK_CAPTURE_MAX_AGE_DAYS = 45`（宽松可配，经 env 注入）。过紧会误产 PENDING、轮间反复 lint；过松使「早已失效」伪装「晚跑」。超龄仅落 annotation，**永不产生 RED**（RED 词表封闭于三码）——故该界是卫生信号而非判定。
 4. **生效域自消退性**：round < 96 的 legacy 分支随轮次推进自然无人命中（lint 靶位=最新轮目录），最终可删；在删除前它是一段**有意的历史兼容**，不是待清理的豁免。
