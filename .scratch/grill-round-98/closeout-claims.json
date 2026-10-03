@@ -1,0 +1,33 @@
+{
+ "schema": "anysearch/closeout-claims@1",
+ "round": 98,
+ "claims": [
+  {
+   "id": "r98-t2-adr-title",
+   "kind": "verbatim",
+   "claim": "ADR-0099 title sentence byte anchor",
+   "file": "docs/adr/0099-architecture-grill-round-98-fifth-morphology.md",
+   "text": "# ADR-0099: Grill Round 98 — 第五形态：装饰性机器约束检测（闭锚注册表 + 行为消费验证 + 两枚自指钉）",
+   "reason": "initial-anchor: fifth-morphology legislation title; audit in .scratch/grill-round-98/reports/2026-10-04-report.md",
+   "reauthored": 0
+  },
+  {
+   "id": "r98-t2-context-terms",
+   "kind": "verbatim",
+   "claim": "CONTEXT R98 terms zone heading byte anchor",
+   "file": "CONTEXT.md",
+   "text": "## Grill Round 98 — Terms (ADR-0099)",
+   "reason": "initial-anchor: glossary zone heading; audit in .scratch/grill-round-98/reports/2026-10-04-report.md",
+   "reauthored": 0
+  },
+  {
+   "id": "r98-t3-anchor-registry",
+   "kind": "verbatim",
+   "claim": "enforcement-anchors.json first anchor id byte anchor (self-referential dogfooding)",
+   "file": "docs/enforcement-anchors.json",
+   "text": "\"id\": \"anchor:predicate-registry\"",
+   "reason": "initial-anchor: closed anchor registry first entry; audit in .scratch/grill-round-98/reports/2026-10-04-report.md",
+   "reauthored": 0
+  }
+ ]
+}

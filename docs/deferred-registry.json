@@ -1214,6 +1214,21 @@
    "status": "open",
    "evidence": "ADR-0099 Known-Risk 1：开放面外约束逃逸——闭表只覆盖已登记锚。未来扩表须走封闭通道：新锚携证伪 fixture 方准入表（自指钉①），本票为首张扩表的闭环验收场景（扩表实现未做，首张扩表即演示）。",
    "monitoring_channel": "ship-gate enforcement-anchors leg + quarterly"
+  },
+  {
+   "id": "defer-r98-stack-land-authorization",
+   "type": "deferred-with-review",
+   "title": "清算坐席: r98-anchor-detector 残留分支待 land 授权",
+   "source_adr": "docs/adr/0099-architecture-grill-round-98-fifth-morphology.md",
+   "owner": "anysearch-platform",
+   "opened_at": "2026-10-04",
+   "review_cadence": "R99 开工即处理（push/land 授权序列 D-001(c)）",
+   "status": "open",
+   "evidence": "收口清算义务「栈空∨deferred 在册」机器兑现：r98-anchor-detector 未 push 未 land（未获授权），残留分支经本票 covers 在册——clearing 腿 covered 非 RED；授权 land 后本票关闭即回落核验。",
+   "monitoring_channel": "ship-gate handoff-lint leg clearing sub-leg",
+   "covers": [
+    "r98-anchor-detector"
+   ]
   }
  ]
 }
