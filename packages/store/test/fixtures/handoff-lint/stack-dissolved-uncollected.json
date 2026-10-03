@@ -1,0 +1,75 @@
+{
+ "name": "green-verified",
+ "round": 96,
+ "description": "GREEN accepted: one cited run is stack-internal, success, required workflow, same repo.",
+ "doc": "# Handoff — Grill Round 96 → R97（夹具）\n\nStack（dissolved @ 2026-10-02）—— 交付栈已 ff-land 上 origin/main，但 ID/ref 随 land 注销，链留作历史定位：\n  r96-handoff-lint → aaa (`aaaaaaa1` @ 2026-10-02) → bbb (`bbbbbbb2` @ 2026-10-02)\n\n## 绿色 run URL（必填）\n\nPENDING: stack-unpushed\n\n## 下一轮候选\n\n- n/a\n",
+ "env": {
+  "now": "2026-10-02",
+  "repo": "Xxx91n/anysearch-cli",
+  "git": {
+   "ok": true,
+   "shallow": false,
+   "branchRefs": {},
+   "stackBranchMembers": {},
+   "commitObjects": {
+    "aaaaaaa1": "commit",
+    "bbbbbbb2": "commit"
+   },
+   "resolveSha": {
+    "aaaaaaa1": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "bbbbbbb2": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   }
+  },
+  "gh": {
+   "ok": true,
+   "runs": {
+    "1001": {
+     "head_sha": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+     "conclusion": "success",
+     "workflow": "ci",
+     "repo": "Xxx91n/anysearch-cli"
+    }
+   }
+  },
+  "but": {
+   "ok": true,
+   "ids": [
+    "aaa",
+    "bbb"
+   ]
+  },
+  "workflows": {
+   "ok": true,
+   "pushBranches": [
+    "main"
+   ],
+   "pushAllBranches": false
+  },
+  "deferred": {
+   "ok": true,
+   "covers": [
+    "r96-handoff-lint"
+   ],
+   "pendingPredicates": []
+  }
+ },
+ "expect": {
+  "verdict": "PENDING",
+  "scope": "three-state",
+  "runUrlState": "PENDING",
+  "stackState": "PENDING",
+  "redCodes": [],
+  "annotations": [
+   "clearing:ref-unavailable",
+   "run-url:verification-unavailable:ref-unavailable",
+   "stack:ref-unavailable"
+  ],
+  "runUrlVerifiedPending": false
+ },
+ "expectE2E": {
+  "verdict": "PENDING",
+  "runUrlVerifiedPending": true,
+  "annotations": [],
+  "redCodes": []
+ }
+}

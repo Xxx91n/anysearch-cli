@@ -1,7 +1,7 @@
 # Handoff — Grill Round 96 → R97（执行轮收口交接；ADR-0097 三态语法首件）
 
-Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：
-r96-handoff-lint → mwp (`e77b35ef` @ 2026-10-03) → lqv (`6335a5c4` @ 2026-10-03) → svk (`f9bd4ce7` @ 2026-10-03) → lsp (`c9614157` @ 2026-10-03) → ksz (`513d7d51` @ 2026-10-03) → zlr (`3ccf3f00` @ 2026-10-03) → lpu（自引用收尾 commit；SHA time-lagged 故不写入，以 `but log` 为准）—— 本栈叠于 `r95-exec` 之上（**已 ff-land 上 `origin/main`，2026-10-03 `but land r97-audit-reanchor --whole-stack` 顺带收编，land 即删 `origin/r96-handoff-lint` ref；未 PR、未 tag**）；返工与残留修复均已 amend 回各自提交（未增新 commit），故上方 SHA 为 amend 后 capture 时值，与提交消息中的历史 SHA 不同——权威值以 `but log` 为准
+Stack（dissolved @ 2026-10-03）—— 交付栈已随 `but land r97-audit-reanchor --whole-stack` ff-land 上 `origin/main`（ref 与但 ID 随 land 注销），链为 capture 时值，留作历史定位不再作但 ID 解析；本栈叠于 `r95-exec` 之上；**未 PR、未 tag**；返工与残留修复均已 amend 回各自提交：
+r96-handoff-lint → mwp (`e77b35ef` @ 2026-10-03) → lqv (`6335a5c4` @ 2026-10-03) → svk (`f9bd4ce7` @ 2026-10-03) → lsp (`c9614157` @ 2026-10-03) → ksz (`513d7d51` @ 2026-10-03) → zlr (`3ccf3f00` @ 2026-10-03) → lpu（自引用收尾 commit；SHA time-lagged 故不写入，以 `but log` 为准）
 
 ## 已完成
 

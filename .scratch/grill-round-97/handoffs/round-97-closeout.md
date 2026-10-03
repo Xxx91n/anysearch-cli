@@ -1,7 +1,7 @@
 # Handoff — Grill Round 97 → R98（执行轮收口交接；ADR-0098 可机检类别首件）
 
-Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：
-r97-selfcheckable → upo (`b67ddbc8` @ 2026-10-03) → pnq (`f923be49` @ 2026-10-03) → spu (`5280704f` @ 2026-10-03) → vrt (`7b28eca7` @ 2026-10-03) → xvw (`fe87e8a4` @ 2026-10-03) → lop (`fb312b97` @ 2026-10-03) → lsz (`f2776a0f` @ 2026-10-03) → krl (`1aedaee3` @ 2026-10-03) —— 本栈叠于 `r96-handoff-lint` 之上（R96 实现栈顶）；**已 ff-land 上 `origin/main`（2026-10-03 `but land r97-audit-reanchor --whole-stack`，land 即删 `origin/r97-selfcheckable` ref）、未 PR、未 tag**；8 个 commit 无 amend，SHA 为初写时值（capture 期 but-id 链，land 后不再出现于 `but status`）；权威值以 `but log` 为准
+Stack（dissolved @ 2026-10-03）—— 交付栈已 ff-land 上 `origin/main`（`but land r97-audit-reanchor --whole-stack`，ref 与但 ID 随 land 注销），链为 capture 时值，留作历史定位不再作但 ID 解析；本栈叠于 `r96-handoff-lint` 之上（R96 实现栈顶）；**未 PR、未 tag**；8 个 commit 无 amend：
+r97-selfcheckable → upo (`b67ddbc8` @ 2026-10-03) → pnq (`f923be49` @ 2026-10-03) → spu (`5280704f` @ 2026-10-03) → vrt (`7b28eca7` @ 2026-10-03) → xvw (`fe87e8a4` @ 2026-10-03) → lop (`fb312b97` @ 2026-10-03) → lsz (`f2776a0f` @ 2026-10-03) → krl (`1aedaee3` @ 2026-10-03)
 
 <!-- state: no-branch-runs r97-selfcheckable @ 2026-10-03 -->
 <!-- re-anchor: 2026-10-03 owner 授权 push 后，原标记 `state: unpushed r97-selfcheckable` 立即失效（R95 F5R 纪律）。ref 已存在，故原谓词不再为真；按重锚仪式改述为「未 land」谓词（unlanded），该谓词当前仍为真：origin/main..origin/r97-selfcheckable 非空（36 commits 实测）。reauthored=1。 -->

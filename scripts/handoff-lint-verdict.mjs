@@ -274,7 +274,15 @@ export function parseStackLine(text) {
     const shaM = /\(\s*`?([0-9a-f]{7,40})`?\s*@\s*(\d{4}-\d{2}-\d{2})\s*\)/.exec(seg);
     entries.push({ butId: idM[1], sha: shaM ? shaM[1] : null, date: shaM ? shaM[2] : null });
   }
-  return { present: true, headerIndex: headerIdx, branch: branch || null, entries, raw: chainLine };
+  // Landed-stack variant (R98 D-002 aftermath): `Stack（dissolved @ <date>）`
+  // declares the workspace stack dissolved (landed-and-deleted). The but-id /
+  // sha captures in the chain are historical and no longer resolvable BY
+  // DESIGN - the leg switches to the dissolve check (the named branch's origin
+  // ref must be absent). An unparseable date simply isn't recognized, so the
+  // line falls through to the strict live-stack path and fails on its own.
+  const dissolvedM = /(?:（|\()\s*dissolved\s*@\s*(\d{4}-\d{2}-\d{2})\s*(?:）|\))/.exec(lines[headerIdx]);
+  const dissolved = !!(dissolvedM && isCalendarDate(dissolvedM[1]));
+  return { present: true, headerIndex: headerIdx, branch: branch || null, entries, raw: chainLine, dissolved, dissolvedDate: dissolved ? dissolvedM[1] : null };
 }
 
 // Round number from a closeout filename, e.g. `round-96-closeout.md` -> 96.
@@ -548,6 +556,44 @@ export function assessStackLeg(parsed, env) {
   if (!parsed.present) {
     return { state: "RED", redCodes: [emitCode(STACK_STRUCTURAL_RED_CODES, "stack-line-missing")], problems: ["missing the required Stack header line"], annotations, links };
   }
+  // Landed-stack variant: `Stack（dissolved @ <date>）` replaces the live-stack
+  // three elements with the dissolve check - the workspace stack and its
+  // but-ids are gone by design, so the only verifiable residual is that the
+  // named branch's origin ref is really absent. A still-present branch (empty
+  // or membered) contradicts the claim; unreadable ref facts degrade.
+  if (parsed.dissolved) {
+    const day = toEpochDay(parsed.dissolvedDate);
+    const nowDay = toEpochDay(String((env && env.now) ?? "").slice(0, 10));
+    if (nowDay !== null && day !== null && day > nowDay) {
+      return { state: "RED", redCodes: [emitCode(STATE_RED_CODES, "state-marker-unparseable")], problems: ["state-marker-unparseable: dissolved date " + parsed.dissolvedDate + " is in the future (a declaration cannot be true when written yet)"], annotations, links };
+    }
+    if (!parsed.branch || !STATE_BRANCH_RE.test(parsed.branch)) {
+      return { state: "RED", redCodes: [emitCode(STACK_STRUCTURAL_RED_CODES, "stack-line-missing")], problems: ["dissolved Stack line names no branch"], annotations, links };
+    }
+    if (!branchCollected(env && env.git, parsed.branch)) {
+      annotations.push(emitCode(STACK_ENV_CODES, "ref-unavailable"));
+      return { state: "PENDING", redCodes, problems: [], annotations, links };
+    }
+    const members = env.git.stackBranchMembers[parsed.branch] ?? null;
+    if (members === null) {
+      links.push({ butId: null, sha: null, branch: parsed.branch });
+      return { state: "GREEN", redCodes, problems: [], annotations, links };
+    }
+    return {
+      state: "RED",
+      redCodes: [emitCode(RUN_URL_RED_CODES, "declaration-fact-conflict")],
+      problems: [
+        "declaration-fact-conflict: `Stack（dissolved` claimed but origin/" +
+        parsed.branch +
+        (members.length > 0
+          ? " still carries " + members.length + " unmerged member(s)"
+          : " still exists (an empty ref is not a dissolve)"),
+      ],
+      annotations,
+      links,
+    };
+  }
+
   if (parsed.entries.length === 0) {
     return { state: "RED", redCodes: [emitCode(STACK_STRUCTURAL_RED_CODES, "stack-chain-empty")], problems: ["Stack line carries no branch → but-id chain"], annotations, links };
   }

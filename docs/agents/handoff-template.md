@@ -29,6 +29,12 @@ never a content exemption (CONTEXT.md → No-Grandfathering).
 Stack (primary key = GitButler change-ids; SHAs are time-lagged):
   <branch> → <but-id> (<sha> @ <iso-date>) → <but-id> (<sha> @ <iso-date>) → ...
 
+<!-- landed-stack variant: after the stack has been landed and its branch
+     ref + but-ids deleted, re-anchor the header to the dissolved form —
+     the historical chain stays as a capture locator: -->
+Stack（dissolved @ <iso-date>）:
+  <branch> → <but-id> (<sha> @ <iso-date>) → ...
+
 ## 已完成
 ## 绿色 run URL（必填）
 ## 下一轮候选
@@ -53,6 +59,15 @@ The gate resolves each element against the live workspace:
    of `git rev-list origin/main..origin/<branch>`. Membership, not tip
    equality: a late gate run may add commits and must not redden the line. A tail
    outside the branch is RED `chain-tail-not-in-branch`.
+
+**Landed-stack variant** — `Stack（dissolved @ <iso-date>）`: once the stack
+has been landed and its branch ref + but-ids deleted (the but workspace no
+longer carries them BY DESIGN), the three elements cannot resolve. Re-anchor
+the header to the dissolved form; the gate then verifies exactly one fact —
+`origin/<branch>` is really absent. A still-present ref (empty or membered)
+is RED `declaration-fact-conflict`; unreadable facts degrade to env-PENDING.
+The historical chain stays in the doc as a capture-time locator but its
+but-ids and shas are no longer consumed.
 
 An element may omit its sha (the self-referential closing commit; a time-lagged
 capture) — a missing sha is not itself a violation, and a sha recorded before a

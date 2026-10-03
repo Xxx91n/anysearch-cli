@@ -564,6 +564,32 @@ eq(parseStateMarkers("note <!-- state: unpushed foo @ 2026-10-02 --> here\n").ma
   assert(c6.state === "RED" && c6.residual.includes("ghost"), "a live unlanded marker adds its branch to the residual set");
 }
 
+// Dissolved Stack-line variant (R98 landed-stack grammar).
+{
+  const dissolvedDoc = docOf("GREEN: " + RUN(1001)).replace(
+    "Stack（primary key = GitButler change-ids）：",
+    "Stack（dissolved @ 2026-10-02）："
+  );
+  // branch ref absent -> dissolve verified -> GREEN stack leg
+  const e1 = baseEnv(); e1.git.stackBranchMembers[BRANCH] = null; delete e1.git.branchRefs[BRANCH];
+  const l1 = assessStackLeg(parseStackLine(dissolvedDoc), e1);
+  eq(l1.state, "GREEN", "a dissolved line verifies when the branch ref is absent");
+  // branch ref still present (membered) -> contradiction -> RED
+  const l2 = assessStackLeg(parseStackLine(dissolvedDoc), baseEnv());
+  assert(l2.state === "RED" && l2.redCodes.includes("declaration-fact-conflict"), "a dissolved claim on a live branch fails closed");
+  // ref present but empty -> still not a dissolve -> RED
+  const e3 = baseEnv(); e3.git.stackBranchMembers[BRANCH] = [];
+  const l3 = assessStackLeg(parseStackLine(dissolvedDoc), e3);
+  assert(l3.state === "RED" && l3.redCodes.includes("declaration-fact-conflict"), "an empty-but-present ref is not a dissolve");
+  // never collected -> env-PENDING, never silent
+  const e4 = baseEnv(); delete e4.git.stackBranchMembers[BRANCH]; delete e4.git.branchRefs[BRANCH];
+  const l4 = assessStackLeg(parseStackLine(dissolvedDoc), e4);
+  eq(l4.state, "PENDING", "an uncollected dissolved branch degrades to env-PENDING");
+  // dissolved lines skip the live-stack three elements (but-ids need not resolve)
+  const r = assessHandoffLint({ text: dissolvedDoc, round: 96, env: e1 });
+  assert(r.stack.state === "GREEN" && !r.redCodes.includes("but-id-not-resolved"), "dissolved exempts but-id resolution BY DESIGN");
+}
+
 // --- O. report summaries are produced once, by the core (N7) -----------------
 const summary = assessHandoffLint({ text: docOf("PENDING: stack-unpushed"), round: 96, env: unpushedEnv() });
 eq(summary.pendingSummary, ["run-url:stack-unpushed", "stack:ref-unavailable"], "pendingSummary carries the run-url and stack PENDING codes");
