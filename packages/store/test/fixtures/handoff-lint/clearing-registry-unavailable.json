@@ -1,7 +1,7 @@
 {
- "name": "gh-api-failed-degraded",
+ "name": "state-unpushed-verified",
  "round": 96,
- "description": "Every cited run id failed to resolve -> env-PENDING with verification-unavailable:api-failed.",
+ "description": "ALLOW: declared unpushed holds (no origin ref)",
  "doc": "# Handoff — Grill Round 96 → R97（夹具）\n\nStack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：\n  r96-handoff-lint → aaa (`aaaaaaa1` @ 2026-10-02) → bbb (`bbbbbbb2` @ 2026-10-02)\n\n## 绿色 run URL（必填）\n\nGREEN: https://github.com/Xxx91n/anysearch-cli/actions/runs/1001\n\n## 下一轮候选\n\n- n/a\n",
  "env": {
   "now": "2026-10-02",
@@ -16,7 +16,8 @@
     "r96-handoff-lint": [
      "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
      "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
-    ]
+    ],
+    "r97-probe": null
    },
    "commitObjects": {
     "aaaaaaa1": "commit",
@@ -30,7 +31,12 @@
   "gh": {
    "ok": true,
    "runs": {
-    "1001": "api-failed"
+    "1001": {
+     "head_sha": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+     "conclusion": "success",
+     "workflow": "ci",
+     "repo": "Xxx91n/anysearch-cli"
+    }
    }
   },
   "but": {
@@ -48,21 +54,19 @@
    "pushAllBranches": false
   },
   "deferred": {
-   "ok": true,
-   "covers": [
-    "r96-handoff-lint"
-   ],
+   "ok": false,
+   "covers": [],
    "pendingPredicates": []
   }
  },
  "expect": {
   "verdict": "PENDING",
   "scope": "three-state",
-  "runUrlState": "PENDING",
+  "runUrlState": "GREEN",
   "stackState": "GREEN",
   "redCodes": [],
   "annotations": [
-   "run-url:verification-unavailable:api-failed"
+   "clearing:deferred-registry-unavailable"
   ]
  }
 }

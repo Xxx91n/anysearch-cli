@@ -16,7 +16,8 @@
     "r96-handoff-lint": [
      "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
      "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
-    ]
+    ],
+    "r97-probe": null
    },
    "commitObjects": {
     "aaaaaaa1": "commit",
@@ -51,6 +52,14 @@
     "main"
    ],
    "pushAllBranches": false
+  },
+  "deferred": {
+   "ok": true,
+   "covers": [
+    "r96-handoff-lint",
+    "r97-probe"
+   ],
+   "pendingPredicates": []
   }
  },
  "expect": {

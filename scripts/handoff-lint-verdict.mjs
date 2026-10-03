@@ -59,6 +59,22 @@ export const STATE_RED_CODES = Object.freeze([
   "bare-word-violation",
 ]);
 
+// R7 (P-3 rework, ADR-0098 D5): the PENDING seat for registered-but-
+// unevaluated predicates. The seat list is NOT a second constant - it lives
+// in docs/deferred-registry.json (open entries' `pending_predicates`), so a
+// defer entry closing automatically re-reddens its predicate (the registered
+// ratchet path). `pending-predicate` is the closed annotation code.
+export const STATE_PENDING_CODES = Object.freeze(["pending-predicate"]);
+
+// R6 (P-2 rework, R97 D-002 legislation): the closeout clearing obligation
+// 「轮收口时栈须空，否则残留分支须在 docs/deferred-registry.json 在册」.
+// Machine-checkable as: residual branches empty (members array empty or the
+// origin ref gone) OR every residual branch covered by an OPEN defer entry's
+// `covers` field. An uncovered residual is RED; unreadable registry facts
+// degrade to env-PENDING.
+export const CLEARING_RED_CODES = Object.freeze(["clearing-residual-unregistered"]);
+export const CLEARING_ENV_CODES = Object.freeze(["deferred-registry-unavailable"]);
+
 // Environment-degradation codes for the run-URL leg (D-002; `ref-unavailable`
 // added by ADR-0097 Addendum A so each degradation cause keeps its own code
 // instead of being folded into `api-failed` - D-002 item 5 forbids one shared
@@ -109,6 +125,9 @@ export const CODE_GROUPS = Object.freeze({
   verificationUnavailable: VERIFICATION_UNAVAILABLE_CODES,
   pendingReason: PENDING_REASON_CODES,
   stateRed: STATE_RED_CODES,
+  statePending: STATE_PENDING_CODES,
+  clearingRed: CLEARING_RED_CODES,
+  clearingEnv: CLEARING_ENV_CODES,
 });
 
 // The single emission gate. An out-of-vocabulary code is a programming error
@@ -316,14 +335,20 @@ function isCalendarDate(ymd) {
 
 // Hyphen-aware boundaries: `stack-unpushed` / `pushed-no-branch-runs` are the
 // older run-URL vocabulary, not bare state words. A hyphen-adjacent hit is a
-// compound code, never a bare word.
-const STATE_BARE_RES = [
-  { predicate: "unpushed", re: /(?<![A-Za-z-])unpushed(?![A-Za-z-])/ },
-  { predicate: "unlanded", re: /(?<![A-Za-z-])unlanded(?![A-Za-z-])/ },
-  { predicate: "no-branch-runs", re: /(?<![A-Za-z-])no-branch-runs(?![A-Za-z-])/ },
-];
+// compound code, never a bare word. R3 (P-8 rework): the English enum is
+// DERIVED from STATE_PREDICATES - a second hand-maintained list is exactly
+// the double-source the audit named (extension edits one constant, not two).
+export const STATE_BARE_RES = Object.freeze(
+  STATE_PREDICATES.map((p) =>
+    Object.freeze({
+      predicate: p,
+      re: new RegExp("(?<![A-Za-z-])" + p.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&") + "(?![A-Za-z-])"),
+    })
+  )
+);
 
-function collectBareWords(text, skipLines) {
+function collectBareWords(text, skipLines, livePreds) {
+  const active = livePreds ?? STATE_PREDICATES;
   const lines = stripCodeSpansAndFences(text);
   const hits = [];
   for (let i = 0; i < lines.length; i++) {
@@ -331,10 +356,11 @@ function collectBareWords(text, skipLines) {
     const listStripped = lines[i].replace(/^\s*(?:[-*+]\s+)?/, "").trim();
     if (STATE_LINE_RE.test(listStripped)) continue; // run-URL state lines are not prose
     for (const e of STATE_BARE_RES) {
+      if (!active.includes(e.predicate)) continue;
       if (e.re.test(lines[i])) { hits.push({ predicate: e.predicate, line: i + 1 }); break; }
     }
     if (hits.length > 0 && hits[hits.length - 1].line === i + 1) continue;
-    for (const pred of STATE_PREDICATES) {
+    for (const pred of active) {
       for (const phrase of STATE_BARE_WORD_PHRASES[pred] || []) {
         if (lines[i].includes(phrase)) { hits.push({ predicate: pred, line: i + 1 }); break; }
       }
@@ -345,6 +371,49 @@ function collectBareWords(text, skipLines) {
 }
 
 // --- legs -------------------------------------------------------------------
+
+// R1 (S-1 rework): the collected branch set is the keys of stackBranchMembers
+// - the collector writes one key per ATTEMPTED branch (member array, or null
+// for ref-absent). A branch that was never collected is not "absent"; it is
+// unread, and reading an unread branch as absent is the report-level
+// false-GREEN direction the audit named. branchRefs keys are unioned in so
+// hand-built snapshots that only set branchRefs still count as collected.
+function branchCollected(git, branch) {
+  if (!git || git.ok !== true) return false;
+  return (
+    (git.stackBranchMembers && Object.prototype.hasOwnProperty.call(git.stackBranchMembers, branch)) ||
+    (git.branchRefs && Object.prototype.hasOwnProperty.call(git.branchRefs, branch))
+  );
+}
+
+// env.registry injects the predicate registry (the anchor:predicate-registry
+// falsification surface). Absent → the production constant; present but
+// malformed → an empty registry so every marker falls to out-of-vocabulary
+// (fail-closed, never silently satisfied). The LIVE predicate set is the
+// closed STATE_PREDICATES intersected with registry keys: a registry entry
+// the core cannot evaluate is RED, and a predicate struck from the registry
+// is OOV.
+function effectiveRegistry(env) {
+  if (!env || env.registry === undefined || env.registry === null) return STATE_PREDICATE_REGISTRY;
+  return typeof env.registry === "object" ? env.registry : {};
+}
+function livePredicates(env) {
+  const registry = effectiveRegistry(env);
+  return STATE_PREDICATES.filter((p) => Object.prototype.hasOwnProperty.call(registry, p));
+}
+// The deferred-registry surface (env.deferred, collected by the shell):
+//   ok                 - the registry file parsed
+//   covers             - branches registered as residual in OPEN entries
+//   pendingPredicates  - predicates seated PENDING by OPEN entries (R7)
+function deferredFacts(env) {
+  const d = env && env.deferred;
+  const ok = !!(d && d.ok === true);
+  return {
+    ok,
+    covers: ok && Array.isArray(d.covers) ? d.covers : [],
+    pendingPredicates: ok && Array.isArray(d.pendingPredicates) ? d.pendingPredicates : [],
+  };
+}
 
 export function assessRunUrlLeg(section, stack, env) {
   const problems = [];
@@ -394,7 +463,9 @@ export function assessRunUrlLeg(section, stack, env) {
     const wfOk = !!(env && env.workflows && env.workflows.ok === true);
     const wf = wfOk ? env.workflows : null;
     if (code === "stack-unpushed") {
-      if (refs === null) {
+      // R1 (S-1): an UNCOLLECTED branch is unread, not absent - degrade to
+      // env-PENDING instead of verifying the predicate on a missing key.
+      if (refs === null || !branchCollected(env && env.git, branch)) {
         annotations.push("verification-unavailable:" + emitCode(VERIFICATION_UNAVAILABLE_CODES, "ref-unavailable"));
         return { ...base, state: "PENDING", pendingCode: code, annotations, problems: ["PENDING{" + code + "} left unverified: origin-ref facts unavailable"] };
       }
@@ -404,7 +475,7 @@ export function assessRunUrlLeg(section, stack, env) {
       return { ...base, state: "PENDING", pendingCode: code, verifiedPending: true, problems: [] };
     }
     // pushed-no-branch-runs
-    if (refs === null || wf === null) {
+    if (refs === null || wf === null || !branchCollected(env && env.git, branch)) {
       annotations.push("verification-unavailable:" + emitCode(VERIFICATION_UNAVAILABLE_CODES, "ref-unavailable"));
       return { ...base, state: "PENDING", pendingCode: code, annotations, problems: ["PENDING{" + code + "} left unverified: origin-ref / workflow-trigger facts unavailable"] };
     }
@@ -569,16 +640,23 @@ function checkStatePredicate(predicate, branch, env) {
   const refsOk = !!(env && env.git && env.git.ok === true);
   if (predicate === "unpushed") {
     const refs = refsOk && env.git.branchRefs ? env.git.branchRefs : null;
-    if (refs === null) return null;
+    // R1 (S-1): uncollected is unread, not absent. A branch the collector never
+    // attempted (report-only sweep, foreign closeout) degrades to env-PENDING.
+    if (refs === null || !branchCollected(env.git, branch)) return null;
     if (Object.prototype.hasOwnProperty.call(refs, branch)) {
       return "origin/" + branch + " exists";
     }
     return true;
   }
-  const members = refsOk && env.git.stackBranchMembers ? (env.git.stackBranchMembers[branch] ?? null) : null;
-  if (members === null) return null;
-  if (members.length > 0) return true;
-  return "origin/main..origin/" + branch + " is empty";
+  if (predicate === "unlanded") {
+    const members = refsOk && env.git.stackBranchMembers ? (env.git.stackBranchMembers[branch] ?? null) : null;
+    if (members === null) return null;
+    if (members.length > 0) return true;
+    return "origin/main..origin/" + branch + " is empty";
+  }
+  // Fail-closed: a registered predicate with no evaluator is a contradiction
+  // detail, never a pass and never an accidental fall-through to `unlanded`.
+  return "no evaluator for predicate `" + String(predicate) + "`";
 }
 
 export function assessStateLeg(text, stackParsed, env) {
@@ -593,13 +671,23 @@ export function assessStateLeg(text, stackParsed, env) {
   const skip = new Set([...parsed.markers.map((m) => m.line), ...parsed.malformed.map((m) => m.line)]);
   let legal = 0;
   const nowDay = toEpochDay(String((env && env.now) ?? "").slice(0, 10));
+  const livePreds = livePredicates(env);
+  const pendingPreds = deferredFacts(env).pendingPredicates;
   for (const m of parsed.markers) {
     if (m.args.includes("--")) {
       redCodes.push(emitCode(STATE_RED_CODES, "state-marker-unparseable"));
       problems.push("state-marker-unparseable: line " + m.line + " args carries `--` (CommonMark comment strictness)");
       continue;
     }
-    if (!STATE_PREDICATES.includes(m.predicate)) {
+    if (!livePreds.includes(m.predicate)) {
+      // R7 (P-3): a predicate seated in docs/deferred-registry.json
+      // (`pending_predicates` on an OPEN entry) is surfaced, never blocking -
+      // the seat list being registry data means a closed defer entry
+      // automatically re-reddens its predicate (ratchet path).
+      if (pendingPreds.includes(m.predicate)) {
+        annotations.push(emitCode(STATE_PENDING_CODES, "pending-predicate") + ":" + m.predicate);
+        continue;
+      }
       redCodes.push(emitCode(STATE_RED_CODES, "state-predicate-out-of-vocabulary"));
       problems.push("state-predicate-out-of-vocabulary: `" + m.predicate + "` is outside {" + STATE_PREDICATES.join(", ") + "} (live predicates ride the extension ticket, never the prose)");
       continue;
@@ -638,7 +726,11 @@ export function assessStateLeg(text, stackParsed, env) {
       problems.push("declaration-fact-conflict: `<!-- state: " + m.predicate + " " + m.args + " -->` contradicted: " + checked);
     }
   }
-  const bare = collectBareWords(text, skip);
+  // R3/P-8 + registry parameterization: the bare-word scan rides the SAME
+  // effective predicate set the markers are judged against (a struck registry
+  // entry silences both - the anchor:bare-word-single-source falsification
+  // surface).
+  const bare = collectBareWords(text, skip, livePredicates(env));
   if (bare.length > 0 && legal === 0) {
     redCodes.push(emitCode(STATE_RED_CODES, "bare-word-violation"));
     const shown = bare.slice(0, 3).map((b) => "`" + b.predicate + "` (line " + b.line + ")").join(", ");
@@ -646,6 +738,72 @@ export function assessStateLeg(text, stackParsed, env) {
   }
   const state = redCodes.length > 0 ? "RED" : annotations.length > 0 ? "PENDING" : "GREEN";
   return { state, redCodes: uniq(redCodes), problems, annotations: uniq(annotations), markers: parsed.markers.length };
+}
+
+// R6 (P-2 rework, R97 D-002 legislation, machine surface = R98 first dogfood):
+// the closeout clearing obligation 「轮收口时栈须空，否则残留分支须在
+// docs/deferred-registry.json 在册」.
+//
+// Residual = the Stack-line branch whose origin member set is non-empty
+// (members === null means the ref itself is gone - the stack was landed and
+// deleted, which IS cleared), plus every branch an unlanded/unpushed marker
+// verifies live at gate time. Satisfied two ways:
+//   栈空      - no live residual (empty member set or absent ref)
+//   deferred  - every residual branch named in `covers` of an OPEN entry
+// Unreadable facts degrade to env-PENDING (never a silent pass); an uncovered
+// residual is RED.
+export function assessClearingLeg(text, stackParsed, env) {
+  const annotations = [];
+  const redCodes = [];
+  const problems = [];
+  const residual = new Set();
+  let unreadable = false;
+
+  if (stackParsed && stackParsed.present && stackParsed.branch) {
+    const branch = stackParsed.branch;
+    if (!branchCollected(env && env.git, branch)) {
+      unreadable = true;
+    } else {
+      const members = env.git.stackBranchMembers[branch] ?? null;
+      if (members !== null && members.length > 0) residual.add(branch);
+    }
+  }
+
+  const livePreds = livePredicates(env);
+  const parsed = parseStateMarkers(text);
+  for (const m of parsed.markers) {
+    if (!livePreds.includes(m.predicate)) continue;   // judged by the state leg
+    if (m.predicate === "no-branch-runs") continue;   // topology, not residual
+    const branch =
+      m.args === "stack" ? (stackParsed && stackParsed.present ? stackParsed.branch : null) : m.args;
+    if (!branch || !STATE_BRANCH_RE.test(branch)) continue;
+    const checked = checkStatePredicate(m.predicate, branch, env);
+    if (checked === null) unreadable = true;
+    else if (checked === true) residual.add(branch);
+  }
+
+  if (unreadable) annotations.push(emitCode(STACK_ENV_CODES, "ref-unavailable"));
+
+  if (residual.size > 0) {
+    const def = deferredFacts(env);
+    if (!def.ok) {
+      annotations.push(emitCode(CLEARING_ENV_CODES, "deferred-registry-unavailable"));
+    } else {
+      const covers = new Set(def.covers);
+      const uncovered = [...residual].filter((b) => !covers.has(b));
+      if (uncovered.length > 0) {
+        redCodes.push(emitCode(CLEARING_RED_CODES, "clearing-residual-unregistered"));
+        problems.push(
+          "clearing-residual-unregistered: residual stack branch(es) {" +
+          uncovered.join(", ") +
+          "} are neither empty on origin nor covered by an OPEN deferred-registry entry (`covers` field) - the clearing obligation is stack-empty OR deferred-registered, never a third state"
+        );
+      }
+    }
+  }
+
+  const state = redCodes.length > 0 ? "RED" : annotations.length > 0 ? "PENDING" : "GREEN";
+  return { state, redCodes: uniq(redCodes), problems, annotations: uniq(annotations), residual: [...residual] };
 }
 
 // --- top level --------------------------------------------------------------
@@ -677,21 +835,25 @@ export function assessHandoffLint(input) {
       pendingSummary: [],
       runUrl: null,
       stack: null,
+      state: null,
+      clearing: null,
     };
   }
 
   const stack = assessStackLeg(stackParsed, env);
   const runUrl = assessRunUrlLeg(runSection, stackParsed, env);
   const state = assessStateLeg(text, stackParsed, env);
-  const problems = [...runUrl.problems, ...stack.problems, ...state.problems];
+  const clearing = assessClearingLeg(text, stackParsed, env);
+  const problems = [...runUrl.problems, ...stack.problems, ...state.problems, ...clearing.problems];
   // N7: the leg annotations are prefixed ONCE here; the report layer consumes
   // these summaries instead of re-projecting the legs (one source of truth).
   const annotations = [
     ...runUrl.annotations.map((a) => "run-url:" + a),
     ...stack.annotations.map((a) => "stack:" + a),
     ...state.annotations.map((a) => "state:" + a),
+    ...clearing.annotations.map((a) => "clearing:" + a),
   ];
-  const redCodes = uniq([...runUrl.redCodes, ...stack.redCodes, ...state.redCodes]);
+  const redCodes = uniq([...runUrl.redCodes, ...stack.redCodes, ...state.redCodes, ...clearing.redCodes]);
   // The declared code AND any degradation annotation: when a declared PENDING
   // could not be verified, the report line must say so (R1/R2 - the degradation
   // is the whole signal; folding it away would re-create the silent fold).
@@ -704,11 +866,12 @@ export function assessHandoffLint(input) {
   }
   if (stack.state === "PENDING") pendingSummary.push("stack:" + (stack.annotations.join(",") || "unverified"));
   if (state.state === "PENDING") pendingSummary.push("state:" + (state.annotations.join(",") || "unverified"));
+  if (clearing.state === "PENDING") pendingSummary.push("clearing:" + (clearing.annotations.join(",") || "unverified"));
   const verdict =
-    runUrl.state === "RED" || stack.state === "RED" || state.state === "RED"
+    runUrl.state === "RED" || stack.state === "RED" || state.state === "RED" || clearing.state === "RED"
       ? "RED"
-      : runUrl.state === "PENDING" || stack.state === "PENDING" || state.state === "PENDING"
+      : runUrl.state === "PENDING" || stack.state === "PENDING" || state.state === "PENDING" || clearing.state === "PENDING"
         ? "PENDING"
         : "GREEN";
-  return { scope: "three-state", round, verdict, problems, annotations, redCodes, pendingSummary, runUrl, stack, state };
+  return { scope: "three-state", round, verdict, problems, annotations, redCodes, pendingSummary, runUrl, stack, state, clearing };
 }

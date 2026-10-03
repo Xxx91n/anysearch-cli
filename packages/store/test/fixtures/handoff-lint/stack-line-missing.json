@@ -51,6 +51,11 @@
     "main"
    ],
    "pushAllBranches": false
+  },
+  "deferred": {
+   "ok": true,
+   "covers": [],
+   "pendingPredicates": []
   }
  },
  "expect": {

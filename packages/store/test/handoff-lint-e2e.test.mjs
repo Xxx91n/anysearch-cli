@@ -19,6 +19,10 @@ import {
   collectWorkflowTriggers,
   newestCloseoutTargets,
   buildReportOnlyScan,
+  resolveReuse,
+  collectDeferred,
+  collectSnapshot,
+  evaluateHandoffLintDocuments,
 } from "../../../scripts/handoff-lint-shell.mjs";
 import { CODE_GROUPS, parseStackLine } from "../../../scripts/handoff-lint-verdict.mjs";
 
@@ -100,6 +104,11 @@ assert(fixtureFiles.length >= 20, "the shared fixture set is present (" + fixtur
 for (const f of fixtureFiles) {
   const fx = JSON.parse(fs.readFileSync(path.join(FIXDIR, f), "utf8"));
   const rel = "round-" + fx.round + "-closeout.md";
+  // `expectE2E` overrides `expect` where the honest through-shell outcome
+  // differs: the shell collects every branch a document names, so an
+  // "uncollected" fact only exists in the unit env (the report-sweep reuse
+  // path exercises it end-to-end instead - see section K).
+  const e2eExpect = fx.expectE2E ?? fx.expect;
   const result = runHandoffLint({
     root,
     documents: [{ rel, name: rel, text: fx.doc }],
@@ -108,25 +117,27 @@ for (const f of fixtureFiles) {
       workflows: fx.env.workflows,
       now: fx.env.now,
       maxCaptureAgeDays: fx.env.maxCaptureAgeDays,
+      registry: fx.env.registry,
+      deferred: fx.env.deferred,
     },
   });
   eq(result.perDoc.length, 1, "E2E " + f + " evaluates exactly one document");
-  eq(result.perDoc[0].verdict.verdict, fx.expect.verdict, "E2E " + f + " verdict matches through the shell");
-  if (fx.expect.runUrlVerifiedPending !== undefined) {
-    eq(result.perDoc[0].verdict.runUrl.verifiedPending, fx.expect.runUrlVerifiedPending, "E2E " + f + " verifiedPending matches through the shell (R1/R2)");
+  eq(result.perDoc[0].verdict.verdict, e2eExpect.verdict, "E2E " + f + " verdict matches through the shell");
+  if (e2eExpect.runUrlVerifiedPending !== undefined) {
+    eq(result.perDoc[0].verdict.runUrl.verifiedPending, e2eExpect.runUrlVerifiedPending, "E2E " + f + " verifiedPending matches through the shell (R1/R2)");
   }
-  const wantFail = fx.expect.verdict === "RED";
+  const wantFail = e2eExpect.verdict === "RED";
   eq(result.exitKind, wantFail ? "fail" : "pass", "E2E " + f + " maps to exitKind " + (wantFail ? "fail" : "pass"));
   const kinds = result.lines.map((l) => l.kind);
   if (wantFail) {
     assert(kinds.includes("fail"), "E2E " + f + " emits a fail report line");
     const msg = result.lines.filter((l) => l.kind === "fail").map((l) => l.msg).join("\n");
-    for (const c of fx.expect.redCodes) assert(msg.includes(c), "E2E " + f + " fail line names the RED code " + c);
-  } else if (fx.expect.verdict === "PENDING") {
+    for (const c of e2eExpect.redCodes) assert(msg.includes(c), "E2E " + f + " fail line names the RED code " + c);
+  } else if (e2eExpect.verdict === "PENDING") {
     assert(kinds.includes("skip"), "E2E " + f + " emits a skip (PENDING) report line");
     const msg = result.lines.filter((l) => l.kind === "skip").map((l) => l.msg).join("\n");
-    for (const a of fx.expect.annotations) {
-      assert(msg.includes(a.replace(/^(run-url|stack):/, "")), "E2E " + f + " PENDING line names " + a);
+    for (const a of e2eExpect.annotations) {
+      assert(msg.includes(a.replace(/^(run-url|stack|clearing|state):/, "")), "E2E " + f + " PENDING line names " + a);
     }
     assert(result.counts.pending === 1 && result.counts.red === 0, "E2E " + f + " counts one PENDING and no RED");
   } else {
@@ -145,7 +156,7 @@ const mixed = runHandoffLint({
     { rel: "round-97-closeout.md", name: "round-97-closeout.md", text: red.doc },
   ],
   // one snapshot, two documents: the red fixture env carries BOTH cited runs
-  deps: { spawnSync: makeSpawnSync(red.env), workflows: red.env.workflows, now: red.env.now },
+  deps: { spawnSync: makeSpawnSync(red.env), workflows: red.env.workflows, now: red.env.now, deferred: red.env.deferred, registry: red.env.registry },
 });
 eq(mixed.exitKind, "fail", "a mixed batch with one RED fails the whole run");
 eq(mixed.counts, { red: 1, pending: 0, green: 1 }, "a mixed batch reports both verdicts");
@@ -227,6 +238,7 @@ const REQUIRED_RED_COVERAGE = [
   "state-marker-unparseable",
   "state-predicate-out-of-vocabulary",
   "bare-word-violation",
+  "clearing-residual-unregistered",
 ];
 const exercisedRedCodes = new Set();
 for (const f of fixtureFiles) {
@@ -253,9 +265,12 @@ const GROUP_MAP = {
   "verification-unavailable": "verificationUnavailable",
   "pending-reason": "pendingReason",
   "state-red": "stateRed",
+  "state-pending": "statePending",
+  "clearing-red": "clearingRed",
+  "clearing-env": "clearingEnv",
 };
 const tplText = fs.readFileSync(path.join(root, "docs", "agents", "handoff-template.md"), "utf8");
-const vocabLines = tplText.split("\n").filter((l) => /^(run-url-red|stack-red|stack-structural-red|stack-env|stack-advisory|verification-unavailable|pending-reason|state-red):/.test(l));
+const vocabLines = tplText.split("\n").filter((l) => /^(run-url-red|stack-red|stack-structural-red|stack-env|stack-advisory|verification-unavailable|pending-reason|state-red|state-pending|clearing-red|clearing-env):/.test(l));
 eq(vocabLines.length, Object.keys(GROUP_MAP).length, "the template declares every governed vocabulary group");
 for (const line of vocabLines) {
   const idx = line.indexOf(":");
@@ -289,6 +304,67 @@ eq(newestCloseoutTargets([
   const ro = buildReportOnlyScan({ documents: [{ rel: "round-96-closeout.md", name: "round-96-closeout.md", text: red.doc }], snapshot: red.env });
   assert(ro.lines.length > 0 && ro.lines.every((l) => l.kind === "info"), "the report-only sweep never fails, even on a RED doc");
   eq(ro.counts.red, 1, "the report-only sweep still counts the RED doc");
+}
+{
+  // S-1/R1: a closeout naming a branch the snapshot never collected must not
+  // verify - the report sweep hands every doc the gate snapshot, so an
+  // unattempted branch must degrade, never read as "absent".
+  const greenFx = JSON.parse(fs.readFileSync(path.join(FIXDIR, "green-verified.json"), "utf8"));
+  const gateRun = runHandoffLint({
+    root,
+    documents: [{ rel: "round-96-closeout.md", name: "round-96-closeout.md", text: greenFx.doc }],
+    deps: { spawnSync: makeSpawnSync(greenFx.env), workflows: greenFx.env.workflows, now: greenFx.env.now, deferred: greenFx.env.deferred },
+  });
+  const foreign = JSON.parse(fs.readFileSync(path.join(FIXDIR, "pending-stack-unpushed-uncollected.json"), "utf8"));
+  // The gate snapshot only ever collected r96-handoff-lint; retarget the
+  // foreign doc to a branch the snapshot never saw (the true S-1 shape: a
+  // report-swept closeout whose branch was never attempted).
+  const ro = evaluateHandoffLintDocuments({
+    documents: [{ rel: "round-97-closeout.md", name: "round-97-closeout.md", text: foreign.doc.replace(/r96-handoff-lint/g, "r99-uncollected") }],
+    snapshot: gateRun.snapshot,
+  });
+  eq(ro.perDoc[0].verdict.verdict, "PENDING", "report-only sweep: an uncollected branch degrades to env-PENDING, never a silent GREEN");
+  eq(ro.perDoc[0].verdict.runUrl.verifiedPending, false, "an uncollected branch is not a verified PENDING either");
+  assert(ro.perDoc[0].verdict.annotations.includes("run-url:verification-unavailable:ref-unavailable"), "the uncollected degradation carries the ref-unavailable annotation");
+}
+
+// --- L. P-7: but-status detail rows are content, never commit rows ------------
+{
+  const detail = parseButStatusIds(
+    [
+      "\u250A\u2502     \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+      "\u250A\u2502     \u25CF file.md",
+      "\u250A\u2502     \uFF08\u4e2d\u6587\uFF09",
+      "\u250A\u25CF abc x",
+      "\u250A\u25D0 def y",
+    ].join("\n")
+  );
+  eq(detail, { ids: ["abc", "def"], degraded: false }, "P-7: symbol-leading detail rows are skipped, not ids and not degradation");
+  eq(parseButStatusIds("\u25CF ?? garbage").degraded, true, "P-7: commit-column non-parse still degrades the whole parse (N5 fail-closed)");
+  eq(parseButStatusIds("\u250A\u2502     \u25CF ?z").degraded, false, "P-7: a non-parse deeper in the detail gutter stays content");
+}
+
+// --- M. R4/P-9: reuse pointers are the wiring, not comments --------------------
+{
+  const resolved = resolveReuse("parseWorkflowTriggers/collectWorkflowTriggers");
+  assert(resolved && resolved.names.length === 2 && typeof resolved.fns.collectWorkflowTriggers === "function", "the production reuse spec resolves both names from the module exports");
+  eq(resolveReuse("notAFunction/collectWorkflowTriggers"), null, "an unresolvable reuse pointer fails closed");
+  eq(resolveReuse(null), null, "a null reuse spec resolves nothing");
+  const snap = collectSnapshot({
+    root,
+    branches: [],
+    deps: {
+      spawnSync: makeSpawnSync({ git: { ok: false }, but: { ok: false }, gh: { ok: false } }),
+      workflows: { ok: false, pushBranches: [], pushAllBranches: false },
+      registry: { unpushed: { verify: "x", invalidate: "x", env: "git", reuse: null } },
+      deferred: { ok: true, covers: [], pendingPredicates: [] },
+    },
+  });
+  eq(snap.workflows.ok, false, "a registry missing the no-branch-runs entry degrades the workflows source (reuse-pointer consumption proven)");
+  assert(snap.registry && typeof snap.registry === "object", "the registry rides the snapshot into the core");
+  const def = collectDeferred(root);
+  eq(def.ok, true, "the real deferred registry parses");
+  assert(def.pendingPredicates.includes("no-pr") && def.pendingPredicates.includes("unpublished"), "R7: the real registry seats no-pr/unpublished as pending predicates");
 }
 
 // --- fail-on-empty red line ---------------------------------------------------

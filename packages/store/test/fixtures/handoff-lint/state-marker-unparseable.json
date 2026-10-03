@@ -51,6 +51,14 @@
     "main"
    ],
    "pushAllBranches": false
+  },
+  "deferred": {
+   "ok": true,
+   "covers": [
+    "r96-handoff-lint",
+    "--oops"
+   ],
+   "pendingPredicates": []
   }
  },
  "expect": {

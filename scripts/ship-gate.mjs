@@ -790,6 +790,7 @@ function stepStaticAssertions() {
         const claims = Array.isArray(reg.claims) ? reg.claims : [];
         if (!claims.length) fail("ADR-0081 D-004: closeout-claims.json registers zero claims — surface must be non-vacuous");
         let verified = 0;
+        let reauthoredTotal = 0;
         for (const c of claims) {
           if (!c.id || !c.kind || !c.claim) fail('ADR-0081 D-004: claim missing id/kind/claim: ' + JSON.stringify(c).slice(0, 120));
           const tag = 'closeout-claim ' + c.id + ' (' + c.kind + ')';
@@ -870,6 +871,18 @@ function stepStaticAssertions() {
             if (!c.file || typeof c.text !== "string" || !c.text) fail('ADR-0098 D4: ' + tag + ' needs file + non-empty text');
             if (typeof c.reason !== "string" || !c.reason.trim()) fail('ADR-0098 D4: ' + tag + ' needs a non-empty reason (re-anchor ritual)');
             if (!Number.isInteger(c.reauthored) || c.reauthored < 0) fail('ADR-0098 D4: ' + tag + ' needs a non-negative integer reauthored count');
+            // R5 (P-6 rework): the ratchet is a RECOUNT, not a flag. reauthored
+            // must equal the length of `reanchor_log`, and every entry carries
+            // the ritual pair (reason + audit pointer). The recount is
+            // surfaced in the pass line instead of silently integer-checked.
+            const rlog = Array.isArray(c.reanchor_log) ? c.reanchor_log : [];
+            if (rlog.length !== c.reauthored) fail('ADR-0098 D4: ' + tag + ' declares reauthored=' + c.reauthored + ' but reanchor_log carries ' + rlog.length + ' entr(ies) — the ratchet is a recount, not a flag');
+            for (let li = 0; li < rlog.length; li++) {
+              const le = rlog[li];
+              if (!le || typeof le.reason !== "string" || !le.reason.trim()) fail('ADR-0098 D4: ' + tag + ' reanchor_log[' + li + '] lacks a non-empty reason (ritual)');
+              if (typeof le.audit !== "string" || !le.audit.trim()) fail('ADR-0098 D4: ' + tag + ' reanchor_log[' + li + '] lacks an audit pointer (ritual)');
+            }
+            reauthoredTotal += rlog.length;
             const fp = path.join(ROOT, c.file);
             if (!fs.existsSync(fp)) fail('ADR-0098 D4: ' + tag + ' file missing: ' + c.file);
             const text = fs.readFileSync(fp, "utf8");
@@ -879,7 +892,7 @@ function stepStaticAssertions() {
             fail('ADR-0081 D-004: unknown claim kind ' + c.kind + ' (' + c.id + ')');
           }
         }
-        report("pass", 'closeout-claims r' + maxRound + ': ' + verified + '/' + claims.length + ' registered claims re-derived green');
+        report("pass", 'closeout-claims r' + maxRound + ': ' + verified + '/' + claims.length + ' registered claims re-derived green (reanchor recount ' + reauthoredTotal + ')');
       }
     }
   }

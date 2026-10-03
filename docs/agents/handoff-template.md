@@ -162,6 +162,9 @@ stack-advisory: stale-capture
 verification-unavailable: gh-missing | repo-parse | api-failed | ref-unavailable
 pending-reason: stack-unpushed | pushed-no-branch-runs
 state-red: state-marker-unparseable | state-predicate-out-of-vocabulary | bare-word-violation
+state-pending: pending-predicate
+clearing-red: clearing-residual-unregistered
+clearing-env: deferred-registry-unavailable
 ```
 
 ### Redaction

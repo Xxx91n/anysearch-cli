@@ -51,6 +51,13 @@
     "main"
    ],
    "pushAllBranches": false
+  },
+  "deferred": {
+   "ok": true,
+   "covers": [
+    "## 绿色 run URL（必填）"
+   ],
+   "pendingPredicates": []
   }
  },
  "expect": {
@@ -62,7 +69,8 @@
    "stack-chain-empty"
   ],
   "annotations": [
-   "run-url:verification-unavailable:ref-unavailable"
+   "run-url:verification-unavailable:ref-unavailable",
+   "clearing:ref-unavailable"
   ]
  }
 }

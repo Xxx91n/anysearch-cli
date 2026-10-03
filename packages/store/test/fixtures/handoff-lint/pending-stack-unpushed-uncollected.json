@@ -1,23 +1,16 @@
 {
- "name": "pending-pushed-no-branch-runs-verified",
+ "name": "state-unpushed-verified",
  "round": 96,
- "description": "F8-c: PENDING{pushed-no-branch-runs} verified offline - ref exists, no workflow push trigger covers the branch.",
- "doc": "# Handoff — Grill Round 96 → R97（夹具）\n\nStack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：\n  r96-handoff-lint → aaa (`aaaaaaa1` @ 2026-10-02) → bbb (`bbbbbbb2` @ 2026-10-02)\n\n## 绿色 run URL（必填）\n\nPENDING: pushed-no-branch-runs — 特性分支 push 不产出 run（夹具）\n\n## 下一轮候选\n\n- n/a\n",
+ "description": "ALLOW: declared unpushed holds (no origin ref)",
+ "doc": "# Handoff — Grill Round 96 → R97（夹具）\n\nStack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：\n  r96-handoff-lint → aaa (`aaaaaaa1` @ 2026-10-02) → bbb (`bbbbbbb2` @ 2026-10-02)\n\n## 绿色 run URL（必填）\n\nPENDING: stack-unpushed\n\n## 下一轮候选\n\n- n/a\n",
  "env": {
   "now": "2026-10-02",
   "repo": "Xxx91n/anysearch-cli",
   "git": {
    "ok": true,
    "shallow": false,
-   "branchRefs": {
-    "r96-handoff-lint": "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0"
-   },
-   "stackBranchMembers": {
-    "r96-handoff-lint": [
-     "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
-     "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
-    ]
-   },
+   "branchRefs": {},
+   "stackBranchMembers": {},
    "commitObjects": {
     "aaaaaaa1": "commit",
     "bbbbbbb2": "commit"
@@ -54,9 +47,7 @@
   },
   "deferred": {
    "ok": true,
-   "covers": [
-    "r96-handoff-lint"
-   ],
+   "covers": [],
    "pendingPredicates": []
   }
  },
@@ -64,8 +55,21 @@
   "verdict": "PENDING",
   "scope": "three-state",
   "runUrlState": "PENDING",
-  "stackState": "GREEN",
+  "stackState": "PENDING",
   "redCodes": [],
-  "annotations": []
+  "annotations": [
+   "run-url:verification-unavailable:ref-unavailable",
+   "stack:ref-unavailable",
+   "clearing:ref-unavailable"
+  ],
+  "runUrlVerifiedPending": false
+ },
+ "expectE2E": {
+  "verdict": "PENDING",
+  "runUrlVerifiedPending": true,
+  "annotations": [
+   "stack:ref-unavailable"
+  ],
+  "redCodes": []
  }
 }

@@ -38,6 +38,13 @@
     "main"
    ],
    "pushAllBranches": false
+  },
+  "deferred": {
+   "ok": true,
+   "covers": [
+    "r96-handoff-lint"
+   ],
+   "pendingPredicates": []
   }
  },
  "expect": {
@@ -48,7 +55,8 @@
   "redCodes": [],
   "annotations": [
    "run-url:verification-unavailable:ref-unavailable",
-   "stack:ref-unavailable"
+   "stack:ref-unavailable",
+   "clearing:ref-unavailable"
   ],
   "runUrlVerifiedPending": false
  }

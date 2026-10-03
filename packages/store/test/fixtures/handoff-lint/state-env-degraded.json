@@ -51,6 +51,14 @@
     "main"
    ],
    "pushAllBranches": false
+  },
+  "deferred": {
+   "ok": true,
+   "covers": [
+    "r96-handoff-lint",
+    "r97-probe"
+   ],
+   "pendingPredicates": []
   }
  },
  "expect": {
@@ -60,7 +68,8 @@
   "stackState": "GREEN",
   "redCodes": [],
   "annotations": [
-   "state:ref-unavailable"
+   "state:ref-unavailable",
+   "clearing:ref-unavailable"
   ]
  }
 }

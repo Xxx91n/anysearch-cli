@@ -15,7 +15,8 @@
 import { spawnSync as nodeSpawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { assessHandoffLint, parseStackLine, parseRoundFromName, parseRunUrlSection, parseStateMarkers, uniq } from "./handoff-lint-verdict.mjs";
+import * as shellModule from "./handoff-lint-shell.mjs";
+import { assessHandoffLint, parseStackLine, parseRoundFromName, parseRunUrlSection, parseStateMarkers, uniq, STATE_PREDICATE_REGISTRY } from "./handoff-lint-verdict.mjs";
 
 // One observational command. Returns trimmed stdout, or null when the command
 // could not run / exited non-zero (both mean "no fact", never "false").
@@ -46,9 +47,22 @@ export function parseButStatusIds(stdout) {
     const t = raw.replace(/^[\s\u2500-\u257F|]+/, "");
     if (!t) continue;
     if (/^[A-Za-z0-9]/.test(t)) continue;
+    // P-7 (R8 rework): N5's widening to "one non-blank symbol" made
+    // symbol-leading DETAIL rows (file rows, message continuations) degrade
+    // the whole parse - the fail-open direction the audit named. Only a
+    // symbol at the commit-bullet column (immediately after the stack/tree
+    // prefix, never inside the indented detail gutter) is a commit marker.
+    // A symbol deeper in is content: skipped, never an id and never a
+    // degradation - while a bullet-column symbol that still fails to parse
+    // still degrades the whole parse (N5 fail-closed kept).
+    const bulletDepth = raw.length - t.length;
+    const commitColumn = bulletDepth <= 4;
     const m = /^([^\s\t])[ \t]+([A-Za-z0-9][A-Za-z0-9_-]{0,9})\b/.exec(t);
-    if (m) ids.push(m[2]);
-    else degraded = true;
+    if (m) {
+      if (commitColumn) ids.push(m[2]);
+      continue;
+    }
+    if (commitColumn) degraded = true;
   }
   return { ids: uniq(ids), degraded };
 }
@@ -165,6 +179,39 @@ export function deriveWorkflowName(run) {
   return typeof run?.name === "string" ? run.name : "";
 }
 
+// R4 (P-9 rework): registry `reuse` pointers are consumed, not decorative.
+// A predicate's env-source functions are resolved BY NAME from this module's
+// own exports - the pointer is the wiring, not a comment. Every name in the
+// spec must resolve; the LAST name is the env producer (the earlier names are
+// its declared pipeline). An unresolvable pointer fails closed: the env
+// source degrades to ok:false and surfaces as env-PENDING everywhere it is
+// needed, instead of silently bypassing the registry.
+export function resolveReuse(spec) {
+  const names = String(spec ?? "").split("/").map((s) => s.trim()).filter(Boolean);
+  if (names.length === 0) return null;
+  const fns = {};
+  for (const n of names) {
+    if (typeof shellModule[n] !== "function") return null;
+    fns[n] = shellModule[n];
+  }
+  return { fns, names };
+}
+
+// docs/deferred-registry.json -> the clearing / pending-seat env surface
+// (R6 clearing coverage + R7 pending predicates). A missing or unparseable
+// registry is an environment fact of its own (ok:false), never an empty one.
+export function collectDeferred(root) {
+  try {
+    const reg = JSON.parse(fs.readFileSync(path.join(root, "docs", "deferred-registry.json"), "utf8"));
+    const open = (Array.isArray(reg.entries) ? reg.entries : []).filter((e) => e && e.status === "open");
+    const covers = open.flatMap((e) => (Array.isArray(e.covers) ? e.covers : []));
+    const pendingPredicates = open.flatMap((e) => (Array.isArray(e.pending_predicates) ? e.pending_predicates : []));
+    return { ok: true, covers: uniq(covers), pendingPredicates: uniq(pendingPredicates) };
+  } catch {
+    return { ok: false, covers: [], pendingPredicates: [] };
+  }
+}
+
 // --- 1. collect -------------------------------------------------------------
 
 // Collect the environment snapshot. Pure observation - no verdicts here.
@@ -243,8 +290,17 @@ export function collectSnapshot({ root, branches = [], shas = [], runIds = [], d
     }
   }
 
-  // deps.workflows is the injection seam the E2E smoke uses; production reads disk.
-  const workflows = deps.workflows ?? collectWorkflowTriggers(root);
+  // deps.workflows is the injection seam the E2E smoke uses; production reads
+  // disk - THROUGH the registry's `reuse` pointer (R4/P-9: the pointer is the
+  // wiring). An unresolvable pointer degrades the source to ok:false.
+  const registry = deps.registry ?? STATE_PREDICATE_REGISTRY;
+  const reuseEntry = registry && typeof registry === "object" ? registry["no-branch-runs"] : null;
+  const resolved = resolveReuse(reuseEntry ? reuseEntry.reuse : null);
+  const workflows =
+    deps.workflows ??
+    (resolved
+      ? resolved.fns[resolved.names[resolved.names.length - 1]](root)
+      : { ok: false, pushBranches: [], pushAllBranches: false });
 
   return {
     now,
@@ -254,6 +310,8 @@ export function collectSnapshot({ root, branches = [], shas = [], runIds = [], d
     gh: { ok: ghOk, runs },
     but: { ok: butOk, ids: butIds },
     workflows,
+    registry,
+    deferred: deps.deferred ?? collectDeferred(root),
   };
 }
 
