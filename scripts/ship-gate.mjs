@@ -1238,12 +1238,17 @@ function stepHandoffCloseoutLint() {
   exitIfCoverageRed();
 }
 
-// 1h. ADR-0099 (R98 D-002/D-003): enforcement-anchor selfcheck — the fifth
+// ADR-0099 (R98 D-002/D-003): enforcement-anchor selfcheck — the fifth
 //     morphology detector. The anchors declare machine constraints on GATE
 //     CODE (not closeout docs), so the leg lives parallel to the lint legs:
-//     the shell runs each anchor's falsification probe and reports
-//     kill/no-kill; the registry file and a missing probe are fail-closed.
-{
+//     registered as its own step (self-labelled reportStep, same convention
+//     as stepValidateDomains) so every verdict line lands in report.json
+//     entries. The shell runs each anchor's falsification probe and reports
+//     kill/no-kill; the registry file, an empty/malformed table and a missing
+//     probe are all fail-closed.
+function stepEnforcementAnchors() {
+  reportStep("step_1_6_enforcement_anchors");
+  report("info", "step 1j/9: enforcement-anchor selfcheck (ADR-0099 fifth morphology)");
   const anchorRes = runEnforcementAnchors({ root: ROOT });
   for (const l of anchorRes.lines) report(l.kind, l.msg);
   if (anchorRes.exitKind === "fail") fail("enforcement-anchors: declared machine constraint(s) lack a live consumer (ADR-0099 fifth morphology)");
@@ -2106,6 +2111,7 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
   stepReadmeParity();
   stepPathLint();
   await stepValidateDomains();
+  stepEnforcementAnchors();
   if (!quick) { reportStep("step_2_turbo"); await stepBuildAndTest(); }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-ship-gate-"));
   try {

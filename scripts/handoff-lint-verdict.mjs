@@ -147,6 +147,18 @@ export function isKnownCode(code) {
   return Object.keys(CODE_GROUPS).some((k) => CODE_GROUPS[k].includes(code));
 }
 
+// Vocabulary guard (anchor:vocab-guards): the production check of record for
+// 「every exported `*_CODES` array is registered in CODE_GROUPS」. The unit
+// truth-table asserts this on the real module namespace; the enforcement-
+// anchor probe consumes the SAME function on a distorted namespace — one
+// implementation, two callers, never a self-defensive copy.
+export function unregisteredCodeExports(ns) {
+  const registered = new Set(Object.values(CODE_GROUPS));
+  return Object.keys(ns ?? {}).filter(
+    (k) => /_CODES$/.test(k) && Array.isArray(ns[k]) && !registered.has(ns[k])
+  );
+}
+
 // --- pure helpers -----------------------------------------------------------
 
 // Days since 1970-01-01 for a YYYY-MM-DD string, computed with integer
@@ -575,9 +587,27 @@ export function assessStackLeg(parsed, env) {
       return { state: "PENDING", redCodes, problems: [], annotations, links };
     }
     const members = env.git.stackBranchMembers[parsed.branch] ?? null;
-    if (members === null) {
+    // Cross-check the ref map before trusting a null member set: a present
+    // origin ref contradicts "dissolved" even when the member collection is
+    // absent (audit N4 - hand-built envs can split the pair; reading the ref
+    // as absent would be the S-1 false-GREEN direction).
+    const refSha = env.git.branchRefs && Object.prototype.hasOwnProperty.call(env.git.branchRefs, parsed.branch) ? env.git.branchRefs[parsed.branch] : null;
+    if (members === null && (refSha === null || refSha === undefined || refSha === "")) {
       links.push({ butId: null, sha: null, branch: parsed.branch });
       return { state: "GREEN", redCodes, problems: [], annotations, links };
+    }
+    if (members === null) {
+      return {
+        state: "RED",
+        redCodes: [emitCode(RUN_URL_RED_CODES, "declaration-fact-conflict")],
+        problems: [
+          "declaration-fact-conflict: `Stack（dissolved` claimed but origin/" +
+          parsed.branch +
+          " still exists (ref " + String(refSha).slice(0, 12) + " present; member set uncollected - an empty ref is not a dissolve)",
+        ],
+        annotations,
+        links,
+      };
     }
     return {
       state: "RED",

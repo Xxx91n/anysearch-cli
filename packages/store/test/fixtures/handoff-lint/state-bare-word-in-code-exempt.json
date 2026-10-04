@@ -1,7 +1,7 @@
 {
- "name": "state-unpushed-verified",
+ "name": "state-bare-word-in-code-exempt",
  "round": 96,
- "description": "ALLOW: declared unpushed holds (no origin ref)",
+ "description": "ALLOW: bare words inside code spans/fences are exempt from the bare-word scan",
  "doc": "# Handoff — Grill Round 96 → R97（夹具）\n\nStack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：\n  r96-handoff-lint → aaa (`aaaaaaa1` @ 2026-10-02) → bbb (`bbbbbbb2` @ 2026-10-02)\n\n## 绿色 run URL（必填）\n\nGREEN: https://github.com/Xxx91n/anysearch-cli/actions/runs/1001\n\n## 下一轮候选\n\n- n/a\n\n```\nunpushed and 未推送 inside a fence are quoted text\n```\n\ninline `unlanded` and `未合流` inside spans are quoted too\n",
  "env": {
   "now": "2026-10-02",

@@ -395,14 +395,21 @@ eq(newestCloseoutTargets([
     },
   });
   eq(seated.exitKind, "pass", "a seated anchor never blocks");
-  assert(seated.lines.some((l) => l.msg.includes("pending-seat") || l.msg.includes("pending-anchor")), "the seat is surfaced in the report");
+  assert(seated.lines.some((l) => l.msg.includes("pending-anchor")), "the seat is surfaced in the report");
   // an unreadable registry file is fail-closed
   const broken = runEnforcementAnchors({ root, deps: { registry: { ok: false, anchors: [] } } });
   eq(broken.exitKind, "fail", "an unreadable anchor registry is fail-closed");
+  // fifth cell (audit F-2): an empty or shape-missing registry is fail-closed —
+  // a detector retired by emptying its table would be vacuous-pass decorative
+  const emptyArr = runEnforcementAnchors({ root, deps: { registry: { ok: true, anchors: [] } } });
+  eq(emptyArr.exitKind, "fail", "an empty anchors list is anchor-registry-empty RED, never vacuous pass");
+  const noKey = runEnforcementAnchors({ root, deps: { registry: { ok: true, anchors: null } } });
+  eq(noKey.exitKind, "fail", "a registry with no anchors array is fail-closed too");
+  assert(emptyArr.lines.some((l) => l.msg.includes("anchor-registry-empty")), "the vacuous-table red carries the governed code");
 }
 
 // --- fail-on-empty red line ---------------------------------------------------
-assert(passed > 160, "fail-on-empty: the E2E smoke actually executed (" + passed + " assertions)");
+assert(passed > 350, "fail-on-empty: the E2E smoke actually executed (" + passed + " assertions)");
 
 console.log("handoff-lint-e2e.test: " + passed + " passed, " + failed + " failed");
 process.exit(failed === 0 ? 0 : 1);

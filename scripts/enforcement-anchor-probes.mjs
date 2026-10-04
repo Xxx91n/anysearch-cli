@@ -14,6 +14,7 @@
 import {
   assessStateLeg,
   parseStackLine,
+  unregisteredCodeExports,
 } from "./handoff-lint-verdict.mjs";
 import {
   resolveReuse,
@@ -82,15 +83,13 @@ export function probeBareWordSingleSource() {
 }
 
 // anchor:vocab-guards — every exported `*_CODES` vocabulary must be registered
-// in CODE_GROUPS. The distortion is a namespace carrying an unregistered
-// export; the guard must report exactly it and nothing else.
+// in CODE_GROUPS. The kill is produced by the PRODUCTION check of record
+// (unregisteredCodeExports in the verdict module - the same function the
+// truth-table consumes), never a probe-local copy: the distortion is a
+// namespace carrying an unregistered export and the guard must name it.
 export function probeVocabGuards() {
-  const unregistered = (ns) =>
-    Object.keys(ns).filter(
-      (k) => /_CODES$/.test(k) && Array.isArray(ns[k]) && !Object.values(ns.CODE_GROUPS ?? {}).includes(ns[k])
-    );
-  const real = unregistered(verdictModule);
-  const distorted = unregistered({ ...verdictModule, FAKE_CODES: Object.freeze(["x-fake-vocab"]) });
+  const real = unregisteredCodeExports(verdictModule);
+  const distorted = unregisteredCodeExports({ ...verdictModule, FAKE_CODES: Object.freeze(["x-fake-vocab"]) });
   const killed = real.length === 0 && distorted.length === 1 && distorted[0] === "FAKE_CODES";
   return { killed, detail: "real exports unregistered=" + JSON.stringify(real) + "; injected FAKE_CODES detected=" + JSON.stringify(distorted) };
 }
@@ -100,7 +99,10 @@ export function probeVocabGuards() {
 // matching one. Consumption = the gate's own checkVerbatimClaim (single code
 // path, extracted for exactly this).
 export function probeRatchetRecount({ root }) {
-  const base = { id: "anchor-probe", kind: "verbatim", file: "docs/deferred-registry.json", text: '"version"', reason: "probe", reauthored: 0, reanchor_log: [] };
+  // The good-case anchors on the ADR-INDEX marker — a surface the gate itself
+  // guarantees (stepAdrIndex fail-closes if it ever disappears), so the probe
+  // is coupled to a contract, not to a data field that may be renamed.
+  const base = { id: "anchor-probe", kind: "verbatim", file: "docs/adr/index.md", text: "<!-- BEGIN ADR-INDEX", reason: "probe", reauthored: 0, reanchor_log: [] };
   const good = checkVerbatimClaim(base, { root });
   const bad = checkVerbatimClaim({ ...base, reauthored: 1 }, { root });
   const badRitual = checkVerbatimClaim({ ...base, reauthored: 1, reanchor_log: [{}] }, { root });
@@ -108,13 +110,6 @@ export function probeRatchetRecount({ root }) {
   return { killed, detail: "matching recount problems=" + good.length + "; declared 1 vs log 0 -> " + bad.length + " problem(s); entry missing ritual pair -> " + badRitual.length + " problem(s)" };
 }
 
-// The runner resolves registry `probe` names from this module's exports.
-// PROBE_TABLE is only a human-facing index for the registry file - the runner
-// resolves by name (a table it never consults, so it cannot go stale).
-export const PROBE_TABLE = Object.freeze({
-  "anchor:predicate-registry": "probePredicateRegistry",
-  "anchor:reuse-pointer": "probeReusePointer",
-  "anchor:bare-word-single-source": "probeBareWordSingleSource",
-  "anchor:vocab-guards": "probeVocabGuards",
-  "anchor:ratchet-recount": "probeRatchetRecount",
-});
+// The runner resolves registry `probe` names from this module's exports
+// directly - no shadow table (a second list the runner never reads would be
+// the decorative double-source this morphology exists to kill).

@@ -43,7 +43,9 @@ import {
   assessStackLeg,
   assessClearingLeg,
   assessHandoffLint,
+  unregisteredCodeExports,
 } from "../../../scripts/handoff-lint-verdict.mjs";
+import * as verdictModuleForGuard from "../../../scripts/handoff-lint-verdict.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXDIR = path.join(__dirname, "fixtures", "handoff-lint");
@@ -136,6 +138,9 @@ for (const k of Object.keys(CODE_GROUPS)) {
   for (const c of CODE_GROUPS[k]) assert(isKnownCode(c), "isKnownCode(" + c + ") is true");
 }
 assert(isKnownCode("ref-unavailable") && isKnownCode("stale-capture") && !isKnownCode("made-up-code"), "isKnownCode distinguishes governed codes from invented ones");
+// Vocabulary guard on the REAL module namespace (anchor:vocab-guards production
+// consumption): every exported `*_CODES` array must be registered in CODE_GROUPS.
+eq(unregisteredCodeExports(verdictModuleForGuard), [], "every exported *_CODES array is registered in CODE_GROUPS (production guard of record)");
 // The guard itself: an out-of-vocabulary code cannot be emitted (R3 negative case).
 let guardThrew = false;
 try { emitCode(RUN_URL_RED_CODES, "made-up-code"); } catch (e) { guardThrew = /not in its vocabulary/.test(String(e.message)); }
