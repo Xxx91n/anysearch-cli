@@ -1,4 +1,4 @@
-# Grill Round 98 审计 LOOP1 复核报告 — PASS（两阻断真修复 + 3 项残留不阻断）
+# Grill Round 98 审计 LOOP1 复核报告 — PASS（两阻断真修复；残留已于 LOOP1.5 清零）
 
 - 日期：2026-10-04 | 审计窗：独立复核（只出报告，不动手修）
 - 复核对象：LOOP1 返修 commit `sml`（`r98-anchor-detector`，git `5362be96`，9 files +131/-35，工作树净）
@@ -6,7 +6,7 @@
 
 ## §0 结论
 
-**两阻断均为真修复非采信自述**：结构、行为、证据三面逐一亲验（§1）。次要项除 N6 半修外全部兑现。断言只升：真值表 444→**445/0**、E2E 360→**363/0**（本窗实跑）。全量船闸本窗复跑 `REAL_GATE_EXIT=0` + green（check/test/build/8 包/126 eval/MCP 测活全过），`report.json` 现含 `step_1_6_enforcement_anchors` **7 条结果**（原 0）。残留 3 项不阻断（§3）：1 项弱化（N6 半修）+ 2 项文档级 nit。
+**两阻断均为真修复非采信自述**：结构、行为、证据三面逐一亲验（§1）。次要项除 N6 半修外全部兑现。断言只升：真值表 444→**445/0**、E2E 360→**363/0**（本窗实跑）。全量船闸本窗复跑 `REAL_GATE_EXIT=0` + green（check/test/build/8 包/126 eval/MCP 测活全过），`report.json` 现含 `step_1_6_enforcement_anchors` **7 条结果**（原 0）。原残留 3 项（§3）：R-1/R-2 已按 owner 指示本窗闭环（§6，断言只升 E2E 363→368），R-3 为合规观察项。
 
 ## §1 阻断复核（声明 → 证据 → 结论）
 
@@ -32,10 +32,10 @@
 | N6 | ANCHOR_RED_CODES/ANCHOR_SKIP_CODES 封闭码 | 常量已立（`enforcement-anchors.mjs:28-34`）且 msg 均携码——**但全仓 grep 除声明处外零消费**（发射仍字面量、无 emitCode 类守卫、无测试断言常量本体）；另此二 `*_CODES` 导出落在 vocab-guards 探针扫描域（仅 verdictModule）之外——同族弱化半修 | ⚠️ **半修→残留 R-1** |
 | N7 | `[pending-anchor]` 统一 / floor 160→350 / ratchet 探针锚定 BEGIN ADR-INDEX | 输出实测 `[pending-anchor]`；e2e `passed > 350`；探针 good-case 改锚 `docs/adr/index.md` `<!-- BEGIN ADR-INDEX`（契约面，生产耦合解除） | ✅ |
 
-## §3 残留（不阻断，具名呈报）
+## §3 残留（不阻断，具名呈报）——LOOP1.5 已闭环
 
-- **R-1（弱化）**：`ANCHOR_RED_CODES`/`ANCHOR_SKIP_CODES` 零消费——「封闭码」声明立而无机器消费（发射字面量、无守卫、无断言），恰为本形态标本的 N6 半修例。处置建议：msg 发射引用常量（最小消费）或在 runner 内加「fail/skip 行必携注册码」自检，或入 deferred registry 一票；另可评估把 `*_CODES` 守卫扩至 scripts/ 全目录（首张扩表候选，衔接 `defer-r98-anchor-open-surface-demo`）。
-- **R-2（文档级）**：轮报 §4b 自述「锚腿 6 行结果」实测 7；同段引用不存在之「§4c」（悬指引）——全量船闸已实跑复绿，补写 §4c 或删引即可。
+- **R-1（弱化）→ 已闭**：`ANCHOR_RED_CODES`/`ANCHOR_SKIP_CODES` 原零消费（发射字面量、无守卫、无断言），N6 半修例。本窗按处置建议最小消费闭环——发射端 8 处码 token 全部改引用常量表（`enforcement-anchors.mjs:36-39` 解构），e2e §N 补「每 RED 行必携 `ANCHOR_RED_CODES` 注册码」断言（5 轮逐轮断言）。`*_CODES` 守卫扩域（scripts/ 全目录）仍留 R99/R100 扩表候选（衔接 `defer-r98-anchor-open-surface-demo`）。
+- **R-2（文档级）→ 已闭**：轮报 §4b「6 行」更正为 7；§4c 补写（返修后全量船闸实跑证据段）。
 - **R-3（观察）**：`--quick` 亦执行锚腿（在 quick 分支外注册）——与 D-003「每次 run 常数级成本」一致，合规非缺陷。
 
 ## §4 验收电池复跑（本窗独立，不信返修自述）
@@ -51,6 +51,15 @@
 
 ## §5 判定
 
-**PASS**（先例 R96 LOOP2「PASS/阻断真修复+文档级残留」同格）。R-1/R-2 不阻断——建议 R99 开工批顺带修（均为数行级），或登记 deferred；R-1 若走扩表通道则天然衔接开放面示范票。
+**PASS**（先例 R96 LOOP2「PASS/阻断真修复+文档级残留」同格）。R-1/R-2 已按 owner 指示在本窗直接闭环（小项直接修——§3），无遗留阻断或可移交缺陷；唯一结转项为 R-1 衍生候选「`*_CODES` 守卫扩域」——非缺陷，是开放面扩表的天然首张票（已挂 `defer-r98-anchor-open-surface-demo`）。
 
-— 审计窗只出报告，未改任何实现文件；本件与审计分支 `r98-audit-loop1` 同栈。
+## §6 LOOP1.5 残留闭环（2026-10-04，owner 指示「小问题直接修复」）
+
+| 项 | 修法 | 证据 |
+|---|---|---|
+| R-1 | 发射端解构常量表（`CODE_UNREADABLE/EMPTY/UNRESOLVABLE/NOT_CONSUMED/PENDING_ANCHOR`）替换全部字面量；e2e §N 补携码守卫断言 ×5 | `enforcement-anchors.mjs:36-39` + 全部 msg 引用；`handoff-lint-e2e.test.mjs:410-417` |
+| R-2 | 「6 行」→7；§4c 补写 | `2026-10-04-report.md` §4b/§4c |
+
+修复落 `r98-anchor-detector`（新 commit），电池复跑见 §4 同项（断言只升 E2E 363→368）。
+
+— 审计窗原只出报告；§6 闭环改动经 owner 明示授权（「小问题直接修复」），与 §1~§4 复核证据一并入账。

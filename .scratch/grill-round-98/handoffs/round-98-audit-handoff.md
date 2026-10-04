@@ -16,10 +16,10 @@ Stack（审计工件栈，与实现栈 `r98-anchor-detector` 平行独立；审�
 - 次要：N1 前检排除注册表自证 / N2 `unregisteredCodeExports` 生产单源双消费 / N3 PROBE_TABLE 删 / N4 dissolved `branchRefs` 交叉校验（语义复核无新洞）/ N5 fixture 元数据 / C7 CHANGELOG `### Deferred`+三新票 / N7 `[pending-anchor]` 统一+floor 350+探针锚定 BEGIN ADR-INDEX——全兑现。
 - 断言只升：真值表 444→445/0、E2E 360→363/0；船闸本窗复跑 exit 0 green。
 
-### 残留（不阻断，具名）
+### 残留（LOOP1.5 已闭环，2026-10-04 owner 指示小项直接修）
 
-- **R-1（弱化）**：`ANCHOR_RED_CODES`/`ANCHOR_SKIP_CODES` 声明立而零消费——发射仍字面量、无守卫、无断言，N6 半修留下的本形态新标本；另此二 `*_CODES` 导出在 vocab-guards 探针扫描域（仅 verdictModule）之外。建议：msg 发射引用常量/或 runner 加「行必携注册码」自检/或入 deferred。
-- **R-2（文档级）**：轮报 §4b「6 行」实测 7、引用不存在之「§4c」悬指引——补写或删引。
+- **R-1（弱化）→ 已闭**：锚码常量发射端解构引用消费（8 处字面量→`CODE_*`）+ e2e §N「每 RED 行必携注册码」断言 ×5（断言只升 363→368）。`*_CODES` 守卫扩域留为开放面扩表首张票。
+- **R-2（文档级）→ 已闭**：轮报 §4b「6 行」→7、§4c 补写（返修后全量船闸实跑证据）。
 
 ### 过程违规呈报（LOOP0，已随返修消解）
 
@@ -27,7 +27,7 @@ Stack（审计工件栈，与实现栈 `r98-anchor-detector` 平行独立；审�
 
 ## 下一轮 grill 方向指示（R99 及以后）
 
-**R99 已定盘**（`handoffs/next-round.md`）：T0 push/land 授权窗（owner 批准后执行；`defer-r98-stack-land-authorization` 随之关闭）、T1 锚坐席关闭票（`anchor:ratchet-recount` 升全量 kill，零代码改动）、T2 开放面扩表示范（可选窗）。**审计侧追加两件顺手票**：R-1 锚码消费（数行级）与 R-2 轮报两处更正。
+**R99 已定盘**（`handoffs/next-round.md`）：T0 push/land 授权窗（owner 批准后执行；`defer-r98-stack-land-authorization` 随之关闭）、T1 锚坐席关闭票（`anchor:ratchet-recount` 升全量 kill，零代码改动）、T2 开放面扩表示范（可选窗）。原审计侧两件顺手票 R-1/R-2 已于 LOOP1.5 闭环——无遗留移交缺陷；唯一结转是「`*_CODES` 守卫扩域」候选（非缺陷，并入 R100 第 1 题）。
 
 **R100+ 正题候选（审计呈报）**：
 
