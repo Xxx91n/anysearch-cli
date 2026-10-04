@@ -33,6 +33,11 @@ export const ANCHOR_RED_CODES = Object.freeze([
 ]);
 export const ANCHOR_SKIP_CODES = Object.freeze(["pending-anchor"]);
 
+// Emitted code tokens below are SOURCED from the tables (N6 closure): a RED
+// or skip line cannot carry an unregistered code without bypassing them.
+const [CODE_UNREADABLE, CODE_EMPTY, CODE_UNRESOLVABLE, CODE_NOT_CONSUMED] = ANCHOR_RED_CODES;
+const [CODE_PENDING_ANCHOR] = ANCHOR_SKIP_CODES;
+
 export function loadAnchorRegistry(root) {
   try {
     const reg = JSON.parse(fs.readFileSync(path.join(root, "docs", "enforcement-anchors.json"), "utf8"));
@@ -86,7 +91,7 @@ export function runEnforcementAnchors({ root, deps = {} }) {
 
   if (!reg.ok) {
     return {
-      lines: [{ kind: "fail", msg: "enforcement-anchors: anchor-registry-unreadable — docs/enforcement-anchors.json unreadable (the anchor registry is itself fail-closed)" }],
+      lines: [{ kind: "fail", msg: "enforcement-anchors: " + CODE_UNREADABLE + " — docs/enforcement-anchors.json unreadable (the anchor registry is itself fail-closed)" }],
       exitKind: "fail",
       counts: { anchors: 0, killed: 0, seated: 0, unkillable: 0 },
     };
@@ -100,7 +105,7 @@ export function runEnforcementAnchors({ root, deps = {} }) {
         {
           kind: "fail",
           msg:
-            "enforcement-anchors: anchor-registry-empty — docs/enforcement-anchors.json carries " +
+            "enforcement-anchors: " + CODE_EMPTY + " — docs/enforcement-anchors.json carries " +
             (Array.isArray(reg.anchors) ? "an empty `anchors` list" : "no `anchors` array") +
             " — the closed table must be non-vacuous; a detector with zero anchors is a decorative declaration",
         },
@@ -123,7 +128,7 @@ export function runEnforcementAnchors({ root, deps = {} }) {
     if (!probe) {
       unkillable++;
       fails++;
-      lines.push({ kind: "fail", msg: tag + ": anchor-unresolvable — probe `" + String(probeName) + "` unresolvable in enforcement-anchor-probes.mjs (no falsification fixture, not admitted)" });
+      lines.push({ kind: "fail", msg: tag + ": " + CODE_UNRESOLVABLE + " — probe `" + String(probeName) + "` unresolvable in enforcement-anchor-probes.mjs (no falsification fixture, not admitted)" });
       continue;
     }
     const refs = countReferences(root, a.subject);
@@ -140,13 +145,13 @@ export function runEnforcementAnchors({ root, deps = {} }) {
     const seat = seats.has(a.id);
     if (killedNow) {
       killed++;
-      lines.push({ kind: seat ? "info" : "pass", msg: tag + (seat ? " [pending-anchor]: constraint verified early" : ": consumer survives falsification") + " — " + String(res.detail ?? "") });
+      lines.push({ kind: seat ? "info" : "pass", msg: tag + (seat ? " [" + CODE_PENDING_ANCHOR + "]: constraint verified early" : ": consumer survives falsification") + " — " + String(res.detail ?? "") });
     } else if (seat) {
       seated++;
-      lines.push({ kind: "skip", msg: tag + " [pending-anchor]: falsification not yet killing (seated via deferred registry) — " + String(res.detail ?? "") });
+      lines.push({ kind: "skip", msg: tag + " [" + CODE_PENDING_ANCHOR + "]: falsification not yet killing (seated via deferred registry) — " + String(res.detail ?? "") });
     } else {
       fails++;
-      lines.push({ kind: "fail", msg: tag + ": anchor-not-consumed — declared constraint survives no falsification probe — " + String(res.detail ?? "") });
+      lines.push({ kind: "fail", msg: tag + ": " + CODE_NOT_CONSUMED + " — declared constraint survives no falsification probe — " + String(res.detail ?? "") });
     }
   }
   lines.push({
@@ -159,7 +164,7 @@ export function runEnforcementAnchors({ root, deps = {} }) {
       " anchors consumer-verified" +
       (seated > 0 ? ", " + seated + " seated" : "") +
       (unkillable > 0 ? ", " + unkillable + " unkillable" : "") +
-      (fails > 0 ? " — anchor-not-consumed" : " (ADR-0099 fifth morphology)"),
+      (fails > 0 ? " — " + CODE_NOT_CONSUMED : " (ADR-0099 fifth morphology)"),
   });
   return { lines, exitKind: fails > 0 ? "fail" : "pass", counts: { anchors: reg.anchors.length, killed, seated, unkillable } };
 }

@@ -24,7 +24,7 @@ import {
   collectSnapshot,
   evaluateHandoffLintDocuments,
 } from "../../../scripts/handoff-lint-shell.mjs";
-import { runEnforcementAnchors } from "../../../scripts/enforcement-anchors.mjs";
+import { runEnforcementAnchors, ANCHOR_RED_CODES } from "../../../scripts/enforcement-anchors.mjs";
 import { CODE_GROUPS, parseStackLine } from "../../../scripts/handoff-lint-verdict.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -406,6 +406,14 @@ eq(newestCloseoutTargets([
   const noKey = runEnforcementAnchors({ root, deps: { registry: { ok: true, anchors: null } } });
   eq(noKey.exitKind, "fail", "a registry with no anchors array is fail-closed too");
   assert(emptyArr.lines.some((l) => l.msg.includes("anchor-registry-empty")), "the vacuous-table red carries the governed code");
+  // N6 closure (audit R-1): every RED line the leg emits must carry a code
+  // registered in ANCHOR_RED_CODES — an ungoverned failure mode is a defect.
+  for (const run of [regless, dead, broken, emptyArr, noKey]) {
+    assert(
+      run.lines.every((l) => l.kind !== "fail" || ANCHOR_RED_CODES.some((c) => l.msg.includes(c))),
+      "every RED line carries a governed ANCHOR_RED_CODES token"
+    );
+  }
 }
 
 // --- fail-on-empty red line ---------------------------------------------------

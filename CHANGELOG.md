@@ -25,7 +25,7 @@ All notable changes to this project are recorded here. Format follows
 - **P-8 裸词单源化（R3）**：`STATE_BARE_RES` 从 `STATE_PREDICATES` 派生——删谓词即裸词漏报逃逸（双源实锤面消除），扩表漏改即漏扫不再可能。
 - **P-5 CHANGELOG 分行（R10）**：本节及 R97 节按 feat/fix/docs(errata) 分行——errata 从 Fixed 条内析出 Docs 类。
 - **P-2 清算义务补码（R6）**：见 Added 清算腿（降格方案放弃，防 D-002 账本连锁改写）。
-- **审计 LOOP1 返修（F-1/F-2+N1~N5/C7）**：锚腿由顶层裸块收为 `stepEnforcementAnchors()`（`step_1_6_enforcement_anchors` 自标 reportStep——report.json 证据面 + `--override` usage-error 顺序回归）；空表/畸形锚表 `anchor-registry-empty` fail-closed（non-vacuous 先例）；前检排除注册表自身（subject 自证结构性死亡修复）；`unregisteredCodeExports` 升生产守卫单源（探针+真值表双消费，杀 PROBE_TABLE 装饰双源）；dissolved 腿补 `branchRefs` 交叉校验（ref 在场+成员缺席=conflict 非 GREEN）；`state-bare-word-in-code-exempt` fixture 元数据更正；`### Deferred` 子节补立。
+- **审计 LOOP1 返修（F-1/F-2+N1~N5/C7）**：锚腿由顶层裸块收为 `stepEnforcementAnchors()`（`step_1_6_enforcement_anchors` 自标 reportStep——report.json 证据面 + `--override` usage-error 顺序回归）；空表/畸形锚表 `anchor-registry-empty` fail-closed（non-vacuous 先例）；前检排除注册表自身（subject 自证结构性死亡修复）；`unregisteredCodeExports` 升生产守卫单源（探针+真值表双消费，杀 PROBE_TABLE 装饰双源）；dissolved 腿补 `branchRefs` 交叉校验（ref 在场+成员缺席=conflict 非 GREEN）；`state-bare-word-in-code-exempt` fixture 元数据更正；`### Deferred` 子节补立；N6 收口——`ANCHOR_RED_CODES`/`ANCHOR_SKIP_CODES` 发射端引用消费（码 token 全部源自常量表）+ e2e「每 RED 行必携注册码」断言（R-1 零消费消除）。
 
 ### Docs
 
