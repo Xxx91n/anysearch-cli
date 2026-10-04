@@ -1,1234 +1,1236 @@
 {
- "version": 1,
- "updated": "2026-10-02",
- "note": "Machine-checkable registry of deferred work items and carried-over acceptance criteria. Discipline is isomorphic to .ship-gate/skip-ledger.json (schema @3) and the ADR-0020 conformance expected-failures ledger: every deferral is an explicit, traceable record, never a silent drop. ADR-0057 D5 / D-006 requires one entry per carried-over acceptance criterion, marked closed-by the ADR that closes it. Old ADR bodies are never edited; the pointer line lives in the old ADR and the record lives here (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). Additive only: new entries are appended, existing ids are never reused or renumbered. Canonical form locked by ship-gate stepGovernedJsonCanonical (ADR-0077): this file must byte-equal JSON.stringify(JSON.parse(src),null,1)+'\\n'. To normalize: node -e \"const f='docs/deferred-registry.json';const fs=require('fs');fs.writeFileSync(f,JSON.stringify(JSON.parse(fs.readFileSync(f,'utf8')),null,1)+'\\n')\"",
- "entries": [
-  {
-   "id": "defer-ac5-adr0056",
-   "type": "carried-over-acceptance-criterion",
-   "title": "ADR-0056 AC5 - pnpm -r check/test/build clean + ship-gate passes (CI green)",
-   "source_adr": "docs/adr/0056-architecture-grill-round-56-session-id-propagation-protocol.md",
-   "pointer_line": "> AC5: CLOSED by ADR-0057 (2026-09-12).",
-   "status": "closed",
-   "closed_by": "ADR-0057",
-   "closed_at": "2026-09-12",
-   "closed_by_adr_path": "docs/adr/0057-architecture-grill-round-57-test-truthfulness-ci-credibility.md",
-   "evidence": "CI run (turbo test, ubuntu-latest + windows-latest) + ship-gate log + test-file execution record; attached at merge per ADR-0057 'Carried-over Acceptance Criteria Closure'."
-  },
-  {
-   "id": "defer-anysearch-domain-ownership",
-   "type": "deferred-with-deadline",
-   "title": "api.anysearch.com ownership confirmation (legal/ops) - ADR-0059 D7 / T-6.4",
-   "source_adr": "docs/adr/0059-architecture-grill-round-58-ci-shipgate-full-green-closure-multiticket.md",
-   "owner": "anysearch-retriever",
-   "opened_at": "2026-09-12",
-   "deadline": "2026-12-31",
-   "review_cadence": "quarterly",
-   "status": "open",
-   "monitoring_channel": "quarterly review + certificate-transparency/expiry watch",
-   "evidence": "Domain verified live at round 58: CloudFront CNAME; Amazon wildcard cert valid to 2026-12-03; fresh status subdomain cert. Annotation block in packages/retriever/src/providers/anysearch.ts (endpoint, CNAME, confirmation date, fail-open note).",
-   "carried_log": [
+  "version": 1,
+  "updated": "2026-10-02",
+  "note": "Machine-checkable registry of deferred work items and carried-over acceptance criteria. Discipline is isomorphic to .ship-gate/skip-ledger.json (schema @3) and the ADR-0020 conformance expected-failures ledger: every deferral is an explicit, traceable record, never a silent drop. ADR-0057 D5 / D-006 requires one entry per carried-over acceptance criterion, marked closed-by the ADR that closes it. Old ADR bodies are never edited; the pointer line lives in the old ADR and the record lives here (Nygard / AWS / MS / MADR / KEP / GEP bidirectional-pointer convention, atomic same PR). Additive only: new entries are appended, existing ids are never reused or renumbered. Canonical form locked by ship-gate stepGovernedJsonCanonical (ADR-0077): this file must byte-equal JSON.stringify(JSON.parse(src),null,1)+'\\n'. To normalize: node -e \"const f='docs/deferred-registry.json';const fs=require('fs');fs.writeFileSync(f,JSON.stringify(JSON.parse(fs.readFileSync(f,'utf8')),null,1)+'\\n')\"",
+  "entries": [
     {
-     "at": "2026-09-22",
-     "round": 76,
-     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): standing record — deadline + quarterly review cadence holds (t6-hostile-cuts)"
+      "id": "defer-ac5-adr0056",
+      "type": "carried-over-acceptance-criterion",
+      "title": "ADR-0056 AC5 - pnpm -r check/test/build clean + ship-gate passes (CI green)",
+      "source_adr": "docs/adr/0056-architecture-grill-round-56-session-id-propagation-protocol.md",
+      "pointer_line": "> AC5: CLOSED by ADR-0057 (2026-09-12).",
+      "status": "closed",
+      "closed_by": "ADR-0057",
+      "closed_at": "2026-09-12",
+      "closed_by_adr_path": "docs/adr/0057-architecture-grill-round-57-test-truthfulness-ci-credibility.md",
+      "evidence": "CI run (turbo test, ubuntu-latest + windows-latest) + ship-gate log + test-file execution record; attached at merge per ADR-0057 'Carried-over Acceptance Criteria Closure'."
     },
     {
-     "at": "2026-09-22",
-     "round": 77,
-     "note": "R77 双轨域外——显式续债（落选≠飘过）：本轮=轨一dsh观测哨+轨二R76治理backlog，ownership议题未入轨"
+      "id": "defer-anysearch-domain-ownership",
+      "type": "deferred-with-deadline",
+      "title": "api.anysearch.com ownership confirmation (legal/ops) - ADR-0059 D7 / T-6.4",
+      "source_adr": "docs/adr/0059-architecture-grill-round-58-ci-shipgate-full-green-closure-multiticket.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-12",
+      "deadline": "2026-12-31",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "monitoring_channel": "quarterly review + certificate-transparency/expiry watch",
+      "evidence": "Domain verified live at round 58: CloudFront CNAME; Amazon wildcard cert valid to 2026-12-03; fresh status subdomain cert. Annotation block in packages/retriever/src/providers/anysearch.ts (endpoint, CNAME, confirmation date, fail-open note).",
+      "carried_log": [
+        {
+          "at": "2026-09-22",
+          "round": 76,
+          "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): standing record — deadline + quarterly review cadence holds (t6-hostile-cuts)"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 77,
+          "note": "R77 双轨域外——显式续债（落选≠飘过）：本轮=轨一dsh观测哨+轨二R76治理backlog，ownership议题未入轨"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 78,
+          "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 79,
+          "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 80,
+          "note": "R80 域外显式续债（carried, not silent）"
+        },
+        {
+          "at": "2026-09-24",
+          "round": 81,
+          "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+        },
+        {
+          "at": "2026-09-25",
+          "round": 82,
+          "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=AnySearch REST→MCP 迁移+TE1 条件辅轴+残余分诊，ownership 议题未入轨"
+        }
+      ]
     },
     {
-     "at": "2026-09-22",
-     "round": 78,
-     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+      "id": "defer-f16-macos-native-crash",
+      "type": "known-issue-quarantine",
+      "title": "F-16: better-sqlite3 exit-time mutex crash on darwin-arm64 (macOS ship-gate job)",
+      "source_adr": "docs/adr/0059-architecture-grill-round-58-ci-shipgate-full-green-closure-multiticket.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-12",
+      "deadline": "2026-12-31",
+      "ttl_days": 90,
+      "review_cadence": "monthly",
+      "status": "open",
+      "upstream_issue": "https://github.com/WiseLibs/better-sqlite3/issues/1514",
+      "ci_evidence": "https://github.com/Xxx91n/anysearch-cli/actions/runs/34700329763 (macos-latest job 103570831306): libc++abi: terminating due to uncaught exception of type std::__1::system_error: mutex lock failed: Invalid argument - hit in the packages/store test step AND the eval CLI spawn, on Node 22.23.2 arm64",
+      "decision_chain_state": "ADR-0059 D4 gate 1 probe DONE (crash = better-sqlite3, darwin-arm64); gate 2 Node 22 alignment applied by T-1 and did NOT fix it; gate 3 onnxruntime not implicated; exits 4 (subprocess isolation + sentinel exit code) and 5 (this ledger) remain. The workflow does NOT silently skip - the macos ship-gate job is honestly red.",
+      "monitoring_channel": "monthly CI re-run of the macos ship-gate job + upstream better-sqlite3 issue watch",
+      "carried_log": [
+        {
+          "at": "2026-09-22",
+          "round": 76,
+          "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream preview blocker unchanged; quarterly cadence holds"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 77,
+          "note": "R77 双轨域外——显式续债：macOS原生崩溃监视维持月度CI+上游issue watch，本轮无处置动作"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 78,
+          "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 79,
+          "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 80,
+          "note": "R80 域外显式续债（carried, not silent）"
+        },
+        {
+          "at": "2026-09-24",
+          "round": 81,
+          "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+        },
+        {
+          "at": "2026-09-25",
+          "round": 82,
+          "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，macOS native crash 修复未入轨（native-smoke 覆盖腿存续）"
+        }
+      ]
     },
     {
-     "at": "2026-09-23",
-     "round": 79,
-     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+      "id": "defer-f17-quarantine-ids",
+      "type": "deferred-with-deadline",
+      "title": "F-17: name the two environment-flaky golden cases and populate eval-quarantine.json",
+      "source_adr": "docs/adr/0059-architecture-grill-round-58-ci-shipgate-full-green-closure-multiticket.md",
+      "owner": "anysearch-eval",
+      "opened_at": "2026-09-12",
+      "deadline": "2026-12-31",
+      "ttl_days": 90,
+      "review_cadence": "monthly",
+      "status": "open",
+      "evidence": "20 local fixed-input runs (docs/eval/quarantine-audit-2026-09-12.md) and 4 post-fix CI memory-eval runs are all 128/128 (mrr 0.548). The single historical 126/128 (mrr 0.524) was produced by the memory-eval job, which uploads no artifact - and the main ship-gate artifacts from that run are 128/128 with integrity.verdict=failed/runPurpose=decision (the F-15 signature), so the two case ids are not recoverable from any artifact. Reproduction procedure: run the memory-eval job repeatedly, one ref per run (same-ref dispatches cancel via the ship-gate concurrency group), and read '[eval] failed cases: <id>(<stage>)' from the job log; then add the entries to packages/store/eval-quarantine.json. The SLA enforcement point (packages/store/test/eval-quarantine-sla.test.ts) is already in place.",
+      "monitoring_channel": "monthly CI re-run of the memory-eval job",
+      "carried_log": [
+        {
+          "at": "2026-09-22",
+          "round": 76,
+          "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream preview blocker unchanged; quarterly cadence holds"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 77,
+          "note": "R77 双轨域外——显式续债：quarantine id工作未入本轮轨"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 78,
+          "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 79,
+          "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 80,
+          "note": "R80 域外显式续债（carried, not silent）"
+        },
+        {
+          "at": "2026-09-24",
+          "round": 81,
+          "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+        },
+        {
+          "at": "2026-09-25",
+          "round": 82,
+          "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，quarantine IDs 未入轨"
+        }
+      ]
     },
     {
-     "at": "2026-09-23",
-     "round": 80,
-     "note": "R80 域外显式续债（carried, not silent）"
+      "id": "defer-r71-shipgate-1g-coverage",
+      "type": "deferred-with-deadline",
+      "title": "ship-gate closeout-required leg coverage gap (R70 F1 successor): fallback picks latest round dir containing a closeout, silently masking a missing one",
+      "source_adr": "docs/adr/0072-architecture-grill-round-71-first-release-path-governance-embedding-reachability.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-19",
+      "deadline": "2026-12-31",
+      "review_cadence": "quarterly",
+      "status": "closed",
+      "evidence": "Ship-gate step 1g leg-b rewritten (scripts/closeout-coverage.mjs + assessCloseoutCoverage): completion signal = ADR index Grill Round N registration; fail-closed 3 assertions (registered-no-closeout red / index↔.scratch bidirectional drift red / empty-or-unparseable derivation red); floor=76 rule birthday; explicit in-flight exemption line; coverage counts on pass. All three assertions exercised red at the real gate (evidence/t1-* logs) + 40/40 fixture tests (audit rework added F-2/F-4 + residual-cleanup regression assertions; original landing was 26).",
+      "monitoring_channel": "next grill round task-book triage; do not re-defer without an explicit ledger entry",
+      "closed_by": "ADR-0077",
+      "closed_by_adr_path": "docs/adr/0077-architecture-grill-round-76-silent-drift-governance-liquidation.md",
+      "closed_at": "2026-09-22"
     },
     {
-     "at": "2026-09-24",
-     "round": 81,
-     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+      "id": "defer-r71-transformers-undeclared-dep",
+      "type": "deferred-with-deadline",
+      "title": "transformers.js undeclared external (onnxruntime-common) — remove the scoped Module._resolveFilename patch when upstream declares it",
+      "source_adr": "docs/adr/0072-architecture-grill-round-71-first-release-path-governance-embedding-reachability.md",
+      "owner": "anysearch-embedding",
+      "opened_at": "2026-09-19",
+      "deadline": "2027-03-31",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "upstream_issue": "https://github.com/huggingface/transformers.js/issues/1087 (CLOSED unresolved — maintainer's repo-internal publicHoistPattern does not cover published consumers); fix in flight: https://github.com/huggingface/transformers.js/pull/1764 (OPEN, maintainer-authored, contains the manifest declaration hunk)",
+      "evidence": "R75 judgement sweep 2026-09-22: deletion condition still unmet (Half-Fired Trigger — upstream declared onnxruntime-node/web, not the specifier actually required). 4.3.0 tarball dissection: dist/transformers.node.cjs top-level bare require('onnxruntime-common') at ~line 13520, manifest still undeclared. Runtime repro on pnpm isolated scope (hoist:false): 'Cannot find module onnxruntime-common' from transformers.node.cjs:13520 (transcript .scratch/grill-round-75/evidence/t0-pnpm-isolated-scope.log); 3.8.1 identical without patch, green with the shipped scoped _resolveFilename patch + self-declared copy. Nuance: pnpm default virtual-store hoist masks it; breaks under hoist:false / pnpm dlx / global-style installs; npm flat hoist masks until a version conflict (episodic-memory#105). Version-pairing discipline: self-declared onnxruntime-common must equal the effective onnxruntime-node embedded dep (currently 1.21.0 ≡ 1.21.0) — now a CI fact via packages/embedding/test/transformers-ghost-dep.test.ts (ADR-0076). Patch stays: fail-open, auto no-ops once upstream declares, and is the only mechanism that travels inside the published tarball.",
+      "monitoring_channel": "watch @huggingface/transformers releases >4.3.0 for a declared onnxruntime-common + watch PR #1764 merge; deletion condition = a released version whose manifest declares it (then verify the bare require is gone)",
+      "carried_log": [
+        {
+          "at": "2026-09-22",
+          "round": 76,
+          "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream #1764 still OPEN — deletion trigger not fired; patch stays (ADR-0076 verdict)"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 77,
+          "note": "R77 双轨域外——显式续债：上游#1764仍open（截至2026-09-22），删除条件未达（半响触发器教义），watch面不变"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 78,
+          "note": "R78 域外显式续债：上游 #1764 仍 OPEN（截至 2026-09-22），删除触发器未响，patch 维持（ADR-0076 verdict）"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 79,
+          "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 80,
+          "note": "R80 域外显式续债（carried, not silent）"
+        },
+        {
+          "at": "2026-09-24",
+          "round": 81,
+          "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+        },
+        {
+          "at": "2026-09-25",
+          "round": 82,
+          "note": "R82 域外显式续债（落选≠飘过）：T0 哨戒续班实测 transformers.js PR #1764 仍 OPEN（stagnant），本体修复未入轨"
+        }
+      ]
     },
     {
-     "at": "2026-09-25",
-     "round": 82,
-     "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=AnySearch REST→MCP 迁移+TE1 条件辅轴+残余分诊，ownership 议题未入轨"
+      "id": "defer-r71-provider-serverside",
+      "type": "deferred-with-deadline",
+      "title": "provider server-side investigation (search endpoint 000 during R71 spike)",
+      "source_adr": "docs/adr/0072-architecture-grill-round-71-first-release-path-governance-embedding-reachability.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-19",
+      "deadline": "2026-12-31",
+      "review_cadence": "quarterly",
+      "status": "closed",
+      "evidence": "R81 T1a/T2/T3 诊断收口：000 观测归因收窄至本机 ANYSEARCH_ENDPOINT env 重定向（User 级 127.0.0.1:20128，dead-port→connection refused 复现，T2 P-C）；api.anysearch.com 基础设施活（新 cert 2027-04-07/health 200/apex+status 200）但 REST /v1/search 路由级 404（双列一致）；POST /mcp 为活 MCP Streamable HTTP 端点（initialize/tools-list/tools-call 全绿 867ms 真结果）→ 裁决=分支 b（死但可修：迁 MCP-over-HTTP，R82 票 fix-r82-anysearch-mcp-migration）。证据 .scratch/grill-round-81/{evidence/t1a-recon,evidence/t2-matrix,t3-diagnosis}.md",
+      "monitoring_channel": "next grill round task-book triage",
+      "carried_log": [
+        {
+          "at": "2026-09-22",
+          "round": 76,
+          "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): deferred scope — no owner pull this round"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 77,
+          "note": "R77 双轨域外——显式续债：provider serverside议题未入本轮轨"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 78,
+          "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 79,
+          "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 80,
+          "note": "R80 域外显式续债（carried, not silent）"
+        },
+        {
+          "at": "2026-09-24",
+          "round": 81,
+          "note": "R81 主轴处置完成：诊断收口+ADR-0082 裁决分支 b；残余未验 R1-R5（含 R71 时刻端口态不可回溯、/mcp anon 凭据面、transport 细节）携入 R82 票"
+        }
+      ],
+      "closed_by": "ADR-0082",
+      "closed_at": "2026-09-24",
+      "closed_by_adr_path": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md"
+    },
+    {
+      "id": "defer-r72-dsh-plugin-npm-publish",
+      "type": "deferred-with-deadline",
+      "title": "@anysearch-cli/dsh-plugin npm publish — flip private + publishConfig when the release track takes it",
+      "source_adr": "docs/adr/0073-architecture-grill-round-72-deepseek-harness-host-adaptation.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-19",
+      "deadline": "2027-03-31",
+      "review_cadence": "quarterly",
+      "status": "closed",
+      "evidence": "插曲事件 1 三扳机全扣实证：手发 dsh-plugin@0.0.7 落 registry（2026-09-23T17:02:41Z, Apache-2.0）；v0.0.8 tag run 35894640525 success——五包 0.0.8 全落 + SLSA provenance attestations 非空 + 无 ENEEDAUTH/E403；装跑冒烟 npm i-g cli@0.0.8 + ans doctor + dsh plugin add @0.0.8（隔离 DSH_HOME）+ dump-config 层核对全绿。证据 .scratch/grill-round-81/evidence/release-interlude-1.md",
+      "monitoring_channel": "next release round task-book triage",
+      "carried_log": [
+        {
+          "at": "2026-09-22",
+          "round": 76,
+          "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): r74 stack landed; publish-adoption gate unmet"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 77,
+          "note": "R77 双轨域外——显式续债：dsh-plugin npm发布议题未入本轮轨"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 78,
+          "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 79,
+          "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 80,
+          "note": "R80 T2 更态=就绪待用户扳机：包内全部就绪，剩三项用户动作（手发 0.0.7→npmjs TP 四字段+allowed actions 勾选→推 v0.0.8 tag）——外发/发布均为用户扳机不代行"
+        }
+      ],
+      "closed_by": "ADR-0082",
+      "closed_at": "2026-09-24",
+      "closed_by_adr_path": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md"
+    },
+    {
+      "id": "defer-r72-dsh-native-tools",
+      "type": "deferred-with-deadline",
+      "title": "native ctx.tools registration of the five ans_* tools inside dsh (bypasses mcp__anysearch__* bridge namespace)",
+      "source_adr": "docs/adr/0073-architecture-grill-round-72-deepseek-harness-host-adaptation.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-19",
+      "deadline": "2027-03-31",
+      "review_cadence": "quarterly",
+      "status": "closed",
+      "evidence": "R72 chose the official mcp-client bridge (zero product code for the tool surface). Revisit triggers: bridge shows insufficiency for ans_chat/research_web latency, or the tool-registration API stabilizes upstream.",
+      "closed_by": "round-90 T3 (commit 1bc7b84d (restacked; pre-move sha dba410b6)): five ans_* tools register natively via ctx.tools.register in apps/dsh-plugin/src/index.ts; execute = MCP tools/call over ans-mcp HTTP transport; bridge row retired in T4 (commit b41469e1, restacked; pre-move sha 32ea8763)",
+      "closed_at": "2026-09-29",
+      "closed_by_adr_path": "docs/adr/0091-architecture-grill-round-90-dsh-native-tool-plane.md",
+      "monitoring_channel": "watch @deepseek-ai/dsh-mcp-client + dsh-tools releases",
+      "carried_log": [
+        {
+          "at": "2026-09-22",
+          "round": 76,
+          "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): r74 stack landed; native-tools gate unmet"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 77,
+          "note": "R77 双轨域外——显式续债：native tools议题未入本轮轨"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 78,
+          "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 79,
+          "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 80,
+          "note": "R80 域外显式续债（carried, not silent）"
+        },
+        {
+          "at": "2026-09-24",
+          "round": 81,
+          "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+        },
+        {
+          "at": "2026-09-25",
+          "round": 82,
+          "note": "R82 域外显式续债（落选≠飘过）：T0 哨戒续班含 dsh-native-tools watch 线（观测在档），本体整改未入轨"
+        },
+        {
+          "at": "2026-09-29",
+          "round": 89,
+          "note": "R89 T4 定形在案（.scratch/grill-round-89/r72-shaping.md）：L1 实测 ctx.tools 注册面（ToolRuntime.register/restrict/defineTool）自 ≥0.1.5-rc.2 三代签名逐字相同——「工具注册 API 上游稳定化」触发器实质已响（从严读=待 0.2.0 stable）；判词 soak-until-stable，维持 defer 不实现"
+        },
+        {
+          "at": "2026-09-29",
+          "round": 90,
+          "note": "R90 实施闭环：T2 expected-RED（15p/6f）→T3 fix dba410b6（ctx.tools.register 裸 ToolDefinition+KernelJsonSchemas 逐字投影+callServer→ans-mcp /mcp+三头+fail-open）21/21 绿→T4 refactor 32ea8763 桥行退役；偏离记档=defineTool→literal ToolDefinition（零依赖契约凌驾 DSL 方便性）"
+        }
+      ]
+    },
+    {
+      "id": "defer-r72-dsh-web-interactive-matrix",
+      "type": "deferred-with-deadline",
+      "title": "dsh web-profile interactive matrix — browser-driven turn, live patch reload (patchReload:live) [approval-channel split out at R90 → defer-r72-dsh-approval-channel]",
+      "source_adr": "docs/adr/0073-architecture-grill-round-72-deepseek-harness-host-adaptation.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-19",
+      "deadline": "2027-03-31",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "evidence": "R72 covered the two named web probes (inject transcript + preheat marker) inside a web-profile composition driven headlessly. Interactive UI turn + live-edit reload + approval-channel behaviour are preview-round scope.",
+      "monitoring_channel": "next grill round task-book triage",
+      "carried_log": [
+        {
+          "at": "2026-09-22",
+          "round": 76,
+          "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): r74 stack landed; web-interactive matrix gate unmet"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 77,
+          "note": "R77 双轨域外——显式续债：web interactive matrix议题未入本轮轨"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 78,
+          "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 79,
+          "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 80,
+          "note": "R80 域外显式续债（carried, not silent）"
+        },
+        {
+          "at": "2026-09-24",
+          "round": 81,
+          "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+        },
+        {
+          "at": "2026-09-25",
+          "round": 82,
+          "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，web-interactive matrix 未入轨"
+        },
+        {
+          "at": "2026-09-29",
+          "round": 89,
+          "note": "R89 T4 定形在案：approval-channel 分项依赖已解除（dsh-user-approval 在架同形）；patchReload:live/browser-turn 上游 .d.ts 双版缺席——维持 defer，依赖状态分项写明"
+        },
+        {
+          "at": "2026-09-29",
+          "round": 90,
+          "note": "R90 T5 复核裁决=拆：approval-channel 拆为独立条目 defer-r72-dsh-approval-channel（0.1.7-rc.1 tarball 复验：approval/request+asked+decided+policy+invariant 事件面在架——唯一依赖已解除的分项，可独立前置）；本条目收窄为 patchReload:live+browser-turn，维持 defer（上游 0.1.7-rc.1/0.2.0-rc.1 .d.ts 键面缺席复核不变）"
+        },
+        {
+          "at": "2026-09-29",
+          "round": 91,
+          "note": "R91 域外显式续债（carried, not silent）：本轮为主轴 dsh L3 冒烟售后验收轮，web-interactive matrix 主体维持 defer"
+        },
+        {
+          "at": "2026-09-30",
+          "round": 92,
+          "note": "R92 域外显式续债（carried, not silent）：本轮为主轴 featherless T2 复跑售后验收轮，web-interactive matrix 主体维持 defer"
+        }
+      ]
+    },
+    {
+      "id": "defer-r72-dsh-approval-channel",
+      "type": "deferred-with-deadline",
+      "title": "dsh approval-channel surface verification — approval/request waterfall + ApprovalOutcome end-to-end behaviour on the interactive path (split out of defer-r72-dsh-web-interactive-matrix at R90)",
+      "source_adr": "docs/adr/0073-architecture-grill-round-72-deepseek-harness-host-adaptation.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-29",
+      "deadline": "2027-03-31",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "evidence": "Split ruling (R90 T5): this is the ONE sub-item of the R72 web matrix whose upstream dependency is fulfilled — @deepseek-ai/dsh-user-approval@0.1.7-rc.1 tarball exposes approval/policy + approval/invariant + approval/types + approval/asked + approval/decided + approval/request event keys (verified .d.ts sweep, evidence .scratch/grill-round-90/evidence/t5-approval-surface.log). Independently pullable; verification still needs a live interactive session (approval prompt rendering + outcome routing) which R90 does not cover.",
+      "monitoring_channel": "next grill round task-book triage (upstream dependency already landed — scheduling gate only)",
+      "carried_log": [
+        {
+          "at": "2026-09-29",
+          "round": 90,
+          "note": "拆出自 defer-r72-dsh-web-interactive-matrix：上游依赖已解除（dsh-user-approval 在架同形），剩余阻碍=交互会话实测成本，非上游缺席"
+        },
+        {
+          "at": "2026-09-29",
+          "round": 91,
+          "note": "R91 T4c headless 可行性探测（.scratch/grill-round-91/evidence/t4c-approval-channel.md）：dsh-headless 未导入亦未注册 ApprovalAnswerer，缺失交互响应通道，调用将触发 fail-closed 降级；实证 headless 下交互审批不可行，维持 defer 挂账"
+        },
+        {
+          "at": "2026-09-30",
+          "round": 92,
+          "note": "R92 域外显式续债（carried, not silent）：headless 无 answerer 实证（R91 T4c）维持生效，审批交互通道维持 defer 挂账"
+        }
+      ]
+    },
+    {
+      "id": "defer-r73-dsh-event-rename",
+      "type": "deferred-with-deadline",
+      "title": "dsh 0.1.6 事件改名迁移：agent/session-start → agent/created（payload 增 source/signal；durable 路由卡仅 source=fresh 注入）",
+      "source_adr": "docs/adr/0074-architecture-grill-round-73-dsh-upstream-family-pinning-and-stack-landing.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-19",
+      "deadline": "2027-03-31",
+      "review_cadence": "per upstream release — L0 每版 npm view 快照+L1 每版 tarball 消费面 diff；L2 仅对合格候选（双锚全响） + quarterly",
+      "status": "closed",
+      "evidence": "R77 T0 实证（evidence/t0-l0-watch.json + t0-api-snapshot-rc2.json + t0-l1-*.md）：改名特征已在 alpha 线全落地——0.1.6-alpha.1 起 agent/session-start 键自 Events 移除、agent/created payload 变 {agent,source:SessionStartSource,signal?:AbortSignal}（rc.2 起两键并存、source 原挂 session-start）；rc/next 线 0.1.5-rc.3 Events 面 ≡ rc.2 零漂移（无 alarm）。迁移蓝图：.scratch/grill-round-73/upgrade-ledger.md + R77 v2（.scratch/grill-round-77/upgrade-ledger.md）；采纳时 override 枚举按新锁文件重推导（0.1.7-alpha.1 dep-closure 已扩至 21 个 dsh-*：+session-persistence/storage/storage-domain/workspace）。 | R83 TE1 双锚齐当日消费 rc.1（commit rot, branch r83-te1）：agent/session-start→agent/created + source==='startup' guard；repin 全族 0.1.7-rc.1+cordis 4.0.4；测试 14/14+L2 彩排（install/dump-config/幂等）绿；实录 .scratch/grill-round-83/evidence/te1-event-migration.md",
+      "monitoring_channel": "upstream @deepseek-ai/dsh-* release watch（L0/L1/L2 漏斗）——触发器=双锚：特征锚（候选 .d.ts 中 agent/created 携 source/signal 且 agent/session-start 缺席）AND 稳定锚（发布在 rc-or-stable 线，alpha/beta 不采纳）+过 minimumReleaseAge 龄期闸；latest-only 彩排，被跳线版本写墓碑非补演",
+      "carried_log": [
+        {
+          "at": "2026-09-22",
+          "round": 76,
+          "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream event rename unshipped — adoption trigger not fired"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 77,
+          "note": "R77 轨一处置——L0/L1 探针取证完成：rc.3 无alarm；alpha.1/alpha.2/0.1.7-alpha.1 全 ALARM 但皆 alpha 线→无 L2 合格候选（no-qualifying-candidate 显式结论）；触发器改写为特征+稳定性双锚（版本号退出触发逻辑）；0.1.6-alpha.* 跳线→墓碑入 tombstones 字段+upgrade-ledger v2"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 78,
+          "note": "R78 域外显式续债：L2 排程义务临近——闸内标本 ≈2026-09-24 06:0xZ 出闸，下轮或即触发；双锚触发器仍守版本号退出逻辑"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 79,
+          "note": "R79 T0 哨戒实录：dsh 0.1.7-alpha.2 L0/L1 取证——特征锚在位（agent/created 携 source/signal、agent/session-start 缺席）、Events union 27≡alpha.1、发版面 21 dsh-*（code-runtime 缺席）+cordis ~4.0.4 线；alpha 线稳定锚不响→非 L2 候选，action=none required；rc.3/alpha.1 仍闸内（≈09-24 05:39/06:04Z 出闸）"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 80,
+          "note": "R80 T0 哨戒实录：alpha.2 携特征锚（agent/created 携 source/signal、session-start 缺席）但稳定锚缺（alpha 线+changelog 未审）→非 L2 合格候选 action=none；rc.3/alpha.1/alpha.2 全闸内 ≈09-24 出闸续哨"
+        },
+        {
+          "at": "2026-09-24",
+          "round": 81,
+          "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+        },
+        {
+          "at": "2026-09-24",
+          "round": 82,
+          "note": "R82 T0 哨戒（evidence/t0-watch-2026-09-24.md）：rc.2 新发（09-24T14:02Z）特征锚复验齐（agent/created 携 source/signal、session-start 缺席）但龄期闸内至 09-26T14:02Z+changelog 审面缺席→双锚未齐，合格候选未出现（D-003 §4 如实记）。修正点：SessionStartSource 实测枚举=startup|resume|clear|compact（无 fresh）——采纳时 guard 按 source!=='startup' 落字"
+        }
+      ],
+      "tombstones": [
+        {
+          "version": "0.1.6-alpha.1",
+          "superseded_by": "0.1.7-alpha.1",
+          "l1_summary": "改名特征已落地（session-start ABSENT, created 携 source/signal）；alpha 线从未是 L2 候选",
+          "at": "2026-09-22"
+        },
+        {
+          "version": "0.1.6-alpha.2",
+          "superseded_by": "0.1.7-alpha.1",
+          "l1_summary": "R73 install 彩排实证单错 RED + R77 L1 复核（session-start ABSENT, created 携 source/signal）；alpha 线从未是 L2 候选",
+          "at": "2026-09-22"
+        }
+      ],
+      "closed_by": "ADR-0084",
+      "closed_at": "2026-09-25"
+    },
+    {
+      "id": "defer-r74-logo-bitmap-matrix",
+      "type": "deferred-with-deadline",
+      "title": "logo 位图衍生矩阵（favicon/social-preview 等 PNG/WebP 导出）——repo-logo Phase4 位图管线依赖的 imagegen 工具本会话不存在，R74 仅交付纯 SVG mark",
+      "source_adr": "docs/adr/0075-architecture-grill-round-74-readme-visual-layer-antigravity-integration.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-20",
+      "deadline": "2027-03-31",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "evidence": "R74 D-002：位图矩阵阶段因 imagegen 不可用整体延期；纯 SVG mark 已落地 assets/readme/logo.svg（深色芯片底、深浅主题双安全、16px 可辨，核验见 .scratch/grill-round-74/evidence/t1-render-verification.md）。采纳时以 logo.svg 为源件导出 PNG/WebP 衍生。",
+      "monitoring_channel": "manual",
+      "carried_log": [
+        {
+          "at": "2026-09-22",
+          "round": 76,
+          "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): imagegen tooling absent; SVG mark landed r74; matrix deferred until tooling exists"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 77,
+          "note": "R77 双轨域外——显式续债：logo位图矩阵未入本轮轨"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 78,
+          "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 79,
+          "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 80,
+          "note": "R80 域外显式续债（carried, not silent）"
+        },
+        {
+          "at": "2026-09-24",
+          "round": 81,
+          "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+        },
+        {
+          "at": "2026-09-25",
+          "round": 82,
+          "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，logo bitmap matrix 未入轨"
+        }
+      ]
+    },
+    {
+      "id": "defer-r75-registerhooks-esm-arm",
+      "type": "deferred-with-deadline",
+      "title": "ESM arm for the transformers ghost-dep patch — module.registerHooks resolve fallback (named return ticket)",
+      "source_adr": "docs/adr/0076-architecture-grill-round-75-transformers-ghost-dep-judgement.md",
+      "owner": "anysearch-embedding",
+      "opened_at": "2026-09-22",
+      "deadline": "2027-03-31",
+      "review_cadence": "trigger-driven (three re-entry triggers below) + quarterly",
+      "status": "open",
+      "evidence": "R75 D-003 (B+): the shipped Module._resolveFilename patch only covers the CJS entry (transformers.node.cjs via createRequire().require()); a consumer reaching transformers.node.mjs through import()/import would bypass it — the ESM resolver cannot be scoped without module.registerHooks. Not adopted now: registerHooks is Stability 1.2 experimental, process-global, needs Node >=22.15 (repo floor >=22), is inert under jest/vitest loaders, and our reachable ESM surface is zero — runtime defense code for an unreachable path is negative value (Static Invariant Guard doctrine). The guard test transformers-ghost-dep.test.ts asserts the invariant instead. Re-entry triggers: (a) any src code path starts loading @huggingface/transformers via ESM import (guard goes red — by construction); (b) upstream merges #1764 and a release declares onnxruntime-common (patch + this ticket retire wholesale); (c) Node floor rises to >=22.15 AND a real ESM consumer exists — then implement registerHooks per GitNexus#2069 posture: fail-open, resolving onnxruntime-common from the effective onnxruntime-node copy (dynamic version pairing, no pin drift).",
+      "monitoring_channel": "guard test red = trigger (a); watch PR #1764 + releases >4.3.0 for trigger (b); Node floor changes for trigger (c)",
+      "carried_log": [
+        {
+          "at": "2026-09-22",
+          "round": 76,
+          "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): no ESM consumer; three named re-entry triggers (r75) unchanged"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 77,
+          "note": "R77 双轨域外——显式续债：registerHooks ESM臂三重触发器未响，watch面不变"
+        },
+        {
+          "at": "2026-09-22",
+          "round": 78,
+          "note": "R78 域外显式续债：repo 无 Node floor 声明+无真实 ESM 消费者=仍半响，三重触发器未响"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 79,
+          "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 80,
+          "note": "R80 域外显式续债（carried, not silent）"
+        },
+        {
+          "at": "2026-09-24",
+          "round": 81,
+          "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
+        },
+        {
+          "at": "2026-09-25",
+          "round": 82,
+          "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，registerhooks ESM arm 未入轨"
+        }
+      ]
+    },
+    {
+      "id": "gov-r76-registry-canonical-lock",
+      "type": "governance-record",
+      "title": "governed-JSON canonical byte lock for docs/deferred-registry.json (ship-gate stepGovernedJsonCanonical)",
+      "source_adr": "docs/adr/0077-architecture-grill-round-76-silent-drift-governance-liquidation.md",
+      "owner": "anysearch-platform",
+      "opened_by": "grill-round-76",
+      "opened_at": "2026-09-22",
+      "deadline": "2026-12-31",
+      "review_cadence": "quarterly",
+      "status": "closed",
+      "closed_by": "ADR-0077",
+      "closed_by_adr_path": "docs/adr/0077-architecture-grill-round-76-silent-drift-governance-liquidation.md",
+      "closed_at": "2026-09-22",
+      "evidence": "ship-gate stepGovernedJsonCanonical leg (CANONICAL_JSON_FILES in scripts/ship-gate.mjs, logic in scripts/governed-json.mjs) byte-locks this file to JSON.stringify(JSON.parse(src),null,1)+\"\\n\"; injection probe red at \"first differs at line 2\" with paste-able normalize command (evidence/t0-canonical-inject.log); normalize command verified to restore canonical bytes. Born-closed record — documents the lock itself, not deferred work.",
+      "monitoring_channel": "ship-gate step 1 canonical-json leg (fail-closed every run); reversal per ADR-0077 D5 (n>=5 multi-type -> registered config + prettier)"
+    },
+    {
+      "id": "defer-r77-pathlint-envvar-blindspot",
+      "type": "deferred-with-deadline",
+      "title": "pathlint PATH_RE 不识别 env-var 形机器路径（%TEMP%/$HOME/~/）——ADR-0072 意图级盲区",
+      "source_adr": "docs/adr/0078-architecture-grill-round-77-dsh-upstream-watch-funnel-and-governance-backlog-liquidation.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-22",
+      "deadline": "2026-12-31",
+      "review_cadence": "next pathlint leg touch + quarterly",
+      "status": "closed",
+      "evidence": "R78 T1 落地：PATH_RE→token+分隔符组合判定器（scripts/ship-gate-pathlint-detect.mjs），四类新 token（%VAR%/$VAR|${VAR}/~/UNC）+字面形统一后随分隔符=locator；warn-first 全量扫 313 文档 96 违例实录（evidence/t1-warn-sweep.md）→97 动作/52 文件处置（evidence/t1-remediate.md）→复扫 0 翻 fail-closed；失效标记棘轮腿+红绿成对 fixture 9 断言（packages/store/test/ship-gate-pathlint.test.mjs）；0042:111 存量逃逸已补 marker。",
+      "monitoring_channel": "ship-gate step 1i 下一触点复审 + 每季 marker 声明审计顺手扫 env-var 形",
+      "carried_log": [
+        {
+          "at": "2026-09-22",
+          "round": 78,
+          "note": "R78 轨内处置完成核销：盲区闭合+棘轮腿上线，非续债"
+        }
+      ],
+      "closed_by": "ADR-0079",
+      "closed_by_adr_path": "docs/adr/0079-architecture-grill-round-78-gate-calibration-pathlint-detector-and-repin-matrix.md",
+      "closed_at": "2026-09-22"
+    },
+    {
+      "id": "defer-r79-lockfile-agegate-replay",
+      "type": "deferred-with-deadline",
+      "title": "E6 lockfile 龄期闸执法空白——pnpm trustLockfile 在钉版 11.24.0 的实证复核 + 护栏选型（R80 候选主题）",
+      "source_adr": "docs/adr/0080-architecture-grill-round-79-pathlint-exemption-domain-contract-convergence.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-09-23",
+      "deadline": "2027-03-31",
+      "review_cadence": "next round candidate — R80 发布龄期闸 lockfile 执法轮主题候选 + upstream pnpm release watch",
+      "status": "closed",
+      "evidence": "R78 E6 证伪实录（ADR-0079 D3 判决矩阵）：lockfile 携闸内版本时 frozen/fetch 静默放行 minimumReleaseAge 拦截；pnpm 调研文档级断言（trustLockfile 应验证）与本仓 E6 实证存在张力——R80 先在钉版 pnpm 11.24.0 实测 trustLockfile 验证腿是否天然覆盖（empirically verify, not doc-trust），再定自建护栏/引用上游/显式记档三选一。 | R80 T1 裁决（e6-matrix.md）：上游 verifyLockfileResolutions 腿在钉版 11.24.0 实测闭合（frozen/install/fetch/vdbr-install 四路 ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION exit 1）；R78 证伪按实测 revised——五变体放行=lockfile-verified.jsonl 判定缓存污染（宽松写入 warn-pass 沿用），非缺腿；残余边界（同机宽松沿用/trustLockfile:true opt-out/no-op 短路）由 ship-gate 1v CI 断言依赖声明兜底；γ 三条件全未命中→不阻塞 0.0.8。",
+      "monitoring_channel": "R80 轮次候选立案 + pnpm 上游 trustLockfile/verifyDepsBeforeRun 行为变更观察",
+      "carried_log": [
+        {
+          "at": "2026-09-23",
+          "round": 79,
+          "note": "R79 D-001 范围裁决：E6 后果显式拆出本轮（不混入契约批）——立案为 R80 候选主题；先在钉版实测 trustLockfile 腿，再定护栏路径"
+        },
+        {
+          "at": "2026-09-23",
+          "round": 80,
+          "note": "R80 T1 核销：三选一裁决取 (b) 引用上游（机器腿闭合）——γ 未触发；R78 E6 revised 记档；CI 断言依赖声明落地为 ship-gate 1v 三禁项+IgnoreMissingTime"
+        }
+      ],
+      "closed_by": "ADR-0081",
+      "closed_at": "2026-09-23",
+      "closed_by_adr_path": "docs/adr/0081-architecture-grill-round-80-release-readiness-dsh-plugin-e6-freshness.md"
+    },
+    {
+      "id": "defer-r81-provider-shape-validation",
+      "type": "bugfix-deferred",
+      "title": "AnySearchProvider 对 200-错形响应静默吞零结果（OmniRoute 错形静默面）",
+      "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-24",
+      "review_cadence": "next-round",
+      "status": "closed",
+      "evidence": "R81 T2 P-B 实测：ANYSEARCH_ENDPOINT 指向 OmniRoute 时 /v1/search 返 200 application/json 但为 provider 枚举形（{object:list,data:[search_provider...]}），body.data?.results ?? [] 使其退化为静默零结果 envelope——「活但错形」比 000 更隐蔽。处置=R82 票 fix-r82-provider-shape-validation（响应形校验：非协议形按 fail 处理），与 fix-r82-anysearch-mcp-migration 同捆",
+      "monitoring_channel": "R82 票验收",
+      "carried_log": [
+        {
+          "at": "2026-09-24",
+          "round": 82,
+          "note": "R82 T1 处置完成：MCP 迁移票内 fail-first 映射落地——isError:true/无 ## Search Results 信封头/非预期 Content-Type/无 result 对象一律 throw 降级该臂（错形不吞零）；test/anysearch.test.ts 错形样本 4 条（OmniRoute 枚举形/无信封头文本/非预期 CT/无 content）全红→绿实测"
+        }
+      ],
+      "closed_by": "ADR-0083",
+      "closed_at": "2026-09-24",
+      "closed_by_adr_path": "docs/adr/0083-architecture-grill-round-82-anysearch-mcp-migration.md"
+    },
+    {
+      "id": "defer-r81-anysearch-rest-route-removed",
+      "type": "deferred-with-deadline",
+      "title": "api.anysearch.com REST /v1/search 路由下线事实记录与复活监控",
+      "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-24",
+      "deadline": "2027-06-30",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "monitoring_channel": "quarterly probe GET /v1/search（非 404 即复路由，重评 REST 面）",
+      "evidence": "R81 T2 P-A：GET /v1/search 双列 404（fake-ip+真 IP 同形，CF X-Amz-Cf-Pop NRT20-P9）；同域 /health 200 + POST /mcp 全活——REST 面被下线而非服务死。若路由复活可重评 REST 臂",
+      "carried_log": [
+        {
+          "at": "2026-09-24",
+          "round": 82,
+          "note": "R82 T1：迁移已落地（provider 仅说 MCP），REST 复活监控续守 quarterly 探针——R5 即销卡另档（registry 残余分诊节）"
+        }
+      ]
+    },
+    {
+      "id": "defer-r83-anysearch-vertical-domain-passthrough",
+      "type": "deferred-with-deadline",
+      "title": "anysearch MCP 垂域贯通：domain/sub_domain/sub_domain_params 通路（≠includeDomains host 过滤）",
+      "source_adr": "docs/adr/0083-architecture-grill-round-82-anysearch-mcp-migration.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-24",
+      "deadline": "2027-03-31",
+      "review_cadence": "next-round",
+      "status": "closed",
+      "evidence": "R82 T1 垂域评估腿（evidence/t1-domain-leg.md）：MCP domain=17 值垂域路由枚举（academic..travel），语义≠SearchRequest.includeDomains（host allowlist）；真贯通需新契约面+引擎路由+审计语义扩展——半径超迁移票，具名转 R83。provider 侧 domainFilterSupported=false 保持，post-filter 仍为唯一权威闸 | R83 T1 落地（commit puz, branch r83-t1）：contract.vertical+verticalDomainSupported 能力位+engine 协商路由+retrieval.vertical.pre（params_keys 不落值）+DomainSchema sources.vertical+三注入面（工具 arg/CLI flag/TOML）+wire 映射+extra.vertical 标记；上游实测矩阵+17 词表快照见 .scratch/grill-round-83/evidence/t1-vertical-domain.md",
+      "monitoring_channel": "R83 task-book triage",
+      "closed_by": "ADR-0084",
+      "closed_at": "2026-09-25"
+    },
+    {
+      "id": "residual-r82-R1-port-state",
+      "type": "residual-triage",
+      "title": "R1 即销卡：R71 时刻 api.anysearch.com:443 端口监听态",
+      "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-24",
+      "status": "closed",
+      "closed_by": "ADR-0083",
+      "closed_at": "2026-09-24",
+      "evidence": "五字段即销卡——残余陈述：R71 观测窗 443 端口监听态未验；本体性不可回溯：历史时刻的网络监听态无观测面留存（cannot 非 won't——不可重建非不愿查）；收敛证据指针：R81 T1a/T2 收敛（cert 轮换+health 200+双列 404+/mcp 活）+R82 wire 实录（initialize/tools-call 全绿）——历史端口态对当前裁决无影响；重开触发器：HTTP 000 复现（对真端点）即重开；决策人/日期：R82 修复子 Agent / 2026-09-24"
+    },
+    {
+      "id": "residual-r82-R2-anon-credential",
+      "type": "residual-triage",
+      "title": "R2 折入验收锚：/mcp 匿名凭据/限流面对照",
+      "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-24",
+      "status": "closed",
+      "closed_by": "ADR-0083",
+      "closed_at": "2026-09-24",
+      "evidence": "折入 T1 谓词锚判定=PASS：anon tools/call 200 真结果（847ms），「anon 可用→继续」分支成立；authed 对照=无效 Bearer→isError:true invalid_api_key（fail-first 降级，非 401/429→未触发 stop-gate）。实录 evidence/t1-wire-probes.md §2"
+    },
+    {
+      "id": "residual-r82-R3-transport-spec",
+      "type": "residual-triage",
+      "title": "R3 折入验收锚：Streamable HTTP transport 细节谓词核验",
+      "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-24",
+      "status": "closed",
+      "closed_by": "ADR-0083",
+      "closed_at": "2026-09-24",
+      "evidence": "折入 T1 谓词锚判定=PASS：2025-11-25 spec 14 条谓词逐条机械判定——MUST 级全过（POST/Accept 双类型/单消息/202 通知/SSE+JSON 双 CT/session-id 回显/404 重初始化/协议头）；SHOULD 级 2 条明示弃（Last-Event-ID 重放/DELETE session）记档。实录 evidence/t1-r3-predicates.md"
+    },
+    {
+      "id": "residual-r82-R4-user-endpoint",
+      "type": "residual-triage",
+      "title": "R4 域外即销：ANYSEARCH_ENDPOINT 用户本地语义",
+      "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-24",
+      "status": "closed",
+      "closed_by": "ADR-0083",
+      "closed_at": "2026-09-24",
+      "evidence": "closed-by-scope 一行闭合：用户个人配置域——值不记档不代改（本机 env 指向 OmniRoute 属用户主权面）；重开触发器=配置治理权变更（如团队级托管配置策略引入）。决策人/日期：R82 修复子 Agent / 2026-09-24"
+    },
+    {
+      "id": "residual-r82-R5-rest-shutdown-timing",
+      "type": "residual-triage",
+      "title": "R5 即销卡：REST /v1/search 下线时点",
+      "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-24",
+      "status": "closed",
+      "closed_by": "ADR-0083",
+      "closed_at": "2026-09-24",
+      "evidence": "五字段即销卡——残余陈述：REST 路由下线的精确时点/发布记录未定位；本体性不可回溯：外部服务的部署历史我方无观测面（git log/发布记录已穷举——本仓无任何 REST 面 commit 痕迹可查时点）；收敛证据指针：R81 T2 P-A 双列 404+R82 wire 实录——「已下线」事实充分，时点不影响修复路径；重开触发器：REST 面复活的官方声明/实测 200 复路由；决策人/日期：R82 修复子 Agent / 2026-09-24"
+    },
+    {
+      "id": "defer-r83-prefer-capable-weighting",
+      "type": "deferred-with-deadline",
+      "title": "prefer-capable 加权调参：垂域能力位声明者在融合/路由中的权重倾斜评估（eval 数据驱动，非契约职责）",
+      "source_adr": "docs/adr/0084-architecture-grill-round-83-vertical-domain-passthrough.md",
+      "owner": "anysearch-eval",
+      "opened_at": "2026-09-25",
+      "deadline": "2027-03-31",
+      "review_cadence": "next-round candidate + quarterly",
+      "status": "closed",
+      "evidence": "R83 D-004 §4 显式范围外：能力位只决定 wire 下发与否，不做权重倾斜；若要做，需 eval 数据证明垂域臂召回质量差异，属评估轮职责非契约轮。 | R84 更新：证据机制在役等数据——双臂配对 delta 腿已落地（packages/store/test/online/eval-looks-vertical.online.ts → .scratch/vertical-eval/delta.json，首轮受匿名配额限部分降格，重跑条件见 ADR-0085 D8/defer-r84-delta-quota-rerun）。数据读出前保持 open。 | R85 核销（NO-GO）：delta 腿全量重跑完成（57/57 格腿全活，指纹 7ac0a48e55cd7954），预注册矩阵单次终读裁决 NO-GO/direction-negative——better/worse=0/0、P(better>worse)=0.500、池化 armHostHit Δ=0、EL=0.1667、rankDiff 中位 null。判词附注：「无信号」纹理实为 anysearch 臂全程 provider-failure 空列（装置级零数据，非测得零增益）；判读矩阵声明#4 已登记此操作化残余限制。证据 .scratch/grill-round-85/decision-record.md + readout-output.json。加权问按注册程序关闭；复活前置=解 defer-r85-anysearch-arm-providersfailed（属新票）。 | R86 勘误（T4）：R85 的「无可观测臂级增益」判词语义修正为 indeterminate—instrument down——0/0 系 provider-failure 装置级零数据（env 层双重缺陷归因，probe-matrix.md），非测得零增益；程序性核销维持不溯改。**具名重开条件**：R86 T5 全绿臂复跑（同指纹 7ac0a48e55cd7954、iso providersFailed=∅、非空覆盖≥70%）若产出方向信号（修正判读器矩阵@2 判 GO 或方向性 better>worse 具可复现纹理），则以新预注册重开加权评估问——本条 closed 状态不变，重开走新票不入本 entry。"
+    },
+    {
+      "id": "defer-r84-anysearch-empty-endpoint-env",
+      "type": "deferred-with-ticket",
+      "title": "ANYSEARCH_ENDPOINT=\"\" 空串经 ?? 落到空 endpoint（POSIX 空≈未设应回落默认）——R84 live 腿实测暴露",
+      "source_adr": "docs/adr/0085-architecture-grill-round-84-vertical-eval-leg.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-26",
+      "review_cadence": "next-round candidate",
+      "status": "closed",
+      "evidence": "R84 T3 实跑：env -u 前手动置空 ANYSEARCH_ENDPOINT= 触发 endpoint=\"\" fetch 失败（臂级 fail 静默进 providersFailed）。修法=constructor 端点解析把空串视同 undefined。 | R86 T3 核销：endpoint/key 双字段空串→||undefined POSIX 语义修复落 provider 构造器（\"\"不再落空 endpoint 亦不产生裸 Bearer 头）；回归用例入 anysearch.test.ts。",
+      "closed_by": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
+      "closed_at": "2026-09-27"
+    },
+    {
+      "id": "defer-r84-ip-fifth-domain",
+      "type": "deferred-with-condition",
+      "title": "ip 第五域语料建集（触发条件=上游为 ip 子域补结构化参数词表）",
+      "source_adr": "docs/adr/0085-architecture-grill-round-84-vertical-eval-leg.md",
+      "owner": "anysearch-eval",
+      "opened_at": "2026-09-26",
+      "review_cadence": "quarterly + upstream vocab watch",
+      "status": "open",
+      "evidence": "R84 D-006/D3：四域先行（finance/academic/code/health）；ip 域当前无可断言的结构化 sub_domain params，建集=低评审合成条目违账本禁项。"
+    },
+    {
+      "id": "defer-r84-delta-quota-rerun",
+      "type": "deferred-with-condition",
+      "title": "首轮 vertical-delta 部分降格重跑（触发=公网有效 ANYSEARCH_API_KEY 就位或匿名额度恢复）",
+      "source_adr": "docs/adr/0085-architecture-grill-round-84-vertical-eval-leg.md",
+      "owner": "anysearch-eval",
+      "opened_at": "2026-09-26",
+      "review_cadence": "next-round candidate",
+      "status": "closed",
+      "evidence": "R84 T3：57 条 corpus×4 趟跑通，前几条获真臂数据（fmp 命中+marked 标记在），其后匿名额度耗尽两臂归零——机制链绿、覆盖受配额限。证据档 .scratch/grill-round-84/evidence/t3-vertical-delta.md。 附：盘上存量 delta.json 为早期 runner schema（缺 providersFailedIsoOn/IsoOff/armInFanout/armOnSample 字段）——重跑产出覆盖即闭合存量漂移（审计 F3）。 | R85 核销：触发条件（有效 ANYSEARCH_API_KEY+live 探针 2026-09-27）成立，全量重跑完成——57 格腿全活、subject 覆盖 41/41、controlDegraded=0、装置探针未触发无早停；新 artifact .scratch/vertical-eval/delta.json 覆盖存量漂移（指纹同 7ac0a48e55cd7954，@1 schema 字段齐含 providersFailedIso*/armInFanout*/armOnSample/hadVerticalSpec）；存量降格件归档 delta-2026-09-26.degraded.json 不删。"
+    },
+    {
+      "id": "defer-r83-a03-flagvalueset-swallow",
+      "type": "deferred-with-ticket",
+      "title": "A-03：CLI flagValueSet 吞词——查询词与旗值同形时被剔除（search.ts 旗值剔除启发式扩至三新旗值）",
+      "source_adr": "docs/adr/0084-architecture-grill-round-83-vertical-domain-passthrough.md",
+      "owner": "anysearch-cli",
+      "opened_at": "2026-09-26",
+      "review_cadence": "cleanup-round candidate",
+      "status": "closed",
+      "evidence": "R83 审计 §三 A-03（nit，pre-existing）：ans search --vertical-domain finance finance 中第二个 finance 被吞。修法=位置化旗值解析替代值集合剔除。R84 D-007(iii) 明令登记。 | R88 T2 核销：位置化旗值消费落地（apps/cli/src/commands/search.ts）；回归锁=--vertical-domain finance/--mode deep 同形查询词留存用例（e2e.test.ts 红→绿实证）。fix commit 在 r88-hygiene 栈。",
+      "closed_by": "ADR-0089",
+      "closed_at": "2026-09-28",
+      "closed_by_adr_path": "docs/adr/0089-architecture-grill-round-88-search-surface-hygiene.md"
+    },
+    {
+      "id": "defer-r83-a06-vertical-assembly-dup",
+      "type": "deferred-with-ticket",
+      "title": "A-06：垂域组装+require-domain guard 三处近重复（cli/search.ts、mcp/search-web、mcp/research-web）+TypeBox 三参块+Raw/解析面 vertical? 双写——建议共享 buildVerticalSpec",
+      "source_adr": "docs/adr/0084-architecture-grill-round-83-vertical-domain-passthrough.md",
+      "owner": "anysearch-cli",
+      "opened_at": "2026-09-26",
+      "review_cadence": "cleanup-round candidate",
+      "status": "closed",
+      "evidence": "R83 审计 §三 A-06（smell·judgement）。三入口各自构造 vertical 对象+依赖 guard——错形处理已立法一致（A-02），组装重复仍属清障素材。R84 D-007(iii) 明令登记。 | R88 T3 核销：buildVerticalSpec/verticalSpecReject 归 packages/retriever/src/contract.ts（判别联合+missing-domain 短码）；三站共享组装+守卫、错文案 byte-identical（golden 断言）；kernel verticalSpecProps 片段共享。ADR-0089 D1-D2 立法。",
+      "closed_by": "ADR-0089",
+      "closed_at": "2026-09-28",
+      "closed_by_adr_path": "docs/adr/0089-architecture-grill-round-88-search-surface-hygiene.md"
+    },
+    {
+      "id": "defer-r83-a08-dead-maxresults",
+      "type": "deferred-with-ticket",
+      "title": "A-08：search-web.tool.ts 解构 maxResults 但 inputSchema additionalProperties:false 未含该键——dead param（pre-existing 非本轮引入）",
+      "source_adr": "docs/adr/0084-architecture-grill-round-83-vertical-domain-passthrough.md",
+      "owner": "anysearch-cli",
+      "opened_at": "2026-09-26",
+      "review_cadence": "cleanup-round candidate",
+      "status": "closed",
+      "evidence": "R83 审计 §三 A-08（pre-existing）。修=schema 增键或删解构，二选一须与 MCP 工具面 contract 复核后定。R84 D-007(iii) 明令登记。 | R88 T1 核销：dead maxResults 解构已删（schema 从不放行，行为零变化）；kernel tool-schemas 测试显式拒收 maxResults 键。暴露=特性决策（ADR-0089 D3 注记）。",
+      "closed_by": "ADR-0089",
+      "closed_at": "2026-09-28",
+      "closed_by_adr_path": "docs/adr/0089-architecture-grill-round-88-search-surface-hygiene.md"
+    },
+    {
+      "id": "defer-r85-anysearch-arm-providersfailed",
+      "type": "deferred-with-ticket",
+      "title": "anysearch 臂 isolated+fanout 全程 providersFailed=[anysearch]（空列 n=0, armInFanout=false）——R85 delta 重跑实证；疑携钥 iso 路径或上游当日失效，修复后 delta 腿才可测真臂数据",
+      "source_adr": "docs/adr/0086-architecture-grill-round-85-delta-rerun-prereg-readout-nogo.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-27",
+      "review_cadence": "cleanup-round candidate + quarterly",
+      "status": "closed",
+      "evidence": "R85 T3：.scratch/vertical-eval/delta.json 全 57 格 providersFailedIsoOn/Off=[anysearch]、armInFanout*=false、armOn/off.n=0；对照层 16/16 同病；fused 命中（param on=0.33/off=0.29、sem 0.45/0.45）由其余 provider 承载。判读记录 .scratch/grill-round-85/decision-record.md。 | R86 T2/T3 归因与复活实证：探针矩阵（.scratch/grill-round-86/reports/probe-matrix.md）三类判别——env 端点 loopback 死路由（initialize→404，permanent-protocol）+ env key invalid_api_key（permanent-auth）+ 公网默认端点匿名存活；iso 臂声明式测量环境下 5/5 providersFailed=∅。代码路径无缺陷。残余=用户侧 env 修正（端点指向/key 轮换，agent 不代办）+ T5 全绿臂复跑证据。 | R86 核销：根因=env 层双重缺陷（loopback 死路由端点+invalid key，probe-matrix 钉版）；臂经声明式测量环境复活（iso 5/5 providersFailed=∅ + T5 全量复跑 97.6% 覆盖）；判读器 matrix@2 修复 device-zero-as-measured 失真。残余类=确定性上游契约拒收（设计内负向格+语料欠参数），已分账 defer-r86-anysearch-corpus-param-contract。",
+      "closed_by": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
+      "closed_at": "2026-09-27"
+    },
+    {
+      "id": "defer-r86-anysearch-corpus-param-contract",
+      "type": "deferred-with-ticket",
+      "title": "语料格 vert-f1105 欠上游 tag 契约必填参数（finance.fundamental 需 cn_code）——矩阵@2 判 unmeasured 如实记账；语料冻结期不可修",
+      "source_adr": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
+      "owner": "anysearch-eval",
+      "opened_at": "2026-09-27",
+      "review_cadence": "next matrix revision",
+      "status": "closed",
+      "evidence": "R86 T5 实证：vert-f1105 isoOn 腿上游 isError \"Missing required params for tag finance.fundamental: cn_code\"（两轮复跑确定性重合）。语料指纹 7ac0a48e55cd7954 冻结=>改格即 G0 漂移，本矩阵期不可修；修订候选=下一矩阵期补 cn_code 或降格该格。同类 bogus-sub_domain 对照格（*-103 ×4）为设计内负向拒收，非缺陷。 | R95 T7 核销：vert-f1105 已按 D-002 原位降格为 unmeasured-by-design（墓碑理由码 `upstream-validator-vs-doc-mismatch`，指纹 7ac0a48e55cd7954→8da3e482b98f8cba，语料 57→56；上游「文档词表 vs validator」不一致独立立 finding 另册（本轮新 finding id）；fundamental×cn_code 新格与全语料契约体检登记为 backlog 候选（不入本轮 diff）。T8 ADR-0096 + CONTEXT 词条区同轮闭环。判读证据：.scratch/grill-round-95/readout-output.json（matrix@3 单次终读 INCONCLUSIVE/instrument-flag）+ evidence/vertical-delta-r95-terminal.json。",
+      "carried_log": [
+        {
+          "at": "2026-09-28",
+          "round": 87,
+          "note": "R87 T5 去向注记：维持 open——语料指纹冻结期内不可修，具名触发=下一矩阵期（补 cn_code 或降格该格）；R87 发布轮未解冻语料，无动作"
+        },
+        {
+          "at": "2026-10-01",
+          "round": 95,
+          "note": "R95 T7 收口注记：本条 closed，兑现记录已追加于 evidence；语料 tombstone + finding 另册，详 ADR-0096"
+        }
+      ],
+      "closed_by": "ADR-0096",
+      "closed_by_adr_path": "docs/adr/0096-architecture-grill-round-95-eval-matrix-revision-closeout.md",
+      "closed_at": "2026-10-01"
+    },
+    {
+      "id": "defer-r86-anysearch-anon-quota-nudge",
+      "type": "deferred-with-ticket",
+      "title": "上游匿名配额边界形态=auto-provisioning 凭证签发文本（200+isError:null+非结果正文）；provider 已具名归类 permanent-auth；env/key 修正归用户侧",
+      "source_adr": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
+      "owner": "anysearch-retriever",
+      "opened_at": "2026-09-27",
+      "review_cadence": "quarterly",
+      "status": "open",
+      "evidence": "R86 T2 P2 raw 探针实测：匿名大跑中段上游改发 provisioning 文本而非结果信封（quota 边界邀请鉴权）。provider 检出后抛 quota/auth nudge→errorClass=permanent-auth。残余=用户侧 env 修正（endpoint 指向/key 轮换，agent 不代办）。",
+      "carried_log": [
+        {
+          "at": "2026-09-28",
+          "round": 87,
+          "note": "R87 T5 去向注记：维持 open——用户侧 env 修正（endpoint 指向/key 轮换）回执核销，agent 不代办；季度 review cadence 不变"
+        }
+      ]
+    },
+    {
+      "id": "r87-f3-criterion-errata",
+      "type": "governance-record",
+      "title": "F-3 判据表述勘误（R87 T5）：iso providersFailed=∅ 字面判据改写为等价表述「装置性失败=∅ 且非空覆盖≥70%」——语义已达成、不溯改 R86 正文、不留永久脚注",
+      "source_adr": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
+      "owner": "anysearch-eval",
+      "opened_at": "2026-09-28",
+      "status": "closed",
+      "closed_by": "ADR-0088",
+      "closed_at": "2026-09-28",
+      "closed_by_adr_path": "docs/adr/0088-architecture-grill-round-87-release-closeout-ship.md",
+      "evidence": "勘误脚注落于 .scratch/grill-round-86/decision-record.md「勘误（R87 T5 补记）」段；字面值未达 vs 装置性失败=∅+覆盖 97.6% 达成，判读结论（NO-GO）不受影响"
+    },
+    {
+      "id": "r88-candidate-f6-refactor-round",
+      "type": "deferred-with-ticket",
+      "title": "R88 候选：F-6 refactor 施工轮——probe-anysearch-mcp-raw.ts ??/|| 一致化+sanitize 对称遮 endpoint+版本字面量护栏+CHANGELOG 归位（独立 refactor commit，遵 ADR-0029）",
+      "source_adr": "docs/adr/0088-architecture-grill-round-87-release-closeout-ship.md",
+      "owner": "anysearch-cli",
+      "opened_at": "2026-09-28",
+      "review_cadence": "next grill round",
+      "status": "closed",
+      "evidence": "R86 下一轮候选第 2 项+R87 审计承继；发布轮不混排工程项故出列立项 | R88 T4 核销：F-6 全项落地——env || POSIX 一致化、sanitize 对称遮（<endpoint>/<key>）、版本字面量钉根 package.json、CHANGELOG r81–r85 旧段归位为 ## 0.1.0。",
+      "closed_by": "ADR-0089",
+      "closed_at": "2026-09-28",
+      "closed_by_adr_path": "docs/adr/0089-architecture-grill-round-88-search-surface-hygiene.md"
+    },
+    {
+      "id": "r88-candidate-vertical-direction-redeliberation",
+      "type": "deferred-with-ticket",
+      "title": "R88 候选：垂域方向重议轮——prefer-capable 具名重开条件 |ΔarmHostHit|≳0.4 未达，作正题候选候审（不复活加权问）",
+      "source_adr": "docs/adr/0088-architecture-grill-round-87-release-closeout-ship.md",
+      "owner": "anysearch-eval",
+      "opened_at": "2026-09-28",
+      "review_cadence": "hard-deadline: must convene before R95",
+      "status": "formally-declined",
+      "evidence": "R86 decision-record 具名重开条件未达；R87 goal 显式范围外登记候场",
+      "deadline": "2026-09-30 (R95 之前必须开庭)",
+      "pre_notification_obligation": "R94 收口批须在 carried_log 追加预通知条目并点名 owner anysearch-eval，不得静默到期",
+      "sunset_clause": "ADR-0094 D4：硬截止 sunset。rolling 复审的橡皮图章化（存续率 ~100%）是本条款针对的失效模式。开庭 ≠ 翻案——reaffirm / revise / retire 三果皆为合法判词；「维持 defer」不再是无期限默认态。",
+      "carried_log": [
+        {
+          "at": "2026-09-30",
+          "round": 93,
+          "note": "R93 T1 ADR-0094 D4 sunset 条款写入：R95 前强制开庭 + R94 收口批预通知义务（registry 挂账 + owner 点名 anysearch-eval）。本轮仅立法，开庭主体在 R94/R95。"
+        },
+        {
+          "at": "2026-09-30",
+          "round": 94,
+          "owner": "anysearch-eval",
+          "trigger_rule": "ADR-0094 D4",
+          "note": "R94 T1 预通知指针条目（先行 commit）：履行 ADR-0094 D4 预通知义务，具名 owner anysearch-eval，自证时序角色先于开庭立法本体，固化规则见 ADR-0095。"
+        },
+        {
+          "at": "2026-09-30",
+          "round": 94,
+          "owner": "anysearch-eval",
+          "trigger_rule": "ADR-0095 D9",
+          "note": "R94 T4 落地裁定：按开庭判词 reaffirm 机械落果，状态变更为 formally-declined，原判据废止留理由，正式确立四项具名复活条件。"
+        },
+        {
+          "id": "r88-candidate-vertical-direction-redeliberation",
+          "owner": "anysearch-eval",
+          "trigger_rule": "ADR-0095 D9 复活条件 ③④ 供证（R95 T7）",
+          "at": "2026-10-01",
+          "round": 95,
+          "note": "R95 读数落账：matrix@3 单次终读 INCONCLUSIVE/instrument-flag（G1b，主体层 instrumentDown 30/40）。条件③ verifier 工件：eval-looks.json vert-f1105 tombstone（prior_scope=live，墓碑理由码受控）+ defer-r86-anysearch-corpus-param-contract→closed（本轮）。条件④ verifier 工件：.scratch/grill-round-95/evidence/vertical-delta-r95-terminal.json（sha256 28f509fb345923633de0fd67e20f60978a95828491648295305f746570eada0b）+ .scratch/grill-round-95/readout-output.json（out.matrix=grill-round-95/prereg-matrix@3）。status=formally-declined 不动，解释权属 owner 未来轮次。"
+        }
+      ],
+      "closed_by": "ADR-0095",
+      "closed_at": "2026-09-30",
+      "closed_by_adr_path": "docs/adr/0095-architecture-grill-round-94-r88-candidate-vertical-direction-court-session.md",
+      "verdict": "reaffirm",
+      "former_criterion_status": "repealed",
+      "former_criterion_repeal_reason": "原重开门槛 |ΔarmHostHit|≳0.4 宣告废止：R86 洁净测量实测确证负效应（净 −0.125、P=0.0378）；L3b primary stream-json 枚举腿结构性死亡不可观测；未来重开转向以新评测矩阵修订版读数及等价性论证为基础的复活条款。",
+      "resurrection_conditions": [
+        {
+          "id": 1,
+          "condition": "dsh stable 晋升",
+          "controllability": "semi-controllable",
+          "verifier": "npm view @deepseek-ai/dsh dist-tags --json"
+        },
+        {
+          "id": 2,
+          "condition": "上游补垂域参数词表",
+          "controllability": "external-uncontrollable",
+          "verifier": "upstream contract notice"
+        },
+        {
+          "id": 3,
+          "condition": "cn_code 契约补齐",
+          "controllability": "semi-controllable",
+          "owner": "anysearch-eval",
+          "verifier": "next matrix revision (corpus unfreezing)"
+        },
+        {
+          "id": 4,
+          "condition": "新评测矩阵修订版读数",
+          "controllability": "pure-internal-controllable",
+          "owner": "anysearch-eval",
+          "verifier": "readout-delta.mjs matrix revision"
+        }
+      ]
+    },
+    {
+      "id": "defer-r92-t2-featherless-upstream-f-bug",
+      "type": "deferred-with-ticket",
+      "title": "T2 复跑 Featherless 上游模型响应异常 (F-bug 分支 C)：Qwen/Qwen3-32B 触 4096 max-tokens 且报 server_error: no_response 无 tool_calls",
+      "source_adr": "docs/adr/0093-architecture-grill-round-92-featherless-t2-smoke-closeout.md",
+      "owner": "anysearch-dsh",
+      "opened_at": "2026-09-30",
+      "review_cadence": "next grill round",
+      "status": "closed",
+      "evidence": ".scratch/grill-round-92/evidence/t2-l3-smoke.md + t2-verdict.json (L3a established, L3b not-established 因上游异常, L3c-min not-established) | R93 T2 核销：换模 moonshotai/Kimi-K2-Instruct-0905 后三跑全绿（L3a established + L3b established-via-fallback + L3c-min established，ans_* 收窄判据下无幻觉调用），F-bug 归因（Qwen3-32B reasoning 吞预算）不再适用于冻结臂",
+      "closed_by": "ADR-0094",
+      "closed_at": "2026-09-30",
+      "closed_by_adr_path": "docs/adr/0094-architecture-grill-round-93-kimi-l3-rerun-verdict-gated-pivot.md"
+    },
+    {
+      "id": "defer-r92-readme-token-pin-machine-leg",
+      "type": "deferred-with-ticket",
+      "title": "readme-token-pin 专属机器腿首跑执行（两拍节奏第二拍完成接线与 shadow，首跑挂账 R93）",
+      "source_adr": "docs/adr/0093-architecture-grill-round-92-featherless-t2-smoke-closeout.md",
+      "owner": "anysearch-devops",
+      "opened_at": "2026-09-30",
+      "review_cadence": "next grill round",
+      "status": "closed",
+      "evidence": ".scratch/grill-round-92/evidence/t4-shadow-dryrun.md + scripts/ship-gate.mjs | R93 T4 核销：机器腿由 shadow 转真实非 shadow 断言首跑——closeout-claims.json 两条 readme-token-pin 声明（README.md + README.zh-CN.md，command=dsh --version），门禁 closeout-claims r93 12/12 re-derived green",
+      "closed_by": "ADR-0094",
+      "closed_at": "2026-09-30",
+      "closed_by_adr_path": "docs/adr/0094-architecture-grill-round-93-kimi-l3-rerun-verdict-gated-pivot.md"
+    },
+    {
+      "id": "defer-r93-deprecate-credential-scope",
+      "type": "deferred-with-ticket",
+      "title": "deprecate 双空格 6 版本（@anysearch-cli/cli@0.0.3~0.0.8）单空格修正重发 — 权限缺口 credential-scope，6 条备准命令备妥待用户亲触",
+      "source_adr": "docs/adr/0094-architecture-grill-round-93-kimi-l3-rerun-verdict-gated-pivot.md",
+      "owner": "anysearch-dsh",
+      "opened_at": "2026-09-30",
+      "review_cadence": "next grill round",
+      "status": "open",
+      "permission_gap_type": "credential-scope",
+      "permission_gap_fallback": "纯备准核销 + EOTP 呈报待用户亲触自执；不代跑、不借他人凭证绕闸",
+      "evidence": ".scratch/grill-round-93/evidence/t5-deprecate.md + t5-deprecate-probe.json（npm whoami E401；6/6 双空格只读复核确认；0.1.0 不在弃用范围）"
+    },
+    {
+      "id": "finding-r95-upstream-validator-vs-doc-vocab-mismatch",
+      "type": "finding",
+      "title": "上游 finance.fundamental 的 validator 按 tag 级索要 cn_code，与 sub_domains 词表文档的 per-type 规则不一致（vert-f1105 格降格根因）",
+      "source_adr": "docs/adr/0096-architecture-grill-round-95-eval-matrix-revision-closeout.md",
+      "owner": "anysearch-eval",
+      "opened_at": "2026-10-01",
+      "review_cadence": "next upstream contract notice + quarterly",
+      "status": "open",
+      "upstream_channel": "pending — agent 不代修不代发，供 owner 走上游渠道",
+      "evidence": "R95 Q2 具名活查（2026-10-01，匿名层）：tools/call {domain:finance, sub_domain:fundamental, sub_domain_params:{type:overview, symbol:MSFT}} → HTTP 200 isError=true `Missing required params for tag 'finance.fundamental': cn_code`。同日 get_sub_domains 词表与 2026-09-26 存档（.scratch/grill-round-84/evidence/sub-domains-vocab.json）逐字一致（漂移在校验层、非文档层）。可机检验证信号：.scratch/grill-round-95/evidence/verify-validator-vs-doc.ts（离线断言文档侧 per-type 规则合法性 + --live 复放断言上游仍拒收；exit 0=不一致复现 / exit 1=未复现须 owner 复核 / exit 2=环境性失败无判词）；2026-10-01 实测：离线 exit 0，--live exit 2（当日匿名配额已耗尽，属环境判词、非 finding 证伪）。"
+    },
+    {
+      "id": "defer-r95-handoff-lint-false-green",
+      "type": "deferred-with-deadline",
+      "title": "F8: ship-gate handoff-lint 腿假绿三缺陷（模板↔门禁 PENDING 冲突 / liveness 静默折叠+祖先性冒充 / CI 拓扑使必填字段物理不可满足）",
+      "source_adr": "docs/adr/0097-architecture-grill-round-96-handoff-lint-three-state-exit-semantics.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-10-01",
+      "deadline": "2026-12-31",
+      "review_cadence": "next handoff-lint leg touch + quarterly",
+      "status": "closed",
+      "evidence": "R96 T1/T2 落地：判定核抽为纯模块 scripts/handoff-lint-verdict.mjs（核内禁 spawnSync/fs/Date.now/process.env）+ 薄壳 scripts/handoff-lint-shell.mjs（采→传→出口三步）+ ship-gate 腿改薄壳。三缺陷逐一机检闭环：(a) 模板↔门禁冲突消解——docs/agents/handoff-template.md 与门禁同轮同语法（GREEN / PENDING{stack-unpushed|pushed-no-branch-runs} / RED）；(b) 祖先性冒充根除——「本轮 run」判等改为栈内成员性 head_sha ∈ git rev-list origin/main..origin/<branch>，裸 rev-parse HEAD 等值目标与 merge-base --is-ancestor 已从 ship-gate 移除（E2E 断言无 is-ancestor）；gh 不可用时由静默 pass 改 env-PENDING + verification-unavailable:{gh-missing|repo-parse|api-failed} 具名标注；(c) CI 拓扑死结由 PENDING{pushed-no-branch-runs}（谓词=无 workflow 的 on.push 覆盖该分支）承接。回归锁：packages/store/test/handoff-lint-verdict.test.mjs（138 断言，OPA 允许+拒绝成对 + Stack 三要素 8 格全枚举 + 词表外必报错 + 空/缺字段/超长边界）+ packages/store/test/handoff-lint-e2e.test.mjs（126 断言，同套 fixtures 走完整壳层路径）+ 共用 fixtures packages/store/test/fixtures/handoff-lint/（20 个）；fail-on-empty 红线。真实仓库实测：r95 closeout 走 legacy 判 GREEN（presence-only），round-96 三态文档实测 PENDING{run-url:stack-unpushed | stack:ref-unavailable} 非阻断。",
+      "monitoring_channel": "ship-gate step 1g handoff-lint 腿每跑（[skip] 行计数 = 降级常态化监控锚，ADR-0097 Known-Risk 2）+ 每季 but 版本升级时复核解析契约（Known-Risk 1）",
+      "closed_by": "ADR-0097",
+      "closed_by_adr_path": "docs/adr/0097-architecture-grill-round-96-handoff-lint-three-state-exit-semantics.md",
+      "closed_at": "2026-10-02"
+    },
+    {
+      "id": "defer-r97-morphology-two-ratchet",
+      "type": "deferred-with-review",
+      "title": "形态二机检腿 ratchet 排程: PENDING 位收敛后升 RED",
+      "source_adr": "docs/adr/0098-architecture-grill-round-97-selfcheckable-declarations.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-10-03",
+      "review_cadence": "next handoff-lint leg touch + quarterly",
+      "status": "open",
+      "evidence": "R97 T1/T5 立法先行(ADR-0098 D5 全文+CONTEXT词条)；机检实现未做，PENDING 位无挂接代码，收敛后升RED。",
+      "monitoring_channel": "ship-gate handoff-lint leg + quarterly"
+    },
+    {
+      "id": "defer-r97-registry-extension-demo",
+      "type": "deferred-with-review",
+      "title": "扩表示范票: no-pr/unpublished 活体谓词首张扩表",
+      "source_adr": "docs/adr/0098-architecture-grill-round-97-selfcheckable-declarations.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-10-03",
+      "review_cadence": "next handoff-lint leg touch + quarterly",
+      "status": "open",
+      "evidence": "R97 T1 封闭注册表+OOV fixture锁死活体词表外；扩表实现未做，首张扩表即闭环验收场景。 | R98 R7 接线：pending_predicates 字段挂接形态二 PENDING 位——marker 点名 seat 谓词→surfaced PENDING 而非 OOV RED；本票关闭即谓词自动回落 OOV（ratchet 语义兑现）。",
+      "monitoring_channel": "ship-gate handoff-lint leg + quarterly",
+      "pending_predicates": [
+        "no-pr",
+        "unpublished"
+      ]
+    },
+    {
+      "id": "defer-r98-anchor-ratchet-recount-seat",
+      "type": "deferred-with-review",
+      "title": "锚 PENDING 位: anchor:ratchet-recount 坐席（ratchet 类首发锚）",
+      "source_adr": "docs/adr/0099-architecture-grill-round-98-fifth-morphology.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-10-03",
+      "review_cadence": "next enforcement-anchor leg touch + quarterly",
+      "status": "open",
+      "evidence": "D-002/D-003 裁定：ratchet 类锚与形态二同构——先 PENDING 坐席后 ratchet 升 RED。pending_anchors 字段挂接锚 PENDING 位：enforcement-anchor 腿对坐席锚仍执行探针但输出 skip 而非 fail；本票关闭即锚升全量 kill 判定（ratchet 语义）。",
+      "monitoring_channel": "ship-gate enforcement-anchors leg + quarterly",
+      "pending_anchors": [
+        "anchor:ratchet-recount"
+      ]
+    },
+    {
+      "id": "defer-r98-anchor-open-surface-demo",
+      "type": "deferred-with-review",
+      "title": "锚扩表示范票: 开放面检测首张扩表演示",
+      "source_adr": "docs/adr/0099-architecture-grill-round-98-fifth-morphology.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-10-03",
+      "review_cadence": "next enforcement-anchor leg touch + quarterly",
+      "status": "open",
+      "evidence": "ADR-0099 Known-Risk 1：开放面外约束逃逸——闭表只覆盖已登记锚。未来扩表须走封闭通道：新锚携证伪 fixture 方准入表（自指钉①），本票为首张扩表的闭环验收场景（扩表实现未做，首张扩表即演示）。",
+      "monitoring_channel": "ship-gate enforcement-anchors leg + quarterly"
+    },
+    {
+      "id": "defer-r98-stack-land-authorization",
+      "type": "deferred-with-review",
+      "title": "清算坐席: r98-anchor-detector 残留分支待 land 授权",
+      "source_adr": "docs/adr/0099-architecture-grill-round-98-fifth-morphology.md",
+      "owner": "anysearch-platform",
+      "opened_at": "2026-10-04",
+      "review_cadence": "R99 开工即处理（push/land 授权序列 D-001(c)）",
+      "status": "closed",
+      "evidence": "owner 授权会话内 but land r98-anchor-detector ff-land 上 origin/main（365b675b）；栈清算义务回落核验——栈已空、ref 自始未建，clearing 腿非 RED；本票随 land 关闭。",
+      "monitoring_channel": "ship-gate handoff-lint leg clearing sub-leg",
+      "covers": [
+        "r98-anchor-detector"
+      ],
+      "closed_by": "owner-authorized but land (R98 LOOP1.5 session)",
+      "closed_at": "2026-10-04"
     }
-   ]
-  },
-  {
-   "id": "defer-f16-macos-native-crash",
-   "type": "known-issue-quarantine",
-   "title": "F-16: better-sqlite3 exit-time mutex crash on darwin-arm64 (macOS ship-gate job)",
-   "source_adr": "docs/adr/0059-architecture-grill-round-58-ci-shipgate-full-green-closure-multiticket.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-09-12",
-   "deadline": "2026-12-31",
-   "ttl_days": 90,
-   "review_cadence": "monthly",
-   "status": "open",
-   "upstream_issue": "https://github.com/WiseLibs/better-sqlite3/issues/1514",
-   "ci_evidence": "https://github.com/Xxx91n/anysearch-cli/actions/runs/34700329763 (macos-latest job 103570831306): libc++abi: terminating due to uncaught exception of type std::__1::system_error: mutex lock failed: Invalid argument - hit in the packages/store test step AND the eval CLI spawn, on Node 22.23.2 arm64",
-   "decision_chain_state": "ADR-0059 D4 gate 1 probe DONE (crash = better-sqlite3, darwin-arm64); gate 2 Node 22 alignment applied by T-1 and did NOT fix it; gate 3 onnxruntime not implicated; exits 4 (subprocess isolation + sentinel exit code) and 5 (this ledger) remain. The workflow does NOT silently skip - the macos ship-gate job is honestly red.",
-   "monitoring_channel": "monthly CI re-run of the macos ship-gate job + upstream better-sqlite3 issue watch",
-   "carried_log": [
-    {
-     "at": "2026-09-22",
-     "round": 76,
-     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream preview blocker unchanged; quarterly cadence holds"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 77,
-     "note": "R77 双轨域外——显式续债：macOS原生崩溃监视维持月度CI+上游issue watch，本轮无处置动作"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 78,
-     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 79,
-     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 80,
-     "note": "R80 域外显式续债（carried, not silent）"
-    },
-    {
-     "at": "2026-09-24",
-     "round": 81,
-     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
-    },
-    {
-     "at": "2026-09-25",
-     "round": 82,
-     "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，macOS native crash 修复未入轨（native-smoke 覆盖腿存续）"
-    }
-   ]
-  },
-  {
-   "id": "defer-f17-quarantine-ids",
-   "type": "deferred-with-deadline",
-   "title": "F-17: name the two environment-flaky golden cases and populate eval-quarantine.json",
-   "source_adr": "docs/adr/0059-architecture-grill-round-58-ci-shipgate-full-green-closure-multiticket.md",
-   "owner": "anysearch-eval",
-   "opened_at": "2026-09-12",
-   "deadline": "2026-12-31",
-   "ttl_days": 90,
-   "review_cadence": "monthly",
-   "status": "open",
-   "evidence": "20 local fixed-input runs (docs/eval/quarantine-audit-2026-09-12.md) and 4 post-fix CI memory-eval runs are all 128/128 (mrr 0.548). The single historical 126/128 (mrr 0.524) was produced by the memory-eval job, which uploads no artifact - and the main ship-gate artifacts from that run are 128/128 with integrity.verdict=failed/runPurpose=decision (the F-15 signature), so the two case ids are not recoverable from any artifact. Reproduction procedure: run the memory-eval job repeatedly, one ref per run (same-ref dispatches cancel via the ship-gate concurrency group), and read '[eval] failed cases: <id>(<stage>)' from the job log; then add the entries to packages/store/eval-quarantine.json. The SLA enforcement point (packages/store/test/eval-quarantine-sla.test.ts) is already in place.",
-   "monitoring_channel": "monthly CI re-run of the memory-eval job",
-   "carried_log": [
-    {
-     "at": "2026-09-22",
-     "round": 76,
-     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream preview blocker unchanged; quarterly cadence holds"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 77,
-     "note": "R77 双轨域外——显式续债：quarantine id工作未入本轮轨"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 78,
-     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 79,
-     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 80,
-     "note": "R80 域外显式续债（carried, not silent）"
-    },
-    {
-     "at": "2026-09-24",
-     "round": 81,
-     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
-    },
-    {
-     "at": "2026-09-25",
-     "round": 82,
-     "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，quarantine IDs 未入轨"
-    }
-   ]
-  },
-  {
-   "id": "defer-r71-shipgate-1g-coverage",
-   "type": "deferred-with-deadline",
-   "title": "ship-gate closeout-required leg coverage gap (R70 F1 successor): fallback picks latest round dir containing a closeout, silently masking a missing one",
-   "source_adr": "docs/adr/0072-architecture-grill-round-71-first-release-path-governance-embedding-reachability.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-09-19",
-   "deadline": "2026-12-31",
-   "review_cadence": "quarterly",
-   "status": "closed",
-   "evidence": "Ship-gate step 1g leg-b rewritten (scripts/closeout-coverage.mjs + assessCloseoutCoverage): completion signal = ADR index Grill Round N registration; fail-closed 3 assertions (registered-no-closeout red / index↔.scratch bidirectional drift red / empty-or-unparseable derivation red); floor=76 rule birthday; explicit in-flight exemption line; coverage counts on pass. All three assertions exercised red at the real gate (evidence/t1-* logs) + 40/40 fixture tests (audit rework added F-2/F-4 + residual-cleanup regression assertions; original landing was 26).",
-   "monitoring_channel": "next grill round task-book triage; do not re-defer without an explicit ledger entry",
-   "closed_by": "ADR-0077",
-   "closed_by_adr_path": "docs/adr/0077-architecture-grill-round-76-silent-drift-governance-liquidation.md",
-   "closed_at": "2026-09-22"
-  },
-  {
-   "id": "defer-r71-transformers-undeclared-dep",
-   "type": "deferred-with-deadline",
-   "title": "transformers.js undeclared external (onnxruntime-common) — remove the scoped Module._resolveFilename patch when upstream declares it",
-   "source_adr": "docs/adr/0072-architecture-grill-round-71-first-release-path-governance-embedding-reachability.md",
-   "owner": "anysearch-embedding",
-   "opened_at": "2026-09-19",
-   "deadline": "2027-03-31",
-   "review_cadence": "quarterly",
-   "status": "open",
-   "upstream_issue": "https://github.com/huggingface/transformers.js/issues/1087 (CLOSED unresolved — maintainer's repo-internal publicHoistPattern does not cover published consumers); fix in flight: https://github.com/huggingface/transformers.js/pull/1764 (OPEN, maintainer-authored, contains the manifest declaration hunk)",
-   "evidence": "R75 judgement sweep 2026-09-22: deletion condition still unmet (Half-Fired Trigger — upstream declared onnxruntime-node/web, not the specifier actually required). 4.3.0 tarball dissection: dist/transformers.node.cjs top-level bare require('onnxruntime-common') at ~line 13520, manifest still undeclared. Runtime repro on pnpm isolated scope (hoist:false): 'Cannot find module onnxruntime-common' from transformers.node.cjs:13520 (transcript .scratch/grill-round-75/evidence/t0-pnpm-isolated-scope.log); 3.8.1 identical without patch, green with the shipped scoped _resolveFilename patch + self-declared copy. Nuance: pnpm default virtual-store hoist masks it; breaks under hoist:false / pnpm dlx / global-style installs; npm flat hoist masks until a version conflict (episodic-memory#105). Version-pairing discipline: self-declared onnxruntime-common must equal the effective onnxruntime-node embedded dep (currently 1.21.0 ≡ 1.21.0) — now a CI fact via packages/embedding/test/transformers-ghost-dep.test.ts (ADR-0076). Patch stays: fail-open, auto no-ops once upstream declares, and is the only mechanism that travels inside the published tarball.",
-   "monitoring_channel": "watch @huggingface/transformers releases >4.3.0 for a declared onnxruntime-common + watch PR #1764 merge; deletion condition = a released version whose manifest declares it (then verify the bare require is gone)",
-   "carried_log": [
-    {
-     "at": "2026-09-22",
-     "round": 76,
-     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream #1764 still OPEN — deletion trigger not fired; patch stays (ADR-0076 verdict)"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 77,
-     "note": "R77 双轨域外——显式续债：上游#1764仍open（截至2026-09-22），删除条件未达（半响触发器教义），watch面不变"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 78,
-     "note": "R78 域外显式续债：上游 #1764 仍 OPEN（截至 2026-09-22），删除触发器未响，patch 维持（ADR-0076 verdict）"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 79,
-     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 80,
-     "note": "R80 域外显式续债（carried, not silent）"
-    },
-    {
-     "at": "2026-09-24",
-     "round": 81,
-     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
-    },
-    {
-     "at": "2026-09-25",
-     "round": 82,
-     "note": "R82 域外显式续债（落选≠飘过）：T0 哨戒续班实测 transformers.js PR #1764 仍 OPEN（stagnant），本体修复未入轨"
-    }
-   ]
-  },
-  {
-   "id": "defer-r71-provider-serverside",
-   "type": "deferred-with-deadline",
-   "title": "provider server-side investigation (search endpoint 000 during R71 spike)",
-   "source_adr": "docs/adr/0072-architecture-grill-round-71-first-release-path-governance-embedding-reachability.md",
-   "owner": "anysearch-retriever",
-   "opened_at": "2026-09-19",
-   "deadline": "2026-12-31",
-   "review_cadence": "quarterly",
-   "status": "closed",
-   "evidence": "R81 T1a/T2/T3 诊断收口：000 观测归因收窄至本机 ANYSEARCH_ENDPOINT env 重定向（User 级 127.0.0.1:20128，dead-port→connection refused 复现，T2 P-C）；api.anysearch.com 基础设施活（新 cert 2027-04-07/health 200/apex+status 200）但 REST /v1/search 路由级 404（双列一致）；POST /mcp 为活 MCP Streamable HTTP 端点（initialize/tools-list/tools-call 全绿 867ms 真结果）→ 裁决=分支 b（死但可修：迁 MCP-over-HTTP，R82 票 fix-r82-anysearch-mcp-migration）。证据 .scratch/grill-round-81/{evidence/t1a-recon,evidence/t2-matrix,t3-diagnosis}.md",
-   "monitoring_channel": "next grill round task-book triage",
-   "carried_log": [
-    {
-     "at": "2026-09-22",
-     "round": 76,
-     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): deferred scope — no owner pull this round"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 77,
-     "note": "R77 双轨域外——显式续债：provider serverside议题未入本轮轨"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 78,
-     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 79,
-     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 80,
-     "note": "R80 域外显式续债（carried, not silent）"
-    },
-    {
-     "at": "2026-09-24",
-     "round": 81,
-     "note": "R81 主轴处置完成：诊断收口+ADR-0082 裁决分支 b；残余未验 R1-R5（含 R71 时刻端口态不可回溯、/mcp anon 凭据面、transport 细节）携入 R82 票"
-    }
-   ],
-   "closed_by": "ADR-0082",
-   "closed_at": "2026-09-24",
-   "closed_by_adr_path": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md"
-  },
-  {
-   "id": "defer-r72-dsh-plugin-npm-publish",
-   "type": "deferred-with-deadline",
-   "title": "@anysearch-cli/dsh-plugin npm publish — flip private + publishConfig when the release track takes it",
-   "source_adr": "docs/adr/0073-architecture-grill-round-72-deepseek-harness-host-adaptation.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-09-19",
-   "deadline": "2027-03-31",
-   "review_cadence": "quarterly",
-   "status": "closed",
-   "evidence": "插曲事件 1 三扳机全扣实证：手发 dsh-plugin@0.0.7 落 registry（2026-09-23T17:02:41Z, Apache-2.0）；v0.0.8 tag run 35894640525 success——五包 0.0.8 全落 + SLSA provenance attestations 非空 + 无 ENEEDAUTH/E403；装跑冒烟 npm i-g cli@0.0.8 + ans doctor + dsh plugin add @0.0.8（隔离 DSH_HOME）+ dump-config 层核对全绿。证据 .scratch/grill-round-81/evidence/release-interlude-1.md",
-   "monitoring_channel": "next release round task-book triage",
-   "carried_log": [
-    {
-     "at": "2026-09-22",
-     "round": 76,
-     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): r74 stack landed; publish-adoption gate unmet"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 77,
-     "note": "R77 双轨域外——显式续债：dsh-plugin npm发布议题未入本轮轨"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 78,
-     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 79,
-     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 80,
-     "note": "R80 T2 更态=就绪待用户扳机：包内全部就绪，剩三项用户动作（手发 0.0.7→npmjs TP 四字段+allowed actions 勾选→推 v0.0.8 tag）——外发/发布均为用户扳机不代行"
-    }
-   ],
-   "closed_by": "ADR-0082",
-   "closed_at": "2026-09-24",
-   "closed_by_adr_path": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md"
-  },
-  {
-   "id": "defer-r72-dsh-native-tools",
-   "type": "deferred-with-deadline",
-   "title": "native ctx.tools registration of the five ans_* tools inside dsh (bypasses mcp__anysearch__* bridge namespace)",
-   "source_adr": "docs/adr/0073-architecture-grill-round-72-deepseek-harness-host-adaptation.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-09-19",
-   "deadline": "2027-03-31",
-   "review_cadence": "quarterly",
-   "status": "closed",
-   "evidence": "R72 chose the official mcp-client bridge (zero product code for the tool surface). Revisit triggers: bridge shows insufficiency for ans_chat/research_web latency, or the tool-registration API stabilizes upstream.",
-   "closed_by": "round-90 T3 (commit 1bc7b84d (restacked; pre-move sha dba410b6)): five ans_* tools register natively via ctx.tools.register in apps/dsh-plugin/src/index.ts; execute = MCP tools/call over ans-mcp HTTP transport; bridge row retired in T4 (commit b41469e1, restacked; pre-move sha 32ea8763)",
-   "closed_at": "2026-09-29",
-   "closed_by_adr_path": "docs/adr/0091-architecture-grill-round-90-dsh-native-tool-plane.md",
-   "monitoring_channel": "watch @deepseek-ai/dsh-mcp-client + dsh-tools releases",
-   "carried_log": [
-    {
-     "at": "2026-09-22",
-     "round": 76,
-     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): r74 stack landed; native-tools gate unmet"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 77,
-     "note": "R77 双轨域外——显式续债：native tools议题未入本轮轨"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 78,
-     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 79,
-     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 80,
-     "note": "R80 域外显式续债（carried, not silent）"
-    },
-    {
-     "at": "2026-09-24",
-     "round": 81,
-     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
-    },
-    {
-     "at": "2026-09-25",
-     "round": 82,
-     "note": "R82 域外显式续债（落选≠飘过）：T0 哨戒续班含 dsh-native-tools watch 线（观测在档），本体整改未入轨"
-    },
-    {
-     "at": "2026-09-29",
-     "round": 89,
-     "note": "R89 T4 定形在案（.scratch/grill-round-89/r72-shaping.md）：L1 实测 ctx.tools 注册面（ToolRuntime.register/restrict/defineTool）自 ≥0.1.5-rc.2 三代签名逐字相同——「工具注册 API 上游稳定化」触发器实质已响（从严读=待 0.2.0 stable）；判词 soak-until-stable，维持 defer 不实现"
-    },
-    {
-     "at": "2026-09-29",
-     "round": 90,
-     "note": "R90 实施闭环：T2 expected-RED（15p/6f）→T3 fix dba410b6（ctx.tools.register 裸 ToolDefinition+KernelJsonSchemas 逐字投影+callServer→ans-mcp /mcp+三头+fail-open）21/21 绿→T4 refactor 32ea8763 桥行退役；偏离记档=defineTool→literal ToolDefinition（零依赖契约凌驾 DSL 方便性）"
-    }
-   ]
-  },
-  {
-   "id": "defer-r72-dsh-web-interactive-matrix",
-   "type": "deferred-with-deadline",
-   "title": "dsh web-profile interactive matrix — browser-driven turn, live patch reload (patchReload:live) [approval-channel split out at R90 → defer-r72-dsh-approval-channel]",
-   "source_adr": "docs/adr/0073-architecture-grill-round-72-deepseek-harness-host-adaptation.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-09-19",
-   "deadline": "2027-03-31",
-   "review_cadence": "quarterly",
-   "status": "open",
-   "evidence": "R72 covered the two named web probes (inject transcript + preheat marker) inside a web-profile composition driven headlessly. Interactive UI turn + live-edit reload + approval-channel behaviour are preview-round scope.",
-   "monitoring_channel": "next grill round task-book triage",
-   "carried_log": [
-    {
-     "at": "2026-09-22",
-     "round": 76,
-     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): r74 stack landed; web-interactive matrix gate unmet"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 77,
-     "note": "R77 双轨域外——显式续债：web interactive matrix议题未入本轮轨"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 78,
-     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 79,
-     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 80,
-     "note": "R80 域外显式续债（carried, not silent）"
-    },
-    {
-     "at": "2026-09-24",
-     "round": 81,
-     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
-    },
-    {
-     "at": "2026-09-25",
-     "round": 82,
-     "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，web-interactive matrix 未入轨"
-    },
-    {
-     "at": "2026-09-29",
-     "round": 89,
-     "note": "R89 T4 定形在案：approval-channel 分项依赖已解除（dsh-user-approval 在架同形）；patchReload:live/browser-turn 上游 .d.ts 双版缺席——维持 defer，依赖状态分项写明"
-    },
-    {
-     "at": "2026-09-29",
-     "round": 90,
-     "note": "R90 T5 复核裁决=拆：approval-channel 拆为独立条目 defer-r72-dsh-approval-channel（0.1.7-rc.1 tarball 复验：approval/request+asked+decided+policy+invariant 事件面在架——唯一依赖已解除的分项，可独立前置）；本条目收窄为 patchReload:live+browser-turn，维持 defer（上游 0.1.7-rc.1/0.2.0-rc.1 .d.ts 键面缺席复核不变）"
-    },
-    {
-     "at": "2026-09-29",
-     "round": 91,
-     "note": "R91 域外显式续债（carried, not silent）：本轮为主轴 dsh L3 冒烟售后验收轮，web-interactive matrix 主体维持 defer"
-    },
-    {
-     "at": "2026-09-30",
-     "round": 92,
-     "note": "R92 域外显式续债（carried, not silent）：本轮为主轴 featherless T2 复跑售后验收轮，web-interactive matrix 主体维持 defer"
-    }
-   ]
-  },
-  {
-   "id": "defer-r72-dsh-approval-channel",
-   "type": "deferred-with-deadline",
-   "title": "dsh approval-channel surface verification — approval/request waterfall + ApprovalOutcome end-to-end behaviour on the interactive path (split out of defer-r72-dsh-web-interactive-matrix at R90)",
-   "source_adr": "docs/adr/0073-architecture-grill-round-72-deepseek-harness-host-adaptation.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-09-29",
-   "deadline": "2027-03-31",
-   "review_cadence": "quarterly",
-   "status": "open",
-   "evidence": "Split ruling (R90 T5): this is the ONE sub-item of the R72 web matrix whose upstream dependency is fulfilled — @deepseek-ai/dsh-user-approval@0.1.7-rc.1 tarball exposes approval/policy + approval/invariant + approval/types + approval/asked + approval/decided + approval/request event keys (verified .d.ts sweep, evidence .scratch/grill-round-90/evidence/t5-approval-surface.log). Independently pullable; verification still needs a live interactive session (approval prompt rendering + outcome routing) which R90 does not cover.",
-   "monitoring_channel": "next grill round task-book triage (upstream dependency already landed — scheduling gate only)",
-   "carried_log": [
-    {
-     "at": "2026-09-29",
-     "round": 90,
-     "note": "拆出自 defer-r72-dsh-web-interactive-matrix：上游依赖已解除（dsh-user-approval 在架同形），剩余阻碍=交互会话实测成本，非上游缺席"
-    },
-    {
-     "at": "2026-09-29",
-     "round": 91,
-     "note": "R91 T4c headless 可行性探测（.scratch/grill-round-91/evidence/t4c-approval-channel.md）：dsh-headless 未导入亦未注册 ApprovalAnswerer，缺失交互响应通道，调用将触发 fail-closed 降级；实证 headless 下交互审批不可行，维持 defer 挂账"
-    },
-    {
-     "at": "2026-09-30",
-     "round": 92,
-     "note": "R92 域外显式续债（carried, not silent）：headless 无 answerer 实证（R91 T4c）维持生效，审批交互通道维持 defer 挂账"
-    }
-   ]
-  },
-  {
-   "id": "defer-r73-dsh-event-rename",
-   "type": "deferred-with-deadline",
-   "title": "dsh 0.1.6 事件改名迁移：agent/session-start → agent/created（payload 增 source/signal；durable 路由卡仅 source=fresh 注入）",
-   "source_adr": "docs/adr/0074-architecture-grill-round-73-dsh-upstream-family-pinning-and-stack-landing.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-09-19",
-   "deadline": "2027-03-31",
-   "review_cadence": "per upstream release — L0 每版 npm view 快照+L1 每版 tarball 消费面 diff；L2 仅对合格候选（双锚全响） + quarterly",
-   "status": "closed",
-   "evidence": "R77 T0 实证（evidence/t0-l0-watch.json + t0-api-snapshot-rc2.json + t0-l1-*.md）：改名特征已在 alpha 线全落地——0.1.6-alpha.1 起 agent/session-start 键自 Events 移除、agent/created payload 变 {agent,source:SessionStartSource,signal?:AbortSignal}（rc.2 起两键并存、source 原挂 session-start）；rc/next 线 0.1.5-rc.3 Events 面 ≡ rc.2 零漂移（无 alarm）。迁移蓝图：.scratch/grill-round-73/upgrade-ledger.md + R77 v2（.scratch/grill-round-77/upgrade-ledger.md）；采纳时 override 枚举按新锁文件重推导（0.1.7-alpha.1 dep-closure 已扩至 21 个 dsh-*：+session-persistence/storage/storage-domain/workspace）。 | R83 TE1 双锚齐当日消费 rc.1（commit rot, branch r83-te1）：agent/session-start→agent/created + source==='startup' guard；repin 全族 0.1.7-rc.1+cordis 4.0.4；测试 14/14+L2 彩排（install/dump-config/幂等）绿；实录 .scratch/grill-round-83/evidence/te1-event-migration.md",
-   "monitoring_channel": "upstream @deepseek-ai/dsh-* release watch（L0/L1/L2 漏斗）——触发器=双锚：特征锚（候选 .d.ts 中 agent/created 携 source/signal 且 agent/session-start 缺席）AND 稳定锚（发布在 rc-or-stable 线，alpha/beta 不采纳）+过 minimumReleaseAge 龄期闸；latest-only 彩排，被跳线版本写墓碑非补演",
-   "carried_log": [
-    {
-     "at": "2026-09-22",
-     "round": 76,
-     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): upstream event rename unshipped — adoption trigger not fired"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 77,
-     "note": "R77 轨一处置——L0/L1 探针取证完成：rc.3 无alarm；alpha.1/alpha.2/0.1.7-alpha.1 全 ALARM 但皆 alpha 线→无 L2 合格候选（no-qualifying-candidate 显式结论）；触发器改写为特征+稳定性双锚（版本号退出触发逻辑）；0.1.6-alpha.* 跳线→墓碑入 tombstones 字段+upgrade-ledger v2"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 78,
-     "note": "R78 域外显式续债：L2 排程义务临近——闸内标本 ≈2026-09-24 06:0xZ 出闸，下轮或即触发；双锚触发器仍守版本号退出逻辑"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 79,
-     "note": "R79 T0 哨戒实录：dsh 0.1.7-alpha.2 L0/L1 取证——特征锚在位（agent/created 携 source/signal、agent/session-start 缺席）、Events union 27≡alpha.1、发版面 21 dsh-*（code-runtime 缺席）+cordis ~4.0.4 线；alpha 线稳定锚不响→非 L2 候选，action=none required；rc.3/alpha.1 仍闸内（≈09-24 05:39/06:04Z 出闸）"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 80,
-     "note": "R80 T0 哨戒实录：alpha.2 携特征锚（agent/created 携 source/signal、session-start 缺席）但稳定锚缺（alpha 线+changelog 未审）→非 L2 合格候选 action=none；rc.3/alpha.1/alpha.2 全闸内 ≈09-24 出闸续哨"
-    },
-    {
-     "at": "2026-09-24",
-     "round": 81,
-     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
-    },
-    {
-     "at": "2026-09-24",
-     "round": 82,
-     "note": "R82 T0 哨戒（evidence/t0-watch-2026-09-24.md）：rc.2 新发（09-24T14:02Z）特征锚复验齐（agent/created 携 source/signal、session-start 缺席）但龄期闸内至 09-26T14:02Z+changelog 审面缺席→双锚未齐，合格候选未出现（D-003 §4 如实记）。修正点：SessionStartSource 实测枚举=startup|resume|clear|compact（无 fresh）——采纳时 guard 按 source!=='startup' 落字"
-    }
-   ],
-   "tombstones": [
-    {
-     "version": "0.1.6-alpha.1",
-     "superseded_by": "0.1.7-alpha.1",
-     "l1_summary": "改名特征已落地（session-start ABSENT, created 携 source/signal）；alpha 线从未是 L2 候选",
-     "at": "2026-09-22"
-    },
-    {
-     "version": "0.1.6-alpha.2",
-     "superseded_by": "0.1.7-alpha.1",
-     "l1_summary": "R73 install 彩排实证单错 RED + R77 L1 复核（session-start ABSENT, created 携 source/signal）；alpha 线从未是 L2 候选",
-     "at": "2026-09-22"
-    }
-   ],
-   "closed_by": "ADR-0084",
-   "closed_at": "2026-09-25"
-  },
-  {
-   "id": "defer-r74-logo-bitmap-matrix",
-   "type": "deferred-with-deadline",
-   "title": "logo 位图衍生矩阵（favicon/social-preview 等 PNG/WebP 导出）——repo-logo Phase4 位图管线依赖的 imagegen 工具本会话不存在，R74 仅交付纯 SVG mark",
-   "source_adr": "docs/adr/0075-architecture-grill-round-74-readme-visual-layer-antigravity-integration.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-09-20",
-   "deadline": "2027-03-31",
-   "review_cadence": "quarterly",
-   "status": "open",
-   "evidence": "R74 D-002：位图矩阵阶段因 imagegen 不可用整体延期；纯 SVG mark 已落地 assets/readme/logo.svg（深色芯片底、深浅主题双安全、16px 可辨，核验见 .scratch/grill-round-74/evidence/t1-render-verification.md）。采纳时以 logo.svg 为源件导出 PNG/WebP 衍生。",
-   "monitoring_channel": "manual",
-   "carried_log": [
-    {
-     "at": "2026-09-22",
-     "round": 76,
-     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): imagegen tooling absent; SVG mark landed r74; matrix deferred until tooling exists"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 77,
-     "note": "R77 双轨域外——显式续债：logo位图矩阵未入本轮轨"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 78,
-     "note": "R78 治理工具链校准轮域外——显式续债（落选≠飘过）：本轮轨=T0 repin 实验+T1 pathlint 重构+T2 文书，本债未入轨"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 79,
-     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 80,
-     "note": "R80 域外显式续债（carried, not silent）"
-    },
-    {
-     "at": "2026-09-24",
-     "round": 81,
-     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
-    },
-    {
-     "at": "2026-09-25",
-     "round": 82,
-     "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，logo bitmap matrix 未入轨"
-    }
-   ]
-  },
-  {
-   "id": "defer-r75-registerhooks-esm-arm",
-   "type": "deferred-with-deadline",
-   "title": "ESM arm for the transformers ghost-dep patch — module.registerHooks resolve fallback (named return ticket)",
-   "source_adr": "docs/adr/0076-architecture-grill-round-75-transformers-ghost-dep-judgement.md",
-   "owner": "anysearch-embedding",
-   "opened_at": "2026-09-22",
-   "deadline": "2027-03-31",
-   "review_cadence": "trigger-driven (three re-entry triggers below) + quarterly",
-   "status": "open",
-   "evidence": "R75 D-003 (B+): the shipped Module._resolveFilename patch only covers the CJS entry (transformers.node.cjs via createRequire().require()); a consumer reaching transformers.node.mjs through import()/import would bypass it — the ESM resolver cannot be scoped without module.registerHooks. Not adopted now: registerHooks is Stability 1.2 experimental, process-global, needs Node >=22.15 (repo floor >=22), is inert under jest/vitest loaders, and our reachable ESM surface is zero — runtime defense code for an unreachable path is negative value (Static Invariant Guard doctrine). The guard test transformers-ghost-dep.test.ts asserts the invariant instead. Re-entry triggers: (a) any src code path starts loading @huggingface/transformers via ESM import (guard goes red — by construction); (b) upstream merges #1764 and a release declares onnxruntime-common (patch + this ticket retire wholesale); (c) Node floor rises to >=22.15 AND a real ESM consumer exists — then implement registerHooks per GitNexus#2069 posture: fail-open, resolving onnxruntime-common from the effective onnxruntime-node copy (dynamic version pairing, no pin drift).",
-   "monitoring_channel": "guard test red = trigger (a); watch PR #1764 + releases >4.3.0 for trigger (b); Node floor changes for trigger (c)",
-   "carried_log": [
-    {
-     "at": "2026-09-22",
-     "round": 76,
-     "note": "R76 task-book triage — explicit re-deferral (落选续债, not silent carry): no ESM consumer; three named re-entry triggers (r75) unchanged"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 77,
-     "note": "R77 双轨域外——显式续债：registerHooks ESM臂三重触发器未响，watch面不变"
-    },
-    {
-     "at": "2026-09-22",
-     "round": 78,
-     "note": "R78 域外显式续债：repo 无 Node floor 声明+无真实 ESM 消费者=仍半响，三重触发器未响"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 79,
-     "note": "R79 域外显式续债（落选≠飘过）：本轮域=pathlint 豁免域契约收敛（T0 ride-along+T1 契约批+T2 文书）；本债不在域内，显式续期非静默滞留"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 80,
-     "note": "R80 域外显式续债（carried, not silent）"
-    },
-    {
-     "at": "2026-09-24",
-     "round": 81,
-     "note": "R81 产品吸气轮域外显式续债（落选≠飘过）：本轮轨=provider-serverside spike+R1 幂等跳过+发布插曲协议；本债未入轨"
-    },
-    {
-     "at": "2026-09-25",
-     "round": 82,
-     "note": "R82 迁移落地轮域外显式续债（落选≠飘过）：本轮轨=provider 迁移，registerhooks ESM arm 未入轨"
-    }
-   ]
-  },
-  {
-   "id": "gov-r76-registry-canonical-lock",
-   "type": "governance-record",
-   "title": "governed-JSON canonical byte lock for docs/deferred-registry.json (ship-gate stepGovernedJsonCanonical)",
-   "source_adr": "docs/adr/0077-architecture-grill-round-76-silent-drift-governance-liquidation.md",
-   "owner": "anysearch-platform",
-   "opened_by": "grill-round-76",
-   "opened_at": "2026-09-22",
-   "deadline": "2026-12-31",
-   "review_cadence": "quarterly",
-   "status": "closed",
-   "closed_by": "ADR-0077",
-   "closed_by_adr_path": "docs/adr/0077-architecture-grill-round-76-silent-drift-governance-liquidation.md",
-   "closed_at": "2026-09-22",
-   "evidence": "ship-gate stepGovernedJsonCanonical leg (CANONICAL_JSON_FILES in scripts/ship-gate.mjs, logic in scripts/governed-json.mjs) byte-locks this file to JSON.stringify(JSON.parse(src),null,1)+\"\\n\"; injection probe red at \"first differs at line 2\" with paste-able normalize command (evidence/t0-canonical-inject.log); normalize command verified to restore canonical bytes. Born-closed record — documents the lock itself, not deferred work.",
-   "monitoring_channel": "ship-gate step 1 canonical-json leg (fail-closed every run); reversal per ADR-0077 D5 (n>=5 multi-type -> registered config + prettier)"
-  },
-  {
-   "id": "defer-r77-pathlint-envvar-blindspot",
-   "type": "deferred-with-deadline",
-   "title": "pathlint PATH_RE 不识别 env-var 形机器路径（%TEMP%/$HOME/~/）——ADR-0072 意图级盲区",
-   "source_adr": "docs/adr/0078-architecture-grill-round-77-dsh-upstream-watch-funnel-and-governance-backlog-liquidation.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-09-22",
-   "deadline": "2026-12-31",
-   "review_cadence": "next pathlint leg touch + quarterly",
-   "status": "closed",
-   "evidence": "R78 T1 落地：PATH_RE→token+分隔符组合判定器（scripts/ship-gate-pathlint-detect.mjs），四类新 token（%VAR%/$VAR|${VAR}/~/UNC）+字面形统一后随分隔符=locator；warn-first 全量扫 313 文档 96 违例实录（evidence/t1-warn-sweep.md）→97 动作/52 文件处置（evidence/t1-remediate.md）→复扫 0 翻 fail-closed；失效标记棘轮腿+红绿成对 fixture 9 断言（packages/store/test/ship-gate-pathlint.test.mjs）；0042:111 存量逃逸已补 marker。",
-   "monitoring_channel": "ship-gate step 1i 下一触点复审 + 每季 marker 声明审计顺手扫 env-var 形",
-   "carried_log": [
-    {
-     "at": "2026-09-22",
-     "round": 78,
-     "note": "R78 轨内处置完成核销：盲区闭合+棘轮腿上线，非续债"
-    }
-   ],
-   "closed_by": "ADR-0079",
-   "closed_by_adr_path": "docs/adr/0079-architecture-grill-round-78-gate-calibration-pathlint-detector-and-repin-matrix.md",
-   "closed_at": "2026-09-22"
-  },
-  {
-   "id": "defer-r79-lockfile-agegate-replay",
-   "type": "deferred-with-deadline",
-   "title": "E6 lockfile 龄期闸执法空白——pnpm trustLockfile 在钉版 11.24.0 的实证复核 + 护栏选型（R80 候选主题）",
-   "source_adr": "docs/adr/0080-architecture-grill-round-79-pathlint-exemption-domain-contract-convergence.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-09-23",
-   "deadline": "2027-03-31",
-   "review_cadence": "next round candidate — R80 发布龄期闸 lockfile 执法轮主题候选 + upstream pnpm release watch",
-   "status": "closed",
-   "evidence": "R78 E6 证伪实录（ADR-0079 D3 判决矩阵）：lockfile 携闸内版本时 frozen/fetch 静默放行 minimumReleaseAge 拦截；pnpm 调研文档级断言（trustLockfile 应验证）与本仓 E6 实证存在张力——R80 先在钉版 pnpm 11.24.0 实测 trustLockfile 验证腿是否天然覆盖（empirically verify, not doc-trust），再定自建护栏/引用上游/显式记档三选一。 | R80 T1 裁决（e6-matrix.md）：上游 verifyLockfileResolutions 腿在钉版 11.24.0 实测闭合（frozen/install/fetch/vdbr-install 四路 ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION exit 1）；R78 证伪按实测 revised——五变体放行=lockfile-verified.jsonl 判定缓存污染（宽松写入 warn-pass 沿用），非缺腿；残余边界（同机宽松沿用/trustLockfile:true opt-out/no-op 短路）由 ship-gate 1v CI 断言依赖声明兜底；γ 三条件全未命中→不阻塞 0.0.8。",
-   "monitoring_channel": "R80 轮次候选立案 + pnpm 上游 trustLockfile/verifyDepsBeforeRun 行为变更观察",
-   "carried_log": [
-    {
-     "at": "2026-09-23",
-     "round": 79,
-     "note": "R79 D-001 范围裁决：E6 后果显式拆出本轮（不混入契约批）——立案为 R80 候选主题；先在钉版实测 trustLockfile 腿，再定护栏路径"
-    },
-    {
-     "at": "2026-09-23",
-     "round": 80,
-     "note": "R80 T1 核销：三选一裁决取 (b) 引用上游（机器腿闭合）——γ 未触发；R78 E6 revised 记档；CI 断言依赖声明落地为 ship-gate 1v 三禁项+IgnoreMissingTime"
-    }
-   ],
-   "closed_by": "ADR-0081",
-   "closed_at": "2026-09-23",
-   "closed_by_adr_path": "docs/adr/0081-architecture-grill-round-80-release-readiness-dsh-plugin-e6-freshness.md"
-  },
-  {
-   "id": "defer-r81-provider-shape-validation",
-   "type": "bugfix-deferred",
-   "title": "AnySearchProvider 对 200-错形响应静默吞零结果（OmniRoute 错形静默面）",
-   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
-   "owner": "anysearch-retriever",
-   "opened_at": "2026-09-24",
-   "review_cadence": "next-round",
-   "status": "closed",
-   "evidence": "R81 T2 P-B 实测：ANYSEARCH_ENDPOINT 指向 OmniRoute 时 /v1/search 返 200 application/json 但为 provider 枚举形（{object:list,data:[search_provider...]}），body.data?.results ?? [] 使其退化为静默零结果 envelope——「活但错形」比 000 更隐蔽。处置=R82 票 fix-r82-provider-shape-validation（响应形校验：非协议形按 fail 处理），与 fix-r82-anysearch-mcp-migration 同捆",
-   "monitoring_channel": "R82 票验收",
-   "carried_log": [
-    {
-     "at": "2026-09-24",
-     "round": 82,
-     "note": "R82 T1 处置完成：MCP 迁移票内 fail-first 映射落地——isError:true/无 ## Search Results 信封头/非预期 Content-Type/无 result 对象一律 throw 降级该臂（错形不吞零）；test/anysearch.test.ts 错形样本 4 条（OmniRoute 枚举形/无信封头文本/非预期 CT/无 content）全红→绿实测"
-    }
-   ],
-   "closed_by": "ADR-0083",
-   "closed_at": "2026-09-24",
-   "closed_by_adr_path": "docs/adr/0083-architecture-grill-round-82-anysearch-mcp-migration.md"
-  },
-  {
-   "id": "defer-r81-anysearch-rest-route-removed",
-   "type": "deferred-with-deadline",
-   "title": "api.anysearch.com REST /v1/search 路由下线事实记录与复活监控",
-   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
-   "owner": "anysearch-retriever",
-   "opened_at": "2026-09-24",
-   "deadline": "2027-06-30",
-   "review_cadence": "quarterly",
-   "status": "open",
-   "monitoring_channel": "quarterly probe GET /v1/search（非 404 即复路由，重评 REST 面）",
-   "evidence": "R81 T2 P-A：GET /v1/search 双列 404（fake-ip+真 IP 同形，CF X-Amz-Cf-Pop NRT20-P9）；同域 /health 200 + POST /mcp 全活——REST 面被下线而非服务死。若路由复活可重评 REST 臂",
-   "carried_log": [
-    {
-     "at": "2026-09-24",
-     "round": 82,
-     "note": "R82 T1：迁移已落地（provider 仅说 MCP），REST 复活监控续守 quarterly 探针——R5 即销卡另档（registry 残余分诊节）"
-    }
-   ]
-  },
-  {
-   "id": "defer-r83-anysearch-vertical-domain-passthrough",
-   "type": "deferred-with-deadline",
-   "title": "anysearch MCP 垂域贯通：domain/sub_domain/sub_domain_params 通路（≠includeDomains host 过滤）",
-   "source_adr": "docs/adr/0083-architecture-grill-round-82-anysearch-mcp-migration.md",
-   "owner": "anysearch-retriever",
-   "opened_at": "2026-09-24",
-   "deadline": "2027-03-31",
-   "review_cadence": "next-round",
-   "status": "closed",
-   "evidence": "R82 T1 垂域评估腿（evidence/t1-domain-leg.md）：MCP domain=17 值垂域路由枚举（academic..travel），语义≠SearchRequest.includeDomains（host allowlist）；真贯通需新契约面+引擎路由+审计语义扩展——半径超迁移票，具名转 R83。provider 侧 domainFilterSupported=false 保持，post-filter 仍为唯一权威闸 | R83 T1 落地（commit puz, branch r83-t1）：contract.vertical+verticalDomainSupported 能力位+engine 协商路由+retrieval.vertical.pre（params_keys 不落值）+DomainSchema sources.vertical+三注入面（工具 arg/CLI flag/TOML）+wire 映射+extra.vertical 标记；上游实测矩阵+17 词表快照见 .scratch/grill-round-83/evidence/t1-vertical-domain.md",
-   "monitoring_channel": "R83 task-book triage",
-   "closed_by": "ADR-0084",
-   "closed_at": "2026-09-25"
-  },
-  {
-   "id": "residual-r82-R1-port-state",
-   "type": "residual-triage",
-   "title": "R1 即销卡：R71 时刻 api.anysearch.com:443 端口监听态",
-   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
-   "owner": "anysearch-retriever",
-   "opened_at": "2026-09-24",
-   "status": "closed",
-   "closed_by": "ADR-0083",
-   "closed_at": "2026-09-24",
-   "evidence": "五字段即销卡——残余陈述：R71 观测窗 443 端口监听态未验；本体性不可回溯：历史时刻的网络监听态无观测面留存（cannot 非 won't——不可重建非不愿查）；收敛证据指针：R81 T1a/T2 收敛（cert 轮换+health 200+双列 404+/mcp 活）+R82 wire 实录（initialize/tools-call 全绿）——历史端口态对当前裁决无影响；重开触发器：HTTP 000 复现（对真端点）即重开；决策人/日期：R82 修复子 Agent / 2026-09-24"
-  },
-  {
-   "id": "residual-r82-R2-anon-credential",
-   "type": "residual-triage",
-   "title": "R2 折入验收锚：/mcp 匿名凭据/限流面对照",
-   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
-   "owner": "anysearch-retriever",
-   "opened_at": "2026-09-24",
-   "status": "closed",
-   "closed_by": "ADR-0083",
-   "closed_at": "2026-09-24",
-   "evidence": "折入 T1 谓词锚判定=PASS：anon tools/call 200 真结果（847ms），「anon 可用→继续」分支成立；authed 对照=无效 Bearer→isError:true invalid_api_key（fail-first 降级，非 401/429→未触发 stop-gate）。实录 evidence/t1-wire-probes.md §2"
-  },
-  {
-   "id": "residual-r82-R3-transport-spec",
-   "type": "residual-triage",
-   "title": "R3 折入验收锚：Streamable HTTP transport 细节谓词核验",
-   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
-   "owner": "anysearch-retriever",
-   "opened_at": "2026-09-24",
-   "status": "closed",
-   "closed_by": "ADR-0083",
-   "closed_at": "2026-09-24",
-   "evidence": "折入 T1 谓词锚判定=PASS：2025-11-25 spec 14 条谓词逐条机械判定——MUST 级全过（POST/Accept 双类型/单消息/202 通知/SSE+JSON 双 CT/session-id 回显/404 重初始化/协议头）；SHOULD 级 2 条明示弃（Last-Event-ID 重放/DELETE session）记档。实录 evidence/t1-r3-predicates.md"
-  },
-  {
-   "id": "residual-r82-R4-user-endpoint",
-   "type": "residual-triage",
-   "title": "R4 域外即销：ANYSEARCH_ENDPOINT 用户本地语义",
-   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
-   "owner": "anysearch-retriever",
-   "opened_at": "2026-09-24",
-   "status": "closed",
-   "closed_by": "ADR-0083",
-   "closed_at": "2026-09-24",
-   "evidence": "closed-by-scope 一行闭合：用户个人配置域——值不记档不代改（本机 env 指向 OmniRoute 属用户主权面）；重开触发器=配置治理权变更（如团队级托管配置策略引入）。决策人/日期：R82 修复子 Agent / 2026-09-24"
-  },
-  {
-   "id": "residual-r82-R5-rest-shutdown-timing",
-   "type": "residual-triage",
-   "title": "R5 即销卡：REST /v1/search 下线时点",
-   "source_adr": "docs/adr/0082-architecture-grill-round-81-product-inhalation-provider-serverside-diagnosis.md",
-   "owner": "anysearch-retriever",
-   "opened_at": "2026-09-24",
-   "status": "closed",
-   "closed_by": "ADR-0083",
-   "closed_at": "2026-09-24",
-   "evidence": "五字段即销卡——残余陈述：REST 路由下线的精确时点/发布记录未定位；本体性不可回溯：外部服务的部署历史我方无观测面（git log/发布记录已穷举——本仓无任何 REST 面 commit 痕迹可查时点）；收敛证据指针：R81 T2 P-A 双列 404+R82 wire 实录——「已下线」事实充分，时点不影响修复路径；重开触发器：REST 面复活的官方声明/实测 200 复路由；决策人/日期：R82 修复子 Agent / 2026-09-24"
-  },
-  {
-   "id": "defer-r83-prefer-capable-weighting",
-   "type": "deferred-with-deadline",
-   "title": "prefer-capable 加权调参：垂域能力位声明者在融合/路由中的权重倾斜评估（eval 数据驱动，非契约职责）",
-   "source_adr": "docs/adr/0084-architecture-grill-round-83-vertical-domain-passthrough.md",
-   "owner": "anysearch-eval",
-   "opened_at": "2026-09-25",
-   "deadline": "2027-03-31",
-   "review_cadence": "next-round candidate + quarterly",
-   "status": "closed",
-   "evidence": "R83 D-004 §4 显式范围外：能力位只决定 wire 下发与否，不做权重倾斜；若要做，需 eval 数据证明垂域臂召回质量差异，属评估轮职责非契约轮。 | R84 更新：证据机制在役等数据——双臂配对 delta 腿已落地（packages/store/test/online/eval-looks-vertical.online.ts → .scratch/vertical-eval/delta.json，首轮受匿名配额限部分降格，重跑条件见 ADR-0085 D8/defer-r84-delta-quota-rerun）。数据读出前保持 open。 | R85 核销（NO-GO）：delta 腿全量重跑完成（57/57 格腿全活，指纹 7ac0a48e55cd7954），预注册矩阵单次终读裁决 NO-GO/direction-negative——better/worse=0/0、P(better>worse)=0.500、池化 armHostHit Δ=0、EL=0.1667、rankDiff 中位 null。判词附注：「无信号」纹理实为 anysearch 臂全程 provider-failure 空列（装置级零数据，非测得零增益）；判读矩阵声明#4 已登记此操作化残余限制。证据 .scratch/grill-round-85/decision-record.md + readout-output.json。加权问按注册程序关闭；复活前置=解 defer-r85-anysearch-arm-providersfailed（属新票）。 | R86 勘误（T4）：R85 的「无可观测臂级增益」判词语义修正为 indeterminate—instrument down——0/0 系 provider-failure 装置级零数据（env 层双重缺陷归因，probe-matrix.md），非测得零增益；程序性核销维持不溯改。**具名重开条件**：R86 T5 全绿臂复跑（同指纹 7ac0a48e55cd7954、iso providersFailed=∅、非空覆盖≥70%）若产出方向信号（修正判读器矩阵@2 判 GO 或方向性 better>worse 具可复现纹理），则以新预注册重开加权评估问——本条 closed 状态不变，重开走新票不入本 entry。"
-  },
-  {
-   "id": "defer-r84-anysearch-empty-endpoint-env",
-   "type": "deferred-with-ticket",
-   "title": "ANYSEARCH_ENDPOINT=\"\" 空串经 ?? 落到空 endpoint（POSIX 空≈未设应回落默认）——R84 live 腿实测暴露",
-   "source_adr": "docs/adr/0085-architecture-grill-round-84-vertical-eval-leg.md",
-   "owner": "anysearch-retriever",
-   "opened_at": "2026-09-26",
-   "review_cadence": "next-round candidate",
-   "status": "closed",
-   "evidence": "R84 T3 实跑：env -u 前手动置空 ANYSEARCH_ENDPOINT= 触发 endpoint=\"\" fetch 失败（臂级 fail 静默进 providersFailed）。修法=constructor 端点解析把空串视同 undefined。 | R86 T3 核销：endpoint/key 双字段空串→||undefined POSIX 语义修复落 provider 构造器（\"\"不再落空 endpoint 亦不产生裸 Bearer 头）；回归用例入 anysearch.test.ts。",
-   "closed_by": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
-   "closed_at": "2026-09-27"
-  },
-  {
-   "id": "defer-r84-ip-fifth-domain",
-   "type": "deferred-with-condition",
-   "title": "ip 第五域语料建集（触发条件=上游为 ip 子域补结构化参数词表）",
-   "source_adr": "docs/adr/0085-architecture-grill-round-84-vertical-eval-leg.md",
-   "owner": "anysearch-eval",
-   "opened_at": "2026-09-26",
-   "review_cadence": "quarterly + upstream vocab watch",
-   "status": "open",
-   "evidence": "R84 D-006/D3：四域先行（finance/academic/code/health）；ip 域当前无可断言的结构化 sub_domain params，建集=低评审合成条目违账本禁项。"
-  },
-  {
-   "id": "defer-r84-delta-quota-rerun",
-   "type": "deferred-with-condition",
-   "title": "首轮 vertical-delta 部分降格重跑（触发=公网有效 ANYSEARCH_API_KEY 就位或匿名额度恢复）",
-   "source_adr": "docs/adr/0085-architecture-grill-round-84-vertical-eval-leg.md",
-   "owner": "anysearch-eval",
-   "opened_at": "2026-09-26",
-   "review_cadence": "next-round candidate",
-   "status": "closed",
-   "evidence": "R84 T3：57 条 corpus×4 趟跑通，前几条获真臂数据（fmp 命中+marked 标记在），其后匿名额度耗尽两臂归零——机制链绿、覆盖受配额限。证据档 .scratch/grill-round-84/evidence/t3-vertical-delta.md。 附：盘上存量 delta.json 为早期 runner schema（缺 providersFailedIsoOn/IsoOff/armInFanout/armOnSample 字段）——重跑产出覆盖即闭合存量漂移（审计 F3）。 | R85 核销：触发条件（有效 ANYSEARCH_API_KEY+live 探针 2026-09-27）成立，全量重跑完成——57 格腿全活、subject 覆盖 41/41、controlDegraded=0、装置探针未触发无早停；新 artifact .scratch/vertical-eval/delta.json 覆盖存量漂移（指纹同 7ac0a48e55cd7954，@1 schema 字段齐含 providersFailedIso*/armInFanout*/armOnSample/hadVerticalSpec）；存量降格件归档 delta-2026-09-26.degraded.json 不删。"
-  },
-  {
-   "id": "defer-r83-a03-flagvalueset-swallow",
-   "type": "deferred-with-ticket",
-   "title": "A-03：CLI flagValueSet 吞词——查询词与旗值同形时被剔除（search.ts 旗值剔除启发式扩至三新旗值）",
-   "source_adr": "docs/adr/0084-architecture-grill-round-83-vertical-domain-passthrough.md",
-   "owner": "anysearch-cli",
-   "opened_at": "2026-09-26",
-   "review_cadence": "cleanup-round candidate",
-   "status": "closed",
-   "evidence": "R83 审计 §三 A-03（nit，pre-existing）：ans search --vertical-domain finance finance 中第二个 finance 被吞。修法=位置化旗值解析替代值集合剔除。R84 D-007(iii) 明令登记。 | R88 T2 核销：位置化旗值消费落地（apps/cli/src/commands/search.ts）；回归锁=--vertical-domain finance/--mode deep 同形查询词留存用例（e2e.test.ts 红→绿实证）。fix commit 在 r88-hygiene 栈。",
-   "closed_by": "ADR-0089",
-   "closed_at": "2026-09-28",
-   "closed_by_adr_path": "docs/adr/0089-architecture-grill-round-88-search-surface-hygiene.md"
-  },
-  {
-   "id": "defer-r83-a06-vertical-assembly-dup",
-   "type": "deferred-with-ticket",
-   "title": "A-06：垂域组装+require-domain guard 三处近重复（cli/search.ts、mcp/search-web、mcp/research-web）+TypeBox 三参块+Raw/解析面 vertical? 双写——建议共享 buildVerticalSpec",
-   "source_adr": "docs/adr/0084-architecture-grill-round-83-vertical-domain-passthrough.md",
-   "owner": "anysearch-cli",
-   "opened_at": "2026-09-26",
-   "review_cadence": "cleanup-round candidate",
-   "status": "closed",
-   "evidence": "R83 审计 §三 A-06（smell·judgement）。三入口各自构造 vertical 对象+依赖 guard——错形处理已立法一致（A-02），组装重复仍属清障素材。R84 D-007(iii) 明令登记。 | R88 T3 核销：buildVerticalSpec/verticalSpecReject 归 packages/retriever/src/contract.ts（判别联合+missing-domain 短码）；三站共享组装+守卫、错文案 byte-identical（golden 断言）；kernel verticalSpecProps 片段共享。ADR-0089 D1-D2 立法。",
-   "closed_by": "ADR-0089",
-   "closed_at": "2026-09-28",
-   "closed_by_adr_path": "docs/adr/0089-architecture-grill-round-88-search-surface-hygiene.md"
-  },
-  {
-   "id": "defer-r83-a08-dead-maxresults",
-   "type": "deferred-with-ticket",
-   "title": "A-08：search-web.tool.ts 解构 maxResults 但 inputSchema additionalProperties:false 未含该键——dead param（pre-existing 非本轮引入）",
-   "source_adr": "docs/adr/0084-architecture-grill-round-83-vertical-domain-passthrough.md",
-   "owner": "anysearch-cli",
-   "opened_at": "2026-09-26",
-   "review_cadence": "cleanup-round candidate",
-   "status": "closed",
-   "evidence": "R83 审计 §三 A-08（pre-existing）。修=schema 增键或删解构，二选一须与 MCP 工具面 contract 复核后定。R84 D-007(iii) 明令登记。 | R88 T1 核销：dead maxResults 解构已删（schema 从不放行，行为零变化）；kernel tool-schemas 测试显式拒收 maxResults 键。暴露=特性决策（ADR-0089 D3 注记）。",
-   "closed_by": "ADR-0089",
-   "closed_at": "2026-09-28",
-   "closed_by_adr_path": "docs/adr/0089-architecture-grill-round-88-search-surface-hygiene.md"
-  },
-  {
-   "id": "defer-r85-anysearch-arm-providersfailed",
-   "type": "deferred-with-ticket",
-   "title": "anysearch 臂 isolated+fanout 全程 providersFailed=[anysearch]（空列 n=0, armInFanout=false）——R85 delta 重跑实证；疑携钥 iso 路径或上游当日失效，修复后 delta 腿才可测真臂数据",
-   "source_adr": "docs/adr/0086-architecture-grill-round-85-delta-rerun-prereg-readout-nogo.md",
-   "owner": "anysearch-retriever",
-   "opened_at": "2026-09-27",
-   "review_cadence": "cleanup-round candidate + quarterly",
-   "status": "closed",
-   "evidence": "R85 T3：.scratch/vertical-eval/delta.json 全 57 格 providersFailedIsoOn/Off=[anysearch]、armInFanout*=false、armOn/off.n=0；对照层 16/16 同病；fused 命中（param on=0.33/off=0.29、sem 0.45/0.45）由其余 provider 承载。判读记录 .scratch/grill-round-85/decision-record.md。 | R86 T2/T3 归因与复活实证：探针矩阵（.scratch/grill-round-86/reports/probe-matrix.md）三类判别——env 端点 loopback 死路由（initialize→404，permanent-protocol）+ env key invalid_api_key（permanent-auth）+ 公网默认端点匿名存活；iso 臂声明式测量环境下 5/5 providersFailed=∅。代码路径无缺陷。残余=用户侧 env 修正（端点指向/key 轮换，agent 不代办）+ T5 全绿臂复跑证据。 | R86 核销：根因=env 层双重缺陷（loopback 死路由端点+invalid key，probe-matrix 钉版）；臂经声明式测量环境复活（iso 5/5 providersFailed=∅ + T5 全量复跑 97.6% 覆盖）；判读器 matrix@2 修复 device-zero-as-measured 失真。残余类=确定性上游契约拒收（设计内负向格+语料欠参数），已分账 defer-r86-anysearch-corpus-param-contract。",
-   "closed_by": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
-   "closed_at": "2026-09-27"
-  },
-  {
-   "id": "defer-r86-anysearch-corpus-param-contract",
-   "type": "deferred-with-ticket",
-   "title": "语料格 vert-f1105 欠上游 tag 契约必填参数（finance.fundamental 需 cn_code）——矩阵@2 判 unmeasured 如实记账；语料冻结期不可修",
-   "source_adr": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
-   "owner": "anysearch-eval",
-   "opened_at": "2026-09-27",
-   "review_cadence": "next matrix revision",
-   "status": "closed",
-   "evidence": "R86 T5 实证：vert-f1105 isoOn 腿上游 isError \"Missing required params for tag finance.fundamental: cn_code\"（两轮复跑确定性重合）。语料指纹 7ac0a48e55cd7954 冻结=>改格即 G0 漂移，本矩阵期不可修；修订候选=下一矩阵期补 cn_code 或降格该格。同类 bogus-sub_domain 对照格（*-103 ×4）为设计内负向拒收，非缺陷。 | R95 T7 核销：vert-f1105 已按 D-002 原位降格为 unmeasured-by-design（墓碑理由码 `upstream-validator-vs-doc-mismatch`，指纹 7ac0a48e55cd7954→8da3e482b98f8cba，语料 57→56；上游「文档词表 vs validator」不一致独立立 finding 另册（本轮新 finding id）；fundamental×cn_code 新格与全语料契约体检登记为 backlog 候选（不入本轮 diff）。T8 ADR-0096 + CONTEXT 词条区同轮闭环。判读证据：.scratch/grill-round-95/readout-output.json（matrix@3 单次终读 INCONCLUSIVE/instrument-flag）+ evidence/vertical-delta-r95-terminal.json。",
-   "carried_log": [
-    {
-     "at": "2026-09-28",
-     "round": 87,
-     "note": "R87 T5 去向注记：维持 open——语料指纹冻结期内不可修，具名触发=下一矩阵期（补 cn_code 或降格该格）；R87 发布轮未解冻语料，无动作"
-    },
-    {
-     "at": "2026-10-01",
-     "round": 95,
-     "note": "R95 T7 收口注记：本条 closed，兑现记录已追加于 evidence；语料 tombstone + finding 另册，详 ADR-0096"
-    }
-   ],
-   "closed_by": "ADR-0096",
-   "closed_by_adr_path": "docs/adr/0096-architecture-grill-round-95-eval-matrix-revision-closeout.md",
-   "closed_at": "2026-10-01"
-  },
-  {
-   "id": "defer-r86-anysearch-anon-quota-nudge",
-   "type": "deferred-with-ticket",
-   "title": "上游匿名配额边界形态=auto-provisioning 凭证签发文本（200+isError:null+非结果正文）；provider 已具名归类 permanent-auth；env/key 修正归用户侧",
-   "source_adr": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
-   "owner": "anysearch-retriever",
-   "opened_at": "2026-09-27",
-   "review_cadence": "quarterly",
-   "status": "open",
-   "evidence": "R86 T2 P2 raw 探针实测：匿名大跑中段上游改发 provisioning 文本而非结果信封（quota 边界邀请鉴权）。provider 检出后抛 quota/auth nudge→errorClass=permanent-auth。残余=用户侧 env 修正（endpoint 指向/key 轮换，agent 不代办）。",
-   "carried_log": [
-    {
-     "at": "2026-09-28",
-     "round": 87,
-     "note": "R87 T5 去向注记：维持 open——用户侧 env 修正（endpoint 指向/key 轮换）回执核销，agent 不代办；季度 review cadence 不变"
-    }
-   ]
-  },
-  {
-   "id": "r87-f3-criterion-errata",
-   "type": "governance-record",
-   "title": "F-3 判据表述勘误（R87 T5）：iso providersFailed=∅ 字面判据改写为等价表述「装置性失败=∅ 且非空覆盖≥70%」——语义已达成、不溯改 R86 正文、不留永久脚注",
-   "source_adr": "docs/adr/0087-architecture-grill-round-86-green-gate-ship.md",
-   "owner": "anysearch-eval",
-   "opened_at": "2026-09-28",
-   "status": "closed",
-   "closed_by": "ADR-0088",
-   "closed_at": "2026-09-28",
-   "closed_by_adr_path": "docs/adr/0088-architecture-grill-round-87-release-closeout-ship.md",
-   "evidence": "勘误脚注落于 .scratch/grill-round-86/decision-record.md「勘误（R87 T5 补记）」段；字面值未达 vs 装置性失败=∅+覆盖 97.6% 达成，判读结论（NO-GO）不受影响"
-  },
-  {
-   "id": "r88-candidate-f6-refactor-round",
-   "type": "deferred-with-ticket",
-   "title": "R88 候选：F-6 refactor 施工轮——probe-anysearch-mcp-raw.ts ??/|| 一致化+sanitize 对称遮 endpoint+版本字面量护栏+CHANGELOG 归位（独立 refactor commit，遵 ADR-0029）",
-   "source_adr": "docs/adr/0088-architecture-grill-round-87-release-closeout-ship.md",
-   "owner": "anysearch-cli",
-   "opened_at": "2026-09-28",
-   "review_cadence": "next grill round",
-   "status": "closed",
-   "evidence": "R86 下一轮候选第 2 项+R87 审计承继；发布轮不混排工程项故出列立项 | R88 T4 核销：F-6 全项落地——env || POSIX 一致化、sanitize 对称遮（<endpoint>/<key>）、版本字面量钉根 package.json、CHANGELOG r81–r85 旧段归位为 ## 0.1.0。",
-   "closed_by": "ADR-0089",
-   "closed_at": "2026-09-28",
-   "closed_by_adr_path": "docs/adr/0089-architecture-grill-round-88-search-surface-hygiene.md"
-  },
-  {
-   "id": "r88-candidate-vertical-direction-redeliberation",
-   "type": "deferred-with-ticket",
-   "title": "R88 候选：垂域方向重议轮——prefer-capable 具名重开条件 |ΔarmHostHit|≳0.4 未达，作正题候选候审（不复活加权问）",
-   "source_adr": "docs/adr/0088-architecture-grill-round-87-release-closeout-ship.md",
-   "owner": "anysearch-eval",
-   "opened_at": "2026-09-28",
-   "review_cadence": "hard-deadline: must convene before R95",
-   "status": "formally-declined",
-   "evidence": "R86 decision-record 具名重开条件未达；R87 goal 显式范围外登记候场",
-   "deadline": "2026-09-30 (R95 之前必须开庭)",
-   "pre_notification_obligation": "R94 收口批须在 carried_log 追加预通知条目并点名 owner anysearch-eval，不得静默到期",
-   "sunset_clause": "ADR-0094 D4：硬截止 sunset。rolling 复审的橡皮图章化（存续率 ~100%）是本条款针对的失效模式。开庭 ≠ 翻案——reaffirm / revise / retire 三果皆为合法判词；「维持 defer」不再是无期限默认态。",
-   "carried_log": [
-    {
-     "at": "2026-09-30",
-     "round": 93,
-     "note": "R93 T1 ADR-0094 D4 sunset 条款写入：R95 前强制开庭 + R94 收口批预通知义务（registry 挂账 + owner 点名 anysearch-eval）。本轮仅立法，开庭主体在 R94/R95。"
-    },
-    {
-     "at": "2026-09-30",
-     "round": 94,
-     "owner": "anysearch-eval",
-     "trigger_rule": "ADR-0094 D4",
-     "note": "R94 T1 预通知指针条目（先行 commit）：履行 ADR-0094 D4 预通知义务，具名 owner anysearch-eval，自证时序角色先于开庭立法本体，固化规则见 ADR-0095。"
-    },
-    {
-     "at": "2026-09-30",
-     "round": 94,
-     "owner": "anysearch-eval",
-     "trigger_rule": "ADR-0095 D9",
-     "note": "R94 T4 落地裁定：按开庭判词 reaffirm 机械落果，状态变更为 formally-declined，原判据废止留理由，正式确立四项具名复活条件。"
-    },
-    {
-     "id": "r88-candidate-vertical-direction-redeliberation",
-     "owner": "anysearch-eval",
-     "trigger_rule": "ADR-0095 D9 复活条件 ③④ 供证（R95 T7）",
-     "at": "2026-10-01",
-     "round": 95,
-     "note": "R95 读数落账：matrix@3 单次终读 INCONCLUSIVE/instrument-flag（G1b，主体层 instrumentDown 30/40）。条件③ verifier 工件：eval-looks.json vert-f1105 tombstone（prior_scope=live，墓碑理由码受控）+ defer-r86-anysearch-corpus-param-contract→closed（本轮）。条件④ verifier 工件：.scratch/grill-round-95/evidence/vertical-delta-r95-terminal.json（sha256 28f509fb345923633de0fd67e20f60978a95828491648295305f746570eada0b）+ .scratch/grill-round-95/readout-output.json（out.matrix=grill-round-95/prereg-matrix@3）。status=formally-declined 不动，解释权属 owner 未来轮次。"
-    }
-   ],
-   "closed_by": "ADR-0095",
-   "closed_at": "2026-09-30",
-   "closed_by_adr_path": "docs/adr/0095-architecture-grill-round-94-r88-candidate-vertical-direction-court-session.md",
-   "verdict": "reaffirm",
-   "former_criterion_status": "repealed",
-   "former_criterion_repeal_reason": "原重开门槛 |ΔarmHostHit|≳0.4 宣告废止：R86 洁净测量实测确证负效应（净 −0.125、P=0.0378）；L3b primary stream-json 枚举腿结构性死亡不可观测；未来重开转向以新评测矩阵修订版读数及等价性论证为基础的复活条款。",
-   "resurrection_conditions": [
-    {
-     "id": 1,
-     "condition": "dsh stable 晋升",
-     "controllability": "semi-controllable",
-     "verifier": "npm view @deepseek-ai/dsh dist-tags --json"
-    },
-    {
-     "id": 2,
-     "condition": "上游补垂域参数词表",
-     "controllability": "external-uncontrollable",
-     "verifier": "upstream contract notice"
-    },
-    {
-     "id": 3,
-     "condition": "cn_code 契约补齐",
-     "controllability": "semi-controllable",
-     "owner": "anysearch-eval",
-     "verifier": "next matrix revision (corpus unfreezing)"
-    },
-    {
-     "id": 4,
-     "condition": "新评测矩阵修订版读数",
-     "controllability": "pure-internal-controllable",
-     "owner": "anysearch-eval",
-     "verifier": "readout-delta.mjs matrix revision"
-    }
-   ]
-  },
-  {
-   "id": "defer-r92-t2-featherless-upstream-f-bug",
-   "type": "deferred-with-ticket",
-   "title": "T2 复跑 Featherless 上游模型响应异常 (F-bug 分支 C)：Qwen/Qwen3-32B 触 4096 max-tokens 且报 server_error: no_response 无 tool_calls",
-   "source_adr": "docs/adr/0093-architecture-grill-round-92-featherless-t2-smoke-closeout.md",
-   "owner": "anysearch-dsh",
-   "opened_at": "2026-09-30",
-   "review_cadence": "next grill round",
-   "status": "closed",
-   "evidence": ".scratch/grill-round-92/evidence/t2-l3-smoke.md + t2-verdict.json (L3a established, L3b not-established 因上游异常, L3c-min not-established) | R93 T2 核销：换模 moonshotai/Kimi-K2-Instruct-0905 后三跑全绿（L3a established + L3b established-via-fallback + L3c-min established，ans_* 收窄判据下无幻觉调用），F-bug 归因（Qwen3-32B reasoning 吞预算）不再适用于冻结臂",
-   "closed_by": "ADR-0094",
-   "closed_at": "2026-09-30",
-   "closed_by_adr_path": "docs/adr/0094-architecture-grill-round-93-kimi-l3-rerun-verdict-gated-pivot.md"
-  },
-  {
-   "id": "defer-r92-readme-token-pin-machine-leg",
-   "type": "deferred-with-ticket",
-   "title": "readme-token-pin 专属机器腿首跑执行（两拍节奏第二拍完成接线与 shadow，首跑挂账 R93）",
-   "source_adr": "docs/adr/0093-architecture-grill-round-92-featherless-t2-smoke-closeout.md",
-   "owner": "anysearch-devops",
-   "opened_at": "2026-09-30",
-   "review_cadence": "next grill round",
-   "status": "closed",
-   "evidence": ".scratch/grill-round-92/evidence/t4-shadow-dryrun.md + scripts/ship-gate.mjs | R93 T4 核销：机器腿由 shadow 转真实非 shadow 断言首跑——closeout-claims.json 两条 readme-token-pin 声明（README.md + README.zh-CN.md，command=dsh --version），门禁 closeout-claims r93 12/12 re-derived green",
-   "closed_by": "ADR-0094",
-   "closed_at": "2026-09-30",
-   "closed_by_adr_path": "docs/adr/0094-architecture-grill-round-93-kimi-l3-rerun-verdict-gated-pivot.md"
-  },
-  {
-   "id": "defer-r93-deprecate-credential-scope",
-   "type": "deferred-with-ticket",
-   "title": "deprecate 双空格 6 版本（@anysearch-cli/cli@0.0.3~0.0.8）单空格修正重发 — 权限缺口 credential-scope，6 条备准命令备妥待用户亲触",
-   "source_adr": "docs/adr/0094-architecture-grill-round-93-kimi-l3-rerun-verdict-gated-pivot.md",
-   "owner": "anysearch-dsh",
-   "opened_at": "2026-09-30",
-   "review_cadence": "next grill round",
-   "status": "open",
-   "permission_gap_type": "credential-scope",
-   "permission_gap_fallback": "纯备准核销 + EOTP 呈报待用户亲触自执；不代跑、不借他人凭证绕闸",
-   "evidence": ".scratch/grill-round-93/evidence/t5-deprecate.md + t5-deprecate-probe.json（npm whoami E401；6/6 双空格只读复核确认；0.1.0 不在弃用范围）"
-  },
-  {
-   "id": "finding-r95-upstream-validator-vs-doc-vocab-mismatch",
-   "type": "finding",
-   "title": "上游 finance.fundamental 的 validator 按 tag 级索要 cn_code，与 sub_domains 词表文档的 per-type 规则不一致（vert-f1105 格降格根因）",
-   "source_adr": "docs/adr/0096-architecture-grill-round-95-eval-matrix-revision-closeout.md",
-   "owner": "anysearch-eval",
-   "opened_at": "2026-10-01",
-   "review_cadence": "next upstream contract notice + quarterly",
-   "status": "open",
-   "upstream_channel": "pending — agent 不代修不代发，供 owner 走上游渠道",
-   "evidence": "R95 Q2 具名活查（2026-10-01，匿名层）：tools/call {domain:finance, sub_domain:fundamental, sub_domain_params:{type:overview, symbol:MSFT}} → HTTP 200 isError=true `Missing required params for tag 'finance.fundamental': cn_code`。同日 get_sub_domains 词表与 2026-09-26 存档（.scratch/grill-round-84/evidence/sub-domains-vocab.json）逐字一致（漂移在校验层、非文档层）。可机检验证信号：.scratch/grill-round-95/evidence/verify-validator-vs-doc.ts（离线断言文档侧 per-type 规则合法性 + --live 复放断言上游仍拒收；exit 0=不一致复现 / exit 1=未复现须 owner 复核 / exit 2=环境性失败无判词）；2026-10-01 实测：离线 exit 0，--live exit 2（当日匿名配额已耗尽，属环境判词、非 finding 证伪）。"
-  },
-  {
-   "id": "defer-r95-handoff-lint-false-green",
-   "type": "deferred-with-deadline",
-   "title": "F8: ship-gate handoff-lint 腿假绿三缺陷（模板↔门禁 PENDING 冲突 / liveness 静默折叠+祖先性冒充 / CI 拓扑使必填字段物理不可满足）",
-   "source_adr": "docs/adr/0097-architecture-grill-round-96-handoff-lint-three-state-exit-semantics.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-10-01",
-   "deadline": "2026-12-31",
-   "review_cadence": "next handoff-lint leg touch + quarterly",
-   "status": "closed",
-   "evidence": "R96 T1/T2 落地：判定核抽为纯模块 scripts/handoff-lint-verdict.mjs（核内禁 spawnSync/fs/Date.now/process.env）+ 薄壳 scripts/handoff-lint-shell.mjs（采→传→出口三步）+ ship-gate 腿改薄壳。三缺陷逐一机检闭环：(a) 模板↔门禁冲突消解——docs/agents/handoff-template.md 与门禁同轮同语法（GREEN / PENDING{stack-unpushed|pushed-no-branch-runs} / RED）；(b) 祖先性冒充根除——「本轮 run」判等改为栈内成员性 head_sha ∈ git rev-list origin/main..origin/<branch>，裸 rev-parse HEAD 等值目标与 merge-base --is-ancestor 已从 ship-gate 移除（E2E 断言无 is-ancestor）；gh 不可用时由静默 pass 改 env-PENDING + verification-unavailable:{gh-missing|repo-parse|api-failed} 具名标注；(c) CI 拓扑死结由 PENDING{pushed-no-branch-runs}（谓词=无 workflow 的 on.push 覆盖该分支）承接。回归锁：packages/store/test/handoff-lint-verdict.test.mjs（138 断言，OPA 允许+拒绝成对 + Stack 三要素 8 格全枚举 + 词表外必报错 + 空/缺字段/超长边界）+ packages/store/test/handoff-lint-e2e.test.mjs（126 断言，同套 fixtures 走完整壳层路径）+ 共用 fixtures packages/store/test/fixtures/handoff-lint/（20 个）；fail-on-empty 红线。真实仓库实测：r95 closeout 走 legacy 判 GREEN（presence-only），round-96 三态文档实测 PENDING{run-url:stack-unpushed | stack:ref-unavailable} 非阻断。",
-   "monitoring_channel": "ship-gate step 1g handoff-lint 腿每跑（[skip] 行计数 = 降级常态化监控锚，ADR-0097 Known-Risk 2）+ 每季 but 版本升级时复核解析契约（Known-Risk 1）",
-   "closed_by": "ADR-0097",
-   "closed_by_adr_path": "docs/adr/0097-architecture-grill-round-96-handoff-lint-three-state-exit-semantics.md",
-   "closed_at": "2026-10-02"
-  },
-  {
-   "id": "defer-r97-morphology-two-ratchet",
-   "type": "deferred-with-review",
-   "title": "形态二机检腿 ratchet 排程: PENDING 位收敛后升 RED",
-   "source_adr": "docs/adr/0098-architecture-grill-round-97-selfcheckable-declarations.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-10-03",
-   "review_cadence": "next handoff-lint leg touch + quarterly",
-   "status": "open",
-   "evidence": "R97 T1/T5 立法先行(ADR-0098 D5 全文+CONTEXT词条)；机检实现未做，PENDING 位无挂接代码，收敛后升RED。",
-   "monitoring_channel": "ship-gate handoff-lint leg + quarterly"
-  },
-  {
-   "id": "defer-r97-registry-extension-demo",
-   "type": "deferred-with-review",
-   "title": "扩表示范票: no-pr/unpublished 活体谓词首张扩表",
-   "source_adr": "docs/adr/0098-architecture-grill-round-97-selfcheckable-declarations.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-10-03",
-   "review_cadence": "next handoff-lint leg touch + quarterly",
-   "status": "open",
-   "evidence": "R97 T1 封闭注册表+OOV fixture锁死活体词表外；扩表实现未做，首张扩表即闭环验收场景。 | R98 R7 接线：pending_predicates 字段挂接形态二 PENDING 位——marker 点名 seat 谓词→surfaced PENDING 而非 OOV RED；本票关闭即谓词自动回落 OOV（ratchet 语义兑现）。",
-   "monitoring_channel": "ship-gate handoff-lint leg + quarterly",
-   "pending_predicates": [
-    "no-pr",
-    "unpublished"
-   ]
-  },
-  {
-   "id": "defer-r98-anchor-ratchet-recount-seat",
-   "type": "deferred-with-review",
-   "title": "锚 PENDING 位: anchor:ratchet-recount 坐席（ratchet 类首发锚）",
-   "source_adr": "docs/adr/0099-architecture-grill-round-98-fifth-morphology.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-10-03",
-   "review_cadence": "next enforcement-anchor leg touch + quarterly",
-   "status": "open",
-   "evidence": "D-002/D-003 裁定：ratchet 类锚与形态二同构——先 PENDING 坐席后 ratchet 升 RED。pending_anchors 字段挂接锚 PENDING 位：enforcement-anchor 腿对坐席锚仍执行探针但输出 skip 而非 fail；本票关闭即锚升全量 kill 判定（ratchet 语义）。",
-   "monitoring_channel": "ship-gate enforcement-anchors leg + quarterly",
-   "pending_anchors": [
-    "anchor:ratchet-recount"
-   ]
-  },
-  {
-   "id": "defer-r98-anchor-open-surface-demo",
-   "type": "deferred-with-review",
-   "title": "锚扩表示范票: 开放面检测首张扩表演示",
-   "source_adr": "docs/adr/0099-architecture-grill-round-98-fifth-morphology.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-10-03",
-   "review_cadence": "next enforcement-anchor leg touch + quarterly",
-   "status": "open",
-   "evidence": "ADR-0099 Known-Risk 1：开放面外约束逃逸——闭表只覆盖已登记锚。未来扩表须走封闭通道：新锚携证伪 fixture 方准入表（自指钉①），本票为首张扩表的闭环验收场景（扩表实现未做，首张扩表即演示）。",
-   "monitoring_channel": "ship-gate enforcement-anchors leg + quarterly"
-  },
-  {
-   "id": "defer-r98-stack-land-authorization",
-   "type": "deferred-with-review",
-   "title": "清算坐席: r98-anchor-detector 残留分支待 land 授权",
-   "source_adr": "docs/adr/0099-architecture-grill-round-98-fifth-morphology.md",
-   "owner": "anysearch-platform",
-   "opened_at": "2026-10-04",
-   "review_cadence": "R99 开工即处理（push/land 授权序列 D-001(c)）",
-   "status": "open",
-   "evidence": "收口清算义务「栈空∨deferred 在册」机器兑现：r98-anchor-detector 未 push 未 land（未获授权），残留分支经本票 covers 在册——clearing 腿 covered 非 RED；授权 land 后本票关闭即回落核验。",
-   "monitoring_channel": "ship-gate handoff-lint leg clearing sub-leg",
-   "covers": [
-    "r98-anchor-detector"
-   ]
-  }
- ]
+  ]
 }

@@ -1,9 +1,10 @@
 # Handoff — Grill Round 98 审计窗 → R99（审计结论 + 下一轮 grill 方向指示）
 
-Stack（审计工件栈，与实现栈 `r98-anchor-detector` 平行独立；审计窗只出报告，未改任何实现文件）：
-  r98-audit-loop1 → xpx (`1fe3862f` @ 2026-10-04) → <本件>
+Stack（dissolved @ 2026-10-04）—— 审计工件栈已 `but land r98-audit-loop1` ff-land 上 `origin/main`（紧随实现栈 land；ref 自始未 push，但 ID 随 land 注销），链为落地后实际 SHA：
+  r98-audit-loop1 → xpx (`52f8dc33` @ 2026-10-04) → vpw (`e8a51fcf` @ 2026-10-04) → lqq (`ea1ae539` @ 2026-10-04)
 
-<!-- state: unpushed r98-audit-loop1 @ 2026-10-04 -->
+<!-- state: no-branch-runs r98-audit-loop1 @ 2026-10-04 -->
+<!-- re-anchor: 2026-10-04 owner 授权会话内 land 本栈；原 `state: unpushed` 标记随 land 失义，按重锚仪式改述 `no-branch-runs`（谓词实测为真：全仓 `on.push` 仅覆盖 `main`）。 -->
 
 ## 审计结论（详见 reports/2026-10-04-audit-report.md + reports/2026-10-04-audit-loop1-report.md）
 

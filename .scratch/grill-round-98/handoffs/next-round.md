@@ -12,7 +12,7 @@
 - 判定核纯净 / 薄壳不写判定 / 正反成对 fixture / fail-closed / 断言数只升不降。
 - 每票收口前自对账覆盖 D 条；发现账本偏离须具名申报，不静默。
 
-## T0 — push/land 授权窗（owner 批准后执行）
+## T0 — push/land 授权窗（owner 批准后执行）【已于 2026-10-04 R98 LOOP1.5 会话内执行：owner 授权 `but land` 两栈 ff-land 上 origin/main（实现栈至 `365b675b`、审计栈至 `ea1ae539`）；closeout/审计交接声明按重锚仪式改述 dissolved+`no-branch-runs`；`defer-r98-stack-land-authorization` 已闭。本票剩余仅「真实 CI run 观测」——首个可能兑现 `GREEN:` run-URL 的窗口待 CI 回传。】
 
 `r98-anchor-detector` 未 push 未 land（R98 收口残留分支，`defer-r98-stack-land-authorization` 在册）。
 

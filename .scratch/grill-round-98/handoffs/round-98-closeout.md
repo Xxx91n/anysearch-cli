@@ -1,8 +1,10 @@
 # Handoff — Grill Round 98 → R99（执行轮收口交接；ADR-0099 第五形态首件 + R97 审计返工清零）
 
-Stack: r98-anchor-detector → skn (`186e3f10` @ 2026-10-04) → mnu (`a31039b4` @ 2026-10-04) → mzp (`500fd30f` @ 2026-10-04) → nxr (`1a54464c` @ 2026-10-04) → rot (`b77103c0` @ 2026-10-04) → pmz (`85a97ca8` @ 2026-10-04)
+Stack（dissolved @ 2026-10-04）—— 交付栈已 `but land r98-anchor-detector` ff-land 上 `origin/main`（ref 自始未 push，land 无 ref 可删；但 ID 随 land 注销），链为落地后实际 SHA（nxr/rot/pmz 为 amend 后值），留作历史定位不再作但 ID 解析；审计栈 `r98-audit-loop1` 同批 land；**未 PR、未 tag**；9 个 commit：
+r98-anchor-detector → skn (`186e3f10` @ 2026-10-04) → mnu (`a31039b4` @ 2026-10-04) → mzp (`500fd30f` @ 2026-10-04) → nxr (`bfaaa47d` @ 2026-10-04) → rot (`c35354e3` @ 2026-10-04) → pmz (`2294b4cc` @ 2026-10-04) → ksm (`249f0a80` @ 2026-10-04) → sml (`5362be96` @ 2026-10-04) → unr (`365b675b` @ 2026-10-04)
 
-<!-- state: unpushed r98-anchor-detector @ 2026-10-03 -->
+<!-- state: no-branch-runs r98-anchor-detector @ 2026-10-04 -->
+<!-- re-anchor: 2026-10-04 owner 授权会话内 `but land` 两栈 ff-land 上 origin/main。原标记 `state: unpushed` 随 land 失义——ref 自始未建、land 后仍不存在，「未推」描述已非栈之实况（栈已合流非待推）；按重锚仪式改述 `no-branch-runs`（谓词实测为真：全仓 `on.push` 仅覆盖 `main`）。Stack 行同步改述 dissolved 变体——but-id 随 land 注销、live 元素不可解析。reauthored=1。 -->
 
 ## 已完成
 
@@ -19,11 +21,11 @@ R98 三轨全兑现：B 轨 land（T0）+ 前置义务轨返工（T1，R1~R8/R10
 
 ## 绿色 run URL（必填）
 
-PENDING: stack-unpushed — `r98-anchor-detector` 未 push（未获授权），`origin/r98-anchor-detector` ref 不存在实测为真；同 R97 边界——本栈 land/push 前 GREEN 物理不可兑现（栈内 commit 集不可达 run `head_sha` 成员检查）。
+PENDING: stack-unpushed — 2026-10-04 owner 授权会话内 `but land r98-anchor-detector` ff-land 上 `origin/main`（`3642d494→5eba7ca0→…→365b675b`）；`origin/r98-anchor-detector` ref 自始未建、land 后仍不存在——「无 origin ref」实测为真。栈内 commit 已合流 origin/main 但分支 ref 缺席，任何被引 run 的 `head_sha` 成员检查仍不可满足（R97 同边界）；真 GREEN 兑现待 PR 拓扑。
 
 ## 下一轮候选
 
-1. **push/land 授权与重锚**：本栈未 push 未 land——获授权后 `but push`/`but land` 将使文首两枚 state 标记与本行 PENDING 码当场失效，须按重锚仪式改述（R97 交接同款先例）。
+1. **push/land 授权与重锚**：~~本栈未 push 未 land~~（已于 2026-10-04 执行：owner 授权会话内 `but land` 两栈 ff-land 上 main，文首两处声明按重锚仪式改述，`defer-r98-stack-land-authorization` 已闭——见文首 re-anchor 注记）。
 2. **GREEN 兑现观察**：首个带 PR 拓扑的 closeout 应以 `GREEN:` 引用真 run（ADR-0098 Known-Risk 5 待 PR 拓扑）。
 3. **锚坐席关闭票**：`defer-r98-anchor-ratchet-recount-seat` 关闭即 `anchor:ratchet-recount` 升全量 kill 判定（ratchet 语义，零代码改动）。
 4. **开放面扩表示范**（deferred 在册）：首张锚扩表即闭环验收（新锚须携证伪 fixture 准入表）。
@@ -31,10 +33,10 @@ PENDING: stack-unpushed — `r98-anchor-detector` 未 push（未获授权），`
 
 ## Known risks / deferred
 
-- **本栈未 push 未 land**：land 授权序列在 D-001(c) 登记，R99 开工前置件。
+- **本栈已 land**：2026-10-04 owner 授权 `but land r98-anchor-detector` ff-land 上 `origin/main`（审计栈 `r98-audit-loop1` 同批）；`defer-r98-stack-land-authorization` 随 land 关闭（deferred registry 已回填 closed）。
 - **双红设计意图预写**（ADR-0099 Consequences）：合法重构未走重锚仪式=锚 RED+消费缺失 RED 同现，修复动作=仪式三步非改判据——首次触发勿误读 flaky。
 - **开放面外约束逃逸**（ADR-0099 Known-Risk 1）：闭表外「宣称-零消费」对仍可存在，扩表走封闭通道。
 - **CI 恒为 env-PENDING**（设计内非阻断）：监控锚＝`[skip]` 行计数异常升高。
-- **deferred 四票在册**：形态二 ratchet / `no-pr`/`unpublished` 扩表 / anchor-ratchet 坐席 / 开放面扩表示范（`docs/deferred-registry.json`）。收口机械条目：栈空 ∨ deferred 在册——本轮栈非空（`r98-anchor-detector` 在 lane）但**残留分支未在册**——按 R6 机检属清算 RED，故本收口件以「栈未清算待授权」明示，deferred 注册动作 = 下一轮 land 授权票（候选 1）。
+- **deferred 四票（land 票已闭，三票 open 沿账）**：形态二 ratchet / `no-pr`/`unpublished` 扩表 / anchor-ratchet 坐席 / 开放面扩表示范（`docs/deferred-registry.json`）；`defer-r98-stack-land-authorization` 已于 2026-10-04 land 后关闭。收口机械条目：栈空 ∨ deferred 在册——栈已空（land 兑现，清算腿回落核验非 RED）。
 
-<!-- closeout-clearing: stack r98-anchor-detector live — residual branch registered for deferred land authorization (candidate 1); clearing leg verified via deferred registry pending land ticket @ 2026-10-03 -->
+<!-- closeout-clearing: stack dissolved — r98-anchor-detector landed 2026-10-04 on owner authorization (origin ref absent, no residual); defer-r98-stack-land-authorization closed -->
