@@ -21,7 +21,12 @@ import {
   collectSnapshot,
 } from "./handoff-lint-shell.mjs";
 import { checkVerbatimClaim } from "./claims-verbatim.mjs";
-import * as verdictModule from "./handoff-lint-verdict.mjs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { GOVERNED_MODULES } from "./vocab-registry.mjs";
+import { scanVocabGuards, resolveRegistryArrays } from "./vocab-scan.mjs";
+
+const requireScript = createRequire(import.meta.url);
 
 // A minimal live env: every leg-greenable, so only the injected distortion
 // decides the outcome.
@@ -82,16 +87,40 @@ export function probeBareWordSingleSource() {
   return { killed: escaped && control, detail: "struck registry -> " + legStruck.state + " (escape), live registry -> " + legLive.state + " {" + legLive.redCodes.join(",") + "}" };
 }
 
-// anchor:vocab-guards — every exported `*_CODES` vocabulary must be registered
-// in CODE_GROUPS. The kill is produced by the PRODUCTION check of record
-// (unregisteredCodeExports in the verdict module - the same function the
-// truth-table consumes), never a probe-local copy: the distortion is a
-// namespace carrying an unregistered export and the guard must name it.
-export function probeVocabGuards() {
-  const real = unregisteredCodeExports(verdictModule);
-  const distorted = unregisteredCodeExports({ ...verdictModule, FAKE_CODES: Object.freeze(["x-fake-vocab"]) });
-  const killed = real.length === 0 && distorted.length === 1 && distorted[0] === "FAKE_CODES";
-  return { killed, detail: "real exports unregistered=" + JSON.stringify(real) + "; injected FAKE_CODES detected=" + JSON.stringify(distorted) };
+// anchor:vocab-guards (ADR-0100 D4): the PRODUCTION scan (scripts/vocab-scan.mjs)
+// must find zero unregistered `*_CODES` exports across the governed surface AND
+// name every injected per-module distortion. The kill is produced by the
+// production check of record (unregisteredCodeExports) driven through the
+// production shell - never a probe-local copy. Per-module: every governed
+// module's namespace is injected independently (no representative sampling).
+export function probeVocabGuards({ root } = {}) {
+  const scan = scanVocabGuards({ root });
+  const inject = [];
+  let allNamed = true;
+  const stems = Object.keys(GOVERNED_MODULES);
+  for (const stem of stems) {
+    let ns;
+    try {
+      ns = requireScript(path.join(root, "scripts", stem + ".mjs"));
+    } catch (e) {
+      allNamed = false;
+      inject.push(stem + ":<load-error:" + String(e && e.message ? e.message : e) + ">");
+      continue;
+    }
+    const reg = resolveRegistryArrays(stem, ns);
+    const found = unregisteredCodeExports({ ...ns, FAKE_CODES: Object.freeze(["x-fake-vocab"]) }, reg);
+    const named = found.length === 1 && found[0] === "FAKE_CODES";
+    if (!named) allNamed = false;
+    inject.push(stem + ":" + JSON.stringify(found));
+  }
+  const killed = scan.ok === true && allNamed === true && inject.length === stems.length && stems.length > 0;
+  return {
+    killed,
+    detail:
+      "scan findings=" + JSON.stringify(scan.findings) +
+      "; excluded-drift=" + JSON.stringify(scan.excludedDrift) +
+      "; per-module injections={" + inject.join(", ") + "}",
+  };
 }
 
 // anchor:ratchet-recount — the verbatim recount must reject a declared

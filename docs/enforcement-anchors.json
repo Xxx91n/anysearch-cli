@@ -24,10 +24,10 @@
   },
   {
    "id": "anchor:vocab-guards",
-   "subject": "CODE_GROUPS",
-   "constraint": "every exported `*_CODES` vocabulary is registered in CODE_GROUPS",
+   "subject": "vocab-registry",
+   "constraint": "every `*_CODES` export across the governed scan surface (scripts/*.mjs, top level only) is registered per module in scripts/vocab-registry.mjs",
    "probe": "probeVocabGuards",
-   "invalidate": "an unregistered `*_CODES` export goes undetected"
+   "invalidate": "an unregistered `*_CODES` export on any governed module goes undetected"
   },
   {
    "id": "anchor:ratchet-recount",

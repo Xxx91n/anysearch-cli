@@ -111,24 +111,24 @@ export const RUN_URL_RED_CODES = Object.freeze([
 // from STACK_ENV_CODES because freshness is hygiene, not unverifiability.
 export const STACK_ADVISORY_CODES = Object.freeze(["stale-capture"]);
 
-// Every vocabulary the core can emit a code from. A code is ONLY ever emitted
-// through emitCode(), which consults the governing constant - so a new literal
-// cannot become a vocabulary entry without touching the constant (and the ADR).
-// This is what turns ADR-0097 D1's "extending the vocabulary requires a gate
-// code change" into an executable invariant instead of a comment.
-export const CODE_GROUPS = Object.freeze({
-  runUrlRed: RUN_URL_RED_CODES,
-  stackRed: STACK_RED_CODES,
-  stackStructuralRed: STACK_STRUCTURAL_RED_CODES,
-  stackEnv: STACK_ENV_CODES,
-  stackAdvisory: STACK_ADVISORY_CODES,
-  verificationUnavailable: VERIFICATION_UNAVAILABLE_CODES,
-  pendingReason: PENDING_REASON_CODES,
-  stateRed: STATE_RED_CODES,
-  statePending: STATE_PENDING_CODES,
-  clearingRed: CLEARING_RED_CODES,
-  clearingEnv: CLEARING_ENV_CODES,
-});
+// The verdict module's own governed vocabularies, in one place. ADR-0100 D2
+// moved the cross-module registry to scripts/vocab-registry.mjs; this local
+// list keeps the core zero-import while preserving the pre-R99 single-argument
+// guard contract (the "default table" of ADR-0100 D5). The authoritative
+// declaration is the registry; a test locks the two together.
+export const VERDICT_VOCABULARIES = Object.freeze([
+  RUN_URL_RED_CODES,
+  STACK_RED_CODES,
+  STACK_STRUCTURAL_RED_CODES,
+  STACK_ENV_CODES,
+  STACK_ADVISORY_CODES,
+  VERIFICATION_UNAVAILABLE_CODES,
+  PENDING_REASON_CODES,
+  STATE_RED_CODES,
+  STATE_PENDING_CODES,
+  CLEARING_RED_CODES,
+  CLEARING_ENV_CODES,
+]);
 
 // The single emission gate. An out-of-vocabulary code is a programming error
 // (fail-closed): it throws rather than shipping a new undocumented code.
@@ -143,17 +143,19 @@ export function emitCode(vocabulary, code) {
 
 // True when `code` belongs to any governed vocabulary (bare codes only; a
 // compound annotation like `verification-unavailable:x` is decomposed first).
-export function isKnownCode(code) {
-  return Object.keys(CODE_GROUPS).some((k) => CODE_GROUPS[k].includes(code));
+export function isKnownCode(code, vocabularies = VERDICT_VOCABULARIES) {
+  return vocabularies.some((v) => v.includes(code));
 }
 
-// Vocabulary guard (anchor:vocab-guards): the production check of record for
-// 「every exported `*_CODES` array is registered in CODE_GROUPS」. The unit
-// truth-table asserts this on the real module namespace; the enforcement-
-// anchor probe consumes the SAME function on a distorted namespace — one
-// implementation, two callers, never a self-defensive copy.
-export function unregisteredCodeExports(ns) {
-  const registered = new Set(Object.values(CODE_GROUPS));
+// Vocabulary guard (anchor:vocab-guards, ADR-0100 D5): the production check of
+// record for `every exported *_CODES array is registered`. `registry` is the
+// set of registered array objects (identity comparison); it defaults to the
+// verdict module's own vocabularies so the pre-R99 single-argument call still
+// works. The cross-module shell (scripts/vocab-scan.mjs) injects each governed
+// module's own arrays; the probe consumes the SAME function on a distorted
+// namespace - one implementation, two callers, never a self-defensive copy.
+export function unregisteredCodeExports(ns, registry = VERDICT_VOCABULARIES) {
+  const registered = new Set(registry ?? []);
   return Object.keys(ns ?? {}).filter(
     (k) => /_CODES$/.test(k) && Array.isArray(ns[k]) && !registered.has(ns[k])
   );
