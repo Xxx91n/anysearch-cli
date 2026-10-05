@@ -27,3 +27,25 @@
   5. sunset 退役判据本轮只立机制不定 N 值。
   6. 若未来改主意本轮激活 approval-channel：须独立实现票+具名申报混合轮切换+R99 D-001 否决理由以新证据显式覆写入账（推翻先例留痕）。
   7. 沿账不扩：不重开评测矩阵/不动 formally-declined/不追写冻结 claims/不发布不打 tag/活体谓词仍走 deferred/不裸删远端指针。
+
+---
+
+## D-002 — T0 绿门清偿立法（instance 改述 + A 案双瓣 + §5 双绑 + reanchor 脚本；B/C/第四案处死入账）
+
+- **状态**：current
+- **原问题**：Q2 — T0 绿门清偿的机制立法。候选：A=land 序列义务立法（land 者同会话重锚 commit+post-land main 重验+§5 扩域）；B=prospective 时态标记 dissolved-on-land；C=纯 instance 修复不立类法；附带第四案盘点（but-id-only / lint 知情 land 事件）。atomcode 深调后修正呈报，用户答「采纳」。
+- **原回答原文**：「采纳」（对修正版 Q2：a) R99 closeout Stack 行改述 `Stack（dissolved @ 2026-10-06）`；b) class=A 双瓣——义务瓣+检测瓣 `stack-orphaned-by-land`（新层须过自家滤尺，指名故障=sha-not-commit 第四漏检形态，滤尺判不配位则退纯义务瓣）；c) §5 签字硬项绑点扩到 post-land main tip 重验 + handoff-reanchor 一键脚本并入 A）。
+- **规范化需求**：
+  1. **instance 修复**：R99 closeout Stack 行改述 dissolved 变体——六死 SHA（e9b888d4/16205b9d/9ffdfc47/759fe259/1d759e81/e5d40d8d）撤下机验面，capture 值保留为散文史料；branch=`r99-vocab-expansion` origin ref 缺席→GREEN，回弹断言（declaration-fact-conflict）保持激活。
+  2. **A 案义务瓣**：「land ⇒ 同会话补重锚 commit（栈内全部活链 Stack 行改述 dissolved）」入 land 检查清单——义务归因因果方（land 是 SHA 重写制造者，expand-contract 的 contract 步纪律）。
+  3. **A 案检测瓣**：新增谓词 `stack-orphaned-by-land`——「main 上存在含活链 Stack 行的 closeout 且其命名 branch 的 origin ref 缺席」判 RED；按修层/新层判据属**新层**（sha-not-commit 与其覆盖域相交不相含——land 保留 SHA 路径下 sha-not-commit 不咬此形态），故须以指名故障过 ADR-0101 封顶滤尺（指名=本轮实证漏检形态）；滤尺若判其不配位则降为纯义务瓣。
+  4. **§5 签字硬项双绑**：①land 动作携带「重锚+验证」义务；②审计末笔验证绑点从「栈内 EXIT=0」扩到「post-land main tip 重验 GREEN」——pre/post 断言对象不同（candidate 合并树 vs 公开树）不可互替。
+  5. **`handoff-reanchor` 一键脚本**并入 A 立法：改述+记 land 后 main SHA+落签字——A 的弱点是摩擦力非语义，迁移工具化配套。
+  6. **处死入账**：B（dissolved-on-land——删除既有 declaration-fact-conflict 回弹方向=棘轮倒转；栈永不 land 则声明永久悬空无回收者=TUF 无 expires 同型）；C（第四次已实证，不立类法必有第五次）；第四案 but-id-only（违 R98「残留 but-id 假核验」Avoid 条款）与 lint 知情 land 事件（状态机搬进检查器=不可证伪）。
+  7. **工业判例入账**：「写时为真随外部事件翻转」的声明——ADR supersession 双向链接 / K8s observedGeneration 校验代际（kubectl wait stale-condition 假绿实证）/ expand-contract contract 后置义务 / HTTP conditional validator 每次重验 / CT·TUF expires+inclusion proof——五例同向：声明须携带可复核证据+翻转须显式义务动作，而非读取方豁免。
+- **显式约束/负向需求**：
+  1. 检测瓣谓词新增须按 R99 纪律带成对证伪 fixture 且入 vocab-registry 注册（RED 码扩表走封闭通道）。
+  2. dissolved 改述逐条对应原 Stack 条目，closeout-coverage 双向一致（ADR index 先例）。
+  3. 禁止以「读取方豁免校验」方向修（B 案形态）；禁止删改既有 declaration-fact-conflict 回弹断言方向。
+  4. reanchor 脚本是降摩擦配套，不替代义务立法本身。
+  5. 沿账不扩：本票不修 closeout 外其他文档类型；审计末笔绑点扩展不改动既有栈内验证义务（双段并存）。
