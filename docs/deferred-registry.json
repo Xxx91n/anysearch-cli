@@ -1196,12 +1196,15 @@
    "owner": "anysearch-platform",
    "opened_at": "2026-10-03",
    "review_cadence": "next enforcement-anchor leg touch + quarterly",
-   "status": "open",
-   "evidence": "D-002/D-003 裁定：ratchet 类锚与形态二同构——先 PENDING 坐席后 ratchet 升 RED。pending_anchors 字段挂接锚 PENDING 位：enforcement-anchor 腿对坐席锚仍执行探针但输出 skip 而非 fail；本票关闭即锚升全量 kill 判定（ratchet 语义）。",
+   "status": "closed",
+   "evidence": "D-002/D-003 裁定：ratchet 类锚与形态二同构——先 PENDING 坐席后 ratchet 升 RED。pending_anchors 字段挂接锚 PENDING 位：enforcement-anchor 腿对坐席锚仍执行探针但输出 skip 而非 fail；本票关闭即锚升全量 kill 判定（ratchet 语义）。 | R99 T0 坐席关票：pending_anchors 摘除（status→closed）即锚升全量 kill 判定——probeRatchetRecount 实测 killed（matching recount problems=0）；单变量验收场=基线绿日志 + 关票后 enforcement-anchors 腿仍 5/5 consumer-verified（本地船闸日志路径见 R99 轮报证据段）。零代码改动。",
    "monitoring_channel": "ship-gate enforcement-anchors leg + quarterly",
    "pending_anchors": [
     "anchor:ratchet-recount"
-   ]
+   ],
+   "closed_by": "ADR-0100 (R99 T0)",
+   "closed_at": "2026-10-05",
+   "closed_by_adr_path": "docs/adr/0100-architecture-grill-round-99-vocab-guards-open-surface-expansion.md"
   },
   {
    "id": "defer-r98-anchor-open-surface-demo",
@@ -1211,9 +1214,12 @@
    "owner": "anysearch-platform",
    "opened_at": "2026-10-03",
    "review_cadence": "next enforcement-anchor leg touch + quarterly",
-   "status": "open",
-   "evidence": "ADR-0099 Known-Risk 1：开放面外约束逃逸——闭表只覆盖已登记锚。未来扩表须走封闭通道：新锚携证伪 fixture 方准入表（自指钉①），本票为首张扩表的闭环验收场景（扩表实现未做，首张扩表即演示）。",
-   "monitoring_channel": "ship-gate enforcement-anchors leg + quarterly"
+   "status": "closed",
+   "evidence": "ADR-0099 Known-Risk 1：开放面外约束逃逸——闭表只覆盖已登记锚。未来扩表须走封闭通道：新锚携证伪 fixture 方准入表（自指钉①），本票为首张扩表的闭环验收场景（扩表实现未做，首张扩表即演示）。 | R99 T2 扩域落地：anchor:vocab-guards 由单模块（CODE_GROUPS）扩域至全 scripts/ 顶层逐模块注册——scripts/vocab-registry.mjs 逐模块分组 + scripts/vocab-scan.mjs glob 枚举 + probeVocabGuards 逐模块注入（3 受治模块失真均被抓）；开放面首张扩表演示闭环。",
+   "monitoring_channel": "ship-gate enforcement-anchors leg + quarterly",
+   "closed_by": "ADR-0100 (R99 T2)",
+   "closed_at": "2026-10-05",
+   "closed_by_adr_path": "docs/adr/0100-architecture-grill-round-99-vocab-guards-open-surface-expansion.md"
   },
   {
    "id": "defer-r98-stack-land-authorization",

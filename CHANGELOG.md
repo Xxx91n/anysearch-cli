@@ -4,6 +4,26 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0100 r99: vocab-guards 扩域至全 scripts/（逐模块注册表 + glob 顶层枚举 + 逐模块证伪）
+
+### Added
+
+- **vocab-registry 逐模块注册表（T2）**：`scripts/vocab-registry.mjs` 纯数据叶（零 import、`Object.freeze`）——`CODE_GROUPS = {verdict, anchors, evalIntegrity}` 逐模块分组，值=各模块受治 `*_CODES` 导出名；`GOVERNED_MODULES` 显式模块→组映射（数据非约定）。注册表脱离判定核，受治模块不回 import（单向依赖零循环）。
+- **vocab-scan 薄壳枚举（T2）**：`scripts/vocab-scan.mjs`——glob `scripts/*.mjs` 顶层（不递归，`tau/` 不入域）两相枚举：静态预筛 `*_CODES` 导出名 → 仅词表承载模块做命名空间注入 → 纯核逐模块断言；封闭排除清单（`.ts`/`.py`，判据=无法命名空间注入）漂移出 info 非 RED。
+- **扫面外三导出入册（T2）**：`ANCHOR_RED_CODES`/`ANCHOR_SKIP_CODES`（enforcement-anchors）与 `SHIP_OVERRIDE_REASON_CODES`（eval-integrity-contract）登记入册——ADR-0099 Known-Risk 1 开放面缺口关闭。
+- **探针无孤儿 + 三钉对抗演练（T2 验收段）**：e2e 新增「probe 模块导出无孤儿」反向断言 + 四钉对抗路径（探针名伪造 / 坐席伪造开 / 坐席关后复红 / 空注册表）逐条验证。
+
+### Changed
+
+- **`unregisteredCodeExports(ns)` → `(ns, registry)`（T2/D5）**：签名泛化为注册表注入（`registry ?? 默认表` 向后兼容），与 `env.registry ?? STATE_PREDICATE_REGISTRY` 参数化同构；`isKnownCode(code, vocabularies)` 同族泛化。
+- **anchor:vocab-guards 扩域（T2/D1）**：constraint/subject 由单模块 `CODE_GROUPS` 更新为全 `scripts/` 顶层逐模块注册语义；probe 由单命名空间改写为逐模块注入（3 受治模块失真均被抓）。
+
+### Docs
+
+- **ADR-0100 立法（T1）**：六 Decision + 两块预写（首抓真 RED 解读纪律 / 四级迁移阶梯次序硬约束）+ CONTEXT「Grill Round 99 — Terms」七词条。
+- **坐席关票（T0/T3）**：`defer-r98-anchor-ratchet-recount-seat` 关闭（零代码改动，探针升全量 kill）；`defer-r98-anchor-open-surface-demo` 随扩域关闭。
+- **AGENTS.md 顶层零副作用摘要**：只指向 ADR-0100 不复述全文。
+
 ## Unreleased — ADR-0099 r98: 第五形态【装饰性机器约束检测】+ R97 审计返工（R1~R8/R10）
 
 ### Added

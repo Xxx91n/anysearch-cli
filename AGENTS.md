@@ -67,6 +67,10 @@ Machine-local paths in committed markdown are linted **by usage class** — ship
 
 Sweep scope (registered in the config — a new document type lands only by editing it): `*.md`, `docs/**/*.md`, and every tracked markdown file under `.scratch/` in a registered doc dir. Applies from grill-round-67 onward (locator class) and grill-round-71 onward (three-class refinement + fail-closed leg).
 
+## Vocabulary registry & governed scan surface (ADR-0100)
+
+`scripts/vocab-registry.mjs` is the per-module registry of every governed `*_CODES` vocabulary (pure data leaf, zero import); `scripts/vocab-scan.mjs` enumerates `scripts/*.mjs` (top level only, no recursion) and asserts each governed module's exports are registered. Governed modules must keep their top level side-effect-free (glob + injection executes it). Full rule: ADR-0100.
+
 ## Codex host notes (ADR-0068)
 
 - Hooks config = official schema `{ "<Event>": [{ matcher, hooks: [{type:"command", command, timeout}] }] }`; `{name,command,args}` registers zero hooks. Matchers are FULL-MATCH regexes.
