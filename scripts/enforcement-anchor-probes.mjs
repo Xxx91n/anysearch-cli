@@ -21,12 +21,7 @@ import {
   collectSnapshot,
 } from "./handoff-lint-shell.mjs";
 import { checkVerbatimClaim } from "./claims-verbatim.mjs";
-import { createRequire } from "node:module";
-import path from "node:path";
-import { GOVERNED_MODULES } from "./vocab-registry.mjs";
-import { scanVocabGuards, resolveRegistryArrays } from "./vocab-scan.mjs";
-
-const requireScript = createRequire(import.meta.url);
+import { scanVocabGuards, resolveRegistryArrays, loadScriptModule, errText } from "./vocab-scan.mjs";
 
 // A minimal live env: every leg-greenable, so only the injected distortion
 // decides the outcome.
@@ -91,29 +86,33 @@ export function probeBareWordSingleSource() {
 // must find zero unregistered `*_CODES` exports across the governed surface AND
 // name every injected per-module distortion. The kill is produced by the
 // production check of record (unregisteredCodeExports) driven through the
-// production shell - never a probe-local copy. Per-module: every governed
-// module's namespace is injected independently (no representative sampling).
+// production shell - never a probe-local copy.
+//
+// Same-source (audit R99-1): the injected module set IS the production scan own
+// enumeration output (scan.scanned vocabulary-bearing modules), never a
+// hand-kept key list. A `*_CODES` export the production scan sees is therefore
+// always falsified here too - no representative sampling, no Anchor Coverage Gap.
 export function probeVocabGuards({ root } = {}) {
   const scan = scanVocabGuards({ root });
+  const stems = scan.scanned.filter((s) => s.codes > 0).map((s) => s.stem);
   const inject = [];
   let allNamed = true;
-  const stems = Object.keys(GOVERNED_MODULES);
   for (const stem of stems) {
     let ns;
     try {
-      ns = requireScript(path.join(root, "scripts", stem + ".mjs"));
+      ns = loadScriptModule(root, stem);
     } catch (e) {
       allNamed = false;
-      inject.push(stem + ":<load-error:" + String(e && e.message ? e.message : e) + ">");
+      inject.push(stem + ":<load-error:" + errText(e) + ">");
       continue;
     }
     const reg = resolveRegistryArrays(stem, ns);
     const found = unregisteredCodeExports({ ...ns, FAKE_CODES: Object.freeze(["x-fake-vocab"]) }, reg);
-    const named = found.length === 1 && found[0] === "FAKE_CODES";
+    const named = found.includes("FAKE_CODES");
     if (!named) allNamed = false;
     inject.push(stem + ":" + JSON.stringify(found));
   }
-  const killed = scan.ok === true && allNamed === true && inject.length === stems.length && stems.length > 0;
+  const killed = scan.ok === true && allNamed === true && stems.length > 0;
   return {
     killed,
     detail:
@@ -122,7 +121,6 @@ export function probeVocabGuards({ root } = {}) {
       "; per-module injections={" + inject.join(", ") + "}",
   };
 }
-
 // anchor:ratchet-recount — the verbatim recount must reject a declared
 // reauthored count that does not match reanchor_log length, and accept a
 // matching one. Consumption = the gate's own checkVerbatimClaim (single code

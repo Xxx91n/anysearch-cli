@@ -12,6 +12,9 @@
 // enumerator executes a module ONLY when it actually carries a vocabulary. A
 // blind `import()` of every scripts/*.mjs would run the CLIs (empirically:
 // importing ship-gate.mjs runs the whole gate).
+//
+// Fail-closed (audit R99-1): an unreadable scripts/ dir is a FATAL finding, not
+// an empty scan - a scan that cannot enumerate must never report ok:true.
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -25,15 +28,21 @@ const require = createRequire(import.meta.url);
 // "cannot be namespace-injected", never by "is a fixture".
 export const EXCLUDED_EXTENSIONS = Object.freeze([".ts", ".py"]);
 
+// The one error-text formatter (audit R99-2 dedup): scan and probe share it so a
+// failure-detail shape can never drift between the two call sites.
+export function errText(e) {
+  return String(e && e.message ? e.message : e);
+}
+
+// FAIL-CLOSED: a readdir failure throws (the caller turns it into a fatal
+// finding). Never swallow it into an empty list - an empty scan is a green.
 export function enumerateScriptFiles(root) {
   const dir = path.join(root, "scripts");
-  let ents;
-  try {
-    ents = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  return ents.filter((e) => e.isFile()).map((e) => e.name).sort();
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isFile())
+    .map((e) => e.name)
+    .sort();
 }
 
 // Static export-name extraction: `export const X_CODES = ...` (top-level).
@@ -51,6 +60,12 @@ export function registeredNamesFor(stem) {
   return group ? Object.values(group) : [];
 }
 
+// The ONE module-loading path (audit R99-2 dedup): both the production scan and
+// the falsification probe use it, so a load-failure shape can never drift.
+export function loadScriptModule(root, stem) {
+  return require(path.join(root, "scripts", stem + ".mjs"));
+}
+
 // Resolve the registry's declared export names for a module into the module's
 // OWN array objects (identity), so the guard compares identity, not content.
 export function resolveRegistryArrays(stem, ns) {
@@ -60,8 +75,19 @@ export function resolveRegistryArrays(stem, ns) {
 }
 
 export function scanVocabGuards({ root, load } = {}) {
-  const loader = load ?? ((p) => require(p));
-  const files = enumerateScriptFiles(root);
+  const loader = load ?? ((stem) => loadScriptModule(root, stem));
+  let files;
+  try {
+    files = enumerateScriptFiles(root);
+  } catch (e) {
+    // Fail-closed: an unreadable scan surface is a fatal finding, never ok:true.
+    return {
+      ok: false,
+      scanned: [],
+      findings: [{ stem: "<scripts-dir>", name: "scan-surface-unreadable", detail: errText(e) }],
+      excludedDrift: [],
+    };
+  }
   const findings = [];
   const scanned = [];
   const excludedDrift = [];
@@ -69,7 +95,11 @@ export function scanVocabGuards({ root, load } = {}) {
     const full = path.join(root, "scripts", f);
     const ext = path.extname(f);
     let text = "";
-    try { text = fs.readFileSync(full, "utf8"); } catch { continue; }
+    try {
+      text = fs.readFileSync(full, "utf8");
+    } catch {
+      continue;
+    }
     if (EXCLUDED_EXTENSIONS.includes(ext)) {
       // excluded by "cannot be namespace-injected": cross-check for drift (info only)
       for (const n of staticCodeExports(text)) excludedDrift.push({ file: f, name: n });
@@ -78,12 +108,15 @@ export function scanVocabGuards({ root, load } = {}) {
     if (ext !== ".mjs") continue;
     const names = staticCodeExports(text);
     const stem = f.replace(/\.mjs$/, "");
-    if (names.length === 0) { scanned.push({ stem, codes: 0 }); continue; }
+    if (names.length === 0) {
+      scanned.push({ stem, codes: 0 });
+      continue;
+    }
     let ns;
     try {
-      ns = loader(full);
+      ns = loader(stem);
     } catch (e) {
-      findings.push({ stem, name: "<module-load-error>", detail: String(e && e.message ? e.message : e) });
+      findings.push({ stem, name: "<module-load-error>", detail: errText(e) });
       continue;
     }
     const unreg = unregisteredCodeExports(ns, resolveRegistryArrays(stem, ns));

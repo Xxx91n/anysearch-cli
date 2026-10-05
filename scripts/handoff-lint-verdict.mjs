@@ -148,8 +148,14 @@ export function isKnownCode(code, vocabularies = VERDICT_VOCABULARIES) {
 }
 
 // Vocabulary guard (anchor:vocab-guards, ADR-0100 D5): the production check of
-// record for `every exported *_CODES array is registered`. `registry` is the
-// set of registered array objects (identity comparison); it defaults to the
+// record for `every exported *_CODES array is registered`.
+//
+// PARAMETER SEMANTICS (audit R99-2): `registry` is NOT the CODE_GROUPS registry
+// map from scripts/vocab-registry.mjs - it is the FLAT COLLECTION OF REGISTERED
+// VOCABULARY ARRAYS (an array of frozen `*_CODES` arrays) matched by object
+// identity. The registry map declares export NAMES; the shell resolves them to
+// the module own arrays and passes them here. The name `registry` is the
+// ADR-0100 D5 contract; the semantic is "registered vocabularies". It defaults to the
 // verdict module's own vocabularies so the pre-R99 single-argument call still
 // works. The cross-module shell (scripts/vocab-scan.mjs) injects each governed
 // module's own arrays; the probe consumes the SAME function on a distorted

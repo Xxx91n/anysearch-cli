@@ -29,6 +29,7 @@ import { parseStackLine } from "../../../scripts/handoff-lint-verdict.mjs";
 import * as verdictNs from "../../../scripts/handoff-lint-verdict.mjs";
 import { CODE_GROUPS } from "../../../scripts/vocab-registry.mjs";
 import * as probesModule from "../../../scripts/enforcement-anchor-probes.mjs";
+import { scanVocabGuards } from "../../../scripts/vocab-scan.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..", "..", "..");
@@ -445,6 +446,16 @@ eq(newestCloseoutTargets([
   drill.push(["forged-empty-registry", p3.exitKind === "fail"]);
   for (const [name, ok] of drill) assert(ok, "three-pin adversarial drill: " + name);
   console.log("R99 three-pin adversarial drill: " + drill.map(([n, ok]) => n + "=" + ok).join(", "));
+  // R99 audit R99-1: the scan surface is fail-closed (an unreadable scripts/ dir
+  // is a fatal finding, never an empty green) and the probe falsifies EXACTLY the
+  // production-scanned vocabulary modules (same-source, no key-list sampling).
+  const badScan = scanVocabGuards({ root: path.join(root, "nonexistent-root-dir") });
+  assert(badScan.ok === false && badScan.findings.length > 0, "an unreadable scan surface is a fatal finding, never an empty green (fail-closed)");
+  const liveScan = scanVocabGuards({ root });
+  const liveStems = liveScan.scanned.filter((s) => s.codes > 0).map((s) => s.stem).sort();
+  assert(liveStems.length >= 3, "the production scan finds the vocabulary-bearing modules (" + liveStems.length + ")");
+  const probeDetail = probesModule.probeVocabGuards({ root }).detail;
+  for (const stem of liveStems) assert(probeDetail.includes(stem + ":"), "the probe injects into every production-scanned vocabulary module (same-source): " + stem);
 }
 // --- fail-on-empty red line ---------------------------------------------------
 assert(passed > 350, "fail-on-empty: the E2E smoke actually executed (" + passed + " assertions)");

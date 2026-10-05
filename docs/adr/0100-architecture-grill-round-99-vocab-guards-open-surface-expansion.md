@@ -82,3 +82,13 @@ R99 正题 = `anchor:vocab-guards` 扩域至全 `scripts/` 顶层，与「开放
 2. **排除清单漂移**：排除项（`.ts`/`.py`）与探针导出面可能漂移。缓解=交叉验证出 info 行（非 RED），季度顺手审。
 3. **顶层零副作用纪律的依赖**：纪律靠受治模块自律，无独立机检（本轮）；缓解=扫面面为 scripts/ 顶层，模块数与体量有限，且顶层副作用在 import 时立即暴露。
 4. **注册表手写漂移**：注册表与模块导出名可能名实漂移。缓解=逐模块探针注入 + 自指钉①（probe 名不可解析即红）。
+
+## Addendum A — Audit R99 rework (2026-10-05)
+
+独立审计（审计 Agent）打回本轮返工：2 项硬违规 + 1 项硬验收阻断。修复如下：
+
+1. **A1 探针枚举同源（D4 契约补正）**：`probeVocabGuards` 原先遍历 `Object.keys(GOVERNED_MODULES)`（自封闭键表），违反 D4「fixture 模块枚举与生产枚举同源」。改为消费 `scanVocabGuards({root}).scanned` 的**词表承载模块**（`codes > 0`）——生产扫面看到什么，证伪就注入什么；新增 `*_CODES` 模块未登记时生产扫面 RED、探针同时无法点名 FAKE_CODES → 双红，抽样死角关闭。
+2. **A2 扫面 Fail-Closed（D3 边界补正）**：`enumerateScriptFiles` 原 `catch { return []; }` 在目录不可读时静默返空 → `scanVocabGuards` 假绿。改为**抛异常**，由 `scanVocabGuards` 转为致命 finding（`scan-surface-unreadable`）+ `ok:false`——不可枚举的扫面永不报绿。
+3. **A3 测试任务并发上界（验收稳定性）**：`turbo run test` 的默认跨包并行会同时跑跨进程 SQLite 竞争演练（`access-chain-bootstrap-spawn`，5s busy_timeout）与 spawn 密集的 revision CLI 集成套件，在负载主机上触及 Windows 进程/原生模块上界（`SQLITE_IOERR_WRITE` / `0xC0000005` / `ERR_WORKER_INIT_FAILED`）。ship-gate step 3 与根 `package.json` test 脚本为 test 任务加 `--concurrency=2`——与 store 套件既有 `--test-concurrency=1` 同一「串行化竞争」纪律，不改变被测内容。
+
+审计另记两处 Fowler smell（重复代码 / 参数命名）已顺带消解：模块加载与错误文本格式化收敛为 `loadScriptModule`/`errText` 单一路径；`unregisteredCodeExports` 的 `registry` 参数语义在判定核注释中显式澄清（名称保留 ADR-0100 D5 契约）。

@@ -1418,7 +1418,18 @@ async function stepBuildAndTest() {
   for (const task of ["check", "test", "build"]) {
     // ADR-0057 D3: test collects the full truth across packages (one red package
     // must not mask the others); check/build keep fail-fast semantics.
-    const args = task === "test" ? ["turbo", "run", task, "--continue=dependencies-successful"] : ["turbo", "run", task];
+    //
+    // Audit R99-3: the test task runs the cross-process SQLite contention drill
+    // (access-chain-bootstrap-spawn) and the spawn-heavy revision CLI integration
+    // suite. At turbo default cross-package parallelism those exceed Windows
+    // process/native-module bounds on a loaded host (SQLITE_IOERR_WRITE /
+    // 0xC0000005 / ERR_WORKER_INIT_FAILED). Bound the test task package
+    // concurrency - the same serialize-the-contention discipline the store suite
+    // already applies with --test-concurrency=1. It does not change what is tested.
+    const args =
+      task === "test"
+        ? ["turbo", "run", task, "--continue=dependencies-successful", "--concurrency=2"]
+        : ["turbo", "run", task];
     await run(PNPM, args);
     report("pass", `turbo run ${task}`);
   }

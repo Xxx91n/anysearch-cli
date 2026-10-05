@@ -24,6 +24,9 @@ All notable changes to this project are recorded here. Format follows
 - **坐席关票（T0/T3）**：`defer-r98-anchor-ratchet-recount-seat` 关闭（零代码改动，探针升全量 kill）；`defer-r98-anchor-open-surface-demo` 随扩域关闭。
 - **AGENTS.md 顶层零副作用摘要**：只指向 ADR-0100 不复述全文。
 
+### Fixed
+
+- **审计 R99 返工（A1~A3）**：① `probeVocabGuards` 枚举面改为消费生产扫面 `scanVocabGuards(...).scanned` 的词表承载模块（ADR-0100 D4 同源契约补正，抽样死角关闭）；② `enumerateScriptFiles` 由吞异常返空改为抛异常 + `scan-surface-unreadable` 致命 finding（Fail-Closed 补正，不可枚举扫面不再假绿）；③ ship-gate step 3 与根 `package.json` 的 test 任务加 `--concurrency=2`（跨进程 SQLite 竞争 + spawn 密集套件在 Windows 负载主机的资源上界稳定化，不改变被测内容）。
 ## Unreleased — ADR-0099 r98: 第五形态【装饰性机器约束检测】+ R97 审计返工（R1~R8/R10）
 
 ### Added
