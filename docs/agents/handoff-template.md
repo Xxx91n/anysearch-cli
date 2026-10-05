@@ -163,11 +163,11 @@ silent: each appears as a `[skip]` line naming its code.
 ### Machine-readable vocabulary（机器可读词表，与判定核双向锁）
 
 The block below is parsed by `packages/store/test/handoff-lint-e2e.test.mjs` and
-asserted set-equal to `CODE_GROUPS` in `scripts/handoff-lint-verdict.mjs`. Adding
+asserted set-equal to the registry's `verdict` group in `scripts/vocab-registry.mjs`. Adding
 a code on either side alone turns the suite red — that is what makes ADR-0097
 D1's “extending the vocabulary requires a gate code change” enforceable.
 
-<!-- HANDOFF-LINT-VOCABULARY (parsed by handoff-lint-e2e.test.mjs — keep in sync with CODE_GROUPS) -->
+<!-- HANDOFF-LINT-VOCABULARY (parsed by handoff-lint-e2e.test.mjs — keep in sync with CODE_GROUPS.verdict in scripts/vocab-registry.mjs) -->
 ```
 run-url-red: run-url-section-missing | run-url-state-line-missing | run-url-state-ambiguous | run-url-unparseable | pending-reason-out-of-vocabulary | declaration-fact-conflict | green-claim-falsified
 stack-red: but-id-not-resolved | sha-not-commit | chain-tail-not-in-branch

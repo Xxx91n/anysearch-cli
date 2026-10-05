@@ -1,0 +1,33 @@
+{
+ "schema": "anysearch/closeout-claims@1",
+ "round": 99,
+ "claims": [
+  {
+   "id": "r99-t1-adr-title",
+   "kind": "verbatim",
+   "claim": "ADR-0100 title sentence byte anchor",
+   "file": "docs/adr/0100-architecture-grill-round-99-vocab-guards-open-surface-expansion.md",
+   "text": "# ADR-0100: Grill Round 99 — vocab-guards 扩域至全 scripts/（逐模块注册表 + glob 顶层枚举 + 逐模块证伪）",
+   "reason": "initial-anchor: R99 open-surface expansion legislation title; audit in .scratch/grill-round-99/reports/2026-10-05-report.md",
+   "reauthored": 0
+  },
+  {
+   "id": "r99-t1-context-terms",
+   "kind": "verbatim",
+   "claim": "CONTEXT R99 terms zone heading byte anchor",
+   "file": "CONTEXT.md",
+   "text": "## Grill Round 99 — Terms (ADR-0100)",
+   "reason": "initial-anchor: glossary zone heading; audit in .scratch/grill-round-99/reports/2026-10-05-report.md",
+   "reauthored": 0
+  },
+  {
+   "id": "r99-t2-registry-leaf",
+   "kind": "verbatim",
+   "claim": "vocab-registry pure data leaf declaration anchor",
+   "file": "scripts/vocab-registry.mjs",
+   "text": "export const CODE_GROUPS = Object.freeze({",
+   "reason": "initial-anchor: per-module registry declaration (ADR-0100 D2); audit in .scratch/grill-round-99/reports/2026-10-05-report.md",
+   "reauthored": 0
+  }
+ ]
+}
