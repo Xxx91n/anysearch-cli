@@ -25,7 +25,10 @@ import {
   evaluateHandoffLintDocuments,
 } from "../../../scripts/handoff-lint-shell.mjs";
 import { runEnforcementAnchors, ANCHOR_RED_CODES } from "../../../scripts/enforcement-anchors.mjs";
-import { CODE_GROUPS, parseStackLine } from "../../../scripts/handoff-lint-verdict.mjs";
+import { parseStackLine } from "../../../scripts/handoff-lint-verdict.mjs";
+import * as verdictNs from "../../../scripts/handoff-lint-verdict.mjs";
+import { CODE_GROUPS } from "../../../scripts/vocab-registry.mjs";
+import * as probesModule from "../../../scripts/enforcement-anchor-probes.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..", "..", "..");
@@ -278,13 +281,14 @@ for (const line of vocabLines) {
   const group = line.slice(0, idx);
   const codes = line.slice(idx + 1).split("|").map((x) => x.trim()).filter(Boolean).sort();
   const key = GROUP_MAP[group];
-  assert(!!key, "template vocabulary group " + group + " maps to a CODE_GROUPS key");
-  eq(codes, CODE_GROUPS[key].slice().sort(), "template group " + group + " is set-equal to CODE_GROUPS." + key);
+  assert(!!key, "template vocabulary group " + group + " maps to a registry verdict group key");
+  const exportName = CODE_GROUPS.verdict[key];
+  assert(typeof exportName === "string" && Array.isArray(verdictNs[exportName]), "registry verdict group " + key + " resolves to a module export " + exportName);
+  eq(codes, verdictNs[exportName].slice().sort(), "template group " + group + " is set-equal to the registry verdict group " + key);
 }
-for (const k of Object.keys(CODE_GROUPS)) {
-  assert(Object.keys(GROUP_MAP).map((g) => GROUP_MAP[g]).includes(k), "CODE_GROUPS." + k + " is declared in the template (no core-only vocabulary)");
+for (const k of Object.keys(CODE_GROUPS.verdict)) {
+  assert(Object.keys(GROUP_MAP).map((g) => GROUP_MAP[g]).includes(k), "CODE_GROUPS.verdict." + k + " is declared in the template (no core-only vocabulary)");
 }
-
 // --- J. deps.repo is a live seam (N7: it had no consumer before) --------------
 const repoOverride = runHandoffLint({
   root,
@@ -416,6 +420,32 @@ eq(newestCloseoutTargets([
   }
 }
 
+// --- O. R99 (ADR-0100 D1): probe-orphan coverage + three-pin drill -----------
+{
+  // Probe-orphan coverage: every export of enforcement-anchor-probes.mjs must be
+  // consumed by some anchor entry probe field (the reverse of self-nail ①).
+  const reg = JSON.parse(fs.readFileSync(path.join(root, "docs", "enforcement-anchors.json"), "utf8"));
+  const wired = new Set(reg.anchors.map((a) => a.probe));
+  const probeExports = Object.keys(probesModule).filter((k) => typeof probesModule[k] === "function" && /^probe/.test(k));
+  assert(probeExports.length > 0, "the probe module exports at least one probe");
+  for (const name of probeExports) assert(wired.has(name), "probe export " + name + " is consumed by an anchor entry (no orphan probe)");
+  // Three-pin adversarial drill (named report; a discovered escape is declared, never silenced).
+  const drill = [];
+  const p1 = runEnforcementAnchors({ root, deps: { registry: { ok: true, anchors: [{ id: "anchor:forged", probe: "probeForgedName" }] } } });
+  drill.push(["forged-probe-name", p1.exitKind === "fail" && p1.lines.some((l) => l.msg.includes("anchor-unresolvable"))]);
+  // pin 2 (forged seat): a seat entry for a probe that does NOT kill converts a
+  // would-be RED into a non-blocking skip - this is the KNOWN escape while the
+  // seat is open (ADR-0099 D4: observed, never blocking). The drill asserts both
+  // halves: open seat holds the decorative anchor; a CLOSED seat re-reddens it.
+  const forgedSeat = runEnforcementAnchors({ root: path.join(root, "nonexistent-root-dir"), deps: { registry: { ok: true, anchors: [{ id: "anchor:dead", probe: "probeRatchetRecount" }] }, deferred: { ok: true, pendingAnchors: ["anchor:dead"], covers: [], pendingPredicates: [] } } });
+  drill.push(["forged-seat-holds-decorative-open", forgedSeat.exitKind === "pass"]);
+  const forgedSeatClosed = runEnforcementAnchors({ root: path.join(root, "nonexistent-root-dir"), deps: { registry: { ok: true, anchors: [{ id: "anchor:dead", probe: "probeRatchetRecount" }] }, deferred: { ok: true, pendingAnchors: [], covers: [], pendingPredicates: [] } } });
+  drill.push(["seat-closed-re-reddens", forgedSeatClosed.exitKind === "fail"]);
+  const p3 = runEnforcementAnchors({ root, deps: { registry: { ok: true, anchors: null } } });
+  drill.push(["forged-empty-registry", p3.exitKind === "fail"]);
+  for (const [name, ok] of drill) assert(ok, "three-pin adversarial drill: " + name);
+  console.log("R99 three-pin adversarial drill: " + drill.map(([n, ok]) => n + "=" + ok).join(", "));
+}
 // --- fail-on-empty red line ---------------------------------------------------
 assert(passed > 350, "fail-on-empty: the E2E smoke actually executed (" + passed + " assertions)");
 

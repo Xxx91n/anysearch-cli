@@ -31,7 +31,7 @@ import {
   STATE_PREDICATE_REGISTRY,
   STATE_BARE_WORD_PHRASES,
   RUN_URL_RED_CODES,
-  CODE_GROUPS,
+  VERDICT_VOCABULARIES,
   emitCode,
   isKnownCode,
   parseRunUrlSection,
@@ -46,6 +46,7 @@ import {
   unregisteredCodeExports,
 } from "../../../scripts/handoff-lint-verdict.mjs";
 import * as verdictModuleForGuard from "../../../scripts/handoff-lint-verdict.mjs";
+import { CODE_GROUPS } from "../../../scripts/vocab-registry.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXDIR = path.join(__dirname, "fixtures", "handoff-lint");
@@ -132,15 +133,30 @@ eq(CLEARING_RED_CODES, ["clearing-residual-unregistered"], "clearing RED codes a
 eq(CLEARING_ENV_CODES, ["deferred-registry-unavailable"], "clearing env codes are exactly one");
 assert(REQUIRED_WORKFLOWS.includes("ci") && REQUIRED_WORKFLOWS.includes("ship-gate"), "required workflow set carries the blocking gates");
 assert(!REQUIRED_WORKFLOWS.includes("native-smoke"), "native-smoke is not a required gate (load-only matrix)");
-eq(Object.keys(CODE_GROUPS).sort(), ["clearingEnv", "clearingRed", "pendingReason", "runUrlRed", "stackAdvisory", "stackEnv", "stackRed", "stackStructuralRed", "statePending", "stateRed", "verificationUnavailable"], "every governed vocabulary is registered in CODE_GROUPS (no orphan constant)");
-for (const k of Object.keys(CODE_GROUPS)) {
-  assert(Array.isArray(CODE_GROUPS[k]) && CODE_GROUPS[k].length > 0, "CODE_GROUPS." + k + " is a non-empty array");
-  for (const c of CODE_GROUPS[k]) assert(isKnownCode(c), "isKnownCode(" + c + ") is true");
+// ADR-0100 D2: the cross-module registry (scripts/vocab-registry.mjs) is the
+// single declaration. Its `verdict` group holds the verdict module's governed
+// export NAMES; the module itself owns the arrays (registry stays zero-import).
+eq(Object.keys(CODE_GROUPS).sort(), ["anchors", "evalIntegrity", "verdict"], "the registry is grouped per governed module (ADR-0100 D2)");
+eq(Object.keys(CODE_GROUPS.verdict).sort(), ["clearingEnv", "clearingRed", "pendingReason", "runUrlRed", "stackAdvisory", "stackEnv", "stackRed", "stackStructuralRed", "statePending", "stateRed", "verificationUnavailable"], "every verdict vocabulary is registered in the verdict group (no orphan constant)");
+const verdictCodeExportNames = Object.keys(verdictModuleForGuard).filter((k) => /_CODES$/.test(k) && Array.isArray(verdictModuleForGuard[k])).sort();
+eq(Object.keys(CODE_GROUPS.verdict).map((k) => CODE_GROUPS.verdict[k]).sort(), verdictCodeExportNames, "the registry verdict names are exactly the module *_CODES exports (registry<->module lock)");
+for (const k of Object.keys(CODE_GROUPS.verdict)) {
+  const name = CODE_GROUPS.verdict[k];
+  const arr = verdictModuleForGuard[name];
+  assert(Array.isArray(arr) && arr.length > 0, "CODE_GROUPS.verdict." + k + " resolves to a non-empty array export " + name);
+  for (const c of arr) assert(isKnownCode(c), "isKnownCode(" + c + ") is true");
 }
+eq(VERDICT_VOCABULARIES.length, verdictCodeExportNames.length, "the local default table has one entry per governed verdict vocabulary");
+for (const n of verdictCodeExportNames) assert(VERDICT_VOCABULARIES.includes(verdictModuleForGuard[n]), "VERDICT_VOCABULARIES carries the array object for " + n);
+eq(Object.values(CODE_GROUPS.anchors).sort(), ["ANCHOR_RED_CODES", "ANCHOR_SKIP_CODES"], "the anchors group registers the enforcement-anchors vocabularies (R99 scan-outside closure)");
+eq(Object.values(CODE_GROUPS.evalIntegrity), ["SHIP_OVERRIDE_REASON_CODES"], "the evalIntegrity group registers the eval-integrity vocabulary (R99 scan-outside closure)");
 assert(isKnownCode("ref-unavailable") && isKnownCode("stale-capture") && !isKnownCode("made-up-code"), "isKnownCode distinguishes governed codes from invented ones");
 // Vocabulary guard on the REAL module namespace (anchor:vocab-guards production
-// consumption): every exported `*_CODES` array must be registered in CODE_GROUPS.
-eq(unregisteredCodeExports(verdictModuleForGuard), [], "every exported *_CODES array is registered in CODE_GROUPS (production guard of record)");
+// consumption): every exported `*_CODES` array must be registered.
+eq(unregisteredCodeExports(verdictModuleForGuard), [], "every exported *_CODES array is registered (production guard of record; bare default table)");
+eq(unregisteredCodeExports(verdictModuleForGuard, VERDICT_VOCABULARIES), [], "the explicit verdict registry also finds zero unregistered exports");
+eq(unregisteredCodeExports({ ...verdictModuleForGuard, FAKE_CODES: [] }, VERDICT_VOCABULARIES), ["FAKE_CODES"], "the guard names an injected unregistered export (per-module falsification unit case)");
+
 // The guard itself: an out-of-vocabulary code cannot be emitted (R3 negative case).
 let guardThrew = false;
 try { emitCode(RUN_URL_RED_CODES, "made-up-code"); } catch (e) { guardThrew = /not in its vocabulary/.test(String(e.message)); }
