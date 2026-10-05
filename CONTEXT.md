@@ -1842,3 +1842,26 @@ deferred registry `pending_anchors` 字段挂接锚 ID：runner 仍执行探针�
 
 ### Dissolved Stack（溶栈声明）
 Stack 行 land 后变体：GitButler 元素已不可解的分支以 dissolved 形态登记——ref 缺失即核验 GREEN，ref 复活即 declaration-fact-conflict，ref 在但空=非溶栈。_Avoid_: 残留 but-id 假核验；空 ref 冒认 dissolved。来源：R98 T1 语法面。
+
+## Grill Round 99 — Terms (ADR-0100)
+
+### Vocabulary Registry（词表注册表）
+`scripts/vocab-registry.mjs`——纯数据叶（零 import、Object.freeze）逐模块分组 `{verdict, anchors, evalIntegrity, ...}` 登记全部受治 `*_CODES` 词表。受治模块不回 import 注册表（单向依赖零循环）。_Avoid_: 注册表寄居判定核；注册表内封闭 modules 清单。来源：R99 D-002。
+
+### Governed Scan Surface（受治扫面）
+薄壳 glob `scripts/*.mjs` 顶层（不递归）动态 import 出的命名空间集合——vocab-guards 逐模块断言的靶面。_Avoid_: 手写 modules 清单；递归入域（tau/ 不入域）。来源：R99 D-002。
+
+### Closed Exclusion List（封闭排除清单）
+扫面排除项的封闭清单，判据 = 「无法命名空间注入的文件」（`.ts`/`.py` 等），非「fixture」措辞。_Avoid_: 用「fixture」措辞混同；排除项漂移出 RED（降级 info）。来源：R99 D-002。
+
+### Per-Module Falsification（逐模块证伪）
+probeVocabGuards 对受治模块集每个命名空间各注入假导出断言点名；fixture 模块枚举与生产枚举同源。_Avoid_: 代表模块抽样注入；fixture 验的面 ≠ 生产扫的面。来源：R99 D-002。
+
+### Top-Level Zero-Effect Surface（顶层零副作用受治面）
+glob + import 会执行扫面内 .mjs 顶层代码；受治模块顶层只准声明，禁 I/O 与副作用——否则枚举器成新故障面。_Avoid_: 受治模块顶层跑副作用；枚举器自伤误归因为词表 RED。来源：R99 D-002 立法项。
+
+### Probe-Orphan Coverage（探针无孤儿覆盖）
+反向覆盖断言：probe 模块导出无孤儿探针（正向锚→probe 可解析已由自指钉①覆盖，此处补反向）。_Avoid_: 探针表漂移无人察觉。来源：R99 D-001 顺手段落。
+
+### Three-Pin Adversarial Drill（三钉对抗演练）
+一组对抗路径逐条验证——探针名伪造 → 坐席伪造等（HN 配额腾挪 loophole 对应物）；结果只呈报，发现逃逸路径须具名申报不静默。_Avoid_: 演练结果静默；逃逸路径不申报。来源：R99 D-001 顺手段落。
