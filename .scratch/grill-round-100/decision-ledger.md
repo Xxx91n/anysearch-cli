@@ -49,3 +49,26 @@
   3. 禁止以「读取方豁免校验」方向修（B 案形态）；禁止删改既有 declaration-fact-conflict 回弹断言方向。
   4. reanchor 脚本是降摩擦配套，不替代义务立法本身。
   5. 沿账不扩：本票不修 closeout 外其他文档类型；审计末笔绑点扩展不改动既有栈内验证义务（双段并存）。
+
+---
+
+## D-003 — ADR-0101 滤尺条文形态（fails 必填 / tier 字段+互斥 / sunset 义务挂收口半机检 / fraud-vs-style 由 tier 承载 + 四精化）
+
+- **状态**：current
+- **原问题**：Q3 — ADR-0101 封顶滤尺条文形态三子项：(a) kill-oracle 机器残余（A=schema 必填 fails 字段 / B=纯人审 / C=lint 谓词验真实性）；(b) 具名登记降级 info 居留位（A=锚条目 tier:red|info / B=deferred-registry documented_anchors / C=ADR 附录）；(c) sunset 退役判据形态（A=义务挂收口一行账 / B=纯条文 / C=全自动日落）。atomcode 深调后修正呈报，用户答「采纳」。
+- **原回答原文**：「采纳」（对修正版 Q3：A+A+A+四精化——fails 条件必填+存量 5 锚回填回审；tier 默认 red 零迁移+pending_anchors∩tier:info=RED 互斥立法；sunset 只计生产 finding 半机检；fraud-vs-style 由 tier 承载 style 上限 info 档）。
+- **规范化需求**：
+  1. **`fails` 条件必填字段**：anchors.json schema 加必填 `fails`——机器验「字段存在非空+指向封闭具名故障类词表」，「故障真用户可见」留 ADR 准入人审（Meyer 相对性：存在性+指向性可机检、真实性不可机检）。**存量 5 锚回填**——全过一遍自家滤尺，某锚指不出故障即发现（滤尺回审首演）。
+  2. **`tier: "red"|"info"` 字段**：默认 red→5 锚零迁移（Semgrep 旧值映射先例）；info 锚仍跑探针（观察不缺席=Coverity Audit 收容档先例）；档迁移须立法痕迹（ADR/账本挂账）。
+  3. **互斥立法**：锚 ID 不得同时在 `pending_anchors` 且 `tier:"info"`——否则「坐席被 sunset 摘除、关票时 runner 升级不存在的锚」状态机漏洞（坐席 loophole 镜像）；runner 遇组合直接 RED（fail-closed，`anchor-unresolvable` 同型）。
+  4. **sunset 义务挂收口**：每轮 closeout claims 段加「锚活性一行账」（各锚生产 finding 计数/距上次真 RED 轮数），**只计生产 finding，fixture kill 不算活性证据**（fixture kill=探针健康检查非活性；计入则判据自毁）；半机检——行存在性+数值与账本一致可机验（ratchet-recount 同构），「连续 N 轮」归因留人审（快照读数+活查裁断分级）；N 值立法不定、首适用时裁。
+  5. **退役阶梯**：red→info→注册表摘除，全程走 schema（ESLint deprecated/replacedBy 先例——退役状态进 schema 不进外部文件）+立法痕迹。
+  6. **fraud-vs-style 由 tier 承载**：style 语义检查器准入上限=info 档（阻断位只给已证明指向真实缺陷的检查器——ESLint meta.type 三分/Error Prone vet/Block 位 highest-confidence 先例）。
+  7. **处死入账**：B（deferred-registry 塞终态降级=在升级通道表寄生降级通道，比特判更违 Avoid）/ C（只入 ADR 附录=运行时判定输入入史料=装饰）/ 全自动日落（N 无机判准）/ 纯条文 sunset（橡皮图章化实证）。
+- **显式约束/负向需求**：
+  1. `fails` 指向的「具名故障类」须封闭词表（与 vocab-registry 纪律同构），禁自由文本。
+  2. 禁止把人读描述（constraint 散文）当机器判定位（labels/annotations 二分）。
+  3. tier 迁移（red↔info、摘除）每次须立法痕迹——禁静默调档。
+  4. sunset 一行账禁把 fixture kill 计入活性。
+  5. N 值本轮不定——立法只立机制与裁断人位，数值留首次适用裁定。
+  6. 沿账不扩：本票不动 pending_anchors 既有坐席语义（其修法归 cohesive 顺手项一，另裁）。
