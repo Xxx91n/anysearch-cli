@@ -94,3 +94,25 @@
   3. 禁运行模块证伪词表存在性（AST 静态唯一通道）。
   4. 排除清单准入仍须具名条目+AST 证据链，禁 AST 结果直写清单（条目是立法痕迹）。
   5. 沿账不扩：tau/*.py 不入域（非 .mjs）；AST 判定域不动深层语句（只顶层）。
+
+---
+
+## D-005 — R100 票序簿记（T0 critical-path 独立栈先行 / ADR-0101 粒度降格 / T2=3 PR 切片 / T3 并入 PR-C / T4 活链 Stack）
+
+- **状态**：current
+- **原问题**：Q5 — R100 票序与簿记结构收官裁。候选：T0 定锚+绿门清偿（land 授权窗具名）→T1 ADR-0101 七 Decision+CONTEXT 词条→T2 八步序实现→T3 簿记→T4 收口。atomcode 深调后修正呈报，用户答「采纳」。
+- **原回答原文**：「采纳」（对修正版 Q5：T0=goal.md+绿门修复独立栈 r100-green-repair critical-path 先行（授权→push→CI→land→pull→重锚→复跑绿→才开 T1）；T1=ADR-0101（D1 降 Context/D4 拆判例入 Consequences/净形~5 Decision）+词条；T2=3 PR（A schema 迁移/B 检测层/C 义务步+T3 并入）；T4 收口锚活性首行+活链 Stack+land 后同会话重锚）。
+- **规范化需求**：
+  1. **T0=critical-path 死锁清偿**：dissolved 改述的 GREEN 依赖 origin ref 缺席（lint :609-615）——改述不 land 则永不兑现；绿门修复独立栈 `r100-green-repair`：owner 授权→push→CI 观测→land→`but pull`→同会话重锚 commit→ship-gate 复跑绿——**此后才开 T1**（stop-the-line 先例：红基上落的立法/实现 commit 验证断言语义全退化）。绿门修复不立新 ADR（instance 清偿+已立法执行非新决策）。
+  2. **ADR-0101 粒度修正**：判据=「能否被独立 supersede」——D1（全做形态记账）降为 Context；D4（orphaned 谓词立法属 D-002 T0 轨）拆两半：谓词本体归 T0 轨执行，滤尺首演判例（equivalent-mutant 处死 B/C 候选）入 Consequences；D2/D3/D5/D6/D7 合为 Decision 面。净形≈5 Decision+Context+判例。立法文本可在 T0 授权等待期并行起草，commit/land 不得早于绿门修复。
+  3. **T2=3 PR 切片**（expand-contract 对位，真实依赖仅两链）：PR-A=anchors.json 一次迁移（fails 回填+tier+互斥+坐席结构化+双读+消费方，expand+migrate）；PR-B=检测层（orphaned 谓词+fixture+RED 码扩表 ∥ tau 递归+AST 前门，可再拆 B1/B2）；PR-C=义务步（§5 绑点+sunset 一行账+reanchor 脚本+T3 簿记并入，contract 步 land 后置）。串行链：`fails→tier→sunset` schema 演化链 ∥ `T0-land→{orphaned,§5,reanchor}` land 后置链；schema 与消费方同 PR；断言数每 PR 内独立只升不降（463/394 基数）。
+  4. **T3 簿记**并入 PR-C：CHANGELOG r100 分行+deferred-registry defer-r72 触发器修订注记+ADR index 再生成（101 件）+AGENTS.md 指向式摘要（不复述）。
+  5. **T4 收口**：轮报+verbatim claims（含锚活性一行账首行 `锚活性 @ R100: anchor:<id> prod-findings=N last-real-RED=Rxx | …`——行存在性+数值一致走 ratchet-recount 同构机验）+R101 任务书+三态+clearing。
+  6. **本轮 closeout Stack 行=活链，禁预写 dissolved**（dissolved 未来日期即 RED——声明不能写时为真）；写活链三元素+PENDING: stack-unpushed（R99 先例），land 后同会话重锚=义务瓣立法痕迹首演。若 T4 时 land 已完成则直接写 dissolved——判据是写行时刻的事实。
+- **显式约束/负向需求**：
+  1. 绿门修复独立成栈但**不独立成立法票**。
+  2. T1 commit/land 不得早于 T0 绿门修复落地（红基禁立法落账）。
+  3. PR-C 义务步不得提前混入 PR-A/B（contract 步后置纪律）。
+  4. closeout Stack 行禁止为省事预写 dissolved——写时假声明即自造失效。
+  5. land/push 仍须 owner 授权窗——T0 授权窗须开工即具名申请。
+  6. 沿账不扩：approval-channel 本轮仍 deferred（只修触发器注记）；no-pr·unpublished 语义不动。
