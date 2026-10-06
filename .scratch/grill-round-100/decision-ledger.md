@@ -72,3 +72,25 @@
   4. sunset 一行账禁把 fixture kill 计入活性。
   5. N 值本轮不定——立法只立机制与裁断人位，数值留首次适用裁定。
   6. 沿账不扩：本票不动 pending_anchors 既有坐席语义（其修法归 cohesive 顺手项一，另裁）。
+
+---
+
+## D-004 — cohesive 三顺手项参数（坐席 Addendum 三件套+双读迁移 / tau 递归+AST 前门耦合+RED 拆双支 / 顺带约束）
+
+- **状态**：current
+- **原问题**：Q4 — cohesive 三顺手项参数。(Q4-a) 坐席 loophole Addendum 修法：A=三件套（结构化条目+masking info+限期 RED）/B=只加 info/C=只设限期/D=删坐席通道；(Q4-b) tau 递归+AST 机检耦合：A=AST 静态判定作排除清单机械前门/B=两票解耦/C=tau 目录级排除/D=不递归。atomcode 深调后修正呈报，用户答「采纳」。
+- **原回答原文**：「采纳」（对修正版 Q4：A+A+三精化——坐席条目结构化 {anchor,reason,seated_at,review_by}+masking info+到期 RED+双读窗口迁移（旧串 seated_at:null 迁移日设限无豁免）；tau 递归 glob scripts/**/*.mjs+AST 只认 export const X_CODES=<字面> 形状+RED 拆双支（{可验证声明∧副作用}→RED；{存在性不可机验}→独立具名 RED）+{副作用∧无codes}→具名排除+info+tau-scan.mjs 排除通道首演；纯静态禁运行模块+typescript API+互斥沿 D-003）。
+- **规范化需求**：
+  1. **坐席 Addendum（修 ADR-0099 D4 既有层）**：pending_anchors 裸字符串→结构化条目 `{anchor,reason,seated_at,review_by}`（限期入 schema 非散文）；runner 对「open seat 下探针报 no-kill」出具名 masking info 行（漏洞从隐形降级升每跑可见）；seat 到期未关票/未具名续期→RED（限期=裁决日禁永悬——unicorn expiring-todo 先例：到期报 error 非 info；CODEOWNERS 反证：事件驱动失效须配时钟兜底）。
+  2. **坐席迁移兼容**：双读窗口——runner 消费「结构化条目∪旧裸字符串」并集；旧串视同 `seated_at:null`→**迁移日设限**（存量不豁免到期 RED）；写端单写，旧形态被消费一次后改写，禁长期双写漂移。
+  3. **tau 递归+AST 前门耦合**：glob 扩为 `scripts/**/*.mjs`（递归入域）；AST 静态判定作排除清单机械前门——三分类：①{AST 可验证 `export const X_CODES=<字面>` 声明 ∧ 顶层副作用}→RED（词表存在但不可机验，fail-closed）；②{词表存在性不可静态验证}（动态计算导出 `buildCodes()`/getter/运行时组装）→**独立具名 RED/候选**（与副作用判定解耦）；③{副作用 ∧ 无 codes}→具名排除候选+info 行（封闭排除清单仍须具名条目，AST 供准入证据）。
+  4. **AST 违规集白名单收敛**：顶层 expression statement / side-effect import / top-level await / 非白名单 initializer call（白名单=Object.freeze/RegExp/字面构造类）；误报经济学——执法语境用窄判面+info 逃生门（webpack 黑名单默认只适合优化语境；ESLint no-unassigned-import/ruff INP001/PEP 420 窄判面先例；Rolldown 2026 激进收窄回归=假阴性代价≫假阳性）。
+  5. **tau-scan.mjs 排除通道首演**：顶层 spawn launcher（import 即起子进程）=side-effect import+顶层 expression statement 双命中→具名排除条目（判据=无法命名空间注入，非 fixture 便利）。
+  6. **顺带约束**：AST 判定纯静态禁运行模块（运行=引入同款副作用自相矛盾）；解析器用 workspace 既有 typescript API（packages pin ^5.6.0）不引新依赖；互斥立法沿 D-003（pending_anchors∩tier:info=RED，结构化后照条款生效）。
+  7. **处死入账**：B（只加 info=可见不致命，实证装饰锚存活）/C（无结构化无从机验到期）/D（删通道违 D4 语义逼向暗门）；递归侧 B（解耦=每次扩域变人工裁定队列不可扩展）/C（目录级排除重开 ADR-0100 D3 封死的口子）/D（不递归=覆盖缺口制度化）。
+- **显式约束/负向需求**：
+  1. masking info 行须具名（哪个坐席掩盖哪个锚），禁泛泛一行。
+  2. 坐席到期语义=RED 非 info（unicorn 先例）；到期计算错宁可 fail-loud 不可静默有效（K8s grant-born-expired 教训）。
+  3. 禁运行模块证伪词表存在性（AST 静态唯一通道）。
+  4. 排除清单准入仍须具名条目+AST 证据链，禁 AST 结果直写清单（条目是立法痕迹）。
+  5. 沿账不扩：tau/*.py 不入域（非 .mjs）；AST 判定域不动深层语句（只顶层）。
