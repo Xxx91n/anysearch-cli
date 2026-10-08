@@ -1,0 +1,62 @@
+{
+ "schema": "anysearch/closeout-claims@1",
+ "round": 100,
+ "claims": [
+  {
+   "id": "r100-t1-adr-title",
+   "kind": "verbatim",
+   "claim": "ADR-0101 title sentence byte anchor",
+   "file": "docs/adr/0101-architecture-grill-round-100-meta-validation-cap.md",
+   "text": "# ADR-0101: Grill Round 100 — 元验证封顶（封顶滤尺三交集 + 修层/新层判据 + 坐席 Addendum + tau 递归/AST 前门 + deferred 触发器）",
+   "reason": "initial-anchor: R100 meta-validation-cap legislation title; audit in .scratch/grill-round-100/reports/2026-10-08-report.md",
+   "reauthored": 0
+  },
+  {
+   "id": "r100-t1-context-terms",
+   "kind": "verbatim",
+   "claim": "CONTEXT R100 terms zone heading byte anchor",
+   "file": "CONTEXT.md",
+   "text": "## Grill Round 100 — Terms (ADR-0101)",
+   "reason": "initial-anchor: glossary zone heading; audit in .scratch/grill-round-100/reports/2026-10-08-report.md",
+   "reauthored": 0
+  },
+  {
+   "id": "r100-t2-orphaned-predicate",
+   "kind": "verbatim",
+   "claim": "stack-orphaned-by-land vocabulary registration anchor",
+   "file": "scripts/handoff-lint-verdict.mjs",
+   "text": "stack-orphaned-by-land",
+   "reason": "initial-anchor: STACK_RED_CODES fourth member (ADR-0101 D6 companion); audit in .scratch/grill-round-100/reports/2026-10-08-report.md",
+   "reauthored": 0
+  },
+  {
+   "id": "r100-t2-excluded-paths-premiere",
+   "kind": "verbatim",
+   "claim": "EXCLUDED_PATHS premiere entry anchor",
+   "file": "scripts/vocab-scan.mjs",
+   "text": "path: \"tau/tau-scan.mjs\"",
+   "reason": "initial-anchor: named path exclusion premiere (ADR-0101 D6); audit in .scratch/grill-round-100/reports/2026-10-08-report.md",
+   "reauthored": 0
+  },
+  {
+   "id": "r100-t2-tau-recursion",
+   "kind": "symbol",
+   "claim": "vocab-scan enumeration recursion wired",
+   "file": "scripts/vocab-scan.mjs",
+   "tokens": ["enumerateScriptFiles", "classifyTopLevel", "EXCLUDED_PATHS", "ast-top-level-effect", "ast-codes-unverifiable", "ast-excluded-codes"]
+  },
+  {
+   "id": "r100-t4-anchor-activity",
+   "kind": "anchor-activity",
+   "claim": "Sunset Ledger premiere line — five anchors' production-finding counts re-derived verbatim against the closeout doc",
+   "file": ".scratch/grill-round-100/handoffs/round-100-closeout.md",
+   "expect": {
+    "anchor:bare-word-single-source": { "prod_findings": 0, "last_real_red": null },
+    "anchor:predicate-registry": { "prod_findings": 0, "last_real_red": null },
+    "anchor:ratchet-recount": { "prod_findings": 0, "last_real_red": null },
+    "anchor:reuse-pointer": { "prod_findings": 0, "last_real_red": null },
+    "anchor:vocab-guards": { "prod_findings": 0, "last_real_red": null }
+   }
+  }
+ ]
+}
