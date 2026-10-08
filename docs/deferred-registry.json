@@ -1251,12 +1251,14 @@
    "owner": "anysearch-platform",
    "opened_at": "2026-10-08",
    "review_cadence": "R100 收尾授权窗即处理（push/land 授权序列）",
-   "status": "open",
-   "evidence": "R100 交付栈（r100-grill-ledger + r100-meta-cap-impl 串行双道）待 owner 授权窗 push/land；坐席覆盖 Stack 行声明道 r100-meta-cap-impl——push 后未 land 窗口期 clearing 腿 residual 覆盖位（defer-r98 先例）。",
+   "status": "closed",
+   "evidence": "R100 交付栈（r100-grill-ledger + r100-meta-cap-impl 串行双道）待 owner 授权窗 push/land；坐席覆盖 Stack 行声明道 r100-meta-cap-impl——push 后未 land 窗口期 clearing 腿 residual 覆盖位（defer-r98 先例）。 | 关闭：r100-grill-ledger+r100-meta-cap-impl 双道整栈 ff-land 上 origin/main（land tip 176e3afd），ref 随 land 注销，栈清算义务回落核验——栈已空；重锚 commit 25704ff2 随 land 闭环。",
    "monitoring_channel": "ship-gate handoff-lint leg clearing sub-leg",
    "covers": [
     "r100-meta-cap-impl"
-   ]
+   ],
+   "closed_by": "owner-authorized but land --whole-stack (R100 T4 session)",
+   "closed_at": "2026-10-08"
   }
  ]
 }
