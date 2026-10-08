@@ -1,7 +1,9 @@
 # Handoff — Grill Round 99 → R100 收口
 
-Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：
-  r99-vocab-expansion → ruy (`e9b888d4` @ 2026-10-05) → zyk (`16205b9d` @ 2026-10-05) → usr (`9ffdfc47` @ 2026-10-05) → pzr (`759fe259` @ 2026-10-05) → zst (`1d759e81` @ 2026-10-05) → qlx (`e5d40d8d` @ 2026-10-05) —— 即 `r99-vocab-expansion` tip；未 push（无 origin ref）、未 land、未 tag、未 publish
+Stack（dissolved @ 2026-10-06）—— 交付栈已于 2026-10-06 land 上 `origin/main`（land 重写 SHA：capture 时值与 but-ID 随 land 注销；`origin/r99-vocab-expansion` ref 自始未建、注销后仍缺席；未 tag、未 publish），链为 capture 时值留作历史定位不再作 but ID / SHA 解析：
+  r99-vocab-expansion → ruy (`e9b888d4` @ 2026-10-05) → zyk (`16205b9d` @ 2026-10-05) → usr (`9ffdfc47` @ 2026-10-05) → pzr (`759fe259` @ 2026-10-05) → zst (`1d759e81` @ 2026-10-05) → qlx (`e5d40d8d` @ 2026-10-05)
+
+<!-- re-anchor: 2026-10-08 R100 T0 绿门清偿——Stack 行按 dissolved 变体改述：closeout 写时栈未 land、声明为真；2026-10-06 land 重写 SHA 后六枚 capture 时值成死引用（sha-not-commit @ CI run 37344186467），but-ID 随 land 注销。capture 值保留为散文史料逐条对应原条目；`origin/r99-vocab-expansion` 缺席经 ls-remote 实测为真。 -->
 
 ## 已完成
 
