@@ -4,6 +4,26 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — ADR-0101 r100: 元验证封顶（封顶滤尺三交集 + 修层/新层判据 + 坐席 Addendum + tau 递归/AST 前门 + deferred 触发器）
+
+### Added
+
+- **执行锚 schema v2（T2-A）**：`docs/enforcement-anchors.json` 升 v2——`failure_classes` 封闭词表 + 每锚必填非空 `fails` ⊆ 词表（Kill Oracle：锚必须具名其防的用户可见产品故障类，禁止自由文本）+ `tier:"red"|"info"`（Audit Tier，观测不缺席）；`anchor-fails-empty` / `anchor-fails-unregistered` / `anchor-tier-invalid` 三新 RED。
+- **坐席结构化 + 限期 + masking 具名（T2-A）**：`pending_anchors` 接受 `{anchor,reason,seated_at,review_by}` 结构化条目与旧裸字符串双读——裸串迁移日设限 `LEGACY_SEAT_REVIEW_BY`（存量不豁免到期）；`anchor-seat-expired` / `anchor-seat-malformed` / `anchor-seat-info-conflict`（pending_anchors ∩ info 互斥）三新 RED；开放坐席下 no-kill 出具名 `masking-surfaced` info 行（哪个坐席掩盖哪个锚行级点名）。
+- **stack-orphaned-by-land 谓词（T2-B）**：STACK_RED_CODES 第四元——closeout 已在 origin/main ∧ 携活链 ∧ 栈 ref 缺失 → RED（land 溶栈后的活链尸体捕获：R99 `sha-not-commit` 漏检类具名）；`git ls-tree origin/main` 采 docOnMain 事实，未采集降级 env-PENDING 不猜边；3 成对 fixture（red / inflight deny / still-pushed deny）。
+- **tau 递归 + AST 前门（T2-B）**：`enumerateScriptFiles` 扩为 `scripts/**/*.mjs` 递归（`scripts/tau/` 入域）；`scripts/top-level-effects.mjs` 纯静态三分类（typescript API 经 packages/store createRequire，零新依赖、零顶层副作用）——①codes∧副作用→`ast-top-level-effect` 拒注入 RED / ②`*_CODES` 非字面初始化→`ast-codes-unverifiable` / ③副作用∧无 codes→具名排除候选 info；`EXCLUDED_PATHS` 封闭具名排除清单首条 `tau/tau-scan.mjs`（spawn 启动器不可命名空间注入），排除路径携 codes→`ast-excluded-codes`。
+- **post-land 双绑点义务（T2-C）**：audit-checklist §5 扩第二勾——land 同会话 post-land 重验（main push 三跑绿 ∧ 落树 ship-gate 复跑）∧ closeout 改述机械位 `scripts/handoff-reanchor.mjs`；锚活性一行账 `kind:"anchor-activity"` claim 类别（半机检：expect 账本重导出 closeout 行逐字比对，fixture kill 不入账）。
+
+### Fixed
+
+- **R99 绿门清偿（T0）**：`.scratch/grill-round-99/handoffs/round-99-closeout.md` Stack 行六死 SHA 改述 `Stack（dissolved @ 2026-10-06）`（capture 留散文史料 + re-anchor 注记）——main tip `992412d6` 红→`8d1854e2` 绿，`r100-green-repair` 独立栈 ff-land（ref 随 land 注销），同会话重锚 commit 落档；候选 CI 双跑绿 + 落树三跑（ci/ship-gate/native-smoke）绿 + 本地 ship-gate 九步复绿实测。
+
+### Docs
+
+- **ADR-0101 立法（T1）**：五 Decision——D2 封顶滤尺三交集（fails+sunset+fraud-vs-style）/ D3 修层新层判据 / D5 坐席 Addendum / D6 tau 递归+AST 前门 / D7 负向边界+deferred 触发器；Consequences 携滤尺首演判例（R99 closeout 六死 SHA=活链尸体）与 T0 引用；CONTEXT「Grill Round 100 — Terms」七词条；ADR index 再生成至 101 件。
+- **deferred-r72 触发器注记（T3）**：`defer-r72-dsh-approval-channel` carried_log 挂 R100 续债注记——「R101+ 含 deferred 前置依赖的正题开工前须先评估触发条件」（任务书 D-003④ 兑现，该条目 trigger 已满足列入 R101 立项评估候选）。
+- **AGENTS.md 扫描面摘要刷新（T3）**：递归域 + AST 前门 + schema v2 + 坐席限期四件指针化，指向 ADR-0101。
+
 ## Unreleased — ADR-0100 r99: vocab-guards 扩域至全 scripts/（逐模块注册表 + glob 顶层枚举 + 逐模块证伪）
 
 ### Added

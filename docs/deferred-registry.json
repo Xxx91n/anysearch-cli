@@ -487,6 +487,11 @@
      "at": "2026-09-30",
      "round": 92,
      "note": "R92 域外显式续债（carried, not silent）：headless 无 answerer 实证（R91 T4c）维持生效，审批交互通道维持 defer 挂账"
+    },
+    {
+     "at": "2026-10-08",
+     "round": 100,
+     "note": "R100 域外显式续债（carried, not silent）：本轮轨=元验证封顶（ADR-0101）+T0 绿门清偿+三顺手（坐席/tau递归AST/义务步）；本债 trigger=依赖已解除可前置，任务书 D-003④ 兑现——R101+ 含 deferred 前置依赖的正题开工前须先评估触发条件（本条目 trigger 已满足，R101 立项评估候选）"
     }
    ]
   },

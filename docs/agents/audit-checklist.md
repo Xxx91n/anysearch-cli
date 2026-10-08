@@ -21,6 +21,7 @@
 ## 5. 审计签字硬项（R86 T1 立法）
 
 - [ ] **签字 commit 上 `node scripts/ship-gate.mjs --quick` exit 0**——签认 commit 的当次工作树必须实测 quick 门绿；「gate 跑了但没人等它」属失守模式（审计窗踩红签认先例），签字即对签认时点 gate 状态负责。
+- [ ] **land 后同会话 post-land 双绑点（R100 / ADR-0101 D3 扩）**——交付栈 land 上 origin/main 的同一会话内完成两件：① post-land 重验——main push 三跑（ci / ship-gate / native-smoke）绿 ∧ 落树本地 ship-gate 复跑绿；② closeout 改述——Stack 行改述为 `Stack（dissolved @ <land 日>）` 形态并记 land 后 main SHA（机械位 `node scripts/handoff-reanchor.mjs <closeout>`），capture 值留散文史料。签字对双绑点负责：pre-land 树 gate 绿 ∧ post-land main tip 复验绿，缺一不签字（R99 绿门失守形态：`sha-not-commit` 漏检的活链尸体）。
 
 ## ADR-0034 Answer Attribution Layer
 

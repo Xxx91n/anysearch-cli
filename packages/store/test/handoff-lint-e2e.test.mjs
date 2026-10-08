@@ -8,9 +8,11 @@
 // boundary is stubbed, so a shape drift between shell and core goes red here.
 // The same fixture set (fixtures/handoff-lint) is shared with the unit test.
 // Exit non-zero on any failure.
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   runHandoffLint,
   parseButStatusIds,
@@ -80,6 +82,13 @@ function makeSpawnSync(env) {
       if (args[0] === "cat-file" && args[1] === "-t") {
         const t = (g.commitObjects || {})[args[2]];
         return t ? out(t) : err();
+      }
+      if (args[0] === "ls-tree" && args[1] === "origin/main") {
+        const m = g.onMainDocs;
+        if (m === undefined || m === null) return err();
+        const rel = args[args.length - 1];
+        if (!Object.prototype.hasOwnProperty.call(m, rel)) return err();
+        return m[rel] === true ? out("f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0 blob\t" + rel) : out("");
       }
       if (args[0] === "remote" && args[1] === "get-url") return env.repo ? out("git@github.com:" + env.repo + ".git") : err();
       return err();
@@ -395,7 +404,7 @@ eq(newestCloseoutTargets([
   const seated = runEnforcementAnchors({
     root,
     deps: {
-      registry: { ok: true, anchors: [{ id: "anchor:ratchet-recount", probe: "probeRatchetRecount" }] },
+      registry: { ok: true, failureClasses: ["falsified-claims"], anchors: [{ id: "anchor:ratchet-recount", probe: "probeRatchetRecount", fails: ["falsified-claims"], tier: "red" }] },
       deferred: { ok: true, pendingAnchors: ["anchor:ratchet-recount"], covers: [], pendingPredicates: [] },
     },
   });
@@ -438,9 +447,10 @@ eq(newestCloseoutTargets([
   // would-be RED into a non-blocking skip - this is the KNOWN escape while the
   // seat is open (ADR-0099 D4: observed, never blocking). The drill asserts both
   // halves: open seat holds the decorative anchor; a CLOSED seat re-reddens it.
-  const forgedSeat = runEnforcementAnchors({ root: path.join(root, "nonexistent-root-dir"), deps: { registry: { ok: true, anchors: [{ id: "anchor:dead", probe: "probeRatchetRecount" }] }, deferred: { ok: true, pendingAnchors: ["anchor:dead"], covers: [], pendingPredicates: [] } } });
+  const forgedSeat = runEnforcementAnchors({ root: path.join(root, "nonexistent-root-dir"), deps: { registry: { ok: true, failureClasses: ["falsified-claims"], anchors: [{ id: "anchor:dead", probe: "probeRatchetRecount", fails: ["falsified-claims"], tier: "red" }] }, deferred: { ok: true, pendingAnchors: ["anchor:dead"], covers: [], pendingPredicates: [] } } });
   drill.push(["forged-seat-holds-decorative-open", forgedSeat.exitKind === "pass"]);
-  const forgedSeatClosed = runEnforcementAnchors({ root: path.join(root, "nonexistent-root-dir"), deps: { registry: { ok: true, anchors: [{ id: "anchor:dead", probe: "probeRatchetRecount" }] }, deferred: { ok: true, pendingAnchors: [], covers: [], pendingPredicates: [] } } });
+  drill.push(["open-seat-masking-surfaced", forgedSeat.lines.some((l) => l.kind === "info" && l.msg.includes("masking-surfaced") && l.msg.includes("anchor:dead"))]);
+  const forgedSeatClosed = runEnforcementAnchors({ root: path.join(root, "nonexistent-root-dir"), deps: { registry: { ok: true, failureClasses: ["falsified-claims"], anchors: [{ id: "anchor:dead", probe: "probeRatchetRecount", fails: ["falsified-claims"], tier: "red" }] }, deferred: { ok: true, pendingAnchors: [], covers: [], pendingPredicates: [] } } });
   drill.push(["seat-closed-re-reddens", forgedSeatClosed.exitKind === "fail"]);
   const p3 = runEnforcementAnchors({ root, deps: { registry: { ok: true, anchors: null } } });
   drill.push(["forged-empty-registry", p3.exitKind === "fail"]);
@@ -456,6 +466,108 @@ eq(newestCloseoutTargets([
   assert(liveStems.length >= 3, "the production scan finds the vocabulary-bearing modules (" + liveStems.length + ")");
   const probeDetail = probesModule.probeVocabGuards({ root }).detail;
   for (const stem of liveStems) assert(probeDetail.includes(stem + ":"), "the probe injects into every production-scanned vocabulary module (same-source): " + stem);
+}
+
+// --- P. R100 (ADR-0101 D2/D5): Kill Oracle + tier + seat deadline/masking -----
+{
+  const FCV = ["falsified-claims"];
+  const reg = (anchors) => ({ ok: true, failureClasses: FCV, anchors });
+  const deadAnchor = (extra) => ({ id: "anchor:dead", probe: "probeRatchetRecount", fails: ["falsified-claims"], tier: "red", ...extra });
+  const deadRoot = path.join(root, "nonexistent-root-dir");
+  const noFails = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([{ id: "anchor:dead", probe: "probeRatchetRecount", tier: "red" }]) } });
+  assert(noFails.exitKind === "fail" && noFails.lines.some((l) => l.msg.includes("anchor-fails-empty")), "anchor-fails-empty: missing `fails` is RED (Kill Oracle)");
+  const emptyFails = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor({ fails: [] })]) } });
+  assert(emptyFails.lines.some((l) => l.msg.includes("anchor-fails-empty")), "anchor-fails-empty: an empty `fails` array is RED");
+  const badClass = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor({ fails: ["style-nit"] })]) } });
+  assert(badClass.lines.some((l) => l.msg.includes("anchor-fails-unregistered") && l.msg.includes("style-nit")), "anchor-fails-unregistered: a free-text failure class is RED (closed vocabulary)");
+  const badTier = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor({ tier: "purple" })]) } });
+  assert(badTier.lines.some((l) => l.msg.includes("anchor-tier-invalid")), "anchor-tier-invalid: an unknown tier is RED");
+  const infoTier = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor({ tier: "info" })]) } });
+  eq(infoTier.exitKind, "pass", "an info-tier anchor's no-kill is observed, never blocking");
+  assert(infoTier.lines.some((l) => l.kind === "info" && l.msg.includes("info tier")), "the info-tier no-kill is reported as an info line");
+  const infoSeat = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor({ tier: "info" })]), deferred: { ok: true, pendingAnchors: [{ anchor: "anchor:dead", reason: "r", seated_at: "2026-10-08", review_by: "2099-01-01" }], covers: [], pendingPredicates: [] } } });
+  assert(infoSeat.lines.some((l) => l.msg.includes("anchor-seat-info-conflict")), "anchor-seat-info-conflict: pending_anchors ∩ tier:info is RED (mutual exclusion)");
+  const expired = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor()]), deferred: { ok: true, pendingAnchors: [{ anchor: "anchor:dead", reason: "r", seated_at: "2026-09-01", review_by: "2026-09-02" }], covers: [], pendingPredicates: [] }, now: "2026-10-08" } });
+  assert(expired.exitKind === "fail" && expired.lines.some((l) => l.msg.includes("anchor-seat-expired")), "anchor-seat-expired: a seat past review_by is RED (Seat Deadline)");
+  assert(expired.lines.some((l) => l.msg.includes("anchor-not-consumed")), "an expired seat no longer exempts the decorative anchor");
+  const malformed = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor()]), deferred: { ok: true, pendingAnchors: [{ anchor: "anchor:dead", reason: "r" }], covers: [], pendingPredicates: [] } } });
+  assert(malformed.lines.some((l) => l.msg.includes("anchor-seat-malformed")), "anchor-seat-malformed: a structured seat lacking review_by is RED");
+  const deadSeat = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor()]), deferred: { ok: true, pendingAnchors: [{ anchor: "anchor:ghost", reason: "r", seated_at: "2026-10-08", review_by: "2099-01-01" }], covers: [], pendingPredicates: [] } } });
+  assert(deadSeat.lines.some((l) => l.msg.includes("anchor-seat-malformed") && l.msg.includes("anchor:ghost")), "a seat naming an unregistered anchor is RED (a dead seat masks intent)");
+  const held = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor()]), deferred: { ok: true, pendingAnchors: [{ anchor: "anchor:dead", reason: "awaiting consumer", seated_at: "2026-10-08", review_by: "2099-01-01", entry: "defer-x" }], covers: [], pendingPredicates: [] } } });
+  eq(held.exitKind, "pass", "a structured in-window seat never blocks");
+  assert(held.lines.some((l) => l.msg.includes("masking-surfaced") && l.msg.includes("defer-x")), "masking-surfaced names the seat entry holding the mask");
+  const legacy = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor()]), deferred: { ok: true, pendingAnchors: ["anchor:dead"], covers: [], pendingPredicates: [] }, now: "2099-01-01" } });
+  assert(legacy.lines.some((l) => l.msg.includes("anchor-seat-expired")), "a legacy string seat past LEGACY_SEAT_REVIEW_BY is RED (stock does not exempt from expiry)");
+}
+
+// --- Q. R100 (ADR-0101 D6): tau recursion + AST front gate three classes ------
+{
+  const { classifyTopLevel } = await import(pathToFileURL(path.join(root, "scripts", "top-level-effects.mjs")).href);
+  // classifyTopLevel fact layer (paired):
+  const c1 = classifyTopLevel("export const X_CODES = Object.freeze([\"a\"]);\nconst c = spawn(\"x\");\nc.on(\"close\", () => {});\n");
+  assert(c1.codes.length === 1 && c1.codes[0].name === "X_CODES" && c1.effects.length > 0, "classifier: codes ∧ effects both reported (class-① input)");
+  const c1Pure = classifyTopLevel("export const X_CODES = Object.freeze([\"a\"]);\nexport const Y_CODES = Object.freeze([\"b\"]);\n");
+  eq(c1Pure.effects.length, 0, "classifier: a pure literal module reports zero effects");
+  assert(c1Pure.codes.every((c) => c.verifiable === true), "classifier: literal vocabulary exports are verifiable");
+  const c2 = classifyTopLevel("export const X_CODES = buildCodes();\n");
+  assert(c2.codes.length === 1 && c2.codes[0].verifiable === false, "classifier: a dynamic codes export is unverifiable (class-② input)");
+  const c2lit = classifyTopLevel("const X_CODES = [\"a\"];\nexport { X_CODES };\n");
+  eq(c2lit.codes.length, 0, "classifier: re-exported const is not an `export const *_CODES` declaration");
+  const c3 = classifyTopLevel("const c = spawn(\"x\");\nc.on(\"close\", () => {});\n");
+  eq(c3.codes.length, 0, "classifier: a pure-side-effect module carries no codes (class-③ input)");
+  assert(c3.effects.length > 0, "classifier: spawn launcher reports effects");
+  const cPure = classifyTopLevel("const ROOT = path.resolve(\".\");\nconst RE = new RegExp(\"x\");\n");
+  eq(cPure.effects.length, 0, "classifier: whitelisted pure initializers (path.resolve/new RegExp) report no effects");
+  // scanVocabGuards on a synthetic root (paired): temp scripts/ tree
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "vocab-scan-"));
+  fs.mkdirSync(path.join(tmpRoot, "scripts", "tau"), { recursive: true });
+  fs.writeFileSync(path.join(tmpRoot, "scripts", "tau", "tau-scan.mjs"), "const c = spawn(\"x\");\nc.on(\"close\", () => {});\n");
+  fs.writeFileSync(path.join(tmpRoot, "scripts", "lib.mjs"), "export const helper = 1;\n");
+  const s1 = scanVocabGuards({ root: tmpRoot, load: (stem) => (stem === "lib" ? { A_CODES: ["ok"] } : {}) });
+  eq(s1.ok, true, "scan: an excluded tau launcher plus a code-free module keeps ok:true");
+  assert(s1.scanned.some((s) => s.stem === "tau/tau-scan" && s.excluded === true), "scan: the premiere exclusion entry covers tau/tau-scan.mjs under recursion");
+  // class-① on a scanned file -> RED finding, never injected
+  fs.writeFileSync(path.join(tmpRoot, "scripts", "bad.mjs"), "export const BAD_CODES = Object.freeze([\"x\"]);\nspawn(\"touch\");\n");
+  const s2 = scanVocabGuards({ root: tmpRoot, load: (stem) => { throw new Error("must never inject " + stem); } });
+  assert(s2.findings.some((f) => f.stem === "bad" && f.name === "ast-top-level-effect"), "scan: codes ∧ effects emits ast-top-level-effect RED (injection refused)");
+  assert(!s2.scanned.every((s) => s.stem !== "bad") === true || s2.scanned.some((s) => s.stem === "bad"), "scan: the flagged module is still enumerated as scanned");
+  // class-② -> RED
+  fs.writeFileSync(path.join(tmpRoot, "scripts", "dyn.mjs"), "export const DYN_CODES = SOMEWHERE_ELSE;\n");
+  const s3 = scanVocabGuards({ root: tmpRoot, load: () => ({}) });
+  assert(s3.findings.some((f) => f.stem === "dyn" && f.name === "ast-codes-unverifiable"), "scan: a dynamic codes export emits ast-codes-unverifiable RED");
+  // excluded path carrying codes -> ast-excluded-codes RED
+  fs.writeFileSync(path.join(tmpRoot, "scripts", "tau", "tau-scan.mjs"), "export const ESCAPE_CODES = Object.freeze([\"x\"]);\nconst c = spawn(\"x\");\n");
+  const s4 = scanVocabGuards({ root: tmpRoot, load: () => ({}) });
+  assert(s4.findings.some((f) => f.stem === "tau/tau-scan" && f.name === "ast-excluded-codes"), "scan: an excluded path carrying *_CODES emits ast-excluded-codes RED (exclusion legitimizes effects, never vocabulary)");
+  // nested governed module under recursion reaches the loader
+  fs.writeFileSync(path.join(tmpRoot, "scripts", "tau", "nested.mjs"), "export const NESTED_CODES = Object.freeze([\"n\"]);\n");
+  const seen = [];
+  scanVocabGuards({ root: tmpRoot, load: (stem) => { seen.push(stem); return { NESTED_CODES: ["n"] }; } });
+  assert(seen.includes("tau/nested"), "scan: a nested scripts/tau/ module is enumerated and injected under recursion");
+  // class-③ surfaces as named exclusion candidates
+  const s5 = scanVocabGuards({ root });
+  assert(Array.isArray(s5.candidates) && s5.candidates.length > 0, "scan: the live repo reports named ast-side-effect candidates");
+  assert(s5.candidates.some((c) => c.stem === "ship-gate"), "scan: ship-gate.mjs is a named exclusion candidate (top-level CLI behavior)");
+  assert(s5.candidates.some((c) => c.stem === "tau/tau-scan") === false, "scan: the excluded premiere entry is not re-reported as a candidate");
+  // live repo: zero class-①/② findings (all vocab modules injectable & literal)
+  assert(s5.ok === true, "live scan stays green under recursion + AST gate");
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+
+  // handoff-reanchor (ADR-0101 T2-C): mechanical dissolved rewrite, paired.
+  const rx = fs.mkdtempSync(path.join(os.tmpdir(), "reanchor-"));
+  const target = path.join(rx, "round-99-closeout.md");
+  fs.writeFileSync(target, "# Handoff（夹具）\n\nStack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：\n  r-x-stack → aaa (`aaaaaaa1` @ 2026-10-02)\n\n## 下一轮候选\n\n- n/a\n");
+  const ra = spawnSync("node", [path.join(root, "scripts", "handoff-reanchor.mjs"), target, "--date", "2026-10-06", "--main-sha", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"], { encoding: "utf8" });
+  eq(ra.status, 0, "handoff-reanchor rewrites a live Stack line");
+  const rew = fs.readFileSync(target, "utf8");
+  assert(rew.includes("Stack（dissolved @ 2026-10-06）"), "the rewrite carries the dissolved form with the land date");
+  assert(rew.includes("aaaaaaa1"), "capture values survive as historical prose");
+  assert(rew.includes("re-anchor") && rew.includes("deadbeef"), "the re-anchor comment records the land main SHA");
+  const ra2 = spawnSync("node", [path.join(root, "scripts", "handoff-reanchor.mjs"), target, "--date", "2026-10-06"], { encoding: "utf8" });
+  eq(ra2.status, 0, "handoff-reanchor is idempotent on an already-dissolved doc");
+  assert(!fs.readFileSync(target, "utf8").includes("dissolved @ 2026-10-07") && (ra2.stdout ?? "").includes("already dissolved"), "the idempotent run changes nothing");
+  fs.rmSync(rx, { recursive: true, force: true });
 }
 // --- fail-on-empty red line ---------------------------------------------------
 assert(passed > 350, "fail-on-empty: the E2E smoke actually executed (" + passed + " assertions)");

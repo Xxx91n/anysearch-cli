@@ -67,9 +67,9 @@ Machine-local paths in committed markdown are linted **by usage class** — ship
 
 Sweep scope (registered in the config — a new document type lands only by editing it): `*.md`, `docs/**/*.md`, and every tracked markdown file under `.scratch/` in a registered doc dir. Applies from grill-round-67 onward (locator class) and grill-round-71 onward (three-class refinement + fail-closed leg).
 
-## Vocabulary registry & governed scan surface (ADR-0100)
+## Vocabulary registry & governed scan surface (ADR-0100 + ADR-0101)
 
-`scripts/vocab-registry.mjs` is the per-module registry of every governed `*_CODES` vocabulary (pure data leaf, zero import); `scripts/vocab-scan.mjs` enumerates `scripts/*.mjs` (top level only, no recursion) and asserts each governed module's exports are registered. Governed modules must keep their top level side-effect-free (glob + injection executes it). Full rule: ADR-0100.
+`scripts/vocab-registry.mjs` is the per-module registry of every governed `*_CODES` vocabulary (pure data leaf, zero import); `scripts/vocab-scan.mjs` enumerates `scripts/**/*.mjs` recursively (ADR-0101: `scripts/tau/` in domain) and asserts each governed module's exports are registered. Governed modules must keep their top level side-effect-free (glob + injection executes it). The AST front gate `scripts/top-level-effects.mjs` adjudicates the closed exclusion list: codes∧top-level-effects → `ast-top-level-effect` RED; non-literal `*_CODES` → `ast-codes-unverifiable`; effects∧no-codes → named exclusion candidates. `EXCLUDED_PATHS` holds named un-injectable files (premiere: `tau/tau-scan.mjs` spawn launcher). Anchor schema v2 (ADR-0101): every anchor carries non-empty `fails` ⊆ `failure_classes` + `tier:"red"|"info"`; `pending_anchors` seats are structured `{anchor,reason,seated_at,review_by}` (legacy strings get `LEGACY_SEAT_REVIEW_BY`) and expire loudly. Full rules: ADR-0100 / ADR-0101.
 
 ## Codex host notes (ADR-0068)
 

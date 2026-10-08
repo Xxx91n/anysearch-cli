@@ -878,6 +878,27 @@ function stepStaticAssertions() {
             for (const p of problems) fail('ADR-0098 D4: ' + p);
             reauthoredTotal += Array.isArray(c.reanchor_log) ? c.reanchor_log.length : 0;
             verified++;
+          } else if (c.kind === "anchor-activity") {
+            // ADR-0101 D2② (Ratchet Sunset): the per-round one-line anchor
+            // activity ledger. The ledger numbers live in this claim's
+            // `expect` map {anchor-id: {prod_findings, last_real_red}}; the
+            // closeout doc must carry the line re-derived from them byte-
+            // identically (recount discipline, same as verbatim reauthored).
+            // Activity semantics stay human-adjudicated: only production
+            // findings count — fixture kills never enter this field.
+            if (!c.file || typeof c.expect !== "object" || c.expect === null || Array.isArray(c.expect)) fail('ADR-0101 D2②: ' + tag + ' needs file + expect object');
+            const afp = path.join(ROOT, c.file);
+            if (!fs.existsSync(afp)) fail('ADR-0101 D2②: ' + tag + ' file missing: ' + c.file);
+            const atext = fs.readFileSync(afp, "utf8");
+            const parts = Object.keys(c.expect).sort().map((id) => {
+              const v = c.expect[id] || {};
+              const n = Number.isFinite(v.prod_findings) ? v.prod_findings : 0;
+              const last = typeof v.last_real_red === "string" && v.last_real_red ? v.last_real_red : "—";
+              return id + " prod-findings=" + n + " last-real-RED=" + last;
+            });
+            const want = "锚活性 @ R" + reg.round + ": " + parts.join(" | ");
+            if (!atext.includes(want)) fail('ADR-0101 D2②: ' + tag + ' closeout doc does not carry the derived activity line verbatim — expected: ' + want.slice(0, 160));
+            verified++;
           } else {
             fail('ADR-0081 D-004: unknown claim kind ' + c.kind + ' (' + c.id + ')');
           }
