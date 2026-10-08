@@ -24,7 +24,7 @@ handoff-lint-verdict.test: **473** passed（基线 463 → +10）/ handoff-lint-
 
 ## 绿色 run URL（必填）
 
-PENDING: stack-unpushed — 本轮交付栈尚未 push/land（owner 授权窗未开），`r100-meta-cap-impl` / `r100-grill-ledger` 无 `origin/` ref，run-URL 无法兑现
+GREEN: https://github.com/Xxx91n/anysearch-cli/actions/runs/37717251731 — ci 全绿（ubuntu+windows check-build、install-smoke 双道、live probe）；head_sha=`12098d9c` ∈ origin/main..origin/r100-meta-cap-impl
 
 ## 下一轮候选
 
