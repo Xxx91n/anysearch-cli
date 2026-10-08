@@ -15,6 +15,23 @@
 //   `info` only (routing signal, never a RED on its own — D-002 negative
 //   requirement ①).
 //
+// ADR-0101 (R100 D2/D5): the anchor registry is schema-migrated —
+//   `fails`     required non-empty; every member must name a class in the
+//               registry's closed `failure_classes` vocabulary (Kill Oracle —
+//               the anchor must name the user-visible product failure it
+//               prevents; no free text)
+//   `tier`      "red" | "info" (default red); info anchors still run their
+//               probe — observation is not absence — but their no-kill is
+//               reported as info, never a verdict
+//   seats       pending_anchors entries may be structured
+//               {anchor,reason,seated_at,review_by} or legacy bare strings;
+//               legacy entries get a migration-day deadline
+//               (LEGACY_SEAT_REVIEW_BY) — stock does not exempt from expiry
+//   exclusions  anchor id in pending_anchors AND tier:"info" is RED
+//               (`anchor-seat-info-conflict`); an expired or malformed seat is
+//               RED; an open seat over a no-kill probe surfaces a named
+//               masking info line (Masking-Surfaced)
+//
 // Node stdlib only. The module carries no verdict logic beyond the
 // kill/no-kill mapping the legislation defines.
 import fs from "node:fs";
@@ -30,21 +47,69 @@ export const ANCHOR_RED_CODES = Object.freeze([
   "anchor-registry-empty",
   "anchor-unresolvable",
   "anchor-not-consumed",
+  "anchor-fails-empty",
+  "anchor-fails-unregistered",
+  "anchor-tier-invalid",
+  "anchor-seat-info-conflict",
+  "anchor-seat-expired",
+  "anchor-seat-malformed",
 ]);
 export const ANCHOR_SKIP_CODES = Object.freeze(["pending-anchor"]);
 
+// ADR-0101 D5: legacy bare-string seats get their deadline set at migration
+// day — a seat is a temporary exemption with a clock, never a perpetual
+// exemption. The date is a named constant so the forcing function is auditable.
+export const LEGACY_SEAT_REVIEW_BY = "2026-10-22";
+
 // Emitted code tokens below are SOURCED from the tables (N6 closure): a RED
 // or skip line cannot carry an unregistered code without bypassing them.
-const [CODE_UNREADABLE, CODE_EMPTY, CODE_UNRESOLVABLE, CODE_NOT_CONSUMED] = ANCHOR_RED_CODES;
+const [CODE_UNREADABLE, CODE_EMPTY, CODE_UNRESOLVABLE, CODE_NOT_CONSUMED, CODE_FAILS_EMPTY, CODE_FAILS_UNREG, CODE_TIER_INVALID, CODE_SEAT_INFO, CODE_SEAT_EXPIRED, CODE_SEAT_MALFORMED] = ANCHOR_RED_CODES;
 const [CODE_PENDING_ANCHOR] = ANCHOR_SKIP_CODES;
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function loadAnchorRegistry(root) {
   try {
     const reg = JSON.parse(fs.readFileSync(path.join(root, "docs", "enforcement-anchors.json"), "utf8"));
-    return { ok: true, anchors: Array.isArray(reg.anchors) ? reg.anchors : null };
+    return { ok: true, anchors: Array.isArray(reg.anchors) ? reg.anchors : null, failureClasses: Array.isArray(reg.failure_classes) ? reg.failure_classes : null };
   } catch {
-    return { ok: false, anchors: null };
+    return { ok: false, anchors: null, failureClasses: null };
   }
+}
+
+// Seat normalization (ADR-0101 D5 dual-read): accepts legacy bare strings,
+// structured {anchor,reason,seated_at,review_by}, and already-normalized
+// objects (collectDeferred attaches `entry`). Every seat carries the entry id
+// that seats it, so the masking surface can name the seat, not just the state.
+export function normalizeSeat(x, entryId) {
+  if (typeof x === "string") {
+    return { anchor: x, reason: null, seated_at: null, review_by: LEGACY_SEAT_REVIEW_BY, legacy: true, entry: entryId ?? null };
+  }
+  if (x && typeof x === "object") {
+    const legacy = x.legacy === true;
+    const reviewBy = typeof x.review_by === "string" && x.review_by ? x.review_by : legacy ? LEGACY_SEAT_REVIEW_BY : null;
+    return {
+      anchor: typeof x.anchor === "string" && x.anchor ? x.anchor : null,
+      reason: typeof x.reason === "string" && x.reason ? x.reason : null,
+      seated_at: typeof x.seated_at === "string" ? x.seated_at : null,
+      review_by: reviewBy,
+      legacy,
+      entry: typeof x.entry === "string" ? x.entry : entryId ?? null,
+    };
+  }
+  return { anchor: null, reason: null, seated_at: null, review_by: null, legacy: false, entry: entryId ?? null, malformed: true };
+}
+
+function seatMalformed(seat) {
+  return seat.malformed === true || !seat.anchor || !ISO_DATE_RE.test(seat.review_by ?? "");
+}
+
+function seatExpired(seat, nowDay) {
+  // A review_by that cannot be compared is already flagged malformed; here a
+  // parse failure is fail-loud (expired), never a silent valid seat.
+  const by = Date.parse(seat.review_by);
+  if (!Number.isFinite(by)) return true;
+  return nowDay !== null && Date.parse(nowDay) > by;
 }
 
 // Static reference-count precheck (routing only): count literal occurrences of
@@ -87,7 +152,9 @@ export function runEnforcementAnchors({ root, deps = {} }) {
   const lines = [];
   const reg = deps.registry ?? loadAnchorRegistry(root);
   const deferred = deps.deferred ?? collectDeferred(root);
-  const seats = new Set(deferred.ok === true && Array.isArray(deferred.pendingAnchors) ? deferred.pendingAnchors : []);
+  const seats = deferred.ok === true && Array.isArray(deferred.pendingAnchors) ? deferred.pendingAnchors.map((x) => normalizeSeat(x)) : [];
+  const nowDay = typeof deps.now === "string" ? deps.now.slice(0, 10) : new Date().toISOString().slice(0, 10);
+  const failureVocab = new Set(Array.isArray(reg.failureClasses) ? reg.failureClasses : []);
 
   if (!reg.ok) {
     return {
@@ -119,6 +186,16 @@ export function runEnforcementAnchors({ root, deps = {} }) {
   let seated = 0;
   let unkillable = 0;
   let fails = 0;
+  // Seats that name no anchor — or an anchor absent from the registry — can
+  // never be claimed by the per-anchor loop below; dead seats are surfaced
+  // here, fail-closed (a seat referencing nothing masks intent).
+  const anchorIds = new Set(reg.anchors.map((a) => (a && typeof a.id === "string" ? a.id : null)).filter(Boolean));
+  for (const s of seats) {
+    if (!s.anchor || !anchorIds.has(s.anchor)) {
+      fails++;
+      lines.push({ kind: "fail", msg: "enforcement-anchors: " + CODE_SEAT_MALFORMED + " — pending_anchors entry names " + (s.anchor ? "anchor `" + s.anchor + "` which is not in the registry" : "no anchor") + " (seat entry id: " + String(s.entry ?? "<unknown>") + ") — a dead seat masks intent" });
+    }
+  }
   for (const a of reg.anchors) {
     const tag = "enforcement-anchor " + String(a && a.id);
     // Self-referencing nail ①: an anchor without a runnable falsification
@@ -131,6 +208,45 @@ export function runEnforcementAnchors({ root, deps = {} }) {
       lines.push({ kind: "fail", msg: tag + ": " + CODE_UNRESOLVABLE + " — probe `" + String(probeName) + "` unresolvable in enforcement-anchor-probes.mjs (no falsification fixture, not admitted)" });
       continue;
     }
+    const id = a && typeof a.id === "string" ? a.id : null;
+    const tier = a.tier === undefined || a.tier === null ? "red" : a.tier;
+    if (tier !== "red" && tier !== "info") {
+      fails++;
+      lines.push({ kind: "fail", msg: tag + ": " + CODE_TIER_INVALID + " — tier `" + String(a.tier) + "` is not \"red\"|\"info\" (audit tier is a closed two-value vocabulary)" });
+    }
+    // Kill Oracle (ADR-0101 D2①): every anchor must name the user-visible
+    // product failure class it prevents — non-empty `fails` ⊆ failure_classes.
+    if (!Array.isArray(a.fails) || a.fails.length === 0) {
+      fails++;
+      lines.push({ kind: "fail", msg: tag + ": " + CODE_FAILS_EMPTY + " — `fails` is missing or empty (Kill Oracle: an anchor must name the user-visible product failure it prevents)" });
+    } else {
+      const unreg = a.fails.filter((f) => !failureVocab.has(f));
+      if (unreg.length > 0) {
+        fails++;
+        lines.push({ kind: "fail", msg: tag + ": " + CODE_FAILS_UNREG + " — `fails` name(s) outside the closed failure_classes vocabulary: {" + unreg.join(", ") + "} (no free-text failure classes)" });
+      }
+    }
+    const seat = id ? seats.find((s) => s.anchor === id) : null;
+    let seatValid = false;
+    if (seat) {
+      let seatBad = false;
+      if (seatMalformed(seat)) {
+        seatBad = true;
+        fails++;
+        lines.push({ kind: "fail", msg: tag + ": " + CODE_SEAT_MALFORMED + " — pending_anchors entry for this anchor lacks {anchor, review_by(YYYY-MM-DD)} (seat entry id: " + String(seat.entry ?? "<unknown>") + ")" });
+      }
+      if (tier === "info") {
+        seatBad = true;
+        fails++;
+        lines.push({ kind: "fail", msg: tag + ": " + CODE_SEAT_INFO + " — anchor id sits in pending_anchors AND carries tier:\"info\" (the exclusion is mutual: a sunsetted anchor may not hold an exemption seat)" });
+      }
+      if (!seatMalformed(seat) && seatExpired(seat, nowDay)) {
+        seatBad = true;
+        fails++;
+        lines.push({ kind: "fail", msg: tag + ": " + CODE_SEAT_EXPIRED + " — seat past review_by " + seat.review_by + " (entry: " + String(seat.entry ?? "<unknown>") + "; Seat Deadline: expire loudly, never a silent perpetual exemption)" });
+      }
+      seatValid = !seatBad;
+    }
     const refs = countReferences(root, a.subject);
     if (refs === 0) {
       lines.push({ kind: "info", msg: tag + ": precheck — subject `" + a.subject + "` has zero references in repo (routing signal only, not a verdict)" });
@@ -142,13 +258,18 @@ export function runEnforcementAnchors({ root, deps = {} }) {
       res = { killed: false, detail: "probe threw: " + String(e && e.message ? e.message : e) };
     }
     const killedNow = !!(res && res.killed === true);
-    const seat = seats.has(a.id);
     if (killedNow) {
       killed++;
-      lines.push({ kind: seat ? "info" : "pass", msg: tag + (seat ? " [" + CODE_PENDING_ANCHOR + "]: constraint verified early" : ": consumer survives falsification") + " — " + String(res.detail ?? "") });
-    } else if (seat) {
+      lines.push({ kind: seatValid ? "info" : "pass", msg: tag + (seatValid ? " [" + CODE_PENDING_ANCHOR + "]: constraint verified early" : ": consumer survives falsification") + " — " + String(res.detail ?? "") });
+    } else if (seatValid) {
       seated++;
-      lines.push({ kind: "skip", msg: tag + " [" + CODE_PENDING_ANCHOR + "]: falsification not yet killing (seated via deferred registry) — " + String(res.detail ?? "") });
+      lines.push({ kind: "skip", msg: tag + " [" + CODE_PENDING_ANCHOR + "]: falsification not yet killing (seated via deferred registry " + String(seat.entry ?? "") + ", review_by " + seat.review_by + ") — " + String(res.detail ?? "") });
+      // Masking-Surfaced (ADR-0101 D5): an open seat over a no-kill probe is a
+      // live exemption holding a possibly-decorative anchor — name the seat
+      // every run so the loophole is never invisible.
+      lines.push({ kind: "info", msg: "masking-surfaced: seat `" + String(seat.entry ?? "<unknown>") + "` masks " + tag + " (probe no-kill under open seat; review_by " + seat.review_by + ", legacy=" + (seat.legacy ? "string-entry" : "structured") + ")" });
+    } else if (tier === "info") {
+      lines.push({ kind: "info", msg: tag + ": " + CODE_NOT_CONSUMED + " (info tier) — declared constraint survives no falsification probe; observed, never a verdict — " + String(res.detail ?? "") });
     } else {
       fails++;
       lines.push({ kind: "fail", msg: tag + ": " + CODE_NOT_CONSUMED + " — declared constraint survives no falsification probe — " + String(res.detail ?? "") });

@@ -1,40 +1,70 @@
 {
- "version": 1,
- "anchors": [
-  {
-   "id": "anchor:predicate-registry",
-   "subject": "STATE_PREDICATE_REGISTRY",
-   "constraint": "STATE_PREDICATE_REGISTRY is the live predicate vocabulary; a marker for a struck entry is RED",
-   "probe": "probePredicateRegistry",
-   "invalidate": "a marker for a struck registry entry is not rejected"
-  },
-  {
-   "id": "anchor:reuse-pointer",
-   "subject": "resolveReuse",
-   "constraint": "registry `reuse` pointers wire the env sources by name; an unresolvable spec degrades the source",
-   "probe": "probeReusePointer",
-   "invalidate": "an unresolvable reuse spec leaves the env source alive"
-  },
-  {
-   "id": "anchor:bare-word-single-source",
-   "subject": "STATE_BARE_RES",
-   "constraint": "the bare-word scan derives from the live predicate set; a struck predicate escapes the scan",
-   "probe": "probeBareWordSingleSource",
-   "invalidate": "a struck predicate still flags in prose (second hard-coded list)"
-  },
-  {
-   "id": "anchor:vocab-guards",
-   "subject": "vocab-registry",
-   "constraint": "every `*_CODES` export across the governed scan surface (scripts/*.mjs, top level only) is registered per module in scripts/vocab-registry.mjs",
-   "probe": "probeVocabGuards",
-   "invalidate": "an unregistered `*_CODES` export on any governed module goes undetected"
-  },
-  {
-   "id": "anchor:ratchet-recount",
-   "subject": "checkVerbatimClaim",
-   "constraint": "verbatim `reauthored` is a recount of `reanchor_log`, not a flag",
-   "probe": "probeRatchetRecount",
-   "invalidate": "a declared recount mismatching reanchor_log passes the claims leg"
-  }
- ]
+    "version": 2,
+    "failure_classes": [
+        "stale-declaration-shipped",
+        "vocabulary-drift-silent",
+        "env-degradation-silent",
+        "falsified-claims",
+        "anchor-coverage-gap"
+    ],
+    "anchors": [
+        {
+            "id": "anchor:predicate-registry",
+            "subject": "STATE_PREDICATE_REGISTRY",
+            "constraint": "STATE_PREDICATE_REGISTRY is the live predicate vocabulary; a marker for a struck entry is RED",
+            "probe": "probePredicateRegistry",
+            "invalidate": "a marker for a struck registry entry is not rejected",
+            "fails": [
+                "stale-declaration-shipped",
+                "vocabulary-drift-silent"
+            ],
+            "tier": "red"
+        },
+        {
+            "id": "anchor:reuse-pointer",
+            "subject": "resolveReuse",
+            "constraint": "registry `reuse` pointers wire the env sources by name; an unresolvable spec degrades the source",
+            "probe": "probeReusePointer",
+            "invalidate": "an unresolvable reuse spec leaves the env source alive",
+            "fails": [
+                "env-degradation-silent"
+            ],
+            "tier": "red"
+        },
+        {
+            "id": "anchor:bare-word-single-source",
+            "subject": "STATE_BARE_RES",
+            "constraint": "the bare-word scan derives from the live predicate set; a struck predicate escapes the scan",
+            "probe": "probeBareWordSingleSource",
+            "invalidate": "a struck predicate still flags in prose (second hard-coded list)",
+            "fails": [
+                "stale-declaration-shipped",
+                "vocabulary-drift-silent"
+            ],
+            "tier": "red"
+        },
+        {
+            "id": "anchor:vocab-guards",
+            "subject": "vocab-registry",
+            "constraint": "every `*_CODES` export across the governed scan surface (scripts/**/*.mjs, recursive) is registered per module in scripts/vocab-registry.mjs",
+            "probe": "probeVocabGuards",
+            "invalidate": "an unregistered `*_CODES` export on any governed module goes undetected",
+            "fails": [
+                "vocabulary-drift-silent",
+                "anchor-coverage-gap"
+            ],
+            "tier": "red"
+        },
+        {
+            "id": "anchor:ratchet-recount",
+            "subject": "checkVerbatimClaim",
+            "constraint": "verbatim `reauthored` is a recount of `reanchor_log`, not a flag",
+            "probe": "probeRatchetRecount",
+            "invalidate": "a declared recount mismatching reanchor_log passes the claims leg",
+            "fails": [
+                "falsified-claims"
+            ],
+            "tier": "red"
+        }
+    ]
 }

@@ -206,8 +206,17 @@ export function collectDeferred(root) {
     const open = (Array.isArray(reg.entries) ? reg.entries : []).filter((e) => e && e.status === "open");
     const covers = open.flatMap((e) => (Array.isArray(e.covers) ? e.covers : []));
     const pendingPredicates = open.flatMap((e) => (Array.isArray(e.pending_predicates) ? e.pending_predicates : []));
-    const pendingAnchors = open.flatMap((e) => (Array.isArray(e.pending_anchors) ? e.pending_anchors : []));
-    return { ok: true, covers: uniq(covers), pendingPredicates: uniq(pendingPredicates), pendingAnchors: uniq(pendingAnchors) };
+    // ADR-0101 D5 dual-read: pending_anchors entries may be bare strings or
+    // structured {anchor,reason,seated_at,review_by}; the seat carries the
+    // entry id so the masking surface can name who holds it. Normalization
+    // (string -> {anchor}) happens at the consumer; this layer only attaches
+    // provenance.
+    const pendingAnchors = open.flatMap((e) =>
+      (Array.isArray(e.pending_anchors) ? e.pending_anchors : []).map((x) =>
+        x && typeof x === "object" ? { ...x, entry: x.entry ?? e.id } : { anchor: x, legacy: true, entry: e.id }
+      )
+    );
+    return { ok: true, covers: uniq(covers), pendingPredicates: uniq(pendingPredicates), pendingAnchors };
   } catch {
     return { ok: false, covers: [], pendingPredicates: [], pendingAnchors: [] };
   }
@@ -216,7 +225,7 @@ export function collectDeferred(root) {
 // --- 1. collect -------------------------------------------------------------
 
 // Collect the environment snapshot. Pure observation - no verdicts here.
-export function collectSnapshot({ root, branches = [], shas = [], runIds = [], deps = {} }) {
+export function collectSnapshot({ root, branches = [], shas = [], runIds = [], docPaths = [], deps = {} }) {
   const spawnSync = deps.spawnSync ?? nodeSpawnSync;
   const now = deps.now ?? new Date().toISOString();
 
@@ -244,6 +253,19 @@ export function collectSnapshot({ root, branches = [], shas = [], runIds = [], d
     for (const sha of shas) {
       commitObjects[sha] = observe(spawnSync, "git", ["cat-file", "-t", sha], root);
       resolveSha[sha] = observe(spawnSync, "git", ["rev-parse", "--verify", "--quiet", sha], root);
+    }
+  }
+
+  // ADR-0101 (stack-orphaned-by-land): which linted docs already live on
+  // origin/main? `git ls-tree` succeeds with empty output for a present ref
+  // and an absent path (false), lists the entry when present (true), and
+  // fails only when the ref/tree is unreadable (null = fact uncollected,
+  // never a guessed side).
+  const onMainDocs = {};
+  if (gitOk) {
+    for (const rel of docPaths) {
+      const out = observe(spawnSync, "git", ["ls-tree", "origin/main", "--", rel], root);
+      onMainDocs[rel] = out === null ? null : out !== "";
     }
   }
 
@@ -307,7 +329,7 @@ export function collectSnapshot({ root, branches = [], shas = [], runIds = [], d
     now,
     repo,
     maxCaptureAgeDays: Number.isFinite(deps.maxCaptureAgeDays) ? deps.maxCaptureAgeDays : undefined,
-    git: { ok: gitOk, shallow, branchRefs, stackBranchMembers, commitObjects, resolveSha },
+    git: { ok: gitOk, shallow, branchRefs, stackBranchMembers, commitObjects, resolveSha, onMainDocs },
     gh: { ok: ghOk, runs },
     but: { ok: butOk, ids: butIds },
     workflows,
@@ -320,9 +342,14 @@ export function collectSnapshot({ root, branches = [], shas = [], runIds = [], d
 
 // Hand every document to the pure core. No verdict logic here.
 export function evaluateHandoffLintDocuments({ documents, snapshot }) {
+  const onMainDocs = (snapshot && snapshot.git && snapshot.git.onMainDocs) || {};
   const perDoc = documents.map((d) => {
     const round = Number.isFinite(d.round) ? d.round : parseRoundFromName(d.name ?? d.rel ?? "");
-    return { rel: d.rel ?? d.name ?? "<unnamed>", round, verdict: assessHandoffLint({ text: d.text, round, env: snapshot }) };
+    const rel = d.rel ?? d.name ?? "<unnamed>";
+    // ADR-0101: docOnMain rides the env as a per-document fact (uncollected ->
+    // null, never a guessed side). Snapshot shape stays additive (SN3).
+    const env = { ...snapshot, docOnMain: Object.prototype.hasOwnProperty.call(onMainDocs, rel) ? onMainDocs[rel] : snapshot && snapshot.docOnMain !== undefined ? snapshot.docOnMain : null };
+    return { rel, round, verdict: assessHandoffLint({ text: d.text, round, env }) };
   });
   return { perDoc, snapshot };
 }
@@ -400,7 +427,7 @@ export function runHandoffLint({ root, documents, deps = {} }) {
       return sec.urls.map((u) => u.id);
     })
   );
-  const snapshot = collectSnapshot({ root, branches, shas, runIds, deps });
+  const snapshot = collectSnapshot({ root, branches, shas, runIds, docPaths: documents.map((d) => d.rel).filter(Boolean), deps });
   const evaluated = evaluateHandoffLintDocuments({ documents, snapshot });
   return { ...evaluated, ...buildHandoffLintReport(evaluated) };
 }
