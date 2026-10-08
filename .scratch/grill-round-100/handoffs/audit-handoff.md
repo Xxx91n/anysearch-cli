@@ -2,7 +2,7 @@
 
 - 日期：2026-10-08 | 身份：审计 Agent（只出报告，不动手修）
 - 审计对象：R100 全轮闭环交付栈（origin/main tip `ef296a2a`；diff 基线 `8d1854e2..ef296a2a`，22 commits / 34 files / +1745）
-- 输入源件：`C:\Windows\temp\any.txt`（R100 轮报摘要）+ 本目录 `round-100-closeout.md` / `reports/2026-10-08-report.md` / `handoffs/next-round.md` + `decision-ledger.md`（D-001~D-005）+ `goal.md`
+- 输入源件：`C:\Windows\temp\any.txt`（R100 轮报摘要，owner 临时投递件）<!-- machine-local: owner 经 OS temp 投递的审计输入 @ 2026-10-08 --> + 本目录 `round-100-closeout.md` / `reports/2026-10-08-report.md` / `handoffs/next-round.md` + `decision-ledger.md`（D-001~D-005）+ `goal.md`
 - 唯一事实源：`.scratch/grill-round-100/decision-ledger.md`（D-001~D-005 全 current）
 
 ## 结论（先给判定）
