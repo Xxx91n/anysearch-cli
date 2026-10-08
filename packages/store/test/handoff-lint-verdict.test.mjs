@@ -123,7 +123,7 @@ assert(EFFECTIVE_SCOPE_FLOOR === 96, "effective-scope floor is 96 (the rule birt
 assert(STACK_CAPTURE_MAX_AGE_DAYS === 45, "stack capture freshness bound is the loose 45d default");
 eq(PENDING_REASON_CODES, ["stack-unpushed", "pushed-no-branch-runs"], "PENDING vocabulary is exactly the closed pair");
 eq(VERIFICATION_UNAVAILABLE_CODES, ["gh-missing", "repo-parse", "api-failed", "ref-unavailable"], "verification-unavailable codes are exactly four (N1 cause split)");
-eq(STACK_RED_CODES, ["but-id-not-resolved", "sha-not-commit", "chain-tail-not-in-branch"], "Stack RED codes are exactly three");
+eq(STACK_RED_CODES, ["but-id-not-resolved", "sha-not-commit", "chain-tail-not-in-branch", "stack-orphaned-by-land"], "Stack RED codes are exactly four (ADR-0101 extends with stack-orphaned-by-land)");
 eq(STACK_STRUCTURAL_RED_CODES, ["stack-line-missing", "stack-chain-empty"], "Stack structural RED codes are exactly two");
 eq(STACK_ENV_CODES, ["stack-unavailable", "ref-unavailable", "shallow-clone"], "Stack env-degradation codes are exactly three");
 eq(STACK_ADVISORY_CODES, ["stale-capture"], "the advisory vocabulary is exactly stale-capture");

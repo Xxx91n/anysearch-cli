@@ -1,7 +1,10 @@
 // scripts/vocab-scan.mjs
 // ADR-0100 D3/D4 (R99): the thin shell that enumerates the governed scan
-// surface (scripts/*.mjs, top level only, no recursion) and drives the pure
-// per-module vocabulary guard.
+// surface and drives the pure per-module vocabulary guard.
+// ADR-0101 D6 (R100): the surface recurses (scripts/**/*.mjs — scripts/tau/
+// subdir now in domain) and the closed exclusion list gains a static front
+// gate: scripts/top-level-effects.mjs classifies each file WITHOUT executing
+// it, adjudicating the three classes below.
 //
 // Enumeration is TWO-PHASE so the enumerator never executes a CLI:
 //   1. STATIC pre-filter - read each file's text and collect its exported
@@ -13,6 +16,17 @@
 // blind `import()` of every scripts/*.mjs would run the CLIs (empirically:
 // importing ship-gate.mjs runs the whole gate).
 //
+// The AST front gate classes (ADR-0101 D6):
+//   ① codes ∧ top-level effects   -> `ast-top-level-effect` (RED): a governed
+//      vocabulary module doing import-time work can never be namespace-
+//      injected safely; it is also never injected here.
+//   ② *_CODES export, non-literal initializer -> `ast-codes-unverifiable`
+//      (RED): the vocabulary's existence cannot be statically proven.
+//   ③ effects ∧ no codes          -> `ast-side-effect-candidate` (info): an
+//      exclusion candidate, named in the result for the closed list to admit.
+// An excluded path that grows `*_CODES` -> `ast-excluded-codes` (RED): an
+// exclusion legitimizes side effects, never an unguarded vocabulary.
+//
 // Fail-closed (audit R99-1): an unreadable scripts/ dir is a FATAL finding, not
 // an empty scan - a scan that cannot enumerate must never report ok:true.
 import fs from "node:fs";
@@ -20,6 +34,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { CODE_GROUPS, GOVERNED_MODULES } from "./vocab-registry.mjs";
 import { unregisteredCodeExports } from "./handoff-lint-verdict.mjs";
+import { classifyTopLevel } from "./top-level-effects.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -27,6 +42,19 @@ const require = createRequire(import.meta.url);
 // injected (no ESM namespace for .ts/.py here). Membership is by the criterion
 // "cannot be namespace-injected", never by "is a fixture".
 export const EXCLUDED_EXTENSIONS = Object.freeze([".ts", ".py"]);
+
+// Named path exclusions (ADR-0101 D6): specific .mjs files that must never be
+// namespace-injected. Membership is by the same criterion, evidence carried on
+// the entry; the AST front gate is the admission adjudicator for new entries.
+// Premiere entry: scripts/tau/tau-scan.mjs is a spawn launcher - importing it
+// executes a child process (top-level `const child = spawn(...)` + `child.on`).
+export const EXCLUDED_PATHS = Object.freeze([
+  {
+    path: "tau/tau-scan.mjs",
+    reason: "spawn launcher: top-level `child = spawn(...)` and `child.on(\"close\")` — namespace injection would execute a child process",
+    since: "2026-10-08",
+  },
+]);
 
 // The one error-text formatter (audit R99-2 dedup): scan and probe share it so a
 // failure-detail shape can never drift between the two call sites.
@@ -36,13 +64,20 @@ export function errText(e) {
 
 // FAIL-CLOSED: a readdir failure throws (the caller turns it into a fatal
 // finding). Never swallow it into an empty list - an empty scan is a green.
+// R100: the walk RECURSES into subdirs (scripts/tau/ is now in the scan domain)
+// and returns posix-style relative paths so exclusion entries stay portable.
 export function enumerateScriptFiles(root) {
   const dir = path.join(root, "scripts");
-  return fs
-    .readdirSync(dir, { withFileTypes: true })
-    .filter((e) => e.isFile())
-    .map((e) => e.name)
-    .sort();
+  const out = [];
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.isFile()) out.push(path.relative(dir, p).replace(/\\/g, "/"));
+    }
+  };
+  walk(dir);
+  return out.sort();
 }
 
 // Static export-name extraction: `export const X_CODES = ...` (top-level).
@@ -86,11 +121,13 @@ export function scanVocabGuards({ root, load } = {}) {
       scanned: [],
       findings: [{ stem: "<scripts-dir>", name: "scan-surface-unreadable", detail: errText(e) }],
       excludedDrift: [],
+      candidates: [],
     };
   }
   const findings = [];
   const scanned = [];
   const excludedDrift = [];
+  const candidates = [];
   for (const f of files) {
     const full = path.join(root, "scripts", f);
     const ext = path.extname(f);
@@ -106,9 +143,32 @@ export function scanVocabGuards({ root, load } = {}) {
       continue;
     }
     if (ext !== ".mjs") continue;
-    const names = staticCodeExports(text);
+    const cls = classifyTopLevel(text);
     const stem = f.replace(/\.mjs$/, "");
-    if (names.length === 0) {
+    if (EXCLUDED_PATHS.some((x) => x.path === f)) {
+      scanned.push({ stem, codes: 0, excluded: true });
+      // An exclusion legitimizes the side effects, never a vocabulary: an
+      // excluded .mjs CAN still be imported - a *_CODES here is an unguarded
+      // vocabulary bypass and goes RED (drift for .ts/.py stays info because
+      // those files can never be injected at all).
+      for (const c of cls.codes) findings.push({ stem, name: "ast-excluded-codes", detail: "excluded path carries `" + c.name + "` - an un-injectable vocabulary can never be guarded" });
+      continue;
+    }
+    if (cls.codes.length > 0 && cls.effects.length > 0) {
+      // ① codes ∧ effects: never inject (that would execute the side effect);
+      // the RED names the structural violation instead.
+      scanned.push({ stem, codes: cls.codes.length });
+      findings.push({ stem, name: "ast-top-level-effect", detail: "vocabulary-bearing module executes top-level work {" + cls.effects.map((e) => e.kind).join(", ") + "} - it cannot be namespace-injected; move the vocabulary to a pure data module" });
+      continue;
+    }
+    for (const c of cls.codes) {
+      if (!c.verifiable) findings.push({ stem, name: "ast-codes-unverifiable", detail: "export `" + c.name + "` initializer is not a literal vocabulary (dynamic assembly cannot be statically proven)" });
+    }
+    if (cls.codes.length === 0 && cls.effects.length > 0) {
+      // ③ effects ∧ no codes: exclusion candidate, named for the closed list.
+      candidates.push({ stem, effects: cls.effects.map((e) => e.kind) });
+    }
+    if (cls.codes.length === 0) {
       scanned.push({ stem, codes: 0 });
       continue;
     }
@@ -120,8 +180,8 @@ export function scanVocabGuards({ root, load } = {}) {
       continue;
     }
     const unreg = unregisteredCodeExports(ns, resolveRegistryArrays(stem, ns));
-    scanned.push({ stem, codes: names.length });
+    scanned.push({ stem, codes: cls.codes.length });
     for (const n of unreg) findings.push({ stem, name: n });
   }
-  return { ok: findings.length === 0, scanned, findings, excludedDrift };
+  return { ok: findings.length === 0, scanned, findings, excludedDrift, candidates };
 }

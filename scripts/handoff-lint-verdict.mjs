@@ -88,6 +88,7 @@ export const STACK_RED_CODES = Object.freeze([
   "but-id-not-resolved",
   "sha-not-commit",
   "chain-tail-not-in-branch",
+  "stack-orphaned-by-land",
 ]);
 
 // Structural RED codes for the Stack leg (absent / unusable chain).
@@ -634,6 +635,38 @@ export function assessStackLeg(parsed, env) {
 
   if (parsed.entries.length === 0) {
     return { state: "RED", redCodes: [emitCode(STACK_STRUCTURAL_RED_CODES, "stack-chain-empty")], problems: ["Stack line carries no branch → but-id chain"], annotations, links };
+  }
+
+  // Element (0) stack-orphaned-by-land (ADR-0101 T0-track): the doc already
+  // lives on origin/main yet still carries a LIVE chain whose named branch
+  // has no origin ref — the stack landed (land dissolved its refs) and the
+  // written-true declaration survived as a dead capture (the R99
+  // sha-not-commit miss class, named). In-flight closeouts (docOnMain
+  // false/absent) are untouched: an unpushed live chain is the normal state.
+  if (parsed.branch && env && env.docOnMain === true) {
+    if (!branchCollected(env.git, parsed.branch)) {
+      annotations.push(emitCode(STACK_ENV_CODES, "ref-unavailable"));
+    } else {
+      const orphanMembers = env.git && env.git.stackBranchMembers ? env.git.stackBranchMembers[parsed.branch] ?? null : null;
+      const orphanRef = env.git && env.git.branchRefs && Object.prototype.hasOwnProperty.call(env.git.branchRefs, parsed.branch) ? env.git.branchRefs[parsed.branch] : null;
+      if (orphanMembers === null && (orphanRef === null || orphanRef === undefined || orphanRef === "")) {
+        redCodes.push(emitCode(STACK_RED_CODES, "stack-orphaned-by-land"));
+        problems.push(
+          "stack-orphaned-by-land: this closeout is on origin/main yet carries a live Stack chain while origin/" +
+          parsed.branch +
+          " is absent — land dissolved the referenced stack and the declaration survived as a dead capture; reword to the `Stack（dissolved @ <date>）` variant"
+        );
+      }
+    }
+  } else if (parsed.branch && env && env.docOnMain !== false) {
+    // docOnMain uncollected (null/undefined): the fact was never read. If the
+    // other orphan preconditions hold (live chain + absent origin ref), the
+    // unread fact matters — degrade, never assume a side (S-1 direction).
+    const m2 = env.git && env.git.stackBranchMembers ? env.git.stackBranchMembers[parsed.branch] ?? null : null;
+    const r2 = env.git && env.git.branchRefs && Object.prototype.hasOwnProperty.call(env.git.branchRefs, parsed.branch) ? env.git.branchRefs[parsed.branch] : null;
+    if (env.git && branchCollected(env.git, parsed.branch) && m2 === null && (r2 === null || r2 === undefined || r2 === "")) {
+      annotations.push(emitCode(STACK_ENV_CODES, "ref-unavailable"));
+    }
   }
 
   // Element (i): every but-id resolves in `but status`.

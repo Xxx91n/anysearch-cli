@@ -170,7 +170,7 @@ D1's “extending the vocabulary requires a gate code change” enforceable.
 <!-- HANDOFF-LINT-VOCABULARY (parsed by handoff-lint-e2e.test.mjs — keep in sync with CODE_GROUPS.verdict in scripts/vocab-registry.mjs) -->
 ```
 run-url-red: run-url-section-missing | run-url-state-line-missing | run-url-state-ambiguous | run-url-unparseable | pending-reason-out-of-vocabulary | declaration-fact-conflict | green-claim-falsified
-stack-red: but-id-not-resolved | sha-not-commit | chain-tail-not-in-branch
+stack-red: but-id-not-resolved | sha-not-commit | chain-tail-not-in-branch | stack-orphaned-by-land
 stack-structural-red: stack-line-missing | stack-chain-empty
 stack-env: stack-unavailable | ref-unavailable | shallow-clone
 stack-advisory: stale-capture

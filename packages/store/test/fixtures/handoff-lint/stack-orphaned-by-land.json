@@ -1,0 +1,67 @@
+{
+ "name": "stack-orphaned-by-land",
+ "round": 99,
+ "description": "R100/ADR-0101: closeout on origin/main carries a live Stack chain while origin/<branch> is absent — land dissolved the stack; the declaration survived as a dead capture (the R99 sha-not-commit miss class).",
+ "doc": "# Handoff — Grill Round 99 → R100（夹具）\n\nStack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：\n  r96-handoff-lint → aaa (`aaaaaaa1` @ 2026-10-02) → bbb (`bbbbbbb2` @ 2026-10-02)\n\n## 绿色 run URL（必填）\n\nPENDING: stack-unpushed — 本栈尚未 push（夹具）\n\n## 下一轮候选\n\n- n/a\n",
+ "env": {
+  "now": "2026-10-08",
+  "repo": "Xxx91n/anysearch-cli",
+  "git": {
+   "ok": true,
+   "shallow": false,
+   "branchRefs": {},
+   "stackBranchMembers": {
+    "r96-handoff-lint": null
+   },
+   "commitObjects": {
+    "aaaaaaa1": "commit",
+    "bbbbbbb2": "commit"
+   },
+   "resolveSha": {
+    "aaaaaaa1": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "bbbbbbb2": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   },
+   "onMainDocs": {
+    "round-99-closeout.md": true
+   }
+  },
+  "gh": {
+   "ok": true,
+   "runs": {}
+  },
+  "but": {
+   "ok": true,
+   "ids": [
+    "aaa",
+    "bbb"
+   ]
+  },
+  "workflows": {
+   "ok": true,
+   "pushBranches": [
+    "main"
+   ],
+   "pushAllBranches": false
+  },
+  "deferred": {
+   "ok": true,
+   "covers": [
+    "r96-handoff-lint"
+   ],
+   "pendingPredicates": []
+  },
+  "docOnMain": true
+ },
+ "expect": {
+  "verdict": "RED",
+  "scope": "three-state",
+  "runUrlState": "PENDING",
+  "stackState": "RED",
+  "redCodes": [
+   "stack-orphaned-by-land"
+  ],
+  "annotations": [
+   "stack:ref-unavailable"
+  ]
+ }
+}

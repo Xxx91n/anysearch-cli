@@ -94,7 +94,10 @@ export function probeBareWordSingleSource() {
 // always falsified here too - no representative sampling, no Anchor Coverage Gap.
 export function probeVocabGuards({ root } = {}) {
   const scan = scanVocabGuards({ root });
-  const stems = scan.scanned.filter((s) => s.codes > 0).map((s) => s.stem);
+  // ①-flagged stems carry codes but were never injected by the scan - the
+  // probe must not inject them either (that would execute the flagged work).
+  const astFlagged = new Set(scan.findings.filter((f) => f.name === "ast-top-level-effect").map((f) => f.stem));
+  const stems = scan.scanned.filter((s) => s.codes > 0 && !astFlagged.has(s.stem)).map((s) => s.stem);
   const inject = [];
   let allNamed = true;
   for (const stem of stems) {
@@ -118,6 +121,7 @@ export function probeVocabGuards({ root } = {}) {
     detail:
       "scan findings=" + JSON.stringify(scan.findings) +
       "; excluded-drift=" + JSON.stringify(scan.excludedDrift) +
+      "; ast-candidates=" + JSON.stringify((scan.candidates ?? []).map((c) => c.stem)) +
       "; per-module injections={" + inject.join(", ") + "}",
   };
 }
