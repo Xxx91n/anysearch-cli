@@ -11,4 +11,5 @@
 
 ## 本地复跑记录
 
-- （ship-gate 复跑结果于同会话回填）
+- main push 三跑全绿：ci 37713569426 success (4m51s) / ship-gate 37713569449 success (8m37s, ubuntu+windows) / native-smoke 37713569413 success (39s) —— 公开树 post-land 重验 GREEN。
+- 本地 `node scripts/ship-gate.mjs` 全量复跑 = `[pass] ship gate green`（9/9；handoff-lint 1g: r99 closeout [three-state] PENDING=dissolved 栈腿 GREEN + run-url stack-unpushed 预期 PENDING；anchors 1j 5/5 consumer-verified；eval 126/126；pack+stdio/fail-open 活测绿）。环境修复：packages/retriever/node_modules 局部断链（@sinclair/typebox 缺席）经 rm+pnpm install 重建，非代码缺陷（CI 全新安装同步绿）。
