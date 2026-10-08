@@ -31,7 +31,7 @@ import { parseStackLine } from "../../../scripts/handoff-lint-verdict.mjs";
 import * as verdictNs from "../../../scripts/handoff-lint-verdict.mjs";
 import { CODE_GROUPS } from "../../../scripts/vocab-registry.mjs";
 import * as probesModule from "../../../scripts/enforcement-anchor-probes.mjs";
-import { scanVocabGuards } from "../../../scripts/vocab-scan.mjs";
+import { scanVocabGuards, AST_FINDING_NAMES } from "../../../scripts/vocab-scan.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..", "..", "..");
@@ -519,6 +519,13 @@ eq(newestCloseoutTargets([
   assert(c3.effects.length > 0, "classifier: spawn launcher reports effects");
   const cPure = classifyTopLevel("const ROOT = path.resolve(\".\");\nconst RE = new RegExp(\"x\");\n");
   eq(cPure.effects.length, 0, "classifier: whitelisted pure initializers (path.resolve/new RegExp) report no effects");
+  // F2 (R100 audit): a bare top-level `await expr;` statement is tagged
+  // top-level-await (not swallowed into expression-statement); a pure module
+  // with no await stays effect-free (paired negative).
+  const cAwait = classifyTopLevel("await loadAll();\n");
+  assert(cAwait.effects.some((e) => e.kind === "top-level-await"), "classifier: a bare top-level await statement is tagged top-level-await");
+  const cNoAwait = classifyTopLevel("const A = 1;\nconst B = [\"x\"];\n");
+  assert(!cNoAwait.effects.some((e) => e.kind === "top-level-await"), "classifier: a side-effect-free module reports no top-level-await");
   // scanVocabGuards on a synthetic root (paired): temp scripts/ tree
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "vocab-scan-"));
   fs.mkdirSync(path.join(tmpRoot, "scripts", "tau"), { recursive: true });
@@ -540,6 +547,12 @@ eq(newestCloseoutTargets([
   fs.writeFileSync(path.join(tmpRoot, "scripts", "tau", "tau-scan.mjs"), "export const ESCAPE_CODES = Object.freeze([\"x\"]);\nconst c = spawn(\"x\");\n");
   const s4 = scanVocabGuards({ root: tmpRoot, load: () => ({}) });
   assert(s4.findings.some((f) => f.stem === "tau/tau-scan" && f.name === "ast-excluded-codes"), "scan: an excluded path carrying *_CODES emits ast-excluded-codes RED (exclusion legitimizes effects, never vocabulary)");
+  // F1 (R100 audit): the AST front-gate finding names are a CLOSED frozen set —
+  // each emitted name must be a member of AST_FINDING_NAMES (no free-form drift).
+  const astNames = new Set(Object.values(AST_FINDING_NAMES));
+  for (const f of [...s2.findings, ...s3.findings, ...s4.findings]) {
+    if (String(f.name).startsWith("ast-")) assert(astNames.has(f.name), "AST finding `" + f.name + "` is a member of the closed AST_FINDING_NAMES vocabulary");
+  }
   // nested governed module under recursion reaches the loader
   fs.writeFileSync(path.join(tmpRoot, "scripts", "tau", "nested.mjs"), "export const NESTED_CODES = Object.freeze([\"n\"]);\n");
   const seen = [];

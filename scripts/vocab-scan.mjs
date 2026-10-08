@@ -51,10 +51,21 @@ export const EXCLUDED_EXTENSIONS = Object.freeze([".ts", ".py"]);
 export const EXCLUDED_PATHS = Object.freeze([
   {
     path: "tau/tau-scan.mjs",
-    reason: "spawn launcher: top-level `child = spawn(...)` and `child.on(\"close\")` — namespace injection would execute a child process",
+    reason: "cannot be namespace-injected: top-level `child = spawn(...)` and `child.on(\"close\")` mean importing it executes a child process at load time",
     since: "2026-10-08",
   },
 ]);
+
+// Closed vocabulary of the AST front-gate finding names (ADR-0101 D6). Emitted
+// as findings[].name, not as governed *_CODES exports, so they live here — a
+// frozen set the e2e R4 coverage leg can lock against (no free-form drift).
+// Named without a _CODES suffix: this is a code-name MAP, not a governed
+// vocabulary, so the scan's own `export const X_CODES` detector must not match it.
+export const AST_FINDING_NAMES = Object.freeze({
+  topLevelEffect: "ast-top-level-effect",
+  codesUnverifiable: "ast-codes-unverifiable",
+  excludedCodes: "ast-excluded-codes",
+});
 
 // The one error-text formatter (audit R99-2 dedup): scan and probe share it so a
 // failure-detail shape can never drift between the two call sites.
@@ -151,18 +162,18 @@ export function scanVocabGuards({ root, load } = {}) {
       // excluded .mjs CAN still be imported - a *_CODES here is an unguarded
       // vocabulary bypass and goes RED (drift for .ts/.py stays info because
       // those files can never be injected at all).
-      for (const c of cls.codes) findings.push({ stem, name: "ast-excluded-codes", detail: "excluded path carries `" + c.name + "` - an un-injectable vocabulary can never be guarded" });
+      for (const c of cls.codes) findings.push({ stem, name: AST_FINDING_NAMES.excludedCodes, detail: "excluded path carries `" + c.name + "` - an un-injectable vocabulary can never be guarded" });
       continue;
     }
     if (cls.codes.length > 0 && cls.effects.length > 0) {
       // ① codes ∧ effects: never inject (that would execute the side effect);
       // the RED names the structural violation instead.
       scanned.push({ stem, codes: cls.codes.length });
-      findings.push({ stem, name: "ast-top-level-effect", detail: "vocabulary-bearing module executes top-level work {" + cls.effects.map((e) => e.kind).join(", ") + "} - it cannot be namespace-injected; move the vocabulary to a pure data module" });
+      findings.push({ stem, name: AST_FINDING_NAMES.topLevelEffect, detail: "vocabulary-bearing module executes top-level work {" + cls.effects.map((e) => e.kind).join(", ") + "} - it cannot be namespace-injected; move the vocabulary to a pure data module" });
       continue;
     }
     for (const c of cls.codes) {
-      if (!c.verifiable) findings.push({ stem, name: "ast-codes-unverifiable", detail: "export `" + c.name + "` initializer is not a literal vocabulary (dynamic assembly cannot be statically proven)" });
+      if (!c.verifiable) findings.push({ stem, name: AST_FINDING_NAMES.codesUnverifiable, detail: "export `" + c.name + "` initializer is not a literal vocabulary (dynamic assembly cannot be statically proven)" });
     }
     if (cls.codes.length === 0 && cls.effects.length > 0) {
       // ③ effects ∧ no codes: exclusion candidate, named for the closed list.

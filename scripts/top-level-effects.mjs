@@ -227,7 +227,11 @@ export function classifyTopLevel(text) {
     if (ts.isExpressionStatement(st)) {
       // Directive prologue ("use strict" etc.) is declaration, not effect.
       if (!(ts.isStringLiteral(st.expression) && i === 0)) {
-        push("expression-statement", st.expression.getText(sf).slice(0, 72));
+        // A bare top-level `await expr;` is an expression statement whose
+        // awaited value runs at import time: tag it top-level-await so the
+        // dedicated signal survives (the generic kind would swallow it).
+        const kind = ts.isAwaitExpression(st.expression) ? "top-level-await" : "expression-statement";
+        push(kind, st.expression.getText(sf).slice(0, 72));
       }
       return;
     }
@@ -262,11 +266,11 @@ export function classifyTopLevel(text) {
       push("control-flow", st.getText(sf).slice(0, 72));
       return;
     }
-    // Anything else at top level (await expression statements are already
-    // ExpressionStatement; labeled/empty/debugger statements are inert).
+    // Anything else at top level (labeled/empty/debugger statements are inert).
+    // A bare `await expr;` is an ExpressionStatement, already tagged above.
   });
-  // top-level await: await expression as a statement already shows up as
-  // expression-statement; an await bound at top level is a dedicated kind.
+  // top-level await bound to a variable initializer (`const x = await ...`) is
+  // a dedicated kind too — the expression-statement branch never sees it.
   const hasTopAwait = sf.statements.some((st) => ts.isVariableStatement(st) && st.declarationList.declarations.some((d) => d.initializer && d.initializer.kind === ts.SyntaxKind.AwaitExpression));
   if (hasTopAwait) push("top-level-await", "await in top-level initializer");
   return { codes, effects };
