@@ -23,9 +23,10 @@
 
 ## T0 执行窗状态（2026-10-08 定锚）
 
-- VC 全走 GitButler：`r100-grill-ledger`（任务书+账本六 commit，unlanded）与 `r100-green-repair`（绿门修复独立栈）并行互不干扰。
+- VC 全走 GitButler：`r100-grill-ledger`（任务书+账本+goal，unlanded）承载后续票；`r100-green-repair` 已 ff-land 上 main（8d1854e2）并注销。
 - main tip 992412d6 红态确认：CI run 37344186467 sha-not-commit（六枚 capture SHA 随 land 重写、远端无对象）；本地残留对象使其呈 PENDING（stack-unavailable+ref-unavailable 降级遮蔽）——写时为真声明被 land 翻转即本轮立法靶症。
 - 断言数基数 463/394 只升不降；判定核纯净、薄壳不写判定、正反成对 fixture、fail-closed 沿账执行。
+- **T0 land 已落**：`r100-green-repair` ff-land @ `8d1854e2`（2026-10-08，origin/r100-green-repair 随 land 注销）；post-land 重验=main push 三跑（ci/ship-gate/native-smoke）+本地 ship-gate 复跑——land 记录见 `evidence/t0-land-record.md`。
 - WORKFLOW.md 备忘：任务书所引「WORKFLOW.md §4.2 版本控制」实体已随 ADR-0092 D3 判死移除，VC 纪律以 GitButler skill + AGENTS.md 为准——具名申报此文档漂移。
 
 no-changelog-entry: T0 为残留轨清偿非簿记轮次动作；CHANGELOG r100 节随 T3（并入 PR-C）落地
