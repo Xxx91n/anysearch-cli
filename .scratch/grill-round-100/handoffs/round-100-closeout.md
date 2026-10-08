@@ -1,7 +1,8 @@
 # Handoff — Grill Round 100 → R101 收口
 
-Stack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：
+Stack（dissolved @ 2026-10-08）—— 交付栈已 ff-land 上 origin/main（land @ 176e3afda425），但 ID/ref 随 land 注销，链留作历史定位：
   r100-meta-cap-impl → uxm (`a8090d72` @ 2026-10-08) → mvt (`a4a38f02` @ 2026-10-08) → qxk (`d7831102` @ 2026-10-08) → nnw (`d54fc053` @ 2026-10-08) → pvt (`82aade15` @ 2026-10-08) → nzs (`3cc124fe` @ 2026-10-08) → rpy (`10b8354d` @ 2026-10-08) → vwn (`536c6319` @ 2026-10-08) → vnm (`ef48549b` @ 2026-10-08) → sly (`c8390a13` @ 2026-10-08) → wtq (`05ff63f2` @ 2026-10-08) → xrp (`2794826f` @ 2026-10-08) → oxk (`24362534` @ 2026-10-08) → xwy (`fe4b6a1b` @ 2026-10-08) → nqw (`98b93976` @ 2026-10-08) → zxl (`2cd70559` @ 2026-10-08) → prw (`a762c69f` @ 2026-10-08)
+<!-- re-anchor: 2026-10-08 by scripts/handoff-reanchor.mjs — Stack 行改述为 dissolved 形态（land @ 176e3afda425）；capture 时值留作历史史料，dissolve claim 由 handoff-lint 门验 -->
 
 ## 已完成
 

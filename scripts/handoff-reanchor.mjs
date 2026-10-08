@@ -74,6 +74,11 @@ lines[idx] =
   indent +
   "Stack（dissolved @ " + landDate + "）—— 交付栈已 ff-land 上 origin/main（land @ " + String(mainSha).slice(0, 12) +
   "），但 ID/ref 随 land 注销，链留作历史定位：";
-lines.splice(idx + 1, 0, indent + "<!-- re-anchor: " + landDate + " by scripts/handoff-reanchor.mjs — Stack 行改述为 dissolved 形态（land @ " + String(mainSha).slice(0, 12) + "）；capture 时值留作历史史料，dissolve claim 由 handoff-lint 门验 -->");
+// The re-anchor comment must go AFTER the chain block — parseStackLine reads
+// the first non-empty line after the header as the chain, so a comment in
+// between would poison the parse (empirically: stack-line-missing).
+let insertAt = idx + 1;
+while (insertAt < lines.length && /^\s+\S/.test(lines[insertAt])) insertAt++;
+lines.splice(insertAt, 0, indent + "<!-- re-anchor: " + landDate + " by scripts/handoff-reanchor.mjs — Stack 行改述为 dissolved 形态（land @ " + String(mainSha).slice(0, 12) + "）；capture 时值留作历史史料，dissolve claim 由 handoff-lint 门验 -->");
 fs.writeFileSync(file, lines.join("\n"), "utf8");
 console.log("handoff-reanchor: " + rel + " — Stack rewritten to dissolved @ " + landDate + " (land @ " + String(mainSha).slice(0, 12) + ", branch " + branch + ")");
