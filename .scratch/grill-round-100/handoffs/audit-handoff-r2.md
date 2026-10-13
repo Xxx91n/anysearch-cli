@@ -125,3 +125,4 @@
 - 一审报告：`.scratch/grill-round-100/handoffs/audit-handoff.md`
 - 账本：`.scratch/grill-round-100/decision-ledger.md`
 - 审计日志目录 `C:\Users\ADMINI~1\AppData\Local\Temp\audit-r100r2\`（check/build/verdict/e2e/shipgate/round100.diff/commits.txt/stat.txt）<!-- machine-local: 本机临时审计输出，不入仓 @ 2026-10-13 -->
+- 落地：`r100-audit-r2` 分支经 `but land` ff-land 入 origin/main，tip `0ab9e0e0`；四 commit 按 docs/fix/docs/docs 序（`3817aa2d`/`cc8d95b9`/`7fabbf49`/`0ab9e0e0`）。

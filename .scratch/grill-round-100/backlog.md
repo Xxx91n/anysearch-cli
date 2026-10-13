@@ -1,7 +1,7 @@
 # Backlog — R100 二次审计（audit-r2）
 
 - 来源：`.scratch/grill-round-100/handoffs/audit-handoff-r2.md`（2026-10-13；审计窗 diff `8d1854e2..58f10f95`，25 commits）。
-- 处置：审计窗判定全部非阻塞 → owner 授权修复窗直接清偿。修复 commit 见 `r100-audit-r2` 分支。
+- 处置：审计窗判定全部非阻塞 → owner 授权修复窗直接清偿。修复 commit 已 ff-land 入 main：`cc8d95b9`（fix）+ `3817aa2d`/`7fabbf49`/`0ab9e0e0`（docs 三枚），origin/main tip `0ab9e0e0`（2026-10-13）。
 - LOOP 复核：修后重跑同一套验收（H1–H14）——verdict 473/0、e2e 471/0、ship-gate 9/9 复绿。
 
 ## 已清偿（fix commit）
