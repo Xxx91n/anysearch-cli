@@ -27,16 +27,10 @@ import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
-import { governedJsonViolation, governedListViolation } from "./governed-json.mjs";
-import { CLOSEOUT_COVERAGE_FLOOR, isCloseoutName, scanRoundDirs, assessCloseoutCoverage } from "./closeout-coverage.mjs";
-import { runHandoffLint, newestCloseoutTargets, buildReportOnlyScan } from "./handoff-lint-shell.mjs";
-import { checkVerbatimClaim } from "./claims-verbatim.mjs";
-import { runEnforcementAnchors } from "./enforcement-anchors.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { enumerateScopedMarkdown, buildEnv, scanLines } from "./ship-gate-pathlint-detect.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -196,29 +190,6 @@ function stepAccessChainVerify() {
     return;
   }
   fail("access-events chain verification failed (object " + object + ", exit " + res.status + (res.status === 0 ? ", verdict " + (parsed && parsed.verdict) : "") + "): " + out + (res.stderr ? " stderr: " + String(res.stderr).trim().slice(0, 300) : ""));
-}
-
-// ADR-0077 (R76 T0 / D-003): governed-JSON canonical lock — the governed
-// file list is a hardcoded constant (n=1 today). Migrate to a registered config
-// when the list reaches n>=5 or packages need self-service registration.
-const CANONICAL_JSON_FILES = ["docs/deferred-registry.json"];
-
-// Byte-identical assertion per governed file; the failure message carries the
-// paste-able normalize command and this constant's location so a renamed file
-// can't orphan the list (list-rot guard). No autofix — the gate reports, the
-// human normalizes ("committed != reviewed" doctrine, ADR-0077).
-function stepGovernedJsonCanonical() {
-  // R77 T1: the list itself is governed — an empty CANONICAL_JSON_FILES iterates
-  // zero files and would report a vacuous green (fail-closed existence doctrine).
-  const listProblem = governedListViolation(CANONICAL_JSON_FILES);
-  if (listProblem) fail("canonical-json: " + listProblem);
-  for (const rel of CANONICAL_JSON_FILES) {
-    const p = path.join(ROOT, rel);
-    if (!fs.existsSync(p)) fail("canonical-json: governed file missing: " + rel + " — update CANONICAL_JSON_FILES in scripts/ship-gate.mjs");
-    const violation = governedJsonViolation(rel, fs.readFileSync(p));
-    if (violation) fail("canonical-json: " + violation);
-  }
-  report("pass", "canonical-json: " + CANONICAL_JSON_FILES.length + " governed file(s) byte-identical to canonical form (ADR-0077)");
 }
 
 // ---------------------------------------------------------------------------
@@ -751,169 +722,6 @@ function stepStaticAssertions() {
     report("pass", "ADR-0053 content trust boundary + inject probes present");
   }
 
-  // 1u. ADR-0081 (R80 D-004): derived-artifact freshness leg — current-round
-  //     CHANGELOG presence (fail) + 'no-changelog-entry: <reason>' structured
-  //     exemption + closeout-claims.json registration surface re-derivation.
-  //     Objective kinds fail-closed; narrative proxies warn-first (promotion
-  //     schedule recorded in ADR-0081). Only the newest grill-round dir is
-  //     asserted — older rounds are historical, not ratcheted retroactively.
-  {
-    const scratchDir = path.join(ROOT, ".scratch");
-    const roundNums = fs.existsSync(scratchDir)
-      ? fs.readdirSync(scratchDir).map((d) => (/^grill-round-(\d+)$/.exec(d) ?? [])[1]).filter(Boolean).map(Number)
-      : [];
-    const maxRound = roundNums.length ? Math.max(...roundNums) : null;
-    if (maxRound == null) {
-      report("skip", "freshness leg: no .scratch/grill-round-* dir — nothing to assert");
-    } else {
-      const roundRel = '.scratch/grill-round-' + maxRound;
-      const goalPath = path.join(ROOT, roundRel, "goal.md");
-      const goal = fs.existsSync(goalPath) ? fs.readFileSync(goalPath, "utf8") : "";
-      const exempt = /^no-changelog-entry\s*:\s*(.*)$/m.exec(goal);
-      const hasEntry = new RegExp('^## .*\\br' + maxRound + '\\b', "m").test(fs.readFileSync(path.join(ROOT, "CHANGELOG.md"), "utf8"));
-      if (exempt) {
-        const reason = exempt[1].trim();
-        if (!reason) fail('ADR-0081 D-004: ' + roundRel + "/goal.md 'no-changelog-entry:' exemption carries an empty reason");
-        report("pass", 'freshness leg: CHANGELOG entry exempted for r' + maxRound + ' (no-changelog-entry: ' + reason.slice(0, 80) + ')');
-      } else if (!hasEntry) {
-        fail("ADR-0081 D-004: CHANGELOG.md has no '## ' entry referencing r" + maxRound + " — current round is " + roundRel + "; add the round entry or declare 'no-changelog-entry: <reason>' in goal.md");
-      } else {
-        report("pass", 'freshness leg: CHANGELOG carries a current-round (r' + maxRound + ') entry');
-      }
-      const claimsPath = path.join(ROOT, roundRel, "closeout-claims.json");
-      if (!fs.existsSync(claimsPath)) {
-        report("warn", 'freshness leg: ' + roundRel + '/closeout-claims.json absent — registration surface expected from r80 onward (pre-registration rounds stay warn)');
-      } else {
-        let reg;
-        try { reg = JSON.parse(fs.readFileSync(claimsPath, "utf8")); }
-        catch (e) { fail('ADR-0081 D-004: ' + roundRel + '/closeout-claims.json is not valid JSON: ' + e.message); }
-        if (reg.schema !== "anysearch/closeout-claims@1") fail('ADR-0081 D-004: closeout-claims.json schema must be anysearch/closeout-claims@1 (got ' + reg.schema + ')');
-        if (reg.round !== maxRound) fail('ADR-0081 D-004: closeout-claims.json round=' + reg.round + ' but newest round dir is r' + maxRound);
-        const claims = Array.isArray(reg.claims) ? reg.claims : [];
-        if (!claims.length) fail("ADR-0081 D-004: closeout-claims.json registers zero claims — surface must be non-vacuous");
-        // ADR-0101 D2② (audit-r2 B7): the per-round sunset ledger line is an
-        // obligation — the claim's presence is what makes 行存在性 machine-
-        // checkable. Absent the claim, the ledger would lapse silently.
-        if (typeof reg.round === "number" && reg.round >= 100 && !claims.some((c) => c && c.kind === "anchor-activity")) {
-          fail('ADR-0101 D2②: ' + roundRel + '/closeout-claims.json carries no kind:"anchor-activity" claim — the anchor-activity ledger line is a per-round obligation since r100');
-        }
-        let verified = 0;
-        let reauthoredTotal = 0;
-        for (const c of claims) {
-          if (!c.id || !c.kind || !c.claim) fail('ADR-0081 D-004: claim missing id/kind/claim: ' + JSON.stringify(c).slice(0, 120));
-          const tag = 'closeout-claim ' + c.id + ' (' + c.kind + ')';
-          if (c.kind === "count") {
-            if (typeof c.command !== "string" || !c.command.trim()) fail('ADR-0081 D-004: ' + tag + ' lacks a derivation command — declaration and command land in the same diff');
-            // closeout-claims.json is a tracked repo file reviewed in the same diff as
-            // its declarations — shell:true runs its curated node -e one-liners on
-            // win32/posix alike (same trust boundary as this gate script itself).
-            const r = spawnSync(c.command, { cwd: ROOT, encoding: "utf8", shell: true, timeout: 30000 });
-            const got = Number((r.stdout ?? "").trim());
-            if (r.status !== 0 || !Number.isFinite(got)) fail('ADR-0081 D-004: ' + tag + ' derivation failed (exit ' + r.status + '): ' + String(r.stderr ?? r.stdout ?? "").slice(0, 160));
-            if (got !== c.expect) fail('ADR-0081 D-004: ' + tag + ' re-derived ' + got + ' != declared ' + c.expect + ' — stale closeout number');
-            verified++;
-          } else if (c.kind === "path") {
-            if (!Array.isArray(c.paths) || !c.paths.length) fail('ADR-0081 D-004: ' + tag + ' carries empty paths');
-            const miss = c.paths.filter((rel) => !fs.existsSync(path.join(ROOT, rel)));
-            if (miss.length) fail('ADR-0081 D-004: ' + tag + ' path(s) missing: ' + miss.join(", "));
-            verified++;
-          } else if (c.kind === "symbol") {
-            if (!c.file || !Array.isArray(c.tokens) || !c.tokens.length) fail('ADR-0081 D-004: ' + tag + ' needs file + non-empty tokens');
-            const fp = path.join(ROOT, c.file);
-            if (!fs.existsSync(fp)) fail('ADR-0081 D-004: ' + tag + ' file missing: ' + c.file);
-            const text = fs.readFileSync(fp, "utf8");
-            const miss = c.tokens.filter((t) => !text.includes(t));
-            if (miss.length) fail('ADR-0081 D-004: ' + tag + ' token(s) absent in ' + c.file + ': ' + miss.join(", "));
-            verified++;
-          } else if (c.kind === "field") {
-            if (!c.file || !c.field) fail('ADR-0081 D-004: ' + tag + ' needs file + field');
-            const jfp = path.join(ROOT, c.file);
-            if (!fs.existsSync(jfp)) fail('ADR-0081 D-004: ' + tag + ' file missing: ' + c.file);
-            let obj;
-            try { obj = JSON.parse(fs.readFileSync(jfp, "utf8")); }
-            catch (e) { fail('ADR-0081 D-004: ' + tag + ' ' + c.file + ' is not valid JSON: ' + e.message); }
-            const got = String(c.field).split(".").reduce((o, k) => (o == null ? o : o[k]), obj);
-            if (JSON.stringify(got) !== JSON.stringify(c.expect)) fail('ADR-0081 D-004: ' + tag + ' ' + c.field + '=' + JSON.stringify(got) + ' != declared ' + JSON.stringify(c.expect));
-            verified++;
-          } else if (c.kind === "narrative") {
-            const text = c.file && fs.existsSync(path.join(ROOT, c.file)) ? fs.readFileSync(path.join(ROOT, c.file), "utf8") : "";
-            const miss = (c.tokens ?? []).filter((t) => !text.includes(t));
-            if (miss.length) report("warn", 'freshness leg narrative proxy: ' + tag + ' token(s) absent in ' + (c.file ?? "<none>") + ': ' + miss.join(", "));
-            else verified++;
-          } else if (c.kind === "readme-token-pin") {
-            // ADR-0092 D4 + ADR-0093 D4: assert README declared host version token against expected/installed version
-            const fp = path.join(ROOT, c.file || "README.md");
-            if (!fs.existsSync(fp)) fail('ADR-0092 D4: ' + tag + ' file missing: ' + c.file);
-            const text = fs.readFileSync(fp, "utf8");
-            const host = c.host || "DeepSeek Harness";
-            const hostLine = text.split("\n").find((l) => l.includes(host));
-            if (!hostLine) fail('ADR-0092 D4: ' + tag + ' cannot find host row for "' + host + '" in ' + c.file);
-            const m = hostLine.match(/\|\s*[^|]+\|\s*([^|\s]+)\s*\|/);
-            const declaredVer = m ? m[1].trim() : null;
-            if (!declaredVer) fail('ADR-0092 D4: ' + tag + ' cannot parse version token from row: ' + hostLine);
-            let expectedVer = c.expect;
-            if (!expectedVer && c.command) {
-              const r = spawnSync(c.command, { cwd: ROOT, encoding: "utf8", shell: true, timeout: 10000 });
-              expectedVer = (r.stdout ?? "").trim();
-            }
-            if (!c.shadow && !expectedVer) {
-              fail('ADR-0092 D4: ' + tag + ' cannot resolve expected version (fail-closed)');
-            }
-            if (c.shadow) {
-              const matchState = (expectedVer && declaredVer === expectedVer) ? "MATCH" : "MISMATCH";
-              report("info", 'readme-token-pin shadow dry-run (' + tag + '): declared=' + declaredVer + ', expected=' + expectedVer + ' (' + matchState + ', non-blocking)');
-              verified++;
-            } else {
-              if (declaredVer !== expectedVer) {
-                fail('ADR-0092 D4: ' + tag + ' declared version ' + declaredVer + ' != expected ' + expectedVer);
-              }
-              verified++;
-            }
-          } else if (c.kind === "verbatim") {
-            // ADR-0098 D4: whole-sentence byte anchor against the count-transposition
-            // blind spot (same count, rewritten meaning, silently green). The text
-            // must occur byte-identically; a rewrite without the re-anchor ritual
-            // (reason + audit record + visible recount) reddens here instead of
-            // drifting silently. Ritual companion: reason is mandatory so the
-            // anchor stays reviewable; reauthored counts ritual passes.
-            // R5 (P-6 rework): the ratchet is a RECOUNT, not a flag - the check
-            // lives in scripts/claims-verbatim.mjs so the anchor:ratchet-recount
-            // probe consumes the SAME code path the gate runs (single consumer
-            // of record, never a divergent copy).
-            const problems = checkVerbatimClaim(c, { root: ROOT });
-            for (const p of problems) fail('ADR-0098 D4: ' + p);
-            reauthoredTotal += Array.isArray(c.reanchor_log) ? c.reanchor_log.length : 0;
-            verified++;
-          } else if (c.kind === "anchor-activity") {
-            // ADR-0101 D2② (Ratchet Sunset): the per-round one-line anchor
-            // activity ledger. The ledger numbers live in this claim's
-            // `expect` map {anchor-id: {prod_findings, last_real_red}}; the
-            // closeout doc must carry the line re-derived from them byte-
-            // identically (recount discipline, same as verbatim reauthored).
-            // Activity semantics stay human-adjudicated: only production
-            // findings count — fixture kills never enter this field.
-            if (!c.file || typeof c.expect !== "object" || c.expect === null || Array.isArray(c.expect)) fail('ADR-0101 D2②: ' + tag + ' needs file + expect object');
-            const afp = path.join(ROOT, c.file);
-            if (!fs.existsSync(afp)) fail('ADR-0101 D2②: ' + tag + ' file missing: ' + c.file);
-            const atext = fs.readFileSync(afp, "utf8");
-            const parts = Object.keys(c.expect).sort().map((id) => {
-              const v = c.expect[id] || {};
-              const n = Number.isFinite(v.prod_findings) ? v.prod_findings : 0;
-              const last = typeof v.last_real_red === "string" && v.last_real_red ? v.last_real_red : "—";
-              return id + " prod-findings=" + n + " last-real-RED=" + last;
-            });
-            const want = "锚活性 @ R" + reg.round + ": " + parts.join(" | ");
-            if (!atext.includes(want)) fail('ADR-0101 D2②: ' + tag + ' closeout doc does not carry the derived activity line verbatim — expected: ' + want.slice(0, 160));
-            verified++;
-          } else {
-            fail('ADR-0081 D-004: unknown claim kind ' + c.kind + ' (' + c.id + ')');
-          }
-        }
-        report("pass", 'closeout-claims r' + maxRound + ': ' + verified + '/' + claims.length + ' registered claims re-derived green (reanchor recount ' + reauthoredTotal + ')');
-      }
-    }
-  }
-
   // 1v. ADR-0081 (R80 T1): E6 supply-chain gate invariants — pnpm 11.1.3+
   //     verifyLockfileResolutions re-checks minimumReleaseAge on lockfile
   //     replay only while the workspace never opts out (evidence:
@@ -952,10 +760,6 @@ function stepStaticAssertions() {
     }
     report("pass", "E6 gate invariants: trustLockfile default(false), strict on, missing-time strict, zero age-excludes — upstream verify leg enforced");
   }
-
-  // 1t. ADR-0077 (R76 T0): governed-JSON canonical lock — governed files must
-  //     byte-equal their canonical serialization (see scripts/governed-json.mjs).
-  stepGovernedJsonCanonical();
 
 }
 
@@ -1104,183 +908,6 @@ function stepContextWiring() {
   report("pass", "CONTEXT.md Retroaererd term wiring: L1 numeric + L2 symbols + L3 negative over-claim green (ADR-0060 D3)");
 }
 
-// ADR-0060 D5 (T-3): evidence anchors must resolve. Every backtick-quoted bare 40-hex git
-// reference in docs/adr must resolve via `git cat-file -e`, or carry an explicit `[squashed]`
-// marker (SPDX NOASSERTION-style honest unknown). A non-zero git exit is itself fail-closed
-// (round-58 audit C-2 discipline). Refs pinned as owner/repo@sha are external and out of scope.
-// stdlib-only.
-function stepEvidenceAnchors() {
-  report("info", "step 1f/9: ADR evidence-anchor resolvability (ADR-0060 D5)");
-  // round-59 audit R-1: `git cat-file -e` on a non-tip history commit needs the full object DB,
-  // so a SHALLOW clone is explicitly unverifiable (exit 2), never a misleading red. CI checks out
-  // with fetch-depth: 0 (.github/workflows/ship-gate.yml).
-  const shallow = spawnSync("git", ["rev-parse", "--is-shallow-repository"], { cwd: ROOT, encoding: "utf8" });
-  if (shallow.error) failUnverifiable("evidence-anchor: git rev-parse could not spawn (" + String(shallow.error.message) + ")");
-  if (shallow.status !== 0) failUnverifiable("evidence-anchor: git rev-parse --is-shallow-repository failed (exit " + shallow.status + ")");
-  if ((shallow.stdout ?? "").trim() === "true") {
-    failUnverifiable("evidence-anchor: the repository is a SHALLOW clone, so non-tip history commits cannot be resolved - check out with fetch-depth: 0 (CI: .github/workflows/ship-gate.yml) before running the gate");
-  }
-  const adrDir = path.join(ROOT, "docs", "adr");
-  const files = fs.readdirSync(adrDir).filter((f) => f.endsWith(".md")).sort();
-  let resolved = 0;
-  let whitelisted = 0;
-  let external = 0;
-  for (const f of files) {
-    const lines = fs.readFileSync(path.join(adrDir, f), "utf8").split(/\r?\n/);
-    lines.forEach((line, i) => {
-      // round-59 audit R-8: scan any backtick-quoted token CONTAINING a 40-hex run, so a prefixed
-      // form (e.g. owner/repo@sha) can no longer hide from the regex. Three forms are lawful: a
-      // bare 40-hex SHA (must resolve), a permalink URL (external reference, reported), or a
-      // reference marked [squashed] (per-reference marker immediately after the token).
-      const re = /`([^`]*)`/g;
-      let m;
-      while ((m = re.exec(line))) {
-        const token = m[1];
-        // round-59 audit: only a DELIMITED 40-hex run counts as a git reference. A 64-hex
-        // sha256 digest contains no delimited 40-hex run, so it is correctly ignored (the
-        // first cut of this scan false-positived on ADR-0045's sha256).
-        if (!/(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])/.test(token)) continue;
-        const after = line.slice(m.index + m[0].length, m.index + m[0].length + 48);
-        if (after.includes("[squashed]")) { whitelisted++; continue; }
-        if (/^https?:\/\//.test(token)) { external++; continue; }
-        if (!/^[0-9a-f]{40}$/.test(token)) {
-          fail("evidence-anchor: " + f + ":" + (i + 1) + " quotes an unrecognized git-reference form `" + token + "` - use a bare 40-hex SHA (resolvable), a full permalink URL (external), or mark it [squashed]");
-        }
-        const res = spawnSync("git", ["cat-file", "-e", token + "^{commit}"], { cwd: ROOT, encoding: "utf8" });
-        if (res.error) failUnverifiable("evidence-anchor: git cat-file could not spawn for " + f + ":" + (i + 1) + " (" + String(res.error.message) + ")");
-        if (res.status !== 0) {
-          fail("evidence-anchor: " + f + ":" + (i + 1) + " quotes " + token + " but `git cat-file -e` cannot resolve it - re-anchor (PR number / permalink / path+line) or mark it [squashed]");
-        }
-        resolved++;
-      }
-    });
-  }
-  if (resolved + whitelisted + external === 0) fail("evidence-anchor: no 40-hex git reference found in docs/adr - the assertion would pass vacuously");
-  report("pass", "evidence-anchor: " + resolved + " resolvable 40-hex reference(s), " + external + " external permalink(s), " + whitelisted + " [squashed]-whitelisted");
-}
-
-// ADR-0069 (R68 T2): closeout handoff required-field lint. The R67 closeout
-// shipped without the handoff-template's mandatory "绿色 run URL" section and
-// Stack line — a doc-level omission no gate caught. Scope = closeout-shaped
-// docs (*closeout* / *closure* filename keyword under .scratch/*/handoffs/;
-// audit-only docs and next-round task books excluded) that are EITHER touched
-// by this diff OR the newest closeout on disk. Older untouched closeouts are
-// grandfathered — the rule postdates them.
-// R69 T0: the bare round-NN-* shape leg was removed — direction/task docs
-// (e.g. round-69-direction.md) are not closeouts and were false-positive hits.
-//
-// R96 T2 (ADR-0097): the field legs were replaced by the three-state verdict
-// core. This function is now a thin shell - it selects the target docs, hands
-// them to runHandoffLint (collect -> transmit -> report), and maps the shell's
-// lines onto gate output. No verdict branch is written here; ancestry-as-
-// identity, the bare rev-parse HEAD target and the silent liveness fold are gone.
-function stepHandoffCloseoutLint() {
-  report("info", "step 1g/9: closeout handoff required-field lint (ADR-0069)");
-  const scratchDir = path.join(ROOT, ".scratch");
-  const targets = new Set();
-
-  // (a) closeout docs touched by this diff — the forward-going enforcement leg.
-  // Range mirrors ship-gate.yml's memory-eval filter: pushed range, else
-  // branch-vs-default-branch, else HEAD's own file list. Working-tree edits
-  // count too (a doc being written right now must comply before commit).
-  const diffSources = [
-    ["diff", "--name-only", "origin/main...HEAD"],
-    ["show", "--pretty=format:", "--name-only", "HEAD"],
-    ["diff", "--name-only", "HEAD"],
-    ["diff", "--name-only", "--cached"],
-  ];
-  for (const args of diffSources) {
-    const d = spawnSync("git", args, { cwd: ROOT, encoding: "utf8" });
-    if (d.status !== 0) continue;
-    for (const f of (d.stdout ?? "").split("\n").map((s) => s.trim()).filter(Boolean)) {
-      const norm = f.replace(/\\/g, "/");
-      const base = path.posix.basename(norm);
-      if (norm.startsWith(".scratch/") && norm.includes("/handoffs/") && isCloseoutName(base)) targets.add(norm);
-    }
-  }
-
-  // (b) closeout coverage (ADR-0077, R76 T1): "round complete" = a registered
-  //     Grill Round N row in docs/adr/index.md, not directory existence. The
-  //     old fallback walked back to the newest dir WITH a closeout and silently
-  //     masked a missing one (R70 F1 — four rounds green on the previous doc).
-  //     Fail-closed assertions live in scripts/closeout-coverage.mjs:
-  //     registered-without-closeout / index<->.scratch drift / empty-or-
-  //     unparseable derivation all go red; the newest dir still in flight
-  //     prints a structured exemption line, never an implicit break.
-  const roundDirs = scanRoundDirs(scratchDir);
-  let indexText;
-  try {
-    indexText = fs.readFileSync(path.join(ROOT, "docs", "adr", "index.md"), "utf8");
-  } catch (e) {
-    fail("closeout-coverage: cannot read docs/adr/index.md (" + (e && e.message) + ") — the derivation must not run blind (ADR-0077)");
-  }
-  const cov = assessCloseoutCoverage({ dirs: roundDirs, indexText });
-  // Rework F-3: the exemption line prints BEFORE the fail — under a mixed red
-  // state (violations AND an in-flight round) the exemption must stay
-  // observable, otherwise the one signal you need to diagnose the red goes
-  // silent. Rework-2 (r76-audit residual): coverage violations print as a
-  // [fail] line but the exit is deferred until after the field-lint below —
-  // a coverage red must not suppress lint diagnostics, nor lint a coverage red.
-  if (cov.awaiting !== null) report("skip", "awaiting closeout: round " + cov.awaiting + " (ADR not yet registered)");
-  const covRed = cov.problems.length > 0;
-  const exitIfCoverageRed = () => { if (covRed) { flushReportEntries("fail"); process.exit(1); } };
-  if (covRed) report("fail", "closeout-coverage: " + cov.problems.length + " violation(s) (ADR-0077):\n  " + cov.problems.join("\n  "));
-  else report("pass", "closeout-coverage: " + cov.registeredCount + " registered / " + cov.completedCount + " completed round(s) at floor " + CLOSEOUT_COVERAGE_FLOOR);
-
-  // Field-lint surface unchanged (bounds the gh-liveness cost): only the
-  // newest round dir WITH closeouts on disk is linted.
-  for (const rel of newestCloseoutTargets(roundDirs)) targets.add(rel);
-
-  if (targets.size === 0) { report("skip", "handoff-lint: no closeout docs in scope (diff-clean and none on disk)"); exitIfCoverageRed(); return; }
-
-  // ADR-0097 D1/D2: the verdict itself lives in scripts/handoff-lint-verdict.mjs
-  // (pure) behind scripts/handoff-lint-shell.mjs (collect -> transmit -> report).
-  // This leg only selects the target docs and maps the shell's lines to gate
-  // output; no verdict branch is written here.
-  const documents = [];
-  for (const rel of [...targets].sort()) {
-    const file = path.join(ROOT, rel);
-    if (!fs.existsSync(file)) continue; // renamed/deleted since diff - nothing to lint
-    documents.push({ rel, name: path.posix.basename(rel), text: fs.readFileSync(file, "utf8") });
-  }
-
-  const result = runHandoffLint({ root: ROOT, documents });
-  // ADR-0098 D3 two-speed split: the report-only full sweep reuses the gate
-  // snapshot (pure re-evaluation, no new subprocess) and never fails.
-  const allDocs = [];
-  for (const dir of roundDirs) {
-    if (!dir || !dir.hasCloseout) continue;
-    for (const c of dir.closeouts || []) {
-      const rel = (".scratch/" + dir.name + "/handoffs/" + c).replace(/\\/g, "/");
-      const file = path.join(ROOT, rel);
-      if (!fs.existsSync(file)) continue;
-      allDocs.push({ rel, name: path.posix.basename(rel), text: fs.readFileSync(file, "utf8") });
-    }
-  }
-  for (const line of buildReportOnlyScan({ documents: allDocs, snapshot: result.snapshot }).lines) report(line.kind, line.msg);
-  for (const line of result.lines) if (line.kind !== "fail") report(line.kind, line.msg);
-  const problems = result.lines.filter((l) => l.kind === "fail").map((l) => l.msg);
-  if (problems.length) fail("handoff-lint: closeout required fields missing/invalid (ADR-0097 three-state):\n  " + problems.join("\n  "));
-  report("pass", "handoff-lint: " + result.counts.green + " GREEN / " + result.counts.pending + " PENDING across " + documents.length + " closeout doc(s) (ADR-0097 three-state)");
-  exitIfCoverageRed();
-}
-
-// ADR-0099 (R98 D-002/D-003): enforcement-anchor selfcheck — the fifth
-//     morphology detector. The anchors declare machine constraints on GATE
-//     CODE (not closeout docs), so the leg lives parallel to the lint legs:
-//     registered as its own step (self-labelled reportStep, same convention
-//     as stepValidateDomains) so every verdict line lands in report.json
-//     entries. The shell runs each anchor's falsification probe and reports
-//     kill/no-kill; the registry file, an empty/malformed table and a missing
-//     probe are all fail-closed.
-function stepEnforcementAnchors() {
-  reportStep("step_1_6_enforcement_anchors");
-  report("info", "step 1j/9: enforcement-anchor selfcheck (ADR-0099 fifth morphology)");
-  const anchorRes = runEnforcementAnchors({ root: ROOT });
-  for (const l of anchorRes.lines) report(l.kind, l.msg);
-  if (anchorRes.exitKind === "fail") fail("enforcement-anchors: declared machine constraint(s) lack a live consumer (ADR-0099 fifth morphology)");
-}
-
 // R69 D-007 (T4): standing bilingual parity gate — README.md (canonical EN) and
 // README.zh-CN.md (derived translation) must not drift. An EN-only edit that
 // forgets the companion is a *persistent* red, not a per-diff warning: both
@@ -1323,76 +950,6 @@ function stepReadmeParity() {
   else if (!/\(docs\/limitations\.md\)/.test(en)) problems.push("README.md lost the docs/limitations.md pointer");
   if (problems.length) fail("readme-parity: " + problems.join("; "));
   report("pass", "readme-parity: heading 1:1 + " + E.code.length + " code block(s) + " + el.length + " link(s) byte-identical; limitations pointer live");
-}
-
-
-// ADR-0072 (R71 T0 / D-002): machine-local path discipline lint. Docs cite
-// machine paths for three different purposes and the doctrine now prices them
-// separately (AGENTS.md "Deliverable path discipline"): locators (Stack lines)
-// may stay absolute; in-repo target references must be repo-relative; every
-// other machine-local path needs a governed declaration marker
-// <!-- machine-local: <reason> @ <YYYY-MM-DD> --> on the same line — or on the
-// line directly before a ``` fence, which covers the fenced block (transcript
-// excerpts). Bare paths, bare markers (no reason/date), and unregistered
-// .scratch doc dirs are all violations. Sweep scope is the registered list in
-// scripts/ship-gate-pathlint.config.json — a new document type lands only by
-// editing that file (explicit registration, q2 correction 3).
-function stepPathLint() {
-  report("info", "step 1i/9: machine-local path discipline lint (ADR-0072)");
-  const cfgPath = path.join(ROOT, "scripts", "ship-gate-pathlint.config.json");
-  if (!fs.existsSync(cfgPath)) fail("path-lint: scripts/ship-gate-pathlint.config.json missing — the sweep registration is the leg's contract (fail-closed)");
-  let cfg;
-  try { cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8")); }
-  catch (e) { fail("path-lint: config unparseable: " + e.message); }
-  if (!Array.isArray(cfg.roots) || !Array.isArray(cfg.scratchDocDirs)) fail("path-lint: config needs roots[] + scratchDocDirs[]");
-  // R71-audit F4: the declared marker template is the leg's contract — validate
-  // its placeholders and derive the loose detector from its literal stem, so a
-  // renamed marker follows the config instead of drifting against a hardcode.
-  if (typeof cfg.marker !== "string" || !cfg.marker.includes("<reason>") || !cfg.marker.includes("<YYYY-MM-DD>"))
-    fail("path-lint: config marker template malformed — needs <reason> + <YYYY-MM-DD> placeholders");
-  for (const g of cfg.roots) {
-    // R71-audit F5: an unsupported glob silently scans nothing inside a
-    // fail-closed leg — allowed forms only: "*.md", "<dir>/**/*.md", literal.
-    if (g.includes("*") && g !== "*.md" && !/^[^*]+\/\*\*\/\*\.md$/.test(g))
-      fail("path-lint: unsupported roots pattern " + JSON.stringify(g) + " — allowed: '*.md', '<dir>/**/*.md', or a literal path");
-  }
-
-  // Enumerate committed docs plus untracked-but-not-ignored new files in scope
-  // (a doc being written right now must comply before commit — same posture as
-  // the closeout lint's working-tree leg).
-  let inScope;
-  try { inScope = enumerateScopedMarkdown(cfg, ROOT); }
-  catch (e) { fail("path-lint: " + e.message); }
-
-  const problems = [];
-  // Registration check: every .scratch doc must sit in a registered dir —
-  // <round>/ file (depth-2, "" entry) or <round>/<dir>/ (first segment entry).
-  for (const f of inScope) {
-    if (!f.startsWith(".scratch/")) continue;
-    const parts = f.slice(".scratch/".length).split("/");
-    if (parts.length === 2) { if (!cfg.scratchDocDirs.includes("")) problems.push(f + ": .scratch round-root doc not covered by a registered dir (empty-string entry removed)"); }
-    else if (parts.length > 2) { if (!cfg.scratchDocDirs.includes(parts[1])) problems.push(f + ": unregistered .scratch doc dir '" + parts[1] + "' — register it in scripts/ship-gate-pathlint.config.json or move the doc"); }
-    else problems.push(f + ": .scratch top-level doc — unregistered document type");
-  }
-
-  // R78 D-003 (A++): token+separator classifier — a locator is a token followed
-  // by a path separator. Bare env-var/tilde prose (%PATH%, $HOME, ~) never
-  // fires; single-segment POSIX roots surface as info; markers ratchet (a marker
-  // guarding nothing is itself a violation). Detector lives in
-  // scripts/ship-gate-pathlint-detect.mjs, shared with the warn-sweep driver.
-  const env = buildEnv(cfg, ROOT);
-
-  let scanned = 0;
-  for (const rel of inScope) {
-    const file = path.join(ROOT, rel);
-    if (!fs.existsSync(file)) continue;
-    scanned++;
-    const { violations, infos } = scanLines(fs.readFileSync(file, "utf8").split("\n"), env);
-    for (const v of violations) problems.push(rel + ":" + v.line + " " + v.detail);
-    for (const inf of infos) report("info", "path-lint surfaced-skip " + rel + ":" + inf.line + " " + inf.detail);
-  }
-  if (problems.length) fail("path-lint: " + problems.length + " machine-local path violation(s):\n  " + problems.slice(0, 40).join("\n  ") + (problems.length > 40 ? "\n  ... and " + (problems.length - 40) + " more" : ""));
-  report("pass", "path-lint: " + scanned + " registered doc(s) clean (in-repo refs repo-relative; machine-local paths declared)");
 }
 
 // ADR-0059 D5 (T-4): three permanent invariants run FIRST, including under --quick, so a release
@@ -2144,12 +1701,8 @@ if (overrideIdx >= 0 && (!overrideReason || !SHIP_OVERRIDE_REASON_CODES.includes
   stepDocClaims();
   stepSupersessionIntegrity();
   stepContextWiring();
-  stepEvidenceAnchors();
-  stepHandoffCloseoutLint();
   stepReadmeParity();
-  stepPathLint();
   await stepValidateDomains();
-  stepEnforcementAnchors();
   if (!quick) { reportStep("step_2_turbo"); await stepBuildAndTest(); }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "anysearch-ship-gate-"));
   try {

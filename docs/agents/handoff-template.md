@@ -4,11 +4,9 @@ Every round-closing handoff under `.scratch/<slug>/handoffs/` carries these
 required fields. The template exists so the next agent can re-verify claims
 without re-reading the whole conversation.
 
-The required fields are machine-checked by `scripts/ship-gate.mjs` step 1g
-through the pure verdict core `scripts/handoff-lint-verdict.mjs`, driven by
-the shell `scripts/handoff-lint-shell.mjs` (ADR-0097). **Template and gate
-share one grammar: this file is the normative source, the core is its
-executable form.** Changing one without the other re-opens F8-a.
+The required fields were machine-checked by the handoff-lint leg of
+`scripts/ship-gate.mjs` (ADR-0097), retired with the governance machinery on
+2026-10-13. This file remains the format convention for handoff docs.
 
 ## Effective scope（生效域边界，ADR-0097 D5）
 
@@ -160,14 +158,10 @@ These are non-blocking by design (CI has no `but` and no `origin/<branch>`
 for a PR checkout; blocking there would be permanently red). They are never
 silent: each appears as a `[skip]` line naming its code.
 
-### Machine-readable vocabulary（机器可读词表，与判定核双向锁）
+### Machine-readable vocabulary（历史词表——原 handoff-lint 判定核词表）
 
-The block below is parsed by `packages/store/test/handoff-lint-e2e.test.mjs` and
-asserted set-equal to the registry's `verdict` group in `scripts/vocab-registry.mjs`. Adding
-a code on either side alone turns the suite red — that is what makes ADR-0097
-D1's “extending the vocabulary requires a gate code change” enforceable.
-
-<!-- HANDOFF-LINT-VOCABULARY (parsed by handoff-lint-e2e.test.mjs — keep in sync with CODE_GROUPS.verdict in scripts/vocab-registry.mjs) -->
+The block below was the verdict vocabulary of the retired handoff-lint core
+(ADR-0097); kept as the historical record of the three-state grammar.
 ```
 run-url-red: run-url-section-missing | run-url-state-line-missing | run-url-state-ambiguous | run-url-unparseable | pending-reason-out-of-vocabulary | declaration-fact-conflict | green-claim-falsified
 stack-red: but-id-not-resolved | sha-not-commit | chain-tail-not-in-branch | stack-orphaned-by-land
@@ -192,15 +186,3 @@ No API keys, tokens, or secrets anywhere in the doc (ledger files record
 Name the skills the next agent should invoke (`$implement`, `$handoff`,
 etc.) so workflow continuity survives.
 
-## Reproduce the verdict locally
-
-```
-node scripts/ship-gate.mjs
-```
-
-The handoff-lint leg prints one line per closeout doc; the fixture truth table
-and the E2E smoke live in `packages/store/test/handoff-lint-verdict.test.mjs`
-and `packages/store/test/handoff-lint-e2e.test.mjs`, sharing
-`packages/store/test/fixtures/handoff-lint/`. The legislative record is
-`docs/adr/0097-architecture-grill-round-96-handoff-lint-three-state-exit-semantics.md`
-and `docs/adr/0098-architecture-grill-round-97-selfcheckable-declarations.md`.

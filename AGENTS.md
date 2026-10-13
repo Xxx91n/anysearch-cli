@@ -1,6 +1,26 @@
 # AGENTS.md — anysearch-cli
 
-This file gives agent skills (set up via `/setup-matt-pocock-skills`) the metadata they need to operate in this repo.
+AnySearch：垂直领域信息专精 agent CLI（`ans`）——严格领域白名单、证据锚定检索、域外弃答。本文件给 agent skills 提供操作本仓库所需的元数据。
+
+## How to run
+
+- `pnpm install --ignore-scripts`（better-sqlite3 走预编译，禁 node-gyp）
+- `pnpm -r check` / `pnpm -r test` / `pnpm -r build`（turbo，各包任务同构）
+- `node scripts/ship-gate.mjs`——产品冒烟总闸（发布判定）
+- `pnpm -C packages/store eval --offline`——golden memory-eval 离线切片
+
+## Tech stack
+
+Node 22 + TypeScript，pnpm 11.24.0 workspace（见下节 pinning），better-sqlite3，turbo。
+
+## Directory conventions
+
+- `packages/{kernel,store,retriever,embedding}`——核心库
+- `apps/{cli,mcp,plugin,dsh-plugin}`——交付面
+- `docs/adr/`——架构决策记录（index.md 由 `node scripts/gen-adr-index.mjs --write` 生成）
+- `CONTEXT.md`——领域词汇表，术语唯一权威
+- `docs/agents/`——agent 面向的约定文档
+- `.scratch/`——本地工作面（issue 票/过程文档），永不入库
 
 ## Agent skills
 
@@ -11,6 +31,10 @@ Issues live as local markdown files under `.scratch/<feature-slug>/`. See `docs/
 ### Domain docs
 
 Single-context layout: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Version control
+
+GitButler（`but`）做全部版本控制操作；未经明令不 push。
 
 ## Tool whitelist
 
@@ -45,31 +69,6 @@ Pinned pnpm version: **11.24.0**, declared once: `packageManager: "pnpm@11.24.0"
 ship-gate no longer needs PATH front-loading of a global pnpm; any conforming install (corepack, pnpm/setup, or global 11.24.0) works. Bump both pinned fields in one commit when upgrading pnpm.
 
 CI uses `pnpm/setup@v2` (the v11+ successor of `pnpm/action-setup`), which reads the pinned version automatically.
-## Scope discipline (ADR-0029)
-
-One grill round = one themed topic. Cohesive engineering items in the same subsystem may land in the ADR as formal Decision entries; due chores ship as separate refactor commits + CHANGELOG Removed entries; rejections stay explicit in the ADR. The anti-pattern is undocumented while-you're-at-it edits — audit-checklist.md enforces diff-size thresholds and the found/fixed/deferred triplet.
-
-## Deliverable path discipline (ADR-0072)
-
-Machine-local paths in committed markdown are linted **by usage class** — ship-gate step 1i (`scripts/ship-gate.mjs`; sweep registration in `scripts/ship-gate-pathlint.config.json`) enforces this section fail-closed. A blanket ban is wrong on purpose: a locator's job is machine precision, so absolute paths survive in exactly one class.
-
-- **Locators / Stack lines** — a line whose role is locating (the `Stack:` header field) may keep an absolute path bare. This is the only bare-absolute class.
-- **In-repo target references** — a path resolving inside this repo (e.g. an absolute path to `scripts/...`, `docs/...`, `.scratch/...` on the author's machine) must be **repo-relative**. Machine-local absolute paths to in-repo targets are violations; markers do not exempt them outside the exemption domain codified below.
-- **Out-of-repo targets** — Temp dirs, sibling checkouts, user-level config, CI runner workspaces, other hosts' paths: keep the absolute path AND declare it with a governed marker on the same line: `<!-- machine-local: <reason> @ <YYYY-MM-DD> -->`. A marker missing reason or date is itself a violation. A valid marker on the line directly before a `````` fence covers the whole fenced block (transcript excerpts). Open declarations are audited quarterly.
-- **Exemption domain (R79 codification, ADR-0080)** — three exempt surfaces:
-  covered fence (valid marker directly before the fence) exempts all checks
-  inside the block; `Stack:` locator lines may carry in-repo absolute paths;
-  `/x` surfaced-skip info is silent inside every fence and on locator lines.
-  Non-exempt neighbors stay enforced: unmarked-fence in-repo refs and
-  non-locator prose in-repo refs still fail; prose `/x` still surfaces; bare
-  `C:\x` still fails while identifier-glued `foo_C:\x` is not a hit <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
-  (`WORD_CHAR` includes `_`).
-
-Sweep scope (registered in the config — a new document type lands only by editing it): `*.md`, `docs/**/*.md`, and every tracked markdown file under `.scratch/` in a registered doc dir. Applies from grill-round-67 onward (locator class) and grill-round-71 onward (three-class refinement + fail-closed leg).
-
-## Vocabulary registry & governed scan surface (ADR-0100 + ADR-0101)
-
-`scripts/vocab-registry.mjs` is the per-module registry of every governed `*_CODES` vocabulary (pure data leaf, zero import); `scripts/vocab-scan.mjs` enumerates `scripts/**/*.mjs` recursively (ADR-0101: `scripts/tau/` in domain) and asserts each governed module's exports are registered. Governed modules must keep their top level side-effect-free (glob + injection executes it). The AST front gate `scripts/top-level-effects.mjs` adjudicates the closed exclusion list: codes∧top-level-effects → `ast-top-level-effect` RED; non-literal `*_CODES` → `ast-codes-unverifiable`; effects∧no-codes → named exclusion candidates. `EXCLUDED_PATHS` holds named un-injectable files (premiere: `tau/tau-scan.mjs` spawn launcher). Anchor schema v2 (ADR-0101): every anchor carries non-empty `fails` ⊆ `failure_classes` + `tier:"red"|"info"`; `pending_anchors` seats are structured `{anchor,reason,seated_at,review_by}` (legacy strings get `LEGACY_SEAT_REVIEW_BY`) and expire loudly. Full rules: ADR-0100 / ADR-0101.
 
 ## Codex host notes (ADR-0068)
 
