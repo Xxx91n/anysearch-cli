@@ -65,6 +65,7 @@ export const AST_FINDING_NAMES = Object.freeze({
   topLevelEffect: "ast-top-level-effect",
   codesUnverifiable: "ast-codes-unverifiable",
   excludedCodes: "ast-excluded-codes",
+  sideEffectCandidate: "ast-side-effect-candidate",
 });
 
 // The one error-text formatter (audit R99-2 dedup): scan and probe share it so a
@@ -139,6 +140,7 @@ export function scanVocabGuards({ root, load } = {}) {
   const scanned = [];
   const excludedDrift = [];
   const candidates = [];
+  const info = [];
   for (const f of files) {
     const full = path.join(root, "scripts", f);
     const ext = path.extname(f);
@@ -176,8 +178,11 @@ export function scanVocabGuards({ root, load } = {}) {
       if (!c.verifiable) findings.push({ stem, name: AST_FINDING_NAMES.codesUnverifiable, detail: "export `" + c.name + "` initializer is not a literal vocabulary (dynamic assembly cannot be statically proven)" });
     }
     if (cls.codes.length === 0 && cls.effects.length > 0) {
-      // ③ effects ∧ no codes: exclusion candidate, named for the closed list.
+      // ③ effects ∧ no codes: exclusion candidate, named for the closed list —
+      // and surfaced as a per-file info line so each run names every candidate
+      // (ADR-0101 D6③; audit-r2 B4: bundled detail alone is invisible drift).
       candidates.push({ stem, effects: cls.effects.map((e) => e.kind) });
+      info.push({ stem, name: AST_FINDING_NAMES.sideEffectCandidate, detail: "top-level effects {" + cls.effects.map((e) => e.kind).join(", ") + "} with no governed vocabulary — named exclusion candidate (admission still requires an EXCLUDED_PATHS entry)" });
     }
     if (cls.codes.length === 0) {
       scanned.push({ stem, codes: 0 });
@@ -194,5 +199,5 @@ export function scanVocabGuards({ root, load } = {}) {
     scanned.push({ stem, codes: cls.codes.length });
     for (const n of unreg) findings.push({ stem, name: n });
   }
-  return { ok: findings.length === 0, scanned, findings, excludedDrift, candidates };
+  return { ok: findings.length === 0, scanned, findings, excludedDrift, candidates, info };
 }

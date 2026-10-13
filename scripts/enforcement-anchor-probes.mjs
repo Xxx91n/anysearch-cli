@@ -122,6 +122,7 @@ export function probeVocabGuards({ root } = {}) {
       "scan findings=" + JSON.stringify(scan.findings) +
       "; excluded-drift=" + JSON.stringify(scan.excludedDrift) +
       "; ast-candidates=" + JSON.stringify((scan.candidates ?? []).map((c) => c.stem)) +
+      "; ast-info=" + JSON.stringify((scan.info ?? []).map((i) => i.stem + ":" + i.name)) +
       "; per-module injections={" + inject.join(", ") + "}",
   };
 }

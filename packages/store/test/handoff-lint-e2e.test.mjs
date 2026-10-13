@@ -236,23 +236,15 @@ eq(deriveWorkflowName({ path: ".github/workflows/ci.yml", name: "CI" }), "ci", "
 eq(deriveWorkflowName({ path: "", name: "ship-gate" }), "ship-gate", "workflow identity falls back to the run name");
 
 // --- G. every governed RED code is exercised by a shared fixture (R4) ----------
+// Derived from the registry's governed RED vocabularies, not hand-kept — a new
+// RED code is automatically required to prove fixture coverage (audit-r2 B6:
+// the hand list silently excluded stack-orphaned-by-land + later additions).
 const REQUIRED_RED_COVERAGE = [
-  "run-url-section-missing",
-  "run-url-state-line-missing",
-  "run-url-state-ambiguous",
-  "run-url-unparseable",
-  "pending-reason-out-of-vocabulary",
-  "declaration-fact-conflict",
-  "green-claim-falsified",
-  "stack-line-missing",
-  "stack-chain-empty",
-  "but-id-not-resolved",
-  "sha-not-commit",
-  "chain-tail-not-in-branch",
-  "state-marker-unparseable",
-  "state-predicate-out-of-vocabulary",
-  "bare-word-violation",
-  "clearing-residual-unregistered",
+  ...new Set(
+    Object.values(CODE_GROUPS.verdict)
+      .filter((exportName) => /RED_CODES$/.test(exportName))
+      .flatMap((exportName) => verdictNs[exportName])
+  ),
 ];
 const exercisedRedCodes = new Set();
 for (const f of fixtureFiles) {
@@ -499,6 +491,17 @@ eq(newestCloseoutTargets([
   assert(held.lines.some((l) => l.msg.includes("masking-surfaced") && l.msg.includes("defer-x")), "masking-surfaced names the seat entry holding the mask");
   const legacy = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor()]), deferred: { ok: true, pendingAnchors: ["anchor:dead"], covers: [], pendingPredicates: [] }, now: "2099-01-01" } });
   assert(legacy.lines.some((l) => l.msg.includes("anchor-seat-expired")), "a legacy string seat past LEGACY_SEAT_REVIEW_BY is RED (stock does not exempt from expiry)");
+  // audit-r2 B1/B2 (paired): the structured {anchor,reason,seated_at,review_by}
+  // shape is enforced for non-legacy seats, and an unreadable `now` fails loud
+  // (expired) — never a silently valid seat.
+  const noReason = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor()]), deferred: { ok: true, pendingAnchors: [{ anchor: "anchor:dead", seated_at: "2026-10-08", review_by: "2099-01-01" }], covers: [], pendingPredicates: [] } } });
+  assert(noReason.lines.some((l) => l.msg.includes("anchor-seat-malformed")), "anchor-seat-malformed: a structured seat lacking reason is RED (audit-r2 B2)");
+  const noSeatedAt = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor()]), deferred: { ok: true, pendingAnchors: [{ anchor: "anchor:dead", reason: "r", review_by: "2099-01-01" }], covers: [], pendingPredicates: [] } } });
+  assert(noSeatedAt.lines.some((l) => l.msg.includes("anchor-seat-malformed")), "anchor-seat-malformed: a structured seat lacking seated_at is RED (audit-r2 B2)");
+  const legacyInWindow = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor()]), deferred: { ok: true, pendingAnchors: ["anchor:dead"], covers: [], pendingPredicates: [] }, now: "2026-10-08" } });
+  assert(!legacyInWindow.lines.some((l) => l.msg.includes("anchor-seat-malformed")), "a legacy string seat is exempt from the reason/seated_at shape (dual-read window)");
+  const badNow = runEnforcementAnchors({ root: deadRoot, deps: { registry: reg([deadAnchor()]), deferred: { ok: true, pendingAnchors: [{ anchor: "anchor:dead", reason: "r", seated_at: "2026-10-08", review_by: "2099-01-01" }], covers: [], pendingPredicates: [] }, now: "not-a-date" } });
+  assert(badNow.lines.some((l) => l.msg.includes("anchor-seat-expired")), "anchor-seat-expired: an unparseable `now` fails loud as expired, never silently valid (audit-r2 B1)");
 }
 
 // --- Q. R100 (ADR-0101 D6): tau recursion + AST front gate three classes ------
@@ -531,14 +534,19 @@ eq(newestCloseoutTargets([
   fs.mkdirSync(path.join(tmpRoot, "scripts", "tau"), { recursive: true });
   fs.writeFileSync(path.join(tmpRoot, "scripts", "tau", "tau-scan.mjs"), "const c = spawn(\"x\");\nc.on(\"close\", () => {});\n");
   fs.writeFileSync(path.join(tmpRoot, "scripts", "lib.mjs"), "export const helper = 1;\n");
+  fs.writeFileSync(path.join(tmpRoot, "scripts", "launcher.mjs"), "const c = spawn(\"x\");\nc.on(\"close\", () => {});\n");
   const s1 = scanVocabGuards({ root: tmpRoot, load: (stem) => (stem === "lib" ? { A_CODES: ["ok"] } : {}) });
   eq(s1.ok, true, "scan: an excluded tau launcher plus a code-free module keeps ok:true");
   assert(s1.scanned.some((s) => s.stem === "tau/tau-scan" && s.excluded === true), "scan: the premiere exclusion entry covers tau/tau-scan.mjs under recursion");
+  // audit-r2 B4 (paired): class-③ surfaces per-file info lines under the closed
+  // name ast-side-effect-candidate, in addition to the candidates array.
+  assert(s1.candidates.some((c) => c.stem === "launcher"), "scan: a class-③ module is a named exclusion candidate");
+  assert(s1.info.some((i) => i.stem === "launcher" && i.name === AST_FINDING_NAMES.sideEffectCandidate), "scan: class-③ emits a named ast-side-effect-candidate info line (audit-r2 B4)");
   // class-① on a scanned file -> RED finding, never injected
   fs.writeFileSync(path.join(tmpRoot, "scripts", "bad.mjs"), "export const BAD_CODES = Object.freeze([\"x\"]);\nspawn(\"touch\");\n");
   const s2 = scanVocabGuards({ root: tmpRoot, load: (stem) => { throw new Error("must never inject " + stem); } });
   assert(s2.findings.some((f) => f.stem === "bad" && f.name === "ast-top-level-effect"), "scan: codes ∧ effects emits ast-top-level-effect RED (injection refused)");
-  assert(!s2.scanned.every((s) => s.stem !== "bad") === true || s2.scanned.some((s) => s.stem === "bad"), "scan: the flagged module is still enumerated as scanned");
+  assert(s2.scanned.some((s) => s.stem === "bad"), "scan: the flagged module is still enumerated as scanned");
   // class-② -> RED
   fs.writeFileSync(path.join(tmpRoot, "scripts", "dyn.mjs"), "export const DYN_CODES = SOMEWHERE_ELSE;\n");
   const s3 = scanVocabGuards({ root: tmpRoot, load: () => ({}) });
@@ -549,8 +557,9 @@ eq(newestCloseoutTargets([
   assert(s4.findings.some((f) => f.stem === "tau/tau-scan" && f.name === "ast-excluded-codes"), "scan: an excluded path carrying *_CODES emits ast-excluded-codes RED (exclusion legitimizes effects, never vocabulary)");
   // F1 (R100 audit): the AST front-gate finding names are a CLOSED frozen set —
   // each emitted name must be a member of AST_FINDING_NAMES (no free-form drift).
+  // The lock covers both the RED findings lane and the info lane (audit-r2 B4).
   const astNames = new Set(Object.values(AST_FINDING_NAMES));
-  for (const f of [...s2.findings, ...s3.findings, ...s4.findings]) {
+  for (const f of [...s1.findings, ...s2.findings, ...s3.findings, ...s4.findings, ...s1.info, ...s2.info, ...s3.info, ...s4.info]) {
     if (String(f.name).startsWith("ast-")) assert(astNames.has(f.name), "AST finding `" + f.name + "` is a member of the closed AST_FINDING_NAMES vocabulary");
   }
   // nested governed module under recursion reaches the loader
@@ -580,6 +589,13 @@ eq(newestCloseoutTargets([
   const ra2 = spawnSync("node", [path.join(root, "scripts", "handoff-reanchor.mjs"), target, "--date", "2026-10-06"], { encoding: "utf8" });
   eq(ra2.status, 0, "handoff-reanchor is idempotent on an already-dissolved doc");
   assert(!fs.readFileSync(target, "utf8").includes("dissolved @ 2026-10-07") && (ra2.stdout ?? "").includes("already dissolved"), "the idempotent run changes nothing");
+  // audit-r2 B5 (paired): an empty/unresolvable main SHA is fatal — never a
+  // silent `land @ ` write into a dissolved line.
+  const targetLive = path.join(rx, "round-98-closeout.md");
+  fs.writeFileSync(targetLive, "# Handoff（夹具）\n\nStack（primary key = GitButler change-ids；SHA 为 capture 时值，time-lagged）：\n  r-y-stack → bbb (`bbbbbbb2` @ 2026-10-03)\n");
+  const ra3 = spawnSync("node", [path.join(root, "scripts", "handoff-reanchor.mjs"), targetLive, "--date", "2026-10-06", "--main-sha", ""], { encoding: "utf8" });
+  eq(ra3.status, 2, "handoff-reanchor exits 2 on an unresolvable main SHA (no silent empty land marker)");
+  assert(!fs.readFileSync(targetLive, "utf8").includes("dissolved"), "the refused run leaves the live chain untouched");
   fs.rmSync(rx, { recursive: true, force: true });
 }
 // --- fail-on-empty red line ---------------------------------------------------

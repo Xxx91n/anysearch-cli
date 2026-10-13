@@ -791,6 +791,12 @@ function stepStaticAssertions() {
         if (reg.round !== maxRound) fail('ADR-0081 D-004: closeout-claims.json round=' + reg.round + ' but newest round dir is r' + maxRound);
         const claims = Array.isArray(reg.claims) ? reg.claims : [];
         if (!claims.length) fail("ADR-0081 D-004: closeout-claims.json registers zero claims — surface must be non-vacuous");
+        // ADR-0101 D2② (audit-r2 B7): the per-round sunset ledger line is an
+        // obligation — the claim's presence is what makes 行存在性 machine-
+        // checkable. Absent the claim, the ledger would lapse silently.
+        if (typeof reg.round === "number" && reg.round >= 100 && !claims.some((c) => c && c.kind === "anchor-activity")) {
+          fail('ADR-0101 D2②: ' + roundRel + '/closeout-claims.json carries no kind:"anchor-activity" claim — the anchor-activity ledger line is a per-round obligation since r100');
+        }
         let verified = 0;
         let reauthoredTotal = 0;
         for (const c of claims) {

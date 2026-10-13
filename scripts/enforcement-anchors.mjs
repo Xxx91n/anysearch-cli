@@ -101,15 +101,27 @@ export function normalizeSeat(x, entryId) {
 }
 
 function seatMalformed(seat) {
-  return seat.malformed === true || !seat.anchor || !ISO_DATE_RE.test(seat.review_by ?? "");
+  if (seat.malformed === true || !seat.anchor || !ISO_DATE_RE.test(seat.review_by ?? "")) return true;
+  // Structured seats carry the full {anchor,reason,seated_at,review_by} shape
+  // (ADR-0101 D5); legacy bare strings are exempt — they carry no reason or
+  // seated_at by construction.
+  if (seat.legacy !== true) {
+    if (typeof seat.reason !== "string" || !seat.reason) return true;
+    if (!ISO_DATE_RE.test(seat.seated_at ?? "")) return true;
+  }
+  return false;
 }
 
 function seatExpired(seat, nowDay) {
   // A review_by that cannot be compared is already flagged malformed; here a
-  // parse failure is fail-loud (expired), never a silent valid seat.
+  // parse failure is fail-loud (expired), never a silent valid seat — the same
+  // holds for a missing/unparseable `now` (audit-r2 B1: the deadline math must
+  // fail loud on BOTH operands, not just review_by).
   const by = Date.parse(seat.review_by);
   if (!Number.isFinite(by)) return true;
-  return nowDay !== null && Date.parse(nowDay) > by;
+  const now = Date.parse(nowDay);
+  if (!Number.isFinite(now)) return true;
+  return now > by;
 }
 
 // Static reference-count precheck (routing only): count literal occurrences of
@@ -233,7 +245,7 @@ export function runEnforcementAnchors({ root, deps = {} }) {
       if (seatMalformed(seat)) {
         seatBad = true;
         fails++;
-        lines.push({ kind: "fail", msg: tag + ": " + CODE_SEAT_MALFORMED + " — pending_anchors entry for this anchor lacks {anchor, review_by(YYYY-MM-DD)} (seat entry id: " + String(seat.entry ?? "<unknown>") + ")" });
+        lines.push({ kind: "fail", msg: tag + ": " + CODE_SEAT_MALFORMED + " — pending_anchors entry for this anchor lacks {anchor, reason, seated_at, review_by(YYYY-MM-DD)} (seat entry id: " + String(seat.entry ?? "<unknown>") + "; legacy string seats exempt reason/seated_at)" });
       }
       if (tier === "info") {
         seatBad = true;

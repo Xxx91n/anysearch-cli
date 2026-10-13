@@ -69,8 +69,6 @@ const PURE_CALLEES = new Set([
   "parseFloat",
   "createRequire",
   "process.cwd",
-  "process.argv.slice",
-  "process.argv.includes",
   "encodeURIComponent",
   "decodeURIComponent",
   "Promise.resolve",
@@ -80,6 +78,10 @@ const PURE_CALLEES = new Set([
 // methods). Only the method NAME is admitted — the walker still visits the
 // call's subtree, so `x.map((p) => spawn(y))` stays flagged through the inner
 // call. An unrecognized bare or member callee is unverifiable, never pure.
+// Boundaries (R100 audit-r2 B3, spec D-004④ narrow set): in-place mutators
+// (`sort`, `reverse`), effects-only iteration (`forEach` — returns undefined,
+// so a top-level call exists only for its side effects), and ambient input
+// reads (`process.argv.*` — load-time invocation-dependent) are NOT pure.
 const PURE_METHODS = new Set([
   "map",
   "filter",
@@ -88,7 +90,6 @@ const PURE_METHODS = new Set([
   "slice",
   "concat",
   "join",
-  "sort",
   "reduce",
   "reduceRight",
   "find",
@@ -96,14 +97,12 @@ const PURE_METHODS = new Set([
   "includes",
   "some",
   "every",
-  "forEach",
   "indexOf",
   "lastIndexOf",
   "at",
   "entries",
   "keys",
   "values",
-  "reverse",
   "replace",
   "replaceAll",
   "toLowerCase",

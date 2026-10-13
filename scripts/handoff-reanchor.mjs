@@ -52,7 +52,11 @@ if (!branch) {
   console.error("handoff-reanchor: Stack line names no branch — cannot derive the dissolved form");
   process.exit(2);
 }
-const mainSha = opt("--main-sha") ?? (spawnSync("git", ["rev-parse", "origin/main"], { cwd: ROOT, encoding: "utf8" }).stdout ?? "").trim() ?? "unresolved";
+const mainSha = opt("--main-sha") ?? (spawnSync("git", ["rev-parse", "origin/main"], { cwd: ROOT, encoding: "utf8" }).stdout ?? "").trim();
+if (!/^[0-9a-f]{7,40}$/i.test(mainSha)) {
+  console.error("handoff-reanchor: land main SHA unresolved (use --main-sha <sha>) — never write an empty land marker into a dissolved line");
+  process.exit(2);
+}
 const landDate = opt("--date") ?? ((spawnSync("git", ["log", "-1", "--format=%cs", "origin/main"], { cwd: ROOT, encoding: "utf8" }).stdout ?? "").trim() || new Date().toISOString().slice(0, 10));
 if (!/^\d{4}-\d{2}-\d{2}$/.test(landDate)) {
   console.error("handoff-reanchor: land date unresolved (use --date YYYY-MM-DD)");
