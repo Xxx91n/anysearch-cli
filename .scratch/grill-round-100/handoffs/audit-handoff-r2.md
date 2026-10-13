@@ -116,7 +116,7 @@
 
 修复内容：`enforcement-anchors.mjs`（seatMalformed 四字段全执 / seatExpired 双操作数 fail-loud）；`top-level-effects.mjs`（白名单剔 sort/reverse/forEach/process.argv.*）；`vocab-scan.mjs`（ast-side-effect-candidate 入封闭集 + scan.info 具名行巷）；`enforcement-anchor-probes.mjs`（detail 增 ast-info 面）；`handoff-reanchor.mjs`（mainSha hex 守卫 exit 2）；`ship-gate.mjs`（round≥100 claims 必带 anchor-activity）；`handoff-lint-e2e.test.mjs`（R4 名单改派生式全覆盖 + 六组新配对断言）；簿记（任务书 24→23 / 一审补记 / anchors.json 尾换行）。
 
-复核（同一套验收重跑）：verdict 473/0（不变）；e2e 458→**471/0**（+13 断言，只升不降）；实扫 38 枚举/23 候选/0 findings/**23 具名 info 行**（白名单收窄零翻转）；ship-gate 复跑结果见提交注记。
+复核（同一套验收重跑）：verdict 473/0（不变）；e2e 458→**471/0**（+13 断言，只升不降）；实扫 38 枚举/23 候选/0 findings/**23 具名 `ast-side-effect-candidate` info 行**（白名单收窄零翻转）；**ship-gate 9/9 复绿 exit 0**（gate 输出可见 `ast-info=` 23 具名巷；r100 claims 腿在新 B7 守卫下过闸）。插曲：一次复跑在 `@anysearch-cli/cli#test` 的 `search --vertical-domain finance` 用例超时红——单包重跑 22/22 绿，定性负载抖动 flake（cli 与本轮改面无依赖边），复跑全绿。
 
 ## 工件索引
 
