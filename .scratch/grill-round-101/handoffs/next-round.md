@@ -11,7 +11,7 @@
 
 - **候选 A：`defer-r72-dsh-approval-channel` 前置**——R100 注记在档：trigger=依赖已解除可前置。开工前完成 ADR-0101 D7 触发条件评估（tarball 复验 + 依赖键面复核），触发成立即立项为正题。
 - **候选 B：sunset N 值首应用裁决**——锚活性一行账 R100 首行全零；R101 评估各锚 prod-findings 计数语义（fixture kill 不计）并裁定 sunset N（连续零产出轮次上限）。规模偏小，宜作顺手项。
-- **候选 C：AST 排除候选入册**——24 枚具名候选（`scan.candidates`）中择稳定者转 `EXCLUDED_PATHS` 正式条目；每转正一条带 paired fixture。
+- **候选 C：AST 排除候选入册**——23 枚具名候选（`scan.candidates`；audit-r2 实测更正：轮报沿写的 24 为陈数）中择稳定者转 `EXCLUDED_PATHS` 正式条目；每转正一条带 paired fixture。
 
 ## 硬约束（沿用）
 

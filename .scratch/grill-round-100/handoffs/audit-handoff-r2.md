@@ -109,6 +109,15 @@
 - `code-review`（B3/B4 修复后 schema/消费方同 PR 复审）
 - `handoff`（R101 收口生成下轮任务书）
 
+
+## 七、修复窗 LOOP 复核实录（2026-10-13，owner 授权「小问题直接修」）
+
+审计窗口身份解除→修复窗。backlog B1–B7 + B9–B11 已清偿（见 `.scratch/grill-round-100/backlog.md` 已清偿表）；B8 与 B3/B7/B11 残余口径呈报 owner 拍板。
+
+修复内容：`enforcement-anchors.mjs`（seatMalformed 四字段全执 / seatExpired 双操作数 fail-loud）；`top-level-effects.mjs`（白名单剔 sort/reverse/forEach/process.argv.*）；`vocab-scan.mjs`（ast-side-effect-candidate 入封闭集 + scan.info 具名行巷）；`enforcement-anchor-probes.mjs`（detail 增 ast-info 面）；`handoff-reanchor.mjs`（mainSha hex 守卫 exit 2）；`ship-gate.mjs`（round≥100 claims 必带 anchor-activity）；`handoff-lint-e2e.test.mjs`（R4 名单改派生式全覆盖 + 六组新配对断言）；簿记（任务书 24→23 / 一审补记 / anchors.json 尾换行）。
+
+复核（同一套验收重跑）：verdict 473/0（不变）；e2e 458→**471/0**（+13 断言，只升不降）；实扫 38 枚举/23 候选/0 findings/**23 具名 info 行**（白名单收窄零翻转）；ship-gate 复跑结果见提交注记。
+
 ## 工件索引
 
 - 本报告：`.scratch/grill-round-100/handoffs/audit-handoff-r2.md`

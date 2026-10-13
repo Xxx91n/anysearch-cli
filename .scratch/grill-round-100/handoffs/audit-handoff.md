@@ -97,3 +97,7 @@ F1/F2/F3 均非阻塞，**不打回原修复窗口返工**。两条路径供 own
 - 审计日志（本机 .codex-tmp/，不入仓）：audit-r100-{check,build,verdict,e2e,shipgate}.log
 - 下一轮任务书：`.scratch/grill-round-101/handoffs/next-round.md`（正题候选 A/B/C + T0 残留轨）
 - 账本：`.scratch/grill-round-100/decision-ledger.md`
+
+## Addendum（2026-10-13，audit-r2 窗补记）
+
+- F1/F2/F3 修复真实存在：`082e86ab`（`AST_FINDING_NAMES` 封闭集 + e2e 成员锁 / 裸 `await` 专签 / `EXCLUDED_PATHS` 判据措辞），audit-r2 已复验为真（见 `audit-handoff-r2.md` §一/§二）。本文件 §一–§五 是一审时实录（审计对象 tip `ef296a2a`），未回写——历史账保留原貌；commit `688df733` 讯称「F1/F2/F3 已修」与文内仍列待处置之间的口径差已在 audit-r2 backlog B10 记档。

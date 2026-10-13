@@ -1,49 +1,27 @@
-# Backlog — R100 二次审计（audit-r2）非阻塞发现
+# Backlog — R100 二次审计（audit-r2）
 
 - 来源：`.scratch/grill-round-100/handoffs/audit-handoff-r2.md`（2026-10-13；审计窗 diff `8d1854e2..58f10f95`，25 commits）。
-- 全部非阻塞：硬验收全绿、无声明证伪、无引入回归。无论谁修，修完须重跑 audit-handoff-r2 §一 同一套验收（H1–H14）。
+- 处置：审计窗判定全部非阻塞 → owner 授权修复窗直接清偿。修复 commit 见 `r100-audit-r2` 分支。
+- LOOP 复核：修后重跑同一套验收（H1–H14）——verdict 473/0、e2e 471/0、ship-gate 9/9 复绿。
 
-## B1 — seatExpired 对坏 `now` 静默有效（D-004 负向② 弱化）
+## 已清偿（fix commit）
 
-- `scripts/enforcement-anchors.mjs` `seatExpired`：`nowDay !== null && Date.parse(nowDay) > by` —— 非空但不可解析的 `deps.now` → `NaN > by` → false → 坐席静默有效；立法方向=「到期计算错宁可 fail-loud」。
-- 仅 deps 注入路径可达（生产 `now` 恒 ISO 日切）；`review_by` 侧已是 fail-loud（不可解析→expired）。修法对称即可。
+| # | 发现 | 修复 | 复核 |
+|---|---|---|---|
+| B1 | seatExpired 对坏 `now` 静默有效 | 不可解析/缺席 now → 判 expired（fail-loud，对称 review_by 侧） | e2e 新增 `badNow` 断言绿 |
+| B2 | seatMalformed 不查 reason/seated_at | 非 legacy 坐席强制四字段 `{anchor,reason,seated_at,review_by}`；legacy 串豁免（双读口径） | e2e `noReason`/`noSeatedAt`/`legacyInWindow` 三成对断言绿 |
+| B3 | AST 白名单超窄集（假阴性方向） | 移除 `sort`/`reverse`（就地变异）、`forEach`（纯副作用语义）、`process.argv.*`（装载期环境输入）；保留数据变换类 | 实扫 38 模块分类零翻转（23 候选不变、0 findings） |
+| B4 | class-③ 无具名 info 行+注释名漂移 | `ast-side-effect-candidate` 入 `AST_FINDING_NAMES`；每候选发 `scan.info[]` 具名行；probe detail 增 `ast-info=` 面 | e2e launcher 配对断言绿；F1 成员锁扩至 info 巷 |
+| B5 | reanchor 空 mainSha 静默下行 | 删不可达 `?? "unresolved"`；加 hex 校验守卫（exit 2，不落空 land 标记） | e2e `--main-sha ""` → exit 2 + 活链不动 断言绿 |
+| B6 | REQUIRED_RED_COVERAGE 未扩新码 | 改为从 `CODE_GROUPS.verdict` 派生全部 `*_RED_CODES` 并集——新 RED 码自动要求 fixture 覆盖，不再靠手维护名单 | e2e R4 腿绿（17 码全覆盖） |
+| B7 | anchor-activity claim 存在性无强制 | ship-gate claims 腿加 fail-closed：round≥100 无 `kind:"anchor-activity"` 即 fail | r100 实跑通过（claim 在册） |
+| B9 | 轮报「24 candidates」陈数 | R101 任务书更正为 23（注明实测） | — |
+| B10 | audit-handoff.md 文/讯漂移 | 文末加 Addendum 记修复 commit 与口径差 | — |
+| B11 | 杂物 | anchors.json 补尾换行；e2e:541 恒等冗余断言化简 | — |
 
-## B2 — seatMalformed 不查 `reason`/`seated_at`（D-004① 弱化）
+## 呈报待拍板（审计窗解决不了/需 owner 裁断）
 
-- `seatMalformed` 仅验 `anchor` + ISO `review_by`；结构化四件 `{anchor,reason,seated_at,review_by}` 中 `reason`/`seated_at` 缺席仍判 well-formed——四字段形态未全执法。
-
-## B3 — AST 白名单宽于 spec 窄集（D-004④ 弱化，假阴性方向）
-
-- `scripts/top-level-effects.mjs`：`PURE_METHODS` 含 `sort`/`forEach`（就地变异/任意回调副作用），`PURE_CALLEES` 含 `process.argv.slice`/`process.argv.includes` 等；spec 白名单=「Object.freeze/RegExp/字面构造类」窄集。受治模块顶层 `xs.forEach(register)` / `arr.sort()` 现判 pure → 真副作用逃分类（fail-closed 面的假阴性方向）。收窄或逐条立法痕迹。
-
-## B4 — class-③ 无具名 info 行 + 注释名漂移（D-004③ 弱化，F1 残余）
-
-- spec「副作用∧无 codes → 具名排除候选 + info 行」：实现只落 `scan.candidates` 数组，经 probe detail `ast-candidates=[...]` 单串带出，无 per-finding info 行；`scripts/vocab-scan.mjs` 头注释仍写 `ast-side-effect-candidate`——不在 `AST_FINDING_NAMES`、永不发出（文档名漂移）。
-
-## B5 — handoff-reanchor 空 mainSha 静默下行
-
-- `scripts/handoff-reanchor.mjs`：`?? "unresolved"` 不可达（`(... ?? "").trim()` 恒为串）；`git rev-parse origin/main` 失败时空 SHA 无校验直写 dissolved 行（`landDate` 有 regex 守卫，`mainSha` 没有）。生产首演走通，属潜伏路径。
-
-## B6 — REQUIRED_RED_COVERAGE 未扩新码（R4 机制缺口）
-
-- `packages/store/test/handoff-lint-e2e.test.mjs` R4 名单未加 `stack-orphaned-by-land` / 六枚 `anchor-*` / 三枚 `ast-*`；覆盖实有（三成对 fixture + inline asserts + R99 对抗演练），但「无死拒收分支」锁不涵盖新码。
-
-## B7 — anchor-activity claim 存在性无强制（D-003④ 机制缺口）
-
-- ship-gate 在 claim 存在时逐字重导校验（recount 纪律）；不写 claim 则锚活性一行账跳过验证静默缺席。「行存在性可机验」依赖每轮自觉登记，非 fail-closed。
-
-## B8 — 重复面（首轮 J1/J2/J5 复核仍真）
-
-- 坐席 legacy→structured 规则两处编码：`collectDeferred` 挂 `{anchor,legacy,entry}` provenance，`normalizeSeat` 再判 `typeof x === "string"`（生产态近乎死支，drift 缝）；orphan 守卫在两分支重复（可抽 helper）；`uniq(pendingAnchors)` 移除后 `seats.find` 首匹配依赖顺序（重复坐席语义未文档化）。
-
-## B9 — 轮报「24 candidates」为陈数（实测 23）
-
-- `scanVocabGuards` 实测 38 枚举 / 23 具名候选 / 0 findings（本审计逐文件独立复分类：零漏报、零幻影、零携码候选）。R101 任务书 C 项沿用「24 枚」应以 23 为准。
-
-## B10 — audit-handoff.md 文/讯漂移
-
-- `688df733` commit 讯称「F1/F2/F3 已修」，但文内仍把三件列为待处置项（R101/小票路径）；修复真实存在（`082e86ab`，本审计已复验 F1/F2/F3 落地），文未记修复后复验段——历史账可留，宜加注。
-
-## B11 — 杂物（cosmetic）
-
-- `docs/enforcement-anchors.json` 全文重排缩进 + 缺尾换行；e2e `!s2.scanned.every(...)===true || s2.scanned.some(...)` 恒等冗余；`enumerateScriptFiles` 递归无 symlink/深度守卫；`docPaths` 仅收 `d.rel`（name-only 文档 docOnMain=null→降级，方向安全非误红）。
+- **B8 重复面（J1/J2/J5 复核仍真，未动）**：坐席 legacy→structured 规则两处编码（`collectDeferred` 挂 provenance + `normalizeSeat` 再判 string，生产态近乎死支）；orphan 守卫两分支重复；`uniq(pendingAnchors)` 移除后 `seats.find` 首匹配依赖顺序。属重构级清理，非缺陷——立小票或并入下轮 cohesive 项由你定。
+- **B3 残余口径**：白名单仍保留 `map/filter/reduce/slice/concat` 等数据变换方法（verdict 核自身 `STATE_PREDICATES.map` 依赖；若按 spec 字面收窄到纯构造类需重构 verdict-core——超「小问题」档）。拍板：就此收口 / 下轮再议。
+- **B7 残余口径**：强制域=r≥100 起算；r80-r99 历史轮若回溯登记 claims 文件则同样受约束（当前不触发）。
+- **B11 残余硬化项**（降级观察，非缺陷）：`enumerateScriptFiles` 递归无 symlink/深度守卫；`docPaths` 仅收 `d.rel`（name-only 文档 docOnMain=null→走降级，方向安全）。
