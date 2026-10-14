@@ -3,7 +3,7 @@
 // Written by hooks layer via IPC to long-running MCP server (ADR-0009 Decision 1+2).
 
 import Database from "better-sqlite3";
-import { fts5EscapeQuery } from "@anysearch-cli/store";
+import { fts5EscapeQuery, fts5RelaxedQuery, relaxedTerms, coversMajority, appendRelaxed } from "@anysearch-cli/store";
 
 export interface ProjectIndexEntry {
   rowid: number;
@@ -133,7 +133,17 @@ export class ProjectIndexStore {
 
   search(query: string, limit = 10): ProjectIndexHit[] {
     const safeQuery = this.fts5Escape(query);
-    return this.stmts.search.all(safeQuery, limit) as ProjectIndexHit[];
+    const strict = this.stmts.search.all(safeQuery, limit) as ProjectIndexHit[];
+    // ADR-0102 D1: host recall questions are natural language — relax when the strict rung under-fills.
+    if (strict.length >= limit) return strict;
+    const relaxed = fts5RelaxedQuery(query);
+    if (!relaxed) return strict;
+    // `p.rowid` on an INTEGER PRIMARY KEY table comes back under the PK's name (`id`), so dedupe on it.
+    const idOf = (h: ProjectIndexHit) => (h as unknown as { id?: number }).id ?? h.rowid;
+    const terms = relaxedTerms(query);
+    const wide = (this.stmts.search.all(relaxed, limit * 4) as ProjectIndexHit[])
+      .filter((h) => coversMajority(terms, `${h.title ?? ""} ${h.snippet ?? ""} ${h.url ?? ""}`));
+    return appendRelaxed(strict, wide, limit, idOf);
   }
 
   purgeProject(projectPath: string): number {

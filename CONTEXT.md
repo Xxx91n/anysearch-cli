@@ -1872,3 +1872,8 @@ closeout 在 main 上含活链 Stack 行且其命名 branch 的 origin ref 缺�
 
 ### Masking-Surfaced（掩盖浮面）
 runner 对 open seat 下探针报 no-kill 出具名 masking info 行——哪个坐席掩盖哪个锚，每跑可见。_Avoid_: 泛泛一行 info；坐席掩盖保持隐形。来源：R100 D-004。
+
+## Hotfix 0.1.1 — Terms
+
+### Relaxed Recall Rung（召回放宽梯级）
+recall 的第二级 FTS5 查询：严格梯级（ADR-0023 D2：全词 AND + 整句）命中不足 limit 时才启用，实词 OR + 前缀匹配、同一 BM25 排序，结果追加在严格命中之后、按行身份去重。目的：宿主以自然语言提问时不再因「无单行含全部词」而取不回已存证据。ADR-0102 D1。_Avoid_: 不用放宽梯级替代严格梯级（精确查询的排序与优先级不变）；不把它当语义召回（向量/语义臂另见 ADR-0037）。
