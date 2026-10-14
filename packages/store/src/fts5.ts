@@ -21,6 +21,57 @@ export function fts5EscapeQuery(query: string, maxTerms = 8): string {
   return "(" + prefixClause + ') OR "' + phrase + '"';
 }
 
+// ADR-0102 D1: relaxed recall rung. A natural-language recall question ("latest NBA champion NBA Finals MVP")
+// rarely has every term inside one stored row, so the strict AND rung above returns zero rows and evidence
+// that IS in memory becomes unreachable. Callers run the strict rung first and, only when it under-fills
+// the limit, append the relaxed rung: content words (function words dropped) OR-ed with prefix match,
+// ranked by the same BM25 expression. Strict hits keep their order and priority.
+const RELAX_STOPWORDS = new Set([
+  "a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "from", "by", "with", "about", "as",
+  "is", "are", "was", "were", "be", "been", "being", "it", "its", "this", "that", "these", "those",
+  "what", "which", "who", "whom", "whose", "when", "where", "why", "how", "do", "does", "did",
+  "can", "could", "would", "should", "will", "i", "you", "we", "they", "he", "she", "me", "my", "our", "your", "their",
+]);
+
+// Content words of a query (sanitised like the strict rung, function words dropped, ≤ maxTerms).
+export function relaxedTerms(query: string, maxTerms = 8): string[] {
+  const words = query.replace(SANITIZE_RE, " ").trim().split(/\s+/).filter(Boolean).map((w) => w.toLowerCase());
+  return [...new Set(words.filter((w) => !RELAX_STOPWORDS.has(w)))].slice(0, maxTerms);
+}
+
+// Returns null when relaxing cannot add a majority-covered row the strict rung missed
+// (fewer than three content words: a strict majority of 1–2 terms is all of them).
+export function fts5RelaxedQuery(query: string, maxTerms = 8): string | null {
+  const content = relaxedTerms(query, maxTerms);
+  if (content.length < 3) return null;
+  return content.map((w) => w + "*").join(" OR ");
+}
+
+// ADR-0102 D1 coverage floor: a relaxed row is kept only if it covers a STRICT MAJORITY of the
+// query's content words (prefix match on its indexed text). A row that shares just one entity word
+// with the question ("cacheflush release timetable" vs "cacheflush interval") is not evidence —
+// the golden unanswerable cases (un_*) require such near-miss distractors to stay out of the FTS arm.
+export function coversMajority(terms: string[], text: string): boolean {
+  if (terms.length === 0) return false;
+  const toks = text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  let matched = 0;
+  for (const t of terms) if (toks.some((k) => k.startsWith(t))) matched++;
+  return matched * 2 > terms.length;
+}
+
+// Append relaxed-rung rows after strict-rung rows, skipping duplicates, up to limit.
+// key: row identity (default rowid; the project index returns its PK as `id`).
+export function appendRelaxed<T>(strict: T[], relaxed: T[], limit: number, key: (h: T) => unknown = (h) => (h as { rowid?: unknown }).rowid): T[] {
+  const out = strict.slice(0, limit);
+  const seen = new Set(out.map(key));
+  for (const h of relaxed) {
+    if (out.length >= limit) break;
+    const k = key(h);
+    if (!seen.has(k)) { seen.add(k); out.push(h); }
+  }
+  return out;
+}
+
 // ADR-0023 D2 (Q2=B): multi-query + RRF (k=60) fusion for consumer queries.
 // queries: 3 variants from S1 rewrite ([original, v1, v2]) — index 0 is always the raw user query (fail-open).
 // Deduplication in rrfScores is list-local: two variants returning the same doc don't double-count when fused.
@@ -44,14 +95,23 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
     if (safe === '""') continue;
     // ADR-0030: mirror of stmts.searchAllResults: freshness_factor UDF must be registered (see registerFreshnessFactorFunction).
     // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
-    const hits = store.dbQuery<THit>(
+    const sql =
       "SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, " +
       "freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank " +
       "FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid " +
       "WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND r.archived = 0 " +
-      "ORDER BY rank LIMIT ?",
-      safe, safe, limit,
-    );
+      "ORDER BY rank LIMIT ?";
+    let hits = store.dbQuery<THit>(sql, safe, safe, limit);
+    // ADR-0102 D1: relaxed rung only when the strict rung under-fills (decay keyed on the same strict string).
+    if (hits.length < limit) {
+      const relaxed = fts5RelaxedQuery(q.trim());
+      if (relaxed) {
+        const terms = relaxedTerms(q.trim());
+        const wide = store.dbQuery<THit & { role?: string; content?: string }>(sql, safe, relaxed, limit * 4)
+          .filter((h) => coversMajority(terms, `${h.role ?? ""} ${h.content ?? ""}`));
+        hits = appendRelaxed(hits, wide, limit);
+      }
+    }
     if (hits.length > 0) {
       // RRF input key must be a stable per-doc id — rowid identifies retrieval_results rows.
       lists.push(hits.map((h) => String(h.rowid)));

@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { SCHEMA_SQL } from "./schema-content";
 import { registerFreshnessFactorFunction, invalidateOldRecords } from "./time-decay.js";
-import { fts5EscapeQuery, searchMemoryMultiQuery } from "./fts5.js";
+import { fts5EscapeQuery, fts5RelaxedQuery, relaxedTerms, coversMajority, appendRelaxed, searchMemoryMultiQuery } from "./fts5.js";
 import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD, MAX_ENTITY_CANDIDATES as MAX_CANDIDATES } from "./entity.js";
 import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_PATTERN_ROWS, RELATION_RULES_VERSION } from "./relation.js";
 import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
@@ -608,7 +608,17 @@ export class SqliteSessionStore implements SessionStore {
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
    const safeQuery = this.fts5Escape(query);
    // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
-   const rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, limit) as MemoryHit[];
+   let rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, limit) as MemoryHit[];
+   // ADR-0102 D1: strict rung under-fills → append the relaxed rung (decay keyed on the strict string).
+   if (rawHits.length < limit) {
+     const relaxed = fts5RelaxedQuery(query);
+     if (relaxed) {
+       const terms = relaxedTerms(query);
+       const wide = (this.stmts.searchAllResults.all(safeQuery, relaxed, limit * 4) as MemoryHit[])
+         .filter((h) => coversMajority(terms, `${h.role ?? ""} ${h.content ?? ""}`));
+       rawHits = appendRelaxed(rawHits, wide, limit);
+     }
+   }
    // ADR-0031 D4: entity arm — conditional activation (absent when query has no entity match), weight 0.5 vs FTS 1.0.
    const armHits = this.entityArmRows(query, limit);
    const vecHits = await this.vectorArmRows(query, limit);

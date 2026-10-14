@@ -4,6 +4,16 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 0.1.1 — 2026-10-15 (hotfix: relaxed recall rung, ADR-0102)
+
+### Fixed
+
+- **recall 自然语言提问取不回已存证据（ADR-0102 D1）**：`recall_memory` 的内部记忆与项目索引两层都只走严格 FTS5 梯级（全词 AND + 整句），宿主自然语言提问几乎从不在单行里凑齐全部词，存储中的证据取不回。现严格梯级不足 `limit` 时追加放宽梯级（实词 OR + 前缀、同一 BM25/新鲜度排序，严格命中保持优先）；覆盖 `searchMemory` / `searchMemoryMultiQuery` / `ProjectIndexStore.search` 三条路径。回归：`packages/store/test/fts5-relaxed-recall.test.ts`、`apps/plugin/test/project-index-relaxed.test.ts`。
+
+### Changed
+
+- 全包版本 0.1.0 → 0.1.1（9 package.json + plugin.json + ship-gate release pin + provider clientInfo 同 commit）。本版同时承载下列 Unreleased（ADR-0094~0101）条目。
+
 ## Unreleased — ADR-0101 r100: 元验证封顶（封顶滤尺三交集 + 修层/新层判据 + 坐席 Addendum + tau 递归/AST 前门 + deferred 触发器）
 
 ### Added
