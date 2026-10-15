@@ -62,6 +62,13 @@ assert(entryProblems.length === 0, "all entries valid: " + entryProblems.join(" 
 for (const e of golden.entries) {
   if (e.provenance.type === "external-community") {
     assert(/^https?:\/\//.test(e.provenance.ref), e.id + ": external provenance is a URL");
+  } else if (e.provenance.ref.startsWith(".scratch/")) {
+    // .scratch/ is local-only by policy since 3f85fee8 (untracked, never committed — AGENTS.md):
+    // a clean checkout (CI) cannot resolve it, so assert a well-formed repo-relative path instead.
+    assert(
+      /^\.scratch\/[A-Za-z0-9._\/-]+$/.test(e.provenance.ref) && !e.provenance.ref.includes(".."),
+      e.id + ": local-only provenance ref is a well-formed .scratch path: " + e.provenance.ref
+    );
   } else {
     assert(
       fs.existsSync(path.join(root, e.provenance.ref)),
