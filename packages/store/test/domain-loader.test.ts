@@ -149,7 +149,9 @@ async function testLoadByName() {
     const schema = loadDomainByName("default", REPO_ROOT);
     assert(schema.name === "default", "loadDomainByName: name = default");
     assert(schema.sources.enabled.length === 3, "loadDomainByName: 3 sources enabled");
-    assert(schema.hooks.toolWhitelist.length === 3, "loadDomainByName: 3 hooks");
+    // ADR-0103 D1: shipped default whitelists the built-in search tool + 3 ctx_* host tools.
+    assert(schema.hooks.toolWhitelist.length === 4, "loadDomainByName: 4 hooks");
+    assert(schema.hooks.toolWhitelist.includes("search"), "loadDomainByName: search whitelisted (ADR-0103)");
   } catch (e: any) {
     assert(false, "loadDomainByName default: " + e.message);
   }

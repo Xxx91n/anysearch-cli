@@ -389,6 +389,25 @@ async function main() {
     } finally { f.restore(); }
   }
 
+  // 17. r19 T2 (STOP-20 regression): a rate-limit / quota notice in the body —
+  //     no provisioning markers — is a transient rate limit, NOT permanent-auth.
+  for (const text of [
+    "Rate limit exceeded. Please try again later.",
+    "Too many requests: daily quota reached for this key, retry after 60s",
+    "请求过于频繁，已触发限流，请稍后再试",
+    "今日额度已用完，请明天再试",
+  ]) {
+    const body = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text } ] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("rate limited"), "rate-limit notice -> rate limited error (" + text.slice(0, 24) + "; got " + msg.slice(0, 80) + ")");
+      assert(classifyProviderError(msg) === "transient", "rate-limit notice classifies transient (" + text.slice(0, 24) + ")");
+    } finally { f.restore(); }
+  }
+
   console.log("--- AnySearchProvider tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);
 }

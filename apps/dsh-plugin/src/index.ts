@@ -137,7 +137,7 @@ const channels = new Map<string, Promise<McpChannel | null>>();
 async function mcpHandshake(base: string, token: string): Promise<McpChannel | null> {
   const init = await callServer(base + '/mcp', token, {
     jsonrpc: '2.0', id: ++rpcSeq, method: 'initialize',
-    params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'anysearch-dsh-plugin', version: '0.1.1' } },
+    params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'anysearch-dsh-plugin', version: '0.1.2' } },
   }, { headers: { Accept: MCP_ACCEPT }, timeoutMs: 15_000 });
   const negotiated = (init?.result as { protocolVersion?: unknown } | undefined)?.protocolVersion;
   if (typeof negotiated !== 'string' || negotiated.length === 0) return null;
