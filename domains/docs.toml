@@ -20,4 +20,4 @@ urlAllowlist = ["modelcontextprotocol.io", "typescriptlang.org", "www.typescript
 adapter = "none"
 
 [hooks]
-toolWhitelist = ["ctx_execute", "ctx_search", "ctx_batch_execute"]
+toolWhitelist = ["search", "ctx_execute", "ctx_search", "ctx_batch_execute"]

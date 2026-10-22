@@ -62,11 +62,43 @@ export function enqueueHitl(record: { url: string; host: string; toolName: strin
   } catch { /* fail-open: queue write failure must not crash the agent loop */ }
 }
 
+// r19 T2 (r18 seal-0 finding): a stop condition other than the wall-clock budget.
+// On adversarial questions the model kept re-searching (46–62 calls per question in
+// r18) until timeout. Track the URLs each search returns; once `maxNoNewStreak`
+// consecutive searches add nothing new, or `maxCalls` searches have run, further
+// search calls are blocked and the model is told to answer from what it has.
+export const SEARCH_SATURATION_DEFAULTS = { maxCalls: 12, maxNoNewStreak: 2 } as const;
+
+export class SearchSaturation {
+  private readonly seen = new Set<string>();
+  private calls = 0;
+  private noNewStreak = 0;
+  constructor(private readonly limits: { maxCalls: number; maxNoNewStreak: number } = SEARCH_SATURATION_DEFAULTS) {}
+
+  record(urls: string[]): void {
+    this.calls++;
+    let fresh = 0;
+    for (const u of urls) if (u && !this.seen.has(u)) { this.seen.add(u); fresh++; }
+    this.noNewStreak = fresh === 0 ? this.noNewStreak + 1 : 0;
+  }
+
+  exhausted(): boolean {
+    return this.calls >= this.limits.maxCalls || this.noNewStreak >= this.limits.maxNoNewStreak;
+  }
+
+  reason(): string {
+    const why = this.noNewStreak >= this.limits.maxNoNewStreak
+      ? "the last " + this.noNewStreak + " searches returned no new results"
+      : "the search limit of " + this.limits.maxCalls + " calls was reached";
+    return "Search stopped: " + why + ". Do not search again; answer now from the evidence already gathered and state what remains uncertain.";
+  }
+}
+
 // Build the search AgentTool: wraps RetroaererdEngine.search() with TypeBox schema.
 // The LLM sees this as a tool it can call to search the web.
-export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObservationSink): AgentTool {
+export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObservationSink, onResults?: (urls: string[]) => void): AgentTool {
   return {
-    name: "search",
+    name: BUILTIN_SEARCH_TOOL,
     label: "Search",
     // ADR-0022 D1/D4: answer is provider-fulfilled (Exa/Tavily only); no CLI-side
     // synthesis. When no provider supports it, answers=[] and metadata.answersAvailable=false.
@@ -91,6 +123,7 @@ export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObser
         ...(span ? { span } : {}),
       };
       const envelope = await retriever.search(q);
+      onResults?.((envelope.results ?? []).map((r) => r.url));
       // ADR-0054 D1: every retrieved payload crosses the LLM boundary through wrapRetrieved
       // (Anthropic tool_result wire format). The full envelope JSON rides in snippet untruncated
       // ponytail: schema maxLength(4000) is not enforced here; downstream parses via unwrapRetrieved.
@@ -124,8 +157,12 @@ function buildSystemPrompt(domain: DomainConfigPort): string {
   return prompts || "You are a helpful research assistant with web search capabilities.";
 }
 
+// Name of the kernel's built-in retrieval tool (createSearchTool).
+export const BUILTIN_SEARCH_TOOL = "search";
+
 // Filter AgentTools by domain skills.active + hooks.toolWhitelist.
-function filterAgentTools(tools: AgentTool[], domain: DomainConfigPort): AgentTool[] {
+// Exported for the shipped-domain regression test (r19 T1, 2026-10-22).
+export function filterAgentTools(tools: AgentTool[], domain: DomainConfigPort): AgentTool[] {
   // ADR-0007 D4: hooks.toolWhitelist is the security filter.
   // skills.active is domain activation (not a tool filter).
   const whitelist = new Set(domain.hooks.toolWhitelist);
@@ -225,7 +262,8 @@ export class PiAgentRuntime {
     const { retriever, domain, model, streamFn, ledger, sessionId } = this.opts;
 
     // Build tools: search tool + any extra tools, filtered by domain.
-    const searchTool = createSearchTool(retriever, this.opts.span);
+    const saturation = new SearchSaturation();
+    const searchTool = createSearchTool(retriever, this.opts.span, (urls) => saturation.record(urls));
     const allTools = [searchTool, ...(this.opts.tools || [])];
     const activeTools = filterAgentTools(allTools, domain);
 
@@ -269,6 +307,10 @@ export class PiAgentRuntime {
       // ADR-0054 D1/D4: shouldAllowUrl at the agent-loop tool-call seam. Retrieved-derived
       // URLs not on the domain [sources].urlAllowlist are HITL-gated; deny-first headless.
       beforeToolCall: async (ctx: any) => {
+        // r19 T2: saturation stop — block further searches, let the model answer.
+        if (ctx?.toolCall?.name === BUILTIN_SEARCH_TOOL && saturation.exhausted()) {
+          return { block: true, reason: saturation.reason() };
+        }
         // ADR-0055 D5: lazy mtime-checked re-read; bad TOML keeps last known good.
         const reloaded = this.domainReloader ? this.domainReloader() : null;
         if (reloaded) (this.opts as { domain: DomainConfigPort }).domain = reloaded as DomainConfigPort;

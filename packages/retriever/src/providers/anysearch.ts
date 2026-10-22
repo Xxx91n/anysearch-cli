@@ -125,6 +125,9 @@ function parseSearchMarkdown(md: string): { results: NormalizedResult[]; elapsed
   return { results, elapsedMs: em ? Number(em[1]) : undefined };
 }
 
+// Rate-limit / quota wording seen in AnySearch reply bodies (EN + ZH).
+export const RATE_LIMIT_NOTICE = /rate.?limit|too many requests|quota|try again later|retry after|限流|频繁|额度|稍后再试/i;
+
 // Fail-first mapping (D-002 §2): isError / wrong-shape 200 / unexpected
 // Content-Type all throw — the engine degrades the arm, never a silent zero.
 function mapToolsCallResult(result: Record<string, unknown>): { results: NormalizedResult[]; elapsedMs?: number } {
@@ -148,8 +151,14 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
     // automatically generated ... api_key=...") instead of a results envelope.
     // That is a credential boundary, not protocol drift — name it so the
     // error-class channel reads permanent-auth, not permanent-protocol.
-    if (/automatically generated|api_key *=|rate limit|quota/i.test(md)) {
+    if (/automatically generated|api_key *=/i.test(md)) {
       throw new Error("AnySearch MCP tools/call quota/auth nudge: upstream issued a provisioning reply instead of results (anonymous quota boundary — set ANYSEARCH_API_KEY)");
+    }
+    // r19 T2 (STOP-20): a rate-limit / quota notice WITHOUT provisioning markers is
+    // a transient throttle on a valid key, not a credential boundary — name it so
+    // the error-class channel reads transient (retry later), not permanent-auth.
+    if (RATE_LIMIT_NOTICE.test(md)) {
+      throw new Error("AnySearch MCP tools/call rate limited: upstream returned a rate-limit/quota notice instead of results (retry later)");
     }
     // Alive-but-wrong-shape (the OmniRoute enumeration family is one) — fail.
     throw new Error("AnySearch MCP tools/call malformed text (no '## Search Results' header)");
@@ -263,7 +272,7 @@ export class AnySearchProvider implements SearchProvider {
       const res = await this.rpc("initialize", {
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: "anysearch-cli", version: "0.1.1" },
+        clientInfo: { name: "anysearch-cli", version: "0.1.2" },
       }, signal);
       const negotiated = res["protocolVersion"];
       if (typeof negotiated === "string" && negotiated) this.protocolVersion = negotiated;

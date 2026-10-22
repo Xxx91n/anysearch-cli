@@ -4,6 +4,18 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## 0.1.2 — 2026-10-22 (hotfix: ans_chat retrieval, search saturation stop, rate-limit class; ADR-0103)
+
+### Fixed
+
+- **ans_chat 从不检索（ADR-0103 D1）**：三个自带域（default/docs/research）的 `hooks.toolWhitelist` 只列宿主侧工具名（`ctx_*`），把内核自带的 `search` 工具过滤掉，ans_chat 的 agent 循环零工具运行——模型凭参数记忆作答或把工具调用当正文输出。三个域白名单补 `"search"`；白名单仍是安全过滤器。回归：`packages/kernel/test/agent-tool-filter.test.ts`。
+- **搜索循环无预算外停止条件（ADR-0103 D2，r18 seal-0）**：新增 `SearchSaturation`——连续 2 次搜索无新 URL 或累计 12 次搜索后，阻断后续 `search` 并要求模型用已得证据作答。回归：`packages/kernel/test/search-saturation.test.ts`（修复前 30 次，修复后 ≤3 次）。
+- **限流提示误判 permanent-auth（ADR-0103 D3，r18 STOP-20）**：正文限流/额度提示（无开户标记）改抛 `rate limited` 并归 `transient`；开户提示仍为 `permanent-auth`。回归：`packages/retriever/test/anysearch.test.ts` case 17、`provider-error-class.test.ts`。
+
+### Changed
+
+- 全包版本 0.1.1 → 0.1.2（9 package.json + plugin.json + ship-gate release pin + 两处 clientInfo 同 commit）。
+
 ## 0.1.1 — 2026-10-15 (hotfix: relaxed recall rung, ADR-0102)
 
 ### Fixed
