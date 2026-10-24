@@ -25,7 +25,7 @@ export const DOCS_GOLDEN_DIMENSIONS = Object.keys(DOCS_GOLDEN_DIMENSION_VALUES);
 export const DOCS_GOLDEN_PROVENANCE_TYPES = ["internal-dogfood", "external-community", "constructed", "llm-assisted"] as const;
 export const DOCS_GOLDEN_VERDICTS = ["answer", "abstain"] as const;
 
-// R84 T1 / draft: vertical-eval strata vocabulary. Kept in a SEPARATE
+// draft: vertical-eval strata vocabulary. Kept in a SEPARATE
 // map from DOCS_GOLDEN_DIMENSION_VALUES — the coverage manifest asserts exact
 // tag-count equality for the eight docs dimensions, so vertical entries must
 // never carry docs-dimension tags; their slice accounting rides on these two.
@@ -35,24 +35,24 @@ export const VERTICAL_DIMENSION_VALUES: Record<string, readonly string[]> = {
 };
 export const VERTICAL_DIMENSIONS = Object.keys(VERTICAL_DIMENSION_VALUES);
 
-// R84 T1 / draft: expected.vertical assertion keys — legislated in
-// .scratch/grill-round-84/evidence/t1-semantics-legislation.md (A-02/A-04)
+// draft: expected.vertical assertion keys — legislated in
+// .scratch/grill-round-84/evidence/t1-semantics-legislation.md
 // before any assertion consumed them (Pact Golden Rule).
-//   role "subject"  — the entry is a vertical query under test; domain required.
-//   role "control"  — off-domain/ambiguous/upstream-reject surface; existence is
-//                     a first-class assertion, pass/fail is soft (live leg
-//                     records control failures to the degraded list, never the
-//                     red gate — D-004 iii).
-//   hit             — subject: >=1 fused result carries extra.vertical marker
-//                     with domain === asserted domain; control:false asserts
-//                     NO result carries the marker (silent-fallback surface).
-//   paramsKeys      — expected Object.keys() of the canonicalized params sent
-//                     on the wire (post A-04 canonicalization truth source).
-//   paramsSent      — false pins wire-absence of sub_domain_params (A-04).
-//   degraded        — subject: exact degraded-arm id list from the
-//                     retrieval.vertical.pre event; control: the string
-//                     "general-fallback" asserts the vertical arm degraded to
-//                     the general fanout surface.
+// role "subject" — the entry is a vertical query under test; domain required.
+// role "control" — off-domain/ambiguous/upstream-reject surface; existence is
+// a first-class assertion, pass/fail is soft (live leg
+// records control failures to the degraded list, never the
+// red gate — iii).
+// hit — subject: >=1 fused result carries extra.vertical marker
+// with domain === asserted domain; control:false asserts
+// NO result carries the marker (silent-fallback surface).
+// paramsKeys — expected Object.keys() of the canonicalized params sent
+// on the wire (post canonicalization truth source).
+// paramsSent — false pins wire-absence of sub_domain_params.
+// degraded — subject: exact degraded-arm id list from the
+// retrieval.vertical.pre event; control: the string
+// "general-fallback" asserts the vertical arm degraded to
+// the general fanout surface.
 export interface DocsGoldenVerticalExpectation {
   role: "subject" | "control";
   domain?: string;
@@ -61,7 +61,7 @@ export interface DocsGoldenVerticalExpectation {
   paramsSent?: boolean;
   hit?: boolean;
   degraded?: string[] | "general-fallback";
-  // R84 T2 / D-004(iv): measurement pool — ANY-of candidate hosts the delta
+  // (iv): measurement pool — ANY-of candidate hosts the delta
   // runner scores against (host-hit / host+path strong-hit rates). This is a
   // measurement surface, NOT a hard gate: the live leg never fails an entry on
   // hitHosts (small-n drift on upstream host mix is evidence, not breakage).
@@ -81,7 +81,7 @@ export interface DocsGoldenVerticalSpec {
   params?: Record<string, unknown>;
 }
 
-// R64 D-005: four optional fixture fields + eval-looks root schema_version
+// four optional fixture fields + eval-looks root schema_version
 // sentinel (additive — no breaking change, hence no schema v2 migration).
 export const DOCS_GOLDEN_TOLERATED_SEGMENTS = ["locale", "version", "dated"] as const;
 export type DocsGoldenToleratedSegment = (typeof DOCS_GOLDEN_TOLERATED_SEGMENTS)[number];
@@ -89,7 +89,7 @@ export const DOCS_GOLDEN_STABILITY_CLASSES = ["controlled", "frozen-spec", "exte
 export type DocsGoldenStabilityClass = (typeof DOCS_GOLDEN_STABILITY_CLASSES)[number];
 export const EVAL_LOOKS_SCHEMA_VERSION = 1;
 
-// R95 T1 /: controlled vocabulary for cell tombstones (the `tombstone`
+// controlled vocabulary for cell tombstones (the `tombstone`
 // block on a demoted entry). Demotion is an explicit declaration, never a
 // silent removal — the reason code names WHY the cell left the measurable set,
 // and the list is closed so free text cannot drift (spelling drift is the
@@ -98,7 +98,7 @@ export const EVAL_LOOKS_SCHEMA_VERSION = 1;
 export const TOMBSTONE_REASON_CODES = ["upstream-validator-vs-doc-mismatch"] as const;
 export type TombstoneReasonCode = (typeof TOMBSTONE_REASON_CODES)[number];
 
-// R64 D-002: page-family pattern — pathname substring match on the result set.
+// page-family pattern — pathname substring match on the result set.
 // tolerate is a REQUIRED (possibly empty) explicit declaration of which
 // wrapper-segment classes the pattern forgives: locale (/zh/), version (/10.x/),
 // dated (/specification/2025-06-18/ -> /latest/).
@@ -113,7 +113,7 @@ export interface DocsGoldenExpected {
   mustHitPaths?: DocsGoldenPathPattern[];
   mustNotHitPaths?: string[];
   minResults?: number;
-  // R84 T1 / draft: vertical assertion block. Present only on entries
+  // draft: vertical assertion block. Present only on entries
   // in the vertical-eval family (vert-* / ctrl-* ids); absent on docs-g* rows.
   vertical?: DocsGoldenVerticalExpectation;
 }
@@ -121,13 +121,13 @@ export interface DocsGoldenProvenance {
   type: "internal-dogfood" | "external-community" | "constructed" | "llm-assisted";
   ref: string;         // repo path / .scratch path / external URL — always revisitable
   harvestedAt: string; // ISO date (YYYY-MM-DD)
-  // R84 T1 / D-003(vi): constructed/llm-assisted entries carry the reviewer and
+  // (vi): constructed/llm-assisted entries carry the reviewer and
   // audit trail — LLM-assisted drafts are cross-family models only (never the
   // family under test or its upstream) and human-reviewed to gold bar.
   reviewer?: string;
   audit?: string;
 }
-// R64 D-005: promote physically deletes the ledger entry, so the provenance
+// promote physically deletes the ledger entry, so the provenance
 // record of an assertion migration can only live on the golden entry itself.
 // Named "migration" (not tombstone — that word is taken by Case Tombstone ADR).
 export interface DocsGoldenMigration {
@@ -136,7 +136,7 @@ export interface DocsGoldenMigration {
   drift: string;     // provider drift evidence observed live
   decidedAt: string; // ISO date of the ruling
 }
-// R95 T1 /: cell tombstone — a cell demoted in place (same id, per the
+// cell tombstone — a cell demoted in place (same id, per the
 // data-version governance rule: a semantic rewrite needs a NEW id plus old-cell
 // deprecation, never an in-place re-chip). A tombstoned entry carries no live
 // route: no scope in golden.scopes, no expected.vertical, no injected spec.
@@ -153,16 +153,16 @@ export interface DocsGoldenTombstone {
 export interface DocsGoldenEntry {
   id: string;
   domain: string;
-  // docs-g* rows: verbatim real question text — never synthetic (D-005).
+  // docs-g* rows: verbatim real question text — never synthetic.
   // vert-*/ctrl-* rows: constructed or llm-assisted-and-reviewed text — the
-  // honesty marker lives in provenance.type, not in the question field (R84).
+  // honesty marker lives in provenance.type, not in the question field.
   question: string;
   questionLang: "zh" | "en";
   intent: DocsGoldenIntent;
   expected: DocsGoldenExpected;
   dimensions: string[]; // "<dimension>:<value>" pairs — docs-g* rows use DOCS_GOLDEN_DIMENSION_VALUES, vert-*/ctrl-* rows use VERTICAL_DIMENSION_VALUES
   provenance: DocsGoldenProvenance;
-  // R84 T1 / draft: query-level vertical spec injected by the
+  // draft: query-level vertical spec injected by the
   // executors (live leg -> --vertical-* CLI flags; stub leg -> engine search
   // request). Subject entries carry it; control entries may carry a bogus or
   // domain-only spec to pin the silent-fallback / reject surface.
@@ -171,7 +171,7 @@ export interface DocsGoldenEntry {
   failure_class?: string;                     // drift attribution (drives disposition path)
   migration?: DocsGoldenMigration;
   watch?: boolean;                            // post-promote observation mark (CI flip -> ratchet re-entry)
-  // R95 T1 /: present when the cell was demoted in place (out of the
+  // present when the cell was demoted in place (out of the
   // measurable set by design). A tombstoned row asserts no vertical route.
   tombstone?: DocsGoldenTombstone;
   notes?: string;
@@ -195,7 +195,7 @@ export interface CoverageManifest {
   dimensions: CoverageDimension[];
 }
 
-// R84 T1 / draft: id families — docs-gNNNN (docs batch),
+// draft: id families — docs-gNNNN (docs batch),
 // vert-<d>NNNN (vertical subject entries, <d> = vdomain letter),
 // ctrl-NNNN (control-class entries asserting the silent-fallback surface).
 export const DOCS_GOLDEN_ID_RE = /^(docs-g\d{4}|vert-[a-z]\d{4}|ctrl-[a-z]?\d{3,4})$/;
@@ -211,7 +211,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
   // narrow-allowlist fixture domain where zero results can ever survive.
   // Non-docs domains are allowed only as abstain-only records: they may
   // assert "the gate blocks everything", never mustHit hits.
-  // R84 T1: vertical-eval entries (vert-*/ctrl-*) run under non-docs TOML
+  // vertical-eval entries (vert-*/ctrl-*) run under non-docs TOML
   // domains (e.g. "default") and may assert verdict=answer — the abstain-only
   // cold-domain rule applies to non-vertical entries only.
   if (typeof e.domain !== "string" || !/^[a-z][a-z0-9-]{0,63}$/.test(e.domain)) p.push("domain must be a lowercase domain slug");
@@ -245,7 +245,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
             p.push("mustHitPaths tolerate outside locale|version|dated: " + pm.path);
           }
         }
-        // R64 D-002 negative-pin: page-family positives REQUIRE written-down
+        // negative-pin: page-family positives REQUIRE written-down
         // negatives — a bare substring pattern can silently over-hit.
         if (exp.mustHitPaths.length > 0 && (exp.mustNotHitPaths?.length ?? 0) === 0)
           p.push("mustHitPaths requires mustNotHitPaths negative pins on the entry");
@@ -253,7 +253,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
     }
     if (exp.mustNotHitPaths !== undefined && (!Array.isArray(exp.mustNotHitPaths) || exp.mustNotHitPaths.some((u) => typeof u !== "string" || u.length === 0))) p.push("mustNotHitPaths must be non-empty string[]");
     if (exp.verdict === "abstain" && ((exp.mustHitUrls?.length ?? 0) > 0 || (exp.mustHitPaths?.length ?? 0) > 0 || (exp.mustNotHitPaths?.length ?? 0) > 0)) p.push("abstain entry must not assert must-hit url/path assertions");
-    // R84 T1 / draft: expected.vertical assertion block validation.
+    // draft: expected.vertical assertion block validation.
     const vexp = exp.vertical as Partial<DocsGoldenVerticalExpectation> | undefined;
     if (vexp !== undefined) {
       if (typeof vexp !== "object" || vexp === null || Array.isArray(vexp)) {
@@ -286,7 +286,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
       }
     }
   }
-  // R84 T1 / draft: entry-level vertical spec (executor injection).
+  // draft: entry-level vertical spec (executor injection).
   const vspec = e.vertical as Partial<DocsGoldenVerticalSpec> | undefined;
   if (vspec !== undefined) {
     if (typeof vspec !== "object" || vspec === null || Array.isArray(vspec)) {
@@ -301,7 +301,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
   if (tags.length === 0) {
     p.push("dimensions must be a non-empty string[]");
   } else if (isVerticalEntry) {
-    // R84: vertical-family entries use the vertical slice vocabulary ONLY —
+    // vertical-family entries use the vertical slice vocabulary ONLY —
     // the coverage manifest asserts exact tag-count equality on the eight
     // docs dimensions, so vertical entries must not carry docs-dim tags.
     for (const d of tags) {
@@ -337,7 +337,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
       if (typeof m.decidedAt !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(m.decidedAt)) p.push("migration.decidedAt ISO date required");
     }
   }
-  // R95 T1 /: cell tombstone — the demotion must be explicit and
+  // cell tombstone — the demotion must be explicit and
   // machine-checkable, and must actually retire the live route (a tombstoned
   // row that still carries a vertical expectation or an injected spec would
   // read as a live cell with a decorative label).
@@ -355,14 +355,14 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
       if (t.prior_expected_vertical !== undefined && (typeof t.prior_expected_vertical !== "object" || t.prior_expected_vertical === null)) p.push("tombstone.prior_expected_vertical must be an object when present");
       if (e.vertical !== undefined) p.push("tombstoned entry must not carry an injected vertical spec (the prior spec lives in tombstone.prior_spec)");
       if ((e.expected as { vertical?: unknown } | undefined)?.vertical !== undefined) p.push("tombstoned entry must not carry expected.vertical (no live route)");
-      // R95-audit F3 (b) / §Addendum-A: the tombstone row's expected
+      // -audit F3 (b) / §Addendum-A: the tombstone row's expected
       // block is a dormant declaration ("this cell asserted answer in general"),
       // never a live promise: NO lane selects a tombstoned row (no scope), so
       // per-clause expectations that only lanes can produce are banned here.
       // Allowed keys stay frozen to {verdict, minResults} (the shape emitted by
       // gen-corpus.mjs tombstone()); mustHit*/mustNotHit*/mustHitPaths and any
       // other per-lane assertion key are rejected as run-time-nonexistent
-      // semantics under Pact Golden Rule (D-002, vertical-face reading).
+      // semantics under Pact Golden Rule (vertical-face reading).
       const liveOnlyKeys = ["mustHitHosts", "mustHitUrls", "mustHitPaths", "mustNotHitPaths"];
       for (const k of liveOnlyKeys) {
         if ((e.expected as Record<string, unknown> | undefined)?.[k] !== undefined)
@@ -381,11 +381,11 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
     if (!DOCS_GOLDEN_PROVENANCE_TYPES.includes(prov.type as "internal-dogfood")) p.push("provenance.type must be internal-dogfood|external-community|constructed|llm-assisted");
     if (typeof prov.ref !== "string" || prov.ref.length < 4) p.push("provenance.ref required");
     if (prov.type === "external-community" && !/^https?:\/\//.test(prov.ref ?? "")) p.push("external-community ref must be a URL");
-    // R84 T1 / D-003(vi): built corpus carries reviewer + audit trail.
-    // constructed  = human-authored -> reviewer required (reviewer = author id).
+    // (vi): built corpus carries reviewer + audit trail.
+    // constructed = human-authored -> reviewer required (reviewer = author id).
     // llm-assisted = cross-family LLM draft, human-reviewed -> reviewer AND
-    //                audit trail ref both required (the draft session/model
-    //                must be revisitable).
+    // audit trail ref both required (the draft session/model
+    // must be revisitable).
     if (prov.type === "constructed" || prov.type === "llm-assisted") {
       if (typeof prov.reviewer !== "string" || prov.reviewer.length === 0) p.push("provenance.reviewer required for " + prov.type + " entries");
     }
@@ -476,7 +476,7 @@ export function crossCheckDocsGolden(set: DocsGoldenSet, manifest: CoverageManif
     if (d.status === "covered" && n === 0) p.push(d.dimension + ": declared covered but no golden entry carries the tag");
     if (d.status === "covered" && d.count !== n) p.push(d.dimension + ": manifest count " + d.count + " != actual " + n);
     if (d.status === "deferred" && n > 0) p.push(d.dimension + ": declared deferred but " + n + " golden entries carry the tag");
-    // R60-audit F3: declared class breakdown must match the actual tag histogram —
+    // -audit F3: declared class breakdown must match the actual tag histogram —
     // count alone staying right is not enough for an honesty artifact.
     if (d.status === "covered" && d.classes) {
       const h = classHist.get(d.dimension) ?? new Map<string, number>();

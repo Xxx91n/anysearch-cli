@@ -12,13 +12,13 @@ import type { T0PreferenceInput } from "@anysearch-cli/store";
 function printHelp(): void {
   process.stdout.write(
     [
-      "ans pref — manage T0 durable preferences ",
+      "ans pref — manage T0 durable preferences",
       "",
       "Commands:",
       "  list                              Show live preferences (global + project merged)",
       "  remember <key> <value> [--scope]  Promote a preference (explicit channel)",
       "  forget   <key> [--scope]          Demote a preference (user channel; recoverable)",
-      " review [--keep|--drop|--promote <id>] Resolve quarantined equal-conflict memories ",
+      " review [--keep|--drop|--promote <id>] Resolve quarantined equal-conflict memories",
       "",
       "Scope: --scope global (default) | --scope project",
       "  global  → ~/.anysearch/MEMORY.md",
@@ -54,7 +54,7 @@ export async function runMemoryPreference(args: string[]): Promise<number> {
     if (rows.length === 0) { process.stdout.write("(none — promote with: ans pref remember <key> <value>)\n"); return 0; }
     for (const r of rows) {
       const tag = r.scope === "global" ? "G" : "P";
-      process.stdout.write(tag + "  " + r.key + " = " + r.value + "  (modified " + r.modified + ", via " + r.source + ")\n");
+      process.stdout.write(tag + "  " + r.key + " = " + r.value + "  (modified" + r.modified + ", via" + r.source + ")\n");
     }
     return 0;
   }
@@ -133,7 +133,7 @@ export async function runMemoryPreference(args: string[]): Promise<number> {
     }
     const id = Number(idArg);
     if (!Number.isInteger(id) || id <= 0) {
-      process.stderr.write("ans pref review: invalid id " + JSON.stringify(idArg) + "\n");
+      process.stderr.write("ans pref review: invalid id" + JSON.stringify(idArg) + "\n");
       return 2;
     }
     const row = (await eng.store.listQuarantinedMemories()).find((r) => r.id === id);
@@ -161,11 +161,11 @@ export async function runMemoryPreference(args: string[]): Promise<number> {
       // Projection regen is fail-open, same contract as remember.
       try { await writeProjection(eng.store, undefined); } catch { }
     }
-    process.stdout.write("pref review " + action + ": #" + id + " resolved\n");
+    process.stdout.write("pref review" + action + ": #" + id + " resolved\n");
     return 0;
   }
 
-  process.stderr.write("ans pref: unknown subcommand " + String.fromCharCode(39) + sub + String.fromCharCode(39) + "\n");
+  process.stderr.write("ans pref: unknown subcommand" + String.fromCharCode(39) + sub + String.fromCharCode(39) + "\n");
   printHelp();
   return 2;
 }

@@ -57,7 +57,7 @@ assert(lockN(10).lockedN === RELATION_GAIN_LOCKED_N_CAP, "lockN caps at " + RELA
 assert(lockN(0.05).rawN === 4, "lockN(0.05) rawN = ceil(2*0.0025*7.84/0.01) = ceil(3.92) = 4");
 assert(sigmaDUpper([0.1, 0.2, 0.15, 0.12]) > 0.036, "sigmaDUpper is an upper CI on sd");
 
-// --- D4: three-tier gain mapping ( supersedes the observational "preregistered rule" verdict) ---
+// --- D4: three-tier gain mapping (supersedes the observational "preregistered rule" verdict) ---
 const posDeltas = [0.14, 0.16, 0.15, 0.13, 0.17, 0.14, 0.16, 0.15, 0.14, 0.16, 0.15, 0.14];
 {
   const g = evaluateGate(fakeReport(mkMetrics(posDeltas)), mkBaseline(0.05));

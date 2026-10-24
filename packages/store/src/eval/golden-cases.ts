@@ -516,7 +516,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "search", stage: "retrieve", query: "BuildKit", expectIncludesTitle: "registry prune shipped" },
     ],
   },
-  // --- Group: semantic ( vector arm) ---
+  // --- Group: semantic (vector arm) ---
   {
     id: "sem_cross_lingual", group: "semantic", difficulty: "hard",
     description: "Chinese paraphrase query recalls an English-only memory via the vector arm (FTS matches nothing)",
@@ -540,7 +540,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
     ],
   },
   // --- Group: relations (kg-lite arm; 12 cases: 8 predicate positives + CN,
-  //   supersede fail-closed, paired strong negatives observational, 1-hop observational) ---
+  // supersede fail-closed, paired strong negatives observational, 1-hop observational) ---
   {
     id: "rel_works_on_en", group: "relations",
     description: "EN works_on rule edge extracted and stored (fail-closed assert_edge)",
@@ -717,7 +717,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
 
 ];
 
-// --- Group: relations ( Phase-1 expansion, r33) — Sakai-locked n = 80 for the group;
+// --- Group: relations (Phase-1 expansion, r33) — Sakai-locked n = 80 for the group;
 // the pilot (12-case group) was degenerate (all-zero RoR deltas), so n locks at the cap per D2
 // (no mid-course top-ups). RoR cases carry expectRankOf on the neighbor memory so the single-run
 // counterfactual ablation (runner drop-relation recompute) has a nonzero paired sample.
@@ -912,7 +912,7 @@ export const ABSTAIN_CASES: CaseSpec[] = [
   },
 ];
 
-// / r59 errata: the vector arm (group "semantic") needs the real embedding
+// r59 errata: the vector arm (group "semantic") needs the real embedding
 // model, so its golden cases are NOT part of the offline default suite - they live behind
 // `test:online` (hermetic-by-default). The DATASET is unchanged (the committed
 // baseline fingerprint stays valid); only the offline RUN excludes the group, and the exclusion

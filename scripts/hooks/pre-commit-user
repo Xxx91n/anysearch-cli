@@ -1,0 +1,5 @@
+#!/bin/sh
+# anysearch pre-commit: run the tests of every package this change touches.
+# Install:  cp scripts/hooks/pre-commit-user .git/hooks/pre-commit-user && chmod +x .git/hooks/pre-commit-user
+# GitButler's managed pre-commit hook chains to this one (it runs pre-commit-user first).
+exec node "$(git rev-parse --show-toplevel)/scripts/preflight-test.mjs"

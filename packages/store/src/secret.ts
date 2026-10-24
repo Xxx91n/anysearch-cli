@@ -2,14 +2,14 @@ import { Buffer } from "node:buffer";
 
 // shared secret guard for ALL write entries and BOTH search exits.
 // Upgrades over the inline SECRET_RE (write-path adjudicateMemory only):
-//  - case-insensitive flag (PEM lowercase / mixed-case AKIA variants)
-//  - JSON-escape restore (e.g. \"-----BEGIN\" embedded in a JSON string)
-//  - whitespace collapse + full squash (secrets split across spaces/newlines)
-//  - NFKC fold (fullwidth Latin ＡＫＩＡ -> AKIA)
-//  - bounded base64 candidate decode (length <= 2048 chars; printable-only accept)
+// - case-insensitive flag (PEM lowercase / mixed-case AKIA variants)
+// - JSON-escape restore (e.g. \"-----BEGIN\" embedded in a JSON string)
+// - whitespace collapse + full squash (secrets split across spaces/newlines)
+// - NFKC fold (fullwidth Latin ＡＫＩＡ -> AKIA)
+// - bounded base64 candidate decode (length <= 2048 chars; printable-only accept)
 // Known blind spots — honesty class "Some", mirrors GitHub push protection docs:
-//  - truncated secrets shorter than the pattern minimum are unrecoverable by regex
-//  - novel encodings (rot13, chunked base64 across rows, unicode-private use) not covered
+// - truncated secrets shorter than the pattern minimum are unrecoverable by regex
+// - novel encodings (rot13, chunked base64 across rows, unicode-private use) not covered
 // ponytail: regex+normalize heuristic shared across 4 writes + 2 search exits;
 // ceiling = novel encodings above; upgrade path = import gitleaks/trufflehog rule pack.
 const SECRET_RE = /(sk-[A-Za-z0-9][A-Za-z0-9-]{14,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/i;

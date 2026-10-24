@@ -1,4 +1,4 @@
-// R86 T2 / D-003 P3: build provenance stamp for apps/cli/dist.
+// build provenance stamp for apps/cli/dist.
 // Written post-tsup; the vertical-delta runner asserts this commit against
 // the working-tree HEAD (stale/absent stamp => FAIL, never a silent run).
 import { execSync } from "node:child_process";

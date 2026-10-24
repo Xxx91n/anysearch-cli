@@ -1,19 +1,19 @@
-// Codex CLI contract tests — R67 (T3 fix).
+// Codex CLI contract tests — (T3 fix).
 // Live-verified against codex-cli 0.142.5 headless probes (evidence:
 // .scratch/grill-round-67/evidence/t1-*, t2-*):
-//   * Real stdin event field is hook_event_name (adapter falls back to event).
-//   * Only the hookSpecificOutput envelope is honored — bare top-level
-//     { additionalContext } is dropped ~80% (L2 legs: 1/8 stub + 1/3 real);
-//     bare { permissionDecision } never blocks; exit code 2 does NOT block.
-//   * configs/codex/hooks.json must use the official schema
-//     { "<Event>": [{ matcher, hooks: [{ type, command, timeout }] }] } —
-//     the shipped 0.0.4 {name,command,args} shape registered ZERO hooks
-//     (silent no-op; no parse error).
-//   * matcher is a FULL-MATCH regex: "mcp__anysearch__" does not match
-//     "mcp__anysearch__search_web"; matchers must be suffix-anchored.
-//   * Commands must resolve via global bin shims — ${CODEX_PLUGIN_DIR} does
-//     not exist; -c injection cannot express hooks (value parsed as string).
-//   * SessionStart needs --envelope (same bare-drop defect class).
+// * Real stdin event field is hook_event_name (adapter falls back to event).
+// * Only the hookSpecificOutput envelope is honored — bare top-level
+// { additionalContext } is dropped ~80% (L2 legs: 1/8 stub + 1/3 real);
+// bare { permissionDecision } never blocks; exit code 2 does NOT block.
+// * configs/codex/hooks.json must use the official schema
+// { "<Event>": [{ matcher, hooks: [{ type, command, timeout }] }] } —
+// the shipped 0.0.4 {name,command,args} shape registered ZERO hooks
+// (silent no-op; no parse error).
+// * matcher is a FULL-MATCH regex: "mcp__anysearch__" does not match
+// "mcp__anysearch__search_web"; matchers must be suffix-anchored.
+// * Commands must resolve via global bin shims — ${CODEX_PLUGIN_DIR} does
+// not exist; -c injection cannot express hooks (value parsed as string).
+// * SessionStart needs --envelope (same bare-drop defect class).
 
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";

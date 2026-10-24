@@ -33,7 +33,7 @@ function toPlainJsonSchema(schema: unknown): JsonSchemaType {
   return JSON.parse(JSON.stringify(schema));
 }
 
-// R90: the native-registration subpath surface (@anysearch-cli/kernel/
+// the native-registration subpath surface (@anysearch-cli/kernel/
 // tool-json-schemas) also carries the tool copy + name vocabulary so host
 // adapters consume the tool identity through one leaf without pulling the
 // kernel barrel (store/retriever/native deps stay out of zero-dep bundles).

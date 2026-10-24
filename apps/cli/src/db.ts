@@ -7,11 +7,11 @@ import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-
 import { defaultDomainsDirs } from "@anysearch-cli/store";
 
 // B1: the domains-dir resolution chain for this CLI.
-//   1. ANS_DOMAINS_DIR env (a dir containing the tomls directly)
-//   2. <cwd>/domains — project-local convention, wins over builtin
-//   3. <pkg>/domains — builtin domains shipped inside the installed package
-//      (build-time sync from the repo-root domains/)
-//   4. repo-root domains — dev fallback when running from source (tsx)
+// 1. ANS_DOMAINS_DIR env (a dir containing the tomls directly)
+// 2. <cwd>/domains — project-local convention, wins over builtin
+// 3. <pkg>/domains — builtin domains shipped inside the installed package
+// (build-time sync from the repo-root domains/)
+// 4. repo-root domains — dev fallback when running from source (tsx)
 export function domainSearchDirs(env: NodeJS.ProcessEnv = process.env): string[] {
   // dist/index.js is a CJS bundle (tsup) — import.meta.url is undefined there;
   // dev runs under tsx as ESM. Cover both.
@@ -23,7 +23,7 @@ export function domainSearchDirs(env: NodeJS.ProcessEnv = process.env): string[]
   return dirs;
 }
 
-// R62 D-003 (T4): teardown registry lives in ./teardown (pure leaf).
+// (T4): teardown registry lives in ./teardown (pure leaf).
 import { registerTeardown } from "./teardown";
 export function createPersistentEngine(domain?: string): CompositionResult {
   const dbPath = resolveDbPath();

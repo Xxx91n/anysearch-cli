@@ -1,13 +1,13 @@
-// D-006: session_id persistence layer.
+// session_id persistence layer.
 //
 // The .anysearch-cli/session file is the single source of truth for the
 // session_id grouping anchor (mirrors systemd machine-id: generate once,
 // atomic write-back, user-scoped base directory). Precedence:
 //
-//   ANS_SESSION_ID env (highest) -- overrides everything for ad-hoc / CI use,
-//                                    never written back to disk.
-//   file content                 -- if present and non-empty, used as-is.
-//   fresh randomUUID()           -- first run; atomically persisted to file.
+// ANS_SESSION_ID env (highest) -- overrides everything for ad-hoc / CI use,
+// never written back to disk.
+// file content -- if present and non-empty, used as-is.
+// fresh randomUUID() -- first run; atomically persisted to file.
 //
 // The trace store writes session_id as a write-only derived reference (see
 // observation.ts); it is NEVER read back to drive identity. Failures degrade
@@ -41,9 +41,9 @@ function generateSessionId(): string {
 }
 
 // readSessionId:
-//   1. ANS_SESSION_ID env (if non-empty) wins and is NOT written back.
-//   2. file content (if non-empty) is returned as-is.
-//   3. otherwise generate + atomically persist a new id.
+// 1. ANS_SESSION_ID env (if non-empty) wins and is NOT written back.
+// 2. file content (if non-empty) is returned as-is.
+// 3. otherwise generate + atomically persist a new id.
 // Atomic-write is shared with url-policy.ts atomicWriteFile; re-implemented here
 // to keep this module dependency-free (the plugin hook bundle esbuild config
 // forbids importing @anysearch-cli/store, so hook callers must inline or copy).
@@ -61,7 +61,7 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
   const fresh = generateSessionId();
   try {
     mkdirSync(dirname(file), { recursive: true });
-    // tmp + rename for atomicity ( pattern).
+    // tmp + rename for atomicity (pattern).
     const tmp = file + ".tmp";
     writeFileSync(tmp, fresh, "utf8");
     renameSync(tmp, file);

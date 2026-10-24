@@ -75,7 +75,7 @@ assert(evaluateGate(fakeReport(), null).exitCode === 12, "missing baseline exits
 // CLI end-to-end: run eval against committed baseline, assert exit 0 + artifacts in scratch out dir.
 const outDir = mkdtempSync(join(tmpdir(), "ans-gate-"));
 try {
-  // / r59 errata: the eval CLI writes observations into the durable DB
+  // r59 errata: the eval CLI writes observations into the durable DB
   // (ANS_DB_PATH or ~/.anysearch/anysearch.db) and then advances the switch state machine
   // against that same DB. The fixture must hand it a DB that carries the store schema
   // (access_events et al.) - i.e. reuse the schema-application path. Otherwise the switch step

@@ -1,4 +1,4 @@
-// R84 rework (audit F1 / addendum): composition-root fail-fast for
+// rework (audit F1 / addendum): composition-root fail-fast for
 // malformed domain TOML — a `Domain schema:` error (e.g. an unknown key under
 // sources.vertical) must propagate, not be swallowed into silent full-fanout.
 // Missing domains stay fail-open (absent ≠ broken).
@@ -12,7 +12,7 @@ import { createEngine } from "../src/composition";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-composition-vertical-"));
 try {
-  // Malformed: unknown key under sources.vertical — the TOML leg of A-02.
+  // Malformed: unknown key under sources.vertical — the TOML leg of.
   fs.writeFileSync(path.join(dir, "badvert.toml"), [
     'name = "badvert"',
     '[sources]',

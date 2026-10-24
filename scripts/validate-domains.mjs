@@ -7,13 +7,13 @@
 // guards from, exits 1 with file:line on any violation.
 //
 // Guards enforced:
-//   - compaction.lowWatermark as absolute number must be >= 50000
+// - compaction.lowWatermark as absolute number must be >= 50000
 // (Anthropic 50K hard floor);
-//   - compaction.lowWatermark as {fraction} must land in (0,1);
-//   - compaction.reuseCap must be a number >= 1;
-//   - sources.weights: Record keyed by registered provider id (exa/tavily/anysearch),
+// - compaction.lowWatermark as {fraction} must land in (0,1);
+// - compaction.reuseCap must be a number >= 1;
+// - sources.weights: Record keyed by registered provider id (exa/tavily/anysearch),
 // each a finite number > 0 (config errors fail fast).
-//   - unknown top-level sections beyond schema (fail-fast, voodoo avoidance).
+// - unknown top-level sections beyond schema (fail-fast, voodoo avoidance).
 //
 // Exit codes: 0 = all green (or no domains found → skip), 1 = violation.
 // stdlib + smol-toml only (zero new dependencies).
@@ -46,7 +46,7 @@ function info(msg) {
 }
 
 if (!fs.existsSync(DOMAINS_DIR)) {
-  info("domains/ not present — skip ( allows absent)");
+  info("domains/ not present — skip (allows absent)");
   process.exit(0);
 }
 

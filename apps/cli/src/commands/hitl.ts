@@ -68,7 +68,7 @@ function allowHost(host: string): boolean {
   // Verify: the written TOML must still parse and expose the host.
   const schema = loadDomainByNameIn(domainName, domainSearchDirs());
   if (!(schema.sources.urlAllowlist ?? []).includes(host)) {
-    throw new Error("allowlist write did not round-trip for host " + host);
+    throw new Error("allowlist write did not round-trip for host" + host);
   }
   // D8: ConfigChange audit event into the local trace store (fail-open).
   if (!beforeHosts.includes(host)) {
@@ -96,7 +96,7 @@ export async function runHitl(args: string[]): Promise<number> {
   if (!sub || sub === "--help" || sub === "-h" || (sub === "review" && !allowHostArg)) {
     if (sub !== "review") {
       process.stdout.write([
-        "ans hitl — HITL review queue for blocked retrieved-derived URLs ",
+        "ans hitl — HITL review queue for blocked retrieved-derived URLs",
         "",
         "Commands:",
         "  review                    List queued URLs awaiting human review",
@@ -120,7 +120,7 @@ export async function runHitl(args: string[]): Promise<number> {
   if (sub === "review" && allowHostArg) {
     const host = allowHostArg.trim().toLowerCase().replace(/^\.+/, "");
     if (!/^[a-z0-9.-]+$/.test(host)) {
-      process.stderr.write("ans hitl: invalid host " + allowHostArg + "\n");
+      process.stderr.write("ans hitl: invalid host" + allowHostArg + "\n");
       return 1;
     }
     const changed = allowHost(host);
@@ -128,12 +128,12 @@ export async function runHitl(args: string[]): Promise<number> {
     mkdirSync(join(process.cwd(), ".anysearch-cli"), { recursive: true });
     writeFileSync(queuePath(), remaining.map((e) => JSON.stringify(e)).join("\n") + (remaining.length ? "\n" : ""), "utf8");
     process.stdout.write(
-      (changed ? "allowed " + host : "already allowed " + host) +
-      "; queue now " + remaining.length + " pending\n",
+      (changed ? "allowed" + host : "already allowed" + host) +
+      "; queue now" + remaining.length + " pending\n",
     );
     return 0;
   }
 
-  process.stderr.write("ans hitl: unknown subcommand " + sub + "\n");
+  process.stderr.write("ans hitl: unknown subcommand" + sub + "\n");
   return 1;
 }

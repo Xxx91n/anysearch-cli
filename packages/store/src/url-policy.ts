@@ -135,7 +135,7 @@ export function atomicWriteFile(path: string, content: string): void {
   renameSync(tmp, path);
 }
 
-// D-007 / supplement: write a MaterializedPolicy envelope
+// supplement: write a MaterializedPolicy envelope
 // (policy body + materialized_at timestamp) to the disk cache so the hook
 // readPolicy cache fallback can surface staleness. The timestamp is the only
 // signal that lets the hook differentiate "fresh from server seconds ago" from
@@ -207,7 +207,7 @@ export interface ConfigChangeEvent {
   sessionId?: string;
 }
 
-// D-005 + D-002/D-003: write into the local trace store. Fail-open
+// + /: write into the local trace store. Fail-open
 // (AGENTS.md: audit write failure degrades to stderr), same posture as the rest of
 // the observation layer. traceId/sessionId are forwarded to recordOperation so
 // the new attribution columns are populated (OPA #6905 closure: SELECT after

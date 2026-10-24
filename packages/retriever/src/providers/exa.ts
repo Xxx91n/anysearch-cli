@@ -1,4 +1,4 @@
-// Exa provider adapter ( decision 3).
+// Exa provider adapter (decision 3).
 // atomcode research: exa-js 2.18.1, new Exa(apiKey), search(query, {contents}), answer(query, opts).
 // NormalizedResult mapping: title/url direct, text/highlights->snippet, publishedDate->publishedAt, score preserved.
 // searchAndContents is deprecated - use search(query, {contents: {text: true}}) instead.

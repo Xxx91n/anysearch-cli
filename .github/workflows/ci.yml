@@ -24,7 +24,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/setup@v2 #: reads packageManager (=11.24.0) automatically
+      - uses: pnpm/setup@v2 # reads packageManager (11.24.0) automatically
         with: { install: false }
       - uses: actions/setup-node@v5
         with:
@@ -37,7 +37,7 @@ jobs:
       - name: Validate calibration labels
         run: node scripts/eval-labels.mjs validate
       - run: pnpm -w turbo check
-      - name: "Test — all packages (: node:test discovery, full truth)"
+      - name: "Test — all packages (node:test discovery, full truth)"
         run: pnpm -w turbo run test --continue=dependencies-successful
         env:
           NODE_OPTIONS: "--test-reporter=spec"
@@ -78,7 +78,7 @@ jobs:
   # documented no-results path. macOS stays excluded per the ponytail note
   # above (arm64 better-sqlite3 prebuild delta only).
   install-smoke:
-    name: "install-smoke ( B2: pack -> clean install -> doctor -> domain -> search)"
+    name: "install-smoke (B2: pack -> clean install -> doctor -> domain -> search)"
     strategy:
       fail-fast: false
       matrix:
@@ -104,7 +104,7 @@ jobs:
   # round-59 audit R-2 / + r59 errata: the vector-arm golden cases left
   # the offline default suite (the gate runs --offline); this job re-establishes that coverage
   # with network access, so the anti-downgrade clause has automated support.
-  # round-59 audit D-3: also runs the embedding model tests (packages/embedding test:online),
+  # round-59 audit: also runs the embedding model tests (packages/embedding test:online),
   # which had no CI home, so the online-gated coverage is complete.
   test-online:
     name: "test:online (online-gated: store vector-arm + embedding, network required)"
@@ -128,10 +128,10 @@ jobs:
         env:
           NODE_OPTIONS: "--test-reporter=spec"
 
-  # R82 T1 ( branch b): provider live-search probe — the watershed the
-  # R81 diagnosis exposed (no CI surface ever touched api.anysearch.com). This
+  # (branch b): provider live-search probe — the watershed the
+  # diagnosis exposed (no CI surface ever touched api.anysearch.com). This
   # job is continue-on-error by contract: an external endpoint must never gate
-  # the pipeline (D-002 §5 two-layer probes, live-path; the fail-path stays in
+  # the pipeline (§5 two-layer probes, live-path; the fail-path stays in
   # install-smoke via the dead-port injection).
   test-online-anysearch:
     name: "test:online anysearch /mcp live probe (non-blocking)"

@@ -23,7 +23,7 @@ export * from "./access-chain";
 // and export mapping at the volatile OTel GenAI boundary.
 export * from "./observation";
 
-// D-006: session_id persistence (.anysearch-cli/session file + env override).
+// session_id persistence (.anysearch-cli/session file + env override).
 export * from "./session-id";
 
 // consumed/synthetic switch governance (state machine + chain evidence).

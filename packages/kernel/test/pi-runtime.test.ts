@@ -216,7 +216,7 @@ assert(mockSuff.agreement.jaccardAtK === 0.5, "D3: agreement.jaccardAtK accessib
 assert(mockSuff.volume.uniqueResults === 3, "D3: volume.uniqueResults accessible");
 assert(mockSuff.spread.rrfVariance === 0.1, "D3: spread.rrfVariance accessible");
 
-// === R65 F-12: mapAssistantMessageEvent contract tests ===
+// ===: mapAssistantMessageEvent contract tests ===
 // Live evidence: ans_chat via MCP returned bare "Agent completed" because
 // pi-ai AssistantMessageEvent has no "text" type — text streams as
 // text_delta.delta / text_end.content. The old inline check dropped all text.

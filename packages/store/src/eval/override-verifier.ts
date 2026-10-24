@@ -1,8 +1,8 @@
 // independent override verifier command.
 // Exit semantics:
-//   0 = allowed/success
-//   1 = governance denied (quota, late obligation, invalid postmortem, no match)
-//   2 = malformed args, corrupt ledger, or internal/IO failure
+// 0 = allowed/success
+// 1 = governance denied (quota, late obligation, invalid postmortem, no match)
+// 2 = malformed args, corrupt ledger, or internal/IO failure
 
 import { existsSync, readFileSync } from "node:fs";
 import {

@@ -15,11 +15,11 @@ interface MemoryStore {
 function printHelp(): void {
   process.stdout.write(
     [
-      "ans memory — memory_embeddings maintenance ",
+      "ans memory — memory_embeddings maintenance",
       "",
       "Commands:",
       "  backfill-vectors [--dry-run] [--limit N]  Embed rows missing a vector (idempotent)",
-      " forget [--dry-run|--apply] [--limit N] Archive stale, never-accessed episodes ",
+      " forget [--dry-run|--apply] [--limit N] Archive stale, never-accessed episodes",
       "  forget --undo <logId>                   Restore an archived episode (idempotent)",
       "",
       "--dry-run reports counts without writing; --limit caps the scan. Exit 0 on full completion,",
@@ -48,14 +48,14 @@ export async function runMemory(args: string[]): Promise<number> {
       process.stdout.write("dry-run: " + r.scanned + " row(s) pending embedding (no writes)\n");
       return 0;
     }
-    process.stdout.write("backfilled " + r.embedded + "/" + r.scanned + " vector(s)" + (r.failed > 0 ? " (" + r.failed + " failed)" : "") + "\n");
-    // R71 T1 (spike finding d): a failed row means the embedding arm
+    process.stdout.write("backfilled" + r.embedded + "/" + r.scanned + " vector(s)" + (r.failed > 0 ? " (" + r.failed + " failed)" : "") + "\n");
+    // (spike finding d): a failed row means the embedding arm
     // could not produce a vector — first use downloads the model, so the cause
     // is almost always reachability. Point at the actionable knobs instead of
     // leaving a bare count (npm arm transcript: raw ENOTDIR gave no guidance).
     if (r.failed > 0) {
       process.stderr.write(
-        "hint: embedding failed — the model downloads on first use; check huggingface.co reachability " +
+        "hint: embedding failed — the model downloads on first use; check huggingface.co reachability" +
         "and any proxy/firewall, or pre-seed the cache dir (ANYSEARCH_MODEL_CACHE, default ~/.anysearch/models) " +
         "from a connected host; run ans doctor to confirm the vector arm is present.\n"
       );
@@ -76,7 +76,7 @@ export async function runMemory(args: string[]): Promise<number> {
         return 2;
       }
       const r = store.undoArchive(logId);
-      process.stdout.write(r.ok ? "restored memory " + r.memoryId + " from archive_log " + logId + "\n" : "nothing to undo for archive_log " + logId + "\n");
+      process.stdout.write(r.ok ? "restored memory" + r.memoryId + " from archive_log" + logId + "\n" : "nothing to undo for archive_log" + logId + "\n");
       return r.ok ? 0 : 1;
     }
     const dryRun = args.includes("--dry-run") || !args.includes("--apply");

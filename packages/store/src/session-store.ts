@@ -20,7 +20,7 @@ import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
-// (R62 T3): embedding is optional — routed through the guarded arm
+// embedding is optional — routed through the guarded arm
 // module (absent package => embedText null / telemetry absent), never imported statically.
 import { embedText, embeddingModelId, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
 import type { NormalizedResult } from "@anysearch-cli/retriever";
@@ -408,7 +408,7 @@ export class SqliteSessionStore implements SessionStore {
     try { this.db.exec("ALTER TABLE access_events ADD COLUMN source_label TEXT"); } catch {}
     // step 1/3: chain columns (idempotent ALTER per existing convention) + one-off
     // anchor bootstrap in an IMMEDIATE transaction (D6). Persistent busy/IO failure degrades to
-    // stderr WARN + telemetry bit ( fail-open); the write path re-probes the anchor.
+    // stderr WARN + telemetry bit (fail-open); the write path re-probes the anchor.
     try { this.db.exec("ALTER TABLE access_events ADD COLUMN prev_hash TEXT"); } catch {}
     try { this.db.exec("ALTER TABLE access_events ADD COLUMN schema_version INTEGER"); } catch {}
     try { this.db.exec("ALTER TABLE access_events ADD COLUMN event_type TEXT"); } catch {}
@@ -740,7 +740,7 @@ export class SqliteSessionStore implements SessionStore {
       // Evidence check: direct user input / high-trust sources bypass (MemTX authority >= 0.9 channel).
       if (evidence || km.source === "user") {
         const entityKey = km.entity ?? km.url;
-        // Temporal supersede: new write for same entity wins; close old record with valid_until = now ( pattern).
+        // Temporal supersede: new write for same entity wins; close old record with valid_until = now (pattern).
         const existing = this.db
           .prepare("SELECT id FROM retrieval_results WHERE entity = ? AND session_id = ? AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 LIMIT 1")
           .get(entityKey, sessionId) as { id: number } | undefined;
@@ -801,7 +801,7 @@ export class SqliteSessionStore implements SessionStore {
     return { ...this.entityTel };
   }
   // vector arm telemetry + breaker state (report-only).
-  // (R62 T3): async — arm presence requires the optional-import probe.
+  // async — arm presence requires the optional-import probe.
   public async vectorTelemetry(): Promise<{ writes: number; pendingVectors: number; armQueries: number; armHits: number; embeds: number; failures: number; circuitOpen: boolean; absent: boolean; fromDb: number }> {
     const pkg = await armTelemetry();
     return { ...this.embedTel, embeds: pkg.embeds, failures: pkg.failures, circuitOpen: pkg.circuitOpen, absent: pkg.absent,
@@ -1514,7 +1514,7 @@ export class SqliteSessionStore implements SessionStore {
     if (!row) return { ok: false };
     if (action === "keep") {
       this.db.prepare("UPDATE retrieval_results SET quarantine = NULL WHERE id = ?").run(id);
-      // Kept value wins: close the live counterpart for the same entity ( bi-temporal pattern).
+      // Kept value wins: close the live counterpart for the same entity (bi-temporal pattern).
       this.db
         .prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE session_id = ? AND entity = ? AND id != ? AND valid_until IS NULL AND quarantine IS NULL")
         .run(row.session_id, row.entity, id);

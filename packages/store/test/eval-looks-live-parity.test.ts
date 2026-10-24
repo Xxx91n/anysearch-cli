@@ -1,12 +1,12 @@
-// R64 D-004: the live runner must consume the quarantine ledger's single
+// the live runner must consume the quarantine ledger's single
 // classification implementation — a second inline predicate already drifted
 // once (it ignored the longterm flag). This test pins the contract two ways:
-//  (a) a mixed ledger (active / expired / retired / longterm / retired+longterm)
-//      asserts activeIds() === isActive() per entry — the exact semantics the
-//      runner now calls;
-//  (b) a source-level check that eval-looks-live.online.ts imports activeIds
-//      and carries no inline retired/expiresAt classification copy.
-// Plus (c) the R64 D-005 schema_version:1 sentinel on the eval-looks root.
+// (a) a mixed ledger (active / expired / retired / longterm / retired+longterm)
+// asserts activeIds() === isActive() per entry — the exact semantics the
+// runner now calls;
+// (b) a source-level check that eval-looks-live.online.ts imports activeIds
+// and carries no inline retired/expiresAt classification copy.
+// Plus (c) the schema_version:1 sentinel on the eval-looks root.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -84,7 +84,7 @@ assert(runnerSrc.includes("mustHitPaths"), "runner consumes the mustHitPaths pag
 assert(runnerSrc.includes("mustNotHitPaths"), "runner consumes the mustNotHitPaths negative pins");
 assert(runnerSrc.includes("WATCH "), "runner surfaces the post-promote watch mark");
 
-// (c) R64 D-005: eval-looks.json root schema_version:1 sentinel; golden
+// (c): eval-looks.json root schema_version:1 sentinel; golden
 // sub-schema unchanged (additive change, no v2 migration).
 const looks = JSON.parse(fs.readFileSync(path.join(root, "eval-looks.json"), "utf8"));
 assert(looks.schema === "anysearch/eval-looks@2", "eval-looks.json keeps schema anysearch/eval-looks@2");

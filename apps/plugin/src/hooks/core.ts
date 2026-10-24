@@ -1,11 +1,11 @@
-// Hook core handler: platform-agnostic. Does 3 things only ( Decision 2):
+// Hook core handler: platform-agnostic. Does 3 things only:
 // 1. Read-only project感知 (project path from cwd/env)
 // 2. IPC to long-running MCP server (HTTP 127.0.0.1 + Bearer token)
 // 3. Decision output JSON to host
 // No SQLite, no file write, no network (except server IPC), no spawn.
 //
-// D-003: outbound HTTP injects traceparent + x-anysearch-session-id so
-// the plugin server can extract (D-003 server path) the same IDs the host
+// outbound HTTP injects traceparent + x-anysearch-session-id so
+// the plugin server can extract (server path) the same IDs the host
 // intent produced. trace_id is per-hook-process; session_id is host stdin.
 import { buildPropagationHeaders } from "./propagation.js";
 
@@ -44,7 +44,7 @@ export function isAnsTool(toolName: string): boolean {
   return ANS_TOOL_PATTERN.test(toolName);
 }
 
-// D-003: callServer now carries the propagation trio on every outbound
+// callServer now carries the propagation trio on every outbound
 // request. sessionId may be empty (host did not provide one); buildPropagationHeaders
 // omits x-anysearch-session-id in that case so the server sees no session.
 export async function callServer(
@@ -55,7 +55,7 @@ export async function callServer(
     sessionId?: string;
     traceId?: string;
     spanId?: string;
-    /** Extra outbound headers merged after the propagation trio (R90: MCP
+    /** Extra outbound headers merged after the propagation trio (: MCP
      * transport needs Accept: application/json, text/event-stream). */
     headers?: Record<string, string>;
     /** Override the 5s default IPC budget (tool executions can run minutes). */
@@ -81,7 +81,7 @@ export async function callServer(
       signal: opts?.signal ? AbortSignal.any([timeout, opts.signal]) : timeout,
     });
     if (!response.ok) return null;
-    // R90: bodyless 2xx (e.g. MCP notifications/initialized 202) yields {} —
+    // bodyless 2xx (e.g. MCP notifications/initialized 202) yields {} —
     // the JSON.parse throw used to collapse that success into null.
     const text = await response.text();
     return (text ? JSON.parse(text) : {}) as Record<string, unknown>;
@@ -93,8 +93,8 @@ export async function callServer(
 export { ANS_TOOL_PATTERN };
 
 // Hosts wrap MCP tool output differently: CodeBuddy sends an ARRAY of content
-// blocks [{type:"text",text:"<json>"}] (verified live in R65 — see defect
-// ledger F-09), Claude Code sends {content:[{type:"text",text}]} or a raw
+// blocks [{type:"text",text:"<json>"}] (verified live in — see defect
+// ledger ), Claude Code sends {content:[{type:"text",text}]} or a raw
 // object/string. Unwrap to the innermost text payload so adapters can
 // JSON.parse the real tool output instead of distilling an empty result set.
 export function unwrapToolResponse(

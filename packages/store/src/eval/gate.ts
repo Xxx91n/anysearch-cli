@@ -167,7 +167,7 @@ export function pairedGainStats(deltas: number[], alpha: number = 0.05): PairedG
 // preregistered Lan-DeMets O'Brien-Fleming alpha-spending (one-sided,
 // alpha=0.025 per OF track; family budget alpha_1+alpha_2 <= 0.05).
 // Formula (gsDesign sfLDOF / MetricGate verified, r97 atomcode):
-//   alpha*(t) = 2 * (1 - Phi(z_{1-alpha/2} / sqrt(t)))  // one-sided level alpha, t = k/K_max
+// alpha*(t) = 2 * (1 - Phi(z_{1-alpha/2} / sqrt(t))) // one-sided level alpha, t = k/K_max
 // k_max convergence clause: after K_MAX looks the claim is either established (promoted to
 // constant SPC monitoring, no further significance retesting) or unproven (arm demoted).
 // Naive uncorrected FWER at k=10 equal looks ~= 40%; the table keeps the family bound 0.05.
@@ -362,7 +362,7 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
   const failures: string[] = [];
   const warnings: string[] = [];
   const m = report.metrics;
-  // + (T-2/F-17): ACTIVE quarantined cases are excluded from the
+  // +: ACTIVE quarantined cases are excluded from the
   // passRate==1 hard gate. The golden set and the dataset fingerprint are untouched — the
   // quarantine is a policy-layer mark (zero recalibration cost).
   const quarantine = new Set(opts.quarantineActiveIds ?? []);

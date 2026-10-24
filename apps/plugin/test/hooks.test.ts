@@ -126,7 +126,7 @@ testAsync("E2E: session-start.cjs outputs valid JSON for SessionStart event", as
     proc.stdin.end();
   });
 
-  // R66 audit F-03: host contract split — bare top-level additionalContext is
+  // audit: host contract split — bare top-level additionalContext is
   // the codex/cursor/antigravity shape; Claude Code drops it and needs the
   // hookSpecificOutput envelope (opt-in via --envelope in generated configs).
   const bare = JSON.parse(await run());

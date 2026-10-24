@@ -1,5 +1,5 @@
 /**
- * apps/dsh-plugin mock-context unit tests (R72 T1 exit gate).
+ * apps/dsh-plugin mock-context unit tests (exit gate).
  * Exercises the five hook surfaces against a hand-built Cordis-like ctx and a
  * real localhost stand-in for the anysearch server — no dsh process needed.
  */
@@ -293,7 +293,7 @@ test('contextMessage: produces a durable user message with plugin provenance', (
 });
 
 // ---------------------------------------------------------------------------
-// R90 T2 — expected-RED: native ctx.tools registration of the five ans_* tools.
+// — expected-RED: native ctx.tools registration of the five ans_* tools.
 // Pre-T3 every assertion below fails: apply() registers nothing on ctx.tools.
 // ---------------------------------------------------------------------------
 

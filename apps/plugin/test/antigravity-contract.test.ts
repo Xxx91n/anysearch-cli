@@ -1,22 +1,22 @@
-// Antigravity CLI (agy) contract tests — R68 (T3 fix).
+// Antigravity CLI (agy) contract tests — (T3 fix).
 // Live-verified against agy 1.2.5 headless probes (evidence:
 // .scratch/grill-round-68/evidence/t3-*):
-//   * stdin is camelCase: conversationId, toolCall{name,args}, workspacePaths,
-//     transcriptPath, artifactDirectoryPath, stepIdx, invocationNum.
-//   * NO hook_event_name field — the event travels via argv
-//     (ans-hook-antigravity <Event>).
-//   * PostToolUse stdin carries toolCall+error but NO tool output.
-//   * stdout is strict protojson: PreToolUse {} = DENY (decision required),
-//     empty stdout = allow, {decision,reason?,permissionOverrides?} strict;
-//     unknown fields (additionalContext/context/systemMessage/userMessage/
-//     {allow:true}) reject via protojson and ERROR the tool call.
-//   * PostToolUse must emit {} only.
-//   * Context injection = Pre/PostInvocation injectSteps[].ephemeralMessage
-//     (verified reaches the model); routing card rides invocationNum===0.
-//   * configs/antigravity/hooks.json must be the named-hook map
-//     { "<name>": { "<Event>": [{matcher,hooks:[{type,command,timeout}]}] } } —
-//     the Gemini-legacy {hooks:{...}} wrapper fails to parse
-//     ("command hook must specify 'command'").
+// * stdin is camelCase: conversationId, toolCall{name,args}, workspacePaths,
+// transcriptPath, artifactDirectoryPath, stepIdx, invocationNum.
+// * NO hook_event_name field — the event travels via argv
+// (ans-hook-antigravity <Event>).
+// * PostToolUse stdin carries toolCall+error but NO tool output.
+// * stdout is strict protojson: PreToolUse {} = DENY (decision required),
+// empty stdout = allow, {decision,reason?,permissionOverrides?} strict;
+// unknown fields (additionalContext/context/systemMessage/userMessage/
+// {allow:true}) reject via protojson and ERROR the tool call.
+// * PostToolUse must emit {} only.
+// * Context injection = Pre/PostInvocation injectSteps[].ephemeralMessage
+// (verified reaches the model); routing card rides invocationNum===0.
+// * configs/antigravity/hooks.json must be the named-hook map
+// { "<name>": { "<Event>": [{matcher,hooks:[{type,command,timeout}]}] } } —
+// the Gemini-legacy {hooks:{...}} wrapper fails to parse
+// ("command hook must specify 'command'").
 
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
@@ -40,7 +40,7 @@ async function testAsync(name: string, fn: () => Promise<void>) {
 const PLUGIN_ROOT = join(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 const AGY_ADAPTER = join(PLUGIN_ROOT, "dist", "hooks", "adapters", "antigravity.cjs");
 
-// R68 audit F-A2: the hook's cwd fallback (workspacePaths[0] -> stdin.cwd ->
+// audit F-A2: the hook's cwd fallback (workspacePaths[0] -> stdin.cwd ->
 // process.cwd()) writes .antigravity/rules/anysearch.mdc. Spawning without an
 // explicit cwd made payloads lacking workspacePaths (e.g. "{}") drop the .mdc
 // into apps/plugin and poison the clean-tree gate. Every spawn now runs in a
@@ -219,7 +219,7 @@ testAsync(".mdc fallback: any invocation writes .antigravity/rules/anysearch.mdc
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-// === moved from codebuddy-contract.test.ts (R68 audit nit: agy cases belong
+// === moved from codebuddy-contract.test.ts (audit nit: agy cases belong
 // in the agy file) ===
 const TOOL_RESP = JSON.stringify({
   results: [
@@ -232,7 +232,7 @@ const BLOCKS = [{ type: "text", text: TOOL_RESP }];
 testAsync("PostToolUse {} stdout + distilled output staged to pending (R68 verified contract)", async () => {
   const dir = mkdtempSync(join(tmpdir(), "agypost-"));
   try {
-    // R68 T3 live verdict (agy 1.2.5): PostToolUse stdout MUST be exactly {} —
+    // live verdict (agy 1.2.5): PostToolUse stdout MUST be exactly {} —
     // additionalContext/context are not proto fields; distill output stages to
     // <artifactDirectoryPath>/anysearch-pending.jsonl for invocation-side flush.
     const { stdout } = await runHook(JSON.stringify({

@@ -171,7 +171,7 @@ test("AGENTS.md: minimal and has required sections", () => {
   assert.ok(agentsContent.includes("ans_*"), "AGENTS.md should mention ans_* prefix");
   const lineCount = agentsContent.split("\n").length;
   assert.ok(lineCount < 200, "AGENTS.md should be < 200 lines, got " + lineCount);
-  // R67 D-003③: the snippet must ride the npm package so users can paste it
+  // ③: the snippet must ride the npm package so users can paste it
   // into their project AGENTS.md (optional step in docs/codex-integration.md).
   const pkgFiles = JSON.parse(fs.readFileSync(join(process.cwd(), "package.json"), "utf8")).files || [];
   assert.ok(pkgFiles.includes("AGENTS.md"), "AGENTS.md must be listed in package.json files[] to ship");
@@ -201,7 +201,7 @@ test("session-start.ts has .mdc generation logic", () => {
   assert.ok(sessionStartSrc.includes("ensureMdc"), "session-start.ts should call ensureMdc");
   assert.ok(sessionStartSrc.includes("routing-card"), "session-start.ts should import from routing-card.ts");
   assert.ok(sessionStartSrc.includes("ROUTING_CARD"), "session-start.ts should use ROUTING_CARD");
-  // R68 audit (ensureMdc×3): the write/exists/MDC_CONTENT logic was deduplicated
+  // audit (ensureMdc×3): the write/exists/MDC_CONTENT logic was deduplicated
   // into the shared routing-card.ts ensureMdc(cwd, rulesRoot) — assert it there.
   const rcSrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "routing-card.ts"), "utf8");
   assert.ok(rcSrc.includes("MDC_CONTENT"), "routing-card.ts ensureMdc should use MDC_CONTENT");
@@ -233,7 +233,7 @@ test("routing card 4-block structure in shared module", () => {
 testAsync("Server: /health endpoint returns 200", async () => {
   const { spawn } = await import("node:child_process");
   const net = await import("node:net");
-  // F-14 + N-1 (audit rework): start the server with the same node + tsx loader
+  // + N-1 (audit rework): start the server with the same node + tsx loader
   // the runner uses - never via `npx` (registry fallback) and never with a stdin
   // pipe. Also never on a FIXED port with a FIXED startup sleep: a fixed port +
   // fixed 2000 ms wait is load-sensitive, and under a loaded machine (ship-gate
@@ -252,7 +252,7 @@ testAsync("Server: /health endpoint returns 200", async () => {
     cwd: PLUGIN_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
     detached: process.platform !== "win32",
-    // (T-6.3): the server is never open; pin a token so the liveness probe authenticates.
+    // the server is never open; pin a token so the liveness probe authenticates.
     env: { ...process.env, ANS_SERVER_PORT: String(port), ANS_SERVER_TOKEN: "plugin-test-token" },
   });
   const exited = new Promise<void>((r) => proc.once("exit", () => r()));
@@ -275,7 +275,7 @@ testAsync("Server: /health endpoint returns 200", async () => {
     }
     assert.ok(ready, "server did not become ready within 30s on port " + port + ": " + String(lastErr));
   } finally {
-    // F-14: kill the WHOLE tree, then wait for it to be gone so no handle
+    // kill the WHOLE tree, then wait for it to be gone so no handle
     // outlives the test (POSIX: process group; Windows: taskkill /T /F).
     const pid = proc.pid;
     if (pid) {

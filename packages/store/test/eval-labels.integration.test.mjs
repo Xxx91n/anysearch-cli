@@ -1,7 +1,7 @@
 // synthetic human/judge integration test. It drives the real
 // CLI against a temp label/manifest pair, then runs eval-calibrate's
 // deterministic synthetic judge path. No OF looks or local DB are touched.
-// R70 T1 (jitter spike): every spawnSync carries an explicit timeout — a
+// (jitter spike): every spawnSync carries an explicit timeout — a
 // CPU-starved child now fails fast with an ETIMEDOUT signature instead of
 // hanging the event loop (spawnSync is synchronous; --test-timeout cannot
 // preempt it, and this bare .mjs file is not bound by it anyway).
@@ -17,7 +17,7 @@ const repoRoot = path.resolve(here, "..", "..", "..");
 const cli = path.join(repoRoot, "scripts", "eval-labels.mjs");
 const calibrate = path.join(repoRoot, "scripts", "eval-calibrate.mjs");
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "ans-calibration-labels-"));
-// R70 audit F6: an ETIMEDOUT throw skips the tail rmSync — clean on exit instead.
+// audit F6: an ETIMEDOUT throw skips the tail rmSync — clean on exit instead.
 process.on("exit", () => { try { fs.rmSync(temp, { recursive: true, force: true }); } catch { } });
 const labelsPath = path.join(temp, "calibration-labels.jsonl");
 const manifestPath = path.join(temp, "calibration-manifest.json");

@@ -1,6 +1,6 @@
-// R63 T3 (D-003): quarantine ratchet — fixture-level red/green contract for the ship-gate
+// quarantine ratchet — fixture-level red/green contract for the ship-gate
 // assertions. Green = the ratified 10 shrink or stay; red = new id / renewal / unruled expiry
-// / flag-without-record drift / second longterm exit (flag ∪ record) / unparseable date.
+// flag-without-record drift / second longterm exit (flag ∪ record) / unparseable date.
 import { checkQuarantineRatchet } from "../../../scripts/quarantine-ratchet.mjs";
 
 let passed = 0, failed = 0;

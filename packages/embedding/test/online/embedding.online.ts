@@ -1,4 +1,4 @@
-// (D-005): real-model embedding path - requires network + model download.
+// real-model embedding path - requires network + model download.
 // NOT part of the default `test` script: the glob is **/*.test.ts|mjs, and this file is
 // *.online.ts. Run explicitly via `pnpm -C packages/embedding test:online`, which supplies
 // ANS_EMBEDDING_ONLINE=1 through --env-file (cross-platform, zero new dependencies).

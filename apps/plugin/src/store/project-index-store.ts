@@ -1,6 +1,6 @@
 // ProjectIndexStore: per-project FTS5 index, physically separate from SessionStore.
-// Decision 4: Physical dual-DB. Internal agent reads this only (read-only).
-// Written by hooks layer via IPC to long-running MCP server ( Decision 1+2).
+// Physical dual-DB. Internal agent reads this only (read-only).
+// Written by hooks layer via IPC to long-running MCP server ( +2).
 
 import Database from "better-sqlite3";
 import { fts5EscapeQuery, fts5RelaxedQuery, relaxedTerms, coversMajority, appendRelaxed } from "@anysearch-cli/store";

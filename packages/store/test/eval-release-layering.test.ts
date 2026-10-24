@@ -1,4 +1,4 @@
-// (T-1 / F-15): layering contract — regular CI runs observational and never spends a
+// layering contract — regular CI runs observational and never spends a
 // preregistered OF look; the decision-grade peek lives only in the release workflow. The seam the
 // ticket is graded on is asserted here rather than left to the workflow run.
 import fs from "node:fs";
@@ -44,10 +44,10 @@ assert(release.includes("scripts/release-gate.mjs"), "release.yml calls the rele
 assert(release.includes("--pre-tag") && release.includes("--post-tag"), "release.yml wires both release-gate modes");
 assert(!release.includes("--decision"), "release.yml delegates the decision flag to release-gate.mjs");
 
-// --- 3. ship-gate.yml aligned on Node 22 (ledger D-003 4) ------------------
+// --- 3. ship-gate.yml aligned on Node 22 (ledger 4) ------------------
 const shipGateYml = read(".github/workflows/ship-gate.yml");
 assert(!shipGateYml.includes("node-version: 24"), "ship-gate.yml must not pin Node 24");
-// R62 T4 added a third job (macos-spillover-probe, non-blocking) — assert EVERY
+// added a third job (macos-spillover-probe, non-blocking) — assert EVERY
 // node-version pin is 22 rather than a fixed job count (no 24, no other version).
 const pins = shipGateYml.match(/node-version: \d+/g) ?? [];
 assert(pins.length >= 2 && pins.every((p) => p === "node-version: 22"), "every ship-gate.yml job pins Node 22 (" + pins.join(", ") + ")");

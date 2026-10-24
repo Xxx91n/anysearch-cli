@@ -1,7 +1,7 @@
 /**
- * @anysearch-cli/dsh-plugin — DeepSeek Harness host adapter (R72 D-001/D-002).
+ * @anysearch-cli/dsh-plugin — DeepSeek Harness host adapter.
  *
- * Thin Cordis bundle: hooks layer + native tool plane (R90 D-001). Zero
+ * Thin Cordis bundle: hooks layer + native tool plane . Zero
  * runtime deps; @deepseek-ai/* packages are devDep TYPE-ONLY imports (the
  * compile-time churn alarm — an upstream contract change breaks this build,
  * which is the point). All business logic stays in the anysearch server at
@@ -10,14 +10,14 @@
  * at build time.
  *
  * Five hook surfaces:
- *   agent/created       → agent.inject() routing card (durable next-step msg; source!=='startup' guard)
- *   systemPrompt        → 'anysearch:routing-card' section registration
- *   tools/pre-execute   → URL-policy deny/ask + preheat recall injection
- *   tools/post-execute  → distilled summary via additionalContexts
- *   tools/result        → /index IPC on the final frozen outcome
+ * agent/created → agent.inject() routing card (durable next-step msg; source!=='startup' guard)
+ * systemPrompt → 'anysearch:routing-card' section registration
+ * tools/pre-execute → URL-policy deny/ask + preheat recall injection
+ * tools/post-execute → distilled summary via additionalContexts
+ * tools/result → /index IPC on the final frozen outcome
  * Tool plane:
- *   ctx.tools.register  → five native ans_* tools; execute = MCP tools/call
- *                         over the ans-mcp HTTP endpoint (zero business logic)
+ * ctx.tools.register → five native ans_* tools; execute = MCP tools/call
+ * over the ans-mcp HTTP endpoint (zero business logic)
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent, SessionStartSource } from '@deepseek-ai/dsh-agent';
@@ -94,7 +94,7 @@ function postHookInput(exec: Readonly<ToolExecution>, result: Readonly<ToolExecu
   };
 }
 
-// -- R90 D-001: native ans_* tool plane ------------------------------------
+// -- native ans_* tool plane ------------------------------------
 // ctx.tools.register() is consumed with literal ToolDefinitions, NOT
 // defineTool(): defineTool is a runtime VALUE in @deepseek-ai/dsh-tools — a
 // runtime import violates this package's zero-dep contract (dependencies:{},
@@ -199,7 +199,7 @@ async function callAnsTool(wire: KernelToolName, args: Record<string, unknown>, 
 }
 
 export function apply(ctx: Context): void {
-  // -- surface 5: native ans_* tool registrations (R90 D-001) ---------------
+  // -- surface 5: native ans_* tool registrations ---------------
   // description+parameters come from the kernel single-source module verbatim
   // (KernelToolDescriptions + KernelJsonSchemas); execute is transport only.
   for (const t of ANS_NATIVE_TOOLS) {

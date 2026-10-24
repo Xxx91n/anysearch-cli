@@ -116,10 +116,10 @@ export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObser
       const q: Query = {
         query: String(params.query),
         mode: (params.mode as "fast" | "index" | "deep" | "answer") || "fast",
-        // (R62 T7): pass the caller span through so retrieval
+        // pass the caller span through so retrieval
         // domain_filter.* audit events + anysearch.outcome land inside the
         // caller's trace (ans_chat path). Single span, multi-event — no
-        // sub-spans per agent-loop turn (D-011).
+        // sub-spans per agent-loop turn.
         ...(span ? { span } : {}),
       };
       const envelope = await retriever.search(q);
@@ -184,12 +184,12 @@ export interface PiAgentRuntimeOptions {
   tools?: AgentTool[]; // extra tools beyond search
   getApiKey?: () => Promise<string | undefined>;
   interactive?: boolean; // composition root grants TTY-ask eligibility (headless/MCP omit -> deny-first)
-  // (R62 T7): caller observation span — retrieval audit events land
+  // caller observation span — retrieval audit events land
   // inside the caller's span events_json (ans_chat / third retrieval surface).
   span?: RetrievalObservationSink;
 }
 
-// R65 F-12: pure event mapping extracted for tests — pi-ai's
+// pure event mapping extracted for tests — pi-ai's
 // AssistantMessageEvent union has NO "text" type; text streams as
 // text_delta.delta chunks (+ text_end.content as non-streamed fallback).
 // state.textSeen resets per message_start so a final text_end only fills in
@@ -270,7 +270,7 @@ export class PiAgentRuntime {
     // decision 4: prompts -> systemPrompt
     const systemPrompt = buildSystemPrompt(domain);
 
-    // Token budget tracking ( decision 5)
+    // Token budget tracking (decision 5)
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
 
@@ -373,7 +373,7 @@ export class PiAgentRuntime {
     });
 
     // decision 3: subscribe 9 events -> our 7 AgentEvent types.
-    // R65 F-12: text mapping delegated to mapAssistantMessageEvent (pure, tested).
+    // text mapping delegated to mapAssistantMessageEvent (pure, tested).
     const mapState = { textSeen: false };
     agent.subscribe((event: any, _signal?: AbortSignal) => {
       switch (event.type) {
@@ -421,7 +421,7 @@ export class PiAgentRuntime {
       }
     });
 
-    // Token budget: reserve at agent_start ( decision 5).
+    // Token budget: reserve at agent_start (decision 5).
     // ponytail: per-call dimension used (token dimension pending BudgetLedgerPort API)
     if (ledger && sessionId) {
       ledger.reserveCalls(sessionId, 1);
@@ -457,7 +457,7 @@ export class PiAgentRuntime {
       yield { type: "error", message: "Agent timeout after " + timeoutMs + "ms" };
     }
 
-    // Token budget: settle at agent_end ( decision 5).
+    // Token budget: settle at agent_end (decision 5).
     if (ledger && sessionId) {
       // ponytail: per-call settle (1 call reserved, 1 actual for the agent run).
       ledger.settleCalls(sessionId, 1, 1);
@@ -476,7 +476,7 @@ export class PiAgentRuntime {
         }
       } catch (e) {
         // ponytail: FTS5 sync is best-effort, don't block agent on store failure.
-        // But log the error so it's not silently swallowed ( debt fix).
+        // But log the error so it's not silently swallowed (debt fix).
         if (typeof process !== "undefined" && process.stderr) {
           process.stderr.write("[anysearch] FTS5 sync warning: " + (e instanceof Error ? e.message : String(e)) + "\n");
         }

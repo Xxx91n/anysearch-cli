@@ -1,16 +1,16 @@
-// D-002/D-003: W3C TraceContext + x-anysearch-session-id propagation.
+// W3C TraceContext + x-anysearch-session-id propagation.
 // Both build (hook outbound) and parse (server inbound) live here so the wire
 // format is one source of truth and stays dependency-free from @anysearch-cli/store
 // (the hook bundle esbuild config forbids the store import path because of
 // native deps; see audit M4 for the rationale).
 //
 // Wire format:
-//   traceparent           : "00-" + <32-hex trace_id> + "-" + <16-hex span_id> + "-01"
-//   x-anysearch-session-id: non-empty string (session anchor; never passed to upstream backends)
+// traceparent: "00-" + <32-hex trace_id> + "-" + <16-hex span_id> + "-01"
+// x-anysearch-session-id: non-empty string (session anchor; never passed to upstream backends)
 //
 // W3C 3.2.2 says: invalid traceparent MUST be discarded by the receiver; we
 // honor that and self-generate a fresh trace_id on parse failure (fallback).
-// session_id absence or empty string is treated as "" (MCP path; D-009).
+// session_id absence or empty string is treated as "" (MCP path; ).
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 

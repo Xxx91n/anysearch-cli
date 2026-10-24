@@ -31,7 +31,7 @@ export const DEFAULT_GATE: SufficiencyGate = {
 
 // Engine config: budget caps + sufficiency gate + grace window.
 export interface EngineConfig {
-  // ponytail: budget field is accepted but not yet wired to BudgetLedger ( decision 4 known deferral).
+  // ponytail: budget field is accepted but not yet wired to BudgetLedger (decision 4 known deferral).
   // Kernel stays pure orchestration; budget enforcement will be injected via store layer when implemented.
   // per-call dimension wired via BudgetLedgerPort. Token dimension pending LLM integration.
   budget?: Budget;
@@ -226,7 +226,7 @@ export class RetroaererdEngine {
   // in the retriever (AFR tag-freshness lesson: 9.7% re-leak on stale snapshots).
   private urlPolicy?: () => { allow: readonly string[]; deny: readonly string[]; policyVersion: string };
   private domainName?: string;
-  // R83 T1 / D-003/D-004: repo-level vertical default resolver (domain
+  // repo-level vertical default resolver (domain
   // TOML sources.vertical), consulted per request like urlPolicy. Query-level
   // q.vertical replaces it wholesale (no deep-merge).
   private repoVertical?: () => SearchRequest["vertical"];
@@ -304,12 +304,12 @@ export class RetroaererdEngine {
         "anysearch.domain_filter.degraded": degradedProviders,
       });
     }
-    // R83 T1 / D-003/D-004/D-005: vertical resolution — query-level
+    // vertical resolution — query-level
     // q.vertical replaces the repo default wholesale (no deep-merge). The
     // retrieval.vertical.pre audit event fires when the resolved spec is
     // non-empty, independently of domainActive (the two axes are orthogonal).
     const repoV = this.repoVertical?.();
-    // R84 T1 / A-04 ( draft): canonicalize at the shared choke — empty
+    // (draft): canonicalize at the shared choke — empty
     // or non-object params never reach the wire, the audit event, or the
     // result marker (empty params ≡ absent; sub_domain_params serializes only
     // for a non-empty Record). One normalization point covers all three entry
@@ -496,7 +496,7 @@ export class RetroaererdEngine {
           }
         } else if (inner.status === "rejected") {
           providersFailed.push(providerIds[i]);
-          // R86 T2 / D-003: keep the captured error's CLASS beside the flag —
+          // keep the captured error's CLASS beside the flag —
           // the "flag without error text" generic-wrapping defect ends here
           // (enum only; forensic name+message stays with the probe channel).
           providerErrorClasses[providerIds[i]] = classifyProviderError(inner.error);

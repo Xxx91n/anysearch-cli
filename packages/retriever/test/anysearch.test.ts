@@ -1,11 +1,11 @@
-// AnySearch provider adapter test — MCP-over-HTTP shape (R82 T1, C-13 RESHAPE).
+// AnySearch provider adapter test — MCP-over-HTTP shape (C-13 RESHAPE).
 // Mock-based: global fetch is stubbed and the REAL AnySearchProvider is driven
 // through its public seam (search()). Covers: handshake sequence, Accept /
 // MCP-Protocol-Version headers (incl. negotiated-version echo), markdown
 // mapping, SSE-framed replies, isError, wrong-shape 200 (OmniRoute family),
 // unexpected Content-Type, reply-id mismatch, /v1/search env tail
 // normalization, max_results clamp=10, dead-port fail-open.
-// ponytail: no test framework, assert-based demo (same style as pre-R82).
+// ponytail: no test framework, assert-based demo (same style as pre-).
 
 import { AnySearchProvider } from "../src/providers/anysearch";
 import { classifyProviderError } from "../src/contract";
@@ -284,8 +284,8 @@ async function main() {
     assert((await p.usage()) === undefined, "usage() stays undefined");
   }
 
-  // 13. R83 T1 / D-003: vertical wire mapping — internal vertical*
-  //     fields map to MCP domain/sub_domain/sub_domain_params arguments.
+  // 13.: vertical wire mapping — internal vertical*
+  // fields map to MCP domain/sub_domain/sub_domain_params arguments.
   {
     const f = installFetch(stdHandler);
     try {
@@ -323,8 +323,8 @@ async function main() {
     } finally { f.restore(); }
   }
 
-  // 13e. R84 T1 / A-04: params:{} canonicalizes to absent — sub_domain_params
-  //      never serializes an empty object on the wire.
+  // 13e. /: params:{} canonicalizes to absent — sub_domain_params
+  // never serializes an empty object on the wire.
   {
     const f = installFetch(stdHandler);
     try {
@@ -337,7 +337,7 @@ async function main() {
   }
 
   // 13d. upstream rejects an illegal vertical combination (isError) ->
-  //      fail-first throw (the arm degrades; never a silent zero envelope).
+  // fail-first throw (the arm degrades; never a silent zero envelope).
   {
     const errBody = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { isError: true, content: [{ type: "text", text: "invalid domain/sub_domain combination" }] } });
     const f = installFetch((c) => c.body?.method === "tools/call" ? { body: errBody(c.body.id) } : stdHandler(c));
@@ -350,8 +350,8 @@ async function main() {
     } finally { f.restore(); }
   }
 
-  // 14. R83 nit: clientInfo.version drift-guard — the initialize literal
-  //     must track packages/retriever/package.json version (hard-pinned to package.json version).
+  // 14. nit: clientInfo.version drift-guard — the initialize literal
+  // must track packages/retriever/package.json version (hard-pinned to package.json version).
   {
     const { readFileSync } = await import("node:fs");
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -361,8 +361,8 @@ async function main() {
     assert(m![1] === pkg.version, "clientInfo.version matches package.json version (" + pkg.version + ")");
   }
 
-  // 15. R86 T3 / defer-r84 closure: ANYSEARCH_ENDPOINT="" behaves as unset
-  //     (POSIX empty==unset) — falls back to the public default endpoint.
+  // 15. / defer-r84 closure: ANYSEARCH_ENDPOINT="" behaves as unset
+  // (POSIX empty==unset) — falls back to the public default endpoint.
   {
     const f = installFetch(stdHandler);
     const prev = process.env.ANYSEARCH_ENDPOINT;
@@ -375,8 +375,8 @@ async function main() {
     } finally { f.restore(); if (prev === undefined) delete process.env.ANYSEARCH_ENDPOINT; else process.env.ANYSEARCH_ENDPOINT = prev; }
   }
 
-  // 16. R86 T3: anonymous quota-boundary provisioning reply -> named
-  //     quota/auth nudge (classifies permanent-auth), not malformed-text.
+  // 16.: anonymous quota-boundary provisioning reply -> named
+  // quota/auth nudge (classifies permanent-auth), not malformed-text.
   {
     const nudge = (id: unknown) => JSON.stringify({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: "Your account and API key have been automatically generated. Use the API key below to continue.\napi_key=as_sk_test" }] } });
     const f = installFetch((c) => c.body?.method === "tools/call" ? { body: nudge(c.body.id) } : stdHandler(c));
@@ -390,7 +390,7 @@ async function main() {
   }
 
   // 17. r19 T2 (STOP-20 regression): a rate-limit / quota notice in the body —
-  //     no provisioning markers — is a transient rate limit, NOT permanent-auth.
+  // no provisioning markers — is a transient rate limit, NOT permanent-auth.
   for (const text of [
     "Rate limit exceeded. Please try again later.",
     "Too many requests: daily quota reached for this key, retry after 60s",

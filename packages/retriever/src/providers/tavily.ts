@@ -1,4 +1,4 @@
-// Tavily provider adapter ( decision 3).
+// Tavily provider adapter (decision 3).
 // atomcode research: @tavily/core 0.7.7, tavily() factory, search(query, opts), extract(urls, opts).
 // NormalizedResult mapping: title/url direct, content->snippet, publishedDate->publishedAt, score preserved.
 

@@ -11,7 +11,7 @@ const LEGACY_ACCESS_EVENTS_DDL = "CREATE TABLE access_events (id INTEGER PRIMARY
 
 /** Pre-upgrade schema: anchor DDL stripped, access_events reduced to the legacy 3-column form. */
 export function preUpgradeSchema(schemaPath: string): string {
-  // r106 audit (F-02): old [^)]* could not span embedded parens (REFERENCES ... (id),
+  // r106 audit: old [^)]* could not span embedded parens (REFERENCES ... (id),
   // DEFAULT (datetime('now'))) and silently no-opped; match to the DDL-closing `);` and
   // fail loudly instead of silently returning an un-stripped schema.
   const out = stripChainAnchorDdl(readFileSync(schemaPath, "utf8")).replace(

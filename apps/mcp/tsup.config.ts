@@ -26,7 +26,7 @@ export default defineConfig({
   ],
   // native/ESM deps stay external (bundling crashes the onnx runtime binding).
   external: [
-    // ponytail: R16-1 migrated SDK v1 -> v2 split packages.
+    // ponytail: migrated SDK v1 -> v2 split packages.
     // stale `@modelcontextprotocol/sdk` external removed; the two v2 packages
     // are listed explicitly here for clarity (they would also be externalized
     // automatically because they are dependencies, but explicit > implicit).

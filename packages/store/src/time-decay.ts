@@ -65,7 +65,7 @@ function sqliteTsToMs(ts: string | null): number | null {
 
 export interface FreshnessInput {
   createdAt: string;              // SQLite datetime('now') UTC
-  lastAccessed: string | null; // refreshed on recall hit ( L2)
+  lastAccessed: string | null; // refreshed on recall hit (L2)
   accessCount: number;            // incremented exactly once per returned hit
   tier: ContentTier;
   pinned?: boolean;               // full bypass
@@ -75,9 +75,9 @@ export interface FreshnessInput {
 }
 
 // Fused freshness factor: ONE multiplicative band combining
-//  creation-age decay, last-accessed recency, access-count frequency.
-//  Bounds hold by construction: decay in [0.3, 1], reinforcement in [1, 1.5];
-//  clamped to [0.3, 1.5] to stay safe under any input.
+// creation-age decay, last-accessed recency, access-count frequency.
+// Bounds hold by construction: decay in [0.3, 1], reinforcement in [1, 1.5];
+// clamped to [0.3, 1.5] to stay safe under any input.
 export function freshnessFactor(input: FreshnessInput): number {
   if (input.pinned) return 1.0;
   const now = input.nowMs ?? Date.now();

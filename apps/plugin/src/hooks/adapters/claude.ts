@@ -2,7 +2,7 @@
 // Claude Code hooks: stdin JSON, stdout JSON, exit 0/2/other.
 // PreToolUse: hook_event_name=PreToolUse, tool_name, tool_input, cwd, session_id
 // PostToolUse: hook_event_name=PostToolUse, tool_name, tool_input, tool_response, cwd, session_id
-// JSON output ( R66, verified on Claude Code 2.1.251): ALL decision keys
+// JSON output (verified on Claude Code 2.1.251): ALL decision keys
 // must sit inside the hookSpecificOutput envelope — bare top-level
 // additionalContext/updatedToolOutput/permissionDecision are silently dropped
 // by the host (proven by deny-sentinels: envelope + legacy decision:block both
@@ -10,7 +10,7 @@
 // Q5: only intercept ans_* tools.
 
 import { isAnsTool, callServer, unwrapToolResponse, type HookDecision } from "../core.js";
-// (T-6.3): resolve the shared server token (env or the 0600 token file).
+// resolve the shared server token (env or the 0600 token file).
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
         projectPath: cwd,
         sessionId: stdin.session_id || "",
       });
-      // + R66 ER-2: every PreToolUse decision key goes inside the
+      // + ER-2: every PreToolUse decision key goes inside the
       // hookSpecificOutput envelope (official names: additionalContext,
       // updatedToolInput, permissionDecision, permissionDecisionReason).
       const hookSpecificOutput: Record<string, unknown> = { hookEventName: "PreToolUse" };
@@ -74,7 +74,7 @@ async function main(): Promise<void> {
       process.exit(0);
     } else if (event === "PostToolUse") {
       // Parse tool response — unwrap content-block envelopes (shared with
-      // CodeBuddy's array-of-blocks shape, R65 F-09).
+      // CodeBuddy's array-of-blocks shape).
       let toolOutput: Record<string, unknown> = {};
       const un = unwrapToolResponse(stdin.tool_response);
       if (un.kind === "string") {
@@ -105,7 +105,7 @@ async function main(): Promise<void> {
 
       // Return distilled output to Claude. PostToolUse has no output-rewrite
       // field on Claude — the only honored channel is
-      // hookSpecificOutput.additionalContext (R66 ER-2: top-level
+      // hookSpecificOutput.additionalContext (ER-2: top-level
       // updatedToolOutput is dropped), so the distilled summary goes there.
       if (decision.distilledOutput) {
         process.stdout.write(JSON.stringify({

@@ -1,7 +1,7 @@
 // ans index — CLI subcommand to manually index entries to project index.
-// Decision 4: hooks write project index via server IPC or CLI.
+// hooks write project index via server IPC or CLI.
 // Usage: ans index --title "..." --url "..." --snippet "..." --source "..."
-//        echo '{"results":[...]}' | ans index --stdin
+// echo '{"results":[...]}' | ans index --stdin
 
 import { ProjectIndexStore } from "../store/project-index-store.js";
 import { createHash } from "node:crypto";

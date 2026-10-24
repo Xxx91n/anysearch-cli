@@ -151,7 +151,7 @@ export function replaySwitchChain(dbPath: string): ReplayedSwitchChain | null {
   if (!existsSync(dbPath)) return null;
   const db = new Database(dbPath, { fileMustExist: true });
   try {
-    // R63 release-gate edge (first pre-tag run on a fresh box): the observation layer
+    // release-gate edge (first pre-tag run on a fresh box): the observation layer
     // creates the shared durable file with only observability_* tables, so a DB can
     // exist with no chain tables at all — that means "no chain to replay", the same
     // absent-table convention as readConsumedReadings. But access_events gone while
@@ -260,7 +260,7 @@ export function advanceSwitch(opts: {
       return { decision, state: fresh.state, registrationHash, integrityError: reason };
     }
 
-    // / chain-wins: rebuild the ledger state from the chain
+    // chain-wins: rebuild the ledger state from the chain
     // whenever chain and ledger disagree, regardless of which side carries a transition.
     // The previous logic only rebuilt when the chain had a transition, leaving the
     // ledger-has-but-chain-has-not direction stuck in an infinite quarantine loop.

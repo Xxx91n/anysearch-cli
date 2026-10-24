@@ -1,7 +1,7 @@
 // item 4: no-database run -> verifier exit 2 ("no input"); ship-gate maps it to
 // an explicit skip + WARN ledger with 3-streak escalation. Verifier behavior is asserted by
 // process spawn; gate mapping is asserted as a wiring contract over scripts/ship-gate.mjs.
-// R70 T1 (jitter spike): spawnSync carries an explicit timeout — a
+// (jitter spike): spawnSync carries an explicit timeout — a
 // CPU-starved child fails fast with an ETIMEDOUT signature instead of an
 // unbounded synchronous hang (--test-timeout cannot preempt spawnSync).
 import { spawnSync } from "node:child_process";

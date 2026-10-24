@@ -49,7 +49,7 @@ const docsBatch = golden.entries.filter((e) => e.id.startsWith("docs-g"));
 const vertBatch = golden.entries.filter((e) => e.id.startsWith("vert-"));
 const ctrlBatch = golden.entries.filter((e) => e.id.startsWith("ctrl-"));
 assert(docsBatch.length >= 8 && docsBatch.length <= 14, "docs first-batch size in the 8-14 shelf gate (got " + docsBatch.length + ")");
-// R84 T1: vertical-eval contract pins landed (subject + control); T2 grows the
+// vertical-eval contract pins landed (subject + control); T2 grows the
 // live-scoped corpus — bound asserts the contract pins exist, not the corpus size.
 assert(vertBatch.length >= 3, "vertical subject contract pins exist (got " + vertBatch.length + ")");
 assert(ctrlBatch.length >= 2, "control-class pins exist (got " + ctrlBatch.length + ")");
@@ -93,7 +93,7 @@ assert(allowlist.length >= 3, "docs.toml urlAllowlist has the D-004 first-party 
 const crossProblems = crossCheckDocsGolden(golden, manifest, allowlist);
 assert(crossProblems.length === 0, "entries vs manifest vs allowlist consistent: " + crossProblems.join(" | "));
 
-// --- 5b. R95 T1 /: cell tombstones are explicit + machine-checked ---
+// --- 5b. /: cell tombstones are explicit + machine-checked ---
 // A demoted cell leaves the measurable set by design: it holds no scope, no
 // expected.vertical and no injected spec, and its reason code must come from
 // the closed vocabulary. The negative direction (a free-text code) must be
@@ -141,8 +141,8 @@ const appended = appendLook(ledger, { key: "t:t", at: "2026-09-14T00:00:00.000Z"
 assert(appended.golden !== undefined, "appendLook preserves golden through the look append");
 fs.rmSync(tmp, { force: true });
 
-// --- 7b. (F-17): Tolerant Reader — unknown ROOT fields survive a
-// read->append->write cycle byte-for-byte, not merely "readable". The R64
+// --- 7b.: Tolerant Reader — unknown ROOT fields survive a
+// read->append->write cycle byte-for-byte, not merely "readable". The
 // schema_version:1 sentinel was stripped once by a field-by-field rebuild.
 {
   const KNOWN_ROOT = new Set(["schema", "looks", "compaction", "golden"]);

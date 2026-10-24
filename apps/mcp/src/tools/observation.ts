@@ -3,7 +3,7 @@ import type { ObservationAttributes } from "@anysearch-cli/store";
 import { mapMcpClientId } from "@anysearch-cli/store";
 import { currentMcpIdentity } from "../mcp-context.js";
 
-// D-008/D-009: client_id best-effort from _meta clientInfo via Railway
+// client_id best-effort from _meta clientInfo via Railway
 // mapping; session_id always empty for MCP (stateless protocol). Trace_id is
 // generated per recordOperation (entry-process per MCP tool call).
 export function observeTool<T>(

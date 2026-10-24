@@ -1,5 +1,5 @@
 // Codex CLI hooks adapter.
-// Verified on codex-cli 0.142.5 (R67 T1): Codex only honors the
+// Verified on codex-cli 0.142.5: Codex only honors the
 // hookSpecificOutput envelope — bare top-level { additionalContext } is dropped
 // ~80% of the time, bare { permissionDecision } never blocks, and exit code 2
 // does NOT block tool calls. Deny must go through the envelope.
@@ -7,7 +7,7 @@
 // the --envelope flag (generated codex config passes it).
 
 import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// (T-6.3): resolve the shared server token (env or the 0600 token file).
+// resolve the shared server token (env or the 0600 token file).
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
@@ -46,7 +46,7 @@ async function main(): Promise<void> {
         projectPath: cwd,
         sessionId: stdin.session_id || "",
       });
-      // R67 T1: single envelope carrying every PreToolUse key — Codex honors
+      // single envelope carrying every PreToolUse key — Codex honors
       // hookSpecificOutput.{additionalContext, permissionDecision,
       // permissionDecisionReason}; bare top-level fields are ignored.
       const hookSpecificOutput: Record<string, unknown> = { hookEventName: "PreToolUse" };
@@ -62,8 +62,8 @@ async function main(): Promise<void> {
       }
       process.exit(0);
     } else if (event === "PostToolUse") {
-      // R65 F-A5: same array-of-blocks tolerance as CodeBuddy/Claude — unwrap
-      // content-block envelopes before distilling (F-09 class defect).
+      // F-A5: same array-of-blocks tolerance as CodeBuddy/Claude — unwrap
+      // content-block envelopes before distilling (class defect).
       const un = unwrapToolResponse(stdin.tool_response);
       let toolOutput: Record<string, unknown> = {};
       if (un.kind === "string") {
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
         }, { sessionId: stdin.session_id || "" }).catch(() => null);
       }
 
-      // R67 T1: PostToolUse context injection requires the envelope too —
+      // PostToolUse context injection requires the envelope too —
       // bare { additionalContext } was dropped on the real host.
       if (decision.distilledOutput) {
         process.stdout.write(JSON.stringify({

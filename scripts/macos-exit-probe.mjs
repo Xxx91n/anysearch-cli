@@ -1,14 +1,14 @@
-// R62 D-007 (T4): macOS exit-teardown SPILLOVER PROBE — experiment, non-blocking.
-// Minimal reproduction of the F1/F-16 exit-time crash family on macos-latest.
+// (T4): macOS exit-teardown SPILLOVER PROBE — experiment, non-blocking.
+// Minimal reproduction of the F1/ exit-time crash family on macos-latest.
 // The workflow runs `node -v` and `new Database(":memory:")` BEFORE this script,
 // separating the two signature families:
-//   - better-sqlite3 registration segfault (SIGSEGV / exit 139 at require/load)
-//   - exit-time libc++abi mutex abort (F-16 / onnxruntime issue family)
+// - better-sqlite3 registration segfault (SIGSEGV / exit 139 at require/load)
+// - exit-time libc++abi mutex abort ( / onnxruntime issue family)
 // This script drives the abstain-path repro through the real bundled ans bin
 // (store+observation handles opened then closed at exit — the crash fired at
 // libuv/native teardown), classifies each run's signature into
 // $GITHUB_STEP_SUMMARY, and exits non-zero when a crash signature is seen.
-// TTL / promotion-removal ( D-007): after >=5 consecutive green runs,
+// TTL / promotion-removal: after >=5 consecutive green runs,
 // evaluate restoring macos-latest to the blocking matrix; if crashes persist,
 // prune at round close and extend ledger defer-f16-macos-native-crash.
 
@@ -38,7 +38,7 @@ for (let i = 1; i <= RUNS; i++) {
   if (!sig.startsWith("clean")) crashes++;
   lines.push("| " + i + " | search | " + String(s.status) + (s.signal ? " (" + s.signal + ")" : "") + " | " + sig + " |");
 }
-// R63 T4/F-5: pin the abstain leg — ANS_DOMAIN=docs makes the out-of-domain
+// pin the abstain leg — ANS_DOMAIN=docs makes the out-of-domain
 // ghost query (bc0001's tokio question) exercise the real abstain write path
 // (dual-gate filter -> first-class abstain marker -> exit 0), then teardown.
 {

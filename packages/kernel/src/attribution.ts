@@ -2,10 +2,10 @@
 // Pure functions only. No LLM, no I/O. Every function testable in node:test.
 //
 // Architecture:
-//   L0 segment      — Intl.Segmenter(sentence) + abbreviation whitelist merge
-//   L1 fragments    — deterministic signal classification (connector/enum/density/entity)
-//   classifyClaim   — BM25-lite overlap + cosine hook + arms + entity -> 3-state label
-//   gap/abstain     — unsupported -> GapRequest; all-unsupported+no-evidence+suff-low -> abstain
+// L0 segment — Intl.Segmenter(sentence) + abbreviation whitelist merge
+// L1 fragments — deterministic signal classification (connector/enum/density/entity)
+// classifyClaim — BM25-lite overlap + cosine hook + arms + entity -> 3-state label
+// gap/abstain — unsupported -> GapRequest; all-unsupported+no-evidence+suff-low -> abstain
 //
 // unsupported = deterministic contradiction (negation keywords AND high overlap);
 // missing evidence always lands in uncertain (honest, not fabricated).

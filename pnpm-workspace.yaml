@@ -5,11 +5,11 @@ packages:
 # 不自动下载/改写 lockfile。本地放行: pnpm_config_pm_on_fail=download (CLI>env>yaml)。
 pmOnFail: error
 
-# R63 audit fix: 发布龄门禁的可用形态。.npmrc 的 min-release-age=2 对 npm
+# audit fix: 发布龄门禁的可用形态。.npmrc 的 min-release-age=2 对 npm
 # (unknown config) 与 pnpm v11 (.npmrc 仅 auth/registry) 均不生效；可用的
 # pnpm key 在此，单位分钟（2880 = 2 天）。
 minimumReleaseAge: 2880
-# R78 D-002 加固：缺 time 字段的源默认跳过龄期检查（true）——置 false 收紧为 fail-closed，
+# 加固：缺 time 字段的源默认跳过龄期检查（true）——置 false 收紧为 fail-closed，
 # 堵「无 time 元数据」豁免面向量（E7 记档态；npmjs 恒带 time，对现状无破坏）。
 minimumReleaseAgeIgnoreMissingTime: false
 
@@ -45,9 +45,9 @@ overrides:
   '@deepseek-ai/dsh-util-values': 'catalog:'
   '@deepseek-ai/dsh-workspace': 'catalog:'
 
-# R73 T1 /: dsh 上游依赖族钉版——catalog 单点承载版本号，overrides 逐名枚举
+# /: dsh 上游依赖族钉版——catalog 单点承载版本号，overrides 逐名枚举
 # 把全树（直接+传递）强制收敛到 catalog 值。直接依赖在 apps/dsh-plugin 用 catalog: 引用。
-# R83 TE1 采纳（闸开先行，双锚齐 @2026-09-25）：锁 20 个 @deepseek-ai/dsh-*=0.1.7-rc.1
+# TE1 采纳（闸开先行，双锚齐 @2026-09-25）：锁 20 个 @deepseek-ai/dsh-*=0.1.7-rc.1
 # + cordis=4.0.4。家族重推导=0.1.7 peer 闭包：新增 workspace/storage/storage-domain/
 # session-persistence/sandbox/sandbox-policy/ptc-runtime 7 名；退役 code-runtime（0.1.7 线无此包）
 # + util-crypto（新闭包不再引用）。升级账本：.scratch/grill-round-73/upgrade-ledger.md

@@ -1,4 +1,4 @@
-// R88 T3 / ③: byte-identical golden for the require-domain
+// ③: byte-identical golden for the require-domain
 // guard on both MCP surfaces. The consolidation (a06 buildVerticalSpec)
 // must not alter the error text by one byte — exact-string asserts are
 // the assertion carrier (Pact Golden Rule: contract frozen by test, not
@@ -81,7 +81,7 @@ async function main() {
     "research_web require-domain golden (params only)",
   );
 
-  // R88 audit F-a (① addendum): whitespace-only domain counts as
+  // audit F-a (① addendum): whitespace-only domain counts as
   // absent — minLength:1 lets " " through AJV, so this leg is the shared
   // function's defensive floor, pinned here as the legislated behavior.
   res = (await swHandler!({ query: "x", verticalDomain: " ", verticalSubDomain: "earnings" })) as any;

@@ -1,16 +1,16 @@
 // CodeBuddy Code hooks adapter.
-// CodeBuddy hook contract (R65 grill-verified, CodeBuddy Code 2.149.0):
-//   stdin:  hook_event_name (NOT event) + tool_name/tool_input/tool_response/session_id/cwd
-//   stdout: decisions via hookSpecificOutput envelope
-//           { permissionDecision | additionalContext | updatedToolOutput }
-//   SessionStart: raw stdout text is injected into context verbatim (no envelope).
-//   settings schema: { matcher, hooks: [{ type: "command", command: <bash string> }] }
-//   Windows: hook commands are forced through Git Bash.
+// CodeBuddy hook contract (grill-verified, CodeBuddy Code 2.149.0):
+// stdin: hook_event_name (NOT event) + tool_name/tool_input/tool_response/session_id/cwd
+// stdout: decisions via hookSpecificOutput envelope
+// { permissionDecision | additionalContext | updatedToolOutput }
+// SessionStart: raw stdout text is injected into context verbatim (no envelope).
+// settings schema: { matcher, hooks: [{ type: "command", command: <bash string> }] }
+// Windows: hook commands are forced through Git Bash.
 // Q5: only intercept ans_* tools.: fail-open — exit 0 on any error.
 // `hook_event_name ?? event` fallback so a legacy `event`-shaped host still works.
 
 import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// (T-6.3): resolve the shared server token (env or the 0600 token file).
+// resolve the shared server token (env or the 0600 token file).
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
         sessionId: stdin.session_id || "",
       });
       // The envelope carries only the CodeBuddy-documented keys; live probe
-      // (R65) confirmed no hookEventName field is required. updatedInput is
+      // confirmed no hookEventName field is required. updatedInput is
       // deliberately NOT emitted — not in the documented shape.
       const hookSpecificOutput: Record<string, unknown> = {};
       if (decision.additionalContext) hookSpecificOutput.additionalContext = decision.additionalContext;
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
       process.exit(0);
     } else if (event === "PostToolUse") {
       // CodeBuddy sends tool_response as an ARRAY of content blocks
-      // [{type:"text",text:"<json>"}] (verified live, R65 F-09); accept the
+      // [{type:"text",text:"<json>"}] (verified live); accept the
       // Claude object/string shapes too via the shared unwrapper.
       let toolOutput: Record<string, unknown> = {};
       const un = unwrapToolResponse(stdin.tool_response);

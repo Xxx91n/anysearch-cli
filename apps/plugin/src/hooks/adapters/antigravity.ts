@@ -2,34 +2,34 @@
 // Antigravity has no SessionStart equivalent; .mdc rule file
 // fallback still runs on every invocation.
 //
-// / R68 T3: contract verified live against agy 1.2.5 headless
+// contract verified live against agy 1.2.5 headless
 // (evidence: .scratch/grill-round-68/evidence/t3-*):
-//   * hooks.json = named-hook map { "<name>": { "<Event>": [
-//     { matcher, hooks: [{type:"command", command, timeout}] }] } };
-//     the Gemini-legacy {hooks:{...}} wrapper FAILS to parse
-//     ("command hook must specify 'command'").
-//   * stdin is camelCase: conversationId (not session_id),
-//     toolCall{name,args} (not tool_name/tool_input), workspacePaths,
-//     transcriptPath, artifactDirectoryPath, modelName, stepIdx.
-//     No hook_event_name field exists — the event travels via argv
-//     (`ans-hook-antigravity <Event>`), stdin fields are kept as fallback.
-//   * PostToolUse carries NO tool output — only toolCall + error.
-//   * stdout is strict protojson:
-//     - PreToolUse: {} = DENY (decision is required); empty stdout = allow;
-//       {decision: allow|deny|ask|force_ask|deny_unless_prior_grant, reason?,
-//        permissionOverrides?}. Unknown fields reject (protojson strict).
-//     - PostToolUse: must emit {} (only compliant shape).
-//     - PreInvocation/PostInvocation: {injectSteps:[{ephemeralMessage|
-//       userMessage|toolCall}]} is the context-injection channel; PostInvocation
-//       also accepts terminationBehavior.
-//     - Stop: {decision:"continue", reason} re-enters the loop; {} stops.
-//   * Pending-context staging: Pre/PostToolUse cannot inject context, so
-//     preheat/distill text is staged to
-//     <artifactDirectoryPath>/anysearch-pending.jsonl and flushed as
-//     ephemeralMessage injectSteps by the next invocation event.
+// * hooks.json = named-hook map { "<name>": { "<Event>": [
+// { matcher, hooks: [{type:"command", command, timeout}] }] } };
+// the Gemini-legacy {hooks:{...}} wrapper FAILS to parse
+// ("command hook must specify 'command'").
+// * stdin is camelCase: conversationId (not session_id),
+// toolCall{name,args} (not tool_name/tool_input), workspacePaths,
+// transcriptPath, artifactDirectoryPath, modelName, stepIdx.
+// No hook_event_name field exists — the event travels via argv
+// (`ans-hook-antigravity <Event>`), stdin fields are kept as fallback.
+// * PostToolUse carries NO tool output — only toolCall + error.
+// * stdout is strict protojson:
+// - PreToolUse: {} = DENY (decision is required); empty stdout = allow;
+// {decision: allow|deny|ask|force_ask|deny_unless_prior_grant, reason?,
+// permissionOverrides?}. Unknown fields reject (protojson strict).
+// - PostToolUse: must emit {} (only compliant shape).
+// - PreInvocation/PostInvocation: {injectSteps:[{ephemeralMessage|
+// userMessage|toolCall}]} is the context-injection channel; PostInvocation
+// also accepts terminationBehavior.
+// - Stop: {decision:"continue", reason} re-enters the loop; {} stops.
+// * Pending-context staging: Pre/PostToolUse cannot inject context, so
+// preheat/distill text is staged to
+// <artifactDirectoryPath>/anysearch-pending.jsonl and flushed as
+// ephemeralMessage injectSteps by the next invocation event.
 
 import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// (T-6.3): resolve the shared server token (env or the 0600 token file).
+// resolve the shared server token (env or the 0600 token file).
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";

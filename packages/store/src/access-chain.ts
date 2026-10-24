@@ -3,15 +3,15 @@
 // of this spec (_Avoid_ 3: shared serialization code is forbidden — a bug must not hide in both).
 //
 // Pinned spec constants (duplicated verbatim in, implemented independently by the verifier):
-//   CHAIN_FIELDS  = ["accessed_at","event_type","id","memory_id","prev_hash","schema_version","source_label"]
-//                   (ASCII lexicographic order = RFC 8785 §3.2.3 key order for this closed ASCII
-//                   scalar schema; JSON.stringify of an object literal built in this order is
-//                   byte-equivalent to JCS.Canonicalize for this schema)
-//   LEGACY_FIELDS = ["accessed_at","id","memory_id"]  (same rule; legacy rows hash only the 3 real columns)
-//   event hash    = SHA-256 hex of JSON.stringify of the fixed-key-order object (NULL -> JSON null)
-//   legacy digest = SHA-256 hex of the byte concat of (legacyRowJson + "\n") over legacy rows in id order
-//   genesis_hash  = SHA-256 hex of the ASCII string "access-chain-genesis:" + digest
-//   first chained row carries prev_hash = genesis_hash; each later row chains on the previous row's hash
+// CHAIN_FIELDS = ["accessed_at","event_type","id","memory_id","prev_hash","schema_version","source_label"]
+// (ASCII lexicographic order = RFC 8785 §3.2.3 key order for this closed ASCII
+// scalar schema; JSON.stringify of an object literal built in this order is
+// byte-equivalent to JCS.Canonicalize for this schema)
+// LEGACY_FIELDS = ["accessed_at","id","memory_id"] (same rule; legacy rows hash only the 3 real columns)
+// event hash = SHA-256 hex of JSON.stringify of the fixed-key-order object (NULL -> JSON null)
+// legacy digest = SHA-256 hex of the byte concat of (legacyRowJson + "\n") over legacy rows in id order
+// genesis_hash = SHA-256 hex of the ASCII string "access-chain-genesis:" + digest
+// first chained row carries prev_hash = genesis_hash; each later row chains on the previous row's hash
 //
 // Type whitelist (D4): INTEGER columns must be integer numbers, TEXT columns strings, NULL only in
 // prev_hash / schema_version / event_type. REAL / blob / NaN entering the chain input throws.
@@ -96,7 +96,7 @@ export function accessChainPreview(db: Database.Database): { anchor: ChainAnchor
  * BEGIN IMMEDIATE via transaction().immediate() (WAL read→write upgrade is not covered by
  * busy_timeout; one defensive retry on SQLITE_BUSY*). Single-row CHECK + upsert give DB-level
  * idempotency under CLI+MCP dual-process open. Throws on persistent busy/IO — caller degrades
- * to stderr WARN + telemetry bit ( fail-open).
+ * to stderr WARN + telemetry bit (fail-open).
  */
 export function bootstrapAccessChain(db: Database.Database): { status: "created" | "exists"; legacyRows: number; digest: string } {
   const run = db.transaction((): { status: "created" | "exists"; legacyRows: number; digest: string } => {

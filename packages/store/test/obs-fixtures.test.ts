@@ -78,11 +78,11 @@ for (const [n, prefix] of [["t1-fail", "T1:"], ["t2-fail", "T2:"], ["t3-fail", "
   assert(isSkip(r) && r.tier === "gate-not-met" && r.reason.includes(prefix), n + " -> single explicit skip quoting " + prefix + " (spawn never attempted)");
 }
 
-// ---- r110 SA-F-01: non-finite PSI is fail-closed at the gate ----
+// ---- r110 SA-: non-finite PSI is fail-closed at the gate ----
 const nanGate = evaluateTauFitGate({ activeRows: 400, fittableUnits: 150, psi: NaN, windowDays: 120, daysSinceLastFit: null });
 assert(!nanGate.ok && nanGate.failures.some((f2) => f2.includes("non-finite")), "NaN PSI rejected with explicit fail-closed message");
 
-// ---- r110 SA-F-07: baseline histogram keys must match AGE_BUCKETS exactly ----
+// ---- r110 SA-: baseline histogram keys must match AGE_BUCKETS exactly ----
 {
   const fake = JSON.parse(readFileSync(join(fixtureDir, "pass-stable.json"), "utf8")) as ObsFixture;
   delete fake.baselineHistogram["91+"];
@@ -91,7 +91,7 @@ assert(!nanGate.ok && nanGate.failures.some((f2) => f2.includes("non-finite")), 
   try { validateFixtureDoc(fake); } catch { threw = true; }
   assert(threw, "bucket-key mismatch (bucket set redefined without fixture regeneration) is a hard error");
 }
-// r110 SA-F-04: generatorVersion participates in the definition hash contract (manifest pins it).
+// r110 SA-: generatorVersion participates in the definition hash contract (manifest pins it).
 assert(typeof manifest === "object" && manifest.definitionHash.length === 16, "manifest definitionHash 16-hex pinned");
 
 console.log("obs-fixtures chain: " + passed + " passed, " + failed + " failed");

@@ -1,15 +1,15 @@
-// R75 T2 (D-003): static guardrails for the transformers ghost-dep patch.
+// static guardrails for the transformers ghost-dep patch.
 // The upstream trigger half-fired (4.3.0 still ships a top-level bare
 // require("onnxruntime-common") with no manifest declaration), so the scoped
 // Module._resolveFilename patch in src/index.ts stays — and the two invariants it
 // depends on are asserted here instead of living as comments:
-//   (a) no code path may load @huggingface/transformers except through
-//       createRequire().require() — static import / import-from / export-from /
-//       dynamic import() bypass the CJS-only patch and would hit the ghost dep
-//       unguarded (the ESM resolver cannot be scoped without loader hooks);
-//   (b) version-pairing contract — our self-declared optionalDependencies copy of
-//       onnxruntime-common must equal the version the *effective* onnxruntime-node
-//       embeds, or consumers get Tensor-class dual instances (drift, not a crash).
+// (a) no code path may load @huggingface/transformers except through
+// createRequire().require() — static import / import-from / export-from /
+// dynamic import() bypass the CJS-only patch and would hit the ghost dep
+// unguarded (the ESM resolver cannot be scoped without loader hooks);
+// (b) version-pairing contract — our self-declared optionalDependencies copy of
+// onnxruntime-common must equal the version the *effective* onnxruntime-node
+// embeds, or consumers get Tensor-class dual instances (drift, not a crash).
 // Plain-script style matching embedding.test.ts (node --test treats the file as the test).
 import assert from "node:assert";
 import { createRequire } from "node:module";
@@ -22,7 +22,7 @@ const PKG_DIR = join(HERE, "..");
 const SRC_DIR = join(PKG_DIR, "src");
 const SPEC = "@huggingface/transformers";
 
-// R75 audit F-3 hardening: quote class includes the template backtick
+// audit hardening: quote class includes the template backtick
 // (import(`…`) was an escape path), and the specifier tail accepts "/" so
 // subpath specifiers (@huggingface/transformers/<sub>) can't slip past.
 const QT = `["'\`]`; // ' " `
@@ -33,9 +33,9 @@ const BANNED: [RegExp, string][] = [
   [new RegExp(`\\bimport\\s*${QT}${SPEC_RE}${SPEC_TAIL}`), "side-effect import"],
   [new RegExp(`\\bimport\\s*\\(\\s*${QT}${SPEC_RE}${SPEC_TAIL}`), "dynamic import()"],
 ];
-// R75 audit F-4: the export-* case needs no own pattern — `export * from "…"`
+// audit: the export-* case needs no own pattern — `export * from "…"`
 // already matches the `from` leg above.
-// R75 audit F-5 (backlog, deliberate strictness): `import type … from` also goes
+// audit (backlog, deliberate strictness): `import type … from` also goes
 // red — type-level coupling routes through the exempted `typeof import("…")`
 // query form (see TransformersModule in src/index.ts), keeping the invariant
 // absolute: exactly one legal load entry, zero exceptions to reason about.
@@ -52,7 +52,7 @@ function listSrcFiles(dir: string): string[] {
 
 // Strip line/block comments and `typeof import("…")` type queries (type-level,
 // erased at compile time — the legal usage on the TransformersModule typedef).
-// Known residual blind spot (R75 audit F-3, documented not fixed): a "//" inside
+// Known residual blind spot (audit , documented not fixed): a "//" inside
 // a same-line string literal makes the naive stripper eat the rest of that line,
 // hiding an import appended after it. Accepted deliberately — separating "//"
 // from a /regex/ opener needs a real tokenizer, and this guard exists to catch
@@ -77,8 +77,8 @@ function findBareSpecifier(src: string): string | null {
 // the published-consumer shape). Fallback: scan the pnpm virtual store, because
 // pnpm 11 does not materialize a workspace package's optionalDependencies into
 // its own node_modules (observed: lockfile records them, .pnpm carries them,
-// packages/embedding/node_modules lacks the link — R75 T2 empirical).
-// R75 audit F-6 (backlog): the store scan takes the first directory match — with
+// packages/embedding/node_modules lacks the link — empirical).
+// audit (backlog): the store scan takes the first directory match — with
 // several transformers versions co-installed the pick is nondeterministic; fine
 // while the workspace carries exactly one (the pairing leg asserts on whatever
 // copy the store holds, which is the same copy the runtime patch would alias).
@@ -101,7 +101,7 @@ function transformersEntry(): string | null {
 // Resolve the onnxruntime-node copy that the installed @huggingface/transformers
 // would actually load (createRequire anchored at transformers' own entry — same
 // scope the runtime patch reasons about), then walk up to its package.json.
-// (F-6 backlog: the ≤6-level walk-up bound is a magic constant sized for the
+// (backlog: the ≤6-level walk-up bound is a magic constant sized for the
 // .pnpm layout — dist/index.js → package root is 2; 6 leaves headroom for
 // nested entry shapes without unbounded ascent.)
 function effectiveOrtCommonVersion(): string | null {
@@ -141,8 +141,8 @@ async function main(): Promise<void> {
   console.log(`ghost-dep guard (a): ${files.length} src file(s) clean — ${SPEC} reachable only via createRequire().require()`);
 
   // Guard (a′): violation corpus — every sample MUST be flagged, and the legal
-  // forms MUST NOT. Permanent CI self-proof that the escapes go red (R75 audit
-  // F-3 closed three escape paths found by a 14-case external probe).
+  // forms MUST NOT. Permanent CI self-proof that the escapes go red (audit
+  // closed three escape paths found by a 14-case external probe).
   const violations: [string, string][] = [
     [`import { pipeline } from "${SPEC}";`, "static import-from"],
     [`import "${SPEC}";`, "side-effect import"],
@@ -175,7 +175,7 @@ async function main(): Promise<void> {
   assert.ok(declared, "optionalDependencies['onnxruntime-common'] must stay declared while the patch lives");
   const effective = effectiveOrtCommonVersion();
   if (effective === null) {
-    // F-6 backlog: one SKIP line covers three distinct causes (transformers
+    // backlog: one SKIP line covers three distinct causes (transformers
     // absent / onnxruntime-node absent / manifest not found) — acceptable while
     // the message says which resolution chain was attempted.
     console.log("ghost-dep guard (b): SKIP — @huggingface/transformers/onnxruntime-node not installed (optional dep); pairing invariant vacuously held");

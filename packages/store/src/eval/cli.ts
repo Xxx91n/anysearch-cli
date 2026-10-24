@@ -1,6 +1,6 @@
 // `pnpm -C packages/store eval` — writes .ship-gate/eval-report.{json,md},
 // applies the gate, exits with the partitioned code contract.
-// /: --calibrate only (50-run hard floor; CI never rewrites). The one-round --write-baseline alias was removed .
+// --calibrate only (50-run hard floor; CI never rewrites). The one-round --write-baseline alias was removed.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import os from "node:os";
@@ -50,7 +50,7 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
     "",
     "| metric | value |",
     "|---|---|",
-    // synthetic runs must carry the simulated-observation-window label ( r108 errata D6).
+    // synthetic runs must carry the simulated-observation-window label (r108 errata D6).
     `| observation track | ${m.observational?.track ?? "consumed"}${m.observational?.simulatedObservationWindow ? " (simulated-observation-window)" : ""} |`,
     `| mrr (rank-of-relevant) | ${m.mrr.toFixed(3)} |`,
     `| answerableFalseRefusalRate | ${m.answerableFalseRefusalRate.toFixed(3)} |`,
@@ -160,7 +160,7 @@ async function main(): Promise<number> {
   const calibrateIdx = args.indexOf("--calibrate");
   const decisionIdx = args.indexOf("--decision");
   const overrideIdx = args.indexOf("--override");
-  // / r59 errata: --offline drops the vector-arm group (needs the model).
+  // r59 errata: --offline drops the vector-arm group (needs the model).
   const offline = args.includes("--offline");
   const overrideReason = overrideIdx >= 0 ? args[overrideIdx + 1] : undefined;
   const outIdx = args.indexOf("--out");
@@ -170,7 +170,7 @@ async function main(): Promise<number> {
   const LOOKS_LEDGER_PATH = join(root, "eval-looks.json");
   const outDir = outIdx >= 0 ? resolve(args[outIdx + 1]!) : join(root, ".ship-gate");
   const baselinePath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "eval-baseline.json");
-  // /: flaky-case quarantine ledger (policy layer, next to the baseline).
+  // flaky-case quarantine ledger (policy layer, next to the baseline).
   const quarantinePath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "eval-quarantine.json");
   const quarantine = readQuarantine(quarantinePath);
   const quarantineActive = activeIds(quarantine, new Date().toISOString());
@@ -220,7 +220,7 @@ async function main(): Promise<number> {
       return 2;
     }
     // Degenerate pilot (sd=0): the pilot never exercised the arm — Webber 2008 rule: never
-    // shrink n on a zero-variance pilot; lock n at the cap instead ( anti-top-up).
+    // shrink n on a zero-variance pilot; lock n at the cap instead (anti-top-up).
     const degenerate = pilotDeltas.every((d) => d === pilotDeltas[0]);
     const sigmaDU = degenerate ? 0 : sigmaDUpper(pilotDeltas);
     const { rawN, lockedN } = degenerate
@@ -234,7 +234,7 @@ async function main(): Promise<number> {
     // the reset must not destroy the docs-domain golden batch that
     // shares this file — read-then-write preserves the golden collection.
     const priorLooks = readLooksLedger(LOOKS_LEDGER_PATH);
-    // (F-17): the reset drops `looks` and the now-orphaned `compaction`
+    // the reset drops `looks` and the now-orphaned `compaction`
     // only — every other root field (golden, schema_version, future unknowns)
     // rides through the spread instead of being rebuilt away.
     const { looks: _droppedRows, compaction: _droppedCompaction, ...preserved } = priorLooks;
@@ -307,7 +307,7 @@ async function main(): Promise<number> {
       if (k === "schema" || k === "dayBucketDefinition") continue;
       if (isSkip(v)) keys.push(skipKey(k, v));
     }
-    // + r110 SP-F-01: structural data absence (no events at all, or events but
+    // + r110 SP-: structural data absence (no events at all, or events but
     // no fit-eligible units) records reason-code data-absent — never builds the 3-streak.
     const obTrack = (ob as { track?: "consumed" | "synthetic" }).track ?? "consumed";
     const dataAbsent = keys.length > 0 && obTrack === "consumed" && ((ob as { dataAbsent?: boolean }).dataAbsent === true || isSkip(ob.accessAge));
@@ -375,7 +375,7 @@ async function main(): Promise<number> {
     };
   }
 
-  // r110 SP-F-03: if the fixture manifest is absent the fingerprint carries the explicit
+  // r110 SP-: if the fixture manifest is absent the fingerprint carries the explicit
   // "no-fixtures" marker — surface it instead of letting the fingerprint silently drift.
   if (fixtureDefinitionHash() === "no-fixtures") console.error("[eval] WARN: obs-feed MANIFEST.json absent — datasetFingerprint includes the explicit 'no-fixtures' marker; repack fixtures or expect a fingerprint flip on restore");
   // a preregistered OF look is spent ONLY by a release-grade peek. Merge-gate/CI runs
@@ -409,7 +409,7 @@ async function main(): Promise<number> {
   console.log("[eval] note: allowance band advisory at current n (allowance/n < MDE) — hard gate is passRate==1 ");
   for (const w of g.warnings) console.warn("[eval] WARN: " + w);
   for (const x of g.failures) console.error("[eval] gate: " + x);
-  // F-17 diagnosability: name the failing cases so a CI log identifies an environment flake
+  // diagnosability: name the failing cases so a CI log identifies an environment flake
   // without needing the report artifact.
   const failedCases = report.cases.filter((c) => !c.passed);
   if (failedCases.length) console.error("[eval] failed cases: " + failedCases.map((c) => c.id + "(" + (c.failedStage ?? "-") + ")").join(", "));

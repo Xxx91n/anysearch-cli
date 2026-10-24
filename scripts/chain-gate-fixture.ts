@@ -19,7 +19,7 @@ async function main() {
   ]);
   // Three chained events: deleting a middle OR head row is detectable (successor prev_hash
   // no longer matches); only tail-row or whole-segment truncation is invisible (declared
-  // limitation, non-adversarial model — / r106 audit F-03/F-10).
+  // limitation, non-adversarial model — / r106 audit /).
   for (let i = 0; i < 3; i++) await store.searchMemory("fixture", 10);
   store.close();
   process.stdout.write(dbPath + "\n");

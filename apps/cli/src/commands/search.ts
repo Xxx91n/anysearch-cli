@@ -26,14 +26,14 @@ export async function runSearch(args: string[]): Promise<number> {
       mode = m;
     }
   }
-  // R83 T1 / D-003: query-level vertical flags — whole-replace over
+  // query-level vertical flags — whole-replace over
   // the domain TOML sources.vertical default (no deep-merge).
-  //   --vertical-domain X --vertical-sub-domain Y --vertical-params '{"k":"v"}'
+  // --vertical-domain X --vertical-sub-domain Y --vertical-params '{"k":"v"}'
   const flagVal = (name: string): string | undefined => {
     const i = args.indexOf(name);
     return i >= 0 ? args[i + 1] : undefined;
   };
-  // R84 T1 / A-02 ( draft): malformed vertical input is fail-fast —
+  // (draft): malformed vertical input is fail-fast —
   // reject-with-error at every entry boundary (aligned with the MCP schema
   // rejection direction). A present flag with no value, a value that is
   // another --flag, or an empty string are all malformed, never silently
@@ -52,7 +52,7 @@ export async function runSearch(args: string[]): Promise<number> {
       return 2;
     }
   }
-  // R88 T3 / (a06): the require-domain verdict comes from the
+  // the require-domain verdict comes from the
   // shared guard layer — the raw params string stands in for the payload
   // (presence is all the guard checks; JSON decoding errors still fire
   // below, preserving the established check order byte-for-byte).
@@ -71,7 +71,7 @@ export async function runSearch(args: string[]): Promise<number> {
       return 2;
     }
   }
-  // A-04 canonicalization rides inside buildVerticalSpec (params:{} ≡ absent) —
+  // canonicalization rides inside buildVerticalSpec (params:{} ≡ absent) —
   // the echoed spec below is the canonical form actually routed to providers.
   // The guard already ran above; a rejection here is unreachable but rendered
   // identically rather than dropped silently.
@@ -84,9 +84,9 @@ export async function runSearch(args: string[]): Promise<number> {
 
   // (T3): drop every --flag token (was only --mode) so --json /
   // --fail-on-abstain can no longer leak into the provider query string.
-  // R83 T1: flag VALUES are also dropped so --vertical-* arguments don't leak
+  // flag VALUES are also dropped so --vertical-* arguments don't leak
   // into the query string either.
-  // R88 T2 / (a03): flag values are consumed POSITIONALLY — the slot
+  // flag values are consumed POSITIONALLY — the slot
   // immediately after a known value-flag is the value position. A query term
   // identical to a flag value survives (the old value-set heuristic swallowed
   // it: "--vertical-domain finance finance" collapsed to an empty query).
@@ -103,7 +103,7 @@ export async function runSearch(args: string[]): Promise<number> {
 
   // decision 3A: createEngine factory with domain filtering.
   const domain = process.env.ANS_DOMAIN;
-  // R84 T3 / draft: ANS_PROVIDERS env-gated provider subset filter —
+  // draft: ANS_PROVIDERS env-gated provider subset filter —
   // eval channel for arm-isolated measurement (the paired delta runner runs
   // ANS_PROVIDERS=anysearch so a slow vertical arm is not cancelled by faster
   // arms inside the engine grace window). Absent = full fanout, unchanged.
@@ -133,20 +133,20 @@ export async function runSearch(args: string[]): Promise<number> {
         query: queryClean,
         mode,
         results: envelope.results,
-        // (R62 T2): providersFailed exposed so the install-smoke offline
+        // providersFailed exposed so the install-smoke offline
         // leg anchors a structured field instead of exit codes/regexes.
         providersFailed: envelope.metadata?.providersFailed ?? [],
-        // R86 T2 / D-003: error-class channel next to the flag (additive).
+        // error-class channel next to the flag (additive).
         providerErrorClasses: envelope.metadata?.providerErrorClasses ?? {},
         answers: envelope.answers,
         sufficiency: envelope.metadata?.sufficiency ?? null,
         attribution: envelope.attribution ?? null,
         // first-class abstain marker is part of the --json contract.
         abstain: envelope.metadata.abstain ?? null,
-        // R83 T1: resolved query-level vertical spec (repo defaults ride on the
+        // resolved query-level vertical spec (repo defaults ride on the
         // retrieval.vertical.pre audit event).
         vertical: vertical ?? null,
-        // R84 T3 / draft: arm-level provenance snapshot — env-gated
+        // draft: arm-level provenance snapshot — env-gated
         // (ANS_ARM_SNAPSHOT=1) because it is eval-channel data, not the
         // default --json contract. The paired delta runner reads
         // fusion.labels/lists for per-arm result sets (pre-truncation,

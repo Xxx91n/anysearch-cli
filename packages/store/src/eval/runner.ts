@@ -98,7 +98,7 @@ export interface CaseResult {
   // per-case semantic-arm shadow telemetry (served must stay 0 in Phase-1).
   semTel?: { queries: number; hits: number; served: number };
   // access-age histogram snapshot from the append-only access_events log.
-  // r110 SP-F-01: unit-level stats (fittable units = repeat-access units) + the observed
+  // r110 SP-: unit-level stats (fittable units = repeat-access units) + the observed
   // access time span, so the consumed track builds a REAL AND-gate input instead of zeros.
   accessEvents?: { total: number; histogram: Record<string, number>; units: number; fittableUnits: number; firstAt: number | null; lastAt: number | null };
   // alert-on-silence — chained event write failures per case (observational, never gated).
@@ -184,12 +184,12 @@ export interface ObservationalZone {
   // fixture snapshots; derived values must be labelled simulated-observation-window.
   track: "consumed" | "synthetic";
   simulatedObservationWindow?: boolean;
-  // r110 SP-F-01/SA-F-05: structural data-absence marker on the consumed track — true when
+  // r110 SP-/SA-: structural data-absence marker on the consumed track — true when
   // there are no access events at all OR events exist but no unit qualifies as fit-eligible
-  // ( widened: "structurally absent" covers the fit-eligible dimension). The eval
+  // (widened: "structurally absent" covers the fit-eligible dimension). The eval
   // CLI records reasonCode=data-absent for such runs; the 3-streak never counts them.
   dataAbsent: boolean;
-  // r110 SA-F-06: fixture definition hash pinned in the report so a fingerprint flip is
+  // r110 SA-: fixture definition hash pinned in the report so a fingerprint flip is
   // auditable from the artifact (eval-baseline.json carries the same zone on calibration).
   fixtureDefinitionHash: string;
   accessAge: { status: "ok"; events: number; histogram: Record<string, number>; track?: "synthetic"; units?: number; fittableUnits?: number; windowDays?: number } | SkipMarker;
@@ -363,7 +363,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
               if (rank === 0) fails.push(`rank-of-relevant absent: "${op.expectRankOf.title}"`);
               else if (rank > op.expectRankOf.maxRank) fails.push(`rank ${rank} > maxRank ${op.expectRankOf.maxRank} for "${op.expectRankOf.title}"`);
             }
-            // /0037/0046: retain the legacy relation and semantic fields for the
+            // 0037/0046: retain the legacy relation and semantic fields for the
             // existing gate/tests, while deriving them from the same uniform drop-arm helper.
             let rorRankOn: number | undefined;
             let rorRankOff: number | undefined;
@@ -845,7 +845,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
       let feed: ObsFeed | null = null;
       if (evTotal === 0 && fxName) feed = feedFromFixture(loadObsFixture(fxName));
       if (feed) zoneTrack = feed.track;
-      // r110 SP-F-01(a): the consumed track evaluates the AND-gate against the REAL
+      // r110 SP-(a): the consumed track evaluates the AND-gate against the REAL
       // access_events evidence (aggregated across per-case isolated DBs), not hardcoded zeros.
       let units = 0;
       let fittableUnits = 0;
@@ -861,7 +861,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
       // Consumed track has no pre-registered baseline histogram to compare against yet, so
       // PSI is honestly null (gate T2 then reports "unavailable", not a fabricated 0).
       const gate = evaluateTauFitGate(feed ? feedToGateInput(feed) : { activeRows: evTotal, fittableUnits, psi: null, windowDays, daysSinceLastFit: null });
-      // r110 SP-F-01(b)/SA-F-05: 's "structural data absence" covers BOTH shapes —
+      // r110 SP-(b)/SA-: 's "structural data absence" covers BOTH shapes —
       // no events at all (0 rows), and events that exist but are not fit-eligible (a single
       // eval run's golden DB can never mature past the T1-units / T2-baseline / T3-window
       // clauses — those failures quote data immaturity, not pipeline regressions). Such runs
@@ -906,7 +906,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
 
 export async function runAll(cases: CaseSpec[], opts?: { excludeGroups?: readonly EvalGroup[] }): Promise<EvalReport> {
   assertParaphraseSlice(cases);
-  // / r59 errata: the vector arm needs the real embedding model, so the
+  // r59 errata: the vector arm needs the real embedding model, so the
   // offline default run excludes its group. The RUN slice is filtered; the dataset fingerprint
   // below stays over the FULL cases, so the committed baseline remains valid.
   const excluded = new Set(opts?.excludeGroups ?? []);

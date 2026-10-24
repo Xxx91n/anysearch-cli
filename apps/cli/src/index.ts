@@ -49,12 +49,12 @@ const help = [
   "  mcp       Start the anysearch MCP server (stdio or HTTP transport)",
   " pref Manage T0 durable preferences (remember, pref review - /0025)",
   " memory Memory embeddings maintenance (backfill-vectors)",
-  " access-chain Access-events tamper-evidence chain bootstrap ",
+  " access-chain Access-events tamper-evidence chain bootstrap",
   " switch-state Read switch governance state (S0-S4)",
-  " entity Entity merge / unmerge / review belt ",
-  " relation Entity relation edges: list + backfill-relations ( KG-lite arm)",
-  " consolidate Episodic->semantic consolidation with fidelity gate ",
-  " hitl HITL review queue for blocked retrieved-derived URLs ",
+  " entity Entity merge / unmerge / review belt",
+  " relation Entity relation edges: list + backfill-relations (KG-lite arm)",
+  " consolidate Episodic->semantic consolidation with fidelity gate",
+  " hitl HITL review queue for blocked retrieved-derived URLs",
   "",
   "Options:",
   "  --version, -v     Print version",
@@ -84,7 +84,7 @@ if (cmd === "--help" || cmd === "-h") {
 
 const known = new Set(["switch-state", "doctor", "auth", "llm", "skill", "search", "chat", "recommend", "domain", "mcp", "pref", "memory", "entity", "relation", "consolidate", "access-chain", "hitl"]);
 if (!known.has(cmd)) {
-  process.stderr.write("ans: unknown command " + String.fromCharCode(39) + cmd + String.fromCharCode(39) + "\n" + "See " + String.fromCharCode(39) + "ans --help" + String.fromCharCode(39) + ".\n");
+  process.stderr.write("ans: unknown command" + String.fromCharCode(39) + cmd + String.fromCharCode(39) + "\n" + "See" + String.fromCharCode(39) + "ans --help" + String.fromCharCode(39) + ".\n");
   process.exit(2);
 }
 
@@ -116,7 +116,7 @@ const handlers: Record<string, (args: string[]) => Promise<number>> = {
 };
 
 const handler = handlers[cmd];
-// R62 D-003 (T4): exit path — explicit native teardown BEFORE exit. The old
+// (T4): exit path — explicit native teardown BEFORE exit. The old
 // process.exit(code) raced libuv teardown against live sqlite/onnx handles
 // (F1 macOS libc++abi abort family). close() first, then let the loop drain;
 // unrefPendingHandles is the D3a backstop for handles we cannot close, and

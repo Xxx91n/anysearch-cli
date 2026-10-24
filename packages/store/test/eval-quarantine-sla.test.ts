@@ -1,4 +1,4 @@
-// (T-2) + round-58 audit R-3: the quarantine SLA needs an EXECUTABLE enforcement point,
+// + round-58 audit R-3: the quarantine SLA needs an EXECUTABLE enforcement point,
 // otherwise the ledger is a graveyard. This test fails when an entry is past its TTL or overdue for
 // its weekly review, which turns the test job red (turbo test runs in ci and in ship-gate step 3).
 import fs from "node:fs";

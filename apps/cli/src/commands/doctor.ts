@@ -8,7 +8,7 @@ import { SqliteSessionStore } from "@anysearch-cli/store";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
-// (T-6.2): use the build-time define — the same single standard as src/index.ts.
+// use the build-time define — the same single standard as src/index.ts.
 // The previous runtime package.json read resolved to the REPO ROOT once tsup bundled the CLI into
 // a single dist/index.js, so `ans doctor` printed the root package's 0.0.0.
 declare const __PACKAGE_VERSION__: string | undefined;
@@ -60,10 +60,10 @@ export async function runDoctor(): Promise<number> {
     await store.append(session.id, { role: "user", content: "doctor smoke test" });
     const hits = await store.searchFts5(session.id, "doctor");
     check("  searchFts5", hits.length >= 1, "hits=" + hits.length);
-    // R62 D-002: vector arm is optional — absent is a legal FTS-only state,
+    // vector arm is optional — absent is a legal FTS-only state,
     // surfaced as SKIP (degraded-but-supported), like a missing provider key.
     const vt = await store.vectorTelemetry();
-    // R71 T1: SKIP text is executable — copy/paste enable path
+    // SKIP text is executable — copy/paste enable path
     // (spike evidence: npm+pnpm global installs resolve via sibling-root
     // fallback; first embed downloads the model, then rows backfill).
     if (vt.absent) skip("  vector arm", "@anysearch-cli/embedding absent — FTS-only; enable: npm i -g @anysearch-cli/embedding (pnpm: pnpm add -g @anysearch-cli/embedding) && ans memory backfill-vectors");

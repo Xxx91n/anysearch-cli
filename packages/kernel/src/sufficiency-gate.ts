@@ -4,8 +4,8 @@
 // D5: bounded reround — default 1, max via domain TOML.
 // Independent fail-open, does not block MemoryPipeline.
 // evaluate returns GateEnvelope (pure, no mutation).
-//   applyTo() returns new messages array (pure reducer, LangGraph discipline).
-//   Claim-ticket pattern: gate.evaluate -> gate.applyTo -> pipeline.consolidate.
+// applyTo() returns new messages array (pure reducer, LangGraph discipline).
+// Claim-ticket pattern: gate.evaluate -> gate.applyTo -> pipeline.consolidate.
 
 import { computeSufficiency } from "./engine";
 import type { RetrieverPort, DomainConfigPort } from "./ports";

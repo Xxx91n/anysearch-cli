@@ -2,7 +2,7 @@
 // Rule-first = zero network, deterministic (Neo4j "LLM as fallback" / Mem0 v3 degrade-to-spaCy pattern).
 // LLM backfill seam lives in session-store (optional, fail-open): only called when rules find nothing.
 // Templates (atomcode r31): Mem0 utils/entity_extraction.py (channels + priority + overlap),
-//   membox entities.py (3-tier funnel), context-mode (trigram substring matching).
+// membox entities.py (3-tier funnel), context-mode (trigram substring matching).
 
 export type EntityType = "url" | "handle" | "phrase" | "ident" | "declared";
 
@@ -12,9 +12,9 @@ export interface EntityCandidate {
 }
 
 // Fellegi-Sunter two-threshold three-state. Initial values, pending eval error-budget calibration:
-//   >= ALIAS  -> auto-merge as alias (reversible via entity_merge_log kind="alias")
-//   >= REVIEW -> create new entity + entity_merge_log kind="candidate" (review band)
-//   <  REVIEW -> create new entity, no log
+// >= ALIAS -> auto-merge as alias (reversible via entity_merge_log kind="alias")
+// >= REVIEW -> create new entity + entity_merge_log kind="candidate" (review band)
+// < REVIEW -> create new entity, no log
 export const ENTITY_ALIAS_THRESHOLD = 0.9;
 export const ENTITY_REVIEW_THRESHOLD = 0.6;
 

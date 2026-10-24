@@ -10,7 +10,7 @@ function assert(label: string, cond: boolean) {
   if (cond) { passed++; } else { failed++; console.error("FAIL: " + label); }
 }
 
-// Pinned expected value — full 64-hex SHA-256 of the canonical payload ( style).
+// Pinned expected value — full 64-hex SHA-256 of the canonical payload (style).
 // Any registry edit without a deliberate re-pin flips this test (registry drift detection).
 const EXPECTED_FUSION_REGISTRY_SHA256 = "33caa6f52f64c156d6029dc9d4650ae92f4c0b8313e4beb97f0502d25081dbce";
 
