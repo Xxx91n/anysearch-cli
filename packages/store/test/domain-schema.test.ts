@@ -92,7 +92,7 @@ let goodOk = true;
 try { validate(goodHosts); } catch { goodOk = false; }
 assert("valid hostnames pass (case tolerated, canonicalized downstream)", goodOk);
 
-// R83 T1 / D-003/D-006: sources.vertical — parse + resolve chain
+// sources.vertical — parse + resolve chain
 // + shape-only validation (no vocabulary enum; unknown values NOT rejected).
 
 // Inheritance: derived restates the whole vertical (section-replace semantics).
@@ -121,7 +121,7 @@ let vUnknownOk = true;
 try { validate(vUnknown); } catch { vUnknownOk = false; }
 assert("unknown vocabulary NOT rejected locally (upstream is the wordlist authority)", vUnknownOk);
 
-// R84 T1 / A-02: unknown keys inside sources.vertical are fail-fast at load —
+// unknown keys inside sources.vertical are fail-fast at load —
 // a silently dropped key (e.g. a params subtable the TOML surface does not
 // carry) is the malformed-silence class the legislation exists to kill.
 const vExtraKey = resolve({ name: "vk", rag: { adapter: "x" }, sources: { enabled: [], vertical: { domain: "finance", params: { type: "earnings" } } } } as unknown as RawDomain, () => undefined);

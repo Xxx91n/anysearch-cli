@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// (T-4) - workflow YAML gate, promoted from .scratch/check-workflows.mjs (backlog B-2).
+// - workflow YAML gate, promoted from .scratch/check-workflows.mjs (backlog B-2).
 //
-// Round-57 F-10: a workflow file that does not parse makes GitHub Actions report a run with zero
+// Round-57: a workflow file that does not parse makes GitHub Actions report a run with zero
 // jobs ("likely failed because of a workflow file issue"), invisible in a normal green/red read.
 // The old checker lived in .scratch/ (never shipped) and FAILED OPEN when no YAML parser was
 // present. This version is fail-closed by construction:
-//   - auto-discovers .github/workflows/*.yml and *.yaml;
-//   - ALWAYS runs dependency-free structural checks (tabs, top-level key syntax, duplicates,
-//     required keys, quote/bracket balance outside block scalars);
-//   - ADDITIONALLY runs a full YAML parse when a parser is resolvable, so the strict check is
-//     available without adding a runtime dependency to the product.
+// - auto-discovers .github/workflows/*.yml and *.yaml;
+// - ALWAYS runs dependency-free structural checks (tabs, top-level key syntax, duplicates,
+// required keys, quote/bracket balance outside block scalars);
+// - ADDITIONALLY runs a full YAML parse when a parser is resolvable, so the strict check is
+// available without adding a runtime dependency to the product.
 // Node stdlib only.
 import fs from "node:fs";
 import path from "node:path";

@@ -1,10 +1,10 @@
-// R86 T2 / D-003 P0: AnySearch provider direct-call forensic probe.
+// AnySearch provider direct-call forensic probe.
 // Calls `new AnySearchProvider().search()` once and prints ONE structured
 // evidence line — on failure it records the error NAME + truncated message +
 // classified lane (the long-term fixture repairing "flag without error text"
 // at the forensic layer). Run:
-//   node --import tsx scripts/probe-anysearch-provider.ts
-//   ANS_PROBE_QUERY="..." node --import tsx scripts/probe-anysearch-provider.ts
+// node --import tsx scripts/probe-anysearch-provider.ts
+// ANS_PROBE_QUERY="..." node --import tsx scripts/probe-anysearch-provider.ts
 // Red lines: ANYSEARCH_ENDPOINT / ANYSEARCH_API_KEY values are NEVER printed —
 // only presence classes (endpointSource/keyPresent); occurrences of the
 // configured values inside an error message are masked <endpoint>/<key>.
@@ -14,8 +14,8 @@ import { AnySearchProvider } from "../packages/retriever/src/providers/anysearch
 import { classifyProviderError } from "../packages/retriever/src/contract";
 
 // Probe overrides (P1 env/key/endpoint separation):
-//   --default-endpoint  force the baked-in public endpoint (env ignored)
-//   --nokey             anonymous call (env key suppressed)
+// --default-endpoint force the baked-in public endpoint (env ignored)
+// --nokey anonymous call (env key suppressed)
 const ARGS = process.argv.slice(2);
 const QUERY = process.env.ANS_PROBE_QUERY ?? "cloudflare workers";
 const FORCE_DEFAULT = ARGS.includes("--default-endpoint");
@@ -32,7 +32,7 @@ function scrub(s: string): string {
 }
 
 function hostOf(u: string): string {
-  try { return new URL(/^https?:\/\//i.test(u) ? u : "https://" + u).hostname; } catch { return "?"; }
+  try { return new URL(/^https?:\/\//i.test(u) ? u: "https://" + u).hostname; } catch { return "?"; }
 }
 
 async function main(): Promise<void> {

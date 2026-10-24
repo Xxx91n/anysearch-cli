@@ -4,7 +4,7 @@ import {
   KernelJsonSchemas
 } from "../src/tool-json-schemas";
 // KernelJsonSchemas is Record<string, JsonSchema-ish>; the declared value type stays {} for
-// wire-purity in the bridge. Tests need property access — alias once to a loose shape ( noise fix).
+// wire-purity in the bridge. Tests need property access — alias once to a loose shape (noise fix).
 const KS = (KernelJsonSchemas) as unknown as Record<string, {
   required?: string[];
   additionalProperties?: boolean;
@@ -83,7 +83,7 @@ assert.equal(rm.limit, 5);
 assert.equal(qk.query, "q");
 assert.equal(ac.message, "m");
 
-// 9. R88 T1 / D-003: maxResults contract rejection — the key is not
+// 9.: maxResults contract rejection — the key is not
 // in the schema and additionalProperties:false makes the check hard-fail.
 // Exposing it is a feature decision; this assert is the CI counterpart so a
 // schema-entropy regression cannot silently reopen the surface.
@@ -94,7 +94,7 @@ assert.equal(
   "search_web rejects maxResults key (additionalProperties:false)",
 );
 
-// 10. R88 T3 / ⑤: Static inference must equal the declared
+// 10. / ⑤: Static inference must equal the declared
 // aliases — naming consistency between the schema and its TS surface is
 // enforced at the tsc level (mutual assignability, both directions).
 type StaticEq<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;

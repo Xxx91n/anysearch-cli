@@ -15,7 +15,7 @@ export interface SearchRequest {
   // The provider parameter is an entry-convergence hint, never the authority —
   // the kernel post-filter remains the fail-closed egress gate.
   includeDomains?: string[];
-  // R83 T1 / D-003: vertical-domain routing spec — orthogonal to
+  // vertical-domain routing spec — orthogonal to
   // includeDomains (host allowlist axis ≠ provider-side vertical route enum).
   // Internal field is vertical*; the wire mapping to MCP domain/sub_domain/
   // sub_domain_params happens only inside the anysearch provider adapter.
@@ -29,7 +29,7 @@ export interface SearchRequest {
 
 export type VerticalSpec = NonNullable<SearchRequest["vertical"]>;
 
-// R84 T1 / A-04 ( draft): canonical vertical spec — the single truth
+// (draft): canonical vertical spec — the single truth
 // source for wire semantics. sub_domain_params serializes only when params is
 // a non-empty Record: an empty object, a non-object, or an array all
 // canonicalize to ABSENT (empty carries no signal; protobuf/JSON API
@@ -52,7 +52,7 @@ export function canonicalizeVertical(v: VerticalSpec): VerticalSpec {
   };
 }
 
-// R88 T3 / -D2 (a06): single authority for vertical-spec guard +
+// -D2: single authority for vertical-spec guard +
 // assembly. The three entry surfaces (CLI flags, search_web, research_web)
 // share this layer; the guard verdict travels as a structured reason and
 // each surface renders its own copy (IpcError-pattern: the enum travels,
@@ -139,7 +139,7 @@ export interface SearchProvider {
   // false = unsupported; the engine degrades that provider to post-filter-only
   // and records it in the retrieval.domain_filter.pre audit event.
   readonly domainFilterSupported?: boolean;
-  // R83 T1 / D-004: vertical-domain capability bit — same shape as
+  // vertical-domain capability bit — same shape as
   // domainFilterSupported. true = the adapter maps SearchRequest.vertical to
   // provider-side domain/sub_domain/sub_domain_params. Absent/false = the
   // provider fans out on the general axis and is named in the
@@ -206,7 +206,7 @@ export interface FusionProvenance {
   scoreKind: "rank_fusion";
 }
 
-// R86 T2 / D-003: provider-failure error classes — the permanence taxonomy
+// provider-failure error classes — the permanence taxonomy
 // carried by FusedEnvelope.metadata.providerErrorClasses so eval artifacts
 // record an error CATEGORY next to the flag, never the flag alone.
 // 5xx/429/rate-limit notice/network-level → transient; 401/403/invalid_api_key → permanent-auth;
@@ -242,7 +242,7 @@ export interface FusedEnvelope {
     providersQueried: string[];
     providersFailed: string[];
     providersCancelled: string[];
-    // R86 T2 / D-003: parallel error-class channel — provider id → class enum
+    // parallel error-class channel — provider id → class enum
     // (machine-usable, zero free-text leak). Absent when nothing failed.
     providerErrorClasses?: Record<string, ProviderErrorClass>;
     elapsedMs: number;

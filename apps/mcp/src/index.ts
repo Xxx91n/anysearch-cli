@@ -6,7 +6,7 @@ import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import express from "express";
 import { buildServer } from "./server.js";
-// D-008: stash clientInfo from initialize requests into AsyncLocalStorage
+// stash clientInfo from initialize requests into AsyncLocalStorage
 // so observeTool can map it to a stable client_id via Railway PR #885.
 import { runWithMcpIdentity } from "./mcp-context.js";
 
@@ -74,7 +74,7 @@ async function main() {
           keepAliveMs: 0,
         });
         await server.connect(t);
-        // D-008: best-effort clientInfo extraction. The MCP spec
+        // best-effort clientInfo extraction. The MCP spec
         // sends clientInfo only on initialize; we still wrap every call in
         // AsyncLocalStorage so observeTool can pick it up consistently.
         const body = (req.body || {}) as { method?: string; params?: { clientInfo?: { name?: string } } };

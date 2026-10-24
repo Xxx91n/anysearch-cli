@@ -10,7 +10,7 @@
 // Cursor postToolUse supports updated_mcp_tool_output for MCP tools.
 
 import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// (T-6.3): resolve the shared server token (env or the 0600 token file).
+// resolve the shared server token (env or the 0600 token file).
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
       }
       process.exit(0);
     } else if (event === "posttooluse") {
-      // R65 F-A5: same array-of-blocks tolerance as CodeBuddy/Claude (F-09 class).
+      // F-A5: same array-of-blocks tolerance as CodeBuddy/Claude (class).
       const un = unwrapToolResponse(stdin.tool_output);
       let toolOutput: Record<string, unknown> = {};
       if (un.kind === "string") {

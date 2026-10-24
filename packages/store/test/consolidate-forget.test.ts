@@ -47,7 +47,7 @@ assert(decideOp(0.5, 0.5, true) === "update", "high-overlap contradiction -> upd
 assert(decideOp(0.5, 0.5, false) === "add", "high overlap without contradiction -> add");
 assert(decideOp(0.5, 0.39, true) === "add", "contradiction below jac 0.4 -> add");
 
-// --- R63 T1 (D-002): degraded path — bestCos === null means no cosine was computable ---
+// --- degraded path — bestCos === null means no cosine was computable ---
 // theta_jac = 0.80 boundary (strict >), calibrated on golden dataset: distinct summaries
 // jac=0.000, identical rerun=1.000, contradiction-pair ceiling=0.714 (update stays reachable).
 assert(decideOp(null, 0.81, false) === "noop", "degraded: jac above theta_jac -> noop");
@@ -197,7 +197,7 @@ assert(store.undoArchive(arep.logIds[0]).ok === false, "undo is idempotent (seco
 const prep = store.applyArchive([pinId]);
 assert(prep.archived === 0 && prep.skipped === 1, "explicit pinned id refused at apply (r94 A7)");
 
-// --- R63 T1 (D-002) integration: embedding arm absent -> jaccard-only dedup ---
+// --- integration: embedding arm absent -> jaccard-only dedup ---
 // Reproduces the con_add_then_noop offline regression: first consolidate ADDs, the rerun
 // near-verbatim summary NOOPs via theta_jac — and the degraded decision is counted.
 {

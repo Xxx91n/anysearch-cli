@@ -308,7 +308,7 @@ function slowProvider(id: string, delayMs: number, urls: string[], aborted: {v:b
   assert(r3.metadata.providersCancelled.length === 0, "under-limit: all providers awaited");
 }
 
-  // 12. R86 T2 / D-003: rejected providers carry an error CLASS parallel to
+  // 12.: rejected providers carry an error CLASS parallel to
   // providersFailed — enum-only additive field, absent when nothing failed.
   const engine12 = new RetroaererdEngine([
     mockProvider("okx", ["https://okx.com/a"]),

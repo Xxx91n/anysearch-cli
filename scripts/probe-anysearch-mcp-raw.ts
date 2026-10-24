@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// R86 T2 batch-2 — P2 raw MCP probe: speaks Streamable HTTP MCP to the
+// batch-2 — P2 raw MCP probe: speaks Streamable HTTP MCP to the
 // AnySearch endpoint directly (no provider layer) and prints the RAW
 // tools/call text payload so upstream reply-shape anomalies are attributable.
 // Values never logged: endpoint is recorded as source-class only; API key
 // existence only.
 //
-//   node --import tsx scripts/probe-anysearch-mcp-raw.ts [--default-endpoint] [--nokey]
+// node --import tsx scripts/probe-anysearch-mcp-raw.ts [--default-endpoint] [--nokey]
 //
 // Exit 0 = results-shaped reply; 2 = transport/tool failure; 3 = non-results
 // text shape (the discriminating case this probe exists for).
@@ -13,7 +13,7 @@
 import { readFileSync } from "node:fs";
 
 const DEFAULT_ENDPOINT = "https://api.anysearch.com/mcp";
-// R88 T4 / F-6: version literals are pinned to the workspace package version —
+// version literals are pinned to the workspace package version —
 // the probe speaks as the CLI client; a hand-maintained literal would drift on
 // every release. Single read at module load; failure is fatal by design (the
 // probe must never misreport which build it ran).
@@ -26,7 +26,7 @@ const QUERY = process.env.ANS_PROBE_QUERY || "cloudflare workers"; // POSIX: emp
 const UA = "anysearch-cli-raw-probe/" + PROBE_VERSION;
 
 function sanitize(s: string): string {
-  // R88 T4 / F-6: symmetric masking — the env-provided endpoint may carry an
+  // symmetric masking — the env-provided endpoint may carry an
   // internal hostname, so it is masked like the key. Placeholders match
   // probe-anysearch-provider.ts scrub() (<endpoint>/<key>) so redaction reads
   // identically across both probes. Guards first: empty values would split

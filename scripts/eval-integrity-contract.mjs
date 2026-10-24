@@ -12,10 +12,9 @@ export function evalIntegrityCheck(report) {
   // when a decision run arrives without an explicit pass verdict from the eval orchestrator.
   // This mirrors K8s PSA enforce/audit and NIST 800-207 PEP enforcement at the decision point.
   if (integrity.verdict !== "pass" && integrity.verdict !== "failed") {
-    return { ok: false, detail: "memory-eval integrity verdict invalid: " + integrity.verdict + " ( fail-closed)" };
+    return { ok: false, detail: "memory-eval integrity verdict invalid: " + integrity.verdict + " (fail-closed)" };
   }
-  if (
-    integrity.runPurpose !== "observational" &&
+  if (integrity.runPurpose !== "observational" &&
     integrity.runPurpose !== "decision" &&
     integrity.runPurpose !== "override"
   ) {
@@ -25,13 +24,13 @@ export function evalIntegrityCheck(report) {
     (integrity.runPurpose === "decision" || integrity.runPurpose === "override") &&
     integrity.verdict !== "pass"
   ) {
-    return { ok: false, detail: "memory-eval decision/override-grade integrity verdict not fail-closed " };
+    return { ok: false, detail: "memory-eval decision/override-grade integrity verdict not fail-closed" };
   }
   if (integrity.runPurpose === "override" && !SHIP_OVERRIDE_REASON_CODES.includes(integrity.overrideReasonCode)) {
     return { ok: false, detail: "memory-eval override runPurpose requires a valid overrideReasonCode" };
   }
   if (integrity.verdict === "failed") {
-    return { ok: false, detail: "memory-eval integrity verdict failed ( fail-closed)" };
+    return { ok: false, detail: "memory-eval integrity verdict failed (fail-closed)" };
   }
   return {
     ok: true,

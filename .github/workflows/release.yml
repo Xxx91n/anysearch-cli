@@ -1,4 +1,4 @@
-# (T-1 / F-15): the release-grade eval gate.
+# the release-grade eval gate.
 #
 # Regular CI (ci.yml, ship-gate.yml) runs observational and never spends a preregistered OF look.
 # The decision-grade peek happens here, exactly once per release, via a pre-tag dispatch. A tag
@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  # (R68 T1): a fixed group serializes every release run — a pre-tag
+  # a fixed group serializes every release run — a pre-tag
   # dispatch and a tag push must never interleave their gate state.
   group: release
   cancel-in-progress: false
@@ -73,7 +73,7 @@ jobs:
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      # (R71 T2, first real guest): the ledger commit is pushed by
+      # (first real guest): the ledger commit is pushed by
       # this job's GITHUB_TOKEN — and GITHUB_TOKEN pushes never cascade-trigger
       # workflow runs (GitHub's recursion guard), so the ledger sha carries ZERO
       # check-runs and wait-on-check-action's FAIL_ON_NO_CHECKS always fails at
@@ -94,7 +94,7 @@ jobs:
           gh workflow run ci.yml --ref release-gate-ledger
           gh workflow run ship-gate.yml --ref release-gate-ledger
 
-      # (R68 T1, layer 1): the pre-tag job now self-waits — after the
+      # (layer 1): the pre-tag job now self-waits — after the
       # ledger commit lands on main it must carry green ci+ship-gate before the
       # operator may tag. wait-on-check-action supplies the two-phase contract:
       # checks-discovery-timeout covers the empty window until the push-run
@@ -113,7 +113,7 @@ jobs:
           check-regexp: '^(check-build|install-smoke|test:online|ship-gate|memory-eval)\b'
           wait-interval: 30
           checks-discovery-timeout: 120
-          # R68 audit F-S2: keep layer-1's allowed set identical to layer-2's
+          # audit F-S2: keep layer-1's allowed set identical to layer-2's
           # (assert-checks-green.mjs TERMINAL_OK = success/skipped/neutral) —
           # an asymmetric default would let a "neutral" check pass post-tag
           # while blocking pre-tag on the same conclusion.
@@ -131,10 +131,10 @@ jobs:
         if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}
         run: git push origin --delete refs/heads/release-gate-ledger || true
 
-      # (R68 T1, layer 2): publish's needs:release-gate now asserts the
+      # (layer 2): publish's needs:release-gate now asserts the
       # TAGGED sha carries all-green ci+ship-gate — the bug this closes: v0.0.5
       # shipped from a red tree because publish never re-checked the tag's base.
-      # (R70 T0) strict two-phase: Red -> fail-fast exit 1 in either
+      # strict two-phase: Red -> fail-fast exit 1 in either
       # phase; every required family must register within --discovery-sec, else
       # fail-closed exit 2 (phase=discovery); remaining completion is bounded
       # by the absolute --timeout-min, else exit 2 (phase=completion).
@@ -144,7 +144,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/assert-checks-green.mjs --sha "${{ github.sha }}" --repo "${{ github.repository }}" --timeout-min 15 --discovery-sec 120 --interval-sec 20
 
-      # (R68 T1): alert-and-block — on any gate red, leave a step
+      # alert-and-block — on any gate red, leave a step
       # summary, auto-open an issue, and stamp the ledger commit with a
       # release-gate/failed status when one exists (pre-tag leg). No auto-revert.
       - name: alert on gate red
@@ -178,15 +178,15 @@ jobs:
               -f target_url="$RUN_URL" || echo "commit status failed (non-blocking)"
           fi
 
-  # (R66 T6): publish via npm OIDC trusted publishing — the job holds
+  # publish via npm OIDC trusted publishing — the job holds
   # id-token:write and npm 11.5.1+ performs the OIDC handshake itself; there is no
   # NPM_TOKEN anywhere. Runs only on tag push, after release-gate is green.
   # Maintainer prerequisite (one-time, per package): npmjs.com → package →
   # Settings → Trusted Publisher → GitHub Actions —
-  #   repository owner: Xxx91n
-  #   repository name : anysearch-cli
-  #   workflow filename: release.yml
-  #   environment     : (none)
+  # repository owner: Xxx91n
+  # repository name: anysearch-cli
+  # workflow filename: release.yml
+  # environment: (none)
   # See docs/publishing.md for the verbatim setup checklist.
   publish:
     name: publish to npm (OIDC trusted publishing)
@@ -223,7 +223,7 @@ jobs:
           done
           ls -la .release/pack
 
-      # (R81 TI, D-004 R1): idempotent skip — before each npm publish,
+      # idempotent skip — before each npm publish,
       # `npm view <name>@<version>` already-existing => skip with a logged notice
       # (npm has no built-in skip flag: rfcs#387; precondition-check is the
       # accepted pattern). E403 "cannot publish over" is also treated as skip,

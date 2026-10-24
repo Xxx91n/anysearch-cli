@@ -1,4 +1,4 @@
-// + (T-2/F-17): quarantine ledger mechanics + gate-exclusion contract.
+// +: quarantine ledger mechanics + gate-exclusion contract.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -84,7 +84,7 @@ assert(emptyQuarantine().entries.length === 0, "emptyQuarantine has no entries")
   assert(r.entries[0]!.retired === true && activeIds(r, plusDays(T0, 1)).length === 0, "retire keeps the audit row but deactivates it");
 }
 
-// --- 4b. longterm one-time exit (R63 T3 / D-003) ---------------------------
+// --- 4b. longterm one-time exit ---------------------------
 {
   let threw = false;
   try {

@@ -46,13 +46,13 @@ const bm = -10;
 assert(scoreWithFreshness(bm, { createdAt: ts(400), lastAccessed: null, accessCount: 0, tier: "news", pinned: true, nowMs: NOW }) === bm, "pinned score unchanged");
 
 // 3. Evergreen query: decay half bypassed, reinforcement still applies.
-//    Same row, never accessed: evergreen query pins factor at exactly 1.0 (no decay).
+// Same row, never accessed: evergreen query pins factor at exactly 1.0 (no decay).
 const evNoAccess = freshnessFactor({ createdAt: ts(400), lastAccessed: null, accessCount: 0, tier: "news", evergreenQuery: true, nowMs: NOW });
 assert(evNoAccess === 1.0, "evergreen query bypasses decay exactly (got " + evNoAccess + ")");
-//    Recently accessed + frequently accessed row keeps reinforcement under evergreen query.
+// Recently accessed + frequently accessed row keeps reinforcement under evergreen query.
 const evBoost = freshnessFactor({ createdAt: ts(400), lastAccessed: ts(0), accessCount: 3, tier: "news", evergreenQuery: true, nowMs: NOW });
 assert(evBoost > 1.4 && evBoost <= 1.5, "evergreen query keeps access reinforcement (got " + evBoost + ")");
-//    Same row without evergreen query: decayed band clearly below the evergreen one.
+// Same row without evergreen query: decayed band clearly below the evergreen one.
 const evDecayed = freshnessFactor({ createdAt: ts(400), lastAccessed: ts(0), accessCount: 3, tier: "news", nowMs: NOW });
 assert(evDecayed < evBoost, "evergreen query outranks decayed same-row (" + evDecayed + " vs " + evBoost + ")");
 
@@ -64,7 +64,7 @@ assert(freshAccessed < stale, "fresh+accessed beats stale+untouched at equal BM2
 assert(Math.abs(stale - bm * 0.3) < 1e-9, "stale+untouched sits at 0.3 floor");
 
 // 5. Year-literal-free QDF regex: 4-digit years no longer trigger;
-//    behavior survives every future rollover.
+// behavior survives every future rollover.
 assert(!isTimeSensitive("AI 2026 全景回顾"), "year literal 2026 no longer triggers QDF");
 assert(!isTimeSensitive("deep dive into 2099 retro"), "no future year literal triggers QDF");
 assert(isTimeSensitive("最新AI新闻"), "still detects 最新");

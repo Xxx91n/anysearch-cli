@@ -28,7 +28,7 @@ export default defineConfig({
     "@sinclair/typebox",
   ],
   // ponytail: also drop stale v1 sdk/zod/express externals (already removed from
-  // dependencies in R16-1; leaving them here misleads future maintainers
+  // dependencies in ; leaving them here misleads future maintainers
   // and would silently externalize if someone re-imported them later).
   external: [
     "better-sqlite3",

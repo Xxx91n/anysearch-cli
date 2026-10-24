@@ -1,4 +1,4 @@
-// + (T-2 / F-17): flaky-case quarantine ledger.
+// +: flaky-case quarantine ledger.
 //
 // A case that is environment-flaky (passes on one runner, fails on another) is quarantined by
 // POLICY MARK, never by editing the golden set: the case stays in GOLDEN_CASES, so the dataset
@@ -6,7 +6,7 @@
 // ACTIVE quarantined cases from the passRate==1 hard assertion while still reporting them.
 //
 // SLA: 30-day TTL, weekly expiry review, at most 2 renewals. Removing a case and
-// putting it back is not new evidence and never resets the statistical budget ( symmetry).
+// putting it back is not new evidence and never resets the statistical budget (symmetry).
 // Per-case statistical slack (majority vote / 2-sigma band) is REJECTED: on a
 // deterministic assertion that is rerun-until-pass.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -15,7 +15,7 @@ export const QUARANTINE_SCHEMA = "anysearch/eval-quarantine@1";
 export const QUARANTINE_TTL_DAYS = 30;
 export const QUARANTINE_REVIEW_INTERVAL_DAYS = 7;
 export const QUARANTINE_MAX_RENEWALS = 2;
-// R63 T3 (D-003): permanent known-issue conversion is a one-time exit — the ratchet
+// permanent known-issue conversion is a one-time exit — the ratchet
 // asserts longterm is used at most once across the ledger (infinite-deferral backdoor guard).
 export const QUARANTINE_MAX_LONGTERM = 1;
 
@@ -36,7 +36,7 @@ export interface QuarantineEntry {
   issueUrl?: string;
   reviews: QuarantineReview[];
   retired?: boolean;
-  // R63 T3 (D-003): longterm = permanently excluded known-issue (never expires, never gates).
+  // longterm = permanently excluded known-issue (never expires, never gates).
   longterm?: boolean;
 }
 
@@ -124,7 +124,7 @@ export function retireEntry(q: QuarantineLedger, id: string, at: string, note: s
   return q;
 }
 
-// longterm (R63 T3, D-003): convert to a permanent known-issue — stays excluded forever,
+// longterm: convert to a permanent known-issue — stays excluded forever,
 // capped at QUARANTINE_MAX_LONGTERM across the whole ledger. The exit exists so an expired
 // entry has a legal third ruling beyond promote/retire; the cap keeps it from becoming an
 // infinite-deferral backdoor.

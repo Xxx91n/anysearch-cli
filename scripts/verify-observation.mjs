@@ -88,7 +88,7 @@ async function main() {
     }) + "\n");
     await readLineStream(child, 2, 10_000);
   } finally {
-    // L-2 (R69 T5): graceful shutdown before the trace read — a hard kill can
+    // L-2: graceful shutdown before the trace read — a hard kill can
     // drop the async observation write that lands just after the JSON-RPC
     // response (Windows kill = TerminateProcess, no cleanup handlers run).
     // stdin EOF lets the server exit on its own and flush; kill only as a
@@ -110,7 +110,7 @@ async function main() {
     for (const table of ["observability_traces", "observability_spans", "observability_evaluations", "observability_scores"]) {
       if (!tables.includes(table)) fail("missing table " + table);
     }
-    // L-2 (R69 T5): retry window — trace persistence may still be landing
+    // L-2: retry window — trace persistence may still be landing
     // when this point is reached even after a graceful exit (WAL flush).
     let traces = [];
     let operations = new Set();

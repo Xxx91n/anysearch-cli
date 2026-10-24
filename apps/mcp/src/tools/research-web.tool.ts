@@ -20,7 +20,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
     async (args: unknown) => {
       return observeTool(eng, "research_web", async (span) => {
         const { question, depth, verticalDomain, verticalSubDomain, verticalParams } = args as { question: string; depth?: string; verticalDomain?: string; verticalSubDomain?: string; verticalParams?: Record<string, unknown> };
-        // R83 T1 / D-003/D-006 + R88 T3 / (a06): shared
+        // + /: shared
         // guard + assembly; error copy is this surface's rendering of the
         // legislated missing-domain reason (byte-frozen).
         const built = buildVerticalSpec({ domain: verticalDomain, subDomain: verticalSubDomain, params: verticalParams });
@@ -85,7 +85,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               ...(mergedAttribution ? { attribution: mergedAttribution } : { attribution: null }),
               // abstain marker when the domain gate emptied the pool.
               abstain: lastEnvelope?.metadata?.abstain ?? null,
-              // R83 T1: resolved vertical routing (query-level spec, applied to every round).
+              // resolved vertical routing (query-level spec, applied to every round).
               vertical: vertical ?? null,
             },
             null,

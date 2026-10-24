@@ -3,8 +3,8 @@
 // Interface: attach (init) / inject (hot read) / consolidate (cold write).
 // Domain-semantic naming — interface does not leak host hook details.
 // pure function-ization + ConsolidationState + shell wrapper.
-//   consolidate() is now a shell that calls pure consolidateState() then executes I/O.
-//   signalSearchTurn() DELETED — replaced by hasRetrievalEvidence parameter.
+// consolidate() is now a shell that calls pure consolidateState() then executes I/O.
+// signalSearchTurn() DELETED — replaced by hasRetrievalEvidence parameter.
 
 import { generateSummaryWithUsage } from "@earendil-works/pi-agent-core";
 // reuse summary engine only, NOT compact window management.
@@ -66,7 +66,7 @@ export interface ConsolidateResult {
   };
 }
 
-// /: gap distillation returns a tagged object, never a bare string.
+// gap distillation returns a tagged object, never a bare string.
 export function distillGap(messages: any[], fromIdx: number): TaggedGap {
   const gap = messages.slice(fromIdx);
   const results: TaggedGap["results"] = [];
@@ -324,7 +324,7 @@ export class MemoryPipeline {
       // D8: Call pure function for decision; inject compaction opts.
       // fail-fast on unsupported {fraction} shape — silent fallback to
       // default 128000 would violate the "不静默回退" principle stated in the ADR.
-      // Once model window probing lands ( scope), wire fraction → tokens here.
+      // Once model window probing lands (scope), wire fraction → tokens here.
       const compactionCfg = domain.compaction;
       const lw = compactionCfg?.lowWatermark;
       let resolvedLowWatermark: number | undefined;

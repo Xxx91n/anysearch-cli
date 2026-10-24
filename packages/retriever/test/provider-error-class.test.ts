@@ -1,4 +1,4 @@
-// R86 T2 / D-003: provider-error-class taxonomy — eval artifacts record an
+// provider-error-class taxonomy — eval artifacts record an
 // error CATEGORY beside the failed flag, never the flag alone. Table-driven
 // over the String(err) seam form ("Name: message").
 import { classifyProviderError } from "../src/contract";

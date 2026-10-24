@@ -1,5 +1,5 @@
-# Docs domain — technical-docs retrieval wedge ( B1, spec .scratch/grill-round-60/spec-b1.md).
-# Corpus anchored on first-party docs the team depends on daily (D-004 inclusion rule).
+# Docs domain — technical-docs retrieval wedge (B1, spec .scratch/grill-round-60/spec-b1.md).
+# Corpus anchored on first-party docs the team depends on daily (inclusion rule).
 # urlAllowlist gates URL *consumption* (policy/HITL), not search ranking.
 name = "docs"
 description = "Technical-docs retrieval: MCP spec / TypeScript tsconfig / pnpm settings (first-party corpus)"
@@ -13,7 +13,7 @@ active = ["search", "doctor"]
 
 [sources]
 enabled = ["tavily", "exa", "anysearch"]
-# First-party corpus (D-004 first-batch instance, bare hostnames only).
+# First-party corpus (first-batch instance, bare hostnames only).
 urlAllowlist = ["modelcontextprotocol.io", "typescriptlang.org", "www.typescriptlang.org", "pnpm.io"]
 
 [rag]

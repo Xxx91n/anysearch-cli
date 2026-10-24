@@ -1,14 +1,14 @@
-// D-005: OPA #6905-style closure test.
+// OPA #6905-style closure test.
 //
 // Three closures:
 //
 // 1) Schema parity: fresh-create and v1-upgrade paths converge on identical
-//    column + index sets. PRAGMA user_version parity.
+// column + index sets. PRAGMA user_version parity.
 // 2) Attribution round-trip: recordOperation(traceId, sessionId, clientId)
-//    -> SELECT trace_id, session_id, client_id returns the same values.
-//    (OPA #6905: defined fields must actually persist.)
+// -> SELECT trace_id, session_id, client_id returns the same values.
+// (OPA #6905: defined fields must actually persist.)
 // 3) Golden case: hook outbound -> server extract -> store write ->
-//    SELECT returns identical traceId + sessionId (full wire round-trip).
+// SELECT returns identical traceId + sessionId (full wire round-trip).
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -25,7 +25,7 @@ import {
 import { emitConfigChangeAudit, writePolicyCache, readPolicyCacheEnvelope, resolveUrlPolicy } from "../src/url-policy";
 import { readSessionId, writeSessionId } from "../src/session-id";
 
-// D-005: this test focuses on the store-side evidence:
+// this test focuses on the store-side evidence:
 // (a) schema parity fresh vs migrated (T7),
 // (b) attribution column round-trip + OPA #6905 SELECT-back (T8 attribution half),
 // (c) audit writes thread trace_id + session_id (T8 emitConfigChangeAudit half),
@@ -113,10 +113,10 @@ async function main() {
   }
 
   // --- 3) Golden case (store side): the hook outbound -> server extract chain
-  //           is verified in apps/plugin/test/propagation.test.ts. Here we
-  //           confirm the store-side contract: any caller that supplies a
-  //           traceId/sessionId (whether from extracted headers or a default)
-  //           has those values persisted under the matching column names.
+  // is verified in apps/plugin/test/propagation.test.ts. Here we
+  // confirm the store-side contract: any caller that supplies a
+  // traceId/sessionId (whether from extracted headers or a default)
+  // has those values persisted under the matching column names.
   {
     const dir = mkdtempSync(join(tmpdir(), "obs-emit-"));
     const db = join(dir, "audit.db");
@@ -153,7 +153,7 @@ async function main() {
     rmSync(dir, { recursive: true, force: true });
   }
 
-  // --- 4) D-007 / supplement: materialized_at + cache fallback ---
+  // --- 4) / supplement: materialized_at + cache fallback ---
   {
     const dir = mkdtempSync(join(tmpdir(), "pol-"));
     const cache = join(dir, "policy.json");

@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 // scripts/release-gate.mjs
-// (T-1 / F-15): the release-grade eval gate.
+// the release-grade eval gate.
 //
 // Regular CI runs the merge gate (scripts/ship-gate.mjs) in observational mode and never spends a
 // preregistered OF look. This script is the ONLY place a look is spent, and it is invoked by
 // .github/workflows/release.yml:
 //
-//   --pre-tag   run the decision-grade eval (spends exactly one OF look and appends one row to the
-//               git-committed eval-looks.json ledger) and fail unless the verdict is green.
-//   --post-tag  assert the most recent pre-tag verdict for the current fingerprint pair is
-//               unexpired; never runs the eval, never spends a look (no OF double-spend).
+// --pre-tag run the decision-grade eval (spends exactly one OF look and appends one row to the
+// git-committed eval-looks.json ledger) and fail unless the verdict is green.
+// --post-tag assert the most recent pre-tag verdict for the current fingerprint pair is
+// unexpired; never runs the eval, never spends a look (no OF double-spend).
 //
 // Node stdlib only.
 import { spawnSync } from "node:child_process";
@@ -43,7 +43,7 @@ function latestRow(key) {
 
 function preTag() {
   ok("pre-tag decision-grade peek (the only place an OF look is spent)");
-  // round-59 audit D-2 (resolved as an explicit, rationale-backed waiver - NOT a code change):
+  // round-59 audit (resolved as an explicit, rationale-backed waiver - NOT a code change):
   // this release peek INTENTIONALLY runs the FULL golden set (no --offline). The offline boundary
   // (r59 errata) governs the merge/default suites; narrowing the release
   // decision to the offline slice would be exactly the coverage downgrade the errata's

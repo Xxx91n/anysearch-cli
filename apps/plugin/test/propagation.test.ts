@@ -1,14 +1,14 @@
-// D-003/T8/T9: Hook+Server wire-format golden case.
+// T8/T9: Hook+Server wire-format golden case.
 //
 // Two layers:
 // (a) buildPropagationHeaders / parseAndValidateHeaders round-trip + edge cases.
-//     All assertions are inlined (no for-loop) so the grep call count matches
-//     the PASS count exactly; the audit's grep-based counting methodology now
-//     lines up with the report's number.
+// All assertions are inlined (no for-loop) so the grep call count matches
+// the PASS count exactly; the audit's grep-based counting methodology now
+// lines up with the report's number.
 // (b) W3C 3.2.2 invalid traceparent MUST be discarded (fresh trace_id generated).
 // (c) session_id absent/empty -> "" (MCP path / never-throw).
 // (d) build/parse mutual consistency: every build() result is parseable back to
-//     the same trace_id + session_id.
+// the same trace_id + session_id.
 //
 // The store-side SELECT-back evidence is covered by packages/store/test/
 // session-id-propagation.test.ts; this file focuses on the wire format itself

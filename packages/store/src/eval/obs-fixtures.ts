@@ -50,7 +50,7 @@ function sha256(buf: Buffer): string {
 }
 
 // 16-hex definition hash of the pinned fixture set; joins the eval baseline fingerprint
-// ( flip). r110 SP-F-03: a missing manifest (e.g. fixtures not packed) degrades
+// (flip). r110 SP-: a missing manifest (e.g. fixtures not packed) degrades
 // to the explicit marker "no-fixtures" — never silently: loadObsFixture hard-throws when a
 // fixture is actually requested, the value is printed into the report's observational zone
 // (fixtureDefinitionHash field), and the eval CLI warns on stderr when it is active.
@@ -65,7 +65,7 @@ export function fixtureDefinitionHash(): string {
 
 // Load + verify a fixture: schema, track marker, bucket-key shape, and SHA-256 against
 // MANIFEST.json. Any mismatch is a hard throw — silently feeding unverified data would
-// defeat pinning. r110 SP-F-02 design boundary: the runtime SHA-256 check is ONLY an
+// defeat pinning. r110 SP- design boundary: the runtime SHA-256 check is ONLY an
 // anti-miswire guard — MANIFEST.json ships in the same directory, so it can be edited
 // alongside a tampered fixture (circular credential). The real tamper anchors are the CI
 // regenerate-and-diff step (fixtures must hash-match what the committed generator produces)
@@ -91,7 +91,7 @@ export function validateFixtureDoc(fx: ObsFixture): void {
   if (fx.schema !== OBS_FIXTURE_SCHEMA) throw new Error("obs-fixture " + name + ": unexpected schema " + fx.schema);
   if (fx.track !== "synthetic") throw new Error("obs-fixture " + name + " track miswire: " + String(fx.track) + " (synthetic snapshots must carry track synthetic)");
   if (!Array.isArray(fx.events) || !fx.meta || typeof fx.meta.windowDays !== "number") throw new Error("obs-fixture " + name + ": malformed body");
-  // r110 SA-F-07: the fixture's pinned baseline histogram must use exactly the current
+  // r110 SA-: the fixture's pinned baseline histogram must use exactly the current
   // AGE_BUCKETS keys — a bucket redefinition without fixture regeneration is a hard error,
   // not a silent zero-filled comparison.
   const wantKeys = AGE_BUCKETS.map((b) => b.id).sort().join(",");
@@ -99,7 +99,7 @@ export function validateFixtureDoc(fx: ObsFixture): void {
   if (gotKeys !== wantKeys) throw new Error("obs-fixture " + name + ": baselineHistogram keys " + JSON.stringify(gotKeys) + " != AGE_BUCKETS " + JSON.stringify(wantKeys) + " — regenerate fixtures after changing day buckets");
 }
 
-// Fixture -> the gate-visible feed ( chain input). PSI = baseline vs current
+// Fixture -> the gate-visible feed (chain input). PSI = baseline vs current
 // access-age histogram over the pre-registered D4 buckets, symmetric-KL with eps smoothing.
 export function feedFromFixture(fx: ObsFixture): ObsFeed {
   const ages = fx.events.map((e) => e.ageDays);

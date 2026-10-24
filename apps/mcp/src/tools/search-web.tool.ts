@@ -19,13 +19,13 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
     },
     async (args: unknown) => {
       return observeTool(eng, "search_web", async (span) => {
-        // R88 T1 / D-003: maxResults is intentionally absent from the
+        // maxResults is intentionally absent from the
         // public schema (additionalProperties:false) — exposing it is a feature
         // decision, not hygiene; the dead destructure is removed, engine
         // default (10) rules uniformly across surfaces.
         const { query, mode, verticalDomain, verticalSubDomain, verticalParams } = args as { query: string; mode?: string; verticalDomain?: string; verticalSubDomain?: string; verticalParams?: Record<string, unknown> };
         // args validated by AJV upstream (fromJsonSchema).
-        // R83 T1 / D-003/D-006 + R88 T3 / (a06): guard +
+        // + /: guard +
         // assembly share buildVerticalSpec — the copy below is this surface's
         // rendering of the legislated missing-domain reason (byte-frozen).
         const built = buildVerticalSpec({ domain: verticalDomain, subDomain: verticalSubDomain, params: verticalParams });
@@ -57,7 +57,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               ...(envelope.attribution ? { attribution: envelope.attribution } : { attribution: null }),
               // first-class abstain marker — policy success, not error.
               abstain: envelope.metadata?.abstain ?? null,
-              // R83 T1: resolved vertical routing (query-level args; repo-level
+              // resolved vertical routing (query-level args; repo-level
               // defaults surface via the retrieval.vertical.pre audit event).
               vertical: vertical ?? null,
               // MCP sufficiency annotation — A+ dual-channel.

@@ -1,27 +1,27 @@
-// R62 D-006 (T6): eval-looks golden executor — ONLINE live layer.
+// (T6): eval-looks golden executor — ONLINE live layer.
 // Entries with scope live|both run through the REAL bundled ans bin
 // (`node apps/cli/dist/index.js search --json`) — the shipped path, not a test
 // double — with hard verdict/mustHitHosts/mustHitUrls/minResults assertions.
 // Discovered only by `pnpm -C packages/store test:online` (glob *.online.ts);
-// never on the ship-gate --offline path (D-006). Flaky live failures belong to
+// never on the ship-gate --offline path . Flaky live failures belong to
 // the eval-quarantine.json ledger, not relaxed assertions.
 // Skip policy: the bundled bin must exist and at least one provider key must be
 // set — a silent zero-provider run would fake a pass, so we skip loudly instead.
 //
-// R64 D-004/D-005 additions:
+// additions:
 // - Quarantine classification consumes the ledger's single implementation
-//   (readQuarantine + activeIds) — the previous inline copy ignored the
-//   longterm flag (second-predicate drift).
+// (readQuarantine + activeIds) — the previous inline copy ignored the
+// longterm flag (second-predicate drift).
 // - Evidence mode (ANS_EVAL_EVIDENCE=1): quarantined entries actually execute
-//   (quarantined-but-runnable — a skipped case can never emit a gone-green
-//   signal), each executed entry appends an EVIDENCE quadruple
-//   (id / verdict / ISO timestamp / run ref) to ANS_EVAL_EVIDENCE_LOG
-//   (default .scratch/eval-evidence.log), a run whose only failures are
-//   quarantined exits 0, and an entry all-red in consecutive evidence runs
-//   prints RETIRE_CANDIDATE for reviewDue().
-// - R64 D-002: mustHitPaths/mustNotHitPaths page-family layer — pathname
-//   substring match, host-scoped to the entry's mustHitHosts when declared.
-// - R64 D-005: watch:true entries announce their post-promote observation mark.
+// (quarantined-but-runnable — a skipped case can never emit a gone-green
+// signal), each executed entry appends an EVIDENCE quadruple
+// (id / verdict / ISO timestamp / run ref) to ANS_EVAL_EVIDENCE_LOG
+// (default .scratch/eval-evidence.log), a run whose only failures are
+// quarantined exits 0, and an entry all-red in consecutive evidence runs
+// prints RETIRE_CANDIDATE for reviewDue().
+// -: mustHitPaths/mustNotHitPaths page-family layer — pathname
+// substring match, host-scoped to the entry's mustHitHosts when declared.
+// -: watch:true entries announce their post-promote observation mark.
 //
 // NOTE for evidence runs: invoke this file directly
 // (`node --import tsx test/online/eval-looks-live.online.ts`) — under
@@ -52,7 +52,7 @@ const evidenceLog = process.env.ANS_EVAL_EVIDENCE_LOG ?? join(root, ".scratch", 
 
 function searchJson(question: string, env: NodeJS.ProcessEnv, vertical?: { domain: string; subDomain?: string; params?: Record<string, unknown> }): any {
   const args = [dist, "search", question, "--json"];
-  // R84 T1 / draft: vertical entries ride the real --vertical-* flags —
+  // draft: vertical entries ride the real --vertical-* flags —
   // the live leg exercises the same config boundary a user types at.
   if (vertical) {
     args.push("--vertical-domain", vertical.domain);
@@ -95,7 +95,7 @@ function urlHit(results: any[], url: string): boolean {
   });
 }
 
-// R64 D-002 page-family matchers. When the entry declares mustHitHosts the
+// page-family matchers. When the entry declares mustHitHosts the
 // pattern must land on one of those hosts: the asserted product promise is
 // "site X page family", not "any host with a /settings-shaped path".
 function hostIn(u: URL, hosts: string[]): boolean {
@@ -145,7 +145,7 @@ function main() {
   // Baseline asserts can never be quarantine-attributable.
   let nonQuarFailed = failed;
 
-  // + R64 D-004: active-quarantined entries are reported, not
+  // +: active-quarantined entries are reported, not
   // silently skipped — the quarantine mark is policy, the TTL clock lives in
   // eval-quarantine.json. Classification = the ledger's single implementation.
   const qPath = join(root, "packages", "store", "eval-quarantine.json");
@@ -189,7 +189,7 @@ function main() {
         for (const n of e.expected.mustNotHitPaths ?? [])
           assert(pathMiss(j.results, n, hosts), e.id + " mustNotHitPath " + n + " absent from results");
       }
-      // R84 T1 / draft: expected.vertical assertion surface (live leg).
+      // draft: expected.vertical assertion surface (live leg).
       // hit rides on the fused results' extra.vertical marker; control entries
       // pin the silent-fallback surface — see degraded handling below.
       const vexp = e.expected?.vertical;
@@ -208,13 +208,13 @@ function main() {
         }
         if (vexp.degraded === "general-fallback") {
           // The vertical arm produced no marked results; the general fanout
-          // still answers. Existence is the assertion (D-004 iii).
+          // still answers. Existence is the assertion (iii).
           assert(j.results.length >= 1, e.id + " general-fallback: results exist");
         }
       }
     }
     const ePass = passed - p0, eFail = failed - f0;
-    // R84 T1 / D-004 iii: control entries' failures walk the degraded list,
+    // iii: control entries' failures walk the degraded list,
     // never the red gate — existence is a first-class assertion, passing is
     // not. Failures are reclassified out of the red counter and logged.
     const isControl = e.expected?.vertical?.role === "control";

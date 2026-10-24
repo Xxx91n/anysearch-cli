@@ -26,7 +26,7 @@ const PKG_VERSION: string =
 // buildServer: factory function. Each connection gets a fresh server instance.
 // factory pattern, era-agnostic, entry selects transport.
 export function buildServer(engine?: CompositionResult): McpServer {
-  // (D-004): a cold HOME has no ~/.anysearch dir yet; create the DB
+  // a cold HOME has no ~/.anysearch dir yet; create the DB
   // parent before better-sqlite3 opens it (mirrors apps/cli/src/db.ts:9).
   let eng: CompositionResult;
   if (engine) {
@@ -37,7 +37,7 @@ export function buildServer(engine?: CompositionResult): McpServer {
     // ANS_DOMAIN flows into the engine (same env contract as the
     // CLI) so the domain post-filter + abstain contract is reachable on MCP.
     // Unset = full fanout, unchanged legacy behavior.
-    // R65 F-10: mirror the CLI's domains-dir chain — an installed ans-mcp must
+    // mirror the CLI's domains-dir chain — an installed ans-mcp must
     // resolve the builtin TOMLs shipped inside its own package, not only
     // <cwd>/domains (a host project's cwd never has one).
     const self = typeof __dirname !== "undefined" ? __dirname : dirname(fileURLToPath(import.meta.url));

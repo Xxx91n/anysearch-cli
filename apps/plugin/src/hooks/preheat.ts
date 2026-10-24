@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isAnsTool, callServer, type HookInput, type HookDecision } from "./core.js";
-// (T-6.3): the server never runs open; resolve the shared token (env or the 0600 token file).
+// the server never runs open; resolve the shared token (env or the 0600 token file).
 import { resolveServerToken } from "../server/token.js";
 
 interface PolicyCache {
@@ -101,7 +101,7 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   if (!query) return {};
 
   // Ask long-running server to recall from project index.
-  // D-003: thread the host-supplied session_id into the outbound
+  // thread the host-supplied session_id into the outbound
   // callServer call so the server can link the /recall response to the same
   // logical session as the inbound hook invocation.
   const result = await callServer(serverUrl + "/recall", token, {

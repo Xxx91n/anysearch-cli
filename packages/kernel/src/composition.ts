@@ -64,7 +64,7 @@ export function resolveAttributionRevisionRoot(env: NodeJS.ProcessEnv = process.
 }
 
 // Fail-open: missing/corrupt head or bundle yields undefined and the engine
-// stays on the legacy 0.6 floor ( degraded path).
+// stays on the legacy 0.6 floor (degraded path).
 export function resolveActiveAttributionCalibration(
   env: NodeJS.ProcessEnv = process.env,
 ): AttributionCalibration | undefined {
@@ -94,7 +94,7 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
   // TOML edits and ANS_URL_ALLOWLIST/DENYLIST env overrides take effect without
   // restart. No cached policy snapshot lives inside the retriever.
   let urlPolicy: (() => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }) | undefined;
-  // R83 T1 / D-003: repo-level vertical default — lazy resolver over the
+  // repo-level vertical default — lazy resolver over the
   // same liveSchema the urlPolicy reloader maintains (TOML edits take effect
   // without restart); absent vertical returns undefined.
   let repoVertical: (() => SearchRequest["vertical"]) | undefined;
@@ -133,7 +133,7 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
     } catch (e) {
       // configuration errors fail fast — an invalid sources.weights must not be
       // swallowed by the fail-open full-fanout fallback (which exists for missing domains/keys).
-      // R84 rework (audit F1 / addendum): the predicate is the whole
+      // rework (audit F1 / addendum): the predicate is the whole
       // "Domain schema:" family, not a single field — a malformed sources.vertical
       // (or urlAllowlist/compaction/…) is the same silent-drop class: the domain
       // is configured but broken, so swallowing it would discard the operator's

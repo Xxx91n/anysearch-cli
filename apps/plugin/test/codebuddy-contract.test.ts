@@ -1,8 +1,8 @@
-// CodeBuddy hook contract tests — (R65).
+// CodeBuddy hook contract tests —.
 // Synthetic stdin per the real CodeBuddy Code 2.149.0 contract:
-//   stdin  : hook_event_name (NOT event) + tool_name/tool_input/tool_response/session_id/cwd
-//   stdout : hookSpecificOutput{permissionDecision|additionalContext|updatedToolOutput}
-//   SessionStart: raw stdout text -> context verbatim.
+// stdin: hook_event_name (NOT event) + tool_name/tool_input/tool_response/session_id/cwd
+// stdout: hookSpecificOutput{permissionDecision|additionalContext|updatedToolOutput}
+// SessionStart: raw stdout text -> context verbatim.
 // Spawns the BUILT dist adapters (same skip-if-unbuilt convention as hooks.test.ts).
 
 import assert from "node:assert/strict";
@@ -106,7 +106,7 @@ testAsync("codebuddy PostToolUse: object-shaped tool_response also parsed", asyn
   assert.ok(parsed.hookSpecificOutput?.updatedToolOutput, "object tool_response should distill too");
 });
 
-// R65 F-09: live CodeBuddy 2.151 sends tool_response as an ARRAY of content
+// live CodeBuddy 2.151 sends tool_response as an ARRAY of content
 // blocks — [{type:"text",text:"<json>"}] — not a string nor {content:[...]}.
 // Before the fix this silently distilled to resultCount:0 and indexed nothing.
 testAsync("codebuddy PostToolUse: array-of-content-blocks tool_response (live shape)", async () => {
@@ -152,7 +152,7 @@ testAsync("codebuddy: unparseable stdin -> silent exit 0", async () => {
 });
 
 // === claude.cjs regression: hook_event_name fix lands on real Claude shape ===
-// R66 ER-2 (live-verified on Claude Code 2.1.251): the host drops every bare
+// ER-2 (live-verified on Claude Code 2.1.251): the host drops every bare
 // top-level decision key — output MUST sit inside hookSpecificOutput.
 testAsync("claude PostToolUse: hook_event_name -> hookSpecificOutput.additionalContext", async () => {
   if (!existsSync(CLAUDE_ADAPTER)) { console.log("    SKIP: dist/hooks/adapters/claude.cjs not built yet"); return; }
@@ -176,7 +176,7 @@ testAsync("claude PostToolUse: legacy event field preserved", async () => {
   assert.ok(JSON.parse(stdout).hookSpecificOutput?.additionalContext);
 });
 
-// === Per-platform hook_event_name closure ( field fix, every adapter) ===
+// === Per-platform hook_event_name closure (field fix, every adapter) ===
 // Each adapter must honor hook_event_name on its own stdin/output shape.
 testAsync("codex PostToolUse: hook_event_name -> envelope additionalContext", async () => {
   const p = join(process.cwd(), "dist", "hooks", "adapters", "codex.cjs");
@@ -186,7 +186,7 @@ testAsync("codex PostToolUse: hook_event_name -> envelope additionalContext", as
     tool_input: { query: "cb" }, tool_response: { results: [{ title: "t", url: "https://x.dev", snippet: "s", source: "x" }] },
     cwd: "/tmp/cb",
   }));
-  // R67 T1: codex 0.142.5 drops bare top-level additionalContext — envelope required.
+  // codex 0.142.5 drops bare top-level additionalContext — envelope required.
   assert.ok(JSON.parse(stdout).hookSpecificOutput?.additionalContext, "codex adapter must emit the envelope on hook_event_name");
 });
 
@@ -205,15 +205,15 @@ testAsync("session-start: hook_event_name SessionStart honored", async () => {
   const p = join(process.cwd(), "dist", "hooks", "session-start.cjs");
   if (!existsSync(p)) { console.log("    SKIP: session-start.cjs not built"); return; }
   const { stdout } = await runHook(p, JSON.stringify({ hook_event_name: "SessionStart", cwd: "/tmp/cb" }));
-  // R66 audit F-03: bare top-level additionalContext is the shared-host default;
+  // audit: bare top-level additionalContext is the shared-host default;
   // Claude gets the envelope only via the generated configs' --envelope flag.
   assert.ok(JSON.parse(stdout).additionalContext?.includes("[anysearch plugin active]"));
 });
 
-// === R65 rework F-A5: array-of-blocks tolerance on the other adapters ===
-// Same F-09 class: codex(tool_response)/cursor(tool_output) now route through
+// === rework F-A5: array-of-blocks tolerance on the other adapters ===
+// Same class: codex(tool_response)/cursor(tool_output) now route through
 // unwrapToolResponse — array shapes must distill, not zero out. The agy leg of
-// this class lives in antigravity-contract.test.ts (R68 audit nit: keep host
+// this class lives in antigravity-contract.test.ts (audit nit: keep host
 // cases in their own file).
 const BLOCKS = [{ type: "text", text: TOOL_RESP }];
 
@@ -239,7 +239,7 @@ testAsync("cursor PostToolUse: array-of-blocks tool_output distills", async () =
   assert.equal(d.resultCount, 2);
 });
 
-// === R65 rework F-A1: template-target executability ===
+// === rework F-A1: template-target executability ===
 // Blind spot closed: earlier tests asserted templates merely HAVE preToolUse
 // keys; nobody checked the target file is a real stdin-reading entrypoint —
 // that's how configs/cursor/hooks.json kept pointing at library files
@@ -258,7 +258,7 @@ testAsync("all configs/*/hooks.json targets resolve to stdin-reading entrypoints
       if (typeof v === "string") {
         const m = v.match(/dist[\\/]hooks[\\/][\w./-]+\.cjs/);
         if (m) targets.push(m[0]);
-        // R66: bin-named commands (ans-hook-*) resolve through package.json bin;
+        // bin-named commands (ans-hook-*) resolve through package.json bin;
         // commands may carry args (e.g. "ans-hook-session-start --envelope").
         else {
           const binName = v.split(" ")[0];

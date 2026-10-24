@@ -14,7 +14,7 @@ type TransformersModule = typeof import("@huggingface/transformers");
 let transformersPromise: Promise<TransformersModule> | null = null;
 let envConfigured = false;
 
-// R71 T1: transformers@3.x ships transformers.node.cjs with
+// transformers@3.x ships transformers.node.cjs with
 // require("onnxruntime-common") as an UNDECLARED external — npm's flat hoisting
 // masks it; pnpm's isolated per-package scopes expose it (spike: pnpm-global
 // arm failed "Cannot find module 'onnxruntime-common'"). Two moves repair it

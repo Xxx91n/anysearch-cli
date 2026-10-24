@@ -1,5 +1,5 @@
 // Live probe: real POST /mcp handshake + tools/call search against the public
-// endpoint (R82 T1 — the CI watershed补课: provider live-search had zero CI
+// endpoint ( — the CI watershed补课: provider live-search had zero CI
 // surface). Runs ONLY under test:online (optional non-blocking CI job);
 // the offline suite never reaches the network.
 // Env semantics unchanged: ANYSEARCH_ENDPOINT / ANYSEARCH_API_KEY win when set

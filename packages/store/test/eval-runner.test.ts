@@ -33,7 +33,7 @@ async function main() {
   assert(Array.isArray(report.metrics.observational?.offlineExcludedGroups) && report.metrics.observational!.offlineExcludedGroups!.includes("semantic"), "offline exclusion is recorded in the observational zone (never silent)");
   assert(report.datasetFingerprint === fp1, "report fingerprint matches dataset");
 {
-  // r110 SP-F-01: consumed track exposes REAL gate numbers + the data-absence signal.
+  // r110 SP-: consumed track exposes REAL gate numbers + the data-absence signal.
   const ob = report.metrics.observational;
   assert(!!ob && ob.track === "consumed", "zone track = consumed (no fixture env)");
   assert(typeof ob!.dataAbsent === "boolean", "dataAbsent marker present");

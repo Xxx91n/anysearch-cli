@@ -27,7 +27,7 @@ try { await createLlmSession({ provider: "openai", model: "this-model-does-not-e
 catch (e: any) { threw2 = true; ok(e.message.includes("not found"), "missing model error says 'not found'"); }
 ok(threw2, "missing model throws");
 
-// Retry after failure succeeds — no cache poisoning ( spec).
+// Retry after failure succeeds — no cache poisoning (spec).
 const s = await createLlmSession({ provider: "openai", model: "gpt-5" });
 ok(s.providerName === "openai" && s.modelName === "gpt-5", "session identity correct");
 ok(typeof s.streamFn === "function", "streamFn bound");

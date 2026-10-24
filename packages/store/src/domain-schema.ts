@@ -1,7 +1,7 @@
 // Domain Schema: typed Active Domain TOML model.
 // Deep-merge semantics transplanted from cc-persona (persona.rs):
-//   [settings] = recursive deep-merge (object keys逐键递归, scalars/arrays replaced)
-//   [prompts], [skills], [sources], [rag], [hooks] = entire section replace
+// [settings] = recursive deep-merge (object keys逐键递归, scalars/arrays replaced)
+// [prompts], [skills], [sources], [rag], [hooks] = entire section replace
 // ref: atomcode-cc-persona-toml research,.
 
 import { FUSION_REGISTRY } from "@anysearch-cli/retriever";
@@ -26,8 +26,8 @@ export interface PromptEntry {
 
 // compaction config for independent summary model.
 // threshold injection — lowWatermark + reuseCap optional, defaults hard-pinned.
-//   lowWatermark: absolute token count (>= 50000) OR {fraction: number} in (0,1) of model window.
-//   reuseCap: consecutive REUSE cap before forcing COMPRESS.
+// lowWatermark: absolute token count (>= 50000) OR {fraction: number} in (0,1) of model window.
+// reuseCap: consecutive REUSE cap before forcing COMPRESS.
 export interface CompactionConfig {
   model?: string; // summary model id (default: cheap model e.g. deepseek-v4-fast)
   lowWatermark?: number | { fraction: number };
@@ -129,7 +129,7 @@ export function resolve(
     if (d.sources?.weights) sourcesWeights = d.sources.weights;
     if (d.sources?.urlAllowlist) sourcesUrlAllowlist = d.sources.urlAllowlist;
     if (d.sources?.urlDenylist) sourcesUrlDenylist = d.sources.urlDenylist;
-    // R83 T1 / D-003: sources.vertical — section-replace like the other
+    // sources.vertical — section-replace like the other
     // sources fields (a derived TOML restates the whole vertical declaration).
     if (d.sources?.vertical) sourcesVertical = d.sources.vertical;
     if (d.rag?.adapter) { ragAdapter = d.rag.adapter; ragConfig = d.rag.config; }
@@ -187,11 +187,11 @@ export function validate(schema: DomainSchema): void {
   if (schema.sources.urlAllowlist !== undefined) assertHostnameList(schema.sources.urlAllowlist, "urlAllowlist");
   // deny channel — first-class, evaluated last, never merged into allow.
   if (schema.sources.urlDenylist !== undefined) assertHostnameList(schema.sources.urlDenylist, "urlDenylist");
-  // R83 T1 / D-006: sources.vertical — shape check only. domain must be a
+  // sources.vertical — shape check only. domain must be a
   // non-empty string; sub_domain when present must be a non-empty string. The
   // domain vocabulary itself stays upstream-owned (unknown values are NOT
   // rejected here — the provider isError + fail-first degrade handles them).
-  // R84 T1 / A-02 ( draft): unknown keys inside sources.vertical are
+  // (draft): unknown keys inside sources.vertical are
   // fail-fast at load (aligned with the MCP schema rejection direction) — a
   // silently dropped key (e.g. a `params` subtable the TOML surface does not
   // carry) is exactly the malformed-silence class this rule exists to kill.

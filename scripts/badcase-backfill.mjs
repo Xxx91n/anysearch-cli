@@ -1,11 +1,11 @@
 // B4/T3: badcase -> golden 回灌闭环。
 //
-//   node scripts/badcase-backfill.mjs --id docs-bc0001 --into docs-g0007
-//     attach 模式：把已观测 badcase 标记为 promoted，回指既有 golden 条目
-//     （同一真实提问的回归证据，不制造重复条目）。
-//   node scripts/badcase-backfill.mjs --id docs-bc0001 --new
-//     create 模式：为新提问生成下一条 docs-gNNNN golden 条目，并自动重算
-//     eval-looks.coverage.json 的 covered 维度计数。
+// node scripts/badcase-backfill.mjs --id docs-bc0001 --into docs-g0007
+// attach 模式：把已观测 badcase 标记为 promoted，回指既有 golden 条目
+// （同一真实提问的回归证据，不制造重复条目）。
+// node scripts/badcase-backfill.mjs --id docs-bc0001 --new
+// create 模式：为新提问生成下一条 docs-gNNNN golden 条目，并自动重算
+// eval-looks.coverage.json 的 covered 维度计数。
 //
 // 禁合成护栏：badcase 必须携带 observed + evidence.command（真实观测），
 // 否则拒绝回灌。完整 schema/词汇/交叉校验由 packages/store/test/

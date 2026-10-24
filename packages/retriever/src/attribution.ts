@@ -11,7 +11,7 @@ export interface AttributionEvidence {
   title?: string;
   provider: string;      // e.g. "exa", "tavily", "anysearch"
   sourceKey: string; // e.g. "retrieval_results[0]" — arms provenance
-  entity?: string; // /0032 entity hit if applicable
+  entity?: string; // 0032 entity hit if applicable
   span?: string;         // snippet text that grounds the claim
 }
 
@@ -28,7 +28,7 @@ export interface AttributionClaim {
   spanEnd?: number;
 }
 
-// D7 unsupported named-gap escalation ( sufficiency-gate bridge).
+// D7 unsupported named-gap escalation (sufficiency-gate bridge).
 export interface GapRequest {
   assertion: string;   // the core assertion that could not be verified
   evidenceState: "no_evidence" | "partial_evidence" | "conflicting_evidence";

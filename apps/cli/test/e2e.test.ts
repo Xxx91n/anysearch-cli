@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-// R16-4: CLI exit-assertion e2e. Spawn the real dist/ bundle and
+// CLI exit-assertion e2e. Spawn the real dist/ bundle and
 // assert process exit codes + minimal stdout invariants. No mocks — this is
 // a public-contract surface. Run after 'build' (dist/index.js must exist).
 
@@ -89,7 +89,7 @@ async function t(name: string, fn: () => Promise<void>) {
   });
 
   await t("chat without LLM env exits 3", async () => {
-    // R83 nit fix: sanitize ambient ANS_LLM_* — the test asserts the
+    // nit fix: sanitize ambient ANS_LLM_* — the test asserts the
     // no-LLM-env behavior, so a developer machine with a configured provider
     // must not leak it into the child process.
     const cleanEnv = { ...process.env };
@@ -115,8 +115,8 @@ async function t(name: string, fn: () => Promise<void>) {
     assert.equal(r.code, 1);
   });
 
-  // R84 T1 / A-02: malformed vertical input is fail-fast at the CLI boundary —
-  // aligned with the MCP schema-rejection direction ( draft).
+  // malformed vertical input is fail-fast at the CLI boundary —
+  // aligned with the MCP schema-rejection direction (draft).
   await t("search --vertical-domain '' exits 2 (empty domain)", async () => {
     const r = await run(["search", "q", "--vertical-domain", ""]);
     assert.equal(r.code, 2);
@@ -151,7 +151,7 @@ async function t(name: string, fn: () => Promise<void>) {
     const r = await run(["search", "q", "--vertical-params", "{\"type\":\"earnings\"}"]);
     assert.equal(r.code, 2);
     assert.match(r.out, /require --vertical-domain/);
-    // R88 T3 / ③: golden — the require-domain error line is
+    // ③: golden — the require-domain error line is
     // byte-identical across the a06 consolidation (assertion carrier for
     // the frozen error shape; exact line, not a regex window).
     assert.ok(
@@ -169,7 +169,7 @@ async function t(name: string, fn: () => Promise<void>) {
     );
   });
 
-  // R88 T2 / (a03): positional flag-value consumption — a query term
+  // positional flag-value consumption — a query term
   // identical to a flag value must survive; the old flagValueSet heuristic
   // swallowed it via set-membership removal. --json echoes the cleaned query.
   await t("search q finance --vertical-domain finance keeps the query word (a03 no-swallow)", async () => {
@@ -183,14 +183,14 @@ async function t(name: string, fn: () => Promise<void>) {
     assert.match(r.out, /"mode": "deep"/);
   });
 
-  // R88 audit: the spec's literal case — lone word identical to the flag value
+  // audit: the spec's literal case — lone word identical to the flag value
   // collapses under the old heuristic (query would be empty), survives now.
   await t("search --vertical-domain finance finance keeps the lone identical word (a03 spec case)", async () => {
     const r = await run(["search", "--vertical-domain", "finance", "finance", "--json"]);
     assert.match(r.out, /"query": "finance"/);
   });
 
-  // R84 rework (audit F1 / addendum): the TOML leg of A-02 —
+  // rework (audit F1 / addendum): the TOML leg of —
   // a domain file with a malformed sources.vertical must fail fast at the
   // user surface (explicit error, non-zero exit), not silently fall back to
   // full-fanout with the whole domain dropped.

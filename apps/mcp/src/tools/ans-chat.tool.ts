@@ -19,7 +19,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
   async function getLlmSession(): Promise<LlmSession> {
     const providerName = process.env.ANS_LLM_PROVIDER ?? "";
     const modelName = process.env.ANS_LLM_MODEL ?? "";
-    // R65 F-11: thread the custom-endpoint env trio like apps/cli chat.ts:40-47 —
+    // thread the custom-endpoint env trio like apps/cli chat.ts:40-47 —
     // ANS_LLM_BASE_URL/ANS_LLM_API/ANS_LLM_API_KEY must reach createLlmSession on
     // the MCP path too, else the configured v1/chat upstream is unreachable.
     const baseUrl = process.env.ANS_LLM_BASE_URL;
@@ -77,7 +77,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
             streamFn: session.streamFn,
             models: session.models,
             getApiKey: async () => session.apiKey,
-            // (R62 T7): one-line observation wiring — the ans_chat span
+            // one-line observation wiring — the ans_chat span
             // receives the engine's retrieval.domain_filter.* audit events.
             span,
           });

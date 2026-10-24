@@ -1,8 +1,8 @@
-// R62 D-006 (T6): eval-looks golden executor — OFFLINE stub layer (blocking).
+// (T6): eval-looks golden executor — OFFLINE stub layer (blocking).
 // Entries with scope stub|both are replayed through RetroaererdEngine with stub
 // providers + the real domain policy. Fixtures come from the OBSERVED badcase
 // scene (eval-badcases.json observed.* / documented scenes) — NEVER from
-// expected.*, which would make the assertion self-fulfilling (D-006 hard ban).
+// expected.*, which would make the assertion self-fulfilling (hard ban).
 // The live layer (store test/online/eval-looks-live.online.ts) re-checks the
 // same entries against real providers; scope has no default — every entry must
 // declare stub|live|both explicitly.
@@ -62,7 +62,7 @@ const coldPolicy = (): UrlPolicy => ({ allow: ["nonexistent.invalid"], deny: [],
 // Off-domain host pool for replays (all outside every shipped allowlist).
 const OFFDOMAIN = ["zhihu.com", "www.cnblogs.com", "csdn.net", "tokio.rs", "kubernetes.io", "stackoverflow.com"];
 
-// --- R84 T1 / draft: vertical-eval stub layer -----------------------
+// --- / draft: vertical-eval stub layer -----------------------
 // Vertical entries (vert-*/ctrl-* ids) replay the legislated wire/marker/
 // degraded semantics through stub providers — the OFFLINE truth layer for
 // expected.vertical{domain,sub_domain,paramsKeys,paramsSent,hit,degraded}.
@@ -161,9 +161,9 @@ function scenarioFor(e: any): Scenario | null {
 async function main() {
   const entries: any[] = looks.golden.entries;
 
-  // Schema: explicit scope on every entry — no default fallback (D-006).
+  // Schema: explicit scope on every entry — no default fallback.
   // golden.scopes is a sidecar map (entry-id -> scope): explicit per-entry scope
-  // without interleaving into r61-owned entry lines. R95 T1 /: a
+  // without interleaving into r61-owned entry lines. /: a
   // tombstoned cell left the measurable set by design — it holds NO scope (the
   // stable "out of the measurable set" marker is scope absence + the tombstone
   // block; a stale scope would silently keep the cell selectable).
@@ -191,7 +191,7 @@ async function main() {
     if (!sc) continue;
     const { sink, events } = fakeSink();
     const eng = new RetroaererdEngine(sc.providers, { urlPolicy: sc.policy, domainName: e.domain });
-    // R84 T1: vertical entries inject their spec at the query level — same
+    // vertical entries inject their spec at the query level — same
     // surface as the CLI --vertical-* flags.
     const env = await eng.search({ query: e.question, mode: "fast", ...(e.vertical ? { vertical: e.vertical } : {}), span: sink });
     if (e.expected.verdict === "abstain") {
@@ -204,7 +204,7 @@ async function main() {
       assert(env.metadata.abstain === undefined, e.id + " answer verdict has no abstain marker");
       assert(env.results.length >= (e.expected.minResults ?? 1), e.id + " meets minResults structure");
     }
-    // R84 T1 / draft: expected.vertical assertion surface. Offline the
+    // draft: expected.vertical assertion surface. Offline the
     // semantics are deterministic — control entries assert hard here too (the
     // soft/degraded treatment is live-leg only, where upstream can drift).
     const vexp = e.expected?.vertical;

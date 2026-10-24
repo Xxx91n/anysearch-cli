@@ -1,4 +1,4 @@
-// (R62 T3) / R62 D-002: guarded optional-embedding arm — when
+// guarded optional-embedding arm — when
 // @anysearch-cli/embedding is absent from the install closure the vector arm
 // degrades to a legal FTS-only state: embedText ≡ null, telemetry reports
 // absent:true with zero counters, writes stay fail-open (pendingVectors
@@ -55,7 +55,7 @@ async function main() {
   assert((await armTelemetry()).absent === false && (await armTelemetry()).embeds === 1, "present arm telemetry passthrough");
   assert((await embeddingModelId()) === "test-model", "model id passthrough");
 
-  // 5. R71 T1: sibling-root fallback — pnpm-style isolated global
+  // 5.: sibling-root fallback — pnpm-style isolated global
   // node_modules roots. <tmp>/global/v11/<hashA>/node_modules/@anysearch-cli/cli
   // holds the invoked entry; <hashB>/node_modules/@anysearch-cli/embedding is the
   // sibling package that bare-specifier resolution cannot reach.
@@ -84,7 +84,7 @@ async function main() {
   assert(fb2 === null || (fb2.EMBEDDING_MODEL_ID as string) !== "stub-e5",
     "empty anchor does not resolve the synthetic stub");
 
-  // 5b. R71-audit F1: a resolved-but-broken sibling copy must stay absent,
+  // 5b. -audit F1: a resolved-but-broken sibling copy must stay absent,
   // not throw — and must not veto the next candidate. "00000000" sorts
   // before "bbbbbbbb" in the child-dir scan, so the broken copy is hit first.
   const brokenDir = join(g, "00000000", "node_modules", "@anysearch-cli", "embedding");

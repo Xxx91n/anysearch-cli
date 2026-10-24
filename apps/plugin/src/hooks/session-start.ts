@@ -36,7 +36,7 @@ async function main(): Promise<void> {
   ensureMdc(cwd, ".cursor");
 
   // Output routing card as additionalContext for the host agent.
-  // Host contract split (R66 F-03 + R67 T1): both Claude Code and Codex require
+  // Host contract split ( + ): both Claude Code and Codex require
   // the hookSpecificOutput envelope — Codex drops bare { additionalContext }
   // ~80% of the time on the real host (verified 0.142.5). `--envelope` is
   // passed by the generated Claude and Codex configs. Cursor / Antigravity keep

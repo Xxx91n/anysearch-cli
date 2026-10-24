@@ -2,7 +2,7 @@
 // Deterministic core; LLM only behind injected seams (summarize / classify). Fail-open:
 // summarize null or absent -> cluster skipped (llmUnavailable); classify absent -> semantic row
 // written at LOW_CONFIDENCE (0.2), never blocks the write.
-// atomcode research (r93): dry-run = BEGIN IMMEDIATE + ROLLBACK exact prediction ( r87
+// atomcode research (r93): dry-run = BEGIN IMMEDIATE + ROLLBACK exact prediction (r87
 // pattern); no RETURNING inside a transaction touching FTS5 content tables (better-sqlite3 #654)
 // -> inserts use lastInsertRowid.
 
@@ -11,10 +11,10 @@ import { embedText, cosineSimilarity } from "./embedding-arm.js";
 import { classifyTier, TAU_TIER } from "./time-decay.js";
 
 export const THETA_DUP = 0.90;           // D4/D7: NOOP boundary; golden boundary case pins <, =, >
-// R63 T1 (D-002): NOOP boundary for the jaccard-only degraded path (embedding absent).
+// NOOP boundary for the jaccard-only degraded path (embedding absent).
 // Calibrated on the golden dataset 2026-09-15: distinct stub summaries jac=0.000, identical
 // rerun=1.000, contradiction-pair ceiling=0.714 (update path must stay reachable). 0.80 sits
-// inside the D-002 conservative band 0.7-0.85 with margin over the 0.714 ceiling.
+// inside the conservative band 0.7-0.85 with margin over the 0.714 ceiling.
 // NOT the 0.4 update gate: update = bestJac>0.4 AND contradiction; noop-jac = bestJac>0.80
 // alone (near-verbatim dup). Lossy by construction — catches lexical dups, misses paraphrase;
 // the embedding path remains the dedup authority when present.
@@ -59,7 +59,7 @@ export interface ConsolidateReport {
   add: number;
   noop: number;
   update: number;
-  // R63 T1 (D-002): dedup decisions made on the jaccard-only degraded path (no cosine
+  // dedup decisions made on the jaccard-only degraded path (no cosine
   // computable — arm absent or no live row carries an embedding). Never silent.
   embeddingAbsent: number;
   semanticIds: number[];
@@ -118,7 +118,7 @@ export type ConsolidateOp = "add" | "noop" | "update";
 
 // D4/D7 ops-quadruple decision as a pure function so the 0.90 boundary is unit-testable without
 // float32 cosine noise (integration covers the real cosine end-to-end).
-// R63 T1 (D-002): bestCos === null marks the degraded path — no cosine was computable (embedding
+// bestCos === null marks the degraded path — no cosine was computable (embedding
 // arm absent, or no live row carries an embedding). Jaccard becomes the sole dedup signal and
 // bestJac > thetaJac decides noop. Ordering mirrors the cosine path: noop before update, so a
 // near-verbatim contradiction is still a noop (the 0.714 ceiling is why thetaJac > 0.72).
@@ -213,7 +213,7 @@ export async function consolidateMemoryRun(
       }
 
       // Embedding seam (fail-open): NULL embedding still inserts; dedup falls back to jaccard
-      // (R63 T1: that fallback now decides noop via THETA_JAC — see decideOp).
+      // (: that fallback now decides noop via THETA_JAC — see decideOp).
       const emb = await embedText(summary, "passage");
       const embBuf = emb ? Buffer.from(emb.buffer, emb.byteOffset, emb.byteLength) : null;
 
@@ -223,7 +223,7 @@ export async function consolidateMemoryRun(
       let best: SemanticRow | null = null;
       let bestCos = 0;
       let bestJac = 0;
-      let sawCos = false; // R63 T1: at least one cosine actually computed this scan
+      let sawCos = false; // at least one cosine actually computed this scan
       const sumTokens = tokenize(summary);
       for (const l of lives) {
         const jac = jaccard(sumTokens, tokenize(l.content));

@@ -1,9 +1,9 @@
-// B2/T2 + (R63 T5): real install-to-use lane — pack the PUBLISHED
+// B2/T2 +: real install-to-use lane — pack the PUBLISHED
 // packages (3 apps + the peer-optional embedding), npm-install the APP tarballs only
 // into a clean temp prefix (consumer-real: bundled internals never ship), then drive
 // the INSTALLED `ans` bin through --version / doctor / domain docs / doctor / search.
 // A second leg co-installs the embedding tarball and asserts peer resolution + the
-// doctor vector-arm line flipping from absent-SKIP to present (D-005).
+// doctor vector-arm line flipping from absent-SKIP to present.
 //
 // Online leg: when EXA_API_KEY or TAVILY_API_KEY is set, the script hard-asserts
 // that a real search returns >=1 result AND that at least one result URL lands on
@@ -12,7 +12,7 @@
 // and asserts the documented abstain contract on `search --json` stdout under a
 // probe domain whose sources.enabled is [anysearch] alone —
 // abstain:true && providersFailed∋anysearch && results.length===0 (
-// R62 D-004: abstain exit 0 replaces the retired exit-1/Results:0 contract).
+// abstain exit 0 replaces the retired exit-1/Results:0 contract).
 // The offline golden lane is the committed
 // packages/store/test/eval-docs-golden.test.ts suite inside `turbo test`.
 //
@@ -34,7 +34,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
-// R63 T5 (D-005): the publish set. kernel/store/retriever are bundled into the apps'
+// the publish set. kernel/store/retriever are bundled into the apps'
 // dist (build-time devDependencies) and are never published or installed.
 const PACK_DIRS = [
   "apps/cli",
@@ -77,7 +77,7 @@ try {
   check("pack produced " + PACK_DIRS.length + " tarballs", tgz.length === PACK_DIRS.length, tgz.join(","));
   check("no stale 0.0.0 tarball", tgz.every((f) => !f.includes("0.0.0")), tgz.join(","));
 
-  // 2. Clean install into the temp prefix — R63 T5 (D-005): consumer-real shape.
+  // 2. Clean install into the temp prefix —: consumer-real shape.
   // Only the three APP tarballs are installed; bundled internals are not on npm at
   // all, and @anysearch-cli/embedding is an optional PEER (peerDependenciesMeta.optional)
   // so npm does not auto-install it — no --omit=optional knob needed. (No --no-save:
@@ -103,7 +103,7 @@ try {
 
   const d1 = ans("doctor");
   check("installed doctor exit 0", d1.code === 0, d1.out);
-  // R62 D-002: arm-absent telemetry is a doctor-visible SKIP, not a failure.
+  // arm-absent telemetry is a doctor-visible SKIP, not a failure.
   check("doctor reports vector arm status", d1.out.includes("vector arm"), d1.out.slice(-600));
   check("doctor shows [5] Domains", d1.out.includes("[5] Domains"), d1.out.slice(-400));
   check("doctor lists docs domain", d1.out.includes("docs"), d1.out.slice(-400));
@@ -115,9 +115,9 @@ try {
   const d2 = ans("doctor");
   check("doctor shows active domain docs", d2.out.includes("active: docs"), d2.out.slice(-400));
 
-  // 3b. R63 T5 (D-005): peer-optional dual-install — npm i cli + embedding into one
+  // 3b.: peer-optional dual-install — npm i cli + embedding into one
   // prefix lands both under the same node_modules root, and the app's bundled
-  // import("@anysearch-cli/embedding") resolves ( pack+install verification).
+  // import("@anysearch-cli/embedding") resolves (pack+install verification).
   const embTgz = tgz.find((f) => f.startsWith("anysearch-cli-embedding-"));
   check("embedding tarball packed for peer leg", !!embTgz, tgz.join(","));
     // --omit=optional skips the heavy transformers/onnxruntime subtree — the peer leg
@@ -133,7 +133,7 @@ try {
   const d3 = ans("doctor");
   check("doctor shows vector arm present after peer install", d3.code === 0 && !/embedding absent/.test(d3.out), d3.out.slice(-400));
 
-  // 3c. R71 T1: pnpm-layout leg — isolated sibling node_modules
+  // 3c.: pnpm-layout leg — isolated sibling node_modules
   // roots. pnpm add -g installs each top-level package in its own
   // <prefix>/global/v11/<hash>/node_modules tree, so the bundled
   // import("@anysearch-cli/embedding") cannot reach the sibling package — the
@@ -171,12 +171,12 @@ try {
     check("search returns results", /Results: [1-9]/.test(s.out), s.out.slice(-400));
     check("a result lands on the docs urlAllowlist", ALLOWLIST.some((h) => s.out.includes(h)), s.out.slice(-400));
   } else {
-    // R62 D-004: hermetic abstain leg. tavily/exa construct keyless (their
+    // hermetic abstain leg. tavily/exa construct keyless (their
     // factories never throw), so "no keys" does NOT mean "only the anysearch
     // arm" — a probe domain narrows sources.enabled to [anysearch] explicitly,
     // and a dead port fault-injects that arm. Zero external network is touched,
     // in any network condition. Assertions anchor structured --json fields, not
-    // the exit code (R62 D-003 teardown rewrites it intermittently) — abstain
+    // the exit code (teardown rewrites it intermittently) — abstain
     // is the contract; the exit-1/Results:0 shape is retired.
     const probeDir = join(dir, "probe-domains");
     mkdirSync(probeDir, { recursive: true });

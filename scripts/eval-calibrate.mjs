@@ -6,7 +6,7 @@
 // (this script is NOT wired into ship-gate); exit 2 = setup failure (too few labels / judge data).
 //
 // Usage (real-time judge mode): JUDGE_API_KEY=... node scripts/eval-calibrate.mjs
-//                          [--out .ship-gate/calibration-report.json] [--boot 5000] [--min-labeled 30]
+// [--out .ship-gate/calibration-report.json] [--boot 5000] [--min-labeled 30]
 // Deterministic mode: --human 1,0,... --judge 0,1,... skips set loading and endpoint calls.
 import fs from "node:fs";
 import path from "node:path";

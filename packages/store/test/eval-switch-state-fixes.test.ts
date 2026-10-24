@@ -1,9 +1,9 @@
 // r116 fixer test wrapper. Covers:
-//   F1 chain-wins rebuild (replaces quarantine loop with ledger recovery)
-//   F2 legacy stage-transition/rollback/freeze rows fail loud
+// F1 chain-wins rebuild (replaces quarantine loop with ledger recovery)
+// F2 legacy stage-transition/rollback/freeze rows fail loud
 // F3 superseded on-chain by eval-ship-gate-integrity.test.mjs
-//   F4 stale lock recovery (malformed JSON reaped)
-//   D6 mutation: changing registered fields changes the digest
+// F4 stale lock recovery (malformed JSON reaped)
+// D6 mutation: changing registered fields changes the digest
 import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -80,7 +80,7 @@ try {
     rmSync(dir, { recursive: true, force: true });
   }
 
-  // R63 release-gate edge: replaySwitchChain on an existing file without chain tables
+  // release-gate edge: replaySwitchChain on an existing file without chain tables
   // (observation-layer created the shared durable DB) must return null, not throw.
   {
     const dir = mkdtempSync(join(tmpdir(), "ans-r63-obs-"));
@@ -95,7 +95,7 @@ try {
     rmSync(dir, { recursive: true, force: true });
   }
 
-  // R63 corruption half of the same edge: chain tables present but access_events gone
+  // corruption half of the same edge: chain tables present but access_events gone
   // must still fail closed.
   {
     const dir = mkdtempSync(join(tmpdir(), "ans-r63-corrupt-"));

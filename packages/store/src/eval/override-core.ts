@@ -80,7 +80,7 @@ function latestEvent(events: readonly OverrideGovernanceEvent[], predicate: (eve
   return undefined;
 }
 
-//:
+//
 // - one override per epoch;
 // - an outstanding LATE obligation blocks the next override;
 // - late acknowledgement is once per epoch and never marks the postmortem complete.

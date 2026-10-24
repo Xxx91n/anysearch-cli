@@ -6,14 +6,14 @@
 // store package because pnpm does not hoist it to the root).
 //
 // Spec (verbatim from):
-//   chain fields   = ["accessed_at","event_type","id","memory_id","prev_hash","schema_version","source_label"]
-//   legacy fields  = ["accessed_at","id","memory_id"]
-//   canonical JSON = JSON.stringify of an object literal whose keys are inserted in the fixed
-//                    order above (ASCII lexicographic = RFC 8785 key order for this closed schema)
-//   event hash     = sha256 hex of the canonical JSON
-//   legacy digest  = sha256 hex over concat of (legacyRowCanonicalJson + "\n") in id order
-//   genesis_hash   = sha256 hex of "access-chain-genesis:" + digest
-//   first chained row carries prev_hash = genesis_hash; every later row chains on the prior hash
+// chain fields = ["accessed_at","event_type","id","memory_id","prev_hash","schema_version","source_label"]
+// legacy fields = ["accessed_at","id","memory_id"]
+// canonical JSON = JSON.stringify of an object literal whose keys are inserted in the fixed
+// order above (ASCII lexicographic = RFC 8785 key order for this closed schema)
+// event hash = sha256 hex of the canonical JSON
+// legacy digest = sha256 hex over concat of (legacyRowCanonicalJson + "\n") in id order
+// genesis_hash = sha256 hex of "access-chain-genesis:" + digest
+// first chained row carries prev_hash = genesis_hash; every later row chains on the prior hash
 //
 // Exit codes (D5): 0 = whole chain verifies; 1 = proven negative / broken / malformed / unknown
 // schema_version; 2 = no database (caller maps to explicit skip + ledger). Never sampled (full

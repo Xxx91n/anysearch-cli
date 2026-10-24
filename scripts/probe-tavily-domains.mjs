@@ -8,7 +8,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 const NL = String.fromCharCode(10);
-const OUT_DIR = join(process.cwd(), ".scratch", "grill-round-62"); // R63 T4/F-3: r61 originals are SKIPPED-tagged — a rerun must not overwrite them
+const OUT_DIR = join(process.cwd(), ".scratch", "grill-round-62"); // r61 originals are SKIPPED-tagged — a rerun must not overwrite them
 const KEY = process.env.TAVILY_API_KEY;
 const HOST = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ""; } };
 const inDomain = (u, allow) => { const h = HOST(u); return allow.some((e) => h === e || h.endsWith("." + e)); };
@@ -59,8 +59,8 @@ if (!KEY) {
       const walk = (o) => { if (!o || typeof o !== "object") return; if (typeof o.url === "string") urls.push(o.url); for (const v of Object.values(o)) walk(v); };
       walk(r.json);
       const leaks = urls.filter((u) => !inDomain(u, ["pnpm.io"]));
-      // R62 T8 honesty fix: 0 extracted sources is vacuous, not a pass — the
-      // /research response shape returned no url fields this run, so the arm
+      // honesty fix: 0 extracted sources is vacuous, not a pass — the
+      // research response shape returned no url fields this run, so the arm
       // records INCONCLUSIVE with the response keys for later review instead
       // of overstating leakage assurance.
       const dStatus = urls.length === 0 ? "INCONCLUSIVE" : (leaks.length ? "LEAK" : "PASS");

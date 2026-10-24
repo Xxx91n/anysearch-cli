@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS resume_anchors (
 -- Historical anchors (rolling_summary, query, fetch, sufficiency) remain append-only.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_anchors_state_unique ON resume_anchors(session_id, anchor_type) WHERE anchor_type = 'consolidation_state';
 
--- Budget Ledger: Mole reserve-then-settle pattern ( decision 4).
+-- Budget Ledger: Mole reserve-then-settle pattern (decision 4).
 -- Non-negative constraints in DB schema layer (not application layer).
 -- Budget = resource consumption, belongs to store layer (not kernel).
 -- Three dimensions: token-cap / usd-cap / time-limit.

@@ -1,4 +1,4 @@
-// recall_memory tool: FTS5 with time edge effect + project index fallback ( two-stage).
+// recall_memory tool: FTS5 with time edge effect + project index fallback (two-stage).
 // input validated by AJV from KernelToolSchemas; handler reads typed args.
 
 import type { McpServer } from "@modelcontextprotocol/server";

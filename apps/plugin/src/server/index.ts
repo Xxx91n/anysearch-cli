@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Anysearch Plugin Server: long-running process for hooks IPC.
-// Decision 1: hooks core handler不碰SQLite. 写库收敛到长驻server进程.
+// hooks core handler不碰SQLite. 写库收敛到长驻server进程.
 // Endpoints:
-//   POST /recall — search project index (for preheat)
-//   POST /index — write entries to project index (for PostToolUse distill)
-//   GET  /health — liveness check
-//   POST /purge — purge project index for a project path
+// POST /recall — search project index (for preheat)
+// POST /index — write entries to project index (for PostToolUse distill)
+// GET /health — liveness check
+// POST /purge — purge project index for a project path
 // Bearer token auth on all endpoints.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -15,7 +15,7 @@ import { resolveServerToken } from "./token.js";
 
 const PORT = Number(process.env.ANS_SERVER_PORT || 33333);
 const HOST = process.env.ANS_SERVER_HOST || "127.0.0.1";
-// (T-6.3): the server never runs open. ANS_SERVER_TOKEN wins; when unset a 256-bit
+// the server never runs open. ANS_SERVER_TOKEN wins; when unset a 256-bit
 // token is generated and persisted to .anysearch-cli/server-token (0600) for the local hooks.
 const RESOLVED_TOKEN = resolveServerToken();
 const TOKEN = RESOLVED_TOKEN.token;
@@ -27,7 +27,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { domainTomlPath, emitConfigChangeAudit, loadPolicyFromToml, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type UrlPolicy } from "@anysearch-cli/store";
-// D-003: parseAndValidateHeaders lives in the hook bundle module so
+// parseAndValidateHeaders lives in the hook bundle module so
 // the wire format stays single-source across hook outbound and server inbound.
 import { parseAndValidateHeaders } from "../hooks/propagation.js";
 mkdirSync(dirname(DB_PATH), { recursive: true });
@@ -39,7 +39,7 @@ const POLICY_CACHE = join(process.cwd(), ".anysearch-cli", "policy.json");
 const OBS_DB = process.env.ANS_DB_PATH ||
   join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");
 
-// D-007 / supplement: on startup, if the policy server is
+// supplement: on startup, if the policy server is
 // unreachable (TOML missing/unreadable), boot from the disk cache and WARN
 // rather than refusing to start. The materialized_at timestamp on the cache
 // lets operators audit staleness; the policy itself remains in effect.
@@ -70,7 +70,7 @@ let envIgnoredAudited = false; // D7: config:env_override_ignored once per sessi
 
 const store = new ProjectIndexStore(DB_PATH);
 
-// (T-6.3): constant-time bearer compare. A wrong-length token is rejected without
+// constant-time bearer compare. A wrong-length token is rejected without
 // walking the bytes, so a caller cannot learn a prefix from response timing.
 function authed(req: IncomingMessage): boolean {
   const auth = req.headers.authorization;
@@ -81,7 +81,7 @@ function authed(req: IncomingMessage): boolean {
   return timingSafeEqual(presented, expected);
 }
 
-// (T-6.3): a browser page on any origin can reach 127.0.0.1, so the server refuses a
+// a browser page on any origin can reach 127.0.0.1, so the server refuses a
 // non-loopback Host (DNS-rebinding) or a non-loopback Origin (cross-site). A native client sends
 // no Origin - those stay allowed.
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
@@ -99,7 +99,7 @@ function originIsLoopback(origin: string | undefined): boolean {
   }
 }
 
-// (T-6.3): hard body cap - refuse rather than buffer an unbounded body.
+// hard body cap - refuse rather than buffer an unbounded body.
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = "";
@@ -124,7 +124,7 @@ function readBody(req: IncomingMessage): Promise<string> {
 }
 
 const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-  // (T-6.3): 403-before-401. Host/Origin rejection is a trust-boundary decision and
+  // 403-before-401. Host/Origin rejection is a trust-boundary decision and
   // must precede the auth challenge (Resilio model), so a cross-site caller never learns whether a
   // token would have been accepted. CORS is reflected for loopback origins only - never "*".
   const reqOrigin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
@@ -179,7 +179,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (policy.policyVersion !== currentPolicyVersion) {
         const before = currentPolicyVersion;
         currentPolicyVersion = policy.policyVersion;
-        // D-003 server path: extract traceId/sessionId from inbound
+        // server path: extract traceId/sessionId from inbound
         // headers so the audit row links back to the same logical request the
         // caller initiated. traceparentValid=false means the client sent garbage;
         // parseAndValidateHeaders already substituted a fresh random traceId.
@@ -193,7 +193,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         });
       }
       const body = { allow: policy.allow, deny: policy.deny, policy_version: policy.policyVersion };
-      // D-007: writePolicyCache stamps materialized_at alongside the
+      // writePolicyCache stamps materialized_at alongside the
       // policy body so the hook fallback can surface staleness.
       writePolicyCache(POLICY_CACHE, policy);
       res.writeHead(200, { "Content-Type": "application/json" });

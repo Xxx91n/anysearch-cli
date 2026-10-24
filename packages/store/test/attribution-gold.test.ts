@@ -72,7 +72,7 @@ assert.notEqual(sampleFingerprint(memoryVersion), sampleFingerprint(samples), "i
 assert.notEqual(sampleFingerprint([unlabeled as AttributionGoldSample, samples[1]!]), sampleFingerprint(samples), "explicit instance enters the fingerprint; absent keeps the legacy @1 canonical form");
 // Audit-only: instance must not touch beta fitting inputs.
 assert.deepEqual(binaryFitSamples(memoryVersion, labels).fit, binaryFitSamples(samples, labels).fit, "fit is instance-blind");
-// @1 records upcast losslessly to @2 ( precedent + audit).
+// @1 records upcast losslessly to @2 (precedent + audit).
 const legacy = parseSampleLines(JSON.stringify({ schema: "anysearch/attribution-gold-sample@1", claimId: "c9", claimText: "x", fusedScore: 0.5 }));
 assert.equal(legacy.errors.length, 0, "@1 records parse after the lossless upcast");
 assert.equal(legacy.samples.length, 1, "upcast preserves the record");

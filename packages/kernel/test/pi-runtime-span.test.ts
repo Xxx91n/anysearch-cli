@@ -1,4 +1,4 @@
-// R62 D-011 (T7): PiAgentRuntimeOptions.span pass-through — the caller
+// (T7): PiAgentRuntimeOptions.span pass-through — the caller
 // observation span reaches every search Query inside the agent loop, so the
 // engine's retrieval.domain_filter.pre/post audit events + anysearch.outcome
 // dimension land inside the caller's span events_json (ans_chat = third

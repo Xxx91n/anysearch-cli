@@ -1,4 +1,4 @@
-// + (D-005): the DEFAULT suite is fully stubbed and offline-hermetic.
+// +: the DEFAULT suite is fully stubbed and offline-hermetic.
 // The real-model (network) path lives in test/online/embedding.online.ts, which the default
 // `test` glob (**/*.test.ts|mjs) deliberately does NOT match - see package.json test:online.
 import assert from "node:assert";

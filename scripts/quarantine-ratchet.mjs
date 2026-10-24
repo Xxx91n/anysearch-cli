@@ -1,13 +1,13 @@
-// R63 T3 (D-003): quarantine ratchet — the live-drift quarantine set may only ever SHRINK.
+// quarantine ratchet — the live-drift quarantine set may only ever SHRINK.
 //
 // Three hard assertions over packages/store/eval-quarantine.json against the frozen baseline
 // (eval-quarantine.baseline.json — the 10 ids ratified 2026-09-15):
-//   1. entries ⊆ baseline ids — a new quarantined case is publish-red (新增即红).
-//   2. every entry.renewals === 0 — a renewal is publish-red (续期即红).
-//   3. an entry past expiresAt with no promote/retire/longterm ruling RECORD is publish-red —
-//      TTL expiry forces a ruling; a bare retired/longterm flag never satisfies it. The ledger
-//      API co-writes flag + review record, so a flag without its record (drift by hand-edit)
-//      is itself red. "longterm" (permanent known-issue) is capped at 1 use across flag ∪ record.
+// 1. entries ⊆ baseline ids — a new quarantined case is publish-red (新增即红).
+// 2. every entry.renewals === 0 — a renewal is publish-red (续期即红).
+// 3. an entry past expiresAt with no promote/retire/longterm ruling RECORD is publish-red —
+// TTL expiry forces a ruling; a bare retired/longterm flag never satisfies it. The ledger
+// API co-writes flag + review record, so a flag without its record (drift by hand-edit)
+// is itself red. "longterm" (permanent known-issue) is capped at 1 use across flag ∪ record.
 // Dates fail closed: an unparseable `now` or `expiresAt` is an error, never a skip.
 // Pure function so ship-gate and the fixture test share one implementation.
 export function checkQuarantineRatchet(ledger, baselineIds, now) {

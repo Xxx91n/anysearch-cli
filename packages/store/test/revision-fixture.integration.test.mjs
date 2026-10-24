@@ -1,5 +1,5 @@
 // deterministic recorded-pairs fixture judge + unknown-schema fail + gold diff.
-// R70 T1 (jitter spike): spawnSync carries an explicit timeout — a
+// (jitter spike): spawnSync carries an explicit timeout — a
 // CPU-starved child fails fast with an ETIMEDOUT signature instead of an
 // unbounded synchronous hang (--test-timeout cannot preempt spawnSync).
 import assert from "node:assert";
@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const script = path.join(repoRoot, "scripts", "eval-calibrate-fixture.mjs");
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "ans-calibration-fixture-"));
-// R70 audit F6: an ETIMEDOUT throw skips the tail rmSync — clean on exit instead.
+// audit F6: an ETIMEDOUT throw skips the tail rmSync — clean on exit instead.
 process.on("exit", () => { try { fs.rmSync(temp, { recursive: true, force: true }); } catch { } });
 const fixture = path.join(temp, "fixture.json");
 const out = path.join(temp, "report.json");

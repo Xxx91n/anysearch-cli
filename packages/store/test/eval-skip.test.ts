@@ -17,7 +17,7 @@ assert(skip("e", "infra-failure").tier === "infra-failure", "tier infra-failure"
 assert(isSkip(s1) && !isSkip({ status: "ok" }) && !isSkip(null), "isSkip guard");
 assert(skipKey("bgnbd", s1) === "bgnbd|gate-not-met|T# blocked", "skipKey = metric|tier|reason with numerics normalized (SA-F-02)");
 
-// r110 SA-F-03: corrupt/unknown ledgers FAIL LOUD (never silently cleared). Callers
+// r110 SA-: corrupt/unknown ledgers FAIL LOUD (never silently cleared). Callers
 // quarantine the file aside; parse itself throws SkipLedgerError.
 function assertThrows(label: string, fn: () => void) { try { fn(); assert(false, label + " should throw"); } catch { passed++; } }
 assertThrows("corrupt ledger JSON throws", () => parseSkipLedger("not json"));
@@ -60,12 +60,12 @@ assert(recordSkips(l2, ["bgnbd|gate-not-met|T1: x"], "t5") === 2 && !skipMustFai
 assert(recordSkips(emptySkipLedger(), ["k"], "t6") === 1, "default meta = consumed + gate-not-met (legacy callers unchanged)");
 assert(emptySkipLedger().schema === "anysearch/gain-ledger@3", "new ledgers are @2");
 
-// ---- r110 SA-F-02: skip-key identity excludes volatile numerics ----
+// ---- r110 SA-: skip-key identity excludes volatile numerics ----
 assert(skipKey("bgnbd", skip("T2: PSI 0.2511 >= 0.25", "gate-not-met")) === skipKey("bgnbd", skip("T2: PSI 0.3099 >= 0.25", "gate-not-met")), "PSI value variation does not change the clause identity");
 assert(skipKey("bgnbd", skip("T1: 299 active rows / 120 fittable units < 300/100", "gate-not-met")) === skipKey("bgnbd", skip("T1: 12 active rows / 3 fittable units < 300/100", "gate-not-met")), "row-count variation does not change the clause identity");
 assert(skipKey("bgnbd", skip("T2: PSI 0.3 >= 0.25", "gate-not-met")) !== skipKey("bgnbd", skip("T3: window short", "gate-not-met")), "different clauses still differ");
 
-// ---- r110 SA-F-09: entry-level validation + green omits reasonCode ----
+// ---- r110 SA-: entry-level validation + green omits reasonCode ----
 const lg = emptySkipLedger();
 recordSkips(lg, [], "t1");
 assert(lg.history[0]!.reasonCode === undefined, "green entry omits reasonCode (no contradiction)");

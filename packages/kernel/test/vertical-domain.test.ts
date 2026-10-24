@@ -1,4 +1,4 @@
-// R83 T1 / D-003..D-006: vertical-domain passthrough — kernel routing
+// ..: vertical-domain passthrough — kernel routing
 // + audit event semantics. Mirrors domain-filter.test.ts: stub providers with a
 // verticalDomainSupported bit, fake observation sink capturing span events.
 // Acceptance anchors covered: query-vs-repo wholesale replace, capability
@@ -112,8 +112,8 @@ async function main() {
   const pre5 = s5.events.find(e => e.name === "retrieval.vertical.pre");
   assert(!!pre5, "vertical.pre still emitted (audit records the attempt)");
 
-  // 6b. R84 T1 / A-04: params:{} canonicalizes to absent at the shared engine
-  //     choke — wire carries no sub_domain_params, params_keys=[].
+  // 6b. /: params:{} canonicalizes to absent at the shared engine
+  // choke — wire carries no sub_domain_params, params_keys=[].
   const cap6b = mockProvider("cap", ["https://x.com/1"], true);
   const eng6b = new RetroaererdEngine([cap6b], { repoVertical: () => ({ domain: "finance", subDomain: "calendar", params: {} }) });
   const s6b = fakeSink();
@@ -132,7 +132,7 @@ async function main() {
   assert((cap6c as any).lastReq?.vertical?.params === undefined, "6c non-object params -> absent on wire (A-04)");
 
   // 6. domain_filter.pre trigger unchanged: vertical active WITHOUT a url
-  //    policy => only the vertical event fires (independent trigger).
+  // policy => only the vertical event fires (independent trigger).
   const s6 = fakeSink();
   const eng6 = new RetroaererdEngine([mockProvider("cap", ["https://a.com/1"], true)], {
     repoVertical: repoV,

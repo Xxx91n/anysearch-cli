@@ -1,10 +1,10 @@
-// (T-1 / F-15): the preregistered OF look ledger is a git-committed, append-only
+// the preregistered OF look ledger is a git-committed, append-only
 // file at the repo root (`eval-looks.json`). It records one row per release-grade peek so the
 // OF alpha-spending sequence survives across runs without depending on local `.ship-gate/` state.
 //
 // Write policy (why ordinary runs never write it):
-//   - merge-gate / CI runs set ANS_EVAL_NO_LOOK=1            -> read-only, never spend a look;
-//   - only a release-grade peek sets ANS_EVAL_LOOKS_WRITE=1  -> appends exactly one row.
+// - merge-gate / CI runs set ANS_EVAL_NO_LOOK=1 -> read-only, never spend a look;
+// - only a release-grade peek sets ANS_EVAL_LOOKS_WRITE=1 -> appends exactly one row.
 // Reading always happens, so the caller computes the next look number from committed state.
 //
 // Compaction: a hard row cap keeps the file bounded; when exceeded the oldest
@@ -39,9 +39,9 @@ export interface LooksLedger {
   // the docs-domain golden batch shares this file as a top-level
   // collection. Writers must round-trip it — dropping it is silent data loss.
   golden?: import("./docs-golden").DocsGoldenSet;
-  // (F-17): Tolerant Reader — unknown root fields ride on the object
+  // Tolerant Reader — unknown root fields ride on the object
   // verbatim so a read->modify->write cycle never strips fields the writer does
-  // not model (the R64 schema_version:1 sentinel was lost exactly this way).
+  // not model (the schema_version:1 sentinel was lost exactly this way).
   [key: string]: unknown;
 }
 
@@ -96,7 +96,7 @@ export function nextLook(ledger: LooksLedger, key: string): number {
 // Append one peek row; compact when the cap is exceeded, preserving the pre-compaction hash.
 export function appendLook(ledger: LooksLedger, entry: LooksLedgerEntry, now: string): LooksLedger {
   const rows = [...ledger.looks, entry];
-  // + (F-17): the spread carries the golden batch AND every
+  // +: the spread carries the golden batch AND every
   // unknown root field through the write — rebuilding the object field-by-field
   // is how the schema_version:1 sentinel got stripped.
   if (rows.length <= LOOKS_LEDGER_MAX_ROWS) {

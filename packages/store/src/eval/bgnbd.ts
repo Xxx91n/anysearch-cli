@@ -23,11 +23,11 @@ export interface TauFitGateInput {
   daysSinceLastFit: number | null;
 }
 
-// r110 SP-F-01: split gate failures into STRUCTURAL ABSENCE (single-run maturity limits —
+// r110 SP-: split gate failures into STRUCTURAL ABSENCE (single-run maturity limits —
 // insufficient rows/fit-eligible units, no baseline histogram pair, too-young observation
 // window; all of them quote an immature dataset, not a degraded pipeline) vs SUBSTANTIVE
 // hits (a numeric PSI drift vs an existing baseline, or the anti-peeking interval). The
-// consumed eval track records the former as reasonCode=data-absent ( widened).
+// consumed eval track records the former as reasonCode=data-absent (widened).
 export function isStructuralAbsence(failures: readonly string[]): boolean {
   if (failures.length === 0) return false;
   return failures.every((f) => f.startsWith("T1:") || f.includes("PSI unavailable") || f.startsWith("T3: observation window"));
@@ -39,7 +39,7 @@ export function evaluateTauFitGate(input: TauFitGateInput): { ok: boolean; failu
   if (input.activeRows < TAU_FIT_GATE.minActiveRows || input.fittableUnits < TAU_FIT_GATE.minFittableUnits)
     failures.push("T1: " + input.activeRows + " active rows / " + input.fittableUnits + " fittable units < " + TAU_FIT_GATE.minActiveRows + "/" + TAU_FIT_GATE.minFittableUnits);
   // T2: PSI < 0.25 (baseline vs rolling 30d, D4 buckets, symmetric-KL). No histogram yet = block.
-  // r110 SA-F-01: non-finite PSI is fail-closed — a bare >= comparison lets NaN slip to false.
+  // r110 SA-: non-finite PSI is fail-closed — a bare >= comparison lets NaN slip to false.
   if (input.psi === null || !Number.isFinite(input.psi) || input.psi >= TAU_FIT_GATE.psiMax)
     failures.push(
       input.psi === null

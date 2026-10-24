@@ -13,15 +13,15 @@ export interface LlmSessionOptions {
   /** Optional API key override; if omitted, pi-ai provider reads its own env vars. */
   apiKey?: string;
   /**
-   *: custom endpoint base URL (LiteLLM / OpenRouter / self-hosted).
+   * custom endpoint base URL (LiteLLM / OpenRouter / self-hosted).
    * When set, `api` is REQUIRED (explicit three-way selection, no protocol sniffing) and a
    * per-session provider is constructed from pi-ai primitives instead of the global registry.
    *
    * baseUrl shape depends on the wire protocol, because pi-ai delegates to the official SDKs:
    * - api=chat / api=responses -> openai SDK, appends "chat/completions" / "responses":
-   *   baseUrl MUST include the version path (e.g. http://host/v1) to hit /v1/chat/completions.
+   * baseUrl MUST include the version path (e.g. http://host/v1) to hit /v1/chat/completions.
    * - api=messages -> anthropic SDK, appends "/v1/messages" itself:
-   *   baseUrl MUST be the host root WITHOUT /v1 (http://host), else /v1/v1/messages.
+   * baseUrl MUST be the host root WITHOUT /v1 (http://host), else /v1/v1/messages.
    */
   baseUrl?: string;
   /** Endpoint wire protocol: chat = <baseUrl>/chat/completions, messages = <baseUrl>/v1/messages, responses = <baseUrl>/responses. */

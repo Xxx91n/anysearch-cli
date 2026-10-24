@@ -1,8 +1,8 @@
 // behavioral abstain smoke — observational only, never gates.
 // Three-tier verdict, cheapest first:
-//   tier 1 "chain"   — access-chain trace shows zero retrieved evidence (chain_empty family)
-//   tier 2 "regex"   — refusal-keyword match on the assistant response (prompt field)
-//   tier 3 "llm"     — async judge sampling; any failure degrades to llm_fallback of tier 2
+// tier 1 "chain" — access-chain trace shows zero retrieved evidence (chain_empty family)
+// tier 2 "regex" — refusal-keyword match on the assistant response (prompt field)
+// tier 3 "llm" — async judge sampling; any failure degrades to llm_fallback of tier 2
 // The LLM judge is observational-only and never called in the golden eval (no judgeFn wired).
 
 export type AbstainFamily = "chain_empty" | "refusal_keyword" | "answered";

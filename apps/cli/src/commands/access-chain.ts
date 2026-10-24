@@ -14,7 +14,7 @@ export async function runAccessChain(args: string[]): Promise<number> {
   if (!sub || sub === "--help" || sub === "-h") {
     process.stdout.write(
       [
-        "ans access-chain — access_events tamper-evidence chain ",
+        "ans access-chain — access_events tamper-evidence chain",
         "",
         "Commands:",
         "  bootstrap              Dry-run: report legacy rows + the anchor digest that --apply would seal",
@@ -27,7 +27,7 @@ export async function runAccessChain(args: string[]): Promise<number> {
     );
     return 0;
   }
-  if (sub !== "bootstrap") { process.stderr.write("ans access-chain: unknown subcommand " + sub + "\n"); return 2; }
+  if (sub !== "bootstrap") { process.stderr.write("ans access-chain: unknown subcommand" + sub + "\n"); return 2; }
   const apply = args.includes("--apply");
   if (apply && args.includes("--dry-run")) { process.stderr.write("ans access-chain bootstrap: --apply and --dry-run are mutually exclusive\n"); return 2; }
   const di = args.indexOf("--db");
@@ -45,7 +45,7 @@ export async function runAccessChain(args: string[]): Promise<number> {
     } finally { db.close(); }
   }
 
-  if (!existsSync(dbPath)) { process.stdout.write("[access-chain] no database at " + dbPath + " (nothing to bootstrap)\n"); return 1; }
+  if (!existsSync(dbPath)) { process.stdout.write("[access-chain] no database at" + dbPath + " (nothing to bootstrap)\n"); return 1; }
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
   try {
     const cols = new Set((db.prepare("PRAGMA table_info(access_events)").all() as { name: string }[]).map((c) => c.name));
@@ -58,7 +58,7 @@ export async function runAccessChain(args: string[]): Promise<number> {
     if (p.anchor) {
       process.stdout.write("[access-chain] anchor already sealed (idempotent): digest=" + p.anchor.digest + " genesis=" + p.anchor.genesis_hash.slice(0, 16) + "... created_at=" + p.anchor.created_at + "\n");
     } else {
-      process.stdout.write("[access-chain] dry-run: would seal " + p.legacyRows + " legacy rows, digest=" + p.digest + "\n");
+      process.stdout.write("[access-chain] dry-run: would seal" + p.legacyRows + " legacy rows, digest=" + p.digest + "\n");
     }
     return 0;
   } finally { db.close(); }

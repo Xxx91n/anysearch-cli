@@ -2,11 +2,11 @@
 // data-absent (structural absence of data) never counts toward the 3-streak human-escalation
 // rule and breaks any in-flight gate-not-met run; the first gate-not-met after data-absent
 // entries starts counting from 1 again. @1 ledgers are upcast losslessly on read
-// (npm lockfile read-old/write-new pattern), closing r106 F-08.
+// (npm lockfile read-old/write-new pattern), closing r106.
 // (r42 impl): schema @3 — materialized state block {phase,since,transitionId,
 // evidenceHash} + a separate actions log for stage-transition / rollback / freeze / check /
 // readiness events. Actions NEVER influence the skip streak (a rollback is an action, not a
-// skip). Upcast @2 -> @3 is lossless; unknown versions fail loud (canon of r110 SA-F-03).
+// skip). Upcast @2 -> @3 is lossless; unknown versions fail loud (canon of r110 SA-).
 import { existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, closeSync } from "node:fs";
 import { join } from "node:path";
 import type { SwitchPhase } from "./switch-machine";
@@ -26,7 +26,7 @@ export interface SkipLedgerEntry {
   tier: string;
   look: string | number;
   track: ObsTrack;
-  // r110 SA-F-09: a green entry means "no skips recorded" — a reason code would be
+  // r110 SA-: a green entry means "no skips recorded" — a reason code would be
   // semantically contradictory, so green rows MUST omit reasonCode; warn/data-absent rows
   // MUST carry one. Enforced by validateEntry on read.
   reasonCode?: SkipReasonCode;
@@ -123,7 +123,7 @@ function validateStateBlock(s: unknown): void {
   }
 }
 
-// r110 SA-F-03: reading NEVER silently clears an unknown/corrupt ledger (schema-evolution
+// r110 SA-: reading NEVER silently clears an unknown/corrupt ledger (schema-evolution
 // discipline — Confluent/Solace rule: keep unknown data, fail loud). Callers quarantine the
 // file aside and restart empty, surfacing the reason, instead of dropping history.
 export class SkipLedgerError extends Error {}

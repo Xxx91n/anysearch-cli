@@ -1,16 +1,16 @@
-// R84 T3 / draft: paired vertical-delta live runner.
+// draft: paired vertical-delta live runner.
 // Runs each live-scoped vertical corpus entry TWICE through the real bundled
 // `ans` bin: vertical-on (the entry's injected spec) vs vertical-off (same
 // query, no flags). Arm-level delta (the anysearch arm's raw post-gate list
 // via metadata.fusion under ANS_ARM_SNAPSHOT=1) is the PRIMARY evidence;
 // fused-level numbers are a secondary observational column only — never a
-// prefer-capable promotion argument (D-005).
+// prefer-capable promotion argument.
 //
 // Emits .scratch/grill-round-84/evidence/vertical-delta.json (env
 // ANS_VERTICAL_DELTA_OUT overrides) with dataset fingerprint, arm identity,
 // explicit n, per-stratum rates, and honest nulls for unmeasurable cells.
 // Control entries (role:"control") record existence facts — their failures
-// walk the degraded list, never the red gate (D-004 iii).
+// walk the degraded list, never the red gate (iii).
 // ANS_VERTICAL_DELTA_LIMIT=N caps the corpus slice for smoke runs.
 
 import assert from "node:assert/strict";
@@ -24,7 +24,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..", "..", "..", "..");
 const dist = join(root, "apps", "cli", "dist", "index.js");
 // Round-neutral default path (the artifact is a durable evidence channel, not
-// an R84 scratch file); CI/devs override via env for dated snapshots.
+// an scratch file); CI/devs override via env for dated snapshots.
 const DELTA_OUT = process.env.ANS_VERTICAL_DELTA_OUT
   ?? join(root, ".scratch", "vertical-eval", "delta.json");
 const LIMIT = Number(process.env.ANS_VERTICAL_DELTA_LIMIT ?? "0") || 0;
@@ -33,10 +33,10 @@ const CONCURRENCY = 4;
 function hostOf(url: string): string {
   // Upstream vertical results may arrive schemeless (site.financialmodelingprep.com/…
   // observed 2026-09-26) — tolerate by synthesizing a scheme for parsing.
-  try { return new URL(/^https?:\/\//i.test(url) ? url : "https://" + url).hostname.replace(/^www\./, ""); } catch { return ""; }
+  try { return new URL(/^https?:\/\//i.test(url) ? url: "https://" + url).hostname.replace(/^www\./, ""); } catch { return ""; }
 }
 function pathOf(url: string): string {
-  try { return new URL(/^https?:\/\//i.test(url) ? url : "https://" + url).pathname; } catch { return ""; }
+  try { return new URL(/^https?:\/\//i.test(url) ? url: "https://" + url).pathname; } catch { return ""; }
 }
 // hitHosts pools hold canonical domains; matching is suffix-domain (a hit on
 // site.financialmodelingprep.com counts for pool entry financialmodelingprep.com)
@@ -50,7 +50,7 @@ function anyHostHit(urls: string[], pool: string[]): boolean {
 function strongHit(urls: string[], pool: string[], paths: string[]): boolean {
   return urls.some((u) => hostIn(hostOf(u), pool) && paths.some((p) => pathOf(u).startsWith(p)));
 }
-// Rank of the first pool hit, 1-based. Absent = null (never 0 — R84 honesty
+// Rank of the first pool hit, 1-based. Absent = null (never 0 — honesty
 // rule: unmeasurable cells are null/unknown, not zero).
 function rankOf(urls: string[], pool: string[]): number | null {
   for (let i = 0; i < urls.length; i++) if (hostIn(hostOf(urls[i]!), pool)) return i + 1;
@@ -116,13 +116,13 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
   const entries = LIMIT > 0 ? all.slice(0, LIMIT) : all;
   if (entries.length === 0) { console.log("SKIP: no live-scoped vertical entries"); process.exit(0); }
 
-  // R85 T2 / D-003 T2 + D-004(1): instrument-health ordering, no sampling-
+  // + (1): instrument-health ordering, no sampling-
   // protocol change — same entries, same legs per entry, only the schedule
   // differs. Control stratum runs first as the instrument-health probe (a
   // raised flag early-stops the batch before subject quota is spent); subject
   // entries interleave round-robin across vdomain×stratum buckets so quota
   // truncation leaves null cells evenly spread (MAR approximation; unfinished
-  // cells = structural missing → unknown per the R85 prereg matrix).
+  // cells = structural missing → unknown per the prereg matrix).
   const dimTag = (e: any, p: string) =>
     (e.dimensions ?? []).find((t: string) => String(t).startsWith(p + ":"))?.split(":")[1] ?? "unknown";
   const isControl = (e: any) => e.expected.vertical.role === "control";
@@ -155,7 +155,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
     return;
   }
 
-  // R86 T2 P3 / D-003: dist freshness assert — FAIL semantics, never a silent
+  // dist freshness assert — FAIL semantics, never a silent
   // run against a stale binary (stale dist was candidate root cause #3 in the
   // r85 wipeout triage). A MISSING dist still skips (CI test-online has no
   // build step); a PRESENT-but-stale dist fails with a rebuild hint. A dist
@@ -209,7 +209,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
     for (const [tag, j] of [["isoOn", isoOn], ["isoOff", isoOff], ["fullOn", fullOn], ["fullOff", fullOff]] as const) {
       if (j !== null && j.__error) console.log("DEGRADED " + e.id + " " + tag + " run error: " + j.__error);
     }
-    // R86 T4 / D-004: a provider-failed iso leg is UNMEASURED — the arm never
+    // a provider-failed iso leg is UNMEASURED — the arm never
     // produced a list; its empty fused output must not masquerade as a
     // measured zero-result arm (the r85 fake-tied scoreboard defect).
     const isoOnFailed = isoOn !== null && !isoOn.__error && (isoOn.providersFailed ?? []).includes("anysearch");
@@ -254,7 +254,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
       // failures on the primary measurement leg must be named.
       providersFailedIsoOn: isoOn?.providersFailed ?? null,
       providersFailedIsoOff: isoOff.providersFailed ?? null,
-      // R86 T2 / D-003: error classes ride next to every failed-providers
+      // error classes ride next to every failed-providers
       // flag — delta evidence records a category, never only a flag.
       providerErrorClassesOn: on?.providerErrorClasses ?? null,
       providerErrorClassesOff: off.providerErrorClasses ?? null,
@@ -298,7 +298,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
   }
 
   // Per-stratum aggregates — arm level is PRIMARY; fused level is the
-  // secondary observational column (D-005, never a weighting-gain argument).
+  // secondary observational column (never a weighting-gain argument).
   const strata = [...new Set(rows.map((r) => r.stratum))].sort();
   const byStratum: Record<string, any> = {};
   const domains = [...new Set(rows.map((r) => r.vdomain))].sort();
@@ -317,7 +317,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
       fusedHostHit: { on: rate(paired, (r) => r.fusedOn.hostHit), off: rate(paired, (r) => r.fusedOff.hostHit) },
       expectRankOfMeanDiff: diffs.length ? diffs.reduce((a, b) => a + b, 0) / diffs.length : null,
       verdicts: { better: rs.filter((r) => r.delta.verdict === "better").length, worse: rs.filter((r) => r.delta.verdict === "worse").length, tied: rs.filter((r) => r.delta.verdict === "tied").length, unknown: rs.filter((r) => r.delta.verdict === "unknown").length },
-      ci: null, // n too small for interval claims — placeholder field per D-004(iv)
+      ci: null, // n too small for interval claims — placeholder field per (iv)
     };
   };
   for (const s of strata) byStratum[s] = agg(rows.filter((r) => r.stratum === s));

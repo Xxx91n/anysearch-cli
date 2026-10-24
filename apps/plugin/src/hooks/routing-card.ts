@@ -39,12 +39,12 @@ export const MDC_CONTENT = [
   "---",
 ].join("\n");
 
-// R68 audit (ensureMdc×3): single implementation shared by session-start,
+// audit (ensureMdc×3): single implementation shared by session-start,
 // cursor, and antigravity — the only difference was the rules root
 // (".cursor" vs ".antigravity"). Fail-open by contract.
 export function ensureMdc(cwd: string, rulesRoot: string): void {
   const rulesDir = join(cwd, rulesRoot, "rules");
-  const mdcPath = join(rulesDir, "anysearch .mdc");
+  const mdcPath = join(rulesDir, "anysearch.mdc");
   try {
     if (existsSync(mdcPath)) {
       const existing = readFileSync(mdcPath, "utf8");

@@ -1,4 +1,4 @@
-# @anysearch-cli/dsh-plugin bundle patch (R72 D-001/D-002; bridge row retired R90 T4).
+# @anysearch-cli/dsh-plugin bundle patch (bridge row retired).
 # insert-not-merge: adds the hooks-layer plugin row only. The mcp-anysearch
 # bridge row is gone — the five ans_* tools register natively on ctx.tools
 # inside the bundle (execute = HTTP MCP to ans-mcp; see

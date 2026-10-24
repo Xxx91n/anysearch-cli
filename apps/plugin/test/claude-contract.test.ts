@@ -1,15 +1,15 @@
-// Claude Code contract tests — R66.
+// Claude Code contract tests —.
 // Live-verified against Claude Code 2.1.251 headless probes:
-//   * Pre/PostToolUse hooks RUN headless but emit no stream-json events —
-//     observability is side-effect only (marker files, /index deltas).
-//   * Only the hookSpecificOutput envelope (or legacy decision:block) is
-//     honored; bare top-level decision keys are silently dropped (ER-2).
-//   * configs/claude/hooks.json must use the official settings schema:
-//     { "<Event>": [{ matcher, hooks: [{ type: "command", command, timeout }] }] }
-//     — the old { name, command, args } shape silently poisons the event.
-//   * Plugin skeleton (.claude-plugin/plugin.json + hooks/hooks.json +
-//     .mcp.json) is generated single-source by scripts/gen-claude-configs.mjs;
-//     ${CLAUDE_PLUGIN_ROOT} expansion remains experimental on Windows (#16116).
+// * Pre/PostToolUse hooks RUN headless but emit no stream-json events —
+// observability is side-effect only (marker files, /index deltas).
+// * Only the hookSpecificOutput envelope (or legacy decision:block) is
+// honored; bare top-level decision keys are silently dropped (ER-2).
+// * configs/claude/hooks.json must use the official settings schema:
+// { "<Event>": [{ matcher, hooks: [{ type: "command", command, timeout }] }] }
+// — the old { name, command, args } shape silently poisons the event.
+// * Plugin skeleton (.claude-plugin/plugin.json + hooks/hooks.json +
+// .mcp.json) is generated single-source by scripts/gen-claude-configs.mjs;
+// ${CLAUDE_PLUGIN_ROOT} expansion remains experimental on Windows (#16116).
 
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
@@ -57,7 +57,7 @@ const TOOL_RESP = JSON.stringify({
     { title: "cl beta", url: "https://example.com/b", snippet: "doc beta", source: "synthetic" },
   ],
 });
-// R66-B04: abstain/slim shape — claims extraction empty -> sufficiency only.
+// -B04: abstain/slim shape — claims extraction empty -> sufficiency only.
 const SLIM_RESP = JSON.stringify({
   sufficiency: { verdict: "ambiguous", volume: { uniqueResults: 19, uniqueDomains: 1 } },
   attribution: { claims: [] },

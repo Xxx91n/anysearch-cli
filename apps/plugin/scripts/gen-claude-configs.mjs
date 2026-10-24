@@ -1,20 +1,20 @@
-// Single-source generator for the Claude Code integration artifacts (R66 T3).
+// Single-source generator for the Claude Code integration artifacts.
 //
 // Emits, from ONE spec:
-//   configs/claude/hooks.json   — .claude/settings.json variant. Commands use
-//                                 the package's global bin shims
-//                                 (ans-hook-claude / ans-hook-session-start),
-//                                 which resolve via PATH on every OS — no
-//                                 absolute paths, no ${CLAUDE_PLUGIN_*} vars.
-//   hooks/hooks.json            — plugin-skeleton variant. Commands reference
-//                                 ${CLAUDE_PLUGIN_ROOT}/dist/... (experimental:
-//                                 CLAUDE_PLUGIN_ROOT expansion is broken on
-//                                 Windows — upstream issue #16116).
-//   .claude-plugin/plugin.json  — plugin manifest (name required; hooks +
-//                                 mcpServers point at the sibling files).
-//   .mcp.json                   — plugin's MCP server wiring (ans-mcp bin).
+// configs/claude/hooks.json — .claude/settings.json variant. Commands use
+// the package's global bin shims
+// (ans-hook-claude / ans-hook-session-start),
+// which resolve via PATH on every OS — no
+// absolute paths, no ${CLAUDE_PLUGIN_*} vars.
+// hooks/hooks.json — plugin-skeleton variant. Commands reference
+// ${CLAUDE_PLUGIN_ROOT}/dist/... (experimental:
+// CLAUDE_PLUGIN_ROOT expansion is broken on
+// Windows — upstream issue #16116).
+// .claude-plugin/plugin.json — plugin manifest (name required; hooks +
+// mcpServers point at the sibling files).
+// .mcp.json — plugin's MCP server wiring (ans-mcp bin).
 //
-// Regenerate after changing the spec:  node scripts/gen-claude-configs.mjs
+// Regenerate after changing the spec: node scripts/gen-claude-configs.mjs
 // Drift is caught by test/claude-contract.test.ts (byte-identical regen).
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -34,13 +34,13 @@ const HOOKS_SPEC = [
   { event: "SessionStart", matcher: "startup", target: "dist/hooks/session-start.cjs", bin: "ans-hook-session-start", args: "--envelope", timeout: 5 },
 ];
 
-// Codex hooks spec — R67 T1 verified on codex-cli 0.142.5:
-//   * official schema { "<Event>": [{ matcher, hooks: [{type,command,timeout}] }] }
-//     (the old {name,command,args} shape silently registers zero hooks).
-//   * matcher is a FULL-MATCH regex — "mcp__anysearch__" never matches
-//     "mcp__anysearch__search_web"; use a suffix-anchored pattern.
-//   * commands resolve via global bin shims (ans-hook-codex /
-//     ans-hook-session-start); ${CODEX_PLUGIN_DIR} does not exist.
+// Codex hooks spec — verified on codex-cli 0.142.5:
+// * official schema { "<Event>": [{ matcher, hooks: [{type,command,timeout}] }] }
+// (the old {name,command,args} shape silently registers zero hooks).
+// * matcher is a FULL-MATCH regex — "mcp__anysearch__" never matches
+// "mcp__anysearch__search_web"; use a suffix-anchored pattern.
+// * commands resolve via global bin shims (ans-hook-codex /
+// ans-hook-session-start); ${CODEX_PLUGIN_DIR} does not exist.
 const CODEX_ANS_MATCHER = ".*(search_web|research_web|recall_memory|query_knowledge|ans_chat)$";
 const CODEX_HOOKS_SPEC = [
   { event: "PreToolUse", matcher: CODEX_ANS_MATCHER, bin: "ans-hook-codex", timeout: 5 },
