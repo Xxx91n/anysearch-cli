@@ -7,7 +7,7 @@ AnySearch: a vertical-domain information-specialist agent CLI (`ans`) — strict
 - `pnpm -r check` / `pnpm -r test` / `pnpm -r build` (turbo, same tasks per package)
 - `node scripts/ship-gate.mjs` — product smoke gate (release verdict)
 - `pnpm -C packages/store eval --offline` — golden memory-eval offline slice
-- `cp scripts/hooks/pre-commit-user .git/hooks/pre-commit-user` — install the pre-commit test gate (runs the tests of the packages a change touches)
+- `cp scripts/hooks/pre-commit-user .git/hooks/pre-commit-user && cp scripts/hooks/pre-push-user .git/hooks/pre-push && chmod +x .git/hooks/pre-commit-user .git/hooks/pre-push` — install the test gates (full workspace suite; `git push` and `but push` run pre-push, plain `git commit` chains pre-commit — `but commit` runs no git hooks, so the push gate is the real backstop)
 
 ## Directory conventions
 - `packages/{kernel,store,retriever,embedding}` core libs; `apps/{cli,mcp,plugin,dsh-plugin}` delivery surfaces; `GLOSSARY.md` terminology authority; `docs/agents/` agent-facing conventions

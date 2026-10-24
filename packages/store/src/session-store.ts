@@ -1369,7 +1369,7 @@ export class SqliteSessionStore implements SessionStore {
   public async backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean; fullRefresh?: boolean }): Promise<BackfillRelationsResult> {
     // r88 audit: a partial window (--from-id/--limit) contradicts a full rebuild — reject the combination.
     if (opts.fullRefresh && (opts.fromId !== undefined || opts.limit !== undefined)) {
-      throw new Error("backfillRelations: fullRefresh cannot be combined with fromId/limit ( r88 guard)");
+      throw new Error("backfillRelations: fullRefresh cannot be combined with fromId/limit (r88 guard)");
     }
     const batch = opts.batch ?? 200;
     const maxRows = opts.limit ?? 100000;

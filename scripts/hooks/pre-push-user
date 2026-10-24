@@ -1,0 +1,8 @@
+#!/bin/sh
+# anysearch pre-push: run the full workspace test suite before anything leaves the machine.
+# Install:  cp scripts/hooks/pre-push-user .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+# Fires for `git push` and for GitButler's push: `but push` runs pre-push hooks by default
+# (see `but push --help`: "--no-hooks, --no-verify  Bypass pre-push hooks").
+# `.git/hooks/pre-push` is NOT GitButler-managed (GitButler only manages
+# pre-commit/post-checkout), so this file stays ours.
+exec node "$(git rev-parse --show-toplevel)/scripts/preflight-test.mjs"
