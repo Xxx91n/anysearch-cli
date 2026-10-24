@@ -7,7 +7,7 @@ export async function runAuth(args: string[]): Promise<number> {
   const keys = [
     { env: "TAVILY_API_KEY", provider: "Tavily", note: "1000 credit/month free" },
     { env: "EXA_API_KEY", provider: "Exa", note: "$20+$10/month free tier" },
-    // ADR-0062 T5: match the variable the provider actually reads.
+    // match the variable the provider actually reads.
     { env: "ANYSEARCH_API_KEY", provider: "AnySearch", note: "optional, anonymous has lower rate" },
   ];
   for (const k of keys) {

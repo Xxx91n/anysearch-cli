@@ -1,4 +1,4 @@
-// ADR-0038 impl: OF alpha-spending, dual-track holdout, three-tier mapping, H0 FWER sim, nDCG@k.
+// impl: OF alpha-spending, dual-track holdout, three-tier mapping, H0 FWER sim, nDCG@k.
 import { evaluateGate, lockN, mdeForPaired, pairedGainStats, ofSpentAlpha, ofTable, OF_K_MAX, OF_TRACK_ALPHA, type EvalBaseline } from "../src/eval/gate";
 import { ndcgAtK, type EvalMetrics, type EvalReport } from "../src/eval/runner";
 import { GOLDEN_CASES } from "../src/eval/golden-cases";
@@ -66,7 +66,7 @@ function mkBaseline(sigmaDU: number): EvalBaseline {
   (BACKFLOW_SLICES as BackflowSlice[]).push({ schema: "anysearch/holdout-slice@1", sliceId: "probe-1", backflowRound: "test", addedAt: "2026-08-30", items: [{ inputHash: caseInputHash(dupe), sourceTraceId: "t", payload: dupe }] });
   let threw = false;
   try { assertBackflowNoOverlap(GOLDEN_CASES); } catch { threw = true; }
-  assert(threw, "duplicating a baseline-golden case into a backflow slice throws (ADR-0038 D5)");
+  assert(threw, "duplicating a baseline-golden case into a backflow slice throws ");
   (BACKFLOW_SLICES as unknown as unknown[]).length = 0; // restore the empty family
 }
 
@@ -139,7 +139,7 @@ function mkBaseline(sigmaDU: number): EvalBaseline {
 
 // --- H0 FWER simulation (three-tier boundary calibration evidence) ---
 {
-  const R = 600; // replications like the ADR-0038 audit mandate
+  const R = 600; // replications like the audit mandate
   let fwer = 0;
   for (let rep = 0; rep < R; rep++) {
     // deterministic per-rep PRNG (mulberry32)

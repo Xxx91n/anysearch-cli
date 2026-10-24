@@ -1,4 +1,4 @@
-// ADR-0050 D3/D4: thin CLI over the attribution-gold pure core.
+// thin CLI over the attribution-gold pure core.
 // Samples are the shared claim stream; labels are blinded AIS annotations.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";

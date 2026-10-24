@@ -1,4 +1,4 @@
-// ADR-0056 D-003/T8/T9: Hook+Server wire-format golden case.
+// D-003/T8/T9: Hook+Server wire-format golden case.
 //
 // Two layers:
 // (a) buildPropagationHeaders / parseAndValidateHeaders round-trip + edge cases.

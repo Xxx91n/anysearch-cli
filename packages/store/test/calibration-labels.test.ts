@@ -1,4 +1,4 @@
-// ADR-0048 D6: table-driven unit coverage for the pure label lifecycle core.
+// table-driven unit coverage for the pure label lifecycle core.
 import assert from "node:assert";
 import {
   addLabel,
@@ -27,7 +27,7 @@ function labeledAll(): CalibrationLabelRecord[] {
 }
 
 assert.equal(labelsFingerprint([]), "da39a3ee5e6b4b0d", "empty labels fingerprint is deterministic");
-assert.equal(caseFingerprint(), "df7a0a4b63954803", "seed case fingerprint is frozen for ADR-0048 initial state");
+assert.equal(caseFingerprint(), "df7a0a4b63954803", "seed case fingerprint is frozen for initial state");
 
 const invalidLine = parseLabelLines('{"schema":"anysearch/calibration-label@1","caseId":"x","label":2}\n');
 assert.equal(invalidLine.errors.length, 1, "invalid label value is rejected");

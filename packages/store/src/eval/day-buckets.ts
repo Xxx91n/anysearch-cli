@@ -1,4 +1,4 @@
-// ADR-0039 D4: Pre-Registered Day Buckets — locked once, definition hash joins the
+// Pre-Registered Day Buckets — locked once, definition hash joins the
 // baseline fingerprint (change = fingerprint flip + forced recalibration). Buckets are
 // aligned with the 7/30/90 tau tiers and are model-independent by construction.
 import { createHash } from "node:crypto";
@@ -11,7 +11,7 @@ export interface DayBucket {
 }
 
 // Pinned order is semantics (0-1 / 2-7 / 8-30 / 31-90 / 91+). Never reorder or reselect
-// without a fingerprint flip (ADR-0039 D4 / _Avoid_ 3).
+// without a fingerprint flip (_Avoid_ 3).
 export const AGE_BUCKETS: readonly DayBucket[] = [
   { id: "0-1", min: 0 },
   { id: "2-7", min: 2 },

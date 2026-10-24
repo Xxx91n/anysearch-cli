@@ -1,5 +1,5 @@
-// ADR-0060 D7 / ADR-0057 r59 errata: the vector-arm slice needs the real embedding model, so it is
-// online-gated (hermetic-by-default, ADR-0057 D4/D5). The default suite excludes it; this file is
+// / r59 errata: the vector-arm slice needs the real embedding model, so it is
+// online-gated (hermetic-by-default). The default suite excludes it; this file is
 // discovered only by `test:online` (the default glob is **/*.test.ts|mjs).
 //   pnpm -C packages/store test:online
 import { GOLDEN_CASES, VECTOR_ARM_GROUP } from "../../src/eval/golden-cases";

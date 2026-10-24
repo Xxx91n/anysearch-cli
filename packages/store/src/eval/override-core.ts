@@ -1,4 +1,4 @@
-// ADR-0047 D1/D2: pure emergency ship override decision core.
+// pure emergency ship override decision core.
 // This module never reads files, git, or the clock. Callers assemble facts and
 // pass every time value explicitly, so quota/deadline decisions are deterministic.
 
@@ -59,7 +59,7 @@ function parseTime(label: string, value: string): number {
   return t;
 }
 
-// ADR-0047 D3: event-anchored deadline, capped by the containing release window.
+// event-anchored deadline, capped by the containing release window.
 // No release-window configuration exists yet; callers may pass null/undefined and
 // the deadline is then the seven-day cap.
 export function postmortemDeadline(
@@ -80,7 +80,7 @@ function latestEvent(events: readonly OverrideGovernanceEvent[], predicate: (eve
   return undefined;
 }
 
-// ADR-0047 D2/D3/D5:
+//:
 // - one override per epoch;
 // - an outstanding LATE obligation blocks the next override;
 // - late acknowledgement is once per epoch and never marks the postmortem complete.

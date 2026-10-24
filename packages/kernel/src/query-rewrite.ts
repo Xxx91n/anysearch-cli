@@ -1,4 +1,4 @@
-// ADR-0023 D2 (Q2=B): S1 query rewrite — kernel-side pure function + LLM seam.
+// (Q2=B): S1 query rewrite — kernel-side pure function + LLM seam.
 // rewriteQuery(query, qdf) returns 3 FTS5-query variants: [original, paraphrase, qdf-flavored variant].
 // ports.ts is the dependency-inversion core; this module stays LLM-seam-free by injecting `llmFn`.
 // Fail-open: if llmFn is absent OR throws, output equals the single-variant [query] — no dead code path.

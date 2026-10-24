@@ -1,4 +1,4 @@
-// ponytail: no test framework, assert-based demo for ADR-0017 D2/D3 llm-init.
+// ponytail: no test framework, assert-based demo for llm-init.
 // Covers the branch logic introduced in c0f4a42c: unknown provider, missing model,
 // env-key failure contamination (D3 spec: no cache poisoning on failure).
 import { strict as assert } from "node:assert";
@@ -27,15 +27,15 @@ try { await createLlmSession({ provider: "openai", model: "this-model-does-not-e
 catch (e: any) { threw2 = true; ok(e.message.includes("not found"), "missing model error says 'not found'"); }
 ok(threw2, "missing model throws");
 
-// Retry after failure succeeds — no cache poisoning (ADR-0017 D3 spec).
+// Retry after failure succeeds — no cache poisoning ( spec).
 const s = await createLlmSession({ provider: "openai", model: "gpt-5" });
 ok(s.providerName === "openai" && s.modelName === "gpt-5", "session identity correct");
 ok(typeof s.streamFn === "function", "streamFn bound");
 ok(s.models && typeof s.models.getModel === "function", "models registry returned");
-ok(s.apiKey === undefined, "kernel never mirrors provider env into the session (ADR-0038 step 7; pi-ai owns provider auth)");
+ok(s.apiKey === undefined, "kernel never mirrors provider env into the session ( step 7; pi-ai owns provider auth)");
 
 
-// --- ADR-0037 D4: explicit endpoint kind, three wire protocols against local stubs ---
+// --- explicit endpoint kind, three wire protocols against local stubs ---
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { LlmEndpointKind } from "../src/llm-init";
 
@@ -91,7 +91,7 @@ process.env.ANS_LLM_API_KEY = "test-key";
 
 // pi-ai delegates to the official SDKs: the openai SDK appends "chat/completions" / "responses"
 // to baseURL (so baseUrl must already include /v1), while the anthropic SDK appends
-// "/v1/messages" itself (so baseUrl must be the host root without /v1). ADR-0037 D4.
+// "/v1/messages" itself (so baseUrl must be the host root without /v1)..
 const endpointConfig: Record<LlmEndpointKind, { basePath: string; expectedPath: string }> = {
   chat: { basePath: "/v1", expectedPath: "/v1/chat/completions" },
   messages: { basePath: "", expectedPath: "/v1/messages" },

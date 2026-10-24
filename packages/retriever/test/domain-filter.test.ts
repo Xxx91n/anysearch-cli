@@ -1,4 +1,4 @@
-// ADR-0062 D2 (T1): capability-negotiated provider pre-filter.
+// (T1): capability-negotiated provider pre-filter.
 // Contract: SearchRequest.includeDomains + SearchProvider.domainFilterSupported.
 // Seam: provider adapter request payload (stub client captures options).
 // ponytail: no test framework, assert-based demo.

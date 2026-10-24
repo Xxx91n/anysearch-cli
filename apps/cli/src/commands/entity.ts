@@ -1,4 +1,4 @@
-// ans entity: entity merge execution + candidate review belt (ADR-0032 D1-D4).
+// ans entity: entity merge execution + candidate review belt (-D4).
 // Subcommands: merge <fromId> <toId> | unmerge <logId> | review [keep|drop <id>]
 
 import { createPersistentEngine } from "../db";
@@ -15,7 +15,7 @@ interface EntityStore {
 function printHelp(): void {
   process.stdout.write(
     [
-      "ans entity — entity merge execution + review belt (ADR-0031/0032)",
+      "ans entity — entity merge execution + review belt (0032)",
       "",
       "Commands:",
       "  merge <fromId> <toId>   Merge entity fromId into toId (destructive redirect + snapshot)",
@@ -25,7 +25,7 @@ function printHelp(): void {
       "  review drop <id>        Reject candidate: keep both entities separate",
       "",
       "Guards: type gate (no cross-type merge); every merge writes a full snapshot;",
-      "unmerge leaves an override record so the pair never auto-merges again (ADR-0032 D2).",
+      "unmerge leaves an override record so the pair never auto-merges again.",
       "",
     ].join("\n") + "\n"
   );

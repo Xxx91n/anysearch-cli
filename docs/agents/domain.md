@@ -2,33 +2,33 @@
 
 How the engineering skills should consume this repo's domain documentation when exploring the codebase.
 
+## Before exploring, read these
+
+- **`GLOSSARY.md`** at the repo root — the glossary of domain terms (term → ≤2-sentence definition).
+
+If it doesn't exist, **proceed silently**. Don't flag its absence; don't suggest creating it upfront.
+
 ## File structure
 
 This repo is **single-context**:
 
 ```
 /
-├── CONTEXT.md          ← glossary (domain terms only, no implementation details)
-├── docs/adr/           ← architecture decision records, 0001 through 0053
+├── GLOSSARY.md         ← glossary (domain terms only, no implementation details)
 ├── apps/cli/           ← anysearch CLI entry
 ├── apps/mcp/           ← MCP server
 ├── apps/plugin/        ← hooks layer and project-index plugin
 └── packages/           ← embedding, kernel, retriever, store
 ```
 
-No `CONTEXT-MAP.md` at the root → single-context, not multi-context.
-
-## Before exploring, read these
-
-- **`CONTEXT.md`** at the repo root — the glossary of domain terms.
-- **`docs/adr/`** — read ADRs that touch the area you're about to work in.
-
-If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
+No `GLOSSARY-MAP.md` at the root → single-context, not multi-context.
 
 ## Use the glossary's vocabulary
 
-When discussing the codebase, use the terms defined in `CONTEXT.md`. When you introduce a new term that isn't in the glossary, add it via `/domain-modeling` — don't leave it fuzzy.
+When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `GLOSSARY.md`. Don't drift to synonyms.
 
-## Flag ADR conflicts
+If the concept you need isn't in the glossary yet, that's a signal: either you're inventing language the project doesn't use (reconsider) or there's a real gap (add the term to `GLOSSARY.md`).
 
-If code contradicts an accepted ADR, flag it. If an ADR is `Proposed` and code already implements a different path, note the divergence for the next grill round.
+## Decision history
+
+Architecture decision records are no longer kept as documents. Load-bearing decisions live as self-contained comments at the code sites they govern; open product questions live as GitHub issues. Archaeology: `git log` on the pre-teardown history.

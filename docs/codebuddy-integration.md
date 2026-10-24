@@ -5,7 +5,7 @@ live-verified **2026-09-16** by the headless P1–P9 probe matrix:
 search/recall/ans_chat/research + 3-event hooks + fail-open +
 with/without-tool contrast (stream-json transcripts in
 `.scratch/grill-round-65/evidence/t2-*.stream.jsonl`).
-Contract source: ADR-0066 + `.scratch/grill-round-65/evidence/`.
+Contract source: + `.scratch/grill-round-65/evidence/`.
 
 CodeBuddy hooks run commands through Git Bash on Windows, inject
 `hook_event_name` on stdin (not `event`), expect decisions inside a

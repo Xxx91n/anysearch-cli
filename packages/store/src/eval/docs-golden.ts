@@ -1,4 +1,4 @@
-// ADR-0061 D2/D5: the docs-domain golden batch lives as a `golden` top-level
+// the docs-domain golden batch lives as a `golden` top-level
 // collection inside eval-looks.json — the same file as the OF look ledger.
 // This module owns the entry schema, the eight-dimension slice vocabulary
 // (first committed definition site), and the eval-looks.coverage.json contract.
@@ -9,7 +9,7 @@ export const DOCS_GOLDEN_COVERAGE_SCHEMA = "anysearch/eval-looks-coverage@1";
 export const DOCS_GOLDEN_INTENTS = ["factoid", "howto", "troubleshoot", "comparison", "reference"] as const;
 export type DocsGoldenIntent = (typeof DOCS_GOLDEN_INTENTS)[number];
 
-// Eight slice dimensions (ADR-0061 D2): intent classes / source tier / freshness /
+// Eight slice dimensions: intent classes / source tier / freshness /
 // chinese-query / claim-level attribution / multi-hop / abstention negative / injection.
 export const DOCS_GOLDEN_DIMENSION_VALUES: Record<string, readonly string[]> = {
   intent: ["factoid", "howto", "troubleshoot", "comparison", "reference"],
@@ -25,7 +25,7 @@ export const DOCS_GOLDEN_DIMENSIONS = Object.keys(DOCS_GOLDEN_DIMENSION_VALUES);
 export const DOCS_GOLDEN_PROVENANCE_TYPES = ["internal-dogfood", "external-community", "constructed", "llm-assisted"] as const;
 export const DOCS_GOLDEN_VERDICTS = ["answer", "abstain"] as const;
 
-// R84 T1 / ADR-0085 draft: vertical-eval strata vocabulary. Kept in a SEPARATE
+// R84 T1 / draft: vertical-eval strata vocabulary. Kept in a SEPARATE
 // map from DOCS_GOLDEN_DIMENSION_VALUES — the coverage manifest asserts exact
 // tag-count equality for the eight docs dimensions, so vertical entries must
 // never carry docs-dimension tags; their slice accounting rides on these two.
@@ -35,7 +35,7 @@ export const VERTICAL_DIMENSION_VALUES: Record<string, readonly string[]> = {
 };
 export const VERTICAL_DIMENSIONS = Object.keys(VERTICAL_DIMENSION_VALUES);
 
-// R84 T1 / ADR-0085 draft: expected.vertical assertion keys — legislated in
+// R84 T1 / draft: expected.vertical assertion keys — legislated in
 // .scratch/grill-round-84/evidence/t1-semantics-legislation.md (A-02/A-04)
 // before any assertion consumed them (Pact Golden Rule).
 //   role "subject"  — the entry is a vertical query under test; domain required.
@@ -89,7 +89,7 @@ export const DOCS_GOLDEN_STABILITY_CLASSES = ["controlled", "frozen-spec", "exte
 export type DocsGoldenStabilityClass = (typeof DOCS_GOLDEN_STABILITY_CLASSES)[number];
 export const EVAL_LOOKS_SCHEMA_VERSION = 1;
 
-// R95 T1 / ADR-0096: controlled vocabulary for cell tombstones (the `tombstone`
+// R95 T1 /: controlled vocabulary for cell tombstones (the `tombstone`
 // block on a demoted entry). Demotion is an explicit declaration, never a
 // silent removal — the reason code names WHY the cell left the measurable set,
 // and the list is closed so free text cannot drift (spelling drift is the
@@ -113,7 +113,7 @@ export interface DocsGoldenExpected {
   mustHitPaths?: DocsGoldenPathPattern[];
   mustNotHitPaths?: string[];
   minResults?: number;
-  // R84 T1 / ADR-0085 draft: vertical assertion block. Present only on entries
+  // R84 T1 / draft: vertical assertion block. Present only on entries
   // in the vertical-eval family (vert-* / ctrl-* ids); absent on docs-g* rows.
   vertical?: DocsGoldenVerticalExpectation;
 }
@@ -136,7 +136,7 @@ export interface DocsGoldenMigration {
   drift: string;     // provider drift evidence observed live
   decidedAt: string; // ISO date of the ruling
 }
-// R95 T1 / ADR-0096: cell tombstone — a cell demoted in place (same id, per the
+// R95 T1 /: cell tombstone — a cell demoted in place (same id, per the
 // data-version governance rule: a semantic rewrite needs a NEW id plus old-cell
 // deprecation, never an in-place re-chip). A tombstoned entry carries no live
 // route: no scope in golden.scopes, no expected.vertical, no injected spec.
@@ -162,7 +162,7 @@ export interface DocsGoldenEntry {
   expected: DocsGoldenExpected;
   dimensions: string[]; // "<dimension>:<value>" pairs — docs-g* rows use DOCS_GOLDEN_DIMENSION_VALUES, vert-*/ctrl-* rows use VERTICAL_DIMENSION_VALUES
   provenance: DocsGoldenProvenance;
-  // R84 T1 / ADR-0085 draft: query-level vertical spec injected by the
+  // R84 T1 / draft: query-level vertical spec injected by the
   // executors (live leg -> --vertical-* CLI flags; stub leg -> engine search
   // request). Subject entries carry it; control entries may carry a bogus or
   // domain-only spec to pin the silent-fallback / reject surface.
@@ -171,7 +171,7 @@ export interface DocsGoldenEntry {
   failure_class?: string;                     // drift attribution (drives disposition path)
   migration?: DocsGoldenMigration;
   watch?: boolean;                            // post-promote observation mark (CI flip -> ratchet re-entry)
-  // R95 T1 / ADR-0096: present when the cell was demoted in place (out of the
+  // R95 T1 /: present when the cell was demoted in place (out of the
   // measurable set by design). A tombstoned row asserts no vertical route.
   tombstone?: DocsGoldenTombstone;
   notes?: string;
@@ -195,7 +195,7 @@ export interface CoverageManifest {
   dimensions: CoverageDimension[];
 }
 
-// R84 T1 / ADR-0085 draft: id families — docs-gNNNN (docs batch),
+// R84 T1 / draft: id families — docs-gNNNN (docs batch),
 // vert-<d>NNNN (vertical subject entries, <d> = vdomain letter),
 // ctrl-NNNN (control-class entries asserting the silent-fallback surface).
 export const DOCS_GOLDEN_ID_RE = /^(docs-g\d{4}|vert-[a-z]\d{4}|ctrl-[a-z]?\d{3,4})$/;
@@ -206,8 +206,8 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
   if (!e || typeof e !== "object") return ["entry is not an object"];
   if (typeof e.id !== "string" || !DOCS_GOLDEN_ID_RE.test(e.id)) p.push("id must match docs-gNNNN|vert-<d>NNNN|ctrl-NNNN");
   const isVerticalEntry = e.tombstone !== undefined || e.vertical !== undefined || (e.expected as { vertical?: unknown } | undefined)?.vertical !== undefined;
-  // ADR-0062 (T4): the collection is still the docs-golden batch (docs-gNNNN
-  // ids), but ADR-0062 criterion 4 needs a cold-domain abstain entry — a
+  // (T4): the collection is still the docs-golden batch (docs-gNNNN
+  // ids), but criterion 4 needs a cold-domain abstain entry — a
   // narrow-allowlist fixture domain where zero results can ever survive.
   // Non-docs domains are allowed only as abstain-only records: they may
   // assert "the gate blocks everything", never mustHit hits.
@@ -253,7 +253,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
     }
     if (exp.mustNotHitPaths !== undefined && (!Array.isArray(exp.mustNotHitPaths) || exp.mustNotHitPaths.some((u) => typeof u !== "string" || u.length === 0))) p.push("mustNotHitPaths must be non-empty string[]");
     if (exp.verdict === "abstain" && ((exp.mustHitUrls?.length ?? 0) > 0 || (exp.mustHitPaths?.length ?? 0) > 0 || (exp.mustNotHitPaths?.length ?? 0) > 0)) p.push("abstain entry must not assert must-hit url/path assertions");
-    // R84 T1 / ADR-0085 draft: expected.vertical assertion block validation.
+    // R84 T1 / draft: expected.vertical assertion block validation.
     const vexp = exp.vertical as Partial<DocsGoldenVerticalExpectation> | undefined;
     if (vexp !== undefined) {
       if (typeof vexp !== "object" || vexp === null || Array.isArray(vexp)) {
@@ -286,7 +286,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
       }
     }
   }
-  // R84 T1 / ADR-0085 draft: entry-level vertical spec (executor injection).
+  // R84 T1 / draft: entry-level vertical spec (executor injection).
   const vspec = e.vertical as Partial<DocsGoldenVerticalSpec> | undefined;
   if (vspec !== undefined) {
     if (typeof vspec !== "object" || vspec === null || Array.isArray(vspec)) {
@@ -337,7 +337,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
       if (typeof m.decidedAt !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(m.decidedAt)) p.push("migration.decidedAt ISO date required");
     }
   }
-  // R95 T1 / ADR-0096: cell tombstone — the demotion must be explicit and
+  // R95 T1 /: cell tombstone — the demotion must be explicit and
   // machine-checkable, and must actually retire the live route (a tombstoned
   // row that still carries a vertical expectation or an injected spec would
   // read as a live cell with a decorative label).
@@ -355,7 +355,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
       if (t.prior_expected_vertical !== undefined && (typeof t.prior_expected_vertical !== "object" || t.prior_expected_vertical === null)) p.push("tombstone.prior_expected_vertical must be an object when present");
       if (e.vertical !== undefined) p.push("tombstoned entry must not carry an injected vertical spec (the prior spec lives in tombstone.prior_spec)");
       if ((e.expected as { vertical?: unknown } | undefined)?.vertical !== undefined) p.push("tombstoned entry must not carry expected.vertical (no live route)");
-      // R95-audit F3 (b) / ADR-0096 §Addendum-A: the tombstone row's expected
+      // R95-audit F3 (b) / §Addendum-A: the tombstone row's expected
       // block is a dormant declaration ("this cell asserted answer in general"),
       // never a live promise: NO lane selects a tombstoned row (no scope), so
       // per-clause expectations that only lanes can produce are banned here.
@@ -442,7 +442,7 @@ export function crossCheckDocsGolden(set: DocsGoldenSet, manifest: CoverageManif
   const p: string[] = [];
   const allow = new Set(allowlist);
   for (const e of set.entries) {
-    // ADR-0062 (T4): the allowlist argument is the docs-domain one — cold-domain
+    // (T4): the allowlist argument is the docs-domain one — cold-domain
     // entries own their allowlist via the fixture TOML in provenance.ref, so
     // the docs-allowlist subset check must not run against them.
     if (e.domain !== "docs") continue;

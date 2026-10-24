@@ -1,5 +1,5 @@
 // ~/.anysearch/config.env — the CLI's persisted key=value config (G016).
-// ADR-0061 B1: shared module + entry-point rehydrate so `ans domain <name>`
+// B1: shared module + entry-point rehydrate so `ans domain <name>`
 // actually takes effect for search/chat/etc. across sessions (was write-only).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

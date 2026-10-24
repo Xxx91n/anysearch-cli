@@ -1,8 +1,8 @@
 // Antigravity CLI (agy) hooks adapter.
-// ADR-0011 D8: Antigravity has no SessionStart equivalent; .mdc rule file
+// Antigravity has no SessionStart equivalent; .mdc rule file
 // fallback still runs on every invocation.
 //
-// ADR-0069 D4 / R68 T3: contract verified live against agy 1.2.5 headless
+// / R68 T3: contract verified live against agy 1.2.5 headless
 // (evidence: .scratch/grill-round-68/evidence/t3-*):
 //   * hooks.json = named-hook map { "<name>": { "<Event>": [
 //     { matcher, hooks: [{type:"command", command, timeout}] }] } };
@@ -29,14 +29,14 @@
 //     ephemeralMessage injectSteps by the next invocation event.
 
 import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// ADR-0059 D7 (T-6.3): resolve the shared server token (env or the 0600 token file).
+// (T-6.3): resolve the shared server token (env or the 0600 token file).
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 import { existsSync, readFileSync, mkdirSync, appendFileSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 
-// ADR-0012 D14: routing card + MDC content imported from shared routing-card.ts module.
+// routing card + MDC content imported from shared routing-card.ts module.
 import { DEFAULT_ROUTING_CARD as ROUTING_CARD, ensureMdc } from "../routing-card.js";
 
 interface AntigravityToolCall {
@@ -134,7 +134,7 @@ async function main(): Promise<void> {
   const sessionId = stdin.conversationId || stdin.session_id || "";
   const cwd = stdin.workspacePaths?.[0] || stdin.cwd || process.cwd();
 
-  // ADR-0011 D8: generate .mdc on any hook invocation as fallback
+  // generate .mdc on any hook invocation as fallback
   // (SessionStart does not exist on this host). Antigravity rules live under
   // .antigravity/rules/ (parallel to Cursor's .cursor/rules/).
   ensureMdc(cwd, ".antigravity");

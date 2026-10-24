@@ -89,7 +89,7 @@ ans memory backfill-vectors   # embeds stored rows; first run downloads the mode
 机器拷贝已填充的缓存目录。卸载该包后 CLI 退回 FTS-only 模式 —— 不崩溃，
 `ans doctor` 将该臂报为 SKIP。
 
-## 域名与弃权（ADR-0062）
+## 域名与弃权（）
 
 *域名（domain）*是 `domains/`（或 `ANS_DOMAINS_DIR`）下的一个 TOML 文件，
 声明其 providers 与权威 `urlAllowlist`；`ANS_DOMAIN` 负责选择。
@@ -132,7 +132,7 @@ Provider 选择来自域名 TOML 的 `sources.enabled`。缺 key 的 provider �
 跳过而非崩溃（fail-open）；若*没有任何* provider 能注册，搜索是错误
 而非弃权。
 
-## AnySearch 垂域（ADR-0084）
+## AnySearch 垂域（）
 
 anysearch provider 另有一根正交轴：服务端**垂域路由**。可按查询（CLI 旗标
 或 MCP 工具参数）或按域名 TOML 设置——它不是 hostname allowlist，与
@@ -217,8 +217,8 @@ flowchart LR
 | DeepSeek Harness（`dsh`） | 0.1.7-rc.2 | 原生注册（`ctx.tools`）+ `dsh-plugin` Cordis bundle | 实机验证（established-via-fallback: [L3b]） <!-- 枚举经 tool_call 侧证 --> · [专文](docs/deepseek-harness-integration.md) |
 
 "已验证"指在真实宿主上捕获端到端 transcript（`stream-json`），而非契约
-同构——完整范围、日期与探针证据见各专文链接；证据集见 ADR-0066 /
-ADR-0067 / ADR-0068 / ADR-0069 / ADR-0073。
+同构——完整范围、日期与探针证据见各专文链接；证据集见 /
+ / / / 。
 
 ## 已知限制
 
@@ -238,14 +238,11 @@ ADR-0067 / ADR-0068 / ADR-0069 / ADR-0073。
 - **Fail-open** —— hooks、providers 与可选 peer 诚实降级，不拖垮宿主
   agent。
 
-完整编号决策记录：[docs/adr/index.md](docs/adr/index.md)。
-
 ## 面向贡献者
 
-- `CONTEXT.md` —— 领域术语 canonical 表（先读）
-- `docs/adr/index.md` —— 生成的决策索引（`scripts/gen-adr-index.mjs`，勿手改）
+- `GLOSSARY.md` —— 领域术语 canonical 表（先读）
 - `docs/limitations.md` —— 完整已知限制记录
-- `docs/agents/` —— domain-doc + 本地 markdown issue tracker 约定
+- `docs/agents/` —— domain-doc + GitHub issue tracker 约定
 - 仓库布局：`packages/kernel`（引擎）· `packages/store`（FTS5 记忆、
   观测、URL 策略）· `packages/retriever`（provider 适配器 + RRF）·
   `apps/cli` · `apps/mcp` · `apps/plugin`（宿主 hooks）

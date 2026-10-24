@@ -1,4 +1,4 @@
-// ADR-0053 D2/D3/D4: content trust pure-pipeline tests.
+// content trust pure-pipeline tests.
 import {
   combineLabels,
   sanitizeRetrieved,
@@ -53,7 +53,7 @@ let assertionPassed = false;
 try { assertLlamaInput({ text: "naked", label: { source: "retrieved", traceId: "t" } }); } catch { assertionPassed = true; }
 assert(assertionPassed, "assertLlamaInput rejects bare string shape");
 
-// ADR-0054 D1: assertJudgmentInput — fail-closed at judgment boundaries.
+// assertJudgmentInput — fail-closed at judgment boundaries.
 assertJudgmentInput({ text: "gap", source: "retrieved", traceId: "g1" }, "test-site"); // must not throw
 let threw = false;
 try { assertJudgmentInput({ text: "", source: "retrieved", traceId: "g1" }, "test-site"); } catch { threw = true; }
@@ -65,7 +65,7 @@ threw = false;
 try { assertJudgmentInput({ text: "ok", source: "retrieved", traceId: "g1", items: [{ bogus: true }] }, "test-site"); } catch { threw = true; }
 assert(threw, "assertJudgmentInput schema-checks items[] via assertLlamaInput");
 
-// ADR-0054 D1: wrapRetrieved -> unwrapRetrieved round-trip preserves the engine envelope.
+// wrapRetrieved -> unwrapRetrieved round-trip preserves the engine envelope.
 const envJson = JSON.stringify({ results: [{ title: "r1" }], metadata: { sufficiency: { verdict: "partial" } } });
 const wrappedRc = wrapRetrieved({
   schema: "anysearch://schemas/retrieval-content/1",

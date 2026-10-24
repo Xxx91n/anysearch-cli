@@ -1,9 +1,9 @@
-// ADR-0038 D3: frozen baseline holdout (one-time stratified split, never re-optimized).
+// frozen baseline holdout (one-time stratified split, never re-optimized).
 // Strata = group x difficulty x CN/EN; RoR pairs over-represented per power: 19 of 38 pairs
 // (every even EN index + every even CN index), ~20% of the remaining strata by sha256(id)[0] < 51.
 // The selection RULE is documented for reproducibility; the LIST below is frozen and any change
-// to it is a golden change = fingerprint flip + forced recalibration (ADR-0027 D9).
-// ADR-0038 D5: backflow (production reflow) forms a separate slice family, physically separate
+// to it is a golden change = fingerprint flip + forced recalibration.
+// backflow (production reflow) forms a separate slice family, physically separate
 // from the baseline holdout; inputHash dedup forbids a case ever sitting in both tracks.
 import { createHash } from "node:crypto";
 import type { CaseSpec } from "./golden-cases";
@@ -56,7 +56,7 @@ export const HOLDOUT_IDS: readonly string[] = [
 const HOLDOUT_SET = new Set(HOLDOUT_IDS);
 export const isHoldout = (caseId: string): boolean => HOLDOUT_SET.has(caseId);
 
-// ADR-0038 D5: backflow slice family (schema anysearch/holdout-slice@1).
+// backflow slice family (schema anysearch/holdout-slice@1).
 // Reflow cases land ONLY in new versioned slices; a slice never mutates after commit.
 export interface BackflowItem {
   inputHash: string;
@@ -103,7 +103,7 @@ export function assertBackflowNoOverlap(goldenCases: readonly CaseSpec[]): void 
     if (slice.schema !== "anysearch/holdout-slice@1") throw new Error("backflow slice " + slice.sliceId + ": bad schema tag");
     for (const item of slice.items) {
       if (item.inputHash !== caseInputHash(item.payload)) throw new Error("backflow item " + item.inputHash + ": inputHash does not match payload (provenance corruption)");
-      if (baselineHashes.has(item.inputHash)) throw new Error("backflow item " + item.inputHash + " duplicates a baseline-golden input — a case may never sit in both tracks (ADR-0038 D5)");
+      if (baselineHashes.has(item.inputHash)) throw new Error("backflow item " + item.inputHash + " duplicates a baseline-golden input — a case may never sit in both tracks ");
       if (seen.has(item.inputHash)) throw new Error("backflow item " + item.inputHash + " duplicated across slices (" + slice.sliceId + ")");
       seen.add(item.inputHash);
     }

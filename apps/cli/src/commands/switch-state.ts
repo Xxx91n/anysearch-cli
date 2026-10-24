@@ -1,4 +1,4 @@
-// ans switch-state — read-only switch-governance query (ADR-0043 D7).
+// ans switch-state — read-only switch-governance query.
 // Prints the current S0-S4 phase and last transition from the @3 skip-ledger; --verify
 // cross-checks the ledger's evidenceHash against the access_events chain (chain wins).
 import { existsSync, readFileSync } from "node:fs";
@@ -10,7 +10,7 @@ export async function runSwitchState(args: string[]): Promise<number> {
   if (args.includes("--help") || args.includes("-h")) {
     process.stdout.write(
       [
-        "ans switch-state — switch governance state reader (ADR-0043 D7, read-only)",
+        "ans switch-state — switch governance state reader (read-only)",
         "",
         "Options:",
         "  --verify   Cross-check ledger evidenceHash against the access_events chain",

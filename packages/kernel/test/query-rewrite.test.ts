@@ -1,4 +1,4 @@
-// ADR-0023 D2 (Q2=B): S1 rewriteQuery fail-open acceptance test.
+// (Q2=B): S1 rewriteQuery fail-open acceptance test.
 // (1) No LLM seam → returns [query] exactly. (2) LLM throws → fail-open to [query].
 // (3) LLM returns variants → 3-item cap with original at index 0, dedup'd.
 // (4) qdf hint does not alter fail-open behavior.

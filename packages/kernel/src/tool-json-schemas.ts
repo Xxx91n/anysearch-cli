@@ -2,7 +2,7 @@
 // derived from kernel TypeBox schemas via JSON.stringify/parse (the official
 // TypeBox serialization path; [Kind] symbols are automatically stripped by
 // JSON serialization, per issue #786/#987). single-source-of-truth:
-// ADR-0019 D1/D3 amendment — atomcode research (round 16 audit) establishes that
+// amendment — atomcode research (round 16 audit) establishes that
 // maintaining a hand-written mirror alongside the TypeBox source is guaranteed
 // drift (specmatic "MCP Servers Are Lying About Their Schemas", aident.ai MCP
 // TS SDK v1→v2 inputSchema empty production incident). JSON round-trip is the

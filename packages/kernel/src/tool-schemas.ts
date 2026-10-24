@@ -1,17 +1,17 @@
 // Tool Schema Registry: canonical TypeBox schemas for the 5 ans_* MCP tools.
-// ADR-0019 D1: kernel holds the single source of truth for tool input schemas;
+// kernel holds the single source of truth for tool input schemas;
 // apps/mcp wraps them via fromJsonSchema() (SDK v2 requires Standard Schema).
-// ADR-0019 D3: all business validation lives here as JSON Schema keywords
+// all business validation lives here as JSON Schema keywords
 // (minLength / enum via Union of Literals); handlers contain zero hand-written validation.
 // D6: rejected codemod kernel to zod; schema source-of-truth stays TypeBox.
 
 import { Type } from "@sinclair/typebox";
 
-// R83 T1 / ADR-0084 D-003: query-level vertical — when verticalDomain is
+// R83 T1 / D-003: query-level vertical — when verticalDomain is
 // present the three args form a complete spec that REPLACES the repo-level
 // sources.vertical default wholesale (no deep-merge). Shape check only —
 // the domain/sub_domain vocabulary is upstream truth (no enum embedded).
-// R88 T3 / ADR-0089 (a06): shared prop fragment for both retrieval tools —
+// R88 T3 / (a06): shared prop fragment for both retrieval tools —
 // the closed-shape closer stays on each consuming Type.Object (that is the
 // tool's own contract; the fragment carries only the props).
 const verticalSpecProps = {
@@ -34,9 +34,9 @@ export const SearchWebInput = Type.Object({
       Type.Literal("index"),
       Type.Literal("deep"),
       Type.Literal("answer"),
-    ], { description: "Search mode: fast (default), index, deep (more sources), answer (provider-generated answer, available only when provider supports it; not synthesized locally per ADR-0022 D4)" })
+    ], { description: "Search mode: fast (default), index, deep (more sources), answer (provider-generated answer, available only when provider supports it; not synthesized locally)" })
   ),
-  // R88 T3 / ADR-0089 (a06): the vertical-spec arg block is the shared
+  // R88 T3 / (a06): the vertical-spec arg block is the shared
   // verticalSpecProps fragment (legislated once, consumed by both tools).
   ...verticalSpecProps,
 }, { additionalProperties: false });
@@ -57,7 +57,7 @@ export const ResearchWebInput = Type.Object({
       Type.Literal("deep"),
     ], { description: "Research depth: brief (1 round), standard (2 rounds), deep (3 rounds)" })
   ),
-  // Same shared fragment as search_web (R88 T3 / ADR-0089 a06).
+  // Same shared fragment as search_web (R88 T3 / a06).
   ...verticalSpecProps,
 }, { additionalProperties: false });
 export type ResearchWebInput = {

@@ -1,4 +1,4 @@
-// ADR-0041 D3: single source of truth for the pre-upgrade access-chain schema derivation.
+// single source of truth for the pre-upgrade access-chain schema derivation.
 // Consumed by access-chain-verify / access-chain-telemetry / access-chain-bootstrap-spawn.
 import { readFileSync } from "node:fs";
 

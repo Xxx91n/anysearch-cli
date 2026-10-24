@@ -1,4 +1,4 @@
-// ADR-0027 D8 + ADR-0059 D3 (T-2/F-17): quarantine ledger mechanics + gate-exclusion contract.
+// + (T-2/F-17): quarantine ledger mechanics + gate-exclusion contract.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";

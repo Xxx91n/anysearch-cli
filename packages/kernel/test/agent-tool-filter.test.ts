@@ -2,7 +2,7 @@
 // only host-side names (ctx_*), so the security filter dropped the kernel's built-in
 // `search` tool and ans_chat ran its agent loop with ZERO tools — the model answered
 // from parametric memory or printed tool calls as text, never retrieving.
-// Contract kept: hooks.toolWhitelist stays the security filter (ADR-0007 D4); the fix
+// Contract kept: hooks.toolWhitelist stays the security filter; the fix
 // is that every shipped domain whitelists the built-in search tool.
 import { test } from "node:test";
 import assert from "node:assert/strict";

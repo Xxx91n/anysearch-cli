@@ -1,4 +1,4 @@
-// ADR-0048 D3: thin CLI over the pure label core. The acceptance command is
+// thin CLI over the pure label core. The acceptance command is
 // plain `node scripts/eval-labels.mjs`; this wrapper re-enters itself under
 // the workspace-local tsx loader so the TypeScript core resolves extensionless
 // imports without adding a root runtime dependency.

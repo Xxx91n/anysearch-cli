@@ -1,4 +1,4 @@
-// ADR-0059 D7 (T-6.3): plugin server trust-boundary contract.
+// (T-6.3): plugin server trust-boundary contract.
 // Six measures: loopback Host whitelist, Origin check (no Origin = native client = allow),
 // auto-generated 256-bit token, timing-safe compare, readBody <= 1MB, 403-before-401 ordering.
 import { spawn } from "node:child_process";

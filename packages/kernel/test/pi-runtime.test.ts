@@ -112,7 +112,7 @@ function mockStreamFn(_model: any, _context: any, _options?: any): any {
 }
 
 
-// === ADR-0012 Contract Tests ===
+// === Contract Tests ===
 
 // D8: L1 injection at latest user message (not first).
 test: {
@@ -192,7 +192,7 @@ test: {
 
 console.log("---");
 
-// ADR-0014 D2/D5/D1: sufficiency gate tests.
+// sufficiency gate tests.
 // 23. DomainConfigPort compaction.sufficiencyMaxRerounds field exists.
 const domain23: DomainConfigPort = {
   sources: { enabled: ["tavily", "exa"] },
@@ -250,7 +250,7 @@ console.log(`PiAgentRuntime tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
 
 
-// === ADR-0013 Contract Tests (D11: four paths) ===
+// === Contract Tests (D11: four paths) ===
 
 // D9: distillGap extracts search tool results after last summary point.
 {
@@ -421,5 +421,5 @@ function makeMockStreamFn(decision: string): any {
 }
 
 console.log("---");
-console.log(`ADR-0013 tests: ${passed} passed, ${failed} failed`);
+console.log(` tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -1,4 +1,4 @@
-// ADR-0050 D6: immutable attribution calibration bundles. Content-addressed
+// immutable attribution calibration bundles. Content-addressed
 // JSON per bundle; the active calibration is a head pointer, so rollback is a
 // pointer move and never a rewrite. Lives beside the attribution-gold revision
 // root but is managed by scripts/attribution-calibrate.mjs, not rev verbs.

@@ -1,4 +1,4 @@
-// ADR-0050 D6/D9: calibration bundle registry lifecycle. L2 gold digest,
+// calibration bundle registry lifecycle. L2 gold digest,
 // L4 rollback and crash drills. Uses a temp copy store, never the real root.
 import assert from "node:assert";
 import fs from "node:fs";

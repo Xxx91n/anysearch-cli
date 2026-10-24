@@ -1,4 +1,4 @@
-// ADR-0049 D4-D9: revision lifecycle CLI over the pure core.
+// -D9: revision lifecycle CLI over the pure core.
 // The script re-enters under workspace-local tsx for extensionless TS imports.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -24,13 +24,13 @@ async function run() {
   const labelsCore = await import("../packages/store/src/eval/calibration-labels.ts");
   const seed = await import("../packages/store/src/eval/calibration-cases.ts");
 
-  // ADR-0050 D6: line is a first-class namespace. --line attribution-gold shares
+  // line is a first-class namespace. --line attribution-gold shares
   // the rev verbs but stores revisions under an isolated root; label lifecycle
   // for that line lives in scripts/attribution-gold-labels.mjs.
   const line = argValue("--line") || "calibration";
   if (!/^[a-z][a-z0-9-]*$/.test(line)) fail(2, "--line must be a slug");
   const rootEnv = line === "attribution-gold" ? "ANS_ATTRIBUTION_GOLD_REVISION_ROOT" : "ANS_CALIBRATION_REVISION_ROOT";
-  // ADR-0051 audit: the attribution-gold default mirrors the packaged runtime
+  // audit: the attribution-gold default mirrors the packaged runtime
   // (~/.anysearch/attribution-gold-revisions), not the repo, so writers and
   // the CLI/MCP reader agree without an env override.
   const defaultRoot =

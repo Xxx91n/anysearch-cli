@@ -1,4 +1,4 @@
-// T0 projection caps + warning assertion (ADR-0024 D7).
+// T0 projection caps + warning assertion.
 // renderMerged enforces 1500 chars AND 200 lines hard caps; when exceeded, an
 // explicit <!-- WARNING --> block must appear and `warned` flag must be true —
 // silent truncation is a fail.

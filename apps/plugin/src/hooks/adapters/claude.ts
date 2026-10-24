@@ -2,21 +2,21 @@
 // Claude Code hooks: stdin JSON, stdout JSON, exit 0/2/other.
 // PreToolUse: hook_event_name=PreToolUse, tool_name, tool_input, cwd, session_id
 // PostToolUse: hook_event_name=PostToolUse, tool_name, tool_input, tool_response, cwd, session_id
-// JSON output (ADR-0066 R66, verified on Claude Code 2.1.251): ALL decision keys
+// JSON output ( R66, verified on Claude Code 2.1.251): ALL decision keys
 // must sit inside the hookSpecificOutput envelope — bare top-level
 // additionalContext/updatedToolOutput/permissionDecision are silently dropped
 // by the host (proven by deny-sentinels: envelope + legacy decision:block both
 // block, top-level permissionDecision executes anyway).
-// ADR-0009 Q5: only intercept ans_* tools.
+// Q5: only intercept ans_* tools.
 
 import { isAnsTool, callServer, unwrapToolResponse, type HookDecision } from "../core.js";
-// ADR-0059 D7 (T-6.3): resolve the shared server token (env or the 0600 token file).
+// (T-6.3): resolve the shared server token (env or the 0600 token file).
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 
 interface ClaudeHookStdin {
-  // ADR-0066: real Claude Code injects hook_event_name; keep event as legacy fallback.
+  // real Claude Code injects hook_event_name; keep event as legacy fallback.
   hook_event_name?: string;
   event: string;
   tool_name?: string;
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
         projectPath: cwd,
         sessionId: stdin.session_id || "",
       });
-      // ADR-0054 D4 + R66 ER-2: every PreToolUse decision key goes inside the
+      // + R66 ER-2: every PreToolUse decision key goes inside the
       // hookSpecificOutput envelope (official names: additionalContext,
       // updatedToolInput, permissionDecision, permissionDecisionReason).
       const hookSpecificOutput: Record<string, unknown> = { hookEventName: "PreToolUse" };
@@ -118,7 +118,7 @@ async function main(): Promise<void> {
       process.exit(0);
     }
   } catch (e) {
-    // ADR-0009 D6: fail-open. stderr warn, exit 0, raw output passes through.
+    // fail-open. stderr warn, exit 0, raw output passes through.
     process.stderr.write("[anysearch] hook error: " + (e instanceof Error ? e.message : String(e)) + "\n");
     process.exit(0);
   }

@@ -1,6 +1,6 @@
 // ans_chat tool: PiAgentRuntime agent loop as MCP tool.
-// ADR-0017 D2/D3: lazy session cache in closure, env-var keyed rebuild.
-// ADR-0019 D3: input validated by AJV.
+// lazy session cache in closure, env-var keyed rebuild.
+// input validated by AJV.
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
@@ -11,7 +11,7 @@ import { createHash } from "node:crypto";
 import { observeTool } from "./observation.js";
 
 export function registerAnsChat(server: McpServer, eng: CompositionResult): void {
-  // ADR-0017 D3: lazy init on first ans_chat call, cached per server instance.
+  // lazy init on first ans_chat call, cached per server instance.
   // Env var change triggers rebuild (detected by key mismatch).
   let llmSession: LlmSession | null = null;
   let llmSessionKey = "";
@@ -77,7 +77,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
             streamFn: session.streamFn,
             models: session.models,
             getApiKey: async () => session.apiKey,
-            // ADR-0063 (R62 T7): one-line observation wiring — the ans_chat span
+            // (R62 T7): one-line observation wiring — the ans_chat span
             // receives the engine's retrieval.domain_filter.* audit events.
             span,
           });

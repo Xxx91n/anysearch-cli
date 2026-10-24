@@ -1,5 +1,5 @@
 // Budget Ledger: Mole reserve-then-settle pattern.
-// ADR-0005 decision 4: non-negative constraint in SQLite schema layer.
+// decision 4: non-negative constraint in SQLite schema layer.
 // Budget = resource consumption, belongs to store layer (not kernel).
 // atomcode research: Mole DB schema non-negative constraint, 0% overshoot.
 
@@ -9,7 +9,7 @@ export interface BudgetCaps {
   tokenCap: number;
   usdCap: number;
   timeLimitMs: number;
-  callCap?: number; // ADR-0006 decision 2B: per-call cap
+  callCap?: number; // decision 2B: per-call cap
 }
 
 export interface BudgetBalance {
@@ -86,13 +86,13 @@ export class BudgetLedger {
     this.stmts.settleUsd.run(reservedAmount, actualAmount, sessionId);
   }
 
-  // ADR-0006 decision 2C: reserve per-call budget by provider count.
+  // decision 2C: reserve per-call budget by provider count.
   reserveCalls(sessionId: string, count: number): boolean {
     const result = this.stmts.reserveCalls.run(count, sessionId, count);
     return result.changes > 0;
   }
 
-  // ADR-0006 decision 2C: settle calls — actual successful providers.
+  // decision 2C: settle calls — actual successful providers.
   settleCalls(sessionId: string, reservedCount: number, actualCount: number): void {
     this.stmts.settleCalls.run(reservedCount, actualCount, sessionId);
   }

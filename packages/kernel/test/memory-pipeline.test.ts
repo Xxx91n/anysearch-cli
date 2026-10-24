@@ -1,4 +1,4 @@
-// MemoryPipeline unit tests (ADR-0015 D6).
+// MemoryPipeline unit tests.
 // Tests: four-exit behavior (REUSE / COMPRESS / low-watermark / reuse-capped).
 // Tests: inject (L1/L2 merged injection), distillGap, adjudicateReuseCompress.
 // ponytail: no test framework, assert-based demo.
@@ -323,7 +323,7 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
     sessionId: "s1",
   });
 // Simulate 3 consecutive REUSE by calling consolidate 3 times.
-  // ADR-0016: consecutiveReuses tracked in ConsolidationState (sync via pure function result.state).
+  // consecutiveReuses tracked in ConsolidationState (sync via pure function result.state).
   for (let i = 0; i < 3; i++) {
     callLog.count = 0;
     const msgs = Array.from({ length: 6 }, (_, j) => ({ role: "user", content: "msg" + j }));
@@ -354,7 +354,7 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
   assert(true, "consolidate: no store -> no-op, no throw");
 }
 
-// ADR-0016 D2: signalSearchTurn deleted, replaced by hasRetrievalEvidence parameter.
+// signalSearchTurn deleted, replaced by hasRetrievalEvidence parameter.
 {
   const store = new MockStore();
   const pipeline = new MemoryPipeline({
@@ -415,7 +415,7 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
 console.log("---");
 console.log(`MemoryPipeline tests: ${passed} passed, ${failed} failed`);
 
-// ADR-0016 D9 Layer 1: Pure function tests for consolidateState — zero mock, zero I/O.
+// Layer 1: Pure function tests for consolidateState — zero mock, zero I/O.
 {
   // consolidateState already imported at top of file
   
@@ -481,20 +481,20 @@ console.log(`MemoryPipeline tests: ${passed} passed, ${failed} failed`);
   }
 
   
-// ADR-0021 D2: opts injection — overwrite lowWatermark triggers compress below default 128K
+// opts injection — overwrite lowWatermark triggers compress below default 128K
 {
   const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
   const r = consolidateState(state, ["m1","m2","m3"], 60000, false, { lowWatermark: 50000 });
   assertPure(r.decision === "compress", "pure: opts.lowWatermark=50000 forces compress at 60K");
 }
-// ADR-0021 D2: fraction is resolved at caller; pure fn only sees absolute number.
+// fraction is resolved at caller; pure fn only sees absolute number.
 // Verify that with default watermark (128000) and 60K totalTokens, no trigger fires.
 {
   const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
   const r = consolidateState(state, ["m1","m2","m3"], 60000, false);
   assertPure(r.decision === "skip", "pure: default 128K watermark skips at 60K");
 }
-// ADR-0021 D2: reuseCap overwrite — cap=1 with consecutiveReuses=1 forces compress (cap hit).
+// reuseCap overwrite — cap=1 with consecutiveReuses=1 forces compress (cap hit).
 {
   const state = { version: 1, consecutiveReuses: 1, lastSummaryMsgCount: 0 };
   const msgs = ["m1","m2","m3","m4","m5"];
@@ -503,7 +503,7 @@ console.log(`MemoryPipeline tests: ${passed} passed, ${failed} failed`);
   assertPure(r.state.consecutiveReuses === 0, "pure: cap-forced compress resets consecutiveReuses");
 }
 
-// ADR-0021 audit Fix #2: {fraction} in TOML is currently rejected at caller, not pure fn.
+// audit Fix #2: {fraction} in TOML is currently rejected at caller, not pure fn.
 // Pure fn must still accept absolute lowWatermark; assert opts pass-through wins.
 {
   const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
@@ -515,7 +515,7 @@ console.log(`MemoryPipeline tests: ${passed} passed, ${failed} failed`);
 console.log("consolidateState pure function tests: " + passed + " assertions passed, " + failed + " failed");
 }
 
-// ADR-0024 D5: T0 user_preferences injection position assertion.
+// T0 user_preferences injection position assertion.
 // MockStore gets listPreferences via type cast (injected for this test block only).
 {
   const mock = new MockStore() as any;
@@ -551,7 +551,7 @@ console.log("consolidateState pure function tests: " + passed + " assertions pas
   assert((out2[0].content.match(/<user_preferences/g) || []).length === 1, "T0 inject: idempotent (no duplicate block)");
 }
 
-// ADR-0026 D7: leading/trailing non-user messages must not receive injections.
+// leading/trailing non-user messages must not receive injections.
 {
   const store = new MockStore() as any;
   store.anchors = [{ anchorType: "rolling_summary", payload: { summary: "sys-safe summary" } }];
@@ -566,9 +566,9 @@ console.log("consolidateState pure function tests: " + passed + " assertions pas
     { role: "tool", content: "t1" },
   ];
   const out = await pipeline.inject(msgs as any);
-  assert((out[0] as any).content === "system prompt", "ADR-0026: system message untouched");
-  assert((out[1] as any).content.includes("[Session Memory]"), "ADR-0026: L1 lands on latest USER message");
-  assert(!(out[3] as any).content.includes("[Session Memory]"), "ADR-0026: trailing tool message not injected");
+  assert((out[0] as any).content === "system prompt", "system message untouched");
+  assert((out[1] as any).content.includes("[Session Memory]"), "L1 lands on latest USER message");
+  assert(!(out[3] as any).content.includes("[Session Memory]"), "trailing tool message not injected");
 }
 
 if (failed > 0) process.exit(1);

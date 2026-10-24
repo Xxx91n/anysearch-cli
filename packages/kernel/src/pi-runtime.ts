@@ -1,10 +1,10 @@
 // PiAgentRuntime: pi-agent-core Agent wrapper for anysearch-cli.
-// ADR-0007 decision 2: lives in packages/kernel.
-// ADR-0007 decision 3: maps pi-agent-core 9 events to our 7 AgentEvent types.
-// ADR-0007 decision 4: Domain 5-layer full consumption.
-// ADR-0007 decision 5: token dimension budget via onResponse.
-// ADR-0007 decision 6: dual session (pi Agent memory + SqliteSessionStore FTS5 sync).
-// ADR-0015: MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
+// decision 2: lives in packages/kernel.
+// decision 3: maps pi-agent-core 9 events to our 7 AgentEvent types.
+// decision 4: Domain 5-layer full consumption.
+// decision 5: token dimension budget via onResponse.
+// decision 6: dual session (pi Agent memory + SqliteSessionStore FTS5 sync).
+// MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -25,7 +25,7 @@ import type { AgentEvent } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
 
-// ADR-0054 D4: HITL gate helpers for shouldAllowUrl (TTY ask / headless deny-first).
+// HITL gate helpers for shouldAllowUrl (TTY ask / headless deny-first).
 // Kernel reads no env config (r94 discipline): the composition root passes
 // `interactive` in PiAgentRuntimeOptions; this helper is the TTY capability check only.
 export function isInteractive(): boolean {
@@ -100,7 +100,7 @@ export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObser
   return {
     name: BUILTIN_SEARCH_TOOL,
     label: "Search",
-    // ADR-0022 D1/D4: answer is provider-fulfilled (Exa/Tavily only); no CLI-side
+    // answer is provider-fulfilled (Exa/Tavily only); no CLI-side
     // synthesis. When no provider supports it, answers=[] and metadata.answersAvailable=false.
     description: "Search the web for information using multiple search engines. Returns fused, deduplicated results with RRF ranking. mode=answer returns provider-generated answers (Exa/Tavily only, unverified) alongside results; answers are provider-side, not synthesized locally.",
     parameters: Type.Object({
@@ -116,7 +116,7 @@ export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObser
       const q: Query = {
         query: String(params.query),
         mode: (params.mode as "fast" | "index" | "deep" | "answer") || "fast",
-        // ADR-0063 (R62 T7): pass the caller span through so retrieval
+        // (R62 T7): pass the caller span through so retrieval
         // domain_filter.* audit events + anysearch.outcome land inside the
         // caller's trace (ans_chat path). Single span, multi-event — no
         // sub-spans per agent-loop turn (D-011).
@@ -124,7 +124,7 @@ export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObser
       };
       const envelope = await retriever.search(q);
       onResults?.((envelope.results ?? []).map((r) => r.url));
-      // ADR-0054 D1: every retrieved payload crosses the LLM boundary through wrapRetrieved
+      // every retrieved payload crosses the LLM boundary through wrapRetrieved
       // (Anthropic tool_result wire format). The full envelope JSON rides in snippet untruncated
       // ponytail: schema maxLength(4000) is not enforced here; downstream parses via unwrapRetrieved.
       const tagged: RetrievalContent = {
@@ -142,7 +142,7 @@ export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObser
         content: [{ type: "text", text: summary }],
         details: {
           resultCount: envelope.results?.length || 0,
-          // ADR-0022 D1/D3: expose answers + provenance as first-class details.
+          // expose answers + provenance as first-class details.
           answerCount: envelope.answers?.length || 0,
           providerAnswers: envelope.metadata?.providerAnswers ?? [],
         },
@@ -163,7 +163,7 @@ export const BUILTIN_SEARCH_TOOL = "search";
 // Filter AgentTools by domain skills.active + hooks.toolWhitelist.
 // Exported for the shipped-domain regression test (r19 T1, 2026-10-22).
 export function filterAgentTools(tools: AgentTool[], domain: DomainConfigPort): AgentTool[] {
-  // ADR-0007 D4: hooks.toolWhitelist is the security filter.
+  // hooks.toolWhitelist is the security filter.
   // skills.active is domain activation (not a tool filter).
   const whitelist = new Set(domain.hooks.toolWhitelist);
   if (whitelist.size === 0) return tools;
@@ -174,17 +174,17 @@ export interface PiAgentRuntimeOptions {
   retriever: RetrieverPort;
   store?: SessionStorePort;
   domain: DomainConfigPort;
-  // ADR-0055 D5: when set, the allow/deny lists are re-read lazily per tool call via mtime.
+  // when set, the allow/deny lists are re-read lazily per tool call via mtime.
   domainTomlPath?: string;
   model: unknown; // pi-ai Model instance
   streamFn: unknown; // models.streamSimple.bind(models)
-  models?: unknown; // ADR-0012 D4: Models object for generateSummaryWithUsage
+  models?: unknown; // Models object for generateSummaryWithUsage
   ledger?: BudgetLedgerPort;
   sessionId?: string;
   tools?: AgentTool[]; // extra tools beyond search
   getApiKey?: () => Promise<string | undefined>;
-  interactive?: boolean; // ADR-0054 D4: composition root grants TTY-ask eligibility (headless/MCP omit -> deny-first)
-  // ADR-0063 (R62 T7): caller observation span — retrieval audit events land
+  interactive?: boolean; // composition root grants TTY-ask eligibility (headless/MCP omit -> deny-first)
+  // (R62 T7): caller observation span — retrieval audit events land
   // inside the caller's span events_json (ans_chat / third retrieval surface).
   span?: RetrievalObservationSink;
 }
@@ -222,12 +222,12 @@ export class PiAgentRuntime {
 
   constructor(opts: PiAgentRuntimeOptions) {
     this.domainReloader = opts.domainTomlPath ? createDomainReloader(opts.domainTomlPath) : null;
-    // ADR-0055 D7 acceptance-4: the override switch is a strict enum at EVERY runtime
+    // acceptance-4: the override switch is a strict enum at EVERY runtime
     // (server, hook, kernel), not just the plugin server. Misset -> throw at startup.
     parseEnvOverrideSwitch(process.env[ENV_ALLOW_OVERRIDE]);
     this.opts = opts;
 
-    // ADR-0015 D8: constructor internally creates pipeline + gate instances.
+    // constructor internally creates pipeline + gate instances.
     // Composition root responsible for wiring; caller opts unchanged.
     if (opts.store && opts.sessionId) {
       this.pipeline = new MemoryPipeline({
@@ -251,7 +251,7 @@ export class PiAgentRuntime {
     });
   }
 
-  // ADR-0007 decision 3: run() returns AsyncIterable<AgentEvent>, mapping pi events.
+  // decision 3: run returns AsyncIterable<AgentEvent>, mapping pi events.
   async *run(input: string): AsyncIterable<AgentEvent> {
     // SECURITY: timeout to prevent agent loop hang (CWE-400, CWE-840).
     // ponytail: 5-minute default, override via opts.timeoutMs.
@@ -267,10 +267,10 @@ export class PiAgentRuntime {
     const allTools = [searchTool, ...(this.opts.tools || [])];
     const activeTools = filterAgentTools(allTools, domain);
 
-    // ADR-0007 decision 4: prompts -> systemPrompt
+    // decision 4: prompts -> systemPrompt
     const systemPrompt = buildSystemPrompt(domain);
 
-    // Token budget tracking (ADR-0007 decision 5)
+    // Token budget tracking ( decision 5)
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
 
@@ -280,7 +280,7 @@ export class PiAgentRuntime {
     let agentDone = false;
     let agentError: string | null = null;
 
-    // ADR-0015: hooks degrade to 2-line delegation to MemoryPipeline + SufficiencyEvaluator.
+    // hooks degrade to 2-line delegation to MemoryPipeline + SufficiencyEvaluator.
     const agent = new Agent({
       initialState: {
         systemPrompt,
@@ -292,29 +292,29 @@ export class PiAgentRuntime {
       streamFn: streamFn as any,
       getApiKey: this.opts.getApiKey as any,
       sessionId,
-      // ADR-0007 decision 5: onResponse accumulates token usage.
+      // decision 5: onResponse accumulates token usage.
       onResponse: (response: any) => {
         if (response?.usage) {
           totalInputTokens += response.usage.inputTokens || 0;
           totalOutputTokens += response.usage.outputTokens || 0;
         }
       },
-      // ADR-0010 D1: transformContext async hot path — delegated to MemoryPipeline.inject.
+      // transformContext async hot path — delegated to MemoryPipeline.inject.
       transformContext: async (messages: any[]) => {
         if (this.pipeline) return this.pipeline.inject(messages);
         return messages;
       },
-      // ADR-0054 D1/D4: shouldAllowUrl at the agent-loop tool-call seam. Retrieved-derived
+      // shouldAllowUrl at the agent-loop tool-call seam. Retrieved-derived
       // URLs not on the domain [sources].urlAllowlist are HITL-gated; deny-first headless.
       beforeToolCall: async (ctx: any) => {
         // r19 T2: saturation stop — block further searches, let the model answer.
         if (ctx?.toolCall?.name === BUILTIN_SEARCH_TOOL && saturation.exhausted()) {
           return { block: true, reason: saturation.reason() };
         }
-        // ADR-0055 D5: lazy mtime-checked re-read; bad TOML keeps last known good.
+        // lazy mtime-checked re-read; bad TOML keeps last known good.
         const reloaded = this.domainReloader ? this.domainReloader() : null;
         if (reloaded) (this.opts as { domain: DomainConfigPort }).domain = reloaded as DomainConfigPort;
-        // ADR-0055 D7 single parse point: kernel consumes the same canonicalize+merge+
+        // single parse point: kernel consumes the same canonicalize+merge+
         // strict-switch resolver as server/hooks (audit M1: raw-array reads re-introduced drift).
         const src = (this.opts.domain as { sources?: { urlAllowlist?: string[]; urlDenylist?: string[] } } | undefined)?.sources;
         const policy = resolveUrlPolicy({ tomlHosts: src?.urlAllowlist ?? [], denyHosts: src?.urlDenylist ?? [] });
@@ -349,12 +349,12 @@ export class PiAgentRuntime {
         }
         return undefined;
       },
-      // ADR-0010 D1: shouldStopAfterTurn async cold path — delegated to SufficiencyEvaluator + MemoryPipeline.
+      // shouldStopAfterTurn async cold path — delegated to SufficiencyEvaluator + MemoryPipeline.
       // Fires after each assistant turn; async, does not block current turn.
       shouldStopAfterTurn: async (ctx: any) => {
         const messages = (agent as any).state?.messages || [];
         const totalTokens = totalInputTokens + totalOutputTokens;
-        // ADR-0016 D6: 3-line sequential call — evaluate -> applyTo -> consolidate.
+        // 3-line sequential call — evaluate -> applyTo -> consolidate.
         // Claim-ticket pattern: gate.evaluate returns envelope, gate.applyTo injects, pipeline.consolidate consumes.
         const lastTool = ctx?.lastToolName || ctx?.toolName || "";
         const hasSearchTurn = typeof lastTool === "string" && lastTool.includes("search");
@@ -372,7 +372,7 @@ export class PiAgentRuntime {
       },
     });
 
-    // ADR-0007 decision 3: subscribe() 9 events -> our 7 AgentEvent types.
+    // decision 3: subscribe 9 events -> our 7 AgentEvent types.
     // R65 F-12: text mapping delegated to mapAssistantMessageEvent (pure, tested).
     const mapState = { textSeen: false };
     agent.subscribe((event: any, _signal?: AbortSignal) => {
@@ -407,7 +407,7 @@ export class PiAgentRuntime {
           break;
         case "agent_end":
           agentDone = true;
-          // ADR-0010 D1: rolling summary moved to shouldStopAfterTurn cold path.
+          // rolling summary moved to shouldStopAfterTurn cold path.
           break;
         case "error":
           agentError = event.error?.message || String(event.error || "Unknown error");
@@ -421,8 +421,8 @@ export class PiAgentRuntime {
       }
     });
 
-    // Token budget: reserve at agent_start (ADR-0007 decision 5).
-    // ponytail: per-call dimension used (token dimension pending BudgetLedgerPort API, ADR-0007 D5)
+    // Token budget: reserve at agent_start ( decision 5).
+    // ponytail: per-call dimension used (token dimension pending BudgetLedgerPort API)
     if (ledger && sessionId) {
       ledger.reserveCalls(sessionId, 1);
     }
@@ -457,13 +457,13 @@ export class PiAgentRuntime {
       yield { type: "error", message: "Agent timeout after " + timeoutMs + "ms" };
     }
 
-    // Token budget: settle at agent_end (ADR-0007 decision 5).
+    // Token budget: settle at agent_end ( decision 5).
     if (ledger && sessionId) {
       // ponytail: per-call settle (1 call reserved, 1 actual for the agent run).
       ledger.settleCalls(sessionId, 1, 1);
     }
 
-    // ADR-0007 decision 6: dual session — sync to FTS5 store.
+    // decision 6: dual session — sync to FTS5 store.
     if (this.opts.store) {
       try {
         const messages = (agent as any).state?.messages || [];
@@ -476,7 +476,7 @@ export class PiAgentRuntime {
         }
       } catch (e) {
         // ponytail: FTS5 sync is best-effort, don't block agent on store failure.
-        // But log the error so it's not silently swallowed (ADR-0007 debt fix).
+        // But log the error so it's not silently swallowed ( debt fix).
         if (typeof process !== "undefined" && process.stderr) {
           process.stderr.write("[anysearch] FTS5 sync warning: " + (e instanceof Error ? e.message : String(e)) + "\n");
         }

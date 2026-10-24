@@ -1,4 +1,4 @@
-// ADR-0056 D-008/D-009: AsyncLocalStorage context for MCP request identity.
+// D-008/D-009: AsyncLocalStorage context for MCP request identity.
 //
 // The MCP transport delivers a fresh clientInfo only on the initialize
 // handshake, then subsequent tool calls reference the same connection.
@@ -12,7 +12,7 @@
 //   - Stash never set (stdin transport bypasses the HTTP shim): same fallback.
 //
 // session_id is intentionally NOT stashed here - MCP keeps session_id empty
-// per ADR-0056 D-009 (protocol carries no per-instance session identifier).
+// per D-009 (protocol carries no per-instance session identifier).
 import { AsyncLocalStorage } from "node:async_hooks";
 
 interface McpRequestIdentity {

@@ -1,4 +1,4 @@
-// ADR-0039 D7: explicit-skip three-tier + WARN ledger + 3-streak escalation (negative: silent
+// explicit-skip three-tier + WARN ledger + 3-streak escalation (negative: silent
 // swallow impossible — skip without reason/key recording fails these assertions).
 import { skip, isSkip, skipKey } from "../src/eval/explicit-skip";
 import { emptySkipLedger, parseSkipLedger, recordSkips, skipMustFail, SKIP_STREAK_LIMIT } from "../src/eval/skip-ledger";
@@ -38,7 +38,7 @@ assert(recordSkips(l, [], "t5") === 0, "green run clears streak");
 assert(l.history.length === 5, "history retains all entries");
 
 
-// ---- ADR-0042 D4: skip-ledger schema @2 — @1 migration + reason-code split ----
+// ---- skip-ledger schema @2 — @1 migration + reason-code split ----
 const v1 = { schema: "anysearch/gain-ledger@1", consecutiveWarn: 2, history: [{ at: "2026-01-01", tier: "warn", look: "a" }], resolutions: [{ at: "x", decision: "stay-warn", note: "n" }], lastSkipKeys: ["a"] };
 const m1 = parseSkipLedger(JSON.stringify(v1));
 assert(m1.schema === "anysearch/gain-ledger@3", "@1 upcasts to @3 on read");

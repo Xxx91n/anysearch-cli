@@ -1,4 +1,4 @@
-// ADR-0049 D2-D13: pure calibration revision lifecycle core. No runtime dependency.
+// -D13: pure calibration revision lifecycle core. No runtime dependency.
 // Immutable semantic payloads, JCS fingerprints, L0/L1/L2 gates, retire/prune/migrate plans.
 import { createHash } from "node:crypto";
 import type { CalibrationCase } from "./calibration-cases";
@@ -421,7 +421,7 @@ export function shadowReplay(
 }
 
 // Krippendorff alpha is intentionally absent for 2-rater cases; this minimal nominal
-// implementation exists only for >=3 raters as ADR-0049 D10 specifies.
+// implementation exists only for >=3 raters as specifies.
 export function krippendorffAlpha(matrix: Array<Array<0 | 1 | null>>): number | null {
   if (matrix.length < 3) return null;
   const valid = matrix.map((row) => row.filter((v): v is 0 | 1 => v === 0 || v === 1));

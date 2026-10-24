@@ -1,4 +1,4 @@
-// ADR-0024 D2/D6/D7: T0 MEMORY.md projection writer.
+// T0 MEMORY.md projection writer.
 // Single source of truth is t0_preferences table; MEMORY.md is a regenerated
 // materialized projection (temp+fsync+rename). Never reverse-syncs.
 
@@ -11,7 +11,7 @@ import type { T0PreferenceRow } from "@anysearch-cli/store";
 const MAX_CHARS = 1500;
 const MAX_LINES = 200;
 
-// Key-level override merge (ADR-0024 D6): project wins same-key; distinct keys merge.
+// Key-level override merge: project wins same-key; distinct keys merge.
 // Deterministic order: alphabetical by key after merge.
 export function keyOverrideMerge(
   rows: T0PreferenceRow[],
@@ -38,7 +38,7 @@ export function renderMerged(
   const merged = keyOverrideMerge(rows, projectScope);
   const scopeLabel = projectScope ? "project" : "global";
   const lines: string[] = [
-    "<!-- ADR-0024: regenerated materialized projection; do not edit manually. Scope: " + scopeLabel + " -->",
+    "<!-- regenerated materialized projection; do not edit manually. Scope: " + scopeLabel + " -->",
   ];
   let totalChars = 0;
   let totalLines = 1;
@@ -81,7 +81,7 @@ export async function writeProjection(
   const merged = renderMerged(rows, projectScope);
   const hasProject = rows.some((r) => r.scope !== "global");
 
-  // Project scope file (only when project rows exist — no auto-creation per ADR-0024 D6).
+  // Project scope file (only when project rows exist — no auto-creation).
   if (projectScope && hasProject) {
     try {
       const projPath = path.join(projectDir, "MEMORY.md");

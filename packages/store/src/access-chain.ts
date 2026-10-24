@@ -1,8 +1,8 @@
-// ADR-0040 D3/D4/D6: access_events tamper-evidence — writer-side canonical serializer + chain
+// access_events tamper-evidence — writer-side canonical serializer + chain
 // bootstrap. The verifier (scripts/verify-access-events.mjs) is an independent re-implementation
 // of this spec (_Avoid_ 3: shared serialization code is forbidden — a bug must not hide in both).
 //
-// Pinned spec constants (duplicated verbatim in ADR-0040, implemented independently by the verifier):
+// Pinned spec constants (duplicated verbatim in, implemented independently by the verifier):
 //   CHAIN_FIELDS  = ["accessed_at","event_type","id","memory_id","prev_hash","schema_version","source_label"]
 //                   (ASCII lexicographic order = RFC 8785 §3.2.3 key order for this closed ASCII
 //                   scalar schema; JSON.stringify of an object literal built in this order is
@@ -21,7 +21,7 @@ import type Database from "better-sqlite3";
 export const CHAIN_SCHEMA_VERSION = 2;
 export const CHAIN_EVENT_TYPE = "access";
 export const CHAIN_FIELDS = ["accessed_at", "event_type", "id", "memory_id", "prev_hash", "schema_version", "source_label"] as const;
-// Pre-ADR-0053 rows were chained without source_label. The independent verifier
+// Pre- rows were chained without source_label. The independent verifier
 // hashes them with this six-field shape, so the writer must match at the v1/v2 boundary.
 export const CHAIN_FIELDS_V1 = ["accessed_at", "event_type", "id", "memory_id", "prev_hash", "schema_version"] as const;
 export const LEGACY_FIELDS = ["accessed_at", "id", "memory_id"] as const;
@@ -51,7 +51,7 @@ export function canonicalEventJson(row: ChainEventRow): string {
   const fields: readonly (keyof ChainEventRow)[] = row.schema_version === 1 ? CHAIN_FIELDS_V1 : CHAIN_FIELDS;
   for (const k of fields) {
     const v = row[k as keyof ChainEventRow];
-    // ADR-0044 D5: switch edges carry a NULL memory_id; the access chain keeps the same
+    // switch edges carry a NULL memory_id; the access chain keeps the same
     // six-field canonical form while the switch_events side table holds the edge provenance.
     if (v === null && k === "memory_id" && typeof out.event_type === "string" && out.event_type !== CHAIN_EVENT_TYPE) {
       out[k] = v;
@@ -96,7 +96,7 @@ export function accessChainPreview(db: Database.Database): { anchor: ChainAnchor
  * BEGIN IMMEDIATE via transaction().immediate() (WAL read→write upgrade is not covered by
  * busy_timeout; one defensive retry on SQLITE_BUSY*). Single-row CHECK + upsert give DB-level
  * idempotency under CLI+MCP dual-process open. Throws on persistent busy/IO — caller degrades
- * to stderr WARN + telemetry bit (ADR-0009 D6 fail-open).
+ * to stderr WARN + telemetry bit ( fail-open).
  */
 export function bootstrapAccessChain(db: Database.Database): { status: "created" | "exists"; legacyRows: number; digest: string } {
   const run = db.transaction((): { status: "created" | "exists"; legacyRows: number; digest: string } => {

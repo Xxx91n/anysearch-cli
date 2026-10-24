@@ -1,4 +1,4 @@
-// ADR-0061 B2/T2 + ADR-0064 (R63 T5): real install-to-use lane — pack the PUBLISHED
+// B2/T2 + (R63 T5): real install-to-use lane — pack the PUBLISHED
 // packages (3 apps + the peer-optional embedding), npm-install the APP tarballs only
 // into a clean temp prefix (consumer-real: bundled internals never ship), then drive
 // the INSTALLED `ans` bin through --version / doctor / domain docs / doctor / search.
@@ -11,7 +11,7 @@
 // Without keys it fault-injects a dead endpoint (ANYSEARCH_ENDPOINT=127.0.0.1:9)
 // and asserts the documented abstain contract on `search --json` stdout under a
 // probe domain whose sources.enabled is [anysearch] alone —
-// abstain:true && providersFailed∋anysearch && results.length===0 (ADR-0063 /
+// abstain:true && providersFailed∋anysearch && results.length===0 (
 // R62 D-004: abstain exit 0 replaces the retired exit-1/Results:0 contract).
 // The offline golden lane is the committed
 // packages/store/test/eval-docs-golden.test.ts suite inside `turbo test`.
@@ -117,7 +117,7 @@ try {
 
   // 3b. R63 T5 (D-005): peer-optional dual-install — npm i cli + embedding into one
   // prefix lands both under the same node_modules root, and the app's bundled
-  // import("@anysearch-cli/embedding") resolves (ADR-0020 pack+install verification).
+  // import("@anysearch-cli/embedding") resolves ( pack+install verification).
   const embTgz = tgz.find((f) => f.startsWith("anysearch-cli-embedding-"));
   check("embedding tarball packed for peer leg", !!embTgz, tgz.join(","));
     // --omit=optional skips the heavy transformers/onnxruntime subtree — the peer leg
@@ -133,7 +133,7 @@ try {
   const d3 = ans("doctor");
   check("doctor shows vector arm present after peer install", d3.code === 0 && !/embedding absent/.test(d3.out), d3.out.slice(-400));
 
-  // 3c. R71 T1 (ADR-0072): pnpm-layout leg — isolated sibling node_modules
+  // 3c. R71 T1: pnpm-layout leg — isolated sibling node_modules
   // roots. pnpm add -g installs each top-level package in its own
   // <prefix>/global/v11/<hash>/node_modules tree, so the bundled
   // import("@anysearch-cli/embedding") cannot reach the sibling package — the

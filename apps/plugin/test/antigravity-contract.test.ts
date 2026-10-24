@@ -1,4 +1,4 @@
-// Antigravity CLI (agy) contract tests — R68 (T3 fix / ADR-0069 D4).
+// Antigravity CLI (agy) contract tests — R68 (T3 fix).
 // Live-verified against agy 1.2.5 headless probes (evidence:
 // .scratch/grill-round-68/evidence/t3-*):
 //   * stdin is camelCase: conversationId, toolCall{name,args}, workspacePaths,

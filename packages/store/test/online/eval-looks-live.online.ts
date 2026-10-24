@@ -4,7 +4,7 @@
 // double — with hard verdict/mustHitHosts/mustHitUrls/minResults assertions.
 // Discovered only by `pnpm -C packages/store test:online` (glob *.online.ts);
 // never on the ship-gate --offline path (D-006). Flaky live failures belong to
-// the eval-quarantine.json ledger (ADR-0027 D8), not relaxed assertions.
+// the eval-quarantine.json ledger, not relaxed assertions.
 // Skip policy: the bundled bin must exist and at least one provider key must be
 // set — a silent zero-provider run would fake a pass, so we skip loudly instead.
 //
@@ -52,7 +52,7 @@ const evidenceLog = process.env.ANS_EVAL_EVIDENCE_LOG ?? join(root, ".scratch", 
 
 function searchJson(question: string, env: NodeJS.ProcessEnv, vertical?: { domain: string; subDomain?: string; params?: Record<string, unknown> }): any {
   const args = [dist, "search", question, "--json"];
-  // R84 T1 / ADR-0085 draft: vertical entries ride the real --vertical-* flags —
+  // R84 T1 / draft: vertical entries ride the real --vertical-* flags —
   // the live leg exercises the same config boundary a user types at.
   if (vertical) {
     args.push("--vertical-domain", vertical.domain);
@@ -145,7 +145,7 @@ function main() {
   // Baseline asserts can never be quarantine-attributable.
   let nonQuarFailed = failed;
 
-  // ADR-0027 D8 + R64 D-004: active-quarantined entries are reported, not
+  // + R64 D-004: active-quarantined entries are reported, not
   // silently skipped — the quarantine mark is policy, the TTL clock lives in
   // eval-quarantine.json. Classification = the ledger's single implementation.
   const qPath = join(root, "packages", "store", "eval-quarantine.json");
@@ -189,7 +189,7 @@ function main() {
         for (const n of e.expected.mustNotHitPaths ?? [])
           assert(pathMiss(j.results, n, hosts), e.id + " mustNotHitPath " + n + " absent from results");
       }
-      // R84 T1 / ADR-0085 draft: expected.vertical assertion surface (live leg).
+      // R84 T1 / draft: expected.vertical assertion surface (live leg).
       // hit rides on the fused results' extra.vertical marker; control entries
       // pin the silent-fallback surface — see degraded handling below.
       const vexp = e.expected?.vertical;

@@ -91,7 +91,7 @@ copy a populated cache dir in from a connected machine. Removing the package
 returns the CLI to FTS-only mode — no crash, `ans doctor` reports the arm as
 SKIP.
 
-## Domains & abstain (ADR-0062)
+## Domains & abstain
 
 A *domain* is a TOML file under `domains/` (or `ANS_DOMAINS_DIR`) naming its
 providers and an authoritative `urlAllowlist`. `ANS_DOMAIN` selects it.
@@ -135,7 +135,7 @@ Provider selection comes from the domain TOML's `sources.enabled`. Missing
 keys skip that provider instead of crashing (fail-open); if *no* provider can
 register, the search is an error, not an abstain.
 
-## AnySearch vertical domains (ADR-0084)
+## AnySearch vertical domains
 
 The anysearch provider also exposes an orthogonal axis: a server-side
 **vertical-domain router**. Set it per query — CLI flags or MCP tool args —
@@ -228,8 +228,8 @@ flowchart LR
 
 "Verified" means an end-to-end transcript captured on the real host
 (`stream-json`), not contract isomorphism — full scope, dates and probe
-evidence live in the linked integration docs. ADR-0066 / ADR-0067 /
-ADR-0068 / ADR-0069 / ADR-0073 carry the evidence sets.
+evidence live in the linked integration docs. / /
+ / / carry the evidence sets.
 
 ## Known limitations
 
@@ -250,14 +250,11 @@ Full record: [docs/limitations.md](docs/limitations.md).
 - **Fail-open** — hooks, providers and optional peers degrade honestly instead
   of breaking the host agent.
 
-The complete numbered record: [docs/adr/index.md](docs/adr/index.md).
-
 ## For contributors
 
-- `CONTEXT.md` — canonical domain glossary (read first)
-- `docs/adr/index.md` — generated decision index (`scripts/gen-adr-index.mjs`, do not edit by hand)
+- `GLOSSARY.md` — canonical domain glossary (read first)
 - `docs/limitations.md` — full known-limitations record
-- `docs/agents/` — domain-doc + local-markdown issue tracker conventions
+- `docs/agents/` — domain-doc + GitHub issue tracker conventions
 - Repo layout: `packages/kernel` (engine) · `packages/store` (FTS5 memory,
   observation, URL policy) · `packages/retriever` (provider adapters + RRF) ·
   `apps/cli` · `apps/mcp` · `apps/plugin` (host hooks)

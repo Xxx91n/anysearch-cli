@@ -3,7 +3,7 @@
 Verified host: **codex-cli 0.142.5** (Windows 11) — headless `codex exec
 --json` probes, verified **2026-09-17**; transcripts in
 `.scratch/grill-round-67/evidence/`.
-Contract source: ADR-0068 +
+Contract source: +
 `.scratch/grill-round-67/evidence/t1-defect-ledger.md`.
 
 Hard-won host facts (live-verified on 0.142.5 — do not guess these):

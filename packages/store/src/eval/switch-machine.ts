@@ -1,4 +1,4 @@
-// ADR-0043 D2-D6 (r42 impl): consumed/synthetic switch state machine - pure decision core.
+// -D6 (r42 impl): consumed/synthetic switch state machine - pure decision core.
 // No fs / no db here: IO lives in switch-run.ts; this module is the audit surface
 // (CertiK FSM discipline: the transition table is enumerable and unit-testable).
 // Stats precedent (atomcode r42 research): evaluation gates hand-roll these two small
@@ -8,7 +8,7 @@
 export type SwitchPhase = "S0" | "S1" | "S2" | "S3" | "S4";
 export const SWITCH_PHASES: readonly SwitchPhase[] = ["S0", "S1", "S2", "S3", "S4"];
 
-// ADR-0044 D1: the access_events chain is a total replay log. Each edge is named by its
+// the access_events chain is a total replay log. Each edge is named by its
 // from/to pair, not by a coarse stage-transition hint. D3 adds the S1->S0 reject edge.
 export const SWITCH_EDGE_EVENTS = [
   "promote-s0-s1",
@@ -171,7 +171,7 @@ export function decideSwitch(from: SwitchPhase, i: SwitchInputs, c: SwitchCounte
     return { from, to: from, kind: "check", record: true, reason: "integrity-fail: " + i.integrityFailed, integrityBlock: true, counters: { readinessRounds: zero.readinessRounds, readinessMetStreak: 0, heavyConfirmStreak: 0 } };
   }
 
-  // ADR-0044 D3: wholly untrustworthy consumed evidence at S1 demotes to S0 and fails closed.
+  // wholly untrustworthy consumed evidence at S1 demotes to S0 and fails closed.
   if (from === "S1" && i.untrustworthyEvidence) {
     return { from, to: "S0", kind: "check", record: true, reason: "reject-s1-s0: wholly untrustworthy consumed evidence base", integrityBlock: true, counters: { readinessRounds: 0, readinessMetStreak: 0, heavyConfirmStreak: 0 } };
   }

@@ -1,4 +1,4 @@
-// ADR-0050 D3/D4: independent attribution-gold binary claim label line.
+// independent attribution-gold binary claim label line.
 // The AIS semantic label is collected first; uncertain records are excluded
 // from beta fitting and only enter the coverage denominator.
 
@@ -20,7 +20,7 @@ export const AttributionGoldSampleSchema = Type.Object(
     claimId: Type.String({ minLength: 1 }),
     claimText: Type.String({ minLength: 1 }),
     fusedScore: Type.Number({ minimum: 0, maximum: 1 }),
-    // ADR-0051 D4: audit-only segment marker. Absent means "web" (the line
+    // audit-only segment marker. Absent means "web" (the line
     // predates segmentation). Never enters beta fitting or threshold
     // derivation; samples feed binaryFitSamples by fusedScore only.
     instance: Type.Optional(
@@ -85,7 +85,7 @@ function jcs(value: unknown): string {
   return "{" + Object.keys(record).sort().map((key) => JSON.stringify(key) + ":" + jcs(record[key])).join(",") + "}";
 }
 
-// ADR-0051 D4: effective instance with the @2 default applied.
+// effective instance with the @2 default applied.
 export function sampleInstance(sample: AttributionGoldSample): "web" | "memory" {
   return sample.instance ?? "web";
 }
@@ -150,7 +150,7 @@ function parseRecordLines<T>(text: string, schema: Parameters<typeof Value.Check
   return { records, errors };
 }
 
-// ADR-0051 D4 (audit amendment) + ADR-0043 upcast precedent: @1 records are
+// (audit amendment) + upcast precedent: @1 records are
 // losslessly rewritten to @2. @1 differs only by the absent optional instance
 // field, whose effective default is "web".
 export function upcastGoldSampleLine(line: string): string {

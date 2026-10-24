@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 
-// ADR-0028 D3: shared secret guard for ALL write entries and BOTH search exits.
-// Upgrades over the ADR-0027 inline SECRET_RE (write-path adjudicateMemory only):
+// shared secret guard for ALL write entries and BOTH search exits.
+// Upgrades over the inline SECRET_RE (write-path adjudicateMemory only):
 //  - case-insensitive flag (PEM lowercase / mixed-case AKIA variants)
 //  - JSON-escape restore (e.g. \"-----BEGIN\" embedded in a JSON string)
 //  - whitespace collapse + full squash (secrets split across spaces/newlines)

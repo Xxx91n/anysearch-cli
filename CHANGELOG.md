@@ -4,29 +4,29 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
-## 0.1.2 — 2026-10-22 (hotfix: ans_chat retrieval, search saturation stop, rate-limit class; ADR-0103)
+## 0.1.2 — 2026-10-22 (hotfix: ans_chat retrieval, search saturation stop, rate-limit class)
 
 ### Fixed
 
-- **ans_chat 从不检索（ADR-0103 D1）**：三个自带域（default/docs/research）的 `hooks.toolWhitelist` 只列宿主侧工具名（`ctx_*`），把内核自带的 `search` 工具过滤掉，ans_chat 的 agent 循环零工具运行——模型凭参数记忆作答或把工具调用当正文输出。三个域白名单补 `"search"`；白名单仍是安全过滤器。回归：`packages/kernel/test/agent-tool-filter.test.ts`。
-- **搜索循环无预算外停止条件（ADR-0103 D2，r18 seal-0）**：新增 `SearchSaturation`——连续 2 次搜索无新 URL 或累计 12 次搜索后，阻断后续 `search` 并要求模型用已得证据作答。回归：`packages/kernel/test/search-saturation.test.ts`（修复前 30 次，修复后 ≤3 次）。
-- **限流提示误判 permanent-auth（ADR-0103 D3，r18 STOP-20）**：正文限流/额度提示（无开户标记）改抛 `rate limited` 并归 `transient`；开户提示仍为 `permanent-auth`。回归：`packages/retriever/test/anysearch.test.ts` case 17、`provider-error-class.test.ts`。
+- **ans_chat 从不检索（）**：三个自带域（default/docs/research）的 `hooks.toolWhitelist` 只列宿主侧工具名（`ctx_*`），把内核自带的 `search` 工具过滤掉，ans_chat 的 agent 循环零工具运行——模型凭参数记忆作答或把工具调用当正文输出。三个域白名单补 `"search"`；白名单仍是安全过滤器。回归：`packages/kernel/test/agent-tool-filter.test.ts`。
+- **搜索循环无预算外停止条件（，r18 seal-0）**：新增 `SearchSaturation`——连续 2 次搜索无新 URL 或累计 12 次搜索后，阻断后续 `search` 并要求模型用已得证据作答。回归：`packages/kernel/test/search-saturation.test.ts`（修复前 30 次，修复后 ≤3 次）。
+- **限流提示误判 permanent-auth（，r18 STOP-20）**：正文限流/额度提示（无开户标记）改抛 `rate limited` 并归 `transient`；开户提示仍为 `permanent-auth`。回归：`packages/retriever/test/anysearch.test.ts` case 17、`provider-error-class.test.ts`。
 
 ### Changed
 
 - 全包版本 0.1.1 → 0.1.2（9 package.json + plugin.json + ship-gate release pin + 两处 clientInfo 同 commit）。
 
-## 0.1.1 — 2026-10-15 (hotfix: relaxed recall rung, ADR-0102)
+## 0.1.1 — 2026-10-15 (hotfix: relaxed recall rung)
 
 ### Fixed
 
-- **recall 自然语言提问取不回已存证据（ADR-0102 D1）**：`recall_memory` 的内部记忆与项目索引两层都只走严格 FTS5 梯级（全词 AND + 整句），宿主自然语言提问几乎从不在单行里凑齐全部词，存储中的证据取不回。现严格梯级不足 `limit` 时追加放宽梯级（实词 OR + 前缀、同一 BM25/新鲜度排序，严格命中保持优先）；覆盖 `searchMemory` / `searchMemoryMultiQuery` / `ProjectIndexStore.search` 三条路径。回归：`packages/store/test/fts5-relaxed-recall.test.ts`、`apps/plugin/test/project-index-relaxed.test.ts`。
+- **recall 自然语言提问取不回已存证据（）**：`recall_memory` 的内部记忆与项目索引两层都只走严格 FTS5 梯级（全词 AND + 整句），宿主自然语言提问几乎从不在单行里凑齐全部词，存储中的证据取不回。现严格梯级不足 `limit` 时追加放宽梯级（实词 OR + 前缀、同一 BM25/新鲜度排序，严格命中保持优先）；覆盖 `searchMemory` / `searchMemoryMultiQuery` / `ProjectIndexStore.search` 三条路径。回归：`packages/store/test/fts5-relaxed-recall.test.ts`、`apps/plugin/test/project-index-relaxed.test.ts`。
 
 ### Changed
 
-- 全包版本 0.1.0 → 0.1.1（9 package.json + plugin.json + ship-gate release pin + provider clientInfo 同 commit）。本版同时承载下列 Unreleased（ADR-0094~0101）条目。
+- 全包版本 0.1.0 → 0.1.1（9 package.json + plugin.json + ship-gate release pin + provider clientInfo 同 commit）。本版同时承载下列 Unreleased（~0101）条目。
 
-## Unreleased — ADR-0101 r100: 元验证封顶（封顶滤尺三交集 + 修层/新层判据 + 坐席 Addendum + tau 递归/AST 前门 + deferred 触发器）
+## Unreleased — r100: 元验证封顶（封顶滤尺三交集 + 修层/新层判据 + 坐席 Addendum + tau 递归/AST 前门 + deferred 触发器）
 
 ### Added
 
@@ -42,17 +42,17 @@ All notable changes to this project are recorded here. Format follows
 
 ### Docs
 
-- **ADR-0101 立法（T1）**：五 Decision——D2 封顶滤尺三交集（fails+sunset+fraud-vs-style）/ D3 修层新层判据 / D5 坐席 Addendum / D6 tau 递归+AST 前门 / D7 负向边界+deferred 触发器；Consequences 携滤尺首演判例（R99 closeout 六死 SHA=活链尸体）与 T0 引用；CONTEXT「Grill Round 100 — Terms」七词条；ADR index 再生成至 101 件。
+- ** 立法（T1）**：五 Decision——D2 封顶滤尺三交集（fails+sunset+fraud-vs-style）/ D3 修层新层判据 / D5 坐席 Addendum / D6 tau 递归+AST 前门 / D7 负向边界+deferred 触发器；Consequences 携滤尺首演判例（R99 closeout 六死 SHA=活链尸体）与 T0 引用；CONTEXT「Grill Round 100 — Terms」七词条；ADR index 再生成至 101 件。
 - **deferred-r72 触发器注记（T3）**：`defer-r72-dsh-approval-channel` carried_log 挂 R100 续债注记——「R101+ 含 deferred 前置依赖的正题开工前须先评估触发条件」（任务书 D-003④ 兑现，该条目 trigger 已满足列入 R101 立项评估候选）。
-- **AGENTS.md 扫描面摘要刷新（T3）**：递归域 + AST 前门 + schema v2 + 坐席限期四件指针化，指向 ADR-0101。
+- **AGENTS.md 扫描面摘要刷新（T3）**：递归域 + AST 前门 + schema v2 + 坐席限期四件指针化，指向 。
 
-## Unreleased — ADR-0100 r99: vocab-guards 扩域至全 scripts/（逐模块注册表 + glob 顶层枚举 + 逐模块证伪）
+## Unreleased — r99: vocab-guards 扩域至全 scripts/（逐模块注册表 + glob 顶层枚举 + 逐模块证伪）
 
 ### Added
 
 - **vocab-registry 逐模块注册表（T2）**：`scripts/vocab-registry.mjs` 纯数据叶（零 import、`Object.freeze`）——`CODE_GROUPS = {verdict, anchors, evalIntegrity}` 逐模块分组，值=各模块受治 `*_CODES` 导出名；`GOVERNED_MODULES` 显式模块→组映射（数据非约定）。注册表脱离判定核，受治模块不回 import（单向依赖零循环）。
 - **vocab-scan 薄壳枚举（T2）**：`scripts/vocab-scan.mjs`——glob `scripts/*.mjs` 顶层（不递归，`tau/` 不入域）两相枚举：静态预筛 `*_CODES` 导出名 → 仅词表承载模块做命名空间注入 → 纯核逐模块断言；封闭排除清单（`.ts`/`.py`，判据=无法命名空间注入）漂移出 info 非 RED。
-- **扫面外三导出入册（T2）**：`ANCHOR_RED_CODES`/`ANCHOR_SKIP_CODES`（enforcement-anchors）与 `SHIP_OVERRIDE_REASON_CODES`（eval-integrity-contract）登记入册——ADR-0099 Known-Risk 1 开放面缺口关闭。
+- **扫面外三导出入册（T2）**：`ANCHOR_RED_CODES`/`ANCHOR_SKIP_CODES`（enforcement-anchors）与 `SHIP_OVERRIDE_REASON_CODES`（eval-integrity-contract）登记入册—— Known-Risk 1 开放面缺口关闭。
 - **探针无孤儿 + 三钉对抗演练（T2 验收段）**：e2e 新增「probe 模块导出无孤儿」反向断言 + 四钉对抗路径（探针名伪造 / 坐席伪造开 / 坐席关后复红 / 空注册表）逐条验证。
 
 ### Changed
@@ -62,14 +62,14 @@ All notable changes to this project are recorded here. Format follows
 
 ### Docs
 
-- **ADR-0100 立法（T1）**：六 Decision + 两块预写（首抓真 RED 解读纪律 / 四级迁移阶梯次序硬约束）+ CONTEXT「Grill Round 99 — Terms」七词条。
+- ** 立法（T1）**：六 Decision + 两块预写（首抓真 RED 解读纪律 / 四级迁移阶梯次序硬约束）+ CONTEXT「Grill Round 99 — Terms」七词条。
 - **坐席关票（T0/T3）**：`defer-r98-anchor-ratchet-recount-seat` 关闭（零代码改动，探针升全量 kill）；`defer-r98-anchor-open-surface-demo` 随扩域关闭。
-- **AGENTS.md 顶层零副作用摘要**：只指向 ADR-0100 不复述全文。
+- **AGENTS.md 顶层零副作用摘要**：只指向 不复述全文。
 
 ### Fixed
 
-- **审计 R99 返工（A1~A3）**：① `probeVocabGuards` 枚举面改为消费生产扫面 `scanVocabGuards(...).scanned` 的词表承载模块（ADR-0100 D4 同源契约补正，抽样死角关闭）；② `enumerateScriptFiles` 由吞异常返空改为抛异常 + `scan-surface-unreadable` 致命 finding（Fail-Closed 补正，不可枚举扫面不再假绿）；③ ship-gate step 3 与根 `package.json` 的 test 任务加 `--concurrency=2`（跨进程 SQLite 竞争 + spawn 密集套件在 Windows 负载主机的资源上界稳定化，不改变被测内容）。
-## Unreleased — ADR-0099 r98: 第五形态【装饰性机器约束检测】+ R97 审计返工（R1~R8/R10）
+- **审计 R99 返工（A1~A3）**：① `probeVocabGuards` 枚举面改为消费生产扫面 `scanVocabGuards(...).scanned` 的词表承载模块（ 同源契约补正，抽样死角关闭）；② `enumerateScriptFiles` 由吞异常返空改为抛异常 + `scan-surface-unreadable` 致命 finding（Fail-Closed 补正，不可枚举扫面不再假绿）；③ ship-gate step 3 与根 `package.json` 的 test 任务加 `--concurrency=2`（跨进程 SQLite 竞争 + spawn 密集套件在 Windows 负载主机的资源上界稳定化，不改变被测内容）。
+## Unreleased — r98: 第五形态【装饰性机器约束检测】+ R97 审计返工（R1~R8/R10）
 
 ### Added
 
@@ -94,7 +94,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Docs
 
-- **ADR-0099**：第五形态立法——行为消费验证为主+静态前检永不独立出 RED / 闭锚注册表 schema + 两枚自指钉 / 参数化注入 / ratchet 类 PENDING 坐席 / 双红设计意图入 Consequences / 开放面入 Known-Risk。
+- ****：第五形态立法——行为消费验证为主+静态前检永不独立出 RED / 闭锚注册表 schema + 两枚自指钉 / 参数化注入 / ratchet 类 PENDING 坐席 / 双红设计意图入 Consequences / 开放面入 Known-Risk。
 - **CONTEXT `Grill Round 98 — Terms` 九词条**：第五形态 / 执行锚 / 证伪探针 / kill-no-kill / 不可杀变异体 / 锚坐席 / 注册表参数化 / anchor-not-consumed / 溶栈声明。
 - **handoff-template 同步**：dissolved 语法家 + state-PENDING/clearing-RED/clearing-env 词表行——模板↔CODE_GROUPS 双向等集。
 - **deferred 三新票**：`defer-r98-anchor-ratchet-recount-seat`（ratchet 类锚坐席）+ `defer-r98-anchor-open-surface-demo`（开放面扩表示范）+ `defer-r98-stack-land-authorization`（残留分支清算坐席）。
@@ -105,13 +105,13 @@ All notable changes to this project are recorded here. Format follows
 - `defer-r98-anchor-open-surface-demo`：开放面检测首张扩表示范（新锚须携证伪 fixture 准入表）。
 - `defer-r98-stack-land-authorization`：`r98-anchor-detector` 残留分支待 push/land 授权（clearing 腿 covers 挂接）。
 
-## Unreleased — ADR-0098 r97: 自造失效声明可机检类别【统一立法 + 形态一/三实现 + 形态二先立规则】
+## Unreleased — r97: 自造失效声明可机检类别【统一立法 + 形态一/三实现 + 形态二先立规则】
 
 ### Added
 
 - **形态一状态腿（T2）**：单行 `state:` 标记解析 + 裸词违例扫描 + `unpushed`/`unlanded`/`no-branch-runs` 三离线谓词 + 判定集成；封闭注册表常量 + 10 成对 fixtures；真值表 310→357 / E2E 207→270（复现：`node packages/store/test/handoff-lint-verdict.test.mjs` / `node packages/store/test/handoff-lint-e2e.test.mjs`）；自移靶位 + 报告/门禁两速分权。
 - **形态三 verbatim 锚（T3）**：claims schema 新增 `verbatim` kind（整句字节级）+ 重锚仪式（理由 + 审计 + 重批计数）+ R97 首批 dogfood 锚。
-- **模板状态声明位（T5）**：handoff-template 标记语法节 + ADR-0098 形态二内容规则全文（实测值定义/marker 示例/PENDING 位挂接与 ratchet 排程引用）。
+- **模板状态声明位（T5）**：handoff-template 标记语法节 + 形态二内容规则全文（实测值定义/marker 示例/PENDING 位挂接与 ratchet 排程引用）。
 
 ### Fixed
 
@@ -119,13 +119,13 @@ All notable changes to this project are recorded here. Format follows
 
 ### Docs
 
-- **ADR-0097 Known-Risk 1 errata 原条目注记（T4）**：N5 修复对应的 errata 注记从 Fixed 条内析出（R98 R10/P-5 分行合规回填）。
+- ** Known-Risk 1 errata 原条目注记（T4）**：N5 修复对应的 errata 注记从 Fixed 条内析出（R98 R10/P-5 分行合规回填）。
 
 ### Deferred
 
 - 形态二 ratchet→RED 排程票 + 扩表示范票（`no-pr`/`unpublished`）见 `docs/deferred-registry.json`（R97 T6 登记）。
 
-## Unreleased — ADR-0097 r96: handoff-lint 门禁假绿收口【三态受控出口语义】（模板↔门禁 PENDING 冲突 + 祖先性冒充/静默折叠 + CI 拓扑不可满足三缺陷闭环）
+## Unreleased — r96: handoff-lint 门禁假绿收口【三态受控出口语义】（模板↔门禁 PENDING 冲突 + 祖先性冒充/静默折叠 + CI 拓扑不可满足三缺陷闭环）
 
 ### Changed
 
@@ -137,7 +137,7 @@ All notable changes to this project are recorded here. Format follows
 - **判定核纯模块 `scripts/handoff-lint-verdict.mjs`（T1）**：输入=交接件文本 + 注入环境快照，输出=三态+理由码+标注；核内禁 `spawnSync` / `fs` / `Date.now()` / `process.env`，故真值表可在无仓库/无网络/无时钟下穷举。
 - **薄壳 `scripts/handoff-lint-shell.mjs`（T2）**：采集（git/gh/but/workflow 触发器）→传递→出口三步；快照形状冻结，E2E 以同形状注入。
 - **真值表单测 + E2E 冒烟 + 共用 fixtures（T1/T2）**：`packages/store/test/handoff-lint-verdict.test.mjs`（OPA 允许+拒绝成对 / Stack 三要素 8 格 / 词表外必报错 / 空缺超长边界）、`packages/store/test/handoff-lint-e2e.test.mjs`（同套 fixtures 走完整壳层路径）、`packages/store/test/fixtures/handoff-lint/`；fail-on-empty 红线。
-- **ADR-0097 + CONTEXT 词条区**：D1 三态语义 / D2 Stack 三要素分级 + 环境分级降级 / D3 回归锁形态 / D4 生效域迁移边界 / D5 同轮闭环 / D6 收口件三态预注册；Known-Risks 预写五项；CONTEXT `Grill Round 96 — Terms` 五词条。
+- ** + CONTEXT 词条区**：D1 三态语义 / D2 Stack 三要素分级 + 环境分级降级 / D3 回归锁形态 / D4 生效域迁移边界 / D5 同轮闭环 / D6 收口件三态预注册；Known-Risks 预写五项；CONTEXT `Grill Round 96 — Terms` 五词条。
 
 ### Fixed
 
@@ -147,9 +147,9 @@ All notable changes to this project are recorded here. Format follows
 
 ### Deferred
 
-- 无。F8 由 ADR-0097 同轮闭环（`docs/deferred-registry.json` F8 行 status=closed）。
+- 无。F8 由 同轮闭环（`docs/deferred-registry.json` F8 行 status=closed）。
 
-## Unreleased — ADR-0096 r95: 评测矩阵修订轮【语料解冻 + matrix@3 读数】（vert-f1105 原位降格墓碑 + 判读器指纹版本戳滚动 + 匿名层终读档单次终读 INCONCLUSIVE-instrument-flag）
+## Unreleased — r95: 评测矩阵修订轮【语料解冻 + matrix@3 读数】（vert-f1105 原位降格墓碑 + 判读器指纹版本戳滚动 + 匿名层终读档单次终读 INCONCLUSIVE-instrument-flag）
 
 ### Changed
 
@@ -160,7 +160,7 @@ All notable changes to this project are recorded here. Format follows
 ### Added
 
 - **matrix@3 预注册（T2）**：先于任何跑数落账（parent 时序自证含 T1 diff）；含新指纹、「读数=复活条件③④输入证据非方向裁定」条款、G1b 谓词锚（>30%→INCONCLUSIVE-instrument）、单次终读纪律、57→56 可比性边界（prereg §7）。
-- **ADR-0096 立法 + CONTEXT 词条区**：D1 语料墓碑形态 / D2 判读器修订幅度 / D3 读数法律角色 / D4 匿名层执行裁量 / D5 三记账 / D6 收口形态；Known-Risks 预写三项（可比性边界先于读数/墓碑词表/G1b 谓词锚）；CONTEXT `Grill Round 95 — Terms` 七词条。
+- ** 立法 + CONTEXT 词条区**：D1 语料墓碑形态 / D2 判读器修订幅度 / D3 读数法律角色 / D4 匿名层执行裁量 / D5 三记账 / D6 收口形态；Known-Risks 预写三项（可比性边界先于读数/墓碑词表/G1b 谓词锚）；CONTEXT `Grill Round 95 — Terms` 七词条。
 - **匿名层终读路（T4–T6）**：容量探针登记为测量非判读输入（执行级修正：board 速记端点值须补完整 MCP 路径 `/mcp`）；终读档（56 格×4 腿=224 调用，351s）中段起系统性 `permanent-auth`（匿名配额边界，122 腿），兑现预注册分支→单次终读 `INCONCLUSIVE/instrument-flag`（G1b：instrumentDown 30/40；探针读数作量化锚）。
 
 ### Deferred
@@ -168,7 +168,7 @@ All notable changes to this project are recorded here. Format follows
 - **B 升级路径（用户侧）**：复活私有端点 `127.0.0.1:20128` 或供有效 key → 兑现后声明式环境一次干净全量跑（判据同 R86 T5：装置性失败=∅ + 覆盖≥70%）；agent 不代修 env、不代持凭证。
 - **backlog 候选（不入本轮 diff）**：`fundamental×cn_code` 新格立案（同 id 换芯禁令→须新 id，下一语料轮）；全语料契约一致性体检（独立轮次）。
 
-## Unreleased — ADR-0095 r94: r88-candidate 垂域死刑复核【开庭轮】（五段议程 + B3 混合制判词 reaffirm 机械落果 + formally-declined 落地裁定 + 四项具名复活条件立案 + D6 门禁证据效力裁定复核确认）
+## Unreleased — r94: r88-candidate 垂域死刑复核【开庭轮】（五段议程 + B3 混合制判词 reaffirm 机械落果 + formally-declined 落地裁定 + 四项具名复活条件立案 + D6 门禁证据效力裁定复核确认）
 
 ### Changed
 
@@ -177,7 +177,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Added
 
-- **ADR-0095 开庭立法（T1）**：D1 议程五段式结构与程序出口（0资格核验→1证据面陈述→2判据先审→3判词表决→4落地裁定，T0-F 复议轮降级出口）；D2 B3 混合判词归属与 exploratory 区机制（充分条件谓词命中机械落果，未命中入暂存区由用户拍板，拍板不可达出路为 pending-user-verdict 挂账）；D3 三果谓词加固与复活条件集可控性分类（可控锚≥1→reaffirm 优先，可控锚=0→retire，锚计数取证时刻预标注冻结）；D4 快照/活查分级纪律与具名步骤（判据快照不重跑 delta，契约现状串行活查）；D5 开庭即预通知与 carried_log 双动作时序（carried_log 追加先行 commit 自证时序，ADR 固化随后 commit）；D6 D6 副议题分级落地；D7 dsh 漂移条款与 Known-Non-Goals；D8 claims 冻结纪律；D9 判词词汇与落地态预注册冻结。
+- ** 开庭立法（T1）**：D1 议程五段式结构与程序出口（0资格核验→1证据面陈述→2判据先审→3判词表决→4落地裁定，T0-F 复议轮降级出口）；D2 B3 混合判词归属与 exploratory 区机制（充分条件谓词命中机械落果，未命中入暂存区由用户拍板，拍板不可达出路为 pending-user-verdict 挂账）；D3 三果谓词加固与复活条件集可控性分类（可控锚≥1→reaffirm 优先，可控锚=0→retire，锚计数取证时刻预标注冻结）；D4 快照/活查分级纪律与具名步骤（判据快照不重跑 delta，契约现状串行活查）；D5 开庭即预通知与 carried_log 双动作时序（carried_log 追加先行 commit 自证时序，ADR 固化随后 commit）；D6 D6 副议题分级落地；D7 dsh 漂移条款与 Known-Non-Goals；D8 claims 冻结纪律；D9 判词词汇与落地态预注册冻结。
 - **开庭取证与文书归档（T2/T3）**：五面卷宗落盘于 `.scratch/grill-round-94/evidence/t2/`；双侧证词全文与锚计数预标注冻结（可控锚=2，具名 owner 可控锚 2 个：条件 ③ 与 ④；广义含外部可机检条件 ① 为 3 个，均满足 $\ge 1$ 充分下界）落盘于 `evidence/t3a/`；终审判词文书与 `verdict.json` 机械落果归档于 `evidence/t3b/`。
 
 ### Deferred
@@ -185,7 +185,7 @@ All notable changes to this project are recorded here. Format follows
 - **defer-r93-deprecate-credential-scope**：T5 deprecate 探针证实 `npm whoami` 为 E401，分型为 `credential-scope`，6 版本命令清单纯备准续挂（见 `.scratch/grill-round-94/evidence/t5-deprecate.md` §3），维持外发动作待具备权限用户亲触执行（EOTP 不代跑）。
 - **常驻债续期**：`defer-r72-dsh-web-interactive-matrix`、`defer-f17` 等维持显式范围外候审。
 
-## Unreleased — ADR-0094 r93: L3 修复续轮【换模三跑】（Kimi-K2-Instruct-0905 冻结臂 + README 双语行对齐 + readme-token 机器腿首跑）
+## Unreleased — r93: L3 修复续轮【换模三跑】（Kimi-K2-Instruct-0905 冻结臂 + README 双语行对齐 + readme-token 机器腿首跑）
 
 ### Changed
 
@@ -198,7 +198,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Added
 
-- **ADR-0094 立法（T1）**：D1 T2 执行设计全包（隔离 profile 注入面 / B1 预注册单链与链级硬顶 / 诱导句与 N 预算 / max-tokens 预算下限判据 / 签名族三形态闭集 / L3c-min 判词收窄为「`ans_*` tool_call」/ 换臂三义务 / 凭证卫生）；D2 判词门控转向票（触发谓词 = 链尽判词显式成立，非「T2 未绿」；429 与环境违规不触发；内容白名单 = F-bug 登记 + 开庭议程；T-B/T3/T4 三条件票互斥求值谓词显式声明）；D3 README 措辞承继与四列表格形态调和；D4 `r88-candidate` sunset 硬截止（R95 前必须开庭 + R94 预通知义务 + owner 点名）；D5 deprecate 权限缺口三型枚举（`credential-scope` / `maintainer` / `org-owner`，每型含 fallback 行为字段）；D6 证据效力口径（本机门禁 advisory 非 blocking，登记 R94 复核）；D7 票序与 commit 结构；D8 Known-Non-Goals（多轮 tool_call ID 污染）。
+- ** 立法（T1）**：D1 T2 执行设计全包（隔离 profile 注入面 / B1 预注册单链与链级硬顶 / 诱导句与 N 预算 / max-tokens 预算下限判据 / 签名族三形态闭集 / L3c-min 判词收窄为「`ans_*` tool_call」/ 换臂三义务 / 凭证卫生）；D2 判词门控转向票（触发谓词 = 链尽判词显式成立，非「T2 未绿」；429 与环境违规不触发；内容白名单 = F-bug 登记 + 开庭议程；T-B/T3/T4 三条件票互斥求值谓词显式声明）；D3 README 措辞承继与四列表格形态调和；D4 `r88-candidate` sunset 硬截止（R95 前必须开庭 + R94 预通知义务 + owner 点名）；D5 deprecate 权限缺口三型枚举（`credential-scope` / `maintainer` / `org-owner`，每型含 fallback 行为字段）；D6 证据效力口径（本机门禁 advisory 非 blocking，登记 R94 复核）；D7 票序与 commit 结构；D8 Known-Non-Goals（多轮 tool_call ID 污染）。
 - **max-tokens 预算下限判据**：诱导轮 `max_tokens` 下限钉为 2048——T0 探针实证 `max_tokens: 8` 即触发 `finish_reason=length` 且 content 截断，证明极小预算下 `length` 形态与模型能力无关，故低于下限的 `length` 判环境违规不计 N。
 
 ### Deferred
@@ -206,7 +206,7 @@ All notable changes to this project are recorded here. Format follows
 - **r88-candidate 垂域死刑复核**：写入 sunset 条款——R95 前强制开庭，R94 收口批须在 registry `carried_log` 追加预通知并点名 owner `anysearch-eval`；开庭 ≠ 翻案（`reaffirm` / `revise` / `retire` 三果皆合法），结束无期限 rolling 候审。开庭主体在 R94/R95，本轮仅立法。
 - **常驻债续期**：`defer-r72-dsh-web-interactive-matrix` 主体维持 defer（patchReload:live + browser-turn 上游 `.d.ts` 键面仍缺席）；评测面（`defer-f17` 等）与常驻债清理维持本轮显式范围外。
 
-## Unreleased — ADR-0093 r92: featherless 自定义上游 T2 复跑 + 售后收口轮（判据复用与 L3b 修订 + 凭证卫生 + readme-token 检查器接线）
+## Unreleased — r92: featherless 自定义上游 T2 复跑 + 售后收口轮（判据复用与 L3b 修订 + 凭证卫生 + readme-token 检查器接线）
 
 ### Changed
 
@@ -223,23 +223,23 @@ All notable changes to this project are recorded here. Format follows
 - **defer-r92-readme-token-pin-machine-leg**：readme-token-pin 检查器专属机器腿首跑显性挂账至 R93。
 - **常驻债续期**：登记表显式续录 2 条在册条目（web-interactive matrix 主体、approval-channel headless 维持生效）carried_log；其余 3 项（domain-ownership、f16、f17）维持 open。
 
-## Unreleased — ADR-0092 r91: dsh L3 冒烟验收 + 售后收口轮（L3 判据立法 + 宿主升版 0.1.7-rc.2 + README 行对齐 + 小修批）
+## Unreleased — r91: dsh L3 冒烟验收 + 售后收口轮（L3 判据立法 + 宿主升版 0.1.7-rc.2 + README 行对齐 + 小修批）
 
 ### Changed
 
-- **dsh 售后验收轮**：宿主升至 `@deepseek-ai/dsh@0.1.7-rc.2`（测=记=钉三版收敛）；门判据三腿（L3a 装册绿/L3b 枚举绿/L3c-min 执行绿）立法于 ADR-0092；L3 实机冒烟实证 L3a 成立（dump-config 单行注册在位）；因环境缺失 `DEEPSEEK_API_KEY`，L3b 取证通道证实可直达端点但 tools 载荷无法确认，判词如实落分支 C（F-bug），T3 条件票锁定不留痕。
+- **dsh 售后验收轮**：宿主升至 `@deepseek-ai/dsh@0.1.7-rc.2`（测=记=钉三版收敛）；门判据三腿（L3a 装册绿/L3b 枚举绿/L3c-min 执行绿）立法于 ；L3 实机冒烟实证 L3a 成立（dump-config 单行注册在位）；因环境缺失 `DEEPSEEK_API_KEY`，L3b 取证通道证实可直达端点但 tools 载荷无法确认，判词如实落分支 C（F-bug），T3 条件票锁定不留痕。
 
 ### Fixed
 
 - **ship-gate.mjs 正则修补（T4a）**：修复 `/id:s*mcp-anysearch/` 为 `/id:\s*mcp-anysearch/`，防止缺失反斜杠导致任意选言误判。
 - **弃用文案双空格核实（T4b）**：枚举 `@anysearch-cli/cli@0.0.3~0.0.8` 双空格文案，备准修复命令；尝试执行遇 E401/权限闸，按 R87 D4 执行态如实记账。
-- **WORKFLOW.md §4.2 终审 ADR 判死（T4d）**：ADR-0092 D3 明确 supersede 语义——由 GitButler skill + 全局 `but` 协议等价覆盖，10+ 轮缺位核销审计正式封口。
+- **WORKFLOW.md §4.2 终审 ADR 判死（T4d）**： 明确 supersede 语义——由 GitButler skill + 全局 `but` 协议等价覆盖，10+ 轮缺位核销审计正式封口。
 
 ### Deferred
 
 - **defer-r72-dsh-approval-channel**：经 T4c 探测，`dsh-headless` 缺失交互式 ApprovalAnswerer，调用触发 fail-closed 降级，维持 open/defer。
 
-## Unreleased — ADR-0091 r90: dsh 原生工具面实施轮（五 ans_* 原生注册 + 桥退役 + approval-channel 拆票）
+## Unreleased — r90: dsh 原生工具面实施轮（五 ans_* 原生注册 + 桥退役 + approval-channel 拆票）
 
 ### Fixed
 
@@ -254,14 +254,14 @@ All notable changes to this project are recorded here. Format follows
 
 - **mcp-anysearch 桥行**自 cordis.patch.yml 退役（独票 refactor；rollback=revert）。注册表 native-tools→closed；approval-channel 拆为独立条目 defer-r72-dsh-approval-channel。
 
-## Unreleased — ADR-0090 r89: dsh 上游线轮（0.2.0-rc.1 调研 + repin 判词 soak-until-stable + r72 两票定形）
+## Unreleased — r89: dsh 上游线轮（0.2.0-rc.1 调研 + repin 判词 soak-until-stable + r72 两票定形）
 
 ### Changed
 
 - **dsh 上游线调研轮**：0.2.0-rc.1（next，2026-09-28T12:14Z 全族同发）L1 tarball 探针——消费子集 .d.ts diff 全等（12/12 字段级 IDENTICAL）、Events 键面零增删、dep-closure 同集零 delta；三锚判词=**soak-until-stable**，钉版 0.1.7-rc.1 + cordis 4.0.4 不动；证据 .scratch/grill-round-89/（upgrade-ledger v3 + t1 transcript/snapshot）。
 - **r72 两票定形（不实现）**：native-tools 依赖触发器实质已响（注册 API 三代同形）；web-interactive-matrix 分项——approval-channel 解除、patchReload:live/browser-turn 上游缺席维持 defer。
 
-## Unreleased — ADR-0089 r88: 搜索面卫生轮（a06 双层归并 + a03 吞词修复 + a08 死参清除 + F-6 探针卫生）
+## Unreleased — r88: 搜索面卫生轮（a06 双层归并 + a03 吞词修复 + a08 死参清除 + F-6 探针卫生）
 
 ### Fixed
 
@@ -298,22 +298,22 @@ All notable changes to this project are recorded here. Format follows
 - R85 NO-GO 判词语义勘误为 indeterminate—instrument down（程序性裁决锁定不溯改）；matrix@2 先登记后读数，T5 原指纹复跑实测 **NO-GO/direction-negative**（P=0.0378、净胜率 −0.125）——垂域臂 armHostHit 轴实测负效应。
 - docs/deferred-registry.json：r85-arm / r84-env 核销；新增 defer-r86-anysearch-corpus-param-contract 与 defer-r86-anysearch-anon-quota-nudge。
 
-## 0.1.0 — ADR-0086 r85: delta 腿全量重跑 + prefer-capable 预注册判读（NO-GO 终局）
+## 0.1.0 — r85: delta 腿全量重跑 + prefer-capable 预注册判读（NO-GO 终局）
 
 ### Added
 
-- 预注册判读矩阵 `.scratch/grill-round-85/prereg-matrix.md` + 确定性判读器 `.scratch/grill-round-85/readout-delta.mjs`（ADR-0086 D2）：G0–G4 固定闸序（输入完整→对照层装置闸→覆盖闸→2-of-4 负向硬闸→方向轴）+ `Beta(1+b,1+w)` flat 后验（P/EL 精确数值积分、固定网格无 RNG）+ 效应量四字段 + 单次终读条款；`assert-corpus | selftest | readout` 三模式——判读器自身携离线 fixture 测试面，判读先于读数落盘 commit。
+- 预注册判读矩阵 `.scratch/grill-round-85/prereg-matrix.md` + 确定性判读器 `.scratch/grill-round-85/readout-delta.mjs`（）：G0–G4 固定闸序（输入完整→对照层装置闸→覆盖闸→2-of-4 负向硬闸→方向轴）+ `Beta(1+b,1+w)` flat 后验（P/EL 精确数值积分、固定网格无 RNG）+ 效应量四字段 + 单次终读条款；`assert-corpus | selftest | readout` 三模式——判读器自身携离线 fixture 测试面，判读先于读数落盘 commit。
 - delta runner instrument-health ordering（sampling 协议不变）：对照层前置探针 + G1 旗标早停 + 处理层 vdomain×stratum 轮询交错（配额截断近似 MAR）+ `ANS_VERTICAL_DELTA_PLAN=1` 零配额排演面 + `hadVerticalSpec` 记账锚字段。
 
 ### Deferred
 
 - `defer-r83-prefer-capable-weighting` **核销（NO-GO 判词附纹理）**：全量重跑完成（57/57 格腿全活、覆盖 41/41、指纹 7ac0a48e55cd7954），注册矩阵单次终读裁决 NO-GO——但「无信号」实为 anysearch 臂全程 provider-failure 空列（装置级零数据非测得零增益），纹理如实披露于 decision-record；复活前置=新挂 `defer-r85-anysearch-arm-providersfailed`（清障候选，owner anysearch-retriever）。`defer-r84-delta-quota-rerun` 核销（触发条件满足+全量重跑实绩+降格件归档 `delta-2026-09-26.degraded.json` 不删）。
 
-## 0.1.0 — ADR-0085 r84: 垂域评测证据腿——契约断言 + 金标语料 + 双臂配对 delta
+## 0.1.0 — r84: 垂域评测证据腿——契约断言 + 金标语料 + 双臂配对 delta
 
 ### Added
 
-- 垂域评测双层扩展（ADR-0085 D2）：`eval-looks.json` 金标账册扩 `expected.vertical{role,domain,sub_domain,paramsKeys,paramsSent,hit,degraded,hitHosts,hitPaths}` 断言面；`vert-*`/`ctrl-*` id 族 + `stratum:`/`vdomain:` 独立维度词表（不触碰 docs 八维计数闸）；57 条 live-scoped 垂域语料（finance/academic/code/health × parameterized/semantic）+ 对照类一等断言条目；provenance 全字段 + 建集期活词表快照（get_sub_domains 仅人工探查不进运行时）。
+- 垂域评测双层扩展（）：`eval-looks.json` 金标账册扩 `expected.vertical{role,domain,sub_domain,paramsKeys,paramsSent,hit,degraded,hitHosts,hitPaths}` 断言面；`vert-*`/`ctrl-*` id 族 + `stratum:`/`vdomain:` 独立维度词表（不触碰 docs 八维计数闸）；57 条 live-scoped 垂域语料（finance/academic/code/health × parameterized/semantic）+ 对照类一等断言条目；provenance 全字段 + 建集期活词表快照（get_sub_domains 仅人工探查不进运行时）。
 - 配对 delta live 腿 `packages/store/test/online/eval-looks-vertical.online.ts`（D-002 证据层/D-004/D-005）：同 query 同期盼集 vertical-on/off 四趟（隔离 `ANS_PROVIDERS=anysearch` 臂级主证 + 全扇出融合级副列），产 `anysearch/vertical-delta@1` 证据件（datasetFingerprint + 臂标识 + 显式 n + better/worse/tied/unknown + providersFailed 四面 + 臂采样 URL）；不可测格记 null/unknown 非 0。
 - CLI eval 面 env 门控：`ANS_ARM_SNAPSHOT=1`（`--json` 透出 `metadata.fusion{labels,lists}`）+ `ANS_PROVIDERS=a,b`（provider 子集过滤走 `Query.providers`）。
 
@@ -329,11 +329,11 @@ All notable changes to this project are recorded here. Format follows
 
 - `defer-r83-prefer-capable-weighting` 注记更新为「证据机制在役等数据」（open，未核销）；新增 `defer-r84-ip-fifth-domain`（上游补 ip 结构化参数再建集）/ `defer-r84-delta-quota-rerun`（匿名配额耗尽后首轮部分降格，持有效 key 重跑）/ `defer-r84-anysearch-empty-endpoint-env`（ANYSEARCH_ENDPOINT 空串应视同未设）。
 
-## 0.1.0 — ADR-0084 r83: 垂域贯通轮——AnySearch vertical-domain passthrough + TE1 dsh 事件迁移
+## 0.1.0 — r83: 垂域贯通轮——AnySearch vertical-domain passthrough + TE1 dsh 事件迁移
 
 ### Added
 
-- `SearchRequest.vertical{domain,subDomain?,params?}` + `SearchProvider.verticalDomainSupported` 能力位（ADR-0084 D-003/D-004）：仓 TOML `[sources] vertical={domain,sub_domain?}` 静态亲和默认 + 工具 arg `verticalDomain/verticalSubDomain/verticalParams` + CLI `--vertical-domain/--vertical-sub-domain/--vertical-params` 三注入面；查询级整体替换仓级（无深合并）；能力协商下仅声明者收 wire 字段 `domain/sub_domain/sub_domain_params`，未声明者 general 扇出并入 degraded 名单（hint 非 abstain）。
+- `SearchRequest.vertical{domain,subDomain?,params?}` + `SearchProvider.verticalDomainSupported` 能力位（ D-003/D-004）：仓 TOML `[sources] vertical={domain,sub_domain?}` 静态亲和默认 + 工具 arg `verticalDomain/verticalSubDomain/verticalParams` + CLI `--vertical-domain/--vertical-sub-domain/--vertical-params` 三注入面；查询级整体替换仓级（无深合并）；能力协商下仅声明者收 wire 字段 `domain/sub_domain/sub_domain_params`，未声明者 general 扇出并入 degraded 名单（hint 非 abstain）。
 - `retrieval.vertical.pre` 审计事件（D-005）：attrs=anysearch.domain+vertical.domain+vertical.sub_domain+vertical.params_keys（仅键名不落值）+vertical.source(repo|query)+vertical.sent+vertical.degraded；与 domain_filter.pre 同构镜像、独立触发；无 vertical.post。垂域命中结果携 `NormalizedResult.extra.vertical` 机读标记（fusion 保活）。
 - `packages/kernel/test/vertical-domain.test.ts`（28 断言）+ store domain-schema 垂域断言 + retriever anysearch wire 映射用例 13/13b/13c/13d；README §AnySearch vertical domains 词表+约束表（17 值枚举快照+params 约束示例+上游拒收语义，标注 2026-09-25 日期源）。
 - `.scratch/grill-round-83/evidence/` —— T0 哨戒（dsh 双锚齐判定+rc.1 龄期闸实测+#1764 OPEN 趋僵 22d+CI 观测窗）+ TE1 迁移实录（三条件+repin 枚举重推导+L2 彩排）+ T1 垂域贯通证据（上游非法组合实测矩阵+CLI e2e）。
@@ -348,13 +348,13 @@ All notable changes to this project are recorded here. Format follows
 
 ### Deferred
 
-- `defer-r83-anysearch-vertical-domain-passthrough` 收口（本轮落地）；`defer-r73-dsh-event-rename` 双锚齐消费完毕核销；新增 prefer-capable 加权调参跟进项（D-004 §4，eval 数据驱动非契约职责）；R82 审计残余 nit 两档处置（e2e hermetic 即修落地；度量行自指/JSON id 不对称/clientInfo.version 硬编码/engines 地板缺席逐项登记——见 ADR-0084）。
+- `defer-r83-anysearch-vertical-domain-passthrough` 收口（本轮落地）；`defer-r73-dsh-event-rename` 双锚齐消费完毕核销；新增 prefer-capable 加权调参跟进项（D-004 §4，eval 数据驱动非契约职责）；R82 审计残余 nit 两档处置（e2e hermetic 即修落地；度量行自指/JSON id 不对称/clientInfo.version 硬编码/engines 地板缺席逐项登记——见 ）。
 
-## 0.1.0 — ADR-0083 r82: 迁移落地轮——AnySearchProvider REST→MCP-over-HTTP
+## 0.1.0 — r82: 迁移落地轮——AnySearchProvider REST→MCP-over-HTTP
 
 ### Changed
 
-- `@anysearch-cli/retriever` AnySearchProvider 传输面迁移（ADR-0082 分支 b 执行，fix-r82-anysearch-mcp-migration）：GET /v1/search（REST，404 死路由）→ POST /mcp（MCP Streamable HTTP，initialize→notifications/initialized→tools/call search 薄 JSON-RPC，不引 @modelcontextprotocol/sdk——eventsource-parser 为唯一新增 dep ~2KB）。Accept 双类型+MCP-Protocol-Version 每 POST+协商版本回写+Mcp-Session-Id 捕获回显+session 404 重初始化；fail-first 映射（structuredContent 优先→markdown 信封容错解析→isError/错形/意外 Content-Type 一律降级该臂，错形不吞零）。ANYSEARCH_ENDPOINT 以 /v1/search 结尾→剥至 base+/mcp+warn 一次。`max_results` 名义上限由 REST 时代宣称 20 修正为 MCP schema 实证上限 **10**（静默 clamp）。`domainFilterSupported` 保持 false——MCP domain=垂域路由枚举非 host allowlist（垂域贯通立 defer-r83-anysearch-vertical-domain-passthrough）。
+- `@anysearch-cli/retriever` AnySearchProvider 传输面迁移（ 分支 b 执行，fix-r82-anysearch-mcp-migration）：GET /v1/search（REST，404 死路由）→ POST /mcp（MCP Streamable HTTP，initialize→notifications/initialized→tools/call search 薄 JSON-RPC，不引 @modelcontextprotocol/sdk——eventsource-parser 为唯一新增 dep ~2KB）。Accept 双类型+MCP-Protocol-Version 每 POST+协商版本回写+Mcp-Session-Id 捕获回显+session 404 重初始化；fail-first 映射（structuredContent 优先→markdown 信封容错解析→isError/错形/意外 Content-Type 一律降级该臂，错形不吞零）。ANYSEARCH_ENDPOINT 以 /v1/search 结尾→剥至 base+/mcp+warn 一次。`max_results` 名义上限由 REST 时代宣称 20 修正为 MCP schema 实证上限 **10**（静默 clamp）。`domainFilterSupported` 保持 false——MCP domain=垂域路由枚举非 host allowlist（垂域贯通立 defer-r83-anysearch-vertical-domain-passthrough）。
 
 ### Added
 
@@ -367,15 +367,15 @@ All notable changes to this project are recorded here. Format follows
 
 ### Deferred
 
-- `defer-r81-provider-shape-validation` 收口（fail-first 映射+错形测试面）；`defer-r81-anysearch-rest-route-removed` 续守 quarterly 监控；`defer-r73-dsh-event-rename` 双锚未齐续债（rc.2 特征锚复验齐/稳定锚未齐，合格候选未出现）；新增 `defer-r83-anysearch-vertical-domain-passthrough`；ADR-0082 残余 R1–R5 四分诊全落位（registry residual-triage 五卡）。
+- `defer-r81-provider-shape-validation` 收口（fail-first 映射+错形测试面）；`defer-r81-anysearch-rest-route-removed` 续守 quarterly 监控；`defer-r73-dsh-event-rename` 双锚未齐续债（rc.2 特征锚复验齐/稳定锚未齐，合格候选未出现）；新增 `defer-r83-anysearch-vertical-domain-passthrough`； 残余 R1–R5 四分诊全落位（registry residual-triage 五卡）。
 
-## 0.1.0 — ADR-0082 r81: 产品吸气轮——provider-serverside spike 诊断 + release.yml R1 幂等跳过 + 发布插曲协议立法
+## 0.1.0 — r81: 产品吸气轮——provider-serverside spike 诊断 + release.yml R1 幂等跳过 + 发布插曲协议立法
 
 ### Added
 
-- `.github/workflows/release.yml` publish 腿幂等跳过（ADR-0082 D-004 R1）：每包 `npm publish` 前 `npm view <name>@<version>` 已存在→`::notice::` skip 记录（npm 无内建开关，rfcs#387，precondition-check 为通行解）+ E403 "cannot publish over"/EPUBLISHCONFLICT 容错兜底（check/publish TOCTOU 竞态）——同 tag `gh run rerun` 对已落包零副作用，C1 复跑前提落地。
+- `.github/workflows/release.yml` publish 腿幂等跳过（ D-004 R1）：每包 `npm publish` 前 `npm view <name>@<version>` 已存在→`::notice::` skip 记录（npm 无内建开关，rfcs#387，precondition-check 为通行解）+ E403 "cannot publish over"/EPUBLISHCONFLICT 容错兜底（check/publish TOCTOU 竞态）——同 tag `gh run rerun` 对已落包零副作用，C1 复跑前提落地。
 - `.scratch/grill-round-81/evidence/` —— T0 哨戒实录（dsh 0.1.7-rc.1 特征锚入 rc 线但龄期闸内/原生工具注册面 rc.2≡rc.1 零漂移触发器未响/llm-init flake 未复现/#1764 趋僵 21d）+ 插曲事件 1 取证（v0.0.8 三扳机全扣：五包发布+SLSA provenance attestations+装跑冒烟 npm i-g/ans doctor/dsh plugin add 全绿+CI 矩阵绿）。
-- `.scratch/grill-round-81/` spike 产物——端点测绘+fake-ip 审计+宣称审计判定表+判别实验矩阵+诊断书（T1a/T1b/T2/T3 实录，裁决权归 ADR-0082）。
+- `.scratch/grill-round-81/` spike 产物——端点测绘+fake-ip 审计+宣称审计判定表+判别实验矩阵+诊断书（T1a/T1b/T2/T3 实录，裁决权归 ）。
 
 ### Changed
 
@@ -383,55 +383,55 @@ All notable changes to this project are recorded here. Format follows
 
 ### Deferred
 
-- `defer-r71-provider-serverside` 本轮主轴处置（spike 诊断→三分支推荐→ADR-0082 裁决）；`defer-r72-dsh-plugin-npm-publish` 更态=已发布落地（三扳机实证，evidence/release-interlude-1.md）；其余 open 债 carried_log r81 显式续记。
+- `defer-r71-provider-serverside` 本轮主轴处置（spike 诊断→三分支推荐→ 裁决）；`defer-r72-dsh-plugin-npm-publish` 更态=已发布落地（三扳机实证，evidence/release-interlude-1.md）；其余 open 债 carried_log r81 显式续记。
 
 ### Known Issues
 
-- `@anysearch-cli/cli@<0.1.0`（0.0.3–0.0.8）内置默认端点指向已退休的 `/v1/search` REST 路由——安装即报 route 404。0.1.0 起默认走 `/mcp`（旧值被守卫自动改写）；旧版本停用处置=deprecate 处方（ADR-0088 D4，执行态见轮次收口档）。升级：`npm i -g @anysearch-cli/cli@latest`。
+- `@anysearch-cli/cli@<0.1.0`（0.0.3–0.0.8）内置默认端点指向已退休的 `/v1/search` REST 路由——安装即报 route 404。0.1.0 起默认走 `/mcp`（旧值被守卫自动改写）；旧版本停用处置=deprecate 处方（，执行态见轮次收口档）。升级：`npm i -g @anysearch-cli/cli@latest`。
 
-## 0.0.8 — 2026-09-23 — ADR-0081 r80: 发布就绪轮——dsh-plugin 上架备货 + E6 lockfile 复核腿实证收口 + 派生件新鲜度腿 + 上游哨戒
+## 0.0.8 — 2026-09-23 — r80: 发布就绪轮——dsh-plugin 上架备货 + E6 lockfile 复核腿实证收口 + 派生件新鲜度腿 + 上游哨戒
 
 ### Added
 
-- `@anysearch-cli/dsh-plugin` 发布就绪（ADR-0081 D-003 预首发路径）：`private:false` + `publishConfig {access:public, provenance:true}`；release.yml pack/publish 清单接入第五包——v0.0.8 tag 起五包统一 OIDC+sigstore provenance（tag 前置=用户手发 0.0.7 + npmjs Trusted Publisher 四字段配置完成，未就绪→顺延不拆清单）。
-- ship-gate 派生件新鲜度腿（ADR-0081 D-004）：CHANGELOG 当前轮条目在场断言（fail-closed）+ `no-changelog-entry: <理由>` 结构化豁免字段 + 可机验声明注册面（计数类/符号·路径存在性/日期·轮次号——声明与推导命令同一 diff 变更）+ 叙述一致性 warn 起步分档。
+- `@anysearch-cli/dsh-plugin` 发布就绪（ D-003 预首发路径）：`private:false` + `publishConfig {access:public, provenance:true}`；release.yml pack/publish 清单接入第五包——v0.0.8 tag 起五包统一 OIDC+sigstore provenance（tag 前置=用户手发 0.0.7 + npmjs Trusted Publisher 四字段配置完成，未就绪→顺延不拆清单）。
+- ship-gate 派生件新鲜度腿（ D-004）：CHANGELOG 当前轮条目在场断言（fail-closed）+ `no-changelog-entry: <理由>` 结构化豁免字段 + 可机验声明注册面（计数类/符号·路径存在性/日期·轮次号——声明与推导命令同一 diff 变更）+ 叙述一致性 warn 起步分档。
 - `.scratch/grill-round-80/evidence/` —— T0 哨戒实录（npm/gh 快照 + rc.3/alpha.1/alpha.2 三版闸态 + 双锚裁决）+ T1 E6 实测矩阵（frozen/install/fetch/vdbr-install 四路全拦 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` + verdict 缓存污染机制）+ T2 pack/dsh plugin add/dump-config 复验 transcript。
 
 ### Changed
 
-- `scripts/ship-gate.mjs` —— step 1s 断言同构更新（private:true→publish-ready 形状：private:false + publishConfig.access:public + provenance:true，ADR-0081）；step 1a 版本钉 0.0.7→0.0.8 同 commit 同步。
+- `scripts/ship-gate.mjs` —— step 1s 断言同构更新（private:true→publish-ready 形状：private:false + publishConfig.access:public + provenance:true，）；step 1a 版本钉 0.0.7→0.0.8 同 commit 同步。
 - `apps/dsh-plugin/AGENTS.md` —— invariant 行同步发布就绪态。
 - `docs/publishing.md` —— 新增「新包首发」节（预首发四步 + provenance 边界声明：证明 origin 非 integrity + no-go 分支顺延不拆清单）；publish set 4→5。
-- E6 闸内执法裁决（ADR-0081）：pnpm 11.1.3+ `verifyLockfileResolutions` 复核腿在钉版 11.24.0 实测闭合（`trustLockfile` 默认 false=复核开）；R78「lockfile 回放绕过龄期闸」证伪按实测 revised——当年五变体放行=`lockfile-verified.jsonl` 判定缓存污染（宽松写入 warn-pass 沿用），非缺腿；放行依据=上游机器腿闭合 + CI 断言依赖声明（ws yaml 禁 `trustLockfile:true`/`minimumReleaseAgeStrict:false`/非空 `minimumReleaseAgeExclude`）。
+- E6 闸内执法裁决（）：pnpm 11.1.3+ `verifyLockfileResolutions` 复核腿在钉版 11.24.0 实测闭合（`trustLockfile` 默认 false=复核开）；R78「lockfile 回放绕过龄期闸」证伪按实测 revised——当年五变体放行=`lockfile-verified.jsonl` 判定缓存污染（宽松写入 warn-pass 沿用），非缺腿；放行依据=上游机器腿闭合 + CI 断言依赖声明（ws yaml 禁 `trustLockfile:true`/`minimumReleaseAgeStrict:false`/非空 `minimumReleaseAgeExclude`）。
 
 ### Deferred
 
 - `defer-r72-dsh-plugin-npm-publish` 更态=就绪待用户扳机（手发 0.0.7→npmjs TP 配置→推 v0.0.8 tag）；`defer-r79-lockfile-agegate-replay` 记裁决=上游机器腿闭合核销（残余边界=同机宽松写入沿用+`trustLockfile:true` opt-out+no-op 短路，CI 断言依赖声明兜底）。
 - 落选债 10 条原名续 deferred（`carried_log` r80 显式记）：`defer-anysearch-domain-ownership` / `defer-f16-macos-native-crash` / `defer-f17-quarantine-ids` / `defer-r71-provider-serverside` / `defer-r71-transformers-undeclared-dep` / `defer-r72-dsh-native-tools` / `defer-r72-dsh-web-interactive-matrix` / `defer-r73-dsh-event-rename`（alpha.2 特征锚已齐、稳定锚缺=alpha 线+changelog 未审，L2 候选哨戒续挂）/ `defer-r74-logo-bitmap-matrix` / `defer-r75-registerhooks-esm-arm`。
 
-## Unreleased — ADR-0080 r79: pathlint 豁免域契约收敛——三豁免域显式立法（covered-fence/locator 行/`/x` 散文面限定）+ WORD_CHAR 边界修复（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
+## Unreleased — r79: pathlint 豁免域契约收敛——三豁免域显式立法（covered-fence/locator 行/`/x` 散文面限定）+ WORD_CHAR 边界修复（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
 
 ### Changed
 
-- `scripts/ship-gate-pathlint-detect.mjs` —— 豁免域契约收敛（ADR-0080 D1）：`/x` surfaced-skip 产出移序至 fence/locator 判定之后——所有 fence（marker 覆盖与否）与 `Stack:` locator 行不再产 info，散文面照旧；`WORD_CHAR` 补 `_`——`foo_C:\x` 形标识符粘连盘符不再误报，裸 `C:\x` 仍拦。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
-- `packages/store/fixtures/pathlint/{red,green}.md` + `ship-gate-pathlint.test.mjs`（9→14 cases）——豁免域近邻成对断言：covered-fence in-repo 放行↔unmarked-fence 仍拦、locator in-repo 放行↔非 locator 同款仍拦、fence/locator 内 `/x` 零 info↔散文仍产、`foo_C:\x` 零违例↔裸 `C:\x` 仍拦；ADR-0072↔AGENTS.md 镜像一致性机器断言新增。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
-- `docs/adr/0072` D1 amendment + `AGENTS.md` 镜像段 + `docs/adr/0080`（第 80 号 ADR）——豁免域三条款立法+drift 归因（文本侧未审视/实现侧有意图）+rejected alternatives（Revert=毁 transcript 保真、逐面混裁=立法负担相当内聚更差）+豁免扩大风险三重缓解（一致性测试/stale-marker 棘轮/季度审计）+结构性同构先例标注+不 bump 判定。
+- `scripts/ship-gate-pathlint-detect.mjs` —— 豁免域契约收敛（）：`/x` surfaced-skip 产出移序至 fence/locator 判定之后——所有 fence（marker 覆盖与否）与 `Stack:` locator 行不再产 info，散文面照旧；`WORD_CHAR` 补 `_`——`foo_C:\x` 形标识符粘连盘符不再误报，裸 `C:\x` 仍拦。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
+- `packages/store/fixtures/pathlint/{red,green}.md` + `ship-gate-pathlint.test.mjs`（9→14 cases）——豁免域近邻成对断言：covered-fence in-repo 放行↔unmarked-fence 仍拦、locator in-repo 放行↔非 locator 同款仍拦、fence/locator 内 `/x` 零 info↔散文仍产、`foo_C:\x` 零违例↔裸 `C:\x` 仍拦；↔AGENTS.md 镜像一致性机器断言新增。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
+- `` D1 amendment + `AGENTS.md` 镜像段 + ``（第 80 号 ADR）——豁免域三条款立法+drift 归因（文本侧未审视/实现侧有意图）+rejected alternatives（Revert=毁 transcript 保真、逐面混裁=立法负担相当内聚更差）+豁免扩大风险三重缓解（一致性测试/stale-marker 棘轮/季度审计）+结构性同构先例标注+不 bump 判定。
 - 文书面次生效应（dogfooding 实录）：WORD_CHAR 修复使 r78/r79 文书内仅靠 `foo_C:\x` FP 撑活的 5 个 marker 翻转 stale 并按棘轮移除；任务书 2 行裸 `C:\x` 字面量补 marker；全仓 markdown 扫描 0 违例（333 文档）。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
 
-## Unreleased — ADR-0079 r78: 门禁可信度校准——pathlint token+分隔符组合判定器 + minimumReleaseAge 拦截边界实测（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
+## Unreleased — r78: 门禁可信度校准——pathlint token+分隔符组合判定器 + minimumReleaseAge 拦截边界实测（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
 
 ### Added
 
-- `scripts/ship-gate-pathlint-detect.mjs` —— pathlint 判定器抽为共享纯函数模块（ADR-0079 D-003），ship-gate step 1i 与 warn-sweep driver（`.scratch/grill-round-78/evidence/t1-warn-sweep.driver.mjs`）同一实现双消费：「token+后随分隔符=locator」组合判定，新增四类 token 形——win-envvar `%VAR%` / posix-envvar `$VAR`、`${VAR}` / tilde `~` / UNC `\\host` 形——与既有字面形（drive / posix-home / appdata）统一收口；裸 env-var 散文永不命中；单段 POSIX 根 `/x` 降 info surfaced-skip（可见不阻断）；失效标记棘轮腿（marker 行不再命中即报 stale-marker，标记只减不增）；inline code 不豁免。
+- `scripts/ship-gate-pathlint-detect.mjs` —— pathlint 判定器抽为共享纯函数模块（ D-003），ship-gate step 1i 与 warn-sweep driver（`.scratch/grill-round-78/evidence/t1-warn-sweep.driver.mjs`）同一实现双消费：「token+后随分隔符=locator」组合判定，新增四类 token 形——win-envvar `%VAR%` / posix-envvar `$VAR`、`${VAR}` / tilde `~` / UNC `\\host` 形——与既有字面形（drive / posix-home / appdata）统一收口；裸 env-var 散文永不命中；单段 POSIX 根 `/x` 降 info surfaced-skip（可见不阻断）；失效标记棘轮腿（marker 行不再命中即报 stale-marker，标记只减不增）；inline code 不豁免。
 - `packages/store/fixtures/pathlint/{red,green}.md` + `packages/store/test/ship-gate-pathlint.test.mjs`（9 cases）——红绿成对 fixture 固化判定器契约：红向全 token 类+两例真实逃逸+inline code+失效/畸形标记必拦；绿向散文提及、URL 边界、已标记行、locator 行、已标记 fence 全放，随 `turbo test` 行使。
-- `docs/adr/0079-architecture-grill-round-78-gate-calibration-pathlint-detector-and-repin-matrix.md`（第 79 号 ADR）——组合判定器+豁免三层心智模型（marker=受审 artifact/只减不增/baseline≠规则后门）+棘轮审计+E1–E7 判决矩阵实录+断言收窄文本+`minimumReleaseAgeIgnoreMissingTime` 加固理由+不 bump 判定。
+- ``（第 79 号 ADR）——组合判定器+豁免三层心智模型（marker=受审 artifact/只减不增/baseline≠规则后门）+棘轮审计+E1–E7 判决矩阵实录+断言收窄文本+`minimumReleaseAgeIgnoreMissingTime` 加固理由+不 bump 判定。
 
 ### Changed
 
 - `scripts/ship-gate.mjs` —— step 1i PATH_RE inline 块整体替换为 detect 模块 import（`enumerateScopedMarkdown`/`buildEnv`/`scanLines`），fail-closed 语义不变。
 - `pnpm-workspace.yaml` —— 新增 `minimumReleaseAgeIgnoreMissingTime: false`：缺 time 元数据的源由默认跳过（豁免面）收紧为 fail-closed；npmjs 恒带 time，对现状无破坏（E7 记档态向量）。
-- 存量违例机械化清算——warn-first 全量扫 313 篇登记文档实录 96 命中 → 97 处置动作/52 文件行尾补受治理 machine-local 标记（`docs/adr/0042-…:111` 等）→ 复扫 0 后翻转 fail-closed（证据 `.scratch/grill-round-78/evidence/`：`t1-warn-sweep.md` + `t1-remediate.md`，driver 幂等可复跑）。
-- `docs/deferred-registry.json` —— `defer-r77-pathlint-envvar-blindspot` 核销 closed（closed_by ADR-0079）；11 条 open 债 `carried_log` r78 显式续记。
+- 存量违例机械化清算——warn-first 全量扫 313 篇登记文档实录 96 命中 → 97 处置动作/52 文件行尾补受治理 machine-local 标记（`…:111` 等）→ 复扫 0 后翻转 fail-closed（证据 `.scratch/grill-round-78/evidence/`：`t1-warn-sweep.md` + `t1-remediate.md`，driver 幂等可复跑）。
+- `docs/deferred-registry.json` —— `defer-r77-pathlint-envvar-blindspot` 核销 closed（closed_by ）；11 条 open 债 `carried_log` r78 显式续记。
 - `.scratch/grill-round-77/upgrade-ledger.md` v2 待校准项消解——断言收窄落锚：minimumReleaseAge 闸只拦新鲜解析路径（catalog/range 重解析），lockfile 回放不执法龄期闸；E6 格证伪如实记档（闸内版手写进 lockfile + frozen/fetch 五变体全放行，`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` 在 11.24.0 不触发——与 #11583 调研结论矛盾，按实测为准）。
 
 ### Deferred
@@ -440,46 +440,46 @@ All notable changes to this project are recorded here. Format follows
 - E6 证伪后果挂账——携带在闸版本的 lockfile 不在龄期闸执法面内（frozen 回放静默放行），该向量由 lockfile review 纪律兜底，不指望闸覆盖。
 - pathlint 残余盲区挂账——多段未知根 POSIX 路径（gitbash `/d/` 盘形等）判定器不命中不报，维持沉默待后续轮次评估。
 
-## Unreleased — ADR-0078 r77: dsh 上游观测哨分层漏斗 + R76 治理 backlog 七项清算（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
+## Unreleased — r77: dsh 上游观测哨分层漏斗 + R76 治理 backlog 七项清算（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
 
 ### Added
 
-- `scripts/governed-json.mjs` 新增 `governedListViolation` + `stripBomCommand`（ADR-0078 D5）——`CANONICAL_JSON_FILES` 空清单 fail-closed（真门探针实测 `[fail] canonical-json: ... is empty`）；UTF-8 BOM 专门报错（EF BB BF 签名 + `subarray(3)` strip 命令，不发 normalize 指针）。
+- `scripts/governed-json.mjs` 新增 `governedListViolation` + `stripBomCommand`（）——`CANONICAL_JSON_FILES` 空清单 fail-closed（真门探针实测 `[fail] canonical-json:... is empty`）；UTF-8 BOM 专门报错（EF BB BF 签名 + `subarray(3)` strip 命令，不发 normalize 指针）。
 - `.scratch/grill-round-77/evidence/` —— T0 轨一探针取证：`t0-l0-watch.json`（23 名全族 npm view 快照）、`t0-api-snapshot-rc2.json`（pin 版消费面 API 快照）、三份 L1 transcript（rc.3 无 alarm / alpha.2 锚复核 ALARM / 0.1.7-alpha.1 ALARM+家族扩至 21 dsh-*）。
 - `.scratch/grill-round-77/upgrade-ledger.md` v2 —— L0/L1/L2 漏斗重排 + 改名映射纠偏（rc.2 session-start 本携 source）+ 墓碑表 + no-qualifying-candidate 显式结论。
 
 ### Changed
 
-- `scripts/closeout-coverage.mjs`（ADR-0078 D5）——`titleRound` 锚定 title 行首（句中「Grill Round N —」提及不误登记）；`ROUND_DIR_RE` 改全名匹配 `/^grill-round-(\d+)$/i`（`grill-round-7x` 不再别名 round 7）。
+- `scripts/closeout-coverage.mjs`（）——`titleRound` 锚定 title 行首（句中「Grill Round N —」提及不误登记）；`ROUND_DIR_RE` 改全名匹配 `/^grill-round-(\d+)$/i`（`grill-round-7x` 不再别名 round 7）。
 - `scripts/gen-adr-index.mjs` —— renderBlock 互注点名消费方 parser（F-5⑥ 双向契约）。
 - `docs/deferred-registry.json` —— `defer-r73-dsh-event-rename` 触发器双锚改写（特征+稳定性，版本号退出触发逻辑）+ `tombstones` 字段（0.1.6-alpha.* superseded-by 0.1.7-alpha.1）+ `gov-r76-registry-canonical-lock` 补 `deadline`/`review_cadence` + 10 条 open 债 carried_log r77 显式续债（canonical normalize+字节锁自证）。
 
 ### Deferred
 
 - L2 合格候选本轮不存在（no-qualifying-candidate 显式结论）：rc.3 无 ALARM、alpha 线稳定锚不响；下一合格候选出现按 latest-only 直接彩排，跳线版本只补墓碑。落选债原名续 deferred（carried_log 记）：transformers(#1764 未 merge) / provider-serverside / dsh 三件套 / bitmap / registerhooks / f16 / f17 / domain-ownership。
-- `defer-r77-pathlint-envvar-blindspot`（审计返工新立项）——ship-gate step 1i PATH_RE 不识别 env-var 形机器路径（`%TEMP%`/`$HOME`/`~/`），ADR-0072 意图级盲区；修复向=PATH_RE 扩形态+红向 fixture。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+- `defer-r77-pathlint-envvar-blindspot`（审计返工新立项）——ship-gate step 1i PATH_RE 不识别 env-var 形机器路径（`%TEMP%`/`$HOME`/`~/`）， 意图级盲区；修复向=PATH_RE 扩形态+红向 fixture。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 
-## Unreleased — ADR-0077 r76: 治理面静默漂移清算（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
+## Unreleased — r76: 治理面静默漂移清算（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
 
 ### Added
 
-- `scripts/governed-json.mjs` + ship-gate step 1 `stepGovernedJsonCanonical` 腿（ADR-0077 D4/D5）——受治理 JSON 的字节锁：`CANONICAL_JSON_FILES = ["docs/deferred-registry.json"]` 逐文件断言字节 ≡ `JSON.stringify(JSON.parse(src),null,1)+'\n'`；非法 JSON 独立报错；非 canonical 报 `first differs at line N` + 可粘贴 normalize 指令 + 清单常量位置；gate 不自修（committed≠reviewed）。
-- `scripts/closeout-coverage.mjs` + ship-gate step 1g leg-b 重写（ADR-0077 D1–D3）——完成信号改为 ADR index `Grill Round N` 登记（登记即完成），fail-closed 三断言（已登记无 closeout→红 / index↔.scratch 双向漂移→红 / 推导集合为空或不可解析→红），floor=76 规则生日锚定，在飞豁免打结构化行 `awaiting closeout: round N (ADR not yet registered)`，成功输出带覆盖计数；字段 lint 面不动（仍只 lint 最新含 closeout dir）。
+- `scripts/governed-json.mjs` + ship-gate step 1 `stepGovernedJsonCanonical` 腿（）——受治理 JSON 的字节锁：`CANONICAL_JSON_FILES = ["docs/deferred-registry.json"]` 逐文件断言字节 ≡ `JSON.stringify(JSON.parse(src),null,1)+'\n'`；非法 JSON 独立报错；非 canonical 报 `first differs at line N` + 可粘贴 normalize 指令 + 清单常量位置；gate 不自修（committed≠reviewed）。
+- `scripts/closeout-coverage.mjs` + ship-gate step 1g leg-b 重写（–D3）——完成信号改为 ADR index `Grill Round N` 登记（登记即完成），fail-closed 三断言（已登记无 closeout→红 / index↔.scratch 双向漂移→红 / 推导集合为空或不可解析→红），floor=76 规则生日锚定，在飞豁免打结构化行 `awaiting closeout: round N (ADR not yet registered)`，成功输出带覆盖计数；字段 lint 面不动（仍只 lint 最新含 closeout dir）。
 - `packages/store/test/governed-json-canonical.test.mjs`（19 断言）+ `closeout-coverage.test.mjs`（40 断言，含审计返工 F-2/F-4 及二批 residual 回归用例）——known-bad fixture 层常态化红绿双证，随 `turbo test` 行使。
 
 ### Changed
 
-- `docs/deferred-registry.json` — `defer-r71-shipgate-1g-coverage` 核销 closed（closed_by ADR-0077）；新增 `gov-r76-registry-canonical-lock` 立项事实入档；11 条落选债原名续 deferred 并各附 `carried_log` 显式续债条；顶层 `note` 追加 canonical 锁定声明。
+- `docs/deferred-registry.json` — `defer-r71-shipgate-1g-coverage` 核销 closed（closed_by ）；新增 `gov-r76-registry-canonical-lock` 立项事实入档；11 条落选债原名续 deferred 并各附 `carried_log` 显式续债条；顶层 `note` 追加 canonical 锁定声明。
 
 ### Deferred
 
 - 落选债原名续 deferred（carried_log 显式记）：transformers(#1764 未 merge) / provider-serverside / dsh 三件套 / event-rename / bitmap / registerhooks / f16 / f17 / domain-ownership。#1764 观察哨续挂；drafts 两文稿仍待用户亲手发。
 
-## Unreleased — ADR-0076 r75: transformers ghost-dep 判定性清算（无发布态代码增量，不 bump）
+## Unreleased — r75: transformers ghost-dep 判定性清算（无发布态代码增量，不 bump）
 
 ### Added
 
-- `packages/embedding/test/transformers-ghost-dep.test.ts` — 静态护栏双件（ADR-0076 D3）：(a) `src/` 全树禁裸引 `@huggingface/transformers`（import/from/export-from/import() 全禁，唯一合法入口 = `createRequire().require()`；注释与 `typeof import(…)` 类型查询豁免）；(b) 版本配对断言——自声明 `optionalDependencies.onnxruntime-common` ≡ effective `onnxruntime-node` 内嵌版本（当前 1.21.0 ≡ 1.21.0），双反例均自证红（`.scratch/grill-round-75/evidence/t2-guardrails-selfproof.log`）。
+- `packages/embedding/test/transformers-ghost-dep.test.ts` — 静态护栏双件（）：(a) `src/` 全树禁裸引 `@huggingface/transformers`（import/from/export-from/import 全禁，唯一合法入口 = `createRequire.require`；注释与 `typeof import(…)` 类型查询豁免）；(b) 版本配对断言——自声明 `optionalDependencies.onnxruntime-common` ≡ effective `onnxruntime-node` 内嵌版本（当前 1.21.0 ≡ 1.21.0），双反例均自证红（`.scratch/grill-round-75/evidence/t2-guardrails-selfproof.log`）。
 - `.scratch/grill-round-75/drafts/` — 上游申报文稿（用户审阅闸，Agent 不代发）：`pr-1764-comment.md`（4.3.0 pnpm 隔离 scope 运行时复现 + published 消费者裸奔 + 下游 ≥4 项目造轮子清单）+ `issue-1087-comment.md`（检索者指路短评）。
 - `.scratch/grill-round-75/evidence/` — T0 运行时实证 transcript：4.3.0 在 `hoist:false` 下 `Cannot find module 'onnxruntime-common'`@`transformers.node.cjs:13520`；3.8.1 无 patch 同红、带 patch 绿；默认 virtual-store hoist 掩盖面注记。
 
@@ -492,7 +492,7 @@ All notable changes to this project are recorded here. Format follows
 
 - `defer-r75-registerhooks-esm-arm`（新条目）— ESM 臂 registerHooks 具名重返票，三重返触发器：(a) src 出现 ESM import 加载路径（护栏断言红）；(b) #1764 merge 且发布版携带声明（patch 整体退役）；(c) Node 地板 ≥22.15 且出现真实 ESM 消费者（按 GitNexus#2069 姿势 fail-open+动态配对）。落选债原名续 deferred：shipgate-1g / provider-000 / dsh 三件套 / bitmap / f16 / f17 / domain-ownership。
 
-## Unreleased — ADR-0075 r74: README 视觉层 + Antigravity 集成专文（docs-only round）
+## Unreleased — r74: README 视觉层 + Antigravity 集成专文（docs-only round）
 
 ### Added
 
@@ -510,11 +510,11 @@ All notable changes to this project are recorded here. Format follows
 
 - `defer-r74-logo-bitmap-matrix` —— logo 位图衍生矩阵（PNG/WebP 导出）延期：repo-logo 位图管线依赖的 imagegen 工具不存在；本轮纯 SVG mark 落地，采纳时以 `assets/readme/logo.svg` 为源件。
 
-## 0.0.7 — 2026-09-19 — ADR-0073/0074 r72+r73: DeepSeek Harness 宿主适配（两阶段 C：Phase-1 MCP 桥 + Phase-2 薄 bundle）+ 上游依赖族钉版
+## 0.0.7 — 2026-09-19 — /0074 r72+r73: DeepSeek Harness 宿主适配（两阶段 C：Phase-1 MCP 桥 + Phase-2 薄 bundle）+ 上游依赖族钉版
 
 ### Added
 
-- `apps/dsh-plugin`（`@anysearch-cli/dsh-plugin`，private 零运行时依赖 Cordis bundle）——首个 in-process 宿主适配器：只做五面 hooks（`agent/session-start` routing-card `agent.inject()`、`ctx.systemPrompt` `anysearch:routing-card` section、`tools/pre-execute` URL 策略 deny/ask + recall 预热注入、`tools/post-execute` 蒸馏 `additionalContexts`、`tools/result` `/index` IPC），业务逻辑全留 127.0.0.1:33333 HTTP IPC（fail-open；URL 门按 ADR-0054/0055 fail-closed）。`@deepseek-ai/*` 仅 devDep `import type` = 编译期 churn 报警器；`dsh.bundle.patch` → 自带 `cordis.patch.yml` 整行复述插入插件行 + `mcp-anysearch` 桥行（`dsh plugin add` 一步装双阶段）。共享 hook 逻辑复用 `@anysearch-cli/plugin` 并 esbuild 打包进 `lib/index.js`（`createRequire` banner——CJS dep 在纯 ESM 下 `Dynamic require of "node:crypto"` 真 loader 实证修复）。
+- `apps/dsh-plugin`（`@anysearch-cli/dsh-plugin`，private 零运行时依赖 Cordis bundle）——首个 in-process 宿主适配器：只做五面 hooks（`agent/session-start` routing-card `agent.inject`、`ctx.systemPrompt` `anysearch:routing-card` section、`tools/pre-execute` URL 策略 deny/ask + recall 预热注入、`tools/post-execute` 蒸馏 `additionalContexts`、`tools/result` `/index` IPC），业务逻辑全留 127.0.0.1:33333 HTTP IPC（fail-open；URL 门按 /0055 fail-closed）。`@deepseek-ai/*` 仅 devDep `import type` = 编译期 churn 报警器；`dsh.bundle.patch` → 自带 `cordis.patch.yml` 整行复述插入插件行 + `mcp-anysearch` 桥行（`dsh plugin add` 一步装双阶段）。共享 hook 逻辑复用 `@anysearch-cli/plugin` 并 esbuild 打包进 `lib/index.js`（`createRequire` banner——CJS dep 在纯 ESM 下 `Dynamic require of "node:crypto"` 真 loader 实证修复）。
 - `apps/plugin` 新窄口子导出 `./hooks/routing-card` + `./hooks/server-token`（esbuild entries + exports map）——dsh bundle 复用 routing card 与 server token resolver 的单一事实源。
 - `scripts/ship-gate.mjs` step 1s——dsh-plugin churn lint（fail-closed）：`@deepseek-ai/*` 泄入任何 runtime dep 字段即红；private:true/type:module/dsh.bundle.patch/cordis.patch.yml 关键键位断言。PKG_DIRS 加 `apps/dsh-plugin`（0.0.6 钉版+打包腿覆盖）。
 - `docs/deepseek-harness-integration.md`——Phase-1 手写 MCP 桥行 + Phase-2 bundle 安装指引 + 层序三律（config 整行替换非合并 / `- insert:` 新增 vs `- id:` 打靶 / 同 id 双 insert=loader 硬错）+ 升级 diff 检查 + 限制记档。
@@ -528,13 +528,13 @@ All notable changes to this project are recorded here. Format follows
 
 ### Changed
 
-- `pnpm-workspace.yaml` —— dsh 上游依赖族钉版（ADR-0074）：新增 `catalog:` 单点块（15 个 `@deepseek-ai/dsh-*`=0.1.5-rc.2 + `@deepseek-ai/cordis`=4.0.2），`overrides:` 逐名枚举→`catalog:` 全树收敛；`apps/dsh-plugin` 5 个 deepseek devDeps 改 `catalog:` 引用（`dependencies:{}`/`private:true` 不动）。修复 R72 审计 F7——caret range 放任传递依赖漂 0.1.6-alpha 混版树。
+- `pnpm-workspace.yaml` —— dsh 上游依赖族钉版（）：新增 `catalog:` 单点块（15 个 `@deepseek-ai/dsh-*`=0.1.5-rc.2 + `@deepseek-ai/cordis`=4.0.2），`overrides:` 逐名枚举→`catalog:` 全树收敛；`apps/dsh-plugin` 5 个 deepseek devDeps 改 `catalog:` 引用（`dependencies:{}`/`private:true` 不动）。修复 R72 审计 F7——caret range 放任传递依赖漂 0.1.6-alpha 混版树。
 
 ### Deferred
 
 - `defer-r73-dsh-event-rename` —— dsh 0.1.6 事件改名迁移（`agent/session-start`→`agent/created`，payload 增 `source`/`signal`；durable 路由卡仅 `source=fresh` 注入）。采纳触发器与迁移蓝图见 `.scratch/grill-round-73/upgrade-ledger.md`。
 
-## 0.0.6 — 2026-09-19 — ADR-0072 r71: 上架首航——路径治理门禁 + embedding 双臂可达 + 首个双层门真发布
+## 0.0.6 — 2026-09-19 — r71: 上架首航——路径治理门禁 + embedding 双臂可达 + 首个双层门真发布
 
 ### Added
 
@@ -543,13 +543,13 @@ All notable changes to this project are recorded here. Format follows
 - `scripts/install-smoke.mjs` leg 3c —— pnpm 孤立根布局模拟腿，断言 fallback 使 doctor 报 vector arm present。
 - README/README.zh-CN `## Post-install` 双语段 —— 激活验证 + backfill 命令、模型缓存位、离线预置法、FTS-only 降级说明。
 - `ans memory backfill-vectors` 失败 hint —— failed>0 时输出可达性/缓存/doctor 可行动指引（替代裸计数）。
-- R68-R70 随版件：release gate 双层化（ADR-0069，pre-tag 烧 look+ledger commit / post-tag 纯断言+publish）、收口必填栏 lint、README 双语化+parity 常驻门 1h、docs/limitations.md+ADR index 生成器、assert-checks-green 严格两段式、spawnSync 测试抖动处置、LICENSE canonical Apache-2.0 修复、F2-F6 文档级修复。
+- R68-R70 随版件：release gate 双层化（，pre-tag 烧 look+ledger commit / post-tag 纯断言+publish）、收口必填栏 lint、README 双语化+parity 常驻门 1h、docs/limitations.md+ADR index 生成器、assert-checks-green 严格两段式、spawnSync 测试抖动处置、LICENSE canonical Apache-2.0 修复、F2-F6 文档级修复。
 
 ### Changed
 
 - `packages/embedding` —— lazy load 改 `createRequire().require()`（CJS 入口）+ scoped `Module._resolveFilename` 补丁（仅 `onnxruntime-common`+仅 `@huggingface/transformers` 父域）；声明 `onnxruntime-common@1.21.0` optional dep —— 修复 transformers@3.8.1 未声明外部在 pnpm 孤立 scope 下的 MODULE_NOT_FOUND（npm hoisting 掩盖）。
 - doctor vector-arm SKIP 文案 → 可执行 enable 路径（install+backfill 两步 copy/paste）。
-- release.yml assert-checks-green timeout 10→15min（ADR-0071 p90=740s>600s 尾部侵蚀）。
+- release.yml assert-checks-green timeout 10→15min（ p90=740s>600s 尾部侵蚀）。
 - AGENTS.md 路径教义 → 用途三分（locator/库内/库外）；pnpm 钉版说明改单 `packageManager` 声明。
 
 ### Fixed
@@ -562,7 +562,7 @@ All notable changes to this project are recorded here. Format follows
 
 - 1g 覆盖缺口 / macOS spillover 探针 / provider 服务端排查 / deferred 大池（cursor / F-01a / npm provider / projectIndex / TUI / cross-OS / plugin / watch）。
 
-## 2026-09-18 — ADR-0071 r70: 验证层时序语义硬化（assert-checks-green 严格两段式 + spawnSync 抖动处置）
+## 2026-09-18 — r70: 验证层时序语义硬化（assert-checks-green 严格两段式 + spawnSync 抖动处置）
 
 ### Added
 
@@ -570,7 +570,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Changed
 
-- `scripts/assert-checks-green.mjs` — 严格两段式时序（ADR-0071 D1/D2）：Phase 1 discovery 要求全 5 required family 在 --discovery-sec 内各注册 >=1 check-run，过期 fail-closed exit 2 且错误行点名 missing-families/present-families；Phase 2 completion 沿用进程启动绝对锚（不 re-anchor）；terminal 非允许 conclusion（failure/cancelled/timed_out/startup_failure/action_required）两段内即时 exit 1；未建模 conclusion（如 stale）在完成段按 not-allowed fail-closed；--once 快照与 exit 10 语义不变；release.yml 调用 flag 未漂移。
+- `scripts/assert-checks-green.mjs` — 严格两段式时序（）：Phase 1 discovery 要求全 5 required family 在 --discovery-sec 内各注册 >=1 check-run，过期 fail-closed exit 2 且错误行点名 missing-families/present-families；Phase 2 completion 沿用进程启动绝对锚（不 re-anchor）；terminal 非允许 conclusion（failure/cancelled/timed_out/startup_failure/action_required）两段内即时 exit 1；未建模 conclusion（如 stale）在完成段按 not-allowed fail-closed；--once 快照与 exit 10 语义不变；release.yml 调用 flag 未漂移。
 
 ### Fixed
 
@@ -578,18 +578,18 @@ All notable changes to this project are recorded here. Format follows
 
 ### Deferred
 
-- ship-gate(windows) check 耗时 p99=740s > assert 绝对界 600s（ADR-0071 D4 尾部侵蚀呈报，C 升格触发器已武装）——最直接缓解=release.yml 调 timeout-min 上调，显式记档 deferred 不静默吸收。
+- ship-gate(windows) check 耗时 p99=740s > assert 绝对界 600s（ 尾部侵蚀呈报，C 升格触发器已武装）——最直接缓解=release.yml 调 timeout-min 上调，显式记档 deferred 不静默吸收。
 - R68/R69 方向指示沿用 deferred：真 release 摘 partial 帽 / agy ans-MCP P7 真链 / PR-mode required-checks 治理。
 - deferred 大项池沿用：cursor / F-01a / npm provider / projectIndex / TUI / embedding / cross-OS / plugin / watch。
 
 
-## 2026-09-18 — ADR-0070 r69: GitHub 门面双语化 + T0 火线修红（README 登录页 IA + 双语 parity 常驻门）
+## 2026-09-18 — r69: GitHub 门面双语化 + T0 火线修红（README 登录页 IA + 双语 parity 常驻门）
 
 ### Added
 
 - `README.zh-CN.md` — 中文伴生件：顶部翻译件声明（规范以 README.md 为准）+ 互链 switcher；heading 结构 1:1 + 代码块/链接 byte-identical。
 - `docs/limitations.md` — Known limitations 全录（20 条，自 README 逐字迁入）。
-- `docs/adr/index.md` — ADR 索引独立生成件（`scripts/gen-adr-index.mjs` 自 README 内嵌段重指向；行内相对链接；index.md 自排除）。
+- `` — ADR 索引独立生成件（`scripts/gen-adr-index.mjs` 自 README 内嵌段重指向；行内相对链接；index.md 自排除）。
 - ship-gate step 1h — 双语 parity standing fail-closed：heading 骨架 1:1 + 代码块逐块 byte-identical + 链接多重集（减互链 switcher）一致 + docs/limitations.md 指针可达；漂移持续 = 持续红。
 - README 徽章 ×3（npm version / ci workflow / license——全动态可验证端点）+ 顶部 switcher。
 
@@ -602,8 +602,8 @@ All notable changes to this project are recorded here. Format follows
 
 ### Changed
 
-- `README.md` 重构为登录页 IA（312 → 159 行）：迁出 limitations 全文与 ADR 索引段，机器路径清零，Known limitations 摘 top-3 摘要表 + 指针，ADR 目录段改 Design rationale 三句 + docs/adr/index.md 指针。
-- `scripts/gen-adr-index.mjs` 靶从 README 改 `docs/adr/index.md`（generate-and-diff 纪律不变）；ship-gate step 1b 同步改靶；`readme-adr-index.test.mjs` → `adr-index.test.mjs`。
+- `README.md` 重构为登录页 IA（312 → 159 行）：迁出 limitations 全文与 ADR 索引段，机器路径清零，Known limitations 摘 top-3 摘要表 + 指针，ADR 目录段改 Design rationale 三句 + 指针。
+- `scripts/gen-adr-index.mjs` 靶从 README 改 ``（generate-and-diff 纪律不变）；ship-gate step 1b 同步改靶；`readme-adr-index.test.mjs` → `adr-index.test.mjs`。
 - `isCloseout` 定界 = 语义关键词非文件名形状（见 Fixed）。
 - `release.yml` `gh issue create` 双写回退补注释（无 label 兜底语义明文化）。
 - 仓库元数据：`gh repo edit` description 改产品向一句 EN + topics ×9（settings 面变更，命令 + 前后 JSON 入证据）。
@@ -618,7 +618,7 @@ All notable changes to this project are recorded here. Format follows
 
 - R69 grill Q2 曾被跳过未问（D-002 空号保留作跳号证据）——以 Q6 补问，流程违规如实入账不追认。
 
-## 2026-09-17 — ADR-0069 r68: release gate 双层化 + 收口必填栏 lint（写仓自动化守门）
+## 2026-09-17 — r68: release gate 双层化 + 收口必填栏 lint（写仓自动化守门）
 
 ### Added
 
@@ -630,13 +630,13 @@ All notable changes to this project are recorded here. Format follows
 ### Fixed
 
 - **`eval-looks.json` 丢 `schema_version: 1`（main 双红根因）**：release-bot 回写管线 read→normalize→write 逐字段重建剥未知字段。`looks-ledger.ts` 改 Tolerant Reader（根/行索引签名+spread 保留）；`cli.ts` calibrate-reset 同型修复——F-17 sweep 同类 N=2 并修。`eval-docs-golden.test.ts` 增字节级 round-trip 契约断言。
-- **`eval-abstain.test.ts` 裸 `runAll(GOLDEN_CASES)`**：semantic/vector-arm 组须归 `test:online`（ADR-0060 D7）——补 `excludeGroups: OFFLINE_EXCLUDED_GROUPS`。
+- **`eval-abstain.test.ts` 裸 `runAll(GOLDEN_CASES)`**：semantic/vector-arm 组须归 `test:online`（）——补 `excludeGroups: OFFLINE_EXCLUDED_GROUPS`。
 - **release.yml 双盲发布通道（v0.0.5 红树发布根因）**：pre-tag 不等 push 触发的检查、publish 不查 tagged SHA——双层门禁关闭。
 
 ### Changed
 
 - `concurrency` 组 `release-${{ github.ref }}` → `release`：pre-tag dispatch 与 tag push 不再交错。
-- 治理入档：`but land` 直推 main 判定为 grill 轮次合规通道（ADR-0069 D5）；future direction=PR-mode + required checks + tag ruleset/environment reviewers。
+- 治理入档：`but land` 直推 main 判定为 grill 轮次合规通道（）；future direction=PR-mode + required checks + tag ruleset/environment reviewers。
 
 ### 验证边界
 
@@ -659,12 +659,12 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 - Antigravity **IDE**（2.12.2）：不执行 hooks——`.antigravity/rules/anysearch.mdc` rules 兜底为唯一支持面（README per-surface 拆分）。
 - ans MCP 工具链腿 excluded（probe 沙箱无 ans server；契约测试覆盖 call_mcp_tool 解包+isAnsTool+pending）；`agy -p` 在用户 MCP 配置下会被挂起 server 阻塞 turn（probe 用隔离 HOME 绕过）。
 
-## 0.0.5 — 2026-09-17 — ADR-0068 r67: Codex 0.142.5 真宿主契约对齐
+## 0.0.5 — 2026-09-17 — r67: Codex 0.142.5 真宿主契约对齐
 
 ### Added
 
 - `apps/plugin` 新 bin `ans-hook-codex`（→ `dist/hooks/adapters/codex.cjs`）——Codex hooks 命令经 PATH 解析全局安装，与 claude 通路同构。
-- `apps/plugin/AGENTS.md` 随包分发（`files[]` 收录）——ans_* 白名单+fail-open+namespace 说明块，供贴入项目 AGENTS.md（可选步骤见 `docs/codex-integration.md`，ADR-0068/D-003③）。
+- `apps/plugin/AGENTS.md` 随包分发（`files[]` 收录）——ans_* 白名单+fail-open+namespace 说明块，供贴入项目 AGENTS.md（可选步骤见 `docs/codex-integration.md`，/D-003③）。
 - `test/codex-contract.test.ts`（11 条）：官方 schema 校验、bin→entrypoint 解析、matcher 全匹配覆盖、SessionStart --envelope 断言、生成器漂移守卫（codex 配置纳入）、信封输出形状、hook_event_name 优先+legacy 兜底、fail-closed ask、非 ans 静默、畸形 stdin fail-open。
 - `docs/codex-integration.md`：Codex 接线文档（config.toml 双配置层 + MCP + hooks + 实测宿主事实清单 + fail-open）。
 
@@ -678,10 +678,10 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 
 ### Changed
 
-- 宿主实测事实（钉入 ADR-0068/docs）：codex `-c` 无法表达 hooks（值按字符串解析）；hooks 须走 config 文件层（config.toml `[[hooks.*]]` 或项目 `.codex/hooks.json`）；required=true MCP 硬退出；hook trust=[hooks.state] sha256 持久化；PostToolUse ctx 注入为同 turn 边界可变量，索引副作用是持久价值。
+- 宿主实测事实（钉入 /docs）：codex `-c` 无法表达 hooks（值按字符串解析）；hooks 须走 config 文件层（config.toml `[[hooks.*]]` 或项目 `.codex/hooks.json`）；required=true MCP 硬退出；hook trust=[hooks.state] sha256 持久化；PostToolUse ctx 注入为同 turn 边界可变量，索引副作用是持久价值。
 - README Verified agent hosts：新增 Codex CLI 0.142.5 行；Known Limitations 补 0.0.4 Codex 三项缺口。
 
-## 2026-09-17 — ADR-0067 r66: Claude Code 真宿主契约对齐（信封/schema/骨架）+ OIDC 发布通道
+## 2026-09-17 — r66: Claude Code 真宿主契约对齐（信封/schema/骨架）+ OIDC 发布通道
 
 ### Added
 
@@ -701,7 +701,7 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 - README Verified agent hosts：新增 Claude Code 2.1.251 行（settings 通路 live-verified；plugin 通路标 experimental）。Known Limitations 补两条 0.0.3 Claude 缺口口径。
 - 宿主实测事实（钉入文档/测试）：Pre/PostToolUse 钩子 headless 下真跑但 stream-json 零事件（副作用观测）；输入校验失败先于钩子分发；`type:"http"` settings 钩子被静默丢弃；MCP 工具调用触发钩子正常。
 
-## 2026-09-16 — ADR-0066 r65: 真实宿主部署开门轮（CodeBuddy 三件套 + hooks 契约对齐修复）
+## 2026-09-16 — r65: 真实宿主部署开门轮（CodeBuddy 三件套 + hooks 契约对齐修复）
 
 ### Added
 
@@ -711,7 +711,7 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 - `test/codebuddy-contract.test.ts`：16 条合成 stdin 契约测试（CodeBuddy 真实形状逐事件 + 数组 tool_response 实物形状 + legacy 兜底 + claude 回归）。
 - `docs/codebuddy-integration.md`：陌生人面向的 CodeBuddy 接线文档（install/keys/server/mcp.json/settings.json/fail-open）。
 - README 新增 Verified agent hosts 表（CodeBuddy=首个真宿主条目，含验证范围与状态列）。
-- `apps/mcp` 新增 `scripts/sync-domains.mjs` + `files+domains`：domains/*.toml 随 mcp tarball 发布（镜像 cli 的 ADR-0061 B1 机制）。
+- `apps/mcp` 新增 `scripts/sync-domains.mjs` + `files+domains`：domains/*.toml 随 mcp tarball 发布（镜像 cli 的 B1 机制）。
 - `packages/kernel` 导出 `mapAssistantMessageEvent` 纯函数（pi-ai AssistantMessageEvent→AgentEvent 文本映射，可测）。
 
 ### Fixed
@@ -727,10 +727,10 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 
 ### Changed
 
-- README Known Limitations：删 stale「Not on npm yet」，补三条 0.0.3 部署缺口口径（server 手拉/模板指库/字段名假绿），各标修复落点 ADR-0066。
+- README Known Limitations：删 stale「Not on npm yet」，补三条 0.0.3 部署缺口口径（server 手拉/模板指库/字段名假绿），各标修复落点 。
 - README Verified agent hosts：CodeBuddy 2.151.0 状态从 contract-verified 翻正 **live-verified**（headless P1–P9 探针矩阵全绿，含 with/without-tool P9 对照）。实测要点：MCP 注册 `anysearch:connected` + 5 工具全列；域内检索 typescriptlang.org 实答 + PostToolUse 索引 +10；OOD 查询全落 modelcontextprotocol.io（与 `ans search` 直调一致）；ans_chat 走 v1/chat 上游出真实回答；recall_memory 10 条跨 3 sessionId；hooks 三事件全命中（SessionStart 卡入 context、Pre/Post exit0、信封合法）；杀 server 后 fail-open 正常；research_web 执行 + query_knowledge 诚实 `adapter=none`；P9 对照——无工具错引 `pnpm.io/npmrc#node-linker` → 有工具实检 `pnpm.io/settings/node-modules`。
 
-## 2026-09-16 — ADR-0065 r64: 隔离金案例 TTL 裁决收口（mustHitPaths 页族断言 + evidence 模式 + 10 条全量 promote）
+## 2026-09-16 — r64: 隔离金案例 TTL 裁决收口（mustHitPaths 页族断言 + evidence 模式 + 10 条全量 promote）
 
 ### Added
 
@@ -753,14 +753,14 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 - npm scope @anysearch → @anysearch-cli（org anysearch 被空壳蹲占不可注册；用户建成 anysearch-cli org）。全仓 100 文件机械替换：包名/import/tsconfig/tsup/ship-gate+install-smoke 断言/workflows/docs。
 - 真事故：npm publish <dir> 不做 pnpm workspace:* canonical 改写——0.0.1/0.0.2 的 cli/mcp/plugin manifest 携带 peerDependencies workspace:* 原文，npm install 报 EUNSUPPORTEDPROTOCOL 不可安装（embedding 无 peer 独活）。bin "invalid and removed" 警告实为 ./ 前缀归一化（bin 实存）。修复：发布通道改为 pnpm pack tarball + npm publish <tgz>（tarball manifest 已 canonical），ship-gate step5 增断言——packed manifest 任何 dep 字段残留 workspace: 即 fail。0.0.3 统一重发。
 
-## 2026-09-15 — ADR-0064 r63: npm 0.0.1 发布形态与验证面（T2/T3/T5，D-005/D-003）
+## 2026-09-15 — r63: npm 0.0.1 发布形态与验证面（T2/T3/T5，D-005/D-003）
 
 ### Added
 
 - **Apache-2.0 license**：根 LICENSE + 4 发布包目录各一份副本；4 包 manifest 补 license/repository/publishConfig.access:public。
 - 发布管线断言：ship-gate step5 校验打包 manifest（dependencies 无 @anysearch-cli/* 死声明、peer-optional 在场、license/repo/access）+ dist 无裸 require 内部包（embedding 按设计豁免）；隔离集棘轮三断言（scripts/quarantine-ratchet.mjs + eval-quarantine.baseline.json 基线）。
 - peer-optional 双装验证：install-smoke + ship-gate 4c 断言 npm i 双装后 @anysearch-cli/embedding 落共享 node_modules 根、从已装 cli 内解析可达、doctor vector arm 翻 present。
-- docs/publishing.md 发布步骤文档（含 min-release-age=2 自验覆盖方式与 72h unpublish 窗）；docs/release-notes/0.0.1.md；ADR-0064。
+- docs/publishing.md 发布步骤文档（含 min-release-age=2 自验覆盖方式与 72h unpublish 窗）；docs/release-notes/0.0.1.md；。
 
 ### Changed
 
@@ -768,13 +768,13 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 - install-smoke 改消费者真实形态：只装 3 个 app tarball，断言 bundled 内部包与 optional peer 均不在安装闭包内。
 - quarantine-ledger 增 longterm 裁决出口（永久已知问题转换，QUARANTINE_MAX_LONGTERM=1 防续期后门）。
 
-## 2026-09-15 — ADR-0064 r63: T1 con_add_then_noop 修复（D-002 Blocker）
+## 2026-09-15 — r63: T1 con_add_then_noop 修复（D-002 Blocker）
 
 ### Fixed
 
-- consolidate 去重在 embedding 缺席时曾整体失效：`decideOp` 只认 cosine>0.90，arm 缺席（FTS-only 安装/离线）下 bestCos 恒 0，重复记忆一律判 add——`con_add_then_noop` 在无网环境必红。现加降级分支：无 cosine 可算时 bestJac>θ_jac（0.80，golden 校准：相异 stub=0.000/同一 rerun=1.000/矛盾对上限=0.714）判 noop。行为变更：无-embedding 环境下近逐字重复记忆开始判 noop（有损降级，抓不到 paraphrase 级重复），降级决策计入 `ConsolidateReport.embeddingAbsent`（不再 silent，ADR-0060 D7）。
+- consolidate 去重在 embedding 缺席时曾整体失效：`decideOp` 只认 cosine>0.90，arm 缺席（FTS-only 安装/离线）下 bestCos 恒 0，重复记忆一律判 add——`con_add_then_noop` 在无网环境必红。现加降级分支：无 cosine 可算时 bestJac>θ_jac（0.80，golden 校准：相异 stub=0.000/同一 rerun=1.000/矛盾对上限=0.714）判 noop。行为变更：无-embedding 环境下近逐字重复记忆开始判 noop（有损降级，抓不到 paraphrase 级重复），降级决策计入 `ConsolidateReport.embeddingAbsent`（不再 silent，）。
 
-## 2026-09-14 — ADR-0061 r60: 审计修复（audit F1–F3 + F5，reports/2026-09-14-audit.md）
+## 2026-09-14 — r60: 审计修复（audit F1–F3 + F5，reports/2026-09-14-audit.md）
 
 ### Fixed
 
@@ -783,7 +783,7 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 - `badcase-backfill --new` 不再编造分类：badcase 记录须自带 intent/questionLang/dimensions（缺则拒），provenance.type 可由记录覆盖；三处台账写改原子写（tmp+rename）。
 - `engine` 早停阈值按 `normalizeUrl` 计唯一 URL（与融合去重口径一致）；`ans domain`/doctor 域列表改共享 `listDomainTomls`；doctor 删 `fileURLToPath` 死 import。
 
-## 2026-09-14 — ADR-0061 r60: graceWindow/deepMode 交付（T6/G1，remove-or-implement → implement）
+## 2026-09-14 — r60: graceWindow/deepMode 交付（T6/G1，remove-or-implement → implement）
 
 ### Changed
 
@@ -791,7 +791,7 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 - 哨兵翻正：ship-gate step1c + t6-hostile-cuts 从「债注存活」断言改为「接线存活」断言；CONTEXT.md「尚未接线」措辞移除；ponytail-debt-ledger 移入 Resolved。
 - engine.test.ts +5 断言：grace 取消上报/abort 实发、deepMode 不取消且慢 provider 结果到达、未达阈值全员等待。
 
-## 2026-09-14 — ADR-0061 r60: doctor 自服务增强（T4/B3）
+## 2026-09-14 — r60: doctor 自服务增强（T4/B3）
 
 ### Added
 
@@ -800,7 +800,7 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 - `ans domain` 解析失败时列出可用域 + ANS_DOMAINS_DIR 修复指引，并明示 silent full-fanout 语义。
 - clig.dev 收口：doctor 失败摘要走 stderr（exit 0/1 不变）。
 
-## 2026-09-14 — ADR-0061 r60: badcase→golden 回灌闭环（T3/B4）
+## 2026-09-14 — r60: badcase→golden 回灌闭环（T3/B4）
 
 ### Added
 
@@ -808,14 +808,14 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 - `scripts/badcase-backfill.mjs`：回灌两模式——`--into` attach 同问句既有 golden（回归证据），`--new` 生成下一条 docs-gNNNN 并自动重算 coverage manifest；无 observed/evidence.command 拒绝回灌（禁合成护栏）。
 - eval-docs-golden.test.ts 扩 badcase 回归段：badcase schema、promotedTo→golden 可解、attach 问句逐字一致、open 态不得已入集。
 
-## 2026-09-14 — ADR-0061 r60: 装到用链路 CI（T2/B2）
+## 2026-09-14 — r60: 装到用链路 CI（T2/B2）
 
 ### Added
 
 - `scripts/install-smoke.mjs`：真实安装到用链路——pack 全部 7 个 workspace 包 → npm 干净前缀安装 → 安装物 `ans` bin 走 --version/doctor/domain docs/doctor/search。online 有 key 时硬断言 ≥1 结果且命中 docs allowlist 主机；无 key 断言文档化离线行为（exit 1 / Results: 0），不造假覆盖。
 - `.github/workflows/ci.yml` `install-smoke` job（ubuntu+windows 矩阵）：build 后跑 install-smoke；EXA/TAVILY key 走 secrets，缺失即离线断言路径。
 
-## 2026-09-14 — ADR-0061 r60: docs 域 walking skeleton（T1/B1）
+## 2026-09-14 — r60: docs 域 walking skeleton（T1/B1）
 
 ### Added
 
@@ -833,11 +833,11 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 
 - 安装后 `ans` 因 shebang `#!/usr/bin/env tsx` 无法启动（tsx 非运行依赖）——walking skeleton 首次实装暴露；改 `#!/usr/bin/env node`。
 
-## 2026-09-02 — ADR-0043 r42: consumed/synthetic switch governance implemented
+## 2026-09-02 — r42: consumed/synthetic switch governance implemented
 
 ### Added
 
-- Switch state machine S0-S4 (ADR-0043 D2-D6): pre-registered readiness trigger (C1-C4 wall-clock, k_max=10), SESOI-band reconcile + McNemar diagnostic (packages/store/src/eval/switch-machine.ts, pure core), graded rollback with Inconclusive hold (promote streak 3 > rollback streak 2 hysteresis), integrity lineage fail-closed, evidence-driven reversible freeze.
+- Switch state machine S0-S4 (-D6): pre-registered readiness trigger (C1-C4 wall-clock, k_max=10), SESOI-band reconcile + McNemar diagnostic (packages/store/src/eval/switch-machine.ts, pure core), graded rollback with Inconclusive hold (promote streak 3 > rollback streak 2 hysteresis), integrity lineage fail-closed, evidence-driven reversible freeze.
 - Pre-registered thresholds as data (version + hash): packages/store/fixtures/switch-registration.json; every verdict records registrationHash.
 - skip-ledger schema @3: state block (phase, since, transitionId, evidenceHash) + actions log (actions never touch the 3-streak); lossless @1/@2 upcast; unknown versions fail loud.
 - access_events chain switch events (stage-transition/rollback/freeze) with sentinel-row FK and chain-first ledger write order; ledger rebuild from chain fallback.
@@ -851,7 +851,7 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 
 ### Added
 
-- ADR-0059 D2 (T-1 / F-15, round 58): eval-grade layering. The merge gate (ship-gate step 7) now
+- (T-1 / F-15, round 58): eval-grade layering. The merge gate (ship-gate step 7) now
   runs observational and never spends a preregistered OF look (ANS_EVAL_NO_LOOK=1); decision grade
   moved to a new `release` workflow (pre-tag dispatch = the only OF peek; post-tag asserts the
   recorded verdict is unexpired and spends nothing). The OF look ledger moved from the local
@@ -859,22 +859,22 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
   (`anysearch/eval-looks@2`, append-only with a 50-row compaction cap and a preserved
   pre-compaction SHA-256); a look is written only when ANS_EVAL_LOOKS_WRITE=1, so CI and local runs
   leave the tracked file untouched. ship-gate.yml Node 24 -> 22 to match ci.yml.
-- ADR-0027 D8 / ADR-0059 D3 (T-2 / F-17, round 58): flaky-case quarantine ledger. A case that is
+- / (T-2 / F-17, round 58): flaky-case quarantine ledger. A case that is
   environment-flaky is quarantined by POLICY MARK (`packages/store/eval-quarantine.json`,
   `anysearch/eval-quarantine@1`) — the golden set and the dataset fingerprint are untouched, so
   zero recalibration cost. The gate excludes ACTIVE quarantined cases from the passRate==1 hard
   assertion while disclosing them; 30-day TTL, weekly review, max 2 renewals, promote/retire
   paths. The eval CLI now names the failing cases on gate failure so a CI log identifies an
   environment flake without needing the report artifact.
-- ADR-0059 D6 (T-5, round 58): the README ADR index is now a generated artifact.
+- (T-5, round 58): the README ADR index is now a generated artifact.
   `scripts/gen-adr-index.mjs` (Node stdlib) owns the `BEGIN/END ADR-INDEX` block derived from
-  `docs/adr/*.md`, and ship-gate step 1b runs it in `--check` mode (regenerate-and-diff) so the
-  index can never silently lag again. The one-time catch-up replaces the stale "ADR-0001 through
-  ADR-0046" claim with the real 0001-0059 range and the full 59-row index.
-- ADR-0059 D7 (T-6, round 58): four hostile-review cuts.
+  `*.md`, and ship-gate step 1b runs it in `--check` mode (regenerate-and-diff) so the
+  index can never silently lag again. The one-time catch-up replaces the stale " through
+  " claim with the real 0001-0059 range and the full 59-row index.
+- (T-6, round 58): four hostile-review cuts.
   (1) engine dead config fixed BY DOCUMENTATION: CONTEXT.md no longer claims an implemented
-  grace window, ADR-0005 gains an append-only r58 errata, and ship-gate step 1c asserts the honest
-  engine debt note survives (ADR-0014). (2) `ans doctor` now prints the real version via the
+  grace window, gains an append-only r58 errata, and ship-gate step 1c asserts the honest
+  engine debt note survives. (2) `ans doctor` now prints the real version via the
   `__PACKAGE_VERSION__` tsup define instead of a runtime package.json read that resolved to the
   repo root after bundling. (3) plugin server trust boundary (highest priority): loopback Host
   whitelist, Origin check (no Origin = native client), auto-generated 256-bit token when
@@ -885,15 +885,15 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 
 ### Removed
 
-- due-chore (ADR-0029 channel, round 59): dropped the `t6-hostile-cuts.test.mjs` text-position assertion that `403` precedes `401` - it pinned source ordering, not behaviour; the behaviour is asserted end-to-end in `apps/plugin/test/plugin-security.test.mjs` (non-loopback Origin without token -> 403 before 401).
-- due-chore (ADR-0029 channel, round 59): `apps/plugin/src/hooks/preheat.ts` comment no longer says the policy cache guards against a *tampered* drop-in (downgraded to a *damaged* drop-in - the sha256 self-check is a damage detector, not an adversary defence), and `canonicalVersion()` now names the store implementation as authoritative.
-- ADR-0057 D-001/R1 (round 57): `.scratch/` is no longer tracked. The local-markdown
+- due-chore ( channel, round 59): dropped the `t6-hostile-cuts.test.mjs` text-position assertion that `403` precedes `401` - it pinned source ordering, not behaviour; the behaviour is asserted end-to-end in `apps/plugin/test/plugin-security.test.mjs` (non-loopback Origin without token -> 403 before 401).
+- due-chore ( channel, round 59): `apps/plugin/src/hooks/preheat.ts` comment no longer says the policy cache guards against a *tampered* drop-in (downgraded to a *damaged* drop-in - the sha256 self-check is a damage detector, not an adversary defence), and `canonicalVersion` now names the store implementation as authoritative.
+- D-001/R1 (round 57): `.scratch/` is no longer tracked. The local-markdown
   issue tracker and round artifacts were tracked as 16 files while README.md:64 documents
   them as not committed to git; all 16 are now untracked (disk copies kept; `.gitignore`
   gained `.scratch/`). Commits `ykm` (first 8) + `rpz` (remaining 8, audit F-1).
 
 ### Fixed
-- ADR-0042 r110 audit repair round (dual-axis review of the r109 implementation; all
+- r110 audit repair round (dual-axis review of the r109 implementation; all
   findings fixed in one round — SP-F-01..03 + SA-F-01..09):
   - SP-F-01/SA-F-05 (severe): the consumed track's AND-gate input was hardcoded zeros, fully
     disconnected from access_events, and the data-absent classifier only fired when NO events
@@ -931,7 +931,7 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
   remain deferred (tracked, r110 does not own them).
 
 ### Added
-- ADR-0042 observational data feeding (r109 implementation): dual-track loader
+- observational data feeding (r109 implementation): dual-track loader
   (consumed=real access_events preferred; synthetic=hash-pinned fixture fallback via
   `ANS_OBS_FIXTURE`, track marker enforced in-load so synthetic rows can never pose as
   consumed data) + pure-stdlib offline generator `scripts/tau/generate_fixtures.py`
@@ -939,14 +939,14 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
   falsification matrix (`packages/store/fixtures/obs-feed/`: pass-stable / t1-fail 299 rows /
   t2-fail PSI>=0.25 / t3-fail 89d window) with SHA-256 MANIFEST + definition hash pinned in the
   eval baseline fingerprint — the initial flip 113be271869dbc54 -> re-baselined is the
-  declared one-time ADR-0042 D6 fingerprint flip (definitionHash `f5c6c438f3696995` joined).
+  declared one-time fingerprint flip (definitionHash `f5c6c438f3696995` joined).
   skip-ledger schema @1 -> @2 (track + reason-code split; data-absent never builds the
   3-streak and resets an in-flight gate-not-met run; @1 ledgers upcast losslessly on read,
   closing r106 F-08; scripts/gain-ledger.mjs resolve tool accepts @2). Synthetic runs are
   labelled simulated-observation-window in the report. CI: regenerate-and-diff guard step in
   tau-python.yml. New test surface: obs-fixtures.test.ts (24 asserts, gate-ok -> ready-to-spawn
   via node stub) + eval-skip.test.ts ledger-semantics block.
-- ADR-0040 access_events tamper-evidence layer (r102/r103 implementation): `prev_hash`
+- access_events tamper-evidence layer (r102/r103 implementation): `prev_hash`
   SHA-256 hash chain (six-field canonical contract: fixed key order = RFC 8785 lexicographic for
   the closed ASCII scalar schema, NULL = JSON null, INTEGER/TEXT/NULL whitelist) + single-row
   `access_chain_anchor` sealing legacy history as a one-off digest snapshot (lazy IMMEDIATE
@@ -959,21 +959,21 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
   files (golden vectors 3+2 pinned, 4 tamper classes + seeded legacy, no-db exit 2, real-spawn
   dual-process concurrent bootstrap, telemetry/idempotency/legacy byte-stability, 100k-row perf
   smoke report-only + schema fwd/back + whitelist negatives). No dataset fingerprint flip —
-  the chain never touches golden cases; baseline fp 113be271869dbc54 verified unchanged (ADR-0027 D9
+  the chain never touches golden cases; baseline fp 113be271869dbc54 verified unchanged (
   flip rule evaluated, not triggered).
-- ADR-0039 tau observation layer (r100 implementation round): access_events append-only log
+- tau observation layer (r100 implementation round): access_events append-only log
   joined into eval per-case observation; pre-registered day buckets (0-1/2-7/8-30/31-90/91+,
   [min,next-min) semantics + dayBucketFingerprint) folded into datasetFingerprint so any bucket
   change forces a recalibration; synthetic tau-scan (seeded mulberry32, kendall@2, shipped as
   node scripts/tau/tau-scan.mjs); BG/NBD out-of-process fit via scripts/tau/bgnbd_fit.py on the
-  frozen lifetimes stack (numpy==1.26.4, autograd==1.7.0 pin below numpy 2 — see ADR-0039 r100
+  frozen lifetimes stack (numpy==1.26.4, autograd==1.7.0 pin below numpy 2 — see r100
   amendment) reached through a hardened spawn wrapper (timeout SIGKILL, non-JSON/non-converged
   all map to explicit-skip); three-tier explicit-skip (gate-not-met / offline-deferred /
   infra-failure) with TAU_FIT_GATE T1+T2+T3 and a skip ledger (anysearch/gain-ledger@1 shape,
   resolve via gain-warn-resolve.mjs); eval report observational zone is a ship-gate contract.
-  ADR-0038 r99 text errata physically applied (D2 full-sample rule failure is WARN not red;
+   r99 text errata physically applied (D2 full-sample rule failure is WARN not red;
   D6 single WARN ships with a ledger entry, three consecutive escalate).
-- ADR-0038: relation-arm gain gate promoted to a three-tier GREEN/WARN/RED verdict — RED only on
+-: relation-arm gain gate promoted to a three-tier GREEN/WARN/RED verdict — RED only on
   proven-negative evidence (BCa upper < 0 or harm-side sign-flip p below the look budget); unproven-
   positive is WARN, never RED. Dual-track holdout: 40-case frozen baseline slice (19 RoR pairs) with
   a second fingerprint plus a backflow slice family (inputHash dedup vs baseline, cross-slice,
@@ -984,23 +984,23 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
   report-only nDCG@5/10/20 plus a dual-review record (relevance-review.json, kappa/AC1 = 1.0 on 610
   label pairs) as the judge-calibration baseline row.
 
-- ADR-0037: `ans consolidate` and `ans memory forget --undo` CLI; durable maintenance DB
+-: `ans consolidate` and `ans memory forget --undo` CLI; durable maintenance DB
   via ANS_DB_PATH (default ~/.anysearch/anysearch.db); semantic_memories sixth RRF arm <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
   (serve, weight 0.5, conditional activation, fail-closed regression gate); three-protocol
   LLM endpoint config (ANS_LLM_BASE_URL + ANS_LLM_API=chat|messages|responses + ANS_LLM_API_KEY).
 
 ### Removed
 - kernel llm-init residual env fallback (OPENAI_/ANTHROPIC_/GOOGLE_API_KEY): the kernel no longer
-  reads provider env (ADR-0038 step 7); provider auth stays entirely inside pi-ai. r94-deferred
+  reads provider env ( step 7); provider auth stays entirely inside pi-ai. r94-deferred
   hygiene, ships as its own refactor commit.
 
 ### Fixed
-- r94 audit (ADR-0037, atomcode Spec-1): single-query searchMemory resolved the semantic arm
+- r94 audit (atomcode Spec-1): single-query searchMemory resolved the semantic arm
   through a byId map that was never populated with semantic hits — sixth arm silently dropped
   on that path (MCP recall_memory consumer). Fixed + regression test.
-- r94 audit (ADR-0037, atomcode S1): kernel llm-init read ANS_LLM_API_KEY from the environment,
+- r94 audit (atomcode S1): kernel llm-init read ANS_LLM_API_KEY from the environment,
   violating its own "No env reads in kernel" contract; callers pass the key explicitly now.
-- r94 audit (ADR-0037): applyArchive explicit-ids path now enforces pinned / closed /
+- r94 audit: applyArchive explicit-ids path now enforces pinned / closed /
   quarantined exclusions at the force point; LLM summarize moved out of the BEGIN IMMEDIATE
   write lock (plan/apply split; dry-run exact prediction unchanged); `ans consolidate`
   rejects unknown flags (exit 2).
@@ -1008,33 +1008,33 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 ## [0.1.0-rc.0] — 2026-08-22
 
 ### Fixed
-- r90 audit (ADR-0036): D5 RoR delta sign convention corrected in ADR-0036 and CONTEXT.md
+- r90 audit: D5 RoR delta sign convention corrected in and CONTEXT.md
   (positive = relation arm pushed the memory earlier; sign was documented inverted while
   code/tests/baseline all used positive=helps — regression trap removed).
-- r90 audit (ADR-0036 D6): backfill retry counter snapshot now also covers
+- r90 audit: backfill retry counter snapshot now also covers
   `relatedToWriteOnce` so a failed batch retry no longer double-counts that telemetry bit;
   busy-injection test now holds the foreign lock past busy_timeout (5200ms) so the
   exponential-backoff branch actually executes (a 150ms hold was absorbed by busy_timeout).
 
 ### Added
-- ADR-0020 ship-gate pipeline: `scripts/ship-gate.mjs` (Node stdlib, single file)
+- ship-gate pipeline: `scripts/ship-gate.mjs` (Node stdlib, single file)
   as the blocking Product Smoke Gate, plus a non-blocking
   `modelcontextprotocol/conformance` workflow as the Protocol Heartbeat.
 
 
 ### Added
-- ADR-0030: fused freshness factor [0.3, 1.5] in store ranking — creation-age decay,
+-: fused freshness factor [0.3, 1.5] in store ranking — creation-age decay,
   `last_accessed` recency, and `access_count` frequency fused into ONE multiplicative band
   (`freshness_factor()` UDF replaces `time_decay()`). `access_count` column added via
   idempotent migration; every returned recall hit increments it exactly once, on both
   `searchMemory` and `searchMemoryMulti` paths.
-- ADR-0030 D5: kernel `memory-pipeline.ts` now imports `isTimeSensitive`/`isEvergreen`
+-: kernel `memory-pipeline.ts` now imports `isTimeSensitive`/`isEvergreen`
   from `@anysearch-cli/store` (inline regex copy deleted; the QDF regex itself no longer
   carries year literals).
 
 ### Removed
-- ADR-0029 D6: dropped `--write-baseline` from `packages/store eval` (the one-round alias for `--calibrate`).
-- ADR-0030 D2: retired the `w` interpolation weight (0.25/0.4) and the
+-: dropped `--write-baseline` from `packages/store eval` (the one-round alias for `--calibrate`).
+-: retired the `w` interpolation weight (0.25/0.4) and the
   `1 - w·(1-decay)` fusion form. Ranking is a direct multiplicative scaling band now.
 
 ### Infrastructure
@@ -1043,7 +1043,7 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
   hooks layer, SessionStart routing, L0/L1 memory pipeline).
 
 ### Added
-- ADR-0035 KG-lite relation arm (fifth RRF arm, weight 0.5): closed 8-predicate table
+- KG-lite relation arm (fifth RRF arm, weight 0.5): closed 8-predicate table
   (`works_on/depends_on/uses/part_of/member_of/located_at/authored_by/related_to`) with EN+CN alias map,
   rule-first extraction (verb frames + url<->handle bridge + 2-preKnown co-occurrence), single-call
   LLM seam behind a strict post-filter (JSON degrade parse, never blocks the write path), edges table
@@ -1051,13 +1051,13 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
   transaction with snapshot-driven bounded unmerge restore, `pendingEdges` gauge + relationTel counters,
   golden `relations` group (12 cases: 8 predicate positives incl. CJK quoted, fail-closed supersede,
   observational no_edge + 1-hop hit-rate), ship-gate 1j static + relation-zone metric assertions.
-- ADR-0035 D7: `ans relation list` + `ans relation backfill-relations` (dry-run default, keyset
+-: `ans relation list` + `ans relation backfill-relations` (dry-run default, keyset
   pagination, `--reprocess` supersedes stale rules_version rows, exit codes 0/1/2).
 
 [0.1.0-rc.0]: https://github.com/anysearch/anysearch-cli/releases/tag/v0.1.0-rc.0
 
 ### Added
-- ADR-0036 relation-arm gain observance (Phase-1): single-run counterfactual ablation for the
+- relation-arm gain observance (Phase-1): single-run counterfactual ablation for the
   relation arm — SqliteSessionStore captures arm provenance per searchMemory call; the eval runner
   drops the relation list and recomputes RRF, producing paired rank deltas for every expectRankOf
   golden op. Gate statistics: paired BCa 95% CI (seeded mulberry32 bootstrap + jackknife), one-sided
@@ -1069,12 +1069,12 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 
 ### Changed
 
-- ADR-0036 D6 (Phase-2): `ans relation backfill-relations --apply` now commits one IMMEDIATE
+- (Phase-2): `ans relation backfill-relations --apply` now commits one IMMEDIATE
   transaction per batch (was a single whole-run transaction), retries SQLITE_BUSY with exponential
   backoff (50ms base, 5s cap, <=8 tries, aligned with busy_timeout=5000), fails fast on
   SQLITE_BUSY_SNAPSHOT, and runs a passive WAL checkpoint after each committed batch. The dry-run
-  path keeps the single rolled-back transaction, so counters remain exact predictions (ADR-0035 r87).
+  path keeps the single rolled-back transaction, so counters remain exact predictions ( r87).
   The "no concurrent MCP traffic during backfill" constraint is relaxed to recommended-not-required;
-  CLI help and ADR-0035 D7 wording updated. Regression coverage: per-batch exact-parity and
+  CLI help and wording updated. Regression coverage: per-batch exact-parity and
   live-writer contention cases in relation-edges.test.ts.
 

@@ -1,4 +1,4 @@
-// ADR-0043 D3/D5/D7 (r42 impl): switch orchestrator — IO shell around the pure decision core
+// (r42 impl): switch orchestrator — IO shell around the pure decision core
 // (switch-machine.ts). Owns: registration loading, consumed-track readings from the durable
 // DB, chain event writes (sentinel FK solution), ledger atomic updates, chain reconstruction
 // fallback, and the --verify cross-check for `ans switch-state`.
@@ -32,7 +32,7 @@ function regPath(): string {
 
 // ---------- registration (D3 impl-plan 6: thresholds as data with version + hash) ----------
 
-// ADR-0044 D2: this expectation is the independent pin. The loader's self-computed digest is
+// this expectation is the independent pin. The loader's self-computed digest is
 // only allowed to be compared against it; a mismatch is an integrity failure, not a re-record.
 export const SWITCH_REGISTRATION_HASH_EXPECTATION = "5f06ea1766b5999c3c2213b33cb324c988efc91336553056cb8dcb9faf63d2cb";
 
@@ -145,7 +145,7 @@ export interface ReplayedSwitchChain {
   since: string | null;
 }
 
-// ADR-0044 D1: total replay over the closed edge set. Every edge maps to exactly one phase;
+// total replay over the closed edge set. Every edge maps to exactly one phase;
 // an inapplicable edge or unknown event_type is a hard error, never a guessed rebuild.
 export function replaySwitchChain(dbPath: string): ReplayedSwitchChain | null {
   if (!existsSync(dbPath)) return null;
@@ -165,7 +165,7 @@ export function replaySwitchChain(dbPath: string): ReplayedSwitchChain | null {
       return null;
     }
     ensureAccessChainSourceLabel(db);
-    // ADR-0044 D1 + r115 audit C6: legacy r42 event_type values are not in the per-edge
+    // + r115 audit C6: legacy r42 event_type values are not in the per-edge
     // closed set and must fail loud (migrations belong to the operator, not the replay
     // function). Detected up front so the loop below only sees canonical edges.
     const legacy = db.prepare("SELECT id, event_type FROM access_events WHERE event_type IN ('stage-transition','rollback','freeze') AND prev_hash IS NOT NULL LIMIT 1").all() as { id: number; event_type: string }[];
@@ -260,7 +260,7 @@ export function advanceSwitch(opts: {
       return { decision, state: fresh.state, registrationHash, integrityError: reason };
     }
 
-    // ADR-0043 D7 / ADR-0044 D1 chain-wins: rebuild the ledger state from the chain
+    // / chain-wins: rebuild the ledger state from the chain
     // whenever chain and ledger disagree, regardless of which side carries a transition.
     // The previous logic only rebuilt when the chain had a transition, leaving the
     // ledger-has-but-chain-has-not direction stuck in an infinite quarantine loop.

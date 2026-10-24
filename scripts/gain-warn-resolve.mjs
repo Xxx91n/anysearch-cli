@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// scripts/gain-warn-resolve.mjs — ADR-0038 D2: human resolution of a WARN streak on the gain ledger.
+// scripts/gain-warn-resolve.mjs —: human resolution of a WARN streak on the gain ledger.
 // Usage: node scripts/gain-warn-resolve.mjs --decision disable-arm|demote|stay-warn [--note "..."] [--ledger path]
 import path from "node:path";
 import { fileURLToPath } from "node:url";

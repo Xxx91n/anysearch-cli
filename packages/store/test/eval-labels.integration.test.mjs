@@ -1,4 +1,4 @@
-// ADR-0048 D6: synthetic human/judge integration test. It drives the real
+// synthetic human/judge integration test. It drives the real
 // CLI against a temp label/manifest pair, then runs eval-calibrate's
 // deterministic synthetic judge path. No OF looks or local DB are touched.
 // R70 T1 (jitter spike): every spawnSync carries an explicit timeout — a

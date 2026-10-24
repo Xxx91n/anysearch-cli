@@ -1,4 +1,4 @@
-// ADR-0017 D2: createLlmSession deep module.
+// createLlmSession deep module.
 // One function, one return type, one error path.
 // Encapsulates createModels -> setProvider -> getModel -> streamSimple.bind.
 // No env reads in kernel — caller passes provider/config explicitly.
@@ -13,7 +13,7 @@ export interface LlmSessionOptions {
   /** Optional API key override; if omitted, pi-ai provider reads its own env vars. */
   apiKey?: string;
   /**
-   * ADR-0037 D4/A3: custom endpoint base URL (LiteLLM / OpenRouter / self-hosted).
+   *: custom endpoint base URL (LiteLLM / OpenRouter / self-hosted).
    * When set, `api` is REQUIRED (explicit three-way selection, no protocol sniffing) and a
    * per-session provider is constructed from pi-ai primitives instead of the global registry.
    *
@@ -52,7 +52,7 @@ export interface LlmSession {
   apiKey?: string;
 }
 
-// ADR-0017 D2: provider registry — delegates to pi-ai provider factories.
+// provider registry — delegates to pi-ai provider factories.
 // ponytail: hardcoded for openai/anthropic/google; add more providers here when needed.
 export const PROVIDER_FACTORIES: Record<string, () => Promise<any>> = {
   openai: () => import("@earendil-works/pi-ai/providers/openai").then(m => m.openaiProvider()),
@@ -84,7 +84,7 @@ export const API_KEYS: Record<string, string> = {
  */
 export async function createLlmSession(opts: LlmSessionOptions): Promise<LlmSession> {
   if (opts.baseUrl) {
-    // ADR-0037 D4: explicit api required; never sniff the protocol from URL or response.
+    // explicit api required; never sniff the protocol from URL or response.
     if (!opts.api) {
       throw new Error("baseUrl requires explicit api kind: chat | messages | responses");
     }
@@ -131,7 +131,7 @@ export async function createLlmSession(opts: LlmSessionOptions): Promise<LlmSess
   }
 
   const streamFn = models.streamSimple.bind(models);
-  // ADR-0038 step 7 (chore): the kernel never reads provider env — opts.apiKey only.
+  // step 7 (chore): the kernel never reads provider env — opts.apiKey only.
   // Provider env fallback (OPENAI_/ANTHROPIC_/GOOGLE_API_KEY) lives inside pi-ai's ProviderAuth.
   const apiKey = opts.apiKey;
 

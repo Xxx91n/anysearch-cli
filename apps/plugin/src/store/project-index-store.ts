@@ -1,6 +1,6 @@
 // ProjectIndexStore: per-project FTS5 index, physically separate from SessionStore.
-// ADR-0009 Decision 4: Physical dual-DB. Internal agent reads this only (read-only).
-// Written by hooks layer via IPC to long-running MCP server (ADR-0009 Decision 1+2).
+// Decision 4: Physical dual-DB. Internal agent reads this only (read-only).
+// Written by hooks layer via IPC to long-running MCP server ( Decision 1+2).
 
 import Database from "better-sqlite3";
 import { fts5EscapeQuery, fts5RelaxedQuery, relaxedTerms, coversMajority, appendRelaxed } from "@anysearch-cli/store";
@@ -122,7 +122,7 @@ export class ProjectIndexStore {
     source: string;
     contentHash: string;
   }): void {
-    // Dedup by content_hash within same project (ADR-0009 D4: de-dup rule).
+    // Dedup by content_hash within same project (: de-dup rule).
     const existing = this.stmts.exists.get(entry.projectPath, entry.contentHash) as { cnt: number };
     if (existing.cnt > 0) return;
     this.stmts.insert.run(
@@ -134,7 +134,7 @@ export class ProjectIndexStore {
   search(query: string, limit = 10): ProjectIndexHit[] {
     const safeQuery = this.fts5Escape(query);
     const strict = this.stmts.search.all(safeQuery, limit) as ProjectIndexHit[];
-    // ADR-0102 D1: host recall questions are natural language — relax when the strict rung under-fills.
+    // host recall questions are natural language — relax when the strict rung under-fills.
     if (strict.length >= limit) return strict;
     const relaxed = fts5RelaxedQuery(query);
     if (!relaxed) return strict;

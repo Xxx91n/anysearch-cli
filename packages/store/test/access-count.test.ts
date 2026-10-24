@@ -1,7 +1,7 @@
-// ADR-0030 D3: access signal exactly-once tests.
+// access signal exactly-once tests.
 // Every returned recall hit increments access_count exactly once and refreshes last_accessed,
 // for BOTH recall paths (searchMemory and searchMemoryMulti).
-// ADR-0039 D5: each touch also appends exactly one row to access_events (append-only event log).
+// each touch also appends exactly one row to access_events (append-only event log).
 
 import Database from "better-sqlite3";
 import { SqliteSessionStore } from "../src/session-store";
@@ -55,7 +55,7 @@ async function main() {
     const gamma = ro.prepare("SELECT access_count FROM retrieval_results WHERE url = ?").get("https://example.com/c") as any;
     assert(gamma.access_count === 0, "fresh row starts at access_count = 0");
 
-    // ADR-0039 D5 (C2): access_events mirror — exactly one event per returned hit per call,
+    // (C2): access_events mirror — exactly one event per returned hit per call,
     // on BOTH read paths. Rows a/b saw 3 touches each; gamma (created but never returned) zero.
     const evFor = (id: number): number => (ro.prepare("SELECT COUNT(*) c FROM access_events WHERE memory_id = ?").get(id) as any).c;
     const ids = (ro.prepare("SELECT id FROM retrieval_results ORDER BY id").all() as any[]).map((r) => r.id);
@@ -65,7 +65,7 @@ async function main() {
     assert(total0 === 6, "total access events = 6 (3 touches x 2 hit rows; got " + total0 + ")");
     ro.close();
 
-    // ADR-0039 C3 negative: archived rows never enter read paths -> accumulate no events.
+    // C3 negative: archived rows never enter read paths -> accumulate no events.
     const rw = new Database(dbPath);
     rw.prepare("UPDATE retrieval_results SET archived = 1 WHERE archived = 0").run();
     rw.close();
@@ -74,7 +74,7 @@ async function main() {
     const ro2 = new Database(dbPath, { readonly: true });
     const total1 = (ro2.prepare("SELECT COUNT(*) c FROM access_events").get() as any).c;
     assert(total1 === total0, "no access events written for archived rows (still " + total1 + ")");
-    // ADR-0039 Boundaries: undo never rewrites or deletes events — flip archived back and
+    // Boundaries: undo never rewrites or deletes events — flip archived back and
     // confirm the event log is untouched by the undo-direction state change itself.
     ro2.close();
     const rw2 = new Database(dbPath);

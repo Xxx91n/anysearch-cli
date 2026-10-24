@@ -1,4 +1,4 @@
-// ADR-0051 D1: composition root resolves the active calibration head through
+// composition root resolves the active calibration head through
 // the store reader; missing/corrupt head fails open (legacy 0.6 floor).
 import assert from "node:assert";
 import fs from "node:fs";

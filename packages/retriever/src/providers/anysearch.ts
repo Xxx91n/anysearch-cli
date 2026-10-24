@@ -1,4 +1,4 @@
-// AnySearch provider adapter (ADR-0005 decision 3; ADR-0082 branch b; R82 T1 fix-r82-anysearch-mcp-migration).
+// AnySearch provider adapter ( decision 3; branch b; R82 T1 fix-r82-anysearch-mcp-migration).
 // Transport: hand-rolled thin JSON-RPC over POST /mcp (MCP Streamable HTTP — the
 // endpoint is stateless: no GET stream, no protocol-level session, no
 // Mcp-Session-Id observed; initialize/tools-list/tools-call verified live
@@ -16,17 +16,17 @@ import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope } from "../contract";
 import { canonicalizeVertical } from "../contract";
 
-// ADR-0059 D7 (T-6.4) DEFERRED-WITH-DEADLINE: ownership of api.anysearch.com is an internal
+// (T-6.4) DEFERRED-WITH-DEADLINE: ownership of api.anysearch.com is an internal
 // confirmation item (legal/ops), not a code decision. Round-58 verification surface was the
 // infrastructure layer only (CloudFront CNAME + cert + status subdomain); R81 re-verified
-// (ADR-0082): cert rotated 2026-09-22, valid to 2027-04-07 (Amazon RSA 2048 M04,
+// cert rotated 2026-09-22, valid to 2027-04-07 (Amazon RSA 2048 M04,
 // SAN *.anysearch.com+anysearch.com); /health 200, apex/status 200 — infrastructure alive.
 // GET /v1/search = 404 route-level dead (R81 T2 P-A, dual-column); POST /mcp = live MCP
 // Streamable HTTP endpoint — this adapter speaks MCP only.
 // Fail-open: an unreachable endpoint or malformed reply degrades the anysearch arm,
 // never the fused envelope.
 // Owner: anysearch-retriever (docs/deferred-registry.json: defer-anysearch-domain-ownership).
-// Review: quarterly cadence (ADR-0010 precedent); CT/expiry monitoring tracks the cert renewal.
+// Review: quarterly cadence ( precedent); CT/expiry monitoring tracks the cert renewal.
 const ANYSEARCH_ENDPOINT = "https://api.anysearch.com/mcp";
 
 // Client-supported protocol version, sent on every POST per spec MUST. The
@@ -37,7 +37,7 @@ const MCP_PROTOCOL_VERSION = "2025-11-25";
 const LEGACY_REST_SUFFIX = "/v1/search";
 let endpointRewriteWarned = false;
 
-// ADR-0082 / D-002 §3: env-compat — an ANYSEARCH_ENDPOINT (or explicit arg)
+// / D-002 §3: env-compat — an ANYSEARCH_ENDPOINT (or explicit arg)
 // ending in the retired REST suffix is normalized to base+/mcp with a
 // once-per-process warning; any other value is used verbatim (dead-port
 // injection for install-smoke stays as-given).
@@ -49,7 +49,7 @@ function normalizeEndpoint(raw: string): string {
     endpointRewriteWarned = true;
     process.stderr.write(
       "[anysearch] endpoint ends with " + LEGACY_REST_SUFFIX +
-      " — REST route is retired (ADR-0082); rewritten to " + rewritten + "\n",
+      " — REST route is retired; rewritten to " + rewritten + "\n",
     );
   }
   return rewritten;
@@ -173,7 +173,7 @@ export class AnySearchProvider implements SearchProvider {
   // carry SearchRequest.includeDomains. This arm stays post-filter-only on the
   // host axis; the orthogonal vertical axis is served by verticalDomainSupported.
   readonly domainFilterSupported = false;
-  // R83 T1 / ADR-0084 D-004: declared — SearchRequest.vertical maps to the MCP
+  // R83 T1 / D-004: declared — SearchRequest.vertical maps to the MCP
   // search tool's domain/sub_domain/sub_domain_params arguments in callSearch.
   readonly verticalDomainSupported = true;
   readonly modes: readonly ("fast" | "index" | "deep" | "answer")[] = ["fast", "index", "deep"];
@@ -192,7 +192,7 @@ export class AnySearchProvider implements SearchProvider {
     // R86 T3: same empty-string treatment for the key — "" would send a
     // bare "Authorization: Bearer " header, worse than anonymous.
     this.apiKey = apiKey ?? (process.env.ANYSEARCH_API_KEY || undefined);
-    // ADR-0063 (R62 T2) + R82 D-002 §3: ANYSEARCH_ENDPOINT env override —
+    // (R62 T2) + R82 D-002 §3: ANYSEARCH_ENDPOINT env override —
     // dead-port fault injection keeps the install-smoke offline leg hermetic;
     // a retired /v1/search tail is normalized to base+/mcp. Explicit arg wins.
     // R86 T3 / defer-r84 closure: POSIX empty-string env == unset — ""
@@ -214,7 +214,7 @@ export class AnySearchProvider implements SearchProvider {
       result = await this.callSearch(req, signal);
     }
     const mapped = mapToolsCallResult(result);
-    // R83 T1 / ADR-0084 D-004: vertical-hit marker — machine-readable stamp on
+    // R83 T1 / D-004: vertical-hit marker — machine-readable stamp on
     // every result routed through a vertical domain (audit + fusion layers can
     // read NormalizedResult.extra.vertical; fusion preserves extra).
     if (req.vertical) {
@@ -245,7 +245,7 @@ export class AnySearchProvider implements SearchProvider {
         query: req.query,
         // MCP schema: max_results maximum 10 — silent clamp (D-002 §4).
         max_results: Math.min(Math.max(req.maxResults ?? 10, 1), 10),
-        // R83 T1 / ADR-0084 D-003: wire layer — internal vertical* fields map to
+        // R83 T1 / D-003: wire layer — internal vertical* fields map to
         // the MCP domain/sub_domain/sub_domain_params argument names. Absent
         // vertical → all three keys stay absent (no empty-string defaults).
         // R84 T1 / A-04: canonicalized at the wire edge too — params:{} ≡ absent

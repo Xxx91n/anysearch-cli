@@ -1,6 +1,6 @@
 # Publishing
 
-## OIDC trusted publishing (0.0.4+, ADR-0067 D4)
+## OIDC trusted publishing (0.0.4+)
 
 `release.yml` carries a `publish` job that runs on tag push after
 `release-gate` is green. It holds `id-token: write`; npm ≥11.5.1 performs the
@@ -49,7 +49,7 @@ window is reserved for catastrophic accidents only.
 ## Manual first release (0.0.3 — historical, D-006)
 
 npm `0.0.3` is a **manual** first release: no `release.yml` provenance is emitted
-(ADR-0064 D-006; this is a known consequence, not a defect — provenance requires
+( D-006; this is a known consequence, not a defect — provenance requires
 a cloud-hosted runner which manual `pnpm publish` does not have).
 
 ## Publish set
@@ -70,7 +70,7 @@ build-time-only. `@anysearch-cli/embedding` is `peerDependencies` +
 `peerDependenciesMeta.optional`: never auto-installed, no warning when absent,
 explicit install enables the vector arm (FTS-only is a supported state).
 
-## First publish of a NEW package (pre-publish path, ADR-0081 D-003)
+## First publish of a NEW package (pre-publish path, D-003)
 
 OIDC trusted publishing requires the package to EXIST on npm already —
 the trusted-publisher row attaches to an existing package page. A brand-new
@@ -83,7 +83,7 @@ precedent, now codified for dsh-plugin@0.0.8):
    `cd apps/dsh-plugin && pnpm publish` (or `npm publish <packaged tgz>`
    against the verified tarball). The published artifact is the REAL
    package — never a placeholder shell. No provenance is emitted by a
-   local manual publish (ADR-0064 D-006 consequence class, recorded).
+   local manual publish ( D-006 consequence class, recorded).
 2. **Configure the Trusted Publisher on npmjs** — package page →
    Settings → Publishing access → Trusted Publisher → GitHub Actions:
    repository owner `Xxx91n`, repository name `anysearch-cli`,
@@ -115,10 +115,10 @@ still lives in review + the gates above.
 
 1. `pnpm install && pnpm build` (turbo builds all; embedding's `prepack` rebuilds dist).
 2. `pnpm -r publish` on the publish set — **user-authorized only** (irreversible:
-   registry data is immutable; see CONTEXT.md — Unpublish Window).
+   registry data is immutable; see GLOSSARY.md — Unpublish Window).
 3. Post-tag checks run via `release.yml` after `git tag v0.0.3` (user-run).
 
-## Publish failure classification (ADR-0082 D-004)
+## Publish failure classification ( D-004)
 
 The release workflow publishes five tarballs sequentially; npm has no
 multi-package atomic publish, so a mid-loop failure leaves a partially

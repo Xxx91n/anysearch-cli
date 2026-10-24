@@ -1,7 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
-# ADR-0026 D5: 钉死 pnpm 版本对人+Agent 双端生效 - 版本不匹配立即报错，
+# 钉死 pnpm 版本对人+Agent 双端生效 - 版本不匹配立即报错，
 # 不自动下载/改写 lockfile。本地放行: pnpm_config_pm_on_fail=download (CLI>env>yaml)。
 pmOnFail: error
 
@@ -18,8 +18,8 @@ allowBuilds:
   better-sqlite3: false
   esbuild: true
   protobufjs: true
-  onnxruntime-node: false  # ADR-0033: prebuilt napi binding; install script only fetches GPU variants
-  sharp: false             # ADR-0033: transitive via transformers.js; prebuilt @img/* optional deps used
+  onnxruntime-node: false #: prebuilt napi binding; install script only fetches GPU variants
+  sharp: false #: transitive via transformers.js; prebuilt @img/* optional deps used
 
 overrides:
   zod: ">=3.25.28"
@@ -45,7 +45,7 @@ overrides:
   '@deepseek-ai/dsh-util-values': 'catalog:'
   '@deepseek-ai/dsh-workspace': 'catalog:'
 
-# R73 T1 / ADR-0074: dsh 上游依赖族钉版——catalog 单点承载版本号，overrides 逐名枚举
+# R73 T1 /: dsh 上游依赖族钉版——catalog 单点承载版本号，overrides 逐名枚举
 # 把全树（直接+传递）强制收敛到 catalog 值。直接依赖在 apps/dsh-plugin 用 catalog: 引用。
 # R83 TE1 采纳（闸开先行，双锚齐 @2026-09-25）：锁 20 个 @deepseek-ai/dsh-*=0.1.7-rc.1
 # + cordis=4.0.4。家族重推导=0.1.7 peer 闭包：新增 workspace/storage/storage-domain/

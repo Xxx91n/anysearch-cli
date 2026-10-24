@@ -1,4 +1,4 @@
-// ADR-0044 D3 + r116: TS-friendly wrapper for the mjs integrity contract consumed by ship-gate.
+// + r116: TS-friendly wrapper for the mjs integrity contract consumed by ship-gate.
 // Resolves the mjs from the project root so the path does not depend on import.meta.url
 // (which is brittle under tsx + CJS interop on Windows).
 import { createRequire } from "node:module";

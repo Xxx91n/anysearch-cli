@@ -1,4 +1,4 @@
-// ADR-0044 D3: isolated publish-red contract for the eval report's run-level integrity block.
+// isolated publish-red contract for the eval report's run-level integrity block.
 // Ship-gate consumes this helper so the negative case is testable without running the whole gate.
 export const SHIP_OVERRIDE_REASON_CODES = ["provider-emergency", "upstream-breaking-change", "data-loss-mitigation"];
 
@@ -7,12 +7,12 @@ export function evalIntegrityCheck(report) {
   if (!integrity || typeof integrity !== "object") {
     return { ok: false, detail: "memory-eval integrity contract missing" };
   }
-  // r116 fix: decision-grade runs are the publish boundary (ADR-0044 D3). The verdict
+  // r116 fix: decision-grade runs are the publish boundary. The verdict
   // producer must not default to "pass" without a valid signal; ship-gate must publish-red
   // when a decision run arrives without an explicit pass verdict from the eval orchestrator.
   // This mirrors K8s PSA enforce/audit and NIST 800-207 PEP enforcement at the decision point.
   if (integrity.verdict !== "pass" && integrity.verdict !== "failed") {
-    return { ok: false, detail: "memory-eval integrity verdict invalid: " + integrity.verdict + " (ADR-0044 D3 fail-closed)" };
+    return { ok: false, detail: "memory-eval integrity verdict invalid: " + integrity.verdict + " ( fail-closed)" };
   }
   if (
     integrity.runPurpose !== "observational" &&
@@ -25,13 +25,13 @@ export function evalIntegrityCheck(report) {
     (integrity.runPurpose === "decision" || integrity.runPurpose === "override") &&
     integrity.verdict !== "pass"
   ) {
-    return { ok: false, detail: "memory-eval decision/override-grade integrity verdict not fail-closed (ADR-0044 D3)" };
+    return { ok: false, detail: "memory-eval decision/override-grade integrity verdict not fail-closed " };
   }
   if (integrity.runPurpose === "override" && !SHIP_OVERRIDE_REASON_CODES.includes(integrity.overrideReasonCode)) {
     return { ok: false, detail: "memory-eval override runPurpose requires a valid overrideReasonCode" };
   }
   if (integrity.verdict === "failed") {
-    return { ok: false, detail: "memory-eval integrity verdict failed (ADR-0044 D3 fail-closed)" };
+    return { ok: false, detail: "memory-eval integrity verdict failed ( fail-closed)" };
   }
   return {
     ok: true,

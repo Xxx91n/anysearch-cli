@@ -1,4 +1,4 @@
-# ADR-0039 D2: pinned python stack for scripts/tau/bgnbd_fit.py.
+# pinned python stack for scripts/tau/bgnbd_fit.py.
 # r100 research amendment: lifetimes==0.11.3 is pure-python and safe itself, but its autograd
 # dependency is the numpy-2 liability — numpy stays pinned BELOW 2.x with autograd>=1.7.
 lifetimes==0.11.3

@@ -1,4 +1,4 @@
-// ADR-0050 D2/D5: beta calibration and held-out dual-threshold derivation.
+// beta calibration and held-out dual-threshold derivation.
 // Pure functions only. No runtime dependency. Small-sample default is beta
 // calibration (Kull 2017); isotonic/conformal are explicitly deferred.
 
@@ -45,7 +45,7 @@ export interface ThresholdDerivationOptions {
   minSamplesTotal?: number;
   legacySupported?: number;
   legacyUnsupported?: number;
-  // ADR-0050 D5: derive thresholds in calibrated-probability space, matching
+  // derive thresholds in calibrated-probability space, matching
   // the value classifyClaim compares at runtime. Identity keeps raw scores.
   params?: BetaCalibrationParams;
 }
@@ -298,7 +298,7 @@ export function evaluateThresholdGate(
   return { decision, supportedWilsonLower: supportedLower, unsupportedWilsonLower: unsupportedLower, targetPrecision };
 }
 
-// ADR-0050 D2: binary sens/spec + prevalence as a cross-check on the
+// binary sens/spec + prevalence as a cross-check on the
 // dual-threshold decision, computed on a held-out segment.
 export interface ConfusionStats {
   sensitivity: number;

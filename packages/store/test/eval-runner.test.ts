@@ -1,4 +1,4 @@
-// ADR-0027 impl plan step 7: runner self-check (path 1/3).
+// impl plan step 7: runner self-check (path 1/3).
 // Verifies: golden set shape, runCase pass on golden spec, stage attribution on failure, metrics, fingerprint stability.
 import { GOLDEN_CASES, OFFLINE_EXCLUDED_GROUPS, offlineCases } from "../src/eval/golden-cases";
 import { computeMetrics, datasetFingerprint, runCase, runAll } from "../src/eval/runner";
@@ -10,7 +10,7 @@ function assert(cond: boolean, msg: string) {
 }
 
 async function main() {
-  // Shape: 128 cases (ADR-0053: +5 INJECT probes), 15 groups, every op has a stage.
+  // Shape: 128 cases (: +5 INJECT probes), 15 groups, every op has a stage.
   assert(GOLDEN_CASES.length === 128, "128 golden cases (got " + GOLDEN_CASES.length + ")");
   const groups = new Set(GOLDEN_CASES.map((c) => c.group));
   assert(groups.size === 15, "15 groups (got " + groups.size + ")");
@@ -25,7 +25,7 @@ async function main() {
   assert(datasetFingerprint(mutated) !== fp1, "fingerprint changes on dataset mutation");
 
   // Full golden suite passes as-is (this IS the calibration assert).
-  // ADR-0060 D7: default (offline) suite drops the vector-arm group; test:online covers it.
+  // default (offline) suite drops the vector-arm group; test:online covers it.
   const report = await runAll(GOLDEN_CASES, { excludeGroups: OFFLINE_EXCLUDED_GROUPS });
   assert(report.totals.failed === 0, "all golden cases PASS (failed: " + report.cases.filter((c) => !c.passed).map((c) => c.id + "@" + c.failedStage).join(", ") + ")");
   assert(report.metrics.passRate === 1, "passRate 1.0");
@@ -41,12 +41,12 @@ async function main() {
   assert(ob!.dataAbsent === true, "golden run is structurally data-absent (single-run window can never reach 90d / 100 fittable units)");
   const bk = (ob!.bgnbd as { status?: string; reason?: string });
   assert(bk.status === "skipped" && String(bk.reason).includes("structural data absence"), "report zone labels the absence explicitly (SA-F-05)");
-  assert(typeof ob!.armDeltas === "object" && ob!.armDeltas !== null, "ADR-0046 D7: armDeltas zone present");
-  assert("maxLexicalOverlap" in ob!, "ADR-0046 D7: maxLexicalOverlap field registered");
-  assert("exclusiveHits" in ob! && "nativeScoresMissing" in ob!, "ADR-0046 D7: web ledger skip fields registered");
+  assert(typeof ob!.armDeltas === "object" && ob!.armDeltas !== null, "armDeltas zone present");
+  assert("maxLexicalOverlap" in ob!, "maxLexicalOverlap field registered");
+  assert("exclusiveHits" in ob! && "nativeScoresMissing" in ob!, "web ledger skip fields registered");
 }
-  assert(Boolean(report.tierBreakdown.adversarial && report.tierBreakdown.hard), "ADR-0028 D4: tier breakdown present");
-  assert(report.metrics.counts && typeof report.metrics.mrr === "number", "ADR-0028 D1/D2: counts + mrr present");
+  assert(Boolean(report.tierBreakdown.adversarial && report.tierBreakdown.hard), "tier breakdown present");
+  assert(report.metrics.counts && typeof report.metrics.mrr === "number", "counts + mrr present");
 
   // Stage attribution: force a retrieve-stage failure, assert failedStage === retrieve.
   const broken = [{

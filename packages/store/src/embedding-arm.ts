@@ -1,11 +1,11 @@
-// ADR-0063 (R62 T3) / R62 D-002 / ADR-0064 (R63 T2): @anysearch-cli/embedding is an
+// (R62 T3) / R62 D-002 / (R63 T2): @anysearch-cli/embedding is an
 // OPTIONAL PEER (peerDependencies + peerDependenciesMeta.optional; R62's
 // optionalDependencies form migrated in R63 T2 — npm auto-install of a heavy
 // optional runtime is the bomb regression). The vector arm is a capability, not
 // a requirement. When the package is absent from the install closure (peer not
 // installed), the arm is absent: embedText ≡ null, telemetry all-zero +
 // absent:true — a legal FTS-only state, never a throw.
-// ADR-0033 D4/D5 fail-open semantics are preserved end-to-end.
+// fail-open semantics are preserved end-to-end.
 // R63 T1: consolidate dedup degrades to jaccard-only (decideOp null-cos branch,
 // THETA_JAC=0.80) when this arm is absent — see packages/store/src/consolidate.ts.
 //
@@ -30,7 +30,7 @@ function loadEmbedding(): Promise<EmbeddingModule | null> {
         return await import("@anysearch-cli/embedding");
       } catch (e) {
         const code = (e as NodeJS.ErrnoException | undefined)?.code;
-        // R71 T1 (ADR-0072): only a NOT-FOUND falls through to sibling-root
+        // R71 T1: only a NOT-FOUND falls through to sibling-root
         // probing — a present-but-broken package stays absent (fail-open),
         // never masked by a stray copy elsewhere on disk.
         if (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND") {
@@ -43,7 +43,7 @@ function loadEmbedding(): Promise<EmbeddingModule | null> {
   return modPromise;
 }
 
-// R71 T1 (ADR-0072): sibling-root fallback for isolated global layouts.
+// R71 T1: sibling-root fallback for isolated global layouts.
 // pnpm add -g installs each top-level package in its own
 // <prefix>/global/v11/<hash>/node_modules tree — the embedding package exists
 // on disk but is unreachable by bare-specifier resolution from the cli's tree
@@ -121,7 +121,7 @@ export interface ArmTelemetry {
   embeds: number;
   failures: number;
   circuitOpen: boolean;
-  // ADR-0063 (R62 T3): absent distinguishes "package not installed" from
+  // (R62 T3): absent distinguishes "package not installed" from
   // "installed but quiet" — both report zero counters otherwise.
   absent: boolean;
 }

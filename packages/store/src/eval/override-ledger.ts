@@ -1,4 +1,4 @@
-// ADR-0047 D4: independent append-only override ledger.
+// independent append-only override ledger.
 // Hash-chain entries, sidecar lock, tmp+rename atomic write, quarantine, and
 // fail-loud validation. Unlike skip/gain ledgers, corruption is not silently
 // restarted by callers; verifier commands treat malformed history as exit 2.

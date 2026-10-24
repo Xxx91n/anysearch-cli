@@ -55,7 +55,7 @@ const server2 = buildServer(mockEngine);
 const server3 = buildServer(mockEngine);
 assert(server2 !== server3, "buildServer() returns new instance each call (factory pattern)");
 
-// Test 4 (ADR-0057 D3 / D-004 regression): buildServer() without an engine must
+// Test 4 (D-004 regression): buildServer without an engine must
 // boot from a COLD HOME - a temp dir with no ~/.anysearch parent - proving the
 // resolveDbPath mkdir guard exists. Removing the guard turns this red.
 {
@@ -83,7 +83,7 @@ assert(server2 !== server3, "buildServer() returns new instance each call (facto
 }
 
 
-// Test 5 (ADR-0057 D3 / D-004 regression; audit F-3 / P7): the charter requires
+// Test 5 (D-004 regression; audit F-3 / P7): the charter requires
 // proving boot works with a COLD HOME (no ~/.anysearch) via the DEFAULT path - i.e.
 // with ANS_DB_PATH UNSET, so resolveDbPath derives ~/.anysearch/anysearch.db from
 // USERPROFILE/HOME. Test 4 sets ANS_DB_PATH, which short-circuits that derivation
@@ -123,7 +123,7 @@ assert(server2 !== server3, "buildServer() returns new instance each call (facto
   }
 }
 
-// ADR-0019 D4 (layer-2): input validation is enforced by AJV via fromJsonSchema.
+// (layer-2): input validation is enforced by AJV via fromJsonSchema.
 // Structural assertion: fromJsonSchema(KernelJsonSchemas.X) produces a Standard Schema
 // that the SDK will validate against. We verify the underlying JSON schemas still carry
 // the expected keyword signatures (minLength / enum-anyOf / required) so a regression

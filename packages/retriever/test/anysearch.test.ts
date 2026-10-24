@@ -284,7 +284,7 @@ async function main() {
     assert((await p.usage()) === undefined, "usage() stays undefined");
   }
 
-  // 13. R83 T1 / ADR-0084 D-003: vertical wire mapping — internal vertical*
+  // 13. R83 T1 / D-003: vertical wire mapping — internal vertical*
   //     fields map to MCP domain/sub_domain/sub_domain_params arguments.
   {
     const f = installFetch(stdHandler);
@@ -413,4 +413,4 @@ async function main() {
 }
 
 await main();
-export { }; // tsc: mark as module so top-level names do not collide across test files (check task, ADR-0028 D5)
+export { }; // tsc: mark as module so top-level names do not collide across test files (check task)

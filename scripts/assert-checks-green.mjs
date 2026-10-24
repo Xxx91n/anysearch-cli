@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ADR-0069 (R68 T1): post-tag/publish pre-assertion — the tagged (or any fixed)
+// (R68 T1): post-tag/publish pre-assertion — the tagged (or any fixed)
 // SHA must carry green ci + ship-gate check-runs before publish proceeds.
 //
 // Semantics (mirrors the lewagon/wait-on-check-action contract used for the
@@ -7,7 +7,7 @@
 // harness):
 //   - check-runs fetched on the FIXED sha — never heads/main (racing window)
 //   - same-name checks dedupe to the latest started_at run
-//   - strict two-phase deadlines (R70 T0 / F-S4, ADR-0071):
+// - strict two-phase deadlines (R70 T0 / F-S4):
 //       Phase 1 discovery — EVERY one of the five check families (check-build,
 //         install-smoke, test:online, ship-gate, memory-eval) must register >=1
 //         check-run within --discovery-sec (default 120). Strictness rests on

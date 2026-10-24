@@ -1,4 +1,4 @@
-// ADR-0051 D5: per-instance observability invariants.
+// per-instance observability invariants.
 import assert from "node:assert";
 import {
   perInstanceReport,

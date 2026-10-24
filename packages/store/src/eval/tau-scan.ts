@@ -1,4 +1,4 @@
-// ADR-0039 D3: tau sensitivity scan — replays the production freshness scoring function
+// tau sensitivity scan — replays the production freshness scoring function
 // over a memory row set with candidate tau tables, reporting RANK-DISPLACEMENT distributions
 // only (Kendall-tau + position-shift histogram). Never hit-rate (circular per Hu/Koren 2008,
 // Joachims 2002). Zero look-ledger contact: this module never touches the eval runner.
@@ -21,7 +21,7 @@ export interface TauScanRow {
   id: number;
   title: string;
   url: string;
-  ageDays: number;        // age at scan time (pre-reserved age_at_access interface, ADR-0039 D1)
+  ageDays: number; // age at scan time (pre-reserved age_at_access interface)
   lastAccessedAgeDays: number | null;
   accessCount: number;
   pinned?: boolean;

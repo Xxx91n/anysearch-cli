@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ADR-0052 D7: packaged CLI/MCP observation smoke.
+// packaged CLI/MCP observation smoke.
 // This script exercises the built bins, then reads the durable trace schema
 // through the same better-sqlite3 prebuild used by the packages.
 import { spawn, spawnSync } from "node:child_process";

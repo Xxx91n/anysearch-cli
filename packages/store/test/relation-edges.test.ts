@@ -1,4 +1,4 @@
-// ADR-0035 D2/D3/D4/D6/D7: relation edge unit coverage (rule extraction, idempotent
+// relation edge unit coverage (rule extraction, idempotent
 // supersede, pattern guard, merge/unmerge edge symmetry, backfill dry-run/apply parity).
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -100,7 +100,7 @@ assert(liveUses === 1, "conflicting uses edge closed at merge; one live remains"
 const un = await store.unmergeEntity(comb.logId!);
 assert(un.ok === true, "unmerge ok: " + JSON.stringify(un));
 liveUses = edgesNow(true).filter((e) => e.relation === "uses").length;
-assert(liveUses === 2, "closed duplicate edge revived by unmerge (ADR-0032 D2: undo merge side-effects only): got "+liveUses);
+assert(liveUses === 2, "closed duplicate edge revived by unmerge (: undo merge side-effects only): got "+liveUses);
 
 // --- backfill dry-run / apply parity + second-apply no-op ---
 const dry = await store.backfillRelations({ apply: false });
@@ -184,7 +184,7 @@ const edgeCounts = (p: string) => {
 }
 rmSync(dir2, { recursive: true, force: true });
 
-// --- ADR-0036 D6: chunked apply commits per batch; live-writer SQLITE_BUSY is absorbed ---
+// --- chunked apply commits per batch; live-writer SQLITE_BUSY is absorbed ---
 {
   const dir3 = mkdtempSync(join(tmpdir(), "ans-rel-busy-"));
   const dbPath3 = join(dir3, "rel3.db");

@@ -1,4 +1,4 @@
-// ADR-0034 attribution module tests — deterministic, no network, no LLM.
+// attribution module tests — deterministic, no network, no LLM.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -141,7 +141,7 @@ describe("classifyClaim — contradiction detect", () => {
 });
 
 describe("classifyClaim — no evidence handles honestly", () => {
-  it("no results → uncertain, not unsupported (ADR-0034 D4)", () => {
+  it("no results → uncertain, not unsupported", () => {
     const result = classifyClaim("Some obscure claim.", { retrievalResults: [] });
     assert.equal(result.label, "uncertain"); // honest: no evidence, not "not enough"
   });
@@ -379,9 +379,9 @@ describe("applyJudgeEscalation — host-injected judge (F2)", () => {
   });
 });
 
-// ADR-0050 D5: calibrated path — beta params + held-out dual thresholds;
+// calibrated path — beta params + held-out dual thresholds;
 // degraded calibration falls back to the legacy 0.6 floor.
-describe("classifyClaim — calibrated dual thresholds (ADR-0050 D5)", () => {
+describe("classifyClaim — calibrated dual thresholds", () => {
   const calibration = {
     params: { a: 1, b: 1, c: 0 }, // identity
     thresholds: { supported: 0.5, unsupported: 0.2, degraded: false },

@@ -1,4 +1,4 @@
-# Docs domain — technical-docs retrieval wedge (ADR-0061 B1, spec .scratch/grill-round-60/spec-b1.md).
+# Docs domain — technical-docs retrieval wedge ( B1, spec .scratch/grill-round-60/spec-b1.md).
 # Corpus anchored on first-party docs the team depends on daily (D-004 inclusion rule).
 # urlAllowlist gates URL *consumption* (policy/HITL), not search ranking.
 name = "docs"

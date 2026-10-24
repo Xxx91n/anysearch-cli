@@ -1,4 +1,4 @@
-// ADR-0024 Step 5 tests: T0 preference layer.
+// Step 5 tests: T0 preference layer.
 // Coverage: promote both channels, veto paths, demote d-i/d-iii, cap-overflow eviction
 // ordering, atomic write (simulated mid-write crash), projection consistency,
 // injection position/order assertion. Uses OS temp dir (WAL needs a file).

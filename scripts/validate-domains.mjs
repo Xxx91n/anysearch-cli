@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 // scripts/validate-domains.mjs
 //
-// ADR-0021 D3 — Domain Schema Validation Acceptance step 1.5 (blocking).
+// — Domain Schema Validation Acceptance step 1.5 (blocking).
 // Scans domains/*.toml, parses with smol-toml (already a store dep, resolved
 // via createRequire so no new dependency is introduced), applies compaction
-// guards from ADR-0021 D1, exits 1 with file:line on any violation.
+// guards from, exits 1 with file:line on any violation.
 //
 // Guards enforced:
 //   - compaction.lowWatermark as absolute number must be >= 50000
-//     (Anthropic 50K hard floor, see ADR-0021 D1);
+// (Anthropic 50K hard floor);
 //   - compaction.lowWatermark as {fraction} must land in (0,1);
 //   - compaction.reuseCap must be a number >= 1;
 //   - sources.weights: Record keyed by registered provider id (exa/tavily/anysearch),
-//     each a finite number > 0 (ADR-0045 D2; config errors fail fast).
+// each a finite number > 0 (config errors fail fast).
 //   - unknown top-level sections beyond schema (fail-fast, voodoo avoidance).
 //
 // Exit codes: 0 = all green (or no domains found → skip), 1 = violation.
@@ -46,7 +46,7 @@ function info(msg) {
 }
 
 if (!fs.existsSync(DOMAINS_DIR)) {
-  info("domains/ not present — skip (ADR-0021 D3 allows absent)");
+  info("domains/ not present — skip ( allows absent)");
   process.exit(0);
 }
 
@@ -90,14 +90,14 @@ for (const file of files) {
   }
   if (!doc || typeof doc !== "object") fail(`${file}: parsed TOML is not a table`);
 
-  // Unknown top-level keys → fail-fast (avoid voodoo fields, see ADR-0021 D6).
+  // Unknown top-level keys → fail-fast (avoid voodoo fields).
   for (const k of Object.keys(doc)) {
     if (!KNOWN_TOP.has(k)) {
       fail(`${file}:${lineOf(src, k)} unknown top-level key "${k}"`);
     }
   }
 
-  // ADR-0045 D2: sources.weights — Record keyed by registered provider id, finite number > 0.
+  // sources.weights — Record keyed by registered provider id, finite number > 0.
   // Config errors fail fast (file:line); provider runtime failures stay fail-open (engine).
   const w = doc.sources?.weights;
   if (w !== undefined) {
@@ -126,7 +126,7 @@ for (const file of files) {
       if (typeof c.lowWatermark === "number") {
         if (!Number.isFinite(c.lowWatermark) || c.lowWatermark < 50000) {
           fail(
-            `${file}:${ln} compaction.lowWatermark=${c.lowWatermark} must be >= 50000 (Anthropic 50K floor, ADR-0021 D1)`
+            `${file}:${ln} compaction.lowWatermark=${c.lowWatermark} must be >= 50000 (Anthropic 50K floor)`
           );
         }
       } else if (typeof c.lowWatermark === "object" && c.lowWatermark !== null) {

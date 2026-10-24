@@ -24,7 +24,7 @@ import { rehydrateConfigEnv } from "./config-env";
 import { runTeardown, unrefPendingHandles } from "./teardown";
 
 // ponytail: single source of truth for CLI version, same pattern as apps/mcp
-// (ADR-0020 D3). tsup injects __PACKAGE_VERSION__ at build time.
+//. tsup injects __PACKAGE_VERSION__ at build time.
 declare const __PACKAGE_VERSION__: string | undefined;
 const VERSION: string =
   typeof __PACKAGE_VERSION__ !== "undefined" && __PACKAGE_VERSION__
@@ -45,16 +45,16 @@ const help = [
   "            options: --json (structured envelope) · --fail-on-abstain (exit 3 on abstain)",
   "  chat      Interactive retrieval-augmented chat session",
   "  recommend Get recommendations from the active domain",
-  "  domain    Switch Active Domain (cc-persona TOML, ADR-0002)",
+  " domain Switch Active Domain (cc-persona TOML)",
   "  mcp       Start the anysearch MCP server (stdio or HTTP transport)",
-  "  pref      Manage T0 durable preferences (/remember, pref review - ADR-0024/0025)",
-  "  memory    Memory embeddings maintenance (backfill-vectors, ADR-0033)",
-  "  access-chain  Access-events tamper-evidence chain bootstrap (ADR-0040)",
-  "  switch-state Read switch governance state (S0-S4, ADR-0043)",
-  "  entity    Entity merge / unmerge / review belt (ADR-0032)",
-  "  relation  Entity relation edges: list + backfill-relations (ADR-0035 KG-lite arm)",
-  "  consolidate Episodic->semantic consolidation with fidelity gate (ADR-0037)",
-  "  hitl      HITL review queue for blocked retrieved-derived URLs (ADR-0054)",
+  " pref Manage T0 durable preferences (remember, pref review - /0025)",
+  " memory Memory embeddings maintenance (backfill-vectors)",
+  " access-chain Access-events tamper-evidence chain bootstrap ",
+  " switch-state Read switch governance state (S0-S4)",
+  " entity Entity merge / unmerge / review belt ",
+  " relation Entity relation edges: list + backfill-relations ( KG-lite arm)",
+  " consolidate Episodic->semantic consolidation with fidelity gate ",
+  " hitl HITL review queue for blocked retrieved-derived URLs ",
   "",
   "Options:",
   "  --version, -v     Print version",
@@ -90,7 +90,7 @@ if (!known.has(cmd)) {
 
 // Composition root: dispatch to command implementation.
 // Each command receives remaining args and returns exit code.
-// ADR-0061 B1: `ans domain <name>` persists to ~/.anysearch/config.env — rehydrate
+// B1: `ans domain <name>` persists to ~/.anysearch/config.env — rehydrate
 // it into env (only where unset) so the active domain actually reaches search/chat/etc.
 rehydrateConfigEnv();
 

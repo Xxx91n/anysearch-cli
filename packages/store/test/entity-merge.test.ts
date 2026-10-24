@@ -1,4 +1,4 @@
-// ADR-0032 test closure: combine (destructive redirect + snapshot), unmerge (bounded + override),
+// test closure: combine (destructive redirect + snapshot), unmerge (bounded + override),
 // candidate review belt (hit_count, keep/drop), merge telemetry.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

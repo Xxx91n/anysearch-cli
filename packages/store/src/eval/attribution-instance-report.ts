@@ -1,4 +1,4 @@
-// ADR-0051 D5: per-instance observability for the single attribution-gold line.
+// per-instance observability for the single attribution-gold line.
 // Audit-only: nothing here gates fitting, thresholds, or promotion. A known
 // web/memory mixture is reported as "mixed-calibration-acknowledged"; forking
 // is the D6 human-gated decision, never automatic.

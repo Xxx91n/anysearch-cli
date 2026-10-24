@@ -1,6 +1,6 @@
 # DeepSeek Harness (dsh) integration — @anysearch-cli/dsh-plugin
 
-DeepSeek Harness is the sixth verified agent host (ADR-0073). The integration
+DeepSeek Harness is the sixth verified agent host. The integration
 is two-surface: a thin Cordis bundle mounts the anysearch hooks layer inside
 the host process AND registers the five `ans_*` tools natively on
 `ctx.tools` (R90 — the Phase-1 MCP-client bridge row is retired; see the
@@ -137,7 +137,7 @@ dsh --profile headless "<task>"
 Verified on the wire: routing-card message + system-prompt section in the
 first model request; `anysearch preheat` context in a later request;
 denylisted URL in tool arguments → tool error `requires approval` (URL
-gating is fail-closed by ADR-0054/0055 contract); distilled summary +
+gating is fail-closed by /0055 contract); distilled summary +
 `POST /index` with real result entries carrying
 `x-anysearch-session-id`.
 

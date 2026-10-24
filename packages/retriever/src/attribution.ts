@@ -1,5 +1,5 @@
-// ADR-0034 D4: first-class attribution field on FusedEnvelope.
-// Orthogonal to ADR-0022 verified:false (provider self-declare vs local signal fusion).
+// first-class attribution field on FusedEnvelope.
+// Orthogonal to verified:false (provider self-declare vs local signal fusion).
 // MIR (Modular IR) pattern: the contract layer declares the type; kernel produces the value.
 
 // Claim label — three-state, matching SufficiencySignal verdict grammar.
@@ -10,8 +10,8 @@ export interface AttributionEvidence {
   url: string;
   title?: string;
   provider: string;      // e.g. "exa", "tavily", "anysearch"
-  sourceKey: string;     // e.g. "retrieval_results[0]" — arms provenance (ADR-0033 D8)
-  entity?: string;       // ADR-0031/0032 entity hit if applicable
+  sourceKey: string; // e.g. "retrieval_results[0]" — arms provenance
+  entity?: string; // /0032 entity hit if applicable
   span?: string;         // snippet text that grounds the claim
 }
 
@@ -28,7 +28,7 @@ export interface AttributionClaim {
   spanEnd?: number;
 }
 
-// D7 unsupported named-gap escalation (ADR-0023 sufficiency-gate bridge).
+// D7 unsupported named-gap escalation ( sufficiency-gate bridge).
 export interface GapRequest {
   assertion: string;   // the core assertion that could not be verified
   evidenceState: "no_evidence" | "partial_evidence" | "conflicting_evidence";
@@ -44,6 +44,6 @@ export interface AttributionReport {
   supportedCount: number;
   uncertainCount: number;
   unsupportedCount: number;
-  // Judge-enhanced flag: true if judge escalation ran on >=1 uncertain claim (ADR-0034 D3).
+  // Judge-enhanced flag: true if judge escalation ran on >=1 uncertain claim.
   judgeEnhanced: boolean;
 }

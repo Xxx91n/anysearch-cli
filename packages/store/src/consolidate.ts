@@ -1,8 +1,8 @@
-// ADR-0037: episodic-to-semantic consolidation (D2/D4) + reversible active forgetting (D5).
+// episodic-to-semantic consolidation (D2/D4) + reversible active forgetting (D5).
 // Deterministic core; LLM only behind injected seams (summarize / classify). Fail-open:
 // summarize null or absent -> cluster skipped (llmUnavailable); classify absent -> semantic row
 // written at LOW_CONFIDENCE (0.2), never blocks the write.
-// atomcode research (r93): dry-run = BEGIN IMMEDIATE + ROLLBACK exact prediction (ADR-0035 r87
+// atomcode research (r93): dry-run = BEGIN IMMEDIATE + ROLLBACK exact prediction ( r87
 // pattern); no RETURNING inside a transaction touching FTS5 content tables (better-sqlite3 #654)
 // -> inserts use lastInsertRowid.
 
@@ -24,7 +24,7 @@ export const CLUSTER_MIN = 3;            // D2: minimum episodes per entity clus
 export const ARCHIVE_AGE_FACTOR = 3;     // D5: age > 3 * tier tau AND access_count = 0 AND stale last_accessed
 
 // Local mirror of kernel attribution.ts CONTRADICTION_RE. Store must not import kernel
-// (kernel -> store one-way dependency); keep in sync manually (ADR-0037 D4).
+// (kernel -> store one-way dependency); keep in sync manually.
 const CONTRADICTION_RE = /\b(?:not|never|no longer)\b|(?:\u5E76\u975E|\u6BEB\u65E0|\u5168\u65E0|\u4E0D\u662F|\u4E0D\u542B|\u6CA1[\u6709\u5728]?|\u672A|\u65E0|\u975E(?!\u5E38))/i;
 
 interface EpisodeRow {
@@ -60,7 +60,7 @@ export interface ConsolidateReport {
   noop: number;
   update: number;
   // R63 T1 (D-002): dedup decisions made on the jaccard-only degraded path (no cosine
-  // computable — arm absent or no live row carries an embedding). Never silent (ADR-0060 D7).
+  // computable — arm absent or no live row carries an embedding). Never silent.
   embeddingAbsent: number;
   semanticIds: number[];
 }
@@ -153,7 +153,7 @@ export async function consolidateMemoryRun(
   const writes: Array<() => void> = [];
   const plan = async (): Promise<void> => {
     // Cluster scan INCLUDES superseded rows (valid_until NOT NULL): same-entity writes soft-close
-    // the prior version immediately (ADR-0008), so episodic history *is* the closed-row set.
+    // the prior version immediately, so episodic history *is* the closed-row set.
     const rows = db
       .prepare(
         "SELECT id, entity, title, snippet, url, created_at, last_accessed, access_count " +

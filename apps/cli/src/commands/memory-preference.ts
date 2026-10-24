@@ -1,7 +1,7 @@
-// ans pref: T0 durable preference management (ADR-0024 D1/D2/D7).
+// ans pref: T0 durable preference management.
 // Subcommands: list | remember <key> <value> [--scope project|global] | forget <key> [--scope project|global]
 //
-// C-prime promote gate (ADR-0024 D3): explicit (/remember) OR correction-count>=2 (implicit).
+// C-prime promote gate: explicit (remember) OR correction-count>=2 (implicit).
 // demote: d-i conflict / d-iii /forget / d-ii eviction at cap overflow (all land in quarantine, never drop).
 // Post-write: regenerates MEMORY.md projection (temp+fsync+rename, key-override merge global+project).
 
@@ -12,20 +12,20 @@ import type { T0PreferenceInput } from "@anysearch-cli/store";
 function printHelp(): void {
   process.stdout.write(
     [
-      "ans pref — manage T0 durable preferences (ADR-0024)",
+      "ans pref — manage T0 durable preferences ",
       "",
       "Commands:",
       "  list                              Show live preferences (global + project merged)",
       "  remember <key> <value> [--scope]  Promote a preference (explicit channel)",
       "  forget   <key> [--scope]          Demote a preference (user channel; recoverable)",
-      "  review  [--keep|--drop|--promote <id>]  Resolve quarantined equal-conflict memories (ADR-0025)",
+      " review [--keep|--drop|--promote <id>] Resolve quarantined equal-conflict memories ",
       "",
       "Scope: --scope global (default) | --scope project",
       "  global  → ~/.anysearch/MEMORY.md",
       "  project → ./.anysearch/MEMORY.md (no auto-creation; only on first promote)",
       "",
       "Injection: preferences are wrapped as <user_preferences updated=...> block",
-      "and prepended to the first USER message on every chat turn (ADR-0024 D5).",
+      "and prepended to the first USER message on every chat turn.",
       "",
     ].join("\n") + "\n"
   );
@@ -96,7 +96,7 @@ export async function runMemoryPreference(args: string[]): Promise<number> {
   }
 
   if (sub === "review") {
-    // ADR-0025 D2: equal-conflict review channel. List quarantined writes, resolve by id.
+    // equal-conflict review channel. List quarantined writes, resolve by id.
     // keep = new value wins (quarantine cleared, live counterpart superseded);
     // drop = old value confirmed (row stays isolated, marked resolved_drop);
     // promote = keep + lift to T0 preference via the existing promotePreference channel.

@@ -36,7 +36,7 @@ apps/cli/domains/
 
 .model-cache/
 
-# runtime policy cache (ADR-0055)
+# runtime policy cache
 .anysearch-cli/
 
 # R68 audit F-A2: agy adapter writes .antigravity/rules/anysearch.mdc into the

@@ -1,8 +1,8 @@
 // ans chat: interactive retrieval-augmented chat session.
-// ADR-0007 decision 7: uses PiAgentRuntime for agent loop.
-// ADR-0017 D2: uses createLlmSession deep module from kernel.
+// decision 7: uses PiAgentRuntime for agent loop.
+// uses createLlmSession deep module from kernel.
 // Reads LLM config from ANS_LLM_PROVIDER + ANS_LLM_MODEL env vars.
-// ADR-0037 D4/A3: optional custom endpoint via ANS_LLM_BASE_URL + ANS_LLM_API (chat|messages|responses).
+// optional custom endpoint via ANS_LLM_BASE_URL + ANS_LLM_API (chat|messages|responses).
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
 import { PiAgentRuntime, createLlmSession } from "@anysearch-cli/kernel";
@@ -32,10 +32,10 @@ export async function runChat(args: string[]): Promise<number> {
     return 3;
   }
 
-  // Initialize LLM session via kernel deep module (ADR-0017 D2).
+  // Initialize LLM session via kernel deep module.
   let session;
   try {
-    // ADR-0037 D4: custom endpoint config — ANS_LLM_API is required when ANS_LLM_BASE_URL is
+    // custom endpoint config — ANS_LLM_API is required when ANS_LLM_BASE_URL is
     // set (explicit three-way; no protocol sniffing). ANS_LLM_API_KEY supplies the key.
     const baseUrl = process.env.ANS_LLM_BASE_URL;
     const apiRaw = process.env.ANS_LLM_API;
@@ -73,13 +73,13 @@ export async function runChat(args: string[]): Promise<number> {
   }
 
   // Construct PiAgentRuntime and run.
-  // ADR-0017 D1: models undefined fix — session.models is now properly initialized.
+  // models undefined fix — session.models is now properly initialized.
   const runtime = new PiAgentRuntime({
     retriever,
     domain,
-    // ADR-0055 D5: lazy mtime re-read lets `ans hitl --allow-url` write-back take effect live.
+    // lazy mtime re-read lets `ans hitl --allow-url` write-back take effect live.
     domainTomlPath: domainTomlPath(),
-    // ADR-0054 D4: CLI is the TTY composition root; kernel decides isInteractive() itself.
+    // CLI is the TTY composition root; kernel decides isInteractive itself.
     interactive: !process.env.ANS_NO_INTERACTIVE,
     model: session.model,
     streamFn: session.streamFn,

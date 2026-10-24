@@ -1,4 +1,4 @@
-// Shared helper: engine backed by the durable anysearch DB (ADR-0037 D6).
+// Shared helper: engine backed by the durable anysearch DB.
 // ANS_DB_PATH overrides; default ~/.anysearch/anysearch.db via kernel resolveDbPath.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
 import { defaultDomainsDirs } from "@anysearch-cli/store";
 
-// ADR-0061 B1: the domains-dir resolution chain for this CLI.
+// B1: the domains-dir resolution chain for this CLI.
 //   1. ANS_DOMAINS_DIR env (a dir containing the tomls directly)
 //   2. <cwd>/domains — project-local convention, wins over builtin
 //   3. <pkg>/domains — builtin domains shipped inside the installed package

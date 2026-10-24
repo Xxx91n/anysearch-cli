@@ -1,7 +1,7 @@
-# ADR-0020 D2 — Non-Blocking Conformance Heartbeat.
+# Non-Blocking Conformance Heartbeat.
 # Tracks MCP spec drift (currently targeting 2025-11-25; 2026-07-28 RC is in
-# flight, see ADR-0018). Result is surfaced via step summary + artifact;
-# never blocks main or release. Promotion to blocking requires a new ADR.
+# flight). Result is surfaced via step summary + artifact;
+# never blocks main or release. Promotion to blocking requires a tracked decision.
 
 name: conformance-heartbeat
 
@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/setup@v2 # ADR-0026 D6: reads packageManager (11.24.0) automatically
+      - uses: pnpm/setup@v2 #: reads packageManager (11.24.0) automatically
         with: { install: false }
 
       - uses: actions/setup-node@v5
@@ -59,7 +59,7 @@ jobs:
         run: |
           echo "## MCP Conformance Heartbeat" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Spec target: 2025-11-25 (stable). RC 2026-07-28 tracked in ADR-0018." >> "$GITHUB_STEP_SUMMARY"
+          echo "Spec target: 2025-11-25 (stable). RC 2026-07-28 tracked in." >> "$GITHUB_STEP_SUMMARY"
           if [ -f conformance-results.json ]; then
             echo '```json' >> "$GITHUB_STEP_SUMMARY"
             head -c 4000 conformance-results.json >> "$GITHUB_STEP_SUMMARY"

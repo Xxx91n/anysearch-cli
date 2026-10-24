@@ -1,4 +1,4 @@
-// ADR-0039 D3 / Acceptance step 4 + C-displacement: replay determinism + displacement
+// / Acceptance step 4 + C-displacement: replay determinism + displacement
 // property tests with seeded RNG (mulberry32 precedent).
 import { scanTau, syntheticRows, rankForTau, kendallTau, positionShift, mulberry32 } from "../src/eval/tau-scan";
 import { TAU_TIER } from "../src/time-decay";

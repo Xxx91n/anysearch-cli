@@ -1,4 +1,4 @@
-// ADR-0041 D1: gate-built verification object. Materializes .ship-gate/chain-gate.db through
+// gate-built verification object. Materializes .ship-gate/chain-gate.db through
 // the real SqliteSessionStore write path with deterministic content seeds, then prints the db
 // path on stdout (single line) so ship-gate can hand it to verify-access-events.mjs via --db.
 import { rmSync, mkdirSync } from "node:fs";
@@ -19,7 +19,7 @@ async function main() {
   ]);
   // Three chained events: deleting a middle OR head row is detectable (successor prev_hash
   // no longer matches); only tail-row or whole-segment truncation is invisible (declared
-  // limitation, non-adversarial model — ADR-0040 / r106 audit F-03/F-10).
+  // limitation, non-adversarial model — / r106 audit F-03/F-10).
   for (let i = 0; i < 3; i++) await store.searchMemory("fixture", 10);
   store.close();
   process.stdout.write(dbPath + "\n");

@@ -1,6 +1,6 @@
 // query_knowledge tool: RAG adapter dispatch stub.
-// ADR-0006 MVP deferral: RAG adapter types not yet defined; returns adapter name only.
-// ADR-0019 D3: input validated by AJV.
+// MVP deferral: RAG adapter types not yet defined; returns adapter name only.
+// input validated by AJV.
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";

@@ -1,4 +1,4 @@
-// ADR-0039 D2/D6/D7 Acceptance C4/C5: spawn contract tests via node stub scripts
+// Acceptance C4/C5: spawn contract tests via node stub scripts
 // (slow / garbage-stdout / contract schema / non-convergence) + AND-gate independent negatives.
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

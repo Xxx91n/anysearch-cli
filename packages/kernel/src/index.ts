@@ -13,13 +13,13 @@ export * from "@anysearch-cli/retriever";
 export * from "./composition";
 export * from "./llm-init";
 
-// ADR-0023 D2: S1 query rewrite (pure + LLM seam, fail-open).
+// S1 query rewrite (pure + LLM seam, fail-open).
 export * from "./query-rewrite";
 export * from "./t0-projection";
 
-// ADR-0034: claim-level attribution layer (deterministic multi-signal fusion).
+// claim-level attribution layer (deterministic multi-signal fusion).
 export * from "./attribution";
 export * from "./attribution-schema";
 
-// ADR-0050 D2/D5: beta calibration + held-out dual thresholds (pure core).
+// beta calibration + held-out dual thresholds (pure core).
 export * from "./calibrate";

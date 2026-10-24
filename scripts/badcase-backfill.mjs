@@ -1,4 +1,4 @@
-// ADR-0061 B4/T3: badcase -> golden 回灌闭环。
+// B4/T3: badcase -> golden 回灌闭环。
 //
 //   node scripts/badcase-backfill.mjs --id docs-bc0001 --into docs-g0007
 //     attach 模式：把已观测 badcase 标记为 promoted，回指既有 golden 条目

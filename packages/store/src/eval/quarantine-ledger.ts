@@ -1,13 +1,13 @@
-// ADR-0027 D8 + ADR-0059 D3 (T-2 / F-17): flaky-case quarantine ledger.
+// + (T-2 / F-17): flaky-case quarantine ledger.
 //
 // A case that is environment-flaky (passes on one runner, fails on another) is quarantined by
 // POLICY MARK, never by editing the golden set: the case stays in GOLDEN_CASES, so the dataset
-// fingerprint is unchanged and no recalibration is triggered (ADR-0059 D3). The gate then excludes
+// fingerprint is unchanged and no recalibration is triggered. The gate then excludes
 // ACTIVE quarantined cases from the passRate==1 hard assertion while still reporting them.
 //
-// SLA (ADR-0027 D8): 30-day TTL, weekly expiry review, at most 2 renewals. Removing a case and
-// putting it back is not new evidence and never resets the statistical budget (ADR-0038 symmetry).
-// Per-case statistical slack (majority vote / 2-sigma band) is REJECTED (ADR-0027 D7): on a
+// SLA: 30-day TTL, weekly expiry review, at most 2 renewals. Removing a case and
+// putting it back is not new evidence and never resets the statistical budget ( symmetry).
+// Per-case statistical slack (majority vote / 2-sigma band) is REJECTED: on a
 // deterministic assertion that is rerun-until-pass.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 

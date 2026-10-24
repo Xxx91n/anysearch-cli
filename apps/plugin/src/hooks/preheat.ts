@@ -1,14 +1,14 @@
 // PreToolUse: recall_memory preheating inject.
-// ADR-0009 Q7=B: before ans_search/ans_research runs, inject relevant memories
+// Q7=B: before ans_search/ans_research runs, inject relevant memories
 // from project index so the agent has context before making the call.
-// ADR-0055 D4: URL authorization policy comes from the server's single parse point
+// URL authorization policy comes from the server's single parse point
 // (GET /policy) or the materialized cache — hooks NEVER read ANS_URL_ALLOWLIST directly.
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isAnsTool, callServer, type HookInput, type HookDecision } from "./core.js";
-// ADR-0059 D7 (T-6.3): the server never runs open; resolve the shared token (env or the 0600 token file).
+// (T-6.3): the server never runs open; resolve the shared token (env or the 0600 token file).
 import { resolveServerToken } from "../server/token.js";
 
 interface PolicyCache {
@@ -31,7 +31,7 @@ function canonicalVersion(allow: readonly string[], deny: readonly string[]): st
   return createHash("sha256").update(JSON.stringify({ allow: canon(allow), deny: canon(deny) })).digest("hex");
 }
 
-// ADR-0055 audit M4: cache integrity self-check — the sha256 of the content must match
+// audit M4: cache integrity self-check — the sha256 of the content must match
 // the self-declared policy_version before the cache is trusted (a damaged drop-in is rejected).
 function usableCache(parsed: Partial<PolicyCache>): PolicyCache | null {
   if (!Array.isArray(parsed.allow) || !Array.isArray(parsed.deny) || typeof parsed.policy_version !== "string") return null;
@@ -65,7 +65,7 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   const serverUrl = process.env.ANS_SERVER_URL || "http://127.0.0.1:33333";
   const token = resolveServerToken().token;
 
-  // ADR-0054 D4 + ADR-0055: any URL in the tool input is gated against the resolved
+  // +: any URL in the tool input is gated against the resolved
   // policy. D4 fail-closed: no cache AND server unreachable -> ask for every URL.
   // D2: deny is a first-class channel evaluated last; it overrides any allow match.
   {
@@ -101,7 +101,7 @@ export async function makePreToolUseDecision(input: HookInput): Promise<HookDeci
   if (!query) return {};
 
   // Ask long-running server to recall from project index.
-  // ADR-0056 D-003: thread the host-supplied session_id into the outbound
+  // D-003: thread the host-supplied session_id into the outbound
   // callServer call so the server can link the /recall response to the same
   // logical session as the inbound hook invocation.
   const result = await callServer(serverUrl + "/recall", token, {

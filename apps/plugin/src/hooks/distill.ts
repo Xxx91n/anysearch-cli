@@ -1,5 +1,5 @@
 // PostToolUse distillation: JSON structured summary + FTS5 auto-index.
-// ADR-0009 Q6: structured summary for host agent context + project index write.
+// Q6: structured summary for host agent context + project index write.
 // Distillation = extract key info, compress, prepare for indexing.
 
 import { isAnsTool, type HookInput, type HookDecision } from "./core.js";

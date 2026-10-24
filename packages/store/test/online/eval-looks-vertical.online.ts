@@ -1,4 +1,4 @@
-// R84 T3 / ADR-0085 draft: paired vertical-delta live runner.
+// R84 T3 / draft: paired vertical-delta live runner.
 // Runs each live-scoped vertical corpus entry TWICE through the real bundled
 // `ans` bin: vertical-on (the entry's injected spec) vs vertical-off (same
 // query, no flags). Arm-level delta (the anysearch arm's raw post-gate list

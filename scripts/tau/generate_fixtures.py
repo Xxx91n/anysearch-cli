@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ADR-0042 D2/D3 (r108 impl): offline generator for the four-fixture falsification matrix.
+""" (r108 impl): offline generator for the four-fixture falsification matrix.
 
 Pure stdlib, zero dependency on the frozen lifetimes stack: fixtures must regenerate
 byte-identically on any Python 3 (CI guard: --check mode, exit 2 on drift, prisma-style),
@@ -8,7 +8,7 @@ numpy. Each fixture embeds seed / BG-NBD-shaped params / generator version / win
 metadata; a MANIFEST.json pins every snapshot with SHA-256 plus the definition hash that
 joins the eval baseline fingerprint.
 
-T2 contract mirrors ADR-0039 D6: PSI between the pinned baseline access-age histogram and
+T2 contract mirrors: PSI between the pinned baseline access-age histogram and
 the current histogram (same five D4 buckets). The baseline histogram is embedded in the
 fixture so the two-histogram comparison is exercised exactly as in production.
 
@@ -87,7 +87,7 @@ def baseline_histogram(rng: Mulberry32, spec: dict, current: dict) -> dict:
     return {b: current[b] * 2 + (1 if rng.next() < 0.5 else -1) for b in BUCKETS}
 
 
-# Four-fixture matrix (ADR-0042 D3). params mirror the BG/NBD-shaped story (rate gamma r/a,
+# Four-fixture matrix. params mirror the BG/NBD-shaped story (rate gamma r/a,
 # dropout beta a/b) as embedded provenance; generation itself is profile-driven — the
 # fixtures exercise the gate machinery (histogram -> PSI -> AND-gate), never a fit.
 DEFS = [
@@ -140,7 +140,7 @@ def render_fixture(d: dict) -> bytes:
     cur = current_histogram(events)
     doc = {
         "schema": "anysearch/obs-fixture@1",
-        # ADR-0042 D1: explicit track marker — a miswired loader can never pass synthetic
+        #: explicit track marker — a miswired loader can never pass synthetic
         # rows off as the consumed track.
         "track": "synthetic",
         "name": d["name"],

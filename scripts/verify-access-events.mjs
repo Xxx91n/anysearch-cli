@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // scripts/verify-access-events.mjs
-// ADR-0040 D2/D5: independent verifier for the access_events tamper-evidence chain.
-// Deliberately re-implements the canonicalization from scratch (ADR-0040 _Avoid_ 3: no shared
+// independent verifier for the access_events tamper-evidence chain.
+// Deliberately re-implements the canonicalization from scratch ( _Avoid_ 3: no shared
 // serialization code with the writer). Node stdlib + better-sqlite3 only (resolved through the
 // store package because pnpm does not hoist it to the root).
 //
-// Spec (verbatim from ADR-0040 D4/D3):
+// Spec (verbatim from):
 //   chain fields   = ["accessed_at","event_type","id","memory_id","prev_hash","schema_version","source_label"]
 //   legacy fields  = ["accessed_at","id","memory_id"]
 //   canonical JSON = JSON.stringify of an object literal whose keys are inserted in the fixed
@@ -55,7 +55,7 @@ function fail(msg) {
 }
 
 function main() {
-  // ADR-0041 D1: resolution order --db <path> -> positional argv -> ANS_DB_PATH -> default path.
+  // resolution order --db <path> -> positional argv -> ANS_DB_PATH -> default path.
   const flagIdx = process.argv.indexOf("--db");
   const flagValue = flagIdx !== -1 ? process.argv[flagIdx + 1] : undefined;
   if (flagIdx !== -1 && (!flagValue || flagValue.startsWith("--"))) fail("usage: --db <path> (flag present but value missing) — fail-closed, refusing silent fallback (r106 audit F-04)");

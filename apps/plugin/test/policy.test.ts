@@ -1,4 +1,4 @@
-// ADR-0055 D4 golden: hook readPolicy pull-through semantics (+ audit M3 signal, M4 integrity).
+// golden: hook readPolicy pull-through semantics (+ audit M3 signal, M4 integrity).
 // Run: npx tsx apps/plugin/test/policy.test.ts
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";

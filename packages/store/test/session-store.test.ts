@@ -54,7 +54,7 @@ async function main() {
     assert(count.c === 2, "saveResults stored 2 rows in retrieval_results (got " + count.c + ")");
     checkDb.close();
 
-    // 4b. searchMemory — ADR-0008 D3 recall_memory searchMemory searches retrieval_results_fts.
+    // 4b. searchMemory — recall_memory searchMemory searches retrieval_results_fts.
     const memHits = await store.searchMemory("Test", 10);
     assert(memHits.length >= 2, "searchMemory finds saved results in retrieval_results_fts (got " + memHits.length + ")");
     assert(typeof memHits[0].rank === "number", "searchMemory hits have numeric rank");

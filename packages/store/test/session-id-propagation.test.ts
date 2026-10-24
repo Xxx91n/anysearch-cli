@@ -1,4 +1,4 @@
-// ADR-0056 D-005: OPA #6905-style closure test.
+// D-005: OPA #6905-style closure test.
 //
 // Three closures:
 //
@@ -25,7 +25,7 @@ import {
 import { emitConfigChangeAudit, writePolicyCache, readPolicyCacheEnvelope, resolveUrlPolicy } from "../src/url-policy";
 import { readSessionId, writeSessionId } from "../src/session-id";
 
-// ADR-0056 D-005: this test focuses on the store-side evidence:
+// D-005: this test focuses on the store-side evidence:
 // (a) schema parity fresh vs migrated (T7),
 // (b) attribution column round-trip + OPA #6905 SELECT-back (T8 attribution half),
 // (c) audit writes thread trace_id + session_id (T8 emitConfigChangeAudit half),
@@ -153,7 +153,7 @@ async function main() {
     rmSync(dir, { recursive: true, force: true });
   }
 
-  // --- 4) ADR-0056 D-007 / ADR-0055 D6 supplement: materialized_at + cache fallback ---
+  // --- 4) D-007 / supplement: materialized_at + cache fallback ---
   {
     const dir = mkdtempSync(join(tmpdir(), "pol-"));
     const cache = join(dir, "policy.json");

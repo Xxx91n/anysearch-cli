@@ -1,4 +1,4 @@
-// ADR-0056 D-006: session_id persistence layer.
+// D-006: session_id persistence layer.
 //
 // The .anysearch-cli/session file is the single source of truth for the
 // session_id grouping anchor (mirrors systemd machine-id: generate once,
@@ -61,7 +61,7 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
   const fresh = generateSessionId();
   try {
     mkdirSync(dirname(file), { recursive: true });
-    // tmp + rename for atomicity (ADR-0055 D5 pattern).
+    // tmp + rename for atomicity ( pattern).
     const tmp = file + ".tmp";
     writeFileSync(tmp, fresh, "utf8");
     renameSync(tmp, file);

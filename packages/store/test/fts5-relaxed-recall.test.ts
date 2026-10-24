@@ -1,4 +1,4 @@
-// ADR-0102 D1: relaxed recall rung. Repro from the host-in-loop follow-up: memory held the
+// relaxed recall rung. Repro from the host-in-loop follow-up: memory held the
 // NBA Finals results, but the host's natural-language recall question had no single row
 // containing every term, so the strict AND rung returned zero and memory was unreachable.
 import { test } from "node:test";

@@ -1,4 +1,4 @@
-// ADR-0039 D3: standalone tau sensitivity scan CLI. Zero look-ledger contact — this
+// standalone tau sensitivity scan CLI. Zero look-ledger contact — this
 // entrypoint never imports golden-cases, the eval runner, or the OF ledger.
 // Usage: tsx src/eval/tau-scan-cli.ts [--input rows.json] [--seed 42] [--rows 60] [--grid 0.5,0.75,1,1.5,2] [--out report.json]
 import { writeFileSync, readFileSync } from "node:fs";

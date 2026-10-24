@@ -1,4 +1,4 @@
-// ADR-0040 D4/D7 item 1: golden vectors pin the writer-side canonical serializer byte-for-byte.
+// item 1: golden vectors pin the writer-side canonical serializer byte-for-byte.
 // 3 core + 2 boundary vectors (NIST KAT structure). Byte-equivalence to RFC 8785 is pinned by
 // asserting the canonical JSON strings literally (ASCII keys in lexicographic order, §3.2.3).
 import { canonicalEventJson, canonicalLegacyJson, eventHash, legacyDigest, genesisHash, CHAIN_FIELDS, LEGACY_FIELDS, type ChainEventRow } from "../src/access-chain.js";

@@ -1,4 +1,4 @@
-// ADR-0040 D6/D7 item 5 (Acceptance #2): two real spawned processes race the lazy anchor
+// item 5 (Acceptance #2): two real spawned processes race the lazy anchor
 // bootstrap on the same DB — exactly one anchor row results, and both processes' subsequent
 // chained events verify clean. worker_threads are rejected (POSIX fcntl = per-process locks).
 import Database from "better-sqlite3";

@@ -1,4 +1,4 @@
-// ADR-0055 D2 golden: deny is a first-class channel, evaluated LAST, unbypassable.
+// golden: deny is a first-class channel, evaluated LAST, unbypassable.
 // Run: npx tsx packages/retriever/test/content-trust-deny.test.ts
 import { shouldAllowUrl } from "../src/content-trust";
 
