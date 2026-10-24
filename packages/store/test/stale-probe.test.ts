@@ -1,7 +1,7 @@
-// ADR-0023 D5 (Q5=A): STALE-lite probe suite — three probes against write-path adjudication.
+// (Q5=A): STALE-lite probe suite — three probes against write-path adjudication.
 // SR = Stale Recognition, PR = Passive Recall, IPA = Implicit Preference Application.
 // Each probe asserts the superseded memory gets valid_until AND disappears from subsequent searchMemory.
-// Acceptance ceiling: implicit-conflict mismatches ≤55% tolerated (STALE data per ADR-0023 D5).
+// Acceptance ceiling: implicit-conflict mismatches ≤55% tolerated (STALE data).
 
 import Database from "better-sqlite3";
 import { mkdtempSync, rmSync } from "node:fs";

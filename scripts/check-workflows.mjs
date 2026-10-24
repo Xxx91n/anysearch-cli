@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ADR-0059 D5 (T-4) - workflow YAML gate, promoted from .scratch/check-workflows.mjs (backlog B-2).
+// (T-4) - workflow YAML gate, promoted from .scratch/check-workflows.mjs (backlog B-2).
 //
 // Round-57 F-10: a workflow file that does not parse makes GitHub Actions report a run with zero
 // jobs ("likely failed because of a workflow file issue"), invisible in a normal green/red read.
@@ -10,7 +10,7 @@
 //     required keys, quote/bracket balance outside block scalars);
 //   - ADDITIONALLY runs a full YAML parse when a parser is resolvable, so the strict check is
 //     available without adding a runtime dependency to the product.
-// Node stdlib only (ADR-0020 D5).
+// Node stdlib only.
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";

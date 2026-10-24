@@ -1,4 +1,4 @@
-// ADR-0023 D2 (Q2=B): FTS5 Query Tokenization acceptance test.
+// (Q2=B): FTS5 Query Tokenization acceptance test.
 // Bug repro: legacy `"vector database"` phrase misses content containing only the word "vectors".
 // Fix: tokenize → per-word `word*` AND, full-phrase OR branch, ≤8 term truncation.
 // Uses OS temp dir for SQLite (WAL needs a file, not :memory:).

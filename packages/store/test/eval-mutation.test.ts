@@ -1,4 +1,4 @@
-// ADR-0027 / round63 atomcode audit finding 1: the gate must PROVE it can catch a regression.
+// / round63 atomcode audit finding 1: the gate must PROVE it can catch a regression.
 // Mutation test — simulate "SECRET_RE deleted" by a malicious subclass that rewrites reject->accept,
 // then run the real golden secret case and assert: case FAILS at the adjudicate stage, and
 // the gate (passRate < 1) exits 1. If the harness were decorative, both assertions would break.

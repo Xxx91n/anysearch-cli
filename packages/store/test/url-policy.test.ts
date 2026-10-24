@@ -1,4 +1,4 @@
-// ADR-0055 golden cases: five-state truth table, canonicalVersion byte-equality,
+// golden cases: five-state truth table, canonicalVersion byte-equality,
 // deny channel, atomic write, mtime reloader, strict-enum switch.
 // Run: npx tsx packages/store/test/url-policy.test.ts
 

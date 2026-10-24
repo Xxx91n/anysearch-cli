@@ -1,12 +1,12 @@
-// ans memory — memory_embeddings maintenance (ADR-0033 D6).
+// ans memory — memory_embeddings maintenance.
 // backfill-vectors: idempotent re-embed of retrieval_results rows missing a vector.
-//   Serves 3 roles: pendingVectors cleanup, pre-ADR-0033 upgrade backfill, future model re-embed.
+// Serves 3 roles: pendingVectors cleanup, pre- upgrade backfill, future model re-embed.
 
 import { createPersistentEngine } from "../db";
 
 interface MemoryStore {
   backfillEmbeddings(dryRun?: boolean, limit?: number): Promise<{ scanned: number; embedded: number; failed: number }>;
-  // ADR-0037 D5: reversible active forgetting (archive + undo).
+  // reversible active forgetting (archive + undo).
   scanArchive(opts?: { limit?: number }): Array<{ id: number; entity: string | null; reason: string }>;
   applyArchive(ids?: number[], opts?: { dryRun?: boolean }): { dryRun: boolean; requested: number; archived: number; skipped: number; logIds: number[]; undoableTotal: number };
   undoArchive(logId: number): { ok: boolean; memoryId?: number };
@@ -15,11 +15,11 @@ interface MemoryStore {
 function printHelp(): void {
   process.stdout.write(
     [
-      "ans memory — memory_embeddings maintenance (ADR-0033)",
+      "ans memory — memory_embeddings maintenance ",
       "",
       "Commands:",
       "  backfill-vectors [--dry-run] [--limit N]  Embed rows missing a vector (idempotent)",
-      "  forget [--dry-run|--apply] [--limit N]  Archive stale, never-accessed episodes (ADR-0037 D5)",
+      " forget [--dry-run|--apply] [--limit N] Archive stale, never-accessed episodes ",
       "  forget --undo <logId>                   Restore an archived episode (idempotent)",
       "",
       "--dry-run reports counts without writing; --limit caps the scan. Exit 0 on full completion,",
@@ -49,7 +49,7 @@ export async function runMemory(args: string[]): Promise<number> {
       return 0;
     }
     process.stdout.write("backfilled " + r.embedded + "/" + r.scanned + " vector(s)" + (r.failed > 0 ? " (" + r.failed + " failed)" : "") + "\n");
-    // R71 T1 (ADR-0072, spike finding d): a failed row means the embedding arm
+    // R71 T1 (spike finding d): a failed row means the embedding arm
     // could not produce a vector — first use downloads the model, so the cause
     // is almost always reachability. Point at the actionable knobs instead of
     // leaving a bare count (npm arm transcript: raw ENOTDIR gave no guidance).

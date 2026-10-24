@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ADR-0039 D2: BG/NBD cohort lifetime fit, out-of-process (data contract over stdio).
+# BG/NBD cohort lifetime fit, out-of-process (data contract over stdio).
 # stdin:  {"rows": [{"frequency": float, "recency": float, "T": float}, ...]}
 # stdout = single-line JSON envelope:
 #   {"ok": true,  "converged": true, "params": {r, alpha, a, b}, "palive": [...],

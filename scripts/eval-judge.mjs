@@ -1,8 +1,8 @@
-// ADR-0027 D2: LLM judge report channel (NOT a gate — never wired into ship-gate).
+// LLM judge report channel (NOT a gate — never wired into ship-gate).
 // Local DeepSeek over OpenAI-compatible /chat/completions. Fail-open:
 // judge unreachable/error on a case => score 0 + error string, never crash.
 // Enablement gate (D2 hard constraints) is manual: kappa >= 0.6 vs human gold-set before trusting reports.
-// ADR-0029 D3/D4: report carries rubricHash + judgeVersion (sixtuple snapshot with eval-calibrate.mjs);
+// report carries rubricHash + judgeVersion (sixtuple snapshot with eval-calibrate.mjs);
 // module is importable (judgeOne/RUBRIC) so the calibration script reuses the same judge client.
 //
 // Usage: node scripts/eval-judge.mjs [--report .ship-gate/eval-report.json] [--out .ship-gate/judge-report.json]
@@ -102,9 +102,9 @@ async function main() {
     generatedAt: new Date().toISOString(),
     model,
     baseUrl,
-    rubricHash: JUDGE_RUBRIC_HASH, // ADR-0029 D3/D4: snapshot component
+    rubricHash: JUDGE_RUBRIC_HASH, // snapshot component
     judgeVersion: judgeVersion(model, baseUrl),
-    note: "nightly/manual report channel (ADR-0027 D2). Not a gate. Enable only after kappa >= 0.6 calibration (scripts/eval-calibrate.mjs).",
+    note: "nightly/manual report channel. Not a gate. Enable only after kappa >= 0.6 calibration (scripts/eval-calibrate.mjs).",
     judgedSamples: entries.length,
     meanScore: scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0,
     errors: entries.filter((e) => e.error).length,

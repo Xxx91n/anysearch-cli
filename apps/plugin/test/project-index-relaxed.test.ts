@@ -1,4 +1,4 @@
-// ADR-0102 D1: the project index (host-recallable memory) gets the same relaxed rung.
+// the project index (host-recallable memory) gets the same relaxed rung.
 // Repro: the host indexed NBA Finals results in session 1, then asked a natural-language
 // question in session 2; the strict AND rung returned 0 although 85 rows were indexed.
 import { test } from "node:test";

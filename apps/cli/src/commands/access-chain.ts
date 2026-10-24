@@ -1,4 +1,4 @@
-// ans access-chain — access_events tamper-evidence chain bootstrap (ADR-0040 D6).
+// ans access-chain — access_events tamper-evidence chain bootstrap.
 // Thin wrapper over the same idempotent bootstrap core the SessionStore constructor runs lazily.
 // dry-run is the default (backfill-relations precedent); --apply constructs the store, which runs
 // the schema + ALTER chain + IMMEDIATE bootstrap.
@@ -14,7 +14,7 @@ export async function runAccessChain(args: string[]): Promise<number> {
   if (!sub || sub === "--help" || sub === "-h") {
     process.stdout.write(
       [
-        "ans access-chain — access_events tamper-evidence chain (ADR-0040)",
+        "ans access-chain — access_events tamper-evidence chain ",
         "",
         "Commands:",
         "  bootstrap              Dry-run: report legacy rows + the anchor digest that --apply would seal",

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Anysearch Plugin Server: long-running process for hooks IPC.
-// ADR-0009 Decision 1: hooks core handler不碰SQLite. 写库收敛到长驻server进程.
+// Decision 1: hooks core handler不碰SQLite. 写库收敛到长驻server进程.
 // Endpoints:
 //   POST /recall — search project index (for preheat)
 //   POST /index — write entries to project index (for PostToolUse distill)
@@ -15,7 +15,7 @@ import { resolveServerToken } from "./token.js";
 
 const PORT = Number(process.env.ANS_SERVER_PORT || 33333);
 const HOST = process.env.ANS_SERVER_HOST || "127.0.0.1";
-// ADR-0059 D7 (T-6.3): the server never runs open. ANS_SERVER_TOKEN wins; when unset a 256-bit
+// (T-6.3): the server never runs open. ANS_SERVER_TOKEN wins; when unset a 256-bit
 // token is generated and persisted to .anysearch-cli/server-token (0600) for the local hooks.
 const RESOLVED_TOKEN = resolveServerToken();
 const TOKEN = RESOLVED_TOKEN.token;
@@ -27,19 +27,19 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { domainTomlPath, emitConfigChangeAudit, loadPolicyFromToml, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type UrlPolicy } from "@anysearch-cli/store";
-// ADR-0056 D-003: parseAndValidateHeaders lives in the hook bundle module so
+// D-003: parseAndValidateHeaders lives in the hook bundle module so
 // the wire format stays single-source across hook outbound and server inbound.
 import { parseAndValidateHeaders } from "../hooks/propagation.js";
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
-// ADR-0055: startup policy parse. D3/D7 fail-closed: TOML parse failure or a misset
+// startup policy parse. D3/D7 fail-closed: TOML parse failure or a misset
 // ANS_ALLOW_ENV_OVERRIDE throws here and refuses to start, naming variable + value.
 const DOMAIN_TOML = domainTomlPath();
 const POLICY_CACHE = join(process.cwd(), ".anysearch-cli", "policy.json");
 const OBS_DB = process.env.ANS_DB_PATH ||
   join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");
 
-// ADR-0056 D-007 / ADR-0055 D6 supplement: on startup, if the policy server is
+// D-007 / supplement: on startup, if the policy server is
 // unreachable (TOML missing/unreadable), boot from the disk cache and WARN
 // rather than refusing to start. The materialized_at timestamp on the cache
 // lets operators audit staleness; the policy itself remains in effect.
@@ -70,7 +70,7 @@ let envIgnoredAudited = false; // D7: config:env_override_ignored once per sessi
 
 const store = new ProjectIndexStore(DB_PATH);
 
-// ADR-0059 D7 (T-6.3): constant-time bearer compare. A wrong-length token is rejected without
+// (T-6.3): constant-time bearer compare. A wrong-length token is rejected without
 // walking the bytes, so a caller cannot learn a prefix from response timing.
 function authed(req: IncomingMessage): boolean {
   const auth = req.headers.authorization;
@@ -81,7 +81,7 @@ function authed(req: IncomingMessage): boolean {
   return timingSafeEqual(presented, expected);
 }
 
-// ADR-0059 D7 (T-6.3): a browser page on any origin can reach 127.0.0.1, so the server refuses a
+// (T-6.3): a browser page on any origin can reach 127.0.0.1, so the server refuses a
 // non-loopback Host (DNS-rebinding) or a non-loopback Origin (cross-site). A native client sends
 // no Origin - those stay allowed.
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
@@ -99,7 +99,7 @@ function originIsLoopback(origin: string | undefined): boolean {
   }
 }
 
-// ADR-0059 D7 (T-6.3): hard body cap - refuse rather than buffer an unbounded body.
+// (T-6.3): hard body cap - refuse rather than buffer an unbounded body.
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = "";
@@ -108,7 +108,7 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on("data", (chunk: Buffer) => {
       bytes += chunk.length;
       if (bytes > MAX_BODY_BYTES) {
-        // ADR-0059 D7: stop buffering but keep draining so the 413 can still be written.
+        // stop buffering but keep draining so the 413 can still be written.
         tooLarge = true;
         data = "";
         return;
@@ -124,7 +124,7 @@ function readBody(req: IncomingMessage): Promise<string> {
 }
 
 const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-  // ADR-0059 D7 (T-6.3): 403-before-401. Host/Origin rejection is a trust-boundary decision and
+  // (T-6.3): 403-before-401. Host/Origin rejection is a trust-boundary decision and
   // must precede the auth challenge (Resilio model), so a cross-site caller never learns whether a
   // token would have been accepted. CORS is reflected for loopback origins only - never "*".
   const reqOrigin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
@@ -156,7 +156,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     }
 
     if (req.url === "/policy" && req.method === "GET") {
-      // ADR-0055 D4: single-point parse + push-down. Re-parses TOML per request (event-driven,
+      // single-point parse + push-down. Re-parses TOML per request (event-driven,
       // no TTL); deny channel + policy_version; atomically materializes policy.json for hooks.
       const policy = readCurrentPolicy();
       if (policy.envHostsIgnored) {
@@ -179,7 +179,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (policy.policyVersion !== currentPolicyVersion) {
         const before = currentPolicyVersion;
         currentPolicyVersion = policy.policyVersion;
-        // ADR-0056 D-003 server path: extract traceId/sessionId from inbound
+        // D-003 server path: extract traceId/sessionId from inbound
         // headers so the audit row links back to the same logical request the
         // caller initiated. traceparentValid=false means the client sent garbage;
         // parseAndValidateHeaders already substituted a fresh random traceId.
@@ -193,7 +193,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         });
       }
       const body = { allow: policy.allow, deny: policy.deny, policy_version: policy.policyVersion };
-      // ADR-0056 D-007: writePolicyCache stamps materialized_at alongside the
+      // D-007: writePolicyCache stamps materialized_at alongside the
       // policy body so the hook fallback can surface staleness.
       writePolicyCache(POLICY_CACHE, policy);
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -254,13 +254,13 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     res.end(JSON.stringify({ error: "not found" }));
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    // ADR-0059 D7: an oversized body is a client error, not a server fault.
+    // an oversized body is a client error, not a server fault.
     if (msg.includes("exceeds")) {
       res.writeHead(413, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: msg }));
       return;
     }
-    // ADR-0009 D6: fail-open.
+    // fail-open.
     res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: msg }));
   }

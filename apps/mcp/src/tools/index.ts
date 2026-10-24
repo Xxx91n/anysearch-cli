@@ -1,5 +1,5 @@
 // Per-tool Barrel: every tool registers itself against the given McpServer.
-// ADR-0019 D2: cyanheads/obsidian canonical pattern — one file per tool,
+// cyanheads/obsidian canonical pattern — one file per tool,
 // tools/index.ts aggregates, server.ts forEaches in order. Handler logic unchanged.
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";

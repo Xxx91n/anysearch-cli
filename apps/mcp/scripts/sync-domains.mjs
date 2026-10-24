@@ -1,6 +1,6 @@
 // R65 F-10: ship repo-root domains/*.toml inside the @anysearch-cli/mcp
 // tarball so an installed `ans-mcp` resolves builtin domains — same contract
-// as apps/cli/scripts/sync-domains.mjs (ADR-0061 B1).
+// as apps/cli/scripts/sync-domains.mjs ( B1).
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

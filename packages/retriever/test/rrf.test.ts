@@ -4,7 +4,7 @@
 import { rrfScores, rrfRank } from "../src/rrf";
 import { FUSION_REGISTRY } from "../src/fusion-registry";
 
-// ADR-0045 D2: probe with the registered rank_window (was the implicit default).
+// probe with the registered rank_window (was the implicit default).
 const K = FUSION_REGISTRY.rank_window;
 
 let passed = 0;

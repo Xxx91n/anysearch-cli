@@ -20,7 +20,7 @@ export default defineConfig({
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
   ],
-  // ADR-0033: native/ESM deps stay external (bundling crashes the onnx runtime binding).
+  // native/ESM deps stay external (bundling crashes the onnx runtime binding).
   external: ["better-sqlite3", "@huggingface/transformers", "onnxruntime-node", "sharp", "@anysearch-cli/embedding"],
   target: "es2022",
 });

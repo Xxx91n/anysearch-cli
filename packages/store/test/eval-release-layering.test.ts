@@ -1,4 +1,4 @@
-// ADR-0059 D2 (T-1 / F-15): layering contract — regular CI runs observational and never spends a
+// (T-1 / F-15): layering contract — regular CI runs observational and never spends a
 // preregistered OF look; the decision-grade peek lives only in the release workflow. The seam the
 // ticket is graded on is asserted here rather than left to the workflow run.
 import fs from "node:fs";
@@ -33,7 +33,7 @@ function assert(cond: boolean, msg: string): void {
 
 // --- 1. the merge gate is observational and never consumes a look ----------
 const shipGate = read("scripts/ship-gate.mjs");
-assert(!shipGate.includes('evalArgs.push("--decision")'), "ship-gate must not run decision grade in regular CI (ADR-0059 D2)");
+assert(!shipGate.includes('evalArgs.push("--decision")'), "ship-gate must not run decision grade in regular CI ");
 assert(shipGate.includes('ANS_EVAL_NO_LOOK: "1"'), "ship-gate step 7 must set ANS_EVAL_NO_LOOK=1");
 
 // --- 2. decision grade lives in the release workflow only ------------------

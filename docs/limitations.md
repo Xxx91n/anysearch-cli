@@ -3,41 +3,41 @@
 - **≤0.0.3 plugin server needs a manual launch** — `@anysearch-cli/plugin@0.0.3`
   ships no bin; run
   `node "$(npm root -g)/@anysearch-cli/plugin/dist/server/index.cjs"` once per
-  machine. Fixed in 0.0.4 as the `ans-plugin-server` bin (ADR-0066).
+  machine. Fixed in 0.0.4 as the `ans-plugin-server` bin.
 - **≤0.0.3 hook templates point at library files** — `configs/*/hooks.json`
   Pre/PostToolUse entries reference `dist/hooks/{preheat,distill}.cjs`
   (decision libraries, no stdin main) instead of `adapters/<host>.cjs`; wire
   hooks per `docs/codebuddy-integration.md` / `docs/claude-integration.md`.
-  Fixed in 0.0.4 (ADR-0066/0067).
+  Fixed in 0.0.4 (0067).
 - **Hook adapters before this fix read `stdin.event`** — real hosts inject
   `hook_event_name`; on ≤0.0.3 the hooks deploy but silently no-op
   (false-green). Fixed in 0.0.4 via `hook_event_name ?? event` on all four
-  adapters + session-start (ADR-0066).
+  adapters + session-start.
 - **≤0.0.3 Claude output keys are dropped by the host** — `claude.ts` and
   `session-start.ts` emitted `additionalContext` / `updatedToolOutput` at top
   level; Claude Code drops every bare top-level decision key (sentinel-proven
   on 2.1.251). Fixed in 0.0.4: all keys sit inside `hookSpecificOutput`
-  (ADR-0067).
+.
 - **≤0.0.3 Claude hook template uses a non-schema shape** — `configs/claude/
   hooks.json` `{name,command,args}` entries silently poison the whole event
   column on Claude Code (0 hooks fire, no error). Fixed in 0.0.4: official
   `{matcher, hooks:[{type:"command", command}]}` + `ans-hook-*` bin commands
-  (ADR-0067).
+.
 - **0.0.4 session-start default output is Codex-unsafe** — published 0.0.4
   `session-start.cjs` emits bare top-level `additionalContext` unless
   `--envelope` is passed; codex 0.142.5 drops the bare form ~80% of the time
   (measured). Fixed in 0.0.5: the shipped Codex config passes `--envelope`
-  (ADR-0068).
+.
 - **≤0.0.4 Codex hook config is a dead file** — `configs/codex/hooks.json`
   used `{name,command,args}` entries; Codex registers zero hooks from that
   shape (no error). Fixed in 0.0.5: official schema + `ans-hook-codex` /
   `ans-hook-session-start --envelope` bin commands, generated single-source by
-  `scripts/gen-claude-configs.mjs` (ADR-0068).
+  `scripts/gen-claude-configs.mjs`.
 - **≤0.0.4 Codex adapter output is dropped/dropped-silently** — bare top-level
   `additionalContext` lands ~20% of the time on codex 0.142.5 and
   `decision.permission` was never emitted, so URL-policy denies executed the
   tool anyway. Fixed in 0.0.5: all output inside `hookSpecificOutput`,
-  `permissionDecision(Reason)` passthrough (ADR-0068).
+  `permissionDecision(Reason)` passthrough.
 - **≤0.0.5 Antigravity hook config + adapter are dead on real agy** —
   `configs/antigravity/hooks.json` used the Gemini-legacy `{hooks:{...}}`
   wrapper which agy rejects (`command hook must specify 'command'` → zero
@@ -46,18 +46,18 @@
   `toolCall`/`conversationId`, event via argv). Any `additionalContext` it
   emitted would protojson-reject and ERROR the tool call. Fixed in 0.0.6:
   named-hook schema + `ans-hook-antigravity <Event>` + camelCase mapping +
-  `{decision:"allow"}`/`{}`/injectSteps outputs (ADR-0069).
+  `{decision:"allow"}`/`{}`/injectSteps outputs.
 - **Antigravity PostToolUse delivers no tool output (0.0.6)** — the host
   stdin carries `toolCall{name,args}` + `error` only, so distill sees args
   but not results on this host; `/index` still accumulates server-side and
   distilled context rides `injectSteps.ephemeralMessage` via a per-
-  conversation pending file (ADR-0069 D4).
+  conversation pending file.
 - **Codex unverified surfaces (0.0.5)** — PostToolUse `additionalContext`
   injection is same-turn-variable on codex 0.142.5 (the `/index` side
   effect is the durable path); `[hooks.state]` trust-hash persistence is
   not headless-verified; `query_knowledge` returns the `adapter=none` stub
   (pre-existing, not a Codex regression); OOD `abstain=null` shape noted
-  under allowlist routing (ADR-0068).
+  under allowlist routing.
 - **`anysearch` provider cannot pre-filter** — its MCP `domain` param is a
   vertical-routing enum (academic..travel), not a hostname allowlist, so
   `includeDomains` cannot ride it; under a domain allowlist the arm stays
@@ -82,7 +82,7 @@
   rotate URL paths (`/zh/` locale, `/10.x` version, dated
   `/specification/<date>/` variants), so live golden entries assert
   `mustHitPaths` (pathname substring + explicit `tolerate` classes +
-  `mustNotHitPaths` negative pins) rather than byte-exact paths (ADR-0065).
+  `mustNotHitPaths` negative pins) rather than byte-exact paths.
   Three byte-exact `mustHitUrls` legs survive on frozen dated MCP spec
   snapshots; the 10 drift-quarantined entries were adjudicated to promote in
   R64 with `migration` provenance on each golden entry (ledger
@@ -92,7 +92,7 @@
   `@anysearch-cli/embedding` peer, memory consolidation falls back to a Jaccard
   similarity floor (θ=0.80): near-verbatim duplicates still noop, but
   paraphrase-level duplicates are not caught (degraded, counted in
-  `ConsolidateReport.embeddingAbsent` — ADR-0064 T1).
+  `ConsolidateReport.embeddingAbsent` —).
 - **Tavily domain-filter probe: live-verified** — `include_domains` held in
   default + filter modes and subdomain direction is bidirectional
   (`scripts/probe-tavily-domains.mjs`, ledger in `.scratch/grill-round-62/`;

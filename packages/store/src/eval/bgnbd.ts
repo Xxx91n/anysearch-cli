@@ -1,4 +1,4 @@
-// ADR-0039 D2/D6: BG/NBD cohort readout behind the preregistered AND-gate.
+// BG/NBD cohort readout behind the preregistered AND-gate.
 // The Python fit is out-of-process (lifelines pinned, versioned JSON envelope); the TS side
 // is a thin spawn wrapper that NEVER throws — every failure maps to an explicit-skip marker.
 import { spawn } from "node:child_process";
@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { skip, type SkipMarker } from "./explicit-skip";
 
-// Preregistered AND-gate (ADR-0039 D6). Any unsatisfied condition -> skip, no fit runs.
+// Preregistered AND-gate. Any unsatisfied condition -> skip, no fit runs.
 export const TAU_FIT_GATE = {
   minActiveRows: 300,
   minFittableUnits: 100,
@@ -27,7 +27,7 @@ export interface TauFitGateInput {
 // insufficient rows/fit-eligible units, no baseline histogram pair, too-young observation
 // window; all of them quote an immature dataset, not a degraded pipeline) vs SUBSTANTIVE
 // hits (a numeric PSI drift vs an existing baseline, or the anti-peeking interval). The
-// consumed eval track records the former as reasonCode=data-absent (ADR-0042 D4 widened).
+// consumed eval track records the former as reasonCode=data-absent ( widened).
 export function isStructuralAbsence(failures: readonly string[]): boolean {
   if (failures.length === 0) return false;
   return failures.every((f) => f.startsWith("T1:") || f.includes("PSI unavailable") || f.startsWith("T3: observation window"));
@@ -56,7 +56,7 @@ export function evaluateTauFitGate(input: TauFitGateInput): { ok: boolean; failu
   return { ok: failures.length === 0, failures };
 }
 
-// PSI, symmetric-KL form with epsilon bucket smoothing (ADR-0039 D6 T2).
+// PSI, symmetric-KL form with epsilon bucket smoothing.
 export function psi(base: readonly number[], current: readonly number[], eps = 1e-6): number {
   if (base.length !== current.length) throw new Error("PSI buckets must match");
   const sb = base.reduce((a, b) => a + b, 0);

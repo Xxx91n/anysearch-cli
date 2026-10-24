@@ -1,4 +1,4 @@
-// ADR-0049 D11: deterministic recorded-pairs fixture judge + unknown-schema fail + gold diff.
+// deterministic recorded-pairs fixture judge + unknown-schema fail + gold diff.
 // R70 T1 (jitter spike): spawnSync carries an explicit timeout — a
 // CPU-starved child fails fast with an ETIMEDOUT signature instead of an
 // unbounded synchronous hang (--test-timeout cannot preempt spawnSync).

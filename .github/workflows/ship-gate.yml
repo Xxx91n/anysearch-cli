@@ -1,4 +1,4 @@
-# ADR-0020 D1 — Product Smoke Gate (blocking).
+# — Product Smoke Gate (blocking).
 # Runs scripts/ship-gate.mjs; merge and tag are gated on this workflow.
 
 name: ship-gate
@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
-      - uses: pnpm/setup@v2 # ADR-0026 D6: reads packageManager (11.24.0) automatically
+      - uses: pnpm/setup@v2 #: reads packageManager (11.24.0) automatically
         with:
           install: false
 
@@ -58,7 +58,7 @@ jobs:
           CI: "true"
           NODE_OPTIONS: "--test-reporter=spec"
 
-      # ADR-0021 D4 — Layer-2 artifact upload, runs even when ship-gate fails.
+      # — Layer-2 artifact upload, runs even when ship-gate fails.
       - name: upload ship-gate report
         if: always()
         uses: actions/upload-artifact@v4
@@ -71,10 +71,10 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  # ADR-0029 D5: golden memory-eval as a dedicated path-filtered job (signal fast,
+  #: golden memory-eval as a dedicated path-filtered job (signal fast,
   # avoid paying eval cost for doc/CI-only diffs). ship-gate above stays the merge gate.
   memory-eval:
-    name: memory-eval (golden, path-filtered ADR-0029 D5)
+    name: memory-eval (golden, path-filtered)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -88,7 +88,7 @@ jobs:
             git fetch origin "${{ github.base_ref }}" --depth=1 || true
             files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
           else
-            # ADR-0059 D3 (T-2): on workflow_dispatch github.event.before is empty, so
+            # (T-2): on workflow_dispatch github.event.before is empty, so
             # `git diff --name-only "..HEAD"` resolves to HEAD-vs-worktree (always empty) and the
             # job silently skipped. Fall back to HEAD's own file list so the memory-eval signal is
             # reachable outside push/PR events.
@@ -115,7 +115,7 @@ jobs:
         if: ${{ steps.changes.outputs.run == '1' }}
         run: pnpm install --ignore-scripts
 
-      - name: memory eval (golden gate, ADR-0027/0028)
+      - name: memory eval (golden gate, /0028)
         if: ${{ steps.changes.outputs.run == '1' }}
         # round-59 audit R-2: the golden gate runs the offline slice; the vector-arm slice is
         # re-established by the test-online job in ci.yml.
@@ -126,7 +126,7 @@ jobs:
   # contract: this job reports crash signatures without gating merges.
   # TTL/promotion: >=5 consecutive green runs => evaluate restoring macos-latest to
   # the blocking matrix; persistent crashes => prune stays + ledger
-  # defer-f16-macos-native-crash (ADR-0063 D-007).
+  # defer-f16-macos-native-crash ( D-007).
   macos-spillover-probe:
     name: macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)
     runs-on: macos-latest

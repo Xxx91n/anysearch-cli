@@ -1,4 +1,4 @@
-// ADR-0053 D5: deterministic INJECT probes. These are structural anti-bypass checks,
+// deterministic INJECT probes. These are structural anti-bypass checks,
 // not an ASR model. Each family has one frozen canonical payload and a boolean oracle.
 import { createHash } from "node:crypto";
 import {

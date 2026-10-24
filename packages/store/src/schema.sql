@@ -64,9 +64,9 @@ CREATE TABLE IF NOT EXISTS retrieval_results (
   valid_until TEXT, -- bi-temporal: NULL = still valid, non-null = invalidated timestamp.
   pinned BOOLEAN DEFAULT 0, -- pinned exemption: bypasses time decay.
   entity TEXT, -- entity key for bi-temporal invalidation (URL for MVP).
-  archived INTEGER NOT NULL DEFAULT 0, -- ADR-0037 D5: soft archive (reversible forgetting); 1 = excluded from all read paths
-  source_label TEXT, -- ADR-0053 D2: FIDES-style source trust label
-  trace_id TEXT       -- ADR-0053 D2: correlation id, never treated as trust
+  archived INTEGER NOT NULL DEFAULT 0, -- soft archive (reversible forgetting); 1 = excluded from all read paths
+  source_label TEXT, -- FIDES-style source trust label
+  trace_id TEXT -- correlation id, never treated as trust
 );
 
 -- FTS5 for retrieval results (search within session results).
@@ -96,15 +96,15 @@ CREATE TABLE IF NOT EXISTS resume_anchors (
   payload TEXT NOT NULL, -- JSON blob
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
--- ADR-0016 D10 audit: partial UNIQUE INDEX for state-type anchors (consolidation_state).
+-- audit: partial UNIQUE INDEX for state-type anchors (consolidation_state).
 -- Allows INSERT ... ON CONFLICT DO UPDATE (atomic UPSERT, SQLite 3.24.0+).
 -- Historical anchors (rolling_summary, query, fetch, sufficiency) remain append-only.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_anchors_state_unique ON resume_anchors(session_id, anchor_type) WHERE anchor_type = 'consolidation_state';
 
--- Budget Ledger: Mole reserve-then-settle pattern (ADR-0005 decision 4).
+-- Budget Ledger: Mole reserve-then-settle pattern ( decision 4).
 -- Non-negative constraints in DB schema layer (not application layer).
 -- Budget = resource consumption, belongs to store layer (not kernel).
--- Three dimensions: token-cap / usd-cap / time-limit (ADR-0005).
+-- Three dimensions: token-cap / usd-cap / time-limit.
 CREATE TABLE IF NOT EXISTS budget_ledger (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS budget_ledger (
   spent_tokens INTEGER NOT NULL DEFAULT 0 CHECK (spent_tokens >= 0),
   reserved_usd REAL NOT NULL DEFAULT 0 CHECK (reserved_usd >= 0),
   spent_usd REAL NOT NULL DEFAULT 0 CHECK (spent_usd >= 0),
-  -- ADR-0006 decision 2B: per-call billing dimension (reserved_calls + billable_calls).
+  -- decision 2B: per-call billing dimension (reserved_calls + billable_calls).
   reserved_calls INTEGER NOT NULL DEFAULT 0 CHECK (reserved_calls >= 0),
   billable_calls INTEGER NOT NULL DEFAULT 0 CHECK (billable_calls >= 0),
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS budget_ledger (
 -- These run after the CREATE TABLE IF NOT EXISTS, so new databases already have the columns.
 -- For existing databases, these add the missing columns.
 
--- ADR-0024 D1/D2: T0 hot zone durable preference layer.
+-- T0 hot zone durable preference layer.
 -- t0_preferences is the single source of truth; MEMORY.md is a regenerated materialized projection
 -- (temp+fsync+rename atomic write in kernel t0-projection.ts). scope: 'global' | project root path.
 -- correction_count drives the C-prime promote gate (>=2 cross-session corrections = implicit promote).
@@ -144,11 +144,11 @@ CREATE TABLE IF NOT EXISTS t0_preferences (
   demote_reason TEXT,
   correction_count INTEGER NOT NULL DEFAULT 0,
   provenance TEXT,
-  source_label TEXT, -- ADR-0053 D4: untrusted sources never promote
+  source_label TEXT, -- untrusted sources never promote
   trace_id TEXT,
   PRIMARY KEY (key, scope)
 );
--- ADR-0031 D3: Entity link layer. Global (session-agnostic) entity registry.
+-- Entity link layer. Global (session-agnostic) entity registry.
 -- Reuses bi-temporal discipline: valid_until NULL = live. Soft-close only, never DELETE.
 CREATE TABLE IF NOT EXISTS entities (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS memory_entity (
   UNIQUE (memory_id, entity_id)
 );
 
--- ADR-0031 D5 + ADR-0032: merge decision log — alias append, destructive merge (full snapshot),
+-- +: merge decision log — alias append, destructive merge (full snapshot),
 -- candidate review belt (hit_count re-hit escalation), and unmerge override records.
 -- kind: 'alias' | 'candidate' | 'merge' | 'override'
 -- merge rows carry a complete snapshot in detail: fromEntityId, fromName, fromNorm, fromAliases,
@@ -183,12 +183,12 @@ CREATE TABLE IF NOT EXISTS entity_merge_log (
   detail TEXT,                   -- JSON: similarity, tier, snapshot (kind='merge'), etc.
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   undone INTEGER NOT NULL DEFAULT 0,
-  -- ADR-0032 D3: review belt — re-hit counter (>=2 = suggested review) and resolution outcome.
+  -- review belt — re-hit counter (>=2 = suggested review) and resolution outcome.
   hit_count INTEGER NOT NULL DEFAULT 1,
   resolved TEXT                  -- NULL = pending; 'confirmed' | 'rejected' after review
 );
 
--- ADR-0033 D4: vector semantic arm side table. BLOB = Float32Array bytes (384 dims, q8 model output).
+-- vector semantic arm side table. BLOB = Float32Array bytes (384 dims, q8 model output).
 -- No index: full-scan JS cosine is the designed path (<50k vectors). pendingVectors = retrieval_results rows
 -- lacking a matching row here (embedded at write; backfilled by `ans memory backfill-vectors`).
 CREATE TABLE IF NOT EXISTS memory_embeddings (
@@ -198,7 +198,7 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
   embedded_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- ADR-0035 D1/D2: KG-lite entity-relation edge layer (fifth retrieval arm).
+-- KG-lite entity-relation edge layer (fifth retrieval arm).
 -- Closed predicate set enforced by CHECK; bi-temporal soft-close (valid_until); the partial
 -- unique index keeps one live row per (source, relation, target); re-assertion supersedes.
 CREATE TABLE IF NOT EXISTS edges (
@@ -228,7 +228,7 @@ CREATE TABLE IF NOT EXISTS edge_patterns (
   UNIQUE (head_type, relation, tail_type)
 );
 
--- ADR-0037 D3: semantic memory layer (sixth RRF arm, Phase-1 shadow). Consolidated, LLM-summarized
+-- semantic memory layer (sixth RRF arm, Phase-1 shadow). Consolidated, LLM-summarized
 -- memories distilled from episode clusters; episodes (retrieval_results) are never physically deleted.
 -- valid_until = bi-temporal soft-close used by the UPDATE op (old row closed, new row written).
 CREATE TABLE IF NOT EXISTS semantic_memories (
@@ -245,7 +245,7 @@ CREATE TABLE IF NOT EXISTS semantic_memories (
 );
 CREATE INDEX IF NOT EXISTS idx_semantic_live ON semantic_memories(id) WHERE valid_until IS NULL;
 
--- ADR-0037 D5: reversible archive ledger (entity_merge_log-style full snapshot). One row per
+-- reversible archive ledger (entity_merge_log-style full snapshot). One row per
 -- archive action; undo restores retrieval_results.archived = 0 and stamps undone_at.
 CREATE TABLE IF NOT EXISTS archive_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -258,7 +258,7 @@ CREATE TABLE IF NOT EXISTS archive_log (
 CREATE INDEX IF NOT EXISTS idx_archive_log_memory ON archive_log(memory_id);
 CREATE INDEX IF NOT EXISTS idx_archive_active ON archive_log(memory_id) WHERE undone_at IS NULL;
 
--- ADR-0039 D5: Access Events Log — append-only transaction-time event table for the tau
+-- Access Events Log — append-only transaction-time event table for the tau
 -- observation layer. Lazy INSERT at the read-path touchAccessed point (max limit INSERTs per
 -- search request). No valid_until axis, no UPDATE/DELETE, undo never rewrites events
 -- (event-sourcing rule: undo = state flip or new event, never event mutation).
@@ -274,7 +274,7 @@ CREATE TABLE IF NOT EXISTS access_events (
 );
 CREATE INDEX IF NOT EXISTS idx_access_events_memory ON access_events(memory_id);
 CREATE INDEX IF NOT EXISTS idx_access_events_time ON access_events(accessed_at);
--- ADR-0040 D3/D6: single-row chain anchor sealing legacy access_events history as a one-off
+-- single-row chain anchor sealing legacy access_events history as a one-off
 -- snapshot (Sigilbase "honest approach"; in-table genesis row impossible under PRAGMA foreign_keys
 -- because memory_id NOT NULL REFERENCES retrieval_results). Rows are never updated or deleted.
 CREATE TABLE IF NOT EXISTS access_chain_anchor (
@@ -284,7 +284,7 @@ CREATE TABLE IF NOT EXISTS access_chain_anchor (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- ADR-0044 D4/D5: switch edges are access_events rows whose provenance lives here. Keeping
+-- switch edges are access_events rows whose provenance lives here. Keeping
 -- this side table avoids the retired retrieval_results sentinel row and adds no hashed field.
 CREATE TABLE IF NOT EXISTS switch_events (
   access_event_id INTEGER PRIMARY KEY REFERENCES access_events(id) ON DELETE CASCADE,

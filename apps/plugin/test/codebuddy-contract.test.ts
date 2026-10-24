@@ -1,4 +1,4 @@
-// CodeBuddy hook contract tests — ADR-0066 (R65).
+// CodeBuddy hook contract tests — (R65).
 // Synthetic stdin per the real CodeBuddy Code 2.149.0 contract:
 //   stdin  : hook_event_name (NOT event) + tool_name/tool_input/tool_response/session_id/cwd
 //   stdout : hookSpecificOutput{permissionDecision|additionalContext|updatedToolOutput}
@@ -176,7 +176,7 @@ testAsync("claude PostToolUse: legacy event field preserved", async () => {
   assert.ok(JSON.parse(stdout).hookSpecificOutput?.additionalContext);
 });
 
-// === Per-platform hook_event_name closure (ADR-0066 field fix, every adapter) ===
+// === Per-platform hook_event_name closure ( field fix, every adapter) ===
 // Each adapter must honor hook_event_name on its own stdin/output shape.
 testAsync("codex PostToolUse: hook_event_name -> envelope additionalContext", async () => {
   const p = join(process.cwd(), "dist", "hooks", "adapters", "codex.cjs");

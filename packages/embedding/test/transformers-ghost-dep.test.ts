@@ -1,4 +1,4 @@
-// R75 T2 (ADR-0076 / D-003): static guardrails for the transformers ghost-dep patch.
+// R75 T2 (D-003): static guardrails for the transformers ghost-dep patch.
 // The upstream trigger half-fired (4.3.0 still ships a top-level bare
 // require("onnxruntime-common") with no manifest declaration), so the scoped
 // Module._resolveFilename patch in src/index.ts stays — and the two invariants it
@@ -136,7 +136,7 @@ async function main(): Promise<void> {
   assert.ok(files.length > 0, "src tree must not be empty (guard would pass vacuously)");
   for (const f of files) {
     const label = findBareSpecifier(readFileSync(f, "utf8"));
-    assert.ok(label === null, `${f}: bare ${label} "${SPEC}" is forbidden — the only legal entry is createRequire().require() (ADR-0076)`);
+    assert.ok(label === null, `${f}: bare ${label} "${SPEC}" is forbidden — the only legal entry is createRequire.require `);
   }
   console.log(`ghost-dep guard (a): ${files.length} src file(s) clean — ${SPEC} reachable only via createRequire().require()`);
 
@@ -184,7 +184,7 @@ async function main(): Promise<void> {
   assert.strictEqual(
     declared,
     effective,
-    `version-pairing contract broken: optionalDependencies['onnxruntime-common']=${declared} but the effective onnxruntime-node embeds onnxruntime-common@${effective} — re-pin to match (ADR-0076)`
+    `version-pairing contract broken: optionalDependencies['onnxruntime-common']=${declared} but the effective onnxruntime-node embeds onnxruntime-common@${effective} — re-pin to match `
   );
   console.log(`ghost-dep guard (b): declared ${declared} ≡ effective onnxruntime-node embedded ${effective}`);
   console.log("transformers-ghost-dep.test: all assertions passed");

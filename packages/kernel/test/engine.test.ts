@@ -101,18 +101,18 @@ async function main() {
   const result6 = await engine6.search({ query: "meaning of life", mode: "answer" });
   assert(result6.answers.length === 1, "answer collected");
   assert(result6.answers[0] === "42", "answer content correct");
-  // ADR-0022 D3/D4: provenance in metadata, not in answers[]; fail-open marker.
+  // provenance in metadata, not in answers[]; fail-open marker.
   assert(result6.metadata.providerAnswers?.length === 1, "providerAnswers collected");
   assert(result6.metadata.providerAnswers?.[0].provider === "answer-provider", "providerAnswers attribution");
   assert(result6.metadata.providerAnswers?.[0].text === "42", "providerAnswers text");
-  // ADR-0022 D2 round-47 fix: verified=false marker MUST be on the contract item (consumer layer trusts contract).
+  // round-47 fix: verified=false marker MUST be on the contract item (consumer layer trusts contract).
   assert(result6.metadata.providerAnswers?.[0].verified === false, "providerAnswers verified=false locked");
   assert(result6.metadata.answersAvailable === true, "answersAvailable true when answers present");
-  // ADR-0022 D2: answers must NOT inflate sufficiency — sufficiency computed from results only.
+  // answers must NOT inflate sufficiency — sufficiency computed from results only.
   // With a single provider + single result the verdict cannot be promoted by answers.
   assert(result6.metadata.sufficiency?.volume.uniqueResults === 1, "sufficiency ignores answers (uniqueResults=1)");
 
-  // 6b. ADR-0022 D4 (round-47): capability-based answersAvailable — false when no queried provider declares mode:answer.
+  // 6b. (round-47): capability-based answersAvailable — false when no queried provider declares mode:answer.
   // Build a fast-only mock on the spot (mockProvider() declares all modes by default).
   const fastOnly: import("@anysearch-cli/retriever").SearchProvider = {
     id: "fast-only",
@@ -233,7 +233,7 @@ async function main() {
   assert(result16.metadata.sufficiency!.verdict === "correct", "D3: verdict correct with 5 results, 5 domains, 2 providers");
   assert(result16.metadata.sufficiency!.volume.successfulProviders === 2, "D3: 2 successful providers in metadata");
 
-  // 17. ADR-0051 D1/D2: injected calibration flows into claim classification.
+  // 17.: injected calibration flows into claim classification.
   const answerProvider: SearchProvider = {
     id: "ans",
     modes: ["answer"],
@@ -261,7 +261,7 @@ async function main() {
   assert(degraded.attribution?.claims[0]?.label === "uncertain", "degraded calibration falls back to legacy floor");
 
   
-// --- ADR-0061 G1: wired grace window (was ADR-0014/ADR-0059 dead-config debt) ---
+// --- wired grace window (was / dead-config debt) ---
 function slowProvider(id: string, delayMs: number, urls: string[], aborted: {v:boolean}): SearchProvider {
   return {
     id,

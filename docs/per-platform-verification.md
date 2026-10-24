@@ -1,6 +1,6 @@
 # Per-Platform Verification Checklist
 
-ADR-0012 D13: Real-client verification checklist + race condition troubleshooting guide.
+: Real-client verification checklist + race condition troubleshooting guide.
 
 ## Claude (SessionStart supported)
 

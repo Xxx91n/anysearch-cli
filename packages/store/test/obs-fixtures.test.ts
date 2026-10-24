@@ -1,4 +1,4 @@
-// ADR-0042 D3/D6 (r108 impl): four-fixture falsification matrix, end-to-end chain
+// (r108 impl): four-fixture falsification matrix, end-to-end chain
 // fixture -> histogram -> PSI -> AND-gate -> tier/skip. Gate-passing fixtures stop at
 // gate ok (ready-to-spawn); the real Python spawn path stays covered by the bgnbd-spawn
 // stub matrix (D6.5). The loader enforces sha256 pinning + track marker before any row

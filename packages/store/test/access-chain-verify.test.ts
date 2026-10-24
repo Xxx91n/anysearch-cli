@@ -1,4 +1,4 @@
-// ADR-0040 D5/D7 items 2+3: full-chain positive verify (exit 0) + four tamper-injection
+// items 2+3: full-chain positive verify (exit 0) + four tamper-injection
 // classes (AuditWeave taxonomy: modify / delete / insert-fork / reorder) -> verifier exit 1 with
 // first-error location. The verifier is spawned as a real process against fixture DBs.
 import Database from "better-sqlite3";

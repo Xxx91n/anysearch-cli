@@ -4,7 +4,7 @@ Verified hosts: **Antigravity CLI (`agy`) 1.2.5** (Windows 11, headless
 `agy -p` probes) — hook contract + end-to-end adapter verified 2026-09-17;
 **Antigravity IDE 2.12.2** — the IDE host does not execute hooks
 (reproduced); the `.antigravity/rules/anysearch.mdc` rules fallback is the
-supported surface there. Contract source: ADR-0069 +
+supported surface there. Contract source: +
 `.scratch/grill-round-68/evidence/` (s2 contract legs + s3 six-leg
 acceptance + SEP-2484 exclusion ledger).
 

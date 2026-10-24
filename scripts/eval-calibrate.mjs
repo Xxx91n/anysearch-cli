@@ -1,4 +1,4 @@
-// ADR-0029 D1/D2/D3/D4: judge calibration gate — Cohen's kappa (percentile bootstrap CI,
+// judge calibration gate — Cohen's kappa (percentile bootstrap CI,
 // 5000 resamples) + Gwet AC1 + raw agreement against the human-labeled calibration holdout
 // (anysearch/calibration-set@1 in packages/store/src/eval/calibration-cases.ts).
 // Sixtuple snapshot (D4): rubricHash/judgeVersion/fingerprint/annotator/annotatedAt/kappa-decision
@@ -110,7 +110,7 @@ async function main() {
   else {
     const labeled = set.cases.filter((c) => c.humanRelevant === 0 || c.humanRelevant === 1);
     if (labeled.length < minLabeled) {
-      process.stderr.write(`eval-calibrate: only ${labeled.length} labeled (need >= ${minLabeled}) — annotations pending (ADR-0029 explicit deferral)\n`);
+      process.stderr.write(`eval-calibrate: only ${labeled.length} labeled (need >= ${minLabeled}) — annotations pending ( explicit deferral)\n`);
       process.exit(2);
     }
     const baseUrl = (process.env.JUDGE_BASE_URL || "http://127.0.0.1:20128/v1").replace(/\/+$/, "");
@@ -133,7 +133,7 @@ Is the returned snippet a plausible, relevant hit?`, { baseUrl, model, apiKey })
   const ac1 = gwetAC1(pairs);
   const [lo, hi] = kappaBootstrapCI(pairs, boot);
   const fmt = (x) => (Number.isFinite(x) ? x.toFixed(3) : "NaN");
-  // ADR-0029 D2 (audit r67): kappa CI lower bound >= 0.6 is the ONLY pass channel.
+  // (audit r67): kappa CI lower bound >= 0.6 is the ONLY pass channel.
   // A degenerate all-same-label cohort (kappa=NaN, po=1) is a setup failure, not perfect calibration.
   const degenerate = po === 1 && !Number.isFinite(kappa);
   if (degenerate) process.stderr.write("eval-calibrate: degenerate cohort (all labels identical, kappa undefined) -- treat as FAIL\n");
@@ -148,7 +148,7 @@ Is the returned snippet a plausible, relevant hit?`, { baseUrl, model, apiKey })
     annotatedAt: set.annotatedAt ?? null,
     n: pairs.length, rawAgreement: po, kappa, kappaCI95: [lo, hi], gwetAC1: ac1,
     decision: pass ? "pass" : "fail",
-    note: "ADR-0029 D2: human-review signal only — never wired into ship-gate gate. Failing => judge untrusted this cycle.",
+    note: ": human-review signal only — never wired into ship-gate gate. Failing => judge untrusted this cycle.",
   };
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(report, null, 2) + "\n", "utf8");

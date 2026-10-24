@@ -1,20 +1,20 @@
 // MemoryPipeline: deep module for L0/L1/L2 memory pipeline logic.
-// ADR-0015 D1/D2: extracted from pi-runtime.ts shouldStopAfterTurn + transformContext.
+// extracted from pi-runtime.ts shouldStopAfterTurn + transformContext.
 // Interface: attach (init) / inject (hot read) / consolidate (cold write).
 // Domain-semantic naming — interface does not leak host hook details.
-// ADR-0016 D2/D3/D5/D6/D7/D8: pure function-ization + ConsolidationState + shell wrapper.
+// pure function-ization + ConsolidationState + shell wrapper.
 //   consolidate() is now a shell that calls pure consolidateState() then executes I/O.
 //   signalSearchTurn() DELETED — replaced by hasRetrievalEvidence parameter.
 
 import { generateSummaryWithUsage } from "@earendil-works/pi-agent-core";
-// ADR-0012 D4: reuse summary engine only, NOT compact() window management.
+// reuse summary engine only, NOT compact window management.
 // Own constant so upstream window-management namespace changes cannot break L0.
 const COMPACTION_RESERVE_TOKENS = 16_384;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
-import { isTimeSensitive, isEvergreen } from "@anysearch-cli/store"; // ADR-0030 D5: no inline regex copies
+import { isTimeSensitive, isEvergreen } from "@anysearch-cli/store"; // no inline regex copies
 import { assertJudgmentInput, combineLabels, unwrapRetrieved, type SourceTraceLabel } from "@anysearch-cli/retriever";
 import type { LlmRewriteFn } from "./query-rewrite";
 
@@ -35,7 +35,7 @@ export interface TaggedGap {
 
 export interface MemoryPipelineDeps {
   store: SessionStorePort;
-  models?: any;       // ADR-0012 D4: Models object for generateSummaryWithUsage
+  models?: any; // Models object for generateSummaryWithUsage
   retriever: RetrieverPort;
   domain: DomainConfigPort;
   model: any;         // pi-ai Model instance
@@ -43,11 +43,11 @@ export interface MemoryPipelineDeps {
   sessionId: string;
   getApiKey?: () => Promise<string | undefined> | undefined;
   providerName?: string;
-  // ADR-0023 D2: S1 LLM rewrite seam. When omitted, L2 recall degrades to single-query mode (fail-open).
+  // S1 LLM rewrite seam. When omitted, L2 recall degrades to single-query mode (fail-open).
   llmRewriteFn?: LlmRewriteFn;
 }
 
-// ADR-0016 D5: ConsolidationState — pure, serializable type for MCP stateless mode.
+// ConsolidationState — pure, serializable type for MCP stateless mode.
 // version field serves as CAS guard for saveAnchor UPSERT (fast.io optimistic locking).
 export interface ConsolidationState {
   version: number;
@@ -55,7 +55,7 @@ export interface ConsolidationState {
   lastSummaryMsgCount: number;
 }
 
-// ADR-0016 D8: ConsolidateResult — pure function output (decision + optional summaryRequest).
+// ConsolidateResult — pure function output (decision + optional summaryRequest).
 export interface ConsolidateResult {
   state: ConsolidationState;
   decision: "skip" | "reuse" | "compress";
@@ -66,7 +66,7 @@ export interface ConsolidateResult {
   };
 }
 
-// ADR-0013 D9 / ADR-0053 D2: gap distillation returns a tagged object, never a bare string.
+// /: gap distillation returns a tagged object, never a bare string.
 export function distillGap(messages: any[], fromIdx: number): TaggedGap {
   const gap = messages.slice(fromIdx);
   const results: TaggedGap["results"] = [];
@@ -114,7 +114,7 @@ export function distillGap(messages: any[], fromIdx: number): TaggedGap {
   return { text, results, source: label.source, traceId: label.traceId };
 }
 
-// ADR-0013 D1/D3/D6: NOOP adjudication — LLM decides REUSE vs COMPRESS.
+// NOOP adjudication — LLM decides REUSE vs COMPRESS.
 export async function adjudicateReuseCompress(
   streamFn: any,
   model: any,
@@ -158,9 +158,9 @@ export async function adjudicateReuseCompress(
   return "compress"; // D10: unparseable -> COMPRESS.
 }
 
-// ADR-0016 D5/D8: PURE consolidateState function — zero I/O, zero side effects.
+// PURE consolidateState function — zero I/O, zero side effects.
 // Returns decision + optional summaryRequest. Shell executes LLM + persistence.
-// ADR-0021 D2: options injectable; defaults 128000 / 3 preserve zero-behavior-change.
+// options injectable; defaults 128000 / 3 preserve zero-behavior-change.
 export interface ConsolidateOpts {
   lowWatermark?: number;
   reuseCap?: number;
@@ -221,7 +221,7 @@ export function consolidateState(
 export class MemoryPipeline {
   private deps: MemoryPipelineDeps;
 
-  // ADR-0016 D5/D7: ConsolidationState — in-memory cache (CLI fast path).
+  // ConsolidationState — in-memory cache (CLI fast path).
   // MCP mode restores from anchor per call (saveAnchor persistence).
   private consolidationState: ConsolidationState = {
     version: 1,
@@ -240,7 +240,7 @@ export class MemoryPipeline {
     let result = messages;
 
     // Stage 1: RAG injection — prepend RAG context note to first user message.
-    // ADR-0026 D7: injections target USER messages; a leading system/tool message must not swallow them.
+    // injections target USER messages; a leading system/tool message must not swallow them.
     const firstUserIdx = result.findIndex((m: any) => m?.role === "user");
     if (domain.rag.adapter && domain.rag.config?.note && firstUserIdx >= 0) {
       const first = result[firstUserIdx];
@@ -251,7 +251,7 @@ export class MemoryPipeline {
       ];
     }
 
-    // ADR-0024 D5: T0 user preferences injection — same Stage-1 slot, identical content/order.
+    // T0 user preferences injection — same Stage-1 slot, identical content/order.
     // Idempotent: skip if first message already carries a <user_preferences> block
     // (transformContext may be invoked more than once on retry/resume).
     try {
@@ -269,7 +269,7 @@ export class MemoryPipeline {
       }
     } catch {}
 
-    // ADR-0012 D8/D9/D12: L1+L2 merged injection at latest user message (hot zone).
+    // L1+L2 merged injection at latest user message (hot zone).
     try {
       const anchors = await store.getAnchors(sessionId);
       const summaryAnchors = anchors.filter(a => a.anchorType === "rolling_summary");
@@ -285,7 +285,7 @@ export class MemoryPipeline {
         injections.push("[Research Recall] " + String((recallAnchor.payload as any).hits).slice(0, 1500));
       }
 
-      // ADR-0026 D7: latest USER message, not blindly the last array element.
+      // latest USER message, not blindly the last array element.
       let lastIdx = -1;
       for (let i = result.length - 1; i >= 0; i--) if (result[i]?.role === "user") { lastIdx = i; break; }
       if (injections.length > 0 && lastIdx >= 0) {
@@ -301,7 +301,7 @@ export class MemoryPipeline {
     return result;
   }
 
-  // ADR-0016 D6/D8: consolidate — shell layer wrapping pure consolidateState().
+  // consolidate — shell layer wrapping pure consolidateState.
   // Fire-and-forget, fail-open. Executes LLM I/O + persistence based on pure decision.
   async consolidate(messages: any[], totalTokens: number, hasRetrievalEvidence: boolean): Promise<void> {
     const { store, domain, model, models, streamFn, sessionId, retriever, providerName, getApiKey } = this.deps;
@@ -321,10 +321,10 @@ export class MemoryPipeline {
         }
       } catch {}
 
-      // D8: Call pure function for decision; inject compaction opts (ADR-0021 D2).
-      // ADR-0021 D1: fail-fast on unsupported {fraction} shape — silent fallback to
+      // D8: Call pure function for decision; inject compaction opts.
+      // fail-fast on unsupported {fraction} shape — silent fallback to
       // default 128000 would violate the "不静默回退" principle stated in the ADR.
-      // Once model window probing lands (ADR-0022 scope), wire fraction → tokens here.
+      // Once model window probing lands ( scope), wire fraction → tokens here.
       const compactionCfg = domain.compaction;
       const lw = compactionCfg?.lowWatermark;
       let resolvedLowWatermark: number | undefined;
@@ -335,7 +335,7 @@ export class MemoryPipeline {
           throw new Error(
             "MemoryPipeline: compaction.lowWatermark as {fraction} is not yet wired " +
             "(needs model context-window lookup). Use absolute token count " +
-            "e.g. lowWatermark = 128000. See ADR-0021 D1 + ADR-0022."
+            "e.g. lowWatermark = 128000. See +."
           );
         }
       }
@@ -346,7 +346,7 @@ export class MemoryPipeline {
 
       if (result.decision === "skip") return;
 
-      // ADR-0054 D1: judgment-input assertion boundary 1/5 — gap distillation.
+      // judgment-input assertion boundary 1/5 — gap distillation.
       const gap = result.summaryRequest?.gap;
       if (gap && gap.text) assertJudgmentInput(gap, "gap-distillation");
 
@@ -366,7 +366,7 @@ export class MemoryPipeline {
       // D5: fire-and-forget compression helper.
       const fireCompress = () => {
         if (modelsObj && actualModel) {
-          // ADR-0054 D1: judgment-input assertion boundary 3/5 — consolidation pre-call.
+          // judgment-input assertion boundary 3/5 — consolidation pre-call.
           // Fire-and-forget: an invalid judgment input skips compression instead of
           // throwing into the agent loop (AGENTS.md fail-open for background paths).
           try {
@@ -407,7 +407,7 @@ export class MemoryPipeline {
       } else if (result.decision === "reuse") {
         // Adjudication: fire-and-forget LLM call to decide reuse vs compress.
         const gapDistillation = result.summaryRequest?.gap.text || "";
-        // ADR-0054 D1: judgment-input assertion boundary 2/5 — NOOP adjudication pre-call.
+        // judgment-input assertion boundary 2/5 — NOOP adjudication pre-call.
         // Fire-and-forget: invalid judgment input skips adjudication (keep reuse),
         // never throws into the agent loop.
         let gapValid = true;
@@ -434,7 +434,7 @@ export class MemoryPipeline {
         await store.saveAnchor(sessionId, "consolidation_state", result.state);
       } catch {}
 
-      // ADR-0012 D10: L2 cold path — FTS5 recall.
+      // L2 cold path — FTS5 recall.
       const lastToolCall = [...messages].reverse().find((m: any) =>
         m.role === "assistant" && Array.isArray(m.content) &&
         m.content.some((c: any) => c.type === "tool_use" && typeof c.name === "string" && c.name.includes("search"))
@@ -442,12 +442,12 @@ export class MemoryPipeline {
       const searchToolInput = lastToolCall?.content?.find((c: any) => c.type === "tool_use" && c.name?.includes("search"))?.input;
       const l2Query = searchToolInput?.query || "";
       if (typeof l2Query === "string" && l2Query.length > 3) {
-        // ADR-0023 D2 (Q2=B): S1 rewrite + RRF fusion. Fail-open via rewriteQuery when no LLM seam.
+        // (Q2=B): S1 rewrite + RRF fusion. Fail-open via rewriteQuery when no LLM seam.
         // QDF hint uses heuristic classifiers from @anysearch-cli/store (no LLM call needed to tag).
         const qdf = classifyQdf(l2Query, { isTimeSensitive, isEvergreen });
         rewriteQuery(l2Query, qdf, this.deps.llmRewriteFn)
           .then((variants) => {
-            // Seamed call: searchMemoryMulti present on ADR-0023-capable stores. Fall back to single-query.
+            // Seamed call: searchMemoryMulti present on -capable stores. Fall back to single-query.
             const s: any = store as any;
             const searchPromise: Promise<any[]> = typeof s.searchMemoryMulti === "function"
               ? s.searchMemoryMulti(variants, 5)
@@ -467,12 +467,12 @@ export class MemoryPipeline {
     } catch {}
   }
 
-  // ADR-0016 D7: Get current consolidation state (for testing/debugging).
+  // Get current consolidation state (for testing/debugging).
   getConsolidationState(): ConsolidationState {
     return this.consolidationState;
   }
 
-  // ADR-0016 D7: Set consolidation state (for MCP restore from anchor).
+  // Set consolidation state (for MCP restore from anchor).
   setConsolidationState(state: ConsolidationState): void {
     this.consolidationState = state;
   }

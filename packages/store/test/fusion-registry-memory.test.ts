@@ -1,4 +1,4 @@
-// ADR-0045 D2 (r118 impl): MemoryFusion registry consumption + sources.weights validation pairs.
+// (r118 impl): MemoryFusion registry consumption + sources.weights validation pairs.
 // - k_fusion.memory / weights.memory consumed by session-store (recomputation equality).
 // - ROR_WINDOW consumes registry ror_window (mutation test anchor — no dead registration).
 // - sources.weights: valid pass / illegal fail-fast (negative pair members).

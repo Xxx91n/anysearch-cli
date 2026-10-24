@@ -1,5 +1,5 @@
 // Domain Loader: thin parser adapter bridging smol-toml to domain-schema resolve/validate.
-// ADR-0005 decision 2: smol-toml parses TOML to JS object; resolve/validate handled by domain-schema.ts.
+// decision 2: smol-toml parses TOML to JS object; resolve/validate handled by domain-schema.ts.
 // atomcode research: smol-toml parse() returns JS object; deep-merge is NOT parser job (domain-schema.resolve does it).
 
 import { parse as tomlParse } from "smol-toml";
@@ -56,7 +56,7 @@ export function loadDomainFromString(
   return schema;
 }
 
-// ADR-0006 decision 4A: load domain from convention directory domains/<name>.toml.
+// decision 4A: load domain from convention directory domains/<name>.toml.
 // Returns DomainSchema; callers treat it as DomainConfigPort (structurally compatible).
 const DOMAINS_DIR = "domains";
 
@@ -80,7 +80,7 @@ export function loadDomainByName(
   return loadDomain(tomlPath, lookup);
 }
 
-// ADR-0061 B1: domains-dir resolution chain. Each entry IS a domains directory
+// B1: domains-dir resolution chain. Each entry IS a domains directory
 // (contains <name>.toml directly). Lets an installed CLI find the builtin
 // domains shipped inside the package while CWD stays the first-class override.
 export function loadDomainByNameIn(

@@ -6,15 +6,15 @@
 //   SessionStart: raw stdout text is injected into context verbatim (no envelope).
 //   settings schema: { matcher, hooks: [{ type: "command", command: <bash string> }] }
 //   Windows: hook commands are forced through Git Bash.
-// ADR-0009 Q5: only intercept ans_* tools. ADR-0009 D6: fail-open — exit 0 on any error.
-// ADR-0066: `hook_event_name ?? event` fallback so a legacy `event`-shaped host still works.
+// Q5: only intercept ans_* tools.: fail-open — exit 0 on any error.
+// `hook_event_name ?? event` fallback so a legacy `event`-shaped host still works.
 
 import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// ADR-0059 D7 (T-6.3): resolve the shared server token (env or the 0600 token file).
+// (T-6.3): resolve the shared server token (env or the 0600 token file).
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
-// ADR-0012 D14: routing card imported from the shared module (one source, two outputs).
+// routing card imported from the shared module (one source, two outputs).
 import { DEFAULT_ROUTING_CARD as ROUTING_CARD } from "../routing-card.js";
 
 interface CodeBuddyHookStdin {
@@ -46,7 +46,7 @@ async function main(): Promise<void> {
   const cwd = stdin.cwd || process.cwd();
 
   // SessionStart: raw stdout goes straight into the host context (no envelope).
-  // ponytail: no .mdc fallback here — CodeBuddy reads CODEBUDDY.md, and ADR-0011 D6
+  // ponytail: no .mdc fallback here — CodeBuddy reads CODEBUDDY.md, and
   // forbids writing host rule files; the routing card text is the injection channel.
   if (event === "SessionStart") {
     process.stdout.write(ROUTING_CARD);
@@ -121,7 +121,7 @@ async function main(): Promise<void> {
       process.exit(0);
     }
   } catch (e) {
-    // ADR-0009 D6: fail-open. stderr warn, exit 0, raw output passes through.
+    // fail-open. stderr warn, exit 0, raw output passes through.
     process.stderr.write("[anysearch] hook error: " + (e instanceof Error ? e.message : String(e)) + "\n");
     process.exit(0);
   }

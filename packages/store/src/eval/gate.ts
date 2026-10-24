@@ -1,5 +1,5 @@
-// ADR-0027 D4/D9: gate = fail-closed vs baseline, never auto-lowered by CI.
-// ADR-0028 D1: integer-op allowance semantics + statistical-power WARN band.
+// gate = fail-closed vs baseline, never auto-lowered by CI.
+// integer-op allowance semantics + statistical-power WARN band.
 // Exit-code contract (EvalGate-style partition): 0 pass-or-warn / 1 metric regression / 2 internal error / 12 fingerprint mismatch.
 import type { EvalMetrics, EvalReport } from "./runner";
 export { SHIP_OVERRIDE_REASON_CODES } from "./override-core";
@@ -8,13 +8,13 @@ export interface EvalBaseline {
   schema: "anysearch/eval-baseline@1";
   fingerprint: string;
   metrics: EvalMetrics;
-  // ADR-0028 D1: integer allowances = max tolerated op-level failures per family,
+  // integer allowances = max tolerated op-level failures per family,
   // calibrated by `eval --calibrate` (worst observed failures + 1). Never fraction margins.
   allowance: { supersessionFails: number; quarantineFp: number };
-  // ADR-0036 D4: paired-design calibration derived from the pilot — sigma_d upper 95% CI and
+  // paired-design calibration derived from the pilot — sigma_d upper 95% CI and
   // the Sakai-locked sample size (n locked ONCE; rawN records the uncapped demand for the report).
   relationGain?: { sigmaDU: number; rawN: number; lockedN: number; minGain: number };
-  // ADR-0038 D5: second fingerprint — covers frozen holdout ids + backflow slice family.
+  // second fingerprint — covers frozen holdout ids + backflow slice family.
   holdoutFingerprint: string;
   updatedAt: string;
   note: string;
@@ -25,9 +25,9 @@ export interface GateResult {
   exitCode: 0 | 1 | 2 | 12;
   failures: string[];
   warnings: string[];
-  // ADR-0038 D2: independent three-tier gain conclusion; NOT merged into exitCode.
+  // independent three-tier gain conclusion; NOT merged into exitCode.
   gainConclusion?: GainConclusion;
-  // ADR-0046 D4: reverse weakest-link conclusion; critical red blocks ship.
+  // reverse weakest-link conclusion; critical red blocks ship.
   weakestLink?: WeakestLinkConclusion;
 }
 
@@ -54,7 +54,7 @@ export function mdeFor(n: number): number {
 // Family size for the gated fraction metrics (passRate is a separate hard gate).
 export const GATE_FAMILY_SIZE = 2;
 
-// ---------------- ADR-0036 D4: paired arm-gain statistics ----------------
+// ---------------- paired arm-gain statistics ----------------
 // Deterministic by construction: fixed seeds, Monte-Carlo counts fixed at 10k/9999,
 // and no library dependency (ponytail — n<=80 makes every computation trivial).
 const BOOT_B = 9999;
@@ -123,7 +123,7 @@ export function pairedGainStats(deltas: number[], alpha: number = 0.05): PairedG
   const rnd = mulberry32(STAT_SEED);
   // Sign-flip permutation: flip each delta's sign uniformly, recompute mean.
   // signFlipP = one-sided evidence of GAIN (H0: mean <= 0); signFlipHarmP = evidence
-  // of HARM (H0: mean >= 0). ADR-0038 D2: only harm-side significance may paint the gate red.
+  // of HARM (H0: mean >= 0).: only harm-side significance may paint the gate red.
   let flipped = 0;
   let flippedHarm = 0;
   const flipRnd = mulberry32(STAT_SEED ^ 0x9e3779b9);
@@ -164,8 +164,8 @@ export function pairedGainStats(deltas: number[], alpha: number = 0.05): PairedG
 
 
 // ---------------------------------------------------------------------------
-// ADR-0038 D4: preregistered Lan-DeMets O'Brien-Fleming alpha-spending (one-sided,
-// alpha=0.025 per OF track; family budget alpha_1+alpha_2 <= 0.05 per ADR-0038 D5).
+// preregistered Lan-DeMets O'Brien-Fleming alpha-spending (one-sided,
+// alpha=0.025 per OF track; family budget alpha_1+alpha_2 <= 0.05).
 // Formula (gsDesign sfLDOF / MetricGate verified, r97 atomcode):
 //   alpha*(t) = 2 * (1 - Phi(z_{1-alpha/2} / sqrt(t)))  // one-sided level alpha, t = k/K_max
 // k_max convergence clause: after K_MAX looks the claim is either established (promoted to
@@ -192,19 +192,19 @@ export function ofTable(kMax: number = OF_K_MAX, alpha: number = OF_TRACK_ALPHA)
   return rows;
 }
 
-// ADR-0038 D7: semantic-arm OF family registered as an inert placeholder this round —
+// semantic-arm OF family registered as an inert placeholder this round —
 // name/alpha/axes preregistered, NOT computed and NOT spent. Activation needs labels past the
-// Sakai power threshold AND judge-vs-human kappa at the ADR-0029 bar.
+// Sakai power threshold AND judge-vs-human kappa at the bar.
 export const SEMANTIC_OF_PLACEHOLDER = {
   name: "semantic-arm-gain",
   alpha: OF_TRACK_ALPHA,
   family: "lan-demets-obrien-fleming",
   axes: ["sign-flip p", "BCa confidence"],
   inert: true,
-  activation: "graded-label coverage past Sakai power threshold AND judge kappa CI >= 0.6 (ADR-0029)",
+  activation: "graded-label coverage past Sakai power threshold AND judge kappa CI >= 0.6 ",
 } as const;
 
-// ADR-0038 D2: independent gain-gate conclusion (exit-code decoupled; ship-gate enforces).
+// independent gain-gate conclusion (exit-code decoupled; ship-gate enforces).
 export interface GainZoneSnapshot {
   n: number; mean: number; bcaLo: number; bcaHi: number; signFlipP: number; signFlipHarmP: number;
 }
@@ -240,7 +240,7 @@ export interface WeakestLinkConclusion {
   betaCorrection: number;
 }
 
-// Sakai topic-set size formula: n = 2 * sigma^2 * (z_a + z_b)^2 / minD^2, capped (ADR-0036 D2).
+// Sakai topic-set size formula: n = 2 * sigma^2 * (z_a + z_b)^2 / minD^2, capped.
 export const RELATION_GAIN_MIN_GAIN = 0.1;      // MEI = 10pp of the RRF window (~= 6 ranks)
 export const RELATION_GAIN_LOCKED_N_CAP = 80;
 export function lockN(sigmaDU: number, minGain: number = RELATION_GAIN_MIN_GAIN): { rawN: number; lockedN: number } {
@@ -256,7 +256,7 @@ export function sigmaDUpper(deltas: number[]): number {
   return s * Math.sqrt(df / chiSquareQuantile(0.05, df));
 }
 
-// ADR-0046 D4: reverse weakest-link harm gate. The direction is harm only
+// reverse weakest-link harm gate. The direction is harm only
 // (H1: delta < minHarm); unproven-negative is never red. The alpha track is
 // shared with the gain gate and only beta is corrected for the number of
 // tested non-anchor arms (Spotify guardrail correction direction).
@@ -287,7 +287,7 @@ export function evaluateWeakestLink(
         minHarm,
         confirmedHarm: false,
         underpowered,
-        reason: `n=${sample.n} < 10 — harm verdict degrades to WARN (ADR-0046 D4)`,
+        reason: `n=${sample.n} < 10 — harm verdict degrades to WARN `,
       };
     }
     const stats = pairedGainStats(sample.deltas, alphaK);
@@ -332,7 +332,7 @@ function allowanceCheck(
   const mde = mdeFor(n);
   const msg = `${label}: ${fails} failure(s) > allowance ${allowance} (n=${n})`;
   if (frac < mde) {
-    // ADR-0028 D1: under-powered allowance — FAIL downgraded to WARN so the metric
+    // under-powered allowance — FAIL downgraded to WARN so the metric
     // cannot gate on noise. Widening the golden set restores power.
     warnings.push(`${msg} — DOWNGRADED to WARN: allowance fraction ${frac.toFixed(3)} < MDE ${mde.toFixed(3)} (under-powered; widen the dataset)`);
   } else {
@@ -343,26 +343,26 @@ function allowanceCheck(
 export interface EvaluateGateOptions { look?: number; kMax?: number; quarantineActiveIds?: string[] }
 export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, opts: EvaluateGateOptions = {}): GateResult {
   if (!baseline) {
-    return { verdict: "fail", exitCode: 12, warnings: [], failures: ["baseline missing — run pnpm -C packages/store eval --calibrate (review before commit, ADR-0027 D9 / ADR-0028 D1)"] };
+    return { verdict: "fail", exitCode: 12, warnings: [], failures: ["baseline missing — run pnpm -C packages/store eval --calibrate (review before commit)"] };
   }
   if (report.datasetFingerprint !== baseline.fingerprint) {
     return { verdict: "fingerprint_mismatch", exitCode: 12, warnings: [], failures: [
-      `dataset fingerprint ${report.datasetFingerprint} != baseline ${baseline.fingerprint} — golden set changed; run eval --calibrate and commit the new baseline (ADR-0028 D1)`,
+      `dataset fingerprint ${report.datasetFingerprint} != baseline ${baseline.fingerprint} — golden set changed; run eval --calibrate and commit the new baseline `,
     ] };
   }
-  // ADR-0038 D5 dual-track: holdout-family fingerprint enforced as fail-closed as the dataset one.
+  // dual-track: holdout-family fingerprint enforced as fail-closed as the dataset one.
   if (!baseline.holdoutFingerprint || report.holdoutFingerprint !== baseline.holdoutFingerprint) {
     return { verdict: "fingerprint_mismatch", exitCode: 12, warnings: [], failures: [
-      "holdout-family fingerprint " + report.holdoutFingerprint + " != baseline " + (baseline.holdoutFingerprint ?? "<missing>") + " — holdout/backflow change = golden change = fingerprint flip + recalibration (ADR-0038 D5)"
+      "holdout-family fingerprint " + report.holdoutFingerprint + " != baseline " + (baseline.holdoutFingerprint ?? "<missing>") + " — holdout/backflow change = golden change = fingerprint flip + recalibration "
     ] };
   }
   if (!baseline.allowance) {
-    return { verdict: "fail", exitCode: 12, warnings: [], failures: ["baseline lacks integer allowance block — regenerate with eval --calibrate (ADR-0028 D1 replaced fraction margins)"] };
+    return { verdict: "fail", exitCode: 12, warnings: [], failures: ["baseline lacks integer allowance block — regenerate with eval --calibrate ( replaced fraction margins)"] };
   }
   const failures: string[] = [];
   const warnings: string[] = [];
   const m = report.metrics;
-  // ADR-0027 D8 + ADR-0059 D3 (T-2/F-17): ACTIVE quarantined cases are excluded from the
+  // + (T-2/F-17): ACTIVE quarantined cases are excluded from the
   // passRate==1 hard gate. The golden set and the dataset fingerprint are untouched — the
   // quarantine is a policy-layer mark (zero recalibration cost).
   const quarantine = new Set(opts.quarantineActiveIds ?? []);
@@ -371,12 +371,12 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
   if (effectivePassRate < 1) failures.push(`passRate ${effectivePassRate.toFixed(3)} < 1.0 (D4: case lifecycle pass rate must be 100%)`);
   if (quarantine.size > 0) {
     const qids = report.cases.filter((c) => quarantine.has(c.id)).map((c) => c.id);
-    warnings.push("ADR-0027 D8 quarantine active for " + qids.length + " case(s): " + qids.join(", ") + " (excluded from the passRate gate; TTL/review clock in eval-quarantine.json)");
+    warnings.push(" quarantine active for " + qids.length + " case(s): " + qids.join(", ") + " (excluded from the passRate gate; TTL/review clock in eval-quarantine.json)");
   }
   allowanceCheck("supersessionFails", m.counts.supExpected - m.counts.supPassed, m.counts.supExpected, baseline.allowance.supersessionFails, failures, warnings);
   allowanceCheck("quarantineFp", m.counts.fpCount, m.counts.fpEligible, baseline.allowance.quarantineFp, failures, warnings);
 
-  // ADR-0038 D2/D4/D5/D6 (supersedes ADR-0036 observational channel): three-tier gain gate.
+  // (supersedes observational channel): three-tier gain gate.
   // Track A paired counterfactual remains the only causal channel; regression metrics above are
   // unchanged. green = full-sample preregistered rule at the OF look-k threshold AND holdout no
   // contradiction; WARN = unproven-degenerate-underpowered-or-contradicted; red = PROVEN-NEGATIVE
@@ -400,41 +400,41 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
     const total = rg.n + rg.excluded;
     if (total > 0 && rg.excluded / total > 0.2) {
       warn = true;
-      reasons.push("full-sample exclusion rate " + (rg.excluded / total * 100).toFixed(1) + "% > 20% (ADR-0036 D5 censoring rule)");
+      reasons.push("full-sample exclusion rate " + (rg.excluded / total * 100).toFixed(1) + "% > 20% ( censoring rule)");
     }
     if (rgH) {
       const totalH = rgH.n + rgH.excluded;
       if (totalH > 0 && rgH.excluded / totalH > 0.2) {
         warn = true;
-        reasons.push("holdout exclusion rate " + (rgH.excluded / totalH * 100).toFixed(1) + "% > 20% (ADR-0038 D2 WARN)");
+        reasons.push("holdout exclusion rate " + (rgH.excluded / totalH * 100).toFixed(1) + "% > 20% ( WARN)");
       }
     }
     if (!b) {
       warn = true;
-      reasons.push("baseline lacks relationGain block — run eval --calibrate (ADR-0036 D2)");
+      reasons.push("baseline lacks relationGain block — run eval --calibrate ");
     } else if (rg.n < 2) {
       warn = true;
-      reasons.push("only " + rg.n + " paired sample(s) — cannot run the decision rule (ADR-0036 D4)");
+      reasons.push("only " + rg.n + " paired sample(s) — cannot run the decision rule ");
     } else {
       const stF = pairedGainStats(rg.deltas, alphaK);
       if (!stF || stF.degenerate) {
         warn = true;
-        reasons.push("full sample degenerate (sd=0), mean=" + (stF ? stF.mean.toFixed(4) : "?") + " — unverifiable variance, human review (ADR-0036 D4)");
+        reasons.push("full sample degenerate (sd=0), mean=" + (stF ? stF.mean.toFixed(4): "?") + " — unverifiable variance, human review ");
       } else {
         fullPass = stF.bcaLo > 0 && stF.mean >= b.minGain && stF.signFlipP < alphaK;
         harm = stF.bcaHi < 0 || stF.signFlipHarmP < alphaK;
         fullSnap = { n: stF.n, mean: stF.mean, bcaLo: stF.bcaLo, bcaHi: stF.bcaHi, signFlipP: stF.signFlipP, signFlipHarmP: stF.signFlipHarmP, passAtLook: fullPass };
         const df = "full: mean=" + stF.mean.toFixed(4) + " BCa=[" + stF.bcaLo.toFixed(4) + ", " + stF.bcaHi.toFixed(4) + "] signFlipP=" + stF.signFlipP.toFixed(5) + " harmP=" + stF.signFlipHarmP.toFixed(5) + " alpha(" + look + "/" + kMax + ")=" + alphaK.toFixed(6);
-        if (harm) reasons.push(df + " — PROVEN-NEGATIVE on the full sample (ADR-0038 D2 red)");
+        if (harm) reasons.push(df + " — PROVEN-NEGATIVE on the full sample ( red)");
         else if (fullPass) reasons.push(df + " — preregistered rule holds at look " + look + "/" + kMax);
-        else { warn = true; reasons.push(df + " — rule not established at this look's alpha; unproven-positive is never red (ADR-0038 D2)"); }
+        else { warn = true; reasons.push(df + " — rule not established at this look's alpha; unproven-positive is never red "); }
       }
       if (!rgH) {
         warn = true;
-        reasons.push("holdout sample missing from metrics — three-tier gate cannot run contradiction check (ADR-0038 D3 report contract)");
+        reasons.push("holdout sample missing from metrics — three-tier gate cannot run contradiction check ( report contract)");
       } else if (rgH.n < 2) {
         warn = true;
-        reasons.push("holdout has " + rgH.n + " pair(s) < 2 — no contradiction check possible (ADR-0038 D2 WARN)");
+        reasons.push("holdout has " + rgH.n + " pair(s) < 2 — no contradiction check possible ( WARN)");
       } else {
         const stH = pairedGainStats(rgH.deltas, alphaK);
         const mdeH = mdeForPaired(rgH.n, b.sigmaDU);
@@ -442,54 +442,54 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
         holdoutSnap = stH
           ? { n: stH.n, mean: stH.mean, bcaLo: stH.bcaLo, bcaHi: stH.bcaHi, signFlipP: stH.signFlipP, signFlipHarmP: stH.signFlipHarmP, mde: mdeH, underpowered: under }
           : { n: rgH.n, mean: rgH.meanDelta, bcaLo: NaN, bcaHi: NaN, signFlipP: NaN, signFlipHarmP: NaN, mde: mdeH, underpowered: under };
-        if (stH && stH.degenerate) { warn = true; reasons.push("holdout degenerate (sd=0) — no-contradiction check unavailable; GREEN requires a live holdout (ADR-0038 D2)"); }
+        if (stH && stH.degenerate) { warn = true; reasons.push("holdout degenerate (sd=0) — no-contradiction check unavailable; GREEN requires a live holdout "); }
         if (stH && !stH.degenerate && (stH.bcaHi < 0 || stH.signFlipHarmP < alphaK)) {
           harm = true;
-          reasons.push("holdout: mean=" + stH.mean.toFixed(4) + " BCa=[" + stH.bcaLo.toFixed(4) + ", " + stH.bcaHi.toFixed(4) + "] harmP=" + stH.signFlipHarmP.toFixed(5) + " — PROVEN-NEGATIVE on the frozen holdout (ADR-0038 D2 red)");
+          reasons.push("holdout: mean=" + stH.mean.toFixed(4) + " BCa=[" + stH.bcaLo.toFixed(4) + ", " + stH.bcaHi.toFixed(4) + "] harmP=" + stH.signFlipHarmP.toFixed(5) + " — PROVEN-NEGATIVE on the frozen holdout ( red)");
         }
-        if (under) { warn = true; reasons.push("holdout underpowered: MDE_paired=" + mdeH.toFixed(3) + " > minGain=" + b.minGain + " (n=" + rgH.n + ", sigmaDU=" + b.sigmaDU + ") — WARN per ADR-0038 D2"); }
-        if (stH && !stH.degenerate && fullPass && stH.mean <= 0) { warn = true; reasons.push("full sample passes but holdout mean <= 0 — gain may contain overfit (ADR-0038 D2 WARN)"); }
+        if (under) { warn = true; reasons.push("holdout underpowered: MDE_paired=" + mdeH.toFixed(3) + " > minGain=" + b.minGain + " (n=" + rgH.n + ", sigmaDU=" + b.sigmaDU + ") — WARN per "); }
+        if (stH && !stH.degenerate && fullPass && stH.mean <= 0) { warn = true; reasons.push("full sample passes but holdout mean <= 0 — gain may contain overfit ( WARN)"); }
         if (stH && !stH.degenerate && !harm && !under && !(fullPass && stH.mean <= 0)) reasons.push("holdout: mean=" + stH.mean.toFixed(4) + " n=" + rgH.n + " MDE=" + mdeH.toFixed(3) + " — no contradiction (holdout significance not required)");
       }
     }
     if (look > kMax) {
       warn = true;
-      reasons.push("k_max convergence clause: look " + look + " > " + kMax + " — promote to constant SPC monitoring or demote the arm; no further significance retesting (ADR-0038 D4)");
+      reasons.push("k_max convergence clause: look " + look + " > " + kMax + " — promote to constant SPC monitoring or demote the arm; no further significance retesting ");
     }
     const tier: GainConclusion["tier"] = harm ? "red" : (warn || !fullPass) ? "warn" : "green";
     gainConclusion = { tier, look, kMax, alphaThreshold: alphaK, spentAlpha, full: fullSnap, holdout: holdoutSnap, reasons };
     for (const r of reasons) warnings.push("relation-gain[" + tier + "] " + r);
-    // ADR-0036 D5 sanity channel (observational, still independent of the tier).
+    // sanity channel (observational, still independent of the tier).
     const rel = m.relation;
     if (rel && rel.hopChecks > 0) {
-      if (rel.hopHitRate >= 0.5 && Math.abs(rg.meanDelta) < 1 / 60) warnings.push("relation-gain sanity: high 1-hop hit-rate but ~zero RoR delta (hits but useless) — human review (ADR-0036 D5)");
-      else if (rel.hopHitRate === 0 && Math.abs(rg.meanDelta) >= 1 / 60) warnings.push("relation-gain sanity: 0 hop hit-rate but RoR delta shifted ranking (arm idle but ranking moved) — human review (ADR-0036 D5)");
+      if (rel.hopHitRate >= 0.5 && Math.abs(rg.meanDelta) < 1 / 60) warnings.push("relation-gain sanity: high 1-hop hit-rate but ~zero RoR delta (hits but useless) — human review ");
+      else if (rel.hopHitRate === 0 && Math.abs(rg.meanDelta) >= 1 / 60) warnings.push("relation-gain sanity: 0 hop hit-rate but RoR delta shifted ranking (arm idle but ranking moved) — human review ");
     }
   }
 
-  // ADR-0046 D4/D6: reverse weakest-link gate. Arm deltas are secondary
+  // reverse weakest-link gate. Arm deltas are secondary
   // evidence; only a confirmed critical-harm verdict is a ship-blocking red.
   const weakestLink = evaluateWeakestLink(m.observational?.armDeltas, baseline, alphaK);
   if (weakestLink) {
     for (const arm of weakestLink.arms) {
       if (arm.confirmedHarm && arm.role === "critical") {
-        failures.push(`weakest-link RED ${arm.label}: ${arm.reason} — critical arm must demote and block ship (ADR-0046 D6)`);
+        failures.push(`weakest-link RED ${arm.label}: ${arm.reason} — critical arm must demote and block ship `);
       } else if (arm.confirmedHarm && arm.role === "observational") {
-        warnings.push(`weakest-link observational RED ${arm.label}: ${arm.reason} — WARN only, no gate (ADR-0046 D6)`);
+        warnings.push(`weakest-link observational RED ${arm.label}: ${arm.reason} — WARN only, no gate `);
       } else {
         warnings.push(`weakest-link ${arm.label}: ${arm.reason}${arm.underpowered ? "; beta-corrected underpowered" : ""}`);
       }
     }
   }
 
-  // ADR-0037 D6 Phase-2: semantic arm live (weight 0.5, conditional activation) —
+  // Phase-2: semantic arm live (weight 0.5, conditional activation) —
   // regression gate fail-closed on per-case RoR counterfactual; gain is observation-zone only
-  // (promotion threshold preregistered in ADR-0036 formula, promoted after one window).
+  // (promotion threshold preregistered in formula, promoted after one window).
   if (m.semantic) {
     if (m.semantic.regressions > 0)
-      failures.push(`semantic-arm: ${m.semantic.regressions} case(s) where the semantic arm worsened the fused rank of the expected memory vs the five-arm baseline — serve is forbidden from regressing (ADR-0037 D6 Phase-2)`);
+      failures.push(`semantic-arm: ${m.semantic.regressions} case(s) where the semantic arm worsened the fused rank of the expected memory vs the five-arm baseline — serve is forbidden from regressing ( Phase-2)`);
     if (m.semantic.gain)
-      warnings.push(`semantic-gain: n=${m.semantic.gain.n} meanDelta=${m.semantic.gain.meanDelta.toFixed(4)} — observational (Phase-2 cite; promotion after one window, ADR-0037 D6)`);
+      warnings.push(`semantic-gain: n=${m.semantic.gain.n} meanDelta=${m.semantic.gain.meanDelta.toFixed(4)} — observational (Phase-2 cite; promotion after one window)`);
   }
   if (m.forget && m.forget.archiveChecks > 0) {
     if (m.forget.dryRunExact < m.forget.archiveChecks) failures.push(`forget: ${m.forget.dryRunExact}/${m.forget.archiveChecks} archive ops had exact dry-run===apply (D7-6 violated)`);

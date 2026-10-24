@@ -1,6 +1,6 @@
-// ADR-0027 D3/D5: golden dataset — deterministic lifecycle cases (was 20 in 6 groups).
-// ADR-0028 D2/D3/D4: rank-of-relevant assertions, seed-op secret negative slices, difficulty tiers.
-// Cases are typed TS data (compiler-forced sync with store API); JSON fixtures rejected (ADR-0027 D11).
+// golden dataset — deterministic lifecycle cases (was 20 in 6 groups).
+// rank-of-relevant assertions, seed-op secret negative slices, difficulty tiers.
+// Cases are typed TS data (compiler-forced sync with store API); JSON fixtures rejected.
 // Runner materializes each case on a fresh temp SQLite DB: adjudicate stubs -> store -> retrieve.
 import type { AdjudicationAction, KeyMemoryInput } from "../session-store";
 import { injectFingerprint, type InjectFamily } from "./inject";
@@ -24,7 +24,7 @@ export type EvalGroup =
   | "inject"
   | "abstain";
 
-// ADR-0046 D1: three-tier paraphrase slice. The bound stays unset until the
+// three-tier paraphrase slice. The bound stays unset until the
 // first 50-run calibration after this round; keeping it in the case shape now
 // makes a future calibration flip the dataset fingerprint deliberately.
 export const PARAPHRASE_MAX_LEXICAL_OVERLAP: number | null = null;
@@ -33,46 +33,46 @@ export type EvalStage = "extract" | "adjudicate" | "store" | "retrieve";
 
 export type CaseOp =
   | { op: "adjudicate"; stage: "adjudicate"; items: KeyMemoryInput[
-]; expect: AdjudicationAction[]; newSession?: boolean /* ADR-0031 step1: cross-session entity aggregation */ }
-  | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number; expectRankOf?: { title: string; maxRank: number }; expectEmpty?: true; expectAllWeak?: true /* ADR-0033 D8: unanswerable slice asserts weak-only evidence, not zero retrieval */; expectHopTitle?: string; relevanceGrades?: Record<string, 0 | 1 | 2 | 3> /* ADR-0038 D7: graded labels drive report-only nDCG@5/10/20; sem cases double as judge-calibration label rows */ }
-  | { op: "seed"; stage: "store"; items: KeyMemoryInput[]; agedDays?: number } /* ADR-0028 D3: direct DB insert, bypasses the write guard on purpose; ADR-0037 D5: agedDays backdates created_at/last_accessed for archive-candidate cases */
+]; expect: AdjudicationAction[]; newSession?: boolean /* step1: cross-session entity aggregation */ }
+  | { op: "search"; stage: "retrieve"; query: string; limit?: number; expectIncludesTitle?: string; expectExcludesTitle?: string; expectMaxCount?: number; expectRankOf?: { title: string; maxRank: number }; expectEmpty?: true; expectAllWeak?: true /*: unanswerable slice asserts weak-only evidence, not zero retrieval */; expectHopTitle?: string; relevanceGrades?: Record<string, 0 | 1 | 2 | 3> /* : graded labels drive report-only nDCG@5/10/20; sem cases double as judge-calibration label rows */ }
+  | { op: "seed"; stage: "store"; items: KeyMemoryInput[]; agedDays?: number } /*: direct DB insert, bypasses the write guard on purpose; : agedDays backdates created_at/last_accessed for archive-candidate cases */
   | { op: "rawValidUntil"; stage: "store"; fromOp: number; expectSet: boolean }
   | { op: "promote"; stage: "store"; key: string; value: string; scope?: string; source: "explicit" | "correction"; expectAction: "promoted" | "rejected" }
   | { op: "correct"; stage: "adjudicate"; key: string; scope: string; times: number; expectCount: number }
   | { op: "listPrefs"; stage: "retrieve"; scope?: string; expectKeyValue?: { key: string; value: string }; expectKeyAbsent?: string }
   | { op: "listQuarantined"; stage: "retrieve"; expectCount: number }
-  | { op: "entities"; stage: "store"; expectNames?: string[]; expectCount?: number } /* ADR-0031 step1 */
+  | { op: "entities"; stage: "store"; expectNames?: string[]; expectCount?: number } /* step1 */
   | { op: "resolveQuarantined"; stage: "adjudicate"; fromOp: number; item: number; action: "keep" | "drop"; expectOk: boolean }
-  // ADR-0035 D5: edge assertions — edge/supersede fail-closed, no_edge observational (paired strong negative).
+  // edge assertions — edge/supersede fail-closed, no_edge observational (paired strong negative).
   | { op: "edge"; stage: "store"; subject: string; relation: string; object: string; assert: "edge" | "no_edge" | "supersede"; fromOp?: number }
-  // ADR-0037 D4/D6: consolidation run against golden stubs (D7-2: ops decisions never touch a live LLM).
+  // consolidation run against golden stubs (D7-2: ops decisions never touch a live LLM).
   | { op: "consolidate"; stage: "store"; expectAdd?: number; expectNoop?: number; expectRejected?: number; expectLlmUnavailable?: number }
-  // ADR-0037 D5/D6: archive apply + exact dry-run prediction (D7-6) + reversible undo (D7-4) go golden.
+  // archive apply + exact dry-run prediction (D7-6) + reversible undo (D7-4) go golden.
   | { op: "archive"; stage: "store"; expectArchived: number }
   | { op: "undoArchive"; stage: "store"; fromOp: number; expectOk: boolean }
-  // ADR-0053 D5: deterministic anti-bypass probes. canonicalPayload is frozen and fingerprinted.
+  // deterministic anti-bypass probes. canonicalPayload is frozen and fingerprinted.
   | { op: "inject"; stage: "retrieve"; family: InjectFamily; canonicalPayload: string; expectFingerprint: string }
-  // ADR-0054 D2/D3: behavioral abstain smoke. Observational only — the runner records the
+  // behavioral abstain smoke. Observational only — the runner records the
   // verdict into ObservationalZone.abstain and never lets it flip case pass/fail.
   | { op: "abstain"; stage: "retrieve"; family: AbstainFamily; prompt: string; expectAbstain: boolean; expectFingerprint?: string };
 
 export interface CaseSpec {
   id: string;
   group: EvalGroup;
-  // ADR-0028 D4: report-only tier; omitted defaults to "core" in the runner report.
+  // report-only tier; omitted defaults to "core" in the runner report.
   difficulty?: "core" | "hard" | "adversarial";
   description: string;
   ops: CaseOp[];
-  // ADR-0037 D4: inject the bounded summarize + fidelity-gate stubs for consolidate cases
+  // inject the bounded summarize + fidelity-gate stubs for consolidate cases
   // (ops decisions stay deterministic / LLM-free; D7-1 negative via classify "unsupported").
   consolidateStub?: { summary: string; classify: "supported" | "uncertain" | "unsupported" };
-  // ADR-0046 D1: paraphrase variant metadata; labels are human-written and dual-reviewed.
+  // paraphrase variant metadata; labels are human-written and dual-reviewed.
   paraphraseTier?: "light" | "medium" | "heavy";
   maxLexicalOverlap?: number | null;
   paraphraseReview?: "dual-reviewed";
 }
 
-// ADR-0046 D1: lexical-overlap measure for the paraphrase fixture. This is a
+// lexical-overlap measure for the paraphrase fixture. This is a
 // token-Jaccard score over lowercased alphanumeric runs; it is intentionally
 // simple because it is a guardrail upper bound, not a semantic similarity score.
 export function lexicalOverlap(a: string, b: string): number {
@@ -326,7 +326,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rc2", "relcycle version two", "relcycle is version two", 0.9, "relcycle")], expect: ["supersede"] },
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rc3", "relcycle version three", "relcycle is version three", 0.9, "relcycle")], expect: ["supersede"] },
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rc4", "relcycle version four", "relcycle is version four", 0.9, "relcycle")], expect: ["supersede"] },
-      { op: "search", stage: "retrieve", query: "relcycle", limit: 5, expectMaxCount: 1, expectRankOf: { title: "relcycle version four", maxRank: 1 } }, /* ADR-0028 D2 */
+      { op: "search", stage: "retrieve", query: "relcycle", limit: 5, expectMaxCount: 1, expectRankOf: { title: "relcycle version four", maxRank: 1 } }, /* */
     ],
   },
   {
@@ -338,11 +338,11 @@ export const GOLDEN_CASES: CaseSpec[] = [
         km("https://ex.com/tw2", "timewindow two uncertain", "timewindow two uncertain wording", 0.4, "timewindow-2"),
         km("https://ex.com/tw3", "timewindow three live", "timewindow three live wording", 0.9, "timewindow-3"),
       ], expect: ["accept", "quarantine", "accept"] },
-      { op: "search", stage: "retrieve", query: "timewindow", limit: 5, expectMaxCount: 2, expectExcludesTitle: "timewindow two uncertain", expectRankOf: { title: "timewindow one live", maxRank: 2 } }, /* ADR-0028 D2 */
+      { op: "search", stage: "retrieve", query: "timewindow", limit: 5, expectMaxCount: 2, expectExcludesTitle: "timewindow two uncertain", expectRankOf: { title: "timewindow one live", maxRank: 2 } }, /* */
     ],
   },
 
-  // --- ADR-0028 D3: seed-bypassed secret slices (8, adversarial) ---
+  // --- seed-bypassed secret slices (8, adversarial) ---
   // seed op writes straight into retrieval_results, bypassing the write guard; the
   // read-side exit filter (containsSecret on searchMemory) must hide every variant.
   {
@@ -409,7 +409,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "search", stage: "retrieve", query: "stealthxh", expectEmpty: true },
     ],
   },
-  // --- ADR-0028 D4 / ADR-0033 D8: unanswerable slice (4, adversarial) — near-answer distractor stored;
+  // --- /: unanswerable slice (4, adversarial) — near-answer distractor stored;
   // retrieval-layer zero-hit assertion migrated to evidence semantics: expectAllWeak asserts the
   // vector arm may recall near-answer distractors ONLY as weak (non-FTS-armed) evidence.
   {
@@ -444,7 +444,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "search", stage: "retrieve", query: "metricspipe dashboard credentials", expectAllWeak: true },
     ],
   },
-  // --- ADR-0028 D4: paraphrase positive variants (3, hard) — answerable queries must still hit.
+  // --- paraphrase positive variants (3, hard) — answerable queries must still hit.
   {
     id: "pv_pref_change", group: "paraphrase", difficulty: "hard",
     paraphraseTier: "light", maxLexicalOverlap: PARAPHRASE_MAX_LEXICAL_OVERLAP, paraphraseReview: "dual-reviewed",
@@ -475,7 +475,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "search", stage: "retrieve", query: "packzone pipeline", expectIncludesTitle: "packzone pipeline built" },
     ],
   },
-  // --- ADR-0031 step1: entity group (4) — entity link layer assertions (red until steps 2-6 land) ---
+  // --- step1: entity group (4) — entity link layer assertions (red until steps 2-6 land) ---
   {
     id: "ent_centric", group: "entity",
     description: "one entity key groups both rows; superseded row invisible",
@@ -516,7 +516,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "search", stage: "retrieve", query: "BuildKit", expectIncludesTitle: "registry prune shipped" },
     ],
   },
-  // --- Group: semantic (ADR-0033 vector arm) ---
+  // --- Group: semantic ( vector arm) ---
   {
     id: "sem_cross_lingual", group: "semantic", difficulty: "hard",
     description: "Chinese paraphrase query recalls an English-only memory via the vector arm (FTS matches nothing)",
@@ -534,12 +534,12 @@ export const GOLDEN_CASES: CaseSpec[] = [
       {
         op: "search", stage: "retrieve", query: "why did the release stop serving traffic",
         expectRankOf: { title: "deployment omega outage cause", maxRank: 2 },
-        // ADR-0038 D7: two-label graded row — paraphrase target grade 3, unrelated runbook grade 1.
+        // two-label graded row — paraphrase target grade 3, unrelated runbook grade 1.
         relevanceGrades: { "deployment omega outage cause": 3, "marketing cache warmup runbook": 1 },
       },
     ],
   },
-  // --- Group: relations (ADR-0035 D5, kg-lite arm; 12 cases: 8 predicate positives + CN,
+  // --- Group: relations (kg-lite arm; 12 cases: 8 predicate positives + CN,
   //   supersede fail-closed, paired strong negatives observational, 1-hop observational) ---
   {
     id: "rel_works_on_en", group: "relations",
@@ -551,7 +551,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
   },
   {
     id: "rel_works_on_cn", group: "relations", difficulty: "hard",
-    description: "CN quoted-phrase works_on edge (CJK rule + alias channel, ADR-0035 D7)",
+    description: "CN quoted-phrase works_on edge (CJK rule + alias channel)",
     ops: [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/rel02", "\"\u738B\u6587\u535A\" \u8D1F\u8D23 \"\u7075\u96C0\u7F51\u5173\"", "\"\u738B\u6587\u535A\" \u8D1F\u8D23 \"\u7075\u96C0\u7F51\u5173\" \u7684\u5F00\u53D1\u6392\u671F", 0.9, "cn-lingque")], expect: ["accept"] },
       { op: "edge", stage: "store", subject: "\u738B\u6587\u535A", relation: "works_on", object: "\u7075\u96C0\u7F51\u5173", assert: "edge", fromOp: 0 },
@@ -642,7 +642,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
     ],
   },
   ...buildRelationExpansionR33(),
-  // --- Group: consolidate (ADR-0037 D4/D6, Phase-1 golden; ops decisions stay LLM-free stubs) ---
+  // --- Group: consolidate (Phase-1 golden; ops decisions stay LLM-free stubs) ---
   {
     id: "con_add_then_noop", group: "consolidate",
     consolidateStub: { summary: "pnpm pins prevent lockfile drift; corepack enforces packageManager", classify: "supported" },
@@ -676,7 +676,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "consolidate", stage: "store", expectLlmUnavailable: 1, expectAdd: 0 },
     ],
   },
-  // --- Group: inject (ADR-0053 D5, five frozen families) ---
+  // --- Group: inject (five frozen families) ---
   {
     id: "inject_invisible_chars", group: "inject", difficulty: "adversarial",
     description: "zero-width family and bidi controls are stripped to a fixed point",
@@ -702,7 +702,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
     description: "strictest merge keeps retrieved distrust after combining with user, sanitization, and egress",
     ops: [{ op: "inject", stage: "retrieve", family: "adaptive", canonicalPayload: "adapt\u200Bive\u202Epayload", expectFingerprint: "a1aaa705ec09124e6683939eeef803a102d0d8b151ae788ce33853f262e13057" }],
   },
-  // --- Group: forget (ADR-0037 D5/D6, Phase-1 golden) ---
+  // --- Group: forget (Phase-1 golden) ---
   {
     id: "for_archive_undo", group: "forget", difficulty: "adversarial",
     description: "aged + never-accessed row archives (dry-run predicts apply exactly, D7-6), undo restores bit-exact (D7-4)",
@@ -717,7 +717,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
 
 ];
 
-// --- Group: relations (ADR-0036 Phase-1 expansion, r33) — Sakai-locked n = 80 for the group;
+// --- Group: relations ( Phase-1 expansion, r33) — Sakai-locked n = 80 for the group;
 // the pilot (12-case group) was degenerate (all-zero RoR deltas), so n locks at the cap per D2
 // (no mid-course top-ups). RoR cases carry expectRankOf on the neighbor memory so the single-run
 // counterfactual ablation (runner drop-relation recompute) has a nonzero paired sample.
@@ -735,7 +735,7 @@ function buildRelationExpansionR33(): CaseSpec[] {
   // subject/object pools stay disjoint so the FTS lane can never hit the RoR target directly.
   const subOf = (i: number) => nm(i) + "Subj";
   const objOf = (i: number) => nm(i + 47) + "Desk";
-  // 14 distractor memories per RoR case (ADR-0036 D5): with a 2-memory corpus the vector arm alone
+  // 14 distractor memories per RoR case: with a 2-memory corpus the vector arm alone
   // lands the neighbor at fused rank 2 by tie, making the paired delta degenerate. Distractors push
   // the vector-only rank mid-corpus so the relation arm's causal lift registers as a positive delta.
   const r33distractors = (i: number, cn: boolean): KeyMemoryInput[] =>
@@ -764,7 +764,7 @@ function buildRelationExpansionR33(): CaseSpec[] {
         {
           op: "search", stage: "retrieve", query: sub,
           expectRankOf: { title: `${obj} runbook`, maxRank: 20 }, expectHopTitle: `${obj} runbook`,
-          // ADR-0038 D7: hop target grade 3; own-subject relation sentence grade 2; distractors grade 1.
+          // hop target grade 3; own-subject relation sentence grade 2; distractors grade 1.
           relevanceGrades: {
             [`${obj} runbook`]: 3,
             [`${sub} ${surface} ${obj} plan`]: 2,
@@ -795,7 +795,7 @@ function buildRelationExpansionR33(): CaseSpec[] {
         {
           op: "search", stage: "retrieve", query: `"${sub}"`,
           expectRankOf: { title: `"${obj}" 运维`, maxRank: 20 }, expectHopTitle: `"${obj}" 运维`,
-          // ADR-0038 D7: quoted hop target grade 3; quoted relation sentence grade 2; CN distractors grade 1.
+          // quoted hop target grade 3; quoted relation sentence grade 2; CN distractors grade 1.
           relevanceGrades: {
             [`"${obj}" 运维`]: 3,
             [`"${sub}" ${verb} "${obj}"`]: 2,
@@ -867,7 +867,7 @@ function buildRelationExpansionR33(): CaseSpec[] {
   return out;
 }
 
-// ADR-0054 D2/D3: abstain smoke cases live OUTSIDE GOLDEN_CASES so the pre-registered
+// abstain smoke cases live OUTSIDE GOLDEN_CASES so the pre-registered
 // dataset fingerprint (and the inject_* piggyback cases) do not move. The runner executes
 // them through the same runCase switch and reports verdicts only in ObservationalZone.abstain.
 export const ABSTAIN_CASES: CaseSpec[] = [
@@ -912,9 +912,9 @@ export const ABSTAIN_CASES: CaseSpec[] = [
   },
 ];
 
-// ADR-0060 D7 / ADR-0057 r59 errata: the vector arm (group "semantic") needs the real embedding
+// / r59 errata: the vector arm (group "semantic") needs the real embedding
 // model, so its golden cases are NOT part of the offline default suite - they live behind
-// `test:online` (hermetic-by-default, ADR-0057 D4/D5). The DATASET is unchanged (the committed
+// `test:online` (hermetic-by-default). The DATASET is unchanged (the committed
 // baseline fingerprint stays valid); only the offline RUN excludes the group, and the exclusion
 // is recorded in the report's observational zone (never silent).
 export const VECTOR_ARM_GROUP: EvalGroup = "semantic";

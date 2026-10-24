@@ -7,13 +7,13 @@
 // the --envelope flag (generated codex config passes it).
 
 import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// ADR-0059 D7 (T-6.3): resolve the shared server token (env or the 0600 token file).
+// (T-6.3): resolve the shared server token (env or the 0600 token file).
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 
 interface CodexHookStdin {
-  // ADR-0066: prefer the real host field hook_event_name; event kept as fallback.
+  // prefer the real host field hook_event_name; event kept as fallback.
   hook_event_name?: string;
   event?: string;
   tool_name?: string;

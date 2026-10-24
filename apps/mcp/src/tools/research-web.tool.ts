@@ -1,8 +1,8 @@
 // research_web tool: deep multi-round search via engine.retriever.
-// ADR-0008 D2: thin wrapper, engine result directly to MCP JSON.
-// ADR-0020 D1.1: no console.* in MCP source — write to stderr explicitly.
-// ADR-0022 D1: provider answers marked as provider-generated (verified:false at contract).
-// ADR-0034 D4: attribution included in both content JSON and structuredContent (SEP-1624).
+// thin wrapper, engine result directly to MCP JSON.
+// no console.* in MCP source — write to stderr explicitly.
+// provider answers marked as provider-generated (verified:false at contract).
+// attribution included in both content JSON and structuredContent (SEP-1624).
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
@@ -20,7 +20,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
     async (args: unknown) => {
       return observeTool(eng, "research_web", async (span) => {
         const { question, depth, verticalDomain, verticalSubDomain, verticalParams } = args as { question: string; depth?: string; verticalDomain?: string; verticalSubDomain?: string; verticalParams?: Record<string, unknown> };
-        // R83 T1 / ADR-0084 D-003/D-006 + R88 T3 / ADR-0089 (a06): shared
+        // R83 T1 / D-003/D-006 + R88 T3 / (a06): shared
         // guard + assembly; error copy is this surface's rendering of the
         // legislated missing-domain reason (byte-frozen).
         const built = buildVerticalSpec({ domain: verticalDomain, subDomain: verticalSubDomain, params: verticalParams });
@@ -46,7 +46,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               span,
             });
             rounds++;
-            // ADR-0023 D1: sufficiency gate — this is the LAST round's sufficiency; earlier rounds tracks but the gate cares about the final state.
+            // sufficiency gate — this is the LAST round's sufficiency; earlier rounds tracks but the gate cares about the final state.
             lastRoundSufficiency = envelope.metadata?.sufficiency as unknown as Record<string, unknown> | undefined;
             lastEnvelope = envelope;
 
@@ -78,12 +78,12 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               totalResults: allResults.length,
               results: lastRound.slice(0, 10),
               citations: allResults.slice(0, 5).map((r: any) => ({ title: r.title, url: r.url, source: r.source })),
-              // ADR-0022 D1/D2/D3: provider answers pass through unmodified.
+              // provider answers pass through unmodified.
               // Round-47 fix: stable output shape.
               ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
-              // ADR-0034 D4: attribution from last round (claim-level evidence linkage).
+              // attribution from last round (claim-level evidence linkage).
               ...(mergedAttribution ? { attribution: mergedAttribution } : { attribution: null }),
-              // ADR-0062 D3: abstain marker when the domain gate emptied the pool.
+              // abstain marker when the domain gate emptied the pool.
               abstain: lastEnvelope?.metadata?.abstain ?? null,
               // R83 T1: resolved vertical routing (query-level spec, applied to every round).
               vertical: vertical ?? null,
@@ -92,7 +92,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             2,
           );
 
-          // ADR-0062 D3 (T3): structuredContent.abstain, isError absent (false).
+          // (T3): structuredContent.abstain, isError absent (false).
           const lastAbstain = lastEnvelope?.metadata?.abstain;
           const structuredContent = {
             ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),

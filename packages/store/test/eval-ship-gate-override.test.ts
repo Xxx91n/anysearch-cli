@@ -1,4 +1,4 @@
-// ADR-0047 D6: ship-gate verifier wiring and independent command integration.
+// ship-gate verifier wiring and independent command integration.
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -48,7 +48,7 @@ try {
     gate: {
       verdict: "fail",
       exitCode: 1,
-      failures: ["weakest-link RED relation: critical arm must demote and block ship (ADR-0046 D6)"],
+      failures: ["weakest-link RED relation: critical arm must demote and block ship "],
     },
   }), "utf8");
   const record = verifierRun([

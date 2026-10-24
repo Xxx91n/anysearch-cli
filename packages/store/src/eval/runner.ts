@@ -1,4 +1,4 @@
-// ADR-0027 D1/D2: deterministic lifecycle runner — extract stub (fixed inputs) ->
+// deterministic lifecycle runner — extract stub (fixed inputs) ->
 // adjudicate -> store -> retrieve, per-case isolated temp SQLite DB.
 // Pure/deterministic only; LLM judge lives in scripts/eval-judge.mjs and never gates (D2).
 import { createHash } from "node:crypto";
@@ -27,27 +27,27 @@ export interface OpRecord {
   ok: boolean;
   detail: string;
   samples?: Array<{ title: string | null; snippet: string | null }>;
-  // ADR-0028 D2/D4: rank-of-relevant + hit count feed MRR and the answerable false-refusal rate.
-  // ADR-0038 D7: per-K nDCG over graded relevance labels (report-only, never gated).
+  // rank-of-relevant + hit count feed MRR and the answerable false-refusal rate.
+  // per-K nDCG over graded relevance labels (report-only, never gated).
   ndcg?: Record<string, number>;
   rank?: number;
   hitCount?: number;
-  // ADR-0033 D8: count of non-weak (FTS-armed) hits, for weak-evidence semantics.
+  // count of non-weak (FTS-armed) hits, for weak-evidence semantics.
   strongCount?: number;
-  // ADR-0035 D5: relation observational flags (never flip case pass/fail).
+  // relation observational flags (never flip case pass/fail).
   hopHit?: boolean;
   noEdgeViolation?: boolean;
-  dryRunExact?: boolean; // ADR-0037 D6: archive dry-run == apply (forget zone, report-only)
-  undoOk?: boolean;      // ADR-0037 D5: undo succeeded (forget zone, report-only)
-  // ADR-0036 D5: single-run counterfactual RoR ablation (capture only when expectRankOf set).
+  dryRunExact?: boolean; // archive dry-run == apply (forget zone, report-only)
+  undoOk?: boolean; // undo succeeded (forget zone, report-only)
+  // single-run counterfactual RoR ablation (capture only when expectRankOf set).
   // rank of the expected memory in the fused list with / without the relation arm; k+1 = clipped.
   rorRankOn?: number;
   rorRankOff?: number;
   rorExcluded?: boolean; // expected memory never identified in any arm list
-  // ADR-0037 D6 Phase-2: semantic-arm counterfactual (six-arm list vs five-arm baseline).
+  // Phase-2: semantic-arm counterfactual (six-arm list vs five-arm baseline).
   semRankOn?: number;
   semRankOff?: number;
-  // ADR-0046 D2: uniform drop-arm counterfactual for every non-anchor memory arm.
+  // uniform drop-arm counterfactual for every non-anchor memory arm.
   armDeltas?: Record<string, ArmDeltaRecord>;
 }
 
@@ -89,21 +89,21 @@ export interface CaseResult {
   passed: boolean;
   failedStage: EvalStage | null;
   ops: OpRecord[];
-  // ADR-0031 step7: per-case entity-arm telemetry snapshot (report-only).
+  // step7: per-case entity-arm telemetry snapshot (report-only).
   entityArm?: { queries: number; candidates: number; activations: number; hits: number };
-  // ADR-0032 D5: per-case merge/review telemetry snapshot (report-only).
+  // per-case merge/review telemetry snapshot (report-only).
   entityMerge?: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number };
-  // ADR-0035 D4: per-case relation extraction telemetry snapshot (report-only).
+  // per-case relation extraction telemetry snapshot (report-only).
   relationTel?: RelTel;
-  // ADR-0037 D6: per-case semantic-arm shadow telemetry (served must stay 0 in Phase-1).
+  // per-case semantic-arm shadow telemetry (served must stay 0 in Phase-1).
   semTel?: { queries: number; hits: number; served: number };
-  // ADR-0039 D1/D5: access-age histogram snapshot from the append-only access_events log.
+  // access-age histogram snapshot from the append-only access_events log.
   // r110 SP-F-01: unit-level stats (fittable units = repeat-access units) + the observed
   // access time span, so the consumed track builds a REAL AND-gate input instead of zeros.
   accessEvents?: { total: number; histogram: Record<string, number>; units: number; fittableUnits: number; firstAt: number | null; lastAt: number | null };
-  // ADR-0040 D2: alert-on-silence — chained event write failures per case (observational, never gated).
+  // alert-on-silence — chained event write failures per case (observational, never gated).
   eventWriteFailures?: number;
-  // ADR-0054 D2/D3: abstain smoke outcome per case (observational only, never gated).
+  // abstain smoke outcome per case (observational only, never gated).
   abstain?: { expectAbstain: boolean; abstain: boolean; tier: string; fingerprintOk: boolean };
 }
 
@@ -122,17 +122,17 @@ export interface EvalMetrics {
   passRate: number;
   supersessionSuccess: number;
   quarantineFalsePositiveRate: number;
-  // ADR-0028 D1: integer counts back the integer-allowance gate.
+  // integer counts back the integer-allowance gate.
   counts: EvalCounts;
-  // ADR-0028 D2: MRR over expectRankOf search ops (report-only).
+  // MRR over expectRankOf search ops (report-only).
   mrr: number;
-  // ADR-0028 D4: answerable-case false-refusal rate (report-only).
+  // answerable-case false-refusal rate (report-only).
   answerableFalseRefusalRate: number;
-  // ADR-0031 step7: entity arm hit-rate telemetry (report-only, never gated).
+  // step7: entity arm hit-rate telemetry (report-only, never gated).
   entityArm?: { queries: number; candidates: number; activations: number; hits: number; hitRate: number; activationRate: number; avgArmHits: number };
-  // ADR-0032 D5: entity merge telemetry (report-only, never gated — Goodhart clause).
+  // entity merge telemetry (report-only, never gated — Goodhart clause).
   entityMerge?: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number };
-  // ADR-0034 D5: attribution zone — report-only, missing zone = fail-closed in gate.
+  // attribution zone — report-only, missing zone = fail-closed in gate.
   attribution?: {
     supported: number;
     uncertain: number;
@@ -144,7 +144,7 @@ export interface EvalMetrics {
     // Confusion matrix over labelled verdicts — zero placeholders during the observation period.
     confusion: { tp: number; fp: number; fn: number; tn: number };
   };
-  // ADR-0035 D5: relation zone — no_edge precision + 1-hop hit rate are OBSERVATIONAL-only
+  // relation zone — no_edge precision + 1-hop hit rate are OBSERVATIONAL-only
   // (budget formulas pre-registered with blank values); assert_edge / edge_supersede are fail-closed
   // and surface through the normal case-pass channel. Zero placeholders during observation period.
   relation?: {
@@ -155,38 +155,38 @@ export interface EvalMetrics {
     hopHitRate: number;
     tel: RelTel;
   };
-  // ADR-0036 D3/D5: paired RoR ablation sample — deltas = (rank_off - rank_on) / ROR_WINDOW,
+  // paired RoR ablation sample — deltas = (rank_off - rank_on) / ROR_WINDOW,
   // positive = the relation arm pulled the expected memory earlier. The gate consumes `deltas`
   // (BCa lower bound + sign-flip + MEI floor); mean alone is report-only evidence.
   relationGain?: { n: number; excluded: number; meanDelta: number; deltas: number[] };
-  // ADR-0038 D3: Track-A paired deltas restricted to the frozen baseline holdout (separate gate sample).
+  // Track-A paired deltas restricted to the frozen baseline holdout (separate gate sample).
   relationGainHoldout?: { n: number; excluded: number; meanDelta: number; deltas: number[] };
-  // ADR-0038 D7: graded-relevance nDCG aggregates (report-only, never gated).
+  // graded-relevance nDCG aggregates (report-only, never gated).
   ndcg?: { n: number; at5: number; at10: number; at20: number };
-  // ADR-0039 step 7: Observational zone — pre-registered, report-only, never read by the
+  // step 7: Observational zone — pre-registered, report-only, never read by the
   // gate (N1); ship-gate fails if the zone is missing entirely (E3, report-as-contract).
   observational?: ObservationalZone;
-  // ADR-0037 D6: semantic-arm zone (Phase-2 serve; served counts live hits. The Phase-1
+  // semantic-arm zone (Phase-2 serve; served counts live hits. The Phase-1
   // served-must-be-0 contract was retired when serve shipped — regression gate is fail-closed).
   // Forget lifecycle counters.
-  // ADR-0037 D6 Phase-2: serve telemetry + fail-closed regression count + RoR gain (observation zone).
+  // Phase-2: serve telemetry + fail-closed regression count + RoR gain (observation zone).
   semantic: { queries: number; hits: number; served: number; regressions: number; gain?: { n: number; meanDelta: number } };
   forget: { archiveChecks: number; archives: number; undoRestores: number; dryRunExact: number };
 }
 
-// ADR-0039 step 7 + ADR-0040 D2: Observational zone — fixed 7-key shape; any metric value may be a SkipMarker.
+// step 7 +: Observational zone — fixed 7-key shape; any metric value may be a SkipMarker.
 export interface ObservationalZone {
   schema: "anysearch/observational@1";
-  // ADR-0060 D7: offline runs that exclude a group (vector arm) record it here - never silent.
+  // offline runs that exclude a group (vector arm) record it here - never silent.
   offlineExcludedGroups?: string[];
   dayBucketDefinition: string; // D4 fingerprint linkage
-  // ADR-0042 D1/D5: dual-track marker — "synthetic" means the feed came from the pinned
+  // dual-track marker — "synthetic" means the feed came from the pinned
   // fixture snapshots; derived values must be labelled simulated-observation-window.
   track: "consumed" | "synthetic";
   simulatedObservationWindow?: boolean;
   // r110 SP-F-01/SA-F-05: structural data-absence marker on the consumed track — true when
   // there are no access events at all OR events exist but no unit qualifies as fit-eligible
-  // (ADR-0042 D4 widened: "structurally absent" covers the fit-eligible dimension). The eval
+  // ( widened: "structurally absent" covers the fit-eligible dimension). The eval
   // CLI records reasonCode=data-absent for such runs; the 3-streak never counts them.
   dataAbsent: boolean;
   // r110 SA-F-06: fixture definition hash pinned in the report so a fingerprint flip is
@@ -197,11 +197,11 @@ export interface ObservationalZone {
   bgnbd: { status: "ok"; params: unknown; validation: unknown } | { status: "ready-to-spawn"; track: "synthetic"; fixture: string; psi: number; label: string } | SkipMarker;
   revival: { status: "ok"; archives: number; undone: number; undoneRate: number } | SkipMarker;
   undoReentryEvents: { status: "ok"; count: number } | SkipMarker;
-  // ADR-0040 D2: alert-on-silence counter, always reported (silence itself is the signal).
+  // alert-on-silence counter, always reported (silence itself is the signal).
   eventWriteFailures: { status: "ok"; count: number };
-  // ADR-0054 D2: abstain smoke metrics, pair-reported (abstainRate + falseAbstainRate).
+  // abstain smoke metrics, pair-reported (abstainRate + falseAbstainRate).
   abstain: { status: "ok"; n: number; abstainRate: number; falseAbstainRate: number } | SkipMarker;
-  // ADR-0046 D7: report-as-contract fields. armDeltas is computed by the memory eval;
+  // report-as-contract fields. armDeltas is computed by the memory eval;
   // webProviderLedger fields are emitted by RetroaererdEngine per web run and remain
   // explicit skips in a memory-only eval.
   armDeltas: Record<string, ArmDeltaSample>;
@@ -219,17 +219,17 @@ export interface EvalReport {
     runPurpose: "observational" | "decision" | "override";
     overrideReasonCode?: ShipOverrideReasonCode;
   };
-  // ADR-0038 D2: frozen-baseline + backflow-slice family fingerprint (gate stores it on the baseline).
+  // frozen-baseline + backflow-slice family fingerprint (gate stores it on the baseline).
   holdoutFingerprint: string;
   totals: { cases: number; passed: number; failed: number };
   stageBreakdown: Record<EvalStage, number>;
-  // ADR-0028 D4: per-difficulty tier pass rates (report-only, never gated).
+  // per-difficulty tier pass rates (report-only, never gated).
   tierBreakdown: Record<string, { cases: number; passed: number; passRate: number }>;
   metrics: EvalMetrics;
   cases: CaseResult[];
 }
 
-// ADR-0038 D7: exponential-gain nDCG@k with log2(rank+1) discount; IDCG truncated to the same k
+// exponential-gain nDCG@k with log2(rank+1) discount; IDCG truncated to the same k
 // (trec eval / scikit semantics). Report-only — feeding the judge-calibration label row.
 export function ndcgAtK(rankedTexts: string[], grades: Record<string, number>, k: number): number {
   const disc = (rank: number): number => Math.log2(rank + 1);
@@ -241,7 +241,7 @@ export function ndcgAtK(rankedTexts: string[], grades: Record<string, number>, k
 }
 
 export function datasetFingerprint(cases: CaseSpec[]): string {
-  // ADR-0039 D4: the pre-registered day-bucket definition joins the fingerprint — changing
+  // the pre-registered day-bucket definition joins the fingerprint — changing
   // bucket boundaries flips the fingerprint and forces recalibration (no silent re-binning).
   return createHash("sha256").update(JSON.stringify(cases) + "|" + dayBucketFingerprint() + "|" + fixtureDefinitionHash()).digest("hex").slice(0, 16);
 }
@@ -249,12 +249,12 @@ export function datasetFingerprint(cases: CaseSpec[]): string {
 const hitText = (h: { role?: unknown; content?: unknown }): string =>
   String(h.role ?? "") + " " + String(h.content ?? "");
 
-// ADR-0036 D5: RRF window for the RoR ablation; target absent from a fused list clips to k+1 (61).
-// ADR-0045 D2: RoR window consumes the registered ror_window (was the third hardcoded 60).
+// RRF window for the RoR ablation; target absent from a fused list clips to k+1 (61).
+// RoR window consumes the registered ror_window (was the third hardcoded 60).
 export const ROR_WINDOW = FUSION_REGISTRY.ror_window;
 export const ROR_CLIP = ROR_WINDOW + 1;
 
-// ADR-0046 D2: uniform drop-arm counterfactual. The FTS anchor is never judged, so this
+// uniform drop-arm counterfactual. The FTS anchor is never judged, so this
 // helper only emits side arms. Dropping an absent arm is recorded as excluded rather than
 // a fabricated zero delta.
 export function computeArmDeltas(
@@ -293,7 +293,7 @@ export function computeArmDeltas(
 
 export type StoreFactory = (dbPath: string, spec: CaseSpec) => SqliteSessionStore;
 
-// ADR-0037 D4/D6: golden consolidate stubs — summarize/classify are deterministic
+// golden consolidate stubs — summarize/classify are deterministic
 // (classify stub returns one fixed label for every claim; label confidence mirrors the role).
 const defaultFactory: StoreFactory = (dbPath, spec) => {
   const stub = spec.consolidateStub;
@@ -319,7 +319,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
   let abstainSnap: CaseResult["abstain"];
   let entityMergeSnapshot: { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } | undefined;
   const adjResults: AdjudicationResultItem[][] = []; // stashed per adjudicate opIndex
-  const archiveLogIdsByOp = new Map<number, number[]>(); // ADR-0037 D5: archive op -> archive_log ids for undo
+  const archiveLogIdsByOp = new Map<number, number[]>; // archive op -> archive_log ids for undo
   let failedStage: EvalStage | null = null;
   const mark = (rec: OpRecord) => {
     ops.push(rec);
@@ -332,7 +332,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
       try {
         switch (op.op) {
           case "adjudicate": {
-            const adjudicateSid = op.newSession ? (await store.createSession("eval")).id : session.id; // ADR-0031 step1: cross-session entity aggregation
+            const adjudicateSid = op.newSession ? (await store.createSession("eval")).id: session.id; // step1: cross-session entity aggregation
             const res = await store.adjudicateMemory(adjudicateSid, op.items);
             adjResults[opIndex] = res;
             // ponytail: wall-clock settle sleep, ceiling = flaky on heavily loaded CI hosts; upgrade path = injectable clock into store.
@@ -346,7 +346,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
           case "search": {
             const hits = await store.searchMemory(op.query, op.limit ?? 20);
             const texts = hits.map((h) => hitText(h));
-            // ADR-0033 D8: weak = hit without the FTS arm (vector/entity-only recall). Weak hits are
+            // weak = hit without the FTS arm (vector/entity-only recall). Weak hits are
             // answer-layer abstain evidence: they don't count toward precision budgets.
             const isWeak = (h: unknown): boolean => { const a = (h as { arms?: string[] }).arms; return Array.isArray(a) && a.length > 0 && !a.includes("fts"); };
             const strongHits = hits.filter((h) => !isWeak(h));
@@ -356,14 +356,14 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
             if (op.expectMaxCount !== undefined && strongHits.length > op.expectMaxCount) fails.push(strongHits.length + " strong hit(s) > max " + op.expectMaxCount);
             if (op.expectEmpty === true && hits.length !== 0) fails.push(hits.length + " hit(s) returned, want 0 (expectEmpty)");
             if (op.expectAllWeak === true && strongHits.length !== 0) fails.push(strongHits.length + " strong hit(s) returned, want 0 (expectAllWeak — hits must all be weak-evidence)");
-            // ADR-0028 D2: rank-of-relevant — 1-based position of the first hit containing the title (0 = absent).
+            // rank-of-relevant — 1-based position of the first hit containing the title (0 = absent).
             let rank: number | undefined;
             if (op.expectRankOf) {
               rank = texts.findIndex((t) => t.includes(op.expectRankOf!.title)) + 1;
               if (rank === 0) fails.push(`rank-of-relevant absent: "${op.expectRankOf.title}"`);
               else if (rank > op.expectRankOf.maxRank) fails.push(`rank ${rank} > maxRank ${op.expectRankOf.maxRank} for "${op.expectRankOf.title}"`);
             }
-            // ADR-0036/0037/0046: retain the legacy relation and semantic fields for the
+            // /0037/0046: retain the legacy relation and semantic fields for the
             // existing gate/tests, while deriving them from the same uniform drop-arm helper.
             let rorRankOn: number | undefined;
             let rorRankOff: number | undefined;
@@ -407,14 +407,14 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
             break;
           }
           case "seed": {
-            // ADR-0028 D3: direct side-channel insert — bypasses SqliteSessionStore write guards on
+            // direct side-channel insert — bypasses SqliteSessionStore write guards on
             // purpose so search assertions test the READ-side exit filter ("write got bypassed" premise).
             const writer = new Database(dbPath);
             try {
               const ins = writer.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, rrf_score, entity) VALUES (?, ?, ?, ?, ?, NULL, ?)");
                             for (const it of op.items) ins.run(sessionId, it.url, it.title, it.snippet, it.source, it.entity ?? it.url);
               if (op.agedDays && op.agedDays > 0) {
-                // ADR-0037 D5: backdate created_at so the archive scan sees an aged row (access_count stays 0).
+                // backdate created_at so the archive scan sees an aged row (access_count stays 0).
                 writer.prepare("UPDATE retrieval_results SET created_at = datetime(created_at, ?), last_accessed = NULL WHERE session_id = ?").run("-" + op.agedDays + " days", sessionId);
               }
               mark({ op: opIndex, kind: op.op, stage: op.stage, ok: true, detail: "seeded " + op.items.length + " row(s) (write guard bypassed)" });
@@ -424,7 +424,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
             break;
           }
           case "entities": {
-            // ADR-0031 step1: entity-table assertions (read-side, same raw handle as seed checks).
+            // step1: entity-table assertions (read-side, same raw handle as seed checks).
             const rows = raw.prepare("SELECT name_norm AS name FROM entities WHERE valid_until IS NULL ORDER BY name_norm, entity_type").all() as Array<{ name: string }>;
             const fails: string[] = [];
             if (op.expectNames) {
@@ -474,7 +474,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
             break;
           }
           case "edge": {
-            // ADR-0035 D5: assert_edge / edge_supersede are fail-closed; no_edge is observational.
+            // assert_edge / edge_supersede are fail-closed; no_edge is observational.
             const sn = normalizeEntityName(op.subject);
             const on = normalizeEntityName(op.object);
             const rows = raw.prepare(
@@ -506,7 +506,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
             break;
           }
           case "consolidate": {
-            // ADR-0037 D4/D7-1/2: consolidation against golden stubs; report counters are asserted directly.
+            // -1/2: consolidation against golden stubs; report counters are asserted directly.
             const rep = await store.consolidateMemory();
             const fails: string[] = [];
             if (op.expectAdd !== undefined && rep.add !== op.expectAdd) fails.push("add " + rep.add + " != " + op.expectAdd);
@@ -517,7 +517,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
             break;
           }
           case "archive": {
-            // ADR-0037 D5/D7-6: dry-run (rolled-back transaction) must predict apply exactly;
+            // -6: dry-run (rolled-back transaction) must predict apply exactly;
             // applyArchive's internal dryRun==apply assertion is re-asserted at the golden layer.
             const candidates = store.scanArchive();
             const dry = store.applyArchive(undefined, { dryRun: true });
@@ -530,7 +530,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
             break;
           }
           case "undoArchive": {
-            // ADR-0037 D5/D7-4: undo restores the archived rows from the archive_log snapshot.
+            // -4: undo restores the archived rows from the archive_log snapshot.
             const logs = archiveLogIdsByOp.get(op.fromOp) ?? [];
             const fails: string[] = [];
             let anyOk = false;
@@ -556,7 +556,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
             break;
           }
           case "abstain": {
-            // ADR-0054 D2/D3: observational only — the verdict never flips case pass/fail.
+            // observational only — the verdict never flips case pass/fail.
             const fingerprintOk = !op.expectFingerprint || injectFingerprint(op.prompt) === op.expectFingerprint;
             const v = await runAbstainProbe({ family: op.family, prompt: op.prompt });
             abstainSnap = { expectAbstain: op.expectAbstain, abstain: v.abstain, tier: v.tier, fingerprintOk };
@@ -588,10 +588,10 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
     entityMergeSnapshot = (store as unknown as { entityMergeTelemetry?: () => { auto_merged: number; unmerged: number; review_pending: number; confirmed: number; rejected: number; candidates_truncated: number } }).entityMergeTelemetry?.();
     relationTelSnapshot = (store as unknown as { relationTelemetry?: () => RelTel }).relationTelemetry?.();
     semTelSnapshot = store.semanticTelemetry();
-    // ADR-0040 D2: alert-on-silence counter per case.
+    // alert-on-silence counter per case.
     eventWriteFailures = store.accessEventTelemetry().writeFailures;
-    // ADR-0039 D1: access-age histogram (aggregation happens offline at report time — never
-    // in the read path, ADR-0039 N2). Ages in days; unreadable timestamps clamp via NaN.
+    // access-age histogram (aggregation happens offline at report time — never
+    // in the read path, N2). Ages in days; unreadable timestamps clamp via NaN.
     try {
       const ev = raw.prepare("SELECT ae.memory_id AS mid, ae.accessed_at, rr.created_at FROM access_events ae JOIN retrieval_results rr ON rr.id = ae.memory_id").all() as Array<{ mid: string; accessed_at: string; created_at: string }>;
       const ages: number[] = [];
@@ -619,9 +619,9 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
   return { id: spec.id, group: spec.group, difficulty: spec.difficulty ?? "core", passed: failedStage === null, failedStage, ops, entityArm: entityArmSnapshot, entityMerge: entityMergeSnapshot, relationTel: relationTelSnapshot, semTel: semTelSnapshot, accessEvents: accessEventsSnapshot, eventWriteFailures, abstain: abstainSnap };
 }
 
-// Metrics per ADR-0027 D4: ① case pass rate (gate: 100%), ② supersession success,
+// Metrics per: ① case pass rate (gate: 100%), ② supersession success,
 // ③ quarantine false-positive rate (high-evidence/user write quarantined anyway).
-// ADR-0054 D2: abstain zone value computed by runAll (ABSTAIN_CASES live outside the
+// abstain zone value computed by runAll (ABSTAIN_CASES live outside the
 // fingerprinted corpus) and threaded through; defaults to an explicit skip for direct callers.
 export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstainZone?: ObservationalZone["abstain"]): EvalMetrics {
   const passed = results.filter((r) => r.passed).length;
@@ -646,12 +646,12 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
       }
     }
   }
-  // ADR-0028 D2: MRR over search ops with an expectRankOf assertion (report-only).
+  // MRR over search ops with an expectRankOf assertion (report-only).
   let rrSum = 0;
   let rrN = 0;
-  // ADR-0028 D4: answerable false-refusal rate — answerable case, positively-asserted
+  // answerable false-refusal rate — answerable case, positively-asserted
   // search op returning zero hits counts as a false refusal. Cases containing any
-  // expectEmpty or expectAllWeak op (ADR-0033 D8) are the unanswerable slice and excluded from the denominator.
+  // expectEmpty or expectAllWeak op are the unanswerable slice and excluded from the denominator.
   for (let i = 0; i < cases.length; i++) {
     for (const [opIndex, op] of cases[i]!.ops.entries()) {
       if (op.op !== "search") continue;
@@ -670,12 +670,12 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
       if (rec) { frEligible += 1; if (rec.hitCount === 0) frCount += 1; }
     }
   }
-  // ADR-0036 D5: paired RoR deltas across every expectRankOf op (Track A causal sample).
+  // paired RoR deltas across every expectRankOf op (Track A causal sample).
   const rorDeltas: number[] = [];
   const semDeltas: number[] = [];
   let semRegressions = 0;
   let rorExcludedCount = 0;
-  // ADR-0038 D2/D3: dual-track split — holdout ops come from the frozen baseline slice only and
+  // dual-track split — holdout ops come from the frozen baseline slice only and
   // feed a separate sample (independent grade; the full sample keeps the coarse zone verdict).
   const rorHoldoutDeltas: number[] = [];
   let rorHoldoutExcluded = 0;
@@ -684,7 +684,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
     for (const rec of r.ops) {
       if (rec.rorExcluded) { if (holdout) rorHoldoutExcluded += 1; else rorExcludedCount += 1; continue; }
       if (rec.rorRankOn !== undefined && rec.rorRankOff !== undefined) (holdout ? rorHoldoutDeltas : rorDeltas).push((rec.rorRankOff - rec.rorRankOn) / ROR_WINDOW);
-      // ADR-0037 D6: semantic regression = arm made fused rank strictly worse (negative delta).
+      // semantic regression = arm made fused rank strictly worse (negative delta).
       if (rec.semRankOn !== undefined && rec.semRankOff !== undefined) {
         const d = (rec.semRankOff - rec.semRankOn) / ROR_WINDOW;
         semDeltas.push(d);
@@ -692,7 +692,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
       }
     }
   }
-  // ADR-0046 D2/D3: aggregate the uniform drop-arm counterfactual. Deltas are
+  // aggregate the uniform drop-arm counterfactual. Deltas are
   // report-only secondary evidence; only the fused RoR and reverse weakest-link gate
   // consume them downstream.
   const armAcc: Record<string, { role: "critical" | "observational"; deltas: number[]; excluded: number }> = {};
@@ -724,10 +724,10 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
     entityArm: (() => {
       let q = 0, c = 0, a = 0, h = 0;
       for (const r of results) if (r.entityArm) { q += r.entityArm.queries; c += r.entityArm.candidates; a += r.entityArm.activations; h += r.entityArm.hits; }
-      // r74 audit E1: hitRate is the RULE-LAYER hit rate (candidates/queries) per ADR-0031 D2 (<0.5 -> fastCRW review, report-only).
+      // r74 audit E1: hitRate is the RULE-LAYER hit rate (candidates/queries) per (<0.5 -> fastCRW review, report-only).
       return { queries: q, candidates: c, activations: a, hits: h, hitRate: q ? c / q : 0, activationRate: q ? a / q : 0, avgArmHits: a ? h / a : 0 };
     })(),
-    // ADR-0032 D5: six report-only merge metrics, aggregated over per-case stores (report-only, never gated).
+    // six report-only merge metrics, aggregated over per-case stores (report-only, never gated).
     entityMerge: (() => {
       const acc = { auto_merged: 0, unmerged: 0, review_pending: 0, confirmed: 0, rejected: 0, candidates_truncated: 0 };
       for (const r of results) if (r.entityMerge) {
@@ -739,7 +739,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
     })(),
     mrr: rrN ? rrSum / rrN : 1,
     answerableFalseRefusalRate: frEligible ? frCount / frEligible : 0,
-    // ADR-0034 D5: attribution zone — Zero state (observation period).
+    // attribution zone — Zero state (observation period).
     // quality.threshold values will be filled after the three-gate observation period completes
     // (golden n>=80, kappa CI>=0.6, >=3 ship-gate cycles).
     attribution: {
@@ -752,7 +752,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
       judgeEnhanced: false,
       confusion: { tp: 0, fp: 0, fn: 0, tn: 0 },
     },
-    // ADR-0035 D5: relation zone (observational parts only — fail-closed edge assertions already
+    // relation zone (observational parts only — fail-closed edge assertions already
     // land in passRate via the normal case channel).
     relation: (() => {
       let noEdgeChecks = 0, noEdgeViolations = 0, hopChecks = 0, hopHits = 0;
@@ -795,7 +795,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
       const avg = (a: number[]): number => a.reduce((x, y) => x + y, 0) / a.length;
       return { n, at5: avg(buckets["5"]!), at10: avg(buckets["10"]!), at20: avg(buckets["20"]!) };
     })(),
-    // ADR-0037 D6: Phase-1 shadow telemetry (served must stay 0; fail-closed in the gate) and
+    // Phase-1 shadow telemetry (served must stay 0; fail-closed in the gate) and
     // forget lifecycle counters (exact dry-run predictions, restores).
     semantic: (() => {
       let queries = 0, hits = 0, served = 0;
@@ -818,7 +818,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
       }
       return { archiveChecks, archives, undoRestores, dryRunExact };
     })(),
-    // ADR-0039 D1/D6/D7 + Acceptance E3: Observational zone. Pre-registered fields; skip
+    // + Acceptance E3: Observational zone. Pre-registered fields; skip
     // markers carry verbatim trigger quotes; values NEVER feed the gate (N1).
     observational: (() => {
       let evTotal = 0;
@@ -838,7 +838,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
       }
       // D6 AND-gate evaluated against the eval corpus itself (golden cases are far below T1;
       // the failure strings are quoted verbatim into the skip reason by contract).
-      // ADR-0042 D1: consumed track empty + ANS_OBS_FIXTURE set -> synthetic fallback (machinery
+      // consumed track empty + ANS_OBS_FIXTURE set -> synthetic fallback (machinery
       // verification only; the loader hard-verifies track + sha256 before any row is trusted).
       const fxName = process.env.ANS_OBS_FIXTURE;
       let zoneTrack: "consumed" | "synthetic" = "consumed";
@@ -861,7 +861,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
       // Consumed track has no pre-registered baseline histogram to compare against yet, so
       // PSI is honestly null (gate T2 then reports "unavailable", not a fabricated 0).
       const gate = evaluateTauFitGate(feed ? feedToGateInput(feed) : { activeRows: evTotal, fittableUnits, psi: null, windowDays, daysSinceLastFit: null });
-      // r110 SP-F-01(b)/SA-F-05: ADR-0042 D4's "structural data absence" covers BOTH shapes —
+      // r110 SP-F-01(b)/SA-F-05: 's "structural data absence" covers BOTH shapes —
       // no events at all (0 rows), and events that exist but are not fit-eligible (a single
       // eval run's golden DB can never mature past the T1-units / T2-baseline / T3-window
       // clauses — those failures quote data immaturity, not pipeline regressions). Such runs
@@ -882,7 +882,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
           : feed
             ? { status: "ok" as const, events: feed.activeRows, histogram: feed.histogram, track: "synthetic" as const }
             : skip("no access events observed in the eval run (goldens may predate the touch path)", "gate-not-met"),
-        tauScan: skip("tau scan is offline-only via scripts/tau/tau-scan.mjs — zero contact with the eval runner / OF look ledger (ADR-0039 D3)", "offline-deferred"),
+        tauScan: skip("tau scan is offline-only via scripts/tau/tau-scan.mjs — zero contact with the eval runner / OF look ledger ", "offline-deferred"),
         bgnbd: feed
           ? gate.ok
             ? { status: "ready-to-spawn" as const, track: "synthetic" as const, fixture: feed.name, psi: feed.psi, label: SIMULATED_LABEL }
@@ -893,7 +893,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
           : skip("no archive ops present in this eval run — revival main ratio is inert", "gate-not-met"),
         eventWriteFailures: { status: "ok" as const, count: evWriteFails },
         undoReentryEvents: skip("undo_reentry needs a 30-day post-undo window — outside the single-run eval horizon (observational sub-metric)", "offline-deferred"),
-        // ADR-0054 D2: abstain smoke — pair-reported abstainRate + falseAbstainRate (never gated).
+        // abstain smoke — pair-reported abstainRate + falseAbstainRate (never gated).
         abstain: abstainZone ?? skip("no abstain_* cases registered — abstain smoke zone empty", "gate-not-met"),
         armDeltas,
         maxLexicalOverlap: PARAPHRASE_MAX_LEXICAL_OVERLAP,
@@ -906,14 +906,14 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
 
 export async function runAll(cases: CaseSpec[], opts?: { excludeGroups?: readonly EvalGroup[] }): Promise<EvalReport> {
   assertParaphraseSlice(cases);
-  // ADR-0060 D7 / ADR-0057 r59 errata: the vector arm needs the real embedding model, so the
+  // / r59 errata: the vector arm needs the real embedding model, so the
   // offline default run excludes its group. The RUN slice is filtered; the dataset fingerprint
   // below stays over the FULL cases, so the committed baseline remains valid.
   const excluded = new Set(opts?.excludeGroups ?? []);
   const runnable = excluded.size ? cases.filter((c) => !excluded.has(c.group)) : cases;
   const results: CaseResult[] = [];
   for (const c of runnable) results.push(await runCase(c));
-  // ADR-0054 D2/D3: abstain smoke runs the same runCase switch but stays out of
+  // abstain smoke runs the same runCase switch but stays out of
   // results/totals/fingerprint — verdicts feed ObservationalZone.abstain only.
   const abstainResults: CaseResult[] = [];
   for (const c of ABSTAIN_CASES) abstainResults.push(await runCase(c));
@@ -931,7 +931,7 @@ export async function runAll(cases: CaseSpec[], opts?: { excludeGroups?: readonl
       };
   const stageBreakdown: Record<EvalStage, number> = { extract: 0, adjudicate: 0, store: 0, retrieve: 0 };
   for (const r of results) if (r.failedStage) stageBreakdown[r.failedStage] += 1;
-  // ADR-0028 D4: difficulty tier breakdown (report-only — never part of the gate).
+  // difficulty tier breakdown (report-only — never part of the gate).
   const tierBreakdown: Record<string, { cases: number; passed: number; passRate: number }> = {};
   for (const r of results) {
     const t = (tierBreakdown[r.difficulty] ??= { cases: 0, passed: 0, passRate: 0 });
@@ -951,7 +951,7 @@ export async function runAll(cases: CaseSpec[], opts?: { excludeGroups?: readonl
     metrics: computeMetrics(runnable, results, abstainZone),
     cases: results,
   };
-  // ADR-0060 D7 (c): the offline exclusion must be observable in the artifact, never silent.
+  // (c): the offline exclusion must be observable in the artifact, never silent.
   if (excluded.size > 0 && report.metrics.observational) {
     report.metrics.observational.offlineExcludedGroups = [...excluded];
   }

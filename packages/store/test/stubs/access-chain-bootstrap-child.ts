@@ -1,4 +1,4 @@
-// ADR-0040 D7 item 5 helper: thin bootstrap + chained-write process (spawned, never worker_threads —
+// item 5 helper: thin bootstrap + chained-write process (spawned, never worker_threads —
 // POSIX fcntl locks are per-process, so real contention requires real processes).
 import Database from "better-sqlite3";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "../../src/access-chain.js";

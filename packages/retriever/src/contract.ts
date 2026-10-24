@@ -9,13 +9,13 @@ export interface SearchRequest {
   query: string;
   mode: Mode;
   maxResults?: number;
-  // ADR-0062 D2 (T1): capability-negotiated provider pre-filter. Kernel sets this
+  // (T1): capability-negotiated provider pre-filter. Kernel sets this
   // per provider to the domain's canonical allow hosts; only adapters that declare
   // domainFilterSupported forward it (tavily include_domains / exa includeDomains).
   // The provider parameter is an entry-convergence hint, never the authority —
   // the kernel post-filter remains the fail-closed egress gate.
   includeDomains?: string[];
-  // R83 T1 / ADR-0084 D-003: vertical-domain routing spec — orthogonal to
+  // R83 T1 / D-003: vertical-domain routing spec — orthogonal to
   // includeDomains (host allowlist axis ≠ provider-side vertical route enum).
   // Internal field is vertical*; the wire mapping to MCP domain/sub_domain/
   // sub_domain_params happens only inside the anysearch provider adapter.
@@ -29,7 +29,7 @@ export interface SearchRequest {
 
 export type VerticalSpec = NonNullable<SearchRequest["vertical"]>;
 
-// R84 T1 / A-04 (ADR-0085 draft): canonical vertical spec — the single truth
+// R84 T1 / A-04 ( draft): canonical vertical spec — the single truth
 // source for wire semantics. sub_domain_params serializes only when params is
 // a non-empty Record: an empty object, a non-object, or an array all
 // canonicalize to ABSENT (empty carries no signal; protobuf/JSON API
@@ -52,11 +52,11 @@ export function canonicalizeVertical(v: VerticalSpec): VerticalSpec {
   };
 }
 
-// R88 T3 / ADR-0089 D1-D2 (a06): single authority for vertical-spec guard +
+// R88 T3 / -D2 (a06): single authority for vertical-spec guard +
 // assembly. The three entry surfaces (CLI flags, search_web, research_web)
 // share this layer; the guard verdict travels as a structured reason and
 // each surface renders its own copy (IpcError-pattern: the enum travels,
-// the surface renders — the reason→copy map is legislated in ADR-0089 D2②).
+// the surface renders — the reason→copy map is legislated in ②).
 // "domain absent" covers undefined AND empty/whitespace-only — empty carries
 // no signal (same convention as params:{} ≡ absent); entry surfaces reject
 // empty domains earlier (CLI non-empty-string check, schema minLength:1), so
@@ -108,7 +108,7 @@ export interface NormalizedResult {
   source: string; // provider id
   publishedAt?: string;
   extra?: Record<string, unknown>;
-  // ADR-0009 D3: entity configurable — overrides URL as entity key for multi-URL same-entity scenarios.
+  // entity configurable — overrides URL as entity key for multi-URL same-entity scenarios.
   entity?: string;
 }
 
@@ -116,7 +116,7 @@ export interface ProviderEnvelope {
   provider: string;
   results: NormalizedResult[];
   answers?: string[]; // for "answer" mode providers
-  // ADR-0022 D3 round-47 fix: parallel provider-attributed answers with optional citations.
+  // round-47 fix: parallel provider-attributed answers with optional citations.
   // answers and answersMeta must have the same length when both are populated; the engine
   // aligns per-index and prefers answersMeta over re-deriving provider attribution.
   // Answers remain text-only in FusedEnvelope.answers; provenance moves to metadata.providerAnswers.
@@ -134,12 +134,12 @@ export interface UsageInfo {
 export interface SearchProvider {
   readonly id: string;
   readonly modes: readonly Mode[];
-  // ADR-0062 D2 (T1): domain-filter capability bit. true = the adapter forwards
+  // (T1): domain-filter capability bit. true = the adapter forwards
   // SearchRequest.includeDomains to a provider-side domain parameter. Absent or
   // false = unsupported; the engine degrades that provider to post-filter-only
   // and records it in the retrieval.domain_filter.pre audit event.
   readonly domainFilterSupported?: boolean;
-  // R83 T1 / ADR-0084 D-004: vertical-domain capability bit — same shape as
+  // R83 T1 / D-004: vertical-domain capability bit — same shape as
   // domainFilterSupported. true = the adapter maps SearchRequest.vertical to
   // provider-side domain/sub_domain/sub_domain_params. Absent/false = the
   // provider fans out on the general axis and is named in the
@@ -149,7 +149,7 @@ export interface SearchProvider {
   usage?(): Promise<UsageInfo | undefined>;
 }
 
-// ADR-0014 D3: MVSS four-segment sufficiency signal.
+// MVSS four-segment sufficiency signal.
 // verdict: CRAG three-state quantifier aggregation (correct/incorrect/ambiguous).
 // agreement: rank-derived (Jaccard@K + RBO@K), always computable.
 // volume: hygiene signals (uniqueResults/uniqueDomains/successfulProviders).
@@ -174,7 +174,7 @@ export interface SufficiencySignal {
   perProvider?: Record<string, number[]>;
 }
 
-// ADR-0022 D2/D3: provider answer with mandatory unverified marker + optional citations.
+// provider answer with mandatory unverified marker + optional citations.
 // Single source of truth for the providerAnswers item shape — ProviderEnvelope.answersMeta
 // and FusedEnvelope.metadata.providerAnswers both reference this alias.
 export interface ProviderAnswer {
@@ -184,7 +184,7 @@ export interface ProviderAnswer {
   citations?: Array<{ url: string; title?: string }>;
 }
 
-// ADR-0046 D5: per-web-run observational ledger. It is intentionally separate from
+// per-web-run observational ledger. It is intentionally separate from
 // the gated sufficiency signal and may never drive a ship verdict or durable table.
 export interface WebProviderLedger {
   providerOverlap: Record<string, number>;
@@ -193,7 +193,7 @@ export interface WebProviderLedger {
   failures: string[];
 }
 
-// ADR-0045 D2/D3 (r118 impl): common fusion provenance shape — the six registered fields
+// (r118 impl): common fusion provenance shape — the six registered fields
 // instance/labels/lists/weights/fusedIds/scoreKind. Memory-only texts (session-store ArmProvenance)
 // and web-only nativeScores (below) are instance extensions on top of this base.
 export interface FusionProvenance {
@@ -246,26 +246,26 @@ export interface FusedEnvelope {
     // (machine-usable, zero free-text leak). Absent when nothing failed.
     providerErrorClasses?: Record<string, ProviderErrorClass>;
     elapsedMs: number;
-    // ADR-0014 D3/D7: MVSS sufficiency signal from computeSufficiency().
+    // MVSS sufficiency signal from computeSufficiency.
     sufficiency?: SufficiencySignal;
-    // ADR-0022 D3: per-provider answer attribution for transparency
+    // per-provider answer attribution for transparency
     // without restructuring envelope.answers (stays string[]).
     // D2: verified=false locked in at contract layer (single source of truth); consumers must not re-stamp.
     // D3-D4 round-47 fix: optional provider citations for transparency (Exa supplies; Tavily grounding is same-batch).
     providerAnswers?: ProviderAnswer[];
-    // ADR-0022 D4: capability marker, computed from provider.modes (NOT output).
+    // capability marker, computed from provider.modes (NOT output).
     // False when no queried provider advertises answer mode support
     // (e.g. AnySearch-only future, or runtime stub stripping the capability).
     answersAvailable?: boolean;
-    // ADR-0045 D2/D3 (r118 impl): pre-truncation WebFusion provenance snapshot. nativeScores are
+    // (r118 impl): pre-truncation WebFusion provenance snapshot. nativeScores are
     // raw provider scores per normalized url (web-only extension); they never enter fusion ranking.
     fusion?: FusionProvenance & { nativeScores: Record<string, Record<string, number>> };
-    // ADR-0046 D5: observational-only zone. webProviderLedger is the engine-side
+    // observational-only zone. webProviderLedger is the engine-side
     // counterpart to the eval report's Observational zone; no threshold, no gate, no table.
     observational?: {
       webProviderLedger?: WebProviderLedger;
     };
-    // ADR-0062 D3 (T2): first-class abstain marker. Set by the kernel post-filter
+    // (T2): first-class abstain marker. Set by the kernel post-filter
     // when a domain allowlist policy is active and zero results survive (including
     // the cold-domain zero-arrival case). A successful policy execution, never an
     // error. preFiltered = provider results that reached the authoritative gate;
@@ -277,13 +277,13 @@ export interface FusedEnvelope {
       domain?: string;
       preFiltered: number;
       postFiltered: number;
-      // ADR-0062 D3: which stage left the pool empty — "pre" when providers
+      // which stage left the pool empty — "pre" when providers
       // returned zero arrivals (pre-filter/provider side), "post" when the
       // authoritative kernel gate dropped every arrival.
       gate: "pre" | "post";
     };
   };
 
-  // ADR-0034 D4: first-class attribution field — claim-level evidence linkage, orthogonal to verified:false.
+  // first-class attribution field — claim-level evidence linkage, orthogonal to verified:false.
   attribution?: AttributionReport;
 }

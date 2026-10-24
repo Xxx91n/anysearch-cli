@@ -1,4 +1,4 @@
-// Hooks integration tests — ADR-0011 D7 layer 2.
+// Hooks integration tests — layer 2.
 // Covers core/distill/preheat/session-start cross-component interactions.
 
 import assert from "node:assert/strict";

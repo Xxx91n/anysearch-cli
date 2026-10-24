@@ -1,4 +1,4 @@
-// ADR-0027 impl plan step 7 + ADR-0028 D1: gate contract self-check (integer allowance + WARN band).
+// impl plan step 7 +: gate contract self-check (integer allowance + WARN band).
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -64,7 +64,7 @@ assert(evaluateGate(fakeReport(mkMetrics({ supPassed: 11 })), baseline).exitCode
 { const g = evaluateGate(fakeReport(mkMetrics({ fpCount: 1 })), baseline);
   assert(g.verdict === "warn" && g.exitCode === 0, "qfp over zero allowance warns when under-powered"); }
 // fingerprint mismatch = 12, missing baseline = 12, missing allowance block = 12
-// ADR-0037 D6 Phase-2: semantic-arm regression fail-closed
+// Phase-2: semantic-arm regression fail-closed
 { const g = evaluateGate(fakeReport(mkMetrics({ semantic: { queries: 1, hits: 1, served: 1, regressions: 1 } } as never)), baseline);
   assert(g.verdict === "fail" && g.exitCode === 1, "semantic regression fails closed (got " + g.verdict + ")"); }
 assert(evaluateGate(fakeReport(undefined, "xyz999"), baseline).exitCode === 12, "fingerprint mismatch exits 12");
@@ -75,7 +75,7 @@ assert(evaluateGate(fakeReport(), null).exitCode === 12, "missing baseline exits
 // CLI end-to-end: run eval against committed baseline, assert exit 0 + artifacts in scratch out dir.
 const outDir = mkdtempSync(join(tmpdir(), "ans-gate-"));
 try {
-  // ADR-0060 D7 / ADR-0057 r59 errata: the eval CLI writes observations into the durable DB
+  // / r59 errata: the eval CLI writes observations into the durable DB
   // (ANS_DB_PATH or ~/.anysearch/anysearch.db) and then advances the switch state machine
   // against that same DB. The fixture must hand it a DB that carries the store schema
   // (access_events et al.) - i.e. reuse the schema-application path. Otherwise the switch step
@@ -95,14 +95,14 @@ try {
   assert(typeof rep.datasetFingerprint === "string" && rep.datasetFingerprint.length === 16, "report carries fingerprint");
   const md = readFileSync(join(outDir, "eval-report.md"), "utf8");
   assert(md.includes("Stage attribution") && md.includes("fingerprint"), "md has stage attribution + fingerprint");
-  assert(md.includes("Statistical power") && md.includes("Wilson95") && md.includes("family size"), "md has ADR-0028 power block (MDE/Wilson/family)");
+  assert(md.includes("Statistical power") && md.includes("Wilson95") && md.includes("family size"), "md has power block (MDE/Wilson/family)");
   assert(md.includes("Difficulty tiers"), "md has difficulty tier breakdown");
   }
 } finally {
   try { rmSync(outDir, { recursive: true, force: true }); } catch {}
 }
 
-// ADR-0039 N1: observational metrics NEVER gate — verdict invariance under injected
+// N1: observational metrics NEVER gate — verdict invariance under injected
 // observational content (Goodhart clause, ship-gate only asserts presence elsewhere).
 {
   const m = mkMetrics();
@@ -118,23 +118,23 @@ try {
   for (const r of reads) assert(!r.includes("access_events"), "N2: read path must never query access_events");
 }
 
-// ADR-0046 D4: reverse weakest-link harm gate — clear negative paired sample is a confirmed
+// reverse weakest-link harm gate — clear negative paired sample is a confirmed
 // critical red; n<10 degrades to WARN.
 {
   const armDeltas = {
     relation: { n: 12, excluded: 0, meanDelta: -0.14, deltas: [-0.14, -0.16, -0.15, -0.13, -0.17, -0.14, -0.16, -0.15, -0.14, -0.16, -0.12, -0.14], role: "critical" as const },
   };
   const wl = evaluateWeakestLink(armDeltas, { ...baseline, relationGain: { sigmaDU: 0.05, rawN: 4, lockedN: 4, minGain: 0.1 } }, 0.025);
-  assert(wl !== undefined && wl.arms[0]!.confirmedHarm === true, "ADR-0046: negative sample confirms weakest-link harm");
+  assert(wl !== undefined && wl.arms[0]!.confirmedHarm === true, "negative sample confirms weakest-link harm");
   const m = { ...mkMetrics(), observational: { schema: "anysearch/observational@1", armDeltas } } as unknown as EvalMetrics;
   const g = evaluateGate(fakeReport(m), { ...baseline, relationGain: { sigmaDU: 0.05, rawN: 4, lockedN: 4, minGain: 0.1 } }, { look: 5 });
-  assert(g.exitCode === 1 && g.failures.some((f) => f.includes("weakest-link RED relation")), "ADR-0046: critical weakest-link red blocks gate");
+  assert(g.exitCode === 1 && g.failures.some((f) => f.includes("weakest-link RED relation")), "critical weakest-link red blocks gate");
 }
 
 // ship-gate wiring: the memory-eval step must exist (dropped step = dropped gate).
 const sg = readFileSync(join(__dirname, "..", "..", "..", "scripts", "ship-gate.mjs"), "utf8");
 assert(sg.includes("stepMemoryEval") && sg.includes("memory eval"), "ship-gate wires stepMemoryEval");
-// ADR-0028 D5: task-parity gate wired at step 1.
+// task-parity gate wired at step 1.
 assert(sg.includes("task-parity"), "ship-gate wires task parity check");
 
 console.log("eval-gate.test.ts: " + passed + " passed, " + failed + " failed");

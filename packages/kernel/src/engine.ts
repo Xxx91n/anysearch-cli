@@ -1,5 +1,5 @@
 // Retroaererd Engine: bounded budget + serialized sufficiency-gate + fanout convergence + RRF fusion.
-// ADR-0005 decision 4: Budget in store layer (BudgetLedger), sufficiency gate in retriever fanout layer.
+// decision 4: Budget in store layer (BudgetLedger), sufficiency gate in retriever fanout layer.
 // atomcode research (paperfoot source-level): JoinSet completion-order collect, enough-results-then-collect,
 // 1.5s grace window, abort_all + drain, providers_cancelled distinct state, RRF(k=60) fusion.
 // JS adaptation: Promise.allSettled + AbortController + unique-URL counter early stop.
@@ -31,9 +31,9 @@ export const DEFAULT_GATE: SufficiencyGate = {
 
 // Engine config: budget caps + sufficiency gate + grace window.
 export interface EngineConfig {
-  // ponytail: budget field is accepted but not yet wired to BudgetLedger (ADR-0005 decision 4 known deferral).
+  // ponytail: budget field is accepted but not yet wired to BudgetLedger ( decision 4 known deferral).
   // Kernel stays pure orchestration; budget enforcement will be injected via store layer when implemented.
-  // ADR-0006: per-call dimension wired via BudgetLedgerPort. Token dimension pending LLM integration.
+  // per-call dimension wired via BudgetLedgerPort. Token dimension pending LLM integration.
   budget?: Budget;
   gate?: Partial<SufficiencyGate>;  // override DEFAULT_GATE fields
   graceWindowMs?: number;            // default 1500 (paperfoot EARLY_STOP_GRACE)
@@ -69,7 +69,7 @@ function extractDomain(url: string): string {
 }
 
 
-// ADR-0014 D7: computeSufficiency pure function — single computation source, dual output.
+// computeSufficiency pure function — single computation source, dual output.
 // control: internal fanout early-stop booleans (SufficiencyGate config stays as internal threshold).
 // mvs: MVSS four-segment signal written to FusedEnvelope.metadata for external consumption.
 // Academic: Fagin TA (PODS 2001) threshold early-stop + epsilon-approximation dual-use;
@@ -188,7 +188,7 @@ function computeVariance(values: number[]): number {
   return values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
 }
 
-// ADR-0062 D2 (T2): post-filter adjudication — reuses shouldAllowUrl so the gate
+// (T2): post-filter adjudication — reuses shouldAllowUrl so the gate
 // shares the store-level policy semantics (deny evaluated first; an allow entry
 // matches host or subdomain suffix; the user-labelled early-allow branch is
 // irrelevant because the label here is always "retrieved"). Scheme-less
@@ -210,35 +210,35 @@ export class RetroaererdEngine {
   private providers: Map<string, SearchProvider> = new Map();
   private ledger?: BudgetLedgerPort;
   private sessionId?: string;
-  // ADR-0034 step 6: host-injected claim judge. The LLM and its budget ledger live in the host;
+  // step 6: host-injected claim judge. The LLM and its budget ledger live in the host;
   // kernel stays pure. r83 audit F2: previously shouldEscalateToJudge had zero callers.
   private attributionJudge?: JudgeFn;
-  // ADR-0045 D2/D4: optional domain sources.weights overlay (user preference, never gained from
+  // optional domain sources.weights overlay (user preference, never gained from
   // observation). Invalid values are rejected at domain load (fail-fast); absent = equal weights.
   private sourceWeights?: Record<string, number>;
-  // ADR-0051 D1: active attribution calibration, injected once by the composition
+  // active attribution calibration, injected once by the composition
   // root (which owns the revision-root file I/O). Absent = legacy 0.6 floor.
   private attributionCalibration?: AttributionCalibration;
-  // ADR-0062 D2 (T2): request-time domain URL policy resolver (allow/deny/
+  // (T2): request-time domain URL policy resolver (allow/deny/
   // policyVersion) + active domain name for audit attributes. Absent resolver or
   // empty allow = domain filtering inactive (full fanout, legacy behavior). The
   // resolver is invoked inside every search() — no cached policy snapshot lives
   // in the retriever (AFR tag-freshness lesson: 9.7% re-leak on stale snapshots).
   private urlPolicy?: () => { allow: readonly string[]; deny: readonly string[]; policyVersion: string };
   private domainName?: string;
-  // R83 T1 / ADR-0084 D-003/D-004: repo-level vertical default resolver (domain
+  // R83 T1 / D-003/D-004: repo-level vertical default resolver (domain
   // TOML sources.vertical), consulted per request like urlPolicy. Query-level
   // q.vertical replaces it wholesale (no deep-merge).
   private repoVertical?: () => SearchRequest["vertical"];
 
-  // ADR-0006 decision 1C: constructor accepts providers array.
-  // ADR-0006 decision 2A: optional BudgetLedger + sessionId for per-call billing.
+  // decision 1C: constructor accepts providers array.
+  // decision 2A: optional BudgetLedger + sessionId for per-call billing.
   constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; attributionJudge?: JudgeFn; sourceWeights?: Record<string, number>; attributionCalibration?: AttributionCalibration; urlPolicy?: () => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }; domainName?: string; repoVertical?: () => SearchRequest["vertical"] }) {
     this.ledger = opts?.ledger;
     this.sessionId = opts?.sessionId;
     this.attributionJudge = opts?.attributionJudge;
     this.sourceWeights = opts?.sourceWeights;
-    // ADR-0051 D1: immutable at the injection seam, even when the caller
+    // immutable at the injection seam, even when the caller
     // bypasses the composition root.
     const cal = opts?.attributionCalibration;
     this.attributionCalibration = cal
@@ -258,8 +258,8 @@ export class RetroaererdEngine {
   }
 
   // Fanout search: parallel provider queries, enough-results-then-collect, RRF fusion.
-  // ADR-0006 decision 1A: implements RetrieverPort.
-  // ADR-0006 decision 1B: accepts Query (superset with budget + provider filter).
+  // decision 1A: implements RetrieverPort.
+  // decision 1B: accepts Query (superset with budget + provider filter).
   async search(
     q: Query,
     config: EngineConfig = {},
@@ -280,8 +280,8 @@ export class RetroaererdEngine {
       throw new Error("No providers registered");
     }
 
-    // ADR-0062 D2 (T2): domain policy resolved per request — the resolver reads
-    // the ADR-0055 single source via a lazy-mtime reloader; nothing is cached in
+    // (T2): domain policy resolved per request — the resolver reads
+    // the single source via a lazy-mtime reloader; nothing is cached in
     // the retriever. Empty allow = policy inactive (fail-open full fanout).
     const domainPolicy = this.urlPolicy?.() ?? null;
     const domainActive = !!domainPolicy && domainPolicy.allow.length > 0;
@@ -304,12 +304,12 @@ export class RetroaererdEngine {
         "anysearch.domain_filter.degraded": degradedProviders,
       });
     }
-    // R83 T1 / ADR-0084 D-003/D-004/D-005: vertical resolution — query-level
+    // R83 T1 / D-003/D-004/D-005: vertical resolution — query-level
     // q.vertical replaces the repo default wholesale (no deep-merge). The
     // retrieval.vertical.pre audit event fires when the resolved spec is
     // non-empty, independently of domainActive (the two axes are orthogonal).
     const repoV = this.repoVertical?.();
-    // R84 T1 / A-04 (ADR-0085 draft): canonicalize at the shared choke — empty
+    // R84 T1 / A-04 ( draft): canonicalize at the shared choke — empty
     // or non-object params never reach the wire, the audit event, or the
     // result marker (empty params ≡ absent; sub_domain_params serializes only
     // for a non-empty Record). One normalization point covers all three entry
@@ -346,11 +346,11 @@ export class RetroaererdEngine {
       return req;
     };
 
-    // ADR-0006 decision 2C: reserve per-call budget by provider count (MoleAPI pre-consumption).
+    // decision 2C: reserve per-call budget by provider count (MoleAPI pre-consumption).
     const hasLedger = !!(this.ledger && this.sessionId);
     if (hasLedger) {
-      // ADR-0006 2C: per-call cost = 1 unit per provider. Coarse upper bound, settle actual.
-      // ADR-0022 P2-3 round-47 fix: answer mode doubles cost for answer-capable providers
+      // 2C: per-call cost = 1 unit per provider. Coarse upper bound, settle actual.
+      // P2-3 round-47 fix: answer mode doubles cost for answer-capable providers
       // (Exa answer() is a second upstream /answer call). Reserve 2 units per such provider
       // when mode === "answer"; other modes keep the 1-per-provider upper bound.
       const perCallEstimate = q.mode === "answer"
@@ -366,7 +366,7 @@ export class RetroaererdEngine {
     const controllers = allProviders.map(() => new AbortController());
     const providerIds = allProviders.map((p) => p.id);
 
-    // ADR-0061 G1: graceWindowMs / deepMode are wired now (was ADR-0014/ADR-0059 debt).
+    // graceWindowMs / deepMode are wired now (was / debt).
     // Each provider outcome lands in out[i] on arrival. Once the fused pool covers
     // q.maxResults unique URLs, stragglers get graceWindowMs, then their controllers
     // abort and they surface as providersCancelled. deepMode never cancels (waits all).
@@ -376,7 +376,7 @@ export class RetroaererdEngine {
       | { provider: string; status: "rejected"; error: string };
     const out: Array<ProviderOutcome | null> = new Array(allProviders.length).fill(null);
     const uniqueUrls = new Set<string>();
-    // ADR-0062 D2: post-gate counters — gateIn = raw provider results that reached
+    // post-gate counters — gateIn = raw provider results that reached
     // the authoritative gate (post-pre-filter arrivals); gateDropped counts only
     // gate removals (dedup collapse must not inflate it); survivors = allResults.size.
     let gateIn = 0;
@@ -417,7 +417,7 @@ export class RetroaererdEngine {
 
     // Collect results into per-provider URL lists for RRF.
     const providerLists: string[][] = [];
-    // ADR-0045 D2: ids + native scores parallel to providerLists (provenance snapshot inputs).
+    // ids + native scores parallel to providerLists (provenance snapshot inputs).
     const listedProviderIds: string[] = [];
     const nativeScores: Record<string, Record<string, number>> = {};
     const allResults = new Map<string, NormalizedResult>(); // keyed by normalized URL
@@ -426,7 +426,7 @@ export class RetroaererdEngine {
     const providerErrorClasses: Record<string, ProviderErrorClass> = {};
     const providersCancelled: string[] = [];
     const answers: string[] = [];
-    // ADR-0022 D3: per-provider attribution in metadata, not in answers[].
+    // per-provider attribution in metadata, not in answers[].
     const providerAnswers: ProviderAnswer[] = [];
 
     for (let i = 0; i < collected.length; i++) {
@@ -465,7 +465,7 @@ export class RetroaererdEngine {
                 trustSuspicious: trusted.suspicious,
               },
             };
-            // ADR-0062 D2 (T2): authoritative egress gate — adjudicated on the
+            // (T2): authoritative egress gate — adjudicated on the
             // sanitized result URL so out-of-domain entries never reach fusion,
             // MVSS, attribution, or output. Deny wins (shouldAllowUrl order).
             if (domainActive && !adjudicateUrlPolicy(r.url, domainPolicy)) { gateDropped += 1; continue; }
@@ -475,7 +475,7 @@ export class RetroaererdEngine {
               allResults.set(norm, { ...r, url: norm }); // store normalized URL as key
             }
             urls.push(norm);
-            // ADR-0045 D2: web native-score snapshot (raw provider score; never fused).
+            // web native-score snapshot (raw provider score; never fused).
             const ns = r.extra?.score;
             if (typeof ns === "number" && Number.isFinite(ns)) native[norm] = ns;
           }
@@ -484,7 +484,7 @@ export class RetroaererdEngine {
           nativeScores[providerIds[i]] = native;
           if (inner.envelope.answers) {
             answers.push(...inner.envelope.answers);
-            // ADR-0022 D3: prefer provider-supplied answersMeta (citations + verified=false);
+            // prefer provider-supplied answersMeta (citations + verified=false);
             // fall back to re-deriving from answers with verified=false for older adapters.
             if (inner.envelope.answersMeta && inner.envelope.answersMeta.length === inner.envelope.answers.length) {
               for (const m of inner.envelope.answersMeta) providerAnswers.push(m);
@@ -506,19 +506,19 @@ export class RetroaererdEngine {
 
     // providersCancelled now populated by the grace window above (was always-empty debt).
 
-    // ADR-0006 decision 2C: settle per-call budget — actual = successful providers.
+    // decision 2C: settle per-call budget — actual = successful providers.
     if (hasLedger) {
       this.ledger!.settleCalls(this.sessionId!, allProviders.length, providerLists.length);
     }
 
-    // ADR-0045 D2/D4: WebFusion consumes the registry k and registered web weights (equal-weight
+    // WebFusion consumes the registry k and registered web weights (equal-weight
     // null model). A domain sources.weights value overrides per provider id (user preference);
     // unregistered/extra providers stay fail-open at weight 1.
     const fusedWeights = listedProviderIds.map((id) =>
       this.sourceWeights?.[id] ?? FUSION_REGISTRY.weights.web[id as keyof typeof FUSION_REGISTRY.weights.web] ?? 1);
     const rankedUrls = rrfRank(providerLists, FUSION_REGISTRY.k_fusion.web, fusedWeights);
 
-    // ADR-0045 D2/D3: pre-truncation provenance snapshot — common six-field shape + web
+    // pre-truncation provenance snapshot — common six-field shape + web
     // nativeScores extension. scoreKind marks the fused score as a rank_fusion signal only
     // (never confidence / threshold / cross-query comparable); NormalizedResult stays clean.
 
@@ -532,20 +532,20 @@ export class RetroaererdEngine {
       }
     }
 
-    // ADR-0045 D3: top-k is a pure prefix truncation. MVSS still sees the full fused pool.
+    // top-k is a pure prefix truncation. MVSS still sees the full fused pool.
     const rankedResults = q.maxResults && q.maxResults > 0
       ? fullRankedResults.slice(0, q.maxResults)
       : fullRankedResults;
 
-    // ADR-0014 D7: single computation source, dual output (control + MVSS).
+    // single computation source, dual output (control + MVSS).
     // Dead booleans deleted; computeSufficiency() replaces scattered logic.
     const suff = computeSufficiency(fullRankedResults, providerLists, gate);
 
-    // ADR-0046 D5: observational-only ledger. It is emitted next to, never consumed
+    // observational-only ledger. It is emitted next to, never consumed
     // by, the sufficiency/fusion gate.
     const webProviderLedger = buildWebProviderLedger(listedProviderIds, providerLists, nativeScores, providersFailed);
 
-    // ADR-0062 D2/D3 (T2): post-gate audit event + outcome dimension. abstain is
+    // (T2): post-gate audit event + outcome dimension. abstain is
     // its own outcome value on the span — criterion 6 keeps it out of error counts.
     if (domainActive) {
       const outcome = allResults.size === 0 ? "abstain" : "answer";
@@ -571,11 +571,11 @@ export class RetroaererdEngine {
         providersCancelled,
         ...(providersFailed.length > 0 ? { providerErrorClasses } : {}),
         elapsedMs: Date.now() - start,
-        // ADR-0014 D3: MVSS four-segment sufficiency signal.
+        // MVSS four-segment sufficiency signal.
         sufficiency: suff.mvs,
-        // ADR-0022 D3/D4: provenance + fail-open marker.
+        // provenance + fail-open marker.
         providerAnswers,
-        // ADR-0022 D4: capability marker — provider.modes covers answer mode.
+        // capability marker — provider.modes covers answer mode.
         // Round-47 fix: not output-derived. providerAnswers.length > 0 reflects OUTPUT; if a
         // provider fails to produce an answer for this query (quota/exception/empty), the
         // CAPABILITY still exists; consumers should read this as "can serve answer mode"
@@ -591,7 +591,7 @@ export class RetroaererdEngine {
           nativeScores,
         },
         observational: { webProviderLedger },
-        // ADR-0062 D3 (T2): first-class abstain marker — domain_filter_empty when
+        // (T2): first-class abstain marker — domain_filter_empty when
         // the authoritative gate leaves zero results (empty post-gate pool is
         // structurally abstain; eval/abstain.ts chain_empty is the sibling rule,
         // shouldBridgeToAbstain is the weak-claims counterpart). Never an error.
@@ -600,7 +600,7 @@ export class RetroaererdEngine {
           : {}),
       },
     };
-    // ADR-0051 D1/D2: claim-level fused confidence is the only calibrated object;
+    // claim-level fused confidence is the only calibrated object;
     // an absent or degraded calibration keeps the legacy 0.6 floor.
     const attributionReport = attachAttribution(
       envelope,

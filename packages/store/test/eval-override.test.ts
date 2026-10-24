@@ -1,4 +1,4 @@
-// ADR-0047 D2/D3/D4/D5: pure override core + append-only ledger self-checks.
+// pure override core + append-only ledger self-checks.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

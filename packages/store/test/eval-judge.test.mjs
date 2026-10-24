@@ -1,4 +1,4 @@
-// ADR-0027 impl plan step 7: judge client self-check (path 2/3).
+// impl plan step 7: judge client self-check (path 2/3).
 // Judge unreachable -> score 0, no crash, exit 0. Missing key -> exit 3. Missing report -> exit 2.
 import { spawn } from "node:child_process";
 import fs from "node:fs";

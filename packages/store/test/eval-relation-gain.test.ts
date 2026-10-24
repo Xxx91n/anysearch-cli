@@ -1,4 +1,4 @@
-// ADR-0036 (r33) impl: relation-arm gain gate self-check.
+// (r33) impl: relation-arm gain gate self-check.
 // Covers paired-stats formulas (D2), the preregistered decision rule both directions (D4),
 // the sanity channel (D5), and an end-to-end counterfactual recompute on a real RoR case.
 import { evaluateGate, lockN, mdeForPaired, pairedGainStats, sigmaDUpper, RELATION_GAIN_LOCKED_N_CAP, type EvalBaseline } from "../src/eval/gate";
@@ -57,7 +57,7 @@ assert(lockN(10).lockedN === RELATION_GAIN_LOCKED_N_CAP, "lockN caps at " + RELA
 assert(lockN(0.05).rawN === 4, "lockN(0.05) rawN = ceil(2*0.0025*7.84/0.01) = ceil(3.92) = 4");
 assert(sigmaDUpper([0.1, 0.2, 0.15, 0.12]) > 0.036, "sigmaDUpper is an upper CI on sd");
 
-// --- D4: three-tier gain mapping (ADR-0038 D2 supersedes the observational "preregistered rule" verdict) ---
+// --- D4: three-tier gain mapping ( supersedes the observational "preregistered rule" verdict) ---
 const posDeltas = [0.14, 0.16, 0.15, 0.13, 0.17, 0.14, 0.16, 0.15, 0.14, 0.16, 0.15, 0.14];
 {
   const g = evaluateGate(fakeReport(mkMetrics(posDeltas)), mkBaseline(0.05));
@@ -67,7 +67,7 @@ const posDeltas = [0.14, 0.16, 0.15, 0.13, 0.17, 0.14, 0.16, 0.15, 0.14, 0.16, 0
 {
   const deltas = [0.04, 0.06, 0.05, 0.05, 0.06, 0.04, 0.05, 0.06, 0.05, 0.04, 0.06, 0.05];
   const g = evaluateGate(fakeReport(mkMetrics(deltas)), mkBaseline(0.05));
-  assert(g.gainConclusion?.tier === "warn" && g.exitCode === 0, "below-minGain is WARN — unproven-positive is never red (ADR-0038 D2)");
+  assert(g.gainConclusion?.tier === "warn" && g.exitCode === 0, "below-minGain is WARN — unproven-positive is never red ");
 }
 {
   const g = evaluateGate(fakeReport(mkMetrics([-0.14, -0.16, -0.15, -0.13, -0.17, -0.14, -0.16, -0.15, -0.14, -0.16, -0.15, -0.14])), mkBaseline(0.05));

@@ -1,9 +1,9 @@
 // SufficiencyEvaluator: sibling module to MemoryPipeline.
-// ADR-0015 D3: extracted from pi-runtime.ts shouldStopAfterTurn.
-// ADR-0014 D2/D5/D1: Google SCA paradigm — gate outputs "what's missing" (named gap), not just boolean.
+// extracted from pi-runtime.ts shouldStopAfterTurn.
+// Google SCA paradigm — gate outputs "what's missing" (named gap), not just boolean.
 // D5: bounded reround — default 1, max via domain TOML.
 // Independent fail-open, does not block MemoryPipeline.
-// ADR-0016 D2/D4: evaluate() returns GateEnvelope (pure, no mutation).
+// evaluate returns GateEnvelope (pure, no mutation).
 //   applyTo() returns new messages array (pure reducer, LangGraph discipline).
 //   Claim-ticket pattern: gate.evaluate -> gate.applyTo -> pipeline.consolidate.
 
@@ -19,11 +19,11 @@ export interface SufficiencyEvaluatorDeps {
   getApiKey?: () => Promise<string | undefined>;
 }
 
-// ADR-0016 D4: GateEnvelope — pure data returned by evaluate(), consumed by applyTo().
+// GateEnvelope — pure data returned by evaluate, consumed by applyTo.
 // Claim-ticket pattern: gate never touches messages array directly.
 export interface GateEnvelope {
-  // ADR-0034 D7: GapRequest trigger sources from attribution layer.
-  // Each gap.query is fed into the bounded reround loop (ADR-0023 D1).
+  // GapRequest trigger sources from attribution layer.
+  // Each gap.query is fed into the bounded reround loop.
   gapRequests?: GapRequest[];
   enrichedEnvelope: any | null;       // merged search results (or null if no sufficiency work done)
   hasRetrievalEvidence: boolean;      // true if gate did re-search (signals pipeline to consolidate)
@@ -38,7 +38,7 @@ export class SufficiencyEvaluator {
   }
 
   // evaluate: check sufficiency of last search result, generate named gap, re-search if needed.
-  // ADR-0016 D2/D4: PURE — returns GateEnvelope, does NOT modify messages.
+  // PURE — returns GateEnvelope, does NOT modify messages.
   // Best-effort, fail-open. Returns empty envelope if no work needed.
   async evaluate(messages: any[]): Promise<GateEnvelope> {
     const { domain, retriever, streamFn, model, getApiKey } = this.deps;
@@ -70,7 +70,7 @@ export class SufficiencyEvaluator {
 
       const parsedEnvelope = JSON.parse(envelopeJson);
       const envelope = unwrapRetrieved(parsedEnvelope) ?? parsedEnvelope;
-      // ADR-0034 D7: extract GapRequests from attribution for GateEnvelope.
+      // extract GapRequests from attribution for GateEnvelope.
     const gapRequests = envelope?.attribution?.gaps ?? [];
     const suff = (envelope?.metadata?.sufficiency ?? envelope?.sufficiency) as SufficiencySignal | undefined;
       if (!suff || suff.verdict === "correct") return empty;
@@ -83,7 +83,7 @@ export class SufficiencyEvaluator {
 
       if (!streamFn || !model) return empty;
 
-      // ADR-0054 D1: judgment-input assertion boundary 4/5 — sufficiency judge pre-call.
+      // judgment-input assertion boundary 4/5 — sufficiency judge pre-call.
       assertJudgmentInput(
         {
           text: gapPrompt[1]!.content,
@@ -107,7 +107,7 @@ export class SufficiencyEvaluator {
       gapQuery = gapQuery.trim().replace(/^["']|["']$/g, "");
       if (gapQuery.length <= 3) return empty;
 
-      // ADR-0034 D7: assertion-level GapRequest is the preferred reround seed.
+      // assertion-level GapRequest is the preferred reround seed.
       // When the attribution layer produced gaps, the first gapQuery takes precedence over
       // the LLM named-gap query (r83 audit F3: previous code extracted gaps but never used them).
       if (gapRequests[0]?.gapQuery) gapQuery = gapRequests[0].gapQuery;
@@ -141,7 +141,7 @@ export class SufficiencyEvaluator {
   }
 
   // applyTo: inject enriched results back into messages.
-  // ADR-0016 D4: PURE — returns NEW messages array, does NOT mutate input (LangGraph reducer discipline).
+  // PURE — returns NEW messages array, does NOT mutate input (LangGraph reducer discipline).
   // atomcode research: LangGraph prohibits direct state mutation; applyTo is a pure reducer.
   applyTo(messages: any[], envelope: GateEnvelope): any[] {
     if (envelope.enrichedEnvelope === null || envelope.targetMessageIndex < 0) return messages;
@@ -153,7 +153,7 @@ export class SufficiencyEvaluator {
 
     // Create new messages array with updated envelope at target index.
     const updatedTarget = {
-      gapRequests: (envelope.gapRequests ?? []) as GapRequest[], // ADR-0034 D7
+      gapRequests: (envelope.gapRequests ?? []) as GapRequest[], //
       ...target,
       content: target.content.map((c: any) =>
         c === toolResultContent

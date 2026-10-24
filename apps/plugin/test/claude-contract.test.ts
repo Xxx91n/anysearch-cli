@@ -1,4 +1,4 @@
-// Claude Code contract tests — R66 (ADR-0066 / T3).
+// Claude Code contract tests — R66.
 // Live-verified against Claude Code 2.1.251 headless probes:
 //   * Pre/PostToolUse hooks RUN headless but emit no stream-json events —
 //     observability is side-effect only (marker files, /index deltas).

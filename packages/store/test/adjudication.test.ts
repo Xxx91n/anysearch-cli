@@ -1,4 +1,4 @@
-// ADR-0023 D4 (Q3=A): write-path adjudication — MemTX-simplified three checks.
+// (Q3=A): write-path adjudication — MemTX-simplified three checks.
 // Evidence >= 0.6 / temporal supersede (valid_until set, excluded from searchMemory) / equal-weight conflict → quarantine.
 // Uses OS temp dir for SQLite (WAL needs a file, not :memory:).
 

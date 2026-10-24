@@ -1,4 +1,4 @@
-// ADR-0055: URL authorization policy single source.
+// URL authorization policy single source.
 // TOML [sources].urlAllowlist/urlDenylist is the ONLY authoritative source. ANS_URL_ALLOWLIST
 // is a dev-only append-only override gated by ANS_ALLOW_ENV_OVERRIDE (strict enum 1/true/0/false;
 // anything else fail-closed refuses to start, D7 five-state truth table).
@@ -29,7 +29,7 @@ export function parseEnvOverrideSwitch(raw: string | undefined | null): boolean 
   );
 }
 
-// ADR-0055 audit M2: env entries validated to the same bar as TOML (D7 equal strictness).
+// audit M2: env entries validated to the same bar as TOML (D7 equal strictness).
 export function parseEnvHosts(raw: string | undefined | null): string[] {
   const entries = (raw ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   const bad = entries.filter((h) => !HOSTNAME_RE.test(h));
@@ -104,7 +104,7 @@ export function loadPolicyFromToml(tomlPath: string, env?: NodeJS.ProcessEnv): U
 }
 
 // Domain TOML path convention shared by CLI/MCP/plugin-server composition roots.
-// ADR-0061 B1: optional extra domains dirs (e.g. the builtin dir shipped inside the
+// B1: optional extra domains dirs (e.g. the builtin dir shipped inside the
 // CLI package) are probed after the CWD convention; first existing file wins.
 export function domainTomlPath(
   cwd: string = process.cwd(),
@@ -135,7 +135,7 @@ export function atomicWriteFile(path: string, content: string): void {
   renameSync(tmp, path);
 }
 
-// ADR-0056 D-007 / ADR-0055 D6 supplement: write a MaterializedPolicy envelope
+// D-007 / supplement: write a MaterializedPolicy envelope
 // (policy body + materialized_at timestamp) to the disk cache so the hook
 // readPolicy cache fallback can surface staleness. The timestamp is the only
 // signal that lets the hook differentiate "fresh from server seconds ago" from
@@ -207,7 +207,7 @@ export interface ConfigChangeEvent {
   sessionId?: string;
 }
 
-// ADR-0056 D-005 + D-002/D-003: write into the ADR-0052 local trace store. Fail-open
+// D-005 + D-002/D-003: write into the local trace store. Fail-open
 // (AGENTS.md: audit write failure degrades to stderr), same posture as the rest of
 // the observation layer. traceId/sessionId are forwarded to recordOperation so
 // the new attribution columns are populated (OPA #6905 closure: SELECT after

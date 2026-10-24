@@ -33,7 +33,7 @@ export function filterTools(
   tools: ToolPort[],
   domain: DomainConfigPort,
 ): ToolPort[] {
-  // ADR-0006 decision 4C: toolWhitelist is now at domain.hooks.toolWhitelist (5-layer port).
+  // decision 4C: toolWhitelist is now at domain.hooks.toolWhitelist (5-layer port).
   if (domain.hooks.toolWhitelist.length === 0) return [];
   const allowed = new Set(domain.hooks.toolWhitelist);
   return tools.filter((t) => allowed.has(t.name));

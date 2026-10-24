@@ -1,4 +1,4 @@
-// ADR-0033: vector semantic arm — local embedding via transformers.js.
+// vector semantic arm — local embedding via transformers.js.
 // Model: Xenova/multilingual-e5-small (q8), 384-dim, Chinese+English (C-MTEB zh 59.95).
 // Lazy pipeline singleton + circuit breaker (n=3 consecutive failures, shared write/read).
 // Fail-open everywhere: embedding never blocks a write or a recall.
@@ -14,7 +14,7 @@ type TransformersModule = typeof import("@huggingface/transformers");
 let transformersPromise: Promise<TransformersModule> | null = null;
 let envConfigured = false;
 
-// R71 T1 (ADR-0072): transformers@3.x ships transformers.node.cjs with
+// R71 T1: transformers@3.x ships transformers.node.cjs with
 // require("onnxruntime-common") as an UNDECLARED external — npm's flat hoisting
 // masks it; pnpm's isolated per-package scopes expose it (spike: pnpm-global
 // arm failed "Cannot find module 'onnxruntime-common'"). Two moves repair it

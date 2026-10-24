@@ -1,7 +1,7 @@
-// ADR-0039 D7: explicit-skip three-tier telemetry — never fail-open, never fail-closed.
+// explicit-skip three-tier telemetry — never fail-open, never fail-closed.
 // Affected metrics are marked skipped with the triggering condition quoted verbatim; every
 // skip lands in the WARN ledger (exit 0, ship allowed, traceable); three consecutive
-// identical skips escalate to forced human review (ADR-0038 WARN-streak mechanic).
+// identical skips escalate to forced human review ( WARN-streak mechanic).
 export type SkipTier = "gate-not-met" | "offline-deferred" | "infra-failure";
 
 export interface SkipMarker {

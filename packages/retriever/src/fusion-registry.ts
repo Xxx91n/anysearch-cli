@@ -1,16 +1,16 @@
-// ADR-0045 D1/D2 (r118 impl): Fusion Governance Contract layer L1 — committed registration payload.
+// (r118 impl): Fusion Governance Contract layer L1 — committed registration payload.
 // L0 = rrf.ts pure primitive (governance-free); L2 = MemoryFusion (store session-store.ts) and
 // WebFusion (kernel engine.ts) instances with zero data sharing; L3 = top-k consumption contract
 // (FusionProvenance in contract.ts). Behavior-conserving round: no algorithm swap, no weight change.
 //
-// Single-consumer discipline (ADR-0044-adjacent): every registered leaf is consumed by exactly one
+// Single-consumer discipline (-adjacent): every registered leaf is consumed by exactly one
 // decision point — see the per-field comments; mutation tests prove no dead registrations.
 
 import { createHash } from "node:crypto";
 
 export const FUSION_REGISTRY_SCHEMA = "anysearch/fusion-registry@1";
 
-// ADR-0045 D3 score_kind atom: a fused score is a rank_fusion signal only — never a confidence,
+// score_kind atom: a fused score is a rank_fusion signal only — never a confidence,
 // threshold/abstain, or cross-query-comparable value (Azure hybrid / Weaviate research conclusion).
 export const SCORE_KIND = "rank_fusion";
 
@@ -50,7 +50,7 @@ function canonicalize(v: unknown): string {
   return "{" + Object.keys(o).sort().map((k) => JSON.stringify(k) + ":" + canonicalize(o[k])).join(",") + "}";
 }
 
-// Full 64-hex SHA-256 over the canonical payload (registrationHash-style pinning, ADR-0044 D2).
+// Full 64-hex SHA-256 over the canonical payload (registrationHash-style pinning).
 // The pinned expected value lives in packages/retriever/test/fusion-registry.test.ts — this
 // function is the computation side of the drift pair, not a credential.
 export function fusionRegistryHash(payload: unknown): string {

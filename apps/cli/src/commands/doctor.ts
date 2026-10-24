@@ -8,7 +8,7 @@ import { SqliteSessionStore } from "@anysearch-cli/store";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
-// ADR-0059 D7 (T-6.2): use the build-time define — the same single standard as src/index.ts.
+// (T-6.2): use the build-time define — the same single standard as src/index.ts.
 // The previous runtime package.json read resolved to the REPO ROOT once tsup bundled the CLI into
 // a single dist/index.js, so `ans doctor` printed the root package's 0.0.0.
 declare const __PACKAGE_VERSION__: string | undefined;
@@ -63,7 +63,7 @@ export async function runDoctor(): Promise<number> {
     // R62 D-002: vector arm is optional — absent is a legal FTS-only state,
     // surfaced as SKIP (degraded-but-supported), like a missing provider key.
     const vt = await store.vectorTelemetry();
-    // R71 T1 (ADR-0072): SKIP text is executable — copy/paste enable path
+    // R71 T1: SKIP text is executable — copy/paste enable path
     // (spike evidence: npm+pnpm global installs resolve via sibling-root
     // fallback; first embed downloads the model, then rows backfill).
     if (vt.absent) skip("  vector arm", "@anysearch-cli/embedding absent — FTS-only; enable: npm i -g @anysearch-cli/embedding (pnpm: pnpm add -g @anysearch-cli/embedding) && ans memory backfill-vectors");
@@ -125,9 +125,9 @@ export async function runDoctor(): Promise<number> {
     }
   }
 
-  // 5. ADR-0061 B1 (T1 "五端联动 doctor 可见"): discover real domains/*.toml on the
+  // 5. B1 (T1 "五端联动 doctor 可见"): discover real domains/*.toml on the
   // resolution chain, validate each, and show the active domain's five downstream
-  // layers a domain switch links (sources/skills/hooks/prompts/rag — CONTEXT.md).
+  // layers a domain switch links (sources/skills/hooks/prompts/rag — GLOSSARY.md).
   console.log("[5] Domains:");
   const found = listDomainTomls(domainSearchDirs()); // toml file name -> its domains dir
   if (found.size === 0) {
@@ -157,9 +157,9 @@ export async function runDoctor(): Promise<number> {
       if (s.sources.urlAllowlist?.length) {
         console.log("    urlAllowlist: " + s.sources.urlAllowlist.join(", "));
       }
-      // ADR-0061 B3 self-service: every enabled provider without a key is silently
+      // B3 self-service: every enabled provider without a key is silently
       // dropped from the fan-out — name the key to set or the entry to remove.
-      // ADR-0062 T5: the provider actually reads ANYSEARCH_API_KEY (see
+      // the provider actually reads ANYSEARCH_API_KEY (see
       // packages/retriever/src/providers/anysearch.ts). ANS_API_KEY here was a
       // drift bug — doctor advised setting a variable nothing reads.
       const KEY_BY_PROVIDER: Record<string, string> = { tavily: "TAVILY_API_KEY", exa: "EXA_API_KEY", anysearch: "ANYSEARCH_API_KEY" };

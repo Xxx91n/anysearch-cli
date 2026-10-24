@@ -1,4 +1,4 @@
-// ADR-0049 D2-D13: table-driven pure-core coverage for immutable revisions,
+// -D13: table-driven pure-core coverage for immutable revisions,
 // score bridge, L2 gate, prune reachability, and expand-contract migration plan.
 import assert from "node:assert";
 import {

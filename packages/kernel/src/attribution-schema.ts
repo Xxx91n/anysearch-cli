@@ -1,16 +1,16 @@
-// ADR-0034 D5 L0: TypeBox contract for AttributionReport.
+// L0: TypeBox contract for AttributionReport.
 // This schema mirrors the AttributionReport interface in packages/retriever/src/attribution.ts
 // and must stay in sync. The ship-gate L0 assertion (scripts/ship-gate.mjs step 1) checks
 // that this file exists, has additionalProperties:false at every level, and that
 // both enums are present — drift between the two files is a ship-blocking error.
 //
-// ADR-0034 D3/D4: supported / uncertain / unsupported labels; evidence maxItems=3.
+// supported / uncertain / unsupported labels; evidence maxItems=3.
 
 import { Type } from "@sinclair/typebox";
 
 export const AttributionLabel = Type.Union(
   [Type.Literal("supported"), Type.Literal("uncertain"), Type.Literal("unsupported")],
-  { description: "ADR-0034 D3: three-state claim label" },
+  { description: ": three-state claim label" },
 );
 
 export const AttributionEvidenceSchema = Type.Object(

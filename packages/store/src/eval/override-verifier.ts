@@ -1,4 +1,4 @@
-// ADR-0047 D5/D6: independent override verifier command.
+// independent override verifier command.
 // Exit semantics:
 //   0 = allowed/success
 //   1 = governance denied (quota, late obligation, invalid postmortem, no match)

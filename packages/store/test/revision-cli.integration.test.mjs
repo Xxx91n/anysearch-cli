@@ -1,4 +1,4 @@
-// ADR-0049 D5/D8/D9 drills: migrate -> open/commit/promote -> rollback -> prune -> crash recovery.
+// drills: migrate -> open/commit/promote -> rollback -> prune -> crash recovery.
 // R70 T1 (jitter spike): every spawnSync carries an explicit timeout — a
 // CPU-starved child now fails fast with an ETIMEDOUT signature instead of
 // hanging the event loop (spawnSync is synchronous; --test-timeout cannot

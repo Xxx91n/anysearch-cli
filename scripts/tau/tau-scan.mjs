@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ADR-0039 D3: zero-dependency thin launcher for the tau sensitivity scan (eval-judge.mjs
+// zero-dependency thin launcher for the tau sensitivity scan (eval-judge.mjs
 // pattern). Spawns tsx for the TS core; the scan never runs through the eval runner and
 // never touches the OF look ledger (ANS_EVAL_NO_LOOK set defensively).
 import { spawn } from "node:child_process";

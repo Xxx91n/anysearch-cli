@@ -1,4 +1,4 @@
-// ADR-0061 B1/D5: docs-domain golden batch + coverage manifest contract.
+// B1/D5: docs-domain golden batch + coverage manifest contract.
 // The golden set lives as eval-looks.json's top-level `golden` collection — the
 // same file as the OF look ledger. This test is the mechanical honesty loop:
 // entry schema, provenance revisitability, allowlist subset, manifest
@@ -93,7 +93,7 @@ assert(allowlist.length >= 3, "docs.toml urlAllowlist has the D-004 first-party 
 const crossProblems = crossCheckDocsGolden(golden, manifest, allowlist);
 assert(crossProblems.length === 0, "entries vs manifest vs allowlist consistent: " + crossProblems.join(" | "));
 
-// --- 5b. R95 T1 / ADR-0096: cell tombstones are explicit + machine-checked ---
+// --- 5b. R95 T1 /: cell tombstones are explicit + machine-checked ---
 // A demoted cell leaves the measurable set by design: it holds no scope, no
 // expected.vertical and no injected spec, and its reason code must come from
 // the closed vocabulary. The negative direction (a free-text code) must be
@@ -141,7 +141,7 @@ const appended = appendLook(ledger, { key: "t:t", at: "2026-09-14T00:00:00.000Z"
 assert(appended.golden !== undefined, "appendLook preserves golden through the look append");
 fs.rmSync(tmp, { force: true });
 
-// --- 7b. ADR-0069 (F-17): Tolerant Reader — unknown ROOT fields survive a
+// --- 7b. (F-17): Tolerant Reader — unknown ROOT fields survive a
 // read->append->write cycle byte-for-byte, not merely "readable". The R64
 // schema_version:1 sentinel was stripped once by a field-by-field rebuild.
 {
@@ -173,7 +173,7 @@ try {
 assert(threw, "loadDomainByNameIn throws Domain not found after exhausting dirs");
 
 
-// --- 8b. ADR-0062 criteria 1-4 anchors: the golden set must carry ---------
+// --- 8b. criteria 1-4 anchors: the golden set must carry ---------
 // an out-of-domain must-abstain (c1), a paired in-domain must-hit guard
 // against over-refusal (c2), a stub-provider degradation arm (c3), and a
 // cold-domain zero-result entry (c4).
@@ -193,7 +193,7 @@ assert(threw, "loadDomainByNameIn throws Domain not found after exhausting dirs"
   }
 }
 
-// --- 9. ADR-0061 B4: badcase -> golden regression loop ----------------------
+// --- 9. B4: badcase -> golden regression loop ----------------------
 const badcasesRaw = JSON.parse(fs.readFileSync(path.join(root, "eval-badcases.json"), "utf8"));
 assert(badcasesRaw.schema === "anysearch/eval-badcases@1", "eval-badcases.json schema");
 const badcases = Array.isArray(badcasesRaw.badcases) ? badcasesRaw.badcases : [];

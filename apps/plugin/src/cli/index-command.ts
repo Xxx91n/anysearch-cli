@@ -1,5 +1,5 @@
 // ans index — CLI subcommand to manually index entries to project index.
-// ADR-0009 Decision 4: hooks write project index via server IPC or CLI.
+// Decision 4: hooks write project index via server IPC or CLI.
 // Usage: ans index --title "..." --url "..." --snippet "..." --source "..."
 //        echo '{"results":[...]}' | ans index --stdin
 

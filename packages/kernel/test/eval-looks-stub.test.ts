@@ -62,7 +62,7 @@ const coldPolicy = (): UrlPolicy => ({ allow: ["nonexistent.invalid"], deny: [],
 // Off-domain host pool for replays (all outside every shipped allowlist).
 const OFFDOMAIN = ["zhihu.com", "www.cnblogs.com", "csdn.net", "tokio.rs", "kubernetes.io", "stackoverflow.com"];
 
-// --- R84 T1 / ADR-0085 draft: vertical-eval stub layer -----------------------
+// --- R84 T1 / draft: vertical-eval stub layer -----------------------
 // Vertical entries (vert-*/ctrl-* ids) replay the legislated wire/marker/
 // degraded semantics through stub providers — the OFFLINE truth layer for
 // expected.vertical{domain,sub_domain,paramsKeys,paramsSent,hit,degraded}.
@@ -163,7 +163,7 @@ async function main() {
 
   // Schema: explicit scope on every entry — no default fallback (D-006).
   // golden.scopes is a sidecar map (entry-id -> scope): explicit per-entry scope
-  // without interleaving into r61-owned entry lines. R95 T1 / ADR-0096: a
+  // without interleaving into r61-owned entry lines. R95 T1 /: a
   // tombstoned cell left the measurable set by design — it holds NO scope (the
   // stable "out of the measurable set" marker is scope absence + the tombstone
   // block; a stale scope would silently keep the cell selectable).
@@ -204,7 +204,7 @@ async function main() {
       assert(env.metadata.abstain === undefined, e.id + " answer verdict has no abstain marker");
       assert(env.results.length >= (e.expected.minResults ?? 1), e.id + " meets minResults structure");
     }
-    // R84 T1 / ADR-0085 draft: expected.vertical assertion surface. Offline the
+    // R84 T1 / draft: expected.vertical assertion surface. Offline the
     // semantics are deterministic — control entries assert hard here too (the
     // soft/degraded treatment is live-leg only, where upstream can drift).
     const vexp = e.expected?.vertical;

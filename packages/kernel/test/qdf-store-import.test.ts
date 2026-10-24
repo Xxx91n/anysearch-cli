@@ -1,4 +1,4 @@
-// ADR-0030 D5: kernel must use store classifiers — this test locks the drift fix in.
+// kernel must use store classifiers — this test locks the drift fix in.
 // Historical bug: memory-pipeline.ts carried an inline QDF/evergreen regex copy that
 // drifted from @anysearch-cli/store (missing forms, hardcoded year literals).
 

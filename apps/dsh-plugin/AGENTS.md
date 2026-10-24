@@ -1,7 +1,7 @@
 # AGENTS.md — @anysearch-cli/dsh-plugin
 
 Thin Cordis bundle adapting DeepSeek Harness (dsh) to the anysearch hooks
-layer (ADR-0073) plus the native tool plane (R90: five `ans_*` tools
+layer plus the native tool plane (R90: five `ans_*` tools
 registered via `ctx.tools.register`). In-process surface is minimal BY
 CONTRACT: this package mounts listeners + literal tool definitions only;
 every anysearch capability lives server-side — hooks on the anysearch server
@@ -14,7 +14,7 @@ at `127.0.0.1:33333`, tool execution on `ans-mcp` HTTP at
   type-only devDependency (the compile-time churn alarm). ship-gate step 1s
   fails on any runtime-dep leak.
 - `private: false` + `publishConfig {access:public, provenance:true}` —
-  publish-ready since R80 (ADR-0081 D-003 pre-publish path); verify the
+  publish-ready since R80 ( D-003 pre-publish path); verify the
   publish shape anyway: `pnpm pack` → `dsh plugin add <tgz>` →
   `dsh --dump-config` layer check.
 - `lib/index.js` is a self-contained ESM bundle (esbuild + `createRequire`
@@ -39,7 +39,7 @@ deny/ask + recall preheat inject; `tools/post-execute` → distilled
 
 Server unreachable → hooks pass through (allow), IPC calls drop silently, and
 tool execution returns empty results (ans-mcp down → `{content:[]}`).
-URL gating is the exception BY CONTRACT (ADR-0054/0055 fail-closed): no
+URL gating is the exception BY CONTRACT (0055 fail-closed): no
 reachable policy + URL in args → `ask` (deny in approval-less headless).
 Upstream tool `isError`/RPC errors materialize as tool errors (fail-closed
 at the tool-result level is intentional — do not convert them to empty).

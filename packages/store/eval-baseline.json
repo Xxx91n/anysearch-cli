@@ -1,6 +1,6 @@
 {
   "schema": "anysearch/eval-baseline@1",
-  "fingerprint": "4a529f6fbe2096c8",
+  "fingerprint": "7a8c7014f7c88f3d",
   "metrics": {
     "passRate": 1,
     "supersessionSuccess": 1,
@@ -164,7 +164,7 @@
       "tauScan": {
         "status": "skipped",
         "tier": "offline-deferred",
-        "reason": "tau scan is offline-only via scripts/tau/tau-scan.mjs — zero contact with the eval runner / OF look ledger (ADR-0039 D3)"
+        "reason": "tau scan is offline-only via scripts/tau/tau-scan.mjs — zero contact with the eval runner / OF look ledger "
       },
       "bgnbd": {
         "status": "skipped",
@@ -364,5 +364,5 @@
   },
   "holdoutFingerprint": "956d925db2f73115",
   "updatedAt": "2026-09-09",
-  "note": "ADR-0053 D5 inject probe closure recalibrated dataset fingerprint (cases 123 -> 128); no gated allowance lowered."
+  "note": "Inject probe closure recalibrated dataset fingerprint (cases 123 -> 128); no gated allowance lowered."
 }

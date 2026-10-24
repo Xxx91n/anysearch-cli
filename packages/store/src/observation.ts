@@ -1,4 +1,4 @@
-// ADR-0052 D2-D5: local-first observation asset.
+// -D5: local-first observation asset.
 // The internal representation is the schema contract. Exporters translate it
 // to volatile gen_ai.* semantics only at the boundary.
 import { randomUUID } from "node:crypto";
@@ -15,7 +15,7 @@ import type {
 
 export const OBSERVATION_SCHEMA_URL = "anysearch://schemas/observation/1.0.0";
 export const OBSERVATION_SCHEMA_VERSION = 2;
-// ADR-0056 D-010: PRAGMA user_version is the schema version for the observation
+// D-010: PRAGMA user_version is the schema version for the observation
 // trace store. Fresh-create and incremental-migration paths MUST produce the
 // same column + index set when this matches OBSERVATION_SCHEMA_VERSION.
 export const OBSERVATION_USER_VERSION = 2;
@@ -208,7 +208,7 @@ CREATE TABLE IF NOT EXISTS observability_traces (
   status TEXT NOT NULL,
   payload_json TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  -- ADR-0056 D-010: trace/session/client attribution columns.
+  -- D-010: trace/session/client attribution columns.
   -- injected_trace_id: external W3C 32-hex carried by hook/CLI/server; falls back to randomUUID.
   -- session_id:        file/env-sourced session grouping anchor (NULL for MCP stateless path).
   -- client_id:         Railway-mapped MCP client identity (NULL for hook/CLI paths).
@@ -250,13 +250,13 @@ CREATE TABLE IF NOT EXISTS observability_scores (
 
 CREATE INDEX IF NOT EXISTS idx_observability_spans_trace ON observability_spans(trace_id);
 CREATE INDEX IF NOT EXISTS idx_observability_evaluations_trace ON observability_evaluations(trace_id);
--- ADR-0056 D-010: the three attribution indexes live in migrateObservationSchema
+-- D-010: the three attribution indexes live in migrateObservationSchema
 -- (not in OBSERVATION_SQL) so the v1-migration path can add the columns BEFORE
 -- the indexes that reference them. CREATE INDEX IF NOT EXISTS is idempotent so
 -- re-running migration on a fresh-create DB still produces the same set.
 `;
 
-// ADR-0056 D-010: span-attribute patch carrying session/client identifiers so
+// D-010: span-attribute patch carrying session/client identifiers so
 // exporters (OTLP) observe the same values that the trace store columns hold.
 // Empty values are skipped to keep the JSON payload compact.
 function attributionAttributePatch(sessionId: string, clientId: string): ObservationAttributes {
@@ -266,7 +266,7 @@ function attributionAttributePatch(sessionId: string, clientId: string): Observa
   return out;
 }
 
-// ADR-0056 D-010: pull a single string attribute out of an arbitrary record.
+// D-010: pull a single string attribute out of an arbitrary record.
 // Used by recordEvaluationTrace to forward session_id / client_id when the
 // caller has embedded them in attributes (e.g. via the observeTool helper).
 function extractString(attrs: ObservationAttributes | undefined, key: string): string | undefined {
@@ -274,7 +274,7 @@ function extractString(attrs: ObservationAttributes | undefined, key: string): s
   return typeof v === "string" && v.length > 0 ? v : undefined;
 }
 
-// ADR-0056 D-010: versioned schema migration for the observation trace store.
+// D-010: versioned schema migration for the observation trace store.
 // PRAGMA user_version is the source of truth. Two paths converge on the same
 // column + index set:
 //   v0 (brand-new DB) -> the v2 CREATE TABLE + indexes above; user_version = 2.
@@ -310,7 +310,7 @@ function migrateObservationSchema(db: Database.Database): void {
   tx.immediate();
 }
 
-// ADR-0056 D-008/D-010: Railway PR #885 clientInfo -> client_id mapping. Unknown
+// D-008/D-010: Railway PR #885 clientInfo -> client_id mapping. Unknown
 // clientInfo.name values (or empty input) collapse to "mcp_unknown"; the function
 // never throws so MCP fail-open is preserved.
 export function mapMcpClientId(rawName: string | null | undefined): string {
@@ -332,7 +332,7 @@ export function mapMcpClientId(rawName: string | null | undefined): string {
   return "mcp_unknown";
 }
 
-// ADR-0056 D-003: generate a W3C TraceContext 32-hex trace id. Validation happens
+// D-003: generate a W3C TraceContext 32-hex trace id. Validation happens
 // at parse time (parseAndValidateTraceparent); generation is always randomUUID with
 // dashes stripped.
 export function generateTraceIdHex(): string {
@@ -574,7 +574,7 @@ export class SqliteObservationStore {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = NORMAL");
     this.db.exec(OBSERVATION_SQL);
-    // ADR-0056 D-010: bring v0/v1 stores up to OBSERVATION_USER_VERSION.
+    // D-010: bring v0/v1 stores up to OBSERVATION_USER_VERSION.
     migrateObservationSchema(this.db);
   }
 
@@ -588,7 +588,7 @@ export class SqliteObservationStore {
       kind: ObservationKind;
       operation: string;
       attributes?: ObservationAttributes;
-      // ADR-0056 D-002/D-003: externally-supplied IDs win; absent values fall
+      // D-002/D-003: externally-supplied IDs win; absent values fall
       // back to randomUUID() (traceId) or "" (sessionId/clientId) to preserve
       // the legacy call sites that pass nothing.
       traceId?: string;
@@ -703,7 +703,7 @@ export class SqliteObservationStore {
     return trace;
   }
 
-  // ADR-0056 D-005: SELECT-back verification of the attribution columns. Used by
+  // D-005: SELECT-back verification of the attribution columns. Used by
   // integration tests to close the OPA #6905 gap (fields defined but never
   // persisted). Returns null when the runId is missing.
   readAttribution(runId: string): { traceId: string; sessionId: string | null; clientId: string | null } | undefined {
@@ -713,7 +713,7 @@ export class SqliteObservationStore {
     return row;
   }
 
-  // ADR-0056 D-010: schema introspection for migration parity tests.
+  // D-010: schema introspection for migration parity tests.
   describeSchema(): { userVersion: number; columns: string[]; indexes: string[] } {
     const userVersion = (this.db.pragma("user_version", { simple: true }) as number) | 0;
     const cols = (this.db.prepare("PRAGMA table_info(observability_traces)").all() as Array<{ name: string }>).map((c) => c.name);
@@ -733,7 +733,7 @@ export class SqliteObservationStore {
     return trace ? mapTraceToOtlp(trace) : undefined;
   }
 
-  // ADR-0056 D-010: persistTrace now also writes the three attribution columns.
+  // D-010: persistTrace now also writes the three attribution columns.
   // attribution.sessionId/clientId/traceId are sourced from the call site (CLI /
   // hook / MCP) and persist alongside the payload_json so SELECT by column works
   // without parsing the JSON. Empty values map to NULL (MCP session_id path).

@@ -3,8 +3,7 @@
   "status": "preregistered",
   "interim": {
     "rule": "kappa bootstrap CI lower bound >= 0.6",
-    "judgeStatus": "provisional/uncalibrated",
-    "adr": "ADR-0029 D2"
+    "judgeStatus": "provisional/uncalibrated"
   },
   "final": {
     "ac1CILowerBound": 0.7,
@@ -15,8 +14,7 @@
       "firstFreeze": "30-50 labels",
       "targetRounds": 3,
       "targetN": "100-200"
-    },
-    "adr": "ADR-0049 D10/D13"
+    }
   },
   "fixedAt": "git-timestamp"
 }

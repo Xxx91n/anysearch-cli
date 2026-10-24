@@ -8,7 +8,7 @@
 // (store+observation handles opened then closed at exit — the crash fired at
 // libuv/native teardown), classifies each run's signature into
 // $GITHUB_STEP_SUMMARY, and exits non-zero when a crash signature is seen.
-// TTL / promotion-removal (ADR-0063 D-007): after >=5 consecutive green runs,
+// TTL / promotion-removal ( D-007): after >=5 consecutive green runs,
 // evaluate restoring macos-latest to the blocking matrix; if crashes persist,
 // prune at round close and extend ledger defer-f16-macos-native-crash.
 
@@ -62,7 +62,7 @@ for (let i = 1; i <= RUNS; i++) {
 
 lines.push("");
 if (crashes === 0) {
-  lines.push("**verdict: GREEN** — teardown fix holds on this run. Promotion rule: >=5 consecutive green runs => evaluate restoring macos-latest to the blocking matrix (ADR-0063 D-007).");
+  lines.push("**verdict: GREEN** — teardown fix holds on this run. Promotion rule: >=5 consecutive green runs => evaluate restoring macos-latest to the blocking matrix ( D-007).");
 } else {
   lines.push("**verdict: CRASH SIGNATURE** — " + crashes + " run(s) crashed. If crashes persist: prune the macOS blocking lane (ubuntu/windows stay blocking), extend ledger defer-f16-macos-native-crash, and keep this probe reporting.");
 }

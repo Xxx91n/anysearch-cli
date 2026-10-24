@@ -1,4 +1,4 @@
-// ADR-0056 D-005/T8 end-to-end golden case:
+// D-005/T8 end-to-end golden case:
 // hook outbound -> server extract -> store write -> SELECT-back closure.
 //
 // Topology: start the plugin server on a localhost port, fire a real

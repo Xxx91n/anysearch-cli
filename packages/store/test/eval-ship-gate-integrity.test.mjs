@@ -1,4 +1,4 @@
-// ADR-0044 D6: negative ship-gate contract for a failed run-level integrity verdict.
+// negative ship-gate contract for a failed run-level integrity verdict.
 import { evalIntegrityCheck } from "../../../scripts/eval-integrity-contract.mjs";
 
 let passed = 0, failed = 0;

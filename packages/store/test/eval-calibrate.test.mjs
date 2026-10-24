@@ -1,4 +1,4 @@
-// ADR-0029 D2 test: kappa/AC1/bootstrap over synthetic 2x2-ish tables + timeout watchdog self-check.
+// test: kappa/AC1/bootstrap over synthetic 2x2-ish tables + timeout watchdog self-check.
 import assert from "node:assert";
 import { spawn } from "node:child_process";
 import os from "node:os";
@@ -45,7 +45,7 @@ const a = (m) => { assert.ok(m, "assertion failed"); };
   a(ac > k); // prevalence-adjusted statistic exceeds kappa under skew
 }
 
-// ADR-0029 D5 timeout watchdog: EVAL_TIMEOUT_MS very small on a slow-stub run must exit 124/timeout.
+// timeout watchdog: EVAL_TIMEOUT_MS very small on a slow-stub run must exit 124/timeout.
 const timeoutRun = await new Promise((resolve) => {
   const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "eval", "cli.ts");
   const p = spawn("node", ["--import", "tsx", cli], {

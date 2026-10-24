@@ -1,4 +1,4 @@
-// ADR-0028 D3: containsSecret unit coverage — literal, i-flag, PEM-case, base64,
+// containsSecret unit coverage — literal, i-flag, PEM-case, base64,
 // JSON-escape, whitespace-split, NFKC fullwidth; plus negatives (truncation = known blind spot).
 import assert from "node:assert/strict";
 import { containsSecret, SECRET_PATTERNS } from "../src/secret";

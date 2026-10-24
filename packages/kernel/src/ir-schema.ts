@@ -1,6 +1,6 @@
 // IR Summary Schema: shared constants for L0 rolling summary 5-section format.
-// ADR-0012 D5: versioned IR 5-segment contract.
-// ADR-0015 D4: extracted from pi-runtime.ts inline constants.
+// versioned IR 5-segment contract.
+// extracted from pi-runtime.ts inline constants.
 
 export const IR_SUMMARY_SECTIONS = [
   "Verified Evidence",

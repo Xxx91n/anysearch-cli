@@ -1,4 +1,4 @@
-// ADR-0031 D2/D5: Entity link layer — rule-first extraction, name normalization, trigram similarity.
+// Entity link layer — rule-first extraction, name normalization, trigram similarity.
 // Rule-first = zero network, deterministic (Neo4j "LLM as fallback" / Mem0 v3 degrade-to-spaCy pattern).
 // LLM backfill seam lives in session-store (optional, fail-open): only called when rules find nothing.
 // Templates (atomcode r31): Mem0 utils/entity_extraction.py (channels + priority + overlap),
@@ -11,7 +11,7 @@ export interface EntityCandidate {
   type: EntityType;
 }
 
-// Fellegi-Sunter two-threshold three-state (ADR-0031 D5). Initial values, pending eval error-budget calibration:
+// Fellegi-Sunter two-threshold three-state. Initial values, pending eval error-budget calibration:
 //   >= ALIAS  -> auto-merge as alias (reversible via entity_merge_log kind="alias")
 //   >= REVIEW -> create new entity + entity_merge_log kind="candidate" (review band)
 //   <  REVIEW -> create new entity, no log
@@ -92,6 +92,6 @@ export function extractEntityCandidates(text: string, knownNorms?: ReadonlySet<s
       }
     }
   }
-  // ADR-0032 D3: cap is a parameter so the store can observe + log the overflow tail (bounded at 2x).
+  // cap is a parameter so the store can observe + log the overflow tail (bounded at 2x).
   return out.slice(0, cap);
 }

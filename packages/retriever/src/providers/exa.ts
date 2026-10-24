@@ -1,4 +1,4 @@
-// Exa provider adapter (ADR-0005 decision 3).
+// Exa provider adapter ( decision 3).
 // atomcode research: exa-js 2.18.1, new Exa(apiKey), search(query, {contents}), answer(query, opts).
 // NormalizedResult mapping: title/url direct, text/highlights->snippet, publishedDate->publishedAt, score preserved.
 // searchAndContents is deprecated - use search(query, {contents: {text: true}}) instead.
@@ -17,7 +17,7 @@ const MODE_TYPE: Record<Mode, "auto" | "fast" | "deep-lite" | "deep"> = {
 export class ExaProvider implements SearchProvider {
   readonly id = "exa";
   readonly modes: readonly Mode[] = ["fast", "index", "deep", "answer"];
-  // ADR-0062 D2 (T1): exa-js BaseSearchOptions.includeDomains is a first-class
+  // (T1): exa-js BaseSearchOptions.includeDomains is a first-class
   // typed field (walled-garden RAG positioning per Exa docs).
   readonly domainFilterSupported = true;
   private client: Exa;
@@ -35,7 +35,7 @@ export class ExaProvider implements SearchProvider {
       type,
       numResults: req.maxResults ?? 10,
       contents: { text: { maxCharacters: 500 } }, // snippet-sized text
-      // ADR-0062 D2: pre-filter send-down (provider-side domain restriction).
+      // pre-filter send-down (provider-side domain restriction).
       ...(req.includeDomains?.length ? { includeDomains: req.includeDomains } : {}),
     });
 
@@ -50,7 +50,7 @@ export class ExaProvider implements SearchProvider {
     }));
 
     // answer mode: use exa.answer() separately.
-    // ADR-0022 D2/D3 round-47 fix: surface citations (Exa returns answer+citations paired)
+    // round-47 fix: surface citations (Exa returns answer+citations paired)
     // and log answer() failure to stderr instead of silent-swallow (failure must be visible;
     // search results still return unblocked per ponytail fail-open).
     const answers: string[] = [];

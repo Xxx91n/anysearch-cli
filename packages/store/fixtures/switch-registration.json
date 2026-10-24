@@ -1,7 +1,7 @@
 {
   "schema": "anysearch/switch-registration@1",
   "version": 1,
-  "note": "ADR-0043 D3-D6 pre-registered threshold table (data, not code). Git commit is the pinning channel (DVC/lockfile precedent); the load-time sha256 of this payload is reported as registrationHash in every verdict.",
+  "note": "Pre-registered threshold table (data, not code). Git commit is the pinning channel (DVC/lockfile precedent); the load-time sha256 of this payload is reported as registrationHash in every verdict.",
   "c": {
     "c1MinActiveRows": 300,
     "c1MinFittableUnits": 100,

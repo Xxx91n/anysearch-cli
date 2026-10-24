@@ -1,7 +1,7 @@
 // r116 fixer test wrapper. Covers:
 //   F1 chain-wins rebuild (replaces quarantine loop with ledger recovery)
 //   F2 legacy stage-transition/rollback/freeze rows fail loud
-//   F3 superseded on-chain by eval-ship-gate-integrity.test.mjs (ADR-0057 T6)
+// F3 superseded on-chain by eval-ship-gate-integrity.test.mjs
 //   F4 stale lock recovery (malformed JSON reaped)
 //   D6 mutation: changing registered fields changes the digest
 import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";

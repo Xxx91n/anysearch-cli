@@ -1,4 +1,4 @@
-// ADR-0059 D7 (T-6.3): server token resolution.
+// (T-6.3): server token resolution.
 //
 // The plugin server must never run open. When ANS_SERVER_TOKEN is unset, a 256-bit token is
 // generated and persisted to <cwd>/.anysearch-cli/server-token (mode 0600) so the local hooks can

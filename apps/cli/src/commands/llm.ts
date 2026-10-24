@@ -1,5 +1,5 @@
 // ans llm: configure LLM providers (via @earendil-works/pi-ai).
-// ADR-0007 decision 7: list/set/check LLM providers.
+// decision 7: list/set/check LLM providers.
 // ponytail: MVP - register provider, check auth, set default model via env/config.
 
 import { createModels } from "@earendil-works/pi-ai";

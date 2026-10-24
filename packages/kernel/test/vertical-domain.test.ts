@@ -1,4 +1,4 @@
-// R83 T1 / ADR-0084 D-003..D-006: vertical-domain passthrough — kernel routing
+// R83 T1 / D-003..D-006: vertical-domain passthrough — kernel routing
 // + audit event semantics. Mirrors domain-filter.test.ts: stub providers with a
 // verticalDomainSupported bit, fake observation sink capturing span events.
 // Acceptance anchors covered: query-vs-repo wholesale replace, capability

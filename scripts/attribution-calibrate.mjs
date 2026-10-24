@@ -1,4 +1,4 @@
-// ADR-0050 D5/D6: fit beta calibration and derive held-out dual thresholds.
+// fit beta calibration and derive held-out dual thresholds.
 // Internal CLI. Fit/select/eval are chronological segments of the JSONL
 // arrival order (append-only stream = arrival order). Thresholds are derived
 // on select, the gate and sens/spec cross-check run on held-out eval.
@@ -46,7 +46,7 @@ async function run() {
   const { fit, uncertain, coverage } = store.binaryFitSamples(samples, labels);
   // Chronological three-way split (D7 / preregistration splits): the JSONL
   // stream is append-only, so file order is arrival order. No re-sorting.
-  // ADR-0051 audit fix: the split is global, not stratified by instance.
+  // audit fix: the split is global, not stratified by instance.
   // instance is audit-only (D4) and must not influence which samples enter
   // fitting or threshold derivation; stratified blind batches live at the
   // labeling stage (attribution-gold-labels.mjs --instance/--batch).
@@ -126,7 +126,7 @@ async function run() {
     fit: fitResult,
     thresholds,
     gate,
-    // ADR-0051 D5: per-instance observability, computed on the whole labeled
+    // per-instance observability, computed on the whole labeled
     // binary set against the active fit params. Audit-only; never gates.
     byInstance: instanceReportMod.perInstanceReport(
       fit.map((item) => ({

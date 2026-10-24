@@ -1,10 +1,10 @@
 // MCP Server factory: buildServer() registers 5 tools via Per-tool Barrel.
-// ADR-0008 D1: context-management mental model (context-mode style).
-// ADR-0008 D3: 5 MCP tools — search_web / research_web / recall_memory / query_knowledge / ans_chat.
-// ADR-0008 D4: factory pattern, era-agnostic, entry selects transport.
-// ADR-0008 D7: createEngine() from @anysearch-cli/kernel.
-// ADR-0019 D1: inputSchema wrapped via fromJsonSchema(KernelToolSchemas[name]) — SDK v2 path.
-// ADR-0019 D2: tools live in apps/mcp/src/tools/*, aggregated by tools/index.ts.
+// context-management mental model (context-mode style).
+// 5 MCP tools — search_web / research_web / recall_memory / query_knowledge / ans_chat.
+// factory pattern, era-agnostic, entry selects transport.
+// createEngine from @anysearch-cli/kernel.
+// inputSchema wrapped via fromJsonSchema(KernelToolSchemas[name]) — SDK v2 path.
+// tools live in apps/mcp/src/tools/*, aggregated by tools/index.ts.
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
@@ -24,9 +24,9 @@ const PKG_VERSION: string =
     : "0.0.0";
 
 // buildServer: factory function. Each connection gets a fresh server instance.
-// ADR-0008 D4: factory pattern, era-agnostic, entry selects transport.
+// factory pattern, era-agnostic, entry selects transport.
 export function buildServer(engine?: CompositionResult): McpServer {
-  // ADR-0057 D3 (D-004): a cold HOME has no ~/.anysearch dir yet; create the DB
+  // (D-004): a cold HOME has no ~/.anysearch dir yet; create the DB
   // parent before better-sqlite3 opens it (mirrors apps/cli/src/db.ts:9).
   let eng: CompositionResult;
   if (engine) {
@@ -34,7 +34,7 @@ export function buildServer(engine?: CompositionResult): McpServer {
   } else {
     const dbPath = resolveDbPath();
     mkdirSync(dirname(dbPath), { recursive: true });
-    // ADR-0062 D2/D3: ANS_DOMAIN flows into the engine (same env contract as the
+    // ANS_DOMAIN flows into the engine (same env contract as the
     // CLI) so the domain post-filter + abstain contract is reachable on MCP.
     // Unset = full fanout, unchanged legacy behavior.
     // R65 F-10: mirror the CLI's domains-dir chain — an installed ans-mcp must

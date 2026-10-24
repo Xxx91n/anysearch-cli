@@ -1,4 +1,4 @@
-// ADR-0049 D11: deterministic recorded-pairs judge. No network, no LLM, no random clock.
+// deterministic recorded-pairs judge. No network, no LLM, no random clock.
 // Produces labels -> po/AC1/CI/decision/report and compares against a committed golden report.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";

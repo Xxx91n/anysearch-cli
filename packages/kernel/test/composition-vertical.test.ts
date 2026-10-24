@@ -1,4 +1,4 @@
-// R84 rework (audit F1 / ADR-0085 D6 addendum): composition-root fail-fast for
+// R84 rework (audit F1 / addendum): composition-root fail-fast for
 // malformed domain TOML — a `Domain schema:` error (e.g. an unknown key under
 // sources.vertical) must propagate, not be swallowed into silent full-fanout.
 // Missing domains stay fail-open (absent ≠ broken).

@@ -1,4 +1,4 @@
-// ADR-0038 D2: gain-ledger streak semantics + human resolution.
+// gain-ledger streak semantics + human resolution.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";

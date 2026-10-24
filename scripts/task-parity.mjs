@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // scripts/task-parity.mjs
-// ADR-0028 D5 — Task Parity Gate. Zero-dep Node stdlib only.
+// — Task Parity Gate. Zero-dep Node stdlib only.
 // turbo silently skips tasks a package doesn't implement (PR #1226: "will not
 // be changing the default behavior"), so the contract lives in the pipeline:
 // every workspace package must implement every "universal" task; exemption set

@@ -1,4 +1,4 @@
-// Phase 3 Plugin tests — ADR-0009 verification + ADR-0010 SessionStart/SKILL.md/AGENTS.md.
+// Phase 3 Plugin tests — verification + SessionStart/SKILL.md/AGENTS.md.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync as fsReadFileSync, existsSync } from "node:fs";
@@ -116,7 +116,7 @@ test("makePostToolUseDecision: returns distilledOutput + indexEntries", () => {
   assert.equal(decision.indexEntries?.length, 1);
 });
 
-// === SessionStart hook (ADR-0010 D2) ===
+// === SessionStart hook ===
 test("SessionStart: routing card has required content", () => {
   const ROUTING_CARD = [
     "[anysearch plugin active]",
@@ -179,8 +179,8 @@ test("AGENTS.md: minimal and has required sections", () => {
 
 
 
-// === ADR-0011: Cursor dual channel + .mdc generation ===
-test("ADR-0011: cursor.ts uses additional_context (snake_case)", () => {
+// ===: Cursor dual channel + .mdc generation ===
+test("cursor.ts uses additional_context (snake_case)", () => {
   const cursorSrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "adapters", "cursor.ts"), "utf8");
   assert.ok(cursorSrc.includes("additional_context"), "cursor.ts should use additional_context (snake_case)");
   assert.ok(cursorSrc.includes("ensureMdc"), "cursor.ts should have ensureMdc function for .mdc generation");
@@ -189,14 +189,14 @@ test("ADR-0011: cursor.ts uses additional_context (snake_case)", () => {
   assert.ok(cursorSrc.includes("sessionstart"), "cursor.ts should handle sessionStart event");
 });
 
-test("ADR-0011: antigravity.ts has .mdc fallback", () => {
+test("antigravity.ts has .mdc fallback", () => {
   const antigravitySrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "adapters", "antigravity.ts"), "utf8");
   assert.ok(antigravitySrc.includes("ensureMdc"), "antigravity.ts should have ensureMdc for .mdc fallback");
   assert.ok(antigravitySrc.includes(".antigravity"), "antigravity.ts should write to .antigravity/rules/");
   assert.ok(antigravitySrc.includes("SessionStart"), "antigravity.ts should keep SessionStart for forward-compat");
 });
 
-test("ADR-0011: session-start.ts has .mdc generation logic", () => {
+test("session-start.ts has .mdc generation logic", () => {
   const sessionStartSrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "session-start.ts"), "utf8");
   assert.ok(sessionStartSrc.includes("ensureMdc"), "session-start.ts should call ensureMdc");
   assert.ok(sessionStartSrc.includes("routing-card"), "session-start.ts should import from routing-card.ts");
@@ -209,7 +209,7 @@ test("ADR-0011: session-start.ts has .mdc generation logic", () => {
   assert.ok(rcSrc.includes("existsSync"), "routing-card.ts ensureMdc should check if .mdc exists before writing");
 });
 
-test("ADR-0011: cursor hooks.json has no _degradation_note", () => {
+test("cursor hooks.json has no _degradation_note", () => {
   const hooksPath = join(PLUGIN_ROOT, "configs", "cursor", "hooks.json");
   const hooksContent = fs.readFileSync(hooksPath, "utf8");
   const parsed = JSON.parse(hooksContent);
@@ -219,8 +219,8 @@ test("ADR-0011: cursor hooks.json has no _degradation_note", () => {
   assert.ok(parsed.hooks.postToolUse, "cursor hooks.json should have postToolUse config");
 });
 
-test("ADR-0012: routing card 4-block structure in shared module", () => {
-  // ADR-0012 D14: routing card extracted to routing-card.ts shared module.
+test("routing card 4-block structure in shared module", () => {
+  // routing card extracted to routing-card.ts shared module.
   // Verify 4 blocks: plugin declaration, tools, trigger rules, fail-open.
   const rcSrc = fs.readFileSync(join(PLUGIN_ROOT, "src", "hooks", "routing-card.ts"), "utf8");
   assert.ok(rcSrc.includes("[anysearch plugin active]"), "routing-card.ts has block 1");
@@ -252,7 +252,7 @@ testAsync("Server: /health endpoint returns 200", async () => {
     cwd: PLUGIN_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
     detached: process.platform !== "win32",
-    // ADR-0059 D7 (T-6.3): the server is never open; pin a token so the liveness probe authenticates.
+    // (T-6.3): the server is never open; pin a token so the liveness probe authenticates.
     env: { ...process.env, ANS_SERVER_PORT: String(port), ANS_SERVER_TOKEN: "plugin-test-token" },
   });
   const exited = new Promise<void>((r) => proc.once("exit", () => r()));

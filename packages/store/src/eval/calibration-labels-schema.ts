@@ -1,4 +1,4 @@
-// ADR-0048 D1: TypeBox is the single source of truth for calibration label
+// TypeBox is the single source of truth for calibration label
 // records and their paired manifest. The JSON Schema views below are
 // mechanically derived from these objects, never hand-maintained.
 import { Type, type Static } from "@sinclair/typebox";

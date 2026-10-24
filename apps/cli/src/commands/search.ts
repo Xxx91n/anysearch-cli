@@ -1,5 +1,5 @@
 // ans search: run a retrieval query through the Retroaererd Engine.
-// ADR-0006 decision 3A: uses createEngine() factory, not inline wiring.
+// decision 3A: uses createEngine factory, not inline wiring.
 
 import type { Mode } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
@@ -17,7 +17,7 @@ export async function runSearch(args: string[]): Promise<number> {
   // Parse optional --mode flag (default: fast).
   let mode: Mode = "fast";
   const isJson = args.includes("--json");
-  // ADR-0062 D3 (T3): --fail-on-abstain promotes abstain to exit 3.
+  // (T3): --fail-on-abstain promotes abstain to exit 3.
   const failOnAbstain = args.includes("--fail-on-abstain");
   const modeIdx = args.indexOf("--mode");
   if (modeIdx >= 0 && args[modeIdx + 1]) {
@@ -26,14 +26,14 @@ export async function runSearch(args: string[]): Promise<number> {
       mode = m;
     }
   }
-  // R83 T1 / ADR-0084 D-003: query-level vertical flags — whole-replace over
+  // R83 T1 / D-003: query-level vertical flags — whole-replace over
   // the domain TOML sources.vertical default (no deep-merge).
   //   --vertical-domain X --vertical-sub-domain Y --vertical-params '{"k":"v"}'
   const flagVal = (name: string): string | undefined => {
     const i = args.indexOf(name);
     return i >= 0 ? args[i + 1] : undefined;
   };
-  // R84 T1 / A-02 (ADR-0085 draft): malformed vertical input is fail-fast —
+  // R84 T1 / A-02 ( draft): malformed vertical input is fail-fast —
   // reject-with-error at every entry boundary (aligned with the MCP schema
   // rejection direction). A present flag with no value, a value that is
   // another --flag, or an empty string are all malformed, never silently
@@ -52,7 +52,7 @@ export async function runSearch(args: string[]): Promise<number> {
       return 2;
     }
   }
-  // R88 T3 / ADR-0089 (a06): the require-domain verdict comes from the
+  // R88 T3 / (a06): the require-domain verdict comes from the
   // shared guard layer — the raw params string stands in for the payload
   // (presence is all the guard checks; JSON decoding errors still fire
   // below, preserving the established check order byte-for-byte).
@@ -82,11 +82,11 @@ export async function runSearch(args: string[]): Promise<number> {
   }
   const vertical = built.vertical;
 
-  // ADR-0062 (T3): drop every --flag token (was only --mode) so --json /
+  // (T3): drop every --flag token (was only --mode) so --json /
   // --fail-on-abstain can no longer leak into the provider query string.
   // R83 T1: flag VALUES are also dropped so --vertical-* arguments don't leak
   // into the query string either.
-  // R88 T2 / ADR-0089 (a03): flag values are consumed POSITIONALLY — the slot
+  // R88 T2 / (a03): flag values are consumed POSITIONALLY — the slot
   // immediately after a known value-flag is the value position. A query term
   // identical to a flag value survives (the old value-set heuristic swallowed
   // it: "--vertical-domain finance finance" collapsed to an empty query).
@@ -101,9 +101,9 @@ export async function runSearch(args: string[]): Promise<number> {
     return 2;
   }
 
-  // ADR-0006 decision 3A: createEngine factory with domain filtering.
+  // decision 3A: createEngine factory with domain filtering.
   const domain = process.env.ANS_DOMAIN;
-  // R84 T3 / ADR-0085 draft: ANS_PROVIDERS env-gated provider subset filter —
+  // R84 T3 / draft: ANS_PROVIDERS env-gated provider subset filter —
   // eval channel for arm-isolated measurement (the paired delta runner runs
   // ANS_PROVIDERS=anysearch so a slow vertical arm is not cancelled by faster
   // arms inside the engine grace window). Absent = full fanout, unchanged.
@@ -122,18 +122,18 @@ export async function runSearch(args: string[]): Promise<number> {
           "anysearch.source": "retrieved",
         },
       },
-      // ADR-0062 D2: span passed through so the kernel can emit the dual
+      // span passed through so the kernel can emit the dual
       // retrieval.domain_filter.* audit events + the anysearch.outcome dimension.
       (span) => retriever.search({ query: queryClean, mode, maxResults: 10, ...(vertical ? { vertical } : {}), ...(providersSel?.length ? { providers: providersSel } : {}), span }),
     );
 
-    // r83 audit F5 / ADR-0034 D4: --json pure — single JSON document on stdout, nothing else.
+    // r83 audit F5 /: --json pure — single JSON document on stdout, nothing else.
     if (isJson) {
       const out = {
         query: queryClean,
         mode,
         results: envelope.results,
-        // ADR-0063 (R62 T2): providersFailed exposed so the install-smoke offline
+        // (R62 T2): providersFailed exposed so the install-smoke offline
         // leg anchors a structured field instead of exit codes/regexes.
         providersFailed: envelope.metadata?.providersFailed ?? [],
         // R86 T2 / D-003: error-class channel next to the flag (additive).
@@ -141,12 +141,12 @@ export async function runSearch(args: string[]): Promise<number> {
         answers: envelope.answers,
         sufficiency: envelope.metadata?.sufficiency ?? null,
         attribution: envelope.attribution ?? null,
-        // ADR-0062 D3: first-class abstain marker is part of the --json contract.
+        // first-class abstain marker is part of the --json contract.
         abstain: envelope.metadata.abstain ?? null,
         // R83 T1: resolved query-level vertical spec (repo defaults ride on the
         // retrieval.vertical.pre audit event).
         vertical: vertical ?? null,
-        // R84 T3 / ADR-0085 draft: arm-level provenance snapshot — env-gated
+        // R84 T3 / draft: arm-level provenance snapshot — env-gated
         // (ANS_ARM_SNAPSHOT=1) because it is eval-channel data, not the
         // default --json contract. The paired delta runner reads
         // fusion.labels/lists for per-arm result sets (pre-truncation,
@@ -160,7 +160,7 @@ export async function runSearch(args: string[]): Promise<number> {
     console.log("ans search: " + JSON.stringify({ query: queryClean, mode }));
     console.log("---");
 
-    // ADR-0062 D3 (T3): first-class abstain — one structured line, not an error.
+    // (T3): first-class abstain — one structured line, not an error.
     const abstain = envelope.metadata.abstain;
     if (abstain) {
       console.log(formatAbstainLine(abstain));
@@ -187,12 +187,12 @@ export async function runSearch(args: string[]): Promise<number> {
 
     // Metadata.
     console.log("---");
-    // ADR-0022 D1: print provider answers when present (unverified, provider-side).
+    // print provider answers when present (unverified, provider-side).
     if (envelope.answers.length > 0) {
       console.log("Provider answers (unverified):");
       const pa = envelope.metadata.providerAnswers ?? [];
       for (const a of pa.length > 0 ? pa : envelope.answers.map(t => ({ provider: "unknown", text: t }))) {
-        // ADR-0022 D1: answers pass through at full length on CLI; if terminal rendering needs
+        // answers pass through at full length on CLI; if terminal rendering needs
         // a cap, set ANSWER_CLI_TRUNCATE=N env-var. Default no truncation (D1: no silent truncation).
         const cap = Number(process.env.ANSWER_CLI_TRUNCATE);
         const truncated = Number.isFinite(cap) && cap > 0 && a.text.length > cap;
@@ -201,7 +201,7 @@ export async function runSearch(args: string[]): Promise<number> {
       }
       console.log("");
     }
-    // ADR-0034 D4: CLI attribution rendering for TTY (mark/annotated Sources). --json exits earlier.
+    // CLI attribution rendering for TTY (mark/annotated Sources). --json exits earlier.
     if (envelope.attribution) {
       const { renderAttributionText } = await import("@anysearch-cli/kernel");
       console.log(renderAttributionText(envelope.attribution));

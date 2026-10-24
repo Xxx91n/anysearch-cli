@@ -1,22 +1,22 @@
 // Cursor hooks adapter.
-// ADR-0011 D4: Cursor dual channel — emit additional_context (snake_case) + .mdc fallback.
+// Cursor dual channel — emit additional_context (snake_case) + .mdc fallback.
 // Cursor sessionStart has a known race condition bug (2026-04~2026-08, no ETA).
 // Best practice (context-mode 20k, Hindsight, superpowers): emit hook field for
 // forward-compat + .mdc rules file for reliability.
-// ADR-0011 D6: do NOT modify host AGENTS.md.
+// do NOT modify host AGENTS.md.
 //
 // Event mapping: PreToolUse→preToolUse, PostToolUse→postToolUse.
 // Cursor hook stdin/stdout contract: JSON in, JSON out, exit 0/2/other (fail-open default).
 // Cursor postToolUse supports updated_mcp_tool_output for MCP tools.
 
 import { isAnsTool, callServer, unwrapToolResponse } from "../core.js";
-// ADR-0059 D7 (T-6.3): resolve the shared server token (env or the 0600 token file).
+// (T-6.3): resolve the shared server token (env or the 0600 token file).
 import { resolveServerToken } from "../../server/token.js";
 import { makePostToolUseDecision } from "../distill.js";
 import { makePreToolUseDecision } from "../preheat.js";
 
 interface CursorHookStdin {
-  // ADR-0066: prefer the real host field hook_event_name; event kept as fallback.
+  // prefer the real host field hook_event_name; event kept as fallback.
   hook_event_name?: string;
   event?: string;
   tool_name?: string;
@@ -26,7 +26,7 @@ interface CursorHookStdin {
   session_id?: string;
 }
 
-// ADR-0012 D14: routing card + MDC content imported from shared routing-card.ts module.
+// routing card + MDC content imported from shared routing-card.ts module.
 import { DEFAULT_ROUTING_CARD as ROUTING_CARD, ensureMdc } from "../routing-card.js";
 
 async function main(): Promise<void> {
@@ -41,10 +41,10 @@ async function main(): Promise<void> {
   const toolName = stdin.tool_name || "";
   const cwd = stdin.cwd || process.cwd();
 
-  // ADR-0011 D4: Cursor sessionStart — emit additional_context (snake_case) + ensure .mdc.
+  // Cursor sessionStart — emit additional_context (snake_case) + ensure .mdc.
   if (event === "sessionstart" || event === "session_start") {
     ensureMdc(cwd, ".cursor");
-    // ADR-0011 D4: snake_case field name (official confirmation).
+    // snake_case field name (official confirmation).
     process.stdout.write(JSON.stringify({ additional_context: ROUTING_CARD }));
     process.exit(0);
   }
@@ -62,7 +62,7 @@ async function main(): Promise<void> {
         sessionId: stdin.session_id || "",
       });
       if (decision.additionalContext) {
-        // ADR-0011 D4: snake_case for Cursor.
+        // snake_case for Cursor.
         process.stdout.write(JSON.stringify({ additional_context: decision.additionalContext }));
       }
       process.exit(0);

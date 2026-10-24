@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // anysearch MCP server entry.
-// ADR-0008 D4: dual transport — stdio + Streamable HTTP, factory pattern.
-// ADR-0008 D6: independent package, CLI forwards via ans mcp subcommand.
+// dual transport — stdio + Streamable HTTP, factory pattern.
+// independent package, CLI forwards via ans mcp subcommand.
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import express from "express";
 import { buildServer } from "./server.js";
-// ADR-0056 D-008: stash clientInfo from initialize requests into AsyncLocalStorage
+// D-008: stash clientInfo from initialize requests into AsyncLocalStorage
 // so observeTool can map it to a stable client_id via Railway PR #885.
 import { runWithMcpIdentity } from "./mcp-context.js";
 
@@ -45,7 +45,7 @@ async function main() {
     // stdio: log to stderr only (stdout is protocol channel)
     process.stderr.write("anysearch MCP server: stdio transport ready\n");
   } else {
-    // ponytail: HTTP transport uses stateless factory pattern (ADR-0008 D4).
+    // ponytail: HTTP transport uses stateless factory pattern.
     // Each request gets a fresh server instance via buildServer().
     const app = express();
     app.use(express.json());
@@ -67,14 +67,14 @@ async function main() {
     app.post("/mcp", async (req, res) => {
       try {
         const server = buildServer();
-        // ADR-0008 D4: stateless mode -- sessionIdGenerator: undefined, enableJsonResponse, keepAliveMs: 0
+        // stateless mode -- sessionIdGenerator: undefined, enableJsonResponse, keepAliveMs: 0
         const t = new NodeStreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableJsonResponse: true,
           keepAliveMs: 0,
         });
         await server.connect(t);
-        // ADR-0056 D-008: best-effort clientInfo extraction. The MCP spec
+        // D-008: best-effort clientInfo extraction. The MCP spec
         // sends clientInfo only on initialize; we still wrap every call in
         // AsyncLocalStorage so observeTool can pick it up consistently.
         const body = (req.body || {}) as { method?: string; params?: { clientInfo?: { name?: string } } };

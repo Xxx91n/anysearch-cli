@@ -4,13 +4,13 @@
 // ref: Cormack, Clarke, Buttcher 2009 SIGIR; BigData Boutique RRF guide.
 
 // ponytail: pure function, no I/O, no network. Key-agnostic (uses URL as document id).
-// ADR-0045 D2: no implicit k default — k is injected by the caller from FUSION_REGISTRY
+// no implicit k default — k is injected by the caller from FUSION_REGISTRY
 // (L0 primitive stays governance-free; L1 owns all registered values).
 
 export function rrfScores(
   lists: string[][],
   k: number,
-  weights?: number[], // ADR-0031 D4: per-arm weight (FTS 1.0 / entity 0.5); default 1 per list
+  weights?: number[], // per-arm weight (FTS 1.0 / entity 0.5); default 1 per list
 ): Map<string, number> {
   const scores = new Map<string, number>();
   for (let li = 0; li < lists.length; li++) {

@@ -71,7 +71,7 @@ async function main() {
       const nullBal = ledger.getBalance("non-existent");
       assert(nullBal === null, "getBalance returns null for non-existent session");
 
-      // 8. ADR-0006: reserveCalls + settleCalls (per-call billing).
+      // 8.: reserveCalls + settleCalls (per-call billing).
       ledger.initBudget(s2.id, { tokenCap: 100000, usdCap: 10.0, timeLimitMs: 60000, callCap: 10 });
       const ok5 = ledger.reserveCalls(s2.id, 3); // reserve 3 calls
       assert(ok5, "reserveCalls 3 succeeds");
@@ -81,7 +81,7 @@ async function main() {
       assert(bal7!.billableCalls === 2, "billableCalls = 2 (actual)");
       assert(bal7!.reservedCalls === 0, "reservedCalls = 0 after settle");
 
-      // 9. ADR-0006: reserveCalls exceeds call_cap fails.
+      // 9.: reserveCalls exceeds call_cap fails.
       // s2 already has billable_calls=2, reserved=0, call_cap=10 -> remaining=8
       const ok6 = ledger.reserveCalls(s2.id, 9); // would be 9 > 8 remaining
       assert(!ok6, "reserveCalls 9 fails (only 8 remaining: cap=10 - spent=2)");

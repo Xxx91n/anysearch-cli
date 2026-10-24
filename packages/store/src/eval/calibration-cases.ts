@@ -1,8 +1,8 @@
-// ADR-0029 D1: judge-vs-human calibration holdout, physically separate from GOLDEN_CASES.
+// judge-vs-human calibration holdout, physically separate from GOLDEN_CASES.
 // Schema anysearch/calibration-set@1. 30 cases, stratified across the six golden failure-mode
 // groups, negative-biased for kappa/AC1 prevalence stability.
 // humanRelevant starts null — labels are filled from accumulated real query samples
-// (ADR-0029 "explicitly not done": annotation depends on real usage stream). eval-calibrate.mjs
+// ( "explicitly not done": annotation depends on real usage stream). eval-calibrate.mjs
 // exits 2 until >= 30 labels exist. NEVER merged into the golden gate (D3).
 import { createHash } from "node:crypto";
 
@@ -15,12 +15,12 @@ export interface CalibrationCase {
   query: string;
   resultTitle: string;
   resultSnippet: string;
-  // ponytail: null = unlabeled; labeling flow fills 0/1 from real usage (ADR-0029 D1).
+  // ponytail: null = unlabeled; labeling flow fills 0/1 from real usage.
   humanRelevant: 0 | 1 | null;
 }
 
 // Human-facing annotation rubric (the JUDGE rubric whose hash is snapshotted lives in
-// scripts/eval-judge.mjs as RUBRIC; both belong to the ADR-0029 D4 sixtuple story).
+// scripts/eval-judge.mjs as RUBRIC; both belong to the sixtuple story).
 export const CALIBRATION_RUBRIC =
   "Relevant (1): the title+snippet plausibly answers or supports the query within the session-memory domain. " +
   "Irrelevant (0): off-topic, contradicted/stale presented as current, or only tangential topic overlap. Judge strictly.";
@@ -72,7 +72,7 @@ export const CALIBRATION_SET = {
   schema: "anysearch/calibration-set@1" as const,
   rubric: CALIBRATION_RUBRIC,
   fingerprint: calibrationHash(CALIBRATION_CASES), // hash of the frozen case content (labels null); labeled runs re-hash on the fly
-  annotators: [] as string[], // ADR-0029 D4 snapshot "annotator"; filled by the labeling flow
-  annotatedAt: null as string | null, // ADR-0029 D4 snapshot "annotatedAt"
+  annotators: [] as string[], // snapshot "annotator"; filled by the labeling flow
+  annotatedAt: null as string | null, // snapshot "annotatedAt"
   cases: CALIBRATION_CASES,
 };

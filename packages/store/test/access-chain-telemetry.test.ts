@@ -1,4 +1,4 @@
-// ADR-0040 D2/D6/D7 items 6+7: event write failures are counted (alert-on-silence), second
+// items 6+7: event write failures are counted (alert-on-silence), second
 // construction is idempotent (no duplicate anchor, zero legacy byte rewrite), and the write
 // path stays unblocked under a degraded (renamed-away) events table.
 import Database from "better-sqlite3";

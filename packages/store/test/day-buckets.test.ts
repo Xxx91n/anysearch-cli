@@ -1,4 +1,4 @@
-// ADR-0039 D4 / Acceptance C1: day-bucket boundary table + fingerprint linkage.
+// / Acceptance C1: day-bucket boundary table + fingerprint linkage.
 import { AGE_BUCKETS, bucketForAge, bucketHistogram, dayBucketFingerprint } from "../src/eval/day-buckets";
 
 let passed = 0, failed = 0;

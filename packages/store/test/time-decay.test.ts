@@ -1,4 +1,4 @@
-// Fused freshness factor tests (ADR-0030).
+// Fused freshness factor tests.
 // Covers: band boundaries, pinned/evergreen exemptions, fusion monotonicity,
 // year-literal-free QDF, kernel decayMultiplier legacy checks.
 
@@ -45,7 +45,7 @@ assert(freshnessFactor({ createdAt: ts(400), lastAccessed: null, accessCount: 0,
 const bm = -10;
 assert(scoreWithFreshness(bm, { createdAt: ts(400), lastAccessed: null, accessCount: 0, tier: "news", pinned: true, nowMs: NOW }) === bm, "pinned score unchanged");
 
-// 3. Evergreen query: decay half bypassed, reinforcement still applies (ADR-0030 D4).
+// 3. Evergreen query: decay half bypassed, reinforcement still applies.
 //    Same row, never accessed: evergreen query pins factor at exactly 1.0 (no decay).
 const evNoAccess = freshnessFactor({ createdAt: ts(400), lastAccessed: null, accessCount: 0, tier: "news", evergreenQuery: true, nowMs: NOW });
 assert(evNoAccess === 1.0, "evergreen query bypasses decay exactly (got " + evNoAccess + ")");
@@ -63,7 +63,7 @@ const freshAccessed = scoreWithFreshness(bm, { createdAt: ts(1), lastAccessed: t
 assert(freshAccessed < stale, "fresh+accessed beats stale+untouched at equal BM25 (" + freshAccessed + " vs " + stale + ")");
 assert(Math.abs(stale - bm * 0.3) < 1e-9, "stale+untouched sits at 0.3 floor");
 
-// 5. Year-literal-free QDF regex (ADR-0030 D5): 4-digit years no longer trigger;
+// 5. Year-literal-free QDF regex: 4-digit years no longer trigger;
 //    behavior survives every future rollover.
 assert(!isTimeSensitive("AI 2026 全景回顾"), "year literal 2026 no longer triggers QDF");
 assert(!isTimeSensitive("deep dive into 2099 retro"), "no future year literal triggers QDF");

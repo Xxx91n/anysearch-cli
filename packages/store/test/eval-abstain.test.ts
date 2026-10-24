@@ -1,4 +1,4 @@
-// ADR-0054 D2/D3: abstain smoke — three-tier verdict, llm_fallback, observational zone.
+// abstain smoke — three-tier verdict, llm_fallback, observational zone.
 import { runAbstainProbe } from "../src/eval/abstain";
 import { runAll } from "../src/eval/runner";
 import { ABSTAIN_CASES, GOLDEN_CASES, OFFLINE_EXCLUDED_GROUPS } from "../src/eval/golden-cases";
@@ -29,7 +29,7 @@ async function main() {
   assert(ABSTAIN_CASES.some((c) => c.ops.some((o) => o.op === "abstain" && o.expectAbstain)), "has expectAbstain=true case");
   assert(ABSTAIN_CASES.some((c) => c.ops.some((o) => o.op === "abstain" && !o.expectAbstain)), "has expectAbstain=false case");
 
-  // ADR-0060 D7: the vector arm (group "semantic") needs the real embedding model,
+  // the vector arm (group "semantic") needs the real embedding model,
   // so the offline run excludes it — same boundary as eval-runner.test.ts.
   const report = await runAll(GOLDEN_CASES, { excludeGroups: OFFLINE_EXCLUDED_GROUPS });
   const z = report.metrics.observational;

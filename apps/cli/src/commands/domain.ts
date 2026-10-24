@@ -1,5 +1,5 @@
-// ans domain: switch or show Active Domain (cc-persona TOML, ADR-0002).
-// ADR-0006 decision 4A: loads TOML from domains/<name>.toml convention directory.
+// ans domain: switch or show Active Domain (cc-persona TOML).
+// decision 4A: loads TOML from domains/<name>.toml convention directory.
 // G016: persists domain to ~/.anysearch/config.env for cross-session recall.
 
 import { loadDomainByNameIn, listDomainTomls } from "@anysearch-cli/store";
@@ -41,7 +41,7 @@ export async function runDomain(args: string[]): Promise<number> {
   }
   // Also set for current process.
   process.env.ANS_DOMAIN = newDomain;
-  // ADR-0006 decision 4A: load TOML and display resolved config.
+  // decision 4A: load TOML and display resolved config.
   try {
     const schema = loadDomainByNameIn(newDomain, domainSearchDirs()) as DomainConfigPort;
     console.log("  sources: " + schema.sources.enabled.join(", "));

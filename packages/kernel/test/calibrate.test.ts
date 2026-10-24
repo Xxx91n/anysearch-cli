@@ -1,4 +1,4 @@
-// ADR-0050 D9: deterministic beta calibration invariants and held-out dual
+// deterministic beta calibration invariants and held-out dual
 // threshold derivation, including the legacy degraded fallback floor.
 import assert from "node:assert";
 import {

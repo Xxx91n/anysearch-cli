@@ -2,7 +2,7 @@
 // Deep-merge semantics transplanted from cc-persona (persona.rs):
 //   [settings] = recursive deep-merge (object keys逐键递归, scalars/arrays replaced)
 //   [prompts], [skills], [sources], [rag], [hooks] = entire section replace
-// ref: atomcode-cc-persona-toml research, ADR-0002.
+// ref: atomcode-cc-persona-toml research,.
 
 import { FUSION_REGISTRY } from "@anysearch-cli/retriever";
 
@@ -24,8 +24,8 @@ export interface PromptEntry {
   content: string;
 }
 
-// ADR-0012 D7: compaction config for independent summary model.
-// ADR-0021 D1: threshold injection — lowWatermark + reuseCap optional, defaults hard-pinned.
+// compaction config for independent summary model.
+// threshold injection — lowWatermark + reuseCap optional, defaults hard-pinned.
 //   lowWatermark: absolute token count (>= 50000) OR {fraction: number} in (0,1) of model window.
 //   reuseCap: consecutive REUSE cap before forcing COMPRESS.
 export interface CompactionConfig {
@@ -125,11 +125,11 @@ export function resolve(
     if (d.prompts) prompts = d.prompts;
     if (d.skills?.active) skillsActive = d.skills.active;
     if (d.sources?.enabled) sourcesEnabled = d.sources.enabled;
-    // ADR-0045 D2: sources.weights — section-replace semantics like enabled (per-chain override).
+    // sources.weights — section-replace semantics like enabled (per-chain override).
     if (d.sources?.weights) sourcesWeights = d.sources.weights;
     if (d.sources?.urlAllowlist) sourcesUrlAllowlist = d.sources.urlAllowlist;
     if (d.sources?.urlDenylist) sourcesUrlDenylist = d.sources.urlDenylist;
-    // R83 T1 / ADR-0084 D-003: sources.vertical — section-replace like the other
+    // R83 T1 / D-003: sources.vertical — section-replace like the other
     // sources fields (a derived TOML restates the whole vertical declaration).
     if (d.sources?.vertical) sourcesVertical = d.sources.vertical;
     if (d.rag?.adapter) { ragAdapter = d.rag.adapter; ragConfig = d.rag.config; }
@@ -152,7 +152,7 @@ export function resolve(
   };
 }
 
-// ADR-0055 audit M2: entries are hostnames only — no scheme/port/wildcard. A malformed
+// audit M2: entries are hostnames only — no scheme/port/wildcard. A malformed
 // entry could never match a real host and would silently deaden allow/deny.
 export const HOSTNAME_RE = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/;
 
@@ -171,7 +171,7 @@ export function validate(schema: DomainSchema): void {
     throw new Error("Domain schema: skills.active must be an array");
   if (!Array.isArray(schema.sources.enabled))
     throw new Error("Domain schema: sources.enabled must be an array");
-  // ADR-0045 D2/D4: sources.weights — Record keyed by registered provider id; config errors
+  // sources.weights — Record keyed by registered provider id; config errors
   // fail fast at load (provider runtime failures stay fail-open).
   const w = schema.sources.weights;
   if (w !== undefined) {
@@ -185,13 +185,13 @@ export function validate(schema: DomainSchema): void {
     }
   }
   if (schema.sources.urlAllowlist !== undefined) assertHostnameList(schema.sources.urlAllowlist, "urlAllowlist");
-  // ADR-0055 D2: deny channel — first-class, evaluated last, never merged into allow.
+  // deny channel — first-class, evaluated last, never merged into allow.
   if (schema.sources.urlDenylist !== undefined) assertHostnameList(schema.sources.urlDenylist, "urlDenylist");
-  // R83 T1 / ADR-0084 D-006: sources.vertical — shape check only. domain must be a
+  // R83 T1 / D-006: sources.vertical — shape check only. domain must be a
   // non-empty string; sub_domain when present must be a non-empty string. The
   // domain vocabulary itself stays upstream-owned (unknown values are NOT
   // rejected here — the provider isError + fail-first degrade handles them).
-  // R84 T1 / A-02 (ADR-0085 draft): unknown keys inside sources.vertical are
+  // R84 T1 / A-02 ( draft): unknown keys inside sources.vertical are
   // fail-fast at load (aligned with the MCP schema rejection direction) — a
   // silently dropped key (e.g. a `params` subtable the TOML surface does not
   // carry) is exactly the malformed-silence class this rule exists to kill.
@@ -209,7 +209,7 @@ export function validate(schema: DomainSchema): void {
   }
   if (!Array.isArray(schema.hooks.toolWhitelist))
     throw new Error("Domain schema: hooks.toolWhitelist must be an array");
-  // ADR-0021 D1: compaction guards — fail-fast on out-of-range.
+  // compaction guards — fail-fast on out-of-range.
   const c = schema.compaction;
   if (c) {
     if (c.lowWatermark !== undefined) {

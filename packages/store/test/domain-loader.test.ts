@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-// ADR-0057 D1 (T5): derive the repo root from this file instead of a machine path.
+// (T5): derive the repo root from this file instead of a machine path.
 // test/ -> store/ -> packages/ -> repo root (domains/ lives at the repo root).
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -142,16 +142,16 @@ toolWhitelist = []
   if (failed > 0) process.exit(1);
 }
 
-// ADR-0006 decision 4A: loadDomainByName from convention directory.
+// decision 4A: loadDomainByName from convention directory.
 async function testLoadByName() {
   // Load default.toml from domains/ directory.
   try {
     const schema = loadDomainByName("default", REPO_ROOT);
     assert(schema.name === "default", "loadDomainByName: name = default");
     assert(schema.sources.enabled.length === 3, "loadDomainByName: 3 sources enabled");
-    // ADR-0103 D1: shipped default whitelists the built-in search tool + 3 ctx_* host tools.
+    // shipped default whitelists the built-in search tool + 3 ctx_* host tools.
     assert(schema.hooks.toolWhitelist.length === 4, "loadDomainByName: 4 hooks");
-    assert(schema.hooks.toolWhitelist.includes("search"), "loadDomainByName: search whitelisted (ADR-0103)");
+    assert(schema.hooks.toolWhitelist.includes("search"), "loadDomainByName: search whitelisted ");
   } catch (e: any) {
     assert(false, "loadDomainByName default: " + e.message);
   }

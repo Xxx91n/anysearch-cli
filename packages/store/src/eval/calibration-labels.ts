@@ -1,4 +1,4 @@
-// ADR-0048 D2/D3: pure calibration-label lifecycle core. It owns the JSONL
+// pure calibration-label lifecycle core. It owns the JSONL
 // record model, the case/labels fingerprints, and promote preconditions.
 // It never reads the golden gate baseline and never mutates golden cases.
 import { createHash } from "node:crypto";

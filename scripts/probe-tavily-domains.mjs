@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ADR-0062 D3 criterion 5 (T1): Tavily include_domains leakage probe — INJECT-style
+// criterion 5 (T1): Tavily include_domains leakage probe — INJECT-style
 // deterministic ledger. Re-runnable: TAVILY_API_KEY=tvly-... node scripts/probe-tavily-domains.mjs
 // Output: .scratch/grill-round-62/tavily-probe-ledger.{json,md}
 // Arms: A default-mode leak / B filter-mode hard / C subdomain directionality /
@@ -75,6 +75,6 @@ if (!KEY) {
 }
 mkdirSync(OUT_DIR, { recursive: true });
 writeFileSync(join(OUT_DIR, "tavily-probe-ledger.json"), JSON.stringify(ledger, null, 2) + NL, "utf8");
-const md = ["# Tavily include_domains probe ledger (ADR-0062 criterion 5)", "", "ranAt: " + ledger.ranAt + " | key: " + ledger.key, "", "| arm | status | summary |", "|---|---|---|", ...ledger.arms.map((a) => "| " + a.id + " | " + a.status + " | " + a.summary.replace(/\|/g, "/") + " |"), "", "Re-run: TAVILY_API_KEY=tvly-... node scripts/probe-tavily-domains.mjs (PROBE_TAVILY_RESEARCH=1 enables arm D)."].join(NL);
+const md = ["# Tavily include_domains probe ledger ( criterion 5)", "", "ranAt: " + ledger.ranAt + " | key: " + ledger.key, "", "| arm | status | summary |", "|---|---|---|",...ledger.arms.map((a) => "| " + a.id + " | " + a.status + " | " + a.summary.replace(/\|/g, "/") + " |"), "", "Re-run: TAVILY_API_KEY=tvly-... node scripts/probe-tavily-domains.mjs (PROBE_TAVILY_RESEARCH=1 enables arm D)."].join(NL);
 writeFileSync(join(OUT_DIR, "tavily-probe-ledger.md"), md + NL, "utf8");
 console.log("ledger -> " + join(OUT_DIR, "tavily-probe-ledger.{json,md}"));

@@ -1,5 +1,5 @@
-// recall_memory tool: FTS5 with time edge effect + project index fallback (ADR-0009 D4 two-stage).
-// ADR-0019 D3: input validated by AJV from KernelToolSchemas; handler reads typed args.
+// recall_memory tool: FTS5 with time edge effect + project index fallback ( two-stage).
+// input validated by AJV from KernelToolSchemas; handler reads typed args.
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
@@ -19,13 +19,13 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
       try {
         const { query, limit } = args as { query: string; limit?: number };
         const lim = limit ?? 5;
-        // ADR-0008 D3: FTS5 memory recall with time edge effect.
+        // FTS5 memory recall with time edge effect.
         const { isTimeSensitive, isEvergreen } = await import("@anysearch-cli/store");
-        // ADR-0008 D3: search Research Memory layer (retrieval_results_fts), not messages.
+        // search Research Memory layer (retrieval_results_fts), not messages.
         const hits = await eng.store.searchMemory(query, lim);
         const ts = isTimeSensitive(query);
         const eg = isEvergreen(query);
-        // ADR-0009 D4: Two-stage recall pipeline.
+        // Two-stage recall pipeline.
         // Stage 2: project index fallback (if internal hits insufficient).
         // provenance tagged, no cross-layer score mixing.
         let projectHits: Array<{ title: string; url: string; snippet: string; source: string; rank: number; createdAt: string }> = [];
@@ -42,7 +42,7 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
             // ponytail: project index optional, fail-open.
           }
         }
-        // ADR-0034 D4: no attribution — recall_memory reads from memory store, not provider envelopes.
+        // no attribution — recall_memory reads from memory store, not provider envelopes.
         const summary = JSON.stringify({
           query,
           qdfClassification: ts ? "time-sensitive" : eg ? "evergreen" : "standard",

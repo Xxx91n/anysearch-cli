@@ -1,5 +1,5 @@
 // ans mcp subcommand: forward to apps/mcp entry.
-// ADR-0008 D6: CLI adds ans mcp subcommand that forwards to apps/mcp entry.
+// CLI adds ans mcp subcommand that forwards to apps/mcp entry.
 // Passes through --transport and --port flags.
 
 import { spawn } from "node:child_process";

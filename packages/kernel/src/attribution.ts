@@ -1,4 +1,4 @@
-// ADR-0034 D3/D6: claim-level attribution — deterministic multi-signal fusion.
+// claim-level attribution — deterministic multi-signal fusion.
 // Pure functions only. No LLM, no I/O. Every function testable in node:test.
 //
 // Architecture:
@@ -7,7 +7,7 @@
 //   classifyClaim   — BM25-lite overlap + cosine hook + arms + entity -> 3-state label
 //   gap/abstain     — unsupported -> GapRequest; all-unsupported+no-evidence+suff-low -> abstain
 //
-// ADR-0034 D4: unsupported = deterministic contradiction (negation keywords AND high overlap);
+// unsupported = deterministic contradiction (negation keywords AND high overlap);
 // missing evidence always lands in uncertain (honest, not fabricated).
 
 import type {
@@ -173,9 +173,9 @@ export interface ClassifyContext {
   retrievalResults: NormalizedResult[];
   // Optional cosine hook: caller computes claim-to-memory cosine similarity (0..1).
   cosineFn?: (claimText: string) => number | undefined;
-  // Entity hits from ADR-0031 entity link (lowercased token strings).
+  // Entity hits from entity link (lowercased token strings).
   entityHits?: string[];
-  // ADR-0050 D5: optional calibrated path. When thresholds are present and not
+  // optional calibrated path. When thresholds are present and not
   // degraded, classification uses beta-calibrated probability vs held-out dual
   // thresholds; degraded or absent calibration falls back to the legacy floor.
   calibration?: AttributionCalibration;
@@ -273,7 +273,7 @@ export function classifyClaim(claimText: string, ctx: ClassifyContext): ClaimCla
 export interface BuildAttributionOptions {
   cosineFn?: (claimText: string) => number | undefined;
   entityHits?: string[];
-  // ADR-0050 D5: calibrated path; absent or degraded falls back to legacy floor.
+  // calibrated path; absent or degraded falls back to legacy floor.
   calibration?: AttributionCalibration;
   // Max claims produced per envelope (bounded loop, D2).
   maxClaims?: number;
@@ -382,7 +382,7 @@ export function shouldBridgeToAbstain(report: AttributionReport, sufficiencyVerd
 }
 
 // ---------------------------------------------------------------------------
-// Judge escalation gate (D3 + ADR-0029 budget gate)
+// Judge escalation gate (D3 + budget gate)
 // ---------------------------------------------------------------------------
 
 export function shouldEscalateToJudge(claim: AttributionClaim): boolean {
@@ -391,7 +391,7 @@ export function shouldEscalateToJudge(claim: AttributionClaim): boolean {
 
 export type JudgeFn = (claim: AttributionClaim) => Promise<ClaimLabel | null>;
 
-// ADR-0034 step 6 / ADR-0029 budget gate: judge escalation is host-injected (the host owns
+// step 6 / budget gate: judge escalation is host-injected (the host owns
 // the LLM and its budget ledger; kernel stays pure). applyJudgeEscalation re-labels
 // escalatable claims via the judge, bounded by maxCalls, and flips judgeEnhanced so the
 // report is honest about whether an actual judge ran.
@@ -405,7 +405,7 @@ export async function applyJudgeEscalation(
     if (used >= maxCalls) break;
     if (!shouldEscalateToJudge(c)) continue;
     used++;
-    // ADR-0054 D1: judgment-input assertion boundary 5/5 — claim attribution pre-call.
+    // judgment-input assertion boundary 5/5 — claim attribution pre-call.
     assertJudgmentInput({ text: c.text, source: "retrieved", traceId: "attr-judge-" + used }, "claim-attribution");
     const verdict = await judgeFn(c);
     if (verdict === "supported" || verdict === "unsupported") {

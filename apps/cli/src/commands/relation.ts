@@ -1,4 +1,4 @@
-// ans relation: KG-lite edge inspection + idempotent backfill (ADR-0035 D6/D7).
+// ans relation: KG-lite edge inspection + idempotent backfill.
 // Subcommands: list [--entity N] [--limit N] | backfill-relations [--apply] [--batch N] [--from-id N] [--limit N] [--reprocess]
 
 import { createPersistentEngine } from "../db";
@@ -12,7 +12,7 @@ interface RelationStore {
 function printHelp(): void {
   process.stdout.write(
     [
-      "ans relation — entity relation edges (KG-lite fifth arm, ADR-0035)",
+      "ans relation — entity relation edges (KG-lite fifth arm)",
       "",
       "Commands:",
       "  list [--entity N] [--limit N]   List live relation edges (optionally filtered by entity name)",
@@ -23,7 +23,7 @@ function printHelp(): void {
       "    [--full-refresh]              Rebuild the edges table from scratch (dbt full-refresh safety net, r87; mutually exclusive with --from-id/--limit)",
       "",
       "Exit codes: 0 success / 1 runtime error / 2 usage error.",
-      "Chunked apply commits per batch with SQLITE_BUSY retry (ADR-0036 D6): a quiet window is recommended, not required.",
+      "Chunked apply commits per batch with SQLITE_BUSY retry: a quiet window is recommended, not required.",
       "",
     ].join("\n") + "\n"
   );

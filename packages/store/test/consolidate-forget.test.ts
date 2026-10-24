@@ -1,4 +1,4 @@
-// ADR-0037 D4/D5/D7: consolidation ops quadruple, fidelity gate, theta boundary,
+// consolidation ops quadruple, fidelity gate, theta boundary,
 // dry-run exact prediction, reversible archive undo, pinned exemption.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

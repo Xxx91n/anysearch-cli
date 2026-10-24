@@ -1,4 +1,4 @@
-// ans consolidate - episodic-to-semantic consolidation (ADR-0037 D2/D4, Phase-3 CLI).
+// ans consolidate - episodic-to-semantic consolidation (Phase-3 CLI).
 // LLM summarize seam is assembled here via kernel createLlmSession; fidelity gate via
 // kernel classifyClaim. Fail-open: missing LLM config -> dry-run with llmUnavailable counts.
 
@@ -17,7 +17,7 @@ interface ConsolidateStore {
 
 function help(): string {
   return [
-    "ans consolidate - episodic->semantic consolidation (ADR-0037)",
+    "ans consolidate - episodic->semantic consolidation ",
     "",
     "Usage: ans consolidate [--dry-run|--apply] [--limit N]",
     "",

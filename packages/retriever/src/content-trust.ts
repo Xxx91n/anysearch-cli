@@ -1,4 +1,4 @@
-// ADR-0053 D2/D3/D4: Content Trust Boundary and Indirect Prompt Injection Defense.
+// Content Trust Boundary and Indirect Prompt Injection Defense.
 // Owned by the RRF/retrieval boundary; kernel and eval consumers import from this package.
 // Pure deterministic layer: source labels, fixed-point sanitization, schema gate,
 // authorization predicates, and tool-result JSON wrapping.
@@ -201,7 +201,7 @@ export function shouldAllowUrl(
   } catch {
     return { allowed: false, requiresHitl: false };
   }
-  // ADR-0055 D2: deny is a first-class channel evaluated LAST — it overrides any allow,
+  // deny is a first-class channel evaluated LAST — it overrides any allow,
   // including a hook-returned allow or a user-source label (Cedar forbid-overrides-permit).
   if (denylistedHosts.some((entry) => host === entry || host.endsWith("." + entry))) {
     return { allowed: false, requiresHitl: false };
@@ -213,7 +213,7 @@ export function shouldAllowUrl(
   return { allowed: false, requiresHitl: true };
 }
 
-// ADR-0054 D1: shared pre-LLM judgment assertion. Every LLM judgment boundary asserts
+// shared pre-LLM judgment assertion. Every LLM judgment boundary asserts
 // through this one wrapper (fail-closed). Input is a tagged judgment payload: a
 // TaggedGap-shaped object (text + source + traceId), optionally carrying items[]
 // of RetrievalContent which are asserted individually via assertLlamaInput.
@@ -243,7 +243,7 @@ export function assertJudgmentInput(
   }
 }
 
-// ADR-0054 D1: unwrap a wrapRetrieved wire payload back to the engine envelope.
+// unwrap a wrapRetrieved wire payload back to the engine envelope.
 // Returns the parsed envelope when the payload is a tagged RetrievalContent whose
 // schema matches, otherwise null (caller falls back to legacy parsing).
 export function unwrapRetrieved(parsed: unknown): unknown | null {

@@ -1,9 +1,9 @@
-// ADR-0042 D4 (r108 impl): skip-ledger schema @2 — track field + reason-code split.
+// (r108 impl): skip-ledger schema @2 — track field + reason-code split.
 // data-absent (structural absence of data) never counts toward the 3-streak human-escalation
 // rule and breaks any in-flight gate-not-met run; the first gate-not-met after data-absent
 // entries starts counting from 1 again. @1 ledgers are upcast losslessly on read
 // (npm lockfile read-old/write-new pattern), closing r106 F-08.
-// ADR-0043 D7 (r42 impl): schema @3 — materialized state block {phase,since,transitionId,
+// (r42 impl): schema @3 — materialized state block {phase,since,transitionId,
 // evidenceHash} + a separate actions log for stage-transition / rollback / freeze / check /
 // readiness events. Actions NEVER influence the skip streak (a rollback is an action, not a
 // skip). Upcast @2 -> @3 is lossless; unknown versions fail loud (canon of r110 SA-F-03).
@@ -17,7 +17,7 @@ export const SKIP_LEDGER_SCHEMA_V1 = "anysearch/gain-ledger@1";
 export const SKIP_STREAK_LIMIT = 3;
 
 export type ObsTrack = "consumed" | "synthetic";
-// ADR-0044 D2: reasonCode is open and deprecate-only. Newer ledger versions may carry new
+// reasonCode is open and deprecate-only. Newer ledger versions may carry new
 // values; readers preserve them byte-for-byte instead of rejecting the file.
 export type SkipReasonCode = string;
 
@@ -32,7 +32,7 @@ export interface SkipLedgerEntry {
   reasonCode?: SkipReasonCode;
 }
 
-// ADR-0043 D7: the switch state block is a materialized cache of the access_events chain
+// the switch state block is a materialized cache of the access_events chain
 // (the chain is the immutable source of truth; on conflict the chain wins).
 export interface SwitchStateBlock {
   phase: SwitchPhase;
@@ -154,8 +154,8 @@ export function parseSkipLedger(text: string): SkipLedger {
 }
 
 // Record one eval run's skip-key set (skips are "identical" when the key set repeats).
-// Multi-tier alignment with ADR-0038: consecutive identical sets bump the streak; a run with
-// zero skips resets it. ADR-0042 D4: a data-absent run never bumps the streak and breaks the
+// Multi-tier alignment with: consecutive identical sets bump the streak; a run with
+// zero skips resets it.: a data-absent run never bumps the streak and breaks the
 // run (streak back to 0), so the next gate-not-met run starts at 1.
 export function recordSkips(
   ledger: SkipLedger,
@@ -166,7 +166,7 @@ export function recordSkips(
   const track = meta.track ?? "consumed";
   const reasonCode = meta.reasonCode ?? "gate-not-met";
   const sorted = [...skipKeys].sort();
-  // ADR-0044 D4: synthetic drills are a separate plane. Their skip history is retained for
+  // synthetic drills are a separate plane. Their skip history is retained for
   // provenance, but they never advance the consumed three-streak escalation budget.
   if (track === "synthetic") {
     if (sorted.length === 0) {
@@ -206,7 +206,7 @@ export function skipMustFail(ledger: SkipLedger): boolean {
   return ledger.consecutiveWarn >= SKIP_STREAK_LIMIT;
 }
 
-// ADR-0043 D5/D7: switch actions are ledgered separately from skip entries — an action is
+// switch actions are ledgered separately from skip entries — an action is
 // never a skip and never touches consecutiveWarn. Capped ring, capped reason length.
 export function appendSwitchAction(ledger: SkipLedger, a: SwitchActionEntry): void {
   ledger.actions = [...ledger.actions, { at: a.at, kind: a.kind, from: a.from, to: a.to, reason: a.reason.slice(0, 400), ...(a.provenance ? { provenance: a.provenance } : {}) }].slice(-100);
@@ -222,7 +222,7 @@ export function tailStreak(actions: SwitchActionEntry[], pred: (a: SwitchActionE
   return n;
 }
 
-// ADR-0044 D5: close the dual-writer read-modify-write window for the JSON skip-ledger.
+// close the dual-writer read-modify-write window for the JSON skip-ledger.
 // A sidecar lock file wraps every read/modify/atomic-rename cycle. Stale locks are recovered
 // when the owning process no longer exists.
 function ledgerPathFor(outDir: string): string { return join(outDir, "skip-ledger.json"); }

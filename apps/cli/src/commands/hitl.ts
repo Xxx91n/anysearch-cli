@@ -1,5 +1,5 @@
 // ans hitl — HITL review queue for shouldAllowUrl-blocked retrieved-derived URLs.
-// ADR-0054 D4: headless runs deny-first + enqueue to .anysearch-cli/hitl.pending (JSONL);
+// headless runs deny-first + enqueue to .anysearch-cli/hitl.pending (JSONL);
 // `ans hitl review` lists the queue; `--allow-url <host>` pre-authorizes a host by writing
 // it into the active domain's [sources] urlAllowlist and drops matching pending entries.
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -70,7 +70,7 @@ function allowHost(host: string): boolean {
   if (!(schema.sources.urlAllowlist ?? []).includes(host)) {
     throw new Error("allowlist write did not round-trip for host " + host);
   }
-  // D8: ConfigChange audit event into the ADR-0052 local trace store (fail-open).
+  // D8: ConfigChange audit event into the local trace store (fail-open).
   if (!beforeHosts.includes(host)) {
     void emitConfigChangeAudit(resolveDbPath(), {
       actor: "cli",
@@ -96,7 +96,7 @@ export async function runHitl(args: string[]): Promise<number> {
   if (!sub || sub === "--help" || sub === "-h" || (sub === "review" && !allowHostArg)) {
     if (sub !== "review") {
       process.stdout.write([
-        "ans hitl — HITL review queue for blocked retrieved-derived URLs (ADR-0054)",
+        "ans hitl — HITL review queue for blocked retrieved-derived URLs ",
         "",
         "Commands:",
         "  review                    List queued URLs awaiting human review",

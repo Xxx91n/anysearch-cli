@@ -1,4 +1,4 @@
-# ADR-0025 D1: Native Smoke Matrix (consumer variant of better-sqlite3 build.yml).
+# Native Smoke Matrix (consumer variant of better-sqlite3 build.yml).
 # Load-only: pnpm install --frozen-lockfile + verify-native.mjs. No toolchain, no build.
 # pnpm-workspace.yaml pins allowBuilds: better-sqlite3=false — a missing prebuild must
 # fail loudly here rather than being papered over by a silent node-gyp source build.
@@ -28,7 +28,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/setup@v2 # ADR-0026 D6: reads packageManager (11.24.0) automatically
+      - uses: pnpm/setup@v2 #: reads packageManager (11.24.0) automatically
         with: { install: false }
       - uses: actions/setup-node@v5
         with:

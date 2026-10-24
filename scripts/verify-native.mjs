@@ -1,4 +1,4 @@
-// ADR-0025 D1: Native Smoke assertion for better-sqlite3 prebuilds.
+// Native Smoke assertion for better-sqlite3 prebuilds.
 // Run by CI matrix (.github/workflows/native-smoke.yml) on win32-x64 / darwin-arm64 /
 // linux-x64 / linux-arm64. allowBuilds=false in pnpm-workspace.yaml is intentional:
 // source builds are disabled so a missing prebuild fails loudly instead of being

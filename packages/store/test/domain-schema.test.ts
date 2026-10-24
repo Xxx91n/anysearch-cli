@@ -92,7 +92,7 @@ let goodOk = true;
 try { validate(goodHosts); } catch { goodOk = false; }
 assert("valid hostnames pass (case tolerated, canonicalized downstream)", goodOk);
 
-// R83 T1 / ADR-0084 D-003/D-006: sources.vertical — parse + resolve chain
+// R83 T1 / D-003/D-006: sources.vertical — parse + resolve chain
 // + shape-only validation (no vocabulary enum; unknown values NOT rejected).
 
 // Inheritance: derived restates the whole vertical (section-replace semantics).

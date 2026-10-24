@@ -192,10 +192,10 @@
         ],
         "provenance": {
           "type": "internal-dogfood",
-          "ref": "docs/adr/0056-architecture-grill-round-56-session-id-propagation-protocol.md",
+          "ref": "apps/plugin/test/propagation.test.ts",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "ADR-0056 session-id propagation work; apps/plugin propagation.test.ts is the in-repo evidence",
+        "notes": "session-id propagation work; apps/plugin propagation.test.ts is the in-repo evidence",
         "stability_class": "frozen-spec",
         "failure_class": "external-doc-dated-rotation",
         "migration": {
@@ -241,10 +241,10 @@
         ],
         "provenance": {
           "type": "internal-dogfood",
-          "ref": "docs/adr/0026-architecture-grill-round-23-pnpm-version-pinning-v11-pmonfail-error.md",
+          "ref": "pnpm-workspace.yaml",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "ADR-0026 pinning work; repo package.json devEngines + pnpm-workspace.yaml pmOnFail in-repo",
+        "notes": "pinning work; repo package.json devEngines + pnpm-workspace.yaml pmOnFail in-repo",
         "stability_class": "external",
         "failure_class": "external-doc-locale-version-wrap",
         "migration": {
@@ -467,7 +467,7 @@
         ],
         "provenance": {
           "type": "internal-dogfood",
-          "ref": "docs/adr/0060-architecture-grill-round-59-archive-truthfulness-closure.md",
+          "ref": "packages/store/test/eval-abstain.test.ts",
           "harvestedAt": "2026-09-14"
         },
         "notes": "real out-of-corpus question: CONTEXT.md:9 claimed tokio::JoinSet for a TS codebase; tokio docs outside allowlist → expect abstain | badcase docs-bc0001 observed 10 results (expected abstain)"
@@ -680,7 +680,7 @@
           "ref": ".scratch/grill-round-61/handoffs/next-round.md",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "ADR-0062 判据2 域内 must-hit 成对锚——与 docs-g0007 同域同语言同 intent 家族的合法域内提问必须答出，防止 post-filter 过度弃答。"
+        "notes": "判据2 域内 must-hit 成对锚——与 docs-g0007 同域同语言同 intent 家族的合法域内提问必须答出，防止 post-filter 过度弃答。"
       },
       {
         "id": "docs-g0013",
@@ -703,7 +703,7 @@
           "ref": "packages/kernel/test/domain-filter.test.ts",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "ADR-0062 判据3 降级 stub-provider 臂——当 provider 无域过滤能力（domainFilterSupported=false）时权威 post-gate 仍拦全部域外到达；可执行臂见 kernel 域过滤测试 §5。"
+        "notes": "判据3 降级 stub-provider 臂——当 provider 无域过滤能力（domainFilterSupported=false）时权威 post-gate 仍拦全部域外到达；可执行臂见 kernel 域过滤测试 §5。"
       },
       {
         "id": "docs-g0014",
@@ -726,7 +726,7 @@
           "ref": ".scratch/grill-round-61/narrow-domains/cold.toml",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "ADR-0062 判据4 冷门域 0 结果——cold.toml allowlist 仅 nonexistent.invalid，任何到达均被闸，零幸存者即弃答；端到端臂见 apps/cli/test/abstain.test.ts live arm。"
+        "notes": "判据4 冷门域 0 结果——cold.toml allowlist 仅 nonexistent.invalid，任何到达均被闸，零幸存者即弃答；端到端臂见 apps/cli/test/abstain.test.ts live arm。"
       },
       {
         "id": "vert-f0001",
@@ -1109,7 +1109,7 @@
           "reason_code": "upstream-validator-vs-doc-mismatch",
           "demoted_at": "2026-10-01",
           "round": 95,
-          "decided_by": "ADR-0096",
+          "decided_by": "round-96 eval-matrix-revision closeout (record removed with governance teardown)",
           "prior_scope": "live",
           "prior_spec": {
             "domain": "finance",

@@ -1,4 +1,4 @@
-// ADR-0042 D1-D5 (r108 impl): dual-track observational data feed.
+// -D5 (r108 impl): dual-track observational data feed.
 // Consumed track (real access_events) is always preferred; the synthetic track (committed,
 // SHA-256-pinned fixture snapshots generated offline by scripts/tau/generate_fixtures.py) is
 // a machinery harness only — it exercises histogram -> PSI -> AND-gate -> skip -> ledger and
@@ -50,7 +50,7 @@ function sha256(buf: Buffer): string {
 }
 
 // 16-hex definition hash of the pinned fixture set; joins the eval baseline fingerprint
-// (ADR-0042 D6 flip). r110 SP-F-03: a missing manifest (e.g. fixtures not packed) degrades
+// ( flip). r110 SP-F-03: a missing manifest (e.g. fixtures not packed) degrades
 // to the explicit marker "no-fixtures" — never silently: loadObsFixture hard-throws when a
 // fixture is actually requested, the value is printed into the report's observational zone
 // (fixtureDefinitionHash field), and the eval CLI warns on stderr when it is active.
@@ -99,7 +99,7 @@ export function validateFixtureDoc(fx: ObsFixture): void {
   if (gotKeys !== wantKeys) throw new Error("obs-fixture " + name + ": baselineHistogram keys " + JSON.stringify(gotKeys) + " != AGE_BUCKETS " + JSON.stringify(wantKeys) + " — regenerate fixtures after changing day buckets");
 }
 
-// Fixture -> the gate-visible feed (ADR-0042 D6 chain input). PSI = baseline vs current
+// Fixture -> the gate-visible feed ( chain input). PSI = baseline vs current
 // access-age histogram over the pre-registered D4 buckets, symmetric-KL with eps smoothing.
 export function feedFromFixture(fx: ObsFixture): ObsFeed {
   const ages = fx.events.map((e) => e.ageDays);

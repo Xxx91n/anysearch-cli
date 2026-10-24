@@ -1,4 +1,4 @@
-// ADR-0050 D3/D4: attribution-gold schema, fingerprint, mutation, and
+// attribution-gold schema, fingerprint, mutation, and
 // AIS-to-binary fitting invariants.
 import assert from "node:assert";
 import {
@@ -62,7 +62,7 @@ assert.equal(added.ok, false, "unknown sample is rejected");
 
 console.log("attribution-gold.test: ok");
 
-// ADR-0051 D4: schema @2 segment audit field.
+// schema @2 segment audit field.
 assert.equal(ATTRIBUTION_GOLD_SAMPLE_SCHEMA, "anysearch/attribution-gold-sample@2", "sample schema is @2");
 assert.equal(sampleInstance(samples[0]!), "web");
 const { instance: _stripped, ...unlabeled } = samples[0]!;
@@ -72,10 +72,10 @@ assert.notEqual(sampleFingerprint(memoryVersion), sampleFingerprint(samples), "i
 assert.notEqual(sampleFingerprint([unlabeled as AttributionGoldSample, samples[1]!]), sampleFingerprint(samples), "explicit instance enters the fingerprint; absent keeps the legacy @1 canonical form");
 // Audit-only: instance must not touch beta fitting inputs.
 assert.deepEqual(binaryFitSamples(memoryVersion, labels).fit, binaryFitSamples(samples, labels).fit, "fit is instance-blind");
-// @1 records upcast losslessly to @2 (ADR-0043 precedent + ADR-0051 audit).
+// @1 records upcast losslessly to @2 ( precedent + audit).
 const legacy = parseSampleLines(JSON.stringify({ schema: "anysearch/attribution-gold-sample@1", claimId: "c9", claimText: "x", fusedScore: 0.5 }));
 assert.equal(legacy.errors.length, 0, "@1 records parse after the lossless upcast");
 assert.equal(legacy.samples.length, 1, "upcast preserves the record");
 assert.equal(legacy.samples[0]!.instance, undefined, "upcast leaves instance absent so the fingerprint matches pre-@2 bundles");
 assert.equal(sampleInstance(legacy.samples[0]!), "web", "effective instance still defaults to web");
-console.log("attribution-gold.test ADR-0051 D4 assertions: ok");
+console.log("attribution-gold.test assertions: ok");

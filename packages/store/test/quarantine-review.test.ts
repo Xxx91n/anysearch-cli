@@ -1,4 +1,4 @@
-// ADR-0025 D2: equal-conflict review channel (keep/drop).
+// equal-conflict review channel (keep/drop).
 // quarantine rows are listed via listQuarantinedMemories; keep clears the flag (and
 // supersedes the live counterpart), drop marks resolved_drop (still excluded from search).
 import Database from "better-sqlite3";

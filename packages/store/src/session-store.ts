@@ -1,6 +1,6 @@
 // SessionStore: SQLite+FTS5 implementation via better-sqlite3 sync API.
 // Seam 4 from atomcode-kernel-split-architecture research.
-// ADR-0005 decision 1: better-sqlite3 synchronous binding.
+// decision 1: better-sqlite3 synchronous binding.
 // atomcode research: WAL persistent, single shared connection, module-level prepared statements,
 // db.transaction(fn) auto-rollback, avoid RETURNING+FTS trigger path (issue #654).
 
@@ -20,12 +20,12 @@ import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
-// ADR-0063 (R62 T3): embedding is optional — routed through the guarded arm
+// (R62 T3): embedding is optional — routed through the guarded arm
 // module (absent package => embedText null / telemetry absent), never imported statically.
 import { embedText, embeddingModelId, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
 import type { NormalizedResult } from "@anysearch-cli/retriever";
 
-// ADR-0023 D4: MemTX-simplified writer adjudication.
+// MemTX-simplified writer adjudication.
 // keyMemories carry the three-check inputs for write-path adjudication (D4, Q3=A).
 export type AdjudicationAction = "accept" | "supersede" | "quarantine" | "reject";
 
@@ -48,7 +48,7 @@ export interface AdjudicationResultItem {
   insertedId?: number; // rowid if accepted (evidence pass) or supersceded (new row landed)
 }
 
-// ADR-0025 D2: equal-conflict review channel row (flag, don't silently pick).
+// equal-conflict review channel row (flag, don't silently pick).
 export interface QuarantinedMemory {
   id: number;
   sessionId: string;
@@ -62,7 +62,7 @@ export interface QuarantinedMemory {
   counterpartTitle: string | null; // live counterpart for the same entity, shown for judgment
   counterpartSnippet: string | null;
 }
-// ADR-0024 D1/D2: T0 hot zone types.
+// T0 hot zone types.
 export interface T0PreferenceInput {
   key: string;
   value: string;
@@ -97,9 +97,9 @@ export interface Message {
   content: string;
 }
 
-// ADR-0037 D3/D6: semantic arm mode. Phase-1 was shadow; landed Phase-2 serve below.
+// semantic arm mode. Phase-1 was shadow; landed Phase-2 serve below.
 // Phase-2 = "serve" (conditioned activation, weight 0.5 via fts5.ts extra arms).
-// ADR-0037 D6 Phase-2: arm live at weight 0.5, conditional activation; regression gate fail-closed (runner sem counterfactual).
+// Phase-2: arm live at weight 0.5, conditional activation; regression gate fail-closed (runner sem counterfactual).
 const SEMANTIC_ARM_MODE: "shadow" | "serve" = "serve";
 
 export interface MemoryHit {
@@ -108,20 +108,20 @@ export interface MemoryHit {
   role: string;
   content: string;
   rank: number;
-  // ADR-0033 D8: arm provenance ("fts" | "entity" | "vector"); absent on legacy paths. A vector-only hit is weak evidence (answer-layer abstain signal).
+  // arm provenance ("fts" | "entity" | "vector"); absent on legacy paths. A vector-only hit is weak evidence (answer-layer abstain signal).
   arms?: string[];
 }
 
-// ADR-0036 D3: eval-only snapshot of one searchMemory call's RRF inputs, so the runner can
+// eval-only snapshot of one searchMemory call's RRF inputs, so the runner can
 // recompute the relation-arm-off counterfactual without a second retrieval (single-run cost ~1x).
 export interface ArmProvenance {
-  // ADR-0045 D2/D3: common fusion provenance shape fields.
+  // common fusion provenance shape fields.
   instance: "memory";
   labels: string[];      // parallel to lists/weights; five-arm order: fts, entity, vector, relation
   lists: string[][];     // rowid strings per arm, rank order
   weights: number[];
   fusedIds: string[];    // full fused id order (pre-limit, pre-secret-filter)
-  scoreKind: "rank_fusion"; // fused score is a rank_fusion signal only (ADR-0045 D3)
+  scoreKind: "rank_fusion"; // fused score is a rank_fusion signal only
   texts: Map<number, string>; // rowid -> role + " " + content for title matching
 }
 
@@ -141,14 +141,14 @@ export interface SessionStore {
   saveResults(sessionId: string, results: NormalizedResult[]): Promise<void>;
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
   getAnchors(sessionId: string): Promise<ResumeAnchor[]>;
-  // ADR-0008 D3: search Research Memory layer for recall_memory MCP tool.
+  // search Research Memory layer for recall_memory MCP tool.
   searchMemory(query: string, limit?: number): Promise<MemoryHit[]>;
-  // ADR-0023 D2 (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
+  // (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
   searchMemoryMulti(queries: string[], limit?: number): Promise<MemoryHit[]>;
-  // ADR-0023 D4 (Q3=A): write-path adjudication with keyMemories carrying evidence score.
+  // (Q3=A): write-path adjudication with keyMemories carrying evidence score.
   // Caller supplies quarantine check readiness (peer-conflict scan split into its own stmt).
   adjudicateMemory(sessionId: string, keyMemories: KeyMemoryInput[]): Promise<AdjudicationResultItem[]>;
-  // ADR-0024 D1/D2/D7: T0 hot zone — durable preference layer.
+  // T0 hot zone — durable preference layer.
   // promotePreference: deterministic write gated by caller (C-prime channels: /remember explicit, correction-count>=2).
   // demotePreference: conflict(d-i)/user(d-iii)/eviction(d-ii); sets invalid_at only (never drop, recoverable).
   // touchPreference: updates last_accessed (eviction order base).
@@ -157,35 +157,35 @@ export interface SessionStore {
   demotePreference(key: string, scope: string, reason: string): Promise<void>;
   touchPreference(key: string, scope: string): Promise<void>;
   listPreferences(projectScope?: string): Promise<T0PreferenceRow[]>;
-  // ADR-0024 D3: adjudication hook — correction-count increment + conditional promote.
+  // adjudication hook — correction-count increment + conditional promote.
   recordCorrectionOnPreference(key: string, scope: string): Promise<{ correctionCount: number }>;
-  // ADR-0025 D2: equal-conflict review channel over retrieval_results.quarantine.
+  // equal-conflict review channel over retrieval_results.quarantine.
   listQuarantinedMemories(): Promise<QuarantinedMemory[]>;
   // keep: new value wins (clear quarantine, supersede live counterpart). drop: keep quarantined, mark resolved_drop.
   resolveQuarantinedMemory(id: number, action: "keep" | "drop"): Promise<{ ok: boolean }>;
-  // ADR-0032 D1/D4: destructive entity merge with full snapshot (single transaction).
+  // destructive entity merge with full snapshot (single transaction).
   combineEntities(fromId: number, toId: number): Promise<{ ok: boolean; logId?: number; error?: string }>;
-  // ADR-0032 D2: bounded unmerge driven by the D1 snapshot; writes override records against re-merge.
+  // bounded unmerge driven by the D1 snapshot; writes override records against re-merge.
   unmergeEntity(logId: number): Promise<{ ok: boolean; error?: string }>;
-  // ADR-0031 D5: alias-append undo (exposed for the CLI unmerge entry point).
+  // alias-append undo (exposed for the CLI unmerge entry point).
   undoEntityMerge(logId: number): boolean;
-  // ADR-0032 D3: candidate review belt (list + keep/drop resolution, ADR-0025 quarantine pattern).
+  // candidate review belt (list + keep/drop resolution, quarantine pattern).
   listEntityReview(): Promise<EntityReviewRow[]>;
   resolveEntityReview(id: number, action: "keep" | "drop"): Promise<{ ok: boolean; error?: string }>;
-  // ADR-0035 D3/D5: entity-relation edge layer (KG-lite fifth retrieval arm).
+  // entity-relation edge layer (KG-lite fifth retrieval arm).
   relationArmRows(query: string, limit?: number): MemoryHit[];
   listRelations(opts?: { entity?: string; limit?: number }): Promise<RelationRow[]>;
   backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean; fullRefresh?: boolean }): Promise<BackfillRelationsResult>;
   relationTelemetry(): RelationTelemetry;
-  // ADR-0040 D2: alert-on-silence telemetry — event write failures are counted, never silent.
+  // alert-on-silence telemetry — event write failures are counted, never silent.
   accessEventTelemetry(): AccessEventTelemetry;
 }
 
-// ADR-0027 D5 + ADR-0028 D3: secret guard lives in ./secret.ts (shared containsSecret) —
+// +: secret guard lives in ./secret.ts (shared containsSecret) —
 // covers case-insensitive / JSON-escape / whitespace-collapse / NFKC / bounded-base64 variants
 // at all 4 write entries and both search exits. Known blind spots: truncated secrets, novel encodings.
 
-// ADR-0032 D3: one unresolved candidate row in the entity review belt.
+// one unresolved candidate row in the entity review belt.
 export interface EntityReviewRow {
   id: number;
   sourceName: string;
@@ -197,7 +197,7 @@ export interface EntityReviewRow {
   createdAt: string;
 }
 
-// ADR-0032 D5: six report-only merge metrics — five counters derived from entity_merge_log
+// six report-only merge metrics — five counters derived from entity_merge_log
 // plus one run-scoped truncation counter; review_pending is a gauge (queue depth).
 export interface EntityMergeTelemetry {
   auto_merged: number;
@@ -208,7 +208,7 @@ export interface EntityMergeTelemetry {
   candidates_truncated: number;
 }
 
-// ADR-0035 D3: one live edge joined to both endpoint entity display names (relation list).
+// one live edge joined to both endpoint entity display names (relation list).
 export interface RelationRow {
   id: number;
   sourceEntityId: number;
@@ -222,7 +222,7 @@ export interface RelationRow {
   createdAt: string;
 }
 
-// ADR-0035 D7: dry-run/apply report through the same shape. Dry-run executes the identical
+// dry-run/apply report through the same shape. Dry-run executes the identical
 // apply pipeline inside a rolled-back transaction, so every counter is an exact prediction
 // (r87 audit F1) — never an upper bound. Exit code is a CLI concern (0/1/2).
 export interface BackfillRelationsResult {
@@ -234,7 +234,7 @@ export interface BackfillRelationsResult {
   lastId: number;
 }
 
-// ADR-0035 D8: report-only relation telemetry. pendingEdges is a derived gauge (linked memories
+// report-only relation telemetry. pendingEdges is a derived gauge (linked memories
 // lacking an edge episode row) — the backfill coverage signal, recomputed at read time.
 export interface RelationTelemetry {
   ruleHits: number;
@@ -250,7 +250,7 @@ export interface RelationTelemetry {
   armHits: number;
 }
 
-// ADR-0040 D2/D6: access-event chain telemetry (observational zone; report-only, never gated).
+// access-event chain telemetry (observational zone; report-only, never gated).
 export interface AccessEventTelemetry {
   writeFailures: number;   // chained event insert failures (alert-on-silence counter)
   bootstrapFailed: boolean; // constructor anchor bootstrap degraded (stderr WARN emitted)
@@ -258,7 +258,7 @@ export interface AccessEventTelemetry {
 
 // better-sqlite3 sync API wrapped in async interface to match SessionStore port.
 // ponytail: thinnest wrapper - no extra abstraction, sync calls wrapped in Promise.resolve.
-// ADR-0044 D5: legacy access_events had memory_id NOT NULL, forcing a fake retrieval_results
+// legacy access_events had memory_id NOT NULL, forcing a fake retrieval_results
 // sentinel for switch edges. Rebuild that table once so switch edges can use NULL memory_id
 // while real access events still satisfy the FK through the same CHECK.
 function migrateSwitchEventSchema(db: Database.Database): void {
@@ -292,23 +292,23 @@ function migrateSwitchEventSchema(db: Database.Database): void {
 
 export class SqliteSessionStore implements SessionStore {
   private db: Database.Database;
-  // ADR-0031 D2: LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
+  // LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
   private readonly entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
-  // ADR-0035 D4: LLM relation seam (optional, fail-open) — returns RAW model text; relation.ts
+  // LLM relation seam (optional, fail-open) — returns RAW model text; relation.ts
   // parseLlmTriples does the Graphiti-style json_schema to json_object degrade.
   private readonly relationLlmFallback?: (text: string) => Promise<string | null>;
-  // ADR-0037 D4: consolidation seams (summarize = bounded LLM per cluster; classify = kernel
+  // consolidation seams (summarize = bounded LLM per cluster; classify = kernel
   // classifyClaim-shaped fidelity gate). Both optional and fail-open.
   private readonly consolidateSummarize?: ConsolidateSummarizeFn;
   private readonly consolidateClassify?: ConsolidateClassifyFn;
-  // ADR-0037 D3/D6: semantic arm telemetry (serve mode; Phase-1 shadow contract retired).
+  // semantic arm telemetry (serve mode; Phase-1 shadow contract retired).
   private readonly semTel = { queries: 0, hits: 0, served: 0 };
-  // ADR-0031 step7: entity arm telemetry counters (report-only in eval).
+  // step7: entity arm telemetry counters (report-only in eval).
   private readonly entityTel = { queries: 0, candidates: 0, activations: 0, hits: 0, truncated: 0 };
-  // ADR-0033 D5/D6: vector arm telemetry (fail-open writes; pendingVectors = rows lacking an embedding).
+  // vector arm telemetry (fail-open writes; pendingVectors = rows lacking an embedding).
   private readonly embedTel = { writes: 0, pendingVectors: 0, armQueries: 0, armHits: 0 };
-  // ADR-0035 D8: relation extraction + arm telemetry (report-only, never gated).
-  // ADR-0040 D2: alert-on-silence — event write failures and bootstrap degradation are counted.
+  // relation extraction + arm telemetry (report-only, never gated).
+  // alert-on-silence — event write failures and bootstrap degradation are counted.
   private readonly accessEventTel: AccessEventTelemetry = { writeFailures: 0, bootstrapFailed: false };
   private readonly relationTel = { ruleHits: 0, llmActivations: 0, llmFailures: 0, triplesWritten: 0, dedupSkipped: 0, relatedToWriteOnce: 0, schemaRejected: 0, armQueries: 0, armHits: 0 };
   private stmts: {
@@ -322,18 +322,18 @@ export class SqliteSessionStore implements SessionStore {
     getAnchors: Database.Statement;
     searchAllResults: Database.Statement;
     touchAccessed: Database.Statement;
-    // ADR-0039 D5: append-only access event twin of touchAccessed (transaction-time log; never gated).
+    // append-only access event twin of touchAccessed (transaction-time log; never gated).
     insertAccessEvent: Database.Statement;
-    // ADR-0040 D4: chain head lookup (latest event with non-NULL prev_hash).
+    // chain head lookup (latest event with non-NULL prev_hash).
     lastChainedEvent: Database.Statement;
-    // ADR-0016 D10: UPSERT for state-type anchors (consolidation_state).
+    // UPSERT for state-type anchors (consolidation_state).
     saveAnchorUpsert: Database.Statement;
   };
 
   constructor(dbPath: string, opts?: {
     entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
     relationLlmFallback?: (text: string) => Promise<string | null>;
-    // ADR-0037 D4: consolidation seams (same injection discipline as relationLlmFallback).
+    // consolidation seams (same injection discipline as relationLlmFallback).
     consolidateSummarize?: ConsolidateSummarizeFn;
     consolidateClassify?: ConsolidateClassifyFn;
   }) {
@@ -359,30 +359,30 @@ export class SqliteSessionStore implements SessionStore {
     }
     this.db.exec(schema);
     migrateSwitchEventSchema(this.db);
-    // ADR-0035 D2: edge-pattern constraint seed (idempotent; mirrors EDGE_PATTERN_ROWS in relation.ts;
+    // edge-pattern constraint seed (idempotent; mirrors EDGE_PATTERN_ROWS in relation.ts;
     // existing rows are preserved via INSERT OR IGNORE).
     const seedPattern = this.db.prepare("INSERT OR IGNORE INTO edge_patterns (head_type, relation, tail_type) VALUES (?, ?, ?)");
     for (const [h, r, t] of EDGE_PATTERN_ROWS) seedPattern.run(h, r, t);
-    // ADR-0030 D2: freshness_factor UDF (fused decay+recency+frequency band, supersedes time_decay).
+    // freshness_factor UDF (fused decay+recency+frequency band, supersedes time_decay).
     registerFreshnessFactorFunction(this.db);
     // G019: Migration for existing databases (ALTER TABLE ADD COLUMN is not IF NOT EXISTS safe).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN valid_until TEXT"); } catch {}
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN pinned BOOLEAN DEFAULT 0"); } catch {}
    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN entity TEXT"); } catch {}
-    // ADR-0009 D3 L2: access-time signal (align Mem0 1.5×/0.3× — recall hit refreshes last_accessed).
+    // L2: access-time signal (align Mem0 1.5×/0.3× — recall hit refreshes last_accessed).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN last_accessed TEXT"); } catch {}
-    // ADR-0030 D3: frequency signal — access_count incremented exactly once per returned hit.
+    // frequency signal — access_count incremented exactly once per returned hit.
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN access_count INTEGER DEFAULT 0"); } catch {}
-    // ADR-0023 D4 (Q3=A): equal-weight conflict quarantine — candidates held for user review at next interaction.
+    // (Q3=A): equal-weight conflict quarantine — candidates held for user review at next interaction.
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN quarantine TEXT"); } catch {}
-    // ADR-0025 D2: evidence persisted on quarantined rows for the review list (atomcode: confidence for queue ordering, never for auto-adjudication).
+    // evidence persisted on quarantined rows for the review list (atomcode: confidence for queue ordering, never for auto-adjudication).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN evidence REAL"); } catch {}
-    // ADR-0032 D3: candidate review belt columns on entity_merge_log.
+    // candidate review belt columns on entity_merge_log.
     try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN hit_count INTEGER NOT NULL DEFAULT 1"); } catch {}
     try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN resolved TEXT"); } catch {}
-    // ADR-0037 D5: soft archive (reversible forgetting).
+    // soft archive (reversible forgetting).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"); } catch {}
-    // ADR-0024 D1/D2: T0 hot zone — t0_preferences is the single source of truth; MEMORY.md is a
+    // T0 hot zone — t0_preferences is the single source of truth; MEMORY.md is a
     // regenerated materialized projection (temp+fsync+rename). scope: "global" | project root path.
     // correction_count drives the C-prime promote gate (>=2 cross-session corrections = implicit promote).
     // invalid_at non-null = demoted (d-i conflict / d-iii /forget / d-ii eviction); row is quarantined, never dropped.
@@ -400,15 +400,15 @@ export class SqliteSessionStore implements SessionStore {
   PRIMARY KEY (key, scope)
 )`);
 
-    // ADR-0053 D2: source trust columns for existing databases.
+    // source trust columns for existing databases.
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN source_label TEXT"); } catch {}
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN trace_id TEXT"); } catch {}
     try { this.db.exec("ALTER TABLE t0_preferences ADD COLUMN source_label TEXT"); } catch {}
     try { this.db.exec("ALTER TABLE t0_preferences ADD COLUMN trace_id TEXT"); } catch {}
     try { this.db.exec("ALTER TABLE access_events ADD COLUMN source_label TEXT"); } catch {}
-    // ADR-0040 step 1/3: chain columns (idempotent ALTER per existing convention) + one-off
+    // step 1/3: chain columns (idempotent ALTER per existing convention) + one-off
     // anchor bootstrap in an IMMEDIATE transaction (D6). Persistent busy/IO failure degrades to
-    // stderr WARN + telemetry bit (ADR-0009 D6 fail-open); the write path re-probes the anchor.
+    // stderr WARN + telemetry bit ( fail-open); the write path re-probes the anchor.
     try { this.db.exec("ALTER TABLE access_events ADD COLUMN prev_hash TEXT"); } catch {}
     try { this.db.exec("ALTER TABLE access_events ADD COLUMN schema_version INTEGER"); } catch {}
     try { this.db.exec("ALTER TABLE access_events ADD COLUMN event_type TEXT"); } catch {}
@@ -429,23 +429,23 @@ export class SqliteSessionStore implements SessionStore {
       searchResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND r.session_id = ? AND r.archived = 0 ORDER BY rank LIMIT ?"),
       saveAnchor: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)"),
       getAnchors: this.db.prepare("SELECT id, session_id as sessionId, anchor_type as anchorType, payload, created_at as createdAt FROM resume_anchors WHERE session_id = ? ORDER BY id"),
-      // ADR-0008 D3: recall_memory searches Research Memory (retrieval_results_fts), not messages.
-      // ADR-0008 D2 -> ADR-0030: freshness_factor() in ORDER BY + bi-temporal filter (valid_until IS NULL).
+      // recall_memory searches Research Memory (retrieval_results_fts), not messages.
+      // ->: freshness_factor in ORDER BY + bi-temporal filter (valid_until IS NULL).
      // MemoryHit.role <-- r.title, MemoryHit.content <-- r.snippet (recall_memory maps these fields).
      searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) ORDER BY rank LIMIT ?"),
-      // ADR-0009 D3 L2: update last_accessed on recall hit (access-time signal, Mem0 1.5×/0.3×).
+      // L2: update last_accessed on recall hit (access-time signal, Mem0 1.5×/0.3×).
       touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now'), access_count = COALESCE(access_count, 0) + 1 WHERE id = ?"),
-      // ADR-0039 D5: same exactly-once site — each returned hit logs one access event.
-      // ADR-0040 D4: chained insert — prev_hash + schema_version(v1) + event_type per event.
+      // same exactly-once site — each returned hit logs one access event.
+      // chained insert — prev_hash + schema_version(v1) + event_type per event.
       insertAccessEvent: this.db.prepare("INSERT INTO access_events (memory_id, prev_hash, schema_version, event_type, source_label) VALUES (?, ?, ?, ?, ?)"),
       lastChainedEvent: this.db.prepare("SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type, source_label FROM access_events WHERE prev_hash IS NOT NULL ORDER BY id DESC LIMIT 1"),
-      // ADR-0016 D10: UPSERT for state-type anchors.
+      // UPSERT for state-type anchors.
   
       saveAnchorUpsert: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?) ON CONFLICT(session_id, anchor_type) WHERE anchor_type = 'consolidation_state' DO UPDATE SET payload = excluded.payload, created_at = datetime('now')"),
     };
   }
 
-  // ADR-0040 D4/D6: chain an access event onto the hash chain. Head-read + insert run in one
+  // chain an access event onto the hash chain. Head-read + insert run in one
   // IMMEDIATE transaction so CLI+MCP dual-process writes cannot interleave into a fork. The anchor
   // is re-probed before the first chained insert so cut-over survives a crashed constructor (D6).
   // Never throws into recall paths: call sites catch and increment accessEventTel.writeFailures.
@@ -469,17 +469,17 @@ export class SqliteSessionStore implements SessionStore {
     write.immediate();
   }
 
-  // ADR-0040 D2: alert-on-silence telemetry — observational zone only, never gated (Goodhart).
+  // alert-on-silence telemetry — observational zone only, never gated (Goodhart).
   accessEventTelemetry(): AccessEventTelemetry {
     return { ...this.accessEventTel };
   }
 
-  // ADR-0024 D1/D2/D7: T0 hot zone methods.
+  // T0 hot zone methods.
   // All writes are deterministic; gate logic lives in caller (A+C+B, not here).
 
   async promotePreference(input: T0PreferenceInput): Promise<{ action: "promoted" | "rejected"; reason?: string }> {
     const sourceLabel = input.sourceLabel ?? "user";
-    // ADR-0053 D4 A: retrieved-derived and memory-derived content never promote T0.
+    // A: retrieved-derived and memory-derived content never promote T0.
     if (sourceLabel === "retrieved" || sourceLabel === "memory") {
       return { action: "rejected", reason: "source-gate" };
     }
@@ -551,7 +551,7 @@ export class SqliteSessionStore implements SessionStore {
     return Array.from(merged.values());
   }
 
-  // ADR-0024 D3: C-prime correction-count channel.
+  // C-prime correction-count channel.
   // Increment correction_count; if >=2 and not already promoted, promote implicitly.
   // Returns current count for caller to decide projection trigger.
   async recordCorrectionOnPreference(key: string, scope: string): Promise<{ correctionCount: number }> {
@@ -580,14 +580,14 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   async append(sessionId: string, message: Message): Promise<void> {
-    // ADR-0028 D3 write entry: never persist a message that trips the secret guard.
+    // write entry: never persist a message that trips the secret guard.
     if (containsSecret(message.role + " " + message.content)) return;
     // atomcode research: avoid RETURNING inside transaction with FTS triggers (#654).
     // Simple INSERT, no RETURNING - trigger syncs FTS automatically.
     this.stmts.append.run(sessionId, message.role, message.content);
   }
 
-  // SECURITY: escape FTS5 special chars, then ADR-0023 D2 FTS5 Query Tokenization (CWE-20).
+  // SECURITY: escape FTS5 special chars, then FTS5 Query Tokenization (CWE-20).
   private fts5Escape(query: string): string {
     return fts5EscapeQuery(query);
   }
@@ -600,7 +600,7 @@ export class SqliteSessionStore implements SessionStore {
     return this.stmts.searchAllMessages.all(safeQuery, limit) as MemoryHit[];
   }
 
-  // ADR-0036 D3: eval-only capture of the latest searchMemory arm inputs. Written on every
+  // eval-only capture of the latest searchMemory arm inputs. Written on every
   // searchMemory call; the eval runner (golden search ops) is the only reader. Never part of
   // the external contract — do not consume from apps/ or kernel.
   public lastArmProvenance: ArmProvenance | null = null;
@@ -609,7 +609,7 @@ export class SqliteSessionStore implements SessionStore {
    const safeQuery = this.fts5Escape(query);
    // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
    let rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, limit) as MemoryHit[];
-   // ADR-0102 D1: strict rung under-fills → append the relaxed rung (decay keyed on the strict string).
+   // strict rung under-fills → append the relaxed rung (decay keyed on the strict string).
    if (rawHits.length < limit) {
      const relaxed = fts5RelaxedQuery(query);
      if (relaxed) {
@@ -619,12 +619,12 @@ export class SqliteSessionStore implements SessionStore {
        rawHits = appendRelaxed(rawHits, wide, limit);
      }
    }
-   // ADR-0031 D4: entity arm — conditional activation (absent when query has no entity match), weight 0.5 vs FTS 1.0.
+   // entity arm — conditional activation (absent when query has no entity match), weight 0.5 vs FTS 1.0.
    const armHits = this.entityArmRows(query, limit);
    const vecHits = await this.vectorArmRows(query, limit);
-   // ADR-0035 D5: relation arm (fifth, weight 0.5) — 1-hop neighbor memories via active edges.
+   // relation arm (fifth, weight 0.5) — 1-hop neighbor memories via active edges.
    const relHits = this.relationArmRows(query, limit);
-   // ADR-0037 D6 Phase-2: semantic arm (sixth, weight 0.5, conditional activation).
+   // Phase-2: semantic arm (sixth, weight 0.5, conditional activation).
    const semHits = await this.semanticArmRows(query, limit);
    const byId = new Map<number, MemoryHit>();
     for (const h of rawHits) byId.set(h.rowid, h);
@@ -632,8 +632,8 @@ export class SqliteSessionStore implements SessionStore {
     for (const h of vecHits) byId.set(h.rowid, h);
     for (const h of relHits) byId.set(h.rowid, h);
     for (const h of semHits) byId.set(h.rowid, h); // r94 audit A1: semantic ids must resolve on the single-query path (was silent drop, atomcode Spec-1)
-   // ADR-0033 D5: RRF arms = FTS (1.0) + entity (0.5) + vector (0.5); an absent arm adds no list (conditional activation).
-   // ADR-0045 D2: MemoryFusion consumes the registry — k_fusion.memory + weights.memory
+   // RRF arms = FTS (1.0) + entity (0.5) + vector (0.5); an absent arm adds no list (conditional activation).
+   // MemoryFusion consumes the registry — k_fusion.memory + weights.memory
    // (FTS anchor 1.0; side arms 0.5). Values identical to the pre-registry literals.
    const lists = [rawHits.map((h) => String(h.rowid))];
    const weights: number[] = [registryWeight("memory", "fts")];
@@ -644,13 +644,13 @@ export class SqliteSessionStore implements SessionStore {
    const fusedIds = lists.length === 1 ? lists[0]! : rrfRank(lists, FUSION_REGISTRY.k_fusion.memory, weights);
    const fusedHits: MemoryHit[] = [];
    for (const id of fusedIds) { const h = byId.get(Number(id)); if (h) fusedHits.push(h); if (fusedHits.length >= limit) break; }
-   // ADR-0033 D8: arm provenance — a hit recalled ONLY by the vector arm is weak evidence.
+   // arm provenance — a hit recalled ONLY by the vector arm is weak evidence.
    const ftsIds = new Set(rawHits.map((h) => h.rowid));
    const entIds = new Set(armHits.map((h) => h.rowid));
    const vecIds = new Set(vecHits.map((h) => h.rowid));
    const relIds = new Set(relHits.map((h) => h.rowid));
    const semIds = new Set(semHits.map((h) => h.rowid));
-   // ADR-0036 D3: provenance snapshot taken BEFORE the read-side secret filter (the filter can
+   // provenance snapshot taken BEFORE the read-side secret filter (the filter can
    // only remove rows; golden fixtures carry no secrets, so on/off deltas are unaffected).
    { const armLabels: string[] = ["fts"];
      if (armHits.length > 0) armLabels.push("entity");
@@ -661,47 +661,47 @@ export class SqliteSessionStore implements SessionStore {
      for (const h of byId.values()) provTexts.set(h.rowid, h.role + " " + h.content);
      this.lastArmProvenance = { instance: "memory", labels: armLabels, lists: lists.map((l) => [...l]), weights: [...weights], fusedIds: [...fusedIds], scoreKind: SCORE_KIND, texts: provTexts }; }
    for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); if (relIds.has(h.rowid)) al.push("relation"); if (SEMANTIC_ARM_MODE === "serve" && semIds.has(h.rowid)) al.push("semantic"); h.arms = al; }
-    // ADR-0028 D3 read-side exit: rows written before the write guard (or via seed/test seams)
+    // read-side exit: rows written before the write guard (or via seed/test seams)
     // must never surface back to the caller either.
     const hits = fusedHits.filter((h) => !containsSecret(h.role + " " + h.content));
-    // ADR-0009 D3 L2: refresh last_accessed for each hit (access-time signal).
+    // L2: refresh last_accessed for each hit (access-time signal).
     for (const hit of hits) {
       try { this.stmts.touchAccessed.run(hit.rowid); this.recordAccessEventChained(hit.rowid); } catch { this.accessEventTel.writeFailures += 1; }
     }
     return hits;
   }
 
-  // ADR-0023 D2 (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
+  // (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
   async searchMemoryMulti(queries: string[], limit = 20): Promise<MemoryHit[]> {
-    // ADR-0031 D4: entity arm on the raw user query (queries[0]); ids passed as extra RRF list (weight 0.5 in fts5.ts).
+    // entity arm on the raw user query (queries[0]); ids passed as extra RRF list (weight 0.5 in fts5.ts).
     const armHits = this.entityArmRows(queries[0] ?? "", limit);
     const vecHits = await this.vectorArmRows(queries[0] ?? "", limit);
-    // ADR-0033 D5: entity + vector arms, each weight 0.5 against FTS 1.0.
-    // ADR-0033 D8: labeled arms so searchMemoryMultiQuery can annotate hit.arms provenance.
+    // entity + vector arms, each weight 0.5 against FTS 1.0.
+    // labeled arms so searchMemoryMultiQuery can annotate hit.arms provenance.
     const arms: { label: string; ids: string[] }[] = [];
     if (armHits.length > 0) arms.push({ label: "entity", ids: armHits.map((h) => String(h.rowid)) });
     if (vecHits.length > 0) arms.push({ label: "vector", ids: vecHits.map((h) => String(h.rowid)) });
-    // ADR-0035 D5: relation arm on the raw query (weight 0.5 in fts5.ts like the other side arms).
-    // ADR-0035 D5: the relation arm attaches to queries[0] only — the multi-query lane keeps the
+    // relation arm on the raw query (weight 0.5 in fts5.ts like the other side arms).
+    // the relation arm attaches to queries[0] only — the multi-query lane keeps the
     // conditional-activation contract on the primary query (r87 audit F5: documented to avoid
     // misreading as all-queries activation).
     const relHitsM = this.relationArmRows(queries[0] ?? "", limit);
     if (relHitsM.length > 0) arms.push({ label: "relation", ids: relHitsM.map((h) => String(h.rowid)) });
-    // ADR-0037 D3/D6 Phase-2: semantic arm fused into RRF in serve mode (negative ids resolved
+    // Phase-2: semantic arm fused into RRF in serve mode (negative ids resolved
     // from semantic_memories in fts5.ts); telemetry still runs in both modes.
     const semHits = await this.semanticArmRows(queries[0] ?? "", limit);
     if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) arms.push({ label: "semantic", ids: semHits.map((h) => String(h.rowid)) });
     const hits = await searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank, arms);
-    // ADR-0028 D3 read-side exit: same guard as searchMemory.
+    // read-side exit: same guard as searchMemory.
     const kept = hits.filter((h) => !containsSecret(h.role + " " + h.content));
-    // ADR-0030 D3: same exactly-once touch as searchMemory (both recall paths feed the signals).
+    // same exactly-once touch as searchMemory (both recall paths feed the signals).
     for (const hit of kept) {
       try { this.stmts.touchAccessed.run(hit.rowid); this.recordAccessEventChained(hit.rowid); } catch { this.accessEventTel.writeFailures += 1; }
     }
     return kept;
   }
 
-  // ADR-0023 D2 structural-typing seam: exposes db.prepare(...).all(...) as a function so
+  // structural-typing seam: exposes db.prepare(...).all(...) as a function so
   // private field doesn't escape through structural typing of the SearchableStoreLike contract.
   // Public by design: duck-typed contract with SearchableStoreLike requires assignability.
   dbQuery<Row = unknown>(sql: string, ...params: unknown[]): Row[] {
@@ -712,12 +712,12 @@ export class SqliteSessionStore implements SessionStore {
     // atomcode research: db.transaction(fn) auto-rollback on throw.
     const insertMany = this.db.transaction((rs: NormalizedResult[]) => {
       for (const r of rs) {
-       // ADR-0028 D3 write entry: skip secret-bearing results entirely (no row, no FTS).
+       // write entry: skip secret-bearing results entirely (no row, no FTS).
        if (containsSecret(r.url + " " + (r.title ?? "") + " " + (r.snippet ?? ""))) continue;
        const sourceLabel = typeof (r.extra?.trustLabel as any)?.source === "string" ? (r.extra?.trustLabel as any).source : "retrieved";
        const traceId = typeof (r.extra?.trustLabel as any)?.traceId === "string" ? (r.extra?.trustLabel as any).traceId : null;
        const info = this.stmts.saveResult.run(sessionId, r.url, r.title, r.snippet, r.source, null, r.entity ?? r.url, sourceLabel, traceId);
-                // ADR-0008 D2: bi-temporal invalidation — close old records for same entity (URL) at write time.
+                // bi-temporal invalidation — close old records for same entity (URL) at write time.
                 // Not relying on decay to suppress staleness; valid_until set immediately on new write.
                 try { invalidateOldRecords(this.db, r.url, Number(info.lastInsertRowid)); } catch {}
       }
@@ -725,13 +725,13 @@ export class SqliteSessionStore implements SessionStore {
     insertMany(results);
   }
 
-  // ADR-0023 D4 (Q3=A): write-path adjudication (MemTX-simplified three checks).
+  // (Q3=A): write-path adjudication (MemTX-simplified three checks).
   // Each KeyMemoryInput is classified by (1) evidence >=0.6, (2) temporal supersede, (3) equal-weight conflict.
   // Quarantined writes get quarantine IS NOT NULL and are excluded from searchMemory until confirmed.
   async adjudicateMemory(sessionId: string, keyMemories: KeyMemoryInput[]): Promise<AdjudicationResultItem[]> {
     const out: AdjudicationResultItem[] = [];
     for (const km of keyMemories) {
-      // ADR-0027 D5: secret check runs BEFORE the evidence gate — a high-evidence leak is still a leak.
+      // secret check runs BEFORE the evidence gate — a high-evidence leak is still a leak.
       if (containsSecret(km.url + " " + (km.title ?? "") + " " + (km.snippet ?? ""))) {
         out.push({ action: "reject", reason: "secret" });
         continue;
@@ -740,7 +740,7 @@ export class SqliteSessionStore implements SessionStore {
       // Evidence check: direct user input / high-trust sources bypass (MemTX authority >= 0.9 channel).
       if (evidence || km.source === "user") {
         const entityKey = km.entity ?? km.url;
-        // Temporal supersede: new write for same entity wins; close old record with valid_until = now (ADR-0008 D2 pattern).
+        // Temporal supersede: new write for same entity wins; close old record with valid_until = now ( pattern).
         const existing = this.db
           .prepare("SELECT id FROM retrieval_results WHERE entity = ? AND session_id = ? AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 LIMIT 1")
           .get(entityKey, sessionId) as { id: number } | undefined;
@@ -748,7 +748,7 @@ export class SqliteSessionStore implements SessionStore {
         const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, entityKey, sourceLabel, km.traceId ?? null);
         const insertedId = Number(info.lastInsertRowid);
         await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
-        try { await this.linkEntities(insertedId, km); } catch {} // ADR-0031: entity linking fail-open, covers accept+supersede
+        try { await this.linkEntities(insertedId, km); } catch {} // entity linking fail-open, covers accept+supersede
         if (existing) {
           try {
             this.db.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(existing.id);
@@ -765,7 +765,7 @@ export class SqliteSessionStore implements SessionStore {
         const info = this.stmts.saveResult.run(sessionId, km.url, km.title, km.snippet, km.source, null, km.entity ?? km.url, sourceLabel, km.traceId ?? null);
         const insertedId = Number(info.lastInsertRowid);
         await this.embedWrite(insertedId, km.title ?? null, km.snippet ?? null);
-        try { await this.linkEntities(insertedId, km); } catch {} // ADR-0031: fail-open
+        try { await this.linkEntities(insertedId, km); } catch {} // fail-open
         try {
           this.db.prepare("UPDATE retrieval_results SET quarantine = ?, evidence = ? WHERE id = ?").run("equal_conflict", typeof km.evidence === "number" ? km.evidence : null, insertedId);
         } catch {}
@@ -775,12 +775,12 @@ export class SqliteSessionStore implements SessionStore {
     return out;
   }
 
-  // ADR-0016 D10: saveAnchor with UPSERT semantics for state-type anchors.
+  // saveAnchor with UPSERT semantics for state-type anchors.
   // State-type anchors (consolidation_state) use DELETE-then-INSERT to ensure single row per (session_id, anchor_type).
   // Historical anchors (rolling_summary, l2_recall) remain append-only (INSERT).
   async saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void> {
     const json = JSON.stringify(payload);
-    // ADR-0028 D3 write entry: anchors are searchable surfaces too — refuse secret payloads.
+    // write entry: anchors are searchable surfaces too — refuse secret payloads.
     if (containsSecret(anchorType + " " + json)) return;
     // ponytail: state-type anchors use UPSERT (DELETE-then-INSERT avoids schema migration for UNIQUE constraint).
     if (anchorType === "consolidation_state") {
@@ -795,20 +795,20 @@ export class SqliteSessionStore implements SessionStore {
     return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
   }
 
-  // ---- ADR-0031: entity link layer (write link + query arm) ----
+  // ---- entity link layer (write link + query arm) ----
 
   public entityTelemetry(): { queries: number; candidates: number; activations: number; hits: number; truncated: number } {
     return { ...this.entityTel };
   }
-  // ADR-0033 D5/D6: vector arm telemetry + breaker state (report-only).
-  // ADR-0063 (R62 T3): async — arm presence requires the optional-import probe.
+  // vector arm telemetry + breaker state (report-only).
+  // (R62 T3): async — arm presence requires the optional-import probe.
   public async vectorTelemetry(): Promise<{ writes: number; pendingVectors: number; armQueries: number; armHits: number; embeds: number; failures: number; circuitOpen: boolean; absent: boolean; fromDb: number }> {
     const pkg = await armTelemetry();
     return { ...this.embedTel, embeds: pkg.embeds, failures: pkg.failures, circuitOpen: pkg.circuitOpen, absent: pkg.absent,
       fromDb: (this.db.prepare("SELECT COUNT(*) as n FROM memory_embeddings").get() as { n: number }).n };
   }
 
-  // ADR-0033 D6: synchronous embed at write; failure records pendingVector (recoverable via backfill-vectors).
+  // synchronous embed at write; failure records pendingVector (recoverable via backfill-vectors).
   private async embedWrite(memoryId: number, title: string | null, snippet: string | null): Promise<void> {
     const text = ((title ?? "") + " " + (snippet ?? "")).trim();
     if (!text) return;
@@ -819,7 +819,7 @@ export class SqliteSessionStore implements SessionStore {
       .run(memoryId, Buffer.from(v.buffer, v.byteOffset, v.byteLength), await embeddingModelId());
   }
 
-  // ADR-0033 D4/D5: vector arm — full-scan JS cosine over live, non-quarantined rows. Absent on CB-open.
+  // vector arm — full-scan JS cosine over live, non-quarantined rows. Absent on CB-open.
   private async vectorArmRows(query: string, limit: number): Promise<MemoryHit[]> {
     this.embedTel.armQueries++;
     const qv = await embedText(query, "query");
@@ -841,7 +841,7 @@ export class SqliteSessionStore implements SessionStore {
     return out;
   }
 
-  // ADR-0033 D6: idempotent backfill for rows missing an embedding (write failures, pre-rename upgrade, model re-embed).
+  // idempotent backfill for rows missing an embedding (write failures, pre-rename upgrade, model re-embed).
   async backfillEmbeddings(dryRun = false, limit?: number): Promise<{ scanned: number; embedded: number; failed: number }> {
     const rows = this.db.prepare(
       "SELECT r.id, r.title, r.snippet FROM retrieval_results r LEFT JOIN memory_embeddings m ON m.memory_id = r.id WHERE m.memory_id IS NULL AND r.archived = 0" +
@@ -861,7 +861,7 @@ export class SqliteSessionStore implements SessionStore {
     }
     return { scanned: rows.length, embedded, failed };
   }
-  // ---- ADR-0037: episodic-to-semantic consolidation (D2/D4) + reversible forgetting (D5) ----
+  // ---- episodic-to-semantic consolidation (D2/D4) + reversible forgetting (D5) ----
 
   async consolidateMemory(opts?: { dryRun?: boolean; limit?: number }): Promise<ConsolidateReport> {
     return consolidateMemoryRun(this.db, { summarize: this.consolidateSummarize, classify: this.consolidateClassify }, opts ?? {});
@@ -879,7 +879,7 @@ export class SqliteSessionStore implements SessionStore {
     return undoArchive(this.db, logId);
   }
 
-  // ADR-0037 D3/D6: semantic arm scoring (served in Phase-2). Full-table JS cosine over live semantic
+  // semantic arm scoring (served in Phase-2). Full-table JS cosine over live semantic
   // rows, same pattern as vectorArmRows. Synthetic negative rowids (-semantic_memories.id) keep
   // the RRF id-space collision-free vs retrieval_results.
   private async semanticArmRows(query: string, limit: number): Promise<MemoryHit[]> {
@@ -915,12 +915,12 @@ export class SqliteSessionStore implements SessionStore {
     const known = new Set(this.liveEntities().flatMap((e) => [e.nameNorm, ...e.aliases]));
     const candidates: EntityCandidate[] = [];
     if (km.entity && !km.entity.includes("://")) candidates.push({ name: km.entity, type: "declared" });
-    for (const c of extractEntityCandidates(text, known, MAX_CANDIDATES * 2)) candidates.push(c); // ADR-0032 D3: 2x cap — overflow tail feeds the review belt
+    for (const c of extractEntityCandidates(text, known, MAX_CANDIDATES * 2)) candidates.push(c); // 2x cap — overflow tail feeds the review belt
     if (candidates.length === 0 && this.entityLlmFallback) {
-      // ADR-0031 D2: LLM backfill (fail-open) — offline/no-key keeps rule output (here: empty).
+      // LLM backfill (fail-open) — offline/no-key keeps rule output (here: empty).
       try { const extra = await this.entityLlmFallback(text); if (extra) candidates.push(...extra); } catch {}
     }
-    // ADR-0035 D4: relation extraction piggybacks this pass; preKnown marks entities that
+    // relation extraction piggybacks this pass; preKnown marks entities that
     // existed before this write (co-occurrence related_to edges only fire between two preKnown refs).
     const linkedRefs: LinkedEntityRef[] = [];
     for (const c of candidates.slice(0, MAX_CANDIDATES + 1)) { // r74 audit E5: 1 declared + MAX_CANDIDATES rule/LLM
@@ -929,14 +929,14 @@ export class SqliteSessionStore implements SessionStore {
       const refNorm = normalizeEntityName(c.name);
       linkedRefs.push({ id: entityId, name: c.name, nameNorm: refNorm, entityType: c.type, preKnown: known.has(refNorm) });
     }
-    try { await this.linkRelations(memoryId, km, linkedRefs); } catch {} // ADR-0035: fail-open, same discipline as linkEntities
-    // ADR-0032 D3: extraction overflow (capped out) enters the candidate review belt — never silent loss.
+    try { await this.linkRelations(memoryId, km, linkedRefs); } catch {} // fail-open, same discipline as linkEntities
+    // extraction overflow (capped out) enters the candidate review belt — never silent loss.
     const overflow = candidates.slice(MAX_CANDIDATES + 1);
     this.entityTel.truncated += overflow.length;
     for (const c of overflow) this.logOverflowCandidate(c);
   }
 
-  // ADR-0032 D3: dedup'd candidate write — a re-hit of the same unresolved (source, target) pair
+  // dedup'd candidate write — a re-hit of the same unresolved (source, target) pair
   // increments hit_count (Senzing re-resolve evidence accumulation, lightweight proxy).
   private logEntityCandidate(sourceName: string, targetId: number, detail: Record<string, unknown>): void {
     const existing = this.db
@@ -966,7 +966,7 @@ export class SqliteSessionStore implements SessionStore {
     }
   }
 
-  // ADR-0031 D5: three-tier match (exact -> trigram) + Fellegi-Sunter two thresholds + type gate.
+  // three-tier match (exact -> trigram) + Fellegi-Sunter two thresholds + type gate.
   // Type gate: fuzzy tiers are same-type only; exact tier also reuses a declared row (declared is authoritative).
   private resolveEntity(name: string, type: EntityType): number {
     const norm = normalizeEntityName(name);
@@ -982,7 +982,7 @@ export class SqliteSessionStore implements SessionStore {
       if (!best || sim > best.sim) best = { id: e.id, sim };
     }
     if (best && best.sim >= ENTITY_ALIAS_THRESHOLD) {
-      // ADR-0032 D2: unmerge wrote kind="override" records for the split pair — auto alias-merge
+      // unmerge wrote kind="override" records for the split pair — auto alias-merge
       // of that pair is blocked until a human merges manually (Splink override precedent).
       const blocked = this.db
         .prepare("SELECT id FROM entity_merge_log WHERE kind = 'override' AND source_name = ? AND target_entity_id = ? LIMIT 1")
@@ -1017,7 +1017,7 @@ export class SqliteSessionStore implements SessionStore {
     return newId;
   }
 
-  // ADR-0031 D5: reversible merge undo — only alias-appends are undoable (candidate band never mutated anything).
+  // reversible merge undo — only alias-appends are undoable (candidate band never mutated anything).
   public undoEntityMerge(logId: number): boolean {
     const log = this.db.prepare("SELECT id, kind, source_name, target_entity_id, undone FROM entity_merge_log WHERE id = ?").get(logId) as { id: number; kind: string; source_name: string; target_entity_id: number; undone: number } | undefined;
     if (!log || log.undone !== 0 || log.kind !== "alias") return false;
@@ -1030,10 +1030,10 @@ export class SqliteSessionStore implements SessionStore {
     return true;
   }
 
-  // ADR-0031 D4: entity arm — read-only resolution (exact/containment, no mutation), arm-level valid_until+quarantine guard.
-  // ---- ADR-0032: destructive merge execution (combine / unmerge / review belt / telemetry) ----
+  // entity arm — read-only resolution (exact/containment, no mutation), arm-level valid_until+quarantine guard.
+  // ---- destructive merge execution (combine / unmerge / review belt / telemetry) ----
 
-  // ADR-0032 D1/D4: destructive redirect merge. Single better-sqlite3 transaction (deferred);
+  // destructive redirect merge. Single better-sqlite3 transaction (deferred);
   // snapshot is written in the SAME transaction as the redirect (acceptance requires it).
   // No RETURNING and no FTS-triggered tables touched inside the transaction (better-sqlite3 #654).
   public async combineEntities(fromId: number, toId: number): Promise<{ ok: boolean; logId?: number; error?: string }> {
@@ -1047,7 +1047,7 @@ export class SqliteSessionStore implements SessionStore {
       if (!a || !b) return { ok: false, error: "entity not found" };
       if (a.valid_until || b.valid_until) return { ok: false, error: "one side is already closed (tombstoned)" };
       if (a.entity_type !== b.entity_type && a.entity_type !== "declared" && b.entity_type !== "declared")
-        return { ok: false, error: "type gate: cross-type merge rejected (ADR-0031 D5)" };
+        return { ok: false, error: "type gate: cross-type merge rejected " };
       const fromAliases = JSON.parse(a.aliases || "[]") as string[];
       const toAliasesBefore = JSON.parse(b.aliases || "[]") as string[];
       const redirected = (this.db.prepare("SELECT memory_id FROM memory_entity WHERE entity_id = ?").all(from) as Array<{ memory_id: number }>)
@@ -1067,7 +1067,7 @@ export class SqliteSessionStore implements SessionStore {
       const union = Array.from(new Set([...toAliasesBefore, ...fromAliases, a.name_norm]));
       this.db.prepare("UPDATE entities SET aliases = ? WHERE id = ?").run(JSON.stringify(union), toIdArg);
       this.db.prepare("UPDATE entities SET valid_until = ? WHERE id = ?").run(now, from);
-      // ADR-0035 D6: edges move with the merge. Self-loops and live-triple conflicts are
+      // edges move with the merge. Self-loops and live-triple conflicts are
       // closed, not redirected; pre-merge endpoints land in the snapshot for bounded unmerge.
       const edgeRows = this.db
         .prepare("SELECT id, source_entity_id, target_entity_id, relation FROM edges WHERE valid_until IS NULL AND (source_entity_id = ? OR target_entity_id = ?)")
@@ -1102,7 +1102,7 @@ export class SqliteSessionStore implements SessionStore {
     }
   }
 
-  // ADR-0032 D2: bounded unmerge — snapshot-driven redirect-back + revive + alias restore + override.
+  // bounded unmerge — snapshot-driven redirect-back + revive + alias restore + override.
   // Compensation semantics: writes that landed on the target AFTER the merge stay on it.
   public async unmergeEntity(logId: number): Promise<{ ok: boolean; error?: string }> {
     const tx = this.db.transaction((id: number): { ok: boolean; error?: string } => {
@@ -1134,7 +1134,7 @@ export class SqliteSessionStore implements SessionStore {
           if (mem) this.db.prepare("INSERT OR IGNORE INTO memory_entity (memory_id, entity_id) VALUES (?, ?)").run(mid, snap.fromEntityId);
         }
       }
-      // ADR-0035 D6: bounded edge restore — redirected edges return to the snapshot endpoints;
+      // bounded edge restore — redirected edges return to the snapshot endpoints;
       // closed duplicates revive only when no live row covers the same triple (conflict guard).
       for (const e of snap.redirectedEdges ?? []) {
         this.db.prepare("UPDATE edges SET source_entity_id = ?, target_entity_id = ? WHERE id = ?").run(e.sourceWas, e.targetWas, e.id);
@@ -1169,7 +1169,7 @@ export class SqliteSessionStore implements SessionStore {
     }
   }
 
-  // ADR-0032 D3: candidate review belt — unresolved candidates, hit_count desc (Senzing escalation).
+  // candidate review belt — unresolved candidates, hit_count desc (Senzing escalation).
   public async listEntityReview(): Promise<EntityReviewRow[]> {
     const rows = this.db
       .prepare(
@@ -1184,7 +1184,7 @@ export class SqliteSessionStore implements SessionStore {
     }));
   }
 
-  // ADR-0032 D3/D5: keep = execute the merge (writes resolved='confirmed'); drop = keep separate
+  // keep = execute the merge (writes resolved='confirmed'); drop = keep separate
   // ('rejected'). Outcomes are written back to the log (report-only telemetry source).
   public async resolveEntityReview(id: number, action: "keep" | "drop"): Promise<{ ok: boolean; error?: string }> {
     const row = this.db
@@ -1204,7 +1204,7 @@ export class SqliteSessionStore implements SessionStore {
     return { ok: true };
   }
 
-  // ADR-0032 D5: six report-only merge metrics. Five counters are derived from the persistent merge
+  // six report-only merge metrics. Five counters are derived from the persistent merge
   // log (survive restarts); review_pending is a gauge (queue depth); candidates_truncated is run-scoped
   // in-memory (resets on restart — truncation is a transient signal, not ledger state).
   // NEVER gated (Goodhart clause; n is far below statistical power).
@@ -1239,7 +1239,7 @@ export class SqliteSessionStore implements SessionStore {
     return rows;
   }
 
-  // ---- ADR-0035: KG-lite entity-relation edge layer ----
+  // ---- KG-lite entity-relation edge layer ----
 
   // Write-path extraction: rules first; LLM seam only when rules found nothing (fail-open).
   private async linkRelations(memoryId: number, km: KeyMemoryInput, linked: LinkedEntityRef[]): Promise<void> {
@@ -1260,14 +1260,14 @@ export class SqliteSessionStore implements SessionStore {
         this.relationTel.llmFailures += 1;
       }
     }
-    // ADR-0035 D7 contract: live-path inserts are single-statement autocommit ops (no explicit
+    // contract: live-path inserts are single-statement autocommit ops (no explicit
     // tx here) — safe under WAL single-writer + busy_timeout. Backfill paths wrap their own tx.
     for (const t of triples) this.insertEdge(memoryId, t, linked);
   }
 
   // Triple to edge row. Pattern check against edge_patterns; same-episode re-write is a dedup
   // skip; a live row for the same triple from another episode is superseded (close old, insert new).
-  // ADR-0035: a rule-side spans a clause ("CraneLib for batch scheduling"), not an entity name.
+  // a rule-side spans a clause ("CraneLib for batch scheduling"), not an entity name.
   // Resolve by prefix-containment against any of the entity's surface forms (name + aliases).
   private resolveTripleEnd(surface: string, linked: LinkedEntityRef[]): LinkedEntityRef | undefined {
     const norm = normalizeEntityName(surface);
@@ -1299,7 +1299,7 @@ export class SqliteSessionStore implements SessionStore {
     const live = this.db
       .prepare("SELECT id FROM edges WHERE source_entity_id = ? AND relation = ? AND target_entity_id = ? AND valid_until IS NULL")
       .get(s.id, t.relation, o.id) as { id: number } | undefined;
-    if (live && t.relation === "related_to") { this.relationTel.relatedToWriteOnce += 1; return; } // ADR-0035 + r87 audit F7: write-once = first co-occurrence materializes the edge; repeat-episode attempts skip (noise control), counted separately from dedup
+    if (live && t.relation === "related_to") { this.relationTel.relatedToWriteOnce += 1; return; } // + r87 audit F7: write-once = first co-occurrence materializes the edge; repeat-episode attempts skip (noise control), counted separately from dedup
     if (live) this.db.prepare("UPDATE edges SET valid_until = datetime('now') WHERE id = ?").run(live.id);
     this.db
       .prepare("INSERT INTO edges (source_entity_id, target_entity_id, relation, description, confidence, episode_memory_id, rules_version) VALUES (?, ?, ?, ?, ?, ?, ?)")
@@ -1307,7 +1307,7 @@ export class SqliteSessionStore implements SessionStore {
     this.relationTel.triplesWritten += 1;
   }
 
-  // ADR-0035 D5: fifth arm — query-matched entities plus their 1-hop edge neighbors feed a
+  // fifth arm — query-matched entities plus their 1-hop edge neighbors feed a
   // DISTINCT memory pull through memory_entity (live, non-quarantined rows), capped at 100.
   public relationArmRows(query: string, limit = 100): MemoryHit[] {
     this.relationTel.armQueries += 1;
@@ -1339,7 +1339,7 @@ export class SqliteSessionStore implements SessionStore {
     return rows;
   }
 
-  // ADR-0035 D3: relation list CLI backing query — live edges, optional single-entity filter.
+  // relation list CLI backing query — live edges, optional single-entity filter.
   public async listRelations(opts?: { entity?: string; limit?: number }): Promise<RelationRow[]> {
     const limit = opts?.limit ?? 50;
     const base =
@@ -1360,7 +1360,7 @@ export class SqliteSessionStore implements SessionStore {
     }));
   }
 
-  // ADR-0035 D7: idempotent keyset-paginated backfill (rules only — the LLM seam stays on the live
+  // idempotent keyset-paginated backfill (rules only — the LLM seam stays on the live
   // write path). Covered rows skip unless --reprocess targets older rules_version rows (supersede).
   // r87 audit F1: dry-run executes the IDENTICAL pipeline inside a rolled-back transaction, so
   // written / dedupSkipped / schemaRejected are exact predictions (never upper bounds) and the
@@ -1369,7 +1369,7 @@ export class SqliteSessionStore implements SessionStore {
   public async backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean; fullRefresh?: boolean }): Promise<BackfillRelationsResult> {
     // r88 audit: a partial window (--from-id/--limit) contradicts a full rebuild — reject the combination.
     if (opts.fullRefresh && (opts.fromId !== undefined || opts.limit !== undefined)) {
-      throw new Error("backfillRelations: fullRefresh cannot be combined with fromId/limit (ADR-0035 D7 r88 guard)");
+      throw new Error("backfillRelations: fullRefresh cannot be combined with fromId/limit ( r88 guard)");
     }
     const batch = opts.batch ?? 200;
     const maxRows = opts.limit ?? 100000;
@@ -1377,7 +1377,7 @@ export class SqliteSessionStore implements SessionStore {
     const res: BackfillRelationsResult = { apply: opts.apply, scanned: 0, written: 0, dedupSkipped: 0, schemaRejected: 0, lastId: fromId0 };
     const tel0 = { ...this.relationTel };
     const dryRollback = Symbol("dry-run-rollback");
-    // Factored scan/process helpers shared by the dry-run and chunked-apply paths (ADR-0036 D6).
+    // Factored scan/process helpers shared by the dry-run and chunked-apply paths.
     type ScanRow = { id: number; title: string | null; snippet: string | null; rules: number | null };
     const scanBatch = (fromId: number): ScanRow[] =>
       this.db
@@ -1402,7 +1402,7 @@ export class SqliteSessionStore implements SessionStore {
       for (const t of triples) this.insertEdge(row.id, t, linked);
     };
     if (!opts.apply) {
-      // Dry-run keeps the ADR-0035 r87 single rolled-back transaction: counts are exact predictions.
+      // Dry-run keeps the r87 single rolled-back transaction: counts are exact predictions.
       const run = () => {
         let fromId = fromId0;
         if (opts.fullRefresh) this.db.exec("DELETE FROM edges");
@@ -1421,7 +1421,7 @@ export class SqliteSessionStore implements SessionStore {
         if (e !== dryRollback) throw e;
       }
     } else {
-      // ADR-0036 D6: apply mode commits one IMMEDIATE transaction per batch, so concurrent live
+      // apply mode commits one IMMEDIATE transaction per batch, so concurrent live
       // MCP writes wait within busy_timeout instead of blocking for the whole run. SQLITE_BUSY is
       // retried with exponential backoff (50ms base, 5s cap, <=8 tries); SQLITE_BUSY_SNAPSHOT (the
       // deferred-upgrade class) fails fast because retrying a stale snapshot is meaningless. A
@@ -1478,8 +1478,8 @@ export class SqliteSessionStore implements SessionStore {
     return res;
   }
 
-  // ADR-0035 D8: report-only. pendingEdges gauge = linked memories with no live edge episode row.
-  // ADR-0037 D6: semantic-arm telemetry (queries/hits/served; regressions gated in eval).
+  // report-only. pendingEdges gauge = linked memories with no live edge episode row.
+  // semantic-arm telemetry (queries/hits/served; regressions gated in eval).
   public semanticTelemetry(): { queries: number; hits: number; served: number } {
     return { ...this.semTel };
   }
@@ -1491,7 +1491,7 @@ export class SqliteSessionStore implements SessionStore {
     return { ...this.relationTel, pendingEdges: pending };
   }
 
-  // ADR-0025 D2: equal-conflict review channel. Zero new tables — the quarantine column
+  // equal-conflict review channel. Zero new tables — the quarantine column
   // on retrieval_results is the ledger; keep/drop reuse the bi-temporal valid_until path.
   async listQuarantinedMemories(): Promise<QuarantinedMemory[]> {
     // Left-join the live counterpart of the same entity so the reviewer sees both sides (atomcode: counterpart display is mandatory).
@@ -1514,7 +1514,7 @@ export class SqliteSessionStore implements SessionStore {
     if (!row) return { ok: false };
     if (action === "keep") {
       this.db.prepare("UPDATE retrieval_results SET quarantine = NULL WHERE id = ?").run(id);
-      // Kept value wins: close the live counterpart for the same entity (ADR-0008 bi-temporal pattern).
+      // Kept value wins: close the live counterpart for the same entity ( bi-temporal pattern).
       this.db
         .prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE session_id = ? AND entity = ? AND id != ? AND valid_until IS NULL AND quarantine IS NULL")
         .run(row.session_id, row.entity, id);

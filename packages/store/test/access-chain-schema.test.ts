@@ -1,4 +1,4 @@
-// ADR-0040 D7 gap items: verifier perf smoke at 10k/100k rows (report-only, never gated),
+// gap items: verifier perf smoke at 10k/100k rows (report-only, never gated),
 // schema_version forward/backward behavior, whitelist boundary negatives through the verifier.
 import Database from "better-sqlite3";
 import { spawnSync } from "node:child_process";
@@ -81,7 +81,7 @@ function main() {
       assert(r.status === 1, "REAL schema_version rejected by whitelist (got " + r.status + ")");
     } finally { try { rmSync(f.dir, { recursive: true, force: true }); } catch {} }
   }
-  // ADR-0053 migration: the writer hashes a pre-existing schema_version=1 row
+  // migration: the writer hashes a pre-existing schema_version=1 row
   // with six fields, matching the independent verifier at the v1/v2 boundary.
   {
     const dir = mkdtempSync(join(tmpdir(), "ans-chain-v1v2-"));
