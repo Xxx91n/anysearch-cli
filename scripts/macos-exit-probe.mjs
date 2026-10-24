@@ -62,7 +62,7 @@ for (let i = 1; i <= RUNS; i++) {
 
 lines.push("");
 if (crashes === 0) {
-  lines.push("**verdict: GREEN** — teardown fix holds on this run. Promotion rule: >=5 consecutive green runs => evaluate restoring macos-latest to the blocking matrix ( D-007).");
+  lines.push("**verdict: GREEN** — teardown fix holds on this run. Promotion rule: >=5 consecutive green runs => evaluate restoring macos-latest to the blocking matrix (D-007).");
 } else {
   lines.push("**verdict: CRASH SIGNATURE** — " + crashes + " run(s) crashed. If crashes persist: prune the macOS blocking lane (ubuntu/windows stay blocking), extend ledger defer-f16-macos-native-crash, and keep this probe reporting.");
 }

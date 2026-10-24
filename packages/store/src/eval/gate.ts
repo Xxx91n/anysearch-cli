@@ -357,7 +357,7 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
     ] };
   }
   if (!baseline.allowance) {
-    return { verdict: "fail", exitCode: 12, warnings: [], failures: ["baseline lacks integer allowance block — regenerate with eval --calibrate ( replaced fraction margins)"] };
+    return { verdict: "fail", exitCode: 12, warnings: [], failures: ["baseline lacks integer allowance block — regenerate with eval --calibrate (replaced fraction margins)"] };
   }
   const failures: string[] = [];
   const warnings: string[] = [];
@@ -400,13 +400,13 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
     const total = rg.n + rg.excluded;
     if (total > 0 && rg.excluded / total > 0.2) {
       warn = true;
-      reasons.push("full-sample exclusion rate " + (rg.excluded / total * 100).toFixed(1) + "% > 20% ( censoring rule)");
+      reasons.push("full-sample exclusion rate " + (rg.excluded / total * 100).toFixed(1) + "% > 20% (censoring rule)");
     }
     if (rgH) {
       const totalH = rgH.n + rgH.excluded;
       if (totalH > 0 && rgH.excluded / totalH > 0.2) {
         warn = true;
-        reasons.push("holdout exclusion rate " + (rgH.excluded / totalH * 100).toFixed(1) + "% > 20% ( WARN)");
+        reasons.push("holdout exclusion rate " + (rgH.excluded / totalH * 100).toFixed(1) + "% > 20% (WARN)");
       }
     }
     if (!b) {
@@ -425,16 +425,16 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
         harm = stF.bcaHi < 0 || stF.signFlipHarmP < alphaK;
         fullSnap = { n: stF.n, mean: stF.mean, bcaLo: stF.bcaLo, bcaHi: stF.bcaHi, signFlipP: stF.signFlipP, signFlipHarmP: stF.signFlipHarmP, passAtLook: fullPass };
         const df = "full: mean=" + stF.mean.toFixed(4) + " BCa=[" + stF.bcaLo.toFixed(4) + ", " + stF.bcaHi.toFixed(4) + "] signFlipP=" + stF.signFlipP.toFixed(5) + " harmP=" + stF.signFlipHarmP.toFixed(5) + " alpha(" + look + "/" + kMax + ")=" + alphaK.toFixed(6);
-        if (harm) reasons.push(df + " — PROVEN-NEGATIVE on the full sample ( red)");
+        if (harm) reasons.push(df + " — PROVEN-NEGATIVE on the full sample (red)");
         else if (fullPass) reasons.push(df + " — preregistered rule holds at look " + look + "/" + kMax);
         else { warn = true; reasons.push(df + " — rule not established at this look's alpha; unproven-positive is never red "); }
       }
       if (!rgH) {
         warn = true;
-        reasons.push("holdout sample missing from metrics — three-tier gate cannot run contradiction check ( report contract)");
+        reasons.push("holdout sample missing from metrics — three-tier gate cannot run contradiction check (report contract)");
       } else if (rgH.n < 2) {
         warn = true;
-        reasons.push("holdout has " + rgH.n + " pair(s) < 2 — no contradiction check possible ( WARN)");
+        reasons.push("holdout has " + rgH.n + " pair(s) < 2 — no contradiction check possible (WARN)");
       } else {
         const stH = pairedGainStats(rgH.deltas, alphaK);
         const mdeH = mdeForPaired(rgH.n, b.sigmaDU);
@@ -445,10 +445,10 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
         if (stH && stH.degenerate) { warn = true; reasons.push("holdout degenerate (sd=0) — no-contradiction check unavailable; GREEN requires a live holdout "); }
         if (stH && !stH.degenerate && (stH.bcaHi < 0 || stH.signFlipHarmP < alphaK)) {
           harm = true;
-          reasons.push("holdout: mean=" + stH.mean.toFixed(4) + " BCa=[" + stH.bcaLo.toFixed(4) + ", " + stH.bcaHi.toFixed(4) + "] harmP=" + stH.signFlipHarmP.toFixed(5) + " — PROVEN-NEGATIVE on the frozen holdout ( red)");
+          reasons.push("holdout: mean=" + stH.mean.toFixed(4) + " BCa=[" + stH.bcaLo.toFixed(4) + ", " + stH.bcaHi.toFixed(4) + "] harmP=" + stH.signFlipHarmP.toFixed(5) + " — PROVEN-NEGATIVE on the frozen holdout (red)");
         }
-        if (under) { warn = true; reasons.push("holdout underpowered: MDE_paired=" + mdeH.toFixed(3) + " > minGain=" + b.minGain + " (n=" + rgH.n + ", sigmaDU=" + b.sigmaDU + ") — WARN per "); }
-        if (stH && !stH.degenerate && fullPass && stH.mean <= 0) { warn = true; reasons.push("full sample passes but holdout mean <= 0 — gain may contain overfit ( WARN)"); }
+        if (under) { warn = true; reasons.push("holdout underpowered: MDE_paired=" + mdeH.toFixed(3) + " > minGain=" + b.minGain + " (n=" + rgH.n + ", sigmaDU=" + b.sigmaDU + ") — WARN"); }
+        if (stH && !stH.degenerate && fullPass && stH.mean <= 0) { warn = true; reasons.push("full sample passes but holdout mean <= 0 — gain may contain overfit (WARN)"); }
         if (stH && !stH.degenerate && !harm && !under && !(fullPass && stH.mean <= 0)) reasons.push("holdout: mean=" + stH.mean.toFixed(4) + " n=" + rgH.n + " MDE=" + mdeH.toFixed(3) + " — no contradiction (holdout significance not required)");
       }
     }
@@ -487,7 +487,7 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
   // (promotion threshold preregistered in formula, promoted after one window).
   if (m.semantic) {
     if (m.semantic.regressions > 0)
-      failures.push(`semantic-arm: ${m.semantic.regressions} case(s) where the semantic arm worsened the fused rank of the expected memory vs the five-arm baseline — serve is forbidden from regressing ( Phase-2)`);
+      failures.push(`semantic-arm: ${m.semantic.regressions} case(s) where the semantic arm worsened the fused rank of the expected memory vs the five-arm baseline — serve is forbidden from regressing (Phase-2)`);
     if (m.semantic.gain)
       warnings.push(`semantic-gain: n=${m.semantic.gain.n} meanDelta=${m.semantic.gain.meanDelta.toFixed(4)} — observational (Phase-2 cite; promotion after one window)`);
   }

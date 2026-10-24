@@ -65,7 +65,7 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
       '| entity candidates_truncated | ' + m.entityMerge.candidates_truncated + ' |',
       '| entity unmerged | ' + m.entityMerge.unmerged + ' |',
     ] : []),
-...(m.entityArm && m.entityArm.hitRate < 0.5 ? [`| WARNING | entity rule-hitRate < 0.5 — : re-evaluate dual-layer extraction with fastCRW (report-only) |`] : []),
+...(m.entityArm && m.entityArm.hitRate < 0.5 ? [`| WARNING | entity rule-hitRate < 0.5 — re-evaluate dual-layer extraction with fastCRW (report-only) |`] : []),
     // Track-A paired RoR block (report shape; the gate decision lives in gate.verdict).
     ...(m.relationGain ? [
       "",

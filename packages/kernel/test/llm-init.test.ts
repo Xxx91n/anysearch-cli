@@ -32,7 +32,7 @@ const s = await createLlmSession({ provider: "openai", model: "gpt-5" });
 ok(s.providerName === "openai" && s.modelName === "gpt-5", "session identity correct");
 ok(typeof s.streamFn === "function", "streamFn bound");
 ok(s.models && typeof s.models.getModel === "function", "models registry returned");
-ok(s.apiKey === undefined, "kernel never mirrors provider env into the session ( step 7; pi-ai owns provider auth)");
+ok(s.apiKey === undefined, "kernel never mirrors provider env into the session (step 7; pi-ai owns provider auth)");
 
 
 // --- explicit endpoint kind, three wire protocols against local stubs ---

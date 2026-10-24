@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS memory_entity (
   UNIQUE (memory_id, entity_id)
 );
 
--- +: merge decision log — alias append, destructive merge (full snapshot),
+-- entity_merge_log: merge decision log — alias append, destructive merge (full snapshot),
 -- candidate review belt (hit_count re-hit escalation), and unmerge override records.
 -- kind: 'alias' | 'candidate' | 'merge' | 'override'
 -- merge rows carry a complete snapshot in detail: fromEntityId, fromName, fromNorm, fromAliases,

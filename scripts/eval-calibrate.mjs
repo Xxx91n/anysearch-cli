@@ -110,7 +110,7 @@ async function main() {
   else {
     const labeled = set.cases.filter((c) => c.humanRelevant === 0 || c.humanRelevant === 1);
     if (labeled.length < minLabeled) {
-      process.stderr.write(`eval-calibrate: only ${labeled.length} labeled (need >= ${minLabeled}) — annotations pending ( explicit deferral)\n`);
+      process.stderr.write(`eval-calibrate: only ${labeled.length} labeled (need >= ${minLabeled}) — annotations pending (explicit deferral)\n`);
       process.exit(2);
     }
     const baseUrl = (process.env.JUDGE_BASE_URL || "http://127.0.0.1:20128/v1").replace(/\/+$/, "");
