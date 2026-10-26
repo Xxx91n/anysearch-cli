@@ -1,4 +1,4 @@
-// (T6): eval-looks golden executor — OFFLINE stub layer (blocking).
+// eval-looks golden executor — OFFLINE stub layer (blocking).
 // Entries with scope stub|both are replayed through RetroaererdEngine with stub
 // providers + the real domain policy. Fixtures come from the OBSERVED badcase
 // scene (eval-badcases.json observed.* / documented scenes) — NEVER from

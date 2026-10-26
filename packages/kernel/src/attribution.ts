@@ -33,7 +33,7 @@ import {
 const WORD_RE = /[\p{L}\p{N}]+/gu;
 // CJK runs are emitted as character bigrams (classic CJK IR trick, deterministic, no model):
 // without segmentation a whole Chinese sentence is one token, making jaccard overlap ~0 and
-// the contradiction gate dead for CJK (r83 audit F13 follow-up).
+// the contradiction gate dead for CJK.
 const CJK_RE = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/;
 
 export function tokenize(text: string): string[] {
@@ -370,7 +370,7 @@ export function deriveGapRequests(claims: AttributionClaim[]): GapRequest[] {
 // D7: "all-weak evidence" bridge — a claim counts as weak when it is unsupported
 // (deterministic contradiction) or uncertain with zero evidence. When EVERY claim is weak
 // and sufficiency says "incorrect", bridge to a full abstain rather than emitting a
-// misleading verified answer. (r83 audit F1: previous double-gate was unreachable —
+// misleading verified answer. (The previous double-gate was unreachable —
 // unsupported implies evidence exists by construction.)
 export function claimIsWeak(c: AttributionClaim): boolean {
   return c.label === "unsupported" || (c.label === "uncertain" && c.evidence.length === 0);
@@ -447,7 +447,7 @@ export function renderAttributionText(report: AttributionReport): string {
 }
 
 // Attach report onto envelope. Mutates envelope.attribution — caller owns the object.
-// r83 audit F14: attribution runs on every mode incl. fast — deliberate (D2 bounded loop,
+// Attribution runs on every mode incl. fast — deliberate (bounded loop,
 // maxClaims=20 * jaccard is O(ns); cost is negligible vs retrieval latency). Recorded, not gated.
 export function attachAttribution(envelope: FusedEnvelope, opts?: BuildAttributionOptions): AttributionReport {
   const report = buildAttributionReport(envelope, opts);

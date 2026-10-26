@@ -188,7 +188,7 @@ function computeVariance(values: number[]): number {
   return values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
 }
 
-// (T2): post-filter adjudication — reuses shouldAllowUrl so the gate
+// post-filter adjudication — reuses shouldAllowUrl so the gate
 // shares the store-level policy semantics (deny evaluated first; an allow entry
 // matches host or subdomain suffix; the user-labelled early-allow branch is
 // irrelevant because the label here is always "retrieved"). Scheme-less
@@ -211,7 +211,7 @@ export class RetroaererdEngine {
   private ledger?: BudgetLedgerPort;
   private sessionId?: string;
   // step 6: host-injected claim judge. The LLM and its budget ledger live in the host;
-  // kernel stays pure. r83 audit F2: previously shouldEscalateToJudge had zero callers.
+  // kernel stays pure. Previously shouldEscalateToJudge had zero callers.
   private attributionJudge?: JudgeFn;
   // optional domain sources.weights overlay (user preference, never gained from
   // observation). Invalid values are rejected at domain load (fail-fast); absent = equal weights.
@@ -219,7 +219,7 @@ export class RetroaererdEngine {
   // active attribution calibration, injected once by the composition
   // root (which owns the revision-root file I/O). Absent = legacy 0.6 floor.
   private attributionCalibration?: AttributionCalibration;
-  // (T2): request-time domain URL policy resolver (allow/deny/
+  // request-time domain URL policy resolver (allow/deny/
   // policyVersion) + active domain name for audit attributes. Absent resolver or
   // empty allow = domain filtering inactive (full fanout, legacy behavior). The
   // resolver is invoked inside every search() — no cached policy snapshot lives
@@ -280,7 +280,7 @@ export class RetroaererdEngine {
       throw new Error("No providers registered");
     }
 
-    // (T2): domain policy resolved per request — the resolver reads
+    // domain policy resolved per request — the resolver reads
     // the single source via a lazy-mtime reloader; nothing is cached in
     // the retriever. Empty allow = policy inactive (fail-open full fanout).
     const domainPolicy = this.urlPolicy?.() ?? null;
@@ -465,7 +465,7 @@ export class RetroaererdEngine {
                 trustSuspicious: trusted.suspicious,
               },
             };
-            // (T2): authoritative egress gate — adjudicated on the
+            // authoritative egress gate — adjudicated on the
             // sanitized result URL so out-of-domain entries never reach fusion,
             // MVSS, attribution, or output. Deny wins (shouldAllowUrl order).
             if (domainActive && !adjudicateUrlPolicy(r.url, domainPolicy)) { gateDropped += 1; continue; }
@@ -545,7 +545,7 @@ export class RetroaererdEngine {
     // by, the sufficiency/fusion gate.
     const webProviderLedger = buildWebProviderLedger(listedProviderIds, providerLists, nativeScores, providersFailed);
 
-    // (T2): post-gate audit event + outcome dimension. abstain is
+    // post-gate audit event + outcome dimension. abstain is
     // its own outcome value on the span — criterion 6 keeps it out of error counts.
     if (domainActive) {
       const outcome = allResults.size === 0 ? "abstain" : "answer";
@@ -591,7 +591,7 @@ export class RetroaererdEngine {
           nativeScores,
         },
         observational: { webProviderLedger },
-        // (T2): first-class abstain marker — domain_filter_empty when
+        // first-class abstain marker — domain_filter_empty when
         // the authoritative gate leaves zero results (empty post-gate pool is
         // structurally abstain; eval/abstain.ts chain_empty is the sibling rule,
         // shouldBridgeToAbstain is the weak-claims counterpart). Never an error.
