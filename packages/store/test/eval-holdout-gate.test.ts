@@ -125,7 +125,7 @@ function mkBaseline(sigmaDU: number): EvalBaseline {
   assert(g.gainConclusion?.tier === "warn", "full-pass + holdout mean<=0 => WARN (overfit suspicion)");
 }
 {
-  // degenerate holdout (sd=0): no-contradiction check unavailable => WARN, never GREEN (r98 audit F3)
+  // degenerate holdout (sd=0): no-contradiction check unavailable => WARN, never GREEN
   const pos = [0.14, 0.16, 0.15, 0.13, 0.17, 0.14, 0.16, 0.15, 0.14, 0.16, 0.15, 0.14];
   const g = evaluateGate(fakeReport(mkMetrics(pos, [0, 0, 0, 0, 0, 0, 0, 0])), mkBaseline(0.05), { look: OF_K_MAX });
   assert(g.gainConclusion?.tier === "warn", "degenerate holdout => WARN (got " + g.gainConclusion?.tier + ")");

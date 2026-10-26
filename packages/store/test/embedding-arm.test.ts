@@ -84,7 +84,7 @@ async function main() {
   assert(fb2 === null || (fb2.EMBEDDING_MODEL_ID as string) !== "stub-e5",
     "empty anchor does not resolve the synthetic stub");
 
-  // 5b. -audit F1: a resolved-but-broken sibling copy must stay absent,
+  // 5b. a resolved-but-broken sibling copy must stay absent,
   // not throw — and must not veto the next candidate. "00000000" sorts
   // before "bbbbbbbb" in the child-dir scan, so the broken copy is hit first.
   const brokenDir = join(g, "00000000", "node_modules", "@anysearch-cli", "embedding");

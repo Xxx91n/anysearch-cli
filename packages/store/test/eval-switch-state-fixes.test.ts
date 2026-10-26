@@ -28,7 +28,7 @@ function freshDb(dbPath: string): void {
 }
 
 try {
-  // F1: stale ledger state must be rebuilt from chain, not quarantined forever.
+  // stale ledger state must be rebuilt from chain, not quarantined forever.
   {
     const dir = mkdtempSync(join(tmpdir(), "ans-r116-f1-"));
     const dbPath = join(dir, "anysearch.db");
@@ -50,7 +50,7 @@ try {
     rmSync(dir, { recursive: true, force: true });
   }
 
-  // F2: legacy stage-transition row must fail loud at replay.
+  // legacy stage-transition row must fail loud at replay.
   {
     const dir = mkdtempSync(join(tmpdir(), "ans-r116-f2-"));
     const dbPath = join(dir, "anysearch.db");
@@ -67,7 +67,7 @@ try {
     rmSync(dir, { recursive: true, force: true });
   }
 
-  // F4: malformed lock file is reaped, advanceSwitch succeeds.
+  // malformed lock file is reaped, advanceSwitch succeeds.
   {
     const dir = mkdtempSync(join(tmpdir(), "ans-r116-f4-"));
     const dbPath = join(dir, "anysearch.db");

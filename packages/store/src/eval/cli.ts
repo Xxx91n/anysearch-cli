@@ -31,12 +31,12 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
   const m = report.metrics;
   const verdict = failures.length ? "FAIL" : warnings.length ? "WARN" : "PASS";
   const lines: string[] = [
-    "# Memory Eval Report ()",
+    "# Memory Eval Report",
     "",
     `- generated: ${report.generatedAt}`,
     `- dataset fingerprint: ${report.datasetFingerprint}`,
     `- verdict: ${verdict}`,
-    `- note: allowance band is advisory at current sample sizes (allowance/n < MDE); the only hard gate is passRate == 1 (r66 audit F-03)`,
+    `- note: allowance band is advisory at current sample sizes (allowance/n < MDE); the only hard gate is passRate == 1`,
     "",
     "## Metrics (gate)",
     "",
@@ -54,7 +54,7 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
     `| observation track | ${m.observational?.track ?? "consumed"}${m.observational?.simulatedObservationWindow ? " (simulated-observation-window)" : ""} |`,
     `| mrr (rank-of-relevant) | ${m.mrr.toFixed(3)} |`,
     `| answerableFalseRefusalRate | ${m.answerableFalseRefusalRate.toFixed(3)} |`,
-    // r74 audit E1: entity-arm telemetry (report-only; D2 <0.5 advisory, never gated)
+    // entity-arm telemetry (report-only; D2 <0.5 advisory, never gated)
     ...(m.entityArm ? [`| entity rule-hitRate | ${m.entityArm.hitRate.toFixed(3)} |`, `| entity activationRate | ${m.entityArm.activationRate.toFixed(3)} |`, `| entity avgArmHits | ${m.entityArm.avgArmHits.toFixed(2)} |`] : []),
     // merge/review telemetry — report-only, NEVER gated (Goodhart clause).
     ...(m.entityMerge ? [

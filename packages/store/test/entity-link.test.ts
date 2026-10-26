@@ -133,7 +133,7 @@ const km = (url: string, title: string, snippet: string, evidence: number, entit
 }
 
 
-// --- step 8 (r74 audit): E2 alias pass-through + E5 drop unlink + rank field presence ---
+// --- step 8: E2 alias pass-through + E5 drop unlink + rank field presence ---
 {
   const store = new SqliteSessionStore(join(dir, "t8.db"));
   const sr = await store.createSession("eval");
@@ -163,7 +163,7 @@ const km = (url: string, title: string, snippet: string, evidence: number, entit
   const after = store.dbQuery<{ n: number }>("SELECT COUNT(*) n FROM memory_entity WHERE memory_id = ?", qid);
   assert.equal(after[0]!.n, 0, "E5: memory_entity rows removed on drop");
   store.close();
-  console.log("step8 r74 audit fixes (E2 alias pass-through / E5 drop unlink + rank): OK");
+  console.log("step8 fixes (E2 alias pass-through / E5 drop unlink + rank): OK");
 }
 rmSync(dir, { recursive: true, force: true });
 console.log("entity-link.test.ts ALL PASS");

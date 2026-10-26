@@ -724,7 +724,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
     entityArm: (() => {
       let q = 0, c = 0, a = 0, h = 0;
       for (const r of results) if (r.entityArm) { q += r.entityArm.queries; c += r.entityArm.candidates; a += r.entityArm.activations; h += r.entityArm.hits; }
-      // r74 audit E1: hitRate is the RULE-LAYER hit rate (candidates/queries) per (<0.5 -> fastCRW review, report-only).
+      // hitRate is the RULE-LAYER hit rate (candidates/queries) per (<0.5 -> fastCRW review, report-only).
       return { queries: q, candidates: c, activations: a, hits: h, hitRate: q ? c / q : 0, activationRate: q ? a / q : 0, avgArmHits: a ? h / a : 0 };
     })(),
     // six report-only merge metrics, aggregated over per-case stores (report-only, never gated).

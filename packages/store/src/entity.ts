@@ -18,7 +18,7 @@ export interface EntityCandidate {
 export const ENTITY_ALIAS_THRESHOLD = 0.9;
 export const ENTITY_REVIEW_THRESHOLD = 0.6;
 
-// r74 audit E5: exported so the store uses one source of truth for the extraction cap.
+// exported so the store uses one source of truth for the extraction cap.
 export const MAX_ENTITY_CANDIDATES = 5; // per-memory extraction cap (bounded cost, Mem0 channel cap pattern)
 
 // Normalization: lowercase, collapse whitespace, strip edge punctuation/quotes.

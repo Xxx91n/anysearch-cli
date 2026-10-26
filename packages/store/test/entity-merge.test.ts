@@ -151,7 +151,7 @@ await put(overflowTitle + " again");
 }
 
 
-// --- step 6 (r77 audit G4 / P1 fix): pre-merge doubly-linked memory roundtrip ---
+// --- step 6: pre-merge doubly-linked memory roundtrip ---
 // One memory mentions BOTH entities; merge deletes the from-link while keeping the target-link;
 // unmerge must restore the from-link WITHOUT dropping the target link.
 {
@@ -186,7 +186,7 @@ await put(overflowTitle + " again");
   console.log("step8 G1 override no-auto-remerge: OK");
 }
 
-// --- step 7 (r77 audit G2/G3): guard branches ---
+// --- step 7: guard branches ---
 {
   const eVault = entityIdByNorm("keyvaultstore") as number;
   const same = await store.combineEntities(eVault, eVault);

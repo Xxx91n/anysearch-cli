@@ -224,7 +224,7 @@ export interface RelationRow {
 
 // dry-run/apply report through the same shape. Dry-run executes the identical
 // apply pipeline inside a rolled-back transaction, so every counter is an exact prediction
-// (r87 audit F1) — never an upper bound. Exit code is a CLI concern (0/1/2).
+// never an upper bound. Exit code is a CLI concern (0/1/2).
 export interface BackfillRelationsResult {
   apply: boolean;
   scanned: number;
@@ -242,7 +242,7 @@ export interface RelationTelemetry {
   llmFailures: number;
   triplesWritten: number;
   dedupSkipped: number;
-  // repeat-episode attempts against a live write-once related_to edge — NOT dedup (r87 audit F2/F7)
+  // repeat-episode attempts against a live write-once related_to edge — NOT dedup
   relatedToWriteOnce: number;
   schemaRejected: number;
   pendingEdges: number;
@@ -631,7 +631,7 @@ export class SqliteSessionStore implements SessionStore {
     for (const h of armHits) byId.set(h.rowid, h);
     for (const h of vecHits) byId.set(h.rowid, h);
     for (const h of relHits) byId.set(h.rowid, h);
-    for (const h of semHits) byId.set(h.rowid, h); // r94 audit A1: semantic ids must resolve on the single-query path (was silent drop, atomcode Spec-1)
+    for (const h of semHits) byId.set(h.rowid, h); // semantic ids must resolve on the single-query path (was silent drop, atomcode Spec-1)
    // RRF arms = FTS (1.0) + entity (0.5) + vector (0.5); an absent arm adds no list (conditional activation).
    // MemoryFusion consumes the registry — k_fusion.memory + weights.memory
    // (FTS anchor 1.0; side arms 0.5). Values identical to the pre-registry literals.
@@ -683,7 +683,7 @@ export class SqliteSessionStore implements SessionStore {
     if (vecHits.length > 0) arms.push({ label: "vector", ids: vecHits.map((h) => String(h.rowid)) });
     // relation arm on the raw query (weight 0.5 in fts5.ts like the other side arms).
     // the relation arm attaches to queries[0] only — the multi-query lane keeps the
-    // conditional-activation contract on the primary query (r87 audit F5: documented to avoid
+    // conditional-activation contract on the primary query (documented to avoid
     // misreading as all-queries activation).
     const relHitsM = this.relationArmRows(queries[0] ?? "", limit);
     if (relHitsM.length > 0) arms.push({ label: "relation", ids: relHitsM.map((h) => String(h.rowid)) });
@@ -911,7 +911,7 @@ export class SqliteSessionStore implements SessionStore {
   // Write-path linking: declared entity key (non-URL) + rule extraction; LLM backfill only on empty rules (fail-open).
   private async linkEntities(memoryId: number, km: KeyMemoryInput): Promise<void> {
     const text = (km.title ?? "") + " " + (km.snippet ?? "");
-    // r74 audit E2: known set includes aliases — alias pass-through on the write path (Neo4j Keep Aliases).
+    // known set includes aliases — alias pass-through on the write path (Neo4j Keep Aliases).
     const known = new Set(this.liveEntities().flatMap((e) => [e.nameNorm, ...e.aliases]));
     const candidates: EntityCandidate[] = [];
     if (km.entity && !km.entity.includes("://")) candidates.push({ name: km.entity, type: "declared" });
@@ -923,7 +923,7 @@ export class SqliteSessionStore implements SessionStore {
     // relation extraction piggybacks this pass; preKnown marks entities that
     // existed before this write (co-occurrence related_to edges only fire between two preKnown refs).
     const linkedRefs: LinkedEntityRef[] = [];
-    for (const c of candidates.slice(0, MAX_CANDIDATES + 1)) { // r74 audit E5: 1 declared + MAX_CANDIDATES rule/LLM
+    for (const c of candidates.slice(0, MAX_CANDIDATES + 1)) { // 1 declared + MAX_CANDIDATES rule/LLM
       const entityId = this.resolveEntity(c.name, c.type);
       this.db.prepare("INSERT OR IGNORE INTO memory_entity (memory_id, entity_id) VALUES (?, ?)").run(memoryId, entityId);
       const refNorm = normalizeEntityName(c.name);
@@ -1053,7 +1053,7 @@ export class SqliteSessionStore implements SessionStore {
       const redirected = (this.db.prepare("SELECT memory_id FROM memory_entity WHERE entity_id = ?").all(from) as Array<{ memory_id: number }>)
         .map((r) => r.memory_id);
       // Redirect, tolerating (memory_id, toId) pairs that already exist (UNIQUE(memory_id, entity_id)).
-      // r77 audit P1: memories linked to BOTH entities pre-merge are recorded in bothLinked —
+      // memories linked to BOTH entities pre-merge are recorded in bothLinked —
       // unmerge must restore the from-link WITHOUT dropping the target link.
       const bothLinked: number[] = [];
       for (const mid of redirected) {
@@ -1120,7 +1120,7 @@ export class SqliteSessionStore implements SessionStore {
       for (const mid of snap.redirectedMemoryIds) {
         const curTarget = this.db.prepare("SELECT 1 as x FROM memory_entity WHERE memory_id = ? AND entity_id = ?").get(mid, logRow.target_entity_id) as { x: number } | undefined;
         if (bothSet.has(mid)) {
-          // r77 audit P1 (G4): pre-merge this memory was linked to BOTH entities. Merge deleted the
+          // pre-merge this memory was linked to BOTH entities. Merge deleted the
           // from-row and kept the target-row. Undo restores the from-link and keeps the target link.
           const mem = this.db.prepare("SELECT id FROM retrieval_results WHERE id = ?").get(mid) as { id: number } | undefined;
           if (mem) this.db.prepare("INSERT OR IGNORE INTO memory_entity (memory_id, entity_id) VALUES (?, ?)").run(mid, snap.fromEntityId);
@@ -1222,7 +1222,7 @@ export class SqliteSessionStore implements SessionStore {
 
   private entityArmRows(query: string, limit: number): MemoryHit[] {
     this.entityTel.queries += 1;
-    const known = new Set(this.liveEntities().flatMap((e) => [e.nameNorm, ...e.aliases])); // r74 audit E2: aliases recognized read-side too
+    const known = new Set(this.liveEntities().flatMap((e) => [e.nameNorm, ...e.aliases])); // aliases recognized read-side too
     const candidates = extractEntityCandidates(query, known);
     if (candidates.length === 0) return [];
     this.entityTel.candidates += 1;
@@ -1231,7 +1231,7 @@ export class SqliteSessionStore implements SessionStore {
     if (matched.length === 0) return [];
     this.entityTel.activations += 1;
     const ids = matched.map((e) => e.id);
-    const sql = "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank FROM retrieval_results r " + // r74 audit E5: rank required by MemoryHit
+    const sql = "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank FROM retrieval_results r " + // rank required by MemoryHit
       "JOIN memory_entity me ON me.memory_id = r.id WHERE me.entity_id IN (" + ids.map(() => "?").join(", ") + ") " +
       "AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) ORDER BY r.created_at DESC LIMIT ?";
     const rows = this.db.prepare(sql).all(...ids, limit) as MemoryHit[];
@@ -1299,7 +1299,7 @@ export class SqliteSessionStore implements SessionStore {
     const live = this.db
       .prepare("SELECT id FROM edges WHERE source_entity_id = ? AND relation = ? AND target_entity_id = ? AND valid_until IS NULL")
       .get(s.id, t.relation, o.id) as { id: number } | undefined;
-    if (live && t.relation === "related_to") { this.relationTel.relatedToWriteOnce += 1; return; } // + r87 audit F7: write-once = first co-occurrence materializes the edge; repeat-episode attempts skip (noise control), counted separately from dedup
+    if (live && t.relation === "related_to") { this.relationTel.relatedToWriteOnce += 1; return; } // write-once = first co-occurrence materializes the edge; repeat-episode attempts skip (noise control), counted separately from dedup
     if (live) this.db.prepare("UPDATE edges SET valid_until = datetime('now') WHERE id = ?").run(live.id);
     this.db
       .prepare("INSERT INTO edges (source_entity_id, target_entity_id, relation, description, confidence, episode_memory_id, rules_version) VALUES (?, ?, ?, ?, ?, ?, ?)")
@@ -1362,12 +1362,12 @@ export class SqliteSessionStore implements SessionStore {
 
   // idempotent keyset-paginated backfill (rules only — the LLM seam stays on the live
   // write path). Covered rows skip unless --reprocess targets older rules_version rows (supersede).
-  // r87 audit F1: dry-run executes the IDENTICAL pipeline inside a rolled-back transaction, so
+  // dry-run executes the IDENTICAL pipeline inside a rolled-back transaction, so
   // written / dedupSkipped / schemaRejected are exact predictions (never upper bounds) and the
   // edges table + telemetry counters are left untouched. fullRefresh is the dbt full-refresh
-  // safety net (r87 audit F3): rebuild the edges table from scratch, atomic with the scan loop.
+  // safety net: rebuild the edges table from scratch, atomic with the scan loop.
   public async backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean; fullRefresh?: boolean }): Promise<BackfillRelationsResult> {
-    // r88 audit: a partial window (--from-id/--limit) contradicts a full rebuild — reject the combination.
+    // a partial window (--from-id/--limit) contradicts a full rebuild — reject the combination.
     if (opts.fullRefresh && (opts.fromId !== undefined || opts.limit !== undefined)) {
       throw new Error("backfillRelations: fullRefresh cannot be combined with fromId/limit (r88 guard)");
     }
@@ -1520,7 +1520,7 @@ export class SqliteSessionStore implements SessionStore {
         .run(row.session_id, row.entity, id);
     } else {
       this.db.prepare("UPDATE retrieval_results SET quarantine = 'resolved_drop' WHERE id = ?").run(id);
-      // r74 audit E5: dropped memories leave no entity-graph residue.
+      // dropped memories leave no entity-graph residue.
       this.db.prepare("DELETE FROM memory_entity WHERE memory_id = ?").run(id);
     }
     return { ok: true };

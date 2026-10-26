@@ -206,7 +206,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
   if (!e || typeof e !== "object") return ["entry is not an object"];
   if (typeof e.id !== "string" || !DOCS_GOLDEN_ID_RE.test(e.id)) p.push("id must match docs-gNNNN|vert-<d>NNNN|ctrl-NNNN");
   const isVerticalEntry = e.tombstone !== undefined || e.vertical !== undefined || (e.expected as { vertical?: unknown } | undefined)?.vertical !== undefined;
-  // (T4): the collection is still the docs-golden batch (docs-gNNNN
+  // the collection is still the docs-golden batch (docs-gNNNN
   // ids), but criterion 4 needs a cold-domain abstain entry — a
   // narrow-allowlist fixture domain where zero results can ever survive.
   // Non-docs domains are allowed only as abstain-only records: they may
@@ -442,7 +442,7 @@ export function crossCheckDocsGolden(set: DocsGoldenSet, manifest: CoverageManif
   const p: string[] = [];
   const allow = new Set(allowlist);
   for (const e of set.entries) {
-    // (T4): the allowlist argument is the docs-domain one — cold-domain
+    // the allowlist argument is the docs-domain one — cold-domain
     // entries own their allowlist via the fixture TOML in provenance.ref, so
     // the docs-allowlist subset check must not run against them.
     if (e.domain !== "docs") continue;
@@ -476,7 +476,7 @@ export function crossCheckDocsGolden(set: DocsGoldenSet, manifest: CoverageManif
     if (d.status === "covered" && n === 0) p.push(d.dimension + ": declared covered but no golden entry carries the tag");
     if (d.status === "covered" && d.count !== n) p.push(d.dimension + ": manifest count " + d.count + " != actual " + n);
     if (d.status === "deferred" && n > 0) p.push(d.dimension + ": declared deferred but " + n + " golden entries carry the tag");
-    // -audit F3: declared class breakdown must match the actual tag histogram —
+    // declared class breakdown must match the actual tag histogram —
     // count alone staying right is not enough for an honesty artifact.
     if (d.status === "covered" && d.classes) {
       const h = classHist.get(d.dimension) ?? new Map<string, number>();

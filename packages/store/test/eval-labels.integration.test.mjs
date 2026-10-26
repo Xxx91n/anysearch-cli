@@ -17,7 +17,7 @@ const repoRoot = path.resolve(here, "..", "..", "..");
 const cli = path.join(repoRoot, "scripts", "eval-labels.mjs");
 const calibrate = path.join(repoRoot, "scripts", "eval-calibrate.mjs");
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "ans-calibration-labels-"));
-// audit F6: an ETIMEDOUT throw skips the tail rmSync — clean on exit instead.
+// an ETIMEDOUT throw skips the tail rmSync — clean on exit instead.
 process.on("exit", () => { try { fs.rmSync(temp, { recursive: true, force: true }); } catch { } });
 const labelsPath = path.join(temp, "calibration-labels.jsonl");
 const manifestPath = path.join(temp, "calibration-manifest.json");
