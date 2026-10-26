@@ -88,7 +88,7 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
   let providers: SearchProvider[] = [];
   let config: DomainConfigPort | undefined;
   let sourceWeights: Record<string, number> | undefined;
-  // (T2): request-time domain URL policy resolver — wired only when
+  // request-time domain URL policy resolver — wired only when
   // the domain schema loads. The lazy-mtime reloader refreshes the schema when
   // the TOML changes; resolvePolicyFromSchema runs on every search() call so
   // TOML edits and ANS_URL_ALLOWLIST/DENYLIST env overrides take effect without

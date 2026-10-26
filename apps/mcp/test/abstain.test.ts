@@ -1,4 +1,4 @@
-// (T3): MCP structuredContent.abstain contract — first-class
+// MCP structuredContent.abstain contract — first-class
 // abstain surfaces with isError absent (false) and the full marker fields.
 // Seam: real registered tool handler, invoked in-process with a mock engine.
 // ponytail: no test framework, assert-based demo.

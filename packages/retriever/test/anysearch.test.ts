@@ -279,7 +279,7 @@ async function main() {
     const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
     assert(p.id === "anysearch", "id = anysearch");
     assert(p.domainFilterSupported === false, "domainFilterSupported stays false (MCP domain is a vertical enum, not a host allowlist)");
-    assert(p.verticalDomainSupported === true, "verticalDomainSupported declared (R83 T1)");
+    assert(p.verticalDomainSupported === true, "verticalDomainSupported declared");
     assert(!p.modes.includes("answer"), "modes still exclude answer");
     assert((await p.usage()) === undefined, "usage() stays undefined");
   }

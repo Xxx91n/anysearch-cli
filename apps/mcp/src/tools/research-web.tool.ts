@@ -58,7 +58,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             if (envelope.metadata?.sufficiency?.verdict === "correct") break;
           }
 
-          // r83 audit F11: re-derive attribution over the MERGED result set so claim
+          // Re-derive attribution over the MERGED result set so claim
           // evidence sourceKeys point into the same results array this tool returns.
           // (Last-round-only attribution indexes a per-round list the tool never returns.)
           let mergedAttribution: unknown = null;
@@ -92,7 +92,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             2,
           );
 
-          // (T3): structuredContent.abstain, isError absent (false).
+          // structuredContent.abstain, isError absent (false).
           const lastAbstain = lastEnvelope?.metadata?.abstain;
           const structuredContent = {
             ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),

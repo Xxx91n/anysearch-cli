@@ -109,7 +109,7 @@ export class SufficiencyEvaluator {
 
       // assertion-level GapRequest is the preferred reround seed.
       // When the attribution layer produced gaps, the first gapQuery takes precedence over
-      // the LLM named-gap query (r83 audit F3: previous code extracted gaps but never used them).
+      // the LLM named-gap query (previous code extracted gaps but never used them).
       if (gapRequests[0]?.gapQuery) gapQuery = gapRequests[0].gapQuery;
       // D5: bounded re-search loop.
       for (let round = 0; round < maxRerounds; round++) {

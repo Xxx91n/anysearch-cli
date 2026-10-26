@@ -116,7 +116,7 @@ const handlers: Record<string, (args: string[]) => Promise<number>> = {
 };
 
 const handler = handlers[cmd];
-// (T4): exit path — explicit native teardown BEFORE exit. The old
+// Exit path — explicit native teardown BEFORE exit. The old
 // process.exit(code) raced libuv teardown against live sqlite/onnx handles
 // (F1 macOS libc++abi abort family). close() first, then let the loop drain;
 // unrefPendingHandles is the D3a backstop for handles we cannot close, and

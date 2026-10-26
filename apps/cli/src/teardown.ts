@@ -1,4 +1,4 @@
-// (T4): native-handle teardown registry — pure leaf, no imports, so
+// Native-handle teardown registry — pure leaf, no imports, so
 // it stays CJS-reachable and unit-testable (same pattern as search-abstain.ts).
 // Every engine handle created through db.ts registers its close(); the dispatcher
 // runs them before exit so libuv never reaps live better-sqlite3/observation
@@ -9,7 +9,7 @@ export function runTeardown(): void {
   for (const fn of teardowns.splice(0)) { try { fn(); } catch {} }
 }
 
-// D-003a (T4): drain-then-unref backstop — after explicit close, whatever
+// Drain-then-unref backstop — after explicit close, whatever
 // handles remain pending (keepalive sockets, native worker threads we cannot
 // close) are unref'd so the loop can end on its own; process.exit() mid-loop
 // teardown is what the crash signature lived on.

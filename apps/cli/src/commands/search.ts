@@ -17,7 +17,7 @@ export async function runSearch(args: string[]): Promise<number> {
   // Parse optional --mode flag (default: fast).
   let mode: Mode = "fast";
   const isJson = args.includes("--json");
-  // (T3): --fail-on-abstain promotes abstain to exit 3.
+  // --fail-on-abstain promotes abstain to exit 3.
   const failOnAbstain = args.includes("--fail-on-abstain");
   const modeIdx = args.indexOf("--mode");
   if (modeIdx >= 0 && args[modeIdx + 1]) {
@@ -82,7 +82,7 @@ export async function runSearch(args: string[]): Promise<number> {
   }
   const vertical = built.vertical;
 
-  // (T3): drop every --flag token (was only --mode) so --json /
+  // Drop every --flag token (was only --mode) so --json /
   // --fail-on-abstain can no longer leak into the provider query string.
   // flag VALUES are also dropped so --vertical-* arguments don't leak
   // into the query string either.
@@ -127,7 +127,7 @@ export async function runSearch(args: string[]): Promise<number> {
       (span) => retriever.search({ query: queryClean, mode, maxResults: 10, ...(vertical ? { vertical } : {}), ...(providersSel?.length ? { providers: providersSel } : {}), span }),
     );
 
-    // r83 audit F5 /: --json pure — single JSON document on stdout, nothing else.
+    // --json pure — single JSON document on stdout, nothing else.
     if (isJson) {
       const out = {
         query: queryClean,
@@ -160,7 +160,7 @@ export async function runSearch(args: string[]): Promise<number> {
     console.log("ans search: " + JSON.stringify({ query: queryClean, mode }));
     console.log("---");
 
-    // (T3): first-class abstain — one structured line, not an error.
+    // First-class abstain — one structured line, not an error.
     const abstain = envelope.metadata.abstain;
     if (abstain) {
       console.log(formatAbstainLine(abstain));

@@ -237,7 +237,7 @@ describe("shouldBridgeToAbstain", () => {
       gaps: [], supportedCount: 0, uncertainCount: 0, unsupportedCount: 1,
       schema: "anysearch/attribution-report@1" as const, generatedAt: "", judgeEnhanced: false,
     };
-    // r83 F1: unsupported claims always carry contradiction evidence — weak ≠ evidence-less.
+    // unsupported claims always carry contradiction evidence — weak ≠ evidence-less.
     assert.equal(shouldBridgeToAbstain(rep, "incorrect"), true);
   });
   it("false when verdict is not incorrect", () => {
@@ -307,10 +307,10 @@ describe("renderAttributionText", () => {
 });
 
 // ---------------------------------------------------------------------------
-// r83 audit additions — F2 judge wiring / F10 signals 5+6 / F12 partial_evidence / F13 negation
+// audit additions — judge wiring / signals 5+6 / partial_evidence / negation
 // ---------------------------------------------------------------------------
-describe("detectFragments — r83 audit additions", () => {
-  it("flags mixed-script / abbreviation signal (F10 混排缩写)", () => {
+describe("detectFragments — audit additions", () => {
+  it("flags mixed-script / abbreviation signal (混排缩写)", () => {
     const f = detectFragments("结果引用 Dr. Smith 2024报告指出结论相反。");
     assert.ok(f.reasons.includes("mixed_abbrev"));
   });
@@ -319,13 +319,13 @@ describe("detectFragments — r83 audit additions", () => {
     assert.ok(f.isLongSentence, "expected long_sentence flag");
     assert.ok(f.reasons.includes("long_sentence"));
   });
-  it("connector regex includes bare 且 (F10)", () => {
+  it("connector regex includes bare 且", () => {
     const f = detectFragments("该方案成本更低且部署更快。");
     assert.ok(f.hasConnector);
   });
 });
 
-describe("classifyClaim — Chinese single-character negation (F13)", () => {
+describe("classifyClaim — Chinese single-character negation", () => {
   it("无/没/非 negate high-overlap snippets into unsupported", () => {
     const claim = "定期运动对心血管健康有益。";
     const results = [{
@@ -338,7 +338,7 @@ describe("classifyClaim — Chinese single-character negation (F13)", () => {
   });
 });
 
-describe("deriveGapRequests — partial_evidence (F12)", () => {
+describe("deriveGapRequests — partial_evidence", () => {
   it("uncertain claim with evidence yields partial_evidence gap", () => {
     const gaps = deriveGapRequests([
       { id: "c1", text: "A claim with some weak evidence", label: "uncertain", evidence: [{ url: "u", provider: "p", sourceKey: "k" }] } as any,
@@ -348,7 +348,7 @@ describe("deriveGapRequests — partial_evidence (F12)", () => {
   });
 });
 
-describe("applyJudgeEscalation — host-injected judge (F2)", () => {
+describe("applyJudgeEscalation — host-injected judge", () => {
   it("escalates only uncertain+evidence claims, bounded by maxCalls, honest judgeEnhanced", async () => {
     const rep = {
       schema: "anysearch/attribution-report@1" as const, generatedAt: "",

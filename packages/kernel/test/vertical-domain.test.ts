@@ -61,7 +61,7 @@ async function main() {
   assert(pre1?.attributes["anysearch.vertical.source"] === "repo", "attr source=repo");
   assert(JSON.stringify(pre1?.attributes["anysearch.vertical.sent"]) === '["cap"]', "sent=[cap]");
   assert(JSON.stringify(pre1?.attributes["anysearch.vertical.degraded"]) === '["incap"]', "degraded=[incap]");
-  assert(!s1.events.some(e => e.name === "retrieval.vertical.post"), "no vertical.post event (D-005)");
+  assert(!s1.events.some(e => e.name === "retrieval.vertical.post"), "no vertical.post event (post event reserved for the post-filter gate axis)");
   assert(!s1.events.some(e => e.name === "retrieval.domain_filter.pre"), "domain_filter.pre untouched (fires only when host policy active)");
   assert(r1.results.length === 2, "both arms contributed results");
 

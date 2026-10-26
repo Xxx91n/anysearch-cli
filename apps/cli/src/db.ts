@@ -23,7 +23,7 @@ export function domainSearchDirs(env: NodeJS.ProcessEnv = process.env): string[]
   return dirs;
 }
 
-// (T4): teardown registry lives in ./teardown (pure leaf).
+// Teardown registry lives in ./teardown (pure leaf).
 import { registerTeardown } from "./teardown";
 export function createPersistentEngine(domain?: string): CompositionResult {
   const dbPath = resolveDbPath();

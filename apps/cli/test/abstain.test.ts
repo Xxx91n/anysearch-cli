@@ -1,4 +1,4 @@
-// (T3): abstain presentation contract — one structured line,
+// Abstain presentation contract — one structured line,
 // exit 0 by default, dedicated exit 3 under --fail-on-abstain. The pure helpers
 // are asserted offline; a conditional live arm spawns the built CLI with a
 // narrow-allowlist domain fixture to measure the real exit codes (skipped

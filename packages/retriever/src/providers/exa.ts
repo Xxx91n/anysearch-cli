@@ -17,7 +17,7 @@ const MODE_TYPE: Record<Mode, "auto" | "fast" | "deep-lite" | "deep"> = {
 export class ExaProvider implements SearchProvider {
   readonly id = "exa";
   readonly modes: readonly Mode[] = ["fast", "index", "deep", "answer"];
-  // (T1): exa-js BaseSearchOptions.includeDomains is a first-class
+  // exa-js BaseSearchOptions.includeDomains is a first-class
   // typed field (walled-garden RAG positioning per Exa docs).
   readonly domainFilterSupported = true;
   private client: Exa;
