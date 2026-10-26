@@ -657,16 +657,23 @@ function stepStaticAssertions() {
     // (CodeRabbit #73 review round 2). Parser unavailable -> fail closed,
     // never pass on unverified text matches.
     const ciSrc = fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
-    if (!/^  test-online:/m.test(ciSrc)) fail("ci.yml missing test-online job key");
     const YAML = resolveWorkflowYaml();
     if (!YAML) failUnverifiable("ci.yml test-online lane unverifiable: no YAML parser resolvable (root dep nor .pnpm store)");
     let ciDoc = null;
     try { ciDoc = YAML.parse(ciSrc); } catch (e) { fail("ci.yml does not parse: " + String(e.message).split("\n")[0]); }
     const onlineJob = ciDoc?.jobs?.["test-online"];
     if (!onlineJob || !Array.isArray(onlineJob.steps)) fail("ci.yml test-online job missing or has no steps");
+    if (onlineJob.if === false || String(onlineJob.if).trim() === "false")
+      fail("ci.yml test-online job is disabled (if: false) — the online lane does not run, so the offline-excluded cases have no CI coverage");
     const laneRun = onlineJob.steps.map((s) => s && s.run).filter((r) => typeof r === "string");
     if (!laneRun.some((r) => r.split(/\r?\n/).some((cmd) => cmd.trim() === "pnpm -C packages/store test:online")))
       fail("ci.yml test-online job missing the 'pnpm -C packages/store test:online' step");
+    // CodeRabbit #74: a step whose `if` is literal false never runs in CI — its run
+    // value existing must not count as coverage (functional correctness, Major).
+    if (!onlineJob.steps.some((s) => s && typeof s.run === "string"
+      && s.if !== false && String(s.if ?? "").trim() !== "false"
+      && s.run.split(/\r?\n/).some((cmd) => cmd.trim() === "pnpm -C packages/store test:online")))
+      fail("ci.yml test-online 'pnpm -C packages/store test:online' step is disabled (if: false) — excluded cases have no active online coverage");
     report("pass", "offline exclusion governance (whitelist + 0.75 floor + test-online lane)");
   }
 
