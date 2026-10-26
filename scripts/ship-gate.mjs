@@ -29,11 +29,31 @@ import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
 import fs from "node:fs";
 import os from "node:os";
+import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// Design: resolve the workspace's YAML parser without adding a runtime
+// dependency — try the root package require, then scan the .pnpm store
+// (same resolution ladder scripts/check-workflows.mjs uses for its full
+// workflow parse; CodeRabbit #73 review round 2).
+function resolveWorkflowYaml() {
+  try {
+    return createRequire(path.join(ROOT, "package.json"))("yaml");
+  } catch { /* not a direct dep */ }
+  const store = path.join(ROOT, "node_modules", ".pnpm");
+  if (fs.existsSync(store)) {
+    for (const d of fs.readdirSync(store).filter((x) => /^yaml@/.test(x))) {
+      try {
+        return createRequire(path.join(store, d, "package.json"))("yaml");
+      } catch { /* keep looking */ }
+    }
+  }
+  return null;
+}
 
 // do NOT hardcode ".cmd". The standalone pnpm that pnpm/setup@v2
 // installs on CI ships pnpm.exe (no pnpm.cmd), while a corepack/npm install
@@ -603,13 +623,22 @@ function stepStaticAssertions() {
   // assertions over the golden dataset — never a runtime NODATA quota.
   {
     const gcSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/golden-cases.ts"), "utf8");
+    // Design: strip comments, then anchor on the ACTIVE declaration —
+    // a commented-out stale declaration must never satisfy the gate while
+    // the runner uses a wider list (CodeRabbit #73 review round 2).
+    const gcCodeOnly = gcSrc.split("\n").map((l) => l.replace(/(^|\s)\/\/.*$/, ""));
+    const activeLine = (re) => gcCodeOnly.filter((l) => re.test(l));
     // (a) the exclusion set exists as an export;
-    if (!gcSrc.includes("export const OFFLINE_EXCLUDED_GROUPS")) fail("OFFLINE_EXCLUDED_GROUPS export missing");
+    if (activeLine(/^export const OFFLINE_EXCLUDED_GROUPS/).length === 0) fail("OFFLINE_EXCLUDED_GROUPS export missing");
     // (b) its whitelist is exactly [VECTOR_ARM_GROUP] with VECTOR_ARM_GROUP === "semantic" —
     // widening the exclusion set fails here, at review time, not in a skipped run.
-    const arm = gcSrc.match(/export const VECTOR_ARM_GROUP: EvalGroup = "([^"]+)"/);
+    const armLines = activeLine(/export const VECTOR_ARM_GROUP/);
+    const arm = armLines.length === 1 ? armLines[0].match(/VECTOR_ARM_GROUP[^=]*=\s*"([^"]+)"/) : null;
     if (!arm || arm[1] !== "semantic") fail("VECTOR_ARM_GROUP must be \"semantic\"");
-    const excl = gcSrc.match(/export const OFFLINE_EXCLUDED_GROUPS: readonly EvalGroup\[\] = \[([^\]]*)\]/);
+    const exclLines = activeLine(/export const OFFLINE_EXCLUDED_GROUPS/);
+    const excl = exclLines.length === 1
+      ? (exclLines[0].match(/OFFLINE_EXCLUDED_GROUPS[^=]*=\s*\[([^\]]*)\]/) ?? (exclLines[0].includes("[") && !exclLines[0].includes("]") ? [, "MULTILINE"] : null))
+      : null;
     const exclToks = (excl?.[1] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
     if (exclToks.length !== 1 || exclToks[0] !== "VECTOR_ARM_GROUP")
       fail("OFFLINE_EXCLUDED_GROUPS must be exactly [VECTOR_ARM_GROUP], got [" + exclToks.join(",") + "]");
@@ -622,11 +651,21 @@ function stepStaticAssertions() {
       { cwd: path.join(ROOT, "packages", "store"), encoding: "utf8" });
     if (cov.status !== 0) fail("offline coverage check failed\n" + String(cov.stderr ?? cov.stdout ?? "").trim());
     // (d) the excluded slice is re-established by the online lane in ci.yml —
-    // job+step double assertion (a bare substring match could be
-    // satisfied by a comment or an orphaned step name while the lane is gone).
+    // Design: parse the YAML and require the exact command inside a
+    // test-online job step's run value — a comment, a renamed job, or the
+    // same command living in another job must not satisfy the check
+    // (CodeRabbit #73 review round 2). Parser unavailable -> fail closed,
+    // never pass on unverified text matches.
     const ciSrc = fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
     if (!/^  test-online:/m.test(ciSrc)) fail("ci.yml missing test-online job key");
-    if (!ciSrc.includes("test:online") || !ciSrc.includes("pnpm -C packages/store test:online"))
+    const YAML = resolveWorkflowYaml();
+    if (!YAML) failUnverifiable("ci.yml test-online lane unverifiable: no YAML parser resolvable (root dep nor .pnpm store)");
+    let ciDoc = null;
+    try { ciDoc = YAML.parse(ciSrc); } catch (e) { fail("ci.yml does not parse: " + String(e.message).split("\n")[0]); }
+    const onlineJob = ciDoc?.jobs?.["test-online"];
+    if (!onlineJob || !Array.isArray(onlineJob.steps)) fail("ci.yml test-online job missing or has no steps");
+    const laneRun = onlineJob.steps.map((s) => s && s.run).filter((r) => typeof r === "string");
+    if (!laneRun.some((r) => r.split(/\r?\n/).some((cmd) => cmd.trim() === "pnpm -C packages/store test:online")))
       fail("ci.yml test-online job missing the 'pnpm -C packages/store test:online' step");
     report("pass", "offline exclusion governance (whitelist + 0.75 floor + test-online lane)");
   }
