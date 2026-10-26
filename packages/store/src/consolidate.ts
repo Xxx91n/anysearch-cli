@@ -147,7 +147,7 @@ export async function consolidateMemoryRun(
     gateRejected: 0, add: 0, noop: 0, update: 0, embeddingAbsent: 0, semanticIds: [],
   };
 
-  // r94 audit A11: plan phase (scan + LLM summarize + classify + dedup) runs WITHOUT the
+  // plan phase (scan + LLM summarize + classify + dedup) runs WITHOUT the
   // write lock; only the collected ops run inside BEGIN IMMEDIATE. Same op order and counters,
   // so the dry-run exact-prediction contract is unchanged (Bacon P2).
   const writes: Array<() => void> = [];
@@ -341,7 +341,7 @@ export function applyArchive(
     for (const id of targets) {
       const row = sel.get(id) as Record<string, unknown> | undefined;
       if (!row || row.archived === 1) { report.skipped++; continue; }
-      // r94 audit A7: explicit ids bypass scanArchiveCandidates — enforce pinned / closed / quarantined
+      // explicit ids bypass scanArchiveCandidates — enforce pinned / closed / quarantined
       // exclusions at the force point too (Bacon P2). Scan path never reaches this (already excluded).
       if (row.pinned === 1 || row.valid_until !== null || row.quarantine !== null) { report.skipped++; continue; }
       upd.run(id);

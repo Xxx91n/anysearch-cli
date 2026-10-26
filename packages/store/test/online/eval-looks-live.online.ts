@@ -1,4 +1,4 @@
-// (T6): eval-looks golden executor — ONLINE live layer.
+// eval-looks golden executor — ONLINE live layer.
 // Entries with scope live|both run through the REAL bundled ans bin
 // (`node apps/cli/dist/index.js search --json`) — the shipped path, not a test
 // double — with hard verdict/mustHitHosts/mustHitUrls/minResults assertions.
@@ -117,7 +117,7 @@ function pathMiss(results: any[], pattern: string, hosts: string[]): boolean {
 
 // Last recorded evidence record per id — consecutive-all-red detection
 // input. allRed means the previous run failed every assertion (f>0 && p=0);
-// a partial fail is not "全红" (audit F3).
+// a partial fail is not "全红".
 interface EvidenceRecord { verdict: string; allRed: boolean }
 function lastEvidenceVerdicts(file: string): Map<string, EvidenceRecord> {
   const last = new Map<string, EvidenceRecord>();
@@ -245,7 +245,7 @@ function main() {
   console.log("--- eval-looks live executor: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) {
     if (evidenceMode && nonQuarFailed === 0) {
-      console.log("EVIDENCE-ONLY-FAILURES: every red assertion belongs to a quarantined entry — exit overridden to 0 (R64 D-004)");
+      console.log("EVIDENCE-ONLY-FAILURES: every red assertion belongs to a quarantined entry — exit overridden to 0");
       return;
     }
     process.exit(1);

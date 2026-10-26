@@ -89,7 +89,7 @@ assert(manifestProblems.length === 0, "coverage manifest valid: " + manifestProb
 
 const docs = loadDomain(path.join(root, "domains", "docs.toml"));
 const allowlist = docs.sources.urlAllowlist ?? [];
-assert(allowlist.length >= 3, "docs.toml urlAllowlist has the D-004 first-party hosts");
+assert(allowlist.length >= 3, "docs.toml urlAllowlist has the first-party hosts");
 const crossProblems = crossCheckDocsGolden(golden, manifest, allowlist);
 assert(crossProblems.length === 0, "entries vs manifest vs allowlist consistent: " + crossProblems.join(" | "));
 

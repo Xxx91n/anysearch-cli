@@ -121,7 +121,7 @@ assert(sem.length === 3, "row written even without fidelity gate");
 const live = sem.filter((r) => r.vu === null);
 assert(live.length === 1 && Math.abs(live[0].confidence - 0.2) < 1e-9, "gate-absent row carries LOW_CONFIDENCE 0.2 marker");
 
-// --- r94 audit A1 (atomcode Spec-1): semantic arm resolves on the single-query searchMemory path.
+// --- semantic arm resolves on the single-query searchMemory path.
 // Pre-fix, negative synthetic rowids entered the RRF list but never the byId map -> silent drop.
 {
   const hits = await store.searchMemory(SUMMARY_A, 5);
@@ -193,7 +193,7 @@ assert(rawAfter.archived === 0, "archived flag restored to 0");
 assert(JSON.stringify(snapRow(oldId)) === JSON.stringify(rowBefore), "row snapshot bit-exact after apply+undo (D7-4)");
 assert(store.undoArchive(arep.logIds[0]).ok === false, "undo is idempotent (second call is a no-op)");
 
-// --- r94 audit A7: pinned exemption enforced at the force point on the explicit-ids path ---
+// --- pinned exemption enforced at the force point on the explicit-ids path ---
 const prep = store.applyArchive([pinId]);
 assert(prep.archived === 0 && prep.skipped === 1, "explicit pinned id refused at apply (r94 A7)");
 

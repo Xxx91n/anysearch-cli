@@ -113,7 +113,7 @@ assert(afterApply >= beforeApply, "apply never shrinks the live edge set");
 const again = await store.backfillRelations({ apply: true });
 assert(again.written === 0, "second apply is a no-op (idempotent): " + again.written);
 
-// --- r87 audit F1: dry-run is an EXACT prediction (rolled-back tx), never an upper bound ---
+// --- dry-run is an EXACT prediction (rolled-back tx), never an upper bound ---
 const dir2 = mkdtempSync(join(tmpdir(), "ans-rel2-"));
 const dbPath2 = join(dir2, "rel2.db");
 const edgeCounts = (p: string) => {
@@ -141,7 +141,7 @@ const edgeCounts = (p: string) => {
   assert(app2.written === dry2.written && app2.dedupSkipped === dry2.dedupSkipped && app2.schemaRejected === dry2.schemaRejected, "dry-run counters exactly predict apply: " + JSON.stringify(dry2) + " vs " + JSON.stringify(app2));
   const app3 = await b.backfillRelations({ apply: true });
   assert(app3.written === 0, "second apply remains a no-op");
-  // r87 audit F3: dbt full-refresh safety net — rebuild from scratch, closed rows never survive
+  // dbt full-refresh safety net — rebuild from scratch, closed rows never survive
   const dryFull = await b.backfillRelations({ apply: false, fullRefresh: true });
   assert(dryFull.written === app2.written, "full-refresh dry-run predicts the same live set: " + dryFull.written);
   assert(edgeCounts(dbPath2).total > 0, "dry full-refresh deleted nothing");
@@ -152,7 +152,7 @@ const edgeCounts = (p: string) => {
   b.close();
 }
 
-// --- r87 audit F2: related_to write-once skip is telemetry-pure (never counted as dedup) ---
+// --- related_to write-once skip is telemetry-pure (never counted as dedup) ---
 {
   const p3 = join(dir2, "rel3.db");
   const c = new SqliteSessionStore(p3);
@@ -170,7 +170,7 @@ const edgeCounts = (p: string) => {
   assert(liveRt.n === 1, "exactly one live related_to edge despite repeated episodes: " + liveRt.n);
   c.close();
 }
-// --- r88 audit: fullRefresh + partial window (--from-id/--limit) is rejected at the store layer ---
+// --- fullRefresh + partial window (--from-id/--limit) is rejected at the store layer ---
 {
   const p4 = join(dir2, "rel4.db");
   const d = new SqliteSessionStore(p4);
@@ -200,7 +200,7 @@ rmSync(dir2, { recursive: true, force: true });
   { const w = new Database(dbPath3); w.exec("DELETE FROM edges"); w.close(); }
   // BUSY injection: hold the foreign write lock slightly past the store's busy_timeout (5000ms),
   // so the first batch attempt throws SQLITE_BUSY and the exponential-backoff retry path actually
-  // executes (a 150ms hold is absorbed by busy_timeout and never reaches it — r90 audit F2).
+  // executes (a 150ms hold is absorbed by busy_timeout and never reaches it).
   const foreign = new Database(dbPath3);
   foreign.exec("BEGIN IMMEDIATE");
   const releaser = setTimeout(() => foreign.exec("COMMIT"), 5200);

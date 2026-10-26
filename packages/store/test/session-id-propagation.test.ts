@@ -26,7 +26,7 @@ import { emitConfigChangeAudit, writePolicyCache, readPolicyCacheEnvelope, resol
 import { readSessionId, writeSessionId } from "../src/session-id";
 
 // this test focuses on the store-side evidence:
-// (a) schema parity fresh vs migrated (T7),
+// (a) schema parity fresh vs migrated,
 // (b) attribution column round-trip + OPA #6905 SELECT-back (T8 attribution half),
 // (c) audit writes thread trace_id + session_id (T8 emitConfigChangeAudit half),
 // (d) materialized_at envelope shape (T9 store-side).

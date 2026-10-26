@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-// (T5): derive the repo root from this file instead of a machine path.
+// derive the repo root from this file instead of a machine path.
 // test/ -> store/ -> packages/ -> repo root (domains/ lives at the repo root).
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 

@@ -73,7 +73,7 @@ function childDirNames(dir: string): string[] {
 }
 
 async function importEmbeddingFallback(anchors: string[] = embeddingAnchorFiles()): Promise<EmbeddingModule | null> {
-  // -audit F1: a resolved-but-broken copy (truncated dist, missing chunk,
+  // a resolved-but-broken copy (truncated dist, missing chunk,
   // top-level throw) must stay absent, not throw — an unguarded rejection
   // would poison modPromise for the process lifetime and veto every caller's
   // null-degrade contract. Each candidate is guarded so a bad copy also

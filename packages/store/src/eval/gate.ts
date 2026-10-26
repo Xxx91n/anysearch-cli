@@ -371,7 +371,7 @@ export function evaluateGate(report: EvalReport, baseline: EvalBaseline | null, 
   if (effectivePassRate < 1) failures.push(`passRate ${effectivePassRate.toFixed(3)} < 1.0 (D4: case lifecycle pass rate must be 100%)`);
   if (quarantine.size > 0) {
     const qids = report.cases.filter((c) => quarantine.has(c.id)).map((c) => c.id);
-    warnings.push(" quarantine active for " + qids.length + " case(s): " + qids.join(", ") + " (excluded from the passRate gate; TTL/review clock in eval-quarantine.json)");
+    warnings.push("quarantine active for " + qids.length + " case(s): " + qids.join(", ") + " (excluded from the passRate gate; TTL/review clock in eval-quarantine.json)");
   }
   allowanceCheck("supersessionFails", m.counts.supExpected - m.counts.supPassed, m.counts.supExpected, baseline.allowance.supersessionFails, failures, warnings);
   allowanceCheck("quarantineFp", m.counts.fpCount, m.counts.fpEligible, baseline.allowance.quarantineFp, failures, warnings);
