@@ -261,4 +261,4 @@ Full record: [docs/limitations.md](docs/limitations.md).
 - Per-package tests run under `node --import tsx --test`; the full gate is
   `node scripts/ship-gate.mjs` (clean tree, tests, pack, install verify, MCP
   initialize, fail-open boot)
-- Governance: `docs/ponytail-debt-ledger.md`, `.scratch/<slug>/`, `AGENTS.md`
+- Governance: `AGENTS.md`, `docs/agents/`
