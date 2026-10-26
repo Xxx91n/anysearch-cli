@@ -100,9 +100,9 @@ function main() {
     }
     if (msgs.length) {
       bad++;
-      process.stdout.write("  FAIL " + f + "\n" + msgs.map((m) => "       - " + m).join("\n") + "\n");
+      process.stdout.write("FAIL " + f + "\n" + msgs.map((m) => "       - " + m).join("\n") + "\n");
     } else {
-      process.stdout.write("  ok   " + f + (YAML ? " (structural + full parse)" : " (structural; no YAML parser present)") + "\n");
+      process.stdout.write("ok   " + f + (YAML ? " (structural + full parse)" : " (structural; no YAML parser present)") + "\n");
     }
   }
   process.stdout.write(bad === 0 ? "check-workflows: OK (" + files.length + " files)\n" : "check-workflows: BROKEN (" + bad + "/" + files.length + ")\n");

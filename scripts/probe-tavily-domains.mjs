@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// criterion 5 (T1): Tavily include_domains leakage probe — INJECT-style
+// criterion 5: Tavily include_domains leakage probe — INJECT-style
 // deterministic ledger. Re-runnable: TAVILY_API_KEY=tvly-... node scripts/probe-tavily-domains.mjs
 // Output: .scratch/grill-round-62/tavily-probe-ledger.{json,md}
 // Arms: A default-mode leak / B filter-mode hard / C subdomain directionality /
