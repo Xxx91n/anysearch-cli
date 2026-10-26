@@ -12,7 +12,7 @@ export type Budget = {
   timeLimitMs?: number;
 };
 
-// (T2): per-call observation sink. The engine emits the dual audit
+// per-call observation sink. The engine emits the dual audit
 // events retrieval.domain_filter.pre/post (plus the anysearch.outcome dimension)
 // into the caller's active span. Structural subset of pi-telemetry TelemetrySpan
 // (addEvent/setAttributes); absent = audit events are not recorded, envelope

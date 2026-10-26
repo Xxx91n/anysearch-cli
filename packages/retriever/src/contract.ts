@@ -9,7 +9,7 @@ export interface SearchRequest {
   query: string;
   mode: Mode;
   maxResults?: number;
-  // (T1): capability-negotiated provider pre-filter. Kernel sets this
+  // capability-negotiated provider pre-filter. Kernel sets this
   // per provider to the domain's canonical allow hosts; only adapters that declare
   // domainFilterSupported forward it (tavily include_domains / exa includeDomains).
   // The provider parameter is an entry-convergence hint, never the authority —
@@ -134,7 +134,7 @@ export interface UsageInfo {
 export interface SearchProvider {
   readonly id: string;
   readonly modes: readonly Mode[];
-  // (T1): domain-filter capability bit. true = the adapter forwards
+  // domain-filter capability bit. true = the adapter forwards
   // SearchRequest.includeDomains to a provider-side domain parameter. Absent or
   // false = unsupported; the engine degrades that provider to post-filter-only
   // and records it in the retrieval.domain_filter.pre audit event.
@@ -265,7 +265,7 @@ export interface FusedEnvelope {
     observational?: {
       webProviderLedger?: WebProviderLedger;
     };
-    // (T2): first-class abstain marker. Set by the kernel post-filter
+    // first-class abstain marker. Set by the kernel post-filter
     // when a domain allowlist policy is active and zero results survive (including
     // the cold-domain zero-arrival case). A successful policy execution, never an
     // error. preFiltered = provider results that reached the authoritative gate;

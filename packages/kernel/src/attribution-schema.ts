@@ -67,4 +67,4 @@ export const AttributionReportSchema = Type.Object(
   { additionalProperties: false },
 );
 
-// Removed (r83 audit F8): dead conditional type that could only ever be undefined.
+// Removed: dead conditional type that could only ever be undefined.

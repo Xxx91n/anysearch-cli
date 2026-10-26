@@ -16,7 +16,7 @@ const MODE_DEPTH: Record<Mode, "basic" | "advanced" | "fast" | "ultra-fast"> = {
 export class TavilyProvider implements SearchProvider {
   readonly id = "tavily";
   readonly modes: readonly Mode[] = ["fast", "index", "deep", "answer"];
-  // (T1): forwards includeDomains as include_domains. The 0.7.7 SDK
+  // forwards includeDomains as include_domains. The 0.7.7 SDK
   // passes unknown kwargs through verbatim, so include_domains_mode reaches the
   // wire; "filter" is the hard mode (Tavily changelog 2026-08: boost leaks).
   readonly domainFilterSupported = true;
