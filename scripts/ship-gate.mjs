@@ -663,17 +663,33 @@ function stepStaticAssertions() {
     try { ciDoc = YAML.parse(ciSrc); } catch (e) { fail("ci.yml does not parse: " + String(e.message).split("\n")[0]); }
     const onlineJob = ciDoc?.jobs?.["test-online"];
     if (!onlineJob || !Array.isArray(onlineJob.steps)) fail("ci.yml test-online job missing or has no steps");
-    if (onlineJob.if === false || String(onlineJob.if).trim() === "false")
+    // CodeRabbit #73 full review: a disabled lane must not count as coverage —
+    // `if: false` (boolean or quoted string) and `if: ${{ false }}` all skip the
+    // job/step in CI while the parsed run value still satisfies the text check.
+    const laneDisabled = (v) => {
+      if (v === false) return true;
+      if (typeof v !== "string") return false;
+      const norm = v.replace(/\s+/g, "");
+      return norm === "false" || norm === "${{false}}";
+    };
+    if (laneDisabled(onlineJob.if))
       fail("ci.yml test-online job is disabled (if: false) — the online lane does not run, so the offline-excluded cases have no CI coverage");
+    // CodeRabbit #73 round 5+6: continue-on-error (job or matching step) lets CI
+    // pass even when the online tests fail. Whitelist semantics — the setting is
+    // accepted only when absent or explicitly false (bool or normalized string);
+    // any other value (true, "true", ${{ true }}, any expression) fails closed.
+    const laneCoErrRejected = (v) => !(v === undefined || v === null || v === false
+      || (typeof v === "string" && v.replace(/\s+/g, "") === "false"));
+    if (laneCoErrRejected(onlineJob["continue-on-error"]))
+      fail("ci.yml test-online job sets continue-on-error (only absent or explicit false is accepted) — online failures cannot pass silently");
     const laneRun = onlineJob.steps.map((s) => s && s.run).filter((r) => typeof r === "string");
     if (!laneRun.some((r) => r.split(/\r?\n/).some((cmd) => cmd.trim() === "pnpm -C packages/store test:online")))
       fail("ci.yml test-online job missing the 'pnpm -C packages/store test:online' step");
-    // CodeRabbit #74: a step whose `if` is literal false never runs in CI — its run
-    // value existing must not count as coverage (functional correctness, Major).
     if (!onlineJob.steps.some((s) => s && typeof s.run === "string"
-      && s.if !== false && String(s.if ?? "").trim() !== "false"
+      && !laneDisabled(s.if)
+      && !laneCoErrRejected(s["continue-on-error"])
       && s.run.split(/\r?\n/).some((cmd) => cmd.trim() === "pnpm -C packages/store test:online")))
-      fail("ci.yml test-online 'pnpm -C packages/store test:online' step is disabled (if: false) — excluded cases have no active online coverage");
+      fail("ci.yml test-online 'pnpm -C packages/store test:online' step is disabled (if: false) or opts out of failure (continue-on-error) — excluded cases have no active online coverage");
     report("pass", "offline exclusion governance (whitelist + 0.75 floor + test-online lane)");
   }
 
