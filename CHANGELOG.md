@@ -8,7 +8,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Fixed
 
-- **ans_chat 从不检索（）**：三个自带域（default/docs/research）的 `hooks.toolWhitelist` 只列宿主侧工具名（`ctx_*`），把内核自带的 `search` 工具过滤掉，ans_chat 的 agent 循环零工具运行——模型凭参数记忆作答或把工具调用当正文输出。三个域白名单补 `"search"`；白名单仍是安全过滤器。回归：`packages/kernel/test/agent-tool-filter.test.ts`。
+- **ans_chat 从不检索**：三个自带域（default/docs/research）的 `hooks.toolWhitelist` 只列宿主侧工具名（`ctx_*`），把内核自带的 `search` 工具过滤掉，ans_chat 的 agent 循环零工具运行——模型凭参数记忆作答或把工具调用当正文输出。三个域白名单补 `"search"`；白名单仍是安全过滤器。回归：`packages/kernel/test/agent-tool-filter.test.ts`。
 - **搜索循环无预算外停止条件（，r18 seal-0）**：新增 `SearchSaturation`——连续 2 次搜索无新 URL 或累计 12 次搜索后，阻断后续 `search` 并要求模型用已得证据作答。回归：`packages/kernel/test/search-saturation.test.ts`（修复前 30 次，修复后 ≤3 次）。
 - **限流提示误判 permanent-auth（，r18 STOP-20）**：正文限流/额度提示（无开户标记）改抛 `rate limited` 并归 `transient`；开户提示仍为 `permanent-auth`。回归：`packages/retriever/test/anysearch.test.ts` case 17、`provider-error-class.test.ts`。
 
@@ -20,7 +20,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Fixed
 
-- **recall 自然语言提问取不回已存证据（）**：`recall_memory` 的内部记忆与项目索引两层都只走严格 FTS5 梯级（全词 AND + 整句），宿主自然语言提问几乎从不在单行里凑齐全部词，存储中的证据取不回。现严格梯级不足 `limit` 时追加放宽梯级（实词 OR + 前缀、同一 BM25/新鲜度排序，严格命中保持优先）；覆盖 `searchMemory` / `searchMemoryMultiQuery` / `ProjectIndexStore.search` 三条路径。回归：`packages/store/test/fts5-relaxed-recall.test.ts`、`apps/plugin/test/project-index-relaxed.test.ts`。
+- **recall 自然语言提问取不回已存证据**：`recall_memory` 的内部记忆与项目索引两层都只走严格 FTS5 梯级（全词 AND + 整句），宿主自然语言提问几乎从不在单行里凑齐全部词，存储中的证据取不回。现严格梯级不足 `limit` 时追加放宽梯级（实词 OR + 前缀、同一 BM25/新鲜度排序，严格命中保持优先）；覆盖 `searchMemory` / `searchMemoryMultiQuery` / `ProjectIndexStore.search` 三条路径。回归：`packages/store/test/fts5-relaxed-recall.test.ts`、`apps/plugin/test/project-index-relaxed.test.ts`。
 
 ### Changed
 
@@ -302,7 +302,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Added
 
-- 预注册判读矩阵 `.scratch/grill-round-85/prereg-matrix.md` + 确定性判读器 `.scratch/grill-round-85/readout-delta.mjs`（）：G0–G4 固定闸序（输入完整→对照层装置闸→覆盖闸→2-of-4 负向硬闸→方向轴）+ `Beta(1+b,1+w)` flat 后验（P/EL 精确数值积分、固定网格无 RNG）+ 效应量四字段 + 单次终读条款；`assert-corpus | selftest | readout` 三模式——判读器自身携离线 fixture 测试面，判读先于读数落盘 commit。
+- 预注册判读矩阵 `.scratch/grill-round-85/prereg-matrix.md` + 确定性判读器 `.scratch/grill-round-85/readout-delta.mjs`：G0–G4 固定闸序（输入完整→对照层装置闸→覆盖闸→2-of-4 负向硬闸→方向轴）+ `Beta(1+b,1+w)` flat 后验（P/EL 精确数值积分、固定网格无 RNG）+ 效应量四字段 + 单次终读条款；`assert-corpus | selftest | readout` 三模式——判读器自身携离线 fixture 测试面，判读先于读数落盘 commit。
 - delta runner instrument-health ordering（sampling 协议不变）：对照层前置探针 + G1 旗标早停 + 处理层 vdomain×stratum 轮询交错（配额截断近似 MAR）+ `ANS_VERTICAL_DELTA_PLAN=1` 零配额排演面 + `hadVerticalSpec` 记账锚字段。
 
 ### Deferred
@@ -313,7 +313,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Added
 
-- 垂域评测双层扩展（）：`eval-looks.json` 金标账册扩 `expected.vertical{role,domain,sub_domain,paramsKeys,paramsSent,hit,degraded,hitHosts,hitPaths}` 断言面；`vert-*`/`ctrl-*` id 族 + `stratum:`/`vdomain:` 独立维度词表（不触碰 docs 八维计数闸）；57 条 live-scoped 垂域语料（finance/academic/code/health × parameterized/semantic）+ 对照类一等断言条目；provenance 全字段 + 建集期活词表快照（get_sub_domains 仅人工探查不进运行时）。
+- 垂域评测双层扩展：`eval-looks.json` 金标账册扩 `expected.vertical{role,domain,sub_domain,paramsKeys,paramsSent,hit,degraded,hitHosts,hitPaths}` 断言面；`vert-*`/`ctrl-*` id 族 + `stratum:`/`vdomain:` 独立维度词表（不触碰 docs 八维计数闸）；57 条 live-scoped 垂域语料（finance/academic/code/health × parameterized/semantic）+ 对照类一等断言条目；provenance 全字段 + 建集期活词表快照（get_sub_domains 仅人工探查不进运行时）。
 - 配对 delta live 腿 `packages/store/test/online/eval-looks-vertical.online.ts`（D-002 证据层/D-004/D-005）：同 query 同期盼集 vertical-on/off 四趟（隔离 `ANS_PROVIDERS=anysearch` 臂级主证 + 全扇出融合级副列），产 `anysearch/vertical-delta@1` 证据件（datasetFingerprint + 臂标识 + 显式 n + better/worse/tied/unknown + providersFailed 四面 + 臂采样 URL）；不可测格记 null/unknown 非 0。
 - CLI eval 面 env 门控：`ANS_ARM_SNAPSHOT=1`（`--json` 透出 `metadata.fusion{labels,lists}`）+ `ANS_PROVIDERS=a,b`（provider 子集过滤走 `Query.providers`）。
 
@@ -402,7 +402,7 @@ All notable changes to this project are recorded here. Format follows
 - `scripts/ship-gate.mjs` —— step 1s 断言同构更新（private:true→publish-ready 形状：private:false + publishConfig.access:public + provenance:true，）；step 1a 版本钉 0.0.7→0.0.8 同 commit 同步。
 - `apps/dsh-plugin/AGENTS.md` —— invariant 行同步发布就绪态。
 - `docs/publishing.md` —— 新增「新包首发」节（预首发四步 + provenance 边界声明：证明 origin 非 integrity + no-go 分支顺延不拆清单）；publish set 4→5。
-- E6 闸内执法裁决（）：pnpm 11.1.3+ `verifyLockfileResolutions` 复核腿在钉版 11.24.0 实测闭合（`trustLockfile` 默认 false=复核开）；R78「lockfile 回放绕过龄期闸」证伪按实测 revised——当年五变体放行=`lockfile-verified.jsonl` 判定缓存污染（宽松写入 warn-pass 沿用），非缺腿；放行依据=上游机器腿闭合 + CI 断言依赖声明（ws yaml 禁 `trustLockfile:true`/`minimumReleaseAgeStrict:false`/非空 `minimumReleaseAgeExclude`）。
+- E6 闸内执法裁决：pnpm 11.1.3+ `verifyLockfileResolutions` 复核腿在钉版 11.24.0 实测闭合（`trustLockfile` 默认 false=复核开）；R78「lockfile 回放绕过龄期闸」证伪按实测 revised——当年五变体放行=`lockfile-verified.jsonl` 判定缓存污染（宽松写入 warn-pass 沿用），非缺腿；放行依据=上游机器腿闭合 + CI 断言依赖声明（ws yaml 禁 `trustLockfile:true`/`minimumReleaseAgeStrict:false`/非空 `minimumReleaseAgeExclude`）。
 
 ### Deferred
 
@@ -413,7 +413,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Changed
 
-- `scripts/ship-gate-pathlint-detect.mjs` —— 豁免域契约收敛（）：`/x` surfaced-skip 产出移序至 fence/locator 判定之后——所有 fence（marker 覆盖与否）与 `Stack:` locator 行不再产 info，散文面照旧；`WORD_CHAR` 补 `_`——`foo_C:\x` 形标识符粘连盘符不再误报，裸 `C:\x` 仍拦。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
+- `scripts/ship-gate-pathlint-detect.mjs` —— 豁免域契约收敛：`/x` surfaced-skip 产出移序至 fence/locator 判定之后——所有 fence（marker 覆盖与否）与 `Stack:` locator 行不再产 info，散文面照旧；`WORD_CHAR` 补 `_`——`foo_C:\x` 形标识符粘连盘符不再误报，裸 `C:\x` 仍拦。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
 - `packages/store/fixtures/pathlint/{red,green}.md` + `ship-gate-pathlint.test.mjs`（9→14 cases）——豁免域近邻成对断言：covered-fence in-repo 放行↔unmarked-fence 仍拦、locator in-repo 放行↔非 locator 同款仍拦、fence/locator 内 `/x` 零 info↔散文仍产、`foo_C:\x` 零违例↔裸 `C:\x` 仍拦；↔AGENTS.md 镜像一致性机器断言新增。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
 - `` D1 amendment + `AGENTS.md` 镜像段 + ``（第 80 号 ADR）——豁免域三条款立法+drift 归因（文本侧未审视/实现侧有意图）+rejected alternatives（Revert=毁 transcript 保真、逐面混裁=立法负担相当内聚更差）+豁免扩大风险三重缓解（一致性测试/stale-marker 棘轮/季度审计）+结构性同构先例标注+不 bump 判定。
 - 文书面次生效应（dogfooding 实录）：WORD_CHAR 修复使 r78/r79 文书内仅靠 `foo_C:\x` FP 撑活的 5 个 marker 翻转 stale 并按棘轮移除；任务书 2 行裸 `C:\x` 字面量补 marker；全仓 markdown 扫描 0 违例（333 文档）。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
@@ -444,13 +444,13 @@ All notable changes to this project are recorded here. Format follows
 
 ### Added
 
-- `scripts/governed-json.mjs` 新增 `governedListViolation` + `stripBomCommand`（）——`CANONICAL_JSON_FILES` 空清单 fail-closed（真门探针实测 `[fail] canonical-json:... is empty`）；UTF-8 BOM 专门报错（EF BB BF 签名 + `subarray(3)` strip 命令，不发 normalize 指针）。
+- `scripts/governed-json.mjs` 新增 `governedListViolation` + `stripBomCommand`——`CANONICAL_JSON_FILES` 空清单 fail-closed（真门探针实测 `[fail] canonical-json:... is empty`）；UTF-8 BOM 专门报错（EF BB BF 签名 + `subarray(3)` strip 命令，不发 normalize 指针）。
 - `.scratch/grill-round-77/evidence/` —— T0 轨一探针取证：`t0-l0-watch.json`（23 名全族 npm view 快照）、`t0-api-snapshot-rc2.json`（pin 版消费面 API 快照）、三份 L1 transcript（rc.3 无 alarm / alpha.2 锚复核 ALARM / 0.1.7-alpha.1 ALARM+家族扩至 21 dsh-*）。
 - `.scratch/grill-round-77/upgrade-ledger.md` v2 —— L0/L1/L2 漏斗重排 + 改名映射纠偏（rc.2 session-start 本携 source）+ 墓碑表 + no-qualifying-candidate 显式结论。
 
 ### Changed
 
-- `scripts/closeout-coverage.mjs`（）——`titleRound` 锚定 title 行首（句中「Grill Round N —」提及不误登记）；`ROUND_DIR_RE` 改全名匹配 `/^grill-round-(\d+)$/i`（`grill-round-7x` 不再别名 round 7）。
+- `scripts/closeout-coverage.mjs`——`titleRound` 锚定 title 行首（句中「Grill Round N —」提及不误登记）；`ROUND_DIR_RE` 改全名匹配 `/^grill-round-(\d+)$/i`（`grill-round-7x` 不再别名 round 7）。
 - `scripts/gen-adr-index.mjs` —— renderBlock 互注点名消费方 parser（F-5⑥ 双向契约）。
 - `docs/deferred-registry.json` —— `defer-r73-dsh-event-rename` 触发器双锚改写（特征+稳定性，版本号退出触发逻辑）+ `tombstones` 字段（0.1.6-alpha.* superseded-by 0.1.7-alpha.1）+ `gov-r76-registry-canonical-lock` 补 `deadline`/`review_cadence` + 10 条 open 债 carried_log r77 显式续债（canonical normalize+字节锁自证）。
 
@@ -463,7 +463,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Added
 
-- `scripts/governed-json.mjs` + ship-gate step 1 `stepGovernedJsonCanonical` 腿（）——受治理 JSON 的字节锁：`CANONICAL_JSON_FILES = ["docs/deferred-registry.json"]` 逐文件断言字节 ≡ `JSON.stringify(JSON.parse(src),null,1)+'\n'`；非法 JSON 独立报错；非 canonical 报 `first differs at line N` + 可粘贴 normalize 指令 + 清单常量位置；gate 不自修（committed≠reviewed）。
+- `scripts/governed-json.mjs` + ship-gate step 1 `stepGovernedJsonCanonical` 腿——受治理 JSON 的字节锁：`CANONICAL_JSON_FILES = ["docs/deferred-registry.json"]` 逐文件断言字节 ≡ `JSON.stringify(JSON.parse(src),null,1)+'\n'`；非法 JSON 独立报错；非 canonical 报 `first differs at line N` + 可粘贴 normalize 指令 + 清单常量位置；gate 不自修（committed≠reviewed）。
 - `scripts/closeout-coverage.mjs` + ship-gate step 1g leg-b 重写（–D3）——完成信号改为 ADR index `Grill Round N` 登记（登记即完成），fail-closed 三断言（已登记无 closeout→红 / index↔.scratch 双向漂移→红 / 推导集合为空或不可解析→红），floor=76 规则生日锚定，在飞豁免打结构化行 `awaiting closeout: round N (ADR not yet registered)`，成功输出带覆盖计数；字段 lint 面不动（仍只 lint 最新含 closeout dir）。
 - `packages/store/test/governed-json-canonical.test.mjs`（19 断言）+ `closeout-coverage.test.mjs`（40 断言，含审计返工 F-2/F-4 及二批 residual 回归用例）——known-bad fixture 层常态化红绿双证，随 `turbo test` 行使。
 
@@ -479,7 +479,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Added
 
-- `packages/embedding/test/transformers-ghost-dep.test.ts` — 静态护栏双件（）：(a) `src/` 全树禁裸引 `@huggingface/transformers`（import/from/export-from/import 全禁，唯一合法入口 = `createRequire.require`；注释与 `typeof import(…)` 类型查询豁免）；(b) 版本配对断言——自声明 `optionalDependencies.onnxruntime-common` ≡ effective `onnxruntime-node` 内嵌版本（当前 1.21.0 ≡ 1.21.0），双反例均自证红（`.scratch/grill-round-75/evidence/t2-guardrails-selfproof.log`）。
+- `packages/embedding/test/transformers-ghost-dep.test.ts` — 静态护栏双件：(a) `src/` 全树禁裸引 `@huggingface/transformers`（import/from/export-from/import 全禁，唯一合法入口 = `createRequire.require`；注释与 `typeof import(…)` 类型查询豁免）；(b) 版本配对断言——自声明 `optionalDependencies.onnxruntime-common` ≡ effective `onnxruntime-node` 内嵌版本（当前 1.21.0 ≡ 1.21.0），双反例均自证红（`.scratch/grill-round-75/evidence/t2-guardrails-selfproof.log`）。
 - `.scratch/grill-round-75/drafts/` — 上游申报文稿（用户审阅闸，Agent 不代发）：`pr-1764-comment.md`（4.3.0 pnpm 隔离 scope 运行时复现 + published 消费者裸奔 + 下游 ≥4 项目造轮子清单）+ `issue-1087-comment.md`（检索者指路短评）。
 - `.scratch/grill-round-75/evidence/` — T0 运行时实证 transcript：4.3.0 在 `hoist:false` 下 `Cannot find module 'onnxruntime-common'`@`transformers.node.cjs:13520`；3.8.1 无 patch 同红、带 patch 绿；默认 virtual-store hoist 掩盖面注记。
 
@@ -528,7 +528,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Changed
 
-- `pnpm-workspace.yaml` —— dsh 上游依赖族钉版（）：新增 `catalog:` 单点块（15 个 `@deepseek-ai/dsh-*`=0.1.5-rc.2 + `@deepseek-ai/cordis`=4.0.2），`overrides:` 逐名枚举→`catalog:` 全树收敛；`apps/dsh-plugin` 5 个 deepseek devDeps 改 `catalog:` 引用（`dependencies:{}`/`private:true` 不动）。修复 R72 审计 F7——caret range 放任传递依赖漂 0.1.6-alpha 混版树。
+- `pnpm-workspace.yaml` —— dsh 上游依赖族钉版：新增 `catalog:` 单点块（15 个 `@deepseek-ai/dsh-*`=0.1.5-rc.2 + `@deepseek-ai/cordis`=4.0.2），`overrides:` 逐名枚举→`catalog:` 全树收敛；`apps/dsh-plugin` 5 个 deepseek devDeps 改 `catalog:` 引用（`dependencies:{}`/`private:true` 不动）。修复 R72 审计 F7——caret range 放任传递依赖漂 0.1.6-alpha 混版树。
 
 ### Deferred
 
@@ -570,7 +570,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Changed
 
-- `scripts/assert-checks-green.mjs` — 严格两段式时序（）：Phase 1 discovery 要求全 5 required family 在 --discovery-sec 内各注册 >=1 check-run，过期 fail-closed exit 2 且错误行点名 missing-families/present-families；Phase 2 completion 沿用进程启动绝对锚（不 re-anchor）；terminal 非允许 conclusion（failure/cancelled/timed_out/startup_failure/action_required）两段内即时 exit 1；未建模 conclusion（如 stale）在完成段按 not-allowed fail-closed；--once 快照与 exit 10 语义不变；release.yml 调用 flag 未漂移。
+- `scripts/assert-checks-green.mjs` — 严格两段式时序：Phase 1 discovery 要求全 5 required family 在 --discovery-sec 内各注册 >=1 check-run，过期 fail-closed exit 2 且错误行点名 missing-families/present-families；Phase 2 completion 沿用进程启动绝对锚（不 re-anchor）；terminal 非允许 conclusion（failure/cancelled/timed_out/startup_failure/action_required）两段内即时 exit 1；未建模 conclusion（如 stale）在完成段按 not-allowed fail-closed；--once 快照与 exit 10 语义不变；release.yml 调用 flag 未漂移。
 
 ### Fixed
 
@@ -630,13 +630,13 @@ All notable changes to this project are recorded here. Format follows
 ### Fixed
 
 - **`eval-looks.json` 丢 `schema_version: 1`（main 双红根因）**：release-bot 回写管线 read→normalize→write 逐字段重建剥未知字段。`looks-ledger.ts` 改 Tolerant Reader（根/行索引签名+spread 保留）；`cli.ts` calibrate-reset 同型修复——F-17 sweep 同类 N=2 并修。`eval-docs-golden.test.ts` 增字节级 round-trip 契约断言。
-- **`eval-abstain.test.ts` 裸 `runAll(GOLDEN_CASES)`**：semantic/vector-arm 组须归 `test:online`（）——补 `excludeGroups: OFFLINE_EXCLUDED_GROUPS`。
+- **`eval-abstain.test.ts` 裸 `runAll(GOLDEN_CASES)`**：semantic/vector-arm 组须归 `test:online`——补 `excludeGroups: OFFLINE_EXCLUDED_GROUPS`。
 - **release.yml 双盲发布通道（v0.0.5 红树发布根因）**：pre-tag 不等 push 触发的检查、publish 不查 tagged SHA——双层门禁关闭。
 
 ### Changed
 
 - `concurrency` 组 `release-${{ github.ref }}` → `release`：pre-tag dispatch 与 tag push 不再交错。
-- 治理入档：`but land` 直推 main 判定为 grill 轮次合规通道（）；future direction=PR-mode + required checks + tag ruleset/environment reviewers。
+- 治理入档：`but land` 直推 main 判定为 grill 轮次合规通道；future direction=PR-mode + required checks + tag ruleset/environment reviewers。
 
 ### 验证边界
 

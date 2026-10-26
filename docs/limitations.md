@@ -95,7 +95,7 @@
   `ConsolidateReport.embeddingAbsent` —).
 - **Tavily domain-filter probe: live-verified** — `include_domains` held in
   default + filter modes and subdomain direction is bidirectional
-  (`scripts/probe-tavily-domains.mjs`, ledger in `.scratch/grill-round-62/`;
+  (`scripts/probe-tavily-domains.mjs`;
   the `/research` endpoint arm is INCONCLUSIVE — async handle, no URL fields).
 - **`ans chat` / `ans llm` need an LLM key** (`OPENAI_API_KEY` etc. via
   `ans llm`); retrieval itself only needs provider keys.

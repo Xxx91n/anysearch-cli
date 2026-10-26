@@ -89,7 +89,7 @@ ans memory backfill-vectors   # embeds stored rows; first run downloads the mode
 机器拷贝已填充的缓存目录。卸载该包后 CLI 退回 FTS-only 模式 —— 不崩溃，
 `ans doctor` 将该臂报为 SKIP。
 
-## 域名与弃权（）
+## 域名与弃权
 
 *域名（domain）*是 `domains/`（或 `ANS_DOMAINS_DIR`）下的一个 TOML 文件，
 声明其 providers 与权威 `urlAllowlist`；`ANS_DOMAIN` 负责选择。
@@ -132,7 +132,7 @@ Provider 选择来自域名 TOML 的 `sources.enabled`。缺 key 的 provider �
 跳过而非崩溃（fail-open）；若*没有任何* provider 能注册，搜索是错误
 而非弃权。
 
-## AnySearch 垂域（）
+## AnySearch 垂域
 
 anysearch provider 另有一根正交轴：服务端**垂域路由**。可按查询（CLI 旗标
 或 MCP 工具参数）或按域名 TOML 设置——它不是 hostname allowlist，与
@@ -249,4 +249,4 @@ flowchart LR
 - 单包测试跑 `node --import tsx --test`；完整门禁 =
   `node scripts/ship-gate.mjs`（净树、测试、打包、安装验证、MCP
   initialize、fail-open 启动）
-- 治理：`docs/ponytail-debt-ledger.md`、`.scratch/<slug>/`、`AGENTS.md`
+- 治理：`AGENTS.md`、`docs/agents/`
