@@ -674,17 +674,20 @@ function stepStaticAssertions() {
     };
     if (laneDisabled(onlineJob.if))
       fail("ci.yml test-online job is disabled (if: false) — the online lane does not run, so the offline-excluded cases have no CI coverage");
-    // CodeRabbit #73 round 5: continue-on-error (job or matching step) lets CI pass
-    // even when the online tests fail — the lane would be theatrical.
-    const laneOptOut = (v) => v === true || (typeof v === "string" && v.replace(/\s+/g, "") === "true");
-    if (laneOptOut(onlineJob["continue-on-error"]))
-      fail("ci.yml test-online job sets continue-on-error — online failures cannot pass silently");
+    // CodeRabbit #73 round 5+6: continue-on-error (job or matching step) lets CI
+    // pass even when the online tests fail. Whitelist semantics — the setting is
+    // accepted only when absent or explicitly false (bool or normalized string);
+    // any other value (true, "true", ${{ true }}, any expression) fails closed.
+    const laneCoErrRejected = (v) => !(v === undefined || v === null || v === false
+      || (typeof v === "string" && v.replace(/\s+/g, "") === "false"));
+    if (laneCoErrRejected(onlineJob["continue-on-error"]))
+      fail("ci.yml test-online job sets continue-on-error (only absent or explicit false is accepted) — online failures cannot pass silently");
     const laneRun = onlineJob.steps.map((s) => s && s.run).filter((r) => typeof r === "string");
     if (!laneRun.some((r) => r.split(/\r?\n/).some((cmd) => cmd.trim() === "pnpm -C packages/store test:online")))
       fail("ci.yml test-online job missing the 'pnpm -C packages/store test:online' step");
     if (!onlineJob.steps.some((s) => s && typeof s.run === "string"
       && !laneDisabled(s.if)
-      && !laneOptOut(s["continue-on-error"])
+      && !laneCoErrRejected(s["continue-on-error"])
       && s.run.split(/\r?\n/).some((cmd) => cmd.trim() === "pnpm -C packages/store test:online")))
       fail("ci.yml test-online 'pnpm -C packages/store test:online' step is disabled (if: false) or opts out of failure (continue-on-error) — excluded cases have no active online coverage");
     report("pass", "offline exclusion governance (whitelist + 0.75 floor + test-online lane)");
