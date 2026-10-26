@@ -1,4 +1,4 @@
-// (T4): native-handle teardown registry — registered closes run once,
+// Native-handle teardown registry — registered closes run once,
 // in order, errors swallowed (a bad close must never mask the exit path).
 // unrefPendingHandles is a no-throw backstop for pending libuv handles.
 import { registerTeardown, runTeardown, unrefPendingHandles } from "../src/teardown";

@@ -33,7 +33,7 @@ function help(): string {
 export async function runConsolidate(args: string[]): Promise<number> {
   const cmd = args[0];
   if (cmd === "--help" || cmd === "-h") { process.stdout.write(help()); return 0; }
-  // r94 audit A6 (Pascal P3): reject unknown flags instead of silently running --apply.
+  // Reject unknown flags instead of silently running --apply.
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === "--limit") { i++; continue; }

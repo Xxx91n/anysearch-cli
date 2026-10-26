@@ -78,7 +78,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
 
           const attribution = envelope.attribution;
           const abstain = envelope.metadata?.abstain;
-          // (T3): abstain surfaces as structuredContent.abstain with
+          // Abstain surfaces as structuredContent.abstain with
           // isError absent (false). The block is emitted whenever any of
           // sufficiency/attribution/abstain is present.
           const structuredContent = {

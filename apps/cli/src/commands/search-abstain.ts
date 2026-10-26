@@ -1,4 +1,4 @@
-// (T3): abstain presentation helpers — pure, no imports, so the
+// Abstain presentation helpers — pure, no imports, so the
 // contract is unit-testable without pulling the kernel module graph (apps/cli
 // has no "type":"module"; CJS resolution cannot reach ESM-only pi-agent-core).
 

@@ -14,7 +14,7 @@ at `127.0.0.1:33333`, tool execution on `ans-mcp` HTTP at
   type-only devDependency (the compile-time churn alarm). ship-gate step 1s
   fails on any runtime-dep leak.
 - `private: false` + `publishConfig {access:public, provenance:true}` —
-  publish-ready since R80 ( D-003 pre-publish path); verify the
+  publish-ready since R80 (pre-publish path); verify the
   publish shape anyway: `pnpm pack` → `dsh plugin add <tgz>` →
   `dsh --dump-config` layer check.
 - `lib/index.js` is a self-contained ESM bundle (esbuild + `createRequire`
