@@ -12,6 +12,9 @@ dist/
 # omx runtime
 .omx/
 
+# opencode host runtime (user preference data written by the host tool, not repo content)
+.opencode/
+
 # os/editor
 .DS_Store
 Thumbs.db
