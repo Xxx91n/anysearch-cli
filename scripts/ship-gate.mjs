@@ -215,7 +215,7 @@ function stepStaticAssertions() {
     // release version (the release candidate), not merely "not 0.0.0".
     // Bump this pin in the same commit as the package version bump (audit ).
     if (pkg.version !== "0.1.2") {
-      fail(`${rel}/package.json not pinned at 0.1.2 (got ${pkg.version}) — release pin (D-006 patch-start)`);
+      fail(`${rel}/package.json not pinned at 0.1.2 (got ${pkg.version}) — release pin`);
     }
   }
   report("pass", `all ${PKG_DIRS.length} packages pinned at 0.1.2`);
@@ -289,7 +289,7 @@ function stepStaticAssertions() {
     const att = fs.readFileSync(attPath, "utf8");
     const required = ["export function tokenize", "export function buildAttributionReport", "export function deriveGapRequests", "export function classifyClaim", "export function attachAttribution"];
     for (const req of required) {
-      if (!att.includes(req)) fail(" attribution.ts missing export: " + req);
+      if (!att.includes(req)) fail("attribution.ts missing export: " + req);
     }
     report("pass", "attribution module exports present");
   }
@@ -301,11 +301,11 @@ function stepStaticAssertions() {
     const sch = fs.readFileSync(schemaPath, "utf8");
     const apf = (sch.match(/additionalProperties:\s*false/g) || []).length;
     if (apf < 4) {
-      fail(" 1g: attribution-schema.ts must close additionalProperties:false on all 4 object schemas (evidence/claim/gap/report), found" + apf);
+      fail("1g: attribution-schema.ts must close additionalProperties:false on all 4 object schemas (evidence/claim/gap/report), found" + apf);
     }
     for (const tok of ["AttributionReportSchema", "ClaimSchema", "GapRequestSchema", "AttributionEvidenceSchema",
       '"supported"', '"uncertain"', '"unsupported"', '"no_evidence"', '"partial_evidence"', '"conflicting_evidence"']) {
-      if (!sch.includes(tok)) fail(" 1g: attribution-schema.ts missing" + tok);
+      if (!sch.includes(tok)) fail("1g: attribution-schema.ts missing" + tok);
     }
     report("pass", "attribution TypeBox schema parity (4 additionalProperties closers + enums present)");
   }
@@ -325,9 +325,9 @@ function stepStaticAssertions() {
   {
     for (const tool of ["search-web.tool.ts", "research-web.tool.ts"]) {
       const src = fs.readFileSync(path.join(ROOT, "apps/mcp/src/tools", tool), "utf8");
-      if (!src.includes("structuredContent")) fail(" 1i: " + tool + " lacks structuredContent channel");
+      if (!src.includes("structuredContent")) fail("1i: " + tool + " lacks structuredContent channel");
       const attrCount = (src.match(/attribution/g) || []).length;
-      if (attrCount < 3) fail(" 1i: " + tool + " attribution wiring incomplete (found" + attrCount + " occurrences)");
+      if (attrCount < 3) fail("1i: " + tool + " attribution wiring incomplete (found" + attrCount + " occurrences)");
     }
     report("pass", "MCP search/research dual-channel attribution (content + structuredContent)");
 
@@ -374,52 +374,52 @@ function stepStaticAssertions() {
     // 1j.: KG-lite relation layer static assertions.
     {
       const relPath = path.join(ROOT, "packages/store/src/relation.ts");
-      if (!fs.existsSync(relPath)) fail(" 1j: packages/store/src/relation.ts missing");
+      if (!fs.existsSync(relPath)) fail("1j: packages/store/src/relation.ts missing");
       const rel = fs.readFileSync(relPath, "utf8");
       for (const tok of ["PREDICATES", "EDGE_PATTERN_ROWS", "extractRelations", "parseLlmTriples", "RELATION_RULES_VERSION"])
-        if (!rel.includes(tok)) fail(" 1j: relation.ts missing" + tok);
+        if (!rel.includes(tok)) fail("1j: relation.ts missing" + tok);
       const sql = fs.readFileSync(path.join(ROOT, "packages/store/src/schema.sql"), "utf8");
       for (const tok of ["IF NOT EXISTS edges", "idx_edges_active_triple", "edge_patterns", "rules_version"])
-        if (!sql.includes(tok)) fail(" 1j: schema.sql missing" + tok);
+        if (!sql.includes(tok)) fail("1j: schema.sql missing" + tok);
       const ss = fs.readFileSync(path.join(ROOT, "packages/store/src/session-store.ts"), "utf8");
       for (const tok of ["relationArmRows", "backfillRelations", "relationTelemetry", "linkRelations"])
-        if (!ss.includes(tok)) fail(" 1j: session-store.ts missing" + tok);
-      if (!ss.includes('label: "relation"')) fail(" 1j: session-store.ts missing the fifth-arm label (RRF extraArms wiring)");
+        if (!ss.includes(tok)) fail("1j: session-store.ts missing" + tok);
+      if (!ss.includes('label: "relation"')) fail("1j: session-store.ts missing the fifth-arm label (RRF extraArms wiring)");
       const cliRel = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/relation.ts"), "utf8");
-      if (!cliRel.includes("backfill-relations")) fail(" 1j: CLI relation command missing backfill-relations");
+      if (!cliRel.includes("backfill-relations")) fail("1j: CLI relation command missing backfill-relations");
       report("pass", " KG-lite layer: relation module + edges schema + store hooks + fifth-arm label + CLI present");
     }
     // 1n.: consolidation + forgetting layer static assertions.
     {
       const conPath = path.join(ROOT, "packages/store/src/consolidate.ts");
-      if (!fs.existsSync(conPath)) fail(" 1n: packages/store/src/consolidate.ts missing");
+      if (!fs.existsSync(conPath)) fail("1n: packages/store/src/consolidate.ts missing");
       const con = fs.readFileSync(conPath, "utf8");
       for (const tok of ["consolidateMemoryRun", "decideOp", "THETA_DUP", "BEGIN IMMEDIATE", "scanArchiveCandidates", "undoArchive", "applyArchive"])
-        if (!con.includes(tok)) fail(" 1n: consolidate.ts missing" + tok);
+        if (!con.includes(tok)) fail("1n: consolidate.ts missing" + tok);
       const sql2 = fs.readFileSync(path.join(ROOT, "packages/store/src/schema.sql"), "utf8");
       for (const tok of ["semantic_memories", "archive_log", "archived INTEGER NOT NULL DEFAULT 0"])
-        if (!sql2.includes(tok)) fail(" 1n: schema.sql missing" + tok);
+        if (!sql2.includes(tok)) fail("1n: schema.sql missing" + tok);
       const ss2 = fs.readFileSync(path.join(ROOT, "packages/store/src/session-store.ts"), "utf8");
       for (const tok of ["consolidateMemory", "scanArchive", "undoArchive", "archived = 0", "semanticTelemetry"])
-        if (!ss2.includes(tok)) fail(" 1n: session-store.ts missing" + tok);
+        if (!ss2.includes(tok)) fail("1n: session-store.ts missing" + tok);
       const kinit = fs.readFileSync(path.join(ROOT, "packages/kernel/src/llm-init.ts"), "utf8");
-      if (!kinit.includes('LlmEndpointKind') || !kinit.includes("ANS_LLM_API_KEY")) fail(" 1n: kernel llm-init.ts missing three-endpoint wiring (LlmEndpointKind/ANS_LLM_API_KEY)");
+      if (!kinit.includes('LlmEndpointKind') || !kinit.includes("ANS_LLM_API_KEY")) fail("1n: kernel llm-init.ts missing three-endpoint wiring (LlmEndpointKind/ANS_LLM_API_KEY)");
       report("pass", " consolidation/forgetting layer: schema + consolidate module + store wiring + kernel 3-endpoint init present");
 
       // 1o. Phase-3 CLI: consolidate command + memory forget + durable DB path wiring.
       {
         const conCli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/consolidate.ts"), "utf8");
         for (const tok of ["createLlmSession", "classifyClaim", "resolveDbPath", "consolidateMemory", "--dry-run"])
-          if (!conCli.includes(tok)) fail(" 1o: apps/cli consolidate.ts missing" + tok);
+          if (!conCli.includes(tok)) fail("1o: apps/cli consolidate.ts missing" + tok);
         const dbHelper = fs.readFileSync(path.join(ROOT, "apps/cli/src/db.ts"), "utf8");
-        if (!dbHelper.includes("createPersistentEngine") || !dbHelper.includes("resolveDbPath")) fail(" 1o: db.ts helper missing");
+        if (!dbHelper.includes("createPersistentEngine") || !dbHelper.includes("resolveDbPath")) fail("1o: db.ts helper missing");
         const memCli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/memory.ts"), "utf8");
         for (const tok of ["scanArchive", "applyArchive", "undoArchive", "--undo"])
-          if (!memCli.includes(tok)) fail(" 1o: memory.ts forget subcommand missing" + tok);
+          if (!memCli.includes(tok)) fail("1o: memory.ts forget subcommand missing" + tok);
         const idx = fs.readFileSync(path.join(ROOT, "apps/cli/src/index.ts"), "utf8");
-        if (!idx.includes("runConsolidate") || !idx.includes('"consolidate"')) fail(" 1o: index.ts missing consolidate registration");
+        if (!idx.includes("runConsolidate") || !idx.includes('"consolidate"')) fail("1o: index.ts missing consolidate registration");
         const comp = fs.readFileSync(path.join(ROOT, "packages/kernel/src/composition.ts"), "utf8");
-        if (!comp.includes("ANS_DB_PATH") || !comp.includes("opts?.dbPath")) fail(" 1o: kernel composition missing dbPath wiring");
+        if (!comp.includes("ANS_DB_PATH") || !comp.includes("opts?.dbPath")) fail("1o: kernel composition missing dbPath wiring");
         report("pass", " Phase-3 CLI: consolidate + forget + durable DB path present");
       }
     }
@@ -428,7 +428,7 @@ function stepStaticAssertions() {
   // 1j.: CLI --json purity — single JSON document on stdout, no decorative chars in this file.
   {
     const cli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/search.ts"), "utf8");
-    if (!cli.includes("process.stdout.write(JSON.stringify(out")) fail(" 1j: CLI --json pure-JSON exit path missing");
+    if (!cli.includes("process.stdout.write(JSON.stringify(out")) fail("1j: CLI --json pure-JSON exit path missing");
     if (/[✓✗~═─]/.test(cli)) fail("decorative glyphs in CLI search (belong to kernel renderAttributionText only)");
     report("pass", "CLI --json pure structural output, glyphs confined to kernel renderer");
   }
@@ -436,7 +436,7 @@ function stepStaticAssertions() {
   // 1k. ghost-reference guard: renderer must dedupe sources before numbering.
   {
     const att = fs.readFileSync(path.join(ROOT, "packages/kernel/src/attribution.ts"), "utf8");
-    if (!att.includes("seen.add(e.url)")) fail(" 1k: renderAttributionText lacks URL dedupe (ghost-reference risk)");
+    if (!att.includes("seen.add(e.url)")) fail("1k: renderAttributionText lacks URL dedupe (ghost-reference risk)");
     report("pass", "attribution renderer dedupes source URLs");
   }
 
@@ -461,12 +461,12 @@ function stepStaticAssertions() {
     for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
       const leaked = Object.keys(pkg[field] ?? {}).filter((d) => d.startsWith("@deepseek-ai/"));
       if (leaked.length) {
-        fail(" churn lint: @deepseek-ai/* in" + field + ": " + leaked.join(", ") + " — runtime deps stay zero; types live in devDependencies only");
+        fail("churn lint: @deepseek-ai/* in" + field + ": " + leaked.join(", ") + " — runtime deps stay zero; types live in devDependencies only");
       }
     }
     if (pkg.private !== false) fail("/: apps/dsh-plugin must be publish-ready (private:false)");
     const pubCfg = pkg.publishConfig ?? {};
-    if (pubCfg.access !== "public" || pubCfg.provenance !== true) fail("apps/dsh-plugin publishConfig must be {access:public, provenance:true} — pre-publish path (D-003)");
+    if (pubCfg.access !== "public" || pubCfg.provenance !== true) fail("apps/dsh-plugin publishConfig must be {access:public, provenance:true} — pre-publish path");
     if (pkg.type !== "module") fail("apps/dsh-plugin must ship type:module (ESM lib)");
     if (pkg.dsh?.bundle?.patch !== "./cordis.patch.yml") fail("package.json dsh.bundle.patch must point at./cordis.patch.yml");
     if (pkg.name !== "@anysearch-cli/dsh-plugin") fail("package.json name must stay @anysearch-cli/dsh-plugin");
@@ -481,7 +481,7 @@ function stepStaticAssertions() {
     // is a regression (comment-level mentions documenting the retirement are ok).
     {
       const bridgeRowLive = patch.split("\n").some((l) => l.trimStart().startsWith("- id: mcp-anysearch") || /^\s*id:\s*mcp-anysearch/.test(l));
-      if (bridgeRowLive) fail("cordis.patch.yml re-introduced a live mcp-anysearch row — bridge retired in R90 T4");
+      if (bridgeRowLive) fail("cordis.patch.yml re-introduced a live mcp-anysearch row — bridge retired");
       const idx = fs.readFileSync(path.join(ROOT, "apps", "dsh-plugin", "src", "index.ts"), "utf8");
       for (const tok of ["ans_search_web", "ans_research_web", "ans_recall_memory", "ans_query_knowledge", "ans_ans_chat", "ctx.tools.register", "KernelJsonSchemas", "KernelToolDescriptions"]) {
         if (!idx.includes(tok)) fail(": dsh-plugin native tool plane missing" + tok + " in src/index.ts");
@@ -497,23 +497,23 @@ function stepStaticAssertions() {
   {
     const runnerSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/runner.ts"), "utf8");
     for (const tok of ["computeArmDeltas", "NON_ANCHOR_MEMORY_ARMS", "armDeltas", "maxLexicalOverlap"])
-      if (!runnerSrc.includes(tok)) fail(" runner missing" + tok);
+      if (!runnerSrc.includes(tok)) fail("runner missing" + tok);
     const gateSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/gate.ts"), "utf8");
     for (const tok of ["evaluateWeakestLink", "minHarm", "betaCorrection"])
-      if (!gateSrc.includes(tok)) fail(" gate missing" + tok);
+      if (!gateSrc.includes(tok)) fail("gate missing" + tok);
     const goldenSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/golden-cases.ts"), "utf8");
     for (const tok of ["paraphraseTier", "PARAPHRASE_MAX_LEXICAL_OVERLAP", "lexicalOverlap", "assertParaphraseSlice"])
-      if (!goldenSrc.includes(tok)) fail(" golden-cases missing" + tok);
+      if (!goldenSrc.includes(tok)) fail("golden-cases missing" + tok);
     const engineSrc = fs.readFileSync(path.join(ROOT, "packages/kernel/src/engine.ts"), "utf8");
     for (const tok of ["buildWebProviderLedger", "webProviderLedger"])
-      if (!engineSrc.includes(tok)) fail(" engine missing webProviderLedger");
-    if (gateSrc.includes("webProviderLedger")) fail(" violated: memory gate must never read web provider ledger");
+      if (!engineSrc.includes(tok)) fail("engine missing webProviderLedger");
+    if (gateSrc.includes("webProviderLedger")) fail("violated: memory gate must never read web provider ledger");
     const coreSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/override-core.ts"), "utf8");
     for (const tok of ["deriveOverrideEpoch", "postmortemDeadline", "decideOverrideGovernance", "parseShipOverridePostmortem"])
-      if (!coreSrc.includes(tok)) fail(" override core missing" + tok);
+      if (!coreSrc.includes(tok)) fail("override core missing" + tok);
     const ledgerSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/override-ledger.ts"), "utf8");
     for (const tok of ["parseShipOverrideLedger", "hashOverrideEntry", "withShipOverrideLedgerLock"])
-      if (!ledgerSrc.includes(tok)) fail(" override ledger missing" + tok);
+      if (!ledgerSrc.includes(tok)) fail("override ledger missing" + tok);
   }
 
   // 1n.: dual-gate domain filter + first-class abstain must exist
@@ -523,27 +523,27 @@ function stepStaticAssertions() {
   {
     const contractSrc = fs.readFileSync(path.join(ROOT, "packages/retriever/src/contract.ts"), "utf8");
     for (const tok of ["includeDomains", "domainFilterSupported", "domain_filter_empty"])
-      if (!contractSrc.includes(tok)) fail(" retriever contract missing" + tok);
+      if (!contractSrc.includes(tok)) fail("retriever contract missing" + tok);
     const engineSrc62 = fs.readFileSync(path.join(ROOT, "packages/kernel/src/engine.ts"), "utf8");
     for (const tok of ["adjudicateUrlPolicy", "retrieval.domain_filter.pre", "retrieval.domain_filter.post", "anysearch.outcome"])
-      if (!engineSrc62.includes(tok)) fail(" engine missing" + tok);
+      if (!engineSrc62.includes(tok)) fail("engine missing" + tok);
     const cliSrc = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/search.ts"), "utf8");
     for (const tok of ["--fail-on-abstain", "formatAbstainLine"])
-      if (!cliSrc.includes(tok)) fail(" CLI abstain surface missing" + tok);
+      if (!cliSrc.includes(tok)) fail("CLI abstain surface missing" + tok);
     const mcpSrc = fs.readFileSync(path.join(ROOT, "apps/mcp/src/tools/search-web.tool.ts"), "utf8");
-    if (!mcpSrc.includes("abstain")) fail(" MCP search_web missing abstain structuredContent");
+    if (!mcpSrc.includes("abstain")) fail("MCP search_web missing abstain structuredContent");
     const evalLooks = JSON.parse(fs.readFileSync(path.join(ROOT, "eval-looks.json"), "utf8"));
     const ge = evalLooks.golden?.entries ?? [];
     if (!ge.some((e) => e.domain === "docs" && e.expected?.verdict === "abstain"))
-      fail(" c1: no docs-domain abstain golden entry");
+      fail("c1: no docs-domain abstain golden entry");
     if (!ge.some((e) => e.domain === "docs" && e.expected?.verdict === "answer" && (e.expected?.mustHitHosts?.length ?? 0) > 0))
-      fail(" c2: no paired must-hit golden entry");
+      fail("c2: no paired must-hit golden entry");
     if (!ge.some((e) => e.domain !== "docs" && e.expected?.verdict === "abstain"))
-      fail(" c4: no cold-domain abstain golden entry");
+      fail("c4: no cold-domain abstain golden entry");
     if (!fs.existsSync(path.join(ROOT, "scripts/probe-tavily-domains.mjs")))
-      fail(" c5: tavily leakage probe missing");
+      fail("c5: tavily leakage probe missing");
     if (!fs.readFileSync(path.join(ROOT, "scripts/ship-gate.mjs"), "utf8").includes("stepOverrideGovernance")) {
-      fail(" ship-gate missing stepOverrideGovernance");
+      fail("ship-gate missing stepOverrideGovernance");
     }
     // criterion anchors (machine-checked, not doc-level caveats):
     // (a) >=2 live entries carry byte-exact mustHitUrls (caveat close-out);
@@ -556,16 +556,16 @@ function stepStaticAssertions() {
     const liveEntries = ge.filter((e) => liveIds.has(e.id));
     const exactHolders = liveEntries.filter((e) => (e.expected?.mustHitUrls?.length ?? 0) > 0);
     if (exactHolders.length < 2)
-      fail("R64 D-005: live entries carrying byte-exact mustHitUrls < 2 (R63 caveat close-out criterion not met)");
+      fail("live entries carrying byte-exact mustHitUrls < 2 (R63 caveat close-out criterion not met)");
     for (const e of exactHolders)
       if (e.stability_class !== "controlled" && e.stability_class !== "frozen-spec")
-        fail("R64 D-005: " + e.id + " anchors byte-exact mustHitUrls on stability_class=" + (e.stability_class ?? "missing") + " (only controlled|frozen-spec allowed)");
+        fail(e.id + " anchors byte-exact mustHitUrls on stability_class=" + (e.stability_class ?? "missing") + " (only controlled|frozen-spec allowed)");
     if (!liveEntries.some((e) => (e.expected?.mustHitPaths?.length ?? 0) > 0))
-      fail("R64 D-005: no live entry carries the mustHitPaths page-family layer");
+      fail("no live entry carries the mustHitPaths page-family layer");
     for (const id of ["docs-g0001", "docs-g0002", "docs-g0003", "docs-g0004", "docs-g0005", "docs-g0006", "docs-g0008", "docs-g0009", "docs-g0010", "docs-g0011"]) {
       const e = ge.find((x) => x.id === id);
       if (!e?.migration?.from || !e?.migration?.to || !e?.migration?.decidedAt)
-        fail("R64 D-005: migrated case" + id + " missing migration provenance block (from/to/decidedAt required)");
+        fail("migrated case" + id + " missing migration provenance block (from/to/decidedAt required)");
     }
     // draft: vertical-eval assertion surface presence — the
     // golden ledger must carry subject pins (wire/marker/degraded semantics)
@@ -595,24 +595,24 @@ function stepStaticAssertions() {
     const cliSrc84 = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/search.ts"), "utf8");
     if (!cliSrc84.includes("ANS_ARM_SNAPSHOT") || !cliSrc84.includes("ANS_PROVIDERS"))
       fail("R84: search.ts missing env-gated eval surfaces (ANS_ARM_SNAPSHOT/ANS_PROVIDERS)");
-    report("pass", "/0047 source gates + dual-gate abstain contracts + criterion anchors + R64 D-005 migration anchors + R84 vertical-eval assertion surface + paired-delta runner");
+    report("pass", "/0047 source gates + dual-gate abstain contracts + criterion anchors + migration anchors + R84 vertical-eval assertion surface + paired-delta runner");
   }
 
-  // 1q. (T5): offline-eval governance — Declared Exclusion is a
+  // 1q. offline-eval governance — Declared Exclusion is a
   // compile-time/static boundary, diff-visible and reviewable. Source
   // assertions over the golden dataset — never a runtime NODATA quota.
   {
     const gcSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/golden-cases.ts"), "utf8");
     // (a) the exclusion set exists as an export;
-    if (!gcSrc.includes("export const OFFLINE_EXCLUDED_GROUPS")) fail("R62 D-005: OFFLINE_EXCLUDED_GROUPS export missing");
+    if (!gcSrc.includes("export const OFFLINE_EXCLUDED_GROUPS")) fail("OFFLINE_EXCLUDED_GROUPS export missing");
     // (b) its whitelist is exactly [VECTOR_ARM_GROUP] with VECTOR_ARM_GROUP === "semantic" —
     // widening the exclusion set fails here, at review time, not in a skipped run.
     const arm = gcSrc.match(/export const VECTOR_ARM_GROUP: EvalGroup = "([^"]+)"/);
-    if (!arm || arm[1] !== "semantic") fail("R62 D-005: VECTOR_ARM_GROUP must be \"semantic\"");
+    if (!arm || arm[1] !== "semantic") fail("VECTOR_ARM_GROUP must be \"semantic\"");
     const excl = gcSrc.match(/export const OFFLINE_EXCLUDED_GROUPS: readonly EvalGroup\[\] = \[([^\]]*)\]/);
     const exclToks = (excl?.[1] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
     if (exclToks.length !== 1 || exclToks[0] !== "VECTOR_ARM_GROUP")
-      fail("R62 D-005: OFFLINE_EXCLUDED_GROUPS must be exactly [VECTOR_ARM_GROUP], got [" + exclToks.join(",") + "]");
+      fail("OFFLINE_EXCLUDED_GROUPS must be exactly [VECTOR_ARM_GROUP], got [" + exclToks.join(",") + "]");
     // (c) offline coverage floor, computed on the real dataset — 0.75 minimum.
     const cov = spawnSync(process.execPath, ["--import", "tsx", "-e",
       "import { GOLDEN_CASES, offlineCases } from './src/eval/golden-cases.ts';" +
@@ -620,15 +620,15 @@ function stepStaticAssertions() {
       "if (!(r >= 0.75)) { console.error('offline coverage ' + r.toFixed(3) + ' < 0.75'); process.exit(1); }" +
       "console.log('offline coverage ' + r.toFixed(3));"],
       { cwd: path.join(ROOT, "packages", "store"), encoding: "utf8" });
-    if (cov.status !== 0) fail("R62 D-005: offline coverage check failed\n" + String(cov.stderr ?? cov.stdout ?? "").trim());
+    if (cov.status !== 0) fail("offline coverage check failed\n" + String(cov.stderr ?? cov.stdout ?? "").trim());
     // (d) the excluded slice is re-established by the online lane in ci.yml —
     // job+step double assertion (a bare substring match could be
     // satisfied by a comment or an orphaned step name while the lane is gone).
     const ciSrc = fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
-    if (!/^  test-online:/m.test(ciSrc)) fail("R62 D-005: ci.yml missing test-online job key");
+    if (!/^  test-online:/m.test(ciSrc)) fail("ci.yml missing test-online job key");
     if (!ciSrc.includes("test:online") || !ciSrc.includes("pnpm -C packages/store test:online"))
-      fail("R62 D-005: ci.yml test-online job missing the 'pnpm -C packages/store test:online' step");
-    report("pass", "R62 D-005: offline exclusion governance (whitelist + 0.75 floor + test-online lane)");
+      fail("ci.yml test-online job missing the 'pnpm -C packages/store test:online' step");
+    report("pass", "offline exclusion governance (whitelist + 0.75 floor + test-online lane)");
   }
 
   // 1r.: quarantine ratchet — the live-drift quarantine set is shrink-only.
@@ -638,14 +638,14 @@ function stepStaticAssertions() {
   {
     const qPath = path.join(ROOT, "packages", "store", "eval-quarantine.json");
     const bPath = path.join(ROOT, "packages", "store", "eval-quarantine.baseline.json");
-    if (!fs.existsSync(bPath)) fail("R63 T3: eval-quarantine.baseline.json missing — ratchet has no floor");
+    if (!fs.existsSync(bPath)) fail("eval-quarantine.baseline.json missing — ratchet has no floor");
     const qLedger = JSON.parse(fs.readFileSync(qPath, "utf8"));
     const qBase = JSON.parse(fs.readFileSync(bPath, "utf8"));
     if (qBase.schema !== "anysearch/eval-quarantine-baseline@1" || !Array.isArray(qBase.ids) || qBase.ids.length === 0)
-      fail("R63 T3: eval-quarantine.baseline.json schema/ids invalid");
+      fail("eval-quarantine.baseline.json schema/ids invalid");
     const ratchetErrors = checkQuarantineRatchet(qLedger, qBase.ids);
-    for (const e of ratchetErrors) fail("R63 T3 quarantine ratchet: " + e);
-    report("pass", "R63 T3: quarantine ratchet green (entries shrink-only vs baseline[" + qBase.ids.length + "], renewals=0, no unruled expiry, longterm<=1)");
+    for (const e of ratchetErrors) fail("quarantine ratchet: " + e);
+    report("pass", "quarantine ratchet green (entries shrink-only vs baseline[" + qBase.ids.length + "], renewals=0, no unruled expiry, longterm<=1)");
   }
 
   // 1n. -D5: local observation representation, SQLite store, export
@@ -653,7 +653,7 @@ function stepStaticAssertions() {
   // acceptance; runtime trace/eval smoke is verified below.
   {
     const obsPath = path.join(ROOT, "packages/store/src/observation.ts");
-    if (!fs.existsSync(obsPath)) fail(" 1n: packages/store/src/observation.ts missing");
+    if (!fs.existsSync(obsPath)) fail("1n: packages/store/src/observation.ts missing");
     const obs = fs.readFileSync(obsPath, "utf8");
     for (const tok of [
       "OBSERVATION_SCHEMA_URL",
@@ -665,24 +665,24 @@ function stepStaticAssertions() {
       "mapTraceToOtlp",
       "gen_ai.evaluation.result",
     ]) {
-      if (!obs.includes(tok)) fail(" 1n: observation.ts missing" + tok);
+      if (!obs.includes(tok)) fail("1n: observation.ts missing" + tok);
     }
     const indexSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/index.ts"), "utf8");
-    if (!indexSrc.includes("./observation")) fail(" 1n: observation module not exported from store index");
+    if (!indexSrc.includes("./observation")) fail("1n: observation module not exported from store index");
     const gateSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/gate.ts"), "utf8");
     for (const forbidden of ["observability_traces", "observability_spans", "observability_evaluations", "ObservabilityTrace", "SqliteObservationStore", "gen_ai."]) {
-      if (gateSrc.includes(forbidden)) fail(" violated: eval gate references observational asset" + forbidden);
+      if (gateSrc.includes(forbidden)) fail("violated: eval gate references observational asset" + forbidden);
     }
     const cliSrc = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/search.ts"), "utf8");
-    if (!cliSrc.includes("observation.recordOperation")) fail(" 1n: CLI search observation missing");
+    if (!cliSrc.includes("observation.recordOperation")) fail("1n: CLI search observation missing");
     const mcpSrc = fs.readFileSync(path.join(ROOT, "apps/mcp/src/tools/index.ts"), "utf8");
     const mcpObs = fs.readFileSync(path.join(ROOT, "apps/mcp/src/tools/observation.ts"), "utf8");
-    if (!mcpObs.includes("observeTool") || !mcpSrc.includes("registerSearchWeb")) fail(" 1n: MCP observation helper/tool registry missing");
+    if (!mcpObs.includes("observeTool") || !mcpSrc.includes("registerSearchWeb")) fail("1n: MCP observation helper/tool registry missing");
     const evalCli = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/cli.ts"), "utf8");
-    if (!evalCli.includes("SqliteObservationStore") || !evalCli.includes("recordEvaluationTrace")) fail(" 1n: eval-runner observation write missing");
+    if (!evalCli.includes("SqliteObservationStore") || !evalCli.includes("recordEvaluationTrace")) fail("1n: eval-runner observation write missing");
     const verifyScript = path.join(ROOT, "scripts", "verify-observation.mjs");
     if (!fs.existsSync(verifyScript) || !fs.readFileSync(verifyScript, "utf8").includes("verdict")) {
-      fail(" 1n: packaged observation verifier missing");
+      fail("1n: packaged observation verifier missing");
     }
     report("pass", " observation representation/store/export boundary and eval isolation present");
   }
@@ -691,29 +691,29 @@ function stepStaticAssertions() {
   // sanitization/schema gate, fail-closed source gate, and INJECT probe closure.
   {
     const ctPath = path.join(ROOT, "packages/retriever/src/content-trust.ts");
-    if (!fs.existsSync(ctPath)) fail(" 1o: retriever content-trust module missing");
+    if (!fs.existsSync(ctPath)) fail("1o: retriever content-trust module missing");
     const ct = fs.readFileSync(ctPath, "utf8");
     for (const tok of ["sanitizeRetrieved", "RetrievalContentSchema", "combine_labels", "wrapRetrieved", "assertLlamaInput", "shouldAllowUrl", "additionalProperties: false"])
-      if (!ct.includes(tok)) fail(" 1o: content-trust missing" + tok);
+      if (!ct.includes(tok)) fail("1o: content-trust missing" + tok);
     const retrieverIndex = fs.readFileSync(path.join(ROOT, "packages/retriever/src/index.ts"), "utf8");
-    if (!retrieverIndex.includes("./content-trust")) fail(" 1o: content-trust not exported");
+    if (!retrieverIndex.includes("./content-trust")) fail("1o: content-trust not exported");
     const pipeline = fs.readFileSync(path.join(ROOT, "packages/kernel/src/memory-pipeline.ts"), "utf8");
     for (const tok of ["TaggedGap", "distillGap(messages: any[], fromIdx: number): TaggedGap"])
-      if (!pipeline.includes(tok)) fail(" 1o: memory pipeline missing tagged gap" + tok);
+      if (!pipeline.includes(tok)) fail("1o: memory pipeline missing tagged gap" + tok);
     const store = fs.readFileSync(path.join(ROOT, "packages/store/src/session-store.ts"), "utf8");
     for (const tok of ["source-gate", "source_label", "trace_id"])
-      if (!store.includes(tok)) fail(" 1o: session-store missing" + tok);
+      if (!store.includes(tok)) fail("1o: session-store missing" + tok);
     const domain = fs.readFileSync(path.join(ROOT, "packages/store/src/domain-schema.ts"), "utf8");
-    if (!domain.includes("urlAllowlist")) fail(" 1o: URL consumption allowlist schema missing");
+    if (!domain.includes("urlAllowlist")) fail("1o: URL consumption allowlist schema missing");
     const chain = fs.readFileSync(path.join(ROOT, "packages/store/src/access-chain.ts"), "utf8");
-    if (!chain.includes('CHAIN_SCHEMA_VERSION = 2') || !chain.includes('"source_label"')) fail(" 1o: access-chain schema v2/source_label missing");
+    if (!chain.includes('CHAIN_SCHEMA_VERSION = 2') || !chain.includes('"source_label"')) fail("1o: access-chain schema v2/source_label missing");
     const golden = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/golden-cases.ts"), "utf8");
     for (const tok of ["inject_invisible_chars", "inject_instruction_injection", "inject_tool_output_url_egress", "inject_memory_poisoning", "inject_combined_adaptive"])
-      if (!golden.includes(tok)) fail(" 1o: inject case missing" + tok);
+      if (!golden.includes(tok)) fail("1o: inject case missing" + tok);
     const runner = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/runner.ts"), "utf8");
-    if (!runner.includes('case "inject"')) fail(" 1o: inject runner op missing");
+    if (!runner.includes('case "inject"')) fail("1o: inject runner op missing");
     const cliSearch = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/search.ts"), "utf8");
-    if (!cliSearch.includes('"anysearch.source": "retrieved"')) fail(" 1o: anysearch.source OTLP emission missing");
+    if (!cliSearch.includes('"anysearch.source": "retrieved"')) fail("1o: anysearch.source OTLP emission missing");
     report("pass", " content trust boundary + inject probes present");
   }
 
@@ -765,7 +765,7 @@ function stepStaticAssertions() {
 // flips from "debt note survives" to"implementation present + docs not over-claiming".
 // The anti-pattern stays identical: silently re-claiming or silently de-wiring recurs.
 function stepDocClaims() {
-  report("info", "step 1c/9: engine grace-window wiring assertion ()");
+  report("info", "step 1c/9: engine grace-window wiring assertion");
   const eng = fs.readFileSync(path.join(ROOT, "packages", "kernel", "src", "engine.ts"), "utf8");
   if (!/graceWindowMs/.test(eng)) fail("engine.ts no longer declares graceWindowMs - update this assertion");
   if (!/graceExpired/.test(eng) || !/controllers\[j\]\.abort\(\)/.test(eng)) fail("engine.ts lost the wired grace-window collect");
@@ -941,12 +941,12 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
       const EMBEDDING_CONSUMERS = ["@anysearch-cli/cli", "@anysearch-cli/mcp", "@anysearch-cli/plugin"];
       if (PUBLISH_SET.includes(pkg.name)) {
         const depKeys = Object.keys(pkg.dependencies ?? {}).filter((d) => d.startsWith("@anysearch-cli/"));
-        if (depKeys.length) fail(`${file}: publish manifest still declares bundled deps in dependencies: ${depKeys.join(", ")} (D-005: bundled internals are devDependencies)`);
-        if ((pkg.optionalDependencies ?? {})["@anysearch-cli/embedding"]) fail(`${file}: @anysearch-cli/embedding in optionalDependencies — must be peer+optional (D-005 bomb-prevention)`);
+        if (depKeys.length) fail(`${file}: publish manifest still declares bundled deps in dependencies: ${depKeys.join(", ")} (bundled internals are devDependencies)`);
+        if ((pkg.optionalDependencies ?? {})["@anysearch-cli/embedding"]) fail(`${file}: @anysearch-cli/embedding in optionalDependencies — must be peer+optional (bomb-prevention)`);
         if (EMBEDDING_CONSUMERS.includes(pkg.name)) {
           const peerOk = pkg.peerDependencies && "@anysearch-cli/embedding" in pkg.peerDependencies &&
             pkg.peerDependenciesMeta && pkg.peerDependenciesMeta["@anysearch-cli/embedding"] && pkg.peerDependenciesMeta["@anysearch-cli/embedding"].optional === true;
-          if (!peerOk) fail(`${file}: @anysearch-cli/embedding missing peerDependencies+peerDependenciesMeta.optional (D-005 peer-optional contract)`);
+          if (!peerOk) fail(`${file}: @anysearch-cli/embedding missing peerDependencies+peerDependenciesMeta.optional (peer-optional contract)`);
           // publish incident: npm publish <dir> bypasses pnpm workspace:* rewrite —
           // packed manifest must carry NO workspace: protocol in any dep field.
           for (const [depField, depSet] of Object.entries(pkg).filter(([k]) => /[Dd]ependencies$/.test(k))) {
@@ -955,8 +955,8 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
             }
           }
         }
-        if (pkg.license !== "Apache-2.0") fail(`${file}: license must be Apache-2.0 (D-007)`);
-        if (!pkg.repository || !String(pkg.repository.url ?? "").includes("Xxx91n/anysearch-cli")) fail(`${file}: repository field missing/wrong (D-005)`);
+        if (pkg.license !== "Apache-2.0") fail(`${file}: license must be Apache-2.0`);
+        if (!pkg.repository || !String(pkg.repository.url ?? "").includes("Xxx91n/anysearch-cli")) fail(`${file}: repository field missing/wrong`);
         if (!pkg.publishConfig || pkg.publishConfig.access !== "public") fail(`${file}: publishConfig.access must be public (scoped @anysearch-cli/*)`);
         // noExternal regression guard: packed dist must not bare-reference bundled
         // internals — covers require()/import() call forms, static and side-effect
@@ -975,7 +975,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
               if (!/\.(js|cjs|mjs)$/.test(e.name)) continue;
               const src = fs.readFileSync(fp, "utf8");
               const m = src.match(bare);
-              if (m) fail(`${file}: dist contains bare require/import/export of bundled @anysearch-cli/${m[1]} — noExternal regression (D-005)`);
+              if (m) fail(`${file}: dist contains bare require/import/export of bundled @anysearch-cli/${m[1]} — noExternal regression`);
             }
           }
         }
@@ -1034,7 +1034,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
   }
   for (const sub of ["@anysearch-cli/kernel", "@anysearch-cli/store", "@anysearch-cli/retriever", "@anysearch-cli/embedding"]) {
     if (fs.existsSync(path.join(nmDir, sub))) {
-      fail(`install-prefix: ${sub} present — bundled internals must not be install-closure members (D-005)`);
+      fail(`install-prefix: ${sub} present — bundled internals must not be install-closure members`);
     }
   }
   // bin links land in <prefix>/node_modules/.bin/

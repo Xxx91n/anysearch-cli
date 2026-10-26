@@ -1,4 +1,4 @@
-// (T4): macOS exit-teardown SPILLOVER PROBE — experiment, non-blocking.
+// macOS exit-teardown SPILLOVER PROBE — experiment, non-blocking.
 // Minimal reproduction of the F1/ exit-time crash family on macos-latest.
 // The workflow runs `node -v` and `new Database(":memory:")` BEFORE this script,
 // separating the two signature families:
@@ -27,7 +27,7 @@ function classify(code, out) {
 
 const lines = [];
 let crashes = 0;
-lines.push("## macOS spillover probe (R62 D-007, experiment — non-blocking)","");
+lines.push("## macOS spillover probe (experiment — non-blocking)","");
 lines.push("| run | command | exit | signature |","|---|---|---|---|");
 
 for (let i = 1; i <= RUNS; i++) {
@@ -62,7 +62,7 @@ for (let i = 1; i <= RUNS; i++) {
 
 lines.push("");
 if (crashes === 0) {
-  lines.push("**verdict: GREEN** — teardown fix holds on this run. Promotion rule: >=5 consecutive green runs => evaluate restoring macos-latest to the blocking matrix (D-007).");
+  lines.push("**verdict: GREEN** — teardown fix holds on this run. Promotion rule: >=5 consecutive green runs => evaluate restoring macos-latest to the blocking matrix.");
 } else {
   lines.push("**verdict: CRASH SIGNATURE** — " + crashes + " run(s) crashed. If crashes persist: prune the macOS blocking lane (ubuntu/windows stay blocking), extend ledger defer-f16-macos-native-crash, and keep this probe reporting.");
 }

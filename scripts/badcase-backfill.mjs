@@ -79,7 +79,7 @@ if (into) {
 }
 
 // Recount covered dimension counts AND class histograms so the manifest stays
-// honest after backfill (r60-audit F3: count-only recount let classes drift).
+// honest after backfill (count-only recount let classes drift).
 const cov = JSON.parse(readFileSync(COVERAGE, "utf8"));
 const counts = new Map();
 const classHist = new Map();

@@ -182,7 +182,7 @@ try {
     mkdirSync(probeDir, { recursive: true });
     writeFileSync(join(probeDir, "probe.toml"), [
       'name = "probe"',
-      'description = "install-smoke offline leg — single-arm fault-injection domain (R62 D-004)"',
+      'description = "install-smoke offline leg — single-arm fault-injection domain"',
       '[settings]', 'language = "TypeScript"', 'depth = "docs"',
       '[skills]', 'active = ["search"]',
       '[sources]', 'enabled = ["anysearch"]', 'urlAllowlist = ["nonexistent.invalid"]',
