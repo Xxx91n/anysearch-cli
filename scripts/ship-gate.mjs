@@ -637,7 +637,7 @@ function stepStaticAssertions() {
     if (!arm || arm[1] !== "semantic") fail("VECTOR_ARM_GROUP must be \"semantic\"");
     const exclLines = activeLine(/export const OFFLINE_EXCLUDED_GROUPS/);
     const excl = exclLines.length === 1
-      ? (exclLines[0].match(/OFFLINE_EXCLUDED_GROUPS[^=]*=\s*\[([^\]]*)\]/) ?? (exclLines[0].includes("[") && !exclLines[0].includes("]") ? [, "MULTILINE"] : null))
+      ? (exclLines[0].match(/OFFLINE_EXCLUDED_GROUPS[^=]*=\s*\[([^\]]*)\]\s*;?\s*$/) ?? (exclLines[0].includes("[") && !exclLines[0].includes("]") ? [, "MULTILINE"] : null))
       : null;
     const exclToks = (excl?.[1] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
     if (exclToks.length !== 1 || exclToks[0] !== "VECTOR_ARM_GROUP")
