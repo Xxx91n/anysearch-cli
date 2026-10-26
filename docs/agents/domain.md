@@ -32,3 +32,17 @@ If the concept you need isn't in the glossary yet, that's a signal: either you'r
 ## Decision history
 
 Architecture decision records are no longer kept as documents. Load-bearing decisions live as self-contained comments at the code sites they govern; open product questions live as GitHub issues. Archaeology: `git log` on the pre-teardown history.
+
+Record a load-bearing decision at its code site as a self-contained, greppable comment:
+
+```
+Design: <decision> — <reason/alternatives>
+```
+
+- `Design:` — the literal marker; `git grep 'Design:'` finds every recorded decision.
+- `<decision>` — what was chosen, stated plainly.
+- `— <reason/alternatives>` — why, or which alternative was rejected and why.
+
+Keep the comment next to the code it governs, so the decision travels with the code instead of with a document that can be deleted.
+
+**Honest status: historical decisions are not backfilled.** The grammar above is the convention going forward; decisions made before it still live only in `git log` archaeology. A code site without a `Design:` marker therefore does not prove that no decision was made there — only that it has not yet been recorded in this form.
