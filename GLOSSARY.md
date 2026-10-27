@@ -113,6 +113,7 @@
 
 - **Memory Eval Harness（记忆评测台）**——golden dataset + 确定性指标门禁 + judge 校准通道；eval 是度量能力本体。数据集指纹随报告，变集必须重校准；基线只手工升、CI 永不自动降。
 - **Golden Entry Scope / Difficulty Tier / Paraphrase Slice**——golden 条目显式声明执行层（stub|live|both，无默认兜底）；难度分层只报告；paraphrase 变体轻档必须配正向断言。
+- **Provenance RefStatus（证据锚状态）**——`provenance.ref` 缺省即活锚（仓库磁盘可解析）；`"historical-local"` 只标记随治理层拆除的 `.scratch/` 本地历史证据（未跟踪、CI 取不到），保留证据链而不回填假活锚。双向收紧：`.scratch/` ref 必须带标记，带标记的 ref 必须是良构 `.scratch/` 路径。
 - **Integer Allowance / Rank-of-Relevant Gate**——容差用「允许挂 N 个 op」整数表达（小样本下连续 margin 无意义）；检索断言用 expectRankOf 整数名次，聚合 MRR/nDCG 只报告。
 - **Judge 校准线**——judge 与人一致性用独立盲标冻结集度量（AC1 CI 下界等判据预注册）；未校准 judge 不进任何 gate；校准 revision 内容寻址不可变 + 指针原子切换 + journal 对账，promote 是人工冻结动作。
 - **归因校准线**——claim 级 gold 标签与 relevance 线物理隔离；fused score 经校准映射为后验概率再按预注册双阈值分流；校不准回退 legacy 阈值 + degraded 告警。
