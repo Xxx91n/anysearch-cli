@@ -121,15 +121,13 @@ export interface DocsGoldenExpected {
   // in the vertical-eval family (vert-* / ctrl-* ids); absent on docs-g* rows.
   vertical?: DocsGoldenVerticalExpectation;
 }
-// Design: historical local evidence is MARKED, never backfilled. The .scratch/
-// refs were harvested out of the untracked local workspace — a clean checkout
-// cannot resolve them, so the honest options were "delete the trail" or "name it
-// dead". Fabricating a live repo anchor would claim a revisitability that does not
-// exist, which is worse than an explicitly historical ref, so the trail stays and
-// carries refStatus. Absent refStatus means live and must resolve on disk; the
-// validator enforces BOTH directions (.scratch requires the marker, the marker
-// requires a well-formed .scratch path) so the marker cannot become an escape
-// hatch for an unresolvable live ref.
+// Design: mark historical local evidence instead of backfilling a live anchor —
+// the .scratch/ refs were harvested out of an untracked workspace that a clean
+// checkout cannot resolve, and rewriting them into a repo anchor would claim a
+// revisitability that does not exist (the rejected alternative). Absent refStatus
+// = live, must resolve on disk; "historical-local" = a well-formed .scratch/ path
+// kept for the evidence trail. The validator enforces BOTH directions so the
+// marker cannot become an escape hatch for an unresolvable live ref.
 export interface DocsGoldenProvenance {
   type: "internal-dogfood" | "external-community" | "constructed" | "llm-assisted";
   ref: string;         // repo path / .scratch path (requires refStatus) / external URL
@@ -214,10 +212,18 @@ export interface CoverageManifest {
 // ctrl-NNNN (control-class entries asserting the silent-fallback surface).
 export const DOCS_GOLDEN_ID_RE = /^(docs-g\d{4}|vert-[a-z]\d{4}|ctrl-[a-z]?\d{3,4})$/;
 
-// well-formed .scratch path: repo-relative, no parent traversal (the class
-// allows ".", so ".." needs its own guard). Single source of truth for both the
-// validator and the contract test — the marker is only as honest as this check.
-export const DOCS_GOLDEN_SCRATCH_REF_RE = /^\.scratch\/[A-Za-z0-9._/-]+$/;
+// The trigger side of the marker rule: a ref pointing into an untracked .scratch
+// workspace. Any path position counts, because .gitignore matches `.scratch/` at
+// every depth — `./.scratch/x` is just as unresolvable from CI as `.scratch/x`, so
+// anchoring the trigger to the prefix would leave a spelling that dodges the marker.
+export function isScratchRef(ref: unknown): boolean {
+  return typeof ref === "string" && /(^|\/)\.scratch\//.test(ref);
+}
+
+// The shape side: a well-formed repo-relative .scratch path, no parent traversal
+// (the class allows ".", so ".." needs its own guard). Single source of truth for
+// validator and contract test — the marker is only as honest as this check.
+const DOCS_GOLDEN_SCRATCH_REF_RE = /^\.scratch\/[A-Za-z0-9._/-]+$/;
 export function isWellFormedScratchRef(ref: unknown): boolean {
   return typeof ref === "string" && DOCS_GOLDEN_SCRATCH_REF_RE.test(ref) && !ref.includes("..");
 }
@@ -403,10 +409,10 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
     if (!DOCS_GOLDEN_PROVENANCE_TYPES.includes(prov.type as "internal-dogfood")) p.push("provenance.type must be internal-dogfood|external-community|constructed|llm-assisted");
     if (typeof prov.ref !== "string" || prov.ref.length < 4) p.push("provenance.ref required");
     if (prov.type === "external-community" && !/^https?:\/\//.test(prov.ref ?? "")) p.push("external-community ref must be a URL");
-    if (prov.refStatus !== undefined && !DOCS_GOLDEN_REF_STATUSES.includes(prov.refStatus)) p.push("provenance.refStatus must be " + DOCS_GOLDEN_REF_STATUSES.join("|"));
+    if (prov.refStatus !== undefined && !DOCS_GOLDEN_REF_STATUSES.includes(prov.refStatus)) p.push("provenance.refStatus outside closed vocabulary " + DOCS_GOLDEN_REF_STATUSES.join("|"));
     // .scratch refs are unresolvable from a clean checkout, so they may only
     // exist as declared history: both directions are enforced (see Design note).
-    if (typeof prov.ref === "string" && prov.ref.startsWith(".scratch/") && prov.refStatus !== "historical-local") p.push("provenance.refStatus must be historical-local for a .scratch/ ref");
+    if (isScratchRef(prov.ref) && prov.refStatus !== "historical-local") p.push("provenance.refStatus must be historical-local for a .scratch/ ref");
     if (prov.refStatus === "historical-local" && !isWellFormedScratchRef(prov.ref)) p.push("provenance.ref must be a well-formed .scratch/ path when refStatus is historical-local");
     // (vi): built corpus carries reviewer + audit trail.
     // constructed = human-authored -> reviewer required (reviewer = author id).

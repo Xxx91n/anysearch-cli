@@ -20,6 +20,7 @@ import {
   validateDocsGoldenEntry,
   validateDocsGoldenSet,
   crossCheckDocsGolden,
+  isScratchRef,
   isWellFormedScratchRef,
   type DocsGoldenSet,
   type CoverageManifest,
@@ -64,7 +65,7 @@ assert(entryProblems.length === 0, "all entries valid: " + entryProblems.join(" 
 for (const e of golden.entries) {
   if (e.provenance.type === "external-community") {
     assert(/^https?:\/\//.test(e.provenance.ref), e.id + ": external provenance is a URL");
-  } else if (e.provenance.ref.startsWith(".scratch/")) {
+  } else if (isScratchRef(e.provenance.ref)) {
     // .scratch/ is untracked since 3f85fee8 (.gitignore:53 — never AGENTS.md):
     // a clean checkout (CI) cannot resolve it, so the entry must mark it
     // historical-local instead of pretending the anchor is revisitable.
@@ -81,15 +82,11 @@ for (const e of golden.entries) {
     );
   }
 }
-assert(
-  golden.entries.some((e) => e.provenance.refStatus === "historical-local"),
-  "at least one historical-local provenance entry exists (the marker is exercised, not decorative)"
-);
-
 // --- 3b. the marker is a guard, not an escape hatch: the validator must
 // REJECT both directions (prior art: the tombstone negative case in 5b). ---
 {
   const historical = golden.entries.find((e) => e.provenance.refStatus === "historical-local");
+  assert(!!historical, "a historical-local sample exists to be de-marked (the marker is exercised, not decorative)");
   if (historical) {
     const unmarked = JSON.parse(JSON.stringify(historical));
     delete unmarked.provenance.refStatus;
@@ -99,7 +96,8 @@ assert(
       "validator rejects an unmarked .scratch ref (" + problems.join(" | ") + ")"
     );
   }
-  const live = golden.entries.find((e) => e.provenance.refStatus === undefined);
+  const live = golden.entries.find((e) => e.provenance.refStatus === undefined && !isScratchRef(e.provenance.ref));
+  assert(!!live, "a live sample exists to smuggle the marker onto (both classes are represented)");
   if (live) {
     const smuggled = JSON.parse(JSON.stringify(live));
     smuggled.provenance.refStatus = "historical-local";
