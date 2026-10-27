@@ -1,7 +1,7 @@
 // B1/D5: docs-domain golden batch + coverage manifest contract.
 // The golden set lives as eval-looks.json's top-level `golden` collection — the
 // same file as the OF look ledger. This test is the mechanical honesty loop:
-// entry schema, provenance revisitability, allowlist subset, manifest
+// entry schema, provenance anchor honesty, allowlist subset, manifest
 // covered|deferred consistency, and ledger writer round-trip preservation.
 import fs from "node:fs";
 import os from "node:os";
@@ -20,6 +20,8 @@ import {
   validateDocsGoldenEntry,
   validateDocsGoldenSet,
   crossCheckDocsGolden,
+  isScratchRef,
+  isWellFormedScratchRef,
   type DocsGoldenSet,
   type CoverageManifest,
 } from "../src/eval/docs-golden";
@@ -58,24 +60,81 @@ assert(ctrlBatch.length >= 2, "control-class pins exist (got " + ctrlBatch.lengt
 const entryProblems = validateDocsGoldenSet(golden);
 assert(entryProblems.length === 0, "all entries valid: " + entryProblems.join(" | "));
 
-// --- 3. provenance is revisitable: internal refs exist, external are URLs ---
+// --- 3. every provenance anchor is honest: live refs resolve on disk, external
+// are URLs, .scratch refs are declared history, not promised as live ---------
 for (const e of golden.entries) {
   if (e.provenance.type === "external-community") {
     assert(/^https?:\/\//.test(e.provenance.ref), e.id + ": external provenance is a URL");
-  } else if (e.provenance.ref.startsWith(".scratch/")) {
-    // .scratch/ is local-only by policy since 3f85fee8 (untracked, never committed — AGENTS.md):
-    // a clean checkout (CI) cannot resolve it, so assert a well-formed repo-relative path instead.
+  } else if (isScratchRef(e.provenance.ref)) {
+    // .scratch/ is untracked since 3f85fee8 (.gitignore:53 — never AGENTS.md):
+    // a clean checkout (CI) cannot resolve it, so the entry must mark it
+    // historical-local instead of pretending the anchor is revisitable.
+    assert(e.provenance.refStatus === "historical-local", e.id + ": .scratch provenance declares historical-local");
     assert(
-      /^\.scratch\/[A-Za-z0-9._\/-]+$/.test(e.provenance.ref) && !e.provenance.ref.includes(".."),
-      e.id + ": local-only provenance ref is a well-formed .scratch path: " + e.provenance.ref
+      isWellFormedScratchRef(e.provenance.ref),
+      e.id + ": historical-local provenance ref is a well-formed .scratch path: " + e.provenance.ref
     );
   } else {
+    assert(e.provenance.refStatus === undefined, e.id + ": live provenance carries no historical-local marker");
     assert(
       fs.existsSync(path.join(root, e.provenance.ref)),
       e.id + ": internal provenance ref resolves: " + e.provenance.ref
     );
   }
 }
+// --- 3b. the marker is a guard, not an escape hatch: the validator must
+// REJECT both directions (prior art: the tombstone negative case in 5b). ---
+{
+  const historical = golden.entries.find((e) => e.provenance.refStatus === "historical-local");
+  assert(!!historical, "a historical-local sample exists to be de-marked (the marker is exercised, not decorative)");
+  if (historical) {
+    const unmarked = JSON.parse(JSON.stringify(historical));
+    delete unmarked.provenance.refStatus;
+    const problems = validateDocsGoldenEntry(unmarked);
+    assert(
+      problems.some((x) => x.includes("for a .scratch/ ref")),
+      "validator rejects an unmarked .scratch ref (" + problems.join(" | ") + ")"
+    );
+  }
+  const live = golden.entries.find((e) => e.provenance.refStatus === undefined && !isScratchRef(e.provenance.ref));
+  assert(!!live, "a live sample exists to smuggle the marker onto (both classes are represented)");
+  if (live) {
+    const smuggled = JSON.parse(JSON.stringify(live));
+    smuggled.provenance.refStatus = "historical-local";
+    const problems = validateDocsGoldenEntry(smuggled);
+    assert(
+      problems.some((x) => x.includes("well-formed")),
+      "validator rejects a historical-local marker on a non-.scratch ref (" + problems.join(" | ") + ")"
+    );
+  }
+}
+
+// --- 3c. the trigger is local-only, separator-agnostic, case-insensitive,
+// segment-bounded, and covers the bare .scratch directory ---------------------
+// CodeRabbit #80 rounds 1–3 (every finding reproduced against the code first): these
+// spellings have no corpus row, so 3b's validator-level negatives can't reach them —
+// 3c pins the classification they must land in, and the validator consequences
+// ride on the marker rule and the shape rule that 3b already pins on real entries.
+assert(
+  !isScratchRef("https://example.com/.scratch/guide"),
+  "an external URL containing /.scratch/ is not classified as a local scratch ref"
+);
+assert(
+  isScratchRef(".scratch\\grill-round-99\\handoffs\\next-round.md"),
+  "a backslash spelling of .scratch is still classified as a scratch ref"
+);
+assert(
+  isScratchRef(".scratch"),
+  "the bare .scratch directory is classified as a scratch ref (it exists on the author's host, never in CI)"
+);
+assert(
+  isScratchRef(".SCRATCH/notes.md"),
+  "a case variant of .scratch is classified as a scratch ref (on a core.ignorecase host it IS the ignored directory)"
+);
+assert(
+  !isScratchRef(".scratchpad"),
+  "the trigger is segment-bounded, so .scratchpad stays a live path"
+);
 
 // --- 4. both provenance classes are exercised --------------------------------
 const provTypes = new Set(golden.entries.map((e) => e.provenance.type));

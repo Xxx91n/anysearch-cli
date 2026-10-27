@@ -678,6 +678,7 @@
         "provenance": {
           "type": "internal-dogfood",
           "ref": ".scratch/grill-round-61/handoffs/next-round.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-14"
         },
         "notes": "判据2 域内 must-hit 成对锚——与 docs-g0007 同域同语言同 intent 家族的合法域内提问必须答出，防止 post-filter 过度弃答。"
@@ -724,6 +725,7 @@
         "provenance": {
           "type": "internal-dogfood",
           "ref": ".scratch/grill-round-61/narrow-domains/cold.toml",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-14"
         },
         "notes": "判据4 冷门域 0 结果——cold.toml allowlist 仅 nonexistent.invalid，任何到达均被闸，零幸存者即弃答；端到端臂见 apps/cli/test/abstain.test.ts live arm。"
@@ -765,6 +767,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/t1-semantics-legislation.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -801,6 +804,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/t1-semantics-legislation.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -836,6 +840,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/t1-semantics-legislation.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -866,6 +871,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-83/evidence/t1-vertical-domain.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -897,6 +903,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-83/evidence/t1-vertical-domain.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -941,6 +948,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -985,6 +993,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1032,6 +1041,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1079,6 +1089,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1101,6 +1112,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1180,6 +1192,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1216,6 +1229,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1253,6 +1267,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1289,6 +1304,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1324,6 +1340,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1360,6 +1377,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1406,6 +1424,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1454,6 +1473,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1500,6 +1520,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1547,6 +1568,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1592,6 +1614,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1627,6 +1650,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1663,6 +1687,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1699,6 +1724,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1735,6 +1761,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1771,6 +1798,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1819,6 +1847,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1867,6 +1896,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1915,6 +1945,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -1961,6 +1992,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2008,6 +2040,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2044,6 +2077,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2079,6 +2113,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2115,6 +2150,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2150,6 +2186,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2187,6 +2224,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2232,6 +2270,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2270,6 +2309,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2309,6 +2349,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2354,6 +2395,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2393,6 +2435,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2430,6 +2473,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2466,6 +2510,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2501,6 +2546,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2537,6 +2583,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2573,6 +2620,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2599,6 +2647,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2628,6 +2677,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2658,6 +2708,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2691,6 +2742,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2717,6 +2769,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2746,6 +2799,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2776,6 +2830,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2805,6 +2860,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2831,6 +2887,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2860,6 +2917,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2890,6 +2948,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2919,6 +2978,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2945,6 +3005,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -2974,6 +3035,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -3004,6 +3066,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
@@ -3033,6 +3096,7 @@
         "provenance": {
           "type": "constructed",
           "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+          "refStatus": "historical-local",
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
