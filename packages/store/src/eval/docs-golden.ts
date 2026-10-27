@@ -23,7 +23,7 @@ export const DOCS_GOLDEN_DIMENSION_VALUES: Record<string, readonly string[]> = {
 };
 export const DOCS_GOLDEN_DIMENSIONS = Object.keys(DOCS_GOLDEN_DIMENSION_VALUES);
 export const DOCS_GOLDEN_PROVENANCE_TYPES = ["internal-dogfood", "external-community", "constructed", "llm-assisted"] as const;
-// closed vocabulary for provenance.refStatus — the list is closed so free text
+// controlled vocabulary for provenance.refStatus — the list is closed so free text
 // cannot drift, same guard as TOMBSTONE_REASON_CODES.
 export const DOCS_GOLDEN_REF_STATUSES = ["historical-local"] as const;
 export type DocsGoldenRefStatus = (typeof DOCS_GOLDEN_REF_STATUSES)[number];
@@ -212,10 +212,12 @@ export interface CoverageManifest {
 // ctrl-NNNN (control-class entries asserting the silent-fallback surface).
 export const DOCS_GOLDEN_ID_RE = /^(docs-g\d{4}|vert-[a-z]\d{4}|ctrl-[a-z]?\d{3,4})$/;
 
-// The trigger side of the marker rule: a ref pointing into an untracked .scratch
-// workspace. Any path position counts, because .gitignore matches `.scratch/` at
-// every depth — `./.scratch/x` is just as unresolvable from CI as `.scratch/x`, so
-// anchoring the trigger to the prefix would leave a spelling that dodges the marker.
+// Design: the scratch trigger matches `.scratch/` at any path position — .gitignore
+// ignores the directory at every depth, so anchoring the trigger to the prefix would
+// leave `./.scratch/x` as a spelling that dodges the marker. The consequence is
+// recorded because it is not obvious: the shape side below is anchored at the repo
+// root, so a nested spelling (`pkg/.scratch/x`) can be neither unmarked nor marked —
+// it is always rejected. Only root-relative `.scratch/` history is representable.
 export function isScratchRef(ref: unknown): boolean {
   return typeof ref === "string" && /(^|\/)\.scratch\//.test(ref);
 }
@@ -409,7 +411,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
     if (!DOCS_GOLDEN_PROVENANCE_TYPES.includes(prov.type as "internal-dogfood")) p.push("provenance.type must be internal-dogfood|external-community|constructed|llm-assisted");
     if (typeof prov.ref !== "string" || prov.ref.length < 4) p.push("provenance.ref required");
     if (prov.type === "external-community" && !/^https?:\/\//.test(prov.ref ?? "")) p.push("external-community ref must be a URL");
-    if (prov.refStatus !== undefined && !DOCS_GOLDEN_REF_STATUSES.includes(prov.refStatus)) p.push("provenance.refStatus outside closed vocabulary " + DOCS_GOLDEN_REF_STATUSES.join("|"));
+    if (prov.refStatus !== undefined && !DOCS_GOLDEN_REF_STATUSES.includes(prov.refStatus)) p.push("provenance.refStatus outside the controlled vocabulary: " + String(prov.refStatus));
     // .scratch refs are unresolvable from a clean checkout, so they may only
     // exist as declared history: both directions are enforced (see Design note).
     if (isScratchRef(prov.ref) && prov.refStatus !== "historical-local") p.push("provenance.refStatus must be historical-local for a .scratch/ ref");

@@ -1,7 +1,7 @@
 // B1/D5: docs-domain golden batch + coverage manifest contract.
 // The golden set lives as eval-looks.json's top-level `golden` collection — the
 // same file as the OF look ledger. This test is the mechanical honesty loop:
-// entry schema, provenance revisitability, allowlist subset, manifest
+// entry schema, provenance anchor honesty, allowlist subset, manifest
 // covered|deferred consistency, and ledger writer round-trip preservation.
 import fs from "node:fs";
 import os from "node:os";
@@ -60,8 +60,8 @@ assert(ctrlBatch.length >= 2, "control-class pins exist (got " + ctrlBatch.lengt
 const entryProblems = validateDocsGoldenSet(golden);
 assert(entryProblems.length === 0, "all entries valid: " + entryProblems.join(" | "));
 
-// --- 3. provenance is revisitable: internal refs exist, external are URLs,
-// .scratch refs are declared history rather than promised as live ---------
+// --- 3. every provenance anchor is honest: live refs resolve on disk, external
+// are URLs, .scratch refs are declared history, not promised as live ---------
 for (const e of golden.entries) {
   if (e.provenance.type === "external-community") {
     assert(/^https?:\/\//.test(e.provenance.ref), e.id + ": external provenance is a URL");
@@ -92,7 +92,7 @@ for (const e of golden.entries) {
     delete unmarked.provenance.refStatus;
     const problems = validateDocsGoldenEntry(unmarked);
     assert(
-      problems.some((x) => x.includes("refStatus")),
+      problems.some((x) => x.includes("for a .scratch/ ref")),
       "validator rejects an unmarked .scratch ref (" + problems.join(" | ") + ")"
     );
   }
@@ -103,7 +103,7 @@ for (const e of golden.entries) {
     smuggled.provenance.refStatus = "historical-local";
     const problems = validateDocsGoldenEntry(smuggled);
     assert(
-      problems.some((x) => x.includes("historical-local")),
+      problems.some((x) => x.includes("well-formed")),
       "validator rejects a historical-local marker on a non-.scratch ref (" + problems.join(" | ") + ")"
     );
   }
