@@ -109,11 +109,11 @@ for (const e of golden.entries) {
   }
 }
 
-// --- 3c. the trigger is local-only, separator-agnostic, and covers the bare
-// .scratch directory ----------------------------------------------------------
-// CodeRabbit #80 rounds 1–2 (every finding reproduced against the code first): these
-// three spellings have no corpus row, so 3b's validator-level negatives can't reach
-// them — 3c pins the classification they must land in, and the validator consequences
+// --- 3c. the trigger is local-only, separator-agnostic, case-insensitive, and
+// covers the bare .scratch directory ------------------------------------------
+// CodeRabbit #80 rounds 1–3 (every finding reproduced against the code first): these
+// spellings have no corpus row, so 3b's validator-level negatives can't reach them —
+// 3c pins the classification they must land in, and the validator consequences
 // ride on the marker rule and the shape rule that 3b already pins on real entries.
 assert(
   !isScratchRef("https://example.com/.scratch/guide"),
@@ -126,6 +126,14 @@ assert(
 assert(
   isScratchRef(".scratch"),
   "the bare .scratch directory is classified as a scratch ref (it exists on the author's host, never in CI)"
+);
+assert(
+  isScratchRef(".SCRATCH/notes.md"),
+  "a case variant of .scratch is classified as a scratch ref (on a core.ignorecase host it IS the ignored directory)"
+);
+assert(
+  !isScratchRef(".scratchpad"),
+  "the trigger is segment-bounded, so .scratchpad stays a live path"
 );
 
 // --- 4. both provenance classes are exercised --------------------------------
