@@ -20,6 +20,7 @@ import {
   validateDocsGoldenEntry,
   validateDocsGoldenSet,
   crossCheckDocsGolden,
+  isWellFormedScratchRef,
   type DocsGoldenSet,
   type CoverageManifest,
 } from "../src/eval/docs-golden";
@@ -58,21 +59,54 @@ assert(ctrlBatch.length >= 2, "control-class pins exist (got " + ctrlBatch.lengt
 const entryProblems = validateDocsGoldenSet(golden);
 assert(entryProblems.length === 0, "all entries valid: " + entryProblems.join(" | "));
 
-// --- 3. provenance is revisitable: internal refs exist, external are URLs ---
+// --- 3. provenance is revisitable: internal refs exist, external are URLs,
+// .scratch refs are declared history rather than promised as live ---------
 for (const e of golden.entries) {
   if (e.provenance.type === "external-community") {
     assert(/^https?:\/\//.test(e.provenance.ref), e.id + ": external provenance is a URL");
   } else if (e.provenance.ref.startsWith(".scratch/")) {
-    // .scratch/ is local-only by policy since 3f85fee8 (untracked, never committed — AGENTS.md):
-    // a clean checkout (CI) cannot resolve it, so assert a well-formed repo-relative path instead.
+    // .scratch/ is untracked since 3f85fee8 (.gitignore:53 — never AGENTS.md):
+    // a clean checkout (CI) cannot resolve it, so the entry must mark it
+    // historical-local instead of pretending the anchor is revisitable.
+    assert(e.provenance.refStatus === "historical-local", e.id + ": .scratch provenance declares historical-local");
     assert(
-      /^\.scratch\/[A-Za-z0-9._\/-]+$/.test(e.provenance.ref) && !e.provenance.ref.includes(".."),
-      e.id + ": local-only provenance ref is a well-formed .scratch path: " + e.provenance.ref
+      isWellFormedScratchRef(e.provenance.ref),
+      e.id + ": historical-local provenance ref is a well-formed .scratch path: " + e.provenance.ref
     );
   } else {
+    assert(e.provenance.refStatus === undefined, e.id + ": live provenance carries no historical-local marker");
     assert(
       fs.existsSync(path.join(root, e.provenance.ref)),
       e.id + ": internal provenance ref resolves: " + e.provenance.ref
+    );
+  }
+}
+assert(
+  golden.entries.some((e) => e.provenance.refStatus === "historical-local"),
+  "at least one historical-local provenance entry exists (the marker is exercised, not decorative)"
+);
+
+// --- 3b. the marker is a guard, not an escape hatch: the validator must
+// REJECT both directions (prior art: the tombstone negative case in 5b). ---
+{
+  const historical = golden.entries.find((e) => e.provenance.refStatus === "historical-local");
+  if (historical) {
+    const unmarked = JSON.parse(JSON.stringify(historical));
+    delete unmarked.provenance.refStatus;
+    const problems = validateDocsGoldenEntry(unmarked);
+    assert(
+      problems.some((x) => x.includes("refStatus")),
+      "validator rejects an unmarked .scratch ref (" + problems.join(" | ") + ")"
+    );
+  }
+  const live = golden.entries.find((e) => e.provenance.refStatus === undefined);
+  if (live) {
+    const smuggled = JSON.parse(JSON.stringify(live));
+    smuggled.provenance.refStatus = "historical-local";
+    const problems = validateDocsGoldenEntry(smuggled);
+    assert(
+      problems.some((x) => x.includes("historical-local")),
+      "validator rejects a historical-local marker on a non-.scratch ref (" + problems.join(" | ") + ")"
     );
   }
 }

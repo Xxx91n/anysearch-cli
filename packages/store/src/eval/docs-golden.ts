@@ -23,6 +23,10 @@ export const DOCS_GOLDEN_DIMENSION_VALUES: Record<string, readonly string[]> = {
 };
 export const DOCS_GOLDEN_DIMENSIONS = Object.keys(DOCS_GOLDEN_DIMENSION_VALUES);
 export const DOCS_GOLDEN_PROVENANCE_TYPES = ["internal-dogfood", "external-community", "constructed", "llm-assisted"] as const;
+// closed vocabulary for provenance.refStatus — the list is closed so free text
+// cannot drift, same guard as TOMBSTONE_REASON_CODES.
+export const DOCS_GOLDEN_REF_STATUSES = ["historical-local"] as const;
+export type DocsGoldenRefStatus = (typeof DOCS_GOLDEN_REF_STATUSES)[number];
 export const DOCS_GOLDEN_VERDICTS = ["answer", "abstain"] as const;
 
 // draft: vertical-eval strata vocabulary. Kept in a SEPARATE
@@ -117,9 +121,19 @@ export interface DocsGoldenExpected {
   // in the vertical-eval family (vert-* / ctrl-* ids); absent on docs-g* rows.
   vertical?: DocsGoldenVerticalExpectation;
 }
+// Design: historical local evidence is MARKED, never backfilled. The .scratch/
+// refs were harvested out of the untracked local workspace — a clean checkout
+// cannot resolve them, so the honest options were "delete the trail" or "name it
+// dead". Fabricating a live repo anchor would claim a revisitability that does not
+// exist, which is worse than an explicitly historical ref, so the trail stays and
+// carries refStatus. Absent refStatus means live and must resolve on disk; the
+// validator enforces BOTH directions (.scratch requires the marker, the marker
+// requires a well-formed .scratch path) so the marker cannot become an escape
+// hatch for an unresolvable live ref.
 export interface DocsGoldenProvenance {
   type: "internal-dogfood" | "external-community" | "constructed" | "llm-assisted";
-  ref: string;         // repo path / .scratch path / external URL — always revisitable
+  ref: string;         // repo path / .scratch path (requires refStatus) / external URL
+  refStatus?: DocsGoldenRefStatus; // absent = live/revisitable anchor; "historical-local" = untracked .scratch evidence
   harvestedAt: string; // ISO date (YYYY-MM-DD)
   // (vi): constructed/llm-assisted entries carry the reviewer and
   // audit trail — LLM-assisted drafts are cross-family models only (never the
@@ -199,6 +213,14 @@ export interface CoverageManifest {
 // vert-<d>NNNN (vertical subject entries, <d> = vdomain letter),
 // ctrl-NNNN (control-class entries asserting the silent-fallback surface).
 export const DOCS_GOLDEN_ID_RE = /^(docs-g\d{4}|vert-[a-z]\d{4}|ctrl-[a-z]?\d{3,4})$/;
+
+// well-formed .scratch path: repo-relative, no parent traversal (the class
+// allows ".", so ".." needs its own guard). Single source of truth for both the
+// validator and the contract test — the marker is only as honest as this check.
+export const DOCS_GOLDEN_SCRATCH_REF_RE = /^\.scratch\/[A-Za-z0-9._/-]+$/;
+export function isWellFormedScratchRef(ref: unknown): boolean {
+  return typeof ref === "string" && DOCS_GOLDEN_SCRATCH_REF_RE.test(ref) && !ref.includes("..");
+}
 
 export function validateDocsGoldenEntry(raw: unknown): string[] {
   const p: string[] = [];
@@ -381,6 +403,11 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
     if (!DOCS_GOLDEN_PROVENANCE_TYPES.includes(prov.type as "internal-dogfood")) p.push("provenance.type must be internal-dogfood|external-community|constructed|llm-assisted");
     if (typeof prov.ref !== "string" || prov.ref.length < 4) p.push("provenance.ref required");
     if (prov.type === "external-community" && !/^https?:\/\//.test(prov.ref ?? "")) p.push("external-community ref must be a URL");
+    if (prov.refStatus !== undefined && !DOCS_GOLDEN_REF_STATUSES.includes(prov.refStatus)) p.push("provenance.refStatus must be " + DOCS_GOLDEN_REF_STATUSES.join("|"));
+    // .scratch refs are unresolvable from a clean checkout, so they may only
+    // exist as declared history: both directions are enforced (see Design note).
+    if (typeof prov.ref === "string" && prov.ref.startsWith(".scratch/") && prov.refStatus !== "historical-local") p.push("provenance.refStatus must be historical-local for a .scratch/ ref");
+    if (prov.refStatus === "historical-local" && !isWellFormedScratchRef(prov.ref)) p.push("provenance.ref must be a well-formed .scratch/ path when refStatus is historical-local");
     // (vi): built corpus carries reviewer + audit trail.
     // constructed = human-authored -> reviewer required (reviewer = author id).
     // llm-assisted = cross-family LLM draft, human-reviewed -> reviewer AND
