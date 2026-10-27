@@ -7,6 +7,7 @@
 #   {"ok": true,  "converged": false, "error": ...}   <- data outcome, still exit 0
 #   {"ok": false, "error": ...}                        <- infra/contract failure, exit 0
 # Exit code 0 always; converged is independent of exit code (D7: TS side maps all to skip).
+import contextlib
 import json
 import sys
 
@@ -39,7 +40,12 @@ def main():
 
     try:
         fitter = BetaGeoFitter()
-        fitter.fit(frequency, recency, period)
+        # Design: redirect stdout to stderr around fitter.fit — lifetimes prints the
+        # scipy OptimizeResult to stdout before raising on a non-convergent fit, and
+        # stdout is the single-line JSON channel; scoping the redirect to the fit keeps
+        # emit() on the real stdout.
+        with contextlib.redirect_stdout(sys.stderr):
+            fitter.fit(frequency, recency, period)
         params = {str(k): float(v) for k, v in fitter.params_.items()}
     except Exception as e:
         emit({"ok": True, "converged": False, "error": "fit did not converge: " + str(e)})

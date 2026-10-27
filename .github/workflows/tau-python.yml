@@ -45,15 +45,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          # Design: pin 3.11 rather than 3.12 — pandas 2.0.3 predates cp312 wheels,
+          # so 3.12 falls back to a source build that fails on pkg_resources; the
+          # frozen pins stay unchanged.
+          python-version: "3.11"
           cache: pip
           cache-dependency-path: scripts/tau/requirements.txt
       - run: python -m pip install -r scripts/tau/requirements.txt
       - name: Fixture regenerate-and-diff guard (pure stdlib, no pinned stack needed)
         run: python scripts/tau/generate_fixtures.py --check
-      - name: Smoke - frozen stack import + envelope contract
+      - name: Smoke - frozen stack import + convergent/non-convergent envelope contract
         run: |
           python -c "import numpy, pandas, scipy, autograd, lifetimes; print(numpy.__version__, lifetimes.__version__)"
-          printf '%s' '{"rows":[{"frequency":3,"recency":20,"T":30},{"frequency":0,"recency":0,"T":15},{"frequency":5,"recency":40,"T":45},{"frequency":1,"recency":10,"T":25},{"frequency":2,"recency":18,"T":22},{"frequency":4,"recency":30,"T":35},{"frequency":0,"recency":0,"T":12},{"frequency":6,"recency":50,"T":60},{"frequency":1,"recency":8,"T":14},{"frequency":3,"recency":25,"T":28},{"frequency":2,"recency":14,"T":20},{"frequency":7,"recency":55,"T":70}]}' | python scripts/tau/bgnbd_fit.py > out.json
-          python -c "import json,sys; e=json.load(open('out.json')); assert e['ok'] is True; assert e['converged'] is True, e.get('error'); assert set(e['params']) >= {'r','alpha','a','b'}; assert 'validation' in e; print('envelope ok:', e['params'], 'chi2 p=', e['validation'].get('p'))"
+          python -c 'import json; from lifetimes.datasets import load_cdnow_summary; cdnow = load_cdnow_summary(); print(json.dumps({"rows": [{"frequency": float(r["frequency"]), "recency": float(r["recency"]), "T": float(r["T"])} for _, r in cdnow.iterrows()]}))' > cdnow.json
+          python scripts/tau/bgnbd_fit.py < cdnow.json > positive.json
+          python -c 'import json; lines = open("positive.json").read().strip().splitlines(); assert len(lines) == 1, lines; e = json.loads(lines[0]); assert e["ok"] is True; assert e["converged"] is True, e.get("error"); assert set(e["params"]) >= {"r","alpha","a","b"}; assert e["params"]["a"] > 0 and e["params"]["b"] > 0; assert "validation" in e; print("positive envelope ok:", e["params"], "chi2 p=", e["validation"].get("p"))'
+          # Design: keep the original 12-row fixture as the deliberate non-convergent
+          # case — it is the regression input for lifetimes' stdout pollution; do not
+          # swap it for a convergent sample.
+          printf '%s' '{"rows":[{"frequency":3,"recency":20,"T":30},{"frequency":0,"recency":0,"T":15},{"frequency":5,"recency":40,"T":45},{"frequency":1,"recency":10,"T":25},{"frequency":2,"recency":18,"T":22},{"frequency":4,"recency":30,"T":35},{"frequency":0,"recency":0,"T":12},{"frequency":6,"recency":50,"T":60},{"frequency":1,"recency":8,"T":14},{"frequency":3,"recency":25,"T":28},{"frequency":2,"recency":14,"T":20},{"frequency":7,"recency":55,"T":70}]}' | python scripts/tau/bgnbd_fit.py > negative.json
+          python -c 'import json; lines = open("negative.json").read().strip().splitlines(); assert len(lines) == 1, lines; e = json.loads(lines[0]); assert e["ok"] is True; assert e["converged"] is False, e; print("negative envelope ok:", e.get("error"))'
         shell: bash
