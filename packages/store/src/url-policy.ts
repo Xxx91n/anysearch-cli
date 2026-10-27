@@ -29,7 +29,7 @@ export function parseEnvOverrideSwitch(raw: string | undefined | null): boolean 
   );
 }
 
-// audit M2: env entries validated to the same bar as TOML (D7 equal strictness).
+// env entries validated to the same bar as TOML (D7 equal strictness).
 export function parseEnvHosts(raw: string | undefined | null): string[] {
   const entries = (raw ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   const bad = entries.filter((h) => !HOSTNAME_RE.test(h));
@@ -185,7 +185,7 @@ export function createDomainReloader(tomlPath: string): () => DomainSchema | nul
       lastMtime = mtime;
       return schema;
     } catch (e) {
-      // D3/OPA bad-bundle semantics: keep last known good, but signal it (audit M3:
+      // D3/OPA bad-bundle semantics: keep last known good, but signal it (because
       // old policy persisting silently leaves new deny entries dead with zero trace).
       if (warnedMtime !== mtime) {
         warnedMtime = mtime;

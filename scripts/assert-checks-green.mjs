@@ -27,7 +27,7 @@
 // (okCount === latest.size): a completed check carrying an unmodelled
 // conclusion (e.g. "stale") is neither bad nor pending, and must NOT be
 // counted as green — it converges to the fail-closed completion-timeout
-// leg instead (audit F-S1).
+// leg instead.
 // - macos-spillover-probe (EXPERIMENT, non-blocking) and native-smoke are
 // deliberately outside the gate.
 //

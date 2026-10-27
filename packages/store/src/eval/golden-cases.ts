@@ -180,7 +180,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
   },
   // --- Group 2: temporal expiry (valid_until bi-temporal closing, 2) ---
   // NOTE: this group covers bi-temporal close-out only, NOT decay scoring — decay (G019) is P2
-  // and currently has NO gate coverage (round63 atomcode audit finding 6).
+  // and currently has NO gate coverage.
   {
     id: "te_valid_until_set", group: "temporal",
     description: "supersede closes old record via valid_until (bi-temporal)",
@@ -912,7 +912,7 @@ export const ABSTAIN_CASES: CaseSpec[] = [
   },
 ];
 
-// r59 errata: the vector arm (group "semantic") needs the real embedding
+// the vector arm (group "semantic") needs the real embedding
 // model, so its golden cases are NOT part of the offline default suite - they live behind
 // `test:online` (hermetic-by-default). The DATASET is unchanged (the committed
 // baseline fingerprint stays valid); only the offline RUN excludes the group, and the exclusion

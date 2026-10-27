@@ -52,7 +52,7 @@ function listSrcFiles(dir: string): string[] {
 
 // Strip line/block comments and `typeof import("…")` type queries (type-level,
 // erased at compile time — the legal usage on the TransformersModule typedef).
-// Known residual blind spot (audit , documented not fixed): a "//" inside
+// Known residual blind spot (documented not fixed): a "//" inside
 // a same-line string literal makes the naive stripper eat the rest of that line,
 // hiding an import appended after it. Accepted deliberately — separating "//"
 // from a /regex/ opener needs a real tokenizer, and this guard exists to catch
@@ -141,8 +141,8 @@ async function main(): Promise<void> {
   console.log(`ghost-dep guard (a): ${files.length} src file(s) clean — ${SPEC} reachable only via createRequire().require()`);
 
   // Guard (a′): violation corpus — every sample MUST be flagged, and the legal
-  // forms MUST NOT. Permanent CI self-proof that the escapes go red (audit
-  // closed three escape paths found by a 14-case external probe).
+  // forms MUST NOT. Permanent CI self-proof that the escapes go red (three escape
+  // paths found by a 14-case external probe).
   const violations: [string, string][] = [
     [`import { pipeline } from "${SPEC}";`, "static import-from"],
     [`import "${SPEC}";`, "side-effect import"],

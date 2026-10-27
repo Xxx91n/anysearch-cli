@@ -31,7 +31,7 @@ function canonicalVersion(allow: readonly string[], deny: readonly string[]): st
   return createHash("sha256").update(JSON.stringify({ allow: canon(allow), deny: canon(deny) })).digest("hex");
 }
 
-// audit M4: cache integrity self-check — the sha256 of the content must match
+// cache integrity self-check — the sha256 of the content must match
 // the self-declared policy_version before the cache is trusted (a damaged drop-in is rejected).
 function usableCache(parsed: Partial<PolicyCache>): PolicyCache | null {
   if (!Array.isArray(parsed.allow) || !Array.isArray(parsed.deny) || typeof parsed.policy_version !== "string") return null;

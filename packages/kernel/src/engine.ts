@@ -350,7 +350,7 @@ export class RetroaererdEngine {
     const hasLedger = !!(this.ledger && this.sessionId);
     if (hasLedger) {
       // 2C: per-call cost = 1 unit per provider. Coarse upper bound, settle actual.
-      // P2-3 round-47 fix: answer mode doubles cost for answer-capable providers
+      // answer mode doubles cost for answer-capable providers
       // (Exa answer() is a second upstream /answer call). Reserve 2 units per such provider
       // when mode === "answer"; other modes keep the 1-per-provider upper bound.
       const perCallEstimate = q.mode === "answer"

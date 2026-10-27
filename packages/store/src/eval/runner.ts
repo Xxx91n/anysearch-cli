@@ -906,7 +906,7 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
 
 export async function runAll(cases: CaseSpec[], opts?: { excludeGroups?: readonly EvalGroup[] }): Promise<EvalReport> {
   assertParaphraseSlice(cases);
-  // r59 errata: the vector arm needs the real embedding model, so the
+  // the vector arm needs the real embedding model, so the
   // offline default run excludes its group. The RUN slice is filtered; the dataset fingerprint
   // below stays over the FULL cases, so the committed baseline remains valid.
   const excluded = new Set(opts?.excludeGroups ?? []);

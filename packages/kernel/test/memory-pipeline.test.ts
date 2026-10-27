@@ -503,7 +503,7 @@ console.log(`MemoryPipeline tests: ${passed} passed, ${failed} failed`);
   assertPure(r.state.consecutiveReuses === 0, "pure: cap-forced compress resets consecutiveReuses");
 }
 
-// audit Fix #2: {fraction} in TOML is currently rejected at caller, not pure fn.
+// {fraction} in TOML is currently rejected at caller, not pure fn.
 // Pure fn must still accept absolute lowWatermark; assert opts pass-through wins.
 {
   const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };

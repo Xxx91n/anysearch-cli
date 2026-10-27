@@ -233,7 +233,7 @@ test("routing card 4-block structure in shared module", () => {
 testAsync("Server: /health endpoint returns 200", async () => {
   const { spawn } = await import("node:child_process");
   const net = await import("node:net");
-  // + N-1 (audit rework): start the server with the same node + tsx loader
+  // start the server with the same node + tsx loader
   // the runner uses - never via `npx` (registry fallback) and never with a stdin
   // pipe. Also never on a FIXED port with a FIXED startup sleep: a fixed port +
   // fixed 2000 ms wait is load-sensitive, and under a loaded machine (ship-gate

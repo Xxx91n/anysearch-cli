@@ -133,7 +133,7 @@ Is the returned snippet a plausible, relevant hit?`, { baseUrl, model, apiKey })
   const ac1 = gwetAC1(pairs);
   const [lo, hi] = kappaBootstrapCI(pairs, boot);
   const fmt = (x) => (Number.isFinite(x) ? x.toFixed(3) : "NaN");
-  // (audit r67): kappa CI lower bound >= 0.6 is the ONLY pass channel.
+  // kappa CI lower bound >= 0.6 is the ONLY pass channel.
   // A degenerate all-same-label cohort (kappa=NaN, po=1) is a setup failure, not perfect calibration.
   const degenerate = po === 1 && !Number.isFinite(kappa);
   if (degenerate) process.stderr.write("eval-calibrate: degenerate cohort (all labels identical, kappa undefined) -- treat as FAIL\n");

@@ -167,7 +167,7 @@ function failUnverifiable(msg) {
 // through the real SqliteSessionStore write path, verified via an explicit --db argument.
 // Pass requires exit 0 AND JSON verdict "PASSED" (CVE-2025-25204 lesson); gate-built track
 // additionally requires chainedRows >= 1 — an empty chain must not render green (Sigstore:
-// absent evidence must fail-closed; "empty gate must be loud", r106 audit ). The skip ledger
+// absent evidence must fail-closed; "empty gate must be loud"). The skip ledger
 // is retained as defense-in-depth for the remaining exit-2 surface.
 function stepAccessChainVerify() {
   const verifyScript = path.join(ROOT, "scripts", "verify-access-events.mjs");
@@ -233,7 +233,7 @@ function stepStaticAssertions() {
     );
     // due-chore: hard pin — every workspace package must be exactly the
     // release version (the release candidate), not merely "not 0.0.0".
-    // Bump this pin in the same commit as the package version bump (audit ).
+    // Bump this pin in the same commit as the package version bump.
     if (pkg.version !== "0.1.2") {
       fail(`${rel}/package.json not pinned at 0.1.2 (got ${pkg.version}) — release pin`);
     }
@@ -785,7 +785,7 @@ function stepStaticAssertions() {
   // .scratch/grill-round-80/evidence/e6-matrix.md — verdict-cache
   // contamination is the residual same-machine edge, CI always re-verifies).
   {
-    // r80-audit F-B: comment/quote-normalized scan — 'k: v # note', quoted
+    // comment/quote-normalized scan — 'k: v # note', quoted
     // scalars, and comment lines inside the exclude list all escaped the
     // naive regexes. Strip yaml comments (whole-line + ' #' inline) first,
     // then require literal unquoted scalar forms — anything else fails closed.
@@ -850,7 +850,7 @@ function stepZeroInvariants() {
 
   // (b) clean-tree invariant - a release verdict requires a committed tree (prism-coder precedent).
   const st = spawnSync("git", ["status", "--porcelain"], { cwd: ROOT, encoding: "utf8" });
-  // A non-zero git exit (e.g. git missing) must fail closed, not pass on empty stdout (round-58 audit C-2).
+  // A non-zero git exit (e.g. git missing) must fail closed, not pass on empty stdout.
   if (st.status !== 0) failUnverifiable("clean-tree invariant: git status --porcelain failed (exit" + st.status + ") - cannot verify a committed tree");
   const dirty = (st.stdout ?? "").trim();
   if (dirty) fail("clean-tree invariant violated (b): git status --porcelain is not empty:\n" + dirty.split("\n").slice(0, 10).join("\n"));
@@ -996,7 +996,7 @@ async function stepInstallVerify(tgzDir, tmpDir, { skipMatrix }) {
     // packed manifest's install-time fields. @anysearch-cli/embedding rides as an optional peer
     // (peerDependenciesMeta.optional), never optionalDependencies (the 404/auto-install bomb).
     {
-      // r80-audit O4: dsh-plugin joins the publish set (license/repo/access/workspace:/bundled-deps
+      // dsh-plugin joins the publish set (license/repo/access/workspace:/bundled-deps
       // asserted on its packed manifest too); the peer-optional embedding contract applies only to
       // the three consumers — dsh-plugin carries zero runtime deps by invariant (1s leg).
       const PUBLISH_SET = ["@anysearch-cli/cli", "@anysearch-cli/mcp", "@anysearch-cli/plugin", "@anysearch-cli/embedding", "@anysearch-cli/dsh-plugin"];
@@ -1190,7 +1190,7 @@ async function stepMemoryEval() {
   report("info", "step 7: memory eval harness gate");
   const outDir = path.join(ROOT, ".ship-gate");
   fs.mkdirSync(outDir, { recursive: true });
-  // round-59 audit R-2 /: the gate is offline-deterministic. The vector-arm slice
+  // the gate is offline-deterministic. The vector-arm slice
   // is excluded here (it needs the embedding model) and re-established by the CI test-online job
   // (.github/workflows/ci.yml). The dataset fingerprint is unaffected (runAll keeps it full).
   const evalArgs = ["--import", "tsx", path.join("src", "eval", "cli.ts"), "--out", outDir, "--offline"];

@@ -1,4 +1,4 @@
-// golden: hook readPolicy pull-through semantics (+ audit M3 signal, M4 integrity).
+// golden: hook readPolicy pull-through semantics (+ cache integrity, failing-server fallback).
 // Run: npx tsx apps/plugin/test/policy.test.ts
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -68,7 +68,7 @@ async function main() {
   const dAsk = await makePreToolUseDecision(input("https://other.example/x"));
   assert("unallowed host -> ask", dAsk.permission === "ask");
 
-  // 4. (audit M4) tampered cache: content replaced but self-declared version kept -> rejected
+  // 4. tampered cache: content replaced but self-declared version kept -> rejected
   writeCache({ allow: [], deny: [], policy_version: goodPolicy.policy_version });
   const p4 = await readPolicy(DEAD, "");
   assert("tampered cache (hash mismatch) -> null, fail-closed", p4 === null);
@@ -76,7 +76,7 @@ async function main() {
   // restore the good cache for the remaining steps
   writeCache(goodPolicy);
 
-  // 5. (audit M4) server reachable: fresh response is authoritative even when versions match
+  // 5. server reachable: fresh response is authoritative even when versions match
   const fresh = { allow: ["fresh.example"], deny: [], policy_version: canonicalVersion(["fresh.example"], []) };
   await withServer(200, fresh, async (url) => {
     // poison the cache
@@ -85,7 +85,7 @@ async function main() {
     assert("server reachable -> fresh wins (no version-equal early return)", p !== null && p.allow.join() === "fresh.example");
   });
 
-  // 6. (audit M3) server reachable but failing (5xx): falls back to good cache, not null
+  // 6. server reachable but failing (5xx): falls back to good cache, not null
   await withServer(500, { error: "policy parse failed" }, async (url) => {
     writeCache(goodPolicy);
     const p = await readPolicy(url, "");

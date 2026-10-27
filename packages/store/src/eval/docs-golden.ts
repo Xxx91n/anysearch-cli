@@ -355,7 +355,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
       if (t.prior_expected_vertical !== undefined && (typeof t.prior_expected_vertical !== "object" || t.prior_expected_vertical === null)) p.push("tombstone.prior_expected_vertical must be an object when present");
       if (e.vertical !== undefined) p.push("tombstoned entry must not carry an injected vertical spec (the prior spec lives in tombstone.prior_spec)");
       if ((e.expected as { vertical?: unknown } | undefined)?.vertical !== undefined) p.push("tombstoned entry must not carry expected.vertical (no live route)");
-      // -audit F3 (b) / §Addendum-A: the tombstone row's expected
+      // the tombstone row's expected
       // block is a dormant declaration ("this cell asserted answer in general"),
       // never a live promise: NO lane selects a tombstoned row (no scope), so
       // per-clause expectations that only lanes can produce are banned here.

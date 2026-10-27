@@ -133,7 +133,7 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
     } catch (e) {
       // configuration errors fail fast — an invalid sources.weights must not be
       // swallowed by the fail-open full-fanout fallback (which exists for missing domains/keys).
-      // rework (audit F1 / addendum): the predicate is the whole
+      // rework: the predicate is the whole
       // "Domain schema:" family, not a single field — a malformed sources.vertical
       // (or urlAllowlist/compaction/…) is the same silent-drop class: the domain
       // is configured but broken, so swallowing it would discard the operator's

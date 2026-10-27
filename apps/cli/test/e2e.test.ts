@@ -190,7 +190,7 @@ async function t(name: string, fn: () => Promise<void>) {
     assert.match(r.out, /"query": "finance"/);
   });
 
-  // rework (audit F1 / addendum): the TOML leg of —
+  // rework: the TOML leg of —
   // a domain file with a malformed sources.vertical must fail fast at the
   // user surface (explicit error, non-zero exit), not silently fall back to
   // full-fanout with the whole domain dropped.

@@ -315,7 +315,7 @@ export class PiAgentRuntime {
         const reloaded = this.domainReloader ? this.domainReloader() : null;
         if (reloaded) (this.opts as { domain: DomainConfigPort }).domain = reloaded as DomainConfigPort;
         // single parse point: kernel consumes the same canonicalize+merge+
-        // strict-switch resolver as server/hooks (audit M1: raw-array reads re-introduced drift).
+        // strict-switch resolver as server/hooks (raw-array reads re-introduced drift).
         const src = (this.opts.domain as { sources?: { urlAllowlist?: string[]; urlDenylist?: string[] } } | undefined)?.sources;
         const policy = resolveUrlPolicy({ tomlHosts: src?.urlAllowlist ?? [], denyHosts: src?.urlDenylist ?? [] });
         if (policy.envHostsIgnored && !this.warnedEnvIgnored) {

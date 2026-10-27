@@ -14,7 +14,7 @@
 // scripts/ship-gate.mjs runs `turbo run test`, whose glob discovers
 // apps/plugin/test/**/*.test.ts. It is also part of apps/plugin's `test`
 // script and of tsconfig.test.json coverage. (An earlier revision of this
-// comment claimed the opposite; corrected per the round-57 closure audit N-3.)
+// comment claimed the opposite; corrected.)
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

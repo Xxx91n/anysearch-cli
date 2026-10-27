@@ -83,7 +83,7 @@ assert(server2 !== server3, "buildServer() returns new instance each call (facto
 }
 
 
-// Test 5 (regression; audit / P7): the charter requires
+// Test 5 (regression): this pins the cold-boot requirement -
 // proving boot works with a COLD HOME (no ~/.anysearch) via the DEFAULT path - i.e.
 // with ANS_DB_PATH UNSET, so resolveDbPath derives ~/.anysearch/anysearch.db from
 // USERPROFILE/HOME. Test 4 sets ANS_DB_PATH, which short-circuits that derivation
