@@ -221,11 +221,13 @@ const DOCS_GOLDEN_URL_RE = /^https?:\/\//;
 // depth, so a prefix-anchored trigger would let `./.scratch/x` dodge the marker),
 // with `\` normalized to `/` (a Windows `.scratch\x` resolves on the author's host
 // and never in CI), and including the bare directory (`.scratch` itself exists
-// locally, absent from a clean checkout). External URLs are exempt — CI can resolve
-// them, so they are live anchors, not history. Consequence, recorded because it is
-// not obvious: the shape side below is root-anchored and forward-slash-only, so
-// every other spelling (`pkg/.scratch/x`, `.scratch\x`, `.scratch`) demands the
-// marker and then cannot satisfy it — always rejected, on purpose.
+// locally, absent from a clean checkout). http(s) URLs are exempt — CI can resolve
+// them, so they are live anchors, not history (every other scheme, `file://` or a
+// scheme-relative `//host/…` included, stays classified as scratch). Consequence,
+// recorded because it is not obvious: the shape side below is root-anchored and
+// forward-slash-only, so every other spelling (`pkg/.scratch/x`, `.scratch\x`,
+// `.scratch`) demands the marker and then cannot satisfy it — always rejected, on
+// purpose.
 export function isScratchRef(ref: unknown): boolean {
   if (typeof ref !== "string" || DOCS_GOLDEN_URL_RE.test(ref)) return false;
   return /(^|\/)\.scratch(\/|$)/.test(ref.replace(/\\/g, "/"));

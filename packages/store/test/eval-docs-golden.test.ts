@@ -109,11 +109,12 @@ for (const e of golden.entries) {
   }
 }
 
-// --- 3c. the trigger is local-only and separator-agnostic -------------------
+// --- 3c. the trigger is local-only, separator-agnostic, and covers the bare
+// .scratch directory ----------------------------------------------------------
 // CodeRabbit #80 rounds 1–2 (every finding reproduced against the code first): these
 // three spellings have no corpus row, so 3b's validator-level negatives can't reach
 // them — 3c pins the classification they must land in, and the validator consequences
-// ride on the same rule 1 / rule 2 that 3b already pins on real entries.
+// ride on the marker rule and the shape rule that 3b already pins on real entries.
 assert(
   !isScratchRef("https://example.com/.scratch/guide"),
   "an external URL containing /.scratch/ is not classified as a local scratch ref"
