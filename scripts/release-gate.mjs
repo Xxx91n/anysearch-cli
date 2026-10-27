@@ -45,9 +45,9 @@ function preTag() {
   ok("pre-tag decision-grade peek (the only place an OF look is spent)");
   // round-59 audit (resolved as an explicit, rationale-backed waiver - NOT a code change):
   // this release peek INTENTIONALLY runs the FULL golden set (no --offline). The offline boundary
-  // (r59 errata) governs the merge/default suites; narrowing the release
-  // decision to the offline slice would be exactly the coverage downgrade the errata's
-  // anti-downgrade clause forbids. release.yml runs on a network-enabled runner, so the vector arm
+  // governs the merge/default suites; narrowing the release
+  // decision to the offline slice would be exactly the coverage downgrade this waiver's
+  // rationale forbids. release.yml runs on a network-enabled runner, so the vector arm
   // resolves here; its offline-scoped coverage is exercised by the ci.yml `test-online` job.
   const res = spawnSync(
     process.execPath,

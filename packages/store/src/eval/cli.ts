@@ -50,7 +50,7 @@ function toMarkdown(report: EvalReport, baseline: EvalBaseline | null, failures:
     "",
     "| metric | value |",
     "|---|---|",
-    // synthetic runs must carry the simulated-observation-window label (r108 errata D6).
+    // synthetic runs must carry the simulated-observation-window label.
     `| observation track | ${m.observational?.track ?? "consumed"}${m.observational?.simulatedObservationWindow ? " (simulated-observation-window)" : ""} |`,
     `| mrr (rank-of-relevant) | ${m.mrr.toFixed(3)} |`,
     `| answerableFalseRefusalRate | ${m.answerableFalseRefusalRate.toFixed(3)} |`,
@@ -160,7 +160,7 @@ async function main(): Promise<number> {
   const calibrateIdx = args.indexOf("--calibrate");
   const decisionIdx = args.indexOf("--decision");
   const overrideIdx = args.indexOf("--override");
-  // r59 errata: --offline drops the vector-arm group (needs the model).
+  // --offline drops the vector-arm group (needs the model).
   const offline = args.includes("--offline");
   const overrideReason = overrideIdx >= 0 ? args[overrideIdx + 1] : undefined;
   const outIdx = args.indexOf("--out");
@@ -340,7 +340,7 @@ async function main(): Promise<number> {
       : join(os.homedir(), ".anysearch", "anysearch.db");
     const gateBoundary = decisionIdx >= 0 || overrideIdx >= 0;
     const probe = gateBoundary ? probeSwitchIntegrity(outDir, swDb) : null;
-    // r115 audit S1: build the verdict AFTER the probe runs and AFTER advanceSwitch has
+    // build the verdict AFTER the probe runs and AFTER advanceSwitch has
     // returned. Default the verdict to failed for decision-grade runs and to pass for
     // observational runs; advanceSwitch only ever flips a decision-grade verdict to
     // failed on its own failure paths.

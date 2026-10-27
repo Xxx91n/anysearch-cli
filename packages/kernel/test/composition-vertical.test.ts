@@ -1,4 +1,4 @@
-// rework (audit F1 / addendum): composition-root fail-fast for
+// rework: composition-root fail-fast for
 // malformed domain TOML — a `Domain schema:` error (e.g. an unknown key under
 // sources.vertical) must propagate, not be swallowed into silent full-fanout.
 // Missing domains stay fail-open (absent ≠ broken).

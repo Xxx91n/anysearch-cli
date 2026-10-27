@@ -912,7 +912,7 @@ export const ABSTAIN_CASES: CaseSpec[] = [
   },
 ];
 
-// r59 errata: the vector arm (group "semantic") needs the real embedding
+// the vector arm (group "semantic") needs the real embedding
 // model, so its golden cases are NOT part of the offline default suite - they live behind
 // `test:online` (hermetic-by-default). The DATASET is unchanged (the committed
 // baseline fingerprint stays valid); only the offline RUN excludes the group, and the exclusion

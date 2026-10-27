@@ -81,7 +81,7 @@ async function main() {
     "research_web require-domain golden (params only)",
   );
 
-  // audit F-a (① addendum): whitespace-only domain counts as
+  // whitespace-only domain counts as
   // absent — minLength:1 lets " " through AJV, so this leg is the shared
   // function's defensive floor, pinned here as the legislated behavior.
   res = (await swHandler!({ query: "x", verticalDomain: " ", verticalSubDomain: "earnings" })) as any;

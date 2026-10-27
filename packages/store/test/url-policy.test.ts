@@ -111,7 +111,7 @@ const future = Date.now() / 1000 + 2;
 utimesSync(tomlPath, future, future);
 const reloaded = rel();
 assert("reloader: changed mtime -> reloaded schema", reloaded === null ? false : (reloaded.sources.urlAllowlist ?? []).join(",") === "ok2.example.com");
-// --- audit M2: hostname format validation (fail-closed at load, D7 equal strictness) ---
+// --- hostname format validation (fail-closed at load, D7 equal strictness) ---
 {
   let threw2 = "";
   try { parseEnvHosts("ok.example.com,https://evil.com"); } catch (e) { threw2 = (e as Error).message; }
@@ -120,7 +120,7 @@ assert("reloader: changed mtime -> reloaded schema", reloaded === null ? false :
 }
 assert("valid env host lists pass unchanged", parseEnvHosts(" A.com ,b.com ").join(",") === "a.com,b.com");
 
-// --- audit M3: bad TOML -> keep last known good + explicit stderr WARN (once per change) ---
+// --- bad TOML -> keep last known good + explicit stderr WARN (once per change) ---
 writeFileSync(tomlPath, "not = [valid toml", "utf8");
 const future2 = Date.now() / 1000 + 4;
 utimesSync(tomlPath, future2, future2);

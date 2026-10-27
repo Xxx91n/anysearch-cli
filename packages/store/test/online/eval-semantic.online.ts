@@ -1,4 +1,4 @@
-// r59 errata: the vector-arm slice needs the real embedding model, so it is
+// the vector-arm slice needs the real embedding model, so it is
 // online-gated (hermetic-by-default). The default suite excludes it; this file is
 // discovered only by `test:online` (the default glob is **/*.test.ts|mjs).
 // pnpm -C packages/store test:online

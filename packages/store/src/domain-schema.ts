@@ -152,7 +152,7 @@ export function resolve(
   };
 }
 
-// audit M2: entries are hostnames only — no scheme/port/wildcard. A malformed
+// entries are hostnames only — no scheme/port/wildcard. A malformed
 // entry could never match a real host and would silently deaden allow/deny.
 export const HOSTNAME_RE = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/;
 

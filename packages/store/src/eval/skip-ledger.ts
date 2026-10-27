@@ -183,7 +183,7 @@ export function recordSkips(
   if (sorted.length === 0) {
     ledger.consecutiveWarn = 0;
     ledger.lastSkipKeys = [];
-    // r115 audit S5/C5: evaluation cadence is the count of evaluation rounds, not access
+    // evaluation cadence is the count of evaluation rounds, not access
     // events. The orchestrator seeds evaluationCount from the ledger's readiness actions
     // ring; advanceSwitch takes care of incrementing it elsewhere, so nothing to do here.
     ledger.history = [...ledger.history, { at, tier: "green", look: "", track }].slice(-20);
@@ -228,7 +228,7 @@ export function tailStreak(actions: SwitchActionEntry[], pred: (a: SwitchActionE
 function ledgerPathFor(outDir: string): string { return join(outDir, "skip-ledger.json"); }
 function lockPathFor(outDir: string): string { return join(outDir, ".skip-ledger.lock"); }
 
-// r115 audit S6: under Windows file-locking semantics a still-running owner cannot be
+// under Windows file-locking semantics a still-running owner cannot be
 // rmSync'd from a sibling, leaving a stuck lock file. The default lock max age (5 minutes)
 // bounds the recovery window without making healthy locks flappable.
 const LOCK_MAX_AGE_MS = 5 * 60 * 1000;

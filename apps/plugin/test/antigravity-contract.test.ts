@@ -40,7 +40,7 @@ async function testAsync(name: string, fn: () => Promise<void>) {
 const PLUGIN_ROOT = join(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 const AGY_ADAPTER = join(PLUGIN_ROOT, "dist", "hooks", "adapters", "antigravity.cjs");
 
-// audit F-A2: the hook's cwd fallback (workspacePaths[0] -> stdin.cwd ->
+// the hook's cwd fallback (workspacePaths[0] -> stdin.cwd ->
 // process.cwd()) writes .antigravity/rules/anysearch.mdc. Spawning without an
 // explicit cwd made payloads lacking workspacePaths (e.g. "{}") drop the .mdc
 // into apps/plugin and poison the clean-tree gate. Every spawn now runs in a
