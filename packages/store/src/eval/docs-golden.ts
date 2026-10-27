@@ -225,7 +225,8 @@ const DOCS_GOLDEN_URL_RE = /^https?:\/\//;
 // uppercase spelling names an anchor whose existence depends on the contributor's
 // filesystem). It stays segment-bounded, so `.scratchpad` is still a live path.
 // Lowercase http(s) URLs are exempt: CI resolves them, so they are live anchors, not
-// history. Everything else stays classified as scratch — any other scheme (`file://`,
+// history. Every other ref pointing into a `.scratch` segment stays classified as
+// scratch — any other scheme (`file://`,
 // scheme-relative `//host/…`) and any other spelling of the scheme too, since
 // `DOCS_GOLDEN_URL_RE` is exactly the shape the external-community rule already
 // accepts. Consequence, recorded because it is not obvious: the shape side below is
