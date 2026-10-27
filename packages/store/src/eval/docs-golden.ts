@@ -224,9 +224,11 @@ const DOCS_GOLDEN_URL_RE = /^https?:\/\//;
 // `.SCRATCH/x` IS the ignored directory — `git check-ignore` proves it — so an
 // uppercase spelling names an anchor whose existence depends on the contributor's
 // filesystem). It stays segment-bounded, so `.scratchpad` is still a live path.
-// http(s) URLs are exempt: CI resolves them, so they are live anchors, not history —
-// any other scheme (`file://`, scheme-relative `//host/…`) stays classified as
-// scratch. Consequence, recorded because it is not obvious: the shape side below is
+// Lowercase http(s) URLs are exempt: CI resolves them, so they are live anchors, not
+// history. Everything else stays classified as scratch — any other scheme (`file://`,
+// scheme-relative `//host/…`) and any other spelling of the scheme too, since
+// `DOCS_GOLDEN_URL_RE` is exactly the shape the external-community rule already
+// accepts. Consequence, recorded because it is not obvious: the shape side below is
 // root-anchored, forward-slash-only and lowercase, so `pkg/.scratch/x`, `.scratch\x`,
 // `.SCRATCH/x` and a bare `.scratch` each demand the marker and then cannot satisfy it
 // — always rejected, on purpose. Canonical `.scratch/<path>` is the only history form.

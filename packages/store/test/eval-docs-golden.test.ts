@@ -109,8 +109,8 @@ for (const e of golden.entries) {
   }
 }
 
-// --- 3c. the trigger is local-only, separator-agnostic, case-insensitive, and
-// covers the bare .scratch directory ------------------------------------------
+// --- 3c. the trigger is local-only, separator-agnostic, case-insensitive,
+// segment-bounded, and covers the bare .scratch directory ---------------------
 // CodeRabbit #80 rounds 1–3 (every finding reproduced against the code first): these
 // spellings have no corpus row, so 3b's validator-level negatives can't reach them —
 // 3c pins the classification they must land in, and the validator consequences
