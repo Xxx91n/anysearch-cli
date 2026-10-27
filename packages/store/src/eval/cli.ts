@@ -137,7 +137,7 @@ async function main(): Promise<number> {
   // hard wall-clock watchdog (default 600s, EVAL_TIMEOUT_MS overrides).
   const envTimeout = process.env.EVAL_TIMEOUT_MS;
   const timeoutMs = envTimeout === undefined ? 600_000 : Number(envTimeout);
-  // audit r67: an invalid override must fail loudly, not silently unset the watchdog.
+  // an invalid override must fail loudly, not silently unset the watchdog.
   if (envTimeout !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
     console.error("EVAL_TIMEOUT_MS invalid: " + JSON.stringify(envTimeout));
     process.exit(2);

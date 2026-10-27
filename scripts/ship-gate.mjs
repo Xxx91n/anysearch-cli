@@ -167,7 +167,7 @@ function failUnverifiable(msg) {
 // through the real SqliteSessionStore write path, verified via an explicit --db argument.
 // Pass requires exit 0 AND JSON verdict "PASSED" (CVE-2025-25204 lesson); gate-built track
 // additionally requires chainedRows >= 1 — an empty chain must not render green (Sigstore:
-// absent evidence must fail-closed; "empty gate must be loud", r106 audit ). The skip ledger
+// absent evidence must fail-closed; "empty gate must be loud"). The skip ledger
 // is retained as defense-in-depth for the remaining exit-2 surface.
 function stepAccessChainVerify() {
   const verifyScript = path.join(ROOT, "scripts", "verify-access-events.mjs");
@@ -233,7 +233,7 @@ function stepStaticAssertions() {
     );
     // due-chore: hard pin — every workspace package must be exactly the
     // release version (the release candidate), not merely "not 0.0.0".
-    // Bump this pin in the same commit as the package version bump (audit ).
+    // Bump this pin in the same commit as the package version bump.
     if (pkg.version !== "0.1.2") {
       fail(`${rel}/package.json not pinned at 0.1.2 (got ${pkg.version}) — release pin`);
     }

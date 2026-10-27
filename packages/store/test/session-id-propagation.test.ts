@@ -43,7 +43,7 @@ function check(label: string, cond: boolean) {
 
 async function main() {
   // --- 1) Schema parity: v0 fresh vs v1 upgrade converge to same shape ---
-  // N-2 (audit rework): descA is hoisted so the migrated-vs-fresh parity
+  // descA is hoisted so the migrated-vs-fresh parity
   // assertion below can compare against it instead of comparing descB to itself.
   let descA: ReturnType<SqliteObservationStore["describeSchema"]>;
   {

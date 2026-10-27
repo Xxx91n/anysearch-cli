@@ -105,14 +105,14 @@ async function main() {
   assert(result6.metadata.providerAnswers?.length === 1, "providerAnswers collected");
   assert(result6.metadata.providerAnswers?.[0].provider === "answer-provider", "providerAnswers attribution");
   assert(result6.metadata.providerAnswers?.[0].text === "42", "providerAnswers text");
-  // round-47 fix: verified=false marker MUST be on the contract item (consumer layer trusts contract).
+  // verified=false marker MUST be on the contract item (consumer layer trusts contract).
   assert(result6.metadata.providerAnswers?.[0].verified === false, "providerAnswers verified=false locked");
   assert(result6.metadata.answersAvailable === true, "answersAvailable true when answers present");
   // answers must NOT inflate sufficiency — sufficiency computed from results only.
   // With a single provider + single result the verdict cannot be promoted by answers.
   assert(result6.metadata.sufficiency?.volume.uniqueResults === 1, "sufficiency ignores answers (uniqueResults=1)");
 
-  // 6b. (round-47): capability-based answersAvailable — false when no queried provider declares mode:answer.
+  // 6b. capability-based answersAvailable — false when no queried provider declares mode:answer.
   // Build a fast-only mock on the spot (mockProvider() declares all modes by default).
   const fastOnly: import("@anysearch-cli/retriever").SearchProvider = {
     id: "fast-only",

@@ -116,7 +116,7 @@ export interface ProviderEnvelope {
   provider: string;
   results: NormalizedResult[];
   answers?: string[]; // for "answer" mode providers
-  // round-47 fix: parallel provider-attributed answers with optional citations.
+  // parallel provider-attributed answers with optional citations.
   // answers and answersMeta must have the same length when both are populated; the engine
   // aligns per-index and prefers answersMeta over re-deriving provider attribution.
   // Answers remain text-only in FusedEnvelope.answers; provenance moves to metadata.providerAnswers.
@@ -251,7 +251,7 @@ export interface FusedEnvelope {
     // per-provider answer attribution for transparency
     // without restructuring envelope.answers (stays string[]).
     // D2: verified=false locked in at contract layer (single source of truth); consumers must not re-stamp.
-    // D3-D4 round-47 fix: optional provider citations for transparency (Exa supplies; Tavily grounding is same-batch).
+    // D3-D4: optional provider citations for transparency (Exa supplies; Tavily grounding is same-batch).
     providerAnswers?: ProviderAnswer[];
     // capability marker, computed from provider.modes (NOT output).
     // False when no queried provider advertises answer mode support

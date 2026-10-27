@@ -56,7 +56,7 @@ const timeoutRun = await new Promise((resolve) => {
   p.stderr.on("data", (d) => (err += d));
   p.on("close", (code) => resolve({ code, err }));
 });
-// tighten (audit r67 P2-4): lock the exit-code contract, not just "nonzero"
+// tighten: lock the exit-code contract, not just "nonzero"
 a(timeoutRun.code === 124); // watchdog exit code
 a(timeoutRun.err.includes("TIMEOUT"));
 console.log("timeout self-check exit=124 stderr has TIMEOUT: ok");
@@ -76,7 +76,7 @@ a(badEnvRun.code === 2);
 a(badEnvRun.err.includes("EVAL_TIMEOUT_MS invalid"));
 console.log("invalid EVAL_TIMEOUT_MS -> exit 2: ok");
 
-// degenerate cohort (audit r67 P2-1): all labels identical -> kappa NaN -> decision fail, NOT po===1 pass
+// degenerate cohort: all labels identical -> kappa NaN -> decision fail, NOT po===1 pass
 const degRun = await new Promise((resolve) => {
   const calib = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "scripts", "eval-calibrate.mjs");
   const p = spawn("node", [calib, "--human", "1,1,1,1,1,1,1,1,1,1", "--judge", "1,1,1,1,1,1,1,1,1,1", "--boot", "200", "--out", path.join(os.tmpdir(), "eval-calibrate-degenerate-test.json")], {

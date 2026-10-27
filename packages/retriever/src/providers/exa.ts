@@ -50,7 +50,7 @@ export class ExaProvider implements SearchProvider {
     }));
 
     // answer mode: use exa.answer() separately.
-    // round-47 fix: surface citations (Exa returns answer+citations paired)
+    // surface citations (Exa returns answer+citations paired)
     // and log answer() failure to stderr instead of silent-swallow (failure must be visible;
     // search results still return unblocked per ponytail fail-open).
     const answers: string[] = [];

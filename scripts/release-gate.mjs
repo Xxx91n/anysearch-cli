@@ -43,7 +43,7 @@ function latestRow(key) {
 
 function preTag() {
   ok("pre-tag decision-grade peek (the only place an OF look is spent)");
-  // round-59 audit (resolved as an explicit, rationale-backed waiver - NOT a code change):
+  // resolved as an explicit, rationale-backed waiver - NOT a code change:
   // this release peek INTENTIONALLY runs the FULL golden set (no --offline). The offline boundary
   // governs the merge/default suites; narrowing the release
   // decision to the offline slice would be exactly the coverage downgrade this waiver's

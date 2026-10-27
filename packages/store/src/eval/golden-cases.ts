@@ -180,7 +180,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
   },
   // --- Group 2: temporal expiry (valid_until bi-temporal closing, 2) ---
   // NOTE: this group covers bi-temporal close-out only, NOT decay scoring — decay (G019) is P2
-  // and currently has NO gate coverage (round63 atomcode audit finding 6).
+  // and currently has NO gate coverage.
   {
     id: "te_valid_until_set", group: "temporal",
     description: "supersede closes old record via valid_until (bi-temporal)",

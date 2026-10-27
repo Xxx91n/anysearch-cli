@@ -165,7 +165,7 @@ export function replaySwitchChain(dbPath: string): ReplayedSwitchChain | null {
       return null;
     }
     ensureAccessChainSourceLabel(db);
-    // legacy r42 event_type values are not in the per-edge
+    // legacy event_type values are not in the per-edge
     // closed set and must fail loud (migrations belong to the operator, not the replay
     // function). Detected up front so the loop below only sees canonical edges.
     const legacy = db.prepare("SELECT id, event_type FROM access_events WHERE event_type IN ('stage-transition','rollback','freeze') AND prev_hash IS NOT NULL LIMIT 1").all() as { id: number; event_type: string }[];
