@@ -212,14 +212,23 @@ export interface CoverageManifest {
 // ctrl-NNNN (control-class entries asserting the silent-fallback surface).
 export const DOCS_GOLDEN_ID_RE = /^(docs-g\d{4}|vert-[a-z]\d{4}|ctrl-[a-z]?\d{3,4})$/;
 
+// shape test for an external (URL) ref — one literal, used by the
+// external-community rule and by the scratch trigger's local-only carve-out.
+const DOCS_GOLDEN_URL_RE = /^https?:\/\//;
+
 // Design: the scratch trigger matches `.scratch/` at any path position — .gitignore
 // ignores the directory at every depth, so anchoring the trigger to the prefix would
-// leave `./.scratch/x` as a spelling that dodges the marker. The consequence is
-// recorded because it is not obvious: the shape side below is anchored at the repo
-// root, so a nested spelling (`pkg/.scratch/x`) can be neither unmarked nor marked —
-// it is always rejected. Only root-relative `.scratch/` history is representable.
+// leave `./.scratch/x` as a spelling that dodges the marker. It classifies LOCAL refs
+// only (an external URL is resolvable from CI, so `https://example.com/.scratch/guide`
+// is a live anchor, not untracked history) and normalizes `\` to `/` first, because a
+// Windows-style `.scratch\x` resolves on the author's host while a clean checkout
+// never sees it. The consequence is recorded because it is not obvious: the shape side
+// below is root-anchored and forward-slash-only, so a nested spelling (`pkg/.scratch/x`)
+// can be neither unmarked nor marked — it is always rejected. Only root-relative
+// `.scratch/` history is representable.
 export function isScratchRef(ref: unknown): boolean {
-  return typeof ref === "string" && /(^|\/)\.scratch\//.test(ref);
+  if (typeof ref !== "string" || DOCS_GOLDEN_URL_RE.test(ref)) return false;
+  return /(^|\/)\.scratch\//.test(ref.replace(/\\/g, "/"));
 }
 
 // The shape side: a well-formed repo-relative .scratch path, no parent traversal
@@ -410,7 +419,7 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
   } else {
     if (!DOCS_GOLDEN_PROVENANCE_TYPES.includes(prov.type as "internal-dogfood")) p.push("provenance.type must be internal-dogfood|external-community|constructed|llm-assisted");
     if (typeof prov.ref !== "string" || prov.ref.length < 4) p.push("provenance.ref required");
-    if (prov.type === "external-community" && !/^https?:\/\//.test(prov.ref ?? "")) p.push("external-community ref must be a URL");
+    if (prov.type === "external-community" && !DOCS_GOLDEN_URL_RE.test(prov.ref ?? "")) p.push("external-community ref must be a URL");
     if (prov.refStatus !== undefined && !DOCS_GOLDEN_REF_STATUSES.includes(prov.refStatus)) p.push("provenance.refStatus outside the controlled vocabulary: " + String(prov.refStatus));
     // .scratch refs are unresolvable from a clean checkout, so they may only
     // exist as declared history: both directions are enforced (see Design note).

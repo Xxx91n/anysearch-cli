@@ -109,6 +109,19 @@ for (const e of golden.entries) {
   }
 }
 
+// --- 3c. the trigger is local-only and separator-agnostic -------------------
+// CodeRabbit #80 (both Minor findings reproduced before fixing): a URL that happens
+// to contain /.scratch/ is a live anchor, not untracked history, and a Windows-style
+// .scratch\x resolves on the author's host but never in a clean CI checkout.
+assert(
+  !isScratchRef("https://example.com/.scratch/guide"),
+  "an external URL containing /.scratch/ is not classified as a local scratch ref"
+);
+assert(
+  isScratchRef(".scratch\\grill-round-99\\handoffs\\next-round.md"),
+  "a backslash spelling of .scratch is still classified as a scratch ref"
+);
+
 // --- 4. both provenance classes are exercised --------------------------------
 const provTypes = new Set(golden.entries.map((e) => e.provenance.type));
 assert(provTypes.has("internal-dogfood"), "at least one internal-dogfood entry");
