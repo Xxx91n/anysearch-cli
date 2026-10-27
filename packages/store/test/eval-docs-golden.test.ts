@@ -110,9 +110,10 @@ for (const e of golden.entries) {
 }
 
 // --- 3c. the trigger is local-only and separator-agnostic -------------------
-// CodeRabbit #80 (both Minor findings reproduced before fixing): a URL that happens
-// to contain /.scratch/ is a live anchor, not untracked history, and a Windows-style
-// .scratch\x resolves on the author's host but never in a clean CI checkout.
+// CodeRabbit #80 rounds 1–2 (every finding reproduced against the code first): these
+// three spellings have no corpus row, so 3b's validator-level negatives can't reach
+// them — 3c pins the classification they must land in, and the validator consequences
+// ride on the same rule 1 / rule 2 that 3b already pins on real entries.
 assert(
   !isScratchRef("https://example.com/.scratch/guide"),
   "an external URL containing /.scratch/ is not classified as a local scratch ref"
@@ -120,6 +121,10 @@ assert(
 assert(
   isScratchRef(".scratch\\grill-round-99\\handoffs\\next-round.md"),
   "a backslash spelling of .scratch is still classified as a scratch ref"
+);
+assert(
+  isScratchRef(".scratch"),
+  "the bare .scratch directory is classified as a scratch ref (it exists on the author's host, never in CI)"
 );
 
 // --- 4. both provenance classes are exercised --------------------------------
