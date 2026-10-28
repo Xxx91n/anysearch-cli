@@ -16,7 +16,7 @@ The gate is **discipline-based, not mechanical**: branch protection is unavailab
 - Before every merge: run the full `pnpm test` locally and require it green — the red of CI is information, not a blocker.
 - `pre-push` is the real backstop gate (the only hook that actually runs on a real push), but it is not a guarantee; never treat a pushed green as a substitute for a pre-merge green.
 - We deliberately do NOT switch repo visibility or upgrade the GitHub plan (option rejected in #58; recorded in #59).
-- #67 is the empirical ticket: it will prove (via a deliberately failing push) that the pre-push hook really blocks outside `--no-verify`, and the evidence lands in #58.
+- #67 proved (via a deliberately failing push) that the pre-push hook really blocks outside `--no-verify` — evidence: [the #67 closeout comment](https://github.com/Xxx91n/anysearch-cli/issues/67#issuecomment-6431860529).
 
 ## Directory conventions
 - `packages/{kernel,store,retriever,embedding}` core libs; `apps/{cli,mcp,plugin,dsh-plugin}` delivery surfaces; `GLOSSARY.md` terminology authority; `docs/agents/` agent-facing conventions
