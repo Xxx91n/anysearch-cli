@@ -13,7 +13,10 @@ import sys
 
 
 def emit(obj):
-    sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    # ASCII-escaped JSON: Windows runners default stdout to cp1252, and raw non-ASCII
+    # in any envelope string crashed the write there with UnicodeEncodeError (no
+    # envelope at all). Escapes keep stdout a single decodable JSON line everywhere.
+    sys.stdout.write(json.dumps(obj, ensure_ascii=True) + "\n")
 
 
 def main():
@@ -55,6 +58,25 @@ def main():
         return
 
     palive = [float(x) for x in fitter.conditional_probability_alive(frequency, recency, period)]
+
+    # Design: zero-threshold degeneracy rule over the existing JSON `palive` field —
+    # when every conditional probability alive is exactly 1.0, the fit stopped at the
+    # degenerate boundary (a→0, b→∞, churn process suppressed) that scipy BFGS reports
+    # as success on some OpenBLAS CPU kernels and raises ConvergenceError on others for
+    # the identical code tree (CI runs 40558589169 vs 40560481344; optimizer state and
+    # Hessian sign are not usable discriminators — the legitimate CDNOW solution also
+    # has a negative Hessian eigenvalue, while its palive always has values strictly
+    # below 1.0). Classify as data-level non-convergence instead of emitting the
+    # successful-convergence envelope. Evidence: issue #83 (recorded prototype
+    # diagnosis on the unpushed prototype/bgnbd-convergence-probe branch).
+    if all(p == 1.0 for p in palive):
+        # ASCII-only explanation: Windows runners default stdout to cp1252, and the
+        # envelope must stay a single JSON line on every platform (non-ASCII crashed
+        # the emit there with UnicodeEncodeError).
+        emit({"ok": True, "converged": False,
+              "error": "degenerate boundary solution: all palive == 1.0 (a->0, b->inf)"})
+        return
+
     cexp = [float(x) for x in fitter.conditional_expected_number_of_purchases_up_to_time(30, frequency, recency, period)]
 
     # C6 self-validation (Fader-Hardie-Lee 2005): chi-square goodness-of-fit over the
