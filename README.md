@@ -146,9 +146,10 @@ with `urlAllowlist` at all.
   `verticalDomain` / `verticalSubDomain` / `verticalParams` on
   `search_web` + `research_web`; CLI `--vertical-domain` /
   `--vertical-sub-domain` / `--vertical-params '{"k":"v"}'`.
-- Repo default: `[sources] vertical = { domain = "finance", sub_domain = "finance.calendar" }`
-  in the domain TOML (static affinity only — dynamic values like tickers
-  stay query-level).
+- Repo default: `[sources] vertical = { domain = "finance", sub_domain = "calendar" }`
+  in the domain TOML (static affinity only — `params` is not a TOML field;
+  parameterized tags like `calendar` need `sub_domain_params` at query level
+  via `--vertical-params`).
 - Capability-negotiated: only providers declaring `verticalDomainSupported`
   (currently just anysearch) receive the wire fields `domain` /
   `sub_domain` / `sub_domain_params`; others fan out on the general axis
