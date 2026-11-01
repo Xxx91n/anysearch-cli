@@ -4,8 +4,8 @@ The vocabulary and constraint notes below are a **dated snapshot** — the
 live authority is the upstream `get_sub_domains` tool (queried 2026-09-25,
 `https://api.anysearch.com/mcp`); the client intentionally ships no enum
 copy. Local validation checks *shape only* (non-empty strings / Record) —
-invalid `sub_domain` or missing required `sub_domain_params` come back as
-upstream `isError`, which degrades the anysearch arm fail-first (never a
+invalid `sub_domain` values or missing required `sub_domain_params` produce
+an upstream `isError`; the anysearch arm uses fail-first degradation (never a
 silent zero-result envelope).
 
 The 17 top-level domain values (enum on `search.domain`):

@@ -146,7 +146,7 @@ with `urlAllowlist` at all.
   `verticalDomain` / `verticalSubDomain` / `verticalParams` on
   `search_web` + `research_web`; CLI `--vertical-domain` /
   `--vertical-sub-domain` / `--vertical-params '{"k":"v"}'`.
-- Repo default: `[sources] vertical = { domain = "finance", sub_domain = "calendar" }`
+- Repo default: `[sources] vertical = { domain = "finance", sub_domain = "finance.calendar" }`
   in the domain TOML (static affinity only — dynamic values like tickers
   stay query-level).
 - Capability-negotiated: only providers declaring `verticalDomainSupported`

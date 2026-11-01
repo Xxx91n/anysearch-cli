@@ -142,7 +142,7 @@ anysearch provider 另有一根正交轴：服务端**垂域路由**。可按查
   `research_web` 上的 `verticalDomain` / `verticalSubDomain` /
   `verticalParams`；CLI `--vertical-domain` / `--vertical-sub-domain` /
   `--vertical-params '{"k":"v"}'`。
-- 仓级默认：域名 TOML 里 `[sources] vertical = { domain = "finance", sub_domain = "calendar" }`
+- 仓级默认：域名 TOML 里 `[sources] vertical = { domain = "finance", sub_domain = "finance.calendar" }`
   （只放静态亲和——symbol 这类动态值走查询级）。
 - 能力协商：仅声明 `verticalDomainSupported` 的 provider（当前只有
   anysearch）收 wire 字段 `domain` / `sub_domain` / `sub_domain_params`；
