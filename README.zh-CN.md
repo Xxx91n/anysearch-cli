@@ -44,7 +44,7 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
 - 真实搜索至少需要一个 provider API key：
   - `EXA_API_KEY` — Exa（支持域名过滤）
   - `TAVILY_API_KEY` — Tavily（支持域名过滤）
-  - `ANYSEARCH_API_KEY` — anysearch REST（可选；匿名层可用，无域名过滤）
+  - `ANYSEARCH_API_KEY` — anysearch MCP（可选；匿名层可用，无域名过滤）
 
 ## 快速上手
 
@@ -62,7 +62,7 @@ npm i -g @anysearch-cli/embedding
 
 ```bash
 git clone <this repo> && cd anysearch-cli
-pnpm install --node-linker=hoisted   # Windows: hoisted avoids better-sqlite3 EPERM
+pnpm install --ignore-scripts --node-linker=hoisted   # better-sqlite3 预编译免 node-gyp；hoisted 规避 Windows EPERM
 pnpm build
 node apps/cli/dist/index.js doctor
 ANS_DOMAIN=docs node apps/cli/dist/index.js search "tokio JoinSet rust"
@@ -85,7 +85,7 @@ ans memory backfill-vectors   # embeds stored rows; first run downloads the mode
 ```
 
 模型首次使用时从 huggingface.co 下载，缓存于
-`~/.anysearch/models`（可用 `ANYSEARCH_MODEL_CACHE` 覆盖）。离线主机可从联网 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+`~/.anysearch/models`（可用 `ANYSEARCH_MODEL_CACHE` 覆盖）。离线主机可从联网
 机器拷贝已填充的缓存目录。卸载该包后 CLI 退回 FTS-only 模式 —— 不崩溃，
 `ans doctor` 将该臂报为 SKIP。
 
@@ -126,7 +126,7 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
 |----------|-----------------|--------------|
 | tavily   | yes（`include_domains`，硬过滤模式） | — |
 | exa      | yes（`includeDomains`） | — |
-| anysearch| no（REST API 无域名参数） | 仅后置过滤 |
+| anysearch| no（MCP `domain` 是垂域路由枚举，不是 hostname allowlist） | 仅后置过滤 |
 
 Provider 选择来自域名 TOML 的 `sources.enabled`。缺 key 的 provider 被
 跳过而非崩溃（fail-open）；若*没有任何* provider 能注册，搜索是错误
@@ -142,8 +142,9 @@ anysearch provider 另有一根正交轴：服务端**垂域路由**。可按查
   `research_web` 上的 `verticalDomain` / `verticalSubDomain` /
   `verticalParams`；CLI `--vertical-domain` / `--vertical-sub-domain` /
   `--vertical-params '{"k":"v"}'`。
-- 仓级默认：域名 TOML 里 `[sources] vertical = { domain = "finance", sub_domain = "calendar" }`
-  （只放静态亲和——symbol 这类动态值走查询级）。
+- 仓级默认：域名 TOML 里 `[sources] vertical = { domain = "finance" }`
+  （只放静态亲和——`sub_domain` 在这里可选；但 `calendar` 这类带参标签没有
+  查询级 `sub_domain_params`（`--vertical-params`）会被上游拒）。
 - 能力协商：仅声明 `verticalDomainSupported` 的 provider（当前只有
   anysearch）收 wire 字段 `domain` / `sub_domain` / `sub_domain_params`；
   其余走 general 扇出并记入 `retrieval.vertical.pre` 审计事件的
@@ -154,28 +155,8 @@ anysearch provider 另有一根正交轴：服务端**垂域路由**。可按查
   `.degraded`。垂域命中在每条 NormalizedResult 上携 `extra.vertical`
   机读标记。
 
-以下词表与约束为**带日期快照**——活权威是上游 `get_sub_domains` 工具
-（2026-09-25 查询 `https://api.anysearch.com/mcp`）；客户端刻意不内嵌
-枚举副本。本地校验只做形状（非空字符串/Record）——非法 `sub_domain`
-或缺必需 `sub_domain_params` 由上游回 `isError`，anysearch 臂据此
-fail-first 降级（绝不静默返回零结果信封）。
-
-17 个顶层 domain 值（`search.domain` 的 enum）：
-
-`academic` `agriculture` `business` `code` `energy` `environment`
-`film` `finance` `gaming` `general` `health` `ip` `legal` `resource`
-`security` `social_media` `travel`
-
-上游实测语义（2026-09-25 live 探针）：
-
-- `sub_domain` 值（如 `finance.calendar` / `finance.fundamental`）连同
-  每个 tag 的 params 约束表出自 `get_sub_domains(domain=<d>)`（如
-  `finance.calendar` 必需 `type` ∈ earnings|dividends|ipos|economic；
-  `finance.fundamental` 必需 `type` 并按 type 要 `symbol` 或 `cn_code`）。
-- 枚举外 `domain` 值上游静默容忍（退回 general 风格结果集）——拒收压力
-  集中在 sub_domain 与 params 侧，而非 domain 枚举本身。
-- 只给 `domain` 不带 `sub_domain` 也能返回结果；文档称 required 但服务
-  不强制。
+带日期的 domain 词表快照与上游实测语义移至
+[docs/vertical-domains.md](docs/vertical-domains.md)。
 
 ## MCP 服务器
 
@@ -214,18 +195,17 @@ flowchart LR
 | Codex CLI | 0.142.5 | `config.toml` MCP 注册 + `.codex/hooks.json` hooks | 实机验证 · [专文](docs/codex-integration.md) |
 | Antigravity CLI（`agy`） | 1.2.5 | named-hook map `hooks.json`（5 事件经 argv 传入） | 实机验证（裁剪矩阵） · [专文](docs/antigravity-integration.md) |
 | Antigravity IDE | 2.12.2 | `.antigravity/rules/anysearch.mdc` 兜底 | IDE 宿主不执行 hooks（已复现） · [专文](docs/antigravity-integration.md) |
-| DeepSeek Harness（`dsh`） | 0.1.7-rc.2 | 原生注册（`ctx.tools`）+ `dsh-plugin` Cordis bundle | 实机验证（established-via-fallback: [L3b]） <!-- 枚举经 tool_call 侧证 --> · [专文](docs/deepseek-harness-integration.md) |
+| DeepSeek Harness（`dsh`） | 0.1.7-rc.2 | 原生注册（`ctx.tools`）+ `dsh-plugin` Cordis bundle | 实机验证（established-via-fallback） · [专文](docs/deepseek-harness-integration.md) |
 
 "已验证"指在真实宿主上捕获端到端 transcript（`stream-json`），而非契约
-同构——完整范围、日期与探针证据见各专文链接；证据集见 /
- / / / 。
+同构——完整范围、日期与探针证据见各专文链接。
 
 ## 已知限制
 
 | 限制 | 影响 |
 |------------|----------------|
 | macOS 在阻断矩阵之外 | 未解决的退出时 `libc++abi` 崩溃使 `ship-gate` 只闸 ubuntu+windows；macOS 以非阻断 probe 车道运行 |
-| `anysearch` provider 无法前置过滤 | 其 REST 面没有域名参数——域名 allowlist 下诚实降级为仅后置过滤 |
+| `anysearch` provider 无法前置过滤 | 其 MCP `domain` 参数是垂域路由枚举（不是 hostname allowlist）——域名 allowlist 下诚实降级为仅后置过滤 |
 | 退出时 `libc++abi` 可能覆盖弃权退出码 | 自动化必须读结构化弃权标记（`--json` / `structuredContent.abstain`），不能只看退出码 |
 
 完整记录：[docs/limitations.md](docs/limitations.md)。
