@@ -63,7 +63,7 @@ From source (contributors):
 
 ```bash
 git clone <this repo> && cd anysearch-cli
-pnpm install --node-linker=hoisted   # Windows: hoisted avoids better-sqlite3 EPERM
+pnpm install --ignore-scripts --node-linker=hoisted   # prebuilt better-sqlite3, no node-gyp; hoisted avoids Windows EPERM
 pnpm build
 node apps/cli/dist/index.js doctor
 ANS_DOMAIN=docs node apps/cli/dist/index.js search "tokio JoinSet rust"
@@ -86,7 +86,7 @@ ans memory backfill-vectors   # embeds stored rows; first run downloads the mode
 ```
 
 The model downloads from huggingface.co on first use and is cached at
-`~/.anysearch/models` (override: `ANYSEARCH_MODEL_CACHE`). On an offline host, <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+`~/.anysearch/models` (override: `ANYSEARCH_MODEL_CACHE`). On an offline host,
 copy a populated cache dir in from a connected machine. Removing the package
 returns the CLI to FTS-only mode — no crash, `ans doctor` reports the arm as
 SKIP.
@@ -160,31 +160,8 @@ with `urlAllowlist` at all.
   `.sent` / `.degraded`. Vertical hits carry a machine-readable
   `extra.vertical` marker on each NormalizedResult.
 
-Vocabulary + constraint notes below are a **dated snapshot** — the live
-authority is the upstream `get_sub_domains` tool (queried
-2026-09-25, `https://api.anysearch.com/mcp`); the client intentionally
-ships no enum copy. Local validation checks *shape only* (non-empty
-strings / Record) — invalid `sub_domain` or missing required
-`sub_domain_params` come back as upstream `isError`, which degrades the
-anysearch arm fail-first (never a silent zero-result envelope).
-
-The 17 top-level domain values (enum on `search.domain`):
-
-`academic` `agriculture` `business` `code` `energy` `environment`
-`film` `finance` `gaming` `general` `health` `ip` `legal` `resource`
-`security` `social_media` `travel`
-
-Observed upstream semantics (live probe 2026-09-25):
-
-- `sub_domain` values like `finance.calendar` / `finance.fundamental` come
-  from `get_sub_domains(domain=<d>)` output along with per-tag param tables
-  (e.g. `finance.calendar` requires `type` ∈ earnings|dividends|ipos|economic;
-  `finance.fundamental` requires `type` plus `symbol` or `cn_code` per type).
-- An out-of-enum `domain` is silently tolerated upstream (falls back to a
-  general-style result set) — rejection pressure lives on the sub_domain and
-  params side, not the domain enum itself.
-- `domain` alone (no `sub_domain`) returns results; docs call sub_domain
-  "required" but the server does not enforce it.
+The dated domain-vocabulary snapshot and observed upstream semantics moved to
+[docs/vertical-domains.md](docs/vertical-domains.md).
 
 ## MCP server
 
@@ -224,12 +201,11 @@ flowchart LR
 | Codex CLI | 0.142.5 | `config.toml` MCP registration + `.codex/hooks.json` hooks | live-verified · [doc](docs/codex-integration.md) |
 | Antigravity CLI (`agy`) | 1.2.5 | named-hook map `hooks.json` (5 events via argv) | live-verified (reduced matrix) · [doc](docs/antigravity-integration.md) |
 | Antigravity IDE | 2.12.2 | `.antigravity/rules/anysearch.mdc` fallback | hooks not executed (reproduced) · [doc](docs/antigravity-integration.md) |
-| DeepSeek Harness (`dsh`) | 0.1.7-rc.2 | native registration (`ctx.tools`) + `dsh-plugin` Cordis bundle | live-verified (established-via-fallback: [L3b]) <!-- enumeration side-verified via tool_call --> · [doc](docs/deepseek-harness-integration.md) |
+| DeepSeek Harness (`dsh`) | 0.1.7-rc.2 | native registration (`ctx.tools`) + `dsh-plugin` Cordis bundle | live-verified (established-via-fallback) · [doc](docs/deepseek-harness-integration.md) |
 
 "Verified" means an end-to-end transcript captured on the real host
 (`stream-json`), not contract isomorphism — full scope, dates and probe
-evidence live in the linked integration docs. / /
- / / carry the evidence sets.
+evidence live in the linked integration docs.
 
 ## Known limitations
 
