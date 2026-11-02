@@ -21,7 +21,8 @@
     "@earendil-works/pi-ai": "^0.84.2",
     "@sinclair/typebox": "^0.34.52",
     "better-sqlite3": "^13.0.3",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "smol-toml": "^1.8.0"
   },
   "devDependencies": {
     "@anysearch-cli/kernel": "workspace:*",

@@ -1,50 +1,50 @@
 // ans chat: interactive retrieval-augmented chat session.
 // decision 7: uses PiAgentRuntime for agent loop.
 // uses createLlmSession deep module from kernel.
-// Reads LLM config from ANS_LLM_PROVIDER + ANS_LLM_MODEL env vars.
-// optional custom endpoint via ANS_LLM_BASE_URL + ANS_LLM_API (chat|messages|responses).
+// LLM config resolves through the layered loader (cli > env > project > user >
+// default; #38/#92): --llm.provider/--llm.model/--llm.base-url/--llm.api flags,
+// ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
 import { PiAgentRuntime, createLlmSession } from "@anysearch-cli/kernel";
 import type { RetrieverPort, DomainConfigPort } from "@anysearch-cli/kernel";
 import { createEngine } from "../composition";
 import { domainSearchDirs } from "../db";
+import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
 import { domainTomlPath, loadDomainByNameIn } from "@anysearch-cli/store";
 import { join } from "node:path";
 
-export async function runChat(args: string[]): Promise<number> {
+export async function runChat(argv: string[]): Promise<number> {
+  const { flags, argv: args } = parseLlmFlags(argv);
   // Parse query from args.
   const query = args.join(" ");
   if (!query) {
-    process.stderr.write("Usage: ans chat [query]\n");
+    process.stderr.write("Usage: ans chat [--llm.provider P] [--llm.model M] [query]\n");
     process.stderr.write("Example: ans chat \"What is RRF fusion?\"\n");
     return 2;
   }
 
-  // Check LLM config.
-  const providerName = process.env.ANS_LLM_PROVIDER;
-  const modelName = process.env.ANS_LLM_MODEL;
-  if (!providerName || !modelName) {
+  // Resolve LLM config: CLI flag > env > project > user > default.
+  const cfg = resolveLlmConfig({ flags });
+  if (!cfg.provider || !cfg.model) {
     process.stderr.write("LLM provider not configured.\n");
-    process.stderr.write("Set with: export ANS_LLM_PROVIDER=anthropic\n");
-    process.stderr.write("           export ANS_LLM_MODEL=claude-sonnet-4-6\n");
-    process.stderr.write("Or use:   ans llm set anthropic claude-sonnet-4-6\n");
+    process.stderr.write("Set with: ans llm set anthropic claude-sonnet-4-6  (writes ~/.anysearch-cli/config.toml)\n");
+    process.stderr.write("Or:       export ANS_LLM_PROVIDER=anthropic ANS_LLM_MODEL=claude-sonnet-4-6\n");
     return 3;
   }
 
   // Initialize LLM session via kernel deep module.
   let session;
   try {
-    // custom endpoint config — ANS_LLM_API is required when ANS_LLM_BASE_URL is
-    // set (explicit three-way; no protocol sniffing). ANS_LLM_API_KEY supplies the key.
-    const baseUrl = process.env.ANS_LLM_BASE_URL;
-    const apiRaw = process.env.ANS_LLM_API;
-    const api = apiRaw === "chat" || apiRaw === "messages" || apiRaw === "responses" ? apiRaw : undefined;
-    if (baseUrl && !api) {
-      process.stderr.write("ANS_LLM_BASE_URL requires ANS_LLM_API=chat|messages|responses\n");
+    // custom endpoint config — api is required when baseUrl is set (explicit
+    // three-way; no protocol sniffing). cfg.apiKey supplies the secret via
+    // env_key indirection or ANS_LLM_API_KEY.
+    const baseUrl = cfg.baseUrl;
+    if (baseUrl && !cfg.api) {
+      process.stderr.write("base_url requires api=chat|messages|responses\n");
       return 3;
     }
-    session = await createLlmSession({ provider: providerName, model: modelName, baseUrl, api, apiKey: baseUrl ? process.env.ANS_LLM_API_KEY : undefined });
+    session = await createLlmSession({ provider: cfg.provider, model: cfg.model, baseUrl, api: cfg.api, apiKey: cfg.apiKey });
   } catch (e: any) {
     process.stderr.write("Failed to initialize LLM: " + (e?.message || String(e)) + "\n");
     return 3;
