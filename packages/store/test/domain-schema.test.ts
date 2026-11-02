@@ -129,5 +129,43 @@ let vKeyThrew = "";
 try { validate(vExtraKey); } catch (e) { vKeyThrew = (e as Error).message; }
 assert("unknown key in sources.vertical rejected naming the key", vKeyThrew.includes("unknown key") && vKeyThrew.includes("params"));
 
+// skills.toolRequires (decision #90 / issue #102) — resolve section-replace +
+// fail-fast shape validation.
+
+// Section-replace along the inheritance chain.
+const trBase: RawDomain = { name: "tb", rag: { adapter: "x" }, skills: { active: ["a"], toolRequires: { a: ["old-tool"] } } };
+const trDerived: RawDomain = { name: "td", base: "tb", rag: { adapter: "x" }, skills: { active: ["b"], toolRequires: { b: ["new-tool"] } } };
+const trResult = resolve(trDerived, (n) => n === "tb" ? trBase : undefined);
+assert("toolRequires whole-map replace along chain (base keys do NOT merge)",
+  JSON.stringify(trResult.skills.toolRequires) === '{"b":["new-tool"]}');
+const trInherit = resolve({ name: "ti", base: "tb", rag: { adapter: "x" } } as RawDomain, (n) => n === "tb" ? trBase : undefined);
+assert("toolRequires inherits from base when derived omits it",
+  JSON.stringify(trInherit.skills.toolRequires) === '{"a":["old-tool"]}');
+
+// Absent field stays absent on the resolved schema (backward-compat marker).
+const trAbsent = resolve({ name: "ta", rag: { adapter: "x" }, skills: { active: ["a"] } } as RawDomain, () => undefined);
+assert("toolRequires absent when not declared", trAbsent.skills.toolRequires === undefined);
+
+// Shape validation: non-Record, non-array values, non-string entries rejected.
+const trBad = resolve({ name: "h3", rag: { adapter: "x" }, skills: { active: [], toolRequires: ["a"] } } as unknown as RawDomain, () => undefined);
+let trArrThrew = "";
+try { validate(trBad); } catch (e) { trArrThrew = (e as Error).message; }
+assert("toolRequires non-Record rejected", trArrThrew.includes("skills.toolRequires"));
+
+const trBadValue = resolve({ name: "h4", rag: { adapter: "x" }, skills: { active: [], toolRequires: { a: "atomcode" } } } as unknown as RawDomain, () => undefined);
+let trValThrew = "";
+try { validate(trBadValue); } catch (e) { trValThrew = (e as Error).message; }
+assert("toolRequires non-array value rejected naming the skill", trValThrew.includes("skills.toolRequires.a"));
+
+const trBadEntry = resolve({ name: "h5", rag: { adapter: "x" }, skills: { active: [], toolRequires: { a: ["ok", 42] } } } as unknown as RawDomain, () => undefined);
+let trEntryThrew = "";
+try { validate(trBadEntry); } catch (e) { trEntryThrew = (e as Error).message; }
+assert("toolRequires non-string entry rejected", trEntryThrew.includes("skills.toolRequires.a"));
+
+const trGood = resolve({ name: "ok2", rag: { adapter: "x" }, skills: { active: ["r"], toolRequires: { r: ["atomcode", "ctx_search"] } } } as unknown as RawDomain, () => undefined);
+let trGoodOk = true;
+try { validate(trGood); } catch { trGoodOk = false; }
+assert("valid toolRequires passes", trGoodOk);
+
 console.log(`Domain schema tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

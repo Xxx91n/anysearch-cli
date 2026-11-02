@@ -162,12 +162,33 @@ export const BUILTIN_SEARCH_TOOL = "search";
 
 // Filter AgentTools by domain skills.active + hooks.toolWhitelist.
 // Exported for the shipped-domain regression test (r19 T1, 2026-10-22).
+// Design: the skill→tool mapping is declarative ([skills.toolRequires]), not derived
+// — pi-agent-core Skill is a pure prompt carrier and carries no tool binding (#90).
+// hooks.toolWhitelist stays the security upper bound. When the domain declares the
+// field, the effective set is whitelist ∩ (∪ toolRequires[active skills] ∪ {built-in
+// search}) and skills.active becomes a real activation filter. Without the field the
+// union is taken as "everything", preserving the pre-toolRequires behavior (an
+// explicitly empty map degrades the same way).
 export function filterAgentTools(tools: AgentTool[], domain: DomainConfigPort): AgentTool[] {
-  // hooks.toolWhitelist is the security filter.
-  // skills.active is domain activation (not a tool filter).
   const whitelist = new Set(domain.hooks.toolWhitelist);
-  if (whitelist.size === 0) return tools;
-  return tools.filter(t => whitelist.has(t.name));
+  const toolRequires = domain.skills.toolRequires;
+  const declared = !!toolRequires && Object.keys(toolRequires).length > 0;
+  // No declared map: whitelist alone decides; an empty whitelist means no
+  // filter at all (pre-#102 behavior).
+  if (!declared) {
+    if (whitelist.size === 0) return tools;
+    return tools.filter(t => whitelist.has(t.name));
+  }
+  const allowed = new Set<string>([BUILTIN_SEARCH_TOOL]);
+  for (const skill of domain.skills.active) {
+    // own-property check: "constructor"/"toString" are legal skill names, and
+    // the inherited prototype member must contribute nothing (not throw).
+    for (const t of (Object.hasOwn(toolRequires, skill) ? toolRequires[skill] : [])) allowed.add(t);
+  }
+  // Declared map: skills.active filters even when the whitelist is empty
+  // (empty whitelist = security upper bound wide open, not a no-op).
+  if (whitelist.size === 0) return tools.filter(t => allowed.has(t.name));
+  return tools.filter(t => whitelist.has(t.name) && allowed.has(t.name));
 }
 
 export interface PiAgentRuntimeOptions {

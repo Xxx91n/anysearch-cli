@@ -12,7 +12,7 @@ export interface DomainSchema {
   base?: string; // inheritance chain, null = root
   settings: Record<string, unknown>;
   prompts: PromptEntry[];
-  skills: { active: string[] };
+  skills: { active: string[]; toolRequires?: Record<string, string[]> };
   sources: { enabled: string[]; weights?: Record<string, number>; urlAllowlist?: string[]; urlDenylist?: string[]; vertical?: { domain: string; sub_domain?: string } };
   rag: { adapter: string; config?: Record<string, unknown> };
   hooks: { toolWhitelist: string[] };
@@ -41,7 +41,7 @@ export interface RawDomain {
   base?: string;
   settings?: Record<string, unknown>;
   prompts?: PromptEntry[];
-  skills?: { active?: string[] };
+  skills?: { active?: string[]; toolRequires?: Record<string, string[]> };
   sources?: { enabled?: string[]; weights?: Record<string, number>; urlAllowlist?: string[]; urlDenylist?: string[]; vertical?: { domain: string; sub_domain?: string } };
   rag?: { adapter?: string; config?: Record<string, unknown> };
   hooks?: { toolWhitelist?: string[] };
@@ -104,6 +104,7 @@ export function resolve(
   let settings: Record<string, unknown> = {};
   let prompts: PromptEntry[] = [];
   let skillsActive: string[] = [];
+  let skillsToolRequires: Record<string, string[]> | undefined;
   let sourcesEnabled: string[] = [];
   let sourcesWeights: Record<string, number> | undefined;
   let sourcesUrlAllowlist: string[] | undefined;
@@ -124,6 +125,8 @@ export function resolve(
     // sections: entire replace (if declared)
     if (d.prompts) prompts = d.prompts;
     if (d.skills?.active) skillsActive = d.skills.active;
+    // skills.toolRequires — section-replace like active (per-chain override).
+    if (d.skills?.toolRequires) skillsToolRequires = d.skills.toolRequires;
     if (d.sources?.enabled) sourcesEnabled = d.sources.enabled;
     // sources.weights — section-replace semantics like enabled (per-chain override).
     if (d.sources?.weights) sourcesWeights = d.sources.weights;
@@ -144,7 +147,7 @@ export function resolve(
     description,
     settings,
     prompts,
-    skills: { active: skillsActive },
+    skills: { active: skillsActive, ...(skillsToolRequires ? { toolRequires: skillsToolRequires } : {}) },
     sources: { enabled: sourcesEnabled, ...(sourcesWeights ? { weights: sourcesWeights } : {}), ...(sourcesUrlAllowlist ? { urlAllowlist: sourcesUrlAllowlist } : {}), ...(sourcesUrlDenylist ? { urlDenylist: sourcesUrlDenylist } : {}), ...(sourcesVertical ? { vertical: sourcesVertical } : {}) },
     rag: { adapter: ragAdapter, config: ragConfig },
     hooks: { toolWhitelist: hooksWhitelist },
@@ -209,6 +212,23 @@ export function validate(schema: DomainSchema): void {
   }
   if (!Array.isArray(schema.hooks.toolWhitelist))
     throw new Error("Domain schema: hooks.toolWhitelist must be an array");
+  // skills.toolRequires — shape check: Record keyed by skill name, values are
+  // tool-name arrays.
+  // Design: the skill→tool mapping is declarative, not derived — pi-agent-core
+  // Skill is a pure prompt carrier and carries no tool binding (#90).
+  const tr = schema.skills.toolRequires;
+  if (tr !== undefined) {
+    if (typeof tr !== "object" || tr === null || Array.isArray(tr))
+      throw new Error("Domain schema: skills.toolRequires must be a Record keyed by skill name");
+    for (const [key, tools] of Object.entries(tr)) {
+      if (key.trim().length === 0)
+        throw new Error("Domain schema: skills.toolRequires keys must be non-empty skill names");
+      if (!Array.isArray(tools))
+        throw new Error("Domain schema: skills.toolRequires." + key + " must be an array of tool names");
+      if (tools.some((t) => typeof t !== "string" || t.trim().length === 0))
+        throw new Error("Domain schema: skills.toolRequires." + key + " entries must be non-empty tool names");
+    }
+  }
   // compaction guards — fail-fast on out-of-range.
   const c = schema.compaction;
   if (c) {
