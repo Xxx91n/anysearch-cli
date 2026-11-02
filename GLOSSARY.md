@@ -72,6 +72,7 @@
 ## 充分性与答案归因
 
 - **MVSS（最低可行信号集）**——sufficiency 元数据四段：verdict（三态聚合）+ agreement（rank 派生）+ volume（卫生信号）+ spread + perProvider 原生分数（不跨源归一化）；只承诺 escalate 决策。
+- **Sufficiency Anchor（充分性锚）**——engine 每次 search 在 computeSufficiency 之后、envelope 返回之前 append-only 写一条 `sufficiency` resume_anchor（崩溃重放所需状态：traceId、query、mode、MVSS、perProvider、failed/cancelled、unique 计数）；走注入的 ResumeAnchorsPort（BudgetLedgerPort 同款，kernel 不碰 store I/O），写失败 fail-open 具名 stderr 不阻塞检索；只写不读，重放/恢复读取是后续票。
 - **Dual-Output Sufficiency（单计算源双输出）**——单个 computeSufficiency() 纯函数双路输出：内部 fanout 早停布尔 + 外部暴露的 MVSS 元数据。
 - **Sufficiency Gate Placement（门禁架构归属）**——LLM 判断层（named gap 生成 + 定向重搜）在 PiAgentRuntime agent loop，engine 保持无 LLM 纯净。
 - **Named Gap Re-search（命名缺口定向重搜）**——gate 输出「缺什么」回灌定向二次检索，有界循环；仍不达标返回 annotate verdict=ambiguous。
