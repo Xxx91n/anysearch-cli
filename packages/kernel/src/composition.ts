@@ -24,11 +24,69 @@ import type { AttributionCalibration } from "./calibrate";
 
 // Map provider ids to constructors.
 // ponytail: wrap in try/catch — providers without API keys are skipped, not crashed.
-const PROVIDER_FACTORIES: Record<string, () => SearchProvider | undefined> = {
-  tavily: () => { try { return new TavilyProvider(); } catch { return undefined; } },
-  exa: () => { try { return new ExaProvider(); } catch { return undefined; } },
-  anysearch: () => { try { return new AnySearchProvider(); } catch { return undefined; } },
+// T7 ruling: the skip is Fail-Open named degradation, never silent — a failed
+// construction writes a named stderr line and lands in
+// CompositionResult.providerBuildErrors. Missing-key/config faults and
+// unexpected construction bugs degrade identically (the arm is absent either
+// way); only the message wording differs (the former hints at the key env).
+const PROVIDER_CONSTRUCTORS: Record<string, () => SearchProvider> = {
+  tavily: () => new TavilyProvider(),
+  exa: () => new ExaProvider(),
+  anysearch: () => new AnySearchProvider(),
 };
+
+// Best-effort diagnostic: a closed/broken stderr (e.g. the MCP parent closed
+// the pipe) must not turn the fail-open engine build into a process crash —
+// both synchronous write throws and asynchronous stream errors are absorbed.
+// The providerBuildErrors record remains the durable trace in that case.
+function writeProviderDiagnostic(message: string): void {
+  const stderr = process.stderr;
+  const swallow = () => {};
+  stderr.once("error", swallow);
+  try {
+    // On async write failure Node invokes the callback with the error BEFORE
+    // emitting 'error' — the listener must survive until the event fires, so
+    // it is removed only on a clean write (a lingering once-listener after a
+    // failed write is harmless: it self-removes on the swallowed event).
+    stderr.write(message, (error) => {
+      if (!error) stderr.off("error", swallow);
+    });
+  } catch {
+    stderr.off("error", swallow);
+  }
+}
+
+// Builds one provider arm; a construction failure is recorded into
+// providerBuildErrors (id -> message) and surfaced on stderr — stdout stays
+// protocol-pure for MCP. Unknown ids keep the legacy silent skip (schema-level
+// concern, not a construction failure).
+function buildProvider(id: string, providerBuildErrors: Record<string, string>): SearchProvider | undefined {
+  const construct = PROVIDER_CONSTRUCTORS[id];
+  if (!construct) return undefined;
+  try {
+    return construct();
+  } catch (error) {
+    // Constructor error text is never recorded verbatim: constructors receive
+    // the API key, and runtime error messages can embed it (e.g. Node's
+    // "Headers.append: <value> is an invalid header value"). Only a safe
+    // category rides stderr and providerBuildErrors (CWE-532). An invalid
+    // header value at construction time is a malformed auth header — worded as
+    // a credential fault regardless of which provider threw.
+    const raw = String(error instanceof Error ? error.message : error);
+    const message = /api[ _-]?key|401|unauthorized|invalid header value/i.test(raw)
+      ? "permanent: missing/invalid credential — set the provider's API key env"
+      : "unexpected construction fault";
+    providerBuildErrors[id] = message;
+    writeProviderDiagnostic("[anysearch] provider " + id + " construction failed: " + message + "\n");
+    return undefined;
+  }
+}
+
+function buildProviders(ids: string[], providerBuildErrors: Record<string, string>): SearchProvider[] {
+  return ids
+    .map((id) => buildProvider(id, providerBuildErrors))
+    .filter((p): p is SearchProvider => p !== undefined);
+}
 
 export interface CompositionResult {
   retriever: RetrieverPort;
@@ -38,6 +96,10 @@ export interface CompositionResult {
   // exposed so cross-round merged attribution can reuse the same
   // immutable active head instead of silently falling back to the legacy floor.
   calibration?: AttributionCalibration;
+  // Fail-open named degradation (T7 ruling): provider id -> construction
+  // failure message, empty when every enabled arm built. Consumers pair this
+  // with the engine's runtime providersFailed to audit the full chain.
+  providerBuildErrors: Record<string, string>;
 }
 
 // createEngine: build configured engine.
@@ -86,6 +148,7 @@ export function resolveActiveAttributionCalibration(
 
 export function createEngine(domain?: string, opts?: { dbPath?: string; attributionCalibration?: AttributionCalibration; domainsDirs?: string[] }): CompositionResult {
   let providers: SearchProvider[] = [];
+  const providerBuildErrors: Record<string, string> = {};
   let config: DomainConfigPort | undefined;
   let sourceWeights: Record<string, number> | undefined;
   // request-time domain URL policy resolver — wired only when
@@ -109,9 +172,7 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
       config = schema as DomainConfigPort;
       const enabled = schema.sources.enabled;
       sourceWeights = schema.sources.weights;
-      providers = enabled
-        .map((id) => PROVIDER_FACTORIES[id]?.())
-        .filter((p): p is SearchProvider => p !== undefined);
+      providers = buildProviders(enabled, providerBuildErrors);
       // resolve the TOML path through the same chain the loader used
       // (env -> CWD -> caller-supplied dirs), then hand the engine a reloader that
       // keeps last-known-good on a bad reload (plugin server reuses this pattern).
@@ -140,10 +201,10 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
       // explicit policy (incl. the URL allowlist trust boundary). "Domain not
       // found" stays fail-open — absent domain ≠ broken domain.
       if (e instanceof Error && e.message.includes("Domain schema:")) throw e;
-      providers = Object.values(PROVIDER_FACTORIES).map((f) => f()).filter((p): p is SearchProvider => p !== undefined);
+      providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors);
     }
   } else {
-    providers = Object.values(PROVIDER_FACTORIES).map((f) => f()).filter((p): p is SearchProvider => p !== undefined);
+    providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors);
   }
 
   // explicit override wins; otherwise resolve the active head on disk.
@@ -164,5 +225,5 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
   const dbPath = opts?.dbPath ?? ":memory:";
   const store = new SqliteSessionStore(dbPath);
   const observation = new SqliteObservationStore(dbPath);
-  return { retriever, config, store, observation, calibration: attributionCalibration };
+  return { retriever, config, store, observation, calibration: attributionCalibration, providerBuildErrors };
 }
