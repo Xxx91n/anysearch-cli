@@ -51,3 +51,7 @@ apps/cli/.build-stamp.json
 # local working area — issue tickets / round artifacts / audit working files.
 # Never versioned (governance court 2026-10-13); past rounds remain in git history.
 .scratch/
+
+# python virtualenvs — scratch/prototype interpreters (e.g. .venv-tau-proto),
+# never repo content; reproduce via scripts/tau/requirements.txt (#88 T2)
+.venv*/
