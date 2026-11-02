@@ -229,10 +229,18 @@ export interface UsageTotals {
   outputTokens: number;
   totalTokens: number;
   costUsd: number;
+  // Latest assistant message's totalTokens (input incl. cache + output of the
+  // most recent LLM call) — approximates CURRENT context occupancy. The
+  // consolidate low-watermark check needs this, not cumulative run spend:
+  // cumulative totals are monotonic, so once they crossed the watermark every
+  // later turn would force-compress even after compaction shrank the context
+  // (CodeRabbit review on PR #114; watermark semantics confirmed by #45's
+  // planned fraction-of-contextWindow reframing).
+  lastTotalTokens: number;
 }
 
 export function emptyUsageTotals(): UsageTotals {
-  return { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0 };
+  return { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, lastTotalTokens: 0 };
 }
 
 // Accumulate one message_end payload into the run totals. Pure helper,
@@ -249,7 +257,9 @@ export function accumulateUsage(totals: UsageTotals, message: unknown): void {
   totals.outputTokens += output;
   // totalTokens includes cache read/write tokens when the provider reports
   // them; fall back to input+output when absent.
-  totals.totalTokens += Number(msg.usage.totalTokens) || (input + output);
+  const messageTotal = Number(msg.usage.totalTokens) || (input + output);
+  totals.totalTokens += messageTotal;
+  totals.lastTotalTokens = messageTotal;
   totals.costUsd += Number(msg.usage.cost?.total) || 0;
 }
 
@@ -389,8 +399,12 @@ export class PiAgentRuntime {
       shouldStopAfterTurn: async (ctx: any) => {
         const messages = (agent as any).state?.messages || [];
         // #103: real token count from message_end accumulation (the old
-        // onResponse path fed a constant 0 here).
-        const totalTokens = usageTotals.totalTokens;
+        // onResponse path fed a constant 0 here). The low-watermark check in
+        // consolidate measures current context occupancy, so pass the latest
+        // call's totalTokens — NOT cumulative run spend, which is monotonic
+        // and would permanently trip the watermark once crossed. Cumulative
+        // totals remain ledger-only (settled below after the run).
+        const totalTokens = usageTotals.lastTotalTokens;
         // 3-line sequential call — evaluate -> applyTo -> consolidate.
         // Claim-ticket pattern: gate.evaluate returns envelope, gate.applyTo injects, pipeline.consolidate consumes.
         const lastTool = ctx?.lastToolName || ctx?.toolName || "";

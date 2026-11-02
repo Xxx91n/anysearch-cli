@@ -437,6 +437,10 @@ function makeMockStreamFn(decision: string): any {
   assert(totals.outputTokens === 75, "#103: output tokens summed across messages");
   assert(totals.totalTokens === 390, "#103: totalTokens summed (incl. cache tokens)");
   assert(Math.abs(totals.costUsd - 0.01) < 1e-9, "#103: USD cost summed from pi-ai Usage.cost.total");
+  // CodeRabbit PR #114: consolidate's low-watermark input is CURRENT context
+  // occupancy (latest call), not cumulative run spend — cumulative is monotonic
+  // and would permanently trip the watermark once crossed.
+  assert(totals.lastTotalTokens === 240, "#103: lastTotalTokens tracks latest call only (context watermark input)");
 }
 
 // accumulateUsage: totalTokens falls back to input+output when absent.
@@ -444,6 +448,7 @@ function makeMockStreamFn(decision: string): any {
   const totals = emptyUsageTotals();
   accumulateUsage(totals, { role: "assistant", usage: { input: 10, output: 5 } });
   assert(totals.totalTokens === 15, "#103: totalTokens falls back to input+output");
+  assert(totals.lastTotalTokens === 15, "#103: lastTotalTokens uses same fallback");
   assert(totals.costUsd === 0, "#103: missing cost treated as 0");
 }
 
@@ -461,6 +466,7 @@ function makeMockStreamFn(decision: string): any {
   accumulateUsage(totals, undefined);
   assert(totals.totalTokens === 0, "#103: non-assistant / usage-less messages ignored");
   assert(totals.costUsd === 0, "#103: toolResult usage not billed to token/USD dimensions");
+  assert(totals.lastTotalTokens === 0, "#103: ignored messages don't move lastTotalTokens");
 }
 
 // Full agent loop: ledger spent tokens/USD reflect per-call usage sum (settle-only, reserved 0).
