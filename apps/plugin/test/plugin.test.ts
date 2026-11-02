@@ -1,10 +1,11 @@
 // Phase 3 Plugin tests — verification + SessionStart/SKILL.md/AGENTS.md.
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync as fsReadFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync as fsReadFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ProjectIndexStore, isAnsTool, distillOutput, makePostToolUseDecision } from "../src/index.js";
+import { ensureMdc } from "../src/hooks/routing-card.js";
 
 const fs = { readFileSync: fsReadFileSync, existsSync };
 
@@ -227,6 +228,76 @@ test("routing card 4-block structure in shared module", () => {
   assert.ok(rcSrc.includes("Tools available"), "routing-card.ts has block 2");
   assert.ok(rcSrc.includes("Trigger rules"), "routing-card.ts has block 3");
   assert.ok(rcSrc.includes("Fail-open"), "routing-card.ts has block 4");
+});
+
+// === Routing card .mdc opt-out (#99) ===
+function withStderrCaptured(fn: () => void): string {
+  const chunks: string[] = [];
+  const original = process.stderr.write;
+  process.stderr.write = ((chunk: string) => { chunks.push(String(chunk)); return true; }) as typeof process.stderr.write;
+  try { fn(); } finally { process.stderr.write = original; }
+  return chunks.join("");
+}
+
+test("ensureMdc: {\"mdc\": false} suppresses .mdc write (no file created)", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "ans-mdc-optout-"));
+  try {
+    mkdirSync(join(cwd, ".anysearch"), { recursive: true });
+    writeFileSync(join(cwd, ".anysearch", "routing-card.json"), JSON.stringify({ mdc: false }));
+    ensureMdc(cwd, ".cursor");
+    ensureMdc(cwd, ".antigravity");
+    assert.ok(!existsSync(join(cwd, ".cursor", "rules", "anysearch.mdc")), "cursor .mdc should not be written when mdc:false");
+    assert.ok(!existsSync(join(cwd, ".antigravity", "rules", "anysearch.mdc")), "antigravity .mdc should not be written when mdc:false");
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test("ensureMdc: {\"mdc\": false} leaves an existing .mdc untouched", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "ans-mdc-optout-"));
+  try {
+    mkdirSync(join(cwd, ".anysearch"), { recursive: true });
+    writeFileSync(join(cwd, ".anysearch", "routing-card.json"), JSON.stringify({ mdc: false }));
+    mkdirSync(join(cwd, ".cursor", "rules"), { recursive: true });
+    writeFileSync(join(cwd, ".cursor", "rules", "anysearch.mdc"), "user-owned content");
+    ensureMdc(cwd, ".cursor");
+    assert.equal(
+      fsReadFileSync(join(cwd, ".cursor", "rules", "anysearch.mdc"), "utf8"),
+      "user-owned content",
+      "existing .mdc must not be overwritten when mdc:false",
+    );
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test("ensureMdc: no override file writes .mdc as before (default)", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "ans-mdc-default-"));
+  try {
+    ensureMdc(cwd, ".cursor");
+    const mdcPath = join(cwd, ".cursor", "rules", "anysearch.mdc");
+    assert.ok(existsSync(mdcPath), "default behavior must still write .mdc");
+    assert.ok(fsReadFileSync(mdcPath, "utf8").includes("anysearch plugin routing card"), "written .mdc should be the routing card");
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test("ensureMdc: missing mdc key or mdc:true writes .mdc (fail-open)", () => {
+  for (const body of ['{"routingCard": "custom"}', '{"mdc": true}', "{}"]) {
+    const cwd = mkdtempSync(join(tmpdir(), "ans-mdc-failopen-"));
+    try {
+      mkdirSync(join(cwd, ".anysearch"), { recursive: true });
+      writeFileSync(join(cwd, ".anysearch", "routing-card.json"), body);
+      ensureMdc(cwd, ".antigravity");
+      assert.ok(existsSync(join(cwd, ".antigravity", "rules", "anysearch.mdc")), "mdc should be written for override body: " + body);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  }
+});
+
+test("ensureMdc: bad JSON writes .mdc and warns on stderr like the existing override", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "ans-mdc-badjson-"));
+  try {
+    mkdirSync(join(cwd, ".anysearch"), { recursive: true });
+    writeFileSync(join(cwd, ".anysearch", "routing-card.json"), "{not json");
+    const stderr = withStderrCaptured(() => ensureMdc(cwd, ".cursor"));
+    assert.ok(existsSync(join(cwd, ".cursor", "rules", "anysearch.mdc")), "bad JSON must fail open and write .mdc");
+    assert.ok(stderr.includes("routing-card.json parse error"), "stderr warning should match the existing override semantics, got: " + stderr);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
 // === Server liveness ===

@@ -43,6 +43,7 @@ export const MDC_CONTENT = [
 // cursor, and antigravity — the only difference was the rules root
 // (".cursor" vs ".antigravity"). Fail-open by contract.
 export function ensureMdc(cwd: string, rulesRoot: string): void {
+  if (mdcOptOut(cwd)) return;
   const rulesDir = join(cwd, rulesRoot, "rules");
   const mdcPath = join(rulesDir, "anysearch.mdc");
   try {
@@ -58,19 +59,33 @@ export function ensureMdc(cwd: string, rulesRoot: string): void {
 }
 
 // high-user override via .anysearch/routing-card.json (fail-open).
-export function loadRoutingCard(cwd: string): string {
+// Shared reader: undefined on missing file; parse error -> stderr warning
+// (same semantics for every key read off this file).
+function readRoutingCardOverride(cwd: string): Record<string, unknown> | undefined {
   const overridePath = join(cwd, ".anysearch", "routing-card.json");
   try {
     if (existsSync(overridePath)) {
-      const raw = readFileSync(overridePath, "utf8");
-      const parsed = JSON.parse(raw);
-      if (typeof parsed.routingCard === "string" && parsed.routingCard.length > 0) {
-        return parsed.routingCard;
-      }
+      return JSON.parse(readFileSync(overridePath, "utf8"));
     }
   } catch (e) {
     // Fail-open: JSON parse error -> stderr warning + fallback to default.
     process.stderr.write("[anysearch] routing-card.json parse error: " + (e instanceof Error ? e.message : String(e)) + "\n");
   }
+  return undefined;
+}
+
+export function loadRoutingCard(cwd: string): string {
+  const parsed = readRoutingCardOverride(cwd);
+  if (parsed && typeof parsed.routingCard === "string" && parsed.routingCard.length > 0) {
+    return parsed.routingCard;
+  }
   return DEFAULT_ROUTING_CARD;
+}
+
+// mdc opt-out: {"mdc": false} suppresses the .mdc rule-file write for every
+// ensureMdc call site. Only an explicit false opts out; missing file, missing
+// key, or bad JSON all fail open (write as before).
+function mdcOptOut(cwd: string): boolean {
+  const parsed = readRoutingCardOverride(cwd);
+  return parsed?.mdc === false;
 }

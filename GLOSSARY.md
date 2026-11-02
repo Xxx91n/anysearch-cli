@@ -103,7 +103,7 @@
 - **Hook Layer（HOOKS 层）**——平台无关 core handler + per-platform adapter；hook 子进程只读项目感知 + 窄 IPC 调长驻 server + 输出 JSON 决策，重操作全下沉 server。
 - **Progressive Disclosure（渐进披露）**——三层分发：SessionStart 路由卡（轻量指针）+ SKILL.md 按需加载 + AGENTS.md 最小常驻；注入太少 skill 永不触发，太多会话崩溃。
 - **Routing Card（路由卡）**——SessionStart 注入的静态路由指令四块：插件声明 + 5 工具用途 + 触发规则 + fail-open 说明；内容单一源，多路输出共享。
-- **Routing Card Override（路由卡配置覆盖）**——`.anysearch/routing-card.json` 可选覆盖内置卡；解析失败 fail-open 回退默认。
+- **Routing Card Override（路由卡配置覆盖）**——`.anysearch/routing-card.json` 可选覆盖内置卡；`{"mdc": false}` 为 .mdc 规则文件写入的 opt-out（在 `ensureMdc` 单点检查，cursor/antigravity 调用点同时生效）；解析失败 fail-open 回退默认。
 - **Fact-Process Split（事实流程分置）**——AGENTS.md 放每会话事实，SKILL.md 放多步流程；强制语义 = AGENTS.md 声明意图 + hook 代码实现。
 - **Cursor Dual Channel / MDC Fallback / Fire-and-Forget**——Cursor 双通道注入（additional_context + .mdc 规则文件兜底官方竞态 bug）；无 SessionStart 的平台由 hook 动态生成 .mdc（alwaysApply）；hook 执行不阻塞 agent loop。
 - **Fail-Open（放行策略）**——hooks/server/索引任一故障都放行工具调用直出原始结果，stderr 告警；增益层挂了不拖垮基础检索。
