@@ -2,7 +2,9 @@
 // decision 2: lives in packages/kernel.
 // decision 3: maps pi-agent-core 9 events to our 7 AgentEvent types.
 // decision 4: Domain 5-layer full consumption.
-// decision 5: token dimension budget via onResponse.
+// decision 5 (amended by #90/#103): token/USD budget metered via agent event
+// subscription (message_end usage accumulation, agent_end settle); USD comes
+// from pi-ai Usage.cost — no price table in TOML or kernel.
 // decision 6: dual session (pi Agent memory + SqliteSessionStore FTS5 sync).
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
@@ -213,6 +215,44 @@ export function mapAssistantMessageEvent(
   return null;
 }
 
+// #103 (T4 ruling #90): token/USD metering source = subscribed agent events.
+// pi-ai SimpleStreamOptions.onResponse receives ProviderResponse {status, headers}
+// — it carries NO usage — so the old onResponse accumulation was dead code and
+// token totals stayed 0 (also starving shouldStopAfterTurn's consolidate input).
+// The real source is the `message_end` event: it carries the full AgentMessage,
+// and AssistantMessage.usage has input/output/totalTokens plus pi-ai-computed
+// cost (Usage.cost.total is the single USD price source — no local price table).
+// Note message_end also fires for user prompts and tool-result messages (which
+// may carry their own usage); per the ruling only AssistantMessage.usage counts.
+export interface UsageTotals {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+}
+
+export function emptyUsageTotals(): UsageTotals {
+  return { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0 };
+}
+
+// Accumulate one message_end payload into the run totals. Pure helper,
+// exported for tests. Non-assistant messages and missing usage are ignored.
+export function accumulateUsage(totals: UsageTotals, message: unknown): void {
+  const msg = message as {
+    role?: string;
+    usage?: { input?: number; output?: number; totalTokens?: number; cost?: { total?: number } };
+  } | undefined;
+  if (!msg || msg.role !== "assistant" || !msg.usage) return;
+  const input = Number(msg.usage.input) || 0;
+  const output = Number(msg.usage.output) || 0;
+  totals.inputTokens += input;
+  totals.outputTokens += output;
+  // totalTokens includes cache read/write tokens when the provider reports
+  // them; fall back to input+output when absent.
+  totals.totalTokens += Number(msg.usage.totalTokens) || (input + output);
+  totals.costUsd += Number(msg.usage.cost?.total) || 0;
+}
+
 export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
   private readonly domainReloader: (() => unknown) | null;
@@ -270,9 +310,9 @@ export class PiAgentRuntime {
     // decision 4: prompts -> systemPrompt
     const systemPrompt = buildSystemPrompt(domain);
 
-    // Token budget tracking (decision 5)
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
+    // Token/USD budget tracking (decision 5, amended #103):
+    // accumulated from message_end events, settled at the end of the run.
+    const usageTotals = emptyUsageTotals();
 
     // Event buffer: collect events from subscribe() to yield them.
     const eventBuffer: AgentEvent[] = [];
@@ -292,13 +332,8 @@ export class PiAgentRuntime {
       streamFn: streamFn as any,
       getApiKey: this.opts.getApiKey as any,
       sessionId,
-      // decision 5: onResponse accumulates token usage.
-      onResponse: (response: any) => {
-        if (response?.usage) {
-          totalInputTokens += response.usage.inputTokens || 0;
-          totalOutputTokens += response.usage.outputTokens || 0;
-        }
-      },
+      // #103: no onResponse here — pi-ai's ProviderResponse is {status, headers}
+      // only (no usage); token accumulation lives in the message_end subscription.
       // transformContext async hot path — delegated to MemoryPipeline.inject.
       transformContext: async (messages: any[]) => {
         if (this.pipeline) return this.pipeline.inject(messages);
@@ -353,7 +388,9 @@ export class PiAgentRuntime {
       // Fires after each assistant turn; async, does not block current turn.
       shouldStopAfterTurn: async (ctx: any) => {
         const messages = (agent as any).state?.messages || [];
-        const totalTokens = totalInputTokens + totalOutputTokens;
+        // #103: real token count from message_end accumulation (the old
+        // onResponse path fed a constant 0 here).
+        const totalTokens = usageTotals.totalTokens;
         // 3-line sequential call — evaluate -> applyTo -> consolidate.
         // Claim-ticket pattern: gate.evaluate returns envelope, gate.applyTo injects, pipeline.consolidate consumes.
         const lastTool = ctx?.lastToolName || ctx?.toolName || "";
@@ -385,6 +422,10 @@ export class PiAgentRuntime {
           if (mapped) eventBuffer.push(mapped);
           break;
         }
+        case "message_end":
+          // #103: accumulate AssistantMessage.usage (tokens + pi-ai cost).
+          accumulateUsage(usageTotals, event.message);
+          break;
         case "tool_execution_start":
           eventBuffer.push({
             type: "tool_call",
@@ -421,8 +462,9 @@ export class PiAgentRuntime {
       }
     });
 
-    // Token budget: reserve at agent_start (decision 5).
-    // ponytail: per-call dimension used (token dimension pending BudgetLedgerPort API)
+    // Budget reserve at agent_start (decision 5).
+    // per-call dimension is the hard enforcement point; token/USD dimensions
+    // are settle-only in v1 (#103, ruling #90) so nothing to reserve here.
     if (ledger && sessionId) {
       ledger.reserveCalls(sessionId, 1);
     }
@@ -457,10 +499,19 @@ export class PiAgentRuntime {
       yield { type: "error", message: "Agent timeout after " + timeoutMs + "ms" };
     }
 
-    // Token budget: settle at agent_end (decision 5).
+    // Budget settle at agent_end (decision 5, amended #103).
     if (ledger && sessionId) {
       // ponytail: per-call settle (1 call reserved, 1 actual for the agent run).
       ledger.settleCalls(sessionId, 1, 1);
+      // #103: token/USD v1 is settle-only (reserved 0) — the per-call dimension
+      // stays the sole reserve/enforcement point; token-cap reservation waits
+      // on a per-run estimate config (follow-up ticket per ruling #90).
+      if (usageTotals.totalTokens > 0) {
+        ledger.settleTokens(sessionId, 0, usageTotals.totalTokens);
+      }
+      if (usageTotals.costUsd > 0) {
+        ledger.settleUsd(sessionId, 0, usageTotals.costUsd);
+      }
     }
 
     // decision 6: dual session — sync to FTS5 store.
@@ -487,8 +538,8 @@ export class PiAgentRuntime {
     if (agentError) {
       yield { type: "error", message: agentError };
     } else {
-      const tokenSummary = totalInputTokens + totalOutputTokens > 0
-        ? ` (tokens: ${totalInputTokens} in + ${totalOutputTokens} out)`
+      const tokenSummary = usageTotals.inputTokens + usageTotals.outputTokens > 0
+        ? ` (tokens: ${usageTotals.inputTokens} in + ${usageTotals.outputTokens} out)`
         : "";
       yield { type: "done", summary: `Agent completed${tokenSummary}` };
     }

@@ -3,7 +3,7 @@
 // ponytail: no test framework, assert-based demo.
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
-import { PiAgentRuntime, mapAssistantMessageEvent } from "../src/pi-runtime";
+import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals } from "../src/pi-runtime";
 import { distillGap, adjudicateReuseCompress } from "../src/memory-pipeline";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
 import type { FusedEnvelope, SufficiencySignal } from "@anysearch-cli/retriever";
@@ -418,6 +418,154 @@ function makeMockStreamFn(decision: string): any {
     .then((d: string) => d)
     .catch(() => "compress"); // D10 fallback
   assert(result === "compress", "D5: two-level async chain works correctly");
+}
+
+// === #103: BudgetLedger token/USD metering via event subscription ===
+
+// accumulateUsage: sums AssistantMessage.usage across calls (tokens + pi-ai cost).
+{
+  const totals = emptyUsageTotals();
+  accumulateUsage(totals, {
+    role: "assistant",
+    usage: { input: 100, output: 50, totalTokens: 150, cost: { total: 0.003 } },
+  });
+  accumulateUsage(totals, {
+    role: "assistant",
+    usage: { input: 200, output: 25, totalTokens: 240, cost: { total: 0.007 } },
+  });
+  assert(totals.inputTokens === 300, "#103: input tokens summed across messages");
+  assert(totals.outputTokens === 75, "#103: output tokens summed across messages");
+  assert(totals.totalTokens === 390, "#103: totalTokens summed (incl. cache tokens)");
+  assert(Math.abs(totals.costUsd - 0.01) < 1e-9, "#103: USD cost summed from pi-ai Usage.cost.total");
+}
+
+// accumulateUsage: totalTokens falls back to input+output when absent.
+{
+  const totals = emptyUsageTotals();
+  accumulateUsage(totals, { role: "assistant", usage: { input: 10, output: 5 } });
+  assert(totals.totalTokens === 15, "#103: totalTokens falls back to input+output");
+  assert(totals.costUsd === 0, "#103: missing cost treated as 0");
+}
+
+// accumulateUsage: non-assistant message_end payloads are ignored
+// (message_end also fires for user prompts and tool results; tool results
+// may carry their own usage — only AssistantMessage.usage counts per #90).
+{
+  const totals = emptyUsageTotals();
+  accumulateUsage(totals, { role: "user", content: "hi" });
+  accumulateUsage(totals, {
+    role: "toolResult",
+    usage: { input: 999, output: 999, totalTokens: 1998, cost: { total: 9.9 } },
+  });
+  accumulateUsage(totals, { role: "assistant" }); // no usage field
+  accumulateUsage(totals, undefined);
+  assert(totals.totalTokens === 0, "#103: non-assistant / usage-less messages ignored");
+  assert(totals.costUsd === 0, "#103: toolResult usage not billed to token/USD dimensions");
+}
+
+// Full agent loop: ledger spent tokens/USD reflect per-call usage sum (settle-only, reserved 0).
+{
+  // Ledger that records every reserve/settle with its arguments.
+  class RecordingLedger implements BudgetLedgerPort {
+    reservedCalls = 0; settledCalls = 0;
+    tokenSettles: Array<{ reserved: number; actual: number }> = [];
+    usdSettles: Array<{ reserved: number; actual: number }> = [];
+    tokenReserves = 0; usdReserves = 0;
+    reserveCalls(_s: string, count: number): boolean { this.reservedCalls += count; return true; }
+    settleCalls(_s: string, _r: number, actual: number): void { this.settledCalls += actual; }
+    reserveTokens(_s: string, _a: number): boolean { this.tokenReserves++; return true; }
+    settleTokens(_s: string, reserved: number, actual: number): void { this.tokenSettles.push({ reserved, actual }); }
+    reserveUsd(_s: string, _a: number): boolean { this.usdReserves++; return true; }
+    settleUsd(_s: string, reserved: number, actual: number): void { this.usdSettles.push({ reserved, actual }); }
+  }
+
+  // streamFn honoring the pi-agent-core contract: async-iterable of events
+  // plus result() resolving to the final AssistantMessage (with usage + cost).
+  const usage = {
+    input: 120, output: 30, cacheRead: 0, cacheWrite: 0, totalTokens: 150,
+    cost: { input: 0.0012, output: 0.0018, cacheRead: 0, cacheWrite: 0, total: 0.003 },
+  };
+  const finalMessage = {
+    role: "assistant",
+    content: [{ type: "text", text: "All done." }],
+    api: "test", provider: "test", model: "test-model",
+    usage, stopReason: "stop", timestamp: Date.now(),
+  };
+  const usageStreamFn = (_model: any, _context: any, _options?: any) => ({
+    async *[Symbol.asyncIterator]() {
+      yield { type: "done", message: finalMessage, partial: finalMessage };
+    },
+    result: async () => finalMessage,
+  });
+
+  const ledger = new RecordingLedger();
+  const runtime = new PiAgentRuntime({
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test-model", provider: "test" } as any,
+    streamFn: usageStreamFn,
+    ledger,
+    sessionId: "s-103",
+  });
+  const events: any[] = [];
+  for await (const ev of runtime.run("hello")) events.push(ev);
+
+  const errors = events.filter(e => e.type === "error");
+  assert(errors.length === 0, "#103: agent loop completes without error: " + JSON.stringify(errors));
+  // Acceptance 1: spent tokens = sum of LLM call usage (non-zero).
+  assert(ledger.tokenSettles.length === 1, "#103: one token settle per run");
+  assert(ledger.tokenSettles[0]?.actual === 150, "#103: settled tokens = usage sum (non-zero)");
+  assert(ledger.tokenSettles[0]?.reserved === 0, "#103: token dimension settle-only (reserved 0)");
+  // Acceptance 2: spent USD from pi-ai cost.
+  assert(ledger.usdSettles.length === 1, "#103: one USD settle per run");
+  assert(Math.abs((ledger.usdSettles[0]?.actual ?? 0) - 0.003) < 1e-9, "#103: settled USD = pi-ai Usage.cost.total");
+  assert(ledger.usdSettles[0]?.reserved === 0, "#103: USD dimension settle-only (reserved 0)");
+  // Acceptance 4 (regression): per-call dimension unchanged — reserve 1 at start, settle 1 at end.
+  assert(ledger.reservedCalls === 1, "#103: per-call reserve unchanged");
+  assert(ledger.settledCalls === 1, "#103: per-call settle unchanged");
+  // v1 has no token/USD reserve calls at all.
+  assert(ledger.tokenReserves === 0 && ledger.usdReserves === 0, "#103: no token/USD reserve in v1");
+  // Acceptance 3: real token counts reach the done summary (was constant 0 via onResponse).
+  const done = events.find(e => e.type === "done");
+  assert(typeof done?.summary === "string" && done.summary.includes("120 in + 30 out"), "#103: done summary carries real token counts");
+}
+
+// Zero-usage run: no token/USD settles written (no pointless ledger rows).
+{
+  class CountingLedger implements BudgetLedgerPort {
+    tokenSettles = 0; usdSettles = 0;
+    reserveCalls(): boolean { return true; }
+    settleCalls(): void { }
+    reserveTokens(): boolean { return true; }
+    settleTokens(): void { this.tokenSettles++; }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { this.usdSettles++; }
+  }
+  const finalMessage = {
+    role: "assistant",
+    content: [{ type: "text", text: "no usage reported" }],
+    api: "test", provider: "test", model: "test-model",
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: "stop", timestamp: Date.now(),
+  };
+  const zeroStreamFn = (_model: any, _context: any, _options?: any) => ({
+    async *[Symbol.asyncIterator]() {
+      yield { type: "done", message: finalMessage, partial: finalMessage };
+    },
+    result: async () => finalMessage,
+  });
+  const ledger = new CountingLedger();
+  const runtime = new PiAgentRuntime({
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test-model", provider: "test" } as any,
+    streamFn: zeroStreamFn,
+    ledger,
+    sessionId: "s-103-zero",
+  });
+  for await (const _ev of runtime.run("hello")) { /* drain */ }
+  assert(ledger.tokenSettles === 0, "#103: zero-usage run writes no token settle");
+  assert(ledger.usdSettles === 0, "#103: zero-usage run writes no USD settle");
 }
 
 console.log("---");
