@@ -149,6 +149,7 @@ jobs:
       # Signature split A: a require-time SIGSEGV/exit-139 here = better-sqlite3
       # dlopen/registration family — NOT the exit-time abort being probed.
       - name: better-sqlite3 registration check
+        working-directory: packages/store
         run: node -e "const D=require('better-sqlite3'); new D(':memory:'); console.log('sqlite registration OK')"
 
       - name: build cli (bundled artifact is the shipped exit path)
