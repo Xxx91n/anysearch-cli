@@ -148,21 +148,27 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
 
   // explicit override wins; otherwise resolve the active head on disk.
   const attributionCalibration = opts?.attributionCalibration ?? resolveActiveAttributionCalibration();
+  // ponytail: share one SessionStore across CLI + MCP. In-memory DB by default;
+  // opts.dbPath enables durable store for maintenance commands.
+  const dbPath = opts?.dbPath ?? ":memory:";
+  const store = new SqliteSessionStore(dbPath);
   const engineOpts: ConstructorParameters<typeof RetroaererdEngine>[1] = {
     ...(sourceWeights ? { sourceWeights } : {}),
     ...(attributionCalibration ? { attributionCalibration } : {}),
     // domain-name rides with the resolver for audit attributes.
     ...(urlPolicy ? { urlPolicy, domainName: domain } : {}),
     ...(repoVertical ? { repoVertical } : {}),
+    // Design: the store owns anchor disk I/O; the engine only sees the port —
+    // kernel purity (T7 decision #93). Writes fire only when the engine also
+    // carries a sessionId (engine opts, like the ledger).
+    anchors: {
+      saveAnchor: (sessionId, anchorType, payload) => store.saveAnchor(sessionId, anchorType, payload),
+    },
   };
   const retriever: RetrieverPort = new RetroaererdEngine(
     providers,
     Object.keys(engineOpts).length ? engineOpts : undefined,
   );
-  // ponytail: share one SessionStore across CLI + MCP. In-memory DB by default;
-  // opts.dbPath enables durable store for maintenance commands.
-  const dbPath = opts?.dbPath ?? ":memory:";
-  const store = new SqliteSessionStore(dbPath);
   const observation = new SqliteObservationStore(dbPath);
   return { retriever, config, store, observation, calibration: attributionCalibration };
 }
