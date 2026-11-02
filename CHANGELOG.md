@@ -28,6 +28,8 @@ All notable changes to this project are recorded here. Format follows
 
 ## Unreleased — r100: 元验证封顶（封顶滤尺三交集 + 修层/新层判据 + 坐席 Addendum + tau 递归/AST 前门 + deferred 触发器）
 
+> ⚠️ 本节所载治理机器已由治理庭 commit `3f85fee8`（"governance court: retire meta-validation machinery, untrack .scratch"）整体退役——`docs/enforcement-anchors.json` 已不存在。本节仅作历史记录保留，未改写。/ ⚠️ The governance machinery documented below was retired wholesale by governance-court commit `3f85fee8` ("governance court: retire meta-validation machinery, untrack .scratch") — `docs/enforcement-anchors.json` no longer exists. Section retained as history, not rewritten.
+
 ### Added
 
 - **执行锚 schema v2（T2-A）**：`docs/enforcement-anchors.json` 升 v2——`failure_classes` 封闭词表 + 每锚必填非空 `fails` ⊆ 词表（Kill Oracle：锚必须具名其防的用户可见产品故障类，禁止自由文本）+ `tier:"red"|"info"`（Audit Tier，观测不缺席）；`anchor-fails-empty` / `anchor-fails-unregistered` / `anchor-tier-invalid` 三新 RED。
