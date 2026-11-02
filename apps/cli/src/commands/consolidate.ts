@@ -52,23 +52,18 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     return 2;
   }
 
-  // LLM summarize seam (fail-open when unconfigured). Layered config (#38/#92):
+  // LLM summarize seam (fail-open when unconfigured). Layered config (#108):
   // --llm.* flag > ANS_LLM_* env > .anysearch/config.toml > ~/.anysearch-cli/config.toml.
+  // A baseUrl without api is warned by the loader and fail-closed by createLlmSession.
   const llmCfg = resolveLlmConfig({ flags: llmFlags });
   const providerName = llmCfg.provider;
   const modelName = llmCfg.model;
-  const baseUrl = llmCfg.baseUrl;
-  const api = llmCfg.api;
-  if (baseUrl && !api) {
-    process.stderr.write("base_url requires api=chat|messages|responses\n");
-    return 3;
-  }
 
   let summarize: ((episodes: ConsolidateEvidence[]) => Promise<string | null>) | undefined;
   if (providerName && modelName) {
     try {
       const session = await createLlmSession({
-        provider: providerName, model: modelName, baseUrl, api,
+        provider: providerName, model: modelName, baseUrl: llmCfg.baseUrl, api: llmCfg.api,
         apiKey: llmCfg.apiKey,
       });
       summarize = async (episodes) => {

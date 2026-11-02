@@ -179,22 +179,26 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     delete resolved.sources.api;
   }
 
-  // Secret resolution: env var wins; otherwise follow the winning file layer's
-  // env_key indirection. env_key only exists at user level (project whitelist).
+  // baseUrl is a no-op without a wire protocol: warn here so every caller
+  // sees the failure mode instead of each re-checking baseUrl && !api.
+  if (resolved.baseUrl && !resolved.api) {
+    warn("[config] base_url set without api — custom endpoint will be ignored by commands that require the pair");
+  }
+
+  // Secret resolution: env var wins; otherwise follow the user file's env_key
+  // indirection. env_key is user-level only (project whitelist drops it), so
+  // there is exactly one file layer to consult.
   if (env.ANS_LLM_API_KEY) {
     resolved.apiKey = env.ANS_LLM_API_KEY;
     resolved.sources.apiKey = "env";
-  } else {
-    const envKey = project.env_key ?? user.env_key;
-    if (envKey) {
-      resolved.envKey = envKey;
-      const secret = env[envKey];
-      if (secret) {
-        resolved.apiKey = secret;
-        resolved.sources.apiKey = project.env_key ? "project" : "user";
-      } else {
-        warn("[config] [llm].env_key names " + envKey + " but that env var is not set");
-      }
+  } else if (user.env_key) {
+    resolved.envKey = user.env_key;
+    const secret = env[user.env_key];
+    if (secret) {
+      resolved.apiKey = secret;
+      resolved.sources.apiKey = "user";
+    } else {
+      warn("[config] [llm].env_key names " + user.env_key + " but that env var is not set");
     }
   }
 

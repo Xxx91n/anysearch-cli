@@ -2,7 +2,7 @@
 // decision 7: uses PiAgentRuntime for agent loop.
 // uses createLlmSession deep module from kernel.
 // LLM config resolves through the layered loader (cli > env > project > user >
-// default; #38/#92): --llm.provider/--llm.model/--llm.base-url/--llm.api flags,
+// default; #108): --llm.provider/--llm.model/--llm.base-url/--llm.api flags,
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
@@ -19,7 +19,7 @@ export async function runChat(argv: string[]): Promise<number> {
   // Parse query from args.
   const query = args.join(" ");
   if (!query) {
-    process.stderr.write("Usage: ans chat [--llm.provider P] [--llm.model M] [query]\n");
+    process.stderr.write("Usage: ans chat [--llm.provider P] [--llm.model M] [--llm.base-url U --llm.api KIND] [query]\n");
     process.stderr.write("Example: ans chat \"What is RRF fusion?\"\n");
     return 2;
   }
@@ -37,14 +37,10 @@ export async function runChat(argv: string[]): Promise<number> {
   let session;
   try {
     // custom endpoint config — api is required when baseUrl is set (explicit
-    // three-way; no protocol sniffing). cfg.apiKey supplies the secret via
-    // env_key indirection or ANS_LLM_API_KEY.
-    const baseUrl = cfg.baseUrl;
-    if (baseUrl && !cfg.api) {
-      process.stderr.write("base_url requires api=chat|messages|responses\n");
-      return 3;
-    }
-    session = await createLlmSession({ provider: cfg.provider, model: cfg.model, baseUrl, api: cfg.api, apiKey: cfg.apiKey });
+    // three-way; no protocol sniffing; loader already warned on a bare baseUrl,
+    // createLlmSession is the fail-closed backstop). cfg.apiKey supplies the
+    // secret via env_key indirection or ANS_LLM_API_KEY.
+    session = await createLlmSession({ provider: cfg.provider, model: cfg.model, baseUrl: cfg.baseUrl, api: cfg.api, apiKey: cfg.apiKey });
   } catch (e: any) {
     process.stderr.write("Failed to initialize LLM: " + (e?.message || String(e)) + "\n");
     return 3;
