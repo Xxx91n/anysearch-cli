@@ -22,7 +22,14 @@ allowBuilds:
   sharp: false #: transitive via transformers.js; prebuilt @img/* optional deps used
 
 overrides:
-  zod: ">=3.25.28"
+  # #100/#46: lock zod >=4.2 so the MCP SDK v2 never hits its zod 4.0-4.1
+  # bundled-fallback leg (which drops tool-schema `description`s on tools/list).
+  # apps/mcp registers TypeBox schemas via fromJsonSchema() (zod-free path), and
+  # the SDK's own protocol schemas need zod >=4.2 for self-conversion with
+  # descriptions intact. Floor was >=3.25.28; raising it to >=4.2.0 keeps the
+  # whole tree on the already-resolved 4.x line (4.4.3) and removes the 4.0-4.1
+  # fallback leg from the reachable resolution set.
+  zod: ">=4.2.0"
   '@deepseek-ai/cordis': 'catalog:'
   '@deepseek-ai/dsh-agent': 'catalog:'
   '@deepseek-ai/dsh-brand': 'catalog:'

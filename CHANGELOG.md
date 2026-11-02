@@ -4,6 +4,19 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #100: MCP SDK v2 monorepo 收口（server 2.4.x + zod ≥4.2 + 双通道/Dual Era 验收）
+
+### Changed
+
+- **apps/mcp 迁至 `@modelcontextprotocol/server` 2.4.x**：`@modelcontextprotocol/server` ^2.0.0 → ^2.4.0、`@modelcontextprotocol/node` ^2.0.0 → ^2.1.2（node 2.1.2 的 peer 强制 server ^2.4.0，故同批升级；core 随之 2.4.0）。TypeBox 输入 schema 仍经官方 `fromJsonSchema()` 直达 `registerTool`（无 zod 双写，#39）；stdio + Streamable HTTP 双通道与 Dual Era 兼容行为不变——legacy 握手逐版回声、2026-07-28 声明优雅降级到 2025-11-25，宿主客户端零可见变化。HTTP 仍为每请求 `buildServer()` 工厂（满足 server 2.3.0 #2918 单连接约束）。
+- **zod 锁 ≥4.2（删 4.0–4.1 fallback 腿，#46）**：`pnpm-workspace.yaml` override `zod: ">=3.25.28"` → `">=4.2.0"`（全树唯一解析仍 4.4.3）。SDK v2 协议 schema 自转保留 descriptions，tools/list 输入 schema 不再相对 zod 4.2+ 降级。
+
+### Added
+
+- **#100 验收测试**（assert 风格，经 tsx 运行，无需 build）：`apps/mcp/test/sdk-v2-schema.test.ts` —— tools/list 5 工具 type descriptions 全量回环等于 kernel JSON schema、`~standard` vendor "mcp"（非 zod）、#94 实证；`apps/mcp/test/dual-era.test.ts` —— legacy 5 版 + 2026-07-28 降级协商、stdio + 无状态 Streamable HTTP 全 5 工具 tools/call 冒烟、AJV 入参校验（空 query / 额外属性拒绝）。
+- **#94 具名未证实点实证**：裸 TypeBox TSchema（`@sinclair/typebox` 0.34.52 与 `typebox` 1.4.3）均**不**含 `~standard`，不满足 StandardSchemaWithJSON —— 必须经 `fromJsonSchema()`（vendor "mcp"、`~standard.jsonSchema.input()` 原样返回、AJV 校验）。结论固化于 sdk-v2-schema.test.ts 并回写 #39/#46。
+- **`scripts/mcp-smoke.mjs` + CI 冒烟扩至双通道**：对构建产物 `dist/index.cjs` 跑 stdio + 无状态 Streamable HTTP 全 5 工具 tools/list 冒烟（descriptions + Dual Era 协商），替换原单工具 grep 握手；仅 tools/list，无需 provider/LLM key。
+
 ## 0.1.2 — 2026-10-22 (hotfix: ans_chat retrieval, search saturation stop, rate-limit class)
 
 ### Fixed

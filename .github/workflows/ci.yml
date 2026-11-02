@@ -50,17 +50,15 @@ jobs:
           pnpm --filter @anysearch-cli/plugin pack --pack-destination artifacts
         shell: bash
 
-      - name: Smoke — apps/mcp --help and protocol handshake
+      - name: Smoke — apps/mcp --help + 5-tool stdio & Streamable HTTP (#100)
         shell: bash
         run: |
           node apps/mcp/dist/index.cjs --help
-          # minimal MCP handshake (initialize + tools/list over stdio)
-          printf '%s\n' \
-            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
-            '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
-            '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-            | node apps/mcp/dist/index.cjs --transport stdio \
-            | grep -q '"search_web"'
+          # #100: full 5-tool smoke on BOTH transports (stdio + stateless Streamable
+          # HTTP) against the built dist — type descriptions intact (#46), Dual Era
+          # negotiation unchanged (legacy echo + 2026-07-28 -> 2025-11-25). tools/list
+          # only, so no provider/LLM keys are required.
+          node scripts/mcp-smoke.mjs
 
       - name: Smoke — apps/cli --help
         run: node apps/cli/dist/index.js --help
