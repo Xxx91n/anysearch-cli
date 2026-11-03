@@ -10,7 +10,7 @@ All notable changes to this project are recorded here. Format follows
 
 - **同 host + PID namespace 的 stale 锁自动回收**：锁记录 `{token, pid, host, bootId, namespace}`（boot/namespace 仅在 Linux 暴露，不可用时只按 host 判定）；`ESRCH` 仅在 host 与 PID namespace 一致时判为已死，上一 boot 留下的锁直接视为已死，跨 host / 跨 namespace / owner 不可读一律 fail-closed。回收以唯一 quarantine rename 作为选举，移走后复核 owner token；可能仍存活的 quarantine 只报告、不删除。
 - **启动对账**：`install` / `list` / `validate` 在持锁且无 `installed.json` 时清理 `.install-*`、`.installed-*.tmp`、已死的 `.installed.lock.reclaim-*` 与 `.installed.lock.pending-*`；`.uninstall-*` 备份、未登记 `<name>/` 与未知条目永不自动删除，`list` 继续对未登记内容 fail-closed。
-- **拒绝带本地 Git content-filter 的源**：`git status` 会执行仓库本地定义的 `filter.<name>.clean`/`process`（即便 `core.fsmonitor=false`），安装器在运行 `status` 前读取 `.git/config` 并拒绝此类源，避免执行 checkout 控制的代码。
+- **拒绝带本地 Git content-filter 的源**：`git status` 会执行仓库本地或 worktree 配置定义的 `filter.<name>.clean`/`process`（即便 `core.fsmonitor=false`），安装器在运行 `status` 前检查这两类配置并拒绝此类源，避免执行 checkout 控制的代码。
 
 ### Changed
 
