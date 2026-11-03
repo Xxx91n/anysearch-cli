@@ -46,13 +46,15 @@ function escapeQueryUnicode(query: string, maxTerms = 8): string {
 // Design: match each query CJK run as a contiguous substring of name+description in JS, as a
 // second lexical stage under the BM25 arm. Rejected: an auxiliary FTS column — a content-bearing
 // extra column moves every row's bm25 length normalization even for queries that never touch it.
-// Measured on the acceptance corpus, match "docs*": shipped two-column 0.99085996, with a
-// per-character column 1.17729808, with a bigram column 1.09191523; explicit bm25 weights (1,1,0)
-// return 1.09191523 unchanged, so silencing the column's weight does not undo it. That would
-// silently re-price #110's ASCII confidence. Also rejected: the trigram
-// tokenizer — it returns nothing for a full-text query under 3 characters, and two-character
-// words are the commonest word length in Chinese, besides flattening tf to 1. The corpus is a
-// handful of domain rows, so the scan costs nothing and gives exact substring semantics.
+// Measured with the ticket's own option 1 (each character space-separated in a third column) on
+// the acceptance corpus: "docs*" scored 0.99085996 shipped and 1.10026599 with that column (the
+// round-1 unigram+bigram variant gave 1.17124992), and "deep academic research" went 1.00083506 ->
+// 0.70620597. Explicit bm25 weights (1,1,0) return those same values, so silencing the column does
+// not undo the drift. #110's confidence is coverage x margin and margin is a ratio of these
+// numbers, so ASCII recommendations would have been re-priced silently. Also rejected: the trigram
+// tokenizer — it returns nothing for a full-text query under 3 characters, and two-character words
+// are the commonest word length in Chinese, besides flattening tf to 1. The corpus is a handful of
+// domain rows, so the scan costs nothing and gives exact substring semantics.
 // Stage combination follows GLOSSARY "Dual DB / Two-Stage Recall": the second stage keeps its own
 // order, is tagged with its own provenance label, and is discounted below the first stage's
 // weakest positive hit rather than fused into BM25 scoring — the FTS arm stays the anchor. No
@@ -61,14 +63,16 @@ function escapeQueryUnicode(query: string, maxTerms = 8): string {
 // as CJK, or the two confidence factors disagree about the same match.
 // The prolonged-sound mark U+30FC (the Japanese prosody mark), the iteration marks U+3031-U+3035
 // and the half-width voiced marks U+FF9E-U+FF9F are Script=Common, so the script properties miss
-// them although they are word-internal: left out, the word for "social" splits into two runs and
-// the mark-less query still matched the full text at strength 1 while termCoverage scored the same
-// term 0, because the whitespace split keeps the description one token. The half-width katakana
-// LETTERS are already \p{Script=Katakana} and need no listing; nothing is folded to full-width, so
-// a half-width query does not match its full-width spelling — a boundary the tests pin, not silence.
-// The full-width iteration marks U+309D-U+309E are claimed by Script=Hiragana, so V8 treats them as
-// letters and the guard below does NOT exclude them; a query of one of those is the same shape as a
-// one-character Han query, which #110 already answers with no length floor.
+// them although they are word-internal. Left out of the class they vanish from the query instead of
+// breaking it into pieces, and a mark-less query then matches a marked spelling as a full-strength
+// substring: "サーバー" against "サーバ運用", or "ソシャル" against "ソーシャルニュース", both score 1.
+// With them in, contiguity is required and both score 0 — the two cases the tests pin. The
+// half-width katakana LETTERS are already \p{Script=Katakana} and need no listing; nothing is
+// folded to full-width, so a half-width query does not match its full-width spelling either.
+// Some marks ARE claimed by a script and so count as letters: 々 (U+3005) and 〇 (U+3007) are Han,
+// ゝ ゞ (U+309D-U+309E) are Hiragana. The guard below does not exclude them, so a bare 々 query
+// matches a description containing it at confidence 1 — the same shape as #110's one-character Han
+// query, which also has no length floor. Disclosed as a boundary rather than narrowed here.
 // A run of marks only (a bare prosody mark or half-width voice mark) is not a query: every run has
 // to carry at least one letter from a CJK script, otherwise the stage fires on punctuation, returns
 // one candidate, and the margin rule hands that candidate confidence 1 — a confident recommendation
@@ -167,8 +171,13 @@ const STAGE_DISCOUNT = 0.5;
 
 // Share of the query's content words (relaxedTerms tokenization, same convention as fts5.ts)
 // matched in `text`: an ASCII word counts when it prefix-matches a token, a CJK word when its runs
-// occur as substrings — the same cjkRunFraction the substring stage prices with, so the two factors
-// cannot disagree about one match. 0 when the query has no content words.
+// occur as substrings — priced by cjkRunFraction, the same function the substring stage uses.
+// A term made only of Script=Common marks (a stray ー) carries no lexical content and is dropped
+// from the denominator, as the stage drops it from its own; before that it scored a hard 0 against
+// a stage that ignored it entirely, worth 1 to recall and half that to confidence. What remains is
+// definitional, not a bug: coverage averages per term, the stage weights by character, so a
+// partially matched multi-term query can still read lower in coverage. The lower of the two drives
+// confidence, which is the conservative direction.
 export function termCoverage(query: string, text: string): number {
   const terms = unicodeTerms(query);
   if (terms.length === 0) return 0;
@@ -176,17 +185,19 @@ export function termCoverage(query: string, text: string): number {
   const hay = text.toLowerCase();
   const toks = hay.split(UNICODE_SANITIZE_RE).filter(Boolean);
   let matched = 0;
+  let counted = 0;
   for (const t of terms) {
+    if (CJK_CHAR_RE.test(t) && cjkQueryRuns(t).length === 0) continue; // mark-only term
+    counted++;
     if (toks.some((k) => k.startsWith(t))) {
       matched++;
     } else if (CJK_CHAR_RE.test(t)) {
-      // #125: a CJK term buried inside a longer unbroken run is not a token prefix. Scored with
-      // cjkRunFraction — the same rule the substring stage prices on — so the recall factor and
-      // the confidence factor cannot disagree about one match.
+      // #125: a CJK term buried inside a longer unbroken run is not a token prefix, so the prefix
+      // test alone would report coverage 0 for a term the stage just matched.
       matched += cjkRunFraction(t, text);
     }
   }
-  return matched / terms.length;
+  return counted > 0 ? matched / counted : 0;
 }
 
 interface FtsRow {

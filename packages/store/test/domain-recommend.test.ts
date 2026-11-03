@@ -229,9 +229,13 @@ async function main() {
     assert(cjkRunFraction("サーバ", "サーバー運用資料〱ﾞ") === 1, "the same mark inside a word stays one run");
     assert(cjkRunFraction("ソーシャル", "ソーシャルニュース") === 1, "a marked word matches its marked spelling");
     assert(cjkRunFraction("ソシャル", "ソーシャルニュース") === 0, "dropping the mark breaks contiguity instead of scoring half a match");
-    // One rule for recall and confidence: they cannot price the same match apart.
+    // Recall and confidence must not disagree about a mark-only term: before it was dropped from
+    // the denominator, coverage read 0.5 here while the stage read 1.
+    const ZH_T = "zh 深度中文研究与学术检索 Deep academic research";
+    assert(termCoverage("中文 ー", ZH_T) === 1, "a stray mark-only term is not counted as a miss");
+    assert(cjkRunFraction("中文 ー", ZH_T) === 1, "the stage drops the same mark-only run");
     assert(termCoverage("ソシャル", "ソーシャルニュース") === cjkRunFraction("ソシャル", "ソーシャルニュース"),
-      "coverage and the substring stage price a mark-less query identically");
+      "a mark-less query scores 0 in both factors, not 1 in one and 0 in the other");
 
     // The stage is inert for a CJK-free query: nothing is added to the MATCH expression and no
     // row is scanned, so #110's pure-ASCII behaviour is preserved by construction.
