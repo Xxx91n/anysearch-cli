@@ -13,6 +13,7 @@ const COMPACTION_RESERVE_TOKENS = 16_384;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
 import { RagAdapterRegistry, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS } from "./rag-adapter";
+import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
 import { isTimeSensitive, isEvergreen } from "@anysearch-cli/store"; // no inline regex copies
@@ -249,16 +250,16 @@ export class MemoryPipeline {
     // injections target USER messages; a leading system/tool message must not swallow them.
     // #35: the adapter is selected by domain.rag.adapter (none / note-legacy / fts);
     // unknown ids fail open to none with a named stderr warning inside the registry.
+    // #104: pi-agent-core normalizes prompt("…") to content BLOCKS, so the seam is
+    // shape-aware (message-text.ts) instead of string-only — a string-only read
+    // either never fired or overwrote the user's message with the injected text.
     const firstUserIdx = result.findIndex((m: any) => m?.role === "user");
-    // Text-only seam: a non-string (content-block array) user turn has no
-    // text slot to append to, and must never be rewritten to "" (that would
-    // silently drop the user's message).
-    const firstRaw = firstUserIdx >= 0 ? result[firstUserIdx]?.content : undefined;
-    if (firstUserIdx >= 0 && typeof firstRaw === "string") {
+    const firstTarget = firstUserIdx >= 0 ? readMessageText(result[firstUserIdx]) : null;
+    if (firstUserIdx >= 0 && firstTarget) {
       // fts recall is keyed on the user's own question — the first user turn, which
       // is also where the block lands. Truncated so long prompts still match the
       // strict FTS5 rung.
-      const ragQuery = firstRaw.slice(0, RAG_QUERY_MAX_CHARS);
+      const ragQuery = firstTarget.text.slice(0, RAG_QUERY_MAX_CHARS);
       // Fail-open: retrieval faults are the registry's to report; the agent loop
       // always continues with the un-injected messages.
       let ragInstruction = "";
@@ -267,12 +268,15 @@ export class MemoryPipeline {
         if (injection && injection.block) ragInstruction = "\n\n" + injection.block;
       } catch { /* fail-open: never block a turn on RAG */ }
       if (ragInstruction) {
-        const first = result[firstUserIdx];
-        result = [
-          ...result.slice(0, firstUserIdx),
-          { ...first, content: firstRaw + ragInstruction },
-          ...result.slice(firstUserIdx + 1),
-        ];
+        // Shape-preserving write-back: blocks stay blocks, non-text blocks survive.
+        const next = appendMessageText(result[firstUserIdx], ragInstruction, firstTarget);
+        if (next) {
+          result = [
+            ...result.slice(0, firstUserIdx),
+            next,
+            ...result.slice(firstUserIdx + 1),
+          ];
+        }
       }
     }
 
@@ -280,15 +284,18 @@ export class MemoryPipeline {
     // Idempotent: skip if first message already carries a <user_preferences> block
     // (transformContext may be invoked more than once on retry/resume).
     try {
-      if (firstUserIdx >= 0) {
-        const first = result[firstUserIdx] as any;
-        const firstContent: string = typeof first.content === "string" ? first.content : "";
+      // Re-read after Stage-1 (same shape rules): the RAG block may have landed here.
+      const t0Target = firstUserIdx >= 0 ? readMessageText(result[firstUserIdx]) : null;
+      if (firstUserIdx >= 0 && t0Target) {
+        const firstContent = t0Target.text;
         if (!firstContent.includes("<user_preferences")) {
           const prefs = await store.listPreferences(process.cwd());
           if (prefs.length > 0) {
             const lines = prefs.map(r => "- **" + r.key + "**: " + r.value);
             const block = "<user_preferences updated=\"" + (prefs[0].modified ?? "") + "\">\n" + lines.join("\n") + "\n</user_preferences>";
-            result = [...result.slice(0, firstUserIdx), { ...first, content: block + "\n\n" + firstContent }, ...result.slice(firstUserIdx + 1)];
+            // Preferences stay a PREFIX of the text channel (documented position).
+            const next = prependMessageText(result[firstUserIdx], block + "\n\n", t0Target);
+            if (next) result = [...result.slice(0, firstUserIdx), next, ...result.slice(firstUserIdx + 1)];
           }
         }
       }

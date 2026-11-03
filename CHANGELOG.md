@@ -13,6 +13,10 @@ All notable changes to this project are recorded here. Format follows
 - **`fts` 注入块带 provenance 头**：`[RAG Context] (adapter=fts, provenance=memory, hits=N, traceId=rag:fts:N)`，每条命中带 role 标签（`- [assistant] …`）；命中文本在注入边界过 `sanitizeText`（零宽/双向覆盖符剔除）并压平换行，防伪造块结构；单条上限 600 字符、整块上限 4000 字符，避免一条巨行挤掉其余命中。
 - **`#104` 验收测试** `packages/kernel/test/rag-adapter.test.ts`：fts 注入 + provenance（AC1）、`none` / legacy `note` 字节级回归（AC2）、未知 adapter fail-open + 具名 stderr（AC3），外加 no-store / 检索抛错 / 无命中 / 空查询 / 缓存与热重载 / Stage-1 落点 / 不叠乘 / 出厂域全量审计。
 
+### Fixed
+
+- **Stage-1 注入在真实运行时从未命中（#104 自查 + CI 发现）**：pi-agent-core 0.84.2 把 `agent.prompt("…")` 规范化为 content block 数组（`content: [{type:"text",text}]`），而注入代码只认 `typeof content === "string"`——RAG 注入在实机上落空，旧 `note` 路径更会在 note 存在时把用户消息整体改写成 RAG 文本（数据丢失）。新增 `packages/kernel/src/message-text.ts`（`readMessageText` / `appendMessageText` / `prependMessageText`）：两种形状都支持，block 形状原地追加到文本块、非文本块原样保留，无文本通道时主动放弃注入。Stage-1 与 T0 偏好注入同时改用该助手；回归见 `packages/kernel/test/message-text.test.ts` 与 `rag-adapter.test.ts` 的 content-block 用例，端到端断言不再假设消息形状。
+
 ### Changed
 
 - **RAG 注入点接线方式改为 adapter 分派**：注入槽位不变（`MemoryPipeline.inject` Stage-1、首条 user 消息），但“有 adapter 且有 note 才注入”的隐式条件被注册表取代——`adapter` 是唯一开关，`none` 域即使残留 `config.note` 也不再注入。`fts` 的检索 query 取首条 user 消息原文（截断 400 字符以适配严格 FTS5 梯级）。

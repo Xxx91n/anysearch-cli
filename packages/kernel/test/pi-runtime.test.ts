@@ -5,6 +5,7 @@
 
 import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals } from "../src/pi-runtime";
 import { distillGap, adjudicateReuseCompress } from "../src/memory-pipeline";
+import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
 import type { FusedEnvelope, SufficiencySignal } from "@anysearch-cli/retriever";
 
@@ -626,31 +627,44 @@ console.log("---");
     return { events, messages: seenContexts.flat() };
   };
 
+  // The model-facing text of a message, whatever shape pi handed us: pi-agent-core
+  // normalizes prompt("…") to content BLOCKS ({type:"text",text}), so a
+  // string-only assertion would silently match nothing (this is exactly the
+  // production-path bug #104 review found — the seam was string-only).
+  const textOf = (m: any) => readMessageText(m)?.text ?? "";
+  const allText = (messages: any[]) => messages.map(textOf).join("\n");
+
   // adapter="fts": recalled content reaches the model, provenance-labeled.
   {
     const { events, messages } = await runWith({ adapter: "fts" });
     assert(events.every(e => e.type !== "error"), "#104 fts: agent loop completes without error");
-    const injected = messages.filter((m: any) => typeof m?.content === "string" && m.content.includes("[RAG Context]"));
+    const injected = messages.filter((m: any) => textOf(m).includes("[RAG Context]"));
     assert(injected.length === 1, "#104 fts: exactly one injected message (Stage-1)");
-    const text = injected[0].content as string;
+    const text = textOf(injected[0]);
     assert(text.includes("internal wiki: proxy port 8080"), "#104 fts: recalled private content reaches the model");
     assert(/adapter=fts/.test(text) && /provenance=memory/.test(text), "#104 fts: injection carries provenance");
     assert(text.includes("how do I reach the internal wiki?"), "#104 fts: user question preserved");
+    assert(!allText(messages).includes("[object Object]"), "#104 fts: no message was stringified into oblivion");
+    // Shape preservation: whatever pi used, the user turn still has exactly one
+    // text channel holding question + block (never replaced by the block).
+    assert(text.indexOf("how do I reach the internal wiki?") < text.indexOf("[RAG Context]"),
+      "#104 fts: block appended AFTER the user text (never overwrites it)");
   }
 
   // adapter="none": nothing injected (regression).
   {
     const { messages } = await runWith({ adapter: "none" });
-    assert(messages.every((m: any) => typeof m?.content !== "string" || !m.content.includes("[RAG Context]")),
-      "#104 none: no RAG injection");
+    assert(!allText(messages).includes("[RAG Context]"), "#104 none: no RAG injection");
+    assert(allText(messages).includes("how do I reach the internal wiki?"), "#104 none: user turn intact");
   }
 
   // legacy adapter="note": unchanged note injection (regression).
   {
     const { messages } = await runWith({ adapter: "note", config: { note: "wiki is on the intranet" } });
-    const injected = messages.filter((m: any) => typeof m?.content === "string" && m.content.includes("[RAG Context]"));
-    assert(injected.length === 1 && (injected[0].content as string).includes("[RAG Context] wiki is on the intranet"),
+    const injected = messages.filter((m: any) => textOf(m).includes("[RAG Context]"));
+    assert(injected.length === 1 && textOf(injected[0]).includes("[RAG Context] wiki is on the intranet"),
       "#104 note: legacy note injection unchanged");
+    assert(textOf(injected[0]).includes("how do I reach the internal wiki?"), "#104 note: user text preserved");
   }
 
   // unknown id: fail-open, no injection, loop still completes, stderr warns once.
@@ -665,8 +679,7 @@ console.log("---");
     } finally {
       process.stderr.write = origWrite;
     }
-    assert(messages.every((m: any) => typeof m?.content !== "string" || !m.content.includes("[RAG Context]")),
-      "#104 unknown adapter: fail-open, no injection");
+    assert(!allText(messages).includes("[RAG Context]"), "#104 unknown adapter: fail-open, no injection");
     assert(events.every(e => e.type !== "error"), "#104 unknown adapter: agent loop still completes");
     assert(/\[anysearch\] unknown rag\.adapter "qdrant" — falling back to none/.test(captured),
       "#104 unknown adapter: named stderr warning");

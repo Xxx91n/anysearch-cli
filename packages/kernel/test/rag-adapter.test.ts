@@ -334,15 +334,62 @@ test("no user message at all (assistant-only) is a no-op", async () => {
   assert.equal(spies.calls, 0, "no recall without a user message");
 });
 
-test("a non-string (content-block) first user turn is preserved, never rewritten", async () => {
-  // Stage-1 is a text seam. Dropping a content-block user turn would silently
-  // delete the user's message, so the adapter must stand down instead.
+test("content-block user turn (the real pi-agent-core shape) is injected in place, not replaced", async () => {
+  // pi-agent-core normalizes prompt("…") to [{type:"text",text}] (verified against
+  // @earendil-works/pi-agent-core 0.84.2). A string-only seam would either never
+  // fire here or overwrite the user's message with the RAG block.
   const spies = { calls: 0, query: "", limit: 0 };
-  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_FTS }, storeWith([{ rowid: 1, role: "a", content: "recalled" }], { spies }));
+  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_FTS }, storeWith([{ rowid: 1, role: "a", content: "recalled fact" }], { spies }));
   const blocks = [{ type: "text", text: "block-form question" }];
   const out = await pipeline.inject([{ role: "user", content: blocks }] as any);
-  assert.deepEqual(out[0], { role: "user", content: blocks }, "content blocks untouched");
-  assert.equal(spies.calls, 0, "no recall for a turn with no text slot");
+  const content = (out[0] as any).content;
+  assert.equal(content.length, 1, "block array stays one text block (no shape churn)");
+  assert.equal(content[0].type, "text", "text block type preserved");
+  assert.ok(content[0].text.startsWith("block-form question"), "user text stays first");
+  assert.ok(content[0].text.includes("[RAG Context]"), "RAG block appended inside the text block");
+  assert.ok(content[0].text.includes("recalled fact"), "recalled row injected");
+  assert.equal(spies.query, "block-form question", "recall keyed on the block text");
+  assert.deepEqual(blocks[0], { type: "text", text: "block-form question" }, "input message not mutated");
+});
+
+test("a content-block turn keeps its non-text blocks", async () => {
+  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_FTS }, storeWith([{ rowid: 1, role: "a", content: "recalled" }]));
+  const image = { type: "image", data: "b64" };
+  const out = await pipeline.inject([{ role: "user", content: [image, { type: "text", text: "what is this?" }] }] as any);
+  const content = (out[0] as any).content;
+  assert.equal(content.length, 2, "block count preserved");
+  assert.deepEqual(content[0], image, "non-text block untouched");
+  assert.ok(content[1].text.includes("what is this?") && content[1].text.includes("recalled"), "text block carries question + block");
+});
+
+test("a user turn with no text channel is left untouched (nothing to append to)", async () => {
+  const spies = { calls: 0, query: "", limit: 0 };
+  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_FTS }, storeWith([{ rowid: 1, role: "a", content: "recalled" }], { spies }));
+  const msgs = [{ role: "user", content: [{ type: "image", data: "b64" }] }];
+  const out = await pipeline.inject(msgs as any);
+  assert.deepEqual(out[0], msgs[0], "image-only turn untouched");
+  assert.equal(spies.calls, 0, "no recall without a text channel");
+});
+
+test("T0 preferences block stays a PREFIX of a content-block user turn", async () => {
+  const store: any = storeWith([]);
+  store.listPreferences = async () => [{ key: "output.language", value: "Chinese", modified: "2026-08-25T00:00:00.000Z" }];
+  const pipeline = new MemoryPipeline({
+    store, retriever, domain: domain({ adapter: RAG_ADAPTER_FTS }),
+    model: {} as any, streamFn: (() => ({})) as any, sessionId: "s1",
+  });
+  const out = await pipeline.inject([{ role: "user", content: [{ type: "text", text: "q" }] }] as any);
+  const text = (out[0] as any).content[0].text as string;
+  assert.ok(text.startsWith("<user_preferences"), "preferences stay the leading text");
+  assert.ok(text.includes("q"), "user text preserved after the block");
+});
+
+test("string-shaped turns still behave exactly as before (both shapes supported)", async () => {
+  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_FTS }, storeWith([{ rowid: 1, role: "a", content: "recalled" }]));
+  const out = await pipeline.inject([{ role: "user", content: "plain question" }] as any);
+  assert.equal(typeof (out[0] as any).content, "string", "string stays a string");
+  assert.ok((out[0] as any).content.startsWith("plain question"), "user text first");
+  assert.ok((out[0] as any).content.includes("recalled"), "block appended");
 });
 
 test("an empty-string first user turn still receives the note block (no crash on empty text)", async () => {
