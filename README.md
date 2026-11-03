@@ -211,8 +211,9 @@ residue under the lock: `.install-*` staging, `.installed-*.tmp` when no
 directories. A `.installed-*.tmp` file that sits beside a published
 `installed.json` is left untouched (remove it yourself once no `ans skill`
 process is running). Everything else is left alone: an unrecorded `<name>/` and
-any unknown entry are never deleted, and `ans skill list` keeps refusing a
-non-empty directory without `installed.json`. `.uninstall-*` backups carry random
+any unknown entry are never deleted (`ans skill list` keeps refusing a non-empty
+directory without `installed.json`); delete an unrecorded `<name>/` left by an
+interrupted install yourself before reinstalling it. `.uninstall-*` backups carry random
 names and are never deleted automatically — when the manifest still records a
 skill whose `<name>/` directory is missing, the command prints a recovery hint
 naming the backups in `skills/synced/`, and you decide whether to rename one back

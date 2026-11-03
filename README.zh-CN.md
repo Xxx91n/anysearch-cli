@@ -190,8 +190,9 @@ schema 时，卸载会拒绝且不删除任何文件；绝不靠扫描目录猜�
 `.installed-*.tmp`、以及回收留下的 `.installed.lock.reclaim-*` 隔离目录。
 已发布 `installed.json` 旁边残留的 `.installed-*.tmp` 不会被自动删除（确认无
 `ans skill` 进程运行时自行删除即可）。
-其余内容一律不动：未登记 `<name>/` 与任何未知条目永不删除，`ans skill list`
-对没有 `installed.json` 的非空目录仍照旧 fail-closed。`.uninstall-*` 备份名为
+其余内容一律不动：未登记 `<name>/` 与任何未知条目永不删除（`ans skill list`
+对没有 `installed.json` 的非空目录仍照旧 fail-closed）；安装中断留下的未登记
+`<name>/` 需自行删除后再重装。`.uninstall-*` 备份名为
 随机值，永不自动删除——清单仍记录某 skill 但其 `<name>/` 目录缺失时，命令会
 打印恢复提示并指出 `skills/synced/` 中的备份，由你决定把其中一个改回
 `<name>/`，或用 `ans skill uninstall <name>` 删掉这条失效记录（项目级加
