@@ -169,8 +169,8 @@ ans skill uninstall research --project
 `synced/` 是机器管理区；同级 `skills/<name>/` 留给用户手写。`SKILL.md` 必须以
 可解析的 YAML frontmatter mapping 开头，其中 `name` 为 1–64 位小写字母/数字，
 可用单个连字符分隔（不能是 Windows 设备名），并据此选择安装目录。这里只检查
-语法和名字，不是完整的 Agent Skills linter。Git 元数据与符号链接不会拷贝；
-已有安装绝不覆盖（请先卸载）。
+语法和名字，不是完整的 Agent Skills linter。Git 元数据会省略，符号链接会被
+拒绝；已有安装绝不覆盖（请先卸载）。
 
 版本 1 的 `installed.json` 含按名字索引的 `skills` 对象；每项记录 `name`、
 绝对路径 `source`、`commit`、`dirty` 和可选 `tag`。清单缺失、损坏或不符合

@@ -178,8 +178,8 @@ User scope is the default (`--user` selects it explicitly):
 user-authored. `SKILL.md` must begin with a parseable YAML frontmatter mapping
 whose `name` is 1–64 lowercase letters/digits with single hyphens (not a Windows
 device name). That name selects the destination. This is a syntax/name check,
-not a full Agent Skills linter. Git metadata and symlinks are not copied;
-existing installations are never overwritten (uninstall first).
+not a full Agent Skills linter. Git metadata is omitted and symlinks are
+rejected; existing installations are never overwritten (uninstall first).
 
 The version-1 `installed.json` has a `skills` object keyed by name. Each entry
 contains `name`, absolute `source`, `commit`, `dirty`, and optional `tag`.

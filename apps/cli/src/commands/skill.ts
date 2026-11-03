@@ -86,7 +86,7 @@ export async function runSkill(args: string[], opts: SkillCommandOptions = {}): 
       }
       case "list": {
         const entries = listInstalledSkills(scopeOpts);
-        out(`Installed skills (${scope ?? "user"}): ${skillManifestPath(scopeOpts)}\n`);
+        out(`Installed skills (${scopeOpts.project ? "project" : "user"}): ${skillManifestPath(scopeOpts)}\n`);
         if (entries.length === 0) out("No installed skills.\n");
         for (const entry of entries) {
           out(`${entry.name}\t${entry.commit.slice(0, 12)}${entry.tag ? ` (${entry.tag})` : ""}${entry.dirty ? " [dirty]" : ""}\t${entry.source}\n`);

@@ -141,6 +141,9 @@ test("an empty scope lists nothing; missing manifest with orphan files still ref
   const f = fixture(t);
   assert.equal((await f.run(["list"])).code, 0);
   assert.equal((await f.run(["validate"])).code, 0);
+  const absent = await f.run(["uninstall", "demo"]);
+  assert.equal(absent.code, 1);
+  assert.match(absent.stderr, /manifest is missing/);
   const orphan = join(managedSkillsRoot(f.opts), "demo", "SKILL.md");
   mkdirSync(join(orphan, ".."), { recursive: true });
   writeFileSync(orphan, "orphan");

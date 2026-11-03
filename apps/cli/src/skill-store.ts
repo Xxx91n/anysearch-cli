@@ -115,11 +115,11 @@ function corruptManifest(path: string, detail: string): never {
 // any directory. Missing, malformed and schema-invalid manifests all fail closed;
 // never rediscover deletion targets by scanning the filesystem.
 function readManifest(managed: string): SkillManifest {
-  requireDirectory(skillsRootFromManaged(managed), "skills root");
-  requireDirectory(managed, "managed skills root");
   const path = join(managed, "installed.json");
   const stat = statIfPresent(path);
   if (!stat) fail(`skill manifest is missing: ${path}. Refusing to guess installation targets; no files were removed.`);
+  requireDirectory(skillsRootFromManaged(managed), "skills root");
+  requireDirectory(managed, "managed skills root");
   if (!stat.isFile() || stat.isSymbolicLink()) fail(`skill manifest must be a regular, non-symlink file: ${path}`);
   let raw: unknown;
   try {
