@@ -71,7 +71,7 @@ export async function runSkill(args: string[], opts: SkillCommandOptions = {}): 
   try {
     switch (command) {
       case "install": {
-        const entry = installSkill(positional[0], scopeOpts);
+        const entry = await installSkill(positional[0], scopeOpts);
         out(`Installed ${entry.name} to ${managedSkillsRoot(scopeOpts)}\n`
           + `Source: ${entry.source}\nCommit: ${entry.commit}${entry.tag ? ` (tag ${entry.tag})` : ""}${entry.dirty ? " [dirty source]" : ""}\n`
           + "Installed only; activation remains in Active Domain TOML ([skills].active).\n");

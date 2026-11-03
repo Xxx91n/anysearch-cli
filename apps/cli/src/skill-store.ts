@@ -4,7 +4,7 @@
 // The sibling skills/<name>/ space belongs to user-authored skills. This module
 // never reads or writes domain TOML: installation is NOT Skill Active List activation.
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync,
@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import type { Readable } from "node:stream";
 import { parseDocument } from "yaml";
 
 export interface SkillOptions {
@@ -659,20 +660,45 @@ export function validateSkillFile(path: string): string {
   return name;
 }
 
+/** Upper bound for a Git inspection child; a hung probe must fail, not hang installs. */
+const GIT_TIMEOUT_MS = 10_000;
+/** Grace period between the early-stop SIGTERM and the SIGKILL fallback. */
+const GIT_KILL_GRACE_MS = 1_000;
+/** Bound on buffered status stderr, kept only to explain a failure. */
+const STATUS_STDERR_LIMIT = 8 * 1024;
+
+/** Variables that redirect Git away from `-C <source>`: inherited values must not choose the repository. */
+const REPOSITORY_LOCATION_ENV = [
+  "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+] as const;
+
+/** Build a Git child environment whose repository discovery comes from `-C` alone. */
+function gitEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, ...extra };
+  for (const key of REPOSITORY_LOCATION_ENV) delete env[key];
+  return env;
+}
+
+/** Map a Git inspection failure to an actionable installer error. */
+function inspectionError(source: string, error: unknown): SkillError {
+  const e = error as (NodeJS.ErrnoException & { stderr?: Buffer | string }) | undefined;
+  if (e?.code === "ENOENT") return new SkillError("Git is required to record the source commit; install Git and retry.");
+  const detail = e?.stderr ? String(e.stderr).trim() : String(e?.message ?? error);
+  return new SkillError(`cannot inspect Git source ${source}: ${detail}`);
+}
+
 /** Run a read-only Git inspection command in the source checkout. */
 function git(source: string, args: string[]): string {
   try {
     // Design: provenance collection is data-only — repository-configured
     // fsmonitor helpers are disabled so `git status` cannot execute checkout code.
     return execFileSync("git", ["-c", "core.fsmonitor=false", "-C", source, ...args], {
-      encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
-      timeout: 10_000, maxBuffer: 16 * 1024 * 1024,
+      encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, env: gitEnv(),
+      timeout: GIT_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024,
     }).trim();
   } catch (error) {
-    const e = error as NodeJS.ErrnoException & { stderr?: Buffer | string };
-    if (e.code === "ENOENT") fail("Git is required to record the source commit; install Git and retry.");
-    const detail = e.stderr ? String(e.stderr).trim() : e.message;
-    fail(`cannot inspect Git source ${source}: ${detail}`);
+    throw inspectionError(source, error);
   }
 }
 
@@ -686,23 +712,145 @@ function gitConfigKeys(source: string, pattern: string): string[] {
       "config", "--show-scope", "--get-regexp", "--name-only", pattern,
     ], {
       encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
-      timeout: 10_000, maxBuffer: 16 * 1024 * 1024,
+      env: gitEnv(), timeout: GIT_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024,
     }).trim();
     return output.split(/\r?\n/).filter(Boolean)
       .map((line) => line.split("\t"))
       .filter((parts) => parts.length === 2 && (parts[0] === "local" || parts[0] === "worktree"))
       .map((parts) => parts[1]);
   } catch (error) {
-    const e = error as NodeJS.ErrnoException & { status?: number; stderr?: Buffer | string };
-    if (e.status === 1) return [];
-    if (e.code === "ENOENT") fail("Git is required to record the source commit; install Git and retry.");
-    const detail = e.stderr ? String(e.stderr).trim() : e.message;
-    fail(`cannot inspect Git source ${source}: ${detail}`);
+    if ((error as NodeJS.ErrnoException & { status?: number }).status === 1) return [];
+    throw inspectionError(source, error);
   }
 }
 
+/** Narrow child-process surface of the streaming `git status` probe. */
+export interface StatusProbeChild {
+  stdout: Readable;
+  stderr: Readable;
+  kill(signal?: NodeJS.Signals): boolean;
+  on(event: "close", listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
+  on(event: "error", listener: (error: Error) => void): unknown;
+}
+
+/** Child factory for the dirty probe; injectable so the bound can be tested. */
+export type StatusProbeSpawn = (
+  command: string,
+  args: string[],
+  options: { stdio: ["ignore", "pipe", "pipe"]; windowsHide: true; env: NodeJS.ProcessEnv },
+) => StatusProbeChild;
+
+/** Spawn the real Git child for the bounded dirty probe. */
+const defaultStatusProbeSpawn: StatusProbeSpawn = (command, args, options) =>
+  spawn(command, args, options) as unknown as StatusProbeChild;
+
+// Test seam (__setStatusProbeForTest): production always spawns real Git with the default bound.
+let statusProbeHooks: { spawn?: StatusProbeSpawn; timeoutMs?: number } | null = null;
+
+/** Replace the dirty-probe child factory and timeout in tests (#138 bounded-output regression). */
+export function __setStatusProbeForTest(hooks: { spawn?: StatusProbeSpawn; timeoutMs?: number } | null): void {
+  statusProbeHooks = hooks;
+}
+
+/**
+ * Decide whether the selected source directory has tracked, staged, untracked or
+ * ignored changes without buffering Git's listing (#138).
+ *
+ * Only the existence of the first entry matters, so `git status` is spawned with
+ * a bounded read: as soon as one porcelain line arrives the child is stopped and
+ * the remaining output is never collected. A checkout with tens of megabytes of
+ * ignored entries therefore cannot exhaust a buffer or turn a usable source into
+ * a provenance failure. Stopping the child is an intentional early exit, not a
+ * Git failure — a non-zero exit before any entry, a spawn error or a timeout
+ * still fails the install before anything is published.
+ */
+function isDirty(source: string): Promise<boolean> {
+  const args = ["-c", "core.fsmonitor=false", "-C", source, "status", "--porcelain", "--untracked-files=all", "--ignored", "--", "."];
+  const timeoutMs = statusProbeHooks?.timeoutMs ?? GIT_TIMEOUT_MS;
+  return new Promise<boolean>((resolve, reject) => {
+    const spawnChild = statusProbeHooks?.spawn ?? defaultStatusProbeSpawn;
+    // Design: the same scrubbed environment as `git()` — `commit`, `tag` and
+    // `dirty` must all describe the selected checkout. GIT_OPTIONAL_LOCKS=0 keeps
+    // `git status` from refreshing and rewriting the index: the probe terminates
+    // the child as soon as dirtiness is known, and interrupting an index refresh
+    // could leave a stale .git/index.lock in the user's checkout.
+    const env = gitEnv({ GIT_OPTIONAL_LOCKS: "0" });
+    let child: StatusProbeChild;
+    try {
+      child = spawnChild("git", args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, env });
+    } catch (error) {
+      reject(inspectionError(source, error));
+      return;
+    }
+    let stderr = "";
+    let entrySeen = false;
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    let killTimer: NodeJS.Timeout | undefined;
+    // Design: never resolve on "we sent a signal". A child that ignores SIGTERM
+    // is escalated to SIGKILL, so the probe never leaves an orphaned Git process.
+    const stop = (signal: NodeJS.Signals) => {
+      try {
+        child.kill(signal);
+      } catch {
+        // The close/timeout path still decides the outcome.
+      }
+    };
+    const settle = (action: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(killTimer);
+      child.stdout.removeAllListeners("data");
+      child.stdout.pause();
+      action();
+    };
+    timer = setTimeout(() => {
+      settle(() => reject(new SkillError(
+        `cannot inspect Git source ${source}: git status did not finish within ${timeoutMs}ms. `
+        + "No files were installed; retry, or check why Git hangs in that checkout.",
+      )));
+      stop("SIGKILL");
+    }, timeoutMs);
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      if (settled || entrySeen) return;
+      // Design: porcelain entries are never whitespace-only; ignoring blank
+      // chunks keeps the previous trimmed-output comparison intact.
+      if (!/\S/.test(chunk)) return;
+      entrySeen = true;
+      // Early stop: drop the pipe so nothing further is buffered, then end Git.
+      child.stdout.removeAllListeners("data");
+      child.stdout.pause();
+      stop("SIGTERM");
+      killTimer = setTimeout(() => stop("SIGKILL"), GIT_KILL_GRACE_MS);
+    });
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      if (stderr.length < STATUS_STDERR_LIMIT) stderr = (stderr + chunk).slice(0, STATUS_STDERR_LIMIT);
+    });
+    // Design: `on` (not `once`) — a second error after a kill must not crash the
+    // installer as an unhandled 'error' event.
+    child.on("error", (error) => {
+      settle(() => {
+        if (entrySeen) resolve(true);
+        else reject(inspectionError(source, error));
+      });
+      stop("SIGKILL");
+    });
+    child.on("close", (code, signal) => {
+      settle(() => {
+        if (entrySeen) return resolve(true);
+        if (code === 0) return resolve(false);
+        const outcome = signal ? `git status was terminated by ${signal}` : `git status exited with code ${code}`;
+        reject(new SkillError(`cannot inspect Git source ${source}: ${outcome}${stderr.trim() ? `: ${stderr.trim()}` : ""}`));
+      });
+    });
+  });
+}
+
 /** Record the source path, HEAD commit, exact tag if present, and dirty state. */
-function provenance(source: string): Omit<InstalledSkill, "name"> {
+async function provenance(source: string): Promise<Omit<InstalledSkill, "name">> {
   // Design: compare native-canonical paths — on Windows, plain realpath keeps
   // 8.3 short names while Git reports the long toplevel, so `relative` would
   // wrongly place the source outside its repository.
@@ -719,7 +867,7 @@ function provenance(source: string): Omit<InstalledSkill, "name"> {
   if (filters.length > 0) {
     fail(`source repository defines Git content filters (${filters.join(", ")}); refusing to run status on it. Remove those definitions from the repository's local or worktree Git config, or install an export without .git.`);
   }
-  const dirty = git(source, ["status", "--porcelain", "--untracked-files=all", "--ignored", "--", "."]).length > 0;
+  const dirty = await isDirty(source);
   return { source, commit, dirty, ...(tag ? { tag } : {}) };
 }
 
@@ -730,7 +878,7 @@ function contains(parent: string, child: string): boolean {
 }
 
 /** Install a local Git skill directory into the managed scope without activating it. */
-export function installSkill(sourceArgument: string, opts: SkillOptions = {}): InstalledSkill {
+export async function installSkill(sourceArgument: string, opts: SkillOptions = {}): Promise<InstalledSkill> {
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(sourceArgument) || /^git@[^:]+:/.test(sourceArgument)) {
     fail("only local Git checkout directories are supported; clone and checkout the desired commit/tag first", 2);
   }
@@ -745,7 +893,7 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
   // rejects control characters — reject it here so an install cannot brick the scope.
   if (!printablePath(source)) fail("source directory path must be absolute and free of control characters");
   const name = validateSkillFile(join(source, "SKILL.md"));
-  const metadata = provenance(source);
+  const metadata = await provenance(source);
   const managed = managedSkillsRoot(opts);
   const target = join(managed, name);
   if (contains(source, target)) fail("source contains its installation destination; choose a separate skill directory");
