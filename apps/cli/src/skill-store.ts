@@ -267,9 +267,9 @@ export function pidNamespaceIdentity(): string | undefined {
 }
 
 // Design: `process.kill(pid, 0)` is the only staleness signal. EPERM means the pid
-// exists under another user (alive), ESRCH means it is provably gone on this host,
-// and anything else (reused pid included) is treated as indeterminate rather than
-// guessed — a lock is never removed on a hunch.
+// exists under another user (alive), ESRCH means it is provably gone in this PID
+// namespace, and anything else (reused pid included) is treated as indeterminate
+// rather than guessed — a lock is never removed on a hunch.
 /** Classify a recorded pid without signalling the process. */
 export function probeHolder(pid: number): HolderState {
   try {
@@ -305,7 +305,8 @@ export interface ReclaimSeam {
 /** Whether a reclaim removed the stale lock, left a holder in place, or lost the rename race. */
 export type ReclaimOutcome = "reclaimed" | "held" | "lost";
 
-// Design: reclaim is same-host only and never deletes a lock it cannot prove dead.
+// Design: reclaim requires the same host and PID namespace, and never deletes a
+// lock it cannot prove dead.
 // The owner token is re-read immediately before the rename, and the quarantined
 // directory is verified afterwards: if a new holder took over in that window the
 // directory is restored (or the operation stops) instead of being deleted.
