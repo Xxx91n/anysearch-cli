@@ -17,8 +17,39 @@
 // so the relaxed OR rung fires at ≥2 content words and ambiguity is handled by the margin instead.
 
 import Database from "better-sqlite3";
-import { fts5EscapeQuery, relaxedTerms } from "./fts5";
+import { RELAX_STOPWORDS } from "./fts5";
 import { embedText, cosineSimilarity, armTelemetry } from "./embedding-arm";
+
+// Unicode-aware query handling, LOCAL to the recommender. The shared fts5.ts
+// helpers sanitize to [A-Za-z0-9] only, so a pure-CJK query collapses to the
+// empty phrase '""' and can never match — yet FTS5's default unicode61
+// tokenizer DOES index Unicode letters. User-facing free text in this repo is
+// bilingual, so the recommender keeps \p{L}\p{N} terms. The shared helpers stay
+// ASCII-strict for memory evidence; for pure-ASCII queries these produce
+// byte-identical expressions to fts5EscapeQuery/relaxedTerms.
+const UNICODE_SANITIZE_RE = /[^\p{L}\p{N}]+/gu;
+const PHRASE_QUOTE_RE = /"/g; // CWE-20 escape: double-quote doubling for FTS5
+
+function escapeQueryUnicode(query: string, maxTerms = 8): string {
+  const sanitized = query.replace(UNICODE_SANITIZE_RE, " ").trim();
+  if (!sanitized) return '""';
+  const words = sanitized.split(/\s+/).slice(0, maxTerms);
+  const prefixClause = words.map((w) => w + "*").join(" AND ");
+  const phrase = query.replace(PHRASE_QUOTE_RE, '""');
+  return "(" + prefixClause + ') OR "' + phrase + '"';
+}
+
+// Content words of a query with Unicode letters preserved (same stopword list
+// and ≤ maxTerms truncation as fts5.ts relaxedTerms).
+export function unicodeTerms(query: string, maxTerms = 8): string[] {
+  const words = query
+    .replace(UNICODE_SANITIZE_RE, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.toLowerCase());
+  return [...new Set(words.filter((w) => !RELAX_STOPWORDS.has(w)))].slice(0, maxTerms);
+}
 
 export interface DomainMeta {
   id: string; // toml file stem, e.g. "docs"
@@ -68,9 +99,10 @@ const EMBEDDING_WEIGHT = 0.4;
 // Share of the query's content words (relaxedTerms tokenization, same convention as fts5.ts)
 // that prefix-match a token of `text`. 0 when the query has no content words.
 export function termCoverage(query: string, text: string): number {
-  const terms = relaxedTerms(query);
+  const terms = unicodeTerms(query);
   if (terms.length === 0) return 0;
-  const toks = text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  // Unicode-aware token split so CJK runs in the text stay matchable tokens.
+  const toks = text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   let matched = 0;
   for (const t of terms) if (toks.some((k) => k.startsWith(t))) matched++;
   return matched / terms.length;
@@ -84,7 +116,7 @@ interface FtsRow {
 }
 
 // BM25 over an in-memory FTS5 index of domain metadata. Strict rung first (all-terms AND +
-// phrase fallback via fts5EscapeQuery), then a relaxed OR rung over content words when the
+// phrase fallback via escapeQueryUnicode), then a relaxed OR rung over content words when the
 // strict rung under-fills — same two-rung shape as searchMemoryMultiQuery, minus the
 // evidence-majority filter (see header comment).
 export function bm25SearchDomainMeta(db: Database.Database, query: string, limit = RECOMMEND_TOP_K): FtsRow[] {
@@ -98,10 +130,10 @@ export function bm25SearchDomainMeta(db: Database.Database, query: string, limit
     description: r.description,
     match: -r.bm25score,
   });
-  const strict = fts5EscapeQuery(query.trim());
+  const strict = escapeQueryUnicode(query.trim());
   const rows = db.prepare<unknown[], RawRow>(sql).all(strict, limit * 4).map(toRow);
   if (rows.length < limit) {
-    const terms = relaxedTerms(query.trim());
+    const terms = unicodeTerms(query.trim());
     // relaxed OR rung at ≥2 content words (memory evidence needs ≥3 + majority; a
     // suggestion does not — the confidence margin prices the ambiguity instead).
     if (terms.length >= 2) {
@@ -131,16 +163,28 @@ export async function recommendDomains(query: string, metas: DomainMeta[], opts?
     const rows = bm25SearchDomainMeta(db, q, topK);
 
     // Peer-optional embedding arm: query vector + per-candidate passage vectors, cosine-fused
-    // with relative bm25. Absent package or null vector ⇒ FTS-only (legal state, never a throw).
+    // with relative bm25. Absent package or ANY null vector ⇒ FTS-only for the whole request
+    // (legal state, never a throw): a zero-filled cosine for one candidate would silently
+    // reorder against the FTS-only result, so partial vectors disable fusion entirely.
     let embedding: RecommendResult["arms"]["embedding"] = "absent";
     let cos: number[] | null = null;
     const qv = await embedText(q, "query");
     if (qv) {
-      embedding = "present";
-      cos = [];
+      const vecs: Float32Array[] = [];
+      let complete = true;
       for (const row of rows) {
         const dv = await embedText(row.name + " " + row.description, "passage");
-        cos.push(dv ? cosineSimilarity(qv, dv) : 0);
+        if (!dv) {
+          complete = false;
+          break;
+        }
+        vecs.push(dv);
+      }
+      if (complete) {
+        embedding = "present";
+        cos = vecs.map((dv) => cosineSimilarity(qv, dv));
+      } else {
+        embedding = "unavailable";
       }
     } else {
       const tel = await armTelemetry();

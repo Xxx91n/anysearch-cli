@@ -6,7 +6,7 @@
 // Embedding arm is peer-optional: without the package the engine degrades to FTS-only.
 
 import { join } from "node:path";
-import { listDomainTomls, loadRawDomain, recommendDomains, type DomainMeta } from "@anysearch-cli/store";
+import { listDomainTomls, loadDomain, recommendDomains, type DomainMeta } from "@anysearch-cli/store";
 import { domainSearchDirs } from "../db";
 import { formatRecommendText, formatRecommendJson, recommendExitCode } from "./recommend-format";
 
@@ -19,16 +19,19 @@ export async function runRecommend(args: string[]): Promise<number> {
   }
 
   // Domain metadata = name+description of every discoverable <name>.toml on the
-  // resolution chain (same lister as `ans domain`). Unreadable tomls are skipped
+  // resolution chain (same lister as `ans domain`). Each candidate goes through the
+  // SAME validating loader the switch command uses (loadDomain = resolve+validate),
+  // so `ans recommend` never suggests a domain that `ans domain <id>` would persist
+  // and then resolve to silent full-fanout. Domains failing load are skipped
   // fail-open — a broken domain must not veto recommendations for the rest.
   const metas: DomainMeta[] = [];
   for (const [file, dir] of listDomainTomls(domainSearchDirs())) {
     const id = file.replace(/\.toml$/, "");
     try {
-      const raw = loadRawDomain(join(dir, file));
-      metas.push({ id, name: raw.name ?? id, description: raw.description ?? "" });
+      const schema = loadDomain(join(dir, file));
+      metas.push({ id, name: schema.name ?? id, description: schema.description ?? "" });
     } catch {
-      // skip unreadable/unparseable domain toml
+      // skip tomls the switch command's loader cannot resolve/validate
     }
   }
 

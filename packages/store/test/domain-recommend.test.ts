@@ -105,6 +105,18 @@ async function main() {
     assert(termCoverage("alpha beta", "alpha only") === 0.5, "coverage 0.5 on half match");
     assert(termCoverage("the and of", "anything") === 0, "stopword-only query => coverage 0");
 
+    // --- CodeRabbit #2: Unicode (CJK) query terms must not collapse to no-match ---
+    const CJK_METAS: DomainMeta[] = [
+      ...METAS,
+      { id: "zh-research", name: "zh", description: "深度中文研究与学术检索 Deep academic research" },
+    ];
+    const cjk = await recommendDomains("深度中文研究", CJK_METAS);
+    assert(cjk.decision !== "none", "pure-CJK query no longer collapses to no_match (got " + cjk.decision + ")");
+    expectRankOf(cjk, "zh-research", 1, "CJK '深度中文研究'");
+    const cjkMixed = await recommendDomains("web 深度中文研究", CJK_METAS);
+    expectRankOf(cjkMixed, "zh-research", 1, "mixed ASCII+CJK 'web 深度中文研究'");
+    assert(termCoverage("深度中文研究", "深度中文研究与学术检索") === 1, "CJK coverage matches CJK text");
+
     // --- AC3 (hybrid): stub embedding module present → arm fuses, ranking preserved ---
     __setEmbeddingModuleForTest({
       embedText: async (text: string) => {
@@ -124,6 +136,20 @@ async function main() {
     expectRankOf(hybrid, "research", 1, "hybrid 'deep web research...'");
     const hybridDocs = await recommendDomains("typescript tsconfig technical documentation", METAS);
     expectRankOf(hybridDocs, "docs", 1, "hybrid 'typescript tsconfig...'");
+
+    // --- CodeRabbit #3: a null PASSAGE vector disables fusion for the whole request ---
+    __setEmbeddingModuleForTest({
+      embedText: async (_text: string, role: string) => {
+        if (role === "passage") return null; // query vector ok, passage vectors fail
+        return new Float32Array(384).fill(0.5);
+      },
+      embeddingTelemetry: () => ({ loads: 1, embeds: 1, failures: 1, circuitOpen: false }),
+      EMBEDDING_MODEL_ID: "test-model",
+    } as never);
+    const partial = await recommendDomains("deep web research with exa and tavily", METAS);
+    assert(partial.arms.embedding === "unavailable", "null passage vector => arm 'unavailable' (got " + partial.arms.embedding + ")");
+    assert(partial.candidates.every((c) => c.arms.length === 1 && c.arms[0] === "fts"), "partial vectors => FTS-only candidates, no zero-cosine fusion");
+    expectRankOf(partial, "research", 1, "partial-vector degradation keeps FTS-only ranking");
   } finally {
     __setEmbeddingModuleForTest("auto");
   }
