@@ -328,9 +328,9 @@ function describeLockHolder(lock: string): string {
 type LockState = "alive" | "dead" | "unknown";
 
 // Design: staleness = pid liveness on the host and boot/PID namespace that wrote the
-// lock — not age, so a long-running install never needs a heartbeat. A different
-// boot proves death; a different namespace on the same boot is undecidable; both,
-// like an unreadable owner, stay fail-closed.
+// lock — not age, so a long-running install never needs a heartbeat. A different boot
+// proves death; a different namespace or an unreadable owner is undecidable and stays
+// fail-closed.
 /** Classify a lock owner as alive, provably dead, or undecidable. */
 function probeLockOwner(owner: LockOwner | undefined): LockState {
   if (!owner || owner.host !== hostname() || !Number.isInteger(owner.pid) || owner.pid <= 0) return "unknown";
@@ -393,30 +393,18 @@ export function releaseOwnedLock(lock: string, token: string): boolean {
 function createLockDirectory(managed: string, lock: string, owner: LockOwner): boolean {
   // Design: publish the lock with its owner in one rename and refuse to replace an
   // existing path — POSIX would otherwise take over an empty directory an older
-  // build may still be filling. A sharing violation on a free path uses the same
-  // bounded retry as the other critical renames.
+  // build may still be filling. A rename failure here is ordinary contention, not a
+  // transient publishing error, so it fails fast instead of using the 60s budget.
   const pending = mkdtempSync(join(managed, LOCK_PENDING_PREFIX));
   try {
     writeFileSync(join(pending, "owner.json"), JSON.stringify(owner), { encoding: "utf8", flag: "wx", mode: 0o600 });
     if (statIfPresent(lock)) return false;
-    try {
-      renameSync(pending, lock);
-      return true;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (!statIfPresent(lock)
-        && (code === "EPERM" || code === "EBUSY" || code === "ENOTEMPTY")) {
-        try {
-          renameWithRetry(pending, lock);
-          return true;
-        } catch (retryError) {
-          if (statIfPresent(lock)) return false;
-          throw retryError;
-        }
-      }
-      if (code === "EEXIST" || code === "ENOTEMPTY" || code === "EPERM" || code === "EBUSY") return false;
-      throw error;
-    }
+    renameSync(pending, lock);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EEXIST" || code === "ENOTEMPTY" || code === "EPERM" || code === "EBUSY") return false;
+    throw error;
   } finally {
     rmSync(pending, { recursive: true, force: true });
   }
@@ -515,7 +503,8 @@ function reconcileManagedRoot(managed: string): void {
     }
     rmSync(quarantine, { recursive: true, force: true });
   }
-  // An unpublished lock is inert, but a dead acquirer's copy can be removed safely.
+  // Design: an unpublished lock is inert unless its recorded owner is provably dead —
+  // only then is removing the directory safe.
   for (const entry of readdirSync(managed)) {
     if (!entry.startsWith(LOCK_PENDING_PREFIX)) continue;
     const pending = join(managed, entry);
@@ -538,8 +527,11 @@ function hasStaleLockOrResidue(managed: string): boolean {
   // A manifest-bearing store keeps its residue and quarantines for the operator;
   // only a scopeless store is reconciled automatically.
   if (statIfPresent(manifestIn(managed))) return false;
-  if (entries.some((entry) => entry.startsWith(LOCK_RECLAIM_PREFIX)
-    || entry.startsWith(LOCK_PENDING_PREFIX))) return true;
+  if (entries.some((entry) => entry.startsWith(LOCK_RECLAIM_PREFIX))) return true;
+  // Only a provably dead unpublished lock needs a lock cycle; a live or malformed
+  // one is inert and must not make reads contend with a starting writer.
+  if (entries.some((entry) => entry.startsWith(LOCK_PENDING_PREFIX)
+    && probeLockOwner(readLockOwner(join(managed, entry))) === "dead")) return true;
   return entries.some(isInstallerResidue);
 }
 
