@@ -272,6 +272,22 @@ test("filters defined in worktree config are also refused", async (t) => {
   assert.equal(existsSync(join(f.repository, "PWNED")), false);
 });
 
+test("user-global filters do not block an install", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  const globalConfig = join(f.base, "global.gitconfig");
+  writeFileSync(globalConfig, "[filter \"global\"]\n\tclean = cat\n");
+  const previous = process.env.GIT_CONFIG_GLOBAL;
+  process.env.GIT_CONFIG_GLOBAL = globalConfig;
+  try {
+    const result = await f.run(["install", dir]);
+    assert.equal(result.code, 0, result.stderr);
+  } finally {
+    if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+    else process.env.GIT_CONFIG_GLOBAL = previous;
+  }
+});
+
 test("repository root is a valid source and Git metadata is not copied", async (t) => {
   const f = fixture(t);
   f.source();
@@ -526,6 +542,7 @@ test("an active reclaim guard prevents a second reclaimer from moving the lock",
   }));
   const result = await f.run(["install", f.source("beta")]);
   assert.equal(result.code, 1, result.stderr);
+  assert.match(result.stderr, /stale-lock reclaim is in progress/);
   assert.ok(existsSync(lock), "the dead lock is not moved while another reclaimer holds the guard");
   assert.ok(existsSync(guard));
 });

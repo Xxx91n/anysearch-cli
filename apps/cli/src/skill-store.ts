@@ -414,12 +414,15 @@ function acquireReclaimGuard(managed: string, guard: string, owner: LockOwner): 
   }
   const moved = readLockOwner(quarantine);
   if (moved?.token !== observed.token) {
-    if (!statIfPresent(guard)) {
-      try {
-        renameSync(quarantine, guard);
-      } catch {
-        // Leave the quarantine for inspection rather than deleting a live guard.
-      }
+    // The guard changed hands: restore it into a free path, otherwise stop — leaving
+    // a live guard displaced could let two reclaimers move locks concurrently.
+    if (statIfPresent(guard)) {
+      fail(`skill lock reclaim guard changed hands; inspect ${quarantine} and ${guard} before retrying.`);
+    }
+    try {
+      renameWithRetry(quarantine, guard);
+    } catch {
+      fail(`skill lock reclaim guard could not be restored; inspect ${quarantine} and ${guard} before retrying.`);
     }
     return false;
   }
@@ -673,8 +676,8 @@ function git(source: string, args: string[]): string {
   }
 }
 
-// Design: `--show-scope` covers `.git/config` and `.git/config.worktree`, the two
-// config files a checkout can control; global/system filters are user-trusted.
+// Design: `--show-scope` covers `.git/config` and `.git/config.worktree` — the two
+// config files a checkout can control — while global/system filters stay user-trusted.
 /** List checkout-controlled config keys matching a pattern; exit status 1 means none. */
 function gitConfigKeys(source: string, pattern: string): string[] {
   try {
@@ -714,7 +717,7 @@ function provenance(source: string): Omit<InstalledSkill, "name"> {
   // attacker-controlled code, so a source that defines any is refused before status.
   const filters = gitConfigKeys(source, "^filter\\..*\\.(clean|process)$");
   if (filters.length > 0) {
-    fail(`source repository defines Git content filters (${filters.join(", ")}); refusing to run status on it. Remove those definitions from .git/config or install an export without .git.`);
+    fail(`source repository defines Git content filters (${filters.join(", ")}); refusing to run status on it. Remove those definitions from .git/config or .git/config.worktree, or install an export without .git.`);
   }
   const dirty = git(source, ["status", "--porcelain", "--untracked-files=all", "--ignored", "--", "."]).length > 0;
   return { source, commit, dirty, ...(tag ? { tag } : {}) };
