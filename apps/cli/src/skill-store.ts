@@ -325,15 +325,15 @@ function reclaimDeadLock(managed: string, lock: string, observed: LockOwner): vo
   }
   const moved = readLockOwner(quarantine);
   if (moved?.token !== observed.token) {
-    // The lock changed hands: restore it only into a free path; a single attempt
-    // avoids sleeping out the retry budget while a new holder owns the lock.
+    // Design: restore a changed-hands lock with one bare rename — retrying could
+    // sleep out the retry budget while a new holder owns the canonical path.
     if (statIfPresent(lock)) {
       fail(`skill lock changed hands while reclaiming it; inspect ${quarantine} and ${lock} before retrying.`);
     }
     try {
       renameSync(quarantine, lock);
     } catch {
-      fail(`skill lock changed hands while reclaiming it; inspect ${quarantine} and ${lock} before retrying.`);
+      fail(`skill lock could not be restored while reclaiming it; inspect ${quarantine} and ${lock} before retrying.`);
     }
     fail(`skill lock changed hands while reclaiming it; another skill operation is running${describeLockHolder(lock)}. Retry when it finishes.`);
   }
