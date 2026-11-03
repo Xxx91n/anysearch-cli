@@ -194,26 +194,30 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
     resolved.apiKey = env.ANS_LLM_API_KEY;
     resolved.sources.apiKey = "env";
   } else if (user.env_key) {
-    resolved.envKey = user.env_key;
-    const secret = env[user.env_key];
-    if (secret) {
-      resolved.apiKey = secret;
-      resolved.sources.apiKey = "user";
-    } else {
-      warn("[config] [llm].env_key names " + user.env_key + " but that env var is not set");
-    }
-  }
-
-  // Cross-layer footgun: project picked the provider while user env_key names a
-  // var for another provider — the key would be sent to the project's provider.
-  if (resolved.sources.provider === "project" && resolved.envKey) {
-    const expected = resolved.provider ? resolved.provider.toUpperCase() + "_API_KEY" : "";
-    if (resolved.envKey !== expected && resolved.envKey !== "ANS_LLM_API_KEY") {
+    // Provider-binding guard (CodeRabbit #120): a user-declared provider that
+    // differs from the effective provider means env_key belongs to another
+    // provider — a project file must not be able to redirect that secret.
+    // An absent user.provider establishes no binding: env_key is accepted
+    // verbatim regardless of which layer picked the provider.
+    const mismatch =
+      resolved.sources.provider === "project" &&
+      user.provider !== undefined &&
+      user.provider !== resolved.provider;
+    if (mismatch) {
       warn(
-        "[config] project [llm].provider=" + resolved.provider +
-        " combined with env_key=" + resolved.envKey +
-        " — that secret will be sent to the project's provider",
+        "[config] [llm].env_key ignored: user file binds provider=" + user.provider +
+        " but project selected provider=" + resolved.provider +
+        " — refusing to send that secret to a different provider",
       );
+    } else {
+      resolved.envKey = user.env_key;
+      const secret = env[user.env_key];
+      if (secret) {
+        resolved.apiKey = secret;
+        resolved.sources.apiKey = "user";
+      } else {
+        warn("[config] [llm].env_key names " + user.env_key + " but that env var is not set");
+      }
     }
   }
 

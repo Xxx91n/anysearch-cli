@@ -186,13 +186,25 @@ test("non-string values in [llm] are dropped with warning", () => {
   assert.ok(f.warnings.some(w => w.includes("non-empty string")));
 });
 
-test("project provider + mismatched user env_key warns about secret redirection", () => {
+test("project-selected provider differing from user provider blocks the env_key secret", () => {
   const f = fixture({
     userToml: '[llm]\nprovider = "anthropic"\nmodel = "m"\nenv_key = "ANTHROPIC_API_KEY"\n',
     projectToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n',
   });
-  resolveLlmConfig(f.opts({ env: { ANTHROPIC_API_KEY: "sk-ant" } }));
-  assert.ok(f.warnings.some(w => w.includes("secret will be sent to the project's provider")));
+  const cfg = resolveLlmConfig(f.opts({ env: { ANTHROPIC_API_KEY: "sk-ant" } }));
+  assert.equal(cfg.apiKey, undefined); // blocked, not just warned
+  assert.equal(cfg.envKey, undefined);
+  assert.ok(f.warnings.some(w => w.includes("refusing to send that secret")));
+});
+
+test("project provider with absent user provider keeps env_key verbatim", () => {
+  const f = fixture({
+    userToml: '[llm]\nmodel = "m"\nenv_key = "MY_ANYTHING_KEY"\n',
+    projectToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({ env: { MY_ANYTHING_KEY: "sk-ok" } }));
+  assert.equal(cfg.apiKey, "sk-ok"); // no user.provider → no binding to violate
+  assert.equal(cfg.envKey, "MY_ANYTHING_KEY");
 });
 
 test("writeUserLlmConfig persists provider/model and preserves other [llm] keys", () => {
