@@ -7,7 +7,7 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
-  chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync,
+  chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync,
   realpathSync, renameSync, rmSync, writeFileSync, type Stats,
 } from "node:fs";
 import { homedir, hostname } from "node:os";
@@ -136,19 +136,17 @@ function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-// Design: bounded exponential backoff (10ms→1s, 60s budget) for EPERM/EBUSY/ENOTEMPTY
-// renames — Windows reports those transiently while another process or a scanner
-// still holds a handle. Exhaustion rethrows the original error, so a permanent
-// failure is never masked and the commit point stays "rename to the new name".
+// Design: bounded exponential backoff (10ms→1s, 60s budget) — Windows reports
+// EPERM/EBUSY/ENOTEMPTY transiently, while POSIX EPERM/ENOTEMPTY are usually
+// permanent, so production retries all three only on Windows and EBUSY elsewhere.
+// Exhaustion rethrows the original error; the commit point stays "rename to the new name".
 /** Rename with bounded exponential backoff for transient sharing violations. */
 export function renameWithRetry(
   from: string,
   to: string,
   io: RenameIO = skillRenameIO.current ?? DEFAULT_RENAME_IO,
 ): void {
-  // Design: the production set is platform-scoped — POSIX EPERM/ENOTEMPTY usually
-  // mean a permanent condition, while Windows reports all three transiently. Tests
-  // inject their own IO and keep the full set.
+  // Tests inject their own IO and keep the full set on every platform.
   const retryableCodes = io === DEFAULT_RENAME_IO && process.platform !== "win32"
     ? POSIX_RETRYABLE_RENAME_CODES
     : RETRYABLE_RENAME_CODES;
@@ -278,16 +276,24 @@ interface LockOwner {
   pid: number;
   host: string;
   startedAt: string;
-  /** PID-namespace identity; absent when the platform does not expose one. */
+  /** Boot identity; a different boot proves the recorded process is gone. */
+  bootId?: string;
+  /** PID-namespace identity; a different namespace makes liveness undecidable. */
   namespace?: string;
 }
 
-/** Identity of this process's PID namespace, or undefined when unavailable. */
-export function pidNamespaceIdentity(): string | undefined {
+interface PidIdentity {
+  bootId: string;
+  namespace: string;
+}
+
+/** Identity of this process's boot and PID namespace, or undefined when unavailable. */
+export function pidIdentity(): PidIdentity | undefined {
   if (process.platform !== "linux") return undefined;
   try {
-    const boot = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
-    return boot ? `${boot}:${readlinkSync("/proc/self/ns/pid")}` : undefined;
+    const bootId = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+    const namespace = readlinkSync("/proc/self/ns/pid");
+    return bootId && namespace ? { bootId, namespace } : undefined;
   } catch {
     return undefined;
   }
@@ -299,9 +305,11 @@ function readLockOwner(lock: string): LockOwner | undefined {
     const raw: unknown = JSON.parse(readFileSync(join(lock, "owner.json"), "utf8"));
     if (isRecord(raw) && typeof raw.token === "string" && typeof raw.pid === "number"
       && typeof raw.host === "string" && typeof raw.startedAt === "string"
+      && (raw.bootId === undefined || typeof raw.bootId === "string")
       && (raw.namespace === undefined || typeof raw.namespace === "string")) {
       return {
         token: raw.token, pid: raw.pid, host: raw.host, startedAt: raw.startedAt,
+        ...(raw.bootId !== undefined ? { bootId: raw.bootId } : {}),
         ...(raw.namespace !== undefined ? { namespace: raw.namespace } : {}),
       };
     }
@@ -319,16 +327,18 @@ function describeLockHolder(lock: string): string {
 
 type LockState = "alive" | "dead" | "unknown";
 
-// Design: staleness = pid liveness on the host and PID namespace that wrote the lock
-// — not age, so a long-running install never needs a heartbeat. A lock from another
-// host/namespace or without a readable owner stays fail-closed: deleting it could
-// interrupt a live operation on that machine.
+// Design: staleness = pid liveness on the host and boot/PID namespace that wrote the
+// lock — not age, so a long-running install never needs a heartbeat. A different
+// boot proves death; a different namespace on the same boot is undecidable; both,
+// like an unreadable owner, stay fail-closed.
 /** Classify a lock owner as alive, provably dead, or undecidable. */
 function probeLockOwner(owner: LockOwner | undefined): LockState {
   if (!owner || owner.host !== hostname() || !Number.isInteger(owner.pid) || owner.pid <= 0) return "unknown";
-  // Containers can share a hostname but not a PID namespace; ESRCH is only
-  // meaningful when the recorded namespace matches this process's.
-  if (owner.namespace !== pidNamespaceIdentity()) return "unknown";
+  const identity = pidIdentity();
+  if (owner.bootId && identity && owner.bootId !== identity.bootId) return "dead";
+  // Containers can share a hostname but not a PID namespace, and ESRCH inside one
+  // namespace says nothing about a pid in another.
+  if (owner.namespace !== identity?.namespace) return "unknown";
   try {
     process.kill(owner.pid, 0);
     return "alive";
@@ -381,20 +391,34 @@ export function releaseOwnedLock(lock: string, token: string): boolean {
 
 /** Publish a lock that already contains its owner record; false means contention. */
 function createLockDirectory(managed: string, lock: string, owner: LockOwner): boolean {
-  // Design: build the lock with its owner record, then rename it into place — a
-  // published lock always has an owner, and a rename failure is ordinary contention
-  // instead of a half-created lock that later runs must diagnose.
+  // Design: publish the lock with its owner in one rename and refuse to replace an
+  // existing path — POSIX would otherwise take over an empty directory an older
+  // build may still be filling. A sharing violation on a free path uses the same
+  // bounded retry as the other critical renames.
   const pending = mkdtempSync(join(managed, LOCK_PENDING_PREFIX));
   try {
     writeFileSync(join(pending, "owner.json"), JSON.stringify(owner), { encoding: "utf8", flag: "wx", mode: 0o600 });
-    renameSync(pending, lock);
-    return true;
-  } catch (error) {
+    if (statIfPresent(lock)) return false;
+    try {
+      renameSync(pending, lock);
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!statIfPresent(lock)
+        && (code === "EPERM" || code === "EBUSY" || code === "ENOTEMPTY")) {
+        try {
+          renameWithRetry(pending, lock);
+          return true;
+        } catch (retryError) {
+          if (statIfPresent(lock)) return false;
+          throw retryError;
+        }
+      }
+      if (code === "EEXIST" || code === "ENOTEMPTY" || code === "EPERM" || code === "EBUSY") return false;
+      throw error;
+    }
+  } finally {
     rmSync(pending, { recursive: true, force: true });
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "EEXIST" || code === "ENOTEMPTY" || code === "EPERM"
-      || code === "ENOENT" || code === "ENOTDIR") return false;
-    throw error;
   }
 }
 
@@ -402,18 +426,18 @@ function createLockDirectory(managed: string, lock: string, owner: LockOwner): b
 function acquireManifestLock(managed: string): () => void;
 /** Acquire the lock, or return undefined when a live holder makes cleanup unsafe. */
 function acquireManifestLock(managed: string, skipOnContention: true): (() => void) | undefined;
-// Design: one coarse mkdir lock per managed root — it serializes read → publish/remove
-// → write, never evicts a live holder, and reclaims only a pid proven dead on this
-// host and PID namespace; contention fails closed instead of deleting a lock that may
-// be live.
+// Design: one coarse directory lock per managed root, published atomically with its
+// owner record — it serializes read → publish/remove → write, never evicts a live
+// holder, and reclaims only a pid proven dead on this host and PID namespace;
+// contention fails closed instead of deleting a lock that may be live.
 function acquireManifestLock(managed: string, skipOnContention = false): (() => void) | undefined {
   const lock = join(managed, MANIFEST_LOCK);
   const token = randomUUID();
-  const namespace = pidNamespaceIdentity();
+  const identity = pidIdentity();
   for (let attempt = 0; attempt < 3; attempt++) {
     const owner: LockOwner = {
       token, pid: process.pid, host: hostname(), startedAt: new Date().toISOString(),
-      ...(namespace ? { namespace } : {}),
+      ...(identity ? { bootId: identity.bootId, namespace: identity.namespace } : {}),
     };
     if (createLockDirectory(managed, lock, owner)) {
       return () => {
@@ -491,6 +515,14 @@ function reconcileManagedRoot(managed: string): void {
     }
     rmSync(quarantine, { recursive: true, force: true });
   }
+  // An unpublished lock is inert, but a dead acquirer's copy can be removed safely.
+  for (const entry of readdirSync(managed)) {
+    if (!entry.startsWith(LOCK_PENDING_PREFIX)) continue;
+    const pending = join(managed, entry);
+    if (probeLockOwner(readLockOwner(pending)) === "dead") {
+      rmSync(pending, { recursive: true, force: true });
+    }
+  }
   for (const entry of readdirSync(managed)) {
     if (isInstallerResidue(entry)) rmSync(join(managed, entry), { recursive: true, force: true });
   }
@@ -506,7 +538,8 @@ function hasStaleLockOrResidue(managed: string): boolean {
   // A manifest-bearing store keeps its residue and quarantines for the operator;
   // only a scopeless store is reconciled automatically.
   if (statIfPresent(manifestIn(managed))) return false;
-  if (entries.some((entry) => entry.startsWith(LOCK_RECLAIM_PREFIX))) return true;
+  if (entries.some((entry) => entry.startsWith(LOCK_RECLAIM_PREFIX)
+    || entry.startsWith(LOCK_PENDING_PREFIX))) return true;
   return entries.some(isInstallerResidue);
 }
 

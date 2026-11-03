@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runSkill } from "../src/commands/skill.js";
 import {
-  managedSkillsRoot, pidNamespaceIdentity, releaseOwnedLock, renameWithRetry, skillManifestPath,
+  managedSkillsRoot, pidIdentity, releaseOwnedLock, renameWithRetry, skillManifestPath,
   skillRenameIO, type SkillManifest,
 } from "../src/skill-store.js";
 
@@ -436,13 +436,16 @@ function plantLock(
   token: string,
   pid: number,
   host = hostname(),
-  namespace = pidNamespaceIdentity(),
+  identity: { bootId?: string; namespace?: string } | undefined = pidIdentity(),
 ): string {
   const lock = join(managed, ".installed.lock");
   rmSync(lock, { recursive: true, force: true });
   mkdirSync(lock);
-  writeFileSync(join(lock, "owner.json"),
-    JSON.stringify({ token, pid, host, startedAt: "2026-11-03T00:00:00.000Z", ...(namespace ? { namespace } : {}) }));
+  writeFileSync(join(lock, "owner.json"), JSON.stringify({
+    token, pid, host, startedAt: "2026-11-03T00:00:00.000Z",
+    ...(identity?.bootId ? { bootId: identity.bootId } : {}),
+    ...(identity?.namespace ? { namespace: identity.namespace } : {}),
+  }));
   return lock;
 }
 
@@ -499,7 +502,7 @@ test("locks that are live or from another host are never reclaimed", async (t) =
   writeFileSync(join(malformedLock, "owner.json"), "{broken");
   const malformed = await f.run(["install", dir]);
   assert.equal(malformed.code, 1, malformed.stderr);
-  assert.match(malformed.stderr, /owner record is incomplete or unreadable/);
+  assert.match(malformed.stderr, /owner record is incomplete/);
   assert.ok(existsSync(malformedLock), "an unreadable owner is never reclaimed");
   assert.equal(existsSync(join(managed, "beta")), false);
   assert.deepEqual(Object.keys(f.manifest().skills), ["demo"]);
@@ -509,12 +512,44 @@ test("a lock from another PID namespace is never reclaimed", async (t) => {
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
-  const lock = plantLock(managed, "foreign-namespace", deadPid(), hostname(), "other-namespace");
+  const current = pidIdentity();
+  const foreign = { bootId: current?.bootId ?? "other-boot", namespace: "other-namespace" };
+  const lock = plantLock(managed, "foreign-namespace", deadPid(), hostname(), foreign);
   const result = await f.run(["install", f.source("beta")]);
   assert.equal(result.code, 1, result.stderr);
   assert.match(result.stderr, /PID namespace/);
   assert.ok(existsSync(lock), "a lock from another namespace is left in place");
   assert.equal(existsSync(join(managed, "beta")), false);
+});
+
+test("a lock from a previous boot is reclaimed as dead", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const current = pidIdentity();
+  const previous = current
+    ? { bootId: "previous-boot", namespace: current.namespace }
+    : { bootId: "previous-boot" };
+  const lock = plantLock(managed, "previous-boot", deadPid(), hostname(), previous);
+  const result = await f.run(["install", f.source("beta")]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(existsSync(lock), false);
+  assert.deepEqual(Object.keys(f.manifest().skills).sort(), ["beta", "demo"]);
+});
+
+test("a dead unpublished lock is cleaned during reconciliation", async (t) => {
+  const f = fixture(t);
+  const managed = managedSkillsRoot(f.opts);
+  const identity = pidIdentity();
+  const pending = join(managed, ".installed.lock.pending-dead");
+  mkdirSync(pending, { recursive: true });
+  writeFileSync(join(pending, "owner.json"), JSON.stringify({
+    token: "dead", pid: deadPid(), host: hostname(), startedAt: "2026-11-03T00:00:00.000Z",
+    ...(identity ? { bootId: identity.bootId, namespace: identity.namespace } : {}),
+  }));
+  const result = await f.run(["install", f.source()]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(existsSync(pending), false);
 });
 
 test("an unpublished lock directory does not block a scope or act as a lock", async (t) => {

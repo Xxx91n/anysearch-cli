@@ -178,11 +178,12 @@ schema 时，卸载会拒绝且不删除任何文件；绝不靠扫描目录猜�
 `install` 与 `uninstall` 在所选 scope 内持独占锁：两个并发变更不会互相丢失
 清单条目。锁内记录持有者（`pid`、`host`，以及系统可提供时的 PID namespace
 标识），并连同 owner 记录一起原子发布，因此锁不会缺少 owner。同一 host 且同一
-PID namespace 上可证明已死的持有者会被自动回收；仍存活的锁、在另一台机器或
-另一个 PID namespace 写入的锁，或 owner 记录不可读的锁一律 fail-closed，绝不
-自动删除。获取过程被杀可能留下惰性的
-`skills/synced/.installed.lock.pending-*` 目录，确认没有 `ans skill` 进程运行后
-可手工删除。清单发布以及安装/卸载的目录 rename 遇到 Windows 瞬时共享冲突
+PID namespace 上可证明已死的持有者会被自动回收（上一 boot 留下的锁也视为已死）；
+仍存活的锁、在另一台机器或另一个 PID namespace 写入的锁，或 owner 记录不可读的
+锁一律 fail-closed，绝不自动删除。发布前中断可能留下
+`skills/synced/.installed.lock.pending-*`：无 `installed.json` 的 scope 会清理
+已死副本，其余副本是惰性的，确认没有 `ans skill` 进程运行后可手工删除。
+清单发布以及安装/卸载的目录 rename 遇到 Windows 瞬时共享冲突
 （`EPERM`/`EBUSY`/`ENOTEMPTY`）会做有界退避重试，最长约 60 秒，耗尽后仍报告
 原始错误；其他平台只把 `EBUSY` 视为瞬时错误。
 

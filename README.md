@@ -195,11 +195,12 @@ concurrent mutations cannot lose each other's manifest entry. The lock records
 its owner (`pid`, `host`, and the PID-namespace identity where the OS exposes
 one) and is published with that record already inside, so a lock never exists
 without an owner. A lock whose owner is provably dead on the same host and PID
-namespace is reclaimed automatically; a live lock, a lock written on another
-host or namespace, or one without a readable owner fails closed and is never
-deleted. A killed acquisition can leave an inert
-`skills/synced/.installed.lock.pending-*` directory, which can be removed once
-no `ans skill` process is running. Manifest publication and the
+namespace — including one left by a previous boot — is reclaimed automatically;
+a live lock, a lock written on another host or namespace, or one without a
+readable owner fails closed and is never deleted. An acquisition killed before
+publication can leave `.installed.lock.pending-*`; a dead copy is cleaned in a
+scope without `installed.json`, and any remaining copy is inert and can be
+removed once no `ans skill` process is running. Manifest publication and the
 install/uninstall directory renames retry transient Windows sharing violations
 (`EPERM`/`EBUSY`/`ENOTEMPTY`) with bounded backoff for up to about 60 seconds
 before reporting the original error; on other platforms only `EBUSY` is treated

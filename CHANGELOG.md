@@ -4,6 +4,21 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #137: `ans skill` 安装器并发硬化（stale 锁回收 / Windows rename 重试 / 启动对账）
+
+### Added
+
+- **同 host + PID namespace 的 stale 锁自动回收**：锁记录 `{token, pid, host, bootId, namespace}`；`ESRCH` 仅在 host 与 PID namespace 一致时判为已死，上一 boot 留下的锁直接视为已死，跨 host / 跨 namespace / owner 不可读一律 fail-closed。回收以唯一 quarantine rename 作为选举，移走后复核 owner token，绝不删除可能存活的锁。
+- **启动对账**：`install` / `list` / `validate` 在持锁且无 `installed.json` 时清理 `.install-*`、`.installed-*.tmp`、已死的 `.installed.lock.reclaim-*` 与 `.installed.lock.pending-*`；`.uninstall-*` 备份、未登记 `<name>/` 与未知条目永不自动删除，`list` 继续对未登记内容 fail-closed。
+
+### Changed
+
+- **关键 rename 有界退避**：manifest 发布、payload→target、target→backup 及锁发布遇到 Windows 瞬时 `EPERM`/`EBUSY`/`ENOTEMPTY` 以 10ms→1s 指数退避重试，上限约 60s，耗尽后保留原始错误；其他平台仅把 `EBUSY` 视为瞬时。锁连同 owner 记录一次性 rename 发布，不再产生无 owner 的锁。
+
+### Documented
+
+- README / README.zh-CN / GLOSSARY 同步恢复说明、PID namespace 判定与“安装 ≠ 激活”。
+
 ## Unreleased — #104: RagAdapterPort + fts adapter 最小真实现（#35 落地，决策 #90）
 
 ### Added
