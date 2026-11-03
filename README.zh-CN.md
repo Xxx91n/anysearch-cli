@@ -176,7 +176,8 @@ ans skill uninstall research --project
 绝对路径 `source`、`commit`、`dirty` 和可选 `tag`。清单缺失、损坏或不符合
 schema 时，卸载会拒绝且不删除任何文件；绝不靠扫描目录猜测删除目标。
 `install` 与 `uninstall` 在所选 scope 内持独占锁：两个并发变更不会互相丢失
-清单条目，争用时会以锁路径报错，而不是覆盖清单。
+清单条目，争用时会以锁路径报错，而不是覆盖清单。若进程在操作中途被杀，请在
+没有 `ans skill` 进程运行时删除残留的 `skills/synced/.installed.lock` 目录。
 
 **安装不等于激活。** 这些命令绝不改写 domain TOML。Skill Active List 仍由
 Active Domain 的 `[skills].active` 决定，激活仍按原方式通过 domain 配置管理。

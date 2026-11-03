@@ -90,9 +90,14 @@ export function managedSkillsRoot(opts: SkillOptions = {}): string {
   return join(skillsRoot(opts), "synced");
 }
 
+/** Resolve the manifest path inside a managed root. */
+function manifestIn(managed: string): string {
+  return join(managed, "installed.json");
+}
+
 /** Resolve the installed.json manifest path for the selected scope. */
 export function skillManifestPath(opts: SkillOptions = {}): string {
-  return join(managedSkillsRoot(opts), "installed.json");
+  return manifestIn(managedSkillsRoot(opts));
 }
 
 /** Lock directory that serializes manifest read-modify-write within one scope. */
@@ -127,11 +132,16 @@ function corruptManifest(path: string, detail: string): never {
 // Design: destructive operations authenticate the entire manifest before touching
 // any directory. Missing, malformed and schema-invalid manifests all fail closed;
 // never rediscover deletion targets by scanning the filesystem.
+/** Fail with the canonical missing-manifest message. */
+function missingManifest(managed: string): never {
+  fail(`skill manifest is missing: ${manifestIn(managed)}. Refusing to guess installation targets; no files were removed.`);
+}
+
 /** Read and schema-validate the manifest, validating the scope anchor before trusting it. */
 function readManifest(managed: string): SkillManifest {
-  const path = join(managed, "installed.json");
+  const path = manifestIn(managed);
   const stat = statIfPresent(path);
-  if (!stat) fail(`skill manifest is missing: ${path}. Refusing to guess installation targets; no files were removed.`);
+  if (!stat) missingManifest(managed);
   requireScopeAnchors(managed);
   if (!stat.isFile() || stat.isSymbolicLink()) fail(`skill manifest must be a regular, non-symlink file: ${path}`);
   let raw: unknown;
@@ -189,26 +199,41 @@ function requireScopeAnchors(managed: string): void {
   requireDirectory(managed, "managed skills root");
 }
 
-/** Describe the recorded lock holder when the owner file is readable. */
-function describeLockHolder(lock: string): string {
+/** Owner record written into the lock directory for diagnostics and ownership checks. */
+interface LockOwner {
+  token: string;
+  pid: number;
+  host: string;
+  startedAt: string;
+}
+
+/** Read the recorded lock owner, or undefined when the record is absent or malformed. */
+function readLockOwner(lock: string): LockOwner | undefined {
   try {
     const raw: unknown = JSON.parse(readFileSync(join(lock, "owner.json"), "utf8"));
-    if (isRecord(raw) && typeof raw.pid === "number" && typeof raw.host === "string") {
-      return ` (pid ${raw.pid} on ${raw.host})`;
+    if (isRecord(raw) && typeof raw.token === "string" && typeof raw.pid === "number"
+      && typeof raw.host === "string" && typeof raw.startedAt === "string") {
+      return { token: raw.token, pid: raw.pid, host: raw.host, startedAt: raw.startedAt };
     }
   } catch {
     // Diagnostics only: an unreadable owner file still blocks the operation.
   }
-  return "";
+  return undefined;
 }
 
-// Design: one coarse lock per managed root, created with mkdir (atomic on local
-// filesystems) and held across the manifest read, directory publish/remove and
-// manifest write. Contention fails closed with the lock path; it never deletes a
-// lock that might belong to a live process.
+/** Describe the recorded lock holder when the owner file is readable. */
+function describeLockHolder(lock: string): string {
+  const owner = readLockOwner(lock);
+  return owner ? ` (pid ${owner.pid} on ${owner.host})` : "";
+}
+
+// Design: one coarse lock per managed root — mkdir is atomic on local
+// filesystems, the lock spans manifest read → publish/remove → write, and
+// contention fails closed instead of deleting a lock that may be live.
 /** Acquire the exclusive manifest lock and return its release function. */
 function acquireManifestLock(managed: string): () => void {
   const lock = join(managed, MANIFEST_LOCK);
+  const token = randomUUID();
   try {
     mkdirSync(lock);
   } catch (error) {
@@ -218,14 +243,16 @@ function acquireManifestLock(managed: string): () => void {
     throw error;
   }
   try {
-    writeFileSync(join(lock, "owner.json"),
-      JSON.stringify({ pid: process.pid, host: hostname(), startedAt: new Date().toISOString() }),
-      { encoding: "utf8", flag: "wx", mode: 0o600 });
+    const owner: LockOwner = { token, pid: process.pid, host: hostname(), startedAt: new Date().toISOString() };
+    writeFileSync(join(lock, "owner.json"), JSON.stringify(owner), { encoding: "utf8", flag: "wx", mode: 0o600 });
   } catch (error) {
     rmSync(lock, { recursive: true, force: true });
     throw error;
   }
-  return () => rmSync(lock, { recursive: true, force: true });
+  return () => {
+    // Release only the lock we still own; a manually reclaimed lock must survive.
+    if (readLockOwner(lock)?.token === token) rmSync(lock, { recursive: true, force: true });
+  };
 }
 
 /** Run one manifest read-modify-write under the scope lock, releasing it on every path. */
@@ -253,7 +280,8 @@ function prepareManagedRoot(opts: SkillOptions): string {
 
 /** Read an existing manifest, or bootstrap one only in an empty managed root. */
 function readManifestForInstall(managed: string): SkillManifest {
-  if (!statIfPresent(join(managed, "installed.json"))) {
+  requireScopeAnchors(managed);
+  if (!statIfPresent(manifestIn(managed))) {
     // Only a genuinely empty managed root may bootstrap a new manifest. An
     // orphaned directory is not permission to forget or overwrite its owner.
     // The lock we hold is not content.
@@ -270,7 +298,7 @@ function writeManifest(managed: string, manifest: SkillManifest): void {
   const temporary = join(managed, `.installed-${randomUUID()}.tmp`);
   try {
     writeFileSync(temporary, JSON.stringify(manifest, null, 2) + "\n", { encoding: "utf8", flag: "wx", mode: 0o600 });
-    renameSync(temporary, join(managed, "installed.json"));
+    renameSync(temporary, manifestIn(managed));
   } finally {
     rmSync(temporary, { force: true });
   }
@@ -316,10 +344,7 @@ function git(source: string, args: string[]): string {
 /** Record the source path, HEAD commit, exact tag if present, and dirty state. */
 function provenance(source: string): Omit<InstalledSkill, "name"> {
   const repository = realpathSync(git(source, ["rev-parse", "--show-toplevel"]));
-  const subdirectory = relative(repository, source);
-  if (subdirectory.startsWith(".." + sep) || subdirectory === ".." || isAbsolute(subdirectory)) {
-    fail(`source is outside its Git working tree: ${source}`);
-  }
+  if (!contains(repository, source)) fail(`source is outside its Git working tree: ${source}`);
   const commit = git(source, ["rev-parse", "--verify", "HEAD^{commit}"]);
   // Exact tags only; lexical ordering makes multiple tags deterministic. A tag
   // is supplementary: the full commit is always recorded, even without a tag.
@@ -432,9 +457,9 @@ export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: 
 export function uninstallSkill(name: string, opts: SkillOptions = {}): InstalledSkill {
   requireName(name);
   const managed = managedSkillsRoot(opts);
-  // A missing managed root cannot hold a lock. Let readManifest report the
-  // missing manifest; the unreachable value only satisfies the compiler.
-  if (!statIfPresent(managed)) return readManifest(managed) as never;
+  // A missing managed root cannot hold a lock. Report the canonical missing
+  // manifest error instead of creating directories for a failed operation.
+  if (!statIfPresent(managed)) missingManifest(managed);
   requireScopeAnchors(managed);
   return withManifestLock(managed, () => {
     const manifest = readManifest(managed);

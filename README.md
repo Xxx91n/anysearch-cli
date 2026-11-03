@@ -192,7 +192,9 @@ Missing, malformed, or schema-invalid manifests cause uninstall to refuse
 without deleting anything; uninstall never scans for guessed targets.
 `install` and `uninstall` hold an exclusive lock in the selected scope, so two
 concurrent mutations cannot lose each other's manifest entry; a contended run
-fails with the lock path instead of overwriting the manifest.
+fails with the lock path instead of overwriting the manifest. If a run is killed
+mid-operation, remove the leftover `skills/synced/.installed.lock` directory
+once no `ans skill` process is running.
 
 **Installation is not activation.** These commands never edit domain TOML.
 The Active Domain's `[skills].active` remains the authority for the Skill

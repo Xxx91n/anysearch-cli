@@ -167,7 +167,7 @@ test("a manifest lock serializes install and uninstall in the same scope", async
   const manifestBefore = readFileSync(skillManifestPath(f.opts), "utf8");
   mkdirSync(lock);
   writeFileSync(join(lock, "owner.json"),
-    JSON.stringify({ pid: 424242, host: "test-host", startedAt: "2026-11-03T00:00:00.000Z" }));
+    JSON.stringify({ token: "test", pid: 424242, host: "test-host", startedAt: "2026-11-03T00:00:00.000Z" }));
   try {
     const install = await f.run(["install", f.source("beta")]);
     assert.equal(install.code, 1, install.stderr);
