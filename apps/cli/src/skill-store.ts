@@ -7,8 +7,8 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
-  chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync,
-  renameSync, rmSync, writeFileSync, type Stats,
+  chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync,
+  realpathSync, renameSync, rmSync, writeFileSync, type Stats,
 } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -108,10 +108,14 @@ const STAGING_PREFIX = ".install-";
 const MANIFEST_TEMP_PREFIX = ".installed-";
 /** Prefix for a stale lock moved aside during reclamation. */
 const LOCK_RECLAIM_PREFIX = `${MANIFEST_LOCK}.reclaim-`;
+/** Prefix for a lock being built with its owner record before publication. */
+const LOCK_PENDING_PREFIX = `${MANIFEST_LOCK}.pending-`;
 /** Uninstall backup prefix; contents are never deleted without a manifest entry. */
 const UNINSTALL_PREFIX = ".uninstall-";
 
 const RETRYABLE_RENAME_CODES = new Set(["EPERM", "EBUSY", "ENOTEMPTY"]);
+/** POSIX reports EPERM/ENOTEMPTY for permanent conditions, so only EBUSY is retried. */
+const POSIX_RETRYABLE_RENAME_CODES = new Set(["EBUSY"]);
 const RENAME_RETRY_BUDGET_MS = 60_000;
 const RENAME_RETRY_INITIAL_MS = 10;
 const RENAME_RETRY_MAX_MS = 1_000;
@@ -142,6 +146,12 @@ export function renameWithRetry(
   to: string,
   io: RenameIO = skillRenameIO.current ?? DEFAULT_RENAME_IO,
 ): void {
+  // Design: the production set is platform-scoped — POSIX EPERM/ENOTEMPTY usually
+  // mean a permanent condition, while Windows reports all three transiently. Tests
+  // inject their own IO and keep the full set.
+  const retryableCodes = io === DEFAULT_RENAME_IO && process.platform !== "win32"
+    ? POSIX_RETRYABLE_RENAME_CODES
+    : RETRYABLE_RENAME_CODES;
   const deadline = io.now() + RENAME_RETRY_BUDGET_MS;
   let delay = RENAME_RETRY_INITIAL_MS;
   for (;;) {
@@ -150,7 +160,7 @@ export function renameWithRetry(
       return;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (code === undefined || !RETRYABLE_RENAME_CODES.has(code) || io.now() + delay > deadline) throw error;
+      if (code === undefined || !retryableCodes.has(code) || io.now() + delay > deadline) throw error;
       io.sleep(delay);
       delay = Math.min(delay * 2, RENAME_RETRY_MAX_MS);
     }
@@ -268,6 +278,19 @@ interface LockOwner {
   pid: number;
   host: string;
   startedAt: string;
+  /** PID-namespace identity; absent when the platform does not expose one. */
+  namespace?: string;
+}
+
+/** Identity of this process's PID namespace, or undefined when unavailable. */
+export function pidNamespaceIdentity(): string | undefined {
+  if (process.platform !== "linux") return undefined;
+  try {
+    const boot = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+    return boot ? `${boot}:${readlinkSync("/proc/self/ns/pid")}` : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Read the recorded lock owner, or undefined when the record is absent or malformed. */
@@ -275,8 +298,12 @@ function readLockOwner(lock: string): LockOwner | undefined {
   try {
     const raw: unknown = JSON.parse(readFileSync(join(lock, "owner.json"), "utf8"));
     if (isRecord(raw) && typeof raw.token === "string" && typeof raw.pid === "number"
-      && typeof raw.host === "string" && typeof raw.startedAt === "string") {
-      return { token: raw.token, pid: raw.pid, host: raw.host, startedAt: raw.startedAt };
+      && typeof raw.host === "string" && typeof raw.startedAt === "string"
+      && (raw.namespace === undefined || typeof raw.namespace === "string")) {
+      return {
+        token: raw.token, pid: raw.pid, host: raw.host, startedAt: raw.startedAt,
+        ...(raw.namespace !== undefined ? { namespace: raw.namespace } : {}),
+      };
     }
   } catch {
     // Diagnostics only: an unreadable owner file still blocks the operation.
@@ -292,12 +319,16 @@ function describeLockHolder(lock: string): string {
 
 type LockState = "alive" | "dead" | "unknown";
 
-// Design: staleness = pid liveness on the host that wrote the lock — not age, so a
-// long-running install never needs a heartbeat. A lock from another host or without
-// a readable owner stays fail-closed: deleting it could interrupt a live operation.
+// Design: staleness = pid liveness on the host and PID namespace that wrote the lock
+// — not age, so a long-running install never needs a heartbeat. A lock from another
+// host/namespace or without a readable owner stays fail-closed: deleting it could
+// interrupt a live operation on that machine.
 /** Classify a lock owner as alive, provably dead, or undecidable. */
 function probeLockOwner(owner: LockOwner | undefined): LockState {
   if (!owner || owner.host !== hostname() || !Number.isInteger(owner.pid) || owner.pid <= 0) return "unknown";
+  // Containers can share a hostname but not a PID namespace; ESRCH is only
+  // meaningful when the recorded namespace matches this process's.
+  if (owner.namespace !== pidNamespaceIdentity()) return "unknown";
   try {
     process.kill(owner.pid, 0);
     return "alive";
@@ -348,46 +379,61 @@ export function releaseOwnedLock(lock: string, token: string): boolean {
   return true;
 }
 
+/** Publish a lock that already contains its owner record; false means contention. */
+function createLockDirectory(managed: string, lock: string, owner: LockOwner): boolean {
+  // Design: build the lock with its owner record, then rename it into place — a
+  // published lock always has an owner, and a rename failure is ordinary contention
+  // instead of a half-created lock that later runs must diagnose.
+  const pending = mkdtempSync(join(managed, LOCK_PENDING_PREFIX));
+  try {
+    writeFileSync(join(pending, "owner.json"), JSON.stringify(owner), { encoding: "utf8", flag: "wx", mode: 0o600 });
+    renameSync(pending, lock);
+    return true;
+  } catch (error) {
+    rmSync(pending, { recursive: true, force: true });
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EEXIST" || code === "ENOTEMPTY" || code === "EPERM"
+      || code === "ENOENT" || code === "ENOTDIR") return false;
+    throw error;
+  }
+}
+
 /** Acquire the exclusive manifest lock and return its release function. */
 function acquireManifestLock(managed: string): () => void;
 /** Acquire the lock, or return undefined when a live holder makes cleanup unsafe. */
 function acquireManifestLock(managed: string, skipOnContention: true): (() => void) | undefined;
 // Design: one coarse mkdir lock per managed root — it serializes read → publish/remove
 // → write, never evicts a live holder, and reclaims only a pid proven dead on this
-// host; contention fails closed instead of deleting a lock that may be live.
+// host and PID namespace; contention fails closed instead of deleting a lock that may
+// be live.
 function acquireManifestLock(managed: string, skipOnContention = false): (() => void) | undefined {
   const lock = join(managed, MANIFEST_LOCK);
   const token = randomUUID();
+  const namespace = pidNamespaceIdentity();
   for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      mkdirSync(lock);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const owner = readLockOwner(lock);
-      const state = probeLockOwner(owner);
-      if (state === "dead" && owner) {
-        reclaimDeadLock(managed, lock, owner);
-        continue;
-      }
-      if (skipOnContention) return undefined;
-      if (state === "alive") {
-        fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. Retry when it finishes.`);
-      }
-      if (owner && owner.host !== hostname()) {
-        fail(`another skill operation may be running in this scope${describeLockHolder(lock)}: ${lock}. The lock was created on ${owner.host}, so it cannot be proven dead from ${hostname()}; automatic reclamation is limited to this host. If no ans skill process is running there, remove that directory and retry.`);
-      }
-      fail(`another skill operation may be running in this scope: ${lock}. The owner record is incomplete or unreadable, so the lock cannot be proven dead. If no ans skill process is running here, remove that directory and retry.`);
-    }
-    try {
-      const owner: LockOwner = { token, pid: process.pid, host: hostname(), startedAt: new Date().toISOString() };
-      writeFileSync(join(lock, "owner.json"), JSON.stringify(owner), { encoding: "utf8", flag: "wx", mode: 0o600 });
-    } catch (error) {
-      rmSync(lock, { recursive: true, force: true });
-      throw error;
-    }
-    return () => {
-      releaseOwnedLock(lock, token);
+    const owner: LockOwner = {
+      token, pid: process.pid, host: hostname(), startedAt: new Date().toISOString(),
+      ...(namespace ? { namespace } : {}),
     };
+    if (createLockDirectory(managed, lock, owner)) {
+      return () => {
+        releaseOwnedLock(lock, token);
+      };
+    }
+    const observed = readLockOwner(lock);
+    const state = probeLockOwner(observed);
+    if (state === "dead" && observed) {
+      reclaimDeadLock(managed, lock, observed);
+      continue;
+    }
+    if (skipOnContention) return undefined;
+    if (state === "alive") {
+      fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. Retry when it finishes.`);
+    }
+    if (observed && observed.host !== hostname()) {
+      fail(`another skill operation may be running in this scope${describeLockHolder(lock)}: ${lock}. The lock was created on ${observed.host}, so it cannot be proven dead from ${hostname()}; automatic reclamation is limited to this host. If no ans skill process is running there, remove that directory and retry.`);
+    }
+    fail(`another skill operation may be running in this scope: ${lock}. The owner record is incomplete, from another PID namespace, or unreadable, so the lock cannot be proven dead. If no ans skill process is running here, remove that directory and retry.`);
   }
   if (skipOnContention) return undefined;
   fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. Retry when it finishes.`);
@@ -416,9 +462,12 @@ function prepareManagedRoot(opts: SkillOptions): string {
   return managed;
 }
 
-/** True when the managed root holds nothing but the lock we hold. */
+// Design: a lock pending publication and a lock directory are not content — a pending
+// directory is inert installer residue, so it must not block bootstrapping a scope.
+/** True when the managed root holds nothing but the lock (or an unpublished lock). */
 function isEmptyManagedRoot(managed: string): boolean {
-  return !readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK);
+  return !readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK
+    && !entry.startsWith(LOCK_PENDING_PREFIX));
 }
 
 /** True when a name is installer-owned staging or a temp manifest. */

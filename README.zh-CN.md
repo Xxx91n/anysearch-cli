@@ -176,14 +176,15 @@ ans skill uninstall research --project
 绝对路径 `source`、`commit`、`dirty` 和可选 `tag`。清单缺失、损坏或不符合
 schema 时，卸载会拒绝且不删除任何文件；绝不靠扫描目录猜测删除目标。
 `install` 与 `uninstall` 在所选 scope 内持独占锁：两个并发变更不会互相丢失
-清单条目。锁内记录持有者（`pid`、`host`）。同一 host 上可证明已死的持有者会
-被自动回收；仍存活的锁、在另一台机器写入的锁，或 owner 记录不可读的锁一律
-fail-closed，绝不自动删除。因此被杀进程不会永久阻塞后续操作，除非锁来自另一台
-机器，或进程在创建锁目录后、写入 owner 记录前被杀（此时无法判定）；这两种情况
-都请在确认没有 `ans skill` 进程运行后，删除残留的
-`skills/synced/.installed.lock` 目录。清单发布以及安装/卸载的目录 rename 遇到
-Windows 瞬时共享冲突（`EPERM`/`EBUSY`/`ENOTEMPTY`）会做有界退避重试，最长约
-60 秒，耗尽后仍报告原始错误。
+清单条目。锁内记录持有者（`pid`、`host`，以及系统可提供时的 PID namespace
+标识），并连同 owner 记录一起原子发布，因此锁不会缺少 owner。同一 host 且同一
+PID namespace 上可证明已死的持有者会被自动回收；仍存活的锁、在另一台机器或
+另一个 PID namespace 写入的锁，或 owner 记录不可读的锁一律 fail-closed，绝不
+自动删除。获取过程被杀可能留下惰性的
+`skills/synced/.installed.lock.pending-*` 目录，确认没有 `ans skill` 进程运行后
+可手工删除。清单发布以及安装/卸载的目录 rename 遇到 Windows 瞬时共享冲突
+（`EPERM`/`EBUSY`/`ENOTEMPTY`）会做有界退避重试，最长约 60 秒，耗尽后仍报告
+原始错误；其他平台只把 `EBUSY` 视为瞬时错误。
 
 `install`、`list`、`validate` 还会在持锁时对账安装器自有残留：
 仅在不存在 `installed.json` 时清理 `.install-*` 暂存目录和 `.installed-*.tmp`

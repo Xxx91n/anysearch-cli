@@ -12,7 +12,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runSkill } from "../src/commands/skill.js";
 import {
-  managedSkillsRoot, releaseOwnedLock, renameWithRetry, skillManifestPath, skillRenameIO, type SkillManifest,
+  managedSkillsRoot, pidNamespaceIdentity, releaseOwnedLock, renameWithRetry, skillManifestPath,
+  skillRenameIO, type SkillManifest,
 } from "../src/skill-store.js";
 
 /** Run a Git command in a test repository and return trimmed stdout. */
@@ -430,12 +431,18 @@ function deadPid(): number {
 }
 
 /** Plant a lock owned by the given record in the user scope. */
-function plantLock(managed: string, token: string, pid: number, host = hostname()): string {
+function plantLock(
+  managed: string,
+  token: string,
+  pid: number,
+  host = hostname(),
+  namespace = pidNamespaceIdentity(),
+): string {
   const lock = join(managed, ".installed.lock");
   rmSync(lock, { recursive: true, force: true });
   mkdirSync(lock);
   writeFileSync(join(lock, "owner.json"),
-    JSON.stringify({ token, pid, host, startedAt: "2026-11-03T00:00:00.000Z" }));
+    JSON.stringify({ token, pid, host, startedAt: "2026-11-03T00:00:00.000Z", ...(namespace ? { namespace } : {}) }));
   return lock;
 }
 
@@ -496,6 +503,33 @@ test("locks that are live or from another host are never reclaimed", async (t) =
   assert.ok(existsSync(malformedLock), "an unreadable owner is never reclaimed");
   assert.equal(existsSync(join(managed, "beta")), false);
   assert.deepEqual(Object.keys(f.manifest().skills), ["demo"]);
+});
+
+test("a lock from another PID namespace is never reclaimed", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const lock = plantLock(managed, "foreign-namespace", deadPid(), hostname(), "other-namespace");
+  const result = await f.run(["install", f.source("beta")]);
+  assert.equal(result.code, 1, result.stderr);
+  assert.match(result.stderr, /PID namespace/);
+  assert.ok(existsSync(lock), "a lock from another namespace is left in place");
+  assert.equal(existsSync(join(managed, "beta")), false);
+});
+
+test("an unpublished lock directory does not block a scope or act as a lock", async (t) => {
+  const f = fixture(t);
+  const managed = managedSkillsRoot(f.opts);
+  const pending = join(managed, ".installed.lock.pending-stale");
+  mkdirSync(pending, { recursive: true });
+  writeFileSync(join(pending, "owner.json"), "{}");
+  const installed = await f.run(["install", f.source()]);
+  assert.equal(installed.code, 0, installed.stderr);
+  assert.ok(existsSync(join(managed, "demo")));
+  assert.ok(existsSync(pending), "pending residue is inert and preserved");
+  const listed = await f.run(["list"]);
+  assert.equal(listed.code, 0, listed.stderr);
+  assert.match(listed.stdout, /demo/);
 });
 
 test("an old holder cannot release a lock that changed hands", (t) => {

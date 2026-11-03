@@ -192,16 +192,18 @@ Missing, malformed, or schema-invalid manifests cause uninstall to refuse
 without deleting anything; uninstall never scans for guessed targets.
 `install` and `uninstall` hold an exclusive lock in the selected scope, so two
 concurrent mutations cannot lose each other's manifest entry. The lock records
-its owner (`pid`, `host`). A lock whose owner is provably dead on the same host
-is reclaimed automatically; a live lock, a lock written on another host, or one
-without a readable owner fails closed and is never deleted. A killed process
-therefore does not block later runs unless the lock came from another machine,
-or it was killed between creating the lock directory and writing its owner
-record; in either case remove the leftover `skills/synced/.installed.lock`
-directory once no `ans skill` process is running there. Manifest publication and
-the install/uninstall directory renames retry transient Windows sharing
-violations (`EPERM`/`EBUSY`/`ENOTEMPTY`) with bounded backoff for up to about
-60 seconds before reporting the original error.
+its owner (`pid`, `host`, and the PID-namespace identity where the OS exposes
+one) and is published with that record already inside, so a lock never exists
+without an owner. A lock whose owner is provably dead on the same host and PID
+namespace is reclaimed automatically; a live lock, a lock written on another
+host or namespace, or one without a readable owner fails closed and is never
+deleted. A killed acquisition can leave an inert
+`skills/synced/.installed.lock.pending-*` directory, which can be removed once
+no `ans skill` process is running. Manifest publication and the
+install/uninstall directory renames retry transient Windows sharing violations
+(`EPERM`/`EBUSY`/`ENOTEMPTY`) with bounded backoff for up to about 60 seconds
+before reporting the original error; on other platforms only `EBUSY` is treated
+as transient.
 
 `install`, `list` and `validate` also reconcile installer-owned residue while
 holding that lock. `.install-*` staging directories and
