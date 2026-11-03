@@ -14,6 +14,10 @@ All notable changes to this project are recorded here. Format follows
 - **用户文档 `docs/rag-adapters.md`**：`[rag] adapter` 三态配置、`fts` 注入块形状与 provenance、四个预算常量、消息形状注意事项（pi 把 prompt 规范化成 content block）、fail-open 矩阵与验证方式；README 的 Domains / Known limitations / For contributors 三处接入。新代码的公开接口补齐 JSDoc（`RagAdapterPort` / `RagAdapterRegistry` / `createNoteRagAdapter` / `createFtsRagAdapter` / `readMessageText` / `appendMessageText` / `prependMessageText`）。
 - **`#104` 验收测试** `packages/kernel/test/rag-adapter.test.ts`：fts 注入 + provenance（AC1）、`none` / legacy `note` 字节级回归（AC2）、未知 adapter fail-open + 具名 stderr（AC3），外加 no-store / 检索抛错 / 无命中 / 空查询 / 缓存与热重载 / Stage-1 落点 / 不叠乘 / 出厂域全量审计。
 
+### Documented
+
+- **`fts` 的作用域 = 跨会话共享的 Research Memory（不是当前会话）**：`SessionStore.searchMemory` 查 `retrieval_results_fts` 且不带 session 过滤（既有 `recall_memory` 语义），本票只在其上包一层、未改作用域；对照 `searchFts5(sessionId, …)` 才是按会话过滤。已在 `docs/rag-adapters.md` 单列「作用域」一节写明，并点出"多域共享同一 DB 时启用 `fts` 等于放宽域间信息边界"的后果。若要"仅当前会话"，需给 `RagAdapterPort` 传 sessionId 并给 store 增带会话过滤的 Research Memory 查询 —— 属独立决策，不在本票改。
+
 ### Fixed
 
 - **Stage-1 注入在真实运行时从未命中（#104 自查 + CI 发现）**：pi-agent-core 0.84.2 把 `agent.prompt("…")` 规范化为 content block 数组（`content: [{type:"text",text}]`），而注入代码只认 `typeof content === "string"`——RAG 注入在实机上落空，旧 `note` 路径更会在 note 存在时把用户消息整体改写成 RAG 文本（数据丢失）。新增 `packages/kernel/src/message-text.ts`（`readMessageText` / `appendMessageText` / `prependMessageText`）：两种形状都支持，block 形状原地追加到文本块、非文本块原样保留，无文本通道时主动放弃注入。Stage-1 与 T0 偏好注入同时改用该助手；回归见 `packages/kernel/test/message-text.test.ts` 与 `rag-adapter.test.ts` 的 content-block 用例，端到端断言不再假设消息形状。

@@ -21,7 +21,7 @@
 
 ## 配置示例
 
-`fts` —— 复用本会话已积累的调研记忆：
+`fts` —— 复用 **Research Memory** 里已积累的调研结果（跨会话共享，见下方「作用域」）：
 
 ```toml
 [rag]
@@ -55,6 +55,26 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
 - 头部携带 adapter id、provenance（`memory`，即信任度低于 user 的一档）、命中数、trace id；
 - 每条命中带 role，让模型能区分「召回证据」与「用户指令」；
 - 命中文本在注入边界过 `sanitizeText`（零宽字符 / 双向覆盖符剔除）并压平换行，防止一条记忆伪造出额外的块结构。
+
+## 作用域：`fts` 读的是**跨会话共享**的 Research Memory
+
+这点容易被误读成"只读当前会话"，务必看清：
+
+- `fts` 走的是 `SessionStore.searchMemory`，它查 `retrieval_results_fts`
+  （Research Memory 层），**不带 session 过滤** —— 同一 store 内其它会话存下的
+  调研结果也会被召回。这是既有 `recall_memory` 工具的语义，本票的 adapter 是
+  在它之上包一层，没有改变作用域。
+- 对照：`SessionStore.searchFts5(sessionId, …)` 才是按会话过滤的（查 `messages` 表）。
+  L2 冷路径的记忆召回同样走跨会话的 `searchMemory`。
+- 这也正是 Domain Full-Stack 想要的语义：`fts` adapter 的价值在于"这个域能读
+  到本机已积累的私有证据"，而不是"重读本轮对话"——本轮对话模型本来就在上下
+  文里。
+- 要注意的后果：**同一个 store 里不同会话/不同域的召回内容会互相可见**。
+  如果多个域共享同一个 DB 但信任级别不同，那么启用 `fts` 等于放宽这些域之间的
+  信息边界。目前出厂三域都是 `adapter = "none"`，所以这个结论尚未被任何出厂配置触发。
+- 如果将来需要"仅当前会话"的 RAG，那是另一件事（要给 `RagAdapterPort` 传
+  sessionId 并给 store 加带会话过滤的 Research Memory 查询），属独立决策，不
+  在本票范围内偷改。
 
 预算（都在 `rag-adapter.ts` 里具名导出，改它们要同步改测试）：
 

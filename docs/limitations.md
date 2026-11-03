@@ -104,3 +104,12 @@
   does not dispatch to it yet: it still answers with the `adapter=<id>` line.
   Wiring it needs an explicit session/store selection (which memory scope a
   knowledge query reads), which is a separate decision.
+- **`rag.adapter = "fts"` reads shared Research Memory, not the current session
+  (#104)** — `SessionStore.searchMemory` queries `retrieval_results_fts`
+  without a session filter (the existing `recall_memory` semantic), so a domain
+  that enables `fts` can surface research saved by any other session in the
+  same store. With domains sharing one DB this widens the information boundary
+  between them; it is inert today because every shipped domain stays on
+  `adapter = "none"`. Session-scoped RAG would need a session id on
+  `RagAdapterPort` plus a session-filtered Research Memory query — a separate
+  decision, tracked in `docs/rag-adapters.md`.
