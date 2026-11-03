@@ -11,6 +11,7 @@ All notable changes to this project are recorded here. Format follows
 - **kernel ports 新增 `RagAdapterPort`**（`packages/kernel/src/ports.ts`）：`retrieve(query, limit) → { block, label, hitCount } | null`，`label` 复用 content-trust 的 `SourceTraceLabel`，注入产物自带 provenance 而非裸文本。
 - **`rag.adapter` 三态注册表**（`packages/kernel/src/rag-adapter.ts`，`RagAdapterRegistry`）：`none`=不注入；`note`=保留 `config.note` 旧注入（legacy 伪 adapter，字节级不变）；`fts`=最小真实现，包裹既有 `SessionStore.searchMemory`（严格 FTS5 梯级 + 放宽梯级 + 既有 side arms），零新索引、零 embedding 依赖。按 domain 对象身份缓存解析结果，TOML 热重载后下一轮即按新 id 生效。
 - **`fts` 注入块带 provenance 头**：`[RAG Context] (adapter=fts, provenance=memory, hits=N, traceId=rag:fts:N)`，每条命中带 role 标签（`- [assistant] …`）；命中文本在注入边界过 `sanitizeText`（零宽/双向覆盖符剔除）并压平换行，防伪造块结构；单条上限 600 字符、整块上限 4000 字符，避免一条巨行挤掉其余命中。
+- **用户文档 `docs/rag-adapters.md`**：`[rag] adapter` 三态配置、`fts` 注入块形状与 provenance、四个预算常量、消息形状注意事项（pi 把 prompt 规范化成 content block）、fail-open 矩阵与验证方式；README 的 Domains / Known limitations / For contributors 三处接入。新代码的公开接口补齐 JSDoc（`RagAdapterPort` / `RagAdapterRegistry` / `createNoteRagAdapter` / `createFtsRagAdapter` / `readMessageText` / `appendMessageText` / `prependMessageText`）。
 - **`#104` 验收测试** `packages/kernel/test/rag-adapter.test.ts`：fts 注入 + provenance（AC1）、`none` / legacy `note` 字节级回归（AC2）、未知 adapter fail-open + 具名 stderr（AC3），外加 no-store / 检索抛错 / 无命中 / 空查询 / 缓存与热重载 / Stage-1 落点 / 不叠乘 / 出厂域全量审计。
 
 ### Fixed

@@ -8,16 +8,25 @@
 // injected text. These helpers make "read the text" and "append text" total
 // over both shapes, and refuse to guess, so a caller can stand down instead.
 
+/** A message's text channel, plus the shape the write-back has to keep. */
 export interface TextTarget {
-  // Text as the model would read it (blocks joined, non-text blocks skipped).
+  /** Text as the model would read it (text blocks joined, non-text blocks skipped). */
   text: string;
-  // Which shape the message actually uses — the shape the write-back keeps.
+  /** Which shape the message actually uses — the shape the write-back keeps. */
   kind: "string" | "blocks";
 }
 
-// readMessageText returns the user-visible text of a message, or null when the
-// message has no text channel at all (e.g. an image-only turn): callers must
-// not treat "no text" as "empty text".
+/**
+ * Read a message's text channel.
+ *
+ * Returns null when the message has no text channel at all (an image-only
+ * turn, a non-string/non-array `content`, a missing message): callers must not
+ * treat "no text" as "empty text", because injecting into the latter is safe
+ * while appending to the former is not.
+ *
+ * @param message - Any chat message; only `.content` is inspected.
+ * @returns The text and its shape, or null when there is no text to read.
+ */
 export function readMessageText(message: unknown): TextTarget | null {
   const content = (message as { content?: unknown } | null | undefined)?.content;
   if (typeof content === "string") return { text: content, kind: "string" };
@@ -36,11 +45,20 @@ export function readMessageText(message: unknown): TextTarget | null {
   return { text: parts.join("\n"), kind: "blocks" };
 }
 
-// appendMessageText returns a copy of `message` with `suffix` appended to its
-// text channel, preserving the original shape: a string stays a string, a
-// block array keeps every non-text block and appends to its last text block
-// (falling back to a new trailing text block). Returns null when the message
-// has no text channel — the caller must then leave it untouched.
+/**
+ * Append `suffix` to a message's text channel, preserving the original shape.
+ *
+ * A string stays a string; a block array keeps every non-text block, appends
+ * into its LAST text block (trailing text wins), and falls back to a new
+ * trailing text block when the array has none. The input message is never
+ * mutated and block objects are copied, not aliased.
+ *
+ * @param message - Message whose text should grow.
+ * @param suffix - Text to append; an empty suffix passes the message through.
+ * @param target - Shape descriptor from {@link readMessageText}.
+ * @returns A new message, or null on a shape mismatch (caller must leave the
+ *   message untouched rather than guess).
+ */
 export function appendMessageText(message: unknown, suffix: string, target: TextTarget): unknown | null {
   if (!suffix) return message;
   const content = (message as { content?: unknown } | null | undefined)?.content;
@@ -61,8 +79,18 @@ export function appendMessageText(message: unknown, suffix: string, target: Text
   return { ...(message as object), content: blocks };
 }
 
-// prependMessageText is appendMessageText at the head of the text channel —
-// used by the T0 preferences block, which is documented as a leading block.
+/**
+ * Prepend `prefix` to a message's text channel, preserving the original shape.
+ *
+ * The mirror of {@link appendMessageText}, used by the T0 preferences block,
+ * which is documented as a *leading* block: the prefix lands on the FIRST text
+ * block so `<user_preferences>` stays at the head of the user's text.
+ *
+ * @param message - Message whose text should grow at the front.
+ * @param prefix - Text to prepend; an empty prefix is a pass-through.
+ * @param target - Shape descriptor from {@link readMessageText}.
+ * @returns A new message, or null on a shape mismatch.
+ */
 export function prependMessageText(message: unknown, prefix: string, target: TextTarget): unknown | null {
   if (!prefix) return message;
   const content = (message as { content?: unknown } | null | undefined)?.content;

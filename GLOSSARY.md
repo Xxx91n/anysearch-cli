@@ -8,8 +8,8 @@
 - **Active Domain（当前领域）**——agent 被专精到哪个领域的权威单元，持有一份 TOML。切换它联动五个下游层：Hooks Tool Whitelist、Prompt Skill Selection、Skill Active List、信息源白名单、RAG Adapter。
 - **Retroaererd Engine（检索专精引擎）**——anysearch 内核：多 provider fanout + RRF 融合 + 充分性门禁 + 预算闸。纯编排，不含 LLM 判定。
 - **Info Source Provider（信息源头供应方）**——对接单一检索后端（anysearch 通道/Exa/Tavily/Brave）的实现；domain 的 `[sources]` 决定启用哪几个及融合权重。
-- **RAG Adapter（领域专属检索适配器）**——企业内部数据的加载/检索配置位（`[rag] adapter=<id>`），kernel 侧三态注册表：`none`=不注入、`note`=保留 `config.note` 旧注入（legacy 伪 adapter）、`fts`=复用既有 FTS5 记忆面（`SessionStore.searchMemory`）做真检索；未知 id fail-open 到 none 并输出具名 stderr 告警（决策 #90，票据 #35/#104）。
-- **RAG Injection（RAG 注入）**——`RagAdapterPort.retrieve()` 的产物经 MemoryPipeline.inject **Stage-1** 追加到首条 user 消息：`fts` 注入块带 provenance 头（adapter / provenance=memory / hits / traceId）逐条标注命中 role，`note` 保持 `[RAG Context] <note>` 逐字节不变；每个域只有一个 adapter 生效，不叠乘；检索异常 fail-open（不注入 + 具名告警），任何情况不阻断 agent loop。注入按**消息形状**工作：pi-agent-core 会把 `prompt("…")` 规范化为 content block 数组，字符串与 block 两种形状都支持（block 形状原地追加到其文本块，非文本块原样保留，绝不把用户消息替换成注入内容）。
+- **RAG Adapter（领域专属检索适配器）**——企业内部数据的加载/检索配置位（`[rag] adapter=<id>`），kernel 侧三态注册表：`none`=不注入、`note`=保留 `config.note` 旧注入（legacy 伪 adapter）、`fts`=复用既有 FTS5 记忆面（`SessionStore.searchMemory`）做真检索；未知 id fail-open 到 none 并输出具名 stderr 告警（决策 #90，票据 #35/#104；配置与预算见 `docs/rag-adapters.md`）。
+- **RAG Injection（RAG 注入）**——`RagAdapterPort.retrieve()` 的产物经 MemoryPipeline.inject **Stage-1** 追加到首条 user 消息：`fts` 注入块带 provenance 头（adapter / provenance=memory / hits / traceId）逐条标注命中 role，`note` 保持 `[RAG Context] <note>` 逐字节不变；每个域只有一个 adapter 生效，不叠乘；检索异常 fail-open（不注入 + 具名告警），任何情况不阻断 agent loop。注入按**消息形状**工作：pi-agent-core 会把 `prompt("…")` 规范化为 content block 数组，字符串与 block 两种形状都支持（block 形状原地追加到其文本块，非文本块原样保留，绝不把用户消息替换成注入内容）。详见 `docs/rag-adapters.md`。
 - **Code Mode（代码开发模式）**——`domain="code"` 特殊值：软依赖用户已装的 context-mode / codegraph 做本地仓索引，CLI 不内置索引实现。
 - **Kernel Distribution（内核分发形态）**——三阶段路线：独立 CLI（`ans`）→ MCP server 包同一 kernel → 宿主 hooks 插件。三形态共享同一 kernel。
 - **Anysearch Plugin**——宿主侧插件形态：hooks + 长驻 MCP server + 项目级 FTS5 索引，可配置进各 agent 宿主。

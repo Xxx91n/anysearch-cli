@@ -54,8 +54,17 @@ function formatBlock(adapterId: string, label: SourceTraceLabel, hitCount: numbe
   return (header + "\n" + body).slice(0, RAG_BLOCK_MAX_CHARS);
 }
 
-// Legacy "note": operator-authored text from domain TOML. Byte-identical to
-// the pre-#104 injection so adapter="note" domains are a zero-change upgrade.
+/**
+ * Legacy `"note"` adapter: injects operator-authored text from domain TOML.
+ *
+ * The produced block is byte-identical to the pre-#104 injection
+ * (`[RAG Context] <note>`), so a domain that declares `adapter = "note"`
+ * upgrades with zero behavior change. Provenance is `system` (operator
+ * config, not recalled evidence) and `hitCount` is 0 — a note is not a
+ * retrieval result.
+ *
+ * @param note - Non-empty `[rag.config].note` text from the domain TOML.
+ */
 export function createNoteRagAdapter(note: string): RagAdapterPort {
   const block = RAG_CONTEXT_TAG + " " + note;
   const result: RagRetrievalResult = {
@@ -69,10 +78,21 @@ export function createNoteRagAdapter(note: string): RagAdapterPort {
   };
 }
 
-// "fts": wraps SessionStore.searchMemory (strict FTS5 rung + relaxed rung +
-// existing side arms). Hit content is sanitized at this boundary — recalled
-// rows were written from untrusted retrieved text, and this is the seam where
-// they re-enter the prompt.
+/**
+ * `"fts"` adapter: the minimal *real* RAG implementation.
+ *
+ * Wraps `SessionStore.searchMemory` (strict FTS5 rung + relaxed rung + the
+ * existing entity/vector/relation side arms) — zero new index, zero embedding
+ * dependency. Hit content is sanitized at this boundary because recalled rows
+ * were written from untrusted retrieved text and this is the seam where they
+ * re-enter the prompt; whitespace is collapsed so one row cannot forge extra
+ * block structure. A huge row is truncated per hit so it cannot crowd out the
+ * rest, and the whole block is capped.
+ *
+ * @param store - Session store exposing `searchMemory` (the recall surface).
+ * @returns An adapter whose `retrieve` yields null when nothing is worth
+ *   injecting (blank query, no hits, or only blank rows).
+ */
 export function createFtsRagAdapter(store: SessionStorePort): RagAdapterPort {
   return {
     id: RAG_ADAPTER_FTS,
@@ -109,16 +129,29 @@ export interface RagAdapterRegistryDeps {
   warn?: (line: string, key: string) => void;
 }
 
-// Registry: resolves domain.rag.adapter to an adapter instance.
-// Results are cached per domain object (identity) and warnings are deduped per
-// reason: inject() is a per-turn hot path, and a mis-configured domain must not
-// emit one warning line per turn.
+/**
+ * Selects the adapter for a domain from `domain.rag.adapter`.
+ *
+ * Three states — `none` (no injection), `note` (legacy config.note), `fts`
+ * (FTS5 recall) — and fail-open to `none` with a named stderr line for
+ * anything else, so a mis-wired or unknown id can never break the agent loop.
+ *
+ * Two hot-path properties: resolution is cached per domain object identity
+ * (a TOML reload produces a new object and therefore re-resolves), and
+ * warnings are deduped per reason so a mis-configured domain does not emit one
+ * warning line per turn.
+ */
 export class RagAdapterRegistry {
   private readonly resolved = new WeakMap<DomainConfigPort, RagAdapterPort | null>();
   private readonly warned = new Set<string>();
 
   constructor(private readonly deps: RagAdapterRegistryDeps = {}) {}
 
+  /**
+   * Resolve (and cache) the adapter for `domain`.
+   *
+   * @returns The adapter, or null for `none` / unset / a fail-open case.
+   */
   resolve(domain: DomainConfigPort): RagAdapterPort | null {
     // The WeakMap requires an object key: a store-less/mis-built runtime that
     // hands over an undefined domain must read as "no adapter", not throw on
@@ -131,9 +164,19 @@ export class RagAdapterRegistry {
     return adapter;
   }
 
-  // Injection entry point used by MemoryPipeline.inject: resolve + retrieve +
-  // fail-open. Retrieval faults degrade to "no RAG context this turn" with a
-  // named stderr line — never a thrown error into the agent loop.
+  /**
+   * Injection entry point used by `MemoryPipeline.inject`: resolve, retrieve,
+   * and fail open.
+   *
+   * A retrieval fault degrades to "no RAG context this turn" plus one named
+   * stderr line — never a thrown error into the agent loop. `adapter = "none"`
+   * (every shipped domain today) short-circuits before any store round trip.
+   *
+   * @param domain - Active domain config carrying `rag.adapter`.
+   * @param query - Caller text, normally the first user turn; truncated here.
+   * @param limit - Max hits to fold into the block.
+   * @returns The injection payload, or null when nothing should be injected.
+   */
   async resolveInjection(
     domain: DomainConfigPort,
     query: string,

@@ -92,25 +92,41 @@ export interface ResumeAnchorsPort {
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
 }
 
-// RagAdapterPort: domain-scoped retrieval over private/internal data (#35,
-// decision #90). One adapter is selected by DomainConfigPort.rag.adapter:
-// "none" skips, "note" keeps the legacy config.note injection, "fts" recalls
-// from the existing FTS5 memory surface (SessionStore.searchMemory) — zero new
-// index, zero embedding dependency.
-// Injection point is unchanged: MemoryPipeline.inject Stage-1, first USER
-// message. retrieve() returning null means "nothing to inject this turn";
-// thrown faults are fail-open at the registry (no injection, named stderr).
+/** One adapter's injection payload for a single turn. */
 export interface RagRetrievalResult {
-  // Text appended after a blank line to the first user message.
+  /** Text appended after a blank line to the first user message's text channel. */
   block: string;
-  // Provenance for the injected text: recalled rows are "memory" (untrusted at
-  // merge per content-trust TRUST_ORDER), the operator-authored note is "system".
+  /**
+   * Provenance for the injected text: recalled rows are `memory` (a tier below
+   * `user` per content-trust TRUST_ORDER), the operator-authored note is `system`.
+   */
   label: SourceTraceLabel;
-  // Number of recalled rows folded into `block`; 0 for a static note.
+  /** Number of recalled rows folded into `block`; 0 for a static note. */
   hitCount: number;
 }
 
+/**
+ * Domain-scoped retrieval over private/internal data (#35, decision #90).
+ *
+ * One adapter is selected by `DomainConfigPort.rag.adapter`: `none` skips,
+ * `note` keeps the legacy `config.note` injection, `fts` recalls from the
+ * existing FTS5 memory surface (`SessionStore.searchMemory`) — zero new index,
+ * zero embedding dependency.
+ *
+ * The injection point is unchanged: `MemoryPipeline.inject` Stage-1, the first
+ * USER message's text channel (string or content-block shape alike).
+ */
 export interface RagAdapterPort {
+  /** Adapter id, matching the `[rag] adapter` value that selected it. */
   readonly id: string;
+  /**
+   * Resolve `query` into an injectable payload.
+   *
+   * @param query - Caller text, normally the first user turn (adapters may truncate).
+   * @param limit - Max hits to fold into the block.
+   * @returns The payload, or null meaning "nothing to inject this turn".
+   *   Thrown faults are fail-open at the registry (no injection, named stderr),
+   *   so implementations may throw without breaking the agent loop.
+   */
   retrieve(query: string, limit?: number): Promise<RagRetrievalResult | null>;
 }
