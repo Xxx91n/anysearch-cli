@@ -108,6 +108,8 @@ const STAGING_PREFIX = ".install-";
 const MANIFEST_TEMP_PREFIX = ".installed-";
 /** Prefix for a stale lock moved aside during reclamation. */
 const LOCK_RECLAIM_PREFIX = `${MANIFEST_LOCK}.reclaim-`;
+/** Guard that serializes reclaimers; only its holder may move the canonical lock. */
+const RECLAIM_GUARD = `${MANIFEST_LOCK}.reclaiming`;
 /** Prefix for a lock being built with its owner record before publication. */
 const LOCK_PENDING_PREFIX = `${MANIFEST_LOCK}.pending-`;
 /** Uninstall backup prefix; contents are never deleted without a manifest entry. */
@@ -351,34 +353,57 @@ function probeLockOwner(owner: LockOwner | undefined): LockState {
   }
 }
 
-// Design: rename-to-unique-quarantine is the reclaim election — exactly one of two
-// reclaimers can move a given lock. The owner token is re-read after the move, so a
-// lock that changed hands is restored instead of deleted; a possibly live lock is
-// never removed.
-/** Move a provably dead lock aside; a lost rename means another reclaimer won. */
-function reclaimDeadLock(managed: string, lock: string, observed: LockOwner): void {
-  const quarantine = join(managed, `${LOCK_RECLAIM_PREFIX}${randomUUID()}`);
+// Design: rename-to-unique-quarantine is the reclaim election, and an exclusive guard
+// serializes reclaimers so no one can move a lock that was just republished. The owner
+// token is re-read under the guard and after the move, so a lock that changed hands is
+// restored instead of deleted; a possibly live lock is never removed.
+/** Move a provably dead lock aside; false means another reclaimer is active. */
+function reclaimDeadLock(managed: string, lock: string, observed: LockOwner, owner: LockOwner): boolean {
+  const guard = join(managed, RECLAIM_GUARD);
+  if (!acquireReclaimGuard(managed, guard, owner)) return false;
   try {
-    renameWithRetry(lock, quarantine);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw error;
-  }
-  const moved = readLockOwner(quarantine);
-  if (moved?.token !== observed.token) {
-    // Design: restore a changed-hands lock with one bare rename — retrying could
-    // sleep out the retry budget while a new holder owns the canonical path.
-    if (statIfPresent(lock)) {
-      fail(`skill lock changed hands while reclaiming it; inspect ${quarantine} and ${lock} before retrying.`);
-    }
+    // Only the guard holder may move the lock, so this re-read cannot be acted on
+    // once another process has republished a live lock.
+    const current = readLockOwner(lock);
+    if (!current || current.token !== observed.token) return false;
+    const quarantine = join(managed, `${LOCK_RECLAIM_PREFIX}${randomUUID()}`);
     try {
-      renameSync(quarantine, lock);
-    } catch {
-      fail(`skill lock could not be restored while reclaiming it; inspect ${quarantine} and ${lock} before retrying.`);
+      renameWithRetry(lock, quarantine);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
     }
-    fail(`skill lock changed hands while reclaiming it; another skill operation is running${describeLockHolder(lock)}. Retry when it finishes.`);
+    const moved = readLockOwner(quarantine);
+    if (moved?.token !== observed.token) {
+      // The lock changed hands: restore it only into a free path; a single attempt
+      // avoids sleeping out the retry budget while a new holder owns the lock.
+      if (statIfPresent(lock)) {
+        fail(`skill lock changed hands while reclaiming it; inspect ${quarantine} and ${lock} before retrying.`);
+      }
+      try {
+        renameSync(quarantine, lock);
+      } catch {
+        fail(`skill lock could not be restored while reclaiming it; inspect ${quarantine} and ${lock} before retrying.`);
+      }
+      fail(`skill lock changed hands while reclaiming it; another skill operation is running${describeLockHolder(lock)}. Retry when it finishes.`);
+    }
+    rmSync(quarantine, { recursive: true, force: true });
+    return true;
+  } finally {
+    releaseOwnedLock(guard, owner.token);
   }
-  rmSync(quarantine, { recursive: true, force: true });
+}
+
+/** Publish the reclaim guard; false means another reclaimer already holds it. */
+function acquireReclaimGuard(managed: string, guard: string, owner: LockOwner): boolean {
+  if (createLockDirectory(managed, guard, owner)) return true;
+  const state = probeLockOwner(readLockOwner(guard));
+  if (state === "dead") {
+    rmSync(guard, { recursive: true, force: true });
+    return createLockDirectory(managed, guard, owner);
+  }
+  if (state === "alive") return false;
+  fail(`skill lock reclaim guard cannot be proven dead: ${guard}. Inspect it and remove the directory if no ans skill process is running.`);
 }
 
 /** Remove a lock only while it still carries the caller's token. */
@@ -437,7 +462,7 @@ function acquireManifestLock(managed: string, skipOnContention = false): (() => 
     const observed = readLockOwner(lock);
     const state = probeLockOwner(observed);
     if (state === "dead" && observed) {
-      reclaimDeadLock(managed, lock, observed);
+      if (!reclaimDeadLock(managed, lock, observed, owner)) sleepSync(5);
       continue;
     }
     if (skipOnContention) return undefined;
@@ -476,12 +501,12 @@ function prepareManagedRoot(opts: SkillOptions): string {
   return managed;
 }
 
-// Design: a lock pending publication and a lock directory are not content — a pending
-// directory is inert installer residue, so it must not block bootstrapping a scope.
-/** True when the managed root holds nothing but the lock (or an unpublished lock). */
+// Design: a lock pending publication and the reclaim guard are not content — they are
+// inert installer bookkeeping, so they must not block bootstrapping a scope.
+/** True when the managed root holds nothing but the lock (or inert bookkeeping). */
 function isEmptyManagedRoot(managed: string): boolean {
   return !readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK
-    && !entry.startsWith(LOCK_PENDING_PREFIX));
+    && entry !== RECLAIM_GUARD && !entry.startsWith(LOCK_PENDING_PREFIX));
 }
 
 /** True when a name is installer-owned staging or a temp manifest. */
@@ -620,6 +645,26 @@ function git(source: string, args: string[]): string {
   }
 }
 
+/** List repository-local config keys matching a pattern; exit status 1 means none. */
+function gitConfigKeys(source: string, pattern: string): string[] {
+  try {
+    const output = execFileSync("git", [
+      "-c", "core.fsmonitor=false", "-C", source,
+      "config", "--local", "--get-regexp", "--name-only", pattern,
+    ], {
+      encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
+      timeout: 10_000, maxBuffer: 16 * 1024 * 1024,
+    }).trim();
+    return output ? output.split(/\r?\n/).filter(Boolean) : [];
+  } catch (error) {
+    const e = error as NodeJS.ErrnoException & { status?: number; stderr?: Buffer | string };
+    if (e.status === 1) return [];
+    if (e.code === "ENOENT") fail("Git is required to record the source commit; install Git and retry.");
+    const detail = e.stderr ? String(e.stderr).trim() : e.message;
+    fail(`cannot inspect Git source ${source}: ${detail}`);
+  }
+}
+
 /** Record the source path, HEAD commit, exact tag if present, and dirty state. */
 function provenance(source: string): Omit<InstalledSkill, "name"> {
   // Design: compare native-canonical paths — on Windows, plain realpath keeps
@@ -631,6 +676,13 @@ function provenance(source: string): Omit<InstalledSkill, "name"> {
   // Exact tags only; lexical ordering makes multiple tags deterministic. A tag
   // is supplementary: the full commit is always recorded, even without a tag.
   const tag = git(source, ["tag", "--points-at", "HEAD", "--sort=refname"]).split(/\r?\n/).filter(Boolean)[0];
+  // Design: `git status` re-hashes stat-dirty files and therefore runs repo-defined
+  // filter.<name>.clean/process drivers even with fsmonitor off — those are
+  // attacker-controlled code, so a source that defines any is refused before status.
+  const filters = gitConfigKeys(source, "^filter\\..*\\.(clean|process)$");
+  if (filters.length > 0) {
+    fail(`source repository defines Git content filters (${filters.join(", ")}); refusing to run status on it. Remove those definitions from .git/config or install an export without .git.`);
+  }
   const dirty = git(source, ["status", "--porcelain", "--untracked-files=all", "--ignored", "--", "."]).length > 0;
   return { source, commit, dirty, ...(tag ? { tag } : {}) };
 }

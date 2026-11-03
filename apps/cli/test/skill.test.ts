@@ -242,6 +242,18 @@ test("gitignored content is copied and recorded as dirty", async (t) => {
   assert.equal(readFileSync(join(managedSkillsRoot(f.opts), "demo", "secret.env"), "utf8"), "TOKEN=example\n");
 });
 
+test("a source repository that defines Git content filters is refused before status", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  git(f.repository, ["config", "filter.evil.clean", "sh -c 'touch PWNED; cat'"]);
+  const result = await f.run(["install", dir]);
+  assert.equal(result.code, 1, result.stderr);
+  assert.match(result.stderr, /content filters/);
+  assert.match(result.stderr, /filter\.evil\.clean/);
+  assert.equal(existsSync(join(f.repository, "PWNED")), false, "the filter must never execute");
+  assert.equal(existsSync(skillManifestPath(f.opts)), false);
+});
+
 test("repository root is a valid source and Git metadata is not copied", async (t) => {
   const f = fixture(t);
   f.source();
@@ -480,6 +492,43 @@ test("read maintenance reclaims a dead lock without blocking list", async (t) =>
   assert.equal(listed.code, 0, listed.stderr);
   assert.match(listed.stdout, /demo/);
   assert.equal(existsSync(lock), false);
+});
+
+test("an active reclaim guard prevents a second reclaimer from moving the lock", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const lock = plantLock(managed, "dead", deadPid());
+  const identity = pidIdentity();
+  const guard = join(managed, ".installed.lock.reclaiming");
+  mkdirSync(guard);
+  writeFileSync(join(guard, "owner.json"), JSON.stringify({
+    token: "guard", pid: process.pid, host: hostname(), startedAt: "2026-11-03T00:00:00.000Z",
+    ...(identity ? { bootId: identity.bootId, namespace: identity.namespace } : {}),
+  }));
+  const result = await f.run(["install", f.source("beta")]);
+  assert.equal(result.code, 1, result.stderr);
+  assert.ok(existsSync(lock), "the dead lock is not moved while another reclaimer holds the guard");
+  assert.ok(existsSync(guard));
+});
+
+test("a dead reclaim guard is recovered before reclamation", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const lock = plantLock(managed, "dead", deadPid());
+  const identity = pidIdentity();
+  const guard = join(managed, ".installed.lock.reclaiming");
+  mkdirSync(guard);
+  writeFileSync(join(guard, "owner.json"), JSON.stringify({
+    token: "dead-guard", pid: deadPid(), host: hostname(), startedAt: "2026-11-03T00:00:00.000Z",
+    ...(identity ? { bootId: identity.bootId, namespace: identity.namespace } : {}),
+  }));
+  const result = await f.run(["install", f.source("beta")]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(existsSync(lock), false);
+  assert.equal(existsSync(guard), false);
+  assert.deepEqual(Object.keys(f.manifest().skills).sort(), ["beta", "demo"]);
 });
 
 test("locks that are live or from another host are never reclaimed", async (t) => {

@@ -184,7 +184,10 @@ user-authored. `SKILL.md` must begin with a parseable YAML frontmatter mapping
 whose `name` is 1–64 lowercase letters/digits with single hyphens (not a Windows
 device name). That name selects the destination. This is a syntax/name check,
 not a full Agent Skills linter. Git metadata is omitted and symlinks are
-rejected; existing installations are never overwritten (uninstall first).
+rejected; a source repository that defines local Git content-filter drivers
+(`filter.<name>.clean`/`process`) is refused, because `git status` would
+otherwise execute that repository-controlled code. Existing installations are
+never overwritten (uninstall first).
 
 The version-1 `installed.json` has a `skills` object keyed by name. Each entry
 contains `name`, absolute `source`, `commit`, `dirty`, and optional `tag`.

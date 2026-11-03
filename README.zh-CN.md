@@ -170,7 +170,8 @@ ans skill uninstall research --project
 可解析的 YAML frontmatter mapping 开头，其中 `name` 为 1–64 位小写字母/数字，
 可用单个连字符分隔（不能是 Windows 设备名），并据此选择安装目录。这里只检查
 语法和名字，不是完整的 Agent Skills linter。Git 元数据会省略，符号链接会被
-拒绝；已有安装绝不覆盖（请先卸载）。
+拒绝；源仓库若在本地定义了 Git content-filter（`filter.<name>.clean`/`process`）
+也会被拒绝，否则 `git status` 会执行该仓库控制的代码。已有安装绝不覆盖（请先卸载）。
 
 版本 1 的 `installed.json` 含按名字索引的 `skills` 对象；每项记录 `name`、
 绝对路径 `source`、`commit`、`dirty` 和可选 `tag`。清单缺失、损坏或不符合
