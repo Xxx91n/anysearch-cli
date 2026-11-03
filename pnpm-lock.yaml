@@ -258,6 +258,9 @@ importers:
       express:
         specifier: ^4.18.2
         version: 4.22.2
+      smol-toml:
+        specifier: ^1.8.0
+        version: 1.8.0
     devDependencies:
       '@anysearch-cli/kernel':
         specifier: workspace:*

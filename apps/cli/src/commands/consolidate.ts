@@ -4,6 +4,7 @@
 
 import { createLlmSession, classifyClaim, resolveDbPath } from "@anysearch-cli/kernel";
 import { SqliteSessionStore, type ConsolidateEvidence, type ConsolidateClaimVerdict } from "@anysearch-cli/store";
+import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -30,9 +31,10 @@ function help(): string {
   ].join("\n");
 }
 
-export async function runConsolidate(args: string[]): Promise<number> {
-  const cmd = args[0];
+export async function runConsolidate(argv: string[]): Promise<number> {
+  const cmd = argv[0];
   if (cmd === "--help" || cmd === "-h") { process.stdout.write(help()); return 0; }
+  const { flags: llmFlags, argv: args } = parseLlmFlags(argv);
   // Reject unknown flags instead of silently running --apply.
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -50,23 +52,19 @@ export async function runConsolidate(args: string[]): Promise<number> {
     return 2;
   }
 
-  // LLM summarize seam (fail-open when unconfigured).
-  const providerName = process.env.ANS_LLM_PROVIDER;
-  const modelName = process.env.ANS_LLM_MODEL;
-  const baseUrl = process.env.ANS_LLM_BASE_URL;
-  const apiRaw = process.env.ANS_LLM_API;
-  const api = apiRaw === "chat" || apiRaw === "messages" || apiRaw === "responses" ? apiRaw : undefined;
-  if (baseUrl && !api) {
-    process.stderr.write("ANS_LLM_BASE_URL requires ANS_LLM_API=chat|messages|responses\n");
-    return 3;
-  }
+  // LLM summarize seam (fail-open when unconfigured). Layered config (#108):
+  // --llm.* flag > ANS_LLM_* env > .anysearch/config.toml > ~/.anysearch-cli/config.toml.
+  // A baseUrl without api is warned by the loader and fail-closed by createLlmSession.
+  const llmCfg = resolveLlmConfig({ flags: llmFlags });
+  const providerName = llmCfg.provider;
+  const modelName = llmCfg.model;
 
   let summarize: ((episodes: ConsolidateEvidence[]) => Promise<string | null>) | undefined;
   if (providerName && modelName) {
     try {
       const session = await createLlmSession({
-        provider: providerName, model: modelName, baseUrl, api,
-        apiKey: baseUrl ? process.env.ANS_LLM_API_KEY : undefined,
+        provider: providerName, model: modelName, baseUrl: llmCfg.baseUrl, api: llmCfg.api,
+        apiKey: llmCfg.apiKey,
       });
       summarize = async (episodes) => {
         const prompt = [
@@ -86,7 +84,7 @@ export async function runConsolidate(args: string[]): Promise<number> {
       process.stderr.write("[warn] LLM init failed (" + (e as Error).message + "); clusters will report llmUnavailable\n");
     }
   } else {
-    process.stderr.write("[warn] ANS_LLM_PROVIDER/ANS_LLM_MODEL not set; consolidation will report llmUnavailable\n");
+    process.stderr.write("[warn] LLM provider/model not configured (env, config files, or --llm.* flags); consolidation will report llmUnavailable\n");
   }
 
   // Fidelity gate adapter: kernel classifyClaim -> store verdict shape.

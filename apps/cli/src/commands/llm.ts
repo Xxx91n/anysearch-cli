@@ -1,22 +1,28 @@
 // ans llm: configure LLM providers (via @earendil-works/pi-ai).
 // decision 7: list/set/check LLM providers.
-// ponytail: MVP - register provider, check auth, set default model via env/config.
+// #108: `set` persists to the layered TOML config (~/.anysearch-cli/config.toml);
+// env still overrides the file; secrets stay in env vars referenced by env_key.
 
 import { createModels } from "@earendil-works/pi-ai";
 import { PROVIDER_FACTORIES, PROVIDER_NAMES, MODELS, API_KEYS } from "@anysearch-cli/kernel";
+import { resolveLlmConfig, userConfigPath, projectConfigPath, writeUserLlmConfig } from "../config-llm";
 
 export async function runLlm(args: string[]): Promise<number> {
   if (args.length === 0) {
     console.log("ans llm - LLM provider configuration");
     console.log("---");
-    const currentProvider = process.env.ANS_LLM_PROVIDER || "(not set)";
-    const currentModel = process.env.ANS_LLM_MODEL || "(not set)";
-    console.log("Current: " + currentProvider + "/" + currentModel);
+    const cfg = resolveLlmConfig();
+    const src = (k: "provider" | "model") => cfg.sources[k] ?? "unset";
+    console.log("Current: " + (cfg.provider || "(not set)") + "/" + (cfg.model || "(not set)") +
+      "  [provider:" + src("provider") + " model:" + src("model") + "]");
+    console.log("Files: user " + userConfigPath() + " | project " + projectConfigPath());
     console.log("");
     console.log("Available providers:");
     for (const [name, models] of Object.entries(MODELS)) {
       const apiKey = API_KEYS[name] || "UNKNOWN";
-      const set = !!process.env[apiKey];
+      // env_key indirection counts as auth only for the configured provider —
+      // the secret belongs to whichever provider the file selected.
+      const set = !!process.env[apiKey] || (name === cfg.provider && !!cfg.apiKey);
       console.log("  " + name + " [" + (set ? "AUTH" : "NO KEY") + "] - " + models.join(", "));
     }
     console.log("");
@@ -48,10 +54,14 @@ export async function runLlm(args: string[]): Promise<number> {
     }
 
     console.log("Setting LLM provider: " + provider + "/" + model);
-    console.log("");
-    console.log("To persist, add to your environment:");
-    console.log("  export ANS_LLM_PROVIDER=" + provider);
-    console.log("  export ANS_LLM_MODEL=" + model);
+    try {
+      const path = writeUserLlmConfig({ provider, model });
+      console.log("Written to " + path + " ([llm] section; env vars still override it).");
+    } catch (e: any) {
+      process.stderr.write((e?.message || String(e)) + "\n");
+      return 1;
+    }
+    console.log("Secrets stay in env vars — reference one in the file via env_key = \"" + (API_KEYS[provider] || "YOUR_API_KEY_ENV") + "\".");
     console.log("");
     try {
       await PROVIDER_FACTORIES[provider]();
