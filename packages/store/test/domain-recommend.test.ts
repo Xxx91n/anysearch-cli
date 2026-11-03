@@ -262,6 +262,14 @@ async function main() {
     // about art and the text says cart. A Latin segment has to start at a script boundary.
     assert(termCoverage("art中文", "cart中文购物") === 0, "a Latin segment inside a longer Latin word is not a match");
     assert(termCoverage("art中文", "art中文购物") === 1, "the same segment at a real boundary is covered");
+    // CodeRabbit round 4 on #134: the boundary split was written as a lookaround regex inside a
+    // template literal, where `\s` collapses to the letter `s` — so the class excluded the letter s
+    // instead of whitespace, and every Latin segment starting with s failed to split off. A test
+    // with `billing` and `art` could never catch that; `search` can. Asserted as 1: the bot's
+    // embedded suggestion said to assert 0, which contradicts its own finding text — 0 is the bug.
+    assert(termCoverage("中文search", "深度中文search研究") === 1, "an s-initial Latin segment splits at a script boundary");
+    const searchRun = await recommendDomains("中文search", [{ id: "zh", name: "zh", description: "深度中文search研究" }]);
+    assert(searchRun.decision === "high" && searchRun.recommendation?.id === "zh", "the s-boundary case recommends (got " + searchRun.decision + ", " + (searchRun.recommendation?.id ?? "null") + ")");
     const edgeRun = await recommendDomains("art中文", [{ id: "cart", name: "cart", description: "cart中文购物" }]);
     assert(edgeRun.recommendation === null, "no suggestion from a mid-word Latin fragment (got " + (edgeRun.recommendation?.id ?? "null") + ")");
 

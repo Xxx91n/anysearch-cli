@@ -82,12 +82,6 @@ const CJK_CLASS = CJK_SCRIPT_CLASS + "\\u30FC\\u3031-\\u3035\\uff9E-\\uff9F";
 const CJK_RUN_RE = new RegExp(`[${CJK_CLASS}]+`, "gu");
 const CJK_CHAR_RE = new RegExp(`[${CJK_CLASS}]`, "u");
 const CJK_LETTER_RE = new RegExp(`[${CJK_SCRIPT_CLASS}]`, "u");
-// Inserted at every boundary between a CJK-class character and a neighbouring letter/digit, so a
-// Latin segment can only be credited where unicode61 would not have swallowed it into one token.
-const SCRIPT_EDGE_RE = new RegExp(
-  `(?<=[${CJK_CLASS}])(?=[^\s${CJK_CLASS}])|(?<=[^\s${CJK_CLASS}])(?=[${CJK_CLASS}])`,
-  "gu",
-);
 
 // The query's CJK runs, deduped and capped like escapeQueryUnicode's maxTerms; mark-only runs
 // dropped (see the note above).
@@ -190,11 +184,14 @@ export function termCoverage(query: string, text: string): number {
   // Unicode-aware token split so CJK runs in the text stay matchable tokens.
   const hay = text.toLowerCase();
   const toks = hay.split(UNICODE_SANITIZE_RE).filter(Boolean);
-  // Script-boundary tokens: unicode61 glues an unbroken CJK+Latin run into ONE token
+  // Latin tokens cut at script edges: unicode61 glues an unbroken CJK+Latin run into ONE token
   // (深度中文billing研究 has no separator), so testing a Latin segment against `toks` alone would
-  // reject a term that is literally present. Splitting at CJK↔Latin edges accepts `billing` there
+  // reject a term that is literally present. Dropping the CJK runs first accepts `billing` there
   // while still refusing `art` inside `cart` — a Latin segment must start at a real boundary.
-  const edgeToks = hay.replace(SCRIPT_EDGE_RE, " ").split(UNICODE_SANITIZE_RE).filter(Boolean);
+  // Same transformation as the term side below, so both are cut by one rule. A lookaround regex
+  // was tried here first and rejected: written inside a template literal, `\s` collapses to the
+  // letter `s`, which silently excluded every Latin segment starting with s (CodeRabbit, #134).
+  const edgeToks = hay.replace(CJK_RUN_RE, " ").split(UNICODE_SANITIZE_RE).filter(Boolean);
   let matched = 0;
   let counted = 0;
   for (const t of terms) {
