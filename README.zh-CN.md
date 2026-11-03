@@ -181,7 +181,8 @@ schema 时，卸载会拒绝且不删除任何文件；绝不靠扫描目录猜�
 操作中断后先用 `ans skill list` 核对再删除残留：清单仍记录某 skill 但其
 `<name>/` 目录缺失时，应把 `.uninstall-*` 备份改回 `<name>/`；清单未记录时，
 `.install-*` 暂存或 `.uninstall-*` 备份可在确认无操作运行后删除。安装中断
-留下的未登记 `<name>/` 可删除后重装。
+留下的未登记 `<name>/` 可删除后重装。清单写入被杀还可能留下 `.installed-*.tmp`，
+在目录中没有 `installed.json` 时删除即可。
 
 **安装不等于激活。** 这些命令绝不改写 domain TOML。Skill Active List 仍由
 Active Domain 的 `[skills].active` 决定，激活仍按原方式通过 domain 配置管理。

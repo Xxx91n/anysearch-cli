@@ -198,8 +198,10 @@ once no `ans skill` process is running. After any interrupted operation, check
 `ans skill list` before deleting leftovers: if the manifest still records a
 skill but its `<name>/` directory is missing, rename the `.uninstall-*` backup
 back to `<name>/`; if the manifest does not record it, the `.install-*` staging
-or `.uninstall-*` backup can be removed. An unrecorded `<name>/` left by an
-interrupted install can be deleted and reinstalled.
+or `.uninstall-*` backup can be removed once no operation is running. An
+unrecorded `<name>/` left by an interrupted install can be deleted and
+reinstalled. A killed manifest write can leave `.installed-*.tmp`; remove it
+when the directory has no `installed.json`.
 
 **Installation is not activation.** These commands never edit domain TOML.
 The Active Domain's `[skills].active` remains the authority for the Skill
