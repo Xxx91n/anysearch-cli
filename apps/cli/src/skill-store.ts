@@ -282,7 +282,7 @@ interface LockOwner {
   namespace?: string;
 }
 
-interface PidIdentity {
+export interface PidIdentity {
   bootId: string;
   namespace: string;
 }
