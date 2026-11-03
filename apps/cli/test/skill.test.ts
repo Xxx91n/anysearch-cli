@@ -82,6 +82,7 @@ for (const project of [false, true]) {
     assert.match(installed.stdout, /Installed only; activation remains in Active Domain TOML/);
     assert.equal(readFileSync(join(managed, "demo", "templates", "report.txt"), "utf8"), " bundled template\n");
     assert.equal(existsSync(join(managed, "demo", ".git")), false);
+    assert.equal(existsSync(join(managed, ".installed.lock")), false, "the manifest lock is released after install");
     const entry = f.manifest(project).skills.demo;
     assert.equal(entry.source, dir);
     assert.equal(entry.commit, git(f.repository, ["rev-parse", "HEAD"]));
@@ -156,6 +157,35 @@ test("an empty scope lists nothing; missing manifest with orphan files still ref
   assert.equal(result.code, 1);
   assert.match(result.stderr, /missing/);
   assert.equal(readFileSync(orphan, "utf8"), "orphan");
+});
+
+test("a manifest lock serializes install and uninstall in the same scope", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const lock = join(managed, ".installed.lock");
+  const manifestBefore = readFileSync(skillManifestPath(f.opts), "utf8");
+  mkdirSync(lock);
+  writeFileSync(join(lock, "owner.json"),
+    JSON.stringify({ pid: 424242, host: "test-host", startedAt: "2026-11-03T00:00:00.000Z" }));
+  try {
+    const install = await f.run(["install", f.source("beta")]);
+    assert.equal(install.code, 1, install.stderr);
+    assert.match(install.stderr, /another skill operation/);
+    assert.match(install.stderr, /424242/, "the error names the recorded holder");
+    assert.equal(existsSync(join(managed, "beta")), false);
+    const uninstall = await f.run(["uninstall", "demo"]);
+    assert.equal(uninstall.code, 1, uninstall.stderr);
+    assert.match(uninstall.stderr, /another skill operation/);
+    assert.ok(existsSync(join(managed, "demo", "SKILL.md")), "a locked uninstall removes nothing");
+    assert.equal(readFileSync(skillManifestPath(f.opts), "utf8"), manifestBefore);
+  } finally {
+    rmSync(lock, { recursive: true, force: true });
+  }
+  const removed = await f.run(["uninstall", "demo"]);
+  assert.equal(removed.code, 0, removed.stderr);
+  assert.equal(existsSync(lock), false, "the manifest lock is released after uninstall");
+  assert.deepEqual(readdirSync(managed), ["installed.json"]);
 });
 
 test("Git provenance records the full commit and marks uncommitted source changes", async (t) => {

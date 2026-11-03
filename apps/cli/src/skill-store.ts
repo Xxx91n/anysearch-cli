@@ -10,7 +10,7 @@ import {
   cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync,
   renameSync, rmSync, writeFileSync, type Stats,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parseDocument } from "yaml";
 
@@ -95,6 +95,9 @@ export function skillManifestPath(opts: SkillOptions = {}): string {
   return join(managedSkillsRoot(opts), "installed.json");
 }
 
+/** Lock directory that serializes manifest read-modify-write within one scope. */
+const MANIFEST_LOCK = ".installed.lock";
+
 // Names are path segments on every supported OS. The Agent Skills naming rule
 // also excludes traversal, absolute paths, Windows device names and separators.
 /** Assert a safe Agent Skill name usable as a single directory segment. */
@@ -129,9 +132,7 @@ function readManifest(managed: string): SkillManifest {
   const path = join(managed, "installed.json");
   const stat = statIfPresent(path);
   if (!stat) fail(`skill manifest is missing: ${path}. Refusing to guess installation targets; no files were removed.`);
-  requireDirectory(scopeRootFromManaged(managed), "scope root");
-  requireDirectory(skillsRootFromManaged(managed), "skills root");
-  requireDirectory(managed, "managed skills root");
+  requireScopeAnchors(managed);
   if (!stat.isFile() || stat.isSymbolicLink()) fail(`skill manifest must be a regular, non-symlink file: ${path}`);
   let raw: unknown;
   try {
@@ -181,6 +182,62 @@ function scopeRootFromManaged(managed: string): string {
   return resolve(managed, "..", "..");
 }
 
+/** Validate the scope anchor, skills root and managed root before granting filesystem authority. */
+function requireScopeAnchors(managed: string): void {
+  requireDirectory(scopeRootFromManaged(managed), "scope root");
+  requireDirectory(skillsRootFromManaged(managed), "skills root");
+  requireDirectory(managed, "managed skills root");
+}
+
+/** Describe the recorded lock holder when the owner file is readable. */
+function describeLockHolder(lock: string): string {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(join(lock, "owner.json"), "utf8"));
+    if (isRecord(raw) && typeof raw.pid === "number" && typeof raw.host === "string") {
+      return ` (pid ${raw.pid} on ${raw.host})`;
+    }
+  } catch {
+    // Diagnostics only: an unreadable owner file still blocks the operation.
+  }
+  return "";
+}
+
+// Design: one coarse lock per managed root, created with mkdir (atomic on local
+// filesystems) and held across the manifest read, directory publish/remove and
+// manifest write. Contention fails closed with the lock path; it never deletes a
+// lock that might belong to a live process.
+/** Acquire the exclusive manifest lock and return its release function. */
+function acquireManifestLock(managed: string): () => void {
+  const lock = join(managed, MANIFEST_LOCK);
+  try {
+    mkdirSync(lock);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. If no ans skill process is running, remove that directory and retry.`);
+    }
+    throw error;
+  }
+  try {
+    writeFileSync(join(lock, "owner.json"),
+      JSON.stringify({ pid: process.pid, host: hostname(), startedAt: new Date().toISOString() }),
+      { encoding: "utf8", flag: "wx", mode: 0o600 });
+  } catch (error) {
+    rmSync(lock, { recursive: true, force: true });
+    throw error;
+  }
+  return () => rmSync(lock, { recursive: true, force: true });
+}
+
+/** Run one manifest read-modify-write under the scope lock, releasing it on every path. */
+function withManifestLock<T>(managed: string, action: () => T): T {
+  const release = acquireManifestLock(managed);
+  try {
+    return action();
+  } finally {
+    release();
+  }
+}
+
 /** Create the managed root only after validating existing scope/skills/synced directories. */
 function prepareManagedRoot(opts: SkillOptions): string {
   const root = skillsRoot(opts);
@@ -199,7 +256,8 @@ function readManifestForInstall(managed: string): SkillManifest {
   if (!statIfPresent(join(managed, "installed.json"))) {
     // Only a genuinely empty managed root may bootstrap a new manifest. An
     // orphaned directory is not permission to forget or overwrite its owner.
-    if (readdirSync(managed).length > 0) {
+    // The lock we hold is not content.
+    if (readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK)) {
       fail(`skill manifest is missing in a non-empty managed directory: ${managed}. Refusing to overwrite untracked installations.`);
     }
     return { version: 1, skills: Object.create(null) };
@@ -294,39 +352,41 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
   const target = join(managed, name);
   if (contains(source, target)) fail("source contains its installation destination; choose a separate skill directory");
   prepareManagedRoot(opts);
-  const manifest = readManifestForInstall(managed);
-  if (Object.hasOwn(manifest.skills, name) || statIfPresent(target)) {
-    fail(`skill ${name} already exists in this scope; uninstall it first (existing files were not overwritten)`);
-  }
+  return withManifestLock(managed, () => {
+    const manifest = readManifestForInstall(managed);
+    if (Object.hasOwn(manifest.skills, name) || statIfPresent(target)) {
+      fail(`skill ${name} already exists in this scope; uninstall it first (existing files were not overwritten)`);
+    }
 
-  const staging = mkdtempSync(join(managed, ".install-"));
-  let directoryPublished = false;
-  let manifestPublished = false;
-  try {
-    // Never execute source code. Copy files only: no dependency resolution,
-    // lifecycle scripts, remote fetches, or symlinks that escape the snapshot.
-    cpSync(source, staging, {
-      recursive: true, force: false, errorOnExist: true,
-      filter: (from) => {
-        if (basename(from) === ".git") return false;
-        if (lstatSync(from).isSymbolicLink()) fail(`source contains a symlink; copy a self-contained skill directory: ${from}`);
-        return true;
-      },
-    });
-    if (validateSkillFile(join(staging, "SKILL.md")) !== name) fail("source name changed during installation; retry");
-    renameSync(staging, target);
-    directoryPublished = true;
-    const entry: InstalledSkill = { name, ...metadata };
-    manifest.skills[name] = entry;
-    writeManifest(managed, manifest);
-    manifestPublished = true;
-    return entry;
-  } catch (error) {
-    if (directoryPublished && !manifestPublished) rmSync(target, { recursive: true, force: true });
-    throw error;
-  } finally {
-    rmSync(staging, { recursive: true, force: true });
-  }
+    const staging = mkdtempSync(join(managed, ".install-"));
+    let directoryPublished = false;
+    let manifestPublished = false;
+    try {
+      // Never execute source code. Copy files only: no dependency resolution,
+      // lifecycle scripts, remote fetches, or symlinks that escape the snapshot.
+      cpSync(source, staging, {
+        recursive: true, force: false, errorOnExist: true,
+        filter: (from) => {
+          if (basename(from) === ".git") return false;
+          if (lstatSync(from).isSymbolicLink()) fail(`source contains a symlink; copy a self-contained skill directory: ${from}`);
+          return true;
+        },
+      });
+      if (validateSkillFile(join(staging, "SKILL.md")) !== name) fail("source name changed during installation; retry");
+      renameSync(staging, target);
+      directoryPublished = true;
+      const entry: InstalledSkill = { name, ...metadata };
+      manifest.skills[name] = entry;
+      writeManifest(managed, manifest);
+      manifestPublished = true;
+      return entry;
+    } catch (error) {
+      if (directoryPublished && !manifestPublished) rmSync(target, { recursive: true, force: true });
+      throw error;
+    } finally {
+      rmSync(staging, { recursive: true, force: true });
+    }
+  });
 }
 
 /** List only manifest-recorded installations, sorted by name. */
@@ -372,23 +432,29 @@ export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: 
 export function uninstallSkill(name: string, opts: SkillOptions = {}): InstalledSkill {
   requireName(name);
   const managed = managedSkillsRoot(opts);
-  const manifest = readManifest(managed);
-  const entry = manifest.skills[name];
-  if (!entry) fail(`skill ${name} is not recorded in ${skillManifestPath(opts)}; no files were removed`);
-  const target = installedDirectory(managed, name);
-  const backup = join(managed, `.uninstall-${randomUUID()}`);
-  renameSync(target, backup);
-  try {
-    delete manifest.skills[name];
-    writeManifest(managed, manifest);
-  } catch (error) {
-    renameSync(backup, target);
-    throw error;
-  }
-  try {
-    rmSync(backup, { recursive: true, force: true });
-  } catch (error) {
-    fail(`skill ${name} was removed from the manifest, but its backup could not be deleted: ${backup}. Remove that backup manually. ${(error as Error).message}`);
-  }
-  return entry;
+  // A missing managed root cannot hold a lock. Let readManifest report the
+  // missing manifest; the unreachable value only satisfies the compiler.
+  if (!statIfPresent(managed)) return readManifest(managed) as never;
+  requireScopeAnchors(managed);
+  return withManifestLock(managed, () => {
+    const manifest = readManifest(managed);
+    const entry = manifest.skills[name];
+    if (!entry) fail(`skill ${name} is not recorded in ${skillManifestPath(opts)}; no files were removed`);
+    const target = installedDirectory(managed, name);
+    const backup = join(managed, `.uninstall-${randomUUID()}`);
+    renameSync(target, backup);
+    try {
+      delete manifest.skills[name];
+      writeManifest(managed, manifest);
+    } catch (error) {
+      renameSync(backup, target);
+      throw error;
+    }
+    try {
+      rmSync(backup, { recursive: true, force: true });
+    } catch (error) {
+      fail(`skill ${name} was removed from the manifest, but its backup could not be deleted: ${backup}. Remove that backup manually. ${(error as Error).message}`);
+    }
+    return entry;
+  });
 }
