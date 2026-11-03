@@ -194,7 +194,13 @@ export function termCoverage(query: string, text: string): number {
     } else if (CJK_CHAR_RE.test(t)) {
       // #125: a CJK term buried inside a longer unbroken run is not a token prefix, so the prefix
       // test alone would report coverage 0 for a term the stage just matched.
-      matched += cjkRunFraction(t, text);
+      // A mixed-script term is credited only when its non-CJK segments match as well. Without that
+      // gate, "中文billing" scored full coverage against a description that mentions 中文 and says
+      // nothing about billing — the CJK half alone vouches for nothing the Latin half asked for,
+      // and with one candidate that reads as a confident out-of-domain recommendation.
+      const latin = t.replace(CJK_RUN_RE, " ").split(UNICODE_SANITIZE_RE).filter(Boolean);
+      const cjk = cjkRunFraction(t, text);
+      if (cjk > 0 && latin.every((seg) => toks.some((k) => k.startsWith(seg)))) matched += cjk;
     }
   }
   return counted > 0 ? matched / counted : 0;

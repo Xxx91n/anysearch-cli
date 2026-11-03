@@ -236,6 +236,16 @@ async function main() {
     assert(cjkRunFraction("中文 ー", ZH_T) === 1, "the stage drops the same mark-only run");
     assert(termCoverage("ソシャル", "ソーシャルニュース") === cjkRunFraction("ソシャル", "ソーシャルニュース"),
       "a mark-less query scores 0 in both factors, not 1 in one and 0 in the other");
+    // CodeRabbit on #134: a mixed-script term must not be credited coverage by its CJK half alone.
+    // Before the gate, "中文billing" scored coverage 1 against a description that mentions 中文 and
+    // says nothing about billing, and one candidate made that print a confident suggestion.
+    assert(termCoverage("中文billing", "深度中文研究与学术检索") === 0, "mixed-script term is not covered by the CJK half alone");
+    assert(termCoverage("中文billing", "深度中文研究与 billing 核对") === 1, "mixed-script term is covered when both halves match");
+    const mixed = await recommendDomains("中文billing", CJK_METAS);
+    assert(mixed.decision !== "high", "an unmatched Latin segment blocks a confident suggestion (got " + mixed.decision + ")");
+    assert(mixed.recommendation === null, "no suggestion printed for a half-matched mixed-script query (got " + (mixed.recommendation?.id ?? "null") + ")");
+    assert(mixed.candidates.length > 0, "the CJK half still earns candidate listing, priced by coverage 0");
+    assert(mixed.candidates.every((c) => c.coverage === 0), "every mixed-script candidate reports coverage 0 (got " + mixed.candidates.map((c) => c.coverage).join(",") + ")");
 
     // The stage is inert for a CJK-free query: nothing is added to the MATCH expression and no
     // row is scanned, so #110's pure-ASCII behaviour is preserved by construction.
