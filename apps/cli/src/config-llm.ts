@@ -257,11 +257,15 @@ export function parseLlmFlags(argv: string[]): { flags: LlmFlags; argv: string[]
 /**
  * Persist provider/model to the user-level config.toml (fixes the original #38
  * gap: `ans llm set` previously only printed export hints). Other [llm] keys
- * (env_key, base_url, api) and non-llm sections are preserved. Never writes secrets.
+ * (base_url, api) and non-llm sections are preserved. env_key is dropped when
+ * the provider changes: it names the previous provider's secret, and the
+ * resolver's project-layer guard cannot detect that binding being rewritten in
+ * place (CodeRabbit #120). Never writes secrets.
  */
 export function writeUserLlmConfig(
   patch: { provider?: string; model?: string },
   home: string = homedir(),
+  warn: (msg: string) => void = (m) => process.stderr.write("[config] " + m + "\n"),
 ): string {
   const path = userConfigPath(home);
   let root: Record<string, unknown> = {};
@@ -277,7 +281,28 @@ export function writeUserLlmConfig(
   const llm = (typeof root["llm"] === "object" && root["llm"] !== null
     ? { ...(root["llm"] as Record<string, unknown>) }
     : {}) as Record<string, unknown>;
-  if (patch.provider !== undefined) llm["provider"] = patch.provider;
+  if (patch.provider !== undefined) {
+    // Match parseLlmToml's validation: only a non-empty string is a recorded
+    // provider. An empty/non-string value counts as absent, so it must not
+    // delete a valid env_key (CodeRabbit #124).
+    const rawProvider = llm["provider"];
+    const previous =
+      typeof rawProvider === "string" && rawProvider !== "" ? rawProvider : undefined;
+    // SECURITY: env_key is bound to the provider present when it was written.
+    // Keeping it across a provider switch would send that secret to the new
+    // provider's endpoint. Same-provider / model-only updates, and files with
+    // no (valid) prior provider (no binding to violate), keep env_key as the
+    // resolver does (CodeRabbit #120).
+    if (previous !== undefined && previous !== patch.provider && llm["env_key"] !== undefined) {
+      warn(
+        "removed [llm].env_key=" + String(llm["env_key"]) +
+        ": provider changed from " + String(previous) + " to " + patch.provider +
+        "; set an env_key for the new provider",
+      );
+      delete llm["env_key"];
+    }
+    llm["provider"] = patch.provider;
+  }
   if (patch.model !== undefined) llm["model"] = patch.model;
   root["llm"] = llm;
   mkdirSync(join(home, ".anysearch-cli"), { recursive: true });

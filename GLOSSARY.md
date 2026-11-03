@@ -31,7 +31,7 @@
 - **MCP SDK 桥接三件套**——TypeBox Bridge（kernel TypeBox schema 经 `fromJsonSchema` 进 MCP 注册，零双写）、Capability Detection（按接口存在性而非版本号探测）、Standard Schema Trigger（v2 SDK 就位即启用）。
 - **Tool Schema Registry / Per-tool Barrel**——kernel 集中导出 5 个工具的 TypeBox 输入 schema 作单一事实源；apps/mcp 每工具一个 `.tool.ts`，barrel 数组一次装配。
 - **LlmSession Deep Module / Lazy Session Cache**——`createLlmSession({provider,model})` 藏住 pi-ai 装配细节、禁止 kernel 读 env；LLM client 进程级惰性初始化+缓存，不每调用新建。
-- **Config Layering（配置分层）**——LLM 配置按 key 取最高优先级层：`--llm.*` flag > `ANS_LLM_*` env > 项目 `.anysearch/config.toml` > 用户 `~/.anysearch-cli/config.toml` > 默认；项目级仅 provider/model 白名单（防恶意仓库改端点/密钥源），密钥永不落文件、文件只存 `env_key`（变量名引用）。loader 在组合根外层取值传入，kernel 保持零 env 读取。
+- **Config Layering（配置分层）**——LLM 配置按 key 取最高优先级层：`--llm.*` flag > `ANS_LLM_*` env > 项目 `.anysearch/config.toml` > 用户 `~/.anysearch-cli/config.toml` > 默认；项目级仅 provider/model 白名单（防恶意仓库改端点/密钥源），密钥永不落文件、文件只存 `env_key`（变量名引用）；`ans llm set` 切换用户配置中已记录的有效 provider 时清除旧 `env_key`（防旧 provider 密钥被发往新端点），同 provider/model 更新或用户配置无有效 provider 时保留。loader 在组合根外层取值传入，kernel 保持零 env 读取。
 
 ## 记忆与检索
 

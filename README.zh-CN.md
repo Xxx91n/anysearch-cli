@@ -120,6 +120,23 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
 退出码：`0` 正常/弃权 · `1` 一般失败或无域名策略下的零结果 · `2` 用法
 错误 · `3` `--fail-on-abstain` 下的弃权。
 
+### 编写 domain 的 description（`ans recommend`）
+
+`ans recommend "<自由文本>"` 只用 **`name` + `description`** 做 BM25 排序
+（装了 `@anysearch-cli/embedding` 时叠加可选的向量臂；未安装则降级为纯
+FTS）。输出 top-3 候选与置信度：高置信建议 `ans domain <id>`，低置信列出
+候选并附结构化的「为什么没推荐」行——绝不自动切换。因此 description 就是
+触发面，请按下面规范写（证据：社区报告与 arXiv 2604.04323 均发现模糊的
+description 会被静默忽略——写得好坏是触发成败的关键）：
+
+- 写清**这个 domain 用来做什么**，以及**用户真会输入的具体名词**——
+  工具、格式、站点（如 `MCP spec / TypeScript tsconfig / pnpm settings`），
+  少用形容词。
+- 补充与兄弟 domain 区分开的**关键触发词**，并隐含它*不是*什么（语料纳入
+  规则）。
+- 一行、≤ ~250 字符（agent skill 注册表的单条 description 预算先例）；
+  `name` 保持简短字面义——两个字段都会被原样索引。
+
 ## Provider 域名过滤矩阵
 
 | provider | 前置过滤已下发 | 降级模式 |

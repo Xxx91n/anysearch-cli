@@ -1,6 +1,7 @@
 // Layered TOML LLM config tests (issue #38 / #108).
 // Covers each layer of cli > env > project > user, the project whitelist,
-// env_key indirection, and the no-plaintext-secret contract.
+// env_key indirection, the no-plaintext-secret contract, and the
+// cross-provider secret guard on `ans llm set` provider switches (#120).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -207,21 +208,79 @@ test("project provider with absent user provider keeps env_key verbatim", () => 
   assert.equal(cfg.envKey, "MY_ANYTHING_KEY");
 });
 
-test("writeUserLlmConfig persists provider/model and preserves other [llm] keys", () => {
+test("writeUserLlmConfig drops env_key when the provider changes (cross-provider secret)", () => {
   const f = fixture({
-    userToml: '[llm]\nprovider = "anthropic"\nmodel = "old"\nenv_key = "KEEP_ME"\n[other]\nx = 1\n',
+    userToml: '[llm]\nprovider = "anthropic"\nmodel = "old"\nenv_key = "ANTHROPIC_API_KEY"\n[other]\nx = 1\n',
   });
-  const path = writeUserLlmConfig({ provider: "openai", model: "gpt-5" }, f.home);
+  const notices: string[] = [];
+  const path = writeUserLlmConfig({ provider: "openai", model: "gpt-5" }, f.home, (m) => notices.push(m));
   assert.equal(path, userConfigPath(f.home));
-  const cfg = resolveLlmConfig(f.opts({ env: { KEEP_ME: "k" } }));
+  const raw = readFileSync(path, "utf8");
+  assert.ok(!raw.includes("env_key")); // the stale binding is gone from disk
+  assert.ok(raw.includes("[other]")); // unrelated sections survive
+  assert.ok(raw.includes('provider = "openai"'));
+  assert.ok(raw.includes('model = "gpt-5"'));
+  // The old provider's key must not reach the new provider via resolution.
+  const cfg = resolveLlmConfig(f.opts({ env: { ANTHROPIC_API_KEY: "sk-ant-secret" } }));
   assert.equal(cfg.provider, "openai");
   assert.equal(cfg.model, "gpt-5");
-  assert.equal(cfg.envKey, "KEEP_ME"); // preserved
+  assert.equal(cfg.envKey, undefined);
+  assert.equal(cfg.apiKey, undefined);
+  assert.ok(notices.some(n => n.includes("provider changed from anthropic to openai")));
+});
+
+test("writeUserLlmConfig keeps env_key on a same-provider update", () => {
+  const f = fixture({
+    userToml: '[llm]\nprovider = "anthropic"\nmodel = "old"\nenv_key = "KEEP_ME"\n',
+  });
+  const notices: string[] = [];
+  const path = writeUserLlmConfig({ provider: "anthropic", model: "new" }, f.home, (m) => notices.push(m));
+  assert.equal(resolveLlmConfig(f.opts({ env: { KEEP_ME: "k" } })).apiKey, "k");
+  assert.equal(resolveLlmConfig(f.opts({ env: { KEEP_ME: "k" } })).envKey, "KEEP_ME");
+  assert.ok(readFileSync(path, "utf8").includes("KEEP_ME"));
+  assert.equal(notices.length, 0);
+});
+
+test("writeUserLlmConfig keeps env_key on a model-only update", () => {
+  const f = fixture({
+    userToml: '[llm]\nprovider = "anthropic"\nmodel = "old"\nenv_key = "KEEP_ME"\n',
+  });
+  const notices: string[] = [];
+  writeUserLlmConfig({ model: "new" }, f.home, (m) => notices.push(m));
+  const cfg = resolveLlmConfig(f.opts({ env: { KEEP_ME: "k" } }));
+  assert.equal(cfg.provider, "anthropic");
+  assert.equal(cfg.model, "new");
   assert.equal(cfg.apiKey, "k");
-  const raw = readFileSync(path, "utf8");
-  assert.ok(raw.includes("[other]")); // unrelated sections survive
-  // contract: the file holds key NAMES, never secret values
-  assert.ok(raw.includes("KEEP_ME"));
+  assert.equal(notices.length, 0);
+});
+
+test("writeUserLlmConfig keeps env_key when the file has no prior provider", () => {
+  const f = fixture({ userToml: '[llm]\nenv_key = "MY_ANYTHING_KEY"\n' });
+  const notices: string[] = [];
+  writeUserLlmConfig({ provider: "openai", model: "gpt-5" }, f.home, (m) => notices.push(m));
+  const cfg = resolveLlmConfig(f.opts({ env: { MY_ANYTHING_KEY: "sk-ok" } }));
+  assert.equal(cfg.apiKey, "sk-ok"); // no prior binding to violate
+  assert.equal(cfg.envKey, "MY_ANYTHING_KEY");
+  assert.equal(notices.length, 0);
+});
+
+test("writeUserLlmConfig treats an invalid prior provider as absent (keeps env_key)", () => {
+  // parseLlmToml drops empty / non-string providers, so they establish no
+  // binding and must not cause a valid env_key to be removed (CodeRabbit #124).
+  for (const userToml of [
+    '[llm]\nprovider = ""\nenv_key = "KEEP_ME"\n',
+    '[llm]\nprovider = 42\nenv_key = "KEEP_ME"\n',
+  ]) {
+    const f = fixture({ userToml });
+    const notices: string[] = [];
+    const path = writeUserLlmConfig({ provider: "openai", model: "gpt-5" }, f.home, (m) => notices.push(m));
+    assert.ok(readFileSync(path, "utf8").includes("KEEP_ME"));
+    const cfg = resolveLlmConfig(f.opts({ env: { KEEP_ME: "k" } }));
+    assert.equal(cfg.provider, "openai");
+    assert.equal(cfg.apiKey, "k");
+    assert.equal(cfg.envKey, "KEEP_ME");
+    assert.equal(notices.length, 0);
+  }
 });
 
 test("writeUserLlmConfig creates the file fresh", () => {

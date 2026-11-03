@@ -123,6 +123,27 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
 Exit codes: `0` ok/abstain · `1` generic failure or zero results without a
 domain policy · `2` usage error · `3` abstain under `--fail-on-abstain`.
 
+### Writing domain descriptions (`ans recommend`)
+
+`ans recommend "<free text>"` ranks domains by BM25 over **`name` +
+`description` only** (plus an optional embedding arm when
+`@anysearch-cli/embedding` is installed; without it the command degrades to
+FTS-only). It prints top-3 candidates with a confidence score: high
+confidence suggests `ans domain <id>`, low confidence lists the candidates
+with a structured "why no recommendation" line — it never switches domains
+by itself. So the description is the trigger surface; write it accordingly
+(evidence: community reports + arXiv 2604.04323 both find vague descriptions
+silently never fire — description quality is the make-or-break factor):
+
+- State **what the domain is for** and the **concrete nouns a user would
+  actually type** — tools, formats, sites (e.g. `MCP spec / TypeScript
+  tsconfig / pnpm settings`), not adjectives.
+- Add the **differentiating keywords** that separate it from sibling
+  domains, and implicitly what it is *not* (the corpus inclusion rule).
+- One line, ≤ ~250 characters (per-entry description budget precedent from
+  agent-skill registries); keep `name` short and literal — both fields are
+  indexed verbatim.
+
 A domain can also inject its own **private/internal data** into the agent's
 context through `[rag] adapter` — `none` (default), `note` (legacy fixed text)
 or `fts` (real FTS5 memory recall, provenance-tagged). See
