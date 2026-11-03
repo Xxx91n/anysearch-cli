@@ -208,6 +208,19 @@ async function main() {
     // Half-width katakana stays inside a run but is not folded to full-width, so this is a
     // documented boundary rather than a silent miss.
     assert((await recommendDomains("ﾌﾗﾝｽ", [{ id: "fr", name: "fr", description: "フランス文化情報" }])).decision === "none", "half-width katakana is not folded to full-width (documented boundary)");
+    // A mark alone must not carry a match. Widening the class to keep ー word-internal also makes
+    // a bare "ー" a run, and one candidate is enough for the margin rule to print confidence 1 —
+    // a confident recommendation built out of punctuation. The letter-bearing guard drops it.
+    const MARK_METAS: DomainMeta[] = [
+      { id: "srv", name: "srv", description: "サーバー運用資料" },
+      { id: "zh2", name: "zh2", description: "深度中文研究" },
+    ];
+    for (const q of ["ー", "゚", "〱"]) {
+      const r = await recommendDomains(q, MARK_METAS);
+      assert(r.decision === "none", "mark-only query '" + q + "' must not recommend (got " + r.decision + ", " + r.candidates.length + " candidates)");
+    }
+    assert(cjkRunFraction("サーバー", "サーバ運用") === 0, "omitting the prolonged mark breaks contiguity instead of scoring half a match");
+    assert(cjkRunFraction("バ運", "サーバーバ運用") === 1, "a repeated syllable still resolves as one contiguous run");
 
     // The stage is inert for a CJK-free query: nothing is added to the MATCH expression and no
     // row is scanned, so #110's pure-ASCII behaviour is preserved by construction.

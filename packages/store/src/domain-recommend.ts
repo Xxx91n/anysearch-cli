@@ -55,23 +55,27 @@ function escapeQueryUnicode(query: string, maxTerms = 8): string {
 // order, is tagged with its own provenance label, and is discounted below the first stage's
 // weakest positive hit rather than fused into BM25 scoring — the FTS arm stays the anchor. No
 // query text is concatenated into SQL here, so the stage adds no MATCH-expression surface.
-// One character class for both regexes: the run matcher and the per-term test must agree on what
-// counts as CJK, and a silent divergence between them would re-open the recall gap.
-// The Japanese prolonged-sound mark ー (U+30FC), iteration marks and the half-width katakana
-// block are Script=Common / outside the script properties, yet they are word-internal in real
-// text: left out, "ソーシャル" splits into ソ + シャル and substring-matches "ソシャルニュース"
-// as a full-strength hit while coverage reads 0 — the two factors would disagree about the same
-// match. Half-width forms are kept inside a run but NOT folded to full-width, so "ﾌﾗﾝｽ" does not
-// match "フランス"; that is a documented boundary, not an oversight.
-const CJK_CLASS =
-  "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}" +
-  "\\u30FC\\u3031-\\u3035\\u303D\\uff66-\\uff9F";
+// One character class for the run matcher and the coverage test: they must agree on what counts
+// as CJK, or the two confidence factors disagree about the same match.
+// The prolonged-sound mark ー (U+30FC), the iteration marks 〱-〵 (U+3031-U+3035) and the
+// half-width voiced marks ゞ゚ (U+FF9E-U+FF9F) are Script=Common, so the script properties miss
+// them although they are word-internal: left out, "ソーシャル" split into ソ + シャル and
+// substring-matched "ソシャルニュース" at full strength. The half-width katakana LETTERS are
+// already \p{Script=Katakana} and need no listing. Not folded to full-width either way, so
+// "ﾌﾗﾝｽ" does not match "フランス" — a boundary the tests pin rather than leave silent.
+// A run of marks only (a bare ー or ゚) is not a query: every run has to carry at least one script
+// letter, otherwise the stage fires on punctuation, returns one candidate, and the margin rule
+// hands that candidate confidence 1 — a confident recommendation built out of nothing.
+const CJK_SCRIPT_CLASS = "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}";
+const CJK_CLASS = CJK_SCRIPT_CLASS + "\\u30FC\\u3031-\\u3035\\uff9E-\\uff9F";
 const CJK_RUN_RE = new RegExp(`[${CJK_CLASS}]+`, "gu");
 const CJK_CHAR_RE = new RegExp(`[${CJK_CLASS}]`, "u");
+const CJK_LETTER_RE = new RegExp(`[${CJK_SCRIPT_CLASS}]`, "u");
 
-// The query's CJK runs, deduped and capped like escapeQueryUnicode's maxTerms.
+// The query's CJK runs, deduped and capped like escapeQueryUnicode's maxTerms; mark-only runs
+// dropped (see the note above).
 function cjkQueryRuns(query: string, maxTerms = 8): string[] {
-  return [...new Set(query.match(CJK_RUN_RE) ?? [])].slice(0, maxTerms);
+  return [...new Set((query.match(CJK_RUN_RE) ?? []).filter((run) => CJK_LETTER_RE.test(run)))].slice(0, maxTerms);
 }
 
 // Share of a query's CJK run characters that occur contiguously in `text` — 1 when every run is
@@ -164,10 +168,11 @@ export function termCoverage(query: string, text: string): number {
   for (const t of terms) {
     if (toks.some((k) => k.startsWith(t))) {
       matched++;
-    } else if (CJK_CHAR_RE.test(t) && hay.includes(t)) {
-      // #125: a CJK term buried inside a longer unbroken run is a substring, never a token
-      // prefix — prefix matching alone would report coverage 0 for a term that did match.
-      matched++;
+    } else if (CJK_CHAR_RE.test(t)) {
+      // #125: a CJK term buried inside a longer unbroken run is not a token prefix. Scored with
+      // cjkRunFraction — the same rule the substring stage prices on — so the recall factor and
+      // the confidence factor cannot disagree about one match.
+      matched += cjkRunFraction(t, text);
     }
   }
   return matched / terms.length;
