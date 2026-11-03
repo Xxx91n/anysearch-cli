@@ -353,10 +353,10 @@ function probeLockOwner(owner: LockOwner | undefined): LockState {
   }
 }
 
-// Design: rename-to-unique-quarantine is the reclaim election, and an exclusive guard
-// serializes reclaimers so no one can move a lock that was just republished. The owner
-// token is re-read under the guard and after the move, so a lock that changed hands is
-// restored instead of deleted; a possibly live lock is never removed.
+// Design: an exclusive, owner-recorded guard serializes reclaimers — the holder
+// re-reads the token before moving the lock, and the quarantine rename plus token
+// re-check afterwards restore a lock that changed hands, so a possibly live lock is
+// never removed.
 /** Move a provably dead lock aside; false means another reclaimer is active. */
 function reclaimDeadLock(managed: string, lock: string, observed: LockOwner, owner: LockOwner): boolean {
   const guard = join(managed, RECLAIM_GUARD);
@@ -397,13 +397,34 @@ function reclaimDeadLock(managed: string, lock: string, observed: LockOwner, own
 /** Publish the reclaim guard; false means another reclaimer already holds it. */
 function acquireReclaimGuard(managed: string, guard: string, owner: LockOwner): boolean {
   if (createLockDirectory(managed, guard, owner)) return true;
-  const state = probeLockOwner(readLockOwner(guard));
-  if (state === "dead") {
-    rmSync(guard, { recursive: true, force: true });
-    return createLockDirectory(managed, guard, owner);
-  }
+  const observed = readLockOwner(guard);
+  const state = probeLockOwner(observed);
   if (state === "alive") return false;
-  fail(`skill lock reclaim guard cannot be proven dead: ${guard}. Inspect it and remove the directory if no ans skill process is running.`);
+  if (state !== "dead" || !observed) {
+    fail(`skill lock reclaim guard cannot be proven dead: ${guard}. Inspect it and remove the directory if no ans skill process is running.`);
+  }
+  // Design: recover a dead guard through the same unique-rename election as a lock —
+  // two reclaimers must not both delete and republish it.
+  const quarantine = join(managed, `${LOCK_RECLAIM_PREFIX}${randomUUID()}`);
+  try {
+    renameWithRetry(guard, quarantine);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+  const moved = readLockOwner(quarantine);
+  if (moved?.token !== observed.token) {
+    if (!statIfPresent(guard)) {
+      try {
+        renameSync(quarantine, guard);
+      } catch {
+        // Leave the quarantine for inspection rather than deleting a live guard.
+      }
+    }
+    return false;
+  }
+  rmSync(quarantine, { recursive: true, force: true });
+  return createLockDirectory(managed, guard, owner);
 }
 
 /** Remove a lock only while it still carries the caller's token. */
@@ -449,6 +470,7 @@ function acquireManifestLock(managed: string, skipOnContention = false): (() => 
   const lock = join(managed, MANIFEST_LOCK);
   const token = randomUUID();
   const identity = pidIdentity();
+  let reclaimBusy = false;
   for (let attempt = 0; attempt < 3; attempt++) {
     const owner: LockOwner = {
       token, pid: process.pid, host: hostname(), startedAt: new Date().toISOString(),
@@ -462,7 +484,10 @@ function acquireManifestLock(managed: string, skipOnContention = false): (() => 
     const observed = readLockOwner(lock);
     const state = probeLockOwner(observed);
     if (state === "dead" && observed) {
-      if (!reclaimDeadLock(managed, lock, observed, owner)) sleepSync(5);
+      if (!reclaimDeadLock(managed, lock, observed, owner)) {
+        reclaimBusy = true;
+        sleepSync(5);
+      }
       continue;
     }
     if (skipOnContention) return undefined;
@@ -475,6 +500,9 @@ function acquireManifestLock(managed: string, skipOnContention = false): (() => 
     fail(`another skill operation may be running in this scope: ${lock}. The owner record is incomplete, from another PID namespace, unreadable, or the lock path could not be published, so the lock cannot be proven dead. If no ans skill process is running here, remove that directory and retry.`);
   }
   if (skipOnContention) return undefined;
+  if (reclaimBusy) {
+    fail(`a stale-lock reclaim is in progress in this scope: ${join(managed, RECLAIM_GUARD)}. Retry when it finishes.`);
+  }
   fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. Retry when it finishes.`);
 }
 
@@ -645,17 +673,22 @@ function git(source: string, args: string[]): string {
   }
 }
 
-/** List repository-local config keys matching a pattern; exit status 1 means none. */
+// Design: `--show-scope` covers `.git/config` and `.git/config.worktree`, the two
+// config files a checkout can control; global/system filters are user-trusted.
+/** List checkout-controlled config keys matching a pattern; exit status 1 means none. */
 function gitConfigKeys(source: string, pattern: string): string[] {
   try {
     const output = execFileSync("git", [
       "-c", "core.fsmonitor=false", "-C", source,
-      "config", "--local", "--get-regexp", "--name-only", pattern,
+      "config", "--show-scope", "--get-regexp", "--name-only", pattern,
     ], {
       encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
       timeout: 10_000, maxBuffer: 16 * 1024 * 1024,
     }).trim();
-    return output ? output.split(/\r?\n/).filter(Boolean) : [];
+    return output.split(/\r?\n/).filter(Boolean)
+      .map((line) => line.split("\t"))
+      .filter((parts) => parts.length === 2 && (parts[0] === "local" || parts[0] === "worktree"))
+      .map((parts) => parts[1]);
   } catch (error) {
     const e = error as NodeJS.ErrnoException & { status?: number; stderr?: Buffer | string };
     if (e.status === 1) return [];

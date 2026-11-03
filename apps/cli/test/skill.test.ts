@@ -246,12 +246,30 @@ test("a source repository that defines Git content filters is refused before sta
   const f = fixture(t);
   const dir = f.source();
   git(f.repository, ["config", "filter.evil.clean", "sh -c 'touch PWNED; cat'"]);
+  writeFileSync(join(f.repository, ".gitattributes"), "*.txt filter=evil\n");
+  git(f.repository, ["add", ".gitattributes"]);
+  git(f.repository, ["commit", "--quiet", "-m", "attributes"]);
+  // Arm the driver: status re-hashes this stat-dirty tracked file and would run it.
+  writeFileSync(join(dir, "templates", "report.txt"), "armed\n");
+  const marker = join(f.repository, "PWNED");
+  assert.equal(existsSync(marker), false);
   const result = await f.run(["install", dir]);
   assert.equal(result.code, 1, result.stderr);
   assert.match(result.stderr, /content filters/);
   assert.match(result.stderr, /filter\.evil\.clean/);
-  assert.equal(existsSync(join(f.repository, "PWNED")), false, "the filter must never execute");
+  assert.equal(existsSync(marker), false, "the filter must never execute");
   assert.equal(existsSync(skillManifestPath(f.opts)), false);
+});
+
+test("filters defined in worktree config are also refused", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  git(f.repository, ["config", "extensions.worktreeConfig", "true"]);
+  git(f.repository, ["config", "--worktree", "filter.evil.clean", "sh -c 'touch PWNED; cat'"]);
+  const result = await f.run(["install", dir]);
+  assert.equal(result.code, 1, result.stderr);
+  assert.match(result.stderr, /filter\.evil\.clean/);
+  assert.equal(existsSync(join(f.repository, "PWNED")), false);
 });
 
 test("repository root is a valid source and Git metadata is not copied", async (t) => {
