@@ -149,6 +149,68 @@ context through `[rag] adapter` — `none` (default), `note` (legacy fixed text)
 or `fts` (real FTS5 memory recall, provenance-tagged). See
 [docs/rag-adapters.md](docs/rag-adapters.md).
 
+### Installing Agent Skills (`ans skill`)
+
+`ans skill` is a minimal installer, not a package manager. It copies a
+self-contained directory with a root `SKILL.md` from a **local Git checkout**.
+Checkout the desired commit or tag first; the installer records that source,
+the full HEAD commit, an exact tag when present, and whether the source was
+dirty. It does not clone repositories, resolve dependencies, or run skill code.
+
+```bash
+ans skill install /path/to/checkout/skills/research
+ans skill validate             # all installed skills; optionally pass one name
+ans skill list
+ans skill uninstall research
+
+# Project scope: add --project to each command
+ans skill install /path/to/checkout/skills/research --project
+ans skill validate --project
+ans skill list --project
+ans skill uninstall research --project
+```
+
+User scope is the default (`--user` selects it explicitly):
+
+```text
+~/.anysearch-cli/skills/synced/installed.json
+~/.anysearch-cli/skills/synced/<name>/SKILL.md
+<any project>/.anysearch/skills/synced/installed.json
+<any project>/.anysearch/skills/synced/<name>/SKILL.md
+```
+
+`synced/` is machine-managed; sibling `skills/<name>/` directories remain
+user-authored. `SKILL.md` must begin with a parseable YAML frontmatter mapping
+whose `name` is 1–64 lowercase letters/digits with single hyphens (not a Windows
+device name). That name selects the destination. This is a syntax/name check,
+not a full Agent Skills linter. Git metadata is omitted and symlinks are
+rejected; existing installations are never overwritten (uninstall first).
+
+The version-1 `installed.json` has a `skills` object keyed by name. Each entry
+contains `name`, absolute `source`, `commit`, `dirty`, and optional `tag`.
+Missing, malformed, or schema-invalid manifests cause uninstall to refuse
+without deleting anything; uninstall never scans for guessed targets.
+`install` and `uninstall` hold an exclusive lock in the selected scope, so two
+concurrent mutations cannot lose each other's manifest entry; a contended run
+fails with the lock path instead of overwriting the manifest. If a run is killed
+mid-operation, remove the leftover `skills/synced/.installed.lock` directory
+once no `ans skill` process is running. After any interrupted operation, check
+`ans skill list` before deleting leftovers: if the manifest still records a
+skill but its `<name>/` directory is missing, rename the `.uninstall-*` backup
+back to `<name>/`, or run `ans skill uninstall <name>` to drop the stale entry
+when no backup remains (add `--project` for project scope); if the manifest does
+not record it, the `.install-*`
+staging or `.uninstall-*` backup can be removed once no operation is running. An
+unrecorded `<name>/` left by an interrupted install can be deleted and
+reinstalled. A killed manifest write can leave `.installed-*.tmp`; remove it
+when the directory has no `installed.json`. If `ans skill list` itself reports a
+missing or invalid manifest, inspect `skills/synced/` directly before removing
+anything.
+
+**Installation is not activation.** These commands never edit domain TOML.
+The Active Domain's `[skills].active` remains the authority for the Skill
+Active List; manage activation through the domain configuration as before.
+
 ## Provider domain-filter matrix
 
 | provider | pre-filter sent | degrade mode |

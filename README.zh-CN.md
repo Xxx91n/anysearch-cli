@@ -137,6 +137,58 @@ description 会被静默忽略——写得好坏是触发成败的关键）：
 - 一行、≤ ~250 字符（agent skill 注册表的单条 description 预算先例）；
   `name` 保持简短字面义——两个字段都会被原样索引。
 
+### 安装 Agent Skills（`ans skill`）
+
+`ans skill` 是最小安装器，不是包管理器。它从**本地 Git checkout** 拷贝根目录
+含 `SKILL.md` 的自包含目录。请先 checkout 到目标 commit/tag；安装器记录来源、
+完整 HEAD commit、存在时的精确 tag，以及来源是否含未提交修改。它不克隆仓库、
+不解析依赖，也不执行 skill 中的代码。
+
+```bash
+ans skill install /path/to/checkout/skills/research
+ans skill validate             # 校验全部已装 skill；也可指定一个名字
+ans skill list
+ans skill uninstall research
+
+# 项目级：每条命令都加 --project
+ans skill install /path/to/checkout/skills/research --project
+ans skill validate --project
+ans skill list --project
+ans skill uninstall research --project
+```
+
+默认用户级（可用 `--user` 显式选择）：
+
+```text
+~/.anysearch-cli/skills/synced/installed.json
+~/.anysearch-cli/skills/synced/<name>/SKILL.md
+<项目>/.anysearch/skills/synced/installed.json
+<项目>/.anysearch/skills/synced/<name>/SKILL.md
+```
+
+`synced/` 是机器管理区；同级 `skills/<name>/` 留给用户手写。`SKILL.md` 必须以
+可解析的 YAML frontmatter mapping 开头，其中 `name` 为 1–64 位小写字母/数字，
+可用单个连字符分隔（不能是 Windows 设备名），并据此选择安装目录。这里只检查
+语法和名字，不是完整的 Agent Skills linter。Git 元数据会省略，符号链接会被
+拒绝；已有安装绝不覆盖（请先卸载）。
+
+版本 1 的 `installed.json` 含按名字索引的 `skills` 对象；每项记录 `name`、
+绝对路径 `source`、`commit`、`dirty` 和可选 `tag`。清单缺失、损坏或不符合
+schema 时，卸载会拒绝且不删除任何文件；绝不靠扫描目录猜测删除目标。
+`install` 与 `uninstall` 在所选 scope 内持独占锁：两个并发变更不会互相丢失
+清单条目，争用时会以锁路径报错，而不是覆盖清单。若进程在操作中途被杀，请在
+没有 `ans skill` 进程运行时删除残留的 `skills/synced/.installed.lock` 目录。
+操作中断后先用 `ans skill list` 核对再删除残留：清单仍记录某 skill 但其
+`<name>/` 目录缺失时，应把 `.uninstall-*` 备份改回 `<name>/`，没有备份时也可
+用 `ans skill uninstall <name>` 删掉这条失效记录（项目级加 `--project`）；清单未记录时，
+`.install-*` 暂存或 `.uninstall-*` 备份可在确认无操作运行后删除。安装中断
+留下的未登记 `<name>/` 可删除后重装。清单写入被杀还可能留下 `.installed-*.tmp`，
+在目录中没有 `installed.json` 时删除即可。若 `ans skill list` 本身报告清单
+缺失或损坏，请先直接查看 `skills/synced/` 再动手删除。
+
+**安装不等于激活。** 这些命令绝不改写 domain TOML。Skill Active List 仍由
+Active Domain 的 `[skills].active` 决定，激活仍按原方式通过 domain 配置管理。
+
 ## Provider 域名过滤矩阵
 
 | provider | 前置过滤已下发 | 降级模式 |
