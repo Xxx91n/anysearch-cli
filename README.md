@@ -144,6 +144,52 @@ silently never fire — description quality is the make-or-break factor):
   agent-skill registries); keep `name` short and literal — both fields are
   indexed verbatim.
 
+### Installing Agent Skills (`ans skill`)
+
+`ans skill` is a minimal installer, not a package manager. It copies a
+self-contained directory with a root `SKILL.md` from a **local Git checkout**.
+Checkout the desired commit or tag first; the installer records that source,
+the full HEAD commit, an exact tag when present, and whether the source was
+dirty. It does not clone repositories, resolve dependencies, or run skill code.
+
+```bash
+ans skill install /path/to/checkout/skills/research
+ans skill validate             # all installed skills; optionally pass one name
+ans skill list
+ans skill uninstall research
+
+# Project scope: add --project to each command
+ans skill install /path/to/checkout/skills/research --project
+ans skill validate --project
+ans skill list --project
+ans skill uninstall research --project
+```
+
+User scope is the default (`--user` selects it explicitly):
+
+```text
+~/.anysearch-cli/skills/synced/installed.json
+~/.anysearch-cli/skills/synced/<name>/SKILL.md
+<any project>/.anysearch/skills/synced/installed.json
+<any project>/.anysearch/skills/synced/<name>/SKILL.md
+```
+
+`synced/` is machine-managed; sibling `skills/<name>/` directories remain
+user-authored. `SKILL.md` must begin with a parseable YAML frontmatter mapping
+whose `name` is 1–64 lowercase letters/digits with single hyphens (not a Windows
+device name). That name selects the destination. This is a syntax/name check,
+not a full Agent Skills linter. Git metadata and symlinks are not copied;
+existing installations are never overwritten (uninstall first).
+
+The version-1 `installed.json` has a `skills` object keyed by name. Each entry
+contains `name`, absolute `source`, `commit`, `dirty`, and optional `tag`.
+Missing, malformed, or schema-invalid manifests cause uninstall to refuse
+without deleting anything; uninstall never scans for guessed targets.
+
+**Installation is not activation.** These commands never edit domain TOML.
+The Active Domain's `[skills].active` remains the authority for the Skill
+Active List; manage activation through the domain configuration as before.
+
 ## Provider domain-filter matrix
 
 | provider | pre-filter sent | degrade mode |

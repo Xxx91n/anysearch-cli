@@ -13,9 +13,9 @@ const DIST = path.resolve(here, "..", "dist", "index.js");
 let passed = 0;
 let failed = 0;
 
-async function run(args: string[], env?: NodeJS.ProcessEnv): Promise<{ code: number; out: string }> {
+async function run(args: string[], env?: NodeJS.ProcessEnv, cwd?: string): Promise<{ code: number; out: string }> {
   return new Promise((resolve, reject) => {
-    const p = spawn(process.execPath, [DIST, ...args], { stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}) });
+    const p = spawn(process.execPath, [DIST, ...args], { stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}), ...(cwd ? { cwd } : {}) });
     let out = "";
     p.stdout.on("data", (d) => (out += d));
     p.stderr.on("data", (d) => (out += d));
@@ -215,6 +215,56 @@ async function t(name: string, fn: () => Promise<void>) {
       assert.match(r.out, /sources\.vertical|Domain schema/i);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t("skill install → validate → list → uninstall on the shipped bundle (#109)", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const { execFileSync } = await import("node:child_process");
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "ans-skill-e2e-"));
+    const home = path.join(base, "home");
+    const cwd = path.join(base, "project");
+    const source = path.join(base, "source");
+    try {
+      for (const dir of [home, cwd, source]) fs.mkdirSync(dir, { recursive: true });
+      const git = (args: string[]) => execFileSync("git", ["-C", source, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+      git(["init", "--quiet"]);
+      git(["config", "user.name", "Skill E2E"]);
+      git(["config", "user.email", "skill-e2e@example.invalid"]);
+      git(["config", "commit.gpgsign", "false"]);
+      fs.writeFileSync(path.join(source, "SKILL.md"), "---\nname: e2e-skill\ndescription: Bundled CLI test\n---\nInstructions.\n");
+      git(["add", "SKILL.md"]);
+      git(["commit", "--quiet", "-m", "skill"]);
+      git(["tag", "v1.0.0"]);
+      fs.mkdirSync(path.join(cwd, "domains"));
+      const domainPath = path.join(cwd, "domains", "research.toml");
+      const domain = '[skills]\nactive = ["existing"]\n';
+      fs.writeFileSync(domainPath, domain);
+      const env = { ...process.env, HOME: home, USERPROFILE: home };
+      const installed = await run(["skill", "install", source, "--project"], env, cwd);
+      assert.equal(installed.code, 0, installed.out);
+      assert.equal(fs.readFileSync(domainPath, "utf8"), domain);
+      const validated = await run(["skill", "validate", "--project"], env, cwd);
+      assert.equal(validated.code, 0, validated.out);
+      assert.match(validated.out, /\[OK\] e2e-skill/);
+      const listed = await run(["skill", "list", "--project"], env, cwd);
+      assert.equal(listed.code, 0, listed.out);
+      assert.match(listed.out, /e2e-skill.*v1\.0\.0/);
+      const manifestPath = path.join(cwd, ".anysearch", "skills", "synced", "installed.json");
+      fs.writeFileSync(manifestPath, "{broken");
+      const refused = await run(["skill", "uninstall", "e2e-skill", "--project"], env, cwd);
+      assert.equal(refused.code, 1, refused.out);
+      assert.ok(fs.existsSync(path.join(cwd, ".anysearch", "skills", "synced", "e2e-skill", "SKILL.md")));
+      fs.writeFileSync(manifestPath, JSON.stringify({ version: 1, skills: {
+        "e2e-skill": { name: "e2e-skill", source, commit: git(["rev-parse", "HEAD"]), tag: "v1.0.0", dirty: false },
+      } }));
+      const removed = await run(["skill", "uninstall", "e2e-skill", "--project"], env, cwd);
+      assert.equal(removed.code, 0, removed.out);
+      assert.equal(fs.existsSync(path.join(cwd, ".anysearch", "skills", "synced", "e2e-skill")), false);
+      assert.equal(fs.readFileSync(domainPath, "utf8"), domain);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
     }
   });
 
