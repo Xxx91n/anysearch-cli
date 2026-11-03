@@ -155,7 +155,10 @@ or `fts` (real FTS5 memory recall, provenance-tagged). See
 self-contained directory with a root `SKILL.md` from a **local Git checkout**.
 Checkout the desired commit or tag first; the installer records that source,
 the full HEAD commit, an exact tag when present, and whether the source was
-dirty. It does not clone repositories, resolve dependencies, or run skill code.
+dirty. Dirty detection streams `git status` and stops at the first entry, so a
+checkout with a very large ignored or untracked tree stays installable instead
+of failing on a full listing. It does not clone repositories, resolve
+dependencies, or run skill code.
 
 ```bash
 ans skill install /path/to/checkout/skills/research

@@ -141,8 +141,10 @@ description 会被静默忽略——写得好坏是触发成败的关键）：
 
 `ans skill` 是最小安装器，不是包管理器。它从**本地 Git checkout** 拷贝根目录
 含 `SKILL.md` 的自包含目录。请先 checkout 到目标 commit/tag；安装器记录来源、
-完整 HEAD commit、存在时的精确 tag，以及来源是否含未提交修改。它不克隆仓库、
-不解析依赖，也不执行 skill 中的代码。
+完整 HEAD commit、存在时的精确 tag，以及来源是否含未提交修改。dirty 探测以流式
+读取 `git status` 并在出现第一条记录时即停止，所以 ignored / untracked 条目极多的
+checkout 仍可安装，不会因为要读完整个列表而失败。它不克隆仓库、不解析依赖，也不
+执行 skill 中的代码。
 
 ```bash
 ans skill install /path/to/checkout/skills/research

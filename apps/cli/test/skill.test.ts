@@ -3,18 +3,85 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync,
   statSync, symlinkSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { runSkill } from "../src/commands/skill.js";
-import { managedSkillsRoot, skillManifestPath, type SkillManifest } from "../src/skill-store.js";
+import {
+  __setStatusProbeForTest, managedSkillsRoot, skillManifestPath,
+  type SkillManifest, type StatusProbeChild, type StatusProbeSpawn,
+} from "../src/skill-store.js";
 
 /** Run a Git command in a test repository and return trimmed stdout. */
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+}
+
+/**
+ * Simulate the streaming `git status` child (#138) without copying a huge skill.
+ *
+ * The fake is willing to emit `totalBytes` of porcelain output, so a probe that
+ * still buffered the listing would blow past the old 16 MiB maxBuffer. `kill`
+ * records signals and closes the fake like Git terminating on a signal; the
+ * probe's early stop is what keeps `emittedBytes()` bounded.
+ */
+function fakeStatusProbe(spec: {
+  totalBytes?: number;
+  code?: number | null;
+  signal?: NodeJS.Signals | null;
+  stderr?: string;
+  silent?: boolean;
+}) {
+  const total = spec.totalBytes ?? 0;
+  const chunk = "M  templates/report.txt\n";
+  const kills: NodeJS.Signals[] = [];
+  const events = new EventEmitter();
+  let emitted = 0;
+  let closed = false;
+  const finish = (code: number | null, signal: NodeJS.Signals | null) => {
+    if (closed) return;
+    closed = true;
+    stdout.push(null);
+    setImmediate(() => events.emit("close", code, signal));
+  };
+  const stdout = new Readable({
+    read() {
+      if (spec.silent) return;
+      if (emitted >= total) {
+        finish(spec.code ?? 0, spec.signal ?? null);
+        return;
+      }
+      emitted = Math.min(total, emitted + chunk.length);
+      this.push(chunk);
+    },
+  });
+  // One push then EOF: an endlessly readable stderr can starve the setImmediate
+  // that emits the child close event, hanging the suite.
+  const stderr = new Readable({
+    read() {
+      if (spec.stderr) this.push(spec.stderr);
+      this.push(null);
+    },
+  });
+  const child: StatusProbeChild = Object.assign(events, {
+    stdout,
+    stderr,
+    kill(signal: NodeJS.Signals = "SIGTERM") {
+      kills.push(signal);
+      finish(null, signal);
+      return true;
+    },
+  });
+  return {
+    spawn: (() => child) as StatusProbeSpawn,
+    kills,
+    emittedBytes: () => emitted,
+  };
 }
 
 /** Create isolated home/project/source Git fixtures with canonical temp paths. */
@@ -233,6 +300,94 @@ test("gitignored content is copied and recorded as dirty", async (t) => {
   assert.match(result.stdout, /\[dirty source\]/);
   assert.equal(f.manifest().skills.demo.dirty, true);
   assert.equal(readFileSync(join(managedSkillsRoot(f.opts), "demo", "secret.env"), "utf8"), "TOKEN=example\n");
+});
+
+test("a dirty probe stops reading a status listing far beyond the old 16 MiB buffer", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  // Three times the old maxBuffer: collecting the listing would have failed the
+  // install, while the bounded probe only needs the first entry.
+  const fake = fakeStatusProbe({ totalBytes: 48 * 1024 * 1024 });
+  __setStatusProbeForTest({ spawn: fake.spawn });
+  t.after(() => __setStatusProbeForTest(null));
+  const result = await f.run(["install", dir]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(f.manifest().skills.demo.dirty, true);
+  assert.deepEqual(fake.kills, ["SIGTERM"], "the probe stops Git once dirtiness is known");
+  assert.ok(fake.emittedBytes() < 1024 * 1024, `only a bounded prefix is read (${fake.emittedBytes()} bytes)`);
+});
+
+test("a failing status probe fails closed before publishing anything", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  const fake = fakeStatusProbe({ code: 128, stderr: "fatal: cannot read repository\n" });
+  __setStatusProbeForTest({ spawn: fake.spawn });
+  t.after(() => __setStatusProbeForTest(null));
+  const result = await f.run(["install", dir]);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /cannot inspect Git source/);
+  assert.equal(existsSync(skillManifestPath(f.opts)), false);
+  assert.equal(existsSync(join(managedSkillsRoot(f.opts), "demo")), false);
+});
+
+test("a hung status probe times out and installs nothing", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  const fake = fakeStatusProbe({ silent: true });
+  __setStatusProbeForTest({ spawn: fake.spawn, timeoutMs: 100 });
+  t.after(() => __setStatusProbeForTest(null));
+  const result = await f.run(["install", dir]);
+  assert.equal(result.code, 1, result.stderr);
+  assert.match(result.stderr, /did not finish within 100ms/);
+  assert.deepEqual(fake.kills, ["SIGKILL"], "a hung Git child is killed, not orphaned");
+  assert.equal(existsSync(skillManifestPath(f.opts)), false);
+});
+
+test("an inherited GIT_DIR cannot redirect provenance to another repository", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  const decoy = join(f.base, "decoy-repo");
+  mkdirSync(decoy, { recursive: true });
+  git(decoy, ["init", "--quiet"]);
+  git(decoy, ["config", "user.name", "Skill Test"]);
+  git(decoy, ["config", "user.email", "skill-test@example.invalid"]);
+  git(decoy, ["config", "commit.gpgsign", "false"]);
+  writeFileSync(join(decoy, "decoy.txt"), "decoy\n");
+  git(decoy, ["add", "--", "decoy.txt"]);
+  git(decoy, ["commit", "--quiet", "-m", "decoy"]);
+  // Read the expectation before exporting GIT_DIR: the test helper inherits it too.
+  const expected = git(f.repository, ["rev-parse", "HEAD"]);
+  const saved = { GIT_DIR: process.env.GIT_DIR, GIT_WORK_TREE: process.env.GIT_WORK_TREE };
+  process.env.GIT_DIR = join(decoy, ".git");
+  process.env.GIT_WORK_TREE = decoy;
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  });
+  const result = await f.run(["install", dir]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(f.manifest().skills.demo.commit, expected, "provenance must describe the selected source");
+});
+
+test("changes outside the selected source directory do not mark it dirty", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  writeFileSync(join(f.repository, "unrelated.txt"), "outside the skill\n");
+  writeFileSync(join(f.repository, "skills", "sibling.txt"), "sibling of the skill\n");
+  const result = await f.run(["install", dir]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(f.manifest().skills.demo.dirty, false, "the probe stays scoped to the selected directory");
+});
+
+test("staged changes mark the source dirty", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  writeFileSync(join(dir, "staged.txt"), "staged but not committed\n");
+  git(f.repository, ["add", "--", join(dir, "staged.txt")]);
+  const result = await f.run(["install", dir]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(f.manifest().skills.demo.dirty, true);
 });
 
 test("repository root is a valid source and Git metadata is not copied", async (t) => {
