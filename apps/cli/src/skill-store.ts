@@ -352,8 +352,11 @@ function git(source: string, args: string[]): string {
 
 /** Record the source path, HEAD commit, exact tag if present, and dirty state. */
 function provenance(source: string): Omit<InstalledSkill, "name"> {
-  const repository = realpathSync(git(source, ["rev-parse", "--show-toplevel"]));
-  if (!contains(repository, source)) fail(`source is outside its Git working tree: ${source}`);
+  // Design: compare native-canonical paths — on Windows, plain realpath keeps
+  // 8.3 short names while Git reports the long toplevel, so `relative` would
+  // wrongly place the source outside its repository.
+  const repository = realpathSync.native(git(source, ["rev-parse", "--show-toplevel"]));
+  if (!contains(repository, realpathSync.native(source))) fail(`source is outside its Git working tree: ${source}`);
   const commit = git(source, ["rev-parse", "--verify", "HEAD^{commit}"]);
   // Exact tags only; lexical ordering makes multiple tags deterministic. A tag
   // is supplementary: the full commit is always recorded, even without a tag.
