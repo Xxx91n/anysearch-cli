@@ -62,6 +62,27 @@ test("project file overrides user file (layer: project)", () => {
   assert.equal(cfg.sources.provider, "project");
 });
 
+test("exported-but-empty env var does not shadow lower layers", () => {
+  const f = fixture({ userToml: '[llm]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-6"\n' });
+  const cfg = resolveLlmConfig(f.opts({ env: { ANS_LLM_PROVIDER: "", ANS_LLM_MODEL: "" } }));
+  assert.equal(cfg.provider, "anthropic");
+  assert.equal(cfg.model, "claude-sonnet-4-6");
+  assert.equal(cfg.sources.provider, "user");
+});
+
+test("empty --llm flag value does not shadow lower layers", () => {
+  const f = fixture({ userToml: '[llm]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-6"\n' });
+  const cfg = resolveLlmConfig(f.opts({ flags: { provider: "" } }));
+  assert.equal(cfg.provider, "anthropic");
+});
+
+test("writeUserLlmConfig refuses to overwrite a malformed file", () => {
+  const f = fixture({ userToml: "[llm\nprovider = broken" });
+  assert.throws(() => writeUserLlmConfig({ provider: "openai" }, f.home), /TOML parse failed/);
+  // original bytes preserved — env_key etc. not silently dropped
+  assert.equal(readFileSync(userConfigPath(f.home), "utf8"), "[llm\nprovider = broken");
+});
+
 test("CLI flag beats env which beats project which beats user", () => {
   const f = fixture({
     userToml: '[llm]\nprovider = "anthropic"\nmodel = "claude-haiku-4-5"\n',

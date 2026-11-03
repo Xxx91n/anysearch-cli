@@ -158,7 +158,9 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       ["user", user],
     ] as const) {
       const v = cfg[field];
-      if (v !== undefined) {
+      // falsy check: an exported-but-empty var (ANS_LLM_PROVIDER=) or a
+      // `--llm.provider=` flag must not shadow lower layers (CodeRabbit #120).
+      if (v) {
         if (outKey === "provider") resolved.provider = v;
         else if (outKey === "model") resolved.model = v;
         else if (outKey === "baseUrl") resolved.baseUrl = v;
@@ -262,8 +264,10 @@ export function writeUserLlmConfig(
   if (existsSync(path)) {
     try {
       root = tomlParse(readFileSync(path, "utf8")) as Record<string, unknown>;
-    } catch {
-      root = {};
+    } catch (e) {
+      // never silently rewrite a malformed file — that would drop env_key and
+      // every unrelated section (CodeRabbit #120).
+      throw new Error(path + ": TOML parse failed (" + (e as Error).message + "); fix or remove the file, then retry");
     }
   }
   const llm = (typeof root["llm"] === "object" && root["llm"] !== null

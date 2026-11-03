@@ -54,8 +54,13 @@ export async function runLlm(args: string[]): Promise<number> {
     }
 
     console.log("Setting LLM provider: " + provider + "/" + model);
-    const path = writeUserLlmConfig({ provider, model });
-    console.log("Written to " + path + " ([llm] section; env vars still override it).");
+    try {
+      const path = writeUserLlmConfig({ provider, model });
+      console.log("Written to " + path + " ([llm] section; env vars still override it).");
+    } catch (e: any) {
+      process.stderr.write((e?.message || String(e)) + "\n");
+      return 1;
+    }
     console.log("Secrets stay in env vars — reference one in the file via env_key = \"" + (API_KEYS[provider] || "YOUR_API_KEY_ENV") + "\".");
     console.log("");
     try {
