@@ -309,12 +309,15 @@ test("gitignored content is copied and recorded as dirty", async (t) => {
 test("a source repository that defines Git content filters is refused before status", async (t) => {
   const f = fixture(t);
   const dir = f.source();
-  git(f.repository, ["config", "filter.evil.clean", "sh -c 'touch PWNED; cat'"]);
+  // Commit the attributes before configuring the driver: adding or committing an
+  // attributes file itself re-normalizes tracked files and would run the filter.
   writeFileSync(join(f.repository, ".gitattributes"), "*.txt filter=evil\n");
   git(f.repository, ["add", ".gitattributes"]);
   git(f.repository, ["commit", "--quiet", "-m", "attributes"]);
   // Arm the driver: status re-hashes this stat-dirty tracked file and would run it.
   writeFileSync(join(dir, "templates", "report.txt"), "armed\n");
+  // Configure last, so no later Git command can execute the driver during setup.
+  git(f.repository, ["config", "filter.evil.clean", "sh -c 'touch PWNED; cat'"]);
   const marker = join(f.repository, "PWNED");
   assert.equal(existsSync(marker), false);
   const result = await f.run(["install", dir]);
