@@ -188,12 +188,13 @@ Windows 瞬时共享冲突（`EPERM`/`EBUSY`/`ENOTEMPTY`）会做有界退避重
 仅在不存在 `installed.json` 时清理 `.install-*` 暂存目录和 `.installed-*.tmp`
 临时清单；`.uninstall-*` 备份、未登记的 `<name>/` 目录和未知条目永不自动删除。
 安装中断留下的未登记 `<name>/` 可手工删除后重装。若清单仍记录某 skill 但其
-`<name>/` 目录缺失，`ans skill list` 会输出恢复提示：把对应的 `.uninstall-*`
-备份改回 `<name>/`，没有备份时用 `ans skill uninstall <name>` 删掉这条失效记录
-（项目级加 `--project`）。已存在 `installed.json` 时留下的 `.installed-*.tmp`
+`<name>/` 目录缺失，`ans skill list`（以及 `validate`）会输出恢复提示：把对应的
+`.uninstall-*` 备份改回 `<name>/`，没有备份时用 `ans skill uninstall <name>`
+删掉这条失效记录（项目级加 `--project`）。已存在 `installed.json` 时留下的 `.installed-*.tmp`
 不会被自动删除，请在手工清理前先查看 `skills/synced/`。回收中断留下的
-`.installed.lock.reclaim-*` 仅在其记录的持有者于本机可证明已死时清理；若持有者
-可能仍存活，则报告并保留。若 `ans skill list`
+`.installed.lock.reclaim-*` 遵循同样的“无清单才清理”规则：仅在没有
+`installed.json`、且其记录的持有者于本机可证明已死时清理；否则报告并保留。
+若 `ans skill list`
 本身报告清单缺失或损坏，请先直接查看 `skills/synced/` 再动手删除。
 
 **安装不等于激活。** 这些命令绝不改写 domain TOML。Skill Active List 仍由

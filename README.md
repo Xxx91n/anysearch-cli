@@ -210,14 +210,15 @@ directories and unknown entries are never deleted automatically. An unrecorded
 `<name>/` left by an interrupted install can be removed manually and
 reinstalled. If the
 manifest records a skill whose `<name>/` directory is missing, `ans skill list`
-prints a recovery hint: rename the matching `.uninstall-*` backup back to
-`<name>/`, or run `ans skill uninstall <name>` to drop the stale entry (add
-`--project` for project scope). A `.installed-*.tmp` left next to an existing
+(and `validate`) prints a recovery hint: rename the matching `.uninstall-*`
+backup back to `<name>/`, or run `ans skill uninstall <name>` to drop the stale
+entry (add `--project` for project scope). A `.installed-*.tmp` left next to an existing
 `installed.json` is not removed automatically; inspect `skills/synced/` before
 manual cleanup. Leftovers from an interrupted reclamation
-(`.installed.lock.reclaim-*`) are removed only when their recorded owner is
-provably dead on this host; one whose owner might still be live is reported and
-left alone. If `ans skill list` itself reports a missing or invalid
+(`.installed.lock.reclaim-*`) follow the same manifest-gated rule: they are
+removed only in a scope without `installed.json`, and only when their recorded
+owner is provably dead on this host; otherwise they are reported and left alone.
+If `ans skill list` itself reports a missing or invalid
 manifest, inspect `skills/synced/` directly before removing anything.
 
 **Installation is not activation.** These commands never edit domain TOML.

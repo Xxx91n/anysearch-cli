@@ -78,7 +78,11 @@ export async function runSkill(args: string[], opts: SkillCommandOptions = {}): 
         return 0;
       }
       case "validate": {
-        const results = validateInstalledSkills(scopeOpts, positional[0]);
+        const selected = positional[0];
+        if (selected === undefined) {
+          for (const warning of inspectInstalledSkills(scopeOpts).warnings) err(`ans skill: ${warning}\n`);
+        }
+        const results = validateInstalledSkills(scopeOpts, selected);
         if (results.length === 0) out("No installed skills to validate.\n");
         for (const result of results) {
           out(result.ok ? `[OK] ${result.name}: SKILL.md frontmatter\n` : `[FAIL] ${result.name}: ${result.error}\n`);
