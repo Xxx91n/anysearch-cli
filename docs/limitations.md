@@ -124,8 +124,10 @@
   protocol deliberately carries no per-instance session id
   (`apps/mcp/src/index.ts` stateless transport, `session_id` never stashed), so
   its session semantics must be decided first (#130 / #132).
-- **A half-wired runtime is now named, not silent (#129)** — a composition root
-  that supplies `store` without `sessionId` (or the reverse) gets one stderr
-  line naming the missing half and stating that RAG / memory injection are
-  disabled for the run. The gate itself (`store && sessionId`) is unchanged;
-  both-absent stays a supported "no memory" runtime and emits nothing.
+- **A runtime without the memory pair is named, not silent (#129)** — a
+  composition root that supplies `store` without `sessionId`, `sessionId`
+  without `store`, or neither at all now gets one stderr line naming what is
+  missing and stating that RAG / L1 / L2 injection are disabled for that
+  runtime. This is what makes the `ans_chat` gap visible instead of a
+  no-op. The gate itself (`store && sessionId`) is unchanged — narrowing it
+  would alter every composition root.

@@ -7,6 +7,10 @@ import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTo
 import { distillGap, adjudicateReuseCompress } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
+import { SqliteSessionStore } from "@anysearch-cli/store";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { FusedEnvelope, SufficiencySignal } from "@anysearch-cli/retriever";
 
 let passed = 0, failed = 0;
@@ -751,11 +755,12 @@ console.log("---");
     "#104+#103: injected context costs more USD");
 }
 
-// #129 contract: a runtime built WITHOUT store (or without sessionId) has no
-// MemoryPipeline, so transformContext is a pass-through. That silence used to
-// be invisible on the production paths (ans chat / ans_chat both omitted the
-// pair); these assertions pin the behavior as an explicit contract and prove
-// the half-wired case now names the missing half on stderr.
+// #129 contract: a runtime built WITHOUT store/sessionId has no MemoryPipeline,
+// so transformContext is a pass-through. That silence used to be invisible on
+// the production paths (ans chat / ans_chat both omitted the pair); the runtime
+// now names the missing wiring, and the fully-wired path is exercised against a
+// REAL SqliteSessionStore so the CLI wiring (#104 fts + restart recall) is
+// proven end-to-end rather than only against a stub.
 {
   const seenContexts: any[][] = [];
   const capturingStreamFn = (_model: any, context: any, _o?: any) => {
@@ -773,9 +778,10 @@ console.log("---");
     };
   };
   const textOf = (m: any) => readMessageText(m)?.text ?? "";
+  const allText = (messages: any[]) => messages.map(textOf).join("\n");
 
-  // fts configured but NO store: transformContext returns the messages untouched,
-  // AND the wiring gap is named (this is the ans_chat shape).
+  // No store at all: transformContext returns the messages untouched AND the
+  // missing wiring is named (this is exactly the ans_chat shape today).
   {
     seenContexts.length = 0;
     const origWrite = process.stderr.write;
@@ -797,33 +803,14 @@ console.log("---");
       if (ev.type === "error") errors.push(ev);
     }
     assert(errors.length === 0, "#129 no-store: agent loop completes without error");
-    const allText = seenContexts.flat().map(textOf).join("\n");
-    assert(!allText.includes("[RAG Context]"), "#129 no-store: no RAG injection (pipeline never constructed)");
-    assert(allText.includes("how do I reach the internal wiki?"), "#129 no-store: user turn passes through unchanged");
-    assert(/the domain configures RAG injection but neither store nor sessionId was supplied/.test(captured),
-      "#129 no-store: a domain asking for RAG names the missing wiring (ans_chat shape)");
+    assert(!allText(seenContexts.flat()).includes("[RAG Context]"), "#129 no-store: no RAG injection (pipeline never constructed)");
+    assert(allText(seenContexts.flat()).includes("how do I reach the internal wiki?"), "#129 no-store: user turn passes through unchanged");
+    assert(/store and sessionId not supplied — MemoryPipeline NOT constructed/.test(captured),
+      "#129 no-store: the missing wiring is named (ans_chat shape)");
   }
 
-  // Nothing to inject and nothing supplied: supported no-memory runtime, stays quiet.
-  {
-    const origWrite = process.stderr.write;
-    let captured = "";
-    process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
-    try {
-      new PiAgentRuntime({
-        retriever: new MockRetriever(),
-        domain: { ...mockDomain, rag: { adapter: "none" } },
-        model: { id: "test-model", provider: "test" } as any,
-        streamFn: capturingStreamFn,
-      });
-    } finally {
-      process.stderr.write = origWrite;
-    }
-    assert(!/PiAgentRuntime:/.test(captured), "#129 no-memory: a domain with nothing to inject stays silent");
-  }
-
-  // Half-wired (store without sessionId): still no pipeline, and now a named
-  // stderr line says which half is missing instead of degrading silently.
+  // Half-wired: the supplied half is still not enough for a pipeline, and the
+  // diagnostic names what is missing.
   {
     const origWrite = process.stderr.write;
     let captured = "";
@@ -834,47 +821,86 @@ console.log("---");
         domain: mockDomain,
         model: { id: "test-model", provider: "test" } as any,
         streamFn: capturingStreamFn,
-        store: {
-          getAnchors: () => [], saveAnchor: () => Promise.resolve(),
-          createSession: (d: string) => ({ id: "s1", domain: d, createdAt: "" }),
-          ensureSession: () => Promise.resolve(),
-          append: () => Promise.resolve(), searchFts5: () => [], searchMemory: () => [],
-          saveResults: () => Promise.resolve(), close: () => {},
-        } as any,
+        store: {} as any,
       });
     } finally {
       process.stderr.write = origWrite;
     }
-    assert(/PiAgentRuntime: store was supplied without sessionId/.test(captured),
+    assert(/sessionId not supplied — MemoryPipeline NOT constructed/.test(captured),
       "#129 half-wired: stderr names the missing half (store without sessionId)");
-    assert(/MemoryPipeline NOT constructed/.test(captured),
-      "#129 half-wired: stderr states the memory chain is disabled");
   }
 
-  // Fully wired: no diagnostic line (the healthy path stays quiet).
+  // Fully wired against a REAL store: what the model receives carries the fts
+  // recall block with provenance, and the recall survives reopening the DB
+  // (the "durable ANS_DB_PATH" acceptance criterion).
   {
-    const origWrite = process.stderr.write;
-    let captured = "";
-    process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+    const tmpDir = mkdtempSync(join(tmpdir(), "ans-129-"));
+    const dbPath = join(tmpDir, "anysearch.db");
+    const sessionId = "stable-session-129";
     try {
-      new PiAgentRuntime({
-        retriever: new MockRetriever(),
-        domain: mockDomain,
-        model: { id: "test-model", provider: "test" } as any,
-        streamFn: capturingStreamFn,
-        store: {
-          getAnchors: () => [], saveAnchor: () => Promise.resolve(),
-          createSession: (d: string) => ({ id: "s1", domain: d, createdAt: "" }),
-          ensureSession: () => Promise.resolve(),
-          append: () => Promise.resolve(), searchFts5: () => [], searchMemory: () => [],
-          saveResults: () => Promise.resolve(), close: () => {},
-        } as any,
-        sessionId: "s-129",
-      });
+      // Writer run: a REAL SqliteSessionStore, external id registered first
+      // (the CLI path), one indexed memory row.
+      const writer = new SqliteSessionStore(dbPath);
+      await writer.ensureSession(sessionId, "default");
+      await writer.saveResults(sessionId, [
+        { url: "https://intra.example/wiki", title: "internal wiki", snippet: "proxy port 8080 for the intranet wiki", source: "tavily" },
+      ]);
+      writer.close();
+
+      const runOnce = async () => {
+        // Reopen: proves the memory outlived the process that wrote it.
+        const store = new SqliteSessionStore(dbPath);
+        try {
+          seenContexts.length = 0;
+          const runtime = new PiAgentRuntime({
+            retriever: new MockRetriever(),
+            domain: { ...mockDomain, rag: { adapter: "fts" } },
+            model: { id: "test-model", provider: "test" } as any,
+            streamFn: capturingStreamFn,
+            store,
+            sessionId,
+          });
+          const errors: any[] = [];
+          for await (const ev of runtime.run("how do I reach the internal wiki?")) {
+            if (ev.type === "error") errors.push(ev);
+          }
+          assert(errors.length === 0, "#129 wired: agent loop completes without error");
+          return seenContexts.flat();
+        } finally {
+          store.close();
+        }
+      };
+
+      const text = allText(await runOnce());
+      assert(text.includes("[RAG Context]"), "#129 wired: RAG block reaches the model on the real store");
+      assert(text.includes("proxy port 8080"), "#129 wired + restart: memory written in an earlier process is recalled");
+      assert(/adapter=fts/.test(text) && /provenance=memory/.test(text), "#129 wired: injection carries provenance");
+      assert(text.includes("how do I reach the internal wiki?"), "#129 wired: user question preserved");
+
+      // adapter="none" regression: the pipeline exists, but nothing is injected.
+      const noneText = allText(await (async () => {
+        const store = new SqliteSessionStore(dbPath);
+        try {
+          seenContexts.length = 0;
+          const runtime = new PiAgentRuntime({
+            retriever: new MockRetriever(),
+            domain: { ...mockDomain, rag: { adapter: "none" } },
+            model: { id: "test-model", provider: "test" } as any,
+            streamFn: capturingStreamFn,
+            store,
+            sessionId,
+          });
+          for await (const _ev of runtime.run("how do I reach the internal wiki?")) { /* drain */ }
+          return seenContexts.flat();
+        } finally {
+          store.close();
+        }
+      })());
+      assert(!noneText.includes("[RAG Context]"), "#129 none: no RAG injection on the wired path");
+      assert(noneText.includes("how do I reach the internal wiki?"), "#129 none: user turn intact");
     } finally {
-      process.stderr.write = origWrite;
+      try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* Windows WAL lock */ }
     }
-    assert(!/PiAgentRuntime:/.test(captured), "#129 wired: healthy wiring emits no wiring diagnostic");
   }
 }
 

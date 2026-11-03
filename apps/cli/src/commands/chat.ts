@@ -45,14 +45,16 @@ export async function runChat(argv: string[]): Promise<number> {
   }
 
   // Initialize retriever + domain over the DURABLE store (#129).
-  // The old createEngine(...) call took the composition root's ":memory:"
-  // default, so anything the RAG adapter recalled vanished with the process —
-  // a "wired but always empty" path that is harder to diagnose than no wiring.
-  // createPersistentEngine resolves ANS_DB_PATH (default ~/.anysearch/anysearch.db)
-  // and mkdirs its parent, matching every other maintenance command.
+  // Design: use createPersistentEngine (ANS_DB_PATH, default
+  // ~/.anysearch/anysearch.db) instead of createEngine — the latter falls back to
+  // ":memory:", which would make the newly wired RAG adapter recall nothing at
+  // all ("connected but always empty" is harder to diagnose than no wiring).
   const domainName = process.env.ANS_DOMAIN || "default";
   let engine: CompositionResult;
   let domain: DomainConfigPort;
+  // sessions.domain is metadata only; record the domain actually in use so a
+  // fallback run does not claim a domain that failed to load.
+  let sessionDomain = domainName;
   try {
     engine = createPersistentEngine(domainName);
     domain = engine.config || loadDomainByNameIn(domainName, domainSearchDirs()) as DomainConfigPort;
@@ -62,6 +64,7 @@ export async function runChat(argv: string[]): Promise<number> {
     // memory reads keep working across runs. A second failure propagates to the
     // CLI entry point; swallowing it here would leave an unclosed store handle.
     engine = createPersistentEngine();
+    sessionDomain = "default";
     domain = {
       sources: { enabled: [] },
       prompts: [],
@@ -73,14 +76,15 @@ export async function runChat(argv: string[]): Promise<number> {
   const { retriever, store } = engine;
 
   // Stable session id — the durable ~/.anysearch-cli/session anchor
-  // (ANS_SESSION_ID overrides it). It is minted outside createSession(), so the
-  // child tables' FK to sessions(id) needs this row registered before any
-  // anchor/message write. Failure here is fatal for the memory chain only:
-  // chat still answers, but we say so instead of silently dropping it.
+  // (ANS_SESSION_ID overrides it). Design: register the row via ensureSession
+  // first — the id is minted outside createSession(), and messages /
+  // resume_anchors carry an FK to sessions(id) under foreign_keys = ON.
+  // Failure here is fatal for the memory chain only: chat still answers, but we
+  // say so instead of silently dropping it.
   const sessionId = readSessionId();
   let memoryWired = true;
   try {
-    await store.ensureSession(sessionId, domainName);
+    await store.ensureSession(sessionId, sessionDomain);
   } catch (e: any) {
     memoryWired = false;
     process.stderr.write(

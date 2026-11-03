@@ -300,12 +300,13 @@ export class PiAgentRuntime {
 
     // constructor internally creates pipeline + gate instances.
     // Composition root responsible for wiring; caller opts unchanged.
-    // The gate stays exactly `store && sessionId` (changing it would alter every
-    // composition root, far beyond this seam). What used to be missing is a
-    // TRACE: a root that supplies one half — or that configures RAG injection
-    // but supplies neither — got a pipeline-less runtime with no signal at all
-    // (#129). Both-absent stays a supported "no memory" runtime, so the warning
-    // fires only when the configuration says injection was expected.
+    // Design: the gate stays exactly `store && sessionId` — narrowing it here
+    // would change every composition root, far beyond this seam (#129).
+    // What was missing is not the gate but a TRACE: a root that omitted either
+    // half got a pipeline-less runtime with no signal, which is why `ans chat`
+    // and `ans_chat` ran without memory for so long. Both-absent remains a
+    // supported "no memory" runtime, but it now announces itself instead of
+    // degrading silently.
     if (opts.store && opts.sessionId) {
       this.pipeline = new MemoryPipeline({
         store: opts.store,
@@ -319,7 +320,14 @@ export class PiAgentRuntime {
         providerName: (opts as any).providerName,
       });
     } else {
-      this.warnIfMemoryExpected(opts);
+      const missing = opts.store ? "sessionId" : opts.sessionId ? "store" : "store and sessionId";
+      // stdout stays protocol-pure for MCP; a dead stderr must not break construction.
+      try {
+        process.stderr.write(
+          "[anysearch] PiAgentRuntime: " + missing + " not supplied — MemoryPipeline NOT constructed; " +
+          "RAG and L1/L2 memory injection are disabled for this runtime\n",
+        );
+      } catch { /* fail-open */ }
     }
     this.gate = new SufficiencyEvaluator({
       retriever: opts.retriever,
@@ -328,40 +336,6 @@ export class PiAgentRuntime {
       model: opts.model as any,
       getApiKey: opts.getApiKey,
     });
-  }
-
-  /**
-   * Name a wiring gap that would otherwise be invisible.
-   *
-   * Called only when the pipeline was NOT built. A half-supplied pair is always
-   * named (it can only be a composition-root mistake). A fully absent pair is
-   * named only when the domain asks for injection — that is the `ans_chat`
-   * shape: `rag.adapter = "fts"` configured, no store/sessionId supplied, so
-   * the adapter layer is never even consulted. A domain with nothing to inject
-   * stays silent, keeping the supported "no memory" runtime quiet.
-   */
-  private warnIfMemoryExpected(opts: PiAgentRuntimeOptions): void {
-    const hasStore = Boolean(opts.store);
-    const hasSession = Boolean(opts.sessionId);
-    // Mirror RagAdapterRegistry.build: injection is expected for a non-empty
-    // adapter other than "none", or for a truthy legacy note next to any id.
-    const rag = opts.domain.rag;
-    const adapterId = typeof rag?.adapter === "string" ? rag.adapter.trim() : "";
-    const note = rag?.config?.note;
-    const ragExpected = (adapterId !== "" && adapterId !== "none") || (typeof note === "string" && note.length > 0);
-    if (!hasStore && !hasSession && !ragExpected) return;
-    const detail = hasStore
-      ? "store was supplied without sessionId"
-      : hasSession
-        ? "sessionId was supplied without store"
-        : "the domain configures RAG injection but neither store nor sessionId was supplied";
-    // stdout stays protocol-pure for MCP; a dead stderr must not break construction.
-    try {
-      process.stderr.write(
-        "[anysearch] PiAgentRuntime: " + detail +
-        " — MemoryPipeline NOT constructed, so RAG and L1/L2 memory injection are disabled this run\n",
-      );
-    } catch { /* fail-open */ }
   }
 
   // decision 3: run returns AsyncIterable<AgentEvent>, mapping pi events.

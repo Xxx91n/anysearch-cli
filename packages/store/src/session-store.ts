@@ -590,8 +590,9 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   async ensureSession(sessionId: string, domain: string): Promise<void> {
-    // INSERT OR IGNORE: a second run of the same durable id is a no-op, and a
-    // concurrent CLI process racing on the same anchor cannot hit a PK conflict.
+    // Design: INSERT OR IGNORE rather than read-then-insert — a repeated durable
+    // id (or two CLI processes racing on the same anchor) must be a no-op, and a
+    // PK conflict must not surface as a memory failure.
     this.stmts.ensureSession.run(sessionId, domain);
   }
 
