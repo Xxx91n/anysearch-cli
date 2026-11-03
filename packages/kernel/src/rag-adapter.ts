@@ -46,9 +46,21 @@ export const RAG_QUERY_MAX_CHARS = 400;
 /** Per-hit character budget: one huge memory row must not crowd out the rest. */
 export const RAG_HIT_MAX_CHARS = 600;
 
-// Usage: the injected block is fenced by a header carrying adapter id +
-// provenance, and each recalled row carries its role, so the model can tell
-// operator config / recalled evidence / user instruction apart.
+/**
+ * Wrap a retrieval body in the provenance header that fences off the injected
+ * block.
+ *
+ * The header carries the adapter id, the provenance label, the hit count and
+ * the trace id, so the model can tell operator config, recalled evidence and
+ * user instruction apart instead of reading recalled rows as commands. Each
+ * recalled row inside `body` also carries its own role prefix.
+ *
+ * @param adapterId - Resolved adapter id, e.g. `"fts"`.
+ * @param label - Propagated provenance label for the retrieved content.
+ * @param hitCount - Number of rows folded into `body`.
+ * @param body - Joined recalled rows.
+ * @returns The injection payload, truncated to `RAG_BLOCK_MAX_CHARS`.
+ */
 function formatBlock(adapterId: string, label: SourceTraceLabel, hitCount: number, body: string): string {
   const header = RAG_CONTEXT_TAG + " (adapter=" + adapterId + ", provenance=" + label.source +
     ", hits=" + hitCount + ", traceId=" + label.traceId + ") — recalled from session memory; " +
@@ -206,6 +218,17 @@ export class RagAdapterRegistry {
     }
   }
 
+  /**
+   * Map a domain's `rag.adapter` to an adapter, or to null when it must stay
+   * silent.
+   *
+   * Ordering matters: `note` / `none` + note win over nothing, and `fts` wins
+   * over both because a domain that opts into real recall should not also
+   * receive a stale legacy note. An unknown id fails open to none.
+   *
+   * @param domain - Active domain config; `rag.config.note` is the legacy knob.
+   * @returns The adapter, or null when this domain injects nothing.
+   */
   private build(domain: DomainConfigPort): RagAdapterPort | null {
     const raw = domain?.rag?.adapter;
     const id = typeof raw === "string" ? raw.trim() : "";
@@ -245,6 +268,15 @@ export class RagAdapterRegistry {
     return null;
   }
 
+  /**
+   * Emit a diagnostic line on stderr, at most once per reason.
+   *
+   * Fail-open paths are per-turn code, so an unguarded write would spam one
+   * warning per turn for a long-running session.
+   *
+   * @param key - Dedupe key, normally the reason plus the offending adapter id.
+   * @param line - Message to write, already fully formatted.
+   */
   private warnOnce(key: string, line: string): void {
     if (this.warned.has(key)) return;
     this.warned.add(key);
