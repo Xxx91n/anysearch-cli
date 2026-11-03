@@ -7,14 +7,14 @@
 // AC3: without the embedding package the engine degrades to FTS-only and still ranks
 // correctly (regression); with a stub embedding module the hybrid arm fuses and still
 // ranks correctly.
-// #125 extends the CJK block: within-run substring queries, two-character words, single
-// characters, and the index/query split-function symmetry that keeps bigram recall honest.
+// #125 extends the CJK block: within-run substring queries (including two-character words and
+// single characters), reordered runs must abstain, the substring stage must stay below the BM25
+// arm, and a CJK-free query must not touch the lexical arm at all.
 
 import {
   recommendDomains,
   termCoverage,
-  cjkIndexTokens,
-  cjkClauses,
+  cjkRunMatch,
   HIGH_CONFIDENCE_THRESHOLD,
   type DomainMeta,
   type RecommendResult,
@@ -130,50 +130,56 @@ async function main() {
     assert(sub.candidates[0]!.coverage === 1, "coverage counts a CJK substring, not only a token prefix");
     assert(termCoverage("中文研究", "深度中文研究与学术检索") === 1, "CJK coverage matches a mid-run substring");
 
-    // Two-character Chinese words: the case that rules the trigram tokenizer out (it needs ≥3
-    // characters per full-text query and returns nothing for "检索").
-    for (const twoChar of ["检索", "学术", "中文"]) {
-      const r = await recommendDomains(twoChar, CJK_METAS);
-      expectRankOf(r, "zh-research", 1, "two-char CJK word '" + twoChar + "'");
+    // Two-character Chinese words — the case that rules the trigram tokenizer out (it needs ≥3
+    // characters per full-text query). Tail and single-character queries resolve the same way.
+    for (const short of ["检索", "学术", "中文", "学术检索", "术"]) {
+      const r = await recommendDomains(short, CJK_METAS);
+      expectRankOf(r, "zh-research", 1, "CJK substring '" + short + "'");
+      assert(r.decision === "high", "CJK substring '" + short + "' reaches high confidence (got " + r.decision + ")");
     }
-    // Tail-of-run and single-character queries resolve through the unigram block.
-    expectRankOf(await recommendDomains("学术检索", CJK_METAS), "zh-research", 1, "CJK tail substring '学术检索'");
-    expectRankOf(await recommendDomains("术", CJK_METAS), "zh-research", 1, "single CJK char '术'");
 
-    // Partial recall stays priced as a suggestion: an out-of-order bigram mix is not an exact
-    // substring, so it may reach the candidate list but must not read as coverage 1.
-    const shuffled = await recommendDomains("研究学术", CJK_METAS);
-    assert(shuffled.candidates.length === 0 || shuffled.candidates[0]!.coverage < 1, "reversed bigram order is not treated as an exact substring");
-    // Absent bigrams must not match anything — guards the relaxed rung against noise.
+    // Exact-substring semantics, not a bag of characters: reordering the query breaks the
+    // substring, so the engine abstains instead of surfacing a candidate. This is the assertion
+    // that would pass vacuously if it only checked "not confident".
+    for (const wrong of ["研究学术", "检索学术", "深文中文研究"]) {
+      const r = await recommendDomains(wrong, CJK_METAS);
+      assert(r.decision === "none" && r.candidates.length === 0, "reordered CJK '" + wrong + "' is not a substring => no_match (got " + r.decision + ", " + r.candidates.length + " candidates)");
+      assert(r.why?.code === "no_match", "reordered CJK '" + wrong + "' reports why.code no_match");
+    }
+    // Absent characters match nothing either.
     const absent = await recommendDomains("机器翻译", CJK_METAS);
-    assert(absent.decision === "none" && absent.candidates.length === 0, "CJK query with no shared bigram => no_match (got " + absent.decision + ")");
+    assert(absent.decision === "none" && absent.candidates.length === 0, "CJK query with no substring in common => no_match (got " + absent.decision + ")");
 
-    // Mixed query: the CJK half contributes even when the ASCII rungs miss.
-    expectRankOf(await recommendDomains("文献 检索", CJK_METAS), "zh-research", 1, "mixed CJK query '文献 检索'");
+    // Partial coverage stays a priced suggestion, never a silent 0: one of two runs matching
+    // lands the candidate with coverage 0.5.
+    const partial = await recommendDomains("文献 检索", CJK_METAS);
+    expectRankOf(partial, "zh-research", 1, "mixed CJK runs '文献 检索' (only 检索 is present)");
+    assert(partial.candidates[0]!.coverage === 0.5, "partial CJK coverage 0.5 (got " + partial.candidates[0]!.coverage + ")");
+    // A whole sentence is not a substring of a description, so it abstains — First-Class
+    // Abstain is preserved rather than traded away for recall.
+    const sentence = await recommendDomains("我想找深度中文研究相关的文献资料推荐一下", CJK_METAS);
+    assert(sentence.decision === "none", "long CJK sentence with no contiguous substring => abstain (got " + sentence.decision + ")");
 
-    // A whole sentence is truncated to its leading substring (the maxTerms cap, mirroring
-    // escapeQueryUnicode), so it reaches the candidate list instead of reporting no_match — and,
-    // because the sentence matches no description as a term, it stays a low-confidence list.
-    const longQ = await recommendDomains("我想找深度中文研究相关的文献资料推荐一下", CJK_METAS);
-    assert(longQ.decision !== "none", "long natural-language CJK query reaches the candidate list (got " + longQ.decision + ")");
-    expectRankOf(longQ, "zh-research", 1, "long CJK query");
+    // The substring stage is appended below the BM25 arm, not fused into it (GLOSSARY
+    // "Dual DB / Two-Stage Recall"): a query the lexical arm can serve still ranks first.
+    const bothArms = await recommendDomains("检索 research", CJK_METAS);
+    assert(bothArms.candidates[0]!.id === "research", "BM25 hit outranks the appended CJK stage (got " + bothArms.candidates[0]!.id + ")");
 
-    // Index side and query side must be the SAME split: a query phrase for any substring of an
-    // indexed run resolves inside that run's token stream. Drift between the two is the silent
-    // recall-loss failure mode this guards.
-    {
-      const run = "深度中文研究与学术检索";
-      const indexed = cjkIndexTokens(run);
-      for (const slice of ["中文研究", "检索", "学术检索", "与学"]) {
-        const clause = cjkClauses(slice);
-        assert(!!clause.strict, "cjkClauses builds a strict clause for '" + slice + "'");
-        const phrase = clause.strict!.split(" AND ").flatMap((p) => p.replace(/"/g, "").split(/\s+/).filter(Boolean));
-        assert(phrase.every((tok) => indexed.includes(tok)), "query tokens for '" + slice + "' all exist in the indexed token stream");
-      }
-      assert(cjkIndexTokens("Deep academic research").length === 0, "ASCII-only text writes nothing into the cjk column");
-      const asciiClause = cjkClauses("deep web research");
-      assert(asciiClause.strict === null && asciiClause.relaxed === null, "pure-ASCII query keeps the pre-#125 expression byte-identical");
-    }
+    // Hiragana and Hangul runs resolve the same way (the run class is CJK-wide, not Han-only).
+    const JA_KO_METAS: DomainMeta[] = [
+      { id: "ja", name: "ja", description: "日本語の文献検索" },
+      { id: "ko", name: "ko", description: "한국어 논문 검색" },
+    ];
+    expectRankOf(await recommendDomains("文献検索", JA_KO_METAS), "ja", 1, "Japanese substring '文献検索'");
+    expectRankOf(await recommendDomains("논문", JA_KO_METAS), "ko", 1, "Korean substring '논문'");
+    expectRankOf(await recommendDomains("검색", JA_KO_METAS), "ko", 1, "Hangul substring '검색'");
+
+    // The stage is inert for a CJK-free query: nothing is added to the MATCH expression and no
+    // row is scanned, so #110's pure-ASCII behaviour is preserved by construction.
+    const inert = cjkRunMatch("deep web research", "深度中文研究与学术检索");
+    assert(inert.all === false && inert.any === false && inert.fraction === 0, "CJK-free query has no substring stage");
+    assert(cjkRunMatch("中文研究", "深度中文研究与学术检索").all === true, "cjkRunMatch reports a contiguous run");
+    assert(cjkRunMatch("研究中文", "深度中文研究与学术检索").fraction === 0, "cjkRunMatch rejects a reordered run");
 
     // --- CodeRabbit #2 (round 2): one content word + stopwords still gets the relaxed rung ---
     const oneTerm = await recommendDomains("research for me", METAS);
