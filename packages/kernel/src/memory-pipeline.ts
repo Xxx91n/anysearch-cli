@@ -266,17 +266,17 @@ export class MemoryPipeline {
     // holds, while query-driven RAG (`fts` and future retrieval adapters) must
     // key `ragQuery` on the pre-injection latest user text (first 400 chars) and
     // append ephemerally to the latest user message before Stage-2 (`user text ->
-    // [RAG Context] (<=4000) -> [Session Memory] (<=4000) -> [Research Recall]
-    // (<=1500)`, independent per-tier budgets). Keeping dynamic `fts` on
-    // `firstUserIdx` (Option A, current #104 code below; runtime migration pending
-    // follow-up implementation ticket) queries stale turn-1 text on follow-up
-    // turns, dilutes recency attention, and invalidates the entire KV-cache prefix
-    // from `messages[0]` whenever Research Memory changes; moving static `note` to
-    // `lastIdx` too (Option B) breaks #104 AC2 multi-turn byte-identity and churns
-    // static prefix tokens; moving L1/L2 to `firstUserIdx` (Option C) loses the
-    // hot zone. Follow-up implementation must also switch Stage-2 write-back below
-    // to `appendMessageText` so content-block turns do not overwrite user text or
-    // the Stage-1 `[RAG Context]` block.
+    // [RAG Context] (block <=4000) -> [Session Memory] (payload <=4000) ->
+    // [Research Recall] (payload <=1500)`, independent per-tier budgets). Keeping
+    // dynamic `fts` on `firstUserIdx` (Option A, current #104 code below; runtime
+    // migration pending follow-up implementation ticket) queries stale turn-1
+    // text on follow-up turns, dilutes recency attention, and invalidates the
+    // entire KV-cache prefix from `messages[0]` whenever Research Memory changes;
+    // moving static `note` to `lastIdx` too (Option B) breaks #104 AC2 multi-turn
+    // byte-identity and churns static prefix tokens; moving L1/L2 to `firstUserIdx`
+    // (Option C) loses the hot zone. Follow-up implementation must also switch
+    // Stage-2 write-back below to `appendMessageText` so content-block turns do
+    // not overwrite user text or the Stage-1 `[RAG Context]` block.
     // Stage 1: RAG injection — append the adapter's block to the first user message.
     // injections target USER messages; a leading system/tool message must not swallow them.
     // #35: the adapter is selected by domain.rag.adapter (none / note-legacy / fts);

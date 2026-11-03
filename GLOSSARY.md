@@ -51,7 +51,7 @@
 - **Gap Distillation（gap 蒸馏）**——裁决输入只取检索工具消息与现有摘要（不取闲聊/推理），控 token 成本。
 - **Consecutive Reuse Cap（连续 REUSE 上限）**——连续 3 次 REUSE 后第 4 次强制 COMPRESS，防裁决偏差导致摘要长期过期。
 - **IR Summary Schema（IR 专精摘要契约）**——滚动摘要五段：已查证证据/未决假设/被否决信源/关键数字与来源/工具调用与已读状态；前三段跨压缩只增补不覆盖。
-- **Injection Hot Zone（注入热区）**——按变化频率分层：静态内容（T0 `<user_preferences>`、legacy `note`）保持首条 user message 保跨轮前缀缓存，动态内容（查询型 RAG 如 `fts`、L1 `rolling_summary`、L2 `l2_recall`）瞬态锚定最新 user message 末尾（顺序为原文 → `[RAG Context]` → `[Session Memory]` → `[Research Recall]`，#131）。热区分项独立硬预算为动态 RAG ≤4000 chars、L1 ≤4000 chars、L2 ≤1500 chars（L1+L2 合计 ≤5500 chars，热区动态总上界 ≤9500 chars）。
+- **Injection Hot Zone（注入热区）**——按变化频率分层：静态内容（T0 `<user_preferences>`、legacy `note`）保持首条 user message 保跨轮前缀缓存，动态内容（查询型 RAG 如 `fts`、L1 `rolling_summary`、L2 `l2_recall`）瞬态锚定最新 user message 末尾（顺序为原文 → `[RAG Context]` → `[Session Memory]` → `[Research Recall]`；#131 约定已定，`fts` 待实现票从首条迁入）。热区分项独立硬预算为动态 RAG 整块 ≤4000 chars、L1 摘要载荷 ≤4000 chars、L2 召回载荷 ≤1500 chars（L1+L2 载荷合计 ≤5500 chars，各层独立截断不互抢配额）。
 - **Hot-Cold Injection / Write-Read Seam**——热路径同步速召回当轮生效，冷路径异步深召回下轮生效；写读两端共享版本化摘要 schema 契约。
 - **记忆管线纯函数化五件套**——Temporal Decoupling（evaluate/applyTo/consolidate 显式数据流）、ConsolidationState（决策状态纯数据对象可序列化）、Claim-Ticket Injection（编排层不碰 envelope 内部）、Functional Shell（纯函数决策 + shell 做 I/O）、State Anchor Upsert（状态锚 UPSERT + version CAS，历史锚 append-only）。
 - **STALE Probe Suite（过期记忆探针集）**——回归断言 valid_until 非空的记忆不再出现在检索结果（SR/PR/IPA 三探针子集）。
