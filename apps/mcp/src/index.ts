@@ -2,13 +2,9 @@
 // anysearch MCP server entry.
 // dual transport — stdio + Streamable HTTP, factory pattern.
 // independent package, CLI forwards via ans mcp subcommand.
-import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
-import express from "express";
-import { buildServer } from "./server.js";
-// stash clientInfo from initialize requests into AsyncLocalStorage
-// so observeTool can map it to a stable client_id via Railway PR #885.
-import { runWithMcpIdentity } from "./mcp-context.js";
+import { buildServer, createMcpEngine } from "./server.js";
+import { createHttpApp } from "./http-app.js";
 
 // ponytail: tsup define substituites __PACKAGE_VERSION__ at build time (see
 // tsup.config.ts). Dev-mode tsx fallthrough reads "0.0.0" — fine for doctor.
@@ -45,50 +41,14 @@ async function main() {
     // stdio: log to stderr only (stdout is protocol channel)
     process.stderr.write("anysearch MCP server: stdio transport ready\n");
   } else {
-    // ponytail: HTTP transport uses stateless factory pattern.
-    // Each request gets a fresh server instance via buildServer().
-    const app = express();
-    app.use(express.json());
-
-    // SECURITY: bind to 127.0.0.1 only — prevent network exposure (CWE-306).
-    // SECURITY: optional bearer token auth via ANS_MCP_KEY env var (CWE-306).
-    const mcpKey = process.env.ANS_MCP_KEY;
-    if (mcpKey) {
-      app.use((req, _res, next) => {
-        const auth = req.headers.authorization || "";
-        if (auth !== "Bearer " + mcpKey) {
-          _res.status(401).json({ error: { code: -32001, message: "Unauthorized" } });
-          return;
-        }
-        next();
-      });
-    }
-
-    app.post("/mcp", async (req, res) => {
-      try {
-        const server = buildServer();
-        // stateless mode -- sessionIdGenerator: undefined, enableJsonResponse, keepAliveMs: 0
-        const t = new NodeStreamableHTTPServerTransport({
-          sessionIdGenerator: undefined,
-          enableJsonResponse: true,
-          keepAliveMs: 0,
-        });
-        await server.connect(t);
-        // best-effort clientInfo extraction. The MCP spec
-        // sends clientInfo only on initialize; we still wrap every call in
-        // AsyncLocalStorage so observeTool can pick it up consistently.
-        const body = (req.body || {}) as { method?: string; params?: { clientInfo?: { name?: string } } };
-        const clientInfoName = body.params?.clientInfo?.name;
-        await runWithMcpIdentity({ clientInfoName }, () => t.handleRequest(req, res, req.body));
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        res.status(500).json({ error: { code: -32603, message: "Internal error: " + msg } });
-      }
-    });
-
-    // Health check endpoint
-    app.get("/health", (_req, res) => {
-      res.json({ status: "ok", server: "anysearch-mcp", version: PKG_VERSION });
+    // HTTP transport is stateless, but the composition is per-CONNECTION
+    // (#40/#112): build the engine once here and reuse it for every request;
+    // only the cheap McpServer + transport instances stay per-request.
+    const engine = createMcpEngine();
+    const app = createHttpApp({
+      engine,
+      version: PKG_VERSION,
+      mcpKey: process.env.ANS_MCP_KEY,
     });
 
     // SECURITY: localhost-only binding — no remote access (CWE-306).

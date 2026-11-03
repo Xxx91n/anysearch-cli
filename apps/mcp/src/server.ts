@@ -23,28 +23,35 @@ const PKG_VERSION: string =
     ? __PACKAGE_VERSION__
     : "0.0.0";
 
-// buildServer: factory function. Each connection gets a fresh server instance.
-// factory pattern, era-agnostic, entry selects transport.
-export function buildServer(engine?: CompositionResult): McpServer {
+// createMcpEngine: the expensive half of the composition — better-sqlite3
+// session + observation connections, domain loading, provider assembly.
+// Design(#40, decision #91): reuse is per-CONNECTION, never a global singleton.
+// The HTTP entry builds exactly one of these at startup and hands it to every
+// request; the protocol-level McpServer/transport instances stay per-request so
+// the stateless 2026-07-28 contract is untouched.
+export function createMcpEngine(): CompositionResult {
   // a cold HOME has no ~/.anysearch dir yet; create the DB
   // parent before better-sqlite3 opens it (mirrors apps/cli/src/db.ts:9).
-  let eng: CompositionResult;
-  if (engine) {
-    eng = engine;
-  } else {
-    const dbPath = resolveDbPath();
-    mkdirSync(dirname(dbPath), { recursive: true });
-    // ANS_DOMAIN flows into the engine (same env contract as the
-    // CLI) so the domain post-filter + abstain contract is reachable on MCP.
-    // Unset = full fanout, unchanged legacy behavior.
-    // mirror the CLI's domains-dir chain — an installed ans-mcp must
-    // resolve the builtin TOMLs shipped inside its own package, not only
-    // <cwd>/domains (a host project's cwd never has one).
-    const self = typeof __dirname !== "undefined" ? __dirname : dirname(fileURLToPath(import.meta.url));
-    const domainsDirs = defaultDomainsDirs();
-    domainsDirs.push(join(self, "..", "domains"));
-    eng = createEngine(process.env.ANS_DOMAIN, { dbPath, domainsDirs });
-  }
+  const dbPath = resolveDbPath();
+  mkdirSync(dirname(dbPath), { recursive: true });
+  // ANS_DOMAIN flows into the engine (same env contract as the
+  // CLI) so the domain post-filter + abstain contract is reachable on MCP.
+  // Unset = full fanout, unchanged legacy behavior.
+  // mirror the CLI's domains-dir chain — an installed ans-mcp must
+  // resolve the builtin TOMLs shipped inside its own package, not only
+  // <cwd>/domains (a host project's cwd never has one).
+  const self = typeof __dirname !== "undefined" ? __dirname : dirname(fileURLToPath(import.meta.url));
+  const domainsDirs = defaultDomainsDirs();
+  domainsDirs.push(join(self, "..", "domains"));
+  return createEngine(process.env.ANS_DOMAIN, { dbPath, domainsDirs });
+}
+
+// buildServer: factory function. Each connection gets a fresh server instance.
+// factory pattern, era-agnostic, entry selects transport.
+// Pass an engine to reuse a connection-scoped composition (#112); omit it and
+// this call composes its own (stdio is process-scoped, so one is enough).
+export function buildServer(engine?: CompositionResult): McpServer {
+  const eng = engine ?? createMcpEngine();
   const server = new McpServer(
     { name: "anysearch", version: PKG_VERSION },
     { capabilities: { tools: {} } }
