@@ -4,6 +4,20 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #104: RagAdapterPort + fts adapter 最小真实现（#35 落地，决策 #90）
+
+### Added
+
+- **kernel ports 新增 `RagAdapterPort`**（`packages/kernel/src/ports.ts`）：`retrieve(query, limit) → { block, label, hitCount } | null`，`label` 复用 content-trust 的 `SourceTraceLabel`，注入产物自带 provenance 而非裸文本。
+- **`rag.adapter` 三态注册表**（`packages/kernel/src/rag-adapter.ts`，`RagAdapterRegistry`）：`none`=不注入；`note`=保留 `config.note` 旧注入（legacy 伪 adapter，字节级不变）；`fts`=最小真实现，包裹既有 `SessionStore.searchMemory`（严格 FTS5 梯级 + 放宽梯级 + 既有 side arms），零新索引、零 embedding 依赖。按 domain 对象身份缓存解析结果，TOML 热重载后下一轮即按新 id 生效。
+- **`fts` 注入块带 provenance 头**：`[RAG Context] (adapter=fts, provenance=memory, hits=N, traceId=rag:fts:N)`，每条命中带 role 标签（`- [assistant] …`）；命中文本在注入边界过 `sanitizeText`（零宽/双向覆盖符剔除）并压平换行，防伪造块结构；单条上限 600 字符、整块上限 4000 字符，避免一条巨行挤掉其余命中。
+- **`#104` 验收测试** `packages/kernel/test/rag-adapter.test.ts`：fts 注入 + provenance（AC1）、`none` / legacy `note` 字节级回归（AC2）、未知 adapter fail-open + 具名 stderr（AC3），外加 no-store / 检索抛错 / 无命中 / 空查询 / 缓存与热重载 / Stage-1 落点 / 不叠乘 / 出厂域全量审计。
+
+### Changed
+
+- **RAG 注入点接线方式改为 adapter 分派**：注入槽位不变（`MemoryPipeline.inject` Stage-1、首条 user 消息），但“有 adapter 且有 note 才注入”的隐式条件被注册表取代——`adapter` 是唯一开关，`none` 域即使残留 `config.note` 也不再注入。`fts` 的检索 query 取首条 user 消息原文（截断 400 字符以适配严格 FTS5 梯级）。
+- **`query_knowledge` 边界据实记录**：该 MCP 工具仍是占位（需先定“知识查询读哪个记忆范围”），已写入 `docs/limitations.md`；GLOSSARY 的 RAG Adapter 条目由“仅占位，未实施”更新为三态定义 + RAG Injection 条目。
+
 ## Unreleased — #100: MCP SDK v2 monorepo 收口（server 2.4.x + zod ≥4.2 + 双通道/Dual Era 验收）
 
 ### Changed

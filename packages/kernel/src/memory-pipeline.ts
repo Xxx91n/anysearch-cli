@@ -12,6 +12,7 @@ import { generateSummaryWithUsage } from "@earendil-works/pi-agent-core";
 const COMPACTION_RESERVE_TOKENS = 16_384;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
+import { RagAdapterRegistry, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS } from "./rag-adapter";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
 import { isTimeSensitive, isEvergreen } from "@anysearch-cli/store"; // no inline regex copies
@@ -220,6 +221,10 @@ export function consolidateState(
 
 export class MemoryPipeline {
   private deps: MemoryPipelineDeps;
+  // rag adapter registry (#35): domain.rag.adapter -> adapter, resolved per
+  // domain object and cached, so the hot path pays no re-resolution. The
+  // session store is handed in because the "fts" adapter recalls from it.
+  private readonly rag: RagAdapterRegistry;
 
   // ConsolidationState — in-memory cache (CLI fast path).
   // MCP mode restores from anchor per call (saveAnchor persistence).
@@ -231,6 +236,7 @@ export class MemoryPipeline {
 
   constructor(deps: MemoryPipelineDeps) {
     this.deps = deps;
+    this.rag = new RagAdapterRegistry({ store: deps.store });
   }
 
   // inject: hot path read — corresponds to transformContext delegation.
@@ -239,16 +245,35 @@ export class MemoryPipeline {
     const { store, domain, sessionId } = this.deps;
     let result = messages;
 
-    // Stage 1: RAG injection — prepend RAG context note to first user message.
+    // Stage 1: RAG injection — append the adapter's block to the first user message.
     // injections target USER messages; a leading system/tool message must not swallow them.
+    // #35: the adapter is selected by domain.rag.adapter (none / note-legacy / fts);
+    // unknown ids fail open to none with a named stderr warning inside the registry.
     const firstUserIdx = result.findIndex((m: any) => m?.role === "user");
-    if (domain.rag.adapter && domain.rag.config?.note && firstUserIdx >= 0) {
-      const first = result[firstUserIdx];
-      result = [
-        ...result.slice(0, firstUserIdx),
-        { ...first, content: (typeof first.content === "string" ? first.content : "") + "\n\n[RAG Context] " + domain.rag.config.note },
-        ...result.slice(firstUserIdx + 1),
-      ];
+    // Text-only seam: a non-string (content-block array) user turn has no
+    // text slot to append to, and must never be rewritten to "" (that would
+    // silently drop the user's message).
+    const firstRaw = firstUserIdx >= 0 ? result[firstUserIdx]?.content : undefined;
+    if (firstUserIdx >= 0 && typeof firstRaw === "string") {
+      // fts recall is keyed on the user's own question — the first user turn, which
+      // is also where the block lands. Truncated so long prompts still match the
+      // strict FTS5 rung.
+      const ragQuery = firstRaw.slice(0, RAG_QUERY_MAX_CHARS);
+      // Fail-open: retrieval faults are the registry's to report; the agent loop
+      // always continues with the un-injected messages.
+      let ragInstruction = "";
+      try {
+        const injection = await this.rag.resolveInjection(domain, ragQuery, RAG_DEFAULT_LIMIT);
+        if (injection && injection.block) ragInstruction = "\n\n" + injection.block;
+      } catch { /* fail-open: never block a turn on RAG */ }
+      if (ragInstruction) {
+        const first = result[firstUserIdx];
+        result = [
+          ...result.slice(0, firstUserIdx),
+          { ...first, content: firstRaw + ragInstruction },
+          ...result.slice(firstUserIdx + 1),
+        ];
+      }
     }
 
     // T0 user preferences injection — same Stage-1 slot, identical content/order.

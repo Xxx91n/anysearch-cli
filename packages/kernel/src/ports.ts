@@ -2,7 +2,7 @@
 // Seam 3 from atomcode-kernel-split-architecture research.
 // Kernel only imports these interfaces; CLI composition root injects implementations.
 
-import type { FusedEnvelope, SearchRequest } from "@anysearch-cli/retriever";
+import type { FusedEnvelope, SearchRequest, SourceTraceLabel } from "@anysearch-cli/retriever";
 import type { SessionStore, Message } from "@anysearch-cli/store";
 export type { T0PreferenceRow, T0PreferenceInput } from "@anysearch-cli/store";
 
@@ -90,4 +90,27 @@ export interface BudgetLedgerPort {
 // fail open (named stderr line, retrieval never blocked). Read/replay is a later ticket.
 export interface ResumeAnchorsPort {
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
+}
+
+// RagAdapterPort: domain-scoped retrieval over private/internal data (#35,
+// decision #90). One adapter is selected by DomainConfigPort.rag.adapter:
+// "none" skips, "note" keeps the legacy config.note injection, "fts" recalls
+// from the existing FTS5 memory surface (SessionStore.searchMemory) — zero new
+// index, zero embedding dependency.
+// Injection point is unchanged: MemoryPipeline.inject Stage-1, first USER
+// message. retrieve() returning null means "nothing to inject this turn";
+// thrown faults are fail-open at the registry (no injection, named stderr).
+export interface RagRetrievalResult {
+  // Text appended after a blank line to the first user message.
+  block: string;
+  // Provenance for the injected text: recalled rows are "memory" (untrusted at
+  // merge per content-trust TRUST_ORDER), the operator-authored note is "system".
+  label: SourceTraceLabel;
+  // Number of recalled rows folded into `block`; 0 for a static note.
+  hitCount: number;
+}
+
+export interface RagAdapterPort {
+  readonly id: string;
+  retrieve(query: string, limit?: number): Promise<RagRetrievalResult | null>;
 }

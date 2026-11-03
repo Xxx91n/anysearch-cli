@@ -575,5 +575,169 @@ function makeMockStreamFn(decision: string): any {
 }
 
 console.log("---");
+
+// #104 acceptance: domain.rag.adapter wiring through the real agent runtime.
+// The contract seam is transformContext -> MemoryPipeline.inject Stage-1: what
+// the model actually receives must carry the RAG block (adapter="fts") or
+// nothing at all (adapter="none" / legacy "note" regression).
+{
+  // Captures every message array transformContext hands to the model.
+  const seenContexts: any[][] = [];
+  function contextCapturingStreamFn(_model: any, context: any, _options?: any) {
+    seenContexts.push(Array.isArray(context) ? context : context?.messages ?? []);
+    const finalMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "answer" }],
+      api: "test", provider: "test", model: "test-model",
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "stop", timestamp: Date.now(),
+    };
+    return {
+      async *[Symbol.asyncIterator]() {
+        yield { type: "done", message: finalMessage, partial: finalMessage };
+      },
+      result: async () => finalMessage,
+    };
+  }
+  const ragStore = {
+    getAnchors: () => [],
+    saveAnchor: () => Promise.resolve(),
+    createSession: (d: string) => ({ id: "s1", domain: d, createdAt: new Date().toISOString() }),
+    append: () => Promise.resolve(),
+    searchFts5: () => [],
+    searchMemory: () => Promise.resolve([
+      { rowid: 7, sessionId: "s1", role: "assistant", content: "internal wiki: proxy port 8080", rank: 1, arms: ["fts"] },
+    ]),
+    saveResults: () => Promise.resolve(),
+    close: () => {},
+  } as any;
+  const runWith = async (rag: DomainConfigPort["rag"]) => {
+    seenContexts.length = 0;
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, rag },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: contextCapturingStreamFn,
+      store: ragStore,
+      sessionId: "s-104",
+    });
+    const events: any[] = [];
+    for await (const ev of runtime.run("how do I reach the internal wiki?")) events.push(ev);
+    return { events, messages: seenContexts.flat() };
+  };
+
+  // adapter="fts": recalled content reaches the model, provenance-labeled.
+  {
+    const { events, messages } = await runWith({ adapter: "fts" });
+    assert(events.every(e => e.type !== "error"), "#104 fts: agent loop completes without error");
+    const injected = messages.filter((m: any) => typeof m?.content === "string" && m.content.includes("[RAG Context]"));
+    assert(injected.length === 1, "#104 fts: exactly one injected message (Stage-1)");
+    const text = injected[0].content as string;
+    assert(text.includes("internal wiki: proxy port 8080"), "#104 fts: recalled private content reaches the model");
+    assert(/adapter=fts/.test(text) && /provenance=memory/.test(text), "#104 fts: injection carries provenance");
+    assert(text.includes("how do I reach the internal wiki?"), "#104 fts: user question preserved");
+  }
+
+  // adapter="none": nothing injected (regression).
+  {
+    const { messages } = await runWith({ adapter: "none" });
+    assert(messages.every((m: any) => typeof m?.content !== "string" || !m.content.includes("[RAG Context]")),
+      "#104 none: no RAG injection");
+  }
+
+  // legacy adapter="note": unchanged note injection (regression).
+  {
+    const { messages } = await runWith({ adapter: "note", config: { note: "wiki is on the intranet" } });
+    const injected = messages.filter((m: any) => typeof m?.content === "string" && m.content.includes("[RAG Context]"));
+    assert(injected.length === 1 && (injected[0].content as string).includes("[RAG Context] wiki is on the intranet"),
+      "#104 note: legacy note injection unchanged");
+  }
+
+  // unknown id: fail-open, no injection, loop still completes, stderr warns once.
+  {
+    const origWrite = process.stderr.write;
+    let captured = "";
+    process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+    let messages: any[] = [];
+    let events: any[] = [];
+    try {
+      ({ messages, events } = await runWith({ adapter: "qdrant" }));
+    } finally {
+      process.stderr.write = origWrite;
+    }
+    assert(messages.every((m: any) => typeof m?.content !== "string" || !m.content.includes("[RAG Context]")),
+      "#104 unknown adapter: fail-open, no injection");
+    assert(events.every(e => e.type !== "error"), "#104 unknown adapter: agent loop still completes");
+    assert(/\[anysearch\] unknown rag\.adapter "qdrant" — falling back to none/.test(captured),
+      "#104 unknown adapter: named stderr warning");
+  }
+}
+
+// #104 is the last ticket of the #37 -> #36 -> #35 cluster (ruling #90), so
+// verify the COMBINED behavior: a turn that carries RAG injection must still be
+// metered correctly by #103 (injected context = higher token count, settled
+// from message_end usage, USD from pi-ai cost).
+{
+  class CombinedLedger implements BudgetLedgerPort {
+    tokenSettles: Array<{ reserved: number; actual: number }> = [];
+    usdSettles: Array<{ reserved: number; actual: number }> = [];
+    reserveCalls(): boolean { return true; }
+    settleCalls(): void { }
+    reserveTokens(): boolean { return true; }
+    settleTokens(_s: string, reserved: number, actual: number): void { this.tokenSettles.push({ reserved, actual }); }
+    reserveUsd(): boolean { return true; }
+    settleUsd(_s: string, reserved: number, actual: number): void { this.usdSettles.push({ reserved, actual }); }
+  }
+  // Usage is derived from the context the model actually received: the RAG
+  // block inflates the prompt, so the injected turn must cost more tokens.
+  const usageStreamFn = (_model: any, context: any, _o?: any) => {
+    const chars = JSON.stringify(context ?? "").length;
+    const input = Math.max(1, Math.ceil(chars / 4));
+    const finalMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "answer" }],
+      api: "test", provider: "test", model: "test-model",
+      usage: { input, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: input + 10,
+        cost: { input: input * 1e-6, output: 1e-5, cacheRead: 0, cacheWrite: 0, total: input * 1e-6 + 1e-5 } },
+      stopReason: "stop", timestamp: Date.now(),
+    };
+    return {
+      async *[Symbol.asyncIterator]() { yield { type: "done", message: finalMessage, partial: finalMessage }; },
+      result: async () => finalMessage,
+    };
+  };
+  const store = {
+    getAnchors: () => [], saveAnchor: () => Promise.resolve(),
+    createSession: (d: string) => ({ id: "s1", domain: d, createdAt: "" }),
+    append: () => Promise.resolve(), searchFts5: () => [],
+    searchMemory: () => Promise.resolve([{ rowid: 1, sessionId: "s1", role: "assistant", content: "x".repeat(800), rank: 1 }]),
+    saveResults: () => Promise.resolve(), close: () => {}, listPreferences: () => [],
+  } as any;
+  const runMetered = async (rag: DomainConfigPort["rag"]) => {
+    const ledger = new CombinedLedger();
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, rag },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStreamFn,
+      store,
+      ledger,
+      sessionId: "s-104-metered",
+    });
+    for await (const _ev of runtime.run("what does the internal wiki say?")) { /* drain */ }
+    return ledger;
+  };
+  const withRag = await runMetered({ adapter: "fts" });
+  const withoutRag = await runMetered({ adapter: "none" });
+  const ragTokens = withRag.tokenSettles[0]?.actual ?? 0;
+  const plainTokens = withoutRag.tokenSettles[0]?.actual ?? 0;
+  assert(ragTokens > plainTokens, "#104+#103: RAG-injected turn meters more tokens than the plain turn");
+  assert(withRag.tokenSettles[0]?.reserved === 0, "#104+#103: token dimension still settle-only");
+  assert((withRag.usdSettles[0]?.actual ?? 0) > 0, "#104+#103: USD still settled from pi-ai cost");
+  assert(withRag.usdSettles[0]?.actual > (withoutRag.usdSettles[0]?.actual ?? 0),
+    "#104+#103: injected context costs more USD");
+}
+
+console.log("---");
 console.log(` tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

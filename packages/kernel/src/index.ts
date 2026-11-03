@@ -4,6 +4,8 @@ export * from "./runtime";
 export * from "./engine";
 export * from "./pi-runtime";
 export * from "./memory-pipeline";
+// rag adapter layer (#35): registry + note/fts adapters, injected at Stage-1.
+export * from "./rag-adapter";
 export * from "./sufficiency-gate";
 export * from "./ir-schema";
 export * from "./tool-schemas";
