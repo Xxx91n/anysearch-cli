@@ -399,12 +399,14 @@ function createLockDirectory(managed: string, lock: string, owner: LockOwner): b
   try {
     writeFileSync(join(pending, "owner.json"), JSON.stringify(owner), { encoding: "utf8", flag: "wx", mode: 0o600 });
     if (statIfPresent(lock)) return false;
-    renameSync(pending, lock);
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "EEXIST" || code === "ENOTEMPTY" || code === "EPERM" || code === "EBUSY") return false;
-    throw error;
+    try {
+      renameSync(pending, lock);
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EEXIST" || code === "ENOTEMPTY" || code === "EPERM" || code === "EBUSY") return false;
+      throw error;
+    }
   } finally {
     rmSync(pending, { recursive: true, force: true });
   }
@@ -445,7 +447,7 @@ function acquireManifestLock(managed: string, skipOnContention = false): (() => 
     if (observed && observed.host !== hostname()) {
       fail(`another skill operation may be running in this scope${describeLockHolder(lock)}: ${lock}. The lock was created on ${observed.host}, so it cannot be proven dead from ${hostname()}; automatic reclamation is limited to this host. If no ans skill process is running there, remove that directory and retry.`);
     }
-    fail(`another skill operation may be running in this scope: ${lock}. The owner record is incomplete, from another PID namespace, or unreadable, so the lock cannot be proven dead. If no ans skill process is running here, remove that directory and retry.`);
+    fail(`another skill operation may be running in this scope: ${lock}. The owner record is incomplete, from another PID namespace, unreadable, or the lock path could not be published, so the lock cannot be proven dead. If no ans skill process is running here, remove that directory and retry.`);
   }
   if (skipOnContention) return undefined;
   fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. Retry when it finishes.`);
@@ -528,8 +530,8 @@ function hasStaleLockOrResidue(managed: string): boolean {
   // only a scopeless store is reconciled automatically.
   if (statIfPresent(manifestIn(managed))) return false;
   if (entries.some((entry) => entry.startsWith(LOCK_RECLAIM_PREFIX))) return true;
-  // Only a provably dead unpublished lock needs a lock cycle; a live or malformed
-  // one is inert and must not make reads contend with a starting writer.
+  // Design: only a provably dead unpublished lock needs a lock cycle — a live or
+  // malformed one is inert and must not make reads contend with a starting writer.
   if (entries.some((entry) => entry.startsWith(LOCK_PENDING_PREFIX)
     && probeLockOwner(readLockOwner(join(managed, entry))) === "dead")) return true;
   return entries.some(isInstallerResidue);

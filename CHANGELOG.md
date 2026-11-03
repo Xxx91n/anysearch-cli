@@ -13,7 +13,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Changed
 
-- **关键 rename 有界退避**：manifest 发布、payload→target、target→backup 及锁发布遇到 Windows 瞬时 `EPERM`/`EBUSY`/`ENOTEMPTY` 以 10ms→1s 指数退避重试，上限约 60s，耗尽后保留原始错误；其他平台仅把 `EBUSY` 视为瞬时。锁连同 owner 记录一次性 rename 发布，不再产生无 owner 的锁。
+- **关键 rename 有界退避**：manifest 发布、payload→target、target→backup 遇到 Windows 瞬时 `EPERM`/`EBUSY`/`ENOTEMPTY` 以 10ms→1s 指数退避重试，上限约 60s，耗尽后保留原始错误；其他平台仅把 `EBUSY` 视为瞬时。锁连同 owner 记录一次性 rename 发布，发布失败直接视为争用并 fail-fast，不占用重试预算。
 
 ### Documented
 
