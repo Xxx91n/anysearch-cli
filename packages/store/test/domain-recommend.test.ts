@@ -7,10 +7,15 @@
 // AC3: without the embedding package the engine degrades to FTS-only and still ranks
 // correctly (regression); with a stub embedding module the hybrid arm fuses and still
 // ranks correctly.
+// #125 extends the CJK block: within-run substring queries (including two-character words and
+// single characters), reordered runs must abstain, the substring stage must stay below the BM25
+// arm with its own provenance label, and a CJK-free query leaves the BM25 arm answering exactly as
+// before — which is what the ASCII cases above, unchanged from #110, demonstrate.
 
 import {
   recommendDomains,
   termCoverage,
+  cjkRunFraction,
   HIGH_CONFIDENCE_THRESHOLD,
   type DomainMeta,
   type RecommendResult,
@@ -116,6 +121,164 @@ async function main() {
     const cjkMixed = await recommendDomains("web 深度中文研究", CJK_METAS);
     expectRankOf(cjkMixed, "zh-research", 1, "mixed ASCII+CJK 'web 深度中文研究'");
     assert(termCoverage("深度中文研究", "深度中文研究与学术检索") === 1, "CJK coverage matches CJK text");
+
+    // --- #125: CJK within-run substring recall (unicode61 keeps a run as ONE token) ---
+    // The exact gap from the ticket: a substring of the description, not a prefix of its token.
+    const sub = await recommendDomains("中文研究", CJK_METAS);
+    assert(sub.decision !== "none", "'中文研究' is a substring of the indexed run, no longer no_match (got " + sub.decision + ")");
+    expectRankOf(sub, "zh-research", 1, "CJK substring '中文研究'");
+    assert(sub.decision === "high" && sub.recommendation?.id === "zh-research", "substring hit is a confident suggestion (conf " + sub.confidence + ")");
+    assert(sub.candidates[0]!.coverage === 1, "coverage counts a CJK substring, not only a token prefix");
+    assert(sub.candidates[0]!.arms[0] === "cjk", "the substring stage, not BM25, answered '中文研究' (arms " + sub.candidates[0]!.arms.join("+") + ")");
+    assert(termCoverage("中文研究", "深度中文研究与学术检索") === 1, "CJK coverage matches a mid-run substring");
+
+    // Two-character Chinese words — the case that rules the trigram tokenizer out (it needs ≥3
+    // characters per full-text query). Tail and single-character queries resolve the same way.
+    for (const short of ["检索", "学术", "中文", "学术检索", "术"]) {
+      const r = await recommendDomains(short, CJK_METAS);
+      expectRankOf(r, "zh-research", 1, "CJK substring '" + short + "'");
+      assert(r.decision === "high", "CJK substring '" + short + "' reaches high confidence (got " + r.decision + ")");
+    }
+
+    // Contiguity is required within a run — reordering characters breaks the substring, so the
+    // engine abstains instead of surfacing a candidate. (Runs separated by whitespace or
+    // punctuation are matched independently, which is why "文献 检索" below still lands.) This is
+    // the assertion that would pass vacuously if it only checked "not confident".
+    for (const wrong of ["研究学术", "检索学术", "深文中文研究"]) {
+      const r = await recommendDomains(wrong, CJK_METAS);
+      assert(r.decision === "none" && r.candidates.length === 0, "reordered CJK '" + wrong + "' is not a substring => no_match (got " + r.decision + ", " + r.candidates.length + " candidates)");
+      assert(r.why?.code === "no_match", "reordered CJK '" + wrong + "' reports why.code no_match");
+    }
+    // Absent characters match nothing either.
+    const absent = await recommendDomains("机器翻译", CJK_METAS);
+    assert(absent.decision === "none" && absent.candidates.length === 0, "CJK query with no substring in common => no_match (got " + absent.decision + ")");
+
+    // Partial coverage stays a priced suggestion, never a silent 0: one of two runs matching
+    // lands the candidate with coverage 0.5.
+    const cjkPartial = await recommendDomains("文献 检索", CJK_METAS);
+    expectRankOf(cjkPartial, "zh-research", 1, "mixed CJK runs '文献 检索' (only 检索 is present)");
+    assert(cjkPartial.candidates[0]!.coverage === 0.5, "partial CJK coverage 0.5 (got " + cjkPartial.candidates[0]!.coverage + ")");
+    // A whole sentence is not a substring of a description, so it abstains — First-Class
+    // Abstain is preserved rather than traded away for recall.
+    const sentence = await recommendDomains("我想找深度中文研究相关的文献资料推荐一下", CJK_METAS);
+    assert(sentence.decision === "none", "long CJK sentence with no contiguous substring => abstain (got " + sentence.decision + ")");
+
+    // The substring stage is appended below the BM25 arm, not fused into it (GLOSSARY
+    // "Dual DB / Two-Stage Recall"), and it never ties the weakest hit (a tie would zero the
+    // margin). "研究 provider" is the query that actually reaches the stage: 研究 is not an
+    // indexed token prefix, so zh-research can only come from the substring stage, while
+    // `provider` gives the BM25 arm a hit.
+    const bothArms = await recommendDomains("研究 provider", CJK_METAS);
+    assert(bothArms.candidates[0]!.id === "default", "BM25 hit ranks above the appended CJK stage (got " + bothArms.candidates[0]!.id + ")");
+    assert(bothArms.candidates[0]!.arms[0] === "fts", "BM25 rows keep the fts label");
+    expectRankOf(bothArms, "zh-research", 2, "CJK stage lands behind the BM25 hit");
+    const stageRow = bothArms.candidates.find((c) => c.id === "zh-research");
+    assert(!!stageRow && stageRow.arms[0] === "cjk", "stage row carries its own provenance label (got " + stageRow?.arms.join("+") + ")");
+    assert(!!stageRow && bothArms.candidates[0]!.score > stageRow.score && stageRow.score > 0, "stage score is discounted below, never tied with, and never zero");
+
+    // Han, Hiragana, Katakana and Hangul all reach the stage (the run class is CJK-wide, not
+    // Han-only). These descriptions carry no spaces, so a mid-run substring can never be a
+    // unicode61 token prefix: the "cjk" provenance label is what proves the stage answered.
+    const JA_KO_METAS: DomainMeta[] = [
+      { id: "ja", name: "nihongo", description: "日本語文献検索資料" },
+      { id: "ja2", name: "gakujutsu", description: "日本語の学術資料" },
+      { id: "ja3", name: "social", description: "ソーシャルニュース話題" },
+      { id: "ko", name: "hangugeo", description: "한국어논문검색서비스" },
+    ];
+    for (const [q, expected] of [
+      ["文献検索", "ja"], // Han, mid-run
+      ["語文献", "ja"], // Han, mid-run
+      ["の学術", "ja2"], // Hiragana inside the run
+      ["ルニュース", "ja3"], // Katakana with the prolonged sound mark U+30FC inside the run
+      ["논문검", "ko"], // Hangul, mid-run
+      ["문검색", "ko"], // Hangul, mid-run
+    ] as [string, string][]) {
+      const r = await recommendDomains(q, JA_KO_METAS);
+      expectRankOf(r, expected, 1, "mid-run CJK substring '" + q + "'");
+      assert(r.candidates[0]!.arms[0] === "cjk", "'" + q + "' answered by the substring stage, not BM25 (arms " + r.candidates[0]!.arms.join("+") + ")");
+    }
+    // A query that is also a whole-token prefix stays on the BM25 arm — the stage is the fallback,
+    // not a replacement, and the two are labelled differently for that reason.
+    const onPrefix = await recommendDomains("ソーシャル", JA_KO_METAS);
+    assert(onPrefix.candidates[0]?.id === "ja3" && onPrefix.candidates[0]!.arms[0] === "fts", "'ソーシャル' is a token prefix, so the BM25 arm answers it (arms " + onPrefix.candidates[0]?.arms.join("+") + ")");
+    // The prolonged mark is word-internal: a query that drops it is not a substring of the marked
+    // spelling, so it abstains instead of scoring a partial match. (With U+30FC outside the class,
+    // this query split into ソ + シャル and both pieces matched — the agreement between coverage and
+    // the stage for exactly this input is asserted below.)
+    const noTie = await recommendDomains("ソシャル", JA_KO_METAS);
+    assert(noTie.decision === "none", "prolonged mark is word-internal: 'ソシャル' must not match 'ソーシャル…' (got " + noTie.decision + ")");
+    // Half-width katakana stays inside a run but is not folded to full-width, so this is a
+    // documented boundary rather than a silent miss.
+    assert((await recommendDomains("ﾌﾗﾝｽ", [{ id: "fr", name: "fr", description: "フランス文化情報" }])).decision === "none", "half-width katakana is not folded to full-width (documented boundary)");
+    // A mark alone must not carry a match. Widening the class to keep the prolonged mark
+    // word-internal also makes a bare U+30FC a run, and one candidate is enough for the margin rule
+    // to print confidence 1 - a confident recommendation built out of punctuation. The marks sit
+    // INSIDE the corpus below, so only the letter-bearing guard can be what abstains here.
+    const MARK_METAS: DomainMeta[] = [
+      { id: "srv", name: "srv", description: "サーバー運用資料〱ﾞ" },
+      { id: "zh2", name: "zh2", description: "深度中文研究" },
+    ];
+    for (const q of ["ー", "〱", "ﾞ"]) {
+      const r = await recommendDomains(q, MARK_METAS);
+      assert(r.decision === "none", "mark-only query must not recommend (got " + r.decision + ", " + r.candidates.length + " candidates)");
+    }
+    // The same marks embedded in a real run still match: this is the guard rejecting a mark-only
+    // run, not the corpus lacking the character.
+    assert(cjkRunFraction("ー", "サーバー運用資料〱ﾞ") === 0, "a bare prolonged mark is dropped by the guard although the text contains it");
+    assert(cjkRunFraction("ﾞ", "サーバー運用資料〱ﾞ") === 0, "a bare half-width voice mark is dropped by the guard although the text contains it");
+    assert(cjkRunFraction("サーバ", "サーバー運用資料〱ﾞ") === 1, "the same mark inside a word stays one run");
+    assert(cjkRunFraction("ソーシャル", "ソーシャルニュース") === 1, "a marked word matches its marked spelling");
+    assert(cjkRunFraction("ソシャル", "ソーシャルニュース") === 0, "dropping the mark breaks contiguity instead of scoring half a match");
+    // Recall and confidence must not disagree about a mark-only term: before it was dropped from
+    // the denominator, coverage read 0.5 here while the stage read 1.
+    const ZH_T = "zh 深度中文研究与学术检索 Deep academic research";
+    assert(termCoverage("中文 ー", ZH_T) === 1, "a stray mark-only term is not counted as a miss");
+    assert(cjkRunFraction("中文 ー", ZH_T) === 1, "the stage drops the same mark-only run");
+    assert(termCoverage("ソシャル", "ソーシャルニュース") === cjkRunFraction("ソシャル", "ソーシャルニュース"),
+      "a mark-less query scores 0 in both factors, not 1 in one and 0 in the other");
+    // CodeRabbit on #134: a mixed-script term must not be credited coverage by its CJK half alone.
+    // Before the gate, "中文billing" scored coverage 1 against a description that mentions 中文 and
+    // says nothing about billing, and one candidate made that print a confident suggestion.
+    assert(termCoverage("中文billing", "深度中文研究与学术检索") === 0, "mixed-script term is not covered by the CJK half alone");
+    assert(termCoverage("中文billing", "深度中文研究与 billing 核对") === 1, "mixed-script term is covered when both halves match");
+    const mixed = await recommendDomains("中文billing", CJK_METAS);
+    assert(mixed.decision !== "high", "an unmatched Latin segment blocks a confident suggestion (got " + mixed.decision + ")");
+    assert(mixed.recommendation === null, "no suggestion printed for a half-matched mixed-script query (got " + (mixed.recommendation?.id ?? "null") + ")");
+    assert(mixed.candidates.length > 0, "the CJK half still earns candidate listing, priced by coverage 0");
+    assert(mixed.candidates.every((c) => c.coverage === 0), "every mixed-script candidate reports coverage 0 (got " + mixed.candidates.map((c) => c.coverage).join(",") + ")");
+    // CodeRabbit follow-up on #134: that Latin gate must not reject a mixed-script term that
+    // occurs verbatim. Inside a description that glues scripts together (深度中文billing研究 is ONE
+    // unicode61 token), the Latin half is never a token prefix, so the gated path alone rejected a
+    // term that is literally present — a false negative the gate itself created.
+    const GLUED = [{ id: "glued", name: "glued", description: "深度中文billing研究" }];
+    assert(termCoverage("中文billing", "深度中文billing研究") === 1, "a verbatim mixed-script term is covered even when its Latin half is not a token prefix");
+    assert(termCoverage("中文billing", "深度中文研究与学术检索") === 0, "a description without the Latin half still scores 0 — the first finding stays fixed");
+    const gluedRun = await recommendDomains("中文billing", GLUED);
+    assert(gluedRun.decision === "high" && gluedRun.recommendation?.id === "glued", "the verbatim case recommends (got " + gluedRun.decision + ", conf " + gluedRun.confidence + ")");
+    const halfRun = await recommendDomains("中文billing", [{ id: "zhonly", name: "zh", description: "深度中文研究与学术检索" }]);
+    assert(halfRun.recommendation === null, "the half-matched case prints no suggestion (got " + (halfRun.recommendation?.id ?? "null") + ")");
+    // CodeRabbit round 3 on #134: matching a mixed-script term verbatim must not drop the Latin
+    // word boundary — otherwise "art中文" is credited against "cart中文购物", where the user asked
+    // about art and the text says cart. A Latin segment has to start at a script boundary.
+    assert(termCoverage("art中文", "cart中文购物") === 0, "a Latin segment inside a longer Latin word is not a match");
+    assert(termCoverage("art中文", "art中文购物") === 1, "the same segment at a real boundary is covered");
+    // CodeRabbit round 4 on #134: the boundary split was written as a lookaround regex inside a
+    // template literal, where `\s` collapses to the letter `s` — so the class excluded the letter s
+    // instead of whitespace, and every Latin segment starting with s failed to split off. A test
+    // with `billing` and `art` could never catch that; `search` can. Asserted as 1: the bot's
+    // embedded suggestion said to assert 0, which contradicts its own finding text — 0 is the bug.
+    assert(termCoverage("中文search", "深度中文search研究") === 1, "an s-initial Latin segment splits at a script boundary");
+    const searchRun = await recommendDomains("中文search", [{ id: "zh", name: "zh", description: "深度中文search研究" }]);
+    assert(searchRun.decision === "high" && searchRun.recommendation?.id === "zh", "the s-boundary case recommends (got " + searchRun.decision + ", " + (searchRun.recommendation?.id ?? "null") + ")");
+    const edgeRun = await recommendDomains("art中文", [{ id: "cart", name: "cart", description: "cart中文购物" }]);
+    assert(edgeRun.recommendation === null, "no suggestion from a mid-word Latin fragment (got " + (edgeRun.recommendation?.id ?? "null") + ")");
+
+    // The stage is inert for a CJK-free query: nothing is added to the MATCH expression and no
+    // row is scanned, so #110's pure-ASCII behaviour is preserved by construction.
+    assert(cjkRunFraction("deep web research", "深度中文研究与学术检索") === 0, "CJK-free query has no substring stage");
+    assert(cjkRunFraction("中文研究", "深度中文研究与学术检索") === 1, "every run present => fraction 1");
+    assert(cjkRunFraction("研究中文", "深度中文研究与学术检索") === 0, "reordered run is not a contiguous substring");
+    assert(cjkRunFraction("文献 检索", "深度中文研究与学术检索") === 0.5, "one of two runs => half the run characters");
 
     // --- CodeRabbit #2 (round 2): one content word + stopwords still gets the relaxed rung ---
     const oneTerm = await recommendDomains("research for me", METAS);
