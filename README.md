@@ -144,6 +144,11 @@ silently never fire — description quality is the make-or-break factor):
   agent-skill registries); keep `name` short and literal — both fields are
   indexed verbatim.
 
+A domain can also inject its own **private/internal data** into the agent's
+context through `[rag] adapter` — `none` (default), `note` (legacy fixed text)
+or `fts` (real FTS5 memory recall, provenance-tagged). See
+[docs/rag-adapters.md](docs/rag-adapters.md).
+
 ## Provider domain-filter matrix
 
 | provider | pre-filter sent | degrade mode |
@@ -236,6 +241,10 @@ evidence live in the linked integration docs.
 | macOS is outside the blocking matrix | an unresolved exit-time `libc++abi` crash keeps `ship-gate` gated on ubuntu+windows; macOS runs as a non-blocking probe lane |
 | `anysearch` provider cannot pre-filter | its MCP `domain` param is a vertical-routing enum (not a host allowlist) — under a domain allowlist it degrades honestly to post-filter only |
 | exit-time `libc++abi` may overwrite the abstain exit code | automation must read the structured abstain marker (`--json` / `structuredContent.abstain`), not the exit code alone |
+| `rag.adapter = "fts"` is not enabled on any shipped domain | all three shipped domains stay on `adapter = "none"`; enabling it per domain needs a product decision plus regression |
+| MCP `query_knowledge` does not dispatch to the RAG registry yet | it still answers with the `adapter=<id>` line — the memory scope a knowledge query reads is an open decision |
+| omitting `[rag]` is not the same as `adapter = "none"` | `rag` is a replace-on-declare section: a derived domain inherits its base's adapter/note, and a chain with no adapter fails validation outright |
+| `rag.adapter = "fts"` reads **shared** Research Memory, not the current session | `searchMemory` has no session filter (existing `recall_memory` semantic), so enabling it in domains that share one DB widens their information boundary — inert today, every shipped domain stays on `none` |
 
 Full record: [docs/limitations.md](docs/limitations.md).
 
@@ -251,6 +260,7 @@ Full record: [docs/limitations.md](docs/limitations.md).
 ## For contributors
 
 - `GLOSSARY.md` — canonical domain glossary (read first)
+- `docs/rag-adapters.md` — RAG adapter configuration (`none` / `note` / `fts`), injection shape and budgets
 - `docs/limitations.md` — full known-limitations record
 - `docs/agents/` — domain-doc + GitHub issue tracker conventions
 - Repo layout: `packages/kernel` (engine) · `packages/store` (FTS5 memory,

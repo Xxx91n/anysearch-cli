@@ -4,6 +4,29 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #104: RagAdapterPort + fts adapter 最小真实现（#35 落地，决策 #90）
+
+### Added
+
+- **kernel ports 新增 `RagAdapterPort`**（`packages/kernel/src/ports.ts`）：`retrieve(query, limit) → { block, label, hitCount } | null`，`label` 复用 content-trust 的 `SourceTraceLabel`，注入产物自带 provenance 而非裸文本。
+- **`rag.adapter` 三态注册表**（`packages/kernel/src/rag-adapter.ts`，`RagAdapterRegistry`）：`none`=不注入；`note`=保留 `config.note` 旧注入（legacy 伪 adapter，字节级不变）；`fts`=最小真实现，包裹既有 `SessionStore.searchMemory`（严格 FTS5 梯级 + 放宽梯级 + 既有 side arms），零新索引、零 embedding 依赖。按 domain 对象身份缓存解析结果，TOML 热重载后下一轮即按新 id 生效。
+- **`fts` 注入块带 provenance 头**：`[RAG Context] (adapter=fts, provenance=memory, hits=N, traceId=rag:fts:N)`，每条命中带 role 标签（`- [assistant] …`）；命中文本在注入边界过 `sanitizeText`（零宽/双向覆盖符剔除）并压平换行，防伪造块结构；单条上限 600 字符、整块上限 4000 字符，避免一条巨行挤掉其余命中。
+- **用户文档 `docs/rag-adapters.md`**：`[rag] adapter` 三态配置（含「`rag.adapter` 必填、派生域沿继承链继承、缺省 ≠ `none`」与「`none` 不压制非空 `config.note`」两条易错点）、`fts` 注入块形状与 provenance、四个预算常量、消息形状注意事项（pi 把 prompt 规范化成 content block）、fail-open 矩阵与验证方式；README 的 Domains / Known limitations / For contributors 三处接入。新代码的公开接口补齐 JSDoc（`RagAdapterPort` / `RagAdapterRegistry` / `createNoteRagAdapter` / `createFtsRagAdapter` / `readMessageText` / `appendMessageText` / `prependMessageText`）。
+- **`#104` 验收测试** `packages/kernel/test/rag-adapter.test.ts`：fts 注入 + provenance（AC1）、`none` / legacy `note` 字节级回归（AC2）、未知 adapter fail-open + 具名 stderr（AC3），外加 no-store / 检索抛错 / 无命中 / 空查询 / 缓存与热重载 / Stage-1 落点 / 不叠乘 / 出厂域全量审计。
+
+### Documented
+
+- **`fts` 的作用域 = 跨会话共享的 Research Memory（不是当前会话）**：`SessionStore.searchMemory` 查 `retrieval_results_fts` 且不带 session 过滤（既有 `recall_memory` 语义），本票只在其上包一层、未改作用域；对照 `searchFts5(sessionId, …)` 才是按会话过滤。已在 `docs/rag-adapters.md` 单列「作用域」一节写明，并点出"多域共享同一 DB 时启用 `fts` 等于放宽域间信息边界"的后果。若要"仅当前会话"，需给 `RagAdapterPort` 传 sessionId 并给 store 增带会话过滤的 Research Memory 查询 —— 属独立决策，不在本票改。
+
+### Fixed
+
+- **Stage-1 注入在真实运行时从未命中（#104 自查 + CI 发现）**：pi-agent-core 0.84.2 把 `agent.prompt("…")` 规范化为 content block 数组（`content: [{type:"text",text}]`），而注入代码只认 `typeof content === "string"`——RAG 注入在实机上落空，旧 `note` 路径更会在 note 存在时把用户消息整体改写成 RAG 文本（数据丢失）。新增 `packages/kernel/src/message-text.ts`（`readMessageText` / `appendMessageText` / `prependMessageText`）：两种形状都支持，block 形状原地追加到文本块、非文本块原样保留，无文本通道时主动放弃注入。Stage-1 与 T0 偏好注入同时改用该助手；回归见 `packages/kernel/test/message-text.test.ts` 与 `rag-adapter.test.ts` 的 content-block 用例，端到端断言不再假设消息形状。
+
+### Changed
+
+- **RAG 注入点接线方式改为 adapter 分派**：注入槽位不变（`MemoryPipeline.inject` Stage-1、首条 user 消息）。`fts` 的检索 query 取首条 user 消息原文（截断 400 字符以适配严格 FTS5 梯级）。**兼容保留**：`adapter = "none"` 但残留 `config.note` 的域仍按 #104 之前的条件（`adapter && config.note`，`"none"` 为真值）注入该 note —— AC2 要求 `none` 行为逐字节不变，故不做“adapter 是唯一开关”的收紧（CodeRabbit PR #123 Linked Issues 检查指出该冲突后修正）。
+- **`query_knowledge` 边界据实记录**：该 MCP 工具仍是占位（需先定“知识查询读哪个记忆范围”），已写入 `docs/limitations.md`；GLOSSARY 的 RAG Adapter 条目由“仅占位，未实施”更新为三态定义 + RAG Injection 条目。
+
 ## Unreleased — #100: MCP SDK v2 monorepo 收口（server 2.4.x + zod ≥4.2 + 双通道/Dual Era 验收）
 
 ### Changed

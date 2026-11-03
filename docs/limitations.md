@@ -55,9 +55,8 @@
 - **Codex unverified surfaces (0.0.5)** — PostToolUse `additionalContext`
   injection is same-turn-variable on codex 0.142.5 (the `/index` side
   effect is the durable path); `[hooks.state]` trust-hash persistence is
-  not headless-verified; `query_knowledge` returns the `adapter=none` stub
-  (pre-existing, not a Codex regression); OOD `abstain=null` shape noted
-  under allowlist routing.
+  not headless-verified; OOD `abstain=null` shape noted under allowlist
+  routing.
 - **`anysearch` provider cannot pre-filter** — its MCP `domain` param is a
   vertical-routing enum (academic..travel), not a hostname allowlist, so
   `includeDomains` cannot ride it; under a domain allowlist the arm stays
@@ -99,4 +98,18 @@
   the `/research` endpoint arm is INCONCLUSIVE — async handle, no URL fields).
 - **`ans chat` / `ans llm` need an LLM key** (`OPENAI_API_KEY` etc. via
   `ans llm`); retrieval itself only needs provider keys.
-
+- **`query_knowledge` is still a stub (#104)** — the kernel-side RAG adapter
+  registry (`rag.adapter` = `none` / `note` / `fts`) now powers the agent-loop
+  injection path (MemoryPipeline Stage-1), but the MCP `query_knowledge` tool
+  does not dispatch to it yet: it still answers with the `adapter=<id>` line.
+  Wiring it needs an explicit session/store selection (which memory scope a
+  knowledge query reads), which is a separate decision.
+- **`rag.adapter = "fts"` reads shared Research Memory, not the current session
+  (#104)** — `SessionStore.searchMemory` queries `retrieval_results_fts`
+  without a session filter (the existing `recall_memory` semantic), so a domain
+  that enables `fts` can surface research saved by any other session in the
+  same store. With domains sharing one DB this widens the information boundary
+  between them; it is inert today because every shipped domain stays on
+  `adapter = "none"`. Session-scoped RAG would need a session id on
+  `RagAdapterPort` plus a session-filtered Research Memory query — a separate
+  decision, tracked in `docs/rag-adapters.md`.
