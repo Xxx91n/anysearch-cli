@@ -618,4 +618,16 @@ export class PiAgentRuntime {
       yield { type: "done", summary: `Agent completed${tokenSummary}` };
     }
   }
+
+  /**
+   * Drain background memory writes before the caller closes the store.
+   *
+   * `consolidate()` intentionally does not block a turn on summary generation or
+   * L2 recall, so a run can end with anchor writes still in flight. A caller
+   * that owns the store (the CLI, which closes it during teardown) must await
+   * this first or those writes are lost. No-op when no pipeline is wired.
+   */
+  async flushMemory(): Promise<void> {
+    if (this.pipeline) await this.pipeline.flush();
+  }
 }

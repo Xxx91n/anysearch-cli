@@ -131,6 +131,11 @@ export async function runChat(argv: string[]): Promise<number> {
   } catch (e: any) {
     console.error("[error] " + (e?.message || String(e)));
     return 1;
+  } finally {
+    // Design: drain background anchor writes before the CLI closes this store
+    // (runTeardown runs on exit). consolidate() is fire-and-forget by design, so
+    // returning here without waiting loses the rolling_summary / l2_recall write.
+    await runtime.flushMemory();
   }
 
   return 0;

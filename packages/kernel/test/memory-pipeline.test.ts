@@ -189,6 +189,53 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
   assert(result[0].content.includes("question"), "inject: original content preserved");
 }
 
+// Test: L1/L2 injection on a BLOCK-shape user turn (what pi-agent-core
+// actually produces) must append and never replace the user's question.
+// Before #129 this path was unreachable (the pipeline was never constructed);
+// once wired it was reachable and string-only, which dropped the question.
+{
+  const store = new MockStore();
+  store.anchors.push({ anchorType: "rolling_summary", payload: { summary: "block summary" } });
+  store.anchors.push({ anchorType: "l2_recall", payload: { hits: "block recall" } });
+  const pipeline = new MemoryPipeline({
+    store: store as any,
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test" } as any,
+    streamFn: mockStreamFn("reuse"),
+    sessionId: "s1",
+  });
+  const msgs = [{ role: "user", content: [{ type: "text", text: "keep my question" }] }];
+  const result = await pipeline.inject(msgs as any);
+  const blocks = result[0].content as any[];
+  assert(Array.isArray(blocks), "inject blocks: content stays a block array");
+  assert(blocks.length === 1 && blocks[0].type === "text", "inject blocks: single text block preserved");
+  const text = blocks[0].text as string;
+  assert(text.includes("keep my question"), "inject blocks: the user's question is NOT lost");
+  assert(text.startsWith("keep my question"), "inject blocks: injection is appended, not prepended over the question");
+  assert(text.includes("[Session Memory]") && text.includes("block summary"), "inject blocks: L1 still injected");
+  assert(text.includes("[Research Recall]") && text.includes("block recall"), "inject blocks: L2 still injected");
+}
+
+// Test: a user turn with no text channel is left untouched (never replaced).
+{
+  const store = new MockStore();
+  store.anchors.push({ anchorType: "rolling_summary", payload: { summary: "s" } });
+  const pipeline = new MemoryPipeline({
+    store: store as any,
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test" } as any,
+    streamFn: mockStreamFn("reuse"),
+    sessionId: "s1",
+  });
+  const msgs = [{ role: "user", content: [{ type: "image", source: {} }] }];
+  const result = await pipeline.inject(msgs as any);
+  const blocks = result[0].content as any[];
+  assert(blocks.length === 1 && blocks[0].type === "image",
+    "inject no-text: an image-only turn is not rewritten and gets no injection");
+}
+
 // Test: inject with L2 recall anchor prepends [Research Recall].
 {
   const store = new MockStore();
@@ -390,6 +437,48 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
   await pipeline.consolidate(msgs as any, 1000, true);
   await new Promise(r => setTimeout(r, 100));
   assert(store.saveAnchorCalls.some(c => c.type === "l2_recall"), "consolidate: L2 FTS5 recall writes l2_recall anchor");
+}
+
+// Test: flush() waits for the fire-and-forget anchor write, so a caller can
+// close the store right after it without losing the write (CodeRabbit #136).
+{
+  let releaseWrite!: () => void;
+  const gate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+  const saved: string[] = [];
+  const slowStore = {
+    getAnchors() { return []; },
+    async saveAnchor(_s: string, type: string) {
+      // Only the background l2_recall write is held open. The consolidation_state
+      // write is awaited by consolidate() itself and must stay fast.
+      if (type === "l2_recall") await gate;
+      saved.push(type);
+    },
+    searchMemory(_q: string, _n: number) { return Promise.resolve([{ content: "hit" }]); },
+  };
+  const pipeline = new MemoryPipeline({
+    store: slowStore as any,
+    models: undefined,
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test" } as any,
+    streamFn: mockStreamFn("reuse"),
+    sessionId: "s1",
+  });
+  const msgs = [
+    { role: "assistant", content: [{ type: "tool_use", name: "search", input: { query: "AI research" } }] },
+    ...Array.from({ length: 5 }, (_, j) => ({ role: "user", content: `msg${j}` })),
+  ];
+  await pipeline.consolidate(msgs as any, 1000, true);
+
+  let flushed = false;
+  const flushPromise = pipeline.flush().then(() => { flushed = true; });
+  await new Promise(r => setTimeout(r, 20));
+  assert(flushed === false, "flush: does not resolve while the anchor write is still in flight");
+
+  releaseWrite();
+  await flushPromise;
+  assert(flushed === true, "flush: resolves once the pending write completes");
+  assert(saved.includes("l2_recall"), "flush: the l2_recall anchor write actually landed before flush returned");
 }
 
 // Test: LOW_WATERMARK constant = 128000 (< 15% of 1M).

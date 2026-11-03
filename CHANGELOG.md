@@ -15,6 +15,11 @@ All notable changes to this project are recorded here. Format follows
 
 - **`SessionStore.ensureSession(sessionId, domain)`**：幂等（`INSERT OR IGNORE`）注册外部生成的会话 id。`messages` / `resume_anchors` / `retrieval_results` / `budget_ledger` 都以外键指向 `sessions(id)` 且 store 开启 `foreign_keys = ON`，而 `createSession()` 自生成 UUID、不接受外部 id——持久 sessionId 必须先注册才能写锚点。回归：`packages/store/test/session-store.test.ts` 用例 7。
 - **CLI 组合根接线测试** `apps/cli/test/chat-memory-wiring.test.ts`：驱动 `runChat` 所用的 `wireChatMemory()`（抽到不含 kernel 依赖的 `apps/cli/src/commands/chat-memory.ts`），用真实 `SqliteSessionStore` 验证三件事——会话行先注册（满足 FK）、重开 DB 后同一持久 id 仍能召回先前的 `retrieval_results`（AC3）、`ensureSession` 失败时返回空接线并具名告警。kernel 只证明接缝，这条证明组合根本身接错时会被测出来；运行时注入（RAG 块到达模型、重启召回）由 `packages/kernel/test/pi-runtime.test.ts` 覆盖——CLI 包是 CJS 而 kernel 依赖 ESM-only 的 `pi-agent-core`，测试不能直接导入 `chat.ts`。
+- **`MemoryPipeline.flush()` / `PiAgentRuntime.flushMemory()`**：`consolidate()` 的摘要生成与 L2 召回是 fire-and-forget，`runChat` 返回后 CLI 会在 teardown 关闭持久库，在途的 `rolling_summary` / `l2_recall` 锚点写入会丢失且被 `.catch(() => {})` 吞掉。现在这些写入被登记，组合根在返回前（`finally`，覆盖错误路径）drain。回归：`packages/kernel/test/memory-pipeline.test.ts` 的 gate 用例。
+
+### Fixed（评论返修，PR #136）
+
+- **L1/L2 注入在 block 形状下会丢失用户问题**：Stage-1/T0 已改用形状感知 helper，但 L1/L2 仍按 `typeof content === "string"` 取文本——pi-agent-core 会把 `prompt("…")` 规范化为 content block 数组，因此一旦有锚点，用户问题会被整体替换成注入文本。现改用 `readMessageText` / `appendMessageText`，无文本通道时主动放弃注入。此路径在本票前不可达（pipeline 从未构造），接线后才成为真实风险，故属本票范围。回归：`memory-pipeline.test.ts` 的 block 形状与纯图片轮用例。
 
 ### Documented
 
