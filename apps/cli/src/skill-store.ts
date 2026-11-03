@@ -8,8 +8,8 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
-  chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync,
-  renameSync, rmSync, writeFileSync, type Stats,
+  chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync,
+  realpathSync, renameSync, rmSync, writeFileSync, type Stats,
 } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -218,6 +218,8 @@ export interface LockOwner {
   pid: number;
   host: string;
   startedAt: string;
+  /** PID namespace of the holder, where the platform exposes one (Linux). */
+  pidNamespace?: string;
 }
 
 /** Classification of the process recorded in a lock owner file. */
@@ -229,13 +231,39 @@ export function readLockOwner(lock: string): LockOwner | undefined {
     const raw: unknown = JSON.parse(readFileSync(join(lock, "owner.json"), "utf8"));
     if (isRecord(raw) && typeof raw.token === "string" && raw.token.length > 0
       && Number.isInteger(raw.pid) && (raw.pid as number) > 0
-      && typeof raw.host === "string" && typeof raw.startedAt === "string") {
-      return { token: raw.token, pid: raw.pid as number, host: raw.host, startedAt: raw.startedAt };
+      && typeof raw.host === "string" && typeof raw.startedAt === "string"
+      && (raw.pidNamespace === undefined
+        || (typeof raw.pidNamespace === "string" && raw.pidNamespace.length > 0))) {
+      return {
+        token: raw.token,
+        pid: raw.pid as number,
+        host: raw.host,
+        startedAt: raw.startedAt,
+        ...(typeof raw.pidNamespace === "string" ? { pidNamespace: raw.pidNamespace } : {}),
+      };
     }
   } catch {
     // Unreadable owner records still block the operation; they are never "stale".
   }
   return undefined;
+}
+
+/**
+ * Identity of this process's PID namespace, when the platform exposes one.
+ * Design: a matching hostname does not prove that the recorded pid is visible in
+ * this process's PID space — a sandbox can reuse the host name with its own pid
+ * space, where a live holder's pid reads as ESRCH and its lock would be reclaimed
+ * mid-operation. Linux exposes the namespace inode through /proc; platforms
+ * without PID namespaces return undefined, and there the pid probe stays
+ * authoritative because the host has a single pid space.
+ */
+export function pidNamespaceIdentity(): string | undefined {
+  if (process.platform !== "linux") return undefined;
+  try {
+    return readlinkSync("/proc/self/ns/pid");
+  } catch {
+    return undefined;
+  }
 }
 
 // Design: `process.kill(pid, 0)` is the only staleness signal. EPERM means the pid
@@ -271,6 +299,7 @@ export interface ReclaimSeam {
   rename?: (from: string, to: string) => void;
   probe?: (pid: number) => HolderState;
   localHost?: () => string;
+  pidNamespace?: () => string | undefined;
 }
 
 /** Whether a reclaim removed the stale lock, left a holder in place, or lost the rename race. */
@@ -294,6 +323,14 @@ export function reclaimStaleLock(managed: string, seam: ReclaimSeam = {}): Recla
   }
   if (observed.host !== localHost) {
     fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. The lock was recorded by host ${observed.host}, not ${localHost}, so its process cannot be probed from here and it is not reclaimed automatically. If that host is gone, remove that directory and retry.`);
+  }
+  // Design: same host is not enough — a different PID namespace makes a live
+  // holder's pid look dead here. Both sides must report the same identity: absent
+  // on both is one pid space (non-Linux platforms), present on one side only is
+  // unprovable and stays fail-closed.
+  const localNamespace = (seam.pidNamespace ?? pidNamespaceIdentity)();
+  if (observed.pidNamespace !== localNamespace) {
+    fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. The lock records PID namespace ${observed.pidNamespace ?? "unrecorded"} while this process sees ${localNamespace ?? "none"}, so its holder cannot be proven dead from here. If no ans skill process is running, remove that directory and retry.`);
   }
   const state = probe(observed.pid);
   if (state === "alive") return "held";
@@ -351,7 +388,11 @@ export function acquireManifestLock(managed: string): () => void {
     }
   }
   try {
-    const owner: LockOwner = { token, pid: process.pid, host: hostname(), startedAt: new Date().toISOString() };
+    const pidNamespace = pidNamespaceIdentity();
+    const owner: LockOwner = {
+      token, pid: process.pid, host: hostname(), startedAt: new Date().toISOString(),
+      ...(pidNamespace ? { pidNamespace } : {}),
+    };
     writeFileSync(join(lock, "owner.json"), JSON.stringify(owner), { encoding: "utf8", flag: "wx", mode: 0o600 });
   } catch (error) {
     rmSync(lock, { recursive: true, force: true });
@@ -492,8 +533,14 @@ export function reconcileManagedRoot(managed: string): ReconcileReport {
       // temp file beside a published installed.json is left for the operator.
       || (!manifestPublished && MANIFEST_TEMP_ENTRY.test(name));
     if (!residue) continue;
-    rmSync(join(managed, name), { recursive: true, force: true });
-    report.removed.push(name);
+    try {
+      // Design: a leftover must never turn into a failed install/uninstall. Retry
+      // the transient Windows handle codes briefly, then report and keep going.
+      rmSync(join(managed, name), { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      report.removed.push(name);
+    } catch (error) {
+      report.notices.push(`could not remove installer residue ${join(managed, name)}: ${(error as Error).message}. Remove it manually once no ans skill process is running.`);
+    }
   }
   const backups = entries.filter((entry) => BACKUP_ENTRY.test(entry.name)).map((entry) => entry.name);
   if (backups.length > 0) {

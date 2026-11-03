@@ -193,11 +193,13 @@ without deleting anything; uninstall never scans for guessed targets.
 `install` and `uninstall` hold an exclusive lock in the selected scope, so two
 concurrent mutations cannot lose each other's manifest entry; a contended run
 fails with the lock path instead of overwriting the manifest. The lock records
-`{token, pid, host, startedAt}`. When the next operation finds a lock, it probes
-that pid: a holder that is provably dead on the **same host** is reclaimed
-automatically, while a live holder — or one recorded by another host, or one
-whose owner record is unreadable — stops the operation with the lock path and
-the recorded holder instead of deleting a lock that may be live. Release is
+`{token, pid, host, startedAt}` plus its PID-namespace identity where the
+platform exposes one. When the next operation finds a lock, it probes that pid:
+a holder that is provably dead in the **same host and PID namespace** is
+reclaimed automatically, while a live holder — or one recorded by another host
+or PID namespace, or one whose owner record is unreadable — stops the operation
+with the lock path and the recorded holder instead of deleting a lock that may
+be live. Release is
 token-checked, so a reclaimed lock is never removed by the process that used to
 hold it. If a run is killed on another machine (or its pid cannot be probed),
 remove `skills/synced/.installed.lock` manually once no `ans skill` process is

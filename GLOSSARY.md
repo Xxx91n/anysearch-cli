@@ -15,8 +15,8 @@
 - **Anysearch Plugin**——宿主侧插件形态：hooks + 长驻 MCP server + 项目级 FTS5 索引，可配置进各 agent 宿主。
 - **Skill Active List / Prompt Skill Selection / Hooks Tool Whitelist**——domain 切换时联动的三份名单：激活的 skills、作为提示词载体的 skill、工具调用白名单（hooks.toolWhitelist 是安全过滤器）。
 - **Skill Installer（最小安装器）**——把本地 Git checkout 中含 `SKILL.md` 的目录安装到用户级或项目级 `skills/synced/`，以 `installed.json` 记录来源与 commit/tag，并按清单校验、列表和卸载。它是目录约定而非包管理器，机器区与手写区隔离；安装不等于激活，Skill Active List 仍由 Active Domain TOML 管理。
-- **Stale Lock Reclamation（死锁回收）**——安装器锁的回收判据：复用 owner 记录 `{token, pid, host, startedAt}`，用 `process.kill(pid, 0)` 探测（EPERM=存活、ESRCH=可证明已死、其他=无法判定）；只在同 host 且可证明已死时回收，跨 host / owner 不可读 / 无法判定一律 fail-closed。回收只针对刚读到的那个锁：先 rename 到唯一 quarantine 名再校验 token，不一致即恢复、绝不删除可能存活的锁；释放仍按 token 校验。不做心跳或超时过期——时间窗无法区分“慢但存活”与“已死”。
-- **Startup Reconciliation（启动对账）**——每次 install/uninstall（以及锁空闲时的 list/validate）在锁内先清理安装器自有的瞬时残留：`.install-*` 暂存、未发布 `installed.json` 时的 `.installed-*.tmp`、回收留下的 quarantine 目录；干净时零改动。`.uninstall-*` 备份与未登记 `<name>/`、未知条目永不自动删除，只在清单记录某 skill 却缺目录时输出恢复提示。
+- **Stale Lock Reclamation（死锁回收）**——只有当持锁进程可证明已死、且锁与当前进程属于同一 host 与同一执行环境（PID 命名空间）时才自动回收安装器锁；其余情况（存活、跨 host、跨命名空间、无法判定）一律 fail-closed，绝不删除可能存活的锁。
+- **Startup Reconciliation（启动对账）**——每次变更（以及锁空闲时的读命令）先清理安装器自有的瞬时残留；操作者内容与无法归属的备份永不自动删除，干净时零改动。
 - **Tool Requires（工具需求表）**——`[skills.toolRequires]` 声明式 skill→工具名映射：Skill 是纯提示载体，工具需求只能声明、无法推导（决策 #90）。声明后 skills.active 参与工具过滤（与白名单和内置 search 取交集，白名单为空时激活集仍生效）；字段缺省或显式空表时过滤行为不变。
 
 ## 引擎与运行时

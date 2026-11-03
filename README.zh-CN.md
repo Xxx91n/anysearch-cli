@@ -177,8 +177,9 @@ ans skill uninstall research --project
 schema 时，卸载会拒绝且不删除任何文件；绝不靠扫描目录猜测删除目标。
 `install` 与 `uninstall` 在所选 scope 内持独占锁：两个并发变更不会互相丢失
 清单条目，争用时会以锁路径报错，而不是覆盖清单。锁内记录
-`{token, pid, host, startedAt}`；下次操作发现锁时会探测该 pid：**同一 host**
-上可证明已死的持有者会被自动回收，而存活持有者、由其他 host 记录的锁、
+`{token, pid, host, startedAt}`，并在平台可提供时附上 PID 命名空间身份；
+下次操作发现锁时会探测该 pid：**同一 host 且同一 PID 命名空间**中可证明已死
+的持有者会被自动回收，而存活持有者、由其他 host 或命名空间记录的锁、
 以及 owner 记录不可读的情况都会带着锁路径和记录的持有者停下，绝不删除
 可能存活的锁。释放按 token 校验，旧持有者不会删掉回收后新的锁。若持锁进程
 死在另一台机器（或 pid 无法探测），请确认那台机器上已无 `ans skill` 进程后

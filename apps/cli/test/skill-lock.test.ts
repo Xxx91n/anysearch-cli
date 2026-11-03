@@ -9,7 +9,8 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSy
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  acquireManifestLock, probeHolder, readLockOwner, reclaimStaleLock, type LockOwner,
+  acquireManifestLock, pidNamespaceIdentity, probeHolder, readLockOwner, reclaimStaleLock,
+  type LockOwner,
 } from "../src/skill-store.js";
 
 /** Create an isolated managed root (skills/synced) for one test. */
@@ -28,6 +29,8 @@ function owner(overrides: Partial<LockOwner> = {}): LockOwner {
     pid: process.pid,
     host: hostname(),
     startedAt: "2026-11-03T00:00:00.000Z",
+    // Same execution environment as this process, unless a test says otherwise.
+    pidNamespace: pidNamespaceIdentity(),
     ...overrides,
   };
 }
@@ -142,6 +145,37 @@ test("an indeterminate holder probe refuses to reclaim", (t) => {
   assert.equal(readLockOwner(lock)?.token, "stale-token", "a lock that may be live is untouched");
 });
 
+test("acquire records the platform PID-namespace identity when there is one", (t) => {
+  const managed = scope(t);
+  const release = acquireManifestLock(managed);
+  try {
+    assert.equal(readLockOwner(join(managed, ".installed.lock"))?.pidNamespace, pidNamespaceIdentity());
+  } finally {
+    release();
+  }
+});
+
+test("a lock recorded in another PID namespace is never reclaimed", (t) => {
+  const managed = scope(t);
+  const lock = plantLock(managed, owner({ pid: deadPid(), pidNamespace: "pid:[111]" }));
+  assert.throws(() => reclaimStaleLock(managed, { pidNamespace: () => "pid:[222]" }), /PID namespace/);
+  assert.equal(readLockOwner(lock)?.token, "stale-token", "the live holder's lock is untouched");
+});
+
+test("a lock without a PID-namespace identity is not reclaimed when this process reports one", (t) => {
+  const managed = scope(t);
+  const lock = plantLock(managed, owner({ pid: deadPid(), pidNamespace: undefined }));
+  assert.throws(() => reclaimStaleLock(managed, { pidNamespace: () => "pid:[111]" }), /PID namespace/);
+  assert.equal(readLockOwner(lock)?.token, "stale-token");
+});
+
+test("a reclaim requires both sides to report the same PID namespace", (t) => {
+  const managed = scope(t);
+  plantLock(managed, owner({ pid: deadPid(), pidNamespace: "pid:[111]" }));
+  assert.equal(reclaimStaleLock(managed, { pidNamespace: () => "pid:[111]" }), "reclaimed");
+  assert.deepEqual(readdirSync(managed), []);
+});
+
 test("a takeover during reclamation is restored, never deleted", (t) => {
   const managed = scope(t);
   const lock = plantLock(managed, owner({ pid: deadPid() }));
@@ -183,9 +217,10 @@ test("a lock left by a SIGKILLed process is reclaimed by the next acquisition", 
   // a mkdir'd lock directory plus its owner record, with no cleanup path run.
   const script = [
     'const fs = require("node:fs"), path = require("node:path"), os = require("node:os");',
+    'const ns = process.platform === "linux" ? fs.readlinkSync("/proc/self/ns/pid") : undefined;',
     'const lock = path.join(process.env.ANS_TEST_MANAGED, ".installed.lock");',
     "fs.mkdirSync(lock);",
-    'fs.writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ token: "killed", pid: process.pid, host: os.hostname(), startedAt: new Date().toISOString() }));',
+    'fs.writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ token: "killed", pid: process.pid, host: os.hostname(), startedAt: new Date().toISOString(), ...(ns ? { pidNamespace: ns } : {}) }));',
     'process.stdout.write("locked\\n");',
     "setInterval(() => {}, 1000);",
   ].join("\n");

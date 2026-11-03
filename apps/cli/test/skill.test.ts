@@ -13,7 +13,8 @@ import { join } from "node:path";
 import { runSkill } from "../src/commands/skill.js";
 import { setRenameSeam } from "../src/fs-atomic.js";
 import {
-  acquireManifestLock, managedSkillsRoot, probeHolder, skillManifestPath, type SkillManifest,
+  acquireManifestLock, managedSkillsRoot, pidNamespaceIdentity, probeHolder, skillManifestPath,
+  type SkillManifest,
 } from "../src/skill-store.js";
 
 /** Run a Git command in a test repository and return trimmed stdout. */
@@ -419,6 +420,7 @@ test("install retries a transient Windows rename failure and publishes once", as
   let remaining = 2;
   const restore = setRenameSeam({
     policy: { baseDelayMs: 1, maxDelayMs: 2, budgetMs: 500 },
+    windows: true,
     rename: (from, to) => {
       if (from.endsWith(".tmp") && remaining > 0) {
         remaining -= 1;
@@ -444,6 +446,7 @@ test("a permanent rename failure keeps the original error and publishes nothing"
   let attempts = 0;
   const restore = setRenameSeam({
     policy: { baseDelayMs: 1, maxDelayMs: 2, budgetMs: 25 },
+    windows: true,
     rename: (from, to) => {
       if (!from.endsWith(".tmp")) {
         renameSync(from, to);
@@ -475,6 +478,7 @@ test("uninstall retries a transient rename of the installed directory", async (t
   let remaining = 1;
   const restore = setRenameSeam({
     policy: { baseDelayMs: 1, maxDelayMs: 2, budgetMs: 500 },
+    windows: true,
     rename: (from, to) => {
       if (from === target && remaining > 0) {
         remaining -= 1;
@@ -503,8 +507,10 @@ test("a stale lock from a killed run is reclaimed by the next install", async (t
   assert.ok(dead, "the probe fixture child must report a pid");
   assert.equal(probeHolder(dead), "dead", "an exited child is provably dead on this host");
   mkdirSync(lock);
+  const pidNamespace = pidNamespaceIdentity();
   writeFileSync(join(lock, "owner.json"), JSON.stringify({
     token: "killed", pid: dead, host: hostname(), startedAt: new Date().toISOString(),
+    ...(pidNamespace ? { pidNamespace } : {}),
   }));
   const installed = await f.run(["install", f.source("beta")]);
   assert.equal(installed.code, 0, installed.stderr);
