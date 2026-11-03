@@ -257,6 +257,13 @@ async function main() {
     assert(gluedRun.decision === "high" && gluedRun.recommendation?.id === "glued", "the verbatim case recommends (got " + gluedRun.decision + ", conf " + gluedRun.confidence + ")");
     const halfRun = await recommendDomains("中文billing", [{ id: "zhonly", name: "zh", description: "深度中文研究与学术检索" }]);
     assert(halfRun.recommendation === null, "the half-matched case prints no suggestion (got " + (halfRun.recommendation?.id ?? "null") + ")");
+    // CodeRabbit round 3 on #134: matching a mixed-script term verbatim must not drop the Latin
+    // word boundary — otherwise "art中文" is credited against "cart中文购物", where the user asked
+    // about art and the text says cart. A Latin segment has to start at a script boundary.
+    assert(termCoverage("art中文", "cart中文购物") === 0, "a Latin segment inside a longer Latin word is not a match");
+    assert(termCoverage("art中文", "art中文购物") === 1, "the same segment at a real boundary is covered");
+    const edgeRun = await recommendDomains("art中文", [{ id: "cart", name: "cart", description: "cart中文购物" }]);
+    assert(edgeRun.recommendation === null, "no suggestion from a mid-word Latin fragment (got " + (edgeRun.recommendation?.id ?? "null") + ")");
 
     // The stage is inert for a CJK-free query: nothing is added to the MATCH expression and no
     // row is scanned, so #110's pure-ASCII behaviour is preserved by construction.

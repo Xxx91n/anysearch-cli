@@ -82,6 +82,12 @@ const CJK_CLASS = CJK_SCRIPT_CLASS + "\\u30FC\\u3031-\\u3035\\uff9E-\\uff9F";
 const CJK_RUN_RE = new RegExp(`[${CJK_CLASS}]+`, "gu");
 const CJK_CHAR_RE = new RegExp(`[${CJK_CLASS}]`, "u");
 const CJK_LETTER_RE = new RegExp(`[${CJK_SCRIPT_CLASS}]`, "u");
+// Inserted at every boundary between a CJK-class character and a neighbouring letter/digit, so a
+// Latin segment can only be credited where unicode61 would not have swallowed it into one token.
+const SCRIPT_EDGE_RE = new RegExp(
+  `(?<=[${CJK_CLASS}])(?=[^\s${CJK_CLASS}])|(?<=[^\s${CJK_CLASS}])(?=[${CJK_CLASS}])`,
+  "gu",
+);
 
 // The query's CJK runs, deduped and capped like escapeQueryUnicode's maxTerms; mark-only runs
 // dropped (see the note above).
@@ -184,6 +190,11 @@ export function termCoverage(query: string, text: string): number {
   // Unicode-aware token split so CJK runs in the text stay matchable tokens.
   const hay = text.toLowerCase();
   const toks = hay.split(UNICODE_SANITIZE_RE).filter(Boolean);
+  // Script-boundary tokens: unicode61 glues an unbroken CJK+Latin run into ONE token
+  // (深度中文billing研究 has no separator), so testing a Latin segment against `toks` alone would
+  // reject a term that is literally present. Splitting at CJK↔Latin edges accepts `billing` there
+  // while still refusing `art` inside `cart` — a Latin segment must start at a real boundary.
+  const edgeToks = hay.replace(SCRIPT_EDGE_RE, " ").split(UNICODE_SANITIZE_RE).filter(Boolean);
   let matched = 0;
   let counted = 0;
   for (const t of terms) {
@@ -198,17 +209,9 @@ export function termCoverage(query: string, text: string): number {
       // gate, "中文billing" scored full coverage against a description that mentions 中文 and says
       // nothing about billing — the CJK half alone vouches for nothing the Latin half asked for,
       // and with one candidate that reads as a confident out-of-domain recommendation.
-      // The term occurring verbatim is the strongest evidence and settles it alone — without this
-      // fast path the Latin half of "中文billing" is never a token prefix inside a description that
-      // glues scripts together (深度中文billing研究 is ONE unicode61 token), so the gated branch
-      // below would reject a term that is literally present.
-      if (hay.includes(t)) {
-        matched++;
-        continue;
-      }
       const latin = t.replace(CJK_RUN_RE, " ").split(UNICODE_SANITIZE_RE).filter(Boolean);
       const cjk = cjkRunFraction(t, text);
-      if (cjk > 0 && latin.every((seg) => toks.some((k) => k.startsWith(seg)))) matched += cjk;
+      if (cjk > 0 && latin.every((seg) => edgeToks.some((k) => k.startsWith(seg)))) matched += cjk;
     }
   }
   return counted > 0 ? matched / counted : 0;
