@@ -7,10 +7,41 @@
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
 import { PiAgentRuntime, createLlmSession } from "@anysearch-cli/kernel";
-import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
+import type { DomainConfigPort, SessionStorePort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
 import { domainTomlPath, loadDomainByNameIn, readSessionId } from "@anysearch-cli/store";
+
+export interface ChatMemoryWiring {
+  store?: SessionStorePort;
+  sessionId?: string;
+}
+
+/**
+ * Decide what `ans chat` hands to PiAgentRuntime for memory.
+ *
+ * Design: the durable session anchor is used as the chat session id, not a
+ * per-run createSession() — the anchor is what makes a later `ans chat` resume
+ * the same L1/L2 state, and it is the same id the observation/trace layer
+ * already records. Because it is minted outside createSession(), the row it
+ * needs for messages/resume_anchors FK targets is registered here first.
+ *
+ * Returns both halves only when registration succeeded; an empty object leaves
+ * the runtime's gate closed (and the runtime then names the gap itself).
+ */
+export async function wireChatMemory(store: SessionStorePort, domain: string): Promise<ChatMemoryWiring> {
+  const sessionId = readSessionId();
+  try {
+    await store.ensureSession(sessionId, domain);
+    return { store, sessionId };
+  } catch (e: any) {
+    process.stderr.write(
+      "[warn] session row registration failed for " + sessionId + ": " +
+      (e?.message || String(e)) + " — continuing without memory anchors\n",
+    );
+    return {};
+  }
+}
 
 export async function runChat(argv: string[]): Promise<number> {
   const { flags, argv: args } = parseLlmFlags(argv);
@@ -75,23 +106,8 @@ export async function runChat(argv: string[]): Promise<number> {
   }
   const { retriever, store } = engine;
 
-  // Stable session id — the durable ~/.anysearch-cli/session anchor
-  // (ANS_SESSION_ID overrides it). Design: register the row via ensureSession
-  // first — the id is minted outside createSession(), and messages /
-  // resume_anchors carry an FK to sessions(id) under foreign_keys = ON.
-  // Failure here is fatal for the memory chain only: chat still answers, but we
-  // say so instead of silently dropping it.
-  const sessionId = readSessionId();
-  let memoryWired = true;
-  try {
-    await store.ensureSession(sessionId, sessionDomain);
-  } catch (e: any) {
-    memoryWired = false;
-    process.stderr.write(
-      "[warn] session row registration failed for " + sessionId + ": " +
-      (e?.message || String(e)) + " — continuing without memory anchors\n",
-    );
-  }
+  // Stable session id + FK registration (#129) — see wireChatMemory.
+  const memory = await wireChatMemory(store, sessionDomain);
 
   // Construct PiAgentRuntime and run.
   // models undefined fix — session.models is now properly initialized.
@@ -101,7 +117,7 @@ export async function runChat(argv: string[]): Promise<number> {
     // store + sessionId together are what make PiAgentRuntime build the
     // MemoryPipeline (#129): RAG Stage-1 injection and L1/L2 memory now run on
     // the real `ans chat` path instead of being silently skipped.
-    ...(memoryWired ? { store, sessionId } : {}),
+    ...memory,
     // lazy mtime re-read lets `ans hitl --allow-url` write-back take effect live.
     domainTomlPath: domainTomlPath(),
     // CLI is the TTY composition root; kernel decides isInteractive itself.

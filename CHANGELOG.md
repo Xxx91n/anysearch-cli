@@ -14,6 +14,7 @@ All notable changes to this project are recorded here. Format follows
 ### Added
 
 - **`SessionStore.ensureSession(sessionId, domain)`**：幂等（`INSERT OR IGNORE`）注册外部生成的会话 id。`messages` / `resume_anchors` / `retrieval_results` / `budget_ledger` 都以外键指向 `sessions(id)` 且 store 开启 `foreign_keys = ON`，而 `createSession()` 自生成 UUID、不接受外部 id——持久 sessionId 必须先注册才能写锚点。回归：`packages/store/test/session-store.test.ts` 用例 7。
+- **CLI 组合根接线测试** `apps/cli/test/chat-memory-wiring.test.ts`：直接驱动 `runChat` 所用的 `wireChatMemory()`，用真实 `SqliteSessionStore` 验证三件事——会话行先注册（满足 FK）、重开 DB 后同一持久 id 仍能召回先前的 `retrieval_results`（AC1/AC3）、`adapter="none"` 在已接线路径上不注入 RAG 块（AC2）。kernel 只证明接缝，这条证明组合根本身接错时会被测出来。
 
 ### Documented
 

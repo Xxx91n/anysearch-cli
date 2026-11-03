@@ -128,6 +128,8 @@
   composition root that supplies `store` without `sessionId`, `sessionId`
   without `store`, or neither at all now gets one stderr line naming what is
   missing and stating that RAG / L1 / L2 injection are disabled for that
-  runtime. This is what makes the `ans_chat` gap visible instead of a
-  no-op. The gate itself (`store && sessionId`) is unchanged — narrowing it
-  would alter every composition root.
+  runtime. It is deduped per missing-half combination for the process lifetime,
+  because a stateless host (`ans_chat`) builds one runtime per request. This is
+  what makes the `ans_chat` gap visible instead of a no-op. The gate itself
+  (`store && sessionId`) is unchanged — narrowing it would alter every
+  composition root.

@@ -3,7 +3,7 @@
 // ponytail: no test framework, assert-based demo.
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
-import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals } from "../src/pi-runtime";
+import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals, resetWiringWarnings } from "../src/pi-runtime";
 import { distillGap, adjudicateReuseCompress } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
@@ -758,9 +758,9 @@ console.log("---");
 // #129 contract: a runtime built WITHOUT store/sessionId has no MemoryPipeline,
 // so transformContext is a pass-through. That silence used to be invisible on
 // the production paths (ans chat / ans_chat both omitted the pair); the runtime
-// now names the missing wiring, and the fully-wired path is exercised against a
-// REAL SqliteSessionStore so the CLI wiring (#104 fts + restart recall) is
-// proven end-to-end rather than only against a stub.
+// now names the missing wiring, and the wired path is exercised against a REAL
+// SqliteSessionStore. This proves the KERNEL seam — the CLI composition root
+// itself is covered by apps/cli/test/chat-memory-wiring.test.ts.
 {
   const seenContexts: any[][] = [];
   const capturingStreamFn = (_model: any, context: any, _o?: any) => {
@@ -780,10 +780,11 @@ console.log("---");
   const textOf = (m: any) => readMessageText(m)?.text ?? "";
   const allText = (messages: any[]) => messages.map(textOf).join("\n");
 
-  // No store at all: transformContext returns the messages untouched AND the
-  // missing wiring is named (this is exactly the ans_chat shape today).
+  // No store at all: transformContext must return the messages UNCHANGED (the
+  // explicit contract #129 asks to freeze), and the missing wiring is named.
   {
     seenContexts.length = 0;
+    resetWiringWarnings();
     const origWrite = process.stderr.write;
     let captured = "";
     process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
@@ -803,15 +804,20 @@ console.log("---");
       if (ev.type === "error") errors.push(ev);
     }
     assert(errors.length === 0, "#129 no-store: agent loop completes without error");
-    assert(!allText(seenContexts.flat()).includes("[RAG Context]"), "#129 no-store: no RAG injection (pipeline never constructed)");
-    assert(allText(seenContexts.flat()).includes("how do I reach the internal wiki?"), "#129 no-store: user turn passes through unchanged");
+    // Structural equality with what the model would receive anyway: the user
+    // turn is exactly the question, with no injected text appended.
+    const userTurns = seenContexts.flat().filter((m: any) => m?.role === "user");
+    assert(userTurns.length > 0, "#129 no-store: the user turn was passed to the model");
+    assert(userTurns.every((m: any) => textOf(m) === "how do I reach the internal wiki?"),
+      "#129 no-store: transformContext returned the user turn unchanged (no pass-through mutation)");
     assert(/store and sessionId not supplied — MemoryPipeline NOT constructed/.test(captured),
       "#129 no-store: the missing wiring is named (ans_chat shape)");
   }
 
   // Half-wired: the supplied half is still not enough for a pipeline, and the
-  // diagnostic names what is missing.
+  // diagnostic names what is missing. Reset first — warnings dedupe per process.
   {
+    resetWiringWarnings();
     const origWrite = process.stderr.write;
     let captured = "";
     process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
@@ -823,6 +829,16 @@ console.log("---");
         streamFn: capturingStreamFn,
         store: {} as any,
       });
+      // A second construction with the same gap must NOT repeat the line.
+      const afterFirst = captured;
+      new PiAgentRuntime({
+        retriever: new MockRetriever(),
+        domain: mockDomain,
+        model: { id: "test-model", provider: "test" } as any,
+        streamFn: capturingStreamFn,
+        store: {} as any,
+      });
+      assert(captured === afterFirst, "#129 wiring warning is deduped per process (ans_chat builds one runtime per call)");
     } finally {
       process.stderr.write = origWrite;
     }
@@ -877,27 +893,29 @@ console.log("---");
       assert(/adapter=fts/.test(text) && /provenance=memory/.test(text), "#129 wired: injection carries provenance");
       assert(text.includes("how do I reach the internal wiki?"), "#129 wired: user question preserved");
 
-      // adapter="none" regression: the pipeline exists, but nothing is injected.
-      const noneText = allText(await (async () => {
-        const store = new SqliteSessionStore(dbPath);
-        try {
-          seenContexts.length = 0;
-          const runtime = new PiAgentRuntime({
-            retriever: new MockRetriever(),
-            domain: { ...mockDomain, rag: { adapter: "none" } },
-            model: { id: "test-model", provider: "test" } as any,
-            streamFn: capturingStreamFn,
-            store,
-            sessionId,
-          });
-          for await (const _ev of runtime.run("how do I reach the internal wiki?")) { /* drain */ }
-          return seenContexts.flat();
-        } finally {
-          store.close();
-        }
-      })());
-      assert(!noneText.includes("[RAG Context]"), "#129 none: no RAG injection on the wired path");
-      assert(noneText.includes("how do I reach the internal wiki?"), "#129 none: user turn intact");
+      // adapter="none" regression: no RAG block on the wired path. The user turn
+      // may still carry L1/L2 anchor text, so assert the RAG block is absent AND
+      // the question itself is preserved (absence alone would also pass if the
+      // pipeline were never built).
+      const storeForNone = new SqliteSessionStore(dbPath);
+      try {
+        seenContexts.length = 0;
+        const runtime = new PiAgentRuntime({
+          retriever: new MockRetriever(),
+          domain: { ...mockDomain, rag: { adapter: "none" } },
+          model: { id: "test-model", provider: "test" } as any,
+          streamFn: capturingStreamFn,
+          store: storeForNone,
+          sessionId,
+        });
+        for await (const _ev of runtime.run("how do I reach the internal wiki?")) { /* drain */ }
+      } finally {
+        storeForNone.close();
+      }
+      const noneLastUser = textOf(seenContexts.flat().filter((m: any) => m?.role === "user").pop());
+      assert(!noneLastUser.includes("[RAG Context]"), "#129 none: adapter=none injects no RAG block");
+      assert(noneLastUser.includes("how do I reach the internal wiki?"),
+        "#129 none: adapter=none preserves the user question");
     } finally {
       try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* Windows WAL lock */ }
     }

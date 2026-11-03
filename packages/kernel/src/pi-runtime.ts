@@ -96,6 +96,36 @@ export class SearchSaturation {
   }
 }
 
+// Wiring-gap diagnostics, deduped per missing-half combination. A stateless MCP
+// host (`ans_chat`) builds one runtime per request, so an undeduped line would
+// print on every call. Module scope, not instance scope, for the same reason
+// RagAdapterRegistry keeps its `warned` set there.
+const warnedWiring = new Set<string>();
+
+/** Test hook: forget which wiring gaps were already announced. */
+export function resetWiringWarnings(): void {
+  warnedWiring.clear();
+}
+
+/**
+ * Name a memory-wiring gap once per process.
+ *
+ * Both halves absent is normal for a host with no session concept — but it is
+ * also exactly the shape that hid #129 for months, so it still gets one line.
+ */
+function warnMissingMemoryWiring(opts: PiAgentRuntimeOptions): void {
+  const missing = opts.store ? "sessionId" : opts.sessionId ? "store" : "store and sessionId";
+  if (warnedWiring.has(missing)) return;
+  warnedWiring.add(missing);
+  // stdout stays protocol-pure for MCP; a dead stderr must not break construction.
+  try {
+    process.stderr.write(
+      "[anysearch] PiAgentRuntime: " + missing + " not supplied — MemoryPipeline NOT constructed; " +
+      "RAG and L1/L2 memory injection are disabled for this runtime\n",
+    );
+  } catch { /* fail-open */ }
+}
+
 // Build the search AgentTool: wraps RetroaererdEngine.search() with TypeBox schema.
 // The LLM sees this as a tool it can call to search the web.
 export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObservationSink, onResults?: (urls: string[]) => void): AgentTool {
@@ -320,14 +350,7 @@ export class PiAgentRuntime {
         providerName: (opts as any).providerName,
       });
     } else {
-      const missing = opts.store ? "sessionId" : opts.sessionId ? "store" : "store and sessionId";
-      // stdout stays protocol-pure for MCP; a dead stderr must not break construction.
-      try {
-        process.stderr.write(
-          "[anysearch] PiAgentRuntime: " + missing + " not supplied — MemoryPipeline NOT constructed; " +
-          "RAG and L1/L2 memory injection are disabled for this runtime\n",
-        );
-      } catch { /* fail-open */ }
+      warnMissingMemoryWiring(opts);
     }
     this.gate = new SufficiencyEvaluator({
       retriever: opts.retriever,
