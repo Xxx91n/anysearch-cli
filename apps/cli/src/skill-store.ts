@@ -454,17 +454,6 @@ function isEmptyManagedRoot(managed: string): boolean {
   return !readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK);
 }
 
-/**
- * True when a manifest-less root holds nothing but the lock and installer-owned
- * residue — never operator content. Used by the read path, which cannot delete
- * while another process holds the lock: an abandoned first install reads as an
- * empty scope instead of a fail-closed manifest error, and nothing is removed.
- */
-function holdsOnlyInstallerResidue(managed: string): boolean {
-  return !readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK
-    && !STAGING_ENTRY.test(entry) && !MANIFEST_TEMP_ENTRY.test(entry) && !QUARANTINE_ENTRY.test(entry));
-}
-
 /** Read an existing manifest, or bootstrap one only in an empty managed root. */
 function readManifestForInstall(managed: string): SkillManifest {
   requireScopeAnchors(managed);
@@ -506,6 +495,17 @@ const STAGING_ENTRY = /^\.install-[A-Za-z0-9]{6}$/;
 const MANIFEST_TEMP_ENTRY = /^\.installed-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/;
 const QUARANTINE_ENTRY = /^\.installed\.lock\.reclaim-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const BACKUP_ENTRY = /^\.uninstall-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * True when a manifest-less root holds nothing but the lock and installer-owned
+ * residue — never operator content. Used by the read path, which cannot delete
+ * while another process holds the lock: an abandoned first install reads as an
+ * empty scope instead of a fail-closed manifest error, and nothing is removed.
+ */
+function holdsOnlyInstallerResidue(managed: string): boolean {
+  return !readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK
+    && !STAGING_ENTRY.test(entry) && !MANIFEST_TEMP_ENTRY.test(entry) && !QUARANTINE_ENTRY.test(entry));
+}
 
 /** Outcome of one reconciliation pass; `removed` are the installer-owned entries it deleted. */
 export interface ReconcileReport {

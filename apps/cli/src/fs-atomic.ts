@@ -29,9 +29,9 @@ const TRANSIENT_RENAME_CODES = new Set(["EPERM", "EBUSY", "ENOTEMPTY"]);
 
 export type RenameOp = (from: string, to: string) => void;
 
-// Design: this module is the single seam for tests — the operation and the policy
-// are replaceable so a unit test can inject transient failures without waiting a
-// minute or depending on a real Windows handle.
+// Design: this module is the single seam for tests — the operation, the policy and
+// the platform gate are replaceable so a unit test can inject transient failures
+// without waiting a minute or depending on a real Windows handle.
 const seam: { rename: RenameOp; policy: RenameRetryPolicy; windows: boolean } = {
   rename: renameSync,
   policy: RENAME_RETRY_POLICY,
