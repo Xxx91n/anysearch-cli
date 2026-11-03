@@ -370,6 +370,22 @@ test("a dirty probe stops reading a status listing far beyond the old 16 MiB buf
   assert.ok(fake.emittedBytes() < 1024 * 1024, `only a bounded prefix is read (${fake.emittedBytes()} bytes)`);
 });
 
+test("the dirty probe does not inspect submodules", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  const fake = fakeStatusProbe({ totalBytes: 64 });
+  let args: string[] = [];
+  const spawnCapture: StatusProbeSpawn = (command, spawnArgs, options) => {
+    args = spawnArgs;
+    return fake.spawn(command, spawnArgs, options);
+  };
+  __setStatusProbeForTest({ spawn: spawnCapture });
+  t.after(() => __setStatusProbeForTest(null));
+  const result = await f.run(["install", dir]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.ok(args.includes("--ignore-submodules=all"), args.join(" "));
+});
+
 test("a failing status probe fails closed before publishing anything", async (t) => {
   const f = fixture(t);
   const dir = f.source();

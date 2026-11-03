@@ -765,7 +765,7 @@ export function __setStatusProbeForTest(hooks: { spawn?: StatusProbeSpawn; timeo
  * still fails the install before anything is published.
  */
 function isDirty(source: string): Promise<boolean> {
-  const args = ["-c", "core.fsmonitor=false", "-C", source, "status", "--porcelain", "--untracked-files=all", "--ignored", "--", "."];
+  const args = ["-c", "core.fsmonitor=false", "-C", source, "status", "--porcelain", "--untracked-files=all", "--ignored", "--ignore-submodules=all", "--", "."];
   const timeoutMs = statusProbeHooks?.timeoutMs ?? GIT_TIMEOUT_MS;
   return new Promise<boolean>((resolve, reject) => {
     const spawnChild = statusProbeHooks?.spawn ?? defaultStatusProbeSpawn;
