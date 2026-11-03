@@ -128,6 +128,7 @@ async function main() {
     expectRankOf(sub, "zh-research", 1, "CJK substring '中文研究'");
     assert(sub.decision === "high" && sub.recommendation?.id === "zh-research", "substring hit is a confident suggestion (conf " + sub.confidence + ")");
     assert(sub.candidates[0]!.coverage === 1, "coverage counts a CJK substring, not only a token prefix");
+    assert(sub.candidates[0]!.arms[0] === "cjk", "the substring stage, not BM25, answered '中文研究' (arms " + sub.candidates[0]!.arms.join("+") + ")");
     assert(termCoverage("中文研究", "深度中文研究与学术检索") === 1, "CJK coverage matches a mid-run substring");
 
     // Two-character Chinese words — the case that rules the trigram tokenizer out (it needs ≥3
@@ -138,9 +139,10 @@ async function main() {
       assert(r.decision === "high", "CJK substring '" + short + "' reaches high confidence (got " + r.decision + ")");
     }
 
-    // Exact-substring semantics, not a bag of characters: reordering the query breaks the
-    // substring, so the engine abstains instead of surfacing a candidate. This is the assertion
-    // that would pass vacuously if it only checked "not confident".
+    // Contiguity is required within a run — reordering characters breaks the substring, so the
+    // engine abstains instead of surfacing a candidate. (Runs separated by whitespace or
+    // punctuation are matched independently, which is why "文献 检索" below still lands.) This is
+    // the assertion that would pass vacuously if it only checked "not confident".
     for (const wrong of ["研究学术", "检索学术", "深文中文研究"]) {
       const r = await recommendDomains(wrong, CJK_METAS);
       assert(r.decision === "none" && r.candidates.length === 0, "reordered CJK '" + wrong + "' is not a substring => no_match (got " + r.decision + ", " + r.candidates.length + " candidates)");
@@ -173,14 +175,18 @@ async function main() {
     assert(!!stageRow && stageRow.arms[0] === "cjk", "stage row carries its own provenance label (got " + stageRow?.arms.join("+") + ")");
     assert(!!stageRow && bothArms.candidates[0]!.score > stageRow.score && stageRow.score > 0, "stage score is discounted below, never tied with, and never zero");
 
-    // Hiragana and Hangul runs resolve the same way (the run class is CJK-wide, not Han-only).
+    // Hiragana/Katakana and Hangul reach the stage too (the run class is CJK-wide, not Han-only).
+    // These descriptions carry no spaces, so a mid-run substring can never be a unicode61 token
+    // prefix: the "cjk" provenance label is what proves the stage answered, not BM25.
     const JA_KO_METAS: DomainMeta[] = [
-      { id: "ja", name: "ja", description: "日本語の文献検索" },
-      { id: "ko", name: "ko", description: "한국어 논문 검색" },
+      { id: "ja", name: "nihongo", description: "日本語文献検索資料" },
+      { id: "ko", name: "hangugeo", description: "한국어논문검색서비스" },
     ];
-    expectRankOf(await recommendDomains("文献検索", JA_KO_METAS), "ja", 1, "Japanese substring '文献検索'");
-    expectRankOf(await recommendDomains("논문", JA_KO_METAS), "ko", 1, "Korean substring '논문'");
-    expectRankOf(await recommendDomains("검색", JA_KO_METAS), "ko", 1, "Hangul substring '검색'");
+    for (const [q, expected] of [["文献検索", "ja"], ["語文献", "ja"], ["논문검", "ko"], ["문검색", "ko"]] as [string, string][]) {
+      const r = await recommendDomains(q, JA_KO_METAS);
+      expectRankOf(r, expected, 1, "non-Han mid-run substring '" + q + "'");
+      assert(r.candidates[0]!.arms[0] === "cjk", "'" + q + "' answered by the substring stage, not BM25 (arms " + r.candidates[0]!.arms.join("+") + ")");
+    }
 
     // The stage is inert for a CJK-free query: nothing is added to the MATCH expression and no
     // row is scanned, so #110's pure-ASCII behaviour is preserved by construction.

@@ -110,7 +110,7 @@ export interface RecommendCandidate {
   score: number; // fused score, higher = better (relative bm25, or the discounted substring fraction for a #125 stage row)
   relative: number; // score / top score ∈ (0, 1]
   coverage: number; // share of query content words matched in this candidate's name+description
-  arms: string[]; // ["fts"] FTS-only, ["fts", "embedding"] hybrid
+  arms: string[]; // lexical stage first: ["fts"] BM25, ["cjk"] #125 substring stage; +"embedding" when fused
 }
 
 export type RecommendDecision = "high" | "low" | "none";
@@ -212,11 +212,13 @@ export function bm25SearchDomainMeta(db: Database.Database, query: string, limit
   }
 
   // #125 second lexical stage — substring recall for the CJK runs FTS5 cannot reach. Each row is
-  // priced by the share of the query's CJK characters it contains, then sorted into place with a
-  // rowid tiebreak (never left to sort stability). The discount puts a stage row under the
+  // priced by the share of the query's CJK characters it contains; the rowid tiebreak states the
+  // intent explicitly instead of relying on scan order. The discount puts a stage row under the
   // weakest positive BM25 hit, so the BM25 arm alone decides a query it can serve — including one
-  // it already fills to topK, where the stage stays out by that rule. A CJK-only query has no
-  // BM25 hits, so the stage owns its ranking and its top row scores the full anchor unit. The
+  // it already fills to topK, where the stage stays out by that rule. When the BM25 arm finds
+  // nothing positive (a query whose runs are not token prefixes anywhere, e.g. "中文研究"), the
+  // stage owns the ranking and its top row scores the full anchor unit. Queries that are also a
+  // whole-token prefix ("深度中文研究") keep their BM25 hits and land here only as extras. The
   // embedding arm still fuses over both stages, so it can reorder the list — #110's hybrid
   // contract, unchanged.
   if (cjkQueryRuns(q).length > 0) {
