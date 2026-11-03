@@ -117,6 +117,11 @@ async function main() {
     expectRankOf(cjkMixed, "zh-research", 1, "mixed ASCII+CJK 'web 深度中文研究'");
     assert(termCoverage("深度中文研究", "深度中文研究与学术检索") === 1, "CJK coverage matches CJK text");
 
+    // --- CodeRabbit #2 (round 2): one content word + stopwords still gets the relaxed rung ---
+    const oneTerm = await recommendDomains("research for me", METAS);
+    assert(oneTerm.decision !== "none", "'research for me' no longer no-match (got " + oneTerm.decision + ")");
+    expectRankOf(oneTerm, "research", 1, "'research for me'");
+
     // --- AC3 (hybrid): stub embedding module present → arm fuses, ranking preserved ---
     __setEmbeddingModuleForTest({
       embedText: async (text: string) => {
