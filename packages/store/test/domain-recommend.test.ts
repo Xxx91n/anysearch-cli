@@ -175,18 +175,39 @@ async function main() {
     assert(!!stageRow && stageRow.arms[0] === "cjk", "stage row carries its own provenance label (got " + stageRow?.arms.join("+") + ")");
     assert(!!stageRow && bothArms.candidates[0]!.score > stageRow.score && stageRow.score > 0, "stage score is discounted below, never tied with, and never zero");
 
-    // Hiragana/Katakana and Hangul reach the stage too (the run class is CJK-wide, not Han-only).
-    // These descriptions carry no spaces, so a mid-run substring can never be a unicode61 token
-    // prefix: the "cjk" provenance label is what proves the stage answered, not BM25.
+    // Han, Hiragana, Katakana and Hangul all reach the stage (the run class is CJK-wide, not
+    // Han-only). These descriptions carry no spaces, so a mid-run substring can never be a
+    // unicode61 token prefix: the "cjk" provenance label is what proves the stage answered.
     const JA_KO_METAS: DomainMeta[] = [
       { id: "ja", name: "nihongo", description: "日本語文献検索資料" },
+      { id: "ja2", name: "gakujutsu", description: "日本語の学術資料" },
+      { id: "ja3", name: "social", description: "ソーシャルニュース話題" },
       { id: "ko", name: "hangugeo", description: "한국어논문검색서비스" },
     ];
-    for (const [q, expected] of [["文献検索", "ja"], ["語文献", "ja"], ["논문검", "ko"], ["문검색", "ko"]] as [string, string][]) {
+    for (const [q, expected] of [
+      ["文献検索", "ja"], // Han, mid-run
+      ["語文献", "ja"], // Han, mid-run
+      ["の学術", "ja2"], // Hiragana inside the run
+      ["ルニュース", "ja3"], // Katakana with the prolonged sound mark U+30FC inside the run
+      ["논문검", "ko"], // Hangul, mid-run
+      ["문검색", "ko"], // Hangul, mid-run
+    ] as [string, string][]) {
       const r = await recommendDomains(q, JA_KO_METAS);
-      expectRankOf(r, expected, 1, "non-Han mid-run substring '" + q + "'");
+      expectRankOf(r, expected, 1, "mid-run CJK substring '" + q + "'");
       assert(r.candidates[0]!.arms[0] === "cjk", "'" + q + "' answered by the substring stage, not BM25 (arms " + r.candidates[0]!.arms.join("+") + ")");
     }
+    // A query that is also a whole-token prefix stays on the BM25 arm — the stage is the fallback,
+    // not a replacement, and the two are labelled differently for that reason.
+    const onPrefix = await recommendDomains("ソーシャル", JA_KO_METAS);
+    assert(onPrefix.candidates[0]?.id === "ja3" && onPrefix.candidates[0]!.arms[0] === "fts", "'ソーシャル' is a token prefix, so the BM25 arm answers it (arms " + onPrefix.candidates[0]?.arms.join("+") + ")");
+    // The prolonged mark is what keeps these apart: dropping U+30FC from the class split
+    // ソーシャル into ソ + シャル, which substring-matched ソシャルニュース as a full-strength hit
+    // while coverage reported 0 — the two confidence factors disagreeing about one match.
+    const noTie = await recommendDomains("ソシャル", JA_KO_METAS);
+    assert(noTie.decision === "none", "prolonged mark is word-internal: 'ソシャル' must not match 'ソーシャル…' (got " + noTie.decision + ")");
+    // Half-width katakana stays inside a run but is not folded to full-width, so this is a
+    // documented boundary rather than a silent miss.
+    assert((await recommendDomains("ﾌﾗﾝｽ", [{ id: "fr", name: "fr", description: "フランス文化情報" }])).decision === "none", "half-width katakana is not folded to full-width (documented boundary)");
 
     // The stage is inert for a CJK-free query: nothing is added to the MATCH expression and no
     // row is scanned, so #110's pure-ASCII behaviour is preserved by construction.

@@ -57,7 +57,15 @@ function escapeQueryUnicode(query: string, maxTerms = 8): string {
 // query text is concatenated into SQL here, so the stage adds no MATCH-expression surface.
 // One character class for both regexes: the run matcher and the per-term test must agree on what
 // counts as CJK, and a silent divergence between them would re-open the recall gap.
-const CJK_CLASS = "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}";
+// The Japanese prolonged-sound mark ー (U+30FC), iteration marks and the half-width katakana
+// block are Script=Common / outside the script properties, yet they are word-internal in real
+// text: left out, "ソーシャル" splits into ソ + シャル and substring-matches "ソシャルニュース"
+// as a full-strength hit while coverage reads 0 — the two factors would disagree about the same
+// match. Half-width forms are kept inside a run but NOT folded to full-width, so "ﾌﾗﾝｽ" does not
+// match "フランス"; that is a documented boundary, not an oversight.
+const CJK_CLASS =
+  "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}" +
+  "\\u30FC\\u3031-\\u3035\\u303D\\uff66-\\uff9F";
 const CJK_RUN_RE = new RegExp(`[${CJK_CLASS}]+`, "gu");
 const CJK_CHAR_RE = new RegExp(`[${CJK_CLASS}]`, "u");
 
@@ -217,7 +225,8 @@ export function bm25SearchDomainMeta(db: Database.Database, query: string, limit
   // weakest positive BM25 hit, so the BM25 arm alone decides a query it can serve — including one
   // it already fills to topK, where the stage stays out by that rule. When the BM25 arm finds
   // nothing positive (a query whose runs are not token prefixes anywhere, e.g. "中文研究"), the
-  // stage owns the ranking and its top row scores the full anchor unit. Queries that are also a
+  // stage owns the ranking: a row carrying every run scores the full anchor unit, a partial row
+  // its share. Queries that are also a
   // whole-token prefix ("深度中文研究") keep their BM25 hits and land here only as extras. The
   // embedding arm still fuses over both stages, so it can reorder the list — #110's hybrid
   // contract, unchanged.
