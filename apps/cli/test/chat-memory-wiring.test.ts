@@ -82,6 +82,30 @@ async function main() {
     check(failedWiring.store === undefined && failedWiring.sessionId === undefined,
       "a failed ensureSession yields empty wiring (the runtime gate stays closed)");
     check(/session row registration failed/.test(captured), "a failed registration is reported, not swallowed");
+
+    // 4. An empty anchor id never reaches the store (no bogus sessions row).
+    const origEnv = process.env.ANS_SESSION_ID;
+    delete process.env.ANS_SESSION_ID;
+    const emptyHome = mkdtempSync(join(tmpdir(), "ans-129-home-"));
+    const prevProfile = process.env.USERPROFILE;
+    const prevHome = process.env.HOME;
+    process.env.USERPROFILE = emptyHome;
+    process.env.HOME = emptyHome;
+    let emptyWiring: ChatMemoryWiring | undefined;
+    let ensuredCalls = 0;
+    try {
+      // First call generates + persists an anchor (normal path, not empty).
+      const probeStore = { ensureSession: async () => { ensuredCalls += 1; } } as any;
+      emptyWiring = await wireChatMemory(probeStore, "default");
+    } finally {
+      process.env.USERPROFILE = prevProfile;
+      process.env.HOME = prevHome;
+      if (origEnv === undefined) delete process.env.ANS_SESSION_ID;
+      else process.env.ANS_SESSION_ID = origEnv;
+      try { rmSync(emptyHome, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+    check(emptyWiring?.sessionId !== undefined && ensuredCalls === 1,
+      "a cold anchor generates a non-empty id and registers it (no empty-id wiring)");
   } finally {
     if (prevSessionEnv === undefined) delete process.env.ANS_SESSION_ID;
     else process.env.ANS_SESSION_ID = prevSessionEnv;

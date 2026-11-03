@@ -470,14 +470,14 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
   ];
   await pipeline.consolidate(msgs as any, 1000, true);
 
-  let flushed = false;
-  const flushPromise = pipeline.flush().then(() => { flushed = true; });
+  let flushResolutions = 0;
+  const flushPromise = pipeline.flush().then(() => { flushResolutions += 1; });
   await new Promise(r => setTimeout(r, 20));
-  assert(flushed === false, "flush: does not resolve while the anchor write is still in flight");
+  assert(flushResolutions === 0, "flush: does not resolve while the anchor write is still in flight");
 
   releaseWrite();
   await flushPromise;
-  assert(flushed === true, "flush: resolves once the pending write completes");
+  assert(flushResolutions === 1, "flush: resolves once the pending write completes");
   assert(saved.includes("l2_recall"), "flush: the l2_recall anchor write actually landed before flush returned");
 }
 

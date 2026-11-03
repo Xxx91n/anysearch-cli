@@ -28,6 +28,12 @@ export interface ChatMemoryWiring {
  */
 export async function wireChatMemory(store: SessionStorePort, domain: string): Promise<ChatMemoryWiring> {
   const sessionId = readSessionId();
+  // readSessionId is fail-open by contract; an empty id must never reach the
+  // store (it would create a bogus sessions row and disable resume).
+  if (!sessionId) {
+    process.stderr.write("[warn] session anchor produced an empty id — continuing without memory anchors\n");
+    return {};
+  }
   try {
     await store.ensureSession(sessionId, domain);
     return { store, sessionId };
