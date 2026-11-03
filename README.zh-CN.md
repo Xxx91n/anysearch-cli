@@ -184,7 +184,7 @@ fail-closed，绝不自动删除。因此被杀进程不会永久阻塞后续操
 Windows 瞬时共享冲突（`EPERM`/`EBUSY`/`ENOTEMPTY`）会做有界退避重试，最长约
 60 秒，耗尽后仍报告原始错误。
 
-`install`、`uninstall`、`list`、`validate` 还会在持锁时对账安装器自有残留：
+`install`、`list`、`validate` 还会在持锁时对账安装器自有残留：
 仅在不存在 `installed.json` 时清理 `.install-*` 暂存目录和 `.installed-*.tmp`
 临时清单；`.uninstall-*` 备份、未登记的 `<name>/` 目录和未知条目永不自动删除。
 安装中断留下的未登记 `<name>/` 可手工删除后重装。若清单仍记录某 skill 但其
@@ -193,8 +193,8 @@ Windows 瞬时共享冲突（`EPERM`/`EBUSY`/`ENOTEMPTY`）会做有界退避重
 删掉这条失效记录（项目级加 `--project`）。已存在 `installed.json` 时留下的 `.installed-*.tmp`
 不会被自动删除，请在手工清理前先查看 `skills/synced/`。回收中断留下的
 `.installed.lock.reclaim-*` 遵循同样的“无清单才清理”规则：仅在没有
-`installed.json`、且其记录的持有者于本机可证明已死时清理；否则报告并保留。
-若 `ans skill list`
+`installed.json`、且其记录的持有者于本机可证明已死时清理；含清单的 scope
+不会自动清理。若 `ans skill list`
 本身报告清单缺失或损坏，请先直接查看 `skills/synced/` 再动手删除。
 
 **安装不等于激活。** 这些命令绝不改写 domain TOML。Skill Active List 仍由

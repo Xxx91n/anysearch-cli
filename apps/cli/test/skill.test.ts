@@ -2,7 +2,7 @@
 // → list → uninstall; fail-closed manifest handling and installation ≠ activation.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync,
   statSync, symlinkSync, writeFileSync,
@@ -167,6 +167,9 @@ test("an empty scope lists nothing; missing manifest with orphan files still ref
   assert.equal(result.code, 1);
   assert.match(result.stderr, /missing/);
   assert.equal(readFileSync(orphan, "utf8"), "orphan");
+  const listed = await f.run(["list"]);
+  assert.equal(listed.code, 1, "list stays fail-closed on unrecorded content");
+  assert.match(listed.stderr, /manifest is missing/);
 });
 
 test("a manifest lock serializes install and uninstall in the same scope", async (t) => {
@@ -421,12 +424,9 @@ test("usage errors are nonzero and do not create an installation", async (t) => 
   assert.equal((await f.run(["--help"])).code, 0);
 });
 
-/** Return the pid of a process that has already exited on this host. */
+/** A pid above every supported OS pid limit; probing it reports ESRCH. */
 function deadPid(): number {
-  const child = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
-  assert.equal(child.status, 0);
-  assert.ok(child.pid);
-  return child.pid;
+  return 2_147_483_647;
 }
 
 /** Plant a lock owned by the given record in the user scope. */
@@ -488,6 +488,12 @@ test("locks that are live or from another host are never reclaimed", async (t) =
     if (host !== hostname()) assert.match(result.stderr, /remote-host/, "cross-host locks name the other host");
     assert.ok(existsSync(lock), "a lock that is not provably dead is left in place");
   }
+  const malformedLock = plantLock(managed, "junk", 0);
+  writeFileSync(join(malformedLock, "owner.json"), "{broken");
+  const malformed = await f.run(["install", dir]);
+  assert.equal(malformed.code, 1, malformed.stderr);
+  assert.match(malformed.stderr, /owner record is incomplete or unreadable/);
+  assert.ok(existsSync(malformedLock), "an unreadable owner is never reclaimed");
   assert.equal(existsSync(join(managed, "beta")), false);
   assert.deepEqual(Object.keys(f.manifest().skills), ["demo"]);
 });
@@ -610,6 +616,107 @@ test("a permanent rename failure keeps the original error and publishes no half 
   }
   assert.equal(readFileSync(skillManifestPath(f.opts), "utf8"), manifestBefore);
   assert.equal(existsSync(join(managed, "beta")), false);
+  assert.deepEqual(readdirSync(managed).sort(), ["demo", "installed.json"]);
+});
+
+test("manifest publication retries transient failures", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  let failures = 0;
+  skillRenameIO.current = {
+    rename: (from, to) => {
+      if (to.endsWith("installed.json") && failures < 2) {
+        failures += 1;
+        throw Object.assign(new Error("busy"), { code: "EBUSY" });
+      }
+      renameSync(from, to);
+    },
+    sleep: () => {},
+    now: () => 0,
+  };
+  try {
+    assert.equal((await f.run(["install", dir])).code, 0);
+  } finally {
+    skillRenameIO.current = undefined;
+  }
+  assert.equal(failures, 2);
+  assert.equal(f.manifest().skills.demo.commit, git(f.repository, ["rev-parse", "HEAD"]));
+});
+
+test("permanent manifest publication failure rolls back the published directory", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  const denied = Object.assign(new Error("denied by test"), { code: "EPERM" });
+  let clock = 0;
+  skillRenameIO.current = {
+    rename: (from, to) => {
+      if (to.endsWith("installed.json")) throw denied;
+      renameSync(from, to);
+    },
+    sleep: (ms) => { clock += ms; },
+    now: () => clock,
+  };
+  try {
+    const result = await f.run(["install", dir]);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /denied by test/);
+  } finally {
+    skillRenameIO.current = undefined;
+  }
+  const managed = managedSkillsRoot(f.opts);
+  assert.equal(existsSync(join(managed, "demo")), false, "the published directory is rolled back");
+  assert.equal(existsSync(skillManifestPath(f.opts)), false, "no partial manifest is published");
+  assert.deepEqual(readdirSync(managed), []);
+});
+
+test("uninstall retries a transient backup rename", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  let failures = 0;
+  skillRenameIO.current = {
+    rename: (from, to) => {
+      if (to.includes(".uninstall-") && failures < 2) {
+        failures += 1;
+        throw Object.assign(new Error("busy"), { code: "EBUSY" });
+      }
+      renameSync(from, to);
+    },
+    sleep: () => {},
+    now: () => 0,
+  };
+  try {
+    assert.equal((await f.run(["uninstall", "demo"])).code, 0);
+  } finally {
+    skillRenameIO.current = undefined;
+  }
+  assert.equal(failures, 2);
+  assert.deepEqual(f.manifest().skills, {});
+});
+
+test("uninstall restores the directory when manifest publication fails", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const manifestBefore = readFileSync(skillManifestPath(f.opts), "utf8");
+  const denied = Object.assign(new Error("denied by test"), { code: "EPERM" });
+  let clock = 0;
+  skillRenameIO.current = {
+    rename: (from, to) => {
+      if (to.endsWith("installed.json")) throw denied;
+      renameSync(from, to);
+    },
+    sleep: (ms) => { clock += ms; },
+    now: () => clock,
+  };
+  try {
+    const result = await f.run(["uninstall", "demo"]);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /denied by test/);
+  } finally {
+    skillRenameIO.current = undefined;
+  }
+  assert.ok(existsSync(join(managed, "demo", "SKILL.md")), "the backup is restored");
+  assert.equal(readFileSync(skillManifestPath(f.opts), "utf8"), manifestBefore);
   assert.deepEqual(readdirSync(managed).sort(), ["demo", "installed.json"]);
 });
 

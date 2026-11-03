@@ -347,9 +347,9 @@ export function releaseOwnedLock(lock: string, token: string): boolean {
 function acquireManifestLock(managed: string): () => void;
 /** Acquire the lock, or return undefined when a live holder makes cleanup unsafe. */
 function acquireManifestLock(managed: string, skipOnContention: true): (() => void) | undefined;
-// Design: one coarse mkdir lock per managed root serializes read → publish/remove →
-// write; a live holder is never evicted, and only a pid proven dead on this host is
-// reclaimed. A contended run fails closed instead of deleting a lock that may be live.
+// Design: one coarse mkdir lock per managed root — it serializes read → publish/remove
+// → write, never evicts a live holder, and reclaims only a pid proven dead on this
+// host; contention fails closed instead of deleting a lock that may be live.
 function acquireManifestLock(managed: string, skipOnContention = false): (() => void) | undefined {
   const lock = join(managed, MANIFEST_LOCK);
   const token = randomUUID();
@@ -359,7 +359,7 @@ function acquireManifestLock(managed: string, skipOnContention = false): (() => 
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       const owner = readLockOwner(lock);
-      const state = owner ? probeLockOwner(owner) : "unknown";
+      const state = probeLockOwner(owner);
       if (state === "dead" && owner) {
         reclaimDeadLock(managed, lock, owner);
         continue;
@@ -468,6 +468,12 @@ function maintainManagedRoot(managed: string): void {
   } finally {
     release();
   }
+}
+
+/** Validate the scope anchors, then reconcile opportunistically. */
+function maintainScope(managed: string): void {
+  requireScopeAnchors(managed);
+  maintainManagedRoot(managed);
 }
 
 /** Read an existing manifest, or bootstrap one only in an empty managed root. */
@@ -642,10 +648,9 @@ function missingDirectoryWarnings(managed: string, entries: InstalledSkill[]): s
 function readInstallationListing(opts: SkillOptions): SkillListing {
   const managed = managedSkillsRoot(opts);
   if (!statIfPresent(managed)) return { skills: [], warnings: [] };
-  requireScopeAnchors(managed);
   // Design: read commands clean only while holding the lock — a live writer keeps
   // the read path lock-free, since the manifest replace is an atomic rename.
-  maintainManagedRoot(managed);
+  maintainScope(managed);
   if (!statIfPresent(manifestIn(managed)) && isEmptyManagedRoot(managed)) return { skills: [], warnings: [] };
   const skills = Object.values(readManifest(managed).skills).sort((a, b) => a.name.localeCompare(b.name));
   return { skills, warnings: missingDirectoryWarnings(managed, skills) };
@@ -671,10 +676,7 @@ export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: 
   let entries: InstalledSkill[];
   if (selectedName !== undefined) {
     requireName(selectedName);
-    if (statIfPresent(managed)) {
-      requireScopeAnchors(managed);
-      maintainManagedRoot(managed);
-    }
+    if (statIfPresent(managed)) maintainScope(managed);
     const entry = readManifest(managed).skills[selectedName];
     if (!entry) fail(`skill ${selectedName} is not recorded in ${skillManifestPath(opts)}`);
     entries = [entry];
@@ -701,10 +703,9 @@ export function uninstallSkill(name: string, opts: SkillOptions = {}): Installed
   if (!statIfPresent(managed)) missingManifest(managed);
   requireScopeAnchors(managed);
   return withManifestLock(managed, () => {
-    // Design: authenticate before reconciling — a refused uninstall must leave the
-    // store untouched, even when the manifest is corrupt or the skill is unrecorded.
+    // Design: uninstall requires a manifest, so manifest-gated residue cleanup is
+    // inherently a no-op; only lock acquisition above reclaims a dead lock.
     const manifest = readManifest(managed);
-    reconcileManagedRoot(managed);
     const entry = manifest.skills[name];
     if (!entry) fail(`skill ${name} is not recorded in ${skillManifestPath(opts)}; no files were removed`);
     // Design: a recorded directory that is already gone leaves nothing to
