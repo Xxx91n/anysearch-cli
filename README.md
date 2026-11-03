@@ -194,7 +194,9 @@ without deleting anything; uninstall never scans for guessed targets.
 concurrent mutations cannot lose each other's manifest entry; a contended run
 fails with the lock path instead of overwriting the manifest. If a run is killed
 mid-operation, remove the leftover `skills/synced/.installed.lock` directory
-once no `ans skill` process is running.
+once no `ans skill` process is running. An interrupted copy can likewise leave a
+`.install-*` staging directory (or `.uninstall-*` backup); remove it once no
+operation is running.
 
 **Installation is not activation.** These commands never edit domain TOML.
 The Active Domain's `[skills].active` remains the authority for the Skill

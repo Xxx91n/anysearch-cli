@@ -103,8 +103,8 @@ export function skillManifestPath(opts: SkillOptions = {}): string {
 /** Lock directory that serializes manifest read-modify-write within one scope. */
 const MANIFEST_LOCK = ".installed.lock";
 
-// Names are path segments on every supported OS. The Agent Skills naming rule
-// also excludes traversal, absolute paths, Windows device names and separators.
+// Design: names are single path segments on every supported OS — the Agent Skills
+// naming rule also excludes traversal, absolute paths, Windows device names and separators.
 /** Assert a safe Agent Skill name usable as a single directory segment. */
 function requireName(value: unknown): asserts value is string {
   if (typeof value !== "string" || !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(value)
@@ -130,8 +130,8 @@ function corruptManifest(path: string, detail: string): never {
 }
 
 // Design: destructive operations authenticate the entire manifest before touching
-// any directory. Missing, malformed and schema-invalid manifests all fail closed;
-// never rediscover deletion targets by scanning the filesystem.
+// any directory — missing, malformed and schema-invalid manifests all fail closed,
+// and deletion targets are never rediscovered by scanning the filesystem.
 /** Fail with the canonical missing-manifest message. */
 function missingManifest(managed: string): never {
   fail(`skill manifest is missing: ${manifestIn(managed)}. Refusing to guess installation targets; no files were removed.`);
@@ -185,8 +185,8 @@ function skillsRootFromManaged(managed: string): string {
 }
 
 // Design: the selected scope anchor (.anysearch / .anysearch-cli) is part of the
-// trust boundary. A project-controlled .anysearch symlink must not alias the
-// user store, so validate it before granting manifest read/write/delete authority.
+// trust boundary — a project-controlled .anysearch symlink must not alias the
+// user store, so it is validated before manifest read/write/delete authority.
 /** Derive the scope anchor (.anysearch / .anysearch-cli) from a managed path. */
 function scopeRootFromManaged(managed: string): string {
   return resolve(managed, "..", "..");
@@ -327,8 +327,8 @@ export function validateSkillFile(path: string): string {
 /** Run a read-only Git inspection command in the source checkout. */
 function git(source: string, args: string[]): string {
   try {
-    // Design: provenance collection is data-only. Disable repository-configured
-    // fsmonitor helpers so `git status` cannot execute checkout-supplied code.
+    // Design: provenance collection is data-only — repository-configured
+    // fsmonitor helpers are disabled so `git status` cannot execute checkout code.
     return execFileSync("git", ["-c", "core.fsmonitor=false", "-C", source, ...args], {
       encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
       timeout: 10_000, maxBuffer: 16 * 1024 * 1024,
@@ -387,8 +387,8 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
     let directoryPublished = false;
     let manifestPublished = false;
     try {
-      // Never execute source code. Copy files only: no dependency resolution,
-      // lifecycle scripts, remote fetches, or symlinks that escape the snapshot.
+      // Design: never execute source code — copy files only: no dependency
+      // resolution, lifecycle scripts, remote fetches, or escaping symlinks.
       cpSync(source, staging, {
         recursive: true, force: false, errorOnExist: true,
         filter: (from) => {
@@ -457,8 +457,8 @@ export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: 
 export function uninstallSkill(name: string, opts: SkillOptions = {}): InstalledSkill {
   requireName(name);
   const managed = managedSkillsRoot(opts);
-  // A missing managed root cannot hold a lock. Report the canonical missing
-  // manifest error instead of creating directories for a failed operation.
+  // Design: a missing managed root cannot hold a lock — report the canonical
+  // missing manifest error instead of creating directories for a failed operation.
   if (!statIfPresent(managed)) missingManifest(managed);
   requireScopeAnchors(managed);
   return withManifestLock(managed, () => {

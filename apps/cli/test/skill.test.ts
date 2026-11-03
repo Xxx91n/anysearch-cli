@@ -145,8 +145,12 @@ test("missing, malformed and schema-invalid manifests never authorize deletion",
 
 test("an empty scope lists nothing; missing manifest with orphan files still refuses uninstall", async (t) => {
   const f = fixture(t);
-  assert.equal((await f.run(["list"])).code, 0);
-  assert.equal((await f.run(["validate"])).code, 0);
+  const emptyList = await f.run(["list"]);
+  assert.equal(emptyList.code, 0);
+  assert.match(emptyList.stdout, /No installed skills\./);
+  const emptyValidate = await f.run(["validate"]);
+  assert.equal(emptyValidate.code, 0);
+  assert.match(emptyValidate.stdout, /No installed skills to validate\./);
   const absent = await f.run(["uninstall", "demo"]);
   assert.equal(absent.code, 1);
   assert.match(absent.stderr, /manifest is missing/);
