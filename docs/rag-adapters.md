@@ -24,7 +24,7 @@
 > required`）。也就是说「不写」不等于「`none`」——要么显式写，要么确认基域写了。
 > 这一点由 CodeRabbit 在 PR #123 指出并核实（`packages/store/src/domain-schema.ts`
 > 的 `derive()` 与 `validate()`）。
-
+>
 > **`none` + 残留 note 的兼容行为（AC2）**：#104 之前注入条件是
 > `rag.adapter && rag.config.note` —— 字符串 `"none"` 是真值，所以
 > `adapter = "none"` 配了 note 的域**本来就会注入**。为了让 `none` 行为逐字节
