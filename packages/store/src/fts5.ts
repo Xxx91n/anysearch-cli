@@ -26,7 +26,9 @@ export function fts5EscapeQuery(query: string, maxTerms = 8): string {
 // that IS in memory becomes unreachable. Callers run the strict rung first and, only when it under-fills
 // the limit, append the relaxed rung: content words (function words dropped) OR-ed with prefix match,
 // ranked by the same BM25 expression. Strict hits keep their order and priority.
-const RELAX_STOPWORDS = new Set([
+// Exported (additive) so the domain recommender can reuse the same stopword
+// list with Unicode-aware tokenization — see domain-recommend.ts.
+export const RELAX_STOPWORDS = new Set([
   "a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "from", "by", "with", "about", "as",
   "is", "are", "was", "were", "be", "been", "being", "it", "its", "this", "that", "these", "those",
   "what", "which", "who", "whom", "whose", "when", "where", "why", "how", "do", "does", "did",
