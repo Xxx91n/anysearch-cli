@@ -8,8 +8,9 @@
 // Confidence model — coverage × margin, NOT an absolute bm25 floor:
 // with a 3-row corpus bm25 magnitudes run ~1e-6..3 and scale with corpus size, so an absolute
 // threshold is uncalibratable. Instead: coverage = share of query content words prefix-matched in
-// the top candidate's name+description; margin = 1 − (runner-up score / top score), 1.0 for a single
-// candidate. confidence = coverage × margin ∈ [0,1]; high ⇔ confidence ≥ HIGH_CONFIDENCE_THRESHOLD.
+// the top candidate's name+description (substring-matched for CJK terms, #125); margin = 1 −
+// (runner-up score / top score), 1.0 for a single candidate. confidence = coverage × margin ∈
+// [0,1]; high ⇔ confidence ≥ HIGH_CONFIDENCE_THRESHOLD.
 // Scale-free, and every factor is printable in the structured "why no recommendation" line.
 //
 // Relaxed rung deviation from fts5.ts: memory evidence requires a strict majority of content words
@@ -37,6 +38,68 @@ function escapeQueryUnicode(query: string, maxTerms = 8): string {
   const prefixClause = words.map((w) => w + "*").join(" AND ");
   const phrase = query.replace(PHRASE_QUOTE_RE, '""');
   return "(" + prefixClause + ') OR "' + phrase + '"';
+}
+
+// #125 — within-run CJK recall. unicode61 keeps an unbroken CJK run as ONE token and MATCH is
+// whole-token equality, so "中文研究" cannot hit the description "深度中文研究与学术检索" even
+// though it is a substring of it. The indexed `cjk` column holds each run as its single chars
+// followed by its character bigrams; chaining a query run's consecutive bigrams into a phrase
+// restores exact-substring semantics (sqlite.org/fts5.html §4.3.1, fts5-cjk recall measurements
+// on a 47k-row legal corpus). Chosen over the trigram tokenizer because trigram returns nothing
+// for a full-text query shorter than 3 characters — two-character words are the commonest word
+// length in Chinese — and because trigram flattens tf to 1, which degrades BM25 ordering.
+// Index side and query side call THESE functions and no others: two split functions drifting
+// apart is the documented silent-recall-loss failure mode for bigram indexes.
+const CJK_RUN_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
+const CJK_CHAR_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+
+function cjkRuns(text: string): string[] {
+  return text.match(CJK_RUN_RE) ?? [];
+}
+
+// Indexed token stream for a text: per run the single chars first (a one-character query has to
+// resolve), then the bigram block. The block stays contiguous inside a run, which is what makes
+// a bigram phrase match a substring rather than a bag of characters.
+export function cjkIndexTokens(text: string): string[] {
+  const out: string[] = [];
+  for (const run of cjkRuns(text)) {
+    const chars = [...run];
+    out.push(...chars);
+    for (let i = 0; i + 1 < chars.length; i++) out.push(chars[i]! + chars[i + 1]!);
+  }
+  return out;
+}
+
+export interface CjkClause {
+  strict: string | null; // every run matched: bigram phrase per run, AND-ed across runs
+  relaxed: string | null; // the runs' bigrams OR-ed — partial within-run recall
+}
+
+// Query-side counterpart of cjkIndexTokens. Null on both fields for a CJK-free query, so the
+// pure-ASCII MATCH expressions stay byte-identical to the pre-#125 shape (and a bm25 column with
+// no query term contributes nothing to the score).
+// Truncation mirrors escapeQueryUnicode's maxTerms: at most maxTerms runs, each phrase built from
+// its first maxTerms bigrams — a long query then matches its leading substring. Only the query is
+// truncated, never the index, so the split itself stays one function on both sides.
+export function cjkClauses(query: string, maxTerms = 8): CjkClause {
+  const strict: string[] = [];
+  const bigrams = new Set<string>();
+  for (const run of cjkRuns(query).slice(0, maxTerms)) {
+    const chars = [...run];
+    if (chars.length === 1) {
+      strict.push('"' + chars[0]! + '"'); // quoted so the column filter parses as a token match
+      continue;
+    }
+    const phrase: string[] = [];
+    for (let i = 0; i + 1 < chars.length && phrase.length < maxTerms; i++) {
+      const bg = chars[i]! + chars[i + 1]!;
+      phrase.push(bg);
+      bigrams.add(bg);
+    }
+    strict.push('"' + phrase.join(" ") + '"');
+  }
+  if (strict.length === 0) return { strict: null, relaxed: null };
+  return { strict: strict.join(" AND "), relaxed: bigrams.size > 0 ? [...bigrams].join(" OR ") : null };
 }
 
 // Content words of a query with Unicode letters preserved (same stopword list
@@ -103,8 +166,17 @@ export function termCoverage(query: string, text: string): number {
   if (terms.length === 0) return 0;
   // Unicode-aware token split so CJK runs in the text stay matchable tokens.
   const toks = text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const hay = text.toLowerCase();
   let matched = 0;
-  for (const t of terms) if (toks.some((k) => k.startsWith(t))) matched++;
+  for (const t of terms) {
+    if (toks.some((k) => k.startsWith(t))) {
+      matched++;
+    } else if (CJK_CHAR_RE.test(t) && hay.includes(t)) {
+      // #125: a CJK term buried inside a longer unbroken run is a substring, never a token
+      // prefix — prefix matching alone would report coverage 0 for a term that did match.
+      matched++;
+    }
+  }
   return matched / terms.length;
 }
 
@@ -116,9 +188,9 @@ interface FtsRow {
 }
 
 // BM25 over an in-memory FTS5 index of domain metadata. Strict rung first (all-terms AND +
-// phrase fallback via escapeQueryUnicode), then a relaxed OR rung over content words when the
-// strict rung under-fills — same two-rung shape as searchMemoryMultiQuery, minus the
-// evidence-majority filter (see header comment).
+// phrase fallback via escapeQueryUnicode, plus the #125 bigram phrase over the `cjk` column),
+// then a relaxed OR rung over content words when the strict rung under-fills — same two-rung
+// shape as searchMemoryMultiQuery, minus the evidence-majority filter (see header comment).
 export function bm25SearchDomainMeta(db: Database.Database, query: string, limit = RECOMMEND_TOP_K): FtsRow[] {
   const sql =
     "SELECT rowid, name, description, bm25(domain_fts) AS bm25score " +
@@ -130,18 +202,26 @@ export function bm25SearchDomainMeta(db: Database.Database, query: string, limit
     description: r.description,
     match: -r.bm25score,
   });
-  const strict = escapeQueryUnicode(query.trim());
-  const rows = db.prepare<unknown[], RawRow>(sql).all(strict, limit * 4).map(toRow);
+  const q = query.trim();
+  const cjk = cjkClauses(q);
+  const strict = escapeQueryUnicode(q);
+  // Column-filtered so the bigram phrase only reads the `cjk` column it was written for.
+  const strictExpr = cjk.strict ? "(" + strict + ") OR cjk:(" + cjk.strict + ")" : strict;
+  const rows = db.prepare<unknown[], RawRow>(sql).all(strictExpr, limit * 4).map(toRow);
   if (rows.length < limit) {
-    const terms = unicodeTerms(query.trim());
+    const terms = unicodeTerms(q);
     // relaxed OR rung at ≥1 content word: a query like "research for me" has a single
     // content term and the strict AND rung requires the stopwords too, so without the
     // one-term relaxed rung it would report no match. (Memory evidence needs ≥3 +
     // majority; a suggestion does not — the confidence margin prices the ambiguity.)
-    if (terms.length >= 1) {
-      const relaxed = terms.map((t) => t + "*").join(" OR ");
-      const seen = new Set(rows.map((r) => r.rowid));
-      for (const r of db.prepare<unknown[], RawRow>(sql).all(relaxed, limit * 8).map(toRow)) {
+    const relaxedExprs: string[] = [];
+    if (terms.length >= 1) relaxedExprs.push(terms.map((t) => t + "*").join(" OR "));
+    // #125: a CJK substring that is not an exact run match still deserves the partial rung,
+    // priced the same way — a suggestion, not evidence.
+    if (cjk.relaxed) relaxedExprs.push("cjk:(" + cjk.relaxed + ")");
+    const seen = new Set(rows.map((r) => r.rowid));
+    for (const expr of relaxedExprs) {
+      for (const r of db.prepare<unknown[], RawRow>(sql).all(expr, limit * 8).map(toRow)) {
         if (!seen.has(r.rowid)) {
           seen.add(r.rowid);
           rows.push(r);
@@ -159,9 +239,13 @@ export async function recommendDomains(query: string, metas: DomainMeta[], opts?
   const q = query.trim();
   const db = new Database(":memory:");
   try {
-    db.exec("CREATE VIRTUAL TABLE domain_fts USING fts5(name, description)");
-    const ins = db.prepare("INSERT INTO domain_fts(rowid, name, description) VALUES (?, ?, ?)");
-    metas.forEach((m, i) => ins.run(i + 1, m.name, m.description));
+    // Auxiliary `cjk` column: FTS5 has no HIDDEN column keyword (only UNINDEXED, which would
+    // drop it out of the index entirely), so it is a plain third column that no SELECT lists —
+    // rows are read back by name/description only. It carries CJK characters only, so an ASCII
+    // query never touches it and bm25 scores for those queries are unchanged.
+    db.exec("CREATE VIRTUAL TABLE domain_fts USING fts5(name, description, cjk)");
+    const ins = db.prepare("INSERT INTO domain_fts(rowid, name, description, cjk) VALUES (?, ?, ?, ?)");
+    metas.forEach((m, i) => ins.run(i + 1, m.name, m.description, cjkIndexTokens(m.name + " " + m.description).join(" ")));
     const rows = bm25SearchDomainMeta(db, q, topK);
 
     // Peer-optional embedding arm: query vector + per-candidate passage vectors, cosine-fused
