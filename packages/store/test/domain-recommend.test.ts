@@ -9,7 +9,8 @@
 // ranks correctly.
 // #125 extends the CJK block: within-run substring queries (including two-character words and
 // single characters), reordered runs must abstain, the substring stage must stay below the BM25
-// arm, and a CJK-free query must not touch the lexical arm at all.
+// arm with its own provenance label, and a CJK-free query leaves the BM25 arm answering exactly as
+// before — which is what the ASCII cases above, unchanged from #110, demonstrate.
 
 import {
   recommendDomains,
@@ -200,27 +201,37 @@ async function main() {
     // not a replacement, and the two are labelled differently for that reason.
     const onPrefix = await recommendDomains("ソーシャル", JA_KO_METAS);
     assert(onPrefix.candidates[0]?.id === "ja3" && onPrefix.candidates[0]!.arms[0] === "fts", "'ソーシャル' is a token prefix, so the BM25 arm answers it (arms " + onPrefix.candidates[0]?.arms.join("+") + ")");
-    // The prolonged mark is what keeps these apart: dropping U+30FC from the class split
-    // ソーシャル into ソ + シャル, which substring-matched ソシャルニュース as a full-strength hit
-    // while coverage reported 0 — the two confidence factors disagreeing about one match.
+    // The prolonged mark is word-internal: a query that drops it is not a substring of the marked
+    // spelling, so it abstains instead of scoring a partial match. (With U+30FC outside the class,
+    // this query split into ソ + シャル and both pieces matched — the agreement between coverage and
+    // the stage for exactly this input is asserted below.)
     const noTie = await recommendDomains("ソシャル", JA_KO_METAS);
     assert(noTie.decision === "none", "prolonged mark is word-internal: 'ソシャル' must not match 'ソーシャル…' (got " + noTie.decision + ")");
     // Half-width katakana stays inside a run but is not folded to full-width, so this is a
     // documented boundary rather than a silent miss.
     assert((await recommendDomains("ﾌﾗﾝｽ", [{ id: "fr", name: "fr", description: "フランス文化情報" }])).decision === "none", "half-width katakana is not folded to full-width (documented boundary)");
-    // A mark alone must not carry a match. Widening the class to keep ー word-internal also makes
-    // a bare "ー" a run, and one candidate is enough for the margin rule to print confidence 1 —
-    // a confident recommendation built out of punctuation. The letter-bearing guard drops it.
+    // A mark alone must not carry a match. Widening the class to keep the prolonged mark
+    // word-internal also makes a bare U+30FC a run, and one candidate is enough for the margin rule
+    // to print confidence 1 - a confident recommendation built out of punctuation. The marks sit
+    // INSIDE the corpus below, so only the letter-bearing guard can be what abstains here.
     const MARK_METAS: DomainMeta[] = [
-      { id: "srv", name: "srv", description: "サーバー運用資料" },
+      { id: "srv", name: "srv", description: "サーバー運用資料〱ﾞ" },
       { id: "zh2", name: "zh2", description: "深度中文研究" },
     ];
-    for (const q of ["ー", "゚", "〱"]) {
+    for (const q of ["ー", "〱", "ﾞ"]) {
       const r = await recommendDomains(q, MARK_METAS);
-      assert(r.decision === "none", "mark-only query '" + q + "' must not recommend (got " + r.decision + ", " + r.candidates.length + " candidates)");
+      assert(r.decision === "none", "mark-only query must not recommend (got " + r.decision + ", " + r.candidates.length + " candidates)");
     }
-    assert(cjkRunFraction("サーバー", "サーバ運用") === 0, "omitting the prolonged mark breaks contiguity instead of scoring half a match");
-    assert(cjkRunFraction("バ運", "サーバーバ運用") === 1, "a repeated syllable still resolves as one contiguous run");
+    // The same marks embedded in a real run still match: this is the guard rejecting a mark-only
+    // run, not the corpus lacking the character.
+    assert(cjkRunFraction("ー", "サーバー運用資料〱ﾞ") === 0, "a bare prolonged mark is dropped by the guard although the text contains it");
+    assert(cjkRunFraction("ﾞ", "サーバー運用資料〱ﾞ") === 0, "a bare half-width voice mark is dropped by the guard although the text contains it");
+    assert(cjkRunFraction("サーバ", "サーバー運用資料〱ﾞ") === 1, "the same mark inside a word stays one run");
+    assert(cjkRunFraction("ソーシャル", "ソーシャルニュース") === 1, "a marked word matches its marked spelling");
+    assert(cjkRunFraction("ソシャル", "ソーシャルニュース") === 0, "dropping the mark breaks contiguity instead of scoring half a match");
+    // One rule for recall and confidence: they cannot price the same match apart.
+    assert(termCoverage("ソシャル", "ソーシャルニュース") === cjkRunFraction("ソシャル", "ソーシャルニュース"),
+      "coverage and the substring stage price a mark-less query identically");
 
     // The stage is inert for a CJK-free query: nothing is added to the MATCH expression and no
     // row is scanned, so #110's pure-ASCII behaviour is preserved by construction.

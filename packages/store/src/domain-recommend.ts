@@ -45,9 +45,11 @@ function escapeQueryUnicode(query: string, maxTerms = 8): string {
 // "深度中文研究与学术检索" although it is a substring of it.
 // Design: match each query CJK run as a contiguous substring of name+description in JS, as a
 // second lexical stage under the BM25 arm. Rejected: an auxiliary FTS column — a content-bearing
-// extra column moves every row's bm25 length normalization (measured on this corpus: "docs*"
-// 0.99085996 → 1.17124992, "deep academic research" 1.00083506 → 0.60796880), which would
-// silently re-price #110's ASCII confidence, and bm25 weight 0 does not undo it; the trigram
+// extra column moves every row's bm25 length normalization even for queries that never touch it.
+// Measured on the acceptance corpus, match "docs*": shipped two-column 0.99085996, with a
+// per-character column 1.17729808, with a bigram column 1.09191523; explicit bm25 weights (1,1,0)
+// return 1.09191523 unchanged, so silencing the column's weight does not undo it. That would
+// silently re-price #110's ASCII confidence. Also rejected: the trigram
 // tokenizer — it returns nothing for a full-text query under 3 characters, and two-character
 // words are the commonest word length in Chinese, besides flattening tf to 1. The corpus is a
 // handful of domain rows, so the scan costs nothing and gives exact substring semantics.
@@ -57,15 +59,20 @@ function escapeQueryUnicode(query: string, maxTerms = 8): string {
 // query text is concatenated into SQL here, so the stage adds no MATCH-expression surface.
 // One character class for the run matcher and the coverage test: they must agree on what counts
 // as CJK, or the two confidence factors disagree about the same match.
-// The prolonged-sound mark ー (U+30FC), the iteration marks 〱-〵 (U+3031-U+3035) and the
-// half-width voiced marks ゞ゚ (U+FF9E-U+FF9F) are Script=Common, so the script properties miss
-// them although they are word-internal: left out, "ソーシャル" split into ソ + シャル and
-// substring-matched "ソシャルニュース" at full strength. The half-width katakana LETTERS are
-// already \p{Script=Katakana} and need no listing. Not folded to full-width either way, so
-// "ﾌﾗﾝｽ" does not match "フランス" — a boundary the tests pin rather than leave silent.
-// A run of marks only (a bare ー or ゚) is not a query: every run has to carry at least one script
-// letter, otherwise the stage fires on punctuation, returns one candidate, and the margin rule
-// hands that candidate confidence 1 — a confident recommendation built out of nothing.
+// The prolonged-sound mark U+30FC (the Japanese prosody mark), the iteration marks U+3031-U+3035
+// and the half-width voiced marks U+FF9E-U+FF9F are Script=Common, so the script properties miss
+// them although they are word-internal: left out, the word for "social" splits into two runs and
+// the mark-less query still matched the full text at strength 1 while termCoverage scored the same
+// term 0, because the whitespace split keeps the description one token. The half-width katakana
+// LETTERS are already \p{Script=Katakana} and need no listing; nothing is folded to full-width, so
+// a half-width query does not match its full-width spelling — a boundary the tests pin, not silence.
+// The full-width iteration marks U+309D-U+309E are claimed by Script=Hiragana, so V8 treats them as
+// letters and the guard below does NOT exclude them; a query of one of those is the same shape as a
+// one-character Han query, which #110 already answers with no length floor.
+// A run of marks only (a bare prosody mark or half-width voice mark) is not a query: every run has
+// to carry at least one letter from a CJK script, otherwise the stage fires on punctuation, returns
+// one candidate, and the margin rule hands that candidate confidence 1 — a confident recommendation
+// built out of nothing.
 const CJK_SCRIPT_CLASS = "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}";
 const CJK_CLASS = CJK_SCRIPT_CLASS + "\\u30FC\\u3031-\\u3035\\uff9E-\\uff9F";
 const CJK_RUN_RE = new RegExp(`[${CJK_CLASS}]+`, "gu");
@@ -81,7 +88,9 @@ function cjkQueryRuns(query: string, maxTerms = 8): string[] {
 // Share of a query's CJK run characters that occur contiguously in `text` — 1 when every run is
 // present, 0 when the query has no CJK or nothing matched. The single number is the stage's whole
 // ranking signal, so no flag struct is carried alongside it.
-// Exported for the acceptance test, at the same level as bm25SearchDomainMeta.
+// Exported so the acceptance test can assert the stage rule directly (the same reason
+// bm25SearchDomainMeta is exported); it therefore also reaches the package surface through
+// index.ts's `export *` — a pure predicate with no engine state behind it.
 export function cjkRunFraction(query: string, text: string, maxTerms = 8): number {
   const runs = cjkQueryRuns(query, maxTerms);
   if (runs.length === 0) return 0;
@@ -157,7 +166,9 @@ const EMBEDDING_WEIGHT = 0.4;
 const STAGE_DISCOUNT = 0.5;
 
 // Share of the query's content words (relaxedTerms tokenization, same convention as fts5.ts)
-// that prefix-match a token of `text`. 0 when the query has no content words.
+// matched in `text`: an ASCII word counts when it prefix-matches a token, a CJK word when its runs
+// occur as substrings — the same cjkRunFraction the substring stage prices with, so the two factors
+// cannot disagree about one match. 0 when the query has no content words.
 export function termCoverage(query: string, text: string): number {
   const terms = unicodeTerms(query);
   if (terms.length === 0) return 0;
