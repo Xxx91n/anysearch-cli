@@ -32,6 +32,14 @@ import { createMockEngine } from "./helpers/mock-engine.js";
 
 let passed = 0;
 let failed = 0;
+/**
+ * Minimal assertion helper (repo convention: no test framework).
+ *
+ * Counts a pass or prints the failure, so the process exit code can gate CI.
+ *
+ * @param cond Condition that must hold.
+ * @param msg Failure description printed when the condition does not hold.
+ */
 function assert(cond: boolean, msg: string) {
   if (cond) {
     passed++;
@@ -59,6 +67,12 @@ const httpServer = app.listen(0, "127.0.0.1");
 await new Promise<void>((resolve) => httpServer.once("listening", () => resolve()));
 const base = "http://127.0.0.1:" + (httpServer.address() as AddressInfo).port;
 
+/**
+ * Posts a JSON-RPC payload to the app under test and parses the JSON response.
+ *
+ * @param body JSON-RPC request body.
+ * @returns HTTP status plus the decoded JSON body.
+ */
 async function post(body: unknown): Promise<{ status: number; json: any }> {
   const res = await fetch(base + "/mcp", {
     method: "POST",

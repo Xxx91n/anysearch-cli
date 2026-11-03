@@ -24,7 +24,7 @@ const PKG_VERSION: string =
     : "0.0.0";
 
 /**
- * createMcpEngine: the expensive half of the composition — better-sqlite3
+ * Builds the expensive half of the composition: better-sqlite3
  * session + observation connections, domain loading, provider assembly.
  * Design(#40, decision #91): reuse is per-CONNECTION, never a global singleton.
  * The HTTP entry builds exactly one of these at startup and hands it to every
@@ -49,7 +49,7 @@ export function createMcpEngine(): CompositionResult {
 }
 
 /**
- * buildServer: factory function. Each connection gets a fresh server instance.
+ * Factory for MCP server instances: each connection gets a fresh server.
  * factory pattern, era-agnostic, entry selects transport.
  * Pass an engine to reuse a connection-scoped composition (#112); omit it and
  * this call composes its own (stdio is process-scoped, so one is enough).
