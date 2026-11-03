@@ -66,7 +66,16 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
     writeFileSync(tmp, fresh, "utf8");
     renameSync(tmp, file);
   } catch {
-    // Fail-open: write failures don't block core CLI flow.
+    // Fail-open: write failures don't block core CLI flow. #129 makes this
+    // identity load-bearing for memory (a new id each run means the previous
+    // run's anchors are unreachable), so say it once instead of silently
+    // handing out an id that will not survive the process.
+    try {
+      process.stderr.write(
+        "[warn] could not persist the session anchor; set ANS_SESSION_ID to a stable value or make " +
+        sessionIdBaseDir(env) + " writable to resume memory across runs\n",
+      );
+    } catch { /* diagnostics must not block the fail-open path */ }
   }
   return fresh;
 }
