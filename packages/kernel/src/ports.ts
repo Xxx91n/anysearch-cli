@@ -2,7 +2,7 @@
 // Seam 3 from atomcode-kernel-split-architecture research.
 // Kernel only imports these interfaces; CLI composition root injects implementations.
 
-import type { FusedEnvelope, SearchRequest } from "@anysearch-cli/retriever";
+import type { FusedEnvelope, SearchRequest, SourceTraceLabel } from "@anysearch-cli/retriever";
 import type { SessionStore, Message } from "@anysearch-cli/store";
 export type { T0PreferenceRow, T0PreferenceInput } from "@anysearch-cli/store";
 
@@ -90,4 +90,43 @@ export interface BudgetLedgerPort {
 // fail open (named stderr line, retrieval never blocked). Read/replay is a later ticket.
 export interface ResumeAnchorsPort {
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
+}
+
+/** One adapter's injection payload for a single turn. */
+export interface RagRetrievalResult {
+  /** Text appended after a blank line to the first user message's text channel. */
+  block: string;
+  /**
+   * Provenance for the injected text: recalled rows are `memory` (a tier below
+   * `user` per content-trust TRUST_ORDER), the operator-authored note is `system`.
+   */
+  label: SourceTraceLabel;
+  /** Number of recalled rows folded into `block`; 0 for a static note. */
+  hitCount: number;
+}
+
+/**
+ * Domain-scoped retrieval over private/internal data (#35, decision #90).
+ *
+ * One adapter is selected by `DomainConfigPort.rag.adapter`: `none` skips,
+ * `note` keeps the legacy `config.note` injection, `fts` recalls from the
+ * existing FTS5 memory surface (`SessionStore.searchMemory`) — zero new index,
+ * zero embedding dependency.
+ *
+ * The injection point is unchanged: `MemoryPipeline.inject` Stage-1, the first
+ * USER message's text channel (string or content-block shape alike).
+ */
+export interface RagAdapterPort {
+  /** Adapter id, matching the `[rag] adapter` value that selected it. */
+  readonly id: string;
+  /**
+   * Resolve `query` into an injectable payload.
+   *
+   * @param query - Caller text, normally the first user turn (adapters may truncate).
+   * @param limit - Max hits to fold into the block.
+   * @returns The payload, or null meaning "nothing to inject this turn".
+   *   Thrown faults are fail-open at the registry (no injection, named stderr),
+   *   so implementations may throw without breaking the agent loop.
+   */
+  retrieve(query: string, limit?: number): Promise<RagRetrievalResult | null>;
 }

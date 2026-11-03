@@ -12,6 +12,8 @@ import { generateSummaryWithUsage } from "@earendil-works/pi-agent-core";
 const COMPACTION_RESERVE_TOKENS = 16_384;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
+import { RagAdapterRegistry, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS } from "./rag-adapter";
+import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
 import { isTimeSensitive, isEvergreen } from "@anysearch-cli/store"; // no inline regex copies
@@ -220,6 +222,10 @@ export function consolidateState(
 
 export class MemoryPipeline {
   private deps: MemoryPipelineDeps;
+  // rag adapter registry (#35): domain.rag.adapter -> adapter, resolved per
+  // domain object and cached, so the hot path pays no re-resolution. The
+  // session store is handed in because the "fts" adapter recalls from it.
+  private readonly rag: RagAdapterRegistry;
 
   // ConsolidationState — in-memory cache (CLI fast path).
   // MCP mode restores from anchor per call (saveAnchor persistence).
@@ -231,39 +237,76 @@ export class MemoryPipeline {
 
   constructor(deps: MemoryPipelineDeps) {
     this.deps = deps;
+    this.rag = new RagAdapterRegistry({ store: deps.store });
   }
 
-  // inject: hot path read — corresponds to transformContext delegation.
-  // RAG injection + L1/L2 merged injection at latest user message (attention hot zone).
+  /**
+   * Build the injection payload for one turn — corresponds to treequery's
+   * `transformContext` delegation.
+   *
+   * Runs two stages against the latest user message (the attention hot zone):
+   * stage 1 appends the RAG adapter's block to the *first* user turn, stage 2
+   * appends the merged L1/L2 memory block to the *last* user turn. Both stages
+   * target user messages only, so a leading system/tool message cannot swallow
+   * the payload. The input array is never mutated.
+   *
+   * @param messages - Conversation so far, in provider message shape.
+   * @returns A new array carrying the turn's injections.
+   */
   async inject(messages: any[]): Promise<any[]> {
     const { store, domain, sessionId } = this.deps;
     let result = messages;
 
-    // Stage 1: RAG injection — prepend RAG context note to first user message.
+    // Stage 1: RAG injection — append the adapter's block to the first user message.
     // injections target USER messages; a leading system/tool message must not swallow them.
+    // #35: the adapter is selected by domain.rag.adapter (none / note-legacy / fts);
+    // unknown ids fail open to none with a named stderr warning inside the registry.
+    // #104: pi-agent-core normalizes prompt("…") to content BLOCKS, so the seam is
+    // shape-aware (message-text.ts) instead of string-only — a string-only read
+    // either never fired or overwrote the user's message with the injected text.
     const firstUserIdx = result.findIndex((m: any) => m?.role === "user");
-    if (domain.rag.adapter && domain.rag.config?.note && firstUserIdx >= 0) {
-      const first = result[firstUserIdx];
-      result = [
-        ...result.slice(0, firstUserIdx),
-        { ...first, content: (typeof first.content === "string" ? first.content : "") + "\n\n[RAG Context] " + domain.rag.config.note },
-        ...result.slice(firstUserIdx + 1),
-      ];
+    const firstTarget = firstUserIdx >= 0 ? readMessageText(result[firstUserIdx]) : null;
+    if (firstUserIdx >= 0 && firstTarget) {
+      // fts recall is keyed on the user's own question — the first user turn, which
+      // is also where the block lands. Truncated so long prompts still match the
+      // strict FTS5 rung.
+      const ragQuery = firstTarget.text.slice(0, RAG_QUERY_MAX_CHARS);
+      // Fail-open: retrieval faults are the registry's to report; the agent loop
+      // always continues with the un-injected messages.
+      let ragInstruction = "";
+      try {
+        const injection = await this.rag.resolveInjection(domain, ragQuery, RAG_DEFAULT_LIMIT);
+        if (injection && injection.block) ragInstruction = "\n\n" + injection.block;
+      } catch { /* fail-open: never block a turn on RAG */ }
+      if (ragInstruction) {
+        // Shape-preserving write-back: blocks stay blocks, non-text blocks survive.
+        const next = appendMessageText(result[firstUserIdx], ragInstruction, firstTarget);
+        if (next) {
+          result = [
+            ...result.slice(0, firstUserIdx),
+            next,
+            ...result.slice(firstUserIdx + 1),
+          ];
+        }
+      }
     }
 
     // T0 user preferences injection — same Stage-1 slot, identical content/order.
     // Idempotent: skip if first message already carries a <user_preferences> block
     // (transformContext may be invoked more than once on retry/resume).
     try {
-      if (firstUserIdx >= 0) {
-        const first = result[firstUserIdx] as any;
-        const firstContent: string = typeof first.content === "string" ? first.content : "";
+      // Re-read after Stage-1 (same shape rules): the RAG block may have landed here.
+      const t0Target = firstUserIdx >= 0 ? readMessageText(result[firstUserIdx]) : null;
+      if (firstUserIdx >= 0 && t0Target) {
+        const firstContent = t0Target.text;
         if (!firstContent.includes("<user_preferences")) {
           const prefs = await store.listPreferences(process.cwd());
           if (prefs.length > 0) {
             const lines = prefs.map(r => "- **" + r.key + "**: " + r.value);
             const block = "<user_preferences updated=\"" + (prefs[0].modified ?? "") + "\">\n" + lines.join("\n") + "\n</user_preferences>";
-            result = [...result.slice(0, firstUserIdx), { ...first, content: block + "\n\n" + firstContent }, ...result.slice(firstUserIdx + 1)];
+            // Preferences stay a PREFIX of the text channel (documented position).
+            const next = prependMessageText(result[firstUserIdx], block + "\n\n", t0Target);
+            if (next) result = [...result.slice(0, firstUserIdx), next, ...result.slice(firstUserIdx + 1)];
           }
         }
       }
