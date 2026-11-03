@@ -240,8 +240,19 @@ export class MemoryPipeline {
     this.rag = new RagAdapterRegistry({ store: deps.store });
   }
 
-  // inject: hot path read — corresponds to transformContext delegation.
-  // RAG injection + L1/L2 merged injection at latest user message (attention hot zone).
+  /**
+   * Build the injection payload for one turn — corresponds to treequery's
+   * `transformContext` delegation.
+   *
+   * Runs two stages against the latest user message (the attention hot zone):
+   * stage 1 appends the RAG adapter's block to the *first* user turn, stage 2
+   * appends the merged L1/L2 memory block to the *last* user turn. Both stages
+   * target user messages only, so a leading system/tool message cannot swallow
+   * the payload. The input array is never mutated.
+   *
+   * @param messages - Conversation so far, in provider message shape.
+   * @returns A new array carrying the turn's injections.
+   */
   async inject(messages: any[]): Promise<any[]> {
     const { store, domain, sessionId } = this.deps;
     let result = messages;
