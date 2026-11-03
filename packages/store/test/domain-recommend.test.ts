@@ -14,7 +14,7 @@
 import {
   recommendDomains,
   termCoverage,
-  cjkRunMatch,
+  cjkRunFraction,
   HIGH_CONFIDENCE_THRESHOLD,
   type DomainMeta,
   type RecommendResult,
@@ -152,18 +152,26 @@ async function main() {
 
     // Partial coverage stays a priced suggestion, never a silent 0: one of two runs matching
     // lands the candidate with coverage 0.5.
-    const partial = await recommendDomains("文献 检索", CJK_METAS);
-    expectRankOf(partial, "zh-research", 1, "mixed CJK runs '文献 检索' (only 检索 is present)");
-    assert(partial.candidates[0]!.coverage === 0.5, "partial CJK coverage 0.5 (got " + partial.candidates[0]!.coverage + ")");
+    const cjkPartial = await recommendDomains("文献 检索", CJK_METAS);
+    expectRankOf(cjkPartial, "zh-research", 1, "mixed CJK runs '文献 检索' (only 检索 is present)");
+    assert(cjkPartial.candidates[0]!.coverage === 0.5, "partial CJK coverage 0.5 (got " + cjkPartial.candidates[0]!.coverage + ")");
     // A whole sentence is not a substring of a description, so it abstains — First-Class
     // Abstain is preserved rather than traded away for recall.
     const sentence = await recommendDomains("我想找深度中文研究相关的文献资料推荐一下", CJK_METAS);
     assert(sentence.decision === "none", "long CJK sentence with no contiguous substring => abstain (got " + sentence.decision + ")");
 
     // The substring stage is appended below the BM25 arm, not fused into it (GLOSSARY
-    // "Dual DB / Two-Stage Recall"): a query the lexical arm can serve still ranks first.
-    const bothArms = await recommendDomains("检索 research", CJK_METAS);
-    assert(bothArms.candidates[0]!.id === "research", "BM25 hit outranks the appended CJK stage (got " + bothArms.candidates[0]!.id + ")");
+    // "Dual DB / Two-Stage Recall"), and it never ties the weakest hit (a tie would zero the
+    // margin). "研究 provider" is the query that actually reaches the stage: 研究 is not an
+    // indexed token prefix, so zh-research can only come from the substring stage, while
+    // `provider` gives the BM25 arm a hit.
+    const bothArms = await recommendDomains("研究 provider", CJK_METAS);
+    assert(bothArms.candidates[0]!.id === "default", "BM25 hit ranks above the appended CJK stage (got " + bothArms.candidates[0]!.id + ")");
+    assert(bothArms.candidates[0]!.arms[0] === "fts", "BM25 rows keep the fts label");
+    expectRankOf(bothArms, "zh-research", 2, "CJK stage lands behind the BM25 hit");
+    const stageRow = bothArms.candidates.find((c) => c.id === "zh-research");
+    assert(!!stageRow && stageRow.arms[0] === "cjk", "stage row carries its own provenance label (got " + stageRow?.arms.join("+") + ")");
+    assert(!!stageRow && bothArms.candidates[0]!.score > stageRow.score && stageRow.score > 0, "stage score is discounted below, never tied with, and never zero");
 
     // Hiragana and Hangul runs resolve the same way (the run class is CJK-wide, not Han-only).
     const JA_KO_METAS: DomainMeta[] = [
@@ -176,10 +184,10 @@ async function main() {
 
     // The stage is inert for a CJK-free query: nothing is added to the MATCH expression and no
     // row is scanned, so #110's pure-ASCII behaviour is preserved by construction.
-    const inert = cjkRunMatch("deep web research", "深度中文研究与学术检索");
-    assert(inert.all === false && inert.any === false && inert.fraction === 0, "CJK-free query has no substring stage");
-    assert(cjkRunMatch("中文研究", "深度中文研究与学术检索").all === true, "cjkRunMatch reports a contiguous run");
-    assert(cjkRunMatch("研究中文", "深度中文研究与学术检索").fraction === 0, "cjkRunMatch rejects a reordered run");
+    assert(cjkRunFraction("deep web research", "深度中文研究与学术检索") === 0, "CJK-free query has no substring stage");
+    assert(cjkRunFraction("中文研究", "深度中文研究与学术检索") === 1, "every run present => fraction 1");
+    assert(cjkRunFraction("研究中文", "深度中文研究与学术检索") === 0, "reordered run is not a contiguous substring");
+    assert(cjkRunFraction("文献 检索", "深度中文研究与学术检索") === 0.5, "one of two runs => half the run characters");
 
     // --- CodeRabbit #2 (round 2): one content word + stopwords still gets the relaxed rung ---
     const oneTerm = await recommendDomains("research for me", METAS);

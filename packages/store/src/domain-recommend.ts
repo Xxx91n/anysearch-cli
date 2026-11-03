@@ -51,10 +51,10 @@ function escapeQueryUnicode(query: string, maxTerms = 8): string {
 // tokenizer — it returns nothing for a full-text query under 3 characters, and two-character
 // words are the commonest word length in Chinese, besides flattening tf to 1. The corpus is a
 // handful of domain rows, so the scan costs nothing and gives exact substring semantics.
-// Stage-combination rule follows GLOSSARY "Dual DB / Two-Stage Recall": the second stage keeps
-// its own order and is never fused onto the first stage's scale, so CJK rows land strictly below
-// every BM25 hit — the FTS arm stays the anchor. No query text is concatenated into SQL here, so
-// the stage adds no MATCH-expression surface.
+// Stage combination follows GLOSSARY "Dual DB / Two-Stage Recall": the second stage keeps its own
+// order, is tagged with its own provenance label, and is discounted below the first stage's
+// weakest positive hit rather than fused into BM25 scoring — the FTS arm stays the anchor. No
+// query text is concatenated into SQL here, so the stage adds no MATCH-expression surface.
 // One character class for both regexes: the run matcher and the per-term test must agree on what
 // counts as CJK, and a silent divergence between them would re-open the recall gap.
 const CJK_CLASS = "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}";
@@ -66,18 +66,13 @@ function cjkQueryRuns(query: string, maxTerms = 8): string[] {
   return [...new Set(query.match(CJK_RUN_RE) ?? [])].slice(0, maxTerms);
 }
 
-export interface CjkMatch {
-  all: boolean; // every run occurs contiguously in the text
-  any: boolean; // at least one run occurs
-  fraction: number; // matched run characters / query run characters ∈ [0,1]
-}
-
-// Substring strength of a query's CJK runs against one text. Zero-effect for a CJK-free query,
-// so the pure-ASCII path is untouched by construction (no expression text is added to MATCH).
+// Share of a query's CJK run characters that occur contiguously in `text` — 1 when every run is
+// present, 0 when the query has no CJK or nothing matched. The single number is the stage's whole
+// ranking signal, so no flag struct is carried alongside it.
 // Exported for the acceptance test, at the same level as bm25SearchDomainMeta.
-export function cjkRunMatch(query: string, text: string, maxTerms = 8): CjkMatch {
+export function cjkRunFraction(query: string, text: string, maxTerms = 8): number {
   const runs = cjkQueryRuns(query, maxTerms);
-  if (runs.length === 0) return { all: false, any: false, fraction: 0 };
+  if (runs.length === 0) return 0;
   const hay = text.toLowerCase();
   let hit = 0;
   let total = 0;
@@ -86,7 +81,7 @@ export function cjkRunMatch(query: string, text: string, maxTerms = 8): CjkMatch
     total += len;
     if (hay.includes(run.toLowerCase())) hit += len;
   }
-  return { all: hit === total, any: hit > 0, fraction: total > 0 ? hit / total : 0 };
+  return total > 0 ? hit / total : 0;
 }
 
 // Content words of a query with Unicode letters preserved (same stopword list
@@ -112,7 +107,7 @@ export interface RecommendCandidate {
   name: string;
   description: string;
   rank: number; // 1-based position in the fused list
-  score: number; // fused score, higher = better
+  score: number; // fused score, higher = better (relative bm25, or the discounted substring fraction for a #125 stage row)
   relative: number; // score / top score ∈ (0, 1]
   coverage: number; // share of query content words matched in this candidate's name+description
   arms: string[]; // ["fts"] FTS-only, ["fts", "embedding"] hybrid
@@ -145,6 +140,9 @@ export const HIGH_CONFIDENCE_THRESHOLD = 0.5;
 // Hybrid fusion weights: FTS stays the anchor arm, embedding only nudges (peer-optional).
 const FTS_WEIGHT = 0.6;
 const EMBEDDING_WEIGHT = 0.4;
+// #125 substring stage: priced under the weakest positive BM25 hit, never on top of it and never
+// at zero (a tie would zero the margin; a zero row would dilute the fused list).
+const STAGE_DISCOUNT = 0.5;
 
 // Share of the query's content words (relaxedTerms tokenization, same convention as fts5.ts)
 // that prefix-match a token of `text`. 0 when the query has no content words.
@@ -153,7 +151,7 @@ export function termCoverage(query: string, text: string): number {
   if (terms.length === 0) return 0;
   // Unicode-aware token split so CJK runs in the text stay matchable tokens.
   const hay = text.toLowerCase();
-  const toks = hay.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const toks = hay.split(UNICODE_SANITIZE_RE).filter(Boolean);
   let matched = 0;
   for (const t of terms) {
     if (toks.some((k) => k.startsWith(t))) {
@@ -172,6 +170,7 @@ interface FtsRow {
   name: string;
   description: string;
   match: number; // -bm25(): higher = better (bm25() itself is negative)
+  stage: "fts" | "cjk"; // which lexical stage produced it (provenance label, GLOSSARY Two-Stage Recall)
 }
 
 // BM25 over an in-memory FTS5 index of domain metadata. Strict rung first (all-terms AND +
@@ -189,6 +188,7 @@ export function bm25SearchDomainMeta(db: Database.Database, query: string, limit
     name: r.name,
     description: r.description,
     match: -r.bm25score,
+    stage: "fts",
   });
   const q = query.trim();
   const strict = escapeQueryUnicode(q);
@@ -210,36 +210,32 @@ export function bm25SearchDomainMeta(db: Database.Database, query: string, limit
       }
     }
   }
-  rows.sort((a, b) => b.match - a.match);
 
-  // #125 second lexical stage — substring recall for CJK runs FTS5 cannot reach. Runs in two
-  // sub-rungs: rows containing every query run, then rows containing some of them, each ordered
-  // by the share of the query's CJK characters covered. `match` is placed on the BM25 arm's
-  // scale but strictly under its weakest hit, so the stage is appended with its own order rather
-  // than fused into BM25 scoring (GLOSSARY "Dual DB / Two-Stage Recall": no mixed scoring across
-  // stages). The BM25 arm alone decides a query it can serve; a CJK-only query has no BM25 hits,
-  // so this stage is its ranking and the top row scores fraction ≤ 1.
+  // #125 second lexical stage — substring recall for the CJK runs FTS5 cannot reach. Each row is
+  // priced by the share of the query's CJK characters it contains, then sorted into place with a
+  // rowid tiebreak (never left to sort stability). The discount puts a stage row under the
+  // weakest positive BM25 hit, so the BM25 arm alone decides a query it can serve — including one
+  // it already fills to topK, where the stage stays out by that rule. A CJK-only query has no
+  // BM25 hits, so the stage owns its ranking and its top row scores the full anchor unit. The
+  // embedding arm still fuses over both stages, so it can reorder the list — #110's hybrid
+  // contract, unchanged.
   if (cjkQueryRuns(q).length > 0) {
-    const anchor = rows.length > 0 ? Math.min(...rows.map((r) => r.match)) : 1;
+    const positives = rows.map((r) => r.match).filter((m) => m > 0);
+    const anchor = positives.length > 0 ? Math.min(...positives) * STAGE_DISCOUNT : 1;
     const seen = new Set(rows.map((r) => r.rowid));
     const scanned = db
       .prepare<unknown[], { rowid: number; name: string; description: string }>(
         "SELECT rowid, name, description FROM domain_fts",
       )
-      .all()
-      .filter((r) => !seen.has(r.rowid))
-      .map((r) => ({ rowid: r.rowid, name: r.name, description: r.description, m: cjkRunMatch(q, r.name + " " + r.description) }))
-      .sort((a, b) => b.m.fraction - a.m.fraction || a.rowid - b.rowid);
-    for (const want of [true, false]) {
-      if (rows.length >= limit) break;
-      for (const s of scanned) {
-        if (rows.length >= limit) break;
-        if (s.m.fraction === 0 || (s.m.all !== want)) continue;
-        rows.push({ rowid: s.rowid, name: s.name, description: s.description, match: s.m.fraction * anchor });
-      }
+      .all();
+    for (const r of scanned) {
+      if (seen.has(r.rowid)) continue;
+      const fraction = cjkRunFraction(q, r.name + " " + r.description);
+      if (fraction === 0) continue;
+      rows.push({ rowid: r.rowid, name: r.name, description: r.description, match: fraction * anchor, stage: "cjk" });
     }
   }
-  return rows.slice(0, limit);
+  return rows.sort((a, b) => b.match - a.match || a.rowid - b.rowid).slice(0, limit);
 }
 
 // Full recommend pipeline. Pure with respect to the outside world except the peer-optional
@@ -317,7 +313,7 @@ export async function recommendDomains(query: string, metas: DomainMeta[], opts?
         score,
         relative: topScore > 0 ? score / topScore : 1,
         coverage: termCoverage(q, row.name + " " + row.description),
-        arms: cos ? ["fts", "embedding"] : ["fts"],
+        arms: cos ? [row.stage, "embedding"] : [row.stage],
       };
     });
 
