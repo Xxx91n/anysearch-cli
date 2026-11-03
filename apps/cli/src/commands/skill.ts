@@ -67,7 +67,12 @@ export async function runSkill(args: string[], opts: SkillCommandOptions = {}): 
     err(`ans skill: invalid arguments for ${command}\n${HELP}`);
     return 2;
   }
-  const scopeOpts: SkillOptions = { ...opts, project: scope ? scope === "project" : opts.project };
+  const scopeOpts: SkillOptions = {
+    ...opts,
+    project: scope ? scope === "project" : opts.project,
+    // Recovery hints are diagnostics: stderr only, never on stdout's data path.
+    notice: (message: string) => err(`${message}\n`),
+  };
   try {
     switch (command) {
       case "install": {

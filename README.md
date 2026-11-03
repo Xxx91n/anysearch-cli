@@ -192,20 +192,37 @@ Missing, malformed, or schema-invalid manifests cause uninstall to refuse
 without deleting anything; uninstall never scans for guessed targets.
 `install` and `uninstall` hold an exclusive lock in the selected scope, so two
 concurrent mutations cannot lose each other's manifest entry; a contended run
-fails with the lock path instead of overwriting the manifest. If a run is killed
-mid-operation, remove the leftover `skills/synced/.installed.lock` directory
-once no `ans skill` process is running. After any interrupted operation, check
-`ans skill list` before deleting leftovers: if the manifest still records a
-skill but its `<name>/` directory is missing, rename the `.uninstall-*` backup
-back to `<name>/`, or run `ans skill uninstall <name>` to drop the stale entry
-when no backup remains (add `--project` for project scope); if the manifest does
-not record it, the `.install-*`
-staging or `.uninstall-*` backup can be removed once no operation is running. An
-unrecorded `<name>/` left by an interrupted install can be deleted and
-reinstalled. A killed manifest write can leave `.installed-*.tmp`; remove it
-when the directory has no `installed.json`. If `ans skill list` itself reports a
-missing or invalid manifest, inspect `skills/synced/` directly before removing
-anything.
+fails with the lock path instead of overwriting the manifest. The lock records
+`{token, pid, host, startedAt}`. When the next operation finds a lock, it probes
+that pid: a holder that is provably dead on the **same host** is reclaimed
+automatically, while a live holder — or one recorded by another host, or one
+whose owner record is unreadable — stops the operation with the lock path and
+the recorded holder instead of deleting a lock that may be live. Release is
+token-checked, so a reclaimed lock is never removed by the process that used to
+hold it. If a run is killed on another machine (or its pid cannot be probed),
+remove `skills/synced/.installed.lock` manually once no `ans skill` process is
+running there.
+
+Every `install`, `uninstall`, `list` and `validate` also runs a reconciliation
+pass over the scope (the read commands only when the lock is free), so a killed
+run no longer leaves manual cleanup behind. It removes only installer-owned
+residue under the lock: `.install-*` staging, `.installed-*.tmp` when no
+`installed.json` was published, and `.installed.lock.reclaim-*` quarantine
+directories. A `.installed-*.tmp` file that sits beside a published
+`installed.json` is left untouched (remove it yourself once no `ans skill`
+process is running). Everything else is left alone: an unrecorded `<name>/` and
+any unknown entry are never deleted, and `ans skill list` keeps refusing a
+non-empty directory without `installed.json`. `.uninstall-*` backups carry random
+names and are never deleted automatically — when the manifest still records a
+skill whose `<name>/` directory is missing, the command prints a recovery hint
+naming the backups in `skills/synced/`, and you decide whether to rename one back
+to `<name>/` or run `ans skill uninstall <name>` to drop the stale entry (add
+`--project` for project scope). If `ans skill list` itself reports a missing or
+invalid manifest, inspect `skills/synced/` directly before removing anything.
+
+On Windows, a rename that fails with `EPERM`, `EBUSY` or `ENOTEMPTY` (a file
+indexer or antivirus still holding the target) is retried with bounded backoff
+for up to about a minute before the original error is reported.
 
 **Installation is not activation.** These commands never edit domain TOML.
 The Active Domain's `[skills].active` remains the authority for the Skill

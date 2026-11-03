@@ -1,8 +1,9 @@
-// Minimal Agent Skill installer (#109, parent #30, T6 decision #92).
-// Design: install from a local Git checkout into skills/synced/, with one
-// installed.json manifest — a directory convention, not a package manager.
-// The sibling skills/<name>/ space belongs to user-authored skills. This module
-// never reads or writes domain TOML: installation is NOT Skill Active List activation.
+// Minimal Agent Skill installer (#109, parent #30, T6 decision #92; concurrency
+// hardening #137). Design: install from a local Git checkout into skills/synced/,
+// with one installed.json manifest — a directory convention, not a package
+// manager. The sibling skills/<name>/ space belongs to user-authored skills. This
+// module never reads or writes domain TOML: installation is NOT Skill Active List
+// activation.
 
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -13,11 +14,14 @@ import {
 import { homedir, hostname } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parseDocument } from "yaml";
+import { atomicRename } from "./fs-atomic";
 
 export interface SkillOptions {
   home?: string;
   cwd?: string;
   project?: boolean;
+  /** Sink for non-fatal reconciliation notices (recovery hints); nothing is thrown through it. */
+  notice?: (message: string) => void;
 }
 
 export interface InstalledSkill {
@@ -208,26 +212,47 @@ function requireScopeAnchors(managed: string): void {
   requireDirectory(managed, "managed skills root");
 }
 
-/** Owner record written into the lock directory for diagnostics and ownership checks. */
-interface LockOwner {
+/** Owner record written into the lock directory for ownership checks and stale recovery. */
+export interface LockOwner {
   token: string;
   pid: number;
   host: string;
   startedAt: string;
 }
 
+/** Classification of the process recorded in a lock owner file. */
+export type HolderState = "alive" | "dead" | "indeterminate";
+
 /** Read the recorded lock owner, or undefined when the record is absent or malformed. */
-function readLockOwner(lock: string): LockOwner | undefined {
+export function readLockOwner(lock: string): LockOwner | undefined {
   try {
     const raw: unknown = JSON.parse(readFileSync(join(lock, "owner.json"), "utf8"));
-    if (isRecord(raw) && typeof raw.token === "string" && typeof raw.pid === "number"
+    if (isRecord(raw) && typeof raw.token === "string" && raw.token.length > 0
+      && Number.isInteger(raw.pid) && (raw.pid as number) > 0
       && typeof raw.host === "string" && typeof raw.startedAt === "string") {
-      return { token: raw.token, pid: raw.pid, host: raw.host, startedAt: raw.startedAt };
+      return { token: raw.token, pid: raw.pid as number, host: raw.host, startedAt: raw.startedAt };
     }
   } catch {
-    // Diagnostics only: an unreadable owner file still blocks the operation.
+    // Unreadable owner records still block the operation; they are never "stale".
   }
   return undefined;
+}
+
+// Design: `process.kill(pid, 0)` is the only staleness signal. EPERM means the pid
+// exists under another user (alive), ESRCH means it is provably gone on this host,
+// and anything else (reused pid included) is treated as indeterminate rather than
+// guessed — a lock is never removed on a hunch.
+/** Classify a recorded pid without signalling the process. */
+export function probeHolder(pid: number): HolderState {
+  try {
+    process.kill(pid, 0);
+    return "alive";
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return "dead";
+    if (code === "EPERM") return "alive";
+    return "indeterminate";
+  }
 }
 
 /** Describe the recorded lock holder when the owner file is readable. */
@@ -236,20 +261,94 @@ function describeLockHolder(lock: string): string {
   return owner ? ` (pid ${owner.pid} on ${owner.host})` : "";
 }
 
-// Design: one coarse lock per managed root — mkdir is atomic on local
-// filesystems, the lock spans manifest read → publish/remove → write, and
+/** Canonical contention failure: name the lock and its recorded holder. */
+function contended(lock: string): never {
+  fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. If no ans skill process is running, remove that directory and retry.`);
+}
+
+/** Injectable edges of stale-lock recovery (tests drive the race branches deterministically). */
+export interface ReclaimSeam {
+  rename?: (from: string, to: string) => void;
+  probe?: (pid: number) => HolderState;
+  localHost?: () => string;
+}
+
+/** Whether a reclaim removed the stale lock, left a holder in place, or lost the rename race. */
+export type ReclaimOutcome = "reclaimed" | "held" | "lost";
+
+// Design: reclaim is same-host only and never deletes a lock it cannot prove dead.
+// The owner token is re-read immediately before the rename, and the quarantined
+// directory is verified afterwards: if a new holder took over in that window the
+// directory is restored (or the operation stops) instead of being deleted.
+// Design: no heartbeat or time-based expiry — a time window cannot tell a slow live
+// holder from a dead one, so a held lock is never removed merely because it is old.
+/** Reclaim a lock whose recorded holder is provably dead on this host. */
+export function reclaimStaleLock(managed: string, seam: ReclaimSeam = {}): ReclaimOutcome {
+  const lock = join(managed, MANIFEST_LOCK);
+  const rename = seam.rename ?? renameSync;
+  const probe = seam.probe ?? probeHolder;
+  const localHost = (seam.localHost ?? hostname)();
+  const observed = readLockOwner(lock);
+  if (!observed) {
+    fail(`another skill operation holds ${lock} but its owner record is unreadable, so it cannot be proven stale. If no ans skill process is running, remove that directory and retry.`);
+  }
+  if (observed.host !== localHost) {
+    fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. The lock was recorded by host ${observed.host}, not ${localHost}, so its process cannot be probed from here and it is not reclaimed automatically. If that host is gone, remove that directory and retry.`);
+  }
+  const state = probe(observed.pid);
+  if (state === "alive") return "held";
+  if (state === "indeterminate") {
+    fail(`cannot determine whether the process holding ${lock}${describeLockHolder(lock)} is still running; refusing to reclaim a lock that may be live. If no ans skill process is running, remove that directory and retry.`);
+  }
+  // Only the lock that was just read may be reclaimed: a changed token means the
+  // holder we proved dead is already gone and someone else owns the lock now.
+  if (readLockOwner(lock)?.token !== observed.token) return "held";
+
+  const quarantine = join(managed, `${MANIFEST_LOCK}.reclaim-${randomUUID()}`);
+  try {
+    rename(lock, quarantine);
+  } catch (error) {
+    // Another reclaimer moved it first: the path is free, so the caller may retry.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "lost";
+    fail(`could not move the stale lock aside: ${lock} (${(error as Error).message}). If no ans skill process is running, remove that directory and retry.`);
+  }
+  if (readLockOwner(quarantine)?.token !== observed.token) {
+    // A new holder owned the directory by the time it moved: put it back untouched.
+    try {
+      rename(quarantine, lock);
+    } catch (error) {
+      fail(`a new skill operation took over ${lock} while a stale lock was being reclaimed, and the displaced lock could not be restored (${(error as Error).message}). Inspect ${quarantine} before retrying.`);
+    }
+    return "held";
+  }
+  // Best effort: a leftover quarantine is installer-owned residue that the next
+  // reconciliation pass removes, so it must not block the acquisition.
+  try {
+    rmSync(quarantine, { recursive: true, force: true });
+  } catch {
+    // ignored on purpose — see above
+  }
+  return "reclaimed";
+}
+
+// Design: one coarse lock per managed root — mkdir is atomic on local filesystems,
+// the lock spans reconciliation → manifest read → publish/remove → write, and
 // contention fails closed instead of deleting a lock that may be live.
 /** Acquire the exclusive manifest lock and return its release function. */
-function acquireManifestLock(managed: string): () => void {
+export function acquireManifestLock(managed: string): () => void {
   const lock = join(managed, MANIFEST_LOCK);
   const token = randomUUID();
-  try {
-    mkdirSync(lock);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. If no ans skill process is running, remove that directory and retry.`);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      mkdirSync(lock);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      // Exactly one reclaim attempt: a second EEXIST means another process won the
+      // race (or a live holder appeared) and must not be cut in front of.
+      if (attempt > 0) contended(lock);
+      if (reclaimStaleLock(managed) === "held") contended(lock);
     }
-    throw error;
   }
   try {
     const owner: LockOwner = { token, pid: process.pid, host: hostname(), startedAt: new Date().toISOString() };
@@ -274,6 +373,21 @@ function withManifestLock<T>(managed: string, action: () => T): T {
   }
 }
 
+// Design: read commands must not fail because a mutation holds the lock, so the
+// guarded phase is skipped instead of throwing when the lock is busy or unreadable.
+/** Run a read-path action under the lock only when it is free. */
+function tryWithManifestLock<T>(managed: string, action: () => T): T | undefined {
+  let release: (() => void) | undefined;
+  try {
+    release = acquireManifestLock(managed);
+    return action();
+  } catch {
+    return undefined;
+  } finally {
+    release?.();
+  }
+}
+
 /** Create the managed root only after validating existing scope/skills/synced directories. */
 function prepareManagedRoot(opts: SkillOptions): string {
   const root = skillsRoot(opts);
@@ -292,6 +406,17 @@ function isEmptyManagedRoot(managed: string): boolean {
   return !readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK);
 }
 
+/**
+ * True when a manifest-less root holds nothing but the lock and installer-owned
+ * residue — never operator content. Used by the read path, which cannot delete
+ * while another process holds the lock: an abandoned first install reads as an
+ * empty scope instead of a fail-closed manifest error, and nothing is removed.
+ */
+function holdsOnlyInstallerResidue(managed: string): boolean {
+  return !readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK
+    && !STAGING_ENTRY.test(entry) && !MANIFEST_TEMP_ENTRY.test(entry) && !QUARANTINE_ENTRY.test(entry));
+}
+
 /** Read an existing manifest, or bootstrap one only in an empty managed root. */
 function readManifestForInstall(managed: string): SkillManifest {
   requireScopeAnchors(managed);
@@ -307,14 +432,108 @@ function readManifestForInstall(managed: string): SkillManifest {
   return readManifest(managed);
 }
 
-/** Atomically replace installed.json via a temporary file and rename. */
+/** Atomically replace installed.json via a same-directory temporary file and rename. */
 function writeManifest(managed: string, manifest: SkillManifest): void {
   const temporary = join(managed, `.installed-${randomUUID()}.tmp`);
   try {
     writeFileSync(temporary, JSON.stringify(manifest, null, 2) + "\n", { encoding: "utf8", flag: "wx", mode: 0o600 });
-    renameSync(temporary, manifestIn(managed));
+    // Design: the temp file lives next to the manifest (no EXDEV) and the commit
+    // point stays "rename onto the published name" — the retry never overwrites
+    // anything but that target.
+    atomicRename(temporary, manifestIn(managed));
   } finally {
     rmSync(temporary, { force: true });
+  }
+}
+
+// Startup reconciliation (#137). Design: only installer-shaped transient entries
+// are removed — staging (never manifest-recorded, because the manifest is written
+// after the publication rename), a manifest temp file when no installed.json was
+// published, and quarantine directories left by a reclaim. Everything else,
+// including random-named .uninstall-* backups, is operator territory: it is
+// reported, never deleted, and the fail-closed manifest rules stay in force.
+/** Installer-generated entry names; anything else in synced/ belongs to the operator. */
+const STAGING_ENTRY = /^\.install-[A-Za-z0-9]{6}$/;
+const MANIFEST_TEMP_ENTRY = /^\.installed-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/;
+const QUARANTINE_ENTRY = /^\.installed\.lock\.reclaim-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const BACKUP_ENTRY = /^\.uninstall-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Outcome of one reconciliation pass; `removed` are the installer-owned entries it deleted. */
+export interface ReconcileReport {
+  removed: string[];
+  notices: string[];
+}
+
+/** Names recorded in the manifest whose installed directory is absent, read best-effort. */
+function recordedSkillsWithoutDirectory(managed: string): string[] {
+  try {
+    return Object.keys(readManifest(managed).skills).filter((name) => !statIfPresent(join(managed, name)));
+  } catch {
+    // A corrupt manifest is reported by the caller's own read, not by reconciliation.
+    return [];
+  }
+}
+
+/**
+ * Remove installer-owned residue from an interrupted run and report backups that
+ * cannot be attributed. The caller holds the manifest lock, so no other installer
+ * process is writing any entry seen here; a clean scope reports zero removals.
+ */
+export function reconcileManagedRoot(managed: string): ReconcileReport {
+  const entries = readdirSync(managed, { withFileTypes: true });
+  const manifestPublished = Boolean(statIfPresent(manifestIn(managed)));
+  const report: ReconcileReport = { removed: [], notices: [] };
+  for (const entry of entries) {
+    const name = entry.name;
+    if (name === MANIFEST_LOCK) continue;
+    const residue = STAGING_ENTRY.test(name)
+      || QUARANTINE_ENTRY.test(name)
+      // Design: an unpublished manifest is the documented recovery boundary — a
+      // temp file beside a published installed.json is left for the operator.
+      || (!manifestPublished && MANIFEST_TEMP_ENTRY.test(name));
+    if (!residue) continue;
+    rmSync(join(managed, name), { recursive: true, force: true });
+    report.removed.push(name);
+  }
+  const backups = entries.filter((entry) => BACKUP_ENTRY.test(entry.name)).map((entry) => entry.name);
+  if (backups.length > 0) {
+    const orphaned = recordedSkillsWithoutDirectory(managed);
+    if (orphaned.length > 0) {
+      // Design: backup names are random, so ownership is never guessed: the notice
+      // points at the backups and the operator decides which one to restore.
+      report.notices.push(
+        `skill ${orphaned.join(", ")} is recorded in ${manifestIn(managed)} but its directory is missing; `
+        + `${backups.length} untracked .uninstall-* backup(s) in ${managed} are never deleted automatically. `
+        + "Inspect them and rename the matching one back to <name>/ if it belongs there, or run "
+        + `"ans skill uninstall ${orphaned[0]}" to drop the stale entry when no backup remains.`,
+      );
+    }
+  }
+  return report;
+}
+
+/** Reconcile inside the lock and forward recovery hints to the caller's notice sink. */
+function reconcileWithinLock(managed: string, opts: SkillOptions): ReconcileReport {
+  const report = reconcileManagedRoot(managed);
+  for (const message of report.notices) opts.notice?.(message);
+  return report;
+}
+
+/**
+ * Best-effort reconciliation for read commands: only when the managed root exists
+ * and the lock is free, so list/validate never fail because a mutation is in
+ * flight and never delete anything under another process's lock.
+ */
+function reconcileForRead(managed: string, opts: SkillOptions): void {
+  if (!statIfPresent(managed)) return;
+  try {
+    requireScopeAnchors(managed);
+    tryWithManifestLock(managed, () => {
+      for (const message of reconcileManagedRoot(managed).notices) opts.notice?.(message);
+    });
+  } catch {
+    // Read paths stay read-only when the scope cannot be locked or inspected; the
+    // manifest read that follows reports anything durable.
   }
 }
 
@@ -398,6 +617,7 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
   if (contains(source, target)) fail("source contains its installation destination; choose a separate skill directory");
   prepareManagedRoot(opts);
   return withManifestLock(managed, () => {
+    reconcileWithinLock(managed, opts);
     const manifest = readManifestForInstall(managed);
     if (Object.hasOwn(manifest.skills, name) || statIfPresent(target)) {
       fail(`skill ${name} already exists in this scope; uninstall it first (existing files were not overwritten)`);
@@ -425,7 +645,7 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
       // mode, matching the old mkdtemp staging semantics.
       chmodSync(payload, 0o700);
       if (validateSkillFile(join(payload, "SKILL.md")) !== name) fail("source name changed during installation; retry");
-      renameSync(payload, target);
+      atomicRename(payload, target);
       directoryPublished = true;
       const entry: InstalledSkill = { name, ...metadata };
       manifest.skills[name] = entry;
@@ -445,11 +665,14 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
 export function listInstalledSkills(opts: SkillOptions = {}): InstalledSkill[] {
   const managed = managedSkillsRoot(opts);
   if (!statIfPresent(managed)) return [];
+  // Startup reconciliation on the read path runs only when the scope is safe to
+  // lock; a contended scope still lists what the manifest records.
+  reconcileForRead(managed, opts);
   if (!statIfPresent(manifestIn(managed))) {
     // Design: an empty managed root (e.g. a failed first install) is an empty
     // scope — only real untracked entries keep the fail-closed manifest error.
     requireScopeAnchors(managed);
-    if (isEmptyManagedRoot(managed)) return [];
+    if (isEmptyManagedRoot(managed) || holdsOnlyInstallerResidue(managed)) return [];
   }
   return Object.values(readManifest(managed).skills).sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -469,6 +692,7 @@ export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: 
   let entries: InstalledSkill[];
   if (selectedName !== undefined) {
     requireName(selectedName);
+    reconcileForRead(managed, opts);
     const entry = readManifest(managed).skills[selectedName];
     if (!entry) fail(`skill ${selectedName} is not recorded in ${skillManifestPath(opts)}`);
     entries = [entry];
@@ -495,6 +719,7 @@ export function uninstallSkill(name: string, opts: SkillOptions = {}): Installed
   if (!statIfPresent(managed)) missingManifest(managed);
   requireScopeAnchors(managed);
   return withManifestLock(managed, () => {
+    reconcileWithinLock(managed, opts);
     const manifest = readManifest(managed);
     const entry = manifest.skills[name];
     if (!entry) fail(`skill ${name} is not recorded in ${skillManifestPath(opts)}; no files were removed`);
@@ -507,12 +732,13 @@ export function uninstallSkill(name: string, opts: SkillOptions = {}): Installed
     }
     const target = installedDirectory(managed, name);
     const backup = join(managed, `.uninstall-${randomUUID()}`);
-    renameSync(target, backup);
+    atomicRename(target, backup);
     try {
       delete manifest.skills[name];
       writeManifest(managed, manifest);
     } catch (error) {
-      renameSync(backup, target);
+      // The backup name is ours and unique; the rename back is the rollback of record.
+      atomicRename(backup, target);
       throw error;
     }
     try {

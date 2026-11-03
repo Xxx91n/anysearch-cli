@@ -2,15 +2,19 @@
 // → list → uninstall; fail-closed manifest handling and installation ≠ activation.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync,
   statSync, symlinkSync, writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { runSkill } from "../src/commands/skill.js";
-import { managedSkillsRoot, skillManifestPath, type SkillManifest } from "../src/skill-store.js";
+import { setRenameSeam } from "../src/fs-atomic.js";
+import {
+  acquireManifestLock, managedSkillsRoot, probeHolder, skillManifestPath, type SkillManifest,
+} from "../src/skill-store.js";
 
 /** Run a Git command in a test repository and return trimmed stdout. */
 function git(cwd: string, args: string[]): string {
@@ -406,6 +410,202 @@ test("project scope cannot alias the user store through a .anysearch symlink", a
     assert.ok(existsSync(userManifest));
   } finally {
     rmSync(link, { force: true });
+  }
+});
+
+test("install retries a transient Windows rename failure and publishes once", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  let remaining = 2;
+  const restore = setRenameSeam({
+    policy: { baseDelayMs: 1, maxDelayMs: 2, budgetMs: 500 },
+    rename: (from, to) => {
+      if (from.endsWith(".tmp") && remaining > 0) {
+        remaining -= 1;
+        throw Object.assign(new Error("injected EPERM"), { code: "EPERM" });
+      }
+      renameSync(from, to);
+    },
+  });
+  try {
+    const result = await f.run(["install", dir]);
+    assert.equal(result.code, 0, result.stderr);
+  } finally {
+    restore();
+  }
+  assert.equal(remaining, 0, "the transient failures really happened");
+  assert.ok(f.manifest().skills.demo, "the manifest was published after the retry");
+  assert.deepEqual(readdirSync(managedSkillsRoot(f.opts)).sort(), ["demo", "installed.json"]);
+});
+
+test("a permanent rename failure keeps the original error and publishes nothing", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  let attempts = 0;
+  const restore = setRenameSeam({
+    policy: { baseDelayMs: 1, maxDelayMs: 2, budgetMs: 25 },
+    rename: (from, to) => {
+      if (!from.endsWith(".tmp")) {
+        renameSync(from, to);
+        return;
+      }
+      attempts += 1;
+      throw Object.assign(new Error("the manifest target is pinned"), { code: "EBUSY" });
+    },
+  });
+  const managed = managedSkillsRoot(f.opts);
+  try {
+    const result = await f.run(["install", dir]);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /EBUSY|pinned/);
+  } finally {
+    restore();
+  }
+  assert.ok(attempts >= 2, "the transient code was retried before the budget ran out");
+  assert.equal(existsSync(skillManifestPath(f.opts)), false, "no half-published manifest");
+  assert.equal(existsSync(join(managed, "demo")), false, "the unpublished directory was rolled back");
+  assert.deepEqual(readdirSync(managed), [], "no staging or temp residue is left");
+});
+
+test("uninstall retries a transient rename of the installed directory", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const target = join(managed, "demo");
+  let remaining = 1;
+  const restore = setRenameSeam({
+    policy: { baseDelayMs: 1, maxDelayMs: 2, budgetMs: 500 },
+    rename: (from, to) => {
+      if (from === target && remaining > 0) {
+        remaining -= 1;
+        throw Object.assign(new Error("injected EPERM"), { code: "EPERM" });
+      }
+      renameSync(from, to);
+    },
+  });
+  try {
+    const result = await f.run(["uninstall", "demo"]);
+    assert.equal(result.code, 0, result.stderr);
+  } finally {
+    restore();
+  }
+  assert.equal(remaining, 0, "the transient failure really happened");
+  assert.deepEqual(f.manifest().skills, {});
+  assert.deepEqual(readdirSync(managed), ["installed.json"]);
+});
+
+test("a stale lock from a killed run is reclaimed by the next install", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source("alpha")])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const lock = join(managed, ".installed.lock");
+  const dead = spawnSync(process.execPath, ["-e", ""], { stdio: "ignore" }).pid;
+  assert.ok(dead, "the probe fixture child must report a pid");
+  assert.equal(probeHolder(dead), "dead", "an exited child is provably dead on this host");
+  mkdirSync(lock);
+  writeFileSync(join(lock, "owner.json"), JSON.stringify({
+    token: "killed", pid: dead, host: hostname(), startedAt: new Date().toISOString(),
+  }));
+  const installed = await f.run(["install", f.source("beta")]);
+  assert.equal(installed.code, 0, installed.stderr);
+  assert.equal(existsSync(lock), false, "the reclaimed lock is released normally");
+  assert.deepEqual(Object.keys(f.manifest().skills).sort(), ["alpha", "beta"]);
+});
+
+test("a live holder still blocks install until its lock is gone", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source("alpha")])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const beta = f.source("beta");
+  const release = acquireManifestLock(managed);
+  try {
+    const blocked = await f.run(["install", beta]);
+    assert.equal(blocked.code, 1, blocked.stdout + blocked.stderr);
+    assert.match(blocked.stderr, /another skill operation/);
+    assert.match(blocked.stderr, new RegExp(String(process.pid)));
+    assert.equal(existsSync(join(managed, "beta")), false, "a blocked install publishes nothing");
+  } finally {
+    release();
+  }
+  const installed = await f.run(["install", beta]);
+  assert.equal(installed.code, 0, installed.stderr);
+  assert.deepEqual(Object.keys(f.manifest().skills).sort(), ["alpha", "beta"]);
+});
+
+test("startup reconciliation removes installer residue from a killed first install", async (t) => {
+  const f = fixture(t);
+  const managed = managedSkillsRoot(f.opts);
+  mkdirSync(managed, { recursive: true });
+  mkdirSync(join(managed, ".install-abc123"));
+  writeFileSync(join(managed, `.installed-${randomUUID()}.tmp`), "{}");
+  const listed = await f.run(["list"]);
+  assert.equal(listed.code, 0, listed.stdout + listed.stderr);
+  assert.match(listed.stdout, /No installed skills\./);
+  assert.deepEqual(readdirSync(managed), [], "only installer-owned residue was removed");
+});
+
+test("reconciliation is idempotent and never touches operator content", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const notes = join(managed, "notes.txt");
+  writeFileSync(notes, "operator notes");
+  mkdirSync(join(managed, ".install-xyz789"));
+  // A manifest temp beside a published installed.json is left for the operator.
+  const temp = `.installed-${randomUUID()}.tmp`;
+  writeFileSync(join(managed, temp), "{}");
+  const expected = ["demo", "installed.json", "notes.txt", temp].sort();
+  const first = await f.run(["validate"]);
+  assert.equal(first.code, 0, first.stdout + first.stderr);
+  assert.deepEqual(readdirSync(managed).sort(), expected, "staging is removed; operator content is kept");
+  const second = await f.run(["validate"]);
+  assert.equal(second.code, 0, second.stdout + second.stderr);
+  assert.deepEqual(readdirSync(managed).sort(), expected, "a clean pass changes nothing");
+  assert.equal(readFileSync(notes, "utf8"), "operator notes");
+});
+
+test("list stays fail-closed on unregistered content without a manifest", async (t) => {
+  const f = fixture(t);
+  const managed = managedSkillsRoot(f.opts);
+  mkdirSync(managed, { recursive: true });
+  writeFileSync(join(managed, "notes.txt"), "operator notes");
+  const listed = await f.run(["list"]);
+  assert.equal(listed.code, 1);
+  assert.match(listed.stderr, /manifest/);
+  assert.equal(readFileSync(join(managed, "notes.txt"), "utf8"), "operator notes");
+});
+
+test("an unattributable uninstall backup is reported and never deleted", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  rmSync(join(managed, "demo"), { recursive: true, force: true });
+  const backup = join(managed, `.uninstall-${randomUUID()}`);
+  mkdirSync(backup);
+  writeFileSync(join(backup, "SKILL.md"), "---\nname: demo\n---\n");
+  const listed = await f.run(["list"]);
+  assert.equal(listed.code, 0, listed.stdout + listed.stderr);
+  assert.match(listed.stderr, /demo/, "the hint names the recorded skill");
+  assert.match(listed.stderr, /backup/);
+  const stale = await f.run(["uninstall", "demo"]);
+  assert.equal(stale.code, 0, stale.stdout + stale.stderr);
+  assert.deepEqual(f.manifest().skills, {});
+  assert.ok(existsSync(join(backup, "SKILL.md")), "backups are never removed automatically");
+});
+
+test("a locked scope still lists and the read path skips reconciliation", async (t) => {
+  const f = fixture(t);
+  const managed = managedSkillsRoot(f.opts);
+  mkdirSync(managed, { recursive: true });
+  mkdirSync(join(managed, ".install-abc123"));
+  const release = acquireManifestLock(managed);
+  try {
+    const listed = await f.run(["list"]);
+    assert.equal(listed.code, 0, listed.stdout + listed.stderr);
+    assert.match(listed.stdout, /No installed skills\./);
+    assert.ok(existsSync(join(managed, ".install-abc123")), "nothing is deleted under another process's lock");
+  } finally {
+    release();
   }
 });
 

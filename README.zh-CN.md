@@ -176,15 +176,30 @@ ans skill uninstall research --project
 绝对路径 `source`、`commit`、`dirty` 和可选 `tag`。清单缺失、损坏或不符合
 schema 时，卸载会拒绝且不删除任何文件；绝不靠扫描目录猜测删除目标。
 `install` 与 `uninstall` 在所选 scope 内持独占锁：两个并发变更不会互相丢失
-清单条目，争用时会以锁路径报错，而不是覆盖清单。若进程在操作中途被杀，请在
-没有 `ans skill` 进程运行时删除残留的 `skills/synced/.installed.lock` 目录。
-操作中断后先用 `ans skill list` 核对再删除残留：清单仍记录某 skill 但其
-`<name>/` 目录缺失时，应把 `.uninstall-*` 备份改回 `<name>/`，没有备份时也可
-用 `ans skill uninstall <name>` 删掉这条失效记录（项目级加 `--project`）；清单未记录时，
-`.install-*` 暂存或 `.uninstall-*` 备份可在确认无操作运行后删除。安装中断
-留下的未登记 `<name>/` 可删除后重装。清单写入被杀还可能留下 `.installed-*.tmp`，
-在目录中没有 `installed.json` 时删除即可。若 `ans skill list` 本身报告清单
-缺失或损坏，请先直接查看 `skills/synced/` 再动手删除。
+清单条目，争用时会以锁路径报错，而不是覆盖清单。锁内记录
+`{token, pid, host, startedAt}`；下次操作发现锁时会探测该 pid：**同一 host**
+上可证明已死的持有者会被自动回收，而存活持有者、由其他 host 记录的锁、
+以及 owner 记录不可读的情况都会带着锁路径和记录的持有者停下，绝不删除
+可能存活的锁。释放按 token 校验，旧持有者不会删掉回收后新的锁。若持锁进程
+死在另一台机器（或 pid 无法探测），请确认那台机器上已无 `ans skill` 进程后
+手动删除 `skills/synced/.installed.lock`。
+
+每条 `install`、`uninstall`、`list` 与 `validate` 还会做一次启动对账
+（读命令仅在锁空闲时执行），被杀的运行不再需要人工清理。对账在锁内只删除
+安装器自有的残留：`.install-*` 暂存、未发布 `installed.json` 时的
+`.installed-*.tmp`、以及回收留下的 `.installed.lock.reclaim-*` 隔离目录。
+已发布 `installed.json` 旁边残留的 `.installed-*.tmp` 不会被自动删除（确认无
+`ans skill` 进程运行时自行删除即可）。
+其余内容一律不动：未登记 `<name>/` 与任何未知条目永不删除，`ans skill list`
+对没有 `installed.json` 的非空目录仍照旧 fail-closed。`.uninstall-*` 备份名为
+随机值，永不自动删除——清单仍记录某 skill 但其 `<name>/` 目录缺失时，命令会
+打印恢复提示并指出 `skills/synced/` 中的备份，由你决定把其中一个改回
+`<name>/`，或用 `ans skill uninstall <name>` 删掉这条失效记录（项目级加
+`--project`）。若 `ans skill list` 本身报告清单缺失或损坏，请先直接查看
+`skills/synced/` 再动手删除。
+
+Windows 上 rename 若因文件索引/杀毒软件占用目标而以 `EPERM`、`EBUSY` 或
+`ENOTEMPTY` 失败，会按有界指数退避重试（合计约一分钟），耗尽后才报原始错误。
 
 **安装不等于激活。** 这些命令绝不改写 domain TOML。Skill Active List 仍由
 Active Domain 的 `[skills].active` 决定，激活仍按原方式通过 domain 配置管理。
