@@ -8,7 +8,7 @@ import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, Su
 import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError } from "@anysearch-cli/retriever";
 import { randomUUID } from "node:crypto";
 import type { Budget, Query, RetrieverPort } from "./ports";
-import type { BudgetLedgerPort } from "./ports";
+import type { BudgetLedgerPort, ResumeAnchorsPort } from "./ports";
 import { attachAttribution, applyJudgeEscalation, type JudgeFn } from "./attribution";
 import type { AttributionCalibration } from "./calibrate";
 
@@ -210,6 +210,9 @@ export class RetroaererdEngine {
   private providers: Map<string, SearchProvider> = new Map();
   private ledger?: BudgetLedgerPort;
   private sessionId?: string;
+  // Design: the resume-anchor sink arrives as an injected port, never a store
+  // import — the composition root wires SqliteSessionStore.saveAnchor (T7 decision #93).
+  private anchors?: ResumeAnchorsPort;
   // step 6: host-injected claim judge. The LLM and its budget ledger live in the host;
   // kernel stays pure. Previously shouldEscalateToJudge had zero callers.
   private attributionJudge?: JudgeFn;
@@ -233,9 +236,10 @@ export class RetroaererdEngine {
 
   // decision 1C: constructor accepts providers array.
   // decision 2A: optional BudgetLedger + sessionId for per-call billing.
-  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; attributionJudge?: JudgeFn; sourceWeights?: Record<string, number>; attributionCalibration?: AttributionCalibration; urlPolicy?: () => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }; domainName?: string; repoVertical?: () => SearchRequest["vertical"] }) {
+  constructor(providers: SearchProvider[] = [], opts?: { ledger?: BudgetLedgerPort; sessionId?: string; anchors?: ResumeAnchorsPort; attributionJudge?: JudgeFn; sourceWeights?: Record<string, number>; attributionCalibration?: AttributionCalibration; urlPolicy?: () => { allow: readonly string[]; deny: readonly string[]; policyVersion: string }; domainName?: string; repoVertical?: () => SearchRequest["vertical"] }) {
     this.ledger = opts?.ledger;
     this.sessionId = opts?.sessionId;
+    this.anchors = opts?.anchors;
     this.attributionJudge = opts?.attributionJudge;
     this.sourceWeights = opts?.sourceWeights;
     // immutable at the injection seam, even when the caller
@@ -544,6 +548,33 @@ export class RetroaererdEngine {
     // observational-only ledger. It is emitted next to, never consumed
     // by, the sufficiency/fusion gate.
     const webProviderLedger = buildWebProviderLedger(listedProviderIds, providerLists, nativeScores, providersFailed);
+
+    // Design: exactly one append-only sufficiency checkpoint per search, written at
+    // this single point — after computeSufficiency, before the envelope assembles
+    // (T7 decision #93). The payload carries the state crash-recovery replay needs
+    // (fanout pool is rebuildable from this anchor + retrieval_results). Anchors are
+    // a recovery gain layer: a write failure fails open with a named stderr line and
+    // never blocks the envelope. Requires both port and sessionId — mirrors
+    // hasLedger; sessionId rides with engine opts like the ledger's.
+    if (this.anchors && this.sessionId) {
+      const anchorDomains = new Set([...allResults.keys()].map(extractDomain).filter(Boolean));
+      const anchorPayload = {
+        retrievalTraceId,
+        query: q.query,
+        mode: q.mode,
+        mvs: suff.mvs,
+        perProvider: listedProviderIds.map((id, i) => ({ id, results: providerLists[i] ?? [] })),
+        providersFailed,
+        providersCancelled,
+        uniqueResults: allResults.size,
+        uniqueDomains: [...anchorDomains],
+      };
+      try {
+        await this.anchors.saveAnchor(this.sessionId, "sufficiency", anchorPayload);
+      } catch (e) {
+        process.stderr.write("[anysearch] sufficiency anchor write failed: " + String(e instanceof Error ? e.message : e) + "\n");
+      }
+    }
 
     // post-gate audit event + outcome dimension. abstain is
     // its own outcome value on the span — criterion 6 keeps it out of error counts.

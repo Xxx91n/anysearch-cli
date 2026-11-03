@@ -92,13 +92,13 @@ END;
 CREATE TABLE IF NOT EXISTS resume_anchors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  anchor_type TEXT NOT NULL, -- "query" | "fetch" | "sufficiency" | "consolidation_state" | "rolling_summary"
+  anchor_type TEXT NOT NULL, -- "query" | "fetch" | "sufficiency" | "consolidation_state" | "rolling_summary" | "l2_recall"
   payload TEXT NOT NULL, -- JSON blob
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 -- audit: partial UNIQUE INDEX for state-type anchors (consolidation_state).
 -- Allows INSERT ... ON CONFLICT DO UPDATE (atomic UPSERT, SQLite 3.24.0+).
--- Historical anchors (rolling_summary, query, fetch, sufficiency) remain append-only.
+-- Historical anchors (rolling_summary, l2_recall, query, fetch, sufficiency) remain append-only.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_anchors_state_unique ON resume_anchors(session_id, anchor_type) WHERE anchor_type = 'consolidation_state';
 
 -- Budget Ledger: Mole reserve-then-settle pattern (decision 4).
