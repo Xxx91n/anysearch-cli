@@ -51,7 +51,11 @@ export interface DomainConfigPort {
   // optional per-provider weight Record (user preference overlay).
   sources: { enabled: string[]; weights?: Record<string, number> };
   prompts: { name: string; content: string }[];
-  skills: { active: string[] };
+  // Design: skills.toolRequires is a declarative skill→required-tool-names map —
+  // pi-agent-core Skill is a pure prompt carrier, so tool needs cannot be derived
+  // from the skill itself (#90); optional — when absent, tool filtering stays
+  // hooks.toolWhitelist-only.
+  skills: { active: string[]; toolRequires?: Record<string, string[]> };
   hooks: { toolWhitelist: string[] };
   rag: { adapter: string; config?: Record<string, unknown> };
   // compaction config for independent summary model.

@@ -13,6 +13,7 @@
 - **Kernel Distribution（内核分发形态）**——三阶段路线：独立 CLI（`ans`）→ MCP server 包同一 kernel → 宿主 hooks 插件。三形态共享同一 kernel。
 - **Anysearch Plugin**——宿主侧插件形态：hooks + 长驻 MCP server + 项目级 FTS5 索引，可配置进各 agent 宿主。
 - **Skill Active List / Prompt Skill Selection / Hooks Tool Whitelist**——domain 切换时联动的三份名单：激活的 skills、作为提示词载体的 skill、工具调用白名单（hooks.toolWhitelist 是安全过滤器）。
+- **Tool Requires（工具需求表）**——`[skills.toolRequires]` 声明式 skill→工具名映射：Skill 是纯提示载体，工具需求只能声明、无法推导（决策 #90）。声明后 skills.active 参与工具过滤（与白名单和内置 search 取交集，白名单为空时激活集仍生效）；字段缺省或显式空表时过滤行为不变。
 
 ## 引擎与运行时
 

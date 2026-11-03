@@ -16,8 +16,8 @@ import type { DomainConfigPort, RetrieverPort } from "../src/ports";
 const retriever: RetrieverPort = { search: async () => ({ query: "", mode: "fast", results: [] }) as any };
 const search = createSearchTool(retriever);
 const extra = (name: string) => ({ ...search, name, label: name }) as typeof search;
-const domain = (toolWhitelist: string[]): DomainConfigPort => ({
-  sources: { enabled: [] }, prompts: [], skills: { active: ["search"] }, hooks: { toolWhitelist }, rag: { adapter: "none" },
+const domain = (toolWhitelist: string[], skills?: Partial<DomainConfigPort["skills"]>): DomainConfigPort => ({
+  sources: { enabled: [] }, prompts: [], skills: { active: ["search"], ...skills }, hooks: { toolWhitelist }, rag: { adapter: "none" },
 });
 const names = (ts: { name: string }[]) => ts.map((t) => t.name);
 
@@ -31,6 +31,79 @@ test("whitelist remains the security filter (search not listed -> dropped)", () 
 
 test("empty whitelist keeps every tool", () => {
   assert.deepEqual(names(filterAgentTools([search, extra("fetch")], domain([]))), ["search", "fetch"]);
+});
+
+// Regression for issue #102: without toolRequires the filter must behave
+// exactly as before — whitelist membership alone decides (a whitelisted tool
+// no active skill requires is still kept).
+test("no toolRequires field: behavior byte-identical to whitelist-only", () => {
+  const tools = [search, extra("atomcode"), extra("ctx_execute"), extra("fetch")];
+  assert.deepEqual(
+    names(filterAgentTools(tools, domain(["search", "atomcode", "fetch"], { active: ["research"] }))),
+    ["search", "atomcode", "fetch"],
+  );
+  assert.deepEqual(
+    names(filterAgentTools(tools, domain(["search", "atomcode", "fetch"], { active: ["research"], toolRequires: {} }))),
+    ["search", "atomcode", "fetch"],
+  );
+});
+
+test("toolRequires declared: only whitelist ∩ active-skill union (∪ search) survives", () => {
+  const tools = [search, extra("atomcode"), extra("ctx_execute"), extra("fetch")];
+  const d = domain(["search", "atomcode", "ctx_execute", "fetch"], {
+    active: ["atomcode-research"],
+    toolRequires: { "atomcode-research": ["atomcode"] },
+  });
+  assert.deepEqual(names(filterAgentTools(tools, d)), ["search", "atomcode"]);
+});
+
+test("toolRequires: inactive skill's required tools are filtered", () => {
+  const tools = [search, extra("atomcode"), extra("ctx_execute")];
+  const d = domain(["search", "atomcode", "ctx_execute"], {
+    active: ["research"],
+    toolRequires: { "atomcode-research": ["atomcode"], research: ["ctx_execute"] },
+  });
+  assert.deepEqual(names(filterAgentTools(tools, d)), ["search", "ctx_execute"]);
+});
+
+test("toolRequires: built-in search survives even when no active skill requires it", () => {
+  const tools = [search, extra("atomcode")];
+  const d = domain(["search", "atomcode"], {
+    active: ["research"],
+    toolRequires: { research: ["atomcode"] },
+  });
+  assert.deepEqual(names(filterAgentTools(tools, d)), ["search", "atomcode"]);
+});
+
+test("toolRequires: whitelist stays the upper bound (union ∖ whitelist dropped)", () => {
+  const tools = [search, extra("atomcode"), extra("fetch")];
+  const d = domain(["search", "fetch"], {
+    active: ["research", "atomcode-research"],
+    toolRequires: { research: ["fetch"], "atomcode-research": ["atomcode"] },
+  });
+  assert.deepEqual(names(filterAgentTools(tools, d)), ["search", "fetch"]);
+});
+
+test("toolRequires declared: empty whitelist still applies the active-skill filter", () => {
+  const tools = [search, extra("atomcode"), extra("ctx_execute")];
+  const d = domain([], {
+    active: ["research"],
+    toolRequires: { research: ["ctx_execute"] },
+  });
+  assert.deepEqual(names(filterAgentTools(tools, d)), ["search", "ctx_execute"]);
+});
+
+test("toolRequires: active skill named like an Object prototype member contributes nothing", () => {
+  const tools = [search, extra("atomcode")];
+  const d = domain(["search", "atomcode"], {
+    active: ["constructor", "research"],
+    toolRequires: { research: ["atomcode"] },
+  });
+  assert.deepEqual(names(filterAgentTools(tools, d)), ["search", "atomcode"]);
+});
+
+test("empty whitelist with no toolRequires keeps every tool (unchanged)", () => {
+  assert.deepEqual(names(filterAgentTools([search, extra("fetch")], domain([], { active: ["research"] }))), ["search", "fetch"]);
 });
 
 test("every shipped domain TOML keeps the built-in search tool active", () => {
