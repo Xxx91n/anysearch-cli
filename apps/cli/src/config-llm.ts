@@ -282,12 +282,17 @@ export function writeUserLlmConfig(
     ? { ...(root["llm"] as Record<string, unknown>) }
     : {}) as Record<string, unknown>;
   if (patch.provider !== undefined) {
-    const previous = llm["provider"];
+    // Match parseLlmToml's validation: only a non-empty string is a recorded
+    // provider. An empty/non-string value counts as absent, so it must not
+    // delete a valid env_key (CodeRabbit #124).
+    const rawProvider = llm["provider"];
+    const previous =
+      typeof rawProvider === "string" && rawProvider !== "" ? rawProvider : undefined;
     // SECURITY: env_key is bound to the provider present when it was written.
     // Keeping it across a provider switch would send that secret to the new
     // provider's endpoint. Same-provider / model-only updates, and files with
-    // no prior provider (no binding to violate), keep env_key as the resolver
-    // does (CodeRabbit #120).
+    // no (valid) prior provider (no binding to violate), keep env_key as the
+    // resolver does (CodeRabbit #120).
     if (previous !== undefined && previous !== patch.provider && llm["env_key"] !== undefined) {
       warn(
         "removed [llm].env_key=" + String(llm["env_key"]) +
