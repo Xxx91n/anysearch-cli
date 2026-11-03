@@ -264,6 +264,25 @@ test("writeUserLlmConfig keeps env_key when the file has no prior provider", () 
   assert.equal(notices.length, 0);
 });
 
+test("writeUserLlmConfig treats an invalid prior provider as absent (keeps env_key)", () => {
+  // parseLlmToml drops empty / non-string providers, so they establish no
+  // binding and must not cause a valid env_key to be removed (CodeRabbit #124).
+  for (const userToml of [
+    '[llm]\nprovider = ""\nenv_key = "KEEP_ME"\n',
+    '[llm]\nprovider = 42\nenv_key = "KEEP_ME"\n',
+  ]) {
+    const f = fixture({ userToml });
+    const notices: string[] = [];
+    const path = writeUserLlmConfig({ provider: "openai", model: "gpt-5" }, f.home, (m) => notices.push(m));
+    assert.ok(readFileSync(path, "utf8").includes("KEEP_ME"));
+    const cfg = resolveLlmConfig(f.opts({ env: { KEEP_ME: "k" } }));
+    assert.equal(cfg.provider, "openai");
+    assert.equal(cfg.apiKey, "k");
+    assert.equal(cfg.envKey, "KEEP_ME");
+    assert.equal(notices.length, 0);
+  }
+});
+
 test("writeUserLlmConfig creates the file fresh", () => {
   const f = fixture();
   const path = writeUserLlmConfig({ provider: "google", model: "gemini-2.5-flash" }, f.home);
