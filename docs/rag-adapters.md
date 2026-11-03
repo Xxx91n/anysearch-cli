@@ -5,7 +5,7 @@
 
 - 端口：`RagAdapterPort`（`packages/kernel/src/ports.ts`）
 - 注册表 + 具体实现：`packages/kernel/src/rag-adapter.ts`
-- 注入槽位：`MemoryPipeline.inject` 的 **Stage-1**（当前 #104 代码暂统一落在**首条 user 消息**文本通道末尾；#131 已裁定**静/动分层约定**——静态 `note` 留首条、动态 `fts` 迁最新 user 末尾热区，见下方「注入落点约定（#131）」）
+- 注入槽位：`MemoryPipeline.inject` 的 **Stage-1**（当前 #104 代码暂统一落在**首条 user 消息**的文本通道末尾；#131 已裁定**静/动分层约定**——静态 `note` 留在首条 user 消息末尾、动态 `fts` 迁至最新一条 user 消息的末尾热区，见下方「注入落点约定（#131）」）
 
 ## 三态
 
@@ -158,6 +158,6 @@ pnpm -C packages/kernel test    # test/rag-adapter.test.ts、test/message-text.t
 ## 边界（还没做的）
 
 - **`fts` 尚未在任何出厂域启用** —— `domains/default.toml`、`docs.toml`、`research.toml` 仍是 `adapter = "none"`。要真开启属产品决策，需要配套回归。
-- **#131 动态 RAG 热区落点尚未迁入运行时代码** —— 静/动分层约定已定（静态 `note` 留首条、动态 `fts` 按最新 user 原文检索并落最新 user 末尾热区），当前 `MemoryPipeline.inject` 仍保持 #104 的首条落点，待后续实现票连同 Stage-2 `appendMessageText` 块形状保护与 `rag-adapter.test.ts` 多轮落点断言一并落地。
+- **#131 动态 RAG 热区落点尚未迁入运行时代码** —— 静/动分层约定已定（静态 `note` 留在首条 user 消息末尾、动态 `fts` 按最新一条 user 消息原文检索并迁至其末尾热区），当前 `MemoryPipeline.inject` 仍保持 #104 的首条落点，待后续实现票连同 Stage-2 `appendMessageText` 块形状保护与 `rag-adapter.test.ts` 多轮落点断言一并落地。
 - **MCP `query_knowledge` 工具未接本注册表** —— 它仍需先定「知识查询读哪个记忆范围」（跨会话 store 范围），见 `docs/limitations.md`。
 - **`apps/mcp` 的 `ans_chat` 未把 store 传给 runtime** —— 若在 MCP 侧启用 `fts`，会走 no-store fail-open 并打一行告警（既有接线缺口）。

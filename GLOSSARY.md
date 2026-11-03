@@ -9,7 +9,7 @@
 - **Retroaererd Engine（检索专精引擎）**——anysearch 内核：多 provider fanout + RRF 融合 + 充分性门禁 + 预算闸。纯编排，不含 LLM 判定。
 - **Info Source Provider（信息源头供应方）**——对接单一检索后端（anysearch 通道/Exa/Tavily/Brave）的实现；domain 的 `[sources]` 决定启用哪几个及融合权重。
 - **RAG Adapter（领域专属检索适配器）**——企业内部数据的加载/检索配置位（`[rag] adapter=<id>`），kernel 侧三态注册表：`none`=不注入、`note`=保留 `config.note` 旧注入（legacy 伪 adapter）、`fts`=复用既有 FTS5 记忆面（`SessionStore.searchMemory`）做真检索；未知 id fail-open 到 none 并输出具名 stderr 告警（决策 #90，票据 #35/#104；配置与预算见 `docs/rag-adapters.md`）。
-- **RAG Injection（RAG 注入）**——`RagAdapterPort.retrieve()` 的产物经 MemoryPipeline.inject **Stage-1** 注入用户消息文本通道：按 #131 静/动分层约定，静态 `note`（含 `none`+残留 note）留首条 user 消息且保持 `[RAG Context] <note>` 逐字节不变，动态 `fts` 按最新 user 原文检索并带 provenance 头追加到最新 user 末尾热区（当前 #104 代码暂统一落首条，`fts` 迁最新待后续实现票落地）；每域单 adapter 生效不叠乘，检索异常 fail-open（不注入 + 具名告警），任何情况不阻断 agent loop。注入按**消息形状**工作，同时支持字符串与 pi-agent-core 的 content block 数组（原地追加到末尾文本块并保留非文本块，详见 `docs/rag-adapters.md`）。
+- **RAG Injection（RAG 注入）**——`RagAdapterPort.retrieve()` 的产物经 MemoryPipeline.inject **Stage-1** 注入用户消息文本通道：按 #131 静/动分层约定，静态 `note`（含 `none`+残留 note）留在首条 user 消息末尾且保持 `[RAG Context] <note>` 逐字节不变，动态 `fts` 按最新一条 user 消息原文检索并带 provenance 头追加到最新一条 user 消息的末尾热区（当前 #104 代码暂统一落在首条 user 消息末尾，`fts` 迁至最新待后续实现票落地）；每域单 adapter 生效不叠乘，检索异常 fail-open（不注入 + 具名告警），任何情况不阻断 agent loop。注入按**消息形状**工作，同时支持字符串与 pi-agent-core 的 content block 数组（原地追加到末尾文本块并保留非文本块，详见 `docs/rag-adapters.md`）。
 - **Code Mode（代码开发模式）**——`domain="code"` 特殊值：软依赖用户已装的 context-mode / codegraph 做本地仓索引，CLI 不内置索引实现。
 - **Kernel Distribution（内核分发形态）**——三阶段路线：独立 CLI（`ans`）→ MCP server 包同一 kernel → 宿主 hooks 插件。三形态共享同一 kernel。
 - **Anysearch Plugin**——宿主侧插件形态：hooks + 长驻 MCP server + 项目级 FTS5 索引，可配置进各 agent 宿主。
