@@ -6,9 +6,10 @@
 // protocol-level) so the 2026-07-28 stateless contract is preserved.
 //
 // Nothing request-scoped lands on the shared engine: identity rides
-// AsyncLocalStorage (mcp-context.ts), session_id stays empty on the MCP path
-// (tools/observation.ts), and MemoryPipeline state resumes from its anchor per
-// call — so two requests never see each other's state.
+// AsyncLocalStorage (mcp-context.ts) and session_id stays empty on the MCP path
+// (tools/observation.ts); the composition's ports take their inputs per call
+// (retriever.query, store args). The ans-chat LLM session cache is module-level,
+// keyed by provider+model+baseUrl+api, so sharing the engine does not change it.
 import express, { type Express } from "express";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import type { McpServer } from "@modelcontextprotocol/server";

@@ -11,7 +11,7 @@
 //       is MethodNotFound (-32601), while tools/list carrying a 2026-07-28 _meta
 //       envelope still returns the tool list (graceful legacy degradation).
 //   Transports: stdio (StdioServerTransport) + stateless Streamable HTTP
-//     (per-request buildServer + NodeStreamableHTTPServerTransport), all 5 tools.
+//     (per-request server over a shared engine + NodeStreamableHTTPServerTransport), all 5 tools.
 //
 // Seam: real buildServer() with a mock engine (offline, no LLM), driven over the
 // actual transport classes in-process. No test framework (repo convention).

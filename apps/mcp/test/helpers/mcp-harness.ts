@@ -1,7 +1,8 @@
 // Transport harnesses for the SDK-v2 acceptance tests (#100).
 // These reproduce, in-process, the exact wiring apps/mcp/src/index.ts uses:
 //   - stdio:  StdioServerTransport over injected PassThrough streams
-//   - HTTP:   express + per-request buildServer() + NodeStreamableHTTPServerTransport
+//   - HTTP:   express + per-request buildServer(engine) + NodeStreamableHTTPServerTransport
+//             (#112: the engine itself is connection-scoped and shared)
 //             (stateless: sessionIdGenerator undefined, enableJsonResponse, keepAliveMs 0)
 // so the acceptance smoke exercises the real transport classes without a build
 // or a spawned binary. The dist-level counterpart lives in scripts/mcp-smoke.mjs.
