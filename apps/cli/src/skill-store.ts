@@ -287,6 +287,11 @@ function prepareManagedRoot(opts: SkillOptions): string {
   return managed;
 }
 
+/** True when the managed root holds nothing but the lock we hold. */
+function isEmptyManagedRoot(managed: string): boolean {
+  return !readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK);
+}
+
 /** Read an existing manifest, or bootstrap one only in an empty managed root. */
 function readManifestForInstall(managed: string): SkillManifest {
   requireScopeAnchors(managed);
@@ -294,7 +299,7 @@ function readManifestForInstall(managed: string): SkillManifest {
     // Only a genuinely empty managed root may bootstrap a new manifest. An
     // orphaned directory is not permission to forget or overwrite its owner.
     // The lock we hold is not content.
-    if (readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK)) {
+    if (!isEmptyManagedRoot(managed)) {
       fail(`skill manifest is missing in a non-empty managed directory: ${managed}. Refusing to overwrite untracked installations.`);
     }
     return { version: 1, skills: Object.create(null) };
@@ -415,8 +420,9 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
           return true;
         },
       });
-      // Design: install copies ignored files too, so the copied root must not
-      // inherit a world-traversable source mode; owner-only matches mkdtemp.
+      // Design: the published root is chmod 0700 after the copy — install copies
+      // ignored files too, so it must not inherit a world-traversable source
+      // mode, matching the old mkdtemp staging semantics.
       chmodSync(payload, 0o700);
       if (validateSkillFile(join(payload, "SKILL.md")) !== name) fail("source name changed during installation; retry");
       renameSync(payload, target);
@@ -443,7 +449,7 @@ export function listInstalledSkills(opts: SkillOptions = {}): InstalledSkill[] {
     // Design: an empty managed root (e.g. a failed first install) is an empty
     // scope — only real untracked entries keep the fail-closed manifest error.
     requireScopeAnchors(managed);
-    if (!readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK)) return [];
+    if (isEmptyManagedRoot(managed)) return [];
   }
   return Object.values(readManifest(managed).skills).sort((a, b) => a.name.localeCompare(b.name));
 }

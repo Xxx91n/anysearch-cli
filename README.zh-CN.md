@@ -180,7 +180,7 @@ schema 时，卸载会拒绝且不删除任何文件；绝不靠扫描目录猜�
 没有 `ans skill` 进程运行时删除残留的 `skills/synced/.installed.lock` 目录。
 操作中断后先用 `ans skill list` 核对再删除残留：清单仍记录某 skill 但其
 `<name>/` 目录缺失时，应把 `.uninstall-*` 备份改回 `<name>/`，没有备份时也可
-用 `ans skill uninstall <name>` 删掉这条失效记录；清单未记录时，
+用 `ans skill uninstall <name>` 删掉这条失效记录（项目级加 `--project`）；清单未记录时，
 `.install-*` 暂存或 `.uninstall-*` 备份可在确认无操作运行后删除。安装中断
 留下的未登记 `<name>/` 可删除后重装。清单写入被杀还可能留下 `.installed-*.tmp`，
 在目录中没有 `installed.json` 时删除即可。若 `ans skill list` 本身报告清单
