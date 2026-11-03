@@ -25,15 +25,18 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     api?: string;
     modelOverride?: string;
   }): string {
-    const base = opts.provider + "/" + opts.model + "/" + (opts.baseUrl ?? "") + "/" + (opts.api ?? "");
+    // Structured tuple prevents ambiguous "/" collisions: distinct configs can no longer
+    // produce the same string (e.g. model="a/b", baseUrl="c" vs model="a", baseUrl="b/c").
+    // JSON array serialization is deterministic and collision-free for these fields.
+    const tuple: string[] = [opts.provider, opts.model, opts.baseUrl ?? "", opts.api ?? ""];
     // Reserve for per-request model override: independent segment + independent Map slot.
     // Must not overwrite the env-keyed default slot — one override would pollute all later default calls (T5 #91).
-    // Single extra segment with explicit prefix keeps default key stable and collision-free
-    // (provider/model/baseUrl/api never contain the "/override:" marker).
+    // An extra tuple element keeps the default key stable and guarantees no collision with
+    // provider/model/baseUrl/api values (they are always the first four elements).
     if (opts.modelOverride) {
-      return base + "/override:" + opts.modelOverride;
+      tuple.push(opts.modelOverride);
     }
-    return base;
+    return JSON.stringify(tuple);
   }
 
   async function getLlmSession(modelOverride?: string): Promise<LlmSession> {
@@ -51,11 +54,18 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     const keyHash = process.env.ANS_LLM_API_KEY
       ? createHash("sha256").update(process.env.ANS_LLM_API_KEY).digest("hex").slice(0, 12)
       : "";
+    // Fingerprint the complete baseUrl before it enters the cache key: raw URLs can
+    // contain userinfo (https://user:pass@host) or secrets in query strings, and the
+    // ANS_LLM_API_KEY assertion alone would not catch them. Hashing preserves
+    // distinct URLs → distinct slots and identical URLs → same slot, without storing
+    // the raw URL (or any embedded credential) in the Map key. keyHash is not needed
+    // as a tiebreaker for this case.
+    const baseUrlFingerprint = baseUrl ? createHash("sha256").update(baseUrl).digest("hex") : "";
     // Wire-affecting config only; secret material never enters cache key (assertion below).
-    const key = buildCacheKey({ provider: providerName, model: modelName, baseUrl, api, modelOverride });
+    const key = buildCacheKey({ provider: providerName, model: modelName, baseUrl: baseUrlFingerprint, api, modelOverride });
 
     // Assertion: cache key must not contain secret material. Key is built only from
-    // provider+model+baseUrl+api (+ optional override segment); keyHash/apiKey are separate.
+    // provider+model+baseUrlFingerprint+api (+ optional override segment); keyHash/apiKey are separate.
     // This guards against accidental future leakage of keyHash or raw key into the key string.
     const rawKey = process.env.ANS_LLM_API_KEY;
     if (rawKey && rawKey.length >= 8 && key.includes(rawKey)) {
