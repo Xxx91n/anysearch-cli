@@ -129,7 +129,7 @@ function readManifest(managed: string): SkillManifest {
   const path = join(managed, "installed.json");
   const stat = statIfPresent(path);
   if (!stat) fail(`skill manifest is missing: ${path}. Refusing to guess installation targets; no files were removed.`);
-  requireDirectory(scopeRootFromManaged(managed), "scope root");
+  requireScopeRoot(scopeRootFromManaged(managed));
   requireDirectory(skillsRootFromManaged(managed), "skills root");
   requireDirectory(managed, "managed skills root");
   if (!stat.isFile() || stat.isSymbolicLink()) fail(`skill manifest must be a regular, non-symlink file: ${path}`);
@@ -181,12 +181,21 @@ function scopeRootFromManaged(managed: string): string {
   return resolve(managed, "..", "..");
 }
 
+/** Require a non-symlink scope anchor, including Windows junction/reparse redirection. */
+function requireScopeRoot(scope: string): void {
+  requireDirectory(scope, "scope root");
+  const expected = join(realpathSync(resolve(scope, "..")), basename(scope));
+  const actual = realpathSync(scope);
+  const same = process.platform === "win32" ? actual.toLowerCase() === expected.toLowerCase() : actual === expected;
+  if (!same) fail(`scope root must not be a symlink or junction: ${scope}`);
+}
+
 /** Create the managed root only after validating existing scope/skills/synced directories. */
 function prepareManagedRoot(opts: SkillOptions): string {
   const root = skillsRoot(opts);
   const managed = managedSkillsRoot(opts);
   const scope = scopeRootFromManaged(managed);
-  if (statIfPresent(scope)) requireDirectory(scope, "scope root");
+  if (statIfPresent(scope)) requireScopeRoot(scope);
   if (statIfPresent(root)) requireDirectory(root, "skills root");
   if (statIfPresent(managed)) requireDirectory(managed, "managed skills root");
   mkdirSync(root, { recursive: true });
