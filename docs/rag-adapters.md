@@ -11,13 +11,18 @@
 
 | `adapter` | 行为 | 依赖 |
 |---|---|---|
-| `"none"`（或缺省） | 不注入。出厂 `domains/*.toml` 都是这个 | 无 |
+| `"none"`（或缺省） | 正常不注入（出厂 `domains/*.toml` 都是这个）。**例外**：若同时残留 `config.note`，则按 #104 之前的 legacy 行为注入该 note（见下） | 无 |
 | `"note"` | legacy 伪 adapter：注入 `[rag.config].note` 文本，**逐字节**等同 #104 之前的行为 | 无 |
 | `"fts"` | 真检索：包既有 `SessionStore.searchMemory`（FTS5 严格梯级 + 放宽梯级 + 既有 side arms），结果带 provenance 注入 | 需要 session store |
 | 其它任意值 | **fail-open 到 none**，并在 stderr 输出具名告警（按原因去重，不会每轮刷） | — |
 
-`adapter` 是**唯一开关**：`adapter = "none"` 时即使残留 `config.note` 也不会注入。
 每个 domain 只有一个 adapter 生效，`note` 与 `fts` 不会叠乘。
+
+> **`none` + 残留 note 的兼容行为（AC2）**：#104 之前注入条件是
+> `rag.adapter && rag.config.note` —— 字符串 `"none"` 是真值，所以
+> `adapter = "none"` 配了 note 的域**本来就会注入**。为了让 `none` 行为逐字节
+> 不变，这条 legacy 路径被原样保留。要彻底不注入，删掉 `config.note` 即可。
+> 出厂三域都既无 `fts` 也无 note，所以对现有用户零影响。
 
 ## 配置示例
 

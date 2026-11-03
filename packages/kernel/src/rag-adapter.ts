@@ -6,7 +6,9 @@
 // Domain Full-Stack is real rather than a placeholder.
 //
 // Registry keyed by domain.rag.adapter (three states):
-//   "none" / unset -> no injection at all
+//   "none" / unset -> no injection … EXCEPT the pre-#104 legacy case: a note
+//                     present in RagConfig still injects (AC2 keeps
+//                     `none` + note byte-identical; see build() below)
 //   "note"         -> legacy pseudo-adapter: inject config.note text
 //                     byte-identically to the pre-#104 behavior
 //   "fts"          -> real adapter: FTS5 memory recall, provenance-tagged
@@ -132,9 +134,14 @@ export interface RagAdapterRegistryDeps {
 /**
  * Selects the adapter for a domain from `domain.rag.adapter`.
  *
- * Three states — `none` (no injection), `note` (legacy config.note), `fts`
- * (FTS5 recall) — and fail-open to `none` with a named stderr line for
- * anything else, so a mis-wired or unknown id can never break the agent loop.
+ * Three states — `none`, `note` (legacy config.note), `fts` (FTS5 recall) —
+ * and fail-open to no adapter with a named stderr line for anything else, so a
+ * mis-wired or unknown id can never break the agent loop.
+ *
+ * Compatibility note: `none` is *not* unconditionally silent. Pre-#104 the
+ * condition was `rag.adapter && rag.config.note`, so a domain declaring
+ * `adapter = "none"` alongside a leftover `config.note` did inject that note;
+ * AC2 requires that to keep working byte-identically, so it does.
  *
  * Two hot-path properties: resolution is cached per domain object identity
  * (a TOML reload produces a new object and therefore re-resolves), and
@@ -169,8 +176,9 @@ export class RagAdapterRegistry {
    * and fail open.
    *
    * A retrieval fault degrades to "no RAG context this turn" plus one named
-   * stderr line — never a thrown error into the agent loop. `adapter = "none"`
-   * (every shipped domain today) short-circuits before any store round trip.
+   * stderr line — never a thrown error into the agent loop. A domain with no
+   * injection to make (every shipped one: `adapter = "none"` and no note)
+   * short-circuits before any store round trip.
    *
    * @param domain - Active domain config carrying `rag.adapter`.
    * @param query - Caller text, normally the first user turn; truncated here.
@@ -182,8 +190,8 @@ export class RagAdapterRegistry {
     query: string,
     limit: number = RAG_DEFAULT_LIMIT,
   ): Promise<RagRetrievalResult | null> {
-    // adapter=none (every shipped domain today) short-circuits here: no store
-    // round trip and no per-turn allocation on the hot path.
+    // A domain with nothing to inject (every shipped one: "none" + no note)
+    // short-circuits here: no store round trip, no per-turn allocation.
     const adapter = this.resolve(domain);
     if (!adapter) return null;
     try {
@@ -201,12 +209,22 @@ export class RagAdapterRegistry {
   private build(domain: DomainConfigPort): RagAdapterPort | null {
     const raw = domain?.rag?.adapter;
     const id = typeof raw === "string" ? raw.trim() : "";
-    if (!id || id === RAG_ADAPTER_NONE) return null;
+    if (!id) return null;
     if (id === RAG_ADAPTER_NOTE) {
       // Legacy condition: injection needs BOTH a truthy adapter and a note.
       // A note-less "note" domain stays silent (pre-#104 behavior).
       const note = domain.rag.config?.note;
       return typeof note === "string" && note ? createNoteRagAdapter(note) : null;
+    }
+    if (id === RAG_ADAPTER_NONE) {
+      // #104 AC2 regression, kept verbatim from the pre-#104 injection:
+      // the old condition was `domain.rag.adapter && domain.rag.config?.note`,
+      // i.e. a truthy adapter id (INCLUDING "none") plus a note injected the
+      // note. Refusing it here would itself be the behavior change AC2 forbids,
+      // so "none" with a leftover config.note keeps injecting. A domain that
+      // wants no injection just drops the note.
+      const legacyNote = domain.rag.config?.note;
+      return typeof legacyNote === "string" && legacyNote ? createNoteRagAdapter(legacyNote) : null;
     }
     if (id === RAG_ADAPTER_FTS) {
       const store = this.deps.store;

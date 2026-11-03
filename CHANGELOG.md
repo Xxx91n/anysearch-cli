@@ -24,7 +24,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Changed
 
-- **RAG 注入点接线方式改为 adapter 分派**：注入槽位不变（`MemoryPipeline.inject` Stage-1、首条 user 消息），但“有 adapter 且有 note 才注入”的隐式条件被注册表取代——`adapter` 是唯一开关，`none` 域即使残留 `config.note` 也不再注入。`fts` 的检索 query 取首条 user 消息原文（截断 400 字符以适配严格 FTS5 梯级）。
+- **RAG 注入点接线方式改为 adapter 分派**：注入槽位不变（`MemoryPipeline.inject` Stage-1、首条 user 消息）。`fts` 的检索 query 取首条 user 消息原文（截断 400 字符以适配严格 FTS5 梯级）。**兼容保留**：`adapter = "none"` 但残留 `config.note` 的域仍按 #104 之前的条件（`adapter && config.note`，`"none"` 为真值）注入该 note —— AC2 要求 `none` 行为逐字节不变，故不做“adapter 是唯一开关”的收紧（CodeRabbit PR #123 Linked Issues 检查指出该冲突后修正）。
 - **`query_knowledge` 边界据实记录**：该 MCP 工具仍是占位（需先定“知识查询读哪个记忆范围”），已写入 `docs/limitations.md`；GLOSSARY 的 RAG Adapter 条目由“仅占位，未实施”更新为三态定义 + RAG Injection 条目。
 
 ## Unreleased — #100: MCP SDK v2 monorepo 收口（server 2.4.x + zod ≥4.2 + 双通道/Dual Era 验收）

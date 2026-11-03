@@ -211,10 +211,22 @@ test("none: no injection at all (regression)", async () => {
   assert.equal(spies.calls, 0, "none does not touch the store");
 });
 
-test("none: a configured note is NOT injected (adapter decides, not config presence)", async () => {
+test("none: a leftover config.note still injects (AC2 — pre-#104 legacy, byte-identical)", async () => {
+  // Pre-#104 the condition was `adapter && config.note`, i.e. the string "none"
+  // is truthy, so "none" + note DID inject. AC2 requires `none` behavior to be
+  // unchanged, so this must keep injecting rather than silently start refusing.
   const pipeline = pipelineWith({ adapter: RAG_ADAPTER_NONE, config: { note: "internal wiki" } }, storeWith([]));
   const out = await pipeline.inject([{ role: "user", content: "question" }] as any);
-  assert.equal((out[0] as any).content, "question", "pre-#104 behavior required a truthy adapter");
+  assert.equal((out[0] as any).content, "question\n\n[RAG Context] internal wiki",
+    "none + note keeps the pre-#104 injection, byte for byte");
+});
+
+test("none with no note is silent (the shipped-domain case)", async () => {
+  const spies = { calls: 0, query: "", limit: 0 };
+  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_NONE }, storeWith([{ rowid: 1, role: "a", content: "recalled" }], { spies }));
+  const out = await pipeline.inject([{ role: "user", content: "question" }] as any);
+  assert.equal((out[0] as any).content, "question", "no note -> no injection");
+  assert.equal(spies.calls, 0, "no store round trip");
 });
 
 test("legacy note: injects config.note exactly as before (regression)", async () => {
