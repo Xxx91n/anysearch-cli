@@ -148,6 +148,10 @@ jobs:
 
       # Signature split A: a require-time SIGSEGV/exit-139 here = better-sqlite3
       # dlopen/registration family — NOT the exit-time abort being probed.
+      # Design: run from packages/store — better-sqlite3 is a direct dependency of
+      # @anysearch-cli/store, and pnpm's strict layout exposes no root symlink; a
+      # root-level require dies with MODULE_NOT_FOUND (split A) before the probe
+      # ever reaches split B. Build and abstain-path repro stay at repo root.
       - name: better-sqlite3 registration check
         working-directory: packages/store
         run: node -e "const D=require('better-sqlite3'); new D(':memory:'); console.log('sqlite registration OK')"
