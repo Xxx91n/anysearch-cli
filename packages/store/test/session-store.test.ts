@@ -80,6 +80,24 @@ async function main() {
     assert(session2Hits.length === 0, "session 2 has no TypeScript messages (isolation)");
     assert(session2AllHits.length >= 1, "session 2 has its own Different content");
 
+    // 7. ensureSession (#129) — an externally minted id (durable session anchor)
+    // must be registered before FK-bearing writes, and re-registering is a no-op.
+    const externalId = "external-session-129";
+    await store.ensureSession(externalId, "code");
+    // Idempotent: a second call with the same id must not throw (INSERT OR IGNORE).
+    await store.ensureSession(externalId, "code");
+    // Child writes now satisfy the messages/resume_anchors FK to sessions(id).
+    await store.append(externalId, { role: "user", content: "anchor write after ensure" });
+    await store.saveAnchor(externalId, "query", { query: "q", timestamp: 1 });
+    const externalAnchors = await store.getAnchors(externalId);
+    assert(externalAnchors.length === 1, "ensureSession: anchor write succeeds for an external id (FK satisfied)");
+    const extHits = await store.searchFts5(externalId, "anchor", 10);
+    assert(extHits.length === 1, "ensureSession: message is searchable under the external id");
+    const extDb = new Database(dbPath, { readonly: true });
+    const extRows = extDb.prepare("SELECT COUNT(*) as c FROM sessions WHERE id = ?").get(externalId) as { c: number };
+    assert(extRows.c === 1, "ensureSession: exactly one sessions row for the external id (idempotent)");
+    extDb.close();
+
     store.close();
   } finally {
     // Cleanup temp db files. Windows may EPERM on WAL files after close; ignore.

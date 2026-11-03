@@ -7,12 +7,10 @@
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
 import { PiAgentRuntime, createLlmSession } from "@anysearch-cli/kernel";
-import type { RetrieverPort, DomainConfigPort } from "@anysearch-cli/kernel";
-import { createEngine } from "../composition";
-import { domainSearchDirs } from "../db";
+import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
+import { createPersistentEngine, domainSearchDirs } from "../db";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
-import { domainTomlPath, loadDomainByNameIn } from "@anysearch-cli/store";
-import { join } from "node:path";
+import { domainTomlPath, loadDomainByNameIn, readSessionId } from "@anysearch-cli/store";
 
 export async function runChat(argv: string[]): Promise<number> {
   const { flags, argv: args } = parseLlmFlags(argv);
@@ -46,19 +44,24 @@ export async function runChat(argv: string[]): Promise<number> {
     return 3;
   }
 
-  // Initialize retriever + domain.
+  // Initialize retriever + domain over the DURABLE store (#129).
+  // The old createEngine(...) call took the composition root's ":memory:"
+  // default, so anything the RAG adapter recalled vanished with the process —
+  // a "wired but always empty" path that is harder to diagnose than no wiring.
+  // createPersistentEngine resolves ANS_DB_PATH (default ~/.anysearch/anysearch.db)
+  // and mkdirs its parent, matching every other maintenance command.
   const domainName = process.env.ANS_DOMAIN || "default";
-  let retriever: RetrieverPort;
+  let engine: CompositionResult;
   let domain: DomainConfigPort;
   try {
-    const engineResult = createEngine(domainName, { domainsDirs: domainSearchDirs() });
-    retriever = engineResult.retriever;
-    domain = engineResult.config || loadDomainByNameIn(domainName, domainSearchDirs()) as DomainConfigPort;
+    engine = createPersistentEngine(domainName);
+    domain = engine.config || loadDomainByNameIn(domainName, domainSearchDirs()) as DomainConfigPort;
   } catch (e: any) {
     console.error("[warn] Domain load failed: " + (e?.message || String(e)) + ", using fallback.");
-    // Fallback: no domain filtering, all providers.
-    const fallback = createEngine();
-    retriever = fallback.retriever;
+    // Fallback: no domain filtering, all providers — still on the durable DB so
+    // memory reads keep working across runs. A second failure propagates to the
+    // CLI entry point; swallowing it here would leave an unclosed store handle.
+    engine = createPersistentEngine();
     domain = {
       sources: { enabled: [] },
       prompts: [],
@@ -67,12 +70,34 @@ export async function runChat(argv: string[]): Promise<number> {
       rag: { adapter: "none" },
     };
   }
+  const { retriever, store } = engine;
+
+  // Stable session id — the durable ~/.anysearch-cli/session anchor
+  // (ANS_SESSION_ID overrides it). It is minted outside createSession(), so the
+  // child tables' FK to sessions(id) needs this row registered before any
+  // anchor/message write. Failure here is fatal for the memory chain only:
+  // chat still answers, but we say so instead of silently dropping it.
+  const sessionId = readSessionId();
+  let memoryWired = true;
+  try {
+    await store.ensureSession(sessionId, domainName);
+  } catch (e: any) {
+    memoryWired = false;
+    process.stderr.write(
+      "[warn] session row registration failed for " + sessionId + ": " +
+      (e?.message || String(e)) + " — continuing without memory anchors\n",
+    );
+  }
 
   // Construct PiAgentRuntime and run.
   // models undefined fix — session.models is now properly initialized.
   const runtime = new PiAgentRuntime({
     retriever,
     domain,
+    // store + sessionId together are what make PiAgentRuntime build the
+    // MemoryPipeline (#129): RAG Stage-1 injection and L1/L2 memory now run on
+    // the real `ans chat` path instead of being silently skipped.
+    ...(memoryWired ? { store, sessionId } : {}),
     // lazy mtime re-read lets `ans hitl --allow-url` write-back take effect live.
     domainTomlPath: domainTomlPath(),
     // CLI is the TTY composition root; kernel decides isInteractive itself.

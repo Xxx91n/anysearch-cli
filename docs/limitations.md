@@ -113,3 +113,19 @@
   `adapter = "none"`. Session-scoped RAG would need a session id on
   `RagAdapterPort` plus a session-filtered Research Memory query — a separate
   decision, tracked in `docs/rag-adapters.md`.
+- **`ans_chat` (MCP) has no `MemoryPipeline` at all (#129)** — this is the
+  whole memory chain being absent, not a fail-open to `none`. `PiAgentRuntime`
+  builds `MemoryPipeline` only when `store` and `sessionId` are BOTH supplied;
+  `ans_chat` passes neither, so RAG injection (including `fts`), the L1/L2
+  anchor injection and the consolidation cold path never run on that path — no
+  adapter is consulted and nothing is logged as degraded by the adapter layer
+  itself. The CLI `ans chat` path now wires both (`apps/cli/src/commands/chat.ts`)
+  and uses the durable `ANS_DB_PATH` store; MCP cannot copy that fix because the
+  protocol deliberately carries no per-instance session id
+  (`apps/mcp/src/index.ts` stateless transport, `session_id` never stashed), so
+  its session semantics must be decided first (#130 / #132).
+- **A half-wired runtime is now named, not silent (#129)** — a composition root
+  that supplies `store` without `sessionId` (or the reverse) gets one stderr
+  line naming the missing half and stating that RAG / memory injection are
+  disabled for the run. The gate itself (`store && sessionId`) is unchanged;
+  both-absent stays a supported "no memory" runtime and emits nothing.

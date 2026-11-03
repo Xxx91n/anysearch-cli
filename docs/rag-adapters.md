@@ -136,4 +136,13 @@ pnpm -C packages/kernel test    # test/rag-adapter.test.ts、test/message-text.t
 
 - **`fts` 尚未在任何出厂域启用** —— `domains/default.toml`、`docs.toml`、`research.toml` 仍是 `adapter = "none"`。要真开启属产品决策，需要配套回归。
 - **MCP `query_knowledge` 工具未接本注册表** —— 它仍需先定「知识查询读哪个记忆范围」（跨会话 store 范围），见 `docs/limitations.md`。
-- **`apps/mcp` 的 `ans_chat` 未把 store 传给 runtime** —— 若在 MCP 侧启用 `fts`，会走 no-store fail-open 并打一行告警（既有接线缺口）。
+- **`apps/mcp` 的 `ans_chat` 未把 store 传给 runtime** —— 该路径上 `MemoryPipeline`
+  根本没有被构造（不是 fail-open 到 none），所以 RAG / L1 / L2 注入整条链路都不存在。
+  MCP 侧是**有意无会话**（stateless transport，`session_id` 从不落地），不能照抄 CLI 的修法；
+  会话语义需先定（#130 / #132）。现状见 `docs/limitations.md`。
+- **CLI `ans chat` 已接持久库 + 稳定 sessionId（#129）** —— `createPersistentEngine` 走
+  `ANS_DB_PATH`（默认 `~/.anysearch/anysearch.db`），sessionId 取持久的
+  `~/.anysearch-cli/session` 锚点（`ANS_SESSION_ID` 可覆盖），并先
+  `store.ensureSession(id, domain)` 注册会话行以满足 `sessions(id)` 外键。
+  注意 `fts` 只读 `retrieval_results`，而 CLI 目前不往该表写入——所以 `ans chat` 能召回的是
+  本机 DB 里**既有**的记忆（例如 MCP `search_web` 自动索引的），不是本轮对话。

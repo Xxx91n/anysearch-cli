@@ -4,6 +4,21 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #129: `ans chat` 接线 MemoryPipeline（持久库 + 稳定 sessionId）
+
+### Fixed
+
+- **`ans chat` 上 RAG 与 L1/L2 记忆注入从未生效**：`PiAgentRuntime` 只在 `store && sessionId` 同时存在时构造 `MemoryPipeline`，而 CLI 组合根两者都没传，`this.pipeline` 恒为 `undefined`——`transformContext` 原样返回、`consolidate` 冷路径也整段跳过，且**没有任何告警**。#104 的 `fts` adapter 因此在生产路径上等于不存在。现在 `apps/cli/src/commands/chat.ts` 用 `createPersistentEngine`（`ANS_DB_PATH`，默认 `~/.anysearch/anysearch.db`）取代原先落 `":memory:"` 的 `createEngine`（fallback 分支同样改），sessionId 取持久锚点 `readSessionId()`（`ANS_SESSION_ID` 可覆盖）。回归：`packages/kernel/test/pi-runtime.test.ts` 的 no-store / half-wired / wired 三段断言。
+- **半接线静默**：组合根只给 `store` 不给 `sessionId`（或反之）时，`PiAgentRuntime` 现在打一行具名 stderr 点明缺哪一半并说明注入已禁用；门控语义（`store && sessionId`）未改，两者都缺仍是无记忆的受支持形态且保持安静。
+
+### Added
+
+- **`SessionStore.ensureSession(sessionId, domain)`**：幂等（`INSERT OR IGNORE`）注册外部生成的会话 id。`messages` / `resume_anchors` / `retrieval_results` / `budget_ledger` 都以外键指向 `sessions(id)` 且 store 开启 `foreign_keys = ON`，而 `createSession()` 自生成 UUID、不接受外部 id——持久 sessionId 必须先注册才能写锚点。回归：`packages/store/test/session-store.test.ts` 用例 7。
+
+### Documented
+
+- `docs/limitations.md` 更正：`ans_chat`（MCP）是**整条记忆链路不存在**（pipeline 从未构造），不是 `fts` fail-open 到 `none`；并记录半接线告警契约。`docs/rag-adapters.md` 同步更新 CLI 已接线的事实与「`fts` 只读 `retrieval_results`、CLI 不写该表」的边界。
+
 ## Unreleased — #104: RagAdapterPort + fts adapter 最小真实现（#35 落地，决策 #90）
 
 ### Added
