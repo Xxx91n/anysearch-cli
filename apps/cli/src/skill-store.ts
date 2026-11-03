@@ -306,10 +306,16 @@ export interface ReclaimSeam {
 export type ReclaimOutcome = "reclaimed" | "held" | "lost";
 
 // Design: reclaim requires the same host and PID namespace, and never deletes a
-// lock it cannot prove dead.
-// The owner token is re-read immediately before the rename, and the quarantined
-// directory is verified afterwards: if a new holder took over in that window the
-// directory is restored (or the operation stops) instead of being deleted.
+// lock it cannot prove dead. The owner token is re-read immediately before the
+// rename, and the quarantined directory is verified afterwards: if a new holder
+// took over in that window the directory is restored (or the operation stops)
+// instead of being deleted.
+// Design: rename cannot be made conditional, so a second reclaimer can still move a
+// lock that a fresh holder created in the gap between the token re-read and the
+// rename; the post-move check detects it and puts the directory back. A live lock is
+// never deleted and only one process can win a fresh mkdir, but the restored path is
+// briefly free. Closing that microsecond window needs a different primitive (OS
+// advisory locks) or a serialized reclaim gate — a design change outside this ticket.
 // Design: no heartbeat or time-based expiry — a time window cannot tell a slow live
 // holder from a dead one, so a held lock is never removed merely because it is old.
 /** Reclaim a lock whose recorded holder is provably dead on this host. */
@@ -465,8 +471,9 @@ function readManifestForInstall(managed: string): SkillManifest {
   if (!statIfPresent(manifestIn(managed))) {
     // Only a genuinely empty managed root may bootstrap a new manifest. An
     // orphaned directory is not permission to forget or overwrite its owner.
-    // The lock we hold is not content.
-    if (!isEmptyManagedRoot(managed)) {
+    // The lock we hold is not content, and installer residue that reconciliation
+    // could not delete is still residue — an unknown entry is what stays fatal.
+    if (!isEmptyManagedRoot(managed) && !holdsOnlyInstallerResidue(managed)) {
       fail(`skill manifest is missing in a non-empty managed directory: ${managed}. Refusing to overwrite untracked installations.`);
     }
     return { version: 1, skills: Object.create(null) };
