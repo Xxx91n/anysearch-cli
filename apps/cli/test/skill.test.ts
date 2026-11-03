@@ -2,15 +2,17 @@
 // → list → uninstall; fail-closed manifest handling and installation ≠ activation.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync,
   statSync, symlinkSync, writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { runSkill } from "../src/commands/skill.js";
-import { managedSkillsRoot, skillManifestPath, type SkillManifest } from "../src/skill-store.js";
+import {
+  managedSkillsRoot, releaseOwnedLock, renameWithRetry, skillManifestPath, type SkillManifest,
+} from "../src/skill-store.js";
 
 /** Run a Git command in a test repository and return trimmed stdout. */
 function git(cwd: string, args: string[]): string {
@@ -416,4 +418,146 @@ test("usage errors are nonzero and do not create an installation", async (t) => 
   }
   assert.equal(existsSync(skillManifestPath(f.opts)), false);
   assert.equal((await f.run(["--help"])).code, 0);
+});
+
+/** Return the pid of a process that has already exited on this host. */
+function deadPid(): number {
+  const child = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+  assert.equal(child.status, 0);
+  assert.ok(child.pid);
+  return child.pid;
+}
+
+/** Plant a lock owned by the given record in the user scope. */
+function plantLock(managed: string, owner: Record<string, unknown>): string {
+  const lock = join(managed, ".installed.lock");
+  rmSync(lock, { recursive: true, force: true });
+  mkdirSync(lock);
+  writeFileSync(join(lock, "owner.json"), JSON.stringify(owner));
+  return lock;
+}
+
+test("a lock held by a provably dead process on this host is reclaimed", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const lock = plantLock(managed, {
+    token: "dead", pid: deadPid(), host: hostname(), startedAt: "2026-11-03T00:00:00.000Z",
+  });
+  const result = await f.run(["install", f.source("beta")]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(existsSync(lock), false, "the reclaimed lock is released after the operation");
+  assert.deepEqual(Object.keys(f.manifest().skills).sort(), ["beta", "demo"]);
+});
+
+test("read maintenance reclaims a dead lock without blocking list", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const lock = plantLock(managed, {
+    token: "dead", pid: deadPid(), host: hostname(), startedAt: "2026-11-03T00:00:00.000Z",
+  });
+  const listed = await f.run(["list"]);
+  assert.equal(listed.code, 0, listed.stderr);
+  assert.match(listed.stdout, /demo/);
+  assert.equal(existsSync(lock), false);
+});
+
+test("locks that are live or from another host are never reclaimed", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const dir = f.source("beta");
+  let lock = "";
+  for (const owner of [
+    { token: "live", pid: process.pid, host: hostname(), startedAt: "2026-11-03T00:00:00.000Z" },
+    { token: "remote", pid: deadPid(), host: "remote-host", startedAt: "2026-11-03T00:00:00.000Z" },
+  ]) {
+    lock = plantLock(managed, owner);
+    const result = await f.run(["install", dir]);
+    assert.equal(result.code, 1, result.stderr);
+    assert.match(result.stderr, /another skill operation/);
+    assert.ok(existsSync(lock), "a lock that is not provably dead is left in place");
+  }
+  assert.equal(existsSync(join(managed, "beta")), false);
+  assert.deepEqual(Object.keys(f.manifest().skills), ["demo"]);
+});
+
+test("an old holder cannot release a lock that changed hands", (t) => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "ans-lock-")));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const lock = plantLock(base, {
+    token: "new", pid: process.pid, host: hostname(), startedAt: "2026-11-03T00:00:00.000Z",
+  });
+  assert.equal(releaseOwnedLock(lock, "old"), false);
+  assert.ok(existsSync(lock), "the replaced lock survives its old holder's release");
+  assert.equal(releaseOwnedLock(lock, "new"), true);
+  assert.equal(existsSync(lock), false);
+});
+
+test("rename retries transient sharing violations and rethrows permanent failures", () => {
+  const busy = Object.assign(new Error("busy"), { code: "EBUSY" });
+  let attempts = 0;
+  const delays: number[] = [];
+  renameWithRetry("from", "to", {
+    rename: () => { attempts += 1; if (attempts < 3) throw busy; },
+    sleep: (ms) => { delays.push(ms); },
+    now: () => 0,
+  });
+  assert.equal(attempts, 3);
+  assert.deepEqual(delays, [10, 20], "backoff grows exponentially from 10ms");
+
+  const denied = Object.assign(new Error("denied"), { code: "EPERM" });
+  let clock = 0;
+  let calls = 0;
+  assert.throws(() => renameWithRetry("from", "to", {
+    rename: () => { calls += 1; throw denied; },
+    sleep: (ms) => { clock += ms; },
+    now: () => clock,
+  }), (error) => error === denied);
+  assert.ok(calls > 1);
+  assert.ok(clock <= 60_000, "the retry budget is bounded");
+
+  const missing = Object.assign(new Error("gone"), { code: "ENOENT" });
+  let nonRetryable = 0;
+  assert.throws(() => renameWithRetry("from", "to", {
+    rename: () => { nonRetryable += 1; throw missing; },
+    sleep: () => assert.fail("ENOENT must not be retried"),
+    now: () => 0,
+  }), (error) => error === missing);
+  assert.equal(nonRetryable, 1);
+});
+
+test("startup reconciliation removes installer residue only when no manifest exists", async (t) => {
+  const f = fixture(t);
+  const managed = managedSkillsRoot(f.opts);
+  mkdirSync(join(managed, ".install-crashed", "payload"), { recursive: true });
+  writeFileSync(join(managed, ".install-crashed", "payload", "SKILL.md"), "partial");
+  writeFileSync(join(managed, ".installed-0000.tmp"), "{}");
+  const installed = await f.run(["install", f.source()]);
+  assert.equal(installed.code, 0, installed.stderr);
+  assert.deepEqual(readdirSync(managed).sort(), ["demo", "installed.json"]);
+
+  mkdirSync(join(managed, ".install-later", "payload"), { recursive: true });
+  writeFileSync(join(managed, ".installed-1111.tmp"), "{}");
+  const second = await f.run(["install", f.source("beta")]);
+  assert.equal(second.code, 0, second.stderr);
+  assert.ok(existsSync(join(managed, ".install-later")), "residue is never guessed away while a manifest exists");
+  assert.ok(existsSync(join(managed, ".installed-1111.tmp")));
+});
+
+test("uninstall backups are never auto-deleted and list reports the restore hint", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  renameSync(join(managed, "demo"), join(managed, ".uninstall-abc"));
+  const listed = await f.run(["list"]);
+  assert.equal(listed.code, 0, listed.stderr);
+  assert.match(listed.stderr, /demo/);
+  assert.match(listed.stderr, /\.uninstall-abc/);
+  assert.ok(existsSync(join(managed, ".uninstall-abc", "SKILL.md")));
+  assert.ok(f.manifest().skills.demo);
+  const second = await f.run(["install", f.source("beta")]);
+  assert.equal(second.code, 0, second.stderr);
+  assert.ok(existsSync(join(managed, ".uninstall-abc", "SKILL.md")), "backups survive other mutations");
 });

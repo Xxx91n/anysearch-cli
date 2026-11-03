@@ -102,6 +102,55 @@ export function skillManifestPath(opts: SkillOptions = {}): string {
 
 /** Lock directory that serializes manifest read-modify-write within one scope. */
 const MANIFEST_LOCK = ".installed.lock";
+/** Staging prefix used by install before the atomic publish rename. */
+const STAGING_PREFIX = ".install-";
+/** Temp-manifest prefix used by writeManifest before the atomic replace. */
+const MANIFEST_TEMP_PREFIX = ".installed-";
+/** Prefix for a stale lock moved aside during reclamation. */
+const LOCK_RECLAIM_PREFIX = `${MANIFEST_LOCK}.reclaim-`;
+/** Uninstall backup prefix; contents are never deleted without a manifest entry. */
+const UNINSTALL_PREFIX = ".uninstall-";
+
+const RETRYABLE_RENAME_CODES = new Set(["EPERM", "EBUSY", "ENOTEMPTY"]);
+const RENAME_RETRY_BUDGET_MS = 60_000;
+const RENAME_RETRY_INITIAL_MS = 10;
+const RENAME_RETRY_MAX_MS = 1_000;
+
+/** Injectable rename primitives so tests can simulate transient sharing violations. */
+export interface RenameIO {
+  rename: (from: string, to: string) => void;
+  sleep: (ms: number) => void;
+  now: () => number;
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// Design: Windows reports a transient EPERM/EBUSY while another process or a
+// scanner still holds a handle on the destination. Bounded backoff rides out
+// that window, then rethrows the original error so a permanent failure is never
+// masked and the commit point stays "rename to the new name".
+/** Rename with bounded exponential backoff for transient sharing violations. */
+export function renameWithRetry(
+  from: string,
+  to: string,
+  io: RenameIO = { rename: renameSync, sleep: sleepSync, now: Date.now },
+): void {
+  const deadline = io.now() + RENAME_RETRY_BUDGET_MS;
+  let delay = RENAME_RETRY_INITIAL_MS;
+  for (;;) {
+    try {
+      io.rename(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === undefined || !RETRYABLE_RENAME_CODES.has(code) || io.now() + delay > deadline) throw error;
+      io.sleep(delay);
+      delay = Math.min(delay * 2, RENAME_RETRY_MAX_MS);
+    }
+  }
+}
 
 // Design: names are single path segments on every supported OS — the Agent Skills
 // naming rule also excludes traversal, absolute paths, Windows device names and separators.
@@ -236,32 +285,100 @@ function describeLockHolder(lock: string): string {
   return owner ? ` (pid ${owner.pid} on ${owner.host})` : "";
 }
 
+type LockState = "alive" | "dead" | "unknown";
+
+// Design: pid liveness is only meaningful on the host that wrote the record.
+// A lock from another host, or one without a readable owner, stays fail-closed:
+// deleting it could interrupt a live operation on that machine. Staleness is
+// pid liveness rather than age, so a long-running install never needs a heartbeat.
+/** Classify a lock owner as alive, provably dead, or undecidable. */
+function probeLockOwner(owner: LockOwner | undefined): LockState {
+  if (!owner || owner.host !== hostname() || !Number.isInteger(owner.pid) || owner.pid <= 0) return "unknown";
+  try {
+    process.kill(owner.pid, 0);
+    return "alive";
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return "dead";
+    // EPERM means the process exists but belongs to another user.
+    if (code === "EPERM") return "alive";
+    return "unknown";
+  }
+}
+
+// Design: two processes may both judge the same lock stale. The rename is the
+// election — exactly one moves it to its own quarantine. The owner token is
+// re-read afterwards, so a lock that changed hands in the meantime is restored
+// instead of deleted: a possibly live lock is never removed.
+/** Move a provably dead lock aside; a lost rename means another reclaimer won. */
+function reclaimDeadLock(managed: string, lock: string, observed: LockOwner): void {
+  const quarantine = join(managed, `${LOCK_RECLAIM_PREFIX}${randomUUID()}`);
+  try {
+    renameWithRetry(lock, quarantine);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  const moved = readLockOwner(quarantine);
+  if (moved?.token !== observed.token) {
+    try {
+      renameWithRetry(quarantine, lock);
+    } catch {
+      fail(`skill lock changed hands while reclaiming it; inspect ${quarantine} and ${lock} before retrying.`);
+    }
+    fail(`skill lock changed hands while reclaiming it; another skill operation is running${describeLockHolder(lock)}. Retry when it finishes.`);
+  }
+  rmSync(quarantine, { recursive: true, force: true });
+}
+
+/** Remove a lock only while it still carries the caller's token. */
+export function releaseOwnedLock(lock: string, token: string): boolean {
+  // A manually reclaimed or replaced lock must survive its old holder's release.
+  if (readLockOwner(lock)?.token !== token) return false;
+  rmSync(lock, { recursive: true, force: true });
+  return true;
+}
+
 // Design: one coarse lock per managed root — mkdir is atomic on local
-// filesystems, the lock spans manifest read → publish/remove → write, and
-// contention fails closed instead of deleting a lock that may be live.
+// filesystems, the lock spans manifest read → publish/remove → write, and a
+// live holder is never evicted. Only a pid proven dead on this host is reclaimed.
 /** Acquire the exclusive manifest lock and return its release function. */
-function acquireManifestLock(managed: string): () => void {
+function acquireManifestLock(managed: string): () => void;
+/** Acquire the lock, or return undefined when a live holder makes cleanup unsafe. */
+function acquireManifestLock(managed: string, skipOnContention: true): (() => void) | undefined;
+function acquireManifestLock(managed: string, skipOnContention = false): (() => void) | undefined {
   const lock = join(managed, MANIFEST_LOCK);
   const token = randomUUID();
-  try {
-    mkdirSync(lock);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. If no ans skill process is running, remove that directory and retry.`);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      mkdirSync(lock);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const owner = readLockOwner(lock);
+      const state = owner ? probeLockOwner(owner) : "unknown";
+      if (state === "dead" && owner) {
+        reclaimDeadLock(managed, lock, owner);
+        continue;
+      }
+      if (skipOnContention) return undefined;
+      if (state === "alive") {
+        fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. Retry when it finishes.`);
+      }
+      fail(`another skill operation may be running in this scope${describeLockHolder(lock)}: ${lock}. The lock cannot be proven dead on this host; if no ans skill process is running here, remove that directory and retry.`);
     }
-    throw error;
+    try {
+      const owner: LockOwner = { token, pid: process.pid, host: hostname(), startedAt: new Date().toISOString() };
+      writeFileSync(join(lock, "owner.json"), JSON.stringify(owner), { encoding: "utf8", flag: "wx", mode: 0o600 });
+    } catch (error) {
+      rmSync(lock, { recursive: true, force: true });
+      throw error;
+    }
+    return () => {
+      releaseOwnedLock(lock, token);
+    };
   }
-  try {
-    const owner: LockOwner = { token, pid: process.pid, host: hostname(), startedAt: new Date().toISOString() };
-    writeFileSync(join(lock, "owner.json"), JSON.stringify(owner), { encoding: "utf8", flag: "wx", mode: 0o600 });
-  } catch (error) {
-    rmSync(lock, { recursive: true, force: true });
-    throw error;
-  }
-  return () => {
-    // Release only the lock we still own; a manually reclaimed lock must survive.
-    if (readLockOwner(lock)?.token === token) rmSync(lock, { recursive: true, force: true });
-  };
+  if (skipOnContention) return undefined;
+  fail(`another skill operation is running in this scope${describeLockHolder(lock)}: ${lock}. Retry when it finishes.`);
 }
 
 /** Run one manifest read-modify-write under the scope lock, releasing it on every path. */
@@ -292,6 +409,60 @@ function isEmptyManagedRoot(managed: string): boolean {
   return !readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK);
 }
 
+// Design: reconciliation removes only residue the installer itself creates, and
+// only when no manifest exists — at that point nothing can claim ownership of a
+// staging copy or a temp manifest. Backups, unknown entries and unrecorded skill
+// directories are never deleted; they stay for the operator to resolve.
+/** Remove installer-owned residue; caller holds the manifest lock. */
+function reconcileManagedRoot(managed: string): void {
+  for (const entry of readdirSync(managed)) {
+    if (!entry.startsWith(LOCK_RECLAIM_PREFIX)) continue;
+    const quarantine = join(managed, entry);
+    // A quarantine is left only by a crashed reclaimer; a live owner there means
+    // the lock may still be in use, so it is never deleted automatically.
+    if (probeLockOwner(readLockOwner(quarantine)) !== "dead") {
+      fail(`a reclaimed skill lock may still be live: ${quarantine}. Inspect it before removing.`);
+    }
+    rmSync(quarantine, { recursive: true, force: true });
+  }
+  if (statIfPresent(manifestIn(managed))) return;
+  for (const entry of readdirSync(managed)) {
+    if (entry === MANIFEST_LOCK) continue;
+    if (entry.startsWith(STAGING_PREFIX)
+      || (entry.startsWith(MANIFEST_TEMP_PREFIX) && entry.endsWith(".tmp"))) {
+      rmSync(join(managed, entry), { recursive: true, force: true });
+    }
+  }
+}
+
+/** True when the managed root holds something reconciliation would clean. */
+function needsReconcile(managed: string): boolean {
+  const entries = readdirSync(managed);
+  if (entries.some((entry) => entry.startsWith(LOCK_RECLAIM_PREFIX))) return true;
+  if (entries.includes(MANIFEST_LOCK)) {
+    const owner = readLockOwner(join(managed, MANIFEST_LOCK));
+    if (owner && probeLockOwner(owner) === "dead") return true;
+  }
+  if (statIfPresent(manifestIn(managed))) return false;
+  return entries.some((entry) => entry !== MANIFEST_LOCK
+    && (entry.startsWith(STAGING_PREFIX)
+      || (entry.startsWith(MANIFEST_TEMP_PREFIX) && entry.endsWith(".tmp"))));
+}
+
+/** Best-effort reconciliation for read-only commands; never waits for a live writer. */
+function maintainManagedRoot(managed: string): void {
+  // Design: a clean scope stays untouched — reads take the lock only when a
+  // dead lock or installer residue actually needs cleanup.
+  if (!needsReconcile(managed)) return;
+  const release = acquireManifestLock(managed, true);
+  if (!release) return;
+  try {
+    reconcileManagedRoot(managed);
+  } finally {
+    release();
+  }
+}
+
 /** Read an existing manifest, or bootstrap one only in an empty managed root. */
 function readManifestForInstall(managed: string): SkillManifest {
   requireScopeAnchors(managed);
@@ -312,7 +483,7 @@ function writeManifest(managed: string, manifest: SkillManifest): void {
   const temporary = join(managed, `.installed-${randomUUID()}.tmp`);
   try {
     writeFileSync(temporary, JSON.stringify(manifest, null, 2) + "\n", { encoding: "utf8", flag: "wx", mode: 0o600 });
-    renameSync(temporary, manifestIn(managed));
+    renameWithRetry(temporary, manifestIn(managed));
   } finally {
     rmSync(temporary, { force: true });
   }
@@ -398,6 +569,7 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
   if (contains(source, target)) fail("source contains its installation destination; choose a separate skill directory");
   prepareManagedRoot(opts);
   return withManifestLock(managed, () => {
+    reconcileManagedRoot(managed);
     const manifest = readManifestForInstall(managed);
     if (Object.hasOwn(manifest.skills, name) || statIfPresent(target)) {
       fail(`skill ${name} already exists in this scope; uninstall it first (existing files were not overwritten)`);
@@ -425,7 +597,7 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
       // mode, matching the old mkdtemp staging semantics.
       chmodSync(payload, 0o700);
       if (validateSkillFile(join(payload, "SKILL.md")) !== name) fail("source name changed during installation; retry");
-      renameSync(payload, target);
+      renameWithRetry(payload, target);
       directoryPublished = true;
       const entry: InstalledSkill = { name, ...metadata };
       manifest.skills[name] = entry;
@@ -441,17 +613,45 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
   });
 }
 
+/** Installed entries plus recovery hints for the CLI. */
+export interface SkillListing {
+  skills: InstalledSkill[];
+  warnings: string[];
+}
+
+/** Hints for recorded skills whose directory is gone; backups are never guessed. */
+function missingDirectoryWarnings(managed: string, entries: InstalledSkill[]): string[] {
+  return entries
+    .filter((entry) => !statIfPresent(join(managed, entry.name)))
+    .map((entry) => {
+      const backups = readdirSync(managed).filter((name) => name.startsWith(UNINSTALL_PREFIX));
+      return backups.length > 0
+        ? `skill ${entry.name} is recorded in installed.json but its directory is missing; an interrupted uninstall may have left ${backups.join(", ")}. Rename the matching backup back to ${entry.name}/ before retrying.`
+        : `skill ${entry.name} is recorded in installed.json but its directory is missing; run "ans skill uninstall ${entry.name}" to drop the stale entry.`;
+    });
+}
+
+/** Reconcile residue when safe, then read the manifest-backed listing. */
+function readInstallationListing(opts: SkillOptions): SkillListing {
+  const managed = managedSkillsRoot(opts);
+  if (!statIfPresent(managed)) return { skills: [], warnings: [] };
+  requireScopeAnchors(managed);
+  // Design: a read-only command may clean residue only while it holds the lock;
+  // a live writer keeps the read path lock-free (the manifest rename is atomic).
+  maintainManagedRoot(managed);
+  if (!statIfPresent(manifestIn(managed)) && isEmptyManagedRoot(managed)) return { skills: [], warnings: [] };
+  const skills = Object.values(readManifest(managed).skills).sort((a, b) => a.name.localeCompare(b.name));
+  return { skills, warnings: missingDirectoryWarnings(managed, skills) };
+}
+
 /** List only manifest-recorded installations, sorted by name. */
 export function listInstalledSkills(opts: SkillOptions = {}): InstalledSkill[] {
-  const managed = managedSkillsRoot(opts);
-  if (!statIfPresent(managed)) return [];
-  if (!statIfPresent(manifestIn(managed))) {
-    // Design: an empty managed root (e.g. a failed first install) is an empty
-    // scope — only real untracked entries keep the fail-closed manifest error.
-    requireScopeAnchors(managed);
-    if (isEmptyManagedRoot(managed)) return [];
-  }
-  return Object.values(readManifest(managed).skills).sort((a, b) => a.name.localeCompare(b.name));
+  return readInstallationListing(opts).skills;
+}
+
+/** List installed skills together with recovery hints. */
+export function inspectInstalledSkills(opts: SkillOptions = {}): SkillListing {
+  return readInstallationListing(opts);
 }
 
 /** Resolve an installed directory and verify it stays inside the managed root. */
@@ -469,6 +669,10 @@ export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: 
   let entries: InstalledSkill[];
   if (selectedName !== undefined) {
     requireName(selectedName);
+    if (statIfPresent(managed)) {
+      requireScopeAnchors(managed);
+      maintainManagedRoot(managed);
+    }
     const entry = readManifest(managed).skills[selectedName];
     if (!entry) fail(`skill ${selectedName} is not recorded in ${skillManifestPath(opts)}`);
     entries = [entry];
@@ -495,7 +699,10 @@ export function uninstallSkill(name: string, opts: SkillOptions = {}): Installed
   if (!statIfPresent(managed)) missingManifest(managed);
   requireScopeAnchors(managed);
   return withManifestLock(managed, () => {
+    // Design: authenticate the manifest before reconciling — a refused
+    // uninstall must leave the store untouched.
     const manifest = readManifest(managed);
+    reconcileManagedRoot(managed);
     const entry = manifest.skills[name];
     if (!entry) fail(`skill ${name} is not recorded in ${skillManifestPath(opts)}; no files were removed`);
     // Design: a recorded directory that is already gone leaves nothing to
@@ -507,12 +714,12 @@ export function uninstallSkill(name: string, opts: SkillOptions = {}): Installed
     }
     const target = installedDirectory(managed, name);
     const backup = join(managed, `.uninstall-${randomUUID()}`);
-    renameSync(target, backup);
+    renameWithRetry(target, backup);
     try {
       delete manifest.skills[name];
       writeManifest(managed, manifest);
     } catch (error) {
-      renameSync(backup, target);
+      renameWithRetry(backup, target);
       throw error;
     }
     try {

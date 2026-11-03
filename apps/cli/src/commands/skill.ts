@@ -2,7 +2,7 @@
 // Installation never changes the Active Domain or its Skill Active List.
 
 import {
-  installSkill, listInstalledSkills, managedSkillsRoot, skillManifestPath,
+  inspectInstalledSkills, installSkill, managedSkillsRoot, skillManifestPath,
   uninstallSkill, validateInstalledSkills, SkillError, type SkillOptions,
 } from "../skill-store";
 
@@ -86,10 +86,12 @@ export async function runSkill(args: string[], opts: SkillCommandOptions = {}): 
         return results.every((result) => result.ok) ? 0 : 1;
       }
       case "list": {
-        const entries = listInstalledSkills(scopeOpts);
+        // inspectInstalledSkills reconciles residue when no writer holds the lock.
+        const listing = inspectInstalledSkills(scopeOpts);
+        for (const warning of listing.warnings) err(`ans skill: ${warning}\n`);
         out(`Installed skills (${scopeOpts.project ? "project" : "user"}): ${skillManifestPath(scopeOpts)}\n`);
-        if (entries.length === 0) out("No installed skills.\n");
-        for (const entry of entries) {
+        if (listing.skills.length === 0) out("No installed skills.\n");
+        for (const entry of listing.skills) {
           out(`${entry.name}\t${entry.commit.slice(0, 12)}${entry.tag ? ` (${entry.tag})` : ""}${entry.dirty ? " [dirty]" : ""}\t${entry.source}\n`);
         }
         return 0;
