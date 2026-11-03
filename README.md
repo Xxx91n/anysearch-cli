@@ -197,11 +197,14 @@ mid-operation, remove the leftover `skills/synced/.installed.lock` directory
 once no `ans skill` process is running. After any interrupted operation, check
 `ans skill list` before deleting leftovers: if the manifest still records a
 skill but its `<name>/` directory is missing, rename the `.uninstall-*` backup
-back to `<name>/`; if the manifest does not record it, the `.install-*` staging
-or `.uninstall-*` backup can be removed once no operation is running. An
+back to `<name>/`, or run `ans skill uninstall <name>` to drop the stale entry
+when no backup remains; if the manifest does not record it, the `.install-*`
+staging or `.uninstall-*` backup can be removed once no operation is running. An
 unrecorded `<name>/` left by an interrupted install can be deleted and
 reinstalled. A killed manifest write can leave `.installed-*.tmp`; remove it
-when the directory has no `installed.json`.
+when the directory has no `installed.json`. If `ans skill list` itself reports a
+missing or invalid manifest, inspect `skills/synced/` directly before removing
+anything.
 
 **Installation is not activation.** These commands never edit domain TOML.
 The Active Domain's `[skills].active` remains the authority for the Skill

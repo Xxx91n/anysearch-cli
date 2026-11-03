@@ -7,7 +7,7 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
-  cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync,
+  chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync,
   renameSync, rmSync, writeFileSync, type Stats,
 } from "node:fs";
 import { homedir, hostname } from "node:os";
@@ -361,7 +361,7 @@ function provenance(source: string): Omit<InstalledSkill, "name"> {
   // Exact tags only; lexical ordering makes multiple tags deterministic. A tag
   // is supplementary: the full commit is always recorded, even without a tag.
   const tag = git(source, ["tag", "--points-at", "HEAD", "--sort=refname"]).split(/\r?\n/).filter(Boolean)[0];
-  const dirty = git(source, ["status", "--porcelain", "--untracked-files=all", "--", "."]).length > 0;
+  const dirty = git(source, ["status", "--porcelain", "--untracked-files=all", "--ignored", "--", "."]).length > 0;
   return { source, commit, dirty, ...(tag ? { tag } : {}) };
 }
 
@@ -415,6 +415,9 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
           return true;
         },
       });
+      // Design: install copies ignored files too, so the copied root must not
+      // inherit a world-traversable source mode; owner-only matches mkdtemp.
+      chmodSync(payload, 0o700);
       if (validateSkillFile(join(payload, "SKILL.md")) !== name) fail("source name changed during installation; retry");
       renameSync(payload, target);
       directoryPublished = true;
@@ -436,6 +439,12 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
 export function listInstalledSkills(opts: SkillOptions = {}): InstalledSkill[] {
   const managed = managedSkillsRoot(opts);
   if (!statIfPresent(managed)) return [];
+  if (!statIfPresent(manifestIn(managed))) {
+    // Design: an empty managed root (e.g. a failed first install) is an empty
+    // scope — only real untracked entries keep the fail-closed manifest error.
+    requireScopeAnchors(managed);
+    if (!readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK)) return [];
+  }
   return Object.values(readManifest(managed).skills).sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -483,6 +492,13 @@ export function uninstallSkill(name: string, opts: SkillOptions = {}): Installed
     const manifest = readManifest(managed);
     const entry = manifest.skills[name];
     if (!entry) fail(`skill ${name} is not recorded in ${skillManifestPath(opts)}; no files were removed`);
+    // Design: a recorded directory that is already gone leaves nothing to
+    // delete — drop the entry so manifest and filesystem agree again.
+    if (!statIfPresent(join(managed, name))) {
+      delete manifest.skills[name];
+      writeManifest(managed, manifest);
+      return entry;
+    }
     const target = installedDirectory(managed, name);
     const backup = join(managed, `.uninstall-${randomUUID()}`);
     renameSync(target, backup);

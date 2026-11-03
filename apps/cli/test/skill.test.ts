@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync,
-  symlinkSync, writeFileSync,
+  statSync, symlinkSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -83,6 +83,9 @@ for (const project of [false, true]) {
     assert.equal(readFileSync(join(managed, "demo", "templates", "report.txt"), "utf8"), " bundled template\n");
     assert.equal(existsSync(join(managed, "demo", ".git")), false);
     assert.equal(existsSync(join(managed, ".installed.lock")), false, "the manifest lock is released after install");
+    if (process.platform !== "win32") {
+      assert.equal(statSync(join(managed, "demo")).mode & 0o777, 0o700, "the installed root is owner-only");
+    }
     const entry = f.manifest(project).skills.demo;
     assert.equal(entry.source, dir);
     assert.equal(entry.commit, git(f.repository, ["rev-parse", "HEAD"]));
@@ -192,6 +195,18 @@ test("a manifest lock serializes install and uninstall in the same scope", async
   assert.deepEqual(readdirSync(managed), ["installed.json"]);
 });
 
+test("uninstall drops a manifest entry whose directory is already gone", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  rmSync(join(managedSkillsRoot(f.opts), "demo"), { recursive: true, force: true });
+  const removed = await f.run(["uninstall", "demo"]);
+  assert.equal(removed.code, 0, removed.stderr);
+  assert.deepEqual(f.manifest().skills, {});
+  const listed = await f.run(["list"]);
+  assert.equal(listed.code, 0, listed.stderr);
+  assert.match(listed.stdout, /No installed skills\./);
+});
+
 test("Git provenance records the full commit and marks uncommitted source changes", async (t) => {
   const f = fixture(t);
   const dir = f.source();
@@ -204,6 +219,20 @@ test("Git provenance records the full commit and marks uncommitted source change
   assert.equal(entry.commit, git(f.repository, ["rev-parse", "HEAD"]));
   assert.equal(entry.dirty, true);
   assert.equal(entry.tag, undefined);
+});
+
+test("gitignored content is copied and recorded as dirty", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  writeFileSync(join(dir, ".gitignore"), "secret.env\n");
+  git(f.repository, ["add", join(dir, ".gitignore")]);
+  git(f.repository, ["commit", "--quiet", "-m", "ignore secret"]);
+  writeFileSync(join(dir, "secret.env"), "TOKEN=example\n");
+  const result = await f.run(["install", dir]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /\[dirty source\]/);
+  assert.equal(f.manifest().skills.demo.dirty, true);
+  assert.equal(readFileSync(join(managedSkillsRoot(f.opts), "demo", "secret.env"), "utf8"), "TOKEN=example\n");
 });
 
 test("repository root is a valid source and Git metadata is not copied", async (t) => {
@@ -288,6 +317,9 @@ test("source symlinks are rejected and staging is rolled back", async (t) => {
     assert.equal(existsSync(join(managedSkillsRoot(f.opts), "demo")), false);
     assert.equal(existsSync(skillManifestPath(f.opts)), false);
     assert.deepEqual(readdirSync(managedSkillsRoot(f.opts)), []);
+    const listed = await f.run(["list"]);
+    assert.equal(listed.code, 0, listed.stderr);
+    assert.match(listed.stdout, /No installed skills\./);
     assert.equal(readFileSync(join(outside, "private.txt"), "utf8"), "do not copy");
   } finally {
     rmSync(link, { force: true });

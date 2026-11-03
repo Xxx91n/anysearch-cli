@@ -179,10 +179,12 @@ schema 时，卸载会拒绝且不删除任何文件；绝不靠扫描目录猜�
 清单条目，争用时会以锁路径报错，而不是覆盖清单。若进程在操作中途被杀，请在
 没有 `ans skill` 进程运行时删除残留的 `skills/synced/.installed.lock` 目录。
 操作中断后先用 `ans skill list` 核对再删除残留：清单仍记录某 skill 但其
-`<name>/` 目录缺失时，应把 `.uninstall-*` 备份改回 `<name>/`；清单未记录时，
+`<name>/` 目录缺失时，应把 `.uninstall-*` 备份改回 `<name>/`，没有备份时也可
+用 `ans skill uninstall <name>` 删掉这条失效记录；清单未记录时，
 `.install-*` 暂存或 `.uninstall-*` 备份可在确认无操作运行后删除。安装中断
 留下的未登记 `<name>/` 可删除后重装。清单写入被杀还可能留下 `.installed-*.tmp`，
-在目录中没有 `installed.json` 时删除即可。
+在目录中没有 `installed.json` 时删除即可。若 `ans skill list` 本身报告清单
+缺失或损坏，请先直接查看 `skills/synced/` 再动手删除。
 
 **安装不等于激活。** 这些命令绝不改写 domain TOML。Skill Active List 仍由
 Active Domain 的 `[skills].active` 决定，激活仍按原方式通过 domain 配置管理。
