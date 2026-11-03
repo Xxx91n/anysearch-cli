@@ -246,6 +246,17 @@ async function main() {
     assert(mixed.recommendation === null, "no suggestion printed for a half-matched mixed-script query (got " + (mixed.recommendation?.id ?? "null") + ")");
     assert(mixed.candidates.length > 0, "the CJK half still earns candidate listing, priced by coverage 0");
     assert(mixed.candidates.every((c) => c.coverage === 0), "every mixed-script candidate reports coverage 0 (got " + mixed.candidates.map((c) => c.coverage).join(",") + ")");
+    // CodeRabbit follow-up on #134: that Latin gate must not reject a mixed-script term that
+    // occurs verbatim. Inside a description that glues scripts together (深度中文billing研究 is ONE
+    // unicode61 token), the Latin half is never a token prefix, so the gated path alone rejected a
+    // term that is literally present — a false negative the gate itself created.
+    const GLUED = [{ id: "glued", name: "glued", description: "深度中文billing研究" }];
+    assert(termCoverage("中文billing", "深度中文billing研究") === 1, "a verbatim mixed-script term is covered even when its Latin half is not a token prefix");
+    assert(termCoverage("中文billing", "深度中文研究与学术检索") === 0, "a description without the Latin half still scores 0 — the first finding stays fixed");
+    const gluedRun = await recommendDomains("中文billing", GLUED);
+    assert(gluedRun.decision === "high" && gluedRun.recommendation?.id === "glued", "the verbatim case recommends (got " + gluedRun.decision + ", conf " + gluedRun.confidence + ")");
+    const halfRun = await recommendDomains("中文billing", [{ id: "zhonly", name: "zh", description: "深度中文研究与学术检索" }]);
+    assert(halfRun.recommendation === null, "the half-matched case prints no suggestion (got " + (halfRun.recommendation?.id ?? "null") + ")");
 
     // The stage is inert for a CJK-free query: nothing is added to the MATCH expression and no
     // row is scanned, so #110's pure-ASCII behaviour is preserved by construction.

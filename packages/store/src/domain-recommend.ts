@@ -198,6 +198,14 @@ export function termCoverage(query: string, text: string): number {
       // gate, "中文billing" scored full coverage against a description that mentions 中文 and says
       // nothing about billing — the CJK half alone vouches for nothing the Latin half asked for,
       // and with one candidate that reads as a confident out-of-domain recommendation.
+      // The term occurring verbatim is the strongest evidence and settles it alone — without this
+      // fast path the Latin half of "中文billing" is never a token prefix inside a description that
+      // glues scripts together (深度中文billing研究 is ONE unicode61 token), so the gated branch
+      // below would reject a term that is literally present.
+      if (hay.includes(t)) {
+        matched++;
+        continue;
+      }
       const latin = t.replace(CJK_RUN_RE, " ").split(UNICODE_SANITIZE_RE).filter(Boolean);
       const cjk = cjkRunFraction(t, text);
       if (cjk > 0 && latin.every((seg) => toks.some((k) => k.startsWith(seg)))) matched += cjk;
