@@ -44,7 +44,7 @@ const help = [
   "  search    Run a retrieval query through the Retroaererd Engine",
   "            options: --json (structured envelope) · --fail-on-abstain (exit 3 on abstain)",
   "  chat      Interactive retrieval-augmented chat session",
-  "  recommend Get recommendations from the active domain",
+  "  recommend Suggest a domain for a free-text task (top-3 + confidence, never auto-switches)",
   " domain Switch Active Domain (cc-persona TOML)",
   "  mcp       Start the anysearch MCP server (stdio or HTTP transport)",
   " pref Manage T0 durable preferences (remember, pref review - /0025)",
