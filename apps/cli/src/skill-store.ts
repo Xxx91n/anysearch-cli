@@ -52,6 +52,7 @@ function fail(message: string, exitCode: 1 | 2 = 1): never {
   throw new SkillError(message, exitCode);
 }
 
+/** Return lstat metadata, or undefined when the path does not exist. */
 function statIfPresent(path: string): Stats | undefined {
   try {
     return lstatSync(path);
@@ -61,6 +62,7 @@ function statIfPresent(path: string): Stats | undefined {
   }
 }
 
+/** Require a real directory, rejecting files and symlinks before filesystem authority is granted. */
 function requireDirectory(path: string, label: string): void {
   const stat = statIfPresent(path);
   if (!stat || !stat.isDirectory() || stat.isSymbolicLink()) {
@@ -68,6 +70,7 @@ function requireDirectory(path: string, label: string): void {
   }
 }
 
+/** Require a regular file, rejecting directories and symlinks. */
 function requireFile(path: string, label: string): void {
   const stat = statIfPresent(path);
   if (!stat || !stat.isFile() || stat.isSymbolicLink()) {
@@ -75,22 +78,26 @@ function requireFile(path: string, label: string): void {
   }
 }
 
+/** Resolve the selected scope's skills root (user or project). */
 export function skillsRoot(opts: SkillOptions = {}): string {
   return opts.project
     ? join(resolve(opts.cwd ?? process.cwd()), ".anysearch", "skills")
     : join(resolve(opts.home ?? homedir()), ".anysearch-cli", "skills");
 }
 
+/** Resolve the machine-managed synced/ directory inside the selected scope. */
 export function managedSkillsRoot(opts: SkillOptions = {}): string {
   return join(skillsRoot(opts), "synced");
 }
 
+/** Resolve the installed.json manifest path for the selected scope. */
 export function skillManifestPath(opts: SkillOptions = {}): string {
   return join(managedSkillsRoot(opts), "installed.json");
 }
 
 // Names are path segments on every supported OS. The Agent Skills naming rule
 // also excludes traversal, absolute paths, Windows device names and separators.
+/** Assert a safe Agent Skill name usable as a single directory segment. */
 function requireName(value: unknown): asserts value is string {
   if (typeof value !== "string" || !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(value)
     || value.includes("--") || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(value)) {
@@ -98,15 +105,18 @@ function requireName(value: unknown): asserts value is string {
   }
 }
 
+/** Check that a manifest source is an absolute, control-character-free path string. */
 function printablePath(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && isAbsolute(value)
     && !/[\u0000-\u001f\u007f]/.test(value);
 }
 
+/** Check for a non-null, non-array object record. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Fail closed on a corrupt manifest without changing installed files. */
 function corruptManifest(path: string, detail: string): never {
   fail(`invalid skill manifest ${path}: ${detail}. No files were changed; repair the manifest before retrying.`);
 }
@@ -114,10 +124,12 @@ function corruptManifest(path: string, detail: string): never {
 // Design: destructive operations authenticate the entire manifest before touching
 // any directory. Missing, malformed and schema-invalid manifests all fail closed;
 // never rediscover deletion targets by scanning the filesystem.
+/** Read and schema-validate the manifest, validating the scope anchor before trusting it. */
 function readManifest(managed: string): SkillManifest {
   const path = join(managed, "installed.json");
   const stat = statIfPresent(path);
   if (!stat) fail(`skill manifest is missing: ${path}. Refusing to guess installation targets; no files were removed.`);
+  requireDirectory(scopeRootFromManaged(managed), "scope root");
   requireDirectory(skillsRootFromManaged(managed), "skills root");
   requireDirectory(managed, "managed skills root");
   if (!stat.isFile() || stat.isSymbolicLink()) fail(`skill manifest must be a regular, non-symlink file: ${path}`);
@@ -156,13 +168,25 @@ function readManifest(managed: string): SkillManifest {
   return { version: 1, skills };
 }
 
+/** Derive the skills root from a managed synced/ path. */
 function skillsRootFromManaged(managed: string): string {
   return resolve(managed, "..");
 }
 
+// Design: the selected scope anchor (.anysearch / .anysearch-cli) is part of the
+// trust boundary. A project-controlled .anysearch symlink must not alias the
+// user store, so validate it before granting manifest read/write/delete authority.
+/** Derive the scope anchor (.anysearch / .anysearch-cli) from a managed path. */
+function scopeRootFromManaged(managed: string): string {
+  return resolve(managed, "..", "..");
+}
+
+/** Create the managed root only after validating existing scope/skills/synced directories. */
 function prepareManagedRoot(opts: SkillOptions): string {
   const root = skillsRoot(opts);
   const managed = managedSkillsRoot(opts);
+  const scope = scopeRootFromManaged(managed);
+  if (statIfPresent(scope)) requireDirectory(scope, "scope root");
   if (statIfPresent(root)) requireDirectory(root, "skills root");
   if (statIfPresent(managed)) requireDirectory(managed, "managed skills root");
   mkdirSync(root, { recursive: true });
@@ -170,6 +194,7 @@ function prepareManagedRoot(opts: SkillOptions): string {
   return managed;
 }
 
+/** Read an existing manifest, or bootstrap one only in an empty managed root. */
 function readManifestForInstall(managed: string): SkillManifest {
   if (!statIfPresent(join(managed, "installed.json"))) {
     // Only a genuinely empty managed root may bootstrap a new manifest. An
@@ -182,6 +207,7 @@ function readManifestForInstall(managed: string): SkillManifest {
   return readManifest(managed);
 }
 
+/** Atomically replace installed.json via a temporary file and rename. */
 function writeManifest(managed: string, manifest: SkillManifest): void {
   const temporary = join(managed, `.installed-${randomUUID()}.tmp`);
   try {
@@ -212,6 +238,7 @@ export function validateSkillFile(path: string): string {
   return name;
 }
 
+/** Run a read-only Git inspection command in the source checkout. */
 function git(source: string, args: string[]): string {
   try {
     return execFileSync("git", ["-C", source, ...args], {
@@ -226,6 +253,7 @@ function git(source: string, args: string[]): string {
   }
 }
 
+/** Record the source path, HEAD commit, exact tag if present, and dirty state. */
 function provenance(source: string): Omit<InstalledSkill, "name"> {
   const repository = realpathSync(git(source, ["rev-parse", "--show-toplevel"]));
   const subdirectory = relative(repository, source);
@@ -240,11 +268,13 @@ function provenance(source: string): Omit<InstalledSkill, "name"> {
   return { source, commit, dirty, ...(tag ? { tag } : {}) };
 }
 
+/** Check lexical containment to prevent installing a directory into itself. */
 function contains(parent: string, child: string): boolean {
   const rel = relative(parent, child);
   return rel === "" || (!rel.startsWith(".." + sep) && rel !== ".." && !isAbsolute(rel));
 }
 
+/** Install a local Git skill directory into the managed scope without activating it. */
 export function installSkill(sourceArgument: string, opts: SkillOptions = {}): InstalledSkill {
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(sourceArgument) || /^git@[^:]+:/.test(sourceArgument)) {
     fail("only local Git checkout directories are supported; clone and checkout the desired commit/tag first", 2);
@@ -297,12 +327,14 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
   }
 }
 
+/** List only manifest-recorded installations, sorted by name. */
 export function listInstalledSkills(opts: SkillOptions = {}): InstalledSkill[] {
   const managed = managedSkillsRoot(opts);
   if (!statIfPresent(managed)) return [];
   return Object.values(readManifest(managed).skills).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Resolve an installed directory and verify it stays inside the managed root. */
 function installedDirectory(managed: string, name: string): string {
   requireName(name);
   const target = join(managed, name);
@@ -311,6 +343,7 @@ function installedDirectory(managed: string, name: string): string {
   return target;
 }
 
+/** Validate installed SKILL.md frontmatter for one or all manifest entries. */
 export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: string): SkillValidation[] {
   const managed = managedSkillsRoot(opts);
   let entries: InstalledSkill[];
@@ -333,6 +366,7 @@ export function validateInstalledSkills(opts: SkillOptions = {}, selectedName?: 
   });
 }
 
+/** Uninstall only a manifest-recorded directory, rolling back if manifest publication fails. */
 export function uninstallSkill(name: string, opts: SkillOptions = {}): InstalledSkill {
   requireName(name);
   const managed = managedSkillsRoot(opts);

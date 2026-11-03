@@ -4,7 +4,7 @@ import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync,
   symlinkSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,7 +17,7 @@ function git(cwd: string, args: string[]): string {
 }
 
 function fixture(t: TestContext) {
-  const base = mkdtempSync(join(tmpdir(), "ans-skill-"));
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "ans-skill-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const home = join(base, "home");
   const cwd = join(base, "project");
@@ -231,8 +231,8 @@ test("source symlinks are rejected and staging is rolled back", async (t) => {
   assert.equal(result.code, 1);
   assert.match(result.stderr, /symlink/);
   assert.equal(existsSync(join(managedSkillsRoot(f.opts), "demo")), false);
-  assert.deepEqual(f.manifest().skills, {});
-  assert.deepEqual(readdirSync(managedSkillsRoot(f.opts)), ["installed.json"]);
+  assert.equal(existsSync(skillManifestPath(f.opts)), false);
+  assert.deepEqual(readdirSync(managedSkillsRoot(f.opts)), []);
   assert.equal(readFileSync(join(outside, "private.txt"), "utf8"), "do not copy");
 });
 
@@ -285,6 +285,29 @@ test("a replaced installed directory cannot redirect uninstall outside synced/",
   assert.match(result.stderr, /symlink/);
   assert.equal(readFileSync(join(outside, "keep.txt"), "utf8"), "keep");
   assert.ok(f.manifest().skills.demo);
+});
+
+test("project scope cannot alias the user store through a .anysearch symlink", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  assert.equal((await f.run(["install", dir])).code, 0);
+  const userSkill = join(managedSkillsRoot(f.opts), "demo", "SKILL.md");
+  const userManifest = skillManifestPath(f.opts);
+  // Junctions work on Windows without requiring file-symlink privileges.
+  symlinkSync(join(f.home, ".anysearch-cli"), join(f.cwd, ".anysearch"), "junction");
+  for (const args of [
+    ["list", "--project"],
+    ["validate", "--project"],
+    ["uninstall", "demo", "--project"],
+    ["install", dir, "--project"],
+  ]) {
+    const result = await f.run(args);
+    assert.equal(result.code, 1, args.join(" "));
+    assert.match(result.stderr, /scope root|symlink/);
+  }
+  assert.ok(existsSync(userSkill), "project-scoped operations must not delete the user installation");
+  assert.ok(f.manifest().skills.demo, "user manifest must remain intact");
+  assert.ok(existsSync(userManifest));
 });
 
 test("usage errors are nonzero and do not create an installation", async (t) => {

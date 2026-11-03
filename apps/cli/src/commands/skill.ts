@@ -31,6 +31,7 @@ Installation does not activate a skill: edit [skills].active in Active Domain TO
 Exit codes: 0 success · 1 validation/filesystem/manifest failure · 2 usage error
 `;
 
+/** Dispatch ans skill subcommands and map installer failures to CLI exit codes. */
 export async function runSkill(args: string[], opts: SkillCommandOptions = {}): Promise<number> {
   const out = opts.stdout ?? ((text: string) => process.stdout.write(text));
   const err = opts.stderr ?? ((text: string) => process.stderr.write(text));
