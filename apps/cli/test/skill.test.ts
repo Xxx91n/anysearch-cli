@@ -355,6 +355,8 @@ test("an inherited GIT_DIR cannot redirect provenance to another repository", as
   writeFileSync(join(decoy, "decoy.txt"), "decoy\n");
   git(decoy, ["add", "--", "decoy.txt"]);
   git(decoy, ["commit", "--quiet", "-m", "decoy"]);
+  // Read the expectation before exporting GIT_DIR: the test helper inherits it too.
+  const expected = git(f.repository, ["rev-parse", "HEAD"]);
   const saved = { GIT_DIR: process.env.GIT_DIR, GIT_WORK_TREE: process.env.GIT_WORK_TREE };
   process.env.GIT_DIR = join(decoy, ".git");
   process.env.GIT_WORK_TREE = decoy;
@@ -365,7 +367,7 @@ test("an inherited GIT_DIR cannot redirect provenance to another repository", as
   });
   const result = await f.run(["install", dir]);
   assert.equal(result.code, 0, result.stderr);
-  assert.equal(f.manifest().skills.demo.commit, git(f.repository, ["rev-parse", "HEAD"]));
+  assert.equal(f.manifest().skills.demo.commit, expected, "provenance must describe the selected source");
 });
 
 test("changes outside the selected source directory do not mark it dirty", async (t) => {
