@@ -5,7 +5,7 @@
 
 - 端口：`RagAdapterPort`（`packages/kernel/src/ports.ts`）
 - 注册表 + 具体实现：`packages/kernel/src/rag-adapter.ts`
-- 注入槽位：`MemoryPipeline.inject` 的 **Stage-1**，落在**首条 user 消息**的文本通道末尾
+- 注入槽位：`MemoryPipeline.inject` 的 **Stage-1**（当前 #104 代码暂统一落在**首条 user 消息**的文本通道末尾；#131 已裁定**静/动分层约定**——静态 `note` 留在首条 user 消息末尾、动态 `fts` 迁至最新一条 user 消息的末尾热区，见下方「注入落点约定（#131）」）
 
 ## 三态
 
@@ -97,6 +97,29 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
 | `RAG_HIT_MAX_CHARS` | 600 | 单条命中字符上限（防一条巨行挤掉其余） |
 | `RAG_BLOCK_MAX_CHARS` | 4000 | 整块字符上限 |
 
+## 注入落点约定（#131 裁定：静/动分层，待实现票落地）
+
+上下文注入位置由两条物理约束共同决定：**KV 前缀缓存按左起精确匹配**（越靠近首部越必须跨轮恒定），**U 型注意力在首尾最强、中段衰减**（随当前提问变化的证据必须紧贴尾部热区）。据此，`#131` 选定按**变化频率（Volatility）**做静/动分层，对齐 `GLOSSARY.md` 的 `Injection Hot Zone` 公理：
+
+| 注入项 | 变化频率 | 目标落点 | Query 来源 | 单项硬预算 |
+|---|---|---|---|---|
+| T0 `<user_preferences>` | 会话级静态 | **首条** user 消息前缀 | — | 1500 chars / 200 行 |
+| `note`（含 `none` + 残留 `config.note`） | 会话级静态 | **首条** user 消息末尾 | — | 原样注入（保持 #104 AC2 逐字节兼容） |
+| `fts`（及后续查询型 `RagAdapterPort`） | 每轮动态 | **最新** user 消息末尾（热区） | 注入前**最新** user 原文前 `400` chars | 整块 `≤ 4000` chars（`RAG_BLOCK_MAX_CHARS`） |
+| Stage-2 `L1 rolling_summary` | 每轮动态 | **最新** user 消息末尾（热区） | — | 摘要载荷 `≤ 4000` chars（另带 `[Session Memory] ` 前缀） |
+| Stage-2 `L2 l2_recall` | 每轮动态 | **最新** user 消息末尾（热区） | 冷路径 `rewriteQuery` | 召回载荷 `≤ 1500` chars（另带 `[Research Recall] ` 前缀） |
+
+配套细则（#131 选定）：
+
+- **Query 源**：动态 RAG 的 `ragQuery` 取**注入前最新 user 消息原始文本**前 `RAG_QUERY_MAX_CHARS`（400）字符，避免多轮对话继续搜第 1 轮旧问题，也避免已注入标签污染检索词；热路径保持零 LLM 调用，跨轮指代扩展继续归异步冷路径 `L2`。
+- **同条最新 user 消息内部顺序**：`用户原始提问 → [RAG Context] → [Session Memory] → [Research Recall]`。
+- **分项独立预算**：各层独立截断、不互抢配额（动态 RAG 整块 `≤ 4000` chars、`L1` 载荷 `≤ 4000` chars、`L2` 载荷 `≤ 1500` chars，不含标签与换行分隔符），防止 `L1` 摘要增长时静默挤掉当轮 RAG 命中。
+- **被否决方案**：
+  - 方案 A（Stage-1 全留首条，即当前 `#104` 临时落点）：多轮下 `fts` 固定查首轮旧文本、远离尾部热区，且一旦 Research Memory 变化改写 `messages[0]` 反而从第 0 条消息起击穿整段历史 KV 缓存；
+  - 方案 B（连静态 `note` 一并迁最新）：破坏 `#104` AC2 多轮首条字节兼容，且长 `note` 跨轮卸下会增加不必要的前缀重算；
+  - 方案 C（Stage-1/2 全放首条）：丢失 `L1/L2` 热区收益并使每轮摘要更新击穿全量缓存。
+- **当前状态与后续实现约束**：`#131` 只定约定、未改运行时代码，当前 `MemoryPipeline.inject` 与 `packages/kernel/test/rag-adapter.test.ts` 仍反映 `#104` 的首条落点。后续实现票落地时，除按静/动态分流 Stage-1 落点与 `ragQuery` 外，**必须同步把 Stage-2 写入改走 `appendMessageText`（`packages/kernel/src/message-text.ts`）**，防止在 `pi-agent-core` 的 content-block 数组消息上覆盖用户原文与前序 `[RAG Context]`。
+
 ## 消息形状（易踩的坑）
 
 `pi-agent-core` 会把 `agent.prompt("…")` 规范化成 **content block 数组**：
@@ -135,5 +158,6 @@ pnpm -C packages/kernel test    # test/rag-adapter.test.ts、test/message-text.t
 ## 边界（还没做的）
 
 - **`fts` 尚未在任何出厂域启用** —— `domains/default.toml`、`docs.toml`、`research.toml` 仍是 `adapter = "none"`。要真开启属产品决策，需要配套回归。
+- **#131 动态 RAG 热区落点尚未迁入运行时代码** —— 静/动分层约定已定（静态 `note` 留在首条 user 消息末尾、动态 `fts` 按最新一条 user 消息原文检索并迁至其末尾热区），当前 `MemoryPipeline.inject` 仍保持 #104 的首条落点，待后续实现票连同 Stage-2 `appendMessageText` 块形状保护与 `rag-adapter.test.ts` 多轮落点断言一并落地。
 - **MCP `query_knowledge` 工具未接本注册表** —— 它仍需先定「知识查询读哪个记忆范围」（跨会话 store 范围），见 `docs/limitations.md`。
 - **`apps/mcp` 的 `ans_chat` 未把 store 传给 runtime** —— 若在 MCP 侧启用 `fts`，会走 no-store fail-open 并打一行告警（既有接线缺口）。
