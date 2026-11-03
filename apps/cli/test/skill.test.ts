@@ -60,7 +60,14 @@ function fakeStatusProbe(spec: {
       this.push(chunk);
     },
   });
-  const stderr = new Readable({ read() { this.push(spec.stderr ?? null); } });
+  // One push then EOF: an endlessly readable stderr can starve the setImmediate
+  // that emits the child close event, hanging the suite.
+  const stderr = new Readable({
+    read() {
+      if (spec.stderr) this.push(spec.stderr);
+      this.push(null);
+    },
+  });
   const child: StatusProbeChild = Object.assign(events, {
     stdout,
     stderr,
@@ -334,6 +341,31 @@ test("a hung status probe times out and installs nothing", async (t) => {
   assert.match(result.stderr, /did not finish within 100ms/);
   assert.deepEqual(fake.kills, ["SIGKILL"], "a hung Git child is killed, not orphaned");
   assert.equal(existsSync(skillManifestPath(f.opts)), false);
+});
+
+test("an inherited GIT_DIR cannot redirect provenance to another repository", async (t) => {
+  const f = fixture(t);
+  const dir = f.source();
+  const decoy = join(f.base, "decoy-repo");
+  mkdirSync(decoy, { recursive: true });
+  git(decoy, ["init", "--quiet"]);
+  git(decoy, ["config", "user.name", "Skill Test"]);
+  git(decoy, ["config", "user.email", "skill-test@example.invalid"]);
+  git(decoy, ["config", "commit.gpgsign", "false"]);
+  writeFileSync(join(decoy, "decoy.txt"), "decoy\n");
+  git(decoy, ["add", "--", "decoy.txt"]);
+  git(decoy, ["commit", "--quiet", "-m", "decoy"]);
+  const saved = { GIT_DIR: process.env.GIT_DIR, GIT_WORK_TREE: process.env.GIT_WORK_TREE };
+  process.env.GIT_DIR = join(decoy, ".git");
+  process.env.GIT_WORK_TREE = decoy;
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  });
+  const result = await f.run(["install", dir]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(f.manifest().skills.demo.commit, git(f.repository, ["rev-parse", "HEAD"]));
 });
 
 test("changes outside the selected source directory do not mark it dirty", async (t) => {

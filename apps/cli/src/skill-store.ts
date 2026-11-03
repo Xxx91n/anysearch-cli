@@ -346,6 +346,19 @@ const GIT_KILL_GRACE_MS = 1_000;
 /** Bound on buffered status stderr, kept only to explain a failure. */
 const STATUS_STDERR_LIMIT = 8 * 1024;
 
+/** Variables that redirect Git away from `-C <source>`: inherited values must not choose the repository. */
+const REPOSITORY_LOCATION_ENV = [
+  "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+] as const;
+
+/** Build a Git child environment whose repository discovery comes from `-C` alone. */
+function gitEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, ...extra };
+  for (const key of REPOSITORY_LOCATION_ENV) delete env[key];
+  return env;
+}
+
 /** Map a Git inspection failure to an actionable installer error. */
 function inspectionError(source: string, error: unknown): SkillError {
   const e = error as (NodeJS.ErrnoException & { stderr?: Buffer | string }) | undefined;
@@ -360,7 +373,7 @@ function git(source: string, args: string[]): string {
     // Design: provenance collection is data-only — repository-configured
     // fsmonitor helpers are disabled so `git status` cannot execute checkout code.
     return execFileSync("git", ["-c", "core.fsmonitor=false", "-C", source, ...args], {
-      encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
+      encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, env: gitEnv(),
       timeout: GIT_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024,
     }).trim();
   } catch (error) {
@@ -413,11 +426,12 @@ function isDirty(source: string): Promise<boolean> {
   const timeoutMs = statusProbeHooks?.timeoutMs ?? GIT_TIMEOUT_MS;
   return new Promise<boolean>((resolve, reject) => {
     const spawnChild = statusProbeHooks?.spawn ?? defaultStatusProbeSpawn;
-    // Design: GIT_OPTIONAL_LOCKS=0 keeps `git status` from refreshing and
-    // rewriting the index. The probe terminates the child as soon as dirtiness is
-    // known, and interrupting an index refresh could leave a stale
-    // .git/index.lock in the user's checkout.
-    const env: NodeJS.ProcessEnv = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
+    // Design: the same scrubbed environment as `git()` — `commit`, `tag` and
+    // `dirty` must all describe the selected checkout. GIT_OPTIONAL_LOCKS=0 keeps
+    // `git status` from refreshing and rewriting the index: the probe terminates
+    // the child as soon as dirtiness is known, and interrupting an index refresh
+    // could leave a stale .git/index.lock in the user's checkout.
+    const env = gitEnv({ GIT_OPTIONAL_LOCKS: "0" });
     let child: StatusProbeChild;
     try {
       child = spawnChild("git", args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, env });
