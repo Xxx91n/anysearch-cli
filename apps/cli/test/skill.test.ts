@@ -677,7 +677,7 @@ test("uninstall retries a transient backup rename", async (t) => {
     rename: (from, to) => {
       if (to.includes(".uninstall-") && failures < 2) {
         failures += 1;
-        throw Object.assign(new Error("busy"), { code: "EBUSY" });
+        throw Object.assign(new Error("denied"), { code: "EPERM" });
       }
       renameSync(from, to);
     },
@@ -749,20 +749,29 @@ test("concurrent installers reclaiming a dead lock keep the manifest consistent"
   const script = join(f.base, "concurrent-install.mjs");
   const source = new URL("../src/commands/skill.ts", import.meta.url).href;
   writeFileSync(script, `
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { runSkill } from ${JSON.stringify(source)};
-const [home, cwd, barrier, dir] = process.argv.slice(2);
+const [home, cwd, barrier, ready, dir] = process.argv.slice(2);
 const wait = new Int32Array(new SharedArrayBuffer(4));
-const deadline = Date.now() + 15000;
+const deadline = Date.now() + 20000;
+writeFileSync(ready, "");
 while (!existsSync(barrier) && Date.now() < deadline) Atomics.wait(wait, 0, 0, 10);
 process.exit(await runSkill(["install", dir], { home, cwd, stdout: () => {}, stderr: (text) => process.stderr.write(text) }));
 `);
   const barrier = join(f.base, "start");
-  const children = dirs.map((dir) => spawn(
+  const ready = dirs.map((_, index) => join(f.base, `ready-${index}`));
+  const children = dirs.map((dir, index) => spawn(
     process.execPath,
-    ["--import", "tsx", script, f.home, f.cwd, barrier, dir],
+    ["--import", "tsx", script, f.home, f.cwd, barrier, ready[index], dir],
     { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: ["ignore", "ignore", "pipe"] },
   ));
+  // Release the children together only after every one has loaded tsx, so the
+  // reclaim races actually overlap instead of running one after another.
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  const readyDeadline = Date.now() + 10000;
+  while (!ready.every((path) => existsSync(path)) && Date.now() < readyDeadline) {
+    Atomics.wait(pause, 0, 0, 20);
+  }
   writeFileSync(barrier, "");
   const outcomes = await Promise.all(children.map((child) => new Promise<{ code: number; stderr: string }>((resolve, reject) => {
     let stderr = "";

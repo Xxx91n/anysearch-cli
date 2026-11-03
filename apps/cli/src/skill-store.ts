@@ -325,8 +325,13 @@ function reclaimDeadLock(managed: string, lock: string, observed: LockOwner): vo
   }
   const moved = readLockOwner(quarantine);
   if (moved?.token !== observed.token) {
+    // The lock changed hands: restore it only into a free path; a single attempt
+    // avoids sleeping out the retry budget while a new holder owns the lock.
+    if (statIfPresent(lock)) {
+      fail(`skill lock changed hands while reclaiming it; inspect ${quarantine} and ${lock} before retrying.`);
+    }
     try {
-      renameWithRetry(quarantine, lock);
+      renameSync(quarantine, lock);
     } catch {
       fail(`skill lock changed hands while reclaiming it; inspect ${quarantine} and ${lock} before retrying.`);
     }
@@ -703,8 +708,8 @@ export function uninstallSkill(name: string, opts: SkillOptions = {}): Installed
   if (!statIfPresent(managed)) missingManifest(managed);
   requireScopeAnchors(managed);
   return withManifestLock(managed, () => {
-    // Design: uninstall requires a manifest, so manifest-gated residue cleanup is
-    // inherently a no-op; only lock acquisition above reclaims a dead lock.
+    // Design: uninstall never reconciles — cleanup is manifest-gated and uninstall
+    // requires a manifest, so only the lock acquisition above can reclaim here.
     const manifest = readManifest(managed);
     const entry = manifest.skills[name];
     if (!entry) fail(`skill ${name} is not recorded in ${skillManifestPath(opts)}; no files were removed`);

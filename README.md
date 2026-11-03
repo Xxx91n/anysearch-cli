@@ -195,12 +195,13 @@ concurrent mutations cannot lose each other's manifest entry. The lock records
 its owner (`pid`, `host`). A lock whose owner is provably dead on the same host
 is reclaimed automatically; a live lock, a lock written on another host, or one
 without a readable owner fails closed and is never deleted. A killed process
-therefore does not block later runs unless the lock came from another machine;
-in that case remove the leftover `skills/synced/.installed.lock` directory once
-no `ans skill` process is running there. Manifest publication and the
-install/uninstall directory renames retry transient Windows sharing violations
-(`EPERM`/`EBUSY`/`ENOTEMPTY`) with bounded backoff for up to about 60 seconds
-before reporting the original error.
+therefore does not block later runs unless the lock came from another machine,
+or it was killed between creating the lock directory and writing its owner
+record; in either case remove the leftover `skills/synced/.installed.lock`
+directory once no `ans skill` process is running there. Manifest publication and
+the install/uninstall directory renames retry transient Windows sharing
+violations (`EPERM`/`EBUSY`/`ENOTEMPTY`) with bounded backoff for up to about
+60 seconds before reporting the original error.
 
 `install`, `list` and `validate` also reconcile installer-owned residue while
 holding that lock. `.install-*` staging directories and
