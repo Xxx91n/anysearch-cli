@@ -161,6 +161,16 @@ test("invalid api value is ignored with warning", () => {
   assert.ok(f.warnings.some(w => w.includes("chat|messages|responses")));
 });
 
+test("invalid api at a higher layer falls through to a valid lower layer", () => {
+  const f = fixture({
+    userToml: '[llm]\nprovider = "openai"\nmodel = "gpt-5"\nbase_url = "https://x.example/v1"\napi = "chat"\n',
+  });
+  const cfg = resolveLlmConfig(f.opts({ env: { ANS_LLM_API: "grpc" } }));
+  assert.equal(cfg.api, "chat"); // env's invalid value warned + skipped, user wins
+  assert.equal(cfg.sources.api, "user");
+  assert.ok(f.warnings.some(w => w.includes("ignoring api=grpc")));
+});
+
 test("malformed TOML warns and yields empty config", () => {
   const f = fixture({ userToml: "[llm\nprovider = broken" });
   const cfg = resolveLlmConfig(f.opts());

@@ -158,6 +158,12 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
       ["user", user],
     ] as const) {
       const v = cfg[field];
+      // an invalid api value is ignored per-layer so a valid lower layer wins
+      // instead of the whole key being discarded (CodeRabbit #120).
+      if (v && field === "api" && !["chat", "messages", "responses"].includes(v)) {
+        warn("[config] ignoring api=" + v + " from " + layer + " — must be chat|messages|responses");
+        continue;
+      }
       // falsy check: an exported-but-empty var (ANS_LLM_PROVIDER=) or a
       // `--llm.provider=` flag must not shadow lower layers (CodeRabbit #120).
       if (v) {
@@ -174,12 +180,6 @@ export function resolveLlmConfig(opts: ResolveLlmOpts = {}): ResolvedLlmConfig {
   pick("model", "model");
   pick("base_url", "baseUrl");
   pick("api", "api");
-
-  if (resolved.api !== undefined && !["chat", "messages", "responses"].includes(resolved.api)) {
-    warn("[config] ignoring api=" + resolved.api + " from " + resolved.sources.api + " — must be chat|messages|responses");
-    delete resolved.api;
-    delete resolved.sources.api;
-  }
 
   // baseUrl is a no-op without a wire protocol: warn here so every caller
   // sees the failure mode instead of each re-checking baseUrl && !api.
