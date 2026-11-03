@@ -12,10 +12,12 @@ import { join } from "node:path";
 import { runSkill } from "../src/commands/skill.js";
 import { managedSkillsRoot, skillManifestPath, type SkillManifest } from "../src/skill-store.js";
 
+/** Run a Git command in a test repository and return trimmed stdout. */
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
+/** Create isolated home/project/source Git fixtures with canonical temp paths. */
 function fixture(t: TestContext) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "ans-skill-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
@@ -28,11 +30,13 @@ function fixture(t: TestContext) {
   git(repository, ["config", "user.email", "skill-test@example.invalid"]);
   git(repository, ["config", "commit.gpgsign", "false"]);
   const opts = { home, cwd };
+  /** Run the skill CLI against the fixture and capture stdout/stderr. */
   async function run(args: string[]) {
     let stdout = "", stderr = "";
     const code = await runSkill(args, { ...opts, stdout: (s) => { stdout += s; }, stderr: (s) => { stderr += s; } });
     return { code, stdout, stderr };
   }
+  /** Create and commit a skill directory in the fixture Git repository. */
   function source(name = "demo", folder = name, body = "Use the bundled template.\n"): string {
     const dir = join(repository, "skills", folder);
     mkdirSync(join(dir, "templates"), { recursive: true });
@@ -42,6 +46,7 @@ function fixture(t: TestContext) {
     git(repository, ["commit", "--quiet", "-m", `add ${folder}`]);
     return dir;
   }
+  /** Read the fixture manifest for the selected scope. */
   function manifest(project = false): SkillManifest {
     return JSON.parse(readFileSync(skillManifestPath({ ...opts, project }), "utf8"));
   }
@@ -226,14 +231,19 @@ test("source symlinks are rejected and staging is rolled back", async (t) => {
   mkdirSync(outside);
   writeFileSync(join(outside, "private.txt"), "do not copy");
   // Junctions work on Windows without requiring file-symlink privileges.
-  symlinkSync(outside, join(dir, "linked"), "junction");
-  const result = await f.run(["install", dir]);
-  assert.equal(result.code, 1);
-  assert.match(result.stderr, /symlink/);
-  assert.equal(existsSync(join(managedSkillsRoot(f.opts), "demo")), false);
-  assert.equal(existsSync(skillManifestPath(f.opts)), false);
-  assert.deepEqual(readdirSync(managedSkillsRoot(f.opts)), []);
-  assert.equal(readFileSync(join(outside, "private.txt"), "utf8"), "do not copy");
+  const link = join(dir, "linked");
+  symlinkSync(outside, link, "junction");
+  try {
+    const result = await f.run(["install", dir]);
+    assert.equal(result.code, 1, result.stderr);
+    assert.match(result.stderr, /symlink/);
+    assert.equal(existsSync(join(managedSkillsRoot(f.opts), "demo")), false);
+    assert.equal(existsSync(skillManifestPath(f.opts)), false);
+    assert.deepEqual(readdirSync(managedSkillsRoot(f.opts)), []);
+    assert.equal(readFileSync(join(outside, "private.txt"), "utf8"), "do not copy");
+  } finally {
+    rmSync(link, { force: true });
+  }
 });
 
 test("reinstallation never overwrites an existing skill or a user-authored namesake", async (t) => {
@@ -280,11 +290,15 @@ test("a replaced installed directory cannot redirect uninstall outside synced/",
   mkdirSync(outside);
   writeFileSync(join(outside, "keep.txt"), "keep");
   symlinkSync(outside, target, "junction");
-  const result = await f.run(["uninstall", "demo"]);
-  assert.equal(result.code, 1);
-  assert.match(result.stderr, /symlink/);
-  assert.equal(readFileSync(join(outside, "keep.txt"), "utf8"), "keep");
-  assert.ok(f.manifest().skills.demo);
+  try {
+    const result = await f.run(["uninstall", "demo"]);
+    assert.equal(result.code, 1, result.stderr);
+    assert.match(result.stderr, /symlink/);
+    assert.equal(readFileSync(join(outside, "keep.txt"), "utf8"), "keep");
+    assert.ok(f.manifest().skills.demo);
+  } finally {
+    rmSync(target, { force: true });
+  }
 });
 
 test("project scope cannot alias the user store through a .anysearch symlink", async (t) => {
@@ -294,20 +308,25 @@ test("project scope cannot alias the user store through a .anysearch symlink", a
   const userSkill = join(managedSkillsRoot(f.opts), "demo", "SKILL.md");
   const userManifest = skillManifestPath(f.opts);
   // Junctions work on Windows without requiring file-symlink privileges.
-  symlinkSync(join(f.home, ".anysearch-cli"), join(f.cwd, ".anysearch"), "junction");
-  for (const args of [
-    ["list", "--project"],
-    ["validate", "--project"],
-    ["uninstall", "demo", "--project"],
-    ["install", dir, "--project"],
-  ]) {
-    const result = await f.run(args);
-    assert.equal(result.code, 1, args.join(" "));
-    assert.match(result.stderr, /scope root|symlink/);
+  const link = join(f.cwd, ".anysearch");
+  symlinkSync(join(f.home, ".anysearch-cli"), link, "junction");
+  try {
+    for (const args of [
+      ["list", "--project"],
+      ["validate", "--project"],
+      ["uninstall", "demo", "--project"],
+      ["install", dir, "--project"],
+    ]) {
+      const result = await f.run(args);
+      assert.equal(result.code, 1, `${args.join(" ")}: ${result.stderr || result.stdout}`);
+      assert.match(result.stderr, /scope root|symlink/);
+    }
+    assert.ok(existsSync(userSkill), "project-scoped operations must not delete the user installation");
+    assert.ok(f.manifest().skills.demo, "user manifest must remain intact");
+    assert.ok(existsSync(userManifest));
+  } finally {
+    rmSync(link, { force: true });
   }
-  assert.ok(existsSync(userSkill), "project-scoped operations must not delete the user installation");
-  assert.ok(f.manifest().skills.demo, "user manifest must remain intact");
-  assert.ok(existsSync(userManifest));
 });
 
 test("usage errors are nonzero and do not create an installation", async (t) => {

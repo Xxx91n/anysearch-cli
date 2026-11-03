@@ -241,7 +241,9 @@ export function validateSkillFile(path: string): string {
 /** Run a read-only Git inspection command in the source checkout. */
 function git(source: string, args: string[]): string {
   try {
-    return execFileSync("git", ["-C", source, ...args], {
+    // Design: provenance collection is data-only. Disable repository-configured
+    // fsmonitor helpers so `git status` cannot execute checkout-supplied code.
+    return execFileSync("git", ["-c", "core.fsmonitor=false", "-C", source, ...args], {
       encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
       timeout: 10_000, maxBuffer: 16 * 1024 * 1024,
     }).trim();
