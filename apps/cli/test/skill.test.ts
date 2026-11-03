@@ -4,7 +4,7 @@ import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync,
   symlinkSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -217,6 +217,20 @@ test("repository root is a valid source and Git metadata is not copied", async (
   const target = join(managedSkillsRoot(f.opts), "root-skill");
   assert.ok(existsSync(join(target, "skills", "demo", "SKILL.md")));
   assert.equal(existsSync(join(target, ".git")), false);
+});
+
+test("a source path with control characters is rejected before publication", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("Windows file names cannot carry control characters");
+    return;
+  }
+  const f = fixture(t);
+  const odd = join(f.base, "odd\nname");
+  renameSync(f.source(), odd);
+  const result = await f.run(["install", odd]);
+  assert.equal(result.code, 1, result.stderr);
+  assert.match(result.stderr, /control characters/);
+  assert.equal(existsSync(skillManifestPath(f.opts)), false);
 });
 
 test("invalid sources and frontmatter fail before publication", async (t) => {

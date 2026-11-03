@@ -380,6 +380,9 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
     fail(`source directory does not exist: ${sourceArgument}`, 2);
   }
   requireDirectory(source, "source");
+  // Design: a source path is persisted in installed.json, whose validator
+  // rejects control characters — reject it here so an install cannot brick the scope.
+  if (!printablePath(source)) fail("source directory path must be absolute and free of control characters");
   const name = validateSkillFile(join(source, "SKILL.md"));
   const metadata = provenance(source);
   const managed = managedSkillsRoot(opts);
@@ -393,12 +396,15 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
     }
 
     const staging = mkdtempSync(join(managed, ".install-"));
+    // Design: cpSync rejects an existing destination when errorOnExist is set —
+    // copy into a fresh child so the staging directory stays a cleanup envelope.
+    const payload = join(staging, "payload");
     let directoryPublished = false;
     let manifestPublished = false;
     try {
       // Design: never execute source code — copy files only: no dependency
       // resolution, lifecycle scripts, remote fetches, or escaping symlinks.
-      cpSync(source, staging, {
+      cpSync(source, payload, {
         recursive: true, force: false, errorOnExist: true,
         filter: (from) => {
           if (basename(from) === ".git") return false;
@@ -406,8 +412,8 @@ export function installSkill(sourceArgument: string, opts: SkillOptions = {}): I
           return true;
         },
       });
-      if (validateSkillFile(join(staging, "SKILL.md")) !== name) fail("source name changed during installation; retry");
-      renameSync(staging, target);
+      if (validateSkillFile(join(payload, "SKILL.md")) !== name) fail("source name changed during installation; retry");
+      renameSync(payload, target);
       directoryPublished = true;
       const entry: InstalledSkill = { name, ...metadata };
       manifest.skills[name] = entry;
