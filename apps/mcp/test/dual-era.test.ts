@@ -54,9 +54,17 @@ const CALL_ARGS: Record<KernelToolName, Record<string, unknown>> = {
 function assertCallOk(res: any, name: string, label: string) {
   assert(res !== undefined && res !== null, label + " " + name + ": got a result");
   assert(res?.isError !== true, label + " " + name + ": isError not true");
+  const text = res?.content?.[0]?.text;
   assert(
-    Array.isArray(res?.content) && typeof res.content[0]?.text === "string" && res.content[0].text.length > 0,
+    Array.isArray(res?.content) && typeof text === "string" && text.length > 0,
     label + " " + name + ": non-empty text content"
+  );
+  // The retrieval/chat handlers catch failures and return "<name> error: ..."
+  // WITHOUT setting isError (src/tools/*.tool.ts). Reject that handler-error
+  // prefix so a failed call cannot pass this smoke (CodeRabbit #117).
+  assert(
+    typeof text === "string" && !text.startsWith(name + " error:"),
+    label + " " + name + ": not a handler-error result"
   );
 }
 
