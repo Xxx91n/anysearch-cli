@@ -134,9 +134,11 @@ export function bm25SearchDomainMeta(db: Database.Database, query: string, limit
   const rows = db.prepare<unknown[], RawRow>(sql).all(strict, limit * 4).map(toRow);
   if (rows.length < limit) {
     const terms = unicodeTerms(query.trim());
-    // relaxed OR rung at ≥2 content words (memory evidence needs ≥3 + majority; a
-    // suggestion does not — the confidence margin prices the ambiguity instead).
-    if (terms.length >= 2) {
+    // relaxed OR rung at ≥1 content word: a query like "research for me" has a single
+    // content term and the strict AND rung requires the stopwords too, so without the
+    // one-term relaxed rung it would report no match. (Memory evidence needs ≥3 +
+    // majority; a suggestion does not — the confidence margin prices the ambiguity.)
+    if (terms.length >= 1) {
       const relaxed = terms.map((t) => t + "*").join(" OR ");
       const seen = new Set(rows.map((r) => r.rowid));
       for (const r of db.prepare<unknown[], RawRow>(sql).all(relaxed, limit * 8).map(toRow)) {
