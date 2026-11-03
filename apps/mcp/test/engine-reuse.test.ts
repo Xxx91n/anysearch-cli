@@ -2,7 +2,7 @@
 //
 // Design(#40, decision #91): the HTTP entry builds ONE composition at startup;
 // the stateless contract only requires a fresh protocol-level McpServer +
-// transport per request. Three proofs below:
+// transport per request. Four proofs below:
 //
 //   A. HTTP: the per-request factory runs once per request but always receives
 //      the SAME engine reference the entry built — no hidden re-composition.
@@ -12,6 +12,8 @@
 //   C. Statelessness survives the shared engine: concurrent requests with
 //      different clientInfo keep isolated client_id values and no request-scoped
 //      sessionId lands on the composition.
+//   D. The identity seam itself: an initialize payload names the client, every
+//      other method carries nothing (no state is invented between requests).
 //
 // Seam: real buildServer()/createHttpApp() with a mock engine (offline, no LLM).
 // No test framework (repo convention).
@@ -23,7 +25,7 @@ import { join } from "node:path";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import { mapMcpClientId } from "@anysearch-cli/store";
 import { buildServer } from "../src/server.js";
-import { createHttpApp } from "../src/http-app.js";
+import { createHttpApp, extractClientInfoName } from "../src/http-app.js";
 import { runWithMcpIdentity } from "../src/mcp-context.js";
 import { observeTool } from "../src/tools/observation.js";
 import { createMockEngine } from "./helpers/mock-engine.js";
@@ -175,6 +177,37 @@ assert(
   records.every((r) => r.sessionId === undefined),
   "C: sessionId stays omitted on the MCP path (stateless protocol)",
 );
+
+// ---------------------------------------------------------------------------
+// D. Identity seam: per-request clientInfo parsing (no session inheritance)
+//
+// Stateless HTTP means identity is NEVER carried across requests, so this only
+// pins what the current payload yields: an initialize payload names the client,
+// any other method carries nothing and falls back to the default MCP client id.
+// ---------------------------------------------------------------------------
+assert(
+  extractClientInfoName({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: { clientInfo: { name: "claude-ai", version: "1.0.0" } },
+  }) === "claude-ai",
+  "D: initialize payload yields its clientInfo name",
+);
+assert(
+  extractClientInfoName({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "search_web" } }) ===
+    undefined,
+  "D: tools/call carries no identity of its own (stateless, no inherited clientInfo)",
+);
+assert(
+  extractClientInfoName({ method: "initialize", params: { clientInfo: {} } }) === undefined,
+  "D: initialize without a client name yields undefined, not an empty id",
+);
+assert(
+  extractClientInfoName({ method: "initialize", params: { clientInfo: { name: 42 } } }) === undefined,
+  "D: a non-string client name is ignored",
+);
+assert(extractClientInfoName(undefined) === undefined, "D: a missing body yields undefined");
 
 console.log("--- mcp engine-reuse tests: " + passed + " passed, " + failed + " failed ---");
 if (failed > 0) process.exit(1);

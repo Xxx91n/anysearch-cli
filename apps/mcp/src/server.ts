@@ -23,12 +23,14 @@ const PKG_VERSION: string =
     ? __PACKAGE_VERSION__
     : "0.0.0";
 
-// createMcpEngine: the expensive half of the composition — better-sqlite3
-// session + observation connections, domain loading, provider assembly.
-// Design(#40, decision #91): reuse is per-CONNECTION, never a global singleton.
-// The HTTP entry builds exactly one of these at startup and hands it to every
-// request; the protocol-level McpServer/transport instances stay per-request so
-// the stateless 2026-07-28 contract is untouched.
+/**
+ * createMcpEngine: the expensive half of the composition — better-sqlite3
+ * session + observation connections, domain loading, provider assembly.
+ * Design(#40, decision #91): reuse is per-CONNECTION, never a global singleton.
+ * The HTTP entry builds exactly one of these at startup and hands it to every
+ * request; the protocol-level McpServer/transport instances stay per-request so
+ * the stateless 2026-07-28 contract is untouched.
+ */
 export function createMcpEngine(): CompositionResult {
   // a cold HOME has no ~/.anysearch dir yet; create the DB
   // parent before better-sqlite3 opens it (mirrors apps/cli/src/db.ts:9).
@@ -46,10 +48,12 @@ export function createMcpEngine(): CompositionResult {
   return createEngine(process.env.ANS_DOMAIN, { dbPath, domainsDirs });
 }
 
-// buildServer: factory function. Each connection gets a fresh server instance.
-// factory pattern, era-agnostic, entry selects transport.
-// Pass an engine to reuse a connection-scoped composition (#112); omit it and
-// this call composes its own (stdio is process-scoped, so one is enough).
+/**
+ * buildServer: factory function. Each connection gets a fresh server instance.
+ * factory pattern, era-agnostic, entry selects transport.
+ * Pass an engine to reuse a connection-scoped composition (#112); omit it and
+ * this call composes its own (stdio is process-scoped, so one is enough).
+ */
 export function buildServer(engine?: CompositionResult): McpServer {
   const eng = engine ?? createMcpEngine();
   const server = new McpServer(
