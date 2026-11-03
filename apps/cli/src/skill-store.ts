@@ -192,9 +192,18 @@ function scopeRootFromManaged(managed: string): string {
   return resolve(managed, "..", "..");
 }
 
+/** Require a non-symlink scope anchor, including Windows junction/reparse redirection. */
+function requireScopeRoot(scope: string): void {
+  requireDirectory(scope, "scope root");
+  const expected = join(realpathSync(resolve(scope, "..")), basename(scope));
+  const actual = realpathSync(scope);
+  const same = process.platform === "win32" ? actual.toLowerCase() === expected.toLowerCase() : actual === expected;
+  if (!same) fail(`scope root must not be a symlink or junction: ${scope}`);
+}
+
 /** Validate the scope anchor, skills root and managed root before granting filesystem authority. */
 function requireScopeAnchors(managed: string): void {
-  requireDirectory(scopeRootFromManaged(managed), "scope root");
+  requireScopeRoot(scopeRootFromManaged(managed));
   requireDirectory(skillsRootFromManaged(managed), "skills root");
   requireDirectory(managed, "managed skills root");
 }
@@ -270,7 +279,7 @@ function prepareManagedRoot(opts: SkillOptions): string {
   const root = skillsRoot(opts);
   const managed = managedSkillsRoot(opts);
   const scope = scopeRootFromManaged(managed);
-  if (statIfPresent(scope)) requireDirectory(scope, "scope root");
+  if (statIfPresent(scope)) requireScopeRoot(scope);
   if (statIfPresent(root)) requireDirectory(root, "skills root");
   if (statIfPresent(managed)) requireDirectory(managed, "managed skills root");
   mkdirSync(root, { recursive: true });
