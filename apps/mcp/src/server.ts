@@ -30,6 +30,14 @@ const PKG_VERSION: string =
  * The HTTP entry builds exactly one of these at startup and hands it to every
  * request; the protocol-level McpServer/transport instances stay per-request so
  * the stateless 2026-07-28 contract is untouched.
+ *
+ * Trade-off inherited from building the composition once (see #112):
+ * createEngine resolves ANS_DOMAIN at construction time. A domain TOML that
+ * already exists keeps hot-reloading on edit; one created *after* startup is
+ * not picked up until the process restarts, because the provider list and
+ * source weights are fixed here. Per-request construction used to retry that
+ * load implicitly; rebuilding providers on a late-arriving domain is a
+ * lifecycle change tracked separately, not in this ticket.
  */
 export function createMcpEngine(): CompositionResult {
   // a cold HOME has no ~/.anysearch dir yet; create the DB

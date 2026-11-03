@@ -33,6 +33,12 @@ for (let i = 0; i < argv.length; i++) {
   }
 }
 
+/**
+ * Starts the MCP server in the transport selected by the CLI flags.
+ *
+ * stdio keeps stdout protocol-pure (logs go to stderr); http binds to
+ * localhost only and reuses one composition for the whole process.
+ */
 async function main() {
   if (transport === "stdio") {
     const server = buildServer();
