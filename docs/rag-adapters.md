@@ -11,12 +11,19 @@
 
 | `adapter` | 行为 | 依赖 |
 |---|---|---|
-| `"none"`（或缺省） | 正常不注入（出厂 `domains/*.toml` 都是这个）。**例外**：若同时残留 `config.note`，则按 #104 之前的 legacy 行为注入该 note（见下） | 无 |
+| `"none"` | 正常不注入（出厂 `domains/*.toml` 都是这个）。**例外**：解析后的 `config.note` 非空时仍按 #104 之前的 legacy 行为注入（见下） | 无 |
 | `"note"` | legacy 伪 adapter：注入 `[rag.config].note` 文本，**逐字节**等同 #104 之前的行为 | 无 |
 | `"fts"` | 真检索：包既有 `SessionStore.searchMemory`（FTS5 严格梯级 + 放宽梯级 + 既有 side arms），结果带 provenance 注入 | 需要 session store |
 | 其它任意值 | **fail-open 到 none**，并在 stderr 输出具名告警（按原因去重，不会每轮刷） | — |
 
 每个 domain 只有一个 adapter 生效，`note` 与 `fts` 不会叠乘。
+
+> **`rag.adapter` 是必填字段，且会沿继承链解析**：`rag` 整段是「声明即替换」，
+> 所以**派生域若省略 `[rag]` 段，就继承基域的 adapter 与 note**；只有整条继承链
+> 都没有 adapter 时，`validate()` 才会直接抛错（`Domain schema: rag.adapter is
+> required`）。也就是说「不写」不等于「`none`」——要么显式写，要么确认基域写了。
+> 这一点由 CodeRabbit 在 PR #123 指出并核实（`packages/store/src/domain-schema.ts`
+> 的 `derive()` 与 `validate()`）。
 
 > **`none` + 残留 note 的兼容行为（AC2）**：#104 之前注入条件是
 > `rag.adapter && rag.config.note` —— 字符串 `"none"` 是真值，所以

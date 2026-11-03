@@ -222,6 +222,7 @@ evidence live in the linked integration docs.
 | exit-time `libc++abi` may overwrite the abstain exit code | automation must read the structured abstain marker (`--json` / `structuredContent.abstain`), not the exit code alone |
 | `rag.adapter = "fts"` is not enabled on any shipped domain | all three shipped domains stay on `adapter = "none"`; enabling it per domain needs a product decision plus regression |
 | MCP `query_knowledge` does not dispatch to the RAG registry yet | it still answers with the `adapter=<id>` line — the memory scope a knowledge query reads is an open decision |
+| omitting `[rag]` is not the same as `adapter = "none"` | `rag` is a replace-on-declare section: a derived domain inherits its base's adapter/note, and a chain with no adapter fails validation outright |
 | `rag.adapter = "fts"` reads **shared** Research Memory, not the current session | `searchMemory` has no session filter (existing `recall_memory` semantic), so enabling it in domains that share one DB widens their information boundary — inert today, every shipped domain stays on `none` |
 
 Full record: [docs/limitations.md](docs/limitations.md).
