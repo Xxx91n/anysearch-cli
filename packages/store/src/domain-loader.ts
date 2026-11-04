@@ -26,9 +26,20 @@ export function parseDomainToml(toml: string): RawDomain {
 
 // Load a domain from a TOML file. No inheritance chain (base = undefined or not found).
 // ponytail: thinnest loader - read, parse, return RawDomain. resolve/validate is caller job.
+// #167: file exists but parse fails is a configuration error (fail-fast), same
+// family as `Domain schema:` validation faults. readFileSync IO errors
+// (ENOENT/EACCES) and `Domain not found` keep the availability fallback —
+// absent ≠ broken — so only the TOML parse fault is wrapped with the
+// fail-fast marker and file-path context.
 export function loadRawDomain(tomlPath: string): RawDomain {
   const content = readFileSync(tomlPath, "utf8");
-  return parseDomainToml(content);
+  try {
+    return parseDomainToml(content);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.startsWith("Domain schema:")) throw e as Error;
+    throw new Error("Domain schema: " + msg + " (" + tomlPath + ")");
+  }
 }
 
 // Load a domain from TOML with optional inheritance chain resolution.
