@@ -481,6 +481,39 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
   assert(saved.includes("l2_recall"), "flush: the l2_recall anchor write actually landed before flush returned");
 }
 
+// Test: a failed/timed-out adjudication does NOT spend a second model call on
+// compression — one background deadline per turn (CodeRabbit #136 review).
+{
+  const failingStreamFn = () => ({
+    async *[Symbol.asyncIterator]() {
+      throw new Error("adjudication aborted");
+      // eslint-disable-next-line no-unreachable
+      yield undefined as any;
+    },
+  });
+  // generateSummaryWithUsage is only reached through fireCompress; count via the
+  // models seam by giving the pipeline a store that records compress writes.
+  const store = new MockStore();
+  const pipeline = new MemoryPipeline({
+    store: store as any,
+    models: { getModel: () => ({ id: "summary-model" }), streamSimple: () => failingStreamFn() } as any,
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test" } as any,
+    streamFn: failingStreamFn as any,
+    sessionId: "s1",
+  });
+  const msgs = [
+    { role: "assistant", content: [{ type: "tool_use", name: "search", input: { query: "AI research" } }] },
+    ...Array.from({ length: 5 }, (_, j) => ({ role: "user", content: `msg${j}` })),
+  ];
+  await pipeline.consolidate(msgs as any, 1000, true);
+  await pipeline.flush();
+  // No rolling_summary anchor: compression was not fired after the failed adjudication.
+  assert(!store.saveAnchorCalls.some(c => c.type === "rolling_summary"),
+    "adjudication failure: no compression model call is fired on the same deadline");
+}
+
 // Test: LOW_WATERMARK constant = 128000 (< 15% of 1M).
 {
   assert(128000 / 1000000 < 0.15, "consolidate: LOW_WATERMARK < 15% of 1M");

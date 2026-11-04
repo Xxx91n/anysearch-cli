@@ -449,7 +449,10 @@ export class MemoryPipeline {
       const previousSummary = (prevSummaryAnchor?.payload as any)?.summary as string | undefined;
 
       // D5: fire-and-forget compression helper.
-      const fireCompress = () => {
+      const fireCompress = (deadline?: AbortSignal) => {
+        // A shared deadline that already expired means this turn's background
+        // budget is spent; do not start a call that can only fail.
+        if (deadline?.aborted) return;
         if (modelsObj && actualModel) {
           // judgment-input assertion boundary 3/5 — consolidation pre-call.
           // Fire-and-forget: an invalid judgment input skips compression instead of
@@ -469,7 +472,7 @@ export class MemoryPipeline {
             generateSummaryWithUsage(
               messages, modelsObj, actualModel,
               COMPACTION_RESERVE_TOKENS,
-              AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS),
+              deadline ?? AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS),
               IR_CUSTOM_INSTRUCTIONS,
               previousSummary,
               "off",
@@ -505,18 +508,30 @@ export class MemoryPipeline {
         } catch {
           gapValid = false;
         }
-        if (gapValid) this.track(
-          adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary, AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS))
-            .then((adjDecision: "reuse" | "compress") => {
-              if (adjDecision === "compress") {
-                fireCompress();
-              } else {
-                // Keep the incremented consecutiveReuses from pure function result.
+        if (gapValid) {
+          // One deadline for adjudication AND any compression it triggers: a
+          // separate timeout per call would let one turn's background work run
+          // for 2x the bound, and flush() waits on all of it. On abort we keep
+          // the reuse state and retry next turn instead of firing compression
+          // under an already-expired budget.
+          const deadline = AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS);
+          this.track(
+            adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary, deadline)
+              .then((adjDecision: "reuse" | "compress") => {
+                if (adjDecision === "compress" && !deadline.aborted) {
+                  fireCompress(deadline);
+                } else {
+                  // Keep the incremented consecutiveReuses from the pure result.
+                  this.consolidationState = result.state;
+                }
+              })
+              .catch(() => {
+                // Adjudication failed or timed out: do not spend more budget on a
+                // second model call; the next turn retries.
                 this.consolidationState = result.state;
-              }
-            })
-            .catch(() => fireCompress()),
-        );
+              }),
+          );
+        }
       }
 
       // D7: Persist consolidation state to anchor (UPSERT in saveAnchor).
