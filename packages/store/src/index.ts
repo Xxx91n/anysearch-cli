@@ -29,6 +29,9 @@ export * from "./observation";
 // session_id persistence (.anysearch-cli/session file + env override).
 export * from "./session-id";
 
+// owner-only DB permission helper (CWE-732 mitigation, shared by CLI/MCP/plugin).
+export * from "./db-perms";
+
 // consumed/synthetic switch governance (state machine + chain evidence).
 export * from "./eval/switch-machine";
 export * from "./eval/switch-run";

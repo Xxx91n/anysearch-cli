@@ -26,7 +26,7 @@ const DB_PATH = process.env.ANS_PROJECT_DB || join(process.cwd(), ".anysearch", 
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { existsSync } from "node:fs";
-import { domainTomlPath, emitConfigChangeAudit, loadPolicyFromToml, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type UrlPolicy } from "@anysearch-cli/store";
+import { domainTomlPath, emitConfigChangeAudit, ensureOwnerOnlyDb, loadPolicyFromToml, resolveUrlPolicy, writePolicyCache, readPolicyCacheEnvelope, type UrlPolicy } from "@anysearch-cli/store";
 // parseAndValidateHeaders lives in the hook bundle module so
 // the wire format stays single-source across hook outbound and server inbound.
 import { parseAndValidateHeaders } from "../hooks/propagation.js";
@@ -38,6 +38,10 @@ const DOMAIN_TOML = domainTomlPath();
 const POLICY_CACHE = join(process.cwd(), ".anysearch-cli", "policy.json");
 const OBS_DB = process.env.ANS_DB_PATH ||
   join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");
+
+// CWE-732: tighten OBS_DB to owner-only before emitConfigChangeAudit opens it.
+// Same shared helper as CLI/MCP (packages/store/src/db-perms.ts).
+ensureOwnerOnlyDb(OBS_DB);
 
 // supplement: on startup, if the policy server is
 // unreachable (TOML missing/unreadable), boot from the disk cache and WARN
