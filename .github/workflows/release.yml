@@ -101,8 +101,10 @@ jobs:
       # checks appear, then it polls to terminal. The step-level
       # timeout-minutes is the fail-closed hard bound (the action has no
       # timeout input). Same-name checks dedupe to the latest run per name
-      # (wait-for-duplicates=false). macos-spillover-probe (EXPERIMENT,
-      # non-blocking) and native-smoke stay outside the gate by regexp design.
+      # (wait-for-duplicates=false). native-smoke stays outside the gate by
+      # regexp design; macOS coverage rides the blocking ship-gate matrix leg
+      # (restored via the #16 promotion — the retired spillover probe never
+      # matched the regexp, and the matrix leg always did).
       - name: wait for ci + ship-gate on the ledger commit (pre-tag only)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}
         uses: lewagon/wait-on-check-action@369769072fe522a3a8a85c03c96af1e5242a1994 # v1.9.1

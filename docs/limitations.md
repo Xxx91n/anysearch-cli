@@ -65,18 +65,29 @@
 - **Tavily does not forward `AbortSignal`** — provider-side timeouts are not
   cancelable through the SDK (recorded limitation; the kernel budget guard
   still bounds wall time).
-- **macOS is outside the blocking matrix** — an exit-time `libc++abi` crash
-  remains unresolved, so `ship-gate` gates on ubuntu+windows while a
-  non-blocking `macos-spillover-probe` job replays a minimal repro each push
-  (promotion rule: ≥5 consecutive green probes before restoring the lane).
+- **macOS blocking-matrix prune is lifted (#16)** — the exit-time `libc++abi`
+  family was fixed at the teardown seam (explicit teardown replaced the racy
+  `process.exit`, fd249d41) and stopped reproducing: after the #107 probe-path
+  fix the non-blocking `macos-spillover-probe` job ran the full chain
+  (registration → build → exit-probe) with zero crash signatures — seven
+  consecutive completed runs green (41840345806…41850289669, 2026-11-04),
+  meeting the promotion rule (≥5 consecutive green probes).
+  `macos-latest` is restored to the blocking `ship-gate` matrix and the probe
+  job is retired with its TTL. If the family re-manifests, prune the lane
+  again and re-probe per the rule recorded here — the retired probe
+  job/script must be recovered from git history (last present at 73ada6b0).
 - **Exit-time `libc++abi` can overwrite the abstain exit code** — observed on
   Windows: the teardown crash may replace the `3` that `--fail-on-abstain`
   produced. Automation must read the structured abstain marker (`--json`
   `abstain` field / MCP `structuredContent.abstain`), not the exit code alone.
-- **macOS probe data point #1 is a registration-segment red** — the first
-  non-blocking probe run (34927388026) failed at the `better-sqlite3`
-  registration check (load-time family, distinct from the exit-time family
-  under probe). The ≥5-consecutive-green promotion clock counts from #1.
+- **macOS probe data point #1 was a registration-segment red (probe defect,
+  closed)** — the 20-run red streak (first: 34927388026) failed at the
+  `better-sqlite3` registration check because the check ran from the repo
+  root under pnpm's strict layout (`MODULE_NOT_FOUND`, load-time family,
+  distinct from the exit-time family under probe and never reaching it) — a
+  probe defect, not the F-16 family. Fixed by #121 (`working-directory:
+  packages/store`); the promotion clock it anchored is closed by the #16
+  lane restoration.
 - **Page-level assertions sit at page-family granularity** — providers
   rotate URL paths (`/zh/` locale, `/10.x` version, dated
   `/specification/<date>/` variants), so live golden entries assert
@@ -180,3 +191,5 @@
 - **Exa envelope `usage` is always `undefined`** — `exa-js` returns cost only
   per-call (`costDollars`) and offers no standalone usage API, so `usage()`
   is unimplemented (contract field is optional).
+
+> AI生成

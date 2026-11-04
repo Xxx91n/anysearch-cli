@@ -47,7 +47,8 @@ assert(!release.includes("--decision"), "release.yml delegates the decision flag
 // --- 3. ship-gate.yml aligned on Node 22 (ledger 4) ------------------
 const shipGateYml = read(".github/workflows/ship-gate.yml");
 assert(!shipGateYml.includes("node-version: 24"), "ship-gate.yml must not pin Node 24");
-// added a third job (macos-spillover-probe, non-blocking) — assert EVERY
+// the macOS spillover probe was a third job until its TTL retired with the
+// #16 promotion (macos-latest restored to the blocking matrix) — assert EVERY
 // node-version pin is 22 rather than a fixed job count (no 24, no other version).
 const pins = shipGateYml.match(/node-version: \d+/g) ?? [];
 assert(pins.length >= 2 && pins.every((p) => p === "node-version: 22"), "every ship-gate.yml job pins Node 22 (" + pins.join(", ") + ")");

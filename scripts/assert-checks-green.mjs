@@ -28,8 +28,10 @@
 // conclusion (e.g. "stale") is neither bad nor pending, and must NOT be
 // counted as green — it converges to the fail-closed completion-timeout
 // leg instead.
-// - macos-spillover-probe (EXPERIMENT, non-blocking) and native-smoke are
-// deliberately outside the gate.
+// - native-smoke is deliberately outside the gate. macOS rides the blocking
+// ship-gate matrix leg (restored via the #16 promotion) and is therefore
+// inside the gate; the non-blocking macos-spillover probe that used to sit
+// outside it was retired with its TTL.
 //
 // Usage: node scripts/assert-checks-green.mjs --sha <sha> [--once]
 // [--timeout-min 10] [--discovery-sec 120] [--interval-sec 20]
