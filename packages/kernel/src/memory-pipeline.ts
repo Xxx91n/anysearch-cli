@@ -10,6 +10,13 @@ import { generateSummaryWithUsage } from "@earendil-works/pi-agent-core";
 // reuse summary engine only, NOT compact window management.
 // Own constant so upstream window-management namespace changes cannot break L0.
 const COMPACTION_RESERVE_TOKENS = 16_384;
+
+// Upper bound for the background summarization call. It is fire-and-forget
+// during a turn but the owning composition root drains it before closing the
+// store (#129), so an unbounded provider stall would hold the CLI open until the
+// provider times out. Aborting is a normal fire-and-forget failure: the next turn
+// simply tries again.
+const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
 import { RagAdapterRegistry, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS } from "./rag-adapter";
@@ -122,6 +129,7 @@ export async function adjudicateReuseCompress(
   model: any,
   gapDistillation: string,
   existingSummary: string | undefined,
+  signal?: AbortSignal,
 ): Promise<"reuse" | "compress"> {
   const prompt = [
     "You are a memory adjudicator for a research agent.",
@@ -147,7 +155,7 @@ export async function adjudicateReuseCompress(
 
   let text = "";
   try {
-    const stream = streamFn(model, context, {});
+    const stream = streamFn(model, context, signal ? { signal } : {});
     for await (const event of stream) {
       if (event?.type === "text" && event.text) text += event.text;
     }
@@ -441,7 +449,7 @@ export class MemoryPipeline {
             generateSummaryWithUsage(
               messages, modelsObj, actualModel,
               COMPACTION_RESERVE_TOKENS,
-              undefined,
+              AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS),
               IR_CUSTOM_INSTRUCTIONS,
               previousSummary,
               "off",
@@ -478,7 +486,7 @@ export class MemoryPipeline {
           gapValid = false;
         }
         if (gapValid) this.track(
-          adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary)
+          adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary, AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS))
             .then((adjDecision: "reuse" | "compress") => {
               if (adjDecision === "compress") {
                 fireCompress();

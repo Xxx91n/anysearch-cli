@@ -920,6 +920,55 @@ console.log("---");
       try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* Windows WAL lock */ }
     }
   }
+
+  // A store whose append() rejects must not crash the run: append is async, so
+  // an un-awaited rejection escapes the old try/catch and terminates Node >= 15.
+  {
+    let appendCalls = 0;
+    const store = {
+      getAnchors: () => [], saveAnchor: () => Promise.resolve(),
+      createSession: (d: string) => ({ id: "s1", domain: d, createdAt: "" }),
+      ensureSession: () => Promise.resolve(),
+      append: () => { appendCalls += 1; return Promise.reject(new Error("write blocked")); },
+      searchFts5: () => [], searchMemory: async () => [],
+      saveResults: () => Promise.resolve(), close: () => {},
+      listPreferences: async () => [],
+    } as any;
+    const origWrite = process.stderr.write;
+    let captured = "";
+    process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+    const errors: any[] = [];
+    // Two assistant turns so "later messages are still attempted" is observable.
+    const twoTurnStreamFn = (_model: any, _ctx: any, _o?: any) => {
+      const finalMessage = {
+        role: "assistant",
+        content: [{ type: "text", text: "answer" }],
+        api: "test", provider: "test", model: "test-model",
+        usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        stopReason: "stop", timestamp: Date.now(),
+      };
+      return {
+        async *[Symbol.asyncIterator]() { yield { type: "done", message: finalMessage, partial: finalMessage }; },
+        result: async () => finalMessage,
+      };
+    };
+    try {
+      const runtime = new PiAgentRuntime({
+        retriever: new MockRetriever(),
+        domain: { ...mockDomain, rag: { adapter: "none" } },
+        model: { id: "test-model", provider: "test" } as any,
+        streamFn: twoTurnStreamFn,
+        store,
+        sessionId: "s-append-fail",
+      });
+      for await (const ev of runtime.run("hello")) if (ev.type === "error") errors.push(ev);
+    } finally {
+      process.stderr.write = origWrite;
+    }
+    assert(errors.length === 0, "#129 append failure: the run still completes (no unhandled rejection)");
+    assert(appendCalls > 1, "#129 append failure: later messages are still attempted after a failure");
+    assert(/FTS5 sync warning: write blocked/.test(captured), "#129 append failure: the failure is reported");
+  }
 }
 
 console.log("---");

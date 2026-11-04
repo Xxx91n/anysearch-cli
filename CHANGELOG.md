@@ -20,6 +20,9 @@ All notable changes to this project are recorded here. Format follows
 ### Fixed（评论返修，PR #136）
 
 - **L1/L2 注入在 block 形状下会丢失用户问题**：Stage-1/T0 已改用形状感知 helper，但 L1/L2 仍按 `typeof content === "string"` 取文本——pi-agent-core 会把 `prompt("…")` 规范化为 content block 数组，因此一旦有锚点，用户问题会被整体替换成注入文本。现改用 `readMessageText` / `appendMessageText`，无文本通道时主动放弃注入。此路径在本票前不可达（pipeline 从未构造），接线后才成为真实风险，故属本票范围。回归：`memory-pipeline.test.ts` 的 block 形状与纯图片轮用例。
+- **`store.append` 未 await 的 rejection 会终止进程**：同一原因——路径原本不可达，接线后才启用。`append` 是 async，未 await 的 rejection 不被外层 `try/catch` 捕获，Node ≥15 默认终止进程且消息丢失。改为逐条 await + 独立 try，单条失败不影响后续消息并走既有告警。回归：`pi-runtime.test.ts` 的 append-reject 用例。
+- **后台摘要/裁决调用无上限**：`flush()` 会等待它们，慢 provider 能把 CLI 退出拖到 provider 超时。压缩调用改用 `AbortSignal.timeout(90s)`，裁决调用把 signal 透传给 `streamFn`；超时按 fire-and-forget 失败处理（下一轮重试），`flush()` 仍是完整 drain、不提前放弃写入。
+- **会话锚点写入失败曾静默**：`readSessionId()` 在锚点文件写失败时仍返回新 id 但不报告，下次运行会换 id、读不到旧锚点。现在 catch 分支输出一行告警（建议设 `ANS_SESSION_ID` 或让目录可写），fail-open 语义不变。回归：`session-id-propagation.test.ts`。
 
 ### Documented
 

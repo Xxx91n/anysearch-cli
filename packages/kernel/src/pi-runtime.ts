@@ -590,20 +590,24 @@ export class PiAgentRuntime {
 
     // decision 6: dual session — sync to FTS5 store.
     if (this.opts.store) {
-      try {
-        const messages = (agent as any).state?.messages || [];
-        for (const msg of messages) {
-          this.opts.store.append(sessionId || "default", {
+      // append() is async: an un-awaited rejection is NOT caught by the
+      // surrounding try/catch and can terminate the process on Node >= 15, and
+      // the message is lost anyway. Each write gets its own try so one failure
+      // does not stop the remaining messages.
+      const messages = (agent as any).state?.messages || [];
+      for (const msg of messages) {
+        try {
+          await this.opts.store.append(sessionId || "default", {
             role: msg.role || "assistant",
             content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
             timestamp: Date.now(),
           } as any);
-        }
-      } catch (e) {
-        // ponytail: FTS5 sync is best-effort, don't block agent on store failure.
-        // But log the error so it's not silently swallowed (debt fix).
-        if (typeof process !== "undefined" && process.stderr) {
-          process.stderr.write("[anysearch] FTS5 sync warning: " + (e instanceof Error ? e.message : String(e)) + "\n");
+        } catch (e) {
+          // ponytail: FTS5 sync is best-effort, don't block agent on store failure.
+          // But log the error so it's not silently swallowed (debt fix).
+          if (typeof process !== "undefined" && process.stderr) {
+            process.stderr.write("[anysearch] FTS5 sync warning: " + (e instanceof Error ? e.message : String(e)) + "\n");
+          }
         }
       }
     }
