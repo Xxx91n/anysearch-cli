@@ -794,6 +794,99 @@ test("a lock from a previous boot is reclaimed as dead", async (t) => {
   assert.deepEqual(Object.keys(f.manifest().skills).sort(), ["beta", "demo"]);
 });
 
+/** Wait until the OS reports the pid as gone (a killed child can linger briefly). */
+async function waitUntilGone(pid: number): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail(`pid ${pid} is still reported alive after SIGKILL`);
+}
+
+// #147: every other reclaim test plants the lock with `plantLock`, which writes
+// the owner into an already-published directory — the shape an older build left
+// behind. The shipped installer never produces that: `createLockDirectory` fills
+// a `.installed.lock.pending-XXXXXX` staging directory and publishes it with one
+// rename, so a crash inside the critical section leaves a *published* lock whose
+// owner record is readable. This test reproduces that exact publication order in
+// a child process, kills it there, and hands the wreckage to a real `install`.
+test("a lock left by a SIGKILLed holder is reclaimed by the next install", async (t) => {
+  const f = fixture(t);
+  const dir = f.source("alpha");
+  const managed = managedSkillsRoot(f.opts);
+  mkdirSync(managed, { recursive: true });
+
+  // The child reproduces the real publication order: pending directory → owner
+  // record → one rename. It then blocks forever inside the critical section, so
+  // the SIGKILL below is the only exit path and no cleanup code ever runs.
+  const script = [
+    'const fs = require("node:fs"), os = require("node:os"), path = require("node:path");',
+    "const managed = process.env.ANS_TEST_MANAGED;",
+    'const pending = fs.mkdtempSync(path.join(managed, ".installed.lock.pending-"));',
+    // All-or-nothing, like pidIdentity(): a failed /proc read must drop both identity
+    // fields and still publish, not abort before the lock exists and fail the test.
+    "let identity;",
+    'if (process.platform === "linux") {',
+    "  try {",
+    '    const bootId = fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();',
+    '    const namespace = fs.readlinkSync("/proc/self/ns/pid");',
+    "    if (bootId && namespace) identity = { bootId, namespace };",
+    "  } catch {}",
+    "}",
+    'fs.writeFileSync(path.join(pending, "owner.json"), JSON.stringify({',
+    '  token: "killed", pid: process.pid, host: os.hostname(), startedAt: new Date().toISOString(),',
+    "  ...(identity ?? {}),",
+    "}), { encoding: \"utf8\", flag: \"wx\", mode: 0o600 });",
+    'fs.renameSync(pending, path.join(managed, ".installed.lock"));',
+    'process.stdout.write("locked\\n");',
+    "setInterval(() => {}, 1000);",
+  ].join("\n");
+
+  const child = spawn(process.execPath, ["-e", script], {
+    env: { ...process.env, ANS_TEST_MANAGED: managed },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  t.after(() => {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  });
+  const holder = child.pid;
+  assert.ok(holder, "the lock holder must report a pid");
+
+  await new Promise<void>((resolve, reject) => {
+    let output = "";
+    child.stdout?.on("data", (chunk) => {
+      output += String(chunk);
+      if (output.includes("locked")) resolve();
+    });
+    child.on("error", reject);
+    child.on("exit", (code) => reject(new Error(`the holder exited before signalling: ${String(code)}`)));
+  });
+  // Armed before the signal: a child that dies between the two lines above would
+  // otherwise never emit the `exit` we are waiting for.
+  const killed = new Promise<void>((resolve) => child.on("exit", () => resolve()));
+  child.kill("SIGKILL");
+  await killed;
+  await waitUntilGone(holder);
+
+  // The killed run really left a published lock behind, owned by a pid that is gone.
+  const lock = join(managed, ".installed.lock");
+  assert.equal(JSON.parse(readFileSync(join(lock, "owner.json"), "utf8")).pid, holder);
+  assert.ok(existsSync(lock));
+
+  const installed = await f.run(["install", dir]);
+  assert.equal(installed.code, 0, installed.stderr);
+  assert.equal(f.manifest().skills.alpha.name, "alpha", "the reclaimer published its own entry");
+  assert.deepEqual(
+    readdirSync(managed).filter((entry) => entry !== "installed.json" && entry !== "alpha"),
+    [],
+    "no lock, pending directory, quarantine or staging residue survives the reclaim",
+  );
+});
+
 test("a dead unpublished lock is cleaned during reconciliation", async (t) => {
   const f = fixture(t);
   const managed = managedSkillsRoot(f.opts);
