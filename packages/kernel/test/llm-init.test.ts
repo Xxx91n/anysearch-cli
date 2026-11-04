@@ -35,20 +35,18 @@ ok(s.models && typeof s.models.getModel === "function", "models registry returne
 ok(s.apiKey === undefined, "kernel never mirrors provider env into the session (step 7; pi-ai owns provider auth)");
 
 // #113: contextWindow passthrough — the L0 watermark resolves {fraction}
-// against this value. Catalog window is overridable per session, no leak.
+// against the REAL window. Catalog models expose their catalog value; the
+// option is custom-endpoint-only (no catalog override in this ticket).
 const catalog = await createLlmSession({ provider: "openai", model: "gpt-5" });
 const catalogWindow = catalog.model.contextWindow;
 ok(typeof catalogWindow === "number" && catalogWindow > 0, "#113: catalog model carries a context window");
-const wide = await createLlmSession({ provider: "openai", model: "gpt-5", contextWindow: catalogWindow + 1000 });
-ok(wide.model.contextWindow === catalogWindow + 1000, "#113: explicit contextWindow overrides the catalog window");
-const again = await createLlmSession({ provider: "openai", model: "gpt-5" });
-ok(again.model.contextWindow === catalogWindow, "#113: contextWindow override does not leak into a later session");
+ok(catalog.contextWindow === catalogWindow, "#113: catalog LlmSession exposes the real window");
 
 // Composition-root parser: kernel never reads env; roots pass the raw value.
 ok(parseContextWindow(undefined) === undefined, "#113: unset context window -> undefined");
 ok(parseContextWindow("  ") === undefined, "#113: blank context window -> undefined");
 ok(parseContextWindow("1000000") === 1000000, "#113: numeric context window parsed");
-for (const bad of ["abc", "0", "-1", "NaN"]) {
+for (const bad of ["abc", "0", "-1", "NaN", "0.5"]) {
   let threwCw = false;
   try { parseContextWindow(bad); } catch { threwCw = true; }
   ok(threwCw, "#113: malformed context window fails fast: " + bad);
@@ -126,13 +124,19 @@ ok(threw3, "baseUrl without api kind throws (no protocol sniffing)");
 // #113: custom endpoints carry no catalog metadata; absent contextWindow keeps
 // the historical 128000, explicit values pass through to session.model.
 const stubDefault = await createLlmSession({ provider: "stub", model: "stub-model", baseUrl: "http://127.0.0.1:1/v1", api: "chat" });
-ok(stubDefault.model.contextWindow === 128000, "#113: custom endpoint default window stays 128000");
+ok(stubDefault.model.contextWindow === 128000, "#113: custom endpoint default model window stays 128000");
+ok(stubDefault.contextWindow === undefined, "#113: unset custom window stays UNKNOWN (not the 128000 placeholder)");
 const stubWide = await createLlmSession({ provider: "stub", model: "stub-model", baseUrl: "http://127.0.0.1:1/v1", api: "chat", contextWindow: 2_000_000 });
-ok(stubWide.model.contextWindow === 2_000_000, "#113: custom endpoint contextWindow passes through");
+ok(stubWide.model.contextWindow === 2_000_000, "#113: custom endpoint contextWindow passes through to the model");
+ok(stubWide.contextWindow === 2_000_000, "#113: LlmSession exposes the declared custom window");
 let threwCw = false;
 try { await createLlmSession({ provider: "stub", model: "stub-model", baseUrl: "http://127.0.0.1:1/v1", api: "chat", contextWindow: -1 }); }
 catch (e: any) { threwCw = /contextWindow/.test(String(e?.message)); }
 ok(threwCw, "#113: invalid LlmSessionOptions.contextWindow fails fast");
+let threwFractional = false;
+try { await createLlmSession({ provider: "stub", model: "stub-model", baseUrl: "http://127.0.0.1:1/v1", api: "chat", contextWindow: 0.5 }); }
+catch (e: any) { threwFractional = /contextWindow/.test(String(e?.message)); }
+ok(threwFractional, "#113: fractional contextWindow floors to 0 and fails fast");
 
 for (const kind of ["chat", "messages", "responses"] as LlmEndpointKind[]) {
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {

@@ -23,18 +23,16 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     model: string;
     baseUrl?: string;
     api?: string;
-    contextWindow?: number;
     modelOverride?: string;
   }): string {
     // Structured tuple prevents ambiguous "/" collisions: distinct configs can no longer
     // produce the same string (e.g. model="a/b", baseUrl="c" vs model="a", baseUrl="b/c").
     // JSON array serialization is deterministic and collision-free for these fields.
-    // #113: contextWindow is wire-affecting (L0 watermark scale), so it joins the key.
-    const tuple: string[] = [opts.provider, opts.model, opts.baseUrl ?? "", opts.api ?? "", opts.contextWindow === undefined ? "" : String(opts.contextWindow)];
+    const tuple: string[] = [opts.provider, opts.model, opts.baseUrl ?? "", opts.api ?? ""];
     // Reserve for per-request model override: independent segment + independent Map slot.
     // Must not overwrite the env-keyed default slot — one override would pollute all later default calls (T5 #91).
     // An extra tuple element keeps the default key stable and guarantees no collision with
-    // provider/model/baseUrl/api/contextWindow values (they are always the first five elements).
+    // provider/model/baseUrl/api values (they are always the first four elements).
     if (opts.modelOverride) {
       tuple.push(opts.modelOverride);
     }
@@ -67,7 +65,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     // as a tiebreaker for this case.
     const baseUrlFingerprint = baseUrl ? createHash("sha256").update(baseUrl).digest("hex") : "";
     // Wire-affecting config only; secret material never enters cache key (assertion below).
-    const key = buildCacheKey({ provider: providerName, model: modelName, baseUrl: baseUrlFingerprint, api, contextWindow, modelOverride });
+    const key = buildCacheKey({ provider: providerName, model: modelName, baseUrl: baseUrlFingerprint, api, modelOverride });
 
     // Assertion: cache key must not contain secret material. Key is built only from
     // provider+model+baseUrlFingerprint+api (+ optional override segment); keyHash/apiKey are separate.
@@ -120,6 +118,9 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
             domain,
             domainTomlPath: domainTomlPath(),
             model: session.model,
+            // #113: real window for the L0 watermark; undefined for an
+            // unconfigured custom endpoint -> absolute 128000 fallback.
+            contextWindow: session.contextWindow,
             streamFn: session.streamFn,
             models: session.models,
             getApiKey: async () => session.apiKey,

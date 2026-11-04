@@ -115,6 +115,9 @@ export async function runChat(argv: string[]): Promise<number> {
     // CLI is the TTY composition root; kernel decides isInteractive itself.
     interactive: !process.env.ANS_NO_INTERACTIVE,
     model: session.model,
+    // #113: real window for the L0 watermark; undefined for an unconfigured
+    // custom endpoint -> absolute 128000 fallback.
+    contextWindow: session.contextWindow,
     streamFn: session.streamFn,
     models: session.models,
     getApiKey: async () => session.apiKey,

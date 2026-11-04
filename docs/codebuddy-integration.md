@@ -30,6 +30,9 @@ Set at OS/user level — never written into config files:
 - `ANS_LLM_PROVIDER` + `ANS_LLM_MODEL` — required by `ans_chat`; for a
   custom endpoint the provider id is arbitrary (`custom` works) and the
   model must be an id the upstream serves (check `GET <base>/models`)
+- `ANS_LLM_CONTEXT_WINDOW` — optional real model window (tokens) for custom
+  endpoints; used by the L0 `{fraction}` watermark. Unset = unknown window →
+  absolute 128000 fallback
 - `EXA_API_KEY` / `TAVILY_API_KEY` — retrieval providers
 
 ## 3. Plugin server (once per machine)

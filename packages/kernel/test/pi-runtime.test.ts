@@ -3,8 +3,8 @@
 // ponytail: no test framework, assert-based demo.
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
-import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals, resetWiringWarnings } from "../src/pi-runtime";
-import { distillGap, adjudicateReuseCompress } from "../src/memory-pipeline";
+import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals, resetWiringWarnings, resolveContextOccupancy } from "../src/pi-runtime";
+import { distillGap, adjudicateReuseCompress, consolidateState } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
 import { SqliteSessionStore } from "@anysearch-cli/store";
@@ -179,13 +179,9 @@ test: {
   assert(sections[2] === "Rejected Sources", "D5: section 3 is Rejected Sources");
 }
 
-// D3/#113: the absolute 128K is now only the unknown-window fallback; a
-// configured {fraction} scales with session.model.contextWindow (covered by
-// memory-pipeline.test.ts).
-{
-  const FALLBACK_LOW_WATERMARK = 128000;
-  assert(FALLBACK_LOW_WATERMARK === 128000, "#113: unknown-window fallback 128K tokens");
-}
+// D3/#113: the absolute 128K is only the unknown-window fallback now; a
+// configured {fraction} scales with the real window. Covered by
+// memory-pipeline.test.ts (resolveLowWatermark / consolidateState).
 
 // D7: compaction config field exists in DomainConfigPort.
 {
@@ -447,6 +443,32 @@ function makeMockStreamFn(decision: string): any {
   // occupancy (latest call), not cumulative run spend — cumulative is monotonic
   // and would permanently trip the watermark once crossed.
   assert(totals.lastTotalTokens === 240, "#103: lastTotalTokens tracks latest call only (context watermark input)");
+}
+
+// #113: watermark input = max(last usage, trailing-message estimate), so a
+// large tool result appended after the last assistant call is counted before
+// the next provider request (the one-turn lag CodeRabbit flagged on PR #114).
+{
+  const messages = [
+    { role: "user", content: "q" },
+    { role: "assistant", content: [{ type: "tool_use", name: "search", input: { query: "q" } }] },
+    // ~80K chars -> ~20K estimated tokens, far above the 100 usage figure.
+    { role: "toolResult", content: [{ type: "text", text: "x".repeat(80000) }] },
+  ];
+  const occupancy = resolveContextOccupancy(100, messages as any);
+  assert(occupancy > 1000, "#113: large tool result is included in occupancy (usage-only would be 100)");
+  assert(resolveContextOccupancy(200000, messages as any) === 200000,
+    "#113: max() keeps the larger provider usage figure");
+  assert(resolveContextOccupancy(0, []) === 0, "#113: no usage + no messages -> 0");
+  // End-to-end shape: with a 1M window and a 1% fraction, the estimated
+  // occupancy alone crosses the watermark even though lastTotalTokens is tiny.
+  const decision = consolidateState(
+    { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 },
+    messages as any, occupancy, false,
+    { lowWatermark: { fraction: 0.01 }, contextWindow: 1_000_000 },
+  );
+  assert(decision.decision === "compress",
+    "#113: large-tool-result occupancy alone triggers compression (no post-search path required)");
 }
 
 // accumulateUsage: totalTokens falls back to input+output when absent.

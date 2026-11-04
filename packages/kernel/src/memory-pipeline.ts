@@ -52,6 +52,14 @@ export interface MemoryPipelineDeps {
   sessionId: string;
   getApiKey?: () => Promise<string | undefined> | undefined;
   providerName?: string;
+  /**
+   * #113: REAL model context window in tokens, or undefined when unknown
+   * (custom endpoint without LlmSessionOptions.contextWindow). Must NOT be
+   * derived from model.contextWindow — pi-ai always carries a number there
+   * (128000 placeholder for custom endpoints), which would turn "unknown"
+   * into "known 128K" and scale `{fraction}` by the placeholder.
+   */
+  contextWindow?: number;
   // S1 LLM rewrite seam. When omitted, L2 recall degrades to single-query mode (fail-open).
   llmRewriteFn?: LlmRewriteFn;
 }
@@ -207,7 +215,7 @@ export function resolveLowWatermark(
   }
   const window = Number(contextWindow);
   if (!Number.isFinite(window) || window <= 0) return FALLBACK_LOW_WATERMARK_TOKENS;
-  // Floor keeps the trigger conservative (never earlier than the fraction);
+  // Floor keeps the trigger conservative (never later than the exact fraction);
   // max(1) avoids a degenerate zero watermark on a pathological tiny window.
   return Math.max(1, Math.floor(fraction * window));
 }
@@ -223,17 +231,13 @@ export function consolidateState(
   const REUSE_CAP = opts?.reuseCap ?? 3;
   const msgCountAtTrigger = messages.length; // local const for race-safe gap anchor update.
 
-  // #113 ruling (issue comment, 2026-11-03): the watermark keeps comparing the
-  // usage-event occupancy (pi-runtime passes `lastTotalTokens`), NOT a
-  // message-level token estimate. A tool result appended after the last
-  // assistant call can therefore lag the check by one turn. That window is
-  // explicitly exempted here because: (a) every current composition root wires
-  // no extra tools beyond the built-in `search`, so a large tool-result turn
-  // always carries retrieval evidence and takes the post-search path below —
-  // which gives compression a chance regardless of the watermark; (b) kernel
-  // has no token estimator, and decision #90 fixes the metering source to usage
-  // events. If a future root adds non-search tools, that root must either pass
-  // evidence or revisit this ruling (tracked in #113).
+  // #113 ruling (issue comment, 2026-11-03): the watermark compares CURRENT
+  // context occupancy — `max(lastUsage, estimateContextTokens(messages))`
+  // computed by pi-runtime — not cumulative run spend (#90 keeps usage as the
+  // metering source; the trailing estimate only covers messages appended after
+  // the last provider call). This closes the one-turn lag after a large tool
+  // result, which `lastTotalTokens` alone would miss (CodeRabbit review on
+  // PR #114).
   const triggerLowWatermark = totalTokens > LOW_WATERMARK_TOKENS;
   const triggerPostSearch = hasRetrievalEvidence && messages.length > 4;
 
@@ -454,15 +458,15 @@ export class MemoryPipeline {
       } catch {}
 
       // D8: Call pure function for decision; inject compaction opts.
-      // #113: {fraction} now resolves against the model window carried on
-      // session.model.contextWindow (pi-ai catalog). Unknown window (custom
-      // endpoint without LlmSessionOptions.contextWindow) falls back to 128000.
-      // Malformed shapes still throw (resolveLowWatermark), never silently
-      // degrade; domain validation is the primary fail-fast gate.
+      // #113: {fraction} resolves against the REAL model window carried by
+      // LlmSession.contextWindow. Unknown window (custom endpoint without
+      // LlmSessionOptions.contextWindow) falls back to 128000. Malformed shapes
+      // still throw (resolveLowWatermark), never silently degrade; domain
+      // validation is the primary fail-fast gate.
       const compactionCfg = domain.compaction;
       const result = consolidateState(state, messages, totalTokens, hasRetrievalEvidence, {
         lowWatermark: compactionCfg?.lowWatermark,
-        contextWindow: Number((model as any)?.contextWindow) || undefined,
+        contextWindow: this.deps.contextWindow,
         reuseCap: compactionCfg?.reuseCap,
       });
 

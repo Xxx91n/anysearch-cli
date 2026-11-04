@@ -417,21 +417,25 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
   assert(true, "hasRetrievalEvidence: triggers consolidation without throw");
 }
 
-// #113 shell: domain.compaction {fraction} resolves against session.model.contextWindow.
-// A trigger writes consolidation_state; a skip returns before any anchor write.
+// #113 shell: domain.compaction {fraction} resolves against the REAL window
+// passed by the composition root (LlmSession.contextWindow). A trigger writes
+// consolidation_state; a skip returns before any anchor write.
 {
   const store = new MockStore();
   const pipeline = new MemoryPipeline({
     store: store as any,
     retriever: new MockRetriever(),
     domain: { ...mockDomain, compaction: { lowWatermark: { fraction: 0.1 } } },
-    model: { id: "wide", contextWindow: 1_000_000 } as any,
+    model: { id: "wide" } as any,
+    contextWindow: 1_000_000,
     streamFn: mockStreamFn("reuse"),
     sessionId: "s1",
   });
-  await pipeline.consolidate(["m1", "m2", "m3", "m4", "m5"] as any, 150000, false);
+  // 120000 sits between 0.1 x 1M (100000) and the old 128000 absolute, so this
+  // assertion actually distinguishes the new behaviour from the old one.
+  await pipeline.consolidate(["m1", "m2", "m3", "m4", "m5"] as any, 120000, false);
   assert(store.saveAnchorCalls.some(c => c.type === "consolidation_state"),
-    "#113 shell: 0.1 x 1M resolves to 100K and triggers at 150K (old absolute would skip)");
+    "#113 shell: 0.1 x 1M resolves to 100K and triggers at 120K (old 128K would skip)");
 }
 {
   const store = new MockStore();
@@ -439,13 +443,30 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
     store: store as any,
     retriever: new MockRetriever(),
     domain: { ...mockDomain, compaction: { lowWatermark: { fraction: 0.5 } } },
-    model: { id: "wide", contextWindow: 1_000_000 } as any,
+    model: { id: "wide" } as any,
+    contextWindow: 1_000_000,
     streamFn: mockStreamFn("reuse"),
     sessionId: "s1",
   });
-  await pipeline.consolidate(["m1", "m2", "m3", "m4", "m5"] as any, 150000, false);
+  await pipeline.consolidate(["m1", "m2", "m3", "m4", "m5"] as any, 120000, false);
   assert(!store.saveAnchorCalls.some(c => c.type === "consolidation_state"),
-    "#113 shell: 0.5 x 1M resolves to 500K and skips at 150K");
+    "#113 shell: 0.5 x 1M resolves to 500K and skips at 120K");
+}
+// Unknown window must use the ABSOLUTE 128000 watermark, never scale the
+// custom endpoint's 128000 placeholder into 12800 (AC2).
+{
+  const store = new MockStore();
+  const pipeline = new MemoryPipeline({
+    store: store as any,
+    retriever: new MockRetriever(),
+    domain: { ...mockDomain, compaction: { lowWatermark: { fraction: 0.1 } } },
+    model: { id: "custom", contextWindow: 128000 } as any, // pi-ai placeholder, NOT a known window
+    streamFn: mockStreamFn("reuse"),
+    sessionId: "s1",
+  });
+  await pipeline.consolidate(["m1", "m2", "m3", "m4", "m5"] as any, 15000, false);
+  assert(!store.saveAnchorCalls.some(c => c.type === "consolidation_state"),
+    "#113 shell: unknown window falls back to 128K watermark (15000 must skip)");
 }
 
 // Test: L2 FTS5 recall writes l2_recall anchor.
@@ -642,7 +663,7 @@ console.log(`MemoryPipeline tests: ${passed} passed, ${failed} failed`);
   const r = consolidateState(state, ["m1","m2","m3"], 60000, false, { lowWatermark: 50000 });
   assertPure(r.decision === "compress", "pure: opts.lowWatermark=50000 forces compress at 60K");
 }
-// fraction is resolved at caller; pure fn only sees absolute number.
+// fraction is resolved inside the pure fn (#113); absolute numbers unchanged.
 // Verify that with default watermark (128000) and 60K totalTokens, no trigger fires.
 {
   const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
@@ -658,8 +679,7 @@ console.log(`MemoryPipeline tests: ${passed} passed, ${failed} failed`);
   assertPure(r.state.consecutiveReuses === 0, "pure: cap-forced compress resets consecutiveReuses");
 }
 
-// {fraction} in TOML is currently rejected at caller, not pure fn.
-// Pure fn must still accept absolute lowWatermark; assert opts pass-through wins.
+// absolute lowWatermark keeps working; opts pass-through wins (#113).
 {
   const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
   const withOpts = consolidateState(state, ["m1"], 60000, false, { lowWatermark: 50000 });
@@ -670,21 +690,30 @@ console.log(`MemoryPipeline tests: ${passed} passed, ${failed} failed`);
 
 // === #113: fraction × contextWindow watermark ===
 // A 1M-window model must not use the historical 128K absolute: 0.1 × 1M = 100K,
-// so 150K compresses while the old absolute would have skipped.
+// so 120K compresses while the old absolute would skip.
 {
   const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
-  const r = consolidateState(state, ["m1", "m2", "m3"], 150000, false, {
+  const r = consolidateState(state, ["m1", "m2", "m3"], 120000, false, {
     lowWatermark: { fraction: 0.1 }, contextWindow: 1_000_000,
   });
-  assertPure(r.decision === "compress", "#113: 0.1 x 1M triggers at 150K (old 128K would skip)");
+  assertPure(r.decision === "compress", "#113: 0.1 x 1M triggers at 120K (old 128K would skip)");
 }
 // Same token count on a 1M window with a higher fraction stays below the line.
 {
   const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
-  const r = consolidateState(state, ["m1", "m2", "m3"], 150000, false, {
+  const r = consolidateState(state, ["m1", "m2", "m3"], 120000, false, {
     lowWatermark: { fraction: 0.5 }, contextWindow: 1_000_000,
   });
   assertPure(r.decision === "skip", "#113: fraction scales with the context window (0.5 x 1M = 500K)");
+}
+// AC1 second half: a 128K model scales too (0.5 x 128K = 64K).
+{
+  assertPure(resolveLowWatermark({ fraction: 0.5 }, 128000) === 64000, "#113: 128K model @ 0.5 = 64K");
+  const state = { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 };
+  const above = consolidateState(state, ["m1"], 65000, false, { lowWatermark: { fraction: 0.5 }, contextWindow: 128000 });
+  const below = consolidateState(state, ["m1"], 63000, false, { lowWatermark: { fraction: 0.5 }, contextWindow: 128000 });
+  assertPure(above.decision === "compress", "#113: 128K model compresses above 64K");
+  assertPure(below.decision === "skip", "#113: 128K model skips below 64K");
 }
 // Unknown window falls back to the current absolute 128000 — no silent default change.
 {

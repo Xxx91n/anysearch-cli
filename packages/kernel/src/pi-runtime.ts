@@ -8,7 +8,7 @@
 // decision 6: dual session (pi Agent memory + SqliteSessionStore FTS5 sync).
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
-import { Agent } from "@earendil-works/pi-agent-core";
+import { Agent, estimateContextTokens } from "@earendil-works/pi-agent-core";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { appendFileSync, mkdirSync } from "node:fs";
@@ -236,6 +236,8 @@ export interface PiAgentRuntimeOptions {
   sessionId?: string;
   tools?: AgentTool[]; // extra tools beyond search
   getApiKey?: () => Promise<string | undefined>;
+  /** #113: REAL model context window (LlmSession.contextWindow); undefined = unknown. */
+  contextWindow?: number;
   interactive?: boolean; // composition root grants TTY-ask eligibility (headless/MCP omit -> deny-first)
   // caller observation span — retrieval audit events land
   // inside the caller's span events_json (ans_chat / third retrieval surface).
@@ -314,6 +316,19 @@ export function accumulateUsage(totals: UsageTotals, message: unknown): void {
   totals.costUsd += Number(msg.usage.cost?.total) || 0;
 }
 
+// #113: current-context occupancy for the L0 watermark. `lastUsageTokens` is
+// the provider-reported usage of the most recent assistant call; the estimate
+// adds messages appended after that call (tool results, user turns) — exactly
+// the lag window CodeRabbit flagged on PR #114. max() keeps a provider report
+// that is larger than the local estimate from being under-counted.
+export function resolveContextOccupancy(lastUsageTokens: number, messages: any[]): number {
+  let estimated = 0;
+  try {
+    estimated = Number(estimateContextTokens(messages as any)?.tokens) || 0;
+  } catch { /* fail-open: fall back to the usage figure */ }
+  return Math.max(Number(lastUsageTokens) || 0, estimated);
+}
+
 export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
   private readonly domainReloader: (() => unknown) | null;
@@ -348,6 +363,7 @@ export class PiAgentRuntime {
         sessionId: opts.sessionId,
         getApiKey: opts.getApiKey,
         providerName: (opts as any).providerName,
+        contextWindow: opts.contextWindow,
       });
     } else {
       warnMissingMemoryWiring(opts);
@@ -458,13 +474,12 @@ export class PiAgentRuntime {
       // Fires after each assistant turn; async, does not block current turn.
       shouldStopAfterTurn: async (ctx: any) => {
         const messages = (agent as any).state?.messages || [];
-        // #103: real token count from message_end accumulation (the old
-        // onResponse path fed a constant 0 here). The low-watermark check in
-        // consolidate measures current context occupancy, so pass the latest
-        // call's totalTokens — NOT cumulative run spend, which is monotonic
-        // and would permanently trip the watermark once crossed. Cumulative
-        // totals remain ledger-only (settled below after the run).
-        const totalTokens = usageTotals.lastTotalTokens;
+        // #113: current context occupancy, not cumulative run spend. The
+        // usage figure from the last assistant call is combined with a
+        // trailing-message estimate so a tool result appended after that call
+        // is counted before the next provider request. Cumulative totals
+        // remain ledger-only (settled below after the run).
+        const totalTokens = resolveContextOccupancy(usageTotals.lastTotalTokens, messages);
         // 3-line sequential call — evaluate -> applyTo -> consolidate.
         // Claim-ticket pattern: gate.evaluate returns envelope, gate.applyTo injects, pipeline.consolidate consumes.
         const lastTool = ctx?.lastToolName || ctx?.toolName || "";
