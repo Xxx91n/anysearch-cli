@@ -1,9 +1,9 @@
 // query_knowledge tool: RAG adapter dispatch stub.
 // #104 defined RagAdapterPort + the rag.adapter registry, but the agent-loop
-// injection path (MemoryPipeline Stage-1) is where they are wired. This tool
-// still answers with the adapter name: dispatching a knowledge query needs an
-// explicit memory-scope decision (which session/store a domain-wide knowledge
-// query reads), tracked as its own ticket; see docs/limitations.md.
+// injection path (MemoryPipeline Stage-1) is where they are wired.
+// Design: query_knowledge reads the same store-scoped shared Research Memory as
+// recall_memory — no sessionId or domain filter. Wiring the dispatch is #155; see
+// docs/rag-adapters.md §作用域.
 // input validated by AJV.
 
 import type { McpServer } from "@modelcontextprotocol/server";

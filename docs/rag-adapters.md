@@ -88,8 +88,8 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
 ### 为什么不按会话或域过滤（#130）
 
 - **会话级**：要给 `RagAdapterPort` 增加 sessionId 参数（违反 #90 已定的
-  `retrieve(query, limit)` 契约），且 entity / vector / relation 各臂与
-  `semantic_memories` 没有统一的 session 归属。更关键的是 CLI `ans chat`
+  `retrieve(query, limit)` 契约）。Research Memory 的 FTS 命中行虽带 `sessionId`，
+  但 semantic / edge 臂与合并结果没有统一的会话归属。更关键的是 CLI `ans chat`
   目前不写 `retrieval_results`，会话级召回会恒为空。
 - **域级**：`retrieval_results` 没有 domain 列，`sessions.domain` 只写不读，
   MCP 自动索引固定写 `"mcp"`；按域过滤同样恒为空，且需要改写入路径、回填旧行
@@ -166,7 +166,7 @@ pnpm -C packages/kernel test    # test/rag-adapter.test.ts、test/message-text.t
 
 ## 边界（还没做的）
 
-- **`fts` 尚未在任何出厂域启用** —— `domains/default.toml`、`docs.toml`、`research.toml` 仍是 `adapter = "none"`。#130 裁定保持这个默认：启用 `fts` 是显式 opt-in，且要等 #154 的动态热区落点落地后才具备评估条件。
+- **`fts` 尚未在任何出厂域启用** —— `domains/default.toml`、`docs.toml`、`research.toml` 仍是 `adapter = "none"`。#130 裁定保持这个默认：启用 `fts` 是显式 opt-in，属另一项产品决策；#154 只影响其落点质量，不是启用前提。
 - **#131 动态 RAG 热区落点尚未迁入运行时代码** —— 静/动分层约定已定（静态 `note` 留在首条 user 消息末尾、动态 `fts` 按最新一条 user 消息原文检索并迁至其末尾热区），当前 `MemoryPipeline.inject` 仍保持 #104 的首条落点，待 #154 连同 Stage-2 `appendMessageText` 块形状保护与 `rag-adapter.test.ts` 多轮落点断言一并落地。
 - **MCP `query_knowledge` 工具未接本注册表** —— 读取范围已由 #130 定为 store 级共享（与 `recall_memory` 一致），接线见 #155；见 `docs/limitations.md`。
 - **`apps/mcp` 的 `ans_chat` 未把 store 传给 runtime** —— 该路径上 `MemoryPipeline`

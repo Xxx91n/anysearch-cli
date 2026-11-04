@@ -622,16 +622,10 @@ export class SqliteSessionStore implements SessionStore {
   // the external contract — do not consume from apps/ or kernel.
   public lastArmProvenance: ArmProvenance | null = null;
 
-  // Design: Research Memory reads are store-scoped, not session- or domain-scoped
-  // (#130). The store file is the principal boundary (per-user path, localhost-only
-  // MCP; CLI tightens to 0700/0600, MCP cold-start hardening in #156); sessions and
-  // domains are retrieval sub-scopes, and retrieval_results carries no domain
-  // attribution. Session-scoped recall would be empty on the CLI path (it never
-  // writes retrieval_results) and domain-scoped recall would miss the
-  // "mcp"-attributed rows that are the only production writes. If multi-principal
-  // sharing ever appears, record an origin namespace at write time first, then
-  // filter reads — never bolt a read filter onto unlabelled rows. See
-  // docs/rag-adapters.md §作用域.
+  // Design: Research Memory reads are store-scoped, not session- or domain-scoped —
+  // the store is the isolation unit (Store Principal); sessions/domains are retrieval
+  // sub-scopes. See docs/rag-adapters.md §作用域 for the evidence and rejected
+  // alternatives.
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
    const safeQuery = this.fts5Escape(query);
    // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.

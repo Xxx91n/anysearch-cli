@@ -103,7 +103,8 @@
   injection path (MemoryPipeline Stage-1), but the MCP `query_knowledge` tool
   does not dispatch to it yet: it still answers with the `adapter=<id>` line.
   Its read scope is now decided (#130): store-level shared Research Memory, the
-  same range `recall_memory` reads. Wiring the tool is tracked in #155.
+  same internal range `recall_memory` reads (before its project-index fallback).
+  Wiring the tool is tracked in #155.
 - **`rag.adapter = "fts"` reads store-level shared Research Memory (#130)** —
   this is a deliberate boundary, not an open question. `SessionStore.searchMemory`
   queries `retrieval_results_fts` without a session or domain filter (the
@@ -112,11 +113,11 @@
   per-user by path and MCP HTTP binds `127.0.0.1` only. The CLI durable path
   enforces 0700/0600; the MCP cold-start path still inherits the process umask
   (hardening tracked in #156). Sessions and domains are retrieval sub-scopes,
-  not principals. Every shipped
-  domain stays on `adapter = "none"`, so the shared read is opt-in. A deployer
-  that shares one store or one MCP server across users must isolate with
-  separate stores, not expect a read filter. If multi-principal sharing ever
-  appears, attribute origin at write time first, then filter reads.
+  not principals. Every shipped domain stays on `adapter = "none"`, so the
+  shared read is opt-in. A deployer that shares one store or one MCP server
+  across users must isolate with separate stores, not expect a read filter. If
+  multi-principal sharing ever appears, attribute origin at write time first,
+  then filter reads.
 - **`ans_chat` (MCP) has no `MemoryPipeline` at all (#129)** — this is the
   whole memory chain being absent, not a fail-open to `none`. `PiAgentRuntime`
   builds `MemoryPipeline` only when `store` and `sessionId` are BOTH supplied;
