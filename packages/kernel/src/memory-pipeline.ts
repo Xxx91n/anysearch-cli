@@ -280,6 +280,33 @@ export function consolidateState(
   };
 }
 
+// Injection tags written by Stage-1/Stage-2, and the T0 closing tag. `ragQuery`
+// must not search them: #131 requires the PRE-INJECTION latest user text, so a
+// retried/resumed inject() that re-reads its own output has to strip what an
+// earlier pass appended before truncating to RAG_QUERY_MAX_CHARS.
+const INJECTION_TAGS = [RAG_CONTEXT_TAG, "[Session Memory]", "[Research Recall]"] as const;
+const PREFS_CLOSE_TAG = "</user_preferences>";
+
+/**
+ * Recover the user's own text from a message that may already carry injections.
+ *
+ * @param text - Current text channel of the target user message.
+ * @returns The pre-injection original; an unmarked text is returned verbatim
+ *   (no trimming), so a normal turn's whitespace is untouched.
+ */
+function preInjectionQueryText(text: string): string {
+  let body = text;
+  const prefsEnd = body.lastIndexOf(PREFS_CLOSE_TAG);
+  if (prefsEnd >= 0) body = body.slice(prefsEnd + PREFS_CLOSE_TAG.length);
+  let cut = -1;
+  for (const tag of INJECTION_TAGS) {
+    const at = body.indexOf(tag);
+    if (at >= 0 && (cut < 0 || at < cut)) cut = at;
+  }
+  if (prefsEnd < 0 && cut < 0) return text;
+  return (cut >= 0 ? body.slice(0, cut) : body).trim();
+}
+
 export class MemoryPipeline {
   private deps: MemoryPipelineDeps;
   // rag adapter registry (#35): domain.rag.adapter -> adapter, resolved per
@@ -328,14 +355,17 @@ export class MemoryPipeline {
     let result = messages;
 
     // Design: Stage-1 splits RAG placement by volatility (#131, implemented by
-    // #154). Static operator text (`note`, and `none` + leftover `config.note`)
+    // #154) — static operator text (`note`, and `none` + leftover `config.note`)
     // appends to the FIRST user message so the session prefix stays byte-stable
-    // across turns and #104 AC2 holds byte-for-byte. Query-driven adapters
-    // (`fts`, see DYNAMIC_RAG_ADAPTERS) append to the LATEST user message — the
-    // attention hot zone — and key `ragQuery` on that turn's PRE-INJECTION text
-    // (first RAG_QUERY_MAX_CHARS). Keeping dynamic RAG on the first turn would
-    // make follow-up turns recall turn-1 evidence, dilute recency attention, and
-    // invalidate the KV cache prefix from `messages[0]` whenever memory changes.
+    // across turns and #104 AC2 holds byte-for-byte, while query-driven adapters
+    // (`fts`, see DYNAMIC_RAG_ADAPTERS) append to the LATEST user message (the
+    // attention hot zone) and key `ragQuery` on that turn's PRE-INJECTION text
+    // (first RAG_QUERY_MAX_CHARS). Rejected alternative (Option A): keeping
+    // dynamic RAG on the first turn makes follow-up turns recall turn-1 evidence,
+    // dilutes recency attention, and invalidates the KV cache prefix from
+    // `messages[0]` whenever memory changes; moving static `note` to the latest
+    // turn (Option B) breaks #104 AC2; moving L1/L2 to the first turn (Option C)
+    // loses the hot zone.
     // Stage-1 runs before Stage-2 so one message reads `user text ->
     // [RAG Context] -> [Session Memory] -> [Research Recall]`, each tier
     // independently budgeted (4000 / 4000 / 1500 chars).
@@ -360,13 +390,11 @@ export class MemoryPipeline {
       const ragIdx = dynamicRag ? lastUserIdx : firstUserIdx;
       const ragTarget = ragIdx >= 0 ? readMessageText(result[ragIdx]) : null;
       if (ragTarget) {
-        // `ragQuery` is the PRE-INJECTION latest user text: strip anything from
-        // an earlier `[RAG Context]` marker so a re-injected/retried array cannot
-        // pollute the recall key, then cap for the strict FTS5 rung. `note`
-        // ignores the query.
-        const markerAt = ragTarget.text.indexOf(RAG_CONTEXT_TAG);
-        const queryText = markerAt >= 0 ? ragTarget.text.slice(0, markerAt).trim() : ragTarget.text;
-        const ragQuery = queryText.slice(0, RAG_QUERY_MAX_CHARS);
+        // `ragQuery` is the PRE-INJECTION latest user text: strip earlier T0 /
+        // [RAG Context] / [Session Memory] / [Research Recall] text so a retried
+        // or resumed array cannot pollute the recall key, then cap for the strict
+        // FTS5 rung. `note` ignores the query.
+        const ragQuery = preInjectionQueryText(ragTarget.text).slice(0, RAG_QUERY_MAX_CHARS);
         // Fail-open: retrieval faults are the registry's to report; the agent loop
         // always continues with the un-injected messages.
         let ragInstruction = "";

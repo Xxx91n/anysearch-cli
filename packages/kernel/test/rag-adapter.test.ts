@@ -348,9 +348,18 @@ test("static note (none + leftover config.note) stays on the first user turn acr
   assert.equal((out[2] as any).content, "turn two", "latest turn untouched by the static note");
 });
 
-test("a re-injected array does not pollute the fts query with the earlier block", async () => {
+test("a re-injected array strips T0 and L1/L2 tags from the fts query", async () => {
   const spies = { calls: 0, query: "", limit: 0 };
-  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_FTS }, storeWith([{ rowid: 1, role: "a", content: "c" }], { spies }));
+  const store: any = storeWith([{ rowid: 1, role: "a", content: "c" }], { spies });
+  store.listPreferences = async () => [{ key: "output.language", value: "Chinese", modified: "x" }];
+  store.getAnchors = async () => [
+    { anchorType: "rolling_summary", payload: { summary: "prior summary" } },
+    { anchorType: "l2_recall", payload: { hits: "prior hits" } },
+  ];
+  const pipeline = new MemoryPipeline({
+    store, retriever, domain: domain({ adapter: RAG_ADAPTER_FTS }),
+    model: {} as any, streamFn: (() => ({})) as any, sessionId: "s1",
+  });
   const msgs = [
     { role: "user", content: "turn one" },
     { role: "assistant", content: "a1" },
@@ -360,7 +369,7 @@ test("a re-injected array does not pollute the fts query with the earlier block"
   spies.query = "";
   await pipeline.inject(first as any);
   assert.equal(spies.query, "turn two question",
-    "recall key strips the earlier [RAG Context] block instead of searching it");
+    "recall key strips T0 preferences and every earlier injection block");
 });
 
 test("content-block turn: Stage-1 + L1/L2 stack in documented order without overwriting user text", async () => {

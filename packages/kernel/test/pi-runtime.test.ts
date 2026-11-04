@@ -733,6 +733,10 @@ console.log("---");
     const queries: string[] = [];
     const queryCapturingStore = {
       ...ragStore,
+      getAnchors: async () => [
+        { anchorType: "rolling_summary", payload: { summary: "prior summary" } },
+        { anchorType: "l2_recall", payload: { hits: "prior hits" } },
+      ],
       searchMemory: async (q: string) => {
         queries.push(q);
         return [
@@ -758,6 +762,15 @@ console.log("---");
     assert(!textOf(out[1]).includes("[RAG Context]"), "#154 multi-turn: first user turn stays byte-stable");
     assert(textOf(out[3]).includes("[RAG Context]") && textOf(out[3]).includes("proxy port 8080"),
       "#154 multi-turn: dynamic RAG lands on the latest user turn");
+    const latest = textOf(out[3]);
+    const order = [
+      latest.indexOf("turn two question"),
+      latest.indexOf("[RAG Context]"),
+      latest.indexOf("[Session Memory]"),
+      latest.indexOf("[Research Recall]"),
+    ];
+    assert(order[0] === 0 && order.every((at, i) => i === 0 || at > order[i - 1]),
+      "#154 multi-turn: order user text -> RAG -> Session Memory -> Research Recall");
     assert(queries.length === 1, "#154 multi-turn: one recall per inject");
     assert(queries[0] === "turn two question",
       "#154 multi-turn: recall keys on the latest user text, not turn-1");
