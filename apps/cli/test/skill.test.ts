@@ -803,7 +803,16 @@ test("a lock without machine identity fails closed", async (t) => {
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
   // Same hostname, dead PID, but no machineId in the owner record.
-  const lock = plantLock(managed, "no-machine-id", deadPid(), hostname(), pidIdentity(), undefined);
+  // Write owner.json directly to avoid plantLock's machineId() default.
+  const lock = join(managed, ".installed.lock");
+  rmSync(lock, { recursive: true, force: true });
+  mkdirSync(lock);
+  const identity = pidIdentity();
+  writeFileSync(join(lock, "owner.json"), JSON.stringify({
+    token: "no-machine-id", pid: deadPid(), host: hostname(), startedAt: "2026-11-03T00:00:00.000Z",
+    ...(identity?.bootId ? { bootId: identity.bootId } : {}),
+    ...(identity?.namespace ? { namespace: identity.namespace } : {}),
+  }));
   const result = await f.run(["install", f.source("beta")]);
   assert.equal(result.code, 1, result.stderr);
   assert.match(result.stderr, /another skill operation/);

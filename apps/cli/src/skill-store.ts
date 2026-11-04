@@ -292,7 +292,9 @@ export function pidIdentity(): PidIdentity | undefined {
 export function machineId(): string | undefined {
   try {
     if (process.platform === "linux") {
-      return readFileSync("/etc/machine-id", "utf8").trim() || undefined;
+      const id = readFileSync("/etc/machine-id", "utf8").trim();
+      // Accept only a valid 32-char lowercase hex ID; reject placeholders (all zeros).
+      return /^[0-9a-f]{32}$/.test(id) && id !== "00000000000000000000000000000000" ? id : undefined;
     }
     if (process.platform === "win32") {
       const out = execFileSync("reg", ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"], { encoding: "utf8", timeout: 5000 });
@@ -519,7 +521,7 @@ function acquireManifestLock(managed: string, skipOnContention = false): (() => 
     if (observed && observed.host !== hostname()) {
       fail(`another skill operation may be running in this scope${describeLockHolder(lock)}: ${lock}. The lock was created on ${observed.host}, so it cannot be proven dead from ${hostname()}; automatic reclamation is limited to this host. If no ans skill process is running there, remove that directory and retry.`);
     }
-    fail(`another skill operation may be running in this scope: ${lock}. The owner record is incomplete, from another machine, from another PID namespace, unreadable, or the lock path could not be published, so the lock cannot be proven dead. If no ans skill process is running here, remove that directory and retry.`);
+    fail(`another skill operation may be running in this scope: ${lock}. The owner record is incomplete, from another machine, from another PID namespace, unreadable, or the lock path could not be published, so the lock cannot be proven dead. If no ans skill process is running on the machine that created it, remove that directory and retry.`);
   }
   if (skipOnContention) return undefined;
   if (reclaimBusy) {
