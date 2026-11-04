@@ -11,7 +11,7 @@
 // SELECT returns identical traceId + sessionId (full wire round-trip).
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -199,6 +199,46 @@ async function main() {
     }
     check("#129: unwritable anchor still yields an id (fail-open)", returned.length > 0);
     check("#129: unwritable anchor reports the lost continuity", /could not persist the session anchor/.test(captured));
+  }
+
+  // #129 review: when the anchor exists but cannot be read, the file must
+  // NOT be overwritten. A fresh ID is returned for this run only, and the
+  // loss is reported on stderr.
+  // Cross-platform fixture: make the anchor path a DIRECTORY so readFileSync
+  // fails with EISDIR on all platforms (chmod 000 does not remove read perm
+  // on Windows or for privileged POSIX processes).
+  {
+    const dir = mkdtempSync(join(tmpdir(), "ans-anchor-unreadable-"));
+    const home = join(dir, "home");
+    mkdirSync(home, { recursive: true });
+    const anchorDir = join(home, ".anysearch-cli");
+    mkdirSync(anchorDir, { recursive: true });
+    const anchorFile = join(anchorDir, "session");
+    // Write the original anchor, then replace it with a directory.
+    writeFileSync(anchorFile, "original-session-id-1234", "utf8");
+    rmSync(anchorFile, { force: true });
+    mkdirSync(anchorFile, { recursive: true });
+    const origWrite = process.stderr.write;
+    let captured = "";
+    process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+    let returned = "";
+    let after = "";
+    try {
+      returned = readSessionId({ HOME: home } as NodeJS.ProcessEnv);
+      // Verify the anchor path is still a directory (not overwritten by a file).
+      after = readFileSync(anchorFile + "/.", "utf8");
+    } catch {
+      // readFileSync on a directory throws — that means the anchor was NOT
+      // overwritten with a file, which is what we want.
+      after = "<directory-not-overwritten>";
+    } finally {
+      process.stderr.write = origWrite;
+      rmSync(dir, { recursive: true, force: true });
+    }
+    check("#129 review: unreadable anchor still yields an id (fail-open)", returned.length > 0);
+    check("#129 review: unreadable anchor reports the read failure", /session anchor could not be read/.test(captured));
+    check("#129 review: unreadable anchor is NOT overwritten", after === "<directory-not-overwritten>");
+    check("#129 review: fresh id differs from the preserved anchor", returned !== "original-session-id-1234");
   }
 
   console.log("\nsession-id-propagation tests: " + passed + " passed, " + failed + " failed");
