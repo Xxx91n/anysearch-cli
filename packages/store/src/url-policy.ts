@@ -8,7 +8,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { loadDomain } from "./domain-loader";
+import { loadDomain, loadRawDomain, tryLoadRawDomain } from "./domain-loader";
 import { HOSTNAME_RE, type DomainSchema } from "./domain-schema";
 import { SqliteObservationStore, generateTraceIdHex } from "./observation";
 import { readSessionId } from "./session-id";
@@ -172,23 +172,134 @@ export function readPolicyCacheEnvelope(cachePath: string): MaterializedPolicy |
 }
 
 // D5: lazy mtime-checked re-read. Probe returns null = unchanged (or unreadable), schema = reloaded.
-export function createDomainReloader(tomlPath: string): () => DomainSchema | null {
-  let lastMtime = -1;
-  let warnedMtime = -1;
-  try { lastMtime = statSync(tomlPath).mtimeMs; } catch { /* path may appear later */ }
-  return () => {
-    let mtime: number;
-    try { mtime = statSync(tomlPath).mtimeMs; } catch { return null; }
-    if (mtime === lastMtime) return null;
+// #167/CodeRabbit: inheritance-aware. Startup now resolves inherited domains via
+// file-based lookup (loadDomainByNameIn), so the reloader must use the same
+// lookup and watch ancestor mtimes. Otherwise a child with base stays stale
+// after a restart-free edit, and a base-only edit is invisible (no warning).
+export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): () => DomainSchema | null {
+  const getSearchDirs = (): string[] => {
+    if (domainsDirs) return domainsDirs;
+    const dirs: string[] = [];
+    const envDir = process.env.ANS_DOMAINS_DIR?.trim();
+    if (envDir) dirs.push(envDir);
+    try { dirs.push(dirname(tomlPath)); } catch {}
+    dirs.push(join(process.cwd(), "domains"));
+    return dirs;
+  };
+  // Single shared dir order — collectChain and lookupFor must agree so the
+  // watched files are exactly the files that would be loaded (grandparent in a
+  // different dir would otherwise be missed). Reuse tryLoadRawDomain for the
+  // ENOENT-vs-fail-fast distinction.
+  const tryResolveParent = (base: string, searchDirs: string[]): { path: string; raw: ReturnType<typeof loadRawDomain> } | undefined => {
+    for (const d of searchDirs) {
+      const cand = join(d, base + ".toml");
+      const raw = tryLoadRawDomain(cand);
+      if (raw) return { path: cand, raw };
+    }
+    return undefined;
+  };
+
+  const collectChainAndProbed = (): { chain: string[]; probed: string[] } => {
+    const searchDirs = getSearchDirs();
+    const chain: string[] = [tomlPath];
+    const probed: string[] = [];
+    const seen = new Set<string>();
+    let curRaw: ReturnType<typeof loadRawDomain> | undefined;
     try {
-      const schema = loadDomain(tomlPath);
-      lastMtime = mtime;
+      curRaw = loadRawDomain(tomlPath);
+    } catch {
+      return { chain, probed };
+    }
+    while (curRaw?.base) {
+      if (seen.has(curRaw.base)) break;
+      seen.add(curRaw.base);
+      let found: { path: string; raw: ReturnType<typeof loadRawDomain> } | undefined;
+      for (const d of searchDirs) {
+        const cand = join(d, curRaw.base + ".toml");
+        probed.push(cand);
+        let raw: ReturnType<typeof loadRawDomain> | undefined;
+        try { raw = tryLoadRawDomain(cand); } catch { raw = {} as ReturnType<typeof loadRawDomain>; }
+        if (raw) { found = { path: cand, raw }; break; }
+      }
+      if (!found) break;
+      chain.push(found.path);
+      curRaw = found.raw;
+    }
+    return { chain, probed };
+  };
+
+  const lookupFor = (): ((name: string) => ReturnType<typeof loadRawDomain> | undefined) | undefined => {
+    const searchDirs = getSearchDirs();
+    return (parent: string) => tryResolveParent(parent, searchDirs)?.raw;
+  };
+
+  // version includes ctime so chmod (permission repair) is detected even
+  // when mtime is unchanged (inode(7): ctime changes on permission change).
+  const fileVersion = (p: string): string => {
+    try {
+      const s = statSync(p);
+      return `${s.mtimeMs}:${s.ctimeMs}`;
+    } catch {
+      return "-1";
+    }
+  };
+
+  // watched = chain files + every probed candidate (including missing, -1)
+  // so a new higher-priority file that shadows a parent is detected via stat,
+  // without re-parsing the chain on every call.
+  let { chain: watchedChain, probed: watchedProbed } = (() => {
+    try { return collectChainAndProbed(); } catch { return { chain: [tomlPath], probed: [] as string[] }; }
+  })();
+  let watched = [...new Set([...watchedChain, ...watchedProbed])];
+  let mtimes = new Map<string, string>();
+  for (const pp of watched) mtimes.set(pp, fileVersion(pp));
+  let warnedSig = "";
+
+  return () => {
+    // snapshot before attempt so a parent created during the load is not
+    // recorded as already loaded.
+    const preWatched = [...watched];
+    let changed = false;
+    for (const pp of watched) {
+      if (fileVersion(pp) !== mtimes.get(pp)) { changed = true; break; }
+    }
+    if (!changed) return null;
+    try {
+      const schema = loadDomain(tomlPath, lookupFor());
+      const next = collectChainAndProbed();
+      watchedChain = next.chain;
+      watchedProbed = next.probed;
+      watched = [...new Set([...watchedChain, ...watchedProbed])];
+      mtimes.clear();
+      for (const pp of watched) mtimes.set(pp, fileVersion(pp));
       return schema;
     } catch (e) {
-      // D3/OPA bad-bundle semantics: keep last known good, but signal it (because
-      // old policy persisting silently leaves new deny entries dead with zero trace).
-      if (warnedMtime !== mtime) {
-        warnedMtime = mtime;
+      // collect new chain/probed but do not snapshot newly discovered paths
+      // with their post-failure versions as if they were already loaded;
+      // otherwise a parent created during the attempt would be missed.
+      let next: { chain: string[]; probed: string[] } | null = null;
+      try { next = collectChainAndProbed(); } catch { /* keep previous */ }
+      if (next) {
+        const preSet = new Set(preWatched);
+        const merged = [...new Set([...watched, ...next.chain, ...next.probed])];
+        const newPaths = new Set(merged.filter((p) => !preSet.has(p)));
+        watched = merged;
+        mtimes.clear();
+        for (const pp of watched) {
+          if (newPaths.has(pp)) {
+            // force next call to re-check this path (was not covered by pre snapshot)
+            mtimes.set(pp, "-1");
+          } else {
+            mtimes.set(pp, fileVersion(pp));
+          }
+        }
+      } else {
+        mtimes.clear();
+        for (const pp of watched) mtimes.set(pp, fileVersion(pp));
+      }
+      const sig = watched.map((pp) => fileVersion(pp)).join(",");
+      if (warnedSig !== sig) {
+        warnedSig = sig;
         process.stderr.write("[anysearch] domain TOML reload failed; keeping last known good policy: " + (e instanceof Error ? e.message : String(e)) + "\n");
       }
       return null;

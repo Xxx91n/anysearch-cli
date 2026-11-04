@@ -86,12 +86,12 @@ export function resolve(
   let current: RawDomain | undefined = derived;
   while (current.base) {
     if (visited.has(current.base)) {
-      throw new Error("Circular inheritance detected: " + current.base);
+      throw new Error("Domain schema: Circular inheritance detected: " + current.base);
     }
     visited.add(current.base);
     const parent = lookup(current.base);
     if (!parent) {
-      throw new Error("Base domain not found: " + current.base);
+      throw new Error("Domain schema: Base domain not found: " + current.base);
     }
     chain.push(parent);
     current = parent;
@@ -165,10 +165,11 @@ function assertHostnameList(list: unknown, field: string): void {
   if (bad.length > 0) throw new Error("Domain schema: sources." + field + " entries must be hostnames (no scheme/port/wildcard); invalid: " + JSON.stringify(bad));
 }
 
-// #162: single classifier for "the domain was found but its configuration is
+// #162/#167: single classifier for "the domain was found but its configuration is
 // invalid". Callers use it to fail closed on a configured-but-broken domain
 // while keeping the availability fallback for absent domains and IO faults.
-// The "Domain schema:" marker is the fail-fast family raised by validate().
+// The "Domain schema:" marker is the fail-fast family raised by validate(),
+// TOML parse (loadRawDomain wrapper), and inheritance (resolve) faults.
 // Anchored at the start: an IO message that merely contains the text (e.g. in
 // a file path) must stay on the availability fallback, not fail closed.
 export function isDomainSchemaError(e: unknown): boolean {

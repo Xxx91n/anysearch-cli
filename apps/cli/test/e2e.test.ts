@@ -336,6 +336,76 @@ async function t(name: string, fn: () => Promise<void>) {
     }
   });
 
+  // #167: syntax error TOML must also fail fast (same Domain schema: family
+  // as the validation fault above, but via smol-toml parse, not validate).
+  // The file exists but is unparseable (missing quote/bracket), so the CLI
+  // must not silently fall back to full fanout.
+  await t("search with malformed syntax TOML fails fast", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-badsyntax-"));
+    try {
+      fs.writeFileSync(path.join(dir, "badsyntax.toml"), 'name = "oops\n[rag]\nadapter = "none"\n', "utf8");
+      const r = await run(["search", "q", "--json"], { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "badsyntax" });
+      assert.notEqual(r.code, 0);
+      assert.match(r.out, /Domain schema/i);
+      assert.match(r.out, /Invalid TOML|badsyntax\.toml/i);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // #167: inheritance chain broken (base missing) is a configuration error,
+  // same fail-fast family as validation/parse. Absent domain (Domain not found)
+  // stays fallback, but a present file whose base points nowhere must error.
+  await t("search with missing base domain fails fast", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-badbase-"));
+    try {
+      fs.writeFileSync(path.join(dir, "child.toml"), 'name = "child"\nbase = "missingbase"\n[rag]\nadapter = "none"\n', "utf8");
+      const r = await run(["search", "q", "--json"], { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "child" });
+      assert.notEqual(r.code, 0);
+      assert.match(r.out, /Domain schema.*Base domain not found/i);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t("chat with malformed syntax TOML fails fast", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-chat-badsyntax-"));
+    try {
+      fs.writeFileSync(path.join(dir, "badsyntax.toml"), 'name = "oops\n[rag]\nadapter = "none"\n', "utf8");
+      const env: NodeJS.ProcessEnv = { ...process.env };
+      for (const k of Object.keys(env)) if (k.startsWith("ANS_LLM_")) delete env[k];
+      const r = await run(["chat", "hello", "--llm.provider", "openai", "--llm.model", "gpt-5", "--llm.base-url", "http://127.0.0.1:1/v1", "--llm.api", "chat"], { ...env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "badsyntax", ANS_DB_PATH: path.join(dir, "anysearch.db") });
+      assert.equal(r.code, 1);
+      assert.match(r.out, /Domain schema/i);
+      assert.doesNotMatch(r.out, /using fallback/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t("chat with missing base domain fails fast", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-chat-badbase-"));
+    try {
+      fs.writeFileSync(path.join(dir, "child.toml"), 'name = "child"\nbase = "missingbase"\n[rag]\nadapter = "none"\n', "utf8");
+      const env: NodeJS.ProcessEnv = { ...process.env };
+      for (const k of Object.keys(env)) if (k.startsWith("ANS_LLM_")) delete env[k];
+      const r = await run(["chat", "hello", "--llm.provider", "openai", "--llm.model", "gpt-5", "--llm.base-url", "http://127.0.0.1:1/v1", "--llm.api", "chat"], { ...env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "child", ANS_DB_PATH: path.join(dir, "anysearch.db") });
+      assert.equal(r.code, 1);
+      assert.match(r.out, /Domain schema.*Base domain not found/i);
+      assert.doesNotMatch(r.out, /using fallback/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   await t("skill install → validate → list → uninstall on the shipped bundle (#109)", async () => {
     const fs = await import("node:fs");
     const os = await import("node:os");

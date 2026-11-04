@@ -26,9 +26,31 @@ export function parseDomainToml(toml: string): RawDomain {
 
 // Load a domain from a TOML file. No inheritance chain (base = undefined or not found).
 // ponytail: thinnest loader - read, parse, return RawDomain. resolve/validate is caller job.
+// #167: file exists but parse fails is a configuration error (fail-fast), same
+// family as `Domain schema:` validation faults. readFileSync IO errors
+// (ENOENT/EACCES) and `Domain not found` keep the availability fallback —
+// absent ≠ broken — so only the TOML parse fault is wrapped with the
+// fail-fast marker and file-path context.
 export function loadRawDomain(tomlPath: string): RawDomain {
   const content = readFileSync(tomlPath, "utf8");
-  return parseDomainToml(content);
+  try {
+    return parseDomainToml(content);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.startsWith("Domain schema:")) throw e as Error;
+    throw new Error("Domain schema: " + msg + " (" + tomlPath + ")");
+  }
+}
+
+// Helper for parent lookup: missing file -> undefined (try next dir), any other fault (parse / EACCES) -> throw.
+// Centralizes the ENOENT-vs-other distinction so callers do not match on error.message.
+export function tryLoadRawDomain(path: string): RawDomain | undefined {
+  try {
+    return loadRawDomain(path);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === "ENOENT") return undefined;
+    throw e;
+  }
 }
 
 // Load a domain from TOML with optional inheritance chain resolution.
@@ -77,7 +99,19 @@ export function loadDomainByName(
     } catch { /* dir not found */ }
     throw new Error("Domain not found: " + name + (available ? " (available: " + available + ")" : ""));
   }
-  return loadDomain(tomlPath, lookup);
+  // #167/CodeRabbit: file-based parent lookup so a valid child with an existing
+  // base resolves via the same convention dir instead of being treated as
+  // "Base domain not found". Caller-provided lookup wins; file fallback preserves
+  // the missing-base error when no parent file exists.
+  const effectiveLookup = (parent: string): RawDomain | undefined => {
+    if (lookup) {
+      const fromCaller = lookup(parent);
+      if (fromCaller !== undefined) return fromCaller;
+    }
+    const parentPath = join(baseDir, DOMAINS_DIR, parent + ".toml");
+    return tryLoadRawDomain(parentPath);
+  };
+  return loadDomain(tomlPath, effectiveLookup);
 }
 
 // B1: domains-dir resolution chain. Each entry IS a domains directory
@@ -93,7 +127,25 @@ export function loadDomainByNameIn(
     const tomlPath = join(dir, name + ".toml");
     if (seen.has(tomlPath)) continue;
     seen.add(tomlPath);
-    if (existsSync(tomlPath)) return loadDomain(tomlPath, lookup);
+    if (existsSync(tomlPath)) {
+      // #167/CodeRabbit: wire file-based parent lookup through the same
+      // domains-dir chain so createEngine can resolve inheritance from disk.
+      // Preserve the existing "Base domain not found" error when the file
+      // lookup confirms no parent exists.
+      const effectiveLookup = (parent: string): RawDomain | undefined => {
+        if (lookup) {
+          const fromCaller = lookup(parent);
+          if (fromCaller !== undefined) return fromCaller;
+        }
+        for (const d of domainsDirs) {
+          const candidate = join(d, parent + ".toml");
+          const raw = tryLoadRawDomain(candidate);
+          if (raw) return raw;
+        }
+        return undefined;
+      };
+      return loadDomain(tomlPath, effectiveLookup);
+    }
   }
   const all = domainsDirs.flatMap((dir) => {
     try {

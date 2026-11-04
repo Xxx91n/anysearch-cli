@@ -2,6 +2,10 @@
 // Run: npx tsx packages/store/test/domain-schema.test.ts
 
 import { resolve, validate, isDomainSchemaError, type RawDomain } from "../src/domain-schema";
+import { loadRawDomain } from "../src/domain-loader";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 let passed = 0;
 let failed = 0;
@@ -208,6 +212,48 @@ assert("marker inside an IO path is not a schema error",
   !isDomainSchemaError(new Error("EACCES: permission denied, open '/tmp/Domain schema: x.toml'")));
 assert("isDomainSchemaError ignores missing-domain errors", !isDomainSchemaError(new Error("Domain not found: nope")));
 assert("isDomainSchemaError is false for non-Error throws", !isDomainSchemaError("Domain schema: not an Error"));
+
+// #167: parse + inheritance faults are the same fail-fast family (file exists
+// but broken), while absent domain and IO stay on the fallback.
+{
+  // Inheritance: base not found
+  let baseMissing: unknown;
+  try {
+    resolve({ name: "child", base: "missingbase", rag: { adapter: "x" } } as RawDomain, () => undefined);
+  } catch (e) { baseMissing = e; }
+  assert("isDomainSchemaError recognises base-not-found", isDomainSchemaError(baseMissing));
+  assert("base-not-found message is Domain schema: family", (baseMissing as Error).message.startsWith("Domain schema: Base domain not found:"));
+  assert("Domain not found (absent domain) stays fallback", !isDomainSchemaError(new Error("Domain not found: missingbase")));
+
+  // Inheritance: circular
+  const ca: RawDomain = { name: "a", base: "b", rag: { adapter: "x" } };
+  const cb: RawDomain = { name: "b", base: "a", rag: { adapter: "x" } };
+  let circular: unknown;
+  try { resolve(ca, (n) => n === "a" ? ca : n === "b" ? cb : undefined); } catch (e) { circular = e; }
+  assert("isDomainSchemaError recognises circular inheritance", isDomainSchemaError(circular));
+  assert("circular message is Domain schema: family", (circular as Error).message.startsWith("Domain schema: Circular inheritance detected:"));
+
+  // TOML parse: file exists but malformed -> Domain schema with path context
+  // (uses loadRawDomain wrapper; readFileSync IO stays fallback).
+  const dir = mkdtempSync(join(tmpdir(), "ans-schema-parse-"));
+  try {
+    const badPath = join(dir, "badsyntax.toml");
+    writeFileSync(badPath, 'name = "oops\n[rag]\nadapter = "none"\n', "utf8");
+    let parseFault: unknown;
+    try { loadRawDomain(badPath); } catch (e) { parseFault = e; }
+    assert("isDomainSchemaError recognises TOML parse fault", isDomainSchemaError(parseFault));
+    assert("parse fault message includes file path", String(parseFault).includes("badsyntax.toml"));
+    assert("parse fault message is Domain schema: family", (parseFault as Error).message.startsWith("Domain schema:"));
+
+    // IO: readFileSync ENOENT must stay fallback (not wrapped)
+    let ioRead: unknown;
+    try { loadRawDomain(join(dir, "no-such-file.toml")); } catch (e) { ioRead = e; }
+    assert("isDomainSchemaError leaves readFileSync ENOENT to fallback", !isDomainSchemaError(ioRead));
+    assert("ENOENT is not Domain schema", !(ioRead as Error).message.startsWith("Domain schema:"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 console.log(`Domain schema tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
