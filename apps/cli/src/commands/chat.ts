@@ -6,7 +6,7 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
@@ -40,7 +40,12 @@ export async function runChat(argv: string[]): Promise<number> {
     // three-way; no protocol sniffing; loader already warned on a bare baseUrl,
     // createLlmSession is the fail-closed backstop). cfg.apiKey supplies the
     // secret via env_key indirection or ANS_LLM_API_KEY.
-    session = await createLlmSession({ provider: cfg.provider, model: cfg.model, baseUrl: cfg.baseUrl, api: cfg.api, apiKey: cfg.apiKey });
+    session = await createLlmSession({
+      provider: cfg.provider, model: cfg.model, baseUrl: cfg.baseUrl, api: cfg.api, apiKey: cfg.apiKey,
+      // #113: custom endpoints have no catalog window; the composition root
+      // reads the env here (kernel stays env-free). Unknown window -> 128000.
+      contextWindow: parseContextWindow(process.env.ANS_LLM_CONTEXT_WINDOW),
+    });
   } catch (e: any) {
     process.stderr.write("Failed to initialize LLM: " + (e?.message || String(e)) + "\n");
     return 3;
@@ -110,6 +115,9 @@ export async function runChat(argv: string[]): Promise<number> {
     // CLI is the TTY composition root; kernel decides isInteractive itself.
     interactive: !process.env.ANS_NO_INTERACTIVE,
     model: session.model,
+    // #113: real window for the L0 watermark; undefined for an unconfigured
+    // custom endpoint -> absolute 128000 fallback.
+    contextWindow: session.contextWindow,
     streamFn: session.streamFn,
     models: session.models,
     getApiKey: async () => session.apiKey,

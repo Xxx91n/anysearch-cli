@@ -26,9 +26,44 @@ export interface LlmSessionOptions {
   baseUrl?: string;
   /** Endpoint wire protocol: chat = <baseUrl>/chat/completions, messages = <baseUrl>/v1/messages, responses = <baseUrl>/responses. */
   api?: LlmEndpointKind;
+  /**
+   * #113: model context window in tokens, used by the L0 watermark
+   * (`{fraction}` × contextWindow). Custom endpoints have no pi-ai catalog
+   * metadata, so the composition root passes it in; kernel never reads env.
+   * When omitted, custom endpoints keep the historical 128000 default for
+   * pi-ai's own request budgeting, but `LlmSession.contextWindow` stays
+   * undefined so the L0 watermark knows the window is UNKNOWN and falls back
+   * to its absolute 128000 watermark instead of scaling the placeholder.
+   */
+  contextWindow?: number;
 }
 
 export type LlmEndpointKind = "chat" | "messages" | "responses";
+
+// #113: composition-root helper. Reads the raw value of the optional
+// ANS_LLM_CONTEXT_WINDOW env var and validates it BEFORE it reaches the kernel;
+// kernel still performs zero env reads. A malformed value is a configuration
+// error and fails fast instead of silently meaning "unknown window".
+export function parseContextWindow(raw: string | undefined): number | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  // CodeRabbit #161: Number() would silently accept "1e3", "0x10", "7.5" and
+  // " 768 " (trimmed), turning a typo into a wrong window. The env value must
+  // be a plain decimal integer; blank means "unknown" (handled above).
+  const n = /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isSafeInteger(n) || n < 1) {
+    throw new Error("ANS_LLM_CONTEXT_WINDOW must be a positive integer token count; got " + JSON.stringify(raw));
+  }
+  return n;
+}
+
+function normalizeContextWindow(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 1) {
+    throw new Error("LlmSessionOptions.contextWindow must be a positive integer token count");
+  }
+  return n;
+}
 
 // pi-ai api module per endpoint kind (first-party implementations; lazyApi defers the import).
 const ENDPOINT_MODULES: Record<LlmEndpointKind, () => Promise<unknown>> = {
@@ -50,6 +85,13 @@ export interface LlmSession {
   providerName: string;
   modelName: string;
   apiKey?: string;
+  /**
+   * #113: the REAL context window, or undefined when it is unknown (custom
+   * endpoint without LlmSessionOptions.contextWindow). `model.contextWindow`
+   * always carries a number for pi-ai request budgeting, so it cannot be used
+   * to distinguish "known 128000" from "unknown -> 128000 placeholder".
+   */
+  contextWindow?: number;
 }
 
 // provider registry — delegates to pi-ai provider factories.
@@ -88,6 +130,9 @@ export async function createLlmSession(opts: LlmSessionOptions): Promise<LlmSess
     if (!opts.api) {
       throw new Error("baseUrl requires explicit api kind: chat | messages | responses");
     }
+    // #113: the real window is what the composition root supplied; undefined
+    // means "unknown" and drives the L0 watermark's absolute 128000 fallback.
+    const customWindow = normalizeContextWindow(opts.contextWindow);
     const model: Model<string> = {
       id: opts.model,
       name: opts.model,
@@ -97,7 +142,9 @@ export async function createLlmSession(opts: LlmSessionOptions): Promise<LlmSess
       reasoning: false,
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 128000,
+      // pi-ai requires a number for request budgeting; 128000 stays the
+      // placeholder when the operator did not declare the custom window.
+      contextWindow: customWindow ?? 128000,
       maxTokens: 8192,
     };
     const provider = createProvider({
@@ -113,7 +160,7 @@ export async function createLlmSession(opts: LlmSessionOptions): Promise<LlmSess
     // no env reads in kernel — the caller (CLI chat/consolidate) passes ANS_LLM_API_KEY explicitly.
     const apiKey = opts.apiKey;
     const resolvedModel = (epModels.getModel(opts.provider, opts.model) ?? model) as Model<string>;
-    return { model: resolvedModel, streamFn: epModels.streamSimple.bind(epModels), models: epModels, providerName: opts.provider, modelName: opts.model, apiKey } as LlmSession;
+    return { model: resolvedModel, streamFn: epModels.streamSimple.bind(epModels), models: epModels, providerName: opts.provider, modelName: opts.model, apiKey, contextWindow: customWindow } as LlmSession;
   }
 
   const factoryLoader = PROVIDER_FACTORIES[opts.provider];
@@ -135,5 +182,18 @@ export async function createLlmSession(opts: LlmSessionOptions): Promise<LlmSess
   // Provider env fallback (OPENAI_/ANTHROPIC_/GOOGLE_API_KEY) lives inside pi-ai's ProviderAuth.
   const apiKey = opts.apiKey;
 
-  return { model: model as Model<string>, streamFn, models, providerName: opts.provider, modelName: opts.model, apiKey };
+  // #113: catalog models already carry a real window; LlmSession exposes it for
+  // the L0 watermark. `contextWindow` is a custom-endpoint-only option — a
+  // catalog override would be new scope beyond this ticket. Warn instead of
+  // silently ignoring an explicitly-set value (the composition roots pass the
+  // parsed env unconditionally).
+  if (opts.contextWindow !== undefined && typeof process !== "undefined" && process.stderr) {
+    process.stderr.write(
+      "[anysearch] ANS_LLM_CONTEXT_WINDOW ignored for catalog model " +
+      opts.provider + "/" + opts.model + "; the pi-ai catalog window is authoritative\n",
+    );
+  }
+  const catalogModel = model as Model<string>;
+
+  return { model: catalogModel, streamFn, models, providerName: opts.provider, modelName: opts.model, apiKey, contextWindow: catalogModel.contextWindow };
 }

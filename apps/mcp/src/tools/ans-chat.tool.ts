@@ -5,7 +5,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import { createLlmSession, PiAgentRuntime, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
+import { createLlmSession, PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
 import { domainTomlPath } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import { observeTool } from "./observation.js";
@@ -48,6 +48,9 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     const baseUrl = process.env.ANS_LLM_BASE_URL;
     const apiRaw = process.env.ANS_LLM_API;
     const api = apiRaw === "chat" || apiRaw === "messages" || apiRaw === "responses" ? apiRaw : undefined;
+    // #113: custom endpoints carry no catalog window; the MCP root reads the env
+    // (kernel stays env-free). Malformed values fail the call, not silently 128000.
+    const contextWindow = parseContextWindow(process.env.ANS_LLM_CONTEXT_WINDOW);
     // F-A4 tiebreaker: keyHash detects ANS_LLM_API_KEY rotation on a long-lived MCP server.
     // It is NOT part of the cache key partitioning — same provider/model/baseUrl/api
     // must hit the same cache slot; hash change re-creates the slot value, not a new slot.
@@ -79,7 +82,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     }
     // Lazy init / rotation rebuild: same slot is overwritten on tiebreaker mismatch — not split.
     const session = await createLlmSession({
-      provider: providerName, model: modelName, baseUrl, api,
+      provider: providerName, model: modelName, baseUrl, api, contextWindow,
       apiKey: baseUrl ? process.env.ANS_LLM_API_KEY : undefined,
     });
     sessionCache.set(key, { session, keyHash });
@@ -115,6 +118,10 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
             domain,
             domainTomlPath: domainTomlPath(),
             model: session.model,
+            // #113: forwarded for a future memory pipeline. ans_chat currently
+            // builds no store/sessionId, so no L0 watermark runs here; the env
+            // still sets the custom model's request-budget window via the session.
+            contextWindow: session.contextWindow,
             streamFn: session.streamFn,
             models: session.models,
             getApiKey: async () => session.apiKey,

@@ -4,6 +4,25 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #113: LOW_WATERMARK 改为 contextWindow 占比制（+ contextWindow 透传）
+
+### Changed
+
+- **L0 压缩水位支持 `compaction.lowWatermark = { fraction = ... }`**：`resolveLowWatermark` 把 fraction 解析为 `floor(fraction × contextWindow)`；窗口取自 `LlmSession.contextWindow`（pi-ai catalog）。`LlmSessionOptions.contextWindow` 透传自定义端点窗口——未设置时 pi-ai 仍用 128000 占位，但 `LlmSession.contextWindow` 保持 `undefined`，因此 **L0 不会把占位值当成真实窗口**，而是回退既有 128000 绝对值。绝对数形状保持原样；malformed fraction 由域加载器 fail-fast（`ans chat` 沿用既有的整域回退告警）。
+- **水位比较对象改为当前上下文占用**：`pi-runtime` 在 `shouldStopAfterTurn` 用 `max(lastTotalTokens, estimateContextTokens(messages).tokens)`，覆盖工具结果在上一次 LLM 调用之后追加造成的一轮滞后（#114 复审遗留）；ledger 仍按 usage 事件结算，不受影响。
+- **新增可选 env `ANS_LLM_CONTEXT_WINDOW`**：CLI `ans chat` 与 MCP `ans_chat` 在组合根读取并透传；kernel 仍零 env 读取。非正整数 fail-fast。
+
+### Documented
+
+- 四份 host 集成文档的 Keys 段补 `ANS_LLM_CONTEXT_WINDOW`（仅自定义端点需要；不设则 L0 走未知窗口回退）。
+
+### Tests
+
+- `packages/kernel/test/memory-pipeline.test.ts`：1M/128K 窗口占比、未知窗口回退、malformed、绝对数优先；shell 层覆盖 120K（旧 128K 不触发、新 100K 触发）与未知窗口 15K 必须 skip。
+- `packages/kernel/test/llm-init.test.ts`：catalog 窗口暴露、自定义端点默认 UNKNOWN、显式透传、非法/小数值 fail-fast。
+- `packages/kernel/test/pi-runtime.test.ts`：大工具结果估算进入水位并可独立触发压缩。
+- memory eval golden 切片不经过 `MemoryPipeline`（store 侧 consolidate 是独立的 L2 路径），默认 lowWatermark 未移动。
+
 ## Unreleased — #129: `ans chat` 接线 MemoryPipeline（持久库 + 稳定 sessionId）
 
 ### Fixed

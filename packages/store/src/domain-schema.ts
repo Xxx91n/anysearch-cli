@@ -234,11 +234,16 @@ export function validate(schema: DomainSchema): void {
   if (c) {
     if (c.lowWatermark !== undefined) {
       if (typeof c.lowWatermark === "number") {
-        if (c.lowWatermark < 50000)
+        // #113/CodeRabbit #161: NaN/Infinity slipped through `< 50000` and were
+        // only rejected inside the fail-open consolidate path, silently
+        // disabling L0. Reject them here, matching scripts/validate-domains.mjs.
+        if (!Number.isFinite(c.lowWatermark) || c.lowWatermark < 50000)
           throw new Error("Domain schema: compaction.lowWatermark must be >= 50000");
+      } else if (c.lowWatermark === null || typeof c.lowWatermark !== "object") {
+        throw new Error("Domain schema: compaction.lowWatermark must be a number or {fraction}");
       } else {
         const f = c.lowWatermark.fraction;
-        if (typeof f !== "number" || !(f > 0 && f < 1))
+        if (typeof f !== "number" || !Number.isFinite(f) || !(f > 0 && f < 1))
           throw new Error("Domain schema: compaction.lowWatermark.fraction must be in (0,1)");
       }
     }
