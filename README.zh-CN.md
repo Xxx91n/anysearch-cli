@@ -180,11 +180,14 @@ ans skill uninstall research --project
 绝对路径 `source`、`commit`、`dirty` 和可选 `tag`。清单缺失、损坏或不符合
 schema 时，卸载会拒绝且不删除任何文件；绝不靠扫描目录猜测删除目标。
 `install` 与 `uninstall` 在所选 scope 内持独占锁：两个并发变更不会互相丢失
-清单条目。锁内记录持有者（`pid`、`host`，以及系统可提供时的 PID namespace
-标识），并连同 owner 记录一起原子发布，因此锁不会缺少 owner。同一 host 且同一
-PID namespace 上可证明已死的持有者会被自动回收（上一 boot 留下的锁也视为已死）；
-仍存活的锁、在另一台机器或另一个 PID namespace 写入的锁，或 owner 记录不可读的
-锁一律 fail-closed，绝不自动删除。发布前中断可能留下
+清单条目。锁内记录持有者（`pid`、`host`、稳定的机器标识，以及系统可提供时的 PID namespace
+标识），并连同 owner 记录一起原子发布，因此锁不会缺少 owner。机器标识取自
+`/etc/machine-id`（Linux）、`MachineGuid`（Windows）或 `IOPlatformUUID`
+（macOS）——不依赖 `hostname()`，因此共享 managed root 且恰好同名的两台主机
+不会互相回收活锁。同一机器且同一 PID namespace 上可证明已死的持有者会被自动回收
+（上一 boot 留下的锁也视为已死）；仍存活的锁、在另一台机器或另一个 PID namespace
+写入的锁，或 owner 记录不可读或缺少机器标识的锁一律 fail-closed，绝不自动删除。
+手工恢复时，确认创建锁的机器上没有 `ans skill` 进程运行后删除锁目录即可。发布前中断可能留下
 `skills/synced/.installed.lock.pending-*`：无 `installed.json` 的 scope 会清理
 已死副本，其余副本是惰性的，确认没有 `ans skill` 进程运行后可手工删除。
 清单发布以及安装/卸载的目录 rename 遇到 Windows 瞬时共享冲突

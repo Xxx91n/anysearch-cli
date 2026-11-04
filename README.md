@@ -198,12 +198,18 @@ Missing, malformed, or schema-invalid manifests cause uninstall to refuse
 without deleting anything; uninstall never scans for guessed targets.
 `install` and `uninstall` hold an exclusive lock in the selected scope, so two
 concurrent mutations cannot lose each other's manifest entry. The lock records
-its owner (`pid`, `host`, and the PID-namespace identity where the OS exposes
-one) and is published with that record already inside, so a lock never exists
-without an owner. A lock whose owner is provably dead on the same host and PID
+its owner (`pid`, `host`, a stable machine identity, and the PID-namespace
+identity where the OS exposes one) and is published with that record already
+inside, so a lock never exists without an owner. The machine identity is
+derived from `/etc/machine-id` (Linux), `MachineGuid` (Windows), or
+`IOPlatformUUID` (macOS) — not from `hostname()`, so two hosts that share a
+managed root and happen to use the same hostname cannot reclaim each other's
+live locks. A lock whose owner is provably dead on the same machine and PID
 namespace — including one left by a previous boot — is reclaimed automatically;
-a live lock, a lock written on another host or namespace, or one without a
-readable owner fails closed and is never deleted. An acquisition killed before
+a live lock, a lock written on another machine or namespace, or one without a
+readable owner or machine identity fails closed and is never deleted. To
+recover manually, remove the lock directory when no `ans skill` process is
+running on the machine that created it. An acquisition killed before
 publication can leave `.installed.lock.pending-*`; a dead copy is cleaned in a
 scope without `installed.json`, and any remaining copy is inert and can be
 removed once no `ans skill` process is running. Manifest publication and the
