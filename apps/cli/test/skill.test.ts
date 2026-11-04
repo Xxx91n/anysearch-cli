@@ -803,6 +803,27 @@ test("a lock with a foreign machine identity is never reclaimed", async (t) => {
   assert.equal(existsSync(join(managed, "beta")), false);
 });
 
+test("a lock with a foreign machine identity and a different boot is never reclaimed", async (t) => {
+  const current = pidIdentity();
+  if (!machineId() || !current?.bootId) { t.skip("machine and boot identities unavailable"); return; }
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const lock = plantLock(
+    managed,
+    "foreign-machine-boot",
+    deadPid(),
+    hostname(),
+    { bootId: `${current.bootId}-foreign`, namespace: current.namespace },
+    "foreign-machine-id",
+  );
+  const result = await f.run(["install", f.source("beta")]);
+  assert.equal(result.code, 1, result.stderr);
+  assert.match(result.stderr, /another machine/);
+  assert.ok(existsSync(lock), "a foreign-machine lock is left in place");
+  assert.equal(existsSync(join(managed, "beta")), false);
+});
+
 test("a lock without machine identity fails closed", async (t) => {
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);

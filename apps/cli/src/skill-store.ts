@@ -299,7 +299,9 @@ export function machineId(): string | undefined {
     if (process.platform === "win32") {
       const out = execFileSync("reg", ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"], { encoding: "utf8", timeout: 5000 });
       const m = out.match(/MachineGuid\s+REG_SZ\s+([0-9a-fA-F-]{36})/);
-      return m?.[1] || undefined;
+      const guid = m?.[1];
+      // Reject all-zero placeholder GUIDs (e.g. unprovisioned VMs).
+      return guid && guid !== "00000000-0000-0000-0000-000000000000" ? guid : undefined;
     }
     if (process.platform === "darwin") {
       const out = execFileSync("ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"], { encoding: "utf8", timeout: 5000 });
