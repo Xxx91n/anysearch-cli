@@ -115,7 +115,8 @@
   POSIX modes); the MCP cold-start path still inherits the process umask
   (hardening tracked in #156). Every shipped domain stays on `adapter = "none"`,
   so the shared read is opt-in; a deployer that shares one store or one MCP
-  server across users must isolate with separate stores. If multi-principal
+  server across users must isolate with separate stores and access-controlled
+  servers (e.g. `ANS_MCP_KEY`). If multi-principal
   sharing ever appears, attribute origin at write time first, then filter reads.
   Evidence and rejected alternatives: `docs/rag-adapters.md` §作用域.
 - **`ans_chat` (MCP) has no `MemoryPipeline` at all (#129)** — this is the
