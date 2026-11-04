@@ -16,7 +16,7 @@
 // Precedent: systemd machine-id(5), K8s Lease/leader election, OPA decision log.
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 export const ENV_SESSION_ID = "ANS_SESSION_ID";
 
@@ -85,7 +85,11 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
   if (existsSync(file)) {
     try {
       const v = readFileSync(file, "utf8").trim();
-      if (v.length > 0) return v;
+      if (v.length > 0) {
+        // Successful read: discard any cached temporary ID for this path.
+        tempIdByAnchor.delete(resolve(file));
+        return v;
+      }
     } catch {
       // CodeRabbit #129 review: do NOT fall through to fresh generate + write.
       // renameSync does not require write permission on the file itself, only
@@ -98,10 +102,11 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
   if (anchorUnreadable) {
     // Reuse one process-local temporary ID per anchor path so events from
     // the same process share a session ID even while the anchor is unreadable.
-    let tempId = tempIdByAnchor.get(file);
+    const absFile = resolve(file);
+    let tempId = tempIdByAnchor.get(absFile);
     if (!tempId) {
       tempId = generateSessionId();
-      tempIdByAnchor.set(file, tempId);
+      tempIdByAnchor.set(absFile, tempId);
     }
     writeStderr(
       "[warn] session anchor could not be read at " + file +
@@ -117,6 +122,8 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
     const tmp = file + ".tmp";
     writeFileSync(tmp, fresh, "utf8");
     renameSync(tmp, file);
+    // Successful write: discard any cached temporary ID for this path.
+    tempIdByAnchor.delete(resolve(file));
   } catch {
     // Fail-open: write failures don't block core CLI flow. #129 makes this
     // identity load-bearing for memory (a new id each run means the previous
@@ -142,4 +149,6 @@ export function writeSessionId(value: string, env: NodeJS.ProcessEnv = process.e
   const tmp = file + ".tmp";
   writeFileSync(tmp, value.trim(), "utf8");
   renameSync(tmp, file);
+  // Successful write: discard any cached temporary ID for this path.
+  tempIdByAnchor.delete(resolve(file));
 }
