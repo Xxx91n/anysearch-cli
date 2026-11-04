@@ -46,8 +46,11 @@ export type LlmEndpointKind = "chat" | "messages" | "responses";
 // error and fails fast instead of silently meaning "unknown window".
 export function parseContextWindow(raw: string | undefined): number | undefined {
   if (raw === undefined || raw.trim() === "") return undefined;
-  const n = Math.floor(Number(raw));
-  if (!Number.isFinite(n) || n < 1) {
+  // CodeRabbit #161: Number() would silently accept "1e3", "0x10", "7.5" and
+  // " 768 " (trimmed), turning a typo into a wrong window. The env value must
+  // be a plain decimal integer; blank means "unknown" (handled above).
+  const n = /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isSafeInteger(n) || n < 1) {
     throw new Error("ANS_LLM_CONTEXT_WINDOW must be a positive integer token count; got " + JSON.stringify(raw));
   }
   return n;

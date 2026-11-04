@@ -46,11 +46,12 @@ ok(catalog.contextWindow === catalogWindow, "#113: catalog LlmSession exposes th
 ok(parseContextWindow(undefined) === undefined, "#113: unset context window -> undefined");
 ok(parseContextWindow("  ") === undefined, "#113: blank context window -> undefined");
 ok(parseContextWindow("1000000") === 1000000, "#113: numeric context window parsed");
-for (const bad of ["abc", "0", "-1", "NaN", "0.5"]) {
+for (const bad of ["abc", "0", "-1", "NaN", "0.5", "1e6", "0x10", "1.9", " 1000 ", "1000px"]) {
   let threwCw = false;
   try { parseContextWindow(bad); } catch { threwCw = true; }
   ok(threwCw, "#113: malformed context window fails fast: " + bad);
 }
+ok(parseContextWindow("") === undefined, "#113: empty string still means unknown");
 
 
 // --- explicit endpoint kind, three wire protocols against local stubs ---
