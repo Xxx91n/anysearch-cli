@@ -98,9 +98,9 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
   semantic 臂不返回会话归属，合并层也不按会话过滤；更关键的是 MCP `search_web`
   每次调用都新建 session，`session_id` 是 per-call 而不是对话边界，CLI `ans chat`
   也不写 `retrieval_results`。接线成本不低，且要先有真正可用的会话归属。
-- **域级**：`retrieval_results` 没有 domain 列，`sessions.domain` 只写不读，
-  MCP 自动索引固定写 `"mcp"`；按域过滤没有可用的归属列，且需要改写入路径、
-  回填旧行并过滤全部检索臂。当前成本最高、收益为零。
+- **域级**：`retrieval_results` 没有 domain 列；`sessions.domain` 只是会话元数据，
+  未参与任何检索过滤，且 MCP 自动索引固定写 `"mcp"`。按域过滤没有可用的归属键，
+  需要改写入路径、回填旧行并过滤全部检索臂。当前成本最高、收益为零。
 - **结论**：当前唯一真实的隔离单元是 store。将来出现多主体写入时，先在写入侧
   记录归属（origin namespace），再做读过滤；不要给未标注的旧行补读过滤。
 
