@@ -12,7 +12,10 @@
 // - Stash never set (stdin transport bypasses the HTTP shim): same fallback.
 //
 // session_id is intentionally NOT stashed here - MCP keeps session_id empty
-// per (protocol carries no per-instance session identifier).
+// per (protocol carries no per-instance session identifier). Cross-call state is
+// explicit instead: `ans_chat` threads a server-minted handle as an ordinary tool
+// argument (#132, MCP 2026-07-28 / SEP-2567); that handle is not a transport
+// session and never becomes a request identity here.
 import { AsyncLocalStorage } from "node:async_hooks";
 
 interface McpRequestIdentity {

@@ -179,11 +179,16 @@ pnpm -C packages/kernel test    # test/rag-adapter.test.ts、test/message-text.t
 - **`fts` 尚未在任何出厂域启用** —— `domains/default.toml`、`docs.toml`、`research.toml` 仍是 `adapter = "none"`。#130 裁定保持这个默认：启用 `fts` 是显式 opt-in，属另一项产品决策；#154 只影响其落点质量，不是启用前提。
 - **#131 动态 RAG 热区落点尚未迁入运行时代码** —— 静/动分层约定已定（静态 `note` 留在首条 user 消息末尾、动态 `fts` 按最新一条 user 消息原文检索并迁至其末尾热区），当前 `MemoryPipeline.inject` 仍保持 #104 的首条落点，待 #154 连同 Stage-2 `appendMessageText` 块形状保护与 `rag-adapter.test.ts` 多轮落点断言一并落地。
 - **MCP `query_knowledge` 工具未接本注册表** —— 读取范围已由 #130 定为 store 级共享（与 `recall_memory` 一致），接线见 #155；见 `docs/limitations.md`。
-- **`apps/mcp` 的 `ans_chat` 未把 store 传给 runtime** —— 该路径上 `MemoryPipeline`
-  根本没有被构造（不是 fail-open 到 none），所以 RAG / L1 / L2 注入整条链路都不存在。
-  MCP 侧是**有意无会话**（stateless transport，`session_id` 从不落地），不能照抄 CLI 的修法；
-  会话语义需先定（#132）。#130 的读取边界裁定不阻塞它：RAG 读 store 级共享，与会话语义解耦。
-  现状见 `docs/limitations.md`。
+- **MCP `ans_chat` 用显式 server-minted handle 接线（#132）** —— 首次调用
+  `store.createSession("mcp")` 并把 id 作为 `structuredContent.sessionId` 与末尾 text block
+  返回（只转发 content 的宿主也能让模型看到 handle）；后续调用通过 `AnsChatInput.sessionId`
+  透传，服务端先 `ensureSession(id, "mcp")` 注册会话行（满足 `sessions(id)` 外键），
+  再把 `store` + `sessionId` 交给 `PiAgentRuntime`，因此 `MemoryPipeline` 被构造、
+  L1/L2 锚点跨调用连续。不传 handle 即显式单次调用（每次新会话，不宣称连续性）。
+  这是 MCP 2026-07-28 的显式 handle 模型（SEP-2567：`create_*() -> handle` + threaded
+  parameters），不是传输会话；协议级 `session_id` 仍为空。handle 不是主体边界，
+  store 才是（#130）；多主体仍需独立 store/server。锚点写盘是后台 fire-and-forget，
+  响应不等待 90s 摘要预算，立即重调可能与前一次写盘竞态。
 - **CLI `ans chat` 已接持久库 + 稳定 sessionId（#129）** —— `createPersistentEngine` 走
   `ANS_DB_PATH`（默认 `~/.anysearch/anysearch.db`），sessionId 取持久的
   `~/.anysearch-cli/session` 锚点（`ANS_SESSION_ID` 可覆盖），并先

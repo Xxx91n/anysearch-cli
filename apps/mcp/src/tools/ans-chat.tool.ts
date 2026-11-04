@@ -1,5 +1,7 @@
 // ans_chat tool: PiAgentRuntime agent loop as MCP tool.
-// lazy session cache in closure, env-var keyed rebuild.
+// LLM session cache in closure, env-var keyed rebuild.
+// #132: explicit server-minted session handle (threaded by the client) wires
+// MemoryPipeline; no handle = single-shot.
 // input validated by AJV.
 
 import type { McpServer } from "@modelcontextprotocol/server";
@@ -8,6 +10,7 @@ import type { CompositionResult } from "@anysearch-cli/kernel";
 import { createLlmSession, PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
 import { domainTomlPath } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
+import { buildAnsChatResult, resolveAnsChatSession } from "../ans-chat-session.js";
 import { observeTool } from "./observation.js";
 
 export function registerAnsChat(server: McpServer, eng: CompositionResult): void {
@@ -99,7 +102,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
       const providerName = process.env.ANS_LLM_PROVIDER;
       const modelName = process.env.ANS_LLM_MODEL;
       return observeTool(eng, "ans_chat", async (span) => {
-        const { message } = args as { message: string };
+        const { message, sessionId: requestedSessionId } = args as { message: string; sessionId?: string };
         if (!providerName || !modelName) {
           return { content: [{ type: "text" as const, text: "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars." }] };
         }
@@ -112,15 +115,24 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
             hooks: { toolWhitelist: ["search"] },
             rag: { adapter: "none" },
           };
+          // #132: explicit server-minted session handle (MCP 2026-07-28 /
+          // SEP-2567). A caller that threads the handle from a previous
+          // structuredContent.sessionId resumes the same L1/L2 anchors; omitting
+          // it is the explicit single-shot mode (fresh session each call).
+          // Either half missing leaves the runtime's `store && sessionId` gate
+          // closed, which warnMissingMemoryWiring names on stderr.
+          const memory = await resolveAnsChatSession(eng, requestedSessionId);
           // ponytail: models undefined fix — pass session.models instead of undefined.
           const runtime = new PiAgentRuntime({
             retriever: eng.retriever,
             domain,
+            ...memory,
             domainTomlPath: domainTomlPath(),
             model: session.model,
-            // #113: forwarded for a future memory pipeline. ans_chat currently
-            // builds no store/sessionId, so no L0 watermark runs here; the env
-            // still sets the custom model's request-budget window via the session.
+            // #113: the real window for the L0 watermark; a single-shot call
+            // (no handle) still builds no pipeline, so no L0 watermark runs
+            // there. The env still sets the custom model's request-budget
+            // window via the session.
             contextWindow: session.contextWindow,
             streamFn: session.streamFn,
             models: session.models,
@@ -135,7 +147,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
             else if (event.type === "done") output += "\n" + event.summary;
             else if (event.type === "error") output += "\n[error: " + event.message + "]";
           }
-          return { content: [{ type: "text" as const, text: output || "ans_chat: no response" }] };
+          return buildAnsChatResult(output, memory.sessionId);
         } catch (e) {
           return { content: [{ type: "text" as const, text: "ans_chat error: " + (e instanceof Error ? e.message : String(e)) }] };
         }
