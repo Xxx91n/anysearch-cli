@@ -43,10 +43,10 @@ export function createHttpApp(engine: CompositionResult): Express {
   }
 
   app.post("/mcp", async (req, res) => {
+    // stateless factory pattern: a fresh server per request, sharing the
+    // startup engine (#112 — no createEngine per request).
+    const server = buildServer(engine);
     try {
-      // stateless factory pattern: a fresh server per request, sharing the
-      // startup engine (#112 — no createEngine per request).
-      const server = buildServer(engine);
       // stateless mode -- sessionIdGenerator: undefined, enableJsonResponse, keepAliveMs: 0
       const t = new NodeStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
@@ -60,12 +60,13 @@ export function createHttpApp(engine: CompositionResult): Express {
       const body = (req.body || {}) as McpRequestBody;
       const clientInfoName = body.params?.clientInfo?.name;
       await runWithMcpIdentity({ clientInfoName }, () => t.handleRequest(req, res, req.body));
-      // release the per-request server's listeners; the shared engine stays
-      // open for the next request (#112 — no per-request resource growth).
-      await server.close();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       res.status(500).json({ error: { code: -32603, message: "Internal error: " + msg } });
+    } finally {
+      // release the per-request server's listeners on EVERY path; the shared
+      // engine stays open for the next request (#112 — no per-request growth).
+      await server.close();
     }
   });
 
