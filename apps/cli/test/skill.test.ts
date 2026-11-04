@@ -833,10 +833,13 @@ test("an old holder cannot release a lock that changed hands", (t) => {
 });
 
 test("rename retries transient sharing violations and rethrows permanent failures", () => {
+  // The platform gate is an explicit declaration now: these injections simulate
+  // Windows sharing violations, so every seam states `platform: "win32"`.
   const busy = Object.assign(new Error("busy"), { code: "EBUSY" });
   let attempts = 0;
   const delays: number[] = [];
   renameWithRetry("from", "to", {
+    platform: "win32",
     rename: () => { attempts += 1; if (attempts < 3) throw busy; },
     sleep: (ms) => { delays.push(ms); },
     now: () => 0,
@@ -848,6 +851,7 @@ test("rename retries transient sharing violations and rethrows permanent failure
   let clock = 0;
   let calls = 0;
   assert.throws(() => renameWithRetry("from", "to", {
+    platform: "win32",
     rename: () => { calls += 1; throw denied; },
     sleep: (ms) => { clock += ms; },
     now: () => clock,
@@ -858,6 +862,7 @@ test("rename retries transient sharing violations and rethrows permanent failure
   const missing = Object.assign(new Error("gone"), { code: "ENOENT" });
   let nonRetryable = 0;
   assert.throws(() => renameWithRetry("from", "to", {
+    platform: "win32",
     rename: () => { nonRetryable += 1; throw missing; },
     sleep: () => assert.fail("ENOENT must not be retried"),
     now: () => 0,
@@ -998,6 +1003,8 @@ test("uninstall retries a transient backup rename", async (t) => {
   assert.equal((await f.run(["install", f.source()])).code, 0);
   let failures = 0;
   skillRenameIO.current = {
+    // EPERM is only retryable under the win32 gate, so the test declares it.
+    platform: "win32",
     rename: (from, to) => {
       if (to.includes(".uninstall-") && failures < 2) {
         failures += 1;
