@@ -106,18 +106,16 @@
   same internal range `recall_memory` reads (before its project-index fallback).
   Wiring the tool is tracked in #155.
 - **`rag.adapter = "fts"` reads store-level shared Research Memory (#130)** —
-  this is a deliberate boundary, not an open question. `SessionStore.searchMemory`
-  queries `retrieval_results_fts` without a session or domain filter (the
-  `recall_memory` semantic), so a domain that enables `fts` can surface research
-  saved by any session in the same store. The store is the isolation unit: it is
-  per-user by path and MCP HTTP binds `127.0.0.1` only. The CLI durable path
-  enforces 0700/0600; the MCP cold-start path still inherits the process umask
-  (hardening tracked in #156). Sessions and domains are retrieval sub-scopes,
-  not principals. Every shipped domain stays on `adapter = "none"`, so the
-  shared read is opt-in. A deployer that shares one store or one MCP server
-  across users must isolate with separate stores, not expect a read filter. If
-  multi-principal sharing ever appears, attribute origin at write time first,
-  then filter reads.
+  this is a deliberate boundary, not an open question: the store is the isolation
+  unit (Store Principal), and sessions/domains are retrieval sub-scopes. A domain
+  that enables `fts` can surface research saved by any session in the same store.
+  The CLI durable path attempts owner-only 0700/0600 (best-effort; Windows ignores
+  POSIX modes); the MCP cold-start path still inherits the process umask
+  (hardening tracked in #156). Every shipped domain stays on `adapter = "none"`,
+  so the shared read is opt-in; a deployer that shares one store or one MCP
+  server across users must isolate with separate stores. If multi-principal
+  sharing ever appears, attribute origin at write time first, then filter reads.
+  Evidence and rejected alternatives: `docs/rag-adapters.md` §作用域.
 - **`ans_chat` (MCP) has no `MemoryPipeline` at all (#129)** — this is the
   whole memory chain being absent, not a fail-open to `none`. `PiAgentRuntime`
   builds `MemoryPipeline` only when `store` and `sessionId` are BOTH supplied;

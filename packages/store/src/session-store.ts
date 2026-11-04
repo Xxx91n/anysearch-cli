@@ -623,9 +623,9 @@ export class SqliteSessionStore implements SessionStore {
   public lastArmProvenance: ArmProvenance | null = null;
 
   // Design: Research Memory reads are store-scoped, not session- or domain-scoped —
-  // the store is the isolation unit (Store Principal); sessions/domains are retrieval
-  // sub-scopes. See docs/rag-adapters.md §作用域 for the evidence and rejected
-  // alternatives.
+  // sessions and domains are not principals and no writer records their origin on
+  // retrieval_results; the store is the isolation unit (Store Principal). See
+  // docs/rag-adapters.md §作用域 for the evidence and rejected alternatives.
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
    const safeQuery = this.fts5Escape(query);
    // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
