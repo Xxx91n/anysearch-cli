@@ -21,7 +21,17 @@ const round = (n: number): string => n.toFixed(3);
 export function formatRecommendText(r: RecommendResult): string {
   const lines: string[] = [];
   lines.push('ans recommend — "' + r.query + '"');
-  lines.push("Search arms: " + (r.arms.embedding === "present" ? "fts+embedding" : "fts (embedding arm " + r.arms.embedding + ")"));
+  // #125 item 5: print the lexical stages the candidates actually carry (RecommendCandidate.arms:
+  // "fts" = BM25, "cjk" = substring stage — the same labels --json prints), unioned in stage order
+  // (BM25 anchor first), not rank order. No candidates ⇒ the "fts" baseline: the BM25 arm always
+  // ran and the result carries no evidence of any other stage. Embedding disclosure is unchanged.
+  const stages = new Set(r.candidates.flatMap((c) => c.arms));
+  const arms = ["fts", "cjk"].filter((a) => stages.has(a));
+  if (arms.length === 0) arms.push("fts");
+  if (r.arms.embedding === "present") arms.push("embedding");
+  lines.push(
+    "Search arms: " + arms.join("+") + (r.arms.embedding === "present" ? "" : " (embedding arm " + r.arms.embedding + ")"),
+  );
   if (r.decision === "high" && r.recommendation) {
     lines.push("Confidence: high (" + round(r.confidence ?? 0) + ")");
     lines.push("Suggestion: ans domain " + r.recommendation.id);

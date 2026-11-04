@@ -82,5 +82,18 @@ assert(env.arms?.embedding === "absent", "json arms.embedding visible (FTS-only 
 const envHigh = JSON.parse(formatRecommendJson(high));
 assert(envHigh.recommendation?.suggest === "ans domain research", "json high recommendation carries suggest command");
 
+// 6. #125 item 5: the Search arms line reflects the candidates' real stage labels, not a hardcoded
+// "fts". Corpus reused from packages/store/test/domain-recommend.test.ts: '中文研究' is answered by
+// the substring stage — zh-research, rank 1, coverage 1, arms ["cjk"], decision high.
+const cjkHigh: RecommendResult = {
+  ...high,
+  query: "中文研究",
+  candidates: [
+    { id: "zh-research", name: "zh", description: "深度中文研究与学术检索 Deep academic research", rank: 1, score: 1, relative: 1, coverage: 1, arms: ["cjk"] },
+  ],
+  recommendation: { id: "zh-research", name: "zh", confidence: 1 },
+};
+assert(formatRecommendText(cjkHigh).includes("Search arms: cjk ("), "cjk-stage answer prints 'Search arms: cjk', agreeing with --json candidates[].arms");
+
 console.log("--- recommend format tests: " + passed + " passed, " + failed + " failed ---");
 if (failed > 0) process.exit(1);
