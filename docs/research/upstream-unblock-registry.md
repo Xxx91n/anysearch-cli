@@ -4,7 +4,9 @@ Wayfinder ticket #97. One section per upstream-blocked issue: the concrete
 fact that makes it actionable (解除信号) and its alignment with
 `docs/limitations.md` (登记状态). Signals were derived from each issue's own
 text plus the code surface it names — verified against the tree at
-`research/upstream-registry` branched from `main@61d6398f`.
+`research/upstream-registry` branched from `main@61d6398f`, and re-checked on
+`main@73ada6b` when the registry landed in `docs/research/` (#171) — where
+登记状态 also reflects the entries actually added to `docs/limitations.md`.
 
 ## #18 transformers.js undeclared external (onnxruntime-common) — remove the scoped Module._resolveFilename patch when upstream declares it
 
@@ -56,8 +58,9 @@ decision point (keep rewriting vs. restore a REST arm). Until then the ticket
 is a monitoring record — recheck on the quarterly cadence already noted for
 the cert in the same header block.
 
-登记状态: absent — 建议补登如下 (the REST retirement + auto-rewrite is a
-user-facing config fact for anyone holding an old `ANYSEARCH_ENDPOINT`):
+登记状态: registered — `docs/limitations.md` L162-165, landed in #171 (the REST
+retirement + auto-rewrite is a user-facing config fact for anyone holding an
+old `ANYSEARCH_ENDPOINT`):
 
 ```md
 - **api.anysearch.com REST `/v1/search` is retired** — the route returns 404;
@@ -99,8 +102,9 @@ detector and the "quota/auth nudge" permanent-auth throw
 The client-side handling itself is complete — the ticket closes by
 re-verifying the boundary still behaves as coded.
 
-登记状态: absent — 建议补登如下 (the anonymous-quota wall is user-facing:
-callers hit `permanent-auth` and are told to set `ANYSEARCH_API_KEY`):
+登记状态: registered — `docs/limitations.md` L166-170, landed in #171 (the
+anonymous-quota wall is user-facing: callers hit `permanent-auth` and are told
+to set `ANYSEARCH_API_KEY`):
 
 ```md
 - **Anonymous `anysearch` calls hit a quota wall classified `permanent-auth`** —
@@ -121,12 +125,13 @@ plus `symbol` or `cn_code` per type"; live-verified still rejecting on
 2026-10-01 per the `vert-f1105` tombstone note at `eval-looks.json:1119`).
 At that point, lift `vert-f1105` out of
 `tombstone{reason_code:"upstream-validator-vs-doc-mismatch"}`
-(`eval-looks.json:1099-1147`) back to live scope using `prior_spec` /
+(`eval-looks.json:1099-1151`) back to live scope using `prior_spec` /
 `prior_expected_vertical` preserved in the tombstone.
 
-登记状态: absent — 建议补登如下 (a documented-valid param combination being
-upstream-rejected is user-facing — callers of finance.fundamental hit
-`isError` for input the vocab doc says is legal):
+登记状态: registered — `docs/limitations.md` L171-176, landed in #171 (a
+documented-valid param combination being upstream-rejected is user-facing —
+callers of finance.fundamental hit `isError` for input the vocab doc says is
+legal):
 
 ```md
 - **Upstream `finance.fundamental` validator over-requires `cn_code`** — the
@@ -147,7 +152,7 @@ timeout" (comment at `packages/retriever/src/providers/tavily.ts:33-34`).
 Then forward `SearchRequest`'s `signal` param (accepted at `tavily.ts:30`
 per contract but currently dropped) into the SDK call.
 
-登记状态: registered — `docs/limitations.md` L66-68
+登记状态: registered — `docs/limitations.md` L65-67
 ("**Tavily does not forward `AbortSignal`** — provider-side timeouts are not
 cancelable through the SDK ... the kernel budget guard still bounds wall
 time."). No new entry needed; the issue stays open as the upstream-watch
@@ -164,7 +169,7 @@ optional). Actionable when Tavily documents/ships the endpoint: implement
 `usage()` mapping to the standalone API (and optionally surface the per-call
 `credits` in the envelope meanwhile).
 
-登记状态: absent — 建议补登如下:
+登记状态: registered — `docs/limitations.md` L177-179, landed in #171:
 
 ```md
 - **Tavily envelope `usage` is always `undefined`** — `@tavily/core` returns
@@ -182,7 +187,7 @@ pin `exa-js@^2.18.1`). Actionable when Exa documents/ships the endpoint:
 implement `usage()` mapping to it (and optionally surface `costDollars` in
 the envelope meanwhile).
 
-登记状态: absent — 建议补登如下:
+登记状态: registered — `docs/limitations.md` L180-182, landed in #171:
 
 ```md
 - **Exa envelope `usage` is always `undefined`** — `exa-js` returns cost only
@@ -196,13 +201,13 @@ the envelope meanwhile).
 |-------|----------------------|--------------------------|----------|
 | #18 | `packages/embedding/src/index.ts:31-45` + `package.json` optionalDep | transformers release declares `onnxruntime-common` | absent — issue-only (internal patch) |
 | #22 | `packages/embedding/src/index.ts` ESM path | #18 fix lands, or ESM consumer appears / `module.registerHooks` adopted | absent — issue-only (no shipped ESM load path) |
-| #23 | `anysearch.ts` `LEGACY_REST_SUFFIX`/`normalizeEndpoint` (L37-56) | `GET /v1/search` returns non-404 | absent — draft above |
+| #23 | `anysearch.ts` `LEGACY_REST_SUFFIX`/`normalizeEndpoint` (L37-56) | `GET /v1/search` returns non-404 | registered — `docs/limitations.md` L162-165 |
 | #24 | `eval-looks.json` (`vert-i*` entries) | `get_sub_domains(domain="ip")` returns structured param vocab | absent — issue-only (eval-internal, doc already defers live) |
-| #25 | `anysearch.ts:148-157` detector + `contract.ts:230` | anonymous quota boundary stops returning provisioning payload | absent — draft above |
-| #27 | `eval-looks.json` `vert-f1105` tombstone (L1099-1147) | `{type:"overview",symbol}` accepted without `cn_code` | absent — draft above |
-| #32 | `tavily.ts:30-34` signal forwarding | `@tavily/core` exposes `signal`/abort option | **registered** — limitations.md L66-68 |
-| #33 | `tavily.ts:68,72-73` `usage()` | Tavily standalone usage API exists | absent — draft above |
-| #34 | `exa.ts:82,86-87` `usage()` | Exa standalone usage API exists | absent — draft above |
+| #25 | `anysearch.ts:148-157` detector + `contract.ts:230` | anonymous quota boundary stops returning provisioning payload | registered — `docs/limitations.md` L166-170 |
+| #27 | `eval-looks.json` `vert-f1105` tombstone (L1099-1151) | `{type:"overview",symbol}` accepted without `cn_code` | registered — `docs/limitations.md` L171-176 |
+| #32 | `tavily.ts:30-34` signal forwarding | `@tavily/core` exposes `signal`/abort option | **registered** — limitations.md L65-67 |
+| #33 | `tavily.ts:68,72-73` `usage()` | Tavily standalone usage API exists | registered — `docs/limitations.md` L177-179 |
+| #34 | `exa.ts:82,86-87` `usage()` | Exa standalone usage API exists | registered — `docs/limitations.md` L180-182 |
 
 Legend: "issue-only" rows are adjudicated as sufficiently tracked by the
 issue itself plus in-code comments/tests — registering them in
