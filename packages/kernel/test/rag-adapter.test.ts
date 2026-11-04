@@ -5,7 +5,8 @@
 //   2. adapter="none" and the legacy "note" path are unchanged (regression).
 //   3. unknown adapter id -> fail-open to none + a named stderr warning.
 // Plus the fail-open edges: no store, retrieval throw, no hits, and the
-// injection seam itself (Stage-1 on the first USER message, never stacking).
+// injection seam itself — #131/#154 volatility split: static `note` on the
+// first USER message, dynamic `fts` on the latest USER message (hot zone).
 // Run: node --import tsx --test test/rag-adapter.test.ts
 
 import { test } from "node:test";
@@ -293,9 +294,9 @@ test("registry caches per domain object (hot path costs one build)", async () =>
   assert.equal(reloaded, null, "reloaded domain re-resolves to its new adapter");
 });
 
-// === injection seam: Stage-1, first USER message, no stacking ===
+// === injection seam: Stage-1, volatility split (#131/#154), no stacking ===
 
-test("injection lands on the first USER message, never a leading system turn", async () => {
+test("dynamic fts lands on the latest USER message, never a leading system turn", async () => {
   const pipeline = pipelineWith({ adapter: RAG_ADAPTER_FTS }, storeWith([
     { rowid: 1, role: "assistant", content: "recalled fact", rank: 1 },
   ]));
@@ -306,15 +307,105 @@ test("injection lands on the first USER message, never a leading system turn", a
     { role: "user", content: "latest question" },
   ] as any);
   assert.equal((out[0] as any).content, "system prompt", "system message untouched");
-  assert.ok((out[1] as any).content.includes("recalled fact"), "RAG block on the first user turn");
-  assert.ok(!(out[3] as any).content.includes("recalled fact"), "latest user turn untouched (Stage-1 only)");
+  assert.equal((out[1] as any).content, "first question", "first user turn bytes unchanged (KV prefix stable)");
+  assert.ok(!(out[1] as any).content.includes("recalled fact"), "first user turn stays byte-stable (static slot)");
+  assert.ok((out[3] as any).content.includes("recalled fact"), "RAG block on the latest user turn (hot zone)");
 });
 
-test("the fts query is the first user turn's own text", async () => {
+test("the fts query is the latest user turn's own pre-injection text", async () => {
   const spies = { calls: 0, query: "", limit: 0 };
   const pipeline = pipelineWith({ adapter: RAG_ADAPTER_FTS }, storeWith([{ rowid: 1, role: "a", content: "c" }], { spies }));
-  await pipeline.inject([{ role: "user", content: "how do I configure the proxy?" }] as any);
-  assert.equal(spies.query, "how do I configure the proxy?", "recall keyed on the user question");
+  await pipeline.inject([
+    { role: "user", content: "turn one question" },
+    { role: "assistant", content: "a1" },
+    { role: "user", content: "turn two question" },
+  ] as any);
+  assert.equal(spies.query, "turn two question",
+    "follow-up turn recalls on the current question, not the stale turn-1 text");
+});
+
+test("the fts query is capped at RAG_QUERY_MAX_CHARS on the latest turn", async () => {
+  const spies = { calls: 0, query: "", limit: 0 };
+  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_FTS }, storeWith([{ rowid: 1, role: "a", content: "c" }], { spies }));
+  const long = "x".repeat(RAG_QUERY_MAX_CHARS + 50);
+  await pipeline.inject([
+    { role: "user", content: "turn one" },
+    { role: "assistant", content: "a1" },
+    { role: "user", content: long },
+  ] as any);
+  assert.equal(spies.query.length, RAG_QUERY_MAX_CHARS, "query truncated to the strict-rung cap");
+});
+
+test("a question that mentions an injection tag is not truncated", async () => {
+  const spies = { calls: 0, query: "", limit: 0 };
+  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_FTS }, storeWith([{ rowid: 1, role: "a", content: "c" }], { spies }));
+  await pipeline.inject([{ role: "user", content: "what does [RAG Context] mean?" }] as any);
+  assert.equal(spies.query, "what does [RAG Context] mean?",
+    "an inline tag belongs to the user's own question");
+});
+
+test("static note (none + leftover config.note) stays on the first user turn across turns", async () => {
+  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_NONE, config: { note: "internal wiki" } }, storeWith([]));
+  const out = await pipeline.inject([
+    { role: "user", content: "turn one" },
+    { role: "assistant", content: "a1" },
+    { role: "user", content: "turn two" },
+  ] as any);
+  assert.equal((out[0] as any).content, "turn one\n\n[RAG Context] internal wiki",
+    "none + note keeps the #104 first-turn slot and bytes");
+  assert.equal((out[2] as any).content, "turn two", "latest turn untouched by the static note");
+});
+
+test("a re-injected array strips T0 and L1/L2 tags from the fts query", async () => {
+  const spies = { calls: 0, query: "", limit: 0 };
+  const store: any = storeWith([{ rowid: 1, role: "a", content: "c" }], { spies });
+  store.listPreferences = async () => [{ key: "output.language", value: "Chinese", modified: "x" }];
+  store.getAnchors = async () => [
+    { anchorType: "rolling_summary", payload: { summary: "prior summary" } },
+    { anchorType: "l2_recall", payload: { hits: "prior hits" } },
+  ];
+  const pipeline = new MemoryPipeline({
+    store, retriever, domain: domain({ adapter: RAG_ADAPTER_FTS }),
+    model: {} as any, streamFn: (() => ({})) as any, sessionId: "s1",
+  });
+  const msgs = [
+    { role: "user", content: "turn one" },
+    { role: "assistant", content: "a1" },
+    { role: "user", content: "turn two question" },
+  ];
+  const first = await pipeline.inject(msgs as any);
+  spies.query = "";
+  await pipeline.inject(first as any);
+  assert.equal(spies.query, "turn two question",
+    "recall key strips T0 preferences and every earlier injection block");
+});
+
+test("content-block turn: Stage-1 + L1/L2 stack in documented order without overwriting user text", async () => {
+  const store: any = storeWith([{ rowid: 1, role: "assistant", content: "recalled fact" }]);
+  store.getAnchors = async () => [
+    { anchorType: "rolling_summary", payload: { summary: "S".repeat(4000) } },
+    { anchorType: "l2_recall", payload: { hits: "H".repeat(1500) } },
+  ];
+  const pipeline = new MemoryPipeline({
+    store, retriever, domain: domain({ adapter: RAG_ADAPTER_FTS }),
+    model: {} as any, streamFn: (() => ({})) as any, sessionId: "s1",
+  });
+  const blocks = [{ type: "text", text: "block-form question" }];
+  const out = await pipeline.inject([{ role: "user", content: blocks }] as any);
+  const content = (out[0] as any).content;
+  assert.equal(content.length, 1, "block array keeps its single text block (no shape churn)");
+  const text = content[0].text as string;
+  assert.ok(text.startsWith("block-form question"), "user text preserved and first");
+  const ragAt = text.indexOf("[RAG Context]");
+  const l1At = text.indexOf("[Session Memory] ");
+  const l2At = text.indexOf("[Research Recall] ");
+  assert.ok(ragAt > 0, "Stage-1 RAG block appended");
+  assert.ok(l1At > ragAt && l2At > l1At,
+    "order: user text -> [RAG Context] -> [Session Memory] -> [Research Recall]");
+  assert.ok(text.includes("[RAG Context]") && text.includes("recalled fact"), "RAG not crowded out by L1");
+  assert.ok(text.includes("S".repeat(4000)) && !text.includes("S".repeat(4001)), "L1 payload capped at 4000");
+  assert.ok(text.includes("H".repeat(1500)) && !text.includes("H".repeat(1501)), "L2 payload capped at 1500");
+  assert.deepEqual(blocks[0], { type: "text", text: "block-form question" }, "input message not mutated");
 });
 
 test("only the selected adapter runs — note and fts do not stack", async () => {

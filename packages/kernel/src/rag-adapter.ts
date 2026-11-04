@@ -16,7 +16,9 @@
 // or mis-wired adapter id must never break the agent loop.
 //
 // Only one adapter is active per domain (the id selects it; note and fts do
-// not stack). The injection slot itself is unchanged: first USER message.
+// not stack). The injection slot follows the #131 volatility split: static
+// operator text (`note`) on the first USER message, query-driven adapters
+// (`fts`, see DYNAMIC_RAG_ADAPTERS) on the latest USER message.
 
 import { sanitizeText, type SourceTraceLabel } from "@anysearch-cli/retriever";
 import type { DomainConfigPort, RagAdapterPort, RagRetrievalResult, SessionStorePort } from "./ports";
@@ -30,6 +32,37 @@ export const RAG_ADAPTER_FTS = "fts";
 
 /** Known adapter ids, in the order the fail-open warning lists them. */
 export const KNOWN_RAG_ADAPTERS = [RAG_ADAPTER_NONE, RAG_ADAPTER_NOTE, RAG_ADAPTER_FTS] as const;
+
+/**
+ * Design: volatility is encoded as an explicit adapter-id allowlist — #131
+ * places query-driven adapters on the latest user message (hot zone) and
+ * session-static operator text on the first, and an id list keeps the #90 port
+ * contract (`retrieve(query, limit)`) frozen instead of adding a placement flag
+ * to every adapter. Rejected alternative: a boolean on `RagAdapterPort` — it
+ * would change the frozen contract and force every implementer to restate a
+ * policy the kernel owns. Adapter ids whose injection is *query-driven* — the
+ * block is recomputed from the user's current question every turn.
+ *
+ * #131 splits Stage-1 placement by volatility: these adapters land on the
+ * LATEST user message (attention hot zone) and key their query on that turn's
+ * pre-injection text, while session-static operator text (`note`, and `none` +
+ * leftover `config.note`) stays on the FIRST user message. Keep this list in
+ * sync when adding a new retrieval adapter — a new id that is not listed here
+ * silently falls back to the static first-turn slot.
+ */
+export const DYNAMIC_RAG_ADAPTERS: readonly string[] = [RAG_ADAPTER_FTS];
+
+/**
+ * Whether `id` names a query-driven adapter that belongs on the latest user
+ * message (#131 volatility split). Unknown/absent ids read as static: they
+ * inject nothing anyway, and the conservative placement keeps existing
+ * behavior.
+ *
+ * @param id - Resolved adapter id, or undefined/null when no adapter ran.
+ */
+export function isDynamicRagAdapter(id: string | null | undefined): boolean {
+  return typeof id === "string" && DYNAMIC_RAG_ADAPTERS.includes(id);
+}
 
 /** Marker that opens every injected RAG block (unchanged since the note-only era). */
 export const RAG_CONTEXT_TAG = "[RAG Context]";
@@ -196,7 +229,8 @@ export class RagAdapterRegistry {
    * short-circuits before any store round trip.
    *
    * @param domain - Active domain config carrying `rag.adapter`.
-   * @param query - Caller text, normally the first user turn; truncated here.
+   * @param query - Caller text, normally the latest user turn's pre-injection
+   *   text (dynamic adapters); truncated here.
    * @param limit - Max hits to fold into the block.
    * @returns The injection payload, or null when nothing should be injected.
    */

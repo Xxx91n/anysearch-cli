@@ -94,7 +94,7 @@ export interface ResumeAnchorsPort {
 
 /** One adapter's injection payload for a single turn. */
 export interface RagRetrievalResult {
-  /** Text appended after a blank line to the first user message's text channel. */
+  /** Text appended after a blank line to a user message's text channel. */
   block: string;
   /**
    * Provenance for the injected text: recalled rows are `memory` (a tier below
@@ -113,8 +113,10 @@ export interface RagRetrievalResult {
  * existing FTS5 memory surface (`SessionStore.searchMemory`) — zero new index,
  * zero embedding dependency.
  *
- * The injection point is unchanged: `MemoryPipeline.inject` Stage-1, the first
- * USER message's text channel (string or content-block shape alike).
+ * Injection point: `MemoryPipeline.inject` Stage-1. Following #131, static
+ * operator text (`note`) targets the first USER message while query-driven
+ * adapters (`fts`) target the latest one; the write is shape-preserving (string
+ * or content-block alike).
  */
 export interface RagAdapterPort {
   /** Adapter id, matching the `[rag] adapter` value that selected it. */
@@ -122,7 +124,8 @@ export interface RagAdapterPort {
   /**
    * Resolve `query` into an injectable payload.
    *
-   * @param query - Caller text, normally the first user turn (adapters may truncate).
+   * @param query - Caller text, normally the latest user turn's pre-injection
+   *   text (query-driven adapters); adapters may truncate it.
    * @param limit - Max hits to fold into the block.
    * @returns The payload, or null meaning "nothing to inject this turn".
    *   Thrown faults are fail-open at the registry (no injection, named stderr),

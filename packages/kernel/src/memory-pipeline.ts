@@ -19,7 +19,7 @@ const COMPACTION_RESERVE_TOKENS = 16_384;
 const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
-import { RagAdapterRegistry, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS } from "./rag-adapter";
+import { RagAdapterRegistry, RAG_CONTEXT_TAG, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
 import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
@@ -280,6 +280,49 @@ export function consolidateState(
   };
 }
 
+// Injection tags written by Stage-1/Stage-2, and the T0 closing tag. `ragQuery`
+// must not search them: #131 requires the PRE-INJECTION latest user text, so a
+// retried/resumed inject() that re-reads its own output has to strip what an
+// earlier pass appended before truncating to RAG_QUERY_MAX_CHARS.
+const SESSION_MEMORY_TAG = "[Session Memory]";
+const RESEARCH_RECALL_TAG = "[Research Recall]";
+const INJECTION_TAGS = [RAG_CONTEXT_TAG, SESSION_MEMORY_TAG, RESEARCH_RECALL_TAG] as const;
+const PREFS_OPEN_TAG = "<user_preferences";
+const PREFS_CLOSE_TAG = "</user_preferences>";
+
+/**
+ * Recover the user's own text from a message that may already carry injections.
+ *
+ * @param text - Current text channel of the target user message.
+ * @returns The pre-injection original; an unmarked text is returned verbatim
+ *   (no trimming), so a normal turn's whitespace is untouched.
+ */
+function preInjectionQueryText(text: string): string {
+  let body = text;
+  let stripped = false;
+  // T0 only ever lands as a leading block; require that shape so a quotation
+  // of the closing tag inside the user's own text is not mistaken for it.
+  if (body.startsWith(PREFS_OPEN_TAG)) {
+    const prefsEnd = body.indexOf(PREFS_CLOSE_TAG);
+    if (prefsEnd >= 0) {
+      body = body.slice(prefsEnd + PREFS_CLOSE_TAG.length);
+      stripped = true;
+    }
+  }
+  // Injected blocks are always appended after a blank line; matching the
+  // separator avoids truncating a question that merely mentions a tag.
+  let cut = -1;
+  for (const tag of INJECTION_TAGS) {
+    const at = body.indexOf("\n\n" + tag);
+    if (at >= 0 && (cut < 0 || at < cut)) cut = at;
+  }
+  if (cut >= 0) {
+    body = body.slice(0, cut);
+    stripped = true;
+  }
+  return stripped ? body.trim() : text;
+}
+
 export class MemoryPipeline {
   private deps: MemoryPipelineDeps;
   // rag adapter registry (#35): domain.rag.adapter -> adapter, resolved per
@@ -311,12 +354,12 @@ export class MemoryPipeline {
    * Build the injection payload for one turn — corresponds to treequery's
    * `transformContext` delegation.
    *
-   * Today (#104 baseline), Stage-1 appends the RAG adapter's block to the
-   * *first* user turn, T0 prepends `<user_preferences>` to the *first* user
-   * turn, and Stage-2 appends the merged L1/L2 memory block to the *last* user
-   * turn (the attention hot zone). Per #131 (see `Design:` note below), dynamic
-   * query-driven RAG (`fts` and future retrieval adapters) is slated to move to
-   * the *last* user turn while static `note` stays on the *first* user turn.
+   * Stage-1 splits by volatility (#131, implemented by #154): static operator
+   * text (`note`, and `none` + leftover `config.note`) appends to the *first*
+   * user turn; query-driven adapters (`fts`) append to the *latest* user turn
+   * (the attention hot zone) and query on that turn's pre-injection text. T0
+   * prepends `<user_preferences>` to the *first* user turn. Stage-2 appends the
+   * merged L1/L2 memory block to the *latest* user turn, after Stage-1.
    * All stages target user messages only, so a leading system/tool message
    * cannot swallow the payload. The input array is never mutated.
    *
@@ -327,62 +370,75 @@ export class MemoryPipeline {
     const { store, domain, sessionId } = this.deps;
     let result = messages;
 
-    // Design: split Stage-1 RAG placement by volatility (#131) — static operator
-    // notes (`note` and `none` + leftover `config.note`) stay on the first user
-    // message so the session prefix stays byte-stable across turns and #104 AC2
-    // holds, while query-driven RAG (`fts` and future retrieval adapters) must
-    // key `ragQuery` on the pre-injection latest user text (first 400 chars) and
-    // append ephemerally to the latest user message before Stage-2 (`user text ->
-    // [RAG Context] (block <=4000) -> [Session Memory] (payload <=4000) ->
-    // [Research Recall] (payload <=1500)`, independent per-tier budgets). Keeping
-    // dynamic `fts` on `firstUserIdx` (Option A, current #104 code below; runtime
-    // migration pending follow-up implementation ticket) queries stale turn-1
-    // text on follow-up turns, dilutes recency attention, and invalidates the
-    // entire KV-cache prefix from `messages[0]` whenever Research Memory changes;
-    // moving static `note` to `lastIdx` too (Option B) breaks #104 AC2 multi-turn
-    // byte-identity and churns static prefix tokens; moving L1/L2 to `firstUserIdx`
-    // (Option C) loses the hot zone. Follow-up implementation must also switch
-    // Stage-2 write-back below to `appendMessageText` so content-block turns do
-    // not overwrite user text or the Stage-1 `[RAG Context]` block.
-    // Stage 1: RAG injection — append the adapter's block to the first user message.
-    // injections target USER messages; a leading system/tool message must not swallow them.
+    // Design: Stage-1 splits RAG placement by volatility (#131, implemented by
+    // #154) — static operator text (`note`, and `none` + leftover `config.note`)
+    // appends to the FIRST user message so the session prefix stays byte-stable
+    // across turns and #104 AC2 holds byte-for-byte, while query-driven adapters
+    // (`fts`, see DYNAMIC_RAG_ADAPTERS) append to the LATEST user message (the
+    // attention hot zone) and key `ragQuery` on that turn's PRE-INJECTION text
+    // (first RAG_QUERY_MAX_CHARS). Rejected alternative (Option A): keeping
+    // dynamic RAG on the first turn makes follow-up turns recall turn-1 evidence,
+    // dilutes recency attention, and invalidates the KV cache prefix from
+    // `messages[0]` whenever memory changes; moving static `note` to the latest
+    // turn (Option B) breaks #104 AC2; moving L1/L2 to the first turn (Option C)
+    // loses the hot zone.
+    // Stage-1 runs before Stage-2 so one message reads `user text ->
+    // [RAG Context] -> [Session Memory] -> [Research Recall]`, each tier
+    // independently budgeted (4000 / 4000 / 1500 chars).
+    // Stage 1: RAG injection — static adapters target the first user message,
+    // dynamic adapters the latest; a leading system/tool message never swallows it.
     // #35: the adapter is selected by domain.rag.adapter (none / note-legacy / fts);
     // unknown ids fail open to none with a named stderr warning inside the registry.
     // #104: pi-agent-core normalizes prompt("…") to content BLOCKS, so the seam is
     // shape-aware (message-text.ts) instead of string-only — a string-only read
     // either never fired or overwrote the user's message with the injected text.
     const firstUserIdx = result.findIndex((m: any) => m?.role === "user");
-    const firstTarget = firstUserIdx >= 0 ? readMessageText(result[firstUserIdx]) : null;
-    if (firstUserIdx >= 0 && firstTarget) {
-      // fts recall is keyed on the user's own question — the first user turn, which
-      // is also where the block lands. Truncated so long prompts still match the
-      // strict FTS5 rung.
-      const ragQuery = firstTarget.text.slice(0, RAG_QUERY_MAX_CHARS);
-      // Fail-open: retrieval faults are the registry's to report; the agent loop
-      // always continues with the un-injected messages.
-      let ragInstruction = "";
+    // One scan, shared with Stage-2 below: replacing an element keeps its index.
+    let lastUserIdx = -1;
+    for (let i = result.length - 1; i >= 0; i--) if (result[i]?.role === "user") { lastUserIdx = i; break; }
+    if (firstUserIdx >= 0) {
+      // Resolve inside the guard (fail-open): registry build is the only throwing
+      // seam, and a turn must not fail because adapter selection did.
+      let dynamicRag = false;
       try {
-        const injection = await this.rag.resolveInjection(domain, ragQuery, RAG_DEFAULT_LIMIT);
-        if (injection && injection.block) ragInstruction = "\n\n" + injection.block;
-      } catch { /* fail-open: never block a turn on RAG */ }
-      if (ragInstruction) {
-        // Shape-preserving write-back: blocks stay blocks, non-text blocks survive.
-        const next = appendMessageText(result[firstUserIdx], ragInstruction, firstTarget);
-        if (next) {
-          result = [
-            ...result.slice(0, firstUserIdx),
-            next,
-            ...result.slice(firstUserIdx + 1),
-          ];
+        dynamicRag = isDynamicRagAdapter(this.rag.resolve(domain)?.id);
+      } catch { dynamicRag = false; }
+      const ragIdx = dynamicRag ? lastUserIdx : firstUserIdx;
+      const ragTarget = ragIdx >= 0 ? readMessageText(result[ragIdx]) : null;
+      if (ragTarget) {
+        // `ragQuery` is the PRE-INJECTION latest user text: strip earlier T0 /
+        // [RAG Context] / [Session Memory] / [Research Recall] text so a retried
+        // or resumed array cannot pollute the recall key, then cap for the strict
+        // FTS5 rung. `note` ignores the query.
+        const ragQuery = preInjectionQueryText(ragTarget.text).slice(0, RAG_QUERY_MAX_CHARS);
+        // Fail-open: retrieval faults are the registry's to report; the agent loop
+        // always continues with the un-injected messages.
+        let ragInstruction = "";
+        try {
+          const injection = await this.rag.resolveInjection(domain, ragQuery, RAG_DEFAULT_LIMIT);
+          if (injection && injection.block) ragInstruction = "\n\n" + injection.block;
+        } catch { /* fail-open: never block a turn on RAG */ }
+        if (ragInstruction) {
+          // Shape-preserving write-back: blocks stay blocks, non-text blocks survive.
+          const next = appendMessageText(result[ragIdx], ragInstruction, ragTarget);
+          if (next) {
+            result = [
+              ...result.slice(0, ragIdx),
+              next,
+              ...result.slice(ragIdx + 1),
+            ];
+          }
         }
       }
     }
 
-    // T0 user preferences injection — same Stage-1 slot, identical content/order.
-    // Idempotent: skip if first message already carries a <user_preferences> block
-    // (transformContext may be invoked more than once on retry/resume).
+    // T0 user preferences injection — static slot (first user turn), identical
+    // content/order. Idempotent: skip if first message already carries a
+    // <user_preferences> block (transformContext may be invoked more than once
+    // on retry/resume).
     try {
-      // Re-read after Stage-1 (same shape rules): the RAG block may have landed here.
+      // Re-read after Stage-1 (same shape rules): a static RAG block may have
+      // landed on this turn.
       const t0Target = firstUserIdx >= 0 ? readMessageText(result[firstUserIdx]) : null;
       if (firstUserIdx >= 0 && t0Target) {
         const firstContent = t0Target.text;
@@ -409,27 +465,26 @@ export class MemoryPipeline {
 
       const injections: string[] = [];
       if ((summaryAnchor?.payload as any)?.summary) {
-        injections.push("[Session Memory] " + String((summaryAnchor.payload as any).summary).slice(0, 4000));
+        injections.push(SESSION_MEMORY_TAG + " " + String((summaryAnchor.payload as any).summary).slice(0, 4000));
       }
       if ((recallAnchor?.payload as any)?.hits) {
-        injections.push("[Research Recall] " + String((recallAnchor.payload as any).hits).slice(0, 1500));
+        injections.push(RESEARCH_RECALL_TAG + " " + String((recallAnchor.payload as any).hits).slice(0, 1500));
       }
 
-      // latest USER message, not blindly the last array element.
-      let lastIdx = -1;
-      for (let i = result.length - 1; i >= 0; i--) if (result[i]?.role === "user") { lastIdx = i; break; }
-      if (injections.length > 0 && lastIdx >= 0) {
+      // latest USER message, not blindly the last array element. The index was
+      // computed once above; Stage-1 replaced elements in place, so it still holds.
+      if (injections.length > 0 && lastUserIdx >= 0) {
         // Same shape rule as Stage-1/T0: pi normalizes prompt("…") to content
         // BLOCKS, so a string-only write here would replace the user's turn with
         // the injection (data loss). Stand down when the turn has no text channel.
-        const last = result[lastIdx];
+        const last = result[lastUserIdx];
         const target = readMessageText(last);
         const next = target ? appendMessageText(last, "\n\n" + injections.join("\n\n"), target) : null;
         if (next) {
           result = [
-            ...result.slice(0, lastIdx),
+            ...result.slice(0, lastUserIdx),
             next,
-            ...result.slice(lastIdx + 1),
+            ...result.slice(lastUserIdx + 1),
           ];
         }
       }
