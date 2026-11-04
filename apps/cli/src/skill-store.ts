@@ -14,6 +14,7 @@ import { homedir, hostname } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { parseDocument } from "yaml";
+import { atomicRename as renameWithRetry, renameSeam, setRenameSeam, sleepSync } from "./fs-atomic";
 
 export interface SkillOptions {
   home?: string;
@@ -116,57 +117,14 @@ const LOCK_PENDING_PREFIX = `${MANIFEST_LOCK}.pending-`;
 /** Uninstall backup prefix; contents are never deleted without a manifest entry. */
 const UNINSTALL_PREFIX = ".uninstall-";
 
-const RETRYABLE_RENAME_CODES = new Set(["EPERM", "EBUSY", "ENOTEMPTY"]);
-/** POSIX reports EPERM/ENOTEMPTY for permanent conditions, so only EBUSY is retried. */
-const POSIX_RETRYABLE_RENAME_CODES = new Set(["EBUSY"]);
-const RENAME_RETRY_BUDGET_MS = 60_000;
-const RENAME_RETRY_INITIAL_MS = 10;
-const RENAME_RETRY_MAX_MS = 1_000;
-
-/** Injectable rename primitives so tests can simulate transient sharing violations. */
-export interface RenameIO {
-  rename: (from: string, to: string) => void;
-  sleep: (ms: number) => void;
-  now: () => number;
-}
-
-const DEFAULT_RENAME_IO: RenameIO = { rename: renameSync, sleep: sleepSync, now: Date.now };
-
-/** Test seam for the real install/uninstall paths; production leaves it unset. */
-export const skillRenameIO: { current?: RenameIO } = {};
-
-function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-// Design: bounded exponential backoff (10ms→1s, 60s budget) — Windows reports
-// EPERM/EBUSY/ENOTEMPTY transiently, while POSIX EPERM/ENOTEMPTY are usually
-// permanent, so production retries all three only on Windows and EBUSY elsewhere.
-// Exhaustion rethrows the original error; the commit point stays "rename to the new name".
-/** Rename with bounded exponential backoff for transient sharing violations. */
-export function renameWithRetry(
-  from: string,
-  to: string,
-  io: RenameIO = skillRenameIO.current ?? DEFAULT_RENAME_IO,
-): void {
-  // Tests inject their own IO and keep the full set on every platform.
-  const retryableCodes = io === DEFAULT_RENAME_IO && process.platform !== "win32"
-    ? POSIX_RETRYABLE_RENAME_CODES
-    : RETRYABLE_RENAME_CODES;
-  const deadline = io.now() + RENAME_RETRY_BUDGET_MS;
-  let delay = RENAME_RETRY_INITIAL_MS;
-  for (;;) {
-    try {
-      io.rename(from, to);
-      return;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === undefined || !retryableCodes.has(code) || io.now() + delay > deadline) throw error;
-      io.sleep(delay);
-      delay = Math.min(delay * 2, RENAME_RETRY_MAX_MS);
-    }
-  }
-}
+// Rename backoff lives in fs-atomic (#145): the Windows/POSIX retryability gate is
+// an explicit `platform` seam field there — not object identity on a default IO —
+// so the POSIX-only-EBUSY semantics is directly testable. Re-exported under the
+// historical names so existing skill-store callers keep working.
+export { renameWithRetry, renameSeam, setRenameSeam };
+export type { RenameSeam } from "./fs-atomic";
+/** @deprecated use `renameSeam` / `setRenameSeam`; kept so existing callers keep working. */
+export const skillRenameIO = renameSeam;
 
 // Design: names are single path segments on every supported OS — the Agent Skills
 // naming rule also excludes traversal, absolute paths, Windows device names and separators.
