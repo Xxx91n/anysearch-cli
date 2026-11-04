@@ -16,17 +16,27 @@ import { createParser, type EventSourceMessage } from "eventsource-parser";
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope } from "../contract";
 import { canonicalizeVertical } from "../contract";
 
-// DEFERRED-WITH-DEADLINE: ownership of api.anysearch.com is an internal
-// confirmation item (legal/ops), not a code decision. Round-58 verification surface was the
-// infrastructure layer only (CloudFront CNAME + cert + status subdomain); re-verified
-// cert rotated 2026-09-22, valid to 2027-04-07 (Amazon RSA 2048 M04,
-// SAN *.anysearch.com+anysearch.com); /health 200, apex/status 200 — infrastructure alive.
-// GET /v1/search = 404 route-level dead (P-A, dual-column); POST /mcp = live MCP
+// CONFIRMED (2026-11-04, closes #15): api.anysearch.com is the official vendor
+// endpoint — the deferred legal/ops ownership item is settled. Official evidence:
+// github.com/anysearch-ai/anysearch-mcp-server README names this exact endpoint
+// ("The production endpoint is: https://api.anysearch.com/mcp", Streamable HTTP);
+// the key console lives on the apex domain (anysearch.com/console/api-keys) and the
+// official register route (POST /v1/auth/email/register) is served from this same
+// host; the wildcard cert (rotated 2026-09-22, valid to 2027-04-07, Amazon RSA 2048
+// M04, SAN *.anysearch.com+anysearch.com) covers apex + api as one operator;
+// /health 200 re-verified 2026-11-04 (code:0 envelope, request_id present).
+// History: deferred round 58 as an internal legal/ops confirmation, not a code
+// decision (ADR-0059 D7 / T-6.4; then-registry entry defer-anysearch-domain-ownership,
+// owner anysearch-retriever); the registry was removed with the governance layer
+// (5593fe05) and GitHub issue #15 carried the open item — this block is its live
+// record now.
+// GET /v1/search = 404 route-level dead (P-A, dual-column; official REST search is
+// POST — GET-dead is not REST-dead); POST /mcp = live MCP
 // Streamable HTTP endpoint — this adapter speaks MCP only.
 // Fail-open: an unreachable endpoint or malformed reply degrades the anysearch arm,
 // never the fused envelope.
-// Owner: anysearch-retriever (docs/deferred-registry.json: defer-anysearch-domain-ownership).
-// Review: quarterly cadence (precedent); CT/expiry monitoring tracks the cert renewal.
+// Review: CT/expiry watch remains (cert valid to 2027-04-07) — re-confirm on the
+// next rotation.
 const ANYSEARCH_ENDPOINT = "https://api.anysearch.com/mcp";
 
 // Client-supported protocol version, sent on every POST per spec MUST. The

@@ -4,6 +4,12 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #15: api.anysearch.com 归属确认落定（官方证据闭环）
+
+### Documented
+
+- **`packages/retriever/src/providers/anysearch.ts` 注释块 DEFERRED-WITH-DEADLINE → CONFIRMED（2026-11-04）**：api.anysearch.com 归属官方的 legal/ops 确认事项（ADR-0059 D7/T-6.4 原延期项）收口。证据：官方仓库 `anysearch-ai/anysearch-mcp-server` README 明确写 "The production endpoint is: https://api.anysearch.com/mcp"（native Streamable HTTP）；Key 控制台位于 apex 域（anysearch.com/console/api-keys），官方注册路由 `POST /v1/auth/email/register` 同在该主机；通配符证书（2026-09-22 轮换、有效期至 2027-04-07、Amazon RSA 2048 M04、SAN `*.anysearch.com+anysearch.com`）同主体覆盖 apex 与 api 子域；`GET /health` 200 于 2026-11-04 复核（code:0 信封）。治理层拆除（5593fe05）后该活账由 issue #15 承载——注释块原指向已删除 `docs/deferred-registry.json` 的悬挂引用一并修复，改指 #15。附注修正：GET `/v1/search` 404 注记补明官方 REST search 为 POST——GET 死 ≠ REST 死。纯注释改动，零行为变化，不触测试；证书 CT/到期观察保留（下一节点 2027-04-07，轮换时复核归属不变）。
+
 ## Unreleased — #162: `ans chat` 对 `Domain schema:` 错误 fail-fast
 
 ### Fixed
@@ -1215,3 +1221,4 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
   CLI help and wording updated. Regression coverage: per-batch exact-parity and
   live-writer contention cases in relation-edges.test.ts.
 
+> AI生成
