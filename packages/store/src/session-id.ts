@@ -40,6 +40,33 @@ function generateSessionId(): string {
   return randomUUID().replace(/-/g, "");
 }
 
+// Process-local cache of temporary IDs for unreadable anchors.
+// CodeRabbit #129 review: without this, each readSessionId() call returns a
+// different ID when the anchor is unreadable, so events from one process
+// can receive different session IDs. Keyed by anchor path so different
+// ANS_SESSION_ID / HOME combinations don't collide.
+const tempIdByAnchor = new Map<string, string>();
+
+// Best-effort stderr write: a closed/broken stderr (e.g. the MCP parent closed
+// the pipe) must not crash the process. Both synchronous write throws and
+// asynchronous stream errors are absorbed. Mirrors the pattern in
+// packages/kernel/src/composition.ts writeProviderDiagnostic.
+// CodeRabbit #129 review: process.stderr.write can emit an asynchronous 'error'
+// event that try/catch cannot capture — a broken pipe would terminate the
+// process instead of continuing fail-open.
+function writeStderr(message: string): void {
+  const stderr = process.stderr;
+  const swallow = () => {};
+  stderr.once("error", swallow);
+  try {
+    stderr.write(message, (error) => {
+      if (!error) stderr.off("error", swallow);
+    });
+  } catch {
+    stderr.off("error", swallow);
+  }
+}
+
 // readSessionId:
 // 1. ANS_SESSION_ID env (if non-empty) wins and is NOT written back.
 // 2. file content (if non-empty) is returned as-is.
@@ -51,11 +78,33 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
   const envId = env[ENV_SESSION_ID];
   if (typeof envId === "string" && envId.trim().length > 0) return envId.trim();
   const file = sessionIdPath(env);
+  let anchorUnreadable = false;
   if (existsSync(file)) {
     try {
       const v = readFileSync(file, "utf8").trim();
       if (v.length > 0) return v;
-    } catch { /* fall through to fresh generate */ }
+    } catch {
+      // CodeRabbit #129 review: do NOT fall through to fresh generate + write.
+      // renameSync does not require write permission on the file itself, only
+      // on its directory, so overwriting would silently destroy the anchor.
+      // The previous session ID may still be recoverable once permissions are
+      // restored; return a fresh ID for this run only.
+      anchorUnreadable = true;
+    }
+  }
+  if (anchorUnreadable) {
+    // Reuse one process-local temporary ID per anchor path so events from
+    // the same process share a session ID even while the anchor is unreadable.
+    let tempId = tempIdByAnchor.get(file);
+    if (!tempId) {
+      tempId = generateSessionId();
+      tempIdByAnchor.set(file, tempId);
+    }
+    writeStderr(
+      "[warn] session anchor could not be read at " + file +
+      "; using a fresh session id for this run. Set ANS_SESSION_ID to resume a session.\n",
+    );
+    return tempId;
   }
   // First run (or corrupted empty file): generate and persist.
   const fresh = generateSessionId();
@@ -70,12 +119,10 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
     // identity load-bearing for memory (a new id each run means the previous
     // run's anchors are unreachable), so say it once instead of silently
     // handing out an id that will not survive the process.
-    try {
-      process.stderr.write(
-        "[warn] could not persist the session anchor; set ANS_SESSION_ID to a stable value or make " +
-        sessionIdBaseDir(env) + " writable to resume memory across runs\n",
-      );
-    } catch { /* diagnostics must not block the fail-open path */ }
+    writeStderr(
+      "[warn] could not persist the session anchor; set ANS_SESSION_ID to a stable value or make " +
+      sessionIdBaseDir(env) + " writable to resume memory across runs\n",
+    );
   }
   return fresh;
 }
