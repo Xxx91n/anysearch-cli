@@ -167,5 +167,27 @@ let trGoodOk = true;
 try { validate(trGood); } catch { trGoodOk = false; }
 assert("valid toolRequires passes", trGoodOk);
 
+// compaction.lowWatermark — #113/CodeRabbit #161: the absolute shape must be a
+// finite number; NaN/Infinity previously slipped through `value < 50000` and
+// only failed later inside the fail-open consolidate path (silently disabling L0).
+{
+  for (const bad of [NaN, Infinity, -Infinity, 49999]) {
+    const s = resolve({ name: "lw", rag: { adapter: "x" }, compaction: { lowWatermark: bad } } as RawDomain, () => undefined);
+    let msg = "";
+    try { validate(s); } catch (e) { msg = (e as Error).message; }
+    assert("lowWatermark rejects " + String(bad), msg.includes("lowWatermark"));
+  }
+  const okAbs = resolve({ name: "lwok", rag: { adapter: "x" }, compaction: { lowWatermark: 50000 } } as RawDomain, () => undefined);
+  let okAbsPassed = true;
+  try { validate(okAbs); } catch { okAbsPassed = false; }
+  assert("lowWatermark 50000 passes", okAbsPassed);
+  for (const badF of [NaN, Infinity, 0, 1, -0.1]) {
+    const s = resolve({ name: "lwf", rag: { adapter: "x" }, compaction: { lowWatermark: { fraction: badF } } } as RawDomain, () => undefined);
+    let threwF = false;
+    try { validate(s); } catch { threwF = true; }
+    assert("fraction rejects " + String(badF), threwF);
+  }
+}
+
 console.log(`Domain schema tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
