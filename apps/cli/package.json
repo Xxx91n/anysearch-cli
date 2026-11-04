@@ -22,7 +22,8 @@
     "@sinclair/typebox": "^0.34.52",
     "better-sqlite3": "^13.0.3",
     "express": "^4.18.2",
-    "smol-toml": "^1.8.0"
+    "smol-toml": "^1.8.0",
+    "yaml": "2.9.0"
   },
   "devDependencies": {
     "@anysearch-cli/kernel": "workspace:*",

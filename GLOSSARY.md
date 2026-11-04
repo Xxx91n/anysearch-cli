@@ -9,11 +9,12 @@
 - **Retroaererd Engine（检索专精引擎）**——anysearch 内核：多 provider fanout + RRF 融合 + 充分性门禁 + 预算闸。纯编排，不含 LLM 判定。
 - **Info Source Provider（信息源头供应方）**——对接单一检索后端（anysearch 通道/Exa/Tavily/Brave）的实现；domain 的 `[sources]` 决定启用哪几个及融合权重。
 - **RAG Adapter（领域专属检索适配器）**——企业内部数据的加载/检索配置位（`[rag] adapter=<id>`），kernel 侧三态注册表：`none`=不注入、`note`=保留 `config.note` 旧注入（legacy 伪 adapter）、`fts`=复用既有 FTS5 记忆面（`SessionStore.searchMemory`）做真检索；未知 id fail-open 到 none 并输出具名 stderr 告警（决策 #90，票据 #35/#104；配置与预算见 `docs/rag-adapters.md`）。
-- **RAG Injection（RAG 注入）**——`RagAdapterPort.retrieve()` 的产物经 MemoryPipeline.inject **Stage-1** 追加到首条 user 消息：`fts` 注入块带 provenance 头（adapter / provenance=memory / hits / traceId）逐条标注命中 role，`note` 保持 `[RAG Context] <note>` 逐字节不变；每个域只有一个 adapter 生效，不叠乘；检索异常 fail-open（不注入 + 具名告警），任何情况不阻断 agent loop。注入按**消息形状**工作：pi-agent-core 会把 `prompt("…")` 规范化为 content block 数组，字符串与 block 两种形状都支持（block 形状原地追加到其文本块，非文本块原样保留，绝不把用户消息替换成注入内容）。详见 `docs/rag-adapters.md`。
+- **RAG Injection（RAG 注入）**——领域检索内容向用户消息的注入约定：按变化频率分层，静态内容留在首条 user 消息的末尾以保持跨轮前缀稳定；动态 RAG 计划锚定最新一条 user 消息的末尾热区，当前仍追加到首条 user 消息的末尾。每域仅单一适配器生效、不叠乘，检索异常遵循 fail-open 且绝不阻断对话。
 - **Code Mode（代码开发模式）**——`domain="code"` 特殊值：软依赖用户已装的 context-mode / codegraph 做本地仓索引，CLI 不内置索引实现。
 - **Kernel Distribution（内核分发形态）**——三阶段路线：独立 CLI（`ans`）→ MCP server 包同一 kernel → 宿主 hooks 插件。三形态共享同一 kernel。
 - **Anysearch Plugin**——宿主侧插件形态：hooks + 长驻 MCP server + 项目级 FTS5 索引，可配置进各 agent 宿主。
 - **Skill Active List / Prompt Skill Selection / Hooks Tool Whitelist**——domain 切换时联动的三份名单：激活的 skills、作为提示词载体的 skill、工具调用白名单（hooks.toolWhitelist 是安全过滤器）。
+- **Skill Installer（最小安装器）**——把本地 Git checkout 中含 `SKILL.md` 的目录安装到用户级或项目级 `skills/synced/`，以 `installed.json` 记录来源与 commit/tag，并按清单校验、列表和卸载。它是目录约定而非包管理器：同一 scope 内的变更串行执行；只在同 host 且同一 PID namespace（或 boot identity 证明已换代）时回收已死持有者，安装器残留按清单状态对账清理；机器区与手写区隔离，安装不等于激活，Skill Active List 仍由 Active Domain TOML 管理。
 - **Tool Requires（工具需求表）**——`[skills.toolRequires]` 声明式 skill→工具名映射：Skill 是纯提示载体，工具需求只能声明、无法推导（决策 #90）。声明后 skills.active 参与工具过滤（与白名单和内置 search 取交集，白名单为空时激活集仍生效）；字段缺省或显式空表时过滤行为不变。
 
 ## 引擎与运行时
@@ -45,13 +46,14 @@
 - **Dual DB / Two-Stage Recall**——项目索引与内部记忆物理分离两个 .db；recall_memory 先查内部（带新鲜度）不足再查外部项目索引，跨层带 provenance 标签不混合打分。
 - **FTS5 Column Weight（FTS5 列权重）**——bm25 列权重让 title 匹配优先于 snippet；UNINDEXED 列权重 0。
 - **FTS5 Query Tokenization（FTS5 查询分词）**——空白/标点切词 + 词前缀匹配 + AND 连接，整句保留为 OR 分支；禁整句加引号（退化为精确短语匹配）。
+- **CJK Substring Stage（汉字段内子串召回）**——`ans recommend` 词法第二级：unicode61 把不间断 CJK 段整体当一个 token，段内子串 FTS 够不到，于是在 name+description 上按整段做子串命中；两级词法结果之间不混排打分（沿用 Dual DB / Two-Stage Recall），只按折扣追加在 BM25 最弱正分命中之后，provenance 标签为 `cjk`；embedding 臂仍可跨两级融合重排（#110 契约）。禁为此给 FTS 表加辅助列（改变行长度会重算全部 ASCII 的 bm25）。
 - **Entity Configurable（实体可配置）**——NormalizedResult 可选 entity 字段覆盖 URL 默认值，支撑「同实体多 URL」聚合（about/pricing/blog 同族）。
 - **MemoryPipeline（记忆管线深模块）**——kernel 内独立深模块承载全部 L0/L1/L2 逻辑，接口三方法 attach/inject/consolidate，领域语义命名，绝不反向依赖 agent loop。
 - **NOOP Adjudication / REUSE-COMPRESS 判别**——检索返回后用 LLM 二元裁决：新结果已被现有 IR 摘要覆盖则 REUSE 跳过摘要，否则 COMPRESS 增量生成；裁决与压缩均 fire-and-forget。
 - **Gap Distillation（gap 蒸馏）**——裁决输入只取检索工具消息与现有摘要（不取闲聊/推理），控 token 成本。
 - **Consecutive Reuse Cap（连续 REUSE 上限）**——连续 3 次 REUSE 后第 4 次强制 COMPRESS，防裁决偏差导致摘要长期过期。
 - **IR Summary Schema（IR 专精摘要契约）**——滚动摘要五段：已查证证据/未决假设/被否决信源/关键数字与来源/工具调用与已读状态；前三段跨压缩只增补不覆盖。
-- **Injection Hot Zone（注入热区）**——动态内容锚定最新 user message 末尾（注意力热区 + 前缀缓存稳定），静态内容保持首条；注入总预算 ≤5500 chars。
+- **Injection Hot Zone（注入热区）**——按变化频率分层：静态内容（T0 偏好、静态 RAG 备注）留在首条 user 消息以保持跨轮前缀缓存稳定；查询型 RAG 计划锚定最新一条 user 消息的末尾热区（当前仍追加到首条 user 消息的末尾），L1 会话摘要与 L2 调研召回按固定顺序瞬态锚定最新一条 user 消息的末尾热区。热区分项独立硬预算为动态 RAG 整块 ≤4000 chars、L1 摘要载荷 ≤4000 chars、L2 召回载荷 ≤1500 chars（L1+L2 载荷合计 ≤5500 chars，各层独立截断、不互抢配额）。
 - **Hot-Cold Injection / Write-Read Seam**——热路径同步速召回当轮生效，冷路径异步深召回下轮生效；写读两端共享版本化摘要 schema 契约。
 - **记忆管线纯函数化五件套**——Temporal Decoupling（evaluate/applyTo/consolidate 显式数据流）、ConsolidationState（决策状态纯数据对象可序列化）、Claim-Ticket Injection（编排层不碰 envelope 内部）、Functional Shell（纯函数决策 + shell 做 I/O）、State Anchor Upsert（状态锚 UPSERT + version CAS，历史锚 append-only）。
 - **STALE Probe Suite（过期记忆探针集）**——回归断言 valid_until 非空的记忆不再出现在检索结果（SR/PR/IPA 三探针子集）。

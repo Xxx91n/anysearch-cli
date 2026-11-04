@@ -40,7 +40,7 @@ const help = [
   "  doctor    Run smoke tests: provider ping + store check + domain validate",
   "  auth      Show provider API key configuration status",
   "  llm       Configure LLM providers (via @earendil-works/pi-ai)",
-  "  skill     Manage Agent Skills (install / list / remove)",
+  "  skill     Install / validate / list / uninstall Agent Skills (installation ≠ activation)",
   "  search    Run a retrieval query through the Retroaererd Engine",
   "            options: --json (structured envelope) · --fail-on-abstain (exit 3 on abstain)",
   "  chat      Interactive retrieval-augmented chat session",

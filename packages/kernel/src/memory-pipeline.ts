@@ -259,11 +259,14 @@ export class MemoryPipeline {
    * Build the injection payload for one turn — corresponds to treequery's
    * `transformContext` delegation.
    *
-   * Runs two stages against the latest user message (the attention hot zone):
-   * stage 1 appends the RAG adapter's block to the *first* user turn, stage 2
-   * appends the merged L1/L2 memory block to the *last* user turn. Both stages
-   * target user messages only, so a leading system/tool message cannot swallow
-   * the payload. The input array is never mutated.
+   * Today (#104 baseline), Stage-1 appends the RAG adapter's block to the
+   * *first* user turn, T0 prepends `<user_preferences>` to the *first* user
+   * turn, and Stage-2 appends the merged L1/L2 memory block to the *last* user
+   * turn (the attention hot zone). Per #131 (see `Design:` note below), dynamic
+   * query-driven RAG (`fts` and future retrieval adapters) is slated to move to
+   * the *last* user turn while static `note` stays on the *first* user turn.
+   * All stages target user messages only, so a leading system/tool message
+   * cannot swallow the payload. The input array is never mutated.
    *
    * @param messages - Conversation so far, in provider message shape.
    * @returns A new array carrying the turn's injections.
@@ -272,6 +275,23 @@ export class MemoryPipeline {
     const { store, domain, sessionId } = this.deps;
     let result = messages;
 
+    // Design: split Stage-1 RAG placement by volatility (#131) — static operator
+    // notes (`note` and `none` + leftover `config.note`) stay on the first user
+    // message so the session prefix stays byte-stable across turns and #104 AC2
+    // holds, while query-driven RAG (`fts` and future retrieval adapters) must
+    // key `ragQuery` on the pre-injection latest user text (first 400 chars) and
+    // append ephemerally to the latest user message before Stage-2 (`user text ->
+    // [RAG Context] (block <=4000) -> [Session Memory] (payload <=4000) ->
+    // [Research Recall] (payload <=1500)`, independent per-tier budgets). Keeping
+    // dynamic `fts` on `firstUserIdx` (Option A, current #104 code below; runtime
+    // migration pending follow-up implementation ticket) queries stale turn-1
+    // text on follow-up turns, dilutes recency attention, and invalidates the
+    // entire KV-cache prefix from `messages[0]` whenever Research Memory changes;
+    // moving static `note` to `lastIdx` too (Option B) breaks #104 AC2 multi-turn
+    // byte-identity and churns static prefix tokens; moving L1/L2 to `firstUserIdx`
+    // (Option C) loses the hot zone. Follow-up implementation must also switch
+    // Stage-2 write-back below to `appendMessageText` so content-block turns do
+    // not overwrite user text or the Stage-1 `[RAG Context]` block.
     // Stage 1: RAG injection — append the adapter's block to the first user message.
     // injections target USER messages; a leading system/tool message must not swallow them.
     // #35: the adapter is selected by domain.rag.adapter (none / note-legacy / fts);

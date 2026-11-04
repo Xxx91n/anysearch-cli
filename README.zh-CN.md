@@ -137,6 +137,76 @@ description 会被静默忽略——写得好坏是触发成败的关键）：
 - 一行、≤ ~250 字符（agent skill 注册表的单条 description 预算先例）；
   `name` 保持简短字面义——两个字段都会被原样索引。
 
+### 安装 Agent Skills（`ans skill`）
+
+`ans skill` 是最小安装器，不是包管理器。它从**本地 Git checkout** 拷贝根目录
+含 `SKILL.md` 的自包含目录。请先 checkout 到目标 commit/tag；安装器记录来源、
+完整 HEAD commit、存在时的精确 tag，以及来源是否含未提交修改。dirty 探测以流式
+读取 `git status` 并在出现第一条记录时即停止，所以 ignored / untracked 条目极多的
+checkout 仍可安装，不会因为要读完整个列表而失败。它不克隆仓库、不解析依赖，也不
+执行 skill 中的代码。
+
+```bash
+ans skill install /path/to/checkout/skills/research
+ans skill validate             # 校验全部已装 skill；也可指定一个名字
+ans skill list
+ans skill uninstall research
+
+# 项目级：每条命令都加 --project
+ans skill install /path/to/checkout/skills/research --project
+ans skill validate --project
+ans skill list --project
+ans skill uninstall research --project
+```
+
+默认用户级（可用 `--user` 显式选择）：
+
+```text
+~/.anysearch-cli/skills/synced/installed.json
+~/.anysearch-cli/skills/synced/<name>/SKILL.md
+<项目>/.anysearch/skills/synced/installed.json
+<项目>/.anysearch/skills/synced/<name>/SKILL.md
+```
+
+`synced/` 是机器管理区；同级 `skills/<name>/` 留给用户手写。`SKILL.md` 必须以
+可解析的 YAML frontmatter mapping 开头，其中 `name` 为 1–64 位小写字母/数字，
+可用单个连字符分隔（不能是 Windows 设备名），并据此选择安装目录。这里只检查
+语法和名字，不是完整的 Agent Skills linter。Git 元数据会省略，符号链接会被
+拒绝；源仓库若在本地定义了 Git content-filter（`filter.<name>.clean`/`process`）
+也会被拒绝，否则 `git status` 会执行该仓库控制的代码。dirty 探测不检查子模块。
+已有安装绝不覆盖（请先卸载）。
+
+版本 1 的 `installed.json` 含按名字索引的 `skills` 对象；每项记录 `name`、
+绝对路径 `source`、`commit`、`dirty` 和可选 `tag`。清单缺失、损坏或不符合
+schema 时，卸载会拒绝且不删除任何文件；绝不靠扫描目录猜测删除目标。
+`install` 与 `uninstall` 在所选 scope 内持独占锁：两个并发变更不会互相丢失
+清单条目。锁内记录持有者（`pid`、`host`，以及系统可提供时的 PID namespace
+标识），并连同 owner 记录一起原子发布，因此锁不会缺少 owner。同一 host 且同一
+PID namespace 上可证明已死的持有者会被自动回收（上一 boot 留下的锁也视为已死）；
+仍存活的锁、在另一台机器或另一个 PID namespace 写入的锁，或 owner 记录不可读的
+锁一律 fail-closed，绝不自动删除。发布前中断可能留下
+`skills/synced/.installed.lock.pending-*`：无 `installed.json` 的 scope 会清理
+已死副本，其余副本是惰性的，确认没有 `ans skill` 进程运行后可手工删除。
+清单发布以及安装/卸载的目录 rename 遇到 Windows 瞬时共享冲突
+（`EPERM`/`EBUSY`/`ENOTEMPTY`）会做有界退避重试，最长约 60 秒，耗尽后仍报告
+原始错误；其他平台只把 `EBUSY` 视为瞬时错误。
+
+`install`、`list`、`validate` 还会在持锁时对账安装器自有残留：
+仅在不存在 `installed.json` 时清理 `.install-*` 暂存目录和 `.installed-*.tmp`
+临时清单；`.uninstall-*` 备份、未登记的 `<name>/` 目录和未知条目永不自动删除。
+安装中断留下的未登记 `<name>/` 可手工删除后重装。若清单仍记录某 skill 但其
+`<name>/` 目录缺失，`ans skill list`（以及 `validate`）会输出恢复提示：把对应的
+`.uninstall-*` 备份改回 `<name>/`，没有备份时用 `ans skill uninstall <name>`
+删掉这条失效记录（项目级加 `--project`）。已存在 `installed.json` 时留下的 `.installed-*.tmp`
+不会被自动删除，请在手工清理前先查看 `skills/synced/`。回收中断留下的
+`.installed.lock.reclaim-*` 遵循同样的“无清单才清理”规则：仅在没有
+`installed.json`、且其记录的持有者于本机可证明已死时清理；含清单的 scope
+不会自动清理。若 `ans skill list`
+本身报告清单缺失或损坏，请先直接查看 `skills/synced/` 再动手删除。
+
+**安装不等于激活。** 这些命令绝不改写 domain TOML。Skill Active List 仍由
+Active Domain 的 `[skills].active` 决定，激活仍按原方式通过 domain 配置管理。
+
 ## Provider 域名过滤矩阵
 
 | provider | 前置过滤已下发 | 降级模式 |

@@ -30,6 +30,23 @@ All notable changes to this project are recorded here. Format follows
 
 - `docs/limitations.md` 更正：`ans_chat`（MCP）是**整条记忆链路不存在**（pipeline 从未构造），不是 `fts` fail-open 到 `none`；并记录半接线告警契约。`docs/rag-adapters.md` 同步更新 CLI 已接线的事实与「`fts` 只读 `retrieval_results`、CLI 不写该表」的边界。
 
+## Unreleased — #137: `ans skill` 安装器并发硬化（stale 锁回收 / Windows rename 重试 / 启动对账）
+
+### Added
+
+- **同 host + PID namespace 的 stale 锁自动回收**：锁记录 `{token, pid, host, bootId, namespace}`（boot/namespace 仅在 Linux 暴露，不可用时只按 host 判定）；`ESRCH` 仅在 host 与 PID namespace 一致时判为已死，上一 boot 留下的锁直接视为已死，跨 host / 跨 namespace / owner 不可读一律 fail-closed。回收以唯一 quarantine rename 作为选举，移走后复核 owner token；可能仍存活的 quarantine 只报告、不删除。
+- **启动对账**：`install` / `list` / `validate` 在持锁且无 `installed.json` 时清理 `.install-*`、`.installed-*.tmp`、已死的 `.installed.lock.reclaim-*` 与 `.installed.lock.pending-*`；`.uninstall-*` 备份、未登记 `<name>/` 与未知条目永不自动删除，`list` 继续对未登记内容 fail-closed。
+- **拒绝带本地 Git content-filter 的源**：`git status` 会执行仓库本地或 worktree 配置定义的 `filter.<name>.clean`/`process`（即便 `core.fsmonitor=false`），安装器在运行 `status` 前检查这两类配置并拒绝此类源；dirty 探测使用 `--ignore-submodules=all`，不进入子模块、也不会执行子模块配置的 filter。
+
+### Changed
+
+- **stale 锁回收串行化**：回收者先取得独占 guard（带 owner 记录、可回收死 guard），在持有 guard 时复核 owner token 后才移动锁，避免把刚发布的活动锁移走而破坏互斥。
+- **关键 rename 有界退避**：manifest 发布、payload→target、target→backup 遇到 Windows 瞬时 `EPERM`/`EBUSY`/`ENOTEMPTY` 以 10ms→1s 指数退避重试，上限约 60s，耗尽后保留原始错误；其他平台仅把 `EBUSY` 视为瞬时。锁连同 owner 记录一次性 rename 发布，发布失败直接视为争用并 fail-fast，不占用重试预算。
+
+### Documented
+
+- README / README.zh-CN / GLOSSARY 同步恢复说明、PID namespace 判定与“安装 ≠ 激活”。
+
 ## Unreleased — #104: RagAdapterPort + fts adapter 最小真实现（#35 落地，决策 #90）
 
 ### Added
