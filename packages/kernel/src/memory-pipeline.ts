@@ -19,7 +19,7 @@ const COMPACTION_RESERVE_TOKENS = 16_384;
 const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
-import { RagAdapterRegistry, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS } from "./rag-adapter";
+import { RagAdapterRegistry, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
 import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
@@ -311,12 +311,12 @@ export class MemoryPipeline {
    * Build the injection payload for one turn — corresponds to treequery's
    * `transformContext` delegation.
    *
-   * Today (#104 baseline), Stage-1 appends the RAG adapter's block to the
-   * *first* user turn, T0 prepends `<user_preferences>` to the *first* user
-   * turn, and Stage-2 appends the merged L1/L2 memory block to the *last* user
-   * turn (the attention hot zone). Per #131 (see `Design:` note below), dynamic
-   * query-driven RAG (`fts` and future retrieval adapters) is slated to move to
-   * the *last* user turn while static `note` stays on the *first* user turn.
+   * Stage-1 splits by volatility (#131, implemented by #154): static operator
+   * text (`note`, and `none` + leftover `config.note`) appends to the *first*
+   * user turn; query-driven adapters (`fts`) append to the *latest* user turn
+   * (the attention hot zone) and query on that turn's pre-injection text. T0
+   * prepends `<user_preferences>` to the *first* user turn. Stage-2 appends the
+   * merged L1/L2 memory block to the *latest* user turn, after Stage-1.
    * All stages target user messages only, so a leading system/tool message
    * cannot swallow the payload. The input array is never mutated.
    *
@@ -327,62 +327,67 @@ export class MemoryPipeline {
     const { store, domain, sessionId } = this.deps;
     let result = messages;
 
-    // Design: split Stage-1 RAG placement by volatility (#131) — static operator
-    // notes (`note` and `none` + leftover `config.note`) stay on the first user
-    // message so the session prefix stays byte-stable across turns and #104 AC2
-    // holds, while query-driven RAG (`fts` and future retrieval adapters) must
-    // key `ragQuery` on the pre-injection latest user text (first 400 chars) and
-    // append ephemerally to the latest user message before Stage-2 (`user text ->
-    // [RAG Context] (block <=4000) -> [Session Memory] (payload <=4000) ->
-    // [Research Recall] (payload <=1500)`, independent per-tier budgets). Keeping
-    // dynamic `fts` on `firstUserIdx` (Option A, current #104 code below; runtime
-    // migration pending follow-up implementation ticket) queries stale turn-1
-    // text on follow-up turns, dilutes recency attention, and invalidates the
-    // entire KV-cache prefix from `messages[0]` whenever Research Memory changes;
-    // moving static `note` to `lastIdx` too (Option B) breaks #104 AC2 multi-turn
-    // byte-identity and churns static prefix tokens; moving L1/L2 to `firstUserIdx`
-    // (Option C) loses the hot zone. Follow-up implementation must also switch
-    // Stage-2 write-back below to `appendMessageText` so content-block turns do
-    // not overwrite user text or the Stage-1 `[RAG Context]` block.
-    // Stage 1: RAG injection — append the adapter's block to the first user message.
-    // injections target USER messages; a leading system/tool message must not swallow them.
+    // Design: Stage-1 splits RAG placement by volatility (#131, implemented by
+    // #154). Static operator text (`note`, and `none` + leftover `config.note`)
+    // appends to the FIRST user message so the session prefix stays byte-stable
+    // across turns and #104 AC2 holds byte-for-byte. Query-driven adapters
+    // (`fts`, see DYNAMIC_RAG_ADAPTERS) append to the LATEST user message — the
+    // attention hot zone — and key `ragQuery` on that turn's PRE-INJECTION text
+    // (first RAG_QUERY_MAX_CHARS). Keeping dynamic RAG on the first turn would
+    // make follow-up turns recall turn-1 evidence, dilute recency attention, and
+    // invalidate the KV cache prefix from `messages[0]` whenever memory changes.
+    // Stage-1 runs before Stage-2 so one message reads `user text ->
+    // [RAG Context] -> [Session Memory] -> [Research Recall]`, each tier
+    // independently budgeted (4000 / 4000 / 1500 chars).
+    // Stage 1: RAG injection — static adapters target the first user message,
+    // dynamic adapters the latest; a leading system/tool message never swallows it.
     // #35: the adapter is selected by domain.rag.adapter (none / note-legacy / fts);
     // unknown ids fail open to none with a named stderr warning inside the registry.
     // #104: pi-agent-core normalizes prompt("…") to content BLOCKS, so the seam is
     // shape-aware (message-text.ts) instead of string-only — a string-only read
     // either never fired or overwrote the user's message with the injected text.
     const firstUserIdx = result.findIndex((m: any) => m?.role === "user");
-    const firstTarget = firstUserIdx >= 0 ? readMessageText(result[firstUserIdx]) : null;
-    if (firstUserIdx >= 0 && firstTarget) {
-      // fts recall is keyed on the user's own question — the first user turn, which
-      // is also where the block lands. Truncated so long prompts still match the
-      // strict FTS5 rung.
-      const ragQuery = firstTarget.text.slice(0, RAG_QUERY_MAX_CHARS);
-      // Fail-open: retrieval faults are the registry's to report; the agent loop
-      // always continues with the un-injected messages.
-      let ragInstruction = "";
-      try {
-        const injection = await this.rag.resolveInjection(domain, ragQuery, RAG_DEFAULT_LIMIT);
-        if (injection && injection.block) ragInstruction = "\n\n" + injection.block;
-      } catch { /* fail-open: never block a turn on RAG */ }
-      if (ragInstruction) {
-        // Shape-preserving write-back: blocks stay blocks, non-text blocks survive.
-        const next = appendMessageText(result[firstUserIdx], ragInstruction, firstTarget);
-        if (next) {
-          result = [
-            ...result.slice(0, firstUserIdx),
-            next,
-            ...result.slice(firstUserIdx + 1),
-          ];
+    if (firstUserIdx >= 0) {
+      let lastUserIdx = -1;
+      for (let i = result.length - 1; i >= 0; i--) if (result[i]?.role === "user") { lastUserIdx = i; break; }
+      // Resolve once so the placement decision uses the SAME adapter that
+      // `resolveInjection` runs (the registry caches per domain object).
+      const adapter = this.rag.resolve(domain);
+      const ragIdx = isDynamicRagAdapter(adapter?.id) ? lastUserIdx : firstUserIdx;
+      const ragTarget = ragIdx >= 0 ? readMessageText(result[ragIdx]) : null;
+      if (ragTarget) {
+        // Dynamic recall keys on the pre-injection latest user text, so a
+        // follow-up turn searches the current question; `note` ignores the
+        // query. Truncated so long prompts still match the strict FTS5 rung.
+        const ragQuery = ragTarget.text.slice(0, RAG_QUERY_MAX_CHARS);
+        // Fail-open: retrieval faults are the registry's to report; the agent loop
+        // always continues with the un-injected messages.
+        let ragInstruction = "";
+        try {
+          const injection = await this.rag.resolveInjection(domain, ragQuery, RAG_DEFAULT_LIMIT);
+          if (injection && injection.block) ragInstruction = "\n\n" + injection.block;
+        } catch { /* fail-open: never block a turn on RAG */ }
+        if (ragInstruction) {
+          // Shape-preserving write-back: blocks stay blocks, non-text blocks survive.
+          const next = appendMessageText(result[ragIdx], ragInstruction, ragTarget);
+          if (next) {
+            result = [
+              ...result.slice(0, ragIdx),
+              next,
+              ...result.slice(ragIdx + 1),
+            ];
+          }
         }
       }
     }
 
-    // T0 user preferences injection — same Stage-1 slot, identical content/order.
-    // Idempotent: skip if first message already carries a <user_preferences> block
-    // (transformContext may be invoked more than once on retry/resume).
+    // T0 user preferences injection — static slot (first user turn), identical
+    // content/order. Idempotent: skip if first message already carries a
+    // <user_preferences> block (transformContext may be invoked more than once
+    // on retry/resume).
     try {
-      // Re-read after Stage-1 (same shape rules): the RAG block may have landed here.
+      // Re-read after Stage-1 (same shape rules): a static RAG block may have
+      // landed on this turn.
       const t0Target = firstUserIdx >= 0 ? readMessageText(result[firstUserIdx]) : null;
       if (firstUserIdx >= 0 && t0Target) {
         const firstContent = t0Target.text;

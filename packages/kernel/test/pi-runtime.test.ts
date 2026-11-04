@@ -725,6 +725,43 @@ console.log("---");
     assert(/\[anysearch\] unknown rag\.adapter "qdrant" — falling back to none/.test(captured),
       "#104 unknown adapter: named stderr warning");
   }
+
+  // #154 end-to-end wiring: the runtime-built pipeline applies the #131
+  // volatility split — dynamic RAG lands on the latest USER turn and queries
+  // that turn's pre-injection text, while the first turn stays byte-stable.
+  {
+    const quarries: string[] = [];
+    const queryCapturingStore = {
+      ...ragStore,
+      searchMemory: async (q: string) => {
+        quarries.push(q);
+        return [
+          { rowid: 7, sessionId: "s1", role: "assistant", content: "internal wiki: proxy port 8080", rank: 1, arms: ["fts"] },
+        ];
+      },
+    } as any;
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, rag: { adapter: "fts" } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: contextCapturingStreamFn,
+      store: queryCapturingStore,
+      sessionId: "s-154",
+    });
+    const out = await (runtime as any).pipeline.inject([
+      { role: "system", content: "system prompt" },
+      { role: "user", content: "turn one question" },
+      { role: "assistant", content: "a1" },
+      { role: "user", content: [{ type: "text", text: "turn two question" }] },
+    ]);
+    assert.equal(textOf(out[0]), "system prompt", "#154 multi-turn: system untouched");
+    assert(!textOf(out[1]).includes("[RAG Context]"), "#154 multi-turn: first user turn stays byte-stable");
+    assert(textOf(out[3]).includes("[RAG Context]") && textOf(out[3]).includes("proxy port 8080"),
+      "#154 multi-turn: dynamic RAG lands on the latest user turn");
+    assert.equal(quarries.length, 1, "#154 multi-turn: one recall per inject");
+    assert.equal(quarries[0], "turn two question",
+      "#154 multi-turn: recall keys on the latest user text, not turn-1");
+  }
 }
 
 // #104 is the last ticket of the #37 -> #36 -> #35 cluster (ruling #90), so
