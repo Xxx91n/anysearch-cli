@@ -40,8 +40,8 @@ const OBS_DB = process.env.ANS_DB_PATH ||
   join(process.env.USERPROFILE || process.env.HOME || ".", ".anysearch", "anysearch.db");
 
 // CWE-732: tighten OBS_DB to owner-only before emitConfigChangeAudit opens it.
-// Same shared helper as CLI/MCP (packages/store/src/db-perms.ts).
-ensureOwnerOnlyDb(OBS_DB);
+// Lazy: only needed when /policy writes an audit row, not for /recall or /index.
+let obsDbEnsured = false;
 
 // supplement: on startup, if the policy server is
 // unreachable (TOML missing/unreadable), boot from the disk cache and WARN
@@ -163,6 +163,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // single-point parse + push-down. Re-parses TOML per request (event-driven,
       // no TTL); deny channel + policy_version; atomically materializes policy.json for hooks.
       const policy = readCurrentPolicy();
+      // Ensure OBS_DB permissions before any audit write (best-effort, once).
+      if (!obsDbEnsured) {
+        obsDbEnsured = true;
+        try { ensureOwnerOnlyDb(OBS_DB); } catch { /* best-effort */ }
+      }
       if (policy.envHostsIgnored) {
         process.stderr.write("[anysearch] WARN: ANS_URL_ALLOWLIST set but ANS_ALLOW_ENV_OVERRIDE not enabled; env hosts ignored\n");
         if (!envIgnoredAudited) {
