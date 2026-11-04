@@ -8,7 +8,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { loadDomain, loadRawDomain } from "./domain-loader";
+import { loadDomain, loadRawDomain, tryLoadRawDomain } from "./domain-loader";
 import { HOSTNAME_RE, type DomainSchema } from "./domain-schema";
 import { SqliteObservationStore, generateTraceIdHex } from "./observation";
 import { readSessionId } from "./session-id";
@@ -177,90 +177,75 @@ export function readPolicyCacheEnvelope(cachePath: string): MaterializedPolicy |
 // lookup and watch ancestor mtimes. Otherwise a child with base stays stale
 // after a restart-free edit, and a base-only edit is invisible (no warning).
 export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): () => DomainSchema | null {
-  // Collect the child + all ancestor paths reachable via base chain.
-  // Uses domainsDirs when provided (composition root), otherwise falls back to
-  // the child's directory (pi-runtime / tests).
-  const collectChain = (): string[] => {
+  const getSearchDirs = (): string[] => {
+    if (domainsDirs) return domainsDirs;
+    const dirs: string[] = [];
+    const envDir = process.env.ANS_DOMAINS_DIR?.trim();
+    if (envDir) dirs.push(envDir);
+    try { dirs.push(dirname(tomlPath)); } catch {}
+    dirs.push(join(process.cwd(), "domains"));
+    return dirs;
+  };
+  // Single shared dir order — collectChain and lookupFor must agree so the
+  // watched files are exactly the files that would be loaded (grandparent in a
+  // different dir would otherwise be missed). Reuse tryLoadRawDomain for the
+  // ENOENT-vs-fail-fast distinction.
+  const tryResolveParent = (base: string, searchDirs: string[]): { path: string; raw: ReturnType<typeof loadRawDomain> } | undefined => {
+    for (const d of searchDirs) {
+      const cand = join(d, base + ".toml");
+      const raw = tryLoadRawDomain(cand);
+      if (raw) return { path: cand, raw };
+    }
+    return undefined;
+  };
+
+  const collectChainAndProbed = (): { chain: string[]; probed: string[] } => {
+    const searchDirs = getSearchDirs();
     const chain: string[] = [tomlPath];
+    const probed: string[] = [];
     const seen = new Set<string>();
-    let curPath = tomlPath;
     let curRaw: ReturnType<typeof loadRawDomain> | undefined;
     try {
-      curRaw = loadRawDomain(curPath);
+      curRaw = loadRawDomain(tomlPath);
     } catch {
-      return chain;
+      return { chain, probed };
     }
     while (curRaw?.base) {
       if (seen.has(curRaw.base)) break;
       seen.add(curRaw.base);
-      let parentPath: string | undefined;
-      let parentRaw: ReturnType<typeof loadRawDomain> | undefined;
-      const searchDirs = domainsDirs ?? (() => {
-        const dirs: string[] = [];
-        const envDir = process.env.ANS_DOMAINS_DIR?.trim();
-        if (envDir) dirs.push(envDir);
-        dirs.push(dirname(curPath));
-        dirs.push(join(process.cwd(), "domains"));
-        return dirs;
-      })();
+      let found: { path: string; raw: ReturnType<typeof loadRawDomain> } | undefined;
       for (const d of searchDirs) {
         const cand = join(d, curRaw.base + ".toml");
-        try {
-          parentRaw = loadRawDomain(cand);
-          parentPath = cand;
-          break;
-        } catch (e) {
-          const code = (e as NodeJS.ErrnoException)?.code;
-          const msg = e instanceof Error ? e.message : String(e);
-          if (msg.startsWith("Domain schema:")) throw e;
-          if (code === "ENOENT") continue;
-          throw e;
-        }
+        probed.push(cand);
+        const raw = tryLoadRawDomain(cand);
+        if (raw) { found = { path: cand, raw }; break; }
       }
-      if (!parentPath || !parentRaw) break;
-      chain.push(parentPath);
-      curRaw = parentRaw;
-      curPath = parentPath;
+      if (!found) break;
+      chain.push(found.path);
+      curRaw = found.raw;
     }
-    return chain;
+    return { chain, probed };
   };
 
   const lookupFor = (): ((name: string) => ReturnType<typeof loadRawDomain> | undefined) | undefined => {
-    const dirs = domainsDirs ?? (() => {
-      const d: string[] = [];
-      const envDir = process.env.ANS_DOMAINS_DIR?.trim();
-      if (envDir) d.push(envDir);
-      // child's dir + CWD convention
-      try { d.push(dirname(tomlPath)); } catch {}
-      d.push(join(process.cwd(), "domains"));
-      return d;
-    })();
-    return (parent: string) => {
-      for (const dd of dirs) {
-        const cand = join(dd, parent + ".toml");
-        try {
-          return loadRawDomain(cand);
-        } catch (e) {
-          const code = (e as NodeJS.ErrnoException)?.code;
-          const msg = e instanceof Error ? e.message : String(e);
-          if (msg.startsWith("Domain schema:")) throw e;
-          if (code === "ENOENT") continue;
-          throw e;
-        }
-      }
-      return undefined;
-    };
+    const searchDirs = getSearchDirs();
+    return (parent: string) => tryResolveParent(parent, searchDirs)?.raw;
   };
 
-  let watched = collectChain();
+  // watched = chain files + every probed candidate (including missing, mtime -1)
+  // so a new higher-priority file that shadows a parent is detected via stat,
+  // without re-parsing the chain on every call.
+  let { chain: watchedChain, probed: watchedProbed } = (() => {
+    try { return collectChainAndProbed(); } catch { return { chain: [tomlPath], probed: [] as string[] }; }
+  })();
+  let watched = [...new Set([...watchedChain, ...watchedProbed])];
   let mtimes = new Map<string, number>();
   for (const pp of watched) {
     try { mtimes.set(pp, statSync(pp).mtimeMs); } catch { mtimes.set(pp, -1); }
   }
-  let warnedMtime = -1;
+  let warnedSig = "";
 
   return () => {
-    // Check if any watched file changed, or if chain grew/shrank (base added/removed)
     let changed = false;
     for (const pp of watched) {
       try {
@@ -270,28 +255,26 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): 
         if (mtimes.get(pp) !== -1) { changed = true; break; }
       }
     }
-    // Re-collect to detect new parent or base removal even if mtimes same
-    let newChain: string[] = [];
-    try { newChain = collectChain(); } catch { /* parse error during collect will be handled on load */ }
-    if (!changed && (newChain.length !== watched.length || newChain.some((p,i)=>p !== watched[i]))) {
-      changed = true;
-    }
     if (!changed) return null;
     try {
       const schema = loadDomain(tomlPath, lookupFor());
-      // success: refresh watched + mtimes
-      watched = collectChain();
+      const next = collectChainAndProbed();
+      watchedChain = next.chain;
+      watchedProbed = next.probed;
+      watched = [...new Set([...watchedChain, ...watchedProbed])];
       mtimes.clear();
       for (const pp of watched) {
         try { mtimes.set(pp, statSync(pp).mtimeMs); } catch { mtimes.set(pp, -1); }
       }
       return schema;
     } catch (e) {
-      // D3/OPA bad-bundle semantics: keep last known good, but signal it
-      let curMtime = -1;
-      try { curMtime = statSync(tomlPath).mtimeMs; } catch {}
-      if (warnedMtime !== curMtime) {
-        warnedMtime = curMtime;
+      mtimes.clear();
+      for (const pp of watched) {
+        try { mtimes.set(pp, statSync(pp).mtimeMs); } catch { mtimes.set(pp, -1); }
+      }
+      const sig = watched.map((pp) => String(mtimes.get(pp))).join(",");
+      if (warnedSig !== sig) {
+        warnedSig = sig;
         process.stderr.write("[anysearch] domain TOML reload failed; keeping last known good policy: " + (e instanceof Error ? e.message : String(e)) + "\n");
       }
       return null;

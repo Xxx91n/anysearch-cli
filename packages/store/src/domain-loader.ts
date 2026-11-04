@@ -42,6 +42,17 @@ export function loadRawDomain(tomlPath: string): RawDomain {
   }
 }
 
+// Helper for parent lookup: missing file -> undefined (try next dir), any other fault (parse / EACCES) -> throw.
+// Centralizes the ENOENT-vs-other distinction so callers do not match on error.message.
+export function tryLoadRawDomain(path: string): RawDomain | undefined {
+  try {
+    return loadRawDomain(path);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === "ENOENT") return undefined;
+    throw e;
+  }
+}
+
 // Load a domain from TOML with optional inheritance chain resolution.
 // lookup: base domain name -> RawDomain or undefined (caller provides file-based lookup).
 export function loadDomain(
@@ -98,15 +109,7 @@ export function loadDomainByName(
       if (fromCaller !== undefined) return fromCaller;
     }
     const parentPath = join(baseDir, DOMAINS_DIR, parent + ".toml");
-    try {
-      return loadRawDomain(parentPath);
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException)?.code;
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.startsWith("Domain schema:")) throw e;
-      if (code === "ENOENT") return undefined;
-      throw e;
-    }
+    return tryLoadRawDomain(parentPath);
   };
   return loadDomain(tomlPath, effectiveLookup);
 }
@@ -136,15 +139,8 @@ export function loadDomainByNameIn(
         }
         for (const d of domainsDirs) {
           const candidate = join(d, parent + ".toml");
-          try {
-            return loadRawDomain(candidate);
-          } catch (e) {
-            const code = (e as NodeJS.ErrnoException)?.code;
-            const msg = e instanceof Error ? e.message : String(e);
-            if (msg.startsWith("Domain schema:")) throw e;
-            if (code === "ENOENT") continue;
-            throw e;
-          }
+          const raw = tryLoadRawDomain(candidate);
+          if (raw) return raw;
         }
         return undefined;
       };
