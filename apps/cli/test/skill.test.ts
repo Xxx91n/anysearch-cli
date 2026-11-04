@@ -856,6 +856,8 @@ async function waitUntilGone(pid: number): Promise<void> {
 // owner record is readable. This test reproduces that exact publication order in
 // a child process, kills it there, and hands the wreckage to a real `install`.
 test("a lock left by a SIGKILLed holder is reclaimed by the next install", async (t) => {
+  const mid = machineId();
+  if (!mid) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   const dir = f.source("alpha");
   const managed = managedSkillsRoot(f.opts);
@@ -881,6 +883,7 @@ test("a lock left by a SIGKILLed holder is reclaimed by the next install", async
     'fs.writeFileSync(path.join(pending, "owner.json"), JSON.stringify({',
     '  token: "killed", pid: process.pid, host: os.hostname(), startedAt: new Date().toISOString(),',
     "  ...(identity ?? {}),",
+    '  ...(process.env.ANS_TEST_MACHINE_ID ? { machineId: process.env.ANS_TEST_MACHINE_ID } : {}),',
     "}), { encoding: \"utf8\", flag: \"wx\", mode: 0o600 });",
     'fs.renameSync(pending, path.join(managed, ".installed.lock"));',
     'process.stdout.write("locked\\n");',
@@ -888,7 +891,7 @@ test("a lock left by a SIGKILLed holder is reclaimed by the next install", async
   ].join("\n");
 
   const child = spawn(process.execPath, ["-e", script], {
-    env: { ...process.env, ANS_TEST_MANAGED: managed },
+    env: { ...process.env, ANS_TEST_MANAGED: managed, ANS_TEST_MACHINE_ID: mid },
     stdio: ["ignore", "pipe", "inherit"],
   });
   t.after(() => {
@@ -941,8 +944,13 @@ test("a dead unpublished lock is cleaned during reconciliation", async (t) => {
     ...(identity ? { bootId: identity.bootId, namespace: identity.namespace } : {}),
   }));
   const result = await f.run(["install", f.source()]);
-  assert.equal(result.code, 0, result.stderr);
-  assert.equal(existsSync(pending), false);
+  if (mid) {
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(existsSync(pending), false);
+  } else {
+    assert.equal(result.code, 0, result.stderr);
+    assert.ok(existsSync(pending), "pending with no machineId is preserved when identity is unavailable");
+  }
 });
 
 test("an unpublished lock directory does not block a scope or act as a lock", async (t) => {
