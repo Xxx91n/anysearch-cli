@@ -1,7 +1,7 @@
 // Self-check for domain-schema deep-merge + resolve + validate.
 // Run: npx tsx packages/store/test/domain-schema.test.ts
 
-import { resolve, validate, type RawDomain } from "../src/domain-schema";
+import { resolve, validate, isDomainSchemaError, type RawDomain } from "../src/domain-schema";
 
 let passed = 0;
 let failed = 0;
@@ -188,6 +188,26 @@ assert("valid toolRequires passes", trGoodOk);
     assert("fraction rejects " + String(badF), threwF);
   }
 }
+
+// #162: error classification. A "Domain schema:" fault is a configured-but-
+// broken domain and must fail closed; an IO fault (unreadable file, DB) keeps
+// the caller's availability fallback.
+const invalidCompaction = resolve(
+  { name: "bad-low", rag: { adapter: "x" }, compaction: { lowWatermark: 49999 } },
+  () => undefined,
+);
+let schemaFault: unknown;
+try { validate(invalidCompaction); } catch (e) { schemaFault = e; }
+assert("isDomainSchemaError recognises validator faults", isDomainSchemaError(schemaFault));
+assert("classification fixture hit the lowWatermark branch",
+  String(schemaFault).includes("compaction.lowWatermark must be >= 50000"));
+
+const ioFault = Object.assign(new Error("EACCES: permission denied, open '/tmp/x.toml'"), { code: "EACCES" });
+assert("isDomainSchemaError leaves IO faults to the fallback", !isDomainSchemaError(ioFault));
+assert("marker inside an IO path is not a schema error",
+  !isDomainSchemaError(new Error("EACCES: permission denied, open '/tmp/Domain schema: x.toml'")));
+assert("isDomainSchemaError ignores missing-domain errors", !isDomainSchemaError(new Error("Domain not found: nope")));
+assert("isDomainSchemaError is false for non-Error throws", !isDomainSchemaError("Domain schema: not an Error"));
 
 console.log(`Domain schema tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
