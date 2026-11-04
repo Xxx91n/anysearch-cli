@@ -213,10 +213,18 @@ before reporting the original error; on other platforms only `EBUSY` is treated
 as transient.
 
 `install`, `list` and `validate` also reconcile installer-owned residue while
-holding that lock. `.install-*` staging directories and
-`.installed-*.tmp` manifest temporaries are removed only when no
-`installed.json` exists; `.uninstall-*` backups, unrecorded `<name>/`
-directories and unknown entries are never deleted automatically. An unrecorded
+holding that lock. Residue is recognized by its exact generated name, never by a
+prefix: `.install-` plus six alphanumerics (staging), `.installed-<uuid>.tmp`
+(manifest temporary), `.installed.lock.pending-` plus six alphanumerics, and
+`.installed.lock.reclaim-<uuid>` (reclamation quarantine). Staging and a temp
+manifest are removed only when no `installed.json` exists; a pending or
+reclaimed lock additionally requires a recorded owner that is provably dead (a
+possibly live one stops the run instead). Anything that merely looks similar — a
+hand-made `.installed-notes.tmp`, an `.install-archive/` directory,
+`.installed.lock.pending-<notes>` — is operator content: it is never deleted,
+and a scope without `installed.json` keeps failing closed instead of
+bootstrapping a manifest beside it. `.uninstall-*` backups, unrecorded
+`<name>/` directories and unknown entries are never deleted automatically. An unrecorded
 `<name>/` left by an interrupted install can be removed manually and
 reinstalled. If the manifest records a skill whose `<name>/` directory is
 missing, `ans skill list` (and `validate`) prints a recovery hint: rename the

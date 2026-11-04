@@ -191,9 +191,15 @@ PID namespace 上可证明已死的持有者会被自动回收（上一 boot 留
 （`EPERM`/`EBUSY`/`ENOTEMPTY`）会做有界退避重试，最长约 60 秒，耗尽后仍报告
 原始错误；其他平台只把 `EBUSY` 视为瞬时错误。
 
-`install`、`list`、`validate` 还会在持锁时对账安装器自有残留：
-仅在不存在 `installed.json` 时清理 `.install-*` 暂存目录和 `.installed-*.tmp`
-临时清单；`.uninstall-*` 备份、未登记的 `<name>/` 目录和未知条目永不自动删除。
+`install`、`list`、`validate` 还会在持锁时对账安装器自有残留：残留按**生成的
+精确名字**识别，绝不用前缀匹配——`.install-` 加 6 位字母数字（暂存）、
+`.installed-<uuid>.tmp`（临时清单）、`.installed.lock.pending-` 加 6 位字母数字、
+`.installed.lock.reclaim-<uuid>`（回收隔离目录）。暂存与临时清单仅在不存在
+`installed.json` 时清理；pending 与回收隔离目录还要求记录的 owner 可证明已死
+（可能存活时直接失败停下）。只是长得像的条目——手写的 `.installed-notes.tmp`、
+`.install-archive/` 目录、`.installed.lock.pending-<notes>`——属于操作者内容：永不删除，且没有
+`installed.json` 的 scope 会继续 fail-closed，不会在它旁边 bootstrap 出清单。
+`.uninstall-*` 备份、未登记的 `<name>/` 目录和未知条目永不自动删除。
 安装中断留下的未登记 `<name>/` 可手工删除后重装。若清单仍记录某 skill 但其
 `<name>/` 目录缺失，`ans skill list`（以及 `validate`）会输出恢复提示：把对应的
 `.uninstall-*` 备份改回 `<name>/`，没有备份时用 `ans skill uninstall <name>`

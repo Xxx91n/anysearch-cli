@@ -117,6 +117,27 @@ const LOCK_PENDING_PREFIX = `${MANIFEST_LOCK}.pending-`;
 /** Uninstall backup prefix; contents are never deleted without a manifest entry. */
 const UNINSTALL_PREFIX = ".uninstall-";
 
+// Design (#146): reconciliation matches the exact names the installer generates,
+// never a prefix. Everything else in synced/ belongs to the operator: a prefix
+// match would delete a hand-made `.installed-notes.tmp` or an `.install-archive/`
+// directory kept next to an abandoned staging run, so the shapes are matched
+// exactly, and the same predicates answer "is this root empty?" so the emptiness
+// check and the delete decision can never disagree. A residue name from an older
+// build is a false negative — it is left in place and reported, never deleted.
+// Leaving a file is recoverable; deleting the wrong one is not.
+// Exported so the contract test can assert these against the names mkdtempSync
+// and randomUUID actually produce on every CI platform.
+/** `.install-XXXXXX` from `mkdtempSync(join(managed, STAGING_PREFIX))`. */
+export const STAGING_ENTRY = /^\.install-[A-Za-z0-9]{6}$/;
+/** `.installed.lock.pending-XXXXXX` from `mkdtempSync(join(managed, LOCK_PENDING_PREFIX))`. */
+export const LOCK_PENDING_ENTRY = /^\.installed\.lock\.pending-[A-Za-z0-9]{6}$/;
+/** `.installed-<uuid>.tmp` from `writeManifest`'s `randomUUID()` temp file. */
+export const MANIFEST_TEMP_ENTRY =
+  /^\.installed-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/;
+/** `.installed.lock.reclaim-<uuid>` from the quarantine rename during reclamation. */
+export const QUARANTINE_ENTRY =
+  /^\.installed\.lock\.reclaim-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 // Rename backoff lives in fs-atomic (#145): the Windows/POSIX retryability gate is
 // an explicit `platform` seam field there — not object identity on a default IO —
 // so the POSIX-only-EBUSY semantics is directly testable. Re-exported under the
@@ -492,17 +513,18 @@ function prepareManagedRoot(opts: SkillOptions): string {
 }
 
 // Design: a lock pending publication and the reclaim guard are not content — they are
-// inert installer bookkeeping, so they must not block bootstrapping a scope.
+// inert installer bookkeeping, so they must not block bootstrapping a scope. The
+// pending name is matched exactly, so an operator's `.installed.lock.pending-<notes>`
+// is content like any other file and keeps the scope fail-closed.
 /** True when the managed root holds nothing but the lock (or inert bookkeeping). */
 function isEmptyManagedRoot(managed: string): boolean {
   return !readdirSync(managed).some((entry) => entry !== MANIFEST_LOCK
-    && entry !== RECLAIM_GUARD && !entry.startsWith(LOCK_PENDING_PREFIX));
+    && entry !== RECLAIM_GUARD && !LOCK_PENDING_ENTRY.test(entry));
 }
 
 /** True when a name is installer-owned staging or a temp manifest. */
 function isInstallerResidue(entry: string): boolean {
-  return entry.startsWith(STAGING_PREFIX)
-    || (entry.startsWith(MANIFEST_TEMP_PREFIX) && entry.endsWith(".tmp"));
+  return STAGING_ENTRY.test(entry) || MANIFEST_TEMP_ENTRY.test(entry);
 }
 
 // Design: residue cleanup is limited to a scopeless store (no manifest) — only then
@@ -513,7 +535,7 @@ function isInstallerResidue(entry: string): boolean {
 function reconcileManagedRoot(managed: string): void {
   if (statIfPresent(manifestIn(managed))) return;
   for (const entry of readdirSync(managed)) {
-    if (!entry.startsWith(LOCK_RECLAIM_PREFIX)) continue;
+    if (!QUARANTINE_ENTRY.test(entry)) continue;
     const quarantine = join(managed, entry);
     if (probeLockOwner(readLockOwner(quarantine)) !== "dead") {
       fail(`a reclaimed skill lock may still be live: ${quarantine}. Inspect it before removing.`);
@@ -523,7 +545,7 @@ function reconcileManagedRoot(managed: string): void {
   // Design: an unpublished lock is inert unless its recorded owner is provably dead —
   // only then is removing the directory safe.
   for (const entry of readdirSync(managed)) {
-    if (!entry.startsWith(LOCK_PENDING_PREFIX)) continue;
+    if (!LOCK_PENDING_ENTRY.test(entry)) continue;
     const pending = join(managed, entry);
     if (probeLockOwner(readLockOwner(pending)) === "dead") {
       rmSync(pending, { recursive: true, force: true });
@@ -544,10 +566,10 @@ function hasStaleLockOrResidue(managed: string): boolean {
   // A manifest-bearing store keeps its residue and quarantines for the operator;
   // only a scopeless store is reconciled automatically.
   if (statIfPresent(manifestIn(managed))) return false;
-  if (entries.some((entry) => entry.startsWith(LOCK_RECLAIM_PREFIX))) return true;
+  if (entries.some((entry) => QUARANTINE_ENTRY.test(entry))) return true;
   // Design: only a provably dead unpublished lock needs a lock cycle — a live or
   // malformed one is inert and must not make reads contend with a starting writer.
-  if (entries.some((entry) => entry.startsWith(LOCK_PENDING_PREFIX)
+  if (entries.some((entry) => LOCK_PENDING_ENTRY.test(entry)
     && probeLockOwner(readLockOwner(join(managed, entry))) === "dead")) return true;
   return entries.some(isInstallerResidue);
 }
