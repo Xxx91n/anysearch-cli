@@ -259,7 +259,6 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): 
     // snapshot before attempt so a parent created during the load is not
     // recorded as already loaded.
     const preWatched = [...watched];
-    const preMtimes = new Map(mtimes);
     let changed = false;
     for (const pp of watched) {
       if (fileVersion(pp) !== mtimes.get(pp)) { changed = true; break; }
@@ -289,7 +288,7 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): 
         for (const pp of watched) {
           if (newPaths.has(pp)) {
             // force next call to re-check this path (was not covered by pre snapshot)
-            mtimes.set(pp, preMtimes.get(pp) ?? "-1");
+            mtimes.set(pp, "-1");
           } else {
             mtimes.set(pp, fileVersion(pp));
           }
@@ -298,7 +297,7 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): 
         mtimes.clear();
         for (const pp of watched) mtimes.set(pp, fileVersion(pp));
       }
-      const sig = watched.map((pp) => String(mtimes.get(pp))).join(",");
+      const sig = watched.map((pp) => fileVersion(pp)).join(",");
       if (warnedSig !== sig) {
         warnedSig = sig;
         process.stderr.write("[anysearch] domain TOML reload failed; keeping last known good policy: " + (e instanceof Error ? e.message : String(e)) + "\n");
