@@ -8,7 +8,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { loadDomain } from "./domain-loader";
+import { loadDomain, loadRawDomain } from "./domain-loader";
 import { HOSTNAME_RE, type DomainSchema } from "./domain-schema";
 import { SqliteObservationStore, generateTraceIdHex } from "./observation";
 import { readSessionId } from "./session-id";
@@ -172,23 +172,126 @@ export function readPolicyCacheEnvelope(cachePath: string): MaterializedPolicy |
 }
 
 // D5: lazy mtime-checked re-read. Probe returns null = unchanged (or unreadable), schema = reloaded.
-export function createDomainReloader(tomlPath: string): () => DomainSchema | null {
-  let lastMtime = -1;
-  let warnedMtime = -1;
-  try { lastMtime = statSync(tomlPath).mtimeMs; } catch { /* path may appear later */ }
-  return () => {
-    let mtime: number;
-    try { mtime = statSync(tomlPath).mtimeMs; } catch { return null; }
-    if (mtime === lastMtime) return null;
+// #167/CodeRabbit: inheritance-aware. Startup now resolves inherited domains via
+// file-based lookup (loadDomainByNameIn), so the reloader must use the same
+// lookup and watch ancestor mtimes. Otherwise a child with base stays stale
+// after a restart-free edit, and a base-only edit is invisible (no warning).
+export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): () => DomainSchema | null {
+  // Collect the child + all ancestor paths reachable via base chain.
+  // Uses domainsDirs when provided (composition root), otherwise falls back to
+  // the child's directory (pi-runtime / tests).
+  const collectChain = (): string[] => {
+    const chain: string[] = [tomlPath];
+    const seen = new Set<string>();
+    let curPath = tomlPath;
+    let curRaw: ReturnType<typeof loadRawDomain> | undefined;
     try {
-      const schema = loadDomain(tomlPath);
-      lastMtime = mtime;
+      curRaw = loadRawDomain(curPath);
+    } catch {
+      return chain;
+    }
+    while (curRaw?.base) {
+      if (seen.has(curRaw.base)) break;
+      seen.add(curRaw.base);
+      let parentPath: string | undefined;
+      let parentRaw: ReturnType<typeof loadRawDomain> | undefined;
+      const searchDirs = domainsDirs ?? (() => {
+        const dirs: string[] = [];
+        const envDir = process.env.ANS_DOMAINS_DIR?.trim();
+        if (envDir) dirs.push(envDir);
+        dirs.push(dirname(curPath));
+        dirs.push(join(process.cwd(), "domains"));
+        return dirs;
+      })();
+      for (const d of searchDirs) {
+        const cand = join(d, curRaw.base + ".toml");
+        try {
+          parentRaw = loadRawDomain(cand);
+          parentPath = cand;
+          break;
+        } catch (e) {
+          const code = (e as NodeJS.ErrnoException)?.code;
+          const msg = e instanceof Error ? e.message : String(e);
+          if (msg.startsWith("Domain schema:")) throw e;
+          if (code === "ENOENT") continue;
+          throw e;
+        }
+      }
+      if (!parentPath || !parentRaw) break;
+      chain.push(parentPath);
+      curRaw = parentRaw;
+      curPath = parentPath;
+    }
+    return chain;
+  };
+
+  const lookupFor = (): ((name: string) => ReturnType<typeof loadRawDomain> | undefined) | undefined => {
+    const dirs = domainsDirs ?? (() => {
+      const d: string[] = [];
+      const envDir = process.env.ANS_DOMAINS_DIR?.trim();
+      if (envDir) d.push(envDir);
+      // child's dir + CWD convention
+      try { d.push(dirname(tomlPath)); } catch {}
+      d.push(join(process.cwd(), "domains"));
+      return d;
+    })();
+    return (parent: string) => {
+      for (const dd of dirs) {
+        const cand = join(dd, parent + ".toml");
+        try {
+          return loadRawDomain(cand);
+        } catch (e) {
+          const code = (e as NodeJS.ErrnoException)?.code;
+          const msg = e instanceof Error ? e.message : String(e);
+          if (msg.startsWith("Domain schema:")) throw e;
+          if (code === "ENOENT") continue;
+          throw e;
+        }
+      }
+      return undefined;
+    };
+  };
+
+  let watched = collectChain();
+  let mtimes = new Map<string, number>();
+  for (const pp of watched) {
+    try { mtimes.set(pp, statSync(pp).mtimeMs); } catch { mtimes.set(pp, -1); }
+  }
+  let warnedMtime = -1;
+
+  return () => {
+    // Check if any watched file changed, or if chain grew/shrank (base added/removed)
+    let changed = false;
+    for (const pp of watched) {
+      try {
+        const mt = statSync(pp).mtimeMs;
+        if (mt !== mtimes.get(pp)) { changed = true; break; }
+      } catch {
+        if (mtimes.get(pp) !== -1) { changed = true; break; }
+      }
+    }
+    // Re-collect to detect new parent or base removal even if mtimes same
+    let newChain: string[] = [];
+    try { newChain = collectChain(); } catch { /* parse error during collect will be handled on load */ }
+    if (!changed && (newChain.length !== watched.length || newChain.some((p,i)=>p !== watched[i]))) {
+      changed = true;
+    }
+    if (!changed) return null;
+    try {
+      const schema = loadDomain(tomlPath, lookupFor());
+      // success: refresh watched + mtimes
+      watched = collectChain();
+      mtimes.clear();
+      for (const pp of watched) {
+        try { mtimes.set(pp, statSync(pp).mtimeMs); } catch { mtimes.set(pp, -1); }
+      }
       return schema;
     } catch (e) {
-      // D3/OPA bad-bundle semantics: keep last known good, but signal it (because
-      // old policy persisting silently leaves new deny entries dead with zero trace).
-      if (warnedMtime !== mtime) {
-        warnedMtime = mtime;
+      // D3/OPA bad-bundle semantics: keep last known good, but signal it
+      let curMtime = -1;
+      try { curMtime = statSync(tomlPath).mtimeMs; } catch {}
+      if (warnedMtime !== curMtime) {
+        warnedMtime = curMtime;
         process.stderr.write("[anysearch] domain TOML reload failed; keeping last known good policy: " + (e instanceof Error ? e.message : String(e)) + "\n");
       }
       return null;

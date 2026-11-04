@@ -178,7 +178,7 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
       // (env -> CWD -> caller-supplied dirs), then hand the engine a reloader that
       // keeps last-known-good on a bad reload (plugin server reuses this pattern).
       const tomlPath = domainTomlPath(process.cwd(), domain, dirs);
-      const reload = createDomainReloader(tomlPath);
+      const reload = createDomainReloader(tomlPath, dirs);
       let liveSchema = schema;
       const live = () => {
         const reloaded = reload();

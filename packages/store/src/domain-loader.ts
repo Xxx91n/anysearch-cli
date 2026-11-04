@@ -98,8 +98,15 @@ export function loadDomainByName(
       if (fromCaller !== undefined) return fromCaller;
     }
     const parentPath = join(baseDir, DOMAINS_DIR, parent + ".toml");
-    if (existsSync(parentPath)) return loadRawDomain(parentPath);
-    return undefined;
+    try {
+      return loadRawDomain(parentPath);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException)?.code;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.startsWith("Domain schema:")) throw e;
+      if (code === "ENOENT") return undefined;
+      throw e;
+    }
   };
   return loadDomain(tomlPath, effectiveLookup);
 }
@@ -129,7 +136,15 @@ export function loadDomainByNameIn(
         }
         for (const d of domainsDirs) {
           const candidate = join(d, parent + ".toml");
-          if (existsSync(candidate)) return loadRawDomain(candidate);
+          try {
+            return loadRawDomain(candidate);
+          } catch (e) {
+            const code = (e as NodeJS.ErrnoException)?.code;
+            const msg = e instanceof Error ? e.message : String(e);
+            if (msg.startsWith("Domain schema:")) throw e;
+            if (code === "ENOENT") continue;
+            throw e;
+          }
         }
         return undefined;
       };
