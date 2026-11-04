@@ -54,16 +54,19 @@ const tempIdByAnchor = new Map<string, string>();
 // CodeRabbit #129 review: process.stderr.write can emit an asynchronous 'error'
 // event that try/catch cannot capture — a broken pipe would terminate the
 // process instead of continuing fail-open.
+const stderrErrorListeners = new WeakSet<NodeJS.WriteStream>();
+
 function writeStderr(message: string): void {
   const stderr = process.stderr;
-  const swallow = () => {};
-  stderr.once("error", swallow);
+  if (!stderrErrorListeners.has(stderr)) {
+    stderr.on("error", () => {});
+    stderrErrorListeners.add(stderr);
+  }
   try {
-    stderr.write(message, (error) => {
-      if (!error) stderr.off("error", swallow);
-    });
+    stderr.write(message);
   } catch {
-    stderr.off("error", swallow);
+    // Synchronous write throws (e.g. stream destroyed) — already absorbed
+    // by the persistent error listener above.
   }
 }
 
