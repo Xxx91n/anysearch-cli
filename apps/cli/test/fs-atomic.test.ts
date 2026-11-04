@@ -128,7 +128,7 @@ test("setRenameSeam restores the previous layer, not the default", () => {
       restoreInner();
     }
 
-    assert.equal(renameSeam.current?.platform, undefined, "the inner-only platform is gone after restore");
+    assert.equal(renameSeam.current?.platform, "linux", "restore returns to the outer layer's platform gate");
     calls.length = 0;
     atomicRename("restored", "to");
     assert.deepEqual(calls, ["restored", "restored"], "restore returns to the outer layer's rename, not the default's");
