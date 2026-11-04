@@ -159,3 +159,24 @@
   what makes the `ans_chat` gap visible instead of a no-op. The gate itself
   (`store && sessionId`) is unchanged — narrowing it would alter every
   composition root.
+- **api.anysearch.com REST `/v1/search` is retired** — the route returns 404;
+  the live API is MCP Streamable HTTP at `POST /mcp`. An
+  `ANYSEARCH_ENDPOINT` (or explicit endpoint arg) ending in `/v1/search` is
+  auto-rewritten to `base+/mcp` with a once-per-process stderr warning.
+- **Anonymous `anysearch` calls hit a quota wall classified `permanent-auth`** —
+  upstream answers quota-exhausted anonymous calls with an auto-provisioning
+  payload (HTTP 200, `isError:null`, no result body) instead of an error;
+  the provider names this `quota/auth nudge` → `permanent-auth`. Fix is
+  user-side: set `ANYSEARCH_API_KEY`.
+- **Upstream `finance.fundamental` validator over-requires `cn_code`** — the
+  `get_sub_domains` vocab documents `type` + `symbol` *or* `cn_code` per
+  type, but the live validator demands `cn_code` at the tag level, so
+  e.g. `{type:"overview", symbol:"MSFT"}` returns `isError`. Pass `cn_code`
+  where the doc implies `symbol` suffices (eval cell `vert-f1105` is
+  tombstoned on this; see `eval-looks.json`).
+- **Tavily envelope `usage` is always `undefined`** — `@tavily/core` returns
+  credits only per-call (`response.usage.credits`) and offers no standalone
+  usage API, so `usage()` is unimplemented (contract field is optional).
+- **Exa envelope `usage` is always `undefined`** — `exa-js` returns cost only
+  per-call (`costDollars`) and offers no standalone usage API, so `usage()`
+  is unimplemented (contract field is optional).
