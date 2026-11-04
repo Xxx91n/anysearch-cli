@@ -102,17 +102,21 @@
   registry (`rag.adapter` = `none` / `note` / `fts`) now powers the agent-loop
   injection path (MemoryPipeline Stage-1), but the MCP `query_knowledge` tool
   does not dispatch to it yet: it still answers with the `adapter=<id>` line.
-  Wiring it needs an explicit session/store selection (which memory scope a
-  knowledge query reads), which is a separate decision.
-- **`rag.adapter = "fts"` reads shared Research Memory, not the current session
-  (#104)** — `SessionStore.searchMemory` queries `retrieval_results_fts`
-  without a session filter (the existing `recall_memory` semantic), so a domain
-  that enables `fts` can surface research saved by any other session in the
-  same store. With domains sharing one DB this widens the information boundary
-  between them; it is inert today because every shipped domain stays on
-  `adapter = "none"`. Session-scoped RAG would need a session id on
-  `RagAdapterPort` plus a session-filtered Research Memory query — a separate
-  decision, tracked in `docs/rag-adapters.md`.
+  Its read scope is now decided (#130): store-level shared Research Memory, the
+  same range `recall_memory` reads. Wiring the tool is tracked in #155.
+- **`rag.adapter = "fts"` reads store-level shared Research Memory (#130)** —
+  this is a deliberate boundary, not an open question. `SessionStore.searchMemory`
+  queries `retrieval_results_fts` without a session or domain filter (the
+  `recall_memory` semantic), so a domain that enables `fts` can surface research
+  saved by any session in the same store. The store is the isolation unit: it is
+  per-user by path and MCP HTTP binds `127.0.0.1` only. The CLI durable path
+  enforces 0700/0600; the MCP cold-start path still inherits the process umask
+  (hardening tracked in #156). Sessions and domains are retrieval sub-scopes,
+  not principals. Every shipped
+  domain stays on `adapter = "none"`, so the shared read is opt-in. A deployer
+  that shares one store or one MCP server across users must isolate with
+  separate stores, not expect a read filter. If multi-principal sharing ever
+  appears, attribute origin at write time first, then filter reads.
 - **`ans_chat` (MCP) has no `MemoryPipeline` at all (#129)** — this is the
   whole memory chain being absent, not a fail-open to `none`. `PiAgentRuntime`
   builds `MemoryPipeline` only when `store` and `sessionId` are BOTH supplied;
@@ -123,7 +127,8 @@
   and uses the durable `ANS_DB_PATH` store; MCP cannot copy that fix because the
   protocol deliberately carries no per-instance session id
   (`apps/mcp/src/index.ts` stateless transport, `session_id` never stashed), so
-  its session semantics must be decided first (#130 / #132).
+  its session semantics must be decided first (#132). #130 only governs the RAG
+  read scope and does not block that decision.
 - **A runtime without the memory pair is named, not silent (#129)** — a
   composition root that supplies `store` without `sessionId`, `sessionId`
   without `store`, or neither at all now gets one stderr line naming what is
