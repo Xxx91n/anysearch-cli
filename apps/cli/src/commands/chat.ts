@@ -11,7 +11,7 @@ import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel"
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
-import { domainTomlPath, loadDomainByNameIn } from "@anysearch-cli/store";
+import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError } from "@anysearch-cli/store";
 import { wireChatMemory } from "./chat-memory";
 
 export async function runChat(argv: string[]): Promise<number> {
@@ -69,6 +69,13 @@ export async function runChat(argv: string[]): Promise<number> {
     engine = createPersistentEngine(domainName);
     domain = engine.config || loadDomainByNameIn(domainName, domainSearchDirs()) as DomainConfigPort;
   } catch (e: any) {
+    // A configured-but-broken domain is a configuration error, not an
+    // availability problem: fail closed instead of silently dropping the
+    // operator's domain (allowlist / weights / compaction) to the default.
+    // Same predicate as createEngine; the CLI top-level handler prints the
+    // error and exits non-zero (#162). Missing domains and DB/IO faults keep
+    // the fallback below.
+    if (isDomainSchemaError(e)) throw e;
     console.error("[warn] Domain load failed: " + (e?.message || String(e)) + ", using fallback.");
     // Fallback: no domain filtering, all providers — still on the durable DB so
     // memory reads keep working across runs.

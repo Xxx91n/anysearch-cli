@@ -18,6 +18,7 @@ import {
   createDomainReloader,
   domainTomlPath,
   resolvePolicyFromSchema,
+  isDomainSchemaError,
 } from "@anysearch-cli/store";
 import * as path from "node:path";
 import type { AttributionCalibration } from "./calibrate";
@@ -200,7 +201,7 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
       // is configured but broken, so swallowing it would discard the operator's
       // explicit policy (incl. the URL allowlist trust boundary). "Domain not
       // found" stays fail-open — absent domain ≠ broken domain.
-      if (e instanceof Error && e.message.includes("Domain schema:")) throw e;
+      if (isDomainSchemaError(e)) throw e;
       providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors);
     }
   } else {

@@ -4,11 +4,18 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #162: `ans chat` 对 `Domain schema:` 错误 fail-fast
+
+### Fixed
+
+- **`Domain schema:` 校验错误不再被静默降级为默认域**：`apps/cli/src/commands/chat.ts` 的 domain 加载 catch 先经 `isDomainSchemaError()`（新增于 `packages/store/src/domain-schema.ts`，与 `createEngine` 共用同一谓词）判定；`Domain schema:` 校验错误直接 rethrow，由 CLI 顶层处理器写明错误并非零退出。数据库/IO 故障与 `Domain not found` 仍走既有回退（持久库失败再降级到内存库并告警）。TOML 语法错误与继承链错误（`Invalid TOML document:` / `Base domain not found:`）不属于票面指定的 `Domain schema:` 族，行为未改（不在本票范围）。
+- **回归**：`apps/cli/test/e2e.test.ts` 新增 malformed `compaction.lowWatermark` → `ans chat` 退出 1、stderr 指明 `Domain schema:` 且不再出现 `using fallback`；以及持久库父路径不可用 → 仍输出 `Durable database unavailable` 的内存回退告警。`packages/store/test/domain-schema.test.ts` 覆盖 schema 错误 / IO 错误 / missing-domain / 非 Error 分类。
+
 ## Unreleased — #113: LOW_WATERMARK 改为 contextWindow 占比制（+ contextWindow 透传）
 
 ### Changed
 
-- **L0 压缩水位支持 `compaction.lowWatermark = { fraction = ... }`**：`resolveLowWatermark` 把 fraction 解析为 `floor(fraction × contextWindow)`；窗口取自 `LlmSession.contextWindow`（pi-ai catalog）。`LlmSessionOptions.contextWindow` 透传自定义端点窗口——未设置时 pi-ai 仍用 128000 占位，但 `LlmSession.contextWindow` 保持 `undefined`，因此 **L0 不会把占位值当成真实窗口**，而是回退既有 128000 绝对值。绝对数形状保持原样；malformed fraction 由域加载器 fail-fast（`ans chat` 沿用既有的整域回退告警）。
+- **L0 压缩水位支持 `compaction.lowWatermark = { fraction = ... }`**：`resolveLowWatermark` 把 fraction 解析为 `floor(fraction × contextWindow)`；窗口取自 `LlmSession.contextWindow`（pi-ai catalog）。`LlmSessionOptions.contextWindow` 透传自定义端点窗口——未设置时 pi-ai 仍用 128000 占位，但 `LlmSession.contextWindow` 保持 `undefined`，因此 **L0 不会把占位值当成真实窗口**，而是回退既有 128000 绝对值。绝对数形状保持原样；malformed fraction 由域加载器 fail-fast（`ans chat` 的整域回退已在 #162 收窄为仅 DB/IO 故障与缺失域）。
 - **水位比较对象改为当前上下文占用**：`pi-runtime` 在 `shouldStopAfterTurn` 用 `max(lastTotalTokens, estimateContextTokens(messages).tokens)`，覆盖工具结果在上一次 LLM 调用之后追加造成的一轮滞后（#114 复审遗留）；ledger 仍按 usage 事件结算，不受影响。
 - **新增可选 env `ANS_LLM_CONTEXT_WINDOW`**：CLI `ans chat` 与 MCP `ans_chat` 在组合根读取并透传；kernel 仍零 env 读取。非正整数 fail-fast。
 

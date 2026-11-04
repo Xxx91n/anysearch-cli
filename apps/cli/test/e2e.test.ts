@@ -25,6 +25,48 @@ async function run(args: string[], env?: NodeJS.ProcessEnv, cwd?: string): Promi
   });
 }
 
+// Spawn and resolve once `pattern` appears in the combined output and the
+// child has closed. Pre-flight assertions (domain/DB init warnings) must not
+// wait for an LLM round-trip; the child is killed at the marker.
+async function runUntil(args: string[], env: NodeJS.ProcessEnv, pattern: RegExp): Promise<{ out: string }> {
+  return new Promise((resolve, reject) => {
+    const p = spawn(process.execPath, [DIST, ...args], { stdio: ["ignore", "pipe", "pipe"], env });
+    let out = "";
+    let matched = false;
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    };
+    timer = setTimeout(() => fail(new Error("timeout " + args[0])), 15000);
+    const onData = (d: Buffer) => {
+      out += d.toString();
+      if (!settled && !matched && pattern.test(out)) {
+        matched = true;
+        p.kill();
+        // The marker was observed; only the post-kill close needs a bound now.
+        clearTimeout(timer);
+        timer = setTimeout(() => fail(new Error("child did not close: " + args[0])), 5000);
+      }
+    };
+    p.stdout.on("data", onData);
+    p.stderr.on("data", onData);
+    // Resolve only on a matched, clean close: an early crash that prints the
+    // pre-marker warnings must reject instead of silently passing.
+    p.on("close", () => {
+      if (settled) return;
+      if (!matched) return fail(new Error("marker never matched: " + args[0] + "\n" + out));
+      settled = true;
+      clearTimeout(timer);
+      resolve({ out });
+    });
+    p.on("error", (e) => fail(e));
+  });
+}
+
 async function t(name: string, fn: () => Promise<void>) {
   try {
     await fn();
@@ -97,6 +139,79 @@ async function t(name: string, fn: () => Promise<void>) {
     const r = await run(["chat", "hello"], cleanEnv);
     assert.equal(r.code, 3);
     assert.match(r.out, /LLM provider not configured|ANS_LLM_PROVIDER/);
+  });
+
+  // #162: a configured-but-broken domain must fail closed. `ans chat` used to
+  // warn and fall back to the default domain, silently discarding the
+  // operator's validated policy (allowlist / weights / compaction).
+  await t("chat with malformed domain TOML fails fast on Domain schema", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-chat-bad-domain-"));
+    try {
+      fs.writeFileSync(path.join(dir, "badlow.toml"), [
+        'name = "badlow"',
+        "[rag]",
+        'adapter = "none"',
+        "[compaction]",
+        "lowWatermark = 49999",
+        "",
+      ].join("\n"), "utf8");
+      // Sanitize ambient LLM config; explicit flags + a dead local endpoint are
+      // enough to build the session (no network happens before the domain load).
+      const env = { ...process.env };
+      for (const k of Object.keys(env)) if (k.startsWith("ANS_LLM_")) delete env[k];
+      const r = await run([
+        "chat", "hello",
+        "--llm.provider", "openai",
+        "--llm.model", "gpt-5",
+        "--llm.base-url", "http://127.0.0.1:1/v1",
+        "--llm.api", "chat",
+      ], {
+        ...env,
+        ANS_DOMAINS_DIR: dir,
+        ANS_DOMAIN: "badlow",
+        ANS_DB_PATH: path.join(dir, "anysearch.db"),
+      });
+      assert.equal(r.code, 1, r.out);
+      assert.match(r.out, /Domain schema: compaction\.lowWatermark/);
+      assert.doesNotMatch(r.out, /using fallback/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // #162: the availability fallback for an unusable durable DB is deliberate and
+  // must stay. A file where the DB parent directory should be makes both the
+  // initial and the fallback persistent-engine builds fail deterministically
+  // (no SQLite path quirks). The child is killed at the post-fallback banner
+  // (`ans chat: hello`): the banner proves the in-memory engine and runtime
+  // were constructed, while the provider round-trip that follows is irrelevant
+  // to this contract.
+  await t("chat keeps in-memory fallback when the durable DB is unavailable", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-chat-nodb-"));
+    try {
+      const blocker = path.join(dir, "not-a-dir");
+      fs.writeFileSync(blocker, "x", "utf8");
+      const env = { ...process.env };
+      for (const k of Object.keys(env)) if (k.startsWith("ANS_LLM_")) delete env[k];
+      const r = await runUntil([
+        "chat", "hello",
+        "--llm.provider", "openai",
+        "--llm.model", "gpt-5",
+        "--llm.base-url", "http://127.0.0.1:1/v1",
+        "--llm.api", "chat",
+      ], {
+        ...env,
+        ANS_DB_PATH: path.join(blocker, "anysearch.db"),
+      }, /ans chat: hello/);
+      assert.match(r.out, /Durable database unavailable/);
+      assert.match(r.out, /in-memory store/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   await t("mcp --help exits 0 (mcp subcommand dependency smoke)", async () => {
