@@ -74,7 +74,8 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
 
 - `fts` 走 `SessionStore.searchMemory`：FTS 主臂查 `retrieval_results_fts`，再与
   entity / vector / relation / semantic 各臂融合；**不带 `session_id` 或 `domain` 过滤** ——
-  同一 store 内的全部调研记忆都可被召回。这与 `recall_memory` 一致，`fts` 只是在其上包一层。
+  同一 store 内所有仍有效（未归档、未隔离、未失效）的调研记忆都可被召回。这与
+  `recall_memory` 一致，`fts` 只是在其上包一层。
 - 隔离单元是 store 本身（Store Principal）：默认 `~/.anysearch/anysearch.db`，MCP HTTP
   只绑 `127.0.0.1`。CLI 的持久库路径会尝试收紧到 0700/0600（best-effort；Windows 忽略
   POSIX 模式）；MCP 冷启动首次建库仍沿用进程 umask，权限对齐见 #156。会话与域是检索的
@@ -87,12 +88,16 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
   “本域可读取本 store 的全部调研记忆”。若把同一 store 或同一 MCP server 共享给
   不同用户/主体，隔离责任在部署层（独立 store / 独立 server），不在读路径。
 
+> **#104 CWE-200 的去向**：该披露成立。本裁定不通过会话过滤修复它，而是把 store
+> 定为主体边界，并用「出厂默认 `none` + 显式 opt-in + 部署层独立 store」承担剩余风险。
+
 ### 为什么不按会话或域过滤（#130）
 
 - **会话级**：要给 `RagAdapterPort` 增加 sessionId 参数（违反 #90 已定的
   `retrieve(query, limit)` 契约）。`searchResults` 虽是现成的会话级语句，但
-  semantic / edge 臂与合并结果没有统一的会话归属；CLI `ans chat` 也不写
-  `retrieval_results`。接线成本并不低，且要先有写入侧归属。
+  semantic 臂不返回会话归属，合并层也不按会话过滤；更关键的是 MCP `search_web`
+  每次调用都新建 session，`session_id` 是 per-call 而不是对话边界，CLI `ans chat`
+  也不写 `retrieval_results`。接线成本不低，且要先有真正可用的会话归属。
 - **域级**：`retrieval_results` 没有 domain 列，`sessions.domain` 只写不读，
   MCP 自动索引固定写 `"mcp"`；按域过滤没有可用的归属列，且需要改写入路径、
   回填旧行并过滤全部检索臂。当前成本最高、收益为零。

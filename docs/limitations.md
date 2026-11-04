@@ -105,9 +105,11 @@
   Its read scope is now decided (#130): store-level shared Research Memory, the
   same internal range `recall_memory` reads (before its project-index fallback).
   Wiring the tool is tracked in #155.
-- **`rag.adapter = "fts"` reads store-level shared Research Memory (#130)** —
-  this is a deliberate boundary, not an open question: the store is the isolation
-  unit (Store Principal), and sessions/domains are retrieval sub-scopes. A domain
+- **`rag.adapter = "fts"` reads store-level shared Research Memory (#130,
+  superseding the #104 CWE-200 disclosure)** — this is a deliberate boundary,
+  not an open question: the store is the isolation unit (Store Principal), and
+  sessions/domains are retrieval sub-scopes. The #104 CWE-200 finding is accepted
+  as this deliberate boundary rather than fixed by a session filter. A domain
   that enables `fts` can surface research saved by any session in the same store.
   The CLI durable path attempts owner-only 0700/0600 (best-effort; Windows ignores
   POSIX modes); the MCP cold-start path still inherits the process umask

@@ -18,10 +18,10 @@ export function registerQueryKnowledge(server: McpServer, eng: CompositionResult
     },
     async (_args: unknown) => {
       return observeTool(eng, "query_knowledge", async () => {
-        // Design: query_knowledge reads store-scoped shared Research Memory —
-        // sessions and domains are not principals, so the tool takes no sessionId or
-        // domain filter. The stub remains until #155 wires it; see
-        // docs/rag-adapters.md §作用域.
+        // Design: query_knowledge is to read the same store-scoped shared Research
+        // Memory range as recall_memory — sessions and domains are not principals, so
+        // the tool takes no sessionId or domain filter. The stub remains until #155
+        // wires it; see docs/rag-adapters.md §作用域.
         const adapter = eng.config?.rag?.adapter ?? "none";
         return { content: [{ type: "text" as const, text: "query_knowledge: adapter=" + adapter + " (not yet implemented)" }] };
       });
