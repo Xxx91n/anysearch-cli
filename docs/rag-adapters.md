@@ -33,7 +33,7 @@
 
 ## 配置示例
 
-`fts` —— 复用 **Research Memory** 里已积累的调研结果（跨会话共享，见下方「作用域」）：
+`fts` —— 复用 **Research Memory** 里已积累的调研结果（store 级共享，见下方「作用域」）：
 
 ```toml
 [rag]
@@ -68,25 +68,41 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
 - 每条命中带 role，让模型能区分「召回证据」与「用户指令」；
 - 命中文本在注入边界过 `sanitizeText`（零宽字符 / 双向覆盖符剔除）并压平换行，防止一条记忆伪造出额外的块结构。
 
-## 作用域：`fts` 读的是**跨会话共享**的 Research Memory
+## 作用域：store 级共享（#130 裁定）
 
-这点容易被误读成"只读当前会话"，务必看清：
+`fts` 的读取边界是 **store**，不是会话，也不是域：
 
-- `fts` 走的是 `SessionStore.searchMemory`，它查 `retrieval_results_fts`
-  （Research Memory 层），**不带 session 过滤** —— 同一 store 内其它会话存下的
-  调研结果也会被召回。这是既有 `recall_memory` 工具的语义，本票的 adapter 是
-  在它之上包一层，没有改变作用域。
-- 对照：`SessionStore.searchFts5(sessionId, …)` 才是按会话过滤的（查 `messages` 表）。
-  L2 冷路径的记忆召回同样走跨会话的 `searchMemory`。
-- 这也正是 Domain Full-Stack 想要的语义：`fts` adapter 的价值在于"这个域能读
-  到本机已积累的私有证据"，而不是"重读本轮对话"——本轮对话模型本来就在上下
-  文里。
-- 要注意的后果：**同一个 store 里不同会话/不同域的召回内容会互相可见**。
-  如果多个域共享同一个 DB 但信任级别不同，那么启用 `fts` 等于放宽这些域之间的
-  信息边界。目前出厂三域都是 `adapter = "none"`，所以这个结论尚未被任何出厂配置触发。
-- 如果将来需要"仅当前会话"的 RAG，那是另一件事（要给 `RagAdapterPort` 传
-  sessionId 并给 store 加带会话过滤的 Research Memory 查询），属独立决策，不
-  在本票范围内偷改。
+- `fts` 走 `SessionStore.searchMemory`：FTS 主臂查 `retrieval_results_fts`，再与
+  entity / vector / relation / semantic 各臂融合；**不带 `session_id` 或 `domain` 过滤** ——
+  同一 store 内所有仍有效（未归档、未隔离、未失效）的调研记忆都可被召回。这与
+  `recall_memory` 一致，`fts` 只是在其上包一层。
+- 隔离单元是 store 本身（Store Principal）：默认 `~/.anysearch/anysearch.db`，MCP HTTP
+  只绑 `127.0.0.1`。CLI 的持久库路径会尝试收紧到 0700/0600（best-effort；Windows 忽略
+  POSIX 模式）；MCP 冷启动首次建库仍沿用进程 umask，权限对齐见 #156。会话与域是检索的
+  **子作用域**（L1/L2 锚点、域配置、工具白名单），不是主体边界；不同主体应使用不同 store
+  （`ANS_DB_PATH`）。
+- 对照：`SessionStore.searchFts5(sessionId, …)` 是按会话过滤的 `messages` 查询；
+  Research Memory 的会话级语句 `searchResults` 已存在但未暴露、未被调用，L2 冷路径
+  同样走 store 级 `searchMemory`。
+- 出厂三域仍是 `adapter = "none"`；启用 `fts` 是显式 opt-in，等于声明
+  “本域可读取本 store 的全部调研记忆”。若把同一 store 或同一 MCP server 共享给
+  不同用户/主体，隔离责任在部署层（独立 store / 独立 server），不在读路径。
+
+> **#104 CWE-200 的去向**：该披露成立。本裁定不通过会话过滤修复它，而是把 store
+> 定为主体边界，并用「出厂默认 `none` + 显式 opt-in + 部署层独立 store」承担剩余风险。
+
+### 为什么不按会话或域过滤（#130）
+
+- **会话级**：要给 `RagAdapterPort` 增加 sessionId 参数（违反 #90 已定的
+  `retrieve(query, limit)` 契约）。`searchResults` 虽是现成的会话级语句，但
+  semantic 臂不返回会话归属，合并层也不按会话过滤；更关键的是 MCP `search_web`
+  每次调用都新建 session，`session_id` 是 per-call 而不是对话边界，CLI `ans chat`
+  也不写 `retrieval_results`。接线成本不低，且要先有真正可用的会话归属。
+- **域级**：`retrieval_results` 没有 domain 列；`sessions.domain` 只是会话元数据，
+  未参与任何检索过滤，且 MCP 自动索引固定写 `"mcp"`。按域过滤没有可用的归属键，
+  需要改写入路径、回填旧行并过滤全部检索臂。当前成本最高、收益为零。
+- **结论**：当前唯一真实的隔离单元是 store。将来出现多主体写入时，先在写入侧
+  记录归属（origin namespace），再做读过滤；不要给未标注的旧行补读过滤。
 
 预算（都在 `rag-adapter.ts` 里具名导出，改它们要同步改测试）：
 
@@ -157,13 +173,14 @@ pnpm -C packages/kernel test    # test/rag-adapter.test.ts、test/message-text.t
 
 ## 边界（还没做的）
 
-- **`fts` 尚未在任何出厂域启用** —— `domains/default.toml`、`docs.toml`、`research.toml` 仍是 `adapter = "none"`。要真开启属产品决策，需要配套回归。
-- **#131 动态 RAG 热区落点尚未迁入运行时代码** —— 静/动分层约定已定（静态 `note` 留在首条 user 消息末尾、动态 `fts` 按最新一条 user 消息原文检索并迁至其末尾热区），当前 `MemoryPipeline.inject` 仍保持 #104 的首条落点，待后续实现票连同 Stage-2 `appendMessageText` 块形状保护与 `rag-adapter.test.ts` 多轮落点断言一并落地。
-- **MCP `query_knowledge` 工具未接本注册表** —— 它仍需先定「知识查询读哪个记忆范围」（跨会话 store 范围），见 `docs/limitations.md`。
+- **`fts` 尚未在任何出厂域启用** —— `domains/default.toml`、`docs.toml`、`research.toml` 仍是 `adapter = "none"`。#130 裁定保持这个默认：启用 `fts` 是显式 opt-in，属另一项产品决策；#154 只影响其落点质量，不是启用前提。
+- **#131 动态 RAG 热区落点尚未迁入运行时代码** —— 静/动分层约定已定（静态 `note` 留在首条 user 消息末尾、动态 `fts` 按最新一条 user 消息原文检索并迁至其末尾热区），当前 `MemoryPipeline.inject` 仍保持 #104 的首条落点，待 #154 连同 Stage-2 `appendMessageText` 块形状保护与 `rag-adapter.test.ts` 多轮落点断言一并落地。
+- **MCP `query_knowledge` 工具未接本注册表** —— 读取范围已由 #130 定为 store 级共享（与 `recall_memory` 一致），接线见 #155；见 `docs/limitations.md`。
 - **`apps/mcp` 的 `ans_chat` 未把 store 传给 runtime** —— 该路径上 `MemoryPipeline`
   根本没有被构造（不是 fail-open 到 none），所以 RAG / L1 / L2 注入整条链路都不存在。
   MCP 侧是**有意无会话**（stateless transport，`session_id` 从不落地），不能照抄 CLI 的修法；
-  会话语义需先定（#130 / #132）。现状见 `docs/limitations.md`。
+  会话语义需先定（#132）。#130 的读取边界裁定不阻塞它：RAG 读 store 级共享，与会话语义解耦。
+  现状见 `docs/limitations.md`。
 - **CLI `ans chat` 已接持久库 + 稳定 sessionId（#129）** —— `createPersistentEngine` 走
   `ANS_DB_PATH`（默认 `~/.anysearch/anysearch.db`），sessionId 取持久的
   `~/.anysearch-cli/session` 锚点（`ANS_SESSION_ID` 可覆盖），并先

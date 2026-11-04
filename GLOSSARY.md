@@ -37,7 +37,8 @@
 ## 记忆与检索
 
 - **Memory Tier（记忆三层架构）**——L0 缓冲（会话工作记忆）→ L1 窗口管理（transformContext 管道：RAG 注入→记忆注入→compaction）→ L2 持久层（FTS5 + 时间衰减）。独立于 MCP 可工作。
-- **Research Memory（调研记忆层）**——FTS5 仓里的历次调研结果（网页内容、蒸馏结论、RAG 私有数据），是三层检索源之一；**按 store 共享、不按会话隔离**（`searchMemory` 查 `retrieval_results_fts` 无 session 过滤，`searchFts5(sessionId, …)` 才是按会话的 messages 查询）。
+- **Store Principal（store 主体边界）**——共享记忆的隔离单元：一个 store 就是一个主体；会话与域只是检索子作用域。
+- **Research Memory（调研记忆层）**——FTS5 仓里的历次调研结果（网页内容、蒸馏结论、RAG 私有数据），是三层检索源之一。读取边界是 store（Store Principal），跨主体隔离靠独立 store；具体到语句：`searchMemory` 查 `retrieval_results_fts` 无 session 过滤，`searchFts5(sessionId, …)` 才是按会话的 messages 查询。
 - **Time Edge Effect（时间边缘效应）**——调研记忆的时间机制：指数半衰期衰减 + 双时态失效（新证据关闭旧记录 valid_until）+ QDF 式时间敏感查询临时 boost + pinned 豁免。
 - **Fused Freshness Factor（融合新鲜度因子）**——检索期唯一时间信号：created_at 衰减 + last_accessed 近因 + access_count 频率压成一个 [0.3,1.5] 乘子乘进 BM25；禁多层时间乘子叠乘。
 - **Explicit Invalidation via Write Path（显式失效走写路径）**——「这条过时了」走既有 valid_until/quarantine 通道，不加 TTL；软衰减管「不再相关」，写时失效管「事实已过期」。
