@@ -193,12 +193,20 @@ PID namespace 上可证明已死的持有者会被自动回收（上一 boot 留
 
 `install`、`list`、`validate` 还会在持锁时对账安装器自有残留：残留按**生成的
 精确名字**识别，绝不用前缀匹配——`.install-` 加 6 位字母数字（暂存）、
-`.installed-<uuid>.tmp`（临时清单）、`.installed.lock.pending-` 加 6 位字母数字、
-`.installed.lock.reclaim-<uuid>`（回收隔离目录）。暂存与临时清单仅在不存在
-`installed.json` 时清理；pending 与回收隔离目录还要求记录的 owner 可证明已死
-（可能存活时直接失败停下）。只是长得像的条目——手写的 `.installed-notes.tmp`、
-`.install-archive/` 目录、`.installed.lock.pending-<notes>`——属于操作者内容：永不删除，且没有
-`installed.json` 的 scope 会继续 fail-closed，不会在它旁边 bootstrap 出清单。
+`.installed-<uuid v4>.tmp`（临时清单）、`.installed.lock.pending-` 加 6 位字母数字、
+`.installed.lock.reclaim-<uuid v4>`（回收隔离目录）。
+
+暂存与临时清单仅在不存在 `installed.json` 的 scope 中清理。pending 与回收隔离
+目录还要求记录的 owner 可证明已死：无法证明已死的回收隔离目录会带着路径失败
+停下；pending 的 owner 存活或不可读时则原样保留——它是惰性的，既不阻塞也不
+中断运行。
+
+判定依据是**形态而非归属**：只是长得像的条目——手写的 `.installed-notes.tmp`、
+`.install-archive/` 目录、`.installed.lock.pending-<notes>`——属于操作者内容：
+永不删除，且没有 `installed.json` 的 scope 会继续 fail-closed，不会在它旁边
+bootstrap 出清单。恰好符合生成形态的名字与安装器残留无法区分，将被按残留处理
+（例如操作者目录 `.install-backup` 在 `.install-` 之后正好是 6 位字母数字，会在
+没有 `installed.json` 的 scope 中被删除），自己的文件请避开这种形态。
 `.uninstall-*` 备份、未登记的 `<name>/` 目录和未知条目永不自动删除。
 安装中断留下的未登记 `<name>/` 可手工删除后重装。若清单仍记录某 skill 但其
 `<name>/` 目录缺失，`ans skill list`（以及 `validate`）会输出恢复提示：把对应的

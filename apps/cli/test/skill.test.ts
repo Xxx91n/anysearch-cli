@@ -932,12 +932,18 @@ test("every installer-generated entry name matches its exact pattern", (t) => {
   assert.ok(QUARANTINE_ENTRY.test(`.installed.lock.reclaim-${randomUUID()}`));
 
   // The boundary is exact: near-misses are operator content, not installer residue.
+  // randomUUID() only writes version-4 UUIDs, so another version or a non-RFC
+  // variant nibble is not a name the installer can have produced.
   for (const name of [".install-archive", ".install-abc", ".install-abcdefg", ".install-ab12_d",
-    ".installed-notes.tmp", `.installed-${randomUUID().toUpperCase()}.tmp`, ".installed-0000.tmp"]) {
+    ".installed-notes.tmp", `.installed-${randomUUID().toUpperCase()}.tmp`, ".installed-0000.tmp",
+    ".installed-00000000-0000-3000-8000-000000000000.tmp",
+    ".installed-00000000-0000-4000-7000-000000000000.tmp"]) {
     assert.equal(STAGING_ENTRY.test(name) || MANIFEST_TEMP_ENTRY.test(name), false, `treated as residue: ${name}`);
   }
   for (const name of [".installed.lock.pending-notalock", ".installed.lock.pending-abc",
-    ".installed.lock.reclaim-notauuid", ".installed.lock.reclaiming"]) {
+    ".installed.lock.reclaim-notauuid", ".installed.lock.reclaiming",
+    ".installed.lock.reclaim-00000000-0000-3000-8000-000000000000",
+    ".installed.lock.reclaim-00000000-0000-4000-7000-000000000000"]) {
     assert.equal(LOCK_PENDING_ENTRY.test(name) || QUARANTINE_ENTRY.test(name), false, `treated as bookkeeping: ${name}`);
   }
 });

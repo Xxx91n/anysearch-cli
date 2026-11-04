@@ -131,12 +131,17 @@ const UNINSTALL_PREFIX = ".uninstall-";
 export const STAGING_ENTRY = /^\.install-[A-Za-z0-9]{6}$/;
 /** `.installed.lock.pending-XXXXXX` from `mkdtempSync(join(managed, LOCK_PENDING_PREFIX))`. */
 export const LOCK_PENDING_ENTRY = /^\.installed\.lock\.pending-[A-Za-z0-9]{6}$/;
-/** `.installed-<uuid>.tmp` from `writeManifest`'s `randomUUID()` temp file. */
+/**
+ * `.installed-<uuid v4>.tmp` from `writeManifest`'s `randomUUID()` temp file.
+ * `randomUUID()` only emits version-4 UUIDs with RFC 4122 variant bits, so the
+ * version and variant nibbles are pinned too: a hand-made file carrying another
+ * UUID version is not something the installer can have written.
+ */
 export const MANIFEST_TEMP_ENTRY =
-  /^\.installed-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/;
-/** `.installed.lock.reclaim-<uuid>` from the quarantine rename during reclamation. */
+  /^\.installed-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/;
+/** `.installed.lock.reclaim-<uuid v4>` from the quarantine rename during reclamation. */
 export const QUARANTINE_ENTRY =
-  /^\.installed\.lock\.reclaim-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  /^\.installed\.lock\.reclaim-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 // Rename backoff lives in fs-atomic (#145): the Windows/POSIX retryability gate is
 // an explicit `platform` seam field there — not object identity on a default IO —
