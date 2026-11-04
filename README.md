@@ -213,10 +213,27 @@ before reporting the original error; on other platforms only `EBUSY` is treated
 as transient.
 
 `install`, `list` and `validate` also reconcile installer-owned residue while
-holding that lock. `.install-*` staging directories and
-`.installed-*.tmp` manifest temporaries are removed only when no
-`installed.json` exists; `.uninstall-*` backups, unrecorded `<name>/`
-directories and unknown entries are never deleted automatically. An unrecorded
+holding that lock. Residue is recognized by its exact generated name, never by a
+prefix: `.install-` plus six alphanumerics (staging), `.installed-<uuid v4>.tmp`
+(manifest temporary), `.installed.lock.pending-` plus six alphanumerics, and
+`.installed.lock.reclaim-<uuid v4>` (reclamation quarantine).
+
+Staging and a temp manifest are removed only in a scope without
+`installed.json`. A pending or reclaimed lock is removed only once its recorded
+owner is provably dead; a reclaimed lock that cannot be proven dead stops the
+run with its path, while a pending lock with a live or unreadable owner is left
+in place — it is inert, so it neither blocks nor stops a run.
+
+The match is on shape, not authorship. Anything that merely looks similar — a
+hand-made `.installed-notes.tmp`, an `.install-archive/` directory,
+`.installed.lock.pending-<notes>` — is operator content: it is never deleted,
+and a scope without `installed.json` keeps failing closed instead of
+bootstrapping a manifest beside it. A name that happens to have exactly the
+generated shape is indistinguishable from installer residue and is treated as
+such — an operator directory named `.install-backup` is six alphanumerics after
+`.install-`, so it is removed in a scope without `installed.json`. Avoid that
+shape for your own files. `.uninstall-*` backups, unrecorded
+`<name>/` directories and unknown entries are never deleted automatically. An unrecorded
 `<name>/` left by an interrupted install can be removed manually and
 reinstalled. If the manifest records a skill whose `<name>/` directory is
 missing, `ans skill list` (and `validate`) prints a recovery hint: rename the

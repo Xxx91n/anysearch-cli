@@ -4,6 +4,20 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #146: 对账只删安装器真实命名形态（精确匹配）
+
+### Changed
+
+- **对账判定由前缀匹配改为精确形态**（`apps/cli/src/skill-store.ts`）：新增 `STAGING_ENTRY`（`.install-` + 6 位 `[A-Za-z0-9]`）、`LOCK_PENDING_ENTRY`（`.installed.lock.pending-` + 6 位）、`MANIFEST_TEMP_ENTRY`（`.installed-<小写 uuid v4>.tmp`）、`QUARANTINE_ENTRY`（`.installed.lock.reclaim-<小写 uuid v4>`；两个 uuid 模式同样钉住 `randomUUID()` 必产的版本位 `4` 与 RFC 4122 variant 位 `[89ab]`，别的 UUID 版本不是安装器能写出的名字）四个模式，`isInstallerResidue` / `isEmptyManagedRoot` / `hasStaleLockOrResidue` / `reconcileManagedRoot` 共用同一套判定。此前 `.installed-notes.tmp`、`.install-archive/`、`.installed.lock.pending-notalock` 这类操作者内容会被判为残留：一是 `list` / `install` 持锁直接 `rm -rf`，二是 `isEmptyManagedRoot` 把它当惰性记账，于是在含用户内容的目录里 bootstrap 出 `installed.json`——检查与删除共用同一个过宽前缀，错误自我确认。现在这类条目一律视为内容，scope 继续 fail-closed、不做任何删除。判定依据是**形态而非归属**：恰好符合生成形态的操作者名字（如 `.install-backup` 在 `.install-` 之后正好 6 位字母数字）仍与安装器残留无法区分，会被按残留处理；README 已明确这条边界。旧命名形态的残留成为**假阴性**：留在原处不删（漏删可恢复，误删不可恢复）。
+
+### Added
+
+- **`apps/cli/test/skill.test.ts`**：新增“操作者自建 lookalike 不被当作残留”用例（`install` 失败于 `skill manifest is missing in a non-empty managed directory`，三个条目全部保留、不生成 `installed.json`；`list` / `validate` 同样 fail-closed 且只读），以及“安装器真实生成的条目名匹配精确模式”反向用例（32 次 `mkdtempSync` 的 6 位后缀在 ubuntu + windows 上断言落在 `[A-Za-z0-9]`，`randomUUID()` 的临时清单与隔离目录名匹配，且近似的操作者名字不匹配——含非 v4 版本位、非 RFC 4122 variant 位的 uuid）。既有对账用例只把构造用的名字改成真实形态（`.install-ab12cd`、`.installed-<uuid>.tmp`、`.installed.lock.pending-dead01`），断言未改。
+
+### Documented
+
+- README / README.zh-CN 对账章节改为按精确形态描述残留，并写明两条边界：相似名字属于操作者内容、永不删除；恰好符合生成形态的名字仍按残留处理。同时更正 pending 锁的说明——owner 存活或不可读时原样保留且惰性，只有回收隔离目录在无法证明已死时才让运行失败。
+
 ## Unreleased — #145: rename 退避抽到独立 `fs-atomic` 模块，平台门改显式 seam（#137 收尾）
 
 ### Changed
