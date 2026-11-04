@@ -122,7 +122,8 @@ export interface RagAdapterPort {
   /**
    * Resolve `query` into an injectable payload.
    *
-   * @param query - Caller text, normally the first user turn (adapters may truncate).
+   * @param query - Caller text, normally the latest user turn's pre-injection
+   *   text (query-driven adapters); adapters may truncate it.
    * @param limit - Max hits to fold into the block.
    * @returns The payload, or null meaning "nothing to inject this turn".
    *   Thrown faults are fail-open at the registry (no injection, named stderr),

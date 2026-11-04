@@ -34,8 +34,14 @@ export const RAG_ADAPTER_FTS = "fts";
 export const KNOWN_RAG_ADAPTERS = [RAG_ADAPTER_NONE, RAG_ADAPTER_NOTE, RAG_ADAPTER_FTS] as const;
 
 /**
- * Adapter ids whose injection is *query-driven* — the block is recomputed from
- * the user's current question every turn.
+ * Design: volatility is encoded as an explicit adapter-id allowlist — #131
+ * places query-driven adapters on the latest user message (hot zone) and
+ * session-static operator text on the first, and an id list keeps the #90 port
+ * contract (`retrieve(query, limit)`) frozen instead of adding a placement flag
+ * to every adapter. Rejected alternative: a boolean on `RagAdapterPort` — it
+ * would change the frozen contract and force every implementer to restate a
+ * policy the kernel owns. Adapter ids whose injection is *query-driven* — the
+ * block is recomputed from the user's current question every turn.
  *
  * #131 splits Stage-1 placement by volatility: these adapters land on the
  * LATEST user message (attention hot zone) and key their query on that turn's

@@ -730,11 +730,11 @@ console.log("---");
   // volatility split — dynamic RAG lands on the latest USER turn and queries
   // that turn's pre-injection text, while the first turn stays byte-stable.
   {
-    const quarries: string[] = [];
+    const queries: string[] = [];
     const queryCapturingStore = {
       ...ragStore,
       searchMemory: async (q: string) => {
-        quarries.push(q);
+        queries.push(q);
         return [
           { rowid: 7, sessionId: "s1", role: "assistant", content: "internal wiki: proxy port 8080", rank: 1, arms: ["fts"] },
         ];
@@ -754,12 +754,12 @@ console.log("---");
       { role: "assistant", content: "a1" },
       { role: "user", content: [{ type: "text", text: "turn two question" }] },
     ]);
-    assert.equal(textOf(out[0]), "system prompt", "#154 multi-turn: system untouched");
+    assert(textOf(out[0]) === "system prompt", "#154 multi-turn: system untouched");
     assert(!textOf(out[1]).includes("[RAG Context]"), "#154 multi-turn: first user turn stays byte-stable");
     assert(textOf(out[3]).includes("[RAG Context]") && textOf(out[3]).includes("proxy port 8080"),
       "#154 multi-turn: dynamic RAG lands on the latest user turn");
-    assert.equal(quarries.length, 1, "#154 multi-turn: one recall per inject");
-    assert.equal(quarries[0], "turn two question",
+    assert(queries.length === 1, "#154 multi-turn: one recall per inject");
+    assert(queries[0] === "turn two question",
       "#154 multi-turn: recall keys on the latest user text, not turn-1");
   }
 }

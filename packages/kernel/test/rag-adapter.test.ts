@@ -307,6 +307,7 @@ test("dynamic fts lands on the latest USER message, never a leading system turn"
     { role: "user", content: "latest question" },
   ] as any);
   assert.equal((out[0] as any).content, "system prompt", "system message untouched");
+  assert.equal((out[1] as any).content, "first question", "first user turn bytes unchanged (KV prefix stable)");
   assert.ok(!(out[1] as any).content.includes("recalled fact"), "first user turn stays byte-stable (static slot)");
   assert.ok((out[3] as any).content.includes("recalled fact"), "RAG block on the latest user turn (hot zone)");
 });
@@ -335,16 +336,31 @@ test("the fts query is capped at RAG_QUERY_MAX_CHARS on the latest turn", async 
   assert.equal(spies.query.length, RAG_QUERY_MAX_CHARS, "query truncated to the strict-rung cap");
 });
 
-test("static note stays on the first user turn across turns (byte-stable prefix)", async () => {
-  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_NOTE, config: { note: "internal wiki" } }, storeWith([]));
+test("static note (none + leftover config.note) stays on the first user turn across turns", async () => {
+  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_NONE, config: { note: "internal wiki" } }, storeWith([]));
   const out = await pipeline.inject([
     { role: "user", content: "turn one" },
     { role: "assistant", content: "a1" },
     { role: "user", content: "turn two" },
   ] as any);
   assert.equal((out[0] as any).content, "turn one\n\n[RAG Context] internal wiki",
-    "static note keeps the #104 first-turn slot and bytes");
+    "none + note keeps the #104 first-turn slot and bytes");
   assert.equal((out[2] as any).content, "turn two", "latest turn untouched by the static note");
+});
+
+test("a re-injected array does not pollute the fts query with the earlier block", async () => {
+  const spies = { calls: 0, query: "", limit: 0 };
+  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_FTS }, storeWith([{ rowid: 1, role: "a", content: "c" }], { spies }));
+  const msgs = [
+    { role: "user", content: "turn one" },
+    { role: "assistant", content: "a1" },
+    { role: "user", content: "turn two question" },
+  ];
+  const first = await pipeline.inject(msgs as any);
+  spies.query = "";
+  await pipeline.inject(first as any);
+  assert.equal(spies.query, "turn two question",
+    "recall key strips the earlier [RAG Context] block instead of searching it");
 });
 
 test("content-block turn: Stage-1 + L1/L2 stack in documented order without overwriting user text", async () => {

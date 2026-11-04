@@ -19,7 +19,7 @@ const COMPACTION_RESERVE_TOKENS = 16_384;
 const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
-import { RagAdapterRegistry, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
+import { RagAdapterRegistry, RAG_CONTEXT_TAG, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
 import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
@@ -347,19 +347,26 @@ export class MemoryPipeline {
     // shape-aware (message-text.ts) instead of string-only — a string-only read
     // either never fired or overwrote the user's message with the injected text.
     const firstUserIdx = result.findIndex((m: any) => m?.role === "user");
+    // One scan, shared with Stage-2 below: replacing an element keeps its index.
+    let lastUserIdx = -1;
+    for (let i = result.length - 1; i >= 0; i--) if (result[i]?.role === "user") { lastUserIdx = i; break; }
     if (firstUserIdx >= 0) {
-      let lastUserIdx = -1;
-      for (let i = result.length - 1; i >= 0; i--) if (result[i]?.role === "user") { lastUserIdx = i; break; }
-      // Resolve once so the placement decision uses the SAME adapter that
-      // `resolveInjection` runs (the registry caches per domain object).
-      const adapter = this.rag.resolve(domain);
-      const ragIdx = isDynamicRagAdapter(adapter?.id) ? lastUserIdx : firstUserIdx;
+      // Resolve inside the guard and fail open: a mis-built domain or a throwing
+      // stderr sink must never break the turn.
+      let dynamicRag = false;
+      try {
+        dynamicRag = isDynamicRagAdapter(this.rag.resolve(domain)?.id);
+      } catch { dynamicRag = false; }
+      const ragIdx = dynamicRag ? lastUserIdx : firstUserIdx;
       const ragTarget = ragIdx >= 0 ? readMessageText(result[ragIdx]) : null;
       if (ragTarget) {
-        // Dynamic recall keys on the pre-injection latest user text, so a
-        // follow-up turn searches the current question; `note` ignores the
-        // query. Truncated so long prompts still match the strict FTS5 rung.
-        const ragQuery = ragTarget.text.slice(0, RAG_QUERY_MAX_CHARS);
+        // `ragQuery` is the PRE-INJECTION latest user text: strip anything from
+        // an earlier `[RAG Context]` marker so a re-injected/retried array cannot
+        // pollute the recall key, then cap for the strict FTS5 rung. `note`
+        // ignores the query.
+        const markerAt = ragTarget.text.indexOf(RAG_CONTEXT_TAG);
+        const queryText = markerAt >= 0 ? ragTarget.text.slice(0, markerAt).trim() : ragTarget.text;
+        const ragQuery = queryText.slice(0, RAG_QUERY_MAX_CHARS);
         // Fail-open: retrieval faults are the registry's to report; the agent loop
         // always continues with the un-injected messages.
         let ragInstruction = "";
@@ -420,21 +427,20 @@ export class MemoryPipeline {
         injections.push("[Research Recall] " + String((recallAnchor.payload as any).hits).slice(0, 1500));
       }
 
-      // latest USER message, not blindly the last array element.
-      let lastIdx = -1;
-      for (let i = result.length - 1; i >= 0; i--) if (result[i]?.role === "user") { lastIdx = i; break; }
-      if (injections.length > 0 && lastIdx >= 0) {
+      // latest USER message, not blindly the last array element. The index was
+      // computed once above; Stage-1 replaced elements in place, so it still holds.
+      if (injections.length > 0 && lastUserIdx >= 0) {
         // Same shape rule as Stage-1/T0: pi normalizes prompt("…") to content
         // BLOCKS, so a string-only write here would replace the user's turn with
         // the injection (data loss). Stand down when the turn has no text channel.
-        const last = result[lastIdx];
+        const last = result[lastUserIdx];
         const target = readMessageText(last);
         const next = target ? appendMessageText(last, "\n\n" + injections.join("\n\n"), target) : null;
         if (next) {
           result = [
-            ...result.slice(0, lastIdx),
+            ...result.slice(0, lastUserIdx),
             next,
-            ...result.slice(lastIdx + 1),
+            ...result.slice(lastUserIdx + 1),
           ];
         }
       }
