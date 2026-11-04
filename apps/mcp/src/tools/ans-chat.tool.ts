@@ -129,10 +129,11 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
             ...memory,
             domainTomlPath: domainTomlPath(),
             model: session.model,
-            // #113: the real window for the L0 watermark; a single-shot call
-            // (no handle) still builds no pipeline, so no L0 watermark runs
-            // there. The env still sets the custom model's request-budget
-            // window via the session.
+            // #113: the real window for the L0 watermark. The pipeline is built
+            // whenever `memory` carries store + sessionId (a minted or threaded
+            // handle); the watermark is skipped only when wiring failed open.
+            // The env still sets the custom model's request-budget window via
+            // the session.
             contextWindow: session.contextWindow,
             streamFn: session.streamFn,
             models: session.models,
