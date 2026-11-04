@@ -284,7 +284,10 @@ export function consolidateState(
 // must not search them: #131 requires the PRE-INJECTION latest user text, so a
 // retried/resumed inject() that re-reads its own output has to strip what an
 // earlier pass appended before truncating to RAG_QUERY_MAX_CHARS.
-const INJECTION_TAGS = [RAG_CONTEXT_TAG, "[Session Memory]", "[Research Recall]"] as const;
+const SESSION_MEMORY_TAG = "[Session Memory]";
+const RESEARCH_RECALL_TAG = "[Research Recall]";
+const INJECTION_TAGS = [RAG_CONTEXT_TAG, SESSION_MEMORY_TAG, RESEARCH_RECALL_TAG] as const;
+const PREFS_OPEN_TAG = "<user_preferences";
 const PREFS_CLOSE_TAG = "</user_preferences>";
 
 /**
@@ -296,15 +299,28 @@ const PREFS_CLOSE_TAG = "</user_preferences>";
  */
 function preInjectionQueryText(text: string): string {
   let body = text;
-  const prefsEnd = body.lastIndexOf(PREFS_CLOSE_TAG);
-  if (prefsEnd >= 0) body = body.slice(prefsEnd + PREFS_CLOSE_TAG.length);
+  let stripped = false;
+  // T0 only ever lands as a leading block; require that shape so a quotation
+  // of the closing tag inside the user's own text is not mistaken for it.
+  if (body.startsWith(PREFS_OPEN_TAG)) {
+    const prefsEnd = body.indexOf(PREFS_CLOSE_TAG);
+    if (prefsEnd >= 0) {
+      body = body.slice(prefsEnd + PREFS_CLOSE_TAG.length);
+      stripped = true;
+    }
+  }
+  // Injected blocks are always appended after a blank line; matching the
+  // separator avoids truncating a question that merely mentions a tag.
   let cut = -1;
   for (const tag of INJECTION_TAGS) {
-    const at = body.indexOf(tag);
+    const at = body.indexOf("\n\n" + tag);
     if (at >= 0 && (cut < 0 || at < cut)) cut = at;
   }
-  if (prefsEnd < 0 && cut < 0) return text;
-  return (cut >= 0 ? body.slice(0, cut) : body).trim();
+  if (cut >= 0) {
+    body = body.slice(0, cut);
+    stripped = true;
+  }
+  return stripped ? body.trim() : text;
 }
 
 export class MemoryPipeline {
@@ -381,8 +397,8 @@ export class MemoryPipeline {
     let lastUserIdx = -1;
     for (let i = result.length - 1; i >= 0; i--) if (result[i]?.role === "user") { lastUserIdx = i; break; }
     if (firstUserIdx >= 0) {
-      // Resolve inside the guard and fail open: a mis-built domain or a throwing
-      // stderr sink must never break the turn.
+      // Resolve inside the guard (fail-open): registry build is the only throwing
+      // seam, and a turn must not fail because adapter selection did.
       let dynamicRag = false;
       try {
         dynamicRag = isDynamicRagAdapter(this.rag.resolve(domain)?.id);
@@ -449,10 +465,10 @@ export class MemoryPipeline {
 
       const injections: string[] = [];
       if ((summaryAnchor?.payload as any)?.summary) {
-        injections.push("[Session Memory] " + String((summaryAnchor.payload as any).summary).slice(0, 4000));
+        injections.push(SESSION_MEMORY_TAG + " " + String((summaryAnchor.payload as any).summary).slice(0, 4000));
       }
       if ((recallAnchor?.payload as any)?.hits) {
-        injections.push("[Research Recall] " + String((recallAnchor.payload as any).hits).slice(0, 1500));
+        injections.push(RESEARCH_RECALL_TAG + " " + String((recallAnchor.payload as any).hits).slice(0, 1500));
       }
 
       // latest USER message, not blindly the last array element. The index was

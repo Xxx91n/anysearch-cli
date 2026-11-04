@@ -94,7 +94,7 @@ export interface ResumeAnchorsPort {
 
 /** One adapter's injection payload for a single turn. */
 export interface RagRetrievalResult {
-  /** Text appended after a blank line to the first user message's text channel. */
+  /** Text appended after a blank line to a user message's text channel. */
   block: string;
   /**
    * Provenance for the injected text: recalled rows are `memory` (a tier below
@@ -113,8 +113,10 @@ export interface RagRetrievalResult {
  * existing FTS5 memory surface (`SessionStore.searchMemory`) — zero new index,
  * zero embedding dependency.
  *
- * The injection point is unchanged: `MemoryPipeline.inject` Stage-1, the first
- * USER message's text channel (string or content-block shape alike).
+ * Injection point: `MemoryPipeline.inject` Stage-1. Following #131, static
+ * operator text (`note`) targets the first USER message while query-driven
+ * adapters (`fts`) target the latest one; the write is shape-preserving (string
+ * or content-block alike).
  */
 export interface RagAdapterPort {
   /** Adapter id, matching the `[rag] adapter` value that selected it. */

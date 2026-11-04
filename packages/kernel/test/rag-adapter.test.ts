@@ -336,6 +336,14 @@ test("the fts query is capped at RAG_QUERY_MAX_CHARS on the latest turn", async 
   assert.equal(spies.query.length, RAG_QUERY_MAX_CHARS, "query truncated to the strict-rung cap");
 });
 
+test("a question that mentions an injection tag is not truncated", async () => {
+  const spies = { calls: 0, query: "", limit: 0 };
+  const pipeline = pipelineWith({ adapter: RAG_ADAPTER_FTS }, storeWith([{ rowid: 1, role: "a", content: "c" }], { spies }));
+  await pipeline.inject([{ role: "user", content: "what does [RAG Context] mean?" }] as any);
+  assert.equal(spies.query, "what does [RAG Context] mean?",
+    "an inline tag belongs to the user's own question");
+});
+
 test("static note (none + leftover config.note) stays on the first user turn across turns", async () => {
   const pipeline = pipelineWith({ adapter: RAG_ADAPTER_NONE, config: { note: "internal wiki" } }, storeWith([]));
   const out = await pipeline.inject([
