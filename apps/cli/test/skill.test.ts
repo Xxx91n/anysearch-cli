@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { Readable } from "node:stream";
 import { runSkill } from "../src/commands/skill.js";
 import {
-  __setStatusProbeForTest, LOCK_PENDING_ENTRY, MANIFEST_TEMP_ENTRY, managedSkillsRoot, pidIdentity,
+  __setStatusProbeForTest, LOCK_PENDING_ENTRY, MANIFEST_TEMP_ENTRY, machineId, managedSkillsRoot, pidIdentity,
   QUARANTINE_ENTRY, releaseOwnedLock, renameWithRetry, skillManifestPath, skillRenameIO, STAGING_ENTRY,
   type SkillManifest, type StatusProbeChild, type StatusProbeSpawn,
 } from "../src/skill-store.js";
@@ -656,12 +656,14 @@ function plantLock(
   pid: number,
   host = hostname(),
   identity: { bootId?: string; namespace?: string } | undefined = pidIdentity(),
+  mid: string | undefined = machineId(),
 ): string {
   const lock = join(managed, ".installed.lock");
   rmSync(lock, { recursive: true, force: true });
   mkdirSync(lock);
   writeFileSync(join(lock, "owner.json"), JSON.stringify({
     token, pid, host, startedAt: "2026-11-03T00:00:00.000Z",
+    ...(mid ? { machineId: mid } : {}),
     ...(identity?.bootId ? { bootId: identity.bootId } : {}),
     ...(identity?.namespace ? { namespace: identity.namespace } : {}),
   }));
@@ -669,6 +671,7 @@ function plantLock(
 }
 
 test("a lock held by a provably dead process on this host is reclaimed", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
@@ -680,6 +683,7 @@ test("a lock held by a provably dead process on this host is reclaimed", async (
 });
 
 test("uninstall also reclaims a provably dead lock", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
@@ -691,6 +695,7 @@ test("uninstall also reclaims a provably dead lock", async (t) => {
 });
 
 test("read maintenance reclaims a dead lock without blocking list", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
@@ -702,6 +707,7 @@ test("read maintenance reclaims a dead lock without blocking list", async (t) =>
 });
 
 test("an active reclaim guard prevents a second reclaimer from moving the lock", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
@@ -709,8 +715,10 @@ test("an active reclaim guard prevents a second reclaimer from moving the lock",
   const identity = pidIdentity();
   const guard = join(managed, ".installed.lock.reclaiming");
   mkdirSync(guard);
+  const mid = machineId();
   writeFileSync(join(guard, "owner.json"), JSON.stringify({
     token: "guard", pid: process.pid, host: hostname(), startedAt: "2026-11-03T00:00:00.000Z",
+    ...(mid ? { machineId: mid } : {}),
     ...(identity ? { bootId: identity.bootId, namespace: identity.namespace } : {}),
   }));
   const result = await f.run(["install", f.source("beta")]);
@@ -721,6 +729,7 @@ test("an active reclaim guard prevents a second reclaimer from moving the lock",
 });
 
 test("a dead reclaim guard is recovered before reclamation", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
@@ -728,8 +737,10 @@ test("a dead reclaim guard is recovered before reclamation", async (t) => {
   const identity = pidIdentity();
   const guard = join(managed, ".installed.lock.reclaiming");
   mkdirSync(guard);
+  const mid = machineId();
   writeFileSync(join(guard, "owner.json"), JSON.stringify({
     token: "dead-guard", pid: deadPid(), host: hostname(), startedAt: "2026-11-03T00:00:00.000Z",
+    ...(mid ? { machineId: mid } : {}),
     ...(identity ? { bootId: identity.bootId, namespace: identity.namespace } : {}),
   }));
   const result = await f.run(["install", f.source("beta")]);
@@ -744,11 +755,11 @@ test("locks that are live or from another host are never reclaimed", async (t) =
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
   const dir = f.source("beta");
-  for (const [token, pid, host] of [
-    ["live", process.pid, hostname()],
-    ["remote", deadPid(), "remote-host"],
+  for (const [token, pid, host, mid] of [
+    ["live", process.pid, hostname(), machineId()],
+    ["remote", deadPid(), "remote-host", "foreign-machine-id"],
   ] as const) {
-    const lock = plantLock(managed, token, pid, host);
+    const lock = plantLock(managed, token, pid, host, pidIdentity(), mid);
     const result = await f.run(["install", dir]);
     assert.equal(result.code, 1, result.stderr);
     assert.match(result.stderr, /another skill operation/);
@@ -779,7 +790,64 @@ test("a lock from another PID namespace is never reclaimed", async (t) => {
   assert.equal(existsSync(join(managed, "beta")), false);
 });
 
+test("a lock with a foreign machine identity is never reclaimed", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  // Same hostname, same boot identity, dead PID — but a foreign machineId.
+  const lock = plantLock(managed, "foreign-machine", deadPid(), hostname(), pidIdentity(), "foreign-machine-id");
+  const result = await f.run(["install", f.source("beta")]);
+  assert.equal(result.code, 1, result.stderr);
+  assert.match(result.stderr, /another machine/);
+  assert.ok(existsSync(lock), "a lock with a foreign machine identity is left in place");
+  assert.equal(existsSync(join(managed, "beta")), false);
+});
+
+test("a lock with a foreign machine identity and a different boot is never reclaimed", async (t) => {
+  const current = pidIdentity();
+  if (!machineId() || !current?.bootId) { t.skip("machine and boot identities unavailable"); return; }
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  const lock = plantLock(
+    managed,
+    "foreign-machine-boot",
+    deadPid(),
+    hostname(),
+    { bootId: `${current.bootId}-foreign`, namespace: current.namespace },
+    "foreign-machine-id",
+  );
+  const result = await f.run(["install", f.source("beta")]);
+  assert.equal(result.code, 1, result.stderr);
+  assert.match(result.stderr, /another machine/);
+  assert.ok(existsSync(lock), "a foreign-machine lock is left in place");
+  assert.equal(existsSync(join(managed, "beta")), false);
+});
+
+test("a lock without machine identity fails closed", async (t) => {
+  const f = fixture(t);
+  assert.equal((await f.run(["install", f.source()])).code, 0);
+  const managed = managedSkillsRoot(f.opts);
+  // Same hostname, dead PID, but no machineId in the owner record.
+  // Write owner.json directly to avoid plantLock's machineId() default.
+  const lock = join(managed, ".installed.lock");
+  rmSync(lock, { recursive: true, force: true });
+  mkdirSync(lock);
+  const identity = pidIdentity();
+  writeFileSync(join(lock, "owner.json"), JSON.stringify({
+    token: "no-machine-id", pid: deadPid(), host: hostname(), startedAt: "2026-11-03T00:00:00.000Z",
+    ...(identity?.bootId ? { bootId: identity.bootId } : {}),
+    ...(identity?.namespace ? { namespace: identity.namespace } : {}),
+  }));
+  const result = await f.run(["install", f.source("beta")]);
+  assert.equal(result.code, 1, result.stderr);
+  assert.match(result.stderr, /another skill operation/);
+  assert.ok(existsSync(lock), "a lock without machine identity is left in place");
+  assert.equal(existsSync(join(managed, "beta")), false);
+});
+
 test("a lock from a previous boot is reclaimed as dead", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
@@ -815,6 +883,8 @@ async function waitUntilGone(pid: number): Promise<void> {
 // owner record is readable. This test reproduces that exact publication order in
 // a child process, kills it there, and hands the wreckage to a real `install`.
 test("a lock left by a SIGKILLed holder is reclaimed by the next install", async (t) => {
+  const mid = machineId();
+  if (!mid) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   const dir = f.source("alpha");
   const managed = managedSkillsRoot(f.opts);
@@ -840,6 +910,7 @@ test("a lock left by a SIGKILLed holder is reclaimed by the next install", async
     'fs.writeFileSync(path.join(pending, "owner.json"), JSON.stringify({',
     '  token: "killed", pid: process.pid, host: os.hostname(), startedAt: new Date().toISOString(),',
     "  ...(identity ?? {}),",
+    '  ...(process.env.ANS_TEST_MACHINE_ID ? { machineId: process.env.ANS_TEST_MACHINE_ID } : {}),',
     "}), { encoding: \"utf8\", flag: \"wx\", mode: 0o600 });",
     'fs.renameSync(pending, path.join(managed, ".installed.lock"));',
     'process.stdout.write("locked\\n");',
@@ -847,7 +918,7 @@ test("a lock left by a SIGKILLed holder is reclaimed by the next install", async
   ].join("\n");
 
   const child = spawn(process.execPath, ["-e", script], {
-    env: { ...process.env, ANS_TEST_MANAGED: managed },
+    env: { ...process.env, ANS_TEST_MANAGED: managed, ANS_TEST_MACHINE_ID: mid },
     stdio: ["ignore", "pipe", "inherit"],
   });
   t.after(() => {
@@ -893,13 +964,20 @@ test("a dead unpublished lock is cleaned during reconciliation", async (t) => {
   const identity = pidIdentity();
   const pending = join(managed, ".installed.lock.pending-dead01");
   mkdirSync(pending, { recursive: true });
+  const mid = machineId();
   writeFileSync(join(pending, "owner.json"), JSON.stringify({
     token: "dead", pid: deadPid(), host: hostname(), startedAt: "2026-11-03T00:00:00.000Z",
+    ...(mid ? { machineId: mid } : {}),
     ...(identity ? { bootId: identity.bootId, namespace: identity.namespace } : {}),
   }));
   const result = await f.run(["install", f.source()]);
-  assert.equal(result.code, 0, result.stderr);
-  assert.equal(existsSync(pending), false);
+  if (mid) {
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(existsSync(pending), false);
+  } else {
+    assert.equal(result.code, 0, result.stderr);
+    assert.ok(existsSync(pending), "pending with no machineId is preserved when identity is unavailable");
+  }
 });
 
 test("an unpublished lock directory does not block a scope or act as a lock", async (t) => {
@@ -1224,6 +1302,7 @@ test("uninstall backups are never auto-deleted and list reports the restore hint
 });
 
 test("concurrent installers reclaiming a dead lock keep the manifest consistent", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   const names = ["alpha", "beta", "gamma", "delta"];
   const dirs = names.map((name) => f.source(name));

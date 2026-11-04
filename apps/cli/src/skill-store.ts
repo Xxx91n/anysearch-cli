@@ -263,6 +263,8 @@ interface LockOwner {
   pid: number;
   host: string;
   startedAt: string;
+  /** Stable machine identity; missing means fail-closed. */
+  machineId?: string;
   /** Boot identity; a different boot proves the recorded process is gone. */
   bootId?: string;
   /** PID-namespace identity; a different namespace makes liveness undecidable. */
@@ -286,16 +288,44 @@ export function pidIdentity(): PidIdentity | undefined {
   }
 }
 
+/** Stable machine identity independent of hostname(); undefined when unavailable. */
+export function machineId(): string | undefined {
+  try {
+    if (process.platform === "linux") {
+      const id = readFileSync("/etc/machine-id", "utf8").trim();
+      // Accept only a valid 32-char lowercase hex ID; reject placeholders (all zeros).
+      return /^[0-9a-f]{32}$/.test(id) && id !== "00000000000000000000000000000000" ? id : undefined;
+    }
+    if (process.platform === "win32") {
+      const out = execFileSync("reg", ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"], { encoding: "utf8", timeout: 5000 });
+      const m = out.match(/MachineGuid\s+REG_SZ\s+([0-9a-fA-F-]{36})/);
+      const guid = m?.[1];
+      // Reject all-zero placeholder GUIDs (e.g. unprovisioned VMs).
+      return guid && guid !== "00000000-0000-0000-0000-000000000000" ? guid : undefined;
+    }
+    if (process.platform === "darwin") {
+      const out = execFileSync("ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"], { encoding: "utf8", timeout: 5000 });
+      const m = out.match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/);
+      return m?.[1] || undefined;
+    }
+  } catch {
+    // Unavailable — fail closed in probeLockOwner.
+  }
+  return undefined;
+}
+
 /** Read the recorded lock owner, or undefined when the record is absent or malformed. */
 function readLockOwner(lock: string): LockOwner | undefined {
   try {
     const raw: unknown = JSON.parse(readFileSync(join(lock, "owner.json"), "utf8"));
     if (isRecord(raw) && typeof raw.token === "string" && typeof raw.pid === "number"
       && typeof raw.host === "string" && typeof raw.startedAt === "string"
+      && (raw.machineId === undefined || typeof raw.machineId === "string")
       && (raw.bootId === undefined || typeof raw.bootId === "string")
       && (raw.namespace === undefined || typeof raw.namespace === "string")) {
       return {
         token: raw.token, pid: raw.pid, host: raw.host, startedAt: raw.startedAt,
+        ...(raw.machineId !== undefined ? { machineId: raw.machineId } : {}),
         ...(raw.bootId !== undefined ? { bootId: raw.bootId } : {}),
         ...(raw.namespace !== undefined ? { namespace: raw.namespace } : {}),
       };
@@ -314,13 +344,19 @@ function describeLockHolder(lock: string): string {
 
 type LockState = "alive" | "dead" | "unknown";
 
-// Design: staleness = pid liveness on the host and boot/PID namespace that wrote the
-// lock — not age, so a long-running install never needs a heartbeat. A different boot
+// Design: staleness = pid liveness on the machine, boot, and PID namespace that
+// wrote the lock — not age, so a long-running install never needs a heartbeat. A
+// stable machine identity must match before boot-ID or PID checks; a different boot
 // proves death; a different namespace or an unreadable owner is undecidable and stays
 // fail-closed.
 /** Classify a lock owner as alive, provably dead, or undecidable. */
 function probeLockOwner(owner: LockOwner | undefined): LockState {
-  if (!owner || owner.host !== hostname() || !Number.isInteger(owner.pid) || owner.pid <= 0) return "unknown";
+  if (!owner || !Number.isInteger(owner.pid) || owner.pid <= 0) return "unknown";
+  // Design: compare a stable machine identity before hostname, boot-ID, or PID
+  // probing — two hosts that share a managed root and happen to use the same
+  // hostname must not reclaim each other's live locks.
+  const mid = machineId();
+  if (!owner.machineId || !mid || owner.machineId !== mid) return "unknown";
   const identity = pidIdentity();
   if (owner.bootId && identity && owner.bootId !== identity.bootId) return "dead";
   // Containers can share a hostname but not a PID namespace, and ESRCH inside one
@@ -458,10 +494,12 @@ function acquireManifestLock(managed: string, skipOnContention = false): (() => 
   const lock = join(managed, MANIFEST_LOCK);
   const token = randomUUID();
   const identity = pidIdentity();
+  const mid = machineId();
   let reclaimBusy = false;
   for (let attempt = 0; attempt < 3; attempt++) {
     const owner: LockOwner = {
       token, pid: process.pid, host: hostname(), startedAt: new Date().toISOString(),
+      ...(mid ? { machineId: mid } : {}),
       ...(identity ? { bootId: identity.bootId, namespace: identity.namespace } : {}),
     };
     if (createLockDirectory(managed, lock, owner)) {
@@ -485,7 +523,7 @@ function acquireManifestLock(managed: string, skipOnContention = false): (() => 
     if (observed && observed.host !== hostname()) {
       fail(`another skill operation may be running in this scope${describeLockHolder(lock)}: ${lock}. The lock was created on ${observed.host}, so it cannot be proven dead from ${hostname()}; automatic reclamation is limited to this host. If no ans skill process is running there, remove that directory and retry.`);
     }
-    fail(`another skill operation may be running in this scope: ${lock}. The owner record is incomplete, from another PID namespace, unreadable, or the lock path could not be published, so the lock cannot be proven dead. If no ans skill process is running here, remove that directory and retry.`);
+    fail(`another skill operation may be running in this scope: ${lock}. The owner record is incomplete, from another machine, from another PID namespace, unreadable, or the lock path could not be published, so the lock cannot be proven dead. If no ans skill process is running on the machine that created it, remove that directory and retry.`);
   }
   if (skipOnContention) return undefined;
   if (reclaimBusy) {
