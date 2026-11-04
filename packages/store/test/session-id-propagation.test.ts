@@ -181,6 +181,26 @@ async function main() {
     rmSync(dir, { recursive: true, force: true });
   }
 
+  // #129: when the anchor cannot be persisted, the id is still returned
+  // (fail-open) but the loss of continuity is reported instead of silent.
+  {
+    const blockedHome = join(tmpdir(), "ans-anchor-blocked-" + process.pid + "-" + Date.now());
+    // A regular FILE where the base directory should be makes mkdirSync fail.
+    await import("node:fs").then((m) => m.writeFileSync(blockedHome, "not a directory"));
+    const origWrite = process.stderr.write;
+    let captured = "";
+    process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+    let returned = "";
+    try {
+      returned = readSessionId({ USERPROFILE: blockedHome, HOME: blockedHome } as NodeJS.ProcessEnv);
+    } finally {
+      process.stderr.write = origWrite;
+      rmSync(blockedHome, { force: true });
+    }
+    check("#129: unwritable anchor still yields an id (fail-open)", returned.length > 0);
+    check("#129: unwritable anchor reports the lost continuity", /could not persist the session anchor/.test(captured));
+  }
+
   console.log("\nsession-id-propagation tests: " + passed + " passed, " + failed + " failed");
   if (failed > 0) process.exit(1);
 }

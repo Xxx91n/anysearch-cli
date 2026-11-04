@@ -7,12 +7,12 @@
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
 import { PiAgentRuntime, createLlmSession } from "@anysearch-cli/kernel";
-import type { RetrieverPort, DomainConfigPort } from "@anysearch-cli/kernel";
+import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
+import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
-import { domainSearchDirs } from "../db";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
 import { domainTomlPath, loadDomainByNameIn } from "@anysearch-cli/store";
-import { join } from "node:path";
+import { wireChatMemory } from "./chat-memory";
 
 export async function runChat(argv: string[]): Promise<number> {
   const { flags, argv: args } = parseLlmFlags(argv);
@@ -46,19 +46,43 @@ export async function runChat(argv: string[]): Promise<number> {
     return 3;
   }
 
-  // Initialize retriever + domain.
+  // Initialize retriever + domain over the DURABLE store (#129).
+  // Design: use createPersistentEngine (ANS_DB_PATH, default
+  // ~/.anysearch/anysearch.db) instead of createEngine — the latter falls back to
+  // ":memory:", which would make the newly wired RAG adapter recall nothing at
+  // all ("connected but always empty" is harder to diagnose than no wiring).
   const domainName = process.env.ANS_DOMAIN || "default";
-  let retriever: RetrieverPort;
+  let engine: CompositionResult;
   let domain: DomainConfigPort;
+  // sessions.domain is metadata only; record the domain actually in use so a
+  // fallback run does not claim a domain that failed to load.
+  let sessionDomain = domainName;
+  // False only when the durable DB could not be opened at all; an in-memory
+  // store must not be registered as a resumable session.
+  let durableStore = true;
   try {
-    const engineResult = createEngine(domainName, { domainsDirs: domainSearchDirs() });
-    retriever = engineResult.retriever;
-    domain = engineResult.config || loadDomainByNameIn(domainName, domainSearchDirs()) as DomainConfigPort;
+    engine = createPersistentEngine(domainName);
+    domain = engine.config || loadDomainByNameIn(domainName, domainSearchDirs()) as DomainConfigPort;
   } catch (e: any) {
     console.error("[warn] Domain load failed: " + (e?.message || String(e)) + ", using fallback.");
-    // Fallback: no domain filtering, all providers.
-    const fallback = createEngine();
-    retriever = fallback.retriever;
+    // Fallback: no domain filtering, all providers — still on the durable DB so
+    // memory reads keep working across runs.
+    // Design: if the durable DB itself is unavailable, degrade to the in-memory
+    // engine rather than failing the run — `ans chat` must still answer, it just
+    // loses persistence (and the memory wiring is then skipped, since an
+    // in-memory store cannot be resumed). Losing chat entirely is the worse
+    // trade; the warning says exactly what was lost.
+    let persistentOk = true;
+    try {
+      engine = createPersistentEngine();
+    } catch (e2: any) {
+      persistentOk = false;
+      console.error("[warn] Durable database unavailable (" + (e2?.message || String(e2)) +
+        "); continuing with an in-memory store — memory will NOT persist across runs.");
+      engine = createEngine();
+    }
+    durableStore = persistentOk;
+    sessionDomain = "default";
     domain = {
       sources: { enabled: [] },
       prompts: [],
@@ -67,12 +91,20 @@ export async function runChat(argv: string[]): Promise<number> {
       rag: { adapter: "none" },
     };
   }
+  const { retriever, store } = engine;
+
+  // Stable session id + FK registration (#129) — see wireChatMemory.
+  const memory = durableStore ? await wireChatMemory(store, sessionDomain) : {};
 
   // Construct PiAgentRuntime and run.
   // models undefined fix — session.models is now properly initialized.
   const runtime = new PiAgentRuntime({
     retriever,
     domain,
+    // store + sessionId together are what make PiAgentRuntime build the
+    // MemoryPipeline (#129): RAG Stage-1 injection and L1/L2 memory now run on
+    // the real `ans chat` path instead of being silently skipped.
+    ...memory,
     // lazy mtime re-read lets `ans hitl --allow-url` write-back take effect live.
     domainTomlPath: domainTomlPath(),
     // CLI is the TTY composition root; kernel decides isInteractive itself.
@@ -116,6 +148,11 @@ export async function runChat(argv: string[]): Promise<number> {
   } catch (e: any) {
     console.error("[error] " + (e?.message || String(e)));
     return 1;
+  } finally {
+    // Design: drain background anchor writes before the CLI closes this store
+    // (runTeardown runs on exit). consolidate() is fire-and-forget by design, so
+    // returning here without waiting loses the rolling_summary / l2_recall write.
+    await runtime.flushMemory();
   }
 
   return 0;

@@ -136,6 +136,13 @@ export interface ResumeAnchor {
 // Port interface: kernel imports this, CLI composition root injects implementation.
 export interface SessionStore {
   createSession(domain: string): Promise<Session>;
+  // Ensure a caller-supplied session id has a row in `sessions`. Every child
+  // table (messages / resume_anchors / retrieval_results / budget_ledger)
+  // references sessions(id) and the store runs `foreign_keys = ON`, so an id
+  // minted outside createSession() (e.g. the durable ~/.anysearch-cli/session
+  // anchor) must be registered before any dependent write. Idempotent: an
+  // existing row is left untouched.
+  ensureSession(sessionId: string, domain: string): Promise<void>;
   append(sessionId: string, message: Message): Promise<void>;
   searchFts5(sessionId: string | null, query: string, limit?: number): Promise<MemoryHit[]>;
   saveResults(sessionId: string, results: NormalizedResult[]): Promise<void>;
@@ -313,6 +320,7 @@ export class SqliteSessionStore implements SessionStore {
   private readonly relationTel = { ruleHits: 0, llmActivations: 0, llmFailures: 0, triplesWritten: 0, dedupSkipped: 0, relatedToWriteOnce: 0, schemaRejected: 0, armQueries: 0, armHits: 0 };
   private stmts: {
     createSession: Database.Statement;
+    ensureSession: Database.Statement;
     append: Database.Statement;
     searchMessages: Database.Statement;
     searchAllMessages: Database.Statement;
@@ -422,6 +430,8 @@ export class SqliteSessionStore implements SessionStore {
    // Module-level prepared statements (atomcode research pattern).
     this.stmts = {
       createSession: this.db.prepare("INSERT INTO sessions (id, domain) VALUES (?, ?) RETURNING id, domain, created_at as createdAt"),
+      // Idempotent registration of an externally minted session id (FK target).
+      ensureSession: this.db.prepare("INSERT OR IGNORE INTO sessions (id, domain) VALUES (?, ?)"),
       append: this.db.prepare("INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)"),
       searchMessages: this.db.prepare("SELECT m.id as rowid, m.session_id as sessionId, m.role, m.content, bm25(messages_fts) as rank FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid WHERE messages_fts MATCH ? AND m.session_id = ? ORDER BY rank LIMIT ?"),
       searchAllMessages: this.db.prepare("SELECT m.id as rowid, m.session_id as sessionId, m.role, m.content, bm25(messages_fts) as rank FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid WHERE messages_fts MATCH ? ORDER BY rank LIMIT ?"),
@@ -577,6 +587,13 @@ export class SqliteSessionStore implements SessionStore {
     const id = crypto.randomUUID();
     const row = this.stmts.createSession.get(id, domain) as Session;
     return row;
+  }
+
+  async ensureSession(sessionId: string, domain: string): Promise<void> {
+    // Design: INSERT OR IGNORE rather than read-then-insert — a repeated durable
+    // id (or two CLI processes racing on the same anchor) must be a no-op, and a
+    // PK conflict must not surface as a memory failure.
+    this.stmts.ensureSession.run(sessionId, domain);
   }
 
   async append(sessionId: string, message: Message): Promise<void> {

@@ -3,10 +3,14 @@
 // ponytail: no test framework, assert-based demo.
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
-import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals } from "../src/pi-runtime";
+import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals, resetWiringWarnings } from "../src/pi-runtime";
 import { distillGap, adjudicateReuseCompress } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
+import { SqliteSessionStore } from "@anysearch-cli/store";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { FusedEnvelope, SufficiencySignal } from "@anysearch-cli/retriever";
 
 let passed = 0, failed = 0;
@@ -749,6 +753,222 @@ console.log("---");
   assert((withRag.usdSettles[0]?.actual ?? 0) > 0, "#104+#103: USD still settled from pi-ai cost");
   assert(withRag.usdSettles[0]?.actual > (withoutRag.usdSettles[0]?.actual ?? 0),
     "#104+#103: injected context costs more USD");
+}
+
+// #129 contract: a runtime built WITHOUT store/sessionId has no MemoryPipeline,
+// so transformContext is a pass-through. That silence used to be invisible on
+// the production paths (ans chat / ans_chat both omitted the pair); the runtime
+// now names the missing wiring, and the wired path is exercised against a REAL
+// SqliteSessionStore. This proves the KERNEL seam — the CLI composition root
+// itself is covered by apps/cli/test/chat-memory-wiring.test.ts.
+{
+  const seenContexts: any[][] = [];
+  const capturingStreamFn = (_model: any, context: any, _o?: any) => {
+    seenContexts.push(Array.isArray(context) ? context : context?.messages ?? []);
+    const finalMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "answer" }],
+      api: "test", provider: "test", model: "test-model",
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "stop", timestamp: Date.now(),
+    };
+    return {
+      async *[Symbol.asyncIterator]() { yield { type: "done", message: finalMessage, partial: finalMessage }; },
+      result: async () => finalMessage,
+    };
+  };
+  const textOf = (m: any) => readMessageText(m)?.text ?? "";
+  const allText = (messages: any[]) => messages.map(textOf).join("\n");
+
+  // No store at all: transformContext must return the messages UNCHANGED (the
+  // explicit contract #129 asks to freeze), and the missing wiring is named.
+  {
+    seenContexts.length = 0;
+    resetWiringWarnings();
+    const origWrite = process.stderr.write;
+    let captured = "";
+    process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+    let runtime!: PiAgentRuntime;
+    try {
+      runtime = new PiAgentRuntime({
+        retriever: new MockRetriever(),
+        domain: { ...mockDomain, rag: { adapter: "fts" } },
+        model: { id: "test-model", provider: "test" } as any,
+        streamFn: capturingStreamFn,
+      });
+    } finally {
+      process.stderr.write = origWrite;
+    }
+    const errors: any[] = [];
+    for await (const ev of runtime.run("how do I reach the internal wiki?")) {
+      if (ev.type === "error") errors.push(ev);
+    }
+    assert(errors.length === 0, "#129 no-store: agent loop completes without error");
+    // Structural equality with what the model would receive anyway: the user
+    // turn is exactly the question, with no injected text appended.
+    const userTurns = seenContexts.flat().filter((m: any) => m?.role === "user");
+    assert(userTurns.length > 0, "#129 no-store: the user turn was passed to the model");
+    assert(userTurns.every((m: any) => textOf(m) === "how do I reach the internal wiki?"),
+      "#129 no-store: transformContext returned the user turn unchanged (no pass-through mutation)");
+    assert(/store and sessionId not supplied — MemoryPipeline NOT constructed/.test(captured),
+      "#129 no-store: the missing wiring is named (ans_chat shape)");
+  }
+
+  // Half-wired: the supplied half is still not enough for a pipeline, and the
+  // diagnostic names what is missing. Reset first — warnings dedupe per process.
+  {
+    resetWiringWarnings();
+    const origWrite = process.stderr.write;
+    let captured = "";
+    process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+    try {
+      new PiAgentRuntime({
+        retriever: new MockRetriever(),
+        domain: mockDomain,
+        model: { id: "test-model", provider: "test" } as any,
+        streamFn: capturingStreamFn,
+        store: {} as any,
+      });
+      // A second construction with the same gap must NOT repeat the line.
+      const afterFirst = captured;
+      new PiAgentRuntime({
+        retriever: new MockRetriever(),
+        domain: mockDomain,
+        model: { id: "test-model", provider: "test" } as any,
+        streamFn: capturingStreamFn,
+        store: {} as any,
+      });
+      assert(captured === afterFirst, "#129 wiring warning is deduped per process (ans_chat builds one runtime per call)");
+    } finally {
+      process.stderr.write = origWrite;
+    }
+    assert(/sessionId not supplied — MemoryPipeline NOT constructed/.test(captured),
+      "#129 half-wired: stderr names the missing half (store without sessionId)");
+  }
+
+  // Fully wired against a REAL store: what the model receives carries the fts
+  // recall block with provenance, and the recall survives reopening the DB
+  // (the "durable ANS_DB_PATH" acceptance criterion).
+  {
+    const tmpDir = mkdtempSync(join(tmpdir(), "ans-129-"));
+    const dbPath = join(tmpDir, "anysearch.db");
+    const sessionId = "stable-session-129";
+    try {
+      // Writer run: a REAL SqliteSessionStore, external id registered first
+      // (the CLI path), one indexed memory row.
+      const writer = new SqliteSessionStore(dbPath);
+      await writer.ensureSession(sessionId, "default");
+      await writer.saveResults(sessionId, [
+        { url: "https://intra.example/wiki", title: "internal wiki", snippet: "proxy port 8080 for the intranet wiki", source: "tavily" },
+      ]);
+      writer.close();
+
+      const runOnce = async () => {
+        // Reopen: proves the memory outlived the process that wrote it.
+        const store = new SqliteSessionStore(dbPath);
+        try {
+          seenContexts.length = 0;
+          const runtime = new PiAgentRuntime({
+            retriever: new MockRetriever(),
+            domain: { ...mockDomain, rag: { adapter: "fts" } },
+            model: { id: "test-model", provider: "test" } as any,
+            streamFn: capturingStreamFn,
+            store,
+            sessionId,
+          });
+          const errors: any[] = [];
+          for await (const ev of runtime.run("how do I reach the internal wiki?")) {
+            if (ev.type === "error") errors.push(ev);
+          }
+          assert(errors.length === 0, "#129 wired: agent loop completes without error");
+          return seenContexts.flat();
+        } finally {
+          store.close();
+        }
+      };
+
+      const text = allText(await runOnce());
+      assert(text.includes("[RAG Context]"), "#129 wired: RAG block reaches the model on the real store");
+      assert(text.includes("proxy port 8080"), "#129 wired + restart: memory written in an earlier process is recalled");
+      assert(/adapter=fts/.test(text) && /provenance=memory/.test(text), "#129 wired: injection carries provenance");
+      assert(text.includes("how do I reach the internal wiki?"), "#129 wired: user question preserved");
+
+      // adapter="none" regression: no RAG block on the wired path. The user turn
+      // may still carry L1/L2 anchor text, so assert the RAG block is absent AND
+      // the question itself is preserved (absence alone would also pass if the
+      // pipeline were never built).
+      const storeForNone = new SqliteSessionStore(dbPath);
+      try {
+        seenContexts.length = 0;
+        const runtime = new PiAgentRuntime({
+          retriever: new MockRetriever(),
+          domain: { ...mockDomain, rag: { adapter: "none" } },
+          model: { id: "test-model", provider: "test" } as any,
+          streamFn: capturingStreamFn,
+          store: storeForNone,
+          sessionId,
+        });
+        for await (const _ev of runtime.run("how do I reach the internal wiki?")) { /* drain */ }
+      } finally {
+        storeForNone.close();
+      }
+      const noneLastUser = textOf(seenContexts.flat().filter((m: any) => m?.role === "user").pop());
+      assert(!noneLastUser.includes("[RAG Context]"), "#129 none: adapter=none injects no RAG block");
+      assert(noneLastUser.includes("how do I reach the internal wiki?"),
+        "#129 none: adapter=none preserves the user question");
+    } finally {
+      try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* Windows WAL lock */ }
+    }
+  }
+
+  // A store whose append() rejects must not crash the run: append is async, so
+  // an un-awaited rejection escapes the old try/catch and terminates Node >= 15.
+  {
+    let appendCalls = 0;
+    const store = {
+      getAnchors: () => [], saveAnchor: () => Promise.resolve(),
+      createSession: (d: string) => ({ id: "s1", domain: d, createdAt: "" }),
+      ensureSession: () => Promise.resolve(),
+      append: () => { appendCalls += 1; return Promise.reject(new Error("write blocked")); },
+      searchFts5: () => [], searchMemory: async () => [],
+      saveResults: () => Promise.resolve(), close: () => {},
+      listPreferences: async () => [],
+    } as any;
+    const origWrite = process.stderr.write;
+    let captured = "";
+    process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+    const errors: any[] = [];
+    // Two assistant turns so "later messages are still attempted" is observable.
+    const twoTurnStreamFn = (_model: any, _ctx: any, _o?: any) => {
+      const finalMessage = {
+        role: "assistant",
+        content: [{ type: "text", text: "answer" }],
+        api: "test", provider: "test", model: "test-model",
+        usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        stopReason: "stop", timestamp: Date.now(),
+      };
+      return {
+        async *[Symbol.asyncIterator]() { yield { type: "done", message: finalMessage, partial: finalMessage }; },
+        result: async () => finalMessage,
+      };
+    };
+    try {
+      const runtime = new PiAgentRuntime({
+        retriever: new MockRetriever(),
+        domain: { ...mockDomain, rag: { adapter: "none" } },
+        model: { id: "test-model", provider: "test" } as any,
+        streamFn: twoTurnStreamFn,
+        store,
+        sessionId: "s-append-fail",
+      });
+      for await (const ev of runtime.run("hello")) if (ev.type === "error") errors.push(ev);
+    } finally {
+      process.stderr.write = origWrite;
+    }
+    assert(errors.length === 0, "#129 append failure: the run still completes (no unhandled rejection)");
+    assert(appendCalls > 1, "#129 append failure: later messages are still attempted after a failure");
+    assert(/FTS5 sync warning: write blocked/.test(captured), "#129 append failure: the failure is reported");
+  }
 }
 
 console.log("---");

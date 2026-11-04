@@ -96,6 +96,36 @@ export class SearchSaturation {
   }
 }
 
+// Wiring-gap diagnostics, deduped per missing-half combination. A stateless MCP
+// host (`ans_chat`) builds one runtime per request, so an undeduped line would
+// print on every call. Module scope, not instance scope, for the same reason
+// RagAdapterRegistry keeps its `warned` set there.
+const warnedWiring = new Set<string>();
+
+/** Test hook: forget which wiring gaps were already announced. */
+export function resetWiringWarnings(): void {
+  warnedWiring.clear();
+}
+
+/**
+ * Name a memory-wiring gap once per process.
+ *
+ * Both halves absent is normal for a host with no session concept — but it is
+ * also exactly the shape that hid #129 for months, so it still gets one line.
+ */
+function warnMissingMemoryWiring(opts: PiAgentRuntimeOptions): void {
+  const missing = opts.store ? "sessionId" : opts.sessionId ? "store" : "store and sessionId";
+  if (warnedWiring.has(missing)) return;
+  warnedWiring.add(missing);
+  // stdout stays protocol-pure for MCP; a dead stderr must not break construction.
+  try {
+    process.stderr.write(
+      "[anysearch] PiAgentRuntime: " + missing + " not supplied — MemoryPipeline NOT constructed; " +
+      "RAG and L1/L2 memory injection are disabled for this runtime\n",
+    );
+  } catch { /* fail-open */ }
+}
+
 // Build the search AgentTool: wraps RetroaererdEngine.search() with TypeBox schema.
 // The LLM sees this as a tool it can call to search the web.
 export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObservationSink, onResults?: (urls: string[]) => void): AgentTool {
@@ -300,6 +330,13 @@ export class PiAgentRuntime {
 
     // constructor internally creates pipeline + gate instances.
     // Composition root responsible for wiring; caller opts unchanged.
+    // Design: the gate stays exactly `store && sessionId` — narrowing it here
+    // would change every composition root, far beyond this seam (#129).
+    // What was missing is not the gate but a TRACE: a root that omitted either
+    // half got a pipeline-less runtime with no signal, which is why `ans chat`
+    // and `ans_chat` ran without memory for so long. Both-absent remains a
+    // supported "no memory" runtime, but it now announces itself instead of
+    // degrading silently.
     if (opts.store && opts.sessionId) {
       this.pipeline = new MemoryPipeline({
         store: opts.store,
@@ -312,6 +349,8 @@ export class PiAgentRuntime {
         getApiKey: opts.getApiKey,
         providerName: (opts as any).providerName,
       });
+    } else {
+      warnMissingMemoryWiring(opts);
     }
     this.gate = new SufficiencyEvaluator({
       retriever: opts.retriever,
@@ -551,20 +590,24 @@ export class PiAgentRuntime {
 
     // decision 6: dual session — sync to FTS5 store.
     if (this.opts.store) {
-      try {
-        const messages = (agent as any).state?.messages || [];
-        for (const msg of messages) {
-          this.opts.store.append(sessionId || "default", {
+      // append() is async: an un-awaited rejection is NOT caught by the
+      // surrounding try/catch and can terminate the process on Node >= 15, and
+      // the message is lost anyway. Each write gets its own try so one failure
+      // does not stop the remaining messages.
+      const messages = (agent as any).state?.messages || [];
+      for (const msg of messages) {
+        try {
+          await this.opts.store.append(sessionId || "default", {
             role: msg.role || "assistant",
             content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
             timestamp: Date.now(),
           } as any);
-        }
-      } catch (e) {
-        // ponytail: FTS5 sync is best-effort, don't block agent on store failure.
-        // But log the error so it's not silently swallowed (debt fix).
-        if (typeof process !== "undefined" && process.stderr) {
-          process.stderr.write("[anysearch] FTS5 sync warning: " + (e instanceof Error ? e.message : String(e)) + "\n");
+        } catch (e) {
+          // ponytail: FTS5 sync is best-effort, don't block agent on store failure.
+          // But log the error so it's not silently swallowed (debt fix).
+          if (typeof process !== "undefined" && process.stderr) {
+            process.stderr.write("[anysearch] FTS5 sync warning: " + (e instanceof Error ? e.message : String(e)) + "\n");
+          }
         }
       }
     }
@@ -578,5 +621,17 @@ export class PiAgentRuntime {
         : "";
       yield { type: "done", summary: `Agent completed${tokenSummary}` };
     }
+  }
+
+  /**
+   * Drain background memory writes before the caller closes the store.
+   *
+   * `consolidate()` intentionally does not block a turn on summary generation or
+   * L2 recall, so a run can end with anchor writes still in flight. A caller
+   * that owns the store (the CLI, which closes it during teardown) must await
+   * this first or those writes are lost. No-op when no pipeline is wired.
+   */
+  async flushMemory(): Promise<void> {
+    if (this.pipeline) await this.pipeline.flush();
   }
 }

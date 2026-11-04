@@ -4,6 +4,32 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #129: `ans chat` 接线 MemoryPipeline（持久库 + 稳定 sessionId）
+
+### Fixed
+
+- **`ans chat` 上 RAG 与 L1/L2 记忆注入从未生效**：`PiAgentRuntime` 只在 `store && sessionId` 同时存在时构造 `MemoryPipeline`，而 CLI 组合根两者都没传，`this.pipeline` 恒为 `undefined`——`transformContext` 原样返回、`consolidate` 冷路径也整段跳过，且**没有任何告警**。#104 的 `fts` adapter 因此在生产路径上等于不存在。现在 `apps/cli/src/commands/chat.ts` 用 `createPersistentEngine`（`ANS_DB_PATH`，默认 `~/.anysearch/anysearch.db`）取代原先落 `":memory:"` 的 `createEngine`（fallback 分支同样改），sessionId 取持久锚点 `readSessionId()`（`ANS_SESSION_ID` 可覆盖）。回归：`packages/kernel/test/pi-runtime.test.ts` 的 no-store 透传、告警去重、真实 store 的 wired 三段断言，加上 `apps/cli/test/chat-memory-wiring.test.ts`。
+- **无记忆组合根不再静默**：`PiAgentRuntime` 在 `store` / `sessionId` 任缺（含两者都缺，即 `ans_chat` 现状）时打一行具名 stderr 点明缺什么并说明注入已禁用；门控语义（`store && sessionId`）未改。
+
+### Added
+
+- **`SessionStore.ensureSession(sessionId, domain)`**：幂等（`INSERT OR IGNORE`）注册外部生成的会话 id。`messages` / `resume_anchors` / `retrieval_results` / `budget_ledger` 都以外键指向 `sessions(id)` 且 store 开启 `foreign_keys = ON`，而 `createSession()` 自生成 UUID、不接受外部 id——持久 sessionId 必须先注册才能写锚点。回归：`packages/store/test/session-store.test.ts` 用例 7。
+- **CLI 组合根接线测试** `apps/cli/test/chat-memory-wiring.test.ts`：驱动 `runChat` 所用的 `wireChatMemory()`（抽到不含 kernel 依赖的 `apps/cli/src/commands/chat-memory.ts`），用真实 `SqliteSessionStore` 验证三件事——会话行先注册（满足 FK）、重开 DB 后同一持久 id 仍能召回先前的 `retrieval_results`（AC3）、`ensureSession` 失败时返回空接线并具名告警。kernel 只证明接缝，这条证明组合根本身接错时会被测出来；运行时注入（RAG 块到达模型、重启召回）由 `packages/kernel/test/pi-runtime.test.ts` 覆盖——CLI 包是 CJS 而 kernel 依赖 ESM-only 的 `pi-agent-core`，测试不能直接导入 `chat.ts`。
+- **`MemoryPipeline.flush()` / `PiAgentRuntime.flushMemory()`**：`consolidate()` 的摘要生成与 L2 召回是 fire-and-forget，`runChat` 返回后 CLI 会在 teardown 关闭持久库，在途的 `rolling_summary` / `l2_recall` 锚点写入会丢失且被 `.catch(() => {})` 吞掉。现在这些写入被登记，组合根在返回前（`finally`，覆盖错误路径）drain。回归：`packages/kernel/test/memory-pipeline.test.ts` 的 gate 用例。
+
+### Fixed（评论返修，PR #136）
+
+- **L1/L2 注入在 block 形状下会丢失用户问题**：Stage-1/T0 已改用形状感知 helper，但 L1/L2 仍按 `typeof content === "string"` 取文本——pi-agent-core 会把 `prompt("…")` 规范化为 content block 数组，因此一旦有锚点，用户问题会被整体替换成注入文本。现改用 `readMessageText` / `appendMessageText`，无文本通道时主动放弃注入。此路径在本票前不可达（pipeline 从未构造），接线后才成为真实风险，故属本票范围。回归：`memory-pipeline.test.ts` 的 block 形状与纯图片轮用例。
+- **`store.append` 未 await 的 rejection 会终止进程**：同一原因——路径原本不可达，接线后才启用。`append` 是 async，未 await 的 rejection 不被外层 `try/catch` 捕获，Node ≥15 默认终止进程且消息丢失。改为逐条 await + 独立 try，单条失败不影响后续消息并走既有告警。回归：`pi-runtime.test.ts` 的 append-reject 用例。
+- **后台摘要/裁决调用无上限**：`flush()` 会等待它们，慢 provider 能把 CLI 退出拖到 provider 超时。压缩调用改用 `AbortSignal.timeout(90s)`，裁决调用把 signal 透传给 `streamFn`；超时按 fire-and-forget 失败处理（下一轮重试），`flush()` 仍是完整 drain、不提前放弃写入。
+- **会话锚点写入失败曾静默**：`readSessionId()` 在锚点文件写失败时仍返回新 id 但不报告，下次运行会换 id、读不到旧锚点。现在 catch 分支输出一行告警（建议设 `ANS_SESSION_ID` 或让目录可写），fail-open 语义不变。回归：`session-id-propagation.test.ts`。
+- **持久库不可用时 `ans chat` 直接退出**：本票把 fallback 分支也改成 `createPersistentEngine()`，一旦 SQLite 或父目录不可用便会在构造 runtime 前终止，反而比改动前更差（旧代码有 `":memory:"` 兜底）。现在持久引擎失败会降级到内存引擎并明确告警——chat 仍可用，只是不持久化；内存库下跳过记忆接线（无法跨运行续接）。
+- **持久库权限过宽（CWE-732）**：`createPersistentEngine` 之前按进程 umask 建目录/文件；本票让 `ans chat` 首次向该库写入记忆后，共享主机上其他本地用户可能读到。现在目录 `0700`、库文件 `0600`（对已存在文件同样收紧），`chmod` 为 best-effort（Windows 忽略 POSIX 模式、非属主不阻断命令）。该修复对所有走 `createPersistentEngine` 的命令生效。
+
+### Documented
+
+- `docs/limitations.md` 更正：`ans_chat`（MCP）是**整条记忆链路不存在**（pipeline 从未构造），不是 `fts` fail-open 到 `none`；并记录半接线告警契约。`docs/rag-adapters.md` 同步更新 CLI 已接线的事实与「`fts` 只读 `retrieval_results`、CLI 不写该表」的边界。
+
 ## Unreleased — #146: 对账只删安装器真实命名形态（精确匹配）
 
 ### Changed

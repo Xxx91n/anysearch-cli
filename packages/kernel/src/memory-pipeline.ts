@@ -10,6 +10,13 @@ import { generateSummaryWithUsage } from "@earendil-works/pi-agent-core";
 // reuse summary engine only, NOT compact window management.
 // Own constant so upstream window-management namespace changes cannot break L0.
 const COMPACTION_RESERVE_TOKENS = 16_384;
+
+// Upper bound for the background summarization call. It is fire-and-forget
+// during a turn but the owning composition root drains it before closing the
+// store (#129), so an unbounded provider stall would hold the CLI open until the
+// provider times out. Aborting is a normal fire-and-forget failure: the next turn
+// simply tries again.
+const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
 import { RagAdapterRegistry, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS } from "./rag-adapter";
@@ -122,6 +129,7 @@ export async function adjudicateReuseCompress(
   model: any,
   gapDistillation: string,
   existingSummary: string | undefined,
+  signal?: AbortSignal,
 ): Promise<"reuse" | "compress"> {
   const prompt = [
     "You are a memory adjudicator for a research agent.",
@@ -147,7 +155,7 @@ export async function adjudicateReuseCompress(
 
   let text = "";
   try {
-    const stream = streamFn(model, context, {});
+    const stream = streamFn(model, context, signal ? { signal } : {});
     for await (const event of stream) {
       if (event?.type === "text" && event.text) text += event.text;
     }
@@ -234,6 +242,13 @@ export class MemoryPipeline {
     consecutiveReuses: 0,
     lastSummaryMsgCount: 0,
   };
+
+  // Background anchor writes started by consolidate(). summarization, adjudication
+  // and L2 recall are fire-and-forget by design (they must not block a turn), but
+  // the caller that owns the store can then close it while a write is still in
+  // flight, losing the anchor and swallowing the failure. flush() lets that owner
+  // drain them first.
+  private readonly pendingWrites = new Set<Promise<unknown>>();
 
   constructor(deps: MemoryPipelineDeps) {
     this.deps = deps;
@@ -352,12 +367,19 @@ export class MemoryPipeline {
       let lastIdx = -1;
       for (let i = result.length - 1; i >= 0; i--) if (result[i]?.role === "user") { lastIdx = i; break; }
       if (injections.length > 0 && lastIdx >= 0) {
+        // Same shape rule as Stage-1/T0: pi normalizes prompt("…") to content
+        // BLOCKS, so a string-only write here would replace the user's turn with
+        // the injection (data loss). Stand down when the turn has no text channel.
         const last = result[lastIdx];
-        result = [
-          ...result.slice(0, lastIdx),
-          { ...last, content: (typeof last.content === "string" ? last.content : "") + "\n\n" + injections.join("\n\n") },
-          ...result.slice(lastIdx + 1),
-        ];
+        const target = readMessageText(last);
+        const next = target ? appendMessageText(last, "\n\n" + injections.join("\n\n"), target) : null;
+        if (next) {
+          result = [
+            ...result.slice(0, lastIdx),
+            next,
+            ...result.slice(lastIdx + 1),
+          ];
+        }
       }
     } catch {}
 
@@ -427,7 +449,10 @@ export class MemoryPipeline {
       const previousSummary = (prevSummaryAnchor?.payload as any)?.summary as string | undefined;
 
       // D5: fire-and-forget compression helper.
-      const fireCompress = () => {
+      const fireCompress = (deadline?: AbortSignal) => {
+        // A shared deadline that already expired means this turn's background
+        // budget is spent; do not start a call that can only fail.
+        if (deadline?.aborted) return;
         if (modelsObj && actualModel) {
           // judgment-input assertion boundary 3/5 — consolidation pre-call.
           // Fire-and-forget: an invalid judgment input skips compression instead of
@@ -442,26 +467,30 @@ export class MemoryPipeline {
             consecutiveReuses: 0,
             lastSummaryMsgCount: result.summaryRequest?.msgCountAtTrigger || messages.length,
           };
-          generateSummaryWithUsage(
-            messages, modelsObj, actualModel,
-            COMPACTION_RESERVE_TOKENS,
-            undefined,
-            IR_CUSTOM_INSTRUCTIONS,
-            previousSummary,
-            "off",
-          ).then((summaryResult: any) => {
-            if (summaryResult?.ok && summaryResult.value?.text) {
-              store!.saveAnchor(sessionId!, "rolling_summary", {
-                summary: summaryResult.value.text,
-                tokenWatermark: totalTokens,
-                timestamp: Date.now(),
-              }).catch(() => {});
-            }
-          }).catch((e: any) => {
-            if (typeof process !== "undefined" && process.stderr) {
-              process.stderr.write("[anysearch] L0 compression warning: " + (e instanceof Error ? e.message : String(e)) + "\n");
-            }
-          });
+          // Tracked: flush() must see this write before the store is closed.
+          this.track(
+            generateSummaryWithUsage(
+              messages, modelsObj, actualModel,
+              COMPACTION_RESERVE_TOKENS,
+              deadline ?? AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS),
+              IR_CUSTOM_INSTRUCTIONS,
+              previousSummary,
+              "off",
+            ).then((summaryResult: any) => {
+              if (summaryResult?.ok && summaryResult.value?.text) {
+                return store!.saveAnchor(sessionId!, "rolling_summary", {
+                  summary: summaryResult.value.text,
+                  tokenWatermark: totalTokens,
+                  timestamp: Date.now(),
+                }).catch(() => {});
+              }
+              return undefined;
+            }).catch((e: any) => {
+              if (typeof process !== "undefined" && process.stderr) {
+                process.stderr.write("[anysearch] L0 compression warning: " + (e instanceof Error ? e.message : String(e)) + "\n");
+              }
+            }),
+          );
         }
       };
 
@@ -479,16 +508,30 @@ export class MemoryPipeline {
         } catch {
           gapValid = false;
         }
-        if (gapValid) adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary)
-          .then((adjDecision: "reuse" | "compress") => {
-            if (adjDecision === "compress") {
-              fireCompress();
-            } else {
-              // Keep the incremented consecutiveReuses from pure function result.
-              this.consolidationState = result.state;
-            }
-          })
-          .catch(() => fireCompress());
+        if (gapValid) {
+          // One deadline for adjudication AND any compression it triggers: a
+          // separate timeout per call would let one turn's background work run
+          // for 2x the bound, and flush() waits on all of it. On abort we keep
+          // the reuse state and retry next turn instead of firing compression
+          // under an already-expired budget.
+          const deadline = AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS);
+          this.track(
+            adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary, deadline)
+              .then((adjDecision: "reuse" | "compress") => {
+                if (adjDecision === "compress" && !deadline.aborted) {
+                  fireCompress(deadline);
+                } else {
+                  // Keep the incremented consecutiveReuses from the pure result.
+                  this.consolidationState = result.state;
+                }
+              })
+              .catch(() => {
+                // Adjudication failed or timed out: do not spend more budget on a
+                // second model call; the next turn retries.
+                this.consolidationState = result.state;
+              }),
+          );
+        }
       }
 
       // D7: Persist consolidation state to anchor (UPSERT in saveAnchor).
@@ -508,24 +551,27 @@ export class MemoryPipeline {
         // (Q2=B): S1 rewrite + RRF fusion. Fail-open via rewriteQuery when no LLM seam.
         // QDF hint uses heuristic classifiers from @anysearch-cli/store (no LLM call needed to tag).
         const qdf = classifyQdf(l2Query, { isTimeSensitive, isEvergreen });
-        rewriteQuery(l2Query, qdf, this.deps.llmRewriteFn)
-          .then((variants) => {
-            // Seamed call: searchMemoryMulti present on -capable stores. Fall back to single-query.
-            const s: any = store as any;
-            const searchPromise: Promise<any[]> = typeof s.searchMemoryMulti === "function"
-              ? s.searchMemoryMulti(variants, 5)
-              : store.searchMemory(l2Query, 5);
-            return searchPromise.then((hits) => ({ hits, variants }));
-          })
-          .then(({ hits, variants }) => {
-            if (hits.length > 0) {
-              const memorySnippet = (hits as any[]).map(h => h.content || "").slice(0, 200).join(" | ");
-              store!.saveAnchor(sessionId!, "l2_recall", {
-                query: l2Query, variants, hits: memorySnippet.slice(0, 2000), timestamp: Date.now(),
-              }).catch(() => {});
-            }
-          })
-          .catch(() => {});
+        this.track(
+          rewriteQuery(l2Query, qdf, this.deps.llmRewriteFn)
+            .then((variants) => {
+              // Seamed call: searchMemoryMulti present on -capable stores. Fall back to single-query.
+              const s: any = store as any;
+              const searchPromise: Promise<any[]> = typeof s.searchMemoryMulti === "function"
+                ? s.searchMemoryMulti(variants, 5)
+                : store.searchMemory(l2Query, 5);
+              return searchPromise.then((hits) => ({ hits, variants }));
+            })
+            .then(({ hits, variants }) => {
+              if (hits.length > 0) {
+                const memorySnippet = (hits as any[]).map(h => h.content || "").slice(0, 200).join(" | ");
+                return store!.saveAnchor(sessionId!, "l2_recall", {
+                  query: l2Query, variants, hits: memorySnippet.slice(0, 2000), timestamp: Date.now(),
+                }).catch(() => {});
+              }
+              return undefined;
+            })
+            .catch(() => {}),
+        );
       }
     } catch {}
   }
@@ -538,5 +584,27 @@ export class MemoryPipeline {
   // Set consolidation state (for MCP restore from anchor).
   setConsolidationState(state: ConsolidationState): void {
     this.consolidationState = state;
+  }
+
+  /** Register a background write so flush() can wait for it. */
+  private track(p: Promise<unknown>): void {
+    this.pendingWrites.add(p);
+    const done = () => { this.pendingWrites.delete(p); };
+    p.then(done, done);
+  }
+
+  /**
+   * Wait for the background anchor writes started by consolidate().
+   *
+   * The caller that owns the store must drain before closing it: closing while a
+   * saveAnchor is in flight loses the anchor and the failure is swallowed by the
+   * fire-and-forget handlers. Never throws — a failed write is not the caller's
+   * problem to handle here.
+   */
+  async flush(): Promise<void> {
+    // Writes can chain (generate -> saveAnchor), so loop until the set drains.
+    while (this.pendingWrites.size > 0) {
+      await Promise.allSettled([...this.pendingWrites]);
+    }
   }
 }
