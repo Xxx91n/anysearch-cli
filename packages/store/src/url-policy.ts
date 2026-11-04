@@ -233,28 +233,36 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): 
     return (parent: string) => tryResolveParent(parent, searchDirs)?.raw;
   };
 
-  // watched = chain files + every probed candidate (including missing, mtime -1)
+  // version includes ctime so chmod (permission repair) is detected even
+  // when mtime is unchanged (inode(7): ctime changes on permission change).
+  const fileVersion = (p: string): string => {
+    try {
+      const s = statSync(p);
+      return `${s.mtimeMs}:${s.ctimeMs}`;
+    } catch {
+      return "-1";
+    }
+  };
+
+  // watched = chain files + every probed candidate (including missing, -1)
   // so a new higher-priority file that shadows a parent is detected via stat,
   // without re-parsing the chain on every call.
   let { chain: watchedChain, probed: watchedProbed } = (() => {
     try { return collectChainAndProbed(); } catch { return { chain: [tomlPath], probed: [] as string[] }; }
   })();
   let watched = [...new Set([...watchedChain, ...watchedProbed])];
-  let mtimes = new Map<string, number>();
-  for (const pp of watched) {
-    try { mtimes.set(pp, statSync(pp).mtimeMs); } catch { mtimes.set(pp, -1); }
-  }
+  let mtimes = new Map<string, string>();
+  for (const pp of watched) mtimes.set(pp, fileVersion(pp));
   let warnedSig = "";
 
   return () => {
+    // snapshot before attempt so a parent created during the load is not
+    // recorded as already loaded.
+    const preWatched = [...watched];
+    const preMtimes = new Map(mtimes);
     let changed = false;
     for (const pp of watched) {
-      try {
-        const mt = statSync(pp).mtimeMs;
-        if (mt !== mtimes.get(pp)) { changed = true; break; }
-      } catch {
-        if (mtimes.get(pp) !== -1) { changed = true; break; }
-      }
+      if (fileVersion(pp) !== mtimes.get(pp)) { changed = true; break; }
     }
     if (!changed) return null;
     try {
@@ -264,18 +272,31 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): 
       watchedProbed = next.probed;
       watched = [...new Set([...watchedChain, ...watchedProbed])];
       mtimes.clear();
-      for (const pp of watched) {
-        try { mtimes.set(pp, statSync(pp).mtimeMs); } catch { mtimes.set(pp, -1); }
-      }
+      for (const pp of watched) mtimes.set(pp, fileVersion(pp));
       return schema;
     } catch (e) {
-      try {
-        const next = collectChainAndProbed();
-        watched = [...new Set([...watched, ...next.chain, ...next.probed])];
-      } catch { /* keep previous watched set */ }
-      mtimes.clear();
-      for (const pp of watched) {
-        try { mtimes.set(pp, statSync(pp).mtimeMs); } catch { mtimes.set(pp, -1); }
+      // collect new chain/probed but do not snapshot newly discovered paths
+      // with their post-failure versions as if they were already loaded;
+      // otherwise a parent created during the attempt would be missed.
+      let next: { chain: string[]; probed: string[] } | null = null;
+      try { next = collectChainAndProbed(); } catch { /* keep previous */ }
+      if (next) {
+        const preSet = new Set(preWatched);
+        const merged = [...new Set([...watched, ...next.chain, ...next.probed])];
+        const newPaths = new Set(merged.filter((p) => !preSet.has(p)));
+        watched = merged;
+        mtimes.clear();
+        for (const pp of watched) {
+          if (newPaths.has(pp)) {
+            // force next call to re-check this path (was not covered by pre snapshot)
+            mtimes.set(pp, preMtimes.get(pp) ?? "-1");
+          } else {
+            mtimes.set(pp, fileVersion(pp));
+          }
+        }
+      } else {
+        mtimes.clear();
+        for (const pp of watched) mtimes.set(pp, fileVersion(pp));
       }
       const sig = watched.map((pp) => String(mtimes.get(pp))).join(",");
       if (warnedSig !== sig) {
