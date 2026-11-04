@@ -3,19 +3,21 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync,
   statSync, symlinkSync, writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Readable } from "node:stream";
 import { runSkill } from "../src/commands/skill.js";
 import {
-  __setStatusProbeForTest, managedSkillsRoot, pidIdentity, releaseOwnedLock, renameWithRetry,
-  skillManifestPath, skillRenameIO, type SkillManifest, type StatusProbeChild, type StatusProbeSpawn,
+  __setStatusProbeForTest, LOCK_PENDING_ENTRY, MANIFEST_TEMP_ENTRY, managedSkillsRoot, pidIdentity,
+  QUARANTINE_ENTRY, releaseOwnedLock, renameWithRetry, skillManifestPath, skillRenameIO, STAGING_ENTRY,
+  type SkillManifest, type StatusProbeChild, type StatusProbeSpawn,
 } from "../src/skill-store.js";
 
 /** Run a Git command in a test repository and return trimmed stdout. */
@@ -796,7 +798,7 @@ test("a dead unpublished lock is cleaned during reconciliation", async (t) => {
   const f = fixture(t);
   const managed = managedSkillsRoot(f.opts);
   const identity = pidIdentity();
-  const pending = join(managed, ".installed.lock.pending-dead");
+  const pending = join(managed, ".installed.lock.pending-dead01");
   mkdirSync(pending, { recursive: true });
   writeFileSync(join(pending, "owner.json"), JSON.stringify({
     token: "dead", pid: deadPid(), host: hostname(), startedAt: "2026-11-03T00:00:00.000Z",
@@ -810,7 +812,7 @@ test("a dead unpublished lock is cleaned during reconciliation", async (t) => {
 test("an unpublished lock directory does not block a scope or act as a lock", async (t) => {
   const f = fixture(t);
   const managed = managedSkillsRoot(f.opts);
-  const pending = join(managed, ".installed.lock.pending-stale");
+  const pending = join(managed, ".installed.lock.pending-stale1");
   mkdirSync(pending, { recursive: true });
   writeFileSync(join(pending, "owner.json"), "{}");
   const installed = await f.run(["install", f.source()]);
@@ -873,19 +875,77 @@ test("rename retries transient sharing violations and rethrows permanent failure
 test("startup reconciliation removes installer residue only when no manifest exists", async (t) => {
   const f = fixture(t);
   const managed = managedSkillsRoot(f.opts);
-  mkdirSync(join(managed, ".install-crashed", "payload"), { recursive: true });
-  writeFileSync(join(managed, ".install-crashed", "payload", "SKILL.md"), "partial");
-  writeFileSync(join(managed, ".installed-0000.tmp"), "{}");
+  mkdirSync(join(managed, ".install-ab12cd", "payload"), { recursive: true });
+  writeFileSync(join(managed, ".install-ab12cd", "payload", "SKILL.md"), "partial");
+  writeFileSync(join(managed, ".installed-00000000-0000-4000-8000-000000000000.tmp"), "{}");
   const installed = await f.run(["install", f.source()]);
   assert.equal(installed.code, 0, installed.stderr);
   assert.deepEqual(readdirSync(managed).sort(), ["demo", "installed.json"]);
 
-  mkdirSync(join(managed, ".install-later", "payload"), { recursive: true });
-  writeFileSync(join(managed, ".installed-1111.tmp"), "{}");
+  mkdirSync(join(managed, ".install-ef34gh", "payload"), { recursive: true });
+  writeFileSync(join(managed, ".installed-11111111-1111-4111-8111-111111111111.tmp"), "{}");
   const second = await f.run(["install", f.source("beta")]);
   assert.equal(second.code, 0, second.stderr);
-  assert.ok(existsSync(join(managed, ".install-later")), "residue is never guessed away while a manifest exists");
-  assert.ok(existsSync(join(managed, ".installed-1111.tmp")));
+  assert.ok(existsSync(join(managed, ".install-ef34gh")), "residue is never guessed away while a manifest exists");
+  assert.ok(existsSync(join(managed, ".installed-11111111-1111-4111-8111-111111111111.tmp")));
+});
+
+test("installer lookalikes written by the operator are never treated as residue", async (t) => {
+  const f = fixture(t);
+  const managed = managedSkillsRoot(f.opts);
+  mkdirSync(join(managed, ".install-archive"), { recursive: true });
+  writeFileSync(join(managed, ".install-archive", "notes.md"), "operator notes");
+  writeFileSync(join(managed, ".installed-notes.tmp"), "{}");
+  // A prefix match would read this as inert bookkeeping; the exact shape says content.
+  mkdirSync(join(managed, ".installed.lock.pending-notalock"));
+  const expected = [".install-archive", ".installed-notes.tmp", ".installed.lock.pending-notalock"];
+
+  const installed = await f.run(["install", f.source()]);
+  assert.equal(installed.code, 1, installed.stdout + installed.stderr);
+  assert.match(installed.stderr, /skill manifest is missing in a non-empty managed directory/);
+  assert.deepEqual(readdirSync(managed).sort(), expected, "nothing was deleted or created");
+  assert.equal(existsSync(skillManifestPath(f.opts)), false, "no manifest is bootstrapped beside operator content");
+
+  const listed = await f.run(["list"]);
+  assert.equal(listed.code, 1, listed.stdout + listed.stderr);
+  assert.match(listed.stderr, /skill manifest is missing/);
+  assert.deepEqual(readdirSync(managed).sort(), expected, "the read path stays read-only");
+
+  const validated = await f.run(["validate"]);
+  assert.equal(validated.code, 1, validated.stdout + validated.stderr);
+  assert.deepEqual(readdirSync(managed).sort(), expected);
+});
+
+test("every installer-generated entry name matches its exact pattern", (t) => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "ans-entries-")));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  // mkdtempSync appends six characters; CI proves on ubuntu and windows that the
+  // charset stays inside [A-Za-z0-9], so the staging and pending shapes hold.
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const staging = basename(mkdtempSync(join(base, ".install-")));
+    assert.ok(STAGING_ENTRY.test(staging), `staging name does not match: ${staging}`);
+    const pending = basename(mkdtempSync(join(base, ".installed.lock.pending-")));
+    assert.ok(LOCK_PENDING_ENTRY.test(pending), `pending name does not match: ${pending}`);
+  }
+  // writeManifest and the quarantine rename build their names from randomUUID().
+  assert.ok(MANIFEST_TEMP_ENTRY.test(`.installed-${randomUUID()}.tmp`));
+  assert.ok(QUARANTINE_ENTRY.test(`.installed.lock.reclaim-${randomUUID()}`));
+
+  // The boundary is exact: near-misses are operator content, not installer residue.
+  // randomUUID() only writes version-4 UUIDs, so another version or a non-RFC
+  // variant nibble is not a name the installer can have produced.
+  for (const name of [".install-archive", ".install-abc", ".install-abcdefg", ".install-ab12_d",
+    ".installed-notes.tmp", `.installed-${randomUUID().toUpperCase()}.tmp`, ".installed-0000.tmp",
+    ".installed-00000000-0000-3000-8000-000000000000.tmp",
+    ".installed-00000000-0000-4000-7000-000000000000.tmp"]) {
+    assert.equal(STAGING_ENTRY.test(name) || MANIFEST_TEMP_ENTRY.test(name), false, `treated as residue: ${name}`);
+  }
+  for (const name of [".installed.lock.pending-notalock", ".installed.lock.pending-abc",
+    ".installed.lock.reclaim-notauuid", ".installed.lock.reclaiming",
+    ".installed.lock.reclaim-00000000-0000-3000-8000-000000000000",
+    ".installed.lock.reclaim-00000000-0000-4000-7000-000000000000"]) {
+    assert.equal(LOCK_PENDING_ENTRY.test(name) || QUARANTINE_ENTRY.test(name), false, `treated as bookkeeping: ${name}`);
+  }
 });
 
 test("a clean scope is unchanged by list and validate", async (t) => {
