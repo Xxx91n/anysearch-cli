@@ -8,8 +8,7 @@
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
-import { defaultDomainsDirs } from "@anysearch-cli/store";
-import { mkdirSync } from "node:fs";
+import { defaultDomainsDirs, ensureOwnerOnlyDb } from "@anysearch-cli/store";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TOOL_REGISTRY } from "./tools/index.js";
@@ -44,10 +43,10 @@ export const PKG_VERSION: string =
 // Half-fixing it (refreshing the URL policy alone) would apply the domain
 // filter only partially, which is worse than the current state.
 export function createDefaultEngine(): CompositionResult {
-  // a cold HOME has no ~/.anysearch dir yet; create the DB
-  // parent before better-sqlite3 opens it (mirrors apps/cli/src/db.ts:9).
+  // a cold HOME has no ~/.anysearch dir yet; tighten permissions before
+  // better-sqlite3 opens it (CWE-732, same as apps/cli/src/db.ts).
   const dbPath = resolveDbPath();
-  mkdirSync(dirname(dbPath), { recursive: true });
+  ensureOwnerOnlyDb(dbPath);
   // ANS_DOMAIN flows into the engine (same env contract as the
   // CLI) so the domain post-filter + abstain contract is reachable on MCP.
   // Unset = full fanout, unchanged legacy behavior.
