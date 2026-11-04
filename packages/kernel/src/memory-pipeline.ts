@@ -172,8 +172,44 @@ export async function adjudicateReuseCompress(
 // Returns decision + optional summaryRequest. Shell executes LLM + persistence.
 // options injectable; defaults 128000 / 3 preserve zero-behavior-change.
 export interface ConsolidateOpts {
-  lowWatermark?: number;
+  /** Absolute token count OR {fraction} of the model context window (#113). */
+  lowWatermark?: number | { fraction: number };
+  /** Model context window (session.model.contextWindow) used to resolve {fraction}. */
+  contextWindow?: number;
   reuseCap?: number;
+}
+
+// #113: absolute fallback when the model's context window is unknown (custom
+// endpoints without metadata, non-catalog models). Kept at the historical
+// value so unknown-window behaviour does not move.
+export const FALLBACK_LOW_WATERMARK_TOKENS = 128_000;
+
+// #113: resolve the TOML compaction.lowWatermark shape to an absolute token
+// count. `{fraction}` is a share of the model context window (pi-ai catalog via
+// session.model.contextWindow); an unknown/non-positive window falls back to
+// FALLBACK_LOW_WATERMARK_TOKENS. A malformed shape throws — the "never silently
+// fall back on a malformed shape" rule from decision #91 still holds (domain
+// validation normally catches it first; this is the deep-module backstop).
+export function resolveLowWatermark(
+  lowWatermark: number | { fraction: number } | undefined,
+  contextWindow: number | undefined,
+): number {
+  if (lowWatermark === undefined) return FALLBACK_LOW_WATERMARK_TOKENS;
+  if (typeof lowWatermark === "number") {
+    if (!Number.isFinite(lowWatermark) || lowWatermark <= 0) {
+      throw new Error("MemoryPipeline: compaction.lowWatermark must be a finite positive token count");
+    }
+    return lowWatermark;
+  }
+  const fraction = (lowWatermark as { fraction?: unknown } | null)?.fraction;
+  if (typeof fraction !== "number" || !Number.isFinite(fraction) || !(fraction > 0 && fraction < 1)) {
+    throw new Error("MemoryPipeline: compaction.lowWatermark.fraction must be a finite number in (0,1)");
+  }
+  const window = Number(contextWindow);
+  if (!Number.isFinite(window) || window <= 0) return FALLBACK_LOW_WATERMARK_TOKENS;
+  // Floor keeps the trigger conservative (never earlier than the fraction);
+  // max(1) avoids a degenerate zero watermark on a pathological tiny window.
+  return Math.max(1, Math.floor(fraction * window));
 }
 
 export function consolidateState(
@@ -183,10 +219,21 @@ export function consolidateState(
   hasRetrievalEvidence: boolean,
   opts?: ConsolidateOpts,
 ): ConsolidateResult {
-  const LOW_WATERMARK_TOKENS = opts?.lowWatermark ?? 128000;
+  const LOW_WATERMARK_TOKENS = resolveLowWatermark(opts?.lowWatermark, opts?.contextWindow);
   const REUSE_CAP = opts?.reuseCap ?? 3;
   const msgCountAtTrigger = messages.length; // local const for race-safe gap anchor update.
 
+  // #113 ruling (issue comment, 2026-11-03): the watermark keeps comparing the
+  // usage-event occupancy (pi-runtime passes `lastTotalTokens`), NOT a
+  // message-level token estimate. A tool result appended after the last
+  // assistant call can therefore lag the check by one turn. That window is
+  // explicitly exempted here because: (a) every current composition root wires
+  // no extra tools beyond the built-in `search`, so a large tool-result turn
+  // always carries retrieval evidence and takes the post-search path below —
+  // which gives compression a chance regardless of the watermark; (b) kernel
+  // has no token estimator, and decision #90 fixes the metering source to usage
+  // events. If a future root adds non-search tools, that root must either pass
+  // evidence or revisit this ruling (tracked in #113).
   const triggerLowWatermark = totalTokens > LOW_WATERMARK_TOKENS;
   const triggerPostSearch = hasRetrievalEvidence && messages.length > 4;
 
@@ -407,25 +454,15 @@ export class MemoryPipeline {
       } catch {}
 
       // D8: Call pure function for decision; inject compaction opts.
-      // fail-fast on unsupported {fraction} shape — silent fallback to
-      // default 128000 would violate the "不静默回退" principle stated in the ADR.
-      // Once model window probing lands (scope), wire fraction → tokens here.
+      // #113: {fraction} now resolves against the model window carried on
+      // session.model.contextWindow (pi-ai catalog). Unknown window (custom
+      // endpoint without LlmSessionOptions.contextWindow) falls back to 128000.
+      // Malformed shapes still throw (resolveLowWatermark), never silently
+      // degrade; domain validation is the primary fail-fast gate.
       const compactionCfg = domain.compaction;
-      const lw = compactionCfg?.lowWatermark;
-      let resolvedLowWatermark: number | undefined;
-      if (lw !== undefined) {
-        if (typeof lw === "number") {
-          resolvedLowWatermark = lw;
-        } else {
-          throw new Error(
-            "MemoryPipeline: compaction.lowWatermark as {fraction} is not yet wired " +
-            "(needs model context-window lookup). Use absolute token count " +
-            "e.g. lowWatermark = 128000. See +."
-          );
-        }
-      }
       const result = consolidateState(state, messages, totalTokens, hasRetrievalEvidence, {
-        lowWatermark: resolvedLowWatermark,
+        lowWatermark: compactionCfg?.lowWatermark,
+        contextWindow: Number((model as any)?.contextWindow) || undefined,
         reuseCap: compactionCfg?.reuseCap,
       });
 

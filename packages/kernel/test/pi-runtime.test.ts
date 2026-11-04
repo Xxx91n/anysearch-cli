@@ -179,11 +179,12 @@ test: {
   assert(sections[2] === "Rejected Sources", "D5: section 3 is Rejected Sources");
 }
 
-// D3: dual-track trigger constants.
+// D3/#113: the absolute 128K is now only the unknown-window fallback; a
+// configured {fraction} scales with session.model.contextWindow (covered by
+// memory-pipeline.test.ts).
 {
-  const LOW_WATERMARK = 128000;
-  assert(LOW_WATERMARK === 128000, "D3: low watermark 128K tokens");
-  assert(LOW_WATERMARK / 1000000 < 0.15, "D3: low watermark < 15% of 1M window");
+  const FALLBACK_LOW_WATERMARK = 128000;
+  assert(FALLBACK_LOW_WATERMARK === 128000, "#113: unknown-window fallback 128K tokens");
 }
 
 // D7: compaction config field exists in DomainConfigPort.

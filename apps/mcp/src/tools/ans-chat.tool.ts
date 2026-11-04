@@ -5,7 +5,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import { createLlmSession, PiAgentRuntime, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
+import { createLlmSession, PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
 import { domainTomlPath } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import { observeTool } from "./observation.js";
@@ -23,16 +23,18 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     model: string;
     baseUrl?: string;
     api?: string;
+    contextWindow?: number;
     modelOverride?: string;
   }): string {
     // Structured tuple prevents ambiguous "/" collisions: distinct configs can no longer
     // produce the same string (e.g. model="a/b", baseUrl="c" vs model="a", baseUrl="b/c").
     // JSON array serialization is deterministic and collision-free for these fields.
-    const tuple: string[] = [opts.provider, opts.model, opts.baseUrl ?? "", opts.api ?? ""];
+    // #113: contextWindow is wire-affecting (L0 watermark scale), so it joins the key.
+    const tuple: string[] = [opts.provider, opts.model, opts.baseUrl ?? "", opts.api ?? "", opts.contextWindow === undefined ? "" : String(opts.contextWindow)];
     // Reserve for per-request model override: independent segment + independent Map slot.
     // Must not overwrite the env-keyed default slot — one override would pollute all later default calls (T5 #91).
     // An extra tuple element keeps the default key stable and guarantees no collision with
-    // provider/model/baseUrl/api values (they are always the first four elements).
+    // provider/model/baseUrl/api/contextWindow values (they are always the first five elements).
     if (opts.modelOverride) {
       tuple.push(opts.modelOverride);
     }
@@ -48,6 +50,9 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     const baseUrl = process.env.ANS_LLM_BASE_URL;
     const apiRaw = process.env.ANS_LLM_API;
     const api = apiRaw === "chat" || apiRaw === "messages" || apiRaw === "responses" ? apiRaw : undefined;
+    // #113: custom endpoints carry no catalog window; the MCP root reads the env
+    // (kernel stays env-free). Malformed values fail the call, not silently 128000.
+    const contextWindow = parseContextWindow(process.env.ANS_LLM_CONTEXT_WINDOW);
     // F-A4 tiebreaker: keyHash detects ANS_LLM_API_KEY rotation on a long-lived MCP server.
     // It is NOT part of the cache key partitioning — same provider/model/baseUrl/api
     // must hit the same cache slot; hash change re-creates the slot value, not a new slot.
@@ -62,7 +67,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     // as a tiebreaker for this case.
     const baseUrlFingerprint = baseUrl ? createHash("sha256").update(baseUrl).digest("hex") : "";
     // Wire-affecting config only; secret material never enters cache key (assertion below).
-    const key = buildCacheKey({ provider: providerName, model: modelName, baseUrl: baseUrlFingerprint, api, modelOverride });
+    const key = buildCacheKey({ provider: providerName, model: modelName, baseUrl: baseUrlFingerprint, api, contextWindow, modelOverride });
 
     // Assertion: cache key must not contain secret material. Key is built only from
     // provider+model+baseUrlFingerprint+api (+ optional override segment); keyHash/apiKey are separate.
@@ -79,7 +84,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     }
     // Lazy init / rotation rebuild: same slot is overwritten on tiebreaker mismatch — not split.
     const session = await createLlmSession({
-      provider: providerName, model: modelName, baseUrl, api,
+      provider: providerName, model: modelName, baseUrl, api, contextWindow,
       apiKey: baseUrl ? process.env.ANS_LLM_API_KEY : undefined,
     });
     sessionCache.set(key, { session, keyHash });
