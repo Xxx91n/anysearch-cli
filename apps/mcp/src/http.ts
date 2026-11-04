@@ -9,19 +9,20 @@
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import express, { type Express } from "express";
-import { buildServer } from "./server.js";
+import { buildServer, PKG_VERSION } from "./server.js";
 // stash clientInfo from initialize requests into AsyncLocalStorage
 // so observeTool can map it to a stable client_id via Railway PR #885.
 import { runWithMcpIdentity } from "./mcp-context.js";
 
-// ponytail: tsup define substituites __PACKAGE_VERSION__ at build time (see
-// tsup.config.ts). Dev-mode tsx fallthrough reads "0.0.0" — fine for doctor.
-declare const __PACKAGE_VERSION__: string | undefined;
-const PKG_VERSION: string =
-  typeof __PACKAGE_VERSION__ !== "undefined" && __PACKAGE_VERSION__
-    ? __PACKAGE_VERSION__
-    : "0.0.0";
+// minimal shape of an MCP request body — only clientInfo.name is read here.
+interface McpRequestBody {
+  method?: string;
+  params?: { clientInfo?: { name?: string } };
+}
 
+// Design: per-request stateless McpServer + transport over ONE shared startup
+// engine — the protocol requires a fresh server per connection, but the
+// better-sqlite3 handles inside the engine open once per process (#112).
 // createHttpApp: build the express app around ONE engine. The engine is captured
 // in the closure and reused by every request; nothing here constructs one.
 export function createHttpApp(engine: CompositionResult): Express {
@@ -56,9 +57,12 @@ export function createHttpApp(engine: CompositionResult): Express {
       // best-effort clientInfo extraction. The MCP spec
       // sends clientInfo only on initialize; we still wrap every call in
       // AsyncLocalStorage so observeTool can pick it up consistently.
-      const body = (req.body || {}) as { method?: string; params?: { clientInfo?: { name?: string } } };
+      const body = (req.body || {}) as McpRequestBody;
       const clientInfoName = body.params?.clientInfo?.name;
       await runWithMcpIdentity({ clientInfoName }, () => t.handleRequest(req, res, req.body));
+      // release the per-request server's listeners; the shared engine stays
+      // open for the next request (#112 — no per-request resource growth).
+      await server.close();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       res.status(500).json({ error: { code: -32603, message: "Internal error: " + msg } });

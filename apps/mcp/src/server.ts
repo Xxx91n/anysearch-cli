@@ -18,16 +18,19 @@ import { TOOL_REGISTRY } from "./tools/index.js";
 // __PACKAGE_VERSION__ at build time (see tsup.config.ts `define`); dev-mode
 // tsx runs read it from the nearest package.json via a small helper.
 declare const __PACKAGE_VERSION__: string | undefined;
-const PKG_VERSION: string =
+export const PKG_VERSION: string =
   typeof __PACKAGE_VERSION__ !== "undefined" && __PACKAGE_VERSION__
     ? __PACKAGE_VERSION__
     : "0.0.0";
 
-// createDefaultEngine: the composition root, split out of buildServer so a
+// Design: the engine is a per-CONNECTION resource, built once at startup and
+// reused — not a per-request one. Before #112, every HTTP request reached
+// buildServer() -> createEngine() and opened two fresh better-sqlite3 handles
+// (SessionStore + ObservationStore), so the open-connection count grew with the
+// request count; stdio stays process-wide, unchanged.
+// createDefaultEngine: wraps the createEngine composition root (GLOSSARY) with
+// the MCP-side env/db/domainsDirs resolution, split out of buildServer so a
 // long-lived transport can run it ONCE and reuse the result (#112).
-// Before the split, every HTTP request reached buildServer() -> createEngine()
-// and opened two fresh better-sqlite3 handles (SessionStore + ObservationStore),
-// so the open-connection count grew with the request count.
 export function createDefaultEngine(): CompositionResult {
   // a cold HOME has no ~/.anysearch dir yet; create the DB
   // parent before better-sqlite3 opens it (mirrors apps/cli/src/db.ts:9).
