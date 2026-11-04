@@ -23,6 +23,7 @@ All notable changes to this project are recorded here. Format follows
 - **`store.append` 未 await 的 rejection 会终止进程**：同一原因——路径原本不可达，接线后才启用。`append` 是 async，未 await 的 rejection 不被外层 `try/catch` 捕获，Node ≥15 默认终止进程且消息丢失。改为逐条 await + 独立 try，单条失败不影响后续消息并走既有告警。回归：`pi-runtime.test.ts` 的 append-reject 用例。
 - **后台摘要/裁决调用无上限**：`flush()` 会等待它们，慢 provider 能把 CLI 退出拖到 provider 超时。压缩调用改用 `AbortSignal.timeout(90s)`，裁决调用把 signal 透传给 `streamFn`；超时按 fire-and-forget 失败处理（下一轮重试），`flush()` 仍是完整 drain、不提前放弃写入。
 - **会话锚点写入失败曾静默**：`readSessionId()` 在锚点文件写失败时仍返回新 id 但不报告，下次运行会换 id、读不到旧锚点。现在 catch 分支输出一行告警（建议设 `ANS_SESSION_ID` 或让目录可写），fail-open 语义不变。回归：`session-id-propagation.test.ts`。
+- **持久库不可用时 `ans chat` 直接退出**：本票把 fallback 分支也改成 `createPersistentEngine()`，一旦 SQLite 或父目录不可用便会在构造 runtime 前终止，反而比改动前更差（旧代码有 `":memory:"` 兜底）。现在持久引擎失败会降级到内存引擎并明确告警——chat 仍可用，只是不持久化；内存库下跳过记忆接线（无法跨运行续接）。
 
 ### Documented
 

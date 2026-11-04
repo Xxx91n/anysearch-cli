@@ -9,6 +9,7 @@
 import { PiAgentRuntime, createLlmSession } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
+import { createEngine } from "../composition";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
 import { domainTomlPath, loadDomainByNameIn } from "@anysearch-cli/store";
 import { wireChatMemory } from "./chat-memory";
@@ -56,15 +57,31 @@ export async function runChat(argv: string[]): Promise<number> {
   // sessions.domain is metadata only; record the domain actually in use so a
   // fallback run does not claim a domain that failed to load.
   let sessionDomain = domainName;
+  // False only when the durable DB could not be opened at all; an in-memory
+  // store must not be registered as a resumable session.
+  let durableStore = true;
   try {
     engine = createPersistentEngine(domainName);
     domain = engine.config || loadDomainByNameIn(domainName, domainSearchDirs()) as DomainConfigPort;
   } catch (e: any) {
     console.error("[warn] Domain load failed: " + (e?.message || String(e)) + ", using fallback.");
     // Fallback: no domain filtering, all providers — still on the durable DB so
-    // memory reads keep working across runs. A second failure propagates to the
-    // CLI entry point; swallowing it here would leave an unclosed store handle.
-    engine = createPersistentEngine();
+    // memory reads keep working across runs.
+    // Design: if the durable DB itself is unavailable, degrade to the in-memory
+    // engine rather than failing the run — `ans chat` must still answer, it just
+    // loses persistence (and the memory wiring is then skipped, since an
+    // in-memory store cannot be resumed). Losing chat entirely is the worse
+    // trade; the warning says exactly what was lost.
+    let persistentOk = true;
+    try {
+      engine = createPersistentEngine();
+    } catch (e2: any) {
+      persistentOk = false;
+      console.error("[warn] Durable database unavailable (" + (e2?.message || String(e2)) +
+        "); continuing with an in-memory store — memory will NOT persist across runs.");
+      engine = createEngine();
+    }
+    durableStore = persistentOk;
     sessionDomain = "default";
     domain = {
       sources: { enabled: [] },
@@ -77,7 +94,7 @@ export async function runChat(argv: string[]): Promise<number> {
   const { retriever, store } = engine;
 
   // Stable session id + FK registration (#129) — see wireChatMemory.
-  const memory = await wireChatMemory(store, sessionDomain);
+  const memory = durableStore ? await wireChatMemory(store, sessionDomain) : {};
 
   // Construct PiAgentRuntime and run.
   // models undefined fix — session.models is now properly initialized.
