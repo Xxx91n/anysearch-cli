@@ -671,6 +671,7 @@ function plantLock(
 }
 
 test("a lock held by a provably dead process on this host is reclaimed", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
@@ -682,6 +683,7 @@ test("a lock held by a provably dead process on this host is reclaimed", async (
 });
 
 test("uninstall also reclaims a provably dead lock", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
@@ -693,6 +695,7 @@ test("uninstall also reclaims a provably dead lock", async (t) => {
 });
 
 test("read maintenance reclaims a dead lock without blocking list", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
@@ -704,6 +707,7 @@ test("read maintenance reclaims a dead lock without blocking list", async (t) =>
 });
 
 test("an active reclaim guard prevents a second reclaimer from moving the lock", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
@@ -725,6 +729,7 @@ test("an active reclaim guard prevents a second reclaimer from moving the lock",
 });
 
 test("a dead reclaim guard is recovered before reclamation", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
@@ -821,6 +826,7 @@ test("a lock without machine identity fails closed", async (t) => {
 });
 
 test("a lock from a previous boot is reclaimed as dead", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   assert.equal((await f.run(["install", f.source()])).code, 0);
   const managed = managedSkillsRoot(f.opts);
@@ -1275,6 +1281,7 @@ test("uninstall backups are never auto-deleted and list reports the restore hint
 });
 
 test("concurrent installers reclaiming a dead lock keep the manifest consistent", async (t) => {
+  if (!machineId()) { t.skip("machineId unavailable"); return; }
   const f = fixture(t);
   const names = ["alpha", "beta", "gamma", "delta"];
   const dirs = names.map((name) => f.source(name));
