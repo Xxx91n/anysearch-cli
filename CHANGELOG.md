@@ -30,6 +30,16 @@ All notable changes to this project are recorded here. Format follows
 
 - `docs/limitations.md` 更正：`ans_chat`（MCP）是**整条记忆链路不存在**（pipeline 从未构造），不是 `fts` fail-open 到 `none`；并记录半接线告警契约。`docs/rag-adapters.md` 同步更新 CLI 已接线的事实与「`fts` 只读 `retrieval_results`、CLI 不写该表」的边界。
 
+## Unreleased — #145: rename 退避抽到独立 `fs-atomic` 模块，平台门改显式 seam（#137 收尾）
+
+### Changed
+
+- **rename 退避模块化，平台门改显式 seam**：新增 `apps/cli/src/fs-atomic.ts` 收拢 #137 的重试策略（10ms→1s 指数退避、约 60s 预算、耗尽抛原始错误）与平台门——`RenameSeam.platform` 显式声明 `"win32"` 重试 `EPERM`/`EBUSY`/`ENOTEMPTY`、其余平台仅 `EBUSY`，取代 #137 中对 `DEFAULT_RENAME_IO` 的对象身份推断（该推断一旦 seam 形状变化，POSIX 语义会静默退化且测试全绿）。`skill-store.ts` 删除内联常量 / `RenameIO` / 重试循环，改为 re-export（`renameWithRetry` / `renameSeam` / `setRenameSeam`；`skillRenameIO` 保留为 deprecated 别名），rename 调用点与生产行为零变化。`sleepSync` 移至 `fs-atomic` 导出，`skill-store` 的锁重取节奏（#137）继续使用。
+
+### Added
+
+- **`apps/cli/test/fs-atomic.test.ts`**：win32 三码依次注入（第 4 次成功，等待 `[10, 20, 40]`）；预算耗尽抛出同一个 error 对象且假时钟累计 ≤ 60s；`ENOENT` 与无 `code` 错误首次即抛、从不 sleep；POSIX 门（`EBUSY` 重试、`EPERM`/`ENOTEMPTY` 立即抛，此前该语义无任何测试）；`setRenameSeam` 嵌套 restore 回到上一层而非默认；默认 seam 完成一次真实 rename。既有 `skill.test.ts` 的 rename 用例改为显式声明 `platform: "win32"`（含依赖 `EPERM` 重试的 uninstall 备份用例），断言未改。
+
 ## Unreleased — #137: `ans skill` 安装器并发硬化（stale 锁回收 / Windows rename 重试 / 启动对账）
 
 ### Added
