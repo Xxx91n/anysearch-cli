@@ -112,11 +112,12 @@
   as this deliberate boundary rather than fixed by a session filter. A domain
   that enables `fts` can surface research saved by any session in the same store.
   The CLI durable path attempts owner-only 0700/0600 (best-effort; Windows ignores
-  POSIX modes); the MCP cold-start path still inherits the process umask
-  (hardening tracked in #156). Every shipped domain stays on `adapter = "none"`,
-  so the shared read is opt-in; a deployer that shares one store or one MCP
-  server across users must isolate with separate stores and access-controlled
-  servers (e.g. `ANS_MCP_KEY`). If multi-principal
+  POSIX modes); the MCP cold-start and plugin-server write paths still inherit the
+  process umask (hardening tracked in #156). Every shipped domain stays on
+  `adapter = "none"`, so the `fts` prompt injection is opt-in (the same store-wide
+  range is already read by `recall_memory` when called); a deployer that shares one
+  store or one MCP server across users must isolate with separate stores and
+  access-controlled HTTP servers (e.g. `ANS_MCP_KEY`). If multi-principal
   sharing ever appears, attribute origin at write time first, then filter reads.
   Evidence and rejected alternatives: `docs/rag-adapters.md` §作用域.
 - **`ans_chat` (MCP) has no `MemoryPipeline` at all (#129)** — this is the

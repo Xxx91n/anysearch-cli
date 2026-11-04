@@ -78,7 +78,7 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
   `recall_memory` 一致，`fts` 只是在其上包一层。
 - 隔离单元是 store 本身（Store Principal）：默认 `~/.anysearch/anysearch.db`，MCP HTTP
   只绑 `127.0.0.1`。CLI 的持久库路径会尝试收紧到 0700/0600（best-effort；Windows 忽略
-  POSIX 模式）；MCP 冷启动首次建库仍沿用进程 umask，权限对齐见 #156。会话与域是检索的
+  POSIX 模式）；MCP 冷启动与 plugin server 的库写入路径仍沿用进程 umask，权限对齐见 #156。会话与域是检索的
   **子作用域**（L1/L2 锚点、域配置、工具白名单），不是主体边界；不同主体应使用不同 store
   （`ANS_DB_PATH`）。
 - 对照：`SessionStore.searchFts5(sessionId, …)` 是按会话过滤的 `messages` 查询；
@@ -86,9 +86,9 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
   同样走 store 级 `searchMemory`。
 - 出厂三域仍是 `adapter = "none"`；启用 `fts` 是显式 opt-in，等于声明
   “本域可读取本 store 的全部调研记忆”。若把同一 store 或同一 MCP server 共享给
-  不同用户/主体，隔离责任在部署层：除独立 store / 独立 server 外，每个 server
-  还必须配置访问控制（如 `ANS_MCP_KEY`）或网络/用户隔离。仅绑定 `127.0.0.1`
-  不能阻止同一主机上的其它用户访问；隔离责任不在读路径。
+  不同用户/主体，隔离责任在部署层：除独立 store / 独立 server 外，HTTP server
+  还必须配置访问控制（如 `ANS_MCP_KEY`）或网络/用户隔离；stdio server 由进程/用户
+  边界隔离。仅绑定 `127.0.0.1` 不能阻止同一主机上的其它用户访问；隔离责任不在读路径。
 
 > **#104 CWE-200 的去向**：该披露成立。本裁定不通过会话过滤修复它，而是把 store
 > 定为主体边界，并用「出厂默认 `none` + 显式 opt-in + 部署层独立 store」承担剩余风险。
