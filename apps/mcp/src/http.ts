@@ -20,6 +20,23 @@ interface McpRequestBody {
   params?: { clientInfo?: { name?: string } };
 }
 
+/**
+ * Reads clientInfo.name out of a JSON-RPC body, if it is there.
+ *
+ * The MCP spec sends clientInfo only on initialize, so every other call
+ * legitimately yields undefined and the observer keeps its anonymous id. The
+ * body is untrusted wire data: anything that is not a non-empty string is
+ * treated as absent, so a malformed payload cannot smuggle a non-string into
+ * the identity store.
+ *
+ * @param body Parsed JSON-RPC request body.
+ * @returns The declared client name, or undefined when absent/malformed.
+ */
+export function extractClientInfoName(body: unknown): string | undefined {
+  const name = ((body || {}) as McpRequestBody).params?.clientInfo?.name;
+  return typeof name === "string" && name.length > 0 ? name : undefined;
+}
+
 // Design: per-request stateless McpServer + transport over ONE shared startup
 // engine — the protocol requires a fresh server per connection, but the
 // better-sqlite3 handles inside the engine open once per process (#112).
@@ -57,8 +74,7 @@ export function createHttpApp(engine: CompositionResult): Express {
       // best-effort clientInfo extraction. The MCP spec
       // sends clientInfo only on initialize; we still wrap every call in
       // AsyncLocalStorage so observeTool can pick it up consistently.
-      const body = (req.body || {}) as McpRequestBody;
-      const clientInfoName = body.params?.clientInfo?.name;
+      const clientInfoName = extractClientInfoName(req.body);
       await runWithMcpIdentity({ clientInfoName }, () => t.handleRequest(req, res, req.body));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
