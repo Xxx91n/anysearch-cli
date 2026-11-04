@@ -1,6 +1,6 @@
 // Shared helper: engine backed by the durable anysearch DB.
 // ANS_DB_PATH overrides; default ~/.anysearch/anysearch.db via kernel resolveDbPath.
-import { mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-cli/kernel";
@@ -27,8 +27,16 @@ export function domainSearchDirs(env: NodeJS.ProcessEnv = process.env): string[]
 import { registerTeardown } from "./teardown";
 export function createPersistentEngine(domain?: string): CompositionResult {
   const dbPath = resolveDbPath();
-  mkdirSync(dirname(dbPath), { recursive: true });
+  const dir = dirname(dbPath);
+  // Design: the DB holds recalled research + preferences, so it is owner-only
+  // (dir 0700, file 0600). #129 moved `ans chat` onto this store, which made the
+  // wider default umask a real exposure on a shared host (CWE-732). chmod is
+  // best-effort: Windows ignores POSIX modes, and a pre-existing file owned by
+  // someone else must not fail the command.
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try { chmodSync(dir, 0o700); } catch { /* best-effort (Windows / not owner) */ }
   const result = createEngine(domain, { dbPath, domainsDirs: domainSearchDirs() });
+  try { if (existsSync(dbPath)) chmodSync(dbPath, 0o600); } catch { /* best-effort */ }
   registerTeardown(() => {
     (result.store as { close?: () => void }).close?.();
     result.observation.close();
