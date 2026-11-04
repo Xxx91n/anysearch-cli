@@ -88,7 +88,20 @@ export function loadDomainByName(
     } catch { /* dir not found */ }
     throw new Error("Domain not found: " + name + (available ? " (available: " + available + ")" : ""));
   }
-  return loadDomain(tomlPath, lookup);
+  // #167/CodeRabbit: file-based parent lookup so a valid child with an existing
+  // base resolves via the same convention dir instead of being treated as
+  // "Base domain not found". Caller-provided lookup wins; file fallback preserves
+  // the missing-base error when no parent file exists.
+  const effectiveLookup = (parent: string): RawDomain | undefined => {
+    if (lookup) {
+      const fromCaller = lookup(parent);
+      if (fromCaller !== undefined) return fromCaller;
+    }
+    const parentPath = join(baseDir, DOMAINS_DIR, parent + ".toml");
+    if (existsSync(parentPath)) return loadRawDomain(parentPath);
+    return undefined;
+  };
+  return loadDomain(tomlPath, effectiveLookup);
 }
 
 // B1: domains-dir resolution chain. Each entry IS a domains directory
@@ -104,7 +117,24 @@ export function loadDomainByNameIn(
     const tomlPath = join(dir, name + ".toml");
     if (seen.has(tomlPath)) continue;
     seen.add(tomlPath);
-    if (existsSync(tomlPath)) return loadDomain(tomlPath, lookup);
+    if (existsSync(tomlPath)) {
+      // #167/CodeRabbit: wire file-based parent lookup through the same
+      // domains-dir chain so createEngine can resolve inheritance from disk.
+      // Preserve the existing "Base domain not found" error when the file
+      // lookup confirms no parent exists.
+      const effectiveLookup = (parent: string): RawDomain | undefined => {
+        if (lookup) {
+          const fromCaller = lookup(parent);
+          if (fromCaller !== undefined) return fromCaller;
+        }
+        for (const d of domainsDirs) {
+          const candidate = join(d, parent + ".toml");
+          if (existsSync(candidate)) return loadRawDomain(candidate);
+        }
+        return undefined;
+      };
+      return loadDomain(tomlPath, effectiveLookup);
+    }
   }
   const all = domainsDirs.flatMap((dir) => {
     try {
