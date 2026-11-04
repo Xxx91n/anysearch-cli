@@ -118,8 +118,9 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
             domain,
             domainTomlPath: domainTomlPath(),
             model: session.model,
-            // #113: real window for the L0 watermark; undefined for an
-            // unconfigured custom endpoint -> absolute 128000 fallback.
+            // #113: forwarded for a future memory pipeline. ans_chat currently
+            // builds no store/sessionId, so no L0 watermark runs here; the env
+            // still sets the custom model's request-budget window via the session.
             contextWindow: session.contextWindow,
             streamFn: session.streamFn,
             models: session.models,
