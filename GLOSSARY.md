@@ -48,7 +48,7 @@
 - **Dual DB / Two-Stage Recall**——项目索引与内部记忆物理分离两个 .db；recall_memory 先查内部（带新鲜度）不足再查外部项目索引，跨层带 provenance 标签不混合打分。
 - **FTS5 Column Weight（FTS5 列权重）**——bm25 列权重让 title 匹配优先于 snippet；UNINDEXED 列权重 0。
 - **FTS5 Query Tokenization（FTS5 查询分词）**——空白/标点切词 + 词前缀匹配 + AND 连接，整句保留为 OR 分支；禁整句加引号（退化为精确短语匹配）。
-- **CJK Substring Stage（汉字段内子串召回）**——`ans recommend` 词法第二级：unicode61 把不间断 CJK 段整体当一个 token，段内子串 FTS 够不到，于是在 name+description 上按整段做子串命中；两级词法结果之间不混排打分（沿用 Dual DB / Two-Stage Recall），只按折扣追加在 BM25 最弱正分命中之后，provenance 标签为 `cjk`；embedding 臂仍可跨两级融合重排（#110 契约）。禁为此给 FTS 表加辅助列（改变行长度会重算全部 ASCII 的 bm25）。
+- **CJK Substring Stage（汉字段内子串召回）**——`ans recommend` 词法第二级：unicode61 把不间断 CJK 段整体当一个 token，段内子串 FTS 够不到，于是在 name+description 上按整段做子串命中；两级词法结果之间不混排打分（沿用 Dual DB / Two-Stage Recall），只按折扣追加在 BM25 最弱正分命中之后，provenance 标签为 `cjk`；BM25 正分命中已填满 topK 时，最佳 stage 行保留末位候选槽——只保在场、不抬分不并列（混合查询的 CJK 域不被展示预算整段挤掉，#125 遗留第 1 项）；embedding 臂仍可跨两级融合重排（#110 契约）。禁为此给 FTS 表加辅助列（改变行长度会重算全部 ASCII 的 bm25）。
 - **Entity Configurable（实体可配置）**——NormalizedResult 可选 entity 字段覆盖 URL 默认值，支撑「同实体多 URL」聚合（about/pricing/blog 同族）。
 - **MemoryPipeline（记忆管线深模块）**——kernel 内独立深模块承载全部 L0/L1/L2 逻辑，接口三方法 attach/inject/consolidate，领域语义命名，绝不反向依赖 agent loop。
 - **NOOP Adjudication / REUSE-COMPRESS 判别**——检索返回后用 LLM 二元裁决：新结果已被现有 IR 摘要覆盖则 REUSE 跳过摘要，否则 COMPRESS 增量生成；裁决与压缩均 fire-and-forget。
@@ -141,3 +141,5 @@
 
 - **Context Engineering（上下文工程总纲）**——token 策展统一总纲：记忆与注入是 curation，多臂融合与充分性是 assembly，预注册评测是 measurement，观测闭环是 telemetry。
 - **Observability Closed Loop（观测闭环）**——本地优先 SQLite trace 资产连接 runtime/eval/experiment；内部表示版本化，只在导出边界映射 OTLP `gen_ai.*`（自定义属性用 `anysearch.*`）。
+
+> AI生成

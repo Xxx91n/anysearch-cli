@@ -11,6 +11,8 @@
 // single characters), reordered runs must abstain, the substring stage must stay below the BM25
 // arm with its own provenance label, and a CJK-free query leaves the BM25 arm answering exactly as
 // before — which is what the ASCII cases above, unchanged from #110, demonstrate.
+// The #125 遗留第 1 项 follow-up adds the crowding case: when BM25 already fills topK with positive
+// hits, the stage keeps candidate presence via a reserved LAST slot (presence, not rank).
 
 import {
   recommendDomains,
@@ -175,6 +177,31 @@ async function main() {
     const stageRow = bothArms.candidates.find((c) => c.id === "zh-research");
     assert(!!stageRow && stageRow.arms[0] === "cjk", "stage row carries its own provenance label (got " + stageRow?.arms.join("+") + ")");
     assert(!!stageRow && bothArms.candidates[0]!.score > stageRow.score && stageRow.score > 0, "stage score is discounted below, never tied with, and never zero");
+
+    // --- #125 遗留第 1 项: the stage must survive BM25 filling topK (topK crowding) ---
+    // Four ASCII research domains give BM25 four positive hits on "research*"; only the substring
+    // stage can reach the CJK domain on 中文研究. Before the reservation, the final slice dropped
+    // every stage row, so the domain that answered a query term never appeared — the ticket's own
+    // crowding example, the same no-show it opened for in its mixed-query form. The reserved row
+    // takes the LAST slot: presence, not rank — the BM25 anchor keeps every rank it held, the
+    // candidate count stays at topK, and the kept list stays non-increasing in score.
+    const CROWD_METAS: DomainMeta[] = [
+      { id: "r1", name: "research", description: "web research one" },
+      { id: "r2", name: "research", description: "web research two" },
+      { id: "r3", name: "research", description: "web research three" },
+      { id: "r4", name: "research", description: "web research four" },
+      { id: "zh-research", name: "zh", description: "深度中文研究与学术检索" },
+    ];
+    const crowd = await recommendDomains("research 中文研究", CROWD_METAS);
+    const zhRank = rankOf(crowd, "zh-research");
+    assert(zhRank !== 0, "a crowded topK still lists the CJK domain the stage answered (rank " + zhRank + ")");
+    assert(zhRank === 3, "the reserved slot is the LAST candidate — BM25 anchor order kept (rank " + zhRank + ")");
+    assert(crowd.candidates.length === 3, "the reservation swaps the last slot, it does not grow the list (got " + crowd.candidates.length + ")");
+    const reservedRow = crowd.candidates[zhRank - 1]!;
+    assert(reservedRow.arms[0] === "cjk", "the reserved row carries its stage provenance (arms " + reservedRow.arms.join("+") + ")");
+    assert(reservedRow.score > 0 && reservedRow.score < crowd.candidates[0]!.score, "the reserved row is priced below the BM25 anchor, never zero");
+    const crowdNoCjk = await recommendDomains("research docs web", CROWD_METAS);
+    assert(rankOf(crowdNoCjk, "zh-research") === 0, "a CJK-free query on the same corpus reserves nothing");
 
     // Han, Hiragana, Katakana and Hangul all reach the stage (the run class is CJK-wide, not
     // Han-only). These descriptions carry no spaces, so a mid-run substring can never be a

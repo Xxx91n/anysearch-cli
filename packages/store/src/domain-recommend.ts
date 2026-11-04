@@ -263,15 +263,14 @@ export function bm25SearchDomainMeta(db: Database.Database, query: string, limit
   // #125 second lexical stage — substring recall for the CJK runs FTS5 cannot reach. Each row is
   // priced by the share of the query's CJK characters it contains; the rowid tiebreak states the
   // intent explicitly instead of relying on scan order. The discount puts a stage row under the
-  // weakest positive BM25 hit, so the BM25 arm alone decides a query it can serve — including one
-  // it already fills to topK, where the stage stays out by that rule. When the BM25 arm finds
-  // nothing positive (a query whose runs are not token prefixes anywhere, e.g. "中文研究"), the
-  // stage owns the ranking: a row carrying every run scores the full anchor unit, a partial row
-  // its share. Queries that are also a
-  // whole-token prefix ("深度中文研究") keep their BM25 hits and land here only as extras. The
-  // embedding arm still fuses over both stages, so it can reorder the list — #110's hybrid
-  // contract, unchanged.
-  if (cjkQueryRuns(q).length > 0) {
+  // weakest positive BM25 hit, so the BM25 arm alone decides a query it can serve: it keeps every
+  // rank a BM25 hit holds. When the BM25 arm finds nothing positive (a query whose runs are not
+  // token prefixes anywhere, e.g. "中文研究"), the stage owns the ranking: a row carrying every run
+  // scores the full anchor unit, a partial row its share. Queries that are also a whole-token
+  // prefix ("深度中文研究") keep their BM25 hits and land here only as extras. The embedding arm
+  // still fuses over both stages, so it can reorder the list — #110's hybrid contract, unchanged.
+  const cjkRuns = cjkQueryRuns(q);
+  if (cjkRuns.length > 0) {
     const positives = rows.map((r) => r.match).filter((m) => m > 0);
     const anchor = positives.length > 0 ? Math.min(...positives) * STAGE_DISCOUNT : 1;
     const seen = new Set(rows.map((r) => r.rowid));
@@ -287,7 +286,29 @@ export function bm25SearchDomainMeta(db: Database.Database, query: string, limit
       rows.push({ rowid: r.rowid, name: r.name, description: r.description, match: fraction * anchor, stage: "cjk" });
     }
   }
-  return rows.sort((a, b) => b.match - a.match || a.rowid - b.rowid).slice(0, limit);
+  const sorted = rows.sort((a, b) => b.match - a.match || a.rowid - b.rowid);
+  // #125 遗留第 1 项（topK crowding）— a stage row prices strictly under every positive BM25 hit,
+  // so once BM25 fills `limit` the plain slice below used to drop ALL stage rows: on a mixed query
+  // like "research 中文研究" over four research domains plus one CJK domain, the CJK domain answered
+  // a query term yet never appeared as a candidate — the same no-show the ticket opened for, in
+  // its mixed-query form. Industry hybrid-retrieval model: each arm contributes its own candidates
+  // and truncation happens once, after fusion; a recall arm starved by the other arm's
+  // presentation budget is an anti-pattern (the embedding arm already fuses across both stages).
+  // The reservation keeps the FTS anchor intact: the best stage row swaps into the LAST slot only
+  // — presence, not rank. The kept list stays non-increasing (the reserved score is
+  // fraction × min(positive) × STAGE_DISCOUNT, strictly under the row above it because that row is
+  // a positive match and min(positive) × 0.5 < min(positive)), the candidate count stays ≤ topK,
+  // and a CJK-free query never reaches this branch, so #110's pure-ASCII behaviour is preserved
+  // by construction. `limit > 0` guards cut[limit - 1] against a caller asking for no rows at all.
+  if (cjkRuns.length > 0 && limit > 0 && sorted.length > limit) {
+    const cut = sorted.slice(0, limit);
+    if (!cut.some((r) => r.stage === "cjk")) {
+      const reserved = sorted.find((r) => r.stage === "cjk");
+      if (reserved) cut[limit - 1] = reserved;
+    }
+    return cut;
+  }
+  return sorted.slice(0, limit);
 }
 
 // Full recommend pipeline. Pure with respect to the outside world except the peer-optional
