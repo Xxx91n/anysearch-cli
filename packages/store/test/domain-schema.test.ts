@@ -222,7 +222,7 @@ assert("isDomainSchemaError is false for non-Error throws", !isDomainSchemaError
     resolve({ name: "child", base: "missingbase", rag: { adapter: "x" } } as RawDomain, () => undefined);
   } catch (e) { baseMissing = e; }
   assert("isDomainSchemaError recognises base-not-found", isDomainSchemaError(baseMissing));
-  assert("base-not-found message is Domain schema: family", String(baseMissing).startsWith("Domain schema: Base domain not found:"));
+  assert("base-not-found message is Domain schema: family", (baseMissing as Error).message.startsWith("Domain schema: Base domain not found:"));
   assert("Domain not found (absent domain) stays fallback", !isDomainSchemaError(new Error("Domain not found: missingbase")));
 
   // Inheritance: circular
@@ -231,7 +231,7 @@ assert("isDomainSchemaError is false for non-Error throws", !isDomainSchemaError
   let circular: unknown;
   try { resolve(ca, (n) => n === "a" ? ca : n === "b" ? cb : undefined); } catch (e) { circular = e; }
   assert("isDomainSchemaError recognises circular inheritance", isDomainSchemaError(circular));
-  assert("circular message is Domain schema: family", String(circular).startsWith("Domain schema: Circular inheritance detected:"));
+  assert("circular message is Domain schema: family", (circular as Error).message.startsWith("Domain schema: Circular inheritance detected:"));
 
   // TOML parse: file exists but malformed -> Domain schema with path context
   // (uses loadRawDomain wrapper; readFileSync IO stays fallback).
@@ -243,13 +243,13 @@ assert("isDomainSchemaError is false for non-Error throws", !isDomainSchemaError
     try { loadRawDomain(badPath); } catch (e) { parseFault = e; }
     assert("isDomainSchemaError recognises TOML parse fault", isDomainSchemaError(parseFault));
     assert("parse fault message includes file path", String(parseFault).includes("badsyntax.toml"));
-    assert("parse fault message is Domain schema: family", String(parseFault).startsWith("Domain schema:"));
+    assert("parse fault message is Domain schema: family", (parseFault as Error).message.startsWith("Domain schema:"));
 
     // IO: readFileSync ENOENT must stay fallback (not wrapped)
     let ioRead: unknown;
     try { loadRawDomain(join(dir, "no-such-file.toml")); } catch (e) { ioRead = e; }
     assert("isDomainSchemaError leaves readFileSync ENOENT to fallback", !isDomainSchemaError(ioRead));
-    assert("ENOENT is not Domain schema", !String(ioRead).startsWith("Domain schema:"));
+    assert("ENOENT is not Domain schema", !(ioRead as Error).message.startsWith("Domain schema:"));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
