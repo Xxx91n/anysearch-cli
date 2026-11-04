@@ -1,9 +1,6 @@
 // query_knowledge tool: RAG adapter dispatch stub.
 // #104 defined RagAdapterPort + the rag.adapter registry, but the agent-loop
-// injection path (MemoryPipeline Stage-1) is where they are wired. This tool
-// still answers with the adapter name: dispatching a knowledge query needs an
-// explicit memory-scope decision (which session/store a domain-wide knowledge
-// query reads), tracked as its own ticket; see docs/limitations.md.
+// injection path (MemoryPipeline Stage-1) is where they are wired.
 // input validated by AJV.
 
 import type { McpServer } from "@modelcontextprotocol/server";
@@ -21,7 +18,10 @@ export function registerQueryKnowledge(server: McpServer, eng: CompositionResult
     },
     async (_args: unknown) => {
       return observeTool(eng, "query_knowledge", async () => {
-        // ponytail: stub until the knowledge-query memory scope is decided.
+        // Design: query_knowledge is to read the same internal store-scoped Research
+        // Memory range as recall_memory (before its project-index fallback) — sessions
+        // and domains are not principals, so the tool takes no sessionId or domain
+        // filter. The stub remains until #155 wires it; see docs/rag-adapters.md §作用域.
         const adapter = eng.config?.rag?.adapter ?? "none";
         return { content: [{ type: "text" as const, text: "query_knowledge: adapter=" + adapter + " (not yet implemented)" }] };
       });

@@ -8,11 +8,13 @@
 //     its own session.
 //   - stdio path unchanged: buildServer(eng) still registers the 5 tools and
 //     reuses the very engine it was handed.
+//   - clientInfo seam: extractClientInfoName is pure, so the identity mapping
+//     (initialize -> client_id, everything else -> anon) is pinned without HTTP.
 //
 // Seam: real createHttpApp() + real buildServer() over the mock engine (offline,
 // no LLM). No test framework (repo convention).
 
-import { createHttpApp } from "../src/http.js";
+import { createHttpApp, extractClientInfoName } from "../src/http.js";
 import { buildServer } from "../src/server.js";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -214,6 +216,22 @@ async function main() {
       assert(log.queries.join(",") === "stdio-only", "stdio: injected engine served the call unchanged");
       await serverA.close();
       await serverB.close();
+    }
+
+    // ---- Part 4: clientInfo identity seam (pure function, no HTTP) ----
+    {
+      const initBody = { method: "initialize", params: { clientInfo: { name: "claude-ai", version: "1.0.0" } } };
+      assert(extractClientInfoName(initBody) === "claude-ai",
+        "identity: initialize body yields the declared client name");
+      assert(extractClientInfoName({ method: "tools/call", params: { name: "search_web", arguments: {} } }) === undefined,
+        "identity: non-initialize call yields undefined (observer keeps anon id)");
+      assert(extractClientInfoName({}) === undefined, "identity: empty body yields undefined");
+      assert(extractClientInfoName(undefined) === undefined, "identity: absent body yields undefined");
+      assert(extractClientInfoName({ params: {} }) === undefined, "identity: body without clientInfo yields undefined");
+      assert(extractClientInfoName({ params: { clientInfo: { name: 42 } } }) === undefined,
+        "identity: non-string name is not forwarded into the identity store");
+      assert(extractClientInfoName({ params: { clientInfo: { name: "" } } }) === undefined,
+        "identity: empty name is treated as absent");
     }
   } finally {
     for (const k of Object.keys(saved)) {

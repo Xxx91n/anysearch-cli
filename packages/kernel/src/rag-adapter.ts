@@ -92,6 +92,9 @@ export function createNoteRagAdapter(note: string): RagAdapterPort {
   };
 }
 
+// Design: `fts` inherits searchMemory's store-scoped read boundary — no sessionId
+// is threaded through RagAdapterPort, preserving the #90 `retrieve(query, limit)`
+// contract. See packages/store/src/session-store.ts and docs/rag-adapters.md §作用域.
 /**
  * `"fts"` adapter: the minimal *real* RAG implementation.
  *

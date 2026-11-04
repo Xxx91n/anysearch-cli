@@ -31,6 +31,18 @@ export const PKG_VERSION: string =
 // createDefaultEngine: wraps the createEngine composition root (GLOSSARY) with
 // the MCP-side env/db/domainsDirs resolution, split out of buildServer so a
 // long-lived transport can run it ONCE and reuse the result (#112).
+//
+// KNOWN LIMITATION (accepted with #112, not a regression fixed here):
+// createEngine resolves ANS_DOMAIN at construction time, so this composition is
+// fixed for the process lifetime. A domain TOML that already exists keeps
+// hot-reloading on edit (the kernel reloader refreshes the schema), but one
+// created AFTER startup is never picked up: providers are selected from
+// sources.enabled and their weights are built once, so re-resolving the domain
+// would have to rebuild the provider list and the source weights too. Before
+// #112 the per-request createEngine retried that load implicitly. Until that
+// lifecycle work lands, a late-arriving domain needs a process restart.
+// Half-fixing it (refreshing the URL policy alone) would apply the domain
+// filter only partially, which is worse than the current state.
 export function createDefaultEngine(): CompositionResult {
   // a cold HOME has no ~/.anysearch dir yet; create the DB
   // parent before better-sqlite3 opens it (mirrors apps/cli/src/db.ts:9).
