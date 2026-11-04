@@ -8,7 +8,7 @@ import {
 const KS = (KernelJsonSchemas) as unknown as Record<string, {
   required?: string[];
   additionalProperties?: boolean;
-  properties?: Record<string, { minLength?: number; anyOf?: Array<{ const: string }> }>;
+  properties?: Record<string, { minLength?: number; maxLength?: number; pattern?: string; anyOf?: Array<{ const: string }> }>;
 }>;
 import {
   AnsChatInput,
@@ -54,6 +54,28 @@ assert.equal(KS.recall_memory.properties?.query?.minLength, 1);
 assert.equal(KS.query_knowledge.properties?.query?.minLength, 1);
 assert.equal(KS.ans_chat.properties?.message?.minLength, 1);
 
+// 4b. #132 explicit session handle: optional. The wire schema stays permissive
+// on purpose — a malformed handle must fail open in the handler (no memory,
+// call still answers), so apps/mcp enforces the 1..128 visible-ASCII rule at
+// the DB-key boundary instead of AJV rejecting the call here.
+assert.ok(
+  !KS.ans_chat.required?.includes("sessionId"),
+  "ans_chat: sessionId is optional (omitting it means single-shot)",
+);
+assert.equal(KS.ans_chat.properties?.sessionId?.minLength, undefined);
+assert.equal(KS.ans_chat.properties?.sessionId?.maxLength, undefined);
+assert.equal(KS.ans_chat.properties?.sessionId?.pattern, undefined);
+assert.equal(Value.Check(AnsChatInput, { message: "m", sessionId: "abc-123" }), true,
+  "ans_chat accepts a valid session handle");
+assert.equal(Value.Check(AnsChatInput, { message: "m", sessionId: "bad handle" }), true,
+  "ans_chat passes a malformed handle through (fail-open contract)");
+assert.equal(Value.Check(AnsChatInput, { message: "m", sessionId: "x".repeat(129) }), true,
+  "ans_chat passes an over-long handle through (fail-open contract)");
+assert.equal(Value.Check(AnsChatInput, { message: "m", sessionId: "" }), true,
+  "ans_chat passes an empty handle through (fail-open contract)");
+assert.equal(Value.Check(AnsChatInput, { message: "m", sessionId: 42 }), false,
+  "ans_chat rejects a non-string session handle");
+
 // 5. Enum-as-anyOf — research_web.depth has brief/standard/deep.
 const depthEnum = KS.research_web.properties?.depth;
 assert.ok(depthEnum?.anyOf);
@@ -77,11 +99,13 @@ const rw: typeof ResearchWebInput.static = { question: "q", depth: "deep" };
 const rm: typeof RecallMemoryInput.static = { query: "q", limit: 5 };
 const qk: typeof QueryKnowledgeInput.static = { query: "q" };
 const ac: typeof AnsChatInput.static = { message: "m" };
+const acThreaded: typeof AnsChatInput.static = { message: "m", sessionId: "abc-123" };
 assert.equal(sw.mode, "fast");
 assert.equal(rw.depth, "deep");
 assert.equal(rm.limit, 5);
 assert.equal(qk.query, "q");
 assert.equal(ac.message, "m");
+assert.equal(acThreaded.sessionId, "abc-123");
 
 // 9.: maxResults contract rejection — the key is not
 // in the schema and additionalProperties:false makes the check hard-fail.

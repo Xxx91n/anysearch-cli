@@ -120,18 +120,36 @@
   access-controlled HTTP servers (e.g. `ANS_MCP_KEY`). If multi-principal
   sharing ever appears, attribute origin at write time first, then filter reads.
   Evidence and rejected alternatives: `docs/rag-adapters.md` §作用域.
-- **`ans_chat` (MCP) has no `MemoryPipeline` at all (#129)** — this is the
-  whole memory chain being absent, not a fail-open to `none`. `PiAgentRuntime`
-  builds `MemoryPipeline` only when `store` and `sessionId` are BOTH supplied;
-  `ans_chat` passes neither, so RAG injection (including `fts`), the L1/L2
-  anchor injection and the consolidation cold path never run on that path — no
-  adapter is consulted and nothing is logged as degraded by the adapter layer
-  itself. The CLI `ans chat` path now wires both (`apps/cli/src/commands/chat.ts`)
-  and uses the durable `ANS_DB_PATH` store; MCP cannot copy that fix because the
-  protocol deliberately carries no per-instance session id
-  (`apps/mcp/src/index.ts` stateless transport, `session_id` never stashed), so
-  its session semantics must be decided first (#132). #130 only governs the RAG
-  read scope and does not block that decision.
+- **`ans_chat` (MCP) uses an explicit, server-minted session handle (#132)** —
+  the tool mints `createSession("mcp")` on the first call and returns it as
+  `structuredContent.sessionId` plus a trailing text block (hosts that only
+  forward content still make the handle model-visible); a later call threads it
+  back as `AnsChatInput.sessionId`, the server `ensureSession()`s it before reuse,
+  and `MemoryPipeline` is then constructed with `store` + `sessionId`, so L1/L2
+  anchors (and RAG injection) continue in that session. Omitting the handle is
+  the explicit single-shot mode: a fresh session per call, no cross-call
+  continuity. A malformed handle (anything that is not 1..128 visible ASCII
+  characters — empty strings, spaces, control characters, and non-ASCII) is
+  ignored for the same fail-open reason: the call runs single-shot, no fake
+  handle is returned, and the answer still comes back. A non-string value is a
+  wire type error before the handler; it is not treated as a malformed handle.
+  This follows the MCP 2026-07-28 revision, which removed
+  protocol-level sessions and directs servers that need cross-call state to
+  explicit, server-minted handles passed as ordinary tool arguments (SEP-2567);
+  the transport `session_id` therefore stays empty. A supplied handle is **not** a
+  security boundary — the store is (`Store Principal`, #130), and a client that
+  can reach the server can already read the store-level Research Memory.
+- **`ans_chat` anchors are written in the background (#132)** — the handle
+  guarantees session identity, not write timing: `consolidation_state` is awaited
+  but `rolling_summary` / `l2_recall` are fire-and-forget (up to the 90s summary
+  budget), and the MCP response does not wait for them. A later call normally
+  reads them; an immediate re-call can race the previous background write.
+- **Handle-less `ans_chat` calls mint a session row per call (#132)** — this is
+  the same per-call pattern `search_web` auto-index already uses, and the store has
+  no session GC. A long-lived client that never threads the handle therefore
+  accumulates empty `sessions` rows; one that threads the returned handle reuses a
+  single row and its anchors. Deployments that care about row growth can prune the
+  table out of band.
 - **A runtime without the memory pair is named, not silent (#129)** — a
   composition root that supplies `store` without `sessionId`, `sessionId`
   without `store`, or neither at all now gets one stderr line naming what is

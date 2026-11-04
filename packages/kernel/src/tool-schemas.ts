@@ -88,9 +88,22 @@ export type QueryKnowledgeInput = {
 
 export const AnsChatInput = Type.Object({
   message: Type.String({ minLength: 1, description: "The user message to send to the agent" }),
+  // #132: explicit, server-minted state handle (MCP 2026-07-28 / SEP-2567).
+  // The first call omits it and gets one back in structuredContent.sessionId;
+  // later calls thread it here so L1/L2 anchors resume in the same session.
+  // Design: the wire schema deliberately does NOT constrain the value. A
+  // malformed handle must fail open in the handler (no memory, call still
+  // answers), so AJV cannot reject it first; apps/mcp validates the 1..128
+  // visible-ASCII rule at the DB-key boundary instead.
+  sessionId: Type.Optional(
+    Type.String({
+      description: "Opaque session handle returned as structuredContent.sessionId (and a trailing text block) by a previous ans_chat call; pass it back to continue L1/L2 memory across calls. Must be 1..128 visible ASCII characters; a malformed value is ignored (single-shot) rather than rejected. Omit for a single-shot call (fresh session, no cross-call continuity).",
+    }),
+  ),
 }, { additionalProperties: false });
 export type AnsChatInput = {
   message: string;
+  sessionId?: string;
 };
 
 // KernelToolSchemas: registry consulted by apps/mcp barrel assembly (Per-tool Barrel).
@@ -114,5 +127,5 @@ export const KernelToolDescriptions = {
   research_web: "Run a deep research query: multiple retrieval rounds fused via RRF, returns sufficiency signal and top citations.",
   recall_memory: "Search the Research Memory layer (FTS5) for previously indexed research results. Applies time edge effect: decay, bi-temporal invalidation, QDF classification.",
   query_knowledge: "Query domain-specific knowledge base via RAG adapter. Dispatches to configured rag.adapter in domain config.",
-  ans_chat: "Run the anysearch agent loop: retrieval-augmented chat with LLM. Uses PiAgentRuntime with domain-aware tool filtering.",
+  ans_chat: "Run the anysearch agent loop: retrieval-augmented chat with LLM. Uses PiAgentRuntime with domain-aware tool filtering. Returns a session handle (structuredContent.sessionId and a trailing text block); pass it back as sessionId to continue L1/L2 memory across calls.",
 } as const satisfies Record<KernelToolName, string>;

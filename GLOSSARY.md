@@ -39,6 +39,7 @@
 - **Memory Tier（记忆三层架构）**——L0 缓冲（会话工作记忆）→ L1 窗口管理（transformContext 管道：RAG 注入→记忆注入→compaction）→ L2 持久层（FTS5 + 时间衰减）。独立于 MCP 可工作。
 - **Store Principal（store 主体边界）**——共享记忆的隔离单元：一个 store 是主体边界的载体；会话与域只是检索子作用域。跨主体隔离需独立 store，且 server 必须配置访问控制或网络/用户隔离。
 - **Research Memory（调研记忆层）**——FTS5 仓里的历次调研结果（网页内容、蒸馏结论、RAG 私有数据），是三层检索源之一。读取边界是 store（Store Principal）；跨主体隔离见该词条。
+- **Explicit Session Handle（显式会话句柄）**——MCP 2026-07-28 移除协议级 session 后，跨调用状态由服务端 mint 的不透明 id 表达（SEP-2567：`create_*() -> handle` + threaded parameters）。`ans_chat` 在 `structuredContent.sessionId` 返回、客户端作为普通工具参数透传，服务端 `ensureSession` 后复用；它是 store 内的恢复键（resumption key），不是主体边界，也不是传输会话。
 - **Time Edge Effect（时间边缘效应）**——调研记忆的时间机制：指数半衰期衰减 + 双时态失效（新证据关闭旧记录 valid_until）+ QDF 式时间敏感查询临时 boost + pinned 豁免。
 - **Fused Freshness Factor（融合新鲜度因子）**——检索期唯一时间信号：created_at 衰减 + last_accessed 近因 + access_count 频率压成一个 [0.3,1.5] 乘子乘进 BM25；禁多层时间乘子叠乘。
 - **Explicit Invalidation via Write Path（显式失效走写路径）**——「这条过时了」走既有 valid_until/quarantine 通道，不加 TTL；软衰减管「不再相关」，写时失效管「事实已过期」。
@@ -114,7 +115,7 @@
 - **Fact-Process Split（事实流程分置）**——AGENTS.md 放每会话事实，SKILL.md 放多步流程；强制语义 = AGENTS.md 声明意图 + hook 代码实现。
 - **Cursor Dual Channel / MDC Fallback / Fire-and-Forget**——Cursor 双通道注入（additional_context + .mdc 规则文件兜底官方竞态 bug）；无 SessionStart 的平台由 hook 动态生成 .mdc（alwaysApply）；hook 执行不阻塞 agent loop。
 - **Fail-Open（放行策略）**——hooks/server/索引任一故障都放行工具调用直出原始结果，stderr 告警；增益层挂了不拖垮基础检索。
-- **Session Identity / Propagation / Client Attribution**——`~/.anysearch-cli/session` 是 session_id 磁盘主源（写时引用、永不回读）；session_id/trace_id 跨 CLI/hook/MCP 透传，MCP 协议级 session 保持置空；client_id 从 _meta clientInfo 尽力提取。
+- **Session Identity / Propagation / Client Attribution**——`~/.anysearch-cli/session` 是 session_id 磁盘主源（写时引用、永不回读）；session_id/trace_id 跨 CLI/hook/MCP 透传，MCP 协议级 session 保持置空，跨调用记忆改用显式 server-minted handle（`AnsChatInput.sessionId`）透传；client_id 从 _meta clientInfo 尽力提取。
 
 ## 评测与发布门禁
 

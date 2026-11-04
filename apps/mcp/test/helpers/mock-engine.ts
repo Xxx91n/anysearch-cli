@@ -31,6 +31,8 @@ export function createMockEngine(): CompositionResult {
   };
   const store = {
     createSession: async (d: string) => ({ id: "mock-session", domain: d, createdAt: new Date().toISOString() }),
+    // #132: ans_chat registers a threaded handle before reuse.
+    ensureSession: async () => {},
     append: async () => {},
     searchFts5: async () => [],
     searchMemory: async () => [],
