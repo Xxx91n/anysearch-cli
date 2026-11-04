@@ -169,8 +169,10 @@ function assertHostnameList(list: unknown, field: string): void {
 // invalid". Callers use it to fail closed on a configured-but-broken domain
 // while keeping the availability fallback for absent domains and IO faults.
 // The "Domain schema:" marker is the fail-fast family raised by validate().
+// Anchored at the start: an IO message that merely contains the text (e.g. in
+// a file path) must stay on the availability fallback, not fail closed.
 export function isDomainSchemaError(e: unknown): boolean {
-  return e instanceof Error && e.message.includes("Domain schema:");
+  return e instanceof Error && e.message.startsWith("Domain schema:");
 }
 
 // Validate a resolved schema. Throws on invalid.

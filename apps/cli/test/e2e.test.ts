@@ -39,6 +39,9 @@ async function runUntil(args: string[], env: NodeJS.ProcessEnv, pattern: RegExp)
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      // Release the child on every failure path (timeout / unmatched close /
+      // spawn error); kill is harmless once it has already exited.
+      p.kill();
       reject(err);
     };
     timer = setTimeout(() => fail(new Error("timeout " + args[0])), 15000);

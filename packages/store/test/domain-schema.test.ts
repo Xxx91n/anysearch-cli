@@ -204,6 +204,8 @@ assert("classification fixture hit the lowWatermark branch",
 
 const ioFault = Object.assign(new Error("EACCES: permission denied, open '/tmp/x.toml'"), { code: "EACCES" });
 assert("isDomainSchemaError leaves IO faults to the fallback", !isDomainSchemaError(ioFault));
+assert("marker inside an IO path is not a schema error",
+  !isDomainSchemaError(new Error("EACCES: permission denied, open '/tmp/Domain schema: x.toml'")));
 assert("isDomainSchemaError ignores missing-domain errors", !isDomainSchemaError(new Error("Domain not found: nope")));
 assert("isDomainSchemaError is false for non-Error throws", !isDomainSchemaError("Domain schema: not an Error"));
 
