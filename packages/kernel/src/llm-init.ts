@@ -181,7 +181,15 @@ export async function createLlmSession(opts: LlmSessionOptions): Promise<LlmSess
 
   // #113: catalog models already carry a real window; LlmSession exposes it for
   // the L0 watermark. `contextWindow` is a custom-endpoint-only option — a
-  // catalog override would be new scope beyond this ticket.
+  // catalog override would be new scope beyond this ticket. Warn instead of
+  // silently ignoring an explicitly-set value (the composition roots pass the
+  // parsed env unconditionally).
+  if (opts.contextWindow !== undefined && typeof process !== "undefined" && process.stderr) {
+    process.stderr.write(
+      "[anysearch] ANS_LLM_CONTEXT_WINDOW ignored for catalog model " +
+      opts.provider + "/" + opts.model + "; the pi-ai catalog window is authoritative\n",
+    );
+  }
   const catalogModel = model as Model<string>;
 
   return { model: catalogModel, streamFn, models, providerName: opts.provider, modelName: opts.model, apiKey, contextWindow: catalogModel.contextWindow };

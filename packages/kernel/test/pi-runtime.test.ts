@@ -471,6 +471,20 @@ function makeMockStreamFn(decision: string): any {
     "#113: large-tool-result occupancy alone triggers compression (no post-search path required)");
 }
 
+// Production branch: when the last assistant message DOES carry usage, the
+// estimate adds trailing tool-result tokens on top of usageTokens
+// (usageTokens + trailingTokens), rather than returning usage alone.
+{
+  const messages = [
+    { role: "user", content: "q" },
+    { role: "assistant", usage: { input: 1000, output: 20, totalTokens: 1020 }, content: [{ type: "text", text: "..." }] },
+    { role: "toolResult", content: [{ type: "text", text: "x".repeat(80000) }] },
+  ];
+  const occupancy = resolveContextOccupancy(0, messages as any);
+  assert(occupancy >= 1020 + 15000,
+    "#113: usage + trailing tool-result tokens are summed (got " + occupancy + ")");
+}
+
 // accumulateUsage: totalTokens falls back to input+output when absent.
 {
   const totals = emptyUsageTotals();

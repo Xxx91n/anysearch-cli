@@ -283,12 +283,10 @@ export interface UsageTotals {
   totalTokens: number;
   costUsd: number;
   // Latest assistant message's totalTokens (input incl. cache + output of the
-  // most recent LLM call) — approximates CURRENT context occupancy. The
-  // consolidate low-watermark check needs this, not cumulative run spend:
-  // cumulative totals are monotonic, so once they crossed the watermark every
-  // later turn would force-compress even after compaction shrank the context
-  // (CodeRabbit review on PR #114; watermark semantics confirmed by #45's
-  // planned fraction-of-contextWindow reframing).
+  // most recent LLM call). One input to the L0 watermark's occupancy:
+  // max(this, estimateContextTokens(messages)) in resolveContextOccupancy.
+  // Cumulative totals are ledger-only and must never feed the watermark —
+  // they are monotonic, so a crossed watermark would re-fire every turn.
   lastTotalTokens: number;
 }
 

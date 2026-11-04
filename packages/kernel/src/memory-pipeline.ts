@@ -182,7 +182,7 @@ export async function adjudicateReuseCompress(
 export interface ConsolidateOpts {
   /** Absolute token count OR {fraction} of the model context window (#113). */
   lowWatermark?: number | { fraction: number };
-  /** Model context window (session.model.contextWindow) used to resolve {fraction}. */
+  /** Model context window (LlmSession.contextWindow, REAL value) used to resolve {fraction}. */
   contextWindow?: number;
   reuseCap?: number;
 }
@@ -193,8 +193,9 @@ export interface ConsolidateOpts {
 export const FALLBACK_LOW_WATERMARK_TOKENS = 128_000;
 
 // #113: resolve the TOML compaction.lowWatermark shape to an absolute token
-// count. `{fraction}` is a share of the model context window (pi-ai catalog via
-// session.model.contextWindow); an unknown/non-positive window falls back to
+// count. `{fraction}` is a share of the REAL model context window
+// (LlmSession.contextWindow; the pi-ai catalog value for catalog models, or the
+// explicit custom-endpoint value); an unknown/non-positive window falls back to
 // FALLBACK_LOW_WATERMARK_TOKENS. A malformed shape throws — the "never silently
 // fall back on a malformed shape" rule from decision #91 still holds (domain
 // validation normally catches it first; this is the deep-module backstop).

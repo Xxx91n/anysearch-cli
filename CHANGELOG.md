@@ -8,7 +8,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Changed
 
-- **L0 压缩水位支持 `compaction.lowWatermark = { fraction = ... }`**：`resolveLowWatermark` 把 fraction 解析为 `floor(fraction × contextWindow)`；窗口取自 `LlmSession.contextWindow`（pi-ai catalog）。`LlmSessionOptions.contextWindow` 透传自定义端点窗口——未设置时 pi-ai 仍用 128000 占位，但 `LlmSession.contextWindow` 保持 `undefined`，因此 **L0 不会把占位值当成真实窗口**，而是回退既有 128000 绝对值。绝对数形状保持原样；malformed fraction 仍在域加载期 fail-fast。
+- **L0 压缩水位支持 `compaction.lowWatermark = { fraction = ... }`**：`resolveLowWatermark` 把 fraction 解析为 `floor(fraction × contextWindow)`；窗口取自 `LlmSession.contextWindow`（pi-ai catalog）。`LlmSessionOptions.contextWindow` 透传自定义端点窗口——未设置时 pi-ai 仍用 128000 占位，但 `LlmSession.contextWindow` 保持 `undefined`，因此 **L0 不会把占位值当成真实窗口**，而是回退既有 128000 绝对值。绝对数形状保持原样；malformed fraction 由域加载器 fail-fast（`ans chat` 沿用既有的整域回退告警）。
 - **水位比较对象改为当前上下文占用**：`pi-runtime` 在 `shouldStopAfterTurn` 用 `max(lastTotalTokens, estimateContextTokens(messages).tokens)`，覆盖工具结果在上一次 LLM 调用之后追加造成的一轮滞后（#114 复审遗留）；ledger 仍按 usage 事件结算，不受影响。
 - **新增可选 env `ANS_LLM_CONTEXT_WINDOW`**：CLI `ans chat` 与 MCP `ans_chat` 在组合根读取并透传；kernel 仍零 env 读取。非正整数 fail-fast。
 
