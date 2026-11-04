@@ -217,7 +217,8 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): 
       for (const d of searchDirs) {
         const cand = join(d, curRaw.base + ".toml");
         probed.push(cand);
-        const raw = tryLoadRawDomain(cand);
+        let raw: ReturnType<typeof loadRawDomain> | undefined;
+        try { raw = tryLoadRawDomain(cand); } catch { raw = {} as ReturnType<typeof loadRawDomain>; }
         if (raw) { found = { path: cand, raw }; break; }
       }
       if (!found) break;
@@ -268,6 +269,10 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): 
       }
       return schema;
     } catch (e) {
+      try {
+        const next = collectChainAndProbed();
+        watched = [...new Set([...watched, ...next.chain, ...next.probed])];
+      } catch { /* keep previous watched set */ }
       mtimes.clear();
       for (const pp of watched) {
         try { mtimes.set(pp, statSync(pp).mtimeMs); } catch { mtimes.set(pp, -1); }
