@@ -150,7 +150,13 @@ export interface SessionStore {
   // Active Domain declares no [budget] — the absence of a ledger row is the
   // "unmetered, pass" state. Idempotent: caps refresh in place and the
   // reserved/spent counters survive a re-registration.
-  initBudget(sessionId: string, caps: BudgetCaps): void;
+  // Optional on the port so hand-built/embedded store implementations stay
+  // source-compatible; the composition roots guard the call.
+  initBudget?(sessionId: string, caps: BudgetCaps): void;
+  // #187: when the Active Domain later drops [budget] (or the durable anchor
+  // switches to a domain without it), release an existing row's caps to
+  // unlimited without deleting its spend history. No row is a no-op.
+  clearBudgetCaps?(sessionId: string): void;
   append(sessionId: string, message: Message): Promise<void>;
   searchFts5(sessionId: string | null, query: string, limit?: number): Promise<MemoryHit[]>;
   saveResults(sessionId: string, results: NormalizedResult[]): Promise<void>;
@@ -631,6 +637,13 @@ export class SqliteSessionStore implements SessionStore {
   // switch does not re-initialize the budget row.
   initBudget(sessionId: string, caps: BudgetCaps): void {
     (this.budgetLedgerInstance ??= new BudgetLedger(this.db)).initBudget(sessionId, caps);
+  }
+
+  // #187: drop [budget] from the Active Domain -> release caps but keep the
+  // spend history. Registration is the only caller; mid-session domain switches
+  // are not re-sampled (known limitation, same as initBudget).
+  clearBudgetCaps(sessionId: string): void {
+    (this.budgetLedgerInstance ??= new BudgetLedger(this.db)).clearBudgetCaps(sessionId);
   }
 
   async append(sessionId: string, message: Message): Promise<void> {

@@ -105,6 +105,10 @@ async function main() {
       assert(!ledger.reserveTokens(s4.id, 1), "cap 0 rejects tokens");
       assert(!ledger.reserveUsd(s4.id, 0.01), "cap 0 rejects USD");
       assert(!ledger.reserveCalls(s4.id, 1), "cap 0 rejects calls");
+      // "Reject everything" includes a zero-count reserve: the cap > 0 guard
+      // makes explicit 0 stricter than a merely exhausted positive budget.
+      assert(!ledger.reserveTokens(s4.id, 0), "cap 0 rejects even a zero token reserve");
+      assert(!ledger.reserveCalls(s4.id, 0), "cap 0 rejects even a zero call reserve");
 
       // 12. #187: omitted caps inside a declared [budget] are unlimited, not 0.
       const s5 = await store.createSession("partial-caps");
@@ -128,6 +132,24 @@ async function main() {
       assert(balReinit!.billableCalls === 1, "re-init preserves billable calls");
       const rows = (store as any).db.prepare("SELECT COUNT(*) AS c FROM budget_ledger WHERE session_id = ?").get(s6.id) as { c: number };
       assert(rows.c === 1, "re-init keeps exactly one budget row per session");
+
+      // 14. #187: dropping [budget] releases an existing row's caps (unlimited,
+      //     spend history preserved) while a never-configured session stays
+      //     row-less. This keeps "active domain at registration" honest across
+      //     durable-anchor restarts / domain switches.
+      const s7 = await store.createSession("release");
+      ledger.clearBudgetCaps(s7.id);
+      assert(ledger.getBalance(s7.id) === null, "clearBudgetCaps is a no-op when no row exists");
+      ledger.initBudget(s7.id, { tokenCap: 100, callCap: 2 });
+      assert(ledger.reserveCalls(s7.id, 1), "release fixture reserves a call");
+      ledger.settleCalls(s7.id, 1, 1);
+      ledger.clearBudgetCaps(s7.id);
+      const balReleased = ledger.getBalance(s7.id);
+      assert(balReleased !== null, "release keeps the row (spend history)");
+      assert(balReleased!.tokenCap === Number.MAX_SAFE_INTEGER && balReleased!.callCap === Number.MAX_SAFE_INTEGER,
+        "release resets every cap to unlimited");
+      assert(balReleased!.billableCalls === 1, "release preserves the spend counters");
+      assert(ledger.reserveCalls(s7.id, 100000), "released session passes a large reserve");
 
       store.close();
     }

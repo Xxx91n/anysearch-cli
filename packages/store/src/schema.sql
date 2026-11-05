@@ -123,6 +123,10 @@ CREATE TABLE IF NOT EXISTS budget_ledger (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- #187: one budget row per session; the upsert in BudgetLedger.initBudget
+-- depends on this uniqueness.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_session_unique ON budget_ledger(session_id);
+
 -- G019 migration: add time edge effect columns to existing retrieval_results table.
 -- ALTER TABLE ADD COLUMN is idempotent-safe: errors if column already exists, caught by try/catch in SessionStore constructor.
 -- These run after the CREATE TABLE IF NOT EXISTS, so new databases already have the columns.

@@ -276,6 +276,14 @@ async function main() {
       assert(plain.sessionId === "no-budget-handle-187", "budget: no-config wiring still registers");
       assert(ledger.getBalance("no-budget-handle-187") === null,
         "#187: no [budget] -> no row -> unmetered (pass), not a zero-cap row");
+
+      // The same threaded handle under a domain that dropped [budget] must stop
+      // enforcing the old caps; history stays for audit.
+      const released = await resolveAnsChatSession(engineWith(store), "budget-handle-187");
+      assert(released.sessionId === "budget-handle-187", "budget: released handle still resumes");
+      const releasedRow = ledger.getBalance("budget-handle-187");
+      assert(releasedRow?.tokenCap === Number.MAX_SAFE_INTEGER && releasedRow?.callCap === Number.MAX_SAFE_INTEGER,
+        "#187: dropping [budget] releases the existing MCP session row to unlimited");
     } finally {
       store.close();
       try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }

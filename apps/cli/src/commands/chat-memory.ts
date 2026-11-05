@@ -36,21 +36,28 @@ export async function wireChatMemory(store: SessionStorePort, domain: string, bu
   }
   try {
     await store.ensureSession(sessionId, domain);
-    // #187: the Active Domain's [budget] is registered at the same session
-    // registration point. No [budget] section -> no initBudget call -> no
-    // ledger row -> unmetered (pass). Known limitation: the domain is sampled
-    // once here, so switching domains mid-session does not re-initialize caps.
-    if (budget) {
+    // #187: synchronize the budget row at the same session-registration point.
+    // A declared [budget] initializes/refreshes caps; its later absence
+    // releases an existing row to unlimited (spend history kept). A session
+    // that never had [budget] gets no row -> unmetered (pass). Known
+    // limitation: the domain is sampled once here, so switching domains
+    // mid-session does not re-initialize caps.
+    const syncBudget = budget ? store.initBudget : store.clearBudgetCaps;
+    if (syncBudget) {
       try {
-        if (typeof store.initBudget === "function") store.initBudget(sessionId, toBudgetCaps(budget));
+        if (budget) store.initBudget!(sessionId, toBudgetCaps(budget));
+        else store.clearBudgetCaps!(sessionId);
       } catch (e: any) {
         // Budget setup is fail-open: a broken ledger must not disable memory
-        // either. No row means the unmetered (pass) state, which is the safe
-        // default rather than an accidental rejection.
-        process.stderr.write(
-          "[warn] budget initialization failed for " + sessionId + ": " +
-          (e?.message || String(e)) + " — continuing unmetered\n",
-        );
+        // either. No row (or unlimited caps) is the safe unmetered default
+        // rather than an accidental rejection. stderr itself is guarded for
+        // the same reason (a closed pipe must not reject the wiring).
+        try {
+          process.stderr.write(
+            "[warn] budget initialization failed for " + sessionId + ": " +
+            (e?.message || String(e)) + " — continuing unmetered\n",
+          );
+        } catch { /* stderr unavailable */ }
       }
     }
     return { store, sessionId };

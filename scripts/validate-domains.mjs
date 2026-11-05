@@ -154,6 +154,8 @@ for (const file of files) {
 
   // #187: [budget] — optional section; missing fields mean "no cap", explicit 0
   // is a legal "reject everything" cap. Validate shape + fail-fast unknown keys.
+  // Mirrors packages/store/src/domain-schema.ts validate(); this script has no
+  // TS dependency, so the key list is intentionally duplicated (keep in sync).
   const b = doc.budget;
   if (b !== undefined) {
     if (typeof b !== "object" || b === null || Array.isArray(b)) {

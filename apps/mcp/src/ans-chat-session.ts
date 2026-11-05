@@ -66,24 +66,41 @@ function warnOnce(key: string, detail: string): void {
 }
 
 /**
- * #187: register the Active Domain's optional [budget] at the same point the
- * session row is registered. No [budget] section -> no row -> unmetered
- * (pass). Budget setup is fail-open: a broken ledger must not turn a usable
- * chat session into a failed call (no row is the safe unmetered state).
+ * #187: synchronize the Active Domain's optional [budget] at the same point the
+ * session row is registered. A declared section initializes/refreshes caps; its
+ * later absence releases an existing row to unlimited (spend history kept).
+ * A session that never had [budget] gets no row -> unmetered (pass). Budget
+ * setup is fail-open: a broken ledger must not turn a usable chat session into
+ * a failed call (no row / unlimited caps is the safe unmetered state).
  * Known limitation: the Active Domain is sampled at registration only, so a
- * mid-session domain switch does not re-initialize caps.
+ * mid-session domain switch (or a long-lived MCP process whose config snapshot
+ * predates the TOML edit) does not re-initialize caps until the next process
+ * start.
  */
 function registerSessionBudget(store: SessionStorePort, sessionId: string, budget?: BudgetConfig): void {
-  if (!budget) return;
-  if (typeof store.initBudget !== "function") {
-    warnOnce("budget", "session store lacks initBudget — continuing unmetered");
+  if (budget) {
+    const init = store.initBudget;
+    if (!init) {
+      warnOnce("budget", "session store lacks initBudget — continuing unmetered");
+      return;
+    }
+    try {
+      init.call(store, sessionId, toBudgetCaps(budget));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      warnOnce("budget:" + msg, "budget initialization failed (" + msg + ") — continuing unmetered");
+    }
     return;
   }
+  // No [budget]: release a pre-existing row (a fresh session has no row, so
+  // this is a no-op). Stores without the seam simply have nothing to release.
+  const clear = store.clearBudgetCaps;
+  if (!clear) return;
   try {
-    store.initBudget(sessionId, toBudgetCaps(budget));
+    clear.call(store, sessionId);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    warnOnce("budget:" + msg, "budget initialization failed (" + msg + ") — continuing unmetered");
+    warnOnce("budget-clear:" + msg, "budget release failed (" + msg + ") — continuing unmetered");
   }
 }
 

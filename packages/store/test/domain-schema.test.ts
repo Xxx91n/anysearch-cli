@@ -1,7 +1,7 @@
 // Self-check for domain-schema deep-merge + resolve + validate.
 // Run: npx tsx packages/store/test/domain-schema.test.ts
 
-import { resolve, validate, isDomainSchemaError, DEFAULT_OUTPUT_RESERVE_TOKENS, type RawDomain } from "../src/domain-schema";
+import { resolve, validate, isDomainSchemaError, DEFAULT_OUTPUT_RESERVE_TOKENS, resolveOutputReserveTokens, type RawDomain } from "../src/domain-schema";
 import { loadRawDomain, loadDomainFromString } from "../src/domain-loader";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -274,6 +274,10 @@ assert("isDomainSchemaError is false for non-Error throws", !isDomainSchemaError
   assert("budget callCap parsed", schema.budget?.callCap === 20);
   assert("budget outputReserveTokens override parsed", schema.budget?.outputReserveTokens === 8192);
   assert("default output reserve constant is 12288", DEFAULT_OUTPUT_RESERVE_TOKENS === 12288);
+  assert("no [budget] -> output reserve falls back to 12288", resolveOutputReserveTokens(undefined) === 12288);
+  assert("empty [budget] -> output reserve falls back to 12288", resolveOutputReserveTokens({}) === 12288);
+  assert("output reserve TOML override wins", resolveOutputReserveTokens({ outputReserveTokens: 4096 }) === 4096);
+  assert("explicit output reserve 0 is preserved", resolveOutputReserveTokens({ outputReserveTokens: 0 }) === 0);
 
   const absent = loadDomainFromString('name = "plain"\n[rag]\nadapter = "x"\n');
   assert("absent [budget] stays undefined (no ledger row later)", absent.budget === undefined);

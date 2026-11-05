@@ -25,7 +25,8 @@ export interface DomainSchema {
 
 // #187: output-side static reserve default, measured against 43 real runs
 // (output p95=9,309 / max=9,600). Re-measure when the per-call maxTokens grows
-// to roughly 1.5x the window this default was calibrated on (R≈1.5×).
+// to roughly 1.5x the calibration maxTokens (8192), per the prototype's
+// R≈1.5× retest trigger.
 export const DEFAULT_OUTPUT_RESERVE_TOKENS = 12288;
 
 // #187: [budget] TOML section. Caps are optional and independent; a missing
@@ -38,6 +39,13 @@ export interface BudgetConfig {
   usdCap?: number;
   callCap?: number;
   outputReserveTokens?: number;
+}
+
+// #187: single resolution point for the token-reserve ticket (#188): the
+// TOML override wins; an absent section or field falls back to the measured
+// constant. Keeping this here prevents the runtime from re-implementing `??`.
+export function resolveOutputReserveTokens(budget?: BudgetConfig): number {
+  return budget?.outputReserveTokens ?? DEFAULT_OUTPUT_RESERVE_TOKENS;
 }
 
 export interface PromptEntry {
@@ -162,8 +170,9 @@ export function resolve(
     if (d.hooks?.toolWhitelist) hooksWhitelist = d.hooks.toolWhitelist;
     if (d.compaction) compaction = d.compaction;
     // budget — whole-section replace like compaction: a derived domain that
-    // declares [budget] restates the full policy rather than inheriting caps
-    // field-by-field (a partial child must not silently loosen a parent cap).
+    // declares [budget] restates the full policy. Omitted caps become "no cap",
+    // so a partial child DOES replace (and can loosen) the parent's caps; this
+    // is the explicit-restate contract used by [compaction], not a field merge.
     if (d.budget) budget = d.budget;
     if (d.name) name = d.name;
     if (d.description) description = d.description;

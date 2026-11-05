@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SqliteSessionStore, BudgetLedger } from "@anysearch-cli/store";
+import { SqliteSessionStore, BudgetLedger, loadDomainFromString } from "@anysearch-cli/store";
 import { wireChatMemory, type ChatMemoryWiring } from "../src/commands/chat-memory";
 
 let passed = 0, failed = 0;
@@ -61,6 +61,12 @@ async function main() {
       const fresh = await wireChatMemory(store, "default");
       check(fresh.sessionId === wiring.sessionId,
         "the durable anchor yields the same session id after a restart");
+      // #187: the restart runs a domain without [budget]; the existing row is
+      // released to unlimited (history kept) rather than silently continuing
+      // to enforce the previous domain's caps.
+      const released = new BudgetLedger((store as any).db).getBalance(fresh.sessionId!);
+      check(released?.tokenCap === Number.MAX_SAFE_INTEGER && released?.callCap === Number.MAX_SAFE_INTEGER,
+        "#187: dropping [budget] releases an existing session's caps");
       // The memory written before the restart is still recallable through the
       // same store surface the fts adapter uses.
       const hits = await store.searchMemory("internal wiki port", 5);
@@ -125,6 +131,33 @@ async function main() {
     } finally {
       plainStore.close();
       try { rmSync(plainDir, { recursive: true, force: true }); } catch { /* Windows WAL lock */ }
+    }
+
+    // 6. #187: full TOML -> toBudgetCaps -> DB chain (the unit tests covered the
+    //    pieces; this pins the wiring that would hide a `||` regression).
+    const chainDir = mkdtempSync(join(tmpdir(), "ans-187-chain-"));
+    const chainStore = new SqliteSessionStore(join(chainDir, "anysearch.db"));
+    const chainLedger = new BudgetLedger((chainStore as any).db);
+    try {
+      process.env.ANS_SESSION_ID = "cli-zero-caps-187";
+      const zero = loadDomainFromString('name = "zero"\n[rag]\nadapter = "x"\n[budget]\ntokenCap = 0\ncallCap = 0\n');
+      const zeroWiring = await wireChatMemory(chainStore, "default", zero.budget);
+      check(zeroWiring.sessionId === "cli-zero-caps-187", "TOML 0 case wires the session");
+      const zeroRow = chainLedger.getBalance("cli-zero-caps-187");
+      check(zeroRow?.tokenCap === 0 && zeroRow?.callCap === 0, "TOML explicit 0 reaches the ledger as 0");
+      check(!chainLedger.reserveTokens("cli-zero-caps-187", 0), "TOML 0 rejects even a zero token reserve");
+      check(!chainLedger.reserveCalls("cli-zero-caps-187", 1), "TOML 0 rejects calls");
+
+      process.env.ANS_SESSION_ID = "cli-partial-caps-187";
+      const partialDoc = loadDomainFromString('name = "partial"\n[rag]\nadapter = "x"\n[budget]\noutputReserveTokens = 4096\n');
+      await wireChatMemory(chainStore, "default", partialDoc.budget);
+      const partialRow = chainLedger.getBalance("cli-partial-caps-187");
+      check(partialRow?.tokenCap === Number.MAX_SAFE_INTEGER && partialRow?.callCap === Number.MAX_SAFE_INTEGER,
+        "TOML omitted caps reach the ledger as unlimited, not 0");
+      check(chainLedger.reserveTokens("cli-partial-caps-187", 1), "omitted token cap passes a real reserve");
+    } finally {
+      chainStore.close();
+      try { rmSync(chainDir, { recursive: true, force: true }); } catch { /* Windows WAL lock */ }
     }
   } finally {
     if (prevSessionEnv === undefined) delete process.env.ANS_SESSION_ID;
