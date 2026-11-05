@@ -1,10 +1,11 @@
 // #183: store-side exit teardown — registry semantics + the tracked opener.
 //
-// The macOS F-16 abort fires when a live better-sqlite3 handle is reaped at
-// process exit, so the contract under test is: every store-side handle is
-// registered, draining the registry closes it, and an owner that closes early
-// leaves no registry entry behind (long-lived processes must not accumulate
-// references to dead handles).
+// The macOS F-16 abort is a forced-exit x live-native-state race, not a handle
+// leak (see test/helpers/exit-teardown.mjs). What must still hold is the
+// product-side contract: every store-owned handle is registered, draining the
+// registry closes it, an owner that closes early leaves no registry entry
+// behind (long-lived processes must not accumulate references to dead handles),
+// and a deferred `process.exit` never downgrades a failure to a pass.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -38,19 +39,6 @@ try {
   assert.equal(pendingTeardowns(), 0, "disposer removes the entry — closed handles leave no reference");
   runTeardown();
   assert.equal(order.join(","), "a,c", "a disposed entry never runs");
-
-  // --- 1b. the preload really intercepts ESM imports (PR #191 review) -------
-  // Behavioural proof, not a property probe: `import Database from
-  // "better-sqlite3"` above is ESM, and constructing a raw handle through it must
-  // move the preload's tracked counter. If a Node/tsx resolution change ever
-  // makes the preload a no-op, this fails loudly instead of leaking handles.
-  const stats = (globalThis as unknown as { __exitTeardownStats?: () => { tracked: number } }).__exitTeardownStats;
-  assert.equal(typeof stats, "function", "preload exposes its tracked-handle count (install did not throw)");
-  const trackedBefore = stats!().tracked;
-  const rawHandle = new Database(join(dir, "esm-tracking.db"));
-  assert.equal(stats!().tracked, trackedBefore + 1, "a raw new Database(...) in an ESM test file is tracked");
-  rawHandle.close();
-  assert.equal(stats!().tracked, trackedBefore, "closing a raw handle removes it from the tracked set");
 
   // --- 2. tracked opener: drain closes, close() self-disposes, idempotent ---
   const db = openDatabase(join(dir, "tracked.db"));

@@ -86,7 +86,10 @@
   the eval runner's exit path (`exitCode` + unref + 5s watchdog instead of
   `process.exit()`); (b) store test processes preload
   `test/helpers/exit-teardown.mjs`, which defers `process.exit()` to a natural
-  exit and closes raw handles newest-first.
+  exit (keeping a recorded nonzero code sticky). It deliberately does *not* try
+  to track raw test handles: under tsx an ESM import of better-sqlite3 does not
+  observe a patched CJS `module.exports` (proved in CI, diag run 42043443737),
+  and closing handles was never what stopped the aborts.
   Promotion evidence (the recalibrated rule: only full-gate greens promote):
   **three consecutive macOS full-gate greens** (9 steps including the store
   suite) on PR #191 — run 42032463918 (head `9d172d3`), run 42034443431
