@@ -89,7 +89,8 @@
   exit (keeping a recorded nonzero code sticky). It deliberately does *not* try
   to track raw test handles: under tsx an ESM import of better-sqlite3 does not
   observe a patched CJS `module.exports` (proved in CI, diag run 42043443737),
-  and closing handles was never what stopped the aborts. The preload still keeps
+  and closing handles was never what stopped the aborts (the first attempt did
+  close them, and the suite still aborted). The preload still keeps
   a 5s unref'd watchdog for a process that refuses to drain; when it fires it
   names the surviving resources on stderr, so a forced exit is always auditable
   in the CI log.
