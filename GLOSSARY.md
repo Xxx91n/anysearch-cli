@@ -21,7 +21,7 @@
 
 - **Composition Root（组合根）**——`createEngine(domain?)` 纯函数统一入口：按域过滤 providers、构造引擎；CLI/MCP/plugin 三端共享，替代散装 new+register。
 - **Seam Wiring（接缝接线）**——把已定义未连通的 kernel port 接到实际实现的过程；接缝接通后端口成为可测试、可替换的合约边界。
-- **Budget Ledger（预算账本）**——reserve-then-settle 预算强制：检索前预留、检索后结算，SQLite 非负约束固化。Billing Dimension 分 per-call（内核层已接线，当前唯一 reserve/强制点）与 token/USD（#103 落地 settle-only，reserved 0）两维；生产组合根的 ledger/sessionId 注入由 #177 承接、runtime 生产接线由 #178 承接，此前 reserve/settle 在生产路径恒不触发；token reserve 的 per-run estimate 设计已由 #186（T9）裁决，落地实现票 #188 仍 OPEN，在落地前 token/USD 维持 settle-only。
+- **Budget Ledger（预算账本）**——reserve-then-settle 预算强制：检索前预留、检索后结算，SQLite 非负约束固化。Billing Dimension 分 per-call（内核层已接线，当前唯一 reserve/强制点）与 token/USD（#103 落地 settle-only，reserved 0）两维；生产组合根的 ledger/sessionId 注入由 #177 承接、runtime 生产接线由 #178 承接，此前 reserve/settle 在生产路径恒不触发；token reserve 的 per-run estimate 设计已由 #186（T9）裁决，落地票 #187/#188 仍 OPEN，在落地前 token/USD 维持 settle-only（USD 无价格表不做预扣，#186 决定 6）。
 - **Sufficiency Gate（充分性门禁）**——检索质量下界（minProviders/minResults/minDomains/crossEngineVerify），post-hoc 判定；与 budget 上界、fanout 延迟三维度互不打架。
 - **PiAgentRuntime（PI Agent 运行时）**——kernel 内 AgentRuntime 的实现：pi-agent-core 驱动 agent loop，把 engine.search() 包成自定义工具，事件桥接到自有 AgentEvent 类型。
 - **Domain Full-Stack（领域全栈消费）**——domain 配置五层在 runtime 的完整映射：sources→provider、hooks→工具白名单、prompts→systemPrompt、skills→AgentTool、rag→transformContext 注入。
@@ -79,7 +79,7 @@
 ## 充分性与答案归因
 
 - **MVSS（最低可行信号集）**——sufficiency 元数据四段：verdict（三态聚合）+ agreement（rank 派生）+ volume（卫生信号）+ spread + perProvider 原生分数（不跨源归一化）；只承诺 escalate 决策。
-- **Sufficiency Anchor（充分性锚）**——engine 每次 search 在 computeSufficiency 之后、envelope 返回之前 append-only 写一条 `sufficiency` resume_anchor（崩溃重放所需状态：traceId、query、mode、MVSS、perProvider、failed/cancelled、unique 计数）；走注入的 ResumeAnchorsPort（BudgetLedgerPort 同款，kernel 不碰 store I/O），写失败 fail-open 具名 stderr 不阻塞检索；engine 只写不读，读侧/recovery 设计已由 #186（T8）裁决，落地实现票 #189 仍 OPEN。注：写锚以 `anchors && sessionId` 为门，生产组合根目前只注入 anchors、未注入 sessionId，故生产路径暂不触发（#177 承接）。
+- **Sufficiency Anchor（充分性锚）**——engine 每次 search 在 computeSufficiency 之后、envelope 返回之前 append-only 写一条 `sufficiency` resume_anchor（崩溃重放所需状态：traceId、query、mode、MVSS、perProvider、failed/cancelled、unique 计数）；走注入的 ResumeAnchorsPort（BudgetLedgerPort 同款，kernel 不碰 store I/O），写失败 fail-open 具名 stderr 不阻塞检索；engine 只写不读，读侧裁决为恢复摘要注入而非机械重放（#186 T8，决定 8/10），落地实现票 #189 仍 OPEN。注：写锚以 `anchors && sessionId` 为门，生产组合根目前只注入 anchors、未注入 sessionId，故生产路径暂不触发（#177 承接）。
 - **Dual-Output Sufficiency（单计算源双输出）**——单个 computeSufficiency() 纯函数双路输出：内部 fanout 早停布尔 + 外部暴露的 MVSS 元数据。
 - **Sufficiency Gate Placement（门禁架构归属）**——LLM 判断层（named gap 生成 + 定向重搜）在 PiAgentRuntime agent loop，engine 保持无 LLM 纯净。
 - **Named Gap Re-search（命名缺口定向重搜）**——gate 输出「缺什么」回灌定向二次检索，有界循环；仍不达标返回 annotate verdict=ambiguous。

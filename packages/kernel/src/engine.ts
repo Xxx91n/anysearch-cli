@@ -36,8 +36,8 @@ export interface EngineConfig {
   // per-call reserve/settle (decision 2C) here, token/USD settle in
   // PiAgentRuntime (#103, kernel level). Production composition-root
   // injection is #177 and PiAgentRuntime production wiring is #178.
-  // Token/USD reserve design is settled in #186 (T9) and implementation
-  // ticket #188 is still open — until then this side stays settle-only.
+  // Token reserve design is settled in #186 (T9), with implementation
+  // tickets #187/#188 still open; USD stays settle-only per #186 decision 6.
   budget?: Budget;
   gate?: Partial<SufficiencyGate>;  // override DEFAULT_GATE fields
   graceWindowMs?: number;            // default 1500 (paperfoot EARLY_STOP_GRACE)
@@ -91,9 +91,10 @@ export interface SufficiencyResult {
 // append-only writes exactly one "sufficiency" resume_anchor per call via the
 // injected ResumeAnchorsPort, after computeSufficiency and before the envelope
 // assembles (see the Design note at the write site). computeSufficiency itself
-// stays a pure single-computation source with no I/O. Read side / replay is
-// deliberately kept out of the engine: the recovery design is settled in
-// #186 (T8) and implementation ticket #189 is still open.
+// stays a pure single-computation source with no I/O. Read side stays out of
+// the engine (#93 ruling, reaffirmed in #186 decision 10: recovery is digest
+// injection, not mechanical replay); design settled in #186 (T8) and
+// implementation ticket #189 is still open.
 export function computeSufficiency(
   rankedResults: NormalizedResult[],
   providerLists: string[][],
