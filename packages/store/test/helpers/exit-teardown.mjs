@@ -66,13 +66,21 @@ function installTracking() {
   const real = req(modPath);
   const entry = req.cache && req.cache[modPath];
   if (!entry) throw new Error("better-sqlite3 CJS cache entry not found — cannot track handles");
-  entry.exports = new Proxy(real, {
+  const tracked = new Proxy(real, {
     construct(target, args) {
       const db = Reflect.construct(target, args, target);
       track(db);
       return db;
     },
   });
+  // Self-check seam: an ESM test file imports better-sqlite3 through Node's CJS
+  // interop, which serves the cached `module.exports` replaced above — asserted
+  // from teardown.test.ts so a future Node/tsx resolution change cannot silently
+  // turn this preload into a no-op (PR #191 review claimed it already is; the
+  // assertion is what settles that, in CI, on every OS).
+  tracked.__exitTeardownTracked = true;
+  entry.exports = tracked;
+  globalThis.__exitTeardownStats = () => ({ tracked: open.size });
 }
 
 function unrefPendingHandles() {
