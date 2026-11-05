@@ -1,5 +1,7 @@
-// Abstain presentation contract — one structured line,
-// exit 0 by default, dedicated exit 3 under --fail-on-abstain. The pure helpers
+// Search presentation contract — abstain: one structured line,
+// exit 0 by default, dedicated exit 3 under --fail-on-abstain; provider
+// build-failure absence: one golden line naming the absent arm + its safe
+// category, undefined when the record is empty. The pure helpers
 // are asserted offline; a conditional live arm spawns the built CLI with a
 // narrow-allowlist domain fixture to measure the real exit codes (skipped
 // honestly when no provider key / dist bundle is available).
@@ -10,7 +12,7 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { searchExitCode, formatAbstainLine } from "../src/commands/search-abstain";
+import { searchExitCode, formatAbstainLine, formatProviderAbsentLine } from "../src/commands/search-abstain";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -35,7 +37,21 @@ async function main() {
   const cold = formatAbstainLine({ domain: "cold", preFiltered: 0, postFiltered: 0, gate: "pre" });
   assert(cold.includes("gate pre"), "cold-domain line reports gate=pre");
 
-  // 3. Conditional live arm: spawn the built CLI against a narrow-allowlist
+  // 3. Provider build-failure absence line (#180): id + safe category per
+  // absent arm on one line, undefined when the record is empty (zero-noise
+  // healthy path). The category text is the kernel's safe message verbatim.
+  assert(formatProviderAbsentLine({}) === undefined, "empty record renders nothing (zero noise)");
+  const absent = formatProviderAbsentLine({ exa: "permanent: missing/invalid credential — set the provider's API key env" });
+  assert(absent !== undefined, "populated record renders a line");
+  assert(absent!.split(String.fromCharCode(10)).length === 1, "absence message is a single line");
+  assert(absent === "Providers absent (build failure): exa — permanent: missing/invalid credential — set the provider's API key env",
+    "golden absence line shape");
+  const multi = formatProviderAbsentLine({ tavily: "unexpected construction fault", exa: "permanent: missing/invalid credential — set the provider's API key env" });
+  assert(multi !== undefined && multi!.includes("; "), "multiple absences render on one line");
+  assert(multi!.includes("tavily — unexpected construction fault"), "each arm carries its own category");
+  assert(multi!.includes("exa — permanent: missing/invalid credential"), "second arm keeps the credential category");
+
+  // 4. Conditional live arm: spawn the built CLI against a narrow-allowlist
   // domain — deterministic abstain whenever one keyed provider exists.
   const here = dirname(fileURLToPath(import.meta.url));
   const dist = join(here, "..", "dist", "index.js");
