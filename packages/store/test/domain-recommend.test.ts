@@ -191,7 +191,11 @@ async function main() {
     // candidate count stays at topK, and the kept list stays non-increasing in score.
     const CROWD_METAS: DomainMeta[] = [
       { id: "r1", name: "research", description: "web research one" },
-      { id: "r2", name: "research", description: "web research two" },
+      // r2 carries the query term twice: a lexically STRONGER row than its peers, so the
+      // weakest retained BM25 row is distinguishable from the leader — the reserved-row
+      // price invariant is "below EVERY positive hit", and the leader-only comparison
+      // could not tell a violation of the weaker rows apart (#173 review round 5).
+      { id: "r2", name: "research", description: "web research research two" },
       { id: "r3", name: "research", description: "web research three" },
       { id: "r4", name: "research", description: "web research four" },
       { id: "zh-research", name: "zh", description: "深度中文研究与学术检索" },
@@ -203,7 +207,8 @@ async function main() {
     assert(crowd.candidates.length === 3, "the reservation swaps the last slot, it does not grow the list (got " + crowd.candidates.length + ")");
     const reservedRow = crowd.candidates[zhRank - 1]!;
     assert(reservedRow.arms[0] === "cjk", "the reserved row carries its stage provenance (arms " + reservedRow.arms.join("+") + ")");
-    assert(reservedRow.score > 0 && reservedRow.score < crowd.candidates[0]!.score, "the reserved row is priced below the BM25 anchor, never zero");
+    const weakestRetained = crowd.candidates[1]!.score; // r2 is the lexically stronger row, so this is the WEAKEST retained BM25 hit
+    assert(reservedRow.score > 0 && reservedRow.score < weakestRetained, "the reserved row is priced below every retained BM25 row, never zero (got " + reservedRow.score + " vs weakest " + weakestRetained + ")");
     const crowdNoCjk = await recommendDomains("research docs web", CROWD_METAS);
     assert(rankOf(crowdNoCjk, "zh-research") === 0, "a CJK-free query on the same corpus reserves nothing");
 
