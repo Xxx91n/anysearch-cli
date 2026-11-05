@@ -67,5 +67,11 @@ export function pendingTeardowns(): number {
 export function unrefPendingHandles(): void {
   const p = process as unknown as { _getActiveHandles?: () => Array<{ unref?: () => void }> };
   if (typeof p._getActiveHandles !== "function") return;
-  for (const h of p._getActiveHandles()) h.unref?.();
+  for (const h of p._getActiveHandles()) {
+    // Never unref stdout/stderr: unref'ing them lets the loop end before the
+    // buffered output is flushed, which would truncate the very diagnostic that
+    // explains why the process is exiting (#183 review).
+    if (h === (process.stdout as unknown) || h === (process.stderr as unknown)) continue;
+    h.unref?.();
+  }
 }
