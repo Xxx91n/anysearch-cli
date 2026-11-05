@@ -66,6 +66,13 @@ async function main() {
     { cwd: ROOT, env: scrubbed, encoding: "utf8" },
   );
   if (cli.error) fail("CLI failed to start: " + cli.error.message);
+  // F-16 hardening (PR #174 CodeRabbit audit): a CLI killed by a signal AFTER
+  // the trace is written (exit-time libc++abi abort during teardown) leaves
+  // cli.error unset and the trace read below still passes. The exit STATUS is
+  // deliberately not gated — teardown rewrites it intermittently (see
+  // install-smoke's abstain contract); the SIGNAL is the reliable marker.
+  // (The MCP child is exempt: its bounded fallback kill is our own signal.)
+  if (cli.signal) fail("CLI search terminated by signal " + cli.signal);
 
   const child = spawn(
     process.execPath,

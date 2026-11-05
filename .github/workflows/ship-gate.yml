@@ -29,9 +29,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-latest pruned from the BLOCKING matrix — the exit-time
-        # libc++abi abort family is unresolved; the non-blocking spillover probe below
-        # keeps per-run signal. Promotion rule lives on the probe job.
+        # macos-latest pruned from the BLOCKING matrix — RE-PRUNED (#16, PR
+        # #174 repair): the promotion attempt was reversed by its own FIRST
+        # full-gate run (run 41913304226): 5/76 store test-file processes
+        # crashed at exit-time (libc++abi "mutex lock failed: Invalid
+        # argument") with zero failed assertions, plus an eval-runner child
+        # killed by signal — the family is alive under full-suite load.
+        # Root cause: fd249d41's explicit teardown covers ONLY the CLI
+        # composition root (apps/cli); store-side process exits (test files,
+        # packages/store/src/eval/cli.ts runner) never got it, and the
+        # spillover probe drove ONLY the fixed CLI path — its consecutive
+        # greens could not predict full-gate stability (probe evidence
+        # surface != gate acceptance surface).
+        # Recalibrated promotion rule: restoring this lane requires green
+        # FULL-GATE trial evidence after store-side teardown is fixed (see
+        # docs/limitations.md); >=5 minimal-probe greens alone are proven
+        # insufficient.
         os: [ubuntu-latest, windows-latest]
 
     steps:
@@ -124,9 +137,15 @@ jobs:
   # (T4): macOS exit-teardown spillover probe — EXPERIMENT. The name, the
   # bounded continue-on-error, and the minimal repro (NOT the 9-step gate) are the
   # contract: this job reports crash signatures without gating merges.
-  # TTL/promotion: >=5 consecutive green runs => evaluate restoring macos-latest to
-  # the blocking matrix; persistent crashes => prune stays + ledger
-  # defer-f16-macos-native-crash.
+  # Restored by the PR #174 repair after the promotion reversal (see the
+  # matrix comment above). PROMOTION RULE RECALIBRATED: the minimal repro
+  # drives the CLI composition root only — the path fd249d41 fixed — so its
+  # greens do NOT predict full-gate stability (the promotion that trusted
+  # 7 consecutive greens crashed 5/76 store test files on its first
+  # full-gate run). This job is a crash-signature reporter, NOT a promotion
+  # clock: any future promotion needs green full-gate trial evidence after
+  # store-side teardown is fixed (docs/limitations.md). Persistent crashes
+  # => prune stays + ledger defer-f16-macos-native-crash.
   macos-spillover-probe:
     name: macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)
     runs-on: macos-latest
@@ -138,7 +157,9 @@ jobs:
         with: { install: false }
 
       - uses: actions/setup-node@v5
-        with: { node-version: 22, cache: pnpm }
+        with:
+          node-version: 22
+          cache: pnpm
 
       - name: node baseline (env facts before any native load)
         run: node -v

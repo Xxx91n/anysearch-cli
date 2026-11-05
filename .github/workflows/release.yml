@@ -101,8 +101,13 @@ jobs:
       # checks appear, then it polls to terminal. The step-level
       # timeout-minutes is the fail-closed hard bound (the action has no
       # timeout input). Same-name checks dedupe to the latest run per name
-      # (wait-for-duplicates=false). macos-spillover-probe (EXPERIMENT,
-      # non-blocking) and native-smoke stay outside the gate by regexp design.
+      # (wait-for-duplicates=false). native-smoke and the non-blocking
+      # macos-spillover-probe stay outside the gate by regexp design (macOS
+      # blocking promotion was attempted and reversed in PR #174 — family
+      # re-manifests under full-suite load). The regexp cannot require NAMED
+      # legs, so the leg-aware assert step right after it closes that gap
+      # (audit S2): wait-on-check returns once the registered checks are
+      # terminal even if a matrix leg never registered.
       - name: wait for ci + ship-gate on the ledger commit (pre-tag only)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}
         uses: lewagon/wait-on-check-action@369769072fe522a3a8a85c03c96af1e5242a1994 # v1.9.1
@@ -122,6 +127,21 @@ jobs:
           running-workflow-name: release
           fail-on-no-checks: true
           verbose: true
+
+      # (audit S2, PR #174): the family-level regexp above cannot require
+      # named legs — a queued/never-registered blocking leg passes the wait
+      # while the registered legs go green. Re-run the same assert on the
+      # ledger sha (now leg-aware via REQUIRED_LEGS): converges in one poll
+      # when every leg is terminal+green; a missing leg holds discovery and
+      # fails closed after --discovery-sec. --timeout-min 20 matches the wait
+      # step's bound — a leg that registers AFTER the wait returned (the gap
+      # this step closes) still needs its full run time, and 5min would
+      # fail-closed a healthy release (windows leg ran ~6m50s in 41913304226).
+      - name: assert every ship-gate leg green on the ledger commit (pre-tag only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.runPurpose == 'pre-tag' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/assert-checks-green.mjs --sha "${{ steps.ledger_commit.outputs.sha }}" --repo "${{ github.repository }}" --timeout-min 20 --discovery-sec 120 --interval-sec 20
 
       # Cleanup runs after the wait (dispatched runs reference the temp ref at
       # checkout — deleting it mid-run would strand not-yet-started jobs; the

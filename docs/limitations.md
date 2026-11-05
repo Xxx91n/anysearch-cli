@@ -65,18 +65,33 @@
 - **Tavily does not forward `AbortSignal`** — provider-side timeouts are not
   cancelable through the SDK (recorded limitation; the kernel budget guard
   still bounds wall time).
-- **macOS is outside the blocking matrix** — an exit-time `libc++abi` crash
-  remains unresolved, so `ship-gate` gates on ubuntu+windows while a
-  non-blocking `macos-spillover-probe` job replays a minimal repro each push
-  (promotion rule: ≥5 consecutive green probes before restoring the lane).
+- **macOS is outside the blocking matrix — promotion attempted and reversed
+  (#16 / PR #174)** — the ≥5-consecutive-green promotion rule fired (7 greens,
+  41840345806…41850289669) and `macos-latest` was restored to the blocking
+  `ship-gate` matrix; the FIRST full-gate run (41913304226) reversed it:
+  5/76 store test-file processes crashed at exit-time (`libc++abi` "mutex
+  lock failed: Invalid argument") with zero failed assertions, plus an
+  eval-runner child killed by signal. Root cause: fd249d41's explicit
+  teardown covers only the CLI composition root (`apps/cli`);
+  store-side process exits (test files, `packages/store/src/eval/cli.ts`)
+  never got it — the spillover probe drove only the fixed CLI path, so its
+  greens could not predict full-gate stability (probe evidence surface ≠
+  gate acceptance surface). The lane is re-pruned to ubuntu+windows and the
+  probe job is restored. Recalibrated promotion rule: restoring the lane
+  requires green FULL-GATE trial evidence after store-side teardown is
+  fixed; ≥5 minimal-probe greens alone are proven insufficient.
 - **Exit-time `libc++abi` can overwrite the abstain exit code** — observed on
   Windows: the teardown crash may replace the `3` that `--fail-on-abstain`
   produced. Automation must read the structured abstain marker (`--json`
   `abstain` field / MCP `structuredContent.abstain`), not the exit code alone.
-- **macOS probe data point #1 is a registration-segment red** — the first
-  non-blocking probe run (34927388026) failed at the `better-sqlite3`
-  registration check (load-time family, distinct from the exit-time family
-  under probe). The ≥5-consecutive-green promotion clock counts from #1.
+- **macOS probe data point #1 was a registration-segment red (probe defect,
+  closed)** — the 20-run red streak (first: 34927388026) failed at the
+  `better-sqlite3` registration check because the check ran from the repo
+  root under pnpm's strict layout (`MODULE_NOT_FOUND`, load-time family,
+  distinct from the exit-time family under probe and never reaching it) — a
+  probe defect, not the F-16 family. Fixed by #121 (`working-directory:
+  packages/store`). The promotion clock it anchored fired (PR #174) and was
+  reversed by the first full-gate run — see the prune entry above.
 - **Page-level assertions sit at page-family granularity** — providers
   rotate URL paths (`/zh/` locale, `/10.x` version, dated
   `/specification/<date>/` variants), so live golden entries assert
@@ -180,3 +195,5 @@
 - **Exa envelope `usage` is always `undefined`** — `exa-js` returns cost only
   per-call (`costDollars`) and offers no standalone usage API, so `usage()`
   is unimplemented (contract field is optional).
+
+> AI生成

@@ -28,8 +28,16 @@
 // conclusion (e.g. "stale") is neither bad nor pending, and must NOT be
 // counted as green — it converges to the fail-closed completion-timeout
 // leg instead.
-// - macos-spillover-probe (EXPERIMENT, non-blocking) and native-smoke are
-// deliberately outside the gate.
+// - native-smoke and the non-blocking macos-spillover probe are deliberately
+// outside the gate (the probe name matches no family; macOS blocking-matrix
+// promotion was attempted and reversed in PR #174 — the family re-manifests
+// under full-suite load, see docs/limitations.md). Every blocking ship-gate
+// matrix LEG is required BY NAME in addition to the family presence check
+// (PR #174 audit S2): family-level discovery passes once ANY ship-gate*
+// check-run registers, so a queued/never-registered leg could be absent while
+// the registered legs alone produce GREEN. REQUIRED_LEGS mirrors the
+// ship-gate.yml blocking matrix exactly — keep the two in lockstep (asserted
+// by packages/store/test/eval-release-layering.test.ts).
 //
 // Usage: node scripts/assert-checks-green.mjs --sha <sha> [--once]
 // [--timeout-min 10] [--discovery-sec 120] [--interval-sec 20]
@@ -39,6 +47,9 @@ import { execFileSync } from "node:child_process";
 
 const FAMILY = /^(check-build|install-smoke|test:online|ship-gate|memory-eval)\b/;
 const FAMILIES = ["check-build", "install-smoke", "test:online", "ship-gate", "memory-eval"];
+// audit S2 (PR #174): GREEN must not be reachable while a blocking matrix leg
+// is unregistered. Mirror ship-gate.yml's os list here, in check-run name form.
+const REQUIRED_LEGS = ["ship-gate (ubuntu-latest)", "ship-gate (windows-latest)"];
 const TERMINAL_BAD = new Set(["failure", "cancelled", "timed_out", "startup_failure", "action_required"]);
 const TERMINAL_OK = new Set(["success", "skipped", "neutral"]);
 
@@ -89,16 +100,21 @@ for (; ;) {
   const names = [...latest.keys()].sort();
   const presentFamilies = new Set(names.map((n) => FAMILIES.find((f) => n.startsWith(f))));
   const missingFamilies = FAMILIES.filter((f) => !presentFamilies.has(f));
+  // audit S2 (PR #174): a required leg that has not registered (yet) is a
+  // discovery-phase gap — it must hold the script in discovery (fail-closed on
+  // expiry) rather than let the registered legs alone produce GREEN.
+  const missingLegs = REQUIRED_LEGS.filter((n) => !latest.has(n));
   const bad = [...latest.values()].filter((r) => r.status === "completed" && TERMINAL_BAD.has(r.conclusion ?? ""));
   const pending = [...latest.values()].filter((r) => r.status !== "completed");
   const notAllowed = [...latest.values()].filter((r) => r.status === "completed" && !TERMINAL_OK.has(r.conclusion ?? "") && !TERMINAL_BAD.has(r.conclusion ?? ""));
   const okCount = [...latest.values()].filter((r) => r.status === "completed" && TERMINAL_OK.has(r.conclusion ?? "")).length;
-  const phase = missingFamilies.length ? "discovery" : "completion";
+  const phase = missingFamilies.length || missingLegs.length ? "discovery" : "completion";
 
   console.log(
     "[assert-checks poll " + poll + "] " + sha.slice(0, 8) + " phase=" + phase +
     " matched=" + names.length + " ok=" + okCount + " pending=" + pending.length + " bad=" + bad.length +
-    (missingFamilies.length ? " missing-families=" + missingFamilies.join(",") : ""),
+    (missingFamilies.length ? " missing-families=" + missingFamilies.join(",") : "") +
+    (missingLegs.length ? " missing-legs=" + missingLegs.join(",") : ""),
   );
 
   // RED short-circuits immediately inside EITHER phase.
@@ -109,7 +125,8 @@ for (; ;) {
   // F-S1: GREEN iff every matched check is completed AND carries an allowed
   // conclusion. A completed check outside TERMINAL_OK/TERMINAL_BAD (e.g.
   // "stale") leaves okCount < latest.size and falls through to fail-closed.
-  if (missingFamilies.length === 0 && pending.length === 0 && names.length > 0 && okCount === latest.size) {
+  // audit S2: GREEN additionally requires every REQUIRED_LEG to be registered.
+  if (missingFamilies.length === 0 && missingLegs.length === 0 && pending.length === 0 && names.length > 0 && okCount === latest.size) {
     console.log("[assert-checks] GREEN: all " + names.length + " ci/ship-gate checks terminal+allowed on " + sha);
     process.exit(0);
   }
@@ -122,11 +139,11 @@ for (; ;) {
   const presentList = FAMILIES.filter((f) => presentFamilies.has(f)).join(",") || "none";
   if (phase === "discovery") {
     if (Date.now() >= discoveryDeadline) {
-      console.error("[assert-checks] FAIL-CLOSED (phase=discovery): discovery window " + discoverySec + "s expired — missing-families=" + missingFamilies.join(",") + " present-families=" + presentList);
+      console.error("[assert-checks] FAIL-CLOSED (phase=discovery): discovery window " + discoverySec + "s expired — missing-families=" + missingFamilies.join(",") + " missing-legs=" + (missingLegs.join(",") || "none") + " present-families=" + presentList);
       process.exit(2);
     }
     if (Date.now() >= deadline) {
-      console.error("[assert-checks] FAIL-CLOSED (phase=discovery): absolute deadline " + timeoutMin + "min reached — missing-families=" + missingFamilies.join(",") + " present-families=" + presentList);
+      console.error("[assert-checks] FAIL-CLOSED (phase=discovery): absolute deadline " + timeoutMin + "min reached — missing-families=" + missingFamilies.join(",") + " missing-legs=" + (missingLegs.join(",") || "none") + " present-families=" + presentList);
       process.exit(2);
     }
   } else if (Date.now() >= deadline) {

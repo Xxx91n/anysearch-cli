@@ -8,9 +8,14 @@
 // (store+observation handles opened then closed at exit — the crash fired at
 // libuv/native teardown), classifies each run's signature into
 // $GITHUB_STEP_SUMMARY, and exits non-zero when a crash signature is seen.
-// TTL / promotion-removal: after >=5 consecutive green runs,
-// evaluate restoring macos-latest to the blocking matrix; if crashes persist,
-// prune at round close and extend ledger defer-f16-macos-native-crash.
+// NOTE (PR #174 repair): this minimal repro drives the CLI composition root
+// only — the path fd249d41 fixed. Greens here do NOT predict full-gate
+// stability (a promotion that trusted 7 consecutive greens crashed 5/76
+// store test files on its first full-gate run: store-side process exits
+// never got explicit teardown). This script is a crash-signature reporter;
+// any future promotion needs green FULL-GATE trial evidence
+// (docs/limitations.md). Persistent crashes: prune stays + extend ledger
+// defer-f16-macos-native-crash.
 
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
@@ -62,7 +67,7 @@ for (let i = 1; i <= RUNS; i++) {
 
 lines.push("");
 if (crashes === 0) {
-  lines.push("**verdict: GREEN** — teardown fix holds on this run. Promotion rule: >=5 consecutive green runs => evaluate restoring macos-latest to the blocking matrix.");
+  lines.push("**verdict: GREEN** — teardown fix holds on this run (CLI path only). Greens here do NOT predict full-gate stability: promotion requires green full-gate trial evidence after store-side teardown is fixed (docs/limitations.md).");
 } else {
   lines.push("**verdict: CRASH SIGNATURE** — " + crashes + " run(s) crashed. If crashes persist: prune the macOS blocking lane (ubuntu/windows stay blocking), extend ledger defer-f16-macos-native-crash, and keep this probe reporting.");
 }
