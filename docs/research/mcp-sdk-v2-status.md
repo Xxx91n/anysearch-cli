@@ -40,8 +40,9 @@ Standard Schema Trigger）的选型，取决于 v2 SDK 的以下事实：
    **PR #1689**）——本仓 TypeBox Bridge 的官方对应物已出现。
 
 3. **`zod ≥4.2` 全支持**（server 自带 `zod ^4.2.0`）；**4.0–4.1** 走
-   `z.toJSONSchema()` fallback + 一次性告警并丢 `.describe()`——与本仓现有降级一致；
-   **`zod 3` 不支持**。
+   `z.toJSONSchema()` fallback + 一次性告警（v2.4.0 变更记录确认）；**`zod 3` 不支持**。
+   `#94` resolution 另称该 fallback 会丢弃 `.describe()`——此点 v2.4.0 变更记录未独立
+   证实，列为待核（见「未证实」）。
 
 4. **Dual-era 是内建能力**：`createMcpHandler` / `serveStdio` 单工厂同时服务
    `2024-10-07…2025-11-25` 旧客户端与 `2026-07-28` 新规范；
@@ -55,7 +56,9 @@ Standard Schema Trigger）的选型，取决于 v2 SDK 的以下事实：
 ## 未证实（具名待核）
 
 - 裸 TypeBox `TSchema` 是否原生满足 `~standard.jsonSchema`；
-- v1.x 过六个月下限后的确切处置。
+- v1.x 过六个月下限后的确切处置；
+- `z.toJSONSchema()` fallback 是否丢弃 `.describe()`（`#94` resolution 断言，待 v2.4.0
+  源码/测试独立证实）。
 
 ## 对决策票的含义
 
