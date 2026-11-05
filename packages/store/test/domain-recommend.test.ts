@@ -12,7 +12,11 @@
 // arm with its own provenance label, and a CJK-free query leaves the BM25 arm answering exactly as
 // before — which is what the ASCII cases above, unchanged from #110, demonstrate.
 // The #125 遗留第 1 项 follow-up adds the crowding case: when BM25 already fills topK with positive
-// hits, the stage keeps candidate presence via a reserved LAST slot (presence, not rank).
+// hits, the stage keeps candidate presence via a reserved LAST slot (presence, not rank). The
+// #173 review round pins the reproduced findings against that reservation: FTS-reachable rows
+// never enter the stage, the reservation appends instead of swapping (topK=1 keeps the anchor,
+// topK=2 keeps the baseline decision), confidence reads the pre-reservation pair, and a
+// fusion-boosted reserved row is clamped out of rank 0.
 
 import {
   recommendDomains,
@@ -202,6 +206,66 @@ async function main() {
     assert(reservedRow.score > 0 && reservedRow.score < crowd.candidates[0]!.score, "the reserved row is priced below the BM25 anchor, never zero");
     const crowdNoCjk = await recommendDomains("research docs web", CROWD_METAS);
     assert(rankOf(crowdNoCjk, "zh-research") === 0, "a CJK-free query on the same corpus reserves nothing");
+
+    // --- #173 review round: the three reproduced findings, pinned ---
+    // Finding 2 (Major): at topK=2 the reservation used to swap the displayed runner-up, and
+    // margin — read from the displayed pair — moved with it: two equal full-coverage FTS rows had
+    // margin 0 (decision low), the reserved row at half their score raised margin to 0.5 and the
+    // decision to high. Confidence now reads the pre-reservation pair, so the decision stays low
+    // while the reserved row still shows in the last slot.
+    const S1: DomainMeta[] = [
+      { id: "full-one", name: "research", description: "中文研究 research one" },
+      { id: "full-two", name: "research", description: "中文研究 research two" },
+      { id: "substr", name: "zh", description: "深度中文研究与学术检索" },
+    ];
+    const s1 = await recommendDomains("research 中文研究", S1, { topK: 2 });
+    assert(s1.decision === "low" && s1.confidence === 0, "topK=2: the reservation cannot raise margin/confidence (got " + s1.decision + ", conf " + s1.confidence + ")");
+    assert(s1.recommendation === null, "topK=2: no suggestion for a query that was baseline-low (got " + (s1.recommendation?.id ?? "null") + ")");
+    assert(rankOf(s1, "substr") === 2, "topK=2: the reserved row still occupies the last display slot (rank " + rankOf(s1, "substr") + ")");
+    // Finding 1 (Major): 13 rows match 中文研究*, so the strict fetch bound (limit*4) leaves the
+    // 13th unfetched; it used to enter the stage at fraction 1, win the reserved slot on the
+    // rowid tiebreak, and keep the substring-only row absent. Rows the FTS query can reach are
+    // stage-excluded now, so the reserved slot goes to a row FTS truly cannot reach.
+    const S2: DomainMeta[] = [];
+    const ordinal = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "甲", "乙", "丙"];
+    for (let i = 0; i < 13; i++) S2.push({ id: "match" + i, name: "m" + i, description: "中文研究" + ordinal[i] });
+    S2.push({ id: "substr", name: "zh", description: "深度中文研究与学术检索" });
+    const s2 = await recommendDomains("中文研究", S2, { topK: 3 });
+    assert(rankOf(s2, "substr") === 3, "the reserved slot goes to the substring-only row, not an unfetched FTS match (rank " + rankOf(s2, "substr") + ")");
+    assert(s2.candidates.every((c) => c.id.startsWith("match") === (c.arms[0] === "fts")), "no FTS-reachable row carries the cjk stage label (arms " + s2.candidates.map((c) => c.arms.join("+")).join(",") + ")");
+    // Finding 3 (Minor): topK=1 has no separate slot, so nothing is reserved and the single
+    // candidate stays the BM25 anchor — the swap used to replace it and re-point the suggestion.
+    const S3: DomainMeta[] = [
+      { id: "r1", name: "research", description: "web research one" },
+      { id: "zh", name: "zh", description: "深度中文研究与学术检索" },
+    ];
+    const s3 = await recommendDomains("research 中文研究", S3, { topK: 1 });
+    assert(s3.candidates.length === 1 && s3.candidates[0]!.id === "r1", "topK=1 keeps the BM25 winner as the only candidate (got " + s3.candidates.map((c) => c.id).join(",") + ")");
+    // Review-round extension: even when the embedding arm boosts the reserved row ABOVE the
+    // anchor (deterministic stub: the query and the zh passage share one axis, the research rows
+    // are anti-parallel — 0.6×0.5 + 0.4×1 = 0.7 beats 0.6×1 + 0.4×0 = 0.6), the reserved row must
+    // not become the suggestion: it is clamped into the last display slot and confidence stays
+    // anchored to the pre-reservation pair.
+    __setEmbeddingModuleForTest({
+      embedText: async (text: string) => {
+        const v = new Float32Array(384);
+        v[1] = text.includes("深度中文") || text === "research 中文研究" ? -1 : 1;
+        return v;
+      },
+      embeddingTelemetry: () => ({ loads: 1, embeds: 1, failures: 0, circuitOpen: false }),
+      EMBEDDING_MODEL_ID: "test-model",
+    } as never);
+    const boosted = await recommendDomains("research 中文研究", [
+      { id: "b1", name: "research", description: "web research uno" },
+      { id: "b2", name: "research", description: "web research dos" },
+      { id: "b3", name: "research", description: "web research tres" },
+      { id: "zh-research", name: "zh", description: "深度中文研究与学术检索" },
+    ]);
+    assert(boosted.candidates[0]!.id === "b1" && boosted.candidates[0]!.arms[0] === "fts", "an embedding-boosted reserved row never takes rank 0 (got " + boosted.candidates[0]!.id + ")");
+    assert(rankOf(boosted, "zh-research") === 3, "the boosted reserved row is clamped into the last display slot (rank " + rankOf(boosted, "zh-research") + ")");
+    assert(boosted.candidates[2]!.arms.join("+") === "cjk+embedding", "the reserved row keeps both provenance labels under fusion (arms " + boosted.candidates[2]?.arms.join("+") + ")");
+    assert(boosted.decision === "low" && boosted.confidence === 0, "fusion-boosting the reserved row cannot move the anchored decision (got " + boosted.decision + ", conf " + boosted.confidence + ")");
+    __setEmbeddingModuleForTest(null);
 
     // Han, Hiragana, Katakana and Hangul all reach the stage (the run class is CJK-wide, not
     // Han-only). These descriptions carry no spaces, so a mid-run substring can never be a

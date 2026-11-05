@@ -220,13 +220,17 @@ interface FtsRow {
   description: string;
   match: number; // -bm25(): higher = better (bm25() itself is negative)
   stage: "fts" | "cjk"; // which lexical stage produced it (provenance label, GLOSSARY Two-Stage Recall)
+  reserved?: boolean; // #173 review: the appended stage row guaranteed a display slot; never a confidence input
 }
 
 // BM25 over an in-memory FTS5 index of domain metadata. Strict rung first (all-terms AND +
 // phrase fallback via escapeQueryUnicode), then a relaxed OR rung over content words when the
 // strict rung under-fills — same two-rung shape as searchMemoryMultiQuery, minus the
 // evidence-majority filter (see header comment). Then the #125 CJK substring stage, appended
-// below every BM25 hit.
+// below every BM25 hit. Returns at most `limit` rows, plus ONE `reserved` stage row beyond the
+// cut when the topK reservation fires (#173 review round: appended, not swapped — the displaced
+// BM25 row stays in the cut as the confidence runner-up; recommendDomains displays the reserved
+// row in the last slot but keeps margin/confidence anchored to the cut).
 export function bm25SearchDomainMeta(db: Database.Database, query: string, limit = RECOMMEND_TOP_K): FtsRow[] {
   const sql =
     "SELECT rowid, name, description, bm25(domain_fts) AS bm25score " +
@@ -273,6 +277,22 @@ export function bm25SearchDomainMeta(db: Database.Database, query: string, limit
   if (cjkRuns.length > 0) {
     const positives = rows.map((r) => r.match).filter((m) => m > 0);
     const anchor = positives.length > 0 ? Math.min(...positives) * STAGE_DISCOUNT : 1;
+    // #173 review (finding 1): the stage is for rows FTS5 cannot reach, so rows the FTS query CAN
+    // match are not stage material — including matches beyond the bounded fetch (strict limit*4,
+    // relaxed limit*8). With 13 rows matching 中文研究*, the unfetched 13th used to enter the stage
+    // at fraction 1, win the reserved slot on the rowid tiebreak, and keep the substring-only row
+    // the ticket exists for absent — carrying a cjk label FTS could have disproved. The reach set
+    // re-runs the SAME parameterized expressions unbounded (no new MATCH surface, no interpolation);
+    // the corpus is a handful of rows, so the two scans cost nothing, and a CJK-free query never
+    // enters this branch.
+    const reach = new Set<number>();
+    const reachTerms = unicodeTerms(q);
+    const reachExprs = [strict, reachTerms.length >= 1 ? reachTerms.map((t) => t + "*").join(" OR ") : ""];
+    const reachStmt = db.prepare<unknown[], { rowid: number }>("SELECT rowid FROM domain_fts WHERE domain_fts MATCH ?");
+    for (const expr of reachExprs) {
+      if (!expr) continue;
+      for (const r of reachStmt.all(expr)) reach.add(r.rowid);
+    }
     const seen = new Set(rows.map((r) => r.rowid));
     const scanned = db
       .prepare<unknown[], { rowid: number; name: string; description: string }>(
@@ -280,7 +300,7 @@ export function bm25SearchDomainMeta(db: Database.Database, query: string, limit
       )
       .all();
     for (const r of scanned) {
-      if (seen.has(r.rowid)) continue;
+      if (seen.has(r.rowid) || reach.has(r.rowid)) continue;
       const fraction = cjkRunFraction(q, r.name + " " + r.description);
       if (fraction === 0) continue;
       rows.push({ rowid: r.rowid, name: r.name, description: r.description, match: fraction * anchor, stage: "cjk" });
@@ -288,23 +308,26 @@ export function bm25SearchDomainMeta(db: Database.Database, query: string, limit
   }
   const sorted = rows.sort((a, b) => b.match - a.match || a.rowid - b.rowid);
   // #125 遗留第 1 项（topK crowding）— a stage row prices strictly under every positive BM25 hit,
-  // so once BM25 fills `limit` the plain slice below used to drop ALL stage rows: on a mixed query
-  // like "research 中文研究" over four research domains plus one CJK domain, the CJK domain answered
+  // so once BM25 fills `limit` the plain slice below drops ALL stage rows: on a mixed query like
+  // "research 中文研究" over four research domains plus one CJK domain, the CJK domain answered
   // a query term yet never appeared as a candidate — the same no-show the ticket opened for, in
   // its mixed-query form. Industry hybrid-retrieval model: each arm contributes its own candidates
   // and truncation happens once, after fusion; a recall arm starved by the other arm's
   // presentation budget is an anti-pattern (the embedding arm already fuses across both stages).
-  // The reservation keeps the FTS anchor intact: the best stage row swaps into the LAST slot only
-  // — presence, not rank. The kept list stays non-increasing (the reserved score is
-  // fraction × min(positive) × STAGE_DISCOUNT, strictly under the row above it because that row is
-  // a positive match and min(positive) × 0.5 < min(positive)), the candidate count stays ≤ topK,
-  // and a CJK-free query never reaches this branch, so #110's pure-ASCII behaviour is preserved
-  // by construction. `limit > 0` guards cut[limit - 1] against a caller asking for no rows at all.
-  if (cjkRuns.length > 0 && limit > 0 && sorted.length > limit) {
+  // #173 review round: the reservation APPENDS the best stage row after the cut, tagged
+  // `reserved`, instead of swapping out the last BM25 row — the swap let the reserved row become
+  // the displayed runner-up at topK=2 and, margin being read from the displayed pair, flipped a
+  // baseline-low decision to high; the displaced row is also the confidence runner-up under hybrid
+  // fusion. `limit > 1` keeps topK=1 alone: with no separate slot there is nothing to reserve, and
+  // the single candidate stays the BM25 anchor (the swap used to replace it and re-point the
+  // suggestion). The appended row keeps the stage discount, so `sorted` order and every cut score
+  // are untouched; a CJK-free query never reaches this branch, so #110's pure-ASCII behaviour is
+  // preserved by construction.
+  if (cjkRuns.length > 0 && limit > 1 && sorted.length > limit) {
     const cut = sorted.slice(0, limit);
     if (!cut.some((r) => r.stage === "cjk")) {
       const reserved = sorted.find((r) => r.stage === "cjk");
-      if (reserved) cut[limit - 1] = reserved;
+      if (reserved) return [...cut, { ...reserved, reserved: true }];
     }
     return cut;
   }
@@ -374,8 +397,28 @@ export async function recommendDomains(query: string, metas: DomainMeta[], opts?
       return FTS_WEIGHT * rel + EMBEDDING_WEIGHT * c;
     });
     const order = rows.map((_, i) => i).sort((a, b) => scores[b]! - scores[a]!);
-    const topScore = scores[order[0]! ]!;
-    const candidates: RecommendCandidate[] = order.slice(0, topK).map((oi, rank) => {
+    // #173 review round 2: the reserved row is display presence, never a confidence input. Every
+    // score is per-row (rel is normalized by rows[0], which a reserved row can never be — its
+    // match is strictly under every positive BM25 hit), so the non-reserved rows score
+    // byte-identically to a no-reservation run and margin read from them cannot move with the
+    // reservation, in both the FTS-only and the embedding-fused path.
+    const confOrder = order.filter((i) => !rows[i]!.reserved);
+    const topScore = scores[confOrder[0]!]!;
+    // Display: the reserved row keeps its fused rank when it lands inside the slice, but never
+    // rank 0 and never beyond the slice. Rank 0 would re-point the suggestion at a row the lexical
+    // anchor never chose — reachable, not hypothetical: EMBEDDING_WEIGHT 0.4 > FTS_WEIGHT / 2, so
+    // 0.6 × 0.5 + 0.4 × 1 = 0.7 beats the anchor's floor 0.6 × 1 + 0.4 × 0 = 0.6. A rank ≥ topK
+    // means the reserved row takes the LAST slot the reservation promised.
+    let display = order;
+    const reservedIdx = rows.findIndex((r) => r.reserved);
+    if (reservedIdx >= 0) {
+      const at = order.indexOf(reservedIdx);
+      if (at === 0 || at >= topK) {
+        display = order.filter((i) => i !== reservedIdx);
+        display.splice(Math.min(topK - 1, display.length), 0, reservedIdx);
+      }
+    }
+    const candidates: RecommendCandidate[] = display.slice(0, topK).map((oi, rank) => {
       const row = rows[oi]!;
       const score = scores[oi]!;
       return {
@@ -390,8 +433,9 @@ export async function recommendDomains(query: string, metas: DomainMeta[], opts?
       };
     });
 
-    const top = candidates[0]!;
-    const margin = candidates.length >= 2 && top.score > 0 ? Math.max(0, 1 - candidates[1]!.score / top.score) : 1;
+    const top = candidates[0]!; // the display top — the reserved row is clamped out of rank 0
+    const runnerScore = confOrder.length >= 2 ? scores[confOrder[1]!]! : null;
+    const margin = runnerScore !== null && topScore > 0 ? Math.max(0, 1 - runnerScore / topScore) : 1;
     const confidence = top.coverage * margin;
     const decision: RecommendDecision = confidence >= HIGH_CONFIDENCE_THRESHOLD ? "high" : "low";
     return {
