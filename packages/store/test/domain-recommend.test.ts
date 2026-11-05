@@ -265,6 +265,12 @@ async function main() {
     assert(rankOf(boosted, "zh-research") === 3, "the boosted reserved row is clamped into the last display slot (rank " + rankOf(boosted, "zh-research") + ")");
     assert(boosted.candidates[2]!.arms.join("+") === "cjk+embedding", "the reserved row keeps both provenance labels under fusion (arms " + boosted.candidates[2]?.arms.join("+") + ")");
     assert(boosted.decision === "low" && boosted.confidence === 0, "fusion-boosting the reserved row cannot move the anchored decision (got " + boosted.decision + ", conf " + boosted.confidence + ")");
+    // #173 review round 4 (finding A): the reserved row's raw fused score (0.7) is the best in
+    // play, so `relative`'s denominator includes it: the reserved row prints exactly 1, the
+    // anchor prints the same ratio it had in a no-reservation run of the same corpus (where
+    // that row was the raw top), and no candidate ever prints above 1.
+    assert(boosted.candidates[2]!.relative === 1, "the boosted reserved row prints relative 1 (got " + boosted.candidates[2]!.relative + ")");
+    assert(boosted.candidates[0]!.relative < 1 && Math.abs(boosted.candidates[0]!.relative - boosted.candidates[0]!.score / boosted.candidates[2]!.score) < 1e-12, "the anchor's relative is its true ratio to the best raw score (got " + boosted.candidates[0]!.relative + ")");
     __setEmbeddingModuleForTest(null);
 
     // --- #173 review round 3: a reserved-row vector miss must not disable fusion for the others ---
@@ -317,6 +323,32 @@ async function main() {
     ], { topK: 1 });
     assert(two.candidates.length === 1 && two.candidates[0]!.id === "t1", "topK=1 shows the single BM25 winner (got " + two.candidates.map((c) => c.id).join(",") + ")");
     assert(two.confidence === 1 && two.decision === "high", "topK=1 keeps the baseline margin 1 with full coverage (got " + two.decision + ", conf " + two.confidence + ")");
+
+    // --- #173 review round 4 (finding B): an interior fused rank still lands in the last slot ---
+    // Deterministic stub: the anchor fuses to 0.9, the reserved row to 0.7 (between the anchor
+    // and the 0.6 runners-up) — its natural rank is 2, an INTERIOR slot. It must move to the last
+    // displayed slot (presence, not rank); the runner-up takes the vacated interior slot, and the
+    // displayed list keeps every relative <= 1 with the anchor printing the true ratio to the
+    // best raw score in play (the anchor itself, here — the reserved row is not the max).
+    __setEmbeddingModuleForTest({
+      embedText: async (text: string) => {
+        const v = new Float32Array(384);
+        v[1] = text === "research 中文研究" ? 1 : text.includes("深度中文") ? 1 : text.includes("uno") ? 0.5 : -1;
+        return v;
+      },
+      embeddingTelemetry: () => ({ loads: 1, embeds: 1, failures: 0, circuitOpen: false }),
+      EMBEDDING_MODEL_ID: "test-model",
+    } as never);
+    const interior = await recommendDomains("research 中文研究", [
+      ...FUSED,
+      { id: "zh-research", name: "zh", description: "深度中文研究与学术检索" },
+    ]);
+    assert(rankOf(interior, "zh-research") === 3, "an interior fused rank still lands in the LAST slot (rank " + rankOf(interior, "zh-research") + ")");
+    assert(interior.candidates[1]!.id === "b2", "the runner-up takes the interior slot the reserved row vacated (got " + interior.candidates[1]!.id + ")");
+    assert(interior.candidates.every((c) => c.relative <= 1), "no candidate prints relative > 1 (got " + interior.candidates.map((c) => c.relative).join(",") + ")");
+    assert(Math.abs(interior.candidates[0]!.relative - 1) < 1e-12, "the anchor is the best raw score here, so it prints relative 1 (got " + interior.candidates[0]!.relative + ")");
+    assert(interior.decision === "low", "the demoted interior rank does not touch the anchored decision (got " + interior.decision + ")");
+    __setEmbeddingModuleForTest(null);
 
 
     // Han, Hiragana, Katakana and Hangul all reach the stage (the run class is CJK-wide, not

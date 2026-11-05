@@ -412,20 +412,28 @@ export async function recommendDomains(query: string, metas: DomainMeta[], opts?
     // reservation, in both the FTS-only and the embedding-fused path.
     const confOrder = order.filter((i) => !rows[i]!.reserved);
     const topScore = scores[confOrder[0]!]!;
-    // Display: the reserved row keeps its fused rank when it lands inside the slice, but never
-    // rank 0 and never beyond the slice. Rank 0 would re-point the suggestion at a row the lexical
-    // anchor never chose — reachable, not hypothetical: EMBEDDING_WEIGHT 0.4 > FTS_WEIGHT / 2, so
-    // 0.6 × 0.5 + 0.4 × 1 = 0.7 beats the anchor's floor 0.6 × 1 + 0.4 × 0 = 0.6. A rank ≥ topK
-    // means the reserved row takes the LAST slot the reservation promised.
+    // Display: the reserved row's slot is the LAST displayed position — never rank 0 (that would
+    // re-point the suggestion at a row the lexical anchor never chose; reachable, not
+    // hypothetical: EMBEDDING_WEIGHT 0.4 > FTS_WEIGHT / 2, so 0.6 × 0.5 + 0.4 × 1 = 0.7 beats the
+    // anchor's floor 0.6 × 1 + 0.4 × 0 = 0.6), never an interior rank (#173 review round 4: a
+    // fused interior rank used to leave it above the runner-up, breaking the ticket's
+    // "presence, not rank" display rule and the non-increasing display), and never beyond the
+    // slice (that IS the slot the reservation promised). All three collapse to one condition.
     let display = order;
     const reservedIdx = rows.findIndex((r) => r.reserved);
     if (reservedIdx >= 0) {
       const at = order.indexOf(reservedIdx);
-      if (at === 0 || at >= topK) {
+      if (at !== topK - 1) {
         display = order.filter((i) => i !== reservedIdx);
         display.splice(Math.min(topK - 1, display.length), 0, reservedIdx);
       }
     }
+    // #173 review round 4: `relative` is a presentation ratio and stays one — its denominator
+    // is the best raw fused score in play, the reserved row's included (fusion may legitimately
+    // boost it above the anchor). The anchor then prints the same ratio it had in a
+    // no-reservation run of the same corpus (where that row was the raw top), the reserved row
+    // never prints > 1, and the fused `score` values and every confidence input stay untouched.
+    const relativeTopScore = reservedIdx >= 0 ? Math.max(topScore, scores[reservedIdx]!) : topScore;
     const candidates: RecommendCandidate[] = display.slice(0, topK).map((oi, rank) => {
       const row = rows[oi]!;
       const score = scores[oi]!;
@@ -435,7 +443,7 @@ export async function recommendDomains(query: string, metas: DomainMeta[], opts?
         description: row.description,
         rank: rank + 1,
         score,
-        relative: topScore > 0 ? score / topScore : 1,
+        relative: relativeTopScore > 0 ? score / relativeTopScore : 1,
         coverage: termCoverage(q, row.name + " " + row.description),
         arms: cos && cos[oi] !== null && cos[oi] !== undefined ? [row.stage, "embedding"] : [row.stage],
       };
