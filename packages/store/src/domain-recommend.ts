@@ -152,7 +152,12 @@ export interface RecommendWhy {
 export interface RecommendResult {
   query: string;
   decision: RecommendDecision; // high = single confident suggestion; low = candidate list; none = no match
-  candidates: RecommendCandidate[]; // ≤ topK, sorted best-first
+  // ≤ topK, best-first among the confidence candidates. ONE documented exception (#172): the
+  // final slot may hold the reserved CJK stage row (provenance `cjk`) whose raw fused score the
+  // embedding arm may legitimately raise above the rows printed above it — that slot is display
+  // presence for a recall arm BM25 crowded out, not a rank: the row is never the suggestion
+  // (decision/confidence read the pre-reservation pair) and never carries a demoted score.
+  candidates: RecommendCandidate[];
   recommendation: { id: string; name: string; confidence: number } | null; // non-null only when high
   confidence: number | null; // top candidate confidence
   why: RecommendWhy | null; // structured "why no recommendation" whenever decision != "high"

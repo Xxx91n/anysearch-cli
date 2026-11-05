@@ -6,6 +6,13 @@
 // prints the candidate list plus a structured one-line "why no recommendation" — never a
 // guess. The command NEVER switches domains itself (`switched: false` in --json is the
 // structural marker; persistence stays with `ans domain <name>`).
+//
+// Ordering: the candidate list is best-first among the confidence candidates, with ONE
+// documented exception (#172): the final slot may hold the reserved CJK stage row whose raw
+// fused score can exceed the rows printed above it (the printed score is the honest fused
+// value — never demoted). The slot is display presence for a recall arm BM25 crowded out,
+// never a rank, never a suggestion: `Suggestion` reads the anchor, and the candidate printed
+// above a higher score is the BM25 arm the lexical anchor chose.
 
 import type { RecommendResult } from "@anysearch-cli/store";
 
