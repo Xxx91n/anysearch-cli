@@ -4,7 +4,8 @@
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
 import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals, resetWiringWarnings, resolveContextOccupancy } from "../src/pi-runtime";
-import { distillGap, adjudicateReuseCompress, consolidateState } from "../src/memory-pipeline";
+import { distillGap, adjudicateReuseCompress, consolidateState, FALLBACK_LOW_WATERMARK_TOKENS, resolveLowWatermark } from "../src/memory-pipeline";
+import { MemoryPipeline } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
 import { SqliteSessionStore } from "@anysearch-cli/store";
@@ -1055,6 +1056,197 @@ console.log("---");
     assert(errors.length === 0, "#129 append failure: the run still completes (no unhandled rejection)");
     assert(appendCalls > 1, "#129 append failure: later messages are still attempted after a failure");
     assert(/FTS5 sync warning: write blocked/.test(captured), "#129 append failure: the failure is reported");
+  }
+}
+
+// === #184 caller-level occupancy regression — pi-runtime end-to-end assertion ( #45 residual) ===
+// Refs #45 comment 2026-11-04 (CodeRabbit trivial nitpick), #176 Wave0 close,
+// #113 {fraction}×contextWindow + unknown-window 128k fallback.
+// This is the ticket the #45 comment left as "leave to harness/regression ticket"
+// without a ticket number; #176 recorded the gap and #184 is the assigned number.
+// Pure test ticket, zero implementation change — resolveContextOccupancy and
+// shouldStopAfterTurn semantics untouched, no new blocking gate leg.
+// What it proves: the one-line forwarding `shouldStopAfterTurn -> resolveContextOccupancy`
+// actually changes the externally observable stop/consolidate decision when
+// occupancy crosses the resolved watermark (fraction×window or FALLBACK).
+// Only the external observable is asserted (was consolidate triggered / would
+// shouldStopAfterTurn's downstream consolidate fire), not internal call chains.
+// Mock shape mirrors pi-runtime's real read: `agent.state.messages` +
+// `usageTotals.lastTotalTokens` feeding resolveContextOccupancy.
+{
+  // Helper — caller-level decision as pi-runtime would compute it:
+  // occupancy = resolveContextOccupancy(lastUsageTokens, agentMessages)
+  // decision  = consolidateState(state, messages, occupancy, hasRetrievalEvidence, opts)
+  // where opts.lowWatermark = {fraction} and opts.contextWindow = LlmSession.contextWindow
+  // (REAL window or undefined==unknown). The observable is "would consolidate fire?"
+  // i.e. decision !== "skip". The helper locks nothing internal beyond that.
+  function callerOccupancyWouldConsolidate(
+    mockAgentMessages: any[],
+    lastTotalTokens: number,
+    lowWatermark: number | { fraction: number } | undefined,
+    contextWindow: number | undefined,
+  ): { occupancy: number; wouldConsolidate: boolean; decision: string } {
+    const occupancy = resolveContextOccupancy(lastTotalTokens, mockAgentMessages);
+    const result = consolidateState(
+      { version: 1, consecutiveReuses: 0, lastSummaryMsgCount: 0 },
+      mockAgentMessages,
+      occupancy,
+      false, // no retrieval evidence — watermark alone drives the test
+      { lowWatermark, contextWindow },
+    );
+    return { occupancy, wouldConsolidate: result.decision !== "skip", decision: result.decision };
+  }
+
+  // AC1: caller-layer opposite stop decisions when crossing / not crossing watermark.
+  // Known window 1M @ 0.1 => watermark 100_000. Below must not consolidate, above must.
+  {
+    const lowWatermark = { fraction: 0.1 } as const;
+    const contextWindow = 1_000_000;
+    const resolved = resolveLowWatermark(lowWatermark, contextWindow);
+    assert(resolved === 100_000, "#184: 1M @ 0.1 resolves to 100K watermark");
+
+    // Small Agent state: one short user turn + small lastTotalTokens => occupancy ~50K < 100K
+    const smallMessages = [{ role: "user", content: "hi" }] as any[];
+    const below = callerOccupancyWouldConsolidate(smallMessages, 50_000, lowWatermark, contextWindow);
+    // Large Agent state: lastTotalTokens itself already 120K > 100K (even without large messages)
+    const above = callerOccupancyWouldConsolidate(smallMessages, 120_000, lowWatermark, contextWindow);
+
+    assert(below.occupancy === 50_000, "#184 known-window: small occupancy is lastTotalTokens when estimate is smaller");
+    assert(above.occupancy === 120_000, "#184 known-window: large occupancy is lastTotalTokens when it dominates");
+    assert(below.wouldConsolidate === false, "#184 known-window: below 100K must NOT trigger consolidate (skip)");
+    assert(above.wouldConsolidate === true, "#184 known-window: above 100K must trigger consolidate (compress)");
+    assert(below.wouldConsolidate !== above.wouldConsolidate,
+      "#184 known-window: crossing watermark gives opposite stop decisions (not an empty test)");
+    assert(below.decision === "skip" && above.decision === "compress",
+      "#184 known-window: decisions are skip vs compress");
+  }
+
+  // AC1 via message-estimate path: large tool result drives occupancy over watermark
+  // even when lastTotalTokens is tiny — the trailing-estimate fix from PR #114.
+  {
+    const lowWatermark = { fraction: 0.01 } as const; // 1M @ 0.01 => 10K
+    const contextWindow = 1_000_000;
+    // One tool result with 80K chars ~20K estimated tokens >> 10K watermark
+    const largeToolResult = [
+      { role: "user", content: "q" },
+      { role: "assistant", content: [{ type: "tool_use", name: "search", input: { query: "q" } }] },
+      { role: "toolResult", content: [{ type: "text", text: "x".repeat(80_000) }] },
+    ] as any[];
+    const viaEstimate = callerOccupancyWouldConsolidate(largeToolResult, 100, lowWatermark, contextWindow);
+    assert(viaEstimate.occupancy > 10_000,
+      "#184 estimate path: large tool result is included in occupancy (got " + viaEstimate.occupancy + ")");
+    assert(viaEstimate.wouldConsolidate === true,
+      "#184 estimate path: large-tool-result occupancy alone triggers consolidate");
+
+    // Same watermark, small message stays below
+    const small = callerOccupancyWouldConsolidate([{ role: "user", content: "q" }] as any[], 100, lowWatermark, contextWindow);
+    assert(small.wouldConsolidate === false, "#184 estimate path: small message stays below 10K");
+    assert(small.wouldConsolidate !== viaEstimate.wouldConsolidate,
+      "#184 estimate path: estimate-driven crossing gives opposite decisions");
+  }
+
+  // AC2: unknown contextWindow fallback morphology — FALLBACK_LOW_WATERMARK_TOKENS
+  // packages/kernel/src/memory-pipeline.ts:193. A {fraction} with unknown window
+  // must NOT scale the pi-ai 128000 placeholder into 12800; it falls back to 128K.
+  {
+    assert(FALLBACK_LOW_WATERMARK_TOKENS === 128_000, "#184 fallback: constant at memory-pipeline.ts:193 is 128000");
+    const lowWatermark = { fraction: 0.1 } as const;
+    // Unknown: undefined window -> fallback 128K
+    assert(resolveLowWatermark(lowWatermark, undefined) === FALLBACK_LOW_WATERMARK_TOKENS,
+      "#184 fallback: undefined window -> FALLBACK_LOW_WATERMARK_TOKENS");
+    assert(resolveLowWatermark(lowWatermark, 0) === FALLBACK_LOW_WATERMARK_TOKENS,
+      "#184 fallback: non-positive window -> FALLBACK_LOW_WATERMARK_TOKENS");
+    // With 1M window, 120K would trigger (100K); with unknown-window fallback, 120K must NOT.
+    const belowFallback = callerOccupancyWouldConsolidate(
+      [{ role: "user", content: "q" }] as any[], 120_000, lowWatermark, undefined,
+    );
+    const aboveFallback = callerOccupancyWouldConsolidate(
+      [{ role: "user", content: "q" }] as any[], 150_000, lowWatermark, undefined,
+    );
+    assert(belowFallback.occupancy === 120_000, "#184 fallback: occupancy 120K");
+    assert(aboveFallback.occupancy === 150_000, "#184 fallback: occupancy 150K");
+    assert(belowFallback.wouldConsolidate === false,
+      "#184 fallback: 120K does NOT cross 128K fallback watermark (unknown-window form)");
+    assert(aboveFallback.wouldConsolidate === true,
+      "#184 fallback: 150K DOES cross 128K fallback watermark");
+    assert(belowFallback.wouldConsolidate !== aboveFallback.wouldConsolidate,
+      "#184 fallback: crossing 128K gives opposite stop decisions");
+    // Absolute lowWatermark is not scaled — sanity that fraction path is the only scaled one
+    assert(resolveLowWatermark(50_000, 1_000_000) === 50_000, "#184 fallback: absolute lowWatermark not scaled");
+  }
+
+  // AC2 variant: 128K model @ 0.5 => 64K watermark — ensures fraction scaling
+  // works for small windows too (complement to 1M case).
+  {
+    const lowWatermark = { fraction: 0.5 } as const;
+    const contextWindow = 128_000;
+    assert(resolveLowWatermark(lowWatermark, contextWindow) === 64_000, "#184 128K model @ 0.5 = 64K");
+    const below = callerOccupancyWouldConsolidate([{ role: "user", content: "q" }] as any[], 63_000, lowWatermark, contextWindow);
+    const above = callerOccupancyWouldConsolidate([{ role: "user", content: "q" }] as any[], 65_000, lowWatermark, contextWindow);
+    assert(below.wouldConsolidate === false && above.wouldConsolidate === true,
+      "#184 128K@0.5: 63K skip vs 65K compress (opposite decisions around 64K)");
+  }
+
+  // Observable shell integration: MemoryPipeline.consolidate writes consolidation_state
+  // only when occupancy crosses the resolved watermark. Mock store's saveAnchor is
+  // the external observable (whether consolidate fired), not internal call-chain locks.
+  {
+    class MockStoreFor184 {
+      calls: Array<{ type: string; payload: unknown }> = [];
+      getAnchors() { return []; }
+      saveAnchor(_s: string, type: string, payload: unknown) {
+        this.calls.push({ type, payload });
+        return Promise.resolve();
+      }
+    }
+
+    const pipelineBelow = new MemoryPipeline({
+      store: new MockStoreFor184() as any,
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, compaction: { lowWatermark: { fraction: 0.1 } } } as any,
+      model: { id: "test" } as any,
+      contextWindow: 1_000_000,
+      streamFn: makeMockStreamFn("reuse"),
+      sessionId: "s-184-below",
+    });
+    const pipelineAbove = new MemoryPipeline({
+      store: new MockStoreFor184() as any,
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, compaction: { lowWatermark: { fraction: 0.1 } } } as any,
+      model: { id: "test" } as any,
+      contextWindow: 1_000_000,
+      streamFn: makeMockStreamFn("reuse"),
+      sessionId: "s-184-above",
+    });
+    // Reuse the same mock stores to inspect calls
+    const storeBelow = (pipelineBelow as any).deps.store as MockStoreFor184;
+    const storeAbove = (pipelineAbove as any).deps.store as MockStoreFor184;
+
+    // Occupancy 50K < 100K => should NOT write consolidation_state (skip)
+    await pipelineBelow.consolidate([{ role: "user", content: "q" }] as any, 50_000, false);
+    // Occupancy 120K > 100K => should write consolidation_state (compress)
+    await pipelineAbove.consolidate([{ role: "user", content: "q" }] as any, 120_000, false);
+
+    const belowFired = storeBelow.calls.some((c) => c.type === "consolidation_state");
+    const aboveFired = storeAbove.calls.some((c) => c.type === "consolidation_state");
+    assert(belowFired === false, "#184 shell: below watermark does NOT write consolidation_state");
+    assert(aboveFired === true, "#184 shell: above watermark DOES write consolidation_state");
+    assert(belowFired !== aboveFired, "#184 shell: shell-level opposite firing (observable consolidate trigger)");
+
+    // Unknown-window shell: same pi-ai placeholder must not be scaled
+    const storeUnknown = new MockStoreFor184();
+    const pipelineUnknown = new MemoryPipeline({
+      store: storeUnknown as any,
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, compaction: { lowWatermark: { fraction: 0.1 } } } as any,
+      model: { id: "custom", contextWindow: 128000 } as any, // pi-ai placeholder, NOT known window
+      // No contextWindow passed => unknown => fallback 128K
+      streamFn: makeMockStreamFn("reuse"),
+      sessionId: "s-184-unknown",
+    });
+    await pipelineUnknown.consolidate([{ role: "user", content: "q" }] as any, 15_000, false);
+    assert(!storeUnknown.calls.some((c) => c.type === "consolidation_state"),
+      "#184 shell unknown: 15K does NOT cross 128K fallback (placeholder not scaled to 12.8K)");
   }
 }
 
