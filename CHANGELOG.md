@@ -50,7 +50,7 @@ All notable changes to this project are recorded here. Format follows
 ### Tests
 
 - `packages/store/test/domain-schema.test.ts`：`[budget]` 解析（含小数 `usdCap`、显式 0、空节、缺节）、继承整节替换、未知键/负数/小数计数/负输出预留 fail-fast、12288 常量、`resolveOutputReserveTokens` 缺省/覆写/显式 0。
-- `packages/store/test/budget-ledger.test.ts`：无行放行四维断言、显式 0 全拒（含 `amount=0` 三维）、节内缺字段=无上限、重复 `initBudget` 只刷新 caps 且保留计数/单行、`clearBudgetCaps` 无行 no-op / 有行置 configured=0 后 getBalance 为 null 且 spend 保留 / 重新 init 复用同行、老库重复行 + 缺 configured 列的受保护迁移（store 仍可打开并告警；重复行不静默删除，ledger 仍可读/初始化）。
+- `packages/store/test/budget-ledger.test.ts`：无行放行四维断言、显式 0 全拒（含 `amount=0` 三维）、节内缺字段=无上限、重复 `initBudget` 只刷新 caps 且保留计数/单行、`clearBudgetCaps` 无行 no-op / 有行置 configured=0 后 getBalance 为 null 且 spend 保留 / 重新 init 复用同行、老库重复行 + 缺 configured 列的受保护迁移（store 仍可打开并告警；重复行不静默删除，ledger 仍可读/初始化）、唯一冲突 INSERT→UPDATE 重试（并发注册单行）。
 - `apps/cli/test/chat-memory-wiring.test.ts`：真实 store 注册后账本行存在；无 `[budget]` 不建行；同一锚点从有预算切到无预算时 getBalance 变为 null（未配置）；TOML 显式 0 与缺省字段经 `toBudgetCaps` 落到账本的全链路断言。
 - `apps/mcp/test/ans-chat-session.test.ts`：`ensureSession` 与 `createSession` 两条 MCP 注册路径均建行；无 `[budget]` 不建行；同一 handle 删除 `[budget]` 后 getBalance 变为 null。
 - `scripts/validate-domains.mjs`：仓库域 TOML 校验同步接受并校验 `[budget]`；规则与 `domain-schema.validate` 同源（脚本无 TS 依赖，注释说明镜像关系）。

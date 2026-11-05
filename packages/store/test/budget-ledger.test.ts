@@ -225,6 +225,21 @@ async function main() {
         try { rmSync(legacyDir, { recursive: true, force: true }); } catch { /* Windows WAL lock */ }
       }
 
+      // 16. #187: concurrent-registration retry. Force the SELECT to miss while
+      //     the row exists, so the INSERT hits the unique constraint and the
+      //     catch path refreshes the winner's row instead of throwing.
+      const s8 = await store.createSession("insert-race");
+      ledger.initBudget(s8.id, { tokenCap: 100, callCap: 2 });
+      (ledger as any).stmts.hasAnyBudgetRow = { get: () => undefined };
+      ledger.initBudget(s8.id, { tokenCap: 999, callCap: 9 });
+      const raced = ledger.getBalance(s8.id);
+      assert(raced?.tokenCap === 999 && raced?.callCap === 9,
+        "unique-conflict INSERT retries as an UPDATE (concurrent registration)");
+      const raceRows = (store as any).db
+        .prepare("SELECT COUNT(*) AS c FROM budget_ledger WHERE session_id = ?")
+        .get(s8.id) as { c: number };
+      assert(raceRows.c === 1, "concurrent registration still leaves one row");
+
       store.close();
     }
     console.log("--- BudgetLedger tests: " + passed + " passed, " + failed + " failed ---");

@@ -119,11 +119,18 @@ export class BudgetLedger {
     } catch (e) {
       // Concurrent registration on a clean DB: the unique constraint rejects
       // the losing INSERT, and the winner's row is refreshed instead. Accept the
-      // base constraint code too — older SQLite builds do not expose the
-      // extended SQLITE_CONSTRAINT_UNIQUE code.
+      // base constraint code only when the message names THIS unique key —
+      // generic SQLITE_CONSTRAINT also covers FK/CHECK/NOTNULL and must not be
+      // mistaken for a benign race.
       const code = (e as { code?: string })?.code;
-      if (code === "SQLITE_CONSTRAINT_UNIQUE" || code === "SQLITE_CONSTRAINT") {
-        this.stmts.updateCaps.run(tokenCap, usdCap, timeLimitMs, callCap, sessionId);
+      const message = e instanceof Error ? e.message : String(e);
+      const uniqueSessionConflict =
+        code === "SQLITE_CONSTRAINT_UNIQUE" ||
+        (code === "SQLITE_CONSTRAINT" && /UNIQUE constraint failed: budget_ledger\.session_id/.test(message));
+      if (uniqueSessionConflict) {
+        const result = this.stmts.updateCaps.run(tokenCap, usdCap, timeLimitMs, callCap, sessionId);
+        // The row can be deleted in the race window; do not report a silent init.
+        if (result.changes === 0) throw e;
         return;
       }
       throw e;
