@@ -6,9 +6,11 @@
 // leaves no registry entry behind (long-lived processes must not accumulate
 // references to dead handles).
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { openDatabase, trackDatabase } from "../src/db";
 import { pendingTeardowns, registerTeardown, runTeardown, unrefPendingHandles } from "../src/teardown";
@@ -76,6 +78,21 @@ try {
   unrefPendingHandles();
   unrefPendingHandles();
   assert.equal(pendingTeardowns(), 0, "unrefPendingHandles touches no registry entry");
+
+  // --- 6. the deferred exit keeps a requested failure sticky ----------------
+  // PR #191 review: the preload defers process.exit(), so the trailing
+  // `process.exit(0)` in fusion-registry-memory.test.ts would run after its
+  // `if (failed > 0) process.exit(1)` and could mask a failure. A synchronous
+  // kill made that impossible; the deferred exit must preserve it.
+  const storeRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const childExit = (script: string): number | null =>
+    spawnSync(process.execPath, ["--import", "./test/helpers/exit-teardown.mjs", "-e", script], {
+      cwd: storeRoot,
+      encoding: "utf8",
+    }).status;
+  assert.equal(childExit("process.exit(1); process.exit(0);"), 1, "a trailing exit(0) cannot mask an earlier exit(1)");
+  assert.equal(childExit("process.exit(0); process.exit(0);"), 0, "a clean exit stays clean");
+  assert.equal(childExit("process.exitCode = 2; process.exit(0);"), 2, "an explicit nonzero exitCode survives a later exit(0)");
 
   console.log("teardown registry + tracked opener: OK");
 } finally {

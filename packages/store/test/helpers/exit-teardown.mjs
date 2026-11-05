@@ -21,7 +21,10 @@
 // - `process.exit(code)` no longer terminates synchronously: it records the code,
 //   unrefs handles that would hold the loop, and lets the process exit on its
 //   own; an unref'd 5s watchdog preserves the old guaranteed-exit semantics if
-//   something keeps the loop alive after all.
+//   something keeps the loop alive after all. A recorded NONZERO status is
+//   sticky: with a synchronous kill, `if (failed) process.exit(1); process.exit(0);`
+//   could never reach the second call, so the deferred version must not let the
+//   trailing zero mask a failure either (CodeRabbit, PR #191).
 // - every better-sqlite3 handle constructed by a test is tracked (the CJS export
 //   is wrapped once, before any test module loads) and closed newest-first from
 //   the `exit` hook; src/ never imports this file, and product code goes through
@@ -90,11 +93,15 @@ function drain() {
 function installDeferredExit() {
   process.exit = (code) => {
     const wanted = typeof code === "number" ? code : (process.exitCode ?? 0);
-    process.exitCode = wanted;
+    const current = process.exitCode;
+    // Nonzero is sticky: a later `process.exit(0)` must never downgrade an
+    // already-requested failure (see the fusion-registry-memory pattern).
+    process.exitCode = typeof current === "number" && current !== 0 ? current : wanted;
     unrefPendingHandles();
     if (!watchdogArmed) {
       watchdogArmed = true;
-      setTimeout(() => realExit(wanted), 5000).unref();
+      const finalCode = () => (typeof process.exitCode === "number" ? process.exitCode : wanted);
+      setTimeout(() => realExit(finalCode()), 5000).unref();
     }
   };
 }

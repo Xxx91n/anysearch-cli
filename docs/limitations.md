@@ -88,11 +88,13 @@
   `test/helpers/exit-teardown.mjs`, which defers `process.exit()` to a natural
   exit and closes raw handles newest-first.
   Promotion evidence (the recalibrated rule: only full-gate greens promote):
-  macOS full-gate **9 steps including the store suite** green in run 42032463918
-  (PR #191, head 9d172d3) and in diag run 42032450895 (`[pass] turbo run test`,
-  `SHIP_GATE_EXIT=0`); the remaining consecutive-green trials are recorded in
-  #183 / PR #191 as they land. `macos-latest` is back in the blocking matrix and
-  `REQUIRED_LEGS` mirrors it.
+  **three consecutive macOS full-gate greens** (9 steps including the store
+  suite) on PR #191 — run 42032463918 (head `9d172d3`), run 42034443431
+  (head `ef6fda5`), run 42035956744 (head `5acf577`) — after diag run
+  42032450895 had confirmed the fix surface (`[pass] turbo run test`,
+  `SHIP_GATE_EXIT=0`). `macos-latest` is back in the blocking matrix and
+  `REQUIRED_LEGS` mirrors it. A later run on the CodeRabbit-repaired head adds
+  confirmation, not promotion credit.
   Residual boundary (kept honest): anything that still force-exits a process
   with live native state can abort again — the `macos-spillover-probe` job stays
   as a non-blocking early-warning reporter, and `apps/mcp` / `apps/plugin` close

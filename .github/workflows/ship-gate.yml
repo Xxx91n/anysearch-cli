@@ -45,10 +45,11 @@ jobs:
         # the tracked opener (packages/store/src/db.ts), the eval runner drains
         # the registry before exit, and store test processes preload
         # test/helpers/exit-teardown.mjs (close-on-exit for raw handles).
-        # Promotion evidence: green FULL-GATE runs (9 steps incl. the store
-        # suite) — 42032463918 on PR #191 (head 9d172d3) plus the consecutive
-        # trials recorded in #183 / docs/limitations.md. The recalibrated rule
-        # stands: only full-gate greens promote; minimal-probe greens never do.
+        # Promotion evidence: three consecutive green FULL-GATE runs (9 steps
+        # incl. the store suite) on PR #191 — 42032463918 (9d172d3),
+        # 42034443431 (ef6fda5), 42035956744 (5acf577); see
+        # docs/limitations.md. The recalibrated rule stands: only full-gate
+        # greens promote; minimal-probe greens never do.
         # The trigger that was actually fixed is process.exit() forcing C++
         # static destruction over live native state (not handle leakage) — see
         # the limitations entry before touching any exit path here.
