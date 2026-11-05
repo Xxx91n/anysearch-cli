@@ -51,6 +51,10 @@
 const realExit = process.exit.bind(process);
 const WATCHDOG_MS = 5000;
 
+/**
+ * Unrefs handles that would keep the loop alive, leaving stdout/stderr ref'd so
+ * a deferred exit never truncates buffered output.
+ */
 function unrefPendingHandles() {
   if (typeof process._getActiveHandles !== "function") return;
   for (const h of process._getActiveHandles()) {
@@ -58,6 +62,11 @@ function unrefPendingHandles() {
   }
 }
 
+/**
+ * Names the resources still keeping the process alive (watchdog diagnostics).
+ *
+ * @returns Comma-separated resource kinds, or "unknown"/"none".
+ */
 function activeResources() {
   if (typeof process.getActiveResourcesInfo !== "function") return "unknown";
   try { return process.getActiveResourcesInfo().join(",") || "none"; } catch { return "unknown"; }
@@ -65,6 +74,11 @@ function activeResources() {
 
 let watchdogArmed = false;
 
+/**
+ * Replaces `process.exit` with a deferred version: record the code (nonzero is
+ * sticky), unref handles, and let the process end on its own; arms a one-shot
+ * watchdog so the old guaranteed-exit semantics still hold if the loop hangs.
+ */
 function installDeferredExit() {
   process.exit = (code) => {
     const wanted = typeof code === "number" ? code : (process.exitCode ?? 0);

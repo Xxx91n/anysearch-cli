@@ -44,7 +44,11 @@ jobs:
         # (packages/store/src/teardown.ts), every store handle opens through
         # the tracked opener (packages/store/src/db.ts), the eval runner drains
         # the registry before exit, and store test processes preload
-        # test/helpers/exit-teardown.mjs (close-on-exit for raw handles).
+        # test/helpers/exit-teardown.mjs, which defers process.exit() to a
+        # natural exit (nonzero exit codes stay sticky) instead of force-exiting
+        # over live native state. That preload does NOT close raw test handles:
+        # under tsx an ESM import never sees a patched CJS module.exports, so
+        # the attempt was removed rather than left looking like a fix.
         # Promotion evidence: three consecutive green FULL-GATE runs (9 steps
         # incl. the store suite) on PR #191 — 42032463918 (9d172d3),
         # 42034443431 (ef6fda5), 42035956744 (5acf577); see

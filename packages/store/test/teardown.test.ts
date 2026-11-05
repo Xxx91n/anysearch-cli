@@ -86,6 +86,13 @@ try {
   // `if (failed > 0) process.exit(1)` and could mask a failure. A synchronous
   // kill made that impossible; the deferred exit must preserve it.
   const storeRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+  /**
+   * Runs a throwaway child with the store preload installed and reports its
+   * exit status, so the deferred-exit contract is asserted on real processes.
+   *
+   * @param script Inline script to execute in the child.
+   * @returns The child's exit status (`null` if it was killed by a signal).
+   */
   const childExit = (script: string): number | null =>
     spawnSync(process.execPath, ["--import", "./test/helpers/exit-teardown.mjs", "-e", script], {
       cwd: storeRoot,
