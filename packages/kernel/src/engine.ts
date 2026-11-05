@@ -567,7 +567,7 @@ export class RetroaererdEngine {
     // by, the sufficiency/fusion gate.
     const webProviderLedger = buildWebProviderLedger(listedProviderIds, providerLists, nativeScores, providersFailed);
 
-// Design: one append-only sufficiency checkpoint attempt per search that
+    // Design: one append-only sufficiency checkpoint attempt per search that
     // reaches this single point — after computeSufficiency, before the envelope
     // assembles (T7 decision #93). Early throws never arrive here, so no row is
     // guaranteed for every search. The payload carries the state crash-recovery

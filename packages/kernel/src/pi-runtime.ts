@@ -348,7 +348,10 @@ export class PiAgentRuntime {
     this.opts = opts;
     // T2 #177: one scoped retriever for the whole runtime. `store && sessionId`
     // is the same gate MemoryPipeline uses — the handle is only trusted when the
-    // session row is also wired, so budget_ledger/resume_anchors FK writes are safe.
+    // store is wired too. PREcondition: the composition root has registered the
+    // session row (ensureSession) before the first search; otherwise the engine's
+    // budget_ledger FK would reject the lazy row. `opts` is not mutated after
+    // construction, so this captured id is the runtime's only session id.
     const wiredSessionId = opts.store && opts.sessionId ? opts.sessionId : undefined;
     this.scopedRetriever = wiredSessionId
       ? { search: (q) => opts.retriever.search({ ...q, sessionId: wiredSessionId }) }

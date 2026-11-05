@@ -7,6 +7,8 @@
 
 import { RetroaererdEngine } from "../src/engine";
 import { createEngine } from "../src/composition";
+import { PiAgentRuntime } from "../src/pi-runtime";
+import type { RetrieverPort, DomainConfigPort } from "../src/ports";
 import { SqliteSessionStore, BudgetLedger } from "@anysearch-cli/store";
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, FusedEnvelope } from "@anysearch-cli/retriever";
 import fs from "node:fs";
@@ -188,6 +190,37 @@ async function main() {
   const tightLedger = new BudgetLedger((tight.store as unknown as { db: any }).db);
   const tightBalance = tightLedger.getBalance(tightSession.id)!;
   assert(tightBalance.billableCalls === 1 && tightBalance.reservedCalls === 0, "7: one settled call, no leaked reservation");
+
+  // 8. Runtime wiring: the scoped retriever carries the handle only for a fully
+  //    wired runtime (store + sessionId), and the sufficiency gate shares that
+  //    same retriever — rerounds are anchored/billed too.
+  const captured: Array<{ query: string; sessionId?: string }> = [];
+  const captureRetriever: RetrieverPort = {
+    search: async (q) => {
+      captured.push({ query: q.query, sessionId: q.sessionId });
+      return { results: [], answers: [], metadata: {} } as unknown as FusedEnvelope;
+    },
+  };
+  const minimalDomain: DomainConfigPort = {
+    sources: { enabled: [] }, prompts: [], skills: { active: [] },
+    hooks: { toolWhitelist: [] }, rag: { adapter: "none" },
+  };
+  const wiredRuntime = new PiAgentRuntime({
+    retriever: captureRetriever, store: {} as any, sessionId: "wired-session",
+    domain: minimalDomain, model: {}, streamFn: (() => {}) as any,
+  });
+  await (wiredRuntime as unknown as { scopedRetriever: RetrieverPort })
+    .scopedRetriever.search({ query: "wired", mode: "fast" });
+  assert(captured.length === 1 && captured[0].sessionId === "wired-session", "8: fully wired runtime threads the session id");
+  assert((wiredRuntime as unknown as { gate?: { deps?: { retriever?: unknown } } }).gate?.deps?.retriever
+    === (wiredRuntime as unknown as { scopedRetriever: unknown }).scopedRetriever, "8: sufficiency gate shares the scoped retriever");
+  const halfRuntime = new PiAgentRuntime({
+    retriever: captureRetriever, sessionId: "orphan-session",
+    domain: minimalDomain, model: {}, streamFn: (() => {}) as any,
+  });
+  await (halfRuntime as unknown as { scopedRetriever: RetrieverPort })
+    .scopedRetriever.search({ query: "half", mode: "fast" });
+  assert(captured.length === 2 && captured[1].sessionId === undefined, "8: half-wired runtime does not thread an unregistered session id");
 
   fs.rmSync(domainsDir, { recursive: true, force: true });
 
