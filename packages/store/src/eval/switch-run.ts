@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
+import { openDatabase } from "../db";
 import { CHAIN_SCHEMA_VERSION, eventHash, bootstrapAccessChain, type ChainEventRow } from "../access-chain";
 import { AGE_BUCKETS, bucketHistogram } from "./day-buckets";
 import { psi } from "./bgnbd";
@@ -57,7 +58,7 @@ export interface ConsumedReadings { readings: SwitchReadings; degraded: boolean 
 
 export function readConsumedReadings(dbPath: string, reg: SwitchRegistration): ConsumedReadings | null {
   if (!existsSync(dbPath)) return null;
-  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  const db = openDatabase(dbPath, { readonly: true, fileMustExist: true });
   try {
     const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((t) => t.name));
     if (!tables.has("access_events")) return null;
@@ -116,7 +117,7 @@ function ensureAccessChainSourceLabel(db: Database.Database): void {
 }
 
 export function writeSwitchChainEvent(dbPath: string, eventType: SwitchChainEventType, provenance: "real" | "drill" = "real"): { id: number; hash: string } {
-  const db = new Database(dbPath);
+  const db = openDatabase(dbPath);
   try {
     if (!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='access_events'").get()) throw new Error("access_events table missing — create the store first");
     const cols = new Set((db.prepare("PRAGMA table_info(access_events)").all() as { name: string }[]).map((c) => c.name));
@@ -149,7 +150,7 @@ export interface ReplayedSwitchChain {
 // an inapplicable edge or unknown event_type is a hard error, never a guessed rebuild.
 export function replaySwitchChain(dbPath: string): ReplayedSwitchChain | null {
   if (!existsSync(dbPath)) return null;
-  const db = new Database(dbPath, { fileMustExist: true });
+  const db = openDatabase(dbPath, { fileMustExist: true });
   try {
     // release-gate edge (first pre-tag run on a fresh box): the observation layer
     // creates the shared durable file with only observability_* tables, so a DB can

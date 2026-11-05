@@ -5,6 +5,7 @@
 // db.transaction(fn) auto-rollback, avoid RETURNING+FTS trigger path (issue #654).
 
 import Database from "better-sqlite3";
+import { openDatabase } from "./db";
 import { containsSecret } from "./secret.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -349,7 +350,9 @@ export class SqliteSessionStore implements SessionStore {
     this.relationLlmFallback = opts?.relationLlmFallback;
     this.consolidateSummarize = opts?.consolidateSummarize;
     this.consolidateClassify = opts?.consolidateClassify;
-    this.db = new Database(dbPath, { timeout: 5000 });
+    // tracked opener: the teardown registry closes it on any store-side exit
+    // path that drains it (eval runner, test processes) — F-16 fix, #183.
+    this.db = openDatabase(dbPath, { timeout: 5000 });
     // atomcode research: WAL persistent, set once, single shared connection.
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = NORMAL");

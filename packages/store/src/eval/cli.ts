@@ -16,6 +16,7 @@ import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, R
 import { appendLook, emptyLooksLedger, nextLook, readLooksLedger, writeLooksLedger } from "./looks-ledger";
 import { activeIds, expiredEntries, readQuarantine } from "./quarantine-ledger";
 import { SqliteObservationStore } from "../observation";
+import { runTeardown, unrefPendingHandles } from "../teardown";
 
 function repoRoot(): string {
   let d = dirname(fileURLToPath(import.meta.url));
@@ -418,10 +419,25 @@ async function main(): Promise<number> {
   return overrideIdx >= 0 && exitCode === 1 ? 0 : exitCode;
 }
 
-main().then(
-  (code) => process.exit(code),
-  (e) => {
-    console.error("[eval] internal error: " + String((e as Error)?.stack ?? e));
-    process.exit(2);
+// Exit path — the same contract as the CLI composition root
+// (apps/cli/src/index.ts), applied to the store-side runner (#183): drain the
+// teardown registry BEFORE exiting so no live native handle (observation store,
+// per-case reader/writer) is reaped by libuv/native static destruction at exit.
+// That teardown is where the macOS F-16 `libc++abi: mutex lock failed` abort
+// fired; unrefPendingHandles is the backstop for handles we cannot close, and
+// the watchdog preserves the forced-exit semantics of the old process.exit().
+// Deliberate hard exits above (invalid EVAL_TIMEOUT_MS, backflow overlap, the
+// wall-clock watchdog) stay immediate: they fire before/independently of the
+// handle-opening phase and must not be delayed by teardown work.
+const exit = (code: number): void => {
+  try { runTeardown(); } finally {
+    process.exitCode = code;
+    unrefPendingHandles();
+    setTimeout(() => process.exit(code), 5000).unref();
   }
-);
+};
+
+main().then(exit, (e) => {
+  console.error("[eval] internal error: " + String((e as Error)?.stack ?? e));
+  exit(2);
+});
