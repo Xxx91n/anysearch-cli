@@ -12,14 +12,27 @@
 import Database from "better-sqlite3";
 import { registerTeardown } from "./teardown";
 
+/**
+ * Opens a better-sqlite3 handle through the store's single tracked door.
+ *
+ * @param dbPath Database file (or `:memory:`).
+ * @param options better-sqlite3 open options.
+ * @returns The handle, registered for the exit path with an idempotent close.
+ */
 export function openDatabase(dbPath: string, options?: Database.Options): Database.Database {
   return trackDatabase(new Database(dbPath, options));
 }
 
-// Registers an already-constructed handle. close() becomes idempotent for the
-// handle's whole lifetime: a second close is a no-op instead of a native
-// double-close (better-sqlite3 throws "The database connection is not open"),
-// and closing early unregisters the exit hook.
+/**
+ * Registers an already-constructed handle with the exit path.
+ *
+ * `close()` becomes idempotent for the handle's whole lifetime: a second close is
+ * a no-op instead of a native double-close (better-sqlite3 throws "The database
+ * connection is not open"), and closing early unregisters the exit hook.
+ *
+ * @param db Handle to track (mutated in place: `close` is replaced).
+ * @returns The same handle, so call sites stay chained.
+ */
 export function trackDatabase(db: Database.Database): Database.Database {
   const close = db.close.bind(db);
   let live = true;
