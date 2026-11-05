@@ -10,7 +10,7 @@ All notable changes to this project are recorded here. Format follows
 
 - **`macos-latest` 晋级尝试被其首个全量门运行反转，再剪除出 `ship-gate` BLOCKING matrix**（`.github/workflows/ship-gate.yml`）：晋级依据（探针 TTL 规则「≥5 连绿→评估恢复」，2026-11-04 七连绿 41840345806…41850289669 达标）在首个全量门 macOS 运行（41913304226）被证伪——5/76 个 store 测试文件进程在**断言全部通过后**exit-time 崩溃（`libc++abi` "mutex lock failed: Invalid argument"），另 `eval-gate.test.ts` 捕获 eval runner 子进程被信号杀死；F-16 家族在全量负载下存活。根因：fd249d41 的显式 teardown 只覆盖 CLI 组合根（`apps/cli`），store 侧进程退出（测试文件、`packages/store/src/eval/cli.ts`）从未修复，而探针只驱动已修的 CLI 路径——**探针证据面 ≠ 全量门验收面**。matrix 回退 ubuntu+windows。
 - **晋级规则重新校准**：恢复 lane 需 store 侧 teardown 修复后的**全量门试跑绿证据**；「≥5 最小复现连绿」已证实不足。此规则同步改写于 ship-gate.yml 矩阵注释、探针 job TTL 注记、`scripts/macos-exit-probe.mjs` 头注与 verdict 文案、`docs/limitations.md`。
-- **门禁腿级加固（审计 S2，PR #174 CodeRabbit）**：`scripts/assert-checks-green.mjs` 新增 `REQUIRED_LEGS`——族级 discovery 通过后，未注册的 blocking 腿不再能靠已注册腿单独产出 GREEN（原竞态：macos runner 排队更久时两腿即可判绿）；缺失腿保持 discovery 相位并在 discovery 窗口到期后 fail-closed。`release.yml` pre-tag 在 wait-on-check（regexp 无法要求命名腿）之后新增同脚本腿级断言步骤（`--timeout-min 20` 与 wait 步同界——晚注册腿需完整运行时间，5 分钟会 fail-closed 掉健康发布），覆盖同一缺口。`REQUIRED_LEGS` 与 ship-gate.yml matrix 的双向同步（缺失腿与多余腿都断红）由 `eval-release-layering.test.ts` 新断言强制（lockstep）。
+- **门禁腿级加固（审计 S2，PR #174 CodeRabbit）**：`scripts/assert-checks-green.mjs` 新增 `REQUIRED_LEGS`——族级 discovery 通过后，未注册的 blocking 腿不再能靠已注册腿单独产出 GREEN（原竞态：macos runner 排队更久时两腿即可判绿）；缺失腿保持 discovery 相位并在 discovery 窗口到期后 fail-closed。`release.yml` pre-tag 在 wait-on-check（regexp 无法要求命名腿）之后新增同脚本腿级断言步骤（`--timeout-min 20`，与 wait 步骤使用相同的 20 分钟窗口——晚注册腿需完整运行时间，5 分钟会 fail-closed 掉健康发布），覆盖同一缺口。`REQUIRED_LEGS` 与 ship-gate.yml matrix 的双向同步（缺失腿与多余腿都断红）由 `eval-release-layering.test.ts` 新断言强制（lockstep）。
 
 ### Fixed
 
