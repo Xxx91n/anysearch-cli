@@ -28,6 +28,7 @@ import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 let passed = 0;
 let failed = 0;
 
+/** Record one assertion result in the pass/fail tally. */
 function assert(cond: boolean, msg: string) {
   if (cond) {
     passed++;
@@ -79,15 +80,20 @@ function chatHarness(): ChatHandler {
   return handler;
 }
 
+/** Concatenate the model-visible text blocks of one tool result. */
 function outputOf(result: ChatResult): string {
   return result.content.map((block) => block.text).join("\n");
 }
 
+/** Invoke ans_chat once and return its text output. */
 async function callOne(handler: ChatHandler): Promise<string> {
   return outputOf(await handler({ message: "cache-key probe" }));
 }
 
-// Counts every catalog session construction via its #113 warning.
+/**
+ * Count every catalog session construction via its #113 warning line, without
+ * swallowing ordinary stderr output.
+ */
 let rebuilt = 0;
 const originalStderrWrite = process.stderr.write;
 function installRebuildProbe(): void {
@@ -99,6 +105,7 @@ function installRebuildProbe(): void {
     return (originalStderrWrite as (...args: unknown[]) => boolean).call(process.stderr, chunk, ...rest);
   } as typeof process.stderr.write;
 }
+/** Restore the original stderr writer after the probe has served its purpose. */
 function restoreRebuildProbe(): void {
   process.stderr.write = originalStderrWrite;
 }
