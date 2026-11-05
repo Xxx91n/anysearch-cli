@@ -31,9 +31,13 @@ export const DEFAULT_GATE: SufficiencyGate = {
 
 // Engine config: budget caps + sufficiency gate + grace window.
 export interface EngineConfig {
-  // ponytail: budget field is accepted but not yet wired to BudgetLedger (decision 4 known deferral).
-  // Kernel stays pure orchestration; budget enforcement will be injected via store layer when implemented.
-  // per-call dimension wired via BudgetLedgerPort. Token dimension pending LLM integration.
+  // EngineConfig.budget is a legacy field: search() never reads it. Budget
+  // enforcement is wired through the injected BudgetLedgerPort + sessionId —
+  // per-call reserve/settle (decision 2C) here, token/USD settle in
+  // PiAgentRuntime (#103, kernel level). Production composition-root
+  // injection is #177 and PiAgentRuntime production wiring is #178;
+  // token-cap reservation's per-run estimate stays undecided (#175 Further
+  // Notes, candidate T9, no implementation ticket cut).
   budget?: Budget;
   gate?: Partial<SufficiencyGate>;  // override DEFAULT_GATE fields
   graceWindowMs?: number;            // default 1500 (paperfoot EARLY_STOP_GRACE)
@@ -83,7 +87,13 @@ export interface SufficiencyResult {
   mvs: SufficiencySignal;
 }
 
-// ponytail: Resume Anchoring on timeout/crash is not implemented - resume_anchors exists in the store schema but this engine never writes a checkpoint (no replay/recovery wiring). | Implement when long-running research sessions need crash recovery
+// Resume Anchoring write side landed in #106 (T7 decision #93): search()
+// append-only writes exactly one "sufficiency" resume_anchor per call via the
+// injected ResumeAnchorsPort, after computeSufficiency and before the envelope
+// assembles (see the Design note at the write site). computeSufficiency itself
+// stays a pure single-computation source with no I/O. Read side / replay is
+// deliberately out of scope and still undecided — see #175 "Further Notes"
+// (candidate T8, no implementation ticket cut yet).
 export function computeSufficiency(
   rankedResults: NormalizedResult[],
   providerLists: string[][],
