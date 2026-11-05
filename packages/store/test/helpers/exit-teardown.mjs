@@ -1,20 +1,36 @@
 // Store test-process exit-teardown bootstrap (#183) — test-only preload.
 //
-// `pnpm test` in this package runs every test FILE as its own node process, and
-// those files open raw better-sqlite3 handles directly (`new Database(...)`).
-// Nothing closed them at exit, so libuv/native static destruction reaped live
-// handles — the macOS F-16 abort family (`libc++abi: terminating ... mutex lock
-// failed: Invalid argument`) that killed 5/76 store test files in run
-// 41913304226 AFTER their assertions had passed, failing the full gate.
+// WHY (evidence, macOS arm64):
+// Two full-gate observations on the #183 branch pin the trigger. Every store test
+// file that aborted at exit (`libc++abi: terminating ... mutex lock failed:
+// Invalid argument`) had called `process.exit(...)` as its terminal statement:
+// diag run 42031513303 -> access-chain-telemetry, access-chain-verify,
+// eval-abstain, fusion-registry-memory (all `process.exit` files, all after
+// "N passed, 0 failed"); no naturally-exiting file ever crashed. And the
+// eval-runner child that died with a signal in run 41913304226 (caught by
+// eval-gate.test.ts) passed in the same diag run once
+// packages/store/src/eval/cli.ts stopped calling `process.exit(code)`.
+// Mechanism: process.exit() runs C++ static destructors (and N-API env cleanup)
+// while Node's threadpool/native state can still be alive; on Apple's libc++
+// locking a mutex that those destructors already tore down is fatal (EINVAL ->
+// std::system_error -> std::terminate -> SIGABRT). Closing every sqlite handle
+// first removes the connection-side surface but cannot stop that race, which is
+// why this preload also applies the CLI composition root's exit contract
+// (apps/cli/src/index.ts `exit()`):
 //
-// Product code now closes its own handles through src/db.ts (tracked opener +
-// teardown registry drained by the eval runner). This preload covers the ~48
-// raw `new Database(...)` call sites the tests use as fixtures and assertion
-// readers, without rewriting each one: it wraps the CJS export of
-// better-sqlite3 — in a test process only, src/ never imports this file — so
-// every constructed handle is tracked and closed from a process 'exit' hook,
-// newest first. Order matters: better-sqlite3 insists on LIFO closes for
-// WAL/statement adjacency, and a test file's readers are opened last.
+// - `process.exit(code)` no longer terminates synchronously: it records the code,
+//   unrefs handles that would hold the loop, and lets the process exit on its
+//   own; an unref'd 5s watchdog preserves the old guaranteed-exit semantics if
+//   something keeps the loop alive after all.
+// - every better-sqlite3 handle constructed by a test is tracked (the CJS export
+//   is wrapped once, before any test module loads) and closed newest-first from
+//   the `exit` hook; src/ never imports this file, and product code goes through
+//   the tracked opener in src/db.ts.
+//
+// Consequence for test authors: code after `process.exit(...)` keeps running in
+// that process. All 51 store call sites use it as their terminal statement or
+// inside an already-failing branch, and the exit code is preserved either way, so
+// the observable contract (does this file pass?) is unchanged.
 //
 // Failure policy: a broken preload must not masquerade as a product failure, so
 // installation errors are reported loudly on stderr and the suite keeps running
@@ -22,6 +38,8 @@
 import { createRequire } from "node:module";
 
 const open = new Set();
+const realExit = process.exit.bind(process);
+let watchdogArmed = false;
 
 function track(db) {
   try {
@@ -39,7 +57,7 @@ function track(db) {
   }
 }
 
-function install() {
+function installTracking() {
   const req = createRequire(import.meta.url);
   const modPath = req.resolve("better-sqlite3");
   const real = req(modPath);
@@ -54,21 +72,36 @@ function install() {
   });
 }
 
+function unrefPendingHandles() {
+  if (typeof process._getActiveHandles !== "function") return;
+  for (const h of process._getActiveHandles()) {
+    try { h.unref?.(); } catch { /* ignore */ }
+  }
+}
+
 function drain() {
   for (const db of [...open].reverse()) {
     try { if (db.open !== false) db.close(); } catch { /* already closed / native release error */ }
     open.delete(db);
   }
-  // Backstop for handles we cannot close (same intent as the store teardown
-  // registry's unrefPendingHandles): let the loop end instead of forcing exit.
-  const p = process;
-  if (typeof p._getActiveHandles === "function") {
-    for (const h of p._getActiveHandles()) { try { h.unref?.(); } catch { /* ignore */ } }
-  }
+  unrefPendingHandles();
+}
+
+function installDeferredExit() {
+  process.exit = (code) => {
+    const wanted = typeof code === "number" ? code : (process.exitCode ?? 0);
+    process.exitCode = wanted;
+    unrefPendingHandles();
+    if (!watchdogArmed) {
+      watchdogArmed = true;
+      setTimeout(() => realExit(wanted), 5000).unref();
+    }
+  };
 }
 
 try {
-  install();
+  installTracking();
+  installDeferredExit();
 } catch (e) {
   console.error("[exit-teardown] bootstrap failed — store test processes are UNTRACKED: " + (e && e.message ? e.message : String(e)));
 }
