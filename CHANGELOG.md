@@ -4,6 +4,13 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #182: 仓务——#94 MCP SDK v2 调研报告落 main + .temp/ 会话残留处置方案
+
+### Documented
+
+- **#94 MCP SDK v2 调研报告归档至 `docs/research/mcp-sdk-v2-status.md`**：证据住 `main`，与 `upstream-unblock-registry.md` 落档先例一致（#171）。内容恢复自 issue #94 resolution 评论（2026-11-03）；原 `research/mcp-sdk-v2` 分支在归档时已不可从 `origin` 恢复，评论为现存权威结论。零行为改动。
+- **`.temp/` 会话残留逐项处置方案 `docs/research/temp-session-residue-disposition.md`**：枚举 #15/#16 调查工件、CI 日志取证、land 前备份、评审快照四类残留，逐项给出删/档/留建议；删除性动作标注「需用户单独授权」，本票不执行任何删除。零行为改动。
+
 ## Unreleased — #16: macOS 晋级尝试被首跑证据反转——再剪除+探针恢复+门禁腿级加固（PR #174）
 
 ### Changed
