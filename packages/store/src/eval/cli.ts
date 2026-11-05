@@ -146,7 +146,10 @@ async function main(): Promise<number> {
   if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
     setTimeout(() => {
       console.error("[eval] TIMEOUT: exceeded " + timeoutMs + "ms ");
-      process.exit(124);
+      // #183 (PR #191 review): a mid-run timeout can fire while a case still
+      // holds tracked handles — drain them before the forced exit, for the same
+      // reason the normal exit path drains. Errors never delay the watchdog.
+      try { runTeardown(); } finally { process.exit(124); }
     }, timeoutMs).unref();
   }
   // backflow slice family must never intersect the frozen baseline — fail fast (exit 12).
@@ -426,9 +429,10 @@ async function main(): Promise<number> {
 // That teardown is where the macOS F-16 `libc++abi: mutex lock failed` abort
 // fired; unrefPendingHandles is the backstop for handles we cannot close, and
 // the watchdog preserves the forced-exit semantics of the old process.exit().
-// Deliberate hard exits above (invalid EVAL_TIMEOUT_MS, backflow overlap, the
-// wall-clock watchdog) stay immediate: they fire before/independently of the
-// handle-opening phase and must not be delayed by teardown work.
+// The argument-validation hard exits above (invalid EVAL_TIMEOUT_MS, backflow
+// overlap) stay immediate: they fire before any handle is opened. The
+// wall-clock watchdog stays a forced exit too, but drains the registry first —
+// it can fire mid-run while a case still holds tracked handles.
 const exit = (code: number): void => {
   try { runTeardown(); } finally {
     process.exitCode = code;
