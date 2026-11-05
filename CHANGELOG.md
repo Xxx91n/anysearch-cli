@@ -4,21 +4,25 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
-## Unreleased — #16: macOS 晋级回 ship-gate blocking matrix（≥5 连绿达标，探针退役）
+## Unreleased — #16: macOS 晋级尝试被首跑证据反转——再剪除+探针恢复+门禁腿级加固（PR #174）
 
 ### Changed
 
-- **`macos-latest` 恢复进入 `ship-gate` 的 BLOCKING matrix**（`.github/workflows/ship-gate.yml`）：F-16 的 exit-time `libc++abi` 崩溃已在 teardown 接缝修复（fd249d41：显式 teardown 取代 `process.exit` 竞态），#107/PR #121 修复探针路径缺陷（`working-directory: packages/store`）后，`macos-spillover-probe` 全链（registration → build → exit-probe）连绿达标——2026-11-04 七个连续已完成 run（41840345806…41850289669）全绿、零崩溃签名（修复合入后抽样的全部探针 run 无红），晋级规则（探针 TTL 注记：≥5 连绿 → 评估恢复）触发。macOS 重新参与 merge/tag 门禁；若崩溃家族复现，按 `docs/limitations.md` 记录的规则重新剪除并复探。
-- **`release.yml` / `scripts/assert-checks-green.mjs` 注释对齐**：macOS 覆盖现随 blocking `ship-gate` matrix 腿进入发布门禁（`check-regexp` 的 `ship-gate` 族始终匹配该腿；退役探针从未匹配）。
+- **`macos-latest` 晋级尝试被其首个全量门运行反转，再剪除出 `ship-gate` BLOCKING matrix**（`.github/workflows/ship-gate.yml`）：晋级依据（探针 TTL 规则「≥5 连绿→评估恢复」，2026-11-04 七连绿 41840345806…41850289669 达标）在首个全量门 macOS 运行（41913304226）被证伪——5/76 个 store 测试文件进程在**断言全部通过后**exit-time 崩溃（`libc++abi` "mutex lock failed: Invalid argument"），另 `eval-gate.test.ts` 捕获 eval runner 子进程被信号杀死；F-16 家族在全量负载下存活。根因：fd249d41 的显式 teardown 只覆盖 CLI 组合根（`apps/cli`），store 侧进程退出（测试文件、`packages/store/src/eval/cli.ts`）从未修复，而探针只驱动已修的 CLI 路径——**探针证据面 ≠ 全量门验收面**。matrix 回退 ubuntu+windows。
+- **晋级规则重新校准**：恢复 lane 需 store 侧 teardown 修复后的**全量门试跑绿证据**；「≥5 最小复现连绿」已证实不足。此规则同步改写于 ship-gate.yml 矩阵注释、探针 job TTL 注记、`scripts/macos-exit-probe.mjs` 头注与 verdict 文案、`docs/limitations.md`。
+- **门禁腿级加固（审计 S2，PR #174 CodeRabbit）**：`scripts/assert-checks-green.mjs` 新增 `REQUIRED_LEGS`——族级 discovery 通过后，未注册的 blocking 腿不再能靠已注册腿单独产出 GREEN（原竞态：macos runner 排队更久时两腿即可判绿）；缺失腿保持 discovery 相位并在 discovery 窗口到期后 fail-closed。`release.yml` pre-tag 在 wait-on-check（regexp 无法要求命名腿）之后新增同脚本腿级断言步骤，覆盖同一缺口。`REQUIRED_LEGS` 与 ship-gate.yml matrix 的同步由 `eval-release-layering.test.ts` 新断言强制（lockstep）。
 
-### Removed
+### Fixed
 
-- **`macos-spillover-probe` job 与 `scripts/macos-exit-probe.mjs` 退役**：探针的 TTL 条款（≥5 连绿晋级）已触发，blocking matrix 腿本身即崩溃信号面，保留探针只会双倍 macOS runner 成本而不增信号。`packages/store/test/eval-release-layering.test.ts` 的 Node 22 钉版断言与 job 数无关（`pins.length >= 2`），探针退役后仍为 2 钉全 22，仅同步其注释。
+- **观察烟测信号盲区（审计 S1，PR #174 CodeRabbit）**：`scripts/verify-observation.mjs` 此前只查 `cli.error`——CLI 写完 trace 后在 teardown 被 SIGABRT 杀死时（F-16 签名）烟测仍 PASS。新增 `cli.signal` 判红（status 仍不设门：teardown 间歇改写退出码，信号才是可靠标记；MCP 子进程豁免——3 秒兜底 kill 是脚本自发的信号）。
+
+### Restored
+
+- **`macos-spillover-probe` job 与 `scripts/macos-exit-probe.mjs` 自 73ada6b0 恢复**（字节级，含 #121 的 `working-directory: packages/store` 路径修复），随再剪除回归观察位；TTL 文案更新为「崩溃签名报告器，非晋级时钟」。`eval-release-layering.test.ts` Node 22 钉版断言不变（三 job 时代 3 钉全 22，`pins.length >= 2` 兼容）。
 
 ### Documented
 
-- **README Known limitations 表删除「macOS is outside the blocking matrix」行**（已非现状；exit-time 覆盖 abstain exit code 的残余风险行保留）。
-- **`docs/limitations.md` 两条 macOS 条目更新为已收口状态**：剪除解除（含复现即再剪除的逃生口）与 registration 段红=探针缺陷（#121 修复）的定性；`docs/release-notes/0.0.3.md` 为历史时点记录，不动。
+- **README Known limitations 恢复「macOS is outside the blocking matrix」行**（带 PR #174 复现证据表述）；`docs/limitations.md` 剪除条目改写为「晋级尝试被首跑反转」完整因果与重校准规则，registration 段红条目收口说明同步；`docs/release-notes/0.0.3.md` 历史时点记录，不动。
 
 ## Unreleased — #15: api.anysearch.com 归属确认落定（官方证据闭环）
 

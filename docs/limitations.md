@@ -65,17 +65,21 @@
 - **Tavily does not forward `AbortSignal`** — provider-side timeouts are not
   cancelable through the SDK (recorded limitation; the kernel budget guard
   still bounds wall time).
-- **macOS blocking-matrix prune is lifted (#16)** — the exit-time `libc++abi`
-  family was fixed at the teardown seam (explicit teardown replaced the racy
-  `process.exit`, fd249d41) and stopped reproducing: after the #107 probe-path
-  fix the non-blocking `macos-spillover-probe` job ran the full chain
-  (registration → build → exit-probe) with zero crash signatures — seven
-  consecutive completed runs green (41840345806…41850289669, 2026-11-04),
-  meeting the promotion rule (≥5 consecutive green probes).
-  `macos-latest` is restored to the blocking `ship-gate` matrix and the probe
-  job is retired with its TTL. If the family re-manifests, prune the lane
-  again and re-probe per the rule recorded here — the retired probe
-  job/script must be recovered from git history (last present at 73ada6b0).
+- **macOS is outside the blocking matrix — promotion attempted and reversed
+  (#16 / PR #174)** — the ≥5-consecutive-green promotion rule fired (7 greens,
+  41840345806…41850289669) and `macos-latest` was restored to the blocking
+  `ship-gate` matrix; the FIRST full-gate run (41913304226) reversed it:
+  5/76 store test-file processes crashed at exit-time (`libc++abi` "mutex
+  lock failed: Invalid argument") with zero failed assertions, plus an
+  eval-runner child killed by signal. Root cause: fd249d41's explicit
+  teardown covers only the CLI composition root (`apps/cli`);
+  store-side process exits (test files, `packages/store/src/eval/cli.ts`)
+  never got it — the spillover probe drove only the fixed CLI path, so its
+  greens could not predict full-gate stability (probe evidence surface ≠
+  gate acceptance surface). The lane is re-pruned to ubuntu+windows and the
+  probe job is restored. Recalibrated promotion rule: restoring the lane
+  requires green FULL-GATE trial evidence after store-side teardown is
+  fixed; ≥5 minimal-probe greens alone are proven insufficient.
 - **Exit-time `libc++abi` can overwrite the abstain exit code** — observed on
   Windows: the teardown crash may replace the `3` that `--fail-on-abstain`
   produced. Automation must read the structured abstain marker (`--json`
@@ -86,8 +90,8 @@
   root under pnpm's strict layout (`MODULE_NOT_FOUND`, load-time family,
   distinct from the exit-time family under probe and never reaching it) — a
   probe defect, not the F-16 family. Fixed by #121 (`working-directory:
-  packages/store`); the promotion clock it anchored is closed by the #16
-  lane restoration.
+  packages/store`). The promotion clock it anchored fired (PR #174) and was
+  reversed by the first full-gate run — see the prune entry above.
 - **Page-level assertions sit at page-family granularity** — providers
   rotate URL paths (`/zh/` locale, `/10.x` version, dated
   `/specification/<date>/` variants), so live golden entries assert

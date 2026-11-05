@@ -47,11 +47,20 @@ assert(!release.includes("--decision"), "release.yml delegates the decision flag
 // --- 3. ship-gate.yml aligned on Node 22 (ledger 4) ------------------
 const shipGateYml = read(".github/workflows/ship-gate.yml");
 assert(!shipGateYml.includes("node-version: 24"), "ship-gate.yml must not pin Node 24");
-// the macOS spillover probe was a third job until its TTL retired with the
-// #16 promotion (macos-latest restored to the blocking matrix) — assert EVERY
-// node-version pin is 22 rather than a fixed job count (no 24, no other version).
+// the macOS spillover probe is a third job again (restored by the PR #174
+// repair after the promotion reversal) — assert EVERY node-version pin is 22
+// rather than a fixed job count (no 24, no other version).
 const pins = shipGateYml.match(/node-version: \d+/g) ?? [];
 assert(pins.length >= 2 && pins.every((p) => p === "node-version: 22"), "every ship-gate.yml job pins Node 22 (" + pins.join(", ") + ")");
+
+// --- 3b. assert-checks-green REQUIRED_LEGS mirrors the ship-gate matrix (PR #174 audit S2) ---
+const assertChecks = read("scripts/assert-checks-green.mjs");
+const matrixOs = shipGateYml.match(/os:\s*\[([^\]]+)\]/)?.[1] ?? "";
+const matrixLegs = matrixOs.split(",").map((s) => "ship-gate (" + s.trim() + ")");
+assert(matrixLegs.length >= 2, "ship-gate.yml matrix os list must parse (got: '" + matrixOs + "')");
+for (const leg of matrixLegs) {
+  assert(assertChecks.includes('"' + leg + '"'), "assert-checks-green REQUIRED_LEGS must mirror the ship-gate blocking matrix (missing: " + leg + ")");
+}
 
 // --- 4. the ledger is a committed repo-root file --------------------------
 assert(fs.existsSync(path.join(root, "eval-looks.json")), "the OF look ledger is committed at the repo root");

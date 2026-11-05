@@ -29,20 +29,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-latest RESTORED to the BLOCKING matrix (#16) — the exit-time
-        # libc++abi family was fixed at the teardown seam (explicit teardown
-        # replaced the racy process.exit, fd249d41) and the promotion rule was
-        # met: >=5 consecutive green probes ran the full chain (registration ->
-        # build -> exit-probe) after the #107 probe-path fix — verified window
-        # runs 41840345806..41850289669 (2026-11-04, 7 consecutive completed
-        # greens, zero crash signatures; every sampled post-fix probe run
-        # 2026-11-03 onward came back green). The non-blocking spillover
-        # probe hit its TTL and was retired with this promotion. If the family
-        # re-manifests here, prune the lane again and re-probe per the rule
-        # recorded in docs/limitations.md — the probe job and
-        # scripts/macos-exit-probe.mjs are retired with this commit and must
-        # be recovered from git history (last present at 73ada6b0).
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macos-latest pruned from the BLOCKING matrix — RE-PRUNED (#16, PR
+        # #174 repair): the promotion attempt was reversed by its own FIRST
+        # full-gate run (run 41913304226): 5/76 store test-file processes
+        # crashed at exit-time (libc++abi "mutex lock failed: Invalid
+        # argument") with zero failed assertions, plus an eval-runner child
+        # killed by signal — the family is alive under full-suite load.
+        # Root cause: fd249d41's explicit teardown covers ONLY the CLI
+        # composition root (apps/cli); store-side process exits (test files,
+        # packages/store/src/eval/cli.ts runner) never got it, and the
+        # spillover probe drove ONLY the fixed CLI path — its consecutive
+        # greens could not predict full-gate stability (probe evidence
+        # surface != gate acceptance surface).
+        # Recalibrated promotion rule: restoring this lane requires green
+        # FULL-GATE trial evidence after store-side teardown is fixed (see
+        # docs/limitations.md); >=5 minimal-probe greens alone are proven
+        # insufficient.
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       # full history checkout kept for headroom (index/supersession legs read the
@@ -131,3 +134,52 @@ jobs:
         # re-established by the test-online job in ci.yml.
         run: pnpm -C packages/store eval --offline
 
+  # (T4): macOS exit-teardown spillover probe — EXPERIMENT. The name, the
+  # bounded continue-on-error, and the minimal repro (NOT the 9-step gate) are the
+  # contract: this job reports crash signatures without gating merges.
+  # Restored by the PR #174 repair after the promotion reversal (see the
+  # matrix comment above). PROMOTION RULE RECALIBRATED: the minimal repro
+  # drives the CLI composition root only — the path fd249d41 fixed — so its
+  # greens do NOT predict full-gate stability (the promotion that trusted
+  # 7 consecutive greens crashed 5/76 store test files on its first
+  # full-gate run). This job is a crash-signature reporter, NOT a promotion
+  # clock: any future promotion needs green full-gate trial evidence after
+  # store-side teardown is fixed (docs/limitations.md). Persistent crashes
+  # => prune stays + ledger defer-f16-macos-native-crash.
+  macos-spillover-probe:
+    name: macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/setup@v2
+        with: { install: false }
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: node baseline (env facts before any native load)
+        run: node -v
+
+      - name: install (no scripts — better-sqlite3 prebuilt)
+        run: pnpm install --ignore-scripts
+
+      # Signature split A: a require-time SIGSEGV/exit-139 here = better-sqlite3
+      # dlopen/registration family — NOT the exit-time abort being probed.
+      # Design: run from packages/store — better-sqlite3 is a direct dependency of
+      # @anysearch-cli/store, and pnpm's strict layout exposes no root symlink; a
+      # root-level require dies with MODULE_NOT_FOUND (split A) before the probe
+      # ever reaches split B. Build and abstain-path repro stay at repo root.
+      - name: better-sqlite3 registration check
+        working-directory: packages/store
+        run: node -e "const D=require('better-sqlite3'); new D(':memory:'); console.log('sqlite registration OK')"
+
+      - name: build cli (bundled artifact is the shipped exit path)
+        run: pnpm --filter @anysearch-cli/cli build
+
+      # Signature split B: libc++abi/mutex abort on process exit = family.
+      - name: abstain-path repro + crash-signature summary
+        run: node scripts/macos-exit-probe.mjs
