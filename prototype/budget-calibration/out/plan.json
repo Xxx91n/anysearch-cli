@@ -1,0 +1,125 @@
+{
+  "startedAt": "2026-11-05T10:47:20.682Z",
+  "plan": [
+    {
+      "domain": "docs",
+      "q": "How do I configure strict mode for a TypeScript project?",
+      "rag": "none"
+    },
+    {
+      "domain": "docs",
+      "q": "How do I configure strict mode for a TypeScript project?",
+      "rag": "none"
+    },
+    {
+      "domain": "docs",
+      "q": "pnpm 的 workspace 协议 workspace:* 是什么含义？",
+      "rag": "none"
+    },
+    {
+      "domain": "docs",
+      "q": "pnpm 的 workspace 协议 workspace:* 是什么含义？",
+      "rag": "none"
+    },
+    {
+      "domain": "docs",
+      "q": "What is the MCP initialize handshake and which capabilities are negotiated?",
+      "rag": "none"
+    },
+    {
+      "domain": "docs",
+      "q": "What is the MCP initialize handshake and which capabilities are negotiated?",
+      "rag": "none"
+    },
+    {
+      "domain": "docs",
+      "q": "How does pnpm decide the store location and can I relocate it?",
+      "rag": "none"
+    },
+    {
+      "domain": "docs",
+      "q": "How does pnpm decide the store location and can I relocate it?",
+      "rag": "none"
+    },
+    {
+      "domain": "research",
+      "q": "What is the current evidence that retrieval augmented generation improves factual accuracy in LLM assistants?",
+      "rag": "none"
+    },
+    {
+      "domain": "research",
+      "q": "What is the current evidence that retrieval augmented generation improves factual accuracy in LLM assistants?",
+      "rag": "none"
+    },
+    {
+      "domain": "research",
+      "q": "比较 RRF 融合与单一 BM25 在真实检索系统中的效果证据",
+      "rag": "none"
+    },
+    {
+      "domain": "research",
+      "q": "比较 RRF 融合与单一 BM25 在真实检索系统中的效果证据",
+      "rag": "none"
+    },
+    {
+      "domain": "research",
+      "q": "What do recent benchmarks say about long-context models versus RAG for knowledge tasks?",
+      "rag": "none"
+    },
+    {
+      "domain": "research",
+      "q": "What do recent benchmarks say about long-context models versus RAG for knowledge tasks?",
+      "rag": "none"
+    },
+    {
+      "domain": "research",
+      "q": "LLM agent memory 有哪些主流架构方案？给出来源对比",
+      "rag": "none"
+    },
+    {
+      "domain": "research",
+      "q": "LLM agent memory 有哪些主流架构方案？给出来源对比",
+      "rag": "none"
+    },
+    {
+      "domain": "default",
+      "q": "What are the tradeoffs between SQLite WAL mode and rollback journal?",
+      "rag": "none"
+    },
+    {
+      "domain": "default",
+      "q": "What are the tradeoffs between SQLite WAL mode and rollback journal?",
+      "rag": "none"
+    },
+    {
+      "domain": "default",
+      "q": "How do token-bucket and sliding-window rate limiters differ in practice?",
+      "rag": "none"
+    },
+    {
+      "domain": "default",
+      "q": "How do token-bucket and sliding-window rate limiters differ in practice?",
+      "rag": "none"
+    },
+    {
+      "domain": "docs",
+      "q": "How do I configure strict mode for a TypeScript project?",
+      "rag": "fts"
+    },
+    {
+      "domain": "docs",
+      "q": "How do I configure strict mode for a TypeScript project?",
+      "rag": "fts"
+    },
+    {
+      "domain": "docs",
+      "q": "What is the MCP initialize handshake and which capabilities are negotiated?",
+      "rag": "fts"
+    },
+    {
+      "domain": "docs",
+      "q": "What is the MCP initialize handshake and which capabilities are negotiated?",
+      "rag": "fts"
+    }
+  ]
+}

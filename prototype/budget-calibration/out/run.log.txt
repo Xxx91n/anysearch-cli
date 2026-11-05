@@ -1,0 +1,25 @@
+[proto] r01 none/docs 29.0s 9004 in / 2190 out
+[proto] r02 none/docs 31.2s 9108 in / 2797 out
+[proto] r03 none/docs 39.8s 28722 in / 2283 out
+[proto] r04 none/docs 60.1s 38397 in / 3789 out
+[proto] r05 none/docs 91.7s 32936 in / 3690 out
+[proto] r06 none/docs 168.7s 64631 in / 5291 out
+[proto] r07 none/docs 147.5s 71851 in / 7240 out
+[proto] r08 none/docs 74.2s 41120 in / 3592 out
+[proto] r09 none/research 135.4s 57783 in / 5974 out
+[proto] r10 none/research 116.0s 53750 in / 5110 out
+[proto] r11 none/research 172.9s 51614 in / 7927 out
+[proto] r12 none/research 172.4s 61049 in / 8599 out
+[proto] r13 none/research 114.3s 49315 in / 5134 out
+[proto] r14 none/research 53.2s 19252 in / 679 out
+[proto] r15 none/research 163.8s 52622 in / 7474 out
+[proto] r16 none/research 167.6s 45073 in / 8171 out
+[proto] skip r17 (already recorded)
+[proto] r18 none/default 106.7s 55961 in / 6146 out
+[proto] skip r19 (already recorded)
+[proto] r20 none/default 60.2s 19897 in / 4765 out
+[proto] skip r21 (already recorded)
+[proto] r22 fts/docs 45.1s 17127 in / 2188 out
+[proto] r23 fts/docs 95.8s 42672 in / 3177 out
+[proto] r24 fts/docs 54.0s 18088 in / 3118 out
+[proto] done -> D:\aworker\anysearch-cli\prototype\budget-calibration\out\raw.jsonl

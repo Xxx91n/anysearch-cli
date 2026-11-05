@@ -1,0 +1,57 @@
+# Samples: 43 total, 43 ok, 0 failed
+
+## ALL ok runs (n=43)
+| metric | min | p10 | p50 | mean | p90 | p95 | max |
+|---|---|---|---|---|---|---|---|
+| output | 167 | 2209 | 3948 | 4744 | 8122 | 9309 | 9600 |
+| input  | 69 | 10356 | 41120 | 38620 | 60839 | 64574 | 75238 |
+
+## none/docs (n=15)
+| metric | min | p10 | p50 | mean | p90 | p95 | max |
+|---|---|---|---|---|---|---|---|
+| output | 2190 | 2489 | 3751 | 4231 | 6326 | 6632 | 7240 |
+| input  | 9004 | 11604 | 38397 | 40397 | 68963 | 72867 | 75238 |
+
+## none/research (n=15)
+| metric | min | p10 | p50 | mean | p90 | p95 | max |
+|---|---|---|---|---|---|---|---|
+| output | 167 | 2258 | 6103 | 6235 | 9434 | 9505 | 9600 |
+| input  | 69 | 29580 | 51614 | 46838 | 59111 | 60313 | 61049 |
+
+## none/default (n=6)
+| metric | min | p10 | p50 | mean | p90 | p95 | max |
+|---|---|---|---|---|---|---|---|
+| output | 3065 | 3246 | 4308 | 4448 | 5790 | 5968 | 6146 |
+| input  | 71 | 9984 | 35668 | 31077 | 47578 | 51770 | 55961 |
+
+## fts/docs (n=7)
+| metric | min | p10 | p50 | mean | p90 | p95 | max |
+|---|---|---|---|---|---|---|---|
+| output | 1406 | 1875 | 3118 | 2902 | 3634 | 3761 | 3888 |
+| input  | 222 | 10365 | 28021 | 23667 | 35095 | 38883 | 42672 |
+
+## Repeat spread (same query, same condition)
+- none/docs::How do I configure strict mode for a TypeScript project? :: out=3163 vs 2190 vs 2797 vs 6005 -> 2.74x
+- none/docs::pnpm 的 workspace 协议 workspace:* 是什么含义？ :: out=2283 vs 3789 vs 3090 -> 1.66x
+- none/docs::What is the MCP initialize handshake and which capabilities are negotiated? :: out=3690 vs 3751 vs 3948 vs 5291 -> 1.43x
+- none/docs::How does pnpm decide the store location and can I relocate it? :: out=6258 vs 7240 vs 3592 vs 6371 -> 2.02x
+- none/research::What is the current evidence that retrieval augmented generation improves factual accuracy in LLM assistants? :: out=5974 vs 4626 vs 5110 vs 6103 -> 1.32x
+- none/research::比较 RRF 融合与单一 BM25 在真实检索系统中的效果证据 :: out=7927 vs 9388 vs 8599 vs 9600 -> 1.21x
+- none/research::What do recent benchmarks say about long-context models versus RAG for knowledge tasks? :: out=5134 vs 679 vs 5110 -> 7.56x
+- none/research::LLM agent memory 有哪些主流架构方案？给出来源对比 :: out=7474 vs 9464 vs 167 vs 8171 -> 56.67x
+- none/default::What are the tradeoffs between SQLite WAL mode and rollback journal? :: out=5433 vs 3065 vs 6146 -> 2.01x
+- none/default::How do token-bucket and sliding-window rate limiters differ in practice? :: out=3426 vs 3851 vs 4765 -> 1.39x
+- fts/docs::How do I configure strict mode for a TypeScript project? :: out=1406 vs 2188 vs 3073 -> 2.19x
+- fts/docs::What is the MCP initialize handshake and which capabilities are negotiated? :: out=3177 vs 3888 vs 3118 vs 3465 -> 1.25x
+- median ratio 1.83x, max 56.67x
+
+## Candidate reserve vs observed output
+| candidate | = basis | runs above | exceed % |
+|---|---|---|---|
+| 9309 | p95 | 3 | 7.0% |
+| 11637 | 1.25 x p95 | 0 | 0.0% |
+| 13964 | 1.5 x p95 | 0 | 0.0% |
+| 18618 | 2 x p95 | 0 | 0.0% |
+| 9600 | max | 0 | 0.0% |
+
+summary -> D:\aworker\anysearch-cli\prototype\budget-calibration\out\summary.json

@@ -9,7 +9,9 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test --concurrency=2",
-    "check": "turbo run check"
+    "check": "turbo run check",
+    "proto:budget-cal": "node prototype/budget-calibration/run.mjs",
+    "proto:budget-cal:report": "node prototype/budget-calibration/analyze.mjs"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

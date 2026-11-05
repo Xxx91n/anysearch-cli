@@ -1,0 +1,23 @@
+# PROTOTYPE ONLY — throwaway clone of domains/docs.toml with RAG Stage-1 enabled.
+# Purpose: measure `ans chat` token usage on a domain that actually injects
+# retrieved context (the shipped domains all use adapter = "none").
+# Do not treat this file as product config; it lives on a prototype branch.
+name = "docs"
+description = "PROTOTYPE docs domain with fts RAG adapter (calibration only)"
+
+[settings]
+language = "TypeScript"
+depth = "docs"
+
+[skills]
+active = ["search", "doctor"]
+
+[sources]
+enabled = ["tavily", "exa", "anysearch"]
+urlAllowlist = ["modelcontextprotocol.io", "typescriptlang.org", "www.typescriptlang.org", "pnpm.io"]
+
+[rag]
+adapter = "fts"
+
+[hooks]
+toolWhitelist = ["search", "ctx_execute", "ctx_search", "ctx_batch_execute"]
