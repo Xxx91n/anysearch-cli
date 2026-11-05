@@ -315,10 +315,10 @@ function migrateSwitchEventSchema(db: Database.Database): void {
 
 export class SqliteSessionStore implements SessionStore {
   private db: Database.Database;
-  // #187: one ledger over the store's single connection. The unique
-  // budget_ledger.session_id index (created below) makes initBudget an upsert,
-  // so re-registering the durable `ans chat` anchor refreshes caps without
-  // duplicating the row.
+  // #187: one ledger over the store's single connection. Registration refreshes
+  // caps in place (unique constraint/index on budget_ledger.session_id for new
+  // and clean existing databases), so re-registering the durable `ans chat`
+  // anchor never duplicates the row.
   private budgetLedgerInstance?: BudgetLedger;
   // LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
   private readonly entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;

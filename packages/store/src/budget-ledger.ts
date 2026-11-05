@@ -50,12 +50,15 @@ export interface BudgetBalance {
   remainingCalls: number;
 }
 
-// ponytail: thinnest ledger - 3 methods (reserve/settle/getBalance).
+// ponytail: thinnest ledger - reserve/settle/getBalance, plus #187's
+// initBudget/clearBudgetCaps registration seam.
 // No interface/port separation (unlike SessionStore) - this is a concrete store-layer utility.
 // Kernel calls these via store injection, never imports better-sqlite3 directly.
 export class BudgetLedger {
   private stmts: {
-    initBudget: Database.Statement;
+    insertBudget: Database.Statement;
+    updateCaps: Database.Statement;
+    hasAnyBudgetRow: Database.Statement;
     clearCaps: Database.Statement;
     hasRow: Database.Statement;
     reserveTokens: Database.Statement;
@@ -69,7 +72,15 @@ export class BudgetLedger {
 
   constructor(private db: Database.Database) {
     this.stmts = {
-      initBudget: db.prepare("INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap, configured) VALUES (?, ?, ?, ?, ?, 1) ON CONFLICT(session_id) DO UPDATE SET token_cap = excluded.token_cap, usd_cap = excluded.usd_cap, time_limit_ms = excluded.time_limit_ms, call_cap = excluded.call_cap, configured = 1"),
+      // #187: SELECT-then-UPDATE/INSERT instead of ON CONFLICT. A legacy database
+      // can lack the unique constraint (duplicate rows block the migration), and
+      // a constructor-time `ON CONFLICT` prepare would make every ledger
+      // operation — including getBalance/reserve — unavailable. This form still
+      // reuses the row and is concurrency-safe on clean databases: the second
+      // concurrent INSERT hits the unique index and is retried as an UPDATE.
+      insertBudget: db.prepare("INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap, configured) VALUES (?, ?, ?, ?, ?, 1)"),
+      updateCaps: db.prepare("UPDATE budget_ledger SET token_cap = ?, usd_cap = ?, time_limit_ms = ?, call_cap = ?, configured = 1 WHERE session_id = ?"),
+      hasAnyBudgetRow: db.prepare("SELECT 1 AS present FROM budget_ledger WHERE session_id = ?"),
       // #187: returning to a no-[budget] Active Domain deactivates the row
       // (configured = 0) without deleting the spend history. A subsequent
       // initBudget reuses the row and re-enables it. No row -> no-op.
@@ -95,13 +106,28 @@ export class BudgetLedger {
   // missing cap means "no cap", not zero. Idempotent: the writing session is
   // the same durable anchor `ans chat` re-registers on every start.
   initBudget(sessionId: string, caps: BudgetCaps): void {
-    this.stmts.initBudget.run(
-      sessionId,
-      caps.tokenCap ?? UNLIMITED_BUDGET_CAP,
-      caps.usdCap ?? UNLIMITED_BUDGET_CAP,
-      caps.timeLimitMs ?? UNLIMITED_BUDGET_CAP,
-      caps.callCap ?? UNLIMITED_BUDGET_CAP,
-    );
+    const tokenCap = caps.tokenCap ?? UNLIMITED_BUDGET_CAP;
+    const usdCap = caps.usdCap ?? UNLIMITED_BUDGET_CAP;
+    const timeLimitMs = caps.timeLimitMs ?? UNLIMITED_BUDGET_CAP;
+    const callCap = caps.callCap ?? UNLIMITED_BUDGET_CAP;
+    if (this.stmts.hasAnyBudgetRow.get(sessionId) !== undefined) {
+      this.stmts.updateCaps.run(tokenCap, usdCap, timeLimitMs, callCap, sessionId);
+      return;
+    }
+    try {
+      this.stmts.insertBudget.run(sessionId, tokenCap, usdCap, timeLimitMs, callCap);
+    } catch (e) {
+      // Concurrent registration on a clean DB: the unique constraint rejects
+      // the losing INSERT, and the winner's row is refreshed instead. Accept the
+      // base constraint code too — older SQLite builds do not expose the
+      // extended SQLITE_CONSTRAINT_UNIQUE code.
+      const code = (e as { code?: string })?.code;
+      if (code === "SQLITE_CONSTRAINT_UNIQUE" || code === "SQLITE_CONSTRAINT") {
+        this.stmts.updateCaps.run(tokenCap, usdCap, timeLimitMs, callCap, sessionId);
+        return;
+      }
+      throw e;
+    }
   }
 
   // #187: an existing row whose Active Domain dropped [budget] (or switched to

@@ -211,12 +211,14 @@ async function main() {
           .prepare("SELECT COUNT(*) AS c FROM budget_ledger WHERE session_id = 'legacy-s'")
           .get() as { c: number };
         assert(legacyRows.c === 2, "legacy rows are preserved (no destructive migration)");
-        // The upsert cannot be prepared while duplicates block the unique index;
-        // the composition roots catch initBudget and stay unmetered. This is the
-        // documented degraded state for a legacy corrupt DB, not a schema bust.
-        let initThrew = false;
-        try { legacyStore.initBudget("legacy-s", { tokenCap: 1 }); } catch { initThrew = true; }
-        assert(initThrew, "legacy duplicate DB degrades budget init (caller fail-open), store stays open");
+        // The ledger stays usable despite the missing unique index: the
+        // SELECT-then-UPDATE/INSERT path does not depend on ON CONFLICT.
+        const legacyLedger = new BudgetLedger((legacyStore as any).db);
+        assert(legacyLedger.getBalance("legacy-s")?.tokenCap === 100, "legacy rows remain readable");
+        legacyLedger.initBudget("legacy-s", { tokenCap: 300, usdCap: 3, timeLimitMs: 3000, callCap: 7 });
+        const updatedLegacy = legacyLedger.getBalance("legacy-s");
+        assert(updatedLegacy?.tokenCap === 300 && updatedLegacy?.callCap === 7,
+          "legacy duplicate DB budget init updates in place");
       } finally {
         process.stderr.write = origWrite;
         legacyStore?.close();

@@ -62,10 +62,12 @@ export async function wireChatMemory(store: SessionStorePort, domain: string, bu
     }
     return { store, sessionId };
   } catch (e: any) {
-    process.stderr.write(
-      "[warn] session row registration failed for " + sessionId + ": " +
-      (e?.message || String(e)) + " — continuing without memory anchors\n",
-    );
+    try {
+      process.stderr.write(
+        "[warn] session row registration failed for " + sessionId + ": " +
+        (e?.message || String(e)) + " — continuing without memory anchors\n",
+      );
+    } catch { /* stderr unavailable */ }
     return {};
   }
 }
