@@ -73,13 +73,13 @@ function installTracking() {
       return db;
     },
   });
-  // Self-check seam: an ESM test file imports better-sqlite3 through Node's CJS
-  // interop, which serves the cached `module.exports` replaced above — asserted
-  // from teardown.test.ts so a future Node/tsx resolution change cannot silently
-  // turn this preload into a no-op (PR #191 review claimed it already is; the
-  // assertion is what settles that, in CI, on every OS).
-  tracked.__exitTeardownTracked = true;
+  // Replace the cached exports FIRST — that is the load-bearing step. Anything
+  // after it is instrumentation and must never be able to undo the patch.
   entry.exports = tracked;
+  // Behavioural self-check seam (PR #191 review claimed ESM imports bypass this
+  // patch): teardown.test.ts constructs a raw handle and asserts this counter
+  // moves, which proves interception in CI on every OS without depending on any
+  // property we add to the (possibly non-extensible) native constructor.
   globalThis.__exitTeardownStats = () => ({ tracked: open.size });
 }
 
@@ -114,11 +114,17 @@ function installDeferredExit() {
   };
 }
 
+// Independent installs: if one half breaks, the other must still hold (a broken
+// tracker must never also un-defer process.exit, or vice versa).
 try {
   installTracking();
+} catch (e) {
+  console.error("[exit-teardown] handle tracking NOT installed — store test handles are UNTRACKED: " + (e && e.message ? e.message : String(e)));
+}
+try {
   installDeferredExit();
 } catch (e) {
-  console.error("[exit-teardown] bootstrap failed — store test processes are UNTRACKED: " + (e && e.message ? e.message : String(e)));
+  console.error("[exit-teardown] deferred exit NOT installed — process.exit stays synchronous: " + (e && e.message ? e.message : String(e)));
 }
 
 process.on("exit", drain);

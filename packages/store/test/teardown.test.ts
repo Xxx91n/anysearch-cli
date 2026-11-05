@@ -40,13 +40,12 @@ try {
   assert.equal(order.join(","), "a,c", "a disposed entry never runs");
 
   // --- 1b. the preload really intercepts ESM imports (PR #191 review) -------
-  // Node serves `import Database from "better-sqlite3"` from the CJS module cache
-  // the preload replaced; these two assertions prove it on every OS in CI, so a
-  // silent no-op (untracked raw handles) fails loudly instead.
-  const preloadMarker = (Database as unknown as { __exitTeardownTracked?: boolean }).__exitTeardownTracked;
-  assert.equal(preloadMarker, true, "ESM import resolved to the tracked better-sqlite3 constructor");
+  // Behavioural proof, not a property probe: `import Database from
+  // "better-sqlite3"` above is ESM, and constructing a raw handle through it must
+  // move the preload's tracked counter. If a Node/tsx resolution change ever
+  // makes the preload a no-op, this fails loudly instead of leaking handles.
   const stats = (globalThis as unknown as { __exitTeardownStats?: () => { tracked: number } }).__exitTeardownStats;
-  assert.equal(typeof stats, "function", "preload exposes its tracked-handle count");
+  assert.equal(typeof stats, "function", "preload exposes its tracked-handle count (install did not throw)");
   const trackedBefore = stats!().tracked;
   const rawHandle = new Database(join(dir, "esm-tracking.db"));
   assert.equal(stats!().tracked, trackedBefore + 1, "a raw new Database(...) in an ESM test file is tracked");
