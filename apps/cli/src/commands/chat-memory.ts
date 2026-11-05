@@ -54,7 +54,7 @@ export async function wireChatMemory(store: SessionStorePort, domain: string, bu
         // the same reason (a closed pipe must not reject the wiring).
         try {
           process.stderr.write(
-            "[warn] budget initialization failed for " + sessionId + ": " +
+            "[warn] budget sync failed for " + sessionId + ": " +
             (e?.message || String(e)) + " — continuing unmetered\n",
           );
         } catch { /* stderr unavailable */ }

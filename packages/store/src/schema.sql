@@ -105,6 +105,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_anchors_state_unique ON resume_anchors(ses
 -- Non-negative constraints in DB schema layer (not application layer).
 -- Budget = resource consumption, belongs to store layer (not kernel).
 -- Three dimensions: token-cap / usd-cap / time-limit.
+-- #187: one row per session (table-level uniqueness keeps the upsert in
+-- BudgetLedger.initBudget valid on new databases without a separate,
+-- fail-hard index statement in the middle of the schema).
 CREATE TABLE IF NOT EXISTS budget_ledger (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -112,6 +115,9 @@ CREATE TABLE IF NOT EXISTS budget_ledger (
   usd_cap REAL NOT NULL DEFAULT 0 CHECK (usd_cap >= 0),
   time_limit_ms INTEGER NOT NULL DEFAULT 0 CHECK (time_limit_ms >= 0),
   call_cap INTEGER NOT NULL DEFAULT 0 CHECK (call_cap >= 0),
+  -- #187: 1 = the Active Domain declared [budget] and this row is enforceable;
+  -- 0 = the section was dropped, so reserve passes but spend history is kept.
+  configured INTEGER NOT NULL DEFAULT 1 CHECK (configured IN (0, 1)),
   reserved_tokens INTEGER NOT NULL DEFAULT 0 CHECK (reserved_tokens >= 0),
   spent_tokens INTEGER NOT NULL DEFAULT 0 CHECK (spent_tokens >= 0),
   reserved_usd REAL NOT NULL DEFAULT 0 CHECK (reserved_usd >= 0),
@@ -120,12 +126,13 @@ CREATE TABLE IF NOT EXISTS budget_ledger (
   reserved_calls INTEGER NOT NULL DEFAULT 0 CHECK (reserved_calls >= 0),
   billable_calls INTEGER NOT NULL DEFAULT 0 CHECK (billable_calls >= 0),
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (session_id)
 );
 
--- #187: one budget row per session; the upsert in BudgetLedger.initBudget
--- depends on this uniqueness.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_session_unique ON budget_ledger(session_id);
+-- #187: old databases do not get the table-level UNIQUE constraint from
+-- IF NOT EXISTS; session-store.ts creates the unique index in a protected
+-- migration for them (a no-op for new databases).
 
 -- G019 migration: add time edge effect columns to existing retrieval_results table.
 -- ALTER TABLE ADD COLUMN is idempotent-safe: errors if column already exists, caught by try/catch in SessionStore constructor.

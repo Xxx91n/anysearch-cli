@@ -147,15 +147,17 @@ export interface SessionStore {
   ensureSession(sessionId: string, domain: string): Promise<void>;
   // #187: register the domain's [budget] caps for this session at the same
   // composition-root point as ensureSession/createSession. Omitted when the
-  // Active Domain declares no [budget] — the absence of a ledger row is the
-  // "unmetered, pass" state. Idempotent: caps refresh in place and the
+  // Active Domain declares no [budget] — a fresh session then has no row, and
+  // an existing session is deactivated so `getBalance()` returns null
+  // (unmetered). Idempotent: caps/configured refresh in place and the
   // reserved/spent counters survive a re-registration.
   // Optional on the port so hand-built/embedded store implementations stay
   // source-compatible; the composition roots guard the call.
   initBudget?(sessionId: string, caps: BudgetCaps): void;
   // #187: when the Active Domain later drops [budget] (or the durable anchor
-  // switches to a domain without it), release an existing row's caps to
-  // unlimited without deleting its spend history. No row is a no-op.
+  // switches to a domain without it), deactivate an existing row
+  // (configured=0) so getBalance()/reserve treat the session as unmetered,
+  // without deleting its spend history. No row is a no-op.
   clearBudgetCaps?(sessionId: string): void;
   append(sessionId: string, message: Message): Promise<void>;
   searchFts5(sessionId: string | null, query: string, limit?: number): Promise<MemoryHit[]>;
@@ -387,12 +389,15 @@ export class SqliteSessionStore implements SessionStore {
       schema = SCHEMA_SQL;
     }
     this.db.exec(schema);
-    // #187: one budget row per session. The original table had no uniqueness
-    // (initBudget had zero production callers), so the index is created here
-    // as an idempotent migration for both new and existing databases; the
-    // upsert in BudgetLedger.initBudget depends on it. Existing duplicates are
-    // impossible in practice (no production writer), but a failed index
-    // creation is surfaced rather than silently disabling the upsert.
+    // #187: existing databases predate the `configured` column. New databases
+    // already have it from the CREATE TABLE above; this ALTER is the migration
+    // and is caught idempotently like the other column migrations below.
+    try { this.db.exec("ALTER TABLE budget_ledger ADD COLUMN configured INTEGER NOT NULL DEFAULT 1"); } catch {}
+    // #187: one budget row per session. New databases got the table-level
+    // UNIQUE(session_id); this protected migration covers old databases. It is
+    // deliberately outside db.exec(schema): a legacy duplicate row must not
+    // prevent the rest of the schema from opening, and the failure degrades to
+    // a warning (the composition roots then fail open to unmetered).
     try {
       this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_session_unique ON budget_ledger(session_id)");
     } catch (e) {

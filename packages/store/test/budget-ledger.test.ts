@@ -108,6 +108,7 @@ async function main() {
       // "Reject everything" includes a zero-count reserve: the cap > 0 guard
       // makes explicit 0 stricter than a merely exhausted positive budget.
       assert(!ledger.reserveTokens(s4.id, 0), "cap 0 rejects even a zero token reserve");
+      assert(!ledger.reserveUsd(s4.id, 0), "cap 0 rejects even a zero USD reserve");
       assert(!ledger.reserveCalls(s4.id, 0), "cap 0 rejects even a zero call reserve");
 
       // 12. #187: omitted caps inside a declared [budget] are unlimited, not 0.
@@ -144,12 +145,76 @@ async function main() {
       assert(ledger.reserveCalls(s7.id, 1), "release fixture reserves a call");
       ledger.settleCalls(s7.id, 1, 1);
       ledger.clearBudgetCaps(s7.id);
-      const balReleased = ledger.getBalance(s7.id);
-      assert(balReleased !== null, "release keeps the row (spend history)");
-      assert(balReleased!.tokenCap === Number.MAX_SAFE_INTEGER && balReleased!.callCap === Number.MAX_SAFE_INTEGER,
+      // #187: a released row is deactivated and presented as unmetered, so
+      // #177's ensureRow (which reads getBalance === null) will re-init it.
+      assert(ledger.getBalance(s7.id) === null, "released row is unmetered from getBalance's perspective");
+      const rawReleased = (store as any).db
+        .prepare("SELECT configured, token_cap, call_cap, billable_calls FROM budget_ledger WHERE session_id = ?")
+        .get(s7.id) as { configured: number; token_cap: number; call_cap: number; billable_calls: number };
+      assert(rawReleased.configured === 0, "release flips configured to 0 (history retained)");
+      assert(rawReleased.token_cap === Number.MAX_SAFE_INTEGER && rawReleased.call_cap === Number.MAX_SAFE_INTEGER,
         "release resets every cap to unlimited");
-      assert(balReleased!.billableCalls === 1, "release preserves the spend counters");
+      assert(rawReleased.billable_calls === 1, "release preserves the spend counters");
       assert(ledger.reserveCalls(s7.id, 100000), "released session passes a large reserve");
+      // Re-enabling the same row preserves the spend history (#177 path).
+      ledger.initBudget(s7.id, { tokenCap: 500, callCap: 5 });
+      const reenabled = ledger.getBalance(s7.id);
+      assert(reenabled?.tokenCap === 500 && reenabled?.callCap === 5, "re-init re-enables the released row with new caps");
+      assert(reenabled?.billableCalls === 1, "re-init after release keeps the spend history");
+
+      // 15. #187: a legacy database with duplicate budget rows must still OPEN.
+      //     The unique index is a protected migration outside db.exec(schema),
+      //     so a duplicate-row failure warns instead of skipping later DDL.
+      const legacyDir = mkdtempSync(join(tmpdir(), "ans-budget-legacy-"));
+      const legacyPath = join(legacyDir, "legacy.db");
+      const raw = new Database(legacyPath);
+      try {
+        raw.exec(`
+          CREATE TABLE sessions (
+            id TEXT PRIMARY KEY,
+            domain TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          CREATE TABLE budget_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            token_cap INTEGER NOT NULL DEFAULT 0 CHECK (token_cap >= 0),
+            usd_cap REAL NOT NULL DEFAULT 0 CHECK (usd_cap >= 0),
+            time_limit_ms INTEGER NOT NULL DEFAULT 0 CHECK (time_limit_ms >= 0),
+            call_cap INTEGER NOT NULL DEFAULT 0 CHECK (call_cap >= 0),
+            reserved_tokens INTEGER NOT NULL DEFAULT 0 CHECK (reserved_tokens >= 0),
+            spent_tokens INTEGER NOT NULL DEFAULT 0 CHECK (spent_tokens >= 0),
+            reserved_usd REAL NOT NULL DEFAULT 0 CHECK (reserved_usd >= 0),
+            spent_usd REAL NOT NULL DEFAULT 0 CHECK (spent_usd >= 0),
+            reserved_calls INTEGER NOT NULL DEFAULT 0 CHECK (reserved_calls >= 0),
+            billable_calls INTEGER NOT NULL DEFAULT 0 CHECK (billable_calls >= 0),
+            started_at TEXT NOT NULL DEFAULT (datetime('now')),
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO sessions (id, domain) VALUES ('legacy-s', 'default');
+          INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap) VALUES ('legacy-s', 100, 1, 1000, 5);
+          INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap) VALUES ('legacy-s', 200, 2, 2000, 10);
+        `);
+      } finally {
+        raw.close();
+      }
+      const origWrite = process.stderr.write;
+      let captured = "";
+      process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+      let legacyStore: SqliteSessionStore | undefined;
+      try {
+        legacyStore = new SqliteSessionStore(legacyPath); // must not throw
+        assert(/budget_ledger unique-session index not created/.test(captured),
+          "duplicate legacy rows surface a warning instead of blocking open");
+        const legacyLedger = new BudgetLedger((legacyStore as any).db);
+        const legacyBal = legacyLedger.getBalance("legacy-s");
+        assert(legacyBal?.tokenCap === 100, "legacy rows gain configured=1 and remain readable");
+      } finally {
+        process.stderr.write = origWrite;
+        legacyStore?.close();
+        try { rmSync(legacyDir, { recursive: true, force: true }); } catch { /* Windows WAL lock */ }
+      }
 
       store.close();
     }

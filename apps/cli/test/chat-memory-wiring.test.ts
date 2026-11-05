@@ -61,12 +61,11 @@ async function main() {
       const fresh = await wireChatMemory(store, "default");
       check(fresh.sessionId === wiring.sessionId,
         "the durable anchor yields the same session id after a restart");
-      // #187: the restart runs a domain without [budget]; the existing row is
-      // released to unlimited (history kept) rather than silently continuing
-      // to enforce the previous domain's caps.
+      // #187: the restart runs a domain without [budget]; the existing session
+      // becomes unmetered (the released row keeps spend history internally).
       const released = new BudgetLedger((store as any).db).getBalance(fresh.sessionId!);
-      check(released?.tokenCap === Number.MAX_SAFE_INTEGER && released?.callCap === Number.MAX_SAFE_INTEGER,
-        "#187: dropping [budget] releases an existing session's caps");
+      check(released === null,
+        "#187: dropping [budget] makes the existing session unmetered");
       // The memory written before the restart is still recallable through the
       // same store surface the fts adapter uses.
       const hits = await store.searchMemory("internal wiki port", 5);

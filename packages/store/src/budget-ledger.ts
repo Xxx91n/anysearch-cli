@@ -69,29 +69,31 @@ export class BudgetLedger {
 
   constructor(private db: Database.Database) {
     this.stmts = {
-      initBudget: db.prepare("INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap) VALUES (?, ?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET token_cap = excluded.token_cap, usd_cap = excluded.usd_cap, time_limit_ms = excluded.time_limit_ms, call_cap = excluded.call_cap"),
-      // #187: returning to a no-[budget] Active Domain releases an existing
-      // row's caps without deleting the spend history. No row -> no-op.
-      clearCaps: db.prepare("UPDATE budget_ledger SET token_cap = ?, usd_cap = ?, time_limit_ms = ?, call_cap = ? WHERE session_id = ?"),
-      // #187: row existence is the "configured" bit. Checked before every
-      // reserve because the absence of a row means unmetered (pass), while a
-      // present row with cap 0 means "reject everything".
-      hasRow: db.prepare("SELECT 1 AS present FROM budget_ledger WHERE session_id = ?"),
-      reserveTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens + ? WHERE session_id = ? AND token_cap > 0 AND reserved_tokens + spent_tokens + ? <= token_cap"),
-      reserveUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = reserved_usd + ? WHERE session_id = ? AND usd_cap > 0 AND reserved_usd + spent_usd + ? <= usd_cap"),
+      initBudget: db.prepare("INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap, configured) VALUES (?, ?, ?, ?, ?, 1) ON CONFLICT(session_id) DO UPDATE SET token_cap = excluded.token_cap, usd_cap = excluded.usd_cap, time_limit_ms = excluded.time_limit_ms, call_cap = excluded.call_cap, configured = 1"),
+      // #187: returning to a no-[budget] Active Domain deactivates the row
+      // (configured = 0) without deleting the spend history. A subsequent
+      // initBudget reuses the row and re-enables it. No row -> no-op.
+      clearCaps: db.prepare("UPDATE budget_ledger SET configured = 0, token_cap = ?, usd_cap = ?, time_limit_ms = ?, call_cap = ? WHERE session_id = ?"),
+      // #187: configured = 1 is the enforceable-bit. A row can exist with
+      // configured = 0 (history kept after [budget] was removed); reserve must
+      // pass and getBalance must look unmetered, so row existence alone is not
+      // the configured signal.
+      hasRow: db.prepare("SELECT 1 AS present FROM budget_ledger WHERE session_id = ? AND configured = 1"),
+      reserveTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens + ? WHERE session_id = ? AND configured = 1 AND token_cap > 0 AND reserved_tokens + spent_tokens + ? <= token_cap"),
+      reserveUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = reserved_usd + ? WHERE session_id = ? AND configured = 1 AND usd_cap > 0 AND reserved_usd + spent_usd + ? <= usd_cap"),
       settleTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens - ?, spent_tokens = spent_tokens + ? WHERE session_id = ?"),
       settleUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = reserved_usd - ?, spent_usd = spent_usd + ? WHERE session_id = ?"),
-      reserveCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = reserved_calls + ? WHERE session_id = ? AND call_cap > 0 AND reserved_calls + billable_calls + ? <= call_cap"),
+      reserveCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = reserved_calls + ? WHERE session_id = ? AND configured = 1 AND call_cap > 0 AND reserved_calls + billable_calls + ? <= call_cap"),
       settleCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = reserved_calls - ?, billable_calls = billable_calls + ? WHERE session_id = ?"),
-      getBalance: db.prepare("SELECT session_id as sessionId, token_cap as tokenCap, usd_cap as usdCap, time_limit_ms as timeLimitMs, call_cap as callCap, reserved_tokens as reservedTokens, spent_tokens as spentTokens, reserved_usd as reservedUsd, spent_usd as spentUsd, reserved_calls as reservedCalls, billable_calls as billableCalls FROM budget_ledger WHERE session_id = ?"),
+      getBalance: db.prepare("SELECT session_id as sessionId, token_cap as tokenCap, usd_cap as usdCap, time_limit_ms as timeLimitMs, call_cap as callCap, reserved_tokens as reservedTokens, spent_tokens as spentTokens, reserved_usd as reservedUsd, spent_usd as spentUsd, reserved_calls as reservedCalls, billable_calls as billableCalls FROM budget_ledger WHERE session_id = ? AND configured = 1"),
     };
   }
 
-  // Initialize (or refresh) the budget row for a session. Called once when the
-  // session is registered. Caps refresh in place so a TOML change takes effect
-  // on the next process start while reserved/spent counters survive; a missing
-  // cap means "no cap", not zero. Idempotent: the writing session is the same
-  // durable anchor `ans chat` re-registers on every start.
+  // Initialize (or refresh) the budget row for a session. Called on each
+  // registration. Caps and configured=1 refresh in place so a TOML change takes
+  // effect on the next process start while reserved/spent counters survive; a
+  // missing cap means "no cap", not zero. Idempotent: the writing session is
+  // the same durable anchor `ans chat` re-registers on every start.
   initBudget(sessionId: string, caps: BudgetCaps): void {
     this.stmts.initBudget.run(
       sessionId,
@@ -103,9 +105,10 @@ export class BudgetLedger {
   }
 
   // #187: an existing row whose Active Domain dropped [budget] (or switched to
-  // a domain without it) must stop metering. Caps become unlimited; reserved /
-  // spent counters stay as the audit history. A session with no row is a no-op
-  // — "no row" remains the canonical unmetered state for never-configured runs.
+  // a domain without it) must stop metering. The row is deactivated
+  // (configured = 0) and its caps become unlimited; reserved / spent counters
+  // stay as the audit history. `getBalance` then returns null (unmetered) and a
+  // later initBudget re-enables the same row. A session with no row is a no-op.
   clearBudgetCaps(sessionId: string): void {
     this.stmts.clearCaps.run(UNLIMITED_BUDGET_CAP, UNLIMITED_BUDGET_CAP, UNLIMITED_BUDGET_CAP, UNLIMITED_BUDGET_CAP, sessionId);
   }
