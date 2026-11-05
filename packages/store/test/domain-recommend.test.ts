@@ -267,6 +267,58 @@ async function main() {
     assert(boosted.decision === "low" && boosted.confidence === 0, "fusion-boosting the reserved row cannot move the anchored decision (got " + boosted.decision + ", conf " + boosted.confidence + ")");
     __setEmbeddingModuleForTest(null);
 
+    // --- #173 review round 3: a reserved-row vector miss must not disable fusion for the others ---
+    // The embedding gate used to go request-wide FTS-only on ANY null passage vector, so a miss
+    // on the appended reserved row re-priced every ORIGINAL candidate's confidence (fused scores
+    // -> pure bm25 relative) — the reservation moving confidence by another door. Cosines are
+    // aligned per row now: a miss on a confidence candidate still disables the whole request
+    // (#110's zero-filled-cosine contract), a miss on the reserved row leaves that row unfused
+    // only. Deterministic stub: bag-of-chars vectors, null exactly for the 深度中文 passage.
+    __setEmbeddingModuleForTest({
+      embedText: async (text: string) => {
+        if (text.includes("深度中文")) return null; // the reserved row's passage misses
+        const v = new Float32Array(384);
+        for (const ch of text.toLowerCase()) v[ch.charCodeAt(0) % 384] += 1;
+        const n = Math.sqrt(v.reduce((s, x) => s + x * x, 0)) || 1;
+        for (let i = 0; i < v.length; i++) v[i] /= n;
+        return v;
+      },
+      embeddingTelemetry: () => ({ loads: 1, embeds: 1, failures: 0, circuitOpen: false }),
+      EMBEDDING_MODEL_ID: "test-model",
+    } as never);
+    const FUSED = [
+      { id: "b1", name: "research", description: "web research uno" },
+      { id: "b2", name: "research", description: "web research dos" },
+      { id: "b3", name: "research", description: "web research tres" },
+    ];
+    const noZh = await recommendDomains("research 中文研究", FUSED); // no CJK domain => no reservation at all
+    const degraded = await recommendDomains("research 中文研究", [...FUSED, { id: "zh-research", name: "zh", description: "深度中文研究与学术检索" }]);
+    assert(degraded.arms.embedding === "present", "a reserved-row vector miss leaves fusion on for the confidence candidates (got " + degraded.arms.embedding + ")");
+    assert(degraded.decision === noZh.decision && degraded.confidence === noZh.confidence, "the reserved row's embed failure cannot re-price confidence (degraded " + degraded.decision + "/" + degraded.confidence + " vs no-reservation " + noZh.decision + "/" + noZh.confidence + ")");
+    assert(degraded.candidates[0]!.arms.includes("embedding"), "the original candidates keep the fused arm label (arms " + degraded.candidates[0]!.arms.join("+") + ")");
+    assert(rankOf(degraded, "zh-research") === 3, "the vector-missing reserved row still occupies the last display slot (rank " + rankOf(degraded, "zh-research") + ")");
+    assert(degraded.candidates[2]!.arms.join("+") === "cjk", "the vector-missing reserved row reports the cjk arm without a fusion label it did not get (arms " + degraded.candidates[2]!.arms.join("+") + ")");
+    // A miss on a CONFIDENCE candidate still disables fusion request-wide (the #110 contract).
+    const missMid = await recommendDomains("research 中文研究", [
+      { id: "c1", name: "research", description: "web research uno 深度中文" },
+      ...FUSED.slice(1),
+    ]);
+    assert(missMid.arms.embedding === "unavailable" && missMid.candidates.every((c) => !c.arms.includes("embedding")), "a null vector on a confidence candidate still degrades the whole request (got " + missMid.arms.embedding + ")");
+    __setEmbeddingModuleForTest(null);
+
+    // --- #173 review round 3 (pre-merge check): pure-ASCII topK=1 pins the baseline margin ---
+    // Two rows match "research"; topK=1 displays one candidate and margin must stay 1 — the
+    // runner-up exists in the rows but is not displayed, exactly the baseline's candidates.length
+    // rule. (confOrder.length <= topK always holds, so the guard reads the same as the baseline's
+    // displayed-pair condition; this pin keeps it that way.)
+    const two = await recommendDomains("research", [
+      { id: "t1", name: "research", description: "web research one" },
+      { id: "t2", name: "research", description: "web research two" },
+    ], { topK: 1 });
+    assert(two.candidates.length === 1 && two.candidates[0]!.id === "t1", "topK=1 shows the single BM25 winner (got " + two.candidates.map((c) => c.id).join(",") + ")");
+    assert(two.confidence === 1 && two.decision === "high", "topK=1 keeps the baseline margin 1 with full coverage (got " + two.decision + ", conf " + two.confidence + ")");
+
+
     // Han, Hiragana, Katakana and Hangul all reach the stage (the run class is CJK-wide, not
     // Han-only). These descriptions carry no spaces, so a mid-run substring can never be a
     // unicode61 token prefix: the "cjk" provenance label is what proves the stage answered.

@@ -351,22 +351,29 @@ export async function recommendDomains(query: string, metas: DomainMeta[], opts?
     // (legal state, never a throw): a zero-filled cosine for one candidate would silently
     // reorder against the FTS-only result, so partial vectors disable fusion entirely.
     let embedding: RecommendResult["arms"]["embedding"] = "absent";
-    let cos: number[] | null = null;
+    // #173 review round 3: cosines stay aligned with rows. A null vector for a CONFIDENCE
+    // candidate still disables fusion for the whole request (#110 contract above); a null vector
+    // for the appended reserved row disables fusion for THAT row only — the reservation is
+    // display presence, so its own embed failure must not re-price the original candidates'
+    // confidence either (fusion-off for everyone was exactly that, in the fused path).
+    let cos: Array<number | null> | null = null;
     const qv = await embedText(q, "query");
     if (qv) {
-      const vecs: Float32Array[] = [];
+      const cosByRow: Array<number | null> = rows.map(() => null);
       let complete = true;
-      for (const row of rows) {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]!;
         const dv = await embedText(row.name + " " + row.description, "passage");
         if (!dv) {
+          if (row.reserved) continue; // that row scores FTS-only; the others keep their fusion
           complete = false;
           break;
         }
-        vecs.push(dv);
+        cosByRow[i] = cosineSimilarity(qv, dv);
       }
       if (complete) {
         embedding = "present";
-        cos = vecs.map((dv) => cosineSimilarity(qv, dv));
+        cos = cosByRow;
       } else {
         embedding = "unavailable";
       }
@@ -392,8 +399,9 @@ export async function recommendDomains(query: string, metas: DomainMeta[], opts?
     const topMatch = rows[0]!.match;
     const scores = rows.map((r, i) => {
       const rel = topMatch > 0 ? r.match / topMatch : 1;
-      if (!cos) return rel; // FTS-only: score ≡ relative bm25 (top = 1)
-      const c = (cos[i]! + 1) / 2; // cosine [-1,1] → [0,1]
+      const c0 = cos ? cos[i] : null; // null slot = this row's vector missed (or fusion off)
+      if (c0 === null || c0 === undefined) return rel; // FTS-only price for that row
+      const c = (c0 + 1) / 2; // cosine [-1,1] → [0,1]
       return FTS_WEIGHT * rel + EMBEDDING_WEIGHT * c;
     });
     const order = rows.map((_, i) => i).sort((a, b) => scores[b]! - scores[a]!);
@@ -429,7 +437,7 @@ export async function recommendDomains(query: string, metas: DomainMeta[], opts?
         score,
         relative: topScore > 0 ? score / topScore : 1,
         coverage: termCoverage(q, row.name + " " + row.description),
-        arms: cos ? [row.stage, "embedding"] : [row.stage],
+        arms: cos && cos[oi] !== null && cos[oi] !== undefined ? [row.stage, "embedding"] : [row.stage],
       };
     });
 
