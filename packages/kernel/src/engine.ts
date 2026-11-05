@@ -92,9 +92,9 @@ export interface SufficiencyResult {
 // injected ResumeAnchorsPort, after computeSufficiency and before the envelope
 // assembles (see the Design note at the write site). computeSufficiency itself
 // stays a pure single-computation source with no I/O. Read side stays out of
-// the engine (#93 ruling, reaffirmed in #186 decision 10: recovery is digest
-// injection, not mechanical replay); design settled in #186 (T8) and
-// implementation ticket #189 is still open.
+// the engine (#93 ruling, reaffirmed in #186 decision 10; decision 8 makes
+// recovery digest injection, not mechanical replay); design settled in
+// #186 (T8) and implementation ticket #189 is still open.
 export function computeSufficiency(
   rankedResults: NormalizedResult[],
   providerLists: string[][],
