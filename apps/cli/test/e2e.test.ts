@@ -433,7 +433,7 @@ async function t(name: string, fn: () => Promise<void>) {
   });
 
   // Partial absence (the presentation path that completes): exa fails
-  // construction while anysearch (optional key) stays live, so the run
+  // construction while anysearch (optional key) constructs fine, so the run
   // reaches the abstain branch — the urlAllowlist gate deterministically
   // empties the pool whatever anysearch returns. The absence line renders on
   // stdout next to the runtime chain lines.
@@ -459,6 +459,12 @@ async function t(name: string, fn: () => Promise<void>) {
       // and flip this abstain fixture. "0" disables env override — the TOML
       // allowlist stays authoritative.
       env.ANS_ALLOW_ENV_OVERRIDE = "0";
+      // Dead-port fault injection (CodeRabbit Major, PR #194; the
+      // install-smoke pattern): keeps this fixture independent of the live
+      // AnySearch endpoint — the arm still constructs and is still queried,
+      // it just fails fast with ECONNREFUSED instead of depending on
+      // live-endpoint timing.
+      env.ANYSEARCH_ENDPOINT = "http://127.0.0.1:9";
       const r = await run(["search", "q"], env);
       assert.equal(r.code, 0, r.out);
       assert.match(r.out, /abstain: no results within allowed partial domain/);
@@ -475,8 +481,9 @@ async function t(name: string, fn: () => Promise<void>) {
   // --json contract for the same partial-absence domain: stdout is a single
   // JSON document (the kernel's construction diagnostic rides stderr and
   // never leaks into stdout); the structured field carries the safe category.
-  // providersFailed is NOT asserted — anysearch's runtime outcome is network
-  // weather, and the pairing surface under test is the build-absence record.
+  // providersFailed is NOT asserted — the pairing surface under test is the
+  // build-absence record; the anysearch arm rides the same dead-port fault
+  // injection as the abstain fixture above.
   await t("search --json carries providerBuildErrors with stdout purity", async () => {
     const fs = await import("node:fs");
     const os = await import("node:os");
@@ -495,6 +502,9 @@ async function t(name: string, fn: () => Promise<void>) {
       env.EXA_API_KEY = "";
       env.ANS_PROVIDERS = "";
       env.ANS_ALLOW_ENV_OVERRIDE = "0";
+      // Same dead-port fault injection as the abstain fixture above — no
+      // live-endpoint dependency (CodeRabbit Major, PR #194).
+      env.ANYSEARCH_ENDPOINT = "http://127.0.0.1:9";
       const r = await runSplit(["search", "q", "--json"], env);
       const doc = JSON.parse(r.stdout);
       assert.equal(doc.providerBuildErrors.exa, "permanent: missing/invalid credential — set the provider's API key env",
