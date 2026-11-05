@@ -129,10 +129,16 @@ const UNLIMITED_BUDGET_CAPS: BudgetCaps = {
 // construction time). The row check is one synchronous SELECT; reserve/settle
 // semantics are delegated unchanged.
 class SessionBudgetLedger implements BudgetLedgerPort {
+  private readonly caps: BudgetCaps;
   constructor(
     private readonly ledger: BudgetLedger,
-    private readonly caps: BudgetCaps,
-  ) {}
+    caps: BudgetCaps,
+  ) {
+    // BudgetCaps.callCap is optional and initBudget maps a missing value to 0;
+    // a host that supplies only token/USD caps would then reject every search.
+    // Normalize to the unlimited default at construction.
+    this.caps = { ...caps, callCap: caps.callCap ?? Number.MAX_SAFE_INTEGER };
+  }
 
   private ensureRow(sessionId: string): void {
     if (!this.ledger.getBalance(sessionId)) this.ledger.initBudget(sessionId, this.caps);

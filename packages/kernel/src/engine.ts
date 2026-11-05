@@ -368,7 +368,7 @@ export class RetroaererdEngine {
     // T2 #177: the caller-supplied session id wins over the construction-time one
     // (PiAgentRuntime threads the wired handle per search). The gate itself is
     // unchanged: ledger work needs both the port and a session id.
-    const sessionId = q.sessionId ?? this.sessionId;
+    const sessionId = q.sessionId || this.sessionId;
     const hasLedger = !!(this.ledger && sessionId);
     if (hasLedger) {
       // 2C: per-call cost = 1 unit per provider. Coarse upper bound, settle actual.
@@ -567,7 +567,7 @@ export class RetroaererdEngine {
     // by, the sufficiency/fusion gate.
     const webProviderLedger = buildWebProviderLedger(listedProviderIds, providerLists, nativeScores, providersFailed);
 
-    // Design: one append-only sufficiency checkpoint attempt per search that
+// Design: one append-only sufficiency checkpoint attempt per search that
     // reaches this single point — after computeSufficiency, before the envelope
     // assembles (T7 decision #93). Early throws never arrive here, so no row is
     // guaranteed for every search. The payload carries the state crash-recovery

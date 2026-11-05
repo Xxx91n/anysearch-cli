@@ -127,6 +127,7 @@ async function main() {
     budgetCaps: { tokenCap: 1_000_000, usdCap: 10, timeLimitMs: 60_000, callCap: 100 },
   });
   // register a deterministic arm so the search reaches the engine.
+  assert(eng.config !== undefined, "5: mockonly domain loaded (no real-provider fallback)");
   (eng.retriever as unknown as { registerProvider: (p: SearchProvider) => void })
     .registerProvider(mockProvider("composition", ["https://comp.example/x"]));
   const port = (eng.retriever as unknown as { anchors?: { saveAnchor?: unknown } }).anchors;
@@ -166,6 +167,29 @@ async function main() {
   assert(overCapError.includes("Budget exceeded"), "6: a search over the per-call cap is rejected");
   const afterSecond = ledger.getBalance(budgetSession.id)!;
   assert(afterSecond.billableCalls === 2 && afterSecond.reservedCalls === 0, "6: the rejected reserve leaves the balance intact");
+
+  // 7. Composition root + explicit caps: the adapter's lazy row and the engine's
+  //    gate work together on the production-shaped path (createEngine + Query.sessionId).
+  const tight = createEngine("mockonly", {
+    domainsDirs: [domainsDir],
+    budgetCaps: { tokenCap: 1_000_000, usdCap: 10, timeLimitMs: 60_000, callCap: 1 },
+  });
+  (tight.retriever as unknown as { registerProvider: (p: SearchProvider) => void })
+    .registerProvider(mockProvider("tight", ["https://tight.example/x"]));
+  const tightSession = await tight.store.createSession("tight-domain");
+  await tight.retriever.search({ query: "first", mode: "fast", sessionId: tightSession.id });
+  let tightError = "";
+  try {
+    await tight.retriever.search({ query: "second", mode: "fast", sessionId: tightSession.id });
+  } catch (e) {
+    tightError = String(e instanceof Error ? e.message : e);
+  }
+  assert(tightError.includes("Budget exceeded"), "7: composition caps reject the second search");
+  const tightLedger = new BudgetLedger((tight.store as unknown as { db: any }).db);
+  const tightBalance = tightLedger.getBalance(tightSession.id)!;
+  assert(tightBalance.billableCalls === 1 && tightBalance.reservedCalls === 0, "7: one settled call, no leaked reservation");
+
+  fs.rmSync(domainsDir, { recursive: true, force: true });
 
   console.log("--- engine sufficiency anchor tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);

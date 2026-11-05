@@ -333,6 +333,12 @@ export class PiAgentRuntime {
   private warnedEnvIgnored = false;
   private pipeline?: MemoryPipeline;
   private gate?: SufficiencyEvaluator;
+  // T2 #177: every internal retrieval (search tool, sufficiency rerounds) goes
+  // through this retriever so the wired session handle rides along. The gate
+  // mirrors MemoryPipeline (`store && sessionId`): a half-wired runtime stays a
+  // no-memory/no-billing runtime instead of hitting budget_ledger's FK on an
+  // unregistered session id.
+  private readonly scopedRetriever: RetrieverPort;
 
   constructor(opts: PiAgentRuntimeOptions) {
     this.domainReloader = opts.domainTomlPath ? createDomainReloader(opts.domainTomlPath) : null;
@@ -340,6 +346,13 @@ export class PiAgentRuntime {
     // (server, hook, kernel), not just the plugin server. Misset -> throw at startup.
     parseEnvOverrideSwitch(process.env[ENV_ALLOW_OVERRIDE]);
     this.opts = opts;
+    // T2 #177: one scoped retriever for the whole runtime. `store && sessionId`
+    // is the same gate MemoryPipeline uses — the handle is only trusted when the
+    // session row is also wired, so budget_ledger/resume_anchors FK writes are safe.
+    const wiredSessionId = opts.store && opts.sessionId ? opts.sessionId : undefined;
+    this.scopedRetriever = wiredSessionId
+      ? { search: (q) => opts.retriever.search({ ...q, sessionId: wiredSessionId }) }
+      : opts.retriever;
 
     // constructor internally creates pipeline + gate instances.
     // Composition root responsible for wiring; caller opts unchanged.
@@ -354,7 +367,7 @@ export class PiAgentRuntime {
       this.pipeline = new MemoryPipeline({
         store: opts.store,
         models: opts.models as any,
-        retriever: opts.retriever,
+        retriever: this.scopedRetriever,
         domain: opts.domain,
         model: opts.model as any,
         streamFn: opts.streamFn as any,
@@ -367,7 +380,7 @@ export class PiAgentRuntime {
       warnMissingMemoryWiring(opts);
     }
     this.gate = new SufficiencyEvaluator({
-      retriever: opts.retriever,
+      retriever: this.scopedRetriever,
       domain: opts.domain,
       streamFn: opts.streamFn as any,
       model: opts.model as any,
@@ -383,18 +396,11 @@ export class PiAgentRuntime {
     const startTime = Date.now();
     const timedOut = () => Date.now() - startTime > timeoutMs;
 
-    const { retriever, domain, model, streamFn, ledger, sessionId } = this.opts;
+    const { domain, model, streamFn, ledger, sessionId } = this.opts;
 
     // Build tools: search tool + any extra tools, filtered by domain.
     const saturation = new SearchSaturation();
-    // T2 #177: the wired session handle rides each retrieval call so the engine's
-    // Budget Ledger reserve→settle and Sufficiency Anchor gates open on the
-    // chat/ans_chat paths. A failed-open memory wiring (no sessionId) leaves the
-    // gates closed — retrieval still works, unchanged.
-    const scopedRetriever: RetrieverPort = sessionId
-      ? { search: (q) => retriever.search({ ...q, sessionId }) }
-      : retriever;
-    const searchTool = createSearchTool(scopedRetriever, this.opts.span, (urls) => saturation.record(urls));
+    const searchTool = createSearchTool(this.scopedRetriever, this.opts.span, (urls) => saturation.record(urls));
     const allTools = [searchTool, ...(this.opts.tools || [])];
     const activeTools = filterAgentTools(allTools, domain);
 
