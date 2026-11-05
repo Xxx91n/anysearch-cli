@@ -56,9 +56,12 @@ const ENV_KEYS = [
 type ChatResult = { content: Array<{ type: string; text: string }> };
 type ChatHandler = (args: unknown) => Promise<ChatResult>;
 
-// Tool-module harness: capture the handler registerAnsChat registers. Every
-// harness owns a fresh closure (a fresh session cache), matching one long-lived
-// MCP process.
+/**
+ * Capture the handler that registerAnsChat registers, against a fake MCP server.
+ *
+ * Each harness owns a fresh cache closure, matching one long-lived MCP process:
+ * the session cache is created inside the tool registration.
+ */
 function chatHarness(): ChatHandler {
   let handler: ChatHandler | undefined;
   const server = {
@@ -100,15 +103,21 @@ function restoreRebuildProbe(): void {
   process.stderr.write = originalStderrWrite;
 }
 
-// Local upstream used to tell "rebuilt for a new baseUrl" from "hit the old
-// slot". Any request reaching it proves the new endpoint session was built;
-// the 400 response is deliberate - the model call is expected to fail.
+/**
+ * Start a local stand-in upstream and count how many model calls reach it.
+ *
+ * A request arriving here proves the session was (re)built against this
+ * endpoint. The 400 response is deliberate: the model call is expected to
+ * fail, and only "which endpoint was used" is asserted.
+ */
 async function startEndpointProbe() {
   let hits = 0;
   const httpServer = createServer((req, res) => {
     hits++;
     req.resume();
-    res.writeHead(400, { "content-type": "application/json" });
+    // Connection: close keeps undici from holding a keep-alive socket open
+    // after the suite finishes (that socket otherwise delays process exit).
+    res.writeHead(400, { "content-type": "application/json", connection: "close" });
     res.end(JSON.stringify({ error: { message: "probe endpoint" } }));
   });
   await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", () => resolve()));
@@ -124,6 +133,12 @@ async function startEndpointProbe() {
   };
 }
 
+/**
+ * Run the cache-key regression scenarios and print the pass/fail tally.
+ *
+ * Environment variables and the stderr probe are restored in `finally`, so a
+ * failing assertion cannot leak state into the rest of the test process.
+ */
 async function main() {
   const saved: Record<string, string | undefined> = {};
   for (const key of ENV_KEYS) {
