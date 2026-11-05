@@ -592,9 +592,9 @@ export class PiAgentRuntime {
       ledger.settleCalls(sessionId, 1, 1);
       // #103: token/USD v1 is settle-only (reserved 0) — the per-call dimension
       // stays the sole reserve/enforcement point; token-cap reservation waits
-      // on a per-run estimate config, still undecided (#175 Further Notes,
-      // candidate T9, no implementation ticket cut; T4 ruling #90 is the
-      // decision source, not an open ticket).
+      // on a per-run estimate config: design settled in #186 (T9),
+      // implementation ticket #188 still open. T4 ruling #90 is the
+      // decision source, not an open ticket.
       if (usageTotals.totalTokens > 0) {
         ledger.settleTokens(sessionId, 0, usageTotals.totalTokens);
       }

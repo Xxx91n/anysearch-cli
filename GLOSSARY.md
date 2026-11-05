@@ -21,7 +21,7 @@
 
 - **Composition Root（组合根）**——`createEngine(domain?)` 纯函数统一入口：按域过滤 providers、构造引擎；CLI/MCP/plugin 三端共享，替代散装 new+register。
 - **Seam Wiring（接缝接线）**——把已定义未连通的 kernel port 接到实际实现的过程；接缝接通后端口成为可测试、可替换的合约边界。
-- **Budget Ledger（预算账本）**——reserve-then-settle 预算强制：检索前预留、检索后结算，SQLite 非负约束固化。Billing Dimension 分 per-call（内核层已接线，当前唯一 reserve/强制点）与 token/USD（#103 落地 settle-only，reserved 0）两维；生产组合根的 ledger/sessionId 注入由 #177 承接、runtime 生产接线由 #178 承接，此前 reserve/settle 在生产路径恒不触发；token-cap reservation 的 per-run estimate 仍是 #175 待裁决项（Further Notes 候选 T9，未切实现票）。
+- **Budget Ledger（预算账本）**——reserve-then-settle 预算强制：检索前预留、检索后结算，SQLite 非负约束固化。Billing Dimension 分 per-call（内核层已接线，当前唯一 reserve/强制点）与 token/USD（#103 落地 settle-only，reserved 0）两维；生产组合根的 ledger/sessionId 注入由 #177 承接、runtime 生产接线由 #178 承接，此前 reserve/settle 在生产路径恒不触发；token reserve 的 per-run estimate 设计已由 #186（T9）裁决，落地实现票 #188 仍 OPEN，在落地前 token/USD 维持 settle-only。
 - **Sufficiency Gate（充分性门禁）**——检索质量下界（minProviders/minResults/minDomains/crossEngineVerify），post-hoc 判定；与 budget 上界、fanout 延迟三维度互不打架。
 - **PiAgentRuntime（PI Agent 运行时）**——kernel 内 AgentRuntime 的实现：pi-agent-core 驱动 agent loop，把 engine.search() 包成自定义工具，事件桥接到自有 AgentEvent 类型。
 - **Domain Full-Stack（领域全栈消费）**——domain 配置五层在 runtime 的完整映射：sources→provider、hooks→工具白名单、prompts→systemPrompt、skills→AgentTool、rag→transformContext 注入。
@@ -79,7 +79,7 @@
 ## 充分性与答案归因
 
 - **MVSS（最低可行信号集）**——sufficiency 元数据四段：verdict（三态聚合）+ agreement（rank 派生）+ volume（卫生信号）+ spread + perProvider 原生分数（不跨源归一化）；只承诺 escalate 决策。
-- **Sufficiency Anchor（充分性锚）**——engine 每次 search 在 computeSufficiency 之后、envelope 返回之前 append-only 写一条 `sufficiency` resume_anchor（崩溃重放所需状态：traceId、query、mode、MVSS、perProvider、failed/cancelled、unique 计数）；走注入的 ResumeAnchorsPort（BudgetLedgerPort 同款，kernel 不碰 store I/O），写失败 fail-open 具名 stderr 不阻塞检索；只写不读，重放/恢复读取仍未裁决（#175 Further Notes 候选 T8，尚未切实现票），不由本词条暗示存在已排期的后续票。
+- **Sufficiency Anchor（充分性锚）**——engine 每次 search 在 computeSufficiency 之后、envelope 返回之前 append-only 写一条 `sufficiency` resume_anchor（崩溃重放所需状态：traceId、query、mode、MVSS、perProvider、failed/cancelled、unique 计数）；走注入的 ResumeAnchorsPort（BudgetLedgerPort 同款，kernel 不碰 store I/O），写失败 fail-open 具名 stderr 不阻塞检索；engine 只写不读，读侧/recovery 设计已由 #186（T8）裁决，落地实现票 #189 仍 OPEN。注：写锚以 `anchors && sessionId` 为门，生产组合根目前只注入 anchors、未注入 sessionId，故生产路径暂不触发（#177 承接）。
 - **Dual-Output Sufficiency（单计算源双输出）**——单个 computeSufficiency() 纯函数双路输出：内部 fanout 早停布尔 + 外部暴露的 MVSS 元数据。
 - **Sufficiency Gate Placement（门禁架构归属）**——LLM 判断层（named gap 生成 + 定向重搜）在 PiAgentRuntime agent loop，engine 保持无 LLM 纯净。
 - **Named Gap Re-search（命名缺口定向重搜）**——gate 输出「缺什么」回灌定向二次检索，有界循环；仍不达标返回 annotate verdict=ambiguous。
@@ -130,7 +130,7 @@
 - **Access Events 与防篡改链**——access_events append-only + prev_hash 哈希链 + 创世锚；verify-access-events 全量重算 fail-closed；插桩写入失败计数告警不静默。
 - **Tau 观测层与显式 skip**——tau 参数不动只配观测（access-age 直方图/BG-NBD/PSI），观测值永不进门禁；数据不足走显式 skip 原因码，不占升级计数。
 - **Switch State Machine（S0–S4）**——合成轨与生产轨间五阶段迁移：阶段晋级（S0–S4 义，见「晋级 / Promotion」词条）走预注册复合阈值，退化分级回退，完整性失败 fail-closed 而非回退；预注册载荷绑定 SHA-256 校验。
-- **晋级 / Promotion（两义，按用法域区分）**——① 评测/门禁语义：S0–S4 Switch State Machine 的阶段迁移与记忆评测阈值晋升，走预注册阈值；② CI 门禁语义：把非阻断 job/lane 提升进 blocking matrix（`macos-latest` ship-gate lane 恢复为典型，其「≥5 探针连绿」规则已被首个全量门反转，#16 / PR #174；现行门槛是 store 侧 teardown 修复后的全量门试跑绿证据，#183 承接）。判据：谈 S0–S4 / 记忆评测阈值（GLOSSARY 评测门禁词条、`packages/store/src/eval/*`、switch-state 测试）取义①；谈 macOS lane / ship-gate matrix / 探针 TTL / "promotion to blocking"（`CHANGELOG.md` #16 段、`README.md`、`docs/limitations.md`、`.github/workflows/*`、`scripts/*`、release-layering 测试、#16/#183 票面）取义②；两义不互指、不互相推导证据。
+- **晋级 / Promotion（两义，按用法域区分）**——① 评测/门禁语义：S0–S4 Switch State Machine 的阶段迁移与记忆评测阈值晋升，走预注册阈值；② CI 门禁语义：把非阻断 job/lane 提升进 blocking matrix（`macos-latest` ship-gate lane 恢复为典型，#16 / PR #174 已反转其「≥5 探针连绿」规则，现行门槛为全量门试跑绿证据、#183 承接）。判据按语义而非文件：谈 S0–S4 / 记忆评测阈值取义①（如 `packages/store/src/eval/*`、C-prime Promote Gate、calibration / switch-state / vertical-delta 评测），谈 macOS lane / ship-gate matrix / 探针 TTL / "promotion to blocking" 取义②（如 `CHANGELOG.md` #16 段、README、limitations.md、workflows、scripts、release-layering 测试、#16/#183 票面；以上均为示例非穷举），两义不互指、不互相推导证据。
 - **Synthetic/Observational 分账**——合成轨只喂机器不冒充生产信号，与 consumed 轨严格分账；每 gate 条款配 pass/fail 成对 fixture。
 - **Ship Override 机制**——critical 红可凭封闭 reasonCode 放行一次/纪元（指纹对定纪元），强制重钉基线 + 限期复盘义务；账本 append-only。
 - **Ship Gate / Product Smoke Gate**——发布阻断闸门：静态断言 → build/test → pack → 真安装 → stdio 冒烟；conformance heartbeat 报告存在但不阻断；native 冒烟矩阵只装不编（prebuild 缺失显形）。
