@@ -563,13 +563,15 @@ export class RetroaererdEngine {
     // by, the sufficiency/fusion gate.
     const webProviderLedger = buildWebProviderLedger(listedProviderIds, providerLists, nativeScores, providersFailed);
 
-    // Design: exactly one append-only sufficiency checkpoint per search, written at
-    // this single point — after computeSufficiency, before the envelope assembles
-    // (T7 decision #93). The payload carries the state crash-recovery replay needs
-    // (fanout pool is rebuildable from this anchor + retrieval_results). Anchors are
-    // a recovery gain layer: a write failure fails open with a named stderr line and
-    // never blocks the envelope. Requires both port and sessionId — mirrors
-    // hasLedger; sessionId rides with engine opts like the ledger's.
+    // Design: one append-only sufficiency checkpoint attempt per search that
+    // reaches this single point — after computeSufficiency, before the envelope
+    // assembles (T7 decision #93). Early throws never arrive here, so no row is
+    // guaranteed for every search. The payload carries the state crash-recovery
+    // replay needs (fanout pool is rebuildable from this anchor + retrieval_results).
+    // Anchors are a recovery gain layer: a write failure fails open with a named
+    // stderr line and never blocks the envelope. Requires both port and
+    // sessionId — mirrors hasLedger; sessionId rides with engine opts like the
+    // ledger's.
     if (this.anchors && this.sessionId) {
       const anchorDomains = new Set([...allResults.keys()].map(extractDomain).filter(Boolean));
       const anchorPayload = {

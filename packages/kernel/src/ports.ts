@@ -85,9 +85,12 @@ export interface BudgetLedgerPort {
 // ResumeAnchorsPort: engine-side sufficiency checkpoint writer (#48).
 // Design: sufficiency anchoring crosses into the engine as an injected port, not a
 // store import — kernel stays pure (BudgetLedgerPort pattern, T7 decision #93).
-// One append-only "sufficiency" anchor per search, written after computeSufficiency
-// and before the envelope returns. Anchors are a recovery gain layer: write failures
-// fail open (named stderr line, retrieval never blocked). Read/replay is a later ticket.
+// One conditional append-only "sufficiency" anchor attempt per search that clears
+// the provider/budget checks, written after computeSufficiency and before the
+// envelope returns; needs both this port and sessionId, early throws write nothing,
+// and the store may skip secret-matching payloads. Anchors are a recovery gain
+// layer: write failures fail open (named stderr line, retrieval never blocked).
+// Read-side design is settled in #186 (T8); implementation ticket #189 is open.
 export interface ResumeAnchorsPort {
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
 }

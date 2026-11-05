@@ -1,6 +1,8 @@
 // Engine sufficiency anchor tests (#48, T7 decision #93 — issue #106).
-// Every search writes one append-only "sufficiency" resume_anchor after
+// A search that clears the provider/budget checks and has both the anchors port
+// and sessionId writes one append-only "sufficiency" resume_anchor after
 // computeSufficiency; write failure fails open with a named stderr line.
+// Cases below also assert the inert path when sessionId is absent.
 
 import { RetroaererdEngine } from "../src/engine";
 import { createEngine } from "../src/composition";
