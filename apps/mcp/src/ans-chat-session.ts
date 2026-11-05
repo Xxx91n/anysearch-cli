@@ -18,6 +18,7 @@
 // last write wins. Isolation is a different handle, and the store (not the
 // handle) is the principal boundary (#130).
 import type { CompositionResult, SessionStorePort } from "@anysearch-cli/kernel";
+import { toBudgetCaps, type BudgetConfig } from "@anysearch-cli/store";
 
 export interface AnsChatSessionWiring {
   store?: SessionStorePort;
@@ -65,6 +66,28 @@ function warnOnce(key: string, detail: string): void {
 }
 
 /**
+ * #187: register the Active Domain's optional [budget] at the same point the
+ * session row is registered. No [budget] section -> no row -> unmetered
+ * (pass). Budget setup is fail-open: a broken ledger must not turn a usable
+ * chat session into a failed call (no row is the safe unmetered state).
+ * Known limitation: the Active Domain is sampled at registration only, so a
+ * mid-session domain switch does not re-initialize caps.
+ */
+function registerSessionBudget(store: SessionStorePort, sessionId: string, budget?: BudgetConfig): void {
+  if (!budget) return;
+  if (typeof store.initBudget !== "function") {
+    warnOnce("budget", "session store lacks initBudget — continuing unmetered");
+    return;
+  }
+  try {
+    store.initBudget(sessionId, toBudgetCaps(budget));
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    warnOnce("budget:" + msg, "budget initialization failed (" + msg + ") — continuing unmetered");
+  }
+}
+
+/**
  * Resolve the store/sessionId pair handed to PiAgentRuntime.
  *
  * @param eng - Composition result carrying the session store.
@@ -95,6 +118,7 @@ export async function resolveAnsChatSession(
       // sessions(id), and the store runs foreign_keys = ON. A handle minted by a
       // previous process is not in this store's sessions table yet.
       await store.ensureSession(requested, "mcp");
+      registerSessionBudget(store, requested, eng.config?.budget);
       return { store, sessionId: requested };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -110,6 +134,7 @@ export async function resolveAnsChatSession(
       warnOnce("mint", "createSession returned an empty/malformed id — continuing without memory");
       return {};
     }
+    registerSessionBudget(store, id, eng.config?.budget);
     return { store, sessionId: id };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

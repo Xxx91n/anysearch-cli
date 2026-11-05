@@ -1,8 +1,8 @@
 // Self-check for domain-schema deep-merge + resolve + validate.
 // Run: npx tsx packages/store/test/domain-schema.test.ts
 
-import { resolve, validate, isDomainSchemaError, type RawDomain } from "../src/domain-schema";
-import { loadRawDomain } from "../src/domain-loader";
+import { resolve, validate, isDomainSchemaError, DEFAULT_OUTPUT_RESERVE_TOKENS, type RawDomain } from "../src/domain-schema";
+import { loadRawDomain, loadDomainFromString } from "../src/domain-loader";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -253,6 +253,67 @@ assert("isDomainSchemaError is false for non-Error throws", !isDomainSchemaError
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+// #187: [budget] TOML section — optional, parseable, fail-fast on bad shapes.
+{
+  const doc = [
+    'name = "budgeted"',
+    '[rag]',
+    'adapter = "x"',
+    '[budget]',
+    'tokenCap = 100000',
+    'usdCap = 2.5',
+    'callCap = 20',
+    'outputReserveTokens = 8192',
+    '',
+  ].join("\n");
+  const schema = loadDomainFromString(doc);
+  assert("budget tokenCap parsed", schema.budget?.tokenCap === 100000);
+  assert("budget usdCap parsed (fractional allowed)", schema.budget?.usdCap === 2.5);
+  assert("budget callCap parsed", schema.budget?.callCap === 20);
+  assert("budget outputReserveTokens override parsed", schema.budget?.outputReserveTokens === 8192);
+  assert("default output reserve constant is 12288", DEFAULT_OUTPUT_RESERVE_TOKENS === 12288);
+
+  const absent = loadDomainFromString('name = "plain"\n[rag]\nadapter = "x"\n');
+  assert("absent [budget] stays undefined (no ledger row later)", absent.budget === undefined);
+
+  const zero = loadDomainFromString('name = "zero"\n[rag]\nadapter = "x"\n[budget]\ntokenCap = 0\ncallCap = 0\n');
+  assert("explicit 0 caps survive parsing (distinct from unset)", zero.budget?.tokenCap === 0 && zero.budget?.callCap === 0);
+
+  const empty = loadDomainFromString('name = "empty"\n[rag]\nadapter = "x"\n[budget]\n');
+  assert("empty [budget] section is legal (all dimensions uncapped)", empty.budget !== undefined && empty.budget.tokenCap === undefined);
+  let emptyOk = true;
+  try { validate(empty); } catch { emptyOk = false; }
+  assert("empty [budget] passes validation", emptyOk);
+
+  // Section-replace inheritance: a derived [budget] restates the policy.
+  const bBase: RawDomain = { name: "bb", rag: { adapter: "x" }, budget: { tokenCap: 100, callCap: 5 } };
+  const bChild = resolve(
+    { name: "bc", base: "bb", rag: { adapter: "x" }, budget: { outputReserveTokens: 4096 } } as RawDomain,
+    (n) => n === "bb" ? bBase : undefined,
+  );
+  assert("budget whole-section replace (base tokenCap/callCap do NOT merge)",
+    bChild.budget?.outputReserveTokens === 4096 && bChild.budget?.tokenCap === undefined && bChild.budget?.callCap === undefined);
+  const bInherit = resolve(
+    { name: "bi", base: "bb", rag: { adapter: "x" } } as RawDomain,
+    (n) => n === "bb" ? bBase : undefined,
+  );
+  assert("budget inherits from base when derived omits it", bInherit.budget?.tokenCap === 100);
+
+  const badBudget = (toml: string): string => {
+    try { loadDomainFromString(toml); return ""; } catch (e) { return (e as Error).message; }
+  };
+  const head = 'name = "bad"\n[rag]\nadapter = "x"\n[budget]\n';
+  assert("budget.tokenCap negative rejected naming field", badBudget(head + "tokenCap = -1\n").includes("budget.tokenCap"));
+  assert("budget.tokenCap fractional rejected", badBudget(head + "tokenCap = 1.5\n").includes("budget.tokenCap"));
+  assert("budget.usdCap negative rejected", badBudget(head + "usdCap = -0.1\n").includes("budget.usdCap"));
+  assert("budget.outputReserveTokens negative rejected", badBudget(head + "outputReserveTokens = -1\n").includes("budget.outputReserveTokens"));
+  assert("budget unknown key rejected naming the key", badBudget(head + "mystery = 1\n").includes("unknown key") && badBudget(head + "mystery = 1\n").includes("mystery"));
+  // A zero output reserve is legal (it is a planning knob, not a "reject" cap).
+  let zeroReserveOk = true;
+  try { loadDomainFromString(head + "outputReserveTokens = 0\n"); } catch { zeroReserveOk = false; }
+  assert("outputReserveTokens 0 is accepted", zeroReserveOk);
 }
 
 console.log(`Domain schema tests: ${passed} passed, ${failed} failed`);

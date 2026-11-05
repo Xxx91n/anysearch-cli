@@ -21,6 +21,7 @@ import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
+import { BudgetLedger, type BudgetCaps } from "./budget-ledger.js";
 // embedding is optional — routed through the guarded arm
 // module (absent package => embedText null / telemetry absent), never imported statically.
 import { embedText, embeddingModelId, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
@@ -144,6 +145,12 @@ export interface SessionStore {
   // anchor) must be registered before any dependent write. Idempotent: an
   // existing row is left untouched.
   ensureSession(sessionId: string, domain: string): Promise<void>;
+  // #187: register the domain's [budget] caps for this session at the same
+  // composition-root point as ensureSession/createSession. Omitted when the
+  // Active Domain declares no [budget] — the absence of a ledger row is the
+  // "unmetered, pass" state. Idempotent: caps refresh in place and the
+  // reserved/spent counters survive a re-registration.
+  initBudget(sessionId: string, caps: BudgetCaps): void;
   append(sessionId: string, message: Message): Promise<void>;
   searchFts5(sessionId: string | null, query: string, limit?: number): Promise<MemoryHit[]>;
   saveResults(sessionId: string, results: NormalizedResult[]): Promise<void>;
@@ -300,6 +307,11 @@ function migrateSwitchEventSchema(db: Database.Database): void {
 
 export class SqliteSessionStore implements SessionStore {
   private db: Database.Database;
+  // #187: one ledger over the store's single connection. The unique
+  // budget_ledger.session_id index (created below) makes initBudget an upsert,
+  // so re-registering the durable `ans chat` anchor refreshes caps without
+  // duplicating the row.
+  private budgetLedgerInstance?: BudgetLedger;
   // LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
   private readonly entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
   // LLM relation seam (optional, fail-open) — returns RAW model text; relation.ts
@@ -369,6 +381,19 @@ export class SqliteSessionStore implements SessionStore {
       schema = SCHEMA_SQL;
     }
     this.db.exec(schema);
+    // #187: one budget row per session. The original table had no uniqueness
+    // (initBudget had zero production callers), so the index is created here
+    // as an idempotent migration for both new and existing databases; the
+    // upsert in BudgetLedger.initBudget depends on it. Existing duplicates are
+    // impossible in practice (no production writer), but a failed index
+    // creation is surfaced rather than silently disabling the upsert.
+    try {
+      this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_session_unique ON budget_ledger(session_id)");
+    } catch (e) {
+      try {
+        process.stderr.write("[warn] budget_ledger unique-session index not created: " + (e instanceof Error ? e.message : String(e)) + "\n");
+      } catch { /* stderr unavailable */ }
+    }
     migrateSwitchEventSchema(this.db);
     // edge-pattern constraint seed (idempotent; mirrors EDGE_PATTERN_ROWS in relation.ts;
     // existing rows are preserved via INSERT OR IGNORE).
@@ -597,6 +622,15 @@ export class SqliteSessionStore implements SessionStore {
     // id (or two CLI processes racing on the same anchor) must be a no-op, and a
     // PK conflict must not surface as a memory failure.
     this.stmts.ensureSession.run(sessionId, domain);
+  }
+
+  // #187: budget row at the session-registration point. The caller (CLI/MCP
+  // composition root) decides whether the Active Domain declared [budget]; no
+  // declaration means no call and therefore no row (pass). Known limitation:
+  // the Active Domain is sampled only at registration, so a mid-session domain
+  // switch does not re-initialize the budget row.
+  initBudget(sessionId: string, caps: BudgetCaps): void {
+    (this.budgetLedgerInstance ??= new BudgetLedger(this.db)).initBudget(sessionId, caps);
   }
 
   async append(sessionId: string, message: Message): Promise<void> {

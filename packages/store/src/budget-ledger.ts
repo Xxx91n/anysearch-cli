@@ -4,12 +4,29 @@
 // atomcode research: Mole DB schema non-negative constraint, 0% overshoot.
 
 import type Database from "better-sqlite3";
+import type { BudgetConfig } from "./domain-schema";
+
+// #187: sentinel persisted for a dimension that has no configured cap. A row
+// still exists (so "configured" is distinguishable from "no row"), but every
+// reserve passes. An explicit TOML 0 is a real cap of zero and rejects.
+export const UNLIMITED_BUDGET_CAP = Number.MAX_SAFE_INTEGER;
 
 export interface BudgetCaps {
-  tokenCap: number;
-  usdCap: number;
-  timeLimitMs: number;
+  tokenCap?: number;
+  usdCap?: number;
+  timeLimitMs?: number;
   callCap?: number; // decision 2B: per-call cap
+}
+
+// #187: map an optional [budget] section onto persisted caps. Missing fields
+// become UNLIMITED_BUDGET_CAP (not 0); explicit 0 stays 0.
+export function toBudgetCaps(budget: BudgetConfig): BudgetCaps {
+  return {
+    tokenCap: budget.tokenCap ?? UNLIMITED_BUDGET_CAP,
+    usdCap: budget.usdCap ?? UNLIMITED_BUDGET_CAP,
+    timeLimitMs: UNLIMITED_BUDGET_CAP,
+    callCap: budget.callCap ?? UNLIMITED_BUDGET_CAP,
+  };
 }
 
 export interface BudgetBalance {
@@ -37,6 +54,7 @@ export interface BudgetBalance {
 export class BudgetLedger {
   private stmts: {
     initBudget: Database.Statement;
+    hasRow: Database.Statement;
     reserveTokens: Database.Statement;
     reserveUsd: Database.Statement;
     settleTokens: Database.Statement;
@@ -48,7 +66,11 @@ export class BudgetLedger {
 
   constructor(private db: Database.Database) {
     this.stmts = {
-      initBudget: db.prepare("INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap) VALUES (?, ?, ?, ?, ?)"),
+      initBudget: db.prepare("INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap) VALUES (?, ?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET token_cap = excluded.token_cap, usd_cap = excluded.usd_cap, time_limit_ms = excluded.time_limit_ms, call_cap = excluded.call_cap"),
+      // #187: row existence is the "configured" bit. Checked before every
+      // reserve because the absence of a row means unmetered (pass), while a
+      // present row with cap 0 means "reject everything".
+      hasRow: db.prepare("SELECT 1 AS present FROM budget_ledger WHERE session_id = ?"),
       reserveTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens + ? WHERE session_id = ? AND reserved_tokens + spent_tokens + ? <= token_cap"),
       reserveUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = reserved_usd + ? WHERE session_id = ? AND reserved_usd + spent_usd + ? <= usd_cap"),
       settleTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens - ?, spent_tokens = spent_tokens + ? WHERE session_id = ?"),
@@ -59,19 +81,41 @@ export class BudgetLedger {
     };
   }
 
-  // Initialize budget for a session. Called once when session starts.
+  // Initialize (or refresh) the budget row for a session. Called once when the
+  // session is registered. Caps refresh in place so a TOML change takes effect
+  // on the next process start while reserved/spent counters survive; a missing
+  // cap means "no cap", not zero. Idempotent: the writing session is the same
+  // durable anchor `ans chat` re-registers on every start.
   initBudget(sessionId: string, caps: BudgetCaps): void {
-    this.stmts.initBudget.run(sessionId, caps.tokenCap, caps.usdCap, caps.timeLimitMs, caps.callCap ?? 0);
+    this.stmts.initBudget.run(
+      sessionId,
+      caps.tokenCap ?? UNLIMITED_BUDGET_CAP,
+      caps.usdCap ?? UNLIMITED_BUDGET_CAP,
+      caps.timeLimitMs ?? UNLIMITED_BUDGET_CAP,
+      caps.callCap ?? UNLIMITED_BUDGET_CAP,
+    );
   }
 
-  // Reserve tokens before a call. Returns false if would exceed cap (non-negative constraint).
+  // #187: "no row" means the domain declared no [budget] for this session and
+  // must not meter. This is deliberately checked before each UPDATE so a
+  // present row with cap 0 (explicit "reject everything") stays distinguishable
+  // from an absent row (pass).
+  private hasConfiguredBudget(sessionId: string): boolean {
+    return this.stmts.hasRow.get(sessionId) !== undefined;
+  }
+
+  // Reserve tokens before a call. Returns false only when a configured row
+  // would exceed its cap (non-negative constraint); an unconfigured session
+  // passes.
   reserveTokens(sessionId: string, amount: number): boolean {
+    if (!this.hasConfiguredBudget(sessionId)) return true;
     const result = this.stmts.reserveTokens.run(amount, sessionId, amount);
     return result.changes > 0;
   }
 
-  // Reserve USD before a call. Returns false if would exceed cap.
+  // Reserve USD before a call. Same no-row-passes contract as tokens.
   reserveUsd(sessionId: string, amount: number): boolean {
+    if (!this.hasConfiguredBudget(sessionId)) return true;
     const result = this.stmts.reserveUsd.run(amount, sessionId, amount);
     return result.changes > 0;
   }
@@ -86,8 +130,10 @@ export class BudgetLedger {
     this.stmts.settleUsd.run(reservedAmount, actualAmount, sessionId);
   }
 
-  // decision 2C: reserve per-call budget by provider count.
+  // decision 2C: reserve per-call budget by provider count. Unconfigured
+  // sessions (no row) pass; a configured row enforces call_cap.
   reserveCalls(sessionId: string, count: number): boolean {
+    if (!this.hasConfiguredBudget(sessionId)) return true;
     const result = this.stmts.reserveCalls.run(count, sessionId, count);
     return result.changes > 0;
   }

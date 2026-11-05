@@ -4,7 +4,7 @@
 // imports the kernel, whose pi-agent-core dependency is ESM-only, while this
 // CLI package is CommonJS — importing chat.ts from a test breaks module
 // resolution before any assertion runs.
-import { readSessionId } from "@anysearch-cli/store";
+import { readSessionId, toBudgetCaps, type BudgetConfig } from "@anysearch-cli/store";
 import type { SessionStorePort } from "@anysearch-cli/kernel";
 
 export interface ChatMemoryWiring {
@@ -26,7 +26,7 @@ export interface ChatMemoryWiring {
  * the runtime's `store && sessionId` gate closed, and the runtime then names
  * the gap itself.
  */
-export async function wireChatMemory(store: SessionStorePort, domain: string): Promise<ChatMemoryWiring> {
+export async function wireChatMemory(store: SessionStorePort, domain: string, budget?: BudgetConfig): Promise<ChatMemoryWiring> {
   const sessionId = readSessionId();
   // readSessionId is fail-open by contract; an empty id must never reach the
   // store (it would create a bogus sessions row and disable resume).
@@ -36,6 +36,23 @@ export async function wireChatMemory(store: SessionStorePort, domain: string): P
   }
   try {
     await store.ensureSession(sessionId, domain);
+    // #187: the Active Domain's [budget] is registered at the same session
+    // registration point. No [budget] section -> no initBudget call -> no
+    // ledger row -> unmetered (pass). Known limitation: the domain is sampled
+    // once here, so switching domains mid-session does not re-initialize caps.
+    if (budget) {
+      try {
+        if (typeof store.initBudget === "function") store.initBudget(sessionId, toBudgetCaps(budget));
+      } catch (e: any) {
+        // Budget setup is fail-open: a broken ledger must not disable memory
+        // either. No row means the unmetered (pass) state, which is the safe
+        // default rather than an accidental rejection.
+        process.stderr.write(
+          "[warn] budget initialization failed for " + sessionId + ": " +
+          (e?.message || String(e)) + " — continuing unmetered\n",
+        );
+      }
+    }
     return { store, sessionId };
   } catch (e: any) {
     process.stderr.write(

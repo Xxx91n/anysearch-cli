@@ -17,6 +17,27 @@ export interface DomainSchema {
   rag: { adapter: string; config?: Record<string, unknown> };
   hooks: { toolWhitelist: string[] };
   compaction?: CompactionConfig;
+  // #187: optional budget declaration. Absent section = no budget row =
+  // unmetered (pass). Within a declared section, an absent cap means "no cap"
+  // for that dimension — only an explicit 0 closes the dimension completely.
+  budget?: BudgetConfig;
+}
+
+// #187: output-side static reserve default, measured against 43 real runs
+// (output p95=9,309 / max=9,600). Re-measure when the per-call maxTokens grows
+// to roughly 1.5x the window this default was calibrated on (R≈1.5×).
+export const DEFAULT_OUTPUT_RESERVE_TOKENS = 12288;
+
+// #187: [budget] TOML section. Caps are optional and independent; a missing
+// field is "no cap" (the ledger row stores an unlimited sentinel), while an
+// explicit 0 rejects every reserve. The output reserve is a runtime planning
+// knob (consumed by the token-reserve ticket), not a ledger column, so it can
+// override the code default without changing persisted caps.
+export interface BudgetConfig {
+  tokenCap?: number;
+  usdCap?: number;
+  callCap?: number;
+  outputReserveTokens?: number;
 }
 
 export interface PromptEntry {
@@ -46,6 +67,7 @@ export interface RawDomain {
   rag?: { adapter?: string; config?: Record<string, unknown> };
   hooks?: { toolWhitelist?: string[] };
   compaction?: CompactionConfig;
+  budget?: BudgetConfig;
 }
 
 // Deep-merge two values. Objects merge recursively; everything else replaces.
@@ -114,6 +136,7 @@ export function resolve(
   let ragConfig: Record<string, unknown> | undefined;
   let hooksWhitelist: string[] = [];
   let compaction: CompactionConfig | undefined;
+  let budget: BudgetConfig | undefined;
   let name = "";
   let description: string | undefined;
 
@@ -138,6 +161,10 @@ export function resolve(
     if (d.rag?.adapter) { ragAdapter = d.rag.adapter; ragConfig = d.rag.config; }
     if (d.hooks?.toolWhitelist) hooksWhitelist = d.hooks.toolWhitelist;
     if (d.compaction) compaction = d.compaction;
+    // budget — whole-section replace like compaction: a derived domain that
+    // declares [budget] restates the full policy rather than inheriting caps
+    // field-by-field (a partial child must not silently loosen a parent cap).
+    if (d.budget) budget = d.budget;
     if (d.name) name = d.name;
     if (d.description) description = d.description;
   }
@@ -152,6 +179,7 @@ export function resolve(
     rag: { adapter: ragAdapter, config: ragConfig },
     hooks: { toolWhitelist: hooksWhitelist },
     compaction,
+    budget,
   };
 }
 
@@ -260,5 +288,29 @@ export function validate(schema: DomainSchema): void {
     }
     if (c.reuseCap !== undefined && (typeof c.reuseCap !== "number" || c.reuseCap < 1))
       throw new Error("Domain schema: compaction.reuseCap must be >= 1");
+  }
+  // #187: [budget] shape. Unknown keys are fail-fast for the same reason as
+  // sources.vertical: a silently dropped cap is a policy that never takes
+  // effect. Missing caps are legal ("no cap"); explicit 0 is legal and means
+  // "reject every reserve" — the two states must stay distinguishable.
+  const b = schema.budget;
+  if (b !== undefined) {
+    if (typeof b !== "object" || b === null || Array.isArray(b))
+      throw new Error("Domain schema: budget must be a table");
+    const budgetKeys = ["tokenCap", "usdCap", "callCap", "outputReserveTokens"];
+    const unknownBudgetKeys = Object.keys(b as Record<string, unknown>).filter((k) => !budgetKeys.includes(k));
+    if (unknownBudgetKeys.length > 0)
+      throw new Error("Domain schema: budget unknown key(s) " + unknownBudgetKeys.map((k) => JSON.stringify(k)).join(", ") + " — supported keys: " + budgetKeys.join(", "));
+    for (const key of budgetKeys) {
+      const value = (b as Record<string, unknown>)[key];
+      if (value === undefined) continue;
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+        throw new Error("Domain schema: budget." + key + " must be a finite number >= 0");
+      // token/call counts and the output reserve are integer quantities; a
+      // fractional token cap would be silently truncated by SQLite and hide a
+      // config mistake.
+      if (key !== "usdCap" && !Number.isInteger(value))
+        throw new Error("Domain schema: budget." + key + " must be an integer >= 0");
+    }
   }
 }

@@ -21,7 +21,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PiAgentRuntime, type CompositionResult } from "@anysearch-cli/kernel";
-import { SqliteSessionStore } from "@anysearch-cli/store";
+import { SqliteSessionStore, BudgetLedger } from "@anysearch-cli/store";
 import {
   buildAnsChatResult,
   isValidSessionHandle,
@@ -41,8 +41,8 @@ function assert(cond: boolean, msg: string) {
   }
 }
 
-function engineWith(store: unknown): CompositionResult {
-  return { retriever: {}, store, observation: {} } as unknown as CompositionResult;
+function engineWith(store: unknown, config?: CompositionResult["config"]): CompositionResult {
+  return { retriever: {}, store, observation: {}, ...(config ? { config } : {}) } as unknown as CompositionResult;
 }
 
 async function main() {
@@ -244,6 +244,41 @@ async function main() {
       } catch {
         /* OS temp */
       }
+    }
+  }
+
+  // ---- 7. #187: [budget] is registered at both session-registration paths ----
+  {
+    const dir = mkdtempSync(join(tmpdir(), "ans-187-mcp-"));
+    const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+    const config: CompositionResult["config"] = {
+      sources: { enabled: [] },
+      prompts: [],
+      skills: { active: [] },
+      hooks: { toolWhitelist: [] },
+      rag: { adapter: "none" },
+      budget: { tokenCap: 4321, usdCap: 1.5, callCap: 3, outputReserveTokens: 4096 },
+    };
+    const ledger = new BudgetLedger((store as any).db);
+    try {
+      const byHandle = await resolveAnsChatSession(engineWith(store, config), "budget-handle-187");
+      assert(byHandle.sessionId === "budget-handle-187", "budget: supplied handle still echoes back");
+      const handleRow = ledger.getBalance("budget-handle-187");
+      assert(handleRow?.tokenCap === 4321 && handleRow?.callCap === 3 && handleRow?.usdCap === 1.5,
+        "#187: ensureSession path creates the budget row from the Active Domain");
+
+      const minted = await resolveAnsChatSession(engineWith(store, config));
+      assert(!!minted.sessionId, "budget: handle-less call still mints");
+      assert(ledger.getBalance(minted.sessionId!)?.tokenCap === 4321,
+        "#187: createSession path creates the budget row from the Active Domain");
+
+      const plain = await resolveAnsChatSession(engineWith(store), "no-budget-handle-187");
+      assert(plain.sessionId === "no-budget-handle-187", "budget: no-config wiring still registers");
+      assert(ledger.getBalance("no-budget-handle-187") === null,
+        "#187: no [budget] -> no row -> unmetered (pass), not a zero-cap row");
+    } finally {
+      store.close();
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
     }
   }
 

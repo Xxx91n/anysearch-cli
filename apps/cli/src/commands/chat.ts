@@ -106,7 +106,9 @@ export async function runChat(argv: string[]): Promise<number> {
   const { retriever, store } = engine;
 
   // Stable session id + FK registration (#129) — see wireChatMemory.
-  const memory = durableStore ? await wireChatMemory(store, sessionDomain) : {};
+  // #187: pass the Active Domain's optional [budget] so registration also
+  // creates the ledger row (absent section = no row = unmetered).
+  const memory = durableStore ? await wireChatMemory(store, sessionDomain, domain.budget) : {};
 
   // Construct PiAgentRuntime and run.
   // models undefined fix — session.models is now properly initialized.

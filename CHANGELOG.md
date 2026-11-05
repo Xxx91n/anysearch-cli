@@ -39,7 +39,21 @@ All notable changes to this project are recorded here. Format follows
 
 - **#94 MCP SDK v2 调研报告归档至 `docs/research/mcp-sdk-v2-status.md`**：证据住 `main`，与 `upstream-unblock-registry.md` 落档先例一致（#171）。内容恢复自 issue #94 resolution 评论（2026-11-03）；原 `research/mcp-sdk-v2` 分支在归档时已不可从 `origin` 恢复，评论为现存权威结论。零行为改动。
 - **`.temp/` 会话残留逐项处置方案 `docs/research/temp-session-residue-disposition.md`**：枚举 #15/#16 调查工件、CI 日志取证、land 前备份、评审快照四类残留，逐项给出删/档/留建议；删除性动作标注「需用户单独授权」，本票不执行任何删除。零行为改动。
+## Unreleased — #187: budget 配置地基（[budget] TOML + 会话注册 initBudget + 无行放行）
 
+### Added
+
+- **domain TOML 可选 `[budget]` 节**（`packages/store/src/domain-schema.ts`）：支持 `tokenCap` / `usdCap` / `callCap` / `outputReserveTokens` 四个可选键。缺节 = 不建账本行 = 未配置放行；节内缺字段 = 该维度无上限（落库为 `Number.MAX_SAFE_INTEGER` 哨兵，不是 0）；显式 `0` = 该维度全拒。未知键、负数、非有限值、非整数计数键均在加载时 fail-fast（`Domain schema:` 家族）。`outputReserveTokens` 覆写代码常量 `DEFAULT_OUTPUT_RESERVE_TOKENS = 12288`（43 次真实 run：输出 p95=9,309 / max=9,600；重测触发条件 R≈1.5× per-call maxTokens）。继承语义与 `[compaction]` 一致：整节替换，不在字段级合并，避免子域局部声明静默放松父域 cap。
+- **会话注册位点初始化预算行**：`SessionStore.initBudget(sessionId, caps)` 在 CLI `wireChatMemory`（`ensureSession` 同点）与 MCP `resolveAnsChatSession`（`ensureSession` / `createSession` 两条路径）按当时 Active Domain 调用；`BudgetLedger.initBudget` 以 `budget_ledger(session_id)` 唯一索引做 upsert，重复注册只刷新 caps、保留 reserved/spent 计数。域中途切换不重初始化（代码注释登记为已知限制）。
+- **BudgetLedger reserve 三态语义**：无行 = 放行（不再因未配置预算 `reserveCalls` 返回 false 而让 engine throw）；有行且额度内 = 放行；有行且超限 = 拒绝；有行且 cap=0 = 全拒。`reserveTokens` / `reserveUsd` 同样先查行存在性。`initBudget` 缺省 cap 由原先的 0（意外全拒）改为无上限哨兵。
+
+### Tests
+
+- `packages/store/test/domain-schema.test.ts`：`[budget]` 解析（含小数 `usdCap`、显式 0、空节、缺节）、继承整节替换、未知键/负数/小数计数/负输出预留 fail-fast、12288 常量与覆写。
+- `packages/store/test/budget-ledger.test.ts`：无行放行四维断言、显式 0 全拒、节内缺字段=无上限、重复 `initBudget` 只刷新 caps 且保留计数/单行。
+- `apps/cli/test/chat-memory-wiring.test.ts`：真实 store 注册后账本行存在；无 `[budget]` 不建行。
+- `apps/mcp/test/ans-chat-session.test.ts`：`ensureSession` 与 `createSession` 两条 MCP 注册路径均建行；无 `[budget]` 不建行。
+- `scripts/validate-domains.mjs`：仓库域 TOML 校验同步接受并校验 `[budget]`。
 ## Unreleased — #16: macOS 晋级尝试被首跑证据反转——再剪除+探针恢复+门禁腿级加固（PR #174）
 
 ### Changed

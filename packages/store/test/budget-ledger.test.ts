@@ -88,6 +88,47 @@ async function main() {
       const ok7 = ledger.reserveCalls(s2.id, 8); // exactly remaining
       assert(ok7, "reserveCalls 8 succeeds (exactly at remaining)");
 
+      // 10. #187: no budget row = unmetered = every reserve passes.
+      //     Reserving on an unconfigured session must not lazily create a row.
+      const s3 = await store.createSession("unmetered");
+      assert(ledger.getBalance(s3.id) === null, "no budget row after session registration without [budget]");
+      assert(ledger.reserveTokens(s3.id, 999999), "reserveTokens passes with no row (unmetered)");
+      assert(ledger.reserveUsd(s3.id, 9999), "reserveUsd passes with no row (unmetered)");
+      assert(ledger.reserveCalls(s3.id, 5), "reserveCalls passes with no row (unmetered)");
+      assert(ledger.getBalance(s3.id) === null, "reserving does not create a row (still unmetered)");
+
+      // 11. #187: a configured row with explicit cap 0 rejects on every dimension —
+      //     the distinguishable "explicit zero" state, not the "no row" state.
+      const s4 = await store.createSession("zero-caps");
+      ledger.initBudget(s4.id, { tokenCap: 0, usdCap: 0, timeLimitMs: 0, callCap: 0 });
+      assert(ledger.getBalance(s4.id) !== null, "explicit zero still has a row");
+      assert(!ledger.reserveTokens(s4.id, 1), "cap 0 rejects tokens");
+      assert(!ledger.reserveUsd(s4.id, 0.01), "cap 0 rejects USD");
+      assert(!ledger.reserveCalls(s4.id, 1), "cap 0 rejects calls");
+
+      // 12. #187: omitted caps inside a declared [budget] are unlimited, not 0.
+      const s5 = await store.createSession("partial-caps");
+      ledger.initBudget(s5.id, { tokenCap: 0 });
+      const balPartial = ledger.getBalance(s5.id);
+      assert(balPartial !== null, "partial [budget] creates a row");
+      assert(balPartial!.callCap === Number.MAX_SAFE_INTEGER, "omitted callCap persists as unlimited, not 0");
+      assert(balPartial!.usdCap === Number.MAX_SAFE_INTEGER, "omitted usdCap persists as unlimited");
+      assert(!ledger.reserveTokens(s5.id, 1), "explicit tokenCap 0 still rejects");
+      assert(ledger.reserveCalls(s5.id, 100000), "unlimited callCap passes");
+
+      // 13. #187: re-registering the same session refreshes caps in place —
+      //     one row, spent/reserved counters preserved (no duplicate inserts).
+      const s6 = await store.createSession("reinit");
+      ledger.initBudget(s6.id, { tokenCap: 1000, usdCap: 1, timeLimitMs: 1000, callCap: 5 });
+      assert(ledger.reserveCalls(s6.id, 2), "initial reserve calls succeeds");
+      ledger.settleCalls(s6.id, 2, 1);
+      ledger.initBudget(s6.id, { tokenCap: 2000, usdCap: 2, timeLimitMs: 2000, callCap: 10 });
+      const balReinit = ledger.getBalance(s6.id);
+      assert(balReinit!.tokenCap === 2000 && balReinit!.callCap === 10, "re-init refreshes caps");
+      assert(balReinit!.billableCalls === 1, "re-init preserves billable calls");
+      const rows = (store as any).db.prepare("SELECT COUNT(*) AS c FROM budget_ledger WHERE session_id = ?").get(s6.id) as { c: number };
+      assert(rows.c === 1, "re-init keeps exactly one budget row per session");
+
       store.close();
     }
     console.log("--- BudgetLedger tests: " + passed + " passed, " + failed + " failed ---");
