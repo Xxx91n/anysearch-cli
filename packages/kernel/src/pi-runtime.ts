@@ -549,9 +549,11 @@ export class PiAgentRuntime {
       }
     });
 
-    // Budget reserve at agent_start (decision 5).
-    // per-call dimension is the hard enforcement point; token/USD dimensions
-    // are settle-only in v1 (#103, ruling #90) so nothing to reserve here.
+    // Budget reserve at agent_start (decision 5). Only engine.search() enforces
+    // the reserve (it throws when reserveCalls is rejected); this runtime path
+    // ignores the result and still runs + settles 1 call. Token/USD remain
+    // settle-only in v1 (#103, ruling #90) so nothing to reserve here. Runtime
+    // enforcement is #187/#188 (still OPEN), not a claim of this path.
     if (ledger && sessionId) {
       ledger.reserveCalls(sessionId, 1);
     }
