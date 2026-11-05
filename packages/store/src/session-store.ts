@@ -797,13 +797,17 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   // saveAnchor with UPSERT semantics for state-type anchors.
-  // State-type anchors (consolidation_state) use DELETE-then-INSERT to ensure single row per (session_id, anchor_type).
-  // Historical anchors (rolling_summary, l2_recall) remain append-only (INSERT).
+  // State-type anchors (consolidation_state) use an atomic INSERT ... ON CONFLICT
+  // DO UPDATE against the partial UNIQUE index (see schema.sql), keeping one row
+  // per (session_id, anchor_type) without a DELETE or a schema migration.
+  // All historical anchor types (query, fetch, sufficiency, rolling_summary,
+  // l2_recall) remain append-only INSERT — sufficiency joined them in #106.
   async saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void> {
     const json = JSON.stringify(payload);
     // write entry: anchors are searchable surfaces too — refuse secret payloads.
     if (containsSecret(anchorType + " " + json)) return;
-    // ponytail: state-type anchors use UPSERT (DELETE-then-INSERT avoids schema migration for UNIQUE constraint).
+    // ponytail: state-type anchors take the atomic UPSERT statement above;
+    // non-state anchors (including sufficiency, #106) stay append-only INSERT.
     if (anchorType === "consolidation_state") {
       this.stmts.saveAnchorUpsert.run(sessionId, anchorType, json);
     } else {

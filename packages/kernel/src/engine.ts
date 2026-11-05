@@ -31,9 +31,13 @@ export const DEFAULT_GATE: SufficiencyGate = {
 
 // Engine config: budget caps + sufficiency gate + grace window.
 export interface EngineConfig {
-  // ponytail: budget field is accepted but not yet wired to BudgetLedger (decision 4 known deferral).
-  // Kernel stays pure orchestration; budget enforcement will be injected via store layer when implemented.
-  // per-call dimension wired via BudgetLedgerPort. Token dimension pending LLM integration.
+  // EngineConfig.budget is a legacy field: search() never reads it. Budget
+  // enforcement is wired through the injected BudgetLedgerPort + sessionId —
+  // per-call reserve/settle (decision 2C) here, token/USD settle in
+  // PiAgentRuntime (#103, kernel level). Production composition-root
+  // injection is #177 and PiAgentRuntime production wiring is #178.
+  // Token reserve design is settled in #186 (T9), with implementation
+  // tickets #187/#188 still open; USD stays settle-only per #186 decision 6.
   budget?: Budget;
   gate?: Partial<SufficiencyGate>;  // override DEFAULT_GATE fields
   graceWindowMs?: number;            // default 1500 (paperfoot EARLY_STOP_GRACE)
@@ -83,7 +87,17 @@ export interface SufficiencyResult {
   mvs: SufficiencySignal;
 }
 
-// ponytail: Resume Anchoring on timeout/crash is not implemented - resume_anchors exists in the store schema but this engine never writes a checkpoint (no replay/recovery wiring). | Implement when long-running research sessions need crash recovery
+// Resume Anchoring write side landed in #106 (T7 decision #93): a search that
+// reaches this point attempts one append-only "sufficiency" resume_anchor write
+// via the injected ResumeAnchorsPort, after computeSufficiency and before the
+// envelope assembles (see the Design note at the write site). It is an attempt,
+// not a guaranteed row: early throws (no providers / budget exceeded) write
+// nothing, it needs both anchors and sessionId, a store error is logged without
+// failing the search, and the store skips secret-matching payloads.
+// computeSufficiency itself stays a pure single-computation source with no I/O.
+// Read side stays out of the engine (#93 ruling, reaffirmed in #186 decision 10;
+// decision 8 makes recovery digest injection, not mechanical replay). The
+// recovery design is settled in #186 (T8); implementation ticket #189 is open.
 export function computeSufficiency(
   rankedResults: NormalizedResult[],
   providerLists: string[][],
@@ -549,13 +563,15 @@ export class RetroaererdEngine {
     // by, the sufficiency/fusion gate.
     const webProviderLedger = buildWebProviderLedger(listedProviderIds, providerLists, nativeScores, providersFailed);
 
-    // Design: exactly one append-only sufficiency checkpoint per search, written at
-    // this single point — after computeSufficiency, before the envelope assembles
-    // (T7 decision #93). The payload carries the state crash-recovery replay needs
-    // (fanout pool is rebuildable from this anchor + retrieval_results). Anchors are
-    // a recovery gain layer: a write failure fails open with a named stderr line and
-    // never blocks the envelope. Requires both port and sessionId — mirrors
-    // hasLedger; sessionId rides with engine opts like the ledger's.
+    // Design: one append-only sufficiency checkpoint attempt per search that
+    // reaches this single point — after computeSufficiency, before the envelope
+    // assembles (T7 decision #93). Early throws never arrive here, so no row is
+    // guaranteed for every search. The payload carries the state crash-recovery
+    // replay needs (fanout pool is rebuildable from this anchor + retrieval_results).
+    // Anchors are a recovery gain layer: a write failure fails open with a named
+    // stderr line and never blocks the envelope. Requires both port and
+    // sessionId — mirrors hasLedger; sessionId rides with engine opts like the
+    // ledger's.
     if (this.anchors && this.sessionId) {
       const anchorDomains = new Set([...allResults.keys()].map(extractDomain).filter(Boolean));
       const anchorPayload = {

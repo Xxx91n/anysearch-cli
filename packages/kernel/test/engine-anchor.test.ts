@@ -1,6 +1,9 @@
 // Engine sufficiency anchor tests (#48, T7 decision #93 — issue #106).
-// Every search writes one append-only "sufficiency" resume_anchor after
-// computeSufficiency; write failure fails open with a named stderr line.
+// A search that clears the provider/budget checks and has both the anchors port
+// and sessionId attempts one append-only "sufficiency" resume_anchor write after
+// computeSufficiency; it is an attempt, not a guaranteed row — a write failure
+// fails open with a named stderr line and the store skips secret-matching payloads.
+// Cases below also assert the inert path when sessionId is absent.
 
 import { RetroaererdEngine } from "../src/engine";
 import { createEngine } from "../src/composition";
@@ -33,7 +36,7 @@ async function main() {
   const store = new SqliteSessionStore(":memory:");
   const session = await store.createSession("test-domain");
 
-  // 1. One sufficiency anchor per search, with the replay payload fields.
+  // 1. One sufficiency anchor for a qualified search, with the replay payload fields.
   const engine1 = new RetroaererdEngine(
     [
       mockProvider("tavily", ["https://example.com/a", "https://example.com/b", "https://example.com/c"]),
