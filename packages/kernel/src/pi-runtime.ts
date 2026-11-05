@@ -553,7 +553,9 @@ export class PiAgentRuntime {
     // the reserve (it throws when reserveCalls is rejected); this runtime path
     // ignores the result and still runs + settles 1 call. Token/USD remain
     // settle-only in v1 (#103, ruling #90) so nothing to reserve here. Runtime
-    // enforcement is #187/#188 (still OPEN), not a claim of this path.
+    // hard-stop is #188 (still OPEN); #187 is its config groundwork and
+    // explicitly leaves engine/pi-runtime semantics unchanged. Neither is a
+    // claim that this path enforces anything.
     if (ledger && sessionId) {
       ledger.reserveCalls(sessionId, 1);
     }

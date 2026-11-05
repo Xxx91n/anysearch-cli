@@ -21,7 +21,7 @@
 
 - **Composition Root（组合根）**——`createEngine(domain?)` 纯函数统一入口：按域过滤 providers、构造引擎；CLI/MCP/plugin 三端共享，替代散装 new+register。
 - **Seam Wiring（接缝接线）**——把已定义未连通的 kernel port 接到实际实现的过程；接缝接通后端口成为可测试、可替换的合约边界。
-- **Budget Ledger（预算账本）**——reserve-then-settle 预算机制：检索前预留、检索后结算，SQLite 非负约束固化。Billing Dimension 分 per-call 与 token/USD（#103 落地 settle-only，reserved 0）两维；预留被拒时只有 engine 检索路径 throw 阻断，PiAgentRuntime 的 agent loop 目前忽略 `reserveCalls()` 结果、仍继续该次 run 并结算 1 call（runtime 侧强制由 #187/#188 承接）；生产组合根的 ledger/sessionId 注入由 #177 承接、runtime 生产接线由 #178 承接，此前 reserve/settle 在生产路径恒不触发；token reserve 的 per-run estimate 设计已由 #186（T9）裁决，落地票 #187/#188 仍 OPEN，在落地前 token/USD 维持 settle-only（USD 无价格表不做预扣，#186 决定 6）。
+- **Budget Ledger（预算账本）**——reserve-then-settle 预算机制：检索前预留、检索后结算，SQLite 非负约束固化。Billing Dimension 分 per-call 与 token/USD（#103 落地 settle-only，reserved 0）两维；预留被拒时只有 engine 检索路径 throw 阻断，PiAgentRuntime 的 agent loop 目前忽略 `reserveCalls()` 结果、仍继续该次 run 并结算 1 call（runtime 侧硬停由 #188 承接，#187 为其纯地基前置、明确不改 engine/pi-runtime 语义）；生产组合根的 ledger/sessionId 注入由 #177 承接、runtime 生产接线由 #178 承接，此前 reserve/settle 在生产路径恒不触发；token reserve 的 per-run estimate 设计已由 #186（T9）裁决，落地票 #187/#188 仍 OPEN，在落地前 token/USD 维持 settle-only（USD 无价格表不做预扣，#186 决定 6）。
 - **Sufficiency Gate（充分性门禁）**——检索质量下界（minProviders/minResults/minDomains/crossEngineVerify），post-hoc 判定；与 budget 上界、fanout 延迟三维度互不打架。
 - **PiAgentRuntime（PI Agent 运行时）**——kernel 内 AgentRuntime 的实现：pi-agent-core 驱动 agent loop，把 engine.search() 包成自定义工具，事件桥接到自有 AgentEvent 类型。
 - **Domain Full-Stack（领域全栈消费）**——domain 配置五层在 runtime 的完整映射：sources→provider、hooks→工具白名单、prompts→systemPrompt、skills→AgentTool、rag→transformContext 注入。
