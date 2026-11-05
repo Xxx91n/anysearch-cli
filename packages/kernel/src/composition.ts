@@ -8,12 +8,14 @@
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
 import type { SearchProvider, SearchRequest } from "@anysearch-cli/retriever";
 import { RetroaererdEngine } from "./engine";
-import type { RetrieverPort, DomainConfigPort, SessionStorePort } from "./ports";
+import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
   defaultDomainsDirs,
   loadDomainByNameIn,
   SqliteObservationStore,
   SqliteSessionStore,
+  BudgetLedger,
+  type BudgetCaps,
   readActiveCalibrationBundle,
   createDomainReloader,
   domainTomlPath,
@@ -101,6 +103,62 @@ export interface CompositionResult {
   // failure message, empty when every enabled arm built. Consumers pair this
   // with the engine's runtime providersFailed to audit the full chain.
   providerBuildErrors: Record<string, string>;
+  // T2 #177: the per-call Budget Ledger bound to `store`'s connection. Exposed so
+  // the PiAgentRuntime wiring (#178) passes this same instance — one budget row
+  // per session, never a second ledger over the same DB. Optional so hand-built
+  // CompositionResult mocks (tests, embedders) stay source-compatible; every
+  // createEngine result supplies it.
+  ledger?: BudgetLedgerPort;
+}
+
+// T2 #177: no default budget is specified by #175/#177, and BudgetLedger's
+// schema default call_cap = 0 would reject every search. Unlimited is therefore
+// the only default that preserves existing behaviour; a host (or a test) passes
+// explicit caps to make the ledger's enforcement observable. Token/USD caps stay
+// settle-only until the per-run estimate is decided (T9, #175 Further Notes).
+const UNLIMITED_BUDGET_CAPS: BudgetCaps = {
+  tokenCap: Number.MAX_SAFE_INTEGER,
+  usdCap: Number.MAX_SAFE_INTEGER,
+  timeLimitMs: Number.MAX_SAFE_INTEGER,
+  callCap: Number.MAX_SAFE_INTEGER,
+};
+
+// T2 #177: BudgetLedgerPort adapter over the store's connection. The budget row
+// is created lazily for the first session the engine sees (the CLI's durable
+// anchor or an MCP-minted handle — the composition root does not know either at
+// construction time). The row check is one synchronous SELECT; reserve/settle
+// semantics are delegated unchanged.
+class SessionBudgetLedger implements BudgetLedgerPort {
+  constructor(
+    private readonly ledger: BudgetLedger,
+    private readonly caps: BudgetCaps,
+  ) {}
+
+  private ensureRow(sessionId: string): void {
+    if (!this.ledger.getBalance(sessionId)) this.ledger.initBudget(sessionId, this.caps);
+  }
+
+  reserveCalls(sessionId: string, count: number): boolean {
+    this.ensureRow(sessionId);
+    return this.ledger.reserveCalls(sessionId, count);
+  }
+  settleCalls(sessionId: string, reservedCount: number, actualCount: number): void {
+    this.ledger.settleCalls(sessionId, reservedCount, actualCount);
+  }
+  reserveTokens(sessionId: string, amount: number): boolean {
+    this.ensureRow(sessionId);
+    return this.ledger.reserveTokens(sessionId, amount);
+  }
+  settleTokens(sessionId: string, reservedAmount: number, actualAmount: number): void {
+    this.ledger.settleTokens(sessionId, reservedAmount, actualAmount);
+  }
+  reserveUsd(sessionId: string, amount: number): boolean {
+    this.ensureRow(sessionId);
+    return this.ledger.reserveUsd(sessionId, amount);
+  }
+  settleUsd(sessionId: string, reservedAmount: number, actualAmount: number): void {
+    this.ledger.settleUsd(sessionId, reservedAmount, actualAmount);
+  }
 }
 
 // createEngine: build configured engine.
@@ -147,7 +205,7 @@ export function resolveActiveAttributionCalibration(
   }
 }
 
-export function createEngine(domain?: string, opts?: { dbPath?: string; attributionCalibration?: AttributionCalibration; domainsDirs?: string[] }): CompositionResult {
+export function createEngine(domain?: string, opts?: { dbPath?: string; attributionCalibration?: AttributionCalibration; domainsDirs?: string[]; budgetCaps?: BudgetCaps }): CompositionResult {
   let providers: SearchProvider[] = [];
   const providerBuildErrors: Record<string, string> = {};
   let config: DomainConfigPort | undefined;
@@ -214,15 +272,22 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
   // opts.dbPath enables durable store for maintenance commands.
   const dbPath = opts?.dbPath ?? ":memory:";
   const store = new SqliteSessionStore(dbPath);
+  // T2 #177: the per-call ledger shares the store's connection. The engine only
+  // acts on it when a search carries a session id (Query.sessionId, threaded by
+  // PiAgentRuntime); stateless `search` calls keep both gates closed.
+  const ledger = new SessionBudgetLedger(store.createBudgetLedger(), opts?.budgetCaps ?? UNLIMITED_BUDGET_CAPS);
   const engineOpts: ConstructorParameters<typeof RetroaererdEngine>[1] = {
     ...(sourceWeights ? { sourceWeights } : {}),
     ...(attributionCalibration ? { attributionCalibration } : {}),
     // domain-name rides with the resolver for audit attributes.
     ...(urlPolicy ? { urlPolicy, domainName: domain } : {}),
     ...(repoVertical ? { repoVertical } : {}),
+    // per-call budget reserve→settle (T2 #177) — port always present; session id
+    // is per search, so the gate opens only on the chat/ans_chat paths.
+    ledger,
     // Design: the store owns anchor disk I/O; the engine only sees the port —
     // kernel purity (T7 decision #93). Writes fire only when the engine also
-    // carries a sessionId (engine opts, like the ledger).
+    // has a sessionId (per-search Query.sessionId, or construction-time opts).
     anchors: {
       saveAnchor: (sessionId, anchorType, payload) => store.saveAnchor(sessionId, anchorType, payload),
     },
@@ -232,5 +297,5 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
     Object.keys(engineOpts).length ? engineOpts : undefined,
   );
   const observation = new SqliteObservationStore(dbPath);
-  return { retriever, config, store, observation, calibration: attributionCalibration, providerBuildErrors };
+  return { retriever, config, store, observation, calibration: attributionCalibration, providerBuildErrors, ledger };
 }

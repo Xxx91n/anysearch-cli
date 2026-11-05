@@ -319,6 +319,8 @@ export class SqliteSessionStore implements SessionStore {
   // caps in place (unique constraint/index on budget_ledger.session_id for new
   // and clean existing databases), so re-registering the durable `ans chat`
   // anchor never duplicates the row.
+  // T2 #177: the same instance is exposed to the composition root so the engine
+  // and registration share one connection and one set of prepared statements.
   private budgetLedgerInstance?: BudgetLedger;
   // LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
   private readonly entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
@@ -528,6 +530,14 @@ export class SqliteSessionStore implements SessionStore {
       this.stmts.insertAccessEvent.run(memoryId, prevHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, "system");
     });
     write.immediate();
+  }
+
+  // T2 #177: hand the composition root a ledger bound to this store's single
+  // connection — never a second better-sqlite3 handle. Reserving/settling on a
+  // different connection would still work under WAL, but the "same DB" contract
+  // in the ticket keeps writes (and their FK/transaction view) in one place.
+  createBudgetLedger(): BudgetLedger {
+    return (this.budgetLedgerInstance ??= new BudgetLedger(this.db));
   }
 
   // alert-on-silence telemetry — observational zone only, never gated (Goodhart).

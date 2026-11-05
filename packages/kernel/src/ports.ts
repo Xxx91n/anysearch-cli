@@ -27,6 +27,12 @@ export type Query = SearchRequest & {
   providers?: string[]; // restrict to subset of registered providers
   // caller-side recordOperation span for the domain-filter audit events.
   span?: RetrievalObservationSink;
+  // T2 #177: per-search session id supplied by the composition path that owns a
+  // session (PiAgentRuntime threads the wired CLI anchor / MCP minted handle
+  // here). The engine opens its Budget Ledger reserve→settle and Sufficiency
+  // Anchor gates only when both the port and a session id are present; a bare
+  // `search` call without a session keeps both gates closed (unchanged).
+  sessionId?: string;
 };
 
 // RetrieverPort: the kernel calls this to search.

@@ -72,6 +72,12 @@ function readCurrentPolicy(): UrlPolicy {
 let currentPolicyVersion = readCurrentPolicy().policyVersion;
 let envIgnoredAudited = false; // D7: config:env_override_ignored once per session
 
+// T2 #177: this process is intentionally NOT an engine composition root. The
+// hooks/server surface only touches the project-index store and the policy
+// cache; it has no resumable chat/agent session to key a Budget Ledger row or a
+// Sufficiency Anchor on. Not injecting sessionId/BudgetLedger is therefore the
+// declared fail-open path (the engine gates stay closed), not an oversight.
+// The wired-session paths are `ans chat` (CLI) and `ans_chat` (MCP).
 const store = new ProjectIndexStore(DB_PATH);
 
 // constant-time bearer compare. A wrong-length token is rejected without

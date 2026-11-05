@@ -7,8 +7,11 @@
 
 import { RetroaererdEngine } from "../src/engine";
 import { createEngine } from "../src/composition";
-import { SqliteSessionStore } from "@anysearch-cli/store";
+import { SqliteSessionStore, BudgetLedger } from "@anysearch-cli/store";
 import type { SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, FusedEnvelope } from "@anysearch-cli/retriever";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -100,16 +103,69 @@ async function main() {
   const anchors4 = (await store.getAnchors(session.id)).filter((a) => a.anchorType === "sufficiency");
   assert(anchors4.length === 2, "4: no anchor written without sessionId");
 
-  // 5. Composition root wires the store's saveAnchor into the engine port.
-  // (Search-to-store coverage lands with sessionId wiring — createEngine supplies none.)
-  const eng = createEngine();
+  // 5. Composition root: the injected ledger and anchors share the store's
+  //    connection, and a session-scoped search lands the sufficiency anchor and
+  //    the budget settle in that store (search-to-store coverage — the gap the
+  //    old comment deferred to sessionId wiring, T2 #177).
+  //    An empty-sources domain keeps createEngine from building real providers
+  //    (they are keyless-capable and would hit the network); the mock arm below
+  //    is the only fanout member.
+  const domainsDir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-177-"));
+  fs.writeFileSync(path.join(domainsDir, "mockonly.toml"), [
+    'name = "mockonly"',
+    '[skills]',
+    'active = []',
+    '[sources]',
+    'enabled = []',
+    '[rag]',
+    'adapter = "none"',
+    "",
+  ].join("\n"), "utf8");
+  const eng = createEngine("mockonly", {
+    domainsDirs: [domainsDir],
+    // explicit caps make the settle observable; the default is unlimited.
+    budgetCaps: { tokenCap: 1_000_000, usdCap: 10, timeLimitMs: 60_000, callCap: 100 },
+  });
+  // register a deterministic arm so the search reaches the engine.
+  (eng.retriever as unknown as { registerProvider: (p: SearchProvider) => void })
+    .registerProvider(mockProvider("composition", ["https://comp.example/x"]));
   const port = (eng.retriever as unknown as { anchors?: { saveAnchor?: unknown } }).anchors;
   assert(port !== undefined && typeof port.saveAnchor === "function", "5: createEngine injects the anchors port");
   const compSession = await eng.store.createSession("composition-domain");
-  await (port as { saveAnchor: (sid: string, type: string, payload: unknown) => Promise<void> })
-    .saveAnchor(compSession.id, "sufficiency", { probe: true });
+  await eng.retriever.search({ query: "composition anchor", mode: "fast", sessionId: compSession.id });
   const compAnchors = (await eng.store.getAnchors(compSession.id)).filter((a) => a.anchorType === "sufficiency");
-  assert(compAnchors.length === 1 && (compAnchors[0].payload as Record<string, unknown>).probe === true, "5: injected callback reaches eng.store");
+  assert(compAnchors.length === 1, "5: createEngine search writes one sufficiency anchor to its own store");
+  assert((compAnchors[0].payload as Record<string, unknown>).query === "composition anchor", "5: the anchor carries this search's query");
+  // the ledger handed to the engine is the store's connection: its budget row
+  // is readable through that same store.
+  const compLedger = new BudgetLedger((eng.store as unknown as { db: any }).db);
+  const compBalance = compLedger.getBalance(compSession.id);
+  assert(compBalance !== null && compBalance.billableCalls === 1 && compBalance.reservedCalls === 0, "5: composition ledger settled the per-call budget on the same connection");
+
+  // 6. Per-call reserve→settle end-to-end: within cap passes, over cap is
+  //    rejected by the ledger's existing semantics (no non-negative change).
+  const budgetSession = await store.createSession("budget-domain");
+  const ledger = new BudgetLedger((store as unknown as { db: any }).db);
+  ledger.initBudget(budgetSession.id, { tokenCap: 1_000_000, usdCap: 10, timeLimitMs: 60_000, callCap: 2 });
+  const budgetEngine = new RetroaererdEngine(
+    [
+      mockProvider("one", ["https://one.example/a"]),
+      mockProvider("two", ["https://two.example/b"]),
+    ],
+    { sessionId: budgetSession.id, ledger },
+  );
+  await budgetEngine.search({ query: "within budget", mode: "fast" });
+  const afterFirst = ledger.getBalance(budgetSession.id)!;
+  assert(afterFirst.billableCalls === 2 && afterFirst.reservedCalls === 0, "6: reserve→settle records the actual provider count");
+  let overCapError = "";
+  try {
+    await budgetEngine.search({ query: "over budget", mode: "fast" });
+  } catch (e) {
+    overCapError = String(e instanceof Error ? e.message : e);
+  }
+  assert(overCapError.includes("Budget exceeded"), "6: a search over the per-call cap is rejected");
+  const afterSecond = ledger.getBalance(budgetSession.id)!;
+  assert(afterSecond.billableCalls === 2 && afterSecond.reservedCalls === 0, "6: the rejected reserve leaves the balance intact");
 
   console.log("--- engine sufficiency anchor tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);

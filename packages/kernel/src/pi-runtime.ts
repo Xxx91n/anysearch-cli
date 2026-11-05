@@ -387,7 +387,14 @@ export class PiAgentRuntime {
 
     // Build tools: search tool + any extra tools, filtered by domain.
     const saturation = new SearchSaturation();
-    const searchTool = createSearchTool(retriever, this.opts.span, (urls) => saturation.record(urls));
+    // T2 #177: the wired session handle rides each retrieval call so the engine's
+    // Budget Ledger reserve→settle and Sufficiency Anchor gates open on the
+    // chat/ans_chat paths. A failed-open memory wiring (no sessionId) leaves the
+    // gates closed — retrieval still works, unchanged.
+    const scopedRetriever: RetrieverPort = sessionId
+      ? { search: (q) => retriever.search({ ...q, sessionId }) }
+      : retriever;
+    const searchTool = createSearchTool(scopedRetriever, this.opts.span, (urls) => saturation.record(urls));
     const allTools = [searchTool, ...(this.opts.tools || [])];
     const activeTools = filterAgentTools(allTools, domain);
 
