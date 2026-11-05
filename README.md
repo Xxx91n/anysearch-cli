@@ -347,7 +347,7 @@ evidence live in the linked integration docs.
 
 | Limitation | Why it matters |
 |------------|----------------|
-| macOS is outside the blocking matrix | the exit-time `libc++abi` family re-manifested under full-suite load when promotion was attempted (PR #174: 5/76 store test files crashed at exit with zero failed assertions); `ship-gate` stays gated on ubuntu+windows, macOS runs as a non-blocking probe lane |
+| exit-time `libc++abi` aborts on macOS | root-caused (#183) to forced `process.exit()` while native state was still alive, not to leaked sqlite handles: store-side exits now close handles and let the loop end, and macOS is a blocking `ship-gate` leg again. Anything that force-exits a process with live native state can still abort — the non-blocking `macos-spillover-probe` job stays as an early-warning reporter |
 | `anysearch` provider cannot pre-filter | its MCP `domain` param is a vertical-routing enum (not a host allowlist) — under a domain allowlist it degrades honestly to post-filter only |
 | exit-time `libc++abi` may overwrite the abstain exit code | automation must read the structured abstain marker (`--json` / `structuredContent.abstain`), not the exit code alone |
 | `rag.adapter = "fts"` is not enabled on any shipped domain | all three shipped domains stay on `adapter = "none"`; enabling it per domain is an explicit opt-in product decision (#130) |
