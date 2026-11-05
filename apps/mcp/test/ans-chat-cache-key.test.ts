@@ -1,4 +1,4 @@
-// #179 acceptance — ans_chat LLM session cache-key pinning (#50 follow-up).
+// #179 acceptance - ans_chat LLM session cache-key pinning (#50 follow-up).
 //
 // The behavior under test was fixed by #111; this file adds regression tests
 // only, so the production module stays untouched.
@@ -11,10 +11,10 @@
 //   - Catalog models (openai/gpt-5-mini) warn once per createLlmSession call
 //     when ANS_LLM_CONTEXT_WINDOW is set (#113): "[anysearch]
 //     ANS_LLM_CONTEXT_WINDOW ignored for catalog model ...". Counting that
-//     line is a direct count of session construction — tiny probe, no network.
+//     line is a direct count of session construction - tiny probe, no network.
 //   - For custom endpoints (baseUrl set) a local HTTP listener stands in for
 //     the upstream: a rebuild repoints the request at the new endpoint, while a
-//     cache hit keeps using the old one. The response is never asserted on —
+//     cache hit keeps using the old one. The response is never asserted on -
 //     the model call is allowed to fail; only "was the slot rebuilt" matters.
 //
 // No test framework (repo convention).
@@ -40,9 +40,6 @@ function assert(cond: boolean, msg: string) {
 // getLlmSession() refuses a cache key that embeds key material. Used as the
 // "cache key shape" guard probe below.
 const SECRET_MARKER = "cache key must not contain secret material";
-// Port 1 is never served: the custom-endpoint slot under test fails fast with
-// ECONNREFUSED whenever a hit still points at it.
-const DEAD_ENDPOINT = "http://127.0.0.1:1/v1";
 
 const ENV_KEYS = [
   "ANS_LLM_PROVIDER",
@@ -105,7 +102,7 @@ function restoreRebuildProbe(): void {
 
 // Local upstream used to tell "rebuilt for a new baseUrl" from "hit the old
 // slot". Any request reaching it proves the new endpoint session was built;
-// the 400 response is deliberate — the model call is expected to fail.
+// the 400 response is deliberate - the model call is expected to fail.
 async function startEndpointProbe() {
   let hits = 0;
   const httpServer = createServer((req, res) => {
@@ -179,7 +176,7 @@ async function main() {
       await callOne(handler);
       assert(
         rebuilt - before === 1,
-        "rotation: switching back also rebuilds — the old credential slot is not retained (same slot, no split cache)",
+        "rotation: switching back also rebuilds - the old credential slot is not retained (same slot, no split cache)",
       );
     }
 
@@ -187,34 +184,37 @@ async function main() {
     {
       registerDefaults();
       const handler = chatHarness();
-      const probe = await startEndpointProbe();
+      // Two stand-in upstreams: the cold call binds the "stale" endpoint, the
+      // switch targets "fresh". A cache hit keeps calling stale (fresh sees no
+      // traffic); a rebuild repoints the session at fresh. Both answer 400 at
+      // once, so neither path waits on a dead socket or a retry backoff.
+      const stale = await startEndpointProbe();
+      const fresh = await startEndpointProbe();
       try {
         const sharedKey = "sk-pin-test-key-SHARED-0003";
-        process.env.ANS_LLM_BASE_URL = DEAD_ENDPOINT;
+        process.env.ANS_LLM_BASE_URL = stale.url;
         process.env.ANS_LLM_API = "chat";
         process.env.ANS_LLM_API_KEY = sharedKey;
-        await callOne(handler); // cold: the dead endpoint slot is created
+        await callOne(handler); // cold: the stale endpoint slot is created
 
-        // 2a. switching the baseUrl must select a different slot. A hit on the
-        // old slot would keep calling the dead endpoint (no probe traffic);
-        // a rebuild points the request at the probe endpoint instead.
-        const hitsBeforeSwitch = probe.hits();
-        process.env.ANS_LLM_BASE_URL = probe.url;
+        // 2a. switching the baseUrl must select a different slot.
+        const freshBefore = fresh.hits();
+        process.env.ANS_LLM_BASE_URL = fresh.url;
         await callOne(handler);
         assert(
-          probe.hits() > hitsBeforeSwitch,
+          fresh.hits() > freshBefore,
           "baseUrl: a different endpoint selects a different slot (baseUrl participates in the key)",
         );
 
         // 2b. the raw URL is fingerprinted before entering the key: using the
         // URL itself as the credential must not trip the secret guard that
         // would fire if the raw URL were embedded in the key.
-        const endpointKey = probe.url;
+        const endpointKey = fresh.url;
         process.env.ANS_LLM_API_KEY = endpointKey; // new keyHash -> rebuild executes the guard
         const fingerprintProbe = await callOne(handler);
         assert(
           !fingerprintProbe.includes(SECRET_MARKER),
-          "baseUrl: the raw URL is fingerprinted — it never lands in the cache key",
+          "baseUrl: the raw URL is fingerprinted - it never lands in the cache key",
         );
 
         // 2c. the guard itself is still armed: an API key that occurs verbatim
@@ -226,7 +226,7 @@ async function main() {
           "secret guard: raw key material appearing in a cache key is rejected",
         );
       } finally {
-        await probe.close();
+        await Promise.all([stale.close(), fresh.close()]);
       }
     }
   } finally {
