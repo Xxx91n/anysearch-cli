@@ -3,19 +3,19 @@
 # The macOS ship-gate leg failed on PR #191 and Actions job logs are not
 # reachable from this session's network, so the gate output is mirrored into a
 # PR comment (readable over the API). Not part of the gate: distinct workflow
-# name, no required-leg family match, workflow_dispatch only.
+# name, no required-leg family match, branch-push/dispatch only.
 #
 # Delete this file once the #183 diagnosis is recorded.
 
 name: macos-store-diag
 
 on:
+  # A workflow file that is not on the default branch cannot be dispatched, so
+  # this lane fires on a push to the #183 branch instead (it is deleted before
+  # merge, so it can never fire on main).
+  push:
+    branches: [arena/af6db14d-anysearch-cli]
   workflow_dispatch:
-    inputs:
-      pr:
-        description: "PR number to comment the captured log on"
-        type: string
-        default: "191"
 
 permissions:
   contents: read
@@ -58,7 +58,7 @@ jobs:
       - name: mirror output to the PR (API-readable)
         env:
           GH_TOKEN: ${{ github.token }}
-          PR: ${{ inputs.pr }}
+          PR: "191"
         run: |
           total=$(wc -c < /tmp/diag.log)
           {
