@@ -24,6 +24,13 @@ All notable changes to this project are recorded here. Format follows
 - **`docs/limitations.md`** macOS 条目改写为「根因 = 强制退出 × 原生状态」的完整证据链 + 修复面 + 晋级证据 + 残留边界（任何强制退出仍可能 abort；`apps/mcp`/`apps/plugin` 按连接 close，未接注册表 drain）；新增「测试里 `process.exit()` 不再同步终止」一条。
 - **README / README.zh-CN 的 Known limitations 行**从「macOS 在阻断矩阵之外」改为「macOS 退出时 abort 已定位 + lane 已恢复 + 残留边界」。
 
+## Unreleased — #182: 仓务——#94 MCP SDK v2 调研报告落 main + .temp/ 会话残留处置方案
+
+### Documented
+
+- **#94 MCP SDK v2 调研报告归档至 `docs/research/mcp-sdk-v2-status.md`**：证据住 `main`，与 `upstream-unblock-registry.md` 落档先例一致（#171）。内容恢复自 issue #94 resolution 评论（2026-11-03）；原 `research/mcp-sdk-v2` 分支在归档时已不可从 `origin` 恢复，评论为现存权威结论。零行为改动。
+- **`.temp/` 会话残留逐项处置方案 `docs/research/temp-session-residue-disposition.md`**：枚举 #15/#16 调查工件、CI 日志取证、land 前备份、评审快照四类残留，逐项给出删/档/留建议；删除性动作标注「需用户单独授权」，本票不执行任何删除。零行为改动。
+
 ## Unreleased — #16: macOS 晋级尝试被首跑证据反转——再剪除+探针恢复+门禁腿级加固（PR #174）
 
 ### Changed
@@ -765,7 +772,6 @@ All notable changes to this project are recorded here. Format follows
 - R68/R69 方向指示沿用 deferred：真 release 摘 partial 帽 / agy ans-MCP P7 真链 / PR-mode required-checks 治理。
 - deferred 大项池沿用：cursor / F-01a / npm provider / projectIndex / TUI / embedding / cross-OS / plugin / watch。
 
-
 ## 2026-09-18 — r69: GitHub 门面双语化 + T0 火线修红（README 登录页 IA + 双语 parity 常驻门）
 
 ### Added
@@ -1203,7 +1209,6 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 - ship-gate pipeline: `scripts/ship-gate.mjs` (Node stdlib, single file)
   as the blocking Product Smoke Gate, plus a non-blocking
   `modelcontextprotocol/conformance` workflow as the Protocol Heartbeat.
-
 
 ### Added
 -: fused freshness factor [0.3, 1.5] in store ranking — creation-age decay,
