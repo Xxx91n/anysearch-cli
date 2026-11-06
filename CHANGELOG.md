@@ -21,9 +21,9 @@ All notable changes to this project are recorded here. Format follows
 
 ### Added
 
-- **run 开始前预留 token**（`packages/kernel/src/pi-runtime.ts`）：在 `agent_start` 边界（`agent.prompt` 之前）按「输入侧占用 + 输出侧静态上限」调用 `ledger.reserveTokens`。输入侧优先复用 `resolveContextOccupancy` 的 `message_end` 用量锚；没有锚也没有历史消息的冷启动，改为估算即将发出的 system prompt + 用户输入。输出侧缺省 12288，`[budget].outputReserveTokens` 可覆写（解析仍由 #187 的 `resolveOutputReserveTokens` 单点负责）。
+- **run 开始前预留 token**（`packages/kernel/src/pi-runtime.ts`）：在 `agent_start` 边界（`agent.prompt` 之前）按「输入占用 + 输出上限」调用 `ledger.reserveTokens`。当前每次 run 都是新开对话，启动时没有历史，所以实际估算即将发出的 system prompt 和用户输入（这个数偏低）；代码保留了「上下文里已经有模型回报用量时直接用」的路径，但当前生产路径走不到。输出上限默认 12288，`[budget].outputReserveTokens` 可覆写（解析仍由 #187 的 `resolveOutputReserveTokens` 单点负责）。
 - **预留被拒 = 硬停**：`reserveTokens` 返回 false 时只 yield 一个结构化 `error` 事件，不启动当次 run 的 `agent.prompt`，不发 `done`、不伪造摘要，也不结算 token/USD 或 per-call。只停当次 run；改 TOML 提额后下一轮 run 重读并刷新 cap，可继续。账本抛错仍按 #200 的 fail-open 处理：具名 stderr 报告，当次 run 不预留但继续。run 正常结束、provider 报零用量或事件流被提前关闭时，都会释放当次 token 预留，避免 `reserved_tokens` 泄漏后误判耗尽。
-- **run 开始重读 Active Domain 并刷新账本 cap**：有 `domainTomlPath` 时，每次 run 开头走 mtime reloader；新建 runtime 的首次探测强制加载当前文件（长驻 MCP 每请求新建 runtime，启动配置快照可能落后于文件），之后按 mtime 差分。读到新 `[budget]` 时调 ledger port 的 `initBudget`（删节则 `clearBudgetCaps`），让提额在下一轮 run 生效，不必重启。坏 TOML 保持上次可用配置，刷新失败 fail-open 并报具名 stderr。
+- **run 开始重读 Active Domain 并刷新账本 cap**：有 `domainTomlPath` 时，每次 run 开头走 mtime reloader；新建 runtime 的首次探测强制加载当前文件（长驻 MCP 每请求新建 runtime，启动配置快照可能落后于文件），之后按 mtime 差分。读到新 `[budget]` 时调 ledger port 的 `initBudget`（删节则 `clearBudgetCaps`），让提额在下一轮 run 生效，默认布局下不必重启。坏 TOML 保持上次可用配置，刷新失败 fail-open 并报具名 stderr。已知限制：runtime 的 reloader 只拿到 `tomlPath`，没有宿主的额外 `domainsDirs`；若 Active Domain 的 `base` 只存在于宿主打包目录，首轮加载会 fail-open 保留旧配置。
 
 ### Changed
 
