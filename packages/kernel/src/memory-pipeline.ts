@@ -506,11 +506,13 @@ export class MemoryPipeline {
           injections.push(this.recoveryDigest!);
         }
       }
-      if ((summaryAnchor?.payload as any)?.summary) {
-        injections.push(SESSION_MEMORY_TAG + " " + String((summaryAnchor.payload as any).summary).slice(0, 4000));
+      const summaryPayload = summaryAnchor?.payload as any;
+      if (summaryPayload?.summary) {
+        injections.push(SESSION_MEMORY_TAG + " " + String(summaryPayload.summary).slice(0, 4000));
       }
-      if ((recallAnchor?.payload as any)?.hits) {
-        injections.push(RESEARCH_RECALL_TAG + " " + String((recallAnchor.payload as any).hits).slice(0, 1500));
+      const recallPayload = recallAnchor?.payload as any;
+      if (recallPayload?.hits) {
+        injections.push(RESEARCH_RECALL_TAG + " " + String(recallPayload.hits).slice(0, 1500));
       }
 
       // latest USER message, not blindly the last array element. The index was
