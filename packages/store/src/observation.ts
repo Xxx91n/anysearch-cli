@@ -3,6 +3,7 @@
 // to volatile gen_ai.* semantics only at the boundary.
 import { randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
+import { openDatabase } from "./db";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type {
@@ -570,7 +571,9 @@ export class SqliteObservationStore {
   private readonly db: Database.Database;
 
   constructor(dbPath: string) {
-    this.db = new Database(dbPath, { timeout: 5000 });
+    // tracked opener: registered with the store teardown registry so an exit
+    // path that drains it cannot leave a live native handle behind (#183).
+    this.db = openDatabase(dbPath, { timeout: 5000 });
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = NORMAL");
     this.db.exec(OBSERVATION_SQL);

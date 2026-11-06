@@ -32,6 +32,13 @@ export * from "./session-id";
 // owner-only DB permission helper (CWE-732 mitigation, shared by CLI/MCP/plugin).
 export * from "./db-perms";
 
+// #183: store-side exit teardown — the fd249d41 registry promoted out of the CLI
+// composition root, plus the tracked opener every store handle goes through, so
+// store-side process exits (eval runner, test processes) close native handles
+// instead of letting libuv reap them at exit (macOS F-16 libc++abi abort).
+export * from "./teardown";
+export * from "./db";
+
 // consumed/synthetic switch governance (state machine + chain evidence).
 export * from "./eval/switch-machine";
 export * from "./eval/switch-run";

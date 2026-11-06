@@ -8,14 +8,17 @@
 // (store+observation handles opened then closed at exit — the crash fired at
 // libuv/native teardown), classifies each run's signature into
 // $GITHUB_STEP_SUMMARY, and exits non-zero when a crash signature is seen.
-// NOTE (PR #174 repair): this minimal repro drives the CLI composition root
-// only — the path fd249d41 fixed. Greens here do NOT predict full-gate
-// stability (a promotion that trusted 7 consecutive greens crashed 5/76
-// store test files on its first full-gate run: store-side process exits
-// never got explicit teardown). This script is a crash-signature reporter;
-// any future promotion needs green FULL-GATE trial evidence
-// (docs/limitations.md). Persistent crashes: prune stays + extend ledger
-// defer-f16-macos-native-crash.
+// NOTE (#183): this minimal repro drives the CLI composition root only — the
+// path fd249d41 fixed — so its greens have never been allowed to promote the
+// lane (the PR #174 promotion trusted 7 consecutive greens and crashed 5/76
+// store test files on its first full-gate run). Store-side teardown is now
+// fixed (packages/store/src/teardown.ts + tracked opener + eval-runner exit
+// path + test-process preload) and macOS runs the real 9-step gate as a
+// blocking leg; the promotion evidence was full-gate trials, never this script
+// (docs/limitations.md).
+// Role since the promotion: non-blocking crash-signature reporter. A red run
+// with a green full-gate macOS leg = CLI-path regression report; a red
+// full-gate leg = the gate's own signal (re-prune per #16/#183).
 
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
@@ -67,9 +70,9 @@ for (let i = 1; i <= RUNS; i++) {
 
 lines.push("");
 if (crashes === 0) {
-  lines.push("**verdict: GREEN** — teardown fix holds on this run (CLI path only). Greens here do NOT predict full-gate stability: promotion requires green full-gate trial evidence after store-side teardown is fixed (docs/limitations.md).");
+  lines.push("**verdict: GREEN** — no crash signature on the CLI path this run. Early-warning confirmation only: the blocking macOS full-gate leg (matrix) is the authority, and greens here are never promotion/prune evidence (docs/limitations.md).");
 } else {
-  lines.push("**verdict: CRASH SIGNATURE** — " + crashes + " run(s) crashed. If crashes persist: prune the macOS blocking lane (ubuntu/windows stay blocking), extend ledger defer-f16-macos-native-crash, and keep this probe reporting.");
+  lines.push("**verdict: CRASH SIGNATURE** — " + crashes + " run(s) crashed on the CLI path. Report it: if the blocking macOS full-gate leg is green, this is a CLI-path regression (extend #183 / open a ticket); if the full gate is also red, re-prune the macOS lane per the #16/#183 rule (ubuntu/windows stay blocking) and keep this probe reporting.");
 }
 
 const summary = lines.join("\n") + "\n";

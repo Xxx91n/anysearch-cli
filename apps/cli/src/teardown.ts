@@ -1,20 +1,13 @@
-// Native-handle teardown registry — pure leaf, no imports, so
-// it stays CJS-reachable and unit-testable (same pattern as search-abstain.ts).
-// Every engine handle created through db.ts registers its close(); the dispatcher
-// runs them before exit so libuv never reaps live better-sqlite3/observation
-// handles mid-loop — the F1 macOS libc++abi teardown-crash family.
-const teardowns: Array<() => void> = [];
-export function registerTeardown(fn: () => void): void { teardowns.push(fn); }
-export function runTeardown(): void {
-  for (const fn of teardowns.splice(0)) { try { fn(); } catch {} }
-}
-
-// Drain-then-unref backstop — after explicit close, whatever
-// handles remain pending (keepalive sockets, native worker threads we cannot
-// close) are unref'd so the loop can end on its own; process.exit() mid-loop
-// teardown is what the crash signature lived on.
-export function unrefPendingHandles(): void {
-  const p = process as unknown as { _getActiveHandles?: () => Array<{ unref?: () => void }> };
-  if (typeof p._getActiveHandles !== "function") return;
-  for (const h of p._getActiveHandles()) h.unref?.();
-}
+// Native-handle teardown registry for the CLI composition root.
+//
+// #183 moved the registry itself into @anysearch-cli/store (a pure leaf at
+// packages/store/src/teardown.ts) so store-side exit paths — the eval runner
+// and store test processes — drain the SAME registry the CLI drains. Keeping a
+// second CLI-private copy would have split the two handle sets: store engines
+// opened through the tracked opener (packages/store/src/db.ts) register there,
+// and the CLI exit path must close them too.
+//
+// This module stays the CLI's import seam (index.ts + test/teardown.test.ts),
+// and stays import-free apart from that one re-export so it is CJS-reachable in
+// the tsup bundle.
+export { registerTeardown, runTeardown, unrefPendingHandles } from "@anysearch-cli/store";
