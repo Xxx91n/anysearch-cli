@@ -3,7 +3,7 @@
 // Kernel only imports these interfaces; CLI composition root injects implementations.
 
 import type { FusedEnvelope, SearchRequest, SourceTraceLabel } from "@anysearch-cli/retriever";
-import type { SessionStore, Message } from "@anysearch-cli/store";
+import type { SessionStore, Message, BudgetConfig } from "@anysearch-cli/store";
 export type { T0PreferenceRow, T0PreferenceInput } from "@anysearch-cli/store";
 
 export type Budget = {
@@ -58,6 +58,9 @@ export interface DomainConfigPort {
   skills: { active: string[]; toolRequires?: Record<string, string[]> };
   hooks: { toolWhitelist: string[] };
   rag: { adapter: string; config?: Record<string, unknown> };
+  // #187: optional domain budget declaration. Runtime consumers read the caps
+  // and the output reserve from here; an absent section means unmetered.
+  budget?: BudgetConfig;
   // compaction config for independent summary model.
   // mirror store CompactionConfig shape — single type defined in
   // packages/store/src/domain-schema.ts; referenced here to avoid drift.

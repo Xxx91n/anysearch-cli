@@ -88,6 +88,224 @@ async function main() {
       const ok7 = ledger.reserveCalls(s2.id, 8); // exactly remaining
       assert(ok7, "reserveCalls 8 succeeds (exactly at remaining)");
 
+      // 10. #187: no budget row = unmetered = every reserve passes.
+      //     Reserving on an unconfigured session must not lazily create a row.
+      const s3 = await store.createSession("unmetered");
+      assert(ledger.getBalance(s3.id) === null, "no budget row after session registration without [budget]");
+      assert(ledger.reserveTokens(s3.id, 999999), "reserveTokens passes with no row (unmetered)");
+      assert(ledger.reserveUsd(s3.id, 9999), "reserveUsd passes with no row (unmetered)");
+      assert(ledger.reserveCalls(s3.id, 5), "reserveCalls passes with no row (unmetered)");
+      assert(ledger.getBalance(s3.id) === null, "reserving does not create a row (still unmetered)");
+
+      // 11. #187: a configured row with explicit cap 0 rejects on every dimension —
+      //     the distinguishable "explicit zero" state, not the "no row" state.
+      const s4 = await store.createSession("zero-caps");
+      ledger.initBudget(s4.id, { tokenCap: 0, usdCap: 0, timeLimitMs: 0, callCap: 0 });
+      assert(ledger.getBalance(s4.id) !== null, "explicit zero still has a row");
+      assert(!ledger.reserveTokens(s4.id, 1), "cap 0 rejects tokens");
+      assert(!ledger.reserveUsd(s4.id, 0.01), "cap 0 rejects USD");
+      assert(!ledger.reserveCalls(s4.id, 1), "cap 0 rejects calls");
+      // "Reject everything" includes a zero-count reserve: the cap > 0 guard
+      // makes explicit 0 stricter than a merely exhausted positive budget.
+      assert(!ledger.reserveTokens(s4.id, 0), "cap 0 rejects even a zero token reserve");
+      assert(!ledger.reserveUsd(s4.id, 0), "cap 0 rejects even a zero USD reserve");
+      assert(!ledger.reserveCalls(s4.id, 0), "cap 0 rejects even a zero call reserve");
+
+      // 12. #187: omitted caps inside a declared [budget] are unlimited, not 0.
+      const s5 = await store.createSession("partial-caps");
+      ledger.initBudget(s5.id, { tokenCap: 0 });
+      const balPartial = ledger.getBalance(s5.id);
+      assert(balPartial !== null, "partial [budget] creates a row");
+      assert(balPartial!.callCap === Number.MAX_SAFE_INTEGER, "omitted callCap persists as unlimited, not 0");
+      assert(balPartial!.usdCap === Number.MAX_SAFE_INTEGER, "omitted usdCap persists as unlimited");
+      assert(!ledger.reserveTokens(s5.id, 1), "explicit tokenCap 0 still rejects");
+      assert(ledger.reserveCalls(s5.id, 100000), "unlimited callCap passes");
+
+      // 13. #187: re-registering the same session refreshes caps in place —
+      //     one row, spent/reserved counters preserved (no duplicate inserts).
+      const s6 = await store.createSession("reinit");
+      ledger.initBudget(s6.id, { tokenCap: 1000, usdCap: 1, timeLimitMs: 1000, callCap: 5 });
+      assert(ledger.reserveCalls(s6.id, 2), "initial reserve calls succeeds");
+      ledger.settleCalls(s6.id, 2, 1);
+      ledger.initBudget(s6.id, { tokenCap: 2000, usdCap: 2, timeLimitMs: 2000, callCap: 10 });
+      const balReinit = ledger.getBalance(s6.id);
+      assert(balReinit!.tokenCap === 2000 && balReinit!.callCap === 10, "re-init refreshes caps");
+      assert(balReinit!.billableCalls === 1, "re-init preserves billable calls");
+      const rows = (store as any).db.prepare("SELECT COUNT(*) AS c FROM budget_ledger WHERE session_id = ?").get(s6.id) as { c: number };
+      assert(rows.c === 1, "re-init keeps exactly one budget row per session");
+
+      // 14. #187: dropping [budget] releases an existing row's caps (unlimited,
+      //     spend history preserved) while a never-configured session stays
+      //     row-less. This keeps "active domain at registration" honest across
+      //     durable-anchor restarts / domain switches.
+      const s7 = await store.createSession("release");
+      ledger.clearBudgetCaps(s7.id);
+      assert(ledger.getBalance(s7.id) === null, "clearBudgetCaps is a no-op when no row exists");
+      ledger.initBudget(s7.id, { tokenCap: 100, callCap: 2 });
+      assert(ledger.reserveCalls(s7.id, 1), "release fixture reserves a call");
+      ledger.settleCalls(s7.id, 1, 1);
+      ledger.clearBudgetCaps(s7.id);
+      // #187: a released row is deactivated and presented as unmetered, so
+      // #177's ensureRow (which reads getBalance === null) will re-init it.
+      assert(ledger.getBalance(s7.id) === null, "released row is unmetered from getBalance's perspective");
+      const rawReleased = (store as any).db
+        .prepare("SELECT configured, token_cap, call_cap, billable_calls FROM budget_ledger WHERE session_id = ?")
+        .get(s7.id) as { configured: number; token_cap: number; call_cap: number; billable_calls: number };
+      assert(rawReleased.configured === 0, "release flips configured to 0 (history retained)");
+      assert(rawReleased.token_cap === Number.MAX_SAFE_INTEGER && rawReleased.call_cap === Number.MAX_SAFE_INTEGER,
+        "release resets every cap to unlimited");
+      assert(rawReleased.billable_calls === 1, "release preserves the spend counters");
+      assert(ledger.reserveCalls(s7.id, 100000), "released session passes a large reserve");
+      // Re-enabling the same row preserves the spend history (#177 path).
+      ledger.initBudget(s7.id, { tokenCap: 500, callCap: 5 });
+      const reenabled = ledger.getBalance(s7.id);
+      assert(reenabled?.tokenCap === 500 && reenabled?.callCap === 5, "re-init re-enables the released row with new caps");
+      assert(reenabled?.billableCalls === 1, "re-init after release keeps the spend history");
+
+      // 15. #187/CodeRabbit: a legacy database with duplicate budget rows is
+      //     merged before the unique index. One row remains; spend/reserved are
+      //     summed and caps take the most restrictive active row.
+      const legacyDir = mkdtempSync(join(tmpdir(), "ans-budget-legacy-"));
+      const legacyPath = join(legacyDir, "legacy.db");
+      const raw = new Database(legacyPath);
+      try {
+        raw.exec(`
+          CREATE TABLE sessions (
+            id TEXT PRIMARY KEY,
+            domain TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          CREATE TABLE budget_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            token_cap INTEGER NOT NULL DEFAULT 0 CHECK (token_cap >= 0),
+            usd_cap REAL NOT NULL DEFAULT 0 CHECK (usd_cap >= 0),
+            time_limit_ms INTEGER NOT NULL DEFAULT 0 CHECK (time_limit_ms >= 0),
+            call_cap INTEGER NOT NULL DEFAULT 0 CHECK (call_cap >= 0),
+            reserved_tokens INTEGER NOT NULL DEFAULT 0 CHECK (reserved_tokens >= 0),
+            spent_tokens INTEGER NOT NULL DEFAULT 0 CHECK (spent_tokens >= 0),
+            reserved_usd REAL NOT NULL DEFAULT 0 CHECK (reserved_usd >= 0),
+            spent_usd REAL NOT NULL DEFAULT 0 CHECK (spent_usd >= 0),
+            reserved_calls INTEGER NOT NULL DEFAULT 0 CHECK (reserved_calls >= 0),
+            billable_calls INTEGER NOT NULL DEFAULT 0 CHECK (billable_calls >= 0),
+            started_at TEXT NOT NULL DEFAULT (datetime('now')),
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO sessions (id, domain) VALUES ('legacy-s', 'default');
+          INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap, spent_tokens, billable_calls) VALUES ('legacy-s', 100, 1, 1000, 5, 30, 1);
+          INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap, spent_tokens, billable_calls) VALUES ('legacy-s', 200, 2, 2000, 10, 20, 2);
+        `);
+      } finally {
+        raw.close();
+      }
+      let legacyStore: SqliteSessionStore | undefined;
+      try {
+        legacyStore = new SqliteSessionStore(legacyPath); // must not throw
+        const legacyRows = (legacyStore as any).db
+          .prepare("SELECT COUNT(*) AS c FROM budget_ledger WHERE session_id = 'legacy-s'")
+          .get() as { c: number };
+        assert(legacyRows.c === 1, "legacy duplicate rows are merged into one row");
+        const legacyLedger = new BudgetLedger((legacyStore as any).db);
+        const merged = legacyLedger.getBalance("legacy-s");
+        assert(merged?.tokenCap === 100 && merged?.callCap === 5,
+          "merge keeps the most restrictive active caps");
+        assert(merged?.spentTokens === 50 && merged?.billableCalls === 3,
+          "merge sums spend/reserved history instead of dropping it");
+        legacyLedger.initBudget("legacy-s", { tokenCap: 300, usdCap: 3, timeLimitMs: 3000, callCap: 7 });
+        const updatedLegacy = legacyLedger.getBalance("legacy-s");
+        assert(updatedLegacy?.tokenCap === 300 && updatedLegacy?.callCap === 7 && updatedLegacy?.spentTokens === 50,
+          "legacy duplicate DB budget init updates in place, keeping merged spend");
+      } finally {
+        legacyStore?.close();
+        try { rmSync(legacyDir, { recursive: true, force: true }); } catch { /* Windows WAL lock */ }
+      }
+
+      // 16. #187: concurrent-registration retry. Force the SELECT to miss while
+      //     the row exists, so the INSERT hits the unique constraint and the
+      //     catch path refreshes the winner's row instead of throwing.
+      const s8 = await store.createSession("insert-race");
+      ledger.initBudget(s8.id, { tokenCap: 100, callCap: 2 });
+      (ledger as any).stmts.hasAnyBudgetRow = { get: () => undefined };
+      ledger.initBudget(s8.id, { tokenCap: 999, callCap: 9 });
+      const raced = ledger.getBalance(s8.id);
+      assert(raced?.tokenCap === 999 && raced?.callCap === 9,
+        "unique-conflict INSERT retries as an UPDATE (concurrent registration)");
+      const raceRows = (store as any).db
+        .prepare("SELECT COUNT(*) AS c FROM budget_ledger WHERE session_id = ?")
+        .get(s8.id) as { c: number };
+      assert(raceRows.c === 1, "concurrent registration still leaves one row");
+
+      // 17. #187/CodeRabbit: settle must be safe across clear and activation.
+      //     - reservations recorded before clear still settle (spend recorded);
+      //     - an unconfigured row records new reservations without enforcement,
+      //       so a later initBudget activation can settle them (no negative CHECK);
+      //     - a configured=0 row with no recorded reservation settles as a no-op.
+      const settleLedger = new BudgetLedger((store as any).db);
+      const s9 = await store.createSession("settle-after-clear");
+      settleLedger.initBudget(s9.id, { tokenCap: 1000, usdCap: 10, timeLimitMs: 1000, callCap: 5 });
+      assert(settleLedger.reserveCalls(s9.id, 1), "pre-clear call reservation");
+      assert(settleLedger.reserveTokens(s9.id, 100), "pre-clear token reservation");
+      assert(settleLedger.reserveUsd(s9.id, 1), "pre-clear USD reservation");
+      settleLedger.clearBudgetCaps(s9.id);
+      settleLedger.settleCalls(s9.id, 1, 1);
+      settleLedger.settleTokens(s9.id, 100, 100);
+      settleLedger.settleUsd(s9.id, 1, 1);
+      const afterSettle = (store as any).db
+        .prepare("SELECT configured, reserved_calls, billable_calls, reserved_tokens, spent_tokens, reserved_usd, spent_usd FROM budget_ledger WHERE session_id = ?")
+        .get(s9.id) as { configured: number; reserved_calls: number; billable_calls: number; reserved_tokens: number; spent_tokens: number; reserved_usd: number; spent_usd: number };
+      assert(afterSettle.configured === 0, "row stays deactivated after settlement");
+      assert(afterSettle.reserved_calls === 0 && afterSettle.billable_calls === 1,
+        "pre-clear call reservation settles without a negative counter");
+      assert(afterSettle.reserved_tokens === 0 && afterSettle.spent_tokens === 100,
+        "pre-clear token reservation settles without a negative counter");
+      assert(afterSettle.reserved_usd === 0 && afterSettle.spent_usd === 1,
+        "pre-clear USD reservation settles without a negative counter");
+
+      // Activation after an unconfigured reservation: the reserve is recorded
+      // while configured=0, then initBudget activates the same row, then settle.
+      const s9b = await store.createSession("activate-after-reserve");
+      settleLedger.initBudget(s9b.id, { tokenCap: 1000, usdCap: 10, timeLimitMs: 1000, callCap: 5 });
+      settleLedger.clearBudgetCaps(s9b.id);
+      assert(settleLedger.reserveCalls(s9b.id, 1), "unconfigured row records a call reservation");
+      assert(settleLedger.reserveTokens(s9b.id, 100), "unconfigured row records a token reservation");
+      assert(settleLedger.reserveUsd(s9b.id, 1), "unconfigured row records a USD reservation");
+      settleLedger.initBudget(s9b.id, { tokenCap: 1000, usdCap: 10, timeLimitMs: 1000, callCap: 5 });
+      settleLedger.settleCalls(s9b.id, 1, 1);
+      settleLedger.settleTokens(s9b.id, 100, 100);
+      settleLedger.settleUsd(s9b.id, 1, 1);
+      const afterActivate = (store as any).db
+        .prepare("SELECT configured, reserved_calls, billable_calls, reserved_tokens, spent_tokens, reserved_usd, spent_usd FROM budget_ledger WHERE session_id = ?")
+        .get(s9b.id) as { configured: number; reserved_calls: number; billable_calls: number; reserved_tokens: number; spent_tokens: number; reserved_usd: number; spent_usd: number };
+      assert(afterActivate.configured === 1, "activation keeps the row configured");
+      assert(afterActivate.reserved_calls === 0 && afterActivate.billable_calls === 1,
+        "activation after unconfigured reserve settles calls without a negative counter");
+      assert(afterActivate.reserved_tokens === 0 && afterActivate.spent_tokens === 100,
+        "activation after unconfigured reserve settles tokens");
+      assert(afterActivate.reserved_usd === 0 && afterActivate.spent_usd === 1,
+        "activation after unconfigured reserve settles USD");
+
+      const s10 = await store.createSession("settle-empty-unconfigured");
+      settleLedger.initBudget(s10.id, { callCap: 5 });
+      settleLedger.clearBudgetCaps(s10.id);
+      settleLedger.settleCalls(s10.id, 1, 1);
+      settleLedger.settleTokens(s10.id, 0, 5);
+      settleLedger.settleUsd(s10.id, 0, 5);
+      const emptySettle = (store as any).db
+        .prepare("SELECT reserved_calls, billable_calls, spent_tokens, spent_usd FROM budget_ledger WHERE session_id = ?")
+        .get(s10.id) as { reserved_calls: number; billable_calls: number; spent_tokens: number; spent_usd: number };
+      assert(emptySettle.reserved_calls === 0 && emptySettle.billable_calls === 0,
+        "unconfigured row with no recorded call reservation settles as a no-op");
+      assert(emptySettle.spent_tokens === 0 && emptySettle.spent_usd === 0,
+        "unconfigured row with no recorded token/USD reservation settles as a no-op");
+
+      const s11 = await store.createSession("settle-no-row");
+      assert(settleLedger.reserveCalls(s11.id, 1), "no-row reserve passes");
+      settleLedger.settleCalls(s11.id, 1, 1);
+      settleLedger.settleTokens(s11.id, 0, 10);
+      settleLedger.settleUsd(s11.id, 0, 1);
+      assert(settleLedger.getBalance(s11.id) === null, "settling a row-less session does not create a row");
+
       store.close();
     }
     console.log("--- BudgetLedger tests: " + passed + " passed, " + failed + " failed ---");

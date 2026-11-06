@@ -71,6 +71,7 @@ const KNOWN_TOP = new Set([
   "rag",
   "hooks",
   "compaction",
+  "budget",
 ]);
 
 function lineOf(src, needle) {
@@ -148,6 +149,30 @@ for (const file of files) {
     }
     if (c.model !== undefined && typeof c.model !== "string") {
       fail(`${file}:${lineOf(src, "model")} compaction.model must be a string`);
+    }
+  }
+
+  // #187: [budget] — optional section; missing fields mean "no cap", explicit 0
+  // is a legal "reject everything" cap. Validate shape + fail-fast unknown keys.
+  // Mirrors packages/store/src/domain-schema.ts validate(); this script has no
+  // TS dependency, so the key list is intentionally duplicated (keep in sync).
+  const b = doc.budget;
+  if (b !== undefined) {
+    if (typeof b !== "object" || b === null || Array.isArray(b)) {
+      fail(`${file}:${lineOf(src, "[budget]")} [budget] must be a table`);
+    }
+    const BUDGET_KEYS = ["tokenCap", "usdCap", "callCap", "outputReserveTokens"];
+    for (const k of Object.keys(b)) {
+      if (!BUDGET_KEYS.includes(k)) {
+        fail(`${file}:${lineOf(src, k)} unknown budget key "${k}" (supported: ${BUDGET_KEYS.join(", ")})`);
+      }
+      const v = b[k];
+      if (typeof v !== "number" || !Number.isFinite(v) || v < 0) {
+        fail(`${file}:${lineOf(src, k)} budget.${k} must be a finite number >= 0`);
+      }
+      if (k !== "usdCap" && !Number.isInteger(v)) {
+        fail(`${file}:${lineOf(src, k)} budget.${k} must be an integer >= 0`);
+      }
     }
   }
 

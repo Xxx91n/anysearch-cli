@@ -4,12 +4,31 @@
 // atomcode research: Mole DB schema non-negative constraint, 0% overshoot.
 
 import type Database from "better-sqlite3";
+import type { BudgetConfig } from "./domain-schema";
+
+// #187: sentinel persisted for a dimension that has no configured cap. A row
+// still exists (so "configured" is distinguishable from "no row"), but every
+// reserve passes. An explicit TOML 0 is a real cap of zero and rejects.
+export const UNLIMITED_BUDGET_CAP = Number.MAX_SAFE_INTEGER;
 
 export interface BudgetCaps {
-  tokenCap: number;
-  usdCap: number;
-  timeLimitMs: number;
+  tokenCap?: number;
+  usdCap?: number;
+  timeLimitMs?: number;
   callCap?: number; // decision 2B: per-call cap
+}
+
+// #187: map an optional [budget] section onto persisted caps. Missing fields
+// become UNLIMITED_BUDGET_CAP (not 0); explicit 0 stays 0. An explicit 0 makes
+// the reserve SQL reject even a zero-count reserve (`cap > 0` guard), matching
+// the "reject everything" reading rather than only refusing positive amounts.
+export function toBudgetCaps(budget: BudgetConfig): BudgetCaps {
+  return {
+    tokenCap: budget.tokenCap ?? UNLIMITED_BUDGET_CAP,
+    usdCap: budget.usdCap ?? UNLIMITED_BUDGET_CAP,
+    timeLimitMs: UNLIMITED_BUDGET_CAP,
+    callCap: budget.callCap ?? UNLIMITED_BUDGET_CAP,
+  };
 }
 
 export interface BudgetBalance {
@@ -31,12 +50,16 @@ export interface BudgetBalance {
   remainingCalls: number;
 }
 
-// ponytail: thinnest ledger - 3 methods (reserve/settle/getBalance).
+// ponytail: thinnest ledger - reserve/settle/getBalance, plus #187's
+// initBudget/clearBudgetCaps registration seam.
 // No interface/port separation (unlike SessionStore) - this is a concrete store-layer utility.
 // Kernel calls these via store injection, never imports better-sqlite3 directly.
 export class BudgetLedger {
   private stmts: {
-    initBudget: Database.Statement;
+    insertBudget: Database.Statement;
+    updateCaps: Database.Statement;
+    hasAnyBudgetRow: Database.Statement;
+    clearCaps: Database.Statement;
     reserveTokens: Database.Statement;
     reserveUsd: Database.Statement;
     settleTokens: Database.Statement;
@@ -48,35 +71,111 @@ export class BudgetLedger {
 
   constructor(private db: Database.Database) {
     this.stmts = {
-      initBudget: db.prepare("INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap) VALUES (?, ?, ?, ?, ?)"),
-      reserveTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens + ? WHERE session_id = ? AND reserved_tokens + spent_tokens + ? <= token_cap"),
-      reserveUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = reserved_usd + ? WHERE session_id = ? AND reserved_usd + spent_usd + ? <= usd_cap"),
-      settleTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens - ?, spent_tokens = spent_tokens + ? WHERE session_id = ?"),
-      settleUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = reserved_usd - ?, spent_usd = spent_usd + ? WHERE session_id = ?"),
-      reserveCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = reserved_calls + ? WHERE session_id = ? AND reserved_calls + billable_calls + ? <= call_cap"),
-      settleCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = reserved_calls - ?, billable_calls = billable_calls + ? WHERE session_id = ?"),
-      getBalance: db.prepare("SELECT session_id as sessionId, token_cap as tokenCap, usd_cap as usdCap, time_limit_ms as timeLimitMs, call_cap as callCap, reserved_tokens as reservedTokens, spent_tokens as spentTokens, reserved_usd as reservedUsd, spent_usd as spentUsd, reserved_calls as reservedCalls, billable_calls as billableCalls FROM budget_ledger WHERE session_id = ?"),
+      // #187: SELECT-then-UPDATE/INSERT instead of ON CONFLICT. A legacy database
+      // can lack the unique constraint (duplicate rows block the migration), and
+      // a constructor-time `ON CONFLICT` prepare would make every ledger
+      // operation — including getBalance/reserve — unavailable. This form still
+      // reuses the row and is concurrency-safe on clean databases: the second
+      // concurrent INSERT hits the unique index and is retried as an UPDATE.
+      insertBudget: db.prepare("INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap, configured) VALUES (?, ?, ?, ?, ?, 1)"),
+      updateCaps: db.prepare("UPDATE budget_ledger SET token_cap = ?, usd_cap = ?, time_limit_ms = ?, call_cap = ?, configured = 1 WHERE session_id = ?"),
+      hasAnyBudgetRow: db.prepare("SELECT 1 AS present FROM budget_ledger WHERE session_id = ?"),
+      // #187: returning to a no-[budget] Active Domain deactivates the row
+      // (configured = 0) without deleting the spend history. A subsequent
+      // initBudget reuses the row and re-enables it. No row -> no-op.
+      clearCaps: db.prepare("UPDATE budget_ledger SET configured = 0, token_cap = ?, usd_cap = ?, time_limit_ms = ?, call_cap = ? WHERE session_id = ?"),
+      // #187: configured = 1 is the enforceable-bit. A row can exist with
+      // configured = 0 (history kept after [budget] was removed); reserve still
+      // records units but does not enforce caps, and getBalance looks unmetered.
+      // #187/CodeRabbit: an unconfigured row still RECORDS the reservation (it just
+      // does not enforce a cap), so a later initBudget activation can settle it
+      // without a negative counter. configured=1 keeps the cap enforcement.
+      reserveTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens + ? WHERE session_id = ? AND (configured = 0 OR (token_cap > 0 AND reserved_tokens + spent_tokens + ? <= token_cap))"),
+      reserveUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = reserved_usd + ? WHERE session_id = ? AND (configured = 0 OR (usd_cap > 0 AND reserved_usd + spent_usd + ? <= usd_cap))"),
+      // #187/CodeRabbit: settle must be safe when the row was deactivated after a
+      // reservation AND when it was activated after an unconfigured reservation.
+      // The counter is clamped for every row (never negative CHECK); a
+      // configured=0 row with no recorded reservation is a no-op. Recording the
+      // reservation even while configured=0 is what makes later activation safe.
+      settleTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = MAX(0, reserved_tokens - ?), spent_tokens = spent_tokens + ? WHERE session_id = ? AND (configured = 1 OR reserved_tokens > 0)"),
+      settleUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = MAX(0, reserved_usd - ?), spent_usd = spent_usd + ? WHERE session_id = ? AND (configured = 1 OR reserved_usd > 0)"),
+      reserveCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = reserved_calls + ? WHERE session_id = ? AND (configured = 0 OR (call_cap > 0 AND reserved_calls + billable_calls + ? <= call_cap))"),
+      settleCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = MAX(0, reserved_calls - ?), billable_calls = billable_calls + ? WHERE session_id = ? AND (configured = 1 OR reserved_calls > 0)"),
+      getBalance: db.prepare("SELECT session_id as sessionId, token_cap as tokenCap, usd_cap as usdCap, time_limit_ms as timeLimitMs, call_cap as callCap, reserved_tokens as reservedTokens, spent_tokens as spentTokens, reserved_usd as reservedUsd, spent_usd as spentUsd, reserved_calls as reservedCalls, billable_calls as billableCalls FROM budget_ledger WHERE session_id = ? AND configured = 1"),
     };
   }
 
-  // Initialize budget for a session. Called once when session starts.
+  // Initialize (or refresh) the budget row for a session. Called on each
+  // registration. Caps and configured=1 refresh in place so a TOML change takes
+  // effect on the next process start while reserved/spent counters survive; a
+  // missing cap means "no cap", not zero. Idempotent: the writing session is
+  // the same durable anchor `ans chat` re-registers on every start.
   initBudget(sessionId: string, caps: BudgetCaps): void {
-    this.stmts.initBudget.run(sessionId, caps.tokenCap, caps.usdCap, caps.timeLimitMs, caps.callCap ?? 0);
+    const tokenCap = caps.tokenCap ?? UNLIMITED_BUDGET_CAP;
+    const usdCap = caps.usdCap ?? UNLIMITED_BUDGET_CAP;
+    const timeLimitMs = caps.timeLimitMs ?? UNLIMITED_BUDGET_CAP;
+    const callCap = caps.callCap ?? UNLIMITED_BUDGET_CAP;
+    if (this.stmts.hasAnyBudgetRow.get(sessionId) !== undefined) {
+      this.stmts.updateCaps.run(tokenCap, usdCap, timeLimitMs, callCap, sessionId);
+      return;
+    }
+    try {
+      this.stmts.insertBudget.run(sessionId, tokenCap, usdCap, timeLimitMs, callCap);
+    } catch (e) {
+      // Concurrent registration on a clean DB: the unique constraint rejects
+      // the losing INSERT, and the winner's row is refreshed instead. Accept the
+      // base constraint code only when the message names THIS unique key —
+      // generic SQLITE_CONSTRAINT also covers FK/CHECK/NOTNULL and must not be
+      // mistaken for a benign race.
+      const code = (e as { code?: string })?.code;
+      const message = e instanceof Error ? e.message : String(e);
+      const uniqueSessionConflict =
+        code === "SQLITE_CONSTRAINT_UNIQUE" ||
+        (code === "SQLITE_CONSTRAINT" && /UNIQUE constraint failed: budget_ledger\.session_id/.test(message));
+      if (uniqueSessionConflict) {
+        const result = this.stmts.updateCaps.run(tokenCap, usdCap, timeLimitMs, callCap, sessionId);
+        // The row can be deleted in the race window; do not report a silent init.
+        if (result.changes === 0) throw e;
+        return;
+      }
+      throw e;
+    }
   }
 
-  // Reserve tokens before a call. Returns false if would exceed cap (non-negative constraint).
+  // #187: an existing row whose Active Domain dropped [budget] (or switched to
+  // a domain without it) must stop metering. The row is deactivated
+  // (configured = 0) and its caps become unlimited; reserved / spent counters
+  // stay as the audit history. `getBalance` then returns null (unmetered) and a
+  // later initBudget re-enables the same row. A session with no row is a no-op.
+  clearBudgetCaps(sessionId: string): void {
+    this.stmts.clearCaps.run(UNLIMITED_BUDGET_CAP, UNLIMITED_BUDGET_CAP, UNLIMITED_BUDGET_CAP, UNLIMITED_BUDGET_CAP, sessionId);
+  }
+
+  // #187: no row = unmetered pass (no write). An existing row — even
+  // configured=0 — records the reservation so a later initBudget activation can
+  // settle it without a negative counter; configured=1 also enforces the cap.
+  private hasBudgetRow(sessionId: string): boolean {
+    return this.stmts.hasAnyBudgetRow.get(sessionId) !== undefined;
+  }
+
+  // Reserve tokens before a call. No row passes; a configured row enforces its
+  // cap; an unconfigured row records the reservation without enforcement.
   reserveTokens(sessionId: string, amount: number): boolean {
+    if (!this.hasBudgetRow(sessionId)) return true;
     const result = this.stmts.reserveTokens.run(amount, sessionId, amount);
     return result.changes > 0;
   }
 
-  // Reserve USD before a call. Returns false if would exceed cap.
+  // Reserve USD before a call. Same contract as tokens.
   reserveUsd(sessionId: string, amount: number): boolean {
+    if (!this.hasBudgetRow(sessionId)) return true;
     const result = this.stmts.reserveUsd.run(amount, sessionId, amount);
     return result.changes > 0;
   }
 
   // Settle tokens after a call: move from reserved to spent (adjust if actual != reserved).
+  // The decrement is clamped so a lost/never-recorded reservation cannot trip
+  // the non-negative CHECK.
   settleTokens(sessionId: string, reservedAmount: number, actualAmount: number): void {
     this.stmts.settleTokens.run(reservedAmount, actualAmount, sessionId);
   }
@@ -86,8 +185,10 @@ export class BudgetLedger {
     this.stmts.settleUsd.run(reservedAmount, actualAmount, sessionId);
   }
 
-  // decision 2C: reserve per-call budget by provider count.
+  // decision 2C: reserve per-call budget by provider count. No row passes; an
+  // unconfigured row records; a configured row enforces call_cap.
   reserveCalls(sessionId: string, count: number): boolean {
+    if (!this.hasBudgetRow(sessionId)) return true;
     const result = this.stmts.reserveCalls.run(count, sessionId, count);
     return result.changes > 0;
   }

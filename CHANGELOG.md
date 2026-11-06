@@ -39,6 +39,22 @@ All notable changes to this project are recorded here. Format follows
 
 - **#94 MCP SDK v2 调研报告归档至 `docs/research/mcp-sdk-v2-status.md`**：证据住 `main`，与 `upstream-unblock-registry.md` 落档先例一致（#171）。内容恢复自 issue #94 resolution 评论（2026-11-03）；原 `research/mcp-sdk-v2` 分支在归档时已不可从 `origin` 恢复，评论为现存权威结论。零行为改动。
 - **`.temp/` 会话残留逐项处置方案 `docs/research/temp-session-residue-disposition.md`**：枚举 #15/#16 调查工件、CI 日志取证、land 前备份、评审快照四类残留，逐项给出删/档/留建议；删除性动作标注「需用户单独授权」，本票不执行任何删除。零行为改动。
+## Unreleased — #187: budget 配置地基（[budget] TOML + 会话注册 initBudget + 无行放行）
+
+### Added
+
+- **domain TOML 可选 `[budget]` 节**（`packages/store/src/domain-schema.ts`）：支持 `tokenCap` / `usdCap` / `callCap` / `outputReserveTokens` 四个可选键。缺节 = 新会话不建账本行 = 未配置放行；已有账本行在重新注册到无 `[budget]` 的 Active Domain 时置 `configured=0`（`getBalance` 视为未配置、reserve 放行，保留 spend 历史，后续重新配预算复用同行），避免切域/删节后旧 cap 继续生效。节内缺字段 = 该维度无上限（落库为 `Number.MAX_SAFE_INTEGER` 哨兵，不是 0）；显式 `0` = 该维度全拒（连 `amount=0` 的预留也拒绝）。未知键、负数、非有限值、非整数计数键均在加载时 fail-fast（`Domain schema:` 家族）。`outputReserveTokens` 覆写代码常量 `DEFAULT_OUTPUT_RESERVE_TOKENS = 12288`，并由 `resolveOutputReserveTokens()` 作为 #188 的唯一解析入口（43 次真实 run：输出 p95=9,309 / max=9,600；重测触发条件 R≈1.5× 校准 maxTokens=8192）。继承语义与 `[compaction]` 一致：**整节替换**——子域一旦声明 `[budget]` 就需重述全部 cap，未重述的维度变为无上限（这是显式重述契约，不是字段级继承）。
+- **会话注册位点初始化预算行**：`SessionStore.initBudget(sessionId, caps)` 在 CLI `wireChatMemory`（`ensureSession` 同点）与 MCP `resolveAnsChatSession`（`ensureSession` / `createSession` 两条路径）按当时 Active Domain 调用；无 `[budget]` 时改调 `SessionStore.clearBudgetCaps`（新建会话无行则 no-op；旧行置 `configured=0`，`getBalance` 返回 null、reserve 放行，行与 spend 历史保留）。`BudgetLedger.initBudget` 以 `budget_ledger(session_id)` 唯一约束为基础，但实现用 SELECT-then-UPDATE/INSERT（不依赖 `ON CONFLICT`，老库缺唯一索引时 ledger 仍可构造/读写），重复注册只刷新 caps/configured、保留 reserved/spent 计数。`budget_ledger` 新增 `configured` 列（老库受保护 ALTER 迁移、老库唯一索引由受保护迁移补建；新库用表级 `UNIQUE(session_id)`，避免 `db.exec(schema)` 中段失败导致后续 DDL 不建）；老库重复行在唯一索引前合并（spend/reserved 求和、caps 取最严 active 行）。合并成功且唯一索引创建成功时才保证一 session 一行且不丢历史；合并失败仅告警并继续，唯一索引可能创建失败，该降级状态下重复行仍可能存在。已知限制：注册位点只采样一次，域中途切换不重初始化；MCP 长驻进程的 `eng.config` 是启动快照，TOML 提额需重启进程才生效（CLI 每次运行重载）；共享同一 durable anchor 的并发进程对预算行是 last-writer-wins。
+- **BudgetLedger reserve 三态语义**：无行 = 放行（不写行）；`configured=0` 的既有行 = 记录保留量但不强制 cap（行为放行）；`configured=1` 行额度内 = 放行、超限 = 拒绝、cap=0 = 全拒。`reserveTokens` / `reserveUsd` / `reserveCalls` 先查行是否存在，再按 `configured` 决定强制/仅记录。`initBudget` 缺省 cap 由原先的 0（意外全拒）改为无上限哨兵。
+- **clear 后的结算安全（CodeRabbit PR #196 返修）**：`reserveCalls/Tokens/Usd` 在 `configured=0` 的既有行上仍记录保留量（只是不强制 cap），因此 clear 后新增的保留量、以及 clear 后又被 `initBudget` 激活的保留量都能安全结算；`settleCalls/Tokens/Usd` 的减量统一用 `MAX(0, …)` 防止非负 CHECK，仅 `configured=0` 且无记录保留量的 settle 为 no-op，不产生幽灵 spend。clear 前的保留量仍可正常结算并计入 spend。
+
+### Tests
+
+- `packages/store/test/domain-schema.test.ts`：`[budget]` 解析（含小数 `usdCap`、显式 0、空节、缺节）、继承整节替换、未知键/负数/小数计数/负输出预留 fail-fast、12288 常量、`resolveOutputReserveTokens` 缺省/覆写/显式 0。
+- `packages/store/test/budget-ledger.test.ts`：无行放行四维断言、显式 0 全拒（含 `amount=0` 三维）、节内缺字段=无上限、重复 `initBudget` 只刷新 caps 且保留计数/单行、`clearBudgetCaps` 无行 no-op / 有行置 configured=0 后 getBalance 为 null 且 spend 保留 / 重新 init 复用同行、老库重复行 + 缺 configured 列的受保护迁移（重复行先合并为单行、spend/reserved 求和、caps 取最严 active 行；ledger 可读/初始化）、唯一冲突 INSERT→UPDATE 重试（并发注册单行）、clear 后结算安全（未配置保留量 no-op、clear 前保留量夹紧结算不触发非负 CHECK）。
+- `apps/cli/test/chat-memory-wiring.test.ts`：真实 store 注册后账本行存在；无 `[budget]` 不建行；同一锚点从有预算切到无预算时 getBalance 变为 null（未配置）；TOML 显式 0 与缺省字段经 `toBudgetCaps` 落到账本的全链路断言。
+- `apps/mcp/test/ans-chat-session.test.ts`：`ensureSession` 与 `createSession` 两条 MCP 注册路径均建行；无 `[budget]` 不建行；同一 handle 删除 `[budget]` 后 getBalance 变为 null。
+- `scripts/validate-domains.mjs`：仓库域 TOML 校验同步接受并校验 `[budget]`；规则与 `domain-schema.validate` 同源（脚本无 TS 依赖，注释说明镜像关系）。
 
 ## Unreleased — #16: macOS 晋级尝试被首跑证据反转——再剪除+探针恢复+门禁腿级加固（PR #174）
 
