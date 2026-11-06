@@ -308,7 +308,7 @@ flowchart LR
 
 | 限制 | 影响 |
 |------------|----------------|
-| macOS 在阻断矩阵之外 | 未解决的退出时 `libc++abi` 崩溃使 `ship-gate` 只闸 ubuntu+windows；macOS 以非阻断 probe 车道运行 |
+| macOS 退出时 `libc++abi` abort | 已定位（#183）：触发点是 `process.exit()` 在原生状态仍活时执行静态析构，不是 sqlite handle 泄漏。store 侧退出路径已改为关 handle + 自然退出，macOS 重新进入 `ship-gate` 阻断矩阵；任何在原生状态存活时强制退出的进程仍可能 abort，`macos-spillover-probe` 保留为非阻断早期预警 |
 | `anysearch` provider 无法前置过滤 | 其 MCP `domain` 参数是垂域路由枚举（不是 hostname allowlist）——域名 allowlist 下诚实降级为仅后置过滤 |
 | 退出时 `libc++abi` 可能覆盖弃权退出码 | 自动化必须读结构化弃权标记（`--json` / `structuredContent.abstain`），不能只看退出码 |
 

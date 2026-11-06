@@ -65,21 +65,56 @@
 - **Tavily does not forward `AbortSignal`** — provider-side timeouts are not
   cancelable through the SDK (recorded limitation; the kernel budget guard
   still bounds wall time).
-- **macOS is outside the blocking matrix — promotion attempted and reversed
-  (#16 / PR #174)** — the ≥5-consecutive-green promotion rule fired (7 greens,
-  41840345806…41850289669) and `macos-latest` was restored to the blocking
-  `ship-gate` matrix; the FIRST full-gate run (41913304226) reversed it:
-  5/76 store test-file processes crashed at exit-time (`libc++abi` "mutex
-  lock failed: Invalid argument") with zero failed assertions, plus an
-  eval-runner child killed by signal. Root cause: fd249d41's explicit
-  teardown covers only the CLI composition root (`apps/cli`);
-  store-side process exits (test files, `packages/store/src/eval/cli.ts`)
-  never got it — the spillover probe drove only the fixed CLI path, so its
-  greens could not predict full-gate stability (probe evidence surface ≠
-  gate acceptance surface). The lane is re-pruned to ubuntu+windows and the
-  probe job is restored. Recalibrated promotion rule: restoring the lane
-  requires green FULL-GATE trial evidence after store-side teardown is
-  fixed; ≥5 minimal-probe greens alone are proven insufficient.
+- **macOS exit-time `libc++abi` aborts (F-16) — root-caused, fixed, lane
+  restored (#183, after #16 / PR #174)** — the family is **not** "better-sqlite3
+  leaks a handle": it is `process.exit()` running C++ static destructors while
+  Node's threadpool/native state is still alive. On Apple's libc++ the resulting
+  lock on a destroyed mutex is fatal (`EINVAL` → `std::system_error` →
+  `std::terminate` → SIGABRT), which is why Linux never showed it and why
+  closing handles alone was insufficient. Evidence chain: the first promotion
+  (PR #174) was reversed by run 41913304226 / job 126866247252 (5/76 store test
+  files aborted after their assertions passed, zero failures, plus the eval
+  runner child killed by signal); after the handle-side fix (registry promoted
+  to `@anysearch-cli/store`, tracked/idempotent opener, test-process
+  close-on-exit) diag run 42031513303 still lost 4 files — access-chain-telemetry,
+  access-chain-verify, eval-abstain, fusion-registry-memory, **every one of them
+  a `process.exit(...)` file** — while `eval-gate.test.ts` flipped green in the
+  same run, purely because `packages/store/src/eval/cli.ts` stopped calling
+  `process.exit()`.
+  Fix surfaces: (a) `packages/store/src/teardown.ts` + `src/db.ts` (drain-once
+  registry — a teardown whose close throws stays queued for the next drain, and
+  a tracked handle keeps its registration until the native close succeeds; every
+  store handle opened through a tracked, idempotent close) and
+  the eval runner's exit path (`exitCode` + unref + 5s watchdog instead of
+  `process.exit()`); (b) store test processes preload
+  `test/helpers/exit-teardown.mjs`, which defers `process.exit()` to a natural
+  exit (keeping a recorded nonzero code sticky). It deliberately does *not* try
+  to track raw test handles: under tsx an ESM import of better-sqlite3 does not
+  observe a patched CJS `module.exports` (proved in CI, diag run 42043443737),
+  and closing handles was never what stopped the aborts (the first attempt did
+  close them, and the suite still aborted). The preload still keeps
+  a 5s unref'd watchdog for a process that refuses to drain; when it fires it
+  names the surviving resources on stderr, so a forced exit is always auditable
+  in the CI log.
+  Promotion evidence (the recalibrated rule: only full-gate greens promote):
+  **three consecutive macOS full-gate greens** (9 steps including the store
+  suite) on PR #191 — run 42032463918 (head `9d172d3`), run 42034443431
+  (head `ef6fda5`), run 42035956744 (head `5acf577`) — after diag run
+  42032450895 had confirmed the fix surface (`[pass] turbo run test`,
+  `SHIP_GATE_EXIT=0`). `macos-latest` is back in the blocking matrix and
+  `REQUIRED_LEGS` mirrors it. A later run on the CodeRabbit-repaired head adds
+  confirmation, not promotion credit.
+  Residual boundary (kept honest): anything that still force-exits a process
+  with live native state can abort again — the `macos-spillover-probe` job stays
+  as a non-blocking early-warning reporter, and `apps/mcp` / `apps/plugin` close
+  per connection without draining the registry on their own exit paths (wire the
+  same contract there if a crash is ever observed).
+- **`process.exit()` in tests is no longer a synchronous kill (#183)** — the
+  `packages/store` test preload defers it to a natural exit (exit code
+  preserved, 5s unref'd watchdog as the backstop). Code placed after
+  `process.exit(...)` in a store test file now keeps running in that process;
+  all 51 existing call sites are terminal statements or already-failing
+  branches.
 - **Exit-time `libc++abi` can overwrite the abstain exit code** — observed on
   Windows: the teardown crash may replace the `3` that `--fail-on-abstain`
   produced. Automation must read the structured abstain marker (`--json`

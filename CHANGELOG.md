@@ -4,6 +4,26 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #183: store 侧退出路径显式 teardown——F-16 根因定位 + macOS lane 恢复
+
+### Fixed
+
+- **F-16 家族根因不是「better-sqlite3 handle 泄漏」，而是 `process.exit()` 在 Node threadpool/native 状态仍活时执行 C++ 静态析构**（`packages/store/src/teardown.ts` / `src/db.ts` / `src/eval/cli.ts` / `test/helpers/exit-teardown.mjs`）：Apple libc++ 下锁一个已被析构的 mutex 即 `EINVAL` → `std::system_error` → `std::terminate` → SIGABRT，故 Linux 从未复现、只关 handle 不足以消除。
+  - **handle 侧**：`fd249d41` 的 drain-once 注册表下沉到 `@anysearch-cli/store`（`registerTeardown` 返回 disposer，owner 提前 close 不留引用），新增 `openDatabase`/`trackDatabase` 作为 store 原生 handle 唯一入口（`close()` 幂等 + 自解注册），session-store / observation / eval runner / switch-run / domain-recommend 全部改走它；`apps/cli/src/teardown.ts` 改为 re-export，CLI 与 store 共用同一注册表。
+  - **退出形态**：eval runner 退出改为 CLI 同款契约（先 drain → `process.exitCode` → `unrefPendingHandles()` → 5s unref 看门狗），不再 `process.exit()` 与 libuv teardown 竞态；运行期看门狗（`EVAL_TIMEOUT_MS`）在强制 `process.exit(124)` 前同样先 drain（看门狗触发时 case 可能正持有 tracked handle）；store 测试进程预载 `test/helpers/exit-teardown.mjs`，把 `process.exit(code)` 延后为自然退出（退出码保留 + 非零粘性 + 5s unref 看门狗兜底）。预载**不做**裸 handle 拦截：tsx 下 ESM 导入 better-sqlite3 读不到被改写的 CJS `module.exports`（CI 证伪：diag run 42043443737），且关 handle 从来不是止血点——那条路径已删除，而不是留着冒充。
+  - **重试语义**：drain 时抛错的 teardown 会留在注册表里等下一次 drain（原生 close 可能因活跃的 statement iterator 失败），`trackDatabase` 的注册也要等原生 close 成功才解除；owner 侧与退出侧共用同一个 `closeOnce()`，失败不吞掉登记。
+  - **回归**：`packages/store/test/teardown.test.ts` 钉住注册表语义（顺序/异常吞没/drain-once + 失败保留待重试/disposer）、tracked opener（drain 关闭、owner close 解注册、幂等）与**延后退出的退出码粘性**（`if (failed) process.exit(1); process.exit(0);` 这类先失败后清零的写法不得被掩盖，子进程实测 1/0/2 三例）。
+- **证据链（远端取证，非推断）**：run 41913304226（PR #174 晋级后首个 macOS 全量门）5/76 文件 abort 且断言零失败；diag run 42031513303 在「只关 handle」后仍丢 4 个文件——access-chain-telemetry / access-chain-verify / eval-abstain / fusion-registry-memory，全部以 `process.exit(...)` 收尾——同一轮 `eval-gate.test.ts` 转绿，唯一变量是 eval runner 不再调用 `process.exit()`；diag run 42032450895 门店 `[pass] turbo run test` + `SHIP_GATE_EXIT=0`；随后 **macOS 全量门连续三次绿**（PR #191，含 store 全量套件）：run 42032463918（head `9d172d3`）、run 42034443431（head `ef6fda5`）、run 42035956744（head `5acf577`）。
+
+### Changed
+
+- **`macos-latest` 回到 `ship-gate` blocking matrix**（`.github/workflows/ship-gate.yml`）：`os: [ubuntu-latest, macos-latest, windows-latest]`，矩阵注记改写为「修复面 + 证据口径 + 重校准晋级规则」完整因果；`scripts/assert-checks-green.mjs` 的 `REQUIRED_LEGS` 同步加 `ship-gate (macos-latest)`（与 matrix 双向 lockstep，`eval-release-layering.test.ts` 断言）。
+- **`macos-spillover-probe` 按 TTL 取「改非阻塞保留」**：继续作崩溃签名报告器/早期预警，不再是晋级或再剪除时钟（红灯单独不 re-prune，全量门腿才是权威）；job 注记与 `scripts/macos-exit-probe.mjs` 头注/GREEN/CRASH verdict 文案同步自洽。
+
+### Documented
+
+- **`docs/limitations.md`** macOS 条目改写为「根因 = 强制退出 × 原生状态」的完整证据链 + 修复面 + 晋级证据 + 残留边界（任何强制退出仍可能 abort；`apps/mcp`/`apps/plugin` 按连接 close，未接注册表 drain）；新增「测试里 `process.exit()` 不再同步终止」一条。
+- **README / README.zh-CN 的 Known limitations 行**从「macOS 在阻断矩阵之外」改为「macOS 退出时 abort 已定位 + lane 已恢复 + 残留边界」。
 ## Unreleased — #180: providerBuildErrors CLI 诊断呈现（#41 承接）
 
 ### Added
@@ -761,7 +781,6 @@ All notable changes to this project are recorded here. Format follows
 - R68/R69 方向指示沿用 deferred：真 release 摘 partial 帽 / agy ans-MCP P7 真链 / PR-mode required-checks 治理。
 - deferred 大项池沿用：cursor / F-01a / npm provider / projectIndex / TUI / embedding / cross-OS / plugin / watch。
 
-
 ## 2026-09-18 — r69: GitHub 门面双语化 + T0 火线修红（README 登录页 IA + 双语 parity 常驻门）
 
 ### Added
@@ -1199,7 +1218,6 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
 - ship-gate pipeline: `scripts/ship-gate.mjs` (Node stdlib, single file)
   as the blocking Product Smoke Gate, plus a non-blocking
   `modelcontextprotocol/conformance` workflow as the Protocol Heartbeat.
-
 
 ### Added
 -: fused freshness factor [0.3, 1.5] in store ranking — creation-age decay,

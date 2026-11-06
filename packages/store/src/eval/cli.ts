@@ -16,6 +16,7 @@ import { evaluateGate, mdeFor, wilson95, GATE_FAMILY_SIZE, sigmaDUpper, lockN, R
 import { appendLook, emptyLooksLedger, nextLook, readLooksLedger, writeLooksLedger } from "./looks-ledger";
 import { activeIds, expiredEntries, readQuarantine } from "./quarantine-ledger";
 import { SqliteObservationStore } from "../observation";
+import { runTeardown, unrefPendingHandles } from "../teardown";
 
 function repoRoot(): string {
   let d = dirname(fileURLToPath(import.meta.url));
@@ -145,7 +146,10 @@ async function main(): Promise<number> {
   if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
     setTimeout(() => {
       console.error("[eval] TIMEOUT: exceeded " + timeoutMs + "ms ");
-      process.exit(124);
+      // #183 (PR #191 review): a mid-run timeout can fire while a case still
+      // holds tracked handles — drain them before the forced exit, for the same
+      // reason the normal exit path drains. Errors never delay the watchdog.
+      try { runTeardown(); } finally { process.exit(124); }
     }, timeoutMs).unref();
   }
   // backflow slice family must never intersect the frozen baseline — fail fast (exit 12).
@@ -418,10 +422,28 @@ async function main(): Promise<number> {
   return overrideIdx >= 0 && exitCode === 1 ? 0 : exitCode;
 }
 
-main().then(
-  (code) => process.exit(code),
-  (e) => {
-    console.error("[eval] internal error: " + String((e as Error)?.stack ?? e));
-    process.exit(2);
+// Exit path — the same contract as the CLI composition root
+// (apps/cli/src/index.ts), applied to the store-side runner (#183): drain the
+// teardown registry BEFORE exiting so no live native handle (observation store,
+// per-case reader/writer) is reaped by libuv/native static destruction at exit.
+// That teardown is where the macOS F-16 `libc++abi: mutex lock failed` abort
+// fired; unrefPendingHandles is the backstop for handles we cannot close, and
+// the watchdog preserves the forced-exit semantics of the old process.exit().
+// The argument-validation hard exits above (invalid EVAL_TIMEOUT_MS, backflow
+// overlap) stay immediate: they fire before any handle is opened. The
+// wall-clock watchdog stays a forced exit too, but drains the registry first —
+// it can fire mid-run while a case still holds tracked handles.
+const exit = (code: number): void => {
+  // Arm the guarantee FIRST: a throwing drain or backstop must never be able to
+  // cancel the watchdog and leave a hung loop with no way out (#183 review).
+  process.exitCode = code;
+  setTimeout(() => process.exit(code), 5000).unref();
+  try { runTeardown(); } finally {
+    try { unrefPendingHandles(); } catch { /* backstop only — never mask the exit */ }
   }
-);
+};
+
+main().then(exit, (e) => {
+  console.error("[eval] internal error: " + String((e as Error)?.stack ?? e));
+  exit(2);
+});

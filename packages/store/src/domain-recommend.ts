@@ -18,6 +18,7 @@
 // so the relaxed OR rung fires at ≥2 content words and ambiguity is handled by the margin instead.
 
 import Database from "better-sqlite3";
+import { openDatabase } from "./db";
 import { RELAX_STOPWORDS } from "./fts5";
 import { embedText, cosineSimilarity, armTelemetry } from "./embedding-arm";
 
@@ -344,7 +345,7 @@ export function bm25SearchDomainMeta(db: Database.Database, query: string, limit
 export async function recommendDomains(query: string, metas: DomainMeta[], opts?: { topK?: number }): Promise<RecommendResult> {
   const topK = opts?.topK ?? RECOMMEND_TOP_K;
   const q = query.trim();
-  const db = new Database(":memory:");
+  const db = openDatabase(":memory:");
   try {
     db.exec("CREATE VIRTUAL TABLE domain_fts USING fts5(name, description)");
     const ins = db.prepare("INSERT INTO domain_fts(rowid, name, description) VALUES (?, ?, ?)");

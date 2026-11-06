@@ -29,23 +29,37 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-latest pruned from the BLOCKING matrix — RE-PRUNED (#16, PR
-        # #174 repair): the promotion attempt was reversed by its own FIRST
-        # full-gate run (run 41913304226): 5/76 store test-file processes
-        # crashed at exit-time (libc++abi "mutex lock failed: Invalid
-        # argument") with zero failed assertions, plus an eval-runner child
-        # killed by signal — the family is alive under full-suite load.
-        # Root cause: fd249d41's explicit teardown covers ONLY the CLI
-        # composition root (apps/cli); store-side process exits (test files,
-        # packages/store/src/eval/cli.ts runner) never got it, and the
-        # spillover probe drove ONLY the fixed CLI path — its consecutive
-        # greens could not predict full-gate stability (probe evidence
-        # surface != gate acceptance surface).
-        # Recalibrated promotion rule: restoring this lane requires green
-        # FULL-GATE trial evidence after store-side teardown is fixed (see
-        # docs/limitations.md); >=5 minimal-probe greens alone are proven
-        # insufficient.
-        os: [ubuntu-latest, windows-latest]
+        # macos-latest RESTORED to the BLOCKING matrix (#183, the store-side
+        # teardown fix that #16's path-A closeout deferred here).
+        # History: the first promotion (PR #174) was reversed by its own first
+        # full-gate run (41913304226) — 5/76 store test-file processes crashed
+        # at exit-time (libc++abi "mutex lock failed: Invalid argument") with
+        # zero failed assertions, plus an eval-runner child killed by signal.
+        # Root cause: fd249d41's explicit teardown covered ONLY the CLI
+        # composition root; store-side process exits (test files, the eval
+        # runner) never closed their native handles, and the spillover probe
+        # drove ONLY the fixed CLI path (probe evidence surface != gate
+        # acceptance surface).
+        # Fix (#183): the teardown registry now lives in @anysearch-cli/store
+        # (packages/store/src/teardown.ts), every store handle opens through
+        # the tracked opener (packages/store/src/db.ts), the eval runner drains
+        # the registry before exit, and store test processes preload
+        # test/helpers/exit-teardown.mjs, which defers process.exit() to a
+        # natural exit (nonzero exit codes stay sticky) instead of force-exiting
+        # over live native state. That preload does NOT close raw test handles:
+        # under tsx an ESM import never sees a patched CJS module.exports, so
+        # the attempt was removed rather than left looking like a fix.
+        # Promotion evidence: three consecutive green FULL-GATE runs (9 steps
+        # incl. the store suite) on PR #191 — 42032463918 (9d172d3),
+        # 42034443431 (ef6fda5), 42035956744 (5acf577); see
+        # docs/limitations.md. The recalibrated rule stands: only full-gate
+        # greens promote; minimal-probe greens never do.
+        # The trigger that was actually fixed is process.exit() forcing C++
+        # static destruction over live native state (not handle leakage) — see
+        # the limitations entry before touching any exit path here.
+        # REQUIRED_LEGS in scripts/assert-checks-green.mjs mirrors this list in
+        # lockstep (asserted by packages/store/test/eval-release-layering.test.ts).
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
       # full history checkout kept for headroom (index/supersession legs read the
@@ -134,18 +148,24 @@ jobs:
         # re-established by the test-online job in ci.yml.
         run: pnpm -C packages/store eval --offline
 
-  # (T4): macOS exit-teardown spillover probe — EXPERIMENT. The name, the
-  # bounded continue-on-error, and the minimal repro (NOT the 9-step gate) are the
-  # contract: this job reports crash signatures without gating merges.
-  # Restored by the PR #174 repair after the promotion reversal (see the
-  # matrix comment above). PROMOTION RULE RECALIBRATED: the minimal repro
-  # drives the CLI composition root only — the path fd249d41 fixed — so its
-  # greens do NOT predict full-gate stability (the promotion that trusted
-  # 7 consecutive greens crashed 5/76 store test files on its first
-  # full-gate run). This job is a crash-signature reporter, NOT a promotion
-  # clock: any future promotion needs green full-gate trial evidence after
-  # store-side teardown is fixed (docs/limitations.md). Persistent crashes
-  # => prune stays + ledger defer-f16-macos-native-crash.
+  # (T4): macOS exit-teardown spillover probe — non-blocking by design. The
+  # name, the bounded continue-on-error, and the minimal repro (NOT the 9-step
+  # gate) are the contract: this job reports crash signatures without gating.
+  # TTL disposition after the #183 promotion: KEPT, non-blocking (the "改非阻塞
+  # 保留" branch of the #16/#183 TTL rule), because it isolates the CLI path in
+  # minutes and its signature table is the cheapest early-warning signal we have.
+  # It is NOT a promotion/prune clock any more: macOS now runs the real 9-step
+  # gate as a blocking leg (matrix above), so
+  # - a green probe on a green full gate = redundant confirmation;
+  # - a RED probe on a green full gate = CLI-path regression report (open/extend
+  #   a ticket, keep the lane until the full gate proves otherwise); a red probe
+  #   alone never re-prunes the blocking leg — probe evidence surface != gate
+  #   acceptance surface (the PR #174 lesson);
+  # - a RED full-gate macOS leg = the gate itself is the signal: re-prune per the
+  #   #16/#183 rule, never on probe greens.
+  # Historical note (why minimal greens do not promote): the PR #174 promotion
+  # trusted 7 consecutive probe greens and crashed 5/76 store test files on its
+  # first full-gate run.
   macos-spillover-probe:
     name: macos-spillover-probe (EXPERIMENT, non-blocking — R62 D-007)
     runs-on: macos-latest

@@ -29,9 +29,10 @@
 // counted as green — it converges to the fail-closed completion-timeout
 // leg instead.
 // - native-smoke and the non-blocking macos-spillover probe are deliberately
-// outside the gate (the probe name matches no family; macOS blocking-matrix
-// promotion was attempted and reversed in PR #174 — the family re-manifests
-// under full-suite load, see docs/limitations.md). Every blocking ship-gate
+// outside the gate (the probe name matches no family; its job is crash-signature
+// reporting on the CLI path, not gating). macOS is a blocking leg again since
+// #183 fixed store-side teardown (promotion evidence: full-gate trials, see
+// docs/limitations.md). Every blocking ship-gate
 // matrix LEG is required BY NAME in addition to the family presence check
 // (PR #174 audit S2): family-level discovery passes once ANY ship-gate*
 // check-run registers, so a queued/never-registered leg could be absent while
@@ -49,7 +50,7 @@ const FAMILY = /^(check-build|install-smoke|test:online|ship-gate|memory-eval)\b
 const FAMILIES = ["check-build", "install-smoke", "test:online", "ship-gate", "memory-eval"];
 // audit S2 (PR #174): GREEN must not be reachable while a blocking matrix leg
 // is unregistered. Mirror ship-gate.yml's os list here, in check-run name form.
-const REQUIRED_LEGS = ["ship-gate (ubuntu-latest)", "ship-gate (windows-latest)"];
+const REQUIRED_LEGS = ["ship-gate (ubuntu-latest)", "ship-gate (macos-latest)", "ship-gate (windows-latest)"];
 const TERMINAL_BAD = new Set(["failure", "cancelled", "timed_out", "startup_failure", "action_required"]);
 const TERMINAL_OK = new Set(["success", "skipped", "neutral"]);
 

@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
+import { openDatabase } from "../db";
 import { SqliteSessionStore } from "../session-store";
 import { normalizeEntityName } from "../entity";
 import type { AdjudicationResultItem } from "../session-store";
@@ -308,7 +309,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
   const tmpDir = mkdtempSync(join(tmpdir(), "ans-eval-"));
   const dbPath = join(tmpDir, "eval.db");
   const store = makeStore(dbPath, spec);
-  const raw = new Database(dbPath, { readonly: true });
+  const raw = openDatabase(dbPath, { readonly: true });
   const ops: OpRecord[] = [];
   let sessionId = "";
   let entityArmSnapshot: { queries: number; candidates: number; activations: number; hits: number } | undefined;
@@ -409,7 +410,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
           case "seed": {
             // direct side-channel insert — bypasses SqliteSessionStore write guards on
             // purpose so search assertions test the READ-side exit filter ("write got bypassed" premise).
-            const writer = new Database(dbPath);
+            const writer = openDatabase(dbPath);
             try {
               const ins = writer.prepare("INSERT INTO retrieval_results (session_id, url, title, snippet, source, rrf_score, entity) VALUES (?, ?, ?, ?, ?, NULL, ?)");
                             for (const it of op.items) ins.run(sessionId, it.url, it.title, it.snippet, it.source, it.entity ?? it.url);
