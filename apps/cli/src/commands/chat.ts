@@ -108,7 +108,12 @@ export async function runChat(argv: string[]): Promise<number> {
   // Stable session id + FK registration (#129) — see wireChatMemory.
   // #187: pass the Active Domain's optional [budget] so registration also
   // creates the ledger row (absent section = no row = unmetered).
-  const memory = durableStore ? await wireChatMemory(store, sessionDomain, domain.budget) : {};
+  // #178: pass the engine's ledger (same store connection) so the runtime's
+  // agent-loop usage settles into the real budget row instead of a dead port.
+  // The wiring helper drops it when registration fails open.
+  const memory = durableStore
+    ? await wireChatMemory(store, sessionDomain, domain.budget, engine.ledger)
+    : {};
 
   // Construct PiAgentRuntime and run.
   // models undefined fix — session.models is now properly initialized.

@@ -121,6 +121,9 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
           // it is the explicit single-shot mode (fresh session each call).
           // Either half missing leaves the runtime's `store && sessionId` gate
           // closed, which warnMissingMemoryWiring names on stderr.
+          // #178: the resolver also returns the engine's ledger on success —
+          // the same connection that holds the session's [budget] row — so the
+          // agent loop's token/USD usage settles on the production path.
           const memory = await resolveAnsChatSession(eng, requestedSessionId);
           // ponytail: models undefined fix — pass session.models instead of undefined.
           const runtime = new PiAgentRuntime({

@@ -173,6 +173,21 @@ async function main() {
   const afterSecond = ledger.getBalance(budgetSession.id)!;
   assert(afterSecond.billableCalls === 2 && afterSecond.reservedCalls === 0, "6: the rejected reserve leaves the balance intact");
 
+  // 6b. #178: answer mode reserves 2 units per answer-capable provider; settle
+  //     must release that same bound. Settling with the provider count left a
+  //     phantom reservation behind and permanently shrank the call budget.
+  const answerSession = await store.createSession("answer-budget");
+  store.initBudget(answerSession.id, { tokenCap: 1_000_000, usdCap: 10, timeLimitMs: 60_000, callCap: 10 });
+  const answerLedger = store.createBudgetLedger();
+  const answerEngine = new RetroaererdEngine(
+    [mockProvider("exa-answer", ["https://answer.example/a"])],
+    { sessionId: answerSession.id, ledger: answerLedger },
+  );
+  await answerEngine.search({ query: "answer mode", mode: "answer" });
+  const answerBalance = answerLedger.getBalance(answerSession.id)!;
+  assert(answerBalance.reservedCalls === 0, "6b: answer-mode settle releases the doubled reservation");
+  assert(answerBalance.billableCalls === 1, "6b: answer-mode actual provider call recorded");
+
   // 7. Composition root + an explicitly registered budget row: #187's
   //    registration seam and the engine gate work together on the
   //    production-shaped path (createEngine + Query.sessionId).

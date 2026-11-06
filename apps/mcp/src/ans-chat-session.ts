@@ -22,12 +22,16 @@
 // history, so a threaded handle is a new recovery each call. The recovery
 // digest (#189) is injected once per call; that is the resume unit here, not
 // the handle's lifetime.
-import type { CompositionResult, SessionStorePort } from "@anysearch-cli/kernel";
+import type { BudgetLedgerPort, CompositionResult, SessionStorePort } from "@anysearch-cli/kernel";
 import { toBudgetCaps, type BudgetConfig } from "@anysearch-cli/store";
 
 export interface AnsChatSessionWiring {
   store?: SessionStorePort;
   sessionId?: string;
+  // Design: the ledger travels only with a registered session row — the
+  // runtime budgets on `store && sessionId && ledger`, so a fail-open path must
+  // not leave a ledger that could settle against an absent row (#178).
+  ledger?: BudgetLedgerPort;
 }
 
 // Wire contract mirrors AnsChatInput.sessionId (tool-schemas.ts): visible ASCII,
@@ -115,8 +119,9 @@ function registerSessionBudget(store: SessionStorePort, sessionId: string, budge
  * @param eng - Composition result carrying the session store.
  * @param requested - `AnsChatInput.sessionId`, already type-checked by AJV; the
  *   runtime guard here also covers direct callers and non-string test input.
- * @returns both halves only when the handle is usable; an empty object leaves the
- *   runtime's `store && sessionId` gate closed (single-shot / memory disabled).
+ * @returns store + sessionId (and the engine's ledger, #178) only when the
+ *   handle is usable; an empty object leaves the runtime's `store && sessionId`
+ *   gate closed (single-shot / memory disabled).
  */
 export async function resolveAnsChatSession(
   eng: CompositionResult,
@@ -141,7 +146,7 @@ export async function resolveAnsChatSession(
       // previous process is not in this store's sessions table yet.
       await store.ensureSession(requested, "mcp");
       registerSessionBudget(store, requested, eng.config?.budget);
-      return { store, sessionId: requested };
+      return { store, sessionId: requested, ledger: eng.ledger };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       warnOnce("register:" + msg, "session row registration failed (" + msg + ") — continuing without memory");
@@ -157,7 +162,7 @@ export async function resolveAnsChatSession(
       return {};
     }
     registerSessionBudget(store, id, eng.config?.budget);
-    return { store, sessionId: id };
+    return { store, sessionId: id, ledger: eng.ledger };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     warnOnce("mint:" + msg, "createSession failed (" + msg + ") — continuing without memory");

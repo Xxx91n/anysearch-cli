@@ -4,6 +4,21 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #178: PiAgentRuntime ledger 接线——token/USD 结算生产化（#36 承接）
+
+### Changed
+
+- **`ans chat` / `ans_chat` 的生产 runtime 收到真实 `BudgetLedger`**：`wireChatMemory`（CLI）与 `resolveAnsChatSession`（MCP）在会话行注册成功后把 `CompositionResult.ledger`（与 store 同一连接、`createBudgetLedger()` 的同一实例）随 `store`/`sessionId` 一起交给 `PiAgentRuntime`；注册失败 fail-open 时不交 ledger，避免对不存在的会话行结算。此前 `CompositionResult.ledger` 只有 engine 消费者，runtime 的 settle 代码与单测存在但生产路径永不触发（#177 遗留）。
+- **runtime 计费门收紧为 `store && sessionId && ledger`**（`packages/kernel/src/pi-runtime.ts`）：与 MemoryPipeline 同一门控；只有 ledger 缺少 store/session 的接线不再写入账本。`reserveCalls()` 被拒时仍照旧继续当次 run（runtime 硬停归 #188），但不再把未获预留的 per-call 结算为 billable call；token/USD settle-only 维度仍记录实际用量。
+- **done 事件 token 摘要与账本结算同口径**：摘要新增 `= <total> total`，total 即 `settleTokens` 写入的 `usage.totalTokens`（含 cache read/write），修复摘要只报 input+output、账本按 total 结算时两者不一致。
+- **engine answer-mode per-call 预留释放修正**（`packages/kernel/src/engine.ts`）：reserve 与 settle 使用同一个 `perCallEstimate`；此前 answer 模式按 2× answer-capable provider 预留、却按 provider 数结算，每个 answer-capable provider 遗留 1 个 `reserved_calls`，永久侵蚀 call 预算（#177 审查转交事项）。
+
+### Tests
+
+- `packages/kernel/test/pi-runtime.test.ts`：真实 `SqliteSessionStore` + `createBudgetLedger()` 的 runtime 端到端（spentTokens=157 / spentUsd / billableCalls=1 / reservedCalls=0，done 摘要总数与账本一致）；`callCap=0` 拒绝 reserve 时不结算 billable、token 实际用量仍落账；只有 ledger 缺 store/session 时计费门保持关闭；既有零 usage 不写 settle 回归保留。
+- `packages/kernel/test/engine-anchor.test.ts`：answer 模式 reserve=2 / settle 释放同界，`reservedCalls` 归零。
+- `apps/cli/test/chat-memory-wiring.test.ts` / `apps/mcp/test/ans-chat-session.test.ts`：成功 wiring 返回 engine ledger 同一实例；注册失败路径不返回 ledger。
+
 ## Unreleased — #189: 会话恢复注入恢复摘要块（sufficiency 锚读侧）
 
 ### Added

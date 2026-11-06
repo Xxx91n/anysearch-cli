@@ -5,11 +5,15 @@
 // CLI package is CommonJS — importing chat.ts from a test breaks module
 // resolution before any assertion runs.
 import { readSessionId, toBudgetCaps, type BudgetConfig } from "@anysearch-cli/store";
-import type { SessionStorePort } from "@anysearch-cli/kernel";
+import type { BudgetLedgerPort, SessionStorePort } from "@anysearch-cli/kernel";
 
 export interface ChatMemoryWiring {
   store?: SessionStorePort;
   sessionId?: string;
+  // Design: the ledger travels only with a registered session row — the
+  // runtime budgets on `store && sessionId && ledger`, so a failed registration
+  // must not leave a ledger that could settle against an absent row (#178).
+  ledger?: BudgetLedgerPort;
 }
 
 /**
@@ -22,11 +26,16 @@ export interface ChatMemoryWiring {
  * outside createSession(), the row its FK targets need
  * (messages / resume_anchors -> sessions(id)) is registered here first.
  *
- * Returns both halves only when registration succeeded; an empty object leaves
- * the runtime's `store && sessionId` gate closed, and the runtime then names
- * the gap itself.
+ * Returns store + sessionId (and #178's ledger) only when registration
+ * succeeded; an empty object leaves the runtime's `store && sessionId` gate
+ * closed, and the runtime then names the gap itself.
  */
-export async function wireChatMemory(store: SessionStorePort, domain: string, budget?: BudgetConfig): Promise<ChatMemoryWiring> {
+export async function wireChatMemory(
+  store: SessionStorePort,
+  domain: string,
+  budget?: BudgetConfig,
+  ledger?: BudgetLedgerPort,
+): Promise<ChatMemoryWiring> {
   const sessionId = readSessionId();
   // readSessionId is fail-open by contract; an empty id must never reach the
   // store (it would create a bogus sessions row and disable resume).
@@ -60,7 +69,7 @@ export async function wireChatMemory(store: SessionStorePort, domain: string, bu
         } catch { /* stderr unavailable */ }
       }
     }
-    return { store, sessionId };
+    return { store, sessionId, ledger };
   } catch (e: any) {
     try {
       process.stderr.write(

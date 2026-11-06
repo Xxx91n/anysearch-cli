@@ -399,7 +399,7 @@ export class PiAgentRuntime {
     const startTime = Date.now();
     const timedOut = () => Date.now() - startTime > timeoutMs;
 
-    const { domain, model, streamFn, ledger, sessionId } = this.opts;
+    const { domain, model, streamFn, store, ledger, sessionId } = this.opts;
 
     // Build tools: search tool + any extra tools, filtered by domain.
     const saturation = new SearchSaturation();
@@ -565,15 +565,18 @@ export class PiAgentRuntime {
       }
     });
 
-    // Budget reserve at agent_start (decision 5). Only engine.search() enforces
-    // the reserve (it throws when reserveCalls is rejected); this runtime path
-    // ignores the result and still runs + settles 1 call. Token/USD remain
-    // settle-only in v1 (#103, ruling #90) so nothing to reserve here. Runtime
-    // hard-stop is #188 (still OPEN); #187 is its config groundwork and
-    // explicitly leaves engine/pi-runtime semantics unchanged. Neither is a
-    // claim that this path enforces anything.
-    if (ledger && sessionId) {
-      ledger.reserveCalls(sessionId, 1);
+    // Design: runtime billing requires store + sessionId + ledger, the same
+    // gate MemoryPipeline uses — a half-wired runtime cannot touch
+    // budget_ledger, and both composition roots hand over the engine's ledger
+    // only after the session row exists (#178). The per-call result is still
+    // not a hard stop (runtime hard-stop is #188): a rejected reserve lets this
+    // run continue.
+    // Design: token/USD stay settle-only in v1 (#103, ruling #90) — nothing to
+    // reserve here.
+    const billingWired = !!(store && sessionId && ledger);
+    let callReserved = false;
+    if (billingWired) {
+      callReserved = ledger!.reserveCalls(sessionId!, 1);
     }
 
     // Start the agent prompt in background.
@@ -607,19 +610,22 @@ export class PiAgentRuntime {
     }
 
     // Budget settle at agent_end (decision 5, amended #103).
-    if (ledger && sessionId) {
-      // ponytail: per-call settle (1 call reserved, 1 actual for the agent run).
-      ledger.settleCalls(sessionId, 1, 1);
+    if (billingWired) {
+      // Design: a rejected per-call reserve is not settled — it was never
+      // recorded, so settling would fabricate a billable call. Token/USD
+      // settle-only dimensions describe usage that did happen and still land
+      // when the provider reported it.
+      if (callReserved) ledger!.settleCalls(sessionId!, 1, 1);
       // #103: token/USD v1 is settle-only (reserved 0) — the per-call dimension
       // stays the sole reserve/enforcement point; token-cap reservation waits
       // on a per-run estimate config: design settled in #186 (T9),
       // implementation ticket #187 merged (budget foundation); #188 still open.
       // T4 ruling #90 is the decision source, not an open ticket.
       if (usageTotals.totalTokens > 0) {
-        ledger.settleTokens(sessionId, 0, usageTotals.totalTokens);
+        ledger!.settleTokens(sessionId!, 0, usageTotals.totalTokens);
       }
       if (usageTotals.costUsd > 0) {
-        ledger.settleUsd(sessionId, 0, usageTotals.costUsd);
+        ledger!.settleUsd(sessionId!, 0, usageTotals.costUsd);
       }
     }
 
@@ -651,8 +657,10 @@ export class PiAgentRuntime {
     if (agentError) {
       yield { type: "error", message: agentError };
     } else {
-      const tokenSummary = usageTotals.inputTokens + usageTotals.outputTokens > 0
-        ? ` (tokens: ${usageTotals.inputTokens} in + ${usageTotals.outputTokens} out)`
+      // #178: the total is the same figure settled into the ledger
+      // (settleTokens) — the summary must not under-report cache tokens.
+      const tokenSummary = usageTotals.totalTokens > 0
+        ? ` (tokens: ${usageTotals.inputTokens} in + ${usageTotals.outputTokens} out = ${usageTotals.totalTokens} total)`
         : "";
       // #189: make the one-shot recovery visible next to the run summary.
       const recovery = this.pipeline?.getInjectedRecoveryDigest();

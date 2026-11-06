@@ -372,14 +372,17 @@ export class RetroaererdEngine {
     // unchanged: ledger work needs both the port and a session id.
     const sessionId = q.sessionId || this.sessionId;
     const hasLedger = !!(this.ledger && sessionId);
+    // 2C: per-call cost = 1 unit per provider. Coarse upper bound, settle actual.
+    // answer mode doubles cost for answer-capable providers
+    // (Exa answer() is a second upstream /answer call). Reserve 2 units per such provider
+    // when mode === "answer"; other modes keep the 1-per-provider upper bound.
+    // #178: settle must release the SAME upper bound it reserved — using
+    // allProviders.length here left one reserved unit behind per answer-capable
+    // provider (the #177 review's deferred finding).
+    const perCallEstimate = q.mode === "answer"
+      ? allProviders.reduce((acc, p) => acc + (p.modes.includes("answer") ? 2 : 1), 0)
+      : allProviders.length;
     if (hasLedger) {
-      // 2C: per-call cost = 1 unit per provider. Coarse upper bound, settle actual.
-      // answer mode doubles cost for answer-capable providers
-      // (Exa answer() is a second upstream /answer call). Reserve 2 units per such provider
-      // when mode === "answer"; other modes keep the 1-per-provider upper bound.
-      const perCallEstimate = q.mode === "answer"
-        ? allProviders.reduce((acc, p) => acc + (p.modes.includes("answer") ? 2 : 1), 0)
-        : allProviders.length;
       const reserved = this.ledger!.reserveCalls(sessionId!, perCallEstimate);
       if (!reserved) {
         throw new Error("Budget exceeded: per-call cap reached (reserved " + perCallEstimate + " calls)");
@@ -532,7 +535,7 @@ export class RetroaererdEngine {
 
     // decision 2C: settle per-call budget — actual = successful providers.
     if (hasLedger) {
-      this.ledger!.settleCalls(sessionId!, allProviders.length, providerLists.length);
+      this.ledger!.settleCalls(sessionId!, perCallEstimate, providerLists.length);
     }
 
     // WebFusion consumes the registry k and registered web weights (equal-weight
