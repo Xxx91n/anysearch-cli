@@ -9,7 +9,7 @@ import { MemoryPipeline } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
 import { SqliteSessionStore } from "@anysearch-cli/store";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FusedEnvelope, SufficiencySignal } from "@anysearch-cli/retriever";
@@ -664,7 +664,9 @@ function makeMockStreamFn(decision: string): any {
     sessionId: "s-103-zero",
   });
   for await (const _ev of runtime.run("hello")) { /* drain */ }
-  assert(ledger.tokenSettles === 0, "#103: zero-usage run writes no token settle");
+  // #188: a zero-usage run still releases its token reservation (one settle with
+  // actual 0); USD stays unwritten because there is no actual cost.
+  assert(ledger.tokenSettles === 1, "#188: zero-usage run releases its token reservation");
   assert(ledger.usdSettles === 0, "#103: zero-usage run writes no USD settle");
 }
 
@@ -993,6 +995,196 @@ function makeMockStreamFn(decision: string): any {
     const balance = ledger.getBalance(session.id)!;
     assert(balance.reservedTokens === 0 && balance.spentTokens === 20_000,
       "#188: settle by actuals releases the reservation even when actual > reserved");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #188 review: a zero-usage run (provider reports no tokens) must release its
+// reservation. A leak would fill reserved_tokens and later reject a healthy run
+// as "exhausted" even though nothing was spent.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-zero-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 3_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const zeroUsage = (_m: any, _c: any) => {
+      const msg = {
+        role: "assistant", content: [{ type: "text", text: "no usage" }], api: "test", provider: "test", model: "test-model",
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        stopReason: "stop", timestamp: Date.now(),
+      };
+      return {
+        async *[Symbol.asyncIterator]() { yield { type: "done", message: msg, partial: msg }; },
+        result: async () => msg,
+      };
+    };
+    const zeroRuntime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { outputReserveTokens: 2048 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: zeroUsage,
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const zeroEvents: any[] = [];
+    for await (const ev of zeroRuntime.run("hello")) zeroEvents.push(ev);
+    assert(zeroEvents.some(e => e.type === "done"), "#188: zero-usage run completes");
+    const afterZero = ledger.getBalance(session.id)!;
+    assert(afterZero.reservedTokens === 0 && afterZero.spentTokens === 0,
+      "#188: zero-usage run releases its reservation instead of leaking it");
+
+    const healthy = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { outputReserveTokens: 2048 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const healthyEvents: any[] = [];
+    for await (const ev of healthy.run("hello")) healthyEvents.push(ev);
+    assert(healthyEvents.some(e => e.type === "done"), "#188: a later healthy run is not falsely rejected");
+    const afterHealthy = ledger.getBalance(session.id)!;
+    assert(afterHealthy.spentTokens === 15 && afterHealthy.reservedTokens === 0,
+      "#188: the healthy run settles normally after a zero-usage run");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #188 review: closing the event stream early (CLI returns on the first error /
+// timeout, stdout EPIPE, MCP abort) must release the reservation too.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-early-close-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 6_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { outputReserveTokens: 2048 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: mockStreamFn,
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const iterator = runtime.run("hello")[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    assert(!first.done, "#188: the run yields before it is closed");
+    await iterator.return?.(undefined);
+    const balance = ledger.getBalance(session.id)!;
+    assert(balance.reservedTokens === 0,
+      "#188: early generator close releases the token reservation (no leak)");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #188 review: a ledger FAULT at token reserve is not exhaustion — it is
+// reported by name and the run continues (the #200 fail-open contract).
+{
+  class TokenReserveFaultLedger implements BudgetLedgerPort {
+    reserveCalls(): boolean { return true; }
+    settleCalls(): void { }
+    reserveTokens(): boolean { throw new Error("token ledger locked"); }
+    settleTokens(): void { }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { }
+  }
+  const ledger = new TokenReserveFaultLedger();
+  const origWrite = process.stderr.write;
+  let captured = "";
+  const events: any[] = [];
+  process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+  try {
+    let providerCalls = 0;
+    const stream = usageStream(10, 5, 15, 0.001);
+    const countingStream = (model: any, context: any, options?: any) => {
+      providerCalls++;
+      return stream(model, context, options);
+    };
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: countingStream,
+      store: noopStore(),
+      sessionId: "s-188-token-fault",
+      ledger,
+    });
+    for await (const ev of runtime.run("hello")) events.push(ev);
+    assert(providerCalls === 1, "#188: a token-reserve fault still starts the run");
+  } finally {
+    process.stderr.write = origWrite;
+  }
+  assert(events.some(e => e.type === "done"), "#188: a token-reserve fault still yields done");
+  assert(!events.some(e => e.type === "error"), "#188: a token-reserve fault is not reported as exhausted");
+  assert(/budget token reserve failed: token ledger locked/.test(captured),
+    "#188: a token-reserve fault is reported on stderr by name");
+  assert(!/Token budget exhausted/.test(captured), "#188: a ledger fault is not confused with exhaustion");
+}
+
+// #188 AC2: a live TOML edit raises the ledger cap at the next run (run-boundary
+// reloader + optional initBudget on the ledger port), not only after a restart.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-live-cap-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const tomlPath = join(dir, "rt.toml");
+    const toml = (cap: number) => [
+      'name = "rt"',
+      '[rag]',
+      'adapter = "none"',
+      '[skills]',
+      'active = ["search"]',
+      '[sources]',
+      'enabled = []',
+      '[hooks]',
+      'toolWhitelist = ["search"]',
+      '[budget]',
+      'tokenCap = ' + cap,
+      'outputReserveTokens = 2048',
+      '',
+    ].join("\n");
+    writeFileSync(tomlPath, toml(100));
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 100, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { tokenCap: 100, outputReserveTokens: 2048 } },
+      domainTomlPath: tomlPath,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+
+    const blocked: any[] = [];
+    for await (const ev of runtime.run("hello")) blocked.push(ev);
+    assert(blocked.some(e => e.type === "error"), "#188: the low cap hard-stops the first run");
+
+    // Live TOML raise; the next run re-reads it and refreshes the ledger row.
+    writeFileSync(tomlPath, toml(100_000));
+    await new Promise((r) => setTimeout(r, 20));
+    const resumed: any[] = [];
+    for await (const ev of runtime.run("hello")) resumed.push(ev);
+    assert(resumed.some(e => e.type === "done"), "#188: a live cap raise takes effect on the next run");
+    const balance = ledger.getBalance(session.id)!;
+    assert(balance.tokenCap === 100_000, "#188: the run-boundary reload refreshed the ledger cap");
+    assert(balance.spentTokens === 15 && balance.reservedTokens === 0,
+      "#188: the raised-cap run settles by actual usage");
   } finally {
     store.close();
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }

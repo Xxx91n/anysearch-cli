@@ -22,8 +22,8 @@ All notable changes to this project are recorded here. Format follows
 ### Added
 
 - **run 开始前预留 token**（`packages/kernel/src/pi-runtime.ts`）：在 `agent_start` 边界（`agent.prompt` 之前）按「输入侧占用 + 输出侧静态上限」调用 `ledger.reserveTokens`。输入侧优先复用 `resolveContextOccupancy` 的 `message_end` 用量锚；没有锚也没有历史消息的冷启动，改为估算即将发出的 system prompt + 用户输入。输出侧缺省 12288，`[budget].outputReserveTokens` 可覆写（解析仍由 #187 的 `resolveOutputReserveTokens` 单点负责）。
-- **预留被拒 = 硬停**：`reserveTokens` 返回 false 时只 yield 一个结构化 `error` 事件，不启动当次 run 的 `agent.prompt`，不发 `done`、不伪造摘要，也不结算 token/USD 或 per-call。只停当次 run；下次 run（cap 提高后）照常执行。账本抛错仍按 #200 的 fail-open 处理：具名 stderr 报告，当次 run 不预留但继续。
-- **run 开始重读 Active Domain**：有 `domainTomlPath` 时，每次 run 开头走现有 mtime reloader，让 TOML 里的输出预留改动在下一轮生效；坏 TOML 保持上次可用配置。tokenCap 等账本 cap 仍按 #187 在会话注册位点刷新（下一次 `ans chat` / `ans_chat` 请求）。
+- **预留被拒 = 硬停**：`reserveTokens` 返回 false 时只 yield 一个结构化 `error` 事件，不启动当次 run 的 `agent.prompt`，不发 `done`、不伪造摘要，也不结算 token/USD 或 per-call。只停当次 run；改 TOML 提额后下一轮 run 重读并刷新 cap，可继续。账本抛错仍按 #200 的 fail-open 处理：具名 stderr 报告，当次 run 不预留但继续。run 正常结束、provider 报零用量或事件流被提前关闭时，都会释放当次 token 预留，避免 `reserved_tokens` 泄漏后误判耗尽。
+- **run 开始重读 Active Domain 并刷新账本 cap**：有 `domainTomlPath` 时，每次 run 开头走现有 mtime reloader；文件变化时按新 `[budget]` 调 ledger port 的 `initBudget`（删节则 `clearBudgetCaps`），让长驻 MCP 进程里的提额也在下一轮 run 生效，不必重启。坏 TOML 保持上次可用配置，刷新失败 fail-open 并报具名 stderr。
 
 ### Changed
 
@@ -32,7 +32,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Tests
 
-- `packages/kernel/test/pi-runtime.test.ts`：预留公式与冷启动回退/用量锚的纯函数断言；默认 12288 与 TOML 覆写经 ledger 端口观测；真实 `SqliteSessionStore` 下预留被拒时只有一个 error、无 done、`agent.prompt` 未启动、账本无 spend/reserved；提高 cap 后同一 runtime 可继续跑；实际用量超过预留时仍按实结算且 reserved 归零。既有 #178/#200 用例的 token cap 随预留语义上调，settle-by-actuals 断言保留。
+- `packages/kernel/test/pi-runtime.test.ts`：预留公式与冷启动回退/用量锚的纯函数断言；默认 12288 与 TOML 覆写经 ledger 端口观测；真实 `SqliteSessionStore` 下预留被拒时只有一个 error、无 done、`agent.prompt` 未启动、账本无 spend/reserved；提高 cap 后同一 runtime 可继续跑；实际用量超过预留时仍按实结算且 reserved 归零；零用量 run 与提前关闭事件流都会释放预留（不泄漏、不误硬停后续 run）；`reserveTokens` 抛错按 fail-open 报具名 stderr 且 run 继续；真实 TOML 文件的 `tokenCap` 改动在下一轮 run 经 reloader + `initBudget` 刷新账本行。既有 #178/#200 用例的 token cap 随预留语义上调，settle-by-actuals 断言保留。
 
 ## Unreleased — #178: PiAgentRuntime ledger 接线——token/USD 结算生产化（#36 承接）
 

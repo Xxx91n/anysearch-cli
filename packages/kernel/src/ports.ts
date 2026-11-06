@@ -3,7 +3,7 @@
 // Kernel only imports these interfaces; CLI composition root injects implementations.
 
 import type { FusedEnvelope, SearchRequest, SourceTraceLabel } from "@anysearch-cli/retriever";
-import type { SessionStore, Message, BudgetConfig } from "@anysearch-cli/store";
+import type { SessionStore, Message, BudgetConfig, BudgetCaps } from "@anysearch-cli/store";
 export type { T0PreferenceRow, T0PreferenceInput } from "@anysearch-cli/store";
 
 export type Budget = {
@@ -89,6 +89,13 @@ export interface BudgetLedgerPort {
   // USD dimension reserve-then-settle.
   reserveUsd(sessionId: string, amount: number): boolean;
   settleUsd(sessionId: string, reservedAmount: number, actualAmount: number): void;
+  // #188: optional live cap refresh at the run boundary. When the domain TOML
+  // changes, the runtime calls initBudget (declared [budget]) or clearBudgetCaps
+  // (section removed) so a cap raise takes effect on the next run in a
+  // long-lived process. Optional: mock/embedded ledgers without the seam still
+  // satisfy the port, and the runtime guards on presence.
+  initBudget?(sessionId: string, caps: BudgetCaps): void;
+  clearBudgetCaps?(sessionId: string): void;
 }
 
 // ResumeAnchorsPort: engine-side sufficiency checkpoint writer (#48).
