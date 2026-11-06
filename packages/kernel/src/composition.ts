@@ -14,8 +14,6 @@ import {
   loadDomainByNameIn,
   SqliteObservationStore,
   SqliteSessionStore,
-  BudgetLedger,
-  type BudgetCaps,
   readActiveCalibrationBundle,
   createDomainReloader,
   domainTomlPath,
@@ -111,62 +109,6 @@ export interface CompositionResult {
   ledger?: BudgetLedgerPort;
 }
 
-// T2 #177: no default budget is specified by #175/#177, and BudgetLedger's
-// schema default call_cap = 0 would reject every search. Unlimited is therefore
-// the only default that preserves existing behaviour; a host (or a test) passes
-// explicit caps to make the ledger's enforcement observable. Token/USD caps stay
-// settle-only until the per-run estimate is decided (T9, #175 Further Notes).
-const UNLIMITED_BUDGET_CAPS: BudgetCaps = {
-  tokenCap: Number.MAX_SAFE_INTEGER,
-  usdCap: Number.MAX_SAFE_INTEGER,
-  timeLimitMs: Number.MAX_SAFE_INTEGER,
-  callCap: Number.MAX_SAFE_INTEGER,
-};
-
-// T2 #177: BudgetLedgerPort adapter over the store's connection. The budget row
-// is created lazily for the first session the engine sees (the CLI's durable
-// anchor or an MCP-minted handle — the composition root does not know either at
-// construction time). The row check is one synchronous SELECT; reserve/settle
-// semantics are delegated unchanged.
-class SessionBudgetLedger implements BudgetLedgerPort {
-  private readonly caps: BudgetCaps;
-  constructor(
-    private readonly ledger: BudgetLedger,
-    caps: BudgetCaps,
-  ) {
-    // BudgetCaps.callCap is optional and initBudget maps a missing value to 0;
-    // a host that supplies only token/USD caps would then reject every search.
-    // Normalize to the unlimited default at construction.
-    this.caps = { ...caps, callCap: caps.callCap ?? Number.MAX_SAFE_INTEGER };
-  }
-
-  private ensureRow(sessionId: string): void {
-    if (!this.ledger.getBalance(sessionId)) this.ledger.initBudget(sessionId, this.caps);
-  }
-
-  reserveCalls(sessionId: string, count: number): boolean {
-    this.ensureRow(sessionId);
-    return this.ledger.reserveCalls(sessionId, count);
-  }
-  settleCalls(sessionId: string, reservedCount: number, actualCount: number): void {
-    this.ledger.settleCalls(sessionId, reservedCount, actualCount);
-  }
-  reserveTokens(sessionId: string, amount: number): boolean {
-    this.ensureRow(sessionId);
-    return this.ledger.reserveTokens(sessionId, amount);
-  }
-  settleTokens(sessionId: string, reservedAmount: number, actualAmount: number): void {
-    this.ledger.settleTokens(sessionId, reservedAmount, actualAmount);
-  }
-  reserveUsd(sessionId: string, amount: number): boolean {
-    this.ensureRow(sessionId);
-    return this.ledger.reserveUsd(sessionId, amount);
-  }
-  settleUsd(sessionId: string, reservedAmount: number, actualAmount: number): void {
-    this.ledger.settleUsd(sessionId, reservedAmount, actualAmount);
-  }
-}
-
 // createEngine: build configured engine.
 // If domain is provided, loads TOML + filters providers by sources.enabled.
 // If domain is omitted, all providers are registered (full fanout, skipping those without API keys).
@@ -211,7 +153,7 @@ export function resolveActiveAttributionCalibration(
   }
 }
 
-export function createEngine(domain?: string, opts?: { dbPath?: string; attributionCalibration?: AttributionCalibration; domainsDirs?: string[]; budgetCaps?: BudgetCaps }): CompositionResult {
+export function createEngine(domain?: string, opts?: { dbPath?: string; attributionCalibration?: AttributionCalibration; domainsDirs?: string[] }): CompositionResult {
   let providers: SearchProvider[] = [];
   const providerBuildErrors: Record<string, string> = {};
   let config: DomainConfigPort | undefined;
@@ -278,19 +220,34 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
   // opts.dbPath enables durable store for maintenance commands.
   const dbPath = opts?.dbPath ?? ":memory:";
   const store = new SqliteSessionStore(dbPath);
-  // T2 #177: the per-call ledger shares the store's connection. The engine only
-  // acts on it when a search carries a session id (Query.sessionId, threaded by
-  // PiAgentRuntime); stateless `search` calls keep both gates closed.
-  const ledger = new SessionBudgetLedger(store.createBudgetLedger(), opts?.budgetCaps ?? UNLIMITED_BUDGET_CAPS);
+  // T2 #177: the per-call ledger shares the store's connection. Budget rows are
+  // created/cleared by #187's session-registration point (initBudget /
+  // clearBudgetCaps on the Active Domain's [budget]); this root never creates
+  // one, so a session without [budget] keeps #187's "no row = unmetered pass".
+  // The engine acts on the ledger only when a search carries a session id
+  // (Query.sessionId, threaded by PiAgentRuntime); stateless `search` calls keep
+  // both gates closed.
+  const ledger: BudgetLedgerPort | undefined = (() => {
+    try {
+      return store.createBudgetLedger();
+    } catch (e) {
+      // T2 #177: a legacy DB whose #187 `configured` migration failed must not
+      // take the whole composition root down (ans search / MCP boot). Degrade to
+      // "budget disabled" with a named stderr line; the anchors path still works.
+      process.stderr.write("[anysearch] budget ledger unavailable: " + String(e instanceof Error ? e.message : e) + "\n");
+      return undefined;
+    }
+  })();
   const engineOpts: ConstructorParameters<typeof RetroaererdEngine>[1] = {
     ...(sourceWeights ? { sourceWeights } : {}),
     ...(attributionCalibration ? { attributionCalibration } : {}),
     // domain-name rides with the resolver for audit attributes.
     ...(urlPolicy ? { urlPolicy, domainName: domain } : {}),
     ...(repoVertical ? { repoVertical } : {}),
-    // per-call budget reserve→settle (T2 #177) — port always present; session id
-    // is per search, so the gate opens only on the chat/ans_chat paths.
-    ledger,
+    // per-call budget reserve→settle (T2 #177) — port present when the store
+    // could build its ledger; session id is per search, so the gate opens only
+    // on the chat/ans_chat paths.
+    ...(ledger ? { ledger } : {}),
     // Design: the store owns anchor disk I/O; the engine only sees the port —
     // kernel purity (T7 decision #93). Writes fire only when the engine also
     // has a sessionId (per-search Query.sessionId, or construction-time opts).

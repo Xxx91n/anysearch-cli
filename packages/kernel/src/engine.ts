@@ -37,7 +37,8 @@ export interface EngineConfig {
   // PiAgentRuntime (#103, kernel level). Production composition-root
   // injection is #177 and PiAgentRuntime production wiring is #178.
   // Token reserve design is settled in #186 (T9), with implementation
-  // tickets #187/#188 still open; USD stays settle-only per #186 decision 6.
+  // tickets #187 merged (budget foundation) / #188 still open; USD stays
+  // settle-only per #186 decision 6.
   budget?: Budget;
   gate?: Partial<SufficiencyGate>;  // override DEFAULT_GATE fields
   graceWindowMs?: number;            // default 1500 (paperfoot EARLY_STOP_GRACE)

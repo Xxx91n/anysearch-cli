@@ -349,9 +349,9 @@ export class PiAgentRuntime {
     // T2 #177: one scoped retriever for the whole runtime. `store && sessionId`
     // is the same gate MemoryPipeline uses — the handle is only trusted when the
     // store is wired too. PREcondition: the composition root has registered the
-    // session row (ensureSession) before the first search; otherwise the engine's
-    // budget_ledger FK would reject the lazy row. `opts` is not mutated after
-    // construction, so this captured id is the runtime's only session id.
+    // session row (ensureSession) before the first search; otherwise the
+    // resume_anchors FK would reject the anchor write. `opts` is not mutated
+    // after construction, so this captured id is the runtime's only session id.
     const wiredSessionId = opts.store && opts.sessionId ? opts.sessionId : undefined;
     this.scopedRetriever = wiredSessionId
       ? { search: (q) => opts.retriever.search({ ...q, sessionId: wiredSessionId }) }
@@ -613,8 +613,8 @@ export class PiAgentRuntime {
       // #103: token/USD v1 is settle-only (reserved 0) — the per-call dimension
       // stays the sole reserve/enforcement point; token-cap reservation waits
       // on a per-run estimate config: design settled in #186 (T9),
-      // implementation tickets #187/#188 still open. T4 ruling #90 is the
-      // decision source, not an open ticket.
+      // implementation ticket #187 merged (budget foundation); #188 still open.
+      // T4 ruling #90 is the decision source, not an open ticket.
       if (usageTotals.totalTokens > 0) {
         ledger.settleTokens(sessionId, 0, usageTotals.totalTokens);
       }

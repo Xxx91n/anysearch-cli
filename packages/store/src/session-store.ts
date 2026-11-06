@@ -532,10 +532,14 @@ export class SqliteSessionStore implements SessionStore {
     write.immediate();
   }
 
-  // T2 #177: hand the composition root a ledger bound to this store's single
-  // connection — never a second better-sqlite3 handle. Reserving/settling on a
-  // different connection would still work under WAL, but the "same DB" contract
-  // in the ticket keeps writes (and their FK/transaction view) in one place.
+  /**
+   * T2 #177: the Budget Ledger over this store's single connection.
+   *
+   * Registration (#187 `initBudget` / `clearBudgetCaps`) and the engine
+   * composition root share this cached instance, so caps, reserve and settle all
+   * see one row and one set of prepared statements. Returns the same object on
+   * every call.
+   */
   createBudgetLedger(): BudgetLedger {
     return (this.budgetLedgerInstance ??= new BudgetLedger(this.db));
   }

@@ -123,11 +123,7 @@ async function main() {
     'adapter = "none"',
     "",
   ].join("\n"), "utf8");
-  const eng = createEngine("mockonly", {
-    domainsDirs: [domainsDir],
-    // explicit caps make the settle observable; the default is unlimited.
-    budgetCaps: { tokenCap: 1_000_000, usdCap: 10, timeLimitMs: 60_000, callCap: 100 },
-  });
+  const eng = createEngine("mockonly", { domainsDirs: [domainsDir] });
   // register a deterministic arm so the search reaches the engine.
   assert(eng.config !== undefined, "5: mockonly domain loaded (no real-provider fallback)");
   (eng.retriever as unknown as { registerProvider: (p: SearchProvider) => void })
@@ -139,17 +135,21 @@ async function main() {
   const compAnchors = (await eng.store.getAnchors(compSession.id)).filter((a) => a.anchorType === "sufficiency");
   assert(compAnchors.length === 1, "5: createEngine search writes one sufficiency anchor to its own store");
   assert((compAnchors[0].payload as Record<string, unknown>).query === "composition anchor", "5: the anchor carries this search's query");
-  // the ledger handed to the engine is the store's connection: its budget row
-  // is readable through that same store.
-  const compLedger = new BudgetLedger((eng.store as unknown as { db: any }).db);
-  const compBalance = compLedger.getBalance(compSession.id);
-  assert(compBalance !== null && compBalance.billableCalls === 1 && compBalance.reservedCalls === 0, "5: composition ledger settled the per-call budget on the same connection");
+  // #187: the mock domain declares no [budget], so registration creates no
+  // ledger row and the engine's reserve is an unmetered pass. Count raw rows,
+  // not getBalance: null alone cannot distinguish "no row" from configured=0.
+  const compRow = (eng.store as unknown as { db: any }).db
+    .prepare("SELECT COUNT(*) AS n FROM budget_ledger WHERE session_id = ?")
+    .get(compSession.id) as { n: number };
+  assert(compRow.n === 0, "5: no [budget] -> no ledger row; reserve passes unmetered");
 
   // 6. Per-call reserve→settle end-to-end: within cap passes, over cap is
   //    rejected by the ledger's existing semantics (no non-negative change).
   const budgetSession = await store.createSession("budget-domain");
-  const ledger = new BudgetLedger((store as unknown as { db: any }).db);
-  ledger.initBudget(budgetSession.id, { tokenCap: 1_000_000, usdCap: 10, timeLimitMs: 60_000, callCap: 2 });
+  // #187 registration seam on the same connection: initBudget creates the row
+  // that the engine's per-call reserve/settle then enforces.
+  store.initBudget(budgetSession.id, { tokenCap: 1_000_000, usdCap: 10, timeLimitMs: 60_000, callCap: 2 });
+  const ledger = store.createBudgetLedger();
   const budgetEngine = new RetroaererdEngine(
     [
       mockProvider("one", ["https://one.example/a"]),
@@ -170,15 +170,15 @@ async function main() {
   const afterSecond = ledger.getBalance(budgetSession.id)!;
   assert(afterSecond.billableCalls === 2 && afterSecond.reservedCalls === 0, "6: the rejected reserve leaves the balance intact");
 
-  // 7. Composition root + explicit caps: the adapter's lazy row and the engine's
-  //    gate work together on the production-shaped path (createEngine + Query.sessionId).
-  const tight = createEngine("mockonly", {
-    domainsDirs: [domainsDir],
-    budgetCaps: { tokenCap: 1_000_000, usdCap: 10, timeLimitMs: 60_000, callCap: 1 },
-  });
+  // 7. Composition root + an explicitly registered budget row: #187's
+  //    registration seam and the engine gate work together on the
+  //    production-shaped path (createEngine + Query.sessionId).
+  const tight = createEngine("mockonly", { domainsDirs: [domainsDir] });
+  assert(tight.config !== undefined, "7: mockonly domain loaded (no real-provider fallback)");
   (tight.retriever as unknown as { registerProvider: (p: SearchProvider) => void })
     .registerProvider(mockProvider("tight", ["https://tight.example/x"]));
   const tightSession = await tight.store.createSession("tight-domain");
+  tight.store.initBudget?.(tightSession.id, { tokenCap: 1_000_000, usdCap: 10, timeLimitMs: 60_000, callCap: 1 });
   await tight.retriever.search({ query: "first", mode: "fast", sessionId: tightSession.id });
   let tightError = "";
   try {
