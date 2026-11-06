@@ -207,6 +207,29 @@ async function main() {
     assert(wiring.sessionId === undefined, "store without ensureSession: no memory wiring");
   }
 
+  // ---- 5d. #200: failed budget setup omits the ledger, memory stays wired ----
+  {
+    const store = {
+      ensureSession: async () => {},
+      createSession: async (domain: string) => ({ id: "budget-broken-01", domain }),
+      initBudget: () => { throw new Error("budget row locked"); },
+    };
+    const config: CompositionResult["config"] = {
+      sources: { enabled: [] },
+      prompts: [],
+      skills: { active: [] },
+      hooks: { toolWhitelist: [] },
+      rag: { adapter: "none" },
+      budget: { callCap: 1 },
+    };
+    const ledger = {} as CompositionResult["ledger"];
+    const byHandle = await resolveAnsChatSession(engineWith(store, config, ledger), "budget-broken-01");
+    assert(byHandle.sessionId === "budget-broken-01", "#200: budget failure keeps the supplied handle");
+    assert(byHandle.ledger === undefined, "#200: supplied-handle path omits ledger on budget failure");
+    const minted = await resolveAnsChatSession(engineWith(store, config, ledger));
+    assert(!!minted.sessionId && minted.ledger === undefined, "#200: mint path omits ledger on budget failure");
+  }
+
   // ---- 6. real store: anchor written under the handle survives the round trip ----
   {
     const dir = mkdtempSync(join(tmpdir(), "ans-132-"));

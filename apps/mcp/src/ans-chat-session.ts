@@ -28,9 +28,11 @@ import { toBudgetCaps, type BudgetConfig } from "@anysearch-cli/store";
 export interface AnsChatSessionWiring {
   store?: SessionStorePort;
   sessionId?: string;
-  // Design: the ledger travels only with a registered session row — the
-  // runtime budgets on `store && sessionId && ledger`, so a fail-open path must
-  // not leave a ledger that could settle against an absent row (#178).
+  // Design: the ledger travels only with a registered session row whose budget
+  // setup succeeded — the runtime budgets on `store && sessionId && ledger`, so
+  // neither a fail-open registration nor a failed budget setup may leave a
+  // ledger that could settle against an absent row or abort `agent.prompt`
+  // (#178, CodeRabbit #200).
   ledger?: BudgetLedgerPort;
 }
 
@@ -81,35 +83,40 @@ function warnOnce(key: string, detail: string): void {
  * A session that never had [budget] gets no row -> unmetered (pass). Budget
  * setup is fail-open: a broken ledger must not turn a usable chat session into
  * a failed call (no row / unlimited caps is the safe unmetered state).
+ * Returns false when setup failed; the caller then omits the ledger so an
+ * unusable ledger cannot abort `agent.prompt` (CodeRabbit #200).
  * Known limitation: the Active Domain is sampled at registration only, so a
  * mid-session domain switch (or a long-lived MCP process whose config snapshot
  * predates the TOML edit) does not re-initialize caps until the next process
  * start.
  */
-function registerSessionBudget(store: SessionStorePort, sessionId: string, budget?: BudgetConfig): void {
+function registerSessionBudget(store: SessionStorePort, sessionId: string, budget?: BudgetConfig): boolean {
   if (budget) {
     const init = store.initBudget;
     if (!init) {
       warnOnce("budget", "session store lacks initBudget — continuing unmetered");
-      return;
+      return false;
     }
     try {
       init.call(store, sessionId, toBudgetCaps(budget));
+      return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       warnOnce("budget:" + msg, "budget initialization failed (" + msg + ") — continuing unmetered");
+      return false;
     }
-    return;
   }
   // No [budget]: release a pre-existing row (a fresh session has no row, so
   // this is a no-op). Stores without the seam simply have nothing to release.
   const clear = store.clearBudgetCaps;
-  if (!clear) return;
+  if (!clear) return true;
   try {
     clear.call(store, sessionId);
+    return true;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     warnOnce("budget-clear:" + msg, "budget release failed (" + msg + ") — continuing unmetered");
+    return false;
   }
 }
 
@@ -145,8 +152,8 @@ export async function resolveAnsChatSession(
       // sessions(id), and the store runs foreign_keys = ON. A handle minted by a
       // previous process is not in this store's sessions table yet.
       await store.ensureSession(requested, "mcp");
-      registerSessionBudget(store, requested, eng.config?.budget);
-      return { store, sessionId: requested, ledger: eng.ledger };
+      const budgetReady = registerSessionBudget(store, requested, eng.config?.budget);
+      return { store, sessionId: requested, ledger: budgetReady ? eng.ledger : undefined };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       warnOnce("register:" + msg, "session row registration failed (" + msg + ") — continuing without memory");
@@ -161,8 +168,8 @@ export async function resolveAnsChatSession(
       warnOnce("mint", "createSession returned an empty/malformed id — continuing without memory");
       return {};
     }
-    registerSessionBudget(store, id, eng.config?.budget);
-    return { store, sessionId: id, ledger: eng.ledger };
+    const budgetReady = registerSessionBudget(store, id, eng.config?.budget);
+    return { store, sessionId: id, ledger: budgetReady ? eng.ledger : undefined };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     warnOnce("mint:" + msg, "createSession failed (" + msg + ") — continuing without memory");

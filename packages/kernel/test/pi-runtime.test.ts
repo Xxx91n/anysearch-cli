@@ -765,6 +765,79 @@ function makeMockStreamFn(decision: string): any {
   );
 }
 
+// #200: a ledger fault at reserve is reported, not fatal — the run still
+// completes and the done event is delivered.
+{
+  class ReserveFaultLedger implements BudgetLedgerPort {
+    reserveCalls(): boolean { throw new Error("database is locked"); }
+    settleCalls(): void { }
+    reserveTokens(): boolean { return true; }
+    settleTokens(): void { }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { }
+  }
+  const ledger = new ReserveFaultLedger();
+  const origWrite = process.stderr.write;
+  let captured = "";
+  const events: any[] = [];
+  process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+  try {
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store: noopStore(),
+      sessionId: "s-reserve-fault",
+      ledger,
+    });
+    for await (const ev of runtime.run("hello")) events.push(ev);
+  } finally {
+    process.stderr.write = origWrite;
+  }
+  assert(events.some(e => e.type === "done"), "#200: reserve fault still yields done");
+  assert(!events.some(e => e.type === "error"), "#200: reserve fault is not surfaced as an agent error");
+  assert(/budget reserve failed: database is locked/.test(captured), "#200: reserve fault is reported on stderr");
+}
+
+// #200: a settlement fault is reported and does not stop later settlement
+// attempts, message synchronization, or the final done event.
+{
+  class SettleFaultLedger implements BudgetLedgerPort {
+    usdSettles = 0;
+    reserveCalls(): boolean { return true; }
+    settleCalls(): void { throw new Error("calls locked"); }
+    reserveTokens(): boolean { return true; }
+    settleTokens(): void { throw new Error("tokens locked"); }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { this.usdSettles++; }
+  }
+  const ledger = new SettleFaultLedger();
+  const origWrite = process.stderr.write;
+  let captured = "";
+  const events: any[] = [];
+  process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+  try {
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store: noopStore(),
+      sessionId: "s-settle-fault",
+      ledger,
+    });
+    for await (const ev of runtime.run("hello")) events.push(ev);
+  } finally {
+    process.stderr.write = origWrite;
+  }
+  assert(events.some(e => e.type === "done"), "#200: settle faults still yield done");
+  assert(!events.some(e => e.type === "error"), "#200: settle faults are not surfaced as agent errors");
+  assert(ledger.usdSettles === 1, "#200: a later settlement attempt still runs after earlier faults");
+  assert(/budget call settlement failed: calls locked/.test(captured), "#200: call settle fault is reported");
+  assert(/budget token settlement failed: tokens locked/.test(captured), "#200: token settle fault is reported");
+}
+
 console.log("---");
 
 // #104 acceptance: domain.rag.adapter wiring through the real agent runtime.

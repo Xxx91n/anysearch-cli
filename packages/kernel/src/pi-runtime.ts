@@ -126,6 +126,23 @@ function warnMissingMemoryWiring(opts: PiAgentRuntimeOptions): void {
   } catch { /* fail-open */ }
 }
 
+/**
+ * Report a budget reserve/settle fault without letting it abort the chat.
+ *
+ * Design: budget is an accounting layer, not a precondition for answering —
+ * a locked/unavailable ledger must not turn a completed agent run into a
+ * failed call. stderr stays protocol-safe for MCP (no stdout), and a closed
+ * stderr pipe is itself fail-open.
+ */
+function reportBudgetFault(stage: string, e: unknown): void {
+  try {
+    process.stderr.write(
+      "[anysearch] budget " + stage + " failed: " +
+      (e instanceof Error ? e.message : String(e)) + "\n",
+    );
+  } catch { /* stderr unavailable */ }
+}
+
 // Build the search AgentTool: wraps RetroaererdEngine.search() with TypeBox schema.
 // The LLM sees this as a tool it can call to search the web.
 export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObservationSink, onResults?: (urls: string[]) => void): AgentTool {
@@ -573,10 +590,18 @@ export class PiAgentRuntime {
     // run continue.
     // Design: token/USD stay settle-only in v1 (#103, ruling #90) — nothing to
     // reserve here.
+    // Design: a ledger fault at reserve is reported and treated as "not
+    // reserved" rather than aborting before agent.prompt — budget is fail-open
+    // for chat; per-search enforcement still throws its own budget error inside
+    // the search tool (CodeRabbit #200).
     const billingWired = !!(store && sessionId && ledger);
     let callReserved = false;
     if (billingWired) {
-      callReserved = ledger!.reserveCalls(sessionId!, 1);
+      try {
+        callReserved = ledger!.reserveCalls(sessionId!, 1);
+      } catch (e) {
+        reportBudgetFault("reserve", e);
+      }
     }
 
     // Start the agent prompt in background.
@@ -615,17 +640,34 @@ export class PiAgentRuntime {
       // recorded, so settling would fabricate a billable call. Token/USD
       // settle-only dimensions describe usage that did happen and still land
       // when the provider reported it.
-      if (callReserved) ledger!.settleCalls(sessionId!, 1, 1);
+      // Design: each settlement attempt is independently fail-open and
+      // reported — a locked ledger must not fail an already-completed chat or
+      // skip message synchronization and the final event (CodeRabbit #200).
+      if (callReserved) {
+        try {
+          ledger!.settleCalls(sessionId!, 1, 1);
+        } catch (e) {
+          reportBudgetFault("call settlement", e);
+        }
+      }
       // #103: token/USD v1 is settle-only (reserved 0) — the per-call dimension
       // stays the sole reserve/enforcement point; token-cap reservation waits
       // on a per-run estimate config: design settled in #186 (T9),
       // implementation ticket #187 merged (budget foundation); #188 still open.
       // T4 ruling #90 is the decision source, not an open ticket.
       if (usageTotals.totalTokens > 0) {
-        ledger!.settleTokens(sessionId!, 0, usageTotals.totalTokens);
+        try {
+          ledger!.settleTokens(sessionId!, 0, usageTotals.totalTokens);
+        } catch (e) {
+          reportBudgetFault("token settlement", e);
+        }
       }
       if (usageTotals.costUsd > 0) {
-        ledger!.settleUsd(sessionId!, 0, usageTotals.costUsd);
+        try {
+          ledger!.settleUsd(sessionId!, 0, usageTotals.costUsd);
+        } catch (e) {
+          reportBudgetFault("usd settlement", e);
+        }
       }
     }
 

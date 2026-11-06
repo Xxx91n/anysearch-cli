@@ -99,6 +99,28 @@ async function main() {
       "a failed ensureSession yields empty wiring, including no ledger (the runtime gate stays closed)");
     check(/session row registration failed/.test(captured), "a failed registration is reported, not swallowed");
 
+    // 3b. #200: a failed budget setup keeps memory wired but omits the ledger,
+    //     so a reserve fault cannot abort agent.prompt.
+    const budgetBroken = {
+      ensureSession: async () => {},
+      initBudget: () => { throw new Error("budget row locked"); },
+    } as any;
+    const budgetLedger = { reserveCalls: () => true } as any;
+    let budgetWiring: ChatMemoryWiring;
+    const origWrite2 = process.stderr.write;
+    let budgetCaptured = "";
+    process.stderr.write = ((chunk: unknown) => { budgetCaptured += String(chunk); return true; }) as typeof process.stderr.write;
+    try {
+      budgetWiring = await wireChatMemory(budgetBroken, "default", { callCap: 1 }, budgetLedger);
+    } finally {
+      process.stderr.write = origWrite2;
+    }
+    check(budgetWiring.store === budgetBroken && typeof budgetWiring.sessionId === "string",
+      "#200: a failed budget setup keeps the memory wiring");
+    check(budgetWiring.ledger === undefined,
+      "#200: a failed budget setup omits the ledger (reserve cannot abort chat)");
+    check(/budget sync failed/.test(budgetCaptured), "#200: a failed budget setup is reported");
+
     // 4. An empty anchor id never reaches the store (no bogus sessions row).
     const origEnv = process.env.ANS_SESSION_ID;
     delete process.env.ANS_SESSION_ID;

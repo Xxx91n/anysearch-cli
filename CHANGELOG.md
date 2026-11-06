@@ -17,7 +17,11 @@ All notable changes to this project are recorded here. Format follows
 
 - `packages/kernel/test/pi-runtime.test.ts`：真实 `SqliteSessionStore` + `createBudgetLedger()` 的 runtime 端到端（spentTokens=157 / spentUsd / billableCalls=1 / reservedCalls=0，done 摘要总数与账本一致）；`callCap=0` 拒绝 reserve 时不结算 billable、token 实际用量仍落账；只有 ledger 缺 store/session 时计费门保持关闭；既有零 usage 不写 settle 回归保留。
 - `packages/kernel/test/engine-anchor.test.ts`：answer 模式 reserve=2 / settle 释放同界，`reservedCalls` 归零。
-- `apps/cli/test/chat-memory-wiring.test.ts` / `apps/mcp/test/ans-chat-session.test.ts`：成功 wiring 返回 engine ledger 同一实例；注册失败路径不返回 ledger。
+- `apps/cli/test/chat-memory-wiring.test.ts` / `apps/mcp/test/ans-chat-session.test.ts`：成功 wiring 返回 engine ledger 同一实例；注册失败路径不返回 ledger；budget setup 失败路径保留 memory wiring 但省略 ledger。
+
+### Fixed
+
+- **CodeRabbit #200 返修——预算故障 fail-open**：两个 wiring helper 在会话行注册成功但 budget setup 失败（`initBudget` / `clearBudgetCaps` 抛错，或声明了 `[budget]` 而 store 缺 `initBudget` seam）时不再交出 ledger；runtime 的 `reserveCalls` / `settleCalls` / `settleTokens` / `settleUsd` 各自 try/catch + 具名 stderr，账本锁定不会在 `agent.prompt` 前或完成后 abort chat，消息同步与 done 事件继续。测试覆盖 reserve 抛错、settle 抛错（后续 settle 仍执行）与两条 wiring 的 budget 失败路径。
 
 ## Unreleased — #189: 会话恢复注入恢复摘要块（sufficiency 锚读侧）
 
