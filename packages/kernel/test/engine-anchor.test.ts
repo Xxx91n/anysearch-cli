@@ -16,6 +16,9 @@ import os from "node:os";
 import path from "node:path";
 
 let passed = 0, failed = 0;
+// Module scope so a thrown fault can clean up the temp domain dir in the
+// catch below (exception-safe cleanup; CodeRabbit #177 review).
+let domainsDir = "";
 function assert(cond: boolean, msg: string) {
   if (!cond) { failed++; console.error("FAIL: " + msg); return false; }
   passed++; return true;
@@ -112,7 +115,7 @@ async function main() {
   //    An empty-sources domain keeps createEngine from building real providers
   //    (they are keyless-capable and would hit the network); the mock arm below
   //    is the only fanout member.
-  const domainsDir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-177-"));
+  domainsDir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-177-"));
   fs.writeFileSync(path.join(domainsDir, "mockonly.toml"), [
     'name = "mockonly"',
     '[skills]',
@@ -222,10 +225,14 @@ async function main() {
     .scopedRetriever.search({ query: "half", mode: "fast" });
   assert(captured.length === 2 && captured[1].sessionId === undefined, "8: half-wired runtime does not thread an unregistered session id");
 
-  fs.rmSync(domainsDir, { recursive: true, force: true });
+  if (domainsDir) fs.rmSync(domainsDir, { recursive: true, force: true });
 
   console.log("--- engine sufficiency anchor tests: " + passed + " passed, " + failed + " failed ---");
   if (failed > 0) process.exit(1);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  if (domainsDir) fs.rmSync(domainsDir, { recursive: true, force: true });
+  process.exit(1);
+});
