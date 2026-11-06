@@ -725,12 +725,13 @@ export class MemoryPipeline {
   }
 
   /**
-   * The digest present in the resumed prompt, if any.
+   * The digest injected at the start of a resumed conversation, if any.
    *
-   * Used by the runtime to make the recovery visible on the `done` event. That
-   * covers both a digest injected by this run and one already carried by the
-   * handed-back history. It is undefined for a fresh session and for a session
-   * whose last anchor had no usable payload.
+   * Used by the runtime to make the recovery visible on the `done` event. It
+   * covers a digest injected by this run and a copy already carried by the
+   * handed-back history when the anchor was readable. A copy that exists only
+   * in history, with no readable anchor, is not reported. Undefined for a fresh
+   * session and for a session whose last anchor had no usable payload.
    */
   getInjectedRecoveryDigest(): string | undefined {
     return this.recoveryDigestInjected ? this.recoveryDigest : undefined;
