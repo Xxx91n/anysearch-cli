@@ -333,6 +333,12 @@ export class PiAgentRuntime {
   private warnedEnvIgnored = false;
   private pipeline?: MemoryPipeline;
   private gate?: SufficiencyEvaluator;
+  // T2 #177: every internal retrieval (search tool, sufficiency rerounds) goes
+  // through this retriever so the wired session handle rides along. The gate
+  // mirrors MemoryPipeline (`store && sessionId`): a half-wired runtime stays a
+  // no-memory/no-billing runtime instead of hitting budget_ledger's FK on an
+  // unregistered session id.
+  private readonly scopedRetriever: RetrieverPort;
 
   constructor(opts: PiAgentRuntimeOptions) {
     this.domainReloader = opts.domainTomlPath ? createDomainReloader(opts.domainTomlPath) : null;
@@ -340,6 +346,16 @@ export class PiAgentRuntime {
     // (server, hook, kernel), not just the plugin server. Misset -> throw at startup.
     parseEnvOverrideSwitch(process.env[ENV_ALLOW_OVERRIDE]);
     this.opts = opts;
+    // T2 #177: one scoped retriever for the whole runtime. `store && sessionId`
+    // is the same gate MemoryPipeline uses — the handle is only trusted when the
+    // store is wired too. PREcondition: the composition root has registered the
+    // session row (ensureSession) before the first search; otherwise the
+    // resume_anchors FK would reject the anchor write. `opts` is not mutated
+    // after construction, so this captured id is the runtime's only session id.
+    const wiredSessionId = opts.store && opts.sessionId ? opts.sessionId : undefined;
+    this.scopedRetriever = wiredSessionId
+      ? { search: (q) => opts.retriever.search({ ...q, sessionId: q.sessionId ?? wiredSessionId }) }
+      : opts.retriever;
 
     // constructor internally creates pipeline + gate instances.
     // Composition root responsible for wiring; caller opts unchanged.
@@ -354,7 +370,7 @@ export class PiAgentRuntime {
       this.pipeline = new MemoryPipeline({
         store: opts.store,
         models: opts.models as any,
-        retriever: opts.retriever,
+        retriever: this.scopedRetriever,
         domain: opts.domain,
         model: opts.model as any,
         streamFn: opts.streamFn as any,
@@ -367,7 +383,7 @@ export class PiAgentRuntime {
       warnMissingMemoryWiring(opts);
     }
     this.gate = new SufficiencyEvaluator({
-      retriever: opts.retriever,
+      retriever: this.scopedRetriever,
       domain: opts.domain,
       streamFn: opts.streamFn as any,
       model: opts.model as any,
@@ -383,11 +399,11 @@ export class PiAgentRuntime {
     const startTime = Date.now();
     const timedOut = () => Date.now() - startTime > timeoutMs;
 
-    const { retriever, domain, model, streamFn, ledger, sessionId } = this.opts;
+    const { domain, model, streamFn, ledger, sessionId } = this.opts;
 
     // Build tools: search tool + any extra tools, filtered by domain.
     const saturation = new SearchSaturation();
-    const searchTool = createSearchTool(retriever, this.opts.span, (urls) => saturation.record(urls));
+    const searchTool = createSearchTool(this.scopedRetriever, this.opts.span, (urls) => saturation.record(urls));
     const allTools = [searchTool, ...(this.opts.tools || [])];
     const activeTools = filterAgentTools(allTools, domain);
 
@@ -597,8 +613,8 @@ export class PiAgentRuntime {
       // #103: token/USD v1 is settle-only (reserved 0) — the per-call dimension
       // stays the sole reserve/enforcement point; token-cap reservation waits
       // on a per-run estimate config: design settled in #186 (T9),
-      // implementation tickets #187/#188 still open. T4 ruling #90 is the
-      // decision source, not an open ticket.
+      // implementation ticket #187 merged (budget foundation); #188 still open.
+      // T4 ruling #90 is the decision source, not an open ticket.
       if (usageTotals.totalTokens > 0) {
         ledger.settleTokens(sessionId, 0, usageTotals.totalTokens);
       }

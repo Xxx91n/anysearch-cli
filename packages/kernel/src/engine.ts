@@ -37,7 +37,8 @@ export interface EngineConfig {
   // PiAgentRuntime (#103, kernel level). Production composition-root
   // injection is #177 and PiAgentRuntime production wiring is #178.
   // Token reserve design is settled in #186 (T9), with implementation
-  // tickets #187/#188 still open; USD stays settle-only per #186 decision 6.
+  // tickets #187 merged (budget foundation) / #188 still open; USD stays
+  // settle-only per #186 decision 6.
   budget?: Budget;
   gate?: Partial<SufficiencyGate>;  // override DEFAULT_GATE fields
   graceWindowMs?: number;            // default 1500 (paperfoot EARLY_STOP_GRACE)
@@ -365,7 +366,11 @@ export class RetroaererdEngine {
     };
 
     // decision 2C: reserve per-call budget by provider count (MoleAPI pre-consumption).
-    const hasLedger = !!(this.ledger && this.sessionId);
+    // T2 #177: the caller-supplied session id wins over the construction-time one
+    // (PiAgentRuntime threads the wired handle per search). The gate itself is
+    // unchanged: ledger work needs both the port and a session id.
+    const sessionId = q.sessionId || this.sessionId;
+    const hasLedger = !!(this.ledger && sessionId);
     if (hasLedger) {
       // 2C: per-call cost = 1 unit per provider. Coarse upper bound, settle actual.
       // answer mode doubles cost for answer-capable providers
@@ -374,7 +379,7 @@ export class RetroaererdEngine {
       const perCallEstimate = q.mode === "answer"
         ? allProviders.reduce((acc, p) => acc + (p.modes.includes("answer") ? 2 : 1), 0)
         : allProviders.length;
-      const reserved = this.ledger!.reserveCalls(this.sessionId!, perCallEstimate);
+      const reserved = this.ledger!.reserveCalls(sessionId!, perCallEstimate);
       if (!reserved) {
         throw new Error("Budget exceeded: per-call cap reached (reserved " + perCallEstimate + " calls)");
       }
@@ -526,7 +531,7 @@ export class RetroaererdEngine {
 
     // decision 2C: settle per-call budget — actual = successful providers.
     if (hasLedger) {
-      this.ledger!.settleCalls(this.sessionId!, allProviders.length, providerLists.length);
+      this.ledger!.settleCalls(sessionId!, allProviders.length, providerLists.length);
     }
 
     // WebFusion consumes the registry k and registered web weights (equal-weight
@@ -570,9 +575,9 @@ export class RetroaererdEngine {
     // replay needs (fanout pool is rebuildable from this anchor + retrieval_results).
     // Anchors are a recovery gain layer: a write failure fails open with a named
     // stderr line and never blocks the envelope. Requires both port and
-    // sessionId — mirrors hasLedger; sessionId rides with engine opts like the
-    // ledger's.
-    if (this.anchors && this.sessionId) {
+    // sessionId — mirrors hasLedger; the per-search Query.sessionId wins over
+    // construction-time opts.
+    if (this.anchors && sessionId) {
       const anchorDomains = new Set([...allResults.keys()].map(extractDomain).filter(Boolean));
       const anchorPayload = {
         retrievalTraceId,
@@ -586,7 +591,7 @@ export class RetroaererdEngine {
         uniqueDomains: [...anchorDomains],
       };
       try {
-        await this.anchors.saveAnchor(this.sessionId, "sufficiency", anchorPayload);
+        await this.anchors.saveAnchor(sessionId, "sufficiency", anchorPayload);
       } catch (e) {
         process.stderr.write("[anysearch] sufficiency anchor write failed: " + String(e instanceof Error ? e.message : e) + "\n");
       }

@@ -8,7 +8,7 @@
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
 import type { SearchProvider, SearchRequest } from "@anysearch-cli/retriever";
 import { RetroaererdEngine } from "./engine";
-import type { RetrieverPort, DomainConfigPort, SessionStorePort } from "./ports";
+import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
   defaultDomainsDirs,
   loadDomainByNameIn,
@@ -101,6 +101,12 @@ export interface CompositionResult {
   // failure message, empty when every enabled arm built. Consumers pair this
   // with the engine's runtime providersFailed to audit the full chain.
   providerBuildErrors: Record<string, string>;
+  // T2 #177: the per-call Budget Ledger bound to `store`'s connection. Exposed so
+  // the PiAgentRuntime wiring (#178) passes this same instance — one budget row
+  // per session, never a second ledger over the same DB. Optional so hand-built
+  // CompositionResult mocks (tests, embedders) stay source-compatible; every
+  // createEngine result supplies it.
+  ledger?: BudgetLedgerPort;
 }
 
 // createEngine: build configured engine.
@@ -214,15 +220,37 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
   // opts.dbPath enables durable store for maintenance commands.
   const dbPath = opts?.dbPath ?? ":memory:";
   const store = new SqliteSessionStore(dbPath);
+  // T2 #177: the per-call ledger shares the store's connection. Budget rows are
+  // created/cleared by #187's session-registration point (initBudget /
+  // clearBudgetCaps on the Active Domain's [budget]); this root never creates
+  // one, so a session without [budget] keeps #187's "no row = unmetered pass".
+  // The engine acts on the ledger only when a search carries a session id
+  // (Query.sessionId, threaded by PiAgentRuntime); stateless `search` calls keep
+  // both gates closed.
+  const ledger: BudgetLedgerPort | undefined = (() => {
+    try {
+      return store.createBudgetLedger();
+    } catch (e) {
+      // T2 #177: a legacy DB whose #187 `configured` migration failed must not
+      // take the whole composition root down (ans search / MCP boot). Degrade to
+      // "budget disabled" with a named stderr line; the anchors path still works.
+      process.stderr.write("[anysearch] budget ledger unavailable: " + String(e instanceof Error ? e.message : e) + "\n");
+      return undefined;
+    }
+  })();
   const engineOpts: ConstructorParameters<typeof RetroaererdEngine>[1] = {
     ...(sourceWeights ? { sourceWeights } : {}),
     ...(attributionCalibration ? { attributionCalibration } : {}),
     // domain-name rides with the resolver for audit attributes.
     ...(urlPolicy ? { urlPolicy, domainName: domain } : {}),
     ...(repoVertical ? { repoVertical } : {}),
+    // per-call budget reserve→settle (T2 #177) — port present when the store
+    // could build its ledger; session id is per search, so the gate opens only
+    // on the chat/ans_chat paths.
+    ...(ledger ? { ledger } : {}),
     // Design: the store owns anchor disk I/O; the engine only sees the port —
     // kernel purity (T7 decision #93). Writes fire only when the engine also
-    // carries a sessionId (engine opts, like the ledger).
+    // has a sessionId (per-search Query.sessionId, or construction-time opts).
     anchors: {
       saveAnchor: (sessionId, anchorType, payload) => store.saveAnchor(sessionId, anchorType, payload),
     },
@@ -232,5 +260,5 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
     Object.keys(engineOpts).length ? engineOpts : undefined,
   );
   const observation = new SqliteObservationStore(dbPath);
-  return { retriever, config, store, observation, calibration: attributionCalibration, providerBuildErrors };
+  return { retriever, config, store, observation, calibration: attributionCalibration, providerBuildErrors, ledger };
 }

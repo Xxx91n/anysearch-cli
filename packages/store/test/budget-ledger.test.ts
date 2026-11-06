@@ -145,8 +145,8 @@ async function main() {
       assert(ledger.reserveCalls(s7.id, 1), "release fixture reserves a call");
       ledger.settleCalls(s7.id, 1, 1);
       ledger.clearBudgetCaps(s7.id);
-      // #187: a released row is deactivated and presented as unmetered, so
-      // #177's ensureRow (which reads getBalance === null) will re-init it.
+      // #187: a released row is deactivated and presented as unmetered;
+      // #187's initBudget (hasAnyBudgetRow) reuses the released row.
       assert(ledger.getBalance(s7.id) === null, "released row is unmetered from getBalance's perspective");
       const rawReleased = (store as any).db
         .prepare("SELECT configured, token_cap, call_cap, billable_calls FROM budget_ledger WHERE session_id = ?")
@@ -156,7 +156,7 @@ async function main() {
         "release resets every cap to unlimited");
       assert(rawReleased.billable_calls === 1, "release preserves the spend counters");
       assert(ledger.reserveCalls(s7.id, 100000), "released session passes a large reserve");
-      // Re-enabling the same row preserves the spend history (#177 path).
+      // Re-enabling the same row preserves the spend history (#187 re-activation).
       ledger.initBudget(s7.id, { tokenCap: 500, callCap: 5 });
       const reenabled = ledger.getBalance(s7.id);
       assert(reenabled?.tokenCap === 500 && reenabled?.callCap === 5, "re-init re-enables the released row with new caps");

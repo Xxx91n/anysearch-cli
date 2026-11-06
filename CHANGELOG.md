@@ -55,6 +55,17 @@ All notable changes to this project are recorded here. Format follows
 - `apps/cli/test/chat-memory-wiring.test.ts`：真实 store 注册后账本行存在；无 `[budget]` 不建行；同一锚点从有预算切到无预算时 getBalance 变为 null（未配置）；TOML 显式 0 与缺省字段经 `toBudgetCaps` 落到账本的全链路断言。
 - `apps/mcp/test/ans-chat-session.test.ts`：`ensureSession` 与 `createSession` 两条 MCP 注册路径均建行；无 `[budget]` 不建行；同一 handle 删除 `[budget]` 后 getBalance 变为 null。
 - `scripts/validate-domains.mjs`：仓库域 TOML 校验同步接受并校验 `[budget]`；规则与 `domain-schema.validate` 同源（脚本无 TS 依赖，注释说明镜像关系）。
+## Unreleased — #177: 组合根接线——engine 按检索注入 sessionId + BudgetLedger（T2）
+
+### Changed
+
+- **per-call 预算与 Sufficiency Anchor 从生产路径休眠改为真实触发**：`createEngine` 把 `SqliteSessionStore` 的 `BudgetLedger`（同一连接，`createBudgetLedger()`）注入 engine，并在 `CompositionResult.ledger` 暴露同一实例供 #178 复用。预算行的建立/清理由 #187 的会话注册位点（`SessionStore.initBudget` / `clearBudgetCaps`，按 Active Domain 的 `[budget]`）负责；engine 不再自建行，无 `[budget]` 时沿用 #187 的「无行=放行」语义。
+- **检索级会话身份**：新增 `Query.sessionId`；`PiAgentRuntime` 构造一次 scoped retriever（门：`store && sessionId`），同时供内置 search tool、`MemoryPipeline`、`SufficiencyEvaluator` reround 使用，使 `ans chat` / `ans_chat` 的每次内部检索都携带已接线的会话句柄。engine 的 ledger/anchor 门改用 `q.sessionId || 构造期 sessionId`；门控、reserve→settle、append-only 锚语义未改。
+- **plugin 组合根不注入**：`apps/plugin` 的 hooks/server 不构造 engine，也无可复用会话，注释声明 fail-open。
+
+### Tests
+
+- `packages/kernel/test/engine-anchor.test.ts`：组合根 search-to-store（真实 `createEngine` + 空 sources domain + mock provider）断言 sufficiency 锚落库；无 budget 行时按 #187 语义放行且不建行；显式 `initBudget` 后验证 reserve→settle、超预算拒绝、拒绝后余额不变；runtime 层验证完整接线线程 sessionId、半接线不线程、sufficiency gate 共享 scoped retriever。
 
 ## Unreleased — #16: macOS 晋级尝试被首跑证据反转——再剪除+探针恢复+门禁腿级加固（PR #174）
 

@@ -319,6 +319,8 @@ export class SqliteSessionStore implements SessionStore {
   // caps in place (unique constraint/index on budget_ledger.session_id for new
   // and clean existing databases), so re-registering the durable `ans chat`
   // anchor never duplicates the row.
+  // T2 #177: the same instance is exposed to the composition root so the engine
+  // and registration share one connection and one set of prepared statements.
   private budgetLedgerInstance?: BudgetLedger;
   // LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
   private readonly entityLlmFallback?: (text: string) => Promise<EntityCandidate[] | null>;
@@ -528,6 +530,18 @@ export class SqliteSessionStore implements SessionStore {
       this.stmts.insertAccessEvent.run(memoryId, prevHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, "system");
     });
     write.immediate();
+  }
+
+  /**
+   * T2 #177: the Budget Ledger over this store's single connection.
+   *
+   * Registration (#187 `initBudget` / `clearBudgetCaps`) and the engine
+   * composition root share this cached instance, so caps, reserve and settle all
+   * see one row and one set of prepared statements. Returns the same object on
+   * every call.
+   */
+  createBudgetLedger(): BudgetLedger {
+    return (this.budgetLedgerInstance ??= new BudgetLedger(this.db));
   }
 
   // alert-on-silence telemetry — observational zone only, never gated (Goodhart).
