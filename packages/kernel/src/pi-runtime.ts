@@ -859,22 +859,40 @@ export class PiAgentRuntime {
         };
       }
     } finally {
-      // #188 (CodeRabbit): wait for the in-flight prompt to stop before
-      // settling. If a consumer closes the stream mid-run, settling immediately
-      // would miss the usage reported after closure and undercount spend.
-      if (promptPromise) {
-        try { await promptPromise; } catch { /* prompt errors are stored above */ }
-      }
-      settleTokenReserve(usageTotals.totalTokens);
-      if (billingWired && callReserved && !callSettled) {
-        // A provider call that already reported usage is billable; a run closed
-        // before any usage only releases the reservation.
-        const actualCalls = usageTotals.totalTokens > 0 ? 1 : 0;
-        try {
-          ledger!.settleCalls(sessionId!, 1, actualCalls);
-        } catch (e) {
-          reportBudgetFault("call settlement", e);
+      // #188 (CodeRabbit): wait briefly for the in-flight prompt so its final
+      // usage is recorded. If the provider is stalled, do not block the close:
+      // settle once the prompt actually stops instead. A late write can fail if
+      // the caller already closed the store; the normal fail-open path reports it.
+      let budgetFinalized = false;
+      const finalizeBudget = (): void => {
+        if (budgetFinalized) return;
+        budgetFinalized = true;
+        settleTokenReserve(usageTotals.totalTokens);
+        if (billingWired && callReserved && !callSettled) {
+          // A provider call that already reported usage is billable; a run closed
+          // before any usage only releases the reservation.
+          const actualCalls = usageTotals.totalTokens > 0 ? 1 : 0;
+          try {
+            ledger!.settleCalls(sessionId!, 1, actualCalls);
+          } catch (e) {
+            reportBudgetFault("call settlement", e);
+          }
         }
+      };
+      let promptStopped = !promptPromise;
+      if (promptPromise) {
+        await Promise.race([
+          promptPromise.then(() => { promptStopped = true; }, () => { promptStopped = true; }),
+          new Promise<void>((resolve) => setTimeout(resolve, 1000)),
+        ]);
+      }
+      if (promptStopped) {
+        finalizeBudget();
+      } else {
+        void promptPromise!.then(
+          () => finalizeBudget(),
+          () => finalizeBudget(),
+        );
       }
     }
   }

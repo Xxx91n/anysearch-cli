@@ -1119,6 +1119,64 @@ function makeMockStreamFn(decision: string): any {
   }
 }
 
+// #188 (CodeRabbit): if the provider is still stalled when the consumer closes,
+// the close must return within the bounded wait; the final usage is settled
+// once the prompt actually stops.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-stalled-close-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 6_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const partial = {
+      role: "assistant", content: [{ type: "text", text: "" }], api: "test", provider: "test", model: "test-model",
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "stop", timestamp: Date.now(),
+    };
+    const finalMessage = {
+      ...partial,
+      content: [{ type: "text", text: "partial" }],
+      usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: { input: 0.001, output: 0.002, cacheRead: 0, cacheWrite: 0, total: 0.003 } },
+    };
+    let releaseStream!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseStream = resolve; });
+    const stalledStream = (_m: any, _c: any) => ({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "start", partial };
+        yield { type: "text_delta", partial: finalMessage, delta: "partial" };
+        await gate;
+        yield { type: "done", message: finalMessage, partial: finalMessage };
+      },
+      result: async () => finalMessage,
+    });
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { outputReserveTokens: 2048 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: stalledStream,
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const iterator = runtime.run("hello")[Symbol.asyncIterator]();
+    await iterator.next();
+    const started = Date.now();
+    await iterator.return?.(undefined);
+    assert(Date.now() - started < 2500,
+      "#188: closing a stalled run returns within the bounded wait");
+    releaseStream();
+    await new Promise((r) => setTimeout(r, 100));
+    const balance = ledger.getBalance(session.id)!;
+    assert(balance.reservedTokens === 0 && balance.spentTokens === 15,
+      "#188: the late final usage still settles after the close");
+    assert(balance.billableCalls === 1, "#188: the late-settled run is billed once");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
 // #188 review: a ledger FAULT at token reserve is not exhaustion — it is
 // reported by name and the run continues (the #200 fail-open contract).
 {
