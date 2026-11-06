@@ -2,8 +2,8 @@
 //
 // The acceptance rule is "Recall is not injection": these tests assert the
 // final model-facing text, not just that an anchor was read. They also pin the
-// one-shot trigger (a fresh session injects nothing), the 600-character cap,
-// the explicit query-truncation marker, and the done-event visibility.
+// capture-once trigger (a fresh session injects nothing), the 600-character
+// cap, the explicit query-truncation marker, and the done-event visibility.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -196,22 +196,22 @@ test("mint-new: a session with no anchor injects nothing", async () => {
   assert.equal(pipeline.getInjectedRecoveryDigest(), undefined, "no recovery summary on done");
 });
 
-test("one-shot: a second turn without carried history does not inject again", async () => {
+test("recovery: a later transform without carried history still gets the digest", async () => {
   const { pipeline } = pipelineWith([{ anchorType: "sufficiency", payload: anchorPayload() }]);
   const first = await pipeline.inject([{ role: "user", content: "turn one" }]);
-  assert.equal(countTag(textOf(first[0])), 1, "first turn injects once");
-  const fresh = await pipeline.inject([{ role: "user", content: "turn one" }]);
-  assert.equal(countTag(textOf(fresh[0])), 0, "a later transform does not re-inject");
+  assert.equal(countTag(textOf(first[0])), 1, "first prompt gets one copy");
+  const next = await pipeline.inject([{ role: "user", content: "turn two" }]);
+  assert.equal(countTag(textOf(next[0])), 1, "a later prompt keeps one copy after a tool call");
 });
 
-test("one-shot: an already-injected history keeps exactly one copy", async () => {
+test("recovery: an already-injected history keeps exactly one copy", async () => {
   const { pipeline } = pipelineWith([{ anchorType: "sufficiency", payload: anchorPayload() }]);
   const first = await pipeline.inject([{ role: "user", content: "resume me" }]);
   const carried = await pipeline.inject(first);
   assert.equal(countTag(textOf(carried[0])), 1, "carried history is not duplicated");
 });
 
-test("one-shot: a digest carried on an earlier user turn is not copied onto a new turn", async () => {
+test("recovery: a digest carried on an earlier user turn is not copied onto a new turn", async () => {
   const digest = buildRecoveryDigest(anchorPayload())!;
   const { pipeline } = pipelineWith([{ anchorType: "sufficiency", payload: anchorPayload() }]);
   const out = await pipeline.inject([
@@ -224,7 +224,7 @@ test("one-shot: a digest carried on an earlier user turn is not copied onto a ne
   assert.ok(!textOf(out[2]).includes(RECOVERY_DIGEST_TAG), "the new turn gets no second copy");
 });
 
-test("one-shot: a mere mention of the tag does not suppress injection", async () => {
+test("recovery: a mere mention of the tag does not suppress injection", async () => {
   const { pipeline } = pipelineWith([{ anchorType: "sufficiency", payload: anchorPayload() }]);
   const out = await pipeline.inject([{ role: "user", content: "what is [Recovery Digest]?" }]);
   const text = textOf(out[0]);
@@ -384,4 +384,59 @@ test("runtime: a mint-new session leaves both prompt and done clean", async () =
   assert.ok(!promptText.includes(RECOVERY_DIGEST_TAG), "no digest in a fresh session prompt");
   const done = events.find((e) => e.type === "done");
   assert.equal(done!.recovery, undefined, "no recovery field on a fresh session done event");
+});
+
+test("runtime: the digest stays in the follow-up prompt after a search tool call", async () => {
+  const seen: any[][] = [];
+  let calls = 0;
+  const streamFn = (_model: any, context: any, _options?: any) => {
+    seen.push(Array.isArray(context) ? context : context?.messages ?? []);
+    const first = calls++ === 0;
+    const usage = {
+      input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    };
+    const finalMessage = first
+      ? {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "call-1", name: "search", arguments: { query: "follow-up search" } }],
+          api: "test", provider: "test", model: "test-model",
+          usage, stopReason: "toolUse", timestamp: Date.now(),
+        }
+      : {
+          role: "assistant",
+          content: [{ type: "text", text: "answer" }],
+          api: "test", provider: "test", model: "test-model",
+          usage, stopReason: "stop", timestamp: Date.now(),
+        };
+    return {
+      async *[Symbol.asyncIterator]() {
+        yield { type: "done", message: finalMessage, partial: finalMessage };
+      },
+      result: async () => finalMessage,
+    };
+  };
+  const runtime = new PiAgentRuntime({
+    retriever,
+    domain,
+    model: { id: "test-model", provider: "test" } as any,
+    streamFn: streamFn as any,
+    store: runtimeStore([{ anchorType: "sufficiency", payload: anchorPayload() }]),
+    sessionId: "s-runtime-tool",
+  });
+  const events: any[] = [];
+  for await (const event of runtime.run("resume and search")) events.push(event);
+
+  // The sufficiency gate shares this streamFn; keep only the agent's
+  // conversation contexts (the gate's prompt is a separate gap query).
+  const conversation = seen.filter((ctx) =>
+    ctx.some((m: any) => m?.role === "user" && textOf(m).includes("resume and search")));
+  assert.ok(conversation.length >= 2, "the agent loop made a follow-up model call");
+  const userTexts = conversation.map((ctx) =>
+    ctx.filter((m: any) => m?.role === "user").map(textOf).join("\n"));
+  assert.ok(userTexts.every((text) => text.includes(RECOVERY_DIGEST_TAG)),
+    "every model prompt in the run carries the digest");
+  assert.equal(countTag(userTexts[0]), 1, "first prompt has one copy");
+  assert.equal(countTag(userTexts[1]), 1, "follow-up prompt has one copy");
+  assert.equal(events.filter((e) => e.type === "error").length, 0, "the tool-call loop completes without error");
 });

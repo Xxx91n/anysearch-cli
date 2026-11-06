@@ -353,9 +353,12 @@ export class MemoryPipeline {
   };
 
   // Design: capture the recovery digest from the first successful anchor read
-  // of this runtime and inject it once. The capture happens before the first
-  // model call, so this runtime's own searches cannot masquerade as a recovered
-  // record; a fresh session has no sufficiency anchor and injects nothing.
+  // of this runtime and keep one copy in each model prompt. The capture happens
+  // before the first model call, so this runtime's own searches cannot
+  // masquerade as a recovered record; a fresh session has no sufficiency anchor
+  // and injects nothing. Keeping one copy per prompt matters because
+  // transformContext output is not written back into agent history: a strict
+  // first-call-only gate would drop the digest after a tool call.
   private recoveryDigest?: string;
   private recoveryDigestResolved = false;
   private recoveryDigestInjected = false;
@@ -489,10 +492,12 @@ export class MemoryPipeline {
       const recallAnchor = lastAnchorOfType(anchors, "l2_recall");
 
       const injections: string[] = [];
-      // The digest is injected once per resumed conversation. A history that
-      // already carries it (on any user turn) keeps the single copy instead of
-      // appending a second one.
-      const injectRecovery = !!this.recoveryDigest && !this.recoveryDigestInjected;
+      // Keep the digest in every model prompt of the resumed conversation. The
+      // carried-block check keeps one copy when a caller does persist the
+      // transformed history; it is not a one-shot gate (transformContext output
+      // is not written back into agent history, so the digest would otherwise
+      // disappear after a tool call).
+      const injectRecovery = !!this.recoveryDigest;
       if (injectRecovery) {
         // Match the block shape (a blank line before the tag), not a bare
         // mention: a user asking about "[Recovery Digest]" must not suppress
@@ -727,13 +732,14 @@ export class MemoryPipeline {
   }
 
   /**
-   * The digest injected at the start of a resumed conversation, if any.
+   * The digest present in the resumed prompt, if any.
    *
    * Used by the runtime to make the recovery visible on the `done` event. It
-   * covers a digest injected by this run and a copy already carried by the
-   * handed-back history when the anchor was readable. A copy that exists only
-   * in history, with no readable anchor, is not reported. Undefined for a fresh
-   * session and for a session whose last anchor had no usable payload.
+   * covers a digest injected in any model prompt of this run and a copy already
+   * carried by the handed-back history when the anchor was readable. A copy
+   * that exists only in history, with no readable anchor, is not reported.
+   * Undefined for a fresh session and for a session whose last anchor had no
+   * usable payload.
    */
   getInjectedRecoveryDigest(): string | undefined {
     return this.recoveryDigestInjected ? this.recoveryDigest : undefined;

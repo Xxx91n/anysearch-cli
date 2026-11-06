@@ -8,7 +8,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Added
 
-- **会话恢复时读最后一条 `sufficiency` 锚，生成并注入一次恢复摘要块**（`packages/kernel/src/recovery-digest.ts`、`memory-pipeline.ts`）：块内包含 query、mode、verdict、各 provider 结果计数、failed/cancelled、unique 计数，并写明「检索计算已完成、送达状态未知」；整块含标记 ≤600 字符硬预算，query 超限追加显式 `[truncated]` 标记；块头按既有内容信任边界标为 untrusted（非用户所写），只当数据、不当指令。只在会话恢复时注入一次；mint-new 会话没有锚，零注入；已经带在对话历史里的摘要不会重复追加。engine 仍只写锚，读侧全部在 kernel 记忆管线（`packages/kernel/src/engine.ts` 仅注释更新）。
+- **会话恢复时读最后一条 `sufficiency` 锚，生成并注入恢复摘要块**（`packages/kernel/src/recovery-digest.ts`、`memory-pipeline.ts`）：块内包含 query、mode、verdict、各 provider 结果计数、failed/cancelled、unique 计数，并写明「检索计算已完成、送达状态未知」；整块含标记 ≤600 字符硬预算，query 超限追加显式 `[truncated]` 标记；块头按既有内容信任边界标为 untrusted（非用户所写），只当数据、不当指令。只在会话恢复时从锚捕获一次；由于 `transformContext` 输出不会写回 agent history，每个模型调用的 prompt 保持一份，历史已携带时不重复追加（否则工具调用后的后续 prompt 会丢）；mint-new 会话没有锚，零注入。engine 仍只写锚，读侧全部在 kernel 记忆管线（`packages/kernel/src/engine.ts` 仅注释更新）。
 - **`done` 事件携带恢复摘要**（`packages/kernel/src/pi-runtime.ts`）：恢复注入发生时，`done` 事件新增可选 `recovery` 字段；`ans chat` 与 MCP `ans_chat` 的输出都会显示该摘要。
 
 ### Fixed
@@ -17,7 +17,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Tests
 
-- `packages/kernel/test/recovery-digest.test.ts`：断言最终注入文本（prompt / transformContext 接缝）含全部字段与 UNKNOWN 声明；mint-new 零注入；只读最后一条锚；一次注入且历史回传（含更早 user 轮）不重复；query 超长截断标记；600 字符硬预算与病态 provider 列表的收窄形态；untrusted 标记与引号转义；摘要块不污染 RAG recall key；首次读锚失败不把本轮自己的锚当恢复；`done.recovery` 可见。
+- `packages/kernel/test/recovery-digest.test.ts`：断言最终注入文本（prompt / transformContext 接缝）含全部字段与 UNKNOWN 声明；mint-new 零注入；只读最后一条锚；每个模型调用保持一份且历史回传（含更早 user 轮）不重复；query 超长截断标记；600 字符硬预算与病态 provider 列表的收窄形态；untrusted 标记与引号转义；摘要块不污染 RAG recall key；首次读锚失败不把本轮自己的锚当恢复；工具调用后的后续 prompt 仍有摘要；`done.recovery` 可见。
 
 ### Documented
 
