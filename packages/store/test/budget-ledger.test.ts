@@ -162,9 +162,9 @@ async function main() {
       assert(reenabled?.tokenCap === 500 && reenabled?.callCap === 5, "re-init re-enables the released row with new caps");
       assert(reenabled?.billableCalls === 1, "re-init after release keeps the spend history");
 
-      // 15. #187: a legacy database with duplicate budget rows must still OPEN.
-      //     The unique index is a protected migration outside db.exec(schema),
-      //     so a duplicate-row failure warns instead of skipping later DDL.
+      // 15. #187/CodeRabbit: a legacy database with duplicate budget rows is
+      //     merged before the unique index. One row remains; spend/reserved are
+      //     summed and caps take the most restrictive active row.
       const legacyDir = mkdtempSync(join(tmpdir(), "ans-budget-legacy-"));
       const legacyPath = join(legacyDir, "legacy.db");
       const raw = new Database(legacyPath);
@@ -193,34 +193,30 @@ async function main() {
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
           );
           INSERT INTO sessions (id, domain) VALUES ('legacy-s', 'default');
-          INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap) VALUES ('legacy-s', 100, 1, 1000, 5);
-          INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap) VALUES ('legacy-s', 200, 2, 2000, 10);
+          INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap, spent_tokens, billable_calls) VALUES ('legacy-s', 100, 1, 1000, 5, 30, 1);
+          INSERT INTO budget_ledger (session_id, token_cap, usd_cap, time_limit_ms, call_cap, spent_tokens, billable_calls) VALUES ('legacy-s', 200, 2, 2000, 10, 20, 2);
         `);
       } finally {
         raw.close();
       }
-      const origWrite = process.stderr.write;
-      let captured = "";
-      process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
       let legacyStore: SqliteSessionStore | undefined;
       try {
         legacyStore = new SqliteSessionStore(legacyPath); // must not throw
-        assert(/budget_ledger unique-session index not created/.test(captured),
-          "duplicate legacy rows surface a warning instead of blocking open");
         const legacyRows = (legacyStore as any).db
           .prepare("SELECT COUNT(*) AS c FROM budget_ledger WHERE session_id = 'legacy-s'")
           .get() as { c: number };
-        assert(legacyRows.c === 2, "legacy rows are preserved (no destructive migration)");
-        // The ledger stays usable despite the missing unique index: the
-        // SELECT-then-UPDATE/INSERT path does not depend on ON CONFLICT.
+        assert(legacyRows.c === 1, "legacy duplicate rows are merged into one row");
         const legacyLedger = new BudgetLedger((legacyStore as any).db);
-        assert(legacyLedger.getBalance("legacy-s")?.tokenCap === 100, "legacy rows remain readable");
+        const merged = legacyLedger.getBalance("legacy-s");
+        assert(merged?.tokenCap === 100 && merged?.callCap === 5,
+          "merge keeps the most restrictive active caps");
+        assert(merged?.spentTokens === 50 && merged?.billableCalls === 3,
+          "merge sums spend/reserved history instead of dropping it");
         legacyLedger.initBudget("legacy-s", { tokenCap: 300, usdCap: 3, timeLimitMs: 3000, callCap: 7 });
         const updatedLegacy = legacyLedger.getBalance("legacy-s");
-        assert(updatedLegacy?.tokenCap === 300 && updatedLegacy?.callCap === 7,
-          "legacy duplicate DB budget init updates in place");
+        assert(updatedLegacy?.tokenCap === 300 && updatedLegacy?.callCap === 7 && updatedLegacy?.spentTokens === 50,
+          "legacy duplicate DB budget init updates in place, keeping merged spend");
       } finally {
-        process.stderr.write = origWrite;
         legacyStore?.close();
         try { rmSync(legacyDir, { recursive: true, force: true }); } catch { /* Windows WAL lock */ }
       }

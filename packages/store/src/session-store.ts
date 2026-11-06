@@ -21,7 +21,7 @@ import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
-import { BudgetLedger, type BudgetCaps } from "./budget-ledger.js";
+import { BudgetLedger, UNLIMITED_BUDGET_CAP, type BudgetCaps } from "./budget-ledger.js";
 // embedding is optional — routed through the guarded arm
 // module (absent package => embedText null / telemetry absent), never imported statically.
 import { embedText, embeddingModelId, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
@@ -393,6 +393,18 @@ export class SqliteSessionStore implements SessionStore {
     // already have it from the CREATE TABLE above; this ALTER is the migration
     // and is caught idempotently like the other column migrations below.
     try { this.db.exec("ALTER TABLE budget_ledger ADD COLUMN configured INTEGER NOT NULL DEFAULT 1"); } catch {}
+    // #187/CodeRabbit: a legacy DB can carry duplicate budget rows (the old
+    // table had no uniqueness and no production writer, but corrupt/raced
+    // databases exist). Merge them BEFORE the unique index: one row per
+    // session, spend/reserved counters summed, caps taken from the most
+    // restrictive active row so merging cannot silently loosen enforcement.
+    try {
+      this.mergeDuplicateBudgetRows();
+    } catch (e) {
+      try {
+        process.stderr.write("[warn] budget_ledger duplicate-row merge failed: " + (e instanceof Error ? e.message : String(e)) + "\n");
+      } catch { /* stderr unavailable */ }
+    }
     // #187: one budget row per session. New databases got the table-level
     // UNIQUE(session_id); this protected migration covers old databases. It is
     // deliberately outside db.exec(schema): a legacy duplicate row must not
@@ -633,6 +645,49 @@ export class SqliteSessionStore implements SessionStore {
     // id (or two CLI processes racing on the same anchor) must be a no-op, and a
     // PK conflict must not surface as a memory failure.
     this.stmts.ensureSession.run(sessionId, domain);
+  }
+
+  // #187/CodeRabbit: merge legacy duplicate budget rows before the unique index.
+  // A single row is required for reserve/settle consistency. Spend and reserved
+  // counters are summed (history preserved); caps come from the most restrictive
+  // active row (MIN), and configured stays active iff any duplicate was active.
+  private mergeDuplicateBudgetRows(): void {
+    const dupes = this.db
+      .prepare("SELECT session_id, COUNT(*) AS c FROM budget_ledger GROUP BY session_id HAVING c > 1")
+      .all() as Array<{ session_id: string; c: number }>;
+    if (dupes.length === 0) return;
+    const rowsStmt = this.db.prepare("SELECT * FROM budget_ledger WHERE session_id = ? ORDER BY id");
+    const update = this.db.prepare("UPDATE budget_ledger SET token_cap = ?, usd_cap = ?, time_limit_ms = ?, call_cap = ?, configured = ?, reserved_tokens = ?, spent_tokens = ?, reserved_usd = ?, spent_usd = ?, reserved_calls = ?, billable_calls = ?, started_at = ?, created_at = ? WHERE id = ?");
+    const del = this.db.prepare("DELETE FROM budget_ledger WHERE session_id = ? AND id <> ?");
+    const merge = this.db.transaction(() => {
+      for (const d of dupes) {
+        const rows = rowsStmt.all(d.session_id) as Array<Record<string, any>>;
+        const active = rows.filter((r) => r.configured === 1);
+        const capRows = active.length > 0 ? active : rows;
+        const minCap = (key: string): number => Math.min(...capRows.map((r) => Number(r[key])));
+        const sum = (key: string): number => rows.reduce((acc, r) => acc + Number(r[key]), 0);
+        const earliest = (key: string): string => String(rows.map((r) => r[key]).sort()[0]);
+        const target = rows[0];
+        update.run(
+          active.length > 0 ? minCap("token_cap") : UNLIMITED_BUDGET_CAP,
+          active.length > 0 ? minCap("usd_cap") : UNLIMITED_BUDGET_CAP,
+          active.length > 0 ? minCap("time_limit_ms") : UNLIMITED_BUDGET_CAP,
+          active.length > 0 ? minCap("call_cap") : UNLIMITED_BUDGET_CAP,
+          active.length > 0 ? 1 : 0,
+          sum("reserved_tokens"),
+          sum("spent_tokens"),
+          sum("reserved_usd"),
+          sum("spent_usd"),
+          sum("reserved_calls"),
+          sum("billable_calls"),
+          earliest("started_at"),
+          earliest("created_at"),
+          target.id,
+        );
+        del.run(d.session_id, target.id);
+      }
+    });
+    merge();
   }
 
   // #187: budget row at the session-registration point. The caller (CLI/MCP
