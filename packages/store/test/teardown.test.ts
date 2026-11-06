@@ -23,22 +23,29 @@ const dir = mkdtempSync(join(tmpdir(), "ans-teardown-"));
 try {
   // --- 1. registry: order, error isolation, drain-once, disposer ------------
   const order: string[] = [];
+  let boomOnce = true;
   registerTeardown(() => order.push("a"));
-  registerTeardown(() => { throw new Error("boom"); });
+  registerTeardown(() => {
+    if (boomOnce) { boomOnce = false; throw new Error("boom"); }
+    order.push("b");
+  });
   registerTeardown(() => order.push("c"));
   assert.equal(pendingTeardowns(), 3, "three registrations are pending");
   runTeardown();
   assert.equal(order.join(","), "a,c", "teardowns run in order, a throwing close is swallowed");
-  assert.equal(pendingTeardowns(), 0, "registry drains");
+  // PR #197 review: a teardown that throws stays queued so a later drain can
+  // retry it (a native close can fail while a statement iterator is active).
+  assert.equal(pendingTeardowns(), 1, "a throwing teardown stays registered for a retry");
   runTeardown();
-  assert.equal(order.join(","), "a,c", "draining twice runs nothing (drain-once)");
+  assert.equal(order.join(","), "a,c,b", "the retry runs the failed teardown, successful ones never repeat");
+  assert.equal(pendingTeardowns(), 0, "the retry cleared the failure");
 
   const dispose = registerTeardown(() => order.push("disposed"));
   assert.equal(pendingTeardowns(), 1, "registration pending");
   dispose();
   assert.equal(pendingTeardowns(), 0, "disposer removes the entry — closed handles leave no reference");
   runTeardown();
-  assert.equal(order.join(","), "a,c", "a disposed entry never runs");
+  assert.equal(order.join(","), "a,c,b", "a disposed entry never runs");
 
   // --- 2. tracked opener: drain closes, close() self-disposes, idempotent ---
   const db = openDatabase(join(dir, "tracked.db"));

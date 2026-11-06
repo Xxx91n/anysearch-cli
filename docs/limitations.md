@@ -82,7 +82,9 @@
   same run, purely because `packages/store/src/eval/cli.ts` stopped calling
   `process.exit()`.
   Fix surfaces: (a) `packages/store/src/teardown.ts` + `src/db.ts` (drain-once
-  registry; every store handle opened through a tracked, idempotent close) and
+  registry — a teardown whose close throws stays queued for the next drain, and
+  a tracked handle keeps its registration until the native close succeeds; every
+  store handle opened through a tracked, idempotent close) and
   the eval runner's exit path (`exitCode` + unref + 5s watchdog instead of
   `process.exit()`); (b) store test processes preload
   `test/helpers/exit-teardown.mjs`, which defers `process.exit()` to a natural

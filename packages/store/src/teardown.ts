@@ -13,7 +13,8 @@
 // Contract (same shape as apps/cli/src/teardown.ts, which stays the CLI's own):
 // - drain-once: runTeardown() splices before running, so it is idempotent and
 //   safe to invoke from an explicit exit path AND a process hook;
-// - error-isolating: a throwing close never masks the process's real exit path;
+// - error-isolating: a throwing close never masks the process's real exit path,
+//   and stays queued so the next drain can retry it;
 // - self-disposing: registerTeardown returns a disposer so a handle its owner
 //   already closed leaves no registry entry behind (long-lived processes such
 //   as the MCP server open/close engines per connection).
@@ -38,12 +39,21 @@ export function registerTeardown(fn: () => void): () => void {
  * Drains the registry: runs every pending teardown once, in registration order.
  *
  * Drain-once (entries are spliced before running) makes it safe to call from an
- * explicit exit path and from a process hook; a throwing teardown is swallowed
- * so it can never mask the process's real exit path.
+ * explicit exit path and from a process hook. A teardown that THROWS never masks
+ * the real exit path, and it stays queued: a native close can fail for a
+ * temporary reason (an active statement iterator), so the next drain — the
+ * process hook after the explicit exit path, or a later drain in a long-lived
+ * process — gets to retry it instead of leaving a live handle untracked
+ * (PR #197 review).
  */
 export function runTeardown(): void {
   for (const fn of teardowns.splice(0)) {
-    try { fn(); } catch { /* a bad close must never mask the real exit path */ }
+    try {
+      fn();
+    } catch {
+      // Keep it registered for the next drain; errors never surface from here.
+      if (!teardowns.includes(fn)) teardowns.push(fn);
+    }
   }
 }
 
