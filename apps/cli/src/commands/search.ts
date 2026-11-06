@@ -5,7 +5,7 @@ import type { Mode } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
 import { createPersistentEngine } from "../db";
 
-import { searchExitCode, formatAbstainLine } from "./search-abstain";
+import { searchExitCode, formatAbstainLine, formatProviderAbsentLine } from "./search-abstain";
 
 export async function runSearch(args: string[]): Promise<number> {
   const query = args.join(" ");
@@ -108,7 +108,12 @@ export async function runSearch(args: string[]): Promise<number> {
   // ANS_PROVIDERS=anysearch so a slow vertical arm is not cancelled by faster
   // arms inside the engine grace window). Absent = full fanout, unchanged.
   const providersSel = process.env.ANS_PROVIDERS?.split(",").map((s) => s.trim()).filter(Boolean);
-  const { retriever, observation } = createPersistentEngine(domain);
+  const { retriever, observation, providerBuildErrors } = createPersistentEngine(domain);
+  // #180: one-line construction-absence note paired with the runtime provider
+  // chain lines below ("Providers queried" / "Providers failed") — undefined
+  // when every enabled arm built, so the healthy path adds zero noise. The
+  // category wording is the kernel's safe message verbatim (CWE-532).
+  const providerAbsentLine = formatProviderAbsentLine(providerBuildErrors);
 
   try {
     const envelope = await observation.recordOperation(
@@ -138,6 +143,11 @@ export async function runSearch(args: string[]): Promise<number> {
         providersFailed: envelope.metadata?.providersFailed ?? [],
         // error-class channel next to the flag (additive).
         providerErrorClasses: envelope.metadata?.providerErrorClasses ?? {},
+        // construction-time provider absences (id -> safe category), paired
+        // with the runtime providersFailed chain above — the audit surface for
+        // "which arm never entered the fanout, and why" (#180). Additive; {}
+        // when every enabled arm built.
+        providerBuildErrors,
         answers: envelope.answers,
         sufficiency: envelope.metadata?.sufficiency ?? null,
         attribution: envelope.attribution ?? null,
@@ -169,6 +179,7 @@ export async function runSearch(args: string[]): Promise<number> {
       if (envelope.metadata.providersFailed.length > 0) {
         console.log("Providers failed: " + envelope.metadata.providersFailed.join(", "));
       }
+      if (providerAbsentLine) console.log(providerAbsentLine);
       console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
       return searchExitCode({ resultCount: 0, abstain: true, failOnAbstain });
     }
@@ -211,12 +222,20 @@ export async function runSearch(args: string[]): Promise<number> {
     if (envelope.metadata.providersFailed.length > 0) {
       console.log("Providers failed: " + envelope.metadata.providersFailed.join(", "));
     }
+    if (providerAbsentLine) console.log(providerAbsentLine);
     console.log("Results: " + envelope.results.length);
     console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
 
     return searchExitCode({ resultCount: envelope.results.length, abstain: false, failOnAbstain });
   } catch (e: any) {
     console.error("ans search error: " + e.message);
+    // All-absent arm case (#180): with every enabled arm failing construction
+    // the kernel engine throws "No providers registered" (pinned contract,
+    // engine.test.ts) before any envelope exists, so the runtime chain lines
+    // above never render. The construction-absence note is the self-service
+    // diagnostic for exactly this case — stderr, so the --json stdout contract
+    // stays pure even on the error path.
+    if (providerAbsentLine) console.error(providerAbsentLine);
     return 1;
   }
 }

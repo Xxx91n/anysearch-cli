@@ -70,6 +70,22 @@ async function runUntil(args: string[], env: NodeJS.ProcessEnv, pattern: RegExp)
   });
 }
 
+// #180: spawn with stdout/stderr kept apart. For --json purity assertions the
+// stdout stream alone must be a single JSON document — the kernel's
+// construction diagnostic rides stderr and must never leak into stdout.
+async function runSplit(args: string[], env?: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const p = spawn(process.execPath, [DIST, ...args], { stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}) });
+    let stdout = "";
+    let stderr = "";
+    p.stdout.on("data", (d) => (stdout += d));
+    p.stderr.on("data", (d) => (stderr += d));
+    p.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    p.on("error", reject);
+    setTimeout(() => { p.kill(); reject(new Error("timeout " + args[0])); }, 15000);
+  });
+}
+
 async function t(name: string, fn: () => Promise<void>) {
   try {
     await fn();
@@ -367,6 +383,202 @@ async function t(name: string, fn: () => Promise<void>) {
       const r = await run(["search", "q", "--json"], { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "child" });
       assert.notEqual(r.code, 0);
       assert.match(r.out, /Domain schema.*Base domain not found/i);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // #180: provider construction absences surface in the existing command
+  // output — which provider is missing from the fanout and under which safe
+  // category (CWE-532 wording rides verbatim; raw error text never does).
+  // EXA_API_KEY is set to an explicit empty string: rehydrateConfigEnv never
+  // overwrites explicit values (not even empty ones), so a developer's
+  // persisted key cannot re-arm exa mid-test.
+  //
+  // All-absent arm case: with every enabled arm failing construction the
+  // kernel engine throws "No providers registered" (pinned contract,
+  // engine.test.ts) before any envelope exists — the runtime chain lines never
+  // render, so the absence note rides the error path instead (stderr, keeping
+  // the --json stdout contract pure even on the error path). Zero network.
+  await t("search error path prints provider build-failure absence line (all arms absent)", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-builderr-"));
+    try {
+      fs.writeFileSync(path.join(dir, "exaonly.toml"), [
+        'name = "exaonly"',
+        "[sources]",
+        'enabled = ["exa"]',
+        "[rag]",
+        'adapter = "none"',
+        "",
+      ].join("\n"), "utf8");
+      const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "exaonly", ANS_DB_PATH: path.join(dir, "anysearch.db") };
+      env.EXA_API_KEY = "";
+      // Sanitize the eval-channel provider filter: a shell-leftover value
+      // (e.g. ANS_PROVIDERS=exa) would fan the engine down to zero arms and
+      // turn this fixture red. Explicit empty string — rehydrateConfigEnv
+      // never overwrites explicit values.
+      env.ANS_PROVIDERS = "";
+      const r = await run(["search", "q"], env);
+      assert.equal(r.code, 1, r.out);
+      assert.match(r.out, /ans search error: No providers registered/);
+      assert.ok(
+        r.out.split("\n").includes("Providers absent (build failure): exa — permanent: missing/invalid credential — set the provider's API key env"),
+        "absence line names the provider and its safe category on the error path; got: " + r.out.slice(-400),
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Partial absence (the presentation path that completes): exa fails
+  // construction while anysearch (optional key) constructs fine, so the run
+  // reaches the abstain branch — the urlAllowlist gate deterministically
+  // empties the pool whatever anysearch returns. The absence line renders on
+  // stdout next to the runtime chain lines.
+  await t("search prints provider build-failure absence line (abstain branch)", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-builderr2-"));
+    try {
+      fs.writeFileSync(path.join(dir, "partial.toml"), [
+        'name = "partial"',
+        "[sources]",
+        'enabled = ["exa", "anysearch"]',
+        'urlAllowlist = ["nonexistent.invalid"]',
+        "[rag]",
+        'adapter = "none"',
+        "",
+      ].join("\n"), "utf8");
+      const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "partial", ANS_DB_PATH: path.join(dir, "anysearch.db") };
+      env.EXA_API_KEY = "";
+      env.ANS_PROVIDERS = "";
+      // Hermetic allowlist: an ambient ANS_URL_ALLOWLIST (union-only, gated by
+      // ANS_ALLOW_ENV_OVERRIDE) could let anysearch results survive the gate
+      // and flip this abstain fixture. "0" disables env override — the TOML
+      // allowlist stays authoritative.
+      env.ANS_ALLOW_ENV_OVERRIDE = "0";
+      // Dead-port fault injection (CodeRabbit Major, PR #194; the
+      // install-smoke pattern): keeps this fixture independent of the live
+      // AnySearch endpoint — the arm still constructs and is still queried,
+      // it just fails fast with ECONNREFUSED instead of depending on
+      // live-endpoint timing.
+      env.ANYSEARCH_ENDPOINT = "http://127.0.0.1:9";
+      const r = await run(["search", "q"], env);
+      assert.equal(r.code, 0, r.out);
+      assert.match(r.out, /abstain: no results within allowed partial domain/);
+      assert.match(r.out, /Providers queried: anysearch/);
+      assert.ok(
+        r.out.split("\n").includes("Providers absent (build failure): exa — permanent: missing/invalid credential — set the provider's API key env"),
+        "absence line on the abstain branch; got: " + r.out.slice(-400),
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // --json contract for the same partial-absence domain: stdout is a single
+  // JSON document (the kernel's construction diagnostic rides stderr and
+  // never leaks into stdout); the structured field carries the safe category.
+  // providersFailed is NOT asserted — the pairing surface under test is the
+  // build-absence record; the anysearch arm rides the same dead-port fault
+  // injection as the abstain fixture above.
+  await t("search --json carries providerBuildErrors with stdout purity", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-builderr3-"));
+    try {
+      fs.writeFileSync(path.join(dir, "partial.toml"), [
+        'name = "partial"',
+        "[sources]",
+        'enabled = ["exa", "anysearch"]',
+        'urlAllowlist = ["nonexistent.invalid"]',
+        "[rag]",
+        'adapter = "none"',
+        "",
+      ].join("\n"), "utf8");
+      const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "partial", ANS_DB_PATH: path.join(dir, "anysearch.db") };
+      env.EXA_API_KEY = "";
+      env.ANS_PROVIDERS = "";
+      env.ANS_ALLOW_ENV_OVERRIDE = "0";
+      // Same dead-port fault injection as the abstain fixture above — no
+      // live-endpoint dependency (CodeRabbit Major, PR #194).
+      env.ANYSEARCH_ENDPOINT = "http://127.0.0.1:9";
+      const r = await runSplit(["search", "q", "--json"], env);
+      const doc = JSON.parse(r.stdout);
+      assert.equal(doc.providerBuildErrors.exa, "permanent: missing/invalid credential — set the provider's API key env",
+        "structured field carries the safe category verbatim");
+      assert.match(r.stderr, /\[anysearch\] provider exa construction failed: /);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Error-path --json purity (the sibling of the success-path test above):
+  // with every arm absent the engine throws before any envelope exists, so
+  // stdout must stay empty — the error line AND the absence note ride stderr.
+  // Pinned because "--json stdout purity holds on the error path too" is an
+  // explicit contract claim of #180 (search.ts catch + CHANGELOG).
+  await t("search --json error path keeps stdout pure (all arms absent)", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-builderr4-"));
+    try {
+      fs.writeFileSync(path.join(dir, "exaonly.toml"), [
+        'name = "exaonly"',
+        "[sources]",
+        'enabled = ["exa"]',
+        "[rag]",
+        'adapter = "none"',
+        "",
+      ].join("\n"), "utf8");
+      const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "exaonly", ANS_DB_PATH: path.join(dir, "anysearch.db") };
+      env.EXA_API_KEY = "";
+      env.ANS_PROVIDERS = "";
+      const r = await runSplit(["search", "q", "--json"], env);
+      assert.equal(r.code, 1, r.stderr + r.stdout);
+      assert.equal(r.stdout, "", "error path keeps --json stdout pure (empty, no absence line)");
+      assert.match(r.stderr, /ans search error: No providers registered/);
+      assert.ok(
+        r.stderr.split("\n").includes("Providers absent (build failure): exa — permanent: missing/invalid credential — set the provider's API key env"),
+        "absence note rides stderr on the --json error path; got: " + r.stderr.slice(-400),
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Healthy path + the failure-surface discriminator: a dummy key lets exa
+  // CONSTRUCT (kernel contract: presence, not reachability) — the record
+  // empties and the absence line must not print (zero noise). The runtime 401
+  // failure then rides the sibling "Providers failed" line instead: the two
+  // failure surfaces (build absence vs runtime failure) stay discriminated.
+  // No urlAllowlist: the 0-results run renders through the results branch.
+  await t("search stays zero-noise on provider absence when every arm built", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-e2e-buildok-"));
+    try {
+      fs.writeFileSync(path.join(dir, "exaonly.toml"), [
+        'name = "exaonly"',
+        "[sources]",
+        'enabled = ["exa"]',
+        "[rag]",
+        'adapter = "none"',
+        "",
+      ].join("\n"), "utf8");
+      const env: NodeJS.ProcessEnv = { ...process.env, ANS_DOMAINS_DIR: dir, ANS_DOMAIN: "exaonly", ANS_DB_PATH: path.join(dir, "anysearch.db") };
+      env.EXA_API_KEY = "test-dummy-key";
+      env.ANS_PROVIDERS = "";
+      // Same hermetic-allowlist guard as the partial-absence fixtures: exa
+      // builds here, so policy is parsed — an ambient URL-policy env override
+      // would flip the abstain/results branch and with it the exit code.
+      env.ANS_ALLOW_ENV_OVERRIDE = "0";
+      const r = await run(["search", "q"], env);
+      assert.equal(r.code, 1, r.out);
+      assert.ok(!r.out.includes("Providers absent"), "healthy build: no absence line (zero noise)");
+      assert.ok(r.out.includes("Providers failed: exa"), "runtime failure rides the failed line, not the absence line");
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
