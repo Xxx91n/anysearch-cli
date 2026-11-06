@@ -354,7 +354,7 @@ export class PiAgentRuntime {
     // after construction, so this captured id is the runtime's only session id.
     const wiredSessionId = opts.store && opts.sessionId ? opts.sessionId : undefined;
     this.scopedRetriever = wiredSessionId
-      ? { search: (q) => opts.retriever.search({ ...q, sessionId: wiredSessionId }) }
+      ? { search: (q) => opts.retriever.search({ ...q, sessionId: q.sessionId ?? wiredSessionId }) }
       : opts.retriever;
 
     // constructor internally creates pipeline + gate instances.

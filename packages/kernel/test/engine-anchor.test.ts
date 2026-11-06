@@ -225,6 +225,14 @@ async function main() {
     .scopedRetriever.search({ query: "half", mode: "fast" });
   assert(captured.length === 2 && captured[1].sessionId === undefined, "8: half-wired runtime does not thread an unregistered session id");
 
+  // Close every engine opened in this file before exit (CodeRabbit #177
+  // review): :memory: handles are harmless but can delay process exit.
+  (eng.store as unknown as { close?: () => void }).close?.();
+  eng.observation.close();
+  (tight.store as unknown as { close?: () => void }).close?.();
+  tight.observation.close();
+  store.close();
+
   if (domainsDir) fs.rmSync(domainsDir, { recursive: true, force: true });
 
   console.log("--- engine sufficiency anchor tests: " + passed + " passed, " + failed + " failed ---");
