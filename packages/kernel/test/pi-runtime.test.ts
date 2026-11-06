@@ -1101,6 +1101,7 @@ function makeMockStreamFn(decision: string): any {
     assert(first.value?.type === "text", "#188: the run is suspended after streaming a token (before settle)");
     await iterator.return?.(undefined);
     releaseStream();
+    await runtime.flushMemory();
     const balance = ledger.getBalance(session.id)!;
     assert(balance.reservedTokens === 0 && balance.spentTokens === 0,
       "#188: early close releases the token reservation without spending it");
@@ -1154,6 +1155,49 @@ function makeMockStreamFn(decision: string): any {
   assert(/budget token reserve failed: token ledger locked/.test(captured),
     "#188: a token-reserve fault is reported on stderr by name");
   assert(!/Token budget exhausted/.test(captured), "#188: a ledger fault is not confused with exhaustion");
+}
+
+// #188 review: a transient token-settle failure is retried exactly once by the
+// finally fallback — no more, and exactly one settlement lands.
+{
+  class FlakyTokenSettleLedger implements BudgetLedgerPort {
+    attempts = 0;
+    successes = 0;
+    reserveCalls(): boolean { return true; }
+    settleCalls(): void { }
+    reserveTokens(): boolean { return true; }
+    settleTokens(): void {
+      this.attempts++;
+      if (this.attempts === 1) throw new Error("transient token lock");
+      this.successes++;
+    }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { }
+  }
+  const ledger = new FlakyTokenSettleLedger();
+  const origWrite = process.stderr.write;
+  let captured = "";
+  const events: any[] = [];
+  process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+  try {
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store: noopStore(),
+      sessionId: "s-188-settle-retry",
+      ledger,
+    });
+    for await (const ev of runtime.run("hello")) events.push(ev);
+  } finally {
+    process.stderr.write = origWrite;
+  }
+  assert(ledger.attempts === 2, "#188: a failed token settle is retried exactly once");
+  assert(ledger.successes === 1, "#188: the retry lands exactly one settlement (no double write)");
+  assert(events.some(e => e.type === "done"), "#188: a transient settle fault still yields done");
+  assert(/budget token settlement failed: transient token lock/.test(captured),
+    "#188: the transient settle fault is reported on stderr");
 }
 
 // #188 AC2: a live TOML edit raises the ledger cap at the next run. Covers both

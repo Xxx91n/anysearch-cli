@@ -644,6 +644,11 @@ export class PiAgentRuntime {
     // once; a long-lived MCP process reuses its startup engine snapshot, so
     // without this a cap raise would only take effect after a restart. A
     // removed [budget] deactivates the row (spend history kept).
+    //
+    // The first probe on a new runtime always re-parses the file (forceFirst),
+    // because a per-request host may have built the runtime after the edit;
+    // later probes are mtime-gated, so this costs one parse and at most one
+    // initBudget upsert per runtime.
     if (reloadedDomain && billingWired) {
       try {
         if (domain.budget) {
@@ -835,8 +840,11 @@ export class PiAgentRuntime {
       // an unused per-call reservation without billing it.
       settleTokenReserve(usageTotals.totalTokens);
       if (billingWired && callReserved && !callSettled) {
+        // A provider call that already reported usage is billable; a run closed
+        // before any usage only releases the reservation.
+        const actualCalls = usageTotals.totalTokens > 0 ? 1 : 0;
         try {
-          ledger!.settleCalls(sessionId!, 1, 0);
+          ledger!.settleCalls(sessionId!, 1, actualCalls);
         } catch (e) {
           reportBudgetFault("call settlement", e);
         }
