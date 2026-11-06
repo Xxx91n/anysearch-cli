@@ -39,7 +39,7 @@ class MockRetriever implements RetrieverPort {
 // #178: a session store that satisfies the runtime's memory wiring while doing
 // nothing. Billing needs `store && sessionId && ledger`, so ledger-focused
 // cases pass this to keep the gate open without touching disk.
-function noopStore(overrides: Record<string, unknown> = {}): any {
+function noopStore(): any {
   return {
     getAnchors: () => [],
     saveAnchor: () => Promise.resolve(),
@@ -52,7 +52,6 @@ function noopStore(overrides: Record<string, unknown> = {}): any {
     saveResults: () => Promise.resolve(),
     listPreferences: () => [],
     close: () => {},
-    ...overrides,
   };
 }
 
