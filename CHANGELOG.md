@@ -55,6 +55,7 @@ All notable changes to this project are recorded here. Format follows
 - `apps/cli/test/chat-memory-wiring.test.ts`：真实 store 注册后账本行存在；无 `[budget]` 不建行；同一锚点从有预算切到无预算时 getBalance 变为 null（未配置）；TOML 显式 0 与缺省字段经 `toBudgetCaps` 落到账本的全链路断言。
 - `apps/mcp/test/ans-chat-session.test.ts`：`ensureSession` 与 `createSession` 两条 MCP 注册路径均建行；无 `[budget]` 不建行；同一 handle 删除 `[budget]` 后 getBalance 变为 null。
 - `scripts/validate-domains.mjs`：仓库域 TOML 校验同步接受并校验 `[budget]`；规则与 `domain-schema.validate` 同源（脚本无 TS 依赖，注释说明镜像关系）。
+
 ## Unreleased — #16: macOS 晋级尝试被首跑证据反转——再剪除+探针恢复+门禁腿级加固（PR #174）
 
 ### Changed
