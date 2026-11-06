@@ -654,7 +654,13 @@ export class PiAgentRuntime {
       const tokenSummary = usageTotals.inputTokens + usageTotals.outputTokens > 0
         ? ` (tokens: ${usageTotals.inputTokens} in + ${usageTotals.outputTokens} out)`
         : "";
-      yield { type: "done", summary: `Agent completed${tokenSummary}` };
+      // #189: make the one-shot recovery visible next to the run summary.
+      const recovery = this.pipeline?.getInjectedRecoveryDigest();
+      yield {
+        type: "done",
+        summary: `Agent completed${tokenSummary}`,
+        ...(recovery ? { recovery } : {}),
+      };
     }
   }
 

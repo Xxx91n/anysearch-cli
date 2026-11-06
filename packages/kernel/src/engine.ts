@@ -97,8 +97,9 @@ export interface SufficiencyResult {
 // failing the search, and the store skips secret-matching payloads.
 // computeSufficiency itself stays a pure single-computation source with no I/O.
 // Read side stays out of the engine (#93 ruling, reaffirmed in #186 decision 10;
-// decision 8 makes recovery digest injection, not mechanical replay). The
-// recovery design is settled in #186 (T8); implementation ticket #189 is open.
+// decision 8 makes recovery digest injection, not mechanical replay). The digest
+// is built and injected by the kernel memory pipeline (#189); this file still
+// only writes the anchor.
 export function computeSufficiency(
   rankedResults: NormalizedResult[],
   providerLists: string[][],

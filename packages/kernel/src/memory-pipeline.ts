@@ -20,6 +20,7 @@ const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
 import { RagAdapterRegistry, RAG_CONTEXT_TAG, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
+import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
 import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
@@ -338,6 +339,14 @@ export class MemoryPipeline {
     lastSummaryMsgCount: 0,
   };
 
+  // Recovery digest (#189): the read side of the Sufficiency Anchor. It is
+  // captured from the first successful anchor read of this runtime, before any
+  // search of this runtime can write a new anchor, and injected exactly once.
+  // A fresh session has no sufficiency anchor, so it injects nothing.
+  private recoveryDigest?: string;
+  private recoveryDigestResolved = false;
+  private recoveryDigestInjected = false;
+
   // Background anchor writes started by consolidate(). summarization, adjudication
   // and L2 recall are fire-and-forget by design (they must not block a turn), but
   // the caller that owns the store can then close it while a write is still in
@@ -458,12 +467,27 @@ export class MemoryPipeline {
     // L1+L2 merged injection at latest user message (hot zone).
     try {
       const anchors = await store.getAnchors(sessionId);
+      // Read side of the Sufficiency Anchor (#189): capture the last anchor
+      // once, before this runtime's first search can replace it.
+      this.captureRecoveryDigest(anchors);
       const summaryAnchors = anchors.filter(a => a.anchorType === "rolling_summary");
       const summaryAnchor = summaryAnchors[summaryAnchors.length - 1];
       const recallAnchors = anchors.filter(a => a.anchorType === "l2_recall");
       const recallAnchor = recallAnchors[recallAnchors.length - 1];
 
       const injections: string[] = [];
+      // The digest is injected once per resumed conversation. When a caller
+      // hands back an already-injected history, the tag check keeps the single
+      // copy instead of appending a second one.
+      const injectRecovery = !!this.recoveryDigest && !this.recoveryDigestInjected;
+      if (injectRecovery) {
+        const latestText = lastUserIdx >= 0 ? readMessageText(result[lastUserIdx])?.text ?? "" : "";
+        if (latestText.includes(RECOVERY_DIGEST_TAG)) {
+          this.recoveryDigestInjected = true;
+        } else {
+          injections.push(this.recoveryDigest!);
+        }
+      }
       if ((summaryAnchor?.payload as any)?.summary) {
         injections.push(SESSION_MEMORY_TAG + " " + String((summaryAnchor.payload as any).summary).slice(0, 4000));
       }
@@ -486,6 +510,7 @@ export class MemoryPipeline {
             next,
             ...result.slice(lastUserIdx + 1),
           ];
+          if (injectRecovery) this.recoveryDigestInjected = true;
         }
       }
     } catch {}
@@ -676,6 +701,30 @@ export class MemoryPipeline {
   // Get current consolidation state (for testing/debugging).
   getConsolidationState(): ConsolidationState {
     return this.consolidationState;
+  }
+
+  /**
+   * The digest injected at the start of a resumed conversation, if any.
+   *
+   * Used by the runtime to make the recovery visible on the `done` event. It is
+   * undefined for a fresh session and for a session whose last anchor had no
+   * usable payload.
+   */
+  getInjectedRecoveryDigest(): string | undefined {
+    return this.recoveryDigestInjected ? this.recoveryDigest : undefined;
+  }
+
+  // One-shot capture: the first successful anchor read wins. Marking the read
+  // as resolved even when there is no sufficiency anchor is what keeps a fresh
+  // session at zero injection after its own first search writes one.
+  private captureRecoveryDigest(anchors: Array<{ anchorType: string; payload: unknown }>): void {
+    if (this.recoveryDigestResolved) return;
+    this.recoveryDigestResolved = true;
+    try {
+      const sufficiency = anchors.filter(a => a.anchorType === "sufficiency");
+      const last = sufficiency[sufficiency.length - 1];
+      if (last) this.recoveryDigest = buildRecoveryDigest(last.payload);
+    } catch { /* fail-open: a malformed anchor never blocks a turn */ }
   }
 
   // Set consolidation state (for MCP restore from anchor).

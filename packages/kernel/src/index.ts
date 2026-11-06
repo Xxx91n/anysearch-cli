@@ -6,6 +6,8 @@ export * from "./pi-runtime";
 export * from "./memory-pipeline";
 // rag adapter layer (#35): registry + note/fts adapters, injected at Stage-1.
 export * from "./rag-adapter";
+// Recovery Digest (#189): read side of the Sufficiency Anchor.
+export * from "./recovery-digest";
 // message-shape helpers for the inject seam (#104: pi normalizes to content blocks).
 export * from "./message-text";
 export * from "./sufficiency-gate";

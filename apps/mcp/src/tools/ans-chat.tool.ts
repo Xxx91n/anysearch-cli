@@ -145,8 +145,11 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
           let output = "";
           for await (const event of runtime.run(message)) {
             if (event.type === "text") output += event.content;
-            else if (event.type === "done") output += "\n" + event.summary;
-            else if (event.type === "error") output += "\n[error: " + event.message + "]";
+            else if (event.type === "done") {
+              output += "\n" + event.summary;
+              // #189: the one-shot recovery summary stays visible to the caller.
+              if (event.recovery) output += "\n" + event.recovery;
+            } else if (event.type === "error") output += "\n[error: " + event.message + "]";
           }
           return buildAnsChatResult(output, memory.sessionId);
         } catch (e) {

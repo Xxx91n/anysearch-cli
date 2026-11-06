@@ -156,6 +156,7 @@ export async function runChat(argv: string[]): Promise<number> {
         case "done":
           console.log("\n---");
           console.log(event.summary);
+          if (event.recovery) console.log("\n" + event.recovery);
           break;
         case "error":
           console.error("\n[error] " + event.message);

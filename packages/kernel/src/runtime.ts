@@ -12,7 +12,7 @@ export type AgentEvent =
   | { type: "tool_result"; name: string; result: unknown }
   | { type: "search"; query: string }
   | { type: "search_result"; envelope: unknown }
-  | { type: "done"; summary: string }
+  | { type: "done"; summary: string; recovery?: string }
   | { type: "error"; message: string };
 
 export interface AgentRuntime {

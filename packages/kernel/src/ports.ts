@@ -99,7 +99,9 @@ export interface BudgetLedgerPort {
 // envelope returns; needs both this port and sessionId, early throws write nothing,
 // and the store may skip secret-matching payloads. Anchors are a recovery gain
 // layer: write failures fail open (named stderr line, retrieval never blocked).
-// Read-side design is settled in #186 (T8); implementation ticket #189 is open.
+// Read-side design is settled in #186 (T8): the kernel memory pipeline reads the
+// last anchor on resume and injects a Recovery Digest once (#189). The engine
+// itself still only writes.
 export interface ResumeAnchorsPort {
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
 }
