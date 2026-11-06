@@ -106,6 +106,9 @@ export interface CompositionResult {
   // per session, never a second ledger over the same DB. Optional so hand-built
   // CompositionResult mocks (tests, embedders) stay source-compatible; every
   // createEngine result supplies it.
+  // #188: the same domain dirs the loader used, passed on to runtime reloaders
+  // so a base TOML in a host-specific dir stays resolvable on a live re-read.
+  domainsDirs?: string[];
   ledger?: BudgetLedgerPort;
 }
 
@@ -260,5 +263,5 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
     Object.keys(engineOpts).length ? engineOpts : undefined,
   );
   const observation = new SqliteObservationStore(dbPath);
-  return { retriever, config, store, observation, calibration: attributionCalibration, providerBuildErrors, ledger };
+  return { retriever, config, store, observation, calibration: attributionCalibration, providerBuildErrors, domainsDirs: opts?.domainsDirs, ledger };
 }

@@ -248,6 +248,10 @@ export interface PiAgentRuntimeOptions {
   domain: DomainConfigPort;
   // when set, the allow/deny lists are re-read lazily per tool call via mtime.
   domainTomlPath?: string;
+  // #188 (CodeRabbit): the host's domain search dirs, so the run-boundary
+  // reloader can resolve a base TOML that lives only in a host-specific dir
+  // (e.g. the MCP packaged domains dir), not just dirname(tomlPath)/cwd.
+  domainsDirs?: string[];
   model: unknown; // pi-ai Model instance
   streamFn: unknown; // models.streamSimple.bind(models)
   models?: unknown; // Models object for generateSummaryWithUsage
@@ -392,6 +396,10 @@ export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
   private readonly domainReloader: (() => unknown) | null;
   private warnedEnvIgnored = false;
+  // #188: a TOML change consumed by beforeToolCall (mid-run) must still refresh
+  // the ledger caps, but the next run's reloader sees no new file change. Keep
+  // the detection until the next run boundary consumes it.
+  private pendingBudgetRefresh = false;
   private pipeline?: MemoryPipeline;
   private gate?: SufficiencyEvaluator;
   // T2 #177: every internal retrieval (search tool, sufficiency rerounds) goes
@@ -402,7 +410,7 @@ export class PiAgentRuntime {
   private readonly scopedRetriever: RetrieverPort;
 
   constructor(opts: PiAgentRuntimeOptions) {
-    this.domainReloader = opts.domainTomlPath ? createDomainReloader(opts.domainTomlPath, undefined, { forceFirst: true }) : null;
+    this.domainReloader = opts.domainTomlPath ? createDomainReloader(opts.domainTomlPath, opts.domainsDirs, { forceFirst: true }) : null;
     // acceptance-4: the override switch is a strict enum at EVERY runtime
     // (server, hook, kernel), not just the plugin server. Misset -> throw at startup.
     parseEnvOverrideSwitch(process.env[ENV_ALLOW_OVERRIDE]);
@@ -516,7 +524,12 @@ export class PiAgentRuntime {
         }
         // lazy mtime-checked re-read; bad TOML keeps last known good.
         const reloaded = this.domainReloader ? this.domainReloader() : null;
-        if (reloaded) (this.opts as { domain: DomainConfigPort }).domain = reloaded as DomainConfigPort;
+        if (reloaded) {
+          (this.opts as { domain: DomainConfigPort }).domain = reloaded as DomainConfigPort;
+          // The next run's mtime probe will see no change; remember this one so
+          // the budget caps still refresh at that run boundary.
+          this.pendingBudgetRefresh = true;
+        }
         // single parse point: kernel consumes the same canonicalize+merge+
         // strict-switch resolver as server/hooks (raw-array reads re-introduced drift).
         const src = (this.opts.domain as { sources?: { urlAllowlist?: string[]; urlDenylist?: string[] } } | undefined)?.sources;
@@ -649,7 +662,8 @@ export class PiAgentRuntime {
     // because a per-request host may have built the runtime after the edit;
     // later probes are mtime-gated, so this costs one parse and at most one
     // initBudget upsert per runtime.
-    if (reloadedDomain && billingWired) {
+    const budgetChanged = !!reloadedDomain || this.pendingBudgetRefresh;
+    if (budgetChanged && billingWired) {
       try {
         if (domain.budget) {
           ledger!.initBudget?.(sessionId!, toBudgetCaps(domain.budget));
@@ -659,6 +673,10 @@ export class PiAgentRuntime {
       } catch (e) {
         // fail-open: keep the previously registered caps and name the fault.
         reportBudgetFault("budget refresh", e);
+      } finally {
+        // Clear only after the refresh attempt (CodeRabbit): a change consumed
+        // mid-run by beforeToolCall is applied once at the next run boundary.
+        this.pendingBudgetRefresh = false;
       }
     }
 
@@ -679,6 +697,10 @@ export class PiAgentRuntime {
     let tokenReserved = 0;
     if (billingWired) {
       const inputOccupancy = resolveReserveInputTokens(0, (agent as any).state?.messages ?? [], input, systemPrompt);
+      // #188: default 12288 is the measured output ceiling from the #186 prototype
+      // (p95 9,309 / max 9,600 over 43 runs, 28% headroom). Re-measure when the
+      // per-call maxTokens grows to roughly 1.5x the calibration value (8192) —
+      // the same R≈1.5x trigger recorded in packages/store/src/domain-schema.ts.
       const outputReserve = resolveOutputReserveTokens(domain.budget);
       const reserveAmount = resolveTokenReserve(inputOccupancy.tokens, outputReserve);
       try {
@@ -733,9 +755,10 @@ export class PiAgentRuntime {
       }
     };
 
+    let promptPromise: Promise<void> | null = null;
     try {
       // Start the agent prompt in background.
-      const promptPromise = agent.prompt(input).catch((e: any) => {
+      promptPromise = agent.prompt(input).catch((e: any) => {
         agentError = e?.message || String(e);
         agentDone = true;
       });
@@ -836,9 +859,12 @@ export class PiAgentRuntime {
         };
       }
     } finally {
-      // Early close / throw: settle with the usage observed so far and release an
-      // unused per-call reservation (billable only when a provider already
-      // reported usage).
+      // #188 (CodeRabbit): wait for the in-flight prompt to stop before
+      // settling. If a consumer closes the stream mid-run, settling immediately
+      // would miss the usage reported after closure and undercount spend.
+      if (promptPromise) {
+        try { await promptPromise; } catch { /* prompt errors are stored above */ }
+      }
       settleTokenReserve(usageTotals.totalTokens);
       if (billingWired && callReserved && !callSettled) {
         // A provider call that already reported usage is billable; a run closed

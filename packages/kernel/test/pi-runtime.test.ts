@@ -9,7 +9,7 @@ import { MemoryPipeline } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
 import { SqliteSessionStore } from "@anysearch-cli/store";
-import { mkdtempSync, rmSync, writeFileSync, utimesSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, utimesSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FusedEnvelope, SufficiencySignal } from "@anysearch-cli/retriever";
@@ -1059,10 +1059,9 @@ function makeMockStreamFn(decision: string): any {
   }
 }
 
-// #188 review: closing the event stream early (CLI returns on the first error /
-// timeout, stdout EPIPE, MCP abort) must release the token and unused call
-// reservations. The stream is held open after the first text delta so the close
-// happens before the normal settle path runs.
+// #188 (CodeRabbit): closing the event stream while the prompt is still
+// running must wait for its final usage and settle it, not settle early with a
+// partial figure. The stream reports 15 tokens after the close request.
 {
   const dir = mkdtempSync(join(tmpdir(), "ans-188-early-close-"));
   const store = new SqliteSessionStore(join(dir, "anysearch.db"));
@@ -1075,7 +1074,11 @@ function makeMockStreamFn(decision: string): any {
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
       stopReason: "stop", timestamp: Date.now(),
     };
-    const finalMessage = { ...partial, content: [{ type: "text", text: "partial" }] };
+    const finalMessage = {
+      ...partial,
+      content: [{ type: "text", text: "partial" }],
+      usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: { input: 0.001, output: 0.002, cacheRead: 0, cacheWrite: 0, total: 0.003 } },
+    };
     let releaseStream!: () => void;
     const gate = new Promise<void>((resolve) => { releaseStream = resolve; });
     const slowStream = (_m: any, _c: any) => ({
@@ -1083,6 +1086,9 @@ function makeMockStreamFn(decision: string): any {
         yield { type: "start", partial };
         yield { type: "text_delta", partial: finalMessage, delta: "partial" };
         await gate;
+        // Usage is reported only after the consumer asked to close: the finally
+        // path must wait for this before settling.
+        await new Promise((r) => setTimeout(r, 30));
         yield { type: "done", message: finalMessage, partial: finalMessage };
       },
       result: async () => finalMessage,
@@ -1099,14 +1105,14 @@ function makeMockStreamFn(decision: string): any {
     const iterator = runtime.run("hello")[Symbol.asyncIterator]();
     const first = await iterator.next();
     assert(first.value?.type === "text", "#188: the run is suspended after streaming a token (before settle)");
-    await iterator.return?.(undefined);
     releaseStream();
+    await iterator.return?.(undefined);
     await runtime.flushMemory();
     const balance = ledger.getBalance(session.id)!;
-    assert(balance.reservedTokens === 0 && balance.spentTokens === 0,
-      "#188: early close releases the token reservation without spending it");
-    assert(balance.reservedCalls === 0 && balance.billableCalls === 0,
-      "#188: early close releases the unused call reservation without billing it");
+    assert(balance.reservedTokens === 0 && balance.spentTokens === 15,
+      "#188: early close waits for and settles the usage reported after closure");
+    assert(balance.reservedCalls === 0 && balance.billableCalls === 1,
+      "#188: a closed run that reported usage is billed as one call, no reservation left");
   } finally {
     store.close();
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
@@ -1312,6 +1318,181 @@ function makeMockStreamFn(decision: string): any {
     const afterRaised = ledger.getBalance(session.id)!;
     assert(afterRaised.tokenCap === 100_000 && afterRaised.spentTokens === 30 && afterRaised.reservedTokens === 0,
       "#188: the raised-cap run settles by actual usage");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #188 (CodeRabbit): a TOML change consumed by beforeToolCall mid-run must still
+// refresh the ledger caps at the next run boundary. The next run's mtime probe
+// sees no change, so only the pending flag can carry the refresh.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-pending-cap-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const tomlPath = join(dir, "rt.toml");
+    const toml = (cap: number) => [
+      'name = "rt"',
+      '[rag]',
+      'adapter = "none"',
+      '[skills]',
+      'active = ["search"]',
+      '[sources]',
+      'enabled = []',
+      '[hooks]',
+      'toolWhitelist = ["search"]',
+      '[budget]',
+      'tokenCap = ' + cap,
+      'outputReserveTokens = 2048',
+      '',
+    ].join("\n");
+    writeFileSync(tomlPath, toml(100));
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 100, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { tokenCap: 100, outputReserveTokens: 2048 } },
+      domainTomlPath: tomlPath,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+
+    // First run consumes forceFirst and leaves the row at 100.
+    const blocked: any[] = [];
+    for await (const ev of runtime.run("hello")) blocked.push(ev);
+    assert(blocked.some(e => e.type === "error"), "#188: the low cap rejects the first run");
+
+    // Simulate what beforeToolCall does mid-run: consume the file change, update
+    // the in-memory domain, and mark the budget refresh pending.
+    writeFileSync(tomlPath, toml(100_000));
+    utimesSync(tomlPath, Date.now() / 1000 + 2, Date.now() / 1000 + 2);
+    const reloaded = (runtime as any).domainReloader();
+    assert(reloaded !== null, "#188: the mid-run reload sees the new file");
+    (runtime as any).opts.domain = reloaded;
+    (runtime as any).pendingBudgetRefresh = true;
+
+    const resumed: any[] = [];
+    for await (const ev of runtime.run("hello")) resumed.push(ev);
+    assert(resumed.some(e => e.type === "done"),
+      "#188: the pending mid-run change refreshes caps even when the next probe sees no change");
+    const balance = ledger.getBalance(session.id)!;
+    assert(balance.tokenCap === 100_000 && balance.spentTokens === 15 && balance.reservedTokens === 0,
+      "#188: the pending refresh updates the durable cap and the run settles by actual usage");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #188 (CodeRabbit): a base TOML that lives only in a host-specific domains dir
+// must still resolve on the run-boundary re-read.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-extra-dirs-"));
+  const extraDir = join(dir, "extra");
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    writeFileSync(join(dir, "rt.toml"), [
+      'name = "rt"',
+      'base = "base"',
+      '[rag]',
+      'adapter = "none"',
+      '[skills]',
+      'active = ["search"]',
+      '[sources]',
+      'enabled = []',
+      '[hooks]',
+      'toolWhitelist = ["search"]',
+      '',
+    ].join("\n"));
+    mkdirSync(extraDir, { recursive: true });
+    writeFileSync(join(extraDir, "base.toml"), [
+      'name = "base"',
+      '[rag]',
+      'adapter = "none"',
+      '[skills]',
+      'active = ["search"]',
+      '[sources]',
+      'enabled = []',
+      '[hooks]',
+      'toolWhitelist = ["search"]',
+      '[budget]',
+      'tokenCap = 100000',
+      'outputReserveTokens = 2048',
+      '',
+    ].join("\n"));
+
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 100, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { tokenCap: 100, outputReserveTokens: 2048 } },
+      domainTomlPath: join(dir, "rt.toml"),
+      domainsDirs: [extraDir, dir],
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const events: any[] = [];
+    for await (const ev of runtime.run("hello")) events.push(ev);
+    assert(events.some(e => e.type === "done"),
+      "#188: a base TOML found only through the host domains dirs resolves on the first run");
+    const balance = ledger.getBalance(session.id)!;
+    assert(balance.tokenCap === 100_000 && balance.spentTokens === 15,
+      "#188: the inherited cap refreshed the durable row");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #188 (CodeRabbit): default 12288 and the TOML override are proven at the real
+// ledger cap boundary, not only through a mock port. 400-char system + 400-char
+// prompt estimate to 200 tokens; cap 12488 fits 200 + 12288, cap 12487 does not.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-default-boundary-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const domain = { ...mockDomain, prompts: [{ name: "system", content: "s".repeat(400) }] };
+    const prompt = "x".repeat(400);
+    const runAtCap = async (cap: number, budget?: DomainConfigPort["budget"]) => {
+      const session = await store.createSession("chat");
+      store.initBudget(session.id, { tokenCap: cap, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+      const ledger = store.createBudgetLedger();
+      const runtime = new PiAgentRuntime({
+        retriever: new MockRetriever(),
+        domain: budget ? { ...domain, budget } : domain,
+        model: { id: "test-model", provider: "test" } as any,
+        streamFn: usageStream(10, 5, 15, 0.001),
+        store,
+        sessionId: session.id,
+        ledger,
+      });
+      const events: any[] = [];
+      for await (const ev of runtime.run(prompt)) events.push(ev);
+      return { events, balance: ledger.getBalance(session.id)! };
+    };
+
+    const fits = await runAtCap(12488);
+    assert(fits.events.some(e => e.type === "done"), "#188: default reserve 12288 fits exactly at cap 12488");
+    assert(fits.balance.spentTokens === 15, "#188: the fitting run settles");
+
+    const misses = await runAtCap(12487);
+    assert(misses.events.some(e => e.type === "error"), "#188: default reserve 12288 is rejected one token below");
+    assert(misses.balance.reservedTokens === 0 && misses.balance.spentTokens === 0,
+      "#188: the rejected run leaves no reservation or spend");
+
+    const overrideFits = await runAtCap(4296, { outputReserveTokens: 4096 });
+    assert(overrideFits.events.some(e => e.type === "done"), "#188: the 4096 TOML override fits at cap 4296");
+    const overrideMisses = await runAtCap(4295, { outputReserveTokens: 4096 });
+    assert(overrideMisses.events.some(e => e.type === "error"), "#188: the 4096 override is rejected one token below");
   } finally {
     store.close();
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
