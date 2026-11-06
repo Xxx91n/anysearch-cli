@@ -32,7 +32,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Tests
 
-- `packages/kernel/test/pi-runtime.test.ts`：预留公式与冷启动回退/用量锚的纯函数断言；默认 12288 与 TOML 覆写经 ledger 端口观测；真实 `SqliteSessionStore` 下预留被拒时只有一个 error、无 done、`agent.prompt` 未启动、账本无 spend/reserved；提高 cap 后同一 runtime 可继续跑；实际用量超过预留时仍按实结算且 reserved 归零；零用量 run 释放预留；事件流在首个 text 后提前关闭时释放 token 与未用的 call 预留（不泄漏、不计费）；token settle 抛错时 finally 只重试一次且只落账一次；`reserveTokens` 抛错按 fail-open 报具名 stderr 且 run 继续；真实 TOML 文件覆盖两种生产形状——先改文件后新建 runtime（MCP 形状）与同一 runtime 后续升降 cap——均刷新账本行。既有 #178/#200 用例的 token cap 随预留语义上调，settle-by-actuals 断言保留。
+- `packages/kernel/test/pi-runtime.test.ts`：预留公式与冷启动回退/用量锚的纯函数断言；默认 12288 与 TOML 覆写经 ledger 端口观测；真实 `SqliteSessionStore` 下预留被拒时只有一个 error、无 done、`agent.prompt` 未启动、账本无 spend/reserved；提高 cap 后同一 runtime 可继续跑；实际用量超过预留时仍按实结算且 reserved 归零；零用量 run 释放预留；事件流在首个 text 后提前关闭时释放 token 与未用的 call 预留（无用量不计费、已有用量计一次）；token settle 抛错时 finally 只重试一次且只落账一次；`reserveTokens` 抛错按 fail-open 报具名 stderr 且 run 继续；真实 TOML 文件覆盖两种生产形状——先改文件后新建 runtime（MCP 形状）与同一 runtime 后续升降 cap——均刷新账本行。既有 #178/#200 用例的 token cap 随预留语义上调，settle-by-actuals 断言保留。
 - `packages/store/test/url-policy.test.ts`：`createDomainReloader` 的 `forceFirst` 只在首次探测强制返回当前 schema，之后恢复 unchanged → null 的既有契约。
 
 ## Unreleased — #178: PiAgentRuntime ledger 接线——token/USD 结算生产化（#36 承接）

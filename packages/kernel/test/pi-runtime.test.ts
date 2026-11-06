@@ -1200,6 +1200,48 @@ function makeMockStreamFn(decision: string): any {
     "#188: the transient settle fault is reported on stderr");
 }
 
+// #188 review: when the normal call settle fails but the run already reported
+// usage, the finally fallback bills that one call instead of dropping it.
+{
+  class CallSettleFaultLedger implements BudgetLedgerPort {
+    callSettles: Array<{ reserved: number; actual: number }> = [];
+    reserveCalls(): boolean { return true; }
+    settleCalls(_s: string, reserved: number, actual: number): void {
+      this.callSettles.push({ reserved, actual });
+      if (this.callSettles.length === 1) throw new Error("call lock");
+    }
+    reserveTokens(): boolean { return true; }
+    settleTokens(): void { }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { }
+  }
+  const ledger = new CallSettleFaultLedger();
+  const origWrite = process.stderr.write;
+  let captured = "";
+  const events: any[] = [];
+  process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+  try {
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store: noopStore(),
+      sessionId: "s-188-call-retry",
+      ledger,
+    });
+    for await (const ev of runtime.run("hello")) events.push(ev);
+  } finally {
+    process.stderr.write = origWrite;
+  }
+  assert(ledger.callSettles.length === 2, "#188: a failed call settle is retried once by the fallback");
+  assert(ledger.callSettles.every(s => s.reserved === 1 && s.actual === 1),
+    "#188: a run with usage stays billable when the normal call settle fails");
+  assert(events.some(e => e.type === "done"), "#188: the call-settle retry still yields done");
+  assert(/budget call settlement failed: call lock/.test(captured),
+    "#188: the call-settle fault is reported on stderr");
+}
+
 // #188 AC2: a live TOML edit raises the ledger cap at the next run. Covers both
 // production shapes: (a) a runtime built AFTER the edit (the MCP per-request
 // host keeps a startup config snapshot; forceFirst loads the current file) and

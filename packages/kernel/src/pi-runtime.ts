@@ -836,8 +836,9 @@ export class PiAgentRuntime {
         };
       }
     } finally {
-      // Early close / throw: settle with the usage observed so far and release
-      // an unused per-call reservation without billing it.
+      // Early close / throw: settle with the usage observed so far and release an
+      // unused per-call reservation (billable only when a provider already
+      // reported usage).
       settleTokenReserve(usageTotals.totalTokens);
       if (billingWired && callReserved && !callSettled) {
         // A provider call that already reported usage is billable; a run closed
