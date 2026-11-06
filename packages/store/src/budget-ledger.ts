@@ -60,7 +60,6 @@ export class BudgetLedger {
     updateCaps: Database.Statement;
     hasAnyBudgetRow: Database.Statement;
     clearCaps: Database.Statement;
-    hasRow: Database.Statement;
     reserveTokens: Database.Statement;
     reserveUsd: Database.Statement;
     settleTokens: Database.Statement;
@@ -86,22 +85,22 @@ export class BudgetLedger {
       // initBudget reuses the row and re-enables it. No row -> no-op.
       clearCaps: db.prepare("UPDATE budget_ledger SET configured = 0, token_cap = ?, usd_cap = ?, time_limit_ms = ?, call_cap = ? WHERE session_id = ?"),
       // #187: configured = 1 is the enforceable-bit. A row can exist with
-      // configured = 0 (history kept after [budget] was removed); reserve must
-      // pass and getBalance must look unmetered, so row existence alone is not
-      // the configured signal.
-      hasRow: db.prepare("SELECT 1 AS present FROM budget_ledger WHERE session_id = ? AND configured = 1"),
-      reserveTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens + ? WHERE session_id = ? AND configured = 1 AND token_cap > 0 AND reserved_tokens + spent_tokens + ? <= token_cap"),
-      reserveUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = reserved_usd + ? WHERE session_id = ? AND configured = 1 AND usd_cap > 0 AND reserved_usd + spent_usd + ? <= usd_cap"),
+      // configured = 0 (history kept after [budget] was removed); reserve still
+      // records units but does not enforce caps, and getBalance looks unmetered.
+      // #187/CodeRabbit: an unconfigured row still RECORDS the reservation (it just
+      // does not enforce a cap), so a later initBudget activation can settle it
+      // without a negative counter. configured=1 keeps the cap enforcement.
+      reserveTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens + ? WHERE session_id = ? AND (configured = 0 OR (token_cap > 0 AND reserved_tokens + spent_tokens + ? <= token_cap))"),
+      reserveUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = reserved_usd + ? WHERE session_id = ? AND (configured = 0 OR (usd_cap > 0 AND reserved_usd + spent_usd + ? <= usd_cap))"),
       // #187/CodeRabbit: settle must be safe when the row was deactivated after a
-      // reservation. configured=1 settles normally; configured=0 only settles
-      // reservations that were actually recorded before clear (reserved > 0),
-      // clamping the decrement so the non-negative CHECK cannot fire. With no
-      // recorded reservation (configured=0, reserved=0) the WHERE guard makes
-      // the whole settle a no-op — no phantom spend on an unmetered row.
-      settleTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = CASE WHEN configured = 1 THEN reserved_tokens - ? ELSE MAX(0, reserved_tokens - ?) END, spent_tokens = spent_tokens + ? WHERE session_id = ? AND (configured = 1 OR reserved_tokens > 0)"),
-      settleUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = CASE WHEN configured = 1 THEN reserved_usd - ? ELSE MAX(0, reserved_usd - ?) END, spent_usd = spent_usd + ? WHERE session_id = ? AND (configured = 1 OR reserved_usd > 0)"),
-      reserveCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = reserved_calls + ? WHERE session_id = ? AND configured = 1 AND call_cap > 0 AND reserved_calls + billable_calls + ? <= call_cap"),
-      settleCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = CASE WHEN configured = 1 THEN reserved_calls - ? ELSE MAX(0, reserved_calls - ?) END, billable_calls = billable_calls + ? WHERE session_id = ? AND (configured = 1 OR reserved_calls > 0)"),
+      // reservation AND when it was activated after an unconfigured reservation.
+      // The counter is clamped for every row (never negative CHECK); a
+      // configured=0 row with no recorded reservation is a no-op. Recording the
+      // reservation even while configured=0 is what makes later activation safe.
+      settleTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = MAX(0, reserved_tokens - ?), spent_tokens = spent_tokens + ? WHERE session_id = ? AND (configured = 1 OR reserved_tokens > 0)"),
+      settleUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = MAX(0, reserved_usd - ?), spent_usd = spent_usd + ? WHERE session_id = ? AND (configured = 1 OR reserved_usd > 0)"),
+      reserveCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = reserved_calls + ? WHERE session_id = ? AND (configured = 0 OR (call_cap > 0 AND reserved_calls + billable_calls + ? <= call_cap))"),
+      settleCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = MAX(0, reserved_calls - ?), billable_calls = billable_calls + ? WHERE session_id = ? AND (configured = 1 OR reserved_calls > 0)"),
       getBalance: db.prepare("SELECT session_id as sessionId, token_cap as tokenCap, usd_cap as usdCap, time_limit_ms as timeLimitMs, call_cap as callCap, reserved_tokens as reservedTokens, spent_tokens as spentTokens, reserved_usd as reservedUsd, spent_usd as spentUsd, reserved_calls as reservedCalls, billable_calls as billableCalls FROM budget_ledger WHERE session_id = ? AND configured = 1"),
     };
   }
@@ -152,51 +151,51 @@ export class BudgetLedger {
     this.stmts.clearCaps.run(UNLIMITED_BUDGET_CAP, UNLIMITED_BUDGET_CAP, UNLIMITED_BUDGET_CAP, UNLIMITED_BUDGET_CAP, sessionId);
   }
 
-  // #187: "no row" means the domain declared no [budget] for this session and
-  // must not meter. This is deliberately checked before each UPDATE so a
-  // present row with cap 0 (explicit "reject everything") stays distinguishable
-  // from an absent row (pass).
-  private hasConfiguredBudget(sessionId: string): boolean {
-    return this.stmts.hasRow.get(sessionId) !== undefined;
+  // #187: no row = unmetered pass (no write). An existing row — even
+  // configured=0 — records the reservation so a later initBudget activation can
+  // settle it without a negative counter; configured=1 also enforces the cap.
+  private hasBudgetRow(sessionId: string): boolean {
+    return this.stmts.hasAnyBudgetRow.get(sessionId) !== undefined;
   }
 
-  // Reserve tokens before a call. Returns false only when a configured row
-  // would exceed its cap (non-negative constraint); an unconfigured session
-  // passes.
+  // Reserve tokens before a call. No row passes; a configured row enforces its
+  // cap; an unconfigured row records the reservation without enforcement.
   reserveTokens(sessionId: string, amount: number): boolean {
-    if (!this.hasConfiguredBudget(sessionId)) return true;
+    if (!this.hasBudgetRow(sessionId)) return true;
     const result = this.stmts.reserveTokens.run(amount, sessionId, amount);
     return result.changes > 0;
   }
 
-  // Reserve USD before a call. Same no-row-passes contract as tokens.
+  // Reserve USD before a call. Same contract as tokens.
   reserveUsd(sessionId: string, amount: number): boolean {
-    if (!this.hasConfiguredBudget(sessionId)) return true;
+    if (!this.hasBudgetRow(sessionId)) return true;
     const result = this.stmts.reserveUsd.run(amount, sessionId, amount);
     return result.changes > 0;
   }
 
   // Settle tokens after a call: move from reserved to spent (adjust if actual != reserved).
+  // The decrement is clamped so a lost/never-recorded reservation cannot trip
+  // the non-negative CHECK.
   settleTokens(sessionId: string, reservedAmount: number, actualAmount: number): void {
-    this.stmts.settleTokens.run(reservedAmount, reservedAmount, actualAmount, sessionId);
+    this.stmts.settleTokens.run(reservedAmount, actualAmount, sessionId);
   }
 
   // Settle USD after a call.
   settleUsd(sessionId: string, reservedAmount: number, actualAmount: number): void {
-    this.stmts.settleUsd.run(reservedAmount, reservedAmount, actualAmount, sessionId);
+    this.stmts.settleUsd.run(reservedAmount, actualAmount, sessionId);
   }
 
-  // decision 2C: reserve per-call budget by provider count. Unconfigured
-  // sessions (no row) pass; a configured row enforces call_cap.
+  // decision 2C: reserve per-call budget by provider count. No row passes; an
+  // unconfigured row records; a configured row enforces call_cap.
   reserveCalls(sessionId: string, count: number): boolean {
-    if (!this.hasConfiguredBudget(sessionId)) return true;
+    if (!this.hasBudgetRow(sessionId)) return true;
     const result = this.stmts.reserveCalls.run(count, sessionId, count);
     return result.changes > 0;
   }
 
   // decision 2C: settle calls — actual successful providers.
   settleCalls(sessionId: string, reservedCount: number, actualCount: number): void {
-    this.stmts.settleCalls.run(reservedCount, reservedCount, actualCount, sessionId);
+    this.stmts.settleCalls.run(reservedCount, actualCount, sessionId);
   }
 
   // Get current balance for a session.
