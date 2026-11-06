@@ -1,0 +1,71 @@
+# TEMPORARY diagnostic lane for #183 (deleted before merge).
+#
+# The windows ship-gate leg failed on PR #197 (run 42161257982) while ubuntu and
+# macOS passed, and Actions job logs are not reachable from this session's
+# network, so the gate output is mirrored into a PR comment (readable over the
+# API). Not part of the gate: distinct workflow name, no required-leg family
+# match, branch-push only.
+
+name: macos-store-diag
+
+on:
+  push:
+    branches: [arena/862c9d50-anysearch-cli]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diag:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/setup@v2
+        with: { install: false }
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: install (no scripts — better-sqlite3 prebuilt)
+        run: pnpm install --ignore-scripts
+
+      - name: capture gate output on windows (never fails the job)
+        shell: bash
+        run: |
+          set +e
+          {
+            echo "=== node -v ==="
+            node -v
+            echo
+            echo "=== node scripts/ship-gate.mjs ==="
+            CI=true node scripts/ship-gate.mjs
+            echo "SHIP_GATE_EXIT=$?"
+          } > /tmp/diag.log 2>&1
+          exit 0
+
+      - name: mirror output to the PR (API-readable)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: "197"
+        run: |
+          total=$(wc -c < /tmp/diag.log)
+          {
+            echo "### windows gate diag capture ($total bytes)"
+            echo ""
+            echo '```'
+            tail -c 45000 /tmp/diag.log
+            echo '```'
+          } > /tmp/comment.md
+          gh pr comment "$PR" --body-file /tmp/comment.md
+
+      - name: annotate the failure lines
+        shell: bash
+        run: |
+          grep -nE "not ok|✖|FAIL|Error:|error TS|SHIP_GATE_EXIT=|\[fail\]" /tmp/diag.log \
+            | tail -n 15 | sed 's/%/%25/g' | while IFS= read -r line; do echo "::error::$line"; done || true
