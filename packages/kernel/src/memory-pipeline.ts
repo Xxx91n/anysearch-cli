@@ -287,7 +287,7 @@ export function consolidateState(
 // earlier pass appended before truncating to RAG_QUERY_MAX_CHARS.
 const SESSION_MEMORY_TAG = "[Session Memory]";
 const RESEARCH_RECALL_TAG = "[Research Recall]";
-const INJECTION_TAGS = [RAG_CONTEXT_TAG, SESSION_MEMORY_TAG, RESEARCH_RECALL_TAG] as const;
+const INJECTION_TAGS = [RAG_CONTEXT_TAG, RECOVERY_DIGEST_TAG, SESSION_MEMORY_TAG, RESEARCH_RECALL_TAG] as const;
 const PREFS_OPEN_TAG = "<user_preferences";
 const PREFS_CLOSE_TAG = "</user_preferences>";
 
@@ -324,6 +324,19 @@ function preInjectionQueryText(text: string): string {
   return stripped ? body.trim() : text;
 }
 
+/**
+ * Last anchor of one type, in append order.
+ *
+ * The store returns anchors oldest-first; callers always want the newest of a
+ * type. Keeping the scan in one place avoids four near-copies of the
+ * filter-plus-last idiom drifting apart.
+ */
+function lastAnchorOfType<T extends { anchorType: string }>(anchors: T[], anchorType: string): T | undefined {
+  let found: T | undefined;
+  for (const anchor of anchors) if (anchor.anchorType === anchorType) found = anchor;
+  return found;
+}
+
 export class MemoryPipeline {
   private deps: MemoryPipelineDeps;
   // rag adapter registry (#35): domain.rag.adapter -> adapter, resolved per
@@ -339,10 +352,10 @@ export class MemoryPipeline {
     lastSummaryMsgCount: 0,
   };
 
-  // Recovery digest (#189): the read side of the Sufficiency Anchor. It is
-  // captured from the first successful anchor read of this runtime, before any
-  // search of this runtime can write a new anchor, and injected exactly once.
-  // A fresh session has no sufficiency anchor, so it injects nothing.
+  // Design: capture the recovery digest from the first successful anchor read
+  // of this runtime and inject it once. The capture happens before the first
+  // model call, so this runtime's own searches cannot masquerade as a recovered
+  // record; a fresh session has no sufficiency anchor and injects nothing.
   private recoveryDigest?: string;
   private recoveryDigestResolved = false;
   private recoveryDigestInjected = false;
@@ -392,8 +405,9 @@ export class MemoryPipeline {
     // turn (Option B) breaks #104 AC2; moving L1/L2 to the first turn (Option C)
     // loses the hot zone.
     // Stage-1 runs before Stage-2 so one message reads `user text ->
-    // [RAG Context] -> [Session Memory] -> [Research Recall]`, each tier
-    // independently budgeted (4000 / 4000 / 1500 chars).
+    // [RAG Context] -> [Recovery Digest] -> [Session Memory] ->
+    // [Research Recall]`; each tier is independently budgeted
+    // (4000 / 600 / 4000 / 1500 chars).
     // Stage 1: RAG injection — static adapters target the first user message,
     // dynamic adapters the latest; a leading system/tool message never swallows it.
     // #35: the adapter is selected by domain.rag.adapter (none / note-legacy / fts);
@@ -470,19 +484,18 @@ export class MemoryPipeline {
       // Read side of the Sufficiency Anchor (#189): capture the last anchor
       // once, before this runtime's first search can replace it.
       this.captureRecoveryDigest(anchors);
-      const summaryAnchors = anchors.filter(a => a.anchorType === "rolling_summary");
-      const summaryAnchor = summaryAnchors[summaryAnchors.length - 1];
-      const recallAnchors = anchors.filter(a => a.anchorType === "l2_recall");
-      const recallAnchor = recallAnchors[recallAnchors.length - 1];
+      const summaryAnchor = lastAnchorOfType(anchors, "rolling_summary");
+      const recallAnchor = lastAnchorOfType(anchors, "l2_recall");
 
       const injections: string[] = [];
-      // The digest is injected once per resumed conversation. When a caller
-      // hands back an already-injected history, the tag check keeps the single
-      // copy instead of appending a second one.
+      // The digest is injected once per resumed conversation. A history that
+      // already carries it (on any user turn) keeps the single copy instead of
+      // appending a second one.
       const injectRecovery = !!this.recoveryDigest && !this.recoveryDigestInjected;
       if (injectRecovery) {
-        const latestText = lastUserIdx >= 0 ? readMessageText(result[lastUserIdx])?.text ?? "" : "";
-        if (latestText.includes(RECOVERY_DIGEST_TAG)) {
+        const carried = result.some((message: any) =>
+          message?.role === "user" && (readMessageText(message)?.text ?? "").includes(RECOVERY_DIGEST_TAG));
+        if (carried) {
           this.recoveryDigestInjected = true;
         } else {
           injections.push(this.recoveryDigest!);
@@ -513,7 +526,12 @@ export class MemoryPipeline {
           if (injectRecovery) this.recoveryDigestInjected = true;
         }
       }
-    } catch {}
+    } catch {
+      // A failed anchor read must not be retried later in the same runtime: by
+      // then this runtime's own search could have written an anchor and been
+      // mistaken for a recovered record.
+      this.recoveryDigestResolved = true;
+    }
 
     return result;
   }
@@ -530,8 +548,7 @@ export class MemoryPipeline {
       let state = this.consolidationState;
       try {
         const anchors = await store.getAnchors(sessionId);
-        const stateAnchors = anchors.filter(a => a.anchorType === "consolidation_state");
-        const stateAnchor = stateAnchors[stateAnchors.length - 1];
+        const stateAnchor = lastAnchorOfType(anchors, "consolidation_state");
         if (stateAnchor?.payload) {
           state = stateAnchor.payload as ConsolidationState;
           this.consolidationState = state; // update in-memory cache
@@ -566,8 +583,7 @@ export class MemoryPipeline {
 
       // Get previous summary from anchor (shell I/O).
       const prevAnchors = await store.getAnchors(sessionId);
-      const prevSummaryAnchors = prevAnchors.filter(a => a.anchorType === "rolling_summary");
-      const prevSummaryAnchor = prevSummaryAnchors[prevSummaryAnchors.length - 1];
+      const prevSummaryAnchor = lastAnchorOfType(prevAnchors, "rolling_summary");
       const previousSummary = (prevSummaryAnchor?.payload as any)?.summary as string | undefined;
 
       // D5: fire-and-forget compression helper.
@@ -721,8 +737,7 @@ export class MemoryPipeline {
     if (this.recoveryDigestResolved) return;
     this.recoveryDigestResolved = true;
     try {
-      const sufficiency = anchors.filter(a => a.anchorType === "sufficiency");
-      const last = sufficiency[sufficiency.length - 1];
+      const last = lastAnchorOfType(anchors, "sufficiency");
       if (last) this.recoveryDigest = buildRecoveryDigest(last.payload);
     } catch { /* fail-open: a malformed anchor never blocks a turn */ }
   }

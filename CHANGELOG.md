@@ -13,7 +13,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Tests
 
-- `packages/kernel/test/recovery-digest.test.ts`：断言最终注入文本（prompt / transformContext 接缝）含全部字段与 UNKNOWN 声明；mint-new 零注入；只读最后一条锚；一次注入且历史回传不重复；query 超长截断标记；600 字符硬预算与病态 provider 列表的收窄形态；untrusted 标记与引号转义；`done.recovery` 可见。
+- `packages/kernel/test/recovery-digest.test.ts`：断言最终注入文本（prompt / transformContext 接缝）含全部字段与 UNKNOWN 声明；mint-new 零注入；只读最后一条锚；一次注入且历史回传（含更早 user 轮）不重复；query 超长截断标记；600 字符硬预算与病态 provider 列表的收窄形态；untrusted 标记与引号转义；摘要块不污染 RAG recall key；首次读锚失败不把本轮自己的锚当恢复；`done.recovery` 可见。
 
 ## Unreleased — #183: store 侧退出路径显式 teardown——F-16 根因定位 + macOS lane 恢复
 

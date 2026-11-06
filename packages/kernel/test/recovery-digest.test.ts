@@ -137,11 +137,13 @@ test("digest: a missing query cannot close the quote and forge a field", () => {
   assert.match(digest, /query="a' mode=evil verdict=evil"/);
 });
 
-test("digest: a non-object payload injects nothing", () => {
+test("digest: a non-object or query-less payload injects nothing", () => {
   assert.equal(buildRecoveryDigest(undefined), undefined);
   assert.equal(buildRecoveryDigest(null), undefined);
   assert.equal(buildRecoveryDigest("not-an-anchor"), undefined);
   assert.equal(buildRecoveryDigest([]), undefined);
+  assert.equal(buildRecoveryDigest({}), undefined);
+  assert.equal(buildRecoveryDigest({ query: "   " }), undefined);
 });
 
 // === Hot-zone injection ===
@@ -155,6 +157,25 @@ test("resume: the digest reaches the final injected user text (not just the stor
   assert.match(text, /query="rust vs go"/, "the previous query is in the model-facing text");
   assert.match(text, /tavily=3/, "provider counts are in the model-facing text");
   assert.match(text, /delivery status is UNKNOWN/, "the UNKNOWN statement is in the model-facing text");
+  assert.match(text, /provenance=untrusted/, "the model-facing text carries the untrusted label");
+});
+
+test("resume: the digest sits before Session Memory and Research Recall", async () => {
+  const { pipeline } = pipelineWith([
+    { anchorType: "sufficiency", payload: anchorPayload() },
+    { anchorType: "rolling_summary", payload: { summary: "summary text" } },
+    { anchorType: "l2_recall", payload: { hits: "recall text" } },
+  ]);
+  const out = await pipeline.inject([{ role: "user", content: "question" }]);
+  const text = textOf(out[0]);
+  const order = [
+    text.indexOf("question"),
+    text.indexOf(RECOVERY_DIGEST_TAG),
+    text.indexOf("[Session Memory]"),
+    text.indexOf("[Research Recall]"),
+  ];
+  assert.ok(order.every((at, i) => i === 0 || at > order[i - 1]),
+    "order: user text -> Recovery Digest -> Session Memory -> Research Recall");
 });
 
 test("resume: only the last sufficiency anchor is used", async () => {
@@ -188,6 +209,70 @@ test("one-shot: an already-injected history keeps exactly one copy", async () =>
   const first = await pipeline.inject([{ role: "user", content: "resume me" }]);
   const carried = await pipeline.inject(first);
   assert.equal(countTag(textOf(carried[0])), 1, "carried history is not duplicated");
+});
+
+test("one-shot: a digest carried on an earlier user turn is not copied onto a new turn", async () => {
+  const digest = buildRecoveryDigest(anchorPayload())!;
+  const { pipeline } = pipelineWith([{ anchorType: "sufficiency", payload: anchorPayload() }]);
+  const out = await pipeline.inject([
+    { role: "user", content: "previous turn\n\n" + digest },
+    { role: "assistant", content: "previous answer" },
+    { role: "user", content: "new turn" },
+  ]);
+  const allText = out.map((message) => textOf(message)).join("\n");
+  assert.equal(countTag(allText), 1, "the carried copy stays the only copy");
+  assert.ok(!textOf(out[2]).includes(RECOVERY_DIGEST_TAG), "the new turn gets no second copy");
+});
+
+test("ragQuery: the digest tag is stripped before recall", async () => {
+  const queries: string[] = [];
+  const store = {
+    getAnchors: async () => [],
+    saveAnchor: async () => {},
+    listPreferences: async () => [],
+    searchMemory: async (query: string) => { queries.push(query); return []; },
+    append: async () => {},
+  } as any;
+  const digest = buildRecoveryDigest(anchorPayload())!;
+  const pipeline = new MemoryPipeline({
+    store,
+    retriever,
+    domain: { ...domain, rag: { adapter: "fts" } },
+    model: {} as any,
+    streamFn: (() => {}) as any,
+    sessionId: "s-rag",
+  });
+  await pipeline.inject([{ role: "user", content: "real question\n\n" + digest }]);
+  assert.equal(queries.length, 1, "one recall per inject");
+  assert.equal(queries[0], "real question", "the injected digest is not part of the recall key");
+});
+
+test("fail-open: a failed first anchor read does not turn this run's own anchor into a recovery", async () => {
+  let reads = 0;
+  const store = {
+    getAnchors: async () => {
+      reads++;
+      if (reads === 1) throw new Error("store temporarily unavailable");
+      return [{ anchorType: "sufficiency", payload: anchorPayload() }];
+    },
+    saveAnchor: async () => {},
+    listPreferences: async () => [],
+    searchMemory: async () => [],
+    append: async () => {},
+  } as any;
+  const pipeline = new MemoryPipeline({
+    store,
+    retriever,
+    domain,
+    model: {} as any,
+    streamFn: (() => {}) as any,
+    sessionId: "s-fail-open",
+  });
+  const first = await pipeline.inject([{ role: "user", content: "turn one" }]);
+  assert.ok(!textOf(first[0]).includes(RECOVERY_DIGEST_TAG), "a failed read injects nothing");
+  const second = await pipeline.inject([{ role: "user", content: "turn two" }]);
+  assert.ok(!textOf(second[0]).includes(RECOVERY_DIGEST_TAG), "a later anchor is not mistaken for a recovery");
+  assert.equal(pipeline.getInjectedRecoveryDigest(), undefined);
 });
 
 test("resume: a block-shape user turn keeps the question and gets the digest", async () => {

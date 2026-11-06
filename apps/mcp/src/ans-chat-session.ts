@@ -17,6 +17,11 @@
 // Design: callers that deliberately thread one handle share its anchors; the
 // last write wins. Isolation is a different handle, and the store (not the
 // handle) is the principal boundary (#130).
+//
+// Design: every ans_chat call builds a fresh runtime with no carried message
+// history, so a threaded handle is a new recovery each call. The recovery
+// digest (#189) is injected once per call; that is the resume unit here, not
+// the handle's lifetime.
 import type { CompositionResult, SessionStorePort } from "@anysearch-cli/kernel";
 import { toBudgetCaps, type BudgetConfig } from "@anysearch-cli/store";
 
