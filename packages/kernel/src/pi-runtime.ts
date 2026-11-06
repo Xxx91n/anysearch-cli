@@ -2,9 +2,11 @@
 // decision 2: lives in packages/kernel.
 // decision 3: maps pi-agent-core 9 events to our 7 AgentEvent types.
 // decision 4: Domain 5-layer full consumption.
-// decision 5 (amended by #90/#103): token/USD budget metered via agent event
-// subscription (message_end usage accumulation, agent_end settle); USD comes
-// from pi-ai Usage.cost — no price table in TOML or kernel.
+// decision 5 (amended by #90/#103, #188): token/USD budget metered via agent
+// event subscription (message_end usage accumulation, agent_end settle). The
+// token dimension also reserves at agent_start — input occupancy + the output
+// static limit — and stops the run when the reserve is rejected. USD comes from
+// pi-ai Usage.cost — no price table in TOML or kernel, so USD stays settle-only.
 // decision 6: dual session (pi Agent memory + SqliteSessionStore FTS5 sync).
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
@@ -21,7 +23,7 @@ import {
   type RetrievalContent,
   type SourceTraceLabel,
 } from "@anysearch-cli/retriever";
-import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveUrlPolicy } from "@anysearch-cli/store";
+import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveOutputReserveTokens, resolveUrlPolicy } from "@anysearch-cli/store";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink } from "./ports";
 import type { AgentEvent } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
@@ -344,6 +346,48 @@ export function resolveContextOccupancy(lastUsageTokens: number, messages: any[]
   return Math.max(Number(lastUsageTokens) || 0, estimated);
 }
 
+// #188 (T9, #186 decisions 2/3/5): the input side of the pre-run token reserve.
+//
+// Reuse resolveContextOccupancy's provider-usage anchor when the context carries
+// one: `lastUsageTokens` is the most recent message_end totalTokens and
+// `messages` is the transcript handed to the run. When both are empty the run
+// is a cold start — which is the normal shape here, because every run builds a
+// fresh pi-agent-core Agent — so fall back to estimating the request that is
+// about to be sent (system prompt + user prompt). An estimate, not a historical
+// rolling average: #186 decision 2 rejects rolling averages as point forecasts.
+export function resolveReserveInputTokens(
+  lastUsageTokens: number,
+  messages: any[],
+  prompt: string,
+  systemPrompt: string,
+): { tokens: number; coldStart: boolean } {
+  const anchor = Number(lastUsageTokens) || 0;
+  const transcript = Array.isArray(messages) ? messages : [];
+  if (anchor > 0 || transcript.length > 0) {
+    return { tokens: resolveContextOccupancy(anchor, transcript), coldStart: false };
+  }
+  let tokens = 0;
+  try {
+    // estimateTokens only reads `role`/`content`; wrapping the system prompt in
+    // a user-shaped message makes it part of the same character estimate (a
+    // "system" role is not a pi-agent-core message role and would count as 0).
+    tokens += Math.ceil(Number(estimateContextTokens([{ role: "user", content: prompt }] as any)?.tokens) || 0);
+    if (systemPrompt) {
+      tokens += Math.ceil(Number(estimateContextTokens([{ role: "user", content: systemPrompt }] as any)?.tokens) || 0);
+    }
+  } catch { /* fail-open: the output reserve alone is still a valid lower bound */ }
+  return { tokens, coldStart: true };
+}
+
+// #188: reserve amount = input-side occupancy + output-side static limit.
+// Non-finite/negative inputs contribute 0 rather than poisoning the ledger
+// amount with NaN (better-sqlite3 would bind it as text/NULL).
+export function resolveTokenReserve(inputTokens: number, outputReserveTokens: number): number {
+  const input = Number.isFinite(inputTokens) ? Math.max(0, inputTokens) : 0;
+  const output = Number.isFinite(outputReserveTokens) ? Math.max(0, outputReserveTokens) : 0;
+  return input + output;
+}
+
 export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
   private readonly domainReloader: (() => unknown) | null;
@@ -415,6 +459,13 @@ export class PiAgentRuntime {
     const timeoutMs = (this.opts as any).timeoutMs ?? 300000;
     const startTime = Date.now();
     const timedOut = () => Date.now() - startTime > timeoutMs;
+
+    // #188: re-read the Active Domain at the run boundary so a live TOML edit
+    // (budget raise, output-reserve override) takes effect on the next run
+    // instead of waiting for a process restart. Fail-open: a bad/partial TOML
+    // keeps the last known good domain, mirroring beforeToolCall's reload.
+    const reloadedDomain = this.domainReloader ? this.domainReloader() : null;
+    if (reloadedDomain) (this.opts as { domain: DomainConfigPort }).domain = reloadedDomain as DomainConfigPort;
 
     const { domain, model, streamFn, store, ledger, sessionId } = this.opts;
 
@@ -585,16 +636,50 @@ export class PiAgentRuntime {
     // Design: runtime billing requires store + sessionId + ledger, the same
     // gate MemoryPipeline uses — a half-wired runtime cannot touch
     // budget_ledger, and both composition roots hand over the engine's ledger
-    // only after the session row exists (#178). The per-call result is still
-    // not a hard stop (runtime hard-stop is #188): a rejected reserve lets this
-    // run continue.
-    // Design: token/USD stay settle-only in v1 (#103, ruling #90) — nothing to
-    // reserve here.
-    // Design: a ledger fault at reserve is reported and treated as "not
-    // reserved" rather than aborting before agent.prompt — budget is fail-open
-    // for chat; per-search enforcement still throws its own budget error inside
-    // the search tool (CodeRabbit #200).
+    // only after the session row exists (#178).
     const billingWired = !!(store && sessionId && ledger);
+
+    // #188 (T9): reserve tokens at the agent_start boundary — before
+    // agent.prompt is invoked, so an exhausted budget stops the run instead of
+    // being discovered after a provider call. Formula = input-side occupancy
+    // (provider usage anchor when present, estimate on a cold start) + the
+    // output-side static limit ([budget].outputReserveTokens, default 12288).
+    //
+    // A rejected reserve is the hard stop from #186 decision 5: yield the
+    // structured error and return without starting the run — no done event, no
+    // settlement, no fabricated summary. Only this run stops; a later run after
+    // a TOML raise is unaffected (the domain reloader above re-reads the output
+    // reserve; the ledger row itself is refreshed at session registration on
+    // the next ans chat / ans_chat request).
+    //
+    // A ledger FAULT at reserve is not exhaustion (#200): report it and keep
+    // the run going unreserved, matching the fail-open budget contract.
+    let tokenReserved = 0;
+    if (billingWired) {
+      const inputOccupancy = resolveReserveInputTokens(0, (agent as any).state?.messages ?? [], input, systemPrompt);
+      const outputReserve = resolveOutputReserveTokens(domain.budget);
+      const reserveAmount = resolveTokenReserve(inputOccupancy.tokens, outputReserve);
+      try {
+        if (!ledger!.reserveTokens(sessionId!, reserveAmount)) {
+          yield {
+            type: "error",
+            message:
+              "Token budget exhausted: this run needs " + reserveAmount +
+              " tokens reserved (input " + inputOccupancy.tokens +
+              " + output limit " + outputReserve + ") but the session cap cannot cover it. " +
+              "The run was not started; raise [budget] tokenCap and retry.",
+          };
+          return;
+        }
+        tokenReserved = reserveAmount;
+      } catch (e) {
+        reportBudgetFault("token reserve", e);
+      }
+    }
+
+    // Per-call reserve stays a soft gate (#178): a rejection lets the run
+    // continue and the call is simply not billed. The token dimension above is
+    // the hard stop.
     let callReserved = false;
     if (billingWired) {
       try {
@@ -650,14 +735,13 @@ export class PiAgentRuntime {
           reportBudgetFault("call settlement", e);
         }
       }
-      // #103: token/USD v1 is settle-only (reserved 0) — the per-call dimension
-      // stays the sole reserve/enforcement point; token-cap reservation waits
-      // on a per-run estimate config: design settled in #186 (T9),
-      // implementation ticket #187 merged (budget foundation); #188 still open.
-      // T4 ruling #90 is the decision source, not an open ticket.
+      // #188: token settle stays "by actuals" — the run's reserved amount is
+      // released and the provider-reported total is recorded as spent, even
+      // when it exceeds the reservation. USD remains settle-only (#186
+      // decision 6: no price table, so no USD pre-charge).
       if (usageTotals.totalTokens > 0) {
         try {
-          ledger!.settleTokens(sessionId!, 0, usageTotals.totalTokens);
+          ledger!.settleTokens(sessionId!, tokenReserved, usageTotals.totalTokens);
         } catch (e) {
           reportBudgetFault("token settlement", e);
         }

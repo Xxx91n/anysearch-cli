@@ -3,7 +3,7 @@
 // ponytail: no test framework, assert-based demo.
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
-import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals, resetWiringWarnings, resolveContextOccupancy } from "../src/pi-runtime";
+import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals, resetWiringWarnings, resolveContextOccupancy, resolveReserveInputTokens, resolveTokenReserve } from "../src/pi-runtime";
 import { distillGap, adjudicateReuseCompress, consolidateState, FALLBACK_LOW_WATERMARK_TOKENS, resolveLowWatermark } from "../src/memory-pipeline";
 import { MemoryPipeline } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
@@ -609,7 +609,7 @@ function makeMockStreamFn(decision: string): any {
   // Acceptance 1: spent tokens = sum of LLM call usage (non-zero).
   assert(ledger.tokenSettles.length === 1, "#103: one token settle per run");
   assert(ledger.tokenSettles[0]?.actual === 150, "#103: settled tokens = usage sum (non-zero)");
-  assert(ledger.tokenSettles[0]?.reserved === 0, "#103: token dimension settle-only (reserved 0)");
+  assert((ledger.tokenSettles[0]?.reserved ?? 0) > 0, "#188: token dimension reserves before it settles");
   // Acceptance 2: spent USD from pi-ai cost.
   assert(ledger.usdSettles.length === 1, "#103: one USD settle per run");
   assert(Math.abs((ledger.usdSettles[0]?.actual ?? 0) - 0.003) < 1e-9, "#103: settled USD = pi-ai Usage.cost.total");
@@ -617,8 +617,8 @@ function makeMockStreamFn(decision: string): any {
   // Acceptance 4 (regression): per-call dimension unchanged — reserve 1 at start, settle 1 at end.
   assert(ledger.reservedCalls === 1, "#103: per-call reserve unchanged");
   assert(ledger.settledCalls === 1, "#103: per-call settle unchanged");
-  // v1 has no token/USD reserve calls at all.
-  assert(ledger.tokenReserves === 0 && ledger.usdReserves === 0, "#103: no token/USD reserve in v1");
+  // #188: one token reserve per run; USD stays settle-only (no price table).
+  assert(ledger.tokenReserves === 1 && ledger.usdReserves === 0, "#188: one token reserve per run, USD stays settle-only");
   // Acceptance 3: real token counts reach the done summary (was constant 0 via onResponse).
   const done = events.find(e => e.type === "done");
   assert(typeof done?.summary === "string" && done.summary.includes("120 in + 30 out"), "#103: done summary carries real token counts");
@@ -677,7 +677,9 @@ function makeMockStreamFn(decision: string): any {
   const store = new SqliteSessionStore(join(dir, "anysearch.db"));
   try {
     const session = await store.createSession("chat");
-    store.initBudget(session.id, { tokenCap: 10_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    // #188: the reserve is input occupancy + 12288 by default, so the cap must
+    // leave room for both before this settle-focused case can start.
+    store.initBudget(session.id, { tokenCap: 100_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
     const ledger = store.createBudgetLedger();
     const runtime = new PiAgentRuntime({
       retriever: new MockRetriever(),
@@ -714,7 +716,9 @@ function makeMockStreamFn(decision: string): any {
   const store = new SqliteSessionStore(join(dir, "anysearch.db"));
   try {
     const session = await store.createSession("chat");
-    store.initBudget(session.id, { tokenCap: 10_000, usdCap: 5, timeLimitMs: 60_000, callCap: 0 });
+    // #188: same reason as above — a token reserve that cannot fit the default
+    // output limit would hard-stop the run before the rejected-call case runs.
+    store.initBudget(session.id, { tokenCap: 100_000, usdCap: 5, timeLimitMs: 60_000, callCap: 0 });
     const ledger = store.createBudgetLedger();
     const runtime = new PiAgentRuntime({
       retriever: new MockRetriever(),
@@ -836,6 +840,163 @@ function makeMockStreamFn(decision: string): any {
   assert(ledger.usdSettles === 1, "#200: a later settlement attempt still runs after earlier faults");
   assert(/budget call settlement failed: calls locked/.test(captured), "#200: call settle fault is reported");
   assert(/budget token settlement failed: tokens locked/.test(captured), "#200: token settle fault is reported");
+}
+
+// === #188: token reserve — formula, cold-start fallback, hard stop ===
+
+// Pure helpers: reserve = input occupancy + output static limit; a cold start
+// estimates the request, while a provider usage anchor takes precedence.
+{
+  assert(resolveTokenReserve(100, 12288) === 12388, "#188: reserve formula = input + output limit");
+  assert(resolveTokenReserve(0, 12288) === 12288, "#188: output limit alone is a valid reserve");
+  assert(resolveTokenReserve(Number.NaN, -5) === 0, "#188: non-finite/negative inputs contribute 0");
+
+  const cold = resolveReserveInputTokens(0, [], "hello world", "You are a research assistant.");
+  assert(cold.coldStart, "#188: no anchor and no transcript = cold start");
+  assert(cold.tokens > 0, "#188: cold start estimates the system prompt + user prompt");
+
+  const anchored = resolveReserveInputTokens(5000, [], "hello", "sys");
+  assert(!anchored.coldStart && anchored.tokens === 5000, "#188: provider usage anchor wins when present");
+
+  const transcript = [{ role: "assistant", usage: { input: 1000, output: 20, totalTokens: 1020 }, content: [{ type: "text", text: "..." }] }];
+  const fromTranscript = resolveReserveInputTokens(0, transcript, "hello", "sys");
+  assert(!fromTranscript.coldStart && fromTranscript.tokens >= 1020, "#188: transcript usage anchor feeds occupancy");
+
+  const biggerPrompt = resolveReserveInputTokens(0, [], "x".repeat(4000), "");
+  assert(biggerPrompt.tokens > cold.tokens, "#188: cold-start estimate grows with the prompt");
+}
+
+// Default 12288 vs [budget].outputReserveTokens override, observed through the
+// ledger port the runtime actually calls.
+{
+  class TokenRecordingLedger implements BudgetLedgerPort {
+    reserves: number[] = [];
+    settles: Array<{ reserved: number; actual: number }> = [];
+    reserveCalls(): boolean { return true; }
+    settleCalls(): void { }
+    reserveTokens(_s: string, amount: number): boolean { this.reserves.push(amount); return true; }
+    settleTokens(_s: string, reserved: number, actual: number): void { this.settles.push({ reserved, actual }); }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { }
+  }
+
+  const prompt = "hello world";
+  const system = "You are a research assistant.";
+  const inputEstimate = resolveReserveInputTokens(0, [], prompt, system).tokens;
+
+  const runWith = async (budget?: DomainConfigPort["budget"]) => {
+    const ledger = new TokenRecordingLedger();
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: budget ? { ...mockDomain, budget } : mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store: noopStore(),
+      sessionId: "s-188-formula",
+      ledger,
+    });
+    const events: any[] = [];
+    for await (const ev of runtime.run(prompt)) events.push(ev);
+    return { ledger, events };
+  };
+
+  {
+    const { ledger, events } = await runWith({ outputReserveTokens: 4096 });
+    assert(events.some(e => e.type === "done"), "#188: run with a TOML output-reserve override completes");
+    assert(ledger.reserves.length === 1, "#188: one token reserve per run");
+    assert(ledger.reserves[0] === inputEstimate + 4096,
+      "#188: TOML output reserve override is used (got " + ledger.reserves[0] + ", want " + (inputEstimate + 4096) + ")");
+    assert(ledger.settles[0]?.reserved === inputEstimate + 4096, "#188: settle releases the reserved amount");
+    assert(ledger.settles[0]?.actual === 15, "#188: settle still records actual usage");
+  }
+  {
+    const { ledger } = await runWith(undefined);
+    assert(ledger.reserves[0] === inputEstimate + 12288,
+      "#188: default output reserve is 12288 (got " + ledger.reserves[0] + ")");
+  }
+}
+
+// A rejected reserve is a hard stop: one structured error, no done, no provider
+// request, no ledger spend. Raise the cap and the SAME runtime runs — only that
+// one run stopped.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-stop-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 100, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    let providerCalls = 0;
+    const stream = usageStream(10, 5, 15, 0.001);
+    const countingStream = (model: any, context: any, options?: any) => {
+      providerCalls++;
+      return stream(model, context, options);
+    };
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { tokenCap: 100, outputReserveTokens: 2048 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: countingStream,
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+
+    const stopped: any[] = [];
+    for await (const ev of runtime.run("hello")) stopped.push(ev);
+    const errors = stopped.filter(e => e.type === "error");
+    assert(errors.length === 1, "#188: exhausted reserve yields exactly one structured error event");
+    assert(/Token budget exhausted/.test(errors[0]?.message ?? ""), "#188: the error names the exhausted token budget");
+    assert(!stopped.some(e => e.type === "done"), "#188: hard stop emits no done event (no fabricated summary)");
+    assert(providerCalls === 0, "#188: agent.prompt is not started when the reserve is rejected");
+    const stoppedBalance = ledger.getBalance(session.id)!;
+    assert(stoppedBalance.reservedTokens === 0 && stoppedBalance.spentTokens === 0,
+      "#188: a rejected reserve records no token reservation or spend");
+    assert(stoppedBalance.reservedCalls === 0 && stoppedBalance.billableCalls === 0,
+      "#188: a hard-stopped run reserves/bills no call");
+
+    // Raise the cap (the next registration refresh) and rerun the same runtime.
+    store.initBudget(session.id, { tokenCap: 100_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const resumed: any[] = [];
+    for await (const ev of runtime.run("hello")) resumed.push(ev);
+    assert(resumed.some(e => e.type === "done"), "#188: only that run stops; a later run after a raise completes");
+    assert(providerCalls === 1, "#188: the resumed run starts the provider request");
+    const resumedBalance = ledger.getBalance(session.id)!;
+    assert(resumedBalance.spentTokens === 15 && resumedBalance.reservedTokens === 0,
+      "#188: the resumed run settles by actual usage and releases its reservation");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// Settle stays by actuals even when usage exceeds the reservation (output can
+// overshoot the static limit): the reservation is released, the real total is
+// recorded as spent.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-overshoot-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 100_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { outputReserveTokens: 0 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(20_000, 0, 20_000, 0.001),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    for await (const _ev of runtime.run("hello")) { /* drain */ }
+    const balance = ledger.getBalance(session.id)!;
+    assert(balance.reservedTokens === 0 && balance.spentTokens === 20_000,
+      "#188: settle by actuals releases the reservation even when actual > reserved");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
 }
 
 console.log("---");
@@ -1058,7 +1219,7 @@ console.log("---");
   const ragTokens = withRag.tokenSettles[0]?.actual ?? 0;
   const plainTokens = withoutRag.tokenSettles[0]?.actual ?? 0;
   assert(ragTokens > plainTokens, "#104+#103: RAG-injected turn meters more tokens than the plain turn");
-  assert(withRag.tokenSettles[0]?.reserved === 0, "#104+#103: token dimension still settle-only");
+  assert((withRag.tokenSettles[0]?.reserved ?? 0) > 0, "#188: token reserve is taken before the metered turn settles");
   assert((withRag.usdSettles[0]?.actual ?? 0) > 0, "#104+#103: USD still settled from pi-ai cost");
   assert(withRag.usdSettles[0]?.actual > (withoutRag.usdSettles[0]?.actual ?? 0),
     "#104+#103: injected context costs more USD");

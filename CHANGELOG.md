@@ -17,6 +17,22 @@ All notable changes to this project are recorded here. Format follows
 
 - `apps/mcp/test/failure-semantics.test.ts`：handler 异常（三个工具）、`ans_chat` 缺失配置与 runtime 错误、全员失败、部分失败元数据双通道、零结果成功、abstain、`query_knowledge` note，以及真实 stateless HTTP 传输上的 `isError` 传播与“unknown tool 仍是 JSON-RPC error”。
 - `apps/mcp/test/dual-era.test.ts`：离线 ans_chat 断言缺失配置的错误结果（stdio + HTTP）；`apps/mcp/test/vertical-guard.test.ts`：金文本不变，新增 `isError: true` 与无 `structuredContent` 断言。
+## Unreleased — #188: token 预算预留——agent_start 预留 + 硬停 + 冷启动回退（T9 落地）
+
+### Added
+
+- **run 开始前预留 token**（`packages/kernel/src/pi-runtime.ts`）：在 `agent_start` 边界（`agent.prompt` 之前）按「输入侧占用 + 输出侧静态上限」调用 `ledger.reserveTokens`。输入侧优先复用 `resolveContextOccupancy` 的 `message_end` 用量锚；没有锚也没有历史消息的冷启动，改为估算即将发出的 system prompt + 用户输入。输出侧缺省 12288，`[budget].outputReserveTokens` 可覆写（解析仍由 #187 的 `resolveOutputReserveTokens` 单点负责）。
+- **预留被拒 = 硬停**：`reserveTokens` 返回 false 时只 yield 一个结构化 `error` 事件，不启动当次 run 的 `agent.prompt`，不发 `done`、不伪造摘要，也不结算 token/USD 或 per-call。只停当次 run；下次 run（cap 提高后）照常执行。账本抛错仍按 #200 的 fail-open 处理：具名 stderr 报告，当次 run 不预留但继续。
+- **run 开始重读 Active Domain**：有 `domainTomlPath` 时，每次 run 开头走现有 mtime reloader，让 TOML 里的输出预留改动在下一轮生效；坏 TOML 保持上次可用配置。tokenCap 等账本 cap 仍按 #187 在会话注册位点刷新（下一次 `ans chat` / `ans_chat` 请求）。
+
+### Changed
+
+- **token 维度从 settle-only 变为预留-结算两段制**：run 结束时 `settleTokens` 先释放本次预留、再按 provider 实报总量计入 spent；实际用量可以高于预留（输出超静态上限时不反向追加）。USD 仍只结算不预留（没有价格表）。
+- **`GLOSSARY.md` Budget Ledger 词条**同步为预留-结算两段制。
+
+### Tests
+
+- `packages/kernel/test/pi-runtime.test.ts`：预留公式与冷启动回退/用量锚的纯函数断言；默认 12288 与 TOML 覆写经 ledger 端口观测；真实 `SqliteSessionStore` 下预留被拒时只有一个 error、无 done、`agent.prompt` 未启动、账本无 spend/reserved；提高 cap 后同一 runtime 可继续跑；实际用量超过预留时仍按实结算且 reserved 归零。既有 #178/#200 用例的 token cap 随预留语义上调，settle-by-actuals 断言保留。
 
 ## Unreleased — #178: PiAgentRuntime ledger 接线——token/USD 结算生产化（#36 承接）
 
