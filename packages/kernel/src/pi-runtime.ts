@@ -740,6 +740,7 @@ export class PiAgentRuntime {
     // healthy runs are later rejected as "exhausted". The normal path settles
     // with the provider-reported total; the finally fallback settles 0.
     let tokenSettled = false;
+    let settledTokens = 0;
     let callSettled = false;
     const settleTokenReserve = (actual: number): void => {
       if (!billingWired || tokenSettled) return;
@@ -747,10 +748,25 @@ export class PiAgentRuntime {
       if (tokenReserved <= 0 && actual <= 0) return;
       try {
         ledger!.settleTokens(sessionId!, tokenReserved, actual);
+        settledTokens = actual;
       } catch (e) {
         // A failed settle leaves the reservation behind; let the finally
         // fallback retry once instead of dropping the release for good.
         tokenSettled = false;
+        reportBudgetFault("token settlement", e);
+      }
+    };
+    // #188 (CodeRabbit): late usage from a stalled prompt is added as a delta
+    // after the reservation was already released, so an exiting process cannot
+    // leave reserved_tokens behind.
+    const settleTokenDelta = (finalActual: number): void => {
+      if (!billingWired) return;
+      const delta = Math.max(0, finalActual - settledTokens);
+      if (delta <= 0) return;
+      try {
+        ledger!.settleTokens(sessionId!, 0, delta);
+        settledTokens = finalActual;
+      } catch (e) {
         reportBudgetFault("token settlement", e);
       }
     };
@@ -889,9 +905,13 @@ export class PiAgentRuntime {
       if (promptStopped) {
         finalizeBudget();
       } else {
+        // Provider still running: release the reservation now so an exiting
+        // process cannot leave it behind, then add only the later delta when the
+        // prompt finally stops (best-effort if the store is already closed).
+        finalizeBudget();
         void promptPromise!.then(
-          () => finalizeBudget(),
-          () => finalizeBudget(),
+          () => settleTokenDelta(usageTotals.totalTokens),
+          () => settleTokenDelta(usageTotals.totalTokens),
         );
       }
     }

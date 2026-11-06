@@ -1166,11 +1166,16 @@ function makeMockStreamFn(decision: string): any {
     assert(Date.now() - started < 2500,
       "#188: closing a stalled run returns within the bounded wait");
     releaseStream();
-    await new Promise((r) => setTimeout(r, 100));
-    const balance = ledger.getBalance(session.id)!;
+    let balance = ledger.getBalance(session.id)!;
+    const deadline = Date.now() + 2000;
+    while (balance.spentTokens !== 15 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+      balance = ledger.getBalance(session.id)!;
+    }
     assert(balance.reservedTokens === 0 && balance.spentTokens === 15,
-      "#188: the late final usage still settles after the close");
-    assert(balance.billableCalls === 1, "#188: the late-settled run is billed once");
+      "#188: the reservation is released on close and the late usage is added as a delta");
+    assert(balance.billableCalls === 0,
+      "#188: a run closed before any usage releases the call reservation without billing it");
   } finally {
     store.close();
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
