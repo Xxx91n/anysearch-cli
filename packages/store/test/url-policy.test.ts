@@ -111,6 +111,13 @@ const future = Date.now() / 1000 + 2;
 utimesSync(tomlPath, future, future);
 const reloaded = rel();
 assert("reloader: changed mtime -> reloaded schema", reloaded === null ? false : (reloaded.sources.urlAllowlist ?? []).join(",") === "ok2.example.com");
+// #188: forceFirst returns the current file on the first probe even when the
+// mtime matches the construction snapshot (per-request runtime built after an
+// edit), then falls back to the normal unchanged -> null contract.
+const forcedRel = createDomainReloader(tomlPath, undefined, { forceFirst: true });
+assert("reloader: forceFirst returns the current schema on the first probe",
+  (forcedRel()?.sources.urlAllowlist ?? []).join(",") === "ok2.example.com");
+assert("reloader: forceFirst only forces the first probe", forcedRel() === null);
 // --- hostname format validation (fail-closed at load, D7 equal strictness) ---
 {
   let threw2 = "";

@@ -9,7 +9,7 @@ import { MemoryPipeline } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
 import { SqliteSessionStore } from "@anysearch-cli/store";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FusedEnvelope, SufficiencySignal } from "@anysearch-cli/retriever";
@@ -1060,7 +1060,9 @@ function makeMockStreamFn(decision: string): any {
 }
 
 // #188 review: closing the event stream early (CLI returns on the first error /
-// timeout, stdout EPIPE, MCP abort) must release the reservation too.
+// timeout, stdout EPIPE, MCP abort) must release the token and unused call
+// reservations. The stream is held open after the first text delta so the close
+// happens before the normal settle path runs.
 {
   const dir = mkdtempSync(join(tmpdir(), "ans-188-early-close-"));
   const store = new SqliteSessionStore(join(dir, "anysearch.db"));
@@ -1068,22 +1070,42 @@ function makeMockStreamFn(decision: string): any {
     const session = await store.createSession("chat");
     store.initBudget(session.id, { tokenCap: 6_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
     const ledger = store.createBudgetLedger();
+    const partial = {
+      role: "assistant", content: [{ type: "text", text: "" }], api: "test", provider: "test", model: "test-model",
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "stop", timestamp: Date.now(),
+    };
+    const finalMessage = { ...partial, content: [{ type: "text", text: "partial" }] };
+    let releaseStream!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseStream = resolve; });
+    const slowStream = (_m: any, _c: any) => ({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "start", partial };
+        yield { type: "text_delta", partial: finalMessage, delta: "partial" };
+        await gate;
+        yield { type: "done", message: finalMessage, partial: finalMessage };
+      },
+      result: async () => finalMessage,
+    });
     const runtime = new PiAgentRuntime({
       retriever: new MockRetriever(),
       domain: { ...mockDomain, budget: { outputReserveTokens: 2048 } },
       model: { id: "test-model", provider: "test" } as any,
-      streamFn: mockStreamFn,
+      streamFn: slowStream,
       store,
       sessionId: session.id,
       ledger,
     });
     const iterator = runtime.run("hello")[Symbol.asyncIterator]();
     const first = await iterator.next();
-    assert(!first.done, "#188: the run yields before it is closed");
+    assert(first.value?.type === "text", "#188: the run is suspended after streaming a token (before settle)");
     await iterator.return?.(undefined);
+    releaseStream();
     const balance = ledger.getBalance(session.id)!;
-    assert(balance.reservedTokens === 0,
-      "#188: early generator close releases the token reservation (no leak)");
+    assert(balance.reservedTokens === 0 && balance.spentTokens === 0,
+      "#188: early close releases the token reservation without spending it");
+    assert(balance.reservedCalls === 0 && balance.billableCalls === 0,
+      "#188: early close releases the unused call reservation without billing it");
   } finally {
     store.close();
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
@@ -1134,8 +1156,10 @@ function makeMockStreamFn(decision: string): any {
   assert(!/Token budget exhausted/.test(captured), "#188: a ledger fault is not confused with exhaustion");
 }
 
-// #188 AC2: a live TOML edit raises the ledger cap at the next run (run-boundary
-// reloader + optional initBudget on the ledger port), not only after a restart.
+// #188 AC2: a live TOML edit raises the ledger cap at the next run. Covers both
+// production shapes: (a) a runtime built AFTER the edit (the MCP per-request
+// host keeps a startup config snapshot; forceFirst loads the current file) and
+// (b) a later edit while the same runtime is alive (mtime diff).
 {
   const dir = mkdtempSync(join(tmpdir(), "ans-188-live-cap-"));
   const store = new SqliteSessionStore(join(dir, "anysearch.db"));
@@ -1156,10 +1180,20 @@ function makeMockStreamFn(decision: string): any {
       'outputReserveTokens = 2048',
       '',
     ].join("\n");
-    writeFileSync(tomlPath, toml(100));
+    let stamp = Date.now() / 1000;
+    const writeToml = (cap: number) => {
+      stamp += 2;
+      writeFileSync(tomlPath, toml(cap));
+      utimesSync(tomlPath, stamp, stamp);
+    };
+
+    writeToml(100);
     const session = await store.createSession("chat");
     store.initBudget(session.id, { tokenCap: 100, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
     const ledger = store.createBudgetLedger();
+
+    // (a) MCP shape: the host snapshot says 100, the file already says 100000.
+    writeToml(100_000);
     const runtime = new PiAgentRuntime({
       retriever: new MockRetriever(),
       domain: { ...mockDomain, budget: { tokenCap: 100, outputReserveTokens: 2048 } },
@@ -1170,20 +1204,27 @@ function makeMockStreamFn(decision: string): any {
       sessionId: session.id,
       ledger,
     });
+    const first: any[] = [];
+    for await (const ev of runtime.run("hello")) first.push(ev);
+    assert(first.some(e => e.type === "done"),
+      "#188: a runtime built after the edit reads the current cap on its first run");
+    const afterFirst = ledger.getBalance(session.id)!;
+    assert(afterFirst.tokenCap === 100_000, "#188: the first run refreshed the ledger cap from the file");
+    assert(afterFirst.spentTokens === 15 && afterFirst.reservedTokens === 0,
+      "#188: the first run settles by actual usage");
 
-    const blocked: any[] = [];
-    for await (const ev of runtime.run("hello")) blocked.push(ev);
-    assert(blocked.some(e => e.type === "error"), "#188: the low cap hard-stops the first run");
+    // (b) same runtime: a later lower hard-stops, a later raise runs again.
+    writeToml(100);
+    const lowered: any[] = [];
+    for await (const ev of runtime.run("hello")) lowered.push(ev);
+    assert(lowered.some(e => e.type === "error"), "#188: lowering the cap hard-stops the next run");
 
-    // Live TOML raise; the next run re-reads it and refreshes the ledger row.
-    writeFileSync(tomlPath, toml(100_000));
-    await new Promise((r) => setTimeout(r, 20));
-    const resumed: any[] = [];
-    for await (const ev of runtime.run("hello")) resumed.push(ev);
-    assert(resumed.some(e => e.type === "done"), "#188: a live cap raise takes effect on the next run");
-    const balance = ledger.getBalance(session.id)!;
-    assert(balance.tokenCap === 100_000, "#188: the run-boundary reload refreshed the ledger cap");
-    assert(balance.spentTokens === 15 && balance.reservedTokens === 0,
+    writeToml(100_000);
+    const raised: any[] = [];
+    for await (const ev of runtime.run("hello")) raised.push(ev);
+    assert(raised.some(e => e.type === "done"), "#188: raising the cap again lets the next run through");
+    const afterRaised = ledger.getBalance(session.id)!;
+    assert(afterRaised.tokenCap === 100_000 && afterRaised.spentTokens === 30 && afterRaised.reservedTokens === 0,
       "#188: the raised-cap run settles by actual usage");
   } finally {
     store.close();

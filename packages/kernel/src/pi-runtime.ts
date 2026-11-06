@@ -402,7 +402,7 @@ export class PiAgentRuntime {
   private readonly scopedRetriever: RetrieverPort;
 
   constructor(opts: PiAgentRuntimeOptions) {
-    this.domainReloader = opts.domainTomlPath ? createDomainReloader(opts.domainTomlPath) : null;
+    this.domainReloader = opts.domainTomlPath ? createDomainReloader(opts.domainTomlPath, undefined, { forceFirst: true }) : null;
     // acceptance-4: the override switch is a strict enum at EVERY runtime
     // (server, hook, kernel), not just the plugin server. Misset -> throw at startup.
     parseEnvOverrideSwitch(process.env[ENV_ALLOW_OVERRIDE]);
@@ -666,9 +666,8 @@ export class PiAgentRuntime {
     // A rejected reserve is the hard stop from #186 decision 5: yield the
     // structured error and return without starting the run — no done event, no
     // settlement, no fabricated summary. Only this run stops; a later run after
-    // a TOML raise is unaffected (the domain reloader above re-reads the output
-    // reserve; the ledger row itself is refreshed at session registration on
-    // the next ans chat / ans_chat request).
+    // a TOML raise is unaffected — the run-boundary reloader re-reads the output
+    // reserve and refreshes the ledger caps from the same file.
     //
     // A ledger FAULT at reserve is not exhaustion (#200): report it and keep
     // the run going unreserved, matching the fail-open budget contract.
@@ -714,6 +713,7 @@ export class PiAgentRuntime {
     // healthy runs are later rejected as "exhausted". The normal path settles
     // with the provider-reported total; the finally fallback settles 0.
     let tokenSettled = false;
+    let callSettled = false;
     const settleTokenReserve = (actual: number): void => {
       if (!billingWired || tokenSettled) return;
       tokenSettled = true;
@@ -721,6 +721,9 @@ export class PiAgentRuntime {
       try {
         ledger!.settleTokens(sessionId!, tokenReserved, actual);
       } catch (e) {
+        // A failed settle leaves the reservation behind; let the finally
+        // fallback retry once instead of dropping the release for good.
+        tokenSettled = false;
         reportBudgetFault("token settlement", e);
       }
     };
@@ -766,6 +769,7 @@ export class PiAgentRuntime {
         if (callReserved) {
           try {
             ledger!.settleCalls(sessionId!, 1, 1);
+            callSettled = true;
           } catch (e) {
             reportBudgetFault("call settlement", e);
           }
@@ -827,8 +831,16 @@ export class PiAgentRuntime {
         };
       }
     } finally {
-      // Early close / throw: release whatever the normal path did not settle.
-      settleTokenReserve(0);
+      // Early close / throw: settle with the usage observed so far and release
+      // an unused per-call reservation without billing it.
+      settleTokenReserve(usageTotals.totalTokens);
+      if (billingWired && callReserved && !callSettled) {
+        try {
+          ledger!.settleCalls(sessionId!, 1, 0);
+        } catch (e) {
+          reportBudgetFault("call settlement", e);
+        }
+      }
     }
   }
 
