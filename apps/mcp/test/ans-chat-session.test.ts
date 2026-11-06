@@ -41,8 +41,18 @@ function assert(cond: boolean, msg: string) {
   }
 }
 
-function engineWith(store: unknown, config?: CompositionResult["config"]): CompositionResult {
-  return { retriever: {}, store, observation: {}, ...(config ? { config } : {}) } as unknown as CompositionResult;
+function engineWith(
+  store: unknown,
+  config?: CompositionResult["config"],
+  ledger?: CompositionResult["ledger"],
+): CompositionResult {
+  return {
+    retriever: {},
+    store,
+    observation: {},
+    ...(config ? { config } : {}),
+    ...(ledger ? { ledger } : {}),
+  } as unknown as CompositionResult;
 }
 
 async function main() {
@@ -58,9 +68,13 @@ async function main() {
       },
       ensureSession: async () => {},
     };
-    const wiring = await resolveAnsChatSession(engineWith(store));
+    const ledger = {} as CompositionResult["ledger"];
+    const wiring = await resolveAnsChatSession(engineWith(store, undefined, ledger));
     assert(wiring.sessionId === "mcp-mint-0001", "mint: returns the created session id");
     assert(wiring.store === store, "mint: returns the same store handle");
+    // #178: the ledger rides with the registered session, so the tool hands
+    // PiAgentRuntime the engine's own instance.
+    assert(wiring.ledger === ledger, "#178: mint path returns the engine ledger");
     assert(calls.length === 1 && calls[0] === "mcp", "mint: createSession called once with domain mcp");
   }
 
@@ -98,8 +112,10 @@ async function main() {
         ensured.push([id, domain]);
       },
     };
-    const wiring = await resolveAnsChatSession(engineWith(store), "client-handle-01");
+    const ledger = {} as CompositionResult["ledger"];
+    const wiring = await resolveAnsChatSession(engineWith(store, undefined, ledger), "client-handle-01");
     assert(wiring.sessionId === "client-handle-01", "handle: echoed back unchanged");
+    assert(wiring.ledger === ledger, "#178: threaded-handle path returns the engine ledger");
     assert(
       ensured.length === 1 && ensured[0][0] === "client-handle-01" && ensured[0][1] === "mcp",
       "handle: ensureSession(id, mcp) runs before reuse",
@@ -176,14 +192,42 @@ async function main() {
         throw new Error("FK target rejected");
       },
     };
-    const wiring = await resolveAnsChatSession(engineWith(store), "unregistered-01");
+    const wiring = await resolveAnsChatSession(
+      engineWith(store, undefined, {} as CompositionResult["ledger"]),
+      "unregistered-01",
+    );
     assert(wiring.sessionId === undefined, "registration failure: no memory wiring");
+    // #178: no session row -> no ledger either; settlement must not target it.
+    assert(wiring.ledger === undefined, "registration failure: no ledger handed to the runtime");
   }
 
   // ---- 5c. store without the seam: fail-open ----
   {
     const wiring = await resolveAnsChatSession(engineWith({ createSession: async () => ({ id: "x-000000" }) }));
     assert(wiring.sessionId === undefined, "store without ensureSession: no memory wiring");
+  }
+
+  // ---- 5d. #200: failed budget setup omits the ledger, memory stays wired ----
+  {
+    const store = {
+      ensureSession: async () => {},
+      createSession: async (domain: string) => ({ id: "budget-broken-01", domain }),
+      initBudget: () => { throw new Error("budget row locked"); },
+    };
+    const config: CompositionResult["config"] = {
+      sources: { enabled: [] },
+      prompts: [],
+      skills: { active: [] },
+      hooks: { toolWhitelist: [] },
+      rag: { adapter: "none" },
+      budget: { callCap: 1 },
+    };
+    const ledger = {} as CompositionResult["ledger"];
+    const byHandle = await resolveAnsChatSession(engineWith(store, config, ledger), "budget-broken-01");
+    assert(byHandle.sessionId === "budget-broken-01", "#200: budget failure keeps the supplied handle");
+    assert(byHandle.ledger === undefined, "#200: supplied-handle path omits ledger on budget failure");
+    const minted = await resolveAnsChatSession(engineWith(store, config, ledger));
+    assert(!!minted.sessionId && minted.ledger === undefined, "#200: mint path omits ledger on budget failure");
   }
 
   // ---- 6. real store: anchor written under the handle survives the round trip ----

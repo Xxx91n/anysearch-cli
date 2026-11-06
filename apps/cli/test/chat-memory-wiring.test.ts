@@ -34,11 +34,16 @@ async function main() {
     // 1. Both halves come back, and the sessions row exists before any child
     //    write — resume_anchors has an FK to sessions(id) under foreign_keys = ON.
     const writer = new SqliteSessionStore(dbPath);
+    const writerLedger = writer.createBudgetLedger();
     let wiring: ChatMemoryWiring;
     try {
-      wiring = await wireChatMemory(writer, "default", { tokenCap: 1234, callCap: 7 });
+      wiring = await wireChatMemory(writer, "default", { tokenCap: 1234, callCap: 7 }, writerLedger);
       check(Boolean(wiring.store) && typeof wiring.sessionId === "string" && wiring.sessionId.length > 0,
         "wireChatMemory returns store + a non-empty sessionId");
+      // #178: the ledger rides with the successful registration, so the runtime
+      // receives the engine's own instance instead of a dead port.
+      check(wiring.ledger === writerLedger,
+        "#178: successful wiring hands PiAgentRuntime the engine ledger instance");
       // #187: [budget] is registered at the same session-registration point.
       const ledger = new BudgetLedger((writer as any).db);
       const budgetRow = ledger.getBalance(wiring.sessionId!);
@@ -84,14 +89,37 @@ async function main() {
     let captured = "";
     process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
     let failedWiring: ChatMemoryWiring;
+    const brokenLedger = { reserveCalls: () => true } as any;
     try {
-      failedWiring = await wireChatMemory(broken, "default");
+      failedWiring = await wireChatMemory(broken, "default", undefined, brokenLedger);
     } finally {
       process.stderr.write = origWrite;
     }
-    check(failedWiring.store === undefined && failedWiring.sessionId === undefined,
-      "a failed ensureSession yields empty wiring (the runtime gate stays closed)");
+    check(failedWiring.store === undefined && failedWiring.sessionId === undefined && failedWiring.ledger === undefined,
+      "a failed ensureSession yields empty wiring, including no ledger (the runtime gate stays closed)");
     check(/session row registration failed/.test(captured), "a failed registration is reported, not swallowed");
+
+    // 3b. #200: a failed budget setup keeps memory wired but omits the ledger,
+    //     so a reserve fault cannot abort agent.prompt.
+    const budgetBroken = {
+      ensureSession: async () => {},
+      initBudget: () => { throw new Error("budget row locked"); },
+    } as any;
+    const budgetLedger = { reserveCalls: () => true } as any;
+    let budgetWiring: ChatMemoryWiring;
+    const origWrite2 = process.stderr.write;
+    let budgetCaptured = "";
+    process.stderr.write = ((chunk: unknown) => { budgetCaptured += String(chunk); return true; }) as typeof process.stderr.write;
+    try {
+      budgetWiring = await wireChatMemory(budgetBroken, "default", { callCap: 1 }, budgetLedger);
+    } finally {
+      process.stderr.write = origWrite2;
+    }
+    check(budgetWiring.store === budgetBroken && typeof budgetWiring.sessionId === "string",
+      "#200: a failed budget setup keeps the memory wiring");
+    check(budgetWiring.ledger === undefined,
+      "#200: a failed budget setup omits the ledger (reserve cannot abort chat)");
+    check(/budget sync failed/.test(budgetCaptured), "#200: a failed budget setup is reported");
 
     // 4. An empty anchor id never reaches the store (no bogus sessions row).
     const origEnv = process.env.ANS_SESSION_ID;

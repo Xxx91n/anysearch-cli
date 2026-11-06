@@ -5,11 +5,17 @@
 // CLI package is CommonJS — importing chat.ts from a test breaks module
 // resolution before any assertion runs.
 import { readSessionId, toBudgetCaps, type BudgetConfig } from "@anysearch-cli/store";
-import type { SessionStorePort } from "@anysearch-cli/kernel";
+import type { BudgetLedgerPort, SessionStorePort } from "@anysearch-cli/kernel";
 
 export interface ChatMemoryWiring {
   store?: SessionStorePort;
   sessionId?: string;
+  // Design: the ledger travels only with a registered session row whose budget
+  // setup succeeded — the runtime budgets on `store && sessionId && ledger`, so
+  // neither a failed registration nor a failed budget setup may leave a ledger
+  // that could settle against an absent row or abort `agent.prompt` (#178,
+  // CodeRabbit #200).
+  ledger?: BudgetLedgerPort;
 }
 
 /**
@@ -22,11 +28,18 @@ export interface ChatMemoryWiring {
  * outside createSession(), the row its FK targets need
  * (messages / resume_anchors -> sessions(id)) is registered here first.
  *
- * Returns both halves only when registration succeeded; an empty object leaves
- * the runtime's `store && sessionId` gate closed, and the runtime then names
- * the gap itself.
+ * Returns store + sessionId (and #178's ledger) only when registration and
+ * budget setup succeeded; an empty object leaves the runtime's
+ * `store && sessionId` gate closed, and the runtime then names the gap itself.
+ * A failed budget setup omits the ledger even though memory stays wired, so an
+ * unusable ledger cannot abort `agent.prompt` (CodeRabbit #200).
  */
-export async function wireChatMemory(store: SessionStorePort, domain: string, budget?: BudgetConfig): Promise<ChatMemoryWiring> {
+export async function wireChatMemory(
+  store: SessionStorePort,
+  domain: string,
+  budget?: BudgetConfig,
+  ledger?: BudgetLedgerPort,
+): Promise<ChatMemoryWiring> {
   const sessionId = readSessionId();
   // readSessionId is fail-open by contract; an empty id must never reach the
   // store (it would create a bogus sessions row and disable resume).
@@ -42,6 +55,7 @@ export async function wireChatMemory(store: SessionStorePort, domain: string, bu
     // that never had [budget] gets no row -> unmetered (pass). Known
     // limitation: the domain is sampled once here, so switching domains
     // mid-session does not re-initialize caps.
+    let budgetReady = true;
     const syncBudget = budget ? store.initBudget : store.clearBudgetCaps;
     if (syncBudget) {
       try {
@@ -52,6 +66,7 @@ export async function wireChatMemory(store: SessionStorePort, domain: string, bu
         // either. No row (or unlimited caps) is the safe unmetered default
         // rather than an accidental rejection. stderr itself is guarded for
         // the same reason (a closed pipe must not reject the wiring).
+        budgetReady = false;
         try {
           process.stderr.write(
             "[warn] budget sync failed for " + sessionId + ": " +
@@ -59,8 +74,16 @@ export async function wireChatMemory(store: SessionStorePort, domain: string, bu
           );
         } catch { /* stderr unavailable */ }
       }
+    } else if (budget) {
+      // A declared [budget] whose store cannot initialize caps is not a usable
+      // budget wiring: omit the ledger so reserve/settle cannot throw into the
+      // chat before agent.prompt (CodeRabbit #200).
+      budgetReady = false;
+      try {
+        process.stderr.write("[warn] session store lacks initBudget — continuing unmetered\n");
+      } catch { /* stderr unavailable */ }
     }
-    return { store, sessionId };
+    return { store, sessionId, ledger: budgetReady ? ledger : undefined };
   } catch (e: any) {
     try {
       process.stderr.write(

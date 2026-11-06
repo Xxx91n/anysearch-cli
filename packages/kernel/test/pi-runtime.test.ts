@@ -36,6 +36,46 @@ class MockRetriever implements RetrieverPort {
   }
 }
 
+// #178: a session store that satisfies the runtime's memory wiring while doing
+// nothing. Billing needs `store && sessionId && ledger`, so ledger-focused
+// cases pass this to keep the gate open without touching disk.
+function noopStore(): any {
+  return {
+    getAnchors: () => [],
+    saveAnchor: () => Promise.resolve(),
+    createSession: (d: string) => ({ id: "s-noop", domain: d, createdAt: "" }),
+    ensureSession: () => Promise.resolve(),
+    append: () => Promise.resolve(),
+    searchFts5: () => [],
+    searchMemory: () => Promise.resolve([]),
+    searchMemoryMulti: () => Promise.resolve([]),
+    saveResults: () => Promise.resolve(),
+    listPreferences: () => [],
+    close: () => {},
+  };
+}
+
+// #178: one-shot provider stream reporting the given usage/cost. The settle
+// cases share this fixture so their assertions differ only in what they prove.
+function usageStream(input: number, output: number, totalTokens: number, costUsd: number) {
+  const finalMessage = {
+    role: "assistant",
+    content: [{ type: "text", text: "ok" }],
+    api: "test", provider: "test", model: "test-model",
+    usage: {
+      input, output, cacheRead: Math.max(0, totalTokens - input - output), cacheWrite: 0, totalTokens,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: costUsd },
+    },
+    stopReason: "stop", timestamp: Date.now(),
+  };
+  return (_model: any, _context: any, _options?: any) => ({
+    async *[Symbol.asyncIterator]() {
+      yield { type: "done", message: finalMessage, partial: finalMessage };
+    },
+    result: async () => finalMessage,
+  });
+}
+
 // Mock domain with 5 layers.
 const mockDomain: DomainConfigPort = {
   sources: { enabled: ["tavily", "exa"] },
@@ -548,11 +588,16 @@ function makeMockStreamFn(decision: string): any {
   });
 
   const ledger = new RecordingLedger();
+  // #178: billing is gated on the same `store && sessionId` pair the memory
+  // wiring uses, plus the ledger. The mock keeps the run's background memory
+  // writes as no-ops.
+  const store = noopStore();
   const runtime = new PiAgentRuntime({
     retriever: new MockRetriever(),
     domain: mockDomain,
     model: { id: "test-model", provider: "test" } as any,
     streamFn: usageStreamFn,
+    store,
     ledger,
     sessionId: "s-103",
   });
@@ -577,6 +622,11 @@ function makeMockStreamFn(decision: string): any {
   // Acceptance 3: real token counts reach the done summary (was constant 0 via onResponse).
   const done = events.find(e => e.type === "done");
   assert(typeof done?.summary === "string" && done.summary.includes("120 in + 30 out"), "#103: done summary carries real token counts");
+  // #178: the summary's total is the exact figure settled into the ledger.
+  assert(typeof done?.summary === "string" && done.summary.includes("= 150 total"),
+    "#178: done summary total equals the settled token amount");
+  assert(done.summary.includes("= " + ledger.tokenSettles[0]?.actual + " total"),
+    "#178: done summary and ledger settlement agree");
 }
 
 // Zero-usage run: no token/USD settles written (no pointless ledger rows).
@@ -609,12 +659,183 @@ function makeMockStreamFn(decision: string): any {
     domain: mockDomain,
     model: { id: "test-model", provider: "test" } as any,
     streamFn: zeroStreamFn,
+    store: noopStore(),
     ledger,
     sessionId: "s-103-zero",
   });
   for await (const _ev of runtime.run("hello")) { /* drain */ }
   assert(ledger.tokenSettles === 0, "#103: zero-usage run writes no token settle");
   assert(ledger.usdSettles === 0, "#103: zero-usage run writes no USD settle");
+}
+
+// #178: production-shaped settlement — real SqliteSessionStore, the ledger the
+// composition root exposes (same connection), and the store+session pair the
+// CLI/MCP wiring hands the runtime. The assertion is on the durable row, not a
+// mock call, so a missing wiring would leave spent_tokens/spent_usd at 0.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-178-runtime-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 10_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(120, 30, 157, 0.003),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const events: any[] = [];
+    for await (const ev of runtime.run("hello")) events.push(ev);
+
+    const balance = ledger.getBalance(session.id)!;
+    assert(balance.spentTokens === 157, "#178: runtime settles provider-reported total tokens into the ledger row");
+    assert(Math.abs(balance.spentUsd - 0.003) < 1e-9, "#178: runtime settles pi-ai USD cost into the ledger row");
+    assert(balance.billableCalls === 1 && balance.reservedCalls === 0, "#178: per-call reserve→settle balances");
+    const done = events.find(e => e.type === "done");
+    assert(typeof done?.summary === "string" && done.summary.includes("= 157 total"),
+      "#178: done summary carries the settled total");
+    assert(done.summary.includes(String(balance.spentTokens)),
+      "#178: done summary and durable ledger agree on the token total");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #178: a rejected per-call reserve is not settled as a billable call. Token/
+// USD are settlement-of-actuals and still record what the run really used
+// (runtime hard-stop belongs to #188).
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-178-rejected-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 10_000, usdCap: 5, timeLimitMs: 60_000, callCap: 0 });
+    const ledger = store.createBudgetLedger();
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    for await (const _ev of runtime.run("hello")) { /* drain */ }
+
+    const balance = ledger.getBalance(session.id)!;
+    assert(balance.reservedCalls === 0 && balance.billableCalls === 0,
+      "#178: a rejected reserve is not recorded as a billable call");
+    assert(balance.spentTokens === 15, "#178: token actuals still settle after a rejected call reserve");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #178: the ledger alone does not open the billing gate; the store and a
+// registered session id are required, mirroring the memory-wiring contract.
+{
+  class SilentLedger implements BudgetLedgerPort {
+    reserves = 0; callSettles = 0; tokenSettles = 0; usdSettles = 0;
+    reserveCalls(): boolean { this.reserves++; return true; }
+    settleCalls(): void { this.callSettles++; }
+    reserveTokens(): boolean { return true; }
+    settleTokens(): void { this.tokenSettles++; }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { this.usdSettles++; }
+  }
+  const ledger = new SilentLedger();
+  const runtime = new PiAgentRuntime({
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test-model", provider: "test" } as any,
+    streamFn: usageStream(10, 5, 15, 0.001),
+    ledger,
+    sessionId: "s-without-store",
+  });
+  for await (const _ev of runtime.run("hello")) { /* drain */ }
+  assert(
+    ledger.reserves === 0 && ledger.callSettles === 0 && ledger.tokenSettles === 0 && ledger.usdSettles === 0,
+    "#178: ledger without a store+session keeps the billing gate closed",
+  );
+}
+
+// #200: a ledger fault at reserve is reported, not fatal — the run still
+// completes and the done event is delivered.
+{
+  class ReserveFaultLedger implements BudgetLedgerPort {
+    reserveCalls(): boolean { throw new Error("database is locked"); }
+    settleCalls(): void { }
+    reserveTokens(): boolean { return true; }
+    settleTokens(): void { }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { }
+  }
+  const ledger = new ReserveFaultLedger();
+  const origWrite = process.stderr.write;
+  let captured = "";
+  const events: any[] = [];
+  process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+  try {
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store: noopStore(),
+      sessionId: "s-reserve-fault",
+      ledger,
+    });
+    for await (const ev of runtime.run("hello")) events.push(ev);
+  } finally {
+    process.stderr.write = origWrite;
+  }
+  assert(events.some(e => e.type === "done"), "#200: reserve fault still yields done");
+  assert(!events.some(e => e.type === "error"), "#200: reserve fault is not surfaced as an agent error");
+  assert(/budget reserve failed: database is locked/.test(captured), "#200: reserve fault is reported on stderr");
+}
+
+// #200: a settlement fault is reported and does not stop later settlement
+// attempts, message synchronization, or the final done event.
+{
+  class SettleFaultLedger implements BudgetLedgerPort {
+    usdSettles = 0;
+    reserveCalls(): boolean { return true; }
+    settleCalls(): void { throw new Error("calls locked"); }
+    reserveTokens(): boolean { return true; }
+    settleTokens(): void { throw new Error("tokens locked"); }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { this.usdSettles++; }
+  }
+  const ledger = new SettleFaultLedger();
+  const origWrite = process.stderr.write;
+  let captured = "";
+  const events: any[] = [];
+  process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+  try {
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store: noopStore(),
+      sessionId: "s-settle-fault",
+      ledger,
+    });
+    for await (const ev of runtime.run("hello")) events.push(ev);
+  } finally {
+    process.stderr.write = origWrite;
+  }
+  assert(events.some(e => e.type === "done"), "#200: settle faults still yield done");
+  assert(!events.some(e => e.type === "error"), "#200: settle faults are not surfaced as agent errors");
+  assert(ledger.usdSettles === 1, "#200: a later settlement attempt still runs after earlier faults");
+  assert(/budget call settlement failed: calls locked/.test(captured), "#200: call settle fault is reported");
+  assert(/budget token settlement failed: tokens locked/.test(captured), "#200: token settle fault is reported");
 }
 
 console.log("---");
