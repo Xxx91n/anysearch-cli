@@ -125,19 +125,20 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
 | T0 `<user_preferences>` | 会话级静态 | **首条** user 消息前缀 | — | 1500 chars / 200 行 |
 | `note`（含 `none` + 残留 `config.note`） | 会话级静态 | **首条** user 消息末尾 | — | 原样注入（保持 #104 AC2 逐字节兼容） |
 | `fts`（及后续查询型 `RagAdapterPort`） | 每轮动态 | **最新** user 消息末尾（热区） | 注入前**最新** user 原文前 `400` chars | 整块 `≤ 4000` chars（`RAG_BLOCK_MAX_CHARS`） |
+| Stage-2 `Recovery Digest` | 每次恢复一次 | **最新** user 消息末尾（热区） | — | 整块 `≤ 600` chars（`RECOVERY_DIGEST_MAX_CHARS`，含标签与截断标记） |
 | Stage-2 `L1 rolling_summary` | 每轮动态 | **最新** user 消息末尾（热区） | — | 摘要载荷 `≤ 4000` chars（另带 `[Session Memory] ` 前缀） |
 | Stage-2 `L2 l2_recall` | 每轮动态 | **最新** user 消息末尾（热区） | 冷路径 `rewriteQuery` | 召回载荷 `≤ 1500` chars（另带 `[Research Recall] ` 前缀） |
 
 配套细则（#131 选定）：
 
 - **Query 源**：动态 RAG 的 `ragQuery` 取**注入前最新 user 消息原始文本**前 `RAG_QUERY_MAX_CHARS`（400）字符，避免多轮对话继续搜第 1 轮旧问题，也避免已注入标签污染检索词；热路径保持零 LLM 调用，跨轮指代扩展继续归异步冷路径 `L2`。
-- **同条最新 user 消息内部顺序**：`用户原始提问 → [RAG Context] → [Session Memory] → [Research Recall]`。
-- **分项独立预算**：各层独立截断、不互抢配额（动态 RAG 整块 `≤ 4000` chars、`L1` 载荷 `≤ 4000` chars、`L2` 载荷 `≤ 1500` chars，不含标签与换行分隔符），防止 `L1` 摘要增长时静默挤掉当轮 RAG 命中。
+- **同条最新 user 消息内部顺序**：`用户原始提问 → [RAG Context] → [Recovery Digest] → [Session Memory] → [Research Recall]`。
+- **分项独立预算**：各层独立截断、不互抢配额（动态 RAG 整块 `≤ 4000` chars、恢复摘要块 `≤ 600` chars、`L1` 载荷 `≤ 4000` chars、`L2` 载荷 `≤ 1500` chars，不含标签与换行分隔符），防止 `L1` 摘要增长时静默挤掉当轮 RAG 命中。
 - **被否决方案**：
   - 方案 A（Stage-1 全留首条，即 #104 的临时落点，已由 #154 迁出）：多轮下 `fts` 固定查首轮旧文本、远离尾部热区，且一旦 Research Memory 变化改写 `messages[0]` 反而从第 0 条消息起击穿整段历史 KV 缓存；
   - 方案 B（连静态 `note` 一并迁最新）：破坏 `#104` AC2 多轮首条字节兼容，且长 `note` 跨轮卸下会增加不必要的前缀重算；
   - 方案 C（Stage-1/2 全放首条）：丢失 `L1/L2` 热区收益并使每轮摘要更新击穿全量缓存。
-- **当前状态**：`MemoryPipeline.inject` 按上表分流——静态 `note`（含 `none` + 残留 `config.note`）仍落首条 user 消息，动态 `fts` 落最新 user 消息并以注入前原文检索；Stage-2 的 L1/L2 已走 `appendMessageText`（`packages/kernel/src/message-text.ts`），在 content-block 数组消息上不会覆盖用户原文与前序 `[RAG Context]`。新增查询型 adapter 需登记到 `DYNAMIC_RAG_ADAPTERS`（`packages/kernel/src/rag-adapter.ts`），否则会静默落回首条静态槽位。`packages/kernel/test/rag-adapter.test.ts` 与 `packages/kernel/test/pi-runtime.test.ts` 覆盖多轮落点、query 来源与形状叠加。
+- **当前状态**：`MemoryPipeline.inject` 按上表分流——静态 `note`（含 `none` + 残留 `config.note`）仍落首条 user 消息，动态 `fts` 落最新 user 消息并以注入前原文检索；Stage-2 的恢复摘要块、L1/L2 已走 `appendMessageText`（`packages/kernel/src/message-text.ts`），在 content-block 数组消息上不会覆盖用户原文与前序 `[RAG Context]`；恢复摘要块只在会话恢复时注入一次，已有历史携带时不重复追加。新增查询型 adapter 需登记到 `DYNAMIC_RAG_ADAPTERS`（`packages/kernel/src/rag-adapter.ts`），否则会静默落回首条静态槽位。`packages/kernel/test/rag-adapter.test.ts`、`packages/kernel/test/pi-runtime.test.ts` 与 `packages/kernel/test/recovery-digest.test.ts` 覆盖多轮落点、query 来源与形状叠加。
 
 ## 消息形状（易踩的坑）
 

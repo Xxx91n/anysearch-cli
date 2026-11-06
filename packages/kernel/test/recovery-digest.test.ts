@@ -224,6 +224,14 @@ test("one-shot: a digest carried on an earlier user turn is not copied onto a ne
   assert.ok(!textOf(out[2]).includes(RECOVERY_DIGEST_TAG), "the new turn gets no second copy");
 });
 
+test("one-shot: a mere mention of the tag does not suppress injection", async () => {
+  const { pipeline } = pipelineWith([{ anchorType: "sufficiency", payload: anchorPayload() }]);
+  const out = await pipeline.inject([{ role: "user", content: "what is [Recovery Digest]?" }]);
+  const text = textOf(out[0]);
+  assert.ok(text.includes("retrieval computation finished"), "the real digest is still injected");
+  assert.match(text, /query="rust vs go"/);
+});
+
 test("ragQuery: the digest tag is stripped before recall", async () => {
   const queries: string[] = [];
   const store = {

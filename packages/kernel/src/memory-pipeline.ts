@@ -430,9 +430,10 @@ export class MemoryPipeline {
       const ragTarget = ragIdx >= 0 ? readMessageText(result[ragIdx]) : null;
       if (ragTarget) {
         // `ragQuery` is the PRE-INJECTION latest user text: strip earlier T0 /
-        // [RAG Context] / [Session Memory] / [Research Recall] text so a retried
-        // or resumed array cannot pollute the recall key, then cap for the strict
-        // FTS5 rung. `note` ignores the query.
+        // [RAG Context] / [Recovery Digest] / [Session Memory] /
+        // [Research Recall] text so a retried or resumed array cannot pollute
+        // the recall key, then cap for the strict FTS5 rung. `note` ignores the
+        // query.
         const ragQuery = preInjectionQueryText(ragTarget.text).slice(0, RAG_QUERY_MAX_CHARS);
         // Fail-open: retrieval faults are the registry's to report; the agent loop
         // always continues with the un-injected messages.
@@ -493,8 +494,12 @@ export class MemoryPipeline {
       // appending a second one.
       const injectRecovery = !!this.recoveryDigest && !this.recoveryDigestInjected;
       if (injectRecovery) {
+        // Match the block shape (a blank line before the tag), not a bare
+        // mention: a user asking about "[Recovery Digest]" must not suppress
+        // the real injection.
+        const carriedBlock = "\n\n" + RECOVERY_DIGEST_TAG;
         const carried = result.some((message: any) =>
-          message?.role === "user" && (readMessageText(message)?.text ?? "").includes(RECOVERY_DIGEST_TAG));
+          message?.role === "user" && (readMessageText(message)?.text ?? "").includes(carriedBlock));
         if (carried) {
           this.recoveryDigestInjected = true;
         } else {
@@ -720,11 +725,12 @@ export class MemoryPipeline {
   }
 
   /**
-   * The digest injected at the start of a resumed conversation, if any.
+   * The digest present in the resumed prompt, if any.
    *
-   * Used by the runtime to make the recovery visible on the `done` event. It is
-   * undefined for a fresh session and for a session whose last anchor had no
-   * usable payload.
+   * Used by the runtime to make the recovery visible on the `done` event. That
+   * covers both a digest injected by this run and one already carried by the
+   * handed-back history. It is undefined for a fresh session and for a session
+   * whose last anchor had no usable payload.
    */
   getInjectedRecoveryDigest(): string | undefined {
     return this.recoveryDigestInjected ? this.recoveryDigest : undefined;
