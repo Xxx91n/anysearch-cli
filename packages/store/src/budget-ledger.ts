@@ -92,10 +92,16 @@ export class BudgetLedger {
       hasRow: db.prepare("SELECT 1 AS present FROM budget_ledger WHERE session_id = ? AND configured = 1"),
       reserveTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens + ? WHERE session_id = ? AND configured = 1 AND token_cap > 0 AND reserved_tokens + spent_tokens + ? <= token_cap"),
       reserveUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = reserved_usd + ? WHERE session_id = ? AND configured = 1 AND usd_cap > 0 AND reserved_usd + spent_usd + ? <= usd_cap"),
-      settleTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = reserved_tokens - ?, spent_tokens = spent_tokens + ? WHERE session_id = ?"),
-      settleUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = reserved_usd - ?, spent_usd = spent_usd + ? WHERE session_id = ?"),
+      // #187/CodeRabbit: settle must be safe when the row was deactivated after a
+      // reservation. configured=1 settles normally; configured=0 only settles
+      // reservations that were actually recorded before clear (reserved > 0),
+      // clamping the decrement so the non-negative CHECK cannot fire. With no
+      // recorded reservation (configured=0, reserved=0) the WHERE guard makes
+      // the whole settle a no-op — no phantom spend on an unmetered row.
+      settleTokens: db.prepare("UPDATE budget_ledger SET reserved_tokens = CASE WHEN configured = 1 THEN reserved_tokens - ? ELSE MAX(0, reserved_tokens - ?) END, spent_tokens = spent_tokens + ? WHERE session_id = ? AND (configured = 1 OR reserved_tokens > 0)"),
+      settleUsd: db.prepare("UPDATE budget_ledger SET reserved_usd = CASE WHEN configured = 1 THEN reserved_usd - ? ELSE MAX(0, reserved_usd - ?) END, spent_usd = spent_usd + ? WHERE session_id = ? AND (configured = 1 OR reserved_usd > 0)"),
       reserveCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = reserved_calls + ? WHERE session_id = ? AND configured = 1 AND call_cap > 0 AND reserved_calls + billable_calls + ? <= call_cap"),
-      settleCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = reserved_calls - ?, billable_calls = billable_calls + ? WHERE session_id = ?"),
+      settleCalls: db.prepare("UPDATE budget_ledger SET reserved_calls = CASE WHEN configured = 1 THEN reserved_calls - ? ELSE MAX(0, reserved_calls - ?) END, billable_calls = billable_calls + ? WHERE session_id = ? AND (configured = 1 OR reserved_calls > 0)"),
       getBalance: db.prepare("SELECT session_id as sessionId, token_cap as tokenCap, usd_cap as usdCap, time_limit_ms as timeLimitMs, call_cap as callCap, reserved_tokens as reservedTokens, spent_tokens as spentTokens, reserved_usd as reservedUsd, spent_usd as spentUsd, reserved_calls as reservedCalls, billable_calls as billableCalls FROM budget_ledger WHERE session_id = ? AND configured = 1"),
     };
   }
@@ -172,12 +178,12 @@ export class BudgetLedger {
 
   // Settle tokens after a call: move from reserved to spent (adjust if actual != reserved).
   settleTokens(sessionId: string, reservedAmount: number, actualAmount: number): void {
-    this.stmts.settleTokens.run(reservedAmount, actualAmount, sessionId);
+    this.stmts.settleTokens.run(reservedAmount, reservedAmount, actualAmount, sessionId);
   }
 
   // Settle USD after a call.
   settleUsd(sessionId: string, reservedAmount: number, actualAmount: number): void {
-    this.stmts.settleUsd.run(reservedAmount, actualAmount, sessionId);
+    this.stmts.settleUsd.run(reservedAmount, reservedAmount, actualAmount, sessionId);
   }
 
   // decision 2C: reserve per-call budget by provider count. Unconfigured
@@ -190,7 +196,7 @@ export class BudgetLedger {
 
   // decision 2C: settle calls — actual successful providers.
   settleCalls(sessionId: string, reservedCount: number, actualCount: number): void {
-    this.stmts.settleCalls.run(reservedCount, actualCount, sessionId);
+    this.stmts.settleCalls.run(reservedCount, reservedCount, actualCount, sessionId);
   }
 
   // Get current balance for a session.

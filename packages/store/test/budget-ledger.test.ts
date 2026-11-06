@@ -240,6 +240,55 @@ async function main() {
         .get(s8.id) as { c: number };
       assert(raceRows.c === 1, "concurrent registration still leaves one row");
 
+      // 17. #187/CodeRabbit: settle must be safe after clearBudgetCaps.
+      //     - reservations recorded before clear still settle (and add spend);
+      //     - unconfigured reservations (no recorded units) settle as a no-op,
+      //       never going negative or adding phantom spend.
+      const settleLedger = new BudgetLedger((store as any).db);
+      const s9 = await store.createSession("settle-after-clear");
+      settleLedger.initBudget(s9.id, { tokenCap: 1000, usdCap: 10, timeLimitMs: 1000, callCap: 5 });
+      assert(settleLedger.reserveCalls(s9.id, 1), "pre-clear call reservation");
+      assert(settleLedger.reserveTokens(s9.id, 100), "pre-clear token reservation");
+      assert(settleLedger.reserveUsd(s9.id, 1), "pre-clear USD reservation");
+      settleLedger.clearBudgetCaps(s9.id);
+      assert(settleLedger.reserveCalls(s9.id, 1), "post-clear call reserve passes without recording");
+      assert(settleLedger.reserveTokens(s9.id, 100), "post-clear token reserve passes without recording");
+      assert(settleLedger.reserveUsd(s9.id, 1), "post-clear USD reserve passes without recording");
+      settleLedger.settleCalls(s9.id, 1, 1);
+      settleLedger.settleTokens(s9.id, 100, 100);
+      settleLedger.settleUsd(s9.id, 1, 1);
+      const afterSettle = (store as any).db
+        .prepare("SELECT configured, reserved_calls, billable_calls, reserved_tokens, spent_tokens, reserved_usd, spent_usd FROM budget_ledger WHERE session_id = ?")
+        .get(s9.id) as { configured: number; reserved_calls: number; billable_calls: number; reserved_tokens: number; spent_tokens: number; reserved_usd: number; spent_usd: number };
+      assert(afterSettle.configured === 0, "row stays deactivated after settlement");
+      assert(afterSettle.reserved_calls === 0 && afterSettle.billable_calls === 1,
+        "pre-clear call reservation settles without a negative counter");
+      assert(afterSettle.reserved_tokens === 0 && afterSettle.spent_tokens === 100,
+        "pre-clear token reservation settles without a negative counter");
+      assert(afterSettle.reserved_usd === 0 && afterSettle.spent_usd === 1,
+        "pre-clear USD reservation settles without a negative counter");
+
+      const s10 = await store.createSession("settle-empty-unconfigured");
+      settleLedger.initBudget(s10.id, { callCap: 5 });
+      settleLedger.clearBudgetCaps(s10.id);
+      settleLedger.settleCalls(s10.id, 1, 1);
+      settleLedger.settleTokens(s10.id, 0, 5);
+      settleLedger.settleUsd(s10.id, 0, 5);
+      const emptySettle = (store as any).db
+        .prepare("SELECT reserved_calls, billable_calls, spent_tokens, spent_usd FROM budget_ledger WHERE session_id = ?")
+        .get(s10.id) as { reserved_calls: number; billable_calls: number; spent_tokens: number; spent_usd: number };
+      assert(emptySettle.reserved_calls === 0 && emptySettle.billable_calls === 0,
+        "unconfigured call settlement is a no-op (no phantom spend)");
+      assert(emptySettle.spent_tokens === 0 && emptySettle.spent_usd === 0,
+        "unconfigured token/USD settlement is a no-op (no phantom spend)");
+
+      const s11 = await store.createSession("settle-no-row");
+      assert(settleLedger.reserveCalls(s11.id, 1), "no-row reserve passes");
+      settleLedger.settleCalls(s11.id, 1, 1);
+      settleLedger.settleTokens(s11.id, 0, 10);
+      settleLedger.settleUsd(s11.id, 0, 1);
+      assert(settleLedger.getBalance(s11.id) === null, "settling a row-less session does not create a row");
+
       store.close();
     }
     console.log("--- BudgetLedger tests: " + passed + " passed, " + failed + " failed ---");
