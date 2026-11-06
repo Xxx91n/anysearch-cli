@@ -65,6 +65,25 @@ try {
   runTeardown();
   assert.throws(() => external.prepare("SELECT 1").get(), "external handle closed by the drain");
 
+  // --- 3b. a close that throws keeps the handle registered for a retry ------
+  // PR #197 review: unregistering before the native close succeeded would leave
+  // a live handle with nobody left to retry it (SQLITE_BUSY on close).
+  let closeAttempts = 0;
+  const flaky = trackDatabase({
+    open: true,
+    close: () => {
+      closeAttempts += 1;
+      if (closeAttempts === 1) throw new Error("SQLITE_BUSY: database is locked");
+    },
+  } as unknown as Database.Database);
+  assert.throws(() => flaky.close(), /SQLITE_BUSY/, "a failing close surfaces to the caller");
+  assert.equal(pendingTeardowns(), 1, "a failed close keeps the registry entry so the exit path can retry");
+  flaky.close();
+  assert.equal(closeAttempts, 2, "the second close retries the native close");
+  assert.equal(pendingTeardowns(), 0, "a successful close unregisters");
+  assert.equal(flaky.close(), flaky, "further closes are no-ops and stay chainable");
+  assert.equal(closeAttempts, 2, "no third native close");
+
   // --- 4. store engines are registered on construction ----------------------
   const before = pendingTeardowns();
   const sessionStore = new SqliteSessionStore(join(dir, "session.db"));

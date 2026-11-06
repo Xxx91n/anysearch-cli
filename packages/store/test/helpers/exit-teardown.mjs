@@ -58,6 +58,10 @@ const WATCHDOG_MS = 5000;
 function unrefPendingHandles() {
   if (typeof process._getActiveHandles !== "function") return;
   for (const h of process._getActiveHandles()) {
+    // Never unref stdout/stderr: unref'ing them lets the loop end before the
+    // buffered output is flushed, truncating the very log that explains the exit
+    // (same rule as src/teardown.ts).
+    if (h === process.stdout || h === process.stderr) continue;
     try { h.unref?.(); } catch { /* ignore */ }
   }
 }

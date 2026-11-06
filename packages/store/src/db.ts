@@ -28,7 +28,8 @@ export function openDatabase(dbPath: string, options?: Database.Options): Databa
  *
  * `close()` becomes idempotent for the handle's whole lifetime: a second close is
  * a no-op instead of a native double-close (better-sqlite3 throws "The database
- * connection is not open"), and closing early unregisters the exit hook.
+ * connection is not open"), and closing early unregisters the exit hook. A close
+ * that throws keeps the handle registered so the exit path can retry it.
  *
  * @param db Handle to track (mutated in place: `close` is replaced).
  * @returns The same handle, so call sites stay chained.
@@ -36,14 +37,21 @@ export function openDatabase(dbPath: string, options?: Database.Options): Databa
 export function trackDatabase(db: Database.Database): Database.Database {
   const close = db.close.bind(db);
   let live = true;
+  let unregister: () => void = () => {};
   // Defensive: a handle that some path closed through the prototype method
   // (bypassing the wrapper) reports open === false — never double-close it.
   const stillOpen = (): boolean => (db as { open?: boolean }).open !== false;
-  const unregister = registerTeardown(() => {
+  // Single close path for owners and the exit hook. The registration survives a
+  // native close that THROWS (e.g. SQLITE_BUSY): dropping it there would leave a
+  // live handle with nobody left to retry, so `live` and the registry entry are
+  // only cleared once the close actually succeeded (PR #197 review).
+  const closeOnce = (): void => {
     if (!live) return;
-    live = false;
     if (stillOpen()) close();
-  });
+    live = false;
+    unregister();
+  };
+  unregister = registerTeardown(() => { closeOnce(); });
   try {
     // defineProperty (not assignment): the @types signature is `close(): this`,
     // so a wrapper typed `() => void` would not type-check, and the handle stays
@@ -52,10 +60,7 @@ export function trackDatabase(db: Database.Database): Database.Database {
       configurable: true,
       writable: true,
       value: (): Database.Database => {
-        if (!live) return db;
-        live = false;
-        unregister();
-        if (stillOpen()) close();
+        closeOnce();
         return db;
       },
     });
