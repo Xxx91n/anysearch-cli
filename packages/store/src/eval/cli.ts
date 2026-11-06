@@ -434,10 +434,12 @@ async function main(): Promise<number> {
 // wall-clock watchdog stays a forced exit too, but drains the registry first —
 // it can fire mid-run while a case still holds tracked handles.
 const exit = (code: number): void => {
+  // Arm the guarantee FIRST: a throwing drain or backstop must never be able to
+  // cancel the watchdog and leave a hung loop with no way out (#183 review).
+  process.exitCode = code;
+  setTimeout(() => process.exit(code), 5000).unref();
   try { runTeardown(); } finally {
-    process.exitCode = code;
-    unrefPendingHandles();
-    setTimeout(() => process.exit(code), 5000).unref();
+    try { unrefPendingHandles(); } catch { /* backstop only — never mask the exit */ }
   }
 };
 
