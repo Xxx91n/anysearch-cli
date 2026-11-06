@@ -761,6 +761,13 @@ export class PiAgentRuntime {
     // leave reserved_tokens behind.
     const settleTokenDelta = (finalActual: number): void => {
       if (!billingWired) return;
+      if (!tokenSettled) {
+        // The reservation release itself failed earlier; retry the full settle
+        // (release + actual) rather than recording spend with the reservation
+        // still held.
+        settleTokenReserve(finalActual);
+        return;
+      }
       const delta = Math.max(0, finalActual - settledTokens);
       if (delta <= 0) return;
       try {
