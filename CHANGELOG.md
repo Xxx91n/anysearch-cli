@@ -17,6 +17,23 @@ All notable changes to this project are recorded here. Format follows
 
 - `apps/mcp/test/failure-semantics.test.ts`：handler 异常（三个工具）、`ans_chat` 缺失配置与 runtime 错误、全员失败、部分失败元数据双通道、零结果成功、abstain、`query_knowledge` note，以及真实 stateless HTTP 传输上的 `isError` 传播与“unknown tool 仍是 JSON-RPC error”。
 - `apps/mcp/test/dual-era.test.ts`：离线 ans_chat 断言缺失配置的错误结果（stdio + HTTP）；`apps/mcp/test/vertical-guard.test.ts`：金文本不变，新增 `isError: true` 与无 `structuredContent` 断言。
+## Unreleased — #188: token 预算预留——agent_start 预留 + 硬停 + 冷启动回退（T9 落地）
+
+### Added
+
+- **run 开始前预留 token**（`packages/kernel/src/pi-runtime.ts`）：在 `agent_start` 边界（`agent.prompt` 之前）按「输入占用 + 输出上限」调用 `ledger.reserveTokens`。当前每次 run 都是新开对话，启动时没有历史，所以实际估算即将发出的 system prompt 和用户输入（这个数偏低）；代码保留了「上下文里已经有模型回报用量时直接用」的路径，但当前生产路径走不到。输出上限默认 12288，`[budget].outputReserveTokens` 可覆写（解析仍由 #187 的 `resolveOutputReserveTokens` 单点负责）。
+- **预留被拒 = 硬停**：`reserveTokens` 返回 false 时只 yield 一个结构化 `error` 事件，不启动当次 run 的 `agent.prompt`，不发 `done`、不伪造摘要，也不结算 token/USD 或 per-call。只停当次 run；改 TOML 提额后下一轮 run 重读并刷新 cap，可继续。账本抛错仍按 #200 的 fail-open 处理：具名 stderr 报告，当次 run 不预留但继续。run 正常结束或 provider 报零用量时释放当次预留；事件流被提前关闭时先中止这一轮，最多等 1 秒拿最终用量；等不到就先按当时用量释放预留再返回，之后有更多用量再补记差额。如果中止时模型还没报最终用量，按预留量保守记账，不当作零用量放过；进程在后台补记前退出时，晚到的用量可能少记，但预留已经释放。
+- **run 开始重读 Active Domain 并刷新账本 cap**：有 `domainTomlPath` 时，每次 run 开头走 mtime reloader；新建 runtime 的首次探测强制加载当前文件（长驻 MCP 每请求新建 runtime，启动配置快照可能落后于文件），之后按 mtime 差分。运行时工具调用（`beforeToolCall`）期间读到的 TOML 改动会记到下个 run 开头再刷新，避免下一次探测看不到文件变化而漏掉。读到新 `[budget]` 时调 ledger port 的 `initBudget`（删节则 `clearBudgetCaps`），让提额在下一轮 run 生效，不必重启。坏的 TOML 保持上次可用配置，刷新失败 fail-open 并报具名 stderr。runtime 现在接收宿主的 `domainsDirs`；`domainTomlPath` 也按同一组目录和引擎创建时的 domain 名找目标 TOML，`createEngine` 返回实际使用的目录（含默认 chain），`base` 或 Active Domain 只在宿主额外目录、或宿主注入自定义 engine 时也不会退回 `default`。
+
+### Changed
+
+- **token 维度从 settle-only 变为预留-结算两段制**：run 结束时 `settleTokens` 先释放本次预留、再按 provider 实报总量计入 spent；实际用量可以高于预留（输出超静态上限时不反向追加）。USD 仍只结算不预留（没有价格表）。
+- **`GLOSSARY.md` Budget Ledger 词条**同步为预留-结算两段制。
+
+### Tests
+
+- `packages/kernel/test/pi-runtime.test.ts`：预留公式与冷启动回退/用量锚的纯函数断言；默认 12288 与 TOML 覆写经 ledger 端口观测，并在真实账本上限边界上再验一次（12488 成功 / 12487 失败，4096 覆写 4296 成功 / 4295 失败）；真实 `SqliteSessionStore` 下预留被拒时只有一个 error、无 done、`agent.prompt` 未启动、账本无 spend/reserved；提高 cap 后同一 runtime 可继续跑；实际用量超过预留时仍按实结算且 reserved 归零；零用量 run 释放预留；事件流提前关闭时最多等 1 秒拿最终用量，停不下来则先按当时用量释放预留、返回后再补差额；`beforeToolCall` 中途读到的 TOML 改动会在下个 run 开头刷新账本；`base` 只在宿主额外 `domainsDirs` 时也能解析；token settle 抛错时 finally 只重试一次且只落账一次；`reserveTokens` 抛错按 fail-open 报具名 stderr 且 run 继续；真实 TOML 文件覆盖两种生产形状——先改文件后新建 runtime（MCP 形状）与同一 runtime 后续升降 cap——均刷新账本行。既有 #178/#200 用例的 token cap 随预留语义上调，settle-by-actuals 断言保留。
+- `packages/store/test/url-policy.test.ts`：`createDomainReloader` 的 `forceFirst` 只在首次探测强制返回当前 schema，之后恢复 unchanged → null 的既有契约。
 
 ## Unreleased — #178: PiAgentRuntime ledger 接线——token/USD 结算生产化（#36 承接）
 

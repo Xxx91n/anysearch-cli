@@ -2,9 +2,11 @@
 // decision 2: lives in packages/kernel.
 // decision 3: maps pi-agent-core 9 events to our 7 AgentEvent types.
 // decision 4: Domain 5-layer full consumption.
-// decision 5 (amended by #90/#103): token/USD budget metered via agent event
-// subscription (message_end usage accumulation, agent_end settle); USD comes
-// from pi-ai Usage.cost — no price table in TOML or kernel.
+// decision 5 (amended by #90/#103, #188): token/USD budget metered via agent
+// event subscription (message_end usage accumulation, agent_end settle). The
+// token dimension also reserves at agent_start — input occupancy + the output
+// static limit — and stops the run when the reserve is rejected. USD comes from
+// pi-ai Usage.cost — no price table in TOML or kernel, so USD stays settle-only.
 // decision 6: dual session (pi Agent memory + SqliteSessionStore FTS5 sync).
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
@@ -21,7 +23,7 @@ import {
   type RetrievalContent,
   type SourceTraceLabel,
 } from "@anysearch-cli/retriever";
-import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveUrlPolicy } from "@anysearch-cli/store";
+import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveOutputReserveTokens, resolveUrlPolicy, toBudgetCaps } from "@anysearch-cli/store";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink } from "./ports";
 import type { AgentEvent } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
@@ -246,6 +248,10 @@ export interface PiAgentRuntimeOptions {
   domain: DomainConfigPort;
   // when set, the allow/deny lists are re-read lazily per tool call via mtime.
   domainTomlPath?: string;
+  // #188 (CodeRabbit): the host's domain search dirs, so the run-boundary
+  // reloader can resolve a base TOML that lives only in a host-specific dir
+  // (e.g. the MCP packaged domains dir), not just dirname(tomlPath)/cwd.
+  domainsDirs?: string[];
   model: unknown; // pi-ai Model instance
   streamFn: unknown; // models.streamSimple.bind(models)
   models?: unknown; // Models object for generateSummaryWithUsage
@@ -344,10 +350,60 @@ export function resolveContextOccupancy(lastUsageTokens: number, messages: any[]
   return Math.max(Number(lastUsageTokens) || 0, estimated);
 }
 
+/**
+ * Input side of the pre-run token reserve (#188).
+ *
+ * Reuse resolveContextOccupancy's provider-usage anchor when the context carries
+ * one: `lastUsageTokens` is the most recent message_end totalTokens and
+ * `messages` is the transcript handed to the run. When both are empty the run
+ * is a cold start — which is the normal shape here, because every run builds a
+ * fresh pi-agent-core Agent — so fall back to estimating the request that is
+ * about to be sent (system prompt + user prompt). An estimate, not a historical
+ * rolling average: #186 decision 2 rejects rolling averages as point forecasts.
+ */
+export function resolveReserveInputTokens(
+  lastUsageTokens: number,
+  messages: any[],
+  prompt: string,
+  systemPrompt: string,
+): { tokens: number; coldStart: boolean } {
+  const anchor = Number(lastUsageTokens) || 0;
+  const transcript = Array.isArray(messages) ? messages : [];
+  if (anchor > 0 || transcript.length > 0) {
+    return { tokens: resolveContextOccupancy(anchor, transcript), coldStart: false };
+  }
+  let tokens = 0;
+  try {
+    // estimateTokens only reads `role`/`content`; wrapping the system prompt in
+    // a user-shaped message makes it part of the same character estimate (a
+    // "system" role is not a pi-agent-core message role and would count as 0).
+    tokens += Math.ceil(Number(estimateContextTokens([{ role: "user", content: prompt }] as any)?.tokens) || 0);
+    if (systemPrompt) {
+      tokens += Math.ceil(Number(estimateContextTokens([{ role: "user", content: systemPrompt }] as any)?.tokens) || 0);
+    }
+  } catch { /* fail-open: the output reserve alone is still a valid lower bound */ }
+  return { tokens, coldStart: true };
+}
+
+/**
+ * Reserve amount = input-side occupancy + output-side static limit (#188).
+ * Non-finite/negative inputs contribute 0 rather than poisoning the ledger
+ * amount with NaN (better-sqlite3 would bind it as text/NULL).
+ */
+export function resolveTokenReserve(inputTokens: number, outputReserveTokens: number): number {
+  const input = Number.isFinite(inputTokens) ? Math.max(0, inputTokens) : 0;
+  const output = Number.isFinite(outputReserveTokens) ? Math.max(0, outputReserveTokens) : 0;
+  return input + output;
+}
+
 export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
   private readonly domainReloader: (() => unknown) | null;
   private warnedEnvIgnored = false;
+  // #188: a TOML change consumed by beforeToolCall (mid-run) must still refresh
+  // the ledger caps, but the next run's reloader sees no new file change. Keep
+  // the detection until the next run boundary consumes it.
+  private pendingBudgetRefresh = false;
   private pipeline?: MemoryPipeline;
   private gate?: SufficiencyEvaluator;
   // T2 #177: every internal retrieval (search tool, sufficiency rerounds) goes
@@ -358,7 +414,7 @@ export class PiAgentRuntime {
   private readonly scopedRetriever: RetrieverPort;
 
   constructor(opts: PiAgentRuntimeOptions) {
-    this.domainReloader = opts.domainTomlPath ? createDomainReloader(opts.domainTomlPath) : null;
+    this.domainReloader = opts.domainTomlPath ? createDomainReloader(opts.domainTomlPath, opts.domainsDirs, { forceFirst: true }) : null;
     // acceptance-4: the override switch is a strict enum at EVERY runtime
     // (server, hook, kernel), not just the plugin server. Misset -> throw at startup.
     parseEnvOverrideSwitch(process.env[ENV_ALLOW_OVERRIDE]);
@@ -416,6 +472,13 @@ export class PiAgentRuntime {
     const startTime = Date.now();
     const timedOut = () => Date.now() - startTime > timeoutMs;
 
+    // #188: re-read the Active Domain at the run boundary so a live TOML edit
+    // (budget raise, output-reserve override) takes effect on the next run
+    // instead of waiting for a process restart. Fail-open: a bad/partial TOML
+    // keeps the last known good domain, mirroring beforeToolCall's reload.
+    const reloadedDomain = this.domainReloader ? this.domainReloader() : null;
+    if (reloadedDomain) (this.opts as { domain: DomainConfigPort }).domain = reloadedDomain as DomainConfigPort;
+
     const { domain, model, streamFn, store, ledger, sessionId } = this.opts;
 
     // Build tools: search tool + any extra tools, filtered by domain.
@@ -430,6 +493,10 @@ export class PiAgentRuntime {
     // Token/USD budget tracking (decision 5, amended #103):
     // accumulated from message_end events, settled at the end of the run.
     const usageTotals = emptyUsageTotals();
+    // #188 (CodeRabbit): distinguish "provider reported zero" from "abort cut the
+    // final usage chunk off". Only an actual assistant usage report counts as a
+    // genuine zero; missing usage after abort is reconciled conservatively.
+    let usageReported = false;
 
     // Event buffer: collect events from subscribe() to yield them.
     const eventBuffer: AgentEvent[] = [];
@@ -465,7 +532,12 @@ export class PiAgentRuntime {
         }
         // lazy mtime-checked re-read; bad TOML keeps last known good.
         const reloaded = this.domainReloader ? this.domainReloader() : null;
-        if (reloaded) (this.opts as { domain: DomainConfigPort }).domain = reloaded as DomainConfigPort;
+        if (reloaded) {
+          (this.opts as { domain: DomainConfigPort }).domain = reloaded as DomainConfigPort;
+          // The next run's mtime probe will see no change; remember this one so
+          // the budget caps still refresh at that run boundary.
+          this.pendingBudgetRefresh = true;
+        }
         // single parse point: kernel consumes the same canonicalize+merge+
         // strict-switch resolver as server/hooks (raw-array reads re-introduced drift).
         const src = (this.opts.domain as { sources?: { urlAllowlist?: string[]; urlDenylist?: string[] } } | undefined)?.sources;
@@ -545,6 +617,7 @@ export class PiAgentRuntime {
         case "message_end":
           // #103: accumulate AssistantMessage.usage (tokens + pi-ai cost).
           accumulateUsage(usageTotals, event.message);
+          if (event.message?.role === "assistant" && event.message?.usage) usageReported = true;
           break;
         case "tool_execution_start":
           eventBuffer.push({
@@ -585,16 +658,81 @@ export class PiAgentRuntime {
     // Design: runtime billing requires store + sessionId + ledger, the same
     // gate MemoryPipeline uses — a half-wired runtime cannot touch
     // budget_ledger, and both composition roots hand over the engine's ledger
-    // only after the session row exists (#178). The per-call result is still
-    // not a hard stop (runtime hard-stop is #188): a rejected reserve lets this
-    // run continue.
-    // Design: token/USD stay settle-only in v1 (#103, ruling #90) — nothing to
-    // reserve here.
-    // Design: a ledger fault at reserve is reported and treated as "not
-    // reserved" rather than aborting before agent.prompt — budget is fail-open
-    // for chat; per-search enforcement still throws its own budget error inside
-    // the search tool (CodeRabbit #200).
+    // only after the session row exists (#178).
     const billingWired = !!(store && sessionId && ledger);
+
+    // #188: if the domain TOML changed since the last run, refresh the ledger
+    // caps before reserving. The registration sites (#187) sample the domain
+    // once; a long-lived MCP process reuses its startup engine snapshot, so
+    // without this a cap raise would only take effect after a restart. A
+    // removed [budget] deactivates the row (spend history kept).
+    //
+    // The first probe on a new runtime always re-parses the file (forceFirst),
+    // because a per-request host may have built the runtime after the edit;
+    // later probes are mtime-gated, so this costs one parse and at most one
+    // initBudget upsert per runtime.
+    const budgetChanged = !!reloadedDomain || this.pendingBudgetRefresh;
+    if (budgetChanged && billingWired) {
+      try {
+        if (domain.budget) {
+          ledger!.initBudget?.(sessionId!, toBudgetCaps(domain.budget));
+        } else {
+          ledger!.clearBudgetCaps?.(sessionId!);
+        }
+      } catch (e) {
+        // fail-open: keep the previously registered caps and name the fault.
+        reportBudgetFault("budget refresh", e);
+      } finally {
+        // Clear only after the refresh attempt (CodeRabbit): a change consumed
+        // mid-run by beforeToolCall is applied once at the next run boundary.
+        this.pendingBudgetRefresh = false;
+      }
+    }
+
+    // #188 (T9): reserve tokens at the agent_start boundary — before
+    // agent.prompt is invoked, so an exhausted budget stops the run instead of
+    // being discovered after a provider call. Formula = input-side occupancy
+    // (provider usage anchor when present, estimate on a cold start) + the
+    // output-side static limit ([budget].outputReserveTokens, default 12288).
+    //
+    // A rejected reserve is the hard stop from #186 decision 5: yield the
+    // structured error and return without starting the run — no done event, no
+    // settlement, no fabricated summary. Only this run stops; a later run after
+    // a TOML raise is unaffected — the run-boundary reloader re-reads the output
+    // reserve and refreshes the ledger caps from the same file.
+    //
+    // A ledger FAULT at reserve is not exhaustion (#200): report it and keep
+    // the run going unreserved, matching the fail-open budget contract.
+    let tokenReserved = 0;
+    if (billingWired) {
+      const inputOccupancy = resolveReserveInputTokens(0, (agent as any).state?.messages ?? [], input, systemPrompt);
+      // #188: default 12288 is the measured output ceiling from the #186 prototype
+      // (p95 9,309 / max 9,600 over 43 runs, 28% headroom). Re-measure when the
+      // per-call maxTokens grows to roughly 1.5x the calibration value (8192) —
+      // the same R≈1.5x trigger recorded in packages/store/src/domain-schema.ts.
+      const outputReserve = resolveOutputReserveTokens(domain.budget);
+      const reserveAmount = resolveTokenReserve(inputOccupancy.tokens, outputReserve);
+      try {
+        if (!ledger!.reserveTokens(sessionId!, reserveAmount)) {
+          yield {
+            type: "error",
+            message:
+              "Token budget exhausted: this run needs " + reserveAmount +
+              " tokens reserved (input " + inputOccupancy.tokens +
+              " + output limit " + outputReserve + ") but the session cap cannot cover it. " +
+              "The run was not started; raise [budget] tokenCap and retry (the next run re-reads the domain TOML).",
+          };
+          return;
+        }
+        tokenReserved = reserveAmount;
+      } catch (e) {
+        reportBudgetFault("token reserve", e);
+      }
+    }
+
+    // Per-call reserve stays a soft gate (#178): a rejection lets the run
+    // continue and the call is simply not billed. The token dimension above is
+    // the hard stop.
     let callReserved = false;
     if (billingWired) {
       try {
@@ -604,113 +742,207 @@ export class PiAgentRuntime {
       }
     }
 
-    // Start the agent prompt in background.
-    const promptPromise = agent.prompt(input).catch((e: any) => {
-      agentError = e?.message || String(e);
-      agentDone = true;
-    });
+    // #188: every path after a successful reservation must release it, even
+    // when the generator is closed early (CLI returns on the first error or
+    // timeout, stdout EPIPE, MCP client abort) or the provider reports zero
+    // usage. Otherwise reserved_tokens leaks for the rest of the session and
+    // healthy runs are later rejected as "exhausted". The normal path settles
+    // with the provider-reported total; the finally fallback settles 0.
+    let tokenSettled = false;
+    let settledTokens = 0;
+    let callSettled = false;
+    const settleTokenReserve = (actual: number): void => {
+      if (!billingWired || tokenSettled) return;
+      tokenSettled = true;
+      if (tokenReserved <= 0 && actual <= 0) return;
+      try {
+        ledger!.settleTokens(sessionId!, tokenReserved, actual);
+        settledTokens = actual;
+      } catch (e) {
+        // A failed settle leaves the reservation behind; let the finally
+        // fallback retry once instead of dropping the release for good.
+        tokenSettled = false;
+        reportBudgetFault("token settlement", e);
+      }
+    };
+    // #188 (CodeRabbit): late usage from a stalled prompt is added as a delta
+    // after the reservation was already released, so an exiting process cannot
+    // leave reserved_tokens behind.
+    const settleTokenDelta = (finalActual: number): void => {
+      if (!billingWired) return;
+      if (!tokenSettled) {
+        // The reservation release itself failed earlier; retry the full settle
+        // (release + actual) rather than recording spend with the reservation
+        // still held.
+        settleTokenReserve(finalActual);
+        return;
+      }
+      const delta = Math.max(0, finalActual - settledTokens);
+      if (delta <= 0) return;
+      try {
+        ledger!.settleTokens(sessionId!, 0, delta);
+        settledTokens = finalActual;
+      } catch (e) {
+        reportBudgetFault("token settlement", e);
+      }
+    };
 
-    // Yield events as they arrive.
-    while ((!agentDone || eventBuffer.length > 0) && !timedOut()) {
-      if (eventBuffer.length > 0) {
+    let promptPromise: Promise<void> | null = null;
+    try {
+      // Start the agent prompt in background.
+      promptPromise = agent.prompt(input).catch((e: any) => {
+        agentError = e?.message || String(e);
+        agentDone = true;
+      });
+
+      // Yield events as they arrive.
+      while ((!agentDone || eventBuffer.length > 0) && !timedOut()) {
+        if (eventBuffer.length > 0) {
+          yield eventBuffer.shift()!;
+        } else if (!agentDone) {
+          // Wait for next event.
+          await new Promise<void>((resolve) => {
+            resolveEvent = resolve;
+          });
+        }
+      }
+
+      // Wait for prompt() to fully resolve.
+      await promptPromise;
+      // Drain any events that arrived between agent_end and promptPromise resolution.
+      while (eventBuffer.length > 0) {
         yield eventBuffer.shift()!;
-      } else if (!agentDone) {
-        // Wait for next event.
-        await new Promise<void>((resolve) => {
-          resolveEvent = resolve;
-        });
       }
-    }
 
-    // Wait for prompt() to fully resolve.
-    await promptPromise;
-    // Drain any events that arrived between agent_end and promptPromise resolution.
-    while (eventBuffer.length > 0) {
-      yield eventBuffer.shift()!;
-    }
+      // SECURITY: timeout check after loop (CWE-400).
+      if (timedOut() && !agentDone) {
+        yield { type: "error", message: "Agent timeout after " + timeoutMs + "ms" };
+      }
 
-    // SECURITY: timeout check after loop (CWE-400).
-    if (timedOut() && !agentDone) {
-      yield { type: "error", message: "Agent timeout after " + timeoutMs + "ms" };
-    }
-
-    // Budget settle at agent_end (decision 5, amended #103).
-    if (billingWired) {
-      // Design: a rejected per-call reserve is not settled — it was never
-      // recorded, so settling would fabricate a billable call. Token/USD
-      // settle-only dimensions describe usage that did happen and still land
-      // when the provider reported it.
-      // Design: each settlement attempt is independently fail-open and
-      // reported — a locked ledger must not fail an already-completed chat or
-      // skip message synchronization and the final event (CodeRabbit #200).
-      if (callReserved) {
-        try {
-          ledger!.settleCalls(sessionId!, 1, 1);
-        } catch (e) {
-          reportBudgetFault("call settlement", e);
+      // Budget settle at agent_end (decision 5, amended #103/#188).
+      if (billingWired) {
+        // Design: a rejected per-call reserve is not settled — it was never
+        // recorded, so settling would fabricate a billable call.
+        // Design: each settlement attempt is independently fail-open and
+        // reported — a locked ledger must not fail an already-completed chat or
+        // skip message synchronization and the final event (CodeRabbit #200).
+        if (callReserved) {
+          try {
+            ledger!.settleCalls(sessionId!, 1, 1);
+            callSettled = true;
+          } catch (e) {
+            reportBudgetFault("call settlement", e);
+          }
         }
-      }
-      // #103: token/USD v1 is settle-only (reserved 0) — the per-call dimension
-      // stays the sole reserve/enforcement point; token-cap reservation waits
-      // on a per-run estimate config: design settled in #186 (T9),
-      // implementation ticket #187 merged (budget foundation); #188 still open.
-      // T4 ruling #90 is the decision source, not an open ticket.
-      if (usageTotals.totalTokens > 0) {
-        try {
-          ledger!.settleTokens(sessionId!, 0, usageTotals.totalTokens);
-        } catch (e) {
-          reportBudgetFault("token settlement", e);
-        }
-      }
-      if (usageTotals.costUsd > 0) {
-        try {
-          ledger!.settleUsd(sessionId!, 0, usageTotals.costUsd);
-        } catch (e) {
-          reportBudgetFault("usd settlement", e);
-        }
-      }
-    }
-
-    // decision 6: dual session — sync to FTS5 store.
-    if (this.opts.store) {
-      // append() is async: an un-awaited rejection is NOT caught by the
-      // surrounding try/catch and can terminate the process on Node >= 15, and
-      // the message is lost anyway. Each write gets its own try so one failure
-      // does not stop the remaining messages.
-      const messages = (agent as any).state?.messages || [];
-      for (const msg of messages) {
-        try {
-          await this.opts.store.append(sessionId || "default", {
-            role: msg.role || "assistant",
-            content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
-            timestamp: Date.now(),
-          } as any);
-        } catch (e) {
-          // ponytail: FTS5 sync is best-effort, don't block agent on store failure.
-          // But log the error so it's not silently swallowed (debt fix).
-          if (typeof process !== "undefined" && process.stderr) {
-            process.stderr.write("[anysearch] FTS5 sync warning: " + (e instanceof Error ? e.message : String(e)) + "\n");
+        // #188: token settle stays "by actuals" — the reserved amount is
+        // released and the provider-reported total is recorded as spent, even
+        // when it exceeds the reservation. This runs unconditionally so a
+        // zero-usage run still releases its reservation. USD remains
+        // settle-only (#186 decision 6: no price table).
+        settleTokenReserve(usageTotals.totalTokens);
+        if (usageTotals.costUsd > 0) {
+          try {
+            ledger!.settleUsd(sessionId!, 0, usageTotals.costUsd);
+          } catch (e) {
+            reportBudgetFault("usd settlement", e);
           }
         }
       }
-    }
 
-    // Final event.
-    if (agentError) {
-      yield { type: "error", message: agentError };
-    } else {
-      // #178: the total is the same figure settled into the ledger
-      // (settleTokens) — the summary must not under-report cache tokens.
-      const tokenSummary = usageTotals.totalTokens > 0
-        ? ` (tokens: ${usageTotals.inputTokens} in + ${usageTotals.outputTokens} out = ${usageTotals.totalTokens} total)`
-        : "";
-      // #189: make the one-shot recovery visible next to the run summary.
-      const recovery = this.pipeline?.getInjectedRecoveryDigest();
-      yield {
-        type: "done",
-        summary: `Agent completed${tokenSummary}`,
-        ...(recovery ? { recovery } : {}),
+      // decision 6: dual session — sync to FTS5 store.
+      if (this.opts.store) {
+        // append() is async: an un-awaited rejection is NOT caught by the
+        // surrounding try/catch and can terminate the process on Node >= 15, and
+        // the message is lost anyway. Each write gets its own try so one failure
+        // does not stop the remaining messages.
+        const messages = (agent as any).state?.messages || [];
+        for (const msg of messages) {
+          try {
+            await this.opts.store.append(sessionId || "default", {
+              role: msg.role || "assistant",
+              content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+              timestamp: Date.now(),
+            } as any);
+          } catch (e) {
+            // ponytail: FTS5 sync is best-effort, don't block agent on store failure.
+            // But log the error so it's not silently swallowed (debt fix).
+            if (typeof process !== "undefined" && process.stderr) {
+              process.stderr.write("[anysearch] FTS5 sync warning: " + (e instanceof Error ? e.message : String(e)) + "\n");
+            }
+          }
+        }
+      }
+
+      // Final event.
+      if (agentError) {
+        yield { type: "error", message: agentError };
+      } else {
+        // #178: the total is the same figure settled into the ledger
+        // (settleTokens) — the summary must not under-report cache tokens.
+        const tokenSummary = usageTotals.totalTokens > 0
+          ? ` (tokens: ${usageTotals.inputTokens} in + ${usageTotals.outputTokens} out = ${usageTotals.totalTokens} total)`
+          : "";
+        // #189: make the one-shot recovery visible next to the run summary.
+        const recovery = this.pipeline?.getInjectedRecoveryDigest();
+        yield {
+          type: "done",
+          summary: `Agent completed${tokenSummary}`,
+          ...(recovery ? { recovery } : {}),
+        };
+      }
+    } finally {
+      // #188 (CodeRabbit): stop the run before its reservation is released, so
+      // a consumer that closed the stream early cannot leave the agent making
+      // provider/tool calls after the budget was freed. The signal exists only
+      // while a run is active, so a normal end is a no-op.
+      let abortedEarly = false;
+      if (promptPromise && (agent as any).signal) {
+        (agent as any).abort?.();
+        abortedEarly = true;
+      }
+      // #188 (CodeRabbit): wait briefly for the in-flight prompt so its final
+      // usage is recorded. If the provider is stalled, do not block the close:
+      // settle once the prompt actually stops instead. A late write can fail if
+      // the caller already closed the store; the normal fail-open path reports it.
+      let budgetFinalized = false;
+      const finalizeBudget = (): void => {
+        if (budgetFinalized) return;
+        budgetFinalized = true;
+        // An aborted run may never receive its final usage chunk. Missing usage
+        // is not a genuine zero: keep the reservation as the conservative
+        // estimate. A provider-reported zero still settles as zero.
+        const actual = abortedEarly && !usageReported ? tokenReserved : usageTotals.totalTokens;
+        settleTokenReserve(actual);
+        if (billingWired && callReserved && !callSettled) {
+          // A provider call happened if it reported usage, or if we aborted it
+          // before the final chunk arrived.
+          const actualCalls = usageReported || abortedEarly ? 1 : 0;
+          try {
+            ledger!.settleCalls(sessionId!, 1, actualCalls);
+          } catch (e) {
+            reportBudgetFault("call settlement", e);
+          }
+        }
       };
+      let promptStopped = !promptPromise;
+      if (promptPromise) {
+        await Promise.race([
+          promptPromise.then(() => { promptStopped = true; }, () => { promptStopped = true; }),
+          new Promise<void>((resolve) => setTimeout(resolve, 1000)),
+        ]);
+      }
+      if (promptStopped) {
+        finalizeBudget();
+      } else {
+        // Provider still running: release the reservation now so an exiting
+        // process cannot leave it behind, then add only the later delta when the
+        // prompt finally stops (best-effort if the store is already closed).
+        finalizeBudget();
+        void promptPromise!.then(
+          () => settleTokenDelta(usageTotals.totalTokens),
+          () => settleTokenDelta(usageTotals.totalTokens),
+        );
+      }
     }
   }
 

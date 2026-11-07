@@ -133,7 +133,10 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
             retriever: eng.retriever,
             domain,
             ...memory,
-            domainTomlPath: domainTomlPath(),
+            domainTomlPath: domainTomlPath(undefined, eng.domainName, eng.domainsDirs),
+            // #188: same dirs the engine loaded the domain from, so a base TOML
+            // in the packaged domains dir stays resolvable on a live re-read.
+            domainsDirs: eng.domainsDirs,
             model: session.model,
             // #113: the real window for the L0 watermark. The pipeline is built
             // whenever `memory` carries store + sessionId (a minted or threaded

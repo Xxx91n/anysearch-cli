@@ -9,7 +9,7 @@ import { MemoryPipeline } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
 import { SqliteSessionStore } from "@anysearch-cli/store";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, utimesSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FusedEnvelope, SufficiencySignal } from "@anysearch-cli/retriever";
@@ -609,7 +609,7 @@ function makeMockStreamFn(decision: string): any {
   // Acceptance 1: spent tokens = sum of LLM call usage (non-zero).
   assert(ledger.tokenSettles.length === 1, "#103: one token settle per run");
   assert(ledger.tokenSettles[0]?.actual === 150, "#103: settled tokens = usage sum (non-zero)");
-  assert(ledger.tokenSettles[0]?.reserved === 0, "#103: token dimension settle-only (reserved 0)");
+  assert((ledger.tokenSettles[0]?.reserved ?? 0) > 0, "#188: token dimension reserves before it settles");
   // Acceptance 2: spent USD from pi-ai cost.
   assert(ledger.usdSettles.length === 1, "#103: one USD settle per run");
   assert(Math.abs((ledger.usdSettles[0]?.actual ?? 0) - 0.003) < 1e-9, "#103: settled USD = pi-ai Usage.cost.total");
@@ -617,8 +617,8 @@ function makeMockStreamFn(decision: string): any {
   // Acceptance 4 (regression): per-call dimension unchanged — reserve 1 at start, settle 1 at end.
   assert(ledger.reservedCalls === 1, "#103: per-call reserve unchanged");
   assert(ledger.settledCalls === 1, "#103: per-call settle unchanged");
-  // v1 has no token/USD reserve calls at all.
-  assert(ledger.tokenReserves === 0 && ledger.usdReserves === 0, "#103: no token/USD reserve in v1");
+  // #188: one token reserve per run; USD stays settle-only (no price table).
+  assert(ledger.tokenReserves === 1 && ledger.usdReserves === 0, "#188: one token reserve per run, USD stays settle-only");
   // Acceptance 3: real token counts reach the done summary (was constant 0 via onResponse).
   const done = events.find(e => e.type === "done");
   assert(typeof done?.summary === "string" && done.summary.includes("120 in + 30 out"), "#103: done summary carries real token counts");
@@ -664,7 +664,9 @@ function makeMockStreamFn(decision: string): any {
     sessionId: "s-103-zero",
   });
   for await (const _ev of runtime.run("hello")) { /* drain */ }
-  assert(ledger.tokenSettles === 0, "#103: zero-usage run writes no token settle");
+  // #188: a zero-usage run still releases its token reservation (one settle with
+  // actual 0); USD stays unwritten because there is no actual cost.
+  assert(ledger.tokenSettles === 1, "#188: zero-usage run releases its token reservation");
   assert(ledger.usdSettles === 0, "#103: zero-usage run writes no USD settle");
 }
 
@@ -677,7 +679,9 @@ function makeMockStreamFn(decision: string): any {
   const store = new SqliteSessionStore(join(dir, "anysearch.db"));
   try {
     const session = await store.createSession("chat");
-    store.initBudget(session.id, { tokenCap: 10_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    // #188: the reserve is input occupancy + 12288 by default, so the cap must
+    // leave room for both before this settle-focused case can start.
+    store.initBudget(session.id, { tokenCap: 100_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
     const ledger = store.createBudgetLedger();
     const runtime = new PiAgentRuntime({
       retriever: new MockRetriever(),
@@ -714,7 +718,9 @@ function makeMockStreamFn(decision: string): any {
   const store = new SqliteSessionStore(join(dir, "anysearch.db"));
   try {
     const session = await store.createSession("chat");
-    store.initBudget(session.id, { tokenCap: 10_000, usdCap: 5, timeLimitMs: 60_000, callCap: 0 });
+    // #188: same reason as above — a token reserve that cannot fit the default
+    // output limit would hard-stop the run before the rejected-call case runs.
+    store.initBudget(session.id, { tokenCap: 100_000, usdCap: 5, timeLimitMs: 60_000, callCap: 0 });
     const ledger = store.createBudgetLedger();
     const runtime = new PiAgentRuntime({
       retriever: new MockRetriever(),
@@ -836,6 +842,707 @@ function makeMockStreamFn(decision: string): any {
   assert(ledger.usdSettles === 1, "#200: a later settlement attempt still runs after earlier faults");
   assert(/budget call settlement failed: calls locked/.test(captured), "#200: call settle fault is reported");
   assert(/budget token settlement failed: tokens locked/.test(captured), "#200: token settle fault is reported");
+}
+
+// === #188: token reserve — formula, cold-start fallback, hard stop ===
+
+// #188 (CodeRabbit): the cold-start estimate and the 12288/override formula are
+// verified through the real ledger cap boundary below (error event or row
+// values), not through direct helper assertions.
+
+// Default 12288 vs [budget].outputReserveTokens override, observed through the
+// ledger port the runtime actually calls.
+{
+  class TokenRecordingLedger implements BudgetLedgerPort {
+    reserves: number[] = [];
+    settles: Array<{ reserved: number; actual: number }> = [];
+    reserveCalls(): boolean { return true; }
+    settleCalls(): void { }
+    reserveTokens(_s: string, amount: number): boolean { this.reserves.push(amount); return true; }
+    settleTokens(_s: string, reserved: number, actual: number): void { this.settles.push({ reserved, actual }); }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { }
+  }
+
+  const prompt = "hello world";
+  const system = "You are a research assistant.";
+  const inputEstimate = Math.ceil(prompt.length / 4) + Math.ceil(system.length / 4);
+
+  const runWith = async (budget?: DomainConfigPort["budget"]) => {
+    const ledger = new TokenRecordingLedger();
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: budget ? { ...mockDomain, budget } : mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store: noopStore(),
+      sessionId: "s-188-formula",
+      ledger,
+    });
+    const events: any[] = [];
+    for await (const ev of runtime.run(prompt)) events.push(ev);
+    return { ledger, events };
+  };
+
+  {
+    const { ledger, events } = await runWith({ outputReserveTokens: 4096 });
+    assert(events.some(e => e.type === "done"), "#188: run with a TOML output-reserve override completes");
+    assert(ledger.reserves.length === 1, "#188: one token reserve per run");
+    assert(ledger.reserves[0] === inputEstimate + 4096,
+      "#188: TOML output reserve override is used (got " + ledger.reserves[0] + ", want " + (inputEstimate + 4096) + ")");
+    assert(ledger.settles[0]?.reserved === inputEstimate + 4096, "#188: settle releases the reserved amount");
+    assert(ledger.settles[0]?.actual === 15, "#188: settle still records actual usage");
+  }
+  {
+    const { ledger } = await runWith(undefined);
+    assert(ledger.reserves[0] === inputEstimate + 12288,
+      "#188: default output reserve is 12288 (got " + ledger.reserves[0] + ")");
+  }
+}
+
+// A rejected reserve is a hard stop: one structured error, no done, no provider
+// request, no ledger spend. Raise the cap and the SAME runtime runs — only that
+// one run stopped.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-stop-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 100, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    let providerCalls = 0;
+    const stream = usageStream(10, 5, 15, 0.001);
+    const countingStream = (model: any, context: any, options?: any) => {
+      providerCalls++;
+      return stream(model, context, options);
+    };
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { tokenCap: 100, outputReserveTokens: 2048 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: countingStream,
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+
+    const stopped: any[] = [];
+    for await (const ev of runtime.run("hello")) stopped.push(ev);
+    const errors = stopped.filter(e => e.type === "error");
+    assert(errors.length === 1, "#188: exhausted reserve yields exactly one structured error event");
+    assert(/Token budget exhausted/.test(errors[0]?.message ?? ""), "#188: the error names the exhausted token budget");
+    assert(!stopped.some(e => e.type === "done"), "#188: hard stop emits no done event (no fabricated summary)");
+    assert(providerCalls === 0, "#188: agent.prompt is not started when the reserve is rejected");
+    const stoppedBalance = ledger.getBalance(session.id)!;
+    assert(stoppedBalance.reservedTokens === 0 && stoppedBalance.spentTokens === 0,
+      "#188: a rejected reserve records no token reservation or spend");
+    assert(stoppedBalance.reservedCalls === 0 && stoppedBalance.billableCalls === 0,
+      "#188: a hard-stopped run reserves/bills no call");
+
+    // Raise the cap (the next registration refresh) and rerun the same runtime.
+    store.initBudget(session.id, { tokenCap: 100_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const resumed: any[] = [];
+    for await (const ev of runtime.run("hello")) resumed.push(ev);
+    assert(resumed.some(e => e.type === "done"), "#188: only that run stops; a later run after a raise completes");
+    assert(providerCalls === 1, "#188: the resumed run starts the provider request");
+    const resumedBalance = ledger.getBalance(session.id)!;
+    assert(resumedBalance.spentTokens === 15 && resumedBalance.reservedTokens === 0,
+      "#188: the resumed run settles by actual usage and releases its reservation");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// Settle stays by actuals even when usage exceeds the reservation (output can
+// overshoot the static limit): the reservation is released, the real total is
+// recorded as spent.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-overshoot-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 100_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { outputReserveTokens: 0 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(20_000, 0, 20_000, 0.001),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    for await (const _ev of runtime.run("hello")) { /* drain */ }
+    const balance = ledger.getBalance(session.id)!;
+    assert(balance.reservedTokens === 0 && balance.spentTokens === 20_000,
+      "#188: settle by actuals releases the reservation even when actual > reserved");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #188 review: a zero-usage run (provider reports no tokens) must release its
+// reservation. A leak would fill reserved_tokens and later reject a healthy run
+// as "exhausted" even though nothing was spent.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-zero-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 3_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const zeroUsage = (_m: any, _c: any) => {
+      const msg = {
+        role: "assistant", content: [{ type: "text", text: "no usage" }], api: "test", provider: "test", model: "test-model",
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        stopReason: "stop", timestamp: Date.now(),
+      };
+      return {
+        async *[Symbol.asyncIterator]() { yield { type: "done", message: msg, partial: msg }; },
+        result: async () => msg,
+      };
+    };
+    const zeroRuntime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { outputReserveTokens: 2048 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: zeroUsage,
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const zeroEvents: any[] = [];
+    for await (const ev of zeroRuntime.run("hello")) zeroEvents.push(ev);
+    assert(zeroEvents.some(e => e.type === "done"), "#188: zero-usage run completes");
+    const afterZero = ledger.getBalance(session.id)!;
+    assert(afterZero.reservedTokens === 0 && afterZero.spentTokens === 0,
+      "#188: zero-usage run releases its reservation instead of leaking it");
+
+    const healthy = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { outputReserveTokens: 2048 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const healthyEvents: any[] = [];
+    for await (const ev of healthy.run("hello")) healthyEvents.push(ev);
+    assert(healthyEvents.some(e => e.type === "done"), "#188: a later healthy run is not falsely rejected");
+    const afterHealthy = ledger.getBalance(session.id)!;
+    assert(afterHealthy.spentTokens === 15 && afterHealthy.reservedTokens === 0,
+      "#188: the healthy run settles normally after a zero-usage run");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #188 (CodeRabbit): closing the event stream while the prompt is still
+// running must wait for its final usage and settle it, not settle early with a
+// partial figure. The stream reports 15 tokens after the close request.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-early-close-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 6_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const partial = {
+      role: "assistant", content: [{ type: "text", text: "" }], api: "test", provider: "test", model: "test-model",
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "stop", timestamp: Date.now(),
+    };
+    const finalMessage = {
+      ...partial,
+      content: [{ type: "text", text: "partial" }],
+      usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: { input: 0.001, output: 0.002, cacheRead: 0, cacheWrite: 0, total: 0.003 } },
+    };
+    let releaseStream!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseStream = resolve; });
+    const slowStream = (_m: any, _c: any) => ({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "start", partial };
+        yield { type: "text_delta", partial: finalMessage, delta: "partial" };
+        await gate;
+        // Usage is reported only after the consumer asked to close: the finally
+        // path must wait for this before settling.
+        await new Promise((r) => setTimeout(r, 30));
+        yield { type: "done", message: finalMessage, partial: finalMessage };
+      },
+      result: async () => finalMessage,
+    });
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { outputReserveTokens: 2048 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: slowStream,
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const iterator = runtime.run("hello")[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    assert(first.value?.type === "text", "#188: the run is suspended after streaming a token (before settle)");
+    releaseStream();
+    await iterator.return?.(undefined);
+    await runtime.flushMemory();
+    const balance = ledger.getBalance(session.id)!;
+    assert(balance.reservedTokens === 0 && balance.spentTokens === 15,
+      "#188: early close waits for and settles the usage reported after closure");
+    assert(balance.reservedCalls === 0 && balance.billableCalls === 1,
+      "#188: a closed run that reported usage is billed as one call, no reservation left");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #188 (CodeRabbit): if the provider is still stalled when the consumer closes,
+// the close must return within the bounded wait. Abort is requested first; when
+// no final usage chunk arrives, the reservation is settled conservatively
+// instead of being recorded as zero.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-stalled-close-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 6_000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const partial = {
+      role: "assistant", content: [{ type: "text", text: "" }], api: "test", provider: "test", model: "test-model",
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "stop", timestamp: Date.now(),
+    };
+    const finalMessage = {
+      ...partial,
+      content: [{ type: "text", text: "partial" }],
+      usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: { input: 0.001, output: 0.002, cacheRead: 0, cacheWrite: 0, total: 0.003 } },
+    };
+    let releaseStream!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseStream = resolve; });
+    const stalledStream = (_m: any, _c: any) => ({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "start", partial };
+        yield { type: "text_delta", partial: finalMessage, delta: "partial" };
+        await gate;
+        yield { type: "done", message: finalMessage, partial: finalMessage };
+      },
+      result: async () => finalMessage,
+    });
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { outputReserveTokens: 2048 } },
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: stalledStream,
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const iterator = runtime.run("hello")[Symbol.asyncIterator]();
+    await iterator.next();
+    const started = Date.now();
+    await iterator.return?.(undefined);
+    assert(Date.now() - started < 2500,
+      "#188: closing a stalled run returns within the bounded wait");
+    releaseStream();
+    let balance = ledger.getBalance(session.id)!;
+    const deadline = Date.now() + 2000;
+    while (balance.spentTokens === 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+      balance = ledger.getBalance(session.id)!;
+    }
+    assert(balance.reservedTokens === 0 && balance.spentTokens >= 2048,
+      "#188: abort without a reported usage chunk settles the reservation conservatively, not as zero");
+    assert(balance.billableCalls === 1,
+      "#188: an aborted run that already started is billed as one call");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #188 review: a ledger FAULT at token reserve is not exhaustion — it is
+// reported by name and the run continues (the #200 fail-open contract).
+{
+  class TokenReserveFaultLedger implements BudgetLedgerPort {
+    reserveCalls(): boolean { return true; }
+    settleCalls(): void { }
+    reserveTokens(): boolean { throw new Error("token ledger locked"); }
+    settleTokens(): void { }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { }
+  }
+  const ledger = new TokenReserveFaultLedger();
+  const origWrite = process.stderr.write;
+  let captured = "";
+  const events: any[] = [];
+  process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+  try {
+    let providerCalls = 0;
+    const stream = usageStream(10, 5, 15, 0.001);
+    const countingStream = (model: any, context: any, options?: any) => {
+      providerCalls++;
+      return stream(model, context, options);
+    };
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: countingStream,
+      store: noopStore(),
+      sessionId: "s-188-token-fault",
+      ledger,
+    });
+    for await (const ev of runtime.run("hello")) events.push(ev);
+    assert(providerCalls === 1, "#188: a token-reserve fault still starts the run");
+  } finally {
+    process.stderr.write = origWrite;
+  }
+  assert(events.some(e => e.type === "done"), "#188: a token-reserve fault still yields done");
+  assert(!events.some(e => e.type === "error"), "#188: a token-reserve fault is not reported as exhausted");
+  assert(/budget token reserve failed: token ledger locked/.test(captured),
+    "#188: a token-reserve fault is reported on stderr by name");
+  assert(!/Token budget exhausted/.test(captured), "#188: a ledger fault is not confused with exhaustion");
+}
+
+// #188 review: a transient token-settle failure is retried exactly once by the
+// finally fallback — no more, and exactly one settlement lands.
+{
+  class FlakyTokenSettleLedger implements BudgetLedgerPort {
+    attempts = 0;
+    successes = 0;
+    reserveCalls(): boolean { return true; }
+    settleCalls(): void { }
+    reserveTokens(): boolean { return true; }
+    settleTokens(): void {
+      this.attempts++;
+      if (this.attempts === 1) throw new Error("transient token lock");
+      this.successes++;
+    }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { }
+  }
+  const ledger = new FlakyTokenSettleLedger();
+  const origWrite = process.stderr.write;
+  let captured = "";
+  const events: any[] = [];
+  process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+  try {
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store: noopStore(),
+      sessionId: "s-188-settle-retry",
+      ledger,
+    });
+    for await (const ev of runtime.run("hello")) events.push(ev);
+  } finally {
+    process.stderr.write = origWrite;
+  }
+  assert(ledger.attempts === 2, "#188: a failed token settle is retried exactly once");
+  assert(ledger.successes === 1, "#188: the retry lands exactly one settlement (no double write)");
+  assert(events.some(e => e.type === "done"), "#188: a transient settle fault still yields done");
+  assert(/budget token settlement failed: transient token lock/.test(captured),
+    "#188: the transient settle fault is reported on stderr");
+}
+
+// #188 review: when the normal call settle fails but the run already reported
+// usage, the finally fallback bills that one call instead of dropping it.
+{
+  class CallSettleFaultLedger implements BudgetLedgerPort {
+    callSettles: Array<{ reserved: number; actual: number }> = [];
+    reserveCalls(): boolean { return true; }
+    settleCalls(_s: string, reserved: number, actual: number): void {
+      this.callSettles.push({ reserved, actual });
+      if (this.callSettles.length === 1) throw new Error("call lock");
+    }
+    reserveTokens(): boolean { return true; }
+    settleTokens(): void { }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { }
+  }
+  const ledger = new CallSettleFaultLedger();
+  const origWrite = process.stderr.write;
+  let captured = "";
+  const events: any[] = [];
+  process.stderr.write = ((chunk: unknown) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+  try {
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store: noopStore(),
+      sessionId: "s-188-call-retry",
+      ledger,
+    });
+    for await (const ev of runtime.run("hello")) events.push(ev);
+  } finally {
+    process.stderr.write = origWrite;
+  }
+  assert(ledger.callSettles.length === 2, "#188: a failed call settle is retried once by the fallback");
+  assert(ledger.callSettles.every(s => s.reserved === 1 && s.actual === 1),
+    "#188: a run with usage stays billable when the normal call settle fails");
+  assert(events.some(e => e.type === "done"), "#188: the call-settle retry still yields done");
+  assert(/budget call settlement failed: call lock/.test(captured),
+    "#188: the call-settle fault is reported on stderr");
+}
+
+// #188 AC2: a live TOML edit raises the ledger cap at the next run. Covers both
+// production shapes: (a) a runtime built AFTER the edit (the MCP per-request
+// host keeps a startup config snapshot; forceFirst loads the current file) and
+// (b) a later edit while the same runtime is alive (mtime diff).
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-live-cap-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const tomlPath = join(dir, "rt.toml");
+    const toml = (cap: number) => [
+      'name = "rt"',
+      '[rag]',
+      'adapter = "none"',
+      '[skills]',
+      'active = ["search"]',
+      '[sources]',
+      'enabled = []',
+      '[hooks]',
+      'toolWhitelist = ["search"]',
+      '[budget]',
+      'tokenCap = ' + cap,
+      'outputReserveTokens = 2048',
+      '',
+    ].join("\n");
+    let stamp = Date.now() / 1000;
+    const writeToml = (cap: number) => {
+      stamp += 2;
+      writeFileSync(tomlPath, toml(cap));
+      utimesSync(tomlPath, stamp, stamp);
+    };
+
+    writeToml(100);
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 100, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+
+    // (a) MCP shape: the host snapshot says 100, the file already says 100000.
+    writeToml(100_000);
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { tokenCap: 100, outputReserveTokens: 2048 } },
+      domainTomlPath: tomlPath,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const first: any[] = [];
+    for await (const ev of runtime.run("hello")) first.push(ev);
+    assert(first.some(e => e.type === "done"),
+      "#188: a runtime built after the edit reads the current cap on its first run");
+    const afterFirst = ledger.getBalance(session.id)!;
+    assert(afterFirst.tokenCap === 100_000, "#188: the first run refreshed the ledger cap from the file");
+    assert(afterFirst.spentTokens === 15 && afterFirst.reservedTokens === 0,
+      "#188: the first run settles by actual usage");
+
+    // (b) same runtime: a later lower hard-stops, a later raise runs again.
+    writeToml(100);
+    const lowered: any[] = [];
+    for await (const ev of runtime.run("hello")) lowered.push(ev);
+    assert(lowered.some(e => e.type === "error"), "#188: lowering the cap hard-stops the next run");
+
+    writeToml(100_000);
+    const raised: any[] = [];
+    for await (const ev of runtime.run("hello")) raised.push(ev);
+    assert(raised.some(e => e.type === "done"), "#188: raising the cap again lets the next run through");
+    const afterRaised = ledger.getBalance(session.id)!;
+    assert(afterRaised.tokenCap === 100_000 && afterRaised.spentTokens === 30 && afterRaised.reservedTokens === 0,
+      "#188: the raised-cap run settles by actual usage");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #188 (CodeRabbit): a TOML change consumed by beforeToolCall mid-run must still
+// refresh the ledger caps at the next run boundary. The next run's mtime probe
+// sees no change, so only the pending flag can carry the refresh.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-pending-cap-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const tomlPath = join(dir, "rt.toml");
+    const toml = (cap: number) => [
+      'name = "rt"',
+      '[rag]',
+      'adapter = "none"',
+      '[skills]',
+      'active = ["search"]',
+      '[sources]',
+      'enabled = []',
+      '[hooks]',
+      'toolWhitelist = ["search"]',
+      '[budget]',
+      'tokenCap = ' + cap,
+      'outputReserveTokens = 2048',
+      '',
+    ].join("\n");
+    writeFileSync(tomlPath, toml(100));
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 100, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { tokenCap: 100, outputReserveTokens: 2048 } },
+      domainTomlPath: tomlPath,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+
+    // First run consumes forceFirst and leaves the row at 100.
+    const blocked: any[] = [];
+    for await (const ev of runtime.run("hello")) blocked.push(ev);
+    assert(blocked.some(e => e.type === "error"), "#188: the low cap rejects the first run");
+
+    // Simulate what beforeToolCall does mid-run: consume the file change, update
+    // the in-memory domain, and mark the budget refresh pending.
+    writeFileSync(tomlPath, toml(100_000));
+    utimesSync(tomlPath, Date.now() / 1000 + 2, Date.now() / 1000 + 2);
+    const reloaded = (runtime as any).domainReloader();
+    assert(reloaded !== null, "#188: the mid-run reload sees the new file");
+    (runtime as any).opts.domain = reloaded;
+    (runtime as any).pendingBudgetRefresh = true;
+
+    const resumed: any[] = [];
+    for await (const ev of runtime.run("hello")) resumed.push(ev);
+    assert(resumed.some(e => e.type === "done"),
+      "#188: the pending mid-run change refreshes caps even when the next probe sees no change");
+    const balance = ledger.getBalance(session.id)!;
+    assert(balance.tokenCap === 100_000 && balance.spentTokens === 15 && balance.reservedTokens === 0,
+      "#188: the pending refresh updates the durable cap and the run settles by actual usage");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #188 (CodeRabbit): a base TOML that lives only in a host-specific domains dir
+// must still resolve on the run-boundary re-read.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-extra-dirs-"));
+  const extraDir = join(dir, "extra");
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    writeFileSync(join(dir, "rt.toml"), [
+      'name = "rt"',
+      'base = "base"',
+      '[rag]',
+      'adapter = "none"',
+      '[skills]',
+      'active = ["search"]',
+      '[sources]',
+      'enabled = []',
+      '[hooks]',
+      'toolWhitelist = ["search"]',
+      '',
+    ].join("\n"));
+    mkdirSync(extraDir, { recursive: true });
+    writeFileSync(join(extraDir, "base.toml"), [
+      'name = "base"',
+      '[rag]',
+      'adapter = "none"',
+      '[skills]',
+      'active = ["search"]',
+      '[sources]',
+      'enabled = []',
+      '[hooks]',
+      'toolWhitelist = ["search"]',
+      '[budget]',
+      'tokenCap = 100000',
+      'outputReserveTokens = 2048',
+      '',
+    ].join("\n"));
+
+    const session = await store.createSession("chat");
+    store.initBudget(session.id, { tokenCap: 100, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+    const ledger = store.createBudgetLedger();
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: { ...mockDomain, budget: { tokenCap: 100, outputReserveTokens: 2048 } },
+      domainTomlPath: join(dir, "rt.toml"),
+      domainsDirs: [extraDir, dir],
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(10, 5, 15, 0.001),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const events: any[] = [];
+    for await (const ev of runtime.run("hello")) events.push(ev);
+    assert(events.some(e => e.type === "done"),
+      "#188: a base TOML found only through the host domains dirs resolves on the first run");
+    const balance = ledger.getBalance(session.id)!;
+    assert(balance.tokenCap === 100_000 && balance.spentTokens === 15,
+      "#188: the inherited cap refreshed the durable row");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #188 (CodeRabbit): default 12288 and the TOML override are proven at the real
+// ledger cap boundary, not only through a mock port. 400-char system + 400-char
+// prompt estimate to 200 tokens; cap 12488 fits 200 + 12288, cap 12487 does not.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-188-default-boundary-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const domain = { ...mockDomain, prompts: [{ name: "system", content: "s".repeat(400) }] };
+    const prompt = "x".repeat(400);
+    const runAtCap = async (cap: number, budget?: DomainConfigPort["budget"]) => {
+      const session = await store.createSession("chat");
+      store.initBudget(session.id, { tokenCap: cap, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+      const ledger = store.createBudgetLedger();
+      const runtime = new PiAgentRuntime({
+        retriever: new MockRetriever(),
+        domain: budget ? { ...domain, budget } : domain,
+        model: { id: "test-model", provider: "test" } as any,
+        streamFn: usageStream(10, 5, 15, 0.001),
+        store,
+        sessionId: session.id,
+        ledger,
+      });
+      const events: any[] = [];
+      for await (const ev of runtime.run(prompt)) events.push(ev);
+      return { events, balance: ledger.getBalance(session.id)! };
+    };
+
+    const fits = await runAtCap(12488);
+    assert(fits.events.some(e => e.type === "done"), "#188: default reserve 12288 fits exactly at cap 12488");
+    assert(fits.balance.spentTokens === 15, "#188: the fitting run settles");
+
+    const misses = await runAtCap(12487);
+    assert(misses.events.some(e => e.type === "error"), "#188: default reserve 12288 is rejected one token below");
+    assert(misses.balance.reservedTokens === 0 && misses.balance.spentTokens === 0,
+      "#188: the rejected run leaves no reservation or spend");
+
+    const overrideFits = await runAtCap(4296, { outputReserveTokens: 4096 });
+    assert(overrideFits.events.some(e => e.type === "done"), "#188: the 4096 TOML override fits at cap 4296");
+    const overrideMisses = await runAtCap(4295, { outputReserveTokens: 4096 });
+    assert(overrideMisses.events.some(e => e.type === "error"), "#188: the 4096 override is rejected one token below");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
 }
 
 console.log("---");
@@ -1058,7 +1765,7 @@ console.log("---");
   const ragTokens = withRag.tokenSettles[0]?.actual ?? 0;
   const plainTokens = withoutRag.tokenSettles[0]?.actual ?? 0;
   assert(ragTokens > plainTokens, "#104+#103: RAG-injected turn meters more tokens than the plain turn");
-  assert(withRag.tokenSettles[0]?.reserved === 0, "#104+#103: token dimension still settle-only");
+  assert((withRag.tokenSettles[0]?.reserved ?? 0) > 0, "#188: token reserve is taken before the metered turn settles");
   assert((withRag.usdSettles[0]?.actual ?? 0) > 0, "#104+#103: USD still settled from pi-ai cost");
   assert(withRag.usdSettles[0]?.actual > (withoutRag.usdSettles[0]?.actual ?? 0),
     "#104+#103: injected context costs more USD");

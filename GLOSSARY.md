@@ -21,7 +21,7 @@
 
 - **Composition Root（组合根）**——`createEngine(domain?)` 纯函数统一入口：按域过滤 providers、构造引擎；CLI/MCP/plugin 三端共享，替代散装 new+register。
 - **Seam Wiring（接缝接线）**——把已定义未连通的 kernel port 接到实际实现的过程；接缝接通后端口成为可测试、可替换的合约边界。
-- **Budget Ledger（预算账本）**——reserve-then-settle 预算机制：检索前预留、检索后结算，SQLite 非负约束固化；Billing Dimension 分 per-call 与 token/USD 两维，token/USD 在 #188 落地前维持 settle-only（reserved 0），token/USD 的 reserve 侧尚未实现。生产 runtime（`ans chat` / `ans_chat`）在会话行注册成功后由 #177/#178 注入同一 engine ledger（计费门 = `store && sessionId && ledger`，注册或预算 setup 失败 fail-open 不交 ledger），预算行由 #187 的 `[budget]` 注册位点建立/释放（无 `[budget]` = 无行放行）；预留被拒时 engine 检索 throw 阻断，runtime 继续当次 run 但不再结算未获预留的 call（硬停归 #188）。
+- **Budget Ledger（预算账本）**——先预留、后结算的预算机制：run 开始前按「输入占用 + 输出上限」占住 token，结束后按实际用量记账；占不住就停当次 run，只停这一次。token 维度已经这样做（#188），USD 因没有价格表只记账、不预留（#186 决定 6）；没配 `[budget]` 的会话没有账本行，照常放行。
 - **Sufficiency Gate（充分性门禁）**——检索质量下界（minProviders/minResults/minDomains/crossEngineVerify），post-hoc 判定；与 budget 上界、fanout 延迟三维度互不打架。
 - **PiAgentRuntime（PI Agent 运行时）**——kernel 内 AgentRuntime 的实现：pi-agent-core 驱动 agent loop，把 engine.search() 包成自定义工具，事件桥接到自有 AgentEvent 类型。
 - **Domain Full-Stack（领域全栈消费）**——domain 配置五层在 runtime 的完整映射：sources→provider、hooks→工具白名单、prompts→systemPrompt、skills→AgentTool、rag→transformContext 注入。

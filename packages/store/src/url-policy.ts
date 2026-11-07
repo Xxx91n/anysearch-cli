@@ -171,12 +171,23 @@ export function readPolicyCacheEnvelope(cachePath: string): MaterializedPolicy |
   }
 }
 
-// D5: lazy mtime-checked re-read. Probe returns null = unchanged (or unreadable), schema = reloaded.
-// #167/CodeRabbit: inheritance-aware. Startup now resolves inherited domains via
-// file-based lookup (loadDomainByNameIn), so the reloader must use the same
-// lookup and watch ancestor mtimes. Otherwise a child with base stays stale
-// after a restart-free edit, and a base-only edit is invisible (no warning).
-export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): () => DomainSchema | null {
+/**
+ * Lazy mtime-checked domain reloader (#167/#CodeRabbit).
+ *
+ * Probe returns null = unchanged (or unreadable), schema = reloaded.
+ * Inheritance-aware: startup resolves inherited domains via file-based lookup
+ * (loadDomainByNameIn), so the reloader must use the same lookup and watch
+ * ancestor mtimes. Otherwise a child with base stays stale after a restart-free
+ * edit, and a base-only edit is invisible (no warning).
+ *
+ * #188: `forceFirst` makes the first probe load and return the schema even when
+ * the mtime is unchanged. A long-lived host that builds a fresh runtime per
+ * request (ans_chat) snapshots mtimes at construction — after a TOML edit — so
+ * an mtime-only difference would never fire. The first run then still sees the
+ * current file instead of the host's startup config snapshot. Default false
+ * preserves the existing "unchanged -> null" contract for other callers.
+ */
+export function createDomainReloader(tomlPath: string, domainsDirs?: string[], opts?: { forceFirst?: boolean }): () => DomainSchema | null {
   const getSearchDirs = (): string[] => {
     if (domainsDirs) return domainsDirs;
     const dirs: string[] = [];
@@ -254,8 +265,11 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): 
   let mtimes = new Map<string, string>();
   for (const pp of watched) mtimes.set(pp, fileVersion(pp));
   let warnedSig = "";
+  let forcedFirst = opts?.forceFirst === true;
 
   return () => {
+    const forced = forcedFirst;
+    forcedFirst = false;
     // snapshot before attempt so a parent created during the load is not
     // recorded as already loaded.
     const preWatched = [...watched];
@@ -263,7 +277,7 @@ export function createDomainReloader(tomlPath: string, domainsDirs?: string[]): 
     for (const pp of watched) {
       if (fileVersion(pp) !== mtimes.get(pp)) { changed = true; break; }
     }
-    if (!changed) return null;
+    if (!forced && !changed) return null;
     try {
       const schema = loadDomain(tomlPath, lookupFor());
       const next = collectChainAndProbed();

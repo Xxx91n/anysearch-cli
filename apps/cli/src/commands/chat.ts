@@ -125,7 +125,10 @@ export async function runChat(argv: string[]): Promise<number> {
     // the real `ans chat` path instead of being silently skipped.
     ...memory,
     // lazy mtime re-read lets `ans hitl --allow-url` write-back take effect live.
-    domainTomlPath: domainTomlPath(),
+    domainTomlPath: domainTomlPath(undefined, engine.domainName, engine.domainsDirs),
+    // #188: same dirs the engine loaded the domain from, so the run-boundary
+    // reloader can still resolve inherited base TOMLs.
+    domainsDirs: engine.domainsDirs,
     // CLI is the TTY composition root; kernel decides isInteractive itself.
     interactive: !process.env.ANS_NO_INTERACTIVE,
     model: session.model,
