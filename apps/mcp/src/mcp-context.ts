@@ -3,14 +3,14 @@
 // #213: client attribution is read from the SDK request context, where a
 // 2026-07-28 request carries `_meta["io.modelcontextprotocol/clientInfo"]`
 // on every call. The initialize-time extraction in http.ts is only a
-// fallback for callers that stash it: legacy 2025-11-25 requests carry no
-// per-request clientInfo, and a stateless HTTP server cannot carry the
-// initialize handshake across requests, so those calls record mcp_unknown.
+// fallback: legacy 2025-11-25 requests carry no per-request clientInfo, and a
+// stateless HTTP server cannot carry the initialize handshake across requests,
+// so those calls record mcp_unknown.
 //
 // Failure modes:
 // - AsyncLocalStorage unavailable (very old Node): falls back to undefined
 // and the audit event records client_id = "mcp_unknown" (still safe).
-// - Stash never set (stdio transport bypasses the HTTP shim): same fallback.
+// - Fallback never set (stdio transport bypasses the HTTP shim): same fallback.
 //
 // session_id is intentionally NOT stashed here - MCP keeps session_id empty
 // per (protocol carries no per-instance session identifier). Cross-call state is
@@ -53,8 +53,8 @@ export function readClientInfoName(value: unknown): string | undefined {
 }
 
 // Design: per-request `_meta` clientInfo is the primary client-attribution
-// source, with the initialize-time stash as a fallback — the stateless
-// transport cannot guarantee a cross-request stash, so a legacy call without
+// source; the initialize-time extraction is only a fallback, and the stateless
+// transport cannot carry it across requests, so a legacy call without
 // per-request identity records mcp_unknown (#213; rejected: a process-wide
 // client-info global).
 //

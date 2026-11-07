@@ -1,6 +1,6 @@
 // #213 client attribution — a modern per-request `_meta` clientInfo maps to a
 // client_id in the observation trace; a legacy call without per-request
-// clientInfo records mcp_unknown; the initialize-only stash remains a fallback.
+// clientInfo records mcp_unknown; the initialize-only extraction remains a fallback.
 //
 // Seam: real buildServer()/createHttpApp() + real SqliteObservationStore over
 // the in-memory SDK transport and the production stateless HTTP app. The
@@ -152,6 +152,10 @@ async function main() {
       try {
         const init = await http.post({ jsonrpc: "2.0", id: 1, method: "initialize", params: initialized });
         assert(init.status === 200, "http legacy initialize: 200");
+        // The shipped server stays legacy-only: a request carrying
+        // MCP-Protocol-Version: 2026-07-28 is rejected before dispatch
+        // (dual-era.test.ts), so the reachable modern path is the body
+        // envelope without that header.
         const modern = await http.post({
           jsonrpc: "2.0",
           id: 2,
@@ -175,20 +179,20 @@ async function main() {
       }
     }
 
-    // ---- 4) the initialize-time stash remains a fallback ----
+    // ---- 4) the initialize-time fallback remains available ----
     {
       await runWithMcpIdentity({ clientInfoName: "claude-ai" }, () =>
         observeTool(engine, "search_web", undefined, async () => ({ content: [] })));
       const attribution = store.readAttribution(latest());
-      assert(attribution?.clientId === "claude_code", "initialize stash maps to claude_code when no per-request envelope exists");
+      assert(attribution?.clientId === "claude_code", "initialize fallback maps to claude_code when no per-request envelope exists");
     }
 
-    // ---- 5) the per-request envelope wins over the initialize stash ----
+    // ---- 5) the per-request envelope wins over the initialize fallback ----
     {
       await runWithMcpIdentity({ clientInfoName: "claude-ai" }, () =>
         observeTool(engine, "search_web", fakeCtx({ name: "cursor", version: "0" }), async () => ({ content: [] })));
       const attribution = store.readAttribution(latest());
-      assert(attribution?.clientId === "cursor", "per-request clientInfo takes precedence over the initialize stash");
+      assert(attribution?.clientId === "cursor", "per-request clientInfo takes precedence over the initialize fallback");
     }
 
     // ---- 6) untrusted/malformed clientInfo degrades to mcp_unknown ----

@@ -335,11 +335,14 @@ Tools never print to stdout; the server keeps the protocol channel pure.
 
 Client attribution is per-request. A `2026-07-28` `tools/call` that carries
 `_meta["io.modelcontextprotocol/clientInfo"]` is mapped to the observation
-trace's `client_id`. A legacy `2025-11-25` stateless HTTP tool call carries no
-per-request identity and cannot inherit the `initialize` handshake across
-requests, so it records `mcp_unknown` — that is expected, not a bug. The
-`initialize`-body extraction remains a fallback, not a stable cross-request
-promise.
+trace's `client_id` when it reaches a handler; the hand-wired server stays
+legacy-only, so a non-initialize request sending the modern
+`MCP-Protocol-Version` header is rejected before dispatch (see the dual-era
+row). A legacy `2025-11-25` stateless
+HTTP tool call carries no per-request identity and cannot inherit the
+`initialize` handshake across requests, so it records `mcp_unknown` — that is
+expected, not a bug. The `initialize`-body extraction remains a fallback, not a
+stable cross-request promise.
 
 ## How it works
 

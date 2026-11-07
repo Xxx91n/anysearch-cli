@@ -4,9 +4,9 @@ import type { ObservationAttributes } from "@anysearch-cli/store";
 import { mapMcpClientId } from "@anysearch-cli/store";
 import { currentMcpIdentity, requestClientInfoName } from "../mcp-context.js";
 
-// Design: per-request `_meta` clientInfo wins over the initialize stash, and
-// absence of both records mcp_unknown — a legacy stateless call has no
-// per-request identity (#213). session_id always empty for MCP (stateless
+// Design: per-request `_meta` clientInfo wins over the initialize fallback,
+// and absence of both records mcp_unknown — a legacy stateless call has no
+// per-request attribution (#213). session_id always empty for MCP (stateless
 // protocol). Trace_id is generated per recordOperation (entry-process per MCP
 // tool call).
 export function observeTool<T>(

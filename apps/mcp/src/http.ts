@@ -14,9 +14,9 @@ import type { CompositionResult } from "@anysearch-cli/kernel";
 import express, { type Express } from "express";
 import { buildServer, PKG_VERSION } from "./server.js";
 import { createMcpToolState, type McpToolState } from "./tool-state.js";
-// #213 client attribution: the primary source is the SDK request context
-// (mcp-context.ts); this body parser only preserves the legacy initialize-time
-// fallback, which cannot cross a stateless HTTP request boundary.
+// Design: this body parser reads only the legacy initialize-time clientInfo;
+// the primary per-request source is mcp-context.ts requestClientInfoName, and
+// a stateless HTTP server cannot carry this fallback across requests (#213).
 import { readClientInfoName, runWithMcpIdentity } from "./mcp-context.js";
 
 // minimal shape of an MCP request body — only clientInfo.name is read here.
@@ -33,8 +33,8 @@ interface McpRequestBody {
  * modern 2026-07-28 request carries clientInfo in `_meta` instead; that path
  * is read from the SDK request context, not this body parser. The body is
  * untrusted wire data: anything that is not a non-empty string is treated as
- * absent, so a malformed payload cannot smuggle a non-string into the identity
- * store.
+ * absent, so a malformed payload cannot smuggle a non-string into the
+ * attribution path.
  *
  * @param body Parsed JSON-RPC request body.
  * @returns The declared client name, or undefined when absent/malformed.
