@@ -258,17 +258,31 @@ manifest, inspect `skills/synced/` directly before removing anything.
 The Active Domain's `[skills].active` remains the authority for the Skill
 Active List; manage activation through the domain configuration as before.
 
-## Provider domain-filter matrix
+## Provider transport & capability matrix
 
-| provider | pre-filter sent | degrade mode |
-|----------|-----------------|--------------|
-| tavily   | yes (`include_domains`, hard filter mode) | — |
-| exa      | yes (`includeDomains`) | — |
-| anysearch| no (MCP `domain` is a vertical-routing enum, not a host allowlist) | post-filter only |
+| provider | transport | wired search surface | answer mode | domain pre-filter | vertical routing | cancellation | standalone usage |
+|----------|-----------|----------------------|-------------|-------------------|------------------|--------------|------------------|
+| anysearch | MCP Streamable HTTP (`POST /mcp`, hand-rolled JSON-RPC; not the official SDK) | `search` (fast / index / deep; an `answer` request degrades to a plain search) | no | no (post-filter only) | yes (`domain` / `sub_domain` / `sub_domain_params`) | yes (per-POST fetch signal; shared handshake caveat below) | no |
+| exa | official `exa-js` SDK | `search` (fast / index / deep / answer) | yes (`answer()`, citations retained with `verified:false`; an answer failure degrades to results plus a stderr line) | yes (`includeDomains`, `search()` only; see note) | no | no (`exa-js@2.18.1` exposes no signal; #216) | no |
+| tavily | official `@tavily/core` SDK | `search` (fast / index / deep / answer) | yes (`includeAnswer`) | yes (`include_domains`, hard filter) | no | no (`@tavily/core@0.7.7` exposes no signal; #32) | no |
 
 Provider selection comes from the domain TOML's `sources.enabled`. Missing
 keys skip that provider instead of crashing (fail-open); if *no* provider can
 register, the search is an error, not an abstain.
+
+The matrix records what the adapters actually wire, not what each upstream
+catalog offers. Exa and Tavily stay on their official SDKs: their hosted MCP
+servers are agent-facing tool surfaces, not a server-side provider API, and
+**no Exa/Tavily MCP migration is planned**. AnySearch is the only MCP upstream
+here because MCP is its native search transport, not because MCP is preferred
+over SDKs for provider code.
+
+Two caveats behind the matrix: AnySearch cancels each POST, but concurrent
+searches share the one-time MCP handshake — it follows the first caller's
+signal, so later callers cannot cancel that wait and aborting the first caller
+can fail both searches. Exa's `includeDomains` applies only to `search()`; the
+separate `answer()` call does not receive the allowlist, and the kernel does
+not URL-gate answer text or citations.
 
 ## AnySearch vertical domains
 

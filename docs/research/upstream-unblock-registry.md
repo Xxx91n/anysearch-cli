@@ -158,9 +158,9 @@ Then forward `SearchRequest`'s `signal` param (accepted at `tavily.ts:30`
 per contract but currently dropped) into the SDK call.
 
 登记状态: registered — `docs/limitations.md` L65-67
-("**Tavily does not forward `AbortSignal`** — provider-side timeouts are not
-cancelable through the SDK ... the kernel budget guard still bounds wall
-time."). No new entry needed; the issue stays open as the upstream-watch
+("**Tavily does not forward `AbortSignal` (#32)** — provider-side timeouts are not
+cancelable through the SDK. The budget guard limits spend, not wall time: the
+grace window only aborts stragglers once enough results arrive, so a slow call can still overrun the budget."). No new entry needed; the issue stays open as the upstream-watch
 handle.
 
 ## #33 Tavily usage() 恒 undefined：仅 per-call credits，无独立用量 API
@@ -200,6 +200,25 @@ the envelope meanwhile).
   is unimplemented (contract field is optional).
 ```
 
+## #216 Exa provider 无法取消：installed pin 未转发 exa-js 的 AbortSignal（上游 2.26.0 已支持）
+
+解除信号: **met upstream** — `exa-js@2.26.0` (2026-10-19) added per-request
+timeouts and abort support; request options (`signal`, `timeout`, `body`,
+`headers`, `query`) are a trailing argument on every method. The repo still
+pins `^2.18.1`, whose installed types expose no `signal` / `AbortSignal`, and
+the adapter accepts the contract signal but drops it
+(`packages/retriever/src/providers/exa.ts:30-40,58-61`).
+
+Actionable now: bump `exa-js` to >=2.26.0, pass the `SearchRequest` signal as
+the trailing request option to `search()` and `answer()`, and add a mock test
+that observes an already-aborted signal. Exa is separate from Tavily (#32):
+different upstream, different issue.
+
+登记状态: registered — `docs/limitations.md` "**Exa does not forward
+`AbortSignal`**" (#216, separate from Tavily's #32), updated by #208. Issued
+as a `needs-info` watch under #203; upstream support is now met, adapter
+forwarding is the remaining work.
+
 ## Summary
 
 | Issue | Surface that changes | 解除信号 (trigger fact) | 登记状态 |
@@ -213,6 +232,7 @@ the envelope meanwhile).
 | #32 | `tavily.ts:30-34` signal forwarding | `@tavily/core` exposes `signal`/abort option | **registered** — limitations.md L65-67 |
 | #33 | `tavily.ts:68,72-73` `usage()` | Tavily standalone usage API exists | registered — `docs/limitations.md` L177-179 |
 | #34 | `exa.ts:82,86-87` `usage()` | Exa standalone usage API exists | registered — `docs/limitations.md` L180-182 |
+| #216 | `exa.ts:30-40,58-61` signal forwarding | `exa-js@2.26.0` exposes `signal`/abort option — met | **registered** — `docs/limitations.md` Exa AbortSignal entry; adapter forwarding open |
 
 Legend: "issue-only" rows are adjudicated as sufficiently tracked by the
 issue itself plus in-code comments/tests — registering them in

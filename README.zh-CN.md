@@ -224,17 +224,29 @@ bootstrap 出清单。恰好符合生成形态的名字与安装器残留无法�
 **安装不等于激活。** 这些命令绝不改写 domain TOML。Skill Active List 仍由
 Active Domain 的 `[skills].active` 决定，激活仍按原方式通过 domain 配置管理。
 
-## Provider 域名过滤矩阵
+## Provider 传输与能力矩阵
 
-| provider | 前置过滤已下发 | 降级模式 |
-|----------|-----------------|--------------|
-| tavily   | yes（`include_domains`，硬过滤模式） | — |
-| exa      | yes（`includeDomains`） | — |
-| anysearch| no（MCP `domain` 是垂域路由枚举，不是 hostname allowlist） | 仅后置过滤 |
+| provider | 传输 | 已接线的检索面 | answer 模式 | 域名前置过滤 | 垂域路由 | 取消 | 独立用量接口 |
+|----------|------|----------------|-------------|--------------|----------|------|--------------|
+| anysearch | MCP Streamable HTTP（`POST /mcp`，手写 JSON-RPC；不是官方 SDK） | `search`（fast / index / deep；`answer` 请求降级为普通检索） | no | no（仅后置过滤） | yes（`domain` / `sub_domain` / `sub_domain_params`） | yes（每次 POST 带 fetch signal；共享握手注意见下） | no |
+| exa | 官方 `exa-js` SDK | `search`（fast / index / deep / answer） | yes（`answer()` 返回 citations，`verified:false`；answer 失败时降级为检索结果并输出 stderr 一行） | yes（`includeDomains`，仅 `search()`；见注） | no | no（`exa-js@2.18.1` 未暴露 signal；#216） | no |
+| tavily | 官方 `@tavily/core` SDK | `search`（fast / index / deep / answer） | yes（`includeAnswer`） | yes（`include_domains`，硬过滤） | no | no（`@tavily/core@0.7.7` 未暴露 signal；#32） | no |
 
 Provider 选择来自域名 TOML 的 `sources.enabled`。缺 key 的 provider 被
 跳过而非崩溃（fail-open）；若*没有任何* provider 能注册，搜索是错误
 而非弃权。
+
+矩阵记录的是适配器实际接线的能力，不是各上游目录提供的全部能力。Exa 与
+Tavily 继续使用官方 SDK：它们的托管 MCP server 是面向 agent 的工具面，
+不是本仓的服务端 provider API，**不计划把 Exa/Tavily 迁移到 MCP**。
+AnySearch 是这里唯一的 MCP 上游，因为 MCP 就是它的原生检索传输，而不是
+因为我们认为 provider 代码应优先用 MCP 而非 SDK。
+
+矩阵背后有两点注意：AnySearch 的取消覆盖每次 POST，但并发检索共享同一次
+MCP 握手——它跟随第一个调用方的 signal，后来的调用方无法取消这段等待，
+而中止第一个调用方可能同时让两个检索失败。Exa 的 `includeDomains` 只作用于
+`search()`；单独的 `answer()` 调用不会收到 allowlist，kernel 也不会对
+answer 文本或 citations 应用 URL 过滤。
 
 ## AnySearch 垂域
 
