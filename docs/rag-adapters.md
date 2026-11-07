@@ -177,7 +177,7 @@ pnpm -C packages/kernel test    # test/rag-adapter.test.ts、test/message-text.t
 
 ## 边界（还没做的）
 
-- **`fts` 尚未在任何出厂域启用** —— `domains/default.toml`、`docs.toml`、`research.toml` 仍是 `adapter = "none"`。#130 裁定保持这个默认：启用 `fts` 是显式 opt-in，属另一项产品决策；#154 只影响其落点质量，不是启用前提。启用步骤：把该域 TOML 的 `rag.adapter` 设为 `"fts"`，用 `ANS_DOMAIN` 选中该域，然后重启 MCP server——`createDefaultEngine` 在构造时快照 Active Domain，运行中的 server 不会看到这次编辑。
+- **`fts` 尚未在任何出厂域启用** —— `domains/default.toml`、`docs.toml`、`research.toml` 仍是 `adapter = "none"`。#130 裁定保持这个默认：启用 `fts` 是显式 opt-in，属另一项产品决策；#154 只影响其落点质量，不是启用前提。启用步骤：把该域 TOML 的 `[rag]` 段里 `adapter` 设为 `"fts"`（替换现有的 `adapter = "none"`，不要追加同名键），用 `ANS_DOMAIN` 选中该域，然后重启 MCP server——`createDefaultEngine` 在构造时快照 Active Domain，运行中的 server 不会看到这次编辑。
 - **MCP `query_knowledge` 已接本注册表（#155）** —— 工具按 Active Domain 的
   `rag.adapter` 走 `RagAdapterRegistry.resolve`；`fts` 时以 `RAG_DEFAULT_LIMIT`
   调 `retrieve`，读取范围是 store 级共享 Research Memory（与 `recall_memory` 一致，

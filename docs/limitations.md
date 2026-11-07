@@ -158,9 +158,10 @@
   id fails open to `none` with one deduped stderr warning. The input schema stays
   `{ query: string }`. Every shipped domain stays on `none`, so a default install
   answers empty until a domain opts into `fts`. To activate it, set
-  `rag.adapter = "fts"` in that domain's TOML, select it with `ANS_DOMAIN`, and
-  restart the MCP server: `createDefaultEngine` snapshots the active domain at
-  construction, so a running server does not see the edit.
+  `adapter = "fts"` under `[rag]` in that domain's TOML (replace the existing
+  `adapter = "none"` line), select it with `ANS_DOMAIN`, and restart the MCP
+  server: `createDefaultEngine` snapshots the active domain at construction, so
+  a running server does not see the edit.
 - **`rag.adapter = "fts"` reads store-level shared Research Memory (#130,
   superseding the #104 CWE-200 disclosure)** — this is a deliberate boundary,
   not an open question: the store is the isolation unit (Store Principal), and
