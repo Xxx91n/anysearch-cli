@@ -1,7 +1,7 @@
 // recall_memory tool: FTS5 with time edge effect + project index fallback (two-stage).
 // input validated by AJV from KernelToolSchemas; handler reads typed args.
 
-import type { McpServer } from "@modelcontextprotocol/server";
+import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import { KernelJsonSchemas, KernelToolDescriptions } from "@anysearch-cli/kernel";
@@ -15,8 +15,8 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
       description: KernelToolDescriptions.recall_memory,
       inputSchema: fromJsonSchema(KernelJsonSchemas.recall_memory),
     },
-    async (args: unknown) => {
-      return observeTool(eng, "recall_memory", async () => {
+    async (args: unknown, ctx?: ServerContext) => {
+      return observeTool(eng, "recall_memory", ctx, async () => {
       try {
         const { query, limit } = args as { query: string; limit?: number };
         const lim = limit ?? 5;

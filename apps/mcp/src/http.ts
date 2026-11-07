@@ -14,9 +14,10 @@ import type { CompositionResult } from "@anysearch-cli/kernel";
 import express, { type Express } from "express";
 import { buildServer, PKG_VERSION } from "./server.js";
 import { createMcpToolState, type McpToolState } from "./tool-state.js";
-// stash clientInfo from initialize requests into AsyncLocalStorage
-// so observeTool can map it to a stable client_id via Railway PR #885.
-import { runWithMcpIdentity } from "./mcp-context.js";
+// Design: this body parser reads only the legacy initialize-time clientInfo;
+// the primary per-request source is mcp-context.ts requestClientInfoName, and
+// a stateless HTTP server cannot carry this fallback across requests (#213).
+import { readClientInfoName, runWithMcpIdentity } from "./mcp-context.js";
 
 // minimal shape of an MCP request body — only clientInfo.name is read here.
 interface McpRequestBody {
@@ -27,18 +28,19 @@ interface McpRequestBody {
 /**
  * Reads clientInfo.name out of a JSON-RPC body, if it is there.
  *
- * The MCP spec sends clientInfo only on initialize, so every other call
- * legitimately yields undefined and the observer keeps its anonymous id. The
- * body is untrusted wire data: anything that is not a non-empty string is
- * treated as absent, so a malformed payload cannot smuggle a non-string into
- * the identity store.
+ * Legacy MCP sends clientInfo only on initialize, so every other call
+ * legitimately yields undefined and the observer keeps its anonymous id. A
+ * modern 2026-07-28 request carries clientInfo in `_meta` instead; that path
+ * is read from the SDK request context, not this body parser. The body is
+ * untrusted wire data: anything that is not a non-empty string is treated as
+ * absent, so a malformed payload cannot smuggle a non-string into the
+ * attribution path.
  *
  * @param body Parsed JSON-RPC request body.
  * @returns The declared client name, or undefined when absent/malformed.
  */
 export function extractClientInfoName(body: unknown): string | undefined {
-  const name = ((body || {}) as McpRequestBody).params?.clientInfo?.name;
-  return typeof name === "string" && name.length > 0 ? name : undefined;
+  return readClientInfoName(((body || {}) as McpRequestBody).params?.clientInfo);
 }
 
 // Design: per-request stateless McpServer + transport over ONE shared startup
@@ -93,9 +95,10 @@ export function createHttpApp(
         keepAliveMs: 0,
       });
       await server.connect(t);
-      // best-effort clientInfo extraction. The MCP spec
-      // sends clientInfo only on initialize; we still wrap every call in
-      // AsyncLocalStorage so observeTool can pick it up consistently.
+      // #213 fallback only: legacy initialize carries clientInfo in params,
+      // and the modern per-request path is read from the SDK context instead.
+      // Every request is still wrapped so the fallback (and #209's signal)
+      // remain available inside the tool handler.
       const clientInfoName = extractClientInfoName(req.body);
       await runWithMcpIdentity({ clientInfoName, signal: requestAbort.signal }, () => t.handleRequest(req, res, req.body));
     } catch (e) {

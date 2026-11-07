@@ -5,7 +5,7 @@
 // only "fts" performs retrieval. Unknown adapter ids fail-open to none
 // with a deduped stderr warning (handled by RagAdapterRegistry.resolve).
 // input validated by AJV.
-import type { McpServer } from "@modelcontextprotocol/server";
+import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import {
@@ -27,8 +27,8 @@ export function registerQueryKnowledge(server: McpServer, eng: CompositionResult
       description: KernelToolDescriptions.query_knowledge,
       inputSchema: fromJsonSchema(KernelJsonSchemas.query_knowledge),
     },
-    async (args: unknown) => {
-      return observeTool(eng, "query_knowledge", async () => {
+    async (args: unknown, ctx?: ServerContext) => {
+      return observeTool(eng, "query_knowledge", ctx, async () => {
         const { query } = args as { query: string };
         const domain = eng.config;
 
