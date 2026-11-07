@@ -11,6 +11,7 @@ import { createEngine, resolveDbPath, type CompositionResult } from "@anysearch-
 import { defaultDomainsDirs, ensureOwnerOnlyDb } from "@anysearch-cli/store";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createMcpToolState, type McpToolState } from "./tool-state.js";
 import { TOOL_REGISTRY } from "./tools/index.js";
 
 // ponytail: single source of truth for server version. Tsup substitutes
@@ -64,15 +65,20 @@ export function createDefaultEngine(): CompositionResult {
 // #112: an injected engine is reused exactly as given — the HTTP transport
 // passes its one startup engine on every request. Omitting it keeps stdio and
 // the cold-HOME boot path on a freshly built default composition root.
-export function buildServer(engine?: CompositionResult): McpServer {
+// #210: an injected tool state is likewise reused across the transport's
+// per-request servers, so the ans_chat LLM client stays process-level. Omitting
+// it builds a fresh state per server, which keeps direct registrations and tests
+// isolated.
+export function buildServer(engine?: CompositionResult, state?: McpToolState): McpServer {
   const eng: CompositionResult = engine ?? createDefaultEngine();
+  const toolState = state ?? createMcpToolState();
   const server = new McpServer(
     { name: "anysearch", version: PKG_VERSION },
     { capabilities: { tools: {} } }
   );
 
   for (const tool of TOOL_REGISTRY) {
-    tool.register(server, eng);
+    tool.register(server, eng, toolState);
   }
 
   return server;
