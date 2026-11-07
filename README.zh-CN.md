@@ -285,13 +285,22 @@ anysearch provider 另有一根正交轴：服务端**垂域路由**。可按查
 ## MCP 服务器
 
 ```bash
-node apps/mcp/dist/index.cjs                    # stdio transport (default)
-node apps/mcp/dist/index.cjs --transport http --port 3099   # HTTP
+npm i -g @anysearch-cli/mcp                     # 提供 ans-mcp 命令
+ans-mcp                                         # stdio transport（默认）
+ans-mcp --transport http --port 3001            # Streamable HTTP（仅本机）
 ```
 
+从源码检出运行时，同一入口是
+`node apps/mcp/dist/index.cjs [--transport http] [--port <n>]`。
+
 五个工具：`search_web`、`research_web`、`recall_memory`、`query_knowledge`、
-`ans_chat`。`ANS_DOMAIN` 以与 CLI 相同的方式限定 server 范围。
+`ans_chat`。`ANS_DOMAIN` 通过进程环境限定 server 范围：直接启动 `ans-mcp`
+时需显式导出；`ans mcp` 会继承 CLI 持久化的选择。
 工具绝不向 stdout 输出；server 保持协议通道纯净。
+
+工具参数、`isError`/空结果/abstain 语义、两种传输、环境变量与认证、
+`ans_chat` 会话句柄、dual-era 行为以及上游 provider 矩阵，见规范参考
+[docs/mcp-server.md](docs/mcp-server.md)。
 
 ## 工作原理
 
@@ -351,6 +360,7 @@ flowchart LR
 ## 面向贡献者
 
 - `GLOSSARY.md` —— 领域术语 canonical 表（先读）
+- `docs/mcp-server.md` —— MCP server 规范参考（工具、语义、传输、环境变量与认证）
 - `docs/limitations.md` —— 完整已知限制记录
 - `docs/agents/` —— domain-doc + GitHub issue tracker 约定
 - 仓库布局：`packages/kernel`（引擎）· `packages/store`（FTS5 记忆、
