@@ -20,6 +20,13 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 interface McpRequestIdentity {
   clientInfoName?: string;
+  // #209: request-scoped cancellation for the stateless HTTP path. The SDK's
+  // handler context signal only aborts via a `notifications/cancelled` on the
+  // same connection; stateless HTTP (a fresh server per POST) has no such
+  // channel, so the spec's cancellation signal is the response stream closing.
+  // The HTTP entry sets this when the client disconnects; the search tools
+  // combine it with the SDK context signal.
+  signal?: AbortSignal;
 }
 
 const storage = new AsyncLocalStorage<McpRequestIdentity>();
@@ -30,4 +37,8 @@ export function runWithMcpIdentity<T>(identity: McpRequestIdentity, fn: () => T)
 
 export function currentMcpIdentity(): McpRequestIdentity | undefined {
   return storage.getStore();
+}
+
+export function currentRequestSignal(): AbortSignal | undefined {
+  return storage.getStore()?.signal;
 }

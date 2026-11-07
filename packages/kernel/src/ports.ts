@@ -33,6 +33,11 @@ export type Query = SearchRequest & {
   // Anchor gates only when both the port and a session id are present; a bare
   // `search` call without a session keeps both gates closed (unchanged).
   sessionId?: string;
+  // #209: caller cancellation. The engine combines it with its per-provider
+  // AbortControllers, so aborting it stops in-flight provider work, ends the
+  // fanout wait, and suppresses post-cancellation anchor writes. Caller-absent
+  // means the engine's own grace-window cancellation is the only canceller.
+  signal?: AbortSignal;
 };
 
 // RetrieverPort: the kernel calls this to search.

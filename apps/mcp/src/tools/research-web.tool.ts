@@ -4,11 +4,13 @@
 // provider answers marked as provider-generated (verified:false at contract).
 // attribution included in both content JSON and structuredContent (SEP-1624).
 
-import type { McpServer } from "@modelcontextprotocol/server";
+import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, KernelToolDescriptions, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec, type ProviderErrorClass } from "@anysearch-cli/retriever";
+import { currentRequestSignal } from "../mcp-context.js";
 import { observeTool } from "./observation.js";
+import { combineSignals } from "./signal.js";
 import {
   allProvidersFailedText,
   providerFailureMetadata,
@@ -23,7 +25,10 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
       description: KernelToolDescriptions.research_web,
       inputSchema: fromJsonSchema(KernelJsonSchemas.research_web),
     },
-    async (args: unknown) => {
+    async (args: unknown, ctx?: ServerContext) => {
+      // #209: same seam as search_web — SDK context signal (stdio) or the
+      // HTTP request signal (stateless response-stream closure).
+      const signal = combineSignals(ctx?.mcpReq.signal, currentRequestSignal());
       return observeTool(eng, "research_web", async (span) => {
         const { question, depth, verticalDomain, verticalSubDomain, verticalParams } = args as { question: string; depth?: string; verticalDomain?: string; verticalSubDomain?: string; verticalParams?: Record<string, unknown> };
         // + /: shared
@@ -58,8 +63,12 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               maxResults: 10,
               ...(vertical ? { vertical } : {}),
               span,
+              signal,
             });
             rounds++;
+            // #209: a cancelled research call stops after the aborted round —
+            // no further provider quota, no post-cancellation work.
+            if (signal?.aborted) break;
             // sufficiency gate — this is the LAST round's sufficiency; earlier rounds tracks but the gate cares about the final state.
             lastRoundSufficiency = envelope.metadata?.sufficiency as unknown as Record<string, unknown> | undefined;
             lastEnvelope = envelope;

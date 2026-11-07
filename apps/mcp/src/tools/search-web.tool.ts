@@ -4,11 +4,13 @@
 // provider answers marked as provider-generated (verified:false at contract).
 // attribution included in both content JSON and structuredContent (SEP-1624).
 
-import type { McpServer } from "@modelcontextprotocol/server";
+import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, KernelToolDescriptions, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec } from "@anysearch-cli/retriever";
+import { currentRequestSignal } from "../mcp-context.js";
 import { observeTool } from "./observation.js";
+import { combineSignals } from "./signal.js";
 import {
   allProvidersFailed,
   allProvidersFailedText,
@@ -24,7 +26,11 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
       description: KernelToolDescriptions.search_web,
       inputSchema: fromJsonSchema(KernelJsonSchemas.search_web),
     },
-    async (args: unknown) => {
+    async (args: unknown, ctx?: ServerContext) => {
+      // #209: the SDK context signal covers stdio cancellation; the request
+      // signal covers stateless HTTP response-stream closure. The engine
+      // combines the winner with its per-provider controllers.
+      const signal = combineSignals(ctx?.mcpReq.signal, currentRequestSignal());
       return observeTool(eng, "search_web", async (span) => {
         // maxResults is intentionally absent from the
         // public schema (additionalProperties:false) — exposing it is a feature
@@ -41,7 +47,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
         }
         const vertical = built.vertical;
         try {
-          const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", ...(vertical ? { vertical } : {}), span });
+          const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", ...(vertical ? { vertical } : {}), span, signal });
 
           // A zero-result search is successful only when an arm answered. If
           // every queried arm is in providersFailed this is an outage: an error
@@ -90,12 +96,17 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           );
 
           // Auto-index into session store (best-effort, fail-open).
-          try {
-            const session = await eng.store.createSession("mcp");
-            await eng.store.saveResults(session.id, envelope.results);
-          } catch (e) {
-            // ponytail: auto-index is best-effort, don't block search response.
-            process.stderr.write("search_web auto-index error: " + (e instanceof Error ? e.message : String(e)) + "\n");
+          // #209: cancellation is not a completed search — no session write for
+          // an aborted caller. The second check closes the window where the
+          // signal aborts while the session row is being minted.
+          if (!signal?.aborted) {
+            try {
+              const session = await eng.store.createSession("mcp");
+              if (!signal?.aborted) await eng.store.saveResults(session.id, envelope.results);
+            } catch (e) {
+              // ponytail: auto-index is best-effort, don't block search response.
+              process.stderr.write("search_web auto-index error: " + (e instanceof Error ? e.message : String(e)) + "\n");
+            }
           }
 
           const attribution = envelope.attribution;

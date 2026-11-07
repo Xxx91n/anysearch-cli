@@ -402,6 +402,34 @@ export class RetroaererdEngine {
       | { provider: string; status: "fulfilled"; envelope: ProviderEnvelope }
       | { provider: string; status: "rejected"; error: string };
     const out: Array<ProviderOutcome | null> = new Array(allProviders.length).fill(null);
+    // #209: the caller's request signal (MCP tools/call cancellation) is combined
+    // with the engine's per-provider controllers. Aborting it stops in-flight
+    // provider work and releases the fanout wait below; it is read again after
+    // the wait to suppress post-cancellation anchor writes.
+    const callerSignal = q.signal;
+    // Arms we aborted on the caller's behalf. A provider that rejects because
+    // of that abort must stay "cancelled", not become a genuine failure merely
+    // because its rejection handler won the race against the snapshot.
+    const callerCancelledArms = new Set<number>();
+    let callerAbortResolve: () => void = () => { };
+    const callerAborted = new Promise<void>((r) => { callerAbortResolve = r; });
+    const cancelProviders = () => {
+      for (let i = 0; i < controllers.length; i++) {
+        if (out[i] == null) {
+          callerCancelledArms.add(i);
+          controllers[i].abort(callerSignal?.reason);
+        }
+      }
+      callerAbortResolve();
+    };
+    if (callerSignal) {
+      // Pre-aborted callers still fan out once: each provider observes an
+      // already-aborted signal (the #209 acceptance seam) and is expected to
+      // skip upstream work. The race below returns immediately.
+      if (callerSignal.aborted) cancelProviders();
+      else callerSignal.addEventListener("abort", cancelProviders, { once: true });
+    }
+
     const uniqueUrls = new Set<string>();
     // post-gate counters — gateIn = raw provider results that reached
     // the authoritative gate (post-pre-filter arrivals); gateDropped counts only
@@ -432,13 +460,25 @@ export class RetroaererdEngine {
           }
         })
         .catch((err) => {
+          // #209: a rejection caused by our own caller abort is a cancellation,
+          // not a provider failure — leaving out[i] null makes the snapshot
+          // classify it as providersCancelled. Genuine failures (and arms whose
+          // controllers we did not abort) keep the rejected status.
+          if (callerCancelledArms.has(i)) return;
           out[i] = { provider: p.id, status: "rejected", error: String(err) };
         }),
     );
 
-    // Wait for every provider, or for the grace window once enough unique results exist.
-    await Promise.race([Promise.all(promises).then(() => undefined), graceExpired]);
-    // Cancelled = queried but still unsettled when the grace window closed.
+    // Wait for every provider, for the grace window once enough unique results
+    // exist, or for the caller's abort (#209).
+    try {
+      await Promise.race([Promise.all(promises).then(() => undefined), graceExpired, callerAborted]);
+    } finally {
+      callerSignal?.removeEventListener("abort", cancelProviders);
+    }
+    // Cancelled = queried but still unsettled when the wait ended. Caller
+    // cancellation and the grace window share this state (an aborted caller
+    // never becomes providersFailed: it did not fail, it was cancelled).
     // Array.prototype.map skips sparse holes — fill(null) keeps every slot materialized.
     const collected: Array<ProviderOutcome | "cancelled"> = out.map((w) => w ?? "cancelled");
 
@@ -544,6 +584,8 @@ export class RetroaererdEngine {
     // providersCancelled now populated by the grace window above (was always-empty debt).
 
     // decision 2C: settle per-call budget — actual = successful providers.
+    // #209: a cancelled caller still settles so the reservation cannot leak; the
+    // actual count only bills arms that answered, never a completed search.
     if (hasLedger) {
       this.ledger!.settleCalls(sessionId!, perCallEstimate, providerLists.length);
     }
@@ -591,7 +633,10 @@ export class RetroaererdEngine {
     // stderr line and never blocks the envelope. Requires both port and
     // sessionId — mirrors hasLedger; the per-search Query.sessionId wins over
     // construction-time opts.
-    if (this.anchors && sessionId) {
+    // #209: cancellation is not a completed search. A cancelled caller skips the
+    // anchor write entirely — the search never reached a trustworthy checkpoint,
+    // and crash recovery must not replay a half-aborted fanout as a result.
+    if (this.anchors && sessionId && !callerSignal?.aborted) {
       const anchorDomains = new Set([...allResults.keys()].map(extractDomain).filter(Boolean));
       const anchorPayload = {
         retrievalTraceId,
@@ -672,8 +717,9 @@ export class RetroaererdEngine {
       envelope,
       this.attributionCalibration ? { calibration: this.attributionCalibration } : undefined,
     );
-    if (this.attributionJudge) {
+    if (this.attributionJudge && !callerSignal?.aborted) {
       // Judge escalation is bounded inside applyJudgeEscalation (max 3 calls/envelope).
+      // #209: a cancelled search does not pay for a post-cancellation judge call.
       await applyJudgeEscalation(attributionReport, this.attributionJudge);
     }
     return envelope;
