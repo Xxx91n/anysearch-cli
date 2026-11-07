@@ -254,12 +254,22 @@ async function main() {
         counted.constructed() === 3,
         "repeat: identical config + identical key does not rebuild (got " + counted.constructed() + ")",
       );
-      // The 4096 window slot was reused, not duplicated: the 8192 slot still
-      // exists alongside it, so there are exactly two keys (no split per rotation).
+
+      // Switching the credential back rebuilds the SAME slot again — the cache
+      // does not keep the old credential's session alongside the new one.
+      process.env.ANS_LLM_API_KEY = KEY_A;
+      const switchedBack = await callChat(post, 6, "key switched back");
+      assert(switchedBack.status === 200, "switch back: 200");
       assert(
-        state.ansChatSessionCache.size === 2,
-        "rotation: credential rotation overwrites its slot instead of splitting the cache (size " +
-          state.ansChatSessionCache.size + ")",
+        counted.constructed() === 4,
+        "rotation: switching back rebuilds the same slot instead of retaining a split cache (got " +
+          counted.constructed() + ")",
+      );
+      const switchedBackRepeat = await callChat(post, 7, "switch back repeat");
+      assert(switchedBackRepeat.status === 200, "switch back repeat: 200");
+      assert(
+        counted.constructed() === 4,
+        "rotation: the switched-back credential owns the slot (second call is a hit)",
       );
     } finally {
       await close();

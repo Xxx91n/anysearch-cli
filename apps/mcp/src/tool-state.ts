@@ -39,14 +39,13 @@ export interface McpToolState {
 }
 
 export interface McpToolStateOverrides {
-  ansChatSessionCache?: Map<string, AnsChatCacheEntry>;
   createAnsChatSession?: AnsChatSessionFactory;
 }
 
 /** Build one process-level tool state; omit overrides in production. */
 export function createMcpToolState(overrides: McpToolStateOverrides = {}): McpToolState {
   return {
-    ansChatSessionCache: overrides.ansChatSessionCache ?? new Map(),
+    ansChatSessionCache: new Map(),
     createAnsChatSession: overrides.createAnsChatSession ?? createKernelLlmSession,
   };
 }
