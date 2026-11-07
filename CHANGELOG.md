@@ -4,6 +4,16 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #213: MCP clientInfo——现代 `_meta` 解析 + trace 断言
+
+### Changed
+
+- **MCP `client_id` 改为 per-request 归属**：五个工具的 handler 从 SDK 请求上下文读取现代 `2026-07-28` 请求的 `_meta["io.modelcontextprotocol/clientInfo"]`，经 `mapMcpClientId` 映射后写入 observation trace。legacy `2025-11-25` stateless HTTP 调用没有 per-request 身份，记录 `mcp_unknown`；HTTP 入口的 `initialize` 提取保留为 fallback，不再承诺跨请求稳定归属。
+
+### Tests
+
+- `apps/mcp/test/client-identity.test.ts`：五个工具在现代 `_meta` 下的 `client_id` 映射、legacy 匿名、initialize fallback、per-request 优先与畸形 payload 降级。
+
 ## Unreleased — #24: ip 第五域语料建集（`vert-i*` 语料 + 活词表快照）
 
 ### Added

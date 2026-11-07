@@ -7,7 +7,7 @@
 // MemoryPipeline; no handle = single-shot.
 // input validated by AJV.
 
-import type { McpServer } from "@modelcontextprotocol/server";
+import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import { PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
@@ -128,10 +128,10 @@ export function registerAnsChat(
       description: KernelToolDescriptions.ans_chat,
       inputSchema: fromJsonSchema(KernelJsonSchemas.ans_chat),
     },
-    async (args: unknown) => {
+    async (args: unknown, ctx?: ServerContext) => {
       const providerName = process.env.ANS_LLM_PROVIDER;
       const modelName = process.env.ANS_LLM_MODEL;
-      return observeTool(eng, "ans_chat", async (span) => {
+      return observeTool(eng, "ans_chat", ctx, async (span) => {
         const { message, sessionId: requestedSessionId } = args as { message: string; sessionId?: string };
         if (!providerName || !modelName) {
           // Missing configuration is an execution failure, not a successful

@@ -116,7 +116,7 @@
 - **Fact-Process Split（事实流程分置）**——AGENTS.md 放每会话事实，SKILL.md 放多步流程；强制语义 = AGENTS.md 声明意图 + hook 代码实现。
 - **Cursor Dual Channel / MDC Fallback / Fire-and-Forget**——Cursor 双通道注入（additional_context + .mdc 规则文件兜底官方竞态 bug）；无 SessionStart 的平台由 hook 动态生成 .mdc（alwaysApply）；hook 执行不阻塞 agent loop。
 - **Fail-Open（放行策略）**——增益层故障不拖垮基础路径：hooks/server/索引故障放行工具调用直出原始结果，RAG adapter 未知 id 退化到 none，路由卡解析失败回退默认，锚写失败不阻塞检索；需要具名的落点走 stderr 具名行（如路由卡解析错误、未知 adapter），`.mdc` 写失败一类则静默放行。#105 起同一家族覆盖组合根 provider 构造失败（`CompositionResult.providerBuildErrors` 具名暴露 + stderr 具名行，CWE-532 安全类别措辞，绝不静默），CLI 侧诊断呈现由 #180 承接。
-- **Session Identity / Propagation / Client Attribution**——`~/.anysearch-cli/session` 是 session_id 磁盘主源（写时引用、永不回读）；session_id/trace_id 跨 CLI/hook/MCP 透传，MCP 协议级 session 保持置空，跨调用记忆改用显式 server-minted handle（`AnsChatInput.sessionId`）透传；client_id 从 _meta clientInfo 尽力提取。
+- **Session Identity / Propagation / Client Attribution**——`~/.anysearch-cli/session` 是 session_id 磁盘主源（写时引用、永不回读）；session_id/trace_id 跨 CLI/hook/MCP 透传，MCP 协议级 session 保持置空，跨调用记忆改用显式 server-minted handle（`AnsChatInput.sessionId`）透传；client_id 优先取现代请求 `_meta["io.modelcontextprotocol/clientInfo"]` 并映射，legacy `2025-11-25` 无 per-request 身份记 `mcp_unknown`，`initialize` 提取仅作 fallback。
 
 ## 评测与发布门禁
 

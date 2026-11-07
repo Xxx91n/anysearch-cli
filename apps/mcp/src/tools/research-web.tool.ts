@@ -29,7 +29,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
       // #209: same seam as search_web — SDK context signal (stdio) or the
       // HTTP request signal (stateless response-stream closure).
       const signal = combineSignals(ctx?.mcpReq.signal, currentRequestSignal());
-      return observeTool(eng, "research_web", async (span) => {
+      return observeTool(eng, "research_web", ctx, async (span) => {
         const { question, depth, verticalDomain, verticalSubDomain, verticalParams } = args as { question: string; depth?: string; verticalDomain?: string; verticalSubDomain?: string; verticalParams?: Record<string, unknown> };
         // + /: shared
         // guard + assembly; error copy is this surface's rendering of the

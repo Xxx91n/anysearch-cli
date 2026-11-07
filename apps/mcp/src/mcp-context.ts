@@ -1,15 +1,16 @@
 // AsyncLocalStorage context for MCP request identity.
 //
-// The MCP transport delivers a fresh clientInfo only on the initialize
-// handshake, then subsequent tool calls reference the same connection.
-// AsyncLocalStorage lets the HTTP transport (apps/mcp/src/index.ts) stash
-// the clientInfo.name it observed on initialize, while each tool's
-// observeTool reads the current value without changing handler signatures.
+// #213: client identity is read from the SDK request context, where a
+// 2026-07-28 request carries `_meta["io.modelcontextprotocol/clientInfo"]`
+// on every call. The initialize-time extraction in http.ts is only a
+// fallback for callers that stash it: legacy 2025-11-25 requests carry no
+// per-request clientInfo, and a stateless HTTP server cannot carry the
+// initialize handshake across requests, so those calls record mcp_unknown.
 //
 // Failure modes:
 // - AsyncLocalStorage unavailable (very old Node): falls back to undefined
 // and the audit event records client_id = "mcp_unknown" (still safe).
-// - Stash never set (stdin transport bypasses the HTTP shim): same fallback.
+// - Stash never set (stdio transport bypasses the HTTP shim): same fallback.
 //
 // session_id is intentionally NOT stashed here - MCP keeps session_id empty
 // per (protocol carries no per-instance session identifier). Cross-call state is
@@ -17,6 +18,7 @@
 // argument (#132, MCP 2026-07-28 / SEP-2567); that handle is not a transport
 // session and never becomes a request identity here.
 import { AsyncLocalStorage } from "node:async_hooks";
+import { CLIENT_INFO_META_KEY, type ServerContext } from "@modelcontextprotocol/server";
 
 interface McpRequestIdentity {
   clientInfoName?: string;
@@ -41,4 +43,17 @@ export function currentMcpIdentity(): McpRequestIdentity | undefined {
 
 export function currentRequestSignal(): AbortSignal | undefined {
   return storage.getStore()?.signal;
+}
+
+// #213: read the client name a modern request carries in its per-request
+// `_meta` envelope. The SDK lifts the reserved envelope keys before the
+// handler runs, so `ctx.mcpReq.envelope` is where clientInfo lands; a legacy
+// request has no envelope here. The payload is untrusted wire data, so only a
+// non-empty string name is forwarded (same rule as http.ts extraction).
+export function requestClientInfoName(ctx: ServerContext | undefined): string | undefined {
+  const envelope = ctx?.mcpReq.envelope as Record<string, unknown> | undefined;
+  const clientInfo = envelope?.[CLIENT_INFO_META_KEY];
+  if (!clientInfo || typeof clientInfo !== "object") return undefined;
+  const name = (clientInfo as { name?: unknown }).name;
+  return typeof name === "string" && name.length > 0 ? name : undefined;
 }

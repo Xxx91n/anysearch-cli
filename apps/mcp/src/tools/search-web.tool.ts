@@ -31,7 +31,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
       // signal covers stateless HTTP response-stream closure. The engine
       // combines the winner with its per-provider controllers.
       const signal = combineSignals(ctx?.mcpReq.signal, currentRequestSignal());
-      return observeTool(eng, "search_web", async (span) => {
+      return observeTool(eng, "search_web", ctx, async (span) => {
         // maxResults is intentionally absent from the
         // public schema (additionalProperties:false) — exposing it is a feature
         // decision, not hygiene; the dead destructure is removed, engine

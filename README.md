@@ -333,6 +333,14 @@ Five tools: `search_web`, `research_web`, `recall_memory`, `query_knowledge`,
 `ans_chat`. `ANS_DOMAIN` scopes the server the same way it scopes the CLI.
 Tools never print to stdout; the server keeps the protocol channel pure.
 
+Client attribution is per-request. A `2026-07-28` `tools/call` that carries
+`_meta["io.modelcontextprotocol/clientInfo"]` is mapped to the observation
+trace's `client_id`. A legacy `2025-11-25` stateless HTTP tool call carries no
+per-request identity and cannot inherit the `initialize` handshake across
+requests, so it records `mcp_unknown` — that is expected, not a bug. The
+`initialize`-body extraction remains a fallback, not a stable cross-request
+promise.
+
 ## How it works
 
 One pass through the pipeline — providers fan out, the domain gate filters,
@@ -379,6 +387,7 @@ evidence live in the linked integration docs.
 | omitting `[rag]` is not the same as `adapter = "none"` | `rag` is a replace-on-declare section: a derived domain inherits its base's adapter/note, and a chain with no adapter fails validation outright |
 | `rag.adapter = "fts"` reads **store-level shared** Research Memory, not the current session | deliberate boundary (#130): the store is the isolation unit; sessions/domains are sub-scopes. Every shipped domain stays on `none`, so the `fts` prompt injection is opt-in (the same store-wide range is already read by `recall_memory`) |
 | MCP dual-era: a `2026-07-28` client is negotiated down to `2025-11-25` | stdio and stateless Streamable HTTP `initialize` return `2025-11-25` for a modern client and all five tools still work; legacy clients get their own version echoed. The hand-wired path stays legacy-only: on stdio/in-memory (or HTTP without the `MCP-Protocol-Version` header), `server/discover` returns `-32601` (`MethodNotFound`) even with a modern `_meta` envelope, while `tools/list` still degrades to the five-tool legacy list. On HTTP, a non-initialize request sending `MCP-Protocol-Version: 2026-07-28` is rejected before dispatch with HTTP 400 / JSON-RPC `-32000`; use the negotiated `2025-11-25` (pinned by `apps/mcp/test/dual-era.test.ts`) |
+| MCP client identity is per-request only | a `2026-07-28` `tools/call` carrying `_meta["io.modelcontextprotocol/clientInfo"]` records the mapped `client_id`; a legacy `2025-11-25` stateless HTTP call carries no per-request identity and records `mcp_unknown`. The `initialize`-only extraction is a fallback, not a cross-request guarantee (pinned by `apps/mcp/test/client-identity.test.ts`) |
 
 Full record: [docs/limitations.md](docs/limitations.md).
 

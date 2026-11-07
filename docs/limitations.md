@@ -234,6 +234,17 @@
   rejected by the transport before dispatch with HTTP 400 and JSON-RPC
   `-32000` (unsupported-version gate); send the negotiated `2025-11-25`
   instead. Pinned by `apps/mcp/test/dual-era.test.ts`.
+- **MCP client attribution is per-request only (#213)** — a `2026-07-28`
+  `tools/call` that carries `_meta["io.modelcontextprotocol/clientInfo"]` is
+  read from the SDK request context and mapped (`mapMcpClientId`) to the
+  observation trace's `client_id`. A legacy `2025-11-25` stateless HTTP tool
+  call carries no per-request identity: the `initialize` handshake is a
+  different request, and a stateless server has no cross-request stash, so the
+  trace records `mcp_unknown`. `mcp_unknown` is therefore the expected legacy
+  value, not a lookup failure. The HTTP entry's `initialize`-body extraction
+  remains a fallback for a caller that stashes it in the same request scope;
+  it is not a stable-attribution promise. Pinned by
+  `apps/mcp/test/client-identity.test.ts`.
 - **AnySearch REST `POST /v1/search` is live; this adapter is MCP-only** — live
   probe 2026-11-07: `GET /v1/search` returns 404, while `POST /v1/search` returns
   200 with a `code:0` envelope. The provider speaks MCP Streamable HTTP at
