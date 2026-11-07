@@ -18,6 +18,20 @@ All notable changes to this project are recorded here. Format follows
 - `validateDocsGoldenSet` / `validateCoverageManifest` / `crossCheckDocsGolden` 对更新后的账本零问题（Node 24 `--experimental-strip-types` 直接加载验证器，未构建）。
 - 远端 `test:online` job 不构建 CLI：`apps/cli/dist` 缺失时 `eval-looks-vertical.online.ts` 直接 SKIP（exit 0），因此 14 条新 live 条目不会进入该 job 的配对 delta；live 语料运行须在已构建 CLI 的环境单独执行。`check-build` 与其余 CI 腿已在本 PR 上通过。
 
+## Unreleased — #204: MCP 失败语义——isError、空结果与 provider failure metadata
+
+### Changed
+
+- **MCP 工具执行失败返回 `isError: true`**：`search_web` / `research_web` / `recall_memory` 的 handler 异常与 vertical guard 拒绝、`ans_chat` 的缺失 LLM 配置与 runtime 错误事件，都按 MCP 规格作为执行错误返回；错误结果只带既有可行动文本，不再携带 `structuredContent`。
+- **全员 provider 失败是错误，空结果不是**：`search_web` / `research_web` 在零结果且所有被查询的 provider 都在 `providersFailed` 时返回 `isError: true` 并在文本中点名失败 provider；至少一个 provider 成功但零命中仍是成功结果（`isError` 不为 true）。`research_web` 按轮聚合失败元数据，任一轮有 provider 应答即视为成功。
+- **部分失败的成功结果携带 provider failure metadata**：至少一个 provider 成功且存在失败/provider 构造错误时，`providersFailed`、`providerErrorClasses`、`providerBuildErrors` 同时出现在 content JSON 与 `structuredContent`。
+- **abstain 与 `query_knowledge` 的 adapter=none/note 保持成功语义**：不因上述收紧转为错误。
+
+### Tests
+
+- `apps/mcp/test/failure-semantics.test.ts`：handler 异常（三个工具）、`ans_chat` 缺失配置与 runtime 错误、全员失败、部分失败元数据双通道、零结果成功、abstain、`query_knowledge` note，以及真实 stateless HTTP 传输上的 `isError` 传播与“unknown tool 仍是 JSON-RPC error”。
+- `apps/mcp/test/dual-era.test.ts`：离线 ans_chat 断言缺失配置的错误结果（stdio + HTTP）；`apps/mcp/test/vertical-guard.test.ts`：金文本不变，新增 `isError: true` 与无 `structuredContent` 断言。
+
 ## Unreleased — #178: PiAgentRuntime ledger 接线——token/USD 结算生产化（#36 承接）
 
 ### Changed

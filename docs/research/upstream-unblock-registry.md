@@ -46,27 +46,32 @@ there is no user-visible limitation to register — the missing arm is a latent
 gap, not a present one. If an entry is ever added for #18 it covers this file
 too.
 
-## #23 api.anysearch.com REST /v1/search 路由下线事实记录与复活监控
+## #23 api.anysearch.com REST `/v1/search` 事实修正（前提无效，已关闭）
 
-解除信号: A live probe shows `GET https://api.anysearch.com/v1/search`
-returning anything other than 404 — i.e. the REST route is resurrected
-(currently "404 route-level dead (P-A, dual-column)", comment at
-`packages/retriever/src/providers/anysearch.ts:24`). At that point the
-`LEGACY_REST_SUFFIX` → `/mcp` auto-rewrite in `normalizeEndpoint`
-(`anysearch.ts:37-56`) and the once-per-process stderr warning become the
-decision point (keep rewriting vs. restore a REST arm). Until then the ticket
-is a monitoring record — recheck on the quarterly cadence already noted for
-the cert in the same header block.
+解除信号: 无 — the original "REST route retired / watch for resurrection"
+premise was invalid, so there is no signal to wait for. Live probe 2026-11-07:
+`GET https://api.anysearch.com/v1/search` → 404;
+`POST https://api.anysearch.com/v1/search` → 200 with a `code:0` envelope
+(`request_id` present). The adapter stays MCP-only
+(`packages/retriever/src/providers/anysearch.ts`); the `LEGACY_REST_SUFFIX` →
+`/mcp` rewrite in `normalizeEndpoint` is a compatibility shim for endpoint
+configs that still name the REST route, not evidence of a retirement. Closed as
+an invalid premise; a REST provider arm is out of scope for #203 (open a
+separate product ticket if one is wanted).
 
-登记状态: registered — `docs/limitations.md` L162-165, landed in #171 (the REST
-retirement + auto-rewrite is a user-facing config fact for anyone holding an
-old `ANYSEARCH_ENDPOINT`):
+登记状态: registered — `docs/limitations.md` L212-220, rewritten by #206 (the
+remaining user-facing fact is the MCP-only rewrite, not a dead REST route):
 
 ```md
-- **api.anysearch.com REST `/v1/search` is retired** — the route returns 404;
-  the live API is MCP Streamable HTTP at `POST /mcp`. An
-  `ANYSEARCH_ENDPOINT` (or explicit endpoint arg) ending in `/v1/search` is
-  auto-rewritten to `base+/mcp` with a once-per-process stderr warning.
+- **AnySearch REST `POST /v1/search` is live; this adapter is MCP-only** — live
+  probe 2026-11-07: `GET /v1/search` returns 404, while `POST /v1/search` returns
+  200 with a `code:0` envelope. The provider speaks MCP Streamable HTTP at
+  `POST /mcp` only, so an `ANYSEARCH_ENDPOINT` (or explicit endpoint arg) ending
+  in `/v1/search` is auto-rewritten to `base+/mcp` with a once-per-process
+  stderr warning — a compatibility shim, not a sign that REST is retired.
+  Upstream `request_id` in the reply envelope is a server-generated diagnostic
+  UUID (also returned as `X-Request-ID`): a caller-supplied value is ignored,
+  and it is not an idempotency key.
 ```
 
 ## #24 ip 第五域语料建集（触发条件=上游为 ip 子域补结构化参数词表）
@@ -206,7 +211,7 @@ the envelope meanwhile).
 |-------|----------------------|--------------------------|----------|
 | #18 | `packages/embedding/src/index.ts:31-45` + `package.json` optionalDep | transformers release declares `onnxruntime-common` | absent — issue-only (internal patch) |
 | #22 | `packages/embedding/src/index.ts` ESM path | #18 fix lands, or ESM consumer appears / `module.registerHooks` adopted | absent — issue-only (no shipped ESM load path) |
-| #23 | `anysearch.ts` `LEGACY_REST_SUFFIX`/`normalizeEndpoint` (L37-56) | `GET /v1/search` returns non-404 | registered — `docs/limitations.md` L162-165 |
+| #23 | `anysearch.ts` `LEGACY_REST_SUFFIX`/`normalizeEndpoint` | none — closed as invalid premise (`POST /v1/search` is live; only GET is 404) | registered — `docs/limitations.md` L212-220 |
 | #24 | `eval-looks.json` (`vert-i*` entries) | `get_sub_domains(domain="ip")` returns structured param vocab | absent — issue-only (eval-internal, doc already defers live) |
 | #25 | `anysearch.ts:148-157` detector + `contract.ts:230` | anonymous quota boundary stops returning provisioning payload | registered — `docs/limitations.md` L166-170 |
 | #27 | `eval-looks.json` `vert-f1105` tombstone (L1099-1151) | `{type:"overview",symbol}` accepted without `cn_code` | registered — `docs/limitations.md` L171-176 |

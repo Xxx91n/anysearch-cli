@@ -30,9 +30,12 @@ import { canonicalizeVertical } from "../contract";
 // owner anysearch-retriever); the registry was removed with the governance layer
 // (5593fe05) and GitHub issue #15 carried the open item — this block is its live
 // record now.
-// GET /v1/search = 404 route-level dead (P-A, dual-column; official REST search is
-// POST — GET-dead is not REST-dead); POST /mcp = live MCP
-// Streamable HTTP endpoint — this adapter speaks MCP only.
+// REST facts (live probe 2026-11-07): GET /v1/search = 404; POST /v1/search = 200
+// with a code:0 envelope — the official REST route is live, so GET-dead is not
+// REST-dead. This adapter speaks MCP only (POST /mcp = live MCP Streamable HTTP);
+// a /v1/search endpoint is rewritten to /mcp as a compatibility shim, not because
+// REST was retired. The reply's request_id is a server-generated diagnostic UUID
+// (also X-Request-ID), never an idempotency key.
 // Fail-open: an unreachable endpoint or malformed reply degrades the anysearch arm,
 // never the fused envelope.
 // Review: CT/expiry watch remains (cert valid to 2027-04-07) — re-confirm on the
@@ -48,9 +51,10 @@ const LEGACY_REST_SUFFIX = "/v1/search";
 let endpointRewriteWarned = false;
 
 // §3: env-compat — an ANYSEARCH_ENDPOINT (or explicit arg)
-// ending in the retired REST suffix is normalized to base+/mcp with a
-// once-per-process warning; any other value is used verbatim (dead-port
-// injection for install-smoke stays as-given).
+// ending in the REST search suffix is normalized to base+/mcp with a
+// once-per-process warning (this adapter speaks MCP only; the rewrite is a
+// compatibility shim, not a retirement claim); any other value is used verbatim
+// (dead-port injection for install-smoke stays as-given).
 function normalizeEndpoint(raw: string): string {
   const trimmed = raw.replace(/\/+$/, "");
   if (!trimmed.endsWith(LEGACY_REST_SUFFIX)) return raw;
@@ -59,7 +63,7 @@ function normalizeEndpoint(raw: string): string {
     endpointRewriteWarned = true;
     process.stderr.write(
       "[anysearch] endpoint ends with " + LEGACY_REST_SUFFIX +
-      " — REST route is retired; rewritten to " + rewritten + "\n",
+      " — this adapter speaks MCP only; rewritten to " + rewritten + "\n",
     );
   }
   return rewritten;
@@ -204,7 +208,8 @@ export class AnySearchProvider implements SearchProvider {
     this.apiKey = apiKey ?? (process.env.ANYSEARCH_API_KEY || undefined);
     // + §3: ANYSEARCH_ENDPOINT env override —
     // dead-port fault injection keeps the install-smoke offline leg hermetic;
-    // a retired /v1/search tail is normalized to base+/mcp. Explicit arg wins.
+    // a /v1/search tail is normalized to base+/mcp (this adapter speaks
+    // MCP only, so the rewrite is a compatibility shim). Explicit arg wins.
     // defer-r84 closure: POSIX empty-string env == unset — ""
     // is a value for ?? (not nullish), so the chain used to fall to an
     // empty endpoint and every call failed into providersFailed.

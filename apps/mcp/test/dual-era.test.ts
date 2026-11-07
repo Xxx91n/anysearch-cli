@@ -59,9 +59,9 @@ function assertCallOk(res: any, name: string, label: string) {
     Array.isArray(res?.content) && typeof text === "string" && text.length > 0,
     label + " " + name + ": non-empty text content"
   );
-  // The retrieval/chat handlers catch failures and return "<name> error: ..."
-  // WITHOUT setting isError (src/tools/*.tool.ts). Reject that handler-error
-  // prefix so a failed call cannot pass this smoke (CodeRabbit #117).
+  // Execution failures now carry isError:true (#204); a successful result must
+  // not. The prefix check stays as a second guard: an error text with isError
+  // absent would still be a lie.
   assert(
     typeof text === "string" && !text.startsWith(name + " error:"),
     label + " " + name + ": not a handler-error result"
@@ -82,8 +82,9 @@ function assertToolList(tools: any[], label: string) {
 }
 
 async function main() {
-  // Force the offline-safe paths: ans_chat returns "LLM not configured" (no
-  // network), recall_memory skips the optional project index.
+  // Force the offline-safe paths: ans_chat returns the "not configured"
+  // ERROR result (#204, no network), recall_memory skips the optional project
+  // index.
   const saved: Record<string, string | undefined> = {};
   for (const k of ["ANS_LLM_PROVIDER", "ANS_LLM_MODEL", "ANS_PROJECT_DB"]) {
     saved[k] = process.env[k];
@@ -135,9 +136,12 @@ async function main() {
       notify("notifications/initialized");
       for (const name of TOOL_NAMES) {
         const res = await rpc("tools/call", { name, arguments: CALL_ARGS[name] });
-        assertCallOk(res.result, name, "stdio");
         if (name === "ans_chat") {
+          // #204: offline missing config is an execution error, not a success.
+          assert(res.result?.isError === true, "stdio ans_chat: missing LLM config is an error result");
           assert(String(res.result?.content?.[0]?.text ?? "").includes("not configured"), "stdio ans_chat: offline not-configured copy (no LLM call)");
+        } else {
+          assertCallOk(res.result, name, "stdio");
         }
       }
       // AJV validation still enforced through fromJsonSchema (empty query rejected).
@@ -172,7 +176,13 @@ async function main() {
         for (const name of TOOL_NAMES) {
           const res = await http.post({ jsonrpc: "2.0", id: id++, method: "tools/call", params: { name, arguments: CALL_ARGS[name] } });
           assert(res.status === 200, "http tools/call " + name + ": 200");
-          assertCallOk(res.json?.result, name, "http");
+          if (name === "ans_chat") {
+            // #204: the error result travels the stateless HTTP transport too.
+            assert(res.json?.result?.isError === true, "http ans_chat: missing LLM config is an error result");
+            assert(String(res.json?.result?.content?.[0]?.text ?? "").includes("not configured"), "http ans_chat: offline not-configured copy");
+          } else {
+            assertCallOk(res.json?.result, name, "http");
+          }
         }
 
         // Stateless consistency: a second independent tools/list still returns 5.

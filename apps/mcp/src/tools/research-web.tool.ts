@@ -7,8 +7,14 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, KernelToolDescriptions, type CompositionResult } from "@anysearch-cli/kernel";
-import { buildVerticalSpec } from "@anysearch-cli/retriever";
+import { buildVerticalSpec, type ProviderErrorClass } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
+import {
+  allProvidersFailedText,
+  providerFailureMetadata,
+  toolError,
+  toolFailure,
+} from "./failure.js";
 
 export function registerResearchWeb(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
@@ -25,7 +31,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         // legislated missing-domain reason (byte-frozen).
         const built = buildVerticalSpec({ domain: verticalDomain, subDomain: verticalSubDomain, params: verticalParams });
         if (!built.ok) {
-          return { content: [{ type: "text" as const, text: "research_web error: verticalSubDomain/verticalParams require verticalDomain" }] };
+          return toolError("research_web", "verticalSubDomain/verticalParams require verticalDomain");
         }
         const vertical = built.vertical;
         const d = depth ?? "deep";
@@ -33,9 +39,17 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         let lastRoundSufficiency: Record<string, unknown> | undefined;
         let lastEnvelope: any = null;
         let rounds = 0;
+        // Failure metadata is aggregated across rounds and exposed once on
+        // the merged result. anyProviderAnswered pins "zero results with at
+        // least one successful arm" as success, not outage.
+        const failedProviders = new Set<string>();
+        const providerErrorClasses: Record<string, ProviderErrorClass> = {};
+        let anyProviderAnswered = false;
 
         try {
-          const maxRounds = d === "deep" ? 3 : 1;
+          // brief = 1, standard = 2, deep = 3 — the model-facing schema promises
+          // these round counts (KernelJsonSchemas.research_web).
+          const maxRounds = d === "deep" ? 3 : d === "standard" ? 2 : 1;
           const seenUrls = new Set<string>();
           for (let round = 0; round < maxRounds; round++) {
             const envelope = await eng.retriever.search({
@@ -50,6 +64,15 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             lastRoundSufficiency = envelope.metadata?.sufficiency as unknown as Record<string, unknown> | undefined;
             lastEnvelope = envelope;
 
+            const queriedProviders = envelope.metadata?.providersQueried ?? [];
+            const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
+            const roundFailed = envelope.metadata?.providersFailed ?? [];
+            for (const id of roundFailed) failedProviders.add(id);
+            Object.assign(providerErrorClasses, envelope.metadata?.providerErrorClasses ?? {});
+            if (queriedProviders.some((id) => !roundFailed.includes(id) && !cancelledProviders.includes(id))) {
+              anyProviderAnswered = true;
+            }
+
             const newItems = (envelope.results ?? []).filter((r: any) => !seenUrls.has(r.url));
             newItems.forEach((r: any) => seenUrls.add(r.url));
             allResults = allResults.concat(newItems);
@@ -57,6 +80,15 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             // Stop early when sufficiency verdict is "correct" (engine D5).
             if (envelope.metadata?.sufficiency?.verdict === "correct") break;
           }
+
+          // Zero results with no arm ever answering is an outage, not an
+          // empty research result. Name the failed arms; no structuredContent.
+          const failedProvidersList = [...failedProviders];
+          if (allResults.length === 0 && !anyProviderAnswered && failedProvidersList.length > 0) {
+            return toolFailure(allProvidersFailedText("research_web", failedProvidersList, providerErrorClasses));
+          }
+          // Partial success: at least one arm answered in some round.
+          const providerFailures = providerFailureMetadata(eng, failedProvidersList, providerErrorClasses);
 
           // Re-derive attribution over the MERGED result set so claim
           // evidence sourceKeys point into the same results array this tool returns.
@@ -87,6 +119,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               abstain: lastEnvelope?.metadata?.abstain ?? null,
               // resolved vertical routing (query-level spec, applied to every round).
               vertical: vertical ?? null,
+              // Partial-failure metadata rides the successful result.
+              ...(providerFailures ?? {}),
             },
             null,
             2,
@@ -98,13 +132,14 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             ...(lastRoundSufficiency ? { sufficiency: lastRoundSufficiency } : {}),
             ...(mergedAttribution ? { attribution: mergedAttribution } : {}),
             ...(lastAbstain ? { abstain: lastAbstain } : {}),
+            ...(providerFailures ?? {}),
           };
           return {
             content: [{ type: "text" as const, text: summary }],
             ...(Object.keys(structuredContent).length > 0 ? { structuredContent } : {}),
           };
         } catch (e) {
-          return { content: [{ type: "text" as const, text: "research_web error: " + (e instanceof Error ? e.message : String(e)) }] };
+          return toolError("research_web", e instanceof Error ? e.message : String(e));
         }
       });
     },

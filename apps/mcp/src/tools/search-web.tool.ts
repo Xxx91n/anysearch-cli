@@ -9,6 +9,13 @@ import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, KernelToolDescriptions, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
+import {
+  allProvidersFailed,
+  allProvidersFailedText,
+  providerFailureMetadata,
+  toolError,
+  toolFailure,
+} from "./failure.js";
 
 export function registerSearchWeb(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
@@ -30,11 +37,24 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
         // rendering of the legislated missing-domain reason (byte-frozen).
         const built = buildVerticalSpec({ domain: verticalDomain, subDomain: verticalSubDomain, params: verticalParams });
         if (!built.ok) {
-          return { content: [{ type: "text" as const, text: "search_web error: verticalSubDomain/verticalParams require verticalDomain" }] };
+          return toolError("search_web", "verticalSubDomain/verticalParams require verticalDomain");
         }
         const vertical = built.vertical;
         try {
           const envelope = await eng.retriever.search({ query, mode: (mode as any) ?? "fast", ...(vertical ? { vertical } : {}), span });
+
+          // A zero-result search is successful only when an arm answered. If
+          // every queried arm is in providersFailed this is an outage: an error
+          // result, never a legitimate empty result.
+          const queriedProviders = envelope.metadata?.providersQueried ?? [];
+          const failedProviders = envelope.metadata?.providersFailed ?? [];
+          const providerErrorClasses = envelope.metadata?.providerErrorClasses;
+          if (envelope.results.length === 0 && allProvidersFailed(queriedProviders, failedProviders)) {
+            return toolFailure(allProvidersFailedText("search_web", failedProviders, providerErrorClasses));
+          }
+          // Partial success: at least one arm answered, so isError stays false
+          // while these fields name the degraded arms.
+          const providerFailures = providerFailureMetadata(eng, failedProviders, providerErrorClasses);
           const topResults = envelope.results.slice(0, 10);
 
           // provider answers pass through as first-class fields.
@@ -62,6 +82,8 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               vertical: vertical ?? null,
               // MCP sufficiency annotation — A+ dual-channel.
               ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
+              // Partial-failure metadata rides the successful result.
+              ...(providerFailures ?? {}),
             },
             null,
             2,
@@ -85,13 +107,14 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
             ...(attribution ? { attribution } : {}),
             ...(abstain ? { abstain } : {}),
+            ...(providerFailures ?? {}),
           };
           return {
             content: [{ type: "text" as const, text: summary }],
             ...(Object.keys(structuredContent).length > 0 ? { structuredContent } : {}),
           };
         } catch (e) {
-          return { content: [{ type: "text" as const, text: "search_web error: " + (e instanceof Error ? e.message : String(e)) }] };
+          return toolError("search_web", e instanceof Error ? e.message : String(e));
         }
       });
     },

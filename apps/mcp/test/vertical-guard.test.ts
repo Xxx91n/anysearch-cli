@@ -17,6 +17,17 @@ function assert(cond: boolean, msg: string) {
   passed++; return true;
 }
 
+// #204: the guard is a tool-execution failure, so the byte-frozen text now
+// travels with isError:true and no structuredContent.
+function assertGuardFailure(res: any, tool: string, label: string) {
+  assert(
+    res?.content?.[0]?.text === tool + " error: verticalSubDomain/verticalParams require verticalDomain",
+    label + ": golden text",
+  );
+  assert(res?.isError === true, label + ": isError true");
+  assert(res?.structuredContent === undefined, label + ": no structuredContent");
+}
+
 const emptyEnvelope: FusedEnvelope = {
   results: [],
   answers: [],
@@ -56,44 +67,26 @@ async function main() {
 
   // Golden: subDomain without domain → byte-exact error text, retriever untouched.
   let res = (await swHandler!({ query: "x", verticalSubDomain: "earnings" })) as any;
-  assert(
-    res.content?.[0]?.text === "search_web error: verticalSubDomain/verticalParams require verticalDomain",
-    "search_web require-domain golden (subDomain only)",
-  );
+  assertGuardFailure(res, "search_web", "search_web require-domain golden (subDomain only)");
   assert(lastQuery === null, "search_web: retriever not called on guard failure");
 
   res = (await swHandler!({ query: "x", verticalParams: { k: "v" } })) as any;
-  assert(
-    res.content?.[0]?.text === "search_web error: verticalSubDomain/verticalParams require verticalDomain",
-    "search_web require-domain golden (params only)",
-  );
+  assertGuardFailure(res, "search_web", "search_web require-domain golden (params only)");
 
   res = (await rwHandler!({ question: "x", verticalSubDomain: "earnings" })) as any;
-  assert(
-    res.content?.[0]?.text === "research_web error: verticalSubDomain/verticalParams require verticalDomain",
-    "research_web require-domain golden (subDomain only)",
-  );
+  assertGuardFailure(res, "research_web", "research_web require-domain golden (subDomain only)");
   assert(lastQuery === null, "research_web: retriever not called on guard failure");
 
   res = (await rwHandler!({ question: "x", verticalParams: { k: "v" } })) as any;
-  assert(
-    res.content?.[0]?.text === "research_web error: verticalSubDomain/verticalParams require verticalDomain",
-    "research_web require-domain golden (params only)",
-  );
+  assertGuardFailure(res, "research_web", "research_web require-domain golden (params only)");
 
   // whitespace-only domain counts as
   // absent — minLength:1 lets " " through AJV, so this leg is the shared
   // function's defensive floor, pinned here as the legislated behavior.
   res = (await swHandler!({ query: "x", verticalDomain: " ", verticalSubDomain: "earnings" })) as any;
-  assert(
-    res.content?.[0]?.text === "search_web error: verticalSubDomain/verticalParams require verticalDomain",
-    "search_web whitespace-only domain treated as absent (reject)",
-  );
+  assertGuardFailure(res, "search_web", "search_web whitespace-only domain treated as absent (reject)");
   res = (await rwHandler!({ question: "x", verticalDomain: " ", verticalParams: { k: "v" } })) as any;
-  assert(
-    res.content?.[0]?.text === "research_web error: verticalSubDomain/verticalParams require verticalDomain",
-    "research_web whitespace-only domain treated as absent (reject)",
-  );
+  assertGuardFailure(res, "research_web", "research_web whitespace-only domain treated as absent (reject)");
 
   // Positive control: domain alone assembles a canonical vertical spec and
   // reaches the retriever with it.
