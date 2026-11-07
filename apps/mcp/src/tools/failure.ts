@@ -5,21 +5,17 @@
 // Error results deliberately carry no structuredContent: the error channel and
 // the output schema stay separate. A partial search (at least one arm answered)
 // is a success whose content and structuredContent name the degraded arms.
+import type { CallToolResult } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import type { ProviderErrorClass } from "@anysearch-cli/retriever";
 
-export interface ToolFailure {
-  isError: true;
-  content: Array<{ type: "text"; text: string }>;
-}
-
 /** Execution-failure result: isError true, text content, no structuredContent. */
-export function toolFailure(text: string): ToolFailure {
+export function toolFailure(text: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text }] };
 }
 
 /** Execution-failure result with the surface's stable "<tool> error: " prefix. */
-export function toolError(toolName: string, detail: string): ToolFailure {
+export function toolError(toolName: string, detail: string): CallToolResult {
   return toolFailure(toolName + " error: " + detail);
 }
 
