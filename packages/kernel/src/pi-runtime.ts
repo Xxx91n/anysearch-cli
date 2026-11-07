@@ -882,6 +882,10 @@ export class PiAgentRuntime {
         };
       }
     } finally {
+      // #188 (CodeRabbit): stop the run before its reservation is released, so
+      // a consumer that closed the stream early cannot leave the agent making
+      // provider/tool calls after the budget was freed. No-op after a normal end.
+      if (promptPromise) (agent as any).abort?.();
       // #188 (CodeRabbit): wait briefly for the in-flight prompt so its final
       // usage is recorded. If the provider is stalled, do not block the close:
       // settle once the prompt actually stops instead. A late write can fail if

@@ -133,7 +133,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
             retriever: eng.retriever,
             domain,
             ...memory,
-            domainTomlPath: domainTomlPath(),
+            domainTomlPath: domainTomlPath(undefined, undefined, eng.domainsDirs),
             // #188: same dirs the engine loaded the domain from, so a base TOML
             // in the packaged domains dir stays resolvable on a live re-read.
             domainsDirs: eng.domainsDirs,

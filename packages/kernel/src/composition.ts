@@ -157,6 +157,10 @@ export function resolveActiveAttributionCalibration(
 }
 
 export function createEngine(domain?: string, opts?: { dbPath?: string; attributionCalibration?: AttributionCalibration; domainsDirs?: string[] }): CompositionResult {
+  // #188 (CodeRabbit): keep the exact dirs the loader used (including the
+  // default env/cwd chain), so a later reload still finds inherited bases even
+  // if ANS_DOMAINS_DIR changes after construction.
+  const domainsDirs = opts?.domainsDirs ?? defaultDomainsDirs();
   let providers: SearchProvider[] = [];
   const providerBuildErrors: Record<string, string> = {};
   let config: DomainConfigPort | undefined;
@@ -177,7 +181,7 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
       // B1: resolution chain — caller-supplied domains dirs (builtin package
       // dir etc.) then the ANS_DOMAINS_DIR/CWD defaults. Missing domain stays
       // fail-open full-fanout; schema errors keep today's semantics.
-      const dirs = opts?.domainsDirs ?? defaultDomainsDirs();
+      const dirs = domainsDirs;
       const schema = loadDomainByNameIn(domain, dirs);
       config = schema as DomainConfigPort;
       const enabled = schema.sources.enabled;
@@ -263,5 +267,5 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
     Object.keys(engineOpts).length ? engineOpts : undefined,
   );
   const observation = new SqliteObservationStore(dbPath);
-  return { retriever, config, store, observation, calibration: attributionCalibration, providerBuildErrors, domainsDirs: opts?.domainsDirs, ledger };
+  return { retriever, config, store, observation, calibration: attributionCalibration, providerBuildErrors, domainsDirs, ledger };
 }

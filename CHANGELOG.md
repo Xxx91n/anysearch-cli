@@ -22,8 +22,8 @@ All notable changes to this project are recorded here. Format follows
 ### Added
 
 - **run 开始前预留 token**（`packages/kernel/src/pi-runtime.ts`）：在 `agent_start` 边界（`agent.prompt` 之前）按「输入占用 + 输出上限」调用 `ledger.reserveTokens`。当前每次 run 都是新开对话，启动时没有历史，所以实际估算即将发出的 system prompt 和用户输入（这个数偏低）；代码保留了「上下文里已经有模型回报用量时直接用」的路径，但当前生产路径走不到。输出上限默认 12288，`[budget].outputReserveTokens` 可覆写（解析仍由 #187 的 `resolveOutputReserveTokens` 单点负责）。
-- **预留被拒 = 硬停**：`reserveTokens` 返回 false 时只 yield 一个结构化 `error` 事件，不启动当次 run 的 `agent.prompt`，不发 `done`、不伪造摘要，也不结算 token/USD 或 per-call。只停当次 run；改 TOML 提额后下一轮 run 重读并刷新 cap，可继续。账本抛错仍按 #200 的 fail-open 处理：具名 stderr 报告，当次 run 不预留但继续。run 正常结束或 provider 报零用量时释放当次预留；事件流被提前关闭时，最多等 1 秒拿最终用量；等不到就先按当时用量释放预留再返回，之后有更多用量再补记差额，避免少记花费或残留 `reserved_tokens`。
-- **run 开始重读 Active Domain 并刷新账本 cap**：有 `domainTomlPath` 时，每次 run 开头走 mtime reloader；新建 runtime 的首次探测强制加载当前文件（长驻 MCP 每请求新建 runtime，启动配置快照可能落后于文件），之后按 mtime 差分。运行时工具调用（`beforeToolCall`）期间读到的 TOML 改动会记到下个 run 开头再刷新，避免下一次探测看不到文件变化而漏掉。读到新 `[budget]` 时调 ledger port 的 `initBudget`（删节则 `clearBudgetCaps`），让提额在下一轮 run 生效，不必重启。坏的 TOML 保持上次可用配置，刷新失败 fail-open 并报具名 stderr。runtime 现在接收宿主的 `domainsDirs`，`base` 只存在于宿主额外目录（如 MCP 打包目录）时也能解析。
+- **预留被拒 = 硬停**：`reserveTokens` 返回 false 时只 yield 一个结构化 `error` 事件，不启动当次 run 的 `agent.prompt`，不发 `done`、不伪造摘要，也不结算 token/USD 或 per-call。只停当次 run；改 TOML 提额后下一轮 run 重读并刷新 cap，可继续。账本抛错仍按 #200 的 fail-open 处理：具名 stderr 报告，当次 run 不预留但继续。run 正常结束或 provider 报零用量时释放当次预留；事件流被提前关闭时先中止这一轮，最多等 1 秒拿最终用量；等不到就先按当时用量释放预留再返回，之后有更多用量再补记差额。如果进程在后台补记前就退出，晚到的用量可能少记，但预留已经释放，不会把后续 run 误判为耗尽。
+- **run 开始重读 Active Domain 并刷新账本 cap**：有 `domainTomlPath` 时，每次 run 开头走 mtime reloader；新建 runtime 的首次探测强制加载当前文件（长驻 MCP 每请求新建 runtime，启动配置快照可能落后于文件），之后按 mtime 差分。运行时工具调用（`beforeToolCall`）期间读到的 TOML 改动会记到下个 run 开头再刷新，避免下一次探测看不到文件变化而漏掉。读到新 `[budget]` 时调 ledger port 的 `initBudget`（删节则 `clearBudgetCaps`），让提额在下一轮 run 生效，不必重启。坏的 TOML 保持上次可用配置，刷新失败 fail-open 并报具名 stderr。runtime 现在接收宿主的 `domainsDirs`；`domainTomlPath` 也按同一组目录找目标 TOML，`createEngine` 返回实际使用的目录（含默认 chain），`base` 或 Active Domain 只在宿主额外目录时也能解析。
 
 ### Changed
 
