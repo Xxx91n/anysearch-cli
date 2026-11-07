@@ -8,7 +8,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Added
 
-- **`ip` 第五域评测语料**（`eval-looks.json`）：14 条 live-scoped 条目 —— 参数化 5 条（`vert-i1101..i1105`，覆盖 `ip.global` 词表 `type`/`keyword`/`applicant`/`ipc`/`date_start` 的单参、双参与四参组合）、语义 5 条（`vert-i1201..i1205`，`ip.global` 无结构化参数注入，`paramsSent:false`）、对照 4 条（`ctrl-i101..i104`：无 spec 防误标、错配 spec 静默回退、bogus sub_domain 拒收、歧义查询）。参数化条目的测量池取 `espacenet.com` / `patsnap.com` 与 `/patent/` 路径；无 URL 行的语义/部分参数条目如实留空（hostHit=null）。
+- **`ip` 第五域评测语料**（`eval-looks.json`）：14 条 live-scoped 条目 —— 参数化 5 条（`vert-i1101..i1105`，覆盖 `ip.global` 词表 `type`/`keyword`/`applicant`/`ipc`/`date_start` 的单参、双参与四参组合）、语义 5 条（`vert-i1201..i1205`，`ip.global` 无结构化参数注入，`paramsSent:false`；domain-only `ip` 实测回退泛网，故显式走 `ip.global`）、对照 4 条（`ctrl-i101..i104`：无 spec 防误标、错配 spec 静默回退、bogus sub_domain 拒收、歧义查询）。参数化条目的测量池取 `espacenet.com` / `patsnap.com` 与 `/patent/` 路径；无 URL 行的语义/部分参数条目如实留空（hostHit=null）。
 - **`ip` 进入垂域维度词表**（`packages/store/src/eval/docs-golden.ts`）：`VERTICAL_DIMENSION_VALUES.vdomain` 增 `ip`，使新语料通过 schema 校验；docs 八维计数闸不受影响（垂域标签走独立词表）。
 - **活词表快照落档**（`docs/eval/ip-corpus-probe-2026-11-07.md` + `docs/vertical-domains.md`）：记录 2026-11-07 的 `get_sub_domains(domain="ip")` 原文（唯一子域 `ip.global`，参数 `type`/`keyword`/`applicant`/`ipc`/`date_start`）与搜索形态矩阵（domain-only 静默回退、bogus sub_domain `isError`、bogus type 值静默容忍）。快照仅用于建集，不进入运行时枚举。
 

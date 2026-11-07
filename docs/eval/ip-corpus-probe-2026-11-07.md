@@ -17,6 +17,16 @@ per-parameter table, the same shape the `finance.*` entries already produce.
 - Probe path: `initialize` (protocol `2025-03-26`, no `mcp-session-id`
   response header) → `notifications/initialized` → `tools/list` →
   `tools/call get_sub_domains {domain:"ip"}` → `tools/call search` samples.
+  The two `tools/call` request bodies were:
+
+  ```json
+  {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_sub_domains","arguments":{"domain":"ip"}}}
+  ```
+
+  ```json
+  {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search","arguments":{"query":"solar cell patents","domain":"ip","sub_domain":"ip.global","sub_domain_params":{"type":"GlobalPatent","keyword":"solar cell"}}}}
+  ```
+
 - Date: 2026-11-07. An API key was present; the key is never recorded here.
 - Read-only: the probe calls `get_sub_domains` and `search` only. No runtime
   wiring changed.
@@ -75,6 +85,13 @@ Consequences used by the corpus:
   asserts an error for it.
 - Domain-only `ip` silently falls back to general web (the `ctrl-i102` /
   `ctrl-i104` surfaces), exactly like the other domains.
+- The semantic entries (`vert-i1201..i1205`) carry `subDomain: "ip.global"`
+  with no `params` instead of the domain-only shape used by the
+  finance/academic/code/health semantic rows. Reason: domain-only `ip` was
+  observed to return general web news (row 1 above), so a domain-only
+  semantic entry would measure the silent-fallback surface rather than the
+  `ip` vertical. `ip.global` with no params still exercises the vertical arm
+  (`paramsSent:false` pins wire-absence of `sub_domain_params`).
 
 ## Scope
 
