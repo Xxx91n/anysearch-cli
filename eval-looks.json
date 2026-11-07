@@ -137,6 +137,16 @@
       "vert-h1203": "live",
       "vert-h1204": "live",
       "vert-h1205": "live",
+      "vert-i1101": "live",
+      "vert-i1102": "live",
+      "vert-i1103": "live",
+      "vert-i1104": "live",
+      "vert-i1105": "live",
+      "vert-i1201": "live",
+      "vert-i1202": "live",
+      "vert-i1203": "live",
+      "vert-i1204": "live",
+      "vert-i1205": "live",
       "ctrl-f101": "live",
       "ctrl-f102": "live",
       "ctrl-f103": "live",
@@ -152,7 +162,11 @@
       "ctrl-h101": "live",
       "ctrl-h102": "live",
       "ctrl-h103": "live",
-      "ctrl-h104": "live"
+      "ctrl-h104": "live",
+      "ctrl-i101": "live",
+      "ctrl-i102": "live",
+      "ctrl-i103": "live",
+      "ctrl-i104": "live"
     },
     "entries": [
       {
@@ -2627,6 +2641,430 @@
         "notes": null
       },
       {
+        "id": "vert-i1101",
+        "domain": "default",
+        "question": "solar cell patents from leading manufacturers",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "ip",
+          "subDomain": "ip.global",
+          "params": {
+            "type": "GlobalPatent",
+            "keyword": "solar cell"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "ip",
+            "sub_domain": "ip.global",
+            "paramsKeys": [
+              "keyword",
+              "type"
+            ],
+            "paramsSent": true,
+            "hit": true,
+            "hitHosts": [
+              "espacenet.com",
+              "patsnap.com"
+            ],
+            "hitPaths": [
+              "/patent/"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "ip.global type=GlobalPatent+keyword（活词表 2026-11-07：type/keyword/applicant/ipc/date_start）。"
+      },
+      {
+        "id": "vert-i1102",
+        "domain": "default",
+        "question": "Huawei patent applications in the last five years",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "ip",
+          "subDomain": "ip.global",
+          "params": {
+            "type": "GlobalPatent",
+            "applicant": "Huawei"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "ip",
+            "sub_domain": "ip.global",
+            "paramsKeys": [
+              "applicant",
+              "type"
+            ],
+            "paramsSent": true,
+            "hit": true,
+            "hitHosts": [
+              "espacenet.com",
+              "patsnap.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "ip.global type=GlobalPatent+applicant（申请人过滤参数）。"
+      },
+      {
+        "id": "vert-i1103",
+        "domain": "default",
+        "question": "semiconductor layered device patents classified H01L",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "ip",
+          "subDomain": "ip.global",
+          "params": {
+            "type": "GlobalPatent",
+            "ipc": "H01L"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "ip",
+            "sub_domain": "ip.global",
+            "paramsKeys": [
+              "ipc",
+              "type"
+            ],
+            "paramsSent": true,
+            "hit": true,
+            "hitHosts": [
+              "espacenet.com",
+              "patsnap.com"
+            ],
+            "hitPaths": [
+              "/patent/"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "ip.global type=GlobalPatent+ipc（IPC/CPC 分类过滤参数）。"
+      },
+      {
+        "id": "vert-i1104",
+        "domain": "default",
+        "question": "quantum computing patents published since 2020",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "ip",
+          "subDomain": "ip.global",
+          "params": {
+            "type": "GlobalPatent",
+            "keyword": "quantum computing",
+            "date_start": "20200101"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "ip",
+            "sub_domain": "ip.global",
+            "paramsKeys": [
+              "date_start",
+              "keyword",
+              "type"
+            ],
+            "paramsSent": true,
+            "hit": true,
+            "hitHosts": [
+              "espacenet.com",
+              "patsnap.com"
+            ],
+            "hitPaths": [
+              "/patent/"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "ip.global type=GlobalPatent+keyword+date_start（公告/申请日下界）。"
+      },
+      {
+        "id": "vert-i1105",
+        "domain": "default",
+        "question": "比亚迪 固态电池专利布局",
+        "questionLang": "zh",
+        "intent": "reference",
+        "vertical": {
+          "domain": "ip",
+          "subDomain": "ip.global",
+          "params": {
+            "type": "GlobalPatent",
+            "applicant": "BYD",
+            "keyword": "solid-state battery",
+            "date_start": "20220101"
+          }
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "ip",
+            "sub_domain": "ip.global",
+            "paramsKeys": [
+              "applicant",
+              "date_start",
+              "keyword",
+              "type"
+            ],
+            "paramsSent": true,
+            "hit": true,
+            "hitHosts": [
+              "espacenet.com",
+              "patsnap.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:parameterized",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "ip.global 四参数组合 type+applicant+keyword+date_start。"
+      },
+      {
+        "id": "vert-i1201",
+        "domain": "default",
+        "question": "patents assigned to TSMC since 2020",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "ip"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "ip",
+            "hit": true,
+            "hitHosts": [
+              "iam-media.com",
+              "mondaq.com",
+              "investor.tsmc.com",
+              "knowmade.com",
+              "cacm.acm.org"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "ip domain-only 语义条（沿用既有语义层模式）；上游回退泛网，vertical 标记由客户端盖章；hitHosts 为 2026-11-07 实测候选宿主（测量池，非硬性门禁）。"
+      },
+      {
+        "id": "vert-i1202",
+        "domain": "default",
+        "question": "华为 5G 标准必要专利 法律状态",
+        "questionLang": "zh",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "ip"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "ip",
+            "hit": true,
+            "hitHosts": [
+              "istis.sh.cn",
+              "court.gov.cn",
+              "stblog.com.cn",
+              "businesstimescn.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "ip domain-only 语义条；中文标准必要专利查询，上游回退泛网；hitHosts 为 2026-11-07 实测候选宿主。"
+      },
+      {
+        "id": "vert-i1203",
+        "domain": "default",
+        "question": "battery recycling patent families and legal status",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "ip"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "ip",
+            "hit": true,
+            "hitHosts": [
+              "patents.google.com",
+              "patsnap.com",
+              "mdpi.com",
+              "knobbe.com",
+              "bardehle.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "ip domain-only 语义条；同族+法律状态查询，上游回退泛网；hitHosts 为 2026-11-07 实测候选宿主。"
+      },
+      {
+        "id": "vert-i1204",
+        "domain": "default",
+        "question": "欧洲专利局 审查意见 答复期限",
+        "questionLang": "zh",
+        "intent": "howto",
+        "vertical": {
+          "domain": "ip"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "ip",
+            "hit": true,
+            "hitHosts": [
+              "mondaq.com",
+              "mewburn.com",
+              "hcipi.com",
+              "ifutureip.com",
+              "patents.qizhidao.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "ip domain-only 语义条；程序性 howto 查询，上游回退泛网；hitHosts 为 2026-11-07 实测候选宿主。"
+      },
+      {
+        "id": "vert-i1205",
+        "domain": "default",
+        "question": "standard essential patent FRAND royalty determination",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "ip"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "subject",
+            "domain": "ip",
+            "hit": true,
+            "hitHosts": [
+              "iam-media.com",
+              "oxfirst.com",
+              "doi.org",
+              "sciencedirect.com",
+              "theiplawblog.com"
+            ]
+          }
+        },
+        "dimensions": [
+          "stratum:semantic",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "ip domain-only 语义条；FRAND 许可费查询，上游回退泛网；hitHosts 为 2026-11-07 实测候选宿主。"
+      },
+      {
         "id": "ctrl-f101",
         "domain": "default",
         "question": "how to cook pasta carbonara properly",
@@ -3101,6 +3539,120 @@
           "reviewer": "r84-fixer"
         },
         "notes": "歧义查询（温度/感冒）。"
+      },
+      {
+        "id": "ctrl-i101",
+        "domain": "default",
+        "question": "how to bake sourdough bread at home",
+        "questionLang": "en",
+        "intent": "howto",
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "hit": false
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "域外对照：无 spec 下禁出现 vertical 标记（防误标钉）。"
+      },
+      {
+        "id": "ctrl-i102",
+        "domain": "default",
+        "question": "best hiking trails near Chengdu",
+        "questionLang": "en",
+        "intent": "reference",
+        "vertical": {
+          "domain": "ip"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "错配 spec：ip domain + 徒步问题——上游静默回退泛网面存在性断言。"
+      },
+      {
+        "id": "ctrl-i103",
+        "domain": "default",
+        "question": "patent claim drafting examples",
+        "questionLang": "en",
+        "intent": "howto",
+        "vertical": {
+          "domain": "ip",
+          "subDomain": "bogus_claims"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "bogus sub_domain：2026-11-07 探针记录 ip.bogus_xyz 的 isError 'Invalid tag: ip.bogus_xyz.'；未记录 bogus_claims 的响应。"
+      },
+      {
+        "id": "ctrl-i104",
+        "domain": "default",
+        "question": "apple patent",
+        "questionLang": "en",
+        "intent": "factoid",
+        "vertical": {
+          "domain": "ip"
+        },
+        "expected": {
+          "verdict": "answer",
+          "minResults": 1,
+          "vertical": {
+            "role": "control",
+            "degraded": "general-fallback"
+          }
+        },
+        "dimensions": [
+          "stratum:control",
+          "vdomain:ip"
+        ],
+        "provenance": {
+          "type": "constructed",
+          "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+          "harvestedAt": "2026-11-07",
+          "reviewer": "impl-24"
+        },
+        "notes": "歧义查询（水果/公司专利）。"
       }
     ]
   }

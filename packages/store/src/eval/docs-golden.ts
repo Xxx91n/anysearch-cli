@@ -35,7 +35,9 @@ export const DOCS_GOLDEN_VERDICTS = ["answer", "abstain"] as const;
 // never carry docs-dimension tags; their slice accounting rides on these two.
 export const VERTICAL_DIMENSION_VALUES: Record<string, readonly string[]> = {
   stratum: ["parameterized", "semantic", "control"],
-  vdomain: ["finance", "academic", "code", "health", "cross"],
+  // "ip" entered the vocabulary when the upstream get_sub_domains(domain="ip")
+  // probe exposed a structured param table (ticket #24, spec #203 T12).
+  vdomain: ["finance", "academic", "code", "health", "ip", "cross"],
 };
 export const VERTICAL_DIMENSIONS = Object.keys(VERTICAL_DIMENSION_VALUES);
 

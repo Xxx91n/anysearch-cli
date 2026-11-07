@@ -4,6 +4,20 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #24: ip 第五域语料建集（`vert-i*` 语料 + 活词表快照）
+
+### Added
+
+- **`ip` 第五域评测语料**（`eval-looks.json`）：14 条 live-scoped 条目 —— 参数化 5 条（`vert-i1101..i1105`，覆盖 `ip.global` 词表 `type`/`keyword`/`applicant`/`ipc`/`date_start` 的双参、三参与四参组合）、语义 5 条（`vert-i1201..i1205`，domain-only spec，沿用既有语义层模式；参数化 `ip.global` 无参数响应多为无 URL 文本，当前 adapter 会丢弃，故不在该层断言）、对照 4 条（`ctrl-i101..i104`：无 spec 防误标、错配 spec 静默回退、bogus sub_domain 拒收、歧义查询）。5 条参数化条目均定义 `hitHosts`（部分附 `/patent/` 路径池）；语义条目按 2026-11-07 domain-only 实测宿主补 `hitHosts` 测量池。
+- **`ip` 进入垂域维度词表**（`packages/store/src/eval/docs-golden.ts`）：`VERTICAL_DIMENSION_VALUES.vdomain` 增 `ip`，使新语料通过 schema 校验；docs 八维计数闸不受影响（垂域标签走独立词表）。
+- **活词表快照落档**（`docs/eval/ip-corpus-probe-2026-11-07.md` + `docs/vertical-domains.md`）：记录 2026-11-07 的 `get_sub_domains(domain="ip")` 原文（唯一子域 `ip.global`，参数 `type`/`keyword`/`applicant`/`ipc`/`date_start`）与搜索形态矩阵（domain-only 静默回退、bogus sub_domain `isError`、bogus type 值静默容忍）。快照仅用于建集，不进入运行时枚举。
+- **上游阻塞 registry 解除登记**（`docs/research/upstream-unblock-registry.md`）：#24 条目追加 2026-11-07 触发事实与语料落点；原始 `登记状态: absent` 不变（内部评测缺口不补登 `docs/limitations.md`）。
+
+### Verification
+
+- `validateDocsGoldenSet` / `validateCoverageManifest` / `crossCheckDocsGolden` 对更新后的账本零问题（Node 24 `--experimental-strip-types` 直接加载验证器，未构建）。
+- 远端 `test:online` job 不构建 CLI：`apps/cli/dist` 缺失时 `eval-looks-vertical.online.ts` 直接 SKIP（exit 0），因此 14 条新 live 条目不会进入该 job 的配对 delta；live 语料运行须在已构建 CLI 的环境单独执行。`check-build` 与其余 CI 腿已在本 PR 上通过。
+
 ## Unreleased — #204: MCP 失败语义——isError、空结果与 provider failure metadata
 
 ### Changed
