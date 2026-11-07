@@ -35,7 +35,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         let rounds = 0;
 
         try {
-          const maxRounds = d === "deep" ? 3 : 1;
+          // brief = 1, standard = 2, deep = 3 — the model-facing schema promises
+          // these round counts (KernelJsonSchemas.research_web).
+          const maxRounds = d === "deep" ? 3 : d === "standard" ? 2 : 1;
           const seenUrls = new Set<string>();
           for (let round = 0; round < maxRounds; round++) {
             const envelope = await eng.retriever.search({
