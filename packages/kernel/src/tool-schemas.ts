@@ -16,7 +16,7 @@ import { Type } from "@sinclair/typebox";
 // tool's own contract; the fragment carries only the props).
 const verticalSpecProps = {
   verticalDomain: Type.Optional(
-    Type.String({ minLength: 1, description: "Vertical domain id routed provider-side (e.g. academic, finance, it_tech); replaces the domain TOML sources.vertical default wholesale" })
+    Type.String({ minLength: 1, description: "Vertical domain id routed provider-side (e.g. academic, finance, ip); replaces the domain TOML sources.vertical default wholesale" })
   ),
   verticalSubDomain: Type.Optional(
     Type.String({ minLength: 1, description: "Vertical sub-domain within verticalDomain (requires verticalDomain)" })

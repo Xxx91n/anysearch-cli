@@ -8,10 +8,11 @@ import {
 const KS = (KernelJsonSchemas) as unknown as Record<string, {
   required?: string[];
   additionalProperties?: boolean;
-  properties?: Record<string, { minLength?: number; maxLength?: number; pattern?: string; anyOf?: Array<{ const: string }> }>;
+  properties?: Record<string, { minLength?: number; maxLength?: number; pattern?: string; description?: string; anyOf?: Array<{ const: string }> }>;
 }>;
 import {
   AnsChatInput,
+  KernelToolDescriptions,
   KernelToolSchemas,
   QueryKnowledgeInput,
   RecallMemoryInput,
@@ -127,4 +128,33 @@ const _researchWebStaticEq: StaticEq<typeof ResearchWebInput.static, ResearchWeb
 void _searchWebStaticEq;
 void _researchWebStaticEq;
 
-console.log("tool-schemas: 33 structural asserts OK");
+// 11. #212: model-facing verticalDomain examples must be real upstream domain
+// ids. Upstream `get_sub_domains` is the live authority; the set below is the
+// dated snapshot in docs/vertical-domains.md (17 top-level values). The invalid
+// `it_tech` example is pinned out of every model-facing string, and each `e.g.`
+// id must come from that snapshot.
+const VERTICAL_DOMAIN_SNAPSHOT = new Set([
+  "academic", "agriculture", "business", "code", "energy", "environment",
+  "film", "finance", "gaming", "general", "health", "ip", "legal", "resource",
+  "security", "social_media", "travel",
+]);
+const modelFacingCopy = JSON.stringify({ KernelJsonSchemas, KernelToolDescriptions });
+assert.ok(
+  !modelFacingCopy.includes("it_tech"),
+  "model-facing copy does not advertise the invalid upstream domain id it_tech",
+);
+for (const name of ["search_web", "research_web"] as const) {
+  const description = String(KS[name].properties?.verticalDomain?.description ?? "");
+  assert.ok(description.length > 0, `${name}.verticalDomain keeps a model-facing description`);
+  const examples = [...description.matchAll(/e\.g\.\s*([^)]+)/g)]
+    .flatMap((m) => m[1].split(",").map((id) => id.trim()).filter(Boolean));
+  assert.ok(examples.length > 0, `${name}.verticalDomain names at least one real upstream example id`);
+  for (const id of examples) {
+    assert.ok(
+      VERTICAL_DOMAIN_SNAPSHOT.has(id),
+      `${name}.verticalDomain example "${id}" is a real upstream domain id (docs/vertical-domains.md snapshot)`,
+    );
+  }
+}
+
+console.log("tool-schemas: structural asserts OK (incl. #212 model-facing vertical examples)");
