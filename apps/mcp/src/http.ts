@@ -63,6 +63,19 @@ export function createHttpApp(engine: CompositionResult): Express {
     // stateless factory pattern: a fresh server per request, sharing the
     // startup engine (#112 — no createEngine per request).
     const server = buildServer(engine);
+    // #209: stateless Streamable HTTP cancellation is signalled by closing the
+    // response stream (the MCP spec's stateless cancellation mechanism). A fresh
+    // server per POST has no same-connection notifications/cancelled channel,
+    // so the request-scoped abort controller is the only way to stop a handler.
+    const requestAbort = new AbortController();
+    const abortIfDisconnected = () => {
+      if (!res.writableFinished) requestAbort.abort("client disconnected");
+    };
+    req.on("aborted", abortIfDisconnected);
+    res.on("close", abortIfDisconnected);
+    // A disconnect can land between app.post() and the listener registration;
+    // check the already-destroyed response so that request never starts provider work.
+    if (res.destroyed) requestAbort.abort("client disconnected");
     try {
       // stateless mode -- sessionIdGenerator: undefined, enableJsonResponse, keepAliveMs: 0
       const t = new NodeStreamableHTTPServerTransport({
@@ -75,11 +88,18 @@ export function createHttpApp(engine: CompositionResult): Express {
       // sends clientInfo only on initialize; we still wrap every call in
       // AsyncLocalStorage so observeTool can pick it up consistently.
       const clientInfoName = extractClientInfoName(req.body);
-      await runWithMcpIdentity({ clientInfoName }, () => t.handleRequest(req, res, req.body));
+      await runWithMcpIdentity({ clientInfoName, signal: requestAbort.signal }, () => t.handleRequest(req, res, req.body));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      res.status(500).json({ error: { code: -32603, message: "Internal error: " + msg } });
+      // A disconnected client cannot receive the 500; write it only when the
+      // response is still open (the request-abort path lands here for encoding/
+      // send faults after cancellation too).
+      if (!res.headersSent && !res.writableEnded) {
+        res.status(500).json({ error: { code: -32603, message: "Internal error: " + msg } });
+      }
     } finally {
+      req.off("aborted", abortIfDisconnected);
+      res.off("close", abortIfDisconnected);
       // release the per-request server's listeners on EVERY path; the shared
       // engine stays open for the next request (#112 — no per-request growth).
       await server.close();
