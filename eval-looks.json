@@ -3604,7 +3604,7 @@
           "harvestedAt": "2026-11-07",
           "reviewer": "impl-24"
         },
-        "notes": "bogus sub_domain：上游 2026-11-07 实测 isError 'Invalid tag: ip.bogus_claims'（拒收面）。"
+        "notes": "bogus sub_domain：2026-11-07 探针记录 ip.bogus_xyz 的 isError 'Invalid tag: ip.bogus_xyz.'；未记录 bogus_claims 的响应。"
       },
       {
         "id": "ctrl-i104",

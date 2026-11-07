@@ -16,7 +16,7 @@ All notable changes to this project are recorded here. Format follows
 ### Verification
 
 - `validateDocsGoldenSet` / `validateCoverageManifest` / `crossCheckDocsGolden` 对更新后的账本零问题（Node 24 `--experimental-strip-types` 直接加载验证器，未构建）。
-- 远端 CI（`check-build` + `test:online`）待授权推送后执行；`test:online` 的 `eval-looks-vertical.online.ts` 会把 14 条新 live 条目纳入配对 delta 运行。
+- 远端 `test:online` job 不构建 CLI：`apps/cli/dist` 缺失时 `eval-looks-vertical.online.ts` 直接 SKIP（exit 0），因此 14 条新 live 条目不会进入该 job 的配对 delta；live 语料运行须在已构建 CLI 的环境单独执行。`check-build` 与其余 CI 腿已在本 PR 上通过。
 
 ## Unreleased — #178: PiAgentRuntime ledger 接线——token/USD 结算生产化（#36 承接）
 
