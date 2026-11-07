@@ -62,9 +62,9 @@
   `includeDomains` cannot ride it; under a domain allowlist the arm stays
   post-filter-only (honest degrade, recorded in the `retrieval.domain_filter.pre`
   audit event). Vertical passthrough is a contract-surface change (R83 ticket).
-- **Tavily does not forward `AbortSignal`** — provider-side timeouts are not
-  cancelable through the SDK (recorded limitation; the kernel budget guard
-  still bounds wall time).
+- **Tavily does not forward `AbortSignal` (#32)** — provider-side timeouts are not
+  cancelable through the SDK. The budget guard limits spend, not wall time: the
+  grace window only aborts stragglers once enough results arrive, so a slow call can still overrun the budget.
 - **macOS exit-time `libc++abi` aborts (F-16) — root-caused, fixed, lane
   restored (#183, after #16 / PR #174)** — the family is **not** "better-sqlite3
   leaks a handle": it is `process.exit()` running C++ static destructors while
@@ -230,5 +230,13 @@
 - **Exa envelope `usage` is always `undefined`** — `exa-js` returns cost only
   per-call (`costDollars`) and offers no standalone usage API, so `usage()`
   is unimplemented (contract field is optional).
+- **Exa does not forward `AbortSignal` (#216, separate from Tavily's #32)** —
+  the installed pin `exa-js@2.18.1` exposes no abort/`signal` option, so the
+  adapter accepts the contract signal but never passes it to the SDK.
+  Upstream `exa-js@2.26.0` (2026-10-19) added per-request timeouts and abort
+  support as a trailing request-options argument; the adapter still needs the
+  SDK bump and signal forwarding. As with Tavily, the budget guard limits
+  spend, not wall time, so a slow call can still hold the search past the
+  budget.
 
 > AI生成
