@@ -7,7 +7,7 @@
 //
 // Covered:
 //   1. two stateless HTTP ans_chat calls with identical wire config construct
-//      the LLM session once
+//      the LLM session once (including concurrent cold requests)
 //   2. a contextWindow change rebuilds the session (window is in the key)
 //   3. an API-key rotation rebuilds through the same slot (no split cache)
 //   4. an identical repeat after the rebuild is a cache hit
@@ -61,31 +61,56 @@ const KEY_A = "sk-probe-key-AAAA-0001";
 const KEY_B = "sk-probe-key-BBBB-0002";
 
 /**
- * Counting session factory. It returns a faux pi-ai session that answers "pong"
- * once per prompt, and records the messages the model saw so the isolation
- * assertions can inspect them. Every real construction increments `constructed`.
+ * Build a faux pi-ai session that answers "pong" once per prompt and records
+ * the messages the model saw. `construction` labels which factory call built it.
  */
+function buildFauxSession(
+  opts: Parameters<AnsChatSessionFactory>[0],
+  construction: number,
+  seen: Array<{ construction: number; messages: any[] }>,
+) {
+  const faux = createFauxCore({ provider: opts.provider, models: [{ id: opts.model }] });
+  // Each prompt consumes one response; the suite never runs more than a few.
+  faux.setResponses(Array.from({ length: 8 }, () => (ctx: any) => {
+    seen.push({ construction, messages: JSON.parse(JSON.stringify(ctx?.messages ?? [])) });
+    return fauxAssistantMessage(fauxText("pong"));
+  }));
+  return {
+    model: faux.getModel(),
+    streamFn: faux.streamSimple,
+    models: faux,
+    providerName: opts.provider,
+    modelName: opts.model,
+    apiKey: opts.apiKey,
+    contextWindow: opts.contextWindow,
+  } as any;
+}
+
+/** Immediately-available counting factory. */
 function makeCountingFactory(seen: Array<{ construction: number; messages: any[] }>) {
   let constructed = 0;
   const factory: AnsChatSessionFactory = async (opts) => {
     const construction = ++constructed;
-    const faux = createFauxCore({ provider: opts.provider, models: [{ id: opts.model }] });
-    // Each prompt consumes one response; the suite never runs more than a few.
-    faux.setResponses(Array.from({ length: 8 }, () => (ctx: any) => {
-      seen.push({ construction, messages: JSON.parse(JSON.stringify(ctx?.messages ?? [])) });
-      return fauxAssistantMessage(fauxText("pong"));
-    }));
-    return {
-      model: faux.getModel(),
-      streamFn: faux.streamSimple,
-      models: faux,
-      providerName: opts.provider,
-      modelName: opts.model,
-      apiKey: opts.apiKey,
-      contextWindow: opts.contextWindow,
-    } as any;
+    return buildFauxSession(opts, construction, seen);
   };
   return { factory, constructed: () => constructed };
+}
+
+/**
+ * Factory whose first construction stays pending until `release()`.
+ * A second concurrent request that reaches the cache while the build is pending
+ * must join it instead of starting a second construction.
+ */
+function makeDeferredFactory(seen: Array<{ construction: number; messages: any[] }>) {
+  let constructed = 0;
+  let open: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { open = resolve; });
+  const factory: AnsChatSessionFactory = async (opts) => {
+    const construction = ++constructed;
+    await gate;
+    return buildFauxSession(opts, construction, seen);
+  };
+  return { factory, constructed: () => constructed, release: () => open() };
 }
 
 const emptyEnvelope: FusedEnvelope = {
@@ -273,6 +298,47 @@ async function main() {
       );
     } finally {
       await close();
+    }
+
+    // ---- 1b. concurrent cold requests share one in-flight construction ----
+    {
+      const seenConcurrent: Array<{ construction: number; messages: any[] }> = [];
+      const deferred = makeDeferredFactory(seenConcurrent);
+      const concurrentState = createMcpToolState({ createAnsChatSession: deferred.factory });
+      const appConcurrent = createHttpApp(createEngine(), concurrentState);
+      const { post: postConcurrent, close: closeConcurrent } = await startApp(appConcurrent);
+      try {
+        // Hold the first build open so the second request reaches the cache while
+        // the construction is still pending.
+        const first = callChat(postConcurrent, 20, "concurrent first");
+        for (let i = 0; i < 200 && deferred.constructed() === 0; i++) {
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        assert(deferred.constructed() === 1, "concurrent: the first request entered the factory");
+
+        const second = callChat(postConcurrent, 21, "concurrent second");
+        await new Promise((r) => setTimeout(r, 100));
+        assert(
+          deferred.constructed() === 1,
+          "concurrent: a second identical request joins the in-flight build (got " + deferred.constructed() + ")",
+        );
+        deferred.release();
+        const [r1, r2] = await Promise.all([first, second]);
+        assert(r1.status === 200 && r2.status === 200, "concurrent: both requests complete");
+        assert(
+          r1.json?.result?.isError !== true && r2.json?.result?.isError !== true,
+          "concurrent: both requests succeed",
+        );
+        assert(
+          deferred.constructed() === 1,
+          "concurrent: both requests share one session construction (got " + deferred.constructed() + ")",
+        );
+      } finally {
+        // Release a gate left closed by a failed assertion so no pending build
+        // outlives the suite.
+        deferred.release();
+        await closeConcurrent();
+      }
     }
 
     // ---- 6. stdio keeps its process-level behavior ----

@@ -14,7 +14,7 @@ import { PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescri
 import { domainTomlPath } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import { buildAnsChatResult, resolveAnsChatSession } from "../ans-chat-session.js";
-import { createMcpToolState, type McpToolState } from "../tool-state.js";
+import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
 import { toolError, toolFailure } from "./failure.js";
 
@@ -102,12 +102,24 @@ export function registerAnsChat(
       throw new Error("ANS_LLM_BASE_URL requires ANS_LLM_API=chat|messages|responses");
     }
     // Lazy init / rotation rebuild: same slot is overwritten on tiebreaker mismatch — not split.
-    const session = await buildSession({
-      provider: providerName, model: modelName, baseUrl, api, contextWindow,
-      apiKey: baseUrl ? process.env.ANS_LLM_API_KEY : undefined,
-    });
-    sessionCache.set(key, { session, keyHash });
-    return session;
+    // The in-flight promise is cached synchronously so concurrent identical requests
+    // share one construction instead of each building a client.
+    const entry: AnsChatCacheEntry = {
+      keyHash,
+      session: buildSession({
+        provider: providerName, model: modelName, baseUrl, api, contextWindow,
+        apiKey: baseUrl ? process.env.ANS_LLM_API_KEY : undefined,
+      }),
+    };
+    sessionCache.set(key, entry);
+    try {
+      return await entry.session;
+    } catch (e) {
+      // A failed build must not poison the slot. Delete only when the slot still
+      // holds THIS build: a newer credential generation may have overwritten it.
+      if (sessionCache.get(key) === entry) sessionCache.delete(key);
+      throw e;
+    }
   }
 
   server.registerTool(

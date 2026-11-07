@@ -18,9 +18,12 @@ import {
   type LlmSessionOptions,
 } from "@anysearch-cli/kernel";
 
-/** One cached ans_chat LLM client plus its credential-rotation tiebreaker. */
+/** One ans_chat LLM client slot plus its credential-rotation tiebreaker. */
 export interface AnsChatCacheEntry {
-  session: LlmSession;
+  // The in-flight construction promise is cached synchronously, before it
+  // settles, so concurrent identical requests share one build. Once resolved
+  // it also serves as the cached client.
+  session: Promise<LlmSession>;
   // F-A4: keyHash detects ANS_LLM_API_KEY rotation on a long-lived process. It
   // is NOT part of the cache key: a rotation overwrites the same slot value.
   keyHash: string;
