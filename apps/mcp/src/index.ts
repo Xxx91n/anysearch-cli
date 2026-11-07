@@ -5,6 +5,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { buildServer, createDefaultEngine } from "./server.js";
 import { createHttpApp } from "./http.js";
+import { createMcpToolState } from "./tool-state.js";
 
 // The /health version banner moved with the HTTP wiring into http.ts (#112),
 // so this entry no longer needs the __PACKAGE_VERSION__ substitution.
@@ -29,9 +30,13 @@ for (let i = 0; i < argv.length; i++) {
 }
 
 async function main() {
+  // #210: one process-level tool state for either transport. stdio already had
+  // process-level behavior through its single long-lived server; HTTP now gets
+  // the same scope even though it builds a fresh server per request.
+  const toolState = createMcpToolState();
   if (transport === "stdio") {
     // stdio is process-wide: one server, one engine for the process lifetime.
-    const server = buildServer();
+    const server = buildServer(undefined, toolState);
     const t = new StdioServerTransport();
     await server.connect(t);
     // stdio: log to stderr only (stdout is protocol channel)
@@ -42,7 +47,7 @@ async function main() {
     // this change each request called createEngine() and opened two fresh
     // better-sqlite3 handles, so connections grew with request count.
     const engine = createDefaultEngine();
-    const app = createHttpApp(engine);
+    const app = createHttpApp(engine, toolState);
 
     // SECURITY: localhost-only binding — no remote access (CWE-306).
     app.listen(port, "127.0.0.1", () => {

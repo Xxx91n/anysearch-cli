@@ -74,6 +74,37 @@ async function main() {
       assert(env.results[0].snippet.includes("serverless functions globally"), "snippet mapped");
       assert(env.results[0].source === "anysearch", "source = anysearch");
       assert(env.elapsedMs === 847, "elapsedMs parsed from envelope header");
+      // #214: result._meta.request_id is captured as an internal diagnostic only.
+      assert(env.diagnostics?.requestId === "req-test", "request_id captured on diagnostics");
+      assert(!JSON.stringify(env.results).includes("req-test"), "request_id never enters results");
+    } finally { f.restore(); }
+  }
+
+  // 1b. missing or non-string _meta.request_id: diagnostics absent, no crash
+  {
+    const noMeta = JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: MD }] } });
+    const badMeta = JSON.stringify({ jsonrpc: "2.0", id: 2, result: { _meta: { request_id: 42 }, content: [{ type: "text", text: MD }] } });
+    for (const [label, body] of [["absent", noMeta], ["non-string", badMeta]] as const) {
+      const f = installFetch((c) => c.body?.method === "tools/call" ? { body } : stdHandler(c));
+      try {
+        const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+        const env = await p.search(REQ, SIG);
+        assert(env.results.length === 2, label + ": results still mapped");
+        assert(env.diagnostics === undefined, label + ": no diagnostics (nothing to correlate)");
+      } finally { f.restore(); }
+    }
+  }
+
+  // 1c. an oversized id is capped at the extraction seam (span-attribute hygiene).
+  {
+    const longId = "r".repeat(4096);
+    const body = JSON.stringify({ jsonrpc: "2.0", id: 2, result: { _meta: { request_id: longId }, content: [{ type: "text", text: MD }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      const env = await p.search(REQ, SIG);
+      assert(env.diagnostics?.requestId?.length === 128, "oversized request_id capped at 128 chars");
+      assert(env.diagnostics?.requestId === "r".repeat(128), "cap keeps the leading 128 chars");
     } finally { f.restore(); }
   }
 
@@ -85,6 +116,7 @@ async function main() {
       const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
       const env = await p.search(REQ, SIG);
       assert(env.results.length === 2 && env.results[1].url.includes("developers.cloudflare.com"), "SSE-framed reply mapped");
+      assert(env.diagnostics?.requestId === "req-test", "SSE-framed reply captures request_id");
     } finally { f.restore(); }
   }
 

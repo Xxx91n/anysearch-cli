@@ -220,6 +220,20 @@
   what makes the `ans_chat` gap visible instead of a no-op. The gate itself
   (`store && sessionId`) is unchanged — narrowing it would alter every
   composition root.
+- **MCP dual-era: a `2026-07-28` client is negotiated down to `2025-11-25`** —
+  both stdio and the stateless Streamable HTTP transport answer an
+  `initialize` claiming `2026-07-28` with `2025-11-25` (the SDK's built-in
+  legacy fallback), and the five tools still work. Legacy clients
+  (`2024-10-07` … `2025-11-25`) get their own version echoed back. The
+  hand-wired server stays legacy-only: a modern `_meta` envelope does not
+  unlock modern methods, so on stdio/in-memory (or HTTP without the
+  `MCP-Protocol-Version` header) `server/discover` returns JSON-RPC `-32601`
+  (`MethodNotFound`), while `tools/list` carrying the same envelope still
+  returns the five-tool list (graceful legacy degradation). On HTTP, a
+  non-initialize request that sends `MCP-Protocol-Version: 2026-07-28` is
+  rejected by the transport before dispatch with HTTP 400 and JSON-RPC
+  `-32000` (unsupported-version gate); send the negotiated `2025-11-25`
+  instead. Pinned by `apps/mcp/test/dual-era.test.ts`.
 - **AnySearch REST `POST /v1/search` is live; this adapter is MCP-only** — live
   probe 2026-11-07: `GET /v1/search` returns 404, while `POST /v1/search` returns
   200 with a `code:0` envelope. The provider speaks MCP Streamable HTTP at
@@ -229,6 +243,18 @@
   Upstream `request_id` in the reply envelope is a server-generated diagnostic
   UUID (also returned as `X-Request-ID`): a caller-supplied value is ignored,
   and it is not an idempotency key.
+- **The AnySearch adapter wires `search` only** — the official
+  `anysearch-mcp-server` documentation lists four tools, while a live
+  `tools/list` on 2026-11-07 also returned `score`, so the upstream count is
+  deliberately not pinned. `get_sub_domains`, `batch_search`, `extract` and the
+  live-but-undocumented `score` are not wired. The `get_sub_domains` output is
+  used as documentation evidence (`docs/vertical-domains.md`), not called at
+  runtime. A successful `search` reply's non-empty `_meta.request_id` is
+  captured as a diagnostic correlation id (capped at 128 characters) and
+  recorded on the observation span (`retrieval.provider.diagnostic`) when the
+  caller supplies one — CLI and MCP tool calls do. Failed replies throw before
+  extraction, so no id is recorded for them. The id never enters query results
+  and is never an idempotency key.
 - **Anonymous `anysearch` calls hit a quota wall classified `permanent-auth`** —
   upstream answers quota-exhausted anonymous calls with an auto-provisioning
   payload (HTTP 200, `isError:null`, no result body) instead of an error;
@@ -246,13 +272,5 @@
 - **Exa envelope `usage` is always `undefined`** — `exa-js` returns cost only
   per-call (`costDollars`) and offers no standalone usage API, so `usage()`
   is unimplemented (contract field is optional).
-- **Exa does not forward `AbortSignal` (#216, separate from Tavily's #32)** —
-  the installed pin `exa-js@2.18.1` exposes no abort/`signal` option, so the
-  adapter accepts the contract signal but never passes it to the SDK.
-  Upstream `exa-js@2.26.0` (2026-10-19) added per-request timeouts and abort
-  support as a trailing request-options argument; the adapter still needs the
-  SDK bump and signal forwarding. As with Tavily, the budget guard limits
-  spend, not wall time, so a slow call can still hold the search past the
-  budget.
 
 > AI生成

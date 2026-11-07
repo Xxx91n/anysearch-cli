@@ -229,7 +229,7 @@ Active Domain 的 `[skills].active` 决定，激活仍按原方式通过 domain 
 | provider | 传输 | 已接线的检索面 | answer 模式 | 域名前置过滤 | 垂域路由 | 取消 | 独立用量接口 |
 |----------|------|----------------|-------------|--------------|----------|------|--------------|
 | anysearch | MCP Streamable HTTP（`POST /mcp`，手写 JSON-RPC；不是官方 SDK） | `search`（fast / index / deep；`answer` 请求降级为普通检索） | no | no（仅后置过滤） | yes（`domain` / `sub_domain` / `sub_domain_params`） | yes（每次 POST 带 fetch signal；共享握手注意见下） | no |
-| exa | 官方 `exa-js` SDK | `search`（fast / index / deep / answer） | yes（`answer()` 返回 citations，`verified:false`；answer 失败时降级为检索结果并输出 stderr 一行） | yes（`includeDomains`，仅 `search()`；见注） | no | no（`exa-js@2.18.1` 未暴露 signal；#216） | no |
+| exa | 官方 `exa-js` SDK | `search`（fast / index / deep / answer） | yes（`answer()` 返回 citations，`verified:false`；answer 失败时降级为检索结果并输出 stderr 一行） | yes（`includeDomains`，仅 `search()`；见注） | no | yes（`signal` 作为 `search()` / `answer()` 的尾参请求选项；#216） | no |
 | tavily | 官方 `@tavily/core` SDK | `search`（fast / index / deep / answer） | yes（`includeAnswer`） | yes（`include_domains`，硬过滤） | no | no（`@tavily/core@0.7.7` 未暴露 signal；#32） | no |
 
 Provider 选择来自域名 TOML 的 `sources.enabled`。缺 key 的 provider 被
@@ -247,6 +247,14 @@ MCP 握手——它跟随第一个调用方的 signal，后来的调用方无法
 而中止第一个调用方可能同时让两个检索失败。Exa 的 `includeDomains` 只作用于
 `search()`；单独的 `answer()` 调用不会收到 allowlist，kernel 也不会对
 answer 文本或 citations 应用 URL 过滤。
+
+AnySearch 这一行在适配器层面只接线 `search`：`get_sub_domains`、
+`batch_search`、`extract` 与线上但未文档化的 `score` 都未接线。上游工具
+数量刻意不写死——官方文档列四个工具，而线上端点还返回过 `score`。
+成功的 `search` 回复若带非空 `_meta.request_id`，且调用方提供观测 span
+（CLI 与 MCP 工具调用都会提供），才记录为诊断关联 id（
+`retrieval.provider.diagnostic`）；失败的回复在提取前就抛出，因此不记录。
+该 id 绝不进入查询结果，也绝不是幂等键。
 
 ## AnySearch 垂域
 
@@ -322,11 +330,13 @@ flowchart LR
 |------------|----------------|
 | macOS 退出时 `libc++abi` abort | 已定位（#183）：触发点是 `process.exit()` 在原生状态仍活时执行静态析构，不是 sqlite handle 泄漏。store 侧退出路径已改为关 handle + 自然退出，macOS 重新进入 `ship-gate` 阻断矩阵；任何在原生状态存活时强制退出的进程仍可能 abort，`macos-spillover-probe` 保留为非阻断早期预警 |
 | `anysearch` provider 无法前置过滤 | 其 MCP `domain` 参数是垂域路由枚举（不是 hostname allowlist）——域名 allowlist 下诚实降级为仅后置过滤 |
+| `anysearch` 适配器只接线 `search` | `get_sub_domains`、`batch_search`、`extract` 与线上但未文档化的 `score` 均未实现；上游工具数不写死（官方文档列四个，线上端点还返回过 `score`）。成功的 `search` 回复的 `_meta.request_id` 仅是观测 trace 的诊断数据（且仅当调用方提供 span）；失败回复不记录——绝不进入结果，也绝不是幂等键 |
 | 退出时 `libc++abi` 可能覆盖弃权退出码 | 自动化必须读结构化弃权标记（`--json` / `structuredContent.abstain`），不能只看退出码 |
 | `rag.adapter = "fts"` 未在任何出厂域启用 | 三个出厂域都保持 `adapter = "none"`；按域启用是显式 opt-in 产品决策（#130） |
 | `query_knowledge` 仅当 Active Domain 启用 `rag.adapter = "fts"` 时检索 | 它经 RAG 注册表（#155）读取 store 级共享 Research Memory；`none` / `note` 返回显式空结果，出厂域都在 `none`，默认安装回答为空 |
 | 省略 `[rag]` 不等于 `adapter = "none"` | `rag` 是声明即替换的段：派生域继承基域的 adapter/note，链路中完全没有 adapter 则校验失败 |
 | `rag.adapter = "fts"` 读取 **store 级共享** Research Memory，不是当前会话 | 刻意边界（#130）：store 是隔离单元，会话/域是子作用域。出厂域都在 `none`，故 `fts` 注入是 opt-in（`recall_memory` 已经读取同一 store 范围） |
+| MCP 双时代：`2026-07-28` 客户端被协商降级到 `2025-11-25` | stdio 与无状态 Streamable HTTP 的 `initialize` 对现代客户端返回 `2025-11-25`，五个工具仍可用；legacy 客户端回声各自版本。手写路径保持 legacy-only：在 stdio/in-memory（或不带 `MCP-Protocol-Version` 头的 HTTP）上，带现代 `_meta` 信封的 `server/discover` 仍返回 `-32601`（`MethodNotFound`），而 `tools/list` 仍优雅降级为五工具 legacy 表。HTTP 上，携带 `MCP-Protocol-Version: 2026-07-28` 的非 initialize 请求会在分发前被传输层拒绝（HTTP 400 / JSON-RPC `-32000`）；应改用协商得到的 `2025-11-25`（由 `apps/mcp/test/dual-era.test.ts` 钉住） |
 
 完整记录：[docs/limitations.md](docs/limitations.md)。
 

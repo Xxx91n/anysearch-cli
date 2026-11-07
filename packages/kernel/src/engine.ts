@@ -507,6 +507,16 @@ export class RetroaererdEngine {
         // Inner outcome: provider resolved (fulfilled) or threw (rejected).
         const inner = s;
         if (inner.status === "fulfilled" && inner.envelope) {
+          // #214: upstream correlation ids are observation-only. They land on the
+          // span (and therefore the trace store) and never on the fused envelope,
+          // so normal results and user-facing output stay free of transport metadata.
+          const providerRequestId = inner.envelope.diagnostics?.requestId;
+          if (typeof providerRequestId === "string" && providerRequestId.length > 0) {
+            q.span?.addEvent("retrieval.provider.diagnostic", {
+              "anysearch.provider": providerIds[i],
+              "anysearch.provider.request_id": providerRequestId,
+            });
+          }
           const urls: string[] = [];
           const native: Record<string, number> = {};
           for (const original of inner.envelope.results) {

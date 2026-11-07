@@ -263,7 +263,7 @@ Active List; manage activation through the domain configuration as before.
 | provider | transport | wired search surface | answer mode | domain pre-filter | vertical routing | cancellation | standalone usage |
 |----------|-----------|----------------------|-------------|-------------------|------------------|--------------|------------------|
 | anysearch | MCP Streamable HTTP (`POST /mcp`, hand-rolled JSON-RPC; not the official SDK) | `search` (fast / index / deep; an `answer` request degrades to a plain search) | no | no (post-filter only) | yes (`domain` / `sub_domain` / `sub_domain_params`) | yes (per-POST fetch signal; shared handshake caveat below) | no |
-| exa | official `exa-js` SDK | `search` (fast / index / deep / answer) | yes (`answer()`, citations retained with `verified:false`; an answer failure degrades to results plus a stderr line) | yes (`includeDomains`, `search()` only; see note) | no | no (`exa-js@2.18.1` exposes no signal; #216) | no |
+| exa | official `exa-js` SDK | `search` (fast / index / deep / answer) | yes (`answer()`, citations retained with `verified:false`; an answer failure degrades to results plus a stderr line) | yes (`includeDomains`, `search()` only; see note) | no | yes (`signal` as the trailing request option on `search()` / `answer()`; #216) | no |
 | tavily | official `@tavily/core` SDK | `search` (fast / index / deep / answer) | yes (`includeAnswer`) | yes (`include_domains`, hard filter) | no | no (`@tavily/core@0.7.7` exposes no signal; #32) | no |
 
 Provider selection comes from the domain TOML's `sources.enabled`. Missing
@@ -283,6 +283,15 @@ signal, so later callers cannot cancel that wait and aborting the first caller
 can fail both searches. Exa's `includeDomains` applies only to `search()`; the
 separate `answer()` call does not receive the allowlist, and the kernel does
 not URL-gate answer text or citations.
+
+The AnySearch row is `search`-only at the adapter level: `get_sub_domains`,
+`batch_search`, `extract` and the live-but-undocumented `score` tool are not
+wired. The upstream tool count is deliberately not pinned — the official docs
+list four tools, while the live endpoint has also returned `score`. A successful `search` reply's non-empty `_meta.request_id` is recorded as a
+diagnostic correlation id on the observation span
+(`retrieval.provider.diagnostic`) when the caller supplies one (CLI and MCP
+tool calls do). Failed replies throw before extraction, so no id is recorded
+for them. The id never enters query results and is never an idempotency key.
 
 ## AnySearch vertical domains
 
@@ -363,11 +372,13 @@ evidence live in the linked integration docs.
 |------------|----------------|
 | exit-time `libc++abi` aborts on macOS | root-caused (#183) to forced `process.exit()` while native state was still alive, not to leaked sqlite handles: store-side exits now close handles and let the loop end, and macOS is a blocking `ship-gate` leg again. Anything that force-exits a process with live native state can still abort — the non-blocking `macos-spillover-probe` job stays as an early-warning reporter |
 | `anysearch` provider cannot pre-filter | its MCP `domain` param is a vertical-routing enum (not a host allowlist) — under a domain allowlist it degrades honestly to post-filter only |
+| the `anysearch` adapter wires `search` only | `get_sub_domains`, `batch_search`, `extract` and the live-but-undocumented `score` are not implemented; the upstream count is not pinned (official docs list four tools, the live endpoint also returned `score`). A successful `search` reply's `_meta.request_id` is observation-trace diagnostic data only (and only when the caller supplies a span); failed replies record nothing — never result data and never an idempotency key |
 | exit-time `libc++abi` may overwrite the abstain exit code | automation must read the structured abstain marker (`--json` / `structuredContent.abstain`), not the exit code alone |
 | `rag.adapter = "fts"` is not enabled on any shipped domain | all three shipped domains stay on `adapter = "none"`; enabling it per domain is an explicit opt-in product decision (#130) |
 | `query_knowledge` only retrieves when the active domain enables `rag.adapter = "fts"` | it dispatches through the RAG registry over store-level shared Research Memory (#155); `none` / `note` return an explicit empty result, and every shipped domain stays on `none`, so a default install answers empty |
 | omitting `[rag]` is not the same as `adapter = "none"` | `rag` is a replace-on-declare section: a derived domain inherits its base's adapter/note, and a chain with no adapter fails validation outright |
 | `rag.adapter = "fts"` reads **store-level shared** Research Memory, not the current session | deliberate boundary (#130): the store is the isolation unit; sessions/domains are sub-scopes. Every shipped domain stays on `none`, so the `fts` prompt injection is opt-in (the same store-wide range is already read by `recall_memory`) |
+| MCP dual-era: a `2026-07-28` client is negotiated down to `2025-11-25` | stdio and stateless Streamable HTTP `initialize` return `2025-11-25` for a modern client and all five tools still work; legacy clients get their own version echoed. The hand-wired path stays legacy-only: on stdio/in-memory (or HTTP without the `MCP-Protocol-Version` header), `server/discover` returns `-32601` (`MethodNotFound`) even with a modern `_meta` envelope, while `tools/list` still degrades to the five-tool legacy list. On HTTP, a non-initialize request sending `MCP-Protocol-Version: 2026-07-28` is rejected before dispatch with HTTP 400 / JSON-RPC `-32000`; use the negotiated `2025-11-25` (pinned by `apps/mcp/test/dual-era.test.ts`) |
 
 Full record: [docs/limitations.md](docs/limitations.md).
 

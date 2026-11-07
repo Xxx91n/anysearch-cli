@@ -483,8 +483,8 @@ importers:
         specifier: ^4.1.1
         version: 4.1.1
       exa-js:
-        specifier: ^2.18.1
-        version: 2.18.1(ws@8.21.3)
+        specifier: ^2.26.0
+        version: 2.27.0(ws@8.21.3)
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -2078,8 +2078,8 @@ packages:
     resolution: {integrity: sha512-YolzkJNxsTL3tCJMWFxpxtG2sCjbZ4LQUBUrkdaJK0ub0p6lmJt+2+1SwhKjLc652lpH9L/79Ptez972H9tphw==}
     engines: {node: '>=18.0.0'}
 
-  exa-js@2.18.1:
-    resolution: {integrity: sha512-52TGyzOjJm3RLlIK5vTKZbn4wCiveFxdvbdiAz+9umtrn8VE2CwnsBSoDIUfCnjVDsOrwoC249gwPf7feAH/Dw==}
+  exa-js@2.27.0:
+    resolution: {integrity: sha512-ZNXtune0tzXaNpppWZDeEyN5qHc1vQ8GHKY5cNo/0zATYv0yQuEIQDv11HvqbG6ww3fYChPXXxJODerD+Nz39A==}
 
   express-rate-limit@8.6.2:
     resolution: {integrity: sha512-YH4ru+eOJxQABscKFfRCy9R7x9QFGdezclVMwwgFFndzS2Xnm0uo6B0ABZsLhcpeptGv2qvuJVWlQr9gQZoC3A==}
@@ -4261,7 +4261,7 @@ snapshots:
       eventsource-parser: 3.1.1
     optional: true
 
-  exa-js@2.18.1(ws@8.21.3):
+  exa-js@2.27.0(ws@8.21.3):
     dependencies:
       cross-fetch: 4.1.0
       dotenv: 16.4.7

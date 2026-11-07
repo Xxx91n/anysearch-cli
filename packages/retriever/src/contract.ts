@@ -112,6 +112,14 @@ export interface NormalizedResult {
   entity?: string;
 }
 
+// Upstream transport diagnostics. Correlation ids only — never result data and
+// never idempotency keys (AnySearch's reply `_meta.request_id` is a
+// server-generated diagnostic UUID). The engine forwards them to the
+// observation span; the fused envelope stays free of transport metadata.
+export interface ProviderDiagnostics {
+  requestId?: string;
+}
+
 export interface ProviderEnvelope {
   provider: string;
   results: NormalizedResult[];
@@ -123,6 +131,9 @@ export interface ProviderEnvelope {
   answersMeta?: ProviderAnswer[];
   elapsedMs: number;
   usage?: UsageInfo;
+  // #214: observation-only seam — consumed by the engine's observation span,
+  // never merged into results or user-facing output.
+  diagnostics?: ProviderDiagnostics;
 }
 
 export interface UsageInfo {
