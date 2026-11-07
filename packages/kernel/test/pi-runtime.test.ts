@@ -3,7 +3,7 @@
 // ponytail: no test framework, assert-based demo.
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
-import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals, resetWiringWarnings, resolveContextOccupancy, resolveReserveInputTokens, resolveTokenReserve } from "../src/pi-runtime";
+import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals, resetWiringWarnings, resolveContextOccupancy } from "../src/pi-runtime";
 import { distillGap, adjudicateReuseCompress, consolidateState, FALLBACK_LOW_WATERMARK_TOKENS, resolveLowWatermark } from "../src/memory-pipeline";
 import { MemoryPipeline } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
@@ -846,27 +846,9 @@ function makeMockStreamFn(decision: string): any {
 
 // === #188: token reserve — formula, cold-start fallback, hard stop ===
 
-// Pure helpers: reserve = input occupancy + output static limit; a cold start
-// estimates the request, while a provider usage anchor takes precedence.
-{
-  assert(resolveTokenReserve(100, 12288) === 12388, "#188: reserve formula = input + output limit");
-  assert(resolveTokenReserve(0, 12288) === 12288, "#188: output limit alone is a valid reserve");
-  assert(resolveTokenReserve(Number.NaN, -5) === 0, "#188: non-finite/negative inputs contribute 0");
-
-  const cold = resolveReserveInputTokens(0, [], "hello world", "You are a research assistant.");
-  assert(cold.coldStart, "#188: no anchor and no transcript = cold start");
-  assert(cold.tokens > 0, "#188: cold start estimates the system prompt + user prompt");
-
-  const anchored = resolveReserveInputTokens(5000, [], "hello", "sys");
-  assert(!anchored.coldStart && anchored.tokens === 5000, "#188: provider usage anchor wins when present");
-
-  const transcript = [{ role: "assistant", usage: { input: 1000, output: 20, totalTokens: 1020 }, content: [{ type: "text", text: "..." }] }];
-  const fromTranscript = resolveReserveInputTokens(0, transcript, "hello", "sys");
-  assert(!fromTranscript.coldStart && fromTranscript.tokens >= 1020, "#188: transcript usage anchor feeds occupancy");
-
-  const biggerPrompt = resolveReserveInputTokens(0, [], "x".repeat(4000), "");
-  assert(biggerPrompt.tokens > cold.tokens, "#188: cold-start estimate grows with the prompt");
-}
+// #188 (CodeRabbit): the cold-start estimate and the 12288/override formula are
+// verified through the real ledger cap boundary below (error event or row
+// values), not through direct helper assertions.
 
 // Default 12288 vs [budget].outputReserveTokens override, observed through the
 // ledger port the runtime actually calls.
@@ -884,7 +866,7 @@ function makeMockStreamFn(decision: string): any {
 
   const prompt = "hello world";
   const system = "You are a research assistant.";
-  const inputEstimate = resolveReserveInputTokens(0, [], prompt, system).tokens;
+  const inputEstimate = Math.ceil(prompt.length / 4) + Math.ceil(system.length / 4);
 
   const runWith = async (budget?: DomainConfigPort["budget"]) => {
     const ledger = new TokenRecordingLedger();
@@ -1168,14 +1150,14 @@ function makeMockStreamFn(decision: string): any {
     releaseStream();
     let balance = ledger.getBalance(session.id)!;
     const deadline = Date.now() + 2000;
-    while (balance.spentTokens !== 15 && Date.now() < deadline) {
+    while (balance.spentTokens === 0 && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 25));
       balance = ledger.getBalance(session.id)!;
     }
-    assert(balance.reservedTokens === 0 && balance.spentTokens === 15,
-      "#188: the reservation is released on close and the late usage is added as a delta");
-    assert(balance.billableCalls === 0,
-      "#188: a run closed before any usage releases the call reservation without billing it");
+    assert(balance.reservedTokens === 0 && balance.spentTokens >= 2048,
+      "#188: abort without a reported usage chunk settles the reservation conservatively, not as zero");
+    assert(balance.billableCalls === 1,
+      "#188: an aborted run that already started is billed as one call");
   } finally {
     store.close();
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }

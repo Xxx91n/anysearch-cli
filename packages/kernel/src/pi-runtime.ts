@@ -350,15 +350,17 @@ export function resolveContextOccupancy(lastUsageTokens: number, messages: any[]
   return Math.max(Number(lastUsageTokens) || 0, estimated);
 }
 
-// #188 (T9, #186 decisions 2/3/5): the input side of the pre-run token reserve.
-//
-// Reuse resolveContextOccupancy's provider-usage anchor when the context carries
-// one: `lastUsageTokens` is the most recent message_end totalTokens and
-// `messages` is the transcript handed to the run. When both are empty the run
-// is a cold start — which is the normal shape here, because every run builds a
-// fresh pi-agent-core Agent — so fall back to estimating the request that is
-// about to be sent (system prompt + user prompt). An estimate, not a historical
-// rolling average: #186 decision 2 rejects rolling averages as point forecasts.
+/**
+ * Input side of the pre-run token reserve (#188).
+ *
+ * Reuse resolveContextOccupancy's provider-usage anchor when the context carries
+ * one: `lastUsageTokens` is the most recent message_end totalTokens and
+ * `messages` is the transcript handed to the run. When both are empty the run
+ * is a cold start — which is the normal shape here, because every run builds a
+ * fresh pi-agent-core Agent — so fall back to estimating the request that is
+ * about to be sent (system prompt + user prompt). An estimate, not a historical
+ * rolling average: #186 decision 2 rejects rolling averages as point forecasts.
+ */
 export function resolveReserveInputTokens(
   lastUsageTokens: number,
   messages: any[],
@@ -383,9 +385,11 @@ export function resolveReserveInputTokens(
   return { tokens, coldStart: true };
 }
 
-// #188: reserve amount = input-side occupancy + output-side static limit.
-// Non-finite/negative inputs contribute 0 rather than poisoning the ledger
-// amount with NaN (better-sqlite3 would bind it as text/NULL).
+/**
+ * Reserve amount = input-side occupancy + output-side static limit (#188).
+ * Non-finite/negative inputs contribute 0 rather than poisoning the ledger
+ * amount with NaN (better-sqlite3 would bind it as text/NULL).
+ */
 export function resolveTokenReserve(inputTokens: number, outputReserveTokens: number): number {
   const input = Number.isFinite(inputTokens) ? Math.max(0, inputTokens) : 0;
   const output = Number.isFinite(outputReserveTokens) ? Math.max(0, outputReserveTokens) : 0;
@@ -489,6 +493,10 @@ export class PiAgentRuntime {
     // Token/USD budget tracking (decision 5, amended #103):
     // accumulated from message_end events, settled at the end of the run.
     const usageTotals = emptyUsageTotals();
+    // #188 (CodeRabbit): distinguish "provider reported zero" from "abort cut the
+    // final usage chunk off". Only an actual assistant usage report counts as a
+    // genuine zero; missing usage after abort is reconciled conservatively.
+    let usageReported = false;
 
     // Event buffer: collect events from subscribe() to yield them.
     const eventBuffer: AgentEvent[] = [];
@@ -609,6 +617,7 @@ export class PiAgentRuntime {
         case "message_end":
           // #103: accumulate AssistantMessage.usage (tokens + pi-ai cost).
           accumulateUsage(usageTotals, event.message);
+          if (event.message?.role === "assistant" && event.message?.usage) usageReported = true;
           break;
         case "tool_execution_start":
           eventBuffer.push({
@@ -884,8 +893,13 @@ export class PiAgentRuntime {
     } finally {
       // #188 (CodeRabbit): stop the run before its reservation is released, so
       // a consumer that closed the stream early cannot leave the agent making
-      // provider/tool calls after the budget was freed. No-op after a normal end.
-      if (promptPromise) (agent as any).abort?.();
+      // provider/tool calls after the budget was freed. The signal exists only
+      // while a run is active, so a normal end is a no-op.
+      let abortedEarly = false;
+      if (promptPromise && (agent as any).signal) {
+        (agent as any).abort?.();
+        abortedEarly = true;
+      }
       // #188 (CodeRabbit): wait briefly for the in-flight prompt so its final
       // usage is recorded. If the provider is stalled, do not block the close:
       // settle once the prompt actually stops instead. A late write can fail if
@@ -894,11 +908,15 @@ export class PiAgentRuntime {
       const finalizeBudget = (): void => {
         if (budgetFinalized) return;
         budgetFinalized = true;
-        settleTokenReserve(usageTotals.totalTokens);
+        // An aborted run may never receive its final usage chunk. Missing usage
+        // is not a genuine zero: keep the reservation as the conservative
+        // estimate. A provider-reported zero still settles as zero.
+        const actual = abortedEarly && !usageReported ? tokenReserved : usageTotals.totalTokens;
+        settleTokenReserve(actual);
         if (billingWired && callReserved && !callSettled) {
-          // A provider call that already reported usage is billable; a run closed
-          // before any usage only releases the reservation.
-          const actualCalls = usageTotals.totalTokens > 0 ? 1 : 0;
+          // A provider call happened if it reported usage, or if we aborted it
+          // before the final chunk arrived.
+          const actualCalls = usageReported || abortedEarly ? 1 : 0;
           try {
             ledger!.settleCalls(sessionId!, 1, actualCalls);
           } catch (e) {
