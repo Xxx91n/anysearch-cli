@@ -248,6 +248,12 @@ MCP 握手——它跟随第一个调用方的 signal，后来的调用方无法
 `search()`；单独的 `answer()` 调用不会收到 allowlist，kernel 也不会对
 answer 文本或 citations 应用 URL 过滤。
 
+AnySearch 这一行在适配器层面只接线 `search`：`get_sub_domains`、
+`batch_search`、`extract` 与线上但未文档化的 `score` 都未接线。上游工具
+数量刻意不写死——官方文档列四个工具，而线上端点还返回过 `score`。
+`search` 回复里的 `_meta.request_id` 只作为诊断关联 id 记录到观测 span
+（`retrieval.provider.diagnostic`），绝不进入查询结果，也绝不是幂等键。
+
 ## AnySearch 垂域
 
 anysearch provider 另有一根正交轴：服务端**垂域路由**。可按查询（CLI 旗标
@@ -322,6 +328,7 @@ flowchart LR
 |------------|----------------|
 | macOS 退出时 `libc++abi` abort | 已定位（#183）：触发点是 `process.exit()` 在原生状态仍活时执行静态析构，不是 sqlite handle 泄漏。store 侧退出路径已改为关 handle + 自然退出，macOS 重新进入 `ship-gate` 阻断矩阵；任何在原生状态存活时强制退出的进程仍可能 abort，`macos-spillover-probe` 保留为非阻断早期预警 |
 | `anysearch` provider 无法前置过滤 | 其 MCP `domain` 参数是垂域路由枚举（不是 hostname allowlist）——域名 allowlist 下诚实降级为仅后置过滤 |
+| `anysearch` 适配器只接线 `search` | `get_sub_domains`、`batch_search`、`extract` 与线上但未文档化的 `score` 均未实现；上游工具数不写死（官方文档列四个，线上端点还返回过 `score`）。`search` 回复的 `_meta.request_id` 仅是观测 trace 的诊断数据——绝不进入结果，也绝不是幂等键 |
 | 退出时 `libc++abi` 可能覆盖弃权退出码 | 自动化必须读结构化弃权标记（`--json` / `structuredContent.abstain`），不能只看退出码 |
 | `rag.adapter = "fts"` 未在任何出厂域启用 | 三个出厂域都保持 `adapter = "none"`；按域启用是显式 opt-in 产品决策（#130） |
 | `query_knowledge` 仅当 Active Domain 启用 `rag.adapter = "fts"` 时检索 | 它经 RAG 注册表（#155）读取 store 级共享 Research Memory；`none` / `note` 返回显式空结果，出厂域都在 `none`，默认安装回答为空 |

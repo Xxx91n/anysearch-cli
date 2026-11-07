@@ -229,6 +229,16 @@
   Upstream `request_id` in the reply envelope is a server-generated diagnostic
   UUID (also returned as `X-Request-ID`): a caller-supplied value is ignored,
   and it is not an idempotency key.
+- **The AnySearch adapter wires `search` only** — the official
+  `anysearch-mcp-server` documentation lists four tools, while a live
+  `tools/list` on 2026-11-07 also returned `score`, so the upstream count is
+  deliberately not pinned. `get_sub_domains`, `batch_search`, `extract` and the
+  live-but-undocumented `score` are not wired. The `get_sub_domains` output is
+  used as documentation evidence (`docs/vertical-domains.md`), not called at
+  runtime. A `search` reply's `_meta.request_id` is captured as a diagnostic
+  correlation id and recorded on the observation span
+  (`retrieval.provider.diagnostic`); it never enters query results and is never
+  an idempotency key.
 - **Anonymous `anysearch` calls hit a quota wall classified `permanent-auth`** —
   upstream answers quota-exhausted anonymous calls with an auto-provisioning
   payload (HTTP 200, `isError:null`, no result body) instead of an error;

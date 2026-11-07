@@ -142,6 +142,16 @@ function parseSearchMarkdown(md: string): { results: NormalizedResult[]; elapsed
 // Rate-limit / quota wording seen in AnySearch reply bodies (EN + ZH).
 export const RATE_LIMIT_NOTICE = /rate.?limit|too many requests|quota|try again later|retry after|限流|频繁|额度|稍后再试/i;
 
+// #214: result._meta.request_id is a server-generated diagnostic correlation id
+// (live probe 2026-11-07). It is captured for the observation trace only — never
+// merged into results and never treated as an idempotency key.
+function requestIdOf(result: Record<string, unknown>): string | undefined {
+  const meta = result._meta;
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return undefined;
+  const requestId = (meta as { request_id?: unknown }).request_id;
+  return typeof requestId === "string" && requestId.length > 0 ? requestId : undefined;
+}
+
 // Fail-first mapping (§2): isError / wrong-shape 200 / unexpected
 // Content-Type all throw — the engine degrades the arm, never a silent zero.
 function mapToolsCallResult(result: Record<string, unknown>): { results: NormalizedResult[]; elapsedMs?: number } {
@@ -229,6 +239,7 @@ export class AnySearchProvider implements SearchProvider {
       result = await this.callSearch(req, signal);
     }
     const mapped = mapToolsCallResult(result);
+    const requestId = requestIdOf(result);
     // vertical-hit marker — machine-readable stamp on
     // every result routed through a vertical domain (audit + fusion layers can
     // read NormalizedResult.extra.vertical; fusion preserves extra).
@@ -249,6 +260,7 @@ export class AnySearchProvider implements SearchProvider {
       answers: [],
       elapsedMs: mapped.elapsedMs ?? (Date.now() - start),
       usage: undefined,
+      ...(requestId ? { diagnostics: { requestId } } : {}),
     };
   }
 
