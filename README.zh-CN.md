@@ -229,7 +229,7 @@ Active Domain 的 `[skills].active` 决定，激活仍按原方式通过 domain 
 | provider | 传输 | 已接线的检索面 | answer 模式 | 域名前置过滤 | 垂域路由 | 取消 | 独立用量接口 |
 |----------|------|----------------|-------------|--------------|----------|------|--------------|
 | anysearch | MCP Streamable HTTP（`POST /mcp`，手写 JSON-RPC；不是官方 SDK） | `search`（fast / index / deep；`answer` 请求降级为普通检索） | no | no（仅后置过滤） | yes（`domain` / `sub_domain` / `sub_domain_params`） | yes（每次 POST 带 fetch signal；共享握手注意见下） | no |
-| exa | 官方 `exa-js` SDK | `search`（fast / index / deep / answer） | yes（`answer()` 返回 citations，`verified:false`；answer 失败时降级为检索结果并输出 stderr 一行） | yes（`includeDomains`，仅 `search()`；见注） | no | no（`exa-js@2.18.1` 未暴露 signal；#216） | no |
+| exa | 官方 `exa-js` SDK | `search`（fast / index / deep / answer） | yes（`answer()` 返回 citations，`verified:false`；answer 失败时降级为检索结果并输出 stderr 一行） | yes（`includeDomains`，仅 `search()`；见注） | no | yes（`signal` 作为 `search()` / `answer()` 的尾参请求选项；#216） | no |
 | tavily | 官方 `@tavily/core` SDK | `search`（fast / index / deep / answer） | yes（`includeAnswer`） | yes（`include_domains`，硬过滤） | no | no（`@tavily/core@0.7.7` 未暴露 signal；#32） | no |
 
 Provider 选择来自域名 TOML 的 `sources.enabled`。缺 key 的 provider 被
