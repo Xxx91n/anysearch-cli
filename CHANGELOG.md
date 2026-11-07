@@ -4,6 +4,19 @@ All notable changes to this project are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
 [SemVer](https://semver.org/).
 
+## Unreleased — #24: ip 第五域语料建集（`vert-i*` 语料 + 活词表快照）
+
+### Added
+
+- **`ip` 第五域评测语料**（`eval-looks.json`）：14 条 live-scoped 条目 —— 参数化 5 条（`vert-i1101..i1105`，覆盖 `ip.global` 词表 `type`/`keyword`/`applicant`/`ipc`/`date_start` 的单参、双参与四参组合）、语义 5 条（`vert-i1201..i1205`，`ip.global` 无结构化参数注入，`paramsSent:false`）、对照 4 条（`ctrl-i101..i104`：无 spec 防误标、错配 spec 静默回退、bogus sub_domain 拒收、歧义查询）。参数化条目的测量池取 `espacenet.com` / `patsnap.com` 与 `/patent/` 路径；无 URL 行的语义/部分参数条目如实留空（hostHit=null）。
+- **`ip` 进入垂域维度词表**（`packages/store/src/eval/docs-golden.ts`）：`VERTICAL_DIMENSION_VALUES.vdomain` 增 `ip`，使新语料通过 schema 校验；docs 八维计数闸不受影响（垂域标签走独立词表）。
+- **活词表快照落档**（`docs/eval/ip-corpus-probe-2026-11-07.md` + `docs/vertical-domains.md`）：记录 2026-11-07 的 `get_sub_domains(domain="ip")` 原文（唯一子域 `ip.global`，参数 `type`/`keyword`/`applicant`/`ipc`/`date_start`）与搜索形态矩阵（domain-only 静默回退、bogus sub_domain `isError`、bogus type 值静默容忍）。快照仅用于建集，不进入运行时枚举。
+
+### Verification
+
+- `validateDocsGoldenSet` / `validateCoverageManifest` / `crossCheckDocsGolden` 对更新后的账本零问题（Node 24 `--experimental-strip-types` 直接加载验证器，未构建）。
+- 远端 CI（`check-build` + `test:online`）待授权推送后执行；`test:online` 的 `eval-looks-vertical.online.ts` 会把 14 条新 live 条目纳入配对 delta 运行。
+
 ## Unreleased — #178: PiAgentRuntime ledger 接线——token/USD 结算生产化（#36 承接）
 
 ### Changed
