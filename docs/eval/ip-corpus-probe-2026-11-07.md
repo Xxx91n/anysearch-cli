@@ -75,26 +75,42 @@ the `## Search Results` envelope.
 Consequences used by the corpus:
 
 - `hitHosts` measurement pools are `espacenet.com` and `patsnap.com` (suffix
-  matching covers `worldwide.espacenet.com` / `analytics.patsnap.com`);
-  `hitPaths` is `/patent/` where URL lines were observed.
-- Parameterless `ip.global` results mostly carry no URL line, so the semantic
-  entries deliberately leave `hitHosts` empty (host-hit stays `null`/unknown
-  rather than a fabricated zero).
+  matching covers `worldwide.espacenet.com` / `analytics.patsnap.com`); all
+  five parameterized entries define `hitHosts`, and `hitPaths` is `/patent/`
+  where URL lines were observed.
+- The semantic entries use `{domain:"ip"}` (domain-only), matching the
+  finance/academic/code/health semantic stratum. A parameterless
+  `ip.global` spec was tested first, but its responses are frequently
+  text-only (no `- **URL**` line); `parseSearchMarkdown` drops URL-less
+  blocks, so a `hit:true` assertion would be unobservable and the live layer
+  would fail. Supporting text-only records is a provider-normalization
+  follow-up outside this corpus ticket. Domain-only `ip` returns URL-bearing
+  general results, so the vertical marker/hit contract stays measurable.
 - A bogus `ip` sub-domain is a hard upstream rejection, the surface the
   `ctrl-i103` control pins; a bogus `type` *value* is not, so no control
   asserts an error for it.
 - Domain-only `ip` silently falls back to general web (the `ctrl-i102` /
   `ctrl-i104` surfaces), exactly like the other domains.
-- The semantic entries (`vert-i1201..i1205`) carry `subDomain: "ip.global"`
-  with no `params` instead of the domain-only shape used by the
-  finance/academic/code/health semantic rows. Reason: domain-only `ip` was
-  observed to return general web news (row 1 above), so a domain-only
-  semantic entry would measure the silent-fallback surface rather than the
-  `ip` vertical. `ip.global` with no params still exercises the vertical arm
-  (`paramsSent:false` pins wire-absence of `sub_domain_params`).
+
+Follow-up probe (2026-11-07, same endpoint) for the rows that stay
+parameterized:
+
+| Case | Result count | `- **URL**` lines |
+|---|---|---|
+| `type=GlobalPatent`, `applicant=Huawei` | 10 | 3 (`worldwide.espacenet.com`) |
+| `type=GlobalPatent`, `applicant=Huawei`, `keyword=5G` | 10 | 3 (`worldwide.espacenet.com`) |
+| `type=GlobalPatent`, `applicant=BYD`, `keyword=solid-state battery`, `date_start=20220101` | 10 | 8 (`worldwide.espacenet.com`) |
+| domain-only `ip` (TSMC / FRAND questions) | 10 | 10 (general web hosts) |
 
 ## Scope
 
 This snapshot is for eval-corpus construction only. It does not add an `ip`
 sub-domain enum to the runtime adapter, and `get_sub_domains` is still not
 wired as a shipped tool (spec #203 Out of Scope).
+
+Known limitation recorded for follow-up: the AnySearch adapter's
+`parseSearchMarkdown` drops blocks with no `- **URL**` line, and `ip.global`
+responses are frequently text-only. Retaining URL-less patent records needs
+a provider-normalization change (result identity without a fabricated URL),
+which is outside #24; the corpus avoids asserting hits on the affected
+`ip.global` shape by using domain-only semantic rows.

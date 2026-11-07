@@ -2887,8 +2887,7 @@
         "questionLang": "en",
         "intent": "factoid",
         "vertical": {
-          "domain": "ip",
-          "subDomain": "ip.global"
+          "domain": "ip"
         },
         "expected": {
           "verdict": "answer",
@@ -2896,8 +2895,6 @@
           "vertical": {
             "role": "subject",
             "domain": "ip",
-            "sub_domain": "ip.global",
-            "paramsSent": false,
             "hit": true
           }
         },
@@ -2911,7 +2908,7 @@
           "harvestedAt": "2026-11-07",
           "reviewer": "impl-24"
         },
-        "notes": "ip.global 无结构化参数（语义层）；上游专利记录多无 URL 行，测量池留空（hostHit 如实 null）。"
+        "notes": "ip domain-only 语义条（沿用既有语义层模式）；上游静默回退泛网，vertical 标记由客户端盖章，测量池留空。"
       },
       {
         "id": "vert-i1202",
@@ -2920,8 +2917,7 @@
         "questionLang": "zh",
         "intent": "factoid",
         "vertical": {
-          "domain": "ip",
-          "subDomain": "ip.global"
+          "domain": "ip"
         },
         "expected": {
           "verdict": "answer",
@@ -2929,8 +2925,6 @@
           "vertical": {
             "role": "subject",
             "domain": "ip",
-            "sub_domain": "ip.global",
-            "paramsSent": false,
             "hit": true
           }
         },
@@ -2944,7 +2938,7 @@
           "harvestedAt": "2026-11-07",
           "reviewer": "impl-24"
         },
-        "notes": "ip.global 语义层；中文标准必要专利查询。"
+        "notes": "ip domain-only 语义条；中文标准必要专利查询，上游回退泛网。"
       },
       {
         "id": "vert-i1203",
@@ -2953,8 +2947,7 @@
         "questionLang": "en",
         "intent": "reference",
         "vertical": {
-          "domain": "ip",
-          "subDomain": "ip.global"
+          "domain": "ip"
         },
         "expected": {
           "verdict": "answer",
@@ -2962,8 +2955,6 @@
           "vertical": {
             "role": "subject",
             "domain": "ip",
-            "sub_domain": "ip.global",
-            "paramsSent": false,
             "hit": true
           }
         },
@@ -2977,7 +2968,7 @@
           "harvestedAt": "2026-11-07",
           "reviewer": "impl-24"
         },
-        "notes": "ip.global 语义层；同族+法律状态（DOCDB/INPADOC 描述面）。"
+        "notes": "ip domain-only 语义条；同族+法律状态查询，上游回退泛网。"
       },
       {
         "id": "vert-i1204",
@@ -2986,8 +2977,7 @@
         "questionLang": "zh",
         "intent": "howto",
         "vertical": {
-          "domain": "ip",
-          "subDomain": "ip.global"
+          "domain": "ip"
         },
         "expected": {
           "verdict": "answer",
@@ -2995,8 +2985,6 @@
           "vertical": {
             "role": "subject",
             "domain": "ip",
-            "sub_domain": "ip.global",
-            "paramsSent": false,
             "hit": true
           }
         },
@@ -3010,7 +2998,7 @@
           "harvestedAt": "2026-11-07",
           "reviewer": "impl-24"
         },
-        "notes": "ip.global 语义层；程序性 howto 查询。"
+        "notes": "ip domain-only 语义条；程序性 howto 查询，上游回退泛网。"
       },
       {
         "id": "vert-i1205",
@@ -3019,8 +3007,7 @@
         "questionLang": "en",
         "intent": "reference",
         "vertical": {
-          "domain": "ip",
-          "subDomain": "ip.global"
+          "domain": "ip"
         },
         "expected": {
           "verdict": "answer",
@@ -3028,8 +3015,6 @@
           "vertical": {
             "role": "subject",
             "domain": "ip",
-            "sub_domain": "ip.global",
-            "paramsSent": false,
             "hit": true
           }
         },
@@ -3043,7 +3028,7 @@
           "harvestedAt": "2026-11-07",
           "reviewer": "impl-24"
         },
-        "notes": "ip.global 语义层；FRAND 许可费查询。"
+        "notes": "ip domain-only 语义条；FRAND 许可费查询，上游回退泛网。"
       },
       {
         "id": "ctrl-f101",

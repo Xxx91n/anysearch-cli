@@ -8,7 +8,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Added
 
-- **`ip` 第五域评测语料**（`eval-looks.json`）：14 条 live-scoped 条目 —— 参数化 5 条（`vert-i1101..i1105`，覆盖 `ip.global` 词表 `type`/`keyword`/`applicant`/`ipc`/`date_start` 的双参、三参与四参组合）、语义 5 条（`vert-i1201..i1205`，`ip.global` 无结构化参数注入，`paramsSent:false`；domain-only `ip` 实测回退泛网，故显式走 `ip.global`）、对照 4 条（`ctrl-i101..i104`：无 spec 防误标、错配 spec 静默回退、bogus sub_domain 拒收、歧义查询）。5 条参数化条目均定义 `hitHosts`（部分附 `/patent/` 路径池），语义条目因上游专利记录多无 URL 行而留空测量池（hostHit=null）。
+- **`ip` 第五域评测语料**（`eval-looks.json`）：14 条 live-scoped 条目 —— 参数化 5 条（`vert-i1101..i1105`，覆盖 `ip.global` 词表 `type`/`keyword`/`applicant`/`ipc`/`date_start` 的双参、三参与四参组合）、语义 5 条（`vert-i1201..i1205`，domain-only spec，沿用既有语义层模式；参数化 `ip.global` 无参数响应多为无 URL 文本，当前 adapter 会丢弃，故不在该层断言）、对照 4 条（`ctrl-i101..i104`：无 spec 防误标、错配 spec 静默回退、bogus sub_domain 拒收、歧义查询）。5 条参数化条目均定义 `hitHosts`（部分附 `/patent/` 路径池）；语义条目回退泛网、不设 ip 宿主池（`hitHosts` 留空）。
 - **`ip` 进入垂域维度词表**（`packages/store/src/eval/docs-golden.ts`）：`VERTICAL_DIMENSION_VALUES.vdomain` 增 `ip`，使新语料通过 schema 校验；docs 八维计数闸不受影响（垂域标签走独立词表）。
 - **活词表快照落档**（`docs/eval/ip-corpus-probe-2026-11-07.md` + `docs/vertical-domains.md`）：记录 2026-11-07 的 `get_sub_domains(domain="ip")` 原文（唯一子域 `ip.global`，参数 `type`/`keyword`/`applicant`/`ipc`/`date_start`）与搜索形态矩阵（domain-only 静默回退、bogus sub_domain `isError`、bogus type 值静默容忍）。快照仅用于建集，不进入运行时枚举。
 - **上游阻塞 registry 解除登记**（`docs/research/upstream-unblock-registry.md`）：#24 条目追加 2026-11-07 触发事实与语料落点；原始 `登记状态: absent` 不变（内部评测缺口不补登 `docs/limitations.md`）。
