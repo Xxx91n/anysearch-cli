@@ -78,7 +78,7 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
   `recall_memory` 一致，`fts` 只是在其上包一层。
 - 隔离单元是 store 本身（Store Principal）：默认 `~/.anysearch/anysearch.db`，MCP HTTP
   只绑 `127.0.0.1`。CLI 的持久库路径会尝试收紧到 0700/0600（best-effort；Windows 忽略
-  POSIX 模式）；MCP 冷启动与 plugin server 的库写入路径仍沿用进程 umask，权限对齐见 #156。会话与域是检索的
+  POSIX 模式）；MCP 冷启动与 plugin server 的 `GET /policy` 审计库路径也调用同一个 `ensureOwnerOnlyDb`（#156）：本次创建目录收紧到 0700，主库与侧车收紧到 0600，全程 best-effort；`POST /index` 使用的 project index 库不经过此 helper。会话与域是检索的
   **子作用域**（L1/L2 锚点、域配置、工具白名单），不是主体边界；不同主体应使用不同 store
   （`ANS_DB_PATH`）。
 - 对照：`SessionStore.searchFts5(sessionId, …)` 是按会话过滤的 `messages` 查询；
@@ -177,8 +177,12 @@ pnpm -C packages/kernel test    # test/rag-adapter.test.ts、test/message-text.t
 
 ## 边界（还没做的）
 
-- **`fts` 尚未在任何出厂域启用** —— `domains/default.toml`、`docs.toml`、`research.toml` 仍是 `adapter = "none"`。#130 裁定保持这个默认：启用 `fts` 是显式 opt-in，属另一项产品决策；#154 只影响其落点质量，不是启用前提。
-- **MCP `query_knowledge` 工具未接本注册表** —— 读取范围已由 #130 定为 store 级共享（与 `recall_memory` 一致），接线见 #155；见 `docs/limitations.md`。
+- **`fts` 尚未在任何出厂域启用** —— `domains/default.toml`、`docs.toml`、`research.toml` 仍是 `adapter = "none"`。#130 裁定保持这个默认：启用 `fts` 是显式 opt-in，属另一项产品决策；#154 只影响其落点质量，不是启用前提。启用步骤：把该域 TOML 的 `[rag]` 段里 `adapter` 设为 `"fts"`（替换现有的 `adapter = "none"`，不要追加同名键），用 `ANS_DOMAIN` 选中该域，然后重启 MCP server——`createDefaultEngine` 在构造时快照 Active Domain，运行中的 server 不会看到这次编辑。
+- **MCP `query_knowledge` 已接本注册表（#155）** —— 工具按 Active Domain 的
+  `rag.adapter` 走 `RagAdapterRegistry.resolve`；`fts` 时以 `RAG_DEFAULT_LIMIT`
+  调 `retrieve`，读取范围是 store 级共享 Research Memory（与 `recall_memory` 一致，
+  #130 已定）；`none` / `note` 返回显式“无可查询知识适配器”空结果（不回显静态 note、
+  不报错），未知 id fail-open 到 none 并打具名 stderr 告警。见 `docs/limitations.md`。
 - **MCP `ans_chat` 用显式 server-minted handle 接线（#132）** —— 首次调用
   `store.createSession("mcp")` 并把 id 作为 `structuredContent.sessionId` 与末尾 text block
   返回（只转发 content 的宿主也能让模型看到 handle）；后续调用通过 `AnsChatInput.sessionId`

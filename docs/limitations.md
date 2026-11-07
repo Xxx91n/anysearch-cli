@@ -148,22 +148,33 @@
   the `/research` endpoint arm is INCONCLUSIVE — async handle, no URL fields).
 - **`ans chat` / `ans llm` need an LLM key** (`OPENAI_API_KEY` etc. via
   `ans llm`); retrieval itself only needs provider keys.
-- **`query_knowledge` is still a stub (#104)** — the kernel-side RAG adapter
-  registry (`rag.adapter` = `none` / `note` / `fts`) now powers the agent-loop
-  injection path (MemoryPipeline Stage-1), but the MCP `query_knowledge` tool
-  does not dispatch to it yet: it still answers with the `adapter=<id>` line.
-  Its read scope is now decided (#130): store-level shared Research Memory, the
-  same internal range `recall_memory` reads (before its project-index fallback).
-  Wiring the tool is tracked in #155.
+- **`query_knowledge` only retrieves when the active domain enables `fts` (#155)** —
+  the tool resolves the Active Domain's `rag.adapter` through `RagAdapterRegistry`
+  and, for `fts`, calls `retrieve(query, RAG_DEFAULT_LIMIT)` over store-level shared
+  Research Memory — the same internal range `recall_memory` reads (before its
+  project-index fallback), per the #130 scope decision. With `adapter = "none"`
+  or `"note"` it returns an explicit "no queryable knowledge adapter" empty
+  result (it does not echo the static note and does not error); an unknown adapter
+  id fails open to `none` with one deduped stderr warning. The input schema stays
+  `{ query: string }`. Every shipped domain stays on `none`, so a default install
+  answers empty until a domain opts into `fts`. To activate it, set
+  `adapter = "fts"` under `[rag]` in that domain's TOML (replace the existing
+  `adapter = "none"` line), select it with `ANS_DOMAIN`, and restart the MCP
+  server: `createDefaultEngine` snapshots the active domain at construction, so
+  a running server does not see the edit.
 - **`rag.adapter = "fts"` reads store-level shared Research Memory (#130,
   superseding the #104 CWE-200 disclosure)** — this is a deliberate boundary,
   not an open question: the store is the isolation unit (Store Principal), and
   sessions/domains are retrieval sub-scopes. The #104 CWE-200 finding is accepted
   as this deliberate boundary rather than fixed by a session filter. A domain
   that enables `fts` can surface research saved by any session in the same store.
-  The CLI durable path attempts owner-only 0700/0600 (best-effort; Windows ignores
-  POSIX modes); the MCP cold-start and plugin-server write paths still inherit the
-  process umask (hardening tracked in #156). Every shipped domain stays on
+  All three default-store writers (CLI, MCP cold start, plugin server) call the
+  shared `ensureOwnerOnlyDb` (`@anysearch-cli/store`): the directory is 0700 only
+  when that call creates it, the main DB and its `-wal`/`-shm` sidecars are 0600
+  (#156). This is best-effort — Windows ignores POSIX modes and a foreign-owned
+  file never fails the command. This covers the default store only; the plugin
+  server's project index (`POST /index`) is a separate store and is not tightened
+  by this helper. Every shipped domain stays on
   `adapter = "none"`, so the `fts` prompt injection is opt-in (the same store-wide
   range is already read by `recall_memory` when called); a deployer that shares one
   store or one MCP server across users must isolate with separate stores and
