@@ -87,6 +87,11 @@ already states the snapshot defers to the live `get_sub_domains` tool
 (`docs/vertical-domains.md:3-8`) — registering a limitation would duplicate
 that disclaimer without telling the user anything actionable.
 
+状态更新 (2026-11-07): 解除信号已触发 —— live probe 返回唯一子域 `ip.global`
+与五参数表（`type`/`keyword`/`applicant`/`ipc`/`date_start`），`vert-i*` /
+`ctrl-i*` 语料已随 #24 落入 `eval-looks.json`（14 条 live-scoped）；原始
+登记状态不变（内部评测缺口，不补登 `docs/limitations.md`）。
+
 ## #25 上游匿名配额边界形态=auto-provisioning 凭证签发文本（200+isError:null+非结果正文）；provider 已具名归类 permanent-auth；env/key 修正归用户侧
 
 解除信号: The upstream anonymous-quota boundary changes shape — i.e. a probe

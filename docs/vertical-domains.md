@@ -34,8 +34,8 @@ Observed upstream semantics — `ip` supplement (live probe 2026-11-07):
   `applicant`, `ipc` (IPC/CPC class, e.g. `H01L`), `date_start`
   (`YYYYMMDD`). Full probe output: `docs/eval/ip-corpus-probe-2026-11-07.md`.
 - The table is a **corpus-construction snapshot**, not a runtime enum — the
-  client still validates shape only and the `ip` vocabulary lives solely in
-  the eval corpus, not in the shipped routing code.
+  client still validates shape only; the `ip` vocabulary appears in the eval
+  corpus and its `vdomain` slice tag, not in the shipped routing code.
 - `ip` with no `sub_domain` returns general web results (the same silent
   fallback as every other domain); an unknown `ip` sub-domain returns
   `isError` (`Invalid tag: ip.<value>`). An unknown `type` *value* is
