@@ -209,10 +209,15 @@
   what makes the `ans_chat` gap visible instead of a no-op. The gate itself
   (`store && sessionId`) is unchanged — narrowing it would alter every
   composition root.
-- **api.anysearch.com REST `/v1/search` is retired** — the route returns 404;
-  the live API is MCP Streamable HTTP at `POST /mcp`. An
-  `ANYSEARCH_ENDPOINT` (or explicit endpoint arg) ending in `/v1/search` is
-  auto-rewritten to `base+/mcp` with a once-per-process stderr warning.
+- **AnySearch REST `POST /v1/search` is live; this adapter is MCP-only** — live
+  probe 2026-11-07: `GET /v1/search` returns 404, while `POST /v1/search` returns
+  200 with a `code:0` envelope. The provider speaks MCP Streamable HTTP at
+  `POST /mcp` only, so an `ANYSEARCH_ENDPOINT` (or explicit endpoint arg) ending
+  in `/v1/search` is auto-rewritten to `base+/mcp` with a once-per-process
+  stderr warning — a compatibility shim, not a sign that REST is retired.
+  Upstream `request_id` in the reply envelope is a server-generated diagnostic
+  UUID (also returned as `X-Request-ID`): a caller-supplied value is ignored,
+  and it is not an idempotency key.
 - **Anonymous `anysearch` calls hit a quota wall classified `permanent-auth`** —
   upstream answers quota-exhausted anonymous calls with an auto-provisioning
   payload (HTTP 200, `isError:null`, no result body) instead of an error;
