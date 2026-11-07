@@ -311,6 +311,10 @@ flowchart LR
 | macOS 退出时 `libc++abi` abort | 已定位（#183）：触发点是 `process.exit()` 在原生状态仍活时执行静态析构，不是 sqlite handle 泄漏。store 侧退出路径已改为关 handle + 自然退出，macOS 重新进入 `ship-gate` 阻断矩阵；任何在原生状态存活时强制退出的进程仍可能 abort，`macos-spillover-probe` 保留为非阻断早期预警 |
 | `anysearch` provider 无法前置过滤 | 其 MCP `domain` 参数是垂域路由枚举（不是 hostname allowlist）——域名 allowlist 下诚实降级为仅后置过滤 |
 | 退出时 `libc++abi` 可能覆盖弃权退出码 | 自动化必须读结构化弃权标记（`--json` / `structuredContent.abstain`），不能只看退出码 |
+| `rag.adapter = "fts"` 未在任何出厂域启用 | 三个出厂域都保持 `adapter = "none"`；按域启用是显式 opt-in 产品决策（#130） |
+| `query_knowledge` 仅当 Active Domain 启用 `rag.adapter = "fts"` 时检索 | 它经 RAG 注册表（#155）读取 store 级共享 Research Memory；`none` / `note` 返回显式空结果，出厂域都在 `none`，默认安装回答为空 |
+| 省略 `[rag]` 不等于 `adapter = "none"` | `rag` 是声明即替换的段：派生域继承基域的 adapter/note，链路中完全没有 adapter 则校验失败 |
+| `rag.adapter = "fts"` 读取 **store 级共享** Research Memory，不是当前会话 | 刻意边界（#130）：store 是隔离单元，会话/域是子作用域。出厂域都在 `none`，故 `fts` 注入是 opt-in（`recall_memory` 已经读取同一 store 范围） |
 
 完整记录：[docs/limitations.md](docs/limitations.md)。
 

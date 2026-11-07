@@ -32,7 +32,9 @@ Set at OS/user level — never written into config files:
   model must be an id the upstream serves (check `GET <base>/models`)
 - `ANS_LLM_CONTEXT_WINDOW` — optional real model window (tokens) for custom
   endpoints: request budgeting, and the L0 `{fraction}` watermark on `ans chat`.
-  MCP `ans_chat` builds no memory pipeline, so it does not use this for L0.
+  A threaded MCP `ans_chat` session handle builds the memory pipeline — L1/L2
+  anchors + RAG injection across calls — while a handle-less call is single-shot:
+  a fresh session per call, no cross-call continuity.
   Unset = unknown window → absolute 128000 fallback (CLI)
 - `EXA_API_KEY` / `TAVILY_API_KEY` — retrieval providers
 
