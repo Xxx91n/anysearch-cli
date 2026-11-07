@@ -6,10 +6,14 @@
 // (the protocol requires a fresh server per connection), but they all share the
 // one engine, so the two better-sqlite3 handles inside a CompositionResult are
 // opened once instead of twice per request.
+// #210: the same holds for process-level tool state — the entry creates it once
+// and every per-request buildServer() receives it, so the ans_chat LLM client
+// cache survives across requests instead of rebuilding per request.
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import express, { type Express } from "express";
 import { buildServer, PKG_VERSION } from "./server.js";
+import { createMcpToolState, type McpToolState } from "./tool-state.js";
 // stash clientInfo from initialize requests into AsyncLocalStorage
 // so observeTool can map it to a stable client_id via Railway PR #885.
 import { runWithMcpIdentity } from "./mcp-context.js";
@@ -42,7 +46,12 @@ export function extractClientInfoName(body: unknown): string | undefined {
 // better-sqlite3 handles inside the engine open once per process (#112).
 // createHttpApp: build the express app around ONE engine. The engine is captured
 // in the closure and reused by every request; nothing here constructs one.
-export function createHttpApp(engine: CompositionResult): Express {
+// The tool state is likewise captured once (#210) — one app means one process
+// scope for the shared LLM client cache.
+export function createHttpApp(
+  engine: CompositionResult,
+  state: McpToolState = createMcpToolState(),
+): Express {
   const app = express();
   app.use(express.json());
 
@@ -61,8 +70,8 @@ export function createHttpApp(engine: CompositionResult): Express {
 
   app.post("/mcp", async (req, res) => {
     // stateless factory pattern: a fresh server per request, sharing the
-    // startup engine (#112 — no createEngine per request).
-    const server = buildServer(engine);
+    // startup engine and process-level tool state (#112, #210).
+    const server = buildServer(engine, state);
     try {
       // stateless mode -- sessionIdGenerator: undefined, enableJsonResponse, keepAliveMs: 0
       const t = new NodeStreamableHTTPServerTransport({

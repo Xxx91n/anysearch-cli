@@ -1,5 +1,8 @@
 // ans_chat tool: PiAgentRuntime agent loop as MCP tool.
-// LLM session cache in closure, env-var keyed rebuild.
+// #210: the LLM session cache lives in the injected process-level McpToolState,
+// so the stateless HTTP transport reuses it across requests instead of
+// rebuilding the client per request. Direct registrations get a fresh state by
+// default (test isolation); rebuild is env-var keyed.
 // #132: explicit server-minted session handle (threaded by the client) wires
 // MemoryPipeline; no handle = single-shot.
 // input validated by AJV.
@@ -7,36 +10,50 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import { createLlmSession, PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
 import { domainTomlPath } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import { buildAnsChatResult, resolveAnsChatSession } from "../ans-chat-session.js";
+import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
 import { toolError, toolFailure } from "./failure.js";
 
-export function registerAnsChat(server: McpServer, eng: CompositionResult): void {
-  // Design: cache key = provider+model+baseUrl+api (all wire-affecting config); key material never enters key.
+export function registerAnsChat(
+  server: McpServer,
+  eng: CompositionResult,
+  state: McpToolState = createMcpToolState(),
+): void {
+  // Design: cache key = provider+model+baseUrl+api+contextWindow (all wire-affecting config);
+  // key material never enters the key. The window participates because it affects request
+  // budgeting and the L0 watermark, not only the constructor call (#210).
   // keyHash is a rotation-detection tiebreaker (F-A4: long-lived MCP process must rebuild on env key rotation),
   // not a cache partition. Single-process single-credential (env-only) — multi-credential coexistence excluded (T5 #91 #50).
   // Future per-request model override reserves an independent Map slot via an extra key segment, never overwriting the env default slot.
-  type CacheEntry = { session: LlmSession; keyHash: string };
-  const sessionCache = new Map<string, CacheEntry>();
+  const sessionCache = state.ansChatSessionCache;
+  const buildSession = state.createAnsChatSession;
 
   function buildCacheKey(opts: {
     provider: string;
     model: string;
     baseUrl?: string;
     api?: string;
+    contextWindow?: number;
     modelOverride?: string;
   }): string {
     // Structured tuple prevents ambiguous "/" collisions: distinct configs can no longer
     // produce the same string (e.g. model="a/b", baseUrl="c" vs model="a", baseUrl="b/c").
     // JSON array serialization is deterministic and collision-free for these fields.
-    const tuple: string[] = [opts.provider, opts.model, opts.baseUrl ?? "", opts.api ?? ""];
+    const tuple: string[] = [
+      opts.provider,
+      opts.model,
+      opts.baseUrl ?? "",
+      opts.api ?? "",
+      opts.contextWindow === undefined ? "" : String(opts.contextWindow),
+    ];
     // Reserve for per-request model override: independent segment + independent Map slot.
     // Must not overwrite the env-keyed default slot — one override would pollute all later default calls (T5 #91).
     // An extra tuple element keeps the default key stable and guarantees no collision with
-    // provider/model/baseUrl/api values (they are always the first four elements).
+    // provider/model/baseUrl/api/contextWindow values (they are always the first five elements).
     if (opts.modelOverride) {
       tuple.push(opts.modelOverride);
     }
@@ -56,7 +73,7 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     // (kernel stays env-free). Malformed values fail the call, not silently 128000.
     const contextWindow = parseContextWindow(process.env.ANS_LLM_CONTEXT_WINDOW);
     // F-A4 tiebreaker: keyHash detects ANS_LLM_API_KEY rotation on a long-lived MCP server.
-    // It is NOT part of the cache key partitioning — same provider/model/baseUrl/api
+    // It is NOT part of the cache key partitioning — same provider/model/baseUrl/api/contextWindow
     // must hit the same cache slot; hash change re-creates the slot value, not a new slot.
     const keyHash = process.env.ANS_LLM_API_KEY
       ? createHash("sha256").update(process.env.ANS_LLM_API_KEY).digest("hex").slice(0, 12)
@@ -69,10 +86,10 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
     // as a tiebreaker for this case.
     const baseUrlFingerprint = baseUrl ? createHash("sha256").update(baseUrl).digest("hex") : "";
     // Wire-affecting config only; secret material never enters cache key (assertion below).
-    const key = buildCacheKey({ provider: providerName, model: modelName, baseUrl: baseUrlFingerprint, api, modelOverride });
+    const key = buildCacheKey({ provider: providerName, model: modelName, baseUrl: baseUrlFingerprint, api, contextWindow, modelOverride });
 
     // Assertion: cache key must not contain secret material. Key is built only from
-    // provider+model+baseUrlFingerprint+api (+ optional override segment); keyHash/apiKey are separate.
+    // provider+model+baseUrlFingerprint+api+contextWindow (+ optional override segment); keyHash/apiKey are separate.
     // This guards against accidental future leakage of keyHash or raw key into the key string.
     const rawKey = process.env.ANS_LLM_API_KEY;
     if (rawKey && rawKey.length >= 8 && key.includes(rawKey)) {
@@ -85,12 +102,24 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
       throw new Error("ANS_LLM_BASE_URL requires ANS_LLM_API=chat|messages|responses");
     }
     // Lazy init / rotation rebuild: same slot is overwritten on tiebreaker mismatch — not split.
-    const session = await createLlmSession({
-      provider: providerName, model: modelName, baseUrl, api, contextWindow,
-      apiKey: baseUrl ? process.env.ANS_LLM_API_KEY : undefined,
-    });
-    sessionCache.set(key, { session, keyHash });
-    return session;
+    // The in-flight promise is cached synchronously so concurrent identical requests
+    // share one construction instead of each building a client.
+    const entry: AnsChatCacheEntry = {
+      keyHash,
+      session: buildSession({
+        provider: providerName, model: modelName, baseUrl, api, contextWindow,
+        apiKey: baseUrl ? process.env.ANS_LLM_API_KEY : undefined,
+      }),
+    };
+    sessionCache.set(key, entry);
+    try {
+      return await entry.session;
+    } catch (e) {
+      // A failed build must not poison the slot. Delete only when the slot still
+      // holds THIS build: a newer credential generation may have overwritten it.
+      if (sessionCache.get(key) === entry) sessionCache.delete(key);
+      throw e;
+    }
   }
 
   server.registerTool(
