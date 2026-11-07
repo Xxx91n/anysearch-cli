@@ -327,7 +327,7 @@ flowchart LR
 | `query_knowledge` 仅当 Active Domain 启用 `rag.adapter = "fts"` 时检索 | 它经 RAG 注册表（#155）读取 store 级共享 Research Memory；`none` / `note` 返回显式空结果，出厂域都在 `none`，默认安装回答为空 |
 | 省略 `[rag]` 不等于 `adapter = "none"` | `rag` 是声明即替换的段：派生域继承基域的 adapter/note，链路中完全没有 adapter 则校验失败 |
 | `rag.adapter = "fts"` 读取 **store 级共享** Research Memory，不是当前会话 | 刻意边界（#130）：store 是隔离单元，会话/域是子作用域。出厂域都在 `none`，故 `fts` 注入是 opt-in（`recall_memory` 已经读取同一 store 范围） |
-| MCP 双时代：`2026-07-28` 客户端被协商降级到 `2025-11-25` | stdio 与无状态 Streamable HTTP 的 `initialize` 对现代客户端返回 `2025-11-25`，五个工具仍可用；legacy 客户端回声各自版本。手写路径保持 legacy-only：带现代 `_meta` 信封的 `server/discover` 仍返回 `-32601`（`MethodNotFound`），而 `tools/list` 仍优雅降级为五工具 legacy 表（由 `apps/mcp/test/dual-era.test.ts` 钉住） |
+| MCP 双时代：`2026-07-28` 客户端被协商降级到 `2025-11-25` | stdio 与无状态 Streamable HTTP 的 `initialize` 对现代客户端返回 `2025-11-25`，五个工具仍可用；legacy 客户端回声各自版本。手写路径保持 legacy-only：在 stdio/in-memory（或不带 `MCP-Protocol-Version` 头的 HTTP）上，带现代 `_meta` 信封的 `server/discover` 仍返回 `-32601`（`MethodNotFound`），而 `tools/list` 仍优雅降级为五工具 legacy 表。HTTP 上，携带 `MCP-Protocol-Version: 2026-07-28` 的非 initialize 请求会在分发前被传输层拒绝（HTTP 400 / JSON-RPC `-32000`）；应改用协商得到的 `2025-11-25`（由 `apps/mcp/test/dual-era.test.ts` 钉住） |
 
 完整记录：[docs/limitations.md](docs/limitations.md)。
 

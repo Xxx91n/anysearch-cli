@@ -226,10 +226,14 @@
   legacy fallback), and the five tools still work. Legacy clients
   (`2024-10-07` … `2025-11-25`) get their own version echoed back. The
   hand-wired server stays legacy-only: a modern `_meta` envelope does not
-  unlock modern methods, so `server/discover` returns JSON-RPC `-32601`
+  unlock modern methods, so on stdio/in-memory (or HTTP without the
+  `MCP-Protocol-Version` header) `server/discover` returns JSON-RPC `-32601`
   (`MethodNotFound`), while `tools/list` carrying the same envelope still
-  returns the five-tool list (graceful legacy degradation). Pinned by
-  `apps/mcp/test/dual-era.test.ts`.
+  returns the five-tool list (graceful legacy degradation). On HTTP, a
+  non-initialize request that sends `MCP-Protocol-Version: 2026-07-28` is
+  rejected by the transport before dispatch with HTTP 400 and JSON-RPC
+  `-32000` (unsupported-version gate); send the negotiated `2025-11-25`
+  instead. Pinned by `apps/mcp/test/dual-era.test.ts`.
 - **AnySearch REST `POST /v1/search` is live; this adapter is MCP-only** — live
   probe 2026-11-07: `GET /v1/search` returns 404, while `POST /v1/search` returns
   200 with a `code:0` envelope. The provider speaks MCP Streamable HTTP at

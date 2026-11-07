@@ -171,6 +171,30 @@ async function main() {
         assert(listNoInit.status === 200, "http tools/list (no init, no header): 200 (stateless)");
         assertToolList(listNoInit.json?.result?.tools, "http-stateless");
 
+        // A non-initialize POST carrying the modern revision header hits the
+        // transport's supported-version gate before dispatch: HTTP 400 /
+        // JSON-RPC -32000, not the method-level -32601. The same modern _meta
+        // envelope without that header still reaches dispatch and gets -32601.
+        const modernMeta = {
+          "io.modelcontextprotocol/protocolVersion": MODERN_VERSION,
+          "io.modelcontextprotocol/clientInfo": { name: "http-modern-probe", version: "0" },
+        };
+        const discoverModernHeader = await http.post(
+          { jsonrpc: "2.0", id: 4, method: "server/discover", params: { _meta: modernMeta } },
+          { "mcp-protocol-version": MODERN_VERSION },
+        );
+        assert(discoverModernHeader.status === 400, "http server/discover@2026-07-28 header: 400 (transport supported-version gate)");
+        assert(discoverModernHeader.json?.error?.code === -32000, "http modern header -> -32000 before dispatch (not -32601)");
+        const listModernHeader = await http.post(
+          { jsonrpc: "2.0", id: 5, method: "tools/list", params: {} },
+          { "mcp-protocol-version": MODERN_VERSION },
+        );
+        assert(listModernHeader.status === 400, "http tools/list@2026-07-28 header: 400 (transport supported-version gate)");
+        assert(listModernHeader.json?.error?.code === -32000, "http modern header -> -32000 before dispatch (not a tool list)");
+        const discoverNoHeader = await http.post({ jsonrpc: "2.0", id: 6, method: "server/discover", params: { _meta: modernMeta } });
+        assert(discoverNoHeader.status === 200, "http server/discover with modern _meta, no header: 200");
+        assert(discoverNoHeader.json?.error?.code === -32601, "http server/discover without modern header -> -32601 (method dispatch)");
+
         // Full 5-tool tools/call smoke over HTTP.
         let id = 10;
         for (const name of TOOL_NAMES) {
