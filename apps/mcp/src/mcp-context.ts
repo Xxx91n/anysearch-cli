@@ -1,6 +1,6 @@
 // AsyncLocalStorage context for MCP request identity.
 //
-// #213: client identity is read from the SDK request context, where a
+// #213: client attribution is read from the SDK request context, where a
 // 2026-07-28 request carries `_meta["io.modelcontextprotocol/clientInfo"]`
 // on every call. The initialize-time extraction in http.ts is only a
 // fallback for callers that stash it: legacy 2025-11-25 requests carry no
@@ -45,15 +45,23 @@ export function currentRequestSignal(): AbortSignal | undefined {
   return storage.getStore()?.signal;
 }
 
-// #213: read the client name a modern request carries in its per-request
-// `_meta` envelope. The SDK lifts the reserved envelope keys before the
-// handler runs, so `ctx.mcpReq.envelope` is where clientInfo lands; a legacy
-// request has no envelope here. The payload is untrusted wire data, so only a
-// non-empty string name is forwarded (same rule as http.ts extraction).
+// A client name is untrusted wire data: only a non-empty string is forwarded.
+export function readClientInfoName(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const name = (value as { name?: unknown }).name;
+  return typeof name === "string" && name.length > 0 ? name : undefined;
+}
+
+// Design: per-request `_meta` clientInfo is the primary client-attribution
+// source, with the initialize-time stash as a fallback — the stateless
+// transport cannot guarantee a cross-request stash, so a legacy call without
+// per-request identity records mcp_unknown (#213; rejected: a process-wide
+// client-info global).
+//
+// The SDK lifts the reserved envelope keys before the handler runs, so
+// `ctx.mcpReq.envelope` is where clientInfo lands; a legacy request has no
+// envelope here.
 export function requestClientInfoName(ctx: ServerContext | undefined): string | undefined {
   const envelope = ctx?.mcpReq.envelope as Record<string, unknown> | undefined;
-  const clientInfo = envelope?.[CLIENT_INFO_META_KEY];
-  if (!clientInfo || typeof clientInfo !== "object") return undefined;
-  const name = (clientInfo as { name?: unknown }).name;
-  return typeof name === "string" && name.length > 0 ? name : undefined;
+  return readClientInfoName(envelope?.[CLIENT_INFO_META_KEY]);
 }

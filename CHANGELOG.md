@@ -12,7 +12,7 @@ All notable changes to this project are recorded here. Format follows
 
 ### Tests
 
-- `apps/mcp/test/client-identity.test.ts`：五个工具在现代 `_meta` 下的 `client_id` 映射、legacy 匿名、initialize fallback、per-request 优先与畸形 payload 降级。
+- `apps/mcp/test/client-attribution.test.ts`：五个工具在现代 `_meta` 下的 `client_id` 映射、legacy 匿名、initialize fallback、per-request 优先与畸形 payload 降级；in-memory 与生产 stateless HTTP 两条路径都覆盖。
 
 ## Unreleased — #24: ip 第五域语料建集（`vert-i*` 语料 + 活词表快照）
 

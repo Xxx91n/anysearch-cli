@@ -244,7 +244,7 @@
   value, not a lookup failure. The HTTP entry's `initialize`-body extraction
   remains a fallback for a caller that stashes it in the same request scope;
   it is not a stable-attribution promise. Pinned by
-  `apps/mcp/test/client-identity.test.ts`.
+  `apps/mcp/test/client-attribution.test.ts`.
 - **AnySearch REST `POST /v1/search` is live; this adapter is MCP-only** — live
   probe 2026-11-07: `GET /v1/search` returns 404, while `POST /v1/search` returns
   200 with a `code:0` envelope. The provider speaks MCP Streamable HTTP at

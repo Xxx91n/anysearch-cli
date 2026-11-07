@@ -14,12 +14,10 @@ import type { CompositionResult } from "@anysearch-cli/kernel";
 import express, { type Express } from "express";
 import { buildServer, PKG_VERSION } from "./server.js";
 import { createMcpToolState, type McpToolState } from "./tool-state.js";
-// #213: the primary client-identity source is the SDK request context
-// (mcp-context.ts requestClientInfoName reads the modern per-request `_meta`
-// envelope). This initialize-body extraction remains only a fallback: a legacy
-// 2025-11-25 stateless HTTP tool call has no per-request clientInfo and cannot
-// inherit the initialize handshake across requests, so it records mcp_unknown.
-import { runWithMcpIdentity } from "./mcp-context.js";
+// #213 client attribution: the primary source is the SDK request context
+// (mcp-context.ts); this body parser only preserves the legacy initialize-time
+// fallback, which cannot cross a stateless HTTP request boundary.
+import { readClientInfoName, runWithMcpIdentity } from "./mcp-context.js";
 
 // minimal shape of an MCP request body — only clientInfo.name is read here.
 interface McpRequestBody {
@@ -42,8 +40,7 @@ interface McpRequestBody {
  * @returns The declared client name, or undefined when absent/malformed.
  */
 export function extractClientInfoName(body: unknown): string | undefined {
-  const name = ((body || {}) as McpRequestBody).params?.clientInfo?.name;
-  return typeof name === "string" && name.length > 0 ? name : undefined;
+  return readClientInfoName(((body || {}) as McpRequestBody).params?.clientInfo);
 }
 
 // Design: per-request stateless McpServer + transport over ONE shared startup
