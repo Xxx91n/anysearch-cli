@@ -1102,8 +1102,9 @@ function makeMockStreamFn(decision: string): any {
 }
 
 // #188 (CodeRabbit): if the provider is still stalled when the consumer closes,
-// the close must return within the bounded wait; the final usage is settled
-// once the prompt actually stops.
+// the close must return within the bounded wait. Abort is requested first; when
+// no final usage chunk arrives, the reservation is settled conservatively
+// instead of being recorded as zero.
 {
   const dir = mkdtempSync(join(tmpdir(), "ans-188-stalled-close-"));
   const store = new SqliteSessionStore(join(dir, "anysearch.db"));
