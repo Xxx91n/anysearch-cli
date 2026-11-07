@@ -8,9 +8,8 @@ import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, KernelToolDescriptions, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec, type ProviderErrorClass } from "@anysearch-cli/retriever";
-import { currentRequestSignal } from "../mcp-context.js";
 import { observeTool } from "./observation.js";
-import { combineSignals } from "./signal.js";
+import { requestSignal } from "./signal.js";
 import {
   allProvidersFailedText,
   providerFailureMetadata,
@@ -28,7 +27,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
     async (args: unknown, ctx?: ServerContext) => {
       // #209: same seam as search_web — SDK context signal (stdio) or the
       // HTTP request signal (stateless response-stream closure).
-      const signal = combineSignals(ctx?.mcpReq.signal, currentRequestSignal());
+      const signal = requestSignal(ctx);
       return observeTool(eng, "research_web", async (span) => {
         const { question, depth, verticalDomain, verticalSubDomain, verticalParams } = args as { question: string; depth?: string; verticalDomain?: string; verticalSubDomain?: string; verticalParams?: Record<string, unknown> };
         // + /: shared

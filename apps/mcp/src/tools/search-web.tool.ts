@@ -8,9 +8,8 @@ import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, KernelToolDescriptions, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec } from "@anysearch-cli/retriever";
-import { currentRequestSignal } from "../mcp-context.js";
 import { observeTool } from "./observation.js";
-import { combineSignals } from "./signal.js";
+import { requestSignal } from "./signal.js";
 import {
   allProvidersFailed,
   allProvidersFailedText,
@@ -30,7 +29,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
       // #209: the SDK context signal covers stdio cancellation; the request
       // signal covers stateless HTTP response-stream closure. The engine
       // combines the winner with its per-provider controllers.
-      const signal = combineSignals(ctx?.mcpReq.signal, currentRequestSignal());
+      const signal = requestSignal(ctx);
       return observeTool(eng, "search_web", async (span) => {
         // maxResults is intentionally absent from the
         // public schema (additionalProperties:false) — exposing it is a feature

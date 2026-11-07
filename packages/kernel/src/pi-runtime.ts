@@ -163,7 +163,7 @@ export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObser
         Type.Literal("answer"),
       ], { description: "Search mode: fast (default), index, deep (more sources), answer (provider-generated answer, available only when provider supports it)" })),
     }),
-    execute: async (_toolCallId: string, params: any) => {
+    execute: async (_toolCallId: string, params: any, signal?: AbortSignal) => {
       const q: Query = {
         query: String(params.query),
         mode: (params.mode as "fast" | "index" | "deep" | "answer") || "fast",
@@ -172,6 +172,10 @@ export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObser
         // caller's trace (ans_chat path). Single span, multi-event — no
         // sub-spans per agent-loop turn.
         ...(span ? { span } : {}),
+        // Design: forward the agent run's active signal into the retrieval
+        // query — a cancelled ans_chat then aborts an in-flight internal
+        // search through the engine's #209 caller-signal seam.
+        ...(signal ? { signal } : {}),
       };
       const envelope = await retriever.search(q);
       onResults?.((envelope.results ?? []).map((r) => r.url));
@@ -265,6 +269,12 @@ export interface PiAgentRuntimeOptions {
   // caller observation span — retrieval audit events land
   // inside the caller's span events_json (ans_chat / third retrieval surface).
   span?: RetrievalObservationSink;
+  // #211: caller cancellation (the MCP request signal for ans_chat). When it
+  // aborts, the active Agent is aborted and run() ends without the completion
+  // path — no done summary, no FTS sync, no memory consolidation, and no
+  // completion-shaped budget settlement. An already-aborted signal starts no
+  // provider call and reserves no budget.
+  signal?: AbortSignal;
 }
 
 // pure event mapping extracted for tests — pi-ai's
@@ -466,6 +476,12 @@ export class PiAgentRuntime {
 
   // decision 3: run returns AsyncIterable<AgentEvent>, mapping pi events.
   async *run(input: string): AsyncIterable<AgentEvent> {
+    // #211: a signal that is already aborted means the caller gave up before
+    // this run began. Do not start a provider call, reserve budget, or touch
+    // session state for a request nobody is waiting for.
+    const callerSignal = this.opts.signal;
+    if (callerSignal?.aborted) return;
+
     // SECURITY: timeout to prevent agent loop hang (CWE-400, CWE-840).
     // ponytail: 5-minute default, override via opts.timeoutMs.
     const timeoutMs = (this.opts as any).timeoutMs ?? 300000;
@@ -503,6 +519,17 @@ export class PiAgentRuntime {
     let resolveEvent: (() => void) | null = null;
     let agentDone = false;
     let agentError: string | null = null;
+    // #211: set by the caller-signal listener below. It gates the event loop
+    // and the completion path (settlement, FTS sync, done summary), so a
+    // cancelled chat is never recorded as a finished run.
+    let callerCancelled = false;
+    const wakeGenerator = () => {
+      if (resolveEvent) {
+        const wake = resolveEvent;
+        resolveEvent = null;
+        wake();
+      }
+    };
 
     // hooks degrade to 2-line delegation to MemoryPipeline + SufficiencyEvaluator.
     const agent = new Agent({
@@ -575,7 +602,13 @@ export class PiAgentRuntime {
       },
       // shouldStopAfterTurn async cold path — delegated to SufficiencyEvaluator + MemoryPipeline.
       // Fires after each assistant turn; async, does not block current turn.
-      shouldStopAfterTurn: async (ctx: any) => {
+      shouldStopAfterTurn: async (ctx: any, signal?: AbortSignal) => {
+        // Design: an aborted run stops the turn loop before the cold memory
+        // path — no gate/consolidate anchor is written after cancellation. A
+        // consolidation already awaiting its own LLM call is not interrupted
+        // here (MemoryPipeline has no signal seam); that in-flight write can
+        // still land after the abort.
+        if (signal?.aborted) return true;
         const messages = (agent as any).state?.messages || [];
         // #113: current context occupancy, not cumulative run spend. The
         // usage figure from the last assistant call is combined with a
@@ -648,12 +681,32 @@ export class PiAgentRuntime {
           break;
       }
       // Wake up the generator if it's waiting.
-      if (resolveEvent) {
-        const r = resolveEvent;
-        resolveEvent = null;
-        r();
-      }
+      wakeGenerator();
     });
+
+    // Design: forward caller cancellation into the agent loop — agent.abort()
+    // flips the run's own AbortSignal so pi-agent-core stops at its tool/turn
+    // seams, and waking the generator makes run() end even when the stream
+    // function never settles. This is the ans_chat request signal; the search
+    // tools already forward their own signal to the engine (#209).
+    const cancelRun = () => {
+      if (callerCancelled) return;
+      callerCancelled = true;
+      // abort is a request, not a failure: a loop that already ended is safe.
+      try { (agent as any).abort?.(); } catch { /* no active run to abort */ }
+      wakeGenerator();
+    };
+    callerSignal?.addEventListener("abort", cancelRun, { once: true });
+    // Close the check/registration race: an abort that lands between the guard
+    // at the top of run() and this listener would otherwise go unnoticed.
+    if (callerSignal?.aborted) cancelRun();
+    // No reservation or provider call for a run that was cancelled before the
+    // agent prompt started. The finally below is not active yet, so drop the
+    // listener here instead of relying on it.
+    if (callerCancelled) {
+      callerSignal?.removeEventListener("abort", cancelRun);
+      return;
+    }
 
     // Design: runtime billing requires store + sessionId + ledger, the same
     // gate MemoryPipeline uses — a half-wired runtime cannot touch
@@ -796,7 +849,7 @@ export class PiAgentRuntime {
       });
 
       // Yield events as they arrive.
-      while ((!agentDone || eventBuffer.length > 0) && !timedOut()) {
+      while ((!agentDone || eventBuffer.length > 0) && !timedOut() && !callerCancelled) {
         if (eventBuffer.length > 0) {
           yield eventBuffer.shift()!;
         } else if (!agentDone) {
@@ -807,17 +860,27 @@ export class PiAgentRuntime {
         }
       }
 
+      // Design: cancellation is a transport outcome, not a completed run —
+      // return before usage settlement, FTS sync, and the "Agent completed"
+      // summary, and let the #188 finally release the reservation instead.
+      // The first check covers a stream that never settles; the second covers
+      // an abort that lands while prompt() is resolving.
+      if (callerCancelled) return;
       // Wait for prompt() to fully resolve.
       await promptPromise;
+      if (callerCancelled) return;
       // Drain any events that arrived between agent_end and promptPromise resolution.
-      while (eventBuffer.length > 0) {
+      while (eventBuffer.length > 0 && !callerCancelled) {
         yield eventBuffer.shift()!;
       }
+      // A yield above suspends the generator; re-check before completion work.
+      if (callerCancelled) return;
 
       // SECURITY: timeout check after loop (CWE-400).
       if (timedOut() && !agentDone) {
         yield { type: "error", message: "Agent timeout after " + timeoutMs + "ms" };
       }
+      if (callerCancelled) return;
 
       // Budget settle at agent_end (decision 5, amended #103/#188).
       if (billingWired) {
@@ -857,6 +920,9 @@ export class PiAgentRuntime {
         // does not stop the remaining messages.
         const messages = (agent as any).state?.messages || [];
         for (const msg of messages) {
+          // A cancelled run stops the remaining sync writes; an append already
+          // in flight is the residual window (it cannot be un-awaited).
+          if (callerCancelled) break;
           try {
             await this.opts.store.append(sessionId || "default", {
               role: msg.role || "assistant",
@@ -872,6 +938,7 @@ export class PiAgentRuntime {
           }
         }
       }
+      if (callerCancelled) return;
 
       // Final event.
       if (agentError) {
@@ -891,6 +958,7 @@ export class PiAgentRuntime {
         };
       }
     } finally {
+      callerSignal?.removeEventListener("abort", cancelRun);
       // #188 (CodeRabbit): stop the run before its reservation is released, so
       // a consumer that closed the stream early cannot leave the agent making
       // provider/tool calls after the budget was freed. The signal exists only
@@ -925,19 +993,19 @@ export class PiAgentRuntime {
         }
       };
       let promptStopped = !promptPromise;
-      if (promptPromise) {
+      if (promptPromise && !callerCancelled) {
         await Promise.race([
           promptPromise.then(() => { promptStopped = true; }, () => { promptStopped = true; }),
           new Promise<void>((resolve) => setTimeout(resolve, 1000)),
         ]);
       }
-      if (promptStopped) {
-        finalizeBudget();
-      } else {
-        // Provider still running: release the reservation now so an exiting
-        // process cannot leave it behind, then add only the later delta when the
-        // prompt finally stops (best-effort if the store is already closed).
-        finalizeBudget();
+      finalizeBudget();
+      if (!promptStopped) {
+        // #211: a cancelled run returns immediately — the caller is gone, so
+        // do not spend the bounded wait on a stream that may never settle.
+        // Provider still running: the reservation was released above; add only
+        // the later delta when the prompt finally stops (best-effort if the
+        // store is already closed).
         void promptPromise!.then(
           () => settleTokenDelta(usageTotals.totalTokens),
           () => settleTokenDelta(usageTotals.totalTokens),

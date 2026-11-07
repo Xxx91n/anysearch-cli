@@ -7,7 +7,7 @@
 // MemoryPipeline; no handle = single-shot.
 // input validated by AJV.
 
-import type { McpServer } from "@modelcontextprotocol/server";
+import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import { PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
@@ -16,6 +16,7 @@ import { createHash } from "node:crypto";
 import { buildAnsChatResult, resolveAnsChatSession } from "../ans-chat-session.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
+import { requestSignal } from "./signal.js";
 import { toolError, toolFailure } from "./failure.js";
 
 export function registerAnsChat(
@@ -128,9 +129,13 @@ export function registerAnsChat(
       description: KernelToolDescriptions.ans_chat,
       inputSchema: fromJsonSchema(KernelJsonSchemas.ans_chat),
     },
-    async (args: unknown) => {
+    async (args: unknown, ctx?: ServerContext) => {
       const providerName = process.env.ANS_LLM_PROVIDER;
       const modelName = process.env.ANS_LLM_MODEL;
+      // #211: the same seam as the search tools (#209) — the SDK context
+      // signal (stdio notifications/cancelled) or the stateless-HTTP request
+      // signal (response stream closed). The runtime aborts the agent loop.
+      const signal = requestSignal(ctx);
       return observeTool(eng, "ans_chat", async (span) => {
         const { message, sessionId: requestedSessionId } = args as { message: string; sessionId?: string };
         if (!providerName || !modelName) {
@@ -138,8 +143,16 @@ export function registerAnsChat(
           // chat whose text happens to say "not configured".
           return toolFailure("ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars.");
         }
+        // Design: a caller that already cancelled gets no LLM construction,
+        // session mint, or budget work — those would be state written for a
+        // dead request. The runtime also guards this. The placeholder result is
+        // not user-visible either way: the SDK drops the response for its
+        // aborted request signal, and on the HTTP seam the abort fires only
+        // after the response socket has closed.
+        if (signal?.aborted) return buildAnsChatResult("");
         try {
           const session = await getLlmSession();
+          if (signal?.aborted) return buildAnsChatResult("");
           const domain = eng.config ?? {
             sources: { enabled: [] },
             prompts: [],
@@ -179,6 +192,8 @@ export function registerAnsChat(
             // one-line observation wiring — the ans_chat span
             // receives the engine's retrieval.domain_filter.* audit events.
             span,
+            // #211: cancellation of the MCP request aborts this agent run.
+            signal,
           });
           let output = "";
           let runtimeError: string | undefined;
