@@ -325,24 +325,24 @@ The dated domain-vocabulary snapshot and observed upstream semantics moved to
 ## MCP server
 
 ```bash
-node apps/mcp/dist/index.cjs                    # stdio transport (default)
-node apps/mcp/dist/index.cjs --transport http --port 3099   # HTTP
+npm i -g @anysearch-cli/mcp                     # provides the ans-mcp bin
+ans-mcp                                         # stdio transport (default)
+ans-mcp --transport http --port 3001            # Streamable HTTP (localhost-only)
 ```
 
-Five tools: `search_web`, `research_web`, `recall_memory`, `query_knowledge`,
-`ans_chat`. `ANS_DOMAIN` scopes the server the same way it scopes the CLI.
-Tools never print to stdout; the server keeps the protocol channel pure.
+From a checkout, the same entry is
+`node apps/mcp/dist/index.cjs [--transport http] [--port <n>]`.
 
-Client attribution is per-request. A `2026-07-28` `tools/call` that carries
-`_meta["io.modelcontextprotocol/clientInfo"]` is mapped to the observation
-trace's `client_id` when it reaches a handler; the hand-wired server stays
-legacy-only, so a non-initialize request sending the modern
-`MCP-Protocol-Version` header is rejected before dispatch (see the dual-era
-row). A legacy `2025-11-25` stateless
-HTTP tool call carries no per-request identity and cannot inherit the
-`initialize` handshake across requests, so it records `mcp_unknown` — that is
-expected, not a bug. The `initialize`-body extraction remains a fallback, not a
-stable cross-request promise.
+Five tools: `search_web`, `research_web`, `recall_memory`, `query_knowledge`,
+`ans_chat`. `ANS_DOMAIN` scopes the server from the process environment:
+export it when launching `ans-mcp` directly; `ans mcp` also inherits the CLI's
+persisted choice. Tools never print to stdout; the server keeps the protocol
+channel pure.
+
+The canonical reference — tool arguments, `isError` / empty / abstain
+semantics, both transports, environment variables and auth, the `ans_chat`
+session handle, dual-era behavior, and the upstream provider matrix — is
+[docs/mcp-server.md](docs/mcp-server.md).
 
 ## How it works
 
@@ -406,6 +406,7 @@ Full record: [docs/limitations.md](docs/limitations.md).
 ## For contributors
 
 - `GLOSSARY.md` — canonical domain glossary (read first)
+- `docs/mcp-server.md` — canonical MCP server reference (tools, semantics, transports, env/auth)
 - `docs/rag-adapters.md` — RAG adapter configuration (`none` / `note` / `fts`), injection shape and budgets
 - `docs/limitations.md` — full known-limitations record
 - `docs/agents/` — domain-doc + GitHub issue tracker conventions

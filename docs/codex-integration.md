@@ -56,7 +56,7 @@ commands resolve by bin name.
 User/OS-level env, never written into config files — `ANYSEARCH_API_KEY`,
 `ANS_LLM_BASE_URL` + `ANS_LLM_API` + `ANS_LLM_API_KEY`,
 `ANS_LLM_PROVIDER` + `ANS_LLM_MODEL`,
-`ANS_LLM_CONTEXT_WINDOW` (optional; real model window for custom endpoints — request budgeting, and `{fraction}` L0 watermarks on `ans chat`; MCP `ans_chat` builds the memory pipeline when session setup succeeds — a threaded `sessionId` reuses available L1/L2 anchors, not full message history, with conditional/background anchor writes and adapter- and hit-dependent RAG injection — while a handle-less call is single-shot: a fresh session per call with no L1/L2 anchor continuity, though `fts` RAG can still inject shared store-level research),
+`ANS_LLM_CONTEXT_WINDOW` (optional; real model window for custom endpoints — request budgeting, and `{fraction}` L0 watermarks on `ans chat`; MCP `ans_chat` session and memory behavior is documented in [mcp-server.md](mcp-server.md)),
 `EXA_API_KEY` / `TAVILY_API_KEY`.
 
 ## 3. Plugin server (once per machine)
