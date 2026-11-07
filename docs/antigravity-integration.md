@@ -55,7 +55,7 @@ name.
 User/OS-level env, never written into config files — `ANYSEARCH_API_KEY`,
 `ANS_LLM_BASE_URL` + `ANS_LLM_API` + `ANS_LLM_API_KEY`,
 `ANS_LLM_PROVIDER` + `ANS_LLM_MODEL`,
-`ANS_LLM_CONTEXT_WINDOW` (optional; real model window for custom endpoints — request budgeting, and `{fraction}` L0 watermarks on `ans chat`; a threaded MCP `ans_chat` session handle builds the memory pipeline — L1/L2 anchors + RAG injection across calls — while a handle-less call is single-shot: a fresh session per call, no cross-call continuity),
+`ANS_LLM_CONTEXT_WINDOW` (optional; real model window for custom endpoints — request budgeting, and `{fraction}` L0 watermarks on `ans chat`; a threaded MCP `ans_chat` session handle builds the memory pipeline over the session's available L1/L2 anchors and RAG injection — not full message history; anchor writes are conditional and may finish after the response, and RAG injection depends on the active adapter and its hits — while a handle-less call is single-shot: a fresh session per call, no cross-call continuity),
 `EXA_API_KEY` / `TAVILY_API_KEY`.
 
 ## 3. Plugin server (once per machine)
