@@ -2895,7 +2895,14 @@
           "vertical": {
             "role": "subject",
             "domain": "ip",
-            "hit": true
+            "hit": true,
+            "hitHosts": [
+              "iam-media.com",
+              "mondaq.com",
+              "investor.tsmc.com",
+              "knowmade.com",
+              "cacm.acm.org"
+            ]
           }
         },
         "dimensions": [
@@ -2908,7 +2915,7 @@
           "harvestedAt": "2026-11-07",
           "reviewer": "impl-24"
         },
-        "notes": "ip domain-only 语义条（沿用既有语义层模式）；上游静默回退泛网，vertical 标记由客户端盖章，测量池留空。"
+        "notes": "ip domain-only 语义条（沿用既有语义层模式）；上游回退泛网，vertical 标记由客户端盖章；hitHosts 为 2026-11-07 实测候选宿主（测量池，非硬性门禁）。"
       },
       {
         "id": "vert-i1202",
@@ -2925,7 +2932,13 @@
           "vertical": {
             "role": "subject",
             "domain": "ip",
-            "hit": true
+            "hit": true,
+            "hitHosts": [
+              "istis.sh.cn",
+              "court.gov.cn",
+              "stblog.com.cn",
+              "businesstimescn.com"
+            ]
           }
         },
         "dimensions": [
@@ -2938,7 +2951,7 @@
           "harvestedAt": "2026-11-07",
           "reviewer": "impl-24"
         },
-        "notes": "ip domain-only 语义条；中文标准必要专利查询，上游回退泛网。"
+        "notes": "ip domain-only 语义条；中文标准必要专利查询，上游回退泛网；hitHosts 为 2026-11-07 实测候选宿主。"
       },
       {
         "id": "vert-i1203",
@@ -2955,7 +2968,14 @@
           "vertical": {
             "role": "subject",
             "domain": "ip",
-            "hit": true
+            "hit": true,
+            "hitHosts": [
+              "patents.google.com",
+              "patsnap.com",
+              "mdpi.com",
+              "knobbe.com",
+              "bardehle.com"
+            ]
           }
         },
         "dimensions": [
@@ -2968,7 +2988,7 @@
           "harvestedAt": "2026-11-07",
           "reviewer": "impl-24"
         },
-        "notes": "ip domain-only 语义条；同族+法律状态查询，上游回退泛网。"
+        "notes": "ip domain-only 语义条；同族+法律状态查询，上游回退泛网；hitHosts 为 2026-11-07 实测候选宿主。"
       },
       {
         "id": "vert-i1204",
@@ -2985,7 +3005,14 @@
           "vertical": {
             "role": "subject",
             "domain": "ip",
-            "hit": true
+            "hit": true,
+            "hitHosts": [
+              "mondaq.com",
+              "mewburn.com",
+              "hcipi.com",
+              "ifutureip.com",
+              "patents.qizhidao.com"
+            ]
           }
         },
         "dimensions": [
@@ -2998,7 +3025,7 @@
           "harvestedAt": "2026-11-07",
           "reviewer": "impl-24"
         },
-        "notes": "ip domain-only 语义条；程序性 howto 查询，上游回退泛网。"
+        "notes": "ip domain-only 语义条；程序性 howto 查询，上游回退泛网；hitHosts 为 2026-11-07 实测候选宿主。"
       },
       {
         "id": "vert-i1205",
@@ -3015,7 +3042,14 @@
           "vertical": {
             "role": "subject",
             "domain": "ip",
-            "hit": true
+            "hit": true,
+            "hitHosts": [
+              "iam-media.com",
+              "oxfirst.com",
+              "doi.org",
+              "sciencedirect.com",
+              "theiplawblog.com"
+            ]
           }
         },
         "dimensions": [
@@ -3028,7 +3062,7 @@
           "harvestedAt": "2026-11-07",
           "reviewer": "impl-24"
         },
-        "notes": "ip domain-only 语义条；FRAND 许可费查询，上游回退泛网。"
+        "notes": "ip domain-only 语义条；FRAND 许可费查询，上游回退泛网；hitHosts 为 2026-11-07 实测候选宿主。"
       },
       {
         "id": "ctrl-f101",

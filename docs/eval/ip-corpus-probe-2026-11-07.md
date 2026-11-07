@@ -86,6 +86,10 @@ Consequences used by the corpus:
   would fail. Supporting text-only records is a provider-normalization
   follow-up outside this corpus ticket. Domain-only `ip` returns URL-bearing
   general results, so the vertical marker/hit contract stays measurable.
+  Their `hitHosts` pools come from the 2026-11-07 domain-only samples
+  (topically relevant hosts such as `iam-media.com`, `mondaq.com`,
+  `patsnap.com`, `patents.google.com`); a pool is a measurement candidate,
+  never a hard gate.
 - A bogus `ip` sub-domain is a hard upstream rejection, the surface the
   `ctrl-i103` control pins; a bogus `type` *value* is not, so no control
   asserts an error for it.
