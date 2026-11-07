@@ -220,6 +220,16 @@
   what makes the `ans_chat` gap visible instead of a no-op. The gate itself
   (`store && sessionId`) is unchanged — narrowing it would alter every
   composition root.
+- **MCP dual-era: a `2026-07-28` client is negotiated down to `2025-11-25`** —
+  both stdio and the stateless Streamable HTTP transport answer an
+  `initialize` claiming `2026-07-28` with `2025-11-25` (the SDK's built-in
+  legacy fallback), and the five tools still work. Legacy clients
+  (`2024-10-07` … `2025-11-25`) get their own version echoed back. The
+  hand-wired server stays legacy-only: a modern `_meta` envelope does not
+  unlock modern methods, so `server/discover` returns JSON-RPC `-32601`
+  (`MethodNotFound`), while `tools/list` carrying the same envelope still
+  returns the five-tool list (graceful legacy degradation). Pinned by
+  `apps/mcp/test/dual-era.test.ts`.
 - **AnySearch REST `POST /v1/search` is live; this adapter is MCP-only** — live
   probe 2026-11-07: `GET /v1/search` returns 404, while `POST /v1/search` returns
   200 with a `code:0` envelope. The provider speaks MCP Streamable HTTP at
