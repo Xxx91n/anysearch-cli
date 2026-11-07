@@ -21,7 +21,7 @@
     "@sinclair/typebox": "^0.34.52",
     "@tavily/core": "^0.7.7",
     "eventsource-parser": "^4.1.1",
-    "exa-js": "^2.18.1"
+    "exa-js": "^2.26.0"
   },
   "engines": {
     "node": ">=22.0.0"

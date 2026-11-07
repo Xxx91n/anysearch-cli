@@ -1,7 +1,10 @@
 // Exa provider adapter (decision 3).
-// atomcode research: exa-js 2.18.1, new Exa(apiKey), search(query, {contents}), answer(query, opts).
+// atomcode research: exa-js >=2.26.0, new Exa(apiKey), search(query, {contents}, {signal}), answer(query, opts, {signal}).
 // NormalizedResult mapping: title/url direct, text/highlights->snippet, publishedDate->publishedAt, score preserved.
 // searchAndContents is deprecated - use search(query, {contents: {text: true}}) instead.
+// Design: forward the contract AbortSignal as exa-js trailing RequestOptions on
+// search()/answer() — exa-js >=2.26.0 exposes per-request transport options, and
+// dropping the signal left provider calls uncancellable (#216).
 
 import Exa from "exa-js";
 import type { ProviderAnswer, SearchProvider, SearchRequest, NormalizedResult, ProviderEnvelope, Mode } from "../contract";
@@ -37,7 +40,7 @@ export class ExaProvider implements SearchProvider {
       contents: { text: { maxCharacters: 500 } }, // snippet-sized text
       // pre-filter send-down (provider-side domain restriction).
       ...(req.includeDomains?.length ? { includeDomains: req.includeDomains } : {}),
-    });
+    }, { signal });
 
     // Map Exa results to NormalizedResult.
     const results: NormalizedResult[] = (res.results || []).map((r) => ({
@@ -57,7 +60,7 @@ export class ExaProvider implements SearchProvider {
     let answersMeta: ProviderAnswer[] | undefined;
     if (req.mode === "answer") {
       try {
-        const ans = await this.client.answer(req.query, { model: "exa" });
+        const ans = await this.client.answer(req.query, { model: "exa" }, { signal });
         if (typeof ans.answer === "string") {
           answers.push(ans.answer);
           const citations = Array.isArray((ans as { citations?: Array<{ url?: string; title?: string }> }).citations)

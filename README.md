@@ -263,7 +263,7 @@ Active List; manage activation through the domain configuration as before.
 | provider | transport | wired search surface | answer mode | domain pre-filter | vertical routing | cancellation | standalone usage |
 |----------|-----------|----------------------|-------------|-------------------|------------------|--------------|------------------|
 | anysearch | MCP Streamable HTTP (`POST /mcp`, hand-rolled JSON-RPC; not the official SDK) | `search` (fast / index / deep; an `answer` request degrades to a plain search) | no | no (post-filter only) | yes (`domain` / `sub_domain` / `sub_domain_params`) | yes (per-POST fetch signal; shared handshake caveat below) | no |
-| exa | official `exa-js` SDK | `search` (fast / index / deep / answer) | yes (`answer()`, citations retained with `verified:false`; an answer failure degrades to results plus a stderr line) | yes (`includeDomains`, `search()` only; see note) | no | no (`exa-js@2.18.1` exposes no signal; #216) | no |
+| exa | official `exa-js` SDK | `search` (fast / index / deep / answer) | yes (`answer()`, citations retained with `verified:false`; an answer failure degrades to results plus a stderr line) | yes (`includeDomains`, `search()` only; see note) | no | yes (`signal` as the trailing request option on `search()` / `answer()`; #216) | no |
 | tavily | official `@tavily/core` SDK | `search` (fast / index / deep / answer) | yes (`includeAnswer`) | yes (`include_domains`, hard filter) | no | no (`@tavily/core@0.7.7` exposes no signal; #32) | no |
 
 Provider selection comes from the domain TOML's `sources.enabled`. Missing

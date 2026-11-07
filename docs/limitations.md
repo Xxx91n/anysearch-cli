@@ -246,13 +246,5 @@
 - **Exa envelope `usage` is always `undefined`** — `exa-js` returns cost only
   per-call (`costDollars`) and offers no standalone usage API, so `usage()`
   is unimplemented (contract field is optional).
-- **Exa does not forward `AbortSignal` (#216, separate from Tavily's #32)** —
-  the installed pin `exa-js@2.18.1` exposes no abort/`signal` option, so the
-  adapter accepts the contract signal but never passes it to the SDK.
-  Upstream `exa-js@2.26.0` (2026-10-19) added per-request timeouts and abort
-  support as a trailing request-options argument; the adapter still needs the
-  SDK bump and signal forwarding. As with Tavily, the budget guard limits
-  spend, not wall time, so a slow call can still hold the search past the
-  budget.
 
 > AI生成
