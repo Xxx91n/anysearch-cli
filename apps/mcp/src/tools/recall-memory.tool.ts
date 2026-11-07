@@ -6,6 +6,7 @@ import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import { KernelJsonSchemas, KernelToolDescriptions } from "@anysearch-cli/kernel";
 import { observeTool } from "./observation.js";
+import { toolError } from "./failure.js";
 
 export function registerRecallMemory(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
@@ -66,7 +67,7 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
         }, null, 2);
         return { content: [{ type: "text" as const, text: summary }] };
       } catch (e) {
-        return { content: [{ type: "text" as const, text: "recall_memory error: " + (e instanceof Error ? e.message : String(e)) }] };
+        return toolError("recall_memory", e instanceof Error ? e.message : String(e));
       }
       });
     }

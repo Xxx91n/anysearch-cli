@@ -1,7 +1,8 @@
 // Shared mock CompositionResult for the SDK-v2 acceptance tests (#100).
-// No real providers / no network / no LLM: every tool handler runs to a
-// successful (non-error) result against this engine, so a full 5-tool
-// tools/call smoke is safe offline. Mirrors the mock in abstain.test.ts.
+// No real providers / no network / no LLM: the retrieval tools run to a
+// successful (non-error) result against this engine, and ans_chat returns its
+// missing-configuration ERROR result (#204), so a full 5-tool tools/call smoke
+// is safe offline. Mirrors the mock in abstain.test.ts.
 //
 // Not a *.test.ts file — imported by the acceptance tests, never run directly.
 
@@ -44,6 +45,7 @@ export function createMockEngine(): CompositionResult {
     recordOperation: async (_o: any, cb: any) => cb(fakeSpan),
   };
   // config intentionally omitted: query_knowledge falls back to adapter "none",
-  // ans_chat reads env (unset in the smoke) and returns the not-configured copy.
+  // ans_chat reads env (unset in the smoke) and returns the not-configured
+  // error result.
   return { retriever, store, observation } as unknown as CompositionResult;
 }

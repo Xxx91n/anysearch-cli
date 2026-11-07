@@ -12,6 +12,7 @@ import { domainTomlPath } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import { buildAnsChatResult, resolveAnsChatSession } from "../ans-chat-session.js";
 import { observeTool } from "./observation.js";
+import { toolError, toolFailure } from "./failure.js";
 
 export function registerAnsChat(server: McpServer, eng: CompositionResult): void {
   // Design: cache key = provider+model+baseUrl+api (all wire-affecting config); key material never enters key.
@@ -104,7 +105,9 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
       return observeTool(eng, "ans_chat", async (span) => {
         const { message, sessionId: requestedSessionId } = args as { message: string; sessionId?: string };
         if (!providerName || !modelName) {
-          return { content: [{ type: "text" as const, text: "ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars." }] };
+          // Missing configuration is an execution failure, not a successful
+          // chat whose text happens to say "not configured".
+          return toolFailure("ans_chat: LLM not configured. Set ANS_LLM_PROVIDER and ANS_LLM_MODEL env vars.");
         }
         try {
           const session = await getLlmSession();
@@ -146,17 +149,23 @@ export function registerAnsChat(server: McpServer, eng: CompositionResult): void
             span,
           });
           let output = "";
+          let runtimeError: string | undefined;
           for await (const event of runtime.run(message)) {
             if (event.type === "text") output += event.content;
             else if (event.type === "done") {
               output += "\n" + event.summary;
               // #189: the one-shot recovery summary stays visible to the caller.
               if (event.recovery) output += "\n" + event.recovery;
-            } else if (event.type === "error") output += "\n[error: " + event.message + "]";
+            } else if (event.type === "error") {
+              runtimeError = event.message;
+            }
           }
+          // The runtime's error event means the loop did not complete; surface
+          // it as an execution failure instead of a successful-looking text.
+          if (runtimeError !== undefined) return toolError("ans_chat", runtimeError);
           return buildAnsChatResult(output, memory.sessionId);
         } catch (e) {
-          return { content: [{ type: "text" as const, text: "ans_chat error: " + (e instanceof Error ? e.message : String(e)) }] };
+          return toolError("ans_chat", e instanceof Error ? e.message : String(e));
         }
       }, {
         "anysearch.provider": providerName ?? "",
