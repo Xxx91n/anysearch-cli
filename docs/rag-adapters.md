@@ -78,7 +78,7 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
   `recall_memory` 一致，`fts` 只是在其上包一层。
 - 隔离单元是 store 本身（Store Principal）：默认 `~/.anysearch/anysearch.db`，MCP HTTP
   只绑 `127.0.0.1`。CLI 的持久库路径会尝试收紧到 0700/0600（best-effort；Windows 忽略
-  POSIX 模式）；MCP 冷启动与 plugin server 的库写入路径也调用同一个 `ensureOwnerOnlyDb`（#156）：本次创建目录收紧到 0700，主库与侧车收紧到 0600，全程 best-effort。会话与域是检索的
+  POSIX 模式）；MCP 冷启动与 plugin server 的 `GET /policy` 审计库路径也调用同一个 `ensureOwnerOnlyDb`（#156）：本次创建目录收紧到 0700，主库与侧车收紧到 0600，全程 best-effort；`POST /index` 使用的 project index 库不经过此 helper。会话与域是检索的
   **子作用域**（L1/L2 锚点、域配置、工具白名单），不是主体边界；不同主体应使用不同 store
   （`ANS_DB_PATH`）。
 - 对照：`SessionStore.searchFts5(sessionId, …)` 是按会话过滤的 `messages` 查询；

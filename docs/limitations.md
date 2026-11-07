@@ -172,7 +172,9 @@
   shared `ensureOwnerOnlyDb` (`@anysearch-cli/store`): the directory is 0700 only
   when that call creates it, the main DB and its `-wal`/`-shm` sidecars are 0600
   (#156). This is best-effort — Windows ignores POSIX modes and a foreign-owned
-  file never fails the command. Every shipped domain stays on
+  file never fails the command. This covers the default store only; the plugin
+  server's project index (`POST /index`) is a separate store and is not tightened
+  by this helper. Every shipped domain stays on
   `adapter = "none"`, so the `fts` prompt injection is opt-in (the same store-wide
   range is already read by `recall_memory` when called); a deployer that shares one
   store or one MCP server across users must isolate with separate stores and
