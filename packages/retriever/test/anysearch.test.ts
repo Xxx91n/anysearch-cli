@@ -95,6 +95,19 @@ async function main() {
     }
   }
 
+  // 1c. an oversized id is capped at the extraction seam (span-attribute hygiene).
+  {
+    const longId = "r".repeat(4096);
+    const body = JSON.stringify({ jsonrpc: "2.0", id: 2, result: { _meta: { request_id: longId }, content: [{ type: "text", text: MD }] } });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("", "https://api.anysearch.com/mcp");
+      const env = await p.search(REQ, SIG);
+      assert(env.diagnostics?.requestId?.length === 128, "oversized request_id capped at 128 chars");
+      assert(env.diagnostics?.requestId === "r".repeat(128), "cap keeps the leading 128 chars");
+    } finally { f.restore(); }
+  }
+
   // 2. SSE-framed tools/call reply parses identically
   {
     const sse = "event: message\ndata: " + OK_CALL(2).replace(/\n/g, "") + "\n\n";

@@ -144,12 +144,18 @@ export const RATE_LIMIT_NOTICE = /rate.?limit|too many requests|quota|try again 
 
 // #214: result._meta.request_id is a server-generated diagnostic correlation id
 // (live probe 2026-11-07). It is captured for the observation trace only — never
-// merged into results and never treated as an idempotency key.
+// merged into results and never treated as an idempotency key. The 128-char cap
+// is generous for a UUID (36 chars) and bounds the span attribute a misbehaving
+// upstream could otherwise inflate.
+const MAX_REQUEST_ID_LENGTH = 128;
+
 function requestIdOf(result: Record<string, unknown>): string | undefined {
   const meta = result._meta;
   if (!meta || typeof meta !== "object" || Array.isArray(meta)) return undefined;
   const requestId = (meta as { request_id?: unknown }).request_id;
-  return typeof requestId === "string" && requestId.length > 0 ? requestId : undefined;
+  return typeof requestId === "string" && requestId.length > 0
+    ? requestId.slice(0, MAX_REQUEST_ID_LENGTH)
+    : undefined;
 }
 
 // Fail-first mapping (§2): isError / wrong-shape 200 / unexpected
