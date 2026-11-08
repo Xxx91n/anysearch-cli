@@ -15,6 +15,9 @@ const OUT_DIR = join(process.cwd(), ".scratch", "grill-round-62"); // r61 origin
 const KEY = process.env.TAVILY_API_KEY;
 const HOST = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ""; } };
 const inDomain = (u, allow) => { const h = HOST(u); return allow.some((e) => h === e || h.endsWith("." + e)); };
+const resultUrls = (json) => (Array.isArray(json?.results) ? json.results : [])
+  .map((x) => x?.url)
+  .filter((u) => typeof u === "string" && /^https?:/i.test(u));
 async function tavily(endpoint, body) {
   const res = await fetch("https://api.tavily.com" + endpoint, {
     method: "POST",
@@ -34,35 +37,38 @@ if (!KEY) {
   try {
     const r = await tavily("/search", { query: "tokio JoinSet rust spawn structured concurrency", max_results: 10, include_domains: ["pnpm.io"] });
     if (r.status !== 200) throw new Error("HTTP " + r.status + " " + r.text);
-    const urls = (r.json?.results ?? []).map((x) => x.url);
+    const allResults = Array.isArray(r.json?.results) ? r.json.results : [];
+    const urls = resultUrls(r.json);
     const leaks = urls.filter((u) => !inDomain(u, ["pnpm.io"]));
     const status = urls.length === 0 ? "INCONCLUSIVE" : (leaks.length ? "LEAK" : "PASS");
-    record({ id: "A-default-mode", status, summary: urls.length === 0 ? "0 results — vacuous, no source checked" : leaks.length + "/" + urls.length + " results outside include_domains (default mode)", evidence: { urls, leaks } });
+    record({ id: "A-default-mode", status, summary: urls.length === 0 ? "0 valid result URLs (of " + allResults.length + ") — vacuous, no source checked" : leaks.length + "/" + urls.length + " results outside include_domains (default mode)", evidence: { urls, leaks, httpStatus: r.status, resultKeys: Object.keys(r.json ?? {}) } });
   } catch (e) { record({ id: "A-default-mode", status: "ERROR", summary: String(e.message || e), evidence: null }); }
   try {
     const r = await tavily("/search", { query: "tokio JoinSet rust spawn structured concurrency", max_results: 10, include_domains: ["pnpm.io"], include_domains_mode: "filter" });
     if (r.status !== 200) throw new Error("HTTP " + r.status + " " + r.text);
-    const urls = (r.json?.results ?? []).map((x) => x.url);
+    const allResults = Array.isArray(r.json?.results) ? r.json.results : [];
+    const urls = resultUrls(r.json);
     const leaks = urls.filter((u) => !inDomain(u, ["pnpm.io"]));
     const status = urls.length === 0 ? "INCONCLUSIVE" : (leaks.length ? "LEAK" : "PASS");
-    record({ id: "B-filter-mode", status, summary: urls.length === 0 ? "0 results — vacuous, no source checked" : leaks.length + "/" + urls.length + " results outside include_domains (filter mode)", evidence: { urls, leaks } });
+    record({ id: "B-filter-mode", status, summary: urls.length === 0 ? "0 valid result URLs (of " + allResults.length + ") — vacuous, no source checked" : leaks.length + "/" + urls.length + " results outside include_domains (filter mode)", evidence: { urls, leaks, httpStatus: r.status, resultKeys: Object.keys(r.json ?? {}) } });
   } catch (e) { record({ id: "B-filter-mode", status: "ERROR", summary: String(e.message || e), evidence: null }); }
   try {
     const parent = await tavily("/search", { query: "typescript tsconfig compilerOptions", max_results: 10, include_domains: ["typescriptlang.org"], include_domains_mode: "filter" });
     const sub = await tavily("/search", { query: "typescript tsconfig compilerOptions", max_results: 10, include_domains: ["www.typescriptlang.org"], include_domains_mode: "filter" });
     if (parent.status !== 200 || sub.status !== 200) throw new Error("HTTP " + parent.status + "/" + sub.status);
-    const pHosts = [...new Set((parent.json?.results ?? []).map((x) => HOST(x.url)))];
-    const sHosts = [...new Set((sub.json?.results ?? []).map((x) => HOST(x.url)))];
+    const pHosts = [...new Set(resultUrls(parent.json).map(HOST))].filter((h) => h !== "");
+    const sHosts = [...new Set(resultUrls(sub.json).map(HOST))].filter((h) => h !== "");
     const parentCoversSub = pHosts.some((h) => h !== "typescriptlang.org" && h.endsWith(".typescriptlang.org"));
     const subPullsParent = sHosts.some((h) => h === "typescriptlang.org" || (h.endsWith(".typescriptlang.org") && h !== "www.typescriptlang.org"));
-    const status = pHosts.length === 0 && sHosts.length === 0 ? "INCONCLUSIVE" : "PASS";
-    record({ id: "C-subdomain-direction", status, summary: (status === "INCONCLUSIVE" ? "0 hosts — vacuous, no source checked; " : "") + "parent hosts=" + JSON.stringify(pHosts) + " sub hosts=" + JSON.stringify(sHosts) + " parentCoversSub=" + parentCoversSub + " subPullsParent=" + subPullsParent, evidence: { pHosts, sHosts, parentCoversSub, subPullsParent } });
+    const status = pHosts.length === 0 || sHosts.length === 0 ? "INCONCLUSIVE" : "PASS";
+    record({ id: "C-subdomain-direction", status, summary: (status === "INCONCLUSIVE" ? "one side returned no hosts — vacuous, no source checked; " : "") + "parent hosts=" + JSON.stringify(pHosts) + " sub hosts=" + JSON.stringify(sHosts) + " parentCoversSub=" + parentCoversSub + " subPullsParent=" + subPullsParent, evidence: { pHosts, sHosts, parentCoversSub, subPullsParent } });
   } catch (e) { record({ id: "C-subdomain-direction", status: "ERROR", summary: String(e.message || e), evidence: null }); }
   if (process.env.PROBE_TAVILY_RESEARCH === "1") {
     try {
       const r = await tavily("/research", { input: "tokio JoinSet structured concurrency", include_domains: ["pnpm.io"] });
+      if (r.status !== 200) throw new Error("HTTP " + r.status + " " + r.text);
       const urls = [];
-      const walk = (o) => { if (!o || typeof o !== "object") return; if (typeof o.url === "string") urls.push(o.url); for (const v of Object.values(o)) walk(v); };
+      const walk = (o) => { if (!o || typeof o !== "object") return; if (typeof o.url === "string" && /^https?:/i.test(o.url)) urls.push(o.url); for (const v of Object.values(o)) walk(v); };
       walk(r.json);
       const leaks = urls.filter((u) => !inDomain(u, ["pnpm.io"]));
       // honesty fix: 0 extracted sources is vacuous, not a pass — the
