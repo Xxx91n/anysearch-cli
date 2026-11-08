@@ -1,49 +1,49 @@
 ---
 name: anysearch
-description: Real-time web search, deep research, session-memory recall and knowledge retrieval via the anysearch ans_* tools.
+description: Search the web now, run deep research, recall earlier results and look things up in a knowledge base, through the anysearch ans_* tools.
 ---
 
-# Anysearch — Information-Specialized Agent
+# Anysearch skill
 
-Research and retrieve information across multiple sources with persistent memory.
+Research and fetch information from many sources, with persistent memory.
 
 ## When to use
 
-- User asks to search the web, research a topic, or look up current events
-- User needs deep multi-hop research with synthesis
-- User wants to recall prior search results from this session
-- User needs enterprise knowledge base retrieval
-- User has a complex research query needing multiple tool calls
+- The user asks to search the web, research a topic, or look up current events
+- The user needs deep research across several steps, with a written answer
+- The user wants earlier search results from memory
+- The user needs the organization's own knowledge base
+- The user has a research question that needs several tool calls
 
 ## Tools
 
-**search_web** — Real-time multi-source web search (Exa, Tavily, Anysearch). Returns fused, deduplicated results with RRF ranking. Use for factual lookup, current events, quick answers.
+**search_web** — Search the web now, across several sources at once (Exa, Tavily, Anysearch). Removes duplicates and merges the ranked lists into one order (RRF). Use it for facts, current events and quick answers.
 
-**research_web** — Deep research mode (minute-level). Multi-hop traversal, source validation, synthesis. Use for complex questions requiring thorough investigation.
+**research_web** — Deep research. Runs for minutes, follows leads across several steps, checks sources and writes up what it found. Use it for questions that need a thorough investigation.
 
-**recall_memory** — FTS5 research memory recall with time edge effect. Searches prior results from this session. Always try this before redundant search_web calls.
+**recall_memory** — Look through earlier research results stored in local memory (FTS5 keyword search). Older records slowly lose weight as they age. Always try this before running the same search_web again.
 
-**query_knowledge** — Enterprise RAG retrieval. Searches the organization's knowledge base. Use when the question is domain-specific and internal docs may have answers.
+**query_knowledge** — Search the organization's own knowledge base. Use it when the question is about internal documents and that knowledge base may hold the answer.
 
-**ans_chat** — PiAgentRuntime agent loop for complex multi-tool research. Use when the query requires orchestrating multiple tools in sequence.
+**ans_chat** — An agent loop (PiAgentRuntime) for research that needs several tools in a row. Use it when one tool call is not enough.
 
 ## Decision tree
 
-1. Is this a factual lookup or current event? -> search_web
-2. Does this need deep multi-hop research? -> research_web
-3. Have we searched this topic before in this session? -> recall_memory first, then search_web only if results are missing
-4. Is this about internal enterprise knowledge? -> query_knowledge
-5. Does this need multiple tools orchestrated? -> ans_chat
+1. Is this a fact lookup or a current event? -> search_web
+2. Does it need research across several steps? -> research_web
+3. Have we searched this topic before? -> recall_memory first, then search_web only if results are missing
+4. Is this about internal company knowledge? -> query_knowledge
+5. Does it need several tools in a row? -> ans_chat
 
 ## Anti-patterns
 
-- Do NOT call search_web for a topic already covered by recall_memory results
-- Do NOT call research_web for simple factual questions (use search_web)
-- Do NOT call ans_chat when a single tool call suffices
-- Do NOT ignore recall_memory — it prevents redundant API calls and token waste
+- Do NOT call search_web for a topic that recall_memory already returned results for
+- Do NOT call research_web for a simple fact question (use search_web)
+- Do NOT call ans_chat when one tool call is enough
+- Do NOT ignore recall_memory — it saves API calls and tokens
 
 ## Mandatory rules
 
-- Always check recall_memory before issuing a new search_web for a previously-discussed topic
-- Fail-open: if anysearch server is unreachable, continue without memory features (do not block)
-- Tool namespace: all anysearch tools use ans_* prefix (platform may add additional prefixes)
+- Always check recall_memory before starting a new search_web on a topic already discussed
+- If the anysearch server is unreachable, continue without the memory features; do not wait for the server to come back
+- Tool names: all anysearch tools use the ans_* prefix (a host may add its own prefixes)
