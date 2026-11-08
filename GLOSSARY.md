@@ -4,14 +4,14 @@
 
 ## 产品与领域
 
-- **垂直领域 agent**——只在一个领域里干活的 agent，站在通用搜索之上做深度研究，自己不做索引（代码里叫 vertical agent）。
+- **垂直领域 agent**——只在一个领域里干活的 agent，站在通用搜索之上做深度研究，自己不做索引（代码里叫 verticalDomain）。
   _Avoid_: Vertical Agent、垂直 Agent
 
 - **当前领域**——当前选中的领域，由一份 TOML 配置决定用哪些信息源、哪些 skill、哪些工具（代码里叫 Active Domain）。
   _Avoid_: 活跃域、激活域
 
 - **信息源**——一个能问的搜索服务，比如 Exa、Tavily、Brave 或 anysearch 通道，由领域配置决定开哪几个、各占多少权重（代码里叫 SearchProvider）。
-  _Avoid_: Info Source Provider、信息源头供应方、搜索后端、检索后端、搜索源
+  _Avoid_: Info Source Provider、信息源头供应方、搜索后端、检索后端、搜索源、搜索服务
 
 - **领域检索适配器**——把企业内部数据接进对话的配置项，接不接、接哪种由领域配置决定（代码里叫 RagAdapterPort）。
   _Avoid_: RAG Adapter、领域专属检索适配器
@@ -19,7 +19,7 @@
 - **宿主插件**——装进各种 agent 宿主的插件，带钩子、长驻 MCP server 和项目级索引（代码里叫 `@anysearch-cli/plugin`）。
   _Avoid_: Anysearch Plugin、插件形态
 
-- **技能安装器**——把本地仓库里带 `SKILL.md` 的目录装到用户级或项目级 skills 目录，并用 `installed.json` 记来源和 commit（代码里叫 skill-store）。
+- **技能安装器**——把本地仓库里带 `SKILL.md` 的目录装进 skills 目录，并记下来源方便以后更新（代码里叫 skill-store）。
   _Avoid_: Skill Installer、最小安装器
 
 ## 检索与运行时
