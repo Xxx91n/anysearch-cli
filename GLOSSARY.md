@@ -10,7 +10,7 @@
 - **当前领域**——当前选中的领域，由一份 TOML 配置决定用哪些信息源、哪些 skill、哪些工具（代码里叫 Active Domain）。
   _Avoid_: 活跃域、激活域
 
-- **信息源**——一个对外的搜索入口，比如 Exa、Tavily、Brave 或 anysearch 通道，由领域配置决定开哪几个、各占多少权重（代码里叫 SearchProvider）。
+- **信息源**——一个对外的搜索入口，比如 Exa、Tavily 或 anysearch 通道，由领域配置决定开哪几个、各占多少权重（代码里叫 SearchProvider）。
   _Avoid_: Info Source Provider、信息源头供应方、搜索后端、检索后端、搜索源、搜索服务
 
 - **领域检索适配器**——把企业内部数据接进对话的配置项，接不接、接哪种由领域配置决定（代码里叫 RagAdapterPort）。
@@ -27,7 +27,7 @@
 - **统一装配入口**——启动时把信息源、存储、运行时拼到一起的入口，CLI、MCP、插件三处共用（代码里叫 createEngine）。
   _Avoid_: Composition Root、组合根
 
-- **检索引擎**——把问题发给多个信息源、合并结果、检查证据够不够、按预算停下来的那套流程，自己不做 LLM 判断（代码里叫 RetroaererdEngine）。
+- **检索引擎**——把问题发给多个信息源、合并结果、检查证据够不够、按预算停下来的那套流程（代码里叫 RetroaererdEngine）。
   _Avoid_: Retrieval Engine、检索专精引擎
 
 - **一次检索的结果包**——一次检索返回的全部东西，包括结果、来源、状态和够不够用的判断（代码里叫 FusedEnvelope）。
@@ -39,10 +39,10 @@
 - **证据够不够的检查**——看结果数量、来源数量、分数分布，判断要不要再搜一轮（代码里叫 computeSufficiency）。
   _Avoid_: Sufficiency Gate、充分性门禁
 
-- **预算记账**——给一次检索定个花费上限，超了就停（代码里叫 BudgetLedgerPort）。
+- **预算记账**——给一次运行定个花费上限，超了就停（代码里叫 BudgetLedgerPort）。
   _Avoid_: Budget Ledger、预算账本
 
-- **恢复存档点**——检索有结果时就写一条状态记录，断了重开时读它把进度接上（代码里叫 ResumeAnchorsPort）。
+- **恢复存档点**——检索跑完就写一条状态记录，断了重开时读它把进度接上（代码里叫 ResumeAnchorsPort）。
   _Avoid_: Anchor、锚点、恢复锚
 
 ## 记忆与检索
