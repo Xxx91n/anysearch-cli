@@ -15,11 +15,11 @@
 3. Recall earlier research results from memory -> recall_memory
 4. Organization's own knowledge base -> query_knowledge
 5. Research that needs several tools in a row -> ans_chat
-6. If recall_memory already has relevant results, skip the extra search
+6. If recall_memory already has results that still answer the question, skip the extra search; if they are stale or incomplete, search again
 
 ## Anti-patterns
 
-- Do NOT call search_web when recall_memory already has results for the same question
+- Do NOT call search_web when recall_memory already has results that still answer the question; search again if they are stale or incomplete
 - Do NOT call ans_chat for a simple fact lookup (use search_web instead)
 - Do NOT call research_web for a one-step question (use search_web instead)
 - Do NOT ignore recall_memory results when they exist

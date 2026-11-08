@@ -1,6 +1,6 @@
 # AGENTS.md — anysearch-cli
 
-AnySearch is an agent CLI (`ans`) that works inside one domain only. It filters retrieval results against a strict domain allowlist, ties each answer to evidence, and says there is nothing to answer when no results pass the domain filter. Answers that a provider generates itself (for example Exa answer mode) and their citations do not pass through this filter. `GLOSSARY.md` is the only place to look up what a term means.
+AnySearch is an agent CLI (`ans`) that works inside one domain only. It keeps retrieval results tied to their sources, filters them against a strict domain allowlist, and says there is nothing to answer when no results pass the domain filter. Answers that a provider generates itself (for example Exa or Tavily answer mode) do not pass through this filter and are marked unverified. `GLOSSARY.md` is the only place to look up what a term means.
 
 ## How to run
 - `pnpm install --ignore-scripts` — install dependencies. better-sqlite3 ships a prebuilt binary, so no node-gyp.

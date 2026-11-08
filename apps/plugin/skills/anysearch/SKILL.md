@@ -31,19 +31,19 @@ Research and fetch information from many sources, with persistent memory.
 
 1. Is this a fact lookup or a current event? -> search_web
 2. Does it need research across several steps? -> research_web
-3. Have we searched this topic before? -> recall_memory first, then search_web only if results are missing
+3. Does recall_memory already have results that still answer this question? -> use them; if they are stale or incomplete, search_web
 4. Is this about internal company knowledge? -> query_knowledge
 5. Does it need several tools in a row? -> ans_chat
 
 ## Anti-patterns
 
-- Do NOT call search_web for a topic that recall_memory already returned results for
+- Do NOT skip search_web when recall_memory results are stale or incomplete
 - Do NOT call research_web for a simple fact question (use search_web)
 - Do NOT call ans_chat when one tool call is enough
 - Do NOT ignore recall_memory — it saves API calls and tokens
 
 ## Mandatory rules
 
-- Always check recall_memory before starting a new search_web on a topic already discussed
+- Always check recall_memory before starting a new search_web on a topic already discussed, and search again when the earlier results are stale or incomplete
 - When a layer breaks, let the call through: if the anysearch server is unreachable, keep going without the memory features. The exception is a call that carries a URL: when the URL policy cannot be read, it is sent for approval (`ask`), and with no approval channel it is denied (never treat it as allowed)
 - Tool names: all anysearch tools use the ans_* prefix (a host may add its own prefixes)
