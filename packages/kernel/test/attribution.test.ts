@@ -436,6 +436,7 @@ describe("attribution schema closure", () => {
   ];
   for (const [name, schema, valid] of cases) {
     it(name + " closes unknown keys", () => {
+      assert.equal(Value.Check(schema, valid), true);
       assert.equal((schema as { additionalProperties?: boolean }).additionalProperties, false);
       assert.equal(Value.Check(schema, { ...valid, unexpected: "x" }), false);
     });

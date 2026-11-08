@@ -1,8 +1,8 @@
 // L0: TypeBox contract for AttributionReport.
 // This schema mirrors the AttributionReport interface in packages/retriever/src/attribution.ts
-// and must stay in sync. The ship-gate L0 assertion (scripts/ship-gate.mjs step 1) checks
-// that this file exists, has additionalProperties:false at every level, and that
-// both enums are present — drift between the two files is a ship-blocking error.
+// and must stay in sync. The runtime closure/enum assertions live in
+// packages/kernel/test/attribution.test.ts ("attribution schema closure") —
+// drift between the two files is a ship-blocking error.
 //
 // supported / uncertain / unsupported labels; evidence maxItems=3.
 
