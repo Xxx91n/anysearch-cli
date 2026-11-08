@@ -1,74 +1,74 @@
-# MCP SDK v2 现状调研（primary-source）
+# MCP SDK v2 现状调研（只看上游原文）
 
-- **来源 issue**: #94（TR MCP SDK v2 现状调研，供 #39/#46 决策）
+- **来源 issue**: #94（MCP SDK v2 现状调研，给 #39/#46 做决定用）
 - **调研日期**: 2026-11-03
 - **调研人**: Xxx91n
-- **归档日期**: 2026-11-05（落 `main`，本仓 `docs/research/`）
-- **归档依据**: 与 `upstream-unblock-registry.md` 落档先例一致（#171）——已合并决议的证据住 `main`，不依赖未合并分支存活。
+- **归档日期**: 2026-11-05（放到 `main` 的 `docs/research/` 目录）
+- **归档依据**: 和 `upstream-unblock-registry.md` 的做法一致（#171）——已经有结论的东西放在 `main` 上，不靠一个没合并的分支活着。
 
-## Provenance（归档来源说明）
+## 这份文件从哪来
 
-本文件内容恢复自 issue #94 的 resolution 评论（2026-11-03）。原调研分支
-`research/mcp-sdk-v2` 曾在 `docs/research/mcp-sdk-v2-status.md` 持有**完整引用版**
-报告（含逐项文献引用），但该分支在归档时（2026-11-05）已从 `origin` 删除且本地
-不可恢复，故此处以 resolution 评论中的结论为现存权威记录。如需补全完整引用版，
-请由 issue #94 的评论或作者本地副本回填，本归档不臆造引用。
+本文件的内容来自 issue #94 的结案评论（2026-11-03）。原来的调研分支
+`research/mcp-sdk-v2` 曾在 `docs/research/mcp-sdk-v2-status.md` 放过一份
+**带完整引用的版本**（每一条都附文献出处），但这个分支在归档时（2026-11-05）
+已经从 `origin` 删掉，本地也找不回来了。所以这里以结案评论里的结论为准。
+要补完整引用版，请从 issue #94 的评论或作者本地副本回填；这份归档不自己编引用。
 
-> 研究结论只回票据、不开 PR、不合并（#94 原约定）。本归档是该结论在 `main` 上的
-> 可读副本，不改变「research 分支不合并」的既定口径。
+> 调研结论只回到票里，不开 PR、不合并（#94 原约定）。这份归档是同一个结论在
+> `main` 上的可读副本，不改变「调研分支不合并」的规矩。
 
-## Background（背景）
+## 背景
 
-MCP TypeScript SDK 桥接三件套（TypeBox Bridge / Capability Detection /
-Standard Schema Trigger）的选型，取决于 v2 SDK 的以下事实：
+MCP TypeScript SDK 这块有三项桥接工作（TypeBox 桥、能力探测、Standard Schema 触发），
+怎么选取决于 v2 SDK 的下面这些事实：
 
-- `registerTool` 对 TypeBox / JSON Schema 的接受度；
-- `zod` 4.2+ 与 4.0–4.1 的差异是否仍存在；
-- Dual Era Compatibility 在新 SDK 上的姿态。
+- `registerTool` 收不收 TypeBox / JSON Schema；
+- `zod` 4.2+ 和 4.0–4.1 的差别还在不在；
+- 新 SDK 怎么处理新旧两代协议并存（Dual Era Compatibility）。
 
-这些事实供决策票使用：#39（v1 SDK 不收 TypeBox）、#46（zod fallback 降级）、
-#47（review-by 锚的 EOL 口径）。
+这些事实给这几张票用：#39（v1 SDK 不收 TypeBox）、#46（zod 版本降级）、
+#47（review-by 检查点的 EOL 口径）。
 
-## Findings（结论）
+## 查到的事实
 
-1. **SDK 已分家为 v2 monorepo**：`@modelcontextprotocol/{server,client,core,server-legacy,codemod}`
-   现版本 **2.4.0（2026-10-23）**；`@modelcontextprotocol/sdk` 停留在 **v1.x 维护线
-   （1.32.2）**。两套并行存在。
+1. **SDK 已经拆成 v2 多包仓库**：`@modelcontextprotocol/{server,client,core,server-legacy,codemod}`
+   现在版本是 **2.4.0（2026-10-23）**；`@modelcontextprotocol/sdk` 停在 **v1.x 维护线
+   （1.32.2）**。两套同时存在。
 
-2. **`registerTool` 不再是 zod-only**：v2 收 `StandardSchemaWithJSON`；裸 JSON Schema
-   仍不可直接赋值，TypeBox 路径是新增的 `fromJsonSchema()` 适配器（server CHANGELOG
-   **PR #1689**）——本仓 TypeBox Bridge 的官方对应物已出现。
+2. **`registerTool` 不再只收 zod**：v2 收 `StandardSchemaWithJSON`；裸 JSON Schema
+   还是不能直接传，TypeBox 现在走新增的 `fromJsonSchema()` 适配器（server CHANGELOG
+   **PR #1689**）——本仓 TypeBox 桥的官方对应物已经出来了。
 
-3. **`zod ≥4.2` 全支持**（server 自带 `zod ^4.2.0`）；**4.0–4.1** 走
-   `z.toJSONSchema()` fallback + 一次性告警（v2.4.0 变更记录确认）；**`zod 3` 不支持**。
-   `#94` resolution 另称该 fallback 会丢弃 `.describe()`——此点 v2.4.0 变更记录未独立
-   证实，列为待核（见「未证实」）。
+3. **`zod ≥4.2` 完全支持**（server 自带 `zod ^4.2.0`）；**4.0–4.1** 走
+   `z.toJSONSchema()` 兜底加一次性警告（v2.4.0 变更记录确认）；**`zod 3` 不支持**。
+   `#94` 结案评论还说这个兜底会丢掉 `.describe()`——v2.4.0 变更记录没有单独
+   证实这一点，所以列进「还没确认」里。
 
-4. **Dual-era 是内建能力**：`createMcpHandler` / `serveStdio` 单工厂同时服务
-   `2024-10-07…2025-11-25` 旧客户端与 `2026-07-28` 新规范；
-   `versionNegotiation:'auto'` 探测 + legacy 回落。
+4. **新旧两代协议是内建能力**：`createMcpHandler` / `serveStdio` 一个工厂同时服务
+   `2024-10-07…2025-11-25` 的旧客户端和 `2026-07-28` 的新规范；
+   `versionNegotiation:'auto'` 自动探测，旧客户端自动回落。
 
-5. **v1.x 维护线**：npm 未标 deprecated，官方承诺 v2 发布后**至少六个月** bug/安全
-   修复 → 下限约 **2027-01-27**（非 2027-01-01 整点）；迁移路径：
+5. **v1.x 维护线**：npm 没标 deprecated，官方承诺 v2 发布后**至少六个月**继续修
+   bug 和安全问题 → 下限大约 **2027-01-27**（不是 2027-01-01 整点）；迁移路径：
    `npx @modelcontextprotocol/codemod@latest v1-to-v2 .` +
    `docs/migration/upgrade-to-v2.md`。
 
-## 未证实（具名待核）
+## 还没确认的（逐条点名）
 
-- 裸 TypeBox `TSchema` 是否原生满足 `~standard.jsonSchema`；
-- v1.x 过六个月下限后的确切处置；
-- `z.toJSONSchema()` fallback 是否丢弃 `.describe()`（`#94` resolution 断言，待 v2.4.0
-  源码/测试独立证实）。
+- 裸 TypeBox `TSchema` 本身满不满足 `~standard.jsonSchema`；
+- v1.x 过了六个月下限后到底怎么处理；
+- `z.toJSONSchema()` 兜底会不会丢掉 `.describe()`（`#94` 结案评论这么说，等
+  v2.4.0 源码或测试独立证实）。
 
-## 对决策票的含义
+## 对相关票的影响
 
-- **#39「v1 SDK 不收 TypeBox」** 与 **#46「zod 4.0–4.1 降级」** 的解除条件 =
-  迁往 v2 monorepo（`fromJsonSchema` 路径 + `zod≥4.2`）。
-- **#47 的 review-by 锚（EOL 口径）应校正为 ~2027-01-27**，而非 2027-01-01 整点。
+- **#39「v1 SDK 不收 TypeBox」** 和 **#46「zod 4.0–4.1 降级」** 的解除条件 =
+  迁到 v2 多包仓库（`fromJsonSchema` 路径 + `zod≥4.2`）。
+- **#47 的 review-by 检查点（EOL 口径）应改成 ~2027-01-27**，不是 2027-01-01 整点。
 
-## References
+## 参考资料
 
-- Issue #94（resolution 评论，2026-11-03）——本归档的权威来源。
-- MCP TypeScript SDK v2 monorepo `2.4.0`（2026-10-23）；v1.x 维护线 `1.32.2`。
+- Issue #94（结案评论，2026-11-03）——这份归档的权威来源。
+- MCP TypeScript SDK v2 多包仓库 `2.4.0`（2026-10-23）；v1.x 维护线 `1.32.2`。
 - server CHANGELOG PR #1689（`fromJsonSchema()` 适配器）。
-- 决策票：#39、#46、#47。
+- 相关票：#39、#46、#47。

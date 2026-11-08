@@ -1,20 +1,20 @@
 # ip domain probe — 2026-11-07
 
-Evidence anchor for ticket **#24** (ip fifth-domain corpus) under spec **#203**
+This file is the evidence for ticket **#24** (the ip fifth-domain corpus) under spec **#203**
 (T12). The corpus entries `vert-i11xx` / `vert-i12xx` / `ctrl-i10x` in
-`eval-looks.json` cite this file as their provenance ref.
+`eval-looks.json` point to this file as their source.
 
 ## Trigger
 
-The original deferred-registry entry said the corpus work becomes actionable
-"the moment the probe output has a harvestable param table". This probe
-confirms the trigger: `get_sub_domains(domain="ip")` now returns a structured
-per-parameter table, the same shape the `finance.*` entries already produce.
+The original deferred-registry entry said the corpus work becomes actionable "the moment the
+probe output has a harvestable param table". This probe shows that moment has arrived:
+`get_sub_domains(domain="ip")` now returns a table of per-parameter definitions, the same
+shape the `finance.*` entries already produce.
 
 ## Method
 
 - Endpoint: `https://api.anysearch.com/mcp` (Streamable HTTP MCP).
-- Probe path: `initialize` (protocol `2025-03-26`, no `mcp-session-id`
+- Request path: `initialize` (protocol `2025-03-26`, no `mcp-session-id`
   response header) → `notifications/initialized` → `tools/list` →
   `tools/call get_sub_domains {domain:"ip"}` → `tools/call search` samples.
   The two `tools/call` request bodies were:
@@ -27,13 +27,13 @@ per-parameter table, the same shape the `finance.*` entries already produce.
   {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search","arguments":{"query":"solar cell patents","domain":"ip","sub_domain":"ip.global","sub_domain_params":{"type":"GlobalPatent","keyword":"solar cell"}}}}
   ```
 
-- Date: 2026-11-07. An API key was present; the key is never recorded here.
-- Read-only: the probe calls `get_sub_domains` and `search` only. No runtime
-  wiring changed.
+- Date: 2026-11-07. An API key was present; the key is never written down here.
+- Read-only: the probe only calls `get_sub_domains` and `search`. Nothing in the
+  runtime was rewired.
 
 `tools/list` returned `batch_search`, `extract`, `get_sub_domains`, `score`,
-`search` — the same five names already documented as upstream drift; only
-`search` is wired in this repo.
+`search` — the same five names already noted as upstream drift; this repo only
+uses `search`.
 
 ## Raw vocabulary table
 
@@ -52,15 +52,15 @@ Global patent aggregation and family tracing via EPO DOCDB/INPADOC, covering 100
 ```
 
 There is exactly one `ip` sub-domain (`ip.global`). The table lists five
-parameters; `type` is the result-shape selector, the rest are filters.
+parameters. `type` picks the result shape; the other four filter it.
 
 ## Search-shape matrix
 
 All calls used `domain: "ip"` (plus `sub_domain` / `sub_domain_params` where
-shown) and the upstream markdown envelope. Counts are the header counts of
-the `## Search Results` envelope.
+shown) and read the upstream markdown reply. The counts are the header counts
+of the `## Search Results` block.
 
-| Case | `isError` | Result count | URL hosts in envelope |
+| Case | `isError` | Result count | URL hosts in reply |
 |---|---|---|---|
 | domain only (no sub_domain) | absent | 10 | general web news (`elecfans.com`, `mydrivers.com`, `cnbeta.com`, `sgpjbg.com`, …) |
 | `ip.global`, no params | absent | 9 | none — patent records are text-only |
@@ -69,34 +69,33 @@ the `## Search Results` envelope.
 | `type=GlobalPatent`, `ipc=H01L` | absent | 10 | `worldwide.espacenet.com` |
 | `type=GlobalPatent`, `date_start=20200101` | absent | 10 | `worldwide.espacenet.com` |
 | `type=GlobalPatent`, `applicant=Huawei`, `date_start=20230101` | absent | 7 | none — text-only |
-| `type=bogus_type` | absent | 8 | none — unknown type value is silently tolerated |
+| `type=bogus_type` | absent | 8 | none — an unknown type value is quietly accepted |
 | `ip.bogus_xyz` | **true** | — | `Invalid tag: ip.bogus_xyz.` |
 
-Consequences used by the corpus:
+How the corpus uses this:
 
-- `hitHosts` measurement pools are `espacenet.com` and `patsnap.com` (suffix
-  matching covers `worldwide.espacenet.com` / `analytics.patsnap.com`); all
+- The `hitHosts` measurement lists are `espacenet.com` and `patsnap.com` (suffix
+  matching covers `worldwide.espacenet.com` / `analytics.patsnap.com`). All
   five parameterized entries define `hitHosts`, and `hitPaths` is `/patent/`
-  where URL lines were observed.
-- The semantic entries use `{domain:"ip"}` (domain-only), matching the
-  finance/academic/code/health semantic stratum. A parameterless
-  `ip.global` spec was tested first, but its responses are frequently
-  text-only (no `- **URL**` line); `parseSearchMarkdown` drops URL-less
-  blocks, so a `hit:true` assertion would be unobservable and the live layer
-  would fail. Supporting text-only records is a provider-normalization
-  follow-up outside this corpus ticket. Domain-only `ip` returns URL-bearing
-  general results, so the vertical marker/hit contract stays measurable.
-  Their `hitHosts` pools come from the 2026-11-07 domain-only samples
-  (topically relevant hosts such as `iam-media.com`, `mondaq.com`,
-  `patsnap.com`, `patents.google.com`); a pool is a measurement candidate,
-  never a hard gate.
-- A bogus `ip` sub-domain is a hard upstream rejection, the surface the
-  `ctrl-i103` control pins; a bogus `type` *value* is not, so no control
-  asserts an error for it.
-- Domain-only `ip` silently falls back to general web (the `ctrl-i102` /
-  `ctrl-i104` surfaces), exactly like the other domains.
+  where URL lines were seen.
+- The semantic entries use `{domain:"ip"}` (domain only), matching the
+  finance/academic/code/health semantic group. We tried a bare
+  `ip.global` spec first, but its replies are often text-only (no
+  `- **URL**` line). `parseSearchMarkdown` drops blocks without a URL, so a
+  `hit:true` check would see nothing and the live test would fail. Keeping
+  text-only records is a provider-normalization task outside this corpus
+  ticket. Domain-only `ip` returns general results that do carry URLs, so the
+  vertical marker and hit rules stay testable. Its `hitHosts` lists come from
+  the 2026-11-07 domain-only samples (relevant hosts such as
+  `iam-media.com`, `mondaq.com`, `patsnap.com`, `patents.google.com`). A list
+  is a measurement candidate, never a hard pass rule.
+- A wrong `ip` sub-domain is rejected upstream; that is the surface
+  `ctrl-i103` locks. A wrong `type` *value* is not rejected, so no control
+  expects an error for it.
+- Domain-only `ip` quietly falls back to general web search (the
+  `ctrl-i102` / `ctrl-i104` surfaces), just like the other domains.
 
-Follow-up probe (2026-11-07, same endpoint) for the rows that stay
+A second probe (2026-11-07, same endpoint) covered the rows that stay
 parameterized:
 
 | Case | Result count | `- **URL**` lines |
@@ -108,13 +107,13 @@ parameterized:
 
 ## Scope
 
-This snapshot is for eval-corpus construction only. It does not add an `ip`
+This snapshot is only for building the eval corpus. It does not add an `ip`
 sub-domain enum to the runtime adapter, and `get_sub_domains` is still not
-wired as a shipped tool (spec #203 Out of Scope).
+connected as a shipped tool (spec #203 Out of Scope).
 
-Known limitation recorded for follow-up: the AnySearch adapter's
+Known limitation left for later: the AnySearch adapter's
 `parseSearchMarkdown` drops blocks with no `- **URL**` line, and `ip.global`
-responses are frequently text-only. Retaining URL-less patent records needs
-a provider-normalization change (result identity without a fabricated URL),
-which is outside #24; the corpus avoids asserting hits on the affected
-`ip.global` shape by using domain-only semantic rows.
+replies are often text-only. Keeping URL-less patent records needs a change in
+how the provider normalizes results (giving a result an identity without
+inventing a URL). That is outside #24; the corpus avoids asserting hits on the
+affected `ip.global` shape by using domain-only semantic rows.
