@@ -54,11 +54,11 @@ name.
 
 Set these at the user/OS level. Never write them into config files:
 `ANYSEARCH_API_KEY`, `ANS_LLM_BASE_URL` + `ANS_LLM_API` + `ANS_LLM_API_KEY`,
-`ANS_LLM_PROVIDER` + `ANS_LLM_MODEL`, and
+`ANS_LLM_PROVIDER` + `ANS_LLM_MODEL`, `ANS_LLM_CONTEXT_WINDOW` (optional), and
 `EXA_API_KEY` / `TAVILY_API_KEY`.
-`ANS_LLM_CONTEXT_WINDOW` is optional. It is the real model window for custom
-endpoints. It feeds request budgeting and the `{fraction}` L0 watermarks on
-`ans chat`. For MCP `ans_chat` session and memory behavior, see
+`ANS_LLM_CONTEXT_WINDOW` is the real model window for custom endpoints. It
+feeds request budgeting and the `{fraction}` L0 watermarks on `ans chat`. For
+MCP `ans_chat` session and memory behavior, see
 [mcp-server.md](mcp-server.md).
 
 ## 3. Plugin server (once per machine)
@@ -88,8 +88,8 @@ stalls headless turns.
 Both files are read: `~/.gemini/antigravity-cli/hooks.json` (preferred) and <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 `~/.gemini/config/hooks.json`. Copy the shipped template <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 `$(npm root -g)/@anysearch-cli/plugin/configs/antigravity/hooks.json` into
-one of them. The top-level key (`"anysearch"`) is just a hook group name. If
-the file already exists, merge under your own names:
+one of them. The top-level key (`"anysearch"`) is an arbitrary hook group
+name. If the file already exists, merge under your own names:
 
 ```json
 {
@@ -158,9 +158,9 @@ named-hook map is a CLI-host contract.
 
 If the server is down, a key is missing, or stdin is malformed, hooks exit 0.
 PreToolUse still sends an explicit allow, and every other event sends `{}`.
-anysearch never blocks the agent. A dead plugin server turns `/index` and
-preheat into no-ops. Contract tests live in `apps/plugin/test/`; the adapter
-sends `allow` on every error path.
+anysearch is fail-open, so it never blocks the agent. A dead plugin server
+turns `/index` and preheat into no-ops. Contract tests live in
+`apps/plugin/test/`; the adapter sends `allow` on every error path.
 
 ## Verification transcript (rerunnable)
 

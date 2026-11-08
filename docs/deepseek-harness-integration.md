@@ -142,7 +142,8 @@ Verified on the wire:
 - `anysearch preheat` context appears in a later request;
 - a denylisted URL in tool arguments returns a tool error
   `requires approval` (URL gating is fail-closed by the /0055 contract);
-- the distilled summary and `POST /index` carry real result entries with
+- the distilled summary appears in the context;
+- `POST /index` carries real result entries with
   `x-anysearch-session-id`.
 
 ## Limitations (this round)

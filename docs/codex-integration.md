@@ -23,9 +23,11 @@ These facts were checked on a real host (0.142.5). Do not guess them:
 - **A matcher is a full-match regex.** `mcp__anysearch__` does not match
   `mcp__anysearch__search_web`. Use `.*(search_web|research_web|recall_memory|query_knowledge|ans_chat)$` or `.*`.
 - **`-c` cannot inject hooks.** `-c hooks.X=[...]` is read as a string
-  ("expected a sequence"). Hook definitions must go into a config file.
+  ("expected a sequence"). Hook definitions must go into a config file
+  layer.
 - **Config layers**: add `[features] hooks = true` plus `[[hooks.<Event>]]`
-  sections in `$CODEX_HOME/config.toml`, or use the project file `.codex/hooks.json` <!-- machine-local: POSIX env-var 路径引用（存量合规化） @ 2026-09-22 -->
+  sections in `$CODEX_HOME/config.toml`, or use the project file
+  `.codex/hooks.json`. <!-- machine-local: POSIX env-var 路径引用（存量合规化） @ 2026-09-22 -->
   It fires when the project is trusted through `[projects.'<path>']` in the
   user config. Hook trust itself is saved as `[hooks.state."<key>"]
   trusted_hash = "sha256:..."` entries. Headless probes use
@@ -34,10 +36,9 @@ These facts were checked on a real host (0.142.5). Do not guess them:
   `ANYSEARCH_*` set in the codex process env reach hook processes.
 - **`required = true` MCP servers hard-exit** when they fail at startup. That
   is by design. anysearch tools and hooks themselves stay fail-open.
-- **PostToolUse context arrives at the next turn.** The distilled
-  `additionalContext` lands at the next-turn boundary, and delivery varies.
-  The lasting value comes from the `/index` side effect: project-index growth
-  is verified.
+- **PostToolUse context delivery varies.** The distilled `additionalContext`
+  lands at the next-turn boundary. The lasting value comes from the `/index`
+  side effect: project-index growth is verified.
 
 ## 1. Install (fresh machine)
 
@@ -54,11 +55,11 @@ commands find them by bin name.
 
 Set these at the user/OS level. Never write them into config files:
 `ANYSEARCH_API_KEY`, `ANS_LLM_BASE_URL` + `ANS_LLM_API` + `ANS_LLM_API_KEY`,
-`ANS_LLM_PROVIDER` + `ANS_LLM_MODEL`, and
+`ANS_LLM_PROVIDER` + `ANS_LLM_MODEL`, `ANS_LLM_CONTEXT_WINDOW` (optional), and
 `EXA_API_KEY` / `TAVILY_API_KEY`.
-`ANS_LLM_CONTEXT_WINDOW` is optional. It is the real model window for custom
-endpoints. It feeds request budgeting and the `{fraction}` L0 watermarks on
-`ans chat`. For MCP `ans_chat` session and memory behavior, see
+`ANS_LLM_CONTEXT_WINDOW` is the real model window for custom endpoints. It
+feeds request budgeting and the `{fraction}` L0 watermarks on `ans chat`. For
+MCP `ans_chat` session and memory behavior, see
 [mcp-server.md](mcp-server.md).
 
 ## 3. Plugin server (once per machine)
@@ -137,6 +138,7 @@ tools. It also learns that hook and server failures degrade gracefully.
 
 ## 6. Failure behavior
 
-If the server is down, tools fall back to direct providers. Hooks exit 0, and
-sessions keep running. Malformed hook stdin also exits 0 with no output.
-Contract tests live in `apps/plugin/test/codex-contract.test.ts`.
+If the server is down, tools fall back to direct providers, and the run keeps
+going (fail-open). Hooks exit 0, and sessions keep running. Malformed hook
+stdin also exits 0 with no output. Contract tests live in
+`apps/plugin/test/codex-contract.test.ts`.

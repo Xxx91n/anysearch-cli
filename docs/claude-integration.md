@@ -40,11 +40,11 @@ ans domain docs       # optional: pin the demo domain
 
 Set these at the user/OS level. Never write them into config files:
 `ANYSEARCH_API_KEY`, `ANS_LLM_BASE_URL` + `ANS_LLM_API=chat` + `ANS_LLM_API_KEY`,
-`ANS_LLM_PROVIDER` + `ANS_LLM_MODEL`, and
+`ANS_LLM_PROVIDER` + `ANS_LLM_MODEL`, `ANS_LLM_CONTEXT_WINDOW` (optional), and
 `EXA_API_KEY` / `TAVILY_API_KEY`.
-`ANS_LLM_CONTEXT_WINDOW` is optional. It is the real model window for custom
-endpoints. It feeds request budgeting and the `{fraction}` L0 watermarks on
-`ans chat`. For MCP `ans_chat` session and memory behavior, see
+`ANS_LLM_CONTEXT_WINDOW` is the real model window for custom endpoints. It
+feeds request budgeting and the `{fraction}` L0 watermarks on `ans chat`. For
+MCP `ans_chat` session and memory behavior, see
 [mcp-server.md](mcp-server.md).
 Claude's own model/proxy env (`ANTHROPIC_*`) lives in `~/.claude/settings.json`. <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 
@@ -101,7 +101,7 @@ What each event does:
 | Event | Behavior |
 |-------|----------|
 | SessionStart | `hookSpecificOutput.additionalContext` carries the ans_* routing card, which goes into context |
-| PreToolUse | recall preheat goes into `hookSpecificOutput.additionalContext`; the URL policy returns `permissionDecision` ask/deny inside the same wrapper |
+| PreToolUse | recall preheat goes into `hookSpecificOutput.additionalContext`; the URL policy sends `permissionDecision` ask/deny inside the same wrapper |
 | PostToolUse | distills `tool_response.results[]` into a `hookSpecificOutput.additionalContext` summary; also POSTs index entries to the plugin server (`/index`) |
 
 ## 6. Plugin form (experimental)
@@ -123,4 +123,5 @@ works once the upstream bug is fixed.
 If the server is down, a key is missing, or stdin is bad, the hook exits 0 and
 the session is unaffected. We checked this on a real host: we killed the
 server on port 33333 in the middle of the run, and the session still
-finished; all SessionStart hooks exited 0. Hooks never block Claude.
+finished; all SessionStart hooks exited 0. The hooks are fail-open, so they
+never block Claude.

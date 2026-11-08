@@ -100,5 +100,6 @@ What each event does:
 
 ## 6. Failure behavior
 
-If the server is down, a key is missing, or stdin is bad, the hook exits 0
-and the host keeps running. Hooks never block CodeBuddy.
+The hooks are fail-open. If the server is down, a key is missing, or stdin is
+bad, the hook exits 0 and the host keeps running. Hooks never block
+CodeBuddy.
