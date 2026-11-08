@@ -19,7 +19,7 @@ If the anysearch server at 127.0.0.1:33333 cannot be reached, every tool still w
 - query_knowledge passes straight through to the domain retrieval adapter (RagAdapterPort).
 - ans_chat runs without memory injection.
 
-A broken hook exits 0. A server outage does not block tool calls, with one exception: when a call carries a URL and the URL policy cannot be read, the call is sent for approval (`ask`), or denied when there is no approval channel (0055).
+A broken hook exits 0. The shared hook code is the same on every host, but URL policy enforcement is not. When a call carries a URL and the URL policy cannot be read, the shared hook returns `ask`. Claude, Codex, CodeBuddy and the dsh plugin pass that answer to the host, so the call waits for approval, and it is denied when there is no approval channel. Cursor does not pass the permission answer on, and Antigravity always allows, so on those two hosts the call can go ahead without approval (0055).
 
 ## Namespace conventions
 
