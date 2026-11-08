@@ -4,9 +4,10 @@
 // Output: .scratch/grill-round-62/tavily-probe-ledger.{json,md}
 // Arms: A default-mode leak / B filter-mode hard / C subdomain directionality /
 // D research-endpoint soft preference (live arm gated by PROBE_TAVILY_RESEARCH=1).
-// Design: a keyless run exits 2 and marks the ledger evidenceStatus=not-verified
-// — SKIPPED arms are not evidence, so the run must not look green; rerun with a
-// key to produce a PASS/LEAK ledger.
+// Design: a run with no conclusive arm (missing/invalid key, all arms ERROR)
+// exits 2 and marks the ledger evidenceStatus=not-verified — SKIPPED/ERROR arms
+// are not evidence, so the run must not look green; rerun with a key to
+// produce a PASS/LEAK ledger.
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 const NL = String.fromCharCode(10);
@@ -24,12 +25,11 @@ async function tavily(endpoint, body) {
   let json = null; try { json = JSON.parse(text); } catch {}
   return { status: res.status, json, text: text.slice(0, 400) };
 }
-const ledger = { schema: "anysearch/tavily-domain-probe@1", ranAt: new Date().toISOString(), key: KEY ? "set" : "unset", evidenceStatus: KEY ? "live" : "not-verified", arms: [] };
+const ledger = { schema: "anysearch/tavily-domain-probe@1", ranAt: new Date().toISOString(), key: KEY ? "set" : "unset", evidenceStatus: "pending", arms: [] };
 const record = (arm) => { ledger.arms.push(arm); console.log("[" + arm.status + "] " + arm.id + " - " + arm.summary); };
 if (!KEY) {
   for (const id of ["A-default-mode", "B-filter-mode", "C-subdomain-direction", "D-research-endpoint"])
     record({ id, status: "SKIPPED", summary: "TAVILY_API_KEY unset - live arm not run", evidence: null });
-  console.error("TAVILY_API_KEY unset — no live evidence produced (exit 2, not a pass)");
 } else {
   try {
     const r = await tavily("/search", { query: "tokio JoinSet rust spawn structured concurrency", max_results: 10, include_domains: ["pnpm.io"] });
@@ -76,9 +76,12 @@ if (!KEY) {
     record({ id: "D-research-endpoint", status: "SKIPPED", summary: "PROBE_TAVILY_RESEARCH=1 not set - changelog documents research include_domains as soft preference", evidence: null });
   }
 }
+const conclusive = ledger.arms.some((a) => a.status === "PASS" || a.status === "LEAK");
+ledger.evidenceStatus = conclusive ? "live" : "not-verified";
+if (!conclusive) console.error("no conclusive evidence this run — evidenceStatus=not-verified (exit 2, not a pass)");
 mkdirSync(OUT_DIR, { recursive: true });
 writeFileSync(join(OUT_DIR, "tavily-probe-ledger.json"), JSON.stringify(ledger, null, 2) + NL, "utf8");
 const md = ["# Tavily include_domains probe ledger (criterion 5)", "", "ranAt: " + ledger.ranAt + " | key: " + ledger.key + " | evidence: " + ledger.evidenceStatus, "", "| arm | status | summary |", "|---|---|---|",...ledger.arms.map((a) => "| " + a.id + " | " + a.status + " | " + a.summary.replace(/\|/g, "/") + " |"), "", "Re-run: TAVILY_API_KEY=tvly-... node scripts/probe-tavily-domains.mjs (PROBE_TAVILY_RESEARCH=1 enables arm D)."].join(NL);
 writeFileSync(join(OUT_DIR, "tavily-probe-ledger.md"), md + NL, "utf8");
 console.log("ledger -> " + join(OUT_DIR, "tavily-probe-ledger.{json,md}"));
-if (!KEY) process.exitCode = 2;
+if (!conclusive) process.exitCode = 2;
