@@ -36,14 +36,16 @@ if (!KEY) {
     if (r.status !== 200) throw new Error("HTTP " + r.status + " " + r.text);
     const urls = (r.json?.results ?? []).map((x) => x.url);
     const leaks = urls.filter((u) => !inDomain(u, ["pnpm.io"]));
-    record({ id: "A-default-mode", status: leaks.length ? "LEAK" : "PASS", summary: leaks.length + "/" + urls.length + " results outside include_domains (default mode)", evidence: { urls, leaks } });
+    const status = urls.length === 0 ? "INCONCLUSIVE" : (leaks.length ? "LEAK" : "PASS");
+    record({ id: "A-default-mode", status, summary: urls.length === 0 ? "0 results — vacuous, no source checked" : leaks.length + "/" + urls.length + " results outside include_domains (default mode)", evidence: { urls, leaks } });
   } catch (e) { record({ id: "A-default-mode", status: "ERROR", summary: String(e.message || e), evidence: null }); }
   try {
     const r = await tavily("/search", { query: "tokio JoinSet rust spawn structured concurrency", max_results: 10, include_domains: ["pnpm.io"], include_domains_mode: "filter" });
     if (r.status !== 200) throw new Error("HTTP " + r.status + " " + r.text);
     const urls = (r.json?.results ?? []).map((x) => x.url);
     const leaks = urls.filter((u) => !inDomain(u, ["pnpm.io"]));
-    record({ id: "B-filter-mode", status: leaks.length ? "LEAK" : "PASS", summary: leaks.length + "/" + urls.length + " results outside include_domains (filter mode)", evidence: { urls, leaks } });
+    const status = urls.length === 0 ? "INCONCLUSIVE" : (leaks.length ? "LEAK" : "PASS");
+    record({ id: "B-filter-mode", status, summary: urls.length === 0 ? "0 results — vacuous, no source checked" : leaks.length + "/" + urls.length + " results outside include_domains (filter mode)", evidence: { urls, leaks } });
   } catch (e) { record({ id: "B-filter-mode", status: "ERROR", summary: String(e.message || e), evidence: null }); }
   try {
     const parent = await tavily("/search", { query: "typescript tsconfig compilerOptions", max_results: 10, include_domains: ["typescriptlang.org"], include_domains_mode: "filter" });
@@ -53,7 +55,8 @@ if (!KEY) {
     const sHosts = [...new Set((sub.json?.results ?? []).map((x) => HOST(x.url)))];
     const parentCoversSub = pHosts.some((h) => h !== "typescriptlang.org" && h.endsWith(".typescriptlang.org"));
     const subPullsParent = sHosts.some((h) => h === "typescriptlang.org" || (h.endsWith(".typescriptlang.org") && h !== "www.typescriptlang.org"));
-    record({ id: "C-subdomain-direction", status: "PASS", summary: "parent hosts=" + JSON.stringify(pHosts) + " sub hosts=" + JSON.stringify(sHosts) + " parentCoversSub=" + parentCoversSub + " subPullsParent=" + subPullsParent, evidence: { pHosts, sHosts, parentCoversSub, subPullsParent } });
+    const status = pHosts.length === 0 && sHosts.length === 0 ? "INCONCLUSIVE" : "PASS";
+    record({ id: "C-subdomain-direction", status, summary: (status === "INCONCLUSIVE" ? "0 hosts — vacuous, no source checked; " : "") + "parent hosts=" + JSON.stringify(pHosts) + " sub hosts=" + JSON.stringify(sHosts) + " parentCoversSub=" + parentCoversSub + " subPullsParent=" + subPullsParent, evidence: { pHosts, sHosts, parentCoversSub, subPullsParent } });
   } catch (e) { record({ id: "C-subdomain-direction", status: "ERROR", summary: String(e.message || e), evidence: null }); }
   if (process.env.PROBE_TAVILY_RESEARCH === "1") {
     try {
