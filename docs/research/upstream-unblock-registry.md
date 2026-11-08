@@ -184,7 +184,7 @@ Tavily 文档写了、或者真出了这个接口，就能做：把 `usage()` �
 
 解除信号: **已经等到了**——`exa-js@2.26.0`（2026-10-19）加了按请求的超时和取消；
 请求选项（`signal`、`timeout`、`body`、`headers`、`query`）是每个方法最后多出来的
-一个参数。本仓还钉着 `^2.18.1`，装上的类型里没有 `signal` / `AbortSignal`，
+一个参数。当时本仓钉的还是 `^2.18.1`，装上的类型里没有 `signal` / `AbortSignal`，
 适配器虽然接了契约里的 signal，但没往下传
 （`packages/retriever/src/providers/exa.ts:36-42,62`）。
 

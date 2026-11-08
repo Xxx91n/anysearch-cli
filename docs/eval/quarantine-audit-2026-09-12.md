@@ -1,7 +1,8 @@
 # F-17 flaky-case audit (round-58 T-2 / D-005, evidence for audit item R-3)
 
 This file is the committed evidence for the 20-run check that ledger D-005 asked for: same
-input every time, every run sorted into one of three buckets. The raw log lives in
+input every time, with each run checked against three buckets; a run can land in more
+than one bucket. The raw log lives in
 `.scratch/t2-audit.log` (not committed); this file keeps the counts and the
 conclusion so the evidence does not vanish with the workspace.
 

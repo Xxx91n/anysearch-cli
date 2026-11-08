@@ -40,7 +40,8 @@ Why:
 
 - **It takes seconds to rebuild**: `python -m venv .venv-tau-proto &&
   .venv-tau-proto/Scripts/pip install -r scripts/tau/requirements.txt` gives you
-  the same set again; every package is pinned to the patch level. Nothing inside
+  the same set again; the main packages are pinned to the patch level, though not
+  every transitive dependency is. Nothing inside
   is irreplaceable — no editable installs, no local data.
 - **Nothing can break**: no tracked references, no history, and the build, tests
   and release check (ship-gate) do not see it (they only use the pnpm workspace).

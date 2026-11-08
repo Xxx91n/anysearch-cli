@@ -19,7 +19,7 @@
 
 ## 背景
 
-MCP TypeScript SDK 有三个桥接件（TypeBox 桥、能力探测、Standard Schema 触发），
+MCP TypeScript SDK 这块有三项桥接工作（TypeBox 桥、能力探测、Standard Schema 触发），
 怎么选取决于 v2 SDK 的下面这些事实：
 
 - `registerTool` 收不收 TypeBox / JSON Schema；
