@@ -175,8 +175,7 @@
   running server does not see the edit.
 - **`rag.adapter = "fts"` reads the store-level shared research archive (#130,
   superseding the #104 CWE-200 disclosure)** — this is a deliberate boundary,
-  not an open question. The store is the isolation unit (code:
-  `Store Principal`),
+  not an open question. The store is the isolation unit,
   and sessions/domains are retrieval sub-scopes. The #104 CWE-200 finding is
   accepted as this deliberate boundary rather than fixed by a session filter.
   A domain that enables `fts` can surface research saved by any session in the
@@ -213,7 +212,7 @@
   cross-call state to use explicit, server-minted handles passed as ordinary
   tool arguments (SEP-2567). The transport `session_id` therefore stays
   empty. A supplied handle is **not** a security boundary. The store is the
-  boundary (`Store Principal`, #130), and a client that can reach the server can
+  boundary (#130), and a client that can reach the server can
   already read the store-level research archive.
 - **`ans_chat` restore points are written in the background (#132)** — the handle
   guarantees session identity, not write timing. `consolidation_state` is
@@ -251,7 +250,7 @@
   rejected by the transport before dispatch with HTTP 400 and JSON-RPC
   `-32000` (unsupported-version gate). Send the negotiated `2025-11-25`
   instead. Pinned by `apps/mcp/test/dual-era.test.ts`.
-- **MCP client attribution is per-request only (#213)** — a `2026-07-28`
+- **MCP client identity is per-request only (#213)** — a `2026-07-28`
   `tools/call` that carries `_meta["io.modelcontextprotocol/clientInfo"]` is
   read from the SDK request context and mapped (`mapMcpClientId`) to the
   observation trace's `client_id` when it reaches a handler. The hand-written

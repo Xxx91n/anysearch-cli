@@ -1,4 +1,4 @@
-// T7 ruling (#105): provider factory construction failure is Fail-Open named
+// T7 ruling (#105): provider factory construction failure is fail-open named
 // degradation — never silent. Each failed arm writes a named stderr line and
 // lands in CompositionResult.providerBuildErrors (id -> message); the healthy
 // path reports an empty record. Missing-key faults word the message as a

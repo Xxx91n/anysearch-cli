@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Anysearch Plugin Server: long-running process for hooks IPC.
+// Anysearch plugin server: long-running process for hooks IPC.
 // hooks core handler不碰SQLite. 写库收敛到长驻server进程.
 // Endpoints:
 // POST /recall — search project index (for preheat)
@@ -72,10 +72,10 @@ function readCurrentPolicy(): UrlPolicy {
 let currentPolicyVersion = readCurrentPolicy().policyVersion;
 let envIgnoredAudited = false; // D7: config:env_override_ignored once per session
 
-// T2 #177: this process is intentionally NOT an engine composition root. The
+// T2 #177: this process is intentionally NOT an engine composition entry point. The
 // hooks/server surface only touches the project-index store and the policy
-// cache; it has no resumable chat/agent session to key a Budget Ledger row or a
-// Sufficiency Anchor on. Not injecting sessionId/BudgetLedger is therefore the
+// cache; it has no resumable chat/agent session to key a budget ledger row or a
+// resume anchor on. Not injecting sessionId/BudgetLedger is therefore the
 // declared fail-open path (the engine gates stay closed), not an oversight.
 // The wired-session paths are `ans chat` (CLI) and `ans_chat` (MCP).
 const store = new ProjectIndexStore(DB_PATH);

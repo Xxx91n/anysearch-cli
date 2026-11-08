@@ -1,4 +1,4 @@
-// Fused freshness factor tests.
+// Freshness factor tests.
 // Covers: band boundaries, pinned/evergreen exemptions, fusion monotonicity,
 // year-literal-free QDF, kernel decayMultiplier legacy checks.
 

@@ -1,4 +1,4 @@
-// Retroaererd Engine test (G009).
+// Retrieval engine test (G009).
 // Mock providers: verify fanout, RRF fusion, sufficiency gate, cross-engine verify.
 // ponytail: no test framework, assert-based demo.
 

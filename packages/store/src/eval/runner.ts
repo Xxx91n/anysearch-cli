@@ -104,7 +104,7 @@ export interface CaseResult {
   accessEvents?: { total: number; histogram: Record<string, number>; units: number; fittableUnits: number; firstAt: number | null; lastAt: number | null };
   // alert-on-silence — chained event write failures per case (observational, never gated).
   eventWriteFailures?: number;
-  // abstain smoke outcome per case (observational only, never gated).
+  // abstain observation outcome per case (observational only, never gated).
   abstain?: { expectAbstain: boolean; abstain: boolean; tier: string; fingerprintOk: boolean };
 }
 
@@ -200,7 +200,7 @@ export interface ObservationalZone {
   undoReentryEvents: { status: "ok"; count: number } | SkipMarker;
   // alert-on-silence counter, always reported (silence itself is the signal).
   eventWriteFailures: { status: "ok"; count: number };
-  // abstain smoke metrics, pair-reported (abstainRate + falseAbstainRate).
+  // abstain observation metrics, pair-reported (abstainRate + falseAbstainRate).
   abstain: { status: "ok"; n: number; abstainRate: number; falseAbstainRate: number } | SkipMarker;
   // report-as-contract fields. armDeltas is computed by the memory eval;
   // webProviderLedger fields are emitted by RetroaererdEngine per web run and remain
@@ -894,8 +894,8 @@ export function computeMetrics(cases: CaseSpec[], results: CaseResult[], abstain
           : skip("no archive ops present in this eval run — revival main ratio is inert", "gate-not-met"),
         eventWriteFailures: { status: "ok" as const, count: evWriteFails },
         undoReentryEvents: skip("undo_reentry needs a 30-day post-undo window — outside the single-run eval horizon (observational sub-metric)", "offline-deferred"),
-        // abstain smoke — pair-reported abstainRate + falseAbstainRate (never gated).
-        abstain: abstainZone ?? skip("no abstain_* cases registered — abstain smoke zone empty", "gate-not-met"),
+        // abstain observation — pair-reported abstainRate + falseAbstainRate (never gated).
+        abstain: abstainZone ?? skip("no abstain_* cases registered — abstain observation zone empty", "gate-not-met"),
         armDeltas,
         maxLexicalOverlap: PARAPHRASE_MAX_LEXICAL_OVERLAP,
         exclusiveHits: skip("web provider ledger is emitted by RetroaererdEngine.metadata.webProviderLedger; memory eval has no web fanout", "offline-deferred"),
@@ -914,13 +914,13 @@ export async function runAll(cases: CaseSpec[], opts?: { excludeGroups?: readonl
   const runnable = excluded.size ? cases.filter((c) => !excluded.has(c.group)) : cases;
   const results: CaseResult[] = [];
   for (const c of runnable) results.push(await runCase(c));
-  // abstain smoke runs the same runCase switch but stays out of
+  // abstain observation runs the same runCase switch but stays out of
   // results/totals/fingerprint — verdicts feed ObservationalZone.abstain only.
   const abstainResults: CaseResult[] = [];
   for (const c of ABSTAIN_CASES) abstainResults.push(await runCase(c));
   const abstainRecs = abstainResults.map((r) => r.abstain).filter((a): a is NonNullable<typeof a> => !!a);
   const abstainZone: ObservationalZone["abstain"] = abstainRecs.length === 0
-    ? skip("no abstain_* cases registered — abstain smoke zone empty", "gate-not-met")
+    ? skip("no abstain_* cases registered — abstain observation zone empty", "gate-not-met")
     : {
         status: "ok" as const,
         n: abstainRecs.length,

@@ -1,4 +1,4 @@
-// ans entity: entity merge execution + candidate review belt (-D4).
+// ans entity: entity merge execution + candidate review list (-D4).
 // Subcommands: merge <fromId> <toId> | unmerge <logId> | review [keep|drop <id>]
 
 import { createPersistentEngine } from "../db";
@@ -15,7 +15,7 @@ interface EntityStore {
 function printHelp(): void {
   process.stdout.write(
     [
-      "ans entity — entity merge execution + review belt (0032)",
+      "ans entity — entity merge execution + review list (0032)",
       "",
       "Commands:",
       "  merge <fromId> <toId>   Merge entity fromId into toId (destructive redirect + snapshot)",

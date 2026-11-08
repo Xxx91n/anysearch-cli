@@ -1,4 +1,4 @@
-// IR Summary Schema: shared constants for L0 rolling summary 5-section format.
+// Rolling summary format: shared constants for the L0 five-section summary.
 // versioned IR 5-segment contract.
 // extracted from pi-runtime.ts inline constants.
 

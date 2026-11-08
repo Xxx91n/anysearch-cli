@@ -1,4 +1,4 @@
-// (Q2=B): FTS5 Query Tokenization shared helper.
+// (Q2=B): shared FTS5 query tokenizer.
 // Shared, package-local copy so any class with `db.prepare` can reuse; no better-sqlite3 type import.
 // SANITIZE order is intentional: sanitize user words to alphanumeric + " " before tokenization (CWE-20).
 // Tokenization = regex word split on [A-Za-z0-9] sequences; CJK chars fall to phrase OR branch.

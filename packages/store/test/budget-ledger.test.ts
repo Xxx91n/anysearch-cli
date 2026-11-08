@@ -1,4 +1,4 @@
-// Budget Ledger test (G004). Mole reserve-then-settle pattern.
+// Budget ledger test (G004). Mole reserve-then-settle pattern.
 // Self-check via assert-based demo (ponytail: no test framework).
 // Uses SqliteSessionStore to create session, then BudgetLedger on same db.
 

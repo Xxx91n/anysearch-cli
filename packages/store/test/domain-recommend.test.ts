@@ -169,9 +169,8 @@ async function main() {
     const sentence = await recommendDomains("我想找深度中文研究相关的文献资料推荐一下", CJK_METAS);
     assert(sentence.decision === "none", "long CJK sentence with no contiguous substring => abstain (got " + sentence.decision + ")");
 
-    // The substring stage is appended below the BM25 arm, not fused into it (GLOSSARY
-    // "Dual DB / Two-Stage Recall"), and it never ties the weakest hit (a tie would zero the
-    // margin). "研究 provider" is the query that actually reaches the stage: 研究 is not an
+    // The substring stage is appended below the BM25 arm, not fused into it (two-stage recall),
+    // and it never ties the weakest hit (a tie would zero the margin). "研究 provider" is the query that actually reaches the stage: 研究 is not an
     // indexed token prefix, so zh-research can only come from the substring stage, while
     // `provider` gives the BM25 arm a hit.
     const bothArms = await recommendDomains("研究 provider", CJK_METAS);

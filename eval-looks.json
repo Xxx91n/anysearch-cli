@@ -695,7 +695,7 @@
           "refStatus": "historical-local",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "判据2 域内 must-hit 成对锚——与 docs-g0007 同域同语言同 intent 家族的合法域内提问必须答出，防止 post-filter 过度弃答。"
+        "notes": "判据2 域内 must-hit 成对锚——与 docs-g0007 同域同语言同 intent 家族的合法域内提问必须答出，防止 post-filter 过度拒答。"
       },
       {
         "id": "docs-g0013",
@@ -742,7 +742,7 @@
           "refStatus": "historical-local",
           "harvestedAt": "2026-09-14"
         },
-        "notes": "判据4 冷门域 0 结果——cold.toml allowlist 仅 nonexistent.invalid，任何到达均被闸，零幸存者即弃答；端到端臂见 apps/cli/test/abstain.test.ts live arm。"
+        "notes": "判据4 冷门域 0 结果——cold.toml allowlist 仅 nonexistent.invalid，任何到达均被闸，零幸存者即拒答；端到端臂见 apps/cli/test/abstain.test.ts live arm。"
       },
       {
         "id": "vert-f0001",
@@ -785,7 +785,7 @@
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
-        "notes": "R84 T1 契约钉：参数化垂域 spec 全键下发（domain+sub_domain+paramsKeys）+extra.vertical 标记 +degraded 臂名单（incapable stub 收 general 扇出不收 vertical）。"
+        "notes": "R84 T1 契约钉：参数化垂域 spec 全键下发（domain+sub_domain+paramsKeys）+extra.vertical 标记 +degraded 臂名单（incapable stub 收 general 多源并发查找，不收 vertical）。"
       },
       {
         "id": "vert-f0002",

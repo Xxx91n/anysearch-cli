@@ -1,4 +1,4 @@
-// Retroaererd Engine: bounded budget + serialized sufficiency-gate + fanout convergence + RRF fusion.
+// Retrieval engine: bounded budget + serialized sufficiency-gate + fanout convergence + RRF fusion.
 // decision 4: Budget in store layer (BudgetLedger), sufficiency gate in retriever fanout layer.
 // atomcode research (paperfoot source-level): JoinSet completion-order collect, enough-results-then-collect,
 // 1.5s grace window, abort_all + drain, providers_cancelled distinct state, RRF(k=60) fusion.
@@ -34,7 +34,7 @@ export interface EngineConfig {
   // EngineConfig.budget is a legacy field: search() never reads it. Budget
   // enforcement is wired through the injected BudgetLedgerPort + sessionId —
   // per-call reserve/settle (decision 2C) here, token/USD settle in
-  // PiAgentRuntime (#103, kernel level). Production composition-root
+  // PiAgentRuntime (#103, kernel level). Production composition entry point
   // injection is #177 and PiAgentRuntime production wiring is #178.
   // Token reserve design is settled in #186 (T9), with implementation
   // tickets #187 merged (budget foundation) / #188 still open; USD stays
@@ -652,7 +652,7 @@ export class RetroaererdEngine {
       try {
         await this.anchors.saveAnchor(sessionId, "sufficiency", anchorPayload);
       } catch (e) {
-        process.stderr.write("[anysearch] sufficiency anchor write failed: " + String(e instanceof Error ? e.message : e) + "\n");
+        process.stderr.write("[anysearch] resume anchor write failed: " + String(e instanceof Error ? e.message : e) + "\n");
       }
     }
 
@@ -702,7 +702,7 @@ export class RetroaererdEngine {
           nativeScores,
         },
         observational: { webProviderLedger },
-        // first-class abstain marker — domain_filter_empty when
+        // abstain marker — domain_filter_empty when
         // the authoritative gate leaves zero results (empty post-gate pool is
         // structurally abstain; eval/abstain.ts chain_empty is the sibling rule,
         // shouldBridgeToAbstain is the weak-claims counterpart). Never an error.

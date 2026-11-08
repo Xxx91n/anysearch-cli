@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // scripts/ship-gate.mjs
 //
-// — Product Smoke Gate (Blocking). Single-file Node stdlib only.
+// — Release smoke gate (blocking). Single-file Node stdlib only.
 // — asserts all published package versions != "0.0.0".
 // — Ponytail floor: no execa / chalk / external packages.
 //
@@ -364,7 +364,7 @@ function stepStaticAssertions() {
       report("pass", " score_kind discipline: no bare fused score on NormalizedResult");
     }
 
-    // 1j.: KG-lite relation layer static assertions.
+    // 1j.: entity-relation layer static assertions.
     {
       const relPath = path.join(ROOT, "packages/store/src/relation.ts");
       if (!fs.existsSync(relPath)) fail("1j: packages/store/src/relation.ts missing");
@@ -380,7 +380,7 @@ function stepStaticAssertions() {
       if (!ss.includes('label: "relation"')) fail("1j: session-store.ts missing the fifth-arm label (RRF extraArms wiring)");
       const cliRel = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/relation.ts"), "utf8");
       if (!cliRel.includes("backfill-relations")) fail("1j: CLI relation command missing backfill-relations");
-      report("pass", " KG-lite layer: relation module + edges schema + store hooks + fifth-arm label + CLI present");
+      report("pass", " entity-relation layer: relation module + edges schema + store hooks + fifth-arm label + CLI present");
     }
     // 1n.: consolidation + forgetting layer static assertions.
     {
@@ -509,7 +509,7 @@ function stepStaticAssertions() {
       if (!ledgerSrc.includes(tok)) fail("override ledger missing" + tok);
   }
 
-  // 1n.: dual-gate domain filter + first-class abstain must exist
+  // 1n.: domain filter + abstain marker must exist
   // as source-level contracts, and the eval-looks golden ledger must carry
   // the four criterion anchors (must-abstain / paired must-hit / stub-
   // provider degradation / cold-domain zero-result).

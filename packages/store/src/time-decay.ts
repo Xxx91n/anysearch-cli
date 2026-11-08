@@ -1,5 +1,5 @@
-// Time Edge Effect: BM25 x freshness factor with tiered tau, fused recency+frequency reinforcement.
-// fused freshness factor band [0.3, 1.5] replaces interpolation (w retired).
+// Time decay: BM25 x freshness factor with tiered tau, fused recency+frequency reinforcement.
+// freshness factor band [0.3, 1.5] replaces interpolation (w retired).
 // References: Mem0 production band 0.3/1.5 (score factor docs), Mem0 issue #5330 half-life defaults,
 // Zep bi-temporal invalidation, Google QDF (spike-driven, no year literals).
 
@@ -74,7 +74,7 @@ export interface FreshnessInput {
   nowMs?: number;                 // test seam
 }
 
-// Fused freshness factor: ONE multiplicative band combining
+// Freshness factor: ONE multiplicative band combining
 // creation-age decay, last-accessed recency, access-count frequency.
 // Bounds hold by construction: decay in [0.3, 1], reinforcement in [1, 1.5];
 // clamped to [0.3, 1.5] to stay safe under any input.

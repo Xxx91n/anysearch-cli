@@ -1,4 +1,4 @@
-// Recovery Digest (#189): read side of the Sufficiency Anchor.
+// Recovery summary (#189): read side of the resume anchor.
 //
 // A resumed session reads the last "sufficiency" anchor and turns it into one
 // small metadata block for the agent. The design is settled in #186 (T8):
@@ -138,7 +138,7 @@ export function buildRecoveryDigest(payload: unknown): string | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
   const p = payload as Record<string, unknown>;
   // The engine always writes the query. An object without one is not a
-  // sufficiency anchor, so skip it instead of injecting a record of unknowns.
+  // resume anchor, so skip it instead of injecting a record of unknowns.
   const queryValue = p.query;
   if (typeof queryValue !== "string" || !oneLine(queryValue)) return undefined;
   const mvs = p.mvs && typeof p.mvs === "object" && !Array.isArray(p.mvs)

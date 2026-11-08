@@ -1,4 +1,4 @@
-// Recovery Digest (#189): read side of the Sufficiency Anchor.
+// Recovery summary (#189): read side of the resume anchor.
 //
 // The acceptance rule is "Recall is not injection": these tests assert the
 // final model-facing text, not just that an anchor was read. They also pin the

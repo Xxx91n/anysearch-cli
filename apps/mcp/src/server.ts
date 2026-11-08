@@ -1,4 +1,4 @@
-// MCP Server factory: buildServer() registers 5 tools via Per-tool Barrel.
+// MCP Server factory: buildServer() registers 5 tools via per-tool modules.
 // context-management mental model (context-mode style).
 // 5 MCP tools — search_web / research_web / recall_memory / query_knowledge / ans_chat.
 // factory pattern, era-agnostic, entry selects transport.

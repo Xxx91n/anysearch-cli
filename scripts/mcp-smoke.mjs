@@ -4,7 +4,7 @@
 // Complements the source-level acceptance tests (apps/mcp/test/sdk-v2-schema.test.ts,
 // dual-era.test.ts) by exercising the real packed binary on BOTH transports:
 //   - stdio:            initialize + tools/list, all 5 tools + type descriptions,
-//                       Dual Era negotiation (legacy echo + 2026-07-28 -> 2025-11-25).
+//                       two-generation protocol negotiation (legacy echo + 2026-07-28 -> 2025-11-25).
 //   - Streamable HTTP:  stateless per-request server, /health readiness, initialize +
 //                       tools/list (with and without a prior initialize), all 5 tools.
 //
@@ -82,7 +82,7 @@ function stdioClient(args) {
 
 async function stdioSmoke() {
   process.stdout.write("stdio smoke (built dist):\n");
-  // Modern claim -> negotiated down to latest legacy (Dual Era fallback, unchanged).
+  // Modern claim -> negotiated down to latest legacy (two-generation fallback, unchanged).
   {
     const c = stdioClient(["--transport", "stdio"]);
     try {

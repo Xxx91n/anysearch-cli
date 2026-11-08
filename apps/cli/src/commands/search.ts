@@ -1,4 +1,4 @@
-// ans search: run a retrieval query through the Retroaererd Engine.
+// ans search: run a retrieval query through the retrieval engine.
 // decision 3A: uses createEngine factory, not inline wiring.
 
 import type { Mode } from "@anysearch-cli/retriever";

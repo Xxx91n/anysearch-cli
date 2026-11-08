@@ -3,7 +3,7 @@
 // Design: minimal *real* implementation — no new index, no embedding
 // dependency. The "fts" adapter reuses the existing FTS5 recall surface
 // (SessionStore.searchMemory), so the rag→transformContext mapping of
-// Domain Full-Stack is real rather than a placeholder.
+// full domain wiring is real rather than a placeholder.
 //
 // Registry keyed by domain.rag.adapter (three states):
 //   "none" / unset -> no injection … EXCEPT the pre-#104 legacy case: a note
@@ -35,7 +35,7 @@ export const KNOWN_RAG_ADAPTERS = [RAG_ADAPTER_NONE, RAG_ADAPTER_NOTE, RAG_ADAPT
 
 /**
  * Design: volatility is encoded as an explicit adapter-id allowlist — #131
- * places query-driven adapters on the latest user message (hot zone) and
+ * places query-driven adapters on the latest user message and
  * session-static operator text on the first, and an id list keeps the #90 port
  * contract (`retrieve(query, limit)`) frozen instead of adding a placement flag
  * to every adapter. Rejected alternative: a boolean on `RagAdapterPort` — it
@@ -44,7 +44,7 @@ export const KNOWN_RAG_ADAPTERS = [RAG_ADAPTER_NONE, RAG_ADAPTER_NOTE, RAG_ADAPT
  * block is recomputed from the user's current question every turn.
  *
  * #131 splits Stage-1 placement by volatility: these adapters land on the
- * LATEST user message (attention hot zone) and key their query on that turn's
+ * LATEST user message and key their query on that turn's
  * pre-injection text, while session-static operator text (`note`, and `none` +
  * leftover `config.note`) stays on the FIRST user message. Keep this list in
  * sync when adding a new retrieval adapter — a new id that is not listed here

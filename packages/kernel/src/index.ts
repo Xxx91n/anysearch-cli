@@ -1,4 +1,4 @@
-// @anysearch-cli/kernel: Retroaererd Engine ports + agent runtime
+// @anysearch-cli/kernel: retrieval engine ports + agent runtime
 export * from "./ports";
 export * from "./runtime";
 export * from "./engine";
@@ -6,7 +6,7 @@ export * from "./pi-runtime";
 export * from "./memory-pipeline";
 // rag adapter layer (#35): registry + note/fts adapters, injected at Stage-1.
 export * from "./rag-adapter";
-// Recovery Digest (#189): read side of the Sufficiency Anchor.
+// Recovery summary (#189): read side of the resume anchor.
 export * from "./recovery-digest";
 // message-shape helpers for the inject seam (#104: pi normalizes to content blocks).
 export * from "./message-text";

@@ -1,5 +1,5 @@
 // test closure: combine (destructive redirect + snapshot), unmerge (bounded + override),
-// candidate review belt (hit_count, keep/drop), merge telemetry.
+// candidate review list (hit_count, keep/drop), merge telemetry.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -92,7 +92,7 @@ const eIdent = entityIdByNorm("graphql") as number;
   console.log("step3 type gate: OK");
 }
 
-// --- step 4: candidate review belt — keep merges, drop keeps separate ---
+// --- step 4: candidate review list — keep merges, drop keeps separate ---
 await put("PineconeDB index stats");
 await put("PineconeDBX managed tier"); // trigram sim 0.889 -> Fellegi-Sunter review band
 {
@@ -133,14 +133,14 @@ await put("KeyrocketAB nightly run"); // sim 0.800 -> review band
 await put("Ops run HazelCast cluster");
 const eHz = entityIdByNorm("hazelcast") as number;
 assert.ok(eHz, "hazelcast entity");
-// 7 identifiers in one title: cap keeps first 6, "Hazelcast" overflows into the review belt.
+// 7 identifiers in one title: cap keeps first 6, "Hazelcast" overflows into the review list.
 const overflowTitle = "AlphaX BetaX GammaX DeltaX EpsilonX ZetaX HazelCast notes";
 await put(overflowTitle);
 await put(overflowTitle + " again");
 {
   const rows = await store.listEntityReview();
   const cand = rows.find((r) => r.sourceName === "HazelCast" && r.targetEntityId === eHz);
-  assert.ok(cand, "overflow candidate in review belt");
+  assert.ok(cand, "overflow candidate in review list");
   assert.equal(cand.hitCount, 2, "re-hit increments hit_count");
   assert.equal(cand.suggested, true, "hit_count>=2 flagged suggested");
   const dupRows = raw.prepare("SELECT COUNT(*) as n FROM entity_merge_log WHERE kind = "+String.fromCharCode(39)+"candidate"+String.fromCharCode(39)+" AND source_name = "+String.fromCharCode(39)+"HazelCast"+String.fromCharCode(39)).get() as { n: number };

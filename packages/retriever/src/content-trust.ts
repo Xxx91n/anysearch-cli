@@ -1,4 +1,4 @@
-// Content Trust Boundary and Indirect Prompt Injection Defense.
+// Untrusted content handling and indirect prompt-injection defense.
 // Owned by the RRF/retrieval boundary; kernel and eval consumers import from this package.
 // Pure deterministic layer: source labels, fixed-point sanitization, schema gate,
 // authorization predicates, and tool-result JSON wrapping.

@@ -64,12 +64,12 @@ export interface QuarantinedMemory {
   counterpartTitle: string | null; // live counterpart for the same entity, shown for judgment
   counterpartSnippet: string | null;
 }
-// T0 hot zone types.
+// T0 durable preference types.
 export interface T0PreferenceInput {
   key: string;
   value: string;
   scope?: string; // "global" or project root path; default "global"
-  source: "explicit" | "correction"; // C-prime gate channels
+  source: "explicit" | "correction"; // T0 promote channels
   provenance?: { event: string; at: string; why: string };
   sourceLabel?: "system" | "user" | "retrieved" | "tool" | "memory";
   traceId?: string;
@@ -164,15 +164,15 @@ export interface SessionStore {
   saveResults(sessionId: string, results: NormalizedResult[]): Promise<void>;
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
   getAnchors(sessionId: string): Promise<ResumeAnchor[]>;
-  // search Research Memory layer for recall_memory MCP tool.
+  // search the research archive for the recall_memory MCP tool.
   searchMemory(query: string, limit?: number): Promise<MemoryHit[]>;
   // (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
   searchMemoryMulti(queries: string[], limit?: number): Promise<MemoryHit[]>;
   // (Q3=A): write-path adjudication with keyMemories carrying evidence score.
   // Caller supplies quarantine check readiness (peer-conflict scan split into its own stmt).
   adjudicateMemory(sessionId: string, keyMemories: KeyMemoryInput[]): Promise<AdjudicationResultItem[]>;
-  // T0 hot zone — durable preference layer.
-  // promotePreference: deterministic write gated by caller (C-prime channels: /remember explicit, correction-count>=2).
+  // T0 durable preference layer.
+  // promotePreference: deterministic write gated by caller (T0 promote channels: /remember explicit, correction-count>=2).
   // demotePreference: conflict(d-i)/user(d-iii)/eviction(d-ii); sets invalid_at only (never drop, recoverable).
   // touchPreference: updates last_accessed (eviction order base).
   // listPreferences: live entries for MEMORY.md projection (global+project scopes, project wins same-key).
@@ -192,10 +192,10 @@ export interface SessionStore {
   unmergeEntity(logId: number): Promise<{ ok: boolean; error?: string }>;
   // alias-append undo (exposed for the CLI unmerge entry point).
   undoEntityMerge(logId: number): boolean;
-  // candidate review belt (list + keep/drop resolution, quarantine pattern).
+  // candidate review list (list + keep/drop resolution, quarantine pattern).
   listEntityReview(): Promise<EntityReviewRow[]>;
   resolveEntityReview(id: number, action: "keep" | "drop"): Promise<{ ok: boolean; error?: string }>;
-  // entity-relation edge layer (KG-lite fifth retrieval arm).
+  // entity-relation edge layer (fifth retrieval arm).
   relationArmRows(query: string, limit?: number): MemoryHit[];
   listRelations(opts?: { entity?: string; limit?: number }): Promise<RelationRow[]>;
   backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean; fullRefresh?: boolean }): Promise<BackfillRelationsResult>;
@@ -208,7 +208,7 @@ export interface SessionStore {
 // covers case-insensitive / JSON-escape / whitespace-collapse / NFKC / bounded-base64 variants
 // at all 4 write entries and both search exits. Known blind spots: truncated secrets, novel encodings.
 
-// one unresolved candidate row in the entity review belt.
+// one unresolved candidate row in the entity review list.
 export interface EntityReviewRow {
   id: number;
   sourceName: string;
@@ -438,14 +438,14 @@ export class SqliteSessionStore implements SessionStore {
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN quarantine TEXT"); } catch {}
     // evidence persisted on quarantined rows for the review list (atomcode: confidence for queue ordering, never for auto-adjudication).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN evidence REAL"); } catch {}
-    // candidate review belt columns on entity_merge_log.
+    // candidate review list columns on entity_merge_log.
     try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN hit_count INTEGER NOT NULL DEFAULT 1"); } catch {}
     try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN resolved TEXT"); } catch {}
     // soft archive (reversible forgetting).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"); } catch {}
-    // T0 hot zone — t0_preferences is the single source of truth; MEMORY.md is a
+    // T0 durable preferences — t0_preferences is the single source of truth; MEMORY.md is a
     // regenerated materialized projection (temp+fsync+rename). scope: "global" | project root path.
-    // correction_count drives the C-prime promote gate (>=2 cross-session corrections = implicit promote).
+    // correction_count drives the T0 promote rule (>=2 cross-session corrections = implicit promote).
     // invalid_at non-null = demoted (d-i conflict / d-iii /forget / d-ii eviction); row is quarantined, never dropped.
     this.db.exec(`CREATE TABLE IF NOT EXISTS t0_preferences (
   key TEXT NOT NULL,
@@ -453,7 +453,7 @@ export class SqliteSessionStore implements SessionStore {
   scope TEXT NOT NULL DEFAULT 'global',
   modified TEXT NOT NULL DEFAULT (datetime('now')),
   last_accessed TEXT NOT NULL DEFAULT (datetime('now')),
-  source TEXT NOT NULL, -- "explicit" (/remember) | "correction" (C-prime count>=2)
+  source TEXT NOT NULL, -- "explicit" (/remember) | "correction" (T0 promote count>=2)
   invalid_at TEXT,
   demote_reason TEXT,
   correction_count INTEGER NOT NULL DEFAULT 0,
@@ -492,7 +492,7 @@ export class SqliteSessionStore implements SessionStore {
       searchResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND r.session_id = ? AND r.archived = 0 ORDER BY rank LIMIT ?"),
       saveAnchor: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)"),
       getAnchors: this.db.prepare("SELECT id, session_id as sessionId, anchor_type as anchorType, payload, created_at as createdAt FROM resume_anchors WHERE session_id = ? ORDER BY id"),
-      // recall_memory searches Research Memory (retrieval_results_fts), not messages.
+      // recall_memory searches the research archive (retrieval_results_fts), not messages.
       // ->: freshness_factor in ORDER BY + bi-temporal filter (valid_until IS NULL).
      // MemoryHit.role <-- r.title, MemoryHit.content <-- r.snippet (recall_memory maps these fields).
      searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) ORDER BY rank LIMIT ?"),
@@ -533,7 +533,7 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   /**
-   * T2 #177: the Budget Ledger over this store's single connection.
+   * T2 #177: the budget ledger over this store's single connection.
    *
    * Registration (#187 `initBudget` / `clearBudgetCaps`) and the engine
    * composition root share this cached instance, so caps, reserve and settle all
@@ -549,7 +549,7 @@ export class SqliteSessionStore implements SessionStore {
     return { ...this.accessEventTel };
   }
 
-  // T0 hot zone methods.
+  // T0 durable preference methods.
   // All writes are deterministic; gate logic lives in caller (A+C+B, not here).
 
   async promotePreference(input: T0PreferenceInput): Promise<{ action: "promoted" | "rejected"; reason?: string }> {
@@ -626,7 +626,7 @@ export class SqliteSessionStore implements SessionStore {
     return Array.from(merged.values());
   }
 
-  // C-prime correction-count channel.
+  // T0 promote correction-count channel.
   // Increment correction_count; if >=2 and not already promoted, promote implicitly.
   // Returns current count for caller to decide projection trigger.
   async recordCorrectionOnPreference(key: string, scope: string): Promise<{ correctionCount: number }> {
@@ -728,7 +728,7 @@ export class SqliteSessionStore implements SessionStore {
     this.stmts.append.run(sessionId, message.role, message.content);
   }
 
-  // SECURITY: escape FTS5 special chars, then FTS5 Query Tokenization (CWE-20).
+  // SECURITY: escape FTS5 special chars, then tokenize the FTS5 query (CWE-20).
   private fts5Escape(query: string): string {
     return fts5EscapeQuery(query);
   }
@@ -746,9 +746,9 @@ export class SqliteSessionStore implements SessionStore {
   // the external contract — do not consume from apps/ or kernel.
   public lastArmProvenance: ArmProvenance | null = null;
 
-  // Design: Research Memory reads are store-scoped, not session- or domain-scoped —
+  // Design: research archive reads are store-scoped, not session- or domain-scoped —
   // session_id is per-call (MCP search_web mints a fresh session each call) and no
-  // row records a domain origin; the store is the isolation unit (Store Principal).
+  // row records a domain origin; the store is the isolation unit.
   // See docs/rag-adapters.md §作用域 for the evidence and rejected alternatives.
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
    const safeQuery = this.fts5Escape(query);
@@ -1010,7 +1010,7 @@ export class SqliteSessionStore implements SessionStore {
     }
     return { scanned: rows.length, embedded, failed };
   }
-  // ---- episodic-to-semantic consolidation (D2/D4) + reversible forgetting (D5) ----
+  // ---- turn older episodes into semantic memories (D2/D4) + reversible forgetting (D5) ----
 
   async consolidateMemory(opts?: { dryRun?: boolean; limit?: number }): Promise<ConsolidateReport> {
     return consolidateMemoryRun(this.db, { summarize: this.consolidateSummarize, classify: this.consolidateClassify }, opts ?? {});
@@ -1064,7 +1064,7 @@ export class SqliteSessionStore implements SessionStore {
     const known = new Set(this.liveEntities().flatMap((e) => [e.nameNorm, ...e.aliases]));
     const candidates: EntityCandidate[] = [];
     if (km.entity && !km.entity.includes("://")) candidates.push({ name: km.entity, type: "declared" });
-    for (const c of extractEntityCandidates(text, known, MAX_CANDIDATES * 2)) candidates.push(c); // 2x cap — overflow tail feeds the review belt
+    for (const c of extractEntityCandidates(text, known, MAX_CANDIDATES * 2)) candidates.push(c); // 2x cap — overflow tail feeds the review list
     if (candidates.length === 0 && this.entityLlmFallback) {
       // LLM backfill (fail-open) — offline/no-key keeps rule output (here: empty).
       try { const extra = await this.entityLlmFallback(text); if (extra) candidates.push(...extra); } catch {}
@@ -1079,7 +1079,7 @@ export class SqliteSessionStore implements SessionStore {
       linkedRefs.push({ id: entityId, name: c.name, nameNorm: refNorm, entityType: c.type, preKnown: known.has(refNorm) });
     }
     try { await this.linkRelations(memoryId, km, linkedRefs); } catch {} // fail-open, same discipline as linkEntities
-    // extraction overflow (capped out) enters the candidate review belt — never silent loss.
+    // extraction overflow (capped out) enters the candidate review list — never silent loss.
     const overflow = candidates.slice(MAX_CANDIDATES + 1);
     this.entityTel.truncated += overflow.length;
     for (const c of overflow) this.logOverflowCandidate(c);
@@ -1099,7 +1099,7 @@ export class SqliteSessionStore implements SessionStore {
       .run("candidate", sourceName, targetId, JSON.stringify(detail));
   }
 
-  // Overflow candidates only enter the review belt when they pass the Fellegi-Sunter review band
+  // Overflow candidates only enter the review list when they pass the Fellegi-Sunter review band
   // against a live entity (sub-band noise is just dropped by the cap, as before).
   private logOverflowCandidate(c: EntityCandidate): void {
     const norm = normalizeEntityName(c.name);
@@ -1180,7 +1180,7 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   // entity arm — read-only resolution (exact/containment, no mutation), arm-level valid_until+quarantine guard.
-  // ---- destructive merge execution (combine / unmerge / review belt / telemetry) ----
+  // ---- destructive merge execution (combine / unmerge / review list / telemetry) ----
 
   // destructive redirect merge. Single better-sqlite3 transaction (deferred);
   // snapshot is written in the SAME transaction as the redirect (acceptance requires it).
@@ -1318,7 +1318,7 @@ export class SqliteSessionStore implements SessionStore {
     }
   }
 
-  // candidate review belt — unresolved candidates, hit_count desc (Senzing escalation).
+  // candidate review list — unresolved candidates, hit_count desc (Senzing escalation).
   public async listEntityReview(): Promise<EntityReviewRow[]> {
     const rows = this.db
       .prepare(
@@ -1388,7 +1388,7 @@ export class SqliteSessionStore implements SessionStore {
     return rows;
   }
 
-  // ---- KG-lite entity-relation edge layer ----
+  // ---- entity-relation edge layer ----
 
   // Write-path extraction: rules first; LLM seam only when rules found nothing (fail-open).
   private async linkRelations(memoryId: number, km: KeyMemoryInput, linked: LinkedEntityRef[]): Promise<void> {

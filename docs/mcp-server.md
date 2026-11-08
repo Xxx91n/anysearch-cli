@@ -209,8 +209,8 @@ tells servers to use explicit, server-minted handles (SEP-2567).
   register the session, the call still answers but returns **no**
   `sessionId`. Clients must check for the handle before relying on
   continuity.
-- The handle is **not** a security boundary. The store is the isolation unit
-  (code: `Store Principal`). A client that can reach the server can already
+- The handle is **not** a security boundary. The store is the isolation unit.
+  A client that can reach the server can already
   read the store-level research archive.
 - Memory writes are not synchronous with the response. Consolidation state
   is awaited, while the L1 rolling summary and L2 recall are background

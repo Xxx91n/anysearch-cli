@@ -28,7 +28,7 @@ export interface AttributionClaim {
   spanEnd?: number;
 }
 
-// D7 unsupported named-gap escalation (sufficiency-gate bridge).
+// D7 escalate an assertion the evidence cannot support (sufficiency-gate bridge).
 export interface GapRequest {
   assertion: string;   // the core assertion that could not be verified
   evidenceState: "no_evidence" | "partial_evidence" | "conflicting_evidence";

@@ -1,4 +1,4 @@
-// Tool Schema Registry: canonical TypeBox schemas for the 5 ans_* MCP tools.
+// Canonical TypeBox schemas for the 5 ans_* MCP tools.
 // kernel holds the single source of truth for tool input schemas;
 // apps/mcp wraps them via fromJsonSchema() (SDK v2 requires Standard Schema).
 // all business validation lives here as JSON Schema keywords
@@ -106,7 +106,7 @@ export type AnsChatInput = {
   sessionId?: string;
 };
 
-// KernelToolSchemas: registry consulted by apps/mcp barrel assembly (Per-tool Barrel).
+// KernelToolSchemas: registry consulted by apps/mcp per-tool module assembly.
 // Keys match the MCP tool names exactly.
 export const KernelToolSchemas = {
   search_web: SearchWebInput,
@@ -123,9 +123,9 @@ export type KernelToolName = keyof typeof KernelToolSchemas;
 // registerTool() descriptions AND by the dsh-plugin native ToolRuntime
 // registrations, so the model sees one canonical surface on every host.
 export const KernelToolDescriptions = {
-  search_web: "Search the web via anysearch provider amalgamation. Returns results with MVSS sufficiency signal.",
-  research_web: "Run a deep research query: multiple retrieval rounds fused via RRF, returns sufficiency signal and top citations.",
-  recall_memory: "Search the Research Memory layer (FTS5) for previously indexed research results. Applies time edge effect: decay, bi-temporal invalidation, QDF classification.",
-  query_knowledge: "Query domain-specific knowledge base via RAG adapter. Dispatches to configured rag.adapter in domain config.",
-  ans_chat: "Run the anysearch agent loop: retrieval-augmented chat with LLM. Uses PiAgentRuntime with domain-aware tool filtering. Returns a session handle (structuredContent.sessionId and a trailing text block); pass it back as sessionId to continue L1/L2 memory across calls.",
+  search_web: "Search the web through several providers at once. Returns results plus a signal saying whether the evidence is enough.",
+  research_web: "Run a deep research query over several rounds; each round merges results with RRF and URLs are deduplicated across rounds. Returns an evidence-sufficiency signal and the top citations.",
+  recall_memory: "Search the local research archive (FTS5) for results indexed earlier. Older results slowly lose weight, can be marked out of date, and time-sensitive questions are flagged for a closer look.",
+  query_knowledge: "Query the knowledge base through the retrieval adapter chosen by the domain config. With `fts` it reads the store-wide research archive, not just the current domain's rows.",
+  ans_chat: "Run the anysearch agent loop: retrieval-augmented chat with an LLM and domain-aware tool filtering. Returns a session handle (structuredContent.sessionId and a trailing text block); pass it back as sessionId to continue L1/L2 memory across calls.",
 } as const satisfies Record<KernelToolName, string>;
