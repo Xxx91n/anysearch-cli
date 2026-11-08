@@ -120,11 +120,10 @@ assert(server2 !== server3, "buildServer() returns new instance each call (facto
   }
 }
 
-// (layer-2): input validation is enforced by AJV via fromJsonSchema.
-// Structural assertion: fromJsonSchema(KernelJsonSchemas.X) produces a Standard Schema
-// that the SDK will validate against. We verify the underlying JSON schemas still carry
-// the expected keyword signatures (minLength / enum-anyOf / required) so a regression
-// dropping them from KernelJsonSchemas is caught here.
+// Kernel JSON schemas still carry the keyword signatures buildServer hands to
+// the SDK (minLength / enum-anyOf / required), so a regression dropping them
+// from KernelJsonSchemas is caught here. The fromJsonSchema wire path and the
+// tool registration are asserted in sdk-v2-schema.test.ts.
 const searchSchema = KernelJsonSchemas.search_web as {
   required?: string[];
   properties?: Record<string, { minLength?: number; anyOf?: Array<{ const?: string }> }>;

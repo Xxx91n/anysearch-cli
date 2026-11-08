@@ -15,6 +15,14 @@ import {
   applyJudgeEscalation,
   renderAttributionText,
 } from "../src/attribution";
+import {
+  AttributionEvidenceSchema,
+  AttributionLabel,
+  AttributionReportSchema,
+  ClaimSchema,
+  GapRequestSchema,
+} from "../src/attribution-schema";
+import { Value } from "@sinclair/typebox/value";
 import type { FusedEnvelope, AttributionReport } from "@anysearch-cli/retriever";
 
 // ---------------------------------------------------------------------------
@@ -409,5 +417,42 @@ describe("classifyClaim — calibrated dual thresholds", () => {
       calibration: fallback,
     });
     assert.equal(result.label, "uncertain");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// L0 schema contract — each TypeBox object closes unknown keys on its own.
+// This replaces a ship-gate source-text count: four occurrences could all sit
+// on one schema while another stayed open.
+// ---------------------------------------------------------------------------
+describe("attribution schema closure", () => {
+  const evidence = { url: "https://example.com/a", provider: "exa", sourceKey: "retrieval_results[0]" };
+  const claim = { id: "c1", text: "claim text", label: "supported", evidence: [evidence] };
+  const gap = { assertion: "missing fact", evidenceState: "no_evidence", gapQuery: "missing fact query" };
+  const cases: Array<[string, any, any]> = [
+    ["evidence", AttributionEvidenceSchema, evidence],
+    ["claim", ClaimSchema, claim],
+    ["gap", GapRequestSchema, gap],
+  ];
+  for (const [name, schema, valid] of cases) {
+    it(name + " closes unknown keys", () => {
+      assert.equal((schema as { additionalProperties?: boolean }).additionalProperties, false);
+      assert.equal(Value.Check(schema, { ...valid, unexpected: "x" }), false);
+    });
+  }
+  it("report closes unknown keys", () => {
+    assert.equal((AttributionReportSchema as { additionalProperties?: boolean }).additionalProperties, false);
+  });
+  it("label union is supported|uncertain|unsupported", () => {
+    for (const label of ["supported", "uncertain", "unsupported"]) {
+      assert.equal(Value.Check(AttributionLabel, label), true);
+    }
+    assert.equal(Value.Check(AttributionLabel, "other"), false);
+  });
+  it("gap evidenceState union is the three documented states", () => {
+    for (const state of ["no_evidence", "partial_evidence", "conflicting_evidence"]) {
+      assert.equal(Value.Check(GapRequestSchema, { ...gap, evidenceState: state }), true);
+    }
+    assert.equal(Value.Check(GapRequestSchema, { ...gap, evidenceState: "other" }), false);
   });
 });

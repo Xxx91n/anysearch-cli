@@ -342,6 +342,38 @@ async function main() {
         await http.close();
       }
     }
+
+    // ---- 12. Attribution travels in BOTH channels on the success path ----
+    // Replaces the ship-gate source-text count in the tool files: this drives
+    // the registered handlers and reads the actual payloads.
+    {
+      const attribution = {
+        schema: "anysearch/attribution-report@1" as const,
+        generatedAt: "2026-01-01T00:00:00.000Z",
+        claims: [] as Array<Record<string, unknown>>,
+        gaps: [] as Array<Record<string, unknown>>,
+        supportedCount: 0,
+        uncertainCount: 0,
+        unsupportedCount: 0,
+        judgeEnhanced: false,
+      };
+      const h = captureHandlers(
+        makeEngine(async () => ({ ...partialEnvelope(), attribution }) as FusedEnvelope),
+      );
+
+      const sw = await h.search_web({ query: "x" });
+      const swDoc = JSON.parse(String(sw?.content?.[0]?.text));
+      assert(swDoc.attribution?.schema === attribution.schema, "search_web content JSON carries attribution");
+      assert(
+        sw?.structuredContent?.attribution?.schema === attribution.schema,
+        "search_web structuredContent carries attribution",
+      );
+
+      const rw = await h.research_web({ question: "x", depth: "brief" });
+      const rwDoc = JSON.parse(String(rw?.content?.[0]?.text));
+      assert(Array.isArray(rwDoc.attribution?.claims), "research_web content JSON carries attribution");
+      assert(Array.isArray(rw?.structuredContent?.attribution?.claims), "research_web structuredContent carries attribution");
+    }
   } finally {
     for (const k of Object.keys(saved)) {
       if (saved[k] === undefined) delete process.env[k];

@@ -4,9 +4,9 @@
 // Output: .scratch/grill-round-62/tavily-probe-ledger.{json,md}
 // Arms: A default-mode leak / B filter-mode hard / C subdomain directionality /
 // D research-endpoint soft preference (live arm gated by PROBE_TAVILY_RESEARCH=1).
-// SKIPPED is recorded honestly when TAVILY_API_KEY is absent. A keyless run is
-// not evidence, so it exits 2 instead of looking green: rerun with a key to
-// produce a PASS/LEAK ledger.
+// Design: a keyless run exits 2 and marks the ledger evidenceStatus=not-verified
+// — SKIPPED arms are not evidence, so the run must not look green; rerun with a
+// key to produce a PASS/LEAK ledger.
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 const NL = String.fromCharCode(10);
