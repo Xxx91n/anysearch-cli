@@ -99,17 +99,18 @@ to say yes first; not done here**.)
 Rewriting or deleting the section would change the record of what r100 actually
 shipped; leaving it bare would make readers think the anchors registry still
 exists. A one-paragraph banner right under the heading is the smallest honest
-fix. The banner (applied on this branch, lines 31–33 of `CHANGELOG.md`):
+fix. The banner (same meaning as the one under the r100 heading in
+`CHANGELOG.md`, lines 31–33 at the time):
 
 ```markdown
-> ⚠️ 这节写的检查工具（检查项 schema v2、待办条目/`pending_anchors`、STACK_RED_CODES、`enumerateScriptFiles`/AST 前置检查、handoff-reanchor 等）已经被治理那边的 commit `3f85fee8`（"governance court: retire meta-validation machinery, untrack .scratch"）整套删掉——`docs/enforcement-anchors.json` 和 `docs/agents/audit-checklist.md` 都不在了，相关的 ship-gate 检查步骤也拆了。这一节只当历史记录留着，没有改写。
+> ⚠️ 这节写的检查工具（检查项 schema v2、待办条目/`pending_anchors`、STACK_RED_CODES、`enumerateScriptFiles`/AST 前置检查、handoff-reanchor 等）已经被治理那边的 commit `3f85fee8`（"governance court: retire meta-validation machinery, untrack .scratch"）整套删掉——`docs/enforcement-anchors.json` 和 `docs/agents/audit-checklist.md` 都不在了，相关的 ship-gate 检查步骤也拆了。这一节只当历史记录留着：事实没改，只把解释文字换成了大白话。
 
 / ⚠️ The checks described below (enforcement-anchor schema v2,
 pending_anchors seats, STACK_RED_CODES, the enumerateScriptFiles/AST front
 gate, handoff-reanchor) were removed wholesale by the governance-court commit
 `3f85fee8` ("governance court: retire meta-validation machinery, untrack
 .scratch"). `docs/enforcement-anchors.json` no longer exists. The section is
-kept as history — not rewritten.
+kept as history: facts unchanged, wording in plain language.
 ```
 
 (Two versions of the same text are shown above — the committed banner uses the

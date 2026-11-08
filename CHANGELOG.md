@@ -19,7 +19,7 @@
 ### Added
 
 - **`ip` 第五域评测语料**（`eval-looks.json`）：14 条能现场跑的条目 —— 参数化 5 条（`vert-i1101..i1105`，覆盖 `ip.global` 词表里 `type`/`keyword`/`applicant`/`ipc`/`date_start` 的两参、三参和四参组合）、语义 5 条（`vert-i1201..i1205`，spec 只写 domain，沿用已有语义层的写法；参数化 `ip.global` 不带参数时多数回的是没有 URL 的文本，当前 adapter 会把这些丢掉，所以这一层不做断言）、对照 4 条（`ctrl-i101..i104`：没有 spec 时防止被误标、spec 配错时静默退回普通搜索、乱写的 sub_domain 被拒、问题本身有歧义）。5 条参数化条目都定义了 `hitHosts`（部分还带 `/patent/` 路径池）；语义条目按 2026-11-07 只给 domain 时实测到的宿主补上 `hitHosts` 测量池。
-- **`ip` 进垂域维度词表**（`packages/store/src/eval/docs-golden.ts`）：`VERTICAL_DIMENSION_VALUES.vdomain` 加 `ip`，新语料才能过 schema 校验；docs 那边八维计数闸不受影响（垂域标签走的是另一份词表）。
+- **`ip` 进垂域维度词表**（`packages/store/src/eval/docs-golden.ts`）：`VERTICAL_DIMENSION_VALUES.vdomain` 加 `ip`，新语料才能过 schema 校验；docs 那边八个维度的计数检查不受影响（垂域标签走的是另一份词表）。
 - **词表快照存档**（`docs/eval/ip-corpus-probe-2026-11-07.md` + `docs/vertical-domains.md`）：记下 2026-11-07 调 `get_sub_domains(domain="ip")` 的原文（只有一个子域 `ip.global`，参数 `type`/`keyword`/`applicant`/`ipc`/`date_start`）和搜索结果的各种形态（只给 domain 时静默退回普通搜索、乱写 sub_domain 时 `isError`、乱写 type 值时静默接受）。快照只用来建语料，运行时不读它。
 - **上游阻塞清单里补上 #24 的进展**（`docs/research/upstream-unblock-registry.md`）：#24 那条加上 2026-11-07 触发的事实和语料放在哪；原来的 `登记状态: absent` 不变（内部评测缺口不往 `docs/limitations.md` 补）。
 
@@ -349,7 +349,7 @@
 
 ## Unreleased — r100: 给这套检查工具自己加上限（三种条件同时满足 + 区分修旧层还是建新层 + 待办登记 + tau 递归/AST 前置检查 + deferred 什么时候触发）
 
-> ⚠️ 这一节写的检查工具（检查项 schema v2、待办条目/`pending_anchors`、STACK_RED_CODES、`enumerateScriptFiles`/AST 前置检查、handoff-reanchor 等）已经被治理那边的 commit `3f85fee8`（"governance court: retire meta-validation machinery, untrack .scratch"）整套删掉——`docs/enforcement-anchors.json` 已经不在了。这一节只当历史记录留着，没有改写。/ ⚠️ The checks described below were removed wholesale by the governance-court commit `3f85fee8` ("governance court: retire meta-validation machinery, untrack .scratch") — `docs/enforcement-anchors.json` no longer exists. The section is kept as history, not rewritten.
+> ⚠️ 这一节写的检查工具（检查项 schema v2、待办条目/`pending_anchors`、STACK_RED_CODES、`enumerateScriptFiles`/AST 前置检查、handoff-reanchor 等）已经被治理那边的 commit `3f85fee8`（"governance court: retire meta-validation machinery, untrack .scratch"）整套删掉——`docs/enforcement-anchors.json` 已经不在了。这一节只当历史记录留着：事实没改，只把解释文字换成了大白话。/ ⚠️ The checks described below were removed wholesale by the governance-court commit `3f85fee8` ("governance court: retire meta-validation machinery, untrack .scratch") — `docs/enforcement-anchors.json` no longer exists. The section is kept as history: the facts are unchanged; only the explanation text was put into plain language.
 
 ### Added
 
@@ -418,10 +418,10 @@
 
 ### Docs
 
-- **立法**：第五形态——行为消费验证为主 + 静态前置检查永远不能单独判为失败 / 封闭的检查项注册表 schema + 两个自指钉子 / 参数化注入 / 只减不增的检查 类 PENDING 待办 / 两处判为失败的设计意图写进 Consequences / 开放面写进 Known-Risk。
+- **立法**：第五形态——行为消费验证为主 + 静态前置检查永远不能单独判为失败 / 封闭的检查项注册表 schema + 两个自指钉子 / 参数化注入 / 只减不增的检查类 PENDING 待办 / 两处判为失败的设计意图写进 Consequences / 开放面写进 Known-Risk。
 - **CONTEXT `Grill Round 98 — Terms` 九个词条**：第五形态 / 检查项 / 证伪探针 / kill-no-kill / 不可杀变异体 / 检查项待办条目 / 注册表参数化 / anchor-not-consumed / 溶解栈声明。
 - **handoff-template 同步**：溶解栈语法家 + state-PENDING/clearing-RED/clearing-env 词表行——模板跟 CODE_GROUPS 双向等集。
-- **deferred 新增三张票**：`defer-r98-anchor-ratchet-recount-seat`（只减不增的检查 类的检查项待办）+ `defer-r98-anchor-open-surface-demo`（开放面扩展示范）+ `defer-r98-stack-land-authorization`（残留分支的清算待办）。
+- **deferred 新增三张票**：`defer-r98-anchor-ratchet-recount-seat`（只减不增的检查类待办）+ `defer-r98-anchor-open-surface-demo`（开放面扩展示范）+ `defer-r98-stack-land-authorization`（残留分支的清算待办）。
 
 ### Deferred
 
@@ -435,7 +435,7 @@
 
 - **形态一状态腿（T2）**：单行 `state:` 标记解析 + 裸词违例扫描 + `unpushed`/`unlanded`/`no-branch-runs` 三个离线判断 + 判定集成；封闭注册表常量 + 10 个成对夹具；真值表 310→357 / E2E 207→270（复现：`node packages/store/test/handoff-lint-verdict.test.mjs` / `node packages/store/test/handoff-lint-e2e.test.mjs`）；把判定器自己移出靶位 + 报告和门禁两种速度分权。
 - **形态三 verbatim 检查项（T3）**：claims schema 新增 `verbatim` kind（整句逐字节）+ 重新登记仪式（理由 + 审计 + 重批计数）+ R97 第一批自己用的检查项。
-- **模板状态声明位（T5）**：handoff-template 的标记语法节 + 形态二内容规则全文（实测值定义 / marker 示例 / PENDING 位挂接和 只减不增的检查 排程引用）。
+- **模板状态声明位（T5）**：handoff-template 的标记语法节 + 形态二内容规则全文（实测值定义 / marker 示例 / PENDING 位挂接和只减不增的检查排程引用）。
 
 ### Fixed
 
@@ -447,7 +447,7 @@
 
 ### Deferred
 
-- 形态二的 只减不增的检查→RED 排程票 + 扩展示范票（`no-pr`/`unpublished`）见 `docs/deferred-registry.json`（R97 T6 登记）。
+- 形态二的只减不增的检查→判为失败的排程票 + 扩展示范票（`no-pr`/`unpublished`）见 `docs/deferred-registry.json`（R97 T6 登记）。
 
 ## Unreleased — r96: 交接检查假绿收口【出口分三种状态】（模板和门禁的 PENDING 说法冲突 + 祖先性冒充/静默折叠 + CI 拓扑不可满足三个缺陷一起关掉）
 
@@ -547,7 +547,7 @@
 - **defer-r92-readme-token-pin-machine-leg**：readme-token-pin 检查器专属机器腿的第一次跑，明着挂账到 R93。
 - **常驻债续期**：登记表明确续录 2 条在册条目（web-interactive matrix 主体、approval-channel headless 继续生效）到 carried_log；其余 3 项（domain-ownership、f16、f17）保持 open。
 
-## Unreleased — r91: dsh L3 冒烟验收 + 售后收口轮（L3 判据立法 + 宿主升版 0.1.7-rc.2 + README 行对齐 + 小修批）
+## Unreleased — r91: dsh L3 冒烟验收 + 售后收口轮（L3 判定规则定下来 + 宿主升版 0.1.7-rc.2 + README 行对齐 + 小修批）
 
 ### Changed
 
@@ -633,7 +633,7 @@
 
 - `defer-r83-prefer-capable-weighting` **核销（NO-GO 结论附纹理）**：全量重跑完成（57/57 格腿全活、覆盖 41/41、指纹 7ac0a48e55cd7954），注册矩阵单次终读裁决 NO-GO——但「没有信号」其实是 anysearch 臂全程 provider-failure 空列（装置级零数据，不是测到零增益），来龙去脉如实写在 decision-record 里；复活前提是新增 `defer-r85-anysearch-arm-providersfailed`（清障候选，owner anysearch-retriever）。`defer-r84-delta-quota-rerun` 核销（触发条件满足 + 全量重跑的实际结果 + 降格件归档 `delta-2026-09-26.degraded.json`，不删）。
 
-## 0.1.0 — r84: 垂域评测证据腿——契约断言 + 金标语料 + 两臂配对 delta
+## 0.1.0 — r84: 垂域评测证据腿——契约断言 + 标准答案语料 + 两臂配对 delta
 
 ### Added
 
@@ -693,7 +693,7 @@
 
 - `defer-r81-provider-shape-validation` 收口（fail-first 映射+错形测试面）；`defer-r81-anysearch-rest-route-removed` 继续按季度监控；`defer-r73-dsh-event-rename` 两个观测点没齐，继续挂债（rc.2 特征观测点复验齐了/稳定观测点没齐，合格的候选还没出现）；新增 `defer-r83-anysearch-vertical-domain-passthrough`；残余 R1–R5 的四分诊全部落位（registry residual-triage 五张卡）。
 
-## 0.1.0 — r81: 产品吸气轮——provider-serverside spike 诊断 + release.yml R1 幂等跳过 + 发布插曲协议立法
+## 0.1.0 — r81: 产品查找轮——provider-serverside spike 诊断 + release.yml R1 同一个版本重复发就跳过 + 发布出插曲后怎么办的规矩
 
 ### Added
 
@@ -739,16 +739,16 @@
 
 - `scripts/ship-gate-pathlint-detect.mjs` —— 豁免范围定规矩：`/x` 的 surfaced-skip 产出顺序挪到 fence/locator 判定之后——所有 fence（不管 marker 有没有覆盖）和 `Stack:` locator 行不再产 info，散文面照旧；`WORD_CHAR` 补 `_`——`foo_C:\x` 这种标识符粘着盘符不再误报，裸 `C:\x` 仍然拦。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
 - `packages/store/fixtures/pathlint/{red,green}.md` + `ship-gate-pathlint.test.mjs`（9→14 cases）——豁免范围的近邻成对断言：covered-fence in-repo 放行↔unmarked-fence 仍然拦、locator in-repo 放行↔不是 locator 的同款仍然拦、fence/locator 里的 `/x` 零 info↔散文仍然产、`foo_C:\x` 零违例↔裸 `C:\x` 仍然拦；跟 AGENTS.md 镜像一致性的机器断言新增。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
-- 某份 ADR 的 D1 修正 + `AGENTS.md` 镜像段 + 第 80 号 ADR——豁免范围三条立法+drift 归因（文本侧没审/实现侧有意图）+rejected alternatives（Revert=毁掉 transcript 的保真、逐面混裁=立法负担差不多但内聚更差）+豁免扩大风险的三重缓解（一致性测试/stale-marker 棘轮/季度审计）+结构性同构先例标注+不 bump 判定。
-- 文书的连带效应（自己踩自己实录）：WORD_CHAR 修复让 r78/r79 文书里只靠 `foo_C:\x` 误报撑着的 5 个 marker 变 stale，按棘轮移除；任务书 2 行裸 `C:\x` 字面量补 marker；全仓 markdown 扫描 0 违例（333 个文档）。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
+- 某份 ADR 的 D1 修正 + `AGENTS.md` 镜像段 + 第 80 号 ADR——豁免范围三条立法+drift 归因（文本侧没审/实现侧有意图）+rejected alternatives（Revert=毁掉 transcript 的保真、逐面混裁=立法负担差不多但内聚更差）+豁免扩大风险的三重缓解（一致性测试/stale-marker 只减不增检查/季度审计）+结构性同构先例标注+不 bump 判定。
+- 文书的连带效应（自己踩自己实录）：WORD_CHAR 修复让 r78/r79 文书里只靠 `foo_C:\x` 误报撑着的 5 个 marker 变 stale，按只减不增的规则移除；任务书 2 行裸 `C:\x` 字面量补 marker；全仓 markdown 扫描 0 违例（333 个文档）。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
 
 ## Unreleased — r78: 门禁可信度校准——pathlint 的 token+分隔符组合判定器 + minimumReleaseAge 拦截边界实测（仓库工具链/治理文书的增量，发出去的代码没变，不 bump）
 
 ### Added
 
-- `scripts/ship-gate-pathlint-detect.mjs` —— pathlint 判定器抽成共用的纯函数模块（D-003），ship-gate step 1i 和 warn-sweep driver（`.scratch/grill-round-78/evidence/t1-warn-sweep.driver.mjs`）用同一份实现，两处消费：「token+后面跟着分隔符=locator」的组合判定，新增四类 token 形态——win-envvar `%VAR%` / posix-envvar `$VAR`、`${VAR}` / tilde `~` / UNC `\\host` 形——跟已有的字面形（drive / posix-home / appdata）统一收口；裸 env-var 的散文永远不命中；单段 POSIX 根 `/x` 降成 info surfaced-skip（看得见但不阻断）；失效标记棘轮腿（marker 行不再命中就报 stale-marker，标记只减不增）；inline code 不豁免。
+- `scripts/ship-gate-pathlint-detect.mjs` —— pathlint 判定器抽成共用的纯函数模块（D-003），ship-gate step 1i 和 warn-sweep driver（`.scratch/grill-round-78/evidence/t1-warn-sweep.driver.mjs`）用同一份实现，两处消费：「token+后面跟着分隔符=locator」的组合判定，新增四类 token 形态——win-envvar `%VAR%` / posix-envvar `$VAR`、`${VAR}` / tilde `~` / UNC `\\host` 形——跟已有的字面形（drive / posix-home / appdata）统一收口；裸 env-var 的散文永远不命中；单段 POSIX 根 `/x` 降成 info surfaced-skip（看得见但不阻断）；失效标记只减不增检查腿（marker 行不再命中就报 stale-marker，标记只减不增）；inline code 不豁免。
 - `packages/store/fixtures/pathlint/{red,green}.md` + `packages/store/test/ship-gate-pathlint.test.mjs`（9 cases）——红绿成对夹具把判定器契约固化：红向全部 token 类+两例真实逃逸+inline code+失效/畸形标记必须拦；绿向散文提及、URL 边界、已标记行、locator 行、已标记 fence 全放，跟 `turbo test` 一起跑。
-- 第 79 号 ADR——组合判定器+豁免三层心智模型（marker=受审 artifact/只减不增/baseline≠规则后门）+棘轮审计+E1–E7 判决矩阵实录+断言收窄文本+`minimumReleaseAgeIgnoreMissingTime` 加固理由+不 bump 判定。
+- 第 79 号 ADR——组合判定器+豁免三层心智模型（marker=受审 artifact/只减不增/baseline≠规则后门）+只减不增检查的审计+E1–E7 判决矩阵实录+断言收窄文本+`minimumReleaseAgeIgnoreMissingTime` 加固理由+不 bump 判定。
 
 ### Changed
 
@@ -775,7 +775,7 @@
 ### Changed
 
 - `scripts/closeout-coverage.mjs`——`titleRound` 检查项定在 title 行首（句子里提到「Grill Round N —」不会误登记）；`ROUND_DIR_RE` 改成全名匹配 `/^grill-round-(\d+)$/i`（`grill-round-7x` 不再被当成 round 7 的别名）。
-- `scripts/gen-adr-index.mjs` —— renderBlock 互注点名消费方 parser（F-5⑥ 双向契约）。
+- `scripts/gen-adr-index.mjs` —— renderBlock 互相标注，点名谁在读取（F-5⑥ 双向约定）。
 - `docs/deferred-registry.json` —— `defer-r73-dsh-event-rename` 的触发器两个观测点改写（特征+稳定性，版本号退出触发逻辑）+ `tombstones` 字段（0.1.6-alpha.* superseded-by 0.1.7-alpha.1）+ `gov-r76-registry-canonical-lock` 补 `deadline`/`review_cadence` + 10 条 open 债 carried_log r77 明确续债（canonical normalize+字节锁自证）。
 
 ### Deferred
@@ -838,7 +838,7 @@
 
 ### Added
 
-- `apps/dsh-plugin`（`@anysearch-cli/dsh-plugin`，private、零运行时依赖的 Cordis bundle）——第一个 in-process 宿主适配器：只做五个面的 hooks（`agent/session-start` routing-card `agent.inject`、`ctx.systemPrompt` `anysearch:routing-card` section、`tools/pre-execute` URL 策略 deny/ask + recall 预热注入、`tools/post-execute` 蒸馏 `additionalContexts`、`tools/result` `/index` IPC），业务逻辑全留在 127.0.0.1:33333 HTTP IPC（出故障就放行；URL 门按 /0055拿不准就拒绝）。`@deepseek-ai/*` 只做 devDep `import type` = 编译期变化的报警器；`dsh.bundle.patch` → 自带 `cordis.patch.yml` 整行复述插入插件行 + `mcp-anysearch` 桥行（`dsh plugin add` 一步装两阶段）。共享 hook 逻辑复用 `@anysearch-cli/plugin`，用 esbuild 打包进 `lib/index.js`（`createRequire` banner——CJS 依赖在纯 ESM 下 `Dynamic require of "node:crypto"` 是真实 loader 实测修好的）。
+- `apps/dsh-plugin`（`@anysearch-cli/dsh-plugin`，private、零运行时依赖的 Cordis bundle）——第一个 in-process 宿主适配器：只做五个面的 hooks（`agent/session-start` routing-card `agent.inject`、`ctx.systemPrompt` `anysearch:routing-card` section、`tools/pre-execute` URL 策略 deny/ask + recall 预热注入、`tools/post-execute` 蒸馏 `additionalContexts`、`tools/result` `/index` IPC），业务逻辑全留在 127.0.0.1:33333 HTTP IPC（出故障就放行；URL 门按 /0055 拿不准就拒绝）。`@deepseek-ai/*` 只做 devDep `import type` = 编译期变化的报警器；`dsh.bundle.patch` → 自带 `cordis.patch.yml` 整行复述插入插件行 + `mcp-anysearch` 桥行（`dsh plugin add` 一步装两阶段）。共享 hook 逻辑复用 `@anysearch-cli/plugin`，用 esbuild 打包进 `lib/index.js`（`createRequire` banner——CJS 依赖在纯 ESM 下 `Dynamic require of "node:crypto"` 是真实 loader 实测修好的）。
 - `apps/plugin` 新增窄口子导出 `./hooks/routing-card` + `./hooks/server-token`（esbuild entries + exports map）——dsh bundle 复用 routing card 和 server token resolver 的单一事实来源。
 - `scripts/ship-gate.mjs` step 1s——dsh-plugin 的变化检查（拿不准就拒绝）：`@deepseek-ai/*` 漏进任何 runtime dep 字段就判为失败；private:true/type:module/dsh.bundle.patch/cordis.patch.yml 关键键位断言。PKG_DIRS 加 `apps/dsh-plugin`（0.0.6 钉版+打包腿覆盖）。
 - `docs/deepseek-harness-integration.md`——Phase-1 手写 MCP 桥行 + Phase-2 bundle 安装指引 + 层序三条规矩（config 整行替换不是合并 / `- insert:` 新增 vs `- id:` 打靶 / 同 id 双 insert=loader 硬错）+ 升级 diff 检查 + 限制记档。
@@ -847,7 +847,7 @@
 ### Fixed
 
 - 真实 loader 的三处语义修正落档：`- insert:` 同 id 重复= `duplicate loader entry id` 硬错（Phase-1 手写行和 bundle 行不能并存）；`- id:` 打缺失的行只告警（`patch: entry ... not found`）；CJS 依赖经 ESM bundle 需要 `createRequire` banner。
-- R71 审计修复包（F1-F6）：`tryImport` 逐候选 guard（resolve-ok+import-fail 归 absent 不抛、不污染 modPromise）、doctor pnpm 行、config marker 接线、globOk拿不准就拒绝、cosmetic 组——同一套验收全部通过后跟着本版上架。
+- R71 审计修复包（F1-F6）：`tryImport` 逐候选 guard（resolve-ok+import-fail 归 absent 不抛、不污染 modPromise）、doctor pnpm 行、config marker 接线、globOk 拿不准就拒绝、cosmetic 组——同一套验收全部通过后跟着本版上架。
 - 升级 diff 预演的 alpha 兼容警报定档：上游 0.1.6 把 `agent/session-start` 移出 Events（改名 `agent/created`，载荷加了 `source`/`signal`）——本轮钉版不迁移，迁移账本见 `.scratch/grill-round-73/upgrade-ledger.md`。
 
 ### Changed
@@ -894,7 +894,7 @@
 
 ### Changed
 
-- `scripts/assert-checks-green.mjs` — 严格两段式时序：Phase 1 discovery 要求全部 5 个 required family 在 --discovery-sec 内各自注册 >=1 个 check-run，过期拿不准就拒绝exit 2 且错误行点名 missing-families/present-families；Phase 2 completion 沿用进程启动的绝对检查项（不 re-anchor）；terminal 不是允许的 conclusion（failure/cancelled/timed_out/startup_failure/action_required）在两段内立即 exit 1；没建模的 conclusion（比如 stale）在完成段按 not-allowed拿不准就拒绝；--once 快照和 exit 10 的语义不变；release.yml 调用时的 flag 没有漂移。
+- `scripts/assert-checks-green.mjs` — 严格两段式时序：Phase 1 discovery 要求全部 5 个 required family 在 --discovery-sec 内各自注册 >=1 个 check-run，过期拿不准就拒绝，exit 2 且错误行点名 missing-families/present-families；Phase 2 completion 沿用进程启动的绝对检查项（不 re-anchor）；terminal 不是允许的 conclusion（failure/cancelled/timed_out/startup_failure/action_required）在两段内立即 exit 1；没建模的 conclusion（比如 stale）在完成段按 not-allowed 拿不准就拒绝；--once 快照和 exit 10 的语义不变；release.yml 调用时的 flag 没有漂移。
 
 ### Fixed
 
@@ -945,7 +945,7 @@
 
 ### Added
 
-- `scripts/assert-checks-green.mjs` — post-tag 前置断言器：在固定 SHA 上轮询 check-runs（ci+ship-gate 五个 job 族），全部通过就放行 / 有失败就立刻停 exit 1 / in-progress ≤10min 短轮询 / 没有信号拿不准就拒绝exit 2；同名 check 取最新 started_at 的那个。
+- `scripts/assert-checks-green.mjs` — post-tag 前置断言器：在固定 SHA 上轮询 check-runs（ci+ship-gate 五个 job 族），全部通过就放行 / 有失败就立刻停 exit 1 / in-progress ≤10min 短轮询 / 没有信号拿不准就拒绝，exit 2；同名 check 取最新 started_at 的那个。
 - release.yml 的 pre-tag 自等腿：账本 commit+push 之后 `lewagon/wait-on-check-action@v1.9.1`（pin `36976907`）等固定 SHA 的 ci+ship-gate 全部通过——discovery 120s 空窗 + step `timeout-minutes:20` 硬超时拿不准就拒绝。
 - release.yml 的告警腿：gate 红了 → blocking job failure + step summary + 自动开 issue + `release-gate` commit-status（failure）打到账本 commit。
 - ship-gate step 1g：`.scratch/*/handoffs/` 收口文档的必填栏检查——「绿色 run URL」段 + Stack 行 + `actions/runs/<id>` URL + gh 可用时校验至少一条 run 的 headSha 是本轮历史的祖先。范围=diff 碰到的 ∪ 最新的收口文档（历史收口 grandfather）。
@@ -988,7 +988,7 @@ T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 
 - `apps/plugin` 新 bin `ans-hook-codex`（→ `dist/hooks/adapters/codex.cjs`）——Codex 的 hooks 命令经 PATH 解析全局安装，跟 claude 那条路同构。
 - `apps/plugin/AGENTS.md` 随包分发（`files[]` 收录）——ans_* 白名单+出故障就放行+namespace 说明块，供人贴进项目的 AGENTS.md（可选步骤见 `docs/codex-integration.md`，/D-003③）。
-- `test/codex-contract.test.ts`（11 条）：官方 schema 校验、bin→entrypoint 解析、matcher 全匹配覆盖、SessionStart `--envelope` 断言、生成器漂移守卫（codex 配置纳入）、返回包输出形状、hook_event_name 优先+legacy 兜底、拿不准就拒绝ask、非 ans 静默、畸形 stdin 出故障就放行。
+- `test/codex-contract.test.ts`（11 条）：官方 schema 校验、bin→entrypoint 解析、matcher 全匹配覆盖、SessionStart `--envelope` 断言、生成器漂移守卫（codex 配置纳入）、返回包输出形状、hook_event_name 优先+legacy 兜底、拿不准就拒绝 ask、非 ans 静默、畸形 stdin 出故障就放行。
 - `docs/codex-integration.md`：Codex 接线文档（config.toml 两层配置 + MCP + hooks + 实测宿主事实清单 + 出故障就放行）。
 
 ### Fixed
@@ -1010,8 +1010,8 @@ T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 
 - `apps/plugin` 新 bin `ans-hook-claude` / `ans-hook-session-start`——hooks 命令经 PATH 解析全局安装，模板里不再有绝对路径或 `${CLAUDE_PLUGIN_*}` 变量。
 - Claude Code plugin 骨架：`.claude-plugin/plugin.json` + `hooks/hooks.json` + `.mcp.json`，由 `scripts/gen-claude-configs.mjs` 单源生成（settings 模板也出自它）；在已安装的包上 `claude plugin validate` 通过。标成 **experimental**（`CLAUDE_PLUGIN_ROOT` 在 Windows 上的展开有上游 bug #16116）。
-- `test/claude-contract.test.ts`（10 条）：返回包形状断言、官方 schema 校验、bin→entrypoint 解析、骨架存在性、生成器漂移守卫、拿不准就拒绝ask、全量和瘦身两种 tool_response 形态。
-- `docs/claude-integration.md`：Claude Code 接线文档（settings 通路 + plugin 实验通路 + 实测宿主事实清单）。
+- `test/claude-contract.test.ts`（10 条）：返回包形状断言、官方 schema 校验、bin→entrypoint 解析、骨架存在性、生成器漂移守卫、拿不准就拒绝 ask、全量和瘦身两种 tool_response 形态。
+- `docs/claude-integration.md`：Claude Code 接线文档（走 settings 这条路 + plugin 这条实验路 + 实测宿主事实清单）。
 
 ### Fixed
 
@@ -1081,7 +1081,7 @@ T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 ### Added
 
 - **Apache-2.0 license**：根 LICENSE + 4 个发布包目录各一份副本；4 个包的 manifest 补上 license/repository/publishConfig.access:public。
-- 发布管线断言：ship-gate step5 校验打包的 manifest（dependencies 里没有 @anysearch-cli/* 的死声明、peer-optional 在场、license/repo/access）+ dist 里没有裸 require 内部包（embedding 按设计豁免）；隔离集的棘轮三条断言（scripts/quarantine-只减不增的检查.mjs + eval-quarantine.baseline.json 基线）。
+- 发布管线断言：ship-gate step5 校验打包的 manifest（dependencies 里没有 @anysearch-cli/* 的死声明、peer-optional 在场、license/repo/access）+ dist 里没有裸 require 内部包（embedding 按设计豁免）；隔离集的只减不增检查三条断言（scripts/quarantine-ratchet.mjs + eval-quarantine.baseline.json 基线）。
 - peer-optional 双装验证：install-smoke + ship-gate 4c 断言 npm i 双装之后 @anysearch-cli/embedding 落在共享 node_modules 根、从已安装的 cli 里能解析到、doctor 的 vector arm 翻成 present。
 - docs/publishing.md 发布步骤文档（含 min-release-age=2 自验的覆盖方式与 72h unpublish 窗）；docs/release-notes/0.0.1.md。
 
@@ -1102,7 +1102,7 @@ T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 ### Fixed
 
 - 域解析链收口（F1/F2）：`domainTomlPath` 现在读 `ANS_DOMAINS_DIR`（env → cwd → extras，跟 `defaultDomainsDirs` 链头同序）；`ans chat`/`ans hitl` 走 `domainSearchDirs()` 四链；`ans pref` 改用 `createPersistentEngine`——顺带修掉 `createEngine` 默认 `:memory:` 导致偏好从来不写进文件的存量 bug。
-- coverage manifest 算术（F3）：`source-tier.reference` 3→4、`freshness.stable` 6→5；`crossCheckDocsGolden` 新增 classes↔entries 直方校验，`badcase-backfill` 重算时同步 classes。
+- 覆盖清单的算术（F3）：`source-tier.reference` 3→4、`freshness.stable` 6→5；`crossCheckDocsGolden` 新增 classes 和 entries 的直方校验，`badcase-backfill` 重算时同步 classes。
 - `badcase-backfill --new` 不再编造分类：badcase 记录必须自带 intent/questionLang/dimensions（缺了就拒），provenance.type 可以被记录覆盖；三处台账写入改成原子写（tmp+rename）。
 - `engine` 的早停阈值按 `normalizeUrl` 算唯一 URL（跟融合去重的口径一致）；`ans domain`/doctor 的域列表改用共享的 `listDomainTomls`；doctor 删掉 `fileURLToPath` 这个没用到的 import。
 
@@ -1128,7 +1128,7 @@ T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 ### Added
 
 - `eval-badcases.json`（schema `anysearch/eval-badcases@1`）：真实 badcase 的记录面，种子条目 docs-bc0001 来自安装物的实跑（tokio 域外提问应该拒答，实际回了 10 条不在 allowlist 里的结果）。
-- `scripts/badcase-backfill.mjs`：回灌两种模式——`--into` 把同一个问句附加到已有的 golden（回归证据），`--new` 生成下一条 docs-gNNNN 并自动重算 coverage manifest；没有 observed/evidence.command 就拒绝回灌（禁止合成的护栏）。
+- `scripts/badcase-backfill.mjs`：回灌两种模式——`--into` 把同一个问句附加到已有的 golden（回归证据），`--new` 生成下一条 docs-gNNNN 并自动重算覆盖清单；没有 observed/evidence.command 就拒绝回灌（禁止合成的护栏）。
 - eval-docs-golden.test.ts 扩出 badcase 回归段：badcase schema、promotedTo→golden 可解、attach 问句逐字一致、open 态的内容不得已经进集。
 
 ## 2026-09-14 — r60: 从装到用的链路 CI（T2/B2）
@@ -1144,8 +1144,8 @@ T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 
 - `domains/docs.toml`：第一个垂直域（技术文档检索）。语料一手的 allowlist：modelcontextprotocol.io / typescriptlang.org / pnpm.io（D-004 第一批实例化）。
 - `eval-looks.json` 顶层 `golden` 集合（schema `anysearch/docs-golden@1`）：第一批 11 条全真源提问（8 条 internal-dogfood + 3 条 external-community），每条都能按来源字段回访；OF 账本 looks[] 的语义不变，读写路径保持透传（looks-ledger.ts / eval cli calibrate）。
-- `eval-looks.coverage.json`（schema `anysearch/eval-looks-coverage@1`）：八维切片 manifest，covered×7 + deferred×1（injection，entryTrigger 挂 B4）。
-- `packages/store/src/eval/docs-golden.ts`：条目 schema + 八维词汇 + manifest/交叉校验器。
+- `eval-looks.coverage.json`（schema `anysearch/eval-looks-coverage@1`）：八个维度的切片清单，covered×7 + deferred×1（injection，entryTrigger 挂 B4）。
+- `packages/store/src/eval/docs-golden.ts`：条目 schema + 八个维度的词表 + 清单/交叉校验器。
 - `loadDomainByNameIn` + `defaultDomainsDirs`（domain-loader.ts）：多目录解析链；`createEngine` 新增 `opts.domainsDirs`；`domainTomlPath` 增加可选的附加目录。
 - `apps/cli/src/config-env.ts`：config.env 共享读写 + 入口 rehydrate（`ans domain` 的持久化从此对所有命令生效，显式 env/空串不会被覆盖）。
 - `apps/cli/src/db.ts` 的 `domainSearchDirs()`：ANS_DOMAINS_DIR → cwd/domains → 包内建 domains → 仓根 domains 的解析链。

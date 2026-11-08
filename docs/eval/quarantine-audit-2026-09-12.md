@@ -17,9 +17,9 @@ for i in $(seq 1 20); do ANS_EVAL_NO_LOOK=1 node --import tsx src/eval/cli.ts --
 
 | bucket | definition | observed |
 |---|---|---|
-| A passes every time | passRate 1.000 on every run | **20 / 20** |
-| B sits next to the line | pass/fail stays the same, but a report-only number moves | **1 / 20** (`mrr=0.536` on run 9; `mrr=0.548` on the other 19) |
-| C a case crosses the line | one case moves across its rank line | **0 / 20 locally**; seen once on CI (`126/128`, `mrr=0.524`, main push run 34696814216) |
+| A passes every time (`pass-stable`) | passRate 1.000 on every run | **20 / 20** |
+| B sits next to the line (`threshold-adjacent`) | pass/fail stays the same, but a report-only number moves | **1 / 20** (`mrr=0.536` on run 9; `mrr=0.548` on the other 19) |
+| C a case crosses the line (`gate-crossing nondeterminism`) | one case moves across its rank line | **0 / 20 locally**; seen once on CI (`126/128`, `mrr=0.524`, main push run 34696814216) |
 
 `fingerprint=4a529f6fbe2096c8` and `passRate=1.000` on every run.
 

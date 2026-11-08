@@ -6,7 +6,7 @@ This file is the evidence for ticket **#24** (the ip fifth-domain corpus) under 
 
 ## Trigger
 
-The original deferred list said the corpus work can start "as soon as the probe prints a
+The original deferred-registry entry said the corpus work can start "as soon as the probe prints a
 parameter table we can use". This probe shows that moment has arrived:
 `get_sub_domains(domain="ip")` now returns a table of per-parameter definitions, the same
 shape the `finance.*` entries already produce.
