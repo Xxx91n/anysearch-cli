@@ -2,13 +2,13 @@
 
 How the engineering skills should read this repo's domain docs while exploring the codebase.
 
-## Read these first
+## Before exploring, read these
 
 - **`GLOSSARY.md`** at the repo root — the word list for domain terms (one plain sentence per term).
 
 If it is missing, say nothing and move on. Do not point out that it is missing, and do not suggest creating it up front.
 
-## File layout
+## File structure
 
 This repo has one context:
 
@@ -17,13 +17,13 @@ This repo has one context:
 ├── GLOSSARY.md         ← glossary (domain terms only, no implementation details)
 ├── apps/cli/           ← anysearch CLI entry
 ├── apps/mcp/           ← MCP server
-├── apps/plugin/        ← hooks layer and project-index plugin
+├── apps/plugin/        ← shared hook code and project-index plugin
 └── packages/           ← embedding, kernel, retriever, store
 ```
 
 There is no `GLOSSARY-MAP.md` at the root, so this is single-context, not multi-context.
 
-## Use the glossary's words
+## Use the glossary's vocabulary
 
 When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the word as `GLOSSARY.md` defines it. Do not drift to synonyms.
 
@@ -45,4 +45,4 @@ Design: <decision> — <reason/alternatives>
 
 Keep the comment next to the code it governs, so the decision travels with the code instead of with a document that can be deleted.
 
-**Status, honestly: past decisions are not backfilled.** The grammar above is the rule from now on; decisions made before it still live only in `git log` archaeology. So a code site without a `Design:` marker does not prove that no decision was made there. It only proves that no one has recorded it this way yet.
+**Honest status: past decisions are not backfilled.** The grammar above is the rule from now on; decisions made before it still live only in `git log` archaeology. So a code site without a `Design:` marker does not prove that no decision was made there. It only proves that no one has recorded it this way yet.
