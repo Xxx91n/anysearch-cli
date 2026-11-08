@@ -1,134 +1,102 @@
 # anysearch-cli
 
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="anysearch-cli — search, research and memory for agents, behind a domain allowlist that holds">
+  <img src="./assets/readme/hero.svg" width="100%" alt="anysearch-cli: search, research, and memory for agents, behind a domain allowlist that actually holds">
 </p>
 
 **English** | [简体中文](README.zh-CN.md)
 
-> The English README is canonical; the Chinese version is kept in sync.
 
 [![npm](https://img.shields.io/npm/v/@anysearch-cli/cli)](https://www.npmjs.com/package/@anysearch-cli/cli)
 [![ci](https://github.com/Xxx91n/anysearch-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Xxx91n/anysearch-cli/actions/workflows/ci.yml)
 [![license](https://img.shields.io/github/license/Xxx91n/anysearch-cli)](LICENSE)
 
-A vertical-domain information-specialist CLI: search, research, memory, and
-knowledge in one agent. It uses FTS5 for recall, RRF to merge results from
-several providers, ships an MCP server that indexes results automatically, and
-puts a domain allowlist in front of what comes back.
-
-Published on npm: `npm i -g @anysearch-cli/cli`. Versions 0.0.1/0.0.2 were
-revoked because of a `workspace:*` dependency escape; see CHANGELOG.
-
-A gated search looks like this:
-
-```text
-$ ANS_DOMAIN=docs ans search "model context protocol"
-1. [tavily] What is the Model Context Protocol (MCP)? ...
-2. [exa] ...
-3. [exa] ...
-
-# when the domain has no results, it abstains instead of failing:
-abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered 0, gate pre)
-```
-
-## Requirements
-
-- Node.js >= 22 (Node 24 verified)
-- pnpm 11.24.0 exactly; corepack reads `packageManager` automatically
-- At least one provider API key for real searches:
-  - `EXA_API_KEY`: Exa, supports domain filtering
-  - `TAVILY_API_KEY`: Tavily, supports domain filtering
-  - `ANYSEARCH_API_KEY`: anysearch MCP, optional; the anonymous tier works but cannot pre-filter by domain
+A vertical-domain information specialist CLI: put search, research, memory, and knowledge into one agent.
+- Uses FTS5 for recall
+- Uses RRF to merge results from multiple sources
+- Ships with an MCP server that automatically indexes results
+- A domain allowlist that actually filters returned content
 
 ## Quickstart
 
 ```bash
 npm i -g @anysearch-cli/cli
-ans doctor                                          # self-check: keys, DB path, domain resolution, provider readiness
+ans doctor                                          # self-check: keys, database path, domain config parsing, provider readiness
 ans search "tokio JoinSet rust"
 ANS_DOMAIN=docs ans search "tokio JoinSet rust"     # search inside the docs domain only
 
-# optional: vector arm, never installed automatically
+# optional: add vector search, never installed automatically
 npm i -g @anysearch-cli/embedding
 ```
 
-## Post-install: vector arm
+## Post-install: Optional Vector Search
 
-`@anysearch-cli/embedding` is peer-optional; without it the CLI runs FTS-only.
-After a global install (npm or pnpm), confirm it is active and embed existing
-rows:
+`@anysearch-cli/embedding` is an optional peer dependency (peer-optional). Without it, the CLI runs FTS-only.
+After installing it (with npm or pnpm), first verify that it is actually active, then backfill vectors for existing records:
 
 ```bash
-ans doctor                    # "vector arm (present ...)" confirms activation
-ans memory backfill-vectors   # embeds stored rows; the first run downloads the model (~130 MB)
+ans doctor                    # "vector arm (present ...)" means it is active
+ans memory backfill-vectors   # backfill vectors for existing rows; downloads the model on first run (~130 MB)
 ```
 
-The model downloads from huggingface.co on first use and is cached at
-`~/.anysearch/models` (override with `ANYSEARCH_MODEL_CACHE`). On an offline
-host, copy a populated cache directory from a connected machine. Removing the
-package returns the CLI to FTS-only mode with no crash; `ans doctor` reports
-that arm as SKIP.
+- The model downloads from huggingface.co on first use and caches in `~/.anysearch/models`
+(override the location with `ANYSEARCH_MODEL_CACHE`).
+- On offline machines, you can copy an already populated cache directory from a connected machine. After uninstalling this package, the CLI falls back to FTS-only without crashing, and `ans doctor` marks this check as SKIP.
 
-## Domains & abstain
+## Requirements
 
-A *domain* is a TOML file under `domains/` (or `ANS_DOMAINS_DIR`). It names the
-providers for that domain and carries an authoritative `urlAllowlist`.
-`ANS_DOMAIN` selects the active domain.
+- Node.js >= 22
+- pnpm 11.24.0, pinned; corepack automatically reads `packageManager`
+- Searching requires an API key for at least one provider (`ans recommend` only reads local domain configs and needs no key):
+  - `EXA_API_KEY`: Exa, supports domain filtering
+  - `TAVILY_API_KEY`: Tavily, supports domain filtering
+  - `ANYSEARCH_API_KEY`: anysearch MCP, optional; the anonymous tier works too, but cannot pre-filter by domain
 
-Filtering runs as two gates:
+## Domains & Abstain
 
-1. **Pre-filter (capability-negotiated)**: providers that declare domain-filter
-   support receive the allowlist directly (`tavily` uses `include_domains` in
-   hard-filter mode; `exa` uses `includeDomains`). Providers without that
-   support (for example `anysearch`) fall back to post-filter only and never
-   pretend to filter.
-2. **Post-filter (authoritative)**: after providers return, the kernel drops
-   every URL that is not in the allowlist before fusion and attribution. Deny
-   rules win; allow entries match a host and its subdomains.
+A *domain* is a TOML file under `domains/` (or `ANS_DOMAINS_DIR`).
+It declares which providers this domain uses, along with an authoritative allowlist `urlAllowlist`.
 
-When the gate leaves zero results, `ans` **abstains**. That is a first-class
-result, not an error:
+```bash
+export ANS_DOMAIN=docs      # select active domain
+```
+
+Filtering happens in two steps:
+
+1. **Step 1: pre-filter before search**: if a provider declares it supports domain filtering, we pass the allowlist straight to it
+   (`tavily` hard-filters via `include_domains`, `exa` uses `includeDomains`). For providers that do not support it
+   (such as `anysearch`), we do not pass it and wait for step 2; we never pretend a provider can filter.
+2. **Step 2: post-filter after search, which has the final say**: when providers return results, the retrieval engine drops any URL not on the allowlist before merging results and tagging sources. Deny rules take priority. Allowlist entries cover both the domain itself and its subdomains.
+
+When filtering leaves zero results, `ans` will **abstain**. This is a normal result, not an error:
 
 ```text
 abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered 0, gate pre)
 ```
 
-- Exit code **0** by default (abstention is a successful policy outcome);
-  `--fail-on-abstain` returns dedicated exit code **3** for automation.
-- `--json` carries `abstain: { reason, domain, preFiltered, postFiltered, gate }`;
-  MCP tools expose the same marker as `structuredContent.abstain` with
-  `isError: false`.
-- Each domain-scoped search writes two audit events into the observation trace:
-  `retrieval.domain_filter.pre` and `retrieval.domain_filter.post`.
+- Default exit code is **0** (abstaining counts as a successful run). When you pass `--fail-on-abstain`, automation gets a dedicated exit code **3**.
+- `--json` includes `abstain: { reason, domain, preFiltered, postFiltered, gate }`.
+  MCP tools report the same thing with `structuredContent.abstain` + `isError: false`.
+- Every domain search writes two audit events into the run trace: `retrieval.domain_filter.pre` and
+  `retrieval.domain_filter.post`.
 
-Exit codes: `0` ok or abstain · `1` generic failure, or zero results without a
-domain policy · `2` usage error · `3` abstain under `--fail-on-abstain`.
+> Exit codes: `0` ok or abstain · `1` generic failure, or zero results without a domain policy · `2` usage error · `3` abstain under `--fail-on-abstain`.
 
 ### Writing domain descriptions (`ans recommend`)
 
-`ans recommend "<free text>"` ranks domains by BM25 over **`name` +
-`description` only** (plus an optional embedding arm when
-`@anysearch-cli/embedding` is installed; without it the command falls back to
-FTS-only). It prints the top three candidates with a confidence score. High
-confidence suggests `ans domain <id>`; low confidence lists the candidates and
-a structured "why no recommendation" line. It never switches domains by
-itself. The description is the trigger surface, so write it like this
-(community reports and arXiv 2604.04323 both found that vague descriptions
-silently never fire):
+```bash
+ans recommend "<free text>"
+```
 
-- State **what the domain is for** and the **concrete nouns a user would
-  actually type**: tools, formats, sites (for example `MCP spec / TypeScript
-tsconfig / pnpm settings`), not adjectives.
-- Add the **differentiating keywords** that separate it from sibling domains,
-  and imply what it is *not* (the corpus inclusion rule).
-- One line, ≤ ~250 characters (the same budget used by agent-skill
-  registries); keep `name` short and literal. Both fields are indexed verbatim.
+- Ranks domains using BM25 over **`name` + `description` only**
+(adds vector search if `@anysearch-cli/embedding` is installed; falls back to FTS-only without it).
+- It outputs the top 3 candidates along with a confidence score. High confidence suggests `ans domain <id>`; low confidence lists candidates with a machine-readable explanation of why nothing was recommended. It never switches domains on its own. The description decides when the model picks this domain, so write it like this (community reports and arXiv 2604.04323 both found that vague descriptions silently fail to trigger):
 
-A domain can also inject its own private/internal data into the agent context
-through `[rag] adapter`: `none` (default), `note` (legacy fixed text), or `fts`
-(real FTS5 memory recall with provenance tags). See
-[docs/rag-adapters.md](docs/rag-adapters.md).
+- Clearly state **what this domain does** and include **concrete nouns users actually type**: tools, formats, sites (such as `MCP spec / TypeScript tsconfig / pnpm settings`), using fewer adjectives.
+- Add **key trigger words** that distinguish it from neighboring domains. Avoid negative phrasing like "not domain X" — every word in the description gets indexed, and it cannot understand negation.
+- Keep it to one line, ≤ ~250 characters (matching the character limit for descriptions in agent skill registries). Keep `name` short and direct; both fields go straight into the index.
+
+> Domains can also inject internal data into the agent's context through `[rag] adapter`: `none` (default), `note` (legacy fixed text), or `fts` (real FTS5 memory recall with provenance tags). See [docs/rag-adapters.md](docs/rag-adapters.md).
 
 ### Installing Agent Skills (`ans skill`)
 
@@ -145,185 +113,129 @@ ans skill list --project
 ans skill uninstall research --project
 ```
 
-`ans skill` copies a self-contained directory with a root `SKILL.md` from a
-local Git checkout into `skills/synced/`, and records the source and commit.
-It is not a package manager and does not run skill code. Locking, manifests,
-and residue cleanup are documented under the Skill Installer entry in
-`GLOSSARY.md`.
+`ans skill` only copies a local checkout directory containing a `SKILL.md` into `skills/synced/`,
+recording its source and commit. It is not a package manager and does not execute skill code. For details on locking, manifests, and cleanup, see the "Skill installer" entry in `GLOSSARY.md`.
 
-**Installation is not activation.** These commands never edit domain TOML.
-The Active Domain's `[skills].active` remains the authority for the Skill
-Active List; manage activation through the domain configuration as before.
+**Installed does not mean active.** These commands never touch domain TOML files. Which skills can run is still decided by `[skills].active` in the Active Domain. You activate them the same way as before: by editing the domain config.
 
-## Provider transport & capability matrix
+## Provider Connections & Capabilities
 
-| provider | transport | wired search surface | answer mode | domain pre-filter | vertical routing | cancellation | standalone usage |
-|----------|-----------|----------------------|-------------|-------------------|------------------|--------------|------------------|
-| anysearch | MCP Streamable HTTP (`POST /mcp`, hand-rolled JSON-RPC; not the official SDK) | `search` (fast / index / deep; an `answer` request degrades to a plain search) | no | no (post-filter only) | yes (`domain` / `sub_domain` / `sub_domain_params`) | yes (per-POST fetch signal; shared-handshake caveat below) | no |
-| exa | official `exa-js` SDK | `search` (fast / index / deep / answer) | yes (`answer()` with citations, `verified:false`; an answer failure degrades to results plus one stderr line) | yes (`includeDomains`, `search()` only; see below) | no | yes (`signal` as the trailing request option on `search()` / `answer()`; #216) | no |
-| tavily | official `@tavily/core` SDK | `search` (fast / index / deep / answer) | yes (`includeAnswer`) | yes (`include_domains`, hard filter) | no | no (`@tavily/core@0.7.7` exposes no signal; #32) | no |
+| Provider | Transport | Wired search features | Answer mode | Pre-filter domains | Vertical routing | Cancellable | Standalone usage endpoint |
+|----------|-----------|-----------------------|-------------|--------------------|------------------|-------------|---------------------------|
+| anysearch | MCP Streamable HTTP (`POST /mcp`, hand-rolled JSON-RPC; not the official SDK) | `search` (fast / index / deep; `answer` requests fall back to plain search) | no | no (post-filter only) | yes (`domain` / `sub_domain` / `sub_domain_params`) | yes (fetch signal on each POST; shared-handshake details below) | no |
+| exa | official `exa-js` SDK | `search` (fast / index / deep / answer) | yes (`answer()` with citations, `verified:false`; answer failures fall back to plain search results and print one line to stderr) | yes (`includeDomains`, only applies to `search()`; see below) | no | yes (`signal` as the last option in `search()` / `answer()` requests; #216) | no |
+| tavily | official `@tavily/core` SDK | `search` (fast / index / deep / answer) | yes (`includeAnswer`) | yes (`include_domains`, hard filter) | no | no (`@tavily/core@0.7.7` has no signal; #32) | no |
 
-Provider selection comes from the domain TOML's `sources.enabled`. A provider
-with a missing key is skipped instead of crashing the search; if *no* provider
-can register, the search is an error, not an abstain.
+Providers are chosen from `sources.enabled` in the domain TOML. Providers with missing keys are skipped without crashing the search. If no providers can connect at all, the search throws an error directly instead of treating it as an abstain.
 
-The matrix records what the adapters actually wire, not what each upstream
-catalog offers. AnySearch is the only MCP upstream here; Exa and Tavily stay on
-their official SDKs. Their hosted MCP servers are agent-facing tool surfaces,
-not a server-side provider API. **No Exa/Tavily MCP migration is planned.**
+This table only lists features that our adapters actually wire up, not everything in the upstream catalogs. AnySearch is the only MCP upstream here. Exa and Tavily continue to use their official SDKs; their hosted MCP servers are tools meant for agents directly, not the interface our server-side providers need. **We have no plans to migrate Exa or Tavily to MCP.**
 
-Two cancellation caveats sit behind the matrix. AnySearch sends a signal on
-every POST, but concurrent searches share one MCP handshake. That handshake
-follows the first caller's signal, so later callers cannot cancel the wait, and
-aborting the first caller can fail both searches. Exa's `includeDomains` only
-applies to `search()`; the separate `answer()` call does not receive the
-allowlist, and the kernel does not URL-gate answer text or citations.
+Two details from the table need special mention: AnySearch sends a signal on every POST, but concurrent searches share a single MCP handshake. This handshake only follows the first caller's signal; subsequent callers cannot cancel that wait, and if the first caller cancels, both searches may fail together. Exa's `includeDomains` only applies to `search()`; a separate `answer()` call does not receive the allowlist, and the retrieval engine does not filter URLs in answer text or citations.
 
-The AnySearch row is `search`-only at the adapter level: `get_sub_domains`,
-`batch_search`, `extract`, and the live-but-undocumented `score` tool are not
-wired. The upstream tool count is deliberately not pinned: official docs list
-four tools, while the live endpoint has also returned `score`. A successful
-`search` reply's non-empty `_meta.request_id` is recorded as a diagnostic
-correlation id on the observation span (`retrieval.provider.diagnostic`) only
-when the caller supplies a span (CLI and MCP tool calls do). Failed replies
-throw before extraction, so nothing is recorded for them. That id never enters
-query results and is never an idempotency key.
+The AnySearch adapter only wires `search`. It does not wire `get_sub_domains`, `batch_search`, `extract`, or `score` (which exists on the live service but is omitted from official docs). Upstream tool counts are not hardcoded: official docs list four tools, while the live service has also returned `score`. When a successful `search` response carries a non-empty `_meta.request_id` and the caller provided a run trace (both CLI and MCP tool calls do), we record it as a diagnostic correlation ID (`retrieval.provider.diagnostic`). Failed responses throw before extraction and record nothing. This ID never enters results and cannot be used as an idempotency key (you cannot deduplicate retries with it).
 
-## AnySearch vertical domains
+## AnySearch Vertical Domains
 
-AnySearch also exposes a separate **vertical routing** axis. Set it per query
-or in the domain TOML. It is not a hostname allowlist and has nothing to do
-with `urlAllowlist`.
+AnySearch also provides a separate **vertical routing** axis. You can pass it per query or configure it in the domain TOML. It is completely separate from hostname allowlists and has nothing to do with `urlAllowlist`.
 
-- Query-level arguments: `verticalDomain` / `verticalSubDomain` /
-  `verticalParams` on `search_web` / `research_web`; CLI flags
-  `--vertical-domain` / `--vertical-sub-domain` /
-  `--vertical-params '{"k":"v"}'`. Query-level values replace the TOML default
-  wholesale; there is no deep merge.
-- Repo default: `[sources] vertical = { domain = "finance" }` in the domain
-  TOML. `sub_domain` is optional here, but parameterized tags such as
-  `calendar` fail upstream without `sub_domain_params`, which live at query
-  level via `--vertical-params`.
-- Capability negotiation: only providers declaring `verticalDomainSupported`
-  (currently just anysearch) receive the wire fields `domain` / `sub_domain` /
-  `sub_domain_params`. Other providers fan out on the general axis and are
-  named in the `retrieval.vertical.pre` audit event's
-  `anysearch.vertical.degraded` list. A lost hint is never an abstain.
-- Audit: one `retrieval.vertical.pre` event per vertical search records
-  parameter key names only, never values; hits carry an `extra.vertical`
-  machine-readable marker.
+- Query-level arguments: `verticalDomain` / `verticalSubDomain` / `verticalParams` on `search_web` / `research_web`; CLI flags `--vertical-domain` / `--vertical-sub-domain` / `--vertical-params '{"k":"v"}'`. Passing query-level arguments replaces the TOML defaults completely without deep merging.
+- Repo defaults: `[sources] vertical = { domain = "finance" }`. `sub_domain` is optional here, but parameterized tags like `calendar` must receive `sub_domain_params` (`--vertical-params`) at query time, or upstream will reject them.
+- Provider capability checks: only providers declaring `verticalDomainSupported` (currently only anysearch) receive `domain` / `sub_domain` / `sub_domain_params`. Other providers do not receive them, proceed with a normal query, and are listed under `anysearch.vertical.degraded` in the `retrieval.vertical.pre` audit event. Dropping this hint never causes an abstain.
+- Audit: each vertical search writes one `retrieval.vertical.pre` audit event, recording parameter key names only, never values. Matching results carry `extra.vertical` for machine consumption.
 
-See [docs/vertical-domains.md](docs/vertical-domains.md) for the dated
-vocabulary snapshot and observed upstream behavior.
+For the full vocabulary and live upstream test results, see [docs/vertical-domains.md](docs/vertical-domains.md).
 
-## MCP server
+## MCP Server
 
 ```bash
-npm i -g @anysearch-cli/mcp                     # provides the ans-mcp bin
+npm i -g @anysearch-cli/mcp                     # provides the ans-mcp command
 ans-mcp                                         # stdio transport (default)
 ans-mcp --transport http --port 3001            # Streamable HTTP (localhost-only)
 ```
 
-From a checkout, the same entry is
+When running from source, the same entry point is:
 `node apps/mcp/dist/index.cjs [--transport http] [--port <n>]`.
 
-Five tools: `search_web`, `research_web`, `recall_memory`, `query_knowledge`,
-and `ans_chat`. `ANS_DOMAIN` scopes the server through the process
-environment: export it when launching `ans-mcp` directly; `ans mcp` also
-inherits the CLI's persisted choice. Tools never print to stdout; the server
-keeps the protocol channel pure.
+Five tools: `search_web`, `research_web`, `recall_memory`, `query_knowledge`, and `ans_chat`.
+`ANS_DOMAIN` scopes the server via process environment variables: export it explicitly when starting `ans-mcp` directly; `ans mcp` inherits the domain selected in the CLI. Tools never write to stdout, keeping the protocol channel clean.
 
-The canonical reference covers tool arguments, `isError` / empty / abstain
-semantics, both transports, environment variables and auth, the `ans_chat`
-session handle, dual-era behavior, and the upstream provider matrix:
-[docs/mcp-server.md](docs/mcp-server.md).
+For tool arguments, `isError` / empty result / abstain semantics, both transports, environment variables and authentication, the `ans_chat` session ID, dual-era compatibility, and upstream provider details, see the specification reference in [docs/mcp-server.md](docs/mcp-server.md).
 
-## How it works
+## How It Works
 
-One pass through the pipeline: providers fan out, the domain gate filters,
-results fuse and persist.
+How a single search works: providers fan out to query in parallel, results are filtered by domain, merged, and saved to the database.
 
 ```mermaid
 flowchart LR
-    U["ans CLI · ans-mcp"] --> Q["fanout"]
+    U["ans CLI · ans-mcp"] --> Q["Parallel fanout"]
     Q --> T["tavily"]
     Q --> E["exa"]
     Q --> A["anysearch"]
-    T & E & A --> G{"domain gate<br/>pre + post urlAllowlist"}
-    G -->|"kept"| F["RRF fusion + attribution"]
-    G -->|"dropped"| X["off-list URLs"]
-    G -->|"zero kept"| Z["abstain — first-class"]
-    F --> S[("store<br/>FTS5 memory + observation")]
+    T & E & A --> G{"Domain filter<br/>pre + post urlAllowlist"}
+    G -->|"kept"| F["RRF merge + source tagging"]
+    G -->|"dropped"| X["URLs outside allowlist"]
+    G -->|"none left"| Z["Abstain — normal result"]
+    F --> S[("store<br/>FTS5 memory + run traces")]
 ```
 
-## Verified agent hosts
+## Verified Agent Hosts
 
 | Host | Version | Verified scope | Status |
 |------|---------|----------------|--------|
-| CodeBuddy Code | 2.151.0 | `mcp.json` registration + `.codebuddy/settings.json` hooks | live-verified · [doc](docs/codebuddy-integration.md) |
-| Claude Code | 2.1.251 | `mcp.json` registration + `.claude/settings.json` hooks + plugin skeleton | live-verified · [doc](docs/claude-integration.md) |
-| Codex CLI | 0.142.5 | `config.toml` MCP registration + `.codex/hooks.json` hooks | live-verified · [doc](docs/codex-integration.md) |
-| Antigravity CLI (`agy`) | 1.2.5 | named-hook map `hooks.json` (5 events via argv) | live-verified (reduced matrix) · [doc](docs/antigravity-integration.md) |
-| Antigravity IDE | 2.12.2 | `.antigravity/rules/anysearch.mdc` fallback | hooks not executed (reproduced) · [doc](docs/antigravity-integration.md) |
-| DeepSeek Harness (`dsh`) | 0.1.7-rc.2 | native registration (`ctx.tools`) + `dsh-plugin` Cordis bundle | live-verified (established-via-fallback) · [doc](docs/deepseek-harness-integration.md) |
+| CodeBuddy Code | 2.151.0 | `mcp.json` registration + `.codebuddy/settings.json` hooks | Live-tested · [doc](docs/codebuddy-integration.md) |
+| Claude Code | 2.1.251 | `mcp.json` registration + `.claude/settings.json` hooks + plugin skeleton | Live-tested · [doc](docs/claude-integration.md) |
+| Codex CLI | 0.142.5 | `config.toml` MCP registration + `.codex/hooks.json` hooks | Live-tested · [doc](docs/codex-integration.md) |
+| Antigravity CLI (`agy`) | 1.2.5 | named-hook map `hooks.json` (5 events passed via argv) | Live-tested (partial scope) · [doc](docs/antigravity-integration.md) |
+| Antigravity IDE | 2.12.2 | `.antigravity/rules/anysearch.mdc` fallback | IDE host does not execute hooks (reproduced) · [doc](docs/antigravity-integration.md) |
+| DeepSeek Harness (`dsh`) | 0.1.7-rc.2 | native registration (`ctx.tools`) + `dsh-plugin` Cordis bundle | Live-tested (via fallback path) · [doc](docs/deepseek-harness-integration.md) |
 
-"Verified" means an end-to-end transcript captured on the real host
-(`stream-json`), not just matching interfaces on paper. Full scope, dates, and
-probe evidence live in the linked integration docs.
+"Verified" means tested end-to-end on a real host and captured in full conversation logs (`stream-json`), not just matching interfaces on paper. Full scopes, dates, and probe evidence are documented in each integration guide.
 
-## Known limitations
+## Known Limitations
 
-| Limitation | Why it matters |
-|------------|----------------|
-| exit-time `libc++abi` aborts on macOS | root cause: forced `process.exit()` while native state was still alive, not a leaked sqlite handle. Store-side exits now close handles and let the loop end, and macOS is a blocking `ship-gate` leg again. Anything that force-exits a process with live native state can still abort; the non-blocking `macos-spillover-probe` job stays as an early-warning reporter |
-| `anysearch` provider cannot pre-filter | its MCP `domain` parameter is a vertical-routing enum, not a hostname allowlist; with a domain allowlist it honestly falls back to post-filter only |
-| the `anysearch` adapter wires `search` only | `get_sub_domains`, `batch_search`, `extract`, and the live-but-undocumented `score` are not wired. The upstream tool count is not pinned (official docs list four; the live endpoint has also returned `score`). A successful `search` reply's `_meta.request_id` is observation-trace diagnostic data only, and only when the caller supplies a span; failed replies record nothing. It never enters results and is never an idempotency key |
-| exit-time `libc++abi` may overwrite the abstain exit code | automation must read the structured abstain marker (`--json` / `structuredContent.abstain`), not the exit code alone |
-| `rag.adapter = "fts"` is not enabled on any shipped domain | all three shipped domains stay on `adapter = "none"`; enabling it per domain is an explicit opt-in product decision (#130) |
-| `query_knowledge` only retrieves when the active domain enables `rag.adapter = "fts"` | it dispatches through the RAG registry over store-level shared Research Memory (#155); `none` / `note` return an explicit empty result, and every shipped domain stays on `none`, so a default install answers empty |
-| omitting `[rag]` is not the same as `adapter = "none"` | `rag` is a replace-on-declare section: a derived domain inherits its base's adapter/note, and a chain with no adapter fails validation outright |
-| `rag.adapter = "fts"` reads **store-level shared** Research Memory, not the current session | deliberate boundary (#130): the store is the isolation unit; sessions and domains are sub-scopes. Every shipped domain stays on `none`, so the `fts` prompt injection is opt-in (the same store-wide range is already read by `recall_memory`) |
-| MCP dual-era: a `2026-07-28` client is negotiated down to `2025-11-25` | stdio and stateless Streamable HTTP `initialize` return `2025-11-25` for a modern client and all five tools still work; legacy clients get their own version echoed. The hand-wired path stays legacy-only: on stdio/in-memory (or HTTP without the `MCP-Protocol-Version` header), `server/discover` returns `-32601` even with a modern `_meta` envelope, while `tools/list` still degrades to the five-tool legacy list. On HTTP, a non-initialize request sending `MCP-Protocol-Version: 2026-07-28` is rejected before dispatch with HTTP 400 / JSON-RPC `-32000`; use the negotiated `2025-11-25`. See [docs/mcp-server.md](docs/mcp-server.md) |
-| MCP client identity is per-request only | a `2026-07-28` `tools/call` carrying `_meta["io.modelcontextprotocol/clientInfo"]` records the mapped `client_id`; a legacy `2025-11-25` stateless HTTP call has no per-request identity and records `mcp_unknown`. The `initialize`-time extraction is a fallback, not a cross-request guarantee |
+| Limitation | Impact |
+|------------|--------|
+| macOS exit-time `libc++abi` aborts | Root cause is calling `process.exit()` while native objects are still alive, not a leaked sqlite handle. Store exits now close handles and let the event loop end naturally, and macOS is back in the blocking `ship-gate` checks. As long as a forced exit happens with live native objects, it can still abort; `macos-spillover-probe` keeps running as a non-blocking warning check |
+| The `anysearch` provider cannot pre-filter domains | Its MCP `domain` parameter is an enum for vertical routing, not a hostname allowlist. When an allowlist is configured, it can only filter after results return |
+| The `anysearch` adapter only wires `search` | `get_sub_domains`, `batch_search`, `extract`, and the live-but-undocumented `score` are not wired. Upstream tool count is not pinned (official docs list four tools, while the live endpoint has also returned `score`). A successful `search` reply's `_meta.request_id` is only diagnostic data in run traces, recorded only when the caller supplies a span; failed replies record nothing. It never enters results and cannot be used as an idempotency key |
+| Exit-time `libc++abi` aborts may mask the abstain exit code | Automation must read the structured abstain marker (`--json` / `structuredContent.abstain`) instead of relying on the exit code alone |
+| `rag.adapter = "fts"` is not enabled on any shipped domain | All three shipped domains stay on `adapter = "none"`. To enable it for a domain, configure it explicitly (#130) |
+| `query_knowledge` only retrieves when the active domain enables `rag.adapter = "fts"` | It reads the store-wide shared research database through the domain retrieval adapter registry (#155). `none` and `note` return explicit empty results. Shipped domains are all `none`, so default installations answer empty |
+| Omitting `[rag]` is not the same as `adapter = "none"` | The `rag` section replaces the whole section when declared: derived domains inherit their base domain's adapter/note, and inheritance chains without any adapter fail validation |
+| `rag.adapter = "fts"` reads the **store-wide shared** research database, not the current session | This is an intentional boundary (#130): the store is the unit of isolation; sessions and domains are sub-scopes under it. Shipped domains default to `none`, so `fts` injection must be enabled manually (`recall_memory` already reads this same store scope) |
+| MCP dual-era compatibility: `2026-07-28` clients negotiate down to `2025-11-25` | stdio and stateless Streamable HTTP `initialize` return `2025-11-25` to modern clients, and all five tools work normally; older clients get their own version echoed back. Hand-rolled paths only support the legacy version: under stdio or in-memory (or HTTP without the `MCP-Protocol-Version` header), `server/discover` with a modern `_meta` returns `-32601`, and `tools/list` falls back to the legacy five-tool list. On HTTP, non-initialize requests carrying `MCP-Protocol-Version: 2026-07-28` are rejected before dispatch by the transport layer (HTTP 400 / JSON-RPC `-32000`); use the negotiated `2025-11-25`. See [docs/mcp-server.md](docs/mcp-server.md) |
+| MCP client identity is only valid within a single request | A `2026-07-28` `tools/call` carrying `_meta["io.modelcontextprotocol/clientInfo"]` records the mapped `client_id`; legacy `2025-11-25` stateless HTTP calls have no per-request identity and record `mcp_unknown`. Extracting at `initialize` time is a fallback, not a cross-request guarantee |
 
 Full record: [docs/limitations.md](docs/limitations.md).
 
-## Design rationale
+## Why It's Designed This Way
 
-- **Vertical-domain**: domains are TOML policy files with an authoritative
-  `urlAllowlist` enforced in the kernel, not prompt wishes.
-- **Abstain-first**: an empty gated result is a first-class abstain, never a
-  hallucinated answer.
-- **Fail-open**: hooks, providers, and optional peers degrade honestly instead
-  of breaking the host agent.
+- **Vertical domains**: a domain is just a TOML file with a strict, authoritative allowlist `urlAllowlist` enforced by the retrieval engine, not a prompt wish hoping the model plays along.
+- **Say so when there are no results**: when filtering leaves nothing, it cleanly abstains instead of making up answers.
+- **Fail-open on errors**: when hooks, providers, or optional components fail, they get skipped so they never crash the host agent.
 
-## For contributors
+## For Contributors
 
-- `GLOSSARY.md`: canonical domain glossary (read first)
-- `docs/mcp-server.md`: canonical MCP server reference (tools, semantics, transports, env/auth)
-- `docs/rag-adapters.md`: RAG adapter configuration (`none` / `note` / `fts`), injection shape, and budgets
-- `docs/limitations.md`: full known-limitations record
-- `docs/agents/`: domain-doc + GitHub issue tracker conventions
-- Repo layout: `packages/kernel` (engine) · `packages/store` (FTS5 memory,
-  observation, URL policy) · `packages/retriever` (provider adapters + RRF) ·
-  `apps/cli` · `apps/mcp` · `apps/plugin` (host hooks)
-- Per-package tests run under `node --import tsx --test`; the full gate is
-  `node scripts/ship-gate.mjs` (clean tree, tests, pack, install verify, MCP
-  initialize, fail-open boot)
+- `GLOSSARY.md`: authoritative domain glossary (read this first)
+- `docs/mcp-server.md`: MCP server specification reference (tools, semantics, transports, environment variables, and auth)
+- `docs/rag-adapters.md`: domain retrieval adapter configs (`none` / `note` / `fts`), injected content, and size limits
+- `docs/limitations.md`: complete record of known limitations
+- `docs/agents/`: conventions for domain docs and GitHub issue tracker
+- Repository layout: `packages/kernel` (engine) · `packages/store` (FTS5 memory, run traces, URL policy) · `packages/retriever` (provider adapters + RRF) · `apps/cli` · `apps/mcp` · `apps/plugin` (host hooks)
+- Run single-package tests with `node --import tsx --test`; full release gate is `node scripts/ship-gate.mjs` (clean tree, test suite, packaging, install verification, MCP initialize, fail-open startup)
 - Governance: `AGENTS.md`, `docs/agents/`
 
 Build from source:
 
 ```bash
 git clone <this repo> && cd anysearch-cli
-pnpm install --ignore-scripts --node-linker=hoisted   # prebuilt better-sqlite3, no node-gyp; hoisted avoids Windows EPERM
+pnpm install --ignore-scripts --node-linker=hoisted   # better-sqlite3 uses prebuilt binaries, no node-gyp; hoisted avoids Windows EPERM
 pnpm build
 node apps/cli/dist/index.js doctor
 ANS_DOMAIN=docs node apps/cli/dist/index.js search "tokio JoinSet rust"
 
-# machine-readable output (includes sufficiency / attribution / abstain)
+# machine-readable output (includes sufficiency check, source tags, and abstain)
 node apps/cli/dist/index.js search "..." --json
 ```
 
-The CLI resolves as `ans` when installed globally or linked; in repo form,
-`node apps/cli/dist/index.js` is the same entry point.
+The CLI resolves to `ans` when installed globally or linked. Inside the repository, `node apps/cli/dist/index.js` is the exact same entry point.
