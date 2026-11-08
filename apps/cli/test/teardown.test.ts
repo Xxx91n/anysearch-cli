@@ -1,5 +1,5 @@
-// Native-handle teardown registry — registered closes run once,
-// in order, errors swallowed (a bad close must never mask the exit path).
+// Native-handle teardown registry — each drain runs pending closes once, in
+// order; a throwing close is swallowed and stays queued for the next drain.
 // unrefPendingHandles is a no-throw backstop for pending libuv handles.
 import { registerTeardown, runTeardown, unrefPendingHandles } from "../src/teardown";
 import { pendingTeardowns } from "@anysearch-cli/store";

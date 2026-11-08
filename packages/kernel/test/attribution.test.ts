@@ -23,6 +23,7 @@ import {
   GapRequestSchema,
 } from "../src/attribution-schema";
 import { Value } from "@sinclair/typebox/value";
+import { FormatRegistry } from "@sinclair/typebox";
 import type { FusedEnvelope, AttributionReport } from "@anysearch-cli/retriever";
 
 // ---------------------------------------------------------------------------
@@ -441,8 +442,26 @@ describe("attribution schema closure", () => {
       assert.equal(Value.Check(schema, { ...valid, unexpected: "x" }), false);
     });
   }
-  it("report closes unknown keys", () => {
-    assert.equal((AttributionReportSchema as { additionalProperties?: boolean }).additionalProperties, false);
+  it("report accepts a valid shape and rejects unknown keys", () => {
+    // Bare TypeBox has no date-time format registered; the schema declares one,
+    // so register it locally before exercising the report as a whole.
+    FormatRegistry.Set("date-time", (value) => typeof value === "string" && !Number.isNaN(Date.parse(value)));
+    const report = {
+      schema: "anysearch/attribution-report@1",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+      claims: [claim],
+      gaps: [gap],
+      supportedCount: 1,
+      uncertainCount: 0,
+      unsupportedCount: 0,
+      judgeEnhanced: false,
+    };
+    assert.equal(Value.Check(AttributionReportSchema, report), true);
+    assert.equal(
+      (AttributionReportSchema as { additionalProperties?: boolean }).additionalProperties,
+      false,
+    );
+    assert.equal(Value.Check(AttributionReportSchema, { ...report, unexpected: "x" }), false);
   });
   it("label union is supported|uncertain|unsupported", () => {
     for (const label of ["supported", "uncertain", "unsupported"]) {
