@@ -60,16 +60,24 @@ if (!KEY) {
     const sHosts = [...new Set(resultUrls(sub.json).map(HOST))].filter((h) => h !== "");
     const parentCoversSub = pHosts.some((h) => h !== "typescriptlang.org" && h.endsWith(".typescriptlang.org"));
     const subPullsParent = sHosts.some((h) => h === "typescriptlang.org" || (h.endsWith(".typescriptlang.org") && h !== "www.typescriptlang.org"));
-    const status = pHosts.length === 0 || sHosts.length === 0 ? "INCONCLUSIVE" : "PASS";
-    record({ id: "C-subdomain-direction", status, summary: (status === "INCONCLUSIVE" ? "one side returned no hosts — vacuous, no source checked; " : "") + "parent hosts=" + JSON.stringify(pHosts) + " sub hosts=" + JSON.stringify(sHosts) + " parentCoversSub=" + parentCoversSub + " subPullsParent=" + subPullsParent, evidence: { pHosts, sHosts, parentCoversSub, subPullsParent } });
+    const allowedParent = (h) => h === "typescriptlang.org" || h.endsWith(".typescriptlang.org");
+    const allowedSub = (h) => h === "www.typescriptlang.org" || h === "typescriptlang.org" || h.endsWith(".typescriptlang.org");
+    const cLeaks = [...new Set([...pHosts.filter((h) => !allowedParent(h)), ...sHosts.filter((h) => !allowedSub(h))])];
+    const bothDirections = parentCoversSub && subPullsParent;
+    const status = cLeaks.length ? "LEAK" : (pHosts.length > 0 && sHosts.length > 0 && bothDirections ? "PASS" : "INCONCLUSIVE");
+    const cNote = status === "LEAK"
+      ? "hosts outside include_domains: " + JSON.stringify(cLeaks) + "; "
+      : status === "INCONCLUSIVE" ? "no conclusive direction observation; " : "";
+    record({ id: "C-subdomain-direction", status, summary: cNote + "parent hosts=" + JSON.stringify(pHosts) + " sub hosts=" + JSON.stringify(sHosts) + " parentCoversSub=" + parentCoversSub + " subPullsParent=" + subPullsParent, evidence: { pHosts, sHosts, parentCoversSub, subPullsParent, bothDirections, leaks: cLeaks } });
   } catch (e) { record({ id: "C-subdomain-direction", status: "ERROR", summary: String(e.message || e), evidence: null }); }
   if (process.env.PROBE_TAVILY_RESEARCH === "1") {
     try {
       const r = await tavily("/research", { input: "tokio JoinSet structured concurrency", include_domains: ["pnpm.io"] });
       if (r.status !== 200) throw new Error("HTTP " + r.status + " " + r.text);
-      const urls = [];
-      const walk = (o) => { if (!o || typeof o !== "object") return; if (typeof o.url === "string" && /^https?:/i.test(o.url)) urls.push(o.url); for (const v of Object.values(o)) walk(v); };
+      const rawUrls = [];
+      const walk = (o) => { if (!o || typeof o !== "object") return; if (typeof o.url === "string") rawUrls.push(o.url); for (const v of Object.values(o)) walk(v); };
       walk(r.json);
+      const urls = rawUrls.filter((u) => /^https?:/i.test(u));
       const leaks = urls.filter((u) => !inDomain(u, ["pnpm.io"]));
       // honesty fix: 0 extracted sources is vacuous, not a pass — the
       // research response shape returned no url fields this run, so the arm
@@ -77,9 +85,9 @@ if (!KEY) {
       // of overstating leakage assurance.
       const dStatus = urls.length === 0 ? "INCONCLUSIVE" : (leaks.length ? "LEAK" : "PASS");
       const dSummary = urls.length === 0
-        ? "0 url fields in /research response (keys: " + Object.keys(r.json ?? {}).join(",") + ") — vacuous, response shape needs review"
-        : leaks.length + "/" + urls.length + " research sources outside include_domains";
-      record({ id: "D-research-endpoint", status: dStatus, summary: dSummary, evidence: { urls: urls.slice(0, 20), leaks: leaks.slice(0, 20), httpStatus: r.status, responseKeys: Object.keys(r.json ?? {}) } });
+        ? "0 valid URL fields (of " + rawUrls.length + ") in /research response (keys: " + Object.keys(r.json ?? {}).join(",") + ") — vacuous, response shape needs review"
+        : leaks.length + "/" + urls.length + " research sources outside include_domains (of " + rawUrls.length + " url strings)";
+      record({ id: "D-research-endpoint", status: dStatus, summary: dSummary, evidence: { urls: urls.slice(0, 20), leaks: leaks.slice(0, 20), rawUrlCount: rawUrls.length, httpStatus: r.status, responseKeys: Object.keys(r.json ?? {}) } });
     } catch (e) { record({ id: "D-research-endpoint", status: "ERROR", summary: String(e.message || e), evidence: null }); }
   } else {
     record({ id: "D-research-endpoint", status: "SKIPPED", summary: "PROBE_TAVILY_RESEARCH=1 not set - changelog documents research include_domains as soft preference", evidence: null });
