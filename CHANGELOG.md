@@ -1,1396 +1,1261 @@
 # Changelog
 
-All notable changes to this project are recorded here. Format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow
-[SemVer](https://semver.org/).
+这里记这个项目每次改了什么，新的在上。格式按
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版本号按
+[SemVer](https://semver.org/)。
 
-## Unreleased — #213: MCP clientInfo——现代 `_meta` 解析 + trace 断言
+## Unreleased — #213: MCP clientInfo——新版 `_meta` 解析 + trace 断言
 
 ### Changed
 
-- **MCP `client_id` 改为 per-request 归属**：五个工具的 handler 从 SDK 请求上下文读取现代 `2026-07-28` 请求的 `_meta["io.modelcontextprotocol/clientInfo"]`，经 `mapMcpClientId` 映射后写入 observation trace。legacy `2025-11-25` stateless HTTP 调用没有 per-request 身份，记录 `mcp_unknown`；HTTP 入口的 `initialize` 提取保留为 fallback，不再承诺跨请求稳定归属。
+- **MCP `client_id` 改成每个请求各自算归属**：五个工具的处理函数从 SDK 请求上下文里读 `2026-07-28` 请求带的 `_meta["io.modelcontextprotocol/clientInfo"]`，经 `mapMcpClientId` 映射后写进观测记录（trace）。旧的 `2025-11-25` 无状态 HTTP 调用没有按请求的身份，记成 `mcp_unknown`；HTTP 入口的 `initialize` 里提取的那份留作 fallback，但不再承诺跨请求都归到同一个人。
 
 ### Tests
 
-- `apps/mcp/test/client-attribution.test.ts`：五个工具在现代 `_meta` 下的 `client_id` 映射、legacy 匿名、initialize fallback、per-request 优先与畸形 payload 降级；in-memory 与生产 stateless HTTP 两条路径都覆盖。
+- `apps/mcp/test/client-attribution.test.ts`：五个工具在新 `_meta` 下的 `client_id` 映射、旧版匿名、initialize fallback、按请求优先以及 payload 畸形时降级；内存传输和生产环境的无状态 HTTP 两条路径都覆盖。
 
-## Unreleased — #24: ip 第五域语料建集（`vert-i*` 语料 + 活词表快照）
+## Unreleased — #24: 建 ip 第五域的评测语料（`vert-i*` 语料 + 当时拉到的词表快照）
 
 ### Added
 
-- **`ip` 第五域评测语料**（`eval-looks.json`）：14 条 live-scoped 条目 —— 参数化 5 条（`vert-i1101..i1105`，覆盖 `ip.global` 词表 `type`/`keyword`/`applicant`/`ipc`/`date_start` 的双参、三参与四参组合）、语义 5 条（`vert-i1201..i1205`，domain-only spec，沿用既有语义层模式；参数化 `ip.global` 无参数响应多为无 URL 文本，当前 adapter 会丢弃，故不在该层断言）、对照 4 条（`ctrl-i101..i104`：无 spec 防误标、错配 spec 静默回退、bogus sub_domain 拒收、歧义查询）。5 条参数化条目均定义 `hitHosts`（部分附 `/patent/` 路径池）；语义条目按 2026-11-07 domain-only 实测宿主补 `hitHosts` 测量池。
-- **`ip` 进入垂域维度词表**（`packages/store/src/eval/docs-golden.ts`）：`VERTICAL_DIMENSION_VALUES.vdomain` 增 `ip`，使新语料通过 schema 校验；docs 八维计数闸不受影响（垂域标签走独立词表）。
-- **活词表快照落档**（`docs/eval/ip-corpus-probe-2026-11-07.md` + `docs/vertical-domains.md`）：记录 2026-11-07 的 `get_sub_domains(domain="ip")` 原文（唯一子域 `ip.global`，参数 `type`/`keyword`/`applicant`/`ipc`/`date_start`）与搜索形态矩阵（domain-only 静默回退、bogus sub_domain `isError`、bogus type 值静默容忍）。快照仅用于建集，不进入运行时枚举。
-- **上游阻塞 registry 解除登记**（`docs/research/upstream-unblock-registry.md`）：#24 条目追加 2026-11-07 触发事实与语料落点；原始 `登记状态: absent` 不变（内部评测缺口不补登 `docs/limitations.md`）。
+- **`ip` 第五域评测语料**（`eval-looks.json`）：14 条能现场跑的条目 —— 参数化 5 条（`vert-i1101..i1105`，覆盖 `ip.global` 词表里 `type`/`keyword`/`applicant`/`ipc`/`date_start` 的两参、三参和四参组合）、语义 5 条（`vert-i1201..i1205`，spec 只写 domain，沿用已有语义层的写法；参数化 `ip.global` 不带参数时多数回的是没有 URL 的文本，当前 adapter 会把这些丢掉，所以这一层不做断言）、对照 4 条（`ctrl-i101..i104`：没有 spec 时防止被误标、spec 配错时静默退回普通搜索、乱写的 sub_domain 被拒、问题本身有歧义）。5 条参数化条目都定义了 `hitHosts`（部分还带 `/patent/` 路径池）；语义条目按 2026-11-07 只给 domain 时实测到的宿主补上 `hitHosts` 测量池。
+- **`ip` 进垂域维度词表**（`packages/store/src/eval/docs-golden.ts`）：`VERTICAL_DIMENSION_VALUES.vdomain` 加 `ip`，新语料才能过 schema 校验；docs 那边八维计数闸不受影响（垂域标签走的是另一份词表）。
+- **词表快照存档**（`docs/eval/ip-corpus-probe-2026-11-07.md` + `docs/vertical-domains.md`）：记下 2026-11-07 调 `get_sub_domains(domain="ip")` 的原文（只有一个子域 `ip.global`，参数 `type`/`keyword`/`applicant`/`ipc`/`date_start`）和搜索结果的各种形态（只给 domain 时静默退回普通搜索、乱写 sub_domain 时 `isError`、乱写 type 值时静默接受）。快照只用来建语料，运行时不读它。
+- **上游阻塞清单里补上 #24 的进展**（`docs/research/upstream-unblock-registry.md`）：#24 那条加上 2026-11-07 触发的事实和语料放在哪；原来的 `登记状态: absent` 不变（内部评测缺口不往 `docs/limitations.md` 补）。
 
 ### Verification
 
-- `validateDocsGoldenSet` / `validateCoverageManifest` / `crossCheckDocsGolden` 对更新后的账本零问题（Node 24 `--experimental-strip-types` 直接加载验证器，未构建）。
-- 远端 `test:online` job 不构建 CLI：`apps/cli/dist` 缺失时 `eval-looks-vertical.online.ts` 直接 SKIP（exit 0），因此 14 条新 live 条目不会进入该 job 的配对 delta；live 语料运行须在已构建 CLI 的环境单独执行。`check-build` 与其余 CI 腿已在本 PR 上通过。
+- `validateDocsGoldenSet` / `validateCoverageManifest` / `crossCheckDocsGolden` 对更新后的账本零问题（Node 24 用 `--experimental-strip-types` 直接加载校验器，没有构建）。
+- 远端的 `test:online` job 不构建 CLI：`apps/cli/dist` 不在时 `eval-looks-vertical.online.ts` 直接 SKIP（exit 0），所以 14 条新现场条目不会进那个 job 的配对 delta；现场语料要在已经构建好 CLI 的环境里单独跑。`check-build` 和其余 CI 腿已经在这个 PR 上通过。
 
-## Unreleased — #204: MCP 失败语义——isError、空结果与 provider failure metadata
+## Unreleased — #204: MCP 失败语义——isError、空结果与 provider 失败信息
 
 ### Changed
 
-- **MCP 工具执行失败返回 `isError: true`**：`search_web` / `research_web` / `recall_memory` 的 handler 异常与 vertical guard 拒绝、`ans_chat` 的缺失 LLM 配置与 runtime 错误事件，都按 MCP 规格作为执行错误返回；错误结果只带既有可行动文本，不再携带 `structuredContent`。
-- **全员 provider 失败是错误，空结果不是**：`search_web` / `research_web` 在零结果且所有被查询的 provider 都在 `providersFailed` 时返回 `isError: true` 并在文本中点名失败 provider；至少一个 provider 成功但零命中仍是成功结果（`isError` 不为 true）。`research_web` 按轮聚合失败元数据，任一轮有 provider 应答即视为成功。
-- **部分失败的成功结果携带 provider failure metadata**：至少一个 provider 成功且存在失败/provider 构造错误时，`providersFailed`、`providerErrorClasses`、`providerBuildErrors` 同时出现在 content JSON 与 `structuredContent`。
-- **abstain 与 `query_knowledge` 的 adapter=none/note 保持成功语义**：不因上述收紧转为错误。
+- **MCP 工具执行失败返回 `isError: true`**：`search_web` / `research_web` / `recall_memory` 的处理函数抛错、vertical guard 拒绝、`ans_chat` 缺少 LLM 配置或 runtime 报错事件，都按 MCP 规范当作执行错误返回；错误结果只带原来那段可照着做的文字，不再带 `structuredContent`。
+- **所有 provider 都失败才算错误，空结果不算**：`search_web` / `research_web` 零结果、而且问过的 provider 全在 `providersFailed` 里时，返回 `isError: true`，并在文字里点名失败的是谁；只要有一个 provider 成功、只是没搜到东西，仍然算成功（`isError` 不为 true）。`research_web` 按轮汇总失败信息，任何一轮有 provider 应答就算成功。
+- **部分失败的成功结果带上 provider 失败信息**：至少一个 provider 成功、同时又有失败或 provider 构造错误时，`providersFailed`、`providerErrorClasses`、`providerBuildErrors` 会同时出现在 content JSON 和 `structuredContent` 里。
+- **拒答和 `query_knowledge` 的 adapter=none/note 仍然是成功语义**：不因为上面收紧就改成错误。
 
 ### Tests
 
-- `apps/mcp/test/failure-semantics.test.ts`：handler 异常（三个工具）、`ans_chat` 缺失配置与 runtime 错误、全员失败、部分失败元数据双通道、零结果成功、abstain、`query_knowledge` note，以及真实 stateless HTTP 传输上的 `isError` 传播与“unknown tool 仍是 JSON-RPC error”。
-- `apps/mcp/test/dual-era.test.ts`：离线 ans_chat 断言缺失配置的错误结果（stdio + HTTP）；`apps/mcp/test/vertical-guard.test.ts`：金文本不变，新增 `isError: true` 与无 `structuredContent` 断言。
-## Unreleased — #188: token 预算预留——agent_start 预留 + 硬停 + 冷启动回退（T9 落地）
+- `apps/mcp/test/failure-semantics.test.ts`：处理函数抛错（三个工具）、`ans_chat` 缺配置和 runtime 报错、全部失败、部分失败信息走两个通道、零结果算成功、拒答、`query_knowledge` 的 note，以及真实的无状态 HTTP 传输上 `isError` 能传出去、"unknown tool 仍然是 JSON-RPC error"。
+- `apps/mcp/test/dual-era.test.ts`：离线测 `ans_chat` 缺配置时的错误结果（stdio + HTTP）；`apps/mcp/test/vertical-guard.test.ts`：固定的期望文字没变，新增 `isError: true` 和无 `structuredContent` 的断言。
+
+## Unreleased — #188: token 预算预留——run 开始先占额度 + 超了硬停 + 冷启动估算（T9 落地）
 
 ### Added
 
-- **run 开始前预留 token**（`packages/kernel/src/pi-runtime.ts`）：在 `agent_start` 边界（`agent.prompt` 之前）按「输入占用 + 输出上限」调用 `ledger.reserveTokens`。当前每次 run 都是新开对话，启动时没有历史，所以实际估算即将发出的 system prompt 和用户输入（这个数偏低）；代码保留了「上下文里已经有模型回报用量时直接用」的路径，但当前生产路径走不到。输出上限默认 12288，`[budget].outputReserveTokens` 可覆写（解析仍由 #187 的 `resolveOutputReserveTokens` 单点负责）。
-- **预留被拒 = 硬停**：`reserveTokens` 返回 false 时只 yield 一个结构化 `error` 事件，不启动当次 run 的 `agent.prompt`，不发 `done`、不伪造摘要，也不结算 token/USD 或 per-call。只停当次 run；改 TOML 提额后下一轮 run 重读并刷新 cap，可继续。账本抛错仍按 #200 的 fail-open 处理：具名 stderr 报告，当次 run 不预留但继续。run 正常结束或 provider 报零用量时释放当次预留；事件流被提前关闭时先中止这一轮，最多等 1 秒拿最终用量；等不到就先按当时用量释放预留再返回，之后有更多用量再补记差额。如果中止时模型还没报最终用量，按预留量保守记账，不当作零用量放过；进程在后台补记前退出时，晚到的用量可能少记，但预留已经释放。
-- **run 开始重读 Active Domain 并刷新账本 cap**：有 `domainTomlPath` 时，每次 run 开头走 mtime reloader；新建 runtime 的首次探测强制加载当前文件（长驻 MCP 每请求新建 runtime，启动配置快照可能落后于文件），之后按 mtime 差分。运行时工具调用（`beforeToolCall`）期间读到的 TOML 改动会记到下个 run 开头再刷新，避免下一次探测看不到文件变化而漏掉。读到新 `[budget]` 时调 ledger port 的 `initBudget`（删节则 `clearBudgetCaps`），让提额在下一轮 run 生效，不必重启。坏的 TOML 保持上次可用配置，刷新失败 fail-open 并报具名 stderr。runtime 现在接收宿主的 `domainsDirs`；`domainTomlPath` 也按同一组目录和引擎创建时的 domain 名找目标 TOML，`createEngine` 返回实际使用的目录（含默认 chain），`base` 或 Active Domain 只在宿主额外目录、或宿主注入自定义 engine 时也不会退回 `default`。
+- **run 开始前先占住 token 额度**（`packages/kernel/src/pi-runtime.ts`）：在 `agent_start` 这个点上（`agent.prompt` 之前）按「输入占用 + 输出上限」调 `ledger.reserveTokens`。现在每次 run 都开新对话，启动时没有历史，所以实际估的是马上要发出去的 system prompt 和用户输入（这个数偏低）；代码里留了「上下文里已经有模型回报用量就直接用」的路径，但当前生产路径走不到。输出上限默认 12288，可用 `[budget].outputReserveTokens` 改（解析仍然只由 #187 的 `resolveOutputReserveTokens` 一处负责）。
+- **占不到额度就硬停**：`reserveTokens` 返回 false 时只发一个结构化 `error` 事件，不启动这次 run 的 `agent.prompt`，不发 `done`、不编造摘要，也不结算 token/USD 或 per-call。只停这一次 run；改 TOML 提额后下一轮 run 会重读并刷新上限，可以继续。账本本身抛错仍按 #200 的「出故障就放行」处理：用带名字的 stderr 报出来，这次 run 不预留但继续跑。run 正常结束或 provider 报零用量时释放这次预留；事件流被提前关掉时先中止这一轮，最多等 1 秒拿最终用量；等不到就按当时的用量先释放预留再返回，之后有更多用量再补记差额。如果中止时模型还没报最终用量，就按预留量保守记账，不当作零用量放过；进程在后台补记前退出时，晚到的用量可能少记，但预留已经释放。
+- **run 开始重读当前领域并刷新账本上限**：有 `domainTomlPath` 时，每次 run 开头都走 mtime 重载；新建 runtime 的第一次探测强制加载当前文件（长驻 MCP 每个请求新建 runtime，启动时的配置快照可能已经落后于文件），之后只看 mtime 有没有变。运行时工具调用（`beforeToolCall`）期间读到的 TOML 改动会记下来，到下次 run 开头再刷新，免得下一次探测看不到文件变化而漏掉。读到新的 `[budget]` 时调账本接口的 `initBudget`（节被删了就 `clearBudgetCaps`），让提额在下一轮 run 生效，不用重启。TOML 写坏时保留上一份能用的配置，刷新失败就「出故障就放行」，用带名字的 stderr 报出来。runtime 现在也接收宿主的 `domainsDirs`；`domainTomlPath` 也按同一组目录和建引擎时的域名去找那份 TOML，`createEngine` 会返回实际用到的目录（包括默认链），`base` 或当前领域只在宿主多给了目录、或者宿主自己塞了 engine 时也不会退回 `default`。
 
 ### Changed
 
-- **token 维度从 settle-only 变为预留-结算两段制**：run 结束时 `settleTokens` 先释放本次预留、再按 provider 实报总量计入 spent；实际用量可以高于预留（输出超静态上限时不反向追加）。USD 仍只结算不预留（没有价格表）。
-- **`GLOSSARY.md` Budget Ledger 词条**同步为预留-结算两段制。
+- **token 从「只在结束时结算」改成「先预留、再结算」两段**：run 结束时 `settleTokens` 先释放这次预留，再按 provider 实报的总量计入 spent；实际用量可以超过预留（输出超过静态上限时不倒扣）。USD 仍然只在结束时结算，不预留（因为没有价格表）。
+- **`GLOSSARY.md` 里预算记账那一条**同步成「先预留、再结算」两段。
 
 ### Tests
 
-- `packages/kernel/test/pi-runtime.test.ts`：预留公式与冷启动回退/用量锚的纯函数断言；默认 12288 与 TOML 覆写经 ledger 端口观测，并在真实账本上限边界上再验一次（12488 成功 / 12487 失败，4096 覆写 4296 成功 / 4295 失败）；真实 `SqliteSessionStore` 下预留被拒时只有一个 error、无 done、`agent.prompt` 未启动、账本无 spend/reserved；提高 cap 后同一 runtime 可继续跑；实际用量超过预留时仍按实结算且 reserved 归零；零用量 run 释放预留；事件流提前关闭时最多等 1 秒拿最终用量，停不下来则先按当时用量释放预留、返回后再补差额；`beforeToolCall` 中途读到的 TOML 改动会在下个 run 开头刷新账本；`base` 只在宿主额外 `domainsDirs` 时也能解析；token settle 抛错时 finally 只重试一次且只落账一次；`reserveTokens` 抛错按 fail-open 报具名 stderr 且 run 继续；真实 TOML 文件覆盖两种生产形状——先改文件后新建 runtime（MCP 形状）与同一 runtime 后续升降 cap——均刷新账本行。既有 #178/#200 用例的 token cap 随预留语义上调，settle-by-actuals 断言保留。
-- `packages/store/test/url-policy.test.ts`：`createDomainReloader` 的 `forceFirst` 只在首次探测强制返回当前 schema，之后恢复 unchanged → null 的既有契约。
+- `packages/kernel/test/pi-runtime.test.ts`：预留公式和冷启动估算/用量检查项的纯函数断言；默认 12288 和 TOML 改写都通过账本接口观察，并在真实账本的上限边界再验一遍（12488 成功 / 12487 失败，4096 改写为 4296 成功 / 4295 失败）；真实 `SqliteSessionStore` 下预留被拒时只有一个 error、没有 done、`agent.prompt` 没启动、账本没有 spend/reserved；提高上限后同一个 runtime 可以继续跑；实际用量超过预留时仍按实结算且 reserved 归零；零用量 run 释放预留；事件流提前关闭时最多等 1 秒拿最终用量，停不下来就先按当时用量释放预留、返回后再补差额；`beforeToolCall` 中途读到的 TOML 改动会在下次 run 开头刷新账本；`base` 只在宿主额外给了 `domainsDirs` 时也能解析；token 结算抛错时 finally 只重试一次且只记一次账；`reserveTokens` 抛错按「出故障就放行」报出带名字的 stderr，run 继续；真实 TOML 文件覆盖两种生产情形——先改文件再新建 runtime（MCP 的用法）和同一个 runtime 后面升降上限——都会刷新账本行。原有 #178/#200 用例的 token 上限跟着预留语义上调，按实际用量结算的断言保留。
+- `packages/store/test/url-policy.test.ts`：`createDomainReloader` 的 `forceFirst` 只在第一次探测时强制返回当前 schema，之后恢复 unchanged → null 的原约定。
 
-## Unreleased — #178: PiAgentRuntime ledger 接线——token/USD 结算生产化（#36 承接）
+## Unreleased — #178: PiAgentRuntime 接上账本——token/USD 结算进生产路径（承接 #36）
 
 ### Changed
 
-- **`ans chat` / `ans_chat` 的生产 runtime 收到真实 `BudgetLedger`**：`wireChatMemory`（CLI）与 `resolveAnsChatSession`（MCP）在会话行注册成功后把 `CompositionResult.ledger`（与 store 同一连接、`createBudgetLedger()` 的同一实例）随 `store`/`sessionId` 一起交给 `PiAgentRuntime`；注册失败 fail-open 时不交 ledger，避免对不存在的会话行结算。此前 `CompositionResult.ledger` 只有 engine 消费者，runtime 的 settle 代码与单测存在但生产路径永不触发（#177 遗留）。
-- **runtime 计费门收紧为 `store && sessionId && ledger`**（`packages/kernel/src/pi-runtime.ts`）：与 MemoryPipeline 同一门控；只有 ledger 缺少 store/session 的接线不再写入账本。`reserveCalls()` 被拒时仍照旧继续当次 run（runtime 硬停归 #188），但不再把未获预留的 per-call 结算为 billable call；token/USD settle-only 维度仍记录实际用量。
-- **done 事件 token 摘要与账本结算同口径**：摘要新增 `= <total> total`，total 即 `settleTokens` 写入的 `usage.totalTokens`（含 cache read/write），修复摘要只报 input+output、账本按 total 结算时两者不一致。
-- **engine answer-mode per-call 预留释放修正**（`packages/kernel/src/engine.ts`）：reserve 与 settle 使用同一个 `perCallEstimate`；此前 answer 模式按 2× answer-capable provider 预留、却按 provider 数结算，每个 answer-capable provider 遗留 1 个 `reserved_calls`，永久侵蚀 call 预算（#177 审查转交事项）。
+- **`ans chat` / `ans_chat` 的生产 runtime 拿到真实 `BudgetLedger`**：`wireChatMemory`（CLI）和 `resolveAnsChatSession`（MCP）在会话行注册成功后，把 `CompositionResult.ledger`（和 store 同一个连接、`createBudgetLedger()` 的同一个实例）跟 `store`/`sessionId` 一起交给 `PiAgentRuntime`；注册失败就「出故障就放行」，不交账本，避免给一个不存在的会话行结算。以前 `CompositionResult.ledger` 只有 engine 用，runtime 的结算代码和单测都在，但生产路径永远走不到（#177 留下的）。
+- **runtime 的计费门收紧为 `store && sessionId && ledger`**（`packages/kernel/src/pi-runtime.ts`）：跟 MemoryPipeline 用同一道门；只有账本、没有 store/session 的接法不再往账本写。`reserveCalls()` 被拒时仍照旧继续这次 run（runtime 硬停归 #188），但不再把没占到额度的 per-call 记成计费调用；token/USD 仍然只按实际用量结算。
+- **done 事件里的 token 摘要和账本用同一个口径**：摘要多了 `= <total> total`，total 就是 `settleTokens` 写进去的 `usage.totalTokens`（含 cache read/write），修掉摘要只报 input+output、账本按 total 结算时两边对不上的问题。
+- **engine answer 模式的 per-call 预留释放修正**（`packages/kernel/src/engine.ts`）：预留和结算用同一个 `perCallEstimate`；以前 answer 模式按 2 倍的 answer-capable provider 预留，却按 provider 数量结算，每个 answer-capable provider 都留下 1 个 `reserved_calls`，一直吃掉 call 预算（#177 审查时转过来的事）。
 
 ### Tests
 
-- `packages/kernel/test/pi-runtime.test.ts`：真实 `SqliteSessionStore` + `createBudgetLedger()` 的 runtime 端到端（spentTokens=157 / spentUsd / billableCalls=1 / reservedCalls=0，done 摘要总数与账本一致）；`callCap=0` 拒绝 reserve 时不结算 billable、token 实际用量仍落账；只有 ledger 缺 store/session 时计费门保持关闭；既有零 usage 不写 settle 回归保留。
-- `packages/kernel/test/engine-anchor.test.ts`：answer 模式 reserve=2 / settle 释放同界，`reservedCalls` 归零。
-- `apps/cli/test/chat-memory-wiring.test.ts` / `apps/mcp/test/ans-chat-session.test.ts`：成功 wiring 返回 engine ledger 同一实例；注册失败路径不返回 ledger；budget setup 失败路径保留 memory wiring 但省略 ledger。
+- `packages/kernel/test/pi-runtime.test.ts`：真实 `SqliteSessionStore` + `createBudgetLedger()` 的 runtime 端到端（spentTokens=157 / spentUsd / billableCalls=1 / reservedCalls=0，done 摘要的总数和账本一致）；`callCap=0` 拒绝预留时不记计费调用、token 实际用量仍然记账；只有账本缺 store/session 时计费门保持关闭；原有的零 usage 不写结算的回归保留。
+- `packages/kernel/test/engine-anchor.test.ts`：answer 模式预留 2、结算释放同一个界，`reservedCalls` 归零。
+- `apps/cli/test/chat-memory-wiring.test.ts` / `apps/mcp/test/ans-chat-session.test.ts`：接好的路径返回的 engine ledger 是同一个实例；注册失败路径不返回 ledger；budget setup 失败路径保留记忆接线，但不给 ledger。
 
 ### Fixed
 
-- **CodeRabbit #200 返修——预算故障 fail-open**：两个 wiring helper 在会话行注册成功但 budget setup 失败（`initBudget` / `clearBudgetCaps` 抛错，或声明了 `[budget]` 而 store 缺 `initBudget` seam）时不再交出 ledger；runtime 的 `reserveCalls` / `settleCalls` / `settleTokens` / `settleUsd` 各自 try/catch + 具名 stderr，账本锁定不会在 `agent.prompt` 前或完成后 abort chat，消息同步与 done 事件继续。测试覆盖 reserve 抛错、settle 抛错（后续 settle 仍执行）与两条 wiring 的 budget 失败路径。
+- **CodeRabbit #200 返修——预算出故障就放行**：两个接线函数在会话行注册成功、但 budget setup 失败（`initBudget` / `clearBudgetCaps` 抛错，或者声明了 `[budget]` 而 store 没有 `initBudget` 接口）时不再交出 ledger；runtime 的 `reserveCalls` / `settleCalls` / `settleTokens` / `settleUsd` 各自 try/catch 并用带名字的 stderr 报出来，账本锁住也不会在 `agent.prompt` 前或完成后打断 chat，消息同步和 done 事件继续。测试覆盖 reserve 抛错、settle 抛错（后面的 settle 仍会执行）和两条接线各自的 budget 失败路径。
 
-## Unreleased — #189: 会话恢复注入恢复摘要块（sufficiency 锚读侧）
+## Unreleased — #189: 恢复会话时注入恢复摘要（读恢复存档点的那一侧）
 
 ### Added
 
-- **会话恢复时读最后一条 `sufficiency` 锚，生成并注入恢复摘要块**（`packages/kernel/src/recovery-digest.ts`、`memory-pipeline.ts`）：块内包含 query、mode、verdict、各 provider 结果计数、failed/cancelled、unique 计数，并写明「检索计算已完成、送达状态未知」；整块含标记 ≤600 字符硬预算，query 超限追加显式 `[truncated]` 标记；块头按既有内容信任边界标为 untrusted（非用户所写），只当数据、不当指令。只在会话恢复时从锚捕获一次；由于 `transformContext` 输出不会写回 agent history，每个模型调用的 prompt 保持一份，历史已携带时不重复追加（否则工具调用后的后续 prompt 会丢）；mint-new 会话没有锚，零注入。engine 仍只写锚，读侧全部在 kernel 记忆管线（`packages/kernel/src/engine.ts` 仅注释更新）。
-- **`done` 事件携带恢复摘要**（`packages/kernel/src/pi-runtime.ts`）：恢复注入发生时，`done` 事件新增可选 `recovery` 字段；`ans chat` 与 MCP `ans_chat` 的输出都会显示该摘要。
+- **恢复会话时读最后一条 `sufficiency` 存档点，生成并注入一段恢复摘要**（`packages/kernel/src/recovery-digest.ts`、`memory-pipeline.ts`）：这段摘要里有 query、mode、verdict、每个 provider 的结果数、failed/cancelled、unique 计数，并写明「检索计算已完成、送达状态未知」；整块连标记不超过 600 字符的硬上限，query 超长时加一个明显的 `[truncated]` 标记；块头按既有的内容信任边界标成 untrusted（不是用户写的），只当数据、不当指令。只在恢复会话时从存档点读一次；因为 `transformContext` 的输出不会写回 agent history，每个模型调用保持一份，历史里已经有时不重复加（否则工具调用后的后续 prompt 会丢）；新开的会话没有存档点，零注入。engine 仍然只写存档点，读的那一侧全在 kernel 记忆流水线（`packages/kernel/src/engine.ts` 只改了注释）。
+- **`done` 事件带上恢复摘要**（`packages/kernel/src/pi-runtime.ts`）：发生恢复注入时，`done` 事件多一个可选的 `recovery` 字段；`ans chat` 和 MCP `ans_chat` 的输出都会显示这段摘要。
 
 ### Fixed
 
-- **`summaryAnchor`/`recallAnchor` 的 payload 判空类型收口**（`packages/kernel/src/memory-pipeline.ts`）：`summaryAnchor?.payload as any` 在 `strict` 下仍触发 TS18048（possibly undefined），改为先取局部 payload 再判空；不改变注入行为。#178 窗口已在 `2b57d8f8` 先带同一修复以解除误快进到 main 的 check-build 红灯，本分支补上后两处可合并。
+- **`summaryAnchor`/`recallAnchor` 的 payload 判空类型收口**（`packages/kernel/src/memory-pipeline.ts`）：`summaryAnchor?.payload as any` 在 `strict` 下仍然触发 TS18048（possibly undefined），改成先取局部 payload 再判空；注入行为没变。#178 那个窗口已经在 `2b57d8f8` 先带同一个修复，免得误快进到 main 时 check-build 变红；本分支补上后两边可以合并。
 
 ### Tests
 
-- `packages/kernel/test/recovery-digest.test.ts`：断言最终注入文本（prompt / transformContext 接缝）含全部字段与 UNKNOWN 声明；mint-new 零注入；只读最后一条锚；每个模型调用保持一份且历史回传（含更早 user 轮）不重复；query 超长截断标记；600 字符硬预算与病态 provider 列表的收窄形态；untrusted 标记与引号转义；摘要块不污染 RAG recall key；首次读锚失败不把本轮自己的锚当恢复；工具调用后的后续 prompt 仍有摘要；`done.recovery` 可见。
+- `packages/kernel/test/recovery-digest.test.ts`：断言最终注入的文本（prompt / transformContext 接口）包含全部字段和 UNKNOWN 声明；新开会话零注入；只读最后一条存档点；每个模型调用保持一份，历史回传（含更早的 user 轮）时不重复；query 超长时的截断标记；600 字符硬上限和病态 provider 列表下收窄后的形状；untrusted 标记和引号转义；摘要块不污染 RAG recall key；第一次读存档点失败时不把本轮自己写的存档点当成恢复；工具调用后的后续 prompt 仍然有摘要；`done.recovery` 看得见。
 
 ### Documented
 
-- `docs/rag-adapters.md` 的注入落点表与 `GLOSSARY.md` 的 Injection Hot Zone 顺序同步：新增恢复摘要块一行、600 字符预算，并写清其一次性与历史去重行为。
+- `docs/rag-adapters.md` 的注入位置表和 `GLOSSARY.md` 里 Injection Hot Zone 的顺序同步：新增恢复摘要块一行、600 字符上限，并写明它只注入一次、历史里会去重。
 
-## Unreleased — #183: store 侧退出路径显式 teardown——F-16 根因定位 + macOS lane 恢复
-
-### Fixed
-
-- **F-16 家族根因不是「better-sqlite3 handle 泄漏」，而是 `process.exit()` 在 Node threadpool/native 状态仍活时执行 C++ 静态析构**（`packages/store/src/teardown.ts` / `src/db.ts` / `src/eval/cli.ts` / `test/helpers/exit-teardown.mjs`）：Apple libc++ 下锁一个已被析构的 mutex 即 `EINVAL` → `std::system_error` → `std::terminate` → SIGABRT，故 Linux 从未复现、只关 handle 不足以消除。
-  - **handle 侧**：`fd249d41` 的 drain-once 注册表下沉到 `@anysearch-cli/store`（`registerTeardown` 返回 disposer，owner 提前 close 不留引用），新增 `openDatabase`/`trackDatabase` 作为 store 原生 handle 唯一入口（`close()` 幂等 + 自解注册），session-store / observation / eval runner / switch-run / domain-recommend 全部改走它；`apps/cli/src/teardown.ts` 改为 re-export，CLI 与 store 共用同一注册表。
-  - **退出形态**：eval runner 退出改为 CLI 同款契约（先 drain → `process.exitCode` → `unrefPendingHandles()` → 5s unref 看门狗），不再 `process.exit()` 与 libuv teardown 竞态；运行期看门狗（`EVAL_TIMEOUT_MS`）在强制 `process.exit(124)` 前同样先 drain（看门狗触发时 case 可能正持有 tracked handle）；store 测试进程预载 `test/helpers/exit-teardown.mjs`，把 `process.exit(code)` 延后为自然退出（退出码保留 + 非零粘性 + 5s unref 看门狗兜底）。预载**不做**裸 handle 拦截：tsx 下 ESM 导入 better-sqlite3 读不到被改写的 CJS `module.exports`（CI 证伪：diag run 42043443737），且关 handle 从来不是止血点——那条路径已删除，而不是留着冒充。
-  - **重试语义**：drain 时抛错的 teardown 会留在注册表里等下一次 drain（原生 close 可能因活跃的 statement iterator 失败），`trackDatabase` 的注册也要等原生 close 成功才解除；owner 侧与退出侧共用同一个 `closeOnce()`，失败不吞掉登记。
-  - **回归**：`packages/store/test/teardown.test.ts` 钉住注册表语义（顺序/异常吞没/drain-once + 失败保留待重试/disposer）、tracked opener（drain 关闭、owner close 解注册、幂等）与**延后退出的退出码粘性**（`if (failed) process.exit(1); process.exit(0);` 这类先失败后清零的写法不得被掩盖，子进程实测 1/0/2 三例）。
-- **证据链（远端取证，非推断）**：run 41913304226（PR #174 晋级后首个 macOS 全量门）5/76 文件 abort 且断言零失败；diag run 42031513303 在「只关 handle」后仍丢 4 个文件——access-chain-telemetry / access-chain-verify / eval-abstain / fusion-registry-memory，全部以 `process.exit(...)` 收尾——同一轮 `eval-gate.test.ts` 转绿，唯一变量是 eval runner 不再调用 `process.exit()`；diag run 42032450895 门店 `[pass] turbo run test` + `SHIP_GATE_EXIT=0`；随后 **macOS 全量门连续三次绿**（PR #191，含 store 全量套件）：run 42032463918（head `9d172d3`）、run 42034443431（head `ef6fda5`）、run 42035956744（head `5acf577`）。
-
-### Changed
-
-- **`macos-latest` 回到 `ship-gate` blocking matrix**（`.github/workflows/ship-gate.yml`）：`os: [ubuntu-latest, macos-latest, windows-latest]`，矩阵注记改写为「修复面 + 证据口径 + 重校准晋级规则」完整因果；`scripts/assert-checks-green.mjs` 的 `REQUIRED_LEGS` 同步加 `ship-gate (macos-latest)`（与 matrix 双向 lockstep，`eval-release-layering.test.ts` 断言）。
-- **`macos-spillover-probe` 按 TTL 取「改非阻塞保留」**：继续作崩溃签名报告器/早期预警，不再是晋级或再剪除时钟（红灯单独不 re-prune，全量门腿才是权威）；job 注记与 `scripts/macos-exit-probe.mjs` 头注/GREEN/CRASH verdict 文案同步自洽。
-
-### Documented
-
-- **`docs/limitations.md`** macOS 条目改写为「根因 = 强制退出 × 原生状态」的完整证据链 + 修复面 + 晋级证据 + 残留边界（任何强制退出仍可能 abort；`apps/mcp`/`apps/plugin` 按连接 close，未接注册表 drain）；新增「测试里 `process.exit()` 不再同步终止」一条。
-- **README / README.zh-CN 的 Known limitations 行**从「macOS 在阻断矩阵之外」改为「macOS 退出时 abort 已定位 + lane 已恢复 + 残留边界」。
-## Unreleased — #180: providerBuildErrors CLI 诊断呈现（#41 承接）
-
-### Added
-
-- **`ans search` 命令输出呈现 provider 构造缺席与安全类别**：`apps/cli/src/commands/search.ts` 消费内核 `CompositionResult.providerBuildErrors`（#105/#41 落地的 Fail-Open 具名降级元数据，此前 app 侧零消费者），与运行时 `providersFailed` 元数据族配对呈现——人类输出在既有 `Providers queried/failed` 行后新增一行 `Providers absent (build failure): <id> — <safe category>`（abstain 与 results 两个呈现分支同享）；`--json` 信封新增 additive 字段 `providerBuildErrors`（id → 安全类别；健康时 `{}`）。类别措辞逐字透传内核安全口径（CWE-532：构造错误原文不进任何呈现面——记录本身即类别-only），让用户自助修 key/配置；全部健康时人类输出零噪音（空记录不打印行）。不新开 doctor 子命令（父 spec #175 决议 5：与 Fail-Open 家族呈现口径一致）。呈现逻辑落在纯函数 `formatProviderAbsentLine`（`apps/cli/src/commands/search-abstain.ts`，头注收宽为 Search presentation helpers）。
-- **全缺席错误路径同样可诊断**：enabled 全部构造失败时内核引擎在 search 入口即 throw `No providers registered`（既有契约，`engine.test.ts` 钉死）——运行时链行不可达，catch 路径补打同一缺席行（stderr 通道，`--json` stdout 纯度在错误路径同样成立）。「一个 key 都没配」的自助修 key 场景由此端到端可辨识。
-- **消费面收窄为 `ans search`（刻意，记录在案）**：chat/entity/memory/relation 等其他引擎消费点本期不呈现——其命令输出面无 provider 元数据段可挂靠（最小形态决策），构造失败诊断仍由内核 stderr 行承载（#41 内核级交付）；后续如需 chat 侧呈现可另开票承接。
-- **回归**：`apps/cli/test/e2e.test.ts` 五条命令输出面断言，覆盖五个呈现面——①全缺席错误路径（无 key 的 exa-only 域，引擎零臂、零网络）：exit 1 + `ans search error: No providers registered` + 缺席行 golden；②部分缺席 abstain 分支（exa 构造失败 + anysearch 可选 key 构造成功 + `urlAllowlist` 确定性清空结果池）：exit 0 + abstain 行 + `Providers queried: anysearch` + 缺席行 golden；③部分缺席 `--json`：`runSplit` 助手（stdout/stderr 分离）断言 stdout 单 JSON 文档纯度与字段值（`providersFailed` 不断言——受测面是构造缺席记录）；④全缺席 `--json` 错误路径：stdout 恒空（纯度契约钉死）、error 行 + 缺席行均在 stderr；⑤健康零噪音（dummy key 构造成功 + 无 allowlist 走 results 分支）：缺席行不打印 + 运行时 401 走 `Providers failed` 行——构造缺席与运行时失败两个呈现面判别。`EXA_API_KEY` 显式空串 + `ANS_PROVIDERS` 显式空串 + 策略可达夹具（②③⑤）设 `ANS_ALLOW_ENV_OVERRIDE="0"`（TOML allowlist 唯一权威源）+ ②③ 设 `ANYSEARCH_ENDPOINT=http://127.0.0.1:9` 死端口注入（install-smoke 同款手法，CodeRabbit PR #194 Major 返修——anysearch 臂照常构造与查询，运行时 ECONNREFUSED 快速失败，无 live 端点时序依赖）（rehydrateConfigEnv 不覆盖显式值，开发者本机 `~/.anysearch/config.env` 与 shell 残留 eval 通道值均无法回灌）。`apps/cli/test/abstain.test.ts` 补 `formatProviderAbsentLine` 纯函数契约（空记录 `undefined` / golden 单行 / 多缺席 `"; "` 同线）。
-
-## Unreleased — #182: 仓务——#94 MCP SDK v2 调研报告落 main + .temp/ 会话残留处置方案
-
-### Documented
-
-- **#94 MCP SDK v2 调研报告归档至 `docs/research/mcp-sdk-v2-status.md`**：证据住 `main`，与 `upstream-unblock-registry.md` 落档先例一致（#171）。内容恢复自 issue #94 resolution 评论（2026-11-03）；原 `research/mcp-sdk-v2` 分支在归档时已不可从 `origin` 恢复，评论为现存权威结论。零行为改动。
-- **`.temp/` 会话残留逐项处置方案 `docs/research/temp-session-residue-disposition.md`**：枚举 #15/#16 调查工件、CI 日志取证、land 前备份、评审快照四类残留，逐项给出删/档/留建议；删除性动作标注「需用户单独授权」，本票不执行任何删除。零行为改动。
-## Unreleased — #187: budget 配置地基（[budget] TOML + 会话注册 initBudget + 无行放行）
-
-### Added
-
-- **domain TOML 可选 `[budget]` 节**（`packages/store/src/domain-schema.ts`）：支持 `tokenCap` / `usdCap` / `callCap` / `outputReserveTokens` 四个可选键。缺节 = 新会话不建账本行 = 未配置放行；已有账本行在重新注册到无 `[budget]` 的 Active Domain 时置 `configured=0`（`getBalance` 视为未配置、reserve 放行，保留 spend 历史，后续重新配预算复用同行），避免切域/删节后旧 cap 继续生效。节内缺字段 = 该维度无上限（落库为 `Number.MAX_SAFE_INTEGER` 哨兵，不是 0）；显式 `0` = 该维度全拒（连 `amount=0` 的预留也拒绝）。未知键、负数、非有限值、非整数计数键均在加载时 fail-fast（`Domain schema:` 家族）。`outputReserveTokens` 覆写代码常量 `DEFAULT_OUTPUT_RESERVE_TOKENS = 12288`，并由 `resolveOutputReserveTokens()` 作为 #188 的唯一解析入口（43 次真实 run：输出 p95=9,309 / max=9,600；重测触发条件 R≈1.5× 校准 maxTokens=8192）。继承语义与 `[compaction]` 一致：**整节替换**——子域一旦声明 `[budget]` 就需重述全部 cap，未重述的维度变为无上限（这是显式重述契约，不是字段级继承）。
-- **会话注册位点初始化预算行**：`SessionStore.initBudget(sessionId, caps)` 在 CLI `wireChatMemory`（`ensureSession` 同点）与 MCP `resolveAnsChatSession`（`ensureSession` / `createSession` 两条路径）按当时 Active Domain 调用；无 `[budget]` 时改调 `SessionStore.clearBudgetCaps`（新建会话无行则 no-op；旧行置 `configured=0`，`getBalance` 返回 null、reserve 放行，行与 spend 历史保留）。`BudgetLedger.initBudget` 以 `budget_ledger(session_id)` 唯一约束为基础，但实现用 SELECT-then-UPDATE/INSERT（不依赖 `ON CONFLICT`，老库缺唯一索引时 ledger 仍可构造/读写），重复注册只刷新 caps/configured、保留 reserved/spent 计数。`budget_ledger` 新增 `configured` 列（老库受保护 ALTER 迁移、老库唯一索引由受保护迁移补建；新库用表级 `UNIQUE(session_id)`，避免 `db.exec(schema)` 中段失败导致后续 DDL 不建）；老库重复行在唯一索引前合并（spend/reserved 求和、caps 取最严 active 行）。合并成功且唯一索引创建成功时才保证一 session 一行且不丢历史；合并失败仅告警并继续，唯一索引可能创建失败，该降级状态下重复行仍可能存在。已知限制：注册位点只采样一次，域中途切换不重初始化；MCP 长驻进程的 `eng.config` 是启动快照，TOML 提额需重启进程才生效（CLI 每次运行重载）；共享同一 durable anchor 的并发进程对预算行是 last-writer-wins。
-- **BudgetLedger reserve 三态语义**：无行 = 放行（不写行）；`configured=0` 的既有行 = 记录保留量但不强制 cap（行为放行）；`configured=1` 行额度内 = 放行、超限 = 拒绝、cap=0 = 全拒。`reserveTokens` / `reserveUsd` / `reserveCalls` 先查行是否存在，再按 `configured` 决定强制/仅记录。`initBudget` 缺省 cap 由原先的 0（意外全拒）改为无上限哨兵。
-- **clear 后的结算安全（CodeRabbit PR #196 返修）**：`reserveCalls/Tokens/Usd` 在 `configured=0` 的既有行上仍记录保留量（只是不强制 cap），因此 clear 后新增的保留量、以及 clear 后又被 `initBudget` 激活的保留量都能安全结算；`settleCalls/Tokens/Usd` 的减量统一用 `MAX(0, …)` 防止非负 CHECK，仅 `configured=0` 且无记录保留量的 settle 为 no-op，不产生幽灵 spend。clear 前的保留量仍可正常结算并计入 spend。
-
-### Tests
-
-- `packages/store/test/domain-schema.test.ts`：`[budget]` 解析（含小数 `usdCap`、显式 0、空节、缺节）、继承整节替换、未知键/负数/小数计数/负输出预留 fail-fast、12288 常量、`resolveOutputReserveTokens` 缺省/覆写/显式 0。
-- `packages/store/test/budget-ledger.test.ts`：无行放行四维断言、显式 0 全拒（含 `amount=0` 三维）、节内缺字段=无上限、重复 `initBudget` 只刷新 caps 且保留计数/单行、`clearBudgetCaps` 无行 no-op / 有行置 configured=0 后 getBalance 为 null 且 spend 保留 / 重新 init 复用同行、老库重复行 + 缺 configured 列的受保护迁移（重复行先合并为单行、spend/reserved 求和、caps 取最严 active 行；ledger 可读/初始化）、唯一冲突 INSERT→UPDATE 重试（并发注册单行）、clear 后结算安全（未配置保留量 no-op、clear 前保留量夹紧结算不触发非负 CHECK）。
-- `apps/cli/test/chat-memory-wiring.test.ts`：真实 store 注册后账本行存在；无 `[budget]` 不建行；同一锚点从有预算切到无预算时 getBalance 变为 null（未配置）；TOML 显式 0 与缺省字段经 `toBudgetCaps` 落到账本的全链路断言。
-- `apps/mcp/test/ans-chat-session.test.ts`：`ensureSession` 与 `createSession` 两条 MCP 注册路径均建行；无 `[budget]` 不建行；同一 handle 删除 `[budget]` 后 getBalance 变为 null。
-- `scripts/validate-domains.mjs`：仓库域 TOML 校验同步接受并校验 `[budget]`；规则与 `domain-schema.validate` 同源（脚本无 TS 依赖，注释说明镜像关系）。
-## Unreleased — #177: 组合根接线——engine 按检索注入 sessionId + BudgetLedger（T2）
-
-### Changed
-
-- **per-call 预算与 Sufficiency Anchor 从生产路径休眠改为真实触发**：`createEngine` 把 `SqliteSessionStore` 的 `BudgetLedger`（同一连接，`createBudgetLedger()`）注入 engine，并在 `CompositionResult.ledger` 暴露同一实例供 #178 复用。预算行的建立/清理由 #187 的会话注册位点（`SessionStore.initBudget` / `clearBudgetCaps`，按 Active Domain 的 `[budget]`）负责；engine 不再自建行，无 `[budget]` 时沿用 #187 的「无行=放行」语义。
-- **检索级会话身份**：新增 `Query.sessionId`；`PiAgentRuntime` 构造一次 scoped retriever（门：`store && sessionId`），同时供内置 search tool、`MemoryPipeline`、`SufficiencyEvaluator` reround 使用，使 `ans chat` / `ans_chat` 的每次内部检索都携带已接线的会话句柄。engine 的 ledger/anchor 门改用 `q.sessionId || 构造期 sessionId`；门控、reserve→settle、append-only 锚语义未改。
-- **plugin 组合根不注入**：`apps/plugin` 的 hooks/server 不构造 engine，也无可复用会话，注释声明 fail-open。
-
-### Tests
-
-- `packages/kernel/test/engine-anchor.test.ts`：组合根 search-to-store（真实 `createEngine` + 空 sources domain + mock provider）断言 sufficiency 锚落库；无 budget 行时按 #187 语义放行且不建行；显式 `initBudget` 后验证 reserve→settle、超预算拒绝、拒绝后余额不变；runtime 层验证完整接线线程 sessionId、半接线不线程、sufficiency gate 共享 scoped retriever。
-
-## Unreleased — #16: macOS 晋级尝试被首跑证据反转——再剪除+探针恢复+门禁腿级加固（PR #174）
-
-### Changed
-
-- **`macos-latest` 晋级尝试被其首个全量门运行反转，再剪除出 `ship-gate` BLOCKING matrix**（`.github/workflows/ship-gate.yml`）：晋级依据（探针 TTL 规则「≥5 连绿→评估恢复」，2026-11-04 七连绿 41840345806…41850289669 达标）在首个全量门 macOS 运行（41913304226）被证伪——5/76 个 store 测试文件进程在**断言全部通过后**exit-time 崩溃（`libc++abi` "mutex lock failed: Invalid argument"），另 `eval-gate.test.ts` 捕获 eval runner 子进程被信号杀死；F-16 家族在全量负载下存活。根因：fd249d41 的显式 teardown 只覆盖 CLI 组合根（`apps/cli`），store 侧进程退出（测试文件、`packages/store/src/eval/cli.ts`）从未修复，而探针只驱动已修的 CLI 路径——**探针证据面 ≠ 全量门验收面**。matrix 回退 ubuntu+windows。
-- **晋级规则重新校准**：恢复 lane 需 store 侧 teardown 修复后的**全量门试跑绿证据**；「≥5 最小复现连绿」已证实不足。此规则同步改写于 ship-gate.yml 矩阵注释、探针 job TTL 注记、`scripts/macos-exit-probe.mjs` 头注与 verdict 文案、`docs/limitations.md`。
-- **门禁腿级加固（审计 S2，PR #174 CodeRabbit）**：`scripts/assert-checks-green.mjs` 新增 `REQUIRED_LEGS`——族级 discovery 通过后，未注册的 blocking 腿不再能靠已注册腿单独产出 GREEN（原竞态：macos runner 排队更久时两腿即可判绿）；缺失腿保持 discovery 相位并在 discovery 窗口到期后 fail-closed。`release.yml` pre-tag 在 wait-on-check（regexp 无法要求命名腿）之后新增同脚本腿级断言步骤（`--timeout-min 20`，与 wait 步骤使用相同的 20 分钟窗口——晚注册腿需完整运行时间，5 分钟会 fail-closed 掉健康发布），覆盖同一缺口。`REQUIRED_LEGS` 与 ship-gate.yml matrix 的双向同步（缺失腿与多余腿都断红）由 `eval-release-layering.test.ts` 新断言强制（lockstep）。
+## Unreleased — #183: store 侧退出路径显式收尾——找到 F-16 的根因 + 恢复 macOS 那条腿
 
 ### Fixed
 
-- **观察烟测信号盲区（审计 S1，PR #174 CodeRabbit）**：`scripts/verify-observation.mjs` 此前只查 `cli.error`——CLI 写完 trace 后在 teardown 被 SIGABRT 杀死时（F-16 签名）烟测仍 PASS。新增 `cli.signal` 判红（status 仍不设门：teardown 间歇改写退出码，信号才是可靠标记；MCP 子进程豁免——3 秒兜底 kill 是脚本自发的信号）。
+- **F-16 这一家的根因不是「better-sqlite3 句柄泄漏」，而是 `process.exit()` 在 Node 线程池/native 状态还活着时执行 C++ 静态析构**（`packages/store/src/teardown.ts` / `src/db.ts` / `src/eval/cli.ts` / `test/helpers/exit-teardown.mjs`）：Apple 的 libc++ 下锁一个已经析构的 mutex 会拿到 `EINVAL` → `std::system_error` → `std::terminate` → SIGABRT，所以 Linux 上从没复现过，光关句柄也不够。
+  - **句柄这一侧**：把 `fd249d41` 的「只排空一次」注册表下沉到 `@anysearch-cli/store`（`registerTeardown` 返回 disposer，owner 提前 close 时不留引用），新增 `openDatabase`/`trackDatabase` 作为 store 原生句柄的唯一入口（`close()` 幂等 + 自己注销注册），session-store / observation / eval runner / switch-run / domain-recommend 全部改走它；`apps/cli/src/teardown.ts` 改成 re-export，CLI 和 store 共用同一张注册表。
+  - **退出方式**：eval runner 退出改成跟 CLI 一样的写法（先 drain → `process.exitCode` → `unrefPendingHandles()` → 5s unref 看门狗），不再让 `process.exit()` 跟 libuv 的收尾抢；运行期看门狗（`EVAL_TIMEOUT_MS`）在强制 `process.exit(124)` 前也先 drain（看门狗触发时用例可能正拿着被跟踪的句柄）；store 测试进程预加载 `test/helpers/exit-teardown.mjs`，把 `process.exit(code)` 延后成自然退出（退出码保留 + 非零粘性 + 5s unref 看门狗兜底）。预加载**不**做裸句柄拦截：tsx 下 ESM 导入 better-sqlite3 读不到被改写过的 CJS `module.exports`（CI 已经证伪：diag run 42043443737），而且关句柄从来不是止血点——那条路径已经删了，没有留着装样子。
+  - **重试语义**：drain 时抛错的收尾会留在注册表里等下一次 drain（原生 close 可能因为还有活跃的 statement iterator 而失败），`trackDatabase` 的注册也要等原生 close 成功才注销；owner 那边和退出那边共用同一个 `closeOnce()`，失败不吞掉登记。
+  - **回归**：`packages/store/test/teardown.test.ts` 钉住注册表语义（顺序/异常吞掉/只排空一次 + 失败保留待重试/disposer）、被跟踪的打开器（drain 时关闭、owner close 时注销、幂等）以及**延后退出时退出码的粘性**（`if (failed) process.exit(1); process.exit(0);` 这种先失败后清零的写法不能被盖掉，子进程实测 1/0/2 三例）。
+- **证据链（远端取证，不是推断）**：run 41913304226（PR #174 晋级后第一次 macOS 全量门）5/76 个文件 abort 且断言零失败；diag run 42031513303 在「只关句柄」之后仍然丢 4 个文件——access-chain-telemetry / access-chain-verify / eval-abstain / fusion-registry-memory，全都以 `process.exit(...)` 收尾——同一轮 `eval-gate.test.ts` 变绿，唯一变量是 eval runner 不再调 `process.exit()`；diag run 42032450895 跑出 `[pass] turbo run test` + `SHIP_GATE_EXIT=0`；随后 **macOS 全量门连续三次绿**（PR #191，含 store 全量套件）：run 42032463918（head `9d172d3`）、run 42034443431（head `ef6fda5`）、run 42035956744（head `5acf577`）。
+
+### Changed
+
+- **`macos-latest` 回到 `ship-gate` 的阻断矩阵**（`.github/workflows/ship-gate.yml`）：`os: [ubuntu-latest, macos-latest, windows-latest]`，矩阵注释改成讲清「修了什么 + 证据怎么算 + 晋级规则怎么重新校准」的完整因果；`scripts/assert-checks-green.mjs` 的 `REQUIRED_LEGS` 同步加上 `ship-gate (macos-latest)`（跟矩阵两边锁步，`eval-release-layering.test.ts` 断言）。
+- **`macos-spillover-probe` 按 TTL 改成「不阻塞、只保留」**：继续当崩溃签名报告器和早期预警，不再当晋级或再剪除的时钟（它单独红不算数，全量门那条腿才是准的）；job 注释和 `scripts/macos-exit-probe.mjs` 的头注释/GREEN/CRASH 结论文字同步。
+
+### Documented
+
+- **`docs/limitations.md`** 的 macOS 条目改写成「根因 = 强制退出 × native 状态」的完整证据链 + 修了哪些地方 + 晋级证据 + 剩下的边界（任何强制退出仍然可能 abort；`apps/mcp`/`apps/plugin` 是按连接 close，没有接注册表 drain）；新增「测试里 `process.exit()` 不再同步终止」一条。
+- **README / README.zh-CN 的 Known limitations 行**从「macOS 在阻断矩阵之外」改成「macOS 退出时的 abort 已经找到 + 那条腿已恢复 + 剩下的边界」。
+
+## Unreleased — #180: `ans search` 显示哪些 provider 没构造起来（承接 #41）
+
+### Added
+
+- **`ans search` 显示哪些 provider 没构造起来、属于哪类安全错误**：`apps/cli/src/commands/search.ts` 用内核的 `CompositionResult.providerBuildErrors`（#105/#41 落地的「出故障就放行 + 点名降级」信息，之前 app 侧没人用），跟运行时的 `providersFailed` 信息一起显示——人类可读的输出在原来的 `Providers queried/failed` 行后面加一行 `Providers absent (build failure): <id> — <safe category>`（拒答和 results 两个显示分支都有）；`--json` 返回包多一个字段 `providerBuildErrors`（id → 安全类别；全都正常时是 `{}`）。类别文字原样照抄内核的安全口径（CWE-532：构造错误的原文不进任何显示面——记录本身只写类别），让用户自己修 key 或配置；全都正常时人类输出一个字都不多（空记录不打印）。不新开 doctor 子命令（父 spec #175 决议 5：跟「出故障就放行」这一家的显示口径保持一致）。显示逻辑放在纯函数 `formatProviderAbsentLine`（`apps/cli/src/commands/search-abstain.ts`，头注释改成 Search presentation helpers）。
+- **全都没构造起来时也能看出原因**：enabled 的 provider 全部构造失败时，内核引擎在 search 入口直接 throw `No providers registered`（原有约定，`engine.test.ts` 钉死）——运行时那行显示走不到，catch 路径补打同样的缺席行（走 stderr，`--json` 的 stdout 在错误路径也保持干净）。「一个 key 都没配」这种要自己动手修的情况，从头到尾都看得明白。
+- **只有 `ans search` 显示（故意的，记在案）**：chat/entity/memory/relation 等其他用到引擎的地方这期不显示——它们的命令输出里没有位置挂 provider 信息（取最小形态），构造失败的诊断仍由内核的 stderr 行给出（#41 内核级交付）；以后 chat 那边也要显示，另开票。
+- **回归**：`apps/cli/test/e2e.test.ts` 五条命令输出断言，覆盖五个显示面——①全部缺席的错误路径（没有 key 的 exa-only 域，引擎零条查找、零网络）：exit 1 + `ans search error: No providers registered` + 缺席行 golden；②部分缺席的拒答分支（exa 构造失败 + anysearch 可选 key 构造成功 + `urlAllowlist` 确定性地把结果清空）：exit 0 +拒答行 + `Providers queried: anysearch` + 缺席行 golden；③部分缺席的 `--json`：`runSplit` 助手（把 stdout/stderr 分开）断言 stdout 只有一个 JSON 文档、干净、字段值正确（`providersFailed` 不做断言——这里测的是构造缺席记录）；④全部缺席的 `--json` 错误路径：stdout 恒空（干净输出的约定钉死）、error 行 + 缺席行都在 stderr；⑤全都正常时零噪音（dummy key 构造成功 + 没有 allowlist 走 results 分支）：缺席行不打印 + 运行时 401 走 `Providers failed` 行——把「构造缺席」和「运行时失败」两个面分开判断。`EXA_API_KEY` 显式空串 + `ANS_PROVIDERS` 显式空串 + 策略可达的夹具（②③⑤）设 `ANS_ALLOW_ENV_OVERRIDE="0"`（TOML allowlist 是唯一权威来源）+ ②③ 设 `ANYSEARCH_ENDPOINT=http://127.0.0.1:9` 死端口注入（跟 install-smoke 一样的做法，CodeRabbit PR #194 Major 返修——anysearch 那条查找照常构造和查询，运行时 ECONNREFUSED 快速失败，不依赖现场端点时序）（rehydrateConfigEnv 不会覆盖显式值，开发机 `~/.anysearch/config.env` 和 shell 里残留的 eval 通道值都灌不回来）。`apps/cli/test/abstain.test.ts` 补 `formatProviderAbsentLine` 纯函数契约（空记录时 `undefined` / golden 单行 / 多个缺席用 `"; "` 连在同一行）。
+
+## Unreleased — #182: 仓务——把 #94 的 MCP SDK v2 调研报告放进 main + `.temp/` 会话残留怎么处理
+
+### Documented
+
+- **#94 的 MCP SDK v2 调研报告归档到 `docs/research/mcp-sdk-v2-status.md`**：证据放在 `main`，跟 `upstream-unblock-registry.md` 的归档做法一致（#171）。内容来自 issue #94 的结案评论（2026-11-03）；归档时原来的 `research/mcp-sdk-v2` 分支已经没法从 `origin` 恢复，那份评论就是现在能拿到的权威结论。没有改动任何行为。
+- **`.temp/` 会话残留逐项处理方案 `docs/research/temp-session-residue-disposition.md`**：把 #15/#16 调查文件、CI 日志取证、land 前备份、评审快照四类残留列出来，逐项给出删、存档还是留着的建议；删除动作都标着「要用户单独授权」，本票不执行任何删除。没有改动任何行为。
+
+## Unreleased — #187: 预算配置打地基（TOML 里的 `[budget]` + 注册会话时 initBudget + 没有账本行就放行）
+
+### Added
+
+- **领域 TOML 可以写 `[budget]` 节**（`packages/store/src/domain-schema.ts`）：支持 `tokenCap` / `usdCap` / `callCap` / `outputReserveTokens` 四个可选键。不写这一节 = 新会话不建账本行 = 没配置就放行；已经有的账本行，在重新注册到一个没有 `[budget]` 的当前领域时会被设成 `configured=0`（`getBalance` 当作没配置、预留放行，花掉的记录保留，以后重新配预算还复用同一行），免得切换领域或删掉这一节后旧上限继续生效。节里缺哪个字段 = 那个维度没有上限（写进库里是 `Number.MAX_SAFE_INTEGER` 这个表示「无上限」的值，不是 0）；明确写 `0` = 那个维度全拒（连 `amount=0` 的预留也拒）。未知键、负数、非有限值、计数键不是整数，在加载时就报错停下（`Domain schema:` 这一家）。`outputReserveTokens` 覆盖代码里的常量 `DEFAULT_OUTPUT_RESERVE_TOKENS = 12288`，并由 `resolveOutputReserveTokens()` 作为 #188 唯一的解析入口（43 次真实 run：输出 p95=9,309 / max=9,600；重测触发条件是 R≈1.5× 校准后的 maxTokens=8192）。继承方式跟 `[compaction]` 一样：**整节替换**——子域一旦写了 `[budget]`，就要把全部上限重新写一遍，没重写的维度变成无上限（这是明着要求重写的约定，不是按字段继承）。
+- **注册会话时就初始化预算行**：`SessionStore.initBudget(sessionId, caps)` 在 CLI `wireChatMemory`（`ensureSession` 同一个点）和 MCP `resolveAnsChatSession`（`ensureSession` / `createSession` 两条路径）按当时的当前领域调；没有 `[budget]` 时改调 `SessionStore.clearBudgetCaps`（新会话没有行就什么也不做；旧行设成 `configured=0`，`getBalance` 返回 null、预留放行，行和花掉的记录都留着）。`BudgetLedger.initBudget` 靠 `budget_ledger(session_id)` 唯一约束兜底，但实现是先 SELECT 再 UPDATE/INSERT（不依赖 `ON CONFLICT`，老库缺唯一索引时账本照样能建、能读写），重复注册只刷新上限和 configured，保留 reserved/spent 计数。`budget_ledger` 多了一个 `configured` 列（老库用带保护的 ALTER 迁移，老库的唯一索引也用带保护的迁移补建；新库用表级 `UNIQUE(session_id)`，免得 `db.exec(schema)` 中途失败后后面的 DDL 不建）；老库有重复行时，在加唯一索引前先合并（spend/reserved 求和，上限取最严的那条有效行）。只有合并成功并且唯一索引也建成功，才保证一个 session 一行、不丢历史；合并失败只警告并继续，唯一索引可能建不起来，这种降级状态下重复行仍可能存在。已知限制：只在注册那一个时刻采样一次，领域中途切换不会重新初始化；MCP 长驻进程的 `eng.config` 是启动时的快照，TOML 提额要重启进程才生效（CLI 每次运行都重载）；多个进程共享同一个持久恢复点并发跑时，预算行是最后写的那个赢。
+- **账本预留有三种状态**：没有行 = 放行（不写行）；`configured=0` 的已有行 = 记录预留量但不强制上限（行为上放行）；`configured=1` 的行在上限内 = 放行、超了 = 拒绝、上限为 0 = 全拒。`reserveTokens` / `reserveUsd` / `reserveCalls` 先看行在不在，再按 `configured` 决定是强制还是只记账。`initBudget` 没给上限时原来默认 0（意外全拒），现在改成「无上限」那个值。
+- **clear 之后结算还是安全的（CodeRabbit PR #196 返修）**：`reserveCalls/Tokens/Usd` 在 `configured=0` 的已有行上仍然记录预留量（只是不强制上限），所以 clear 之后新增的预留、以及 clear 之后又被 `initBudget` 重新激活的预留，都能安全结算；`settleCalls/Tokens/Usd` 的减量统一用 `MAX(0, …)`，不会撞上非负 CHECK，只有 `configured=0` 且没有记录过预留量的 settle 是什么也不做，不会凭空多出 spend。clear 之前的预留量照常能结算、并计入 spend。
+
+### Tests
+
+- `packages/store/test/domain-schema.test.ts`：`[budget]` 解析（含小数 `usdCap`、显式 0、空节、缺节）、继承时整节替换、未知键/负数/小数计数/负输出预留报错停下、12288 常量、`resolveOutputReserveTokens` 缺省/覆盖/显式 0。
+- `packages/store/test/budget-ledger.test.ts`：没有行时四个维度都放行、显式 0 全拒（含 `amount=0` 三个维度）、节里缺字段就是无上限、重复 `initBudget` 只刷新上限且保留计数/仍是单行、`clearBudgetCaps` 没有行时什么也不做 / 有行时设 configured=0 后 getBalance 为 null 且 spend 保留 / 重新 init 复用同一行、老库重复行 + 缺 configured 列的带保护迁移（重复行先合并成单行、spend/reserved 求和、上限取最严的有效行；账本能读也能初始化）、唯一冲突时 INSERT→UPDATE 重试（并发注册仍是单行）、clear 后结算安全（没配置的预留量什么也不做、clear 前的预留量夹紧后结算不会撞非负 CHECK）。
+- `apps/cli/test/chat-memory-wiring.test.ts`：真实 store 注册后账本行存在；没有 `[budget]` 不建行；同一个恢复点从有预算切到没预算时 getBalance 变成 null（当作没配置）；TOML 显式 0 和缺省字段经 `toBudgetCaps` 落到账本的整条链路断言。
+- `apps/mcp/test/ans-chat-session.test.ts`：`ensureSession` 和 `createSession` 两条 MCP 注册路径都建行；没有 `[budget]` 不建行；同一个 handle 删掉 `[budget]` 后 getBalance 变成 null。
+- `scripts/validate-domains.mjs`：仓库里的领域 TOML 校验也跟着接受并校验 `[budget]`；规则跟 `domain-schema.validate` 同源（脚本不依赖 TS，注释里写了这层镜像关系）。
+
+## Unreleased — #177: 统一装配入口接线——engine 每次检索带上 sessionId + BudgetLedger（T2）
+
+### Changed
+
+- **per-call 预算和证据够不够的存档点，从「在生产路径上没用」变成真的会触发**：`createEngine` 把 `SqliteSessionStore` 的 `BudgetLedger`（同一个连接，`createBudgetLedger()`）塞给 engine，并在 `CompositionResult.ledger` 暴露同一个实例给 #178 用。预算行的建立和清理由 #187 的会话注册点负责（`SessionStore.initBudget` / `clearBudgetCaps`，按当前领域的 `[budget]`）；engine 不再自己建行，没有 `[budget]` 时沿用 #187 的「没有行 = 放行」。
+- **检索时带上会话身份**：新增 `Query.sessionId`；`PiAgentRuntime` 构造一个绑定了会话的 retriever（条件是 `store && sessionId`），同时给内置 search 工具、`MemoryPipeline`、`SufficiencyEvaluator` 的再检索用，让 `ans chat` / `ans_chat` 每次内部检索都带上接好的会话句柄。engine 的账本/存档点门改成 `q.sessionId || 构造期 sessionId`；门的判断、reserve→settle、存档点只追加的语义都没改。
+- **plugin 的统一装配入口不注入**：`apps/plugin` 的 hooks/server 不构造 engine，也没有可复用的会话，注释里说明了按「出故障就放行」处理。
+
+### Tests
+
+- `packages/kernel/test/engine-anchor.test.ts`：统一装配入口从搜索到存储（真实 `createEngine` + 空 sources 领域 + mock provider）断言 证据够不够 存档点落库；没有 budget 行时按 #187 的语义放行且不建行；显式 `initBudget` 后验证 reserve→settle、超预算拒绝、拒绝后余额不变；runtime 层验证完整接线会把 sessionId 传下去、只接一半不传、证据够不够的检查共用同一个绑定的 retriever。
+
+## Unreleased — #16: 想让 macOS 变成阻断项，第一次全量跑就推翻了——再拿出去 + 恢复探针 + 给检查腿加锁（PR #174）
+
+### Changed
+
+- **`macos-latest` 的晋级尝试被它第一次全量门反过来证伪，于是再次拿掉 `ship-gate` 的阻断矩阵**（`.github/workflows/ship-gate.yml`）：晋级的依据（探针的 TTL 规则「连续 ≥5 次绿就评估恢复」，2026-11-04 的七连绿 41840345806…41850289669 达标）在第一次 macOS 全量门（41913304226）上就不成立了——5/76 个 store 测试文件在**断言全部通过之后**退出时崩溃（`libc++abi` "mutex lock failed: Invalid argument"），另外 `eval-gate.test.ts` 抓到 eval runner 子进程被信号杀死；F-16 这一家在全量负载下还活着。根因：`fd249d41` 的显式收尾只盖住了 CLI 的统一装配入口（`apps/cli`），store 侧进程退出（测试文件、`packages/store/src/eval/cli.ts`）从来没修过，而探针只跑已经修好的 CLI 路径——**探针看到的范围 ≠ 全量门验收的范围**。矩阵退回 ubuntu+windows。
+- **晋级规则重新校准**：要让这条腿回来，需要 store 侧收尾修好后的**全量门试跑绿证据**；「≥5 次最小复现连绿」已经证明不够。这条规则同步写进 ship-gate.yml 的矩阵注释、探针 job 的 TTL 注释、`scripts/macos-exit-probe.mjs` 的头注释和结论文字、`docs/limitations.md`。
+- **检查腿加锁（审计 S2，PR #174 CodeRabbit）**：`scripts/assert-checks-green.mjs` 新增 `REQUIRED_LEGS`——按名字找腿这一层过了之后，没登记的阻断腿不能再靠已登记的腿单独判为通过（原来有竞态：macos runner 排队更久时，两条腿就能判为通过）；缺腿保持在 discovery 阶段，discovery 窗口到期后按「拿不准就拒绝」处理。`release.yml` 的 pre-tag 在 wait-on-check（正则没法要求指定的腿）后面加了同一个脚本的腿级断言步骤（`--timeout-min 20`，跟 wait 步骤一样的 20 分钟窗口——晚注册的腿需要完整的运行时间，5 分钟会把健康的发布按「拿不准就拒绝」拦掉），覆盖同一个缺口。`REQUIRED_LEGS` 跟 ship-gate.yml 矩阵的双向同步（缺腿和多余的腿都判为失败）由 `eval-release-layering.test.ts` 的新断言强制（锁步）。
+
+### Fixed
+
+- **观察冒烟测试看不到信号（审计 S1，PR #174 CodeRabbit）**：`scripts/verify-observation.mjs` 以前只查 `cli.error`——CLI 写完 trace 后在收尾时被 SIGABRT 杀死（F-16 的签名）时，冒烟测试仍然 PASS。新增 `cli.signal` 判为失败（status 仍然不设门：收尾会间歇改写退出码，信号才是可靠的标记；MCP 子进程豁免——3 秒兜底 kill 是脚本自己发的信号）。
 
 ### Restored
 
-- **`macos-spillover-probe` job 与 `scripts/macos-exit-probe.mjs` 自 73ada6b0 恢复**（字节级，含 #121 的 `working-directory: packages/store` 路径修复），随再剪除回归观察位；TTL 文案更新为「崩溃签名报告器，非晋级时钟」。`eval-release-layering.test.ts` Node 22 钉版断言不变（三 job 时代 3 钉全 22，`pins.length >= 2` 兼容）。
+- **`macos-spillover-probe` job 和 `scripts/macos-exit-probe.mjs` 从 73ada6b0 恢复**（逐字节恢复，含 #121 的 `working-directory: packages/store` 路径修复），跟着再剪除一起回来当观察位；TTL 文字改成「崩溃签名报告器，不是晋级时钟」。`eval-release-layering.test.ts` 的 Node 22 钉版断言不变（三个 job 的时代 3 个钉全是 22，`pins.length >= 2` 兼容）。
 
 ### Documented
 
-- **README Known limitations 恢复「macOS is outside the blocking matrix」行**（带 PR #174 复现证据表述）；`docs/limitations.md` 剪除条目改写为「晋级尝试被首跑反转」完整因果与重校准规则，registration 段红条目收口说明同步；`docs/release-notes/0.0.3.md` 历史时点记录，不动。
+- **README 的 Known limitations 恢复「macOS is outside the blocking matrix」这一行**（带上 PR #174 的复现证据说法）；`docs/limitations.md` 的剪除条目改成「晋级尝试被第一次跑推翻」的完整因果和重新校准后的规则，registration 段红条目的收口说明同步；`docs/release-notes/0.0.3.md` 是当时点的记录，不动。
 
-## Unreleased — #15: api.anysearch.com 归属确认落定（官方证据闭环）
+## Unreleased — #15: 确认 api.anysearch.com 是官方的（证据齐了）
 
 ### Documented
 
-- **`packages/retriever/src/providers/anysearch.ts` 注释块 DEFERRED-WITH-DEADLINE → CONFIRMED（2026-11-04）**：api.anysearch.com 归属官方的 legal/ops 确认事项（ADR-0059 D7/T-6.4 原延期项）收口。证据：官方仓库 `anysearch-ai/anysearch-mcp-server` README 明确写 "The production endpoint is: https://api.anysearch.com/mcp"（native Streamable HTTP）；Key 控制台位于 apex 域（anysearch.com/console/api-keys），官方注册路由 `POST /v1/auth/email/register` 同在该主机；通配符证书（2026-09-22 轮换、有效期至 2027-04-07、Amazon RSA 2048 M04、SAN `*.anysearch.com+anysearch.com`）同主体覆盖 apex 与 api 子域；`GET /health` 200 于 2026-11-04 复核（code:0 信封）。治理层拆除（5593fe05）后该活账由 issue #15 承载——注释块原指向已删除 `docs/deferred-registry.json` 的悬挂引用一并修复，改指 #15。附注修正：GET `/v1/search` 404 注记补明官方 REST search 为 POST——GET 死 ≠ REST 死。纯注释改动，零行为变化，不触测试；证书 CT/到期观察保留（下一节点 2027-04-07，轮换时复核归属不变）。
+- **`packages/retriever/src/providers/anysearch.ts` 的注释块从 DEFERRED-WITH-DEADLINE 改成 CONFIRMED（2026-11-04）**：api.anysearch.com 归官方所有这件事（ADR-0059 D7/T-6.4 原来延期的那项）收口了。证据：官方仓库 `anysearch-ai/anysearch-mcp-server` 的 README 明确写着 "The production endpoint is: https://api.anysearch.com/mcp"（原生 Streamable HTTP）；Key 控制台在 apex 域（anysearch.com/console/api-keys），官方注册路由 `POST /v1/auth/email/register` 也在同一台主机；通配符证书（2026-09-22 轮换、有效期到 2027-04-07、Amazon RSA 2048 M04、SAN `*.anysearch.com+anysearch.com`）同主体覆盖 apex 和 api 子域；`GET /health` 在 2026-11-04 复核是 200（code:0 返回包）。治理层拆掉（5593fe05）后，这件活账由 issue #15 接着记——注释块原来指向已经删掉的 `docs/deferred-registry.json`，那个悬空引用也一并修好，改指 #15。附注修正：GET `/v1/search` 404 这句补明官方 REST search 是 POST——GET 不通 ≠ REST 不通。纯注释改动，行为零变化，不碰测试；证书 CT/到期观察保留（下一个节点 2027-04-07，轮换时再复核归属没变）。
 
-## Unreleased — #162: `ans chat` 对 `Domain schema:` 错误 fail-fast
+## Unreleased — #162: `ans chat` 遇到 `Domain schema:` 错误直接报错停下
 
 ### Fixed
 
-- **`Domain schema:` 校验错误不再被静默降级为默认域**：`apps/cli/src/commands/chat.ts` 的 domain 加载 catch 先经 `isDomainSchemaError()`（新增于 `packages/store/src/domain-schema.ts`，与 `createEngine` 共用同一谓词）判定；`Domain schema:` 校验错误直接 rethrow，由 CLI 顶层处理器写明错误并非零退出。数据库/IO 故障与 `Domain not found` 仍走既有回退（持久库失败再降级到内存库并告警）。TOML 语法错误与继承链错误（`Invalid TOML document:` / `Base domain not found:`）不属于票面指定的 `Domain schema:` 族，行为未改（不在本票范围）。
-- **回归**：`apps/cli/test/e2e.test.ts` 新增 malformed `compaction.lowWatermark` → `ans chat` 退出 1、stderr 指明 `Domain schema:` 且不再出现 `using fallback`；以及持久库父路径不可用 → 仍输出 `Durable database unavailable` 的内存回退告警。`packages/store/test/domain-schema.test.ts` 覆盖 schema 错误 / IO 错误 / missing-domain / 非 Error 分类。
+- **`Domain schema:` 校验错误不再被悄悄降级成默认域**：`apps/cli/src/commands/chat.ts` 里加载 domain 的 catch 先过 `isDomainSchemaError()`（新增在 `packages/store/src/domain-schema.ts`，跟 `createEngine` 用同一个判断函数）；`Domain schema:` 校验错误直接 rethrow，由 CLI 顶层处理写出错误并以非零退出。数据库/IO 故障和 `Domain not found` 仍走原来的回退（持久库失败再降级到内存库并告警）。TOML 语法错误和继承链错误（`Invalid TOML document:` / `Base domain not found:`）不属于票面点名的 `Domain schema:` 这一家，行为没改（不在本票范围）。
+- **回归**：`apps/cli/test/e2e.test.ts` 新增「`compaction.lowWatermark` 写坏 → `ans chat` 退出 1、stderr 指明 `Domain schema:` 且不再出现 `using fallback`」；以及「持久库父路径不可用 → 仍然输出 `Durable database unavailable` 的内存回退告警」。`packages/store/test/domain-schema.test.ts` 覆盖 schema 错误 / IO 错误 / 找不到域 / 不是 Error 这几种分类。
 
-## Unreleased — #113: LOW_WATERMARK 改为 contextWindow 占比制（+ contextWindow 透传）
+## Unreleased — #113: LOW_WATERMARK 改成按上下文窗口的比例（+ 把 contextWindow 传下去）
 
 ### Changed
 
-- **L0 压缩水位支持 `compaction.lowWatermark = { fraction = ... }`**：`resolveLowWatermark` 把 fraction 解析为 `floor(fraction × contextWindow)`；窗口取自 `LlmSession.contextWindow`（pi-ai catalog）。`LlmSessionOptions.contextWindow` 透传自定义端点窗口——未设置时 pi-ai 仍用 128000 占位，但 `LlmSession.contextWindow` 保持 `undefined`，因此 **L0 不会把占位值当成真实窗口**，而是回退既有 128000 绝对值。绝对数形状保持原样；malformed fraction 由域加载器 fail-fast（`ans chat` 的整域回退已在 #162 收窄为仅 DB/IO 故障与缺失域）。
-- **水位比较对象改为当前上下文占用**：`pi-runtime` 在 `shouldStopAfterTurn` 用 `max(lastTotalTokens, estimateContextTokens(messages).tokens)`，覆盖工具结果在上一次 LLM 调用之后追加造成的一轮滞后（#114 复审遗留）；ledger 仍按 usage 事件结算，不受影响。
-- **新增可选 env `ANS_LLM_CONTEXT_WINDOW`**：CLI `ans chat` 与 MCP `ans_chat` 在组合根读取并透传；kernel 仍零 env 读取。非正整数 fail-fast。
+- **L0 压缩水位支持 `compaction.lowWatermark = { fraction = ... }`**：`resolveLowWatermark` 把 fraction 算成 `floor(fraction × contextWindow)`；窗口从 `LlmSession.contextWindow` 取（pi-ai catalog）。`LlmSessionOptions.contextWindow` 会把自定义端点的窗口传下去——不设置时 pi-ai 仍然用 128000 占位，但 `LlmSession.contextWindow` 保持 `undefined`，所以 **L0 不会把占位值当成真实窗口**，而是退回原来的 128000 绝对值。绝对数的写法保持原样；fraction 写坏时由域加载器报错停下（`ans chat` 的整域回退已经在 #162 收窄成只有 DB/IO 故障和缺失域）。
+- **比较水位时用当前上下文占用量**：`pi-runtime` 在 `shouldStopAfterTurn` 里用 `max(lastTotalTokens, estimateContextTokens(messages).tokens)`，覆盖工具结果在上一次 LLM 调用之后追加造成的一轮滞后（#114 复审留下的）；账本仍按 usage 事件结算，不受影响。
+- **新增可选环境变量 `ANS_LLM_CONTEXT_WINDOW`**：CLI `ans chat` 和 MCP `ans_chat` 在统一装配入口读它并传下去；kernel 仍然一个环境变量都不读。非正整数报错停下。
 
 ### Documented
 
-- 四份 host 集成文档的 Keys 段补 `ANS_LLM_CONTEXT_WINDOW`（仅自定义端点需要；不设则 L0 走未知窗口回退）。
+- 四份宿主集成文档的 Keys 段补上 `ANS_LLM_CONTEXT_WINDOW`（只有自定义端点需要；不设的话 L0 走未知窗口回退）。
 
 ### Tests
 
-- `packages/kernel/test/memory-pipeline.test.ts`：1M/128K 窗口占比、未知窗口回退、malformed、绝对数优先；shell 层覆盖 120K（旧 128K 不触发、新 100K 触发）与未知窗口 15K 必须 skip。
-- `packages/kernel/test/llm-init.test.ts`：catalog 窗口暴露、自定义端点默认 UNKNOWN、显式透传、非法/小数值 fail-fast。
-- `packages/kernel/test/pi-runtime.test.ts`：大工具结果估算进入水位并可独立触发压缩。
-- memory eval golden 切片不经过 `MemoryPipeline`（store 侧 consolidate 是独立的 L2 路径），默认 lowWatermark 未移动。
+- `packages/kernel/test/memory-pipeline.test.ts`：1M/128K 窗口的比例、未知窗口回退、写坏的 fraction、绝对数优先；shell 层覆盖 120K（旧 128K 不触发、新 100K 触发）和未知窗口 15K 必须 skip。
+- `packages/kernel/test/llm-init.test.ts`：catalog 窗口暴露、自定义端点默认 UNKNOWN、显式传下去、非法/小数报错停下。
+- `packages/kernel/test/pi-runtime.test.ts`：大的工具结果估算会进水位数并能单独触发压缩。
+- memory eval 的 golden 切片不走 `MemoryPipeline`（store 侧 consolidate 是独立的 L2 路径），默认 lowWatermark 没动。
 
-## Unreleased — #129: `ans chat` 接线 MemoryPipeline（持久库 + 稳定 sessionId）
+## Unreleased — #129: `ans chat` 接上记忆流水线（持久库 + 固定 sessionId）
 
 ### Fixed
 
-- **`ans chat` 上 RAG 与 L1/L2 记忆注入从未生效**：`PiAgentRuntime` 只在 `store && sessionId` 同时存在时构造 `MemoryPipeline`，而 CLI 组合根两者都没传，`this.pipeline` 恒为 `undefined`——`transformContext` 原样返回、`consolidate` 冷路径也整段跳过，且**没有任何告警**。#104 的 `fts` adapter 因此在生产路径上等于不存在。现在 `apps/cli/src/commands/chat.ts` 用 `createPersistentEngine`（`ANS_DB_PATH`，默认 `~/.anysearch/anysearch.db`）取代原先落 `":memory:"` 的 `createEngine`（fallback 分支同样改），sessionId 取持久锚点 `readSessionId()`（`ANS_SESSION_ID` 可覆盖）。回归：`packages/kernel/test/pi-runtime.test.ts` 的 no-store 透传、告警去重、真实 store 的 wired 三段断言，加上 `apps/cli/test/chat-memory-wiring.test.ts`。
-- **无记忆组合根不再静默**：`PiAgentRuntime` 在 `store` / `sessionId` 任缺（含两者都缺，即 `ans_chat` 现状）时打一行具名 stderr 点明缺什么并说明注入已禁用；门控语义（`store && sessionId`）未改。
+- **`ans chat` 上 RAG 和 L1/L2 记忆注入从来没生效过**：`PiAgentRuntime` 只在 `store && sessionId` 同时存在时才构造 `MemoryPipeline`，而 CLI 的统一装配入口两个都没传，`this.pipeline` 一直是 `undefined`——`transformContext` 原样返回、`consolidate` 的冷路径也整段跳过，而且**没有任何告警**。#104 的 `fts` adapter 因此在生产路径上等于不存在。现在 `apps/cli/src/commands/chat.ts` 用 `createPersistentEngine`（`ANS_DB_PATH`，默认 `~/.anysearch/anysearch.db`）取代原来落在 `":memory:"` 的 `createEngine`（fallback 分支也一样改），sessionId 取持久恢复点 `readSessionId()`（可用 `ANS_SESSION_ID` 覆盖）。回归：`packages/kernel/test/pi-runtime.test.ts` 的 no-store 透传、告警去重、真实 store 的 wired 三段断言，加上 `apps/cli/test/chat-memory-wiring.test.ts`。
+- **没有记忆的统一装配入口不再沉默**：`PiAgentRuntime` 在 `store` / `sessionId` 任缺（包括两个都缺，也就是 `ans_chat` 以前的样子）时打一行带名字的 stderr，说清缺什么、注入已经关了；门的语义（`store && sessionId`）没改。
 
 ### Added
 
-- **`SessionStore.ensureSession(sessionId, domain)`**：幂等（`INSERT OR IGNORE`）注册外部生成的会话 id。`messages` / `resume_anchors` / `retrieval_results` / `budget_ledger` 都以外键指向 `sessions(id)` 且 store 开启 `foreign_keys = ON`，而 `createSession()` 自生成 UUID、不接受外部 id——持久 sessionId 必须先注册才能写锚点。回归：`packages/store/test/session-store.test.ts` 用例 7。
-- **CLI 组合根接线测试** `apps/cli/test/chat-memory-wiring.test.ts`：驱动 `runChat` 所用的 `wireChatMemory()`（抽到不含 kernel 依赖的 `apps/cli/src/commands/chat-memory.ts`），用真实 `SqliteSessionStore` 验证三件事——会话行先注册（满足 FK）、重开 DB 后同一持久 id 仍能召回先前的 `retrieval_results`（AC3）、`ensureSession` 失败时返回空接线并具名告警。kernel 只证明接缝，这条证明组合根本身接错时会被测出来；运行时注入（RAG 块到达模型、重启召回）由 `packages/kernel/test/pi-runtime.test.ts` 覆盖——CLI 包是 CJS 而 kernel 依赖 ESM-only 的 `pi-agent-core`，测试不能直接导入 `chat.ts`。
-- **`MemoryPipeline.flush()` / `PiAgentRuntime.flushMemory()`**：`consolidate()` 的摘要生成与 L2 召回是 fire-and-forget，`runChat` 返回后 CLI 会在 teardown 关闭持久库，在途的 `rolling_summary` / `l2_recall` 锚点写入会丢失且被 `.catch(() => {})` 吞掉。现在这些写入被登记，组合根在返回前（`finally`，覆盖错误路径）drain。回归：`packages/kernel/test/memory-pipeline.test.ts` 的 gate 用例。
+- **`SessionStore.ensureSession(sessionId, domain)`**：幂等地（`INSERT OR IGNORE`）注册外部生成的会话 id。`messages` / `resume_anchors` / `retrieval_results` / `budget_ledger` 都用外键指向 `sessions(id)`，而且 store 开了 `foreign_keys = ON`，而 `createSession()` 自己生成 UUID、不收外部 id——持久的 sessionId 必须先注册才能写存档点。回归：`packages/store/test/session-store.test.ts` 用例 7。
+- **CLI 统一装配入口的接线测试** `apps/cli/test/chat-memory-wiring.test.ts`：驱动 `runChat` 用的 `wireChatMemory()`（抽到不依赖 kernel 的 `apps/cli/src/commands/chat-memory.ts`），用真实 `SqliteSessionStore` 验证三件事——先把会话行注册好（满足外键）、重开 DB 后同一个持久 id 仍能召回之前的 `retrieval_results`（AC3）、`ensureSession` 失败时返回空接线并用带名字的告警。kernel 只证明接口，这条证明统一装配入口本身接错时会被测出来；运行时注入（RAG 块到达模型、重启召回）由 `packages/kernel/test/pi-runtime.test.ts` 覆盖——CLI 包是 CJS，而 kernel 依赖 ESM-only 的 `pi-agent-core`，测试不能直接导入 `chat.ts`。
+- **`MemoryPipeline.flush()` / `PiAgentRuntime.flushMemory()`**：`consolidate()` 的摘要生成和 L2 召回是发出去就不管的，`runChat` 返回后 CLI 会在收尾时关掉持久库，还在路上的 `rolling_summary` / `l2_recall` 存档点写入会丢，而且被 `.catch(() => {})` 吞掉。现在这些写被登记下来，统一装配入口在返回前（`finally`，错误路径也盖住）把它们排空。回归：`packages/kernel/test/memory-pipeline.test.ts` 的门用例。
 
 ### Fixed（评论返修，PR #136）
 
-- **L1/L2 注入在 block 形状下会丢失用户问题**：Stage-1/T0 已改用形状感知 helper，但 L1/L2 仍按 `typeof content === "string"` 取文本——pi-agent-core 会把 `prompt("…")` 规范化为 content block 数组，因此一旦有锚点，用户问题会被整体替换成注入文本。现改用 `readMessageText` / `appendMessageText`，无文本通道时主动放弃注入。此路径在本票前不可达（pipeline 从未构造），接线后才成为真实风险，故属本票范围。回归：`memory-pipeline.test.ts` 的 block 形状与纯图片轮用例。
-- **`store.append` 未 await 的 rejection 会终止进程**：同一原因——路径原本不可达，接线后才启用。`append` 是 async，未 await 的 rejection 不被外层 `try/catch` 捕获，Node ≥15 默认终止进程且消息丢失。改为逐条 await + 独立 try，单条失败不影响后续消息并走既有告警。回归：`pi-runtime.test.ts` 的 append-reject 用例。
-- **后台摘要/裁决调用无上限**：`flush()` 会等待它们，慢 provider 能把 CLI 退出拖到 provider 超时。压缩调用改用 `AbortSignal.timeout(90s)`，裁决调用把 signal 透传给 `streamFn`；超时按 fire-and-forget 失败处理（下一轮重试），`flush()` 仍是完整 drain、不提前放弃写入。
-- **会话锚点写入失败曾静默**：`readSessionId()` 在锚点文件写失败时仍返回新 id 但不报告，下次运行会换 id、读不到旧锚点。现在 catch 分支输出一行告警（建议设 `ANS_SESSION_ID` 或让目录可写），fail-open 语义不变。回归：`session-id-propagation.test.ts`。
-- **持久库不可用时 `ans chat` 直接退出**：本票把 fallback 分支也改成 `createPersistentEngine()`，一旦 SQLite 或父目录不可用便会在构造 runtime 前终止，反而比改动前更差（旧代码有 `":memory:"` 兜底）。现在持久引擎失败会降级到内存引擎并明确告警——chat 仍可用，只是不持久化；内存库下跳过记忆接线（无法跨运行续接）。
-- **持久库权限过宽（CWE-732）**：`createPersistentEngine` 之前按进程 umask 建目录/文件；本票让 `ans chat` 首次向该库写入记忆后，共享主机上其他本地用户可能读到。现在目录 `0700`、库文件 `0600`（对已存在文件同样收紧），`chmod` 为 best-effort（Windows 忽略 POSIX 模式、非属主不阻断命令）。该修复对所有走 `createPersistentEngine` 的命令生效。
+- **L1/L2 注入在 block 形状下会丢用户问题**：Stage-1/T0 已经改用看形状的 helper，但 L1/L2 仍按 `typeof content === "string"` 取文本——pi-agent-core 会把 `prompt("…")` 规范化成 content block 数组，因此一旦有存档点，用户问题会被整个换成注入文本。现在改用 `readMessageText` / `appendMessageText`，没有文本通道时主动放弃注入。这条路径在本票之前走不到（pipeline 从来没被构造），接线后才成了真实风险，所以属于本票范围。回归：`memory-pipeline.test.ts` 的 block 形状和纯图片轮用例。
+- **`store.append` 没 await 的 rejection 会终止进程**：同一个原因——路径原本走不到，接线后才启用。`append` 是 async，没 await 的 rejection 不会被外层 `try/catch` 抓到，Node ≥15 默认终止进程且消息丢失。改成逐条 await + 独立 try，单条失败不影响后面的消息并走原来的告警。回归：`pi-runtime.test.ts` 的 append-reject 用例。
+- **后台摘要/判定调用没有上限**：`flush()` 会等它们，慢 provider 能把 CLI 退出拖到 provider 超时。压缩调用改用 `AbortSignal.timeout(90s)`，判定调用把 signal 传给 `streamFn`；超时按「发出去就不管」的失败处理（下一轮重试），`flush()` 仍然完整排空、不提前放弃写入。
+- **会话存档点写入失败曾经是静默的**：`readSessionId()` 在存档点文件写失败时仍然返回新 id 但不报告，下次运行会换 id、读不到旧存档点。现在 catch 分支输出一行告警（建议设 `ANS_SESSION_ID` 或让目录可写），「出故障就放行」的语义不变。回归：`session-id-propagation.test.ts`。
+- **持久库不可用时 `ans chat` 直接退出**：本票把 fallback 分支也改成 `createPersistentEngine()`，一旦 SQLite 或父目录不可用，会在构造 runtime 前就终止，反而比改动前更差（旧代码有 `":memory:"` 兜底）。现在持久引擎失败会降级到内存引擎并明确告警——chat 仍然能用，只是不持久化；内存库下跳过记忆接线（没法跨运行续上）。
+- **持久库权限过宽（CWE-732）**：`createPersistentEngine` 之前按进程 umask 建目录和文件；本票让 `ans chat` 第一次往这个库写记忆后，共享主机上别的本地用户可能读到。现在目录 `0700`、库文件 `0600`（已经存在的文件也收紧），`chmod` 只尽力而为（Windows 忽略 POSIX 模式、不是属主也不阻断命令）。这个修复对所有走 `createPersistentEngine` 的命令都生效。
 
 ### Documented
 
-- `docs/limitations.md` 更正：`ans_chat`（MCP）是**整条记忆链路不存在**（pipeline 从未构造），不是 `fts` fail-open 到 `none`；并记录半接线告警契约。`docs/rag-adapters.md` 同步更新 CLI 已接线的事实与「`fts` 只读 `retrieval_results`、CLI 不写该表」的边界。
+- `docs/limitations.md` 更正：`ans_chat`（MCP）是**整条记忆链路都不存在**（pipeline 从来没被构造），不是 `fts` 出故障就放行到 `none`；并记下「只接一半」时的告警约定。`docs/rag-adapters.md` 同步更新 CLI 已经接线的事实和「`fts` 只读 `retrieval_results`、CLI 不写这张表」这条边界。
 
-## Unreleased — #147: 用真实 SIGKILL 持有者覆盖锁回收（含锁发布路径保真）
+## Unreleased — #147: 用真的被 SIGKILL 杀掉的持有者来测锁回收（发布锁的路径也照原样）
 
 ### Added
 
-- **`apps/cli/test/skill.test.ts`**：新增端到端用例“`a lock left by a SIGKILLed holder is reclaimed by the next install`”。既有的锁回收用例都用 `plantLock` **植入**状态（先 `mkdirSync(.installed.lock)` 再写 `owner.json`），那是旧式形状——合并版 `createLockDirectory` 的顺序是“先建 `.installed.lock.pending-XXXXXX`、写 owner、再一次 `renameSync` 发布”，因此线上只可能留下“已发布且 owner 可读、持有者刚被信号杀死”的锁。新用例让子进程用与生产相同的发布序列取得真实锁（pending 目录 → `owner.json` 以 `wx` 写入 → 单次 rename），随后停在临界区内被 `SIGKILL`（唯一的退出路径，不跑任何清理代码）；父进程确认锁已发布、`owner.json` 的 pid 就是被杀的子进程，且该 pid 已被 OS 回收（`waitUntilGone` 轮询 `process.kill(pid, 0)` 直到 `ESRCH`），再跑真实 `install`，断言回收成功后清单登记了新 skill、managed root 里除 `installed.json` 与该 skill 外**零残留**（无锁、pending 目录、quarantine 或 staging 目录）。验收含义：把 `probeLockOwner` 改成恒返回 `"alive"` 时该用例必须失败——它测的是回收，而不是“install 恰好成功”。该变异已实跑（本地 `node --import tsx --test test/skill.test.ts`）：注入后新用例以 `ans skill: another skill operation is running in this scope (pid <holder> on <host>): …/.installed.lock` 失败（`1 !== 0`，`skill.test.ts` 的 `installed.code` 断言），同文件 `not ok 37`；撤销注入后 53/53 全绿，注入提交从未进入分支。两个 CI 平台（ubuntu + windows）都跑，Windows 上顺带覆盖“目录 rename 发布 + SIGKILL 后回收”。用例与既有 4 进程竞态用例不共享锁目录，互不影响运行时间。子进程的身份字段按 `pidIdentity()` 的 **all-or-nothing** 语义读取：Linux 上把 `boot_id` 与 PID namespace 放在同一个 `try` 里，任一读取失败就两个字段都不写、继续发布锁（评论返修，PR #151 的 CodeRabbit Minor）——否则一次偶发 `/proc` 失败会让子进程在发布前退出，用例红在环境而非被测行为上。
+- **`apps/cli/test/skill.test.ts`**：新增端到端用例「`a lock left by a SIGKILLed holder is reclaimed by the next install`」。原来的锁回收用例都用 `plantLock` **直接摆**状态（先 `mkdirSync(.installed.lock)` 再写 `owner.json`），那是旧形状——合并后的 `createLockDirectory` 顺序是「先建 `.installed.lock.pending-XXXXXX`、写 owner、再一次 `renameSync` 发布」，所以线上只可能留下「已经发布、owner 能读、持有者刚被信号杀掉」的锁。新用例让子进程用跟生产一样的发布顺序拿到真锁（pending 目录 → `owner.json` 用 `wx` 写 → 一次 rename），然后停在临界区里被 `SIGKILL`（唯一退出路径，不跑任何清理代码）；父进程先确认锁已发布、`owner.json` 里的 pid 就是被杀的子进程、而且这个 pid 已被操作系统回收（`waitUntilGone` 轮询 `process.kill(pid, 0)` 直到 `ESRCH`），再跑真的 `install`，断言回收成功后清单登记了新 skill、managed root 里除了 `installed.json` 和这个 skill 之外**一点残留都没有**（没有锁、pending 目录、隔离目录或 staging 目录）。验收的意思：把 `probeLockOwner` 改成永远返回 `"alive"` 时这个用例必须失败——它测的是回收，不是「install 恰好成功了」。这个改坏代码的试验真跑过（本地 `node --import tsx --test test/skill.test.ts`）：改坏后新用例报 `ans skill: another skill operation is running in this scope (pid <holder> on <host>): …/.installed.lock` 失败（`1 !== 0`，`skill.test.ts` 的 `installed.code` 断言），同文件 `not ok 37`；改回来之后 53/53 全部通过，改坏的提交从没进过分支。两个 CI 平台（ubuntu + windows）都跑，Windows 上顺带覆盖「目录 rename 发布 + SIGKILL 后回收」。这个用例跟已有的 4 进程竞态用例不共用锁目录，互不影响运行时间。子进程的身份字段按 `pidIdentity()` 的 **全有或全无** 语义读：Linux 上把 `boot_id` 和 PID namespace 放在同一个 `try` 里，任一读取失败就两个字段都不写、继续发布锁（评论返修，PR #151 的 CodeRabbit Minor）——否则一次偶发的 `/proc` 读取失败会让子进程在发布前退出，用例红在环境上而不是被测行为上。
 
-## Unreleased — #146: 对账只删安装器真实命名形态（精确匹配）
+## Unreleased — #146: 启动对账只删安装器真会生成的名字（精确匹配）
 
 ### Changed
 
-- **对账判定由前缀匹配改为精确形态**（`apps/cli/src/skill-store.ts`）：新增 `STAGING_ENTRY`（`.install-` + 6 位 `[A-Za-z0-9]`）、`LOCK_PENDING_ENTRY`（`.installed.lock.pending-` + 6 位）、`MANIFEST_TEMP_ENTRY`（`.installed-<小写 uuid v4>.tmp`）、`QUARANTINE_ENTRY`（`.installed.lock.reclaim-<小写 uuid v4>`；两个 uuid 模式同样钉住 `randomUUID()` 必产的版本位 `4` 与 RFC 4122 variant 位 `[89ab]`，别的 UUID 版本不是安装器能写出的名字）四个模式，`isInstallerResidue` / `isEmptyManagedRoot` / `hasStaleLockOrResidue` / `reconcileManagedRoot` 共用同一套判定。此前 `.installed-notes.tmp`、`.install-archive/`、`.installed.lock.pending-notalock` 这类操作者内容会被判为残留：一是 `list` / `install` 持锁直接 `rm -rf`，二是 `isEmptyManagedRoot` 把它当惰性记账，于是在含用户内容的目录里 bootstrap 出 `installed.json`——检查与删除共用同一个过宽前缀，错误自我确认。现在这类条目一律视为内容，scope 继续 fail-closed、不做任何删除。判定依据是**形态而非归属**：恰好符合生成形态的操作者名字（如 `.install-backup` 在 `.install-` 之后正好 6 位字母数字）仍与安装器残留无法区分，会被按残留处理；README 已明确这条边界。旧命名形态的残留成为**假阴性**：留在原处不删（漏删可恢复，误删不可恢复）。
+- **对账判断从前缀匹配改成精确形态**（`apps/cli/src/skill-store.ts`）：新增四个模式——`STAGING_ENTRY`（`.install-` + 6 位 `[A-Za-z0-9]`）、`LOCK_PENDING_ENTRY`（`.installed.lock.pending-` + 6 位）、`MANIFEST_TEMP_ENTRY`（`.installed-<小写 uuid v4>.tmp`）、`QUARANTINE_ENTRY`（`.installed.lock.reclaim-<小写 uuid v4>`；两个 uuid 模式也钉住 `randomUUID()` 一定会产出的版本位 `4` 和 RFC 4122 的 variant 位 `[89ab]`，别的 UUID 版本不是安装器能写出来的名字），`isInstallerResidue` / `isEmptyManagedRoot` / `hasStaleLockOrResidue` / `reconcileManagedRoot` 共用这套判断。以前 `.installed-notes.tmp`、`.install-archive/`、`.installed.lock.pending-notalock` 这种操作者自己的内容会被判成残留：一是 `list` / `install` 拿着锁直接 `rm -rf`，二是 `isEmptyManagedRoot` 把它当成「没什么东西」的记账，于是在有用户内容的目录里 bootstrap 出 `installed.json`——检查和删除共用同一个过宽的前缀，错误自己确认自己。现在这类条目一律算内容，scope 继续按「拿不准就拒绝」处理、不删任何东西。判断依据是**名字的形态，不是归谁所有**：恰好长成生成形态的操作者名字（比如 `.install-backup`，`.install-` 后面正好 6 位字母数字）仍然跟安装器残留分不出来，会被当残留处理；README 已经写明这条边界。旧命名形态的残留变成**漏删**：留在原处不删（漏删能恢复，误删不能恢复）。
 
 ### Added
 
-- **`apps/cli/test/skill.test.ts`**：新增“操作者自建 lookalike 不被当作残留”用例（`install` 失败于 `skill manifest is missing in a non-empty managed directory`，三个条目全部保留、不生成 `installed.json`；`list` / `validate` 同样 fail-closed 且只读），以及“安装器真实生成的条目名匹配精确模式”反向用例（32 次 `mkdtempSync` 的 6 位后缀在 ubuntu + windows 上断言落在 `[A-Za-z0-9]`，`randomUUID()` 的临时清单与隔离目录名匹配，且近似的操作者名字不匹配——含非 v4 版本位、非 RFC 4122 variant 位的 uuid）。既有对账用例只把构造用的名字改成真实形态（`.install-ab12cd`、`.installed-<uuid>.tmp`、`.installed.lock.pending-dead01`），断言未改。
+- **`apps/cli/test/skill.test.ts`**：新增「操作者自建的相似名字不被当成残留」用例（`install` 失败于 `skill manifest is missing in a non-empty managed directory`，三个条目全部保留、不生成 `installed.json`；`list` / `validate` 同样按「拿不准就拒绝」处理且只读），以及「安装器真会生成的条目名能匹配精确模式」的反向用例（32 次 `mkdtempSync` 的 6 位后缀在 ubuntu + windows 上断言落在 `[A-Za-z0-9]`，`randomUUID()` 的临时清单和隔离目录名能匹配，而相近的操作者名字匹配不上——含非 v4 版本位、非 RFC 4122 variant 位的 uuid）。原有对账用例只把构造用的名字改成真实形态（`.install-ab12cd`、`.installed-<uuid>.tmp`、`.installed.lock.pending-dead01`），断言没改。
 
 ### Documented
 
-- README / README.zh-CN 对账章节改为按精确形态描述残留，并写明两条边界：相似名字属于操作者内容、永不删除；恰好符合生成形态的名字仍按残留处理。同时更正 pending 锁的说明——owner 存活或不可读时原样保留且惰性，只有回收隔离目录在无法证明已死时才让运行失败。
+- README / README.zh-CN 的对账章节改成按精确形态讲残留，并写明两条边界：像残留的名字属于操作者内容、永远不删；恰好符合生成形态的名字仍按残留处理。同时更正 pending 锁的说明——owner 还活着或读不到时原样保留、不急着动，只有回收隔离目录在没法证明已死时才让运行失败。
 
-## Unreleased — #145: rename 退避抽到独立 `fs-atomic` 模块，平台门改显式 seam（#137 收尾）
-
-### Changed
-
-- **rename 退避模块化，平台门改显式 seam**：新增 `apps/cli/src/fs-atomic.ts` 收拢 #137 的重试策略（10ms→1s 指数退避、约 60s 预算、耗尽抛原始错误）与平台门——`RenameSeam.platform` 显式声明 `"win32"` 重试 `EPERM`/`EBUSY`/`ENOTEMPTY`、其余平台仅 `EBUSY`，取代 #137 中对 `DEFAULT_RENAME_IO` 的对象身份推断（该推断一旦 seam 形状变化，POSIX 语义会静默退化且测试全绿）。`skill-store.ts` 删除内联常量 / `RenameIO` / 重试循环，改为 re-export（`renameWithRetry` / `renameSeam` / `setRenameSeam`；`skillRenameIO` 保留为 deprecated 别名），rename 调用点与生产行为零变化。`sleepSync` 移至 `fs-atomic` 导出，`skill-store` 的锁重取节奏（#137）继续使用。
-
-### Added
-
-- **`apps/cli/test/fs-atomic.test.ts`**：win32 三码依次注入（第 4 次成功，等待 `[10, 20, 40]`）；预算耗尽抛出同一个 error 对象且假时钟累计 ≤ 60s；`ENOENT` 与无 `code` 错误首次即抛、从不 sleep；POSIX 门（`EBUSY` 重试、`EPERM`/`ENOTEMPTY` 立即抛，此前该语义无任何测试）；`setRenameSeam` 嵌套 restore 回到上一层而非默认；默认 seam 完成一次真实 rename。既有 `skill.test.ts` 的 rename 用例改为显式声明 `platform: "win32"`（含依赖 `EPERM` 重试的 uninstall 备份用例），断言未改。
-
-## Unreleased — #137: `ans skill` 安装器并发硬化（stale 锁回收 / Windows rename 重试 / 启动对账）
-
-### Added
-
-- **同 host + PID namespace 的 stale 锁自动回收**：锁记录 `{token, pid, host, bootId, namespace}`（boot/namespace 仅在 Linux 暴露，不可用时只按 host 判定）；`ESRCH` 仅在 host 与 PID namespace 一致时判为已死，上一 boot 留下的锁直接视为已死，跨 host / 跨 namespace / owner 不可读一律 fail-closed。回收以唯一 quarantine rename 作为选举，移走后复核 owner token；可能仍存活的 quarantine 只报告、不删除。
-- **启动对账**：`install` / `list` / `validate` 在持锁且无 `installed.json` 时清理 `.install-*`、`.installed-*.tmp`、已死的 `.installed.lock.reclaim-*` 与 `.installed.lock.pending-*`；`.uninstall-*` 备份、未登记 `<name>/` 与未知条目永不自动删除，`list` 继续对未登记内容 fail-closed。
-- **拒绝带本地 Git content-filter 的源**：`git status` 会执行仓库本地或 worktree 配置定义的 `filter.<name>.clean`/`process`（即便 `core.fsmonitor=false`），安装器在运行 `status` 前检查这两类配置并拒绝此类源；dirty 探测使用 `--ignore-submodules=all`，不进入子模块、也不会执行子模块配置的 filter。
+## Unreleased — #145: 把 rename 重试挪进独立的 `fs-atomic` 模块，平台判断改成显式接口（#137 收尾）
 
 ### Changed
 
-- **stale 锁回收串行化**：回收者先取得独占 guard（带 owner 记录、可回收死 guard），在持有 guard 时复核 owner token 后才移动锁，避免把刚发布的活动锁移走而破坏互斥。
-- **关键 rename 有界退避**：manifest 发布、payload→target、target→backup 遇到 Windows 瞬时 `EPERM`/`EBUSY`/`ENOTEMPTY` 以 10ms→1s 指数退避重试，上限约 60s，耗尽后保留原始错误；其他平台仅把 `EBUSY` 视为瞬时。锁连同 owner 记录一次性 rename 发布，发布失败直接视为争用并 fail-fast，不占用重试预算。
+- **rename 重试模块化，平台判断改成显式接口**：新增 `apps/cli/src/fs-atomic.ts`，收拢 #137 的重试策略（10ms→1s 指数退避、大约 60s 预算、用完了抛原始错误）和平台判断——`RenameSeam.platform` 明着写 `"win32"` 时重试 `EPERM`/`EBUSY`/`ENOTEMPTY`，其他平台只重试 `EBUSY`，取代 #137 里靠对象身份猜 `DEFAULT_RENAME_IO` 的做法（那个猜法一旦接口形状变了，POSIX 语义会悄悄退化而且测试全部通过）。`skill-store.ts` 删掉内联常量 / `RenameIO` / 重试循环，改成 re-export（`renameWithRetry` / `renameSeam` / `setRenameSeam`；`skillRenameIO` 保留为 deprecated 别名），rename 调用点和生产行为零变化。`sleepSync` 移到 `fs-atomic` 导出，`skill-store` 的锁重取节奏（#137）继续用它。
+
+### Added
+
+- **`apps/cli/test/fs-atomic.test.ts`**：win32 三个错误码依次注入（第 4 次成功，等待 `[10, 20, 40]`）；预算用完抛同一个 error 对象且假时钟累计 ≤ 60s；`ENOENT` 和没有 `code` 的错误第一次就抛、从不 sleep；POSIX 门（`EBUSY` 重试、`EPERM`/`ENOTEMPTY` 立即抛，以前这条语义一个测试都没有）；`setRenameSeam` 嵌套 restore 回到上一层而不是默认；默认接口完成一次真实的 rename。原有 `skill.test.ts` 的 rename 用例改成显式声明 `platform: "win32"`（含依赖 `EPERM` 重试的 uninstall 备份用例），断言没改。
+
+## Unreleased — #137: `ans skill` 安装器处理并发（回收旧锁 / Windows rename 重试 / 启动时对账）
+
+### Added
+
+- **同 host + PID namespace 的旧锁自动回收**：锁记录 `{token, pid, host, bootId, namespace}`（boot/namespace 只有 Linux 暴露，拿不到时就只按 host 判断）；`ESRCH` 只有在 host 和 PID namespace 都一致时才判定为已死，上一个 boot 留下的锁直接算已死，跨 host / 跨 namespace / owner 读不到一律按「拿不准就拒绝」处理。回收时用一个唯一的隔离 rename 做选举，移走后复核 owner token；可能还活着的隔离目录只报告、不删除。
+- **启动时对账**：`install` / `list` / `validate` 在拿着锁、又没有 `installed.json` 时清理 `.install-*`、`.installed-*.tmp`、已经死掉的 `.installed.lock.reclaim-*` 和 `.installed.lock.pending-*`；`.uninstall-*` 备份、没登记过的 `<name>/` 和未知条目永远不自动删，`list` 对没登记的内容继续按「拿不准就拒绝」处理。
+- **拒绝带本地 Git content-filter 的源**：`git status` 会执行仓库本地或 worktree 配置里定义的 `filter.<name>.clean`/`process`（即使 `core.fsmonitor=false`），安装器在跑 `status` 前先检查这两类配置，遇到就拒绝这种源；检查 dirty 用 `--ignore-submodules=all`，不进子模块，也不会执行子模块配置的 filter。
+
+### Changed
+
+- **旧锁回收串行化**：回收的人先拿到独占 guard（带 owner 记录、死 guard 也能回收），拿着 guard 复核 owner token 之后才移动锁，免得把刚发布的活动锁移走、把互斥搞坏。
+- **关键 rename 有上限地重试**：发布清单、payload→target、target→backup 碰到 Windows 的瞬时 `EPERM`/`EBUSY`/`ENOTEMPTY`，按 10ms→1s 指数退避重试，上限大约 60s，用完保留原始错误；其他平台只把 `EBUSY` 当瞬时错误。锁连 owner 记录一起一次性 rename 发布，发布失败直接当成争用、马上失败，不占用重试预算。
 
 ### Documented
 
-- README / README.zh-CN / GLOSSARY 同步恢复说明、PID namespace 判定与“安装 ≠ 激活”。
+- README / README.zh-CN / GLOSSARY 同步恢复说明、PID namespace 判断和「安装 ≠ 激活」。
 
-## Unreleased — #104: RagAdapterPort + fts adapter 最小真实现（#35 落地，决策 #90）
+## Unreleased — #104: 接入企业数据的接口 + fts 最小实现（#35 落地，决策 #90）
 
 ### Added
 
-- **kernel ports 新增 `RagAdapterPort`**（`packages/kernel/src/ports.ts`）：`retrieve(query, limit) → { block, label, hitCount } | null`，`label` 复用 content-trust 的 `SourceTraceLabel`，注入产物自带 provenance 而非裸文本。
-- **`rag.adapter` 三态注册表**（`packages/kernel/src/rag-adapter.ts`，`RagAdapterRegistry`）：`none`=不注入；`note`=保留 `config.note` 旧注入（legacy 伪 adapter，字节级不变）；`fts`=最小真实现，包裹既有 `SessionStore.searchMemory`（严格 FTS5 梯级 + 放宽梯级 + 既有 side arms），零新索引、零 embedding 依赖。按 domain 对象身份缓存解析结果，TOML 热重载后下一轮即按新 id 生效。
-- **`fts` 注入块带 provenance 头**：`[RAG Context] (adapter=fts, provenance=memory, hits=N, traceId=rag:fts:N)`，每条命中带 role 标签（`- [assistant] …`）；命中文本在注入边界过 `sanitizeText`（零宽/双向覆盖符剔除）并压平换行，防伪造块结构；单条上限 600 字符、整块上限 4000 字符，避免一条巨行挤掉其余命中。
-- **用户文档 `docs/rag-adapters.md`**：`[rag] adapter` 三态配置（含「`rag.adapter` 必填、派生域沿继承链继承、缺省 ≠ `none`」与「`none` 不压制非空 `config.note`」两条易错点）、`fts` 注入块形状与 provenance、四个预算常量、消息形状注意事项（pi 把 prompt 规范化成 content block）、fail-open 矩阵与验证方式；README 的 Domains / Known limitations / For contributors 三处接入。新代码的公开接口补齐 JSDoc（`RagAdapterPort` / `RagAdapterRegistry` / `createNoteRagAdapter` / `createFtsRagAdapter` / `readMessageText` / `appendMessageText` / `prependMessageText`）。
-- **`#104` 验收测试** `packages/kernel/test/rag-adapter.test.ts`：fts 注入 + provenance（AC1）、`none` / legacy `note` 字节级回归（AC2）、未知 adapter fail-open + 具名 stderr（AC3），外加 no-store / 检索抛错 / 无命中 / 空查询 / 缓存与热重载 / Stage-1 落点 / 不叠乘 / 出厂域全量审计。
+- **kernel 的接口层新增 `RagAdapterPort`**（`packages/kernel/src/ports.ts`）：`retrieve(query, limit) → { block, label, hitCount } | null`，`label` 复用内容信任那边的 `SourceTraceLabel`，注入出来的内容自带来源标记，不是一段没头没尾的文字。
+- **`rag.adapter` 三态注册表**（`packages/kernel/src/rag-adapter.ts`，`RagAdapterRegistry`）：`none` = 不注入；`note` = 保留 `config.note` 的老注入方式（旧版假 adapter，逐字节不变）；`fts` = 最小真实现，包住已有的 `SessionStore.searchMemory`（严格的 FTS5 阶梯 + 放宽的阶梯 + 已有的其他查找），不新建索引、不依赖 embedding。解析结果按 domain 对象身份缓存，TOML 热重载后下一轮就按新 id 生效。
+- **`fts` 注入块带来源标记头**：`[RAG Context] (adapter=fts, provenance=memory, hits=N, traceId=rag:fts:N)`，每条命中有角色标签（`- [assistant] …`）；命中的文字在注入边界过 `sanitizeText`（去掉零宽字符和双向覆盖符）并压平换行，防止伪造块结构；单条上限 600 字符、整块上限 4000 字符，避免一条超长行把其他命中挤掉。
+- **用户文档 `docs/rag-adapters.md`**：`[rag] adapter` 三态配置（含「`rag.adapter` 必填、派生域沿继承链继承、缺省 ≠ `none`」和「`none` 不会压掉非空的 `config.note`」两条容易踩的点）、`fts` 注入块的形状和来源标记、四个预算常量、消息形状要注意的地方（pi 会把 prompt 规范化成 content block）、出故障就放行的矩阵和验证方法；README 的 Domains / Known limitations / For contributors 三处接上。新代码的公开接口补齐 JSDoc（`RagAdapterPort` / `RagAdapterRegistry` / `createNoteRagAdapter` / `createFtsRagAdapter` / `readMessageText` / `appendMessageText` / `prependMessageText`）。
+- **`#104` 验收测试** `packages/kernel/test/rag-adapter.test.ts`：fts 注入 + 来源标记（AC1）、`none` / 旧版 `note` 逐字节回归（AC2）、未知 adapter 出故障就放行 + 带名字的 stderr（AC3），另外覆盖没有 store / 检索抛错 / 没有命中 / 空查询 / 缓存和热重载 / Stage-1 注入点 / 不叠乘 / 出厂域全量审计。
 
 ### Documented
 
-- **`fts` 的作用域 = 跨会话共享的 Research Memory（不是当前会话）**：`SessionStore.searchMemory` 查 `retrieval_results_fts` 且不带 session 过滤（既有 `recall_memory` 语义），本票只在其上包一层、未改作用域；对照 `searchFts5(sessionId, …)` 才是按会话过滤。已在 `docs/rag-adapters.md` 单列「作用域」一节写明，并点出"多域共享同一 DB 时启用 `fts` 等于放宽域间信息边界"的后果。若要"仅当前会话"，需给 `RagAdapterPort` 传 sessionId 并给 store 增带会话过滤的 Research Memory 查询 —— 属独立决策，不在本票改。
+- **`fts` 管的范围 = 跨会话共享的调研资料库（不是当前会话）**：`SessionStore.searchMemory` 查 `retrieval_results_fts`，不带 session 过滤（既有 `recall_memory` 的语义），本票只在它上面包了一层、没改范围；按会话过滤的是 `searchFts5(sessionId, …)`。已经在 `docs/rag-adapters.md` 单独写了「范围」一节，并点明「多个域共用同一个 DB 时开 `fts` 等于放宽域间的信息边界」的后果。要做到「只看当前会话」，得给 `RagAdapterPort` 传 sessionId，再给 store 加一个带会话过滤的调研资料库查询——这是另一个决定，不在本票改。
 
 ### Fixed
 
-- **Stage-1 注入在真实运行时从未命中（#104 自查 + CI 发现）**：pi-agent-core 0.84.2 把 `agent.prompt("…")` 规范化为 content block 数组（`content: [{type:"text",text}]`），而注入代码只认 `typeof content === "string"`——RAG 注入在实机上落空，旧 `note` 路径更会在 note 存在时把用户消息整体改写成 RAG 文本（数据丢失）。新增 `packages/kernel/src/message-text.ts`（`readMessageText` / `appendMessageText` / `prependMessageText`）：两种形状都支持，block 形状原地追加到文本块、非文本块原样保留，无文本通道时主动放弃注入。Stage-1 与 T0 偏好注入同时改用该助手；回归见 `packages/kernel/test/message-text.test.ts` 与 `rag-adapter.test.ts` 的 content-block 用例，端到端断言不再假设消息形状。
+- **Stage-1 注入在真实运行时从来没命中过（#104 自查 + CI 发现）**：pi-agent-core 0.84.2 会把 `agent.prompt("…")` 规范化成 content block 数组（`content: [{type:"text",text}]`），而注入代码只认 `typeof content === "string"`——RAG 注入在真机上落空，旧的 `note` 路径更会在有 note 时把用户消息整个改写成 RAG 文本（数据丢失）。新增 `packages/kernel/src/message-text.ts`（`readMessageText` / `appendMessageText` / `prependMessageText`）：两种形状都支持，block 形状原地追加到文本块、非文本块原样保留，没有文本通道时主动放弃注入。Stage-1 和 T0 偏好注入同时改用这个 helper；回归见 `packages/kernel/test/message-text.test.ts` 和 `rag-adapter.test.ts` 的 content-block 用例，端到端断言不再假设消息形状。
 
 ### Changed
 
-- **RAG 注入点接线方式改为 adapter 分派**：注入槽位不变（`MemoryPipeline.inject` Stage-1、首条 user 消息）。`fts` 的检索 query 取首条 user 消息原文（截断 400 字符以适配严格 FTS5 梯级）。**兼容保留**：`adapter = "none"` 但残留 `config.note` 的域仍按 #104 之前的条件（`adapter && config.note`，`"none"` 为真值）注入该 note —— AC2 要求 `none` 行为逐字节不变，故不做“adapter 是唯一开关”的收紧（CodeRabbit PR #123 Linked Issues 检查指出该冲突后修正）。
-- **`query_knowledge` 边界据实记录**：该 MCP 工具仍是占位（需先定“知识查询读哪个记忆范围”），已写入 `docs/limitations.md`；GLOSSARY 的 RAG Adapter 条目由“仅占位，未实施”更新为三态定义 + RAG Injection 条目。
+- **RAG 注入点改成按 adapter 分派**：注入的位置没变（`MemoryPipeline.inject` 的 Stage-1、第一条 user 消息）。`fts` 的检索 query 取第一条 user 消息的原文（截到 400 字符，适配严格的 FTS5 阶梯）。**兼容保留**：`adapter = "none"` 但还留着 `config.note` 的域，仍按 #104 之前的条件（`adapter && config.note`，`"none"` 是真值）注入那条 note——AC2 要求 `none` 的行为逐字节不变，所以不做「adapter 是唯一开关」的收紧（CodeRabbit PR #123 的 Linked Issues 检查指出这个冲突后改的）。
+- **`query_knowledge` 的边界照实记录**：这个 MCP 工具还是占位（得先定「知识查询读哪个记忆范围」），已经写进 `docs/limitations.md`；GLOSSARY 的 RAG Adapter 条目从「只是占位、没实现」更新成三态定义 + 一条 RAG Injection。
 
-## Unreleased — #100: MCP SDK v2 monorepo 收口（server 2.4.x + zod ≥4.2 + 双通道/Dual Era 验收）
+## Unreleased — #100: MCP SDK v2 多包仓库收口（server 2.4.x + zod ≥4.2 + 两条传输通道/新旧两代协议验收）
 
 ### Changed
 
-- **apps/mcp 迁至 `@modelcontextprotocol/server` 2.4.x**：`@modelcontextprotocol/server` ^2.0.0 → ^2.4.0、`@modelcontextprotocol/node` ^2.0.0 → ^2.1.2（node 2.1.2 的 peer 强制 server ^2.4.0，故同批升级；core 随之 2.4.0）。TypeBox 输入 schema 仍经官方 `fromJsonSchema()` 直达 `registerTool`（无 zod 双写，#39）；stdio + Streamable HTTP 双通道与 Dual Era 兼容行为不变——legacy 握手逐版回声、2026-07-28 声明优雅降级到 2025-11-25，宿主客户端零可见变化。HTTP 仍为每请求 `buildServer()` 工厂（满足 server 2.3.0 #2918 单连接约束）。
-- **zod 锁 ≥4.2（删 4.0–4.1 fallback 腿，#46）**：`pnpm-workspace.yaml` override `zod: ">=3.25.28"` → `">=4.2.0"`（全树唯一解析仍 4.4.3）。SDK v2 协议 schema 自转保留 descriptions，tools/list 输入 schema 不再相对 zod 4.2+ 降级。
+- **apps/mcp 迁到 `@modelcontextprotocol/server` 2.4.x**：`@modelcontextprotocol/server` ^2.0.0 → ^2.4.0、`@modelcontextprotocol/node` ^2.0.0 → ^2.1.2（node 2.1.2 强制要求 server ^2.4.0，所以同一批升；core 跟着到 2.4.0）。TypeBox 输入 schema 仍然经官方 `fromJsonSchema()` 直接交给 `registerTool`（没有用 zod 再写一遍，#39）；stdio + Streamable HTTP 两条通道和新旧两代协议的兼容行为都没变——旧版握手逐版本回声、`2026-07-28` 的声明优雅降级到 `2025-11-25`，宿主客户端看不到变化。HTTP 仍然是每请求一个 `buildServer()` 工厂（满足 server 2.3.0 #2918 的单连接约束）。
+- **zod 锁到 ≥4.2（删掉 4.0–4.1 的 fallback 腿，#46）**：`pnpm-workspace.yaml` 的 override 从 `zod: ">=3.25.28"` 改成 `">=4.2.0"`（整棵依赖树仍然只解析到 4.4.3）。SDK v2 协议 schema 自己转出来的描述保留，tools/list 的输入 schema 不再比 zod 4.2+ 差。
 
 ### Added
 
-- **#100 验收测试**（assert 风格，经 tsx 运行，无需 build）：`apps/mcp/test/sdk-v2-schema.test.ts` —— tools/list 5 工具 type descriptions 全量回环等于 kernel JSON schema、`~standard` vendor "mcp"（非 zod）、#94 实证；`apps/mcp/test/dual-era.test.ts` —— legacy 5 版 + 2026-07-28 降级协商、stdio + 无状态 Streamable HTTP 全 5 工具 tools/call 冒烟、AJV 入参校验（空 query / 额外属性拒绝）。
-- **#94 具名未证实点实证**：裸 TypeBox TSchema（`@sinclair/typebox` 0.34.52 与 `typebox` 1.4.3）均**不**含 `~standard`，不满足 StandardSchemaWithJSON —— 必须经 `fromJsonSchema()`（vendor "mcp"、`~standard.jsonSchema.input()` 原样返回、AJV 校验）。结论固化于 sdk-v2-schema.test.ts 并回写 #39/#46。
-- **`scripts/mcp-smoke.mjs` + CI 冒烟扩至双通道**：对构建产物 `dist/index.cjs` 跑 stdio + 无状态 Streamable HTTP 全 5 工具 tools/list 冒烟（descriptions + Dual Era 协商），替换原单工具 grep 握手；仅 tools/list，无需 provider/LLM key。
+- **#100 验收测试**（assert 风格，经 tsx 跑，不用构建）：`apps/mcp/test/sdk-v2-schema.test.ts` —— tools/list 5 个工具的 type 描述完整回环等于 kernel 的 JSON schema、`~standard` 的 vendor 是 "mcp"（不是 zod）、#94 的实证；`apps/mcp/test/dual-era.test.ts` —— 旧版 5 个版本 + `2026-07-28` 的降级协商、stdio + 无状态 Streamable HTTP 上全 5 个工具的 tools/call 冒烟、AJV 入参校验（空 query / 额外属性被拒）。
+- **#94 里点名但没证实的地方，现在证实了**：裸 TypeBox TSchema（`@sinclair/typebox` 0.34.52 和 `typebox` 1.4.3）都**不**带 `~standard`，不满足 StandardSchemaWithJSON —— 必须经 `fromJsonSchema()`（vendor "mcp"、`~standard.jsonSchema.input()` 原样返回、AJV 校验）。结论固化在 sdk-v2-schema.test.ts 里，并回写到 #39/#46。
+- **`scripts/mcp-smoke.mjs` + CI 冒烟扩到两条通道**：对构建产物 `dist/index.cjs` 跑 stdio + 无状态 Streamable HTTP 的全 5 工具 tools/list 冒烟（descriptions + 新旧协议协商），替换原来只查一个工具的 grep 握手；只跑 tools/list，不需要 provider/LLM 的 key。
 
-## 0.1.2 — 2026-10-22 (hotfix: ans_chat retrieval, search saturation stop, rate-limit class)
-
-### Fixed
-
-- **ans_chat 从不检索**：三个自带域（default/docs/research）的 `hooks.toolWhitelist` 只列宿主侧工具名（`ctx_*`），把内核自带的 `search` 工具过滤掉，ans_chat 的 agent 循环零工具运行——模型凭参数记忆作答或把工具调用当正文输出。三个域白名单补 `"search"`；白名单仍是安全过滤器。回归：`packages/kernel/test/agent-tool-filter.test.ts`。
-- **搜索循环无预算外停止条件（，r18 seal-0）**：新增 `SearchSaturation`——连续 2 次搜索无新 URL 或累计 12 次搜索后，阻断后续 `search` 并要求模型用已得证据作答。回归：`packages/kernel/test/search-saturation.test.ts`（修复前 30 次，修复后 ≤3 次）。
-- **限流提示误判 permanent-auth（，r18 STOP-20）**：正文限流/额度提示（无开户标记）改抛 `rate limited` 并归 `transient`；开户提示仍为 `permanent-auth`。回归：`packages/retriever/test/anysearch.test.ts` case 17、`provider-error-class.test.ts`。
-
-### Changed
-
-- 全包版本 0.1.1 → 0.1.2（9 package.json + plugin.json + ship-gate release pin + 两处 clientInfo 同 commit）。
-
-## 0.1.1 — 2026-10-15 (hotfix: relaxed recall rung)
+## 0.1.2 — 2026-10-22（修补：ans_chat 不检索、搜索太多自动停、限流分类错误）
 
 ### Fixed
 
-- **recall 自然语言提问取不回已存证据**：`recall_memory` 的内部记忆与项目索引两层都只走严格 FTS5 梯级（全词 AND + 整句），宿主自然语言提问几乎从不在单行里凑齐全部词，存储中的证据取不回。现严格梯级不足 `limit` 时追加放宽梯级（实词 OR + 前缀、同一 BM25/新鲜度排序，严格命中保持优先）；覆盖 `searchMemory` / `searchMemoryMultiQuery` / `ProjectIndexStore.search` 三条路径。回归：`packages/store/test/fts5-relaxed-recall.test.ts`、`apps/plugin/test/project-index-relaxed.test.ts`。
+- **ans_chat 从来不做检索**：三个自带域（default/docs/research）的 `hooks.toolWhitelist` 只列了宿主那边的工具名（`ctx_*`），把内核自带的 `search` 工具过滤掉了，ans_chat 的 agent 循环一个工具都没有——模型要么凭参数记忆作答，要么把工具调用当正文输出。三个域的白名单补上 `"search"`；白名单仍然是安全过滤器。回归：`packages/kernel/test/agent-tool-filter.test.ts`。
+- **搜索循环没有预算之外的停止条件（r18 seal-0）**：新增 `SearchSaturation`——连续 2 次搜索没有新 URL，或者累计 12 次搜索之后，挡住后面的 `search`，要求模型用已经拿到的证据作答。回归：`packages/kernel/test/search-saturation.test.ts`（修之前 30 次，修之后 ≤3 次）。
+- **限流提示被误判成 permanent-auth（r18 STOP-20）**：正文里的限流/额度提示（没有开户标记）改成抛 `rate limited` 并归到 `transient`；开户提示仍然是 `permanent-auth`。回归：`packages/retriever/test/anysearch.test.ts` case 17、`provider-error-class.test.ts`。
 
 ### Changed
 
-- 全包版本 0.1.0 → 0.1.1（9 package.json + plugin.json + ship-gate release pin + provider clientInfo 同 commit）。本版同时承载下列 Unreleased（~0101）条目。
+- 全包版本 0.1.1 → 0.1.2（9 个 package.json + plugin.json + ship-gate 的发布钉版 + 两处 clientInfo，同一个 commit）。
 
-## Unreleased — r100: 元验证封顶（封顶滤尺三交集 + 修层/新层判据 + 坐席 Addendum + tau 递归/AST 前门 + deferred 触发器）
+## 0.1.1 — 2026-10-15（修补：放宽记忆召回的阶梯）
 
-> ⚠️ 本节所载治理机器已由治理庭 commit `3f85fee8`（"governance court: retire meta-validation machinery, untrack .scratch"）整体退役——`docs/enforcement-anchors.json` 已不存在。本节仅作历史记录保留，未改写。/ ⚠️ The governance machinery documented below was retired wholesale by governance-court commit `3f85fee8` ("governance court: retire meta-validation machinery, untrack .scratch") — `docs/enforcement-anchors.json` no longer exists. Section retained as history, not rewritten.
+### Fixed
+
+- **用日常说话的方式提问，recall 取不回已经存下的证据**：`recall_memory` 查内部记忆和项目索引两层时都只走严格的 FTS5 阶梯（全部词 AND + 整句），宿主日常提问几乎不可能在一行里凑齐所有词，库里的证据就取不回来。现在严格阶梯不够 `limit` 时补一层放宽的阶梯（实词 OR + 前缀、还是按同一个 BM25/新鲜度排序，严格命中的仍然排前面）；覆盖 `searchMemory` / `searchMemoryMultiQuery` / `ProjectIndexStore.search` 三条路径。回归：`packages/store/test/fts5-relaxed-recall.test.ts`、`apps/plugin/test/project-index-relaxed.test.ts`。
+
+### Changed
+
+- 全包版本 0.1.0 → 0.1.1（9 个 package.json + plugin.json + ship-gate 的发布钉版 + provider clientInfo，同一个 commit）。这个版本同时带上下面那些 Unreleased（~0101）条目。
+
+## Unreleased — r100: 给这套检查工具自己加上限（三种条件同时满足 + 区分修旧层还是建新层 + 待办登记 + tau 递归/AST 前置检查 + deferred 什么时候触发）
+
+> ⚠️ 这一节写的检查工具（检查项 schema v2、待办条目/`pending_anchors`、STACK_RED_CODES、`enumerateScriptFiles`/AST 前置检查、handoff-reanchor 等）已经被治理那边的 commit `3f85fee8`（"governance court: retire meta-validation machinery, untrack .scratch"）整套删掉——`docs/enforcement-anchors.json` 已经不在了。这一节只当历史记录留着，没有改写。/ ⚠️ The checks described below were removed wholesale by the governance-court commit `3f85fee8` ("governance court: retire meta-validation machinery, untrack .scratch") — `docs/enforcement-anchors.json` no longer exists. The section is kept as history, not rewritten.
 
 ### Added
 
-- **执行锚 schema v2（T2-A）**：`docs/enforcement-anchors.json` 升 v2——`failure_classes` 封闭词表 + 每锚必填非空 `fails` ⊆ 词表（Kill Oracle：锚必须具名其防的用户可见产品故障类，禁止自由文本）+ `tier:"red"|"info"`（Audit Tier，观测不缺席）；`anchor-fails-empty` / `anchor-fails-unregistered` / `anchor-tier-invalid` 三新 RED。
-- **坐席结构化 + 限期 + masking 具名（T2-A）**：`pending_anchors` 接受 `{anchor,reason,seated_at,review_by}` 结构化条目与旧裸字符串双读——裸串迁移日设限 `LEGACY_SEAT_REVIEW_BY`（存量不豁免到期）；`anchor-seat-expired` / `anchor-seat-malformed` / `anchor-seat-info-conflict`（pending_anchors ∩ info 互斥）三新 RED；开放坐席下 no-kill 出具名 `masking-surfaced` info 行（哪个坐席掩盖哪个锚行级点名）。
-- **stack-orphaned-by-land 谓词（T2-B）**：STACK_RED_CODES 第四元——closeout 已在 origin/main ∧ 携活链 ∧ 栈 ref 缺失 → RED（land 溶栈后的活链尸体捕获：R99 `sha-not-commit` 漏检类具名）；`git ls-tree origin/main` 采 docOnMain 事实，未采集降级 env-PENDING 不猜边；3 成对 fixture（red / inflight deny / still-pushed deny）。
-- **tau 递归 + AST 前门（T2-B）**：`enumerateScriptFiles` 扩为 `scripts/**/*.mjs` 递归（`scripts/tau/` 入域）；`scripts/top-level-effects.mjs` 纯静态三分类（typescript API 经 packages/store createRequire，零新依赖、零顶层副作用）——①codes∧副作用→`ast-top-level-effect` 拒注入 RED / ②`*_CODES` 非字面初始化→`ast-codes-unverifiable` / ③副作用∧无 codes→具名排除候选 info；`EXCLUDED_PATHS` 封闭具名排除清单首条 `tau/tau-scan.mjs`（spawn 启动器不可命名空间注入），排除路径携 codes→`ast-excluded-codes`。
-- **post-land 双绑点义务（T2-C）**：audit-checklist §5 扩第二勾——land 同会话 post-land 重验（main push 三跑绿 ∧ 落树 ship-gate 复跑）∧ closeout 改述机械位 `scripts/handoff-reanchor.mjs`；锚活性一行账 `kind:"anchor-activity"` claim 类别（半机检：expect 账本重导出 closeout 行逐字比对，fixture kill 不入账）。
+- **检查项 schema v2（T2-A）**：`docs/enforcement-anchors.json` 升到 v2——`failure_classes` 是一个封闭的故障类词表，每一条检查项必须写非空的 `fails`，而且只能是词表里的值（意思是这条检查必须点名它防的是哪一类用户能碰到的产品故障，不准自己随便写）+ `tier:"red"|"info"`（审计级别，保证每条都有观察）；新增三个判为失败项 `anchor-fails-empty` / `anchor-fails-unregistered` / `anchor-tier-invalid`。
+- **待办条目要有结构、有期限、写明谁在挡着（T2-A）**：`pending_anchors` 既接受 `{anchor,reason,seated_at,review_by}` 这种结构化条目，也接受旧的裸字符串；裸字符串迁移那天设了期限 `LEGACY_SEAT_REVIEW_BY`（老条目到期不豁免）；新增三个判为失败项 `anchor-seat-expired` / `anchor-seat-malformed` / `anchor-seat-info-conflict`（pending_anchors 和 info 不能同时有）；还有待办没关时，没拦住的那条要出一行 `masking-surfaced` info，点名是哪个待办挡住了哪条检查项。
+- **`stack-orphaned-by-land` 判断（T2-B）**：STACK_RED_CODES 的第四个成员——收尾已经进了 `origin/main`、又带着还没销的链、但栈 ref 不在了 → 判为失败（专门抓 land 之后被溶解的栈留下的活链尸体：R99 的 `sha-not-commit` 漏检类）；用 `git ls-tree origin/main` 采「文档在不在 main 上」的事实，采不到就记 env-PENDING、不猜；3 组成对夹具（红 / 还在飞就拒绝 / 还在推就拒绝）。
+- **tau 递归 + AST 前置检查（T2-B）**：`enumerateScriptFiles` 扩成 `scripts/**/*.mjs` 递归（把 `scripts/tau/` 也纳进来）；`scripts/top-level-effects.mjs` 做纯静态三分类（TypeScript API 经 packages/store 的 createRequire 拿，零新依赖、零顶层副作用）——①带 codes 又有副作用 → `ast-top-level-effect` 拒绝注入，判为失败 / ②`*_CODES` 不是字面量初始化 → `ast-codes-unverifiable` / ③有副作用又没有 codes → 具名排除候选，出 info；`EXCLUDED_PATHS` 是封闭的具名排除清单，第一条 `tau/tau-scan.mjs`（spawn 启动器没法做命名空间注入），排除路径带着 codes → `ast-excluded-codes`。
+- **land 之后两个必须绑定做的事（T2-C）**：audit-checklist §5 加第二个勾——land 的同一个会话里，land 后重验（向 main push 跑三次都通过、落进代码树的 ship-gate 再跑）并让收尾改述机械位 `scripts/handoff-reanchor.mjs`；检查项活性记一行账 `kind:"anchor-activity"` claim 类别（半机检：expect 账本重新导出收尾行逐字比对，夹具 kill 不入账）。
 
 ### Fixed
 
-- **R99 绿门清偿（T0）**：`.scratch/grill-round-99/handoffs/round-99-closeout.md` Stack 行六死 SHA 改述 `Stack（dissolved @ 2026-10-06）`（capture 留散文史料 + re-anchor 注记）——main tip `992412d6` 红→`8d1854e2` 绿，`r100-green-repair` 独立栈 ff-land（ref 随 land 注销），同会话重锚 commit 落档；候选 CI 双跑绿 + 落树三跑（ci/ship-gate/native-smoke）绿 + 本地 ship-gate 九步复绿实测。
+- **R99 发布检查修好（T0）**：`.scratch/grill-round-99/handoffs/round-99-closeout.md` 的 Stack 行六个死 SHA 改成 `Stack（dissolved @ 2026-10-06）`（capture 留散文史料 + re-anchor 注记）——main tip `992412d6` 从失败变成通过 `8d1854e2`，`r100-green-repair` 独立栈 ff-land（ref 随 land 注销），同一个会话里重新登记的 commit 存档；候选 CI 两次都通过 + 落进代码树后跑三次（ci/ship-gate/native-smoke）都通过 + 本地 ship-gate 九步重新通过实测。
 
 ### Docs
 
-- ** 立法（T1）**：五 Decision——D2 封顶滤尺三交集（fails+sunset+fraud-vs-style）/ D3 修层新层判据 / D5 坐席 Addendum / D6 tau 递归+AST 前门 / D7 负向边界+deferred 触发器；Consequences 携滤尺首演判例（R99 closeout 六死 SHA=活链尸体）与 T0 引用；CONTEXT「Grill Round 100 — Terms」七词条；ADR index 再生成至 101 件。
-- **deferred-r72 触发器注记（T3）**：`defer-r72-dsh-approval-channel` carried_log 挂 R100 续债注记——「R101+ 含 deferred 前置依赖的正题开工前须先评估触发条件」（任务书 D-003④ 兑现，该条目 trigger 已满足列入 R101 立项评估候选）。
-- **AGENTS.md 扫描面摘要刷新（T3）**：递归域 + AST 前门 + schema v2 + 坐席限期四件指针化，指向 。
+- **立法（T1）**：五条 Decision——D2 上限条件三交集（fails+sunset+fraud-vs-style）/ D3 修层新层判据 / D5 待办 Addendum / D6 tau 递归+AST 前置检查 / D7 负向边界+deferred 触发器；Consequences 带着这套尺子第一次用的判例（R99 收尾里六个死 SHA = 活链尸体）和 T0 引用；CONTEXT「Grill Round 100 — Terms」七个词条；ADR 索引重新生成到 101 件。
+- **deferred-r72 触发器注记（T3）**：`defer-r72-dsh-approval-channel` 的 carried_log 挂上 R100 续债注记——「R101+ 带 deferred 前置依赖的正题，开工前先评估触发条件」（任务书 D-003④ 兑现，这条的 trigger 已经满足，列进 R101 立项评估候选）。
+- **AGENTS.md 扫描范围摘要刷新（T3）**：递归范围 + AST 前置检查 + schema v2 + 待办限期四件改成只留指针，指向别处。
 
-## Unreleased — r99: vocab-guards 扩域至全 scripts/（逐模块注册表 + glob 顶层枚举 + 逐模块证伪）
+## Unreleased — r99: 词表检查扩到整个 scripts/（逐模块注册表 + glob 顶层枚举 + 逐模块故意改坏验证）
 
 ### Added
 
-- **vocab-registry 逐模块注册表（T2）**：`scripts/vocab-registry.mjs` 纯数据叶（零 import、`Object.freeze`）——`CODE_GROUPS = {verdict, anchors, evalIntegrity}` 逐模块分组，值=各模块受治 `*_CODES` 导出名；`GOVERNED_MODULES` 显式模块→组映射（数据非约定）。注册表脱离判定核，受治模块不回 import（单向依赖零循环）。
-- **vocab-scan 薄壳枚举（T2）**：`scripts/vocab-scan.mjs`——glob `scripts/*.mjs` 顶层（不递归，`tau/` 不入域）两相枚举：静态预筛 `*_CODES` 导出名 → 仅词表承载模块做命名空间注入 → 纯核逐模块断言；封闭排除清单（`.ts`/`.py`，判据=无法命名空间注入）漂移出 info 非 RED。
-- **扫面外三导出入册（T2）**：`ANCHOR_RED_CODES`/`ANCHOR_SKIP_CODES`（enforcement-anchors）与 `SHIP_OVERRIDE_REASON_CODES`（eval-integrity-contract）登记入册—— Known-Risk 1 开放面缺口关闭。
-- **探针无孤儿 + 三钉对抗演练（T2 验收段）**：e2e 新增「probe 模块导出无孤儿」反向断言 + 四钉对抗路径（探针名伪造 / 坐席伪造开 / 坐席关后复红 / 空注册表）逐条验证。
+- **vocab-registry 逐模块注册表（T2）**：`scripts/vocab-registry.mjs` 是纯数据叶子（零 import、`Object.freeze`）——`CODE_GROUPS = {verdict, anchors, evalIntegrity}` 按模块分组，值是该模块受管的 `*_CODES` 导出名；`GOVERNED_MODULES` 是显式的模块→组映射（是数据，不是约定）。注册表不依赖判定核心，受管模块也不会反过来 import 它（单向依赖，没有循环）。
+- **vocab-scan 薄壳枚举（T2）**：`scripts/vocab-scan.mjs`——glob `scripts/*.mjs` 的顶层（不递归，`tau/` 不在范围内）分两相枚举：先静态预筛 `*_CODES` 导出名 → 只对带词表的模块做命名空间注入 → 再由纯核心逐模块断言；封闭的排除清单（`.ts`/`.py`，理由是没法做命名空间注入）漂出就记 info，不判为失败。
+- **三个扫描面外的导出补登记（T2）**：`ANCHOR_RED_CODES`/`ANCHOR_SKIP_CODES`（enforcement-anchors）和 `SHIP_OVERRIDE_REASON_CODES`（eval-integrity-contract）登记进册——Known-Risk 1 的开放面缺口关掉。
+- **探针没有孤儿 + 三处对抗演练（T2 验收段）**：e2e 新增「探针模块导出没有孤儿」的反向断言 + 四处故意改坏（探针名伪造 / 待办伪造开 / 待办关了又红 / 空注册表）逐条验证。
 
 ### Changed
 
-- **`unregisteredCodeExports(ns)` → `(ns, registry)`（T2/D5）**：签名泛化为注册表注入（`registry ?? 默认表` 向后兼容），与 `env.registry ?? STATE_PREDICATE_REGISTRY` 参数化同构；`isKnownCode(code, vocabularies)` 同族泛化。
-- **anchor:vocab-guards 扩域（T2/D1）**：constraint/subject 由单模块 `CODE_GROUPS` 更新为全 `scripts/` 顶层逐模块注册语义；probe 由单命名空间改写为逐模块注入（3 受治模块失真均被抓）。
+- **`unregisteredCodeExports(ns)` → `(ns, registry)`（T2/D5）**：签名泛化成由外部注入注册表（`registry ?? 默认表`，向后兼容），跟 `env.registry ?? STATE_PREDICATE_REGISTRY` 的注入方式同构；`isKnownCode(code, vocabularies)` 也按同一族泛化。
+- **anchor:vocab-guards 扩范围（T2/D1）**：约束/对象从单模块 `CODE_GROUPS` 改成整个 `scripts/` 顶层逐模块注册的语义；探针从单命名空间改成逐模块注入（3 个受管模块改坏都会被抓住）。
 
 ### Docs
 
-- ** 立法（T1）**：六 Decision + 两块预写（首抓真 RED 解读纪律 / 四级迁移阶梯次序硬约束）+ CONTEXT「Grill Round 99 — Terms」七词条。
-- **坐席关票（T0/T3）**：`defer-r98-anchor-ratchet-recount-seat` 关闭（零代码改动，探针升全量 kill）；`defer-r98-anchor-open-surface-demo` 随扩域关闭。
-- **AGENTS.md 顶层零副作用摘要**：只指向 不复述全文。
+- **立法（T1）**：六条 Decision + 两块预写（第一次抓到真红怎么读的纪律 / 四级迁移阶梯的次序硬约束）+ CONTEXT「Grill Round 99 — Terms」七个词条。
+- **待办关票（T0/T3）**：`defer-r98-anchor-ratchet-recount-seat` 关闭（零代码改动，探针升成全量 kill）；`defer-r98-anchor-open-surface-demo` 随扩范围关闭。
+- **AGENTS.md 顶层零副作用摘要**：只指向，不复述全文。
 
 ### Fixed
 
-- **审计 R99 返工（A1~A3）**：① `probeVocabGuards` 枚举面改为消费生产扫面 `scanVocabGuards(...).scanned` 的词表承载模块（ 同源契约补正，抽样死角关闭）；② `enumerateScriptFiles` 由吞异常返空改为抛异常 + `scan-surface-unreadable` 致命 finding（Fail-Closed 补正，不可枚举扫面不再假绿）；③ ship-gate step 3 与根 `package.json` 的 test 任务加 `--concurrency=2`（跨进程 SQLite 竞争 + spawn 密集套件在 Windows 负载主机的资源上界稳定化，不改变被测内容）。
-## Unreleased — r98: 第五形态【装饰性机器约束检测】+ R97 审计返工（R1~R8/R10）
+- **审计 R99 返工（A1~A3）**：① `probeVocabGuards` 的枚举面改成用生产扫描 `scanVocabGuards(...).scanned` 的词表模块（同源约定补正，抽样的死角关掉）；② `enumerateScriptFiles` 从吞异常返空改成抛异常 + `scan-surface-unreadable` 致命 finding（按「拿不准就拒绝」补正，枚举不了的面不再假装是绿的）；③ ship-gate step 3 和根 `package.json` 的 test 任务加 `--concurrency=2`（跨进程 SQLite 竞争 + spawn 密集套件在 Windows 负载主机上让资源上限稳定下来，被测内容不变）。
+
+## Unreleased — r98: 第五种形态【装饰性机器约束检测】+ R97 审计返工（R1~R8/R10）
 
 ### Added
 
-- **enforcement-anchors 自检腿（T3）**：ship-gate 新增与 handoff-lint 平级的 `enforcement-anchors` 腿（`scripts/enforcement-anchors.mjs`）——读 `docs/enforcement-anchors.json` 闭锚注册表，逐条执行证伪探针判 kill/no-kill；`anchor-unresolvable`（无 fixture 不准入表）/ `anchor-not-consumed`（不杀即红）两枚自指钉 fail-closed；注册表文件不可读即 RED。
-- **五证伪探针（T3）**：`scripts/enforcement-anchor-probes.mjs`——`anchor:predicate-registry` / `anchor:reuse-pointer` / `anchor:bare-word-single-source` / `anchor:vocab-guards` / `anchor:ratchet-recount`；探针经模块导出自指解析，名实漂移不可达稳态。
-- **注册表参数化（T3/R1 配套）**：判定核 `env.registry ?? STATE_PREDICATE_REGISTRY`——「唯一引用即自声明」在签名层面不再可能（S-5 根治），缺省=生产表路径兼作隐式 fixture。
-- **dissolved 栈声明语法（T1）**：Stack 行 land 后变体——ref 缺失即 GREEN、ref 复活即 `declaration-fact-conflict`、ref 在但空=非溶栈；模板语法家同轮登记；3 fixture（verified/contradicted/uncollected）。
-- **清算腿机检（T1/R6）**：`assessClearingLeg`——收口清算义务「栈空 ∨ deferred 在册」首次机器兑现；`clearing:` 注解面 + `clearingRed`/`clearingEnv` 两新治理组。
-- **claims-verbatim 抽取（T1/R5 配套）**：`scripts/claims-verbatim.mjs`——verbatim claim 检查成可注入模块；`reauthored` 与 `reanchor_log` recount 比对并上表面（P-6「ratchet 可见的重批计数」兑现）。
-- **deferred registry `pending_predicates` / `pending_anchors` 字段（T1/R7）**：形态二 PENDING 位与锚 PENDING 坐席统一挂点——marker 点名 seat 谓词→surfaced PENDING 非 OOV RED；坐席锚执行探针但 skip 非 fail，关票即自动升级。
-- **E2E/真值表扩网（T1/R2）**：未采集分支显式 env-PENDING 对、清算三态、deferrd-PENDING 位、词表双向锁、检测器自身四格失效（unresolvable/不杀/坐席/注册表不可读）；真值表 357→444 / E2E 270→360 断言只升。
+- **enforcement-anchors 自检腿（T3）**：ship-gate 新增跟 handoff-lint 平级的 `enforcement-anchors` 腿（`scripts/enforcement-anchors.mjs`）——读 `docs/enforcement-anchors.json` 的封闭的检查项注册表，逐条跑故意改坏的探针，判断能不能拦住；`anchor-unresolvable`（没有夹具不准进表）/ `anchor-not-consumed`（拦不住就判为失败）两个自指钉子按「拿不准就拒绝」处理；注册表文件读不了就判为失败。
+- **五个证伪探针（T3）**：`scripts/enforcement-anchor-probes.mjs`——`anchor:predicate-registry` / `anchor:reuse-pointer` / `anchor:bare-word-single-source` / `anchor:vocab-guards` / `anchor:ratchet-recount`；探针通过模块导出自己解析自己，名字和实际对不上就到不了稳态。
+- **注册表参数化（T3/R1 配套）**：判定核心 `env.registry ?? STATE_PREDICATE_REGISTRY`——「唯一引用即自己声明」在签名层面不再可能（S-5 根治），缺省值是生产表路径，顺便当隐式夹具。
+- **溶解栈的声明语法（T1）**：Stack 行 land 之后的变体——ref 不在了就判为通过、ref 复活就是 `declaration-fact-conflict`、ref 在但为空 = 不是溶解栈；模板语法家同轮登记；3 个夹具（已验证 / 矛盾 / 没采集）。
+- **清算腿机器检查（T1/R6）**：`assessClearingLeg`——「栈空 ∨ deferred 在册」这条收口清算义务第一次由机器兑现；`clearing:` 注解面 + `clearingRed`/`clearingEnv` 两个新治理组。
+- **claims-verbatim 抽取（T1/R5 配套）**：`scripts/claims-verbatim.mjs`——把逐字 claim 检查做成可注入的模块；`reauthored` 和 `reanchor_log` 的 recount 比对后放到面上（P-6「让重复批准的次数看得见」兑现）。
+- **deferred registry 的 `pending_predicates` / `pending_anchors` 字段（T1/R7）**：形态二的 PENDING 位和检查项的 PENDING 待办统一挂点——marker 点名 seat 谓词 → surfaced PENDING 不算词表外判为失败；待办检查项照跑探针但 skip 不 fail，关票就自动升级。
+- **E2E/真值表扩网（T1/R2）**：没采集的分支单独记 env-PENDING、清算三态、deferred-PENDING 位、词表双向锁、检测器自己四种失效（解析不了 / 拦不住 / 待办 / 注册表读不了）；真值表 357→444 / E2E 270→360，断言只加不减。
 
 ### Fixed
 
-- **S-1 未采集≠缺失方向反转（R1）**：分支事实未采集（git/but 不可用）从静默 GREEN 改显式 env-PENDING——fail-open 方向根除，缺失观察不再折叠成空事实。
-- **P-7 误降级方向收窄（R8）**：`parseButStatusIds` 符号开头 detail 行不再整体降级 `butOk=false`——detail 行收窄为逐行丢弃，Stack 元素只在 but 真不可用时 env-PENDING。
-- **P-9 reuse 指针消费（R4）**：`resolveReuse` 将注册表 `reuse` 字符串解析为薄壳导出函数实参——不可解析 spec 即源降级，`no-branch-runs` 的 env 源按名接线非硬编码。
-- **P-8 裸词单源化（R3）**：`STATE_BARE_RES` 从 `STATE_PREDICATES` 派生——删谓词即裸词漏报逃逸（双源实锤面消除），扩表漏改即漏扫不再可能。
-- **P-5 CHANGELOG 分行（R10）**：本节及 R97 节按 feat/fix/docs(errata) 分行——errata 从 Fixed 条内析出 Docs 类。
-- **P-2 清算义务补码（R6）**：见 Added 清算腿（降格方案放弃，防 D-002 账本连锁改写）。
-- **审计 LOOP1 返修（F-1/F-2+N1~N5/C7）**：锚腿由顶层裸块收为 `stepEnforcementAnchors()`（`step_1_6_enforcement_anchors` 自标 reportStep——report.json 证据面 + `--override` usage-error 顺序回归）；空表/畸形锚表 `anchor-registry-empty` fail-closed（non-vacuous 先例）；前检排除注册表自身（subject 自证结构性死亡修复）；`unregisteredCodeExports` 升生产守卫单源（探针+真值表双消费，杀 PROBE_TABLE 装饰双源）；dissolved 腿补 `branchRefs` 交叉校验（ref 在场+成员缺席=conflict 非 GREEN）；`state-bare-word-in-code-exempt` fixture 元数据更正；`### Deferred` 子节补立；N6 收口——`ANCHOR_RED_CODES`/`ANCHOR_SKIP_CODES` 发射端引用消费（码 token 全部源自常量表）+ e2e「每 RED 行必携注册码」断言（R-1 零消费消除）。
+- **S-1 「没采集」不等于「没有」，方向反了（R1）**：分支事实没采集到（git/but 不可用）从静默判为通过改成显式的 env-PENDING——「出故障就放行」的方向根除，没看到的观察不再折叠成空事实。
+- **P-7 误降级方向收窄（R8）**：`parseButStatusIds` 里以符号开头的 detail 行不再整体降级成 `butOk=false`——detail 行改成逐行丢弃，Stack 元素只在 but 真的不可用时才 env-PENDING。
+- **P-9 reuse 指针消费（R4）**：`resolveReuse` 把注册表里的 `reuse` 字符串解析成薄壳导出函数的实参——解析不了的 spec 就是源降级，`no-branch-runs` 的 env 源按名字接线，不硬编码。
+- **P-8 裸词单源化（R3）**：`STATE_BARE_RES` 从 `STATE_PREDICATES` 派生——删掉谓词就会漏报（双源实锤面消除），扩表漏改也不可能再漏扫。
+- **P-5 CHANGELOG 分行（R10）**：这一节和 R97 节按 feat/fix/docs(errata) 分行——errata 从 Fixed 条里拆出来，放进 Docs 类。
+- **P-2 清算义务补码（R6）**：见 Added 里的清算腿（降格方案放弃，防止 D-002 的账本连锁改写）。
+- **审计 LOOP1 返修（F-1/F-2+N1~N5/C7）**：检查腿从顶层裸块收成 `stepEnforcementAnchors()`（`step_1_6_enforcement_anchors` 自己标 reportStep——report.json 证据面 + `--override` usage-error 顺序回归）；空表/畸形检查项表 `anchor-registry-empty` 按「拿不准就拒绝」处理（non-vacuous 先例）；前检把注册表自己排除掉（subject 自证结构性死亡修复）；`unregisteredCodeExports` 升成生产守卫单源（探针+真值表两边消费，杀掉 PROBE_TABLE 装饰双源）；溶解栈腿补 `branchRefs` 交叉校验（ref 在场 + 成员缺席 = conflict 不是 GREEN）；`state-bare-word-in-code-exempt` 夹具的元数据更正；`### Deferred` 子节补上；N6 收口——`ANCHOR_RED_CODES`/`ANCHOR_SKIP_CODES` 的发射端引用消费（码 token 全部来自常量表）+ e2e「每条 RED 行都带注册码」断言（R-1 零消费消除）。
 
 ### Docs
 
-- ****：第五形态立法——行为消费验证为主+静态前检永不独立出 RED / 闭锚注册表 schema + 两枚自指钉 / 参数化注入 / ratchet 类 PENDING 坐席 / 双红设计意图入 Consequences / 开放面入 Known-Risk。
-- **CONTEXT `Grill Round 98 — Terms` 九词条**：第五形态 / 执行锚 / 证伪探针 / kill-no-kill / 不可杀变异体 / 锚坐席 / 注册表参数化 / anchor-not-consumed / 溶栈声明。
-- **handoff-template 同步**：dissolved 语法家 + state-PENDING/clearing-RED/clearing-env 词表行——模板↔CODE_GROUPS 双向等集。
-- **deferred 三新票**：`defer-r98-anchor-ratchet-recount-seat`（ratchet 类锚坐席）+ `defer-r98-anchor-open-surface-demo`（开放面扩表示范）+ `defer-r98-stack-land-authorization`（残留分支清算坐席）。
+- **立法**：第五形态——行为消费验证为主 + 静态前置检查永远不能单独判为失败 / 封闭的检查项注册表 schema + 两个自指钉子 / 参数化注入 / 只减不增的检查 类 PENDING 待办 / 两处判为失败的设计意图写进 Consequences / 开放面写进 Known-Risk。
+- **CONTEXT `Grill Round 98 — Terms` 九个词条**：第五形态 / 检查项 / 证伪探针 / kill-no-kill / 不可杀变异体 / 检查项待办条目 / 注册表参数化 / anchor-not-consumed / 溶解栈声明。
+- **handoff-template 同步**：溶解栈语法家 + state-PENDING/clearing-RED/clearing-env 词表行——模板跟 CODE_GROUPS 双向等集。
+- **deferred 新增三张票**：`defer-r98-anchor-ratchet-recount-seat`（只减不增的检查 类的检查项待办）+ `defer-r98-anchor-open-surface-demo`（开放面扩展示范）+ `defer-r98-stack-land-authorization`（残留分支的清算待办）。
 
 ### Deferred
 
-- `defer-r98-anchor-ratchet-recount-seat`：`anchor:ratchet-recount` PENDING 坐席，关票即升全量 kill 判定。
-- `defer-r98-anchor-open-surface-demo`：开放面检测首张扩表示范（新锚须携证伪 fixture 准入表）。
-- `defer-r98-stack-land-authorization`：`r98-anchor-detector` 残留分支待 push/land 授权（clearing 腿 covers 挂接）。
+- `defer-r98-anchor-ratchet-recount-seat`：`anchor:ratchet-recount` 的 PENDING 待办，关票就升成全量 kill 判定。
+- `defer-r98-anchor-open-surface-demo`：开放面检测的第一张扩展示范（新检查项必须带证伪夹具才能进表）。
+- `defer-r98-stack-land-authorization`：`r98-anchor-detector` 的残留分支等 push/land 授权（clearing 腿的 covers 挂接）。
 
-## Unreleased — r97: 自造失效声明可机检类别【统一立法 + 形态一/三实现 + 形态二先立规则】
+## Unreleased — r97: 自己给自己写「失效声明」也能机器检查【统一立法 + 形态一/三实现 + 形态二先立规矩】
 
 ### Added
 
-- **形态一状态腿（T2）**：单行 `state:` 标记解析 + 裸词违例扫描 + `unpushed`/`unlanded`/`no-branch-runs` 三离线谓词 + 判定集成；封闭注册表常量 + 10 成对 fixtures；真值表 310→357 / E2E 207→270（复现：`node packages/store/test/handoff-lint-verdict.test.mjs` / `node packages/store/test/handoff-lint-e2e.test.mjs`）；自移靶位 + 报告/门禁两速分权。
-- **形态三 verbatim 锚（T3）**：claims schema 新增 `verbatim` kind（整句字节级）+ 重锚仪式（理由 + 审计 + 重批计数）+ R97 首批 dogfood 锚。
-- **模板状态声明位（T5）**：handoff-template 标记语法节 + 形态二内容规则全文（实测值定义/marker 示例/PENDING 位挂接与 ratchet 排程引用）。
+- **形态一状态腿（T2）**：单行 `state:` 标记解析 + 裸词违例扫描 + `unpushed`/`unlanded`/`no-branch-runs` 三个离线判断 + 判定集成；封闭注册表常量 + 10 个成对夹具；真值表 310→357 / E2E 207→270（复现：`node packages/store/test/handoff-lint-verdict.test.mjs` / `node packages/store/test/handoff-lint-e2e.test.mjs`）；把判定器自己移出靶位 + 报告和门禁两种速度分权。
+- **形态三 verbatim 检查项（T3）**：claims schema 新增 `verbatim` kind（整句逐字节）+ 重新登记仪式（理由 + 审计 + 重批计数）+ R97 第一批自己用的检查项。
+- **模板状态声明位（T5）**：handoff-template 的标记语法节 + 形态二内容规则全文（实测值定义 / marker 示例 / PENDING 位挂接和 只减不增的检查 排程引用）。
 
 ### Fixed
 
-- **N5 锚覆盖缺口（T4）**：`parseButStatusIds` 标记类放宽为单个非空白非制表符号 + 未知形状整体解析降级（but 视为不可用 / env-PENDING）+ E2E 冻结样本三 glyph 全集。
+- **N5 检查项覆盖缺口（T4）**：`parseButStatusIds` 的标记类放宽成单个非空白非制表符号 + 未知形状整体降级（but 视为不可用 / env-PENDING）+ E2E 冻结样本三个 glyph 全集。
 
 ### Docs
 
-- ** Known-Risk 1 errata 原条目注记（T4）**：N5 修复对应的 errata 注记从 Fixed 条内析出（R98 R10/P-5 分行合规回填）。
+- **Known-Risk 1 errata 原条目注记（T4）**：N5 修复对应的 errata 注记从 Fixed 条里拆出来（按 R98 R10/P-5 的分行规矩回填）。
 
 ### Deferred
 
-- 形态二 ratchet→RED 排程票 + 扩表示范票（`no-pr`/`unpublished`）见 `docs/deferred-registry.json`（R97 T6 登记）。
+- 形态二的 只减不增的检查→RED 排程票 + 扩展示范票（`no-pr`/`unpublished`）见 `docs/deferred-registry.json`（R97 T6 登记）。
 
-## Unreleased — r96: handoff-lint 门禁假绿收口【三态受控出口语义】（模板↔门禁 PENDING 冲突 + 祖先性冒充/静默折叠 + CI 拓扑不可满足三缺陷闭环）
+## Unreleased — r96: 交接检查假绿收口【出口分三种状态】（模板和门禁的 PENDING 说法冲突 + 祖先性冒充/静默折叠 + CI 拓扑不可满足三个缺陷一起关掉）
 
 ### Changed
 
-- **ship-gate handoff-lint 腿改薄壳（T2）**：判定从「必填 URL 存在性 + 活体祖先性」重构为三态受控判定；腿内只做「采集环境快照 → 调判定核 → 报出口」三步，判定分支全部移出。祖先性冒充（`merge-base --is-ancestor`）、裸 `rev-parse HEAD` 等值目标（GitButler workspace 合成 commit 自指悖论）、`gh` 不可用时的静默 pass 三处一并根除。
-- **handoff-template 三态语法同步（T3）**：run-URL 字段改为 `GREEN: <url>` / `PENDING: <code>` 显式状态行（散文/旁注 URL 不再满足字段）；Stack 行三要素契约、降级标注格式、生效域边界（>=96 新语法 / <96 旧 presence-only）同轮同语法——模板与门禁同源，F8-a 根因消除。
+- **ship-gate 的 handoff-lint 腿改成薄壳（T2）**：判定从「必填 URL 在不在 + 活体祖先性」重构成三种状态的受控判定；腿里只做「采环境快照 → 调判定核心 → 报出口」三步，判断分支全部搬出去。祖先性冒充（`merge-base --is-ancestor`）、裸 `rev-parse HEAD` 拿等值当目标（GitButler workspace 合成 commit 自己指自己的悖论）、`gh` 不可用时静默 pass 这三处一起根除。
+- **handoff-template 的三种状态语法同步（T3）**：run-URL 字段改成 `GREEN: <url>` / `PENDING: <code>` 这种显式状态行（散文或旁注里的 URL 不再满足字段）；Stack 行三要素约定、降级标注格式、生效范围边界（>=96 用新语法 / <96 用只查存在性的旧语法）同轮同一语法——模板和门禁同源，F8-a 的根因消除。
 
 ### Added
 
-- **判定核纯模块 `scripts/handoff-lint-verdict.mjs`（T1）**：输入=交接件文本 + 注入环境快照，输出=三态+理由码+标注；核内禁 `spawnSync` / `fs` / `Date.now()` / `process.env`，故真值表可在无仓库/无网络/无时钟下穷举。
-- **薄壳 `scripts/handoff-lint-shell.mjs`（T2）**：采集（git/gh/but/workflow 触发器）→传递→出口三步；快照形状冻结，E2E 以同形状注入。
-- **真值表单测 + E2E 冒烟 + 共用 fixtures（T1/T2）**：`packages/store/test/handoff-lint-verdict.test.mjs`（OPA 允许+拒绝成对 / Stack 三要素 8 格 / 词表外必报错 / 空缺超长边界）、`packages/store/test/handoff-lint-e2e.test.mjs`（同套 fixtures 走完整壳层路径）、`packages/store/test/fixtures/handoff-lint/`；fail-on-empty 红线。
-- ** + CONTEXT 词条区**：D1 三态语义 / D2 Stack 三要素分级 + 环境分级降级 / D3 回归锁形态 / D4 生效域迁移边界 / D5 同轮闭环 / D6 收口件三态预注册；Known-Risks 预写五项；CONTEXT `Grill Round 96 — Terms` 五词条。
+- **判定核心纯模块 `scripts/handoff-lint-verdict.mjs`（T1）**：输入是交接件文本 + 注入的环境快照，输出是三种状态 + 理由码 + 标注；核心里不许用 `spawnSync` / `fs` / `Date.now()` / `process.env`，所以真值表可以在没有仓库、没有网络、没有时钟的情况下穷举。
+- **薄壳 `scripts/handoff-lint-shell.mjs`（T2）**：采集（git/gh/but/workflow 触发器）→传递→出口三步；快照形状冻结，E2E 按同一个形状注入。
+- **真值表单测 + E2E 冒烟 + 共用夹具（T1/T2）**：`packages/store/test/handoff-lint-verdict.test.mjs`（OPA 允许+拒绝成对 / Stack 三要素 8 格 / 词表外必须报错 / 空缺和超长边界）、`packages/store/test/handoff-lint-e2e.test.mjs`（同一套夹具走完整薄壳路径）、`packages/store/test/fixtures/handoff-lint/`；空文件必须失败的红线。
+- **立法 + CONTEXT 词条区**：D1 三种状态语义 / D2 Stack 三要素分级 + 环境分级降级 / D3 回归锁形态 / D4 生效范围迁移边界 / D5 同轮闭环 / D6 收口件三种状态预登记；Known-Risks 预写五项；CONTEXT `Grill Round 96 — Terms` 五个词条。
 
 ### Fixed
 
-- **F8-a 模板↔门禁 PENDING 冲突**：模板的诚实 PENDING 写法与门禁的必填 URL 要求互斥（诚实者恒红、不诚实者恒绿）——三态语法 + PENDING 封闭词表 + 门禁离线谓词自证闭环。
-- **F8-b liveness 静默折叠 + 祖先性冒充**：`gh` / repo 不可用时不再静默 pass（改 env-PENDING + 具名降级码）；「本轮 run」判等由祖先性升为栈内成员性，main 基线 run 不再满足主字段。
-- **F8-c CI 拓扑不可满足**：特性分支 push 恒无 run 这一可机检状态，现由 `PENDING: pushed-no-branch-runs`（谓词=无 workflow 的 `on.push` 覆盖该分支）承接，不再是无解死结。
+- **F8-a 模板和门禁的 PENDING 说法冲突**：模板里诚实的 PENDING 写法跟门禁要求的必填 URL 互相排斥（诚实的人永远红、不诚实的人永远绿）——三种状态语法 + PENDING 封闭词表 + 门禁离线判断自己证明自己，闭环。
+- **F8-b 活体检查静默折叠 + 祖先性冒充**：`gh` / 仓库不可用时不再静默 pass（改成 env-PENDING + 带名字的降级码）；「这一轮的 run」从祖先性升级成栈内成员性，main 基线的 run 不再满足主字段。
+- **F8-c CI 拓扑不可满足**：特性分支 push 永远没有 run 这件事本身可以机器检查，现在由 `PENDING: pushed-no-branch-runs`（判断 = 没有 workflow 的 `on.push` 覆盖这个分支）接住，不再是解不开的死结。
 
 ### Deferred
 
-- 无。F8 由 同轮闭环（`docs/deferred-registry.json` F8 行 status=closed）。
+- 无。F8 由同一轮闭环（`docs/deferred-registry.json` 的 F8 行 status=closed）。
 
-## Unreleased — r95: 评测矩阵修订轮【语料解冻 + matrix@3 读数】（vert-f1105 原位降格墓碑 + 判读器指纹版本戳滚动 + 匿名层终读档单次终读 INCONCLUSIVE-instrument-flag）
+## Unreleased — r95: 评测矩阵修订轮【语料解冻 + matrix@3 读数】（vert-f1105 原地退成退役标记 + 判分程序指纹滚动 + 匿名层最后一次读数只读一次，结论 INCONCLUSIVE-instrument-flag）
 
 ### Changed
 
-- **语料修订（T1）**：`vert-f1105` 原位降格为 `unmeasured-by-design`（墓碑理由码受控 `upstream-validator-vs-doc-mismatch` + prior 载荷留档 + `golden.scopes` 除名），可测集 57→56，指纹 `7ac0a48e55cd7954`→`8da3e482b98f8cba`；语料 diff 仅此一格。机检载体：`TOMBSTONE_REASON_CODES` 常量 + `validateDocsGoldenEntry` 交叉规则 + kernel 作用域豁免 + store 负例（自由文本理由码被拒）。
-- **判读器升 matrix@3（T3）**：`EXPECTED_FP` 滚动 + `out.matrix` 指向 `grill-round-95/prereg-matrix@3`；G0–G4 闸序/β 后验/四字段/早停/单次终读逐字不变；selftest fixture 一处 n 漂移重调（indeterminate 判例 P=0.658）7/7 全绿。
-- **台账落账（T7）**：`defer-r86-anysearch-corpus-param-contract`→closed（字段集照 r87-f3 先例）；新 finding `finding-r95-upstream-validator-vs-doc-vocab-mismatch`（type:finding，owner anysearch-eval，evidence 带可机检验证信号 `evidence/verify-validator-vs-doc.ts`）；`r88-candidate-vertical-direction-redeliberation` 仅追加 carried_log（条件③④ verifier 工件快照路径），status=`formally-declined` 不动。
+- **语料修订（T1）**：`vert-f1105` 原地降成 `unmeasured-by-design`（退役标记理由码受控 `upstream-validator-vs-doc-mismatch` + prior 载荷留档 + 从 `golden.scopes` 除名），能测的条数 57→56，指纹 `7ac0a48e55cd7954`→`8da3e482b98f8cba`；语料 diff 只有这一格。机器检查载体：`TOMBSTONE_REASON_CODES` 常量 + `validateDocsGoldenEntry` 交叉规则 + kernel 作用域豁免 + store 负例（自由文本的理由码被拒）。
+- **判分程序升到 matrix@3（T3）**：`EXPECTED_FP` 滚动 + `out.matrix` 指向 `grill-round-95/prereg-matrix@3`；G0–G4 闸序/β 后验/四字段/早停/单次终读逐字没变；selftest 夹具一处 n 漂移重调（indeterminate 判例 P=0.658）7/7 全部通过。
+- **台账记账（T7）**：`defer-r86-anysearch-corpus-param-contract`→closed（字段集照 r87-f3 先例）；新 finding `finding-r95-upstream-validator-vs-doc-vocab-mismatch`（type:finding，owner anysearch-eval，evidence 带可机检验证信号 `evidence/verify-validator-vs-doc.ts`）；`r88-candidate-vertical-direction-redeliberation` 只追加 carried_log（条件③④的 verifier 工件快照路径），status=`formally-declined` 不动。
 
 ### Added
 
-- **matrix@3 预注册（T2）**：先于任何跑数落账（parent 时序自证含 T1 diff）；含新指纹、「读数=复活条件③④输入证据非方向裁定」条款、G1b 谓词锚（>30%→INCONCLUSIVE-instrument）、单次终读纪律、57→56 可比性边界（prereg §7）。
-- ** 立法 + CONTEXT 词条区**：D1 语料墓碑形态 / D2 判读器修订幅度 / D3 读数法律角色 / D4 匿名层执行裁量 / D5 三记账 / D6 收口形态；Known-Risks 预写三项（可比性边界先于读数/墓碑词表/G1b 谓词锚）；CONTEXT `Grill Round 95 — Terms` 七词条。
-- **匿名层终读路（T4–T6）**：容量探针登记为测量非判读输入（执行级修正：board 速记端点值须补完整 MCP 路径 `/mcp`）；终读档（56 格×4 腿=224 调用，351s）中段起系统性 `permanent-auth`（匿名配额边界，122 腿），兑现预注册分支→单次终读 `INCONCLUSIVE/instrument-flag`（G1b：instrumentDown 30/40；探针读数作量化锚）。
+- **matrix@3 预注册（T2）**：在任何跑数记账之前先落（parent 时序自证含 T1 diff）；含新指纹、「读数=复活条件③④的输入证据，不是方向裁定」条款、G1b 谓词检查项（>30%→INCONCLUSIVE-instrument）、单次终读纪律、57→56 可比性边界（prereg §7）。
+- **立法 + CONTEXT 词条区**：D1 语料退役标记形态 / D2 判分程序修订幅度 / D3 读数在法律上的角色 / D4 匿名层的执行裁量 / D5 三记账 / D6 收口形态；Known-Risks 预写三项（可比性边界先于读数/退役标记词表/G1b 谓词检查项）；CONTEXT `Grill Round 95 — Terms` 七个词条。
+- **匿名层终读路（T4–T6）**：容量探针登记成测量、不是判分读数输入（执行级修正：board 速记端点值要补完整 MCP 路径 `/mcp`）；终读档（56 格×4 腿=224 调用，351s）中途开始系统性 `permanent-auth`（匿名配额边界，122 腿），兑现预注册的分支→单次终读 `INCONCLUSIVE/instrument-flag`（G1b：instrumentDown 30/40；探针读数当量化检查项）。
 
 ### Deferred
 
-- **B 升级路径（用户侧）**：复活私有端点 `127.0.0.1:20128` 或供有效 key → 兑现后声明式环境一次干净全量跑（判据同 R86 T5：装置性失败=∅ + 覆盖≥70%）；agent 不代修 env、不代持凭证。
-- **backlog 候选（不入本轮 diff）**：`fundamental×cn_code` 新格立案（同 id 换芯禁令→须新 id，下一语料轮）；全语料契约一致性体检（独立轮次）。
+- **B 升级路径（用户这边）**：复活私有端点 `127.0.0.1:20128` 或给一个有效 key → 兑现后按声明的环境跑一次干净的全量（判断同 R86 T5：装置性失败=∅ + 覆盖≥70%）；agent 不替用户修环境、不代持凭证。
+- **backlog 候选（不进本轮 diff）**：`fundamental×cn_code` 新格立案（同 id 换芯禁令→必须新 id，下一个语料轮）；全语料契约一致性体检（独立轮次）。
 
-## Unreleased — r94: r88-candidate 垂域死刑复核【开庭轮】（五段议程 + B3 混合制判词 reaffirm 机械落果 + formally-declined 落地裁定 + 四项具名复活条件立案 + D6 门禁证据效力裁定复核确认）
+## Unreleased — r94: r88-candidate 垂域方向要不要砍的最后复核【复核轮】（五段议程 + B3 混合结论 reaffirm 自动落地 + formally-declined 落地 + 四项点名复活条件 + D6 检查证据效力复核确认）
 
 ### Changed
 
-- **r88-candidate 落地裁定（T4）**：经五段开庭审理（段 0 资格核验四要素全在位、段 1 调档与实测为负序列登记、段 2 判据合法性先审废止原 |ΔarmHostHit|≳0.4 重开门槛、段 3 B3 充分条件谓词求值命中机械落果为 `reaffirm`），`docs/deferred-registry.json` 中 `r88-candidate-vertical-direction-redeliberation` 状态变更为 `formally-declined`，终结 5 轮以来的无限期 rolling 候审态。确立四项具名复活条件（dsh stable 晋升、上游补参数词表、cn_code 契约补齐、新评测矩阵修订版读数），严格按可控性分类归档，后续由 owner `anysearch-eval` 重新立案。
-- **D6 门禁分级裁定（T0/T7）**：本轮复核确认 `scripts/ship-gate.mjs` 在基线已具 blocking 合入门禁效力，本轮无源码改动；`check` 与 `test` 维持 advisory 反馈环；澄清了证据效力口径。同时如实记账 T0 预检因 CHANGELOG 在途排期出现 exit 1 属在途分节假红，未触发降级复议票之未申报偏差。
+- **r88-candidate 落地裁定（T4）**：经过五段复核审理（段 0 资格核验四要素全在、段 1 调档和实测登记为负序列、段 2 判据合法性先审并废止原来 |ΔarmHostHit|≳0.4 的重开门槛、段 3 B3 充分条件谓词求值命中自动落地为 `reaffirm`），`docs/deferred-registry.json` 里 `r88-candidate-vertical-direction-redeliberation` 的状态改成 `formally-declined`，结束 5 轮以来的无限期 rolling 候审。确立四项点名复活条件（dsh stable 晋升、上游补参数词表、cn_code 契约补齐、新评测矩阵修订版读数），按可控性分类归档，以后由 owner `anysearch-eval` 重新立案。
+- **D6 检查分级裁定（T0/T7）**：本轮复核确认 `scripts/ship-gate.mjs` 在基线时就已经有阻断式合入检查的效力，本轮没有源码改动；`check` 和 `test` 保持只给建议、不阻断；把证据怎么算的规则讲清楚。同时如实记账：T0 预检因为 CHANGELOG 还在排期出现 exit 1，属于「还没写完的分节假红」，没有触发降级复议票的未申报偏差。
 
 ### Added
 
-- ** 开庭立法（T1）**：D1 议程五段式结构与程序出口（0资格核验→1证据面陈述→2判据先审→3判词表决→4落地裁定，T0-F 复议轮降级出口）；D2 B3 混合判词归属与 exploratory 区机制（充分条件谓词命中机械落果，未命中入暂存区由用户拍板，拍板不可达出路为 pending-user-verdict 挂账）；D3 三果谓词加固与复活条件集可控性分类（可控锚≥1→reaffirm 优先，可控锚=0→retire，锚计数取证时刻预标注冻结）；D4 快照/活查分级纪律与具名步骤（判据快照不重跑 delta，契约现状串行活查）；D5 开庭即预通知与 carried_log 双动作时序（carried_log 追加先行 commit 自证时序，ADR 固化随后 commit）；D6 D6 副议题分级落地；D7 dsh 漂移条款与 Known-Non-Goals；D8 claims 冻结纪律；D9 判词词汇与落地态预注册冻结。
-- **开庭取证与文书归档（T2/T3）**：五面卷宗落盘于 `.scratch/grill-round-94/evidence/t2/`；双侧证词全文与锚计数预标注冻结（可控锚=2，具名 owner 可控锚 2 个：条件 ③ 与 ④；广义含外部可机检条件 ① 为 3 个，均满足 $\ge 1$ 充分下界）落盘于 `evidence/t3a/`；终审判词文书与 `verdict.json` 机械落果归档于 `evidence/t3b/`。
+- **复核立法（T1）**：D1 议程五段式结构和程序出口（0 资格核验→1 证据面陈述→2 判据先审→3 结论表决→4 落地裁定，T0-F 复议轮降级出口）；D2 B3 混合结论的归属和 exploratory 区机制（充分条件谓词命中就自动落地，没命中进暂存区由用户拍板，用户拍板够不着时的出路是 pending-user-verdict 挂账）；D3 三种结果的谓词加固和复活条件的可控性分类（可控检查项≥1→优先 reaffirm，可控检查项=0→retire，检查项计数取证时刻预标注冻结）；D4 快照/现场查询分级纪律和具名步骤（判据快照不重跑 delta，契约现状串行现场查）；D5 复核即预通知和 carried_log 双动作时序（carried_log 追加先 commit 自证时序，ADR 固化随后 commit）；D6 副议题分级落地；D7 dsh 漂移条款和 Known-Non-Goals；D8 claims 冻结纪律；D9 结论词汇和落地态预注册冻结。
+- **复核取证和文书归档（T2/T3）**：五面卷宗存在 `.scratch/grill-round-94/evidence/t2/`；两边证词全文和检查项计数预标注冻结（可控检查项=2，点名 owner 可控检查项 2 个：条件 ③ 和 ④；广义含外部可机检条件 ① 是 3 个，都满足 $\ge 1$ 充分下界）存在 `evidence/t3a/`；终审结论文书和 `verdict.json` 自动落地归档在 `evidence/t3b/`。
 
 ### Deferred
 
-- **defer-r93-deprecate-credential-scope**：T5 deprecate 探针证实 `npm whoami` 为 E401，分型为 `credential-scope`，6 版本命令清单纯备准续挂（见 `.scratch/grill-round-94/evidence/t5-deprecate.md` §3），维持外发动作待具备权限用户亲触执行（EOTP 不代跑）。
-- **常驻债续期**：`defer-r72-dsh-web-interactive-matrix`、`defer-f17` 等维持显式范围外候审。
+- **defer-r93-deprecate-credential-scope**：T5 的 deprecate 探针确认 `npm whoami` 是 E401，分型 `credential-scope`，6 个版本的命令清单纯备准续挂（见 `.scratch/grill-round-94/evidence/t5-deprecate.md` §3），外发动作等有权限的用户亲手做（EOTP 不代跑）。
+- **常驻债续期**：`defer-r72-dsh-web-interactive-matrix`、`defer-f17` 等仍明确列在范围外候审。
 
-## Unreleased — r93: L3 修复续轮【换模三跑】（Kimi-K2-Instruct-0905 冻结臂 + README 双语行对齐 + readme-token 机器腿首跑）
+## Unreleased — r93: L3 修复续轮【换模型跑三次】（冻结 Kimi-K2-Instruct-0905 + 中英文 README 行对齐 + readme-token 机器检查第一次跑）
 
 ### Changed
 
-- **dsh L3 换模三跑（T2）**：冻结模型由 `Qwen/Qwen3-32B`（reasoning 形态吞 `max_tokens` 预算，R92 F-bug 签名）换为 `moonshotai/Kimi-K2-Instruct-0905`（上游裸探针实证 `200 + finish_reason=tool_calls + ans_search_web` 载荷）。新建隔离 profile `r93-kimi`（不复用 `r92-smoke`——其 patch 硬编 `Qwen/Qwen3-32B` 且属 R92 证据工件，冻结零触碰），patch 层注入 `providers.featherless`（`contextWindow: 32768` 取托管目录值）+ `agent-default-model` 覆写。三跑严格串行、N=3 全绿：L3a `established`（dump-config 8/8 断言）、L3b `established-via-fallback`（宿主 stream 通道不暴露 tools 枚举载荷，3 跑各 1 个 `ans_*` tool_call 侧证）、L3c-min `established`（`ans_search_web` 往返完成，result 为 8177B 真实检索载荷 `totalResults:10`；收窄判据下无未声明工具幻觉）。判词 `branch_label=A` / `verdict=established-via-fallback`，换臂 0 次。凭证泄漏探针双查（原文 + SHA-256 前缀）零命中。
-- **README 双语行对齐（T3）**：verified-hosts 表 dsh 行按预注册措辞版本 B 誊抄——版本 token `0.1.5-rc.2 → 0.1.7-rc.2` 对齐实测宿主，机制列更新为 R90 后的实际形态 `native registration (ctx.tools)`，状态列嵌入 `established-via-fallback: [L3b]` 判词与 `tool_call` 侧证注。中英双版锁步。
+- **dsh L3 换模型跑三次（T2）**：冻结模型从 `Qwen/Qwen3-32B`（reasoning 形态会吃掉 `max_tokens` 预算，是 R92 的 F-bug 签名）换成 `moonshotai/Kimi-K2-Instruct-0905`（上游裸探针实测 `200 + finish_reason=tool_calls + ans_search_web` 载荷）。新建隔离 profile `r93-kimi`（不复用 `r92-smoke`——它的 patch 硬写 `Qwen/Qwen3-32B`，而且属于 R92 的证据工件，冻结的东西一点都不能碰），patch 层注入 `providers.featherless`（`contextWindow: 32768` 取托管目录的值）+ `agent-default-model` 覆盖。三次严格串行、N=3 全部通过：L3a `established`（dump-config 8/8 断言）、L3b `established-via-fallback`（宿主 stream 通道不暴露 tools 枚举载荷，3 次各 1 个 `ans_*` tool_call 侧证）、L3c-min `established`（`ans_search_web` 往返完成，result 是 8177B 的真实检索载荷 `totalResults:10`；收窄判据下没有未声明工具的幻觉）。结论 `branch_label=A` / `verdict=established-via-fallback`，换臂 0 次。凭证泄漏探针双查（原文 + SHA-256 前缀）零命中。
+- **中英文 README 行对齐（T3）**：verified-hosts 表的 dsh 行按预注册措辞版本 B 誊抄——版本 token `0.1.5-rc.2 → 0.1.7-rc.2` 对齐实测宿主，机制列更新成 R90 之后的实际形态 `native registration (ctx.tools)`，状态列嵌入 `established-via-fallback: [L3b]` 结论和 `tool_call` 侧证注。中英双版锁步。
 
 ### Fixed
 
-- **readme-token-pin 机器腿首跑（T4）**：`readme-token-pin` 断言检查器的专属机器腿由 shadow 模式转为**真实非 shadow 断言**首跑（`closeout-claims.json` 两条 `command: dsh --version` 实测比对，README.md / README.zh-CN.md 双份）——R92 显式挂账项核销。
+- **readme-token-pin 机器检查第一次跑（T4）**：`readme-token-pin` 断言检查器专属的机器腿从 shadow 模式改成**真实非 shadow 断言**第一次跑（`closeout-claims.json` 两条 `command: dsh --version` 实测比对，README.md / README.zh-CN.md 两份）——R92 明确挂账的项核销。
 
 ### Added
 
-- ** 立法（T1）**：D1 T2 执行设计全包（隔离 profile 注入面 / B1 预注册单链与链级硬顶 / 诱导句与 N 预算 / max-tokens 预算下限判据 / 签名族三形态闭集 / L3c-min 判词收窄为「`ans_*` tool_call」/ 换臂三义务 / 凭证卫生）；D2 判词门控转向票（触发谓词 = 链尽判词显式成立，非「T2 未绿」；429 与环境违规不触发；内容白名单 = F-bug 登记 + 开庭议程；T-B/T3/T4 三条件票互斥求值谓词显式声明）；D3 README 措辞承继与四列表格形态调和；D4 `r88-candidate` sunset 硬截止（R95 前必须开庭 + R94 预通知义务 + owner 点名）；D5 deprecate 权限缺口三型枚举（`credential-scope` / `maintainer` / `org-owner`，每型含 fallback 行为字段）；D6 证据效力口径（本机门禁 advisory 非 blocking，登记 R94 复核）；D7 票序与 commit 结构；D8 Known-Non-Goals（多轮 tool_call ID 污染）。
-- **max-tokens 预算下限判据**：诱导轮 `max_tokens` 下限钉为 2048——T0 探针实证 `max_tokens: 8` 即触发 `finish_reason=length` 且 content 截断，证明极小预算下 `length` 形态与模型能力无关，故低于下限的 `length` 判环境违规不计 N。
+- **立法（T1）**：D1 T2 执行设计全包（隔离 profile 注入面 / B1 预注册单链和链级硬顶 / 诱导句和 N 预算 / max-tokens 预算下限判据 / 签名族三形态闭集 / L3c-min 结论收窄成「`ans_*` tool_call」/ 换臂三义务 / 凭证卫生）；D2 结论门控转向票（触发谓词 = 链尽结论显式成立，不是「T2 未绿」；429 和环境违规不触发；内容白名单 = F-bug 登记 + 复核议程；T-B/T3/T4 三条件票互斥求值谓词显式声明）；D3 README 措辞承继和四列表格形态调和；D4 `r88-candidate` sunset 硬截止（R95 前必须复核 + R94 预通知义务 + owner 点名）；D5 deprecate 权限缺口三型枚举（`credential-scope` / `maintainer` / `org-owner`，每型含 fallback 行为字段）；D6 证据怎么算的规则（本机检查只给建议不阻断，登记 R94 复核）；D7 票序和 commit 结构；D8 Known-Non-Goals（多轮 tool_call ID 污染）。
+- **max-tokens 预算下限判据**：诱导轮的 `max_tokens` 下限钉成 2048——T0 探针实测 `max_tokens: 8` 就会触发 `finish_reason=length` 且 content 被截断，证明极小预算下的 `length` 形态跟模型能力无关，所以低于下限的 `length` 判环境违规，不计入 N。
 
 ### Deferred
 
-- **r88-candidate 垂域死刑复核**：写入 sunset 条款——R95 前强制开庭，R94 收口批须在 registry `carried_log` 追加预通知并点名 owner `anysearch-eval`；开庭 ≠ 翻案（`reaffirm` / `revise` / `retire` 三果皆合法），结束无期限 rolling 候审。开庭主体在 R94/R95，本轮仅立法。
-- **常驻债续期**：`defer-r72-dsh-web-interactive-matrix` 主体维持 defer（patchReload:live + browser-turn 上游 `.d.ts` 键面仍缺席）；评测面（`defer-f17` 等）与常驻债清理维持本轮显式范围外。
+- **r88-candidate 垂域方向要不要砍的复核**：写入 sunset 条款——R95 前强制复核，R94 收口批要在 registry 的 `carried_log` 追加预通知并点名 owner `anysearch-eval`；复核 ≠ 翻案（`reaffirm` / `revise` / `retire` 三种结果都合法），结束无期限 rolling 候审。复核主体在 R94/R95，本轮只立法。
+- **常驻债续期**：`defer-r72-dsh-web-interactive-matrix` 主体保持 defer（patchReload:live + browser-turn 上游的 `.d.ts` 键面还缺席）；评测面（`defer-f17` 等）和常驻债清理仍明确列在本轮范围外。
 
-## Unreleased — r92: featherless 自定义上游 T2 复跑 + 售后收口轮（判据复用与 L3b 修订 + 凭证卫生 + readme-token 检查器接线）
+## Unreleased — r92: featherless 自定义上游 T2 复跑 + 售后收口轮（判据复用和 L3b 修订 + 凭证卫生 + readme-token 检查器接线）
 
 ### Changed
 
-- **dsh 售后复跑轮**：通过 User-scope 安全注入 `DEEPSEEK_API_KEY`（len=67，SHA-256 前缀 `64a88ea6`），配置自定义上游 Featherless（`api.featherless.ai/v1`，模型 `Qwen/Qwen3-32B`）。L3 实机冒烟实证 L3a 成立（`cordis.patch.yml` 注入 `id: llm-pi-ai` 与 `id: agent-default-model`，`dump-config` 证实 bundle 层及 patch 覆写生效）；因 Featherless 上游服务异常（响应触 4096 max-tokens 且报 `server_error: no_response`，未产出 `tool_calls`），判词落分支 C（F-bug），T3 条件票锁定未启不留痕。泄漏探针经 SHA-256 前缀检测全绿 passed。
+- **dsh 售后复跑轮**：通过 User-scope 安全注入 `DEEPSEEK_API_KEY`（len=67，SHA-256 前缀 `64a88ea6`），配置自定义上游 Featherless（`api.featherless.ai/v1`，模型 `Qwen/Qwen3-32B`）。L3 实机冒烟确认 L3a 成立（`cordis.patch.yml` 注入 `id: llm-pi-ai` 和 `id: agent-default-model`，`dump-config` 证实 bundle 层和 patch 覆盖都生效）；因为 Featherless 上游服务异常（响应碰到 4096 max-tokens 并报 `server_error: no_response`，没有产出 `tool_calls`），结论落在分支 C（F-bug），T3 条件票锁住、不启动、不留痕。泄漏探针经 SHA-256 前缀检测全部通过 passed。
 
 ### Fixed
 
-- **readme-token-pin 检查器接线（T4）**：在 `scripts/ship-gate.mjs` stepDocClaims 中正式接入 `readme-token-pin` 声明断言检查器（两拍节奏第二拍），执行 shadow dry-run 并归档证据，首跑专属机器腿挂账 R93。
-- **弃用文案双空格核实（T5）**：执行 `@anysearch-cli/cli@0.0.3~0.0.8` 双空格文案修复尝试（单空格目标）；遇 E401/E404 权限闸如实记账，closeout-claims 双态措辞随本票预注册。
+- **readme-token-pin 检查器接线（T4）**：在 `scripts/ship-gate.mjs` 的 stepDocClaims 里正式接上 `readme-token-pin` 声明断言检查器（两拍节奏的第二拍），执行 shadow dry-run 并归档证据，第一次专属机器腿挂账到 R93。
+- **弃用文案双空格核实（T5）**：尝试修复 `@anysearch-cli/cli@0.0.3~0.0.8` 的双空格文案（目标是单空格）；碰到 E401/E404 权限闸，如实记账，closeout-claims 的两种说法随本票预注册。
 
 ### Deferred
 
-- **defer-r92-t2-featherless-upstream-f-bug**：T2 实机复跑因 Featherless 上游模型服务异常挂起 F-bug 登记，转下轮修复与模型源排查。
-- **defer-r92-readme-token-pin-machine-leg**：readme-token-pin 检查器专属机器腿首跑显性挂账至 R93。
-- **常驻债续期**：登记表显式续录 2 条在册条目（web-interactive matrix 主体、approval-channel headless 维持生效）carried_log；其余 3 项（domain-ownership、f16、f17）维持 open。
+- **defer-r92-t2-featherless-upstream-f-bug**：T2 实机复跑因为 Featherless 上游模型服务异常挂起，登记 F-bug，转到下一轮修复和排查模型源。
+- **defer-r92-readme-token-pin-machine-leg**：readme-token-pin 检查器专属机器腿的第一次跑，明着挂账到 R93。
+- **常驻债续期**：登记表明确续录 2 条在册条目（web-interactive matrix 主体、approval-channel headless 继续生效）到 carried_log；其余 3 项（domain-ownership、f16、f17）保持 open。
 
 ## Unreleased — r91: dsh L3 冒烟验收 + 售后收口轮（L3 判据立法 + 宿主升版 0.1.7-rc.2 + README 行对齐 + 小修批）
 
 ### Changed
 
-- **dsh 售后验收轮**：宿主升至 `@deepseek-ai/dsh@0.1.7-rc.2`（测=记=钉三版收敛）；门判据三腿（L3a 装册绿/L3b 枚举绿/L3c-min 执行绿）立法于 ；L3 实机冒烟实证 L3a 成立（dump-config 单行注册在位）；因环境缺失 `DEEPSEEK_API_KEY`，L3b 取证通道证实可直达端点但 tools 载荷无法确认，判词如实落分支 C（F-bug），T3 条件票锁定不留痕。
+- **dsh 售后验收轮**：宿主升到 `@deepseek-ai/dsh@0.1.7-rc.2`（测的、记的、钉的三个版本收敛）；门的判据三条腿（L3a 装册通过/L3b 枚举通过/L3c-min 执行通过）立法；L3 实机冒烟确认 L3a 成立（dump-config 单行注册在位）；因为环境缺 `DEEPSEEK_API_KEY`，L3b 取证通道证实能直达端点但 tools 载荷确认不了，结论如实落在分支 C（F-bug），T3 条件票锁住、不留痕。
 
 ### Fixed
 
-- **ship-gate.mjs 正则修补（T4a）**：修复 `/id:s*mcp-anysearch/` 为 `/id:\s*mcp-anysearch/`，防止缺失反斜杠导致任意选言误判。
-- **弃用文案双空格核实（T4b）**：枚举 `@anysearch-cli/cli@0.0.3~0.0.8` 双空格文案，备准修复命令；尝试执行遇 E401/权限闸，按 R87 D4 执行态如实记账。
-- **WORKFLOW.md §4.2 终审 ADR 判死（T4d）**： 明确 supersede 语义——由 GitButler skill + 全局 `but` 协议等价覆盖，10+ 轮缺位核销审计正式封口。
+- **ship-gate.mjs 正则修补（T4a）**：把 `/id:s*mcp-anysearch/` 修成 `/id:\s*mcp-anysearch/`，防止漏了反斜杠导致任何选言都误判。
+- **弃用文案双空格核实（T4b）**：列出 `@anysearch-cli/cli@0.0.3~0.0.8` 的双空格文案，备好修复命令；尝试执行时碰到 E401/权限闸，按 R87 D4 对执行状态如实记账。
+- **WORKFLOW.md §4.2 终审 ADR 判死（T4d）**：明确 supersede 语义——由 GitButler skill + 全局 `but` 协议等价覆盖，10+ 轮缺位的核销审计正式封口。
 
 ### Deferred
 
-- **defer-r72-dsh-approval-channel**：经 T4c 探测，`dsh-headless` 缺失交互式 ApprovalAnswerer，调用触发 fail-closed 降级，维持 open/defer。
+- **defer-r72-dsh-approval-channel**：经 T4c 探测，`dsh-headless` 缺交互式 ApprovalAnswerer，调用会按「拿不准就拒绝」降级，保持 open/defer。
 
-## Unreleased — r90: dsh 原生工具面实施轮（五 ans_* 原生注册 + 桥退役 + approval-channel 拆票）
+## Unreleased — r90: dsh 原生工具面实施轮（五个 ans_* 工具原生注册 + 桥退役 + approval-channel 拆票）
 
 ### Fixed
 
-- **defer-r72-dsh-native-tools 解除**：五 ans_* 工具（search_web/research_web/recall_memory/query_knowledge/ans_chat）经 `ctx.tools.register` 原生注册于 apps/dsh-plugin `apply()`；裸 ToolDefinition（非 defineTool——零依赖契约凌驾 DSL 方便性），parameters=KernelJsonSchemas 逐字投影，execute=纯传输（MCP tools/call→ans-mcp HTTP /mcp，传播三头+fail-open 空结果）。测试 21/21 绿（expected-RED 先行留证）。
+- **defer-r72-dsh-native-tools 解除**：五个 ans_* 工具（search_web/research_web/recall_memory/query_knowledge/ans_chat）经 `ctx.tools.register` 原生注册在 apps/dsh-plugin 的 `apply()` 里；用的是裸 ToolDefinition（不是 defineTool——零依赖的约定比 DSL 的方便更重要），parameters 逐字照 KernelJsonSchemas 投影，execute 只做传输（MCP tools/call→ans-mcp HTTP /mcp，带三个头 + 出故障就放行、返回空结果）。测试 21/21 绿（先写期望失败的那一步留了证据）。
 
 ### Added
 
-- **kernel `./tool-json-schemas` 子路径导出** + KernelToolDescriptions SSOT（apps/mcp 五 .tool.ts 描述文案收敛单源）。
-- **callServer 加性槽位**：headers/timeoutMs/signal + 空体 2xx→{}（同一契约延展，非新通道）。
+- **kernel 的 `./tool-json-schemas` 子路径导出** + KernelToolDescriptions 单一来源（apps/mcp 五个 .tool.ts 的描述文案收敛到一处）。
+- **callServer 加槽位**：headers/timeoutMs/signal + 空体 2xx→{}（同一个约定的扩展，不是新通道）。
 
 ### Removed
 
-- **mcp-anysearch 桥行**自 cordis.patch.yml 退役（独票 refactor；rollback=revert）。注册表 native-tools→closed；approval-channel 拆为独立条目 defer-r72-dsh-approval-channel。
+- **mcp-anysearch 桥行**从 cordis.patch.yml 退役（单独一张票做重构；回滚=revert）。注册表 native-tools→closed；approval-channel 拆成独立条目 defer-r72-dsh-approval-channel。
 
-## Unreleased — r89: dsh 上游线轮（0.2.0-rc.1 调研 + repin 判词 soak-until-stable + r72 两票定形）
+## Unreleased — r89: dsh 上游线轮（0.2.0-rc.1 调研 + repin 结论 soak-until-stable + r72 两张票定形）
 
 ### Changed
 
-- **dsh 上游线调研轮**：0.2.0-rc.1（next，2026-09-28T12:14Z 全族同发）L1 tarball 探针——消费子集 .d.ts diff 全等（12/12 字段级 IDENTICAL）、Events 键面零增删、dep-closure 同集零 delta；三锚判词=**soak-until-stable**，钉版 0.1.7-rc.1 + cordis 4.0.4 不动；证据 .scratch/grill-round-89/（upgrade-ledger v3 + t1 transcript/snapshot）。
-- **r72 两票定形（不实现）**：native-tools 依赖触发器实质已响（注册 API 三代同形）；web-interactive-matrix 分项——approval-channel 解除、patchReload:live/browser-turn 上游缺席维持 defer。
+- **dsh 上游线调研轮**：0.2.0-rc.1（next，2026-09-28T12:14Z 全族同发）的 L1 tarball 探针——我们用到的那部分 `.d.ts` diff 全部相等（12/12 字段级 IDENTICAL）、Events 键面没有任何增删、依赖闭包同一个集合零变化；三个检查项的结论=**soak-until-stable**，钉住 0.1.7-rc.1 + cordis 4.0.4 不动；证据在 `.scratch/grill-round-89/`（upgrade-ledger v3 + t1 transcript/snapshot）。
+- **r72 两张票定形（不实现）**：native-tools 的依赖触发器实际上已经响了（注册 API 三代同形）；web-interactive-matrix 分项——approval-channel 解除、patchReload:live/browser-turn 上游缺席继续保持 defer。
 
-## Unreleased — r88: 搜索面卫生轮（a06 双层归并 + a03 吞词修复 + a08 死参清除 + F-6 探针卫生）
+## Unreleased — r88: 搜索面清理轮（a06 两层合并 + a03 吞词修复 + a08 死参数清除 + F-6 探针卫生）
 
 ### Fixed
 
-- **defer-r83-a03-flagvalueset-swallow**：`ans search --vertical-domain finance finance` 吞词修复——旗值改按位置消费（已知值旗的 i+1 位为值位），查询词与旗值同形不再被剔（回归测试先红后绿在案）。
+- **defer-r83-a03-flagvalueset-swallow**：修复 `ans search --vertical-domain finance finance` 吞掉查询词的问题——旗值改成按位置消费（已知值旗的 i+1 位就是值位），查询词跟旗值长得一样也不会被剔掉（回归测试先红后绿，在案）。
 
 ### Removed
 
-- **defer-r83-a08-dead-maxresults**：search_web 移除 dead `maxResults` 解构——schema `additionalProperties:false` 从不放行该键，行为零变化；kernel 契约测试显式断言拒收 `maxResults`（暴露它是特性决策而非卫生项）。
+- **defer-r83-a08-dead-maxresults**：search_web 删掉没用的 `maxResults` 解构——schema 的 `additionalProperties:false` 从来不放行这个键，行为零变化；kernel 契约测试明确断言拒收 `maxResults`（说明这是有意的特性决定，不是顺手清理）。
 
 ### Changed
 
-- **defer-r83-a06-vertical-assembly-dup**：垂域组装+require-domain 守卫归并为 `buildVerticalSpec`/`verticalSpecReject`（packages/retriever/src/contract.ts，判别联合 {ok,vertical}|{ok:false,reason:"missing-domain"}）——cli/search、search_web、research_web 三站共享组装+守卫语义、各渲各的错文案（错误输出 byte-identical，golden 断言在案）；kernel `verticalSpecProps` TypeBox 片段共享，`additionalProperties:false` 保持。
-- **r88-candidate-f6-refactor-round**：scripts/probe-anysearch-mcp-raw.ts 卫生——env 读 POSIX 空串≈未设（`||` 一致化）、sanitize 对称遮 endpoint（`<endpoint>`/`<key>` 与 provider 探针同形）、UA/clientInfo 版本字面量钉根 package.json；CHANGELOG r81–r85 五个存量 `## Unreleased` 段归位为 `## 0.1.0 —`。
+- **defer-r83-a06-vertical-assembly-dup**：垂域组装和 require-domain 守卫合并成 `buildVerticalSpec`/`verticalSpecReject`（packages/retriever/src/contract.ts，判别联合 {ok,vertical}|{ok:false,reason:"missing-domain"}）——cli/search、search_web、research_web 三个地方共用同一套组装和守卫语义、各写各的错误文案（错误输出逐字节相同，golden 断言在案）；kernel 的 `verticalSpecProps` TypeBox 片段共用，`additionalProperties:false` 保持不变。
+- **r88-candidate-f6-refactor-round**：scripts/probe-anysearch-mcp-raw.ts 清理——env 读到 POSIX 空串≈没设（统一用 `||`）、sanitize 对称地遮住 endpoint（`<endpoint>`/`<key>` 跟 provider 探针同形）、UA/clientInfo 的版本字面量从根 package.json 钉住；CHANGELOG 里 r81–r85 五个存量 `## Unreleased` 段归位成 `## 0.1.0 —`。
 
-## 0.1.0 — 2026-09-27 (r86 green-gate ship)
+## 0.1.0 — 2026-09-27（r86 全部通过的门装船轮）
 
-绿门装船轮：修红门根因 + provider-failure 判别实验 + 判读器语义修正 + 真测量版复跑 + 全包钉版。
+这一轮：修好变红的门的根因 + 做 provider 失败的判别实验 + 修正判分程序的语义 + 用真测量版复跑 + 给所有包钉版。
 
 ### Added
 
-- `ProviderErrorClass` 契约层错误分类（transient / permanent-auth / permanent-protocol / session-expired / unknown）+ `classifyProviderError`；engine `metadata.providerErrorClasses`（id→类别）贯通 `ans search --json` 与 delta 证据行（providerErrorClasses{On,Off,IsoOn,IsoOff}）——失败从此记类别不记裸旗标。
-- `scripts/probe-anysearch-provider.ts` + `scripts/probe-anysearch-mcp-raw.ts`——provider 直调取证探针与 raw MCP 原文探针（长期 fixture；env 值只录存在性类别）。
-- `apps/cli/scripts/stamp-dist.mjs` 构建戳（anysearch/build-stamp@1：commit+dirty）+ eval runner 的 dist 新鲜度断言（stale→FAIL，缺 dist→SKIP 保 CI 无构建腿）。
+- `ProviderErrorClass` 契约层的错误分类（transient / permanent-auth / permanent-protocol / session-expired / unknown）+ `classifyProviderError`；engine 的 `metadata.providerErrorClasses`（id→类别）贯通到 `ans search --json` 和 delta 证据行（providerErrorClasses{On,Off,IsoOn,IsoOff}）——失败从此记类别，不记裸旗标。
+- `scripts/probe-anysearch-provider.ts` + `scripts/probe-anysearch-mcp-raw.ts`——provider 直调取证探针和 raw MCP 原文探针（长期保留的夹具；env 值只记「有没有」的那一类）。
+- `apps/cli/scripts/stamp-dist.mjs` 构建戳（anysearch/build-stamp@1：commit+dirty）+ eval runner 的 dist 新鲜度断言（过期→FAIL，缺 dist→SKIP，保证 CI 在没有构建腿时也能跑）。
 
 ### Fixed
 
-- **ship-gate 红门**：R85 closeout claim 的 kind:path 指向 gitignore 机器本地证据件（CI 双平台必红）——改指入库指纹清单 `.scratch/grill-round-85/evidence-manifest.json`（path+sha256+size+来源commit+判读器hash+环境指纹）。
-- **判读器记分簿失真（matrix@2）**：provider-failed iso 腿不再被读成「测得零增益」——格判 unmeasured/unknown；subject 层 instrumentDown>30% 触发 instrument-flag（新闸 G1b）；runner 捕获层失败腿不再落成空列表。
-- **defer-r84-anysearch-empty-endpoint-env**：ANYSEARCH_ENDPOINT/ANYSEARCH_API_KEY 空串按 POSIX 空≈未设回落（\s*||undefined\s*），不再落空端点/裸 Bearer 头。
-- **quota/auth nudge 归因**：上游匿名配额边界的 auto-provisioning 回复具名识别，归 permanent-auth（不再落 malformed/permanent-protocol 桶）。
+- **ship-gate 变红的门**：R85 closeout claim 的 kind:path 指向一个被 gitignore 的机器本地证据件（CI 双平台必然红）——改成指向入库的指纹清单 `.scratch/grill-round-85/evidence-manifest.json`（path+sha256+size+来源commit+判分程序hash+环境指纹）。
+- **判分程序记分簿失真（matrix@2）**：provider-failed 的 iso 腿不再被读成「测到零增益」——这一格判 unmeasured/unknown；subject 层 instrumentDown>30% 触发 instrument-flag（新闸 G1b）；runner 捕获层的失败腿不再落成空列表。
+- **defer-r84-anysearch-empty-endpoint-env**：ANYSEARCH_ENDPOINT/ANYSEARCH_API_KEY 的空串按 POSIX「空≈没设」回落（\s*||undefined\s*），不再落成空端点或裸 Bearer 头。
+- **quota/auth nudge 归因**：上游匿名配额边界的自动签凭证回复能被具名识别，归到 permanent-auth（不再落进 malformed/permanent-protocol 桶）。
 
 ### Changed
 
-- R85 NO-GO 判词语义勘误为 indeterminate—instrument down（程序性裁决锁定不溯改）；matrix@2 先登记后读数，T5 原指纹复跑实测 **NO-GO/direction-negative**（P=0.0378、净胜率 −0.125）——垂域臂 armHostHit 轴实测负效应。
-- docs/deferred-registry.json：r85-arm / r84-env 核销；新增 defer-r86-anysearch-corpus-param-contract 与 defer-r86-anysearch-anon-quota-nudge。
+- R85 的 NO-GO 结论语义勘误成 indeterminate—instrument down（程序性裁决锁定，不追溯改）；matrix@2 先登记再读数，T5 用原指纹复跑实测 **NO-GO/direction-negative**（P=0.0378、净胜率 −0.125）——垂域臂在 armHostHit 轴上实测是负效应。
+- docs/deferred-registry.json：r85-arm / r84-env 核销；新增 defer-r86-anysearch-corpus-param-contract 和 defer-r86-anysearch-anon-quota-nudge。
 
-## 0.1.0 — r85: delta 腿全量重跑 + prefer-capable 预注册判读（NO-GO 终局）
+## 0.1.0 — r85: delta 腿全量重跑 + prefer-capable 预注册判分读数（NO-GO 终局）
 
 ### Added
 
-- 预注册判读矩阵 `.scratch/grill-round-85/prereg-matrix.md` + 确定性判读器 `.scratch/grill-round-85/readout-delta.mjs`：G0–G4 固定闸序（输入完整→对照层装置闸→覆盖闸→2-of-4 负向硬闸→方向轴）+ `Beta(1+b,1+w)` flat 后验（P/EL 精确数值积分、固定网格无 RNG）+ 效应量四字段 + 单次终读条款；`assert-corpus | selftest | readout` 三模式——判读器自身携离线 fixture 测试面，判读先于读数落盘 commit。
-- delta runner instrument-health ordering（sampling 协议不变）：对照层前置探针 + G1 旗标早停 + 处理层 vdomain×stratum 轮询交错（配额截断近似 MAR）+ `ANS_VERTICAL_DELTA_PLAN=1` 零配额排演面 + `hadVerticalSpec` 记账锚字段。
+- 预注册判分读数矩阵 `.scratch/grill-round-85/prereg-matrix.md` + 确定性判分程序 `.scratch/grill-round-85/readout-delta.mjs`：G0–G4 固定闸序（输入完整→对照层装置闸→覆盖闸→2-of-4 负向硬闸→方向轴）+ `Beta(1+b,1+w)` flat 后验（P/EL 精确数值积分、固定网格无 RNG）+ 效应量四个字段 + 单次终读条款；`assert-corpus | selftest | readout` 三种模式——判分程序自己就带离线夹具测试面，判分读数先于读数写进文件 commit。
+- delta runner 的 instrument-health 排序（采样协议不变）：对照层前置探针 + G1 旗标早停 + 处理层 vdomain×stratum 轮询交错（配额截断近似 MAR）+ `ANS_VERTICAL_DELTA_PLAN=1` 零配额排演面 + `hadVerticalSpec` 记账检查项字段。
 
 ### Deferred
 
-- `defer-r83-prefer-capable-weighting` **核销（NO-GO 判词附纹理）**：全量重跑完成（57/57 格腿全活、覆盖 41/41、指纹 7ac0a48e55cd7954），注册矩阵单次终读裁决 NO-GO——但「无信号」实为 anysearch 臂全程 provider-failure 空列（装置级零数据非测得零增益），纹理如实披露于 decision-record；复活前置=新挂 `defer-r85-anysearch-arm-providersfailed`（清障候选，owner anysearch-retriever）。`defer-r84-delta-quota-rerun` 核销（触发条件满足+全量重跑实绩+降格件归档 `delta-2026-09-26.degraded.json` 不删）。
+- `defer-r83-prefer-capable-weighting` **核销（NO-GO 结论附纹理）**：全量重跑完成（57/57 格腿全活、覆盖 41/41、指纹 7ac0a48e55cd7954），注册矩阵单次终读裁决 NO-GO——但「没有信号」其实是 anysearch 臂全程 provider-failure 空列（装置级零数据，不是测到零增益），来龙去脉如实写在 decision-record 里；复活前提是新增 `defer-r85-anysearch-arm-providersfailed`（清障候选，owner anysearch-retriever）。`defer-r84-delta-quota-rerun` 核销（触发条件满足 + 全量重跑的实际结果 + 降格件归档 `delta-2026-09-26.degraded.json`，不删）。
 
-## 0.1.0 — r84: 垂域评测证据腿——契约断言 + 金标语料 + 双臂配对 delta
+## 0.1.0 — r84: 垂域评测证据腿——契约断言 + 金标语料 + 两臂配对 delta
 
 ### Added
 
-- 垂域评测双层扩展：`eval-looks.json` 金标账册扩 `expected.vertical{role,domain,sub_domain,paramsKeys,paramsSent,hit,degraded,hitHosts,hitPaths}` 断言面；`vert-*`/`ctrl-*` id 族 + `stratum:`/`vdomain:` 独立维度词表（不触碰 docs 八维计数闸）；57 条 live-scoped 垂域语料（finance/academic/code/health × parameterized/semantic）+ 对照类一等断言条目；provenance 全字段 + 建集期活词表快照（get_sub_domains 仅人工探查不进运行时）。
-- 配对 delta live 腿 `packages/store/test/online/eval-looks-vertical.online.ts`（D-002 证据层/D-004/D-005）：同 query 同期盼集 vertical-on/off 四趟（隔离 `ANS_PROVIDERS=anysearch` 臂级主证 + 全扇出融合级副列），产 `anysearch/vertical-delta@1` 证据件（datasetFingerprint + 臂标识 + 显式 n + better/worse/tied/unknown + providersFailed 四面 + 臂采样 URL）；不可测格记 null/unknown 非 0。
-- CLI eval 面 env 门控：`ANS_ARM_SNAPSHOT=1`（`--json` 透出 `metadata.fusion{labels,lists}`）+ `ANS_PROVIDERS=a,b`（provider 子集过滤走 `Query.providers`）。
+- 垂域评测双层扩展：`eval-looks.json` 的金标账册扩出 `expected.vertical{role,domain,sub_domain,paramsKeys,paramsSent,hit,degraded,hitHosts,hitPaths}` 断言面；`vert-*`/`ctrl-*` id 族 + `stratum:`/`vdomain:` 独立维度词表（不碰 docs 八维计数闸）；57 条能现场跑的垂域语料（finance/academic/code/health × parameterized/semantic）+ 对照类一等断言条目；来源字段全带 + 建集时拉到的词表快照（get_sub_domains 只人工看，不进运行时）。
+- 配对 delta 的现场腿 `packages/store/test/online/eval-looks-vertical.online.ts`（D-002 证据层/D-004/D-005）：同一个 query 同一批期望集，vertical-on/off 跑四趟（隔离 `ANS_PROVIDERS=anysearch` 做臂级主证 + 全同时查多个源融合级副列），产出 `anysearch/vertical-delta@1` 证据件（datasetFingerprint + 臂标识 + 显式 n + better/worse/tied/unknown + providersFailed 四面 + 臂采样 URL）；测不了的格记 null/unknown，不记 0。
+- CLI eval 面的 env 门：`ANS_ARM_SNAPSHOT=1`（`--json` 透出 `metadata.fusion{labels,lists}`）+ `ANS_PROVIDERS=a,b`（provider 子集过滤走 `Query.providers`）。
 
 ### Changed
 
-- 三入口错形统一 fail-fast（A-02 立法）：CLI/TOML 对齐 MCP 拒收报错——bare/subordinate flag 无 domain、空串 domain/subDomain、非法 JSON `--vertical-params` 一律显式报错；`canonicalizeVertical`（contract.ts）为 params:{}≡absent 单点规范化（A-04），engine 审计事件与 anysearch wire 边界共用。
+- 三个入口的错误形状统一成「直接报错停下」（A-02 立法）：CLI/TOML 对齐 MCP 的拒收报错——bare/subordinate flag 没有 domain、空串 domain/subDomain、非法 JSON `--vertical-params` 全部明确报错；`canonicalizeVertical`（contract.ts）是「params:{} 等同于没有」的唯一规范化点（A-04），engine 审计事件和 anysearch wire 边界共用。
 
 ### Fixed
 
-- 测量容错：delta runner 的 host 解析容忍上游 schemeless URL；hitHosts 池后缀域匹配（site.financialmodelingprep.com ↔ financialmodelingprep.com）。
+- 测量容错：delta runner 的 host 解析能容忍上游不带 scheme 的 URL；hitHosts 池按后缀匹配域（site.financialmodelingprep.com ↔ financialmodelingprep.com）。
 
 ### Deferred
 
-- `defer-r83-prefer-capable-weighting` 注记更新为「证据机制在役等数据」（open，未核销）；新增 `defer-r84-ip-fifth-domain`（上游补 ip 结构化参数再建集）/ `defer-r84-delta-quota-rerun`（匿名配额耗尽后首轮部分降格，持有效 key 重跑）/ `defer-r84-anysearch-empty-endpoint-env`（ANYSEARCH_ENDPOINT 空串应视同未设）。
+- `defer-r83-prefer-capable-weighting` 注记更新成「证据机制在役，等数据」（open，未核销）；新增 `defer-r84-ip-fifth-domain`（上游补 ip 结构化参数后再建集）/ `defer-r84-delta-quota-rerun`（匿名配额耗尽后第一轮部分降格，拿到有效 key 再重跑）/ `defer-r84-anysearch-empty-endpoint-env`（ANYSEARCH_ENDPOINT 空串应该视同没设）。
 
-## 0.1.0 — r83: 垂域贯通轮——AnySearch vertical-domain passthrough + TE1 dsh 事件迁移
+## 0.1.0 — r83: 垂域贯通轮——AnySearch vertical-domain 参数直通 + TE1 dsh 事件迁移
 
 ### Added
 
-- `SearchRequest.vertical{domain,subDomain?,params?}` + `SearchProvider.verticalDomainSupported` 能力位（ D-003/D-004）：仓 TOML `[sources] vertical={domain,sub_domain?}` 静态亲和默认 + 工具 arg `verticalDomain/verticalSubDomain/verticalParams` + CLI `--vertical-domain/--vertical-sub-domain/--vertical-params` 三注入面；查询级整体替换仓级（无深合并）；能力协商下仅声明者收 wire 字段 `domain/sub_domain/sub_domain_params`，未声明者 general 扇出并入 degraded 名单（hint 非 abstain）。
-- `retrieval.vertical.pre` 审计事件（D-005）：attrs=anysearch.domain+vertical.domain+vertical.sub_domain+vertical.params_keys（仅键名不落值）+vertical.source(repo|query)+vertical.sent+vertical.degraded；与 domain_filter.pre 同构镜像、独立触发；无 vertical.post。垂域命中结果携 `NormalizedResult.extra.vertical` 机读标记（fusion 保活）。
-- `packages/kernel/test/vertical-domain.test.ts`（28 断言）+ store domain-schema 垂域断言 + retriever anysearch wire 映射用例 13/13b/13c/13d；README §AnySearch vertical domains 词表+约束表（17 值枚举快照+params 约束示例+上游拒收语义，标注 2026-09-25 日期源）。
-- `.scratch/grill-round-83/evidence/` —— T0 哨戒（dsh 双锚齐判定+rc.1 龄期闸实测+#1764 OPEN 趋僵 22d+CI 观测窗）+ TE1 迁移实录（三条件+repin 枚举重推导+L2 彩排）+ T1 垂域贯通证据（上游非法组合实测矩阵+CLI e2e）。
+- `SearchRequest.vertical{domain,subDomain?,params?}` + `SearchProvider.verticalDomainSupported` 能力位（D-003/D-004）：仓 TOML 的 `[sources] vertical={domain,sub_domain?}` 是静态的默认亲和 + 工具参数 `verticalDomain/verticalSubDomain/verticalParams` + CLI 的 `--vertical-domain/--vertical-sub-domain/--vertical-params` 三个注入面；查询级会整个覆盖仓级（没有深合并）；按能力协商，只有声明支持的 provider 才收到 wire 字段 `domain/sub_domain/sub_domain_params`，没声明的走 general 同时查多个源并进 degraded 名单（只是提示，不是拒答）。
+- `retrieval.vertical.pre` 审计事件（D-005）：attrs=anysearch.domain+vertical.domain+vertical.sub_domain+vertical.params_keys（只记键名不记值）+vertical.source(repo|query)+vertical.sent+vertical.degraded；跟 domain_filter.pre 同构镜像、独立触发；没有 vertical.post。垂域命中的结果带 `NormalizedResult.extra.vertical` 机器标记（融合时保活）。
+- `packages/kernel/test/vertical-domain.test.ts`（28 条断言）+ store domain-schema 的垂域断言 + retriever anysearch wire 映射用例 13/13b/13c/13d；README §AnySearch vertical domains 词表+约束表（17 个值的枚举快照+params 约束示例+上游拒收的语义，标了 2026-09-25 这个日期源）。
+- `.scratch/grill-round-83/evidence/` —— T0 观测（dsh 两个观测点齐判定+rc.1 龄期闸实测+#1764 OPEN 趋僵 22d+CI 观察窗）+ TE1 迁移实录（三条件+repin 枚举重推导+L2 彩排）+ T1 垂域贯通证据（上游非法组合实测矩阵+CLI e2e）。
 
 ### Changed
 
-- `@anysearch-cli/dsh-plugin` 事件面迁移（TE1，fix-r82-dsh-event-created-consumption 闸开兑现）：`ctx.on('agent/session-start')` → `ctx.on('agent/created')` + `source === 'startup'` guard（resume/clear/compact 不重注入）；@deepseek-ai/* 全族 repin 0.1.5-rc.2 → 0.1.7-rc.1（catalog+overrides 枚举重推导 21 名；新增 workspace/storage/storage-domain/session-persistence/sandbox/sandbox-policy/ptc-runtime，退役 code-runtime/util-crypto）+ cordis 4.0.2 → 4.0.4；contextMessage 适配新契约（MessageId brand + 自有 anysearch-plugin MessageSourceMap 增扩）。旧宿主（<0.1.7）下 payload 无 source → guard 自然不注入=静默降级。
+- `@anysearch-cli/dsh-plugin` 的事件面迁移（TE1，fix-r82-dsh-event-created-consumption 闸开兑现）：`ctx.on('agent/session-start')` → `ctx.on('agent/created')` + `source === 'startup'` 守卫（resume/clear/compact 不再重复注入）；@deepseek-ai/* 全族从 0.1.5-rc.2 repin 到 0.1.7-rc.1（catalog+overrides 枚举重推导 21 个名字；新增 workspace/storage/storage-domain/session-persistence/sandbox/sandbox-policy/ptc-runtime，退役 code-runtime/util-crypto）+ cordis 4.0.2 → 4.0.4；contextMessage 适配新契约（MessageId brand + 自有 anysearch-plugin MessageSourceMap 增扩）。旧宿主（<0.1.7）下 payload 没有 source → 守卫自然不注入，就是静默降级。
 
 ### Fixed
 
-- `apps/cli/test/e2e.test.ts` hermetic 修：chat 无 LLM 用例剥离环境 `ANS_LLM_*`（run() 增 env 参）——配置了 LLM 的开发机上不再假败。
+- `apps/cli/test/e2e.test.ts` 的隔离修复：chat 没 LLM 的用例把环境的 `ANS_LLM_*` 剥掉（`run()` 加了 env 参数）——配置了 LLM 的开发机上不会再假失败。
 
 ### Deferred
 
-- `defer-r83-anysearch-vertical-domain-passthrough` 收口（本轮落地）；`defer-r73-dsh-event-rename` 双锚齐消费完毕核销；新增 prefer-capable 加权调参跟进项（D-004 §4，eval 数据驱动非契约职责）；R82 审计残余 nit 两档处置（e2e hermetic 即修落地；度量行自指/JSON id 不对称/clientInfo.version 硬编码/engines 地板缺席逐项登记——见 ）。
+- `defer-r83-anysearch-vertical-domain-passthrough` 收口（本轮落地）；`defer-r73-dsh-event-rename` 两个观测点都消费完，核销；新增 prefer-capable 加权调参跟进项（D-004 §4，交给 eval 数据驱动，不是契约职责）；R82 审计剩下的 nit 分两档处理（e2e 隔离当场修好；度量行自指/JSON id 不对称/clientInfo.version 硬编码/engines 地板缺席逐项登记）。
 
-## 0.1.0 — r82: 迁移落地轮——AnySearchProvider REST→MCP-over-HTTP
+## 0.1.0 — r82: 迁移落地轮——AnySearchProvider 从 REST 迁到 MCP-over-HTTP
 
 ### Changed
 
-- `@anysearch-cli/retriever` AnySearchProvider 传输面迁移（ 分支 b 执行，fix-r82-anysearch-mcp-migration）：GET /v1/search（REST，404 死路由）→ POST /mcp（MCP Streamable HTTP，initialize→notifications/initialized→tools/call search 薄 JSON-RPC，不引 @modelcontextprotocol/sdk——eventsource-parser 为唯一新增 dep ~2KB）。Accept 双类型+MCP-Protocol-Version 每 POST+协商版本回写+Mcp-Session-Id 捕获回显+session 404 重初始化；fail-first 映射（structuredContent 优先→markdown 信封容错解析→isError/错形/意外 Content-Type 一律降级该臂，错形不吞零）。ANYSEARCH_ENDPOINT 以 /v1/search 结尾→剥至 base+/mcp+warn 一次。`max_results` 名义上限由 REST 时代宣称 20 修正为 MCP schema 实证上限 **10**（静默 clamp）。`domainFilterSupported` 保持 false——MCP domain=垂域路由枚举非 host allowlist（垂域贯通立 defer-r83-anysearch-vertical-domain-passthrough）。
+- `@anysearch-cli/retriever` 的 AnySearchProvider 传输面迁移（分支 b 执行，fix-r82-anysearch-mcp-migration）：GET /v1/search（REST，404 死路由）→ POST /mcp（MCP Streamable HTTP，initialize→notifications/initialized→tools/call search 这种薄 JSON-RPC，不引入 @modelcontextprotocol/sdk——eventsource-parser 是唯一新增依赖，约 2KB）。Accept 双类型+MCP-Protocol-Version 每个 POST+协商版本回写+Mcp-Session-Id 捕获回显+session 404 重新初始化；fail-first 映射（优先 structuredContent→markdown 返回包容错解析→isError/错形/意外的 Content-Type 一律降级这一路，错形不吞成零）。ANYSEARCH_ENDPOINT 以 /v1/search 结尾→剥到 base+/mcp+warn 一次。`max_results` 名义上限从 REST 时代宣称的 20 修正为 MCP schema 实证的 **10**（静默 clamp）。`domainFilterSupported` 保持 false——MCP 的 domain 是垂域路由枚举，不是 host allowlist（垂域贯通立了 defer-r83-anysearch-vertical-domain-passthrough）。
 
 ### Added
 
-- `packages/retriever/test/online/anysearch-mcp.online.ts` + `test:online` 脚本 + ci.yml `test-online-anysearch` 非阻断 job（continue-on-error）——provider live-search 的 CI 探针面补课（R81 分水岭诊断的修法）。
-- `.scratch/grill-round-82/evidence/` —— T0 哨戒（dsh rc.2 龄期闸 ETARGET 实测+特征锚 tarball 复验+#1764 OPEN 趋僵+双锚未齐判定）+ T1 wire/R2 对照/R3 谓词/垂域腿实录。
+- `packages/retriever/test/online/anysearch-mcp.online.ts` + `test:online` 脚本 + ci.yml 的 `test-online-anysearch` 非阻断 job（continue-on-error）——补上 provider 现场搜索的 CI 探针面（R81 分水岭诊断的修法）。
+- `.scratch/grill-round-82/evidence/` —— T0 观测（dsh rc.2 龄期闸 ETARGET 实测+特征观测点 tarball 复验+#1764 OPEN 趋僵+两个观测点未齐判定）+ T1 wire/R2 对照/R3 谓词/垂域腿实录。
 
 ### Removed
 
-- AnySearchProvider 的 REST /v1/search 调用路径与 data.results 映射（随 MCP 迁移整体移除）。
+- AnySearchProvider 的 REST /v1/search 调用路径和 data.results 映射（随 MCP 迁移整体移除）。
 
 ### Deferred
 
-- `defer-r81-provider-shape-validation` 收口（fail-first 映射+错形测试面）；`defer-r81-anysearch-rest-route-removed` 续守 quarterly 监控；`defer-r73-dsh-event-rename` 双锚未齐续债（rc.2 特征锚复验齐/稳定锚未齐，合格候选未出现）；新增 `defer-r83-anysearch-vertical-domain-passthrough`； 残余 R1–R5 四分诊全落位（registry residual-triage 五卡）。
+- `defer-r81-provider-shape-validation` 收口（fail-first 映射+错形测试面）；`defer-r81-anysearch-rest-route-removed` 继续按季度监控；`defer-r73-dsh-event-rename` 两个观测点没齐，继续挂债（rc.2 特征观测点复验齐了/稳定观测点没齐，合格的候选还没出现）；新增 `defer-r83-anysearch-vertical-domain-passthrough`；残余 R1–R5 的四分诊全部落位（registry residual-triage 五张卡）。
 
 ## 0.1.0 — r81: 产品吸气轮——provider-serverside spike 诊断 + release.yml R1 幂等跳过 + 发布插曲协议立法
 
 ### Added
 
-- `.github/workflows/release.yml` publish 腿幂等跳过（ D-004 R1）：每包 `npm publish` 前 `npm view <name>@<version>` 已存在→`::notice::` skip 记录（npm 无内建开关，rfcs#387，precondition-check 为通行解）+ E403 "cannot publish over"/EPUBLISHCONFLICT 容错兜底（check/publish TOCTOU 竞态）——同 tag `gh run rerun` 对已落包零副作用，C1 复跑前提落地。
-- `.scratch/grill-round-81/evidence/` —— T0 哨戒实录（dsh 0.1.7-rc.1 特征锚入 rc 线但龄期闸内/原生工具注册面 rc.2≡rc.1 零漂移触发器未响/llm-init flake 未复现/#1764 趋僵 21d）+ 插曲事件 1 取证（v0.0.8 三扳机全扣：五包发布+SLSA provenance attestations+装跑冒烟 npm i-g/ans doctor/dsh plugin add 全绿+CI 矩阵绿）。
-- `.scratch/grill-round-81/` spike 产物——端点测绘+fake-ip 审计+宣称审计判定表+判别实验矩阵+诊断书（T1a/T1b/T2/T3 实录，裁决权归 ）。
+- `.github/workflows/release.yml` 的 publish 腿幂等跳过（D-004 R1）：每个包 `npm publish` 之前先 `npm view <name>@<version>`，已经存在就 `::notice::` 记录并跳过（npm 没有内建开关，rfcs#387，precondition-check 是通行解法）+ E403 "cannot publish over"/EPUBLISHCONFLICT 容错兜底（check/publish 的 TOCTOU 竞态）——同一个 tag 上 `gh run rerun` 对已经发出去的包零副作用，C1 复跑的前提落地。
+- `.scratch/grill-round-81/evidence/` —— T0 观测实录（dsh 0.1.7-rc.1 特征观测点进了 rc 线但还在龄期闸内/原生工具注册面 rc.2≡rc.1 零漂移触发器没响/llm-init flake 没复现/#1764 趋僵 21d）+ 插曲事件 1 取证（v0.0.8 三个扳机全扣：五个包发布+SLSA provenance attestations+装跑冒烟 npm i-g/ans doctor/dsh plugin add 全部通过+CI 矩阵绿）。
+- `.scratch/grill-round-81/` 的 spike 产物——端点测绘+fake-ip 审计+宣称审计判定表+判别实验矩阵+诊断书（T1a/T1b/T2/T3 实录，裁决权归别处）。
 
 ### Changed
 
-- `docs/publishing.md` —— 失败分级节立法（C1 零发布→修因+同 tag rerun；C2a 基础设施因→修因+复跑补全；C2b 已落内容坏→0.0.9 patch-forward；C3 全发冒烟败→deprecate+0.0.9；unpublish 仅灾难性事故边界）。
+- `docs/publishing.md` —— 失败分级节立法（C1 零发布→修原因+同 tag rerun；C2a 基础设施原因→修原因+复跑补全；C2b 已经发出去的内容坏了→0.0.9 patch-forward；C3 全发冒烟失败→deprecate+0.0.9；unpublish 只留给灾难性事故边界）。
 
 ### Deferred
 
-- `defer-r71-provider-serverside` 本轮主轴处置（spike 诊断→三分支推荐→ 裁决）；`defer-r72-dsh-plugin-npm-publish` 更态=已发布落地（三扳机实证，evidence/release-interlude-1.md）；其余 open 债 carried_log r81 显式续记。
+- `defer-r71-provider-serverside` 本轮主轴处理（spike 诊断→三分支推荐→别处裁决）；`defer-r72-dsh-plugin-npm-publish` 状态改成已发布落地（三个扳机实证，evidence/release-interlude-1.md）；其余 open 债 carried_log r81 明确续记。
 
 ### Known Issues
 
-- `@anysearch-cli/cli@<0.1.0`（0.0.3–0.0.8）内置默认端点指向已退休的 `/v1/search` REST 路由——安装即报 route 404。0.1.0 起默认走 `/mcp`（旧值被守卫自动改写）；旧版本停用处置=deprecate 处方（，执行态见轮次收口档）。升级：`npm i -g @anysearch-cli/cli@latest`。
+- `@anysearch-cli/cli@<0.1.0`（0.0.3–0.0.8）内置的默认端点指向已经退休的 `/v1/search` REST 路由——装上就报 route 404。0.1.0 起默认走 `/mcp`（旧值会被守卫自动改写）；旧版本的停用处理=deprecate 处方（执行状态见轮次收口档）。升级：`npm i -g @anysearch-cli/cli@latest`。
 
-## 0.0.8 — 2026-09-23 — r80: 发布就绪轮——dsh-plugin 上架备货 + E6 lockfile 复核腿实证收口 + 派生件新鲜度腿 + 上游哨戒
+## 0.0.8 — 2026-09-23 — r80: 发布就绪轮——dsh-plugin 备货上架 + E6 lockfile 复核腿实证收口 + 派生件新鲜度腿 + 上游观测
 
 ### Added
 
-- `@anysearch-cli/dsh-plugin` 发布就绪（ D-003 预首发路径）：`private:false` + `publishConfig {access:public, provenance:true}`；release.yml pack/publish 清单接入第五包——v0.0.8 tag 起五包统一 OIDC+sigstore provenance（tag 前置=用户手发 0.0.7 + npmjs Trusted Publisher 四字段配置完成，未就绪→顺延不拆清单）。
-- ship-gate 派生件新鲜度腿（ D-004）：CHANGELOG 当前轮条目在场断言（fail-closed）+ `no-changelog-entry: <理由>` 结构化豁免字段 + 可机验声明注册面（计数类/符号·路径存在性/日期·轮次号——声明与推导命令同一 diff 变更）+ 叙述一致性 warn 起步分档。
-- `.scratch/grill-round-80/evidence/` —— T0 哨戒实录（npm/gh 快照 + rc.3/alpha.1/alpha.2 三版闸态 + 双锚裁决）+ T1 E6 实测矩阵（frozen/install/fetch/vdbr-install 四路全拦 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` + verdict 缓存污染机制）+ T2 pack/dsh plugin add/dump-config 复验 transcript。
+- `@anysearch-cli/dsh-plugin` 发布就绪（D-003 预首发路径）：`private:false` + `publishConfig {access:public, provenance:true}`；release.yml 的 pack/publish 清单接上第五个包——从 v0.0.8 tag 起五个包统一走 OIDC+sigstore provenance（tag 的前置条件=用户手发 0.0.7 + npmjs Trusted Publisher 四个字段配置完成，没就绪就顺延、不拆清单）。
+- ship-gate 派生件新鲜度腿（D-004）：CHANGELOG 当前轮条目必须在场（拿不准就拒绝）+ `no-changelog-entry: <理由>` 结构化豁免字段 + 可机器验证的声明注册面（计数类/符号和路径存在性/日期和轮次号——声明和推导命令同一个 diff 变更）+ 叙述一致性先按 warn 起步分档。
+- `.scratch/grill-round-80/evidence/` —— T0 观测实录（npm/gh 快照 + rc.3/alpha.1/alpha.2 三版闸态 + 两个观测点裁决）+ T1 E6 实测矩阵（frozen/install/fetch/vdbr-install 四路全拦 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` + verdict 缓存污染机制）+ T2 pack/dsh plugin add/dump-config 复验 transcript。
 
 ### Changed
 
-- `scripts/ship-gate.mjs` —— step 1s 断言同构更新（private:true→publish-ready 形状：private:false + publishConfig.access:public + provenance:true，）；step 1a 版本钉 0.0.7→0.0.8 同 commit 同步。
-- `apps/dsh-plugin/AGENTS.md` —— invariant 行同步发布就绪态。
-- `docs/publishing.md` —— 新增「新包首发」节（预首发四步 + provenance 边界声明：证明 origin 非 integrity + no-go 分支顺延不拆清单）；publish set 4→5。
-- E6 闸内执法裁决：pnpm 11.1.3+ `verifyLockfileResolutions` 复核腿在钉版 11.24.0 实测闭合（`trustLockfile` 默认 false=复核开）；R78「lockfile 回放绕过龄期闸」证伪按实测 revised——当年五变体放行=`lockfile-verified.jsonl` 判定缓存污染（宽松写入 warn-pass 沿用），非缺腿；放行依据=上游机器腿闭合 + CI 断言依赖声明（ws yaml 禁 `trustLockfile:true`/`minimumReleaseAgeStrict:false`/非空 `minimumReleaseAgeExclude`）。
+- `scripts/ship-gate.mjs` —— step 1s 的断言同构更新（private:true→publish-ready 形状：private:false + publishConfig.access:public + provenance:true）；step 1a 版本钉 0.0.7→0.0.8，同一个 commit 同步。
+- `apps/dsh-plugin/AGENTS.md` —— invariant 行同步成发布就绪状态。
+- `docs/publishing.md` —— 新增「新包首发」节（预首发四步 + provenance 边界声明：证明 origin 不等于证明 integrity + no-go 分支顺延、不拆清单）；publish set 从 4 改成 5。
+- E6 闸内执法裁决：pnpm 11.1.3+ 的 `verifyLockfileResolutions` 复核腿在钉版 11.24.0 实测闭合（`trustLockfile` 默认 false=复核开着）；R78「lockfile 回放绕过龄期闸」被证伪，按实测 revised——当年五个变体放行=`lockfile-verified.jsonl` 判定缓存污染（宽松写入 warn-pass 继续沿用），不是缺腿；放行依据=上游机器腿闭合 + CI 断言依赖声明（ws yaml 禁 `trustLockfile:true`/`minimumReleaseAgeStrict:false`/非空 `minimumReleaseAgeExclude`）。
 
 ### Deferred
 
-- `defer-r72-dsh-plugin-npm-publish` 更态=就绪待用户扳机（手发 0.0.7→npmjs TP 配置→推 v0.0.8 tag）；`defer-r79-lockfile-agegate-replay` 记裁决=上游机器腿闭合核销（残余边界=同机宽松写入沿用+`trustLockfile:true` opt-out+no-op 短路，CI 断言依赖声明兜底）。
-- 落选债 10 条原名续 deferred（`carried_log` r80 显式记）：`defer-anysearch-domain-ownership` / `defer-f16-macos-native-crash` / `defer-f17-quarantine-ids` / `defer-r71-provider-serverside` / `defer-r71-transformers-undeclared-dep` / `defer-r72-dsh-native-tools` / `defer-r72-dsh-web-interactive-matrix` / `defer-r73-dsh-event-rename`（alpha.2 特征锚已齐、稳定锚缺=alpha 线+changelog 未审，L2 候选哨戒续挂）/ `defer-r74-logo-bitmap-matrix` / `defer-r75-registerhooks-esm-arm`。
+- `defer-r72-dsh-plugin-npm-publish` 状态=就绪等用户扳机（手发 0.0.7→npmjs TP 配置→推 v0.0.8 tag）；`defer-r79-lockfile-agegate-replay` 记裁决=上游机器腿闭合核销（剩下的边界=同机宽松写入沿用+`trustLockfile:true` opt-out+no-op 短路，CI 断言依赖声明兜底）。
+- 落选的 10 条债按原名继续 deferred（`carried_log` r80 明确记录）：`defer-anysearch-domain-ownership` / `defer-f16-macos-native-crash` / `defer-f17-quarantine-ids` / `defer-r71-provider-serverside` / `defer-r71-transformers-undeclared-dep` / `defer-r72-dsh-native-tools` / `defer-r72-dsh-web-interactive-matrix` / `defer-r73-dsh-event-rename`（alpha.2 特征观测点齐了、稳定观测点还缺=alpha 线+changelog 没审，L2 候选观测继续挂）/ `defer-r74-logo-bitmap-matrix` / `defer-r75-registerhooks-esm-arm`。
 
-## Unreleased — r79: pathlint 豁免域契约收敛——三豁免域显式立法（covered-fence/locator 行/`/x` 散文面限定）+ WORD_CHAR 边界修复（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
+## Unreleased — r79: pathlint 豁免范围定规矩——三个豁免面明着立法（covered-fence/locator 行/`/x` 只在散文里）+ WORD_CHAR 边界修复（仓库工具链/治理文书的增量，发出去的代码没变，不 bump）
 
 ### Changed
 
-- `scripts/ship-gate-pathlint-detect.mjs` —— 豁免域契约收敛：`/x` surfaced-skip 产出移序至 fence/locator 判定之后——所有 fence（marker 覆盖与否）与 `Stack:` locator 行不再产 info，散文面照旧；`WORD_CHAR` 补 `_`——`foo_C:\x` 形标识符粘连盘符不再误报，裸 `C:\x` 仍拦。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
-- `packages/store/fixtures/pathlint/{red,green}.md` + `ship-gate-pathlint.test.mjs`（9→14 cases）——豁免域近邻成对断言：covered-fence in-repo 放行↔unmarked-fence 仍拦、locator in-repo 放行↔非 locator 同款仍拦、fence/locator 内 `/x` 零 info↔散文仍产、`foo_C:\x` 零违例↔裸 `C:\x` 仍拦；↔AGENTS.md 镜像一致性机器断言新增。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
-- `` D1 amendment + `AGENTS.md` 镜像段 + ``（第 80 号 ADR）——豁免域三条款立法+drift 归因（文本侧未审视/实现侧有意图）+rejected alternatives（Revert=毁 transcript 保真、逐面混裁=立法负担相当内聚更差）+豁免扩大风险三重缓解（一致性测试/stale-marker 棘轮/季度审计）+结构性同构先例标注+不 bump 判定。
-- 文书面次生效应（dogfooding 实录）：WORD_CHAR 修复使 r78/r79 文书内仅靠 `foo_C:\x` FP 撑活的 5 个 marker 翻转 stale 并按棘轮移除；任务书 2 行裸 `C:\x` 字面量补 marker；全仓 markdown 扫描 0 违例（333 文档）。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
+- `scripts/ship-gate-pathlint-detect.mjs` —— 豁免范围定规矩：`/x` 的 surfaced-skip 产出顺序挪到 fence/locator 判定之后——所有 fence（不管 marker 有没有覆盖）和 `Stack:` locator 行不再产 info，散文面照旧；`WORD_CHAR` 补 `_`——`foo_C:\x` 这种标识符粘着盘符不再误报，裸 `C:\x` 仍然拦。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
+- `packages/store/fixtures/pathlint/{red,green}.md` + `ship-gate-pathlint.test.mjs`（9→14 cases）——豁免范围的近邻成对断言：covered-fence in-repo 放行↔unmarked-fence 仍然拦、locator in-repo 放行↔不是 locator 的同款仍然拦、fence/locator 里的 `/x` 零 info↔散文仍然产、`foo_C:\x` 零违例↔裸 `C:\x` 仍然拦；跟 AGENTS.md 镜像一致性的机器断言新增。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
+- 某份 ADR 的 D1 修正 + `AGENTS.md` 镜像段 + 第 80 号 ADR——豁免范围三条立法+drift 归因（文本侧没审/实现侧有意图）+rejected alternatives（Revert=毁掉 transcript 的保真、逐面混裁=立法负担差不多但内聚更差）+豁免扩大风险的三重缓解（一致性测试/stale-marker 棘轮/季度审计）+结构性同构先例标注+不 bump 判定。
+- 文书的连带效应（自己踩自己实录）：WORD_CHAR 修复让 r78/r79 文书里只靠 `foo_C:\x` 误报撑着的 5 个 marker 变 stale，按棘轮移除；任务书 2 行裸 `C:\x` 字面量补 marker；全仓 markdown 扫描 0 违例（333 个文档）。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
 
-## Unreleased — r78: 门禁可信度校准——pathlint token+分隔符组合判定器 + minimumReleaseAge 拦截边界实测（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
+## Unreleased — r78: 门禁可信度校准——pathlint 的 token+分隔符组合判定器 + minimumReleaseAge 拦截边界实测（仓库工具链/治理文书的增量，发出去的代码没变，不 bump）
 
 ### Added
 
-- `scripts/ship-gate-pathlint-detect.mjs` —— pathlint 判定器抽为共享纯函数模块（ D-003），ship-gate step 1i 与 warn-sweep driver（`.scratch/grill-round-78/evidence/t1-warn-sweep.driver.mjs`）同一实现双消费：「token+后随分隔符=locator」组合判定，新增四类 token 形——win-envvar `%VAR%` / posix-envvar `$VAR`、`${VAR}` / tilde `~` / UNC `\\host` 形——与既有字面形（drive / posix-home / appdata）统一收口；裸 env-var 散文永不命中；单段 POSIX 根 `/x` 降 info surfaced-skip（可见不阻断）；失效标记棘轮腿（marker 行不再命中即报 stale-marker，标记只减不增）；inline code 不豁免。
-- `packages/store/fixtures/pathlint/{red,green}.md` + `packages/store/test/ship-gate-pathlint.test.mjs`（9 cases）——红绿成对 fixture 固化判定器契约：红向全 token 类+两例真实逃逸+inline code+失效/畸形标记必拦；绿向散文提及、URL 边界、已标记行、locator 行、已标记 fence 全放，随 `turbo test` 行使。
-- ``（第 79 号 ADR）——组合判定器+豁免三层心智模型（marker=受审 artifact/只减不增/baseline≠规则后门）+棘轮审计+E1–E7 判决矩阵实录+断言收窄文本+`minimumReleaseAgeIgnoreMissingTime` 加固理由+不 bump 判定。
+- `scripts/ship-gate-pathlint-detect.mjs` —— pathlint 判定器抽成共用的纯函数模块（D-003），ship-gate step 1i 和 warn-sweep driver（`.scratch/grill-round-78/evidence/t1-warn-sweep.driver.mjs`）用同一份实现，两处消费：「token+后面跟着分隔符=locator」的组合判定，新增四类 token 形态——win-envvar `%VAR%` / posix-envvar `$VAR`、`${VAR}` / tilde `~` / UNC `\\host` 形——跟已有的字面形（drive / posix-home / appdata）统一收口；裸 env-var 的散文永远不命中；单段 POSIX 根 `/x` 降成 info surfaced-skip（看得见但不阻断）；失效标记棘轮腿（marker 行不再命中就报 stale-marker，标记只减不增）；inline code 不豁免。
+- `packages/store/fixtures/pathlint/{red,green}.md` + `packages/store/test/ship-gate-pathlint.test.mjs`（9 cases）——红绿成对夹具把判定器契约固化：红向全部 token 类+两例真实逃逸+inline code+失效/畸形标记必须拦；绿向散文提及、URL 边界、已标记行、locator 行、已标记 fence 全放，跟 `turbo test` 一起跑。
+- 第 79 号 ADR——组合判定器+豁免三层心智模型（marker=受审 artifact/只减不增/baseline≠规则后门）+棘轮审计+E1–E7 判决矩阵实录+断言收窄文本+`minimumReleaseAgeIgnoreMissingTime` 加固理由+不 bump 判定。
 
 ### Changed
 
-- `scripts/ship-gate.mjs` —— step 1i PATH_RE inline 块整体替换为 detect 模块 import（`enumerateScopedMarkdown`/`buildEnv`/`scanLines`），fail-closed 语义不变。
-- `pnpm-workspace.yaml` —— 新增 `minimumReleaseAgeIgnoreMissingTime: false`：缺 time 元数据的源由默认跳过（豁免面）收紧为 fail-closed；npmjs 恒带 time，对现状无破坏（E7 记档态向量）。
-- 存量违例机械化清算——warn-first 全量扫 313 篇登记文档实录 96 命中 → 97 处置动作/52 文件行尾补受治理 machine-local 标记（`…:111` 等）→ 复扫 0 后翻转 fail-closed（证据 `.scratch/grill-round-78/evidence/`：`t1-warn-sweep.md` + `t1-remediate.md`，driver 幂等可复跑）。
-- `docs/deferred-registry.json` —— `defer-r77-pathlint-envvar-blindspot` 核销 closed（closed_by ）；11 条 open 债 `carried_log` r78 显式续记。
-- `.scratch/grill-round-77/upgrade-ledger.md` v2 待校准项消解——断言收窄落锚：minimumReleaseAge 闸只拦新鲜解析路径（catalog/range 重解析），lockfile 回放不执法龄期闸；E6 格证伪如实记档（闸内版手写进 lockfile + frozen/fetch 五变体全放行，`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` 在 11.24.0 不触发——与 #11583 调研结论矛盾，按实测为准）。
+- `scripts/ship-gate.mjs` —— step 1i 的 PATH_RE inline 块整个替换成 detect 模块的 import（`enumerateScopedMarkdown`/`buildEnv`/`scanLines`），拿不准就拒绝语义不变。
+- `pnpm-workspace.yaml` —— 新增 `minimumReleaseAgeIgnoreMissingTime: false`：缺 time 元数据的源从「默认跳过」（豁免面）收紧成拿不准就拒绝；npmjs 永远带 time，对现状没有破坏（E7 记档态向量）。
+- 存量违例机械化清算——先 warn 全量扫 313 篇登记文档，实录 96 个命中 → 97 个处置动作/52 个文件行尾补上受治理的 machine-local 标记（`…:111` 等）→ 复扫 0 之后翻成拿不准就拒绝（证据 `.scratch/grill-round-78/evidence/`：`t1-warn-sweep.md` + `t1-remediate.md`，driver 幂等可复跑）。
+- `docs/deferred-registry.json` —— `defer-r77-pathlint-envvar-blindspot` 核销 closed（closed_by 另记）；11 条 open 债在 `carried_log` r78 明确续记。
+- `.scratch/grill-round-77/upgrade-ledger.md` v2 的待校准项消解——断言收窄登记检查项：minimumReleaseAge 闸只拦新鲜解析路径（catalog/range 重新解析），lockfile 回放不执行龄期闸；E6 格证伪如实记档（闸内版手写进 lockfile + frozen/fetch 五个变体全放行，`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` 在 11.24.0 不触发——跟 #11583 调研结论矛盾，按实测为准）。
 
 ### Deferred
 
-- 落选债 11 条原名续 deferred（`carried_log` r78 显式记）：`defer-anysearch-domain-ownership` / `defer-f16-macos-native-crash` / `defer-f17-quarantine-ids` / `defer-r71-provider-serverside` / `defer-r71-transformers-undeclared-dep` / `defer-r72-dsh-plugin-npm-publish` / `defer-r72-dsh-native-tools` / `defer-r72-dsh-web-interactive-matrix` / `defer-r73-dsh-event-rename`（L2 排程中）/ `defer-r74-logo-bitmap-matrix` / `defer-r75-registerhooks-esm-arm`。
-- E6 证伪后果挂账——携带在闸版本的 lockfile 不在龄期闸执法面内（frozen 回放静默放行），该向量由 lockfile review 纪律兜底，不指望闸覆盖。
-- pathlint 残余盲区挂账——多段未知根 POSIX 路径（gitbash `/d/` 盘形等）判定器不命中不报，维持沉默待后续轮次评估。
+- 落选的 11 条债按原名继续 deferred（`carried_log` r78 明确记录）：`defer-anysearch-domain-ownership` / `defer-f16-macos-native-crash` / `defer-f17-quarantine-ids` / `defer-r71-provider-serverside` / `defer-r71-transformers-undeclared-dep` / `defer-r72-dsh-plugin-npm-publish` / `defer-r72-dsh-native-tools` / `defer-r72-dsh-web-interactive-matrix` / `defer-r73-dsh-event-rename`（L2 排程中）/ `defer-r74-logo-bitmap-matrix` / `defer-r75-registerhooks-esm-arm`。
+- E6 证伪的后果挂账——带着闸内版本的 lockfile 不在龄期闸的执法面内（frozen 回放静默放行），这个口子由 lockfile review 纪律兜底，不指望闸覆盖。
+- pathlint 残余盲区挂账——多段未知根 POSIX 路径（gitbash `/d/` 盘形等）判定器不命中也不报，继续沉默，等后面轮次评估。
 
-## Unreleased — r77: dsh 上游观测哨分层漏斗 + R76 治理 backlog 七项清算（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
+## Unreleased — r77: dsh 上游观测哨分层漏斗 + R76 治理 backlog 七项清算（仓库工具链/治理文书的增量，发出去的代码没变，不 bump）
 
 ### Added
 
-- `scripts/governed-json.mjs` 新增 `governedListViolation` + `stripBomCommand`——`CANONICAL_JSON_FILES` 空清单 fail-closed（真门探针实测 `[fail] canonical-json:... is empty`）；UTF-8 BOM 专门报错（EF BB BF 签名 + `subarray(3)` strip 命令，不发 normalize 指针）。
-- `.scratch/grill-round-77/evidence/` —— T0 轨一探针取证：`t0-l0-watch.json`（23 名全族 npm view 快照）、`t0-api-snapshot-rc2.json`（pin 版消费面 API 快照）、三份 L1 transcript（rc.3 无 alarm / alpha.2 锚复核 ALARM / 0.1.7-alpha.1 ALARM+家族扩至 21 dsh-*）。
-- `.scratch/grill-round-77/upgrade-ledger.md` v2 —— L0/L1/L2 漏斗重排 + 改名映射纠偏（rc.2 session-start 本携 source）+ 墓碑表 + no-qualifying-candidate 显式结论。
+- `scripts/governed-json.mjs` 新增 `governedListViolation` + `stripBomCommand`——`CANONICAL_JSON_FILES` 是空清单时拿不准就拒绝（真门探针实测 `[fail] canonical-json:... is empty`）；UTF-8 BOM 单独报错（EF BB BF 签名 + `subarray(3)` strip 命令，不给 normalize 指针）。
+- `.scratch/grill-round-77/evidence/` —— T0 轨一探针取证：`t0-l0-watch.json`（23 个名字全族 npm view 快照）、`t0-api-snapshot-rc2.json`（pin 版消费面 API 快照）、三份 L1 transcript（rc.3 无 alarm / alpha.2 检查项复核 ALARM / 0.1.7-alpha.1 ALARM+家族扩到 21 个 dsh-*）。
+- `.scratch/grill-round-77/upgrade-ledger.md` v2 —— L0/L1/L2 漏斗重排 + 改名映射纠偏（rc.2 的 session-start 本来就带 source）+ 退役标记表 + no-qualifying-candidate 显式结论。
 
 ### Changed
 
-- `scripts/closeout-coverage.mjs`——`titleRound` 锚定 title 行首（句中「Grill Round N —」提及不误登记）；`ROUND_DIR_RE` 改全名匹配 `/^grill-round-(\d+)$/i`（`grill-round-7x` 不再别名 round 7）。
+- `scripts/closeout-coverage.mjs`——`titleRound` 检查项定在 title 行首（句子里提到「Grill Round N —」不会误登记）；`ROUND_DIR_RE` 改成全名匹配 `/^grill-round-(\d+)$/i`（`grill-round-7x` 不再被当成 round 7 的别名）。
 - `scripts/gen-adr-index.mjs` —— renderBlock 互注点名消费方 parser（F-5⑥ 双向契约）。
-- `docs/deferred-registry.json` —— `defer-r73-dsh-event-rename` 触发器双锚改写（特征+稳定性，版本号退出触发逻辑）+ `tombstones` 字段（0.1.6-alpha.* superseded-by 0.1.7-alpha.1）+ `gov-r76-registry-canonical-lock` 补 `deadline`/`review_cadence` + 10 条 open 债 carried_log r77 显式续债（canonical normalize+字节锁自证）。
+- `docs/deferred-registry.json` —— `defer-r73-dsh-event-rename` 的触发器两个观测点改写（特征+稳定性，版本号退出触发逻辑）+ `tombstones` 字段（0.1.6-alpha.* superseded-by 0.1.7-alpha.1）+ `gov-r76-registry-canonical-lock` 补 `deadline`/`review_cadence` + 10 条 open 债 carried_log r77 明确续债（canonical normalize+字节锁自证）。
 
 ### Deferred
 
-- L2 合格候选本轮不存在（no-qualifying-candidate 显式结论）：rc.3 无 ALARM、alpha 线稳定锚不响；下一合格候选出现按 latest-only 直接彩排，跳线版本只补墓碑。落选债原名续 deferred（carried_log 记）：transformers(#1764 未 merge) / provider-serverside / dsh 三件套 / bitmap / registerhooks / f16 / f17 / domain-ownership。
-- `defer-r77-pathlint-envvar-blindspot`（审计返工新立项）——ship-gate step 1i PATH_RE 不识别 env-var 形机器路径（`%TEMP%`/`$HOME`/`~/`）， 意图级盲区；修复向=PATH_RE 扩形态+红向 fixture。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
+- L2 合格候选本轮不存在（no-qualifying-candidate 显式结论）：rc.3 无 ALARM、alpha 线的稳定观测点不响；下一个合格候选出现就按 latest-only 直接彩排，跳线版本只补退役标记。落选债按原名继续 deferred（carried_log 记）：transformers(#1764 未 merge) / provider-serverside / dsh 三件套 / bitmap / registerhooks / f16 / f17 / domain-ownership。
+- `defer-r77-pathlint-envvar-blindspot`（审计返工新立项）——ship-gate step 1i 的 PATH_RE 不认识 env-var 形态的机器路径（`%TEMP%`/`$HOME`/`~/`），是意图层面的盲区；修复方向=PATH_RE 扩形态+红向 fixture。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 
-## Unreleased — r76: 治理面静默漂移清算（repo 工具链/治理文书增量，无发布态代码增量，不 bump）
+## Unreleased — r76: 治理面静默漂移清算（仓库工具链/治理文书的增量，发出去的代码没变，不 bump）
 
 ### Added
 
-- `scripts/governed-json.mjs` + ship-gate step 1 `stepGovernedJsonCanonical` 腿——受治理 JSON 的字节锁：`CANONICAL_JSON_FILES = ["docs/deferred-registry.json"]` 逐文件断言字节 ≡ `JSON.stringify(JSON.parse(src),null,1)+'\n'`；非法 JSON 独立报错；非 canonical 报 `first differs at line N` + 可粘贴 normalize 指令 + 清单常量位置；gate 不自修（committed≠reviewed）。
-- `scripts/closeout-coverage.mjs` + ship-gate step 1g leg-b 重写（–D3）——完成信号改为 ADR index `Grill Round N` 登记（登记即完成），fail-closed 三断言（已登记无 closeout→红 / index↔.scratch 双向漂移→红 / 推导集合为空或不可解析→红），floor=76 规则生日锚定，在飞豁免打结构化行 `awaiting closeout: round N (ADR not yet registered)`，成功输出带覆盖计数；字段 lint 面不动（仍只 lint 最新含 closeout dir）。
-- `packages/store/test/governed-json-canonical.test.mjs`（19 断言）+ `closeout-coverage.test.mjs`（40 断言，含审计返工 F-2/F-4 及二批 residual 回归用例）——known-bad fixture 层常态化红绿双证，随 `turbo test` 行使。
+- `scripts/governed-json.mjs` + ship-gate step 1 的 `stepGovernedJsonCanonical` 腿——受治理 JSON 的字节锁：`CANONICAL_JSON_FILES = ["docs/deferred-registry.json"]`，逐文件断言字节 ≡ `JSON.stringify(JSON.parse(src),null,1)+'\n'`；非法 JSON 单独报错；不是 canonical 就报 `first differs at line N` + 可粘贴的 normalize 指令 + 清单常量位置；gate 不自己修（committed≠reviewed）。
+- `scripts/closeout-coverage.mjs` + ship-gate step 1g 的 leg-b 重写（–D3）——完成信号改成 ADR index 里登记了 `Grill Round N`（登记即完成），拿不准就拒绝三条断言（已登记但没有 closeout→失败 / index 和 .scratch 双向漂移→失败 / 推导集合为空或解析不了→失败），floor=76 规则生日检查项定，还在飞的打一行结构化 `awaiting closeout: round N (ADR not yet registered)`，成功输出带覆盖计数；字段 lint 面不动（仍然只 lint 最新含 closeout 目录的那份）。
+- `packages/store/test/governed-json-canonical.test.mjs`（19 条断言）+ `closeout-coverage.test.mjs`（40 条断言，含审计返工 F-2/F-4 和二批 residual 回归用例）——known-bad 夹具常态化红绿双证，跟 `turbo test` 一起跑。
 
 ### Changed
 
-- `docs/deferred-registry.json` — `defer-r71-shipgate-1g-coverage` 核销 closed（closed_by ）；新增 `gov-r76-registry-canonical-lock` 立项事实入档；11 条落选债原名续 deferred 并各附 `carried_log` 显式续债条；顶层 `note` 追加 canonical 锁定声明。
+- `docs/deferred-registry.json` — `defer-r71-shipgate-1g-coverage` 核销 closed（closed_by 另记）；新增 `gov-r76-registry-canonical-lock` 立项事实入档；11 条落选债按原名继续 deferred，并且每条都附 `carried_log` 续债条；顶层 `note` 追加 canonical 锁定声明。
 
 ### Deferred
 
-- 落选债原名续 deferred（carried_log 显式记）：transformers(#1764 未 merge) / provider-serverside / dsh 三件套 / event-rename / bitmap / registerhooks / f16 / f17 / domain-ownership。#1764 观察哨续挂；drafts 两文稿仍待用户亲手发。
+- 落选债按原名继续 deferred（carried_log 明确记）：transformers(#1764 未 merge) / provider-serverside / dsh 三件套 / event-rename / bitmap / registerhooks / f16 / f17 / domain-ownership。#1764 观察哨继续挂；两份 drafts 文稿仍等用户亲手发。
 
-## Unreleased — r75: transformers ghost-dep 判定性清算（无发布态代码增量，不 bump）
+## Unreleased — r75: transformers 没声明的依赖，查清楚了（发出去的代码没变，不 bump）
 
 ### Added
 
-- `packages/embedding/test/transformers-ghost-dep.test.ts` — 静态护栏双件：(a) `src/` 全树禁裸引 `@huggingface/transformers`（import/from/export-from/import 全禁，唯一合法入口 = `createRequire.require`；注释与 `typeof import(…)` 类型查询豁免）；(b) 版本配对断言——自声明 `optionalDependencies.onnxruntime-common` ≡ effective `onnxruntime-node` 内嵌版本（当前 1.21.0 ≡ 1.21.0），双反例均自证红（`.scratch/grill-round-75/evidence/t2-guardrails-selfproof.log`）。
-- `.scratch/grill-round-75/drafts/` — 上游申报文稿（用户审阅闸，Agent 不代发）：`pr-1764-comment.md`（4.3.0 pnpm 隔离 scope 运行时复现 + published 消费者裸奔 + 下游 ≥4 项目造轮子清单）+ `issue-1087-comment.md`（检索者指路短评）。
-- `.scratch/grill-round-75/evidence/` — T0 运行时实证 transcript：4.3.0 在 `hoist:false` 下 `Cannot find module 'onnxruntime-common'`@`transformers.node.cjs:13520`；3.8.1 无 patch 同红、带 patch 绿；默认 virtual-store hoist 掩盖面注记。
+- `packages/embedding/test/transformers-ghost-dep.test.ts` — 两道静态护栏：(a) `src/` 整棵树禁止直接引 `@huggingface/transformers`（import/from/export-from/import 全禁，唯一合法入口 = `createRequire.require`；注释和 `typeof import(…)` 类型查询豁免）；(b) 版本配对断言——自己声明的 `optionalDependencies.onnxruntime-common` 要等于实际 `onnxruntime-node` 里嵌的版本（当前 1.21.0 ≡ 1.21.0），两个反例都自证会红（`.scratch/grill-round-75/evidence/t2-guardrails-selfproof.log`）。
+- `.scratch/grill-round-75/drafts/` — 给上游的申报文稿（等用户审阅，agent 不代发）：`pr-1764-comment.md`（4.3.0 pnpm 隔离 scope 运行时复现 + 发布后消费者裸奔 + 下游 ≥4 个项目自己造轮子的清单）+ `issue-1087-comment.md`（给检索者指路的短评）。
+- `.scratch/grill-round-75/evidence/` — T0 运行时实证 transcript：4.3.0 在 `hoist:false` 下 `Cannot find module 'onnxruntime-common'`@`transformers.node.cjs:13520`；3.8.1 不打补丁同样红、带补丁绿；默认 virtual-store hoist 把这个面盖住的注记。
 
 ### Changed
 
-- `docs/deferred-registry.json` — `defer-r71-transformers-undeclared-dep` 证据刷新（4.3.0 解剖 + 运行时复现 + 配对纪律 + watch 改 >4.3.0 + #1764 链接），status 续 open（#1764 未 merge 条件未达成）。
-- `scripts/ship-gate-pathlint.config.json` — `scratchDocDirs` 登记 `drafts`（新文档类型落地唯一入口）。
+- `docs/deferred-registry.json` — `defer-r71-transformers-undeclared-dep` 证据刷新（4.3.0 解剖 + 运行时复现 + 配对纪律 + watch 改成 >4.3.0 + #1764 链接），status 继续 open（#1764 没 merge，条件没达成）。
+- `scripts/ship-gate-pathlint.config.json` — `scratchDocDirs` 登记 `drafts`（新文档类型落地的唯一入口）。
 
 ### Deferred
 
-- `defer-r75-registerhooks-esm-arm`（新条目）— ESM 臂 registerHooks 具名重返票，三重返触发器：(a) src 出现 ESM import 加载路径（护栏断言红）；(b) #1764 merge 且发布版携带声明（patch 整体退役）；(c) Node 地板 ≥22.15 且出现真实 ESM 消费者（按 GitNexus#2069 姿势 fail-open+动态配对）。落选债原名续 deferred：shipgate-1g / provider-000 / dsh 三件套 / bitmap / f16 / f17 / domain-ownership。
+- `defer-r75-registerhooks-esm-arm`（新条目）— 给 ESM 分支补 registerHooks 的点名回头票，三个重返触发器：(a) src 里出现 ESM import 加载路径（护栏断言会红）；(b) #1764 merge 且发布版带声明（补丁整体退役）；(c) Node 地板 ≥22.15 且出现真实的 ESM 消费者（按 GitNexus#2069 的姿势做到「出故障就放行 + 动态配对」）。落选债按原名继续 deferred：shipgate-1g / provider-000 / dsh 三件套 / bitmap / f16 / f17 / domain-ownership。
 
-## Unreleased — r74: README 视觉层 + Antigravity 集成专文（docs-only round）
+## Unreleased — r74: README 的图 + Antigravity 集成专文（只改文档）
 
 ### Added
 
-- `assets/readme/logo.svg` — 项目原生「域门」纯 SVG mark（256² 深色芯片底=深浅主题双安全；图元映射真实模块：三 provider 射线扇入 / pre+post 双竖闸 / TOML 域界框 / 融合落格点 / abstain 截停×；16px 可辨）。概念闸：3 案文字提案（视觉解剖+图元-模块对照表）经用户选定概念 1。
-- `assets/readme/hero.svg` — `1200`-unit viewBox 域门首屏：左=字标+一句话价值+install 元数据+logo mark，右=扇出→`urlAllowlist` 闸门→门内落格行+门外 abstain 卡。自含（无 foreignObject/脚本/远程资源/被剥离 CSS）；Playwright 渲染核验 900px/360px/深浅底/16px 全过。
-- README/README.zh-CN `## How it works` 双语新节——Mermaid 管线图（`ans`/`ans-mcp` → fanout → tavily/exa/anysearch → domain gate pre+post `urlAllowlist` → RRF fusion + attribution → FTS5 memory + observation store；kept/dropped/zero-kept→abstain 三分支），置于 Verified agent hosts 前。
-- README/README.zh-CN 真实输出 proof 块（status 段后）——`ANS_DOMAIN=docs ans search "model context protocol"` 亲跑摘录（返回 URL 全在 allowlist 内）+ canonical abstain 行，证据先于承诺；双语逐字同（parity 腿 ii）。
-- `docs/antigravity-integration.md` —— agy 双宿主专文（CLI 1.2.5 + IDE 2.12.2）：named-hook map 契约 / camelCase stdin / 严格 protojson（`{}`=DENY、空=allow）/ argv 传事件 / 五事件无 SessionStart / `call_mcp_tool` 伞 / pending 暂存→injectSteps 注入 / IDE 不执行 hooks 的 `.mdc` 兜底 / 隔离 HOME 探针法。承接 verified-hosts 表 agy 证据迁移（先于瘦身提交）。
+- `assets/readme/logo.svg` — 项目原生的「域门」纯 SVG 标（256² 深色芯片底=深浅两个主题都安全；图形对应真实模块：三路 provider 射线扇入 / pre+post 两道竖闸 / TOML 域界框 / 融合落格点 /拒答截停×；16px 也认得出）。概念闸：3 个文字提案（视觉解剖+图形和模块的对照表）由用户选定概念 1。
+- `assets/readme/hero.svg` — `1200` unit 的 viewBox 域门首屏：左边是字标+一句话价值+install 元数据+logo 标，右边是同时查多个源→`urlAllowlist` 闸门→门内落格行+门外拒答卡。自包含（没有 foreignObject/脚本/远程资源/会被剥掉的 CSS）；Playwright 渲染核验 900px/360px/深浅底/16px 全过。
+- README/README.zh-CN 的 `## How it works` 双语新节——Mermaid 管线图（`ans`/`ans-mcp` → fanout → tavily/exa/anysearch → domain gate pre+post `urlAllowlist` → RRF fusion + attribution → FTS5 memory + observation store；kept/dropped/zero-kept→拒答三个分支），放在 Verified agent hosts 前面。
+- README/README.zh-CN 真实输出 proof 块（status 段后面）——`ANS_DOMAIN=docs ans search "model context protocol"` 亲手跑的摘录（返回的 URL 全在 allowlist 里）+ 标准的拒答行，证据先于承诺；中英逐字相同（parity 腿 ii）。
+- `docs/antigravity-integration.md` —— agy 双宿主专文（CLI 1.2.5 + IDE 2.12.2）：named-hook map 契约 / camelCase stdin / 严格 protojson（`{}`=DENY、空=allow）/ argv 传事件 / 五个事件没有 SessionStart / `call_mcp_tool` 伞 / pending 暂存→injectSteps 注入 / IDE 不执行 hooks 时的 `.mdc` 兜底 / 隔离 HOME 探针法。承接 verified-hosts 表的 agy 证据迁移（先于瘦身提交）。
 
 ### Changed
 
-- README/README.zh-CN `Verified agent hosts` 表瘦身——5 列段落级长文压为 4 列可扫读（Host / Version / Verified scope / Status=verdict 短语+专文指针）；Date 列与探针细节迁入各宿主专文，证据零净丢失；表下指针段补 `docs/antigravity-integration.md`。
+- README/README.zh-CN 的 `Verified agent hosts` 表瘦身——5 列段落级长文压成 4 列好扫读（Host / Version / Verified scope / Status=结论短语+专文指针）；Date 列和探针细节迁进各宿主专文，证据没有净丢失；表下指针段补 `docs/antigravity-integration.md`。
 
 ### Deferred
 
-- `defer-r74-logo-bitmap-matrix` —— logo 位图衍生矩阵（PNG/WebP 导出）延期：repo-logo 位图管线依赖的 imagegen 工具不存在；本轮纯 SVG mark 落地，采纳时以 `assets/readme/logo.svg` 为源件。
+- `defer-r74-logo-bitmap-matrix` —— logo 的位图衍生矩阵（PNG/WebP 导出）延期：repo-logo 位图管线依赖的 imagegen 工具不存在；本轮只落纯 SVG 标，真要位图时以 `assets/readme/logo.svg` 为源件。
 
 ## 0.0.7 — 2026-09-19 — /0074 r72+r73: DeepSeek Harness 宿主适配（两阶段 C：Phase-1 MCP 桥 + Phase-2 薄 bundle）+ 上游依赖族钉版
 
 ### Added
 
-- `apps/dsh-plugin`（`@anysearch-cli/dsh-plugin`，private 零运行时依赖 Cordis bundle）——首个 in-process 宿主适配器：只做五面 hooks（`agent/session-start` routing-card `agent.inject`、`ctx.systemPrompt` `anysearch:routing-card` section、`tools/pre-execute` URL 策略 deny/ask + recall 预热注入、`tools/post-execute` 蒸馏 `additionalContexts`、`tools/result` `/index` IPC），业务逻辑全留 127.0.0.1:33333 HTTP IPC（fail-open；URL 门按 /0055 fail-closed）。`@deepseek-ai/*` 仅 devDep `import type` = 编译期 churn 报警器；`dsh.bundle.patch` → 自带 `cordis.patch.yml` 整行复述插入插件行 + `mcp-anysearch` 桥行（`dsh plugin add` 一步装双阶段）。共享 hook 逻辑复用 `@anysearch-cli/plugin` 并 esbuild 打包进 `lib/index.js`（`createRequire` banner——CJS dep 在纯 ESM 下 `Dynamic require of "node:crypto"` 真 loader 实证修复）。
-- `apps/plugin` 新窄口子导出 `./hooks/routing-card` + `./hooks/server-token`（esbuild entries + exports map）——dsh bundle 复用 routing card 与 server token resolver 的单一事实源。
-- `scripts/ship-gate.mjs` step 1s——dsh-plugin churn lint（fail-closed）：`@deepseek-ai/*` 泄入任何 runtime dep 字段即红；private:true/type:module/dsh.bundle.patch/cordis.patch.yml 关键键位断言。PKG_DIRS 加 `apps/dsh-plugin`（0.0.6 钉版+打包腿覆盖）。
-- `docs/deepseek-harness-integration.md`——Phase-1 手写 MCP 桥行 + Phase-2 bundle 安装指引 + 层序三律（config 整行替换非合并 / `- insert:` 新增 vs `- id:` 打靶 / 同 id 双 insert=loader 硬错）+ 升级 diff 检查 + 限制记档。
-- README/README.zh-CN verified-hosts 第 6 行（DeepSeek Harness 0.1.5-rc.2）。
+- `apps/dsh-plugin`（`@anysearch-cli/dsh-plugin`，private、零运行时依赖的 Cordis bundle）——第一个 in-process 宿主适配器：只做五个面的 hooks（`agent/session-start` routing-card `agent.inject`、`ctx.systemPrompt` `anysearch:routing-card` section、`tools/pre-execute` URL 策略 deny/ask + recall 预热注入、`tools/post-execute` 蒸馏 `additionalContexts`、`tools/result` `/index` IPC），业务逻辑全留在 127.0.0.1:33333 HTTP IPC（出故障就放行；URL 门按 /0055拿不准就拒绝）。`@deepseek-ai/*` 只做 devDep `import type` = 编译期变化的报警器；`dsh.bundle.patch` → 自带 `cordis.patch.yml` 整行复述插入插件行 + `mcp-anysearch` 桥行（`dsh plugin add` 一步装两阶段）。共享 hook 逻辑复用 `@anysearch-cli/plugin`，用 esbuild 打包进 `lib/index.js`（`createRequire` banner——CJS 依赖在纯 ESM 下 `Dynamic require of "node:crypto"` 是真实 loader 实测修好的）。
+- `apps/plugin` 新增窄口子导出 `./hooks/routing-card` + `./hooks/server-token`（esbuild entries + exports map）——dsh bundle 复用 routing card 和 server token resolver 的单一事实来源。
+- `scripts/ship-gate.mjs` step 1s——dsh-plugin 的变化检查（拿不准就拒绝）：`@deepseek-ai/*` 漏进任何 runtime dep 字段就判为失败；private:true/type:module/dsh.bundle.patch/cordis.patch.yml 关键键位断言。PKG_DIRS 加 `apps/dsh-plugin`（0.0.6 钉版+打包腿覆盖）。
+- `docs/deepseek-harness-integration.md`——Phase-1 手写 MCP 桥行 + Phase-2 bundle 安装指引 + 层序三条规矩（config 整行替换不是合并 / `- insert:` 新增 vs `- id:` 打靶 / 同 id 双 insert=loader 硬错）+ 升级 diff 检查 + 限制记档。
+- README/README.zh-CN 的 verified-hosts 第 6 行（DeepSeek Harness 0.1.5-rc.2）。
 
 ### Fixed
 
-- 真实 loader 三处语义修正落档：`- insert:` 同 id 重复= `duplicate loader entry id` 硬错（Phase-1 手写行与 bundle 行不得并存）；`- id:` 打缺失行仅告警（`patch: entry ... not found`）；CJS dep 经 ESM bundle 需 `createRequire` banner。
-- R71 审计修复包（F1-F6）：`tryImport` 逐候选 guard（resolve-ok+import-fail 归 absent 不抛、不污染 modPromise）、doctor pnpm 行、config marker 接线、globOk fail-closed、cosmetic 组——同套验收全绿后随本版上架。
-- 升级 diff 预演的 alpha 兼容警报定档：上游 0.1.6 将 `agent/session-start` 移出 Events（改名 `agent/created`，载荷增 `source`/`signal`）——本轮钉版不迁移，迁移账本见 `.scratch/grill-round-73/upgrade-ledger.md`。
+- 真实 loader 的三处语义修正落档：`- insert:` 同 id 重复= `duplicate loader entry id` 硬错（Phase-1 手写行和 bundle 行不能并存）；`- id:` 打缺失的行只告警（`patch: entry ... not found`）；CJS 依赖经 ESM bundle 需要 `createRequire` banner。
+- R71 审计修复包（F1-F6）：`tryImport` 逐候选 guard（resolve-ok+import-fail 归 absent 不抛、不污染 modPromise）、doctor pnpm 行、config marker 接线、globOk拿不准就拒绝、cosmetic 组——同一套验收全部通过后跟着本版上架。
+- 升级 diff 预演的 alpha 兼容警报定档：上游 0.1.6 把 `agent/session-start` 移出 Events（改名 `agent/created`，载荷加了 `source`/`signal`）——本轮钉版不迁移，迁移账本见 `.scratch/grill-round-73/upgrade-ledger.md`。
 
 ### Changed
 
-- `pnpm-workspace.yaml` —— dsh 上游依赖族钉版：新增 `catalog:` 单点块（15 个 `@deepseek-ai/dsh-*`=0.1.5-rc.2 + `@deepseek-ai/cordis`=4.0.2），`overrides:` 逐名枚举→`catalog:` 全树收敛；`apps/dsh-plugin` 5 个 deepseek devDeps 改 `catalog:` 引用（`dependencies:{}`/`private:true` 不动）。修复 R72 审计 F7——caret range 放任传递依赖漂 0.1.6-alpha 混版树。
+- `pnpm-workspace.yaml` —— dsh 上游依赖族钉版：新增 `catalog:` 单点块（15 个 `@deepseek-ai/dsh-*`=0.1.5-rc.2 + `@deepseek-ai/cordis`=4.0.2），`overrides:` 逐名枚举→`catalog:` 全树收敛；`apps/dsh-plugin` 的 5 个 deepseek devDeps 改成 `catalog:` 引用（`dependencies:{}`/`private:true` 不动）。修 R72 审计 F7——caret range 放任传递依赖漂到 0.1.6-alpha 的混版树。
 
 ### Deferred
 
-- `defer-r73-dsh-event-rename` —— dsh 0.1.6 事件改名迁移（`agent/session-start`→`agent/created`，payload 增 `source`/`signal`；durable 路由卡仅 `source=fresh` 注入）。采纳触发器与迁移蓝图见 `.scratch/grill-round-73/upgrade-ledger.md`。
+- `defer-r73-dsh-event-rename` —— dsh 0.1.6 的事件改名迁移（`agent/session-start`→`agent/created`，payload 加 `source`/`signal`；durable 路由卡只在 `source=fresh` 时注入）。采纳触发器和迁移蓝图见 `.scratch/grill-round-73/upgrade-ledger.md`。
 
-## 0.0.6 — 2026-09-19 — r71: 上架首航——路径治理门禁 + embedding 双臂可达 + 首个双层门真发布
+## 0.0.6 — 2026-09-19 — r71: 第一次上架——机器路径治理检查 + embedding 两种安装方式都能找到 + 第一次真正的两层发布门
 
 ### Added
 
-- `scripts/ship-gate.mjs` step 1i/9 — machine-local path discipline lint（fail-closed，config `scripts/ship-gate-pathlint.config.json`）：Stack/locator 行裸绝对路径合法；库内绝对 target 强制 repo-relative（marker 不豁免）；库外绝对路径须带 `<!-- machine-local: <reason> @ <YYYY-MM-DD> -->` 治理声明；声明紧贴 fenced block 覆盖整段；文档目录显式注册（.scratch 轮根/handoffs/reports/evidence/backups）。历史机械扫 317 处库内引用转相对 + 93 声明标记，先红（330 violations）后绿（224 docs clean）。
-- `packages/store/src/embedding-arm.ts` sibling-root fallback —— pnpm-global 把每个顶层包装进 `<prefix>/global/v11/<hash>/node_modules` 孤立树，optional peer 裸 specifier 不可达；fallback 以 argv[1]（bin shim 保住布局路径）+模块自址为锚，上溯祖先并扫 `*/node_modules/@anysearch-cli/embedding` 姊妹根。单测合成布局 + install-smoke leg 3c（junction+--preserve-symlinks 模拟）双证。
-- `scripts/install-smoke.mjs` leg 3c —— pnpm 孤立根布局模拟腿，断言 fallback 使 doctor 报 vector arm present。
-- README/README.zh-CN `## Post-install` 双语段 —— 激活验证 + backfill 命令、模型缓存位、离线预置法、FTS-only 降级说明。
-- `ans memory backfill-vectors` 失败 hint —— failed>0 时输出可达性/缓存/doctor 可行动指引（替代裸计数）。
-- R68-R70 随版件：release gate 双层化（，pre-tag 烧 look+ledger commit / post-tag 纯断言+publish）、收口必填栏 lint、README 双语化+parity 常驻门 1h、docs/limitations.md+ADR index 生成器、assert-checks-green 严格两段式、spawnSync 测试抖动处置、LICENSE canonical Apache-2.0 修复、F2-F6 文档级修复。
+- `scripts/ship-gate.mjs` step 1i/9 — 机器本地路径纪律检查（拿不准就拒绝，配置在 `scripts/ship-gate-pathlint.config.json`）：Stack/locator 行里的裸绝对路径合法；库内的绝对目标强制写成仓库相对路径（marker 不豁免）；库外的绝对路径必须带 `<!-- machine-local: <reason> @ <YYYY-MM-DD> -->` 治理声明；声明紧贴 fenced block 就覆盖整段；文档目录显式登记（.scratch 轮根/handoffs/reports/evidence/backups）。历史机械扫描 317 处库内引用转成相对路径 + 93 个声明标记，先红（330 violations）后绿（224 docs clean）。
+- `packages/store/src/embedding-arm.ts` 的兄弟根回退 —— pnpm-global 把每个顶层包装进 `<prefix>/global/v11/<hash>/node_modules` 这种孤立树，optional peer 的裸 specifier 找不到；回退用 argv[1]（bin shim 保住布局路径）+模块自己的地址做检查项，往上找祖先并扫 `*/node_modules/@anysearch-cli/embedding` 兄弟根。单测合成布局 + install-smoke leg 3c（junction+--preserve-symlinks 模拟）两边证明。
+- `scripts/install-smoke.mjs` leg 3c —— pnpm 孤立根布局的模拟腿，断言回退能让 doctor 报 vector arm present。
+- README/README.zh-CN 的 `## Post-install` 双语段 —— 激活验证 + backfill 命令、模型缓存位置、离线预置法、只用 FTS 的降级说明。
+- `ans memory backfill-vectors` 失败提示 —— failed>0 时输出可达性/缓存/doctor 可照着做的指引（替代光秃秃的计数）。
+- 跟着这一版一起发的 R68-R70 的东西：发布门分两层（pre-tag 烧 look+ledger commit / post-tag 纯断言+publish）、收口必填栏检查、README 双语化+parity 常驻检查每小时、docs/limitations.md+ADR index 生成器、assert-checks-green 严格两段式、spawnSync 测试抖动处理、LICENSE 换成标准 Apache-2.0、F2-F6 文档级修复。
 
 ### Changed
 
-- `packages/embedding` —— lazy load 改 `createRequire().require()`（CJS 入口）+ scoped `Module._resolveFilename` 补丁（仅 `onnxruntime-common`+仅 `@huggingface/transformers` 父域）；声明 `onnxruntime-common@1.21.0` optional dep —— 修复 transformers@3.8.1 未声明外部在 pnpm 孤立 scope 下的 MODULE_NOT_FOUND（npm hoisting 掩盖）。
-- doctor vector-arm SKIP 文案 → 可执行 enable 路径（install+backfill 两步 copy/paste）。
-- release.yml assert-checks-green timeout 10→15min（ p90=740s>600s 尾部侵蚀）。
-- AGENTS.md 路径教义 → 用途三分（locator/库内/库外）；pnpm 钉版说明改单 `packageManager` 声明。
+- `packages/embedding` —— lazy load 改成 `createRequire().require()`（CJS 入口）+ 作用域内的 `Module._resolveFilename` 补丁（只补 `onnxruntime-common`+只补 `@huggingface/transformers` 这个父域）；声明 `onnxruntime-common@1.21.0` optional dep —— 修 transformers@3.8.1 没声明外部依赖、在 pnpm 孤立 scope 下的 MODULE_NOT_FOUND（npm hoisting 会把它盖住）。
+- doctor 的 vector-arm SKIP 文案 → 给出可执行的启用路径（install+backfill 两步 copy/paste）。
+- release.yml 的 assert-checks-green timeout 10→15min（p90=740s>600s，尾巴会被削掉）。
+- AGENTS.md 的路径规则 → 按用途分三种（locator/库内/库外）；pnpm 钉版说明改成单个 `packageManager` 声明。
 
 ### Fixed
 
-- **release-gate pre-tag 结构性断点（首个真客暴露）** —— 账本 commit 由 GITHUB_TOKEN push，GitHub 递归守卫使其永不触发 workflow run → ledger sha 无 check-run → `FAIL_ON_NO_CHECKS` 必败（run 35385345425）。修复：release-gate 在 ledger sha 上自 dispatch ci+ship-gate（temp ref `release-gate-ledger` 确定性钉 sha，wait 后清理）——assertion 不减，所需权限 `actions: write`。
-- **EBADDEVENGINES 根治** —— root `devEngines` 删除：对钉版冗余（packageManager+pmOnFail 实证 pnpm@11.7.0 仍 ERR_PNPM_BAD_PM_VERSION）且令仓内一切 npm 命令告警；发布 tarball 从未携带。
-- R70 审计 Temp transcript 入库 `.scratch/grill-round-70/evidence/r70-audit-temp/`（默认提交裁决）。
+- **release-gate pre-tag 的结构性断点（第一次真客户暴露）** —— 账本 commit 是 GITHUB_TOKEN push 的，GitHub 的递归守卫让它永远不触发 workflow run → ledger sha 没有 check-run → `FAIL_ON_NO_CHECKS` 必然失败（run 35385345425）。修复：release-gate 在 ledger sha 上自己 dispatch ci+ship-gate（临时 ref `release-gate-ledger` 确定性地钉住 sha，wait 之后清理）——断言一条没减，需要的权限是 `actions: write`。
+- **EBADDEVENGINES 根治** —— 删掉根 `devEngines`：对钉版来说是多余的（packageManager+pmOnFail 实证 pnpm@11.7.0 仍然 ERR_PNPM_BAD_PM_VERSION），而且让仓库里所有 npm 命令都告警；发布的 tarball 从来没带过它。
+- R70 审计的 Temp transcript 入库 `.scratch/grill-round-70/evidence/r70-audit-temp/`（默认提交裁决）。
 
 ### Deferred
 
 - 1g 覆盖缺口 / macOS spillover 探针 / provider 服务端排查 / deferred 大池（cursor / F-01a / npm provider / projectIndex / TUI / cross-OS / plugin / watch）。
 
-## 2026-09-18 — r70: 验证层时序语义硬化（assert-checks-green 严格两段式 + spawnSync 抖动处置）
+## 2026-09-18 — r70: 把验证的时间顺序定死（assert-checks-green 严格两段 + spawnSync 抖动处理）
 
 ### Added
 
-- `.scratch/grill-round-70/fixture/` — assert-checks-green ESM-loader 夹具常驻化（acg-hooks/acg-cp-stub/acg-register/run-legs 四件，`node:child_process` 定向拦截注入脚本化 gh check-runs 响应；7 腿断言：全绿/stale 完成段/空信号/partial→全到齐/family 永不注册/发现段红/完成段红）。
+- `.scratch/grill-round-70/fixture/` — assert-checks-green 的 ESM-loader 夹具常驻化（acg-hooks/acg-cp-stub/acg-register/run-legs 四件，`node:child_process` 定向拦截注入脚本化的 gh check-runs 响应；7 条腿断言：全部通过/完成段 stale/空信号/部分→全到齐/家族永远不注册/发现段红/完成段红）。
 
 ### Changed
 
-- `scripts/assert-checks-green.mjs` — 严格两段式时序：Phase 1 discovery 要求全 5 required family 在 --discovery-sec 内各注册 >=1 check-run，过期 fail-closed exit 2 且错误行点名 missing-families/present-families；Phase 2 completion 沿用进程启动绝对锚（不 re-anchor）；terminal 非允许 conclusion（failure/cancelled/timed_out/startup_failure/action_required）两段内即时 exit 1；未建模 conclusion（如 stale）在完成段按 not-allowed fail-closed；--once 快照与 exit 10 语义不变；release.yml 调用 flag 未漂移。
+- `scripts/assert-checks-green.mjs` — 严格两段式时序：Phase 1 discovery 要求全部 5 个 required family 在 --discovery-sec 内各自注册 >=1 个 check-run，过期拿不准就拒绝exit 2 且错误行点名 missing-families/present-families；Phase 2 completion 沿用进程启动的绝对检查项（不 re-anchor）；terminal 不是允许的 conclusion（failure/cancelled/timed_out/startup_failure/action_required）在两段内立即 exit 1；没建模的 conclusion（比如 stale）在完成段按 not-allowed拿不准就拒绝；--once 快照和 exit 10 的语义不变；release.yml 调用时的 flag 没有漂移。
 
 ### Fixed
 
-- **store spawnSync 型测试负载抖动（R70 T1，签名=spawnSync 子进程 CPU 饿死）**：裸 .mjs 测试文件不受 --test-timeout 约束且同步阻塞不可抢占——4 件测试内层 spawnSync 全部加显式 timeout（eval-calibrate --boot 200 judgeRun 180s，其余 60s）+ ETIMEDOUT 描述性抛出；同载实测转绿（66s/94s），断言与 --boot 规模未动。
+- **store 里 spawnSync 型测试的负载抖动（R70 T1，签名=spawnSync 子进程 CPU 饿死）**：裸 .mjs 测试文件不受 --test-timeout 约束，而且同步阻塞、抢不走——4 个测试内层 spawnSync 全部加显式 timeout（eval-calibrate --boot 200 judgeRun 180s，其余 60s）+ ETIMEDOUT 带描述的抛出；同负载实测转绿（66s/94s），断言和 --boot 规模没动。
 
 ### Deferred
 
-- ship-gate(windows) check 耗时 p99=740s > assert 绝对界 600s（ 尾部侵蚀呈报，C 升格触发器已武装）——最直接缓解=release.yml 调 timeout-min 上调，显式记档 deferred 不静默吸收。
-- R68/R69 方向指示沿用 deferred：真 release 摘 partial 帽 / agy ans-MCP P7 真链 / PR-mode required-checks 治理。
-- deferred 大项池沿用：cursor / F-01a / npm provider / projectIndex / TUI / embedding / cross-OS / plugin / watch。
+- ship-gate(windows) 的 check 耗时 p99=740s > assert 的绝对界 600s（尾巴侵蚀呈报，C 升格触发器已经武装）——最直接的缓解=release.yml 的 timeout-min 往上调，明着记档 deferred，不静默吸收。
+- R68/R69 的方向指示继续 deferred：真 release 摘掉 partial 帽 / agy ans-MCP P7 真链 / PR-mode required-checks 治理。
+- deferred 大项池继续：cursor / F-01a / npm provider / projectIndex / TUI / embedding / cross-OS / plugin / watch。
 
-## 2026-09-18 — r69: GitHub 门面双语化 + T0 火线修红（README 登录页 IA + 双语 parity 常驻门）
+## 2026-09-18 — r69: GitHub 首页中英双语 + 紧急修红（README 首页结构 + 双语对齐常驻检查）
 
 ### Added
 
-- `README.zh-CN.md` — 中文伴生件：顶部翻译件声明（规范以 README.md 为准）+ 互链 switcher；heading 结构 1:1 + 代码块/链接 byte-identical。
-- `docs/limitations.md` — Known limitations 全录（20 条，自 README 逐字迁入）。
-- `` — ADR 索引独立生成件（`scripts/gen-adr-index.mjs` 自 README 内嵌段重指向；行内相对链接；index.md 自排除）。
-- ship-gate step 1h — 双语 parity standing fail-closed：heading 骨架 1:1 + 代码块逐块 byte-identical + 链接多重集（减互链 switcher）一致 + docs/limitations.md 指针可达；漂移持续 = 持续红。
-- README 徽章 ×3（npm version / ci workflow / license——全动态可验证端点）+ 顶部 switcher。
+- `README.zh-CN.md` — 中文伴生件：顶部翻译件声明（规范以 README.md 为准）+ 互链切换器；heading 结构 1:1 + 代码块/链接逐字节相同。
+- `docs/limitations.md` — Known limitations 全录（20 条，从 README 逐字迁入）。
+- ADR 索引独立生成件（`scripts/gen-adr-index.mjs` 从 README 内嵌段重指向；行内相对链接；index.md 自己排除自己）。
+- ship-gate step 1h — 双语 parity 常驻拿不准就拒绝：heading 骨架 1:1 + 代码块逐块逐字节相同 + 链接多重集（减掉互链切换器）一致 + docs/limitations.md 指针可达；漂移一直存在就一直判失败。
+- README 的徽章 ×3（npm version / ci workflow / license——全是动态可验证的端点）+ 顶部切换器。
 
 ### Fixed
 
-- **main tip ship-gate 红（e265667）**：`isCloseout` 裸 `^round-\d+` 前缀误伤 `round-69-direction.md`——收窄为要求 `closeout|closure` 关键词（双向验证：direction 脱靶 + round-67/68-closeout 仍命中）；方向文档补 Stack 头 +「绿色 run URL」段引六条实证 run（主张-引证教义）。
-- **`LICENSE` 实为变体 Apache-2.0**：专利反制/再分发条款被改写 → GitHub 判 Other 属实；换 canonical Apache-2.0 全文（根 + 4 发布目录副本）对齐 package.json 声明意图。
-- **verify-observation step-8b 抖动**：响应后异步 trace 落库可遭硬杀丢写——stdin EOF 优雅退出（3s 兜底 kill）+ 落库重试窗（20×250ms）。
-- L-1：report L43 相对路径 → 绝对路径。
+- **main tip 的 ship-gate 红（e265667）**：`isCloseout` 的裸 `^round-\d+` 前缀误伤了 `round-69-direction.md`——收窄成必须带 `closeout|closure` 关键词（双向验证：direction 脱靶 + round-67/68-closeout 仍然命中）；方向文档补 Stack 头 +「绿色 run URL」段引六条实证 run（主张-引证教义）。
+- **`LICENSE` 实际上是变体的 Apache-2.0**：专利反制/再分发条款被改写过 → GitHub 判 Other 属实；换成标准 Apache-2.0 全文（根目录 + 4 个发布目录副本），对齐 package.json 声明里说的意思。
+- **verify-observation step-8b 抖动**：响应后异步写 trace 可能被硬杀丢掉——stdin EOF 优雅退出（3s 兜底 kill）+ 落库重试窗（20×250ms）。
+- L-1：report L43 的相对路径 → 绝对路径。
 
 ### Changed
 
-- `README.md` 重构为登录页 IA（312 → 159 行）：迁出 limitations 全文与 ADR 索引段，机器路径清零，Known limitations 摘 top-3 摘要表 + 指针，ADR 目录段改 Design rationale 三句 + 指针。
-- `scripts/gen-adr-index.mjs` 靶从 README 改 ``（generate-and-diff 纪律不变）；ship-gate step 1b 同步改靶；`readme-adr-index.test.mjs` → `adr-index.test.mjs`。
-- `isCloseout` 定界 = 语义关键词非文件名形状（见 Fixed）。
-- `release.yml` `gh issue create` 双写回退补注释（无 label 兜底语义明文化）。
-- 仓库元数据：`gh repo edit` description 改产品向一句 EN + topics ×9（settings 面变更，命令 + 前后 JSON 入证据）。
+- `README.md` 重构成首页结构（312 → 159 行）：把 limitations 全文和 ADR 索引段搬出去，机器路径清零，Known limitations 摘成 top-3 摘要表 + 指针，ADR 目录段改成 Design rationale 三句 + 指针。
+- `scripts/gen-adr-index.mjs` 的目标从 README 改成 ADR 索引文件（generate-and-diff 纪律不变）；ship-gate step 1b 同步改目标；`readme-adr-index.test.mjs` → `adr-index.test.mjs`。
+- `isCloseout` 的定界 = 语义关键词，不是文件名形状（见 Fixed）。
+- `release.yml` 的 `gh issue create` 双写回退补注释（没有 label 时的兜底语义写明白）。
+- 仓库元数据：`gh repo edit` 的 description 改成产品向的一句英文 + topics ×9（settings 面的变更，命令 + 前后 JSON 都进了证据）。
 
 ### Deferred
 
-- F-S4：`assert-checks-green.mjs` 严格两段式 discovery/completion 截止另开票；现 timeout-min 兜底沿用。
-- R68 方向指示三线沿用 deferred：真 release 摘 partial 帽 / agy ans-MCP P7 真链 / PR-mode required-checks 治理。
-- deferred 大项池沿用：cursor / F-01a / npm provider / projectIndex / TUI / embedding / cross-OS / plugin / watch。
+- F-S4：`assert-checks-green.mjs` 严格两段的 discovery/completion 截止另开票；现在先靠 timeout-min 兜底。
+- R68 方向指示的三条线继续 deferred：真 release 摘掉 partial 帽 / agy ans-MCP P7 真链 / PR-mode required-checks 治理。
+- deferred 大项池继续：cursor / F-01a / npm provider / projectIndex / TUI / embedding / cross-OS / plugin / watch。
 
 ### 过程违规自报
 
-- R69 grill Q2 曾被跳过未问（D-002 空号保留作跳号证据）——以 Q6 补问，流程违规如实入账不追认。
+- R69 的 grill Q2 曾经被跳过没问（D-002 的空号保留，作为跳号的证据）——用 Q6 补问，流程违规如实记账，不追认。
 
-## 2026-09-17 — r68: release gate 双层化 + 收口必填栏 lint（写仓自动化守门）
+## 2026-09-17 — r68: 发布门分两层 + 收口必填栏检查（写仓库的自动化守门）
 
 ### Added
 
-- `scripts/assert-checks-green.mjs` — post-tag 前置断言器：固定 SHA 上轮询 check-runs（ci+ship-gate 五 job 族），全绿放行 / 红 fail-fast exit 1 / in-progress ≤10min 短轮询 / 无信号 fail-closed exit 2；同名 check 取最新 started_at。
-- release.yml pre-tag 自等腿：账本 commit+push 后 `lewagon/wait-on-check-action@v1.9.1`（pin `36976907`）等固定 SHA 的 ci+ship-gate 全绿——discovery 120s 空窗 + step `timeout-minutes:20` 硬超时 fail-closed。
-- release.yml 告警腿：gate 红 → blocking job failure + step summary + 自动开 issue + `release-gate` commit-status（failure）打账本 commit。
-- ship-gate step 1g：`.scratch/*/handoffs/` 收口文档必填栏 lint——「绿色 run URL」段 + Stack 行 + `actions/runs/<id>` URL + gh 可用时校验至少一条 run 的 headSha 是本轮历史祖先。作用域=diff 触碰 ∪ 最新收口文档（历史收口 grandfathered）。
+- `scripts/assert-checks-green.mjs` — post-tag 前置断言器：在固定 SHA 上轮询 check-runs（ci+ship-gate 五个 job 族），全部通过就放行 / 有失败就立刻停 exit 1 / in-progress ≤10min 短轮询 / 没有信号拿不准就拒绝exit 2；同名 check 取最新 started_at 的那个。
+- release.yml 的 pre-tag 自等腿：账本 commit+push 之后 `lewagon/wait-on-check-action@v1.9.1`（pin `36976907`）等固定 SHA 的 ci+ship-gate 全部通过——discovery 120s 空窗 + step `timeout-minutes:20` 硬超时拿不准就拒绝。
+- release.yml 的告警腿：gate 红了 → blocking job failure + step summary + 自动开 issue + `release-gate` commit-status（failure）打到账本 commit。
+- ship-gate step 1g：`.scratch/*/handoffs/` 收口文档的必填栏检查——「绿色 run URL」段 + Stack 行 + `actions/runs/<id>` URL + gh 可用时校验至少一条 run 的 headSha 是本轮历史的祖先。范围=diff 碰到的 ∪ 最新的收口文档（历史收口 grandfather）。
 
 ### Fixed
 
-- **`eval-looks.json` 丢 `schema_version: 1`（main 双红根因）**：release-bot 回写管线 read→normalize→write 逐字段重建剥未知字段。`looks-ledger.ts` 改 Tolerant Reader（根/行索引签名+spread 保留）；`cli.ts` calibrate-reset 同型修复——F-17 sweep 同类 N=2 并修。`eval-docs-golden.test.ts` 增字节级 round-trip 契约断言。
-- **`eval-abstain.test.ts` 裸 `runAll(GOLDEN_CASES)`**：semantic/vector-arm 组须归 `test:online`——补 `excludeGroups: OFFLINE_EXCLUDED_GROUPS`。
-- **release.yml 双盲发布通道（v0.0.5 红树发布根因）**：pre-tag 不等 push 触发的检查、publish 不查 tagged SHA——双层门禁关闭。
+- **`eval-looks.json` 丢了 `schema_version: 1`（main 两个红的根因）**：release-bot 的回写管线 read→normalize→write 逐字段重建，把不认识的字段剥掉了。`looks-ledger.ts` 改成宽容读取（根/行索引签名+spread 保留）；`cli.ts` 的 calibrate-reset 同类修复——F-17 排查里同一种 N=2 并修。`eval-docs-golden.test.ts` 增加逐字节 round-trip 契约断言。
+- **`eval-abstain.test.ts` 裸跑 `runAll(GOLDEN_CASES)`**：semantic/vector-arm 组必须归到 `test:online`——补上 `excludeGroups: OFFLINE_EXCLUDED_GROUPS`。
+- **release.yml 的发布通道两头都没查（v0.0.5 用红树发布的原因）**：pre-tag 不等 push 触发的检查、publish 不查 tagged SHA——两层门都关着。
 
 ### Changed
 
-- `concurrency` 组 `release-${{ github.ref }}` → `release`：pre-tag dispatch 与 tag push 不再交错。
-- 治理入档：`but land` 直推 main 判定为 grill 轮次合规通道；future direction=PR-mode + required checks + tag ruleset/environment reviewers。
+- `concurrency` 组从 `release-${{ github.ref }}` 改成 `release`：pre-tag dispatch 和 tag push 不再交错。
+- 治理入档：`but land` 直推 main 判定为 grill 轮次的合规通道；未来方向=PR-mode + required checks + tag ruleset/environment reviewers。
 
 ### 验证边界
 
-T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da / 红 d7bed91 / 无信号 4833833），wait-action 腿未实跑；首次真 pre-tag dispatch 前不得宣称 fully verified。
+T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（绿 14514da / 红 d7bed91 / 无信号 4833833），wait-action 那条腿没有实跑；第一次真正的 pre-tag dispatch 之前不能宣称 fully verified。
 
 ### Added (T3 — Antigravity spike 验收通过)
 
-- `ans-hook-antigravity` bin（→ `dist/hooks/adapters/antigravity.cjs`）——agy hooks 命令经 PATH 解析 + argv 传事件名。
-- `test/antigravity-contract.test.ts`（11 条）：named-hook schema 校验、bin+argv 事件断言、PreToolUse 恒 `allow`/绝不 `{}`、PostToolUse `{}`、PreInvocation inv0 注入 routing card、pending 暂存/flush、fail-open、mdc 兜底、Stop protojson 安全。
+- `ans-hook-antigravity` bin（→ `dist/hooks/adapters/antigravity.cjs`）——agy 的 hooks 命令经 PATH 解析 + argv 传事件名。
+- `test/antigravity-contract.test.ts`（11 条）：named-hook schema 校验、bin+argv 事件断言、PreToolUse 始终 `allow`/绝不发 `{}`、PostToolUse 发 `{}`、PreInvocation 的 inv0 注入 routing card、pending 暂存/flush、出故障就放行、mdc 兜底、Stop 的 protojson 安全。
 
 ### Fixed (T3 — agy 1.2.5 实测契约重写)
 
-- **configs/antigravity/hooks.json 是死文件**：Gemini-legacy `{hooks:{...}}` 包装被 agy 拒绝（`command hook must specify 'command'`）——重写为官方 named-hook map，五事件全挂。
-- **adapter 读错字段**：stdin 实发 camelCase（`conversationId`/`toolCall{name,args}`/`workspacePaths`）且无 `hook_event_name`——改 argv[2] 主源 + camelCase 映射 + `call_mcp_tool` 内层工具名解包。
-- **输出形在真宿主全废**：`additionalContext` 等非 proto 字段 protojson 拒收并 ERROR 工具调用；`{}` 在 PreToolUse = DENY。重写为：PreToolUse 恒 `{decision:"allow"}`、PostToolUse 恒 `{}`、Pre/PostInvocation `injectSteps[].ephemeralMessage` 注入、Stop `{}`。
-- **PostToolUse 无工具输出**：宿主不投递 output——preheat/distill 产出暂存 `<artifactDirectoryPath>/anysearch-pending.jsonl`，下次 invocation 以 ephemeralMessage flush（真机 e2e 证 routing card 进 transcript）。
+- **configs/antigravity/hooks.json 是个死文件**：Gemini-legacy 的 `{hooks:{...}}` 包装被 agy 拒绝（`command hook must specify 'command'`）——重写成官方 named-hook map，五个事件全挂上。
+- **adapter 读错了字段**：stdin 实际发的是 camelCase（`conversationId`/`toolCall{name,args}`/`workspacePaths`），而且没有 `hook_event_name`——改成 argv[2] 为主源 + camelCase 映射 + `call_mcp_tool` 内层工具名解包。
+- **输出形状在真宿主上全废**：`additionalContext` 这类非 proto 字段 protojson 拒收并让工具调用报 ERROR；`{}` 在 PreToolUse 就是 DENY。重写成：PreToolUse 始终 `{decision:"allow"}`、PostToolUse 始终 `{}`、Pre/PostInvocation 用 `injectSteps[].ephemeralMessage` 注入、Stop 发 `{}`。
+- **PostToolUse 拿不到工具输出**：宿主不投递 output——preheat/distill 的产出先暂存到 `<artifactDirectoryPath>/anysearch-pending.jsonl`，下次 invocation 用 ephemeralMessage flush（真机 e2e 证明 routing card 进了 transcript）。
 
 ### 降级声明
 
-- Antigravity **IDE**（2.12.2）：不执行 hooks——`.antigravity/rules/anysearch.mdc` rules 兜底为唯一支持面（README per-surface 拆分）。
-- ans MCP 工具链腿 excluded（probe 沙箱无 ans server；契约测试覆盖 call_mcp_tool 解包+isAnsTool+pending）；`agy -p` 在用户 MCP 配置下会被挂起 server 阻塞 turn（probe 用隔离 HOME 绕过）。
+- Antigravity **IDE**（2.12.2）：不执行 hooks——`.antigravity/rules/anysearch.mdc` 的 rules 兜底是唯一支持面（README 按 surface 拆分）。
+- ans MCP 工具链腿排除在外（probe 沙箱没有 ans server；契约测试覆盖 call_mcp_tool 解包+isAnsTool+pending）；`agy -p` 在用户的 MCP 配置下会被挂起的 server 阻塞 turn（probe 用隔离 HOME 绕开）。
 
-## 0.0.5 — 2026-09-17 — r67: Codex 0.142.5 真宿主契约对齐
+## 0.0.5 — 2026-09-17 — r67: 对齐 Codex 0.142.5 真实宿主的契约
 
 ### Added
 
-- `apps/plugin` 新 bin `ans-hook-codex`（→ `dist/hooks/adapters/codex.cjs`）——Codex hooks 命令经 PATH 解析全局安装，与 claude 通路同构。
-- `apps/plugin/AGENTS.md` 随包分发（`files[]` 收录）——ans_* 白名单+fail-open+namespace 说明块，供贴入项目 AGENTS.md（可选步骤见 `docs/codex-integration.md`，/D-003③）。
-- `test/codex-contract.test.ts`（11 条）：官方 schema 校验、bin→entrypoint 解析、matcher 全匹配覆盖、SessionStart --envelope 断言、生成器漂移守卫（codex 配置纳入）、信封输出形状、hook_event_name 优先+legacy 兜底、fail-closed ask、非 ans 静默、畸形 stdin fail-open。
-- `docs/codex-integration.md`：Codex 接线文档（config.toml 双配置层 + MCP + hooks + 实测宿主事实清单 + fail-open）。
+- `apps/plugin` 新 bin `ans-hook-codex`（→ `dist/hooks/adapters/codex.cjs`）——Codex 的 hooks 命令经 PATH 解析全局安装，跟 claude 那条路同构。
+- `apps/plugin/AGENTS.md` 随包分发（`files[]` 收录）——ans_* 白名单+出故障就放行+namespace 说明块，供人贴进项目的 AGENTS.md（可选步骤见 `docs/codex-integration.md`，/D-003③）。
+- `test/codex-contract.test.ts`（11 条）：官方 schema 校验、bin→entrypoint 解析、matcher 全匹配覆盖、SessionStart `--envelope` 断言、生成器漂移守卫（codex 配置纳入）、返回包输出形状、hook_event_name 优先+legacy 兜底、拿不准就拒绝ask、非 ans 静默、畸形 stdin 出故障就放行。
+- `docs/codex-integration.md`：Codex 接线文档（config.toml 两层配置 + MCP + hooks + 实测宿主事实清单 + 出故障就放行）。
 
 ### Fixed
 
-- **configs/codex/hooks.json 是死文件（live 抓出）**：0.0.4 用 `{name,command,args}` 条目——Codex 严格态报 unknown-field、宽松态静默注册零 hooks。重写为官方 `{matcher,hooks:[{type:"command",command}]}` schema，纳入 `scripts/gen-claude-configs.mjs` 单源生成+漂移守卫。
-- **codex 适配器裸输出被宿主丢弃（live 裁决）**：`adapters/codex.ts` PreToolUse/PostToolUse 原写顶层 `additionalContext`——codex 0.142.5 实测 ~80% 丢弃（合成桩 1/8、实物 1/3）。全部改入 `hookSpecificOutput{hookEventName,...}` 信封。
-- **URL 策略 deny 在 Codex 上完全失效**：适配器原只发 additionalContext、丢弃 `decision.permission`——deny 决策零输出、工具照跑。现 `permissionDecision`/`permissionDecisionReason` 透传，真宿主端到端拦阻实测通过（router: `Tool call blocked by PreToolUse hook`）。
-- **SessionStart 裸输出在 Codex 上不可靠**：shipped codex 配置改传 `--envelope`，路由卡经信封投递实测成功。
-- **matcher 非全匹配**：`mcp__anysearch__` 不命中 `mcp__anysearch__search_web`（全匹配 regex）——shipped matcher 改后缀锚定 `.*(search_web|research_web|recall_memory|query_knowledge|ans_chat)$`，namespace 无关。
+- **configs/codex/hooks.json 是个死文件（现场抓出来的）**：0.0.4 用的是 `{name,command,args}` 条目——Codex 严格态报 unknown-field、宽松态静默注册零 hooks。重写成官方 `{matcher,hooks:[{type:"command",command}]}` schema，纳入 `scripts/gen-claude-configs.mjs` 单源生成+漂移守卫。
+- **codex 适配器的裸输出被宿主丢掉（现场裁决）**：`adapters/codex.ts` 的 PreToolUse/PostToolUse 原来把顶层 `additionalContext` 直接写出去——codex 0.142.5 实测大约 80% 被丢掉（合成桩 1/8、实物 1/3）。全部改放进 `hookSpecificOutput{hookEventName,...}` 返回包。
+- **URL 策略的 deny 在 Codex 上完全失效**：适配器原来只发 additionalContext、把 `decision.permission` 丢了——deny 决策零输出、工具照跑。现在把 `permissionDecision`/`permissionDecisionReason` 传出去，真宿主端到端拦阻实测通过（router: `Tool call blocked by PreToolUse hook`）。
+- **SessionStart 的裸输出在 Codex 上不可靠**：shipped codex 配置改传 `--envelope`，路由卡经返回包投递实测成功。
+- **matcher 不是全匹配**：`mcp__anysearch__` 匹配不到 `mcp__anysearch__search_web`（全匹配 regex）——shipped matcher 改成后缀检查项定 `.*(search_web|research_web|recall_memory|query_knowledge|ans_chat)$`，跟 namespace 无关。
 
 ### Changed
 
-- 宿主实测事实（钉入 /docs）：codex `-c` 无法表达 hooks（值按字符串解析）；hooks 须走 config 文件层（config.toml `[[hooks.*]]` 或项目 `.codex/hooks.json`）；required=true MCP 硬退出；hook trust=[hooks.state] sha256 持久化；PostToolUse ctx 注入为同 turn 边界可变量，索引副作用是持久价值。
-- README Verified agent hosts：新增 Codex CLI 0.142.5 行；Known Limitations 补 0.0.4 Codex 三项缺口。
+- 宿主实测事实（钉进 /docs）：codex 的 `-c` 没法表达 hooks（值按字符串解析）；hooks 必须走 config 文件层（config.toml 的 `[[hooks.*]]` 或项目 `.codex/hooks.json`）；required=true 的 MCP 会硬退出；hook trust=[hooks.state] 用 sha256 持久化；PostToolUse 的 ctx 注入是同 turn 边界可变的，索引的副作用才是持久价值。
+- README 的 Verified agent hosts：新增 Codex CLI 0.142.5 行；Known Limitations 补上 0.0.4 的 Codex 三个缺口。
 
-## 2026-09-17 — r66: Claude Code 真宿主契约对齐（信封/schema/骨架）+ OIDC 发布通道
+## 2026-09-17 — r66: 对齐 Claude Code 真实宿主的契约（返回包/schema/骨架）+ OIDC 发布通道
 
 ### Added
 
-- `apps/plugin` 新 bin `ans-hook-claude` / `ans-hook-session-start`——hooks 命令经 PATH 解析全局安装，模板不再含绝对路径或 `${CLAUDE_PLUGIN_*}` 变量。
-- Claude Code plugin 骨架：`.claude-plugin/plugin.json` + `hooks/hooks.json` + `.mcp.json`，由 `scripts/gen-claude-configs.mjs` 单源生成（settings 模板同出自它）；`claude plugin validate` 在已安装包上通过。标记 **experimental**（`CLAUDE_PLUGIN_ROOT` Windows 展开上游 bug #16116）。
-- `test/claude-contract.test.ts`（10 条）：信封形状断言、官方 schema 校验、bin→entrypoint 解析、骨架存在性、生成器漂移守卫、fail-closed ask、全量/瘦身两种 tool_response 形态。
+- `apps/plugin` 新 bin `ans-hook-claude` / `ans-hook-session-start`——hooks 命令经 PATH 解析全局安装，模板里不再有绝对路径或 `${CLAUDE_PLUGIN_*}` 变量。
+- Claude Code plugin 骨架：`.claude-plugin/plugin.json` + `hooks/hooks.json` + `.mcp.json`，由 `scripts/gen-claude-configs.mjs` 单源生成（settings 模板也出自它）；在已安装的包上 `claude plugin validate` 通过。标成 **experimental**（`CLAUDE_PLUGIN_ROOT` 在 Windows 上的展开有上游 bug #16116）。
+- `test/claude-contract.test.ts`（10 条）：返回包形状断言、官方 schema 校验、bin→entrypoint 解析、骨架存在性、生成器漂移守卫、拿不准就拒绝ask、全量和瘦身两种 tool_response 形态。
 - `docs/claude-integration.md`：Claude Code 接线文档（settings 通路 + plugin 实验通路 + 实测宿主事实清单）。
 
 ### Fixed
 
-- **Claude 决策键被宿主静默丢弃（live 抓出，ER-2）**：`adapters/claude.ts`/`session-start.ts` 原把 `additionalContext`/`updatedToolOutput`/`permissionDecision` 写顶层——Claude Code 2.1.251 哨兵实测：顶层 `permissionDecision` 不拦工具执行，信封 `hookSpecificOutput.permissionDecision:"deny"` 与 legacy `decision:"block"` 均拦。全部决策键改入 `hookSpecificOutput{hookEventName,...}`；PostToolUse 蒸馏摘要走 `additionalContext`（Claude 无输出改写字段）。
-- **configs/claude/hooks.json 非官方 schema（live 抓出，ER-1）**：`{name,command,args}` 形状被静默接受但毒害整个事件列（混入的合法 sentinel 同被丢）。重写为 `{matcher,hooks:[{type:"command",command}]}`。
-- **plugin 骨架缺失（ER-3）**：`claude plugin validate` 原报 "No manifest found"；骨架补齐后通过。
+- **Claude 的决策键被宿主静默丢掉（现场抓出，ER-2）**：`adapters/claude.ts`/`session-start.ts` 原来把 `additionalContext`/`updatedToolOutput`/`permissionDecision` 写在顶层——Claude Code 2.1.251 哨兵实测：顶层 `permissionDecision` 拦不住工具执行，返回包里的 `hookSpecificOutput.permissionDecision:"deny"` 和 legacy `decision:"block"` 都能拦。全部决策键改放进 `hookSpecificOutput{hookEventName,...}`；PostToolUse 的蒸馏摘要走 `additionalContext`（Claude 没有改写输出的字段）。
+- **configs/claude/hooks.json 不是官方 schema（现场抓出，ER-1）**：`{name,command,args}` 这个形状被静默接受，但会毒掉整个事件列（混进来的合法 sentinel 一起丢）。重写成 `{matcher,hooks:[{type:"command",command}]}`。
+- **plugin 骨架缺失（ER-3）**：`claude plugin validate` 原来报 "No manifest found"；骨架补齐后通过。
 
 ### Changed
 
-- README Verified agent hosts：新增 Claude Code 2.1.251 行（settings 通路 live-verified；plugin 通路标 experimental）。Known Limitations 补两条 0.0.3 Claude 缺口口径。
-- 宿主实测事实（钉入文档/测试）：Pre/PostToolUse 钩子 headless 下真跑但 stream-json 零事件（副作用观测）；输入校验失败先于钩子分发；`type:"http"` settings 钩子被静默丢弃；MCP 工具调用触发钩子正常。
+- README 的 Verified agent hosts：新增 Claude Code 2.1.251 行（settings 通路现场验证过；plugin 通路标 experimental）。Known Limitations 补上 0.0.3 的 Claude 两个缺口口径。
+- 宿主实测事实（钉进文档/测试）：Pre/PostToolUse 钩子在 headless 下真的跑，但 stream-json 零事件（只有副作用能观察）；输入校验失败发生在钩子分发之前；`type:"http"` 的 settings 钩子被静默丢弃；MCP 工具调用触发钩子正常。
 
 ## 2026-09-16 — r65: 真实宿主部署开门轮（CodeBuddy 三件套 + hooks 契约对齐修复）
 
 ### Added
 
-- `apps/plugin` 新适配器 `hooks/adapters/codebuddy.ts`：CodeBuddy Code 2.149.0 契约——stdin `hook_event_name`（兼容 `event` 兜底）、stdout 决策入 `hookSpecificOutput{permissionDecision|additionalContext|updatedToolOutput}` 信封、SessionStart 路由卡原文直出（CodeBuddy 把 stdout 原文注入上下文）；单入口内部按事件分发三事件。
-- `apps/plugin` 新 bin `ans-plugin-server`（→ `dist/server/index.cjs`，server/index.ts 补 `#!/usr/bin/env node`）——0.0.3 陌生人手拉 server 的部署缺口闭合。
-- `configs/codebuddy/hooks.json` 模板：`{matcher, hooks:[{type:"command",command}]}` schema，命令用 `$(npm root -g)` 解析全局安装路径（Git Bash 兼容）。
-- `test/codebuddy-contract.test.ts`：16 条合成 stdin 契约测试（CodeBuddy 真实形状逐事件 + 数组 tool_response 实物形状 + legacy 兜底 + claude 回归）。
-- `docs/codebuddy-integration.md`：陌生人面向的 CodeBuddy 接线文档（install/keys/server/mcp.json/settings.json/fail-open）。
-- README 新增 Verified agent hosts 表（CodeBuddy=首个真宿主条目，含验证范围与状态列）。
-- `apps/mcp` 新增 `scripts/sync-domains.mjs` + `files+domains`：domains/*.toml 随 mcp tarball 发布（镜像 cli 的 B1 机制）。
-- `packages/kernel` 导出 `mapAssistantMessageEvent` 纯函数（pi-ai AssistantMessageEvent→AgentEvent 文本映射，可测）。
+- `apps/plugin` 新适配器 `hooks/adapters/codebuddy.ts`：CodeBuddy Code 2.149.0 的契约——stdin 的 `hook_event_name`（兼容 `event` 兜底）、stdout 决策放进 `hookSpecificOutput{permissionDecision|additionalContext|updatedToolOutput}` 返回包、SessionStart 路由卡原文直接输出（CodeBuddy 会把 stdout 原文注入上下文）；单入口内部按事件分发三个事件。
+- `apps/plugin` 新 bin `ans-plugin-server`（→ `dist/server/index.cjs`，server/index.ts 补 `#!/usr/bin/env node`）——0.0.3 里陌生人得手动拉 server 的部署缺口补上。
+- `configs/codebuddy/hooks.json` 模板：`{matcher, hooks:[{type:"command",command}]}` schema，命令用 `$(npm root -g)` 解析全局安装路径（兼容 Git Bash）。
+- `test/codebuddy-contract.test.ts`：16 条合成 stdin 契约测试（CodeBuddy 真实形状逐事件 + 数组 tool_response 的实物形状 + legacy 兜底 + claude 回归）。
+- `docs/codebuddy-integration.md`：给陌生人看的 CodeBuddy 接线文档（install/keys/server/mcp.json/settings.json/出故障就放行）。
+- README 新增 Verified agent hosts 表（CodeBuddy=第一个真实宿主条目，含验证范围和状态列）。
+- `apps/mcp` 新增 `scripts/sync-domains.mjs` + `files+domains`：domains/*.toml 跟着 mcp 的 tarball 发布（镜像 cli 的 B1 机制）。
+- `packages/kernel` 导出 `mapAssistantMessageEvent` 纯函数（pi-ai 的 AssistantMessageEvent→AgentEvent 文本映射，可测）。
 
 ### Fixed
 
-- **hooks 假绿（潜伏缺陷）**：四个适配器 + session-start.ts 读 `stdin.event`，真实宿主注入 `hook_event_name` → 部署即静默 no-op。统一改 `hook_event_name ?? event`；合成 stdin 红绿证据对见 `.scratch/grill-round-65/evidence/`。
-- **hooks 模板指向库文件**：configs/*/hooks.json 的 Pre/PostToolUse 原指 `dist/hooks/{preheat,distill}.cjs`（纯库无 main）——照模板接线永远静默 no-op；T3 修 claude/codex/antigravity + 新增 codebuddy，cursor 漏修由审计返工（F-A1）补齐，并加模板-target 可执行断言堵盲区。
-- **`configs/` 不随包发布**：`files:["dist"]` 导致模板根本不在 npm tarball 里；`files` 补 `configs`，模板 0.0.4 起随包。
-- **plugin server 无启动入口**：package.json 原无 bin；补 `ans-plugin-server`。
-- **CodeBuddy tool_response 形状（live 抓出）**：真实宿主送数组 content blocks `[{type:"text",text:"<json>"}]`，适配器只认 string/{content:[]}/object → distill `resultCount:0` 假绿。新增 `core.unwrapToolResponse` 共享解包（codebuddy+claude 接入）。
-- **ans-mcp 域向全灭（live 抓出）**：`domains/` 不在 mcp tarball 且 `createEngine` 未传 `domainsDirs` → 默认链只有 `<cwd>/domains`（宿主 cwd 永远没有）→ `ANS_DOMAIN` 在 MCP 路径静默无效。补包内域链回退。
-- **ans_chat 上游不可达（live 抓出）**：MCP 工具只读 `ANS_LLM_PROVIDER/MODEL`，不线程化 `ANS_LLM_BASE_URL/API/API_KEY`（cli chat.ts 有此逻辑）→ v1/chat 自定义上游永远打不到。补齐 env 三件套。
-- **ans_chat 永远空正文（live 抓出）**：pi-runtime 等 `assistantMessageEvent.type==="text"`——pi-ai union 无此类型（真实：`text_delta.delta`/`text_end.content`）→ 所有助手文本被静默丢弃，工具恒返回裸 "Agent completed"。修 `mapAssistantMessageEvent` + 6 断言。
+- **hooks 假绿（潜伏的缺陷）**：四个适配器 + session-start.ts 读的是 `stdin.event`，真实宿主注入的是 `hook_event_name` → 部署之后就是静默 no-op。统一改成 `hook_event_name ?? event`；合成 stdin 的红绿证据对见 `.scratch/grill-round-65/evidence/`。
+- **hooks 模板指向库文件**：configs/*/hooks.json 的 Pre/PostToolUse 原来指向 `dist/hooks/{preheat,distill}.cjs`（纯库、没有 main）——照着模板接线永远是静默 no-op；T3 修了 claude/codex/antigravity + 新增 codebuddy，cursor 漏掉的由审计返工（F-A1）补齐，并加上「模板目标可执行」的断言堵住盲区。
+- **`configs/` 不随包发布**：`files:["dist"]` 导致模板根本不在 npm tarball 里；`files` 补上 `configs`，模板从 0.0.4 起随包。
+- **plugin server 没有启动入口**：package.json 原来没有 bin；补上 `ans-plugin-server`。
+- **CodeBuddy 的 tool_response 形状（现场抓出）**：真实宿主送的是数组 content blocks `[{type:"text",text:"<json>"}]`，适配器只认 string/{content:[]}/object → distill 的 `resultCount:0` 假绿。新增 `core.unwrapToolResponse` 共享解包（codebuddy+claude 接入）。
+- **ans-mcp 域向全灭（现场抓出）**：`domains/` 不在 mcp 的 tarball 里，`createEngine` 也没传 `domainsDirs` → 默认链只有 `<cwd>/domains`（宿主的 cwd 永远没有）→ `ANS_DOMAIN` 在 MCP 路径上静默无效。补上包内域链回退。
+- **ans_chat 上游不可达（现场抓出）**：MCP 工具只读 `ANS_LLM_PROVIDER/MODEL`，没有把 `ANS_LLM_BASE_URL/API/API_KEY` 传下去（cli chat.ts 有这套逻辑）→ v1/chat 自定义上游永远打不到。补齐 env 三件套。
+- **ans_chat 永远空正文（现场抓出）**：pi-runtime 等的是 `assistantMessageEvent.type==="text"`——pi-ai 的 union 没有这个类型（真实是 `text_delta.delta`/`text_end.content`）→ 所有助手文本被静默丢掉，工具永远返回裸 "Agent completed"。修 `mapAssistantMessageEvent` + 6 条断言。
 
 ### Changed
 
-- README Known Limitations：删 stale「Not on npm yet」，补三条 0.0.3 部署缺口口径（server 手拉/模板指库/字段名假绿），各标修复落点 。
-- README Verified agent hosts：CodeBuddy 2.151.0 状态从 contract-verified 翻正 **live-verified**（headless P1–P9 探针矩阵全绿，含 with/without-tool P9 对照）。实测要点：MCP 注册 `anysearch:connected` + 5 工具全列；域内检索 typescriptlang.org 实答 + PostToolUse 索引 +10；OOD 查询全落 modelcontextprotocol.io（与 `ans search` 直调一致）；ans_chat 走 v1/chat 上游出真实回答；recall_memory 10 条跨 3 sessionId；hooks 三事件全命中（SessionStart 卡入 context、Pre/Post exit0、信封合法）；杀 server 后 fail-open 正常；research_web 执行 + query_knowledge 诚实 `adapter=none`；P9 对照——无工具错引 `pnpm.io/npmrc#node-linker` → 有工具实检 `pnpm.io/settings/node-modules`。
+- README 的 Known Limitations：删掉过时的「Not on npm yet」，补上 0.0.3 的三个部署缺口口径（server 手拉/模板指库/字段名假绿），各标修复落点。
+- README 的 Verified agent hosts：CodeBuddy 2.151.0 的状态从 contract-verified 翻正成 **live-verified**（headless P1–P9 探针矩阵全部通过，含 with/without-tool 的 P9 对照）。实测要点：MCP 注册 `anysearch:connected` + 5 个工具全列出来；域内检索 typescriptlang.org 实答 + PostToolUse 索引 +10；OOD 查询全落在 modelcontextprotocol.io（跟 `ans search` 直调一致）；ans_chat 走 v1/chat 上游给出真实回答；recall_memory 10 条跨 3 个 sessionId；hooks 三个事件全命中（SessionStart 卡进 context、Pre/Post exit0、返回包合法）；杀掉 server 后出故障就放行正常；research_web 执行 + query_knowledge 诚实 `adapter=none`；P9 对照——没有工具时错引 `pnpm.io/npmrc#node-linker` → 有工具时实检 `pnpm.io/settings/node-modules`。
 
 ## 2026-09-16 — r64: 隔离金案例 TTL 裁决收口（mustHitPaths 页族断言 + evidence 模式 + 10 条全量 promote）
 
 ### Added
 
-- `eval-looks.json` schema v1 additive fields：`mustHitPaths`（pathname 子串页族断言，mustHitHosts 内作用域）/`mustNotHitPaths`（负例写死）/`stability_class`/`failure_class`/`migration`（promote 留痕载体——promoteEntry 物理删账本条目）/`watch`（post-promote 观测标记）；根 `schema_version: 1` 哨兵。
-- live runner `ANS_EVAL_EVIDENCE=1` 证据模式：隔离条目实跑不跳（quarantined-but-runnable）、EVIDENCE 四元组落 `ANS_EVAL_EVIDENCE_LOG`、仅隔离失败 exit 0 覆写（EVIDENCE-ONLY-FAILURES）、连续全红 RETIRE_CANDIDATE 喂 reviewDue()。
-- `eval-looks-live-parity.test.ts`：runner 隔离分类==isActive()（longterm/expired/retired 组合台账）+ runner 源码无内联判定副本断言。
-- ship-gate §1n R64 锚点：live mustHitUrls 持有者≥2 且限 controlled|frozen-spec、mustHitPaths 持有者≥1、迁移案例 migration 块存在性机器校验。
+- `eval-looks.json` schema v1 增加字段：`mustHitPaths`（pathname 子串页族断言，在 mustHitHosts 范围内）/`mustNotHitPaths`（负例写死）/`stability_class`/`failure_class`/`migration`（promote 留痕的载体——promoteEntry 会物理删掉账本条目）/`watch`（promote 之后的观测标记）；根 `schema_version: 1` 哨兵。
+- 现场 runner 的 `ANS_EVAL_EVIDENCE=1` 证据模式：隔离条目实跑不跳过（quarantined-but-runnable）、EVIDENCE 四元组落进 `ANS_EVAL_EVIDENCE_LOG`、只有隔离失败时 exit 0 被覆盖（EVIDENCE-ONLY-FAILURES）、连续全红 RETIRE_CANDIDATE 喂给 reviewDue()。
+- `eval-looks-live-parity.test.ts`：runner 的隔离分类==isActive()（longterm/expired/retired 组合台账）+ 断言 runner 源码里没有内联判定的副本。
+- ship-gate §1n R64 检查项点：live mustHitUrls 的持有者≥2 且限 controlled|frozen-spec、mustHitPaths 的持有者≥1、迁移案例的 migration 块存在性机器校验。
 
 ### Changed
 
-- runner 隔离分类收编到账本 `activeIds()` 单一实现（原内联判定忽略 longterm flag——第二次判定漂移被拆除）。
-- eval-looks 8 条路径漂移案例（g0001/2/3/4/5/6/9/11）迁 mustHitPaths 页族层；g0008 降格单宿主 pnpm.io（locale-clustering-suppressed-cross-host，hops:multi 保留为 dimensions 观察）；g0010 实测恢复 answer 并入路径簇（未走 abstain 改判）；3 条 frozen-spec 字节级腿（g0001→2026-07-28、g0005→2025-11-25、g0010→2024-11-05 dated MCP spec 快照，复现率 3/3·6/6·3/3 校准）。
-- 10 条隔离案例全量 promoteEntry 裁决落账（9 轮 evidence 复跑记录 .scratch/grill-round-64/evidence/；flaky 三条 flip=0；watch:true 标 g0001/4/5/6/9），eval-quarantine.json 棘轮视野清空，TTL 2026-10-14 提前近月收口。
-- README Known Limitations 页级断言条目改写为页族粒度现状。
+- runner 的隔离分类收编到账本 `activeIds()` 单一实现（原来内联判定忽略了 longterm flag——第二次判定漂移被拆掉）。
+- eval-looks 的 8 条路径漂移案例（g0001/2/3/4/5/6/9/11）迁到 mustHitPaths 页族层；g0008 降格成单宿主 pnpm.io（locale-clustering-suppressed-cross-host，hops:multi 保留为 dimensions 观察）；g0010 实测恢复 answer 并入路径簇（没有走拒答改判）；3 条 frozen-spec 逐字节腿（g0001→2026-07-28、g0005→2025-11-25、g0010→2024-11-05 的带日期 MCP spec 快照，复现率 3/3·6/6·3/3 校准）。
+- 10 条隔离案例全量 promoteEntry 裁决记账（9 轮 evidence 复跑记录在 .scratch/grill-round-64/evidence/；flaky 三条 flip=0；watch:true 标 g0001/4/5/6/9），eval-quarantine.json 的棘轮视野清空，TTL 2026-10-14 提前将近一个月收口。
+- README 的 Known Limitations 页级断言条目改写成页族粒度的现状。
 
-## 2026-09-15 — npm scope 改名 + 0.0.3 重发（workspace:* peer 逃逸修复）
+## 2026-09-15 — npm scope 改名 + 0.0.3 重发（修 workspace:* peer 逃逸）
 
 ### Fixed
 
-- npm scope @anysearch → @anysearch-cli（org anysearch 被空壳蹲占不可注册；用户建成 anysearch-cli org）。全仓 100 文件机械替换：包名/import/tsconfig/tsup/ship-gate+install-smoke 断言/workflows/docs。
-- 真事故：npm publish <dir> 不做 pnpm workspace:* canonical 改写——0.0.1/0.0.2 的 cli/mcp/plugin manifest 携带 peerDependencies workspace:* 原文，npm install 报 EUNSUPPORTEDPROTOCOL 不可安装（embedding 无 peer 独活）。bin "invalid and removed" 警告实为 ./ 前缀归一化（bin 实存）。修复：发布通道改为 pnpm pack tarball + npm publish <tgz>（tarball manifest 已 canonical），ship-gate step5 增断言——packed manifest 任何 dep 字段残留 workspace: 即 fail。0.0.3 统一重发。
+- npm scope 从 @anysearch 改成 @anysearch-cli（org anysearch 被空壳蹲着注册不了；用户建了 anysearch-cli org）。全仓 100 个文件机械替换：包名/import/tsconfig/tsup/ship-gate+install-smoke 断言/workflows/docs。
+- 真事故：`npm publish <dir>` 不会对 pnpm 的 workspace:* 做 canonical 改写——0.0.1/0.0.2 的 cli/mcp/plugin manifest 带着 peerDependencies 里的 workspace:* 原文，npm install 报 EUNSUPPORTEDPROTOCOL、装不上（embedding 没有 peer，自己活着）。bin 的 "invalid and removed" 警告其实是 ./ 前缀归一化（bin 实际存在）。修复：发布通道改成 pnpm pack tarball + npm publish <tgz>（tarball 里的 manifest 已经是 canonical 的），ship-gate step5 增加断言——packed manifest 任何 dep 字段残留 workspace: 就 fail。0.0.3 统一重发。
 
-## 2026-09-15 — r63: npm 0.0.1 发布形态与验证面（T2/T3/T5，D-005/D-003）
+## 2026-09-15 — r63: npm 0.0.1 的发布形态和验证面（T2/T3/T5，D-005/D-003）
 
 ### Added
 
-- **Apache-2.0 license**：根 LICENSE + 4 发布包目录各一份副本；4 包 manifest 补 license/repository/publishConfig.access:public。
-- 发布管线断言：ship-gate step5 校验打包 manifest（dependencies 无 @anysearch-cli/* 死声明、peer-optional 在场、license/repo/access）+ dist 无裸 require 内部包（embedding 按设计豁免）；隔离集棘轮三断言（scripts/quarantine-ratchet.mjs + eval-quarantine.baseline.json 基线）。
-- peer-optional 双装验证：install-smoke + ship-gate 4c 断言 npm i 双装后 @anysearch-cli/embedding 落共享 node_modules 根、从已装 cli 内解析可达、doctor vector arm 翻 present。
-- docs/publishing.md 发布步骤文档（含 min-release-age=2 自验覆盖方式与 72h unpublish 窗）；docs/release-notes/0.0.1.md；。
+- **Apache-2.0 license**：根 LICENSE + 4 个发布包目录各一份副本；4 个包的 manifest 补上 license/repository/publishConfig.access:public。
+- 发布管线断言：ship-gate step5 校验打包的 manifest（dependencies 里没有 @anysearch-cli/* 的死声明、peer-optional 在场、license/repo/access）+ dist 里没有裸 require 内部包（embedding 按设计豁免）；隔离集的棘轮三条断言（scripts/quarantine-只减不增的检查.mjs + eval-quarantine.baseline.json 基线）。
+- peer-optional 双装验证：install-smoke + ship-gate 4c 断言 npm i 双装之后 @anysearch-cli/embedding 落在共享 node_modules 根、从已安装的 cli 里能解析到、doctor 的 vector arm 翻成 present。
+- docs/publishing.md 发布步骤文档（含 min-release-age=2 自验的覆盖方式与 72h unpublish 窗）；docs/release-notes/0.0.1.md。
 
 ### Changed
 
-- bundled-CLI 发布形态：apps/{cli,mcp,plugin} 的 @anysearch-cli/{kernel,store,retriever,plugin} 从 dependencies 移 devDependencies（已 bundle 入 dist，如实声明 build-time）；@anysearch-cli/embedding 全部 optionalDependencies→peerDependencies+peerDependenciesMeta.optional:true（含真正 import 方 store；npm 自动安装重型 optional runtime 的炸弹回归被拆除）；embedding 移除 private 标记（可发布）+ tsup ESM 构建 + publishConfig.exports 改写（dev 仍解析 src/index.ts，tarball 指 dist/index.js）。
-- install-smoke 改消费者真实形态：只装 3 个 app tarball，断言 bundled 内部包与 optional peer 均不在安装闭包内。
-- quarantine-ledger 增 longterm 裁决出口（永久已知问题转换，QUARANTINE_MAX_LONGTERM=1 防续期后门）。
+- bundled-CLI 的发布形态：apps/{cli,mcp,plugin} 里的 @anysearch-cli/{kernel,store,retriever,plugin} 从 dependencies 挪到 devDependencies（已经 bundle 进 dist，如实声明成构建期）；@anysearch-cli/embedding 从全部 optionalDependencies 改成 peerDependencies+peerDependenciesMeta.optional:true（含真正 import 它的 store；npm 自动安装重型 optional runtime 这颗炸弹的回归被拆掉）；embedding 去掉 private 标记（可以发布）+ tsup ESM 构建 + publishConfig.exports 改写（开发时仍然解析 src/index.ts，tarball 指 dist/index.js）。
+- install-smoke 改成消费者的真实形态：只装 3 个 app tarball，断言 bundled 的内部包和 optional peer 都不在安装闭包里。
+- quarantine-ledger 增加 longterm 裁决出口（把永久已知问题转换过去，QUARANTINE_MAX_LONGTERM=1 防止拿续期当后门）。
 
 ## 2026-09-15 — r63: T1 con_add_then_noop 修复（D-002 Blocker）
 
 ### Fixed
 
-- consolidate 去重在 embedding 缺席时曾整体失效：`decideOp` 只认 cosine>0.90，arm 缺席（FTS-only 安装/离线）下 bestCos 恒 0，重复记忆一律判 add——`con_add_then_noop` 在无网环境必红。现加降级分支：无 cosine 可算时 bestJac>θ_jac（0.80，golden 校准：相异 stub=0.000/同一 rerun=1.000/矛盾对上限=0.714）判 noop。行为变更：无-embedding 环境下近逐字重复记忆开始判 noop（有损降级，抓不到 paraphrase 级重复），降级决策计入 `ConsolidateReport.embeddingAbsent`（不再 silent，）。
+- consolidate 去重在 embedding 缺席时曾经整体失效：`decideOp` 只认 cosine>0.90，arm 缺席时（只用 FTS 安装/离线）bestCos 恒为 0，重复记忆一律判 add——`con_add_then_noop` 在没网的环境里必红。现在加了降级分支：没有 cosine 可算时，bestJac>θ_jac（0.80，golden 校准：相异 stub=0.000/同一 rerun=1.000/矛盾对上限=0.714）判 noop。行为变化：没有 embedding 的环境里，几乎一字不差的重复记忆开始判 noop（有损降级，抓不到改写级别的重复），降级决策计入 `ConsolidateReport.embeddingAbsent`（不再沉默）。
 
 ## 2026-09-14 — r60: 审计修复（audit F1–F3 + F5，reports/2026-09-14-audit.md）
 
 ### Fixed
 
-- 域解析链收口（F1/F2）：`domainTomlPath` 现读 `ANS_DOMAINS_DIR`（env → cwd → extras，与 `defaultDomainsDirs` 链头同序）；`ans chat`/`ans hitl` 走 `domainSearchDirs()` 四链；`ans pref` 改用 `createPersistentEngine`——顺带修复 `createEngine` 默认 `:memory:` 导致偏好从不落盘的存量 bug。
+- 域解析链收口（F1/F2）：`domainTomlPath` 现在读 `ANS_DOMAINS_DIR`（env → cwd → extras，跟 `defaultDomainsDirs` 链头同序）；`ans chat`/`ans hitl` 走 `domainSearchDirs()` 四链；`ans pref` 改用 `createPersistentEngine`——顺带修掉 `createEngine` 默认 `:memory:` 导致偏好从来不写进文件的存量 bug。
 - coverage manifest 算术（F3）：`source-tier.reference` 3→4、`freshness.stable` 6→5；`crossCheckDocsGolden` 新增 classes↔entries 直方校验，`badcase-backfill` 重算时同步 classes。
-- `badcase-backfill --new` 不再编造分类：badcase 记录须自带 intent/questionLang/dimensions（缺则拒），provenance.type 可由记录覆盖；三处台账写改原子写（tmp+rename）。
-- `engine` 早停阈值按 `normalizeUrl` 计唯一 URL（与融合去重口径一致）；`ans domain`/doctor 域列表改共享 `listDomainTomls`；doctor 删 `fileURLToPath` 死 import。
+- `badcase-backfill --new` 不再编造分类：badcase 记录必须自带 intent/questionLang/dimensions（缺了就拒），provenance.type 可以被记录覆盖；三处台账写入改成原子写（tmp+rename）。
+- `engine` 的早停阈值按 `normalizeUrl` 算唯一 URL（跟融合去重的口径一致）；`ans domain`/doctor 的域列表改用共享的 `listDomainTomls`；doctor 删掉 `fileURLToPath` 这个没用到的 import。
 
 ## 2026-09-14 — r60: graceWindow/deepMode 交付（T6/G1，remove-or-implement → implement）
 
 ### Changed
 
-- `RetroaererdEngine.search` 真接线早停：fused pool 覆盖 `q.maxResults` 个唯一 URL 后，straggler 获 `graceWindowMs`（默认 1500）再触发 per-provider AbortController；`deepMode` 恒等全部。取消者进 `metadata.providersCancelled`（此前恒空）。
-- 哨兵翻正：ship-gate step1c + t6-hostile-cuts 从「债注存活」断言改为「接线存活」断言；CONTEXT.md「尚未接线」措辞移除；ponytail-debt-ledger 移入 Resolved。
-- engine.test.ts +5 断言：grace 取消上报/abort 实发、deepMode 不取消且慢 provider 结果到达、未达阈值全员等待。
+- `RetroaererdEngine.search` 真的接上了早停：融合后的结果池覆盖 `q.maxResults` 个唯一 URL 之后，落后的 provider 再等 `graceWindowMs`（默认 1500）就触发 per-provider AbortController；`deepMode` 等于全部等齐。被取消的进 `metadata.providersCancelled`（之前一直是空的）。
+- 哨兵翻正：ship-gate step1c + t6-hostile-cuts 从「债注还活着」的断言改成「接线还活着」的断言；CONTEXT.md 里「还没接线」的措辞删掉；ponytail-debt-ledger 移进 Resolved。
+- engine.test.ts +5 条断言：grace 取消上报/abort 真的发出、deepMode 不取消且慢 provider 的结果能到、没到阈值时所有 provider 都等。
 
 ## 2026-09-14 — r60: doctor 自服务增强（T4/B3）
 
 ### Added
 
-- doctor [4] 增补：ANS_DOMAINS_DIR 可见化、durable DB 路径 mkdir+可写探测。
-- doctor [5] 增补：活动域 sources.enabled 逐 provider key 覆盖检查——未设 key 记 SKIP 并给双向修复路径（设 key 或移出 enabled）；域不在解析链/链上无 TOML 时点名具体修复命令。
-- `ans domain` 解析失败时列出可用域 + ANS_DOMAINS_DIR 修复指引，并明示 silent full-fanout 语义。
-- clig.dev 收口：doctor 失败摘要走 stderr（exit 0/1 不变）。
+- doctor [4] 补充：ANS_DOMAINS_DIR 可见化、持久 DB 路径 mkdir+可写探测。
+- doctor [5] 补充：当前领域 sources.enabled 逐 provider key 覆盖检查——没设 key 记 SKIP 并给两个方向的修复路径（设 key 或从 enabled 里移出去）；域不在解析链/链上没有 TOML 时点名具体的修复命令。
+- `ans domain` 解析失败时列出可用的域 + ANS_DOMAINS_DIR 修复指引，并明说「静默全同时查多个源」的语义。
+- clig.dev 收口：doctor 的失败摘要走 stderr（exit 0/1 不变）。
 
 ## 2026-09-14 — r60: badcase→golden 回灌闭环（T3/B4）
 
 ### Added
 
-- `eval-badcases.json`（schema `anysearch/eval-badcases@1`）：真实 badcase 记录面，种子条目 docs-bc0001 来自安装物实跑（tokio 域外提问应 abstain 实返 10 条非 allowlist 结果）。
-- `scripts/badcase-backfill.mjs`：回灌两模式——`--into` attach 同问句既有 golden（回归证据），`--new` 生成下一条 docs-gNNNN 并自动重算 coverage manifest；无 observed/evidence.command 拒绝回灌（禁合成护栏）。
-- eval-docs-golden.test.ts 扩 badcase 回归段：badcase schema、promotedTo→golden 可解、attach 问句逐字一致、open 态不得已入集。
+- `eval-badcases.json`（schema `anysearch/eval-badcases@1`）：真实 badcase 的记录面，种子条目 docs-bc0001 来自安装物的实跑（tokio 域外提问应该拒答，实际回了 10 条不在 allowlist 里的结果）。
+- `scripts/badcase-backfill.mjs`：回灌两种模式——`--into` 把同一个问句附加到已有的 golden（回归证据），`--new` 生成下一条 docs-gNNNN 并自动重算 coverage manifest；没有 observed/evidence.command 就拒绝回灌（禁止合成的护栏）。
+- eval-docs-golden.test.ts 扩出 badcase 回归段：badcase schema、promotedTo→golden 可解、attach 问句逐字一致、open 态的内容不得已经进集。
 
-## 2026-09-14 — r60: 装到用链路 CI（T2/B2）
-
-### Added
-
-- `scripts/install-smoke.mjs`：真实安装到用链路——pack 全部 7 个 workspace 包 → npm 干净前缀安装 → 安装物 `ans` bin 走 --version/doctor/domain docs/doctor/search。online 有 key 时硬断言 ≥1 结果且命中 docs allowlist 主机；无 key 断言文档化离线行为（exit 1 / Results: 0），不造假覆盖。
-- `.github/workflows/ci.yml` `install-smoke` job（ubuntu+windows 矩阵）：build 后跑 install-smoke；EXA/TAVILY key 走 secrets，缺失即离线断言路径。
-
-## 2026-09-14 — r60: docs 域 walking skeleton（T1/B1）
+## 2026-09-14 — r60: 从装到用的链路 CI（T2/B2）
 
 ### Added
 
-- `domains/docs.toml`：首个垂直域（技术文档检索）。语料一手 allowlist：modelcontextprotocol.io / typescriptlang.org / pnpm.io（D-004 首批实例化）。
-- `eval-looks.json` 顶层 `golden` 集合（schema `anysearch/docs-golden@1`）：首批 11 条全真源提问（8 internal-dogfood + 3 external-community），逐条 provenance 可回访；OF 账本 looks[] 语义不变，读写路径保透传（looks-ledger.ts / eval cli calibrate）。
+- `scripts/install-smoke.mjs`：真实的从安装到使用链路——pack 全部 7 个 workspace 包 → npm 干净前缀安装 → 安装出来的 `ans` bin 走 --version/doctor/domain docs/doctor/search。online 有 key 时硬断言 ≥1 个结果并且命中 docs allowlist 的主机；没有 key 就断言文档化的离线行为（exit 1 / Results: 0），不造假覆盖。
+- `.github/workflows/ci.yml` 的 `install-smoke` job（ubuntu+windows 矩阵）：build 之后跑 install-smoke；EXA/TAVILY key 走 secrets，缺了就断言离线路径。
+
+## 2026-09-14 — r60: docs 域走路骨架（T1/B1）
+
+### Added
+
+- `domains/docs.toml`：第一个垂直域（技术文档检索）。语料一手的 allowlist：modelcontextprotocol.io / typescriptlang.org / pnpm.io（D-004 第一批实例化）。
+- `eval-looks.json` 顶层 `golden` 集合（schema `anysearch/docs-golden@1`）：第一批 11 条全真源提问（8 条 internal-dogfood + 3 条 external-community），每条都能按来源字段回访；OF 账本 looks[] 的语义不变，读写路径保持透传（looks-ledger.ts / eval cli calibrate）。
 - `eval-looks.coverage.json`（schema `anysearch/eval-looks-coverage@1`）：八维切片 manifest，covered×7 + deferred×1（injection，entryTrigger 挂 B4）。
 - `packages/store/src/eval/docs-golden.ts`：条目 schema + 八维词汇 + manifest/交叉校验器。
-- `loadDomainByNameIn` + `defaultDomainsDirs`（domain-loader.ts）：多目录解析链；`createEngine` 新增 `opts.domainsDirs`；`domainTomlPath` 增可选附加目录。
-- `apps/cli/src/config-env.ts`：config.env 共享读写 + 入口 rehydrate（`ans domain` 持久化从此对全命令生效，显式 env/空串不被覆盖）。
-- `apps/cli/src/db.ts` `domainSearchDirs()`：ANS_DOMAINS_DIR → cwd/domains → 包内建 domains → 仓根 domains 的解析链。
-- `ans doctor` 新增 `[5] Domains` 段：解析链逐目录发现 + 逐 TOML 校验 + 活动域五下游层（sources/skills/hooks/prompts/rag）可见。
-- @anysearch-cli/cli 打包 domains/（files + build 期 sync-domains.mjs 从仓根同步）；测试：eval-docs-golden.test.ts（27 断言）、domain-loader.test.ts 链路用例、e2e doctor [5] 断言。
+- `loadDomainByNameIn` + `defaultDomainsDirs`（domain-loader.ts）：多目录解析链；`createEngine` 新增 `opts.domainsDirs`；`domainTomlPath` 增加可选的附加目录。
+- `apps/cli/src/config-env.ts`：config.env 共享读写 + 入口 rehydrate（`ans domain` 的持久化从此对所有命令生效，显式 env/空串不会被覆盖）。
+- `apps/cli/src/db.ts` 的 `domainSearchDirs()`：ANS_DOMAINS_DIR → cwd/domains → 包内建 domains → 仓根 domains 的解析链。
+- `ans doctor` 新增 `[5] Domains` 段：解析链逐目录发现 + 逐 TOML 校验 + 当前领域五个下游层（sources/skills/hooks/prompts/rag）可见。
+- @anysearch-cli/cli 打包 domains/（files + build 期 sync-domains.mjs 从仓根同步）；测试：eval-docs-golden.test.ts（27 条断言）、domain-loader.test.ts 链路用例、e2e doctor [5] 断言。
 
 ### Fixed
 
-- 安装后 `ans` 因 shebang `#!/usr/bin/env tsx` 无法启动（tsx 非运行依赖）——walking skeleton 首次实装暴露；改 `#!/usr/bin/env node`。
+- 安装后 `ans` 因为 shebang `#!/usr/bin/env tsx` 启动不了（tsx 不是运行依赖）——走路骨架第一次实装时暴露；改成 `#!/usr/bin/env node`。
 
-## 2026-09-02 — r42: consumed/synthetic switch governance implemented
+## 2026-09-02 — r42: consumed/synthetic 开关治理实现
 
 ### Added
 
-- Switch state machine S0-S4 (-D6): pre-registered readiness trigger (C1-C4 wall-clock, k_max=10), SESOI-band reconcile + McNemar diagnostic (packages/store/src/eval/switch-machine.ts, pure core), graded rollback with Inconclusive hold (promote streak 3 > rollback streak 2 hysteresis), integrity lineage fail-closed, evidence-driven reversible freeze.
-- Pre-registered thresholds as data (version + hash): packages/store/fixtures/switch-registration.json; every verdict records registrationHash.
-- skip-ledger schema @3: state block (phase, since, transitionId, evidenceHash) + actions log (actions never touch the 3-streak); lossless @1/@2 upcast; unknown versions fail loud.
-- access_events chain switch events (stage-transition/rollback/freeze) with sentinel-row FK and chain-first ledger write order; ledger rebuild from chain fallback.
-- ans switch-state [--verify] [--db PATH] [--out DIR] read-only query.
-- ship-gate step 7 reports the current switch phase (exit semantics unchanged).
+- 开关状态机 S0-S4（-D6）：预注册的就绪触发器（C1-C4 按墙上时钟，k_max=10）、SESOI 区间的对账 + McNemar 诊断（packages/store/src/eval/switch-machine.ts，纯核心）、分级回滚加 Inconclusive 保持（晋升连续 3 次 > 回滚连续 2 次的滞后）、完整性血缘按「拿不准就拒绝」处理、由证据驱动、可逆的冻结。
+- 预注册阈值写成数据（带版本 + 哈希）：packages/store/fixtures/switch-registration.json；每次裁决都记 registrationHash。
+- skip-ledger schema @3：状态块（phase、since、transitionId、evidenceHash）+ 动作日志（动作永远不碰 3 连计数）；@1/@2 无损升版；不认识的版本大声报错。
+- access_events 链上的开关事件（stage-transition/rollback/freeze）带哨兵行外键，写入顺序是链先、账本后；账本可以用链重建作兜底。
+- `ans switch-state [--verify] [--db PATH] [--out DIR]` 只读查询。
+- ship-gate step 7 报告当前的开关阶段（退出语义不变）。
 
 ### Fixed
 
-- bgnbd/obs-fixtures/switch-run no longer evaluate fileURLToPath(import.meta.url) at module init — the CJS CLI bundle crashed every ans command at boot once @anysearch-cli/store re-exported switch modules.
+- bgnbd/obs-fixtures/switch-run 不再在模块初始化时求值 `fileURLToPath(import.meta.url)`——@anysearch-cli/store 重新导出 switch 模块之后，CJS 的 CLI bundle 每次启动都会让所有 ans 命令崩掉。
+
 ## [Unreleased]
 
 ### Added
 
-- (T-1 / F-15, round 58): eval-grade layering. The merge gate (ship-gate step 7) now
-  runs observational and never spends a preregistered OF look (ANS_EVAL_NO_LOOK=1); decision grade
-  moved to a new `release` workflow (pre-tag dispatch = the only OF peek; post-tag asserts the
-  recorded verdict is unexpired and spends nothing). The OF look ledger moved from the local
-  `.ship-gate/eval-looks.json` to the git-committed repo-root `eval-looks.json`
-  (`anysearch/eval-looks@2`, append-only with a 50-row compaction cap and a preserved
-  pre-compaction SHA-256); a look is written only when ANS_EVAL_LOOKS_WRITE=1, so CI and local runs
-  leave the tracked file untouched. ship-gate.yml Node 24 -> 22 to match ci.yml.
-- / (T-2 / F-17, round 58): flaky-case quarantine ledger. A case that is
-  environment-flaky is quarantined by POLICY MARK (`packages/store/eval-quarantine.json`,
-  `anysearch/eval-quarantine@1`) — the golden set and the dataset fingerprint are untouched, so
-  zero recalibration cost. The gate excludes ACTIVE quarantined cases from the passRate==1 hard
-  assertion while disclosing them; 30-day TTL, weekly review, max 2 renewals, promote/retire
-  paths. The eval CLI now names the failing cases on gate failure so a CI log identifies an
-  environment flake without needing the report artifact.
-- (T-5, round 58): the README ADR index is now a generated artifact.
-  `scripts/gen-adr-index.mjs` (Node stdlib) owns the `BEGIN/END ADR-INDEX` block derived from
-  `*.md`, and ship-gate step 1b runs it in `--check` mode (regenerate-and-diff) so the
-  index can never silently lag again. The one-time catch-up replaces the stale " through
-  " claim with the real 0001-0059 range and the full 59-row index.
-- (T-6, round 58): four hostile-review cuts.
-  (1) engine dead config fixed BY DOCUMENTATION: CONTEXT.md no longer claims an implemented
-  grace window, gains an append-only r58 errata, and ship-gate step 1c asserts the honest
-  engine debt note survives. (2) `ans doctor` now prints the real version via the
-  `__PACKAGE_VERSION__` tsup define instead of a runtime package.json read that resolved to the
-  repo root after bundling. (3) plugin server trust boundary (highest priority): loopback Host
-  whitelist, Origin check (no Origin = native client), auto-generated 256-bit token when
-  ANS_SERVER_TOKEN is unset (persisted 0600 for the hooks), crypto.timingSafeEqual, 1MB body cap,
-  and 403-before-401 ordering; wildcard CORS removed. (4) api.anysearch.com ownership deferred
-  WITH deadline: named owner + quarterly review + CT/expiry monitoring in docs/deferred-registry.json
-  and an annotation block in anysearch.ts.
+- （T-1 / F-15，round 58）：评测分成两档。合并门（ship-gate step 7）只做观察，永远不花掉预注册的 OF 观察次数（ANS_EVAL_NO_LOOK=1）；决定档搬到新的 `release` workflow（pre-tag dispatch = 唯一一次正式查看；post-tag 只断言已经记录的裁决还没过期，不花任何次数）。OF 观察账本从本地的 `.ship-gate/eval-looks.json` 搬到 git 提交的仓库根 `eval-looks.json`（`anysearch/eval-looks@2`，只追加，压缩上限 50 行，压缩前的 SHA-256 保留）；只有 ANS_EVAL_LOOKS_WRITE=1 时才写观察，所以 CI 和本地跑都不会动这个被跟踪的文件。ship-gate.yml 的 Node 24 → 22，跟 ci.yml 对齐。
+- （T-2 / F-17，round 58）：不稳定的用例单独隔离。某个用例只要被环境弄得不稳定，就用标记把它隔离（`packages/store/eval-quarantine.json`，`anysearch/eval-quarantine@1`）——golden 集和数据集指纹都不动，重新校准的成本是零。门禁在 passRate==1 的硬断言里排除生效中的隔离用例，同时把排除的事说出来；30 天 TTL、每周复审、最多续期 2 次、有 promote/retire 两条路。eval CLI 现在门禁失败时会点名失败的用例，CI 日志不用拿报告工件也能认出是环境抖动。
+- （T-5，round 58）：README 的 ADR 索引改成生成件。`scripts/gen-adr-index.mjs`（只用 Node 标准库）负责 `BEGIN/END ADR-INDEX` 块，内容从 `*.md` 推导，ship-gate step 1b 用 `--check` 模式（重新生成再比 diff）跑，索引再也不会悄悄落后。一次性补齐时把过时的「到某年某月」说法换成真实的 0001-0059 范围，并补上完整的 59 行索引。
+- （T-6，round 58）：四处对抗性审查的修补。(1) engine 的死配置**靠写文档**修好：CONTEXT.md 不再声称 grace window 已经实现，补一条只追加的 r58 errata，ship-gate step 1c 断言「engine 欠账」这句诚实的说明还在。(2) `ans doctor` 用 tsup 的 `__PACKAGE_VERSION__` 定义打印真实版本，不再运行时读 package.json（打包后会解析到仓库根）。(3) plugin server 的信任边界（最高优先级）：只认 loopback 的 Host 白名单、检查 Origin（没有 Origin = 原生客户端）、ANS_SERVER_TOKEN 没设时自动生成 256 位 token（持久化 0600 给 hooks 用）、crypto.timingSafeEqual、请求体 1MB 上限、403 在 401 之前返回；去掉通配 CORS。(4) api.anysearch.com 的归属**带期限**延期：在 docs/deferred-registry.json 里点名 owner + 季度复查 + CT/到期监控，并在 anysearch.ts 里加注释块。
 
 ### Removed
 
-- due-chore ( channel, round 59): dropped the `t6-hostile-cuts.test.mjs` text-position assertion that `403` precedes `401` - it pinned source ordering, not behaviour; the behaviour is asserted end-to-end in `apps/plugin/test/plugin-security.test.mjs` (non-loopback Origin without token -> 403 before 401).
-- due-chore ( channel, round 59): `apps/plugin/src/hooks/preheat.ts` comment no longer says the policy cache guards against a *tampered* drop-in (downgraded to a *damaged* drop-in - the sha256 self-check is a damage detector, not an adversary defence), and `canonicalVersion` now names the store implementation as authoritative.
-- D-001/R1 (round 57): `.scratch/` is no longer tracked. The local-markdown
-  issue tracker and round artifacts were tracked as 16 files while README.md:64 documents
-  them as not committed to git; all 16 are now untracked (disk copies kept; `.gitignore`
-  gained `.scratch/`). Commits `ykm` (first 8) + `rpz` (remaining 8, audit F-1).
+- due-chore（round 59）：删掉 `t6-hostile-cuts.test.mjs` 里「`403` 在 `401` 前面」的文本位置断言——它钉的是源码顺序，不是行为；行为在 `apps/plugin/test/plugin-security.test.mjs` 里端到端断言（非 loopback 的 Origin 不带 token → 先 403 再 401）。
+- due-chore（round 59）：`apps/plugin/src/hooks/preheat.ts` 的注释不再说策略缓存防的是被*篡改*的 drop-in（降级成防*损坏*的 drop-in——sha256 自检是损坏检测，不是对抗攻击的防御），`canonicalVersion` 现在点名 store 的实现才是权威。
+- D-001/R1（round 57）：`.scratch/` 不再被跟踪。本地的 markdown issue 跟踪器和轮次工件被跟踪了 16 个文件，而 README.md:64 把它们写成不进 git；这 16 个现在全部取消跟踪（磁盘副本保留；`.gitignore` 加上 `.scratch/`）。提交 `ykm`（前 8 个）+ `rpz`（后 8 个，审计 F-1）。
 
 ### Fixed
-- r110 audit repair round (dual-axis review of the r109 implementation; all
-  findings fixed in one round — SP-F-01..03 + SA-F-01..09):
-  - SP-F-01/SA-F-05 (severe): the consumed track's AND-gate input was hardcoded zeros, fully
-    disconnected from access_events, and the data-absent classifier only fired when NO events
-    existed at all — so a healthy eval always logged gate-not-met and the 3-streak fired
-    spuriously (ship-gate exit 1). Now the runner aggregates real unit-level stats
-    (events/units/fittableUnits/access-time span) and D4 "structural data absence" covers
-    "events exist but nothing is fit-eligible" — both empty-library and populated-but-
-    immature forms record reasonCode=data-absent and never build the streak.
-  - SA-F-01: non-finite PSI is fail-closed at the AND-gate (NaN can no longer slip past
-    the >= comparison).
-  - SA-F-02: skip-key identity excludes volatile numerics (normalized to '#') — the 3-streak
-    now matches on WHICH gate clauses failed, so identical conditions across runs actually
-    reach escalation.
-  - SA-F-03: unknown/corrupt skip-ledgers are never silently cleared; reading fails loud
-    (SkipLedgerError) and the eval CLI quarantines the file aside then restarts empty with a
-    stderr notice.
-  - SA-F-04: fixture definitionHash now pins generatorVersion + per-file SHA-256s (generator
-    bumped to v2) — a generator-contract change flips the fingerprint (declared flip
-    5be13f8abcfab1f9 -> re-baselined via --calibrate).
-  - SA-F-05: the observational zone carries an explicit dataAbsent boolean; the report zone
-    no longer presents structural absence as an unexplained gate-not-met.
-  - SA-F-06: fixtureDefinitionHash is recorded in the observational zone (and thus in
-    eval-baseline.json on calibration) — fingerprint flips are auditable from the artifact.
-  - SA-F-07: tau-python.yml regenera guard triggers on day-buckets.ts, and the fixture loader
-    hard-rejects a baselineHistogram whose keys drift from AGE_BUCKETS.
-  - SA-F-08: skip-ledger writes are atomic (tmp + rename), so a concurrent/crashed eval
-    cannot leave a half-written ledger.
-  - SA-F-09: @2 entry-level validation (tier/track enums; green rows MUST omit reasonCode,
-    warn/data-absent rows MUST carry one); @1 upcasts keep green rows reason-free.
-  - SP-F-02/03 (nits): runtime SHA-256-vs-MANIFEST check now documented as an anti-miswire
-    guard only (CI regenerate-and-diff is the tamper anchor); a missing MANIFEST yields the
-    explicit "no-fixtures" marker in the report + a stderr warning instead of a silent
-    fingerprint drift.
-- r39 deferred items F-07 (staircase automation tests) and F-09 (report subject digest)
-  remain deferred (tracked, r110 does not own them).
+
+- r110 审计返修轮（对 r109 实现做双轴复审；所有发现一轮修完——SP-F-01..03 + SA-F-01..09）：
+  - SP-F-01/SA-F-05（严重）：consumed 轨的 AND-gate 输入写死成 0，跟 access_events 完全断开，而「数据缺失」分类器只在一条事件都没有时才触发——结果健康的 eval 也总记 gate-not-met，3 连计数乱触发（ship-gate exit 1）。现在 runner 汇总真实的单元级统计（events/units/fittableUnits/access-time span），D4 的「结构性数据缺失」也覆盖「有事件但没有任何能拟合的单元」——空库和「有数据但还不成熟」两种形态都记 reasonCode=data-absent，永远不建 3 连。
+  - SA-F-01：AND-gate 遇到非有限的 PSI 按「拿不准就拒绝」处理（NaN 不能再溜过 >= 比较）。
+  - SA-F-02：skip-key 的身份排除会变的数字（统一成 '#'）——3 连现在按「哪些门条款失败」匹配，所以跨轮相同条件真的能到升级。
+  - SA-F-03：不认识/损坏的 skip-ledger 永远不会被静默清空；读取大声失败（SkipLedgerError），eval CLI 把文件隔离到一边、清空重来，并在 stderr 说明。
+  - SA-F-04：夹具 definitionHash 现在钉住 generatorVersion + 每个文件的 SHA-256（generator 升到 v2）——生成器契约一变指纹就翻（声明的翻转是 5be13f8abcfab1f9 → 用 --calibrate 重新基线）。
+  - SA-F-05：观察区带一个明确的 dataAbsent 布尔值；报告区不再把结构性缺失当成没解释的 gate-not-met。
+  - SA-F-06：fixtureDefinitionHash 也记进观察区（校准后进 eval-baseline.json）——指纹翻转可以从工件里审计。
+  - SA-F-07：tau-python.yml 的重新生成守卫触发到 day-buckets.ts，夹具加载器硬拒一个键跟 AGE_BUCKETS 漂开的 baselineHistogram。
+  - SA-F-08：skip-ledger 写入是原子的（tmp + rename），并发的或崩掉的 eval 不会留下写了一半的账本。
+  - SA-F-09：@2 的条目级校验（tier/track 枚举；green 行必须不带 reasonCode，warn/data-absent 行必须带一个）；@1 升版时 green 行保持不带 reason。
+  - SP-F-02/03（小问题）：运行时 SHA-256 对 MANIFEST 的检查现在写明白只是防接错的护栏（防篡改的检查项是 CI 的重新生成再比 diff）；MANIFEST 缺失会在报告里给明确的 "no-fixtures" 标记 + stderr 警告，不再是静默的指纹漂移。
+- r39 的 deferred 项 F-07（阶梯自动化测试）和 F-09（报告 subject 摘要）继续 deferred（有跟踪，r110 不负责）。
 
 ### Added
-- observational data feeding (r109 implementation): dual-track loader
-  (consumed=real access_events preferred; synthetic=hash-pinned fixture fallback via
-  `ANS_OBS_FIXTURE`, track marker enforced in-load so synthetic rows can never pose as
-  consumed data) + pure-stdlib offline generator `scripts/tau/generate_fixtures.py`
-  (mulberry32, byte-deterministic, --check exits 2 on drift) producing the four-fixture
-  falsification matrix (`packages/store/fixtures/obs-feed/`: pass-stable / t1-fail 299 rows /
-  t2-fail PSI>=0.25 / t3-fail 89d window) with SHA-256 MANIFEST + definition hash pinned in the
-  eval baseline fingerprint — the initial flip 113be271869dbc54 -> re-baselined is the
-  declared one-time fingerprint flip (definitionHash `f5c6c438f3696995` joined).
-  skip-ledger schema @1 -> @2 (track + reason-code split; data-absent never builds the
-  3-streak and resets an in-flight gate-not-met run; @1 ledgers upcast losslessly on read,
-  closing r106 F-08; scripts/gain-ledger.mjs resolve tool accepts @2). Synthetic runs are
-  labelled simulated-observation-window in the report. CI: regenerate-and-diff guard step in
-  tau-python.yml. New test surface: obs-fixtures.test.ts (24 asserts, gate-ok -> ready-to-spawn
-  via node stub) + eval-skip.test.ts ledger-semantics block.
-- access_events tamper-evidence layer (r102/r103 implementation): `prev_hash`
-  SHA-256 hash chain (six-field canonical contract: fixed key order = RFC 8785 lexicographic for
-  the closed ASCII scalar schema, NULL = JSON null, INTEGER/TEXT/NULL whitelist) + single-row
-  `access_chain_anchor` sealing legacy history as a one-off digest snapshot (lazy IMMEDIATE
-  constructor bootstrap, one defensive BUSY retry, busy/IO degrade = stderr WARN + telemetry bit)
-  + independent zero-shared-code verifier `scripts/verify-access-events.mjs` (fork detection,
-  legacy digest recompute, unknown schema_version = explicit error, exit 0/1/2) wired fail-closed
-  into ship-gate step 1 (no-db -> explicit skip + `access-chain-skip-ledger.json`, 3-streak
-  escalation) + alert-on-silence `eventWriteFailures` counter joined into the eval observational
-  zone + `ans access-chain bootstrap [--dry-run default | --apply]`. Six zero-dependency test
-  files (golden vectors 3+2 pinned, 4 tamper classes + seeded legacy, no-db exit 2, real-spawn
-  dual-process concurrent bootstrap, telemetry/idempotency/legacy byte-stability, 100k-row perf
-  smoke report-only + schema fwd/back + whitelist negatives). No dataset fingerprint flip —
-  the chain never touches golden cases; baseline fp 113be271869dbc54 verified unchanged (
-  flip rule evaluated, not triggered).
-- tau observation layer (r100 implementation round): access_events append-only log
-  joined into eval per-case observation; pre-registered day buckets (0-1/2-7/8-30/31-90/91+,
-  [min,next-min) semantics + dayBucketFingerprint) folded into datasetFingerprint so any bucket
-  change forces a recalibration; synthetic tau-scan (seeded mulberry32, kendall@2, shipped as
-  node scripts/tau/tau-scan.mjs); BG/NBD out-of-process fit via scripts/tau/bgnbd_fit.py on the
-  frozen lifetimes stack (numpy==1.26.4, autograd==1.7.0 pin below numpy 2 — see r100
-  amendment) reached through a hardened spawn wrapper (timeout SIGKILL, non-JSON/non-converged
-  all map to explicit-skip); three-tier explicit-skip (gate-not-met / offline-deferred /
-  infra-failure) with TAU_FIT_GATE T1+T2+T3 and a skip ledger (anysearch/gain-ledger@1 shape,
-  resolve via gain-warn-resolve.mjs); eval report observational zone is a ship-gate contract.
-   r99 text errata physically applied (D2 full-sample rule failure is WARN not red;
-  D6 single WARN ships with a ledger entry, three consecutive escalate).
--: relation-arm gain gate promoted to a three-tier GREEN/WARN/RED verdict — RED only on
-  proven-negative evidence (BCa upper < 0 or harm-side sign-flip p below the look budget); unproven-
-  positive is WARN, never RED. Dual-track holdout: 40-case frozen baseline slice (19 RoR pairs) with
-  a second fingerprint plus a backflow slice family (inputHash dedup vs baseline, cross-slice,
-  payload provenance). Preregistered Lan-DeMets OF alpha spending (0.025 per track, k_max=5,
-  convergence clause past k_max) with a per-fingerprint look ledger (.ship-gate/eval-looks.json).
-  ship-gate enforces the tier: RED hard-fails, GREEN passes, WARN is released but three consecutive
-  WARNs force `node scripts/gain-warn-resolve.mjs`. Graded relevance labels (0-3) on 39 cases feed
-  report-only nDCG@5/10/20 plus a dual-review record (relevance-review.json, kappa/AC1 = 1.0 on 610
-  label pairs) as the judge-calibration baseline row.
 
--: `ans consolidate` and `ans memory forget --undo` CLI; durable maintenance DB
-  via ANS_DB_PATH (default ~/.anysearch/anysearch.db); semantic_memories sixth RRF arm <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
-  (serve, weight 0.5, conditional activation, fail-closed regression gate); three-protocol
-  LLM endpoint config (ANS_LLM_BASE_URL + ANS_LLM_API=chat|messages|responses + ANS_LLM_API_KEY).
+- 观察数据喂入（r109 实现）：双轨加载器（consumed=真实的 access_events 优先；synthetic=挂哈希的夹具兜底，走 `ANS_OBS_FIXTURE`，轨道标记在加载时就强制检查，所以 synthetic 行永远不能冒充 consumed 数据）+ 纯标准库的离线生成器 `scripts/tau/generate_fixtures.py`（mulberry32，逐字节确定，--check 有漂移就 exit 2），产出四套证伪矩阵（`packages/store/fixtures/obs-feed/`：pass-stable / t1-fail 299 行 / t2-fail PSI>=0.25 / t3-fail 89d 窗口）并带 SHA-256 MANIFEST + definition hash，钉进 eval 基线的指纹——初始翻转 113be271869dbc54 → 重新基线是声明好的一次性指纹翻转（definitionHash `f5c6c438f3696995` 同时加入）。skip-ledger schema @1 → @2（轨道 + 理由码分开；data-absent 永远不建 3 连，并重置正在飞的 gate-not-met 轮；@1 的账本读取时无损升版，关掉 r106 F-08；scripts/gain-ledger.mjs 的 resolve 工具接受 @2）。synthetic 跑在报告里标成 simulated-observation-window。CI：tau-python.yml 加重新生成再比 diff 的守卫步骤。新的测试面：obs-fixtures.test.ts（24 条断言，gate-ok → ready-to-spawn 用 node stub）+ eval-skip.test.ts 的账本语义块。
+- access_events 防篡改层（r102/r103 实现）：`prev_hash` 的 SHA-256 哈希链（六字段 canonical 契约：固定键序 = 闭集 ASCII 标量 schema 的 RFC 8785 字典序，NULL = JSON null，白名单 INTEGER/TEXT/NULL）+ 单行 `access_chain_anchor` 把历史封存成一次性摘要快照（懒加载的 IMMEDIATE 构造引导，一次防御性 BUSY 重试，busy/IO 降级 = stderr WARN + telemetry 位）+ 独立、零共享代码的校验器 `scripts/verify-access-events.mjs`（分支检测、老历史摘要重算、不认识的 schema_version = 明确报错，exit 0/1/2），按拿不准就拒绝接进 ship-gate step 1（没有 DB → 明确 skip + `access-chain-skip-ledger.json`，3 连升级）+ 沉默即告警的 `eventWriteFailures` 计数器并入 eval 观察区 + `ans access-chain bootstrap [--dry-run default | --apply]`。六个零依赖测试文件（3+2 个 golden 向量钉住、4 类篡改 + 种子化的老历史、无 DB exit 2、真 spawn 的双进程并发 bootstrap、telemetry/幂等/老历史逐字节稳定、10 万行性能冒烟只报告 + schema 前向/后向 + 白名单负例）。数据集指纹没有翻——链永远不碰 golden 用例；基线指纹 113be271869dbc54 验证没变（翻转规则评估过，没触发）。
+- tau 观察层（r100 实现轮）：access_events 只追加日志并入 eval 的逐用例观察；预注册的天数桶（0-1/2-7/8-30/31-90/91+，[min,next-min) 语义 + dayBucketFingerprint）折进 datasetFingerprint，桶一变就强制重新校准；synthetic tau-scan（种子化 mulberry32、kendall@2，以 node 脚本 `scripts/tau/tau-scan.mjs` 交付）；BG/NBD 走进程外的 `scripts/tau/bgnbd_fit.py`，在冻结的 lifetimes 栈上跑（numpy==1.26.4、autograd==1.7.0 钉在 numpy 2 以下——见 r100 修正），通过一个加固的 spawn 包装（超时 SIGKILL，不是 JSON/没收敛都明确映射成 skip）；三档显式 skip（gate-not-met / offline-deferred / infra-failure），TAU_FIT_GATE T1+T2+T3 和一个 skip 账本（anysearch/gain-ledger@1 形状，用 gain-warn-resolve.mjs resolve）；eval 报告的观察区是 ship-gate 的契约。r99 的文字 errata 已经真的打上（D2 全样本规则失败是 WARN 不是红；D6 单次 WARN 带账本条目，连续三次升级）。
+- 关系臂的收益门改成三档 GREEN/WARN/RED 判定——只有证明是负的才 RED（BCa 上界 < 0 或者伤害侧符号翻转的 p 低于观察预算）；没证明是正的就 WARN，永远不 RED。双轨留存：40 条冻结的基线切片（19 对 RoR）+ 第二个指纹 + 一个回流切片家族（inputHash 对基线去重、跨切片、载荷来源）。预注册的 Lan-DeMets OF alpha 花费（每条轨 0.025，k_max=5，超过 k_max 后收敛条款）+ 按指纹的观察账本（.ship-gate/eval-looks.json）。ship-gate 执行分档：RED 硬失败、GREEN 通过、WARN 放行但连续三次 WARN 强制跑 `node scripts/gain-warn-resolve.mjs`。39 条用例上有分级相关度标签（0-3），喂进只报告不设门的 nDCG@5/10/20，再加一条双人复核记录（relevance-review.json，610 对标签上 kappa/AC1 = 1.0），作为判定校准的基线行。
+- `ans consolidate` 和 `ans memory forget --undo` 两个 CLI 命令；持久维护库走 ANS_DB_PATH（默认 ~/.anysearch/anysearch.db）；semantic_memories 第六条 RRF 臂 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->（serve、权重 0.5、条件激活、拿不准就拒绝回归门）；三协议 LLM 端点配置（ANS_LLM_BASE_URL + ANS_LLM_API=chat|messages|responses + ANS_LLM_API_KEY）。
 
 ### Removed
-- kernel llm-init residual env fallback (OPENAI_/ANTHROPIC_/GOOGLE_API_KEY): the kernel no longer
-  reads provider env ( step 7); provider auth stays entirely inside pi-ai. r94-deferred
-  hygiene, ships as its own refactor commit.
+
+- kernel llm-init 里残留的环境变量兜底（OPENAI_/ANTHROPIC_/GOOGLE_API_KEY）：kernel 不再读 provider 的环境变量（step 7）；provider 的认证全部留在 pi-ai 里。这是 r94 留下的清理项，单独一个重构 commit 发。
 
 ### Fixed
-- r94 audit (atomcode Spec-1): single-query searchMemory resolved the semantic arm
-  through a byId map that was never populated with semantic hits — sixth arm silently dropped
-  on that path (MCP recall_memory consumer). Fixed + regression test.
-- r94 audit (atomcode S1): kernel llm-init read ANS_LLM_API_KEY from the environment,
-  violating its own "No env reads in kernel" contract; callers pass the key explicitly now.
-- r94 audit: applyArchive explicit-ids path now enforces pinned / closed /
-  quarantined exclusions at the force point; LLM summarize moved out of the BEGIN IMMEDIATE
-  write lock (plan/apply split; dry-run exact prediction unchanged); `ans consolidate`
-  rejects unknown flags (exit 2).
+
+- r94 审计（atomcode Spec-1）：单 query 的 searchMemory 用一张从没被 semantic 命中填过的 byId 表来解析语义臂——那条路径上第六条臂被静默丢掉（MCP recall_memory 的消费者）。修好 + 回归测试。
+- r94 审计（atomcode S1）：kernel 的 llm-init 从环境读 ANS_LLM_API_KEY，违反了自己「kernel 不读环境变量」的约定；现在调用方显式传 key。
+- r94 审计：applyArchive 的 explicit-ids 路径在强制点现在执行 pinned / closed / quarantined 的排除；LLM 摘要移出 BEGIN IMMEDIATE 写锁（plan/apply 拆开；dry-run 的精确预测不变）；`ans consolidate` 拒收未知 flag（exit 2）。
 
 ## [0.1.0-rc.0] — 2026-08-22
 
 ### Fixed
-- r90 audit: D5 RoR delta sign convention corrected in and CONTEXT.md
-  (positive = relation arm pushed the memory earlier; sign was documented inverted while
-  code/tests/baseline all used positive=helps — regression trap removed).
-- r90 audit: backfill retry counter snapshot now also covers
-  `relatedToWriteOnce` so a failed batch retry no longer double-counts that telemetry bit;
-  busy-injection test now holds the foreign lock past busy_timeout (5200ms) so the
-  exponential-backoff branch actually executes (a 150ms hold was absorbed by busy_timeout).
+
+- r90 审计：D5 的 RoR delta 符号约定在文档和 CONTEXT.md 里改正（正数 = 关系臂把记忆更早推出来；文档曾经写反了，而代码/测试/基线一直用正数=有帮助——这个回归陷阱拆掉）。
+- r90 审计：backfill 重试计数器的快照现在也覆盖 `relatedToWriteOnce`，所以失败的批次重试不会再把这个 telemetry 位算两次；busy 注入测试现在把外部锁持到 busy_timeout（5200ms）之外，让指数退避分支真的执行（原来持 150ms 被 busy_timeout 吸收了）。
 
 ### Added
-- ship-gate pipeline: `scripts/ship-gate.mjs` (Node stdlib, single file)
-  as the blocking Product Smoke Gate, plus a non-blocking
-  `modelcontextprotocol/conformance` workflow as the Protocol Heartbeat.
+
+- ship-gate 管线：`scripts/ship-gate.mjs`（Node 标准库，单文件）作为阻断式的产品冒烟检查，外加一个非阻断的 `modelcontextprotocol/conformance` workflow 作为协议心跳。
 
 ### Added
--: fused freshness factor [0.3, 1.5] in store ranking — creation-age decay,
-  `last_accessed` recency, and `access_count` frequency fused into ONE multiplicative band
-  (`freshness_factor()` UDF replaces `time_decay()`). `access_count` column added via
-  idempotent migration; every returned recall hit increments it exactly once, on both
-  `searchMemory` and `searchMemoryMulti` paths.
--: kernel `memory-pipeline.ts` now imports `isTimeSensitive`/`isEvergreen`
-  from `@anysearch-cli/store` (inline regex copy deleted; the QDF regex itself no longer
-  carries year literals).
+
+- 融合新鲜度因子 [0.3, 1.5] 进入 store 的排序——创建时间的衰减、`last_accessed` 的最近性、`access_count` 的频率，融成一个乘法区间（`freshness_factor()` UDF 取代 `time_decay()`）。`access_count` 列通过幂等迁移加上；每个返回的召回命中恰好加一次，`searchMemory` 和 `searchMemoryMulti` 两条路径都一样。
+- kernel 的 `memory-pipeline.ts` 现在从 `@anysearch-cli/store` import `isTimeSensitive`/`isEvergreen`（删掉内联的正则副本；QDF 正则自己也不再带年份字面量）。
 
 ### Removed
--: dropped `--write-baseline` from `packages/store eval` (the one-round alias for `--calibrate`).
--: retired the `w` interpolation weight (0.25/0.4) and the
-  `1 - w·(1-decay)` fusion form. Ranking is a direct multiplicative scaling band now.
+
+- 从 `packages/store eval` 删掉 `--write-baseline`（它是 `--calibrate` 的一轮别名）。
+- 退役 `w` 插值权重（0.25/0.4）和 `1 - w·(1-decay)` 的融合形式。排序现在是直接的乘法缩放区间。
 
 ### Infrastructure
-- 16 prior ADRs landed across rounds 1–17 (MCP Phase2, Kernel Engine
-  composition, dual-era SDK v1+v2 bridge, TypeBox source-of-truth, plugin
-  hooks layer, SessionStart routing, L0/L1 memory pipeline).
+
+- 第 1–17 轮一共落了 16 条 ADR（MCP Phase2、Kernel Engine 组合、dual-era SDK v1+v2 桥、TypeBox 单一事实源、plugin hooks 层、SessionStart 路由、L0/L1 记忆流水线）。
 
 ### Added
-- KG-lite relation arm (fifth RRF arm, weight 0.5): closed 8-predicate table
-  (`works_on/depends_on/uses/part_of/member_of/located_at/authored_by/related_to`) with EN+CN alias map,
-  rule-first extraction (verb frames + url<->handle bridge + 2-preKnown co-occurrence), single-call
-  LLM seam behind a strict post-filter (JSON degrade parse, never blocks the write path), edges table
-  with partial-unique active index and episode provenance, merge redirects edges within the combine
-  transaction with snapshot-driven bounded unmerge restore, `pendingEdges` gauge + relationTel counters,
-  golden `relations` group (12 cases: 8 predicate positives incl. CJK quoted, fail-closed supersede,
-  observational no_edge + 1-hop hit-rate), ship-gate 1j static + relation-zone metric assertions.
--: `ans relation list` + `ans relation backfill-relations` (dry-run default, keyset
-  pagination, `--reprocess` supersedes stale rules_version rows, exit codes 0/1/2).
+
+- KG-lite 关系臂（第五条 RRF 臂，权重 0.5）：封闭的 8 谓词表（`works_on/depends_on/uses/part_of/member_of/located_at/authored_by/related_to`）带中英别名映射，规则优先的抽取（动词框架 + url<->handle 桥 + 2-preKnown 共现），单次 LLM 调用藏在一个严格的后置过滤后面（JSON 降级解析，永远不挡写路径），边表带部分唯一 active 索引和 episode 来源，合并时在 combine 事务里重定向边，并用快照驱动的有界 unmerge 恢复，`pendingEdges` 指标 + relationTel 计数器，golden `relations` 组（12 条用例：8 个谓词正例含 CJK 引号、拿不准就拒绝supersede、观察性的 no_edge + 1-hop 命中率），ship-gate 1j 静态 + relation 区指标断言。
+- `ans relation list` + `ans relation backfill-relations`（默认 dry-run，keyset 分页，`--reprocess` 覆盖过时的 rules_version 行，退出码 0/1/2）。
 
 [0.1.0-rc.0]: https://github.com/anysearch/anysearch-cli/releases/tag/v0.1.0-rc.0
 
 ### Added
-- relation-arm gain observance (Phase-1): single-run counterfactual ablation for the
-  relation arm — SqliteSessionStore captures arm provenance per searchMemory call; the eval runner
-  drops the relation list and recomputes RRF, producing paired rank deltas for every expectRankOf
-  golden op. Gate statistics: paired BCa 95% CI (seeded mulberry32 bootstrap + jackknife), one-sided
-  sign-flip permutation p, Sakai sample-size lock (cap 80), chi-square upper sigma_d. Decision rule
-  (BCa lo > 0 AND mean >= minGain AND signFlip p < 0.05) fails closed; under-powered / degenerate /
-  missing-baseline downgrade to WARN. Golden relations group expanded 12 -> 78 (30 EN + 8 CN RoR
-  pairs with 14-memory distractor corpus, 14 EN + 8 CN alias edges, 6 no_edge negatives); baseline
-  recalibrated over 50 seeded runs (sigmaDU=0.102, lockedN=17). New test eval-relation-gain.test.ts.
+
+- 关系臂收益观测（Phase-1）：对关系臂做单轮反事实消融——SqliteSessionStore 每次 searchMemory 调用都记下臂的来源；eval runner 丢掉关系列表重新算 RRF，为每个 expectRankOf 的 golden 操作产出配对的排名差。门禁统计：配对的 BCa 95% CI（种子化 mulberry32 bootstrap + jackknife）、单边符号翻转置换 p、Sakai 样本量锁（上限 80）、卡方上界 sigma_d。判决规则（BCa lo > 0 且 mean >= minGain 且 signFlip p < 0.05）按拿不准就拒绝处理；样本不够 / 退化 / 缺基线的降级成 WARN。golden relations 组从 12 扩到 78（30 对 EN + 8 对 CN 的 RoR，配 14 条记忆的干扰语料，14 条 EN + 8 条 CN 别名边，6 条 no_edge 负例）；基线在 50 次种子化跑上重新校准（sigmaDU=0.102，lockedN=17）。新测试 eval-relation-gain.test.ts。
 
 ### Changed
 
-- (Phase-2): `ans relation backfill-relations --apply` now commits one IMMEDIATE
-  transaction per batch (was a single whole-run transaction), retries SQLITE_BUSY with exponential
-  backoff (50ms base, 5s cap, <=8 tries, aligned with busy_timeout=5000), fails fast on
-  SQLITE_BUSY_SNAPSHOT, and runs a passive WAL checkpoint after each committed batch. The dry-run
-  path keeps the single rolled-back transaction, so counters remain exact predictions ( r87).
-  The "no concurrent MCP traffic during backfill" constraint is relaxed to recommended-not-required;
-  CLI help and wording updated. Regression coverage: per-batch exact-parity and
-  live-writer contention cases in relation-edges.test.ts.
+- （Phase-2）：`ans relation backfill-relations --apply` 现在每批提交一个 IMMEDIATE 事务（原来是一整个 run 一个事务），遇到 SQLITE_BUSY 用指数退避重试（基数 50ms，上限 5s，最多 8 次，跟 busy_timeout=5000 对齐），碰到 SQLITE_BUSY_SNAPSHOT 立即失败，每批提交后跑一次 passive WAL checkpoint。dry-run 路径保持单个回滚事务，所以计数仍然是精确预测（r87）。「backfill 期间不要有并发 MCP 流量」的约束放松成「建议、不强制」；CLI 帮助和措辞同步更新。回归覆盖：逐批精确一致和现场写者争用两种情况，在 relation-edges.test.ts 里。
