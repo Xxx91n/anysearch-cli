@@ -124,8 +124,8 @@ export type KernelToolName = keyof typeof KernelToolSchemas;
 // registrations, so the model sees one canonical surface on every host.
 export const KernelToolDescriptions = {
   search_web: "Search the web through several providers at once. Returns results plus a signal saying whether the evidence is enough.",
-  research_web: "Run a deep research query: several retrieval rounds merged with RRF; returns an evidence-sufficiency signal and the top citations.",
-  recall_memory: "Search the local research archive (FTS5) for results indexed earlier. Older results slowly lose weight, can be marked out of date, and time-sensitive questions get a temporary boost.",
+  research_web: "Run a deep research query over several rounds; each round merges results with RRF and URLs are deduplicated across rounds. Returns an evidence-sufficiency signal and the top citations.",
+  recall_memory: "Search the local research archive (FTS5) for results indexed earlier. Older results slowly lose weight, can be marked out of date, and time-sensitive questions are flagged for a closer look.",
   query_knowledge: "Query a domain's own knowledge base through its retrieval adapter. Dispatches to the configured rag.adapter in the domain config.",
   ans_chat: "Run the anysearch agent loop: retrieval-augmented chat with an LLM and domain-aware tool filtering. Returns a session handle (structuredContent.sessionId and a trailing text block); pass it back as sessionId to continue L1/L2 memory across calls.",
 } as const satisfies Record<KernelToolName, string>;

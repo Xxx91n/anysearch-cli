@@ -1,5 +1,5 @@
 // Time decay: BM25 x freshness factor with tiered tau, fused recency+frequency reinforcement.
-// fused freshness factor band [0.3, 1.5] replaces interpolation (w retired).
+// freshness factor band [0.3, 1.5] replaces interpolation (w retired).
 // References: Mem0 production band 0.3/1.5 (score factor docs), Mem0 issue #5330 half-life defaults,
 // Zep bi-temporal invalidation, Google QDF (spike-driven, no year literals).
 

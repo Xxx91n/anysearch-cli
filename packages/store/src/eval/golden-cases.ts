@@ -52,7 +52,7 @@ export type CaseOp =
   | { op: "undoArchive"; stage: "store"; fromOp: number; expectOk: boolean }
   // deterministic anti-bypass probes. canonicalPayload is frozen and fingerprinted.
   | { op: "inject"; stage: "retrieve"; family: InjectFamily; canonicalPayload: string; expectFingerprint: string }
-  // behavioral abstain smoke. Observational only — the runner records the
+  // behavioral abstain observation. Observational only — the runner records the
   // verdict into ObservationalZone.abstain and never lets it flip case pass/fail.
   | { op: "abstain"; stage: "retrieve"; family: AbstainFamily; prompt: string; expectAbstain: boolean; expectFingerprint?: string };
 
@@ -867,7 +867,7 @@ function buildRelationExpansionR33(): CaseSpec[] {
   return out;
 }
 
-// abstain smoke cases live OUTSIDE GOLDEN_CASES so the pre-registered
+// abstain observation cases live OUTSIDE GOLDEN_CASES so the pre-registered
 // dataset fingerprint (and the inject_* piggyback cases) do not move. The runner executes
 // them through the same runCase switch and reports verdicts only in ObservationalZone.abstain.
 export const ABSTAIN_CASES: CaseSpec[] = [

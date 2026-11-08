@@ -1,4 +1,4 @@
-// episodic-to-semantic consolidation (D2/D4) + reversible active forgetting (D5).
+// Turn older episodes into semantic memories (D2/D4) + reversible active forgetting (D5).
 // Deterministic core; LLM only behind injected seams (summarize / classify). Fail-open:
 // summarize null or absent -> cluster skipped (llmUnavailable); classify absent -> semantic row
 // written at LOW_CONFIDENCE (0.2), never blocks the write.

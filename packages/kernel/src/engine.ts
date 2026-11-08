@@ -652,7 +652,7 @@ export class RetroaererdEngine {
       try {
         await this.anchors.saveAnchor(sessionId, "sufficiency", anchorPayload);
       } catch (e) {
-        process.stderr.write("[anysearch] sufficiency anchor write failed: " + String(e instanceof Error ? e.message : e) + "\n");
+        process.stderr.write("[anysearch] resume anchor write failed: " + String(e instanceof Error ? e.message : e) + "\n");
       }
     }
 
@@ -702,7 +702,7 @@ export class RetroaererdEngine {
           nativeScores,
         },
         observational: { webProviderLedger },
-        // first-class abstain marker — domain_filter_empty when
+        // abstain marker — domain_filter_empty when
         // the authoritative gate leaves zero results (empty post-gate pool is
         // structurally abstain; eval/abstain.ts chain_empty is the sibling rule,
         // shouldBridgeToAbstain is the weak-claims counterpart). Never an error.

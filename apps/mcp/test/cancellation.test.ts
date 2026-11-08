@@ -3,7 +3,7 @@
 //   - The registered handler seam passes the SDK context signal into the engine
 //     for BOTH search_web and research_web (pre-aborted caller included).
 //   - HTTP transport e2e: closing the response stream cancels an in-flight
-//     search, the provider sees its signal abort, and no sufficiency anchor or
+//     search, the provider sees its signal abort, and no resume anchor or
 //     session auto-index write happens afterwards.
 //   - stdio e2e: `notifications/cancelled` on the SDK request signal reaches the
 //     same seam through a real stdio transport.

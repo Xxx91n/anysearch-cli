@@ -1,4 +1,4 @@
-// behavioral abstain smoke — observational only, never gates.
+// behavioral abstain observation — observational only, never gates.
 // Three-tier verdict, cheapest first:
 // tier 1 "chain" — access-chain trace shows zero retrieved evidence (chain_empty family)
 // tier 2 "regex" — refusal-keyword match on the assistant response (prompt field)

@@ -355,7 +355,7 @@ export class MemoryPipeline {
   // Design: capture the recovery digest from the first successful anchor read
   // of this runtime and keep one copy in each model prompt. The capture happens
   // before the first model call, so this runtime's own searches cannot
-  // masquerade as a recovered record; a fresh session has no sufficiency anchor
+  // masquerade as a recovered record; a fresh session has no resume anchor
   // and injects nothing. Keeping one copy per prompt matters because
   // transformContext output is not written back into agent history: a strict
   // first-call-only gate would drop the digest after a tool call.
@@ -745,7 +745,7 @@ export class MemoryPipeline {
   }
 
   // One-shot capture: the first successful anchor read wins. Marking the read
-  // as resolved even when there is no sufficiency anchor is what keeps a fresh
+  // as resolved even when there is no resume anchor is what keeps a fresh
   // session at zero injection after its own first search writes one.
   private captureRecoveryDigest(anchors: Array<{ anchorType: string; payload: unknown }>): void {
     if (this.recoveryDigestResolved) return;

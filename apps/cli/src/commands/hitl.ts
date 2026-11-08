@@ -96,7 +96,7 @@ export async function runHitl(args: string[]): Promise<number> {
   if (!sub || sub === "--help" || sub === "-h" || (sub === "review" && !allowHostArg)) {
     if (sub !== "review") {
       process.stdout.write([
-        "ans hitl — HITL review queue for blocked retrieved-derived URLs",
+        "ans hitl — review queue for blocked retrieved-derived URLs",
         "",
         "Commands:",
         "  review                    List queued URLs awaiting human review",

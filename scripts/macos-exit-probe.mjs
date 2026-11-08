@@ -48,7 +48,7 @@ for (let i = 1; i <= RUNS; i++) {
 }
 // pin the abstain leg — ANS_DOMAIN=docs makes the out-of-domain
 // ghost query (bc0001's tokio question) exercise the real abstain write path
-// (dual-gate filter -> first-class abstain marker -> exit 0), then teardown.
+// (domain filter -> abstain marker -> exit 0), then teardown.
 {
   const a = spawnSync(process.execPath, [BIN, "search", "tokio JoinSet rust scheduler internals"], {
     encoding: "utf8", env: { ...process.env, ANS_DOMAIN: "docs" },

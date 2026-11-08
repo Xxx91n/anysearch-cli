@@ -192,10 +192,10 @@ export interface SessionStore {
   unmergeEntity(logId: number): Promise<{ ok: boolean; error?: string }>;
   // alias-append undo (exposed for the CLI unmerge entry point).
   undoEntityMerge(logId: number): boolean;
-  // candidate review belt (list + keep/drop resolution, quarantine pattern).
+  // candidate review list (list + keep/drop resolution, quarantine pattern).
   listEntityReview(): Promise<EntityReviewRow[]>;
   resolveEntityReview(id: number, action: "keep" | "drop"): Promise<{ ok: boolean; error?: string }>;
-  // entity-relation edge layer (KG-lite fifth retrieval arm).
+  // entity-relation edge layer (fifth retrieval arm).
   relationArmRows(query: string, limit?: number): MemoryHit[];
   listRelations(opts?: { entity?: string; limit?: number }): Promise<RelationRow[]>;
   backfillRelations(opts: { apply: boolean; batch?: number; fromId?: number; limit?: number; reprocess?: boolean; fullRefresh?: boolean }): Promise<BackfillRelationsResult>;
@@ -208,7 +208,7 @@ export interface SessionStore {
 // covers case-insensitive / JSON-escape / whitespace-collapse / NFKC / bounded-base64 variants
 // at all 4 write entries and both search exits. Known blind spots: truncated secrets, novel encodings.
 
-// one unresolved candidate row in the entity review belt.
+// one unresolved candidate row in the entity review list.
 export interface EntityReviewRow {
   id: number;
   sourceName: string;
@@ -438,7 +438,7 @@ export class SqliteSessionStore implements SessionStore {
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN quarantine TEXT"); } catch {}
     // evidence persisted on quarantined rows for the review list (atomcode: confidence for queue ordering, never for auto-adjudication).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN evidence REAL"); } catch {}
-    // candidate review belt columns on entity_merge_log.
+    // candidate review list columns on entity_merge_log.
     try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN hit_count INTEGER NOT NULL DEFAULT 1"); } catch {}
     try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN resolved TEXT"); } catch {}
     // soft archive (reversible forgetting).
@@ -1010,7 +1010,7 @@ export class SqliteSessionStore implements SessionStore {
     }
     return { scanned: rows.length, embedded, failed };
   }
-  // ---- episodic-to-semantic consolidation (D2/D4) + reversible forgetting (D5) ----
+  // ---- turn older episodes into semantic memories (D2/D4) + reversible forgetting (D5) ----
 
   async consolidateMemory(opts?: { dryRun?: boolean; limit?: number }): Promise<ConsolidateReport> {
     return consolidateMemoryRun(this.db, { summarize: this.consolidateSummarize, classify: this.consolidateClassify }, opts ?? {});
@@ -1064,7 +1064,7 @@ export class SqliteSessionStore implements SessionStore {
     const known = new Set(this.liveEntities().flatMap((e) => [e.nameNorm, ...e.aliases]));
     const candidates: EntityCandidate[] = [];
     if (km.entity && !km.entity.includes("://")) candidates.push({ name: km.entity, type: "declared" });
-    for (const c of extractEntityCandidates(text, known, MAX_CANDIDATES * 2)) candidates.push(c); // 2x cap — overflow tail feeds the review belt
+    for (const c of extractEntityCandidates(text, known, MAX_CANDIDATES * 2)) candidates.push(c); // 2x cap — overflow tail feeds the review list
     if (candidates.length === 0 && this.entityLlmFallback) {
       // LLM backfill (fail-open) — offline/no-key keeps rule output (here: empty).
       try { const extra = await this.entityLlmFallback(text); if (extra) candidates.push(...extra); } catch {}
@@ -1079,7 +1079,7 @@ export class SqliteSessionStore implements SessionStore {
       linkedRefs.push({ id: entityId, name: c.name, nameNorm: refNorm, entityType: c.type, preKnown: known.has(refNorm) });
     }
     try { await this.linkRelations(memoryId, km, linkedRefs); } catch {} // fail-open, same discipline as linkEntities
-    // extraction overflow (capped out) enters the candidate review belt — never silent loss.
+    // extraction overflow (capped out) enters the candidate review list — never silent loss.
     const overflow = candidates.slice(MAX_CANDIDATES + 1);
     this.entityTel.truncated += overflow.length;
     for (const c of overflow) this.logOverflowCandidate(c);
@@ -1099,7 +1099,7 @@ export class SqliteSessionStore implements SessionStore {
       .run("candidate", sourceName, targetId, JSON.stringify(detail));
   }
 
-  // Overflow candidates only enter the review belt when they pass the Fellegi-Sunter review band
+  // Overflow candidates only enter the review list when they pass the Fellegi-Sunter review band
   // against a live entity (sub-band noise is just dropped by the cap, as before).
   private logOverflowCandidate(c: EntityCandidate): void {
     const norm = normalizeEntityName(c.name);
@@ -1180,7 +1180,7 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   // entity arm — read-only resolution (exact/containment, no mutation), arm-level valid_until+quarantine guard.
-  // ---- destructive merge execution (combine / unmerge / review belt / telemetry) ----
+  // ---- destructive merge execution (combine / unmerge / review list / telemetry) ----
 
   // destructive redirect merge. Single better-sqlite3 transaction (deferred);
   // snapshot is written in the SAME transaction as the redirect (acceptance requires it).
@@ -1318,7 +1318,7 @@ export class SqliteSessionStore implements SessionStore {
     }
   }
 
-  // candidate review belt — unresolved candidates, hit_count desc (Senzing escalation).
+  // candidate review list — unresolved candidates, hit_count desc (Senzing escalation).
   public async listEntityReview(): Promise<EntityReviewRow[]> {
     const rows = this.db
       .prepare(
@@ -1388,7 +1388,7 @@ export class SqliteSessionStore implements SessionStore {
     return rows;
   }
 
-  // ---- KG-lite entity-relation edge layer ----
+  // ---- entity-relation edge layer ----
 
   // Write-path extraction: rules first; LLM seam only when rules found nothing (fail-open).
   private async linkRelations(memoryId: number, km: KeyMemoryInput, linked: LinkedEntityRef[]): Promise<void> {

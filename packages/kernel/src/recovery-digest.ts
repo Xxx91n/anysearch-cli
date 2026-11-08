@@ -138,7 +138,7 @@ export function buildRecoveryDigest(payload: unknown): string | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
   const p = payload as Record<string, unknown>;
   // The engine always writes the query. An object without one is not a
-  // sufficiency anchor, so skip it instead of injecting a record of unknowns.
+  // resume anchor, so skip it instead of injecting a record of unknowns.
   const queryValue = p.query;
   if (typeof queryValue !== "string" || !oneLine(queryValue)) return undefined;
   const mvs = p.mvs && typeof p.mvs === "object" && !Array.isArray(p.mvs)

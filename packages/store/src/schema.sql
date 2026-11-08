@@ -182,7 +182,7 @@ CREATE TABLE IF NOT EXISTS memory_entity (
 );
 
 -- entity_merge_log: merge decision log — alias append, destructive merge (full snapshot),
--- candidate review belt (hit_count re-hit escalation), and unmerge override records.
+-- candidate review list (hit_count re-hit escalation), and unmerge override records.
 -- kind: 'alias' | 'candidate' | 'merge' | 'override'
 -- merge rows carry a complete snapshot in detail: fromEntityId, fromName, fromNorm, fromAliases,
 -- toAliasesBefore, redirectedMemoryIds, mergedAt (the sole basis for bounded unmerge).
@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS entity_merge_log (
   detail TEXT,                   -- JSON: similarity, tier, snapshot (kind='merge'), etc.
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   undone INTEGER NOT NULL DEFAULT 0,
-  -- review belt — re-hit counter (>=2 = suggested review) and resolution outcome.
+  -- review list — re-hit counter (>=2 = suggested review) and resolution outcome.
   hit_count INTEGER NOT NULL DEFAULT 1,
   resolved TEXT                  -- NULL = pending; 'confirmed' | 'rejected' after review
 );
@@ -209,7 +209,7 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
   embedded_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- KG-lite entity-relation edge layer (fifth retrieval arm).
+-- Entity-relation edge layer (fifth retrieval arm).
 -- Closed predicate set enforced by CHECK; bi-temporal soft-close (valid_until); the partial
 -- unique index keeps one live row per (source, relation, target); re-assertion supersedes.
 CREATE TABLE IF NOT EXISTS edges (

@@ -97,7 +97,7 @@ async function main() {
     (process.stderr as { write: (chunk: string) => boolean }).write = origWrite;
   }
   assert(r3 !== undefined && r3.results.length > 0, "3: envelope returned despite anchor write failure");
-  assert(stderrLines.some((l) => l.includes("[anysearch] sufficiency anchor write failed:") && l.includes("disk on fire")), "3: named stderr line emitted");
+  assert(stderrLines.some((l) => l.includes("[anysearch] resume anchor write failed:") && l.includes("disk on fire")), "3: named stderr line emitted");
 
   // 4. No write without a sessionId (port alone is inert) — mirrors the ledger gate.
   const engine4 = new RetroaererdEngine(

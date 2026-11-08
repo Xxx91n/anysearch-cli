@@ -1,4 +1,4 @@
-// ans relation: KG-lite edge inspection + idempotent backfill.
+// ans relation: entity-relation edge inspection + idempotent backfill.
 // Subcommands: list [--entity N] [--limit N] | backfill-relations [--apply] [--batch N] [--from-id N] [--limit N] [--reprocess]
 
 import { createPersistentEngine } from "../db";
@@ -12,7 +12,7 @@ interface RelationStore {
 function printHelp(): void {
   process.stdout.write(
     [
-      "ans relation — entity relation edges (KG-lite fifth arm)",
+      "ans relation — entity relation edges",
       "",
       "Commands:",
       "  list [--entity N] [--limit N]   List live relation edges (optionally filtered by entity name)",

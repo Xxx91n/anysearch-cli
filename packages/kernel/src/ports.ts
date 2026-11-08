@@ -103,8 +103,8 @@ export interface BudgetLedgerPort {
   clearBudgetCaps?(sessionId: string): void;
 }
 
-// ResumeAnchorsPort: engine-side sufficiency checkpoint writer (#48).
-// Design: sufficiency anchoring crosses into the engine as an injected port, not a
+// ResumeAnchorsPort: engine-side resume-anchor writer (#48).
+// Design: resume-anchor writes cross into the engine as an injected port, not a
 // store import — kernel stays pure (BudgetLedgerPort pattern, T7 decision #93).
 // One conditional append-only "sufficiency" anchor attempt per search that clears
 // the provider/budget checks, written after computeSufficiency and before the

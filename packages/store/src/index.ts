@@ -13,7 +13,7 @@ export * from "./time-decay";
 // FTS5 query tokenizer + multi-query RRF fusion helpers.
 export * from "./fts5";
 
-// KG-lite entity-relation edge layer (fifth arm).
+// entity-relation edge layer (fifth arm).
 export * from "./relation";
 
 // consolidation + reversible forgetting (sixth arm, Phase-1 shadow).

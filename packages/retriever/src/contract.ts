@@ -160,13 +160,13 @@ export interface SearchProvider {
   usage?(): Promise<UsageInfo | undefined>;
 }
 
-// MVSS four-segment sufficiency signal.
+// Four-segment sufficiency signal.
 // verdict: CRAG three-state quantifier aggregation (correct/incorrect/ambiguous).
 // agreement: rank-derived (Jaccard@K + RBO@K), always computable.
 // volume: hygiene signals (uniqueResults/uniqueDomains/successfulProviders).
 // spread: rrfVariance (rank-derived weak signal) + scoreScale (native score dimension).
 // perProvider: native scores attached, explicitly not cross-source normalized.
-// Hard ceiling: cheap-signal AUC ceiling approx 0.76 — MVSS only promises escalate.
+// Hard ceiling: cheap-signal AUC ceiling approx 0.76 — the signal only promises escalate.
 export interface SufficiencySignal {
   verdict: "correct" | "incorrect" | "ambiguous";
   agreement: {
@@ -257,7 +257,7 @@ export interface FusedEnvelope {
     // (machine-usable, zero free-text leak). Absent when nothing failed.
     providerErrorClasses?: Record<string, ProviderErrorClass>;
     elapsedMs: number;
-    // MVSS sufficiency signal from computeSufficiency.
+    // sufficiency signal from computeSufficiency.
     sufficiency?: SufficiencySignal;
     // per-provider answer attribution for transparency
     // without restructuring envelope.answers (stays string[]).
@@ -276,7 +276,7 @@ export interface FusedEnvelope {
     observational?: {
       webProviderLedger?: WebProviderLedger;
     };
-    // first-class abstain marker. Set by the kernel post-filter
+    // abstain marker. Set by the kernel post-filter
     // when a domain allowlist policy is active and zero results survive (including
     // the cold-domain zero-arrival case). A successful policy execution, never an
     // error. preFiltered = provider results that reached the authoritative gate;
