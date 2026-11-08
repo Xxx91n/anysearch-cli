@@ -50,7 +50,11 @@ async function main() {
       check(budgetRow?.tokenCap === 1234 && budgetRow?.callCap === 7,
         "#187: Active Domain [budget] creates the session ledger row");
       await writer.saveAnchor(wiring.sessionId!, "query", { query: "seed", timestamp: 1 });
-      check(true, "the wired session id accepts anchor writes (FK satisfied)");
+      const anchors = await writer.getAnchors(wiring.sessionId!);
+      check(
+        anchors.some((a) => a.anchorType === "query" && (a.payload as { query?: string } | null)?.query === "seed"),
+        "the wired session id accepts anchor writes (FK satisfied, row reads back)",
+      );
 
       // Seed recall-able Research Memory the way the MCP search path does.
       await writer.saveResults(wiring.sessionId!, [

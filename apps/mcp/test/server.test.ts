@@ -1,11 +1,12 @@
-// MCP server factory tests.
-// G015 test closure: verify buildServer() creates server with registered tools.
+// MCP server factory tests: per-call factory identity, cold-HOME boot
+// (explicit ANS_DB_PATH and the HOME-derived default), and the kernel JSON
+// schema signatures buildServer hands to the SDK. Tool registration itself is
+// asserted over tools/list in sdk-v2-schema.test.ts.
 
 import { buildServer } from "../src/server.js";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas } from "@anysearch-cli/kernel";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import type { RetrieverPort, Query } from "@anysearch-cli/kernel";
@@ -44,14 +45,9 @@ const mockStore: SessionStore = {
 };
 const mockEngine: CompositionResult = { retriever: mockRetriever, store: mockStore };
 
-// Test 1: buildServer returns an McpServer instance.
-const server = buildServer(mockEngine);
-assert(server !== undefined && server !== null, "buildServer() returns non-null server");
-
-// Test 2: server is an object.
-assert(typeof server === "object", "server is an object");
-
-// Test 3: buildServer can be called multiple times (factory pattern).
+// Factory pattern: each call returns a fresh server. Non-null / typeof checks
+// were removed here — the McpServer return type guarantees them, and the real
+// registration evidence (5 tools over tools/list) lives in sdk-v2-schema.test.ts.
 const server2 = buildServer(mockEngine);
 const server3 = buildServer(mockEngine);
 assert(server2 !== server3, "buildServer() returns new instance each call (factory pattern)");
@@ -148,10 +144,6 @@ assert(
   JSON.stringify(depthValues) === JSON.stringify(["brief", "deep", "standard"]),
   "plain research_web depth enum=brief/standard/deep (got " + JSON.stringify(depthValues) + ")"
 );
-
-// Also confirm fromJsonSchema produces a plain object (not undefined / thrown).
-const wrapped = fromJsonSchema(KernelJsonSchemas.search_web);
-assert(wrapped !== undefined && typeof wrapped === "object", "fromJsonSchema returns non-null Standard Schema");
 
 console.log("--- MCP server tests: " + passed + " passed, " + failed + " failed ---");
 if (failed > 0) process.exit(1);

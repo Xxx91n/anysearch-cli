@@ -290,18 +290,10 @@ function stepStaticAssertions() {
   }
   report("pass", "no console.log | stdout.write in apps/mcp/src + packages/kernel/src");
 
-  // 1e.: kernel tool-schemas must explicitly close with
-  // `additionalProperties: false` 5 times (one per ans_* tool).
-  const schemasSrc = fs.readFileSync(path.join(ROOT, "packages/kernel/src/tool-schemas.ts"),
-    "utf8"
-  );
-  const apfCount = (schemasSrc.match(/additionalProperties:\s*false/g) || []).length;
-  if (apfCount !== 5) {
-    fail(
-      `tool-schemas.ts expected 5 additionalProperties:false markers, found ${apfCount}`
-    );
-  }
-  report("pass", "tool-schemas.ts has 5 additionalProperties:false closers");
+  // 1e. removed: counting `additionalProperties: false` occurrences in source
+  // text could go green while a schema stayed open (all counts on one tool).
+  // The real per-tool assertion is in packages/kernel/test/tool-schemas.test.ts
+  // (step 3 below runs it) and on the wire in apps/mcp/test/sdk-v2-schema.test.ts.
   // 1f.: attribution module exists with required exports.
   {
     const attPath = path.join(ROOT, "packages/kernel/src/attribution.ts");
@@ -560,8 +552,9 @@ function stepStaticAssertions() {
       fail("c2: no paired must-hit golden entry");
     if (!ge.some((e) => e.domain !== "docs" && e.expected?.verdict === "abstain"))
       fail("c4: no cold-domain abstain golden entry");
-    if (!fs.existsSync(path.join(ROOT, "scripts/probe-tavily-domains.mjs")))
-      fail("c5: tavily leakage probe missing");
+    // c5 is a live probe that needs TAVILY_API_KEY; file presence proved
+    // nothing, so it is no longer a gate assertion. Run it by hand to refresh
+    // the evidence: TAVILY_API_KEY=tvly-... node scripts/probe-tavily-domains.mjs
     if (!fs.readFileSync(path.join(ROOT, "scripts/ship-gate.mjs"), "utf8").includes("stepOverrideGovernance")) {
       fail("ship-gate missing stepOverrideGovernance");
     }

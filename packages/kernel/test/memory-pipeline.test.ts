@@ -394,11 +394,36 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
     domain: mockDomain,
     model: { id: "test" } as any,
     streamFn: mockStreamFn("reuse"),
-    sessionId: "",
+    sessionId: "s1",
   });
+  const before = JSON.stringify(pipeline.getConsolidationState());
   const msgs = [{ role: "user", content: "q" }];
   await pipeline.consolidate(msgs as any, 200000, false);
-  assert(true, "consolidate: no store -> no-op, no throw");
+  assert(
+    JSON.stringify(pipeline.getConsolidationState()) === before,
+    "consolidate: no store -> guard returns before touching state",
+  );
+}
+
+// An empty sessionId is the other half of the guard: the store must not be read.
+{
+  let storeTouched = 0;
+  const sentinelStore = {
+    getAnchors() { storeTouched++; return Promise.resolve([]); },
+    saveAnchor() { storeTouched++; return Promise.resolve(); },
+    searchMemory() { storeTouched++; return Promise.resolve([]); },
+  };
+  const pipeline = new MemoryPipeline({
+    store: sentinelStore as any,
+    models: undefined,
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test" } as any,
+    streamFn: mockStreamFn("reuse"),
+    sessionId: "",
+  });
+  await pipeline.consolidate([{ role: "user", content: "q" }] as any, 200000, false);
+  assert(storeTouched === 0, "consolidate: empty sessionId -> store never touched");
 }
 
 // signalSearchTurn deleted, replaced by hasRetrievalEvidence parameter.
@@ -414,7 +439,11 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
   });
   const msgs = Array.from({ length: 6 }, (_, j) => ({ role: "user", content: `msg${j}` }));
   await pipeline.consolidate(msgs as any, 1000, true);
-  assert(true, "hasRetrievalEvidence: triggers consolidation without throw");
+  await pipeline.flush();
+  assert(
+    store.saveAnchorCalls.some((c) => c.type === "consolidation_state"),
+    "hasRetrievalEvidence with >4 messages triggers consolidation (state anchor written)",
+  );
 }
 
 // #113 shell: domain.compaction {fraction} resolves against the REAL window

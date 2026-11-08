@@ -143,19 +143,9 @@ function mockStreamFn(_model: any, _context: any, _options?: any): any {
   assert(eventTypes.length === 7, "7 AgentEvent types");
 }
 
-// Test 5: PiAgentRuntime accepts ledger and sessionId.
-{
-  const ledger = new MockLedger();
-  const runtime = new PiAgentRuntime({
-    retriever: new MockRetriever(),
-    domain: mockDomain,
-    model: { id: "test" } as any,
-    streamFn: mockStreamFn,
-    ledger,
-    sessionId: "test-session",
-  });
-  assert(true, "PiAgentRuntime accepts ledger + sessionId");
-}
+// Test 5 removed: "constructor accepts ledger + sessionId" only asserted a
+// TypeScript-guaranteed call signature. The ledger/sessionId wiring is covered
+// by the real-run tests below (#103/#178/#188 reserve + settle assertions).
 
 
 // === Contract Tests ===

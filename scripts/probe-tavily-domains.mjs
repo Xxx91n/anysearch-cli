@@ -4,7 +4,9 @@
 // Output: .scratch/grill-round-62/tavily-probe-ledger.{json,md}
 // Arms: A default-mode leak / B filter-mode hard / C subdomain directionality /
 // D research-endpoint soft preference (live arm gated by PROBE_TAVILY_RESEARCH=1).
-// SKIPPED is recorded honestly when TAVILY_API_KEY is absent.
+// SKIPPED is recorded honestly when TAVILY_API_KEY is absent. A keyless run is
+// not evidence, so it exits 2 instead of looking green: rerun with a key to
+// produce a PASS/LEAK ledger.
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 const NL = String.fromCharCode(10);
@@ -27,6 +29,7 @@ const record = (arm) => { ledger.arms.push(arm); console.log("[" + arm.status + 
 if (!KEY) {
   for (const id of ["A-default-mode", "B-filter-mode", "C-subdomain-direction", "D-research-endpoint"])
     record({ id, status: "SKIPPED", summary: "TAVILY_API_KEY unset - live arm not run", evidence: null });
+  console.error("TAVILY_API_KEY unset — no live evidence produced (exit 2, not a pass)");
 } else {
   try {
     const r = await tavily("/search", { query: "tokio JoinSet rust spawn structured concurrency", max_results: 10, include_domains: ["pnpm.io"] });
@@ -78,3 +81,4 @@ writeFileSync(join(OUT_DIR, "tavily-probe-ledger.json"), JSON.stringify(ledger, 
 const md = ["# Tavily include_domains probe ledger (criterion 5)", "", "ranAt: " + ledger.ranAt + " | key: " + ledger.key, "", "| arm | status | summary |", "|---|---|---|",...ledger.arms.map((a) => "| " + a.id + " | " + a.status + " | " + a.summary.replace(/\|/g, "/") + " |"), "", "Re-run: TAVILY_API_KEY=tvly-... node scripts/probe-tavily-domains.mjs (PROBE_TAVILY_RESEARCH=1 enables arm D)."].join(NL);
 writeFileSync(join(OUT_DIR, "tavily-probe-ledger.md"), md + NL, "utf8");
 console.log("ledger -> " + join(OUT_DIR, "tavily-probe-ledger.{json,md}"));
+if (!KEY) process.exitCode = 2;
