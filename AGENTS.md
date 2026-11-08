@@ -25,7 +25,7 @@ The rule is kept by discipline, not by a machine. Branch protection is not avail
 - better-sqlite3@13 loads a prebuilt `.node` file. `allowBuilds: false` in pnpm-workspace.yaml is on purpose. Turning it on would need MSBuild + ClangCL. Leave it.
 - pnpm is pinned to 11.24.0 with `pmOnFail: error`. A version mismatch stops at once and never rewrites the lockfile. Change both pinned fields in one commit.
 - All version control goes through GitButler (`but`). Never push without an explicit order.
-- Every host has its own hook format, and each one traps you differently. Codex accepts only the `hookSpecificOutput` shape. Antigravity sends camelCase JSON on stdin, and on `PreToolUse` an empty `{}` means DENY. The rest are listed in `docs/*-integration.md` and in the comments under `apps/plugin/src/hooks/adapters/`.
+- Each host's hook format has its own trap. Codex accepts only the `hookSpecificOutput` shape. Antigravity sends camelCase JSON on stdin, and on `PreToolUse` an empty `{}` means DENY. The rest are listed in `docs/*-integration.md` and in the comments under `apps/plugin/src/hooks/adapters/`.
 
 ## Agent skills
 

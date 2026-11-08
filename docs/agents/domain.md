@@ -18,6 +18,7 @@ This repo has one context:
 ├── apps/cli/           ← anysearch CLI entry
 ├── apps/mcp/           ← MCP server
 ├── apps/plugin/        ← shared hook code and project-index plugin
+├── apps/dsh-plugin/    ← DeepSeek Harness adapter
 └── packages/           ← embedding, kernel, retriever, store
 ```
 

@@ -3,7 +3,7 @@ name: anysearch
 description: Search the web now, run deep research, recall earlier results and look things up in a knowledge base, through the anysearch ans_* tools.
 ---
 
-# Anysearch — Information-Specialized Agent
+# Anysearch skill
 
 Research and fetch information from many sources, with persistent memory.
 
@@ -45,5 +45,5 @@ Research and fetch information from many sources, with persistent memory.
 ## Mandatory rules
 
 - Always check recall_memory before starting a new search_web on a topic already discussed
-- When a layer breaks, let the call through: if the anysearch server is unreachable, keep going without the memory features (do not block)
+- When a layer breaks, let the call through: if the anysearch server is unreachable, keep going without the memory features (the outage does not block the call)
 - Tool names: all anysearch tools use the ans_* prefix (a host may add its own prefixes)
