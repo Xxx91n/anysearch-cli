@@ -214,7 +214,7 @@ ans-mcp --transport http --port 3001            # Streamable HTTP（只绑本机
 
 ```mermaid
 flowchart LR
-    U["ans CLI · ans-mcp"] --> Q["同时查（fanout）"]
+    U["ans CLI · ans-mcp"] --> Q["多源并发查找（fanout）"]
     Q --> T["tavily"]
     Q --> E["exa"]
     Q --> A["anysearch"]
@@ -243,7 +243,7 @@ flowchart LR
 
 | 限制 | 影响 |
 |------------|----------------|
-| macOS 退出时 `libc++abi` 可能 abort | 原因是进程里还有原生对象活着时强行 `process.exit()`，不是 sqlite 句柄泄漏。store 这边的退出已经改成先关句柄再自然退出，macOS 也重新放回 `ship-gate` 的阻断检查；但只要进程里还有原生对象就强行退出，仍可能 abort，`macos-spillover-probe` 继续做不阻断的预警 |
+| macOS 退出时 `libc++abi` 可能 abort | 原因是进程里还有原生对象活着时强行 `process.exit()`，不是 sqlite 句柄泄漏。store 退出已改成先关句柄再自然退出，macOS 也重新放回 `ship-gate` 的阻断检查。只要强制退出时还有原生对象，仍可能 abort；`macos-spillover-probe` 继续做不阻断的预警 |
 | `anysearch` 信息源没法在搜之前筛域名 | 它的 MCP `domain` 参数是垂直领域路由的枚举，不是 hostname 白名单；有域名白名单时只能等搜完再筛 |
 | `anysearch` 适配器只接了 `search` | `get_sub_domains`、`batch_search`、`extract` 和线上有、但官方文档没写的 `score` 都没接；上游工具数量不写死（官方文档列四个，线上还返回过 `score`）。成功的 `search` 回复里的 `_meta.request_id` 只是运行记录里的诊断数据，而且只有调用方给了 span 才记；失败回复不记。它绝不会进结果，也不能当幂等键用 |
 | 退出时 `libc++abi` 可能盖掉拒答的退出码 | 自动化必须读结构化的拒答标记（`--json` / `structuredContent.abstain`），不能只看退出码 |
@@ -251,7 +251,7 @@ flowchart LR
 | `query_knowledge` 只有在当前领域开了 `rag.adapter = "fts"` 时才查 | 它通过领域检索适配器的注册表（#155）读整个 store 共用的调研资料库；`none` / `note` 返回明确的空结果，出厂域都是 `none`，所以默认安装回答为空 |
 | 省略 `[rag]` 不等于 `adapter = "none"` | `rag` 这段是写了就整段替换：继承出来的域会用基域的 adapter/note；整条继承链都没有 adapter 就校验不过 |
 | `rag.adapter = "fts"` 读的是**整个 store 共用**的调研资料库，不是当前会话 | 这是故意的边界（#130）：store 才是隔离单位，会话和域只是它下面的小范围。出厂域都是 `none`，所以 `fts` 注入要自己打开（`recall_memory` 本来就读同一个 store 范围） |
-| MCP 新旧版本并存：`2026-07-28` 的客户端会被谈成 `2025-11-25` | stdio 和无状态 Streamable HTTP 的 `initialize` 对现代客户端返回 `2025-11-25`，五个工具照样能用；旧客户端会拿到自己的版本。手写的那条路径仍只支持旧版：在 stdio / in-memory（或不带 `MCP-Protocol-Version` 头的 HTTP）上，带现代 `_meta` 的 `server/discover` 返回 `-32601`，`tools/list` 仍会退成五个工具的旧版表。HTTP 上，不是 initialize 的请求如果带 `MCP-Protocol-Version: 2026-07-28`，会在分发前被传输层拒绝（HTTP 400 / JSON-RPC `-32000`），应该用谈下来的 `2025-11-25`。细节见 [docs/mcp-server.md](docs/mcp-server.md) |
+| MCP 新旧版本并存：`2026-07-28` 的客户端会被谈成 `2025-11-25` | stdio 和无状态 Streamable HTTP 的 `initialize` 对现代客户端回 `2025-11-25`，五个工具照常能用；旧客户端拿到自己的版本。手写路径只支持旧版：在 stdio / in-memory（或 HTTP 不带 `MCP-Protocol-Version` 头）时，带现代 `_meta` 的 `server/discover` 返回 `-32601`，`tools/list` 退回五个工具的旧版表。HTTP 上，非 initialize 请求带 `MCP-Protocol-Version: 2026-07-28` 会在分发前被传输层拒绝（HTTP 400 / JSON-RPC `-32000`），应该用谈下来的 `2025-11-25`。细节见 [docs/mcp-server.md](docs/mcp-server.md) |
 | MCP 客户端身份只在单次请求里有效 | `2026-07-28` 的 `tools/call` 如果带 `_meta["io.modelcontextprotocol/clientInfo"]`，会记录映射后的 `client_id`；旧版 `2025-11-25` 的无状态 HTTP 调用没有单次请求身份，记录为 `mcp_unknown`。`initialize` 时提取只是兜底，不是跨请求保证 |
 
 完整记录：[docs/limitations.md](docs/limitations.md)。

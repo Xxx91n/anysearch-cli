@@ -1,7 +1,7 @@
 # 领域检索适配器
 
 `[rag] adapter = <id>` 让一个域把自己的**私有数据、内部数据**塞进 agent 的上下文里。
-插件每轮给模型加内容时都会走 `transformContext`，`rag` 就是这一层里的一个环节。
+领域接入按层划分，`rag` 对应 `transformContext` 这一层。
 
 - 接口：`RagAdapterPort`（`packages/kernel/src/ports.ts`）
 - 注册表和具体实现：`packages/kernel/src/rag-adapter.ts`
