@@ -6,39 +6,16 @@
 
 [English](README.md) | **简体中文**
 
-> 英文版是主文档，中文版会跟着同步。
 
 [![npm](https://img.shields.io/npm/v/@anysearch-cli/cli)](https://www.npmjs.com/package/@anysearch-cli/cli)
 [![ci](https://github.com/Xxx91n/anysearch-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Xxx91n/anysearch-cli/actions/workflows/ci.yml)
 [![license](https://img.shields.io/github/license/Xxx91n/anysearch-cli)](LICENSE)
 
 垂直领域信息专家 CLI：把 search、research、memory、knowledge 放进一个 agent。
-它用 FTS5 做召回，用 RRF 把几个来源的结果合在一起，自带一个能自动索引结果的
-MCP server，还有一道真能拦住返回内容的域名白名单。
-
-已发布到 npm：`npm i -g @anysearch-cli/cli`。0.0.1/0.0.2 因为 `workspace:*`
-依赖问题作废，细节见 CHANGELOG。
-
-按域名筛过之后，搜一次大概是这样：
-
-```text
-$ ANS_DOMAIN=docs ans search "model context protocol"
-1. [tavily] What is the Model Context Protocol (MCP)? ...
-2. [exa] ...
-3. [exa] ...
-
-# 域内没有结果时直接拒答，不报错：
-abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered 0, gate pre)
-```
-
-## 环境要求
-
-- Node.js >= 22（Node 24 已验证）
-- pnpm 11.24.0，版本固定；corepack 会自动读取 `packageManager`
-- 真搜至少需要一个信息源的 API key：
-  - `EXA_API_KEY`：Exa，支持按域名筛
-  - `TAVILY_API_KEY`：Tavily，支持按域名筛
-  - `ANYSEARCH_API_KEY`：anysearch MCP，可选；匿名层也能用，但不能在搜之前按域名筛
+- 用 FTS5 做召回
+- 用 RRF 把几个来源的结果合在一起
+- 自带一个能自动索引结果的 MCP server
+- 一道真能拦住返回内容的域名白名单
 
 ## 快速上手
 
@@ -62,16 +39,27 @@ ans doctor                    # "vector arm (present ...)" 表示已激活
 ans memory backfill-vectors   # 给已有记录补向量；第一次会下载模型（约 130 MB）
 ```
 
-模型第一次使用时从 huggingface.co 下载，缓存在 `~/.anysearch/models`
-（可以用 `ANYSEARCH_MODEL_CACHE` 改位置）。离线机器可以从联网机器拷贝已经填好的
-缓存目录。卸载这个包后，CLI 会退回只用 FTS，不会崩，`ans doctor` 会把这一项
-标成 SKIP。
+- 模型第一次使用时从 huggingface.co 下载，缓存在 `~/.anysearch/models`
+（可以用 `ANYSEARCH_MODEL_CACHE` 改位置）。
+- 离线机器可以从联网机器拷贝已经填好的缓存目录。卸载这个包后，CLI 会退回只用 FTS，不会崩，`ans doctor` 会把这一项标成 SKIP。
+
+## 环境要求
+
+- Node.js >= 22
+- pnpm 11.24.0，版本固定；corepack 会自动读取 `packageManager`
+- 至少需要一个信息源的 API key：
+  - `EXA_API_KEY`：Exa，支持按域名筛
+  - `TAVILY_API_KEY`：Tavily，支持按域名筛
+  - `ANYSEARCH_API_KEY`：anysearch MCP，可选；匿名层也能用，但不能在搜之前按域名筛
 
 ## 域名与拒答
 
 *域名（domain）* 是 `domains/`（或 `ANS_DOMAINS_DIR`）下的一个 TOML 文件，
-里面声明这个域用哪些信息源，还有一份说了算的白名单 `urlAllowlist`。用 `ANS_DOMAIN`
-选当前域。
+里面声明这个域用哪些信息源，还有一份说了算的白名单 `urlAllowlist`。
+
+```bash
+export ANS_DOMAIN=docs      # 选当前域
+```
 
 过滤分两步：
 
@@ -95,14 +83,18 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
 - 每次按域搜索会往运行记录里写两条审计事件：`retrieval.domain_filter.pre` 和
   `retrieval.domain_filter.post`。
 
-退出码：`0` 正常或拒答 · `1` 一般失败，或没有域名策略时零结果 · `2` 用法错误 ·
+> 退出码：`0` 正常或拒答 · `1` 一般失败，或没有域名策略时零结果 · `2` 用法错误 ·
 `3` 开了 `--fail-on-abstain` 后的拒答。
 
 ### 编写 domain 的 description（`ans recommend`）
 
-`ans recommend "<自由文本>"` 只用 **`name` + `description`** 做 BM25 排序
-（装了 `@anysearch-cli/embedding` 时再加一路向量；没装就只用 FTS）。它输出前
-3 个候选和有多大把握：把握大就建议 `ans domain <id>`，把握小就列出候选，再附
+```bash
+ans recommend "<自由文本>"
+```
+
+- 只用 **`name` + `description`** 做 BM25 排序
+（若装了 `@anysearch-cli/embedding` 再加一路向量；没装就只用 FTS）。
+- 它输出前 3 个候选和有多大把握：把握大就建议 `ans domain <id>`，把握小就列出候选，再附
 一段机读的「为什么没推荐」——它不会自己切域。所以 description 决定模型什么时候
 会想到这个域，按下面这么写（社区报告和 arXiv 2604.04323 都发现：说明写得含糊，
 就会悄悄不触发）：
@@ -113,11 +105,11 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
 - 一行，≤ ~250 字符（参考 agent skill 注册表里单条 description 的字数上限）；
   `name` 保持简短、直白，两个字段都会原样进索引。
 
-域还可以通过 `[rag] adapter`（领域检索适配器）把自己的内部数据塞进 agent
+> 域还可以通过 `[rag] adapter`（领域检索适配器）把自己的内部数据塞进 agent
 的上下文：`none`（默认）、`note`（旧版固定文字）或 `fts`（真的用 FTS5 查记忆，
 带来源标记）。见 [docs/rag-adapters.md](docs/rag-adapters.md)。
 
-### 安装 Agent Skills（`ans skill`）
+### 安装使用该 Agent 的 Skills（`ans skill`）
 
 ```bash
 ans skill install /path/to/checkout/skills/research
@@ -153,12 +145,6 @@ ans skill uninstall research --project
 这张表只写适配器真接上的功能，不是上游目录里写的全部。AnySearch 是这里唯一的
 MCP 上游；Exa 和 Tavily 继续用官方 SDK，它们托管的 MCP 是让 agent 直接用的工具，
 不是本仓服务端信息源要用的接口。**我们没打算把 Exa/Tavily 迁到 MCP。**
-
-表里有两点取消的细节：AnySearch 每次 POST 都带 signal，但几个搜索并发时共用
-一次 MCP 握手，这次握手只听第一个调用方的话；后来的调用方取消不了这段等待，
-第一个调用方取消也可能让两个搜索一起失败。Exa 的 `includeDomains` 只对
-`search()` 生效；单独的 `answer()` 收不到白名单，检索引擎也不会去筛答案文字或
-citations 里的网址。
 
 AnySearch 适配器只接了 `search`。`get_sub_domains`、`batch_search`、`extract`
 和线上有、但官方文档没写的 `score` 都没接。上游工具数量不写死：官方文档列四个，
