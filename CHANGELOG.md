@@ -1394,5 +1394,3 @@ T1 门禁为**部分验证**：dry-run 仅打既有 concluded SHA（绿 14514da 
   The "no concurrent MCP traffic during backfill" constraint is relaxed to recommended-not-required;
   CLI help and wording updated. Regression coverage: per-batch exact-parity and
   live-writer contention cases in relation-edges.test.ts.
-
-> AI生成

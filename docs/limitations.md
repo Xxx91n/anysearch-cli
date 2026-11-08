@@ -286,5 +286,3 @@
 - **Exa envelope `usage` is always `undefined`** — `exa-js` returns cost only
   per-call (`costDollars`) and offers no standalone usage API, so `usage()`
   is unimplemented (contract field is optional).
-
-> AI生成

@@ -1,154 +1,125 @@
 # anysearch-cli
 
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="anysearch-cli —— 面向 agent 的搜索、调研与记忆，由一道守得住的域名 allowlist 把关">
+  <img src="./assets/readme/hero.svg" width="100%" alt="anysearch-cli：给 agent 用的搜索、调研和记忆工具，外面有一道守得住的域名 allowlist">
 </p>
 
 [English](README.md) | **简体中文**
 
-> 本文档为翻译件，规范以 [README.md](README.md) 为准。
+> 英文版是主文档，中文版会跟着同步。
 
 [![npm](https://img.shields.io/npm/v/@anysearch-cli/cli)](https://www.npmjs.com/package/@anysearch-cli/cli)
 [![ci](https://github.com/Xxx91n/anysearch-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Xxx91n/anysearch-cli/actions/workflows/ci.yml)
 [![license](https://img.shields.io/github/license/Xxx91n/anysearch-cli)](LICENSE)
 
-垂直领域信息专家 CLI：search + research + memory + knowledge 合于一个
-agent——FTS5 召回、多路 RRF 融合、自动索引结果的 MCP server，以及一道
-真正拦得住返回内容的域名 allowlist。
+垂直领域信息专家 CLI：把 search、research、memory、knowledge 放进一个 agent。
+它用 FTS5 做召回，用 RRF 把多个来源的结果合在一起，自带一个能自动索引结果的
+MCP server，还有一道真正能拦住返回内容的域名 allowlist。
 
-**状态：已发布 npm** — `npm i -g @anysearch-cli/cli`（自 0.0.4 起经 npm
-OIDC trusted publishing 发布，含 sigstore provenance；0.0.1/0.0.2 因
-`workspace:*` peer 逃逸作废——见 CHANGELOG）。
+已发布到 npm：`npm i -g @anysearch-cli/cli`。0.0.1/0.0.2 因为 `workspace:*`
+依赖问题作废，细节见 CHANGELOG。
 
-域门限定搜索的真实输出——返回的每个 URL 都在该域 `urlAllowlist` 内；
-闸门后为空则是一等公民弃权：
+域门限定后的搜索大概是这样：
 
 ```text
 $ ANS_DOMAIN=docs ans search "model context protocol"
-1. [tavily] What is the Model Context Protocol (MCP)? - Model Context Protocol
-   modelcontextprotocol.io/
-2. [exa]
-   modelcontextprotocol.io/specification/2026-07-28/basic
-3. [exa]
-   modelcontextprotocol.io/specification/2026%2D07%2D28
-   …
+1. [tavily] What is the Model Context Protocol (MCP)? ...
+2. [exa] ...
+3. [exa] ...
 
-# when the gate leaves zero results — a first-class abstain, not an error:
+# 域内没有结果时直接弃权，不报错：
 abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered 0, gate pre)
 ```
 
 ## 环境要求
 
 - Node.js >= 22（Node 24 已验证）
-- pnpm 11.24.0 精确版本（钉死；corepack 自动读取 `packageManager`）
-- 真实搜索至少需要一个 provider API key：
-  - `EXA_API_KEY` — Exa（支持域名过滤）
-  - `TAVILY_API_KEY` — Tavily（支持域名过滤）
-  - `ANYSEARCH_API_KEY` — anysearch MCP（可选；匿名层可用，无域名过滤）
+- pnpm 11.24.0，版本固定；corepack 会自动读取 `packageManager`
+- 真实搜索至少需要一个 provider（检索服务商）的 API key：
+  - `EXA_API_KEY`：Exa，支持域名过滤
+  - `TAVILY_API_KEY`：Tavily，支持域名过滤
+  - `ANYSEARCH_API_KEY`：anysearch MCP，可选；匿名层也能用，但不能按域名前置过滤
 
 ## 快速上手
 
 ```bash
 npm i -g @anysearch-cli/cli
-ans doctor                                          # self-check: keys, DB path, domain resolution, provider readiness
-ans search "tokio JoinSet rust"                     # first search (full fanout across keyed providers)
-ANS_DOMAIN=docs ans search "tokio JoinSet rust"     # domain-scoped search
+ans doctor                                          # 自检：key、数据库路径、domain 解析、provider 是否就绪
+ans search "tokio JoinSet rust"
+ANS_DOMAIN=docs ans search "tokio JoinSet rust"     # 只在 docs 域里搜
 
-# optional vector arm (peer-optional — never auto-installed):
+# 可选：向量臂，不会自动安装
 npm i -g @anysearch-cli/embedding
 ```
 
-从源码构建（贡献者）：
-
-```bash
-git clone <this repo> && cd anysearch-cli
-pnpm install --ignore-scripts --node-linker=hoisted   # better-sqlite3 预编译免 node-gyp；hoisted 规避 Windows EPERM
-pnpm build
-node apps/cli/dist/index.js doctor
-ANS_DOMAIN=docs node apps/cli/dist/index.js search "tokio JoinSet rust"
-
-# machine-readable output (includes sufficiency / attribution / abstain)
-node apps/cli/dist/index.js search "..." --json
-```
-
-CLI 在全局安装或 link 后解析为 `ans`；仓库形态下
-`node apps/cli/dist/index.js` 是同一入口。
-
 ## 安装后：向量臂
 
-`@anysearch-cli/embedding` 是 peer-optional —— 未安装时 CLI 以 FTS-only 运行。
-全局安装后（npm 或 pnpm），验证激活并为存量记录补向量：
+`@anysearch-cli/embedding` 是可选依赖（peer-optional），没装时 CLI 只用 FTS。
+全局安装后（npm 或 pnpm），先确认它已经激活，再给已有记录补向量：
 
 ```bash
-ans doctor                    # "vector arm (present ...)" confirms activation
-ans memory backfill-vectors   # embeds stored rows; first run downloads the model (~130 MB)
+ans doctor                    # "vector arm (present ...)" 表示已激活
+ans memory backfill-vectors   # 给已有记录补向量；第一次会下载模型（约 130 MB）
 ```
 
-模型首次使用时从 huggingface.co 下载，缓存于
-`~/.anysearch/models`（可用 `ANYSEARCH_MODEL_CACHE` 覆盖）。离线主机可从联网
-机器拷贝已填充的缓存目录。卸载该包后 CLI 退回 FTS-only 模式 —— 不崩溃，
-`ans doctor` 将该臂报为 SKIP。
+模型第一次使用时从 huggingface.co 下载，缓存在 `~/.anysearch/models`
+（可以用 `ANYSEARCH_MODEL_CACHE` 改位置）。离线机器可以从联网机器拷贝已经填好的
+缓存目录。卸载这个包后，CLI 会退回只用 FTS 模式，不会崩，`ans doctor` 会把这一臂
+标成 SKIP。
 
 ## 域名与弃权
 
 *域名（domain）*是 `domains/`（或 `ANS_DOMAINS_DIR`）下的一个 TOML 文件，
-声明其 providers 与权威 `urlAllowlist`；`ANS_DOMAIN` 负责选择。
+里面声明这个域用哪些 provider，以及一份权威的 `urlAllowlist`。用 `ANS_DOMAIN`
+选当前域。
 
-过滤以两道闸运行：
+过滤分两道闸：
 
-1. **前置过滤（按能力协商）** —— 声明支持域名过滤的 provider 直接收到
-   allowlist（`tavily`：`include_domains` 硬过滤模式；`exa`：
-   `includeDomains`）；不支持的 provider（如 `anysearch`）诚实降级为
-   仅后置过滤——绝不为它们伪造过滤能力。
-2. **后置过滤（权威）** —— provider 返回后，kernel 在融合/归因之前丢弃
-   所有 URL 不在 allowlist 的结果。deny 规则优先；allow 条目匹配宿主
-   及其子域。
+1. **前置过滤（按能力协商）**：声明支持域名过滤的 provider 会直接收到 allowlist
+   （`tavily` 用 `include_domains` 强制过滤，`exa` 用 `includeDomains`）；不支持
+   前置过滤的 provider（比如 `anysearch`）只做后置过滤，不会假装自己会过滤。
+2. **后置过滤（权威）**：provider 返回后，kernel 在融合和归因之前，把不在
+   allowlist 里的 URL 全部丢掉。deny 规则优先；allow 条目匹配域名和它的子域。
 
-当闸门后结果为零，`ans` **弃权（abstain）** —— 一等公民结果，不是错误：
+域门后结果为零时，`ans` **弃权（abstain）**。这是一等公民的结果，不是错误：
 
 ```text
 abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered 0, gate pre)
 ```
 
-- 默认退出码 **0**（弃权是成功的策略结果）；`--fail-on-abstain` 为自动化
-  返回专用退出码 **3**。
-- `--json` 携带 `abstain: { reason, domain, preFiltered, postFiltered, gate }`；
-  MCP 工具以 `structuredContent.abstain` + `isError: false` 呈现。
-- 每次域名限定搜索在观测轨迹里落地两条审计事件：
-  `retrieval.domain_filter.pre` 与 `retrieval.domain_filter.post`。
+- 默认退出码 **0**（弃权是成功的策略结果）；加 `--fail-on-abstain` 时，自动化
+  会拿到专用退出码 **3**。
+- `--json` 里有 `abstain: { reason, domain, preFiltered, postFiltered, gate }`；
+  MCP 工具用 `structuredContent.abstain` + `isError: false` 表示同样的事。
+- 每次按域搜索会往观测轨迹里写两条审计事件：`retrieval.domain_filter.pre` 和
+  `retrieval.domain_filter.post`。
 
-退出码：`0` 正常/弃权 · `1` 一般失败或无域名策略下的零结果 · `2` 用法
-错误 · `3` `--fail-on-abstain` 下的弃权。
+退出码：`0` 正常或弃权 · `1` 一般失败，或没有域名策略时零结果 · `2` 用法错误 ·
+`3` 开了 `--fail-on-abstain` 后的弃权。
 
 ### 编写 domain 的 description（`ans recommend`）
 
 `ans recommend "<自由文本>"` 只用 **`name` + `description`** 做 BM25 排序
-（装了 `@anysearch-cli/embedding` 时叠加可选的向量臂；未安装则降级为纯
-FTS）。输出 top-3 候选与置信度：高置信建议 `ans domain <id>`，低置信列出
-候选并附结构化的「为什么没推荐」行——绝不自动切换。因此 description 就是
-触发面，请按下面规范写（证据：社区报告与 arXiv 2604.04323 均发现模糊的
-description 会被静默忽略——写得好坏是触发成败的关键）：
+（装了 `@anysearch-cli/embedding` 时再加一路向量；没装就只用 FTS）。它输出
+top-3 候选和置信度：高置信会建议 `ans domain <id>`，低置信会列出候选，并附一行
+结构化的“为什么没推荐”——它不会自己切域。所以 description 就是触发面，按下面
+这么写（社区报告和 arXiv 2604.04323 都发现：描述写得模糊，就会静默不触发）：
 
-- 写清**这个 domain 用来做什么**，以及**用户真会输入的具体名词**——
-  工具、格式、站点（如 `MCP spec / TypeScript tsconfig / pnpm settings`），
-  少用形容词。
-- 补充与兄弟 domain 区分开的**关键触发词**，并隐含它*不是*什么（语料纳入
-  规则）。
-- 一行、≤ ~250 字符（agent skill 注册表的单条 description 预算先例）；
-  `name` 保持简短字面义——两个字段都会被原样索引。
+- 写清**这个域是干什么的**，以及**用户真会输入的具体名词**——工具、格式、站点
+  （比如 `MCP spec / TypeScript tsconfig / pnpm settings`），少用形容词。
+- 补上和兄弟域区分开的**关键触发词**，也隐含它*不是*什么（这是语料纳入规则）。
+- 一行，≤ ~250 字符（参考 agent skill 注册表单条 description 的预算先例）；
+  `name` 保持简短、字面，两个字段都会被原样索引。
+
+域还可以通过 `[rag] adapter`（领域检索适配器）把自己的内部数据注入 agent 上下文：`none`（默认）、
+`note`（旧版固定文本）或 `fts`（真正的 FTS5 记忆检索，带来源标记）。见
+[docs/rag-adapters.md](docs/rag-adapters.md)。
 
 ### 安装 Agent Skills（`ans skill`）
 
-`ans skill` 是最小安装器，不是包管理器。它从**本地 Git checkout** 拷贝根目录
-含 `SKILL.md` 的自包含目录。请先 checkout 到目标 commit/tag；安装器记录来源、
-完整 HEAD commit、存在时的精确 tag，以及来源是否含未提交修改。dirty 探测以流式
-读取 `git status` 并在出现第一条记录时即停止，所以 ignored / untracked 条目极多的
-checkout 仍可安装，不会因为要读完整个列表而失败。它不克隆仓库、不解析依赖，也不
-执行 skill 中的代码。
-
 ```bash
 ans skill install /path/to/checkout/skills/research
-ans skill validate             # 校验全部已装 skill；也可指定一个名字
+ans skill validate             # 校验全部已装 skill；也可以只指定一个名字
 ans skill list
 ans skill uninstall research
 
@@ -159,152 +130,85 @@ ans skill list --project
 ans skill uninstall research --project
 ```
 
-默认用户级（可用 `--user` 显式选择）：
+`ans skill` 只是把本地 checkout 里带 `SKILL.md` 的目录拷到 `skills/synced/`，
+并记下来源和 commit。它不是包管理器，也不会执行 skill 里的代码。锁、清单、
+残留清理这些细节，见 `GLOSSARY.md` 的 Skill Installer 词条。
 
-```text
-~/.anysearch-cli/skills/synced/installed.json
-~/.anysearch-cli/skills/synced/<name>/SKILL.md
-<项目>/.anysearch/skills/synced/installed.json
-<项目>/.anysearch/skills/synced/<name>/SKILL.md
-```
-
-`synced/` 是机器管理区；同级 `skills/<name>/` 留给用户手写。`SKILL.md` 必须以
-可解析的 YAML frontmatter mapping 开头，其中 `name` 为 1–64 位小写字母/数字，
-可用单个连字符分隔（不能是 Windows 设备名），并据此选择安装目录。这里只检查
-语法和名字，不是完整的 Agent Skills linter。Git 元数据会省略，符号链接会被
-拒绝；源仓库若在本地定义了 Git content-filter（`filter.<name>.clean`/`process`）
-也会被拒绝，否则 `git status` 会执行该仓库控制的代码。dirty 探测不检查子模块。
-已有安装绝不覆盖（请先卸载）。
-
-版本 1 的 `installed.json` 含按名字索引的 `skills` 对象；每项记录 `name`、
-绝对路径 `source`、`commit`、`dirty` 和可选 `tag`。清单缺失、损坏或不符合
-schema 时，卸载会拒绝且不删除任何文件；绝不靠扫描目录猜测删除目标。
-`install` 与 `uninstall` 在所选 scope 内持独占锁：两个并发变更不会互相丢失
-清单条目。锁内记录持有者（`pid`、`host`、稳定的机器标识，以及系统可提供时的 PID namespace
-标识），并连同 owner 记录一起原子发布，因此锁不会缺少 owner。机器标识取自
-`/etc/machine-id`（Linux）、`MachineGuid`（Windows）或 `IOPlatformUUID`
-（macOS）——不依赖 `hostname()`，因此共享 managed root 且恰好同名的两台主机
-不会互相回收活锁。同一机器且同一 PID namespace 上可证明已死的持有者会被自动回收
-（上一 boot 留下的锁也视为已死）；仍存活的锁、在另一台机器或另一个 PID namespace
-写入的锁，或 owner 记录不可读或缺少机器标识的锁一律 fail-closed，绝不自动删除。
-手工恢复时，确认创建锁的机器上没有 `ans skill` 进程运行后删除锁目录即可。发布前中断可能留下
-`skills/synced/.installed.lock.pending-*`：无 `installed.json` 的 scope 会清理
-已死副本，其余副本是惰性的，确认没有 `ans skill` 进程运行后可手工删除。
-清单发布以及安装/卸载的目录 rename 遇到 Windows 瞬时共享冲突
-（`EPERM`/`EBUSY`/`ENOTEMPTY`）会做有界退避重试，最长约 60 秒，耗尽后仍报告
-原始错误；其他平台只把 `EBUSY` 视为瞬时错误。
-
-`install`、`list`、`validate` 还会在持锁时对账安装器自有残留：残留按**生成的
-精确名字**识别，绝不用前缀匹配——`.install-` 加 6 位字母数字（暂存）、
-`.installed-<uuid v4>.tmp`（临时清单）、`.installed.lock.pending-` 加 6 位字母数字、
-`.installed.lock.reclaim-<uuid v4>`（回收隔离目录）。
-
-暂存与临时清单仅在不存在 `installed.json` 的 scope 中清理。pending 与回收隔离
-目录还要求记录的 owner 可证明已死：无法证明已死的回收隔离目录会带着路径失败
-停下；pending 的 owner 存活或不可读时则原样保留——它是惰性的，既不阻塞也不
-中断运行。
-
-判定依据是**形态而非归属**：只是长得像的条目——手写的 `.installed-notes.tmp`、
-`.install-archive/` 目录、`.installed.lock.pending-<notes>`——属于操作者内容：
-永不删除，且没有 `installed.json` 的 scope 会继续 fail-closed，不会在它旁边
-bootstrap 出清单。恰好符合生成形态的名字与安装器残留无法区分，将被按残留处理
-（例如操作者目录 `.install-backup` 在 `.install-` 之后正好是 6 位字母数字，会在
-没有 `installed.json` 的 scope 中被删除），自己的文件请避开这种形态。
-`.uninstall-*` 备份、未登记的 `<name>/` 目录和未知条目永不自动删除。
-安装中断留下的未登记 `<name>/` 可手工删除后重装。若清单仍记录某 skill 但其
-`<name>/` 目录缺失，`ans skill list`（以及 `validate`）会输出恢复提示：把对应的
-`.uninstall-*` 备份改回 `<name>/`，没有备份时用 `ans skill uninstall <name>`
-删掉这条失效记录（项目级加 `--project`）。已存在 `installed.json` 时留下的 `.installed-*.tmp`
-不会被自动删除，请在手工清理前先查看 `skills/synced/`。回收中断留下的
-`.installed.lock.reclaim-*` 遵循同样的“无清单才清理”规则：仅在没有
-`installed.json`、且其记录的持有者于本机可证明已死时清理；含清单的 scope
-不会自动清理。若 `ans skill list`
-本身报告清单缺失或损坏，请先直接查看 `skills/synced/` 再动手删除。
-
-**安装不等于激活。** 这些命令绝不改写 domain TOML。Skill Active List 仍由
-Active Domain 的 `[skills].active` 决定，激活仍按原方式通过 domain 配置管理。
+**安装不等于激活。** 这些命令不会改 domain TOML。Skill Active List 仍由
+Active Domain 的 `[skills].active` 决定，激活还是按原来的方式改 domain 配置。
 
 ## Provider 传输与能力矩阵
 
-| provider | 传输 | 已接线的检索面 | answer 模式 | 域名前置过滤 | 垂域路由 | 取消 | 独立用量接口 |
+| provider | 传输层 | 已接上的检索能力 | answer（直接答案）模式 | 域名前置过滤 | 垂域路由 | 取消 | 独立用量接口 |
 |----------|------|----------------|-------------|--------------|----------|------|--------------|
-| anysearch | MCP Streamable HTTP（`POST /mcp`，手写 JSON-RPC；不是官方 SDK） | `search`（fast / index / deep；`answer` 请求降级为普通检索） | no | no（仅后置过滤） | yes（`domain` / `sub_domain` / `sub_domain_params`） | yes（每次 POST 带 fetch signal；共享握手注意见下） | no |
-| exa | 官方 `exa-js` SDK | `search`（fast / index / deep / answer） | yes（`answer()` 返回 citations，`verified:false`；answer 失败时降级为检索结果并输出 stderr 一行） | yes（`includeDomains`，仅 `search()`；见注） | no | yes（`signal` 作为 `search()` / `answer()` 的尾参请求选项；#216） | no |
-| tavily | 官方 `@tavily/core` SDK | `search`（fast / index / deep / answer） | yes（`includeAnswer`） | yes（`include_domains`，硬过滤） | no | no（`@tavily/core@0.7.7` 未暴露 signal；#32） | no |
+| anysearch | MCP Streamable HTTP（`POST /mcp`，手写 JSON-RPC；不是官方 SDK） | `search`（fast / index / deep；`answer` 请求会降级成普通检索） | no | no（只做后置过滤） | yes（`domain` / `sub_domain` / `sub_domain_params`） | yes（每次 POST 带 fetch signal；共享握手的细节见下） | no |
+| exa | 官方 `exa-js` SDK | `search`（fast / index / deep / answer） | yes（`answer()` 带 citations，`verified:false`；answer 失败会降级成检索结果，并往 stderr 写一行） | yes（`includeDomains`，只作用于 `search()`；见下） | no | yes（`signal` 作为 `search()` / `answer()` 请求选项的最后一个参数；#216） | no |
+| tavily | 官方 `@tavily/core` SDK | `search`（fast / index / deep / answer） | yes（`includeAnswer`） | yes（`include_domains`，强制过滤） | no | no（`@tavily/core@0.7.7` 没暴露 signal；#32） | no |
 
-Provider 选择来自域名 TOML 的 `sources.enabled`。缺 key 的 provider 被
-跳过而非崩溃（fail-open）；若*没有任何* provider 能注册，搜索是错误
-而非弃权。
+provider 从 domain TOML 的 `sources.enabled` 里选。缺 key 的 provider 会被跳过，
+不会让搜索崩掉；如果一个 provider 都没能注册，搜索直接报错，不会当成弃权。
 
-矩阵记录的是适配器实际接线的能力，不是各上游目录提供的全部能力。Exa 与
-Tavily 继续使用官方 SDK：它们的托管 MCP server 是面向 agent 的工具面，
-不是本仓的服务端 provider API，**不计划把 Exa/Tavily 迁移到 MCP**。
-AnySearch 是这里唯一的 MCP 上游，因为 MCP 就是它的原生检索传输，而不是
-因为我们认为 provider 代码应优先用 MCP 而非 SDK。
+这张表只写适配器真正接上的能力，不是各上游目录里列的全部能力。AnySearch 是这里
+唯一的 MCP 上游；Exa 和 Tavily 继续用官方 SDK，它们的托管 MCP 是给 agent 直接用
+的工具面，不是本仓服务端 provider 的接口。**我们不打算把 Exa/Tavily 迁到 MCP。**
 
-矩阵背后有两点注意：AnySearch 的取消覆盖每次 POST，但并发检索共享同一次
-MCP 握手——它跟随第一个调用方的 signal，后来的调用方无法取消这段等待，
-而中止第一个调用方可能同时让两个检索失败。Exa 的 `includeDomains` 只作用于
-`search()`；单独的 `answer()` 调用不会收到 allowlist，kernel 也不会对
-answer 文本或 citations 应用 URL 过滤。
+表里有两点取消上的细节：AnySearch 每次 POST 都带 signal，但并发搜索共用一次
+MCP 握手，这段握手只跟第一个调用方的 signal；后来的调用方取消不了这段等待，
+第一个调用方取消也可能让两个搜索一起失败。Exa 的 `includeDomains` 只作用于
+`search()`；单独的 `answer()` 不会收到 allowlist，kernel 也不会对答案文本或
+citations 做 URL 过滤。
 
-AnySearch 这一行在适配器层面只接线 `search`：`get_sub_domains`、
-`batch_search`、`extract` 与线上但未文档化的 `score` 都未接线。上游工具
-数量刻意不写死——官方文档列四个工具，而线上端点还返回过 `score`。
-成功的 `search` 回复若带非空 `_meta.request_id`，且调用方提供观测 span
-（CLI 与 MCP 工具调用都会提供），才记录为诊断关联 id（
-`retrieval.provider.diagnostic`）；失败的回复在提取前就抛出，因此不记录。
-该 id 绝不进入查询结果，也绝不是幂等键。
+AnySearch 适配器只接了 `search`。`get_sub_domains`、`batch_search`、`extract`
+和线上有、但官方文档没写的 `score` 都没接。上游工具数量不写死：官方文档列四个，
+线上还返回过 `score`。成功的 `search` 回复如果带非空 `_meta.request_id`，并且
+调用方提供了观测记录（CLI 和 MCP 工具调用都会提供），才把它记成排查用的关联 id
+（`retrieval.provider.diagnostic`）；失败的回复在提取前就抛了，不记。这个 id
+不会进结果，也不是幂等键。
 
 ## AnySearch 垂域
 
-anysearch provider 另有一根正交轴：服务端**垂域路由**。可按查询（CLI 旗标
-或 MCP 工具参数）或按域名 TOML 设置——它不是 hostname allowlist，与
-`urlAllowlist` 完全不相干。
+AnySearch 还有一根单独的**垂域路由**轴。可以按查询传，也可以写在 domain TOML
+里。它不是 hostname allowlist，和 `urlAllowlist` 没关系。
 
-- 查询级参数（整体替换 TOML 默认，绝不深合并）：`search_web` 与
-  `research_web` 上的 `verticalDomain` / `verticalSubDomain` /
-  `verticalParams`；CLI `--vertical-domain` / `--vertical-sub-domain` /
-  `--vertical-params '{"k":"v"}'`。
-- 仓级默认：域名 TOML 里 `[sources] vertical = { domain = "finance" }`
-  （只放静态亲和——`sub_domain` 在这里可选；但 `calendar` 这类带参标签没有
-  查询级 `sub_domain_params`（`--vertical-params`）会被上游拒）。
-- 能力协商：仅声明 `verticalDomainSupported` 的 provider（当前只有
-  anysearch）收 wire 字段 `domain` / `sub_domain` / `sub_domain_params`；
-  其余走 general 扇出并记入 `retrieval.vertical.pre` 审计事件的
-  `anysearch.vertical.degraded` 名单（丢的是提示，绝不弃权）。
-- 审计：每次垂域检索落一条 `retrieval.vertical.pre`——
-  属性 `anysearch.vertical.domain` / `.sub_domain` / `.params_keys`
-  （只记键名，值绝不进审计）/ `.source`（repo|query）/ `.sent` /
-  `.degraded`。垂域命中在每条 NormalizedResult 上携 `extra.vertical`
-  机读标记。
+- 查询级参数：`search_web` / `research_web` 上的 `verticalDomain` /
+  `verticalSubDomain` / `verticalParams`；CLI 的 `--vertical-domain` /
+  `--vertical-sub-domain` / `--vertical-params '{"k":"v"}'`。传了查询级参数就
+  整体替换 TOML 默认，不做深合并。
+- 仓级默认：`[sources] vertical = { domain = "finance" }`。`sub_domain` 在这里
+  可选；但 `calendar` 这种带参数的标签，必须在查询级传 `sub_domain_params`
+  （`--vertical-params`），否则上游会拒。
+- 能力协商：只有声明 `verticalDomainSupported` 的 provider（现在只有 anysearch）
+  会收到 `domain` / `sub_domain` / `sub_domain_params`；其他 provider 继续走普通
+  查询，并在 `retrieval.vertical.pre` 审计事件里列进
+  `anysearch.vertical.degraded`。丢的只是提示，不会弃权。
+- 审计：每次垂域检索记一条 `retrieval.vertical.pre`，只记参数键名，不记值；
+  命中的结果带 `extra.vertical`，给程序读。
 
-带日期的 domain 词表快照与上游实测语义移至
-[docs/vertical-domains.md](docs/vertical-domains.md)。
+详细词表和上游实测见 [docs/vertical-domains.md](docs/vertical-domains.md)。
 
 ## MCP 服务器
 
 ```bash
 npm i -g @anysearch-cli/mcp                     # 提供 ans-mcp 命令
 ans-mcp                                         # stdio transport（默认）
-ans-mcp --transport http --port 3001            # Streamable HTTP（仅本机）
+ans-mcp --transport http --port 3001            # Streamable HTTP（只绑本机）
 ```
 
-从源码检出运行时，同一入口是
+从源码检出运行时，同一个入口是
 `node apps/mcp/dist/index.cjs [--transport http] [--port <n>]`。
 
 五个工具：`search_web`、`research_web`、`recall_memory`、`query_knowledge`、
-`ans_chat`。`ANS_DOMAIN` 通过进程环境限定 server 范围：直接启动 `ans-mcp`
-时需显式导出；`ans mcp` 会继承 CLI 持久化的选择。
-工具绝不向 stdout 输出；server 保持协议通道纯净。
+`ans_chat`。`ANS_DOMAIN` 通过进程环境限定 server 范围：直接启动 `ans-mcp` 时
+要显式导出；`ans mcp` 会继承 CLI 持久化的选择。工具绝不往 stdout 输出，server
+保持协议通道纯净。
 
-工具参数、`isError`/空结果/abstain 语义、两种传输、环境变量与认证、
-`ans_chat` 会话句柄、dual-era 行为以及上游 provider 矩阵，见规范参考
+工具参数、`isError` / 空结果 / abstain 语义、两种传输、环境变量与认证、
+`ans_chat` 会话句柄、dual-era 行为和上游 provider 矩阵，见规范参考
 [docs/mcp-server.md](docs/mcp-server.md)。
 
 ## 工作原理
 
-一次检索的管线——providers 扇出、域门过滤、结果融合并落库：
+一次检索的管线：providers 分头去查，域门过滤，结果合并后写进数据库。
 
 ```mermaid
 flowchart LR
@@ -326,47 +230,64 @@ flowchart LR
 | CodeBuddy Code | 2.151.0 | `mcp.json` 注册 + `.codebuddy/settings.json` hooks | 实机验证 · [专文](docs/codebuddy-integration.md) |
 | Claude Code | 2.1.251 | `mcp.json` 注册 + `.claude/settings.json` hooks + plugin 骨架 | 实机验证 · [专文](docs/claude-integration.md) |
 | Codex CLI | 0.142.5 | `config.toml` MCP 注册 + `.codex/hooks.json` hooks | 实机验证 · [专文](docs/codex-integration.md) |
-| Antigravity CLI（`agy`） | 1.2.5 | named-hook map `hooks.json`（5 事件经 argv 传入） | 实机验证（裁剪矩阵） · [专文](docs/antigravity-integration.md) |
+| Antigravity CLI（`agy`） | 1.2.5 | named-hook map `hooks.json`（5 个事件经 argv 传入） | 实机验证（裁剪矩阵） · [专文](docs/antigravity-integration.md) |
 | Antigravity IDE | 2.12.2 | `.antigravity/rules/anysearch.mdc` 兜底 | IDE 宿主不执行 hooks（已复现） · [专文](docs/antigravity-integration.md) |
 | DeepSeek Harness（`dsh`） | 0.1.7-rc.2 | 原生注册（`ctx.tools`）+ `dsh-plugin` Cordis bundle | 实机验证（established-via-fallback） · [专文](docs/deepseek-harness-integration.md) |
 
-"已验证"指在真实宿主上捕获端到端 transcript（`stream-json`），而非契约
-同构——完整范围、日期与探针证据见各专文链接。
+这里的“已验证”是指在真实宿主里跑过一轮，抓到了完整的对话记录
+（`stream-json`），不是只看接口形状。完整范围、日期和探针证据在各专文里。
 
 ## 已知限制
 
 | 限制 | 影响 |
 |------------|----------------|
-| macOS 退出时 `libc++abi` abort | 已定位（#183）：触发点是 `process.exit()` 在原生状态仍活时执行静态析构，不是 sqlite handle 泄漏。store 侧退出路径已改为关 handle + 自然退出，macOS 重新进入 `ship-gate` 阻断矩阵；任何在原生状态存活时强制退出的进程仍可能 abort，`macos-spillover-probe` 保留为非阻断早期预警 |
-| `anysearch` provider 无法前置过滤 | 其 MCP `domain` 参数是垂域路由枚举（不是 hostname allowlist）——域名 allowlist 下诚实降级为仅后置过滤 |
-| `anysearch` 适配器只接线 `search` | `get_sub_domains`、`batch_search`、`extract` 与线上但未文档化的 `score` 均未实现；上游工具数不写死（官方文档列四个，线上端点还返回过 `score`）。成功的 `search` 回复的 `_meta.request_id` 仅是观测 trace 的诊断数据（且仅当调用方提供 span）；失败回复不记录——绝不进入结果，也绝不是幂等键 |
-| 退出时 `libc++abi` 可能覆盖弃权退出码 | 自动化必须读结构化弃权标记（`--json` / `structuredContent.abstain`），不能只看退出码 |
-| `rag.adapter = "fts"` 未在任何出厂域启用 | 三个出厂域都保持 `adapter = "none"`；按域启用是显式 opt-in 产品决策（#130） |
-| `query_knowledge` 仅当 Active Domain 启用 `rag.adapter = "fts"` 时检索 | 它经 RAG 注册表（#155）读取 store 级共享 Research Memory；`none` / `note` 返回显式空结果，出厂域都在 `none`，默认安装回答为空 |
-| 省略 `[rag]` 不等于 `adapter = "none"` | `rag` 是声明即替换的段：派生域继承基域的 adapter/note，链路中完全没有 adapter 则校验失败 |
-| `rag.adapter = "fts"` 读取 **store 级共享** Research Memory，不是当前会话 | 刻意边界（#130）：store 是隔离单元，会话/域是子作用域。出厂域都在 `none`，故 `fts` 注入是 opt-in（`recall_memory` 已经读取同一 store 范围） |
-| MCP 双时代：`2026-07-28` 客户端被协商降级到 `2025-11-25` | stdio 与无状态 Streamable HTTP 的 `initialize` 对现代客户端返回 `2025-11-25`，五个工具仍可用；legacy 客户端回声各自版本。手写路径保持 legacy-only：在 stdio/in-memory（或不带 `MCP-Protocol-Version` 头的 HTTP）上，带现代 `_meta` 信封的 `server/discover` 仍返回 `-32601`（`MethodNotFound`），而 `tools/list` 仍优雅降级为五工具 legacy 表。HTTP 上，携带 `MCP-Protocol-Version: 2026-07-28` 的非 initialize 请求会在分发前被传输层拒绝（HTTP 400 / JSON-RPC `-32000`）；应改用协商得到的 `2025-11-25`（由 `apps/mcp/test/dual-era.test.ts` 钉住） |
+| macOS 退出时 `libc++abi` 可能 abort | 根因是进程在原生状态还活着时强制 `process.exit()`，不是 sqlite handle 泄漏。store 侧退出已经改成先关 handle 再自然退出，macOS 也重新进了 `ship-gate` 阻断矩阵；但任何在原生状态还活着时强制退出的进程仍可能 abort，`macos-spillover-probe` 继续做非阻断预警 |
+| `anysearch` provider 无法前置过滤 | 它的 MCP `domain` 参数是垂域路由枚举，不是 hostname allowlist；有域名 allowlist 时只能诚实地做后置过滤 |
+| `anysearch` 适配器只接了 `search` | `get_sub_domains`、`batch_search`、`extract` 和线上有、但官方文档没写的 `score` 都没接；上游工具数量不写死（官方文档列四个，线上还返回过 `score`）。成功的 `search` 回复里的 `_meta.request_id` 只是观测 trace 的诊断数据，而且只有调用方提供 span 时才记；失败回复不记。它绝不会进结果，也不是幂等键 |
+| 退出时 `libc++abi` 可能覆盖弃权退出码 | 自动化必须读结构化的弃权标记（`--json` / `structuredContent.abstain`），不能只看退出码 |
+| `rag.adapter = "fts"` 没在任何出厂域启用 | 三个出厂域都保持 `adapter = "none"`；要按域启用，得自己显式打开（#130） |
+| `query_knowledge` 只有在 Active Domain 开了 `rag.adapter = "fts"` 时才检索 | 它经 RAG 注册表（#155）读 store 级共享的 Research Memory；`none` / `note` 返回显式空结果，出厂域都是 `none`，所以默认安装回答为空 |
+| 省略 `[rag]` 不等于 `adapter = "none"` | `rag` 是声明即替换的段：派生域会继承基域的 adapter/note，链路里完全没有 adapter 则校验失败 |
+| `rag.adapter = "fts"` 读的是 **store 级共享** Research Memory，不是当前会话 | 这是刻意边界（#130）：store 是隔离单元，会话和域只是子作用域。出厂域都在 `none`，所以 `fts` 注入要自己打开（`recall_memory` 本来就读同一个 store 范围） |
+| MCP 双时代：`2026-07-28` 客户端会被协商降到 `2025-11-25` | stdio 和无状态 Streamable HTTP 的 `initialize` 对现代客户端返回 `2025-11-25`，五个工具仍可用；legacy 客户端会拿到自己的版本。手写路径仍是 legacy-only：在 stdio / in-memory（或不带 `MCP-Protocol-Version` 头的 HTTP）上，带现代 `_meta` 信封的 `server/discover` 返回 `-32601`，`tools/list` 仍会降级成五工具 legacy 表。HTTP 上，非 initialize 请求如果带 `MCP-Protocol-Version: 2026-07-28`，会在分发前被传输层拒绝（HTTP 400 / JSON-RPC `-32000`），应该用协商得到的 `2025-11-25`。细节见 [docs/mcp-server.md](docs/mcp-server.md) |
+| MCP 客户端身份只在单次请求里有效 | `2026-07-28` 的 `tools/call` 如果带 `_meta["io.modelcontextprotocol/clientInfo"]`，会记录映射后的 `client_id`；legacy `2025-11-25` 的无状态 HTTP 调用没有单次请求身份，记录为 `mcp_unknown`。`initialize` 时的提取只是兜底，不是跨请求保证 |
 
 完整记录：[docs/limitations.md](docs/limitations.md)。
 
 ## 设计取舍
 
-- **垂直领域** —— 域名是带权威 `urlAllowlist` 的 TOML 策略文件，在
-  kernel 内强制执行，不是提示词愿望。
-- **弃权优先** —— 闸门后为空是一等公民的弃权结果，绝不编造答案。
-- **Fail-open** —— hooks、providers 与可选 peer 诚实降级，不拖垮宿主
-  agent。
+- **垂直领域**：域是带权威 `urlAllowlist` 的 TOML 策略文件，由 kernel 强制执行，
+  不是提示词愿望。
+- **弃权优先**：域门后为空是一等公民的弃权结果，绝不编造答案。
+- **Fail-open**：hooks、providers 和可选 peer 诚实降级，不拖垮宿主 agent。
 
 ## 面向贡献者
 
-- `GLOSSARY.md` —— 领域术语 canonical 表（先读）
-- `docs/mcp-server.md` —— MCP server 规范参考（工具、语义、传输、环境变量与认证）
-- `docs/limitations.md` —— 完整已知限制记录
-- `docs/agents/` —— domain-doc + GitHub issue tracker 约定
-- 仓库布局：`packages/kernel`（引擎）· `packages/store`（FTS5 记忆、
-  观测、URL 策略）· `packages/retriever`（provider 适配器 + RRF）·
-  `apps/cli` · `apps/mcp` · `apps/plugin`（宿主 hooks）
-- 单包测试跑 `node --import tsx --test`；完整门禁 =
-  `node scripts/ship-gate.mjs`（净树、测试、打包、安装验证、MCP
-  initialize、fail-open 启动）
+- `GLOSSARY.md`：领域术语权威表（先读）
+- `docs/mcp-server.md`：MCP server 规范参考（工具、语义、传输、环境变量与认证）
+- `docs/rag-adapters.md`：RAG adapter 配置（`none` / `note` / `fts`）、注入形状和预算
+- `docs/limitations.md`：完整已知限制记录
+- `docs/agents/`：domain-doc + GitHub issue tracker 约定
+- 仓库布局：`packages/kernel`（引擎）· `packages/store`（FTS5 记忆、观测、
+  URL 策略）· `packages/retriever`（provider 适配器 + RRF）· `apps/cli` ·
+  `apps/mcp` · `apps/plugin`（宿主 hooks）
+- 单包测试跑 `node --import tsx --test`；完整门禁是
+  `node scripts/ship-gate.mjs`（净树、测试、打包、安装验证、MCP initialize、
+  fail-open 启动）
 - 治理：`AGENTS.md`、`docs/agents/`
+
+从源码构建：
+
+```bash
+git clone <this repo> && cd anysearch-cli
+pnpm install --ignore-scripts --node-linker=hoisted   # better-sqlite3 用预编译，免 node-gyp；hoisted 规避 Windows EPERM
+pnpm build
+node apps/cli/dist/index.js doctor
+ANS_DOMAIN=docs node apps/cli/dist/index.js search "tokio JoinSet rust"
+
+# 机器可读输出（包含 sufficiency / attribution / abstain）
+node apps/cli/dist/index.js search "..." --json
+```
+
+CLI 在全局安装或 link 后解析为 `ans`；仓库形态下
+`node apps/cli/dist/index.js` 是同一个入口。

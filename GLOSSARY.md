@@ -143,5 +143,3 @@
 
 - **Context Engineering（上下文工程总纲）**——token 策展统一总纲：记忆与注入是 curation，多臂融合与充分性是 assembly，预注册评测是 measurement，观测闭环是 telemetry。
 - **Observability Closed Loop（观测闭环）**——本地优先 SQLite trace 资产连接 runtime/eval/experiment；内部表示版本化，只在导出边界映射 OTLP `gen_ai.*`（自定义属性用 `anysearch.*`）。
-
-> AI生成

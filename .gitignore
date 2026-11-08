@@ -52,6 +52,10 @@ apps/cli/.build-stamp.json
 # Never versioned (governance court 2026-10-13); past rounds remain in git history.
 .scratch/
 
+# local session temp — reference dumps, probe output and handoff files.
+# Never versioned; the repo's agent policy keeps these outside the index.
+.temp/
+
 # python virtualenvs — scratch/prototype interpreters (e.g. .venv-tau-proto),
 # never repo content; reproduce via scripts/tau/requirements.txt (#88 T2)
 .venv*/
