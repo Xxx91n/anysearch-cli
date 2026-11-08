@@ -1,18 +1,18 @@
 # CodeBuddy Code integration
 
-Verified host: **CodeBuddy Code 2.151.0** (Windows 11, Git Bash hooks) —
-live-verified **2026-09-16** by the headless P1–P9 probe matrix:
-search/recall/ans_chat/research + 3-event hooks + fail-open +
-with/without-tool contrast (stream-json transcripts in
-`.scratch/grill-round-65/evidence/t2-*.stream.jsonl`).
-Contract source: + `.scratch/grill-round-65/evidence/`.
+Verified host: **CodeBuddy Code 2.151.0** (Windows 11, Git Bash hooks). We
+checked it on **2026-09-16** with the headless P1–P9 probe matrix: search,
+recall, ans_chat, research, 3-event hooks, fail-open, and a with/without-tool
+contrast. The stream-json transcripts are in
+`.scratch/grill-round-65/evidence/t2-*.stream.jsonl`.
+Contract source: `.scratch/grill-round-65/evidence/`.
 
-CodeBuddy hooks run commands through Git Bash on Windows, inject
-`hook_event_name` on stdin (not `event`), expect decisions inside a
-`hookSpecificOutput` envelope on stdout, and pass SessionStart stdout into
-context verbatim.
+On Windows, CodeBuddy hooks run commands through Git Bash. They put
+`hook_event_name` on stdin (not `event`). They expect decisions wrapped in
+`hookSpecificOutput` on stdout. They pass SessionStart stdout into context
+word for word.
 
-## 1. Install (stranger path)
+## 1. Install (fresh machine)
 
 ```bash
 npm i -g @anysearch-cli/cli @anysearch-cli/mcp @anysearch-cli/plugin
@@ -22,20 +22,20 @@ ans domain docs       # optional: pin the demo domain (persists to ~/.anysearch/
 
 ## 2. Keys
 
-Set at OS/user level — never written into config files:
+Set these at the OS/user level. Never write them into config files:
 
-- `ANYSEARCH_API_KEY` — internal anysearch service
-- `ANS_LLM_BASE_URL` + `ANS_LLM_API=chat` + `ANS_LLM_API_KEY` — upstream
-  OpenAI-compatible `v1/chat` endpoint (for `ans_chat`)
-- `ANS_LLM_PROVIDER` + `ANS_LLM_MODEL` — required by `ans_chat`; for a
-  custom endpoint the provider id is arbitrary (`custom` works) and the
-  model must be an id the upstream serves (check `GET <base>/models`)
-- `ANS_LLM_CONTEXT_WINDOW` — optional real model window (tokens) for custom
-  endpoints: request budgeting, and the L0 `{fraction}` watermark on `ans chat`.
-  MCP `ans_chat` session and memory behavior is documented in
-  [mcp-server.md](mcp-server.md).
-  Unset = unknown window → absolute 128000 fallback (CLI)
-- `EXA_API_KEY` / `TAVILY_API_KEY` — retrieval providers
+- `ANYSEARCH_API_KEY` — the internal anysearch service
+- `ANS_LLM_BASE_URL` + `ANS_LLM_API=chat` + `ANS_LLM_API_KEY` — an upstream
+  OpenAI-compatible `v1/chat` endpoint (used by `ans_chat`)
+- `ANS_LLM_PROVIDER` + `ANS_LLM_MODEL` — required by `ans_chat`. For a custom
+  endpoint, the provider id can be anything (`custom` works). The model must
+  be an id the upstream serves; check `GET <base>/models`
+- `ANS_LLM_CONTEXT_WINDOW` — optional. It is the real model window in tokens
+  for custom endpoints. It feeds request budgeting and the L0 `{fraction}`
+  watermark on `ans chat`. For MCP `ans_chat` session and memory behavior,
+  see [mcp-server.md](mcp-server.md). If you leave it unset, the window is
+  unknown, and the CLI falls back to a flat 128000
+- `EXA_API_KEY` / `TAVILY_API_KEY` — search providers
 
 ## 3. Plugin server (once per machine)
 
@@ -43,15 +43,15 @@ Set at OS/user level — never written into config files:
 ans-plugin-server     # listens 127.0.0.1:33333, Bearer token auto-generated
 ```
 
-On ≤0.0.3 there is no bin — hand-launch instead:
+On ≤0.0.3 there is no bin. Start it by hand:
 
 ```bash
 node "$(npm root -g)/@anysearch-cli/plugin/dist/server/index.cjs"
 ```
 
-The server writes a 0600 token to `<cwd>/.anysearch-cli/server-token`;
-hooks read the same file relative to their working directory. Launch it
-from (or share cwd with) the project you work in.
+The server writes a 0600 token to `<cwd>/.anysearch-cli/server-token`. Hooks
+read the same file relative to their working directory. Start it from the
+project you work in, or share its cwd with that project.
 
 ## 4. MCP registration — project `mcp.json`
 
@@ -63,8 +63,8 @@ from (or share cwd with) the project you work in.
 }
 ```
 
-Empty `env` block is deliberate: the child inherits the host env, so keys
-never sit in a file. Drive headless with
+The empty `env` block is on purpose. The child inherits the host env, so keys
+never sit in a file. Drive it headless with
 `codebuddy -p --output-format stream-json --mcp-config mcp.json --strict-mcp-config`.
 
 ## 5. Hooks — project `.codebuddy/settings.json`
@@ -87,19 +87,19 @@ Shipped template: `@anysearch-cli/plugin/configs/codebuddy/hooks.json`.
 }
 ```
 
-One adapter entry serves all three events (it dispatches on
-`hook_event_name` internally). `$(npm root -g)` resolves the global install
-inside Git Bash.
+One adapter entry serves all three events. It dispatches on `hook_event_name`
+itself. `$(npm root -g)` resolves the global install inside Git Bash.
 
 What each event does:
 
 | Event | Behavior |
 |-------|----------|
-| SessionStart | prints the ans_* routing card — stdout enters context verbatim |
+| SessionStart | prints the ans_* routing card; stdout enters context word for word |
 | PreToolUse | recalls the project index and returns `hookSpecificOutput.additionalContext` (preheat) |
-| PostToolUse | distills `tool_response.results[]` → `hookSpecificOutput.updatedToolOutput`, and POSTs index entries to the plugin server (`/index`) |
+| PostToolUse | distills `tool_response.results[]` into `hookSpecificOutput.updatedToolOutput`, and POSTs index entries to the plugin server (`/index`) |
 
-## 6. Fail-open contract
+## 6. Failure behavior
 
-Server down / key missing / bad stdin → the hook exits 0 and the host runs
-unaffected. Hooks never block CodeBuddy.
+The hooks are fail-open. If the server is down, a key is missing, or stdin is
+bad, the hook exits 0 and the host keeps running. Hooks never block
+CodeBuddy.
