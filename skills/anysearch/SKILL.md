@@ -15,7 +15,7 @@
 3. Recall earlier research results from memory -> recall_memory
 4. Organization's own knowledge base -> query_knowledge
 5. Research that needs several tools in a row -> ans_chat
-6. If recall_memory already has results, skip the extra search
+6. If recall_memory already has relevant results, skip the extra search
 
 ## Anti-patterns
 
