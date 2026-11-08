@@ -355,7 +355,7 @@
 
 - **检查项 schema v2（T2-A）**：`docs/enforcement-anchors.json` 升到 v2——`failure_classes` 是一个封闭的故障类词表，每一条检查项必须写非空的 `fails`，而且只能是词表里的值（意思是这条检查必须点名它防的是哪一类用户能碰到的产品故障，不准自己随便写）+ `tier:"red"|"info"`（审计级别，保证每条都有观察）；新增三个判为失败项 `anchor-fails-empty` / `anchor-fails-unregistered` / `anchor-tier-invalid`。
 - **待办条目要有结构、有期限、写明谁在挡着（T2-A）**：`pending_anchors` 既接受 `{anchor,reason,seated_at,review_by}` 这种结构化条目，也接受旧的裸字符串；裸字符串迁移那天设了期限 `LEGACY_SEAT_REVIEW_BY`（老条目到期不豁免）；新增三个判为失败项 `anchor-seat-expired` / `anchor-seat-malformed` / `anchor-seat-info-conflict`（pending_anchors 和 info 不能同时有）；还有待办没关时，没拦住的那条要出一行 `masking-surfaced` info，点名是哪个待办挡住了哪条检查项。
-- **`stack-orphaned-by-land` 判断（T2-B）**：STACK_RED_CODES 的第四个成员——收尾已经进了 `origin/main`、又带着还没销的链、但栈 ref 不在了 → 判为失败（专门抓 land 之后被溶解的栈留下的活链尸体：R99 的 `sha-not-commit` 漏检类）；用 `git ls-tree origin/main` 采「文档在不在 main 上」的事实，采不到就记 env-PENDING、不猜；3 组成对夹具（红 / 还在飞就拒绝 / 还在推就拒绝）。
+- **`stack-orphaned-by-land` 判断（T2-B）**：STACK_RED_CODES 的第四个成员——收尾已经进了 `origin/main`、又带着还没销的链、但栈 ref 不在了 → 判为失败（专门抓 land 之后解散的栈留下的、已经没用的分支链：R99 的 `sha-not-commit` 漏检类）；用 `git ls-tree origin/main` 采「文档在不在 main 上」的事实，采不到就记 env-PENDING、不猜；3 组成对夹具（红 / 还在飞就拒绝 / 还在推就拒绝）。
 - **tau 递归 + AST 前置检查（T2-B）**：`enumerateScriptFiles` 扩成 `scripts/**/*.mjs` 递归（把 `scripts/tau/` 也纳进来）；`scripts/top-level-effects.mjs` 做纯静态三分类（TypeScript API 经 packages/store 的 createRequire 拿，零新依赖、零顶层副作用）——①带 codes 又有副作用 → `ast-top-level-effect` 拒绝注入，判为失败 / ②`*_CODES` 不是字面量初始化 → `ast-codes-unverifiable` / ③有副作用又没有 codes → 具名排除候选，出 info；`EXCLUDED_PATHS` 是封闭的具名排除清单，第一条 `tau/tau-scan.mjs`（spawn 启动器没法做命名空间注入），排除路径带着 codes → `ast-excluded-codes`。
 - **land 之后两个必须绑定做的事（T2-C）**：audit-checklist §5 加第二个勾——land 的同一个会话里，land 后重验（向 main push 跑三次都通过、落进代码树的 ship-gate 再跑）并让收尾改述机械位 `scripts/handoff-reanchor.mjs`；检查项活性记一行账 `kind:"anchor-activity"` claim 类别（半机检：expect 账本重新导出收尾行逐字比对，夹具 kill 不入账）。
 
@@ -365,7 +365,7 @@
 
 ### Docs
 
-- **立法（T1）**：五条 Decision——D2 上限条件三交集（fails+sunset+fraud-vs-style）/ D3 修层新层判据 / D5 待办 Addendum / D6 tau 递归+AST 前置检查 / D7 负向边界+deferred 触发器；Consequences 带着这套尺子第一次用的判例（R99 收尾里六个死 SHA = 活链尸体）和 T0 引用；CONTEXT「Grill Round 100 — Terms」七个词条；ADR 索引重新生成到 101 件。
+- **定规矩（T1）**：五条 Decision——D2 上限条件三交集（fails+sunset+fraud-vs-style）/ D3 修层新层判据 / D5 待办 Addendum / D6 tau 递归+AST 前置检查 / D7 负向边界+deferred 触发器；Consequences 带着这套尺子第一次用的判例（R99 收尾里六个死 SHA = 已经没用的分支链）和 T0 引用；CONTEXT「Grill Round 100 — Terms」七个词条；ADR 索引重新生成到 101 件。
 - **deferred-r72 触发器注记（T3）**：`defer-r72-dsh-approval-channel` 的 carried_log 挂上 R100 续债注记——「R101+ 带 deferred 前置依赖的正题，开工前先评估触发条件」（任务书 D-003④ 兑现，这条的 trigger 已经满足，列进 R101 立项评估候选）。
 - **AGENTS.md 扫描范围摘要刷新（T3）**：递归范围 + AST 前置检查 + schema v2 + 待办限期四件改成只留指针，指向别处。
 
@@ -385,7 +385,7 @@
 
 ### Docs
 
-- **立法（T1）**：六条 Decision + 两块预写（第一次抓到真红怎么读的纪律 / 四级迁移阶梯的次序硬约束）+ CONTEXT「Grill Round 99 — Terms」七个词条。
+- **定规矩（T1）**：六条 Decision + 两块预写（第一次抓到真红怎么读的纪律 / 四级迁移阶梯的次序硬约束）+ CONTEXT「Grill Round 99 — Terms」七个词条。
 - **待办关票（T0/T3）**：`defer-r98-anchor-ratchet-recount-seat` 关闭（零代码改动，探针升成全量 kill）；`defer-r98-anchor-open-surface-demo` 随扩范围关闭。
 - **AGENTS.md 顶层零副作用摘要**：只指向，不复述全文。
 
@@ -393,17 +393,17 @@
 
 - **审计 R99 返工（A1~A3）**：① `probeVocabGuards` 的枚举面改成用生产扫描 `scanVocabGuards(...).scanned` 的词表模块（同源约定补正，抽样的死角关掉）；② `enumerateScriptFiles` 从吞异常返空改成抛异常 + `scan-surface-unreadable` 致命 finding（按「拿不准就拒绝」补正，枚举不了的面不再假装是绿的）；③ ship-gate step 3 和根 `package.json` 的 test 任务加 `--concurrency=2`（跨进程 SQLite 竞争 + spawn 密集套件在 Windows 负载主机上让资源上限稳定下来，被测内容不变）。
 
-## Unreleased — r98: 第五种形态【装饰性机器约束检测】+ R97 审计返工（R1~R8/R10）
+## Unreleased — r98: 第五种做法【装饰性机器约束检测】+ R97 审计返工（R1~R8/R10）
 
 ### Added
 
 - **enforcement-anchors 自检腿（T3）**：ship-gate 新增跟 handoff-lint 平级的 `enforcement-anchors` 腿（`scripts/enforcement-anchors.mjs`）——读 `docs/enforcement-anchors.json` 的封闭的检查项注册表，逐条跑故意改坏的探针，判断能不能拦住；`anchor-unresolvable`（没有夹具不准进表）/ `anchor-not-consumed`（拦不住就判为失败）两个自指钉子按「拿不准就拒绝」处理；注册表文件读不了就判为失败。
 - **五个证伪探针（T3）**：`scripts/enforcement-anchor-probes.mjs`——`anchor:predicate-registry` / `anchor:reuse-pointer` / `anchor:bare-word-single-source` / `anchor:vocab-guards` / `anchor:ratchet-recount`；探针通过模块导出自己解析自己，名字和实际对不上就到不了稳态。
 - **注册表参数化（T3/R1 配套）**：判定核心 `env.registry ?? STATE_PREDICATE_REGISTRY`——「唯一引用即自己声明」在签名层面不再可能（S-5 根治），缺省值是生产表路径，顺便当隐式夹具。
-- **溶解栈的声明语法（T1）**：Stack 行 land 之后的变体——ref 不在了就判为通过、ref 复活就是 `declaration-fact-conflict`、ref 在但为空 = 不是溶解栈；模板语法家同轮登记；3 个夹具（已验证 / 矛盾 / 没采集）。
+- **解散栈的声明语法（T1）**：Stack 行 land 之后的变体——ref 不在了就判为通过、ref 复活就是 `declaration-fact-conflict`、ref 在但为空 = 不是解散栈；模板语法家同轮登记；3 个夹具（已验证 / 矛盾 / 没采集）。
 - **清算腿机器检查（T1/R6）**：`assessClearingLeg`——「栈空 ∨ deferred 在册」这条收口清算义务第一次由机器兑现；`clearing:` 注解面 + `clearingRed`/`clearingEnv` 两个新治理组。
 - **claims-verbatim 抽取（T1/R5 配套）**：`scripts/claims-verbatim.mjs`——把逐字 claim 检查做成可注入的模块；`reauthored` 和 `reanchor_log` 的 recount 比对后放到面上（P-6「让重复批准的次数看得见」兑现）。
-- **deferred registry 的 `pending_predicates` / `pending_anchors` 字段（T1/R7）**：形态二的 PENDING 位和检查项的 PENDING 待办统一挂点——marker 点名 seat 谓词 → surfaced PENDING 不算词表外判为失败；待办检查项照跑探针但 skip 不 fail，关票就自动升级。
+- **deferred registry 的 `pending_predicates` / `pending_anchors` 字段（T1/R7）**：第二种情况的 PENDING 位和检查项的 PENDING 待办统一挂点——marker 点名 seat 谓词 → surfaced PENDING 不算词表外判为失败；待办检查项照跑探针但 skip 不 fail，关票就自动升级。
 - **E2E/真值表扩网（T1/R2）**：没采集的分支单独记 env-PENDING、清算三态、deferred-PENDING 位、词表双向锁、检测器自己四种失效（解析不了 / 拦不住 / 待办 / 注册表读不了）；真值表 357→444 / E2E 270→360，断言只加不减。
 
 ### Fixed
@@ -414,13 +414,13 @@
 - **P-8 裸词单源化（R3）**：`STATE_BARE_RES` 从 `STATE_PREDICATES` 派生——删掉谓词就会漏报（双源实锤面消除），扩表漏改也不可能再漏扫。
 - **P-5 CHANGELOG 分行（R10）**：这一节和 R97 节按 feat/fix/docs(errata) 分行——errata 从 Fixed 条里拆出来，放进 Docs 类。
 - **P-2 清算义务补码（R6）**：见 Added 里的清算腿（降格方案放弃，防止 D-002 的账本连锁改写）。
-- **审计 LOOP1 返修（F-1/F-2+N1~N5/C7）**：检查腿从顶层裸块收成 `stepEnforcementAnchors()`（`step_1_6_enforcement_anchors` 自己标 reportStep——report.json 证据面 + `--override` usage-error 顺序回归）；空表/畸形检查项表 `anchor-registry-empty` 按「拿不准就拒绝」处理（non-vacuous 先例）；前检把注册表自己排除掉（subject 自证结构性死亡修复）；`unregisteredCodeExports` 升成生产守卫单源（探针+真值表两边消费，杀掉 PROBE_TABLE 装饰双源）；溶解栈腿补 `branchRefs` 交叉校验（ref 在场 + 成员缺席 = conflict 不是 GREEN）；`state-bare-word-in-code-exempt` 夹具的元数据更正；`### Deferred` 子节补上；N6 收口——`ANCHOR_RED_CODES`/`ANCHOR_SKIP_CODES` 的发射端引用消费（码 token 全部来自常量表）+ e2e「每条 RED 行都带注册码」断言（R-1 零消费消除）。
+- **审计 LOOP1 返修（F-1/F-2+N1~N5/C7）**：检查腿从顶层裸块收成 `stepEnforcementAnchors()`（`step_1_6_enforcement_anchors` 自己标 reportStep——report.json 证据面 + `--override` usage-error 顺序回归）；空表/畸形检查项表 `anchor-registry-empty` 按「拿不准就拒绝」处理（non-vacuous 先例）；前检把注册表自己排除掉（subject 自证结构性死亡修复）；`unregisteredCodeExports` 升成生产守卫单源（探针+真值表两边消费，杀掉 PROBE_TABLE 装饰双源）；解散栈腿补 `branchRefs` 交叉校验（ref 在场 + 成员缺席 = conflict 不是 GREEN）；`state-bare-word-in-code-exempt` 夹具的元数据更正；`### Deferred` 子节补上；N6 收口——`ANCHOR_RED_CODES`/`ANCHOR_SKIP_CODES` 的发射端引用消费（码 token 全部来自常量表）+ e2e「每条 RED 行都带注册码」断言（R-1 零消费消除）。
 
 ### Docs
 
-- **立法**：第五形态——行为消费验证为主 + 静态前置检查永远不能单独判为失败 / 封闭的检查项注册表 schema + 两个自指钉子 / 参数化注入 / 只减不增的检查类 PENDING 待办 / 两处判为失败的设计意图写进 Consequences / 开放面写进 Known-Risk。
-- **CONTEXT `Grill Round 98 — Terms` 九个词条**：第五形态 / 检查项 / 证伪探针 / kill-no-kill / 不可杀变异体 / 检查项待办条目 / 注册表参数化 / anchor-not-consumed / 溶解栈声明。
-- **handoff-template 同步**：溶解栈语法家 + state-PENDING/clearing-RED/clearing-env 词表行——模板跟 CODE_GROUPS 双向等集。
+- **定规矩**：第五种做法——行为消费验证为主 + 静态前置检查永远不能单独判为失败 / 封闭的检查项注册表 schema + 两个自指钉子 / 参数化注入 / 只减不增的检查类 PENDING 待办 / 两处判为失败的设计意图写进 Consequences / 开放面写进 Known-Risk。
+- **CONTEXT `Grill Round 98 — Terms` 九个词条**：第五种做法 / 检查项 / 证伪探针 / kill-no-kill / 不可杀变异体 / 检查项待办条目 / 注册表参数化 / anchor-not-consumed / 解散栈声明。
+- **handoff-template 同步**：解散栈语法家 + state-PENDING/clearing-RED/clearing-env 词表行——模板跟 CODE_GROUPS 双向等集。
 - **deferred 新增三张票**：`defer-r98-anchor-ratchet-recount-seat`（只减不增的检查类待办）+ `defer-r98-anchor-open-surface-demo`（开放面扩展示范）+ `defer-r98-stack-land-authorization`（残留分支的清算待办）。
 
 ### Deferred
@@ -429,13 +429,13 @@
 - `defer-r98-anchor-open-surface-demo`：开放面检测的第一张扩展示范（新检查项必须带证伪夹具才能进表）。
 - `defer-r98-stack-land-authorization`：`r98-anchor-detector` 的残留分支等 push/land 授权（clearing 腿的 covers 挂接）。
 
-## Unreleased — r97: 自己给自己写「失效声明」也能机器检查【统一立法 + 形态一/三实现 + 形态二先立规矩】
+## Unreleased — r97: 自己给自己写「失效声明」也能机器检查【统一定规矩 + 第一/三种情况实现 + 第二种情况先定规矩】
 
 ### Added
 
-- **形态一状态腿（T2）**：单行 `state:` 标记解析 + 裸词违例扫描 + `unpushed`/`unlanded`/`no-branch-runs` 三个离线判断 + 判定集成；封闭注册表常量 + 10 个成对夹具；真值表 310→357 / E2E 207→270（复现：`node packages/store/test/handoff-lint-verdict.test.mjs` / `node packages/store/test/handoff-lint-e2e.test.mjs`）；把判定器自己移出靶位 + 报告和门禁两种速度分权。
-- **形态三 verbatim 检查项（T3）**：claims schema 新增 `verbatim` kind（整句逐字节）+ 重新登记仪式（理由 + 审计 + 重批计数）+ R97 第一批自己用的检查项。
-- **模板状态声明位（T5）**：handoff-template 的标记语法节 + 形态二内容规则全文（实测值定义 / marker 示例 / PENDING 位挂接和只减不增的检查排程引用）。
+- **第一种情况的状态检查腿（T2）**：单行 `state:` 标记解析 + 裸词违例扫描 + `unpushed`/`unlanded`/`no-branch-runs` 三个离线判断 + 判定集成；封闭注册表常量 + 10 个成对夹具；真值表 310→357 / E2E 207→270（复现：`node packages/store/test/handoff-lint-verdict.test.mjs` / `node packages/store/test/handoff-lint-e2e.test.mjs`）；把判定器自己移出靶位 + 报告和门禁两种速度分权。
+- **第三种情况的逐字检查项（T3）**：claims schema 新增 `verbatim` kind（整句逐字节）+ 重新登记仪式（理由 + 审计 + 重批计数）+ R97 第一批自己用的检查项。
+- **模板状态声明位（T5）**：handoff-template 的标记语法节 + 第二种情况的内容规则全文（实测值定义 / marker 示例 / PENDING 位挂接和只减不增的检查排程引用）。
 
 ### Fixed
 
@@ -447,7 +447,7 @@
 
 ### Deferred
 
-- 形态二的只减不增的检查→判为失败的排程票 + 扩展示范票（`no-pr`/`unpublished`）见 `docs/deferred-registry.json`（R97 T6 登记）。
+- 第二种情况的排程任务：把只减不增的检查从建议升级成会判失败的判定；扩展示范任务（`no-pr`/`unpublished`）见 `docs/deferred-registry.json`（R97 T6 登记）。
 
 ## Unreleased — r96: 交接检查假绿收口【出口分三种状态】（模板和门禁的 PENDING 说法冲突 + 祖先性冒充/静默折叠 + CI 拓扑不可满足三个缺陷一起关掉）
 
@@ -461,7 +461,7 @@
 - **判定核心纯模块 `scripts/handoff-lint-verdict.mjs`（T1）**：输入是交接件文本 + 注入的环境快照，输出是三种状态 + 理由码 + 标注；核心里不许用 `spawnSync` / `fs` / `Date.now()` / `process.env`，所以真值表可以在没有仓库、没有网络、没有时钟的情况下穷举。
 - **薄壳 `scripts/handoff-lint-shell.mjs`（T2）**：采集（git/gh/but/workflow 触发器）→传递→出口三步；快照形状冻结，E2E 按同一个形状注入。
 - **真值表单测 + E2E 冒烟 + 共用夹具（T1/T2）**：`packages/store/test/handoff-lint-verdict.test.mjs`（OPA 允许+拒绝成对 / Stack 三要素 8 格 / 词表外必须报错 / 空缺和超长边界）、`packages/store/test/handoff-lint-e2e.test.mjs`（同一套夹具走完整薄壳路径）、`packages/store/test/fixtures/handoff-lint/`；空文件必须失败的红线。
-- **立法 + CONTEXT 词条区**：D1 三种状态语义 / D2 Stack 三要素分级 + 环境分级降级 / D3 回归锁形态 / D4 生效范围迁移边界 / D5 同轮闭环 / D6 收口件三种状态预登记；Known-Risks 预写五项；CONTEXT `Grill Round 96 — Terms` 五个词条。
+- **定规矩 + CONTEXT 词条区**：D1 三种状态语义 / D2 Stack 三要素分级 + 环境分级降级 / D3 回归锁形态 / D4 生效范围迁移边界 / D5 同轮闭环 / D6 收口件三种状态预登记；Known-Risks 预写五项；CONTEXT `Grill Round 96 — Terms` 五个词条。
 
 ### Fixed
 
@@ -484,7 +484,7 @@
 ### Added
 
 - **matrix@3 预注册（T2）**：在任何跑数记账之前先落（parent 时序自证含 T1 diff）；含新指纹、「读数=复活条件③④的输入证据，不是方向裁定」条款、G1b 谓词检查项（>30%→INCONCLUSIVE-instrument）、单次终读纪律、57→56 可比性边界（prereg §7）。
-- **立法 + CONTEXT 词条区**：D1 语料退役标记形态 / D2 判分程序修订幅度 / D3 读数在法律上的角色 / D4 匿名层的执行裁量 / D5 三记账 / D6 收口形态；Known-Risks 预写三项（可比性边界先于读数/退役标记词表/G1b 谓词检查项）；CONTEXT `Grill Round 95 — Terms` 七个词条。
+- **定规矩 + CONTEXT 词条区**：D1 语料退役标记形态 / D2 判分程序修订幅度 / D3 读数在法律上的角色 / D4 匿名层的执行裁量 / D5 三记账 / D6 收口形态；Known-Risks 预写三项（可比性边界先于读数/退役标记词表/G1b 谓词检查项）；CONTEXT `Grill Round 95 — Terms` 七个词条。
 - **匿名层终读路（T4–T6）**：容量探针登记成测量、不是判分读数输入（执行级修正：board 速记端点值要补完整 MCP 路径 `/mcp`）；终读档（56 格×4 腿=224 调用，351s）中途开始系统性 `permanent-auth`（匿名配额边界，122 腿），兑现预注册的分支→单次终读 `INCONCLUSIVE/instrument-flag`（G1b：instrumentDown 30/40；探针读数当量化检查项）。
 
 ### Deferred
@@ -501,7 +501,7 @@
 
 ### Added
 
-- **复核立法（T1）**：D1 议程五段式结构和程序出口（0 资格核验→1 证据面陈述→2 判据先审→3 结论表决→4 落地裁定，T0-F 复议轮降级出口）；D2 B3 混合结论的归属和 exploratory 区机制（充分条件谓词命中就自动落地，没命中进暂存区由用户拍板，用户拍板够不着时的出路是 pending-user-verdict 挂账）；D3 三种结果的谓词加固和复活条件的可控性分类（可控检查项≥1→优先 reaffirm，可控检查项=0→retire，检查项计数取证时刻预标注冻结）；D4 快照/现场查询分级纪律和具名步骤（判据快照不重跑 delta，契约现状串行现场查）；D5 复核即预通知和 carried_log 双动作时序（carried_log 追加先 commit 自证时序，ADR 固化随后 commit）；D6 副议题分级落地；D7 dsh 漂移条款和 Known-Non-Goals；D8 claims 冻结纪律；D9 结论词汇和落地态预注册冻结。
+- **复核定规矩（T1）**：D1 议程五段式结构和程序出口（0 资格核验→1 证据面陈述→2 判据先审→3 结论表决→4 落地裁定，T0-F 复议轮降级出口）；D2 B3 混合结论的归属和 exploratory 区机制（充分条件谓词命中就自动落地，没命中进暂存区由用户拍板，用户拍板够不着时的出路是 pending-user-verdict 挂账）；D3 三种结果的谓词加固和复活条件的可控性分类（可控检查项≥1→优先 reaffirm，可控检查项=0→retire，检查项计数取证时刻预标注冻结）；D4 快照/现场查询分级纪律和具名步骤（判据快照不重跑 delta，契约现状串行现场查）；D5 复核即预通知和 carried_log 双动作时序（carried_log 追加先 commit 自证时序，ADR 固化随后 commit）；D6 副议题分级落地；D7 dsh 漂移条款和 Known-Non-Goals；D8 claims 冻结纪律；D9 结论词汇和落地态预注册冻结。
 - **复核取证和文书归档（T2/T3）**：五面卷宗存在 `.scratch/grill-round-94/evidence/t2/`；两边证词全文和检查项计数预标注冻结（可控检查项=2，点名 owner 可控检查项 2 个：条件 ③ 和 ④；广义含外部可机检条件 ① 是 3 个，都满足 $\ge 1$ 充分下界）存在 `evidence/t3a/`；终审结论文书和 `verdict.json` 自动落地归档在 `evidence/t3b/`。
 
 ### Deferred
@@ -518,16 +518,16 @@
 
 ### Fixed
 
-- **readme-token-pin 机器检查第一次跑（T4）**：`readme-token-pin` 断言检查器专属的机器腿从 shadow 模式改成**真实非 shadow 断言**第一次跑（`closeout-claims.json` 两条 `command: dsh --version` 实测比对，README.md / README.zh-CN.md 两份）——R92 明确挂账的项核销。
+- **readme-token-pin 机器检查第一次跑（T4）**：`readme-token-pin` 断言检查器专属的机器腿从 shadow 模式改成**真实非 shadow 断言**第一次跑（`closeout-claims.json` 两条 `command: dsh --version` 实测比对，README.md / README.zh-CN.md 两份）——R92 明确挂账的项关掉。
 
 ### Added
 
-- **立法（T1）**：D1 T2 执行设计全包（隔离 profile 注入面 / B1 预注册单链和链级硬顶 / 诱导句和 N 预算 / max-tokens 预算下限判据 / 签名族三形态闭集 / L3c-min 结论收窄成「`ans_*` tool_call」/ 换臂三义务 / 凭证卫生）；D2 结论门控转向票（触发谓词 = 链尽结论显式成立，不是「T2 未绿」；429 和环境违规不触发；内容白名单 = F-bug 登记 + 复核议程；T-B/T3/T4 三条件票互斥求值谓词显式声明）；D3 README 措辞承继和四列表格形态调和；D4 `r88-candidate` sunset 硬截止（R95 前必须复核 + R94 预通知义务 + owner 点名）；D5 deprecate 权限缺口三型枚举（`credential-scope` / `maintainer` / `org-owner`，每型含 fallback 行为字段）；D6 证据怎么算的规则（本机检查只给建议不阻断，登记 R94 复核）；D7 票序和 commit 结构；D8 Known-Non-Goals（多轮 tool_call ID 污染）。
+- **定规矩（T1）**：D1 T2 执行设计全包（隔离 profile 注入面 / B1 预注册单链和链级硬顶 / 诱导句和 N 预算 / max-tokens 预算下限判据 / 签名族三形态闭集 / L3c-min 结论收窄成「`ans_*` tool_call」/ 换臂三义务 / 凭证卫生）；D2 结论门控转向票（触发谓词 = 链尽结论显式成立，不是「T2 未绿」；429 和环境违规不触发；内容白名单 = F-bug 登记 + 复核议程；T-B/T3/T4 三条件票互斥求值谓词显式声明）；D3 README 措辞承继和四列表格形态调和；D4 `r88-candidate` sunset 硬截止（R95 前必须复核 + R94 预通知义务 + owner 点名）；D5 deprecate 权限缺口三型枚举（`credential-scope` / `maintainer` / `org-owner`，每型含 fallback 行为字段）；D6 证据怎么算的规则（本机检查只给建议不阻断，登记 R94 复核）；D7 票序和 commit 结构；D8 Known-Non-Goals（多轮 tool_call ID 污染）。
 - **max-tokens 预算下限判据**：诱导轮的 `max_tokens` 下限钉成 2048——T0 探针实测 `max_tokens: 8` 就会触发 `finish_reason=length` 且 content 被截断，证明极小预算下的 `length` 形态跟模型能力无关，所以低于下限的 `length` 判环境违规，不计入 N。
 
 ### Deferred
 
-- **r88-candidate 垂域方向要不要砍的复核**：写入 sunset 条款——R95 前强制复核，R94 收口批要在 registry 的 `carried_log` 追加预通知并点名 owner `anysearch-eval`；复核 ≠ 翻案（`reaffirm` / `revise` / `retire` 三种结果都合法），结束无期限 rolling 候审。复核主体在 R94/R95，本轮只立法。
+- **r88-candidate 垂域方向要不要砍的复核**：写入 sunset 条款——R95 前强制复核，R94 收口批要在 registry 的 `carried_log` 追加预通知并点名 owner `anysearch-eval`；复核 ≠ 翻案（`reaffirm` / `revise` / `retire` 三种结果都合法），结束无期限 rolling 候审。复核主体在 R94/R95，本轮只定规矩。
 - **常驻债续期**：`defer-r72-dsh-web-interactive-matrix` 主体保持 defer（patchReload:live + browser-turn 上游的 `.d.ts` 键面还缺席）；评测面（`defer-f17` 等）和常驻债清理仍明确列在本轮范围外。
 
 ## Unreleased — r92: featherless 自定义上游 T2 复跑 + 售后收口轮（判据复用和 L3b 修订 + 凭证卫生 + readme-token 检查器接线）
@@ -551,13 +551,13 @@
 
 ### Changed
 
-- **dsh 售后验收轮**：宿主升到 `@deepseek-ai/dsh@0.1.7-rc.2`（测的、记的、钉的三个版本收敛）；门的判据三条腿（L3a 装册通过/L3b 枚举通过/L3c-min 执行通过）立法；L3 实机冒烟确认 L3a 成立（dump-config 单行注册在位）；因为环境缺 `DEEPSEEK_API_KEY`，L3b 取证通道证实能直达端点但 tools 载荷确认不了，结论如实落在分支 C（F-bug），T3 条件票锁住、不留痕。
+- **dsh 售后验收轮**：宿主升到 `@deepseek-ai/dsh@0.1.7-rc.2`（测的、记的、钉的三个版本收敛）；门的判据三条腿（L3a 装册通过/L3b 枚举通过/L3c-min 执行通过）定规矩；L3 实机冒烟确认 L3a 成立（dump-config 单行注册在位）；因为环境缺 `DEEPSEEK_API_KEY`，L3b 取证通道证实能直达端点但 tools 载荷确认不了，结论如实落在分支 C（F-bug），T3 条件票锁住、不留痕。
 
 ### Fixed
 
 - **ship-gate.mjs 正则修补（T4a）**：把 `/id:s*mcp-anysearch/` 修成 `/id:\s*mcp-anysearch/`，防止漏了反斜杠导致任何选言都误判。
 - **弃用文案双空格核实（T4b）**：列出 `@anysearch-cli/cli@0.0.3~0.0.8` 的双空格文案，备好修复命令；尝试执行时碰到 E401/权限闸，按 R87 D4 对执行状态如实记账。
-- **WORKFLOW.md §4.2 终审 ADR 判死（T4d）**：明确 supersede 语义——由 GitButler skill + 全局 `but` 协议等价覆盖，10+ 轮缺位的核销审计正式封口。
+- **WORKFLOW.md §4.2 终审 ADR 判死（T4d）**：明确 supersede 语义——由 GitButler skill + 全局 `but` 协议等价覆盖，10+ 轮缺位的关掉审计正式封口。
 
 ### Deferred
 
@@ -620,7 +620,7 @@
 ### Changed
 
 - R85 的 NO-GO 结论语义勘误成 indeterminate—instrument down（程序性裁决锁定，不追溯改）；matrix@2 先登记再读数，T5 用原指纹复跑实测 **NO-GO/direction-negative**（P=0.0378、净胜率 −0.125）——垂域臂在 armHostHit 轴上实测是负效应。
-- docs/deferred-registry.json：r85-arm / r84-env 核销；新增 defer-r86-anysearch-corpus-param-contract 和 defer-r86-anysearch-anon-quota-nudge。
+- docs/deferred-registry.json：r85-arm / r84-env 关掉；新增 defer-r86-anysearch-corpus-param-contract 和 defer-r86-anysearch-anon-quota-nudge。
 
 ## 0.1.0 — r85: delta 腿全量重跑 + prefer-capable 预注册判分读数（NO-GO 终局）
 
@@ -631,7 +631,7 @@
 
 ### Deferred
 
-- `defer-r83-prefer-capable-weighting` **核销（NO-GO 结论附纹理）**：全量重跑完成（57/57 格腿全活、覆盖 41/41、指纹 7ac0a48e55cd7954），注册矩阵单次终读裁决 NO-GO——但「没有信号」其实是 anysearch 臂全程 provider-failure 空列（装置级零数据，不是测到零增益），来龙去脉如实写在 decision-record 里；复活前提是新增 `defer-r85-anysearch-arm-providersfailed`（清障候选，owner anysearch-retriever）。`defer-r84-delta-quota-rerun` 核销（触发条件满足 + 全量重跑的实际结果 + 降格件归档 `delta-2026-09-26.degraded.json`，不删）。
+- `defer-r83-prefer-capable-weighting` **关掉（NO-GO 结论附纹理）**：全量重跑完成（57/57 格腿全活、覆盖 41/41、指纹 7ac0a48e55cd7954），注册矩阵单次终读裁决 NO-GO——但「没有信号」其实是 anysearch 臂全程 provider-failure 空列（装置级零数据，不是测到零增益），来龙去脉如实写在 decision-record 里；复活前提是新增 `defer-r85-anysearch-arm-providersfailed`（清障候选，owner anysearch-retriever）。`defer-r84-delta-quota-rerun` 关掉（触发条件满足 + 全量重跑的实际结果 + 降格件归档 `delta-2026-09-26.degraded.json`，不删）。
 
 ## 0.1.0 — r84: 垂域评测证据腿——契约断言 + 标准答案语料 + 两臂配对 delta
 
@@ -643,7 +643,7 @@
 
 ### Changed
 
-- 三个入口的错误形状统一成「直接报错停下」（A-02 立法）：CLI/TOML 对齐 MCP 的拒收报错——bare/subordinate flag 没有 domain、空串 domain/subDomain、非法 JSON `--vertical-params` 全部明确报错；`canonicalizeVertical`（contract.ts）是「params:{} 等同于没有」的唯一规范化点（A-04），engine 审计事件和 anysearch wire 边界共用。
+- 三个入口的错误形状统一成「直接报错停下」（A-02 定规矩）：CLI/TOML 对齐 MCP 的拒收报错——bare/subordinate flag 没有 domain、空串 domain/subDomain、非法 JSON `--vertical-params` 全部明确报错；`canonicalizeVertical`（contract.ts）是「params:{} 等同于没有」的唯一规范化点（A-04），engine 审计事件和 anysearch wire 边界共用。
 
 ### Fixed
 
@@ -651,7 +651,7 @@
 
 ### Deferred
 
-- `defer-r83-prefer-capable-weighting` 注记更新成「证据机制在役，等数据」（open，未核销）；新增 `defer-r84-ip-fifth-domain`（上游补 ip 结构化参数后再建集）/ `defer-r84-delta-quota-rerun`（匿名配额耗尽后第一轮部分降格，拿到有效 key 再重跑）/ `defer-r84-anysearch-empty-endpoint-env`（ANYSEARCH_ENDPOINT 空串应该视同没设）。
+- `defer-r83-prefer-capable-weighting` 注记更新成「证据机制在役，等数据」（open，未关掉）；新增 `defer-r84-ip-fifth-domain`（上游补 ip 结构化参数后再建集）/ `defer-r84-delta-quota-rerun`（匿名配额耗尽后第一轮部分降格，拿到有效 key 再重跑）/ `defer-r84-anysearch-empty-endpoint-env`（ANYSEARCH_ENDPOINT 空串应该视同没设）。
 
 ## 0.1.0 — r83: 垂域贯通轮——AnySearch vertical-domain 参数直通 + TE1 dsh 事件迁移
 
@@ -672,7 +672,7 @@
 
 ### Deferred
 
-- `defer-r83-anysearch-vertical-domain-passthrough` 收口（本轮落地）；`defer-r73-dsh-event-rename` 两个观测点都消费完，核销；新增 prefer-capable 加权调参跟进项（D-004 §4，交给 eval 数据驱动，不是契约职责）；R82 审计剩下的 nit 分两档处理（e2e 隔离当场修好；度量行自指/JSON id 不对称/clientInfo.version 硬编码/engines 地板缺席逐项登记）。
+- `defer-r83-anysearch-vertical-domain-passthrough` 收口（本轮落地）；`defer-r73-dsh-event-rename` 两个观测点都消费完，关掉；新增 prefer-capable 加权调参跟进项（D-004 §4，交给 eval 数据驱动，不是契约职责）；R82 审计剩下的 nit 分两档处理（e2e 隔离当场修好；度量行自指/JSON id 不对称/clientInfo.version 硬编码/engines 地板缺席逐项登记）。
 
 ## 0.1.0 — r82: 迁移落地轮——AnySearchProvider 从 REST 迁到 MCP-over-HTTP
 
@@ -693,7 +693,7 @@
 
 - `defer-r81-provider-shape-validation` 收口（fail-first 映射+错形测试面）；`defer-r81-anysearch-rest-route-removed` 继续按季度监控；`defer-r73-dsh-event-rename` 两个观测点没齐，继续挂债（rc.2 特征观测点复验齐了/稳定观测点没齐，合格的候选还没出现）；新增 `defer-r83-anysearch-vertical-domain-passthrough`；残余 R1–R5 的四分诊全部落位（registry residual-triage 五张卡）。
 
-## 0.1.0 — r81: 产品查找轮——provider-serverside spike 诊断 + release.yml R1 同一个版本重复发就跳过 + 发布出插曲后怎么办的规矩
+## 0.1.0 — r81: 产品摸底轮——provider-serverside spike 诊断 + release.yml R1 同一个版本重复发就跳过 + 发布出插曲后怎么办的规矩
 
 ### Added
 
@@ -703,7 +703,7 @@
 
 ### Changed
 
-- `docs/publishing.md` —— 失败分级节立法（C1 零发布→修原因+同 tag rerun；C2a 基础设施原因→修原因+复跑补全；C2b 已经发出去的内容坏了→0.0.9 patch-forward；C3 全发冒烟失败→deprecate+0.0.9；unpublish 只留给灾难性事故边界）。
+- `docs/publishing.md` —— 失败分级节定规矩（C1 零发布→修原因+同 tag rerun；C2a 基础设施原因→修原因+复跑补全；C2b 已经发出去的内容坏了→0.0.9 patch-forward；C3 全发冒烟失败→deprecate+0.0.9；unpublish 只留给灾难性事故边界）。
 
 ### Deferred
 
@@ -730,16 +730,16 @@
 
 ### Deferred
 
-- `defer-r72-dsh-plugin-npm-publish` 状态=就绪等用户扳机（手发 0.0.7→npmjs TP 配置→推 v0.0.8 tag）；`defer-r79-lockfile-agegate-replay` 记裁决=上游机器腿闭合核销（剩下的边界=同机宽松写入沿用+`trustLockfile:true` opt-out+no-op 短路，CI 断言依赖声明兜底）。
+- `defer-r72-dsh-plugin-npm-publish` 状态=就绪等用户扳机（手发 0.0.7→npmjs TP 配置→推 v0.0.8 tag）；`defer-r79-lockfile-agegate-replay` 记裁决=上游机器腿闭合关掉（剩下的边界=同机宽松写入沿用+`trustLockfile:true` opt-out+no-op 短路，CI 断言依赖声明兜底）。
 - 落选的 10 条债按原名继续 deferred（`carried_log` r80 明确记录）：`defer-anysearch-domain-ownership` / `defer-f16-macos-native-crash` / `defer-f17-quarantine-ids` / `defer-r71-provider-serverside` / `defer-r71-transformers-undeclared-dep` / `defer-r72-dsh-native-tools` / `defer-r72-dsh-web-interactive-matrix` / `defer-r73-dsh-event-rename`（alpha.2 特征观测点齐了、稳定观测点还缺=alpha 线+changelog 没审，L2 候选观测继续挂）/ `defer-r74-logo-bitmap-matrix` / `defer-r75-registerhooks-esm-arm`。
 
-## Unreleased — r79: pathlint 豁免范围定规矩——三个豁免面明着立法（covered-fence/locator 行/`/x` 只在散文里）+ WORD_CHAR 边界修复（仓库工具链/治理文书的增量，发出去的代码没变，不 bump）
+## Unreleased — r79: pathlint 豁免范围定规矩——三个豁免面明着定规矩（covered-fence/locator 行/`/x` 只在散文里）+ WORD_CHAR 边界修复（仓库工具链/治理文书的增量，发出去的代码没变，不 bump）
 
 ### Changed
 
 - `scripts/ship-gate-pathlint-detect.mjs` —— 豁免范围定规矩：`/x` 的 surfaced-skip 产出顺序挪到 fence/locator 判定之后——所有 fence（不管 marker 有没有覆盖）和 `Stack:` locator 行不再产 info，散文面照旧；`WORD_CHAR` 补 `_`——`foo_C:\x` 这种标识符粘着盘符不再误报，裸 `C:\x` 仍然拦。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
 - `packages/store/fixtures/pathlint/{red,green}.md` + `ship-gate-pathlint.test.mjs`（9→14 cases）——豁免范围的近邻成对断言：covered-fence in-repo 放行↔unmarked-fence 仍然拦、locator in-repo 放行↔不是 locator 的同款仍然拦、fence/locator 里的 `/x` 零 info↔散文仍然产、`foo_C:\x` 零违例↔裸 `C:\x` 仍然拦；跟 AGENTS.md 镜像一致性的机器断言新增。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
-- 某份 ADR 的 D1 修正 + `AGENTS.md` 镜像段 + 第 80 号 ADR——豁免范围三条立法+drift 归因（文本侧没审/实现侧有意图）+rejected alternatives（Revert=毁掉 transcript 的保真、逐面混裁=立法负担差不多但内聚更差）+豁免扩大风险的三重缓解（一致性测试/stale-marker 只减不增检查/季度审计）+结构性同构先例标注+不 bump 判定。
+- 某份 ADR 的 D1 修正 + `AGENTS.md` 镜像段 + 第 80 号 ADR——豁免范围三条定规矩+drift 归因（文本侧没审/实现侧有意图）+rejected alternatives（Revert=毁掉 transcript 的保真、逐面混裁=定规矩负担差不多但内聚更差）+豁免扩大风险的三重缓解（一致性测试/stale-marker 只减不增检查/季度审计）+结构性同构先例标注+不 bump 判定。
 - 文书的连带效应（自己踩自己实录）：WORD_CHAR 修复让 r78/r79 文书里只靠 `foo_C:\x` 误报撑着的 5 个 marker 变 stale，按只减不增的规则移除；任务书 2 行裸 `C:\x` 字面量补 marker；全仓 markdown 扫描 0 违例（333 个文档）。 <!-- machine-local: 判定器边界用例字面量（裸盘符散文引用） @ 2026-09-23 -->
 
 ## Unreleased — r78: 门禁可信度校准——pathlint 的 token+分隔符组合判定器 + minimumReleaseAge 拦截边界实测（仓库工具链/治理文书的增量，发出去的代码没变，不 bump）
@@ -755,7 +755,7 @@
 - `scripts/ship-gate.mjs` —— step 1i 的 PATH_RE inline 块整个替换成 detect 模块的 import（`enumerateScopedMarkdown`/`buildEnv`/`scanLines`），拿不准就拒绝语义不变。
 - `pnpm-workspace.yaml` —— 新增 `minimumReleaseAgeIgnoreMissingTime: false`：缺 time 元数据的源从「默认跳过」（豁免面）收紧成拿不准就拒绝；npmjs 永远带 time，对现状没有破坏（E7 记档态向量）。
 - 存量违例机械化清算——先 warn 全量扫 313 篇登记文档，实录 96 个命中 → 97 个处置动作/52 个文件行尾补上受治理的 machine-local 标记（`…:111` 等）→ 复扫 0 之后翻成拿不准就拒绝（证据 `.scratch/grill-round-78/evidence/`：`t1-warn-sweep.md` + `t1-remediate.md`，driver 幂等可复跑）。
-- `docs/deferred-registry.json` —— `defer-r77-pathlint-envvar-blindspot` 核销 closed（closed_by 另记）；11 条 open 债在 `carried_log` r78 明确续记。
+- `docs/deferred-registry.json` —— `defer-r77-pathlint-envvar-blindspot` 关掉 closed（closed_by 另记）；11 条 open 债在 `carried_log` r78 明确续记。
 - `.scratch/grill-round-77/upgrade-ledger.md` v2 的待校准项消解——断言收窄登记检查项：minimumReleaseAge 闸只拦新鲜解析路径（catalog/range 重新解析），lockfile 回放不执行龄期闸；E6 格证伪如实记档（闸内版手写进 lockfile + frozen/fetch 五个变体全放行，`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` 在 11.24.0 不触发——跟 #11583 调研结论矛盾，按实测为准）。
 
 ### Deferred
@@ -793,7 +793,7 @@
 
 ### Changed
 
-- `docs/deferred-registry.json` — `defer-r71-shipgate-1g-coverage` 核销 closed（closed_by 另记）；新增 `gov-r76-registry-canonical-lock` 立项事实入档；11 条落选债按原名继续 deferred，并且每条都附 `carried_log` 续债条；顶层 `note` 追加 canonical 锁定声明。
+- `docs/deferred-registry.json` — `defer-r71-shipgate-1g-coverage` 关掉 closed（closed_by 另记）；新增 `gov-r76-registry-canonical-lock` 立项事实入档；11 条落选债按原名继续 deferred，并且每条都附 `carried_log` 续债条；顶层 `note` 追加 canonical 锁定声明。
 
 ### Deferred
 
@@ -1156,106 +1156,106 @@ T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 
 - 安装后 `ans` 因为 shebang `#!/usr/bin/env tsx` 启动不了（tsx 不是运行依赖）——走路骨架第一次实装时暴露；改成 `#!/usr/bin/env node`。
 
-## 2026-09-02 — r42: consumed/synthetic 开关治理实现
+## 2026-09-02 — r42: implemented the consumed/synthetic switch
 
 ### Added
 
-- 开关状态机 S0-S4（-D6）：预注册的就绪触发器（C1-C4 按墙上时钟，k_max=10）、SESOI 区间的对账 + McNemar 诊断（packages/store/src/eval/switch-machine.ts，纯核心）、分级回滚加 Inconclusive 保持（晋升连续 3 次 > 回滚连续 2 次的滞后）、完整性血缘按「拿不准就拒绝」处理、由证据驱动、可逆的冻结。
-- 预注册阈值写成数据（带版本 + 哈希）：packages/store/fixtures/switch-registration.json；每次裁决都记 registrationHash。
-- skip-ledger schema @3：状态块（phase、since、transitionId、evidenceHash）+ 动作日志（动作永远不碰 3 连计数）；@1/@2 无损升版；不认识的版本大声报错。
-- access_events 链上的开关事件（stage-transition/rollback/freeze）带哨兵行外键，写入顺序是链先、账本后；账本可以用链重建作兜底。
-- `ans switch-state [--verify] [--db PATH] [--out DIR]` 只读查询。
-- ship-gate step 7 报告当前的开关阶段（退出语义不变）。
+- Switch state machine S0-S4 (-D6): a pre-registered readiness trigger (C1-C4 wall clock, k_max=10), SESOI-band reconcile plus a McNemar diagnostic (packages/store/src/eval/switch-machine.ts, pure core), graded rollback with an Inconclusive hold (promote streak 3 > rollback streak 2 hysteresis), integrity lineage fail-closed, and a reversible freeze driven by evidence.
+- Pre-registered thresholds stored as data (version + hash): packages/store/fixtures/switch-registration.json; every verdict records registrationHash.
+- skip-ledger schema @3: a state block (phase, since, transitionId, evidenceHash) plus an actions log (actions never touch the 3-streak); @1/@2 upcast losslessly; unknown versions fail loudly.
+- access_events chain switch events (stage-transition/rollback/freeze) with a sentinel-row foreign key, writing the chain before the ledger; the ledger can be rebuilt from the chain as a fallback.
+- `ans switch-state [--verify] [--db PATH] [--out DIR]` read-only query.
+- ship-gate step 7 reports the current switch phase (exit semantics unchanged).
 
 ### Fixed
 
-- bgnbd/obs-fixtures/switch-run 不再在模块初始化时求值 `fileURLToPath(import.meta.url)`——@anysearch-cli/store 重新导出 switch 模块之后，CJS 的 CLI bundle 每次启动都会让所有 ans 命令崩掉。
+- bgnbd/obs-fixtures/switch-run no longer evaluate `fileURLToPath(import.meta.url)` at module init — once @anysearch-cli/store re-exported the switch modules, the CJS CLI bundle crashed every ans command at startup.
 
 ## [Unreleased]
 
 ### Added
 
-- （T-1 / F-15，round 58）：评测分成两档。合并门（ship-gate step 7）只做观察，永远不花掉预注册的 OF 观察次数（ANS_EVAL_NO_LOOK=1）；决定档搬到新的 `release` workflow（pre-tag dispatch = 唯一一次正式查看；post-tag 只断言已经记录的裁决还没过期，不花任何次数）。OF 观察账本从本地的 `.ship-gate/eval-looks.json` 搬到 git 提交的仓库根 `eval-looks.json`（`anysearch/eval-looks@2`，只追加，压缩上限 50 行，压缩前的 SHA-256 保留）；只有 ANS_EVAL_LOOKS_WRITE=1 时才写观察，所以 CI 和本地跑都不会动这个被跟踪的文件。ship-gate.yml 的 Node 24 → 22，跟 ci.yml 对齐。
-- （T-2 / F-17，round 58）：不稳定的用例单独隔离。某个用例只要被环境弄得不稳定，就用标记把它隔离（`packages/store/eval-quarantine.json`，`anysearch/eval-quarantine@1`）——golden 集和数据集指纹都不动，重新校准的成本是零。门禁在 passRate==1 的硬断言里排除生效中的隔离用例，同时把排除的事说出来；30 天 TTL、每周复审、最多续期 2 次、有 promote/retire 两条路。eval CLI 现在门禁失败时会点名失败的用例，CI 日志不用拿报告工件也能认出是环境抖动。
-- （T-5，round 58）：README 的 ADR 索引改成生成件。`scripts/gen-adr-index.mjs`（只用 Node 标准库）负责 `BEGIN/END ADR-INDEX` 块，内容从 `*.md` 推导，ship-gate step 1b 用 `--check` 模式（重新生成再比 diff）跑，索引再也不会悄悄落后。一次性补齐时把过时的「到某年某月」说法换成真实的 0001-0059 范围，并补上完整的 59 行索引。
-- （T-6，round 58）：四处对抗性审查的修补。(1) engine 的死配置**靠写文档**修好：CONTEXT.md 不再声称 grace window 已经实现，补一条只追加的 r58 errata，ship-gate step 1c 断言「engine 欠账」这句诚实的说明还在。(2) `ans doctor` 用 tsup 的 `__PACKAGE_VERSION__` 定义打印真实版本，不再运行时读 package.json（打包后会解析到仓库根）。(3) plugin server 的信任边界（最高优先级）：只认 loopback 的 Host 白名单、检查 Origin（没有 Origin = 原生客户端）、ANS_SERVER_TOKEN 没设时自动生成 256 位 token（持久化 0600 给 hooks 用）、crypto.timingSafeEqual、请求体 1MB 上限、403 在 401 之前返回；去掉通配 CORS。(4) api.anysearch.com 的归属**带期限**延期：在 docs/deferred-registry.json 里点名 owner + 季度复查 + CT/到期监控，并在 anysearch.ts 里加注释块。
+- (T-1 / F-15, round 58): evaluation has two grades. The merge gate (ship-gate step 7) only observes and never spends a pre-registered OF look (ANS_EVAL_NO_LOOK=1); decision grade moved to a new `release` workflow (pre-tag dispatch = the only formal look; post-tag only asserts the recorded verdict is still valid and spends nothing). The OF look ledger moved from the local `.ship-gate/eval-looks.json` to the git-tracked repo-root `eval-looks.json` (`anysearch/eval-looks@2`, append-only, 50-row compaction cap, pre-compaction SHA-256 preserved); a look is written only when ANS_EVAL_LOOKS_WRITE=1, so CI and local runs leave the tracked file untouched. ship-gate.yml Node 24 -> 22 to match ci.yml.
+- (T-2 / F-17, round 58): flaky cases are quarantined. When a case is flaky because of the environment, a policy mark quarantines it (`packages/store/eval-quarantine.json`, `anysearch/eval-quarantine@1`) — the golden set and dataset fingerprint stay untouched, so recalibration costs nothing. The gate excludes active quarantined cases from the passRate==1 hard assertion and says so; 30-day TTL, weekly review, at most 2 renewals, promote/retire paths. The eval CLI now names failing cases on gate failure, so a CI log identifies an environment flake without the report artifact.
+- (T-5, round 58): the README ADR index is generated. `scripts/gen-adr-index.mjs` (Node stdlib only) owns the `BEGIN/END ADR-INDEX` block derived from `*.md`, and ship-gate step 1b runs it in `--check` mode (regenerate and diff), so the index cannot lag silently. The one-time catch-up replaced the stale range with the real 0001-0059 range and the full 59-row index.
+- (T-6, round 58): four adversarial-review fixes. (1) The engine's dead config was fixed **by documentation**: CONTEXT.md no longer claims a grace window is implemented, gains an append-only r58 errata, and ship-gate step 1c asserts the honest engine-debt note survives. (2) `ans doctor` prints the real version via the tsup `__PACKAGE_VERSION__` define instead of reading package.json at runtime (after bundling that resolved to the repo root). (3) Plugin server trust boundary (highest priority): loopback Host whitelist, Origin check (no Origin = native client), auto-generated 256-bit token when ANS_SERVER_TOKEN is unset (persisted 0600 for the hooks), crypto.timingSafeEqual, 1MB body cap, 403 before 401; wildcard CORS removed. (4) api.anysearch.com ownership deferred **with a deadline**: named owner + quarterly review + CT/expiry monitoring in docs/deferred-registry.json and an annotation block in anysearch.ts.
 
 ### Removed
 
-- due-chore（round 59）：删掉 `t6-hostile-cuts.test.mjs` 里「`403` 在 `401` 前面」的文本位置断言——它钉的是源码顺序，不是行为；行为在 `apps/plugin/test/plugin-security.test.mjs` 里端到端断言（非 loopback 的 Origin 不带 token → 先 403 再 401）。
-- due-chore（round 59）：`apps/plugin/src/hooks/preheat.ts` 的注释不再说策略缓存防的是被*篡改*的 drop-in（降级成防*损坏*的 drop-in——sha256 自检是损坏检测，不是对抗攻击的防御），`canonicalVersion` 现在点名 store 的实现才是权威。
-- D-001/R1（round 57）：`.scratch/` 不再被跟踪。本地的 markdown issue 跟踪器和轮次工件被跟踪了 16 个文件，而 README.md:64 把它们写成不进 git；这 16 个现在全部取消跟踪（磁盘副本保留；`.gitignore` 加上 `.scratch/`）。提交 `ykm`（前 8 个）+ `rpz`（后 8 个，审计 F-1）。
+- due-chore (round 59): removed the `t6-hostile-cuts.test.mjs` text-position assertion that `403` comes before `401` — it pinned source order, not behaviour; the behaviour is asserted end-to-end in `apps/plugin/test/plugin-security.test.mjs` (non-loopback Origin without a token -> 403 before 401).
+- due-chore (round 59): the `apps/plugin/src/hooks/preheat.ts` comment no longer says the policy cache guards against a *tampered* drop-in (downgraded to a *damaged* drop-in — the sha256 self-check detects damage, not an attacker), and `canonicalVersion` now names the store implementation as authoritative.
+- D-001/R1 (round 57): `.scratch/` is no longer tracked. The local markdown issue tracker and round artifacts were tracked as 16 files while README.md:64 documents them as not committed; all 16 are now untracked (disk copies kept; `.gitignore` gained `.scratch/`). Commits `ykm` (first 8) + `rpz` (remaining 8, audit F-1).
 
 ### Fixed
 
-- r110 审计返修轮（对 r109 实现做双轴复审；所有发现一轮修完——SP-F-01..03 + SA-F-01..09）：
-  - SP-F-01/SA-F-05（严重）：consumed 轨的 AND-gate 输入写死成 0，跟 access_events 完全断开，而「数据缺失」分类器只在一条事件都没有时才触发——结果健康的 eval 也总记 gate-not-met，3 连计数乱触发（ship-gate exit 1）。现在 runner 汇总真实的单元级统计（events/units/fittableUnits/access-time span），D4 的「结构性数据缺失」也覆盖「有事件但没有任何能拟合的单元」——空库和「有数据但还不成熟」两种形态都记 reasonCode=data-absent，永远不建 3 连。
-  - SA-F-01：AND-gate 遇到非有限的 PSI 按「拿不准就拒绝」处理（NaN 不能再溜过 >= 比较）。
-  - SA-F-02：skip-key 的身份排除会变的数字（统一成 '#'）——3 连现在按「哪些门条款失败」匹配，所以跨轮相同条件真的能到升级。
-  - SA-F-03：不认识/损坏的 skip-ledger 永远不会被静默清空；读取大声失败（SkipLedgerError），eval CLI 把文件隔离到一边、清空重来，并在 stderr 说明。
-  - SA-F-04：夹具 definitionHash 现在钉住 generatorVersion + 每个文件的 SHA-256（generator 升到 v2）——生成器契约一变指纹就翻（声明的翻转是 5be13f8abcfab1f9 → 用 --calibrate 重新基线）。
-  - SA-F-05：观察区带一个明确的 dataAbsent 布尔值；报告区不再把结构性缺失当成没解释的 gate-not-met。
-  - SA-F-06：fixtureDefinitionHash 也记进观察区（校准后进 eval-baseline.json）——指纹翻转可以从工件里审计。
-  - SA-F-07：tau-python.yml 的重新生成守卫触发到 day-buckets.ts，夹具加载器硬拒一个键跟 AGE_BUCKETS 漂开的 baselineHistogram。
-  - SA-F-08：skip-ledger 写入是原子的（tmp + rename），并发的或崩掉的 eval 不会留下写了一半的账本。
-  - SA-F-09：@2 的条目级校验（tier/track 枚举；green 行必须不带 reasonCode，warn/data-absent 行必须带一个）；@1 升版时 green 行保持不带 reason。
-  - SP-F-02/03（小问题）：运行时 SHA-256 对 MANIFEST 的检查现在写明白只是防接错的护栏（防篡改的检查项是 CI 的重新生成再比 diff）；MANIFEST 缺失会在报告里给明确的 "no-fixtures" 标记 + stderr 警告，不再是静默的指纹漂移。
-- r39 的 deferred 项 F-07（阶梯自动化测试）和 F-09（报告 subject 摘要）继续 deferred（有跟踪，r110 不负责）。
+- r110 audit repair round (two-axis review of the r109 implementation; all findings fixed in one round — SP-F-01..03 + SA-F-01..09):
+  - SP-F-01/SA-F-05 (severe): the consumed track's AND-gate input was hardcoded to zero and fully disconnected from access_events, and the data-absent classifier only fired when there were no events at all — so a healthy eval always logged gate-not-met and the 3-streak fired spuriously (ship-gate exit 1). Now the runner aggregates real unit-level stats (events/units/fittableUnits/access-time span), and D4 "structural data absence" covers "events exist but nothing is fit-eligible" — both the empty library and the populated-but-immature form record reasonCode=data-absent and never build the streak.
+  - SA-F-01: non-finite PSI is fail-closed at the AND-gate (NaN can no longer slip past the >= comparison).
+  - SA-F-02: skip-key identity excludes volatile numbers (normalized to '#') — the 3-streak now matches on which gate clauses failed, so identical conditions across runs actually reach escalation.
+  - SA-F-03: unknown/corrupt skip-ledgers are never silently cleared; reading fails loudly (SkipLedgerError), and the eval CLI moves the file aside, restarts empty, and says so on stderr.
+  - SA-F-04: fixture definitionHash pins generatorVersion + per-file SHA-256s (generator bumped to v2) — a generator contract change flips the fingerprint (the declared flip 5be13f8abcfab1f9 -> re-baselined via --calibrate).
+  - SA-F-05: the observational zone carries an explicit dataAbsent boolean; the report zone no longer presents structural absence as an unexplained gate-not-met.
+  - SA-F-06: fixtureDefinitionHash is recorded in the observational zone (and in eval-baseline.json after calibration) — fingerprint flips are auditable from the artifact.
+  - SA-F-07: the tau-python.yml regeneration guard triggers on day-buckets.ts, and the fixture loader hard-rejects a baselineHistogram whose keys drift from AGE_BUCKETS.
+  - SA-F-08: skip-ledger writes are atomic (tmp + rename), so a concurrent or crashed eval cannot leave a half-written ledger.
+  - SA-F-09: @2 entry-level validation (tier/track enums; green rows must omit reasonCode, warn/data-absent rows must carry one); @1 upcasts keep green rows reason-free.
+  - SP-F-02/03 (nits): the runtime SHA-256-vs-MANIFEST check is now documented as an anti-miswire guard only (CI regenerate-and-diff is the tamper anchor); a missing MANIFEST yields an explicit "no-fixtures" marker plus a stderr warning instead of a silent fingerprint drift.
+- r39 deferred items F-07 (staircase automation tests) and F-09 (report subject digest) remain deferred (tracked; r110 does not own them).
 
 ### Added
 
-- 观察数据喂入（r109 实现）：双轨加载器（consumed=真实的 access_events 优先；synthetic=挂哈希的夹具兜底，走 `ANS_OBS_FIXTURE`，轨道标记在加载时就强制检查，所以 synthetic 行永远不能冒充 consumed 数据）+ 纯标准库的离线生成器 `scripts/tau/generate_fixtures.py`（mulberry32，逐字节确定，--check 有漂移就 exit 2），产出四套证伪矩阵（`packages/store/fixtures/obs-feed/`：pass-stable / t1-fail 299 行 / t2-fail PSI>=0.25 / t3-fail 89d 窗口）并带 SHA-256 MANIFEST + definition hash，钉进 eval 基线的指纹——初始翻转 113be271869dbc54 → 重新基线是声明好的一次性指纹翻转（definitionHash `f5c6c438f3696995` 同时加入）。skip-ledger schema @1 → @2（轨道 + 理由码分开；data-absent 永远不建 3 连，并重置正在飞的 gate-not-met 轮；@1 的账本读取时无损升版，关掉 r106 F-08；scripts/gain-ledger.mjs 的 resolve 工具接受 @2）。synthetic 跑在报告里标成 simulated-observation-window。CI：tau-python.yml 加重新生成再比 diff 的守卫步骤。新的测试面：obs-fixtures.test.ts（24 条断言，gate-ok → ready-to-spawn 用 node stub）+ eval-skip.test.ts 的账本语义块。
-- access_events 防篡改层（r102/r103 实现）：`prev_hash` 的 SHA-256 哈希链（六字段 canonical 契约：固定键序 = 闭集 ASCII 标量 schema 的 RFC 8785 字典序，NULL = JSON null，白名单 INTEGER/TEXT/NULL）+ 单行 `access_chain_anchor` 把历史封存成一次性摘要快照（懒加载的 IMMEDIATE 构造引导，一次防御性 BUSY 重试，busy/IO 降级 = stderr WARN + telemetry 位）+ 独立、零共享代码的校验器 `scripts/verify-access-events.mjs`（分支检测、老历史摘要重算、不认识的 schema_version = 明确报错，exit 0/1/2），按拿不准就拒绝接进 ship-gate step 1（没有 DB → 明确 skip + `access-chain-skip-ledger.json`，3 连升级）+ 沉默即告警的 `eventWriteFailures` 计数器并入 eval 观察区 + `ans access-chain bootstrap [--dry-run default | --apply]`。六个零依赖测试文件（3+2 个 golden 向量钉住、4 类篡改 + 种子化的老历史、无 DB exit 2、真 spawn 的双进程并发 bootstrap、telemetry/幂等/老历史逐字节稳定、10 万行性能冒烟只报告 + schema 前向/后向 + 白名单负例）。数据集指纹没有翻——链永远不碰 golden 用例；基线指纹 113be271869dbc54 验证没变（翻转规则评估过，没触发）。
-- tau 观察层（r100 实现轮）：access_events 只追加日志并入 eval 的逐用例观察；预注册的天数桶（0-1/2-7/8-30/31-90/91+，[min,next-min) 语义 + dayBucketFingerprint）折进 datasetFingerprint，桶一变就强制重新校准；synthetic tau-scan（种子化 mulberry32、kendall@2，以 node 脚本 `scripts/tau/tau-scan.mjs` 交付）；BG/NBD 走进程外的 `scripts/tau/bgnbd_fit.py`，在冻结的 lifetimes 栈上跑（numpy==1.26.4、autograd==1.7.0 钉在 numpy 2 以下——见 r100 修正），通过一个加固的 spawn 包装（超时 SIGKILL，不是 JSON/没收敛都明确映射成 skip）；三档显式 skip（gate-not-met / offline-deferred / infra-failure），TAU_FIT_GATE T1+T2+T3 和一个 skip 账本（anysearch/gain-ledger@1 形状，用 gain-warn-resolve.mjs resolve）；eval 报告的观察区是 ship-gate 的契约。r99 的文字 errata 已经真的打上（D2 全样本规则失败是 WARN 不是红；D6 单次 WARN 带账本条目，连续三次升级）。
-- 关系臂的收益门改成三档 GREEN/WARN/RED 判定——只有证明是负的才 RED（BCa 上界 < 0 或者伤害侧符号翻转的 p 低于观察预算）；没证明是正的就 WARN，永远不 RED。双轨留存：40 条冻结的基线切片（19 对 RoR）+ 第二个指纹 + 一个回流切片家族（inputHash 对基线去重、跨切片、载荷来源）。预注册的 Lan-DeMets OF alpha 花费（每条轨 0.025，k_max=5，超过 k_max 后收敛条款）+ 按指纹的观察账本（.ship-gate/eval-looks.json）。ship-gate 执行分档：RED 硬失败、GREEN 通过、WARN 放行但连续三次 WARN 强制跑 `node scripts/gain-warn-resolve.mjs`。39 条用例上有分级相关度标签（0-3），喂进只报告不设门的 nDCG@5/10/20，再加一条双人复核记录（relevance-review.json，610 对标签上 kappa/AC1 = 1.0），作为判定校准的基线行。
-- `ans consolidate` 和 `ans memory forget --undo` 两个 CLI 命令；持久维护库走 ANS_DB_PATH（默认 ~/.anysearch/anysearch.db）；semantic_memories 第六条 RRF 臂 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->（serve、权重 0.5、条件激活、拿不准就拒绝回归门）；三协议 LLM 端点配置（ANS_LLM_BASE_URL + ANS_LLM_API=chat|messages|responses + ANS_LLM_API_KEY）。
+- Observational data feeding (r109 implementation): dual-track loader (consumed = real access_events preferred; synthetic = hash-pinned fixture fallback via `ANS_OBS_FIXTURE`, with the track marker enforced at load so synthetic rows can never pose as consumed data) + a pure-stdlib offline generator `scripts/tau/generate_fixtures.py` (mulberry32, byte-deterministic, `--check` exits 2 on drift) that produces four falsification fixtures (`packages/store/fixtures/obs-feed/`: pass-stable / t1-fail 299 rows / t2-fail PSI>=0.25 / t3-fail 89d window) with a SHA-256 MANIFEST and a definition hash pinned into the eval baseline fingerprint — the initial flip 113be271869dbc54 -> re-baselined is the declared one-time fingerprint flip (definitionHash `f5c6c438f3696995` joined). skip-ledger schema @1 -> @2 (track + reason-code split; data-absent never builds the 3-streak and resets an in-flight gate-not-met run; @1 ledgers upcast losslessly on read, closing r106 F-08; scripts/gain-ledger.mjs resolve accepts @2). Synthetic runs are labelled simulated-observation-window in the report. CI: a regenerate-and-diff guard step in tau-python.yml. New tests: obs-fixtures.test.ts (24 asserts, gate-ok -> ready-to-spawn via node stub) plus the eval-skip.test.ts ledger-semantics block.
+- access_events tamper-evidence layer (r102/r103 implementation): `prev_hash` SHA-256 hash chain (six-field canonical contract: fixed key order = RFC 8785 lexicographic for the closed ASCII scalar schema, NULL = JSON null, INTEGER/TEXT/NULL whitelist) + a single-row `access_chain_anchor` sealing legacy history as a one-off digest snapshot (lazy IMMEDIATE constructor bootstrap, one defensive BUSY retry, busy/IO degrade = stderr WARN + telemetry bit) + an independent zero-shared-code verifier `scripts/verify-access-events.mjs` (fork detection, legacy digest recompute, unknown schema_version = explicit error, exit 0/1/2) wired fail-closed into ship-gate step 1 (no DB -> explicit skip + `access-chain-skip-ledger.json`, 3-streak escalation) + an alert-on-silence `eventWriteFailures` counter joined into the eval observational zone + `ans access-chain bootstrap [--dry-run default | --apply]`. Six zero-dependency test files (3+2 golden vectors pinned, 4 tamper classes + seeded legacy, no-DB exit 2, real-spawn dual-process concurrent bootstrap, telemetry/idempotency/legacy byte stability, 100k-row perf smoke report-only + schema forward/back + whitelist negatives). No dataset fingerprint flip — the chain never touches golden cases; baseline fingerprint 113be271869dbc54 verified unchanged (flip rule evaluated, not triggered).
+- tau observation layer (r100 implementation round): access_events append-only log joined into eval per-case observation; pre-registered day buckets (0-1/2-7/8-30/31-90/91+, [min,next-min) semantics + dayBucketFingerprint) folded into datasetFingerprint so any bucket change forces recalibration; synthetic tau-scan (seeded mulberry32, kendall@2, shipped as `scripts/tau/tau-scan.mjs`); BG/NBD out-of-process fit via `scripts/tau/bgnbd_fit.py` on the frozen lifetimes stack (numpy==1.26.4, autograd==1.7.0 pinned below numpy 2 — see r100 amendment) behind a hardened spawn wrapper (timeout SIGKILL; non-JSON/non-converged map to explicit skip); three-tier explicit skip (gate-not-met / offline-deferred / infra-failure) with TAU_FIT_GATE T1+T2+T3 and a skip ledger (anysearch/gain-ledger@1 shape, resolve via gain-warn-resolve.mjs); the eval report observational zone is a ship-gate contract. r99 text errata physically applied (D2 full-sample rule failure is WARN not red; D6 single WARN ships with a ledger entry, three consecutive escalate).
+- The relation arm's gain gate is now a three-tier GREEN/WARN/RED verdict — RED only on proven-negative evidence (BCa upper < 0 or harm-side sign-flip p below the look budget); unproven-positive is WARN, never RED. Dual-track holdout: 40-case frozen baseline slice (19 RoR pairs) with a second fingerprint plus a backflow slice family (inputHash dedup vs baseline, cross-slice, payload provenance). Preregistered Lan-DeMets OF alpha spending (0.025 per track, k_max=5, convergence clause past k_max) with a per-fingerprint look ledger (.ship-gate/eval-looks.json). ship-gate enforces the tier: RED hard-fails, GREEN passes, WARN is released but three consecutive WARNs force `node scripts/gain-warn-resolve.mjs`. Graded relevance labels (0-3) on 39 cases feed report-only nDCG@5/10/20 plus a dual-review record (relevance-review.json, kappa/AC1 = 1.0 on 610 label pairs) as the judge-calibration baseline row.
+- `ans consolidate` and `ans memory forget --undo` CLI; durable maintenance DB via ANS_DB_PATH (default ~/.anysearch/anysearch.db); semantic_memories sixth RRF arm <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 --> (serve, weight 0.5, conditional activation, fail-closed regression gate); three-protocol LLM endpoint config (ANS_LLM_BASE_URL + ANS_LLM_API=chat|messages|responses + ANS_LLM_API_KEY).
 
 ### Removed
 
-- kernel llm-init 里残留的环境变量兜底（OPENAI_/ANTHROPIC_/GOOGLE_API_KEY）：kernel 不再读 provider 的环境变量（step 7）；provider 的认证全部留在 pi-ai 里。这是 r94 留下的清理项，单独一个重构 commit 发。
+- kernel llm-init residual env fallback (OPENAI_/ANTHROPIC_/GOOGLE_API_KEY): the kernel no longer reads provider env (step 7); provider auth stays entirely inside pi-ai. This is r94-deferred cleanup, shipped as its own refactor commit.
 
 ### Fixed
 
-- r94 审计（atomcode Spec-1）：单 query 的 searchMemory 用一张从没被 semantic 命中填过的 byId 表来解析语义臂——那条路径上第六条臂被静默丢掉（MCP recall_memory 的消费者）。修好 + 回归测试。
-- r94 审计（atomcode S1）：kernel 的 llm-init 从环境读 ANS_LLM_API_KEY，违反了自己「kernel 不读环境变量」的约定；现在调用方显式传 key。
-- r94 审计：applyArchive 的 explicit-ids 路径在强制点现在执行 pinned / closed / quarantined 的排除；LLM 摘要移出 BEGIN IMMEDIATE 写锁（plan/apply 拆开；dry-run 的精确预测不变）；`ans consolidate` 拒收未知 flag（exit 2）。
+- r94 audit (atomcode Spec-1): single-query searchMemory resolved the semantic arm through a byId map that was never populated with semantic hits — the sixth arm was silently dropped on that path (the MCP recall_memory consumer). Fixed + regression test.
+- r94 audit (atomcode S1): kernel llm-init read ANS_LLM_API_KEY from the environment, violating its own "no env reads in kernel" contract; callers now pass the key explicitly.
+- r94 audit: the applyArchive explicit-ids path now enforces pinned / closed / quarantined exclusions at the force point; LLM summarize moved out of the BEGIN IMMEDIATE write lock (plan/apply split; dry-run exact prediction unchanged); `ans consolidate` rejects unknown flags (exit 2).
 
 ## [0.1.0-rc.0] — 2026-08-22
 
 ### Fixed
 
-- r90 审计：D5 的 RoR delta 符号约定在文档和 CONTEXT.md 里改正（正数 = 关系臂把记忆更早推出来；文档曾经写反了，而代码/测试/基线一直用正数=有帮助——这个回归陷阱拆掉）。
-- r90 审计：backfill 重试计数器的快照现在也覆盖 `relatedToWriteOnce`，所以失败的批次重试不会再把这个 telemetry 位算两次；busy 注入测试现在把外部锁持到 busy_timeout（5200ms）之外，让指数退避分支真的执行（原来持 150ms 被 busy_timeout 吸收了）。
+- r90 audit: D5 RoR delta sign convention corrected in the docs and CONTEXT.md (positive = the relation arm pushed the memory earlier; the docs had it inverted while code/tests/baseline used positive=helps — the regression trap is removed).
+- r90 audit: the backfill retry counter snapshot now also covers `relatedToWriteOnce`, so a failed batch retry no longer double-counts that telemetry bit; the busy-injection test now holds the foreign lock past busy_timeout (5200ms) so the exponential-backoff branch actually runs (a 150ms hold was absorbed by busy_timeout).
 
 ### Added
 
-- ship-gate 管线：`scripts/ship-gate.mjs`（Node 标准库，单文件）作为阻断式的产品冒烟检查，外加一个非阻断的 `modelcontextprotocol/conformance` workflow 作为协议心跳。
+- ship-gate pipeline: `scripts/ship-gate.mjs` (Node stdlib, single file) as the blocking product smoke check, plus a non-blocking `modelcontextprotocol/conformance` workflow as the protocol heartbeat.
 
 ### Added
 
-- 融合新鲜度因子 [0.3, 1.5] 进入 store 的排序——创建时间的衰减、`last_accessed` 的最近性、`access_count` 的频率，融成一个乘法区间（`freshness_factor()` UDF 取代 `time_decay()`）。`access_count` 列通过幂等迁移加上；每个返回的召回命中恰好加一次，`searchMemory` 和 `searchMemoryMulti` 两条路径都一样。
-- kernel 的 `memory-pipeline.ts` 现在从 `@anysearch-cli/store` import `isTimeSensitive`/`isEvergreen`（删掉内联的正则副本；QDF 正则自己也不再带年份字面量）。
+- Fused freshness factor [0.3, 1.5] in store ranking — creation-age decay, `last_accessed` recency, and `access_count` frequency fused into one multiplicative band (`freshness_factor()` UDF replaces `time_decay()`). `access_count` added by idempotent migration; every returned recall hit increments it exactly once, on both `searchMemory` and `searchMemoryMulti`.
+- kernel `memory-pipeline.ts` now imports `isTimeSensitive`/`isEvergreen` from `@anysearch-cli/store` (inline regex copy deleted; the QDF regex itself no longer carries year literals).
 
 ### Removed
 
-- 从 `packages/store eval` 删掉 `--write-baseline`（它是 `--calibrate` 的一轮别名）。
-- 退役 `w` 插值权重（0.25/0.4）和 `1 - w·(1-decay)` 的融合形式。排序现在是直接的乘法缩放区间。
+- dropped `--write-baseline` from `packages/store eval` (the one-round alias for `--calibrate`).
+- retired the `w` interpolation weight (0.25/0.4) and the `1 - w·(1-decay)` fusion form. Ranking is a direct multiplicative scaling band now.
 
 ### Infrastructure
 
-- 第 1–17 轮一共落了 16 条 ADR（MCP Phase2、Kernel Engine 组合、dual-era SDK v1+v2 桥、TypeBox 单一事实源、plugin hooks 层、SessionStart 路由、L0/L1 记忆流水线）。
+- 16 prior ADRs landed across rounds 1–17 (MCP Phase2, Kernel Engine composition, dual-era SDK v1+v2 bridge, TypeBox source of truth, plugin hooks layer, SessionStart routing, L0/L1 memory pipeline).
 
 ### Added
 
-- KG-lite 关系臂（第五条 RRF 臂，权重 0.5）：封闭的 8 谓词表（`works_on/depends_on/uses/part_of/member_of/located_at/authored_by/related_to`）带中英别名映射，规则优先的抽取（动词框架 + url<->handle 桥 + 2-preKnown 共现），单次 LLM 调用藏在一个严格的后置过滤后面（JSON 降级解析，永远不挡写路径），边表带部分唯一 active 索引和 episode 来源，合并时在 combine 事务里重定向边，并用快照驱动的有界 unmerge 恢复，`pendingEdges` 指标 + relationTel 计数器，golden `relations` 组（12 条用例：8 个谓词正例含 CJK 引号、拿不准就拒绝supersede、观察性的 no_edge + 1-hop 命中率），ship-gate 1j 静态 + relation 区指标断言。
-- `ans relation list` + `ans relation backfill-relations`（默认 dry-run，keyset 分页，`--reprocess` 覆盖过时的 rules_version 行，退出码 0/1/2）。
+- KG-lite relation arm (fifth RRF arm, weight 0.5): closed 8-predicate table (`works_on/depends_on/uses/part_of/member_of/located_at/authored_by/related_to`) with EN+CN alias map, rule-first extraction (verb frames + url<->handle bridge + 2-preKnown co-occurrence), single-call LLM seam behind a strict post-filter (JSON degrade parse, never blocks the write path), edges table with partial-unique active index and episode provenance, merge redirects edges inside the combine transaction with snapshot-driven bounded unmerge restore, `pendingEdges` gauge + relationTel counters, golden `relations` group (12 cases: 8 predicate positives including CJK quoted, fail-closed supersede, observational no_edge + 1-hop hit rate), ship-gate 1j static + relation-zone metric assertions.
+- `ans relation list` + `ans relation backfill-relations` (dry-run default, keyset pagination, `--reprocess` supersedes stale rules_version rows, exit codes 0/1/2).
 
 [0.1.0-rc.0]: https://github.com/anysearch/anysearch-cli/releases/tag/v0.1.0-rc.0
 
 ### Added
 
-- 关系臂收益观测（Phase-1）：对关系臂做单轮反事实消融——SqliteSessionStore 每次 searchMemory 调用都记下臂的来源；eval runner 丢掉关系列表重新算 RRF，为每个 expectRankOf 的 golden 操作产出配对的排名差。门禁统计：配对的 BCa 95% CI（种子化 mulberry32 bootstrap + jackknife）、单边符号翻转置换 p、Sakai 样本量锁（上限 80）、卡方上界 sigma_d。判决规则（BCa lo > 0 且 mean >= minGain 且 signFlip p < 0.05）按拿不准就拒绝处理；样本不够 / 退化 / 缺基线的降级成 WARN。golden relations 组从 12 扩到 78（30 对 EN + 8 对 CN 的 RoR，配 14 条记忆的干扰语料，14 条 EN + 8 条 CN 别名边，6 条 no_edge 负例）；基线在 50 次种子化跑上重新校准（sigmaDU=0.102，lockedN=17）。新测试 eval-relation-gain.test.ts。
+- relation-arm gain observance (Phase-1): single-run counterfactual ablation for the relation arm — SqliteSessionStore captures arm provenance per searchMemory call; the eval runner drops the relation list and recomputes RRF, producing paired rank deltas for every expectRankOf golden op. Gate statistics: paired BCa 95% CI (seeded mulberry32 bootstrap + jackknife), one-sided sign-flip permutation p, Sakai sample-size lock (cap 80), chi-square upper sigma_d. Decision rule (BCa lo > 0 AND mean >= minGain AND signFlip p < 0.05) fails closed; under-powered / degenerate / missing-baseline downgrade to WARN. Golden relations group expanded 12 -> 78 (30 EN + 8 CN RoR pairs with a 14-memory distractor corpus, 14 EN + 8 CN alias edges, 6 no_edge negatives); baseline recalibrated over 50 seeded runs (sigmaDU=0.102, lockedN=17). New test eval-relation-gain.test.ts.
 
 ### Changed
 
-- （Phase-2）：`ans relation backfill-relations --apply` 现在每批提交一个 IMMEDIATE 事务（原来是一整个 run 一个事务），遇到 SQLITE_BUSY 用指数退避重试（基数 50ms，上限 5s，最多 8 次，跟 busy_timeout=5000 对齐），碰到 SQLITE_BUSY_SNAPSHOT 立即失败，每批提交后跑一次 passive WAL checkpoint。dry-run 路径保持单个回滚事务，所以计数仍然是精确预测（r87）。「backfill 期间不要有并发 MCP 流量」的约束放松成「建议、不强制」；CLI 帮助和措辞同步更新。回归覆盖：逐批精确一致和现场写者争用两种情况，在 relation-edges.test.ts 里。
+- (Phase-2): `ans relation backfill-relations --apply` now commits one IMMEDIATE transaction per batch (was one whole-run transaction), retries SQLITE_BUSY with exponential backoff (50ms base, 5s cap, <=8 tries, aligned with busy_timeout=5000), fails fast on SQLITE_BUSY_SNAPSHOT, and runs a passive WAL checkpoint after each committed batch. The dry-run path keeps the single rolled-back transaction, so counters remain exact predictions (r87). The "no concurrent MCP traffic during backfill" constraint is relaxed to recommended, not required; CLI help and wording updated. Regression coverage: per-batch exact parity and live-writer contention in relation-edges.test.ts.
