@@ -21,7 +21,7 @@ import { registerRecallMemory } from "../src/tools/recall-memory.tool.js";
 import { registerAnsChat } from "../src/tools/ans-chat.tool.js";
 import { registerQueryKnowledge } from "../src/tools/query-knowledge.tool.js";
 import type { CompositionResult, Query } from "@anysearch-cli/kernel";
-import type { FusedEnvelope } from "@anysearch-cli/retriever";
+import type { FusedEnvelope, AttributionReport } from "@anysearch-cli/retriever";
 import type { SessionStore } from "@anysearch-cli/store";
 import { httpStateless } from "./helpers/mcp-harness.js";
 
@@ -341,6 +341,38 @@ async function main() {
       } finally {
         await http.close();
       }
+    }
+
+    // ---- 12. Attribution travels in BOTH channels on the success path ----
+    // Replaces the ship-gate source-text count in the tool files: this drives
+    // the registered handlers and reads the actual payloads.
+    {
+      const attribution: AttributionReport = {
+        schema: "anysearch/attribution-report@1",
+        generatedAt: "2026-01-01T00:00:00.000Z",
+        claims: [],
+        gaps: [],
+        supportedCount: 0,
+        uncertainCount: 0,
+        unsupportedCount: 0,
+        judgeEnhanced: false,
+      };
+      const h = captureHandlers(
+        makeEngine(async () => ({ ...partialEnvelope(), attribution }) as FusedEnvelope),
+      );
+
+      const sw = await h.search_web({ query: "x" });
+      const swDoc = JSON.parse(String(sw?.content?.[0]?.text));
+      assert(swDoc.attribution?.schema === attribution.schema, "search_web content JSON carries attribution");
+      assert(
+        sw?.structuredContent?.attribution?.schema === attribution.schema,
+        "search_web structuredContent carries attribution",
+      );
+
+      const rw = await h.research_web({ question: "x", depth: "brief" });
+      const rwDoc = JSON.parse(String(rw?.content?.[0]?.text));
+      assert(Array.isArray(rwDoc.attribution?.claims), "research_web content JSON carries attribution");
+      assert(Array.isArray(rw?.structuredContent?.attribution?.claims), "research_web structuredContent carries attribution");
     }
   } finally {
     for (const k of Object.keys(saved)) {
