@@ -13,7 +13,7 @@ const order: string[] = [];
 registerTeardown(() => order.push("a"));
 registerTeardown(() => { throw new Error("boom"); });
 registerTeardown(() => order.push("c"));
-assert(pendingTeardowns() === 3, "the CLI re-export registers into the shared store registry");
+assert(pendingTeardowns() === 3, "registerTeardown from the CLI re-export lands in the store registry");
 runTeardown();
 assert(order.join(",") === "a,c", "teardowns ran in order, throwing close swallowed");
 assert(pendingTeardowns() === 1, "a throwing close stays queued for the next drain");

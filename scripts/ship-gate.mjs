@@ -290,10 +290,10 @@ function stepStaticAssertions() {
   }
   report("pass", "no console.log | stdout.write in apps/mcp/src + packages/kernel/src");
 
-  // 1e. removed: counting `additionalProperties: false` occurrences in source
-  // text could go green while a schema stayed open (all counts on one tool).
-  // The real per-tool assertion is in packages/kernel/test/tool-schemas.test.ts
-  // (step 3 below runs it) and on the wire in apps/mcp/test/sdk-v2-schema.test.ts.
+  // Design: source-text occurrence counts are not gate assertions — the same
+  // count can land on one schema while another stays open. The real per-tool
+  // check lives in packages/kernel/test/tool-schemas.test.ts (step 3 below)
+  // and on the wire in apps/mcp/test/sdk-v2-schema.test.ts.
   // 1f.: attribution module exists with required exports.
   {
     const attPath = path.join(ROOT, "packages/kernel/src/attribution.ts");
@@ -552,9 +552,10 @@ function stepStaticAssertions() {
       fail("c2: no paired must-hit golden entry");
     if (!ge.some((e) => e.domain !== "docs" && e.expected?.verdict === "abstain"))
       fail("c4: no cold-domain abstain golden entry");
-    // c5 is a live probe that needs TAVILY_API_KEY; file presence proved
-    // nothing, so it is no longer a gate assertion. Run it by hand to refresh
-    // the evidence: TAVILY_API_KEY=tvly-... node scripts/probe-tavily-domains.mjs
+    // Design: the Tavily domain probe is a live manual check that needs
+    // TAVILY_API_KEY, so file presence is not evidence and is not a gate
+    // assertion. Refresh it by hand:
+    // TAVILY_API_KEY=tvly-... node scripts/probe-tavily-domains.mjs
     if (!fs.readFileSync(path.join(ROOT, "scripts/ship-gate.mjs"), "utf8").includes("stepOverrideGovernance")) {
       fail("ship-gate missing stepOverrideGovernance");
     }
