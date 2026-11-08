@@ -4,10 +4,10 @@
 // Output: .scratch/grill-round-62/tavily-probe-ledger.{json,md}
 // Arms: A default-mode leak / B filter-mode hard / C subdomain directionality /
 // D research-endpoint soft preference (live arm gated by PROBE_TAVILY_RESEARCH=1).
-// Design: a run with no conclusive arm (missing/invalid key, all arms ERROR)
-// exits 2 and marks the ledger evidenceStatus=not-verified — SKIPPED/ERROR arms
-// are not evidence, so the run must not look green; rerun with a key to
-// produce a PASS/LEAK ledger.
+// Design: exit codes separate "no evidence" from "probe found a leak" —
+// 2 = no conclusive arm (missing/invalid key, empty results); 1 = a LEAK arm
+// fired; 0 = conclusive PASS only. SKIPPED/ERROR/INCONCLUSIVE arms are not
+// evidence, so they never make the run look green.
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 const NL = String.fromCharCode(10);
@@ -94,11 +94,14 @@ if (!KEY) {
   }
 }
 const conclusive = ledger.arms.some((a) => a.status === "PASS" || a.status === "LEAK");
+const leaked = ledger.arms.some((a) => a.status === "LEAK");
 ledger.evidenceStatus = conclusive ? "live" : "not-verified";
 if (!conclusive) console.error("no conclusive evidence this run — evidenceStatus=not-verified (exit 2, not a pass)");
+else if (leaked) console.error("LEAK detected — evidenceStatus=live (exit 1, probe failed)");
 mkdirSync(OUT_DIR, { recursive: true });
 writeFileSync(join(OUT_DIR, "tavily-probe-ledger.json"), JSON.stringify(ledger, null, 2) + NL, "utf8");
 const md = ["# Tavily include_domains probe ledger (criterion 5)", "", "ranAt: " + ledger.ranAt + " | key: " + ledger.key + " | evidence: " + ledger.evidenceStatus, "", "| arm | status | summary |", "|---|---|---|",...ledger.arms.map((a) => "| " + a.id + " | " + a.status + " | " + a.summary.replace(/\|/g, "/") + " |"), "", "Re-run: TAVILY_API_KEY=tvly-... node scripts/probe-tavily-domains.mjs (PROBE_TAVILY_RESEARCH=1 enables arm D)."].join(NL);
 writeFileSync(join(OUT_DIR, "tavily-probe-ledger.md"), md + NL, "utf8");
 console.log("ledger -> " + join(OUT_DIR, "tavily-probe-ledger.{json,md}"));
 if (!conclusive) process.exitCode = 2;
+else if (leaked) process.exitCode = 1;
