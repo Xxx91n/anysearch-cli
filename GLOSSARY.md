@@ -39,7 +39,7 @@
 - **证据够不够的检查**:看结果数量、来源数量、分数分布，判断要不要再搜一轮（代码里叫 computeSufficiency）。
   _Avoid_: Sufficiency Gate、充分性门禁
 
-- **预算记账**:记录一次运行的 token 和美元用量，token 预留不够就拦住运行，美元只在跑完后结算（代码里叫 BudgetLedgerPort）。
+- **预算记账**:记录一次运行的调用数、token 和美元用量，调用或 token 额度不够就拦住运行，美元只在跑完后结算（代码里叫 BudgetLedgerPort）。
   _Avoid_: Budget Ledger、预算账本
 
 - **恢复存档点**:检索算完后可能写一条状态记录，重开时读它给模型一份检索摘要，不会自动重跑检索（代码里叫 ResumeAnchorsPort）。
@@ -70,7 +70,7 @@
 
 ## 域过滤与安全
 
-- **域过滤**:白名单非空时只留名单里的网址，信息源支持就先让它筛，引擎最后再本地筛一遍，名单为空就不筛（代码里叫 shouldAllowUrl）。
+- **域过滤**:白名单非空时只留名单里的网址，黑名单永远优先，信息源支持就先让它筛，引擎再本地筛一遍；名单为空时这条域过滤不启用（代码里叫 shouldAllowUrl）。
   _Avoid_: Dual-Gate Domain Filtering、双闸域过滤
 
 - **拒答**:过滤后一个结果都没有时，明确说“没有可答的”，这不是报错（代码里叫 abstain）。
@@ -99,7 +99,7 @@
 - **技能启用名单**:当前领域激活哪些 skill，只有激活的才进模型（代码里叫 skills.active）。
   _Avoid_: Skill Active List
 
-- **会话身份**:CLI 用来标识会话并恢复记忆的 id，跨钩子和 MCP 传（代码里叫 session_id）。
+- **会话身份**:CLI 用来标识会话并恢复记忆的 id，钩子会带着它传下去（代码里叫 session_id）。
   _Avoid_: Session Identity
 
 - **显式会话句柄**:`ans_chat` 返回的会话 id，客户端传回它才能接上同一段记忆（代码里叫 sessionId）。
