@@ -24,20 +24,17 @@
 
 ## 检索与运行时
 
-- **统一装配入口**——启动时把搜索源、存储、运行时拼到一起的入口，CLI、MCP、插件三处共用（代码里叫 composition root）。
+- **统一装配入口**——启动时把搜索源、存储、运行时拼到一起的入口，CLI、MCP、插件三处共用（代码里叫 createEngine）。
   _Avoid_: Composition Root、组合根
 
-- **检索引擎**——把问题发给多个搜索源、合并结果、检查证据够不够、按预算停下来的那套流程，自己不做 LLM 判断（代码里叫 engine）。
-  _Avoid_: Retrieval Engine、检索专精引擎、Retroaererd Engine
+- **检索引擎**——把问题发给多个搜索源、合并结果、检查证据够不够、按预算停下来的那套流程，自己不做 LLM 判断（代码里叫 RetroaererdEngine）。
+  _Avoid_: Retrieval Engine、检索专精引擎
 
 - **一次检索的结果包**——一次检索返回的全部东西，包括结果、来源、状态和够不够用的判断（代码里叫 FusedEnvelope）。
   _Avoid_: Envelope、检索信封
 
 - **多源并发查找**——同时问多个搜索源，先回来的先用，不用等最慢的（代码里叫 fanout）。
   _Avoid_: 扇出、并行检索
-
-- **合并排序**——把多个来源的排名按名次倒数加权合成一个总排名（代码里叫 rrfRank）。
-  _Avoid_: 融合排序、排名融合
 
 - **证据够不够的检查**——看结果数量、来源数量、分数分布，判断要不要再搜一轮（代码里叫 computeSufficiency）。
   _Avoid_: Sufficiency Gate、充分性门禁
@@ -63,7 +60,7 @@
   _Avoid_: Project Index、项目级索引
 
 - **两套数据库**——项目索引和内部记忆分两个库，先查内部，不够再查项目索引（代码里叫 two-stage recall）。
-  _Avoid_: Dual DB、Two-Stage Recall、双库两阶段召回
+  _Avoid_: Dual DB、Two-Stage Recall
 
 - **来源标记**——记这条结果是哪一路找来的，跨层不混着打分（代码里叫 SourceTraceLabel）。
   _Avoid_: Source Label、Provenance、来源标签
@@ -97,10 +94,10 @@
   _Avoid_: Hook Layer、HOOKS 层
 
 - **路由卡**——会话开始时塞给 agent 的一小段说明，讲插件能干什么、有哪几个工具、什么时候用（代码里叫 routing-card）。
-  _Avoid_: Routing Card、渐进披露
+  _Avoid_: Routing Card
 
 - **技能启用名单**——当前领域激活哪些 skill，另有一份提示词用哪些 skill、一份工具白名单（代码里叫 skills.active）。
-  _Avoid_: Skill Active List、Skill Active List / Prompt Skill Selection / Hooks Tool Whitelist
+  _Avoid_: Skill Active List、Prompt Skill Selection、Hooks Tool Whitelist
 
 - **会话身份**——`~/.anysearch-cli/session` 里记的 session_id，跨 CLI、钩子、MCP 传，MCP 另发一个不透明句柄给跨调用用（代码里叫 session_id）。
   _Avoid_: Session Identity、显式会话句柄、Explicit Session Handle
@@ -118,8 +115,8 @@
 - **FTS5**——SQLite 自带的全文本搜索，本地记忆和项目索引都靠它（代码里叫 fts5）。
   _Avoid_: 全文检索扩展
 
-- **RRF**——倒数排名融合，把多路排名按名次合成一路（代码里叫 rrfRank）。
-  _Avoid_: Reciprocal Rank Fusion
+- **RRF（合并排序）**——把多路排名按名次倒数加权合成一个总排名（代码里叫 rrfRank）。
+  _Avoid_: Reciprocal Rank Fusion、融合排序
 
 - **MCP**——Model Context Protocol，给 agent 提供工具和上下文的协议（代码里叫 MCP server）。
   _Avoid_: 模型上下文协议
