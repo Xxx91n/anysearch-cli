@@ -1,6 +1,6 @@
 # GLOSSARY
 
-本仓唯一词表，每条一句话说清这东西是什么、实际干什么，代码里的真名写在括号里；实现细节看代码，决策历史看 git log 和 issue。
+本仓唯一权威词表，每条一句话说清这东西是什么、实际干什么，代码里的真名写在括号里；实现细节看代码，决策历史看 git log 和 issue。
 
 ## 产品与领域
 
@@ -10,7 +10,7 @@
 - **当前领域**——当前选中的领域，由一份 TOML 配置决定用哪些信息源、哪些 skill、哪些工具（代码里叫 Active Domain）。
   _Avoid_: 活跃域、激活域
 
-- **信息源**——一个能问的搜索服务，比如 Exa、Tavily、Brave 或 anysearch 通道，由领域配置决定开哪几个、各占多少权重（代码里叫 SearchProvider）。
+- **信息源**——一个对外的搜索入口，比如 Exa、Tavily、Brave 或 anysearch 通道，由领域配置决定开哪几个、各占多少权重（代码里叫 SearchProvider）。
   _Avoid_: Info Source Provider、信息源头供应方、搜索后端、检索后端、搜索源、搜索服务
 
 - **领域检索适配器**——把企业内部数据接进对话的配置项，接不接、接哪种由领域配置决定（代码里叫 RagAdapterPort）。
@@ -39,7 +39,7 @@
 - **证据够不够的检查**——看结果数量、来源数量、分数分布，判断要不要再搜一轮（代码里叫 computeSufficiency）。
   _Avoid_: Sufficiency Gate、充分性门禁
 
-- **预算记账**——开跑前先占住 token 额度，跑完按实际用量结算，占不住就停这一次（代码里叫 BudgetLedgerPort）。
+- **预算记账**——给一次检索定个花费上限，超了就停（代码里叫 BudgetLedgerPort）。
   _Avoid_: Budget Ledger、预算账本
 
 - **恢复存档点**——检索有结果时就写一条状态记录，断了重开时读它把进度接上（代码里叫 ResumeAnchorsPort）。
@@ -62,7 +62,7 @@
 - **两套数据库**——项目索引和内部记忆分两个库，先查内部，不够再查项目索引（代码里叫 SessionStore 和 ProjectIndexStore）。
   _Avoid_: Dual DB、Two-Stage Recall
 
-- **来源标记**——记这条结果是哪一路找来的，跨层不混着打分（代码里叫 SourceTraceLabel）。
+- **来源标记**——给结果贴两个标签，一个说明可不可信，一个说明是哪次检索来的（代码里叫 SourceTraceLabel）。
   _Avoid_: Source Label、Provenance、来源标签
 
 - **时间衰减**——旧记忆按半衰期慢慢降权，过时的记录标成失效（代码里叫 time-decay）。
@@ -82,7 +82,7 @@
 - **净化**——把不可见字符、双向覆盖符这类藏起来的东西去掉，再检查内容形状（代码里叫 sanitizeText 和 sanitizeRetrieved）。
   _Avoid_: Sanitization Pipeline、净化管道
 
-- **出故障就放行**——某一层坏了也照常往下走，不拖垮主流程，需要留名的地方写一行 stderr（代码里叫 fail-open）。
+- **出故障就放行**——某一层坏了也照常往下走，不拖垮主流程，坏在哪要记下来（代码里叫 fail-open）。
   _Avoid_: Fail-Open、放行策略
 
 - **默认拒绝**——拿不准就拒绝，记忆写入、网址消费、LLM 判断输入这三处默认不放行（代码里叫 fail-closed）。
