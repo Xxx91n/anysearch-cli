@@ -72,7 +72,7 @@ to say yes first; not done here**.)
 
 ### What we found
 
-- `CHANGELOG.md` line 29 has
+- At the time, `CHANGELOG.md` line 29 carried
   `## Unreleased — r100: 元验证封顶（…）` (lines 29–47). Every bullet describes
   checks that no longer exist: `docs/enforcement-anchors.json` schema v2 plus a
   `fails` word list plus audit tiers, `pending_anchors` seats,
@@ -92,7 +92,7 @@ to say yes first; not done here**.)
   wanted.
 - The r100 *product* work is NOT gone: the tau observation layer
   (`scripts/tau/bgnbd_fit.py`, access_events, switch machine) still runs and is
-  written up separately in the English `[Unreleased]` section (line ~964).
+  written up separately in the English `[Unreleased]` section (line ~964 at the time).
 
 ### Decision: **put a banner under the r100 heading — keep the history, do not rewrite it**
 

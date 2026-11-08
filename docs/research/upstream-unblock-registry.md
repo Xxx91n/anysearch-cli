@@ -12,7 +12,7 @@ Wayfinder 票 #97。每张等上游的票写一段：出现什么具体事实就
 `packages/embedding/package.json`）在自己的 `dependencies`/`peerDependencies` 里
 声明了 `onnxruntime-common`——也就是 `transformers.node.cjs` 里的
 `require("onnxruntime-common")` 不再是没声明的外部依赖。确认方法：看新版本发布出来
-的包清单；确认后删掉两样东西——作用域内的 `Module._resolveFilename` 补丁
+的包清单；确认后删掉三样东西——作用域内的 `Module._resolveFilename` 补丁
 （`patchOnnxruntimeCommonResolve`，`packages/embedding/src/index.ts:31-45`），以及
 我们自己声明的 `onnxruntime-common@1.21.0` optionalDependency 和
 `packages/embedding/test/transformers-ghost-dep.test.ts`。
