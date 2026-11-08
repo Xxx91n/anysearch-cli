@@ -1,26 +1,27 @@
 # DeepSeek Harness (dsh) integration — @anysearch-cli/dsh-plugin
 
-DeepSeek Harness is the sixth verified agent host. The integration
-is two-surface: a thin Cordis bundle mounts the anysearch hooks layer inside
-the host process AND registers the five `ans_*` tools natively on
-`ctx.tools` (R90 — the Phase-1 MCP-client bridge row is retired; see the
-legacy section). All business logic stays server-side: hooks reach the
-anysearch server at `127.0.0.1:33333`, tool execution reaches `ans-mcp`
-over its HTTP transport (default `127.0.0.1:3001/mcp`). The dsh process
-carries no retrieval logic, no secrets beyond the shared IPC credentials, and
-no database access.
+DeepSeek Harness is the sixth verified agent host. The integration has two
+surfaces. A thin Cordis bundle mounts the anysearch hooks layer inside the
+host process. It also registers the five `ans_*` tools natively on
+`ctx.tools` (R90: the Phase-1 MCP-client bridge row is retired; see the
+legacy section). All business logic stays on the server. Hooks reach the
+anysearch server at `127.0.0.1:33333`. Tool calls reach `ans-mcp` over its
+HTTP transport (default `127.0.0.1:3001/mcp`). The dsh process holds no
+retrieval logic, no secrets beyond the shared IPC credentials, and no
+database access.
 
-Verified against `@deepseek-ai/dsh@0.1.5-rc.2` (headless profile +
-web-profile composition), 2026-09-19. Evidence:
-`.scratch/grill-round-72/evidence/`. R90: native tool plane implemented
-and unit-verified against the pinned API (`@deepseek-ai/dsh-*@0.1.7-rc.1`);
-bridge row retired (`cordis.patch.yml` now ships the plugin row only).
+Verified against `@deepseek-ai/dsh@0.1.5-rc.2` (headless profile plus
+web-profile composition) on 2026-09-19. Evidence:
+`.scratch/grill-round-72/evidence/`. R90: the native tool plane is
+implemented and unit-checked against the pinned API
+(`@deepseek-ai/dsh-*@0.1.7-rc.1`). The bridge row is retired
+(`cordis.patch.yml` now ships the plugin row only).
 
 ## Phase 1 (RETIRED — R90) — MCP bridge only (no bundle)
 
-> The bundle below no longer ships this row: R90 moved the five tools onto
-> native `ctx.tools` registration. This section stays as the manual/legacy
-> path — e.g. a profile that wants the bridge without the bundle, or rollback
+> The bundle no longer ships this row. R90 moved the five tools onto native
+> `ctx.tools` registration. This section stays as the manual/legacy path: for
+> example, a profile that wants the bridge without the bundle, or a rollback
 > of the R90 change (revert commit T4).
 
 Register the official MCP client bridge in the profile's user patch so the
@@ -45,24 +46,24 @@ five `mcp__anysearch__*` tools appear on `ctx.tools`. Edit
           maxAttempts: 10
 ```
 
-Phase-1 semantics (verified):
+Phase-1 behavior (verified):
 
-- Rows are **added** via `- insert:` with the complete row (`id` + `name` +
-  `config`). An `- id:`-targeted entry on a missing row only warns
+- Rows are added with `- insert:` and the complete row (`id` plus `name` plus
+  `config`). An `- id:` entry that targets a missing row only warns
   (`patch: entry "mcp-anysearch" not found`).
-- `config` **replaces a targeted row whole** — it never merges. Any override
-  (e.g. pointing `command` at a repo-local `ans-mcp` build) must restate
-  every key or the row loses them.
-- Two `insert` entries declaring the same `id` are a hard loader error
-  (`duplicate loader entry id`). On the native path the bundle owns no
-  bridge row — a hand-inserted `mcp-anysearch` row is the rollback escape
-  hatch only; user overrides use `- id:` entries.
-- Legacy bridge namespace was
-  `mcp__anysearch__{search_web,research_web,recall_memory,query_knowledge,ans_chat}`;
-  the native plane registers the BARE names `ans_search_web` … `ans_ans_chat`
+- `config` replaces the whole targeted row. It never merges. Any override
+  (for example, pointing `command` at a repo-local `ans-mcp` build) must
+  restate every key, or the row loses them.
+- Two `insert` entries with the same `id` are a hard loader error
+  (`duplicate loader entry id`). On the native path the bundle owns no bridge
+  row. A hand-inserted `mcp-anysearch` row is only the rollback escape
+  hatch. User overrides use `- id:` entries.
+- The legacy bridge namespace was
+  `mcp__anysearch__{search_web,research_web,recall_memory,query_knowledge,ans_chat}`.
+  The native plane registers the bare names `ans_search_web` … `ans_ans_chat`
   directly on `ctx.tools`.
-- `failOnStartupError: false` + `reconnect` keep the host booting when the
-  MCP server is absent — anysearch fail-open by contract.
+- `failOnStartupError: false` plus `reconnect` keep the host booting when the
+  MCP server is absent. anysearch is fail-open by contract.
 
 ## Phase 2 — hooks bundle (recommended)
 
@@ -72,56 +73,56 @@ dsh plugin --profile <name> add <tmp>/anysearch-cli-dsh-plugin-0.0.6.tgz
 # post-publish equivalent: dsh plugin --profile <name> add @anysearch-cli/dsh-plugin
 ```
 
-`dsh plugin add` installs the package into the profile (zero runtime deps →
-no `pendingBuilds` approval) and registers it under
-`dsh.profile.bundles`. The bundle's own `cordis.patch.yml` inserts the
-plugin row only — tool registration happens inside `apply()` via
-`ctx.tools.register`. Verify with `dsh --profile <name> --dump-config`:
-the bundle layer shows `# == @anysearch-cli/dsh-plugin` with the single row;
-a user-layer override shows a `patched by` marker.
+`dsh plugin add` installs the package into the profile (zero runtime deps, so
+no `pendingBuilds` approval) and registers it under `dsh.profile.bundles`.
+The bundle's own `cordis.patch.yml` inserts the plugin row only. Tool
+registration happens inside `apply()` through `ctx.tools.register`. Check it
+with `dsh --profile <name> --dump-config`: the bundle layer shows
+`# == @anysearch-cli/dsh-plugin` with the single row. A user-layer override
+shows a `patched by` marker.
 
-Hook surfaces mounted by the bundle (all over HTTP IPC to the anysearch
-server, fail-open — a dead server never blocks the agent):
+Hook surfaces mounted by the bundle. All of them go over HTTP IPC to the
+anysearch server and are fail-open: a dead server never blocks the agent.
 
-| Surface | Behaviour |
+| Surface | Behavior |
 | --- | --- |
 | `agent/session-start` | `agent.inject()` writes the routing card as a durable user message (next request) |
-| `ctx.systemPrompt` | registers `anysearch:routing-card` section (every request) |
-| `tools/pre-execute` | URL-policy gate — `deny` on denylist hosts, `ask` on non-allowlist (fail-closed on URLs when the policy is unreachable) + recall preheat injected into the next request |
+| `ctx.systemPrompt` | registers the `anysearch:routing-card` section (every request) |
+| `tools/pre-execute` | URL policy check: `deny` on denylist hosts, `ask` on non-allowlist. It is fail-closed on URLs when the policy is unreachable. Recall preheat is injected into the next request. |
 | `tools/post-execute` | appends the distilled result summary to `additionalContexts` |
-| `tools/result` | indexes the final outcome to the project index (`POST /index`, fire-and-forget) |
-| `ctx.tools.register` | five native `ans_*` tools; `execute` is pure transport — MCP `tools/call` JSON-RPC over HTTP, zero business logic in the bundle |
+| `tools/result` | indexes the final outcome into the project index (`POST /index`, fire-and-forget) |
+| `ctx.tools.register` | five native `ans_*` tools; `execute` is pure transport: MCP `tools/call` JSON-RPC over HTTP, with zero business logic in the bundle |
 
-Server endpoints used: `GET /policy`, `POST /recall`, `POST /index` on
-`ANS_SERVER_URL` (default `http://127.0.0.1:33333`) with the shared
-`ANS_SERVER_TOKEN` / `.anysearch-cli/server-token` credential and
-`traceparent` + `x-anysearch-session-id` propagation. Tool execution posts
-MCP JSON-RPC to `POST {ANS_MCP_URL}/mcp` (default `http://127.0.0.1:3001` —
-serve it with `ans mcp --transport http`; `ANS_MCP_KEY` supplies the Bearer
-when set, else the server token is sent) — a stateless initialize handshake is
-cached per endpoint, session errors re-handshake once, transport failure
-degrades fail-open to empty results, upstream `isError` materializes a tool
-error.
+Server endpoints used: `GET /policy`, `POST /recall`, and `POST /index` on
+`ANS_SERVER_URL` (default `http://127.0.0.1:33333`). They use the shared
+`ANS_SERVER_TOKEN` / `.anysearch-cli/server-token` credential and pass
+`traceparent` plus `x-anysearch-session-id`. Tool execution posts MCP
+JSON-RPC to `POST {ANS_MCP_URL}/mcp` (default `http://127.0.0.1:3001`; serve
+it with `ans mcp --transport http`). When set, `ANS_MCP_KEY` supplies the
+Bearer token; otherwise the server token is sent. The bundle caches a
+stateless initialize handshake per endpoint. Session errors re-handshake
+once. A transport failure degrades fail-open to empty results. An upstream
+`isError` becomes a tool error.
 
 ## Layering rules (verified on the real loader)
 
-- Bundle patches apply in `dsh.profile.bundles` order; the user patch applies
-  last → user overrides win.
-- Override a bundle row with `- id: <row-id>` entries (patch the fields you
-  need; for `config` restate every key — whole-row replacement).
-- `patchReload: "startup"` (headless, verified) applies patches on next boot;
-  `patchReload: "live"` (web) is expected to reload the patch layer live — our
+- Bundle patches apply in `dsh.profile.bundles` order. The user patch applies
+  last, so user overrides win.
+- Override a bundle row with `- id: <row-id>` entries. Patch the fields you
+  need. For `config`, restate every key: the whole row is replaced.
+- `patchReload: "startup"` (headless, verified) applies patches on next boot.
+  `patchReload: "live"` (web) is expected to reload the patch layer live. Our
   listeners are fiber-scoped Cordis effects that should dispose cleanly on
-  reload — EXPECTED, not yet verified (see
+  reload. This is EXPECTED, not yet verified (see
   defer-r72-dsh-web-interactive-matrix).
 - Upgrade check: after bumping `@deepseek-ai/dsh`, diff
-  `--dump-default-config` to confirm the bundle rows still land — a future
-  dsh release that ships its own `mcp-anysearch` id would collide (the
-  duplicate-insert rule), which is exactly what the diff catches.
+  `--dump-default-config` to confirm the bundle rows still land. A future dsh
+  release that ships its own `mcp-anysearch` id would collide (the
+  duplicate-insert rule). That is exactly what the diff catches.
 
 ## Verification transcript (rerunnable)
 
-Headless profile, isolated `$DSH_HOME` — full evidence under
+Headless profile, isolated `$DSH_HOME`. Full evidence is under
 `.scratch/grill-round-72/evidence/`:
 
 ```sh
@@ -134,20 +135,25 @@ dsh --profile headless --dump-config        # bundle layer + patched-by markers
 dsh --profile headless "<task>"
 ```
 
-Verified on the wire: routing-card message + system-prompt section in the
-first model request; `anysearch preheat` context in a later request;
-denylisted URL in tool arguments → tool error `requires approval` (URL
-gating is fail-closed by /0055 contract); distilled summary +
-`POST /index` with real result entries carrying
-`x-anysearch-session-id`.
+Verified on the wire:
+
+- the routing-card message and the system-prompt section appear in the first
+  model request;
+- `anysearch preheat` context appears in a later request;
+- a denylisted URL in tool arguments returns a tool error
+  `requires approval` (URL gating is fail-closed by the /0055 contract);
+- the distilled summary and `POST /index` carry real result entries with
+  `x-anysearch-session-id`.
 
 ## Limitations (this round)
 
-- Interactive web UI turn untested — the two named web probes (routing-card
-  inject + preheat marker) were verified on a web-profile composition driven
-  headlessly; the full browser flow is a later round's matrix.
+- The interactive web UI turn is untested. The two named web probes
+  (routing-card inject and preheat marker) were verified on a web-profile
+  composition driven headlessly. The full browser flow is a later round's
+  matrix.
 - Native tool-call timeouts are per-tool budgets inside the bundle
-  (search 30 s / recall 15 s / knowledge 60 s / research+chat 300 s) — the
+  (search 30 s / recall 15 s / knowledge 60 s / research+chat 300 s). The
   bridge `toolCallTimeoutMs` knob no longer applies.
-- Package is `private` this round; npm publish is a one-field change
-  (`private: false` + `publishConfig`) deferred to the release track.
+- The package is `private` this round. npm publish is a one-field change
+  (`private: false` plus `publishConfig`) and is deferred to the release
+  track.
