@@ -127,7 +127,7 @@ async function waitHealth(port, child, timeoutMs = 20000) {
     if (child.exitCode !== null) throw new Error("HTTP server exited early (code " + child.exitCode + ")");
     try {
       const r = await fetch("http://127.0.0.1:" + port + "/health");
-      if (r.status === 200) return;
+      if (r.status === 200) return r.json().catch(() => null);
     } catch { /* not up yet */ }
     await new Promise((r) => setTimeout(r, 200));
   }
@@ -151,8 +151,8 @@ async function httpSmoke() {
     return { status: r.status, json: await r.json().catch(() => null) };
   };
   try {
-    await waitHealth(port, child);
-    check(true, "http /health ready");
+    const health = await waitHealth(port, child);
+    check(health?.status === "ok" && health?.server === "anysearch-mcp", "http /health body reports anysearch-mcp ok");
     const init = await post({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: MODERN, capabilities: {}, clientInfo: { name: "mcp-smoke", version: "0" } } });
     check(init.status === 200, "http initialize: 200");
     check(init.json?.result?.protocolVersion === LATEST_LEGACY, "http init@" + MODERN + " negotiates " + LATEST_LEGACY);
