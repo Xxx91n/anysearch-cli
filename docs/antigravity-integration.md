@@ -127,7 +127,7 @@ What each event does (adapter behavior, verified on the real host):
 
 | Event | Behavior |
 |-------|----------|
-| PreToolUse | Sends `{decision:"allow"}`: an explicit allow, never `{}` (which would deny). For `ans_*` tools it stages the recall preheat to `anysearch-pending.jsonl`. The protojson deny path (`{decision:"deny", reason}` blocks the tool) is proven by a sentinel, but this adapter never gates. |
+| PreToolUse | Sends `{decision:"allow"}`: an explicit allow, never `{}` (which would deny). For `ans_*` tools it stages the recall preheat to `anysearch-pending.jsonl`. The protojson deny path (`{decision:"deny", reason}` blocks the tool) is proven by a sentinel probe, but this adapter never gates. |
 | PostToolUse | For `ans_*` tools: distills from `toolCall.args` (the host sends no tool output), POSTs `/index` to the plugin server (fire-and-forget), and stages the distilled summary. Sends `{}`, the only shape the host accepts. |
 | PreInvocation | When `invocationNum === 0`, `injectSteps[].ephemeralMessage` carries the routing card (verified reaching the transcript). It also flushes staged preheat and distill text. |
 | PostInvocation | Flushes any remaining staged text as `ephemeralMessage`; otherwise sends `{}`. |

@@ -13,7 +13,7 @@ database access.
 Verified against `@deepseek-ai/dsh@0.1.5-rc.2` (headless profile plus
 web-profile composition) on 2026-09-19. Evidence:
 `.scratch/grill-round-72/evidence/`. R90: the native tool plane is
-implemented and unit-checked against the pinned API
+implemented and unit-tested against the pinned API
 (`@deepseek-ai/dsh-*@0.1.7-rc.1`). The bridge row is retired
 (`cordis.patch.yml` now ships the plugin row only).
 
@@ -142,9 +142,8 @@ Verified on the wire:
 - `anysearch preheat` context appears in a later request;
 - a denylisted URL in tool arguments returns a tool error
   `requires approval` (URL gating is fail-closed by the /0055 contract);
-- the distilled summary appears in the context;
-- `POST /index` carries real result entries with
-  `x-anysearch-session-id`.
+- the distilled summary is appended to `additionalContexts`, and `POST /index`
+  carries real result entries with `x-anysearch-session-id`.
 
 ## Limitations (this round)
 

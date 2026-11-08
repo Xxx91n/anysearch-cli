@@ -36,9 +36,9 @@ These facts were checked on a real host (0.142.5). Do not guess them:
   `ANYSEARCH_*` set in the codex process env reach hook processes.
 - **`required = true` MCP servers hard-exit** when they fail at startup. That
   is by design. anysearch tools and hooks themselves stay fail-open.
-- **PostToolUse context delivery varies.** The distilled `additionalContext`
-  lands at the next-turn boundary. The lasting value comes from the `/index`
-  side effect: project-index growth is verified.
+- **PostToolUse context timing is unreliable.** The distilled
+  `additionalContext` lands at the next-turn boundary. The lasting value
+  comes from the `/index` side effect: project-index growth is verified.
 
 ## 1. Install (fresh machine)
 

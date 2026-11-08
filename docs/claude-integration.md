@@ -101,7 +101,7 @@ What each event does:
 | Event | Behavior |
 |-------|----------|
 | SessionStart | `hookSpecificOutput.additionalContext` carries the ans_* routing card, which goes into context |
-| PreToolUse | recall preheat goes into `hookSpecificOutput.additionalContext`; the URL policy sends `permissionDecision` ask/deny inside the same wrapper |
+| PreToolUse | recall preheat goes into `hookSpecificOutput.additionalContext`; the URL policy sends `permissionDecision` ask/deny inside the same `hookSpecificOutput` |
 | PostToolUse | distills `tool_response.results[]` into a `hookSpecificOutput.additionalContext` summary; also POSTs index entries to the plugin server (`/index`) |
 
 ## 6. Plugin form (experimental)
@@ -122,6 +122,6 @@ works once the upstream bug is fixed.
 
 If the server is down, a key is missing, or stdin is bad, the hook exits 0 and
 the session is unaffected. We checked this on a real host: we killed the
-server on port 33333 in the middle of the run, and the session still
+server on port 33333 in the middle of the probe matrix, and the session still
 finished; all SessionStart hooks exited 0. The hooks are fail-open, so they
 never block Claude.
