@@ -7,8 +7,9 @@ of the enum.
 
 The client checks the shape only (non-empty strings / Record). A bad
 `sub_domain` value, or a missing required `sub_domain_params`, comes back as
-an upstream `isError`. The anysearch provider fails with an error. It never
-returns an empty result that looks like a normal search.
+an upstream `isError`. When the upstream returns `isError`, the anysearch
+provider fails with an error. It does not turn that into an empty result that
+looks like a normal search.
 
 These are the 17 top-level domain values (the enum on `search.domain`):
 

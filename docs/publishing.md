@@ -27,7 +27,7 @@ before you try to save its trusted-publisher row.
 After the setup, the release sequence is:
 
 ```bash
-# 1. run the pre-tag release gate (the check that decides the release)
+# 1. run the pre-tag release gate (this spends one limited preregistered check; its verdict decides the release)
 gh workflow run release.yml -f runPurpose=pre-tag
 # 2. when green: tag + push (authorized step)
 git tag v0.0.4 && git push origin v0.0.4
