@@ -1,4 +1,4 @@
-// ans consolidate - turn older episodes into semantic memories (Phase-3 CLI).
+// ans consolidate - turn episode records into semantic memories (Phase-3 CLI).
 // LLM summarize seam is assembled here via kernel createLlmSession; fidelity gate via
 // kernel classifyClaim. Fail-open: missing LLM config -> dry-run with llmUnavailable counts.
 
@@ -18,7 +18,7 @@ interface ConsolidateStore {
 
 function help(): string {
   return [
-    "ans consolidate - turn older episodes into semantic memories ",
+    "ans consolidate - turn episode records into semantic memories ",
     "",
     "Usage: ans consolidate [--dry-run|--apply] [--limit N]",
     "",

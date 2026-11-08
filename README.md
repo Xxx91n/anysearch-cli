@@ -15,7 +15,7 @@ A vertical-domain information specialist CLI: put search, research, memory, and 
 - Uses FTS5 for recall
 - Uses RRF to merge results from multiple sources
 - Ships with an MCP server that automatically indexes results
-- A domain allowlist that actually filters the returned content (when one is configured)
+- A domain allowlist that actually filters the search results it returns (when one is configured; provider-written answers are not filtered)
 
 ## Quickstart
 
@@ -81,6 +81,7 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
   MCP tools put the same object in `structuredContent.abstain`, and `isError` stays false.
 - Every domain search writes two audit events into the run trace: `retrieval.domain_filter.pre` and
   `retrieval.domain_filter.post`.
+- For `research_web`, the abstain marker describes only the last round; earlier rounds may already have results.
 
 > Exit codes: `0` ok or abstain · `1` generic failure, or zero results without a domain policy · `2` usage error · `3` abstain under `--fail-on-abstain`.
 

@@ -10,7 +10,7 @@ export const DEFAULT_ROUTING_CARD = [
   "- search_web: real-time multi-source web search",
   "- research_web: deep research (minute-level, multi-hop)",
   "- recall_memory: search the local research archive (FTS5; older results slowly lose weight)",
-  "- query_knowledge: query a domain's own knowledge base",
+  "- query_knowledge: query the knowledge base through the domain's retrieval adapter (with fts, it reads the whole store)",
   "- ans_chat: agent loop with retrieval augmentation",
   "",
   "Trigger rules:",

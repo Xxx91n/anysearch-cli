@@ -15,7 +15,7 @@
 - 用 FTS5 做召回
 - 用 RRF 把几个来源的结果合在一起
 - 自带一个能自动索引结果的 MCP server
-- 一道真能拦住返回内容的域名白名单（配了才拦）
+- 一道真能拦住搜索结果的域名白名单（配了才拦；信息源自己写的答案不筛）
 
 ## 快速上手
 
@@ -71,7 +71,7 @@ export ANS_DOMAIN=docs      # 选当前域
    管域名本身和它的子域。
 
 这条过滤只在生效的白名单非空时运行：域 TOML 里没写 `urlAllowlist` 时通常就不过滤
-（开发用的 `ANS_URL_ALLOWLIST` 覆盖项打开时，仍可能补进白名单）。
+（开发用的 `ANS_URL_ALLOWLIST` 覆盖项还要配 `ANS_ALLOW_ENV_OVERRIDE=1` 才生效，生效后仍可能补进白名单）。
 `ANS_DOMAIN` 写的域找不到时，搜索会退回所有信息源，白名单也会一起关掉，
 所以先把域名和 TOML 检查一遍。
 
@@ -87,6 +87,7 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
   MCP 工具把同一个对象放在 `structuredContent.abstain`，`isError` 保持 false。
 - 每次按域搜索会往运行记录里写两条审计事件：`retrieval.domain_filter.pre` 和
   `retrieval.domain_filter.post`。
+- `research_web` 的拒答标记只代表最后一轮；前几轮可能已经有结果。
 
 > 退出码：`0` 正常或拒答 · `1` 一般失败，或没有域名策略时零结果 · `2` 用法错误 ·
 `3` 开了 `--fail-on-abstain` 后的拒答。
