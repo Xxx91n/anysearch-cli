@@ -19,7 +19,7 @@ If the anysearch server at 127.0.0.1:33333 cannot be reached, every tool still w
 - query_knowledge passes straight through to the domain retrieval adapter (RagAdapterPort).
 - ans_chat runs without memory injection.
 
-A broken hook exits 0. A server outage does not block tool calls, with one exception: when a call carries a URL and the URL policy cannot be read, the call is asked about, or denied when there is no approval channel (0055).
+A broken hook exits 0. A server outage does not block tool calls, with one exception: when a call carries a URL and the URL policy cannot be read, the call is sent for approval (`ask`), or denied when there is no approval channel (0055).
 
 ## Namespace conventions
 

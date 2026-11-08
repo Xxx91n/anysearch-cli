@@ -45,5 +45,5 @@ Research and fetch information from many sources, with persistent memory.
 ## Mandatory rules
 
 - Always check recall_memory before starting a new search_web on a topic already discussed
-- When a layer breaks, let the call through: if the anysearch server is unreachable, keep going without the memory features (the outage does not block the call)
+- When a layer breaks, let the call through: if the anysearch server is unreachable, keep going without the memory features (the outage alone does not block the call; a call carrying a URL may still be held for approval)
 - Tool names: all anysearch tools use the ans_* prefix (a host may add its own prefixes)

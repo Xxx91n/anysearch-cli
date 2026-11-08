@@ -33,5 +33,6 @@ name that contains ans_ followed by a known tool name.
 ## Fail-open
 
 If the anysearch server is down, every tool still works, just with fewer features.
-A server outage does not block tool calls. Errors are written to stderr, and the tool
-returns an empty result.
+A server outage alone does not block a call, except that a call carrying a URL is held
+for approval when the URL policy cannot be read. Errors are written to stderr, and the
+tool returns an empty result.
