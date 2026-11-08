@@ -15,7 +15,7 @@
 3. Recall earlier research results from memory -> recall_memory
 4. Organization's own knowledge base -> query_knowledge
 5. Research that needs several tools in a row -> ans_chat
-6. If recall_memory already has relevant results, skip the extra search
+6. If recall_memory already has results, skip the extra search
 
 ## Anti-patterns
 
@@ -32,5 +32,5 @@ name that contains ans_ followed by a known tool name.
 
 ## Fail-open
 
-If the anysearch server is down, every tool still works, just with fewer features.
+If the anysearch server is down, continue without the memory features.
 Errors are written to stderr, and the tool returns an empty result.
