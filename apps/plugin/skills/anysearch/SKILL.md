@@ -31,7 +31,7 @@ Research and fetch information from many sources, with persistent memory.
 
 1. Is this a fact lookup or a current event? -> search_web
 2. Does it need research across several steps? -> research_web
-3. Have we searched this topic before? -> recall_memory first, then search_web only if results are missing, incomplete, or out of date
+3. Have we searched this topic before? -> recall_memory first, then search_web only if results are missing, incomplete, out of date, or the user asks for the latest
 4. Is this about internal company knowledge? -> query_knowledge
 5. Does it need several tools in a row? -> ans_chat
 
