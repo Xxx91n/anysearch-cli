@@ -47,7 +47,7 @@ ans memory backfill-vectors   # 给已有记录补向量；第一次会下载模
 
 - Node.js >= 22
 - pnpm 11.24.0，版本固定；corepack 会自动读取 `packageManager`
-- 至少需要一个信息源的 API key：
+- 搜索至少需要一个信息源的 API key（`ans recommend` 只读本地域配置，不需要 key）：
   - `EXA_API_KEY`：Exa，支持按域名筛
   - `TAVILY_API_KEY`：Tavily，支持按域名筛
   - `ANYSEARCH_API_KEY`：anysearch MCP，可选；匿名层也能用，但不能在搜之前按域名筛
@@ -145,6 +145,12 @@ ans skill uninstall research --project
 这张表只写适配器真接上的功能，不是上游目录里写的全部。AnySearch 是这里唯一的
 MCP 上游；Exa 和 Tavily 继续用官方 SDK，它们托管的 MCP 是让 agent 直接用的工具，
 不是本仓服务端信息源要用的接口。**我们没打算把 Exa/Tavily 迁到 MCP。**
+
+表里有两点要单独说：AnySearch 每次 POST 都带 signal，但几个搜索并发时共用
+一次 MCP 握手，这次握手只听第一个调用方的话；后来的调用方取消不了这段等待，
+第一个调用方取消也可能让两个搜索一起失败。Exa 的 `includeDomains` 只对
+`search()` 生效；单独的 `answer()` 收不到白名单，检索引擎也不会去筛答案文字或
+citations 里的网址。
 
 AnySearch 适配器只接了 `search`。`get_sub_domains`、`batch_search`、`extract`
 和线上有、但官方文档没写的 `score` 都没接。上游工具数量不写死：官方文档列四个，
