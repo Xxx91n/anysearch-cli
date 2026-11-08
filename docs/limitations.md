@@ -250,7 +250,7 @@
   rejected by the transport before dispatch with HTTP 400 and JSON-RPC
   `-32000` (unsupported-version gate). Send the negotiated `2025-11-25`
   instead. Pinned by `apps/mcp/test/dual-era.test.ts`.
-- **MCP client attribution is per-request only (#213)** — a `2026-07-28`
+- **MCP client identity is per-request only (#213)** — a `2026-07-28`
   `tools/call` that carries `_meta["io.modelcontextprotocol/clientInfo"]` is
   read from the SDK request context and mapped (`mapMcpClientId`) to the
   observation trace's `client_id` when it reaches a handler. The hand-written

@@ -785,7 +785,7 @@
           "harvestedAt": "2026-09-26",
           "reviewer": "r84-fixer"
         },
-        "notes": "R84 T1 契约钉：参数化垂域 spec 全键下发（domain+sub_domain+paramsKeys）+extra.vertical 标记 +degraded 臂名单（incapable stub 收 general 并发查找，不收 vertical）。"
+        "notes": "R84 T1 契约钉：参数化垂域 spec 全键下发（domain+sub_domain+paramsKeys）+extra.vertical 标记 +degraded 臂名单（incapable stub 收 general 多源并发查找，不收 vertical）。"
       },
       {
         "id": "vert-f0002",

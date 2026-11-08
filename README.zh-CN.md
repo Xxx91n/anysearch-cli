@@ -70,7 +70,8 @@ export ANS_DOMAIN=docs      # 选当前域
    标来源之前，先把不在白名单里的网址全扔掉。黑名单规则优先；白名单里的条目
    管域名本身和它的子域。
 
-这条过滤只在白名单非空时生效：域 TOML 里没写 `urlAllowlist`，结果就不过滤。
+这条过滤只在生效的白名单非空时运行：域 TOML 里没写 `urlAllowlist` 时通常就不过滤
+（开发用的 `ANS_URL_ALLOWLIST` 覆盖项打开时，仍可能补进白名单）。
 `ANS_DOMAIN` 写的域找不到时，搜索会退回所有信息源，白名单也会一起关掉，
 所以先把域名和 TOML 检查一遍。
 
@@ -82,9 +83,8 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
 
 - 默认退出码 **0**（拒答也算正常完成）；加 `--fail-on-abstain` 时，自动化
   会拿到专用退出码 **3**。
-- `--json` 里有 `abstain: { reason, domain, preFiltered, postFiltered, gate }`；
-  MCP 工具把同样的标记放在 `structuredContent.abstain`：里面多一个 `abstain: true`，
-  其余字段一样，`isError` 保持 false。
+- `--json` 里有 `abstain: { abstain: true, reason, domain, preFiltered, postFiltered, gate }`；
+  MCP 工具把同一个对象放在 `structuredContent.abstain`，`isError` 保持 false。
 - 每次按域搜索会往运行记录里写两条审计事件：`retrieval.domain_filter.pre` 和
   `retrieval.domain_filter.post`。
 

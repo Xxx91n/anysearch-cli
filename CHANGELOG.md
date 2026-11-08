@@ -96,7 +96,7 @@
 
 ### Documented
 
-- `docs/rag-adapters.md` 的注入位置表和 `GLOSSARY.md` 里讲注入顺序的那一段同步：新增恢复摘要一行、600 字符上限，并写明它只注入一次、历史里会去重。
+- `docs/rag-adapters.md` 的注入位置表补上恢复摘要一行、600 字符上限，并写明它只注入一次、历史里会去重。
 
 ## Unreleased — #183: store 侧退出路径显式收尾——找到 F-16 的根因 + 恢复 macOS 那条腿
 
@@ -1160,7 +1160,7 @@ T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 
 ### Added
 
-- Switch state machine S0-S4 (-D6): a pre-registered readiness trigger (C1-C4 wall clock, k_max=10), SESOI-band reconcile plus a McNemar diagnostic (packages/store/src/eval/switch-machine.ts, pure core), graded rollback with an Inconclusive hold (promote streak 3 > rollback streak 2 hysteresis), integrity lineage fail-closed, and a reversible freeze driven by evidence.
+- 状态机 S0-S4 (-D6): a pre-registered readiness trigger (C1-C4 wall clock, k_max=10), SESOI-band reconcile plus a McNemar diagnostic (packages/store/src/eval/switch-machine.ts, pure core), graded rollback with an Inconclusive hold (promote streak 3 > rollback streak 2 hysteresis), integrity lineage fail-closed, and a reversible freeze driven by evidence.
 - Pre-registered thresholds stored as data (version + hash): packages/store/fixtures/switch-registration.json; every verdict records registrationHash.
 - skip-ledger schema @3: a state block (phase, since, transitionId, evidenceHash) plus an actions log (actions never touch the 3-streak); @1/@2 upcast losslessly; unknown versions fail loudly.
 - access_events chain switch events (stage-transition/rollback/freeze) with a sentinel-row foreign key, writing the chain before the ledger; the ledger can be rebuilt from the chain as a fallback.
@@ -1233,7 +1233,7 @@ T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 
 ### Added
 
-- Fused freshness factor [0.3, 1.5] in store ranking — creation-age decay, `last_accessed` recency, and `access_count` frequency fused into one multiplicative band (`freshness_factor()` UDF replaces `time_decay()`). `access_count` added by idempotent migration; every returned recall hit increments it exactly once, on both `searchMemory` and `searchMemoryMulti`.
+- 融合新鲜度因子 [0.3, 1.5] 进 store 排序 — creation-age decay, `last_accessed` recency, and `access_count` frequency fused into one multiplicative band (`freshness_factor()` UDF replaces `time_decay()`). `access_count` added by idempotent migration; every returned recall hit increments it exactly once, on both `searchMemory` and `searchMemoryMulti`.
 - kernel `memory-pipeline.ts` now imports `isTimeSensitive`/`isEvergreen` from `@anysearch-cli/store` (inline regex copy deleted; the QDF regex itself no longer carries year literals).
 
 ### Removed
@@ -1243,7 +1243,7 @@ T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 
 ### Infrastructure
 
-- 16 prior ADRs landed across rounds 1–17 (MCP Phase2, Kernel Engine composition, dual-era SDK v1+v2 bridge, TypeBox source of truth, plugin hooks layer, SessionStart routing, L0/L1 memory pipeline).
+- 16 prior ADRs landed across rounds 1–17 (MCP Phase2, Kernel Engine composition, the two-generation SDK bridge (v1+v2), TypeBox source of truth, plugin hooks layer, SessionStart routing, L0/L1 memory pipeline).
 
 ### Added
 

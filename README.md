@@ -68,7 +68,7 @@ Filtering happens in two steps:
    (such as `anysearch`), we do not pass it and wait for step 2; we never pretend a provider can filter.
 2. **Step 2: post-filter after search, which has the final say**: when providers return results, the retrieval engine drops any URL not on the allowlist before merging results and tagging sources. Deny rules take priority. Allowlist entries cover both the domain itself and its subdomains.
 
-Filtering only runs when the allowlist is non-empty. A domain TOML without `urlAllowlist` returns unfiltered results. If `ANS_DOMAIN` names a domain that cannot be found, search falls back to every provider and turns the allowlist off too, so verify the domain name and the TOML first.
+Filtering only runs when the effective allowlist is non-empty. A domain TOML without `urlAllowlist` normally returns unfiltered results (the dev-only `ANS_URL_ALLOWLIST` override can still add hosts when `ANS_ALLOW_ENV_OVERRIDE` is on). If `ANS_DOMAIN` names a domain that cannot be found, search falls back to every provider and turns the allowlist off too, so verify the domain name and the TOML first.
 
 When filtering leaves zero results, `ans` will **abstain**. This is a normal result, not an error:
 
@@ -77,8 +77,8 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
 ```
 
 - Default exit code is **0** (abstaining counts as a successful run). When you pass `--fail-on-abstain`, automation gets a dedicated exit code **3**.
-- `--json` includes `abstain: { reason, domain, preFiltered, postFiltered, gate }`.
-  MCP tools put the same marker in `structuredContent.abstain` — an object that also carries `abstain: true`, with the same fields — and `isError` stays false.
+- `--json` includes `abstain: { abstain: true, reason, domain, preFiltered, postFiltered, gate }`.
+  MCP tools put the same object in `structuredContent.abstain`, and `isError` stays false.
 - Every domain search writes two audit events into the run trace: `retrieval.domain_filter.pre` and
   `retrieval.domain_filter.post`.
 
@@ -161,7 +161,7 @@ When running from source, the same entry point is:
 Five tools: `search_web`, `research_web`, `recall_memory`, `query_knowledge`, and `ans_chat`.
 `ANS_DOMAIN` scopes the server via process environment variables: export it explicitly when starting `ans-mcp` directly; `ans mcp` inherits the domain selected in the CLI. Tools never write to stdout, keeping the protocol channel clean.
 
-For tool arguments, `isError` / empty result / abstain semantics, both transports, environment variables and authentication, the `ans_chat` session ID, dual-era compatibility, and upstream provider details, see the specification reference in [docs/mcp-server.md](docs/mcp-server.md).
+For tool arguments, `isError` / empty result / abstain semantics, both transports, environment variables and authentication, the `ans_chat` session ID, how both protocol generations are handled, and upstream provider details, see the specification reference in [docs/mcp-server.md](docs/mcp-server.md).
 
 ## How It Works
 
@@ -205,7 +205,7 @@ flowchart LR
 | `query_knowledge` only retrieves when the active domain enables `rag.adapter = "fts"` | It reads the store-wide shared research database through the domain retrieval adapter registry (#155). `none` and `note` return explicit empty results. Shipped domains are all `none`, so default installations answer empty |
 | Omitting `[rag]` is not the same as `adapter = "none"` | The `rag` section replaces the whole section when declared: derived domains inherit their base domain's adapter/note, and inheritance chains without any adapter fail validation |
 | `rag.adapter = "fts"` reads the **store-wide shared** research database, not the current session | This is an intentional boundary (#130): the store is the unit of isolation; sessions and domains are sub-scopes under it. Shipped domains default to `none`, so `fts` injection must be enabled manually (`recall_memory` already reads this same store scope) |
-| MCP dual-era compatibility: `2026-07-28` clients negotiate down to `2025-11-25` | stdio and stateless Streamable HTTP `initialize` return `2025-11-25` to modern clients, and all five tools work normally; older clients get their own version echoed back. Hand-rolled paths only support the legacy version: under stdio or in-memory (or HTTP without the `MCP-Protocol-Version` header), `server/discover` with a modern `_meta` returns `-32601`, and `tools/list` falls back to the legacy five-tool list. On HTTP, non-initialize requests carrying `MCP-Protocol-Version: 2026-07-28` are rejected before dispatch by the transport layer (HTTP 400 / JSON-RPC `-32000`); use the negotiated `2025-11-25`. See [docs/mcp-server.md](docs/mcp-server.md) |
+| MCP protocol versions: `2026-07-28` clients negotiate down to `2025-11-25` | stdio and stateless Streamable HTTP `initialize` return `2025-11-25` to modern clients, and all five tools work normally; older clients get their own version echoed back. Hand-rolled paths only support the legacy version: under stdio or in-memory (or HTTP without the `MCP-Protocol-Version` header), `server/discover` with a modern `_meta` returns `-32601`, and `tools/list` falls back to the legacy five-tool list. On HTTP, non-initialize requests carrying `MCP-Protocol-Version: 2026-07-28` are rejected before dispatch by the transport layer (HTTP 400 / JSON-RPC `-32000`); use the negotiated `2025-11-25`. See [docs/mcp-server.md](docs/mcp-server.md) |
 | MCP client identity is only valid within a single request | A `2026-07-28` `tools/call` carrying `_meta["io.modelcontextprotocol/clientInfo"]` records the mapped `client_id`; legacy `2025-11-25` stateless HTTP calls have no per-request identity and record `mcp_unknown`. Extracting at `initialize` time is a fallback, not a cross-request guarantee |
 
 Full record: [docs/limitations.md](docs/limitations.md).
