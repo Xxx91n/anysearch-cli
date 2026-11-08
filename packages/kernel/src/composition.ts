@@ -1,4 +1,4 @@
-// Composition Root: createEngine factory.
+// Composition entry point: createEngine factory.
 // lifted from apps/cli/src/composition.ts to packages/kernel.
 // Both apps/cli and apps/mcp import from @anysearch-cli/kernel.
 // decision 3A: pure function, no state, domain-aware provider filtering.
@@ -25,7 +25,7 @@ import type { AttributionCalibration } from "./calibrate";
 
 // Map provider ids to constructors.
 // ponytail: wrap in try/catch — providers without API keys are skipped, not crashed.
-// T7 ruling: the skip is Fail-Open named degradation, never silent — a failed
+// T7 ruling: the skip is fail-open named degradation, never silent — a failed
 // construction writes a named stderr line and lands in
 // CompositionResult.providerBuildErrors. Missing-key/config faults and
 // unexpected construction bugs degrade identically (the arm is absent either
@@ -101,7 +101,7 @@ export interface CompositionResult {
   // failure message, empty when every enabled arm built. Consumers pair this
   // with the engine's runtime providersFailed to audit the full chain.
   providerBuildErrors: Record<string, string>;
-  // T2 #177: the per-call Budget Ledger bound to `store`'s connection. Exposed so
+  // T2 #177: the per-call budget ledger bound to `store`'s connection. Exposed so
   // the PiAgentRuntime wiring (#178) passes this same instance — one budget row
   // per session, never a second ledger over the same DB. Optional so hand-built
   // CompositionResult mocks (tests, embedders) stay source-compatible; every

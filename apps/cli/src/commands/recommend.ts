@@ -2,7 +2,7 @@
 // Retrieval-style recommender: user free text → BM25 (FTS5) over domain metadata
 // (name+description) → top-3 + confidence → high confidence suggests `ans domain <id>`,
 // low confidence lists candidates for manual choice. NEVER auto-switches — this command
-// only prints; persistence stays with `ans domain <name>` (First-Class Abstain homomorph).
+// only prints; persistence stays with `ans domain <name>` (abstain is a normal result here too).
 // Embedding arm is peer-optional: without the package the engine degrades to FTS-only.
 
 import { join } from "node:path";

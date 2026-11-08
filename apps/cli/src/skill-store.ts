@@ -2,7 +2,7 @@
 // Design: install from a local Git checkout into skills/synced/, with one
 // installed.json manifest — a directory convention, not a package manager.
 // The sibling skills/<name>/ space belongs to user-authored skills. This module
-// never reads or writes domain TOML: installation is NOT Skill Active List activation.
+// never reads or writes domain TOML: installation is NOT active skill list activation.
 
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";

@@ -142,15 +142,15 @@ export async function adjudicateReuseCompress(
 ): Promise<"reuse" | "compress"> {
   const prompt = [
     "You are a memory adjudicator for a research agent.",
-    "Decide if the new search results are already fully covered by the existing IR summary.",
+    "Decide if the new search results are already fully covered by the existing rolling summary.",
     "",
-    "IR Summary has 5 sections: Verified Evidence, Open Hypotheses, Rejected Sources, Key Numbers & Sources, Tool Calls & Read Status.",
+    "The rolling summary has 5 sections: Verified Evidence, Open Hypotheses, Rejected Sources, Key Numbers & Sources, Tool Calls & Read Status.",
     "Check each section: is the new information already present?",
     "",
     "If ALL new information is already covered -> respond: reuse",
     "If ANY new information is NOT covered -> respond: compress",
     "",
-    "=== Existing IR Summary ===",
+    "=== Existing rolling summary ===",
     existingSummary || "(empty - no prior summary)",
     "",
     "=== New Search Results (gap) ===",
@@ -382,7 +382,7 @@ export class MemoryPipeline {
    * Stage-1 splits by volatility (#131, implemented by #154): static operator
    * text (`note`, and `none` + leftover `config.note`) appends to the *first*
    * user turn; query-driven adapters (`fts`) append to the *latest* user turn
-   * (the attention hot zone) and query on that turn's pre-injection text. T0
+   * (the end of the latest user turn) and query on that turn's pre-injection text. T0
    * prepends `<user_preferences>` to the *first* user turn. Stage-2 appends the
    * merged L1/L2 memory block to the *latest* user turn, after Stage-1.
    * All stages target user messages only, so a leading system/tool message
@@ -400,14 +400,13 @@ export class MemoryPipeline {
     // appends to the FIRST user message so the session prefix stays byte-stable
     // across turns and #104 AC2 holds byte-for-byte, while query-driven adapters
     // (`fts`, see DYNAMIC_RAG_ADAPTERS) append to the LATEST user message (the
-    // attention hot zone) and key `ragQuery` on that turn's PRE-INJECTION text
+    // end of that turn) and key `ragQuery` on that turn's PRE-INJECTION text
     // (first RAG_QUERY_MAX_CHARS). Rejected alternative (Option A): keeping
     // dynamic RAG on the first turn makes follow-up turns recall turn-1 evidence,
     // dilutes recency attention, and invalidates the KV cache prefix from
     // `messages[0]` whenever memory changes; moving static `note` to the latest
     // turn (Option B) breaks #104 AC2; moving L1/L2 to the first turn (Option C)
-    // loses the hot zone.
-    // Stage-1 runs before Stage-2 so one message reads `user text ->
+    // loses recency. Stage-1 runs before Stage-2 so one message reads `user text ->
     // [RAG Context] -> [Recovery Digest] -> [Session Memory] ->
     // [Research Recall]`; each tier is independently budgeted
     // (4000 / 600 / 4000 / 1500 chars).
@@ -482,10 +481,10 @@ export class MemoryPipeline {
       }
     } catch {}
 
-    // L1+L2 merged injection at latest user message (hot zone).
+    // L1+L2 merged injection at latest user message (the end of that turn).
     try {
       const anchors = await store.getAnchors(sessionId);
-      // Read side of the Sufficiency Anchor (#189): capture the last anchor
+      // Read side of the resume anchor (#189): capture the last anchor
       // once, before this runtime's first search can replace it.
       this.captureRecoveryDigest(anchors);
       const summaryAnchor = lastAnchorOfType(anchors, "rolling_summary");

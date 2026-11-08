@@ -227,7 +227,7 @@ export const GOLDEN_CASES: CaseSpec[] = [
       { op: "search", stage: "retrieve", query: "certdump", expectMaxCount: 0 },
     ],
   },
-  // --- Group 4: C-prime evidence accumulation (4) ---
+  // --- Group 4: T0 promote evidence accumulation (4) ---
   {
     id: "cp_correction_count_two", group: "cprime",
     description: "two cross-session corrections accumulate to count 2",

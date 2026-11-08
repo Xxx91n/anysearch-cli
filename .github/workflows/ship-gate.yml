@@ -1,4 +1,4 @@
-# — Product Smoke Gate (blocking).
+# — release smoke gate (blocking).
 # Runs scripts/ship-gate.mjs; merge and tag are gated on this workflow.
 
 name: ship-gate

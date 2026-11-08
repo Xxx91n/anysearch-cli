@@ -1,6 +1,6 @@
-// #100 acceptance — Dual Era compatibility + dual-transport 5-tool smoke.
+// #100 acceptance — two-generation protocol compatibility + dual-transport 5-tool smoke.
 //
-//   Dual Era (behavior UNCHANGED by the 2.0.0 -> 2.4.0 bump, hand-wired path):
+//   Two protocol generations (behavior UNCHANGED by the 2.0.0 -> 2.4.0 bump, hand-wired path):
 //     - legacy clients (2024-10-07 .. 2025-11-25) initialize and get their own
 //       version echoed back; tools/list + tools/call work.
 //     - a client claiming the modern 2026-07-28 revision is gracefully negotiated
@@ -92,7 +92,7 @@ async function main() {
   }
 
   try {
-    // ---- Part 1: stdio Dual Era negotiation + listing, per protocol version ----
+    // ---- Part 1: stdio two-generation protocol negotiation + listing, per protocol version ----
     for (const v of [...LEGACY_VERSIONS, MODERN_VERSION]) {
       const expected = v === MODERN_VERSION ? LATEST_LEGACY : v;
       const server = buildServer(createMockEngine());

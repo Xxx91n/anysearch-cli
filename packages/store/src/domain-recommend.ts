@@ -2,7 +2,7 @@
 // Design: user free text → BM25 (FTS5) over domain metadata (name+description) → top-3 + confidence →
 // high confidence suggests `ans domain <id>`, low confidence lists candidates for manual selection —
 // NEVER auto-switches (the CLI only prints the suggestion; persistence stays with `ans domain <name>`,
-// homomorphic with First-Class Abstain). The embedding arm is peer-optional: package absent or
+// homomorphic with abstain as a normal result). The embedding arm is peer-optional: package absent or
 // vector null degrades to FTS-only, never a throw (fail-open, same contract as embedding-arm.ts).
 //
 // Confidence model — coverage × margin, NOT an absolute bm25 floor:
@@ -56,7 +56,7 @@ function escapeQueryUnicode(query: string, maxTerms = 8): string {
 // tokenizer — it returns nothing for a full-text query under 3 characters, and two-character words
 // are the commonest word length in Chinese, besides flattening tf to 1. The corpus is a handful of
 // domain rows, so the scan costs nothing and gives exact substring semantics.
-// Stage combination follows GLOSSARY "Dual DB / Two-Stage Recall": the second stage keeps its own
+// Stage combination follows the two-stage recall design: the second stage keeps its own
 // order, is tagged with its own provenance label, and is discounted below the first stage's
 // weakest positive hit rather than fused into BM25 scoring — the FTS arm stays the anchor. No
 // query text is concatenated into SQL here, so the stage adds no MATCH-expression surface.
@@ -225,7 +225,7 @@ interface FtsRow {
   name: string;
   description: string;
   match: number; // -bm25(): higher = better (bm25() itself is negative)
-  stage: "fts" | "cjk"; // which lexical stage produced it (provenance label, GLOSSARY Two-Stage Recall)
+  stage: "fts" | "cjk"; // which lexical stage produced it (source label, two-stage recall)
   reserved?: boolean; // #173 review: the appended stage row guaranteed a display slot; never a confidence input
 }
 

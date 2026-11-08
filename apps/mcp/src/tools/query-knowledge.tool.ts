@@ -1,5 +1,5 @@
 // query_knowledge tool: RAG adapter dispatch — real implementation (#155).
-// Reads the same store-scoped Research Memory range as recall_memory
+// Reads the same store-scoped research archive range as recall_memory
 // (SessionStore.searchMemory), dispatched via RagAdapterRegistry.
 // Non-query adapters (none, note) return an explicit empty result;
 // only "fts" performs retrieval. Unknown adapter ids fail-open to none

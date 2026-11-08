@@ -10,7 +10,7 @@ export * from "./url-policy";
 
 export * from "./time-decay";
 
-// FTS5 Query Tokenization + multi-query RRF fusion helpers.
+// FTS5 query tokenizer + multi-query RRF fusion helpers.
 export * from "./fts5";
 
 // KG-lite entity-relation edge layer (fifth arm).

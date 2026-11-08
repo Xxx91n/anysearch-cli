@@ -64,12 +64,12 @@ export interface QuarantinedMemory {
   counterpartTitle: string | null; // live counterpart for the same entity, shown for judgment
   counterpartSnippet: string | null;
 }
-// T0 hot zone types.
+// T0 durable preference types.
 export interface T0PreferenceInput {
   key: string;
   value: string;
   scope?: string; // "global" or project root path; default "global"
-  source: "explicit" | "correction"; // C-prime gate channels
+  source: "explicit" | "correction"; // T0 promote channels
   provenance?: { event: string; at: string; why: string };
   sourceLabel?: "system" | "user" | "retrieved" | "tool" | "memory";
   traceId?: string;
@@ -164,15 +164,15 @@ export interface SessionStore {
   saveResults(sessionId: string, results: NormalizedResult[]): Promise<void>;
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
   getAnchors(sessionId: string): Promise<ResumeAnchor[]>;
-  // search Research Memory layer for recall_memory MCP tool.
+  // search the research archive for the recall_memory MCP tool.
   searchMemory(query: string, limit?: number): Promise<MemoryHit[]>;
   // (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
   searchMemoryMulti(queries: string[], limit?: number): Promise<MemoryHit[]>;
   // (Q3=A): write-path adjudication with keyMemories carrying evidence score.
   // Caller supplies quarantine check readiness (peer-conflict scan split into its own stmt).
   adjudicateMemory(sessionId: string, keyMemories: KeyMemoryInput[]): Promise<AdjudicationResultItem[]>;
-  // T0 hot zone — durable preference layer.
-  // promotePreference: deterministic write gated by caller (C-prime channels: /remember explicit, correction-count>=2).
+  // T0 durable preference layer.
+  // promotePreference: deterministic write gated by caller (T0 promote channels: /remember explicit, correction-count>=2).
   // demotePreference: conflict(d-i)/user(d-iii)/eviction(d-ii); sets invalid_at only (never drop, recoverable).
   // touchPreference: updates last_accessed (eviction order base).
   // listPreferences: live entries for MEMORY.md projection (global+project scopes, project wins same-key).
@@ -443,9 +443,9 @@ export class SqliteSessionStore implements SessionStore {
     try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN resolved TEXT"); } catch {}
     // soft archive (reversible forgetting).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"); } catch {}
-    // T0 hot zone — t0_preferences is the single source of truth; MEMORY.md is a
+    // T0 durable preferences — t0_preferences is the single source of truth; MEMORY.md is a
     // regenerated materialized projection (temp+fsync+rename). scope: "global" | project root path.
-    // correction_count drives the C-prime promote gate (>=2 cross-session corrections = implicit promote).
+    // correction_count drives the T0 promote rule (>=2 cross-session corrections = implicit promote).
     // invalid_at non-null = demoted (d-i conflict / d-iii /forget / d-ii eviction); row is quarantined, never dropped.
     this.db.exec(`CREATE TABLE IF NOT EXISTS t0_preferences (
   key TEXT NOT NULL,
@@ -453,7 +453,7 @@ export class SqliteSessionStore implements SessionStore {
   scope TEXT NOT NULL DEFAULT 'global',
   modified TEXT NOT NULL DEFAULT (datetime('now')),
   last_accessed TEXT NOT NULL DEFAULT (datetime('now')),
-  source TEXT NOT NULL, -- "explicit" (/remember) | "correction" (C-prime count>=2)
+  source TEXT NOT NULL, -- "explicit" (/remember) | "correction" (T0 promote count>=2)
   invalid_at TEXT,
   demote_reason TEXT,
   correction_count INTEGER NOT NULL DEFAULT 0,
@@ -492,7 +492,7 @@ export class SqliteSessionStore implements SessionStore {
       searchResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title, r.snippet, bm25(retrieval_results_fts) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND r.session_id = ? AND r.archived = 0 ORDER BY rank LIMIT ?"),
       saveAnchor: this.db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, ?, ?)"),
       getAnchors: this.db.prepare("SELECT id, session_id as sessionId, anchor_type as anchorType, payload, created_at as createdAt FROM resume_anchors WHERE session_id = ? ORDER BY id"),
-      // recall_memory searches Research Memory (retrieval_results_fts), not messages.
+      // recall_memory searches the research archive (retrieval_results_fts), not messages.
       // ->: freshness_factor in ORDER BY + bi-temporal filter (valid_until IS NULL).
      // MemoryHit.role <-- r.title, MemoryHit.content <-- r.snippet (recall_memory maps these fields).
      searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) ORDER BY rank LIMIT ?"),
@@ -533,7 +533,7 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   /**
-   * T2 #177: the Budget Ledger over this store's single connection.
+   * T2 #177: the budget ledger over this store's single connection.
    *
    * Registration (#187 `initBudget` / `clearBudgetCaps`) and the engine
    * composition root share this cached instance, so caps, reserve and settle all
@@ -549,7 +549,7 @@ export class SqliteSessionStore implements SessionStore {
     return { ...this.accessEventTel };
   }
 
-  // T0 hot zone methods.
+  // T0 durable preference methods.
   // All writes are deterministic; gate logic lives in caller (A+C+B, not here).
 
   async promotePreference(input: T0PreferenceInput): Promise<{ action: "promoted" | "rejected"; reason?: string }> {
@@ -626,7 +626,7 @@ export class SqliteSessionStore implements SessionStore {
     return Array.from(merged.values());
   }
 
-  // C-prime correction-count channel.
+  // T0 promote correction-count channel.
   // Increment correction_count; if >=2 and not already promoted, promote implicitly.
   // Returns current count for caller to decide projection trigger.
   async recordCorrectionOnPreference(key: string, scope: string): Promise<{ correctionCount: number }> {
@@ -728,7 +728,7 @@ export class SqliteSessionStore implements SessionStore {
     this.stmts.append.run(sessionId, message.role, message.content);
   }
 
-  // SECURITY: escape FTS5 special chars, then FTS5 Query Tokenization (CWE-20).
+  // SECURITY: escape FTS5 special chars, then tokenize the FTS5 query (CWE-20).
   private fts5Escape(query: string): string {
     return fts5EscapeQuery(query);
   }
@@ -746,9 +746,9 @@ export class SqliteSessionStore implements SessionStore {
   // the external contract — do not consume from apps/ or kernel.
   public lastArmProvenance: ArmProvenance | null = null;
 
-  // Design: Research Memory reads are store-scoped, not session- or domain-scoped —
+  // Design: research archive reads are store-scoped, not session- or domain-scoped —
   // session_id is per-call (MCP search_web mints a fresh session each call) and no
-  // row records a domain origin; the store is the isolation unit (Store Principal).
+  // row records a domain origin; the store is the isolation unit.
   // See docs/rag-adapters.md §作用域 for the evidence and rejected alternatives.
   async searchMemory(query: string, limit = 20): Promise<MemoryHit[]> {
    const safeQuery = this.fts5Escape(query);

@@ -32,7 +32,7 @@ async function main() {
   assert(rows[0].source === "explicit", "source=explicit");
   assert(rows[0].scope === projectScope, "scope=project");
 
-  // 2. C-prime correction-count channel: 1st correction inserts placeholder row (count=1, no promote)
+  // 2. T0 promote correction-count channel: 1st correction inserts placeholder row (count=1, no promote)
   let c = await store.recordCorrectionOnPreference("tone", "global");
   assert(c.correctionCount === 1, "1st correction: count=1 row inserted");
   rows = await store.listPreferences();

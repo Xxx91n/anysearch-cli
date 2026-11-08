@@ -56,7 +56,7 @@ async function main() {
         "the wired session id accepts anchor writes (FK satisfied, row reads back)",
       );
 
-      // Seed recall-able Research Memory the way the MCP search path does.
+      // Seed recall-able research archive entries the way the MCP search path does.
       await writer.saveResults(wiring.sessionId!, [
         { url: "https://intra.example/wiki", title: "internal wiki", snippet: "the intranet wiki proxy runs on port 8080", source: "tavily" },
       ]);

@@ -1,4 +1,4 @@
-// Budget Ledger: Mole reserve-then-settle pattern.
+// Budget ledger: Mole reserve-then-settle pattern.
 // decision 4: non-negative constraint in SQLite schema layer.
 // Budget = resource consumption, belongs to store layer (not kernel).
 // atomcode research: Mole DB schema non-negative constraint, 0% overshoot.

@@ -29,8 +29,8 @@ export type Query = SearchRequest & {
   span?: RetrievalObservationSink;
   // T2 #177: per-search session id supplied by the composition path that owns a
   // session (PiAgentRuntime threads the wired CLI anchor / MCP minted handle
-  // here). The engine opens its Budget Ledger reserve→settle and Sufficiency
-  // Anchor gates only when both the port and a session id are present; a bare
+  // here). The engine opens its budget ledger reserve→settle and resume
+  // anchor gates only when both the port and a session id are present; a bare
   // `search` call without a session keeps both gates closed (unchanged).
   sessionId?: string;
   // #209: caller cancellation. The engine combines it with its per-provider
@@ -112,7 +112,7 @@ export interface BudgetLedgerPort {
 // and the store may skip secret-matching payloads. Anchors are a recovery gain
 // layer: write failures fail open (named stderr line, retrieval never blocked).
 // Read-side design is settled in #186 (T8): the kernel memory pipeline reads the
-// last anchor on resume and injects a Recovery Digest once (#189). The engine
+// last anchor on resume and injects a recovery summary once (#189). The engine
 // itself still only writes.
 export interface ResumeAnchorsPort {
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;

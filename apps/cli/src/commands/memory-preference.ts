@@ -1,7 +1,7 @@
 // ans pref: T0 durable preference management.
 // Subcommands: list | remember <key> <value> [--scope project|global] | forget <key> [--scope project|global]
 //
-// C-prime promote gate: explicit (remember) OR correction-count>=2 (implicit).
+// T0 promote rule: explicit (remember) OR correction-count>=2 (implicit).
 // demote: d-i conflict / d-iii /forget / d-ii eviction at cap overflow (all land in quarantine, never drop).
 // Post-write: regenerates MEMORY.md projection (temp+fsync+rename, key-override merge global+project).
 

@@ -72,7 +72,7 @@ export function cosine(a: ArrayLike<number>, b: ArrayLike<number>): number {
 }
 
 // ---------------------------------------------------------------------------
-// L0 segmenter — sentence extraction from answer text (D6 C-prime)
+// L0 segmenter — sentence extraction from answer text (D6 T0 promote rule)
 // ---------------------------------------------------------------------------
 
 export interface SentenceSpan { text: string; start: number; end: number; }

@@ -6,7 +6,7 @@
 //   3. unknown adapter id -> fail-open to none + a named stderr warning.
 // Plus the fail-open edges: no store, retrieval throw, no hits, and the
 // injection seam itself — #131/#154 volatility split: static `note` on the
-// first USER message, dynamic `fts` on the latest USER message (hot zone).
+// first USER message, dynamic `fts` on the latest USER message.
 // Run: node --import tsx --test test/rag-adapter.test.ts
 
 import { test } from "node:test";
@@ -309,7 +309,7 @@ test("dynamic fts lands on the latest USER message, never a leading system turn"
   assert.equal((out[0] as any).content, "system prompt", "system message untouched");
   assert.equal((out[1] as any).content, "first question", "first user turn bytes unchanged (KV prefix stable)");
   assert.ok(!(out[1] as any).content.includes("recalled fact"), "first user turn stays byte-stable (static slot)");
-  assert.ok((out[3] as any).content.includes("recalled fact"), "RAG block on the latest user turn (hot zone)");
+  assert.ok((out[3] as any).content.includes("recalled fact"), "RAG block on the latest user turn");
 });
 
 test("the fts query is the latest user turn's own pre-injection text", async () => {

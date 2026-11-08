@@ -1,0 +1,115 @@
+Abstain Smoke
+Access Events 与防篡改链
+Active Domain
+Answer Mode / Answer Provenance
+Anysearch Plugin
+Assert Judgment Input
+Budget Ledger
+C-prime Promote Gate
+CJK Substring Stage
+Candidate Review Belt
+Claim-Level Attribution
+Closed Predicate Table
+Code Mode
+Composition Root
+Conditional Arm Activation
+Config Layering
+Consecutive Reuse Cap
+Content Trust Boundary
+Context Engineering
+Cursor Dual Channel / MDC Fallback / Fire-and-Forget
+Domain Full-Stack
+Dual DB / Two-Stage Recall
+Dual Era Compatibility
+Dual Session
+Dual Transport / MCP Factory
+Dual-Gate Domain Filtering
+Dual-Output Sufficiency
+Entity Configurable
+Entity Link Layer
+Episodic-to-Semantic Consolidation
+Explicit Invalidation via Write Path
+Explicit Session Handle
+FTS5 Column Weight
+FTS5 Query Tokenization
+Fact-Process Split
+Fail-Closed Authorization
+Fail-Open
+First-Class Abstain
+Fused Freshness Factor
+Gap Distillation
+Golden Entry Scope / Difficulty Tier / Paraphrase Slice
+HITL Review Queue
+Hook Layer
+Hot-Cold Injection / Write-Read Seam
+INJECT Probe Suite
+IR Summary Schema
+Info Source Provider
+Injection Hot Zone
+Integer Allowance / Rank-of-Relevant Gate
+Judge 校准线
+KG-lite Fifth Arm
+Kernel Distribution
+Key-Level Override Merge
+LlmSession Deep Module / Lazy Session Cache
+MCP SDK 桥接三件套
+MCP Sufficiency Annotate
+MCP Tool Layer
+MVSS
+Memory Eval Harness
+Memory Tier
+MemoryPipeline
+NOOP Adjudication / REUSE-COMPRESS 判别
+Named Gap Re-search
+Observability Closed Loop
+PiAgentRuntime
+Policy Single Source / Append-Only Merge / Policy Version
+Progressive Disclosure
+Project Index
+Provenance RefStatus
+RAG Adapter
+RAG Injection
+Read-Side Secret Guard
+Recovery Digest
+Research Memory
+Retrieval Content Schema
+Retroaererd Engine
+Reversible Entity Merge
+Routing Card
+Routing Card Override
+STALE Probe Suite
+Sanitization Pipeline
+Scope Discipline / Module Extraction
+Seam Wiring
+Session Identity / Propagation / Client Attribution
+Ship Gate / Product Smoke Gate
+Ship Override 机制
+Signal-Gated Claim Proposal
+Signal-Gated Consolidation Trigger
+Skill Active List / Prompt Skill Selection / Hooks Tool Whitelist
+Skill Installer
+Soft Archive with Undo Log
+Source Label
+Store Principal
+Sufficiency Anchor
+Sufficiency Gate
+Sufficiency Gate Placement
+Sufficiency Gate Preserved
+Switch State Machine
+Synthetic/Observational 分账
+T0 Hot Zone
+Tau 观测层与显式 skip
+Time Edge Effect
+Tool Requires
+Tool Schema Registry / Per-tool Barrel
+Unsupported Named-Gap Escalation
+Vertical Agent
+Year-Free QDF Trigger
+发布形态
+回填纪律
+工具链钉版
+归因校准线
+晋级 / Promotion
+臂增益判定纪律
+融合治理
+记忆管线纯函数化五件套

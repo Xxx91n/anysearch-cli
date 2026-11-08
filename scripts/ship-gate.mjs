@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // scripts/ship-gate.mjs
 //
-// — Product Smoke Gate (Blocking). Single-file Node stdlib only.
+// — Release smoke gate (blocking). Single-file Node stdlib only.
 // — asserts all published package versions != "0.0.0".
 // — Ponytail floor: no execa / chalk / external packages.
 //

@@ -1,0 +1,77 @@
+Anchor
+Anysearch Plugin
+Best Matching 25
+Budget Ledger
+Composition Root
+Content Trust Boundary
+Dual DB
+Dual-Gate Domain Filtering
+Envelope
+Explicit Session Handle
+Fail-Closed
+Fail-Open
+First-Class Abstain
+HOOKS 层
+Hook Layer
+Info Source Provider
+Memory Eval Harness
+Memory Tier
+Product Smoke Gate
+Project Index
+Provenance
+RAG Adapter
+Reciprocal Rank Fusion
+Research Memory
+Retrieval Engine
+Routing Card
+Sanitization Pipeline
+Session Identity
+Ship Gate
+Skill Active List
+Skill Installer
+Source Label
+Sufficiency Gate
+Time Edge Effect
+Two-Stage Recall
+Vertical Agent
+不可信内容管线
+产品冒烟闸门
+信息源头供应方
+充分性门禁
+全文检索扩展
+净化管道
+双闸域过滤
+垂直 Agent
+失败关闭
+并行检索
+弃答
+恢复锚
+扇出
+插件形态
+搜索后端
+搜索服务
+搜索源
+放行策略
+时间边缘效应
+最小安装器
+本地数据库引擎
+来源标签
+检索专精引擎
+检索信封
+检索后端
+模型上下文协议
+活跃域
+深模块
+激活域
+第一类拒答
+组合根
+融合排序
+记忆三层架构
+记忆管线
+记忆评测台
+调研记忆层
+锚点
+项目级索引
+预算账本
+领域专属检索适配器
+领域配置格式

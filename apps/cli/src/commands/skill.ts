@@ -1,5 +1,5 @@
 // ans skill: directory convention + manifest + validation (#109, decision #92).
-// Installation never changes the Active Domain or its Skill Active List.
+// Installation never changes the Active Domain or its active skill list.
 
 import {
   inspectInstalledSkills, installSkill, managedSkillsRoot, skillManifestPath,

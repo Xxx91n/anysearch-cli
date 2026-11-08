@@ -1,0 +1,284 @@
+CHANGELOG.md:63: [PiAgentRuntime] ## Unreleased — #178: PiAgentRuntime 接上账本——token/USD 结算进生产路径（承接 #36）
+CHANGELOG.md:67: [PiAgentRuntime] - **`ans chat` / `ans_chat` 的生产 runtime 拿到真实 `BudgetLedger`**：`wireChatMemory`（CLI）和 `resolveAnsChatSession`（MCP）在会话行注册成功后，把 `CompositionResult.ledger`（和 store 同一个连接、`createBudgetLedger()` 的同一个实例）跟 `s
+CHANGELOG.md:68: [MemoryPipeline] - **runtime 的计费门收紧为 `store && sessionId && ledger`**（`packages/kernel/src/pi-runtime.ts`）：跟 MemoryPipeline 用同一道门；只有账本、没有 store/session 的接法不再往账本写。`reserveCalls()` 被拒时仍照旧继续这次 run（runtime 硬停归 #188），但不再把没
+CHANGELOG.md:160: [MemoryPipeline] - **检索时带上会话身份**：新增 `Query.sessionId`；`PiAgentRuntime` 构造一个绑定了会话的 retriever（条件是 `store && sessionId`），同时给内置 search 工具、`MemoryPipeline`、`SufficiencyEvaluator` 的再检索用，让 `ans chat` / `ans_chat` 每次内部检索都带上接好
+CHANGELOG.md:160: [PiAgentRuntime] - **检索时带上会话身份**：新增 `Query.sessionId`；`PiAgentRuntime` 构造一个绑定了会话的 retriever（条件是 `store && sessionId`），同时给内置 search 工具、`MemoryPipeline`、`SufficiencyEvaluator` 的再检索用，让 `ans chat` / `ans_chat` 每次内部检索都带上接好
+CHANGELOG.md:217: [MemoryPipeline] - memory eval 的 golden 切片不走 `MemoryPipeline`（store 侧 consolidate 是独立的 L2 路径），默认 lowWatermark 没动。
+CHANGELOG.md:223: [MemoryPipeline] - **`ans chat` 上 RAG 和 L1/L2 记忆注入从来没生效过**：`PiAgentRuntime` 只在 `store && sessionId` 同时存在时才构造 `MemoryPipeline`，而 CLI 的统一装配入口两个都没传，`this.pipeline` 一直是 `undefined`——`transformContext` 原样返回、`consolidate` 的
+CHANGELOG.md:223: [PiAgentRuntime] - **`ans chat` 上 RAG 和 L1/L2 记忆注入从来没生效过**：`PiAgentRuntime` 只在 `store && sessionId` 同时存在时才构造 `MemoryPipeline`，而 CLI 的统一装配入口两个都没传，`this.pipeline` 一直是 `undefined`——`transformContext` 原样返回、`consolidate` 的
+CHANGELOG.md:224: [PiAgentRuntime] - **没有记忆的统一装配入口不再沉默**：`PiAgentRuntime` 在 `store` / `sessionId` 任缺（包括两个都缺，也就是 `ans_chat` 以前的样子）时打一行带名字的 stderr，说清缺什么、注入已经关了；门的语义（`store && sessionId`）没改。
+CHANGELOG.md:230: [MemoryPipeline] - **`MemoryPipeline.flush()` / `PiAgentRuntime.flushMemory()`**：`consolidate()` 的摘要生成和 L2 召回是发出去就不管的，`runChat` 返回后 CLI 会在收尾时关掉持久库，还在路上的 `rolling_summary` / `l2_recall` 存档点写入会丢，而且被 `.catch(() => {})` 吞
+CHANGELOG.md:230: [PiAgentRuntime] - **`MemoryPipeline.flush()` / `PiAgentRuntime.flushMemory()`**：`consolidate()` 的摘要生成和 L2 召回是发出去就不管的，`runChat` 返回后 CLI 会在收尾时关掉持久库，还在路上的 `rolling_summary` / `l2_recall` 存档点写入会丢，而且被 `.catch(() => {})` 吞
+CHANGELOG.md:312: [MemoryPipeline] - **RAG 内容注入的位置改成按 adapter 分派**：注入的位置没变（`MemoryPipeline.inject` 的 Stage-1、第一条 user 消息）。`fts` 的检索 query 取第一条 user 消息的原文（截到 400 字符，适配严格的 FTS5 阶梯）。**兼容保留**：`adapter = "none"` 但还留着 `config.note` 的域，仍按 #10
+apps/cli/src/commands/chat-memory.ts:22: [PiAgentRuntime] * Decide what `ans chat` hands to PiAgentRuntime for memory.
+apps/cli/src/commands/chat.ts:2: [PiAgentRuntime] // decision 7: uses PiAgentRuntime for agent loop.
+apps/cli/src/commands/chat.ts:9: [PiAgentRuntime] import { PiAgentRuntime, createLlmSession, parseContextWindow } from "@anysearch-cli/kernel";
+apps/cli/src/commands/chat.ts:109: [Active Domain] // #187: pass the Active Domain's optional [budget] so registration also
+apps/cli/src/commands/chat.ts:118: [PiAgentRuntime] // Construct PiAgentRuntime and run.
+apps/cli/src/commands/chat.ts:120: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+apps/cli/src/commands/chat.ts:123: [PiAgentRuntime] // store + sessionId together are what make PiAgentRuntime build the
+apps/cli/src/commands/chat.ts:124: [MemoryPipeline] // MemoryPipeline (#129): RAG Stage-1 injection and L1/L2 memory now run on
+apps/cli/src/commands/domain.ts:1: [Active Domain] // ans domain: switch or show Active Domain (cc-persona TOML).
+apps/cli/src/commands/domain.ts:21: [Active Domain] console.log("Active Domain: " + current);
+apps/cli/src/commands/domain.ts:35: [Active Domain] console.log("Switching Active Domain to: " + newDomain);
+apps/cli/src/commands/recommend.ts:5: [First-Class Abstain] // only prints; persistence stays with `ans domain <name>` (First-Class Abstain homomorph).
+apps/cli/src/commands/search.ts:1: [Retroaererd Engine] // ans search: run a retrieval query through the Retroaererd Engine.
+apps/cli/src/commands/skill.ts:2: [Active Domain] // Installation never changes the Active Domain or its Skill Active List.
+apps/cli/src/commands/skill.ts:30: [Active Domain] Installation does not activate a skill: edit [skills].active in Active Domain TOML.
+apps/cli/src/commands/skill.ts:77: [Active Domain] + "Installed only; activation remains in Active Domain TOML ([skills].active).\n");
+apps/cli/src/index.ts:48: [Active Domain] " domain Switch Active Domain (cc-persona TOML)",
+apps/cli/src/index.ts:64: [Active Domain] "  ANS_DOMAIN        Active Domain name (overrides TOML selection)",
+apps/cli/test/chat-memory-wiring.test.ts:46: [PiAgentRuntime] "#178: successful wiring hands PiAgentRuntime the engine ledger instance");
+apps/cli/test/chat-memory-wiring.test.ts:51: [Active Domain] "#187: Active Domain [budget] creates the session ledger row");
+apps/cli/test/chat-memory-wiring.test.ts:59: [Research Memory] // Seed recall-able Research Memory the way the MCP search path does.
+apps/cli/test/skill.test.ts:152: [Active Domain] assert.match(installed.stdout, /Installed only; activation remains in Active Domain TOML/);
+apps/mcp/src/ans-chat-session.ts:80: [Active Domain] * #187: synchronize the Active Domain's optional [budget] at the same point the
+apps/mcp/src/ans-chat-session.ts:88: [Active Domain] * Known limitation: the Active Domain is sampled at registration only, so a
+apps/mcp/src/ans-chat-session.ts:124: [PiAgentRuntime] * Resolve the store/sessionId pair handed to PiAgentRuntime.
+apps/mcp/src/tools/ans-chat.tool.ts:1: [PiAgentRuntime] // ans_chat tool: PiAgentRuntime agent loop as MCP tool.
+apps/mcp/src/tools/ans-chat.tool.ts:7: [MemoryPipeline] // MemoryPipeline; no handle = single-shot.
+apps/mcp/src/tools/ans-chat.tool.ts:13: [PiAgentRuntime] import { PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
+apps/mcp/src/tools/ans-chat.tool.ts:174: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+apps/mcp/src/tools/query-knowledge.tool.ts:2: [Research Memory] // Reads the same store-scoped Research Memory range as recall_memory
+apps/mcp/src/tools/query-knowledge.tool.ts:21: [MemoryPipeline] // Per-connection registry, same pattern as MemoryPipeline.
+apps/mcp/src/tools/recall-memory.tool.ts:25: [Research Memory] // search Research Memory layer (retrieval_results_fts), not messages.
+apps/mcp/test/ans-chat-session.test.ts:23: [PiAgentRuntime] import { PiAgentRuntime, type CompositionResult } from "@anysearch-cli/kernel";
+apps/mcp/test/ans-chat-session.test.ts:76: [PiAgentRuntime] // PiAgentRuntime the engine's own instance.
+apps/mcp/test/ans-chat-session.test.ts:259: [PiAgentRuntime] // what opens PiAgentRuntime's `store && sessionId` gate.
+apps/mcp/test/ans-chat-session.test.ts:260: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+apps/mcp/test/ans-chat-session.test.ts:275: [MemoryPipeline] "real store: store + threaded handle constructs MemoryPipeline",
+apps/mcp/test/ans-chat-session.test.ts:312: [Active Domain] "#187: ensureSession path creates the budget row from the Active Domain");
+apps/mcp/test/ans-chat-session.test.ts:317: [Active Domain] "#187: createSession path creates the budget row from the Active Domain");
+apps/plugin/skills/anysearch/SKILL.md:28: [PiAgentRuntime] **ans_chat** — An agent loop (PiAgentRuntime) for research that needs several tools in a row. Use it when one tool call is not enough.
+apps/plugin/src/hooks/session-start.ts:2: [Progressive Disclosure] // Progressive Disclosure Three-Layer — this is the lightest layer.
+apps/plugin/src/server/index.ts:2: [Anysearch Plugin] // Anysearch Plugin Server: long-running process for hooks IPC.
+apps/plugin/src/server/index.ts:77: [Budget Ledger] // cache; it has no resumable chat/agent session to key a Budget Ledger row or a
+apps/plugin/src/server/index.ts:78: [Sufficiency Anchor] // Sufficiency Anchor on. Not injecting sessionId/BudgetLedger is therefore the
+apps/plugin/test/plugin.test.ts:129: [PiAgentRuntime] "- ans_chat: PiAgentRuntime agent loop for complex queries",
+docs/limitations.md:162: [Active Domain] `Active Domain`) enables `fts` (#155)** — the tool resolves the current
+docs/limitations.md:201: [MemoryPipeline] it before reuse, and `MemoryPipeline` is then built with `store` +
+docs/mcp-server.md:24: [Active Domain] current domain, code: `Active Domain`), and the child process inherits it.
+docs/mcp-server.md:57: [PiAgentRuntime] | `ans_chat` | `message` (required); `sessionId` (optional) | Runs the `PiAgentRuntime` agent loop. Requires `ANS_LLM_PROVIDER` and `ANS_LLM_MODEL`. Missing configuration is an error result, not a suc
+docs/mcp-server.md:192: [MemoryPipeline] `ensureSession()` and is reused. `MemoryPipeline` is then built with
+docs/rag-adapters.md:8: [MemoryPipeline] - 注入位置：`MemoryPipeline.inject` 的 **Stage-1**（#131 把「不变的」和「每轮变的」分开，已由 #154 落地：不变的 `note` 放在**第一条**用户消息的正文末尾，并且每轮字节都不变；每轮变的 `fts` 放在**最新**一条用户消息的末尾，检索词取注入前最新一条用户原文的前 400 chars，见下方「注入放在哪（#131）」）
+docs/rag-adapters.md:133: [Recovery Digest] | Stage-2 恢复摘要（消息里标 `[Recovery Digest]`） | 恢复时从恢复存档点取一次；每次调模型保持一份 | **最新**一条用户消息的末尾 | — | 整块 `≤ 600` chars（`RECOVERY_DIGEST_MAX_CHARS`，含标签与截断标记） |
+docs/rag-adapters.md:143: [Recovery Digest] - **同一条最新用户消息里的顺序**：`用户原始提问 → [RAG Context] → [Recovery Digest] → [Session Memory] → [Research Recall]`。
+docs/rag-adapters.md:155: [MemoryPipeline] - **现在怎么走**：`MemoryPipeline.inject` 按上表分流——不变的 `note`（包括 `none` 配残留
+docs/rag-adapters.md:211: [MemoryPipeline] 再把 `store` 和 `sessionId` 交给 `PiAgentRuntime`，所以 `MemoryPipeline` 会建起来，
+docs/rag-adapters.md:211: [PiAgentRuntime] 再把 `store` 和 `sessionId` 交给 `PiAgentRuntime`，所以 `MemoryPipeline` 会建起来，
+packages/kernel/src/composition.ts:1: [Composition Root] // Composition Root: createEngine factory.
+packages/kernel/src/composition.ts:28: [Fail-Open] // T7 ruling: the skip is Fail-Open named degradation, never silent — a failed
+packages/kernel/src/composition.ts:104: [Budget Ledger] // T2 #177: the per-call Budget Ledger bound to `store`'s connection. Exposed so
+packages/kernel/src/composition.ts:105: [PiAgentRuntime] // the PiAgentRuntime wiring (#178) passes this same instance — one budget row
+packages/kernel/src/composition.ts:235: [Active Domain] // clearBudgetCaps on the Active Domain's [budget]); this root never creates
+packages/kernel/src/composition.ts:238: [PiAgentRuntime] // (Query.sessionId, threaded by PiAgentRuntime); stateless `search` calls keep
+packages/kernel/src/engine.ts:1: [Retroaererd Engine] // Retroaererd Engine: bounded budget + serialized sufficiency-gate + fanout convergence + RRF fusion.
+packages/kernel/src/engine.ts:37: [PiAgentRuntime] // PiAgentRuntime (#103, kernel level). Production composition-root
+packages/kernel/src/engine.ts:38: [PiAgentRuntime] // injection is #177 and PiAgentRuntime production wiring is #178.
+packages/kernel/src/engine.ts:79: [MVSS] // mvs: MVSS four-segment signal written to FusedEnvelope.metadata for external consumption.
+packages/kernel/src/engine.ts:122: [MVSS] // MVSS: verdict (CRAG three-state quantifier aggregation).
+packages/kernel/src/engine.ts:132: [MVSS] // MVSS: agreement (Jaccard@K + RBO@K, rank-derived, always computable).
+packages/kernel/src/engine.ts:137: [MVSS] // MVSS: spread (rrfVariance + scoreScale).
+packages/kernel/src/engine.ts:371: [PiAgentRuntime] // (PiAgentRuntime threads the wired handle per search). The gate itself is
+packages/kernel/src/engine.ts:547: [MVSS] // MVSS, attribution, or output. Deny wins (shouldAllowUrl order).
+packages/kernel/src/engine.ts:614: [MVSS] // top-k is a pure prefix truncation. MVSS still sees the full fused pool.
+packages/kernel/src/engine.ts:619: [MVSS] // single computation source, dual output (control + MVSS).
+packages/kernel/src/engine.ts:685: [MVSS] // MVSS four-segment sufficiency signal.
+packages/kernel/src/index.ts:1: [Retroaererd Engine] // @anysearch-cli/kernel: Retroaererd Engine ports + agent runtime
+packages/kernel/src/index.ts:9: [Recovery Digest] // Recovery Digest (#189): read side of the Sufficiency Anchor.
+packages/kernel/src/index.ts:9: [Sufficiency Anchor] // Recovery Digest (#189): read side of the Sufficiency Anchor.
+packages/kernel/src/ir-schema.ts:1: [IR Summary Schema] // IR Summary Schema: shared constants for L0 rolling summary 5-section format.
+packages/kernel/src/memory-pipeline.ts:1: [MemoryPipeline] // MemoryPipeline: deep module for L0/L1/L2 memory pipeline logic.
+packages/kernel/src/memory-pipeline.ts:46: [MemoryPipeline] export interface MemoryPipelineDeps {
+packages/kernel/src/memory-pipeline.ts:210: [MemoryPipeline] throw new Error("MemoryPipeline: compaction.lowWatermark must be a finite positive token count");
+packages/kernel/src/memory-pipeline.ts:216: [MemoryPipeline] throw new Error("MemoryPipeline: compaction.lowWatermark.fraction must be a finite number in (0,1)");
+packages/kernel/src/memory-pipeline.ts:340: [MemoryPipeline] export class MemoryPipeline {
+packages/kernel/src/memory-pipeline.ts:341: [MemoryPipeline] private deps: MemoryPipelineDeps;
+packages/kernel/src/memory-pipeline.ts:373: [MemoryPipeline] constructor(deps: MemoryPipelineDeps) {
+packages/kernel/src/memory-pipeline.ts:411: [Recovery Digest] // [RAG Context] -> [Recovery Digest] -> [Session Memory] ->
+packages/kernel/src/memory-pipeline.ts:436: [Recovery Digest] // [RAG Context] / [Recovery Digest] / [Session Memory] /
+packages/kernel/src/memory-pipeline.ts:488: [Sufficiency Anchor] // Read side of the Sufficiency Anchor (#189): capture the last anchor
+packages/kernel/src/memory-pipeline.ts:503: [Recovery Digest] // mention: a user asking about "[Recovery Digest]" must not suppress
+packages/kernel/src/pi-runtime.ts:1: [PiAgentRuntime] // PiAgentRuntime: pi-agent-core Agent wrapper for anysearch-cli.
+packages/kernel/src/pi-runtime.ts:11: [MemoryPipeline] // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
+packages/kernel/src/pi-runtime.ts:29: [MemoryPipeline] import { MemoryPipeline } from "./memory-pipeline";
+packages/kernel/src/pi-runtime.ts:34: [PiAgentRuntime] // `interactive` in PiAgentRuntimeOptions; this helper is the TTY capability check only.
+packages/kernel/src/pi-runtime.ts:118: [PiAgentRuntime] function warnMissingMemoryWiring(opts: PiAgentRuntimeOptions): void {
+packages/kernel/src/pi-runtime.ts:125: [MemoryPipeline] "[anysearch] PiAgentRuntime: " + missing + " not supplied — MemoryPipeline NOT constructed; " +
+packages/kernel/src/pi-runtime.ts:125: [PiAgentRuntime] "[anysearch] PiAgentRuntime: " + missing + " not supplied — MemoryPipeline NOT constructed; " +
+packages/kernel/src/pi-runtime.ts:249: [PiAgentRuntime] export interface PiAgentRuntimeOptions {
+packages/kernel/src/pi-runtime.ts:409: [PiAgentRuntime] export class PiAgentRuntime {
+packages/kernel/src/pi-runtime.ts:410: [PiAgentRuntime] private opts: PiAgentRuntimeOptions;
+packages/kernel/src/pi-runtime.ts:417: [MemoryPipeline] private pipeline?: MemoryPipeline;
+packages/kernel/src/pi-runtime.ts:421: [MemoryPipeline] // mirrors MemoryPipeline (`store && sessionId`): a half-wired runtime stays a
+packages/kernel/src/pi-runtime.ts:426: [PiAgentRuntime] constructor(opts: PiAgentRuntimeOptions) {
+packages/kernel/src/pi-runtime.ts:433: [MemoryPipeline] // is the same gate MemoryPipeline uses — the handle is only trusted when the
+packages/kernel/src/pi-runtime.ts:453: [MemoryPipeline] this.pipeline = new MemoryPipeline({
+packages/kernel/src/pi-runtime.ts:491: [Active Domain] // #188: re-read the Active Domain at the run boundary so a live TOML edit
+packages/kernel/src/pi-runtime.ts:534: [MemoryPipeline] // hooks degrade to 2-line delegation to MemoryPipeline + SufficiencyEvaluator.
+packages/kernel/src/pi-runtime.ts:548: [MemoryPipeline] // transformContext async hot path — delegated to MemoryPipeline.inject.
+packages/kernel/src/pi-runtime.ts:603: [MemoryPipeline] // shouldStopAfterTurn async cold path — delegated to SufficiencyEvaluator + MemoryPipeline.
+packages/kernel/src/pi-runtime.ts:609: [MemoryPipeline] // here (MemoryPipeline has no signal seam); that in-flight write can
+packages/kernel/src/pi-runtime.ts:712: [MemoryPipeline] // gate MemoryPipeline uses — a half-wired runtime cannot touch
+packages/kernel/src/ports.ts:31: [PiAgentRuntime] // session (PiAgentRuntime threads the wired CLI anchor / MCP minted handle
+packages/kernel/src/ports.ts:32: [Budget Ledger] // here). The engine opens its Budget Ledger reserve→settle and Sufficiency
+packages/kernel/src/ports.ts:115: [Recovery Digest] // last anchor on resume and injects a Recovery Digest once (#189). The engine
+packages/kernel/src/ports.ts:142: [MemoryPipeline] * Injection point: `MemoryPipeline.inject` Stage-1. Following #131, static
+packages/kernel/src/rag-adapter.ts:2: [MemoryPipeline] // private/internal data, injected at MemoryPipeline.inject Stage-1.
+packages/kernel/src/rag-adapter.ts:6: [Domain Full-Stack] // Domain Full-Stack is real rather than a placeholder.
+packages/kernel/src/rag-adapter.ts:223: [MemoryPipeline] * Injection entry point used by `MemoryPipeline.inject`: resolve, retrieve,
+packages/kernel/src/recovery-digest.ts:1: [Recovery Digest] // Recovery Digest (#189): read side of the Sufficiency Anchor.
+packages/kernel/src/recovery-digest.ts:1: [Sufficiency Anchor] // Recovery Digest (#189): read side of the Sufficiency Anchor.
+packages/kernel/src/recovery-digest.ts:14: [Recovery Digest] export const RECOVERY_DIGEST_TAG = "[Recovery Digest]";
+packages/kernel/src/sufficiency-gate.ts:1: [MemoryPipeline] // SufficiencyEvaluator: sibling module to MemoryPipeline.
+packages/kernel/src/sufficiency-gate.ts:5: [MemoryPipeline] // Independent fail-open, does not block MemoryPipeline.
+packages/kernel/src/tool-schemas.ts:126: [MVSS] search_web: "Search the web via anysearch provider amalgamation. Returns results with MVSS sufficiency signal.",
+packages/kernel/src/tool-schemas.ts:128: [Research Memory] recall_memory: "Search the Research Memory layer (FTS5) for previously indexed research results. Applies time edge effect: decay, bi-temporal invalidation, QDF classification.",
+packages/kernel/src/tool-schemas.ts:130: [PiAgentRuntime] ans_chat: "Run the anysearch agent loop: retrieval-augmented chat with LLM. Uses PiAgentRuntime with domain-aware tool filtering. Returns a session handle (structuredContent.sessionId and a trailing t
+packages/kernel/test/composition-build-errors.test.ts:1: [Fail-Open] // T7 ruling (#105): provider factory construction failure is Fail-Open named
+packages/kernel/test/engine-anchor.test.ts:10: [PiAgentRuntime] import { PiAgentRuntime } from "../src/pi-runtime";
+packages/kernel/test/engine-anchor.test.ts:65: [MVSS] assert(typeof (p1.mvs as Record<string, unknown>).verdict === "string", "1: MVSS verdict present");
+packages/kernel/test/engine-anchor.test.ts:226: [PiAgentRuntime] const wiredRuntime = new PiAgentRuntime({
+packages/kernel/test/engine-anchor.test.ts:235: [PiAgentRuntime] const halfRuntime = new PiAgentRuntime({
+packages/kernel/test/engine.test.ts:1: [Retroaererd Engine] // Retroaererd Engine test (G009).
+packages/kernel/test/engine.test.ts:199: [MVSS] // 14. computeSufficiency: MVSS agreement signals computed correctly.
+packages/kernel/test/memory-pipeline.test.ts:1: [MemoryPipeline] // MemoryPipeline unit tests.
+packages/kernel/test/memory-pipeline.test.ts:7: [MemoryPipeline] import { MemoryPipeline, distillGap, adjudicateReuseCompress, consolidateState, resolveLowWatermark, FALLBACK_LOW_WATERMARK_TOKENS } from "../src/memory-pipeline";
+packages/kernel/test/memory-pipeline.test.ts:154: [MemoryPipeline] // === MemoryPipeline inject Tests ===
+packages/kernel/test/memory-pipeline.test.ts:159: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:177: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:200: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:224: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:243: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:262: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:282: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:303: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:316: [MemoryPipeline] // === MemoryPipeline consolidate Tests ===
+packages/kernel/test/memory-pipeline.test.ts:325: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:344: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:363: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:390: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:416: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:432: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:454: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:471: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:488: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:505: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:539: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:578: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:605: [MemoryPipeline] // Test: MemoryPipeline constructs with all deps.
+packages/kernel/test/memory-pipeline.test.ts:607: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:615: [MemoryPipeline] assert(typeof pipeline.inject === "function", "MemoryPipeline.inject is function");
+packages/kernel/test/memory-pipeline.test.ts:616: [MemoryPipeline] assert(typeof pipeline.consolidate === "function", "MemoryPipeline.consolidate is function");
+packages/kernel/test/memory-pipeline.test.ts:617: [MemoryPipeline] assert(typeof pipeline.consolidate === "function" && pipeline.consolidate.length === 3, "MemoryPipeline.consolidate has 3 params");
+packages/kernel/test/memory-pipeline.test.ts:621: [MemoryPipeline] console.log(`MemoryPipeline tests: ${passed} passed, ${failed} failed`);
+packages/kernel/test/memory-pipeline.test.ts:788: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/memory-pipeline.test.ts:816: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/pi-runtime-cancellation.test.ts:1: [PiAgentRuntime] // #211 acceptance — PiAgentRuntime honors a caller cancellation signal.
+packages/kernel/test/pi-runtime-cancellation.test.ts:15: [PiAgentRuntime] import { PiAgentRuntime, createSearchTool } from "../src/pi-runtime";
+packages/kernel/test/pi-runtime-cancellation.test.ts:68: [PiAgentRuntime] function consume(runtime: PiAgentRuntime, input: string) {
+packages/kernel/test/pi-runtime-cancellation.test.ts:84: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime-cancellation.test.ts:125: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime-cancellation.test.ts:171: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime-cancellation.test.ts:263: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime-span.test.ts:1: [PiAgentRuntime] // PiAgentRuntimeOptions.span pass-through — the caller
+packages/kernel/test/pi-runtime.test.ts:1: [PiAgentRuntime] // PiAgentRuntime test (G012).
+packages/kernel/test/pi-runtime.test.ts:6: [PiAgentRuntime] import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals, resetWiringWarnings, resolveContextOccupancy } from "../src/pi-runtime";
+packages/kernel/test/pi-runtime.test.ts:8: [MemoryPipeline] import { MemoryPipeline } from "../src/memory-pipeline";
+packages/kernel/test/pi-runtime.test.ts:111: [PiAgentRuntime] // Test 1: PiAgentRuntime constructs with valid options.
+packages/kernel/test/pi-runtime.test.ts:113: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:119: [PiAgentRuntime] assert(typeof runtime.run === "function", "PiAgentRuntime.run is a function");
+packages/kernel/test/pi-runtime.test.ts:155: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:282: [PiAgentRuntime] console.log(`PiAgentRuntime tests: ${passed} passed, ${failed} failed`);
+packages/kernel/test/pi-runtime.test.ts:585: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:647: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:676: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:715: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:749: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:781: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:817: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:863: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:909: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:957: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:997: [PiAgentRuntime] const zeroRuntime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1013: [PiAgentRuntime] const healthy = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1068: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1126: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1181: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1225: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1266: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1325: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1390: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1468: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1505: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1541: [MemoryPipeline] // The contract seam is transformContext -> MemoryPipeline.inject Stage-1: what
+packages/kernel/test/pi-runtime.test.ts:1577: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1666: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1741: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1764: [MemoryPipeline] // #129 contract: a runtime built WITHOUT store/sessionId has no MemoryPipeline,
+packages/kernel/test/pi-runtime.test.ts:1797: [PiAgentRuntime] let runtime!: PiAgentRuntime;
+packages/kernel/test/pi-runtime.test.ts:1799: [PiAgentRuntime] runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1819: [MemoryPipeline] assert(/store and sessionId not supplied — MemoryPipeline NOT constructed/.test(captured),
+packages/kernel/test/pi-runtime.test.ts:1831: [PiAgentRuntime] new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1840: [PiAgentRuntime] new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1851: [MemoryPipeline] assert(/sessionId not supplied — MemoryPipeline NOT constructed/.test(captured),
+packages/kernel/test/pi-runtime.test.ts:1877: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1909: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:1962: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/pi-runtime.test.ts:2108: [MemoryPipeline] // Observable shell integration: MemoryPipeline.consolidate writes consolidation_state
+packages/kernel/test/pi-runtime.test.ts:2121: [MemoryPipeline] const pipelineBelow = new MemoryPipeline({
+packages/kernel/test/pi-runtime.test.ts:2130: [MemoryPipeline] const pipelineAbove = new MemoryPipeline({
+packages/kernel/test/pi-runtime.test.ts:2156: [MemoryPipeline] const pipelineUnknown = new MemoryPipeline({
+packages/kernel/test/rag-adapter.test.ts:27: [MemoryPipeline] import { MemoryPipeline } from "../src/memory-pipeline";
+packages/kernel/test/rag-adapter.test.ts:63: [MemoryPipeline] return new MemoryPipeline({
+packages/kernel/test/rag-adapter.test.ts:367: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/rag-adapter.test.ts:389: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/rag-adapter.test.ts:480: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/recovery-digest.test.ts:1: [Recovery Digest] // Recovery Digest (#189): read side of the Sufficiency Anchor.
+packages/kernel/test/recovery-digest.test.ts:1: [Sufficiency Anchor] // Recovery Digest (#189): read side of the Sufficiency Anchor.
+packages/kernel/test/recovery-digest.test.ts:16: [MemoryPipeline] import { MemoryPipeline } from "../src/memory-pipeline";
+packages/kernel/test/recovery-digest.test.ts:17: [PiAgentRuntime] import { PiAgentRuntime } from "../src/pi-runtime";
+packages/kernel/test/recovery-digest.test.ts:59: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/recovery-digest.test.ts:88: [MVSS] assert.match(digest!, /verdict=sufficient/, "MVSS verdict is carried");
+packages/kernel/test/recovery-digest.test.ts:178: [Recovery Digest] "order: user text -> Recovery Digest -> Session Memory -> Research Recall");
+packages/kernel/test/recovery-digest.test.ts:229: [Recovery Digest] const out = await pipeline.inject([{ role: "user", content: "what is [Recovery Digest]?" }]);
+packages/kernel/test/recovery-digest.test.ts:245: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/recovery-digest.test.ts:271: [MemoryPipeline] const pipeline = new MemoryPipeline({
+packages/kernel/test/recovery-digest.test.ts:348: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/recovery-digest.test.ts:372: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/recovery-digest.test.ts:419: [PiAgentRuntime] const runtime = new PiAgentRuntime({
+packages/kernel/test/search-saturation.test.ts:10: [PiAgentRuntime] import { PiAgentRuntime, SearchSaturation, SEARCH_SATURATION_DEFAULTS } from "../src/pi-runtime";
+packages/kernel/test/search-saturation.test.ts:61: [PiAgentRuntime] const runtime = new PiAgentRuntime({ retriever, domain, model: faux.getModel(), streamFn: faux.streamSimple });
+packages/retriever/src/content-trust.ts:1: [Content Trust Boundary] // Content Trust Boundary and Indirect Prompt Injection Defense.
+packages/retriever/src/contract.ts:163: [MVSS] // MVSS four-segment sufficiency signal.
+packages/retriever/src/contract.ts:169: [MVSS] // Hard ceiling: cheap-signal AUC ceiling approx 0.76 — MVSS only promises escalate.
+packages/retriever/src/contract.ts:260: [MVSS] // MVSS sufficiency signal from computeSufficiency.
+packages/store/src/budget-ledger.ts:1: [Budget Ledger] // Budget Ledger: Mole reserve-then-settle pattern.
+packages/store/src/budget-ledger.ts:83: [Active Domain] // #187: returning to a no-[budget] Active Domain deactivates the row
+packages/store/src/budget-ledger.ts:145: [Active Domain] // #187: an existing row whose Active Domain dropped [budget] (or switched to
+packages/store/src/domain-recommend.ts:5: [First-Class Abstain] // homomorphic with First-Class Abstain). The embedding arm is peer-optional: package absent or
+packages/store/src/domain-recommend.ts:59: [Dual DB / Two-Stage Recall] // Stage combination follows GLOSSARY "Dual DB / Two-Stage Recall": the second stage keeps its own
+packages/store/src/domain-schema.ts:1: [Active Domain] // Domain Schema: typed Active Domain TOML model.
+packages/store/src/fts5.ts:1: [FTS5 Query Tokenization] // (Q2=B): FTS5 Query Tokenization shared helper.
+packages/store/src/index.ts:13: [FTS5 Query Tokenization] // FTS5 Query Tokenization + multi-query RRF fusion helpers.
+packages/store/src/schema-content.ts:6: [Budget Ledger] export const SCHEMA_SQL = "-- Session Store FTS5 schema.\n-- Seam 4 from atomcode-kernel-split-architecture research.\n-- Uses external content table (content=) to avoid duplicate storage.\n-- WAL mod
+packages/store/src/schema-content.ts:6: [Time Edge Effect] export const SCHEMA_SQL = "-- Session Store FTS5 schema.\n-- Seam 4 from atomcode-kernel-split-architecture research.\n-- Uses external content table (content=) to avoid duplicate storage.\n-- WAL mod
+packages/store/src/schema.sql:63: [Time Edge Effect] -- G019: Time Edge Effect columns.
+packages/store/src/schema.sql:104: [Budget Ledger] -- Budget Ledger: Mole reserve-then-settle pattern (decision 4).
+packages/store/src/schema.sql:118: [Active Domain] -- #187: 1 = the Active Domain declared [budget] and this row is enforceable;
+packages/store/src/session-store.ts:150: [Active Domain] // Active Domain declares no [budget] — a fresh session then has no row, and
+packages/store/src/session-store.ts:157: [Active Domain] // #187: when the Active Domain later drops [budget] (or the durable anchor
+packages/store/src/session-store.ts:167: [Research Memory] // search Research Memory layer for recall_memory MCP tool.
+packages/store/src/session-store.ts:495: [Research Memory] // recall_memory searches Research Memory (retrieval_results_fts), not messages.
+packages/store/src/session-store.ts:536: [Budget Ledger] * T2 #177: the Budget Ledger over this store's single connection.
+packages/store/src/session-store.ts:708: [Active Domain] // composition root) decides whether the Active Domain declared [budget]; no
+packages/store/src/session-store.ts:710: [Active Domain] // the Active Domain is sampled only at registration, so a mid-session domain
+packages/store/src/session-store.ts:716: [Active Domain] // #187: drop [budget] from the Active Domain -> release caps but keep the
+packages/store/src/session-store.ts:731: [FTS5 Query Tokenization] // SECURITY: escape FTS5 special chars, then FTS5 Query Tokenization (CWE-20).
+packages/store/src/session-store.ts:749: [Research Memory] // Design: Research Memory reads are store-scoped, not session- or domain-scoped —
+packages/store/src/session-store.ts:751: [Store Principal] // row records a domain origin; the store is the isolation unit (Store Principal).
+packages/store/src/time-decay.ts:1: [Time Edge Effect] // Time Edge Effect: BM25 x freshness factor with tiered tau, fused recency+frequency reinforcement.
+packages/store/test/budget-ledger.test.ts:1: [Budget Ledger] // Budget Ledger test (G004). Mole reserve-then-settle pattern.
+packages/store/test/domain-recommend.test.ts:173: [Dual DB / Two-Stage Recall] // "Dual DB / Two-Stage Recall"), and it never ties the weakest hit (a tie would zero the
+packages/store/test/fts5-tokenize.test.ts:1: [FTS5 Query Tokenization] // (Q2=B): FTS5 Query Tokenization acceptance test.
+skills/anysearch/SKILL.md:9: [PiAgentRuntime] - ans_chat: an agent loop (PiAgentRuntime) for questions that need several tools.

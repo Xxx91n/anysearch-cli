@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS retrieval_results (
   rrf_score REAL,
   fetched BOOLEAN DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  -- G019: Time Edge Effect columns.
+  -- G019: time-decay columns.
   valid_until TEXT, -- bi-temporal: NULL = still valid, non-null = invalidated timestamp.
   pinned BOOLEAN DEFAULT 0, -- pinned exemption: bypasses time decay.
   entity TEXT, -- entity key for bi-temporal invalidation (URL for MVP).
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS resume_anchors (
 -- Historical anchors (rolling_summary, l2_recall, query, fetch, sufficiency) remain append-only.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_anchors_state_unique ON resume_anchors(session_id, anchor_type) WHERE anchor_type = 'consolidation_state';
 
--- Budget Ledger: Mole reserve-then-settle pattern (decision 4).
+-- Budget ledger: Mole reserve-then-settle pattern (decision 4).
 -- Non-negative constraints in DB schema layer (not application layer).
 -- Budget = resource consumption, belongs to store layer (not kernel).
 -- Three dimensions: token-cap / usd-cap / time-limit.
@@ -134,15 +134,15 @@ CREATE TABLE IF NOT EXISTS budget_ledger (
 -- IF NOT EXISTS; session-store.ts creates the unique index in a protected
 -- migration for them (a no-op for new databases).
 
--- G019 migration: add time edge effect columns to existing retrieval_results table.
+-- G019 migration: add time-decay columns to existing retrieval_results table.
 -- ALTER TABLE ADD COLUMN is idempotent-safe: errors if column already exists, caught by try/catch in SessionStore constructor.
 -- These run after the CREATE TABLE IF NOT EXISTS, so new databases already have the columns.
 -- For existing databases, these add the missing columns.
 
--- T0 hot zone durable preference layer.
+-- T0 durable preference layer.
 -- t0_preferences is the single source of truth; MEMORY.md is a regenerated materialized projection
 -- (temp+fsync+rename atomic write in kernel t0-projection.ts). scope: 'global' | project root path.
--- correction_count drives the C-prime promote gate (>=2 cross-session corrections = implicit promote).
+-- correction_count drives the T0 promote rule (>=2 cross-session corrections = implicit promote).
 -- invalid_at non-null = demoted (d-i conflict / d-iii /forget / d-ii eviction); row quarantined, never dropped.
 CREATE TABLE IF NOT EXISTS t0_preferences (
   key TEXT NOT NULL,

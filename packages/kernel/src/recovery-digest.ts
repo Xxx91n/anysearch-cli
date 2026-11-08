@@ -1,4 +1,4 @@
-// Recovery Digest (#189): read side of the Sufficiency Anchor.
+// Recovery summary (#189): read side of the resume anchor.
 //
 // A resumed session reads the last "sufficiency" anchor and turns it into one
 // small metadata block for the agent. The design is settled in #186 (T8):

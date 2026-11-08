@@ -1,4 +1,4 @@
-// recall_memory tool: FTS5 with time edge effect + project index fallback (two-stage).
+// recall_memory tool: FTS5 with time decay + project index fallback (two-stage).
 // input validated by AJV from KernelToolSchemas; handler reads typed args.
 
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
@@ -20,9 +20,9 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
       try {
         const { query, limit } = args as { query: string; limit?: number };
         const lim = limit ?? 5;
-        // FTS5 memory recall with time edge effect.
+        // FTS5 memory recall with time decay.
         const { isTimeSensitive, isEvergreen } = await import("@anysearch-cli/store");
-        // search Research Memory layer (retrieval_results_fts), not messages.
+        // search the research archive (retrieval_results_fts), not messages.
         const hits = await eng.store.searchMemory(query, lim);
         const ts = isTimeSensitive(query);
         const eg = isEvergreen(query);
