@@ -1,16 +1,16 @@
 # Domain Docs
 
-How the engineering skills should consume this repo's domain documentation when exploring the codebase.
+How the engineering skills should read this repo's domain docs while exploring the codebase.
 
-## Before exploring, read these
+## Read these first
 
-- **`GLOSSARY.md`** at the repo root — the glossary of domain terms (term → ≤2-sentence definition).
+- **`GLOSSARY.md`** at the repo root — the word list for domain terms (one plain sentence per term).
 
-If it doesn't exist, **proceed silently**. Don't flag its absence; don't suggest creating it upfront.
+If it is missing, say nothing and move on. Do not point out that it is missing, and do not suggest creating it up front.
 
-## File structure
+## File layout
 
-This repo is **single-context**:
+This repo has one context:
 
 ```
 /
@@ -21,19 +21,19 @@ This repo is **single-context**:
 └── packages/           ← embedding, kernel, retriever, store
 ```
 
-No `GLOSSARY-MAP.md` at the root → single-context, not multi-context.
+There is no `GLOSSARY-MAP.md` at the root, so this is single-context, not multi-context.
 
-## Use the glossary's vocabulary
+## Use the glossary's words
 
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `GLOSSARY.md`. Don't drift to synonyms.
+When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the word as `GLOSSARY.md` defines it. Do not drift to synonyms.
 
-If the concept you need isn't in the glossary yet, that's a signal: either you're inventing language the project doesn't use (reconsider) or there's a real gap (add the term to `GLOSSARY.md`).
+If the concept you need is not in the glossary yet, that is a signal: either you are inventing language the project does not use (think again) or there is a real gap (add the term to `GLOSSARY.md`).
 
 ## Decision history
 
-Architecture decision records are no longer kept as documents. Load-bearing decisions live as self-contained comments at the code sites they govern; open product questions live as GitHub issues. Archaeology: `git log` on the pre-teardown history.
+Architecture decision records are no longer kept as documents. Decisions that matter live as self-contained comments at the code they govern; open product questions live as GitHub issues. To dig into the past, run `git log` on the pre-teardown history.
 
-Record a load-bearing decision at its code site as a self-contained, greppable comment:
+Record a decision that matters at its code site as a self-contained, greppable comment:
 
 ```
 Design: <decision> — <reason/alternatives>
@@ -41,8 +41,8 @@ Design: <decision> — <reason/alternatives>
 
 - `Design:` — the literal marker; `git grep 'Design:'` finds every recorded decision.
 - `<decision>` — what was chosen, stated plainly.
-- `— <reason/alternatives>` — why, or which alternative was rejected and why.
+- `— <reason/alternatives>` — why, or which other option was rejected and why.
 
 Keep the comment next to the code it governs, so the decision travels with the code instead of with a document that can be deleted.
 
-**Honest status: historical decisions are not backfilled.** The grammar above is the convention going forward; decisions made before it still live only in `git log` archaeology. A code site without a `Design:` marker therefore does not prove that no decision was made there — only that it has not yet been recorded in this form.
+**Status, honestly: past decisions are not backfilled.** The grammar above is the rule from now on; decisions made before it still live only in `git log` archaeology. So a code site without a `Design:` marker does not prove that no decision was made there. It only proves that no one has recorded it this way yet.

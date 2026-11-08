@@ -2,36 +2,36 @@
 
 ## Tools
 
-- search_web: real-time multi-source web search
-- research_web: deep research (minute-level, multi-hop)
-- recall_memory: FTS5 research memory recall (time edge effect)
-- query_knowledge: enterprise RAG retrieval
-- ans_chat: PiAgentRuntime agent loop for complex queries
+- search_web: search the web now, across several sources at once.
+- research_web: deep research. Runs for minutes and follows several steps.
+- recall_memory: look through results saved earlier in this session (FTS5 keyword search). Older results slowly lose weight.
+- query_knowledge: search the organization's own knowledge base.
+- ans_chat: an agent loop (PiAgentRuntime) for questions that need several tools.
 
-## Decision tree
+## Which tool to use
 
-1. Current events / factual lookup -> search_web
-2. Multi-step research / synthesis -> research_web
-3. Recall prior results from this session -> recall_memory
+1. Current events or a fact to look up -> search_web
+2. Research that needs several steps and a written answer -> research_web
+3. Recall earlier results from this session -> recall_memory
 4. Enterprise knowledge base -> query_knowledge
-5. Complex multi-tool research -> ans_chat
-6. Skip redundant search if recall_memory already has relevant results
+5. Research that needs several tools in a row -> ans_chat
+6. If recall_memory already has relevant results, skip the extra search
 
-## Anti-patterns
+## Do not
 
-- Do NOT call search_web for a query that recall_memory already has results for
-- Do NOT call ans_chat for simple factual lookups (use search_web instead)
-- Do NOT call research_web for single-hop questions (use search_web instead)
+- Do NOT call search_web when recall_memory already has results for the same question
+- Do NOT call ans_chat for a simple fact lookup (use search_web instead)
+- Do NOT call research_web for a one-step question (use search_web instead)
 - Do NOT ignore recall_memory results when they exist
 
-## Namespace conventions
+## Naming rules
 
 All anysearch tools use the ans_* prefix. Host agents may add their own namespace
-prefix (e.g., mcp__anysearch__search_web). The hooks layer matches any tool name
-containing ans_ followed by a known tool name.
+prefix (for example mcp__anysearch__search_web). The hooks layer matches any tool
+name that contains ans_ followed by a known tool name.
 
-## Fail-open
+## When a layer breaks
 
-If the anysearch server is down, all tools degrade gracefully. No tool call will
-block the host agent. Errors are logged to stderr and the tool returns an empty
-result.
+If the anysearch server is down, every tool still works, just with fewer features.
+No tool call blocks the host agent. Errors are written to stderr, and the tool
+returns an empty result.
