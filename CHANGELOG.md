@@ -357,7 +357,7 @@
 - **待办条目要有结构、有期限、写明谁在挡着（T2-A）**：`pending_anchors` 既接受 `{anchor,reason,seated_at,review_by}` 这种结构化条目，也接受旧的裸字符串；裸字符串迁移那天设了期限 `LEGACY_SEAT_REVIEW_BY`（老条目到期不豁免）；新增三个判为失败项 `anchor-seat-expired` / `anchor-seat-malformed` / `anchor-seat-info-conflict`（pending_anchors 和 info 不能同时有）；还有待办没关时，没拦住的那条要出一行 `masking-surfaced` info，点名是哪个待办挡住了哪条检查项。
 - **`stack-orphaned-by-land` 判断（T2-B）**：STACK_RED_CODES 的第四个成员——收尾已经进了 `origin/main`、又带着还没关掉的链、但栈 ref 不在了 → 判为失败（专门抓 land 之后解散的栈留下的、已经没用的分支链：R99 的 `sha-not-commit` 漏检类）；用 `git ls-tree origin/main` 采「文档在不在 main 上」的事实，采不到就记 env-PENDING、不猜；3 组成对夹具（红 / 还在飞就拒绝 / 还在推就拒绝）。
 - **tau 递归 + AST 前置检查（T2-B）**：`enumerateScriptFiles` 扩成 `scripts/**/*.mjs` 递归（把 `scripts/tau/` 也纳进来）；`scripts/top-level-effects.mjs` 做纯静态三分类（TypeScript API 经 packages/store 的 createRequire 拿，零新依赖、零顶层副作用）——①带 codes 又有副作用 → `ast-top-level-effect` 拒绝注入，判为失败 / ②`*_CODES` 不是字面量初始化 → `ast-codes-unverifiable` / ③有副作用又没有 codes → 具名排除候选，出 info；`EXCLUDED_PATHS` 是封闭的具名排除清单，第一条 `tau/tau-scan.mjs`（spawn 启动器没法做命名空间注入），排除路径带着 codes → `ast-excluded-codes`。
-- **land 之后两个必须绑定做的事（T2-C）**：audit-checklist §5 加第二个勾——land 的同一个会话里，land 后重验（向 main push 跑三次都通过、落进代码树的 ship-gate 再跑）并让收尾改述机械位 `scripts/handoff-reanchor.mjs`；检查项活性记一行账 `kind:"anchor-activity"` claim 类别（一半靠机器检查：expect 账本重新导出收尾行逐字比对，夹具 kill 不入账）。
+- **land 之后两个必须绑定做的事（T2-C）**：audit-checklist §5 加第二个勾——land 的同一个会话里，land 后重验（向 main push 跑三次都通过、落进代码树的 ship-gate 再跑）并让收尾把重新登记那一行写在固定位置 `scripts/handoff-reanchor.mjs` 里；检查项活性记一行账 `kind:"anchor-activity"` claim 类别（一半靠机器检查：expect 账本重新导出收尾行逐字比对，夹具 kill 不入账）。
 
 ### Fixed
 
@@ -366,7 +366,7 @@
 ### Docs
 
 - **定规矩（T1）**：五条 Decision——D2 上限条件三交集（fails+sunset+fraud-vs-style）/ D3 修层新层判据 / D5 待办 Addendum / D6 tau 递归+AST 前置检查 / D7 负向边界+deferred 触发器；Consequences 带着这套尺子第一次用的判例（R99 收尾里六个死 SHA = 已经没用的分支链）和 T0 引用；CONTEXT「Grill Round 100 — Terms」七个词条；ADR 索引重新生成到 101 件。
-- **deferred-r72 触发器注记（T3）**：`defer-r72-dsh-approval-channel` 的 carried_log 挂上 R100 续债注记——「R101+ 带 deferred 前置依赖的正题，开工前先评估触发条件」（任务书 D-003④ 兑现，这条的 trigger 已经满足，列进 R101 立项评估候选）。
+- **deferred-r72 触发器注记（T3）**：`defer-r72-dsh-approval-channel` 的 carried_log 里记上 R100 留下的后续欠账——「R101+ 带 deferred 前置依赖的正题，开工前先评估触发条件」（任务书 D-003④ 兑现，这条的 trigger 已经满足，列进 R101 立项评估候选）。
 - **AGENTS.md 扫描范围摘要刷新（T3）**：递归范围 + AST 前置检查 + schema v2 + 待办限期四件改成只留指针，指向别处。
 
 ## Unreleased — r99: 词表检查扩到整个 scripts/（逐模块注册表 + glob 顶层枚举 + 逐模块故意改坏验证）
@@ -783,13 +783,13 @@
 - L2 合格候选本轮不存在（no-qualifying-candidate 显式结论）：rc.3 无 ALARM、alpha 线的稳定观测点不响；下一个合格候选出现就按 latest-only 直接彩排，跳线版本只补退役标记。落选债按原名继续 deferred（carried_log 记）：transformers(#1764 未 merge) / provider-serverside / dsh 三件套 / bitmap / registerhooks / f16 / f17 / domain-ownership。
 - `defer-r77-pathlint-envvar-blindspot`（审计返工新立项）——ship-gate step 1i 的 PATH_RE 不认识 env-var 形态的机器路径（`%TEMP%`/`$HOME`/`~/`），是意图层面的盲区；修复方向=PATH_RE 扩形态+红向 fixture。 <!-- machine-local: 用户级 ~ 路径引用（存量合规化） @ 2026-09-22 -->
 
-## Unreleased — r76: 治理面静默漂移清算（仓库工具链/治理文书的增量，发出去的代码没变，不 bump）
+## Unreleased — r76: 治理面悄悄跑偏后的清理（仓库工具链/治理文书的增量，发出去的代码没变，不 bump）
 
 ### Added
 
 - `scripts/governed-json.mjs` + ship-gate step 1 的 `stepGovernedJsonCanonical` 腿——受治理 JSON 必须逐字节一致的检查：`CANONICAL_JSON_FILES = ["docs/deferred-registry.json"]`，逐文件断言字节 ≡ `JSON.stringify(JSON.parse(src),null,1)+'\n'`；非法 JSON 单独报错；不是 canonical 就报 `first differs at line N` + 可粘贴的 normalize 指令 + 清单常量位置；gate 不自己修（committed≠reviewed）。
 - `scripts/closeout-coverage.mjs` + ship-gate step 1g 的 leg-b 重写（–D3）——完成信号改成 ADR index 里登记了 `Grill Round N`（登记即完成），拿不准就拒绝三条断言（已登记但没有 closeout→失败 / index 和 .scratch 双向漂移→失败 / 推导集合为空或解析不了→失败），从第 76 轮开始算，还没收尾的轮次先放行，打一行结构化 `awaiting closeout: round N (ADR not yet registered)`，成功输出带覆盖计数；字段 lint 面不动（仍然只 lint 最新含 closeout 目录的那份）。
-- `packages/store/test/governed-json-canonical.test.mjs`（19 条断言）+ `closeout-coverage.test.mjs`（40 条断言，含审计返工 F-2/F-4 和二批 residual 回归用例）——known-bad 夹具常态化红绿双证，跟 `turbo test` 一起跑。
+- `packages/store/test/governed-json-canonical.test.mjs`（19 条断言）+ `closeout-coverage.test.mjs`（40 条断言，含审计返工 F-2/F-4 和二批 residual 回归用例）——用已知有问题的夹具常驻跑，坏的情况和好的情况都证明一遍，跟 `turbo test` 一起跑。
 
 ### Changed
 
@@ -1182,8 +1182,8 @@ T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 
 ### Removed
 
-- due-chore (round 59): removed the `t6-hostile-cuts.test.mjs` text-position assertion that `403` comes before `401` — it pinned source order, not behaviour; the behaviour is asserted end-to-end in `apps/plugin/test/plugin-security.test.mjs` (non-loopback Origin without a token -> 403 before 401).
-- due-chore (round 59): the `apps/plugin/src/hooks/preheat.ts` comment no longer says the policy cache guards against a *tampered* drop-in (downgraded to a *damaged* drop-in — the sha256 self-check detects damage, not an attacker), and `canonicalVersion` now names the store implementation as authoritative.
+- round 59 housekeeping: removed the `t6-hostile-cuts.test.mjs` text-position assertion that `403` comes before `401` — it pinned source order, not behaviour; the behaviour is asserted end-to-end in `apps/plugin/test/plugin-security.test.mjs` (non-loopback Origin without a token -> 403 before 401).
+- round 59 housekeeping: the `apps/plugin/src/hooks/preheat.ts` comment no longer says the policy cache guards against a *tampered* drop-in (downgraded to a *damaged* drop-in — the sha256 self-check detects damage, not an attacker), and `canonicalVersion` now names the store implementation as authoritative.
 - D-001/R1 (round 57): `.scratch/` is no longer tracked. The local markdown issue tracker and round artifacts were tracked as 16 files while README.md:64 documents them as not committed; all 16 are now untracked (disk copies kept; `.gitignore` gained `.scratch/`). Commits `ykm` (first 8) + `rpz` (remaining 8, audit F-1).
 
 ### Fixed

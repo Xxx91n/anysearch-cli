@@ -94,7 +94,7 @@ to say yes first; not done here**.)
   (`scripts/tau/bgnbd_fit.py`, access_events, switch machine) still runs and is
   written up separately in the English `[Unreleased]` section (line ~964 at the time).
 
-### Decision: **put a banner under the r100 heading — keep the history, do not rewrite it**
+### Decision: **put a banner under the r100 heading — keep the history, do not change the facts**
 
 Rewriting or deleting the section would change the record of what r100 actually
 shipped; leaving it bare would make readers think the anchors registry still
