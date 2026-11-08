@@ -109,7 +109,7 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
 
 - 写清**这个域是干什么的**，还有**用户真会输入的具体名词**——工具、格式、站点
   （比如 `MCP spec / TypeScript tsconfig / pnpm settings`），少用形容词。
-- 补上和邻近的域区分开的**关键触发词**，顺便说清它*不是*干什么的。
+- 补上和邻近的域区分开的**关键触发词**；别直接写「不是某领域」这种否定说法——描述里的词都会被索引，它认不出否定。
 - 一行，≤ ~250 字符（参考 agent skill 注册表里单条 description 的字数上限）；
   `name` 保持简短、直白，两个字段都会原样进索引。
 
