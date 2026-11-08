@@ -78,7 +78,7 @@ ans memory backfill-vectors   # 给已有记录补向量；第一次会下载模
 1. **第一步，搜之前先筛**：信息源自己说支持按域名筛，就把白名单直接交给它
    （`tavily` 用 `include_domains` 强制筛，`exa` 用 `includeDomains`）；不支持的
    （比如 `anysearch`）就不给，等第二步再筛，不会假装自己会筛。
-2. **第二步，搜完再筛，这一步说了算**：信息源把结果交回来，引擎在合并结果、
+2. **第二步，搜完再筛，这一步说了算**：信息源把结果交回来，检索引擎在合并结果、
    标来源之前，先把不在白名单里的网址全扔掉。黑名单规则优先；白名单里的条目
    管域名本身和它的子域。
 
@@ -136,12 +136,12 @@ ans skill uninstall research --project
 并记下来源和 commit。它不是包管理器，也不会执行 skill 里的代码。锁、清单、
 残留清理这些细节，见 `GLOSSARY.md` 的「技能安装器」词条。
 
-**装了不等于打开。** 这些命令不会改 domain TOML。哪些 skill 能用，还是由当前
-领域（Active Domain）的 `[skills].active` 决定，打开的方式没变，还是改域配置。
+**装了不等于打开。** 这些命令不会改 domain TOML。哪些 skill 能用，还是由当前领域
+（Active Domain）的 `[skills].active` 决定，打开的方式没变，还是改域配置。
 
 ## 信息源怎么连、能干什么
 
-| 信息源 | 怎么连 | 已经接上的功能 | 直接答（answer） | 搜前筛域名 | 细分领域路由 | 能取消吗 | 单独的用量接口 |
+| 信息源 | 怎么连 | 已经接上的功能 | 直接答（answer） | 搜前筛域名 | 垂直领域路由 | 能取消吗 | 单独的用量接口 |
 |----------|------|----------------|-------------|--------------|----------|------|--------------|
 | anysearch | MCP Streamable HTTP（`POST /mcp`，手写 JSON-RPC；不是官方 SDK） | `search`（fast / index / deep；`answer` 请求会退成普通检索） | no | no（只能搜完再筛） | yes（`domain` / `sub_domain` / `sub_domain_params`） | yes（每次 POST 带 fetch signal；共用握手的细节见下） | no |
 | exa | 官方 `exa-js` SDK | `search`（fast / index / deep / answer） | yes（`answer()` 带 citations，`verified:false`；answer 失败会退成普通检索结果，并往 stderr 写一行） | yes（`includeDomains`，只对 `search()` 生效；见下） | no | yes（`signal` 作为 `search()` / `answer()` 请求选项的最后一个参数；#216） | no |
@@ -157,7 +157,7 @@ MCP 上游；Exa 和 Tavily 继续用官方 SDK，它们托管的 MCP 是让 age
 表里有两点取消的细节：AnySearch 每次 POST 都带 signal，但几个搜索并发时共用
 一次 MCP 握手，这次握手只听第一个调用方的话；后来的调用方取消不了这段等待，
 第一个调用方取消也可能让两个搜索一起失败。Exa 的 `includeDomains` 只对
-`search()` 生效；单独的 `answer()` 收不到白名单，引擎也不会去筛答案文字或
+`search()` 生效；单独的 `answer()` 收不到白名单，检索引擎也不会去筛答案文字或
 citations 里的网址。
 
 AnySearch 适配器只接了 `search`。`get_sub_domains`、`batch_search`、`extract`
@@ -167,9 +167,9 @@ AnySearch 适配器只接了 `search`。`get_sub_domains`、`batch_search`、`ex
 （`retrieval.provider.diagnostic`）；失败的回复在提取前就抛了，不记。这个 id
 不会进结果，也不能拿来当幂等键（重试时不能靠它去重）。
 
-## AnySearch 细分领域
+## AnySearch 垂直领域
 
-AnySearch 还有一根单独的**细分领域路由**轴。可以按查询传，也可以写在 domain TOML
+AnySearch 还有一根单独的**垂直领域路由**轴。可以按查询传，也可以写在 domain TOML
 里。它跟 hostname 白名单是两回事，和 `urlAllowlist` 没关系。
 
 - 查询级参数：`search_web` / `research_web` 上的 `verticalDomain` /
@@ -179,11 +179,11 @@ AnySearch 还有一根单独的**细分领域路由**轴。可以按查询传，
 - 仓级默认：`[sources] vertical = { domain = "finance" }`。`sub_domain` 在这里
   可选；但 `calendar` 这种带参数的标签，必须在查询级传 `sub_domain_params`
   （`--vertical-params`），否则上游会拒。
-- 按能力分发：只有声明 `verticalDomainSupported` 的信息源（现在只有 anysearch）
+- 看信息源自己怎么说：只有声明 `verticalDomainSupported` 的信息源（现在只有 anysearch）
   会收到 `domain` / `sub_domain` / `sub_domain_params`；别的不传，继续走普通
   查询，并在 `retrieval.vertical.pre` 审计事件里列进
   `anysearch.vertical.degraded`。丢的只是提示，不会导致拒答。
-- 审计：每次细分领域检索记一条 `retrieval.vertical.pre`，只记参数键名，不记值；
+- 审计：每次垂直领域检索记一条 `retrieval.vertical.pre`，只记参数键名，不记值；
   命中的结果带 `extra.vertical`，给程序读。
 
 详细词表和上游实测见 [docs/vertical-domains.md](docs/vertical-domains.md)。
@@ -244,8 +244,8 @@ flowchart LR
 | 限制 | 影响 |
 |------------|----------------|
 | macOS 退出时 `libc++abi` 可能 abort | 原因是进程里还有原生对象活着时强行 `process.exit()`，不是 sqlite 句柄泄漏。store 这边的退出已经改成先关句柄再自然退出，macOS 也重新放回 `ship-gate` 的阻断检查；但只要进程里还有原生对象就强行退出，仍可能 abort，`macos-spillover-probe` 继续做不阻断的预警 |
-| `anysearch` 信息源没法在搜之前筛域名 | 它的 MCP `domain` 参数是细分领域路由的枚举，不是 hostname 白名单；有域名白名单时只能老老实实等搜完再筛 |
-| `anysearch` 适配器只接了 `search` | `get_sub_domains`、`batch_search`、`extract` 和线上有、但官方文档没写的 `score` 都没接；上游工具数量不写死（官方文档列四个，线上还返回过 `score`）。成功的 `search` 回复里的 `_meta.request_id` 只是运行记录里的诊断数据，而且只有调用方给了 span 才记；失败回复不记。它绝不会进结果，也不能拿来当幂等键（重试时不能靠它去重） |
+| `anysearch` 信息源没法在搜之前筛域名 | 它的 MCP `domain` 参数是垂直领域路由的枚举，不是 hostname 白名单；有域名白名单时只能等搜完再筛 |
+| `anysearch` 适配器只接了 `search` | `get_sub_domains`、`batch_search`、`extract` 和线上有、但官方文档没写的 `score` 都没接；上游工具数量不写死（官方文档列四个，线上还返回过 `score`）。成功的 `search` 回复里的 `_meta.request_id` 只是运行记录里的诊断数据，而且只有调用方给了 span 才记；失败回复不记。它绝不会进结果，也不能当幂等键用 |
 | 退出时 `libc++abi` 可能盖掉拒答的退出码 | 自动化必须读结构化的拒答标记（`--json` / `structuredContent.abstain`），不能只看退出码 |
 | `rag.adapter = "fts"` 没在任何出厂域打开 | 三个出厂域都还是 `adapter = "none"`；要按域打开，得自己手动写（#130） |
 | `query_knowledge` 只有在当前领域开了 `rag.adapter = "fts"` 时才查 | 它通过领域检索适配器的注册表（#155）读整个 store 共用的调研资料库；`none` / `note` 返回明确的空结果，出厂域都是 `none`，所以默认安装回答为空 |
@@ -259,7 +259,7 @@ flowchart LR
 ## 为什么这么设计
 
 - **垂直领域**：域就是一份 TOML 文件，里面写死一份说了算的白名单 `urlAllowlist`，
-  由引擎强制执行，不是写在提示词里盼着模型听话。
+  由检索引擎强制执行，不是写在提示词里盼着模型听话。
 - **没结果就直说**：筛完一个不剩就是正常拒答，绝不编答案。
 - **出故障就放行**：钩子、信息源、可选组件坏了就跳过，不把宿主 agent 拖死。
 

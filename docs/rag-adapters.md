@@ -1,7 +1,7 @@
-# 领域检索适配器（RAG adapter）
+# 领域检索适配器
 
 `[rag] adapter = <id>` 让一个域把自己的**私有数据、内部数据**塞进 agent 的上下文里。
-在领域整套接入里，它对应 `rag → transformContext` 这一层（见 `GLOSSARY.md`）。
+插件每轮给模型加内容时都会走 `transformContext`，`rag` 就是这一层里的一个环节。
 
 - 接口：`RagAdapterPort`（`packages/kernel/src/ports.ts`）
 - 注册表和具体实现：`packages/kernel/src/rag-adapter.ts`
@@ -74,7 +74,7 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
 
 - `fts` 走 `SessionStore.searchMemory`：先用 FTS 主路查 `retrieval_results_fts`，再和
   entity / vector / relation / semantic 几路结果合在一起；**不带 `session_id` 或 `domain` 过滤** ——
-  同一个 store 里所有还有效（没归档、没隔离、没失效）的调研记忆都能被查出来。这和
+  同一个 store 里所有还有效（没归档、没隔离、没失效）的调研资料都能被查出来。这和
   `recall_memory` 一样，`fts` 只是在它外面包了一层。
 - 真正隔开数据的单位是 store 自己（代码里叫 Store Principal）：默认 `~/.anysearch/anysearch.db`，MCP HTTP
   只绑 `127.0.0.1`。CLI 的持久库路径会尽量把权限收紧到 0700/0600（能做就做；Windows 不认
@@ -85,7 +85,7 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
   调研资料库里按会话查的语句 `searchResults` 虽然已经写好，但一直没暴露、也没人调用，
   L2 的慢路径同样走整个 store 范围的 `searchMemory`。
 - 出厂三个域仍然是 `adapter = "none"`；打开 `fts` 要自己手动写，等于声明
-  “本域可以读这个 store 里的全部调研记忆”。如果把同一个 store 或同一个 MCP server
+  “本域可以读这个 store 里的全部调研资料”。如果把同一个 store 或同一个 MCP server
   给不同的用户、不同的使用方用，隔开他们的责任在部署这一层：除了各自用独立的 store /
   独立的 server，HTTP server 还必须配访问控制（比如 `ANS_MCP_KEY`），或者做网络隔离、
   用户隔离；stdio server 靠进程和用户边界隔开。共用一个 bearer 只能挡住没令牌的人，
@@ -130,7 +130,7 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
 | T0 `<user_preferences>` | 整段会话都不变 | **第一条**用户消息的开头 | — | 1500 chars / 200 行 |
 | `note`（含 `none` + 残留 `config.note`） | 整段会话都不变 | **第一条**用户消息的末尾 | — | 原样塞进去（保持 #104 AC2 的逐字节兼容） |
 | `fts`（及后续查询型 `RagAdapterPort`） | 每轮都变 | **最新**一条用户消息的末尾 | 注入前**最新**一条用户原文的前 `400` chars | 整块 `≤ 4000` chars（`RAG_BLOCK_MAX_CHARS`） |
-| Stage-2 `Recovery Digest` | 恢复时从存档点取一次；每次调模型保持一份 | **最新**一条用户消息的末尾 | — | 整块 `≤ 600` chars（`RECOVERY_DIGEST_MAX_CHARS`，含标签与截断标记） |
+| Stage-2 `Recovery Digest` | 恢复时从恢复存档点取一次；每次调模型保持一份 | **最新**一条用户消息的末尾 | — | 整块 `≤ 600` chars（`RECOVERY_DIGEST_MAX_CHARS`，含标签与截断标记） |
 | Stage-2 `L1 rolling_summary` | 每轮都变 | **最新**一条用户消息的末尾 | — | 摘要正文 `≤ 4000` chars（另带 `[Session Memory] ` 前缀） |
 | Stage-2 `L2 l2_recall` | 每轮都变 | **最新**一条用户消息的末尾 | 慢路径 `rewriteQuery` | 查回来的正文 `≤ 1500` chars（另带 `[Research Recall] ` 前缀） |
 
@@ -155,7 +155,7 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
 - **现在怎么走**：`MemoryPipeline.inject` 按上表分流——不变的 `note`（包括 `none` 配残留
   `config.note` 的情况）还是放在第一条用户消息，每轮变的 `fts` 放在最新一条用户消息，并且
   用注入前的原文去查；Stage-2 的恢复摘要块和 L1/L2 已经改走 `appendMessageText`（`packages/kernel/src/message-text.ts`），在 content-block 数组消息上不会盖掉用户原文和前面的 `[RAG Context]`；
-  恢复摘要块在恢复时从存档点取一次，每次调模型保持一份（`transformContext` 的输出不回写历史），
+  恢复摘要块在恢复时从恢复存档点取一次，每次调模型保持一份（`transformContext` 的输出不回写历史），
   历史里已经有了就不再追加。新加一种每轮查库的 adapter，必须登记到 `DYNAMIC_RAG_ADAPTERS`（`packages/kernel/src/rag-adapter.ts`），
   不然会悄悄退回第一条消息那个固定位置。`packages/kernel/test/rag-adapter.test.ts`、
   `packages/kernel/test/pi-runtime.test.ts` 和 `packages/kernel/test/recovery-digest.test.ts`
@@ -202,7 +202,7 @@ pnpm -C packages/kernel test    # test/rag-adapter.test.ts、test/message-text.t
 - **MCP 的 `query_knowledge` 已经接上这个注册表（#155）** —— 工具看当前领域的
   `rag.adapter`，走 `RagAdapterRegistry.resolve`；是 `fts` 就按 `RAG_DEFAULT_LIMIT`
   调 `retrieve`，读的范围是整个 store 共用的调研资料库（和 `recall_memory` 一样，
-  #130 定过）；`none` / `note` 返回明确的空结果「没有可查询知识适配器」（不回显那条
+  #130 定过）；`none` / `note` 返回明确的空结果「无可查询知识适配器」（不回显那条
   固定 note、也不报错），不认识的 id 会退回 `none` 并在 stderr 写警告。见 `docs/limitations.md`。
 - **MCP 的 `ans_chat` 用 server 自己签发的会话 id 接上记忆（#132）** —— 第一次调用
   `store.createSession("mcp")`，把 id 放进 `structuredContent.sessionId`，也在末尾的 text block
@@ -210,7 +210,7 @@ pnpm -C packages/kernel test    # test/rag-adapter.test.ts、test/message-text.t
   传回来，服务端先 `ensureSession(id, "mcp")` 建好会话行（满足 `sessions(id)` 的外键），
   再把 `store` 和 `sessionId` 交给 `PiAgentRuntime`，所以 `MemoryPipeline` 会建起来，
   L1/L2 存档点跨调用连得上。不传 id 就是一次性的（每次都是新会话，不保证连着）。
-  这是 MCP 2026-07-28 的显式会话 id 模型（SEP-2567：`create_*() -> handle` + threaded
+  这是 MCP 2026-07-28 的显式会话句柄模型（SEP-2567：`create_*() -> handle` + threaded
   parameters），不是传输层的会话；协议级的 `session_id` 还是空的。这个 id 不是使用方的
   分界线，store 才是（#130）；多个使用方还是各用独立 store/server。存档点写盘是后台
   扔出去就不管（fire-and-forget），响应不等那 90s 摘要额度，马上再调可能和前一次写盘抢。
