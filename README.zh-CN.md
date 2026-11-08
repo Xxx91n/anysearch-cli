@@ -1,7 +1,10 @@
 # anysearch-cli
 
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="anysearch-cli：给 agent 用的搜索、调研和记忆工具，外面有一道真能拦住内容的域名白名单">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/readme/hero.zh-CN-dark.svg">
+    <img src="./assets/readme/hero.zh-CN.svg" width="100%" alt="anysearch-cli：给 agent 用的搜索、调研和记忆工具，外面有一道真能拦住内容的域名白名单">
+  </picture>
 </p>
 
 [English](README.md) | **简体中文**
