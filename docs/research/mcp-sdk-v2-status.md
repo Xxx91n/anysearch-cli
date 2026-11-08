@@ -24,7 +24,7 @@ MCP TypeScript SDK 这块有三项桥接工作（TypeBox 桥、能力探测、St
 
 - `registerTool` 收不收 TypeBox / JSON Schema；
 - `zod` 4.2+ 和 4.0–4.1 的差别还在不在；
-- 新 SDK 怎么处理新旧两代协议并存（Dual Era Compatibility）。
+- 新 SDK 怎么处理新旧两代协议并存。
 
 这些事实给这几张票用：#39（v1 SDK 不收 TypeBox）、#46（zod 版本降级）、
 #47（review-by 检查点的 EOL 口径）。

@@ -76,7 +76,7 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
   entity / vector / relation / semantic 几路结果合在一起；**不带 `session_id` 或 `domain` 过滤** ——
   同一个 store 里所有还有效（没归档、没隔离、没失效）的调研资料都能被查出来。这和
   `recall_memory` 一样，`fts` 只是在它外面包了一层。
-- 真正隔开数据的单位是 store 自己（代码里叫 Store Principal）：默认 `~/.anysearch/anysearch.db`，MCP HTTP
+- 真正隔开数据的单位是 store 自己：默认 `~/.anysearch/anysearch.db`，MCP HTTP
   只绑 `127.0.0.1`。CLI 的持久库路径会尽量把权限收紧到 0700/0600（能做就做；Windows 不认
   POSIX 权限位）；MCP 冷启动和 plugin server 的 `GET /policy` 审计库路径也调用同一个 `ensureOwnerOnlyDb`（#156）：本次新建的目录收紧到 0700，主库和附属文件收紧到 0600，全都是能做就做；`POST /index` 用的 project index 库不走这个 helper。会话和域只是检索时的
   **小范围**（L1/L2 存档点、域配置、工具白名单），不是「哪个使用方」的分界线；不同使用方应该用不同 store
@@ -130,7 +130,7 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
 | T0 `<user_preferences>` | 整段会话都不变 | **第一条**用户消息的开头 | — | 1500 chars / 200 行 |
 | `note`（含 `none` + 残留 `config.note`） | 整段会话都不变 | **第一条**用户消息的末尾 | — | 原样塞进去（保持 #104 AC2 的逐字节兼容） |
 | `fts`（及后续查询型 `RagAdapterPort`） | 每轮都变 | **最新**一条用户消息的末尾 | 注入前**最新**一条用户原文的前 `400` chars | 整块 `≤ 4000` chars（`RAG_BLOCK_MAX_CHARS`） |
-| Stage-2 `Recovery Digest` | 恢复时从恢复存档点取一次；每次调模型保持一份 | **最新**一条用户消息的末尾 | — | 整块 `≤ 600` chars（`RECOVERY_DIGEST_MAX_CHARS`，含标签与截断标记） |
+| Stage-2 恢复摘要（消息里标 `[Recovery Digest]`） | 恢复时从恢复存档点取一次；每次调模型保持一份 | **最新**一条用户消息的末尾 | — | 整块 `≤ 600` chars（`RECOVERY_DIGEST_MAX_CHARS`，含标签与截断标记） |
 | Stage-2 `L1 rolling_summary` | 每轮都变 | **最新**一条用户消息的末尾 | — | 摘要正文 `≤ 4000` chars（另带 `[Session Memory] ` 前缀） |
 | Stage-2 `L2 l2_recall` | 每轮都变 | **最新**一条用户消息的末尾 | 慢路径 `rewriteQuery` | 查回来的正文 `≤ 1500` chars（另带 `[Research Recall] ` 前缀） |
 
@@ -142,7 +142,7 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
   问的东西）继续交给后台的慢路径 `L2`。
 - **同一条最新用户消息里的顺序**：`用户原始提问 → [RAG Context] → [Recovery Digest] → [Session Memory] → [Research Recall]`。
 - **每层各自限长**：各层分开截断，不抢别人的额度（每轮变的 RAG 整块 `≤ 4000` chars、
-  恢复摘要块 `≤ 600` chars、`L1` 正文 `≤ 4000` chars、`L2` 正文 `≤ 1500` chars，都不算
+  恢复摘要 `≤ 600` chars、`L1` 正文 `≤ 4000` chars、`L2` 正文 `≤ 1500` chars，都不算
   标签和换行），免得 `L1` 摘要越长越挤掉这一轮的 RAG 命中。
 - **当时没选的方案**：
   - 方案 A（Stage-1 全放在第一条，这是 #104 时的临时办法，已由 #154 挪走）：聊到多轮时
@@ -154,8 +154,8 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
     整段缓存全作废。
 - **现在怎么走**：`MemoryPipeline.inject` 按上表分流——不变的 `note`（包括 `none` 配残留
   `config.note` 的情况）还是放在第一条用户消息，每轮变的 `fts` 放在最新一条用户消息，并且
-  用注入前的原文去查；Stage-2 的恢复摘要块和 L1/L2 已经改走 `appendMessageText`（`packages/kernel/src/message-text.ts`），在 content-block 数组消息上不会盖掉用户原文和前面的 `[RAG Context]`；
-  恢复摘要块在恢复时从恢复存档点取一次，每次调模型保持一份（`transformContext` 的输出不回写历史），
+  用注入前的原文去查；Stage-2 的恢复摘要和 L1/L2 已经改走 `appendMessageText`（`packages/kernel/src/message-text.ts`），在 content-block 数组消息上不会盖掉用户原文和前面的 `[RAG Context]`；
+  恢复摘要在恢复时从恢复存档点取一次，每次调模型保持一份（`transformContext` 的输出不回写历史），
   历史里已经有了就不再追加。新加一种每轮查库的 adapter，必须登记到 `DYNAMIC_RAG_ADAPTERS`（`packages/kernel/src/rag-adapter.ts`），
   不然会悄悄退回第一条消息那个固定位置。`packages/kernel/test/rag-adapter.test.ts`、
   `packages/kernel/test/pi-runtime.test.ts` 和 `packages/kernel/test/recovery-digest.test.ts`

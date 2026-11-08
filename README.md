@@ -15,7 +15,7 @@ A vertical-domain information specialist CLI: put search, research, memory, and 
 - Uses FTS5 for recall
 - Uses RRF to merge results from multiple sources
 - Ships with an MCP server that automatically indexes results
-- A domain allowlist that actually filters returned content
+- A domain allowlist that actually filters the returned content (when one is configured)
 
 ## Quickstart
 
@@ -47,10 +47,10 @@ ans memory backfill-vectors   # backfill vectors for existing rows; downloads th
 
 - Node.js >= 22
 - pnpm 11.24.0, pinned; corepack automatically reads `packageManager`
-- Searching requires an API key for at least one provider (`ans recommend` only reads local domain configs and needs no key):
-  - `EXA_API_KEY`: Exa, supports domain filtering
-  - `TAVILY_API_KEY`: Tavily, supports domain filtering
-  - `ANYSEARCH_API_KEY`: anysearch MCP, optional; the anonymous tier works too, but cannot pre-filter by domain
+- Searching needs at least one reachable provider (`ans recommend` only reads local domain configs and needs no key):
+  - `EXA_API_KEY`: Exa, supports domain filtering; Exa needs a key.
+  - `TAVILY_API_KEY`: Tavily, supports domain filtering; Tavily also runs without a key by default.
+  - `ANYSEARCH_API_KEY`: anysearch MCP, optional; the anonymous tier works too, but cannot pre-filter by domain.
 
 ## Domains & Abstain
 
@@ -68,6 +68,8 @@ Filtering happens in two steps:
    (such as `anysearch`), we do not pass it and wait for step 2; we never pretend a provider can filter.
 2. **Step 2: post-filter after search, which has the final say**: when providers return results, the retrieval engine drops any URL not on the allowlist before merging results and tagging sources. Deny rules take priority. Allowlist entries cover both the domain itself and its subdomains.
 
+Filtering only runs when the allowlist is non-empty. A domain TOML without `urlAllowlist` returns unfiltered results. If `ANS_DOMAIN` names a domain that cannot be found, search falls back to every provider and turns the allowlist off too, so verify the domain name and the TOML first.
+
 When filtering leaves zero results, `ans` will **abstain**. This is a normal result, not an error:
 
 ```text
@@ -76,7 +78,7 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
 
 - Default exit code is **0** (abstaining counts as a successful run). When you pass `--fail-on-abstain`, automation gets a dedicated exit code **3**.
 - `--json` includes `abstain: { reason, domain, preFiltered, postFiltered, gate }`.
-  MCP tools report the same thing with `structuredContent.abstain` + `isError: false`.
+  MCP tools put the same marker in `structuredContent.abstain` — an object that also carries `abstain: true`, with the same fields — and `isError` stays false.
 - Every domain search writes two audit events into the run trace: `retrieval.domain_filter.pre` and
   `retrieval.domain_filter.post`.
 
@@ -113,10 +115,10 @@ ans skill list --project
 ans skill uninstall research --project
 ```
 
-`ans skill` only copies a local checkout directory containing a `SKILL.md` into `skills/synced/`,
-recording its source and commit. It is not a package manager and does not execute skill code. For details on locking, manifests, and cleanup, see the "Skill installer" entry in `GLOSSARY.md`.
+`ans skill` only copies a directory inside a local Git checkout (one that contains a `SKILL.md`) into `skills/synced/`,
+recording its source and commit. It is not a package manager and does not execute skill code. Locking, manifests, and cleanup live in `apps/cli/src/skill-store.ts`.
 
-**Installed does not mean active.** These commands never touch domain TOML files. Which skills can run is still decided by `[skills].active` in the Active Domain. You activate them the same way as before: by editing the domain config.
+**Installed does not mean active.** These commands never touch domain TOML files. Which skills can run is still decided by `[skills].active` in the current domain. You activate them the same way as before: by editing the domain config.
 
 ## Provider Connections & Capabilities
 

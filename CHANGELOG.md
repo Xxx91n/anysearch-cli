@@ -96,7 +96,7 @@
 
 ### Documented
 
-- `docs/rag-adapters.md` 的注入位置表和 `GLOSSARY.md` 里 Injection Hot Zone 的顺序同步：新增恢复摘要块一行、600 字符上限，并写明它只注入一次、历史里会去重。
+- `docs/rag-adapters.md` 的注入位置表和 `GLOSSARY.md` 里讲注入顺序的那一段同步：新增恢复摘要一行、600 字符上限，并写明它只注入一次、历史里会去重。
 
 ## Unreleased — #183: store 侧退出路径显式收尾——找到 F-16 的根因 + 恢复 macOS 那条腿
 
@@ -305,12 +305,12 @@
 
 ### Fixed
 
-- **Stage-1 注入在真实运行时从来没命中过（#104 自查 + CI 发现）**：pi-agent-core 0.84.2 会把 `agent.prompt("…")` 规范化成 content block 数组（`content: [{type:"text",text}]`），而注入代码只认 `typeof content === "string"`——RAG 注入在真机上落空，旧的 `note` 路径更会在有 note 时把用户消息整个改写成 RAG 文本（数据丢失）。新增 `packages/kernel/src/message-text.ts`（`readMessageText` / `appendMessageText` / `prependMessageText`）：两种形状都支持，block 形状原地追加到文本块、非文本块原样保留，没有文本通道时主动放弃注入。Stage-1 和 T0 偏好注入同时改用这个 helper；回归见 `packages/kernel/test/message-text.test.ts` 和 `rag-adapter.test.ts` 的 content-block 用例，端到端断言不再假设消息形状。
+- **Stage-1 注入在真实运行时从来没命中过（#104 自查 + CI 发现）**：pi-agent-core 0.84.2 会把 `agent.prompt("…")` 规范化成 content block 数组（`content: [{type:"text",text}]`），而注入代码只认 `typeof content === "string"`——RAG 内容注入在真机上落空，旧的 `note` 路径更会在有 note 时把用户消息整个改写成 RAG 文本（数据丢失）。新增 `packages/kernel/src/message-text.ts`（`readMessageText` / `appendMessageText` / `prependMessageText`）：两种形状都支持，block 形状原地追加到文本块、非文本块原样保留，没有文本通道时主动放弃注入。Stage-1 和 T0 偏好注入同时改用这个 helper；回归见 `packages/kernel/test/message-text.test.ts` 和 `rag-adapter.test.ts` 的 content-block 用例，端到端断言不再假设消息形状。
 
 ### Changed
 
-- **RAG 注入点改成按 adapter 分派**：注入的位置没变（`MemoryPipeline.inject` 的 Stage-1、第一条 user 消息）。`fts` 的检索 query 取第一条 user 消息的原文（截到 400 字符，适配严格的 FTS5 阶梯）。**兼容保留**：`adapter = "none"` 但还留着 `config.note` 的域，仍按 #104 之前的条件（`adapter && config.note`，`"none"` 是真值）注入那条 note——AC2 要求 `none` 的行为逐字节不变，所以不做「adapter 是唯一开关」的收紧（CodeRabbit PR #123 的 Linked Issues 检查指出这个冲突后改的）。
-- **`query_knowledge` 的边界照实记录**：这个 MCP 工具还是占位（得先定「知识查询读哪个记忆范围」），已经写进 `docs/limitations.md`；GLOSSARY 的 RAG Adapter 条目从「只是占位、没实现」更新成三态定义 + 一条 RAG Injection。
+- **RAG 内容注入的位置改成按 adapter 分派**：注入的位置没变（`MemoryPipeline.inject` 的 Stage-1、第一条 user 消息）。`fts` 的检索 query 取第一条 user 消息的原文（截到 400 字符，适配严格的 FTS5 阶梯）。**兼容保留**：`adapter = "none"` 但还留着 `config.note` 的域，仍按 #104 之前的条件（`adapter && config.note`，`"none"` 是真值）注入那条 note——AC2 要求 `none` 的行为逐字节不变，所以不做「adapter 是唯一开关」的收紧（CodeRabbit PR #123 的 Linked Issues 检查指出这个冲突后改的）。
+- **`query_knowledge` 的边界照实记录**：这个 MCP 工具还是占位（得先定「知识查询读哪个记忆范围」），已经写进 `docs/limitations.md`；GLOSSARY 的「领域检索适配器」条目从「只是占位、没实现」更新成三种取值的定义，并加了一条 RAG 内容注入的说明。
 
 ## Unreleased — #100: MCP SDK v2 多包仓库收口（server 2.4.x + zod ≥4.2 + 两条传输通道/新旧两代协议验收）
 
@@ -657,7 +657,7 @@
 
 ### Added
 
-- `SearchRequest.vertical{domain,subDomain?,params?}` + `SearchProvider.verticalDomainSupported` 能力位（D-003/D-004）：仓 TOML 的 `[sources] vertical={domain,sub_domain?}` 是静态的默认亲和 + 工具参数 `verticalDomain/verticalSubDomain/verticalParams` + CLI 的 `--vertical-domain/--vertical-sub-domain/--vertical-params` 三个注入面；查询级会整个覆盖仓级（没有深合并）；按能力协商，只有声明支持的 provider 才收到 wire 字段 `domain/sub_domain/sub_domain_params`，没声明的走 general 同时查多个源并进 degraded 名单（只是提示，不是拒答）。
+- `SearchRequest.vertical{domain,subDomain?,params?}` + `SearchProvider.verticalDomainSupported` 能力位（D-003/D-004）：仓 TOML 的 `[sources] vertical={domain,sub_domain?}` 是静态的默认亲和 + 工具参数 `verticalDomain/verticalSubDomain/verticalParams` + CLI 的 `--vertical-domain/--vertical-sub-domain/--vertical-params` 三个注入面；查询级会整个覆盖仓级（没有深合并）；能力由信息源自己声明，只有声明支持的 provider 才收到 wire 字段 `domain/sub_domain/sub_domain_params`，没声明的走 general 同时查多个源并进 degraded 名单（只是提示，不是拒答）。
 - `retrieval.vertical.pre` 审计事件（D-005）：attrs=anysearch.domain+vertical.domain+vertical.sub_domain+vertical.params_keys（只记键名不记值）+vertical.source(repo|query)+vertical.sent+vertical.degraded；跟 domain_filter.pre 同构镜像、独立触发；没有 vertical.post。垂域命中的结果带 `NormalizedResult.extra.vertical` 机器标记（融合时保活）。
 - `packages/kernel/test/vertical-domain.test.ts`（28 条断言）+ store domain-schema 的垂域断言 + retriever anysearch wire 映射用例 13/13b/13c/13d；README §AnySearch vertical domains 词表+约束表（17 个值的枚举快照+params 约束示例+上游拒收的语义，标了 2026-09-25 这个日期源）。
 - `.scratch/grill-round-83/evidence/` —— T0 观测（dsh 两个观测点齐判定+rc.1 龄期闸实测+#1764 OPEN 趋僵 22d+CI 观察窗）+ TE1 迁移实录（三条件+repin 枚举重推导+L2 彩排）+ T1 垂域贯通证据（上游非法组合实测矩阵+CLI e2e）。
@@ -1076,7 +1076,7 @@ T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 - npm scope 从 @anysearch 改成 @anysearch-cli（org anysearch 被空壳蹲着注册不了；用户建了 anysearch-cli org）。全仓 100 个文件机械替换：包名/import/tsconfig/tsup/ship-gate+install-smoke 断言/workflows/docs。
 - 真事故：`npm publish <dir>` 不会对 pnpm 的 workspace:* 做 canonical 改写——0.0.1/0.0.2 的 cli/mcp/plugin manifest 带着 peerDependencies 里的 workspace:* 原文，npm install 报 EUNSUPPORTEDPROTOCOL、装不上（embedding 没有 peer，自己活着）。bin 的 "invalid and removed" 警告其实是 ./ 前缀归一化（bin 实际存在）。修复：发布通道改成 pnpm pack tarball + npm publish <tgz>（tarball 里的 manifest 已经是 canonical 的），ship-gate step5 增加断言——packed manifest 任何 dep 字段残留 workspace: 就 fail。0.0.3 统一重发。
 
-## 2026-09-15 — r63: npm 0.0.1 的发布形态和验证面（T2/T3/T5，D-005/D-003）
+## 2026-09-15 — r63: npm 0.0.1 的打包发布方式和验证面（T2/T3/T5，D-005/D-003）
 
 ### Added
 
@@ -1087,7 +1087,7 @@ T1 门禁只是**部分验证**：dry-run 只打了既有 concluded 的 SHA（�
 
 ### Changed
 
-- bundled-CLI 的发布形态：apps/{cli,mcp,plugin} 里的 @anysearch-cli/{kernel,store,retriever,plugin} 从 dependencies 挪到 devDependencies（已经 bundle 进 dist，如实声明成构建期）；@anysearch-cli/embedding 从全部 optionalDependencies 改成 peerDependencies+peerDependenciesMeta.optional:true（含真正 import 它的 store；npm 自动安装重型 optional runtime 这颗炸弹的回归被拆掉）；embedding 去掉 private 标记（可以发布）+ tsup ESM 构建 + publishConfig.exports 改写（开发时仍然解析 src/index.ts，tarball 指 dist/index.js）。
+- bundled-CLI 的打包发布方式：apps/{cli,mcp,plugin} 里的 @anysearch-cli/{kernel,store,retriever,plugin} 从 dependencies 挪到 devDependencies（已经 bundle 进 dist，如实声明成构建期）；@anysearch-cli/embedding 从全部 optionalDependencies 改成 peerDependencies+peerDependenciesMeta.optional:true（含真正 import 它的 store；npm 自动安装重型 optional runtime 这颗炸弹的回归被拆掉）；embedding 去掉 private 标记（可以发布）+ tsup ESM 构建 + publishConfig.exports 改写（开发时仍然解析 src/index.ts，tarball 指 dist/index.js）。
 - install-smoke 改成消费者的真实形态：只装 3 个 app tarball，断言 bundled 的内部包和 optional peer 都不在安装闭包里。
 - quarantine-ledger 增加 longterm 裁决出口（把永久已知问题转换过去，QUARANTINE_MAX_LONGTERM=1 防止拿续期当后门）。
 

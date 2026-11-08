@@ -15,7 +15,7 @@
 - 用 FTS5 做召回
 - 用 RRF 把几个来源的结果合在一起
 - 自带一个能自动索引结果的 MCP server
-- 一道真能拦住返回内容的域名白名单
+- 一道真能拦住返回内容的域名白名单（配了才拦）
 
 ## 快速上手
 
@@ -47,9 +47,9 @@ ans memory backfill-vectors   # 给已有记录补向量；第一次会下载模
 
 - Node.js >= 22
 - pnpm 11.24.0，版本固定；corepack 会自动读取 `packageManager`
-- 搜索至少需要一个信息源的 API key（`ans recommend` 只读本地域配置，不需要 key）：
-  - `EXA_API_KEY`：Exa，支持按域名筛
-  - `TAVILY_API_KEY`：Tavily，支持按域名筛
+- 搜索至少要有一个能连上的信息源（`ans recommend` 只读本地域配置，不需要 key）：
+  - `EXA_API_KEY`：Exa，支持按域名筛；Exa 必须有 key
+  - `TAVILY_API_KEY`：Tavily，支持按域名筛；Tavily 默认不带 key 也能跑
   - `ANYSEARCH_API_KEY`：anysearch MCP，可选；匿名层也能用，但不能在搜之前按域名筛
 
 ## 域名与拒答
@@ -70,6 +70,10 @@ export ANS_DOMAIN=docs      # 选当前域
    标来源之前，先把不在白名单里的网址全扔掉。黑名单规则优先；白名单里的条目
    管域名本身和它的子域。
 
+这条过滤只在白名单非空时生效：域 TOML 里没写 `urlAllowlist`，结果就不过滤。
+`ANS_DOMAIN` 写的域找不到时，搜索会退回所有信息源，白名单也会一起关掉，
+所以先把域名和 TOML 检查一遍。
+
 筛完一个结果都不剩时，`ans` 会**拒答（abstain）**。这是正常结果，不是报错：
 
 ```text
@@ -79,7 +83,8 @@ abstain: no results within allowed cold domain(s) (pre-filtered 0, post-filtered
 - 默认退出码 **0**（拒答也算正常完成）；加 `--fail-on-abstain` 时，自动化
   会拿到专用退出码 **3**。
 - `--json` 里有 `abstain: { reason, domain, preFiltered, postFiltered, gate }`；
-  MCP 工具用 `structuredContent.abstain` + `isError: false` 表示同样的事。
+  MCP 工具把同样的标记放在 `structuredContent.abstain`：里面多一个 `abstain: true`，
+  其余字段一样，`isError` 保持 false。
 - 每次按域搜索会往运行记录里写两条审计事件：`retrieval.domain_filter.pre` 和
   `retrieval.domain_filter.post`。
 
@@ -124,12 +129,12 @@ ans skill list --project
 ans skill uninstall research --project
 ```
 
-`ans skill` 只是把本地代码目录里带 `SKILL.md` 的目录拷到 `skills/synced/`，
+`ans skill` 只把本地 Git 仓库里带 `SKILL.md` 的目录拷到 `skills/synced/`，
 并记下来源和 commit。它不是包管理器，也不会执行 skill 里的代码。锁、清单、
-残留清理这些细节，见 `GLOSSARY.md` 的「技能安装器」词条。
+残留清理这些细节看 `apps/cli/src/skill-store.ts`。
 
-**装了不等于打开。** 这些命令不会改 domain TOML。哪些 skill 能用，还是由当前领域
-（Active Domain）的 `[skills].active` 决定，打开的方式没变，还是改域配置。
+**装了不等于打开。** 这些命令不会改 domain TOML。哪些 skill 能用，还是由当前领域的
+`[skills].active` 决定，打开的方式没变，还是改域配置。
 
 ## 信息源怎么连、能干什么
 

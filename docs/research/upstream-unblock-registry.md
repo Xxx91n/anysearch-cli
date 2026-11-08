@@ -180,7 +180,7 @@ Tavily 文档写了、或者真出了这个接口，就能做：把 `usage()` �
   is unimplemented (contract field is optional).
 ```
 
-## #216 Exa provider 没法取消：装上的版本没转发 exa-js 的 AbortSignal（上游 2.26.0 已经支持）
+## #216 Exa provider 没法取消：当时装上的版本没转发 exa-js 的 AbortSignal（上游 2.26.0 已经支持）
 
 解除信号: **已经等到了**——`exa-js@2.26.0`（2026-10-19）加了按请求的超时和取消；
 请求选项（`signal`、`timeout`、`body`、`headers`、`query`）是每个方法最后多出来的
@@ -188,7 +188,7 @@ Tavily 文档写了、或者真出了这个接口，就能做：把 `usage()` �
 适配器虽然接了契约里的 signal，但没往下传
 （`packages/retriever/src/providers/exa.ts:36-42,62`）。
 
-现在就能做：把 `exa-js` 升到 >=2.26.0，把 `SearchRequest` 的 signal 当成方法最后
+当时要做的是：把 `exa-js` 升到 >=2.26.0，把 `SearchRequest` 的 signal 当成方法最后
 的请求选项传给 `search()` 和 `answer()`，再加一个 mock 测试，用一个已经 abort 的
 signal 观察它。Exa 和 Tavily（#32）是两回事：上游不同，票也不同。
 
