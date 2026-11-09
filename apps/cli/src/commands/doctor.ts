@@ -1,5 +1,5 @@
 // ans doctor: smoke test - provider ping + config check + domain TOML validate.
-// Seam 5 composition root: wires providers + store + engine for diagnostic.
+// CLI wiring: wires providers + store + engine for diagnostics.
 
 import { TavilyProvider, ExaProvider, AnySearchProvider } from "@anysearch-cli/retriever/providers";
 import { loadDomain, loadDomainFromString, listDomainTomls } from "@anysearch-cli/store";

@@ -661,7 +661,7 @@ function makeMockStreamFn(decision: string): any {
 }
 
 // #178: production-shaped settlement — real SqliteSessionStore, the ledger the
-// composition root exposes (same connection), and the store+session pair the
+// the wiring exposes (same connection), and the store+session pair the
 // CLI/MCP wiring hands the runtime. The assertion is on the durable row, not a
 // mock call, so a missing wiring would leave spent_tokens/spent_usd at 0.
 {
@@ -1765,7 +1765,7 @@ console.log("---");
 // so transformContext is a pass-through. That silence used to be invisible on
 // the production paths (ans chat / ans_chat both omitted the pair); the runtime
 // now names the missing wiring, and the wired path is exercised against a REAL
-// SqliteSessionStore. This proves the KERNEL seam — the CLI composition root
+// SqliteSessionStore. This proves the kernel boundary — the CLI wiring
 // itself is covered by apps/cli/test/chat-memory-wiring.test.ts.
 {
   const seenContexts: any[][] = [];

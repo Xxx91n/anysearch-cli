@@ -1,5 +1,5 @@
 // Relation extraction: closed-predicate edge layer.
-// Seam from atomcode-adr0035-impl research: SQLite edge table over a dedicated graph engine
+// From the atomcode adr0035 research: SQLite edge table over a dedicated graph engine
 // (Kuzu archived 2025-10; sqlite-graph/ctxgraph edge-table pattern), Graphiti-style
 // json_schema -> json_object degrade for the LLM seam, RRF arm fusion at weight 0.5 (fts5.ts).
 

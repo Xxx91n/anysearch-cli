@@ -11,7 +11,7 @@
 //   - clientInfo seam: extractClientInfoName is pure, so the identity mapping
 //     (initialize -> client_id, everything else -> anon) is pinned without HTTP.
 //
-// Seam: real createHttpApp() + real buildServer() over the mock engine (offline,
+// Test setup: real createHttpApp() + real buildServer() over the mock engine (offline,
 // no LLM). No test framework (repo convention).
 
 import { createHttpApp, extractClientInfoName } from "../src/http.js";

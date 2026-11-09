@@ -3,7 +3,7 @@
 // must not alter the error text by one byte — exact-string asserts are
 // the assertion carrier (Pact Golden Rule: contract frozen by test, not
 // by the implementation that happens to be live).
-// Seam: real registered tool handlers, in-process mock engine (no network).
+// Test setup: real registered tool handlers, in-process mock engine (no network).
 
 import { registerSearchWeb } from "../src/tools/search-web.tool.js";
 import { registerResearchWeb } from "../src/tools/research-web.tool.js";

@@ -12,7 +12,7 @@ import { generateSummaryWithUsage } from "@earendil-works/pi-agent-core";
 const COMPACTION_RESERVE_TOKENS = 16_384;
 
 // Upper bound for the background summarization call. It is fire-and-forget
-// during a turn but the owning composition root drains it before closing the
+// during a turn but the code that owns it drains it before closing the
 // store (#129), so an unbounded provider stall would hold the CLI open until the
 // provider times out. Aborting is a normal fire-and-forget failure: the next turn
 // simply tries again.
@@ -703,7 +703,7 @@ export class MemoryPipeline {
         this.track(
           rewriteQuery(l2Query, qdf, this.deps.llmRewriteFn)
             .then((variants) => {
-              // Seamed call: searchMemoryMulti present on -capable stores. Fall back to single-query.
+              // Optional call: searchMemoryMulti present on -capable stores. Fall back to single-query.
               const s: any = store as any;
               const searchPromise: Promise<any[]> = typeof s.searchMemoryMulti === "function"
                 ? s.searchMemoryMulti(variants, 5)

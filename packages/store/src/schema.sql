@@ -1,5 +1,5 @@
 -- Session Store FTS5 schema.
--- Seam 4 from atomcode-kernel-split-architecture research.
+-- Split 4 from the atomcode kernel-split research.
 -- Uses external content table (content=) to avoid duplicate storage.
 -- WAL mode for CLI/MCP concurrency.
 

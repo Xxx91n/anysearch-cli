@@ -27,7 +27,7 @@ MCP TypeScript SDK 这块有三项桥接工作（TypeBox 桥、能力探测、St
 - 新 SDK 怎么处理新旧两代协议并存。
 
 这些事实给这几张票用：#39（v1 SDK 不收 TypeBox）、#46（zod 版本降级）、
-#47（review-by 检查点的 EOL 口径）。
+#47（review-by 检查点的 EOL 标准）。
 
 ## 查到的事实
 
@@ -64,7 +64,7 @@ MCP TypeScript SDK 这块有三项桥接工作（TypeBox 桥、能力探测、St
 
 - **#39「v1 SDK 不收 TypeBox」** 和 **#46「zod 4.0–4.1 降级」** 的解除条件 =
   迁到 v2 多包仓库（`fromJsonSchema` 路径 + `zod≥4.2`）。
-- **#47 的 review-by 检查点（EOL 口径）应改成 ~2027-01-27**，不是 2027-01-01 整点。
+- **#47 的 review-by 检查点（EOL 标准）应改成 ~2027-01-27**，不是 2027-01-01 整点。
 
 ## 参考资料
 

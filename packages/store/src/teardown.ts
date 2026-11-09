@@ -1,11 +1,11 @@
 // Store-side native-handle teardown registry — the fd249d41 pattern promoted
-// out of the CLI composition root (#183).
+// out of the CLI wiring (#183).
 //
 // Why this exists: the F-16 macOS exit-time abort (`libc++abi: terminating ...
 // mutex lock failed: Invalid argument`) re-manifested under full-suite load
 // (run 41913304226: 5/76 store test-file processes crashed AFTER their
 // assertions passed) because the explicit teardown only ever covered the CLI
-// composition root. Store-side process exits — every store test file and
+// wiring. Store-side process exits — every store test file and
 // `packages/store/src/eval/cli.ts` — left their native better-sqlite3 handles
 // alive for libuv/native static destruction to reap at exit, which is exactly
 // the teardown the crash signature lives on.

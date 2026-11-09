@@ -1,5 +1,5 @@
 // RRF (Reciprocal Rank Fusion) pure function.
-// Seam 2 from atomcode-kernel-split-architecture research.
+// Split 2 from the atomcode kernel-split research.
 // Formula: RRF_score(d) = sum_r 1/(k + rank_r(d)).
 // ref: Cormack, Clarke, Buttcher 2009 SIGIR; BigData Boutique RRF guide.
 

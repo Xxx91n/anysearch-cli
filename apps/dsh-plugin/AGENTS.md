@@ -18,7 +18,7 @@ This package is a small Cordis bundle. It plugs DeepSeek Harness (dsh) into anys
 - `tools/post-execute` adds a shorter version of the tool output as `additionalContexts`.
 - `tools/result` sends the final result to `/index` and does not wait for an answer.
 
-## Fail-open
+## When something breaks
 
 If the server cannot be reached, hooks allow the call, IPC calls disappear silently, and tool calls return empty results (`{content:[]}` when ans-mcp is down). The URL policy is the one exception, and that is on purpose: when it cannot check the URL, it must not silently allow the call (0055). If no policy can be reached and the arguments contain a URL, the answer is `ask` (which becomes deny when there is no approval channel, as in headless runs). If the upstream tool returns `isError` or an RPC error, the tool call fails. That is also on purpose: errors at the tool-result level stay errors, so never turn them into empty results.
 

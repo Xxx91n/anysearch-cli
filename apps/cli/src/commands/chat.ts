@@ -42,7 +42,7 @@ export async function runChat(argv: string[]): Promise<number> {
     // secret via env_key indirection or ANS_LLM_API_KEY.
     session = await createLlmSession({
       provider: cfg.provider, model: cfg.model, baseUrl: cfg.baseUrl, api: cfg.api, apiKey: cfg.apiKey,
-      // #113: custom endpoints have no catalog window; the composition root
+      // #113: custom endpoints have no catalog window; the wiring
       // reads the env here (kernel stays env-free). Unknown window -> 128000.
       contextWindow: parseContextWindow(process.env.ANS_LLM_CONTEXT_WINDOW),
     });
@@ -129,7 +129,7 @@ export async function runChat(argv: string[]): Promise<number> {
     // #188: same dirs the engine loaded the domain from, so the run-boundary
     // reloader can still resolve inherited base TOMLs.
     domainsDirs: engine.domainsDirs,
-    // CLI is the TTY composition root; kernel decides isInteractive itself.
+    // CLI is the place that decides TTY; kernel decides isInteractive itself.
     interactive: !process.env.ANS_NO_INTERACTIVE,
     model: session.model,
     // #113: real window for the L0 watermark; undefined for an unconfigured

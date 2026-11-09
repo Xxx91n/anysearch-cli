@@ -1,5 +1,5 @@
 // AgentRuntime: thin adapter over pi-agent-core.
-// Seam 5 from atomcode-kernel-split-architecture research.
+// Split 5 from the atomcode kernel-split research.
 // Candidate 4: deepens the agent runtime by hiding pi-agent-core behind
 // a domain-aware interface. Deletion test: deleting this would scatter
 // domain-aware tool filtering across every command.

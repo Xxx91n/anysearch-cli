@@ -3,7 +3,7 @@
 // The behavior under test was fixed by #111; this file adds regression tests
 // only, so the production module stays untouched.
 //
-// Seam: the tool module boundary (registerAnsChat). The cache closure lives in
+// Test setup: the tool module boundary (registerAnsChat). The cache closure lives in
 // the real implementation, so these assertions pin the shipped behavior rather
 // than a test-local copy of buildCacheKey.
 //

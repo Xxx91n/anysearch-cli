@@ -1,5 +1,5 @@
 // SessionStore: SQLite+FTS5 implementation via better-sqlite3 sync API.
-// Seam 4 from atomcode-kernel-split-architecture research.
+// Split 4 from the atomcode kernel-split research.
 // decision 1: better-sqlite3 synchronous binding.
 // atomcode research: WAL persistent, single shared connection, module-level prepared statements,
 // db.transaction(fn) auto-rollback, avoid RETURNING+FTS trigger path (issue #654).
@@ -135,7 +135,7 @@ export interface ResumeAnchor {
   createdAt: string;
 }
 
-// Port interface: kernel imports this, CLI composition root injects implementation.
+// Port interface: kernel imports this, CLI wiring injects implementation.
 export interface SessionStore {
   createSession(domain: string): Promise<Session>;
   // Ensure a caller-supplied session id has a row in `sessions`. Every child
@@ -152,7 +152,7 @@ export interface SessionStore {
   // (unmetered). Idempotent: caps/configured refresh in place and the
   // reserved/spent counters survive a re-registration.
   // Optional on the port so hand-built/embedded store implementations stay
-  // source-compatible; the composition roots guard the call.
+  // source-compatible; the startup paths guard the call.
   initBudget?(sessionId: string, caps: BudgetCaps): void;
   // #187: when the Active Domain later drops [budget] (or the durable anchor
   // switches to a domain without it), deactivate an existing row
@@ -319,7 +319,7 @@ export class SqliteSessionStore implements SessionStore {
   // caps in place (unique constraint/index on budget_ledger.session_id for new
   // and clean existing databases), so re-registering the durable `ans chat`
   // anchor never duplicates the row.
-  // T2 #177: the same instance is exposed to the composition root so the engine
+  // T2 #177: the same instance is exposed to the wiring so the engine
   // and registration share one connection and one set of prepared statements.
   private budgetLedgerInstance?: BudgetLedger;
   // LLM entity backfill (optional, fail-open) — invoked only when rule extraction finds nothing.
@@ -411,7 +411,7 @@ export class SqliteSessionStore implements SessionStore {
     // UNIQUE(session_id); this protected migration covers old databases. It is
     // deliberately outside db.exec(schema): a legacy duplicate row must not
     // prevent the rest of the schema from opening, and the failure degrades to
-    // a warning (the composition roots then fail open to unmetered).
+    // a warning (the startup paths then fail open to unmetered).
     try {
       this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_session_unique ON budget_ledger(session_id)");
     } catch (e) {
@@ -536,7 +536,7 @@ export class SqliteSessionStore implements SessionStore {
    * T2 #177: the budget ledger over this store's single connection.
    *
    * Registration (#187 `initBudget` / `clearBudgetCaps`) and the engine
-   * composition root share this cached instance, so caps, reserve and settle all
+   * wiring share this cached instance, so caps, reserve and settle all
    * see one row and one set of prepared statements. Returns the same object on
    * every call.
    */
@@ -705,7 +705,7 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   // #187: budget row at the session-registration point. The caller (CLI/MCP
-  // composition root) decides whether the Active Domain declared [budget]; no
+  // wiring) decides whether the Active Domain declared [budget]; no
   // declaration means no call and therefore no row (pass). Known limitation:
   // the Active Domain is sampled only at registration, so a mid-session domain
   // switch does not re-initialize the budget row.

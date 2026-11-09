@@ -1,4 +1,4 @@
-// #129 — the CLI composition root really wires memory.
+// #129 — the CLI wiring really connects memory.
 //
 // This drives the exact helper `runChat` calls (wireChatMemory) against a real
 // SqliteSessionStore. A dropped store, or a session id that never gets

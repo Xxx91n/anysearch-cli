@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // anysearch-cli entry - vertical agent for information retrieval.
-// Seam 5: CLI composition root. Packages are wired here.
-// Composition root: provider registry + store + engine injected per command.
+// CLI wiring: packages are wired here.
+// CLI wiring: provider registry + store + engine injected per command.
 
 import { runDoctor } from "./commands/doctor";
 import { runSearch } from "./commands/search";
@@ -88,7 +88,7 @@ if (!known.has(cmd)) {
   process.exit(2);
 }
 
-// Composition root: dispatch to command implementation.
+// CLI wiring: dispatch to command implementation.
 // Each command receives remaining args and returns exit code.
 // B1: `ans domain <name>` persists to ~/.anysearch/config.env — rehydrate
 // it into env (only where unset) so the active domain actually reaches search/chat/etc.

@@ -103,7 +103,7 @@ export function loadPolicyFromToml(tomlPath: string, env?: NodeJS.ProcessEnv): U
   return resolvePolicyFromSchema(schema, env);
 }
 
-// Domain TOML path convention shared by CLI/MCP/plugin-server composition roots.
+// Domain TOML path convention shared by CLI/MCP/plugin-server startup paths.
 // B1: optional extra domains dirs (e.g. the builtin dir shipped inside the
 // CLI package) are probed after the CWD convention; first existing file wins.
 export function domainTomlPath(

@@ -1,7 +1,7 @@
 // #205: research_web executes the round count its model-facing schema
 // promises — brief = 1, standard = 2, deep = 3 — while a `correct`
 // sufficiency verdict still stops the loop early.
-// Seam: real registered tool handler, invoked in-process with a counting
+// Test setup: real registered tool handler, invoked in-process with a counting
 // retriever (external behavior: how many search calls the engine sees).
 
 import { registerResearchWeb } from "../src/tools/research-web.tool.js";

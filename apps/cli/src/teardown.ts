@@ -1,4 +1,4 @@
-// Native-handle teardown registry for the CLI composition root.
+// Native-handle teardown registry for the CLI wiring.
 //
 // #183 moved the registry itself into @anysearch-cli/store (a pure leaf at
 // packages/store/src/teardown.ts) so store-side exit paths — the eval runner

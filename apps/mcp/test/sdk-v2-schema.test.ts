@@ -9,7 +9,7 @@
 //        TypeBox schemas have no `~standard`; fromJsonSchema() is required and
 //        adds a Standard Schema with vendor "mcp".
 //
-// Seam: real buildServer() + registered tools, driven over InMemoryTransport,
+// Test setup: real buildServer() + registered tools, driven over InMemoryTransport,
 // plus the registerTool config captured directly. No test framework (repo
 // convention: assert-based, run via `node --import tsx --test`).
 

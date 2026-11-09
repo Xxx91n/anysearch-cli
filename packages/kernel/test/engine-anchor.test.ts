@@ -108,7 +108,7 @@ async function main() {
   const anchors4 = (await store.getAnchors(session.id)).filter((a) => a.anchorType === "sufficiency");
   assert(anchors4.length === 2, "4: no anchor written without sessionId");
 
-  // 5. Composition root: the injected ledger and anchors share the store's
+  // 5. Wiring: the injected ledger and anchors share the store's
   //    connection, and a session-scoped search lands the sufficiency anchor and
   //    the budget settle in that store (search-to-store coverage — the gap the
   //    old comment deferred to sessionId wiring, T2 #177).
@@ -188,7 +188,7 @@ async function main() {
   assert(answerBalance.reservedCalls === 0, "6b: answer-mode settle releases the doubled reservation");
   assert(answerBalance.billableCalls === 1, "6b: answer-mode actual provider call recorded");
 
-  // 7. Composition root + an explicitly registered budget row: #187's
+  // 7. Wiring + an explicitly registered budget row: #187's
   //    registration seam and the engine gate work together on the
   //    production-shaped path (createEngine + Query.sessionId).
   const tight = createEngine("mockonly", { domainsDirs: [domainsDir] });

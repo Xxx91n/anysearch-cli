@@ -1,6 +1,6 @@
 // capability-negotiated provider pre-filter.
 // Contract: SearchRequest.includeDomains + SearchProvider.domainFilterSupported.
-// Seam: provider adapter request payload (stub client captures options).
+// Test setup: provider adapter request payload (stub client captures options).
 // ponytail: no test framework, assert-based demo.
 
 import { TavilyProvider } from "../src/providers/tavily";

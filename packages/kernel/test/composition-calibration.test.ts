@@ -1,4 +1,4 @@
-// composition root resolves the active calibration head through
+// the wiring resolves the active calibration head through
 // the store reader; missing/corrupt head fails open (legacy 0.6 floor).
 import assert from "node:assert";
 import fs from "node:fs";
@@ -29,7 +29,7 @@ try {
   assert.equal(cal.thresholds.supported, 0.7);
   assert.ok(Object.isFrozen(cal) && Object.isFrozen(cal.params), "injected calibration is immutable");
 
-  // Rollback is a pointer move; the composition root follows it.
+  // Rollback is a pointer move; the wiring follows it.
   writeCalibrationBundle(root, makeBundle({ a: 2, b: 2, c: 2 }, "2026-09-02T00:00:00.000Z"), { activate: true });
   setCalibrationHead(root, v1.digest, "2026-09-03T00:00:00.000Z");
   assert.deepEqual(resolveActiveAttributionCalibration({ ANS_ATTRIBUTION_GOLD_REVISION_ROOT: root } as NodeJS.ProcessEnv)?.params, { a: 1, b: 1, c: 0 }, "composition follows rollback pointer");

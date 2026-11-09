@@ -227,7 +227,7 @@ export class RetroaererdEngine {
   private ledger?: BudgetLedgerPort;
   private sessionId?: string;
   // Design: the resume-anchor sink arrives as an injected port, never a store
-  // import — the composition root wires SqliteSessionStore.saveAnchor (T7 decision #93).
+  // import — the wiring connects SqliteSessionStore.saveAnchor (T7 decision #93).
   private anchors?: ResumeAnchorsPort;
   // step 6: host-injected claim judge. The LLM and its budget ledger live in the host;
   // kernel stays pure. Previously shouldEscalateToJudge had zero callers.
@@ -259,7 +259,7 @@ export class RetroaererdEngine {
     this.attributionJudge = opts?.attributionJudge;
     this.sourceWeights = opts?.sourceWeights;
     // immutable at the injection seam, even when the caller
-    // bypasses the composition root.
+    // bypasses the wiring.
     const cal = opts?.attributionCalibration;
     this.attributionCalibration = cal
       ? Object.freeze({ params: Object.freeze({ ...cal.params }), thresholds: Object.freeze({ ...cal.thresholds }) })

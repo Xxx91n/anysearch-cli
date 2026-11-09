@@ -129,7 +129,7 @@ export function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 // attribution calibration lives on disk as a revision-root head
-// pointer; only the composition root resolves it. Env override mirrors
+// pointer; only the wiring resolves it. Env override mirrors
 // scripts/attribution-calibrate.mjs; default joins the ~/.anysearch dir convention.
 export function resolveAttributionRevisionRoot(env: NodeJS.ProcessEnv = process.env): string {
   const explicit = env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT && env.ANS_ATTRIBUTION_GOLD_REVISION_ROOT.trim();
@@ -242,7 +242,7 @@ export function createEngine(domain?: string, opts?: { dbPath?: string; attribut
       return store.createBudgetLedger();
     } catch (e) {
       // T2 #177: a legacy DB whose #187 `configured` migration failed must not
-      // take the whole composition root down (ans search / MCP boot). Degrade to
+      // take the whole startup path down (ans search / MCP boot). Degrade to
       // "budget disabled" with a named stderr line; the anchors path still works.
       process.stderr.write("[anysearch] budget ledger unavailable: " + String(e instanceof Error ? e.message : e) + "\n");
       return undefined;

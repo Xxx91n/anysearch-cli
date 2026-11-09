@@ -8,7 +8,7 @@
 // (store+observation handles opened then closed at exit — the crash fired at
 // libuv/native teardown), classifies each run's signature into
 // $GITHUB_STEP_SUMMARY, and exits non-zero when a crash signature is seen.
-// NOTE (#183): this minimal repro drives the CLI composition root only — the
+// NOTE (#183): this minimal repro drives the CLI wiring only — the
 // path fd249d41 fixed — so its greens have never been allowed to promote the
 // lane (the PR #174 promotion trusted 7 consecutive greens and crashed 5/76
 // store test files on its first full-gate run). Store-side teardown is now

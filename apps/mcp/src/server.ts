@@ -28,7 +28,7 @@ export const PKG_VERSION: string =
 // buildServer() -> createEngine() and opened two fresh better-sqlite3 handles
 // (SessionStore + ObservationStore), so the open-connection count grew with the
 // request count; stdio stays process-wide, unchanged.
-// createDefaultEngine: wraps the createEngine composition root (GLOSSARY) with
+// createDefaultEngine: wraps the createEngine wiring (GLOSSARY) with
 // the MCP-side env/db/domainsDirs resolution, split out of buildServer so a
 // long-lived transport can run it ONCE and reuse the result (#112).
 //
@@ -64,7 +64,7 @@ export function createDefaultEngine(): CompositionResult {
 // factory pattern, era-agnostic, entry selects transport.
 // #112: an injected engine is reused exactly as given — the HTTP transport
 // passes its one startup engine on every request. Omitting it keeps stdio and
-// the cold-HOME boot path on a freshly built default composition root.
+// the cold-HOME boot path on a freshly built default wiring.
 // #210: an injected tool state is likewise reused across the transport's
 // per-request servers, so the ans_chat LLM client stays process-level. Omitting
 // it builds a fresh state per server, which keeps direct registrations and tests
