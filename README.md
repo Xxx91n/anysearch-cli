@@ -218,7 +218,7 @@ Full record: [docs/limitations.md](docs/limitations.md).
 
 - **Vertical domains**: a domain is just a TOML file with a strict, authoritative allowlist `urlAllowlist` enforced by the retrieval engine, not a prompt wish hoping the model plays along.
 - **Say so when there are no results**: when filtering leaves nothing, it cleanly abstains instead of making up answers.
-- **Fail-open on errors**: when hooks, providers, or optional components fail, they get skipped so they never crash the host agent.
+- **When something breaks, skip it**: when hooks, providers, or optional components fail, they get skipped so they never crash the host agent.
 
 ## For Contributors
 
@@ -228,7 +228,7 @@ Full record: [docs/limitations.md](docs/limitations.md).
 - `docs/limitations.md`: complete record of known limitations
 - `docs/agents/`: conventions for domain docs and GitHub issue tracker
 - Repository layout: `packages/kernel` (engine) · `packages/store` (FTS5 memory, run traces, URL policy) · `packages/retriever` (provider adapters + RRF) · `apps/cli` · `apps/mcp` · `apps/plugin` (host hooks)
-- Run single-package tests with `node --import tsx --test`; full release gate is `node scripts/ship-gate.mjs` (clean tree, test suite, packaging, install verification, MCP initialize, fail-open startup)
+- Run single-package tests with `node --import tsx --test`; the full pre-release check is `node scripts/ship-gate.mjs` (no uncommitted changes, test suite, packaging, install verification, MCP initialize, startup when a component is broken)
 - Governance: `AGENTS.md`, `docs/agents/`
 
 Build from source:

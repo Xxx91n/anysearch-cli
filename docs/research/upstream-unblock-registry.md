@@ -21,11 +21,11 @@ Wayfinder 票 #97。每张等上游的票写一段：出现什么具体事实就
 内部，用户看不见——它正常工作时用户那边没有任何缺口（pnpm 隔离安装现在也能正确
 解析）。`docs/limitations.md` 记的是用户能碰到的限制，不是维护隐患；这个隐患
 （补丁或依赖被误删）已经由 `packages/embedding/src/index.ts:17-29` 的文件头注释和
-ghost-dep 测试守住，这才是对的护栏。
+ghost-dep 测试守住，这才是对的保护措施。
 
 ## #22 transformers ghost-dep 补丁的 ESM 分支——用 module.registerHooks 兜住解析（点名回头票）
 
-解除信号: 两种情况之一：(a) #18 的上游修复落地——transformers.js 的新版本自己声明了
+解除信号: 两种情况之一：(a) #18 的上游修复做完——transformers.js 的新版本自己声明了
 `onnxruntime-common`，那 ESM 分支就彻底不需要了；或者 (b) 我们用 Node 的
 `module.registerHooks`（resolve 钩子，Node 22.15 起稳定 / `module.register` 20.x 起有）
 覆盖 `.mjs` 路径，现在的补丁够不到那里（`packages/embedding/src/index.ts:26-27` 的注释
@@ -97,7 +97,7 @@ permanent-auth 的那段代码
 `packages/retriever/test/provider-error-class.test.ts:21`）要跟着改映射。
 客户端这边的处理已经完整——这张票关的时候就是再验一遍边界还跟代码写的一样。
 
-登记状态: registered — `docs/limitations.md` L166-170，在 #171 落地（匿名配额墙
+登记状态: registered — `docs/limitations.md` L166-170，在 #171 做完（匿名配额墙
 用户能碰到：调用方撞上 `permanent-auth`，并被提示设 `ANYSEARCH_API_KEY`）：
 
 ```md
@@ -120,7 +120,7 @@ type"；按 `vert-f1105` 的退役标记（`eval-looks.json:1119`），2026-10-0
 `tombstone{reason_code:"upstream-validator-vs-doc-mismatch"}`
 （`eval-looks.json:1099-1151`）恢复成 live 状态。
 
-登记状态: registered — `docs/limitations.md` L171-176，在 #171 落地（文档说合法的
+登记状态: registered — `docs/limitations.md` L171-176，在 #171 做完（文档说合法的
 参数组合被上游拒，用户能碰到：调 finance.fundamental 的人按词表文档传参却收到
 `isError`）：
 
@@ -140,7 +140,7 @@ type"；按 `vert-f1105` 的退役标记（`eval-looks.json:1119`），2026-10-0
 暴露 abort/`signal` 选项。2026-09 对着 SDK 源码核过："no AbortSignal support in
 search options ... SDK uses internal timeout"（注释在
 `packages/retriever/src/providers/tavily.ts:33-34`）。到那时，把 `SearchRequest` 的
-`signal` 参数（`tavily.ts:30` 按契约是收的，但现在被丢掉）传进 SDK 调用。
+`signal` 参数（`tavily.ts:30` 按接口约定是收的，但现在被丢掉）传进 SDK 调用。
 
 登记状态: registered — `docs/limitations.md` L65-67
 （"**Tavily does not forward `AbortSignal` (#32)** — provider-side timeouts are not
@@ -152,11 +152,11 @@ grace window only aborts stragglers once enough results arrive, so a slow call c
 解除信号: Tavily 出一个单独的用量/配额 API（账户级的 credits 消耗，不用发起搜索就能
 查）。现在的用量只有每次调用回来的 `response.usage.credits`——provider 在返回包里
 写死 `usage: undefined`，也没有 `usage()` 方法
-（`packages/retriever/src/providers/tavily.ts:68,72-73`；契约里 `usage?` 是可选的）。
+（`packages/retriever/src/providers/tavily.ts:68,72-73`；接口约定里 `usage?` 是可选的）。
 Tavily 文档写了、或者真出了这个接口，就能做：把 `usage()` 映射到这个单独接口
 （同时也可以先把每次调用的 `credits` 放进返回包）。
 
-登记状态: registered — `docs/limitations.md` L177-179，在 #171 落地：
+登记状态: registered — `docs/limitations.md` L177-179，在 #171 做完：
 
 ```md
 - **Tavily envelope `usage` is always `undefined`** — `@tavily/core` returns
@@ -172,7 +172,7 @@ Tavily 文档写了、或者真出了这个接口，就能做：把 `usage()` �
 `exa-js@^2.18.1`）。Exa 文档写了、或者真出了这个接口，就能做：把 `usage()` 映射到它
 （同时也可以先把 `costDollars` 放进返回包）。
 
-登记状态: registered — `docs/limitations.md` L180-182，在 #171 落地：
+登记状态: registered — `docs/limitations.md` L180-182，在 #171 做完：
 
 ```md
 - **Exa envelope `usage` is always `undefined`** — `exa-js` returns cost only
@@ -185,7 +185,7 @@ Tavily 文档写了、或者真出了这个接口，就能做：把 `usage()` �
 解除信号: **已经等到了**——`exa-js@2.26.0`（2026-10-19）加了按请求的超时和取消；
 请求选项（`signal`、`timeout`、`body`、`headers`、`query`）是每个方法最后多出来的
 一个参数。当时本仓钉的还是 `^2.18.1`，装上的类型里没有 `signal` / `AbortSignal`，
-当时的适配器虽然接了契约里的 signal，但没往下传
+当时的适配器虽然接了接口约定里的 signal，但没往下传
 （`packages/retriever/src/providers/exa.ts:36-42,62`）。
 
 当时要做的是：把 `exa-js` 升到 >=2.26.0，把 `SearchRequest` 的 signal 当成方法最后
@@ -193,7 +193,7 @@ Tavily 文档写了、或者真出了这个接口，就能做：把 `usage()` �
 signal 观察它。Exa 和 Tavily（#32）是两回事：上游不同，票也不同。
 
 登记状态: resolved — `packages/retriever/package.json` 现在钉 `exa-js@^2.26.0`
-（lockfile 解析到 2.27.0），`packages/retriever/src/providers/exa.ts` 会把契约里的
+（lockfile 解析到 2.27.0），`packages/retriever/src/providers/exa.ts` 会把接口约定里的
 signal 当成最后的请求选项传给 `search()` 和 `answer()`；
 `packages/retriever/test/exa.test.ts` 用桩 SDK 客户端，在两个调用上都观察一个
 已经 abort 的 signal。`docs/limitations.md` 里 Exa AbortSignal 那条已经删了，因为
@@ -204,7 +204,7 @@ signal 当成最后的请求选项传给 `search()` 和 `answer()`；
 | 票 | 会变的那个面 | 解除信号（触发事实） | 登记状态 |
 |-------|----------------------|--------------------------|----------|
 | #18 | `packages/embedding/src/index.ts:31-45` + `package.json` optionalDep | transformers 新版本声明 `onnxruntime-common` | absent — 只留票（内部补丁） |
-| #22 | `packages/embedding/src/index.ts` ESM 路径 | #18 修复落地，或者出现 ESM 消费者 / 采用 `module.registerHooks` | absent — 只留票（没有发出去的 ESM 加载路径） |
+| #22 | `packages/embedding/src/index.ts` ESM 路径 | #18 修复做完，或者出现 ESM 消费者 / 采用 `module.registerHooks` | absent — 只留票（没有发出去的 ESM 加载路径） |
 | #23 | `anysearch.ts` `LEGACY_REST_SUFFIX`/`normalizeEndpoint` | 没有——前提不成立关票（`POST /v1/search` 还活着，只有 GET 是 404） | registered — `docs/limitations.md` L212-220 |
 | #24 | `eval-looks.json`（`vert-i*` 条目） | `get_sub_domains(domain="ip")` 返回结构化参数词表 | absent — 只留票（评测内部，文档已让位给现场工具） |
 | #25 | `anysearch.ts:148-157` 探测器 + `contract.ts:230` | 匿名配额边界不再回自动签凭证的内容 | registered — `docs/limitations.md` L166-170 |

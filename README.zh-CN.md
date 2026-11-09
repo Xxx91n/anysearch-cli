@@ -274,8 +274,8 @@ flowchart LR
 - 仓库布局：`packages/kernel`（引擎）· `packages/store`（FTS5 记忆、运行记录、
   URL 策略）· `packages/retriever`（信息源适配器 + RRF）· `apps/cli` ·
   `apps/mcp` · `apps/plugin`（宿主 hooks）
-- 单包测试跑 `node --import tsx --test`；完整门禁是
-  `node scripts/ship-gate.mjs`（净树、测试、打包、安装验证、MCP initialize、
+- 单包测试跑 `node --import tsx --test`；发布前的完整检查是
+  `node scripts/ship-gate.mjs`（工作区没有未提交的改动、测试、打包、安装验证、MCP initialize、
   出故障也能启动）
 - 治理：`AGENTS.md`、`docs/agents/`
 

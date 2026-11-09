@@ -30,7 +30,7 @@ All anysearch tools use the ans_* prefix. Host agents may add their own namespac
 prefix (for example mcp__anysearch__search_web). The hook code matches any tool
 name that contains ans_ followed by a known tool name.
 
-## Fail-open
+## When something breaks
 
 If the anysearch server is down, continue without the memory features.
 Errors are written to stderr, and the tool returns an empty result.
