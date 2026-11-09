@@ -55,7 +55,7 @@ overrides:
 # 把全树（直接+传递）强制收敛到 catalog 值。直接依赖在 apps/dsh-plugin 用 catalog: 引用。
 # 2026-11-10：锁 19 个 @deepseek-ai/dsh-*=0.2.2-rc.1 + cordis=4.1.0。
 # dsh-invariants 在 0.2.2 已经退役，catalog 和 overrides 都不再列它。
-# 真机验收证据见 https://github.com/Xxx91n/anysearch-cli/issues/252#issuecomment-6751094447。
+# 真机验收证据见 #252 的验收评论。
 catalog:
   '@deepseek-ai/cordis': 4.1.0
   '@deepseek-ai/dsh-agent': 0.2.2-rc.1

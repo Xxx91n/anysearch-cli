@@ -235,7 +235,7 @@ flowchart LR
 | Codex CLI | 0.142.5 | `config.toml` MCP 注册 + `.codex/hooks.json` hooks | 真跑过 · [专文](docs/codex-integration.md) |
 | Antigravity CLI（`agy`） | 1.2.5 | named-hook map `hooks.json`（5 个事件经 argv 传入） | 真跑过（只验了一部分） · [专文](docs/antigravity-integration.md) |
 | Antigravity IDE | 2.12.2 | `.antigravity/rules/anysearch.mdc` 兜底 | IDE 宿主不执行 hooks（已复现） · [专文](docs/antigravity-integration.md) |
-| DeepSeek Harness（`dsh`） | 0.2.2-rc.1 | 原生注册（`ctx.tools`）+ `dsh-plugin` Cordis bundle | 沙盒真机验过（网页对话 + 热重载；2026-11-10；后端是假桩） · [专文](docs/deepseek-harness-integration.md) |
+| DeepSeek Harness（`dsh`） | 0.2.2-rc.1 | 原生注册（`ctx.tools`）+ `dsh-plugin` Cordis bundle | 在 dsh 宿主里验过（网页对话 + 热重载；2026-11-10；后端是假桩） · [专文](docs/deepseek-harness-integration.md) |
 
 这里说的“已验证”，是指在真实宿主里跑过一轮，抓到了完整的对话记录
 （`stream-json`），不是只看接口长什么样。标了“后端是假桩”的行只验了宿主
