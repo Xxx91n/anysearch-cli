@@ -7,6 +7,7 @@ AnySearch is an agent CLI (`ans`) that works inside one domain only. It keeps re
 - `pnpm -r check` / `pnpm -r test` / `pnpm -r build` — run the same task in every package (turbo).
 - `node scripts/ship-gate.mjs` — release smoke check. It runs checks, build, packaging, a real install and a real start, and its answer decides whether the release is good.
 - `pnpm -C packages/store eval --offline` — offline run of the fixed memory test set.
+- `node scripts/dsh-approval-acceptance.mjs` — real-host check of the dsh approval channel (allow once, reject, cancel, headless no-channel). It builds its own temp `DSH_HOME`, workspace, servers and model patch, then deletes them on exit; `--keep` leaves the sandbox. Needs Node 22.15+ (zstd session logs), `ANS_LLM_BASE_URL`, `ANS_LLM_API_KEY`, `ANS_LLM_MODEL`, plus `ANS_ACCEPTANCE_PLAYWRIGHT` (module or directory) and optionally `ANS_ACCEPTANCE_BROWSER`. `DSH_BIN` picks the host; no version is pinned.
 - `cp scripts/hooks/pre-commit-user .git/hooks/pre-commit-user && cp scripts/hooks/pre-push-user .git/hooks/pre-push && chmod +x .git/hooks/pre-commit-user .git/hooks/pre-push` — install the test gates. Both run the full workspace test suite. `git push` and `but push` run the pre-push hook; a plain `git commit` runs pre-commit. `but commit` runs no git hooks at all, so the push gate is the last one that really runs.
 
 ### Merge gate (#58 direction — decided, see #59)

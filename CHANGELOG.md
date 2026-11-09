@@ -4,6 +4,21 @@
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版本号按
 [SemVer](https://semver.org/)。
 
+## Unreleased — #20: dsh 审批通道真机验收（沙盒，四种结果都跑通）
+
+### Added
+
+- **`scripts/dsh-approval-acceptance.mjs`**：一条命令把 dsh 审批通道从头跑到尾。脚本先从源码构建并打包 `apps/dsh-plugin`（`lib/` 不进仓库，全新检出也能跑），按 `web` 和 `headless` 两个模板各建一个独立 profile，装插件，配好模型路由，再起本地的 anysearch 策略服务和 `ans-mcp`，最后用浏览器真点一轮对话。跑完读会话日志里的 `approval/asked`、`approval/decided` 和工具结果，逐项核对：允许一次就真的执行工具；拒绝时模型拿到的是拒绝错误，不是检索结果；停止生成记成撤回；headless 没有审批通道时按“拿不准就拒绝”收尾。需要 Node 22.15 以上，因为会话日志是 zstd 压缩的。
+- **沙盒只碰自己的临时目录**：`DSH_HOME`、默认工作区（`documentsDirectory` 指到临时目录）、两个本地服务和它们的库、模型补丁全在一个临时目录里；退出时先杀子进程，删目录失败会重试，实在删不掉就报错并把退出码改成 1，`--keep` 才留现场。Ctrl-C 也会走同一套清理。真实主目录不写。
+- **不钉 dsh 版本**：脚本用 `PATH` 上的 `dsh`，也可以用 `DSH_BIN` 换一个，报告里只打印实际版本。profile 的补丁按当前 0.2.2 的行 id 写的，换大版本要先核对一遍。
+
+### Verification
+
+- 在本机沙盒里用 `@deepseek-ai/dsh@0.2.2-rc.1`（仓库当前钉的版本）跑：退出码 0，8 项检查全 PASS。八项是宿主在位、策略服务、`ans-mcp` 服务、网页起来，加上允许一次（`allowed-once`，工具返回 9912 字符真实检索结果）、拒绝（`rejected`，模型看到 `the user rejected tool "ans_search_web"`）、停止生成（`cancelled`，模型看到 `tool call aborted before dispatch`）、headless（`unavailable`，模型看到 `requires approval, but no approval channel is available`）。打包只是准备步骤，不算一项检查。
+- 前三种在网页里点出来；第四种只能走 headless，因为 headless profile 本来就没装审批应答器，这正是它要证明的“默认拒绝”。
+- 模型走的是本机现有的 OpenAI 兼容网关，不是 DeepSeek 官方 Key；检索走真实的 `ans-mcp` 和真实网络。这一轮验的是审批交接和拒绝路径，不是检索质量。
+- 跑完复查过：临时目录已删，真实 `文档/deepseek-harness/default-workspace` 没被动过（修改时间仍是本轮之前），脚本起的端口都已释放。
+
 ## Unreleased — #252: dsh 0.1.7 → 0.2.2 升级
 
 ### Changed

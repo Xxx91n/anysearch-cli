@@ -16,7 +16,10 @@ showed up, preheat recall fired, and a live patch reload moved the next model
 request to a new port. Evidence is the verification comment on #252 (this run,
 exit 0, 16/16 checks). The anysearch server, the MCP endpoint, and the model
 were local stubs, so this round proves the dsh host wiring, not retrieval
-quality or real-model behavior. R90: the native tool plane was implemented and
+quality or real-model behavior. On the same host version the approval channel
+was also verified on the interactive path: allow once, reject, cancel, and the
+headless "no channel" refusal all matched the host's recorded outcomes (see
+"Approval channel" below). R90: the native tool plane was implemented and
 unit-tested against the API pinned then
 (`@deepseek-ai/dsh-*@0.1.7-rc.1`). The current pinned API is
 `@deepseek-ai/dsh-*@0.2.2-rc.1`; the bridge row remains retired
@@ -151,6 +154,70 @@ Verified on the wire:
   `requires approval` (URL gating is fail-closed by the /0055 contract);
 - the distilled summary is appended to `additionalContexts`, and `POST /index`
   carries real result entries with `x-anysearch-session-id`.
+
+## Approval channel (verified on the real host, 2026-11-10)
+
+When a tool argument carries a URL, `tools/pre-execute` decides `deny`, `allow`,
+or `ask`. Our plugin only produces that decision. What happens after `ask` is
+the host's work: it asks its composed approval answerers and turns the answer
+into `allowed-once`, `rejected`, `cancelled`, or `unavailable`.
+
+`node scripts/dsh-approval-acceptance.mjs` checks that handoff end to end. It
+uses a real model route, a real `ans-mcp` HTTP server, and the real host; only
+the model endpoint may be a gateway rather than DeepSeek's own API. It runs
+against whatever `dsh` is on `PATH` (set `DSH_BIN` to use another one), so there
+is no pinned version in the script.
+
+Every scenario runs in one temporary directory: `DSH_HOME`, the default
+workspace, both local servers, their stores, and the model patch all live
+there. The directory and every child process are removed on exit; pass `--keep`
+to inspect it. The real home directory is never written.
+
+| Scenario | What the script drives | What it asserts |
+| --- | --- | --- |
+| allow once | browser turn, click 允许一次 | `approval/decided` = `allowed-once`, the tool returns real search content |
+| reject | browser turn, click 拒绝 | outcome `rejected`, the model sees `the user rejected tool "ans_search_web"` instead of a result |
+| cancel | stop the running turn while the approval panel is open | outcome `cancelled`, the model sees `tool call aborted before dispatch` |
+| no channel | `dsh headless` with the same profile | outcome `unavailable`, the model sees `requires approval, but no approval channel is available` |
+
+Run it with:
+
+```sh
+ANS_LLM_BASE_URL=... ANS_LLM_API_KEY=... ANS_LLM_MODEL=... \
+ANS_ACCEPTANCE_PLAYWRIGHT=<playwright-core module or directory> \
+ANS_ACCEPTANCE_BROWSER=<browser executable> \
+node scripts/dsh-approval-acceptance.mjs
+```
+
+`ANS_ACCEPTANCE_PLAYWRIGHT` points at an installed `playwright-core` or
+`playwright`; `ANS_ACCEPTANCE_BROWSER` is optional when Playwright's own
+browser download is present. Both environment variables are only for the
+browser driver, not for the host. The script needs Node 22.15 or newer, because
+it reads the host's zstd session logs with `zlib.zstdDecompressSync`.
+
+The session log is the receipt: each run writes `approval/asked`, then the
+matching `approval/decided`, then the tool result. The script reads those
+three events and fails if the pair is missing, if the outcomes disagree, or if
+the denied call is presented to the model as a success.
+
+What the run does not cover:
+
+- Only the terminal answerer is exercised. A multi-answerer chain where one
+  listener returns `next()` and another answers is host behaviour; this script
+  does not compose such a chain.
+- `unavailable` is checked on the headless profile, because a headless profile
+  composes no answerer. The other three outcomes run on the interactive path.
+- The sandbox pre-acknowledges the product preview notice
+  (`ui-settings-general.welcomeNoticeVersion`), so the page opens on the
+  composer instead of a modal. That row is test setup, not product behaviour.
+- The reject and cancel scenarios prove the recorded decision and the
+  model-facing error, not zero network calls: the script does not count MCP
+  requests. The host refuses before dispatch by contract; this run does not
+  measure that independently.
+- The script builds `apps/dsh-plugin` from source before packing, because its
+  `lib/` output is gitignored and a fresh checkout has none. If
+  `apps/plugin/dist` or `apps/mcp/dist` is missing, it builds those in place
+  too. Build output stays in the repo; only runtime state is sandboxed.
 
 ## Limitations (this round)
 
