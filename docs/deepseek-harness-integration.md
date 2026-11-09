@@ -13,13 +13,13 @@ database access.
 Verified against `@deepseek-ai/dsh@0.2.2-rc.1` on 2026-11-10. The web profile
 loaded the plugin unchanged, a browser chat turn ran, the routing card showed
 up, preheat recall fired, and a live patch reload moved the next model request
-to a new port. Evidence is the triage comment on #19 (two green runs, exit 0,
+to a new port. Evidence is the verification comment on #252 (this run, exit 0,
 16/16 checks) plus the sandbox report. The anysearch server, the MCP endpoint,
 and the model were local stubs, so this round proves the dsh host wiring, not
 retrieval quality or real-model behavior. R90: the native tool plane is
-implemented and unit-tested against the pinned API
-(`@deepseek-ai/dsh-*@0.2.2-rc.1`). The bridge row is retired
-(`cordis.patch.yml` now ships the plugin row only).
+implemented and unit-tested against the API that was pinned then
+(`@deepseek-ai/dsh-*@0.1.7-rc.1`); this tree now pins `0.2.2-rc.1`. The bridge
+row is retired (`cordis.patch.yml` now ships the plugin row only).
 
 ## Phase 1 (RETIRED — R90) — MCP bridge only (no bundle)
 
@@ -127,8 +127,9 @@ once. A transport failure degrades fail-open to empty results. An upstream
 
 ## Verification transcript (rerunnable)
 
-Headless profile, isolated `$DSH_HOME`. The 2026-09-19 headless evidence and
-the 2026-11-10 web run are both recorded in the #19 triage comment.
+Headless profile, isolated `$DSH_HOME`. The 2026-09-19 headless record is
+historical. The 2026-11-10 web run is recorded in the #252 verification
+comment.
 
 ```sh
 # install + register
