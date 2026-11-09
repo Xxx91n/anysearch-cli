@@ -193,7 +193,7 @@ flowchart LR
 | Codex CLI | 0.142.5 | `config.toml` MCP registration + `.codex/hooks.json` hooks | Live-tested · [doc](docs/codex-integration.md) |
 | Antigravity CLI (`agy`) | 1.2.5 | named-hook map `hooks.json` (5 events passed via argv) | Live-tested (partial scope) · [doc](docs/antigravity-integration.md) |
 | Antigravity IDE | 2.12.2 | `.antigravity/rules/anysearch.mdc` fallback | IDE host does not execute hooks (reproduced) · [doc](docs/antigravity-integration.md) |
-| DeepSeek Harness (`dsh`) | 0.1.7-rc.2 | native registration (`ctx.tools`) + `dsh-plugin` Cordis bundle | Live-tested (via fallback path) · [doc](docs/deepseek-harness-integration.md) |
+| DeepSeek Harness (`dsh`) | 0.2.2-rc.1 | native registration (`ctx.tools`) + `dsh-plugin` Cordis bundle | Live-tested (web UI + live reload; 2026-11-10 sandbox stubs) · [doc](docs/deepseek-harness-integration.md) |
 
 "Verified" means tested end-to-end on a real host and captured in full conversation logs (`stream-json`), not just matching interfaces on paper. Full scopes, dates, and probe evidence are documented in each integration guide.
 

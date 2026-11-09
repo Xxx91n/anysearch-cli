@@ -40,7 +40,7 @@ import { DEFAULT_ROUTING_CARD } from '@anysearch-cli/plugin/hooks/routing-card';
 import { resolveServerToken } from '@anysearch-cli/plugin/hooks/server-token';
 
 /**
- * anysearch plugin producer kind for injected user messages (0.1.7 contract:
+ * anysearch plugin producer kind for injected user messages (0.2.2 contract:
  * MessageSourceMap is merge-extensible — each producer declares its own kind
  * in its own module; there is no shared catch-all 'plugin' kind).
  */

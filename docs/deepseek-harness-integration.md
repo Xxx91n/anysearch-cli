@@ -10,11 +10,15 @@ HTTP transport (default `127.0.0.1:3001/mcp`). The dsh process holds no
 retrieval logic, no secrets beyond the shared IPC credentials, and no
 database access.
 
-Verified against `@deepseek-ai/dsh@0.1.5-rc.2` (headless profile plus
-web-profile composition) on 2026-09-19. Evidence:
-`.scratch/grill-round-72/evidence/`. R90: the native tool plane is
+Verified against `@deepseek-ai/dsh@0.2.2-rc.1` on 2026-11-10. The web profile
+loaded the plugin unchanged, a browser chat turn ran, the routing card showed
+up, preheat recall fired, and a live patch reload moved the next model request
+to a new port. Evidence is the triage comment on #19 (two green runs, exit 0,
+16/16 checks) plus the sandbox report. The anysearch server, the MCP endpoint,
+and the model were local stubs, so this round proves the dsh host wiring, not
+retrieval quality or real-model behavior. R90: the native tool plane is
 implemented and unit-tested against the pinned API
-(`@deepseek-ai/dsh-*@0.1.7-rc.1`). The bridge row is retired
+(`@deepseek-ai/dsh-*@0.2.2-rc.1`). The bridge row is retired
 (`cordis.patch.yml` now ships the plugin row only).
 
 ## Phase 1 (RETIRED — R90) — MCP bridge only (no bundle)
@@ -69,7 +73,7 @@ Phase-1 behavior (verified):
 
 ```sh
 pnpm pack --pack-destination <tmp>          # in apps/dsh-plugin
-dsh plugin --profile <name> add <tmp>/anysearch-cli-dsh-plugin-0.0.6.tgz
+dsh plugin --profile <name> add <tmp>/anysearch-cli-dsh-plugin-<version>.tgz
 # post-publish equivalent: dsh plugin --profile <name> add @anysearch-cli/dsh-plugin
 ```
 
@@ -86,7 +90,7 @@ anysearch server and are fail-open: a dead server never blocks the agent.
 
 | Surface | Behavior |
 | --- | --- |
-| `agent/session-start` | `agent.inject()` writes the routing card as a durable user message (next request) |
+| `agent/created` | with `source === 'startup'`, `agent.inject()` writes the routing card as a durable user message (next request). Resume, clear, and compact are skipped. |
 | `ctx.systemPrompt` | registers the `anysearch:routing-card` section (every request) |
 | `tools/pre-execute` | URL policy check: `deny` on denylist hosts, `ask` on non-allowlist. It is fail-closed on URLs when the policy is unreachable. Recall preheat is injected into the next request. |
 | `tools/post-execute` | appends the distilled result summary to `additionalContexts` |
@@ -110,11 +114,12 @@ once. A transport failure degrades fail-open to empty results. An upstream
   last, so user overrides win.
 - Override a bundle row with `- id: <row-id>` entries. Patch the fields you
   need. For `config`, restate every key: the whole row is replaced.
-- `patchReload: "startup"` (headless, verified) applies patches on next boot.
-  `patchReload: "live"` (web) is expected to reload the patch layer live. Our
-  listeners are fiber-scoped Cordis effects that should dispose cleanly on
-  reload. This is EXPECTED, not yet verified (see
-  defer-r72-dsh-web-interactive-matrix).
+- Live reload comes from `dsh-hmr`, which the shipped `web` template enables.
+  The old `patchReload` profile field was removed in 0.1.7, so do not add it.
+  Verified on 2026-11-10 with 0.2.2-rc.1: changing the `llm-deepseek` baseURL
+  in the user patch while the host was running sent the next request to the
+  new port, and the `anysearch:routing-card` section still appeared exactly
+  once (no duplicate registration).
 - Upgrade check: after bumping `@deepseek-ai/dsh`, diff
   `--dump-default-config` to confirm the bundle rows still land. A future dsh
   release that ships its own `mcp-anysearch` id would collide (the
@@ -122,13 +127,13 @@ once. A transport failure degrades fail-open to empty results. An upstream
 
 ## Verification transcript (rerunnable)
 
-Headless profile, isolated `$DSH_HOME`. Full evidence is under
-`.scratch/grill-round-72/evidence/`:
+Headless profile, isolated `$DSH_HOME`. The 2026-09-19 headless evidence and
+the 2026-11-10 web run are both recorded in the #19 triage comment.
 
 ```sh
 # install + register
 pnpm pack --pack-destination <tmp>          # apps/dsh-plugin
-dsh plugin --profile headless add <tmp>/anysearch-cli-dsh-plugin-0.0.6.tgz
+dsh plugin --profile headless add <tmp>/anysearch-cli-dsh-plugin-<version>.tgz
 dsh --profile headless --dump-config        # bundle layer + patched-by markers
 
 # live turn (task positional; exits after one task)
@@ -147,13 +152,13 @@ Verified on the wire:
 
 ## Limitations (this round)
 
-- The interactive web UI turn is untested. The two named web probes
-  (routing-card inject and preheat marker) were verified on a web-profile
-  composition driven headlessly. The full browser flow is a later round's
-  matrix.
+- The 2026-11-10 web run used local stubs for the anysearch server, the MCP
+  endpoint, and the model. It proves plugin load, the routing card, preheat,
+  a native tool call, `/index`, live reload, host shutdown, and port release.
+  It does not prove real retrieval or real-model behavior.
 - Native tool-call timeouts are per-tool budgets inside the bundle
   (search 30 s / recall 15 s / knowledge 60 s / research+chat 300 s). The
   bridge `toolCallTimeoutMs` knob no longer applies.
-- The package is `private` this round. npm publish is a one-field change
-  (`private: false` plus `publishConfig`) and is deferred to the release
-  track.
+- npm publish is deferred to the release track. The package already ships
+  `private: false` plus `publishConfig`, so publishing is a release step, not
+  a code change.
