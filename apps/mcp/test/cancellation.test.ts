@@ -8,7 +8,7 @@
 //   - stdio e2e: `notifications/cancelled` on the SDK request signal reaches the
 //     same seam through a real stdio transport.
 //
-// Seam: real buildServer()/createHttpApp() over a real RetroaererdEngine with a
+// Test setup: real buildServer()/createHttpApp() over a real RetroaererdEngine with a
 // mock provider (offline, no LLM, no network). No test framework (repo
 // convention: assert-based, run via `node --import tsx --test`).
 

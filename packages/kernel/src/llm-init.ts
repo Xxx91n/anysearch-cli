@@ -29,7 +29,7 @@ export interface LlmSessionOptions {
   /**
    * #113: model context window in tokens, used by the L0 watermark
    * (`{fraction}` × contextWindow). Custom endpoints have no pi-ai catalog
-   * metadata, so the composition root passes it in; kernel never reads env.
+   * metadata, so the wiring passes it in; kernel never reads env.
    * When omitted, custom endpoints keep the historical 128000 default for
    * pi-ai's own request budgeting, but `LlmSession.contextWindow` stays
    * undefined so the L0 watermark knows the window is UNKNOWN and falls back
@@ -130,7 +130,7 @@ export async function createLlmSession(opts: LlmSessionOptions): Promise<LlmSess
     if (!opts.api) {
       throw new Error("baseUrl requires explicit api kind: chat | messages | responses");
     }
-    // #113: the real window is what the composition root supplied; undefined
+    // #113: the real window is what the wiring supplied; undefined
     // means "unknown" and drives the L0 watermark's absolute 128000 fallback.
     const customWindow = normalizeContextWindow(opts.contextWindow);
     const model: Model<string> = {
@@ -185,7 +185,7 @@ export async function createLlmSession(opts: LlmSessionOptions): Promise<LlmSess
   // #113: catalog models already carry a real window; LlmSession exposes it for
   // the L0 watermark. `contextWindow` is a custom-endpoint-only option — a
   // catalog override would be new scope beyond this ticket. Warn instead of
-  // silently ignoring an explicitly-set value (the composition roots pass the
+  // silently ignoring an explicitly-set value (the startup paths pass the
   // parsed env unconditionally).
   if (opts.contextWindow !== undefined && typeof process !== "undefined" && process.stderr) {
     process.stderr.write(

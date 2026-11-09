@@ -30,7 +30,7 @@ import { MemoryPipeline } from "./memory-pipeline";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
 
 // HITL gate helpers for shouldAllowUrl (TTY ask / headless deny-first).
-// Kernel reads no env config (r94 discipline): the composition root passes
+// Kernel reads no env config (r94 discipline): the wiring passes
 // `interactive` in PiAgentRuntimeOptions; this helper is the TTY capability check only.
 export function isInteractive(): boolean {
   return Boolean(process.stdin.isTTY);
@@ -265,7 +265,7 @@ export interface PiAgentRuntimeOptions {
   getApiKey?: () => Promise<string | undefined>;
   /** #113: REAL model context window (LlmSession.contextWindow); undefined = unknown. */
   contextWindow?: number;
-  interactive?: boolean; // composition root grants TTY-ask eligibility (headless/MCP omit -> deny-first)
+  interactive?: boolean; // wiring grants TTY-ask eligibility (headless/MCP omit -> deny-first)
   // caller observation span — retrieval audit events land
   // inside the caller's span events_json (ans_chat / third retrieval surface).
   span?: RetrievalObservationSink;
@@ -431,7 +431,7 @@ export class PiAgentRuntime {
     this.opts = opts;
     // T2 #177: one scoped retriever for the whole runtime. `store && sessionId`
     // is the same gate MemoryPipeline uses — the handle is only trusted when the
-    // store is wired too. PREcondition: the composition root has registered the
+    // store is wired too. PREcondition: the wiring has registered the
     // session row (ensureSession) before the first search; otherwise the
     // resume_anchors FK would reject the anchor write. `opts` is not mutated
     // after construction, so this captured id is the runtime's only session id.
@@ -441,9 +441,9 @@ export class PiAgentRuntime {
       : opts.retriever;
 
     // constructor internally creates pipeline + gate instances.
-    // Composition root responsible for wiring; caller opts unchanged.
+    // The CLI wiring is responsible; caller opts unchanged.
     // Design: the gate stays exactly `store && sessionId` — narrowing it here
-    // would change every composition root, far beyond this seam (#129).
+    // would change every startup path, far beyond this boundary (#129).
     // What was missing is not the gate but a TRACE: a root that omitted either
     // half got a pipeline-less runtime with no signal, which is why `ans chat`
     // and `ans_chat` ran without memory for so long. Both-absent remains a
@@ -710,7 +710,7 @@ export class PiAgentRuntime {
 
     // Design: runtime billing requires store + sessionId + ledger, the same
     // gate MemoryPipeline uses — a half-wired runtime cannot touch
-    // budget_ledger, and both composition roots hand over the engine's ledger
+    // budget_ledger, and both startup paths hand over the engine's ledger
     // only after the session row exists (#178).
     const billingWired = !!(store && sessionId && ledger);
 

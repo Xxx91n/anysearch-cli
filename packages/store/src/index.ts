@@ -33,7 +33,7 @@ export * from "./session-id";
 export * from "./db-perms";
 
 // #183: store-side exit teardown — the fd249d41 registry promoted out of the CLI
-// composition root, plus the tracked opener every store handle goes through, so
+// the wiring, plus the tracked opener every store handle goes through, so
 // store-side process exits (eval runner, test processes) close native handles
 // instead of letting libuv reap them at exit (macOS F-16 libc++abi abort).
 export * from "./teardown";

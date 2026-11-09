@@ -447,7 +447,7 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
 }
 
 // #113 shell: domain.compaction {fraction} resolves against the REAL window
-// passed by the composition root (LlmSession.contextWindow). A trigger writes
+// passed by the wiring (LlmSession.contextWindow). A trigger writes
 // consolidation_state; a skip returns before any anchor write.
 {
   const store = new MockStore();

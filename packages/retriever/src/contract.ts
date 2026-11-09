@@ -1,7 +1,7 @@
 import type { AttributionReport } from "./attribution";
 
 // SearchProvider contract: normalized interface for all search providers.
-// Seam 1 from atomcode-kernel-split-architecture research.
+// Split 1 from the atomcode kernel-split research.
 
 export type Mode = "fast" | "index" | "deep" | "answer";
 

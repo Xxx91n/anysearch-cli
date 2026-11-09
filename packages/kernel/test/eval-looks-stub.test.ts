@@ -46,7 +46,7 @@ function stubProvider(id: string, urls: string[], capable: boolean): SearchProvi
 interface UrlPolicy { allow: readonly string[]; deny: readonly string[]; policyVersion: string }
 interface Scenario { policy: () => UrlPolicy; providers: SearchProvider[] }
 
-// Real docs.toml policy — same loader the CLI composition root uses.
+// Real docs.toml policy — same loader the CLI wiring uses.
 function docsPolicy(): () => UrlPolicy {
   const dirs = defaultDomainsDirs();
   dirs.push(join(root, "domains"));

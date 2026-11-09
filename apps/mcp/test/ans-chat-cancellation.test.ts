@@ -9,7 +9,7 @@
 //     than settling as a completed run.
 //   - A pre-aborted call performs no LLM construction or session mint.
 //
-// Seam: the registered ans_chat handler with an injected session factory
+// Test setup: the registered ans_chat handler with an injected session factory
 // (never-resolving stream) plus the real createHttpApp() transport. No test
 // framework (repo convention: assert-based, run via `node --import tsx --test`).
 

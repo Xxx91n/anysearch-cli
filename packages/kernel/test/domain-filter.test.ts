@@ -1,6 +1,6 @@
 // kernel post-filter authoritative gate + dual audit events
 // + first-class abstain marker + outcome:abstain dimension.
-// Seam: RetroaererdEngine.search() with stub providers, injected per-request
+// Test setup: RetroaererdEngine.search() with stub providers, injected per-request
 // urlPolicy resolver, and a fake observation sink capturing span events.
 // ponytail: no test framework, assert-based demo.
 

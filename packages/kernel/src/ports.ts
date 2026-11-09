@@ -1,6 +1,6 @@
 // Kernel ports: dependency inversion interfaces.
-// Seam 3 from atomcode-kernel-split-architecture research.
-// Kernel only imports these interfaces; CLI composition root injects implementations.
+// Split 3 from the atomcode kernel-split research.
+// Kernel only imports these interfaces; CLI wiring injects implementations.
 
 import type { FusedEnvelope, SearchRequest, SourceTraceLabel } from "@anysearch-cli/retriever";
 import type { SessionStore, Message, BudgetConfig, BudgetCaps } from "@anysearch-cli/store";

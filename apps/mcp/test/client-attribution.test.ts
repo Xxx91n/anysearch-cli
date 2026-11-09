@@ -2,7 +2,7 @@
 // client_id in the observation trace; a legacy call without per-request
 // clientInfo records mcp_unknown; the initialize-only extraction remains a fallback.
 //
-// Seam: real buildServer()/createHttpApp() + real SqliteObservationStore over
+// Test setup: real buildServer()/createHttpApp() + real SqliteObservationStore over
 // the in-memory SDK transport and the production stateless HTTP app. The
 // observation wrapper pins each runId so the persisted client_id column can be
 // SELECTed back (the store-side round-trip is covered separately in

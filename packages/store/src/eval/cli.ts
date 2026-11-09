@@ -422,7 +422,7 @@ async function main(): Promise<number> {
   return overrideIdx >= 0 && exitCode === 1 ? 0 : exitCode;
 }
 
-// Exit path — the same contract as the CLI composition root
+// Exit path — the same contract as the CLI wiring
 // (apps/cli/src/index.ts), applied to the store-side runner (#183): drain the
 // teardown registry BEFORE exiting so no live native handle (observation store,
 // per-case reader/writer) is reaped by libuv/native static destruction at exit.

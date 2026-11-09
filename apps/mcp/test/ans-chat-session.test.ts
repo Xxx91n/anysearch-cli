@@ -14,7 +14,7 @@
 //   6. real SqliteSessionStore -> an anchor written under the minted handle is
 //      readable when the handle is threaded back (cross-call continuity)
 //
-// Seam: the real resolver + real SqliteSessionStore (offline, no LLM, no network).
+// Test setup: the real resolver + real SqliteSessionStore (offline, no LLM, no network).
 // No test framework (repo convention).
 
 import { mkdtempSync, rmSync } from "node:fs";

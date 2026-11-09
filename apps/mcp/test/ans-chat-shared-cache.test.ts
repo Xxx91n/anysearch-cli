@@ -1,7 +1,7 @@
 // #210 acceptance — ans_chat's LLM session cache is process-level across the
 // stateless HTTP transport, while direct tool registrations stay isolated.
 //
-// Seam: real createHttpApp() + real buildServer() + the real stateless
+// Test setup: real createHttpApp() + real buildServer() + the real stateless
 // Streamable HTTP transport, with an INJECTED session-factory counter (the
 // confirmed test interface for #210 — not stderr-warning counting).
 //

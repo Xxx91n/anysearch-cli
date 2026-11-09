@@ -36,7 +36,7 @@ jobs:
         # at exit-time (libc++abi "mutex lock failed: Invalid argument") with
         # zero failed assertions, plus an eval-runner child killed by signal.
         # Root cause: fd249d41's explicit teardown covered ONLY the CLI
-        # composition root; store-side process exits (test files, the eval
+        # wiring; store-side process exits (test files, the eval
         # runner) never closed their native handles, and the spillover probe
         # drove ONLY the fixed CLI path (probe evidence surface != gate
         # acceptance surface).

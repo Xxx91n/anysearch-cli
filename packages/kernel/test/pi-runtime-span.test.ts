@@ -3,7 +3,7 @@
 // engine's retrieval.domain_filter.pre/post audit events + anysearch.outcome
 // dimension land inside the caller's span events_json (ans_chat = third
 // retrieval surface). Assertion shape mirrors domain-filter.test.ts §4.
-// Seam: createSearchTool is a pure builder — testable without the Agent loop.
+// Test setup: createSearchTool is a pure builder — testable without the Agent loop.
 
 import { RetroaererdEngine } from "../src/engine";
 import { createSearchTool } from "../src/pi-runtime";

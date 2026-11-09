@@ -8,7 +8,7 @@
 //     budget settles through the abort release rather than the zero-usage
 //     completion settlement.
 //
-// Seam: the runtime's public run() generator with an injected never-settling
+// Test setup: the runtime's public run() generator with an injected never-settling
 // stream. No test framework (repo convention: assert-based, run via
 // `node --import tsx --test`).
 

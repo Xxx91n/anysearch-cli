@@ -13,7 +13,7 @@
 //   Transports: stdio (StdioServerTransport) + stateless Streamable HTTP
 //     (per-request buildServer + NodeStreamableHTTPServerTransport), all 5 tools.
 //
-// Seam: real buildServer() with a mock engine (offline, no LLM), driven over the
+// Test setup: real buildServer() with a mock engine (offline, no LLM), driven over the
 // actual transport classes in-process. No test framework (repo convention).
 
 import { buildServer } from "../src/server.js";
