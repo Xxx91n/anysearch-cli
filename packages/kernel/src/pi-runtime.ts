@@ -441,7 +441,7 @@ export class PiAgentRuntime {
       : opts.retriever;
 
     // constructor internally creates pipeline + gate instances.
-    // The CLI wiring is responsible; caller opts unchanged.
+    // The caller supplies the wiring; caller opts unchanged.
     // Design: the gate stays exactly `store && sessionId` — narrowing it here
     // would change every startup path, far beyond this boundary (#129).
     // What was missing is not the gate but a TRACE: a root that omitted either
