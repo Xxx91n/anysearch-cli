@@ -186,8 +186,18 @@ export function registerAnsChat(
               "ans_chat consolidate: sessionId must be 1..128 visible ASCII characters; refusing an invalid scope (no full-archive fallback).",
             );
           }
-          const sessionIds = requestedSessionId !== undefined ? [requestedSessionId] : undefined;
+          // Q18: a missing scope must be an error, not a full-archive run. Both
+          // scope parameters absent is the gap the previous round left open.
           const memoryScope = memoryIds && memoryIds.length > 0 ? memoryIds : undefined;
+          if (requestedSessionId === undefined && memoryScope === undefined) {
+            return toolFailure(
+              "ans_chat consolidate: an explicit scope is required; pass sessionId or memoryIds. Refusing to consolidate the full archive.",
+            );
+          }
+          if (memoryScope && memoryScope.some((id) => !Number.isInteger(id) || id < 1)) {
+            return toolFailure("ans_chat consolidate: memoryIds must be positive integer ids.");
+          }
+          const sessionIds = requestedSessionId !== undefined ? [requestedSessionId] : undefined;
           try {
             const report = await eng.store.consolidateMemory({
               ...(sessionIds ? { sessionIds } : {}),
