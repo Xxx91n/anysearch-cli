@@ -331,6 +331,38 @@ function migrateSwitchEventSchema(db: Database.Database): void {
   db.pragma("foreign_keys = ON");
 }
 
+// PROTOTYPE (cold-start): two processes opening one brand-new database at the
+// same instant can each see SQLITE_BUSY. busy_timeout covers row locks, but the
+// WAL switch and some DDL take a lock the busy handler does not wait on. Retry
+// the initialization steps a bounded number of times instead of letting the
+// second process die. ANS_PROTOTYPE_BUSY_RETRY=0 restores the old single shot.
+function isBusyError(e: unknown): boolean {
+  const code = (e as { code?: unknown })?.code;
+  if (typeof code === "string" && (code === "SQLITE_BUSY" || code === "SQLITE_LOCKED" || code.startsWith("SQLITE_BUSY_") || code.startsWith("SQLITE_LOCKED_"))) return true;
+  const message = (e as Error)?.message ?? "";
+  return /database is locked|database table is locked/i.test(message);
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function withBusyRetry<T>(label: string, fn: () => T, attempts = 60, delayMs = 100): T {
+  if (process.env.ANS_PROTOTYPE_BUSY_RETRY === "0") return fn();
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return fn();
+    } catch (e) {
+      if (!isBusyError(e)) throw e;
+      lastError = e;
+      sleepSync(delayMs + Math.floor(Math.random() * delayMs));
+    }
+  }
+  // Exhausted: surface the real error, never pretend the run succeeded.
+  throw new Error("sqlite " + label + " still busy after " + attempts + " retries: " + ((lastError as Error)?.message ?? String(lastError)));
+}
+
 export class SqliteSessionStore implements SessionStore {
   private db: Database.Database;
   // #187: one ledger over the store's single connection. Registration refreshes
@@ -397,10 +429,11 @@ export class SqliteSessionStore implements SessionStore {
     // path that drains it (eval runner, test processes) — F-16 fix, #183.
     this.db = openDatabase(dbPath, { timeout: 5000 });
     // atomcode research: WAL persistent, set once, single shared connection.
-    this.db.pragma("journal_mode = WAL");
+    // busy_timeout first so ordinary row locks wait before any retry kicks in.
+    this.db.pragma("busy_timeout = 5000");
+    withBusyRetry("journal_mode", () => this.db.pragma("journal_mode = WAL"));
     this.db.pragma("synchronous = NORMAL");
     this.db.pragma("foreign_keys = ON");
-    this.db.pragma("busy_timeout = 5000");
     // Apply schema (idempotent IF NOT EXISTS).
     // ESM dev mode: read schema.sql from source dir via import.meta.url.
     // CJS bundled mode: import.meta is empty, use inlined SCHEMA_SQL constant.
@@ -411,7 +444,7 @@ export class SqliteSessionStore implements SessionStore {
     } catch {
       schema = SCHEMA_SQL;
     }
-    this.db.exec(schema);
+    withBusyRetry("schema", () => this.db.exec(schema));
     // #187: existing databases predate the `configured` column. New databases
     // already have it from the CREATE TABLE above; this ALTER is the migration
     // and is caught idempotently like the other column migrations below.
@@ -444,7 +477,7 @@ export class SqliteSessionStore implements SessionStore {
     // edge-pattern constraint seed (idempotent; mirrors EDGE_PATTERN_ROWS in relation.ts;
     // existing rows are preserved via INSERT OR IGNORE).
     const seedPattern = this.db.prepare("INSERT OR IGNORE INTO edge_patterns (head_type, relation, tail_type) VALUES (?, ?, ?)");
-    for (const [h, r, t] of EDGE_PATTERN_ROWS) seedPattern.run(h, r, t);
+    withBusyRetry("edge seed", () => { for (const [h, r, t] of EDGE_PATTERN_ROWS) seedPattern.run(h, r, t); });
     // freshness_factor UDF (fused decay+recency+frequency band, supersedes time_decay).
     registerFreshnessFactorFunction(this.db);
     // G019: Migration for existing databases (ALTER TABLE ADD COLUMN is not IF NOT EXISTS safe).
@@ -472,7 +505,7 @@ export class SqliteSessionStore implements SessionStore {
     // regenerated materialized projection (temp+fsync+rename). scope: "global" | project root path.
     // correction_count drives the T0 promote rule (>=2 cross-session corrections = implicit promote).
     // invalid_at non-null = demoted (d-i conflict / d-iii /forget / d-ii eviction); row is quarantined, never dropped.
-    this.db.exec(`CREATE TABLE IF NOT EXISTS t0_preferences (
+    withBusyRetry("prefs table", () => this.db.exec(`CREATE TABLE IF NOT EXISTS t0_preferences (
   key TEXT NOT NULL,
   value TEXT NOT NULL,
   scope TEXT NOT NULL DEFAULT 'global',
@@ -484,7 +517,7 @@ export class SqliteSessionStore implements SessionStore {
   correction_count INTEGER NOT NULL DEFAULT 0,
   provenance TEXT, -- JSON: {event, at, why}
   PRIMARY KEY (key, scope)
-)`);
+)`));
 
     // source trust columns for existing databases.
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN source_label TEXT"); } catch {}
@@ -499,7 +532,7 @@ export class SqliteSessionStore implements SessionStore {
     try { this.db.exec("ALTER TABLE access_events ADD COLUMN schema_version INTEGER"); } catch {}
     try { this.db.exec("ALTER TABLE access_events ADD COLUMN event_type TEXT"); } catch {}
     try {
-      bootstrapAccessChain(this.db);
+      withBusyRetry("access-chain bootstrap", () => bootstrapAccessChain(this.db));
     } catch (e) {
       this.accessEventTel.bootstrapFailed = true;
       process.stderr.write("anysearch: access-chain bootstrap degraded (fail-open): " + String((e as Error)?.message ?? e) + "\n");
