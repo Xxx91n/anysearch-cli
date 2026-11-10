@@ -25,12 +25,12 @@
 
 - **dsh 依赖族从 `0.1.7-rc.1` 升到 `0.2.2-rc.1`**：`pnpm-workspace.yaml` 的 catalog 里 19 个 `@deepseek-ai/dsh-*` 一起升版；`@deepseek-ai/cordis` 从 `4.0.4` 升到 `4.1.0`。`@deepseek-ai/dsh-invariants` 在 0.2.2 已经没有这个包，catalog 和 overrides 里的同名条目一起删掉；装好的 0.2.2 依赖里也没有谁再引用它。lockfile 重新生成后，`pnpm install --ignore-scripts` 退出 0。
 - **插件源码只改了一句版本注释**：对照 0.2.2 的 `.d.ts`，我们用到的工具注册、hook 事件、消息来源这几个类型没变，所以没有改行为，也没有加 `any`、`ts-ignore` 或 `@ts-expect-error`。
-- **文档跟版本对齐**：中英文 README 的宿主表改成 `0.2.2-rc.1`，写清“网页对话 + 热重载，2026-11-10，后端是假桩”；`docs/deepseek-harness-integration.md` 的已验证版本、热重载机制和限制说明一起改。旧的 `patchReload` 说法删掉，改成 `dsh-hmr`；`agent/session-start` 改成代码里真实用的 `agent/created` 加 `source === 'startup'` 守卫；仓库里已经没有的 `.scratch` 证据路径换成 #252 的验收评论。
+- **文档跟版本对齐**：中英文 README 的宿主表改成 `0.2.2-rc.1`，写清网页对话和热重载都验过；`docs/deepseek-harness-integration.md` 的已验证版本、热重载机制和限制说明一起改。旧的 `patchReload` 说法删掉，改成 `dsh-hmr`；`agent/session-start` 改成代码里真实用的 `agent/created` 加 `source === 'startup'` 守卫；仓库里已经没有的 `.scratch` 证据路径换成 #252 的验收评论。
 
 ### Verification
 
-- 沙盒真机验收（dsh `0.2.2-rc.1` + cordis `4.1.0`，网页 profile，2026-11-10）：这次运行退出码 0，16 项检查全 PASS。验过 `--dump-config` 里有插件和 `dsh-hmr` 两行、第一轮系统提示里路由卡片正好 1 份、工具调用后的请求带预热标记、每次工具调用只发 1 次 `/recall`、运行中改 `llm-deepseek` 的 baseURL 后下一轮请求真的打到新端口、热重载后路由卡片仍然只有 1 份、停宿主后网页端口关掉了。
-- 沙盒里的 anysearch 服务、MCP 端点和模型都是本地假桩；这一轮验的是 dsh 宿主这一侧的行为，不是真实检索或真实模型。
+- 沙盒真机验收（dsh `0.2.2-rc.1` + cordis `4.1.0`，网页 profile）：这次运行退出码 0，16 项检查全 PASS。验过 `--dump-config` 里有插件和 `dsh-hmr` 两行、第一轮系统提示里路由卡片正好 1 份、工具调用后的请求带预热标记、每次工具调用只发 1 次 `/recall`、运行中改 `llm-deepseek` 的 baseURL 后下一轮请求真的打到新端口、热重载后路由卡片仍然只有 1 份、停宿主后网页端口关掉了。
+- 沙盒里的 anysearch 服务、MCP 端点和模型都是本地临时搭的模拟服务；这一轮验的是 dsh 宿主这一侧的行为，不是真实检索或真实模型。
 
 ## Unreleased — #213: MCP clientInfo——新版 `_meta` 解析 + trace 断言
 
