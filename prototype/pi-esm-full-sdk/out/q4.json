@@ -1,6 +1,6 @@
 {
   "probe": "q4",
-  "generatedAt": "2026-11-10T08:55:19.708Z",
+  "generatedAt": "2026-11-10T09:31:24.720Z",
   "inputSource": "built MCP + built CLI + real SQLite; local OpenAI-compatible SSE endpoint with controlled usage",
   "fakeRequests": 6,
   "findings": [
@@ -37,7 +37,17 @@
           ]
         },
         "semanticRowsAfterDryRun": 0,
-        "promptSeenByFake": "Business hours are Monday to Friday 9-5."
+        "promptSeenByFake": "Business hours are Monday to Friday 9-5.",
+        "usage": {
+          "calls": 1,
+          "inputTokens": 80,
+          "outputTokens": 20,
+          "cacheReadTokens": 40,
+          "cacheWriteTokens": 0,
+          "totalTokens": 140,
+          "costUsd": 0,
+          "missing": []
+        }
       }
     },
     {
@@ -60,7 +70,17 @@
           }
         ],
         "unrelatedEpisodes": 3,
-        "unrelatedSemantic": 0
+        "unrelatedSemantic": 0,
+        "usage": {
+          "calls": 1,
+          "inputTokens": 80,
+          "outputTokens": 20,
+          "cacheReadTokens": 40,
+          "cacheWriteTokens": 0,
+          "totalTokens": 140,
+          "costUsd": 0,
+          "missing": []
+        }
       }
     },
     {
@@ -75,7 +95,17 @@
           "conflict": 0,
           "failure": 0
         },
-        "semanticRows": 1
+        "semanticRows": 1,
+        "usage": {
+          "calls": 1,
+          "inputTokens": 80,
+          "outputTokens": 20,
+          "cacheReadTokens": 40,
+          "cacheWriteTokens": 0,
+          "totalTokens": 140,
+          "costUsd": 0,
+          "missing": []
+        }
       }
     },
     {
@@ -103,7 +133,7 @@
         ],
         "oldRow": {
           "id": 1,
-          "valid_until": "2026-11-10 08:55:12",
+          "valid_until": "2026-11-10 09:31:18",
           "superseded_by": 2
         },
         "newRow": {
@@ -126,8 +156,18 @@
           }
         ],
         "summariesNeedingRefresh": [
-          "c6bd4a82-5819-410b-9a2d-42515c021311"
-        ]
+          "1606a997-99e5-48ce-8fb6-e14a59459479"
+        ],
+        "usage": {
+          "calls": 1,
+          "inputTokens": 80,
+          "outputTokens": 20,
+          "cacheReadTokens": 40,
+          "cacheWriteTokens": 0,
+          "totalTokens": 140,
+          "costUsd": 0,
+          "missing": []
+        }
       }
     },
     {
@@ -159,6 +199,16 @@
           "retiredEpisodeIds": [],
           "summariesNeedingRefresh": [],
           "semanticIds": []
+        },
+        "usage": {
+          "calls": 1,
+          "inputTokens": 80,
+          "outputTokens": 20,
+          "cacheReadTokens": 40,
+          "cacheWriteTokens": 0,
+          "totalTokens": 140,
+          "costUsd": 0,
+          "missing": []
         }
       }
     },

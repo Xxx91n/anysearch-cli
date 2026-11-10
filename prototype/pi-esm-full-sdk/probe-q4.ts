@@ -177,7 +177,7 @@ try {
     dry.structuredContent?.report?.dryRun === true && dry.structuredContent?.report?.add === 1 &&
       dry.structuredContent?.counts?.add === 1 && semAfterDry.n === 0,
     { counts: dry.structuredContent?.counts, report: dry.structuredContent?.report, semanticRowsAfterDryRun: semAfterDry.n,
-      promptSeenByFake: requestLog.at(-1)?.replyHead });
+      promptSeenByFake: requestLog.at(-1)?.replyHead, usage: dry.structuredContent?.usage });
 
   // ---------- S2 apply, scoped to one session ----------
   const apply = await consolidate(mcp, { sessionId: sMain.id });
@@ -192,7 +192,8 @@ try {
       unrelatedEps.length === 3 && unrelatedEps.every((r) => r.superseded_by === null && r.archived === 0) &&
       unrelatedSem.length === 0,
     { counts: apply.structuredContent?.counts, scanned: apply.structuredContent?.report?.clustersScanned,
-      mainSemantic: mainSem, unrelatedEpisodes: unrelatedEps.length, unrelatedSemantic: unrelatedSem.length });
+      mainSemantic: mainSem, unrelatedEpisodes: unrelatedEps.length, unrelatedSemantic: unrelatedSem.length,
+      usage: apply.structuredContent?.usage });
 
   // ---------- S3 rerun -> skip, not add ----------
   const rerun = await consolidate(mcp, { sessionId: sMain.id });
@@ -202,7 +203,7 @@ try {
   record("S3", "an identical rerun reports skip (noop) and adds no row",
     rerun.structuredContent?.report?.skip === 1 && rerun.structuredContent?.report?.add === 0 &&
       semCount3 === 1 && rerun.structuredContent?.counts?.skip === 1,
-    { counts: rerun.structuredContent?.counts, semanticRows: semCount3 });
+    { counts: rerun.structuredContent?.counts, semanticRows: semCount3, usage: rerun.structuredContent?.usage });
 
   // ---------- S4 single-evidence correction scoped by memoryId ----------
   const db4 = new Database(dbPath);
@@ -225,14 +226,15 @@ try {
       Array.isArray(update.structuredContent?.report?.summariesNeedingRefresh) &&
       update.structuredContent.report.summariesNeedingRefresh.includes(sMain.id),
     { counts: update.structuredContent?.counts, updates: update.structuredContent?.report?.updates,
-      oldRow, newRow, retired, summariesNeedingRefresh: update.structuredContent?.report?.summariesNeedingRefresh });
+      oldRow, newRow, retired, summariesNeedingRefresh: update.structuredContent?.report?.summariesNeedingRefresh,
+      usage: update.structuredContent?.usage });
 
   // ---------- S5 conflict ----------
   const conflict = await consolidate(mcp, { sessionId: sConflict.id });
   record("S5", "a claim the fidelity gate rejects is reported as conflict, not add",
     conflict.structuredContent?.report?.conflict === 1 && conflict.structuredContent?.counts?.conflict === 1 &&
       conflict.structuredContent?.report?.add === 0 && conflict.structuredContent?.report?.gateRejected === 1,
-    { counts: conflict.structuredContent?.counts, report: conflict.structuredContent?.report });
+    { counts: conflict.structuredContent?.counts, report: conflict.structuredContent?.report, usage: conflict.structuredContent?.usage });
 
   // ---------- S6 failure + explicit missing usage ----------
   await mcp.close();
