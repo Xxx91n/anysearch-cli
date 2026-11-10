@@ -225,16 +225,49 @@ try {
   evidence.diagnostics = { R1: r1Diag, R5: r5Diag };
   console.log("diagnostics done (R1 update=" + r1Diag.report.update + ", R5 update=" + r5Diag.report.update + ")");
 
+  // Reliability is about repeatability on the SAME frozen input. Repeat the
+  // real-model fixed path 3 times per case and report the outcome distribution.
+  const stability: any = { R1: [], R5: [] };
+  for (const id of ["R1", "R5"]) {
+    const c = cases.find((x) => x.id === id)!;
+    for (let i = 1; i <= 3; i++) {
+      const r = await runCase(c, "fixed", llm);
+      stability[id].push({
+        run: i,
+        update: r.report.update,
+        verifyRejected: r.report.verifyRejected,
+        verifyDetails: r.report.verifyDetails,
+        content: r.knowledge.newContent,
+        usage: r.usage,
+      });
+      console.log("stability " + id + " run " + i + ": update=" + r.report.update + " reject=" + r.report.verifyRejected);
+    }
+  }
+  evidence.stability = stability;
+
   const byId = (id: string, mode: string) => evidence.cases.find((x: any) => x.id === id)?.[mode];
   const cur = (id: string) => byId(id, "current");
   const fix = (id: string) => byId(id, "fixed");
+
+  // Sentence-level check: "no longer ... 9-5" and an explicit "this was
+  // corrected" note are not restatements; a sentence that asserts the old
+  // hours as a current fact is. A whole line is too coarse because a merge can
+  // put the correction and the old claim in the same line.
+  // Normalize en/em dashes: real-model text writes "9–5" while the frozen
+  // sample uses "9-5". Without this the check silently misses restatements.
+  const restatesOldHours = (text: string) => text
+    .replace(/[–—]/g, "-")
+    .split(/(?<=[.!?])\s+|\n+/)
+    .some((sentence) => /Monday to Friday 9-5/i.test(sentence) &&
+      !/no longer|corrected|must not|not restated|not current/i.test(sentence));
 
   // R1 primary correction: real model, real gate.
   record("R1", "fixed", "real model corrects the same fact, old knowledge closed and replaced",
     fix("R1").report.update === 1 && fix("R1").knowledge.oldStillLive === false &&
       /24\/7/.test(fix("R1").knowledge.newContent ?? "") &&
+      !restatesOldHours(fix("R1").knowledge.newContent ?? "") &&
       typeof fix("R1").knowledge.oldSupersededBy === "number",
-    fix("R1").report);
+    { report: fix("R1").report, content: fix("R1").knowledge.newContent });
   record("R1", "current", "without the new seams the same correction also lands (pipeline behavior unchanged)",
     cur("R1").report.update === 1, cur("R1").report);
   // The real-model checker refused R1 ("business hours" vs "support hours").
@@ -243,9 +276,7 @@ try {
     r1Diag.report.update === 1 && !!r1Diag.refresh &&
       r1Diag.refresh.result?.refreshed === true &&
       /24\/7/.test(r1Diag.refresh.summary ?? "") &&
-      // "no longer Monday to Friday 9-5" is the correction, not a restatement
-      // of the old conclusion; only the old positive claim must be absent.
-      !/Business hours are Monday to Friday 9-5/i.test(r1Diag.refresh.summary ?? "") &&
+      !restatesOldHours(r1Diag.refresh.summary ?? "") &&
       r1Diag.refresh.pausedAfter === false,
     { report: r1Diag.report, refresh: r1Diag.refresh });
 
@@ -276,9 +307,10 @@ try {
 
   // R5 multi-fact preservation.
   const merged = fix("R5").knowledge.newContent ?? "";
-  record("R5", "fixed", "one corrected fact keeps the other still-valid facts",
+  record("R5", "fixed", "one corrected fact keeps the other still-valid facts and drops the corrected one",
     fix("R5").report.update === 1 &&
-      /24\/7/.test(merged) && /help@example\.com/.test(merged) && /holiday/i.test(merged),
+      /24\/7/.test(merged) && /help@example\.com/.test(merged) && /holiday/i.test(merged) &&
+      !restatesOldHours(merged),
     { content: merged, report: fix("R5").report });
   record("R5", "current", "PRE-DECLARED DEFECT reproduced: current update drops the other still-valid facts",
     cur("R5").report.update === 1 &&
@@ -287,10 +319,20 @@ try {
   // Mechanics only: scripted checker says "same fact, reliable"; the real model
   // must still preserve the facts the new material did not correct.
   const diagMerged = r5Diag.knowledge.newContent ?? "";
-  record("R5-mechanics", "diagnostic", "real model merge keeps the other still-valid facts",
+  record("R5-mechanics", "diagnostic", "real model merge keeps the other facts AND drops the corrected one",
     r5Diag.report.update === 1 &&
-      /24\/7/.test(diagMerged) && /help@example\.com/.test(diagMerged) && /holiday/i.test(diagMerged),
+      /24\/7/.test(diagMerged) && /help@example\.com/.test(diagMerged) && /holiday/i.test(diagMerged) &&
+      // the old hours claim must stop being presented as current
+      !restatesOldHours(diagMerged),
     { content: diagMerged, report: r5Diag.report });
+
+  // Repeatability: the frozen input must get the same decision every time.
+  for (const id of ["R1", "R5"]) {
+    const outcomes = stability[id].map((x: any) => x.update === 1 ? "update" : "refuse");
+    record(id + "-stability", "fixed", "same frozen input repeated 3x gets the same decision",
+      new Set(outcomes).size === 1,
+      { outcomes, details: stability[id].map((x: any) => ({ update: x.update, reasons: x.verifyDetails?.map((v: any) => v.reason) })) });
+  }
 
   // Q19: cost basis on the real endpoint.
   const usage = fix("R1").usage;
@@ -303,6 +345,22 @@ try {
   record("SEC", "all", "evidence carries no API key material",
     !apiKey || !text.includes(apiKey), { apiKeyLength: apiKey?.length ?? 0 });
 
+  // Total real-model spend for THIS probe run. Cost stays unknown because the
+  // custom endpoint has no price table; tokens are provider-reported.
+  const allUsage = [
+    ...evidence.cases.flatMap((c: any) => [c.current.usage, c.fixed.usage]),
+    evidence.diagnostics.R1.usage, evidence.diagnostics.R5.usage,
+    ...stability.R1.map((x: any) => x.usage), ...stability.R5.map((x: any) => x.usage),
+  ];
+  evidence.usageTotals = allUsage.reduce((a: any, u: any) => ({
+    calls: a.calls + u.calls,
+    inputTokens: a.inputTokens + u.inputTokens,
+    outputTokens: a.outputTokens + u.outputTokens,
+    cacheReadTokens: a.cacheReadTokens + u.cacheReadTokens,
+    cacheWriteTokens: a.cacheWriteTokens + u.cacheWriteTokens,
+    totalTokens: a.totalTokens + u.totalTokens,
+  }), { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0 });
+  evidence.usageTotals.costBasis = "unknown";
   evidence.checks = findings;
   evidence.prompts = prompts.slice(0, 60);
   writeFileSync(join(OUT, "q3-real-model.json"), JSON.stringify(evidence, null, 2) + "\n");
