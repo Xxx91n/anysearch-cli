@@ -225,9 +225,47 @@ export interface ConsolidateReportShape {
   // PROTOTYPE (concurrency): planned updates refused because another writer
   // closed the target row first; they are counted in `conflict`.
   staleUpdates?: number;
+  // PROTOTYPE (Q21): lost races that were re-judged once, and races that stayed
+  // unresolved after that one re-read (each carries both sides' materials).
+  retriedAfterStale?: number;
+  concurrentConflicts?: number;
+  staleDetails?: Array<{ entity?: string; oldId: number; expected: string; current: string | null; candidate?: string }>;
+  conflictDetails?: Array<{
+    entity: string;
+    oldId: number;
+    expected: string;
+    current: string;
+    candidate: string;
+    candidateEvidence: Array<{ title: string; snippet: string; url: string }>;
+    currentEvidence: Array<{ title: string; snippet: string; url: string }>;
+    reason?: string;
+    followUp?: string;
+  }>;
   // PROTOTYPE (real-model check): single-evidence corrections refused because
-  // the checker said "different fact" or "not reliable enough" (counted in `skip`).
+  // the checker said "different fact", "unclear", or "not reliable enough"
+  // (counted in `skip`).
   verifyRejected?: number;
+  verifiedCorrections?: Array<{
+    oldId: number;
+    oldContent: string;
+    candidate: string;
+    evidence: Array<{ title: string; snippet: string; url: string }>;
+    sameFact: boolean;
+    reliable: boolean;
+    relation?: "same" | "correction" | "different" | "unclear";
+    reason?: string;
+  }>;
+  verifyDetails?: Array<{
+    oldId: number;
+    oldContent: string;
+    candidate: string;
+    evidence: Array<{ title: string; snippet: string; url: string }>;
+    sameFact: boolean;
+    reliable: boolean;
+    relation?: "same" | "correction" | "different" | "unclear";
+    reason?: string;
+    followUp?: string;
+  }>;
   semanticIds: number[];
   updates: Array<{ oldId: number; newId: number; retiredEpisodeIds: number[] }>;
   retiredEpisodeIds: number[];
@@ -265,6 +303,8 @@ export function buildAnsChatConsolidateResult(
     ": add " + report.add + ", update " + report.update + ", skip " + report.skip +
     ", conflict " + report.conflict + ", failure " + report.llmUnavailable +
     (report.staleUpdates ? ", stale " + report.staleUpdates : "") +
+    (report.retriedAfterStale ? ", retried " + report.retriedAfterStale : "") +
+    (report.concurrentConflicts ? ", unresolved " + report.concurrentConflicts : "") +
     " (scanned " + report.clustersScanned + ", triggered " + report.clustersTriggered + ")";
   return {
     content: [{ type: "text", text: line }],
@@ -279,6 +319,8 @@ export function buildAnsChatConsolidateResult(
         conflict: report.conflict,
         failure: report.llmUnavailable,
         ...(report.staleUpdates !== undefined ? { stale: report.staleUpdates } : {}),
+        ...(report.retriedAfterStale !== undefined ? { retriedAfterStale: report.retriedAfterStale } : {}),
+        ...(report.concurrentConflicts !== undefined ? { concurrentConflicts: report.concurrentConflicts } : {}),
         ...(report.verifyRejected !== undefined ? { verifyRejected: report.verifyRejected } : {}),
       },
       usage,

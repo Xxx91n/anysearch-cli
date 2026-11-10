@@ -62,16 +62,25 @@ const CORRECTION_CHECK_PROMPT = [
   "NEW MATERIAL:",
   "{EVIDENCE}",
   "",
-  "Decide two things:",
-  "1. sameFact: does the new material assert a change to the SAME fact, subject and scope as",
+  "Decide:",
+  "1. alreadyCurrent: does the new material already say the same thing as the current",
+  "   knowledge (no change)? If yes, there is nothing to correct.",
+  "2. sameFact: does the new material assert a change to the SAME fact, subject and scope as",
   "   the current knowledge? A different subject, period, population, or special case",
   "   (for example holiday hours vs regular hours) is NOT the same fact.",
-  "2. reliable: does the material itself confidently and specifically assert the change?",
+  "3. reliable: does the material itself confidently and specifically assert the change?",
   "   Hearsay, speculation, questions, anonymous forum guesses, or \"might be\" text is NOT",
   "   reliable enough to replace existing knowledge.",
+  "4. relation: one of",
+  '   "same"       the material restates the current value (no correction)',
+  '   "correction" the material explicitly replaces the current value (effective date,',
+  '                "changed to", "no longer", "replaced by")',
+  '   "different"  a different subject, period, population or special case',
+  '   "unclear"    same topic but a conflicting claim with no basis to prefer either side',
+  '                (for example two undated statements of equal authority)',
   "",
   "Reply with JSON only:",
-  '{"sameFact": true|false, "reliable": true|false, "reason": "<short reason>"}',
+  '{"alreadyCurrent": true|false, "sameFact": true|false, "reliable": true|false, "relation": "same|correction|different|unclear", "reason": "<short reason>"}',
 ].join("\n");
 
 type RawUsage = { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; totalTokens?: number; cost?: { total?: number } };
@@ -102,19 +111,26 @@ async function completeText(
   return { text: text.trim(), usage };
 }
 
-function parseCheckReply(text: string): { sameFact: boolean; reliable: boolean; reason?: string } {
+export type CorrectionRelation = "same" | "correction" | "different" | "unclear";
+
+function parseCheckReply(text: string): { alreadyCurrent: boolean; sameFact: boolean; reliable: boolean; relation?: CorrectionRelation; reason?: string } {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return { sameFact: false, reliable: false, reason: "checker returned no JSON" };
+  if (start < 0 || end <= start) return { alreadyCurrent: false, sameFact: false, reliable: false, reason: "checker returned no JSON" };
   try {
-    const obj = JSON.parse(text.slice(start, end + 1)) as { sameFact?: unknown; reliable?: unknown; reason?: unknown };
+    const obj = JSON.parse(text.slice(start, end + 1)) as { alreadyCurrent?: unknown; sameFact?: unknown; reliable?: unknown; relation?: unknown; reason?: unknown };
+    const relation = obj.relation === "same" || obj.relation === "correction" || obj.relation === "different" || obj.relation === "unclear"
+      ? obj.relation
+      : undefined;
     return {
+      alreadyCurrent: obj.alreadyCurrent === true,
       sameFact: obj.sameFact === true,
       reliable: obj.reliable === true,
+      ...(relation ? { relation } : {}),
       ...(typeof obj.reason === "string" ? { reason: obj.reason.slice(0, 240) } : {}),
     };
   } catch {
-    return { sameFact: false, reliable: false, reason: "checker JSON unparseable" };
+    return { alreadyCurrent: false, sameFact: false, reliable: false, reason: "checker JSON unparseable" };
   }
 }
 

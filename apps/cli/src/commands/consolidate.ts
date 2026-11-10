@@ -20,6 +20,28 @@ interface ConsolidateStore {
     llmUnavailable: number; gateRejected: number; add: number; noop: number; update: number;
     skip: number; conflict: number;
     staleUpdates?: number; verifyRejected?: number;
+    retriedAfterStale?: number; concurrentConflicts?: number;
+    staleDetails?: Array<{ entity?: string; oldId: number; expected: string; current: string | null; candidate?: string }>;
+    conflictDetails?: Array<{
+      entity: string; oldId: number; expected: string; current: string; candidate: string;
+      candidateEvidence: Array<{ title: string; snippet: string; url: string }>;
+      currentEvidence: Array<{ title: string; snippet: string; url: string }>;
+      reason?: string; followUp?: string;
+    }>;
+    verifyDetails?: Array<{
+      oldId: number; oldContent: string; candidate: string;
+      evidence: Array<{ title: string; snippet: string; url: string }>;
+      sameFact: boolean; reliable: boolean;
+      relation?: "same" | "correction" | "different" | "unclear";
+      reason?: string; followUp?: string;
+    }>;
+    verifiedCorrections?: Array<{
+      oldId: number; oldContent: string; candidate: string;
+      evidence: Array<{ title: string; snippet: string; url: string }>;
+      sameFact: boolean; reliable: boolean;
+      relation?: "same" | "correction" | "different" | "unclear";
+      reason?: string;
+    }>;
     updates: Array<{ oldId: number; newId: number; retiredEpisodeIds: number[] }>;
     retiredEpisodeIds: number[];
     summariesNeedingRefresh: string[];
@@ -37,6 +59,8 @@ function help(): string {
     "through the configured LLM (ANS_LLM_PROVIDER/MODEL, optional ANS_LLM_BASE_URL+ANS_LLM_API),",
     "gated per-claim against source evidence, then written to semantic_memories (RRF sixth arm).",
     "--session / --memory restrict the run to those episodes (repeatable).",
+    "An explicit scope is required: with neither flag the command refuses to run,",
+    "so a typo cannot turn into a full-archive consolidation.",
     "--single-evidence lets one contradicting episode correct a live semantic memory; it can",
     "update, never add.",
     "--dry-run runs inside a rolled-back transaction (exact prediction, no writes). Default: --apply.",
@@ -77,6 +101,11 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   }
   if (args.includes("--session") && sessionIds.length === 0) {
     process.stderr.write("ans consolidate: --session requires an id\n");
+    return 2;
+  }
+  // Q18: a missing scope must be an error, not a full-archive run.
+  if (sessionIds.length === 0 && memoryIds.length === 0) {
+    process.stderr.write("ans consolidate: an explicit scope is required; pass --session ID or --memory ID (full-archive runs are refused).\n");
     return 2;
   }
   const dryRun = args.includes("--dry-run");
@@ -133,11 +162,13 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       ", conflict " + r.conflict + ", failure " + r.llmUnavailable +
       (r.staleUpdates ? ", stale " + r.staleUpdates : "") +
       (r.verifyRejected ? ", verifyRejected " + r.verifyRejected : "") +
+      (r.retriedAfterStale ? ", retried " + r.retriedAfterStale : "") +
+      (r.concurrentConflicts ? ", unresolved " + r.concurrentConflicts : "") +
       " (llmUnavailable " + r.llmUnavailable + ", gateRejected " + r.gateRejected + ", noop " + r.noop + ")\n",
   );
-  // Q18: make the resolved scope explicit; no silent full-archive run.
+  // Q18: the scope is required and is always echoed, never "full-archive".
   process.stdout.write(
-    "scope: " + (sessionIds.length > 0 ? "session " + sessionIds.join(", ") : memoryIds.length > 0 ? "memory " + memoryIds.join(", ") : "full-archive") + "\n",
+    "scope: " + (sessionIds.length > 0 ? "session " + sessionIds.join(", ") : "memory " + memoryIds.join(", ")) + "\n",
   );
   if (r.semanticIds.length > 0) {
     process.stdout.write("semantic ids: " + r.semanticIds.join(", ") + "\n");
@@ -146,6 +177,39 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     process.stdout.write(
       "update: semantic " + u.oldId + " -> " + u.newId +
         " (retired materials: " + (u.retiredEpisodeIds.join(", ") || "none") + ")\n",
+    );
+  }
+  for (const v of r.verifiedCorrections ?? []) {
+    process.stdout.write(
+      "verified correction: semantic " + v.oldId +
+        " (sameFact=" + v.sameFact + ", reliable=" + v.reliable +
+        (v.relation ? ", relation=" + v.relation : "") + ")\n" +
+        "  old: " + v.oldContent + "\n" +
+        "  candidate: " + v.candidate + "\n" +
+        "  evidence: " + v.evidence.map((e) => e.url).join(", ") + "\n" +
+        (v.reason ? "  reason: " + v.reason + "\n" : ""),
+    );
+  }
+  for (const v of r.verifyDetails ?? []) {
+    process.stdout.write(
+      "verify rejected: semantic " + v.oldId + " (sameFact=" + v.sameFact + ", reliable=" + v.reliable +
+        (v.relation ? ", relation=" + v.relation : "") + ")\n" +
+        "  old: " + v.oldContent + "\n" +
+        "  candidate: " + v.candidate + "\n" +
+        "  evidence: " + v.evidence.map((e) => e.url).join(", ") + "\n" +
+        (v.reason ? "  reason: " + v.reason + "\n" : "") +
+        (v.followUp ? "  followUp: " + v.followUp + "\n" : ""),
+    );
+  }
+  for (const c of r.conflictDetails ?? []) {
+    process.stdout.write(
+      "conflict unresolved: semantic " + c.oldId + " (" + c.entity + ")\n" +
+        "  current: " + c.current + "\n" +
+        "  candidate: " + c.candidate + "\n" +
+        "  current evidence: " + (c.currentEvidence.map((e) => e.url).join(", ") || "none") + "\n" +
+        "  candidate evidence: " + (c.candidateEvidence.map((e) => e.url).join(", ") || "none") + "\n" +
+        (c.reason ? "  reason: " + c.reason + "\n" : "") +
+        (c.followUp ? "  followUp: " + c.followUp + "\n" : ""),
     );
   }
   if (r.summariesNeedingRefresh.length > 0) {

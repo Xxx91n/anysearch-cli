@@ -59,7 +59,14 @@ export interface ConsolidateVerifyInput {
   summary: string;
   evidence: ConsolidateEvidence[];
 }
-export interface ConsolidateVerifyVerdict { sameFact: boolean; reliable: boolean; reason?: string; }
+export interface ConsolidateVerifyVerdict {
+  // The material already agrees with what the live knowledge says: no write.
+  alreadyCurrent?: boolean;
+  sameFact: boolean;
+  reliable: boolean;
+  relation?: "same" | "correction" | "different" | "unclear";
+  reason?: string;
+}
 export type ConsolidateVerifyFn = (input: ConsolidateVerifyInput) => Promise<ConsolidateVerifyVerdict>;
 
 export interface ConsolidateReport {
@@ -86,11 +93,50 @@ export interface ConsolidateReport {
   // process closed before this writer committed. The write is skipped and
   // reported; two contradictory live conclusions are never left behind.
   staleUpdates: number;
-  staleDetails: Array<{ oldId: number; expected: string; current: string | null }>;
+  staleDetails: Array<{ entity?: string; oldId: number; expected: string; current: string | null; candidate?: string }>;
+  // PROTOTYPE (Q21): conflicts that were re-judged once against the winner's
+  // version, and conflicts that stayed unresolved after that one re-read.
+  retriedAfterStale: number;
+  concurrentConflicts: number;
+  // Both sides are handed back: the candidate material + its evidence, and the
+  // live row + the episodes that support it. Never "first writer wins" silently.
+  conflictDetails: Array<{
+    entity: string;
+    oldId: number;
+    expected: string;
+    current: string;
+    candidate: string;
+    candidateEvidence: ConsolidateEvidence[];
+    currentEvidence: ConsolidateEvidence[];
+    reason?: string;
+    followUp?: string;
+  }>;
   // PROTOTYPE (real-model check): single-evidence corrections refused because
-  // the check said "different fact" or "not reliable enough".
+  // the check said "different fact", "unclear", or "not reliable enough".
   verifyRejected: number;
-  verifyDetails: Array<{ oldId: number; sameFact: boolean; reliable: boolean; reason?: string }>;
+  // Accepted corrections keep the checker's verdict, so a caller can see that
+  // the write was "same fact / reliable / explicit correction", not a keyword hit.
+  verifiedCorrections: Array<{
+    oldId: number;
+    oldContent: string;
+    candidate: string;
+    evidence: ConsolidateEvidence[];
+    sameFact: boolean;
+    reliable: boolean;
+    relation?: "same" | "correction" | "different" | "unclear";
+    reason?: string;
+  }>;
+  verifyDetails: Array<{
+    oldId: number;
+    oldContent: string;
+    candidate: string;
+    evidence: ConsolidateEvidence[];
+    sameFact: boolean;
+    reliable: boolean;
+    relation?: "same" | "correction" | "different" | "unclear";
+    reason?: string;
+    followUp?: string;
+  }>;
   // Update relations (old live row -> replacement) for traceability.
   updates: Array<{ oldId: number; newId: number; retiredEpisodeIds: number[] }>;
   retiredEpisodeIds: number[];
@@ -206,36 +252,127 @@ export async function consolidateMemoryRun(
   const report: ConsolidateReport = {
     dryRun, clustersScanned: 0, clustersTriggered: 0, llmUnavailable: 0,
     gateRejected: 0, add: 0, noop: 0, update: 0, embeddingAbsent: 0, singleEvidenceSkipped: 0,
-    skip: 0, conflict: 0, staleUpdates: 0, staleDetails: [], verifyRejected: 0, verifyDetails: [],
+    skip: 0, conflict: 0, staleUpdates: 0, staleDetails: [], retriedAfterStale: 0,
+    concurrentConflicts: 0, conflictDetails: [], verifyRejected: 0, verifyDetails: [], verifiedCorrections: [],
     updates: [], retiredEpisodeIds: [], summariesNeedingRefresh: [], semanticIds: [],
   };
 
-  // plan phase (scan + LLM summarize + classify + dedup) runs WITHOUT the
-  // write lock; only the collected ops run inside BEGIN IMMEDIATE. Same op order and counters,
-  // so the dry-run exact-prediction contract is unchanged (Bacon P2).
-  const writes: Array<() => void> = [];
-  const plan = async (): Promise<void> => {
-    // Cluster scan INCLUDES superseded rows (valid_until NOT NULL): same-entity writes soft-close
-    // the prior version immediately, so episodic history *is* the closed-row set.
+  // One planned cluster. Kept as data (not a closure) so a lost write race can
+  // be re-read and re-judged once from the winner's version without
+  // re-summarizing (and re-paying for) the whole run.
+  interface PlannedCluster {
+    entityKey: string;
+    evidence: ConsolidateEvidence[];
+    epsIds: number[];
+    salience: number;
+    confidence: number;
+    candidate: string;
+    finalSummary: string;
+    finalEmbBuf: Buffer | null;
+    op: ConsolidateOp;
+    target: SemanticRow | null;
+    singleEvidence: boolean;
+  }
+  const plans: PlannedCluster[] = [];
+
+  const scopedRows = (entities?: string[]): EpisodeRow[] => {
     const scope: string[] = [];
-    const scopeParams: Array<string | number> = [];
+    const params: Array<string | number> = [];
     if (opts.memoryIds && opts.memoryIds.length > 0) {
       scope.push("id IN (" + opts.memoryIds.map(() => "?").join(", ") + ")");
-      scopeParams.push(...opts.memoryIds);
+      params.push(...opts.memoryIds);
     } else if (opts.sessionIds && opts.sessionIds.length > 0) {
       scope.push("session_id IN (" + opts.sessionIds.map(() => "?").join(", ") + ")");
-      scopeParams.push(...opts.sessionIds);
+      params.push(...opts.sessionIds);
     }
-    const rows = db
+    if (entities && entities.length > 0) {
+      scope.push("entity IN (" + entities.map(() => "?").join(", ") + ")");
+      params.push(...entities);
+    }
+    return db
       .prepare(
         "SELECT id, entity, title, snippet, url, created_at, last_accessed, access_count " +
           "FROM retrieval_results WHERE entity IS NOT NULL " +
           "AND quarantine IS NULL AND archived = 0 " +
-          (scope.length > 0 ? "AND " + scope[0] + " " : "") +
+          (scope.length > 0 ? "AND " + scope.join(" AND ") + " " : "") +
           "ORDER BY entity, id",
       )
-      .all(...scopeParams) as EpisodeRow[];
+      .all(...params) as EpisodeRow[];
+  };
 
+  const parseSources = (raw: string): number[] => {
+    try {
+      const ids = JSON.parse(raw) as unknown;
+      return Array.isArray(ids) ? ids.filter((id): id is number => Number.isInteger(id)) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const liveRows = (): SemanticRow[] =>
+    db.prepare("SELECT id, content, source_episode_ids, embedding FROM semantic_memories WHERE valid_until IS NULL").all() as SemanticRow[];
+
+  // The nearest live claim for a candidate; cosine when both embeddings exist,
+  // jaccard otherwise. Mirrors the initial plan so a retry judges the same way.
+  const bestLiveFor = (candidate: string, embBuf: Buffer | null): { row: SemanticRow | null; cos: number | null; jac: number } => {
+    const emb = embBuf ? new Float32Array(embBuf.buffer, embBuf.byteOffset, embBuf.byteLength / 4) : null;
+    const tokens = tokenize(candidate);
+    let best: SemanticRow | null = null;
+    let bestCos = 0;
+    let bestJac = 0;
+    let sawCos = false;
+    for (const live of liveRows()) {
+      const jac = jaccard(tokens, tokenize(live.content));
+      let cos = 0;
+      if (emb && live.embedding) {
+        cos = cosineSimilarity(emb, blobToFloat32(live.embedding));
+        sawCos = true;
+      }
+      if (cos > bestCos || (cos === bestCos && jac > bestJac)) {
+        best = live; bestCos = cos; bestJac = jac;
+      }
+    }
+    return { row: best, cos: sawCos ? bestCos : null, jac: bestJac };
+  };
+
+  const insertCluster = (c: PlannedCluster, extraSources: number[] = [], content = c.finalSummary, buffer = c.finalEmbBuf): number => {
+    const src = Array.from(new Set([...c.epsIds, ...extraSources])).sort((a, b) => a - b);
+    const info = db
+      .prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, ?, ?, ?, ?)")
+      .run(content, JSON.stringify(src), c.salience, c.confidence, buffer);
+    const id = Number(info.lastInsertRowid);
+    report.semanticIds.push(id);
+    return id;
+  };
+
+  const currentEvidenceFor = (sourceEpisodeIds: string): ConsolidateEvidence[] => {
+    const ids = parseSources(sourceEpisodeIds);
+    if (ids.length === 0) return [];
+    const rows = db
+      .prepare("SELECT title, snippet, url FROM retrieval_results WHERE id IN (" + ids.map(() => "?").join(", ") + ") ORDER BY id")
+      .all(...ids) as Array<{ title: string | null; snippet: string | null; url: string }>;
+    return rows.map((r) => ({ title: r.title ?? "", snippet: r.snippet ?? "", url: r.url }));
+  };
+
+  const pushConflict = (c: PlannedCluster, current: string, reason?: string, currentEvidence: ConsolidateEvidence[] = []): void => {
+    report.concurrentConflicts++;
+    report.conflictDetails.push({
+      entity: c.entityKey,
+      oldId: c.target?.id ?? 0,
+      expected: c.target?.content ?? "",
+      current,
+      candidate: c.candidate,
+      candidateEvidence: c.evidence,
+      currentEvidence,
+      ...(reason ? { reason } : {}),
+      followUp: "两边材料互相冲突且无法判定哪边更新；未覆盖任何一边，请调用方人工核实后再决定。",
+    });
+  };
+
+  const plan = async (): Promise<void> => {
+    // Cluster scan INCLUDES superseded rows (valid_until NOT NULL): same-entity writes soft-close
+    // the prior version immediately, so episodic history *is* the closed-row set.
+    const rows = scopedRows();
     const byEntity = new Map<string, EpisodeRow[]>();
     for (const r of rows) {
       const key = r.entity ?? "";
@@ -247,7 +384,7 @@ export async function consolidateMemoryRun(
 
     const nowMs = Date.now();
     let processed = 0;
-    for (const [, eps] of byEntity) {
+    for (const [entityKey, eps] of byEntity) {
       if (opts.limit && processed >= opts.limit) break;
       report.clustersScanned++;
       // Single-evidence correction is an opt-in exception to the batch threshold.
@@ -301,43 +438,21 @@ export async function consolidateMemoryRun(
       const emb = await embedText(summary, "passage");
       const embBuf = emb ? Buffer.from(emb.buffer, emb.byteOffset, emb.byteLength) : null;
 
-      const lives = db
-        .prepare("SELECT id, content, source_episode_ids, embedding FROM semantic_memories WHERE valid_until IS NULL")
-        .all() as SemanticRow[];
-      let best: SemanticRow | null = null;
-      let bestCos = 0;
-      let bestJac = 0;
-      let sawCos = false; // at least one cosine actually computed this scan
-      const sumTokens = tokenize(summary);
-      for (const l of lives) {
-        const jac = jaccard(sumTokens, tokenize(l.content));
-        let cos = 0;
-        if (emb && l.embedding) { cos = cosineSimilarity(emb, blobToFloat32(l.embedding)); sawCos = true; }
-        if (cos > bestCos || (cos === bestCos && jac > bestJac)) {
-          best = l; bestCos = cos; bestJac = jac;
-        }
-      }
+      const lives = liveRows();
+      const bestCandidate = bestLiveFor(summary, embBuf);
+      const best = bestCandidate.row;
+      const bestCos = bestCandidate.cos;
+      const bestJac = bestCandidate.jac;
+      let sawCos = bestCos !== null;
       // Degraded-path accounting: a dedup decision ran without any cosine signal.
       if (!sawCos && lives.length > 0) report.embeddingAbsent++;
-
-      const salience = Math.min(1, 0.4 + 0.1 * eps.length);
-      const epsIds = eps.map((e) => e.id);
-      const insert = (extraSources: number[] = [], content = summary, buffer = embBuf): number => {
-        const src = Array.from(new Set([...epsIds, ...extraSources])).sort((a, b) => a - b);
-        const info = db
-          .prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, ?, ?, ?, ?)")
-          .run(content, JSON.stringify(src), salience, confidence, buffer);
-        const id = Number(info.lastInsertRowid);
-        report.semanticIds.push(id);
-        return id;
-      };
 
       // Polarity matters: a correction that restates the same negation as the
       // existing claim is not a contradiction. Only disagreement updates.
       const contradiction = best
         ? CONTRADICTION_RE.test(summary) !== CONTRADICTION_RE.test(best.content)
         : false;
-      let op = best ? decideOp(sawCos ? bestCos : null, bestJac, contradiction, theta) : "add";
+      let op: ConsolidateOp = best ? decideOp(bestCos, bestJac, contradiction, theta) : "add";
       if (singleEvidence) {
         // One episode may correct an existing memory; it may not create new
         // knowledge and does not count as a duplicate touch.
@@ -347,21 +462,46 @@ export async function consolidateMemoryRun(
         // positive restatement of a changed fact, and cannot tell a confident
         // official update from hearsay. When the caller supplies the checker,
         // it makes that call; without it the old negation-only rule stays.
+        const reject = (verdict?: ConsolidateVerifyVerdict): void => {
+          report.verifyRejected++;
+          const followUp = verdict?.relation === "different"
+            ? "与旧结论可能是不同对象/时段/范围，不能当成纠正；旧结论保留，请调用方核实对应关系。"
+            : verdict?.relation === "unclear"
+              ? "新资料与旧结论是否同一事实无法确定；旧结论保留，请调用方人工核实。"
+              : "新资料未被判定为同一事实且可靠；旧结论保留，请调用方人工核实。";
+          report.verifyDetails.push({
+            oldId: best!.id, oldContent: best!.content, candidate: summary, evidence,
+            sameFact: verdict?.sameFact ?? false, reliable: verdict?.reliable ?? false,
+            ...(verdict?.relation ? { relation: verdict.relation } : {}),
+            ...(verdict?.reason ? { reason: verdict.reason } : {}),
+            followUp,
+          });
+        };
         if (deps.verify) {
           const verdict = await deps.verify({ oldContent: best.content, summary, evidence });
-          if (!verdict.sameFact || !verdict.reliable) {
-            report.verifyRejected++;
-            report.verifyDetails.push({
-              oldId: best.id, sameFact: verdict.sameFact, reliable: verdict.reliable,
+          const alreadyCurrent = verdict.alreadyCurrent === true
+            || verdict.relation === "same"
+            || summary.trim() === best.content.trim();
+          if (alreadyCurrent) {
+            op = "noop";
+          } else if (!verdict.sameFact || !verdict.reliable || verdict.relation === "different" || verdict.relation === "unclear") {
+            reject(verdict);
+            continue;
+          } else {
+            op = "update";
+            report.verifiedCorrections.push({
+              oldId: best.id, oldContent: best.content, candidate: summary, evidence,
+              sameFact: verdict.sameFact, reliable: verdict.reliable,
+              ...(verdict.relation ? { relation: verdict.relation } : {}),
               ...(verdict.reason ? { reason: verdict.reason } : {}),
             });
-            continue;
           }
         } else if (!contradiction) {
           report.singleEvidenceSkipped++;
           continue;
+        } else {
+          op = "update";
         }
-        op = "update";
       }
 
       // PROTOTYPE: an UPDATE replaces the old distilled claim. Regenerate it
@@ -395,53 +535,174 @@ export async function consolidateMemoryRun(
         } catch { /* keep the initial summary: a merge fault must not block the correction */ }
       }
 
-      if (best && op === "noop") {
-        // D4 NOOP: touch only; the row is a stable anchor for idempotent reruns.
-        const row = best;
-        writes.push(() => {
-          db.prepare("UPDATE semantic_memories SET access_count = access_count + 1, last_accessed = datetime('now') WHERE id = ?").run(row.id);
-          report.noop++;
-        });
-      } else if (best && op === "update") {
-        // D4 UPDATE: high-overlap contradiction -> soft-close old row, write new, union sources.
-        // Correction propagation: the old row names its successor, and the
-        // episodes that supported the old fact are marked superseded so current
-        // recall stops presenting them. They stay in the archive (traceable).
-        const row = best;
-        writes.push(() => {
-          // PROTOTYPE (concurrency): the plan was computed outside the write
-          // transaction. Re-check that the row this update targets is still the
-          // live version. If another writer closed it first, refuse the write
-          // and report the conflict instead of forking a second live truth.
-          if (concurrencyGuard) {
-            const live = db
-              .prepare("SELECT content FROM semantic_memories WHERE id = ? AND valid_until IS NULL")
-              .get(row.id) as { content: string } | undefined;
-            if (!live || live.content !== row.content) {
-              report.staleUpdates++;
-              report.staleDetails.push({ oldId: row.id, expected: row.content, current: live?.content ?? null });
-              return;
-            }
-          }
-          let prev: number[] = [];
-          try { prev = JSON.parse(row.source_episode_ids) as number[]; } catch { prev = []; }
-          const newId = insert(prev, finalSummary, finalEmbBuf);
-          db.prepare("UPDATE semantic_memories SET valid_until = datetime('now'), superseded_by = ? WHERE id = ?").run(newId, row.id);
-          if (prev.length > 0) {
-            db.prepare(
-              "UPDATE retrieval_results SET superseded_by = ? WHERE id IN (" + prev.map(() => "?").join(", ") + ") AND superseded_by IS NULL",
-            ).run(newId, ...prev);
-          }
-          report.updates.push({ oldId: row.id, newId, retiredEpisodeIds: prev });
-          report.retiredEpisodeIds.push(...prev);
-          report.update++;
-        });
-      } else {
-        writes.push(() => {
-          insert();
-          report.add++;
-        });
+      plans.push({
+        entityKey, evidence, epsIds: eps.map((e) => e.id),
+        salience: Math.min(1, 0.4 + 0.1 * eps.length),
+        confidence, candidate: summary, finalSummary, finalEmbBuf,
+        op, target: best, singleEvidence,
+      });
+    }
+  };
+
+  // Apply one plan inside the caller's write transaction. Returns "stale" when
+  // the row it was planned against is no longer the live version: the caller
+  // re-reads and re-judges that cluster exactly once.
+  const applyPlan = (c: PlannedCluster): "written" | "stale" => {
+    if (c.op === "noop") {
+      if (!c.target) return "stale";
+      if (concurrencyGuard) {
+        const live = db.prepare("SELECT content FROM semantic_memories WHERE id = ? AND valid_until IS NULL").get(c.target.id) as { content: string } | undefined;
+        if (!live || live.content !== c.target.content) return "stale";
       }
+      // D4 NOOP: touch only; the row is a stable anchor for idempotent reruns.
+      db.prepare("UPDATE semantic_memories SET access_count = access_count + 1, last_accessed = datetime('now') WHERE id = ?").run(c.target.id);
+      report.noop++;
+      return "written";
+    }
+    if (c.op === "update") {
+      if (!c.target) return "stale";
+      // PROTOTYPE (concurrency): the plan was computed outside the write
+      // transaction. Re-check that the row this update targets is still the
+      // live version. If another writer closed it first, refuse the write
+      // and report the conflict instead of forking a second live truth.
+      if (concurrencyGuard) {
+        const live = db
+          .prepare("SELECT content, source_episode_ids FROM semantic_memories WHERE id = ? AND valid_until IS NULL")
+          .get(c.target.id) as { content: string; source_episode_ids: string } | undefined;
+        if (!live || live.content !== c.target.content) return "stale";
+      }
+      const prev = parseSources(c.target.source_episode_ids);
+      const newId = insertCluster(c, prev, c.finalSummary, c.finalEmbBuf);
+      db.prepare("UPDATE semantic_memories SET valid_until = datetime('now'), superseded_by = ? WHERE id = ?").run(newId, c.target.id);
+      if (prev.length > 0) {
+        db.prepare(
+          "UPDATE retrieval_results SET superseded_by = ? WHERE id IN (" + prev.map(() => "?").join(", ") + ") AND superseded_by IS NULL",
+        ).run(newId, ...prev);
+      }
+      report.updates.push({ oldId: c.target.id, newId, retiredEpisodeIds: prev });
+      report.retiredEpisodeIds.push(...prev);
+      report.update++;
+      return "written";
+    }
+    insertCluster(c);
+    report.add++;
+    return "written";
+  };
+
+  const recordStale = (c: PlannedCluster, current: string | null): void => {
+    report.staleUpdates++;
+    report.staleDetails.push({
+      entity: c.entityKey, oldId: c.target?.id ?? 0, expected: c.target?.content ?? "",
+      current, candidate: c.candidate,
+    });
+  };
+
+  /**
+   * Q21: after losing the write race, read the current live version and judge
+   * once more. The candidate may only replace the winner when the checker
+   * explicitly calls it a correction of the same fact; "same", "different",
+   * "unclear", or a candidate that already matches the winner become a no-op
+   * or an unresolved conflict. No third attempt, no silent first-writer-wins.
+   */
+  const retryConflicts = async (conflicts: PlannedCluster[]): Promise<void> => {
+    const retryOps: Array<{ kind: "noop" | "update"; c: PlannedCluster; target: SemanticRow }> = [];
+    const seen = new Set<string>();
+    for (const c of conflicts) {
+      // One re-judge per entity: several planned clusters cannot target the
+      // same live row, but a repeated entity must not pay twice.
+      const key = c.entityKey + "\u0000" + (c.target?.id ?? 0);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      report.retriedAfterStale++;
+      const near = bestLiveFor(c.candidate, c.finalEmbBuf);
+      const target = near.row;
+      if (!target) {
+        pushConflict(c, "");
+        continue;
+      }
+      const sameText = c.candidate.trim() === target.content.trim()
+        || c.finalSummary.trim() === target.content.trim()
+        || near.jac >= 0.95;
+      if (sameText) {
+        report.noop++;
+        retryOps.push({ kind: "noop", c, target });
+        continue;
+      }
+      if (!deps.verify) {
+        // No checker: the deterministic rule may still update on a contradiction,
+        // but the candidate never gets to overwrite an unflagged competing claim.
+        const contradiction = CONTRADICTION_RE.test(c.candidate) !== CONTRADICTION_RE.test(target.content);
+        if (contradiction && near.jac > 0.4) {
+          retryOps.push({ kind: "update", c, target });
+        } else {
+          pushConflict(c, target.content, "无校验器：保留了原结论", currentEvidenceFor(target.source_episode_ids));
+        }
+        continue;
+      }
+      const verdict = await deps.verify({ oldContent: target.content, summary: c.candidate, evidence: c.evidence });
+      if (verdict.alreadyCurrent === true || verdict.relation === "same") {
+        report.noop++;
+        retryOps.push({ kind: "noop", c, target });
+        continue;
+      }
+      if (verdict.sameFact && verdict.reliable && verdict.relation === "correction") {
+        report.verifiedCorrections.push({
+          oldId: target.id, oldContent: target.content, candidate: c.candidate, evidence: c.evidence,
+          sameFact: verdict.sameFact, reliable: verdict.reliable,
+          ...(verdict.relation ? { relation: verdict.relation } : {}),
+          ...(verdict.reason ? { reason: verdict.reason } : {}),
+        });
+        retryOps.push({ kind: "update", c, target });
+        continue;
+      }
+      pushConflict(
+        c,
+        target.content,
+        verdict.reason ?? "再判一次仍无法确定哪边正确",
+        currentEvidenceFor(target.source_episode_ids),
+      );
+    }
+
+    if (retryOps.length === 0) return;
+    const updatesBefore = report.updates.length;
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const op of retryOps) {
+        if (op.kind === "noop") {
+          db.prepare("UPDATE semantic_memories SET access_count = access_count + 1, last_accessed = datetime('now') WHERE id = ? AND valid_until IS NULL").run(op.target.id);
+          continue;
+        }
+        const live = db
+          .prepare("SELECT content, source_episode_ids FROM semantic_memories WHERE id = ? AND valid_until IS NULL")
+          .get(op.target.id) as { content: string; source_episode_ids: string } | undefined;
+        if (!live || live.content !== op.target.content) {
+          // Lost again between the re-judge and this write: no third attempt.
+          pushConflict(op.c, live?.content ?? "", "重判后写入时又发生变化", currentEvidenceFor(live?.source_episode_ids ?? ""));
+          continue;
+        }
+        const prev = parseSources(live.source_episode_ids);
+        const newId = insertCluster(op.c, prev, op.c.finalSummary, op.c.finalEmbBuf);
+        db.prepare("UPDATE semantic_memories SET valid_until = datetime('now'), superseded_by = ? WHERE id = ?").run(newId, op.target.id);
+        if (prev.length > 0) {
+          db.prepare(
+            "UPDATE retrieval_results SET superseded_by = ? WHERE id IN (" + prev.map(() => "?").join(", ") + ") AND superseded_by IS NULL",
+          ).run(newId, ...prev);
+        }
+        report.updates.push({ oldId: op.target.id, newId, retiredEpisodeIds: prev });
+        report.retiredEpisodeIds.push(...prev);
+        report.update++;
+      }
+      if (report.updates.length > updatesBefore) {
+        const retryUpdates = report.updates.slice(updatesBefore);
+        report.summariesNeedingRefresh = Array.from(new Set([
+          ...report.summariesNeedingRefresh,
+          ...markSummariesNeedingRefresh(db, retryUpdates),
+        ]));
+      }
+      db.exec("COMMIT");
+    } catch (err) {
+      try { db.exec("ROLLBACK"); } catch { /* already rolled back */ }
+      throw err;
     }
   };
 
@@ -450,9 +711,15 @@ export async function consolidateMemoryRun(
   // PROTOTYPE (probe seam): both processes have planned against the version
   // they read; only now do they race for the write transaction.
   if (opts.planBarrier) await opts.planBarrier();
+  const conflicts: PlannedCluster[] = [];
   db.exec("BEGIN IMMEDIATE");
   try {
-    for (const w of writes) w();
+    for (const c of plans) {
+      if (applyPlan(c) === "stale") {
+        recordStale(c, null);
+        conflicts.push(c);
+      }
+    }
     // Runs inside the write txn so a crash cannot commit a correction while
     // leaving its summaries live. dry-run still measures (and rolls back).
     if (report.updates.length > 0) report.summariesNeedingRefresh = markSummariesNeedingRefresh(db, report.updates);
@@ -461,8 +728,10 @@ export async function consolidateMemoryRun(
     try { db.exec("ROLLBACK"); } catch { /* already rolled back */ }
     throw err;
   }
+  // The one re-read + re-judge happens only after the winner's commit is visible.
+  if (!dryRun && conflicts.length > 0) await retryConflicts(conflicts);
   report.skip = report.noop + report.singleEvidenceSkipped + report.verifyRejected;
-  report.conflict = report.gateRejected + report.staleUpdates;
+  report.conflict = report.gateRejected + report.concurrentConflicts;
   return report;
 }
 
