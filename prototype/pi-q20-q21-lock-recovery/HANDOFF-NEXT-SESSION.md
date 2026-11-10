@@ -25,8 +25,8 @@
 ## 3. 分支与状态
 
 - 分支：`prototype/pi-q20-q21-lock-recovery`，叠在 `prototype/pi-concurrency-reliability` 之上。
-- 本轮共 7 个提交：样例冻结、锁心跳/pid、空库重试、Q20/Q21 整理与输出、Q18 范围报错、探针与证据、本交接。
-- 未合并到 `main`；用户本轮明确授权推送本原型分支，已推送到 `origin/prototype/pi-q20-q21-lock-recovery`，头提交 `7afa2d1d`。
+- 本轮共 8 个提交：样例冻结、锁心跳/pid、空库重试、Q20/Q21 整理与输出、Q18 范围报错、探针与证据、下一会话交接、推送状态更正。
+- 未合并到 `main`；用户本轮明确授权推送本原型分支，已推送到 `origin/prototype/pi-q20-q21-lock-recovery`，头提交 `ae78a586`（第一次推送落在 `7afa2d1d`）。
 - 改动范围：`packages/kernel/src/{pi-runtime,consolidation}.ts`、`packages/store/src/{session-store,consolidate}.ts`、`apps/mcp/src/{tools/ans-chat.tool,ans-chat-session}.ts`、`apps/cli/src/commands/consolidate.ts`。行为清单见 `HANDOFF.md` 第 7 节。
 
 ## 4. 怎么跑
