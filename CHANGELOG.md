@@ -4,6 +4,34 @@
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版本号按
 [SemVer](https://semver.org/)。
 
+## Unreleased — #20: dsh 审批通道真机验收（沙盒，四种结果都跑通）
+
+### Added
+
+- **`scripts/dsh-approval-acceptance.mjs`**：一条命令把 dsh 审批通道从头跑到尾。脚本先从源码构建并打包 `apps/dsh-plugin`（`lib/` 不进仓库，全新检出也能跑），按 `web` 和 `headless` 两个模板各建一个独立 profile，装插件，配好模型路由，再起本地的 anysearch 策略服务和 `ans-mcp`，最后用浏览器真点一轮对话。跑完读会话日志里的 `approval/asked`、`approval/decided` 和工具结果，逐项核对：允许一次就真的执行工具；拒绝时模型拿到的是拒绝错误，不是检索结果；停止生成记成撤回；headless 没有审批通道时按“拿不准就拒绝”收尾。需要 Node 22.15 以上，因为会话日志是 zstd 压缩的。
+- **沙盒只碰自己的临时目录**：`DSH_HOME`、默认工作区（`documentsDirectory` 指到临时目录）、两个本地服务和它们的库、模型补丁全在一个临时目录里；退出时先杀子进程，删目录失败会重试，实在删不掉就报错并把退出码改成 1，`--keep` 才留现场。Ctrl-C 也会走同一套清理。真实主目录不写。
+- **不钉 dsh 版本**：脚本用 `PATH` 上的 `dsh`，也可以用 `DSH_BIN` 换一个，报告里只打印实际版本。profile 的补丁按当前 0.2.2 的行 id 写的，换大版本要先核对一遍。
+
+### Verification
+
+- 在本机沙盒里用 `@deepseek-ai/dsh@0.2.2-rc.1`（仓库当前钉的版本）跑：退出码 0，8 项检查全 PASS。八项是宿主在位、策略服务、`ans-mcp` 服务、网页起来，加上允许一次（`allowed-once`，工具返回 9912 字符真实检索结果）、拒绝（`rejected`，模型看到 `the user rejected tool "ans_search_web"`）、停止生成（`cancelled`，模型看到 `tool call aborted before dispatch`）、headless（`unavailable`，模型看到 `requires approval, but no approval channel is available`）。打包只是准备步骤，不算一项检查。
+- 前三种在网页里点出来；第四种只能走 headless，因为 headless profile 本来就没装审批应答器，这正是它要证明的“默认拒绝”。
+- 模型走的是本机现有的 OpenAI 兼容网关，不是 DeepSeek 官方 Key；检索走真实的 `ans-mcp` 和真实网络。这一轮验的是审批交接和拒绝路径，不是检索质量。
+- 跑完复查过：临时目录已删，真实 `文档/deepseek-harness/default-workspace` 没被动过（修改时间仍是本轮之前），脚本起的端口都已释放。
+
+## Unreleased — #252: dsh 0.1.7 → 0.2.2 升级
+
+### Changed
+
+- **dsh 依赖族从 `0.1.7-rc.1` 升到 `0.2.2-rc.1`**：`pnpm-workspace.yaml` 的 catalog 里 19 个 `@deepseek-ai/dsh-*` 一起升版；`@deepseek-ai/cordis` 从 `4.0.4` 升到 `4.1.0`。`@deepseek-ai/dsh-invariants` 在 0.2.2 已经没有这个包，catalog 和 overrides 里的同名条目一起删掉；装好的 0.2.2 依赖里也没有谁再引用它。lockfile 重新生成后，`pnpm install --ignore-scripts` 退出 0。
+- **插件源码只改了一句版本注释**：对照 0.2.2 的 `.d.ts`，我们用到的工具注册、hook 事件、消息来源这几个类型没变，所以没有改行为，也没有加 `any`、`ts-ignore` 或 `@ts-expect-error`。
+- **文档跟版本对齐**：中英文 README 的宿主表改成 `0.2.2-rc.1`，写清“网页对话 + 热重载，2026-11-10，后端是假桩”；`docs/deepseek-harness-integration.md` 的已验证版本、热重载机制和限制说明一起改。旧的 `patchReload` 说法删掉，改成 `dsh-hmr`；`agent/session-start` 改成代码里真实用的 `agent/created` 加 `source === 'startup'` 守卫；仓库里已经没有的 `.scratch` 证据路径换成 #252 的验收评论。
+
+### Verification
+
+- 沙盒真机验收（dsh `0.2.2-rc.1` + cordis `4.1.0`，网页 profile，2026-11-10）：这次运行退出码 0，16 项检查全 PASS。验过 `--dump-config` 里有插件和 `dsh-hmr` 两行、第一轮系统提示里路由卡片正好 1 份、工具调用后的请求带预热标记、每次工具调用只发 1 次 `/recall`、运行中改 `llm-deepseek` 的 baseURL 后下一轮请求真的打到新端口、热重载后路由卡片仍然只有 1 份、停宿主后网页端口关掉了。
+- 沙盒里的 anysearch 服务、MCP 端点和模型都是本地假桩；这一轮验的是 dsh 宿主这一侧的行为，不是真实检索或真实模型。
+
 ## Unreleased — #213: MCP clientInfo——新版 `_meta` 解析 + trace 断言
 
 ### Changed

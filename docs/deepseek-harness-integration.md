@@ -10,11 +10,19 @@ HTTP transport (default `127.0.0.1:3001/mcp`). The dsh process holds no
 retrieval logic, no secrets beyond the shared IPC credentials, and no
 database access.
 
-Verified against `@deepseek-ai/dsh@0.1.5-rc.2` (headless profile plus
-web-profile composition) on 2026-09-19. Evidence:
-`.scratch/grill-round-72/evidence/`. R90: the native tool plane is
-implemented and unit-tested against the pinned API
-(`@deepseek-ai/dsh-*@0.1.7-rc.1`). The bridge row is retired
+Sandbox-tested against `@deepseek-ai/dsh@0.2.2-rc.1` on 2026-11-10. The web
+profile loaded the plugin unchanged, a browser chat turn ran, the routing card
+showed up, preheat recall fired, and a live patch reload moved the next model
+request to a new port. Evidence is the verification comment on #252 (this run,
+exit 0, 16/16 checks). The anysearch server, the MCP endpoint, and the model
+were local stubs, so this round proves the dsh host wiring, not retrieval
+quality or real-model behavior. On the same host version the approval channel
+was also verified on the interactive path: allow once, reject, cancel, and the
+headless "no channel" refusal all matched the host's recorded outcomes (see
+"Approval channel" below). R90: the native tool plane was implemented and
+unit-tested against the API pinned then
+(`@deepseek-ai/dsh-*@0.1.7-rc.1`). The current pinned API is
+`@deepseek-ai/dsh-*@0.2.2-rc.1`; the bridge row remains retired
 (`cordis.patch.yml` now ships the plugin row only).
 
 ## Phase 1 (RETIRED — R90) — MCP bridge only (no bundle)
@@ -69,7 +77,7 @@ Phase-1 behavior (verified):
 
 ```sh
 pnpm pack --pack-destination <tmp>          # in apps/dsh-plugin
-dsh plugin --profile <name> add <tmp>/anysearch-cli-dsh-plugin-0.0.6.tgz
+dsh plugin --profile <name> add <tmp>/anysearch-cli-dsh-plugin-<version>.tgz
 # post-publish equivalent: dsh plugin --profile <name> add @anysearch-cli/dsh-plugin
 ```
 
@@ -86,7 +94,7 @@ anysearch server and are fail-open: a dead server never blocks the agent.
 
 | Surface | Behavior |
 | --- | --- |
-| `agent/session-start` | `agent.inject()` writes the routing card as a durable user message (next request) |
+| `agent/created` | with `source === 'startup'`, `agent.inject()` writes the routing card as a durable user message (next request). Resume, clear, and compact are skipped. |
 | `ctx.systemPrompt` | registers the `anysearch:routing-card` section (every request) |
 | `tools/pre-execute` | URL policy check: `deny` on denylist hosts, `ask` on non-allowlist. It is fail-closed on URLs when the policy is unreachable. Recall preheat is injected into the next request. |
 | `tools/post-execute` | appends the distilled result summary to `additionalContexts` |
@@ -110,11 +118,12 @@ once. A transport failure degrades fail-open to empty results. An upstream
   last, so user overrides win.
 - Override a bundle row with `- id: <row-id>` entries. Patch the fields you
   need. For `config`, restate every key: the whole row is replaced.
-- `patchReload: "startup"` (headless, verified) applies patches on next boot.
-  `patchReload: "live"` (web) is expected to reload the patch layer live. Our
-  listeners are fiber-scoped Cordis effects that should dispose cleanly on
-  reload. This is EXPECTED, not yet verified (see
-  defer-r72-dsh-web-interactive-matrix).
+- Live reload comes from `dsh-hmr`, which the shipped `web` template enables.
+  The old `patchReload` profile field was removed in 0.1.7, so do not add it.
+  Verified on 2026-11-10 with 0.2.2-rc.1: changing the `llm-deepseek` baseURL
+  in the user patch while the host was running sent the next request to the
+  new port, and the `anysearch:routing-card` section still appeared exactly
+  once (no duplicate registration).
 - Upgrade check: after bumping `@deepseek-ai/dsh`, diff
   `--dump-default-config` to confirm the bundle rows still land. A future dsh
   release that ships its own `mcp-anysearch` id would collide (the
@@ -122,13 +131,14 @@ once. A transport failure degrades fail-open to empty results. An upstream
 
 ## Verification transcript (rerunnable)
 
-Headless profile, isolated `$DSH_HOME`. Full evidence is under
-`.scratch/grill-round-72/evidence/`:
+Headless profile, isolated `$DSH_HOME`. The 2026-09-19 headless record is
+historical. The 2026-11-10 web run is recorded in the #252 verification
+comment.
 
 ```sh
 # install + register
 pnpm pack --pack-destination <tmp>          # apps/dsh-plugin
-dsh plugin --profile headless add <tmp>/anysearch-cli-dsh-plugin-0.0.6.tgz
+dsh plugin --profile headless add <tmp>/anysearch-cli-dsh-plugin-<version>.tgz
 dsh --profile headless --dump-config        # bundle layer + patched-by markers
 
 # live turn (task positional; exits after one task)
@@ -145,15 +155,79 @@ Verified on the wire:
 - the distilled summary is appended to `additionalContexts`, and `POST /index`
   carries real result entries with `x-anysearch-session-id`.
 
+## Approval channel (verified on the real host, 2026-11-10)
+
+When a tool argument carries a URL, `tools/pre-execute` decides `deny`, `allow`,
+or `ask`. Our plugin only produces that decision. What happens after `ask` is
+the host's work: it asks its composed approval answerers and turns the answer
+into `allowed-once`, `rejected`, `cancelled`, or `unavailable`.
+
+`node scripts/dsh-approval-acceptance.mjs` checks that handoff end to end. It
+uses a real model route, a real `ans-mcp` HTTP server, and the real host; only
+the model endpoint may be a gateway rather than DeepSeek's own API. It runs
+against whatever `dsh` is on `PATH` (set `DSH_BIN` to use another one), so there
+is no pinned version in the script.
+
+Every scenario runs in one temporary directory: `DSH_HOME`, the default
+workspace, both local servers, their stores, and the model patch all live
+there. The directory and every child process are removed on exit; pass `--keep`
+to inspect it. The real home directory is never written.
+
+| Scenario | What the script drives | What it asserts |
+| --- | --- | --- |
+| allow once | browser turn, click 允许一次 | `approval/decided` = `allowed-once`, the tool returns real search content |
+| reject | browser turn, click 拒绝 | outcome `rejected`, the model sees `the user rejected tool "ans_search_web"` instead of a result |
+| cancel | stop the running turn while the approval panel is open | outcome `cancelled`, the model sees `tool call aborted before dispatch` |
+| no channel | `dsh headless` with the same profile | outcome `unavailable`, the model sees `requires approval, but no approval channel is available` |
+
+Run it with:
+
+```sh
+ANS_LLM_BASE_URL=... ANS_LLM_API_KEY=... ANS_LLM_MODEL=... \
+ANS_ACCEPTANCE_PLAYWRIGHT=<playwright-core module or directory> \
+ANS_ACCEPTANCE_BROWSER=<browser executable> \
+node scripts/dsh-approval-acceptance.mjs
+```
+
+`ANS_ACCEPTANCE_PLAYWRIGHT` points at an installed `playwright-core` or
+`playwright`; `ANS_ACCEPTANCE_BROWSER` is optional when Playwright's own
+browser download is present. Both environment variables are only for the
+browser driver, not for the host. The script needs Node 22.15 or newer, because
+it reads the host's zstd session logs with `zlib.zstdDecompressSync`.
+
+The session log is the receipt: each run writes `approval/asked`, then the
+matching `approval/decided`, then the tool result. The script reads those
+three events and fails if the pair is missing, if the outcomes disagree, or if
+the denied call is presented to the model as a success.
+
+What the run does not cover:
+
+- Only the terminal answerer is exercised. A multi-answerer chain where one
+  listener returns `next()` and another answers is host behaviour; this script
+  does not compose such a chain.
+- `unavailable` is checked on the headless profile, because a headless profile
+  composes no answerer. The other three outcomes run on the interactive path.
+- The sandbox pre-acknowledges the product preview notice
+  (`ui-settings-general.welcomeNoticeVersion`), so the page opens on the
+  composer instead of a modal. That row is test setup, not product behaviour.
+- The reject and cancel scenarios prove the recorded decision and the
+  model-facing error, not zero network calls: the script does not count MCP
+  requests. The host refuses before dispatch by contract; this run does not
+  measure that independently.
+- The script builds `apps/dsh-plugin` from source before packing, because its
+  `lib/` output is gitignored and a fresh checkout has none. If
+  `apps/plugin/dist` or `apps/mcp/dist` is missing, it builds those in place
+  too. Build output stays in the repo; only runtime state is sandboxed.
+
 ## Limitations (this round)
 
-- The interactive web UI turn is untested. The two named web probes
-  (routing-card inject and preheat marker) were verified on a web-profile
-  composition driven headlessly. The full browser flow is a later round's
-  matrix.
+- The 2026-11-10 web run used local stubs for the anysearch server, the MCP
+  endpoint, and the model. It proves plugin load, the routing card, preheat,
+  a native tool call, `/index`, live reload, host shutdown, and port release.
+  It does not prove real retrieval or real-model behavior.
 - Native tool-call timeouts are per-tool budgets inside the bundle
   (search 30 s / recall 15 s / knowledge 60 s / research+chat 300 s). The
   bridge `toolCallTimeoutMs` knob no longer applies.
-- The package is `private` this round. npm publish is a one-field change
-  (`private: false` plus `publishConfig`) and is deferred to the release
-  track.
+- npm publish is deferred to the release track. The package already ships
+  `private: false` plus `publishConfig`, so publishing is a release step, not
+  a code change.

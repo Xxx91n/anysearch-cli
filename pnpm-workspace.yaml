@@ -33,7 +33,6 @@ overrides:
   '@deepseek-ai/cordis': 'catalog:'
   '@deepseek-ai/dsh-agent': 'catalog:'
   '@deepseek-ai/dsh-brand': 'catalog:'
-  '@deepseek-ai/dsh-invariants': 'catalog:'
   '@deepseek-ai/dsh-llm': 'catalog:'
   '@deepseek-ai/dsh-ptc-runtime': 'catalog:'
   '@deepseek-ai/dsh-sandbox': 'catalog:'
@@ -54,30 +53,27 @@ overrides:
 
 # /: dsh 上游依赖族钉版——catalog 单点承载版本号，overrides 逐名枚举
 # 把全树（直接+传递）强制收敛到 catalog 值。直接依赖在 apps/dsh-plugin 用 catalog: 引用。
-# TE1 采纳（闸开先行，双锚齐 @2026-09-25）：锁 20 个 @deepseek-ai/dsh-*=0.1.7-rc.1
-# + cordis=4.0.4。家族重推导=0.1.7 peer 闭包：新增 workspace/storage/storage-domain/
-# session-persistence/sandbox/sandbox-policy/ptc-runtime 7 名；退役 code-runtime（0.1.7 线无此包）
-# + util-crypto（新闭包不再引用）。升级账本：.scratch/grill-round-73/upgrade-ledger.md
-# + v2 .scratch/grill-round-77/upgrade-ledger.md。
+# 2026-11-10：锁 19 个 @deepseek-ai/dsh-*=0.2.2-rc.1 + cordis=4.1.0。
+# dsh-invariants 在 0.2.2 已经退役，catalog 和 overrides 都不再列它。
+# 真机验收证据见 #252 的验收评论。
 catalog:
-  '@deepseek-ai/cordis': 4.0.4
-  '@deepseek-ai/dsh-agent': 0.1.7-rc.1
-  '@deepseek-ai/dsh-brand': 0.1.7-rc.1
-  '@deepseek-ai/dsh-invariants': 0.1.7-rc.1
-  '@deepseek-ai/dsh-llm': 0.1.7-rc.1
-  '@deepseek-ai/dsh-ptc-runtime': 0.1.7-rc.1
-  '@deepseek-ai/dsh-sandbox': 0.1.7-rc.1
-  '@deepseek-ai/dsh-sandbox-policy': 0.1.7-rc.1
-  '@deepseek-ai/dsh-scope': 0.1.7-rc.1
-  '@deepseek-ai/dsh-session': 0.1.7-rc.1
-  '@deepseek-ai/dsh-session-persistence': 0.1.7-rc.1
-  '@deepseek-ai/dsh-session-projection': 0.1.7-rc.1
-  '@deepseek-ai/dsh-storage': 0.1.7-rc.1
-  '@deepseek-ai/dsh-storage-domain': 0.1.7-rc.1
-  '@deepseek-ai/dsh-system-prompt': 0.1.7-rc.1
-  '@deepseek-ai/dsh-timeout': 0.1.7-rc.1
-  '@deepseek-ai/dsh-tools': 0.1.7-rc.1
-  '@deepseek-ai/dsh-typert-protocol': 0.1.7-rc.1
-  '@deepseek-ai/dsh-user-approval': 0.1.7-rc.1
-  '@deepseek-ai/dsh-util-values': 0.1.7-rc.1
-  '@deepseek-ai/dsh-workspace': 0.1.7-rc.1
+  '@deepseek-ai/cordis': 4.1.0
+  '@deepseek-ai/dsh-agent': 0.2.2-rc.1
+  '@deepseek-ai/dsh-brand': 0.2.2-rc.1
+  '@deepseek-ai/dsh-llm': 0.2.2-rc.1
+  '@deepseek-ai/dsh-ptc-runtime': 0.2.2-rc.1
+  '@deepseek-ai/dsh-sandbox': 0.2.2-rc.1
+  '@deepseek-ai/dsh-sandbox-policy': 0.2.2-rc.1
+  '@deepseek-ai/dsh-scope': 0.2.2-rc.1
+  '@deepseek-ai/dsh-session': 0.2.2-rc.1
+  '@deepseek-ai/dsh-session-persistence': 0.2.2-rc.1
+  '@deepseek-ai/dsh-session-projection': 0.2.2-rc.1
+  '@deepseek-ai/dsh-storage': 0.2.2-rc.1
+  '@deepseek-ai/dsh-storage-domain': 0.2.2-rc.1
+  '@deepseek-ai/dsh-system-prompt': 0.2.2-rc.1
+  '@deepseek-ai/dsh-timeout': 0.2.2-rc.1
+  '@deepseek-ai/dsh-tools': 0.2.2-rc.1
+  '@deepseek-ai/dsh-typert-protocol': 0.2.2-rc.1
+  '@deepseek-ai/dsh-user-approval': 0.2.2-rc.1
+  '@deepseek-ai/dsh-util-values': 0.2.2-rc.1
+  '@deepseek-ai/dsh-workspace': 0.2.2-rc.1

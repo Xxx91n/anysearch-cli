@@ -105,6 +105,12 @@
 - **显式会话句柄**:`ans_chat` 返回的会话 id，客户端传回它才能接上同一段记忆（代码里叫 sessionId）。
   _Avoid_: Explicit Session Handle
 
+- **审批通道**:宿主在放行一个拿不准的工具调用前，先把“要不要放行”问给用户，再把用户的选择传回工具那一层的整条路（代码里叫 approval channel；上游 dsh 叫 `approval/request`）。
+  _Avoid_: Approval Channel、审批 waterfall、审批瀑布
+
+- **审批结果**:审批通道问完之后只有四种回答——放行一次、拒绝、撤回、没人应答；除了放行一次，其余三种都不执行工具（代码里叫 ApprovalOutcome）。
+  _Avoid_: ApprovalOutcome、审批裁决
+
 ## 评测与发布
 
 - **评测台**:用固定数据集量记忆能力，指标和判定线预先定好，换数据集必须重新校准（代码里叫 eval）。
