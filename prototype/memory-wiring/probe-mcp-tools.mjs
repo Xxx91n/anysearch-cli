@@ -15,8 +15,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, "out");
 mkdirSync(OUT, { recursive: true });
 
-const FILTER = "D:/Windows/Temp/xx-anysearch-probe/papers/anysearch-cli-demo/eval-r19/lib/mcp-tool-filter.mjs";
-const MCP = "D:/Aworker/anysearch-cli/apps/mcp/dist/index.cjs";
+// Override these two if the paper checkout or the MCP build lives elsewhere.
+const FILTER = process.env.PROBE_FILTER
+  || "D:/Aworker/research/ALL/papers/anysearch-cli-demo/eval-r19/lib/mcp-tool-filter.mjs";
+const MCP = process.env.PROBE_MCP
+  || fileURLToPath(new URL("../../apps/mcp/dist/index.cjs", import.meta.url));
 
 function rpcSession(command, args, label) {
   return new Promise((resolve, reject) => {
