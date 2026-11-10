@@ -25,7 +25,8 @@ import {
 import { estimateTranscriptTokens } from "./message-text";
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
-import { appendFileSync, mkdirSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import {
   CONTENT_TRUST_SCHEMA_VERSION,
@@ -531,8 +532,25 @@ async function acquireSessionQueue(key: string): Promise<() => void> {
   };
 }
 
+/**
+ * Cross-process mutex for one PI session file. The JSONL record has one
+ * writer; two processes appending at once would interleave entries. The lock
+ * is a directory (mkdir is atomic).
+ *
+ * A plain directory-mtime lock mistakes a long but healthy run for a dead one.
+ * The holder now records its pid/host and refreshes a heartbeat file, and a
+ * waiter only steals a lock when the recorded owner is really gone:
+ * - same host + live pid: never steal, however old the heartbeat is
+ * - same host + dead pid: steal once the stale window has passed (the floor
+ *   keeps a just-created lock from being taken before owner.json lands)
+ * - other host or unreadable owner: fall back to heartbeat/directory age
+ * ANS_PROTOTYPE_LOCK_HEARTBEAT=0 restores the old mtime-only behavior so the
+ * before/after evidence can be produced on the same binary.
+ */
 const FILE_LOCK_STALE_MS = 10 * 60_000;
 const FILE_LOCK_TIMEOUT_MS = 120_000;
+const LOCK_OWNER_FILE = "owner.json";
+const LOCK_HEARTBEAT_FILE = "heartbeat";
 
 // PROTOTYPE (cross-process probe): default behavior is unchanged, but the
 // stale/timeout windows are overridable so a killed holder can be shown to
@@ -544,27 +562,85 @@ function lockMsFromEnv(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-/**
- * Cross-process mutex for one PI session file. The JSONL record has one
- * writer; two processes appending at once would interleave entries. The lock
- * is a directory (mkdir is atomic) and goes stale after the stale window.
- */
+function lockHeartbeatEnabled(): boolean {
+  return process.env.ANS_PROTOTYPE_LOCK_HEARTBEAT !== "0";
+}
+
+function pidIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException)?.code === "EPERM";
+  }
+}
+
+interface LockOwner { pid: number; host: string; startedAt: number }
+
+function readLockOwner(lockPath: string): LockOwner | undefined {
+  try {
+    const raw = JSON.parse(readFileSync(join(lockPath, LOCK_OWNER_FILE), "utf8")) as Partial<LockOwner>;
+    if (!Number.isInteger(raw.pid) || raw.pid! <= 0 || typeof raw.host !== "string") return undefined;
+    return { pid: raw.pid!, host: raw.host, startedAt: Number(raw.startedAt) || 0 };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Newest ORIGINAL timestamp available for the lock: heartbeat, else directory. */
+function lockAgeMs(lockPath: string, now: number): number {
+  const heartbeat = join(lockPath, LOCK_HEARTBEAT_FILE);
+  try {
+    return now - statSync(existsSync(heartbeat) ? heartbeat : lockPath).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
 async function acquireFileLock(lockPath: string, timeoutMs = lockMsFromEnv("ANS_PI_LOCK_TIMEOUT_MS", FILE_LOCK_TIMEOUT_MS)): Promise<() => void> {
   const staleMs = lockMsFromEnv("ANS_PI_LOCK_STALE_MS", FILE_LOCK_STALE_MS);
+  const heartbeatEnabled = lockHeartbeatEnabled();
   const start = Date.now();
   for (;;) {
     try {
       mkdirSync(lockPath);
-      return () => { try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* unlocked by stale sweep */ } };
+      let timer: ReturnType<typeof setInterval> | undefined;
+      if (heartbeatEnabled) {
+        const owner: LockOwner = { pid: process.pid, host: hostname(), startedAt: Date.now() };
+        try { writeFileSync(join(lockPath, LOCK_OWNER_FILE), JSON.stringify(owner)); } catch { /* best effort */ }
+        const beat = () => { try { writeFileSync(join(lockPath, LOCK_HEARTBEAT_FILE), String(Date.now())); } catch { /* lock already released */ } };
+        beat();
+        timer = setInterval(beat, Math.min(5_000, Math.max(100, Math.floor(staleMs / 3))));
+        timer.unref?.();
+      }
+      return () => {
+        if (timer) clearInterval(timer);
+        try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* unlocked by stale sweep */ }
+      };
     } catch (e) {
       if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
-      try {
-        const st = statSync(lockPath);
-        if (Date.now() - st.mtimeMs > staleMs) {
+      const now = Date.now();
+      let steal = false;
+      if (heartbeatEnabled) {
+        const owner = readLockOwner(lockPath);
+        if (owner) {
+          const sameHost = owner.host === hostname();
+          const alive = sameHost ? pidIsAlive(owner.pid) : false;
+          // A live local owner is protected no matter how old the heartbeat is.
+          // A dead owner or a foreign host is judged by the stale window.
+          steal = sameHost ? !alive && lockAgeMs(lockPath, now) > staleMs : lockAgeMs(lockPath, now) > staleMs;
+        } else {
+          steal = lockAgeMs(lockPath, now) > staleMs;
+        }
+      } else {
+        steal = lockAgeMs(lockPath, now) > staleMs;
+      }
+      if (steal) {
+        try {
           rmSync(lockPath, { recursive: true, force: true });
           continue;
-        }
-      } catch { /* the holder released between stat and now */ }
+        } catch { /* another waiter swept it first; retry the mkdir */ }
+      }
       if (Date.now() - start > timeoutMs) {
         throw new Error("This session is busy in another process; retry after the current run finishes.");
       }
