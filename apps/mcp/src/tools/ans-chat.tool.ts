@@ -165,7 +165,11 @@ export function registerAnsChat(
             try {
               const llm = await getLlmSession();
               seams = createConsolidationSeams(llm);
-              eng.store.setConsolidationSeams?.({ summarize: seams.summarize, classify: seams.classify });
+              eng.store.setConsolidationSeams?.({
+                summarize: seams.summarize,
+                classify: seams.classify,
+                verify: seams.verify,
+              });
             } catch (e) {
               // Fail-open: the store still reports llmUnavailable per cluster;
               // the usage block names the missing accounting instead of faking it.
@@ -175,14 +179,19 @@ export function registerAnsChat(
               );
             }
           }
-          const sessionIds =
-            requestedSessionId !== undefined && isValidSessionHandle(requestedSessionId)
-              ? [requestedSessionId]
-              : undefined;
+          // Q18: consolidation must have a valid scope. A malformed handle is an
+          // error, not a silent fallback to a full-archive run.
+          if (requestedSessionId !== undefined && !isValidSessionHandle(requestedSessionId)) {
+            return toolFailure(
+              "ans_chat consolidate: sessionId must be 1..128 visible ASCII characters; refusing an invalid scope (no full-archive fallback).",
+            );
+          }
+          const sessionIds = requestedSessionId !== undefined ? [requestedSessionId] : undefined;
+          const memoryScope = memoryIds && memoryIds.length > 0 ? memoryIds : undefined;
           try {
             const report = await eng.store.consolidateMemory({
               ...(sessionIds ? { sessionIds } : {}),
-              ...(memoryIds && memoryIds.length > 0 ? { memoryIds } : {}),
+              ...(memoryScope ? { memoryIds: memoryScope } : {}),
               ...(allowSingleEvidence ? { allowSingleEvidence } : {}),
               ...(dryRun ? { dryRun } : {}),
             });
@@ -194,9 +203,13 @@ export function registerAnsChat(
               cacheWriteTokens: 0,
               totalTokens: 0,
               costUsd: 0,
+              costBasis: "not-called" as const,
               missing: ["consolidation usage", "consolidation cache usage", "consolidation cost"],
             };
-            return buildAnsChatConsolidateResult(report, usage);
+            return buildAnsChatConsolidateResult(report, usage, {
+              sessionIds: sessionIds ?? null,
+              memoryIds: memoryScope ?? null,
+            });
           } catch (e) {
             return toolError("ans_chat", e instanceof Error ? e.message : String(e));
           }

@@ -1,0 +1,470 @@
+{
+  "probe": "q1-cross-process",
+  "startedAt": "2026-11-10T14:19:33.853Z",
+  "fixedSamples": "SAMPLES-Q1-Q3.md",
+  "nonce": "nmwas0tal",
+  "checks": {
+    "S1-serialized": {
+      "id": "S1-serialized",
+      "question": "same sessionId: A and B provider requests do not overlap",
+      "pass": true,
+      "evidence": {
+        "a": [
+          {
+            "start": 1794320378228,
+            "end": 1794320379445
+          }
+        ],
+        "b": [
+          {
+            "start": 1794320379739,
+            "end": 1794320380948
+          }
+        ]
+      }
+    },
+    "S1-continuity": {
+      "id": "S1-continuity",
+      "question": "B's provider request carries A's completed answer from the shared session record",
+      "pass": true,
+      "evidence": {
+        "bPromptIncludesA": true,
+        "bLastUser": "Q1-B-CONTINUE. Restate the previous answer verbatim, then add: Q1-B-ANSWER-nmwas0tal."
+      }
+    },
+    "S1-both-succeed": {
+      "id": "S1-both-succeed",
+      "question": "both calls return a completed structured result with the same sessionId",
+      "pass": true,
+      "evidence": {
+        "a": {
+          "ok": true,
+          "sessionId": "q1-shared-nmwas0tal"
+        },
+        "b": {
+          "ok": true,
+          "sessionId": "q1-shared-nmwas0tal"
+        }
+      }
+    },
+    "S2-one-file": {
+      "id": "S2-one-file",
+      "question": "the shared sessionId has exactly one PI JSONL file",
+      "pass": true,
+      "evidence": {
+        "files": [
+          "<tmp>\\pi-sessions\\2026-11-10T14-19-37-969Z_ans-d7594bbfb76441eaa6119de75f979d8f.jsonl"
+        ]
+      }
+    },
+    "S2-lines-parse": {
+      "id": "S2-lines-parse",
+      "question": "every PI JSONL line parses (no truncated/partial write)",
+      "pass": true,
+      "evidence": {
+        "lines": 8,
+        "unparsable": 0
+      }
+    },
+    "S2-no-duplicate": {
+      "id": "S2-no-duplicate",
+      "question": "the shared turn record was appended once: 2 user + 2 assistant entries, in order",
+      "pass": true,
+      "evidence": {
+        "assistantMessages": 2,
+        "userMessages": 2,
+        "answerRawOccurrences": {
+          "a": 2,
+          "b": 2
+        },
+        "note": "A marker occurs twice because B restates A's answer by sample design"
+      }
+    },
+    "S3-recovered": {
+      "id": "S3-recovered",
+      "question": "after the holder is SIGKILLed the next process acquires the stale lock and completes",
+      "pass": true,
+      "evidence": {
+        "elapsedMs": 3478,
+        "text": "Q1-B-AFTER-CRASH-ANSWER-nmwas0tal\nAgent completed (tokens: 60 in + 8 out = 68 total)\n{\"sessionId\":\"q1-crash-nmwas0tal\"}",
+        "killedExit": {
+          "code": null,
+          "signal": "SIGKILL"
+        }
+      }
+    },
+    "S3-lock-cleared": {
+      "id": "S3-lock-cleared",
+      "question": "no lock is left behind after recovery (not permanently stuck)",
+      "pass": true,
+      "evidence": {
+        "locksLeft": []
+      }
+    },
+    "S4-no-fake-success": {
+      "id": "S4-no-fake-success",
+      "question": "the killed request never returns a successful result",
+      "pass": true,
+      "evidence": {
+        "killed": {
+          "ok": false,
+          "text": "TRANSPORT ERROR: MCP process exited (code=null, signal=SIGKILL)\nstderr: anysearch MCP server: stdio transport ready\n"
+        }
+      }
+    },
+    "S4-no-completion-record": {
+      "id": "S4-no-completion-record",
+      "question": "the killed run is not recorded as a completed answer in the PI JSONL",
+      "pass": true,
+      "evidence": {
+        "crashFiles": [
+          "<tmp>\\pi-sessions\\2026-11-10T14-19-45-145Z_ans-ac735fe9f7fa001e8332023cf7100f8e.jsonl"
+        ],
+        "hasPartial": false,
+        "lines": 7
+      }
+    },
+    "S4-no-settlement": {
+      "id": "S4-no-settlement",
+      "question": "the killed run is not settled as spent in the budget ledger",
+      "pass": true,
+      "evidence": {
+        "ledger": []
+      }
+    },
+    "S5-parallel": {
+      "id": "S5-parallel",
+      "question": "different sessionIds really overlap at the provider",
+      "pass": true,
+      "evidence": {
+        "parA": [
+          {
+            "start": 1794320394554,
+            "end": 1794320395758
+          }
+        ],
+        "parB": [
+          {
+            "start": 1794320394563,
+            "end": 1794320395774
+          }
+        ]
+      }
+    },
+    "S5-separate-files": {
+      "id": "S5-separate-files",
+      "question": "different sessions write separate JSONL files",
+      "pass": true,
+      "evidence": {
+        "aFiles": [
+          "<tmp>\\pi-sessions\\2026-11-10T14-19-54-239Z_ans-d7f4e755270735521a8b44fea40b62c8.jsonl"
+        ],
+        "bFiles": [
+          "<tmp>\\pi-sessions\\2026-11-10T14-19-54-259Z_ans-daf32c32362af8ecd0da0916522abf47.jsonl"
+        ]
+      }
+    },
+    "S6-no-credential": {
+      "id": "S6-no-credential",
+      "question": "evidence carries no credential material",
+      "pass": true,
+      "evidence": {
+        "checkedChars": 80272
+      }
+    }
+  },
+  "calls": {
+    "sameSession": {
+      "a": {
+        "label": "A",
+        "ok": true,
+        "elapsedMs": 1525,
+        "isError": false,
+        "text": "Q1-A-ANSWER-nmwas0tal\nAgent completed (tokens: 60 in + 8 out = 68 total)\n{\"sessionId\":\"q1-shared-nmwas0tal\"}",
+        "structured": {
+          "sessionId": "q1-shared-nmwas0tal",
+          "usage": {
+            "run": {
+              "inputTokens": 60,
+              "outputTokens": 8,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "totalTokens": 68,
+              "costUsd": 0,
+              "assistantCalls": 1,
+              "compactionCalls": 0,
+              "compactionTokens": 0,
+              "compactionCostUsd": 0,
+              "missing": []
+            },
+            "memorySummary": {
+              "calls": 0,
+              "inputTokens": 0,
+              "outputTokens": 0,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "totalTokens": 0,
+              "costUsd": 0,
+              "missing": [
+                "summary usage",
+                "summary cost"
+              ]
+            }
+          },
+          "context": {
+            "tokens": 68,
+            "window": 100000,
+            "percent": 0.068
+          },
+          "toolCalls": {}
+        }
+      },
+      "b": {
+        "label": "B",
+        "ok": true,
+        "elapsedMs": 2430,
+        "isError": false,
+        "text": "Q1-B-ANSWER-nmwas0tal\nAgent completed (tokens: 60 in + 8 out = 68 total)\n{\"sessionId\":\"q1-shared-nmwas0tal\"}",
+        "structured": {
+          "sessionId": "q1-shared-nmwas0tal",
+          "usage": {
+            "run": {
+              "inputTokens": 60,
+              "outputTokens": 8,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "totalTokens": 68,
+              "costUsd": 0,
+              "assistantCalls": 1,
+              "compactionCalls": 0,
+              "compactionTokens": 0,
+              "compactionCostUsd": 0,
+              "missing": []
+            },
+            "memorySummary": {
+              "calls": 0,
+              "inputTokens": 0,
+              "outputTokens": 0,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "totalTokens": 0,
+              "costUsd": 0,
+              "missing": [
+                "summary usage",
+                "summary cost"
+              ]
+            }
+          },
+          "context": {
+            "tokens": 68,
+            "window": 100000,
+            "percent": 0.068
+          },
+          "toolCalls": {}
+        }
+      }
+    },
+    "crash": {
+      "killed": {
+        "label": "HANG",
+        "ok": false,
+        "isError": true,
+        "elapsedMs": 1198,
+        "text": "TRANSPORT ERROR: MCP process exited (code=null, signal=SIGKILL)\nstderr: anysearch MCP server: stdio transport ready\n",
+        "structured": null
+      },
+      "recovered": {
+        "label": "AFTER-CRASH",
+        "ok": true,
+        "elapsedMs": 3478,
+        "isError": false,
+        "text": "Q1-B-AFTER-CRASH-ANSWER-nmwas0tal\nAgent completed (tokens: 60 in + 8 out = 68 total)\n{\"sessionId\":\"q1-crash-nmwas0tal\"}",
+        "structured": {
+          "sessionId": "q1-crash-nmwas0tal",
+          "usage": {
+            "run": {
+              "inputTokens": 60,
+              "outputTokens": 8,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "totalTokens": 68,
+              "costUsd": 0,
+              "assistantCalls": 1,
+              "compactionCalls": 0,
+              "compactionTokens": 0,
+              "compactionCostUsd": 0,
+              "missing": []
+            },
+            "memorySummary": {
+              "calls": 0,
+              "inputTokens": 0,
+              "outputTokens": 0,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "totalTokens": 0,
+              "costUsd": 0,
+              "missing": [
+                "summary usage",
+                "summary cost"
+              ]
+            }
+          },
+          "context": {
+            "tokens": 68,
+            "window": 100000,
+            "percent": 0.068
+          },
+          "toolCalls": {}
+        }
+      },
+      "killedExit": {
+        "code": null,
+        "signal": "SIGKILL"
+      }
+    },
+    "parallel": {
+      "a": {
+        "label": "PAR-A",
+        "ok": true,
+        "elapsedMs": 1571,
+        "isError": false,
+        "text": "Q1-PAR-A-ANSWER-nmwas0tal\nAgent completed (tokens: 60 in + 8 out = 68 total)\n{\"sessionId\":\"q1-par-a-nmwas0tal\"}",
+        "structured": {
+          "sessionId": "q1-par-a-nmwas0tal",
+          "usage": {
+            "run": {
+              "inputTokens": 60,
+              "outputTokens": 8,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "totalTokens": 68,
+              "costUsd": 0,
+              "assistantCalls": 1,
+              "compactionCalls": 0,
+              "compactionTokens": 0,
+              "compactionCostUsd": 0,
+              "missing": []
+            },
+            "memorySummary": {
+              "calls": 0,
+              "inputTokens": 0,
+              "outputTokens": 0,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "totalTokens": 0,
+              "costUsd": 0,
+              "missing": [
+                "summary usage",
+                "summary cost"
+              ]
+            }
+          },
+          "context": {
+            "tokens": 68,
+            "window": 100000,
+            "percent": 0.068
+          },
+          "toolCalls": {}
+        }
+      },
+      "b": {
+        "label": "PAR-B",
+        "ok": true,
+        "elapsedMs": 1587,
+        "isError": false,
+        "text": "Q1-PAR-B-ANSWER-nmwas0tal\nAgent completed (tokens: 60 in + 8 out = 68 total)\n{\"sessionId\":\"q1-par-b-nmwas0tal\"}",
+        "structured": {
+          "sessionId": "q1-par-b-nmwas0tal",
+          "usage": {
+            "run": {
+              "inputTokens": 60,
+              "outputTokens": 8,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "totalTokens": 68,
+              "costUsd": 0,
+              "assistantCalls": 1,
+              "compactionCalls": 0,
+              "compactionTokens": 0,
+              "compactionCostUsd": 0,
+              "missing": []
+            },
+            "memorySummary": {
+              "calls": 0,
+              "inputTokens": 0,
+              "outputTokens": 0,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "totalTokens": 0,
+              "costUsd": 0,
+              "missing": [
+                "summary usage",
+                "summary cost"
+              ]
+            }
+          },
+          "context": {
+            "tokens": 68,
+            "window": 100000,
+            "percent": 0.068
+          },
+          "toolCalls": {}
+        }
+      }
+    }
+  },
+  "coldStart": {
+    "attempts": [
+      {
+        "attempt": 1,
+        "a": {
+          "alive": true,
+          "stderr": "anysearch MCP server: stdio transport ready\n"
+        },
+        "b": {
+          "alive": true,
+          "stderr": "anysearch MCP server: stdio transport ready\n"
+        }
+      },
+      {
+        "attempt": 2,
+        "a": {
+          "alive": true,
+          "stderr": "anysearch MCP server: stdio transport ready\n"
+        },
+        "b": {
+          "alive": true,
+          "stderr": "anysearch MCP server: stdio transport ready\n"
+        }
+      },
+      {
+        "attempt": 3,
+        "a": {
+          "alive": true,
+          "stderr": "anysearch MCP server: stdio transport ready\n"
+        },
+        "b": {
+          "alive": false,
+          "stderr": "anysearch MCP server error: database is locked\n",
+          "exit": {
+            "code": 1,
+            "signal": null
+          }
+        }
+      },
+      {
+        "attempt": 4,
+        "a": {
+          "alive": true,
+          "stderr": "anysearch MCP server: stdio transport ready\n"
+        },
+        "b": {
+          "alive": true,
+          "stderr": "anysearch MCP server: stdio transport ready\n"
+        }
+      }
+    ],
+    "failures": 1
+  },
+  "failed": []
+}

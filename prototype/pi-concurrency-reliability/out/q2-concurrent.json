@@ -1,0 +1,474 @@
+{
+  "probe": "q2-concurrent",
+  "startedAt": "2026-11-10T14:11:50.437Z",
+  "fixedSamples": "SAMPLES-Q1-Q3.md",
+  "model": {
+    "provider": "openai",
+    "model": "deepseek-v4.1-flash",
+    "customEndpoint": true
+  },
+  "scenarios": {
+    "before": {
+      "mode": "A",
+      "guard": "0",
+      "oldId": 1,
+      "reports": {
+        "alpha": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 3,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "staleDetails": [],
+          "semanticIds": [
+            3
+          ],
+          "summariesNeedingRefresh": [
+            "30272424-14c0-4dd5-a55a-d9d09c27c495",
+            "c8b62ea9-075a-44b5-be0f-399acabda95f"
+          ]
+        },
+        "omega": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "staleDetails": [],
+          "semanticIds": [
+            2
+          ],
+          "summariesNeedingRefresh": [
+            "30272424-14c0-4dd5-a55a-d9d09c27c495",
+            "c8b62ea9-075a-44b5-be0f-399acabda95f"
+          ]
+        }
+      },
+      "liveSemantic": [
+        {
+          "id": 2,
+          "content": "Support hours are now 10:00-18:00 on weekends, no longer Monday to Friday 9-5."
+        },
+        {
+          "id": 3,
+          "content": "Support hours are now 24/7, no longer Monday to Friday 9-5."
+        }
+      ],
+      "oldRow": {
+        "id": 1,
+        "content": "Business hours are Monday to Friday 9-5.",
+        "valid_until": "2026-11-10 14:11:42",
+        "superseded_by": 3
+      },
+      "oldEpisodes": [
+        {
+          "id": 1,
+          "superseded_by": 2
+        },
+        {
+          "id": 2,
+          "superseded_by": 2
+        },
+        {
+          "id": 3,
+          "superseded_by": 2
+        }
+      ],
+      "statuses": [
+        {
+          "target": "rolling_summary",
+          "needsRefresh": true,
+          "invalidatedBy": 2,
+          "oldSemanticId": 1,
+          "overlap": 1,
+          "markedAt": "2026-11-10T14:11:42.724Z"
+        },
+        {
+          "target": "rolling_summary",
+          "needsRefresh": true,
+          "invalidatedBy": 2,
+          "oldSemanticId": 1,
+          "overlap": 1,
+          "markedAt": "2026-11-10T14:11:42.724Z"
+        },
+        {
+          "target": "rolling_summary",
+          "needsRefresh": true,
+          "invalidatedBy": 3,
+          "oldSemanticId": 1,
+          "overlap": 1,
+          "markedAt": "2026-11-10T14:11:42.755Z"
+        },
+        {
+          "target": "rolling_summary",
+          "needsRefresh": true,
+          "invalidatedBy": 3,
+          "oldSemanticId": 1,
+          "overlap": 1,
+          "markedAt": "2026-11-10T14:11:42.755Z"
+        }
+      ],
+      "stderr": {
+        "alpha": "",
+        "omega": ""
+      }
+    },
+    "after": {
+      "mode": "B",
+      "guard": "1",
+      "oldId": 1,
+      "reports": {
+        "alpha": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "staleDetails": [],
+          "semanticIds": [
+            2
+          ],
+          "summariesNeedingRefresh": [
+            "0caea339-1181-4d0a-befd-50c79ef7a71c",
+            "390db57f-700d-42a1-bf9c-8dfed5351760"
+          ]
+        },
+        "omega": {
+          "add": 0,
+          "update": 0,
+          "skip": 0,
+          "conflict": 1,
+          "staleUpdates": 1,
+          "verifyRejected": 0,
+          "updates": [],
+          "staleDetails": [
+            {
+              "oldId": 1,
+              "expected": "Business hours are Monday to Friday 9-5.",
+              "current": null
+            }
+          ],
+          "semanticIds": [],
+          "summariesNeedingRefresh": []
+        }
+      },
+      "liveSemantic": [
+        {
+          "id": 2,
+          "content": "Support hours are now 24/7, no longer Monday to Friday 9-5."
+        }
+      ],
+      "oldRow": {
+        "id": 1,
+        "content": "Business hours are Monday to Friday 9-5.",
+        "valid_until": "2026-11-10 14:11:46",
+        "superseded_by": 2
+      },
+      "oldEpisodes": [
+        {
+          "id": 1,
+          "superseded_by": 2
+        },
+        {
+          "id": 2,
+          "superseded_by": 2
+        },
+        {
+          "id": 3,
+          "superseded_by": 2
+        }
+      ],
+      "statuses": [
+        {
+          "target": "rolling_summary",
+          "needsRefresh": true,
+          "invalidatedBy": 2,
+          "oldSemanticId": 1,
+          "overlap": 1,
+          "markedAt": "2026-11-10T14:11:46.587Z"
+        },
+        {
+          "target": "rolling_summary",
+          "needsRefresh": true,
+          "invalidatedBy": 2,
+          "oldSemanticId": 1,
+          "overlap": 1,
+          "markedAt": "2026-11-10T14:11:46.587Z"
+        }
+      ],
+      "stderr": {
+        "alpha": "",
+        "omega": ""
+      }
+    },
+    "invalidScope": {
+      "isError": true,
+      "text": "ans_chat consolidate: sessionId must be 1..128 visible ASCII characters; refusing an invalid scope (no full-archive fallback).",
+      "structured": null,
+      "stderr": "anysearch MCP server: stdio transport ready\n"
+    }
+  },
+  "checks": [
+    {
+      "id": "S0-repro",
+      "question": "current behavior: both writers report update and leave two contradictory live conclusions",
+      "pass": true,
+      "evidence": {
+        "mode": "A (guard=0)",
+        "liveSemantic": [
+          {
+            "id": 2,
+            "content": "Support hours are now 10:00-18:00 on weekends, no longer Monday to Friday 9-5."
+          },
+          {
+            "id": 3,
+            "content": "Support hours are now 24/7, no longer Monday to Friday 9-5."
+          }
+        ],
+        "reports": {
+          "alpha": {
+            "add": 0,
+            "update": 1,
+            "skip": 0,
+            "conflict": 0,
+            "staleUpdates": 0,
+            "verifyRejected": 0,
+            "updates": [
+              {
+                "oldId": 1,
+                "newId": 3,
+                "retiredEpisodeIds": [
+                  1,
+                  2,
+                  3
+                ]
+              }
+            ],
+            "staleDetails": [],
+            "semanticIds": [
+              3
+            ],
+            "summariesNeedingRefresh": [
+              "30272424-14c0-4dd5-a55a-d9d09c27c495",
+              "c8b62ea9-075a-44b5-be0f-399acabda95f"
+            ]
+          },
+          "omega": {
+            "add": 0,
+            "update": 1,
+            "skip": 0,
+            "conflict": 0,
+            "staleUpdates": 0,
+            "verifyRejected": 0,
+            "updates": [
+              {
+                "oldId": 1,
+                "newId": 2,
+                "retiredEpisodeIds": [
+                  1,
+                  2,
+                  3
+                ]
+              }
+            ],
+            "staleDetails": [],
+            "semanticIds": [
+              2
+            ],
+            "summariesNeedingRefresh": [
+              "30272424-14c0-4dd5-a55a-d9d09c27c495",
+              "c8b62ea9-075a-44b5-be0f-399acabda95f"
+            ]
+          }
+        },
+        "oldRow": {
+          "id": 1,
+          "content": "Business hours are Monday to Friday 9-5.",
+          "valid_until": "2026-11-10 14:11:42",
+          "superseded_by": 3
+        },
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "superseded_by": 2
+          },
+          {
+            "id": 2,
+            "superseded_by": 2
+          },
+          {
+            "id": 3,
+            "superseded_by": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "S1-serialized-conflict",
+      "question": "guard on: exactly one update lands, the other reports a stale conflict, one live conclusion",
+      "pass": true,
+      "evidence": {
+        "mode": "B (guard=1)",
+        "liveSemantic": [
+          {
+            "id": 2,
+            "content": "Support hours are now 24/7, no longer Monday to Friday 9-5."
+          }
+        ],
+        "reports": {
+          "alpha": {
+            "add": 0,
+            "update": 1,
+            "skip": 0,
+            "conflict": 0,
+            "staleUpdates": 0,
+            "verifyRejected": 0,
+            "updates": [
+              {
+                "oldId": 1,
+                "newId": 2,
+                "retiredEpisodeIds": [
+                  1,
+                  2,
+                  3
+                ]
+              }
+            ],
+            "staleDetails": [],
+            "semanticIds": [
+              2
+            ],
+            "summariesNeedingRefresh": [
+              "0caea339-1181-4d0a-befd-50c79ef7a71c",
+              "390db57f-700d-42a1-bf9c-8dfed5351760"
+            ]
+          },
+          "omega": {
+            "add": 0,
+            "update": 0,
+            "skip": 0,
+            "conflict": 1,
+            "staleUpdates": 1,
+            "verifyRejected": 0,
+            "updates": [],
+            "staleDetails": [
+              {
+                "oldId": 1,
+                "expected": "Business hours are Monday to Friday 9-5.",
+                "current": null
+              }
+            ],
+            "semanticIds": [],
+            "summariesNeedingRefresh": []
+          }
+        },
+        "oldRow": {
+          "id": 1,
+          "content": "Business hours are Monday to Friday 9-5.",
+          "valid_until": "2026-11-10 14:11:46",
+          "superseded_by": 2
+        }
+      }
+    },
+    {
+      "id": "S1-relations",
+      "question": "old row names the winning successor; old episodes point at that same successor",
+      "pass": true,
+      "evidence": {
+        "winnerId": 2,
+        "oldRow": {
+          "id": 1,
+          "content": "Business hours are Monday to Friday 9-5.",
+          "valid_until": "2026-11-10 14:11:46",
+          "superseded_by": 2
+        },
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "superseded_by": 2
+          },
+          {
+            "id": 2,
+            "superseded_by": 2
+          },
+          {
+            "id": 3,
+            "superseded_by": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "S1-summaries",
+      "question": "affected summaries are paused once, pointing at the winning correction",
+      "pass": true,
+      "evidence": {
+        "statuses": [
+          {
+            "target": "rolling_summary",
+            "needsRefresh": true,
+            "invalidatedBy": 2,
+            "oldSemanticId": 1,
+            "overlap": 1,
+            "markedAt": "2026-11-10T14:11:46.587Z"
+          },
+          {
+            "target": "rolling_summary",
+            "needsRefresh": true,
+            "invalidatedBy": 2,
+            "oldSemanticId": 1,
+            "overlap": 1,
+            "markedAt": "2026-11-10T14:11:46.587Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "S2-invalid-scope",
+      "question": "malformed consolidate sessionId is an error, not a full-archive fallback",
+      "pass": true,
+      "evidence": {
+        "isError": true,
+        "text": "ans_chat consolidate: sessionId must be 1..128 visible ASCII characters; refusing an invalid scope (no full-archive fallback).",
+        "structured": null,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      }
+    }
+  ]
+}

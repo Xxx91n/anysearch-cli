@@ -19,7 +19,7 @@ import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate } from "./entity.js";
 import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch-cli/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
-import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ConsolidateOptions, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
+import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateVerifyFn, ConsolidateReport, ConsolidateOptions, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
 import { BudgetLedger, UNLIMITED_BUDGET_CAP, type BudgetCaps } from "./budget-ledger.js";
 // embedding is optional — routed through the guarded arm
@@ -168,7 +168,10 @@ export interface SessionStore {
   // the latest anchor_status row for a target anchor type, and the valid
   // materials a stale summary can be regenerated from.
   getAnchorStatus?(sessionId: string, target: string): Promise<{ payload: Record<string, unknown> } | undefined>;
-  getLiveKnowledgeDigest?(limit?: number): Promise<Array<{ kind: "semantic" | "episode"; id: number; text: string }>>;
+  getLiveKnowledgeDigest?(
+    limit?: number,
+    opts?: { sessionId?: string; includeSemanticIds?: number[] },
+  ): Promise<Array<{ kind: "semantic" | "episode"; id: number; text: string }>>;
   // Decision 6: the explicit consolidation entry the MCP tool calls. Optional
   // so embedded stores stay source-compatible; the tool refuses to guess.
   consolidateMemory?(opts?: ConsolidateOptions): Promise<ConsolidateReport>;
@@ -177,6 +180,7 @@ export interface SessionStore {
   setConsolidationSeams?(seams: {
     summarize?: ConsolidateSummarizeFn;
     classify?: ConsolidateClassifyFn;
+    verify?: ConsolidateVerifyFn;
   }): void;
   // search the research archive for the recall_memory MCP tool.
   searchMemory(query: string, limit?: number): Promise<MemoryHit[]>;
@@ -344,6 +348,7 @@ export class SqliteSessionStore implements SessionStore {
   // consolidation seams (summarize = bounded LLM per cluster; classify = kernel
   // classifyClaim-shaped fidelity gate). Both optional and fail-open.
   private consolidateSummarize?: ConsolidateSummarizeFn;
+  private consolidateVerify?: ConsolidateVerifyFn;
   private consolidateClassify?: ConsolidateClassifyFn;
   // semantic arm telemetry (serve mode; Phase-1 shadow contract retired).
   private readonly semTel = { queries: 0, hits: 0, served: 0 };
@@ -381,11 +386,13 @@ export class SqliteSessionStore implements SessionStore {
     // consolidation seams (same injection discipline as relationLlmFallback).
     consolidateSummarize?: ConsolidateSummarizeFn;
     consolidateClassify?: ConsolidateClassifyFn;
+    consolidateVerify?: ConsolidateVerifyFn;
   }) {
     this.entityLlmFallback = opts?.entityLlmFallback;
     this.relationLlmFallback = opts?.relationLlmFallback;
     this.consolidateSummarize = opts?.consolidateSummarize;
     this.consolidateClassify = opts?.consolidateClassify;
+    this.consolidateVerify = opts?.consolidateVerify;
     // tracked opener: the teardown registry closes it on any store-side exit
     // path that drains it (eval runner, test processes) — F-16 fix, #183.
     this.db = openDatabase(dbPath, { timeout: 5000 });
@@ -984,15 +991,41 @@ export class SqliteSessionStore implements SessionStore {
    * episodes that are live, unquarantined, unarchived, and not superseded.
    * Used to regenerate a summary that a correction invalidated.
    */
-  async getLiveKnowledgeDigest(limit = 40): Promise<Array<{ kind: "semantic" | "episode"; id: number; text: string }>> {
-    const sem = this.db
-      .prepare("SELECT id, content FROM semantic_memories WHERE valid_until IS NULL ORDER BY id DESC LIMIT ?")
-      .all(limit) as Array<{ id: number; content: string }>;
+  async getLiveKnowledgeDigest(
+    limit = 40,
+    opts: { sessionId?: string; includeSemanticIds?: number[] } = {},
+  ): Promise<Array<{ kind: "semantic" | "episode"; id: number; text: string }>> {
+    // PROTOTYPE (source dependency): when a session is named, rebuild only from
+    // that session's own live materials plus the knowledge derived from them (and
+    // the row that invalidated the summary). Selecting by global recency pulled
+    // unrelated sessions into one session's rebuilt summary.
+    const scopedEpisodeIds = opts.sessionId
+      ? new Set((this.db
+          .prepare(
+            "SELECT id FROM retrieval_results WHERE session_id = ? AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 AND superseded_by IS NULL",
+          )
+          .all(opts.sessionId) as Array<{ id: number }>).map((r) => r.id))
+      : undefined;
+    const includeIds = new Set(opts.includeSemanticIds ?? []);
+    const sem = (this.db
+      .prepare("SELECT id, content, source_episode_ids FROM semantic_memories WHERE valid_until IS NULL ORDER BY id DESC")
+      .all() as Array<{ id: number; content: string; source_episode_ids: string }>)
+      .filter((r) => {
+        if (includeIds.has(r.id)) return true;
+        if (!scopedEpisodeIds) return true;
+        let src: number[] = [];
+        try { src = JSON.parse(r.source_episode_ids) as number[]; } catch { src = []; }
+        return Array.isArray(src) && src.some((id) => scopedEpisodeIds.has(id));
+      })
+      .slice(0, limit)
+      .map((r) => ({ id: r.id, content: r.content }));
     const eps = this.db
       .prepare(
-        "SELECT id, title, snippet FROM retrieval_results WHERE valid_until IS NULL AND quarantine IS NULL AND archived = 0 AND superseded_by IS NULL ORDER BY id DESC LIMIT ?",
+        "SELECT id, title, snippet FROM retrieval_results WHERE valid_until IS NULL AND quarantine IS NULL AND archived = 0 AND superseded_by IS NULL" +
+          (opts.sessionId ? " AND session_id = ?" : "") +
+          " ORDER BY id DESC LIMIT ?",
       )
-      .all(limit) as Array<{ id: number; title: string | null; snippet: string | null }>;
+      .all(...(opts.sessionId ? [opts.sessionId, limit] : [limit])) as Array<{ id: number; title: string | null; snippet: string | null }>;
     return [
       ...sem.map((r) => ({ kind: "semantic" as const, id: r.id, text: r.content })),
       ...eps.map((r) => ({ kind: "episode" as const, id: r.id, text: [r.title, r.snippet].filter(Boolean).join(" — ") })),
@@ -1073,13 +1106,18 @@ export class SqliteSessionStore implements SessionStore {
    * constructor there. Replacing them is safe: each call supplies its own
    * stateless closures.
    */
-  setConsolidationSeams(seams: { summarize?: ConsolidateSummarizeFn; classify?: ConsolidateClassifyFn }): void {
+  setConsolidationSeams(seams: { summarize?: ConsolidateSummarizeFn; classify?: ConsolidateClassifyFn; verify?: ConsolidateVerifyFn }): void {
     if (seams.summarize) this.consolidateSummarize = seams.summarize;
     if (seams.classify) this.consolidateClassify = seams.classify;
+    if (seams.verify) this.consolidateVerify = seams.verify;
   }
 
   async consolidateMemory(opts?: ConsolidateOptions): Promise<ConsolidateReport> {
-    return consolidateMemoryRun(this.db, { summarize: this.consolidateSummarize, classify: this.consolidateClassify }, opts ?? {});
+    return consolidateMemoryRun(this.db, {
+      summarize: this.consolidateSummarize,
+      classify: this.consolidateClassify,
+      verify: this.consolidateVerify,
+    }, opts ?? {});
   }
 
   scanArchive(opts?: { ageFactor?: number; now?: number; limit?: number }): ArchiveCandidate[] {

@@ -532,13 +532,25 @@ async function acquireSessionQueue(key: string): Promise<() => void> {
 }
 
 const FILE_LOCK_STALE_MS = 10 * 60_000;
+const FILE_LOCK_TIMEOUT_MS = 120_000;
+
+// PROTOTYPE (cross-process probe): default behavior is unchanged, but the
+// stale/timeout windows are overridable so a killed holder can be shown to
+// recover in seconds instead of waiting ten minutes.
+function lockMsFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
 
 /**
  * Cross-process mutex for one PI session file. The JSONL record has one
  * writer; two processes appending at once would interleave entries. The lock
- * is a directory (mkdir is atomic) and goes stale after 10 minutes.
+ * is a directory (mkdir is atomic) and goes stale after the stale window.
  */
-async function acquireFileLock(lockPath: string, timeoutMs = 120_000): Promise<() => void> {
+async function acquireFileLock(lockPath: string, timeoutMs = lockMsFromEnv("ANS_PI_LOCK_TIMEOUT_MS", FILE_LOCK_TIMEOUT_MS)): Promise<() => void> {
+  const staleMs = lockMsFromEnv("ANS_PI_LOCK_STALE_MS", FILE_LOCK_STALE_MS);
   const start = Date.now();
   for (;;) {
     try {
@@ -548,7 +560,7 @@ async function acquireFileLock(lockPath: string, timeoutMs = 120_000): Promise<(
       if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
       try {
         const st = statSync(lockPath);
-        if (Date.now() - st.mtimeMs > FILE_LOCK_STALE_MS) {
+        if (Date.now() - st.mtimeMs > staleMs) {
           rmSync(lockPath, { recursive: true, force: true });
           continue;
         }

@@ -19,6 +19,7 @@ interface ConsolidateStore {
     dryRun: boolean; clustersScanned: number; clustersTriggered: number;
     llmUnavailable: number; gateRejected: number; add: number; noop: number; update: number;
     skip: number; conflict: number;
+    staleUpdates?: number; verifyRejected?: number;
     updates: Array<{ oldId: number; newId: number; retiredEpisodeIds: number[] }>;
     retiredEpisodeIds: number[];
     summariesNeedingRefresh: string[];
@@ -115,6 +116,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   const store = new SqliteSessionStore(dbPath, {
     consolidateSummarize: seams?.summarize,
     consolidateClassify: seams?.classify,
+    consolidateVerify: seams?.verify,
   });
 
   const r = await store.consolidateMemory({
@@ -129,7 +131,13 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       ": scanned " + r.clustersScanned + " cluster(s), triggered " + r.clustersTriggered +
       ", add " + r.add + ", update " + r.update + ", skip " + r.skip +
       ", conflict " + r.conflict + ", failure " + r.llmUnavailable +
+      (r.staleUpdates ? ", stale " + r.staleUpdates : "") +
+      (r.verifyRejected ? ", verifyRejected " + r.verifyRejected : "") +
       " (llmUnavailable " + r.llmUnavailable + ", gateRejected " + r.gateRejected + ", noop " + r.noop + ")\n",
+  );
+  // Q18: make the resolved scope explicit; no silent full-archive run.
+  process.stdout.write(
+    "scope: " + (sessionIds.length > 0 ? "session " + sessionIds.join(", ") : memoryIds.length > 0 ? "memory " + memoryIds.join(", ") : "full-archive") + "\n",
   );
   if (r.semanticIds.length > 0) {
     process.stdout.write("semantic ids: " + r.semanticIds.join(", ") + "\n");
@@ -148,11 +156,11 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     process.stdout.write(
       "usage: consolidation calls " + u.calls + ", in " + u.inputTokens + ", out " + u.outputTokens +
         ", cacheRead " + u.cacheReadTokens + ", cacheWrite " + u.cacheWriteTokens +
-        ", total " + u.totalTokens + ", costUsd " + u.costUsd +
+        ", total " + u.totalTokens + ", costUsd " + u.costUsd + ", costBasis " + u.costBasis +
         (u.missing.length > 0 ? ", MISSING " + u.missing.join(" + ") : "") + "\n",
     );
   } else {
-    process.stdout.write("usage: consolidation calls 0, MISSING consolidation usage + consolidation cache usage + consolidation cost\n");
+    process.stdout.write("usage: consolidation calls 0, costBasis not-called, MISSING consolidation usage + consolidation cache usage + consolidation cost\n");
   }
   return r.llmUnavailable > 0 && r.add === 0 && r.update === 0 ? 1 : 0;
 }

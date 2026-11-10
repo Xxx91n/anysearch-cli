@@ -1,0 +1,1276 @@
+{
+  "probe": "q3-real-model",
+  "startedAt": "2026-11-10T14:02:00.820Z",
+  "fixedSamples": "SAMPLES-Q1-Q3.md",
+  "model": {
+    "provider": "openai",
+    "model": "deepseek-v4.1-flash",
+    "baseUrlPresent": true,
+    "api": "chat",
+    "apiKeyLength": 39,
+    "note": "custom endpoint: provider does not return USD; cost is reported as unknown, never free"
+  },
+  "cases": [
+    {
+      "id": "R1",
+      "current": {
+        "mode": "current",
+        "report": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "verifyDetails": [],
+          "summariesNeedingRefresh": [
+            "55b94571-4f3a-42f7-8a47-b1de66d31b89"
+          ]
+        },
+        "usage": {
+          "calls": 1,
+          "inputTokens": 15,
+          "outputTokens": 248,
+          "cacheReadTokens": 128,
+          "cacheWriteTokens": 0,
+          "totalTokens": 391,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        },
+        "knowledge": {
+          "oldContent": "Business hours are Monday to Friday 9-5. Support email is help@example.com.",
+          "oldStillLive": false,
+          "oldSupersededBy": 2,
+          "liveRows": [
+            {
+              "id": 2,
+              "content": "According to an official update, support hours are now 24/7, no longer Monday to Friday 9–5, effective 2026-11-01 (https://support.example/official-update)."
+            }
+          ],
+          "newContent": "According to an official update, support hours are now 24/7, no longer Monday to Friday 9–5, effective 2026-11-01 (https://support.example/official-update).",
+          "oldEpisodes": [
+            {
+              "id": 1,
+              "superseded_by": 2
+            },
+            {
+              "id": 2,
+              "superseded_by": 2
+            },
+            {
+              "id": 3,
+              "superseded_by": 2
+            }
+          ]
+        },
+        "refresh": null
+      },
+      "fixed": {
+        "mode": "fixed",
+        "report": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "verifyDetails": [],
+          "summariesNeedingRefresh": [
+            "952a81e0-6225-496c-8041-6ef02e53670b"
+          ]
+        },
+        "usage": {
+          "calls": 3,
+          "inputTokens": 371,
+          "outputTokens": 813,
+          "cacheReadTokens": 256,
+          "cacheWriteTokens": 0,
+          "totalTokens": 1440,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        },
+        "knowledge": {
+          "oldContent": "Business hours are Monday to Friday 9-5. Support email is help@example.com.",
+          "oldStillLive": false,
+          "oldSupersededBy": 2,
+          "liveRows": [
+            {
+              "id": 2,
+              "content": "Business hours are Monday to Friday 9–5, and the support email is help@example.com. Effective 2026-11-01, support hours are now 24/7, no longer Monday to Friday 9–5."
+            }
+          ],
+          "newContent": "Business hours are Monday to Friday 9–5, and the support email is help@example.com. Effective 2026-11-01, support hours are now 24/7, no longer Monday to Friday 9–5.",
+          "oldEpisodes": [
+            {
+              "id": 1,
+              "superseded_by": 2
+            },
+            {
+              "id": 2,
+              "superseded_by": 2
+            },
+            {
+              "id": 3,
+              "superseded_by": 2
+            }
+          ]
+        },
+        "refresh": null
+      }
+    },
+    {
+      "id": "R2",
+      "current": {
+        "mode": "current",
+        "report": {
+          "add": 0,
+          "update": 0,
+          "skip": 1,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [],
+          "verifyDetails": [],
+          "summariesNeedingRefresh": []
+        },
+        "usage": {
+          "calls": 1,
+          "inputTokens": 11,
+          "outputTokens": 232,
+          "cacheReadTokens": 128,
+          "cacheWriteTokens": 0,
+          "totalTokens": 371,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        },
+        "knowledge": {
+          "oldContent": "Business hours are Monday to Friday 9-5.",
+          "oldStillLive": true,
+          "oldSupersededBy": null,
+          "liveRows": [
+            {
+              "id": 1,
+              "content": "Business hours are Monday to Friday 9-5."
+            }
+          ],
+          "newContent": null,
+          "oldEpisodes": [
+            {
+              "id": 1,
+              "superseded_by": null
+            },
+            {
+              "id": 2,
+              "superseded_by": null
+            },
+            {
+              "id": 3,
+              "superseded_by": null
+            }
+          ]
+        },
+        "refresh": null
+      },
+      "fixed": {
+        "mode": "fixed",
+        "report": {
+          "add": 0,
+          "update": 0,
+          "skip": 1,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 1,
+          "updates": [],
+          "verifyDetails": [
+            {
+              "oldId": 1,
+              "sameFact": false,
+              "reliable": false,
+              "reason": "It merely restates the same business hours; the republished date is not a change to the business-hours fact."
+            }
+          ],
+          "summariesNeedingRefresh": []
+        },
+        "usage": {
+          "calls": 2,
+          "inputTokens": 309,
+          "outputTokens": 4476,
+          "cacheReadTokens": 128,
+          "cacheWriteTokens": 0,
+          "totalTokens": 4913,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        },
+        "knowledge": {
+          "oldContent": "Business hours are Monday to Friday 9-5.",
+          "oldStillLive": true,
+          "oldSupersededBy": null,
+          "liveRows": [
+            {
+              "id": 1,
+              "content": "Business hours are Monday to Friday 9-5."
+            }
+          ],
+          "newContent": null,
+          "oldEpisodes": [
+            {
+              "id": 1,
+              "superseded_by": null
+            },
+            {
+              "id": 2,
+              "superseded_by": null
+            },
+            {
+              "id": 3,
+              "superseded_by": null
+            }
+          ]
+        },
+        "refresh": null
+      }
+    },
+    {
+      "id": "R3",
+      "current": {
+        "mode": "current",
+        "report": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "verifyDetails": [],
+          "summariesNeedingRefresh": [
+            "0e51d01e-5d2d-4f50-8c14-9f72d38d4868"
+          ]
+        },
+        "usage": {
+          "calls": 1,
+          "inputTokens": 1,
+          "outputTokens": 133,
+          "cacheReadTokens": 128,
+          "cacheWriteTokens": 0,
+          "totalTokens": 262,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        },
+        "knowledge": {
+          "oldContent": "Business hours are Monday to Friday 9-5.",
+          "oldStillLive": false,
+          "oldSupersededBy": 2,
+          "liveRows": [
+            {
+              "id": 2,
+              "content": "Holiday business hours are not Monday to Friday 9–5, and the office is closed on public holidays."
+            }
+          ],
+          "newContent": "Holiday business hours are not Monday to Friday 9–5, and the office is closed on public holidays.",
+          "oldEpisodes": [
+            {
+              "id": 1,
+              "superseded_by": 2
+            },
+            {
+              "id": 2,
+              "superseded_by": 2
+            },
+            {
+              "id": 3,
+              "superseded_by": 2
+            }
+          ]
+        },
+        "refresh": null
+      },
+      "fixed": {
+        "mode": "fixed",
+        "report": {
+          "add": 0,
+          "update": 0,
+          "skip": 1,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 1,
+          "updates": [],
+          "verifyDetails": [
+            {
+              "oldId": 1,
+              "sameFact": false,
+              "reliable": true,
+              "reason": "The notice concerns holiday hours, a special case, not the regular Monday–Friday 9–5 business hours; it is a specific official notice."
+            }
+          ],
+          "summariesNeedingRefresh": []
+        },
+        "usage": {
+          "calls": 2,
+          "inputTokens": 271,
+          "outputTokens": 421,
+          "cacheReadTokens": 128,
+          "cacheWriteTokens": 0,
+          "totalTokens": 820,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        },
+        "knowledge": {
+          "oldContent": "Business hours are Monday to Friday 9-5.",
+          "oldStillLive": true,
+          "oldSupersededBy": null,
+          "liveRows": [
+            {
+              "id": 1,
+              "content": "Business hours are Monday to Friday 9-5."
+            }
+          ],
+          "newContent": null,
+          "oldEpisodes": [
+            {
+              "id": 1,
+              "superseded_by": null
+            },
+            {
+              "id": 2,
+              "superseded_by": null
+            },
+            {
+              "id": 3,
+              "superseded_by": null
+            }
+          ]
+        },
+        "refresh": null
+      }
+    },
+    {
+      "id": "R4",
+      "current": {
+        "mode": "current",
+        "report": {
+          "add": 0,
+          "update": 0,
+          "skip": 0,
+          "conflict": 1,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [],
+          "verifyDetails": [],
+          "summariesNeedingRefresh": []
+        },
+        "usage": {
+          "calls": 1,
+          "inputTokens": 7,
+          "outputTokens": 359,
+          "cacheReadTokens": 128,
+          "cacheWriteTokens": 0,
+          "totalTokens": 494,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        },
+        "knowledge": {
+          "oldContent": "Business hours are Monday to Friday 9-5.",
+          "oldStillLive": true,
+          "oldSupersededBy": null,
+          "liveRows": [
+            {
+              "id": 1,
+              "content": "Business hours are Monday to Friday 9-5."
+            }
+          ],
+          "newContent": null,
+          "oldEpisodes": [
+            {
+              "id": 1,
+              "superseded_by": null
+            },
+            {
+              "id": 2,
+              "superseded_by": null
+            },
+            {
+              "id": 3,
+              "superseded_by": null
+            }
+          ]
+        },
+        "refresh": null
+      },
+      "fixed": {
+        "mode": "fixed",
+        "report": {
+          "add": 0,
+          "update": 0,
+          "skip": 1,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 1,
+          "updates": [],
+          "verifyDetails": [
+            {
+              "oldId": 1,
+              "sameFact": false,
+              "reliable": false,
+              "reason": "Forum post is uncertain hearsay about support availability, not a confident change to general business hours."
+            }
+          ],
+          "summariesNeedingRefresh": []
+        },
+        "usage": {
+          "calls": 2,
+          "inputTokens": 296,
+          "outputTokens": 961,
+          "cacheReadTokens": 128,
+          "cacheWriteTokens": 0,
+          "totalTokens": 1385,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        },
+        "knowledge": {
+          "oldContent": "Business hours are Monday to Friday 9-5.",
+          "oldStillLive": true,
+          "oldSupersededBy": null,
+          "liveRows": [
+            {
+              "id": 1,
+              "content": "Business hours are Monday to Friday 9-5."
+            }
+          ],
+          "newContent": null,
+          "oldEpisodes": [
+            {
+              "id": 1,
+              "superseded_by": null
+            },
+            {
+              "id": 2,
+              "superseded_by": null
+            },
+            {
+              "id": 3,
+              "superseded_by": null
+            }
+          ]
+        },
+        "refresh": null
+      }
+    },
+    {
+      "id": "R5",
+      "current": {
+        "mode": "current",
+        "report": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "verifyDetails": [],
+          "summariesNeedingRefresh": [
+            "75360ae3-22a7-4c18-9175-a7c8f8861cef"
+          ]
+        },
+        "usage": {
+          "calls": 1,
+          "inputTokens": 6,
+          "outputTokens": 162,
+          "cacheReadTokens": 128,
+          "cacheWriteTokens": 0,
+          "totalTokens": 296,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        },
+        "knowledge": {
+          "oldContent": "Business hours are Monday to Friday 9-5. Support email is help@example.com. The office is closed on public holidays.",
+          "oldStillLive": false,
+          "oldSupersededBy": 2,
+          "liveRows": [
+            {
+              "id": 2,
+              "content": "According to an official update, support hours are now 24/7, no longer Monday to Friday 9–5 (https://support.example/official-update)."
+            }
+          ],
+          "newContent": "According to an official update, support hours are now 24/7, no longer Monday to Friday 9–5 (https://support.example/official-update).",
+          "oldEpisodes": [
+            {
+              "id": 1,
+              "superseded_by": 2
+            },
+            {
+              "id": 2,
+              "superseded_by": 2
+            },
+            {
+              "id": 3,
+              "superseded_by": 2
+            }
+          ]
+        },
+        "refresh": null
+      },
+      "fixed": {
+        "mode": "fixed",
+        "report": {
+          "add": 0,
+          "update": 0,
+          "skip": 1,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 1,
+          "updates": [],
+          "verifyDetails": [
+            {
+              "oldId": 1,
+              "sameFact": false,
+              "reliable": true,
+              "reason": "The update concerns support hours, not the stated business hours, and reliably asserts the change."
+            }
+          ],
+          "summariesNeedingRefresh": []
+        },
+        "usage": {
+          "calls": 2,
+          "inputTokens": 305,
+          "outputTokens": 768,
+          "cacheReadTokens": 128,
+          "cacheWriteTokens": 0,
+          "totalTokens": 1201,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        },
+        "knowledge": {
+          "oldContent": "Business hours are Monday to Friday 9-5. Support email is help@example.com. The office is closed on public holidays.",
+          "oldStillLive": true,
+          "oldSupersededBy": null,
+          "liveRows": [
+            {
+              "id": 1,
+              "content": "Business hours are Monday to Friday 9-5. Support email is help@example.com. The office is closed on public holidays."
+            }
+          ],
+          "newContent": null,
+          "oldEpisodes": [
+            {
+              "id": 1,
+              "superseded_by": null
+            },
+            {
+              "id": 2,
+              "superseded_by": null
+            },
+            {
+              "id": 3,
+              "superseded_by": null
+            }
+          ]
+        },
+        "refresh": null
+      }
+    }
+  ],
+  "checks": [
+    {
+      "id": "R1",
+      "mode": "fixed",
+      "question": "real model corrects the same fact, old knowledge closed and replaced",
+      "pass": true,
+      "evidence": {
+        "add": 0,
+        "update": 1,
+        "skip": 0,
+        "conflict": 0,
+        "staleUpdates": 0,
+        "verifyRejected": 0,
+        "updates": [
+          {
+            "oldId": 1,
+            "newId": 2,
+            "retiredEpisodeIds": [
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "verifyDetails": [],
+        "summariesNeedingRefresh": [
+          "952a81e0-6225-496c-8041-6ef02e53670b"
+        ]
+      }
+    },
+    {
+      "id": "R1",
+      "mode": "current",
+      "question": "without the new seams the same correction also lands (pipeline behavior unchanged)",
+      "pass": true,
+      "evidence": {
+        "add": 0,
+        "update": 1,
+        "skip": 0,
+        "conflict": 0,
+        "staleUpdates": 0,
+        "verifyRejected": 0,
+        "updates": [
+          {
+            "oldId": 1,
+            "newId": 2,
+            "retiredEpisodeIds": [
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "verifyDetails": [],
+        "summariesNeedingRefresh": [
+          "55b94571-4f3a-42f7-8a47-b1de66d31b89"
+        ]
+      }
+    },
+    {
+      "id": "R1-mechanics",
+      "mode": "diagnostic",
+      "question": "real model summary + rebuild use the corrected materials, not the old conclusion",
+      "pass": true,
+      "evidence": {
+        "report": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "verifyDetails": [],
+          "summariesNeedingRefresh": [
+            "36b17b04-034e-465a-8295-473c7885efd8"
+          ]
+        },
+        "refresh": {
+          "result": {
+            "refreshed": true,
+            "sessions": 1
+          },
+          "summary": "## Verified Evidence\n- Support hours are now 24/7, effective 2026-11-01; this supersedes the prior support-hours schedule.\n- Support email: help@example.com.\n- Sources: knowledge #2; material #4 (official page update).\n\n## Open Hypotheses\n- (none)\n\n## Rejected Sources\n- Prior support-hours statement — corrected by the official update effective 2026-11-01; excluded from the current summary.\n\n## Key Numbers & Sources\n- Effective date: 2026-11-01 — knowledge #2; material #4 (official page).\n- Support email: help@example.com — knowledge #2.\n- Source URLs: none provided.\n\n## Tool Calls & Read Status\n- No tool calls were made.\n- Read and incorporated: knowledge #2 and material #4.\n- Prior support-hours schedule was not restated as current.",
+          "pausedAfter": false
+        }
+      }
+    },
+    {
+      "id": "R2",
+      "mode": "fixed",
+      "question": "a publication-date update does not replace the fact",
+      "pass": true,
+      "evidence": {
+        "add": 0,
+        "update": 0,
+        "skip": 1,
+        "conflict": 0,
+        "staleUpdates": 0,
+        "verifyRejected": 1,
+        "updates": [],
+        "verifyDetails": [
+          {
+            "oldId": 1,
+            "sameFact": false,
+            "reliable": false,
+            "reason": "It merely restates the same business hours; the republished date is not a change to the business-hours fact."
+          }
+        ],
+        "summariesNeedingRefresh": []
+      }
+    },
+    {
+      "id": "R2",
+      "mode": "current",
+      "question": "current path also refuses the date-only update",
+      "pass": true,
+      "evidence": {
+        "add": 0,
+        "update": 0,
+        "skip": 1,
+        "conflict": 0,
+        "staleUpdates": 0,
+        "verifyRejected": 0,
+        "updates": [],
+        "verifyDetails": [],
+        "summariesNeedingRefresh": []
+      }
+    },
+    {
+      "id": "R3",
+      "mode": "fixed",
+      "question": "holiday-hours negation does not overwrite regular-hours knowledge",
+      "pass": true,
+      "evidence": {
+        "add": 0,
+        "update": 0,
+        "skip": 1,
+        "conflict": 0,
+        "staleUpdates": 0,
+        "verifyRejected": 1,
+        "updates": [],
+        "verifyDetails": [
+          {
+            "oldId": 1,
+            "sameFact": false,
+            "reliable": true,
+            "reason": "The notice concerns holiday hours, a special case, not the regular Monday–Friday 9–5 business hours; it is a specific official notice."
+          }
+        ],
+        "summariesNeedingRefresh": []
+      }
+    },
+    {
+      "id": "R3",
+      "mode": "current",
+      "question": "PRE-DECLARED DEFECT reproduced: negation-only path wrongly updates regular hours from a holiday notice",
+      "pass": true,
+      "evidence": {
+        "report": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "verifyDetails": [],
+          "summariesNeedingRefresh": [
+            "0e51d01e-5d2d-4f50-8c14-9f72d38d4868"
+          ]
+        },
+        "knowledge": {
+          "oldContent": "Business hours are Monday to Friday 9-5.",
+          "oldStillLive": false,
+          "oldSupersededBy": 2,
+          "liveRows": [
+            {
+              "id": 2,
+              "content": "Holiday business hours are not Monday to Friday 9–5, and the office is closed on public holidays."
+            }
+          ],
+          "newContent": "Holiday business hours are not Monday to Friday 9–5, and the office is closed on public holidays.",
+          "oldEpisodes": [
+            {
+              "id": 1,
+              "superseded_by": 2
+            },
+            {
+              "id": 2,
+              "superseded_by": 2
+            },
+            {
+              "id": 3,
+              "superseded_by": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "R4",
+      "mode": "fixed",
+      "question": "uncertain hearsay does not replace reliable knowledge",
+      "pass": true,
+      "evidence": {
+        "add": 0,
+        "update": 0,
+        "skip": 1,
+        "conflict": 0,
+        "staleUpdates": 0,
+        "verifyRejected": 1,
+        "updates": [],
+        "verifyDetails": [
+          {
+            "oldId": 1,
+            "sameFact": false,
+            "reliable": false,
+            "reason": "Forum post is uncertain hearsay about support availability, not a confident change to general business hours."
+          }
+        ],
+        "summariesNeedingRefresh": []
+      }
+    },
+    {
+      "id": "R4",
+      "mode": "current",
+      "question": "PRE-DECLARED DEFECT not reproduced: the existing gate already refuses the hearsay claim",
+      "pass": true,
+      "evidence": {
+        "report": {
+          "add": 0,
+          "update": 0,
+          "skip": 0,
+          "conflict": 1,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [],
+          "verifyDetails": [],
+          "summariesNeedingRefresh": []
+        },
+        "knowledge": {
+          "oldContent": "Business hours are Monday to Friday 9-5.",
+          "oldStillLive": true,
+          "oldSupersededBy": null,
+          "liveRows": [
+            {
+              "id": 1,
+              "content": "Business hours are Monday to Friday 9-5."
+            }
+          ],
+          "newContent": null,
+          "oldEpisodes": [
+            {
+              "id": 1,
+              "superseded_by": null
+            },
+            {
+              "id": 2,
+              "superseded_by": null
+            },
+            {
+              "id": 3,
+              "superseded_by": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "R5",
+      "mode": "fixed",
+      "question": "one corrected fact keeps the other still-valid facts",
+      "pass": false,
+      "evidence": {
+        "content": "",
+        "report": {
+          "add": 0,
+          "update": 0,
+          "skip": 1,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 1,
+          "updates": [],
+          "verifyDetails": [
+            {
+              "oldId": 1,
+              "sameFact": false,
+              "reliable": true,
+              "reason": "The update concerns support hours, not the stated business hours, and reliably asserts the change."
+            }
+          ],
+          "summariesNeedingRefresh": []
+        }
+      }
+    },
+    {
+      "id": "R5",
+      "mode": "current",
+      "question": "PRE-DECLARED DEFECT reproduced: current update drops the other still-valid facts",
+      "pass": true,
+      "evidence": {
+        "content": "According to an official update, support hours are now 24/7, no longer Monday to Friday 9–5 (https://support.example/official-update).",
+        "report": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "verifyDetails": [],
+          "summariesNeedingRefresh": [
+            "75360ae3-22a7-4c18-9175-a7c8f8861cef"
+          ]
+        }
+      }
+    },
+    {
+      "id": "R5-mechanics",
+      "mode": "diagnostic",
+      "question": "real model merge keeps the other still-valid facts",
+      "pass": true,
+      "evidence": {
+        "content": "Business hours are Monday to Friday 9–5, the office is closed on public holidays, and the support email is help@example.com. An official update states that support hours are now 24/7, no longer Monday to Friday 9–5.",
+        "report": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "staleUpdates": 0,
+          "verifyRejected": 0,
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "verifyDetails": [],
+          "summariesNeedingRefresh": [
+            "ae90c335-a9c6-4d1d-81a9-da2b4954e503"
+          ]
+        }
+      }
+    },
+    {
+      "id": "Q19",
+      "mode": "fixed",
+      "question": "cost is reported as unknown (no price table), not as free",
+      "pass": true,
+      "evidence": {
+        "costBasis": "unknown",
+        "costUsd": 0,
+        "missing": [
+          "consolidation cost (price unknown)"
+        ]
+      }
+    },
+    {
+      "id": "SEC",
+      "mode": "all",
+      "question": "evidence carries no API key material",
+      "pass": true,
+      "evidence": {
+        "apiKeyLength": 39
+      }
+    }
+  ],
+  "diagnostics": {
+    "R1": {
+      "mode": "diagnostic",
+      "report": {
+        "add": 0,
+        "update": 1,
+        "skip": 0,
+        "conflict": 0,
+        "staleUpdates": 0,
+        "verifyRejected": 0,
+        "updates": [
+          {
+            "oldId": 1,
+            "newId": 2,
+            "retiredEpisodeIds": [
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "verifyDetails": [],
+        "summariesNeedingRefresh": [
+          "36b17b04-034e-465a-8295-473c7885efd8"
+        ]
+      },
+      "usage": {
+        "calls": 2,
+        "inputTokens": 65,
+        "outputTokens": 635,
+        "cacheReadTokens": 256,
+        "cacheWriteTokens": 0,
+        "totalTokens": 956,
+        "costUsd": 0,
+        "costBasis": "unknown",
+        "missing": [
+          "consolidation cost (price unknown)"
+        ]
+      },
+      "knowledge": {
+        "oldContent": "Business hours are Monday to Friday 9-5. Support email is help@example.com.",
+        "oldStillLive": false,
+        "oldSupersededBy": 2,
+        "liveRows": [
+          {
+            "id": 2,
+            "content": "Business hours are Monday to Friday 9-5, and the support email is help@example.com. Effective 2026-11-01, support hours are 24/7, no longer Monday to Friday 9-5."
+          }
+        ],
+        "newContent": "Business hours are Monday to Friday 9-5, and the support email is help@example.com. Effective 2026-11-01, support hours are 24/7, no longer Monday to Friday 9-5.",
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "superseded_by": 2
+          },
+          {
+            "id": 2,
+            "superseded_by": 2
+          },
+          {
+            "id": 3,
+            "superseded_by": 2
+          }
+        ]
+      },
+      "refresh": {
+        "result": {
+          "refreshed": true,
+          "sessions": 1
+        },
+        "summary": "## Verified Evidence\n- Support hours are now 24/7, effective 2026-11-01; this supersedes the prior support-hours schedule.\n- Support email: help@example.com.\n- Sources: knowledge #2; material #4 (official page update).\n\n## Open Hypotheses\n- (none)\n\n## Rejected Sources\n- Prior support-hours statement — corrected by the official update effective 2026-11-01; excluded from the current summary.\n\n## Key Numbers & Sources\n- Effective date: 2026-11-01 — knowledge #2; material #4 (official page).\n- Support email: help@example.com — knowledge #2.\n- Source URLs: none provided.\n\n## Tool Calls & Read Status\n- No tool calls were made.\n- Read and incorporated: knowledge #2 and material #4.\n- Prior support-hours schedule was not restated as current.",
+        "pausedAfter": false
+      }
+    },
+    "R5": {
+      "mode": "diagnostic",
+      "report": {
+        "add": 0,
+        "update": 1,
+        "skip": 0,
+        "conflict": 0,
+        "staleUpdates": 0,
+        "verifyRejected": 0,
+        "updates": [
+          {
+            "oldId": 1,
+            "newId": 2,
+            "retiredEpisodeIds": [
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "verifyDetails": [],
+        "summariesNeedingRefresh": [
+          "ae90c335-a9c6-4d1d-81a9-da2b4954e503"
+        ]
+      },
+      "usage": {
+        "calls": 2,
+        "inputTokens": 55,
+        "outputTokens": 721,
+        "cacheReadTokens": 256,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1032,
+        "costUsd": 0,
+        "costBasis": "unknown",
+        "missing": [
+          "consolidation cost (price unknown)"
+        ]
+      },
+      "knowledge": {
+        "oldContent": "Business hours are Monday to Friday 9-5. Support email is help@example.com. The office is closed on public holidays.",
+        "oldStillLive": false,
+        "oldSupersededBy": 2,
+        "liveRows": [
+          {
+            "id": 2,
+            "content": "Business hours are Monday to Friday 9–5, the office is closed on public holidays, and the support email is help@example.com. An official update states that support hours are now 24/7, no longer Monday to Friday 9–5."
+          }
+        ],
+        "newContent": "Business hours are Monday to Friday 9–5, the office is closed on public holidays, and the support email is help@example.com. An official update states that support hours are now 24/7, no longer Monday to Friday 9–5.",
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "superseded_by": 2
+          },
+          {
+            "id": 2,
+            "superseded_by": 2
+          },
+          {
+            "id": 3,
+            "superseded_by": 2
+          }
+        ]
+      },
+      "refresh": null
+    }
+  },
+  "prompts": [
+    {
+      "label": "R1-current",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Support hours updated (official page) - Official update: Support hours are now 24/7, no longer Monday to Friday 9-5. Effective 2026-11-01. (https://support.example/official-update)"
+    },
+    {
+      "label": "R1-fixed",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Support hours updated (official page) - Official update: Support hours are now 24/7, no longer Monday to Friday 9-5. Effective 2026-11-01. (https://support.example/official-update)"
+    },
+    {
+      "label": "R1-fixed",
+      "prompt": "You are checking a correction before it replaces durable knowledge.\nCURRENT KNOWLEDGE:\nBusiness hours are Monday to Friday 9-5. Support email is help@example.com.\n\nCANDIDATE SUMMARY FROM THE NEW MATERIAL:\nAccording to an official update on the support page, support hours are now 24/7, replacing the previous Monday–Friday 9–5 schedule, effective 2026-11-01.\n\nNEW MATERIAL:\n[1] Support hours updated (official page) - Official update: Support hours are now 24/7, no longer Monday to Friday 9-5. Effective 2026-11-01. (https://support.example/official-update)\n\nDecide two things:\n1. sameFact: does the new material assert a change to the SAME fact, subject and scope as\n   the current knowledge? A different subject, period, population, or special case\n   (for example holiday hours vs regular hours) is NOT the same fact.\n2. reliable: does the material itself confidently and specifically assert the change?\n   Hearsay, speculation, questions, anonymous forum guesses, or \"might be\" text is NOT\n   reliable enough to replace existing knowledge.\n\nReply with JSON only:\n{\"sameFact\": true|false, \"reliable\": true|false, \"reason\": \"<short reason>\"}"
+    },
+    {
+      "label": "R1-fixed",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Support hours updated (official page) - Official update: Support hours are now 24/7, no longer Monday to Friday 9-5. Effective 2026-11-01. (https://support.example/official-update)\n[2] CURRENT KNOWLEDGE - Business hours are Monday to Friday 9-5. Support email is help@example.com. (knowledge://semantic/1)"
+    },
+    {
+      "label": "R2-current",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Support page republished - Published 2026-11-01. Business hours are Monday to Friday 9-5. The page was republished with a new date. (https://support.example/official-update)"
+    },
+    {
+      "label": "R2-fixed",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Support page republished - Published 2026-11-01. Business hours are Monday to Friday 9-5. The page was republished with a new date. (https://support.example/official-update)"
+    },
+    {
+      "label": "R2-fixed",
+      "prompt": "You are checking a correction before it replaces durable knowledge.\nCURRENT KNOWLEDGE:\nBusiness hours are Monday to Friday 9-5.\n\nCANDIDATE SUMMARY FROM THE NEW MATERIAL:\nThe support page at https://support.example/official-update was republished on 2026-11-01 with a new date, and it states that business hours are Monday to Friday, 9–5.\n\nNEW MATERIAL:\n[1] Support page republished - Published 2026-11-01. Business hours are Monday to Friday 9-5. The page was republished with a new date. (https://support.example/official-update)\n\nDecide two things:\n1. sameFact: does the new material assert a change to the SAME fact, subject and scope as\n   the current knowledge? A different subject, period, population, or special case\n   (for example holiday hours vs regular hours) is NOT the same fact.\n2. reliable: does the material itself confidently and specifically assert the change?\n   Hearsay, speculation, questions, anonymous forum guesses, or \"might be\" text is NOT\n   reliable enough to replace existing knowledge.\n\nReply with JSON only:\n{\"sameFact\": true|false, \"reliable\": true|false, \"reason\": \"<short reason>\"}"
+    },
+    {
+      "label": "R3-current",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Holiday hours notice - Holiday business hours are not Monday to Friday 9-5; the office is closed on public holidays. (https://support.example/official-update)"
+    },
+    {
+      "label": "R3-fixed",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Holiday hours notice - Holiday business hours are not Monday to Friday 9-5; the office is closed on public holidays. (https://support.example/official-update)"
+    },
+    {
+      "label": "R3-fixed",
+      "prompt": "You are checking a correction before it replaces durable knowledge.\nCURRENT KNOWLEDGE:\nBusiness hours are Monday to Friday 9-5.\n\nCANDIDATE SUMMARY FROM THE NEW MATERIAL:\nThe office’s holiday business hours are not Monday to Friday 9–5, and the office is closed on public holidays.\n\nNEW MATERIAL:\n[1] Holiday hours notice - Holiday business hours are not Monday to Friday 9-5; the office is closed on public holidays. (https://support.example/official-update)\n\nDecide two things:\n1. sameFact: does the new material assert a change to the SAME fact, subject and scope as\n   the current knowledge? A different subject, period, population, or special case\n   (for example holiday hours vs regular hours) is NOT the same fact.\n2. reliable: does the material itself confidently and specifically assert the change?\n   Hearsay, speculation, questions, anonymous forum guesses, or \"might be\" text is NOT\n   reliable enough to replace existing knowledge.\n\nReply with JSON only:\n{\"sameFact\": true|false, \"reliable\": true|false, \"reason\": \"<short reason>\"}"
+    },
+    {
+      "label": "R4-current",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Forum post about support - Someone on a forum says support might be 24/7 now, but the poster is not certain and gives no official source. (https://support.example/official-update)"
+    },
+    {
+      "label": "R4-fixed",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Forum post about support - Someone on a forum says support might be 24/7 now, but the poster is not certain and gives no official source. (https://support.example/official-update)"
+    },
+    {
+      "label": "R4-fixed",
+      "prompt": "You are checking a correction before it replaces durable knowledge.\nCURRENT KNOWLEDGE:\nBusiness hours are Monday to Friday 9-5.\n\nCANDIDATE SUMMARY FROM THE NEW MATERIAL:\nA forum post stated that support might now be available 24/7, but the poster was uncertain and gave no official source; the post links to https://support.example/official-update.\n\nNEW MATERIAL:\n[1] Forum post about support - Someone on a forum says support might be 24/7 now, but the poster is not certain and gives no official source. (https://support.example/official-update)\n\nDecide two things:\n1. sameFact: does the new material assert a change to the SAME fact, subject and scope as\n   the current knowledge? A different subject, period, population, or special case\n   (for example holiday hours vs regular hours) is NOT the same fact.\n2. reliable: does the material itself confidently and specifically assert the change?\n   Hearsay, speculation, questions, anonymous forum guesses, or \"might be\" text is NOT\n   reliable enough to replace existing knowledge.\n\nReply with JSON only:\n{\"sameFact\": true|false, \"reliable\": true|false, \"reason\": \"<short reason>\"}"
+    },
+    {
+      "label": "R5-current",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Support hours updated (official page) - Official update: Support hours are now 24/7, no longer Monday to Friday 9-5. (https://support.example/official-update)"
+    },
+    {
+      "label": "R5-fixed",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Support hours updated (official page) - Official update: Support hours are now 24/7, no longer Monday to Friday 9-5. (https://support.example/official-update)"
+    },
+    {
+      "label": "R5-fixed",
+      "prompt": "You are checking a correction before it replaces durable knowledge.\nCURRENT KNOWLEDGE:\nBusiness hours are Monday to Friday 9-5. Support email is help@example.com. The office is closed on public holidays.\n\nCANDIDATE SUMMARY FROM THE NEW MATERIAL:\nSupport hours are now 24/7, no longer Monday to Friday 9–5, according to an official update (https://support.example/official-update).\n\nNEW MATERIAL:\n[1] Support hours updated (official page) - Official update: Support hours are now 24/7, no longer Monday to Friday 9-5. (https://support.example/official-update)\n\nDecide two things:\n1. sameFact: does the new material assert a change to the SAME fact, subject and scope as\n   the current knowledge? A different subject, period, population, or special case\n   (for example holiday hours vs regular hours) is NOT the same fact.\n2. reliable: does the material itself confidently and specifically assert the change?\n   Hearsay, speculation, questions, anonymous forum guesses, or \"might be\" text is NOT\n   reliable enough to replace existing knowledge.\n\nReply with JSON only:\n{\"sameFact\": true|false, \"reliable\": true|false, \"reason\": \"<short reason>\"}"
+    },
+    {
+      "label": "R1-diagnostic",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Support hours updated (official page) - Official update: Support hours are now 24/7, no longer Monday to Friday 9-5. Effective 2026-11-01. (https://support.example/official-update)"
+    },
+    {
+      "label": "R1-diagnostic",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Support hours updated (official page) - Official update: Support hours are now 24/7, no longer Monday to Friday 9-5. Effective 2026-11-01. (https://support.example/official-update)\n[2] CURRENT KNOWLEDGE - Business hours are Monday to Friday 9-5. Support email is help@example.com. (knowledge://semantic/1)"
+    },
+    {
+      "label": "R1-refresh",
+      "prompt": "[{\"type\":\"text\",\"text\":\"<conversation>\\n[User]: Rebuild the research summary from the CURRENT valid materials below. A previously stated fact was corrected; do not restate it. Only use the materials shown.\\n\\n[knowledge #2] Business hours are Monday to Friday 9-5, and the support email is help@example.com. Effective 2026-11-01, support hours are 24/7, no longer Monday to Friday 9-5.\\n[material #4] Support hours updated (official page) — Official update: Support hours are now 24/7, no longer Monday to Friday 9-5. Effective 2026-11-01.\\n</conversation>\\n\\nThe messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.\\n\\nUse this EXACT format:\\n\\n## Goal\\n[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]\\n\\n## Constraints & Preferences\\n- [Any constraints, preferences, or requirements mentioned by user]\\n- [Or \\\"(none)\\\" if none were mentioned]\\n\\n## Progress\\n### Done\\n- [x] [Completed tasks/changes]\\n\\n### In Progress\\n- [ ] [Current work]\\n\\n### Blocked\\n- [Issues preventing progress, if any]\\n\\n## Key Decisions\\n- **[Decision]**: [Brief rationale]\\n\\n## Next Steps\\n1. [Ordered list of what should happen next]\\n\\n## Critical Context\\n- [Any data, examples, or references needed to continue]\\n- [Or \\\"(none)\\\" if not applicable]\\n\\nKeep each section concise. Preserve exact file paths, function names, and error messages.\\n\\nAdditional focus: Format the summary as exactly these 5 sections:\\n1. Verified Evidence: facts confirmed by search results (append-only across compressions)\\n2. Open Hypotheses: claims not yet verified (append-only)\\n3. Rejected Sources: sources checked and dismissed (append-only)\\n4. Key Numbers & Sources: important figures with source URLs\\n5. Tool Calls & Read Status: which tools were called and what was read\\nSections 1-3 are append-only: preserve all existing entries, only add new ones.\"}]"
+    },
+    {
+      "label": "R5-diagnostic",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Support hours updated (official page) - Official update: Support hours are now 24/7, no longer Monday to Friday 9-5. (https://support.example/official-update)"
+    },
+    {
+      "label": "R5-diagnostic",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] Support hours updated (official page) - Official update: Support hours are now 24/7, no longer Monday to Friday 9-5. (https://support.example/official-update)\n[2] CURRENT KNOWLEDGE - Business hours are Monday to Friday 9-5. Support email is help@example.com. The office is closed on public holidays. (knowledge://semantic/1)"
+    }
+  ]
+}

@@ -50,6 +50,18 @@ export type ConsolidateSummarizeFn = (episodes: ConsolidateEvidence[]) => Promis
 export interface ConsolidateClaimVerdict { label: "supported" | "uncertain" | "unsupported"; confidence: number; }
 export type ConsolidateClassifyFn = (claim: string, evidence: ConsolidateEvidence[]) => ConsolidateClaimVerdict;
 
+// PROTOTYPE (real-model correction check): a single contradicting material may
+// only replace existing knowledge when a checker confirms it is about the SAME
+// fact and is itself reliable enough. The seam is supplied by the caller; without
+// it the deterministic negation-only behavior stays in place.
+export interface ConsolidateVerifyInput {
+  oldContent: string;
+  summary: string;
+  evidence: ConsolidateEvidence[];
+}
+export interface ConsolidateVerifyVerdict { sameFact: boolean; reliable: boolean; reason?: string; }
+export type ConsolidateVerifyFn = (input: ConsolidateVerifyInput) => Promise<ConsolidateVerifyVerdict>;
+
 export interface ConsolidateReport {
   dryRun: boolean;
   clustersScanned: number;
@@ -65,10 +77,20 @@ export interface ConsolidateReport {
   // single-evidence episodes that were rejected because they did not
   // contradict anything (a lone episode may correct, never create).
   singleEvidenceSkipped: number;
-  // Result categories the host reports: skipped = noop + singleEvidenceSkipped,
-  // conflict = fidelity gate rejected the claim, failure = no summary available.
+  // Result categories the host reports: skipped = noop + singleEvidenceSkipped
+  // + verifyRejected, conflict = fidelity gate rejected the claim or a planned
+  // update lost the race to another writer, failure = no summary available.
   skip: number;
   conflict: number;
+  // PROTOTYPE (concurrency): an update planned against a live row that another
+  // process closed before this writer committed. The write is skipped and
+  // reported; two contradictory live conclusions are never left behind.
+  staleUpdates: number;
+  staleDetails: Array<{ oldId: number; expected: string; current: string | null }>;
+  // PROTOTYPE (real-model check): single-evidence corrections refused because
+  // the check said "different fact" or "not reliable enough".
+  verifyRejected: number;
+  verifyDetails: Array<{ oldId: number; sameFact: boolean; reliable: boolean; reason?: string }>;
   // Update relations (old live row -> replacement) for traceability.
   updates: Array<{ oldId: number; newId: number; retiredEpisodeIds: number[] }>;
   retiredEpisodeIds: number[];
@@ -157,6 +179,16 @@ export interface ConsolidateOptions {
   sessionIds?: string[];
   memoryIds?: number[];
   allowSingleEvidence?: boolean;
+  // PROTOTYPE (probe seam): called after the scan/LLM plan and before the write
+  // transaction. Lets two real processes prove they both planned against the
+  // same old version before either commits.
+  planBarrier?: () => Promise<void>;
+  // PROTOTYPE: default ON. Set false to reproduce the pre-fix lost-update
+  // behavior (two live contradictory rows) in the probe.
+  concurrencyGuard?: boolean;
+  // PROTOTYPE: default ON. When an UPDATE lands, regenerate the summary with
+  // the old knowledge included so uncorrected facts are not dropped.
+  preserveOnUpdate?: boolean;
 }
 
 // D2/D4 main pipeline: signal-gated cluster scan -> summarize seam -> fidelity gate ->
@@ -164,15 +196,18 @@ export interface ConsolidateOptions {
 // BEGIN IMMEDIATE transaction, so its counters are an exact prediction of apply.
 export async function consolidateMemoryRun(
   db: Database.Database,
-  deps: { summarize?: ConsolidateSummarizeFn; classify?: ConsolidateClassifyFn } = {},
+  deps: { summarize?: ConsolidateSummarizeFn; classify?: ConsolidateClassifyFn; verify?: ConsolidateVerifyFn } = {},
   opts: ConsolidateOptions = {},
 ): Promise<ConsolidateReport> {
   const dryRun = opts.dryRun === true;
   const theta = opts.thetaDup ?? THETA_DUP;
+  const concurrencyGuard = opts.concurrencyGuard ?? process.env.ANS_PROTOTYPE_CONSOLIDATE_GUARD !== "0";
+  const preserveOnUpdate = opts.preserveOnUpdate ?? process.env.ANS_PROTOTYPE_PRESERVE_ON_UPDATE !== "0";
   const report: ConsolidateReport = {
     dryRun, clustersScanned: 0, clustersTriggered: 0, llmUnavailable: 0,
     gateRejected: 0, add: 0, noop: 0, update: 0, embeddingAbsent: 0, singleEvidenceSkipped: 0,
-    skip: 0, conflict: 0, updates: [], retiredEpisodeIds: [], summariesNeedingRefresh: [], semanticIds: [],
+    skip: 0, conflict: 0, staleUpdates: 0, staleDetails: [], verifyRejected: 0, verifyDetails: [],
+    updates: [], retiredEpisodeIds: [], summariesNeedingRefresh: [], semanticIds: [],
   };
 
   // plan phase (scan + LLM summarize + classify + dedup) runs WITHOUT the
@@ -238,8 +273,16 @@ export async function consolidateMemoryRun(
 
       // D4 fidelity gate (kernel classifyClaim shape, injected). Row verdict = worst claim:
       // any unsupported -> reject the whole consolidation; any uncertain -> LOW_CONFIDENCE row.
+      //
+      // PROTOTYPE: for a verifier-backed single-evidence correction the gate is
+      // circular: the summary states the correction, and the same evidence also
+      // carries the negation, which the claim-level contradiction rule can read
+      // as counter-evidence depending on how the model splits sentences. The
+      // real-model checker (same fact + reliable) is the gate for that path.
       let confidence = LOW_CONFIDENCE;
-      if (deps.classify) {
+      const verifierBackedSingle = singleEvidence && deps.verify !== undefined;
+      if (verifierBackedSingle) confidence = 0.85;
+      if (deps.classify && !verifierBackedSingle) {
         let rejected = false;
         let uncertain = false;
         let minConf = 1;
@@ -279,26 +322,79 @@ export async function consolidateMemoryRun(
 
       const salience = Math.min(1, 0.4 + 0.1 * eps.length);
       const epsIds = eps.map((e) => e.id);
-      const insert = (extraSources: number[] = []): number => {
+      const insert = (extraSources: number[] = [], content = summary, buffer = embBuf): number => {
         const src = Array.from(new Set([...epsIds, ...extraSources])).sort((a, b) => a - b);
         const info = db
           .prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, ?, ?, ?, ?)")
-          .run(summary, JSON.stringify(src), salience, confidence, embBuf);
+          .run(content, JSON.stringify(src), salience, confidence, buffer);
         const id = Number(info.lastInsertRowid);
         report.semanticIds.push(id);
         return id;
       };
 
+      // Polarity matters: a correction that restates the same negation as the
+      // existing claim is not a contradiction. Only disagreement updates.
       const contradiction = best
-        ? CONTRADICTION_RE.test(summary) || CONTRADICTION_RE.test(best.content)
+        ? CONTRADICTION_RE.test(summary) !== CONTRADICTION_RE.test(best.content)
         : false;
       let op = best ? decideOp(sawCos ? bestCos : null, bestJac, contradiction, theta) : "add";
       if (singleEvidence) {
         // One episode may correct an existing memory; it may not create new
         // knowledge and does not count as a duplicate touch.
-        if (!best || !contradiction) { report.singleEvidenceSkipped++; continue; }
+        if (!best) { report.singleEvidenceSkipped++; continue; }
+        // PROTOTYPE: negation alone cannot tell "same fact, now corrected" from
+        // "different subject/period mentioning a negation", cannot recognise a
+        // positive restatement of a changed fact, and cannot tell a confident
+        // official update from hearsay. When the caller supplies the checker,
+        // it makes that call; without it the old negation-only rule stays.
+        if (deps.verify) {
+          const verdict = await deps.verify({ oldContent: best.content, summary, evidence });
+          if (!verdict.sameFact || !verdict.reliable) {
+            report.verifyRejected++;
+            report.verifyDetails.push({
+              oldId: best.id, sameFact: verdict.sameFact, reliable: verdict.reliable,
+              ...(verdict.reason ? { reason: verdict.reason } : {}),
+            });
+            continue;
+          }
+        } else if (!contradiction) {
+          report.singleEvidenceSkipped++;
+          continue;
+        }
         op = "update";
       }
+
+      // PROTOTYPE: an UPDATE replaces the old distilled claim. Regenerate it
+      // with the old knowledge in the evidence so facts the new material did
+      // not correct are carried over instead of silently dropped.
+      let finalSummary = summary;
+      let finalEmbBuf = embBuf;
+      if (best && op === "update" && preserveOnUpdate && deps.summarize) {
+        const currentKnowledge: ConsolidateEvidence = {
+          title: "CURRENT KNOWLEDGE",
+          snippet: best.content,
+          url: "knowledge://semantic/" + best.id,
+        };
+        const mergeEvidence = [...evidence, currentKnowledge];
+        try {
+          const merged = await deps.summarize(mergeEvidence);
+          if (merged && merged.trim()) {
+            // The merged text now carries old facts too, so re-run the fidelity
+            // gate against both the new materials and the current knowledge.
+            let mergedRejected = false;
+            if (deps.classify && !(singleEvidence && deps.verify)) {
+              for (const claim of splitClaims(merged)) {
+                if (deps.classify(claim, mergeEvidence).label === "unsupported") { mergedRejected = true; break; }
+              }
+            }
+            if (mergedRejected) { report.gateRejected++; continue; }
+            const mergedEmb = await embedText(merged, "passage");
+            finalSummary = merged.trim();
+            finalEmbBuf = mergedEmb ? Buffer.from(mergedEmb.buffer, mergedEmb.byteOffset, mergedEmb.byteLength) : null;
+          }
+        } catch { /* keep the initial summary: a merge fault must not block the correction */ }
+      }
+
       if (best && op === "noop") {
         // D4 NOOP: touch only; the row is a stable anchor for idempotent reruns.
         const row = best;
@@ -313,9 +409,23 @@ export async function consolidateMemoryRun(
         // recall stops presenting them. They stay in the archive (traceable).
         const row = best;
         writes.push(() => {
+          // PROTOTYPE (concurrency): the plan was computed outside the write
+          // transaction. Re-check that the row this update targets is still the
+          // live version. If another writer closed it first, refuse the write
+          // and report the conflict instead of forking a second live truth.
+          if (concurrencyGuard) {
+            const live = db
+              .prepare("SELECT content FROM semantic_memories WHERE id = ? AND valid_until IS NULL")
+              .get(row.id) as { content: string } | undefined;
+            if (!live || live.content !== row.content) {
+              report.staleUpdates++;
+              report.staleDetails.push({ oldId: row.id, expected: row.content, current: live?.content ?? null });
+              return;
+            }
+          }
           let prev: number[] = [];
           try { prev = JSON.parse(row.source_episode_ids) as number[]; } catch { prev = []; }
-          const newId = insert(prev);
+          const newId = insert(prev, finalSummary, finalEmbBuf);
           db.prepare("UPDATE semantic_memories SET valid_until = datetime('now'), superseded_by = ? WHERE id = ?").run(newId, row.id);
           if (prev.length > 0) {
             db.prepare(
@@ -337,6 +447,9 @@ export async function consolidateMemoryRun(
 
   if (db.inTransaction) throw new Error("consolidateMemoryRun must not run inside an open transaction");
   await plan();
+  // PROTOTYPE (probe seam): both processes have planned against the version
+  // they read; only now do they race for the write transaction.
+  if (opts.planBarrier) await opts.planBarrier();
   db.exec("BEGIN IMMEDIATE");
   try {
     for (const w of writes) w();
@@ -348,8 +461,8 @@ export async function consolidateMemoryRun(
     try { db.exec("ROLLBACK"); } catch { /* already rolled back */ }
     throw err;
   }
-  report.skip = report.noop + report.singleEvidenceSkipped;
-  report.conflict = report.gateRejected;
+  report.skip = report.noop + report.singleEvidenceSkipped + report.verifyRejected;
+  report.conflict = report.gateRejected + report.staleUpdates;
   return report;
 }
 

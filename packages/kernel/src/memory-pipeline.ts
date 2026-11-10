@@ -458,7 +458,15 @@ export class MemoryPipeline {
       const recallStale = recallStatus?.payload?.needsRefresh === true;
       if (!summaryStale && !recallStale) return { refreshed: false, reason: "no refresh needed" };
 
-      const digest = await getDigest(40);
+      // PROTOTYPE (source dependency): rebuild from this session's own live
+      // materials and the knowledge derived from them, plus the row that
+      // invalidated the summary. Global "latest 40" pulled unrelated sessions in.
+      const invalidatedByRaw = summaryStatus?.payload?.invalidatedBy ?? recallStatus?.payload?.invalidatedBy;
+      const invalidatedBy = typeof invalidatedByRaw === "number" ? invalidatedByRaw : undefined;
+      const digest = await getDigest(40, {
+        sessionId,
+        ...(invalidatedBy !== undefined ? { includeSemanticIds: [invalidatedBy] } : {}),
+      });
       if (digest.length === 0) {
         // Nothing valid to rebuild from: keep the pause rather than invent text.
         return { refreshed: false, reason: "no valid materials to regenerate from" };
@@ -467,7 +475,6 @@ export class MemoryPipeline {
         .map((m) => (m.kind === "semantic" ? "[knowledge #" : "[material #") + m.id + "] " + m.text)
         .join("\n")
         .slice(0, 12000);
-      const invalidatedBy = summaryStatus?.payload?.invalidatedBy ?? recallStatus?.payload?.invalidatedBy;
 
       let summaryText: string | undefined;
       if (summaryStale) {

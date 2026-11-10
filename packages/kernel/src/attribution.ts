@@ -196,12 +196,17 @@ const CONTRADICTION_RE = /\b(?:not|never|no longer)\b|(?:并非|毫无|全无|�
 export function classifyClaim(claimText: string, ctx: ClassifyContext): ClaimClassification {
   const claimTokens = tokenize(claimText);
   const results = ctx.retrievalResults ?? [];
+  // PROTOTYPE (correction summaries): evidence that states the SAME negated
+  // fact ("hours are no longer 9-5") must not be read as contradiction evidence
+  // against a claim that restates that same negation. Compare polarity: only a
+  // disagreement (one side negated, the other not) is a contradiction.
+  const claimNegated = CONTRADICTION_RE.test(claimText);
 
   const ranked = results
     .map((r, i) => {
       const snip = (r.snippet ?? "") + " " + r.title;
       const overlap = jaccard(claimTokens, tokenize(snip));
-      return { r, i, overlap, contradiction: overlap > 0.4 && CONTRADICTION_RE.test(snip) };
+      return { r, i, overlap, contradiction: overlap > 0.4 && CONTRADICTION_RE.test(snip) !== claimNegated };
     })
     .filter((e) => e.overlap > 0)
     .sort((a, b) => b.overlap - a.overlap);

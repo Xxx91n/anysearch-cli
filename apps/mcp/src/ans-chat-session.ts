@@ -222,6 +222,12 @@ export interface ConsolidateReportShape {
   conflict: number;
   noop: number;
   singleEvidenceSkipped: number;
+  // PROTOTYPE (concurrency): planned updates refused because another writer
+  // closed the target row first; they are counted in `conflict`.
+  staleUpdates?: number;
+  // PROTOTYPE (real-model check): single-evidence corrections refused because
+  // the checker said "different fact" or "not reliable enough" (counted in `skip`).
+  verifyRejected?: number;
   semanticIds: number[];
   updates: Array<{ oldId: number; newId: number; retiredEpisodeIds: number[] }>;
   retiredEpisodeIds: number[];
@@ -236,6 +242,9 @@ export interface ConsolidationUsageShape {
   cacheWriteTokens: number;
   totalTokens: number;
   costUsd: number;
+  // Q19: distinguish "not called", "called but cost unknown", "price estimate",
+  // "provider-reported" instead of rendering every case as 0.
+  costBasis?: "not-called" | "unknown" | "price-estimate" | "provider-reported";
   missing: string[];
 }
 
@@ -247,16 +256,21 @@ export interface ConsolidationUsageShape {
 export function buildAnsChatConsolidateResult(
   report: ConsolidateReportShape,
   usage: ConsolidationUsageShape,
+  // PROTOTYPE (Q18): the resolved scope is echoed so a caller can see whether
+  // the run was session/memory scoped or covered the full archive.
+  scope?: { sessionIds: string[] | null; memoryIds: number[] | null },
 ): AnsChatToolResult {
   const line =
     "ans_chat consolidate" + (report.dryRun ? " (dry-run)" : "") +
     ": add " + report.add + ", update " + report.update + ", skip " + report.skip +
     ", conflict " + report.conflict + ", failure " + report.llmUnavailable +
+    (report.staleUpdates ? ", stale " + report.staleUpdates : "") +
     " (scanned " + report.clustersScanned + ", triggered " + report.clustersTriggered + ")";
   return {
     content: [{ type: "text", text: line }],
     structuredContent: {
       operation: "consolidate",
+      ...(scope ? { scope } : {}),
       report,
       counts: {
         add: report.add,
@@ -264,6 +278,8 @@ export function buildAnsChatConsolidateResult(
         skip: report.skip,
         conflict: report.conflict,
         failure: report.llmUnavailable,
+        ...(report.staleUpdates !== undefined ? { stale: report.staleUpdates } : {}),
+        ...(report.verifyRejected !== undefined ? { verifyRejected: report.verifyRejected } : {}),
       },
       usage,
     },
