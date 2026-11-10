@@ -1,0 +1,391 @@
+{
+  "generatedAt": "2026-11-10T03:17:54.764Z",
+  "piVersions": {
+    "kernelPin": "0.84.2",
+    "piAi": "0.84.2",
+    "piAgentCore": "0.84.2"
+  },
+  "inputSource": "Real pi-agent-core Agent/message shapes; scripted StreamFn (no network); in-memory ProbeStore; production kernel source imported unmodified.",
+  "findings": [
+    {
+      "id": "Q1-1",
+      "question": "真实 PI 消息进入流程时，哪些步骤执行、哪些跳过",
+      "reproduced": true,
+      "evidence": "shouldStopAfterTurn ran; gate.evaluate saw {\"inputRoles\":[\"user\",\"assistant\",\"toolResult\"],\"hasToolResultMessage\":true,\"hasLegacyToolResultBlock\":false,\"resultHasEnvelope\":false,\"resultEvidence\":false}; consolidate received roles=[\"user\",\"assistant\",\"toolResult\"]; real tool result message role=toolResult",
+      "detail": "The gate is reached but finds no target: it searches user messages for a legacy tool_result block, while PI appends a separate toolResult message."
+    },
+    {
+      "id": "Q1-2",
+      "question": "自动回忆是否调用存储检索并产生 l2_recall",
+      "reproduced": true,
+      "evidence": "searchMemory calls=0, searchMemoryMulti calls=0, anchors after turn 1=[\"consolidation_state\",\"rolling_summary\",\"consolidation_state\",\"rolling_summary\"], consolidate hasRetrievalEvidence=[false,false,false]",
+      "detail": "The L2 lookup scans assistant content for type 'tool_use' with .input.query; PI writes type 'toolCall' with .arguments, so the query is never found."
+    },
+    {
+      "id": "Q1-3",
+      "question": "模型返回 reuse 时程序是否正确识别",
+      "reproduced": true,
+      "evidence": "real event shape {type:'text_delta',delta:'reuse'} -> compress; legacy event shape {type:'text',text:'reuse'} -> reuse",
+      "detail": "adjudicateReuseCompress only accumulates event.type === 'text' && event.text; runner then read its verdict from the empty text and defaults to compress."
+    },
+    {
+      "id": "Q1-4",
+      "question": "额外补搜取得的资料是否进入下一次模型请求",
+      "reproduced": true,
+      "evidence": "turn 2 request roles=[\"user\"]; reround URL absent (and no reround happened: retriever calls=1)",
+      "detail": "The gate never produced an enriched envelope, and even if it had, shouldStopAfterTurn can only return a boolean; its applyTo() array is not written back to agent state. pi-agent-core 0.84.2 offers prepareNextTurn(context) for that, which production does not use."
+    },
+    {
+      "id": "Q2-1",
+      "question": "压缩有没有减少实际输入；旧工具结果是否仍完整发送",
+      "reproduced": true,
+      "evidence": "same-run request#1(messages=1, est tokens=10) -> request#2(messages=3, est tokens=2768); old tool result text chars=3072; [Session Memory] in same-run request#2=true, in next ans_chat-style run=true",
+      "detail": "No old message is dropped: request#2 still carries the full tool result plus the summary block when it arrives. The summary lands on the NEXT call (fresh Agent); within the same run the background summarization loses the race with the next provider request."
+    },
+    {
+      "id": "Q2-2",
+      "question": "总结和判断额外增加了多少调用与 token",
+      "reproduced": true,
+      "evidence": "summary calls=3; [{\"chars\":3586,\"estTokens\":897,\"includesOldToolResult\":true},{\"chars\":4069,\"estTokens\":1018,\"includesOldToolResult\":true},{\"chars\":1922,\"estTokens\":481,\"includesOldToolResult\":false}]; adjudication calls=0 (post-search trigger never true)",
+      "detail": "Each compression adds one standalone summarization request that re-serializes the whole conversation. Adjudication is unreachable because hasRetrievalEvidence stays false."
+    },
+    {
+      "id": "Q2-3",
+      "question": "摘要锚点是否按预期保存",
+      "reproduced": true,
+      "evidence": "anchors=[\"consolidation_state\",\"rolling_summary\",\"consolidation_state\",\"rolling_summary\"]; summary prompt char/token=[[3586,897],[4069,1018],[1922,481]]",
+      "detail": "rolling_summary and consolidation_state are written; the summary content itself is injected later, but only as an addition."
+    },
+    {
+      "id": "Q5-1",
+      "question": "最小适配：把 toolResult 折成旧 role:'tool' 后，缺口提炼是否恢复",
+      "reproduced": true,
+      "evidence": "real gap text chars=0, results=0; adapted gap text chars=2402, results=2",
+      "detail": "One shape adapter restores distillGap; without it the summarizer prompt's gap section stays empty."
+    },
+    {
+      "id": "Q5-2",
+      "question": "最小适配：把 toolResult 折成旧 user/tool_result 合并块后，补搜是否恢复",
+      "reproduced": true,
+      "evidence": "hasRetrievalEvidence=true; reround retriever calls=1; gate streamFn call shape=[{\"firstArgKeys\":[\"model\",\"messages\",\"thinkingLevel\"],\"secondArgKeys\":[\"apiKey\"],\"firstArgLooksLikeModel\":false}]",
+      "detail": "Shape adapter restores discovery and reround. The gate's own streamFn call still uses the old 2-argument form, separate from the message-shape mismatch."
+    },
+    {
+      "id": "Q5-3",
+      "question": "补搜结果是否能进入下一次主模型请求（即使 gate 已恢复）",
+      "reproduced": true,
+      "evidence": "applyTo produced enriched adapted messages containing probe.example=true; the real next request still has no reround URL. Production hook cannot return a message array.",
+      "detail": "Even with the shape fixed, shouldStopAfterTurn returns only a boolean. Wiring reround evidence into the next request needs prepareNextTurn(context) (available in 0.84.2), which is a wiring change, not a shape fix."
+    },
+    {
+      "id": "Q5-4",
+      "question": "最小适配：回合结束上下文里如何取到“这一轮搜索过”",
+      "reproduced": true,
+      "evidence": "current code reads lastToolName/toolName -> \"\"; real context keys=[\"message\",\"toolResults\",\"context\",\"newMessages\"]; toolResults-based extraction -> true",
+      "detail": "ShouldStopAfterTurnContext exposes message/toolResults/context/newMessages. The tool name is on toolResults, not on the context root."
+    },
+    {
+      "id": "Q5-5",
+      "question": "最小适配：把 toolCall/arguments 折成 tool_use/input 后，L2 回忆是否恢复",
+      "reproduced": true,
+      "evidence": "searchMemory calls=0, searchMemoryMulti calls=1, anchors=[\"consolidation_state\",\"l2_recall\"]",
+      "detail": "The same content re-expressed in the legacy names restores query extraction, store recall, and the l2_recall anchor."
+    },
+    {
+      "id": "Q5-7",
+      "question": "最小适配下，L2 回忆还受 messages.length > 4 约束",
+      "reproduced": true,
+      "evidence": "messages=5, hasRetrievalEvidence=true, totalTokens=0 -> anchors=[\"consolidation_state\",\"l2_recall\"]; one search turn alone is 3 messages",
+      "detail": "Even with names and evidence flag fixed, a single search turn never triggers post-search consolidation; L2 recall needs at least five messages (two tool rounds) or the token watermark."
+    },
+    {
+      "id": "Q5-6",
+      "question": "最小适配：把 text_delta 映射为旧 text 事件后，reuse 识别是否恢复",
+      "reproduced": true,
+      "evidence": "adapted event stream -> reuse",
+      "detail": "An event-name shim restores the adjudicator's verdict parsing."
+    },
+    {
+      "id": "Q2-4",
+      "question": "缓存能否观察到（客户端复用 / 服务商输入缓存 / 历史资料复用）",
+      "reproduced": false,
+      "evidence": "scripted provider reports cacheRead=[\"no usage fields\",\"no usage fields\",\"no usage fields\"]; no provider cache exists in this loop",
+      "detail": "The scripted provider cannot show provider-side cache. Client-side reuse is absent too: each ans_chat call builds a fresh Agent with no carried history, so only anchors (summary/digest) cross calls."
+    }
+  ],
+  "raw": {
+    "consolidateArgs": [
+      {
+        "messageCount": 3,
+        "roles": [
+          "user",
+          "assistant",
+          "toolResult"
+        ],
+        "totalTokens": 2768,
+        "hasRetrievalEvidence": false
+      },
+      {
+        "messageCount": 4,
+        "roles": [
+          "user",
+          "assistant",
+          "toolResult",
+          "assistant"
+        ],
+        "totalTokens": 2000,
+        "hasRetrievalEvidence": false
+      },
+      {
+        "messageCount": 2,
+        "roles": [
+          "user",
+          "assistant"
+        ],
+        "totalTokens": 2000,
+        "hasRetrievalEvidence": false
+      },
+      {
+        "messageCount": 3,
+        "roles": [
+          "user",
+          "assistant",
+          "toolResult"
+        ],
+        "totalTokens": 2000,
+        "hasRetrievalEvidence": false
+      },
+      {
+        "messageCount": 5,
+        "roles": [
+          "user",
+          "assistant",
+          "tool",
+          "assistant",
+          "tool"
+        ],
+        "totalTokens": 0,
+        "hasRetrievalEvidence": true
+      }
+    ],
+    "evaluateArgs": [
+      {
+        "inputRoles": [
+          "user",
+          "assistant",
+          "toolResult"
+        ],
+        "hasToolResultMessage": true,
+        "hasLegacyToolResultBlock": false,
+        "resultHasEnvelope": false,
+        "resultEvidence": false
+      },
+      {
+        "inputRoles": [
+          "user",
+          "assistant",
+          "toolResult",
+          "assistant"
+        ],
+        "hasToolResultMessage": true,
+        "hasLegacyToolResultBlock": false,
+        "resultHasEnvelope": false,
+        "resultEvidence": false
+      },
+      {
+        "inputRoles": [
+          "user",
+          "assistant"
+        ],
+        "hasToolResultMessage": false,
+        "hasLegacyToolResultBlock": false,
+        "resultHasEnvelope": false,
+        "resultEvidence": false
+      },
+      {
+        "inputRoles": [
+          "user",
+          "assistant",
+          "user"
+        ],
+        "hasToolResultMessage": false,
+        "hasLegacyToolResultBlock": true,
+        "resultHasEnvelope": true,
+        "resultEvidence": true
+      }
+    ],
+    "anchorsAfterTurn1": [
+      "consolidation_state",
+      "rolling_summary",
+      "consolidation_state",
+      "rolling_summary"
+    ],
+    "anchorsAfterTurn2": [
+      "consolidation_state",
+      "rolling_summary",
+      "consolidation_state",
+      "rolling_summary",
+      "consolidation_state",
+      "rolling_summary"
+    ],
+    "contexts": [
+      {
+        "index": 0,
+        "roles": [
+          "user"
+        ],
+        "messageCount": 1,
+        "estimatedTokens": 10,
+        "tools": [
+          "search"
+        ],
+        "optionsKeys": [
+          "model",
+          "reasoning",
+          "sessionId",
+          "onPayload",
+          "onResponse",
+          "transport",
+          "thinkingBudgets",
+          "maxRetryDelayMs",
+          "toolExecution",
+          "beforeToolCall",
+          "afterToolCall",
+          "shouldStopAfterTurn",
+          "prepareNextTurn",
+          "convertToLlm",
+          "transformContext",
+          "getApiKey",
+          "getSteeringMessages",
+          "getFollowUpMessages",
+          "apiKey",
+          "signal"
+        ],
+        "systemPrompt": "You are a probe research agent.",
+        "lastUserText": "what does the memory pipeline remember?"
+      },
+      {
+        "index": 1,
+        "roles": [
+          "user",
+          "assistant",
+          "toolResult"
+        ],
+        "messageCount": 3,
+        "estimatedTokens": 2768,
+        "tools": [
+          "search"
+        ],
+        "optionsKeys": [
+          "model",
+          "reasoning",
+          "sessionId",
+          "onPayload",
+          "onResponse",
+          "transport",
+          "thinkingBudgets",
+          "maxRetryDelayMs",
+          "toolExecution",
+          "beforeToolCall",
+          "afterToolCall",
+          "shouldStopAfterTurn",
+          "prepareNextTurn",
+          "convertToLlm",
+          "transformContext",
+          "getApiKey",
+          "getSteeringMessages",
+          "getFollowUpMessages",
+          "apiKey",
+          "signal"
+        ],
+        "systemPrompt": "You are a probe research agent.",
+        "lastUserText": "what does the memory pipeline remember?\n\n[Session Memory] SUMMARY PROBE: fact A and fact B."
+      },
+      {
+        "index": 2,
+        "roles": [
+          "user"
+        ],
+        "messageCount": 1,
+        "estimatedTokens": 20,
+        "tools": [
+          "search"
+        ],
+        "optionsKeys": [
+          "model",
+          "reasoning",
+          "sessionId",
+          "onPayload",
+          "onResponse",
+          "transport",
+          "thinkingBudgets",
+          "maxRetryDelayMs",
+          "toolExecution",
+          "beforeToolCall",
+          "afterToolCall",
+          "shouldStopAfterTurn",
+          "prepareNextTurn",
+          "convertToLlm",
+          "transformContext",
+          "getApiKey",
+          "getSteeringMessages",
+          "getFollowUpMessages",
+          "apiKey",
+          "signal"
+        ],
+        "systemPrompt": "You are a probe research agent.",
+        "lastUserText": "and what did we just learn?\n\n[Session Memory] SUMMARY PROBE: fact A and fact B."
+      }
+    ],
+    "summaryLog": [
+      {
+        "systemPrompt": "You are a context summarization assistant. Your task is to r",
+        "promptChars": 3586,
+        "estimatedTokens": 897,
+        "optionsKeys": [
+          "maxTokens",
+          "signal",
+          "cacheRetention",
+          "sessionId"
+        ],
+        "includesOldToolResult": true
+      },
+      {
+        "systemPrompt": "You are a context summarization assistant. Your task is to r",
+        "promptChars": 4069,
+        "estimatedTokens": 1018,
+        "optionsKeys": [
+          "maxTokens",
+          "signal",
+          "cacheRetention",
+          "sessionId"
+        ],
+        "includesOldToolResult": true
+      },
+      {
+        "systemPrompt": "You are a context summarization assistant. Your task is to r",
+        "promptChars": 1922,
+        "estimatedTokens": 481,
+        "optionsKeys": [
+          "maxTokens",
+          "signal",
+          "cacheRetention",
+          "sessionId"
+        ],
+        "includesOldToolResult": false
+      }
+    ],
+    "turn2TextHasReround": false,
+    "adaptedEnriched": "[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"what does the memory pipeline remember?\\n\\n[Session Memory] SUMMARY PROBE: fact A and fact B.\"}],\"timestamp\":1794280674734},{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"call-1\",\"name\":\"search\",\"arguments\":{\"query\":\"anysearch memory pipeline\",\"mode\":\"fast\"}}],\"api\":\"openai-completions\",\"provider\":\"probe\",\"model\":\"probe-model\",\"usage\":{\"input\":1990,\"output\":10,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":2000,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"toolUse\",\"timestamp\":1794280674737},{\"gapRequests\":[],\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_call_id\":\"call-1\",\"content\":[{\"type\":\"text\",\"text\":\"{\\n  \\\"query\\\": \\\"anysearch memory pipeline\\\",\\n  \\\"mode\\\": \\\"fast\\\",\\n  \\\"results\\\": [\\n    {\\n      \\\"url\\\": \\\"https://probe.example/a\\\",\\n      \\\"title\\\": \\\"Probe A\\\",\\n      \\\"snippet\\\": \\\"probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph \\\",\\n      \\\"source\\\": \\\"tavily\\\",\\n      \\\"score\\\": 1\\n    },\\n    {\\n      \\\"url\\\": \\\"https://probe.example/b\\\",\\n      \\\"title\\\": \\\"Probe B\\\",\\n      \\\"snippet\\\": \\\"probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph probe evidence paragraph \\\",\\n      \\\"source\\\": \\\"exa\\\",\\n      \\\"score\\\": 0.9\\n    }\\n  ],\\n  \\\"metadata\\\": {\\n    \\\"sufficiency\\\": {\\n      \\\"verdict\\\": \\\"insufficient\\\",\\n      \\\"missing\\\": [\\n        \\\"the second half of the question\\\"\\n      ]\\n    },\\n    \\\"providerAnswers\\\": []\\n  },\\n  \\\"sufficiencyRerounds\\\": true\\n}\"}]}]}]",
+    "gapReal": {
+      "text": "",
+      "results": [],
+      "source": "retrieved",
+      "traceId": "gap"
+    },
+    "gapAdapted": {
+      "textChars": 2402,
+      "results": 2
+    }
+  }
+}

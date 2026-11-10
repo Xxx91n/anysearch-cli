@@ -1,0 +1,53 @@
+{
+  "generatedAt": "2026-11-10T03:13:20.161Z",
+  "inputSource": "existing ~/.dsh/sessions logs for r19 question-level g3/g5 runs (read-only)",
+  "note": "project-level runs have not started; the arm config is the same filter (--allow ans_chat)",
+  "arms": {
+    "g3": {
+      "calls": 699,
+      "withSession": 0,
+      "headers": 173,
+      "headersAnsChat": 173,
+      "headersRecall": 0,
+      "resultSessionBlocks": 0,
+      "dirs": 97,
+      "toolSurface": [
+        "mcp__anysearch__ans_chat"
+      ]
+    },
+    "g5": {
+      "calls": 440,
+      "withSession": 0,
+      "headers": 110,
+      "headersAnsChat": 110,
+      "headersRecall": 0,
+      "resultSessionBlocks": 0,
+      "dirs": 72,
+      "toolSurface": [
+        "mcp__anysearch__ans_chat"
+      ]
+    }
+  },
+  "totals": {
+    "calls": 1139,
+    "withSession": 0
+  },
+  "hostToolNamesSeen": [
+    "create_goal",
+    "edit",
+    "exit_plan_mode",
+    "get_goal",
+    "glob",
+    "grep",
+    "list_mcp_resource_templates",
+    "list_mcp_resources",
+    "mcp__anysearch__ans_chat",
+    "read",
+    "read_image",
+    "read_mcp_resource",
+    "todo_write",
+    "update_goal",
+    "working_directory",
+    "write"
+  ]
+}

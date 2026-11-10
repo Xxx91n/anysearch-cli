@@ -1,0 +1,28 @@
+{
+  "filtered": {
+    "label": "filtered-allow-ans_chat",
+    "initialized": true,
+    "tools": [
+      "ans_chat"
+    ],
+    "recallCall": {
+      "error": "tool not available in this arm: recall_memory"
+    },
+    "messageCount": 5
+  },
+  "unfiltered": {
+    "label": "unfiltered",
+    "initialized": true,
+    "tools": [
+      "search_web",
+      "research_web",
+      "recall_memory",
+      "query_knowledge",
+      "ans_chat"
+    ],
+    "recallCall": {
+      "result": "reached upstream"
+    },
+    "messageCount": 5
+  }
+}
