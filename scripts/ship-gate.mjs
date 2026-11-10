@@ -72,7 +72,7 @@ const PKG_DIRS = [
 ];
 
 // MCP server entry (ans-mcp bin). Step 5 spawns this over stdio.
-const MCP_MAIN = "apps/mcp/dist/index.cjs";
+const MCP_MAIN = "apps/mcp/dist/index.js";
 
 const ANSI = process.stdout.isTTY
   ? { green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", reset: "\x1b[0m" }

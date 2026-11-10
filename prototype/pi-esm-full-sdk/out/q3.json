@@ -1,0 +1,216 @@
+{
+  "probe": "q3",
+  "generatedAt": "2026-11-10T09:04:47.290Z",
+  "inputSource": "real MemoryPipeline + PiAgentRuntime + SqliteSessionStore; scripted provider and seams (no network)",
+  "findings": [
+    {
+      "id": "S1",
+      "question": "three-business-hours episodes consolidate into one live semantic memory",
+      "pass": true,
+      "evidence": {
+        "report": {
+          "add": 1,
+          "update": 0,
+          "skip": 0
+        },
+        "oldSem": {
+          "id": 1,
+          "content": "Business hours are Monday to Friday 9-5.",
+          "source_episode_ids": "[1,2,3]",
+          "valid_until": null,
+          "superseded_by": null
+        }
+      }
+    },
+    {
+      "id": "S3",
+      "question": "one newer contradicting material updates the knowledge, soft-closes the old row, retires its episodes",
+      "pass": true,
+      "evidence": {
+        "report": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0
+        },
+        "singleEvidenceSkipped": 0,
+        "newSem": {
+          "id": 3,
+          "content": "Support hours are now 24/7, no longer Monday to Friday 9-5.",
+          "source_episode_ids": "[1,2,3,7]",
+          "valid_until": null
+        },
+        "oldSemAfter": {
+          "id": 1,
+          "content": "Business hours are Monday to Friday 9-5.",
+          "valid_until": "2026-11-10 09:04:47",
+          "superseded_by": 3
+        },
+        "retiredEpisodes": [
+          {
+            "id": 1,
+            "supersededBy": 3,
+            "archived": 0
+          },
+          {
+            "id": 2,
+            "supersededBy": 3,
+            "archived": 0
+          },
+          {
+            "id": 3,
+            "supersededBy": 3,
+            "archived": 0
+          }
+        ],
+        "updates": [
+          {
+            "oldId": 1,
+            "newId": 3,
+            "retiredEpisodeIds": [
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "seamCalls": [
+          "seed",
+          "unrelated",
+          "correction"
+        ]
+      }
+    },
+    {
+      "id": "S4",
+      "question": "affected summaries are paused from injection; unrelated session knowledge is untouched",
+      "pass": true,
+      "evidence": {
+        "summariesNeedingRefresh": [
+          "932e7b06-e3a8-4261-9be3-9772c2dddee2"
+        ],
+        "summaryStatus": {
+          "target": "rolling_summary",
+          "needsRefresh": true,
+          "invalidatedBy": 3,
+          "oldSemanticId": 1,
+          "overlap": 1,
+          "markedAt": "2026-11-10T09:04:47.086Z"
+        },
+        "recallStatus": {
+          "target": "l2_recall",
+          "needsRefresh": true,
+          "invalidatedBy": 3,
+          "oldSemanticId": 1,
+          "overlap": 1,
+          "markedAt": "2026-11-10T09:04:47.088Z"
+        },
+        "otherStatus": null,
+        "otherStatusIsUndefined": true,
+        "pausedInjectionHead": "what are the support hours?",
+        "pausedHasOld": false,
+        "unrelatedSeed": {
+          "add": 1,
+          "update": 0,
+          "skip": 0,
+          "scanned": 1
+        },
+        "unrelatedSemantic": {
+          "id": 2,
+          "content": "UNRELATED-KNOWLEDGE: the unrelated conclusion stays valid.",
+          "valid_until": null
+        }
+      }
+    },
+    {
+      "id": "S5",
+      "question": "refresh rebuilds the summary from live materials and clears the pause",
+      "pass": true,
+      "evidence": {
+        "refresh": {
+          "refreshed": true,
+          "sessions": 1
+        },
+        "statusAfter": {
+          "target": "rolling_summary",
+          "needsRefresh": false,
+          "refreshedFrom": "valid-materials",
+          "invalidatedBy": 3,
+          "refreshedAt": "2026-11-10T09:04:47.102Z"
+        },
+        "latestSummary": "REFRESHED-SUMMARY: support is available 24/7 every day (rebuilt from live materials).",
+        "digestHasNew": true,
+        "digestHasOld": false,
+        "refreshedInjection": "what are the support hours now?\n\n[Session Memory] REFRESHED-SUMMARY: support is available 24/7 every day (rebuilt from live materials).\n\n[Research Recall] [knowledge #3] Support hours are now 24/7, no longer Monday to Friday 9-5.\n[knowledge #2] UNRELATED-KNOWLEDGE: the unrelated conclusion stays valid.\n[material #7] Support hours updated (official page) — Official update: Support hours are now 24/",
+        "extraSummaryRows": 1,
+        "refreshRequestHead": "[{\"role\":\"system\",\"text\":\"You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.\\n\\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.\"},{\"role\":\"user\",\"text\":\"<conversation>\\n[User]: Rebuild the research summary from the CURRENT valid materials below. A previously stated fact was corrected; do ",
+        "refreshHasNewRow": true,
+        "refreshHasOldRow": false,
+        "secondRefresh": {
+          "refreshed": false,
+          "reason": "no refresh needed"
+        },
+        "secondRefreshCalls": 1
+      }
+    },
+    {
+      "id": "S6",
+      "question": "the post-correction model request states the new fact and no longer presents the old one",
+      "pass": true,
+      "evidence": {
+        "firstMainHead": "[{\"role\":\"system\",\"text\":\"\",\"sections\":{\"preamble\":\"PROBE-Q3-DOMAIN: probe research agent.\",\"cwd\":\"<cwd>\\nD:/Aworker/anysearch-cli\\n</cwd>\"}},{\"role\":\"user\",\"text\":\"What are the current support hours?\\n\\n[Session Memory] REFRESHED-SUMMARY: support is available 24/7 every day (rebuilt from live materials).\\n\\n[Research Recall] [knowledge #3] Support hours are now 24/7, no longer Monday to Friday 9-5.\\n[knowledge #2] UNRELATED-KNOWLEDGE: the unrelated conclusion stays valid.\\n[material #7] Support hours updated (official page) — Official update: Support hours are now 24/7, no longer Monday to Friday 9-5. Effective 2026-11-01.\\n[material #6] Unrelated topic — UNRELATED-KNOWLEDGE: the unrelated ",
+        "done": "Agent completed (tokens: 140 in + 10 out = 150 total)",
+        "context": {
+          "tokens": 150,
+          "window": 200000,
+          "percent": 0.075
+        },
+        "usage": {
+          "inputTokens": 140,
+          "outputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "totalTokens": 150,
+          "costUsd": 0,
+          "assistantCalls": 1,
+          "compactionCalls": 0,
+          "compactionTokens": 0,
+          "compactionCostUsd": 0,
+          "missing": []
+        },
+        "memoryUsage": {
+          "calls": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "totalTokens": 0,
+          "costUsd": 0,
+          "missing": [
+            "summary usage",
+            "summary cost"
+          ]
+        }
+      }
+    },
+    {
+      "id": "S7",
+      "question": "old rows and old anchor history stay queryable; relations are traceable forward",
+      "pass": true,
+      "evidence": {
+        "rollingSummaryVersions": 2,
+        "oldAnchorStillHasOldFact": true,
+        "finalOld": {
+          "id": 1,
+          "valid_until": "2026-11-10 09:04:47",
+          "superseded_by": 3
+        },
+        "finalNew": {
+          "id": 3,
+          "valid_until": null,
+          "superseded_by": null
+        }
+      }
+    }
+  ]
+}

@@ -164,6 +164,20 @@ export interface SessionStore {
   saveResults(sessionId: string, results: NormalizedResult[]): Promise<void>;
   saveAnchor(sessionId: string, anchorType: string, payload: unknown): Promise<void>;
   getAnchors(sessionId: string): Promise<ResumeAnchor[]>;
+  // Correction propagation (optional so embedded stores stay source-compatible):
+  // the latest anchor_status row for a target anchor type, and the valid
+  // materials a stale summary can be regenerated from.
+  getAnchorStatus?(sessionId: string, target: string): Promise<{ payload: Record<string, unknown> } | undefined>;
+  getLiveKnowledgeDigest?(limit?: number): Promise<Array<{ kind: "semantic" | "episode"; id: number; text: string }>>;
+  // Decision 6: the explicit consolidation entry the MCP tool calls. Optional
+  // so embedded stores stay source-compatible; the tool refuses to guess.
+  consolidateMemory?(opts?: ConsolidateOptions): Promise<ConsolidateReport>;
+  // Injected summarize / fidelity-gate seams (LLM). Both entry points build
+  // them from the shared kernel helper, so they cannot drift.
+  setConsolidationSeams?(seams: {
+    summarize?: ConsolidateSummarizeFn;
+    classify?: ConsolidateClassifyFn;
+  }): void;
   // search the research archive for the recall_memory MCP tool.
   searchMemory(query: string, limit?: number): Promise<MemoryHit[]>;
   // (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
@@ -329,8 +343,8 @@ export class SqliteSessionStore implements SessionStore {
   private readonly relationLlmFallback?: (text: string) => Promise<string | null>;
   // consolidation seams (summarize = bounded LLM per cluster; classify = kernel
   // classifyClaim-shaped fidelity gate). Both optional and fail-open.
-  private readonly consolidateSummarize?: ConsolidateSummarizeFn;
-  private readonly consolidateClassify?: ConsolidateClassifyFn;
+  private consolidateSummarize?: ConsolidateSummarizeFn;
+  private consolidateClassify?: ConsolidateClassifyFn;
   // semantic arm telemetry (serve mode; Phase-1 shadow contract retired).
   private readonly semTel = { queries: 0, hits: 0, served: 0 };
   // step7: entity arm telemetry counters (report-only in eval).
@@ -443,6 +457,10 @@ export class SqliteSessionStore implements SessionStore {
     try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN resolved TEXT"); } catch {}
     // soft archive (reversible forgetting).
     try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"); } catch {}
+    // correction propagation: an episode revised by a later consolidation stays
+    // in the archive but leaves current-fact recall (superseded_by = new memory id).
+    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN superseded_by INTEGER"); } catch {}
+    try { this.db.exec("ALTER TABLE semantic_memories ADD COLUMN superseded_by INTEGER"); } catch {}
     // T0 durable preferences — t0_preferences is the single source of truth; MEMORY.md is a
     // regenerated materialized projection (temp+fsync+rename). scope: "global" | project root path.
     // correction_count drives the T0 promote rule (>=2 cross-session corrections = implicit promote).
@@ -495,7 +513,7 @@ export class SqliteSessionStore implements SessionStore {
       // recall_memory searches the research archive (retrieval_results_fts), not messages.
       // ->: freshness_factor in ORDER BY + bi-temporal filter (valid_until IS NULL).
      // MemoryHit.role <-- r.title, MemoryHit.content <-- r.snippet (recall_memory maps these fields).
-     searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) ORDER BY rank LIMIT ?"),
+     searchAllResults: this.db.prepare("SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) AND (r.superseded_by IS NULL) ORDER BY rank LIMIT ?"),
       // L2: update last_accessed on recall hit (access-time signal, Mem0 1.5×/0.3×).
       touchAccessed: this.db.prepare("UPDATE retrieval_results SET last_accessed = datetime('now'), access_count = COALESCE(access_count, 0) + 1 WHERE id = ?"),
       // same exactly-once site — each returned hit logs one access event.
@@ -944,6 +962,43 @@ export class SqliteSessionStore implements SessionStore {
     return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
   }
 
+  /**
+   * Latest correction status for one anchor type. Status rows are append-only;
+   * the newest statement wins (needs_refresh true, then false after a refresh).
+   */
+  async getAnchorStatus(sessionId: string, target: string): Promise<{ payload: Record<string, unknown> } | undefined> {
+    const rows = this.db
+      .prepare("SELECT payload FROM resume_anchors WHERE session_id = ? AND anchor_type = 'anchor_status' ORDER BY id DESC")
+      .all(sessionId) as Array<{ payload: string }>;
+    for (const row of rows) {
+      try {
+        const payload = JSON.parse(row.payload) as Record<string, unknown>;
+        if (payload?.target === target) return { payload };
+      } catch { /* skip a malformed row */ }
+    }
+    return undefined;
+  }
+
+  /**
+   * Materials that are still treated as current: live semantic rows plus
+   * episodes that are live, unquarantined, unarchived, and not superseded.
+   * Used to regenerate a summary that a correction invalidated.
+   */
+  async getLiveKnowledgeDigest(limit = 40): Promise<Array<{ kind: "semantic" | "episode"; id: number; text: string }>> {
+    const sem = this.db
+      .prepare("SELECT id, content FROM semantic_memories WHERE valid_until IS NULL ORDER BY id DESC LIMIT ?")
+      .all(limit) as Array<{ id: number; content: string }>;
+    const eps = this.db
+      .prepare(
+        "SELECT id, title, snippet FROM retrieval_results WHERE valid_until IS NULL AND quarantine IS NULL AND archived = 0 AND superseded_by IS NULL ORDER BY id DESC LIMIT ?",
+      )
+      .all(limit) as Array<{ id: number; title: string | null; snippet: string | null }>;
+    return [
+      ...sem.map((r) => ({ kind: "semantic" as const, id: r.id, text: r.content })),
+      ...eps.map((r) => ({ kind: "episode" as const, id: r.id, text: [r.title, r.snippet].filter(Boolean).join(" — ") })),
+    ];
+  }
+
   // ---- entity link layer (write link + query arm) ----
 
   public entityTelemetry(): { queries: number; candidates: number; activations: number; hits: number; truncated: number } {
@@ -976,7 +1031,7 @@ export class SqliteSessionStore implements SessionStore {
     const rows = this.db.prepare(
       "SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, me.embedding as emb " +
       "FROM memory_embeddings me JOIN retrieval_results r ON r.id = me.memory_id " +
-      "WHERE r.valid_until IS NULL AND r.quarantine IS NULL AND r.archived = 0"
+      "WHERE r.valid_until IS NULL AND r.quarantine IS NULL AND r.archived = 0 AND r.superseded_by IS NULL"
     ).all() as Array<{ rowid: number; sessionId: string; role: string | null; content: string | null; emb: Buffer }>;
     const scored: Array<{ h: MemoryHit; s: number }> = [];
     for (const r of rows) {
@@ -1011,6 +1066,17 @@ export class SqliteSessionStore implements SessionStore {
     return { scanned: rows.length, embedded, failed };
   }
   // ---- turn older episodes into semantic memories (D2/D4) + reversible forgetting (D5) ----
+
+  /**
+   * Late-bind the consolidation seams. The MCP server builds its LLM session
+   * lazily per request, after the store exists, so the seams cannot ride the
+   * constructor there. Replacing them is safe: each call supplies its own
+   * stateless closures.
+   */
+  setConsolidationSeams(seams: { summarize?: ConsolidateSummarizeFn; classify?: ConsolidateClassifyFn }): void {
+    if (seams.summarize) this.consolidateSummarize = seams.summarize;
+    if (seams.classify) this.consolidateClassify = seams.classify;
+  }
 
   async consolidateMemory(opts?: ConsolidateOptions): Promise<ConsolidateReport> {
     return consolidateMemoryRun(this.db, { summarize: this.consolidateSummarize, classify: this.consolidateClassify }, opts ?? {});
@@ -1382,7 +1448,7 @@ export class SqliteSessionStore implements SessionStore {
     const ids = matched.map((e) => e.id);
     const sql = "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank FROM retrieval_results r " + // rank required by MemoryHit
       "JOIN memory_entity me ON me.memory_id = r.id WHERE me.entity_id IN (" + ids.map(() => "?").join(", ") + ") " +
-      "AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) ORDER BY r.created_at DESC LIMIT ?";
+      "AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) AND (r.superseded_by IS NULL) ORDER BY r.created_at DESC LIMIT ?";
     const rows = this.db.prepare(sql).all(...ids, limit) as MemoryHit[];
     this.entityTel.hits += rows.length;
     return rows;
@@ -1480,7 +1546,7 @@ export class SqliteSessionStore implements SessionStore {
       .prepare(
         "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank" +
         " FROM retrieval_results r JOIN memory_entity me ON me.memory_id = r.id" +
-        " WHERE me.entity_id IN (" + ph2 + ") AND r.valid_until IS NULL AND (r.quarantine IS NULL) AND r.archived = 0" +
+        " WHERE me.entity_id IN (" + ph2 + ") AND r.valid_until IS NULL AND (r.quarantine IS NULL) AND r.archived = 0 AND r.superseded_by IS NULL" +
         " ORDER BY r.created_at DESC LIMIT ?"
       )
       .all(...allIds, Math.min(limit, 100)) as MemoryHit[];

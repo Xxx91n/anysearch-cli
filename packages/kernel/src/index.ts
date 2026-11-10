@@ -18,6 +18,8 @@ export * from "@anysearch-cli/retriever";
 
 export * from "./composition";
 export * from "./llm-init";
+// Shared consolidation seams for the CLI and MCP entry points.
+export * from "./consolidation";
 
 // S1 query rewrite (pure + LLM seam, fail-open).
 export * from "./query-rewrite";

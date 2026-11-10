@@ -1,0 +1,131 @@
+{
+  "probe": "q1-sdk-controls",
+  "generatedAt": "2026-11-10T09:04:34.438Z",
+  "inputSource": "real kernel PiAgentRuntime + real SqliteSessionStore, scripted provider (no network)",
+  "findings": [
+    {
+      "id": "C1",
+      "question": "zero host discovery: no AGENTS.md/.pi/.claude skills; only the domain prompt + whitelisted tool",
+      "pass": true,
+      "evidence": {
+        "systemHead": "\n\n{\"preamble\":\"PROBE-DOMAIN-PROMPT: you are a probe research agent.\",\"cwd\":\"<cwd>\\nC:/Users/ADMINI~1/AppData/Local/Temp/",
+        "toolNames": [
+          "search"
+        ],
+        "hostContextLeaked": false,
+        "hostSkillLeaked": false,
+        "domainPromptPresent": true
+      }
+    },
+    {
+      "id": "C2",
+      "question": "domain toolWhitelist is the security upper bound on the model-visible tool list",
+      "pass": true,
+      "evidence": {
+        "tools": [
+          "search"
+        ]
+      }
+    },
+    {
+      "id": "C3",
+      "question": "tool_call extension blocks a non-allowlisted URL before execute() and lets an allowlisted one run",
+      "pass": true,
+      "evidence": {
+        "executed": 0,
+        "blockedText": "[{\"content\":[{\"type\":\"text\",\"text\":\"Blocked retrieved-derived URL https://evil.example/secret (queued for `ans hitl review`)\"}],\"details\":{},\"terminate\":true}]",
+        "allowedExecuted": 1,
+        "allowedAnswer": "allowed fetch done"
+      }
+    },
+    {
+      "id": "C4",
+      "question": "stale searches stop early and the run still answers",
+      "pass": true,
+      "evidence": {
+        "searchCalls": 3,
+        "finalAnswer": true
+      }
+    },
+    {
+      "id": "C5",
+      "question": "a refused token reserve stops the run before any provider call",
+      "pass": true,
+      "evidence": {
+        "streamCalls": 0,
+        "tokenReserves": 1,
+        "error": "Token budget exhausted: this run needs 2064 tokens reserved (input 16 + output limit 2048) but the session cap cannot cover it. The run was not started; raise [budget] tokenCap and retry (the next run"
+      }
+    },
+    {
+      "id": "C6",
+      "question": "pre-aborted signal starts nothing; mid-run abort ends without a done summary",
+      "pass": true,
+      "evidence": {
+        "preCalls": 0,
+        "preEvents": 0,
+        "midCalls": 1,
+        "midSettled": true,
+        "midDoneEvent": false
+      }
+    },
+    {
+      "id": "C7",
+      "question": "PI compaction: next request carries the summary, originals remain in the PI JSONL, done.context reports usage",
+      "pass": true,
+      "evidence": {
+        "summaryCalls": 2,
+        "mainCalls": [
+          "main",
+          "summary",
+          "main",
+          "summary"
+        ],
+        "nextRequestHead": "[{\"role\":\"system\",\"text\":\"\"},{\"role\":\"user\",\"text\":\"The conversation history before this point was compacted into the following summary:\\n\\n<summary>\\nNo prior history.\\n\\n---\\n\\n**Turn Context (split turn):**\\n\\nSUMMARY-MARKER-Q1: condensed probe history.\\n</summary>\"},{\"role\":\"assistant\",\"text\":\"\"},{\"role\":\"toolResult\",\"text\":\"{\\\"schema\\\":\\\"anysearch://schemas/retrieval-content/1\\\",\\\"version\\\":1",
+        "jsonlHasOriginalQuery": true,
+        "jsonlHasOriginalToolResult": true,
+        "jsonlLines": 10,
+        "usage": {
+          "inputTokens": 7980,
+          "outputTokens": 20,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "totalTokens": 8000,
+          "costUsd": 0,
+          "assistantCalls": 2,
+          "compactionCalls": 2,
+          "compactionTokens": 200,
+          "compactionCostUsd": 0,
+          "missing": []
+        },
+        "context": {
+          "tokens": null,
+          "window": 2000,
+          "percent": null
+        },
+        "contextNote": "PI reports tokens=null right after compaction; window still comes from the session"
+      }
+    },
+    {
+      "id": "C8",
+      "question": "system header is excluded from carried history and added exactly once on cold start",
+      "pass": true,
+      "evidence": {
+        "headerOnly": {
+          "tokens": 0,
+          "coldStart": true
+        },
+        "cold": {
+          "tokens": 8,
+          "coldStart": true
+        },
+        "expectedCold": 8,
+        "withConversation": {
+          "tokens": 3,
+          "coldStart": false
+        },
+        "expectedConversation": 3
+      }
+    }
+  ]
+}

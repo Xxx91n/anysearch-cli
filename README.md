@@ -160,7 +160,7 @@ ans-mcp --transport http --port 3001            # Streamable HTTP (localhost-onl
 ```
 
 When running from source, the same entry point is:
-`node apps/mcp/dist/index.cjs [--transport http] [--port <n>]`.
+`node apps/mcp/dist/index.js [--transport http] [--port <n>]`.
 
 Five tools: `search_web`, `research_web`, `recall_memory`, `query_knowledge`, and `ans_chat`.
 `ANS_DOMAIN` scopes the server via process environment variables: export it explicitly when starting `ans-mcp` directly; `ans mcp` inherits the domain selected in the CLI. Tools never write to stdout, keeping the protocol channel clean.

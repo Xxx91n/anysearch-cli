@@ -10,15 +10,22 @@
 // decision 6: dual session (pi Agent memory + SqliteSessionStore FTS5 sync).
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
-import { Agent } from "@earendil-works/pi-agent-core";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-// pi-agent-core 1.5.1 moved the context estimator into pi-coding-agent. That
-// package's root entry reads `import.meta.url` at import time and cannot be
-// bundled into the CJS CLI/MCP, so the message estimator lives in
-// message-text.ts with the same chars/4 contract.
+// Full PI session runtime. pi-coding-agent exports only an ESM entry, so both
+// hosts that link the kernel (CLI, MCP) build as ESM now.
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+  ModelRuntime,
+  SessionManager,
+  SettingsManager,
+  type ExtensionFactory,
+  type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import { estimateTranscriptTokens } from "./message-text";
+import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   CONTENT_TRUST_SCHEMA_VERSION,
@@ -30,7 +37,7 @@ import {
 } from "@anysearch-cli/retriever";
 import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveOutputReserveTokens, resolveUrlPolicy, toBudgetCaps } from "@anysearch-cli/store";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink } from "./ports";
-import type { AgentEvent } from "./runtime";
+import type { AgentEvent, RunUsage } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
 
@@ -288,9 +295,21 @@ export interface PiAgentRuntimeOptions {
   domainsDirs?: string[];
   model: unknown; // pi-ai Model instance
   streamFn: unknown; // models.streamSimple.bind(models)
-  models?: unknown; // Models object for generateSummaryWithUsage
+  models?: unknown; // Models object for summary generation
+  /** API key handed to the PI provider registration; never logged. */
+  apiKey?: string;
   ledger?: BudgetLedgerPort;
   sessionId?: string;
+  /**
+   * Directory for PI's append-only JSONL session records. When set together
+   * with anysearch sessionId, each session resumes its own record; when absent
+   * the session stays in memory.
+   */
+  piSessionDir?: string;
+  /** Working directory for the PI session + resource loader. Defaults to cwd. */
+  cwd?: string;
+  /** PI compaction thresholds (auto-compaction stays enabled unless disabled). */
+  piCompaction?: { enabled?: boolean; reserveTokens?: number; keepRecentTokens?: number };
   tools?: AgentTool[]; // extra tools beyond search
   getApiKey?: () => Promise<string | undefined>;
   /** #113: REAL model context window (LlmSession.contextWindow); undefined = unknown. */
@@ -345,6 +364,16 @@ export interface UsageTotals {
   outputTokens: number;
   totalTokens: number;
   costUsd: number;
+  // Provider-reported cache reads/writes. Absent usage stays 0 here but the
+  // report says "unavailable" instead of pretending the call was free.
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  // Whether the provider actually reported each dimension, so a reported zero
+  // stays distinguishable from an absent number.
+  cacheReported: boolean;
+  costReported: boolean;
+  // Number of assistant calls that actually returned usage.
+  assistantCalls: number;
   // Latest assistant message's totalTokens (input incl. cache + output of the
   // most recent LLM call). One input to the L0 watermark's occupancy:
   // max(this, estimateContextTokens(messages)) in resolveContextOccupancy.
@@ -354,7 +383,43 @@ export interface UsageTotals {
 }
 
 export function emptyUsageTotals(): UsageTotals {
-  return { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, lastTotalTokens: 0 };
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    costUsd: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    cacheReported: false,
+    costReported: false,
+    assistantCalls: 0,
+    lastTotalTokens: 0,
+  };
+}
+
+// One run's complete accounting. `missing` names the dimensions the provider
+// did not report; the caller must surface them rather than zero-fill.
+export type { RunUsage };
+
+export function toRunUsage(totals: UsageTotals, compactionCalls: number, compactionTokens: number, compactionCostUsd: number): RunUsage {
+  const missing: string[] = [];
+  if (totals.assistantCalls === 0) missing.push("assistant usage");
+  if (totals.assistantCalls > 0 && !totals.cacheReported) missing.push("cache usage");
+  if (!totals.costReported) missing.push("cost");
+  if (compactionCalls > 0 && compactionTokens === 0) missing.push("compaction usage");
+  return {
+    inputTokens: totals.inputTokens,
+    outputTokens: totals.outputTokens,
+    cacheReadTokens: totals.cacheReadTokens,
+    cacheWriteTokens: totals.cacheWriteTokens,
+    totalTokens: totals.totalTokens,
+    costUsd: totals.costUsd,
+    assistantCalls: totals.assistantCalls,
+    compactionCalls,
+    compactionTokens,
+    compactionCostUsd,
+    missing,
+  };
 }
 
 // Accumulate one message_end payload into the run totals. Pure helper,
@@ -362,13 +427,18 @@ export function emptyUsageTotals(): UsageTotals {
 export function accumulateUsage(totals: UsageTotals, message: unknown): void {
   const msg = message as {
     role?: string;
-    usage?: { input?: number; output?: number; totalTokens?: number; cost?: { total?: number } };
+    usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; totalTokens?: number; cost?: { total?: number } };
   } | undefined;
   if (!msg || msg.role !== "assistant" || !msg.usage) return;
   const input = Number(msg.usage.input) || 0;
   const output = Number(msg.usage.output) || 0;
   totals.inputTokens += input;
   totals.outputTokens += output;
+  totals.cacheReadTokens += Number(msg.usage.cacheRead) || 0;
+  totals.cacheWriteTokens += Number(msg.usage.cacheWrite) || 0;
+  totals.cacheReported = totals.cacheReported || msg.usage.cacheRead !== undefined || msg.usage.cacheWrite !== undefined;
+  totals.costReported = totals.costReported || msg.usage.cost !== undefined;
+  totals.assistantCalls += 1;
   // totalTokens includes cache read/write tokens when the provider reports
   // them; fall back to input+output when absent.
   const messageTotal = Number(msg.usage.totalTokens) || (input + output);
@@ -444,6 +514,87 @@ export function resolveTokenReserve(inputTokens: number, outputReserveTokens: nu
   return input + output;
 }
 
+// Same-session runs are serialized (decision 10). Different sessions keep
+// separate tails and run in parallel.
+const sessionQueues = new Map<string, Promise<void>>();
+
+async function acquireSessionQueue(key: string): Promise<() => void> {
+  const previous = sessionQueues.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  const tail = previous.then(() => current);
+  sessionQueues.set(key, tail);
+  await previous;
+  return () => {
+    release();
+    if (sessionQueues.get(key) === tail) sessionQueues.delete(key);
+  };
+}
+
+const FILE_LOCK_STALE_MS = 10 * 60_000;
+
+/**
+ * Cross-process mutex for one PI session file. The JSONL record has one
+ * writer; two processes appending at once would interleave entries. The lock
+ * is a directory (mkdir is atomic) and goes stale after 10 minutes.
+ */
+async function acquireFileLock(lockPath: string, timeoutMs = 120_000): Promise<() => void> {
+  const start = Date.now();
+  for (;;) {
+    try {
+      mkdirSync(lockPath);
+      return () => { try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* unlocked by stale sweep */ } };
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
+      try {
+        const st = statSync(lockPath);
+        if (Date.now() - st.mtimeMs > FILE_LOCK_STALE_MS) {
+          rmSync(lockPath, { recursive: true, force: true });
+          continue;
+        }
+      } catch { /* the holder released between stat and now */ }
+      if (Date.now() - start > timeoutMs) {
+        throw new Error("This session is busy in another process; retry after the current run finishes.");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+}
+
+// Stable PI session id per AnySearch session handle. Hashing keeps arbitrary
+// visible-ASCII handles out of file names.
+export function piSessionKey(sessionId: string): string {
+  return "ans-" + createHash("sha256").update(sessionId).digest("hex").slice(0, 32);
+}
+
+function mapSessionEvent(event: any, buffer: AgentEvent[], state: { textSeen: boolean }, onUsage: (message: unknown) => void): void {
+  switch (event.type) {
+    case "message_start":
+      state.textSeen = false;
+      break;
+    case "message_update": {
+      const mapped = mapAssistantMessageEvent(event.assistantMessageEvent, state);
+      if (mapped) buffer.push(mapped);
+      break;
+    }
+    case "message_end":
+      onUsage(event.message);
+      break;
+    case "tool_execution_start":
+      buffer.push({ type: "tool_call", name: event.toolName, args: event.args });
+      if (event.toolName === BUILTIN_SEARCH_TOOL) {
+        buffer.push({ type: "search", query: String(event.args?.query || "") });
+      }
+      break;
+    case "tool_execution_end":
+      buffer.push({ type: "tool_result", name: event.toolName, result: event.result });
+      if (event.toolName === BUILTIN_SEARCH_TOOL) {
+        buffer.push({ type: "search_result", envelope: event.result });
+      }
+      break;
+  }
+}
+
 export class PiAgentRuntime {
   private opts: PiAgentRuntimeOptions;
   private readonly domainReloader: (() => unknown) | null;
@@ -513,7 +664,30 @@ export class PiAgentRuntime {
   }
 
   // decision 3: run returns AsyncIterable<AgentEvent>, mapping pi events.
+  // Serialization: same session -> one run at a time (in-process queue plus a
+  // cross-process lock on the PI JSONL record); different sessions proceed in
+  // parallel.
   async *run(input: string): AsyncIterable<AgentEvent> {
+    if (this.opts.signal?.aborted) return;
+    const key = this.opts.sessionId ?? "";
+    const releaseQueue = key ? await acquireSessionQueue(key) : () => {};
+    let releaseFile: (() => void) | undefined;
+    try {
+      const lockDir = this.opts.piSessionDir && key ? join(this.opts.piSessionDir, "locks") : "";
+      if (lockDir) {
+        mkdirSync(lockDir, { recursive: true });
+        releaseFile = await acquireFileLock(join(lockDir, piSessionKey(key) + ".lock"));
+      }
+      yield* this.runInternal(input);
+    } catch (e) {
+      yield { type: "error", message: e instanceof Error ? e.message : String(e) };
+    } finally {
+      releaseFile?.();
+      releaseQueue();
+    }
+  }
+
+  private async *runInternal(input: string): AsyncIterable<AgentEvent> {
     // #211: a signal that is already aborted means the caller gave up before
     // this run began. Do not start a provider call, reserve budget, or touch
     // session state for a request nobody is waiting for.
@@ -574,49 +748,101 @@ export class PiAgentRuntime {
     // prepareNextTurnWithContext. Scoped to this run: the next run starts clean.
     let pendingTurnMessages: any[] | null = null;
 
-    // hooks degrade to 2-line delegation to MemoryPipeline + SufficiencyEvaluator.
-    const agent = new Agent({
-      initialState: {
-        systemPrompt,
-        model: model as any,
-        thinkingLevel: "off" as const,
-        tools: activeTools,
-        messages: [],
+    // Full PI SDK session. The provider registration below routes every model
+    // call back through the caller's streamFn, so auth/baseUrl stay owned by
+    // llm-init while session persistence, compaction, retries, and accounting
+    // come from pi-coding-agent.
+    const cwd = this.opts.cwd ?? process.cwd();
+    const baseModel = (this.opts.model ?? {}) as any;
+    const modelId = typeof baseModel.id === "string" && baseModel.id ? baseModel.id : "anysearch-model";
+    const api = typeof baseModel.api === "string" && baseModel.api ? baseModel.api : "openai-completions";
+    const contextWindow =
+      this.opts.contextWindow && this.opts.contextWindow > 0
+        ? this.opts.contextWindow
+        : (Number(baseModel.contextWindow) > 0 ? Number(baseModel.contextWindow) : 128000);
+    const sdkProviderId = "anysearch";
+    const modelRuntime = await ModelRuntime.create({ modelsPath: null, refreshOnCreate: false, allowModelNetwork: false });
+    modelRuntime.registerProvider(sdkProviderId, {
+      name: "AnySearch",
+      // Required by the provider composer even though streamSimple below
+      // never dials it. The real endpoint stays on the llm-init model.
+      baseUrl: typeof baseModel.baseUrl === "string" && baseModel.baseUrl ? baseModel.baseUrl : "http://127.0.0.1:1/v1",
+      // Placeholder credential for the same reason: the composer refuses a
+      // provider without an auth method, and our streamFn resolves the real
+      // key itself. Never printed.
+      apiKey: this.opts.apiKey || "anysearch-local-stream",
+      api,
+      models: [{
+        id: modelId,
+        name: typeof baseModel.name === "string" ? baseModel.name : modelId,
+        api,
+        input: Array.isArray(baseModel.input) ? baseModel.input : ["text"],
+        cost: baseModel.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        reasoning: Boolean(baseModel.reasoning),
+        contextWindow,
+        maxTokens: Number(baseModel.maxTokens) > 0 ? Number(baseModel.maxTokens) : 8192,
+      }],
+      // Ignore the registered model: the stream function owns auth and wire
+      // config, and this keeps catalog and custom-endpoint paths identical.
+      streamSimple: (_model, context, options) => (this.opts.streamFn as any)(baseModel, context, options),
+    });
+    const sdkModel = modelRuntime.getModel(sdkProviderId, modelId);
+    if (!sdkModel) throw new Error("PI provider registration did not expose " + modelId);
+
+    const persistentDir = this.opts.piSessionDir && sessionId ? this.opts.piSessionDir : undefined;
+    let sessionManager: SessionManager;
+    if (persistentDir) {
+      mkdirSync(persistentDir, { recursive: true });
+      const key = piSessionKey(sessionId!);
+      const found = SessionManager.findById(cwd, key, persistentDir);
+      sessionManager = found
+        ? SessionManager.open(found, persistentDir, cwd)
+        : SessionManager.create(cwd, persistentDir, { id: key });
+    } else {
+      sessionManager = SessionManager.inMemory(cwd);
+    }
+    const piCompaction = this.opts.piCompaction ?? {};
+    const settingsManager = SettingsManager.inMemory({
+      compaction: {
+        enabled: piCompaction.enabled ?? true,
+        reserveTokens: piCompaction.reserveTokens ?? 16384,
+        keepRecentTokens: piCompaction.keepRecentTokens ?? 20000,
       },
-      streamFn: streamFn as any,
-      getApiKey: this.opts.getApiKey as any,
-      sessionId,
-      // #103: no onResponse here — pi-ai's ProviderResponse is {status, headers}
-      // only (no usage); token accumulation lives in the message_end subscription.
-      // transformContext async hot path — delegated to MemoryPipeline.inject.
-      transformContext: async (messages: any[]) => {
-        if (this.pipeline) return this.pipeline.inject(messages);
-        return messages;
-      },
-      // shouldAllowUrl at the agent-loop tool-call seam. Retrieved-derived
-      // URLs not on the domain [sources].urlAllowlist are HITL-gated; deny-first headless.
-      beforeToolCall: async (ctx: any) => {
-        // r19 T2: saturation stop — block further searches, let the model answer.
-        if (ctx?.toolCall?.name === BUILTIN_SEARCH_TOOL && saturation.exhausted()) {
+    });
+
+    let compactionCalls = 0;
+    let compactionTokens = 0;
+    let compactionCostUsd = 0;
+    // Every message finalized in this run (used for the FTS sync so a resumed
+    // session does not re-append its whole history).
+    const runMessages: Array<{ role?: string; content?: unknown }> = [];
+
+    const controlFactory: ExtensionFactory = (pi) => {
+      // Official extension seam for memory injection: pi calls this before
+      // every provider request and restores system messages afterwards.
+      pi.on("context", async (event) => {
+        if (!this.pipeline) return undefined;
+        const injected = await this.pipeline.inject(event.messages as any);
+        return { messages: injected as any };
+      });
+      // Tool checks stay on the official tool_call event: AgentSession owns
+      // beforeToolCall, so re-wrapping it would race its own handler.
+      pi.on("tool_call", async (event) => {
+        if (event.toolName === BUILTIN_SEARCH_TOOL && saturation.exhausted()) {
           return { block: true, reason: saturation.reason() };
         }
-        // lazy mtime-checked re-read; bad TOML keeps last known good.
         const reloaded = this.domainReloader ? this.domainReloader() : null;
         if (reloaded) {
           (this.opts as { domain: DomainConfigPort }).domain = reloaded as DomainConfigPort;
-          // The next run's mtime probe will see no change; remember this one so
-          // the budget caps still refresh at that run boundary.
           this.pendingBudgetRefresh = true;
         }
-        // single parse point: kernel consumes the same canonicalize+merge+
-        // strict-switch resolver as server/hooks (raw-array reads re-introduced drift).
         const src = (this.opts.domain as { sources?: { urlAllowlist?: string[]; urlDenylist?: string[] } } | undefined)?.sources;
         const policy = resolveUrlPolicy({ tomlHosts: src?.urlAllowlist ?? [], denyHosts: src?.urlDenylist ?? [] });
         if (policy.envHostsIgnored && !this.warnedEnvIgnored) {
           this.warnedEnvIgnored = true;
           process.stderr.write("[anysearch] " + ENV_URL_ALLOWLIST + " ignored; set " + ENV_ALLOW_OVERRIDE + "=1 to opt in\n");
         }
-        const urls: string[] = JSON.stringify(ctx?.args ?? {}).match(/https?:\/\/[^\s"'<>\\)]+/g) ?? [];
+        const urls: string[] = JSON.stringify(event.input ?? {}).match(/https?:\/\/[^\s"'<>\\)]+/g) ?? [];
         for (const url of urls) {
           const label: SourceTraceLabel = typeof input === "string" && input.includes(url)
             ? { source: "user", traceId: "user-input" }
@@ -632,7 +858,7 @@ export class PiAgentRuntime {
           enqueueHitl({
             url,
             host,
-            toolName: String(ctx?.toolCall?.name ?? "unknown"),
+            toolName: String(event.toolName ?? "unknown"),
             reason: "retrieved-derived URL blocked pending human review",
           });
           return {
@@ -642,112 +868,107 @@ export class PiAgentRuntime {
           };
         }
         return undefined;
-      },
-      // pi-agent-core 1.5.1 replaced shouldStopAfterTurn with finishTurn and
-      // moved the turn context into the callback argument. The tool name now
-      // lives on toolResults, not on the context root.
-      //
-      // prepareNextTurnWithContext is the seam that finally lets the
-      // sufficiency reround replace the next provider request: the old boolean
-      // hook could not write gate.applyTo() back into agent state.
-      finishTurn: async (turn: any, signal?: AbortSignal) => {
-        // Design: an aborted run stops the turn loop before the cold memory
-        // path — no gate/consolidate anchor is written after cancellation.
-        if (signal?.aborted) return { action: "end" as const };
-        const messages = turn?.context?.messages ?? (agent as any).state?.messages ?? [];
-        // #113: current context occupancy, not cumulative run spend. The
-        // leading system message (prompt + tool declarations) is excluded here
-        // because the provider usage anchor already counts it.
-        const conversation = messages.filter((m: any) => m?.role !== "system");
-        const totalTokens = resolveContextOccupancy(usageTotals.lastTotalTokens, conversation);
-        const toolResults: any[] = Array.isArray(turn?.toolResults) ? turn.toolResults : [];
-        const hasSearchTurn = toolResults.some((r: any) => String(r?.toolName ?? "").includes("search"))
-          || (typeof turn?.lastToolName === "string" && turn.lastToolName.includes("search"));
-
-        if (this.gate && this.pipeline) {
-          try {
-            const env = await this.gate.evaluate(messages);
-            const enriched = this.gate.applyTo(messages, env);
-            // Only a real enrichment changes the next request.
-            if (env.enrichedEnvelope !== null && enriched !== messages) {
-              pendingTurnMessages = enriched;
-            }
-            await this.pipeline.consolidate(enriched, totalTokens, env.hasRetrievalEvidence || hasSearchTurn);
-          } catch { }
-        } else if (this.pipeline) {
-          try { await this.pipeline.consolidate(messages, totalTokens, hasSearchTurn); } catch { }
-        }
+      });
+      // Accounting from the official message_end event; absent usage stays
+      // absent so a later report can say "unavailable" instead of "free".
+      pi.on("message_end", async (event) => {
+        const message = event.message as any;
+        accumulateUsage(usageTotals, message);
+        if (message?.role === "assistant" && message?.usage) usageReported = true;
+        if (message?.role !== "system") runMessages.push(message);
         return undefined;
-      },
-      prepareNextTurnWithContext: async (turn: any) => {
-        if (!pendingTurnMessages) return undefined;
-        const nextMessages = pendingTurnMessages;
-        pendingTurnMessages = null;
-        return { context: { ...(turn?.context ?? {}), messages: nextMessages } };
-      },
+      });
+    };
 
+    const resourceLoader = new DefaultResourceLoader({
+      cwd,
+      agentDir: persistentDir ? join(persistentDir, "agent") : join(cwd, ".anysearch", "pi-agent"),
+      settingsManager,
+      systemPrompt,
+      // Zero host discovery: no extensions, skills, prompts, themes, or
+      // AGENTS.md from the operator's environment.
+      noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+      noContextFiles: true,
+      extensionFactories: [{ name: "anysearch-control", factory: controlFactory }],
     });
+    await resourceLoader.reload();
 
-    // decision 3: subscribe 9 events -> our 7 AgentEvent types.
-    // text mapping delegated to mapAssistantMessageEvent (pure, tested).
-    const mapState = { textSeen: false };
-    agent.subscribe((event: any, _signal?: AbortSignal) => {
-      switch (event.type) {
-        case "message_start":
-          mapState.textSeen = false;
-          break;
-        case "message_update": {
-          const mapped = mapAssistantMessageEvent(event.assistantMessageEvent, mapState);
-          if (mapped) eventBuffer.push(mapped);
-          break;
-        }
-        case "message_end":
-          // #103: accumulate AssistantMessage.usage (tokens + pi-ai cost).
-          accumulateUsage(usageTotals, event.message);
-          if (event.message?.role === "assistant" && event.message?.usage) usageReported = true;
-          break;
-        case "tool_execution_start":
-          eventBuffer.push({
-            type: "tool_call",
-            name: event.toolName,
-            args: event.args,
-          });
-          if (event.toolName === "search") {
-            eventBuffer.push({ type: "search", query: String(event.args?.query || "") });
+    const created = await createAgentSession({
+      cwd,
+      agentDir: persistentDir ? join(persistentDir, "agent") : join(cwd, ".anysearch", "pi-agent"),
+      modelRuntime,
+      model: sdkModel,
+      thinkingLevel: "off",
+      settingsManager,
+      resourceLoader,
+      sessionManager,
+      customTools: activeTools as unknown as ToolDefinition[],
+      tools: activeTools.map((t) => t.name),
+    });
+    const session = created.session;
+    const agent = session.agent;
+
+    // finishTurn and prepareNextTurnWithContext chain their predecessors, so
+    // the sufficiency gate can wrap the session's own hooks without losing
+    // compaction, boundary, or tool-loadout handling.
+    const sessionFinishTurn = agent.finishTurn;
+    (agent as any).finishTurn = async (turn: any, signal?: AbortSignal) => {
+      if (signal?.aborted) return { action: "end" as const };
+      const messages = turn?.context?.messages ?? agent.state?.messages ?? [];
+      const conversation = messages.filter((m: any) => m?.role !== "system");
+      const totalTokens = resolveContextOccupancy(usageTotals.lastTotalTokens, conversation);
+      const toolResults: any[] = Array.isArray(turn?.toolResults) ? turn.toolResults : [];
+      const hasSearchTurn = toolResults.some((r: any) => String(r?.toolName ?? "").includes("search"))
+        || (typeof turn?.lastToolName === "string" && turn.lastToolName.includes("search"));
+      if (this.gate && this.pipeline) {
+        try {
+          const env = await this.gate.evaluate(messages);
+          const enriched = this.gate.applyTo(messages, env);
+          if (env.enrichedEnvelope !== null && enriched !== messages) {
+            pendingTurnMessages = enriched;
           }
-          break;
-        case "tool_execution_end":
-          eventBuffer.push({
-            type: "tool_result",
-            name: event.toolName,
-            result: event.result,
-          });
-          if (event.toolName === "search") {
-            eventBuffer.push({ type: "search_result", envelope: event.result });
-          }
-          break;
-        case "agent_end":
-          agentDone = true;
-          // rolling summary moved to shouldStopAfterTurn cold path.
-          break;
-        case "error":
-          agentError = event.error?.message || String(event.error || "Unknown error");
-          break;
+          await this.pipeline.consolidate(enriched, totalTokens, env.hasRetrievalEvidence || hasSearchTurn);
+        } catch { /* fail-open: a memory fault must not end the turn */ }
+      } else if (this.pipeline) {
+        try { await this.pipeline.consolidate(messages, totalTokens, hasSearchTurn); } catch { /* fail-open */ }
       }
-      // Wake up the generator if it's waiting.
+      return sessionFinishTurn?.(turn, signal);
+    };
+    const sessionPrepareNextTurn = agent.prepareNextTurnWithContext;
+    (agent as any).prepareNextTurnWithContext = async (turn: any, signal?: AbortSignal) => {
+      const snapshot = await sessionPrepareNextTurn?.(turn, signal);
+      if (!pendingTurnMessages) return snapshot;
+      const nextMessages = pendingTurnMessages;
+      pendingTurnMessages = null;
+      const context = (snapshot?.context ?? turn?.context ?? {}) as Record<string, unknown>;
+      return { ...(snapshot ?? {}), context: { ...context, messages: nextMessages } };
+    };
+
+    // decision 3: session events -> our AgentEvent types.
+    const mapState = { textSeen: false };
+    session.subscribe((event: any) => {
+      if (event.type === "compaction_end" && event.result?.usage) {
+        compactionCalls += 1;
+        const u = event.result.usage;
+        compactionTokens += Number(u.totalTokens) || (Number(u.input) || 0) + (Number(u.output) || 0);
+        compactionCostUsd += Number(u.cost?.total) || 0;
+      }
+      mapSessionEvent(event, eventBuffer, mapState, () => { /* usage handled by the extension */ });
+      if (event.type === "agent_end") agentDone = true;
       wakeGenerator();
     });
 
-    // Design: forward caller cancellation into the agent loop — agent.abort()
-    // flips the run's own AbortSignal so pi-agent-core stops at its tool/turn
-    // seams, and waking the generator makes run() end even when the stream
-    // function never settles. This is the ans_chat request signal; the search
-    // tools already forward their own signal to the engine (#209).
+    // Design: forward caller cancellation into the session. `abort()` stops
+    // the agent loop at its tool/turn seams; waking the generator makes run()
+    // end even when the stream function never settles. This is the ans_chat
+    // request signal; search tools forward their own signal to the engine.
     const cancelRun = () => {
       if (callerCancelled) return;
       callerCancelled = true;
-      // abort is a request, not a failure: a loop that already ended is safe.
-      try { (agent as any).abort?.(); } catch { /* no active run to abort */ }
+      try { void session.abort(); } catch { /* no active run to abort */ }
       wakeGenerator();
     };
     callerSignal?.addEventListener("abort", cancelRun, { once: true });
@@ -759,6 +980,7 @@ export class PiAgentRuntime {
     // listener here instead of relying on it.
     if (callerCancelled) {
       callerSignal?.removeEventListener("abort", cancelRun);
+      try { session.dispose(); } catch { /* already disposed */ }
       return;
     }
 
@@ -796,6 +1018,14 @@ export class PiAgentRuntime {
       }
     }
 
+    // Correction propagation (#Q3): if a correction paused this session's
+    // rolling summary, rebuild it from valid materials before the turn builds
+    // its prompt, so this run never injects a corrected fact. Fail-open: a
+    // failed rebuild leaves the pause in place (the stale block stays out).
+    if (this.pipeline) {
+      try { await this.pipeline.refreshIfNeeded(); } catch { /* fail-open */ }
+    }
+
     // #188 (T9): reserve tokens at the agent_start boundary — before
     // agent.prompt is invoked, so an exhausted budget stops the run instead of
     // being discovered after a provider call. Formula = input-side occupancy
@@ -829,6 +1059,7 @@ export class PiAgentRuntime {
               " + output limit " + outputReserve + ") but the session cap cannot cover it. " +
               "The run was not started; raise [budget] tokenCap and retry (the next run re-reads the domain TOML).",
           };
+          try { session.dispose(); } catch { /* already disposed */ }
           return;
         }
         tokenReserved = reserveAmount;
@@ -896,10 +1127,12 @@ export class PiAgentRuntime {
 
     let promptPromise: Promise<void> | null = null;
     try {
-      // Start the agent prompt in background.
-      promptPromise = agent.prompt(input).catch((e: any) => {
+      // Start the session prompt in background. Prompt templates stay off:
+      // a user message beginning with "/" is text, not a host command.
+      promptPromise = session.prompt(input, { expandPromptTemplates: false }).catch((e: any) => {
         agentError = e?.message || String(e);
         agentDone = true;
+        wakeGenerator();
       });
 
       // Yield events as they arrive.
@@ -966,14 +1199,11 @@ export class PiAgentRuntime {
         }
       }
 
-      // decision 6: dual session — sync to FTS5 store.
+      // decision 6: dual session — sync this run's finalized messages to FTS5.
+      // Only the run's own messages: the PI record owns history, and re-appending
+      // a resumed session's whole transcript would duplicate rows per call.
       if (this.opts.store) {
-        // append() is async: an un-awaited rejection is NOT caught by the
-        // surrounding try/catch and can terminate the process on Node >= 15, and
-        // the message is lost anyway. Each write gets its own try so one failure
-        // does not stop the remaining messages.
-        const messages = (agent as any).state?.messages || [];
-        for (const msg of messages) {
+        for (const msg of runMessages) {
           // A cancelled run stops the remaining sync writes; an append already
           // in flight is the residual window (it cannot be un-awaited).
           if (callerCancelled) break;
@@ -1005,10 +1235,20 @@ export class PiAgentRuntime {
           : "";
         // #189: make the one-shot recovery visible next to the run summary.
         const recovery = this.pipeline?.getInjectedRecoveryDigest();
+        // #Q1 evidence: PI's own view of the window this session runs with.
+        // The value comes from the SDK model registered from LlmSessionOptions,
+        // so it proves the configured 1M window reached the agent session.
+        let context: { tokens: number | null; window: number; percent: number | null } | undefined;
+        try {
+          const cu = session.getContextUsage();
+          if (cu) context = { tokens: cu.tokens, window: cu.contextWindow, percent: cu.percent };
+        } catch { /* diagnostics only */ }
         yield {
           type: "done",
           summary: `Agent completed${tokenSummary}`,
           ...(recovery ? { recovery } : {}),
+          ...(context ? { context } : {}),
+          usage: toRunUsage(usageTotals, compactionCalls, compactionTokens, compactionCostUsd),
         };
       }
     } finally {
@@ -1018,8 +1258,8 @@ export class PiAgentRuntime {
       // provider/tool calls after the budget was freed. The signal exists only
       // while a run is active, so a normal end is a no-op.
       let abortedEarly = false;
-      if (promptPromise && (agent as any).signal) {
-        (agent as any).abort?.();
+      if (promptPromise && !agentDone) {
+        try { void session.abort(); } catch { /* already idle */ }
         abortedEarly = true;
       }
       // #188 (CodeRabbit): wait briefly for the in-flight prompt so its final
@@ -1065,6 +1305,8 @@ export class PiAgentRuntime {
           () => settleTokenDelta(usageTotals.totalTokens),
         );
       }
+      // Release the session listeners; the JSONL record is already durable.
+      try { session.dispose(); } catch { /* already disposed */ }
     }
   }
 
@@ -1078,5 +1320,10 @@ export class PiAgentRuntime {
    */
   async flushMemory(): Promise<void> {
     if (this.pipeline) await this.pipeline.flush();
+  }
+
+  /** Usage of the memory pipeline's own summary calls (separate from the run). */
+  getMemoryUsage(): { calls: number; inputTokens: number; outputTokens: number; totalTokens: number; costUsd: number; missing: string[] } | null {
+    return this.pipeline ? this.pipeline.getSummaryUsage() : null;
   }
 }

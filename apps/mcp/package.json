@@ -3,15 +3,15 @@
   "version": "0.1.2",
   "type": "module",
   "bin": {
-    "ans-mcp": "dist/index.cjs"
+    "ans-mcp": "dist/index.js"
   },
   "files": [
     "dist",
     "domains"
   ],
   "exports": {
-    ".": "./dist/index.cjs",
-    "./server": "./dist/index.cjs"
+    ".": "./dist/index.js",
+    "./server": "./dist/index.js"
   },
   "scripts": {
     "build": "node scripts/sync-domains.mjs && tsup",
@@ -28,7 +28,8 @@
     "@modelcontextprotocol/server": "^2.4.0",
     "better-sqlite3": "^13.0.3",
     "express": "^4.21.0",
-    "zod": "^4.2.0"
+    "zod": "^4.2.0",
+    "@earendil-works/pi-coding-agent": "^1.5.1"
   },
   "devDependencies": {
     "@anysearch-cli/kernel": "workspace:*",
@@ -42,7 +43,7 @@
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },
-  "types": "./dist/index.d.cts",
+  "types": "./dist/index.d.ts",
   "peerDependencies": {
     "@anysearch-cli/embedding": "workspace:*"
   },

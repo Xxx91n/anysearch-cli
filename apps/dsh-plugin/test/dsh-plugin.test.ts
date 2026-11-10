@@ -343,8 +343,12 @@ test('native tools: parameters projected verbatim from the kernel schema source'
   const rc = (ctx.tools.get('ans_recall_memory') as { parameters: { properties: Record<string, unknown>; required: string[] } }).parameters;
   assert.deepEqual(rc.required, ['query']);
   assert.ok('limit' in rc.properties);
-  const ac = (ctx.tools.get('ans_ans_chat') as { parameters: { required: string[] } }).parameters;
-  assert.deepEqual(ac.required, ['message']);
+  const ac = (ctx.tools.get('ans_ans_chat') as { parameters: { properties: Record<string, unknown>; required?: string[] } }).parameters;
+  // ans_chat also serves operation=consolidate, so `message` is no longer a
+  // required wire field; the handler enforces it for the chat operation.
+  assert.ok('message' in ac.properties, 'ans_chat parameters lack message');
+  assert.ok('operation' in ac.properties, 'ans_chat parameters lack operation');
+  assert.equal(ac.required, undefined);
 });
 
 test('native execute: MCP tools/call to /mcp carries kernel tool name + propagation trio', async () => {

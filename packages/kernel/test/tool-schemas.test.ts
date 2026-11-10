@@ -46,7 +46,13 @@ assert.ok(KS.search_web.required?.includes("query"));
 assert.ok(KS.research_web.required?.includes("question"));
 assert.ok(KS.recall_memory.required?.includes("query"));
 assert.ok(KS.query_knowledge.required?.includes("query"));
-assert.ok(KS.ans_chat.required?.includes("message"));
+// Decision 6: ans_chat also exposes operation=consolidate, which takes no
+// message. The field therefore stays optional on the wire and the handler
+// enforces it for the chat path; the string constraints are unchanged.
+assert.ok(
+  !KS.ans_chat.required?.includes("message"),
+  "ans_chat: message is optional on the wire (required only for operation=chat)",
+);
 
 // 4. Keyword signatures — minLength on required strings.
 assert.equal(KS.search_web.properties?.query?.minLength, 1);

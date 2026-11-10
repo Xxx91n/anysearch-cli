@@ -12,8 +12,23 @@ export type AgentEvent =
   | { type: "tool_result"; name: string; result: unknown }
   | { type: "search"; query: string }
   | { type: "search_result"; envelope: unknown }
-  | { type: "done"; summary: string; recovery?: string }
+  | { type: "done"; summary: string; recovery?: string; usage?: RunUsage; context?: { tokens: number | null; window: number; percent: number | null } }
   | { type: "error"; message: string };
+
+/** Complete per-run accounting; `missing` lists dimensions the provider did not report. */
+export interface RunUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  assistantCalls: number;
+  compactionCalls: number;
+  compactionTokens: number;
+  compactionCostUsd: number;
+  missing: string[];
+}
 
 export interface AgentRuntime {
   // Run the agent loop. Yields events as they occur.

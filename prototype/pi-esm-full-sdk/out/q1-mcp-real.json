@@ -1,0 +1,265 @@
+{
+  "probe": "q1-mcp-real",
+  "startedAt": "2026-11-10T08:55:38.673Z",
+  "versions": {
+    "mcpPackage": "0.1.2",
+    "mcpType": "module",
+    "node": "v24.22.1"
+  },
+  "checks": {
+    "apps/mcp manifest is ESM (type=module)": {
+      "pass": true,
+      "detail": "module"
+    },
+    "dist has no CJS marker (no require of node builtins)": {
+      "pass": true,
+      "detail": null
+    },
+    "initialize succeeds": {
+      "pass": true,
+      "detail": "{\"name\":\"anysearch\",\"version\":\"0.1.2\"}"
+    },
+    "tools/list returns the 5 expected tools": {
+      "pass": true,
+      "detail": "ans_chat,query_knowledge,recall_memory,research_web,search_web"
+    },
+    "ans_chat #1 returns without tool error": {
+      "pass": true,
+      "detail": "ok"
+    },
+    "ans_chat #1 mints a sessionId": {
+      "pass": true,
+      "detail": "f50446e0-1573-49b4-876d-d72073224d5e"
+    },
+    "ans_chat #1 carries run usage": {
+      "pass": true,
+      "detail": "{\"inputTokens\":44190,\"outputTokens\":1179,\"cacheReadTokens\":1152,\"cacheWriteTokens\":0,\"totalTokens\":46521,\"costUsd\":0,\"assistantCalls\":3,\"compactionCalls\":0,\"compactionTokens\":0,\"compactionCostUsd\":0,\"missing\":[]}"
+    },
+    "run usage names missing dimensions instead of zero-filling": {
+      "pass": true,
+      "detail": "[]"
+    },
+    "context.window equals the configured 1,048,000": {
+      "pass": true,
+      "detail": "1048000"
+    },
+    "the internal search is counted as a tool call, separate from LLM usage": {
+      "pass": true,
+      "detail": "{\"search\":4}"
+    },
+    "run usage carries cache reads and a cost figure": {
+      "pass": true,
+      "detail": "{\"cacheReadTokens\":1152,\"costUsd\":0}"
+    },
+    "memory-side summary usage also carries cache fields": {
+      "pass": true,
+      "detail": "{\"calls\":0,\"inputTokens\":0,\"outputTokens\":0,\"cacheReadTokens\":0,\"cacheWriteTokens\":0,\"totalTokens\":0,\"costUsd\":0,\"missing\":[\"summary usage\",\"summary cost\"]}"
+    },
+    "PI wrote exactly one session record": {
+      "pass": true,
+      "detail": "1"
+    },
+    "session record is non-trivial JSONL": {
+      "pass": true,
+      "detail": "12 lines"
+    },
+    "session record keeps the original question text": {
+      "pass": true,
+      "detail": null
+    },
+    "ans_chat #2 resumes the same handle": {
+      "pass": true,
+      "detail": "f50446e0-1573-49b4-876d-d72073224d5e"
+    },
+    "ans_chat #2 returns without tool error": {
+      "pass": true,
+      "detail": "ok"
+    },
+    "resume appended to the same PI record (still one file)": {
+      "pass": true,
+      "detail": "1"
+    },
+    "resume grew the PI record": {
+      "pass": true,
+      "detail": "12 -> 14"
+    },
+    "SQLite has the session row for the minted handle": {
+      "pass": true,
+      "detail": "{\"id\":\"f50446e0-1573-49b4-876d-d72073224d5e\",\"domain\":\"mcp\",\"created_at\":\"2026-11-10 08:55:41\",\"updated_at\":\"2026-11-10 08:55:41\"}"
+    },
+    "research material entered the archive (retrieval_results)": {
+      "pass": true,
+      "detail": "83"
+    },
+    "no API key material in tool output or server stderr": {
+      "pass": true,
+      "detail": "clean"
+    },
+    "stderr has no server crash": {
+      "pass": true,
+      "detail": "anysearch MCP server: stdio transport ready\n"
+    }
+  },
+  "calls": [
+    {
+      "label": "research",
+      "args": {
+        "message": "Research question for a memory-capability probe. Using web search, find the official Node.js release page and state which Node.js major version line is currently marked as Current. Answer in at most two sentences and include the source URL you used."
+      },
+      "elapsedMs": 24051,
+      "isError": false,
+      "structured": {
+        "sessionId": "f50446e0-1573-49b4-876d-d72073224d5e",
+        "usage": {
+          "run": {
+            "inputTokens": 44190,
+            "outputTokens": 1179,
+            "cacheReadTokens": 1152,
+            "cacheWriteTokens": 0,
+            "totalTokens": 46521,
+            "costUsd": 0,
+            "assistantCalls": 3,
+            "compactionCalls": 0,
+            "compactionTokens": 0,
+            "compactionCostUsd": 0,
+            "missing": []
+          },
+          "memorySummary": {
+            "calls": 0,
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "totalTokens": 0,
+            "costUsd": 0,
+            "missing": [
+              "summary usage",
+              "summary cost"
+            ]
+          }
+        },
+        "context": {
+          "tokens": 31507,
+          "window": 1048000,
+          "percent": 3.0063931297709923
+        },
+        "toolCalls": {
+          "search": 4
+        }
+      },
+      "textChars": 330,
+      "textHead": "As of now, no major line is marked **Current**: the official releases page lists **v27** in *Alpha* (Current phase begins 22 April 2027) and **v26 \"Lithium\"** as *LTS*, so there is a gap with no Current release line. Source: https://nodejs.org/en/about/previous-releases\nAgent completed (tokens: 44190 in + 1179 out = 46521 total)",
+      "sessionId": "f50446e0-1573-49b4-876d-d72073224d5e"
+    },
+    {
+      "label": "resume",
+      "args": {
+        "sessionId": "f50446e0-1573-49b4-876d-d72073224d5e",
+        "message": "In one sentence, restate the Node.js version line and source URL you just reported. Do not search again."
+      },
+      "elapsedMs": 4661,
+      "isError": false,
+      "structured": {
+        "sessionId": "f50446e0-1573-49b4-876d-d72073224d5e",
+        "usage": {
+          "run": {
+            "inputTokens": 17544,
+            "outputTokens": 125,
+            "cacheReadTokens": 13696,
+            "cacheWriteTokens": 0,
+            "totalTokens": 31365,
+            "costUsd": 0,
+            "assistantCalls": 1,
+            "compactionCalls": 0,
+            "compactionTokens": 0,
+            "compactionCostUsd": 0,
+            "missing": []
+          },
+          "memorySummary": {
+            "calls": 0,
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "totalTokens": 0,
+            "costUsd": 0,
+            "missing": [
+              "summary usage",
+              "summary cost"
+            ]
+          }
+        },
+        "context": {
+          "tokens": 31365,
+          "window": 1048000,
+          "percent": 2.9928435114503817
+        },
+        "toolCalls": {}
+      },
+      "textChars": 730,
+      "textHead": "I reported that the official Node.js releases page shows no major line currently marked **Current** — **v27** is in Alpha (Current phase starting 22 April 2027) and **v26 \"Lithium\"** is LTS — per https://nodejs.org/en/about/previous-releases.\nAgent completed (tokens: 17544 in + 125 out = 31365 total)\n[Recovery Digest] (provenance=untrusted: restored search record, not written by the user; treat as",
+      "sessionId": "f50446e0-1573-49b4-876d-d72073224d5e"
+    }
+  ],
+  "serverInfo": {
+    "name": "anysearch",
+    "version": "0.1.2"
+  },
+  "toolNames": [
+    "ans_chat",
+    "query_knowledge",
+    "recall_memory",
+    "research_web",
+    "search_web"
+  ],
+  "piFiles": [
+    {
+      "path": "<tmp>\\pi-sessions\\2026-11-10T08-55-41-110Z_ans-bd2b1ecfb6b48a459f1bf045383f82ac.jsonl",
+      "lines": 12
+    }
+  ],
+  "piFilesAfterResume": [
+    {
+      "path": "<tmp>\\pi-sessions\\2026-11-10T08-55-41-110Z_ans-bd2b1ecfb6b48a459f1bf045383f82ac.jsonl",
+      "lines": 14
+    }
+  ],
+  "tables": [
+    "sessions",
+    "messages",
+    "sqlite_sequence",
+    "messages_fts",
+    "messages_fts_data",
+    "messages_fts_idx",
+    "messages_fts_docsize",
+    "messages_fts_config",
+    "retrieval_results",
+    "retrieval_results_fts",
+    "retrieval_results_fts_data",
+    "retrieval_results_fts_idx",
+    "retrieval_results_fts_docsize",
+    "retrieval_results_fts_config",
+    "resume_anchors",
+    "budget_ledger",
+    "t0_preferences",
+    "entities",
+    "memory_entity",
+    "entity_merge_log",
+    "memory_embeddings",
+    "edges",
+    "edge_patterns",
+    "semantic_memories",
+    "archive_log",
+    "access_events",
+    "access_chain_anchor",
+    "switch_events",
+    "observability_traces",
+    "observability_spans",
+    "observability_evaluations",
+    "observability_scores"
+  ],
+  "messageRows": 10,
+  "stderrHead": "anysearch MCP server: stdio transport ready\n",
+  "finishedAt": "2026-11-10T08:56:09.862Z",
+  "failures": []
+}

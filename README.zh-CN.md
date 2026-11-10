@@ -198,7 +198,7 @@ ans-mcp --transport http --port 3001            # Streamable HTTP（只绑本机
 ```
 
 从源码跑起来时，同一个入口是
-`node apps/mcp/dist/index.cjs [--transport http] [--port <n>]`。
+`node apps/mcp/dist/index.js [--transport http] [--port <n>]`。
 
 五个工具：`search_web`、`research_web`、`recall_memory`、`query_knowledge`、
 `ans_chat`。`ANS_DOMAIN` 通过进程环境限定 server 范围：直接启动 `ans-mcp` 时

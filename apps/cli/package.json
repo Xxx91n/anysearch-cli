@@ -23,7 +23,8 @@
     "better-sqlite3": "^13.0.3",
     "express": "^4.18.2",
     "smol-toml": "^1.8.0",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "@earendil-works/pi-coding-agent": "^1.5.1"
   },
   "devDependencies": {
     "@anysearch-cli/kernel": "workspace:*",
@@ -59,5 +60,6 @@
   },
   "engines": {
     "node": ">=22.0.0"
-  }
+  },
+  "type": "module"
 }

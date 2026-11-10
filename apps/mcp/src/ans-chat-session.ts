@@ -183,7 +183,8 @@ export interface AnsChatToolResult {
   // this module (the tool layer already owns that dependency).
   [key: string]: unknown;
   content: Array<{ type: "text"; text: string }>;
-  structuredContent?: { sessionId: string };
+  // chat carries sessionId; consolidation carries its report and usage.
+  structuredContent?: Record<string, unknown>;
 }
 
 /**
@@ -194,7 +195,7 @@ export interface AnsChatToolResult {
  * tool argument, and content-only proxies (e.g. the dsh native tool plane) never
  * see structuredContent. The answer text itself stays untouched.
  */
-export function buildAnsChatResult(output: string, sessionId?: string): AnsChatToolResult {
+export function buildAnsChatResult(output: string, sessionId?: string, extra?: Record<string, unknown>): AnsChatToolResult {
   return {
     content: [
       { type: "text", text: output || "ans_chat: no response" },
@@ -202,6 +203,69 @@ export function buildAnsChatResult(output: string, sessionId?: string): AnsChatT
         ? [{ type: "text" as const, text: JSON.stringify({ sessionId }) }]
         : []),
     ],
-    ...(sessionId ? { structuredContent: { sessionId } } : {}),
+    ...(sessionId ? { structuredContent: { sessionId, ...(extra ?? {}) } } : {}),
+  };
+}
+
+// Result categories required by the handoff: add / update / skip / conflict /
+// failure, plus the usage block (with explicit `missing` entries — never 0-sized
+// silent gaps). Kept structural so apps/mcp does not re-declare the store type.
+export interface ConsolidateReportShape {
+  dryRun: boolean;
+  clustersScanned: number;
+  clustersTriggered: number;
+  llmUnavailable: number;
+  gateRejected: number;
+  add: number;
+  update: number;
+  skip: number;
+  conflict: number;
+  noop: number;
+  singleEvidenceSkipped: number;
+  semanticIds: number[];
+  updates: Array<{ oldId: number; newId: number; retiredEpisodeIds: number[] }>;
+  retiredEpisodeIds: number[];
+  summariesNeedingRefresh: string[];
+}
+
+export interface ConsolidationUsageShape {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  missing: string[];
+}
+
+/**
+ * Consolidation result. The report travels in structuredContent (the host reads
+ * the categories there) and a readable line stays in content for content-only
+ * proxies.
+ */
+export function buildAnsChatConsolidateResult(
+  report: ConsolidateReportShape,
+  usage: ConsolidationUsageShape,
+): AnsChatToolResult {
+  const line =
+    "ans_chat consolidate" + (report.dryRun ? " (dry-run)" : "") +
+    ": add " + report.add + ", update " + report.update + ", skip " + report.skip +
+    ", conflict " + report.conflict + ", failure " + report.llmUnavailable +
+    " (scanned " + report.clustersScanned + ", triggered " + report.clustersTriggered + ")";
+  return {
+    content: [{ type: "text", text: line }],
+    structuredContent: {
+      operation: "consolidate",
+      report,
+      counts: {
+        add: report.add,
+        update: report.update,
+        skip: report.skip,
+        conflict: report.conflict,
+        failure: report.llmUnavailable,
+      },
+      usage,
+    },
   };
 }

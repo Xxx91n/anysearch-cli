@@ -81,7 +81,7 @@ async function main() {
     rmSync(dirB, { recursive: true, force: true });
   }
   check("OBSERVATION_SCHEMA_VERSION = 2", OBSERVATION_SCHEMA_VERSION === 2);
-  check("OBSERVATION_USER_VERSION = 2", OBSERVATION_USER_VERSION === 2);
+  check("OBSERVATION_USER_VERSION = 3", OBSERVATION_USER_VERSION === 3);
 
   // --- 2) Attribution round-trip (OPA #6905 closure) ---
   {

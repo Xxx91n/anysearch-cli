@@ -65,6 +65,16 @@ export interface ConsolidateReport {
   // single-evidence episodes that were rejected because they did not
   // contradict anything (a lone episode may correct, never create).
   singleEvidenceSkipped: number;
+  // Result categories the host reports: skipped = noop + singleEvidenceSkipped,
+  // conflict = fidelity gate rejected the claim, failure = no summary available.
+  skip: number;
+  conflict: number;
+  // Update relations (old live row -> replacement) for traceability.
+  updates: Array<{ oldId: number; newId: number; retiredEpisodeIds: number[] }>;
+  retiredEpisodeIds: number[];
+  // Sessions whose rolling summary was paused because it still carried a
+  // corrected fact.
+  summariesNeedingRefresh: string[];
   semanticIds: number[];
 }
 
@@ -162,7 +172,7 @@ export async function consolidateMemoryRun(
   const report: ConsolidateReport = {
     dryRun, clustersScanned: 0, clustersTriggered: 0, llmUnavailable: 0,
     gateRejected: 0, add: 0, noop: 0, update: 0, embeddingAbsent: 0, singleEvidenceSkipped: 0,
-    semanticIds: [],
+    skip: 0, conflict: 0, updates: [], retiredEpisodeIds: [], summariesNeedingRefresh: [], semanticIds: [],
   };
 
   // plan phase (scan + LLM summarize + classify + dedup) runs WITHOUT the
@@ -269,12 +279,14 @@ export async function consolidateMemoryRun(
 
       const salience = Math.min(1, 0.4 + 0.1 * eps.length);
       const epsIds = eps.map((e) => e.id);
-      const insert = (extraSources: number[] = []): void => {
+      const insert = (extraSources: number[] = []): number => {
         const src = Array.from(new Set([...epsIds, ...extraSources])).sort((a, b) => a - b);
         const info = db
           .prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, ?, ?, ?, ?)")
           .run(summary, JSON.stringify(src), salience, confidence, embBuf);
-        report.semanticIds.push(Number(info.lastInsertRowid));
+        const id = Number(info.lastInsertRowid);
+        report.semanticIds.push(id);
+        return id;
       };
 
       const contradiction = best
@@ -296,12 +308,22 @@ export async function consolidateMemoryRun(
         });
       } else if (best && op === "update") {
         // D4 UPDATE: high-overlap contradiction -> soft-close old row, write new, union sources.
+        // Correction propagation: the old row names its successor, and the
+        // episodes that supported the old fact are marked superseded so current
+        // recall stops presenting them. They stay in the archive (traceable).
         const row = best;
         writes.push(() => {
-          db.prepare("UPDATE semantic_memories SET valid_until = datetime('now') WHERE id = ?").run(row.id);
           let prev: number[] = [];
           try { prev = JSON.parse(row.source_episode_ids) as number[]; } catch { prev = []; }
-          insert(prev);
+          const newId = insert(prev);
+          db.prepare("UPDATE semantic_memories SET valid_until = datetime('now'), superseded_by = ? WHERE id = ?").run(newId, row.id);
+          if (prev.length > 0) {
+            db.prepare(
+              "UPDATE retrieval_results SET superseded_by = ? WHERE id IN (" + prev.map(() => "?").join(", ") + ") AND superseded_by IS NULL",
+            ).run(newId, ...prev);
+          }
+          report.updates.push({ oldId: row.id, newId, retiredEpisodeIds: prev });
+          report.retiredEpisodeIds.push(...prev);
           report.update++;
         });
       } else {
@@ -318,12 +340,93 @@ export async function consolidateMemoryRun(
   db.exec("BEGIN IMMEDIATE");
   try {
     for (const w of writes) w();
+    // Runs inside the write txn so a crash cannot commit a correction while
+    // leaving its summaries live. dry-run still measures (and rolls back).
+    if (report.updates.length > 0) report.summariesNeedingRefresh = markSummariesNeedingRefresh(db, report.updates);
     db.exec(dryRun ? "ROLLBACK" : "COMMIT");
   } catch (err) {
     try { db.exec("ROLLBACK"); } catch { /* already rolled back */ }
     throw err;
   }
+  report.skip = report.noop + report.singleEvidenceSkipped;
+  report.conflict = report.gateRejected;
   return report;
+}
+
+// Share of the superseded fact's own tokens that still appear in a summary.
+// Containment, not jaccard: the summary is much longer than one fact, so a
+// jaccard threshold would never reach a rolled-up session summary. A summary
+// that still carries half the old claim is treated as affected.
+export const REFRESH_OVERLAP = 0.5;
+
+// Correction propagation, summary side: pause every rolling summary (and the
+// recall digest built from the same materials) that still carries the
+// superseded fact. The pause is an append-only anchor_status row (latest per
+// session and target wins), so nothing is rewritten or deleted and the full
+// history stays queryable.
+const REFRESH_TARGETS = ["rolling_summary", "l2_recall"] as const;
+
+export function markSummariesNeedingRefresh(
+  db: Database.Database,
+  updates: Array<{ oldId: number; newId: number; retiredEpisodeIds: number[] }>,
+  opts: { minOverlap?: number } = {},
+): string[] {
+  if (updates.length === 0) return [];
+  const minOverlap = opts.minOverlap ?? REFRESH_OVERLAP;
+  const latest: Array<{ session_id: string; anchor_type: string; text: string }> = [];
+  for (const target of REFRESH_TARGETS) {
+    const rows = db
+      .prepare(
+        "SELECT session_id, payload FROM resume_anchors WHERE anchor_type = ? AND id IN (" +
+          "SELECT MAX(id) FROM resume_anchors WHERE anchor_type = ? GROUP BY session_id)",
+      )
+      .all(target, target) as Array<{ session_id: string; payload: string }>;
+    for (const row of rows) {
+      try {
+        const payload = JSON.parse(row.payload) as { summary?: unknown; hits?: unknown };
+        const text = typeof payload?.summary === "string" ? payload.summary : typeof payload?.hits === "string" ? payload.hits : "";
+        if (text) latest.push({ session_id: row.session_id, anchor_type: target, text });
+      } catch { /* skip a malformed anchor */ }
+    }
+  }
+  if (latest.length === 0) return [];
+  const getContent = db.prepare("SELECT content FROM semantic_memories WHERE id = ?");
+  const insertStatus = db.prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, 'anchor_status', ?)");
+  const marked = new Map<string, { overlap: number; oldId: number; newId: number }>();
+  for (const u of updates) {
+    const row = getContent.get(u.oldId) as { content: string } | undefined;
+    if (!row?.content) continue;
+    const oldTokens = tokenize(row.content);
+    if (oldTokens.size === 0) continue;
+    for (const anchor of latest) {
+      const sumTokens = tokenize(anchor.text);
+      let shared = 0;
+      for (const t of oldTokens) if (sumTokens.has(t)) shared++;
+      const overlap = shared / oldTokens.size;
+      if (overlap < minOverlap) continue;
+      const key = anchor.session_id + "\u0000" + anchor.anchor_type;
+      const prev = marked.get(key) as { overlap: number; oldId: number; newId: number } | undefined;
+      if (prev && prev.overlap >= overlap) continue;
+      marked.set(key, { overlap, oldId: u.oldId, newId: u.newId });
+    }
+  }
+  const sessions = new Set<string>();
+  for (const [key, info] of marked) {
+    const [sessionId, target] = key.split("\u0000");
+    insertStatus.run(
+      sessionId,
+      JSON.stringify({
+        target,
+        needsRefresh: true,
+        invalidatedBy: info.newId,
+        oldSemanticId: info.oldId,
+        overlap: Number(info.overlap.toFixed(3)),
+        markedAt: new Date().toISOString(),
+      }),
+    );
+    sessions.add(sessionId);
+  }
+  return [...sessions];
 }
 
 // D5 deterministic candidate scan: live, non-pinned, non-quarantined rows whose age exceeds

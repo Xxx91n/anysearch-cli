@@ -66,7 +66,11 @@ CREATE TABLE IF NOT EXISTS retrieval_results (
   entity TEXT, -- entity key for bi-temporal invalidation (URL for MVP).
   archived INTEGER NOT NULL DEFAULT 0, -- soft archive (reversible forgetting); 1 = excluded from all read paths
   source_label TEXT, -- FIDES-style source trust label
-  trace_id TEXT -- correlation id, never treated as trust
+  trace_id TEXT, -- correlation id, never treated as trust
+  -- Correction propagation: set when a later consolidation revised the fact this
+  -- episode supported. The row stays in the archive (provenance/undo) but is
+  -- excluded from "current fact" recall until the correction is reverted.
+  superseded_by INTEGER
 );
 
 -- FTS5 for retrieval results (search within session results).
@@ -100,6 +104,10 @@ CREATE TABLE IF NOT EXISTS resume_anchors (
 -- Allows INSERT ... ON CONFLICT DO UPDATE (atomic UPSERT, SQLite 3.24.0+).
 -- Historical anchors (rolling_summary, l2_recall, query, fetch, sufficiency) remain append-only.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_anchors_state_unique ON resume_anchors(session_id, anchor_type) WHERE anchor_type = 'consolidation_state';
+-- Correction propagation status: one row per anchor generation. The latest
+-- row per (session_id, anchor_type = 'anchor_status') names whether the anchor
+-- type it targets is paused from injection and what replaced it.
+CREATE INDEX IF NOT EXISTS idx_anchors_status ON resume_anchors(session_id, anchor_type, id);
 
 -- Budget ledger: Mole reserve-then-settle pattern (decision 4).
 -- Non-negative constraints in DB schema layer (not application layer).
@@ -252,7 +260,9 @@ CREATE TABLE IF NOT EXISTS semantic_memories (
   last_accessed TEXT,
   embedding BLOB,                          -- Float32Array bytes (same model as memory_embeddings); NULL until embedded
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  valid_until TEXT                         -- NULL = live
+  valid_until TEXT,                        -- NULL = live
+  -- Update relation: the live row that replaced this one (NULL = no successor).
+  superseded_by INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_semantic_live ON semantic_memories(id) WHERE valid_until IS NULL;
 

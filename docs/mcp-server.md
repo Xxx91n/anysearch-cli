@@ -14,7 +14,7 @@ ans-mcp --transport http --port 3001               # Streamable HTTP
 ```
 
 From a source checkout, the same entry is
-`node apps/mcp/dist/index.cjs [--transport http] [--port <n>]`. `ans mcp`
+`node apps/mcp/dist/index.js [--transport http] [--port <n>]`. `ans mcp`
 forwards to that sibling build. The CLI does not bundle the server, so the
 installed `ans-mcp` bin stays the normal entry. `--help` prints the two
 flags.
@@ -291,7 +291,7 @@ provider or LLM keys.
 |---------|----------------|
 | `pnpm -C apps/mcp check` | TypeScript typecheck of the server source (`src/**/*.ts`). The test files run through `tsx` and are not part of this `tsc` pass. |
 | `pnpm -C apps/mcp test` | Source-level suites: tool registration/schemas, abstain, failure semantics, protocol-version negotiation, cancellation (search + `ans_chat`), shared LLM cache, client attribution, provider diagnostics, research depth. |
-| `pnpm --filter @anysearch-cli/mcp build` then `node scripts/mcp-smoke.mjs` | The **built** `dist/index.cjs`, on both transports: stdio and stateless-HTTP `initialize`, `tools/list` with all five tools and their type descriptions, and protocol-version negotiation (`2026-07-28` → `2025-11-25`, legacy echo). No provider or LLM keys are required because it never calls a tool. Unset `ANS_MCP_KEY` first: the smoke's `/health` probe sends no auth header and would time out. CI runs `--help` separately before this script. |
+| `pnpm --filter @anysearch-cli/mcp build` then `node scripts/mcp-smoke.mjs` | The **built** `dist/index.js`, on both transports: stdio and stateless-HTTP `initialize`, `tools/list` with all five tools and their type descriptions, and protocol-version negotiation (`2026-07-28` → `2025-11-25`, legacy echo). No provider or LLM keys are required because it never calls a tool. Unset `ANS_MCP_KEY` first: the smoke's `/health` probe sends no auth header and would time out. CI runs `--help` separately before this script. |
 | `node scripts/ship-gate.mjs` | The release gate: workspace check/test/build, pack + install verification, a real stdio `initialize`, the packaged CLI/MCP observation round-trip, stdout purity, and boot with a scrubbed environment and no provider backend (the boot still succeeds when providers fail). |
 | `pnpm check` / `pnpm test` (root scripts; `pnpm -r check` / `pnpm -r test` also work) | Whole-workspace typecheck / test. The merge gate requires the full suite green locally; CI red is information, not a blocker (see AGENTS.md). |
 | conformance heartbeat (`.github/workflows/conformance.yml`) | Scheduled `@modelcontextprotocol/conformance` run against the HTTP transport. It targets stable `2025-11-25`, expects no known failures, and is **non-blocking by design** (spec drift is surfaced, not gated). |

@@ -6,52 +6,27 @@
 // consolidate() is now a shell that calls pure consolidateState() then executes I/O.
 // signalSearchTurn() DELETED — replaced by hasRetrievalEvidence parameter.
 
-// PROTOTYPE (pi-1.5.1 window): pi-agent-core no longer ships a summary engine
-// and pi-coding-agent's root entry cannot be bundled into the CJS CLI/MCP
-// (it reads import.meta.url at import time). This local summarizer keeps the
-// rolling-summary contract (one direct LLM request, previous summary merged)
-// without that dependency.
-const SUMMARIZATION_SYSTEM_PROMPT =
-  "You are a context summarization assistant. Your task is to read a conversation " +
-  "between a user and an AI assistant, then produce a structured summary following the " +
-  "exact format specified. Do NOT continue the conversation. Do NOT respond to any " +
-  "questions in the conversation. ONLY output the structured summary.";
+import { generateSummaryWithUsage } from "@earendil-works/pi-coding-agent";
 
-async function generateSummaryViaStream(
-  streamFn: any,
-  model: any,
-  messages: any[],
-  apiKey: string | undefined,
-  signal: AbortSignal | undefined,
-  customInstructions: string | undefined,
-  previousSummary: string | undefined,
-): Promise<{ text: string }> {
-  const serialized = serializeTranscriptForSummary(messages);
-  const prompt = [
-    previousSummary
-      ? "=== Previous summary ===\n" + previousSummary + "\n\nUpdate it with the new turns below."
-      : "Summarize the conversation below.",
-    customInstructions ?? "",
-    "=== Conversation ===",
-    serialized,
-  ].filter(Boolean).join("\n\n");
-  const context = {
-    messages: [
-      { role: "system", content: SUMMARIZATION_SYSTEM_PROMPT },
-      { role: "user", content: prompt },
-    ],
-  };
-  let text = "";
-  const stream = streamFn(model, context, { ...(apiKey ? { apiKey } : {}), ...(signal ? { signal } : {}) });
-  for await (const event of stream) {
-    if (event?.type === "text_delta" && typeof event.delta === "string") text += event.delta;
-    else if (event?.type === "text" && event.text) text += event.text;
-    else if (event?.type === "done" && event.message) {
-      const blocks = Array.isArray(event.message.content) ? event.message.content : [];
-      for (const block of blocks) if (block?.type === "text" && typeof block.text === "string") text += block.text;
+// PI's summarizer calls `stream.result()`; test doubles and some wrappers only
+// implement the async iterator. Adding the missing method keeps the official
+// path usable everywhere without a second summarizer implementation.
+function ensureResult(streamFn: any): any {
+  if (typeof streamFn !== "function") return streamFn;
+  return (model: any, context: any, options?: any) => {
+    const stream = streamFn(model, context, options);
+    if (stream && typeof stream.result !== "function") {
+      stream.result = async () => {
+        let last: any;
+        for await (const event of stream) {
+          if (event?.type === "done" && event.message) last = event.message;
+        }
+        if (!last) throw new Error("summarization stream produced no final message");
+        return last;
+      };
     }
-  }
-  return { text: text.trim() };
+    return stream;
+  };
 }
 // Upper bound for the background summarization call. It is fire-and-forget
 // during a turn but the code that owns it drains it before closing the
@@ -385,6 +360,20 @@ function lastAnchorOfType<T extends { anchorType: string }>(anchors: T[], anchor
   return found;
 }
 
+/**
+ * Newest correction status for one anchor type. Status rows are append-only,
+ * so the last matching statement wins: needsRefresh true pauses injection,
+ * a later false row (written by refreshIfNeeded) resumes it.
+ */
+function latestAnchorStatus<T extends { anchorType: string; payload: any }>(anchors: T[], target: string): any {
+  let found: any;
+  for (const anchor of anchors) {
+    if (anchor.anchorType !== "anchor_status") continue;
+    if (anchor.payload?.target === target) found = anchor.payload;
+  }
+  return found;
+}
+
 export class MemoryPipeline {
   private deps: MemoryPipelineDeps;
   // rag adapter registry (#35): domain.rag.adapter -> adapter, resolved per
@@ -418,9 +407,128 @@ export class MemoryPipeline {
   // drain them first.
   private readonly pendingWrites = new Set<Promise<unknown>>();
 
+  // Usage of the pipeline's own summary requests, kept apart from the main run
+  // so the caller can report both without double counting.
+  private summaryUsage = { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0, costUsd: 0, cacheReported: false, costReported: false };
+
   constructor(deps: MemoryPipelineDeps) {
-    this.deps = deps;
+    this.deps = { ...deps, streamFn: ensureResult(deps.streamFn) };
     this.rag = new RagAdapterRegistry({ store: deps.store });
+  }
+
+  /** Summary-call accounting for this runtime (never zero-filled). */
+  getSummaryUsage(): { calls: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; totalTokens: number; costUsd: number; missing: string[] } {
+    const u = this.summaryUsage;
+    const missing: string[] = [];
+    if (u.calls === 0) missing.push("summary usage");
+    if (u.calls > 0 && !u.cacheReported) missing.push("summary cache usage");
+    if (!u.costReported) missing.push("summary cost");
+    return {
+      calls: u.calls,
+      inputTokens: u.inputTokens,
+      outputTokens: u.outputTokens,
+      cacheReadTokens: u.cacheReadTokens,
+      cacheWriteTokens: u.cacheWriteTokens,
+      totalTokens: u.totalTokens,
+      costUsd: u.costUsd,
+      missing,
+    };
+  }
+
+  /**
+   * Correction propagation, summary side. When a correction paused this
+   * session's rolling summary (or its recall digest), rebuild it from the
+   * materials that are still valid and clear the pause. Originals stay in the
+   * archive — this writes a new anchor, it never rewrites history.
+   *
+   * Fail-open: a failed rebuild leaves the pause in place (the stale summary
+   * stays out of prompts) and reports the reason to the caller.
+   */
+  async refreshIfNeeded(): Promise<{ refreshed: boolean; reason?: string; sessions?: number }> {
+    const { store, sessionId } = this.deps;
+    const getStatus = store.getAnchorStatus?.bind(store);
+    const getDigest = store.getLiveKnowledgeDigest?.bind(store);
+    if (!getStatus || !getDigest) return { refreshed: false, reason: "store has no correction-propagation support" };
+    try {
+      const [summaryStatus, recallStatus] = await Promise.all([
+        getStatus(sessionId, "rolling_summary"),
+        getStatus(sessionId, "l2_recall"),
+      ]);
+      const summaryStale = summaryStatus?.payload?.needsRefresh === true;
+      const recallStale = recallStatus?.payload?.needsRefresh === true;
+      if (!summaryStale && !recallStale) return { refreshed: false, reason: "no refresh needed" };
+
+      const digest = await getDigest(40);
+      if (digest.length === 0) {
+        // Nothing valid to rebuild from: keep the pause rather than invent text.
+        return { refreshed: false, reason: "no valid materials to regenerate from" };
+      }
+      const materialText = digest
+        .map((m) => (m.kind === "semantic" ? "[knowledge #" : "[material #") + m.id + "] " + m.text)
+        .join("\n")
+        .slice(0, 12000);
+      const invalidatedBy = summaryStatus?.payload?.invalidatedBy ?? recallStatus?.payload?.invalidatedBy;
+
+      let summaryText: string | undefined;
+      if (summaryStale) {
+        const modelsObj = this.deps.models;
+        const actualModel = (this.deps.model as any);
+        if (!modelsObj || !actualModel) return { refreshed: false, reason: "no model for summary regeneration" };
+        const apiKey = await this.deps.getApiKey?.();
+        const result = await generateSummaryWithUsage(
+          [
+            {
+              role: "user",
+              timestamp: Date.now(),
+              content:
+                "Rebuild the research summary from the CURRENT valid materials below. " +
+                "A previously stated fact was corrected; do not restate it. Only use the materials shown.\n\n" +
+                materialText,
+            },
+          ],
+          actualModel,
+          undefined,
+          apiKey,
+          undefined,
+          AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS),
+          IR_CUSTOM_INSTRUCTIONS,
+          undefined,
+          undefined,
+          this.deps.streamFn,
+        );
+        const u = result.usage;
+        if (u) {
+          this.summaryUsage.calls += 1;
+          this.summaryUsage.inputTokens += Number(u.input) || 0;
+          this.summaryUsage.outputTokens += Number(u.output) || 0;
+          this.summaryUsage.cacheReadTokens += Number(u.cacheRead) || 0;
+          this.summaryUsage.cacheWriteTokens += Number(u.cacheWrite) || 0;
+          this.summaryUsage.totalTokens += Number(u.totalTokens) || (Number(u.input) || 0) + (Number(u.output) || 0);
+          this.summaryUsage.costUsd += Number(u.cost?.total) || 0;
+          this.summaryUsage.cacheReported = this.summaryUsage.cacheReported || u.cacheRead !== undefined || u.cacheWrite !== undefined;
+          this.summaryUsage.costReported = this.summaryUsage.costReported || u.cost !== undefined;
+        }
+        summaryText = result.text?.trim() || undefined;
+        if (!summaryText) return { refreshed: false, reason: "regeneration returned no summary" };
+      }
+
+      const refreshedAt = new Date().toISOString();
+      const origin = { refreshedFrom: "valid-materials", invalidatedBy, refreshedAt };
+      if (summaryText) {
+        await store.saveAnchor(sessionId, "rolling_summary", { summary: summaryText, ...origin, timestamp: Date.now() });
+        await store.saveAnchor(sessionId, "anchor_status", { target: "rolling_summary", needsRefresh: false, ...origin });
+      }
+      if (recallStale) {
+        await store.saveAnchor(sessionId, "l2_recall", { hits: materialText.slice(0, 1500), ...origin });
+        await store.saveAnchor(sessionId, "anchor_status", { target: "l2_recall", needsRefresh: false, ...origin });
+      }
+      return { refreshed: true, sessions: 1 };
+    } catch (e: any) {
+      if (typeof process !== "undefined" && process.stderr) {
+        process.stderr.write("[anysearch] summary refresh warning: " + (e instanceof Error ? e.message : String(e)) + "\n");
+      }
+      return { refreshed: false, reason: "refresh failed: " + (e instanceof Error ? e.message : String(e)) };
+    }
   }
 
   /**
@@ -559,11 +667,16 @@ export class MemoryPipeline {
         }
       }
       const summaryPayload = summaryAnchor?.payload as any;
-      if (summaryPayload?.summary) {
+      // Correction propagation (#Q3): a summary that still carries a corrected
+      // fact stays in the archive but is paused from automatic injection until
+      // refreshIfNeeded() rebuilds it from valid materials.
+      const summaryPaused = latestAnchorStatus(anchors, "rolling_summary")?.needsRefresh === true;
+      const recallPaused = latestAnchorStatus(anchors, "l2_recall")?.needsRefresh === true;
+      if (summaryPayload?.summary && !summaryPaused) {
         injections.push(SESSION_MEMORY_TAG + " " + String(summaryPayload.summary).slice(0, 4000));
       }
       const recallPayload = recallAnchor?.payload as any;
-      if (recallPayload?.hits) {
+      if (recallPayload?.hits && !recallPaused) {
         injections.push(RESEARCH_RECALL_TAG + " " + String(recallPayload.hits).slice(0, 1500));
       }
 
@@ -668,15 +781,31 @@ export class MemoryPipeline {
           this.track(
             (async () => {
               const apiKey = await getApiKey?.();
-              return generateSummaryViaStream(
-                streamFn,
-                actualModel,
+              const result = await generateSummaryWithUsage(
                 messages,
+                actualModel,
+                undefined,
                 apiKey,
+                undefined,
                 deadline ?? AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS),
                 IR_CUSTOM_INSTRUCTIONS,
                 previousSummary,
+                undefined,
+                streamFn,
               );
+              const u = result.usage;
+              if (u) {
+                this.summaryUsage.calls += 1;
+                this.summaryUsage.inputTokens += Number(u.input) || 0;
+                this.summaryUsage.outputTokens += Number(u.output) || 0;
+                this.summaryUsage.cacheReadTokens += Number(u.cacheRead) || 0;
+                this.summaryUsage.cacheWriteTokens += Number(u.cacheWrite) || 0;
+                this.summaryUsage.totalTokens += Number(u.totalTokens) || (Number(u.input) || 0) + (Number(u.output) || 0);
+                this.summaryUsage.costUsd += Number(u.cost?.total) || 0;
+                this.summaryUsage.cacheReported = this.summaryUsage.cacheReported || u.cacheRead !== undefined || u.cacheWrite !== undefined;
+                this.summaryUsage.costReported = this.summaryUsage.costReported || u.cost !== undefined;
+              }
+              return { text: result.text };
             })().then((summaryResult: any) => {
               if (summaryResult?.text) {
                 return store!.saveAnchor(sessionId!, "rolling_summary", {

@@ -1,0 +1,150 @@
+{
+  "probe": "q2",
+  "generatedAt": "2026-11-10T09:04:42.252Z",
+  "inputSource": "real kernel + real SqliteSessionStore + real PI JSONL; scripted provider (no network)",
+  "findings": [
+    {
+      "id": "S1",
+      "question": "same sessionId runs sequentially; the later run sees the earlier completed message",
+      "pass": true,
+      "evidence": {
+        "aDoneAt": 1794301478560,
+        "bFirstAt": 1794301478641,
+        "serialized": true,
+        "bRequestHasA": true,
+        "bSawA": "B-SAW:A"
+      }
+    },
+    {
+      "id": "S3",
+      "question": "after a restart the same handle resumes the same PI record and both prior answers",
+      "pass": true,
+      "evidence": {
+        "files": [
+          "2026-11-10T09-04-38-210Z_ans-77e8c4ed80b2f22470107066658b8745.jsonl"
+        ],
+        "restartSeesA": true,
+        "restartSeesB": true,
+        "done": true
+      }
+    },
+    {
+      "id": "S2",
+      "question": "different sessions run in parallel (request/stream intervals overlap)",
+      "pass": true,
+      "evidence": {
+        "overlapMs": 411,
+        "wallMs": 504,
+        "xInterval": [
+          1794301478850,
+          1794301479261
+        ],
+        "yInterval": [
+          1794301478850,
+          1794301479262
+        ],
+        "crossTalk": {
+          "xHasY": false,
+          "yHasX": false
+        }
+      }
+    },
+    {
+      "id": "S4",
+      "question": "research from one call is retrievable by the next call from the archive, and by other handles",
+      "pass": true,
+      "evidence": {
+        "searchCalls": 1,
+        "archiveRows": 1,
+        "anchors": [
+          {
+            "type": "consolidation_state",
+            "payload": "{\"version\":1,\"consecutiveReuses\":0,\"lastSummaryMsgCount\":5}"
+          },
+          {
+            "type": "l2_recall",
+            "payload": "{\"query\":\"probe fact 42\",\"variants\":[\"probe fact 42\"],\"hits\":\"MATERIAL-Q2-FACT: the probe fact is 42.\",\"timestamp\":1794301481292}"
+          },
+          {
+            "type": "l2_recall",
+            "payload": "{\"query\":\"probe fact 42\",\"variants\":[\"probe fact 42\"],\"hits\":\"MATERIAL-Q2-FACT: the probe fact is 42.\",\"timestamp\":1794301481310}"
+          }
+        ],
+        "freshPiHistory": true,
+        "recallRequestHasFact": true,
+        "recallRequestTags": [
+          "[Research Recall]"
+        ],
+        "crossHandleHits": 1
+      }
+    },
+    {
+      "id": "S5",
+      "question": "an interrupted run is not recorded as success, its material survives, and the handle recovers",
+      "pass": true,
+      "evidence": {
+        "settled": true,
+        "doneEvent": false,
+        "interruptedText": "",
+        "fakeSuccessInJsonl": false,
+        "recovered": true,
+        "recoveredRequestHasFact": true
+      }
+    },
+    {
+      "id": "S6",
+      "question": "after compaction a fresh runtime resumes the compacted summary; originals remain in the PI record",
+      "pass": true,
+      "evidence": {
+        "compactionCalls": 2,
+        "restartHasSummary": true,
+        "jsonlHasOriginalQuery": true,
+        "jsonlHasOriginalTool": true
+      }
+    },
+    {
+      "id": "S7",
+      "question": "two connections consolidate different sessions in parallel without overwriting either result",
+      "pass": true,
+      "evidence": {
+        "wallMs": 34,
+        "reports": [
+          {
+            "scanned": 1,
+            "triggered": 1,
+            "llmUnavailable": 0,
+            "add": 1,
+            "update": 0,
+            "skip": 0,
+            "conflict": 0
+          },
+          {
+            "scanned": 1,
+            "triggered": 1,
+            "llmUnavailable": 0,
+            "add": 1,
+            "update": 0,
+            "skip": 0,
+            "conflict": 0
+          }
+        ],
+        "live": [
+          {
+            "id": 1,
+            "content": "ALPHA protocol requires blue calibration on the eastern rig.",
+            "validUntil": null
+          },
+          {
+            "id": 2,
+            "content": "OMEGA schedule favors green maintenance on the western rig.",
+            "validUntil": null
+          }
+        ],
+        "episodes": [
+          3,
+          3
+        ]
+      }
+    }
+  ]
+}

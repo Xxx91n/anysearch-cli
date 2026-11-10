@@ -72,7 +72,9 @@ async function main() {
       canonical(wire.inputSchema) === canonical(KernelJsonSchemas[name]),
       name + " inputSchema round-trips unchanged from kernel (descriptions intact, #46)"
     );
-    const req = (KernelJsonSchemas[name] as any).required?.[0];
+    // ans_chat has no required field since operation=consolidate takes no
+    // message; the #46 no-downgrade intent still applies to its main argument.
+    const req = (KernelJsonSchemas[name] as any).required?.[0] ?? "message";
     const propDesc = wire.inputSchema?.properties?.[req]?.description;
     assert(typeof propDesc === "string" && propDesc.length > 0, name + "." + req + " carries a type description on the wire (#46)");
     assert(wire.inputSchema?.additionalProperties === false, name + " inputSchema is closed (additionalProperties:false)");

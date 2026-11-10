@@ -1,0 +1,236 @@
+{
+  "probe": "q4",
+  "generatedAt": "2026-11-10T08:55:19.708Z",
+  "inputSource": "built MCP + built CLI + real SQLite; local OpenAI-compatible SSE endpoint with controlled usage",
+  "fakeRequests": 6,
+  "findings": [
+    {
+      "id": "S1",
+      "question": "dry-run predicts the add and writes nothing",
+      "pass": true,
+      "evidence": {
+        "counts": {
+          "add": 1,
+          "update": 0,
+          "skip": 0,
+          "conflict": 0,
+          "failure": 0
+        },
+        "report": {
+          "dryRun": true,
+          "clustersScanned": 1,
+          "clustersTriggered": 1,
+          "llmUnavailable": 0,
+          "gateRejected": 0,
+          "add": 1,
+          "noop": 0,
+          "update": 0,
+          "embeddingAbsent": 0,
+          "singleEvidenceSkipped": 0,
+          "skip": 0,
+          "conflict": 0,
+          "updates": [],
+          "retiredEpisodeIds": [],
+          "summariesNeedingRefresh": [],
+          "semanticIds": [
+            1
+          ]
+        },
+        "semanticRowsAfterDryRun": 0,
+        "promptSeenByFake": "Business hours are Monday to Friday 9-5."
+      }
+    },
+    {
+      "id": "S2",
+      "question": "apply adds only the selected session's cluster; unrelated materials are untouched",
+      "pass": true,
+      "evidence": {
+        "counts": {
+          "add": 1,
+          "update": 0,
+          "skip": 0,
+          "conflict": 0,
+          "failure": 0
+        },
+        "scanned": 1,
+        "mainSemantic": [
+          {
+            "id": 1,
+            "content": "Business hours are Monday to Friday 9-5."
+          }
+        ],
+        "unrelatedEpisodes": 3,
+        "unrelatedSemantic": 0
+      }
+    },
+    {
+      "id": "S3",
+      "question": "an identical rerun reports skip (noop) and adds no row",
+      "pass": true,
+      "evidence": {
+        "counts": {
+          "add": 0,
+          "update": 0,
+          "skip": 1,
+          "conflict": 0,
+          "failure": 0
+        },
+        "semanticRows": 1
+      }
+    },
+    {
+      "id": "S4",
+      "question": "single-evidence correction via memoryIds reports update, points the old row forward, pauses the summary",
+      "pass": true,
+      "evidence": {
+        "counts": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "failure": 0
+        },
+        "updates": [
+          {
+            "oldId": 1,
+            "newId": 2,
+            "retiredEpisodeIds": [
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "oldRow": {
+          "id": 1,
+          "valid_until": "2026-11-10 08:55:12",
+          "superseded_by": 2
+        },
+        "newRow": {
+          "id": 2,
+          "content": "Support hours are now 24/7, no longer Monday to Friday 9-5.",
+          "valid_until": null
+        },
+        "retired": [
+          {
+            "id": 1,
+            "superseded_by": 2
+          },
+          {
+            "id": 2,
+            "superseded_by": 2
+          },
+          {
+            "id": 3,
+            "superseded_by": 2
+          }
+        ],
+        "summariesNeedingRefresh": [
+          "c6bd4a82-5819-410b-9a2d-42515c021311"
+        ]
+      }
+    },
+    {
+      "id": "S5",
+      "question": "a claim the fidelity gate rejects is reported as conflict, not add",
+      "pass": true,
+      "evidence": {
+        "counts": {
+          "add": 0,
+          "update": 0,
+          "skip": 0,
+          "conflict": 1,
+          "failure": 0
+        },
+        "report": {
+          "dryRun": false,
+          "clustersScanned": 1,
+          "clustersTriggered": 1,
+          "llmUnavailable": 0,
+          "gateRejected": 1,
+          "add": 0,
+          "noop": 0,
+          "update": 0,
+          "embeddingAbsent": 0,
+          "singleEvidenceSkipped": 0,
+          "skip": 0,
+          "conflict": 1,
+          "updates": [],
+          "retiredEpisodeIds": [],
+          "summariesNeedingRefresh": [],
+          "semanticIds": []
+        }
+      }
+    },
+    {
+      "id": "S6",
+      "question": "no LLM configured reports failure and names every missing usage dimension",
+      "pass": true,
+      "evidence": {
+        "counts": {
+          "add": 0,
+          "update": 0,
+          "skip": 0,
+          "conflict": 0,
+          "failure": 1
+        },
+        "usage": {
+          "calls": 0,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "totalTokens": 0,
+          "costUsd": 0,
+          "missing": [
+            "consolidation usage",
+            "consolidation cache usage",
+            "consolidation cost"
+          ]
+        },
+        "missing": [
+          "consolidation usage",
+          "consolidation cache usage",
+          "consolidation cost"
+        ]
+      }
+    },
+    {
+      "id": "S7",
+      "question": "the CLI subcommand produces the same categories through the shared seams, with cache-read usage",
+      "pass": true,
+      "evidence": {
+        "exitCode": 0,
+        "output": [
+          "consolidate: scanned 1 cluster(s), triggered 1, add 1, update 0, skip 0, conflict 0, failure 0 (llmUnavailable 0, gateRejected 0, noop 0)",
+          "semantic ids: 3",
+          "usage: consolidation calls 1, in 80, out 20, cacheRead 40, cacheWrite 0, total 140, costUsd 0"
+        ],
+        "stderr": "",
+        "cliSemantic": [
+          {
+            "id": 3,
+            "content": "The CLI probe color is vermilion."
+          }
+        ],
+        "usageLine": "usage: consolidation calls 1, in 80, out 20, cacheRead 40, cacheWrite 0, total 140, costUsd 0"
+      }
+    },
+    {
+      "id": "S8",
+      "question": "the budget reserve counts the static system header once, not twice",
+      "pass": true,
+      "evidence": {
+        "reserved": 2066,
+        "expected": 2066,
+        "expectedInput": 18,
+        "direct": {
+          "tokens": 18,
+          "coldStart": true
+        },
+        "headerTokensIfDoubleCounted": 232,
+        "reserveBreakdown": "input 18 + output 2048"
+      }
+    }
+  ]
+}

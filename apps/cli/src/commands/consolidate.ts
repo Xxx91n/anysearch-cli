@@ -2,8 +2,8 @@
 // LLM summarize seam is assembled here via kernel createLlmSession; fidelity gate via
 // kernel classifyClaim. Fail-open: missing LLM config -> dry-run with llmUnavailable counts.
 
-import { createLlmSession, classifyClaim, resolveDbPath } from "@anysearch-cli/kernel";
-import { SqliteSessionStore, type ConsolidateEvidence, type ConsolidateClaimVerdict } from "@anysearch-cli/store";
+import { createLlmSession, createConsolidationSeams, resolveDbPath } from "@anysearch-cli/kernel";
+import { SqliteSessionStore } from "@anysearch-cli/store";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -18,6 +18,10 @@ interface ConsolidateStore {
   }): Promise<{
     dryRun: boolean; clustersScanned: number; clustersTriggered: number;
     llmUnavailable: number; gateRejected: number; add: number; noop: number; update: number;
+    skip: number; conflict: number;
+    updates: Array<{ oldId: number; newId: number; retiredEpisodeIds: number[] }>;
+    retiredEpisodeIds: number[];
+    summariesNeedingRefresh: string[];
     semanticIds: number[];
   }>;
 }
@@ -89,27 +93,16 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   const providerName = llmCfg.provider;
   const modelName = llmCfg.model;
 
-  let summarize: ((episodes: ConsolidateEvidence[]) => Promise<string | null>) | undefined;
+  let seams: ReturnType<typeof createConsolidationSeams> | undefined;
   if (providerName && modelName) {
     try {
       const session = await createLlmSession({
         provider: providerName, model: modelName, baseUrl: llmCfg.baseUrl, api: llmCfg.api,
         apiKey: llmCfg.apiKey,
       });
-      summarize = async (episodes) => {
-        const prompt = [
-          "Summarize these episodic memories about the same entity into one short, factual paragraph.",
-          "Only state facts directly supported by the episodes. No speculation.",
-          ...episodes.map((e, i) => "[" + (i + 1) + "] " + e.title + " - " + e.snippet + " (" + e.url + ")"),
-        ].join("\n");
-        const stream = session.streamFn(session.model, { messages: [{ role: "user", content: prompt }] } as never, { apiKey: session.apiKey } as never);
-        let out = "";
-        for await (const ev of stream as AsyncIterable<{ type: string; delta?: string; content?: string }>) {
-          if (ev.type === "text_delta") out += ev.delta ?? "";
-          else if (ev.type === "text") out += ev.content ?? "";
-        }
-        return out.trim() || null;
-      };
+      // Shared with MCP ans_chat operation=consolidate — one implementation of
+      // the summarize seam and the fidelity gate for both entry points.
+      seams = createConsolidationSeams(session);
     } catch (e) {
       process.stderr.write("[warn] LLM init failed (" + (e as Error).message + "); clusters will report llmUnavailable\n");
     }
@@ -117,17 +110,12 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     process.stderr.write("[warn] LLM provider/model not configured (env, config files, or --llm.* flags); consolidation will report llmUnavailable\n");
   }
 
-  // Fidelity gate adapter: kernel classifyClaim -> store verdict shape.
-  const classify = (claim: string, evidence: ConsolidateEvidence[]): ConsolidateClaimVerdict => {
-    const r = classifyClaim(claim, {
-      retrievalResults: evidence.map((e) => ({ title: e.title, snippet: e.snippet, url: e.url }) as never),
-    });
-    return { label: r.label, confidence: r.confidence };
-  };
-
   const dbPath = resolveDbPath();
   mkdirSync(dirname(dbPath), { recursive: true });
-  const store = new SqliteSessionStore(dbPath, { consolidateSummarize: summarize, consolidateClassify: classify });
+  const store = new SqliteSessionStore(dbPath, {
+    consolidateSummarize: seams?.summarize,
+    consolidateClassify: seams?.classify,
+  });
 
   const r = await store.consolidateMemory({
     dryRun,
@@ -139,11 +127,32 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   process.stdout.write(
     "consolidate" + (dryRun ? " (dry-run)" : "") +
       ": scanned " + r.clustersScanned + " cluster(s), triggered " + r.clustersTriggered +
-      ", llmUnavailable " + r.llmUnavailable + ", gateRejected " + r.gateRejected +
-      ", add " + r.add + ", noop " + r.noop + ", update " + r.update + "\n",
+      ", add " + r.add + ", update " + r.update + ", skip " + r.skip +
+      ", conflict " + r.conflict + ", failure " + r.llmUnavailable +
+      " (llmUnavailable " + r.llmUnavailable + ", gateRejected " + r.gateRejected + ", noop " + r.noop + ")\n",
   );
   if (r.semanticIds.length > 0) {
     process.stdout.write("semantic ids: " + r.semanticIds.join(", ") + "\n");
+  }
+  for (const u of r.updates) {
+    process.stdout.write(
+      "update: semantic " + u.oldId + " -> " + u.newId +
+        " (retired materials: " + (u.retiredEpisodeIds.join(", ") || "none") + ")\n",
+    );
+  }
+  if (r.summariesNeedingRefresh.length > 0) {
+    process.stdout.write("summaries paused (needs-refresh): " + r.summariesNeedingRefresh.join(", ") + "\n");
+  }
+  if (seams) {
+    const u = seams.usage;
+    process.stdout.write(
+      "usage: consolidation calls " + u.calls + ", in " + u.inputTokens + ", out " + u.outputTokens +
+        ", cacheRead " + u.cacheReadTokens + ", cacheWrite " + u.cacheWriteTokens +
+        ", total " + u.totalTokens + ", costUsd " + u.costUsd +
+        (u.missing.length > 0 ? ", MISSING " + u.missing.join(" + ") : "") + "\n",
+    );
+  } else {
+    process.stdout.write("usage: consolidation calls 0, MISSING consolidation usage + consolidation cache usage + consolidation cost\n");
   }
   return r.llmUnavailable > 0 && r.add === 0 && r.update === 0 ? 1 : 0;
 }

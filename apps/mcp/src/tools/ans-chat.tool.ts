@@ -10,10 +10,11 @@
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import { PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescriptions, createConsolidationSeams, type LlmSession } from "@anysearch-cli/kernel";
 import { domainTomlPath } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
-import { buildAnsChatResult, resolveAnsChatSession } from "../ans-chat-session.js";
+import { buildAnsChatConsolidateResult, buildAnsChatResult, isValidSessionHandle, resolveAnsChatSession } from "../ans-chat-session.js";
+import { piCompactionFromEnv, resolvePiSessionDir } from "../pi-session.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
@@ -137,7 +138,73 @@ export function registerAnsChat(
       // signal (response stream closed). The runtime aborts the agent loop.
       const signal = requestSignal(ctx);
       return observeTool(eng, "ans_chat", ctx, async (span) => {
-        const { message, sessionId: requestedSessionId } = args as { message: string; sessionId?: string };
+        const {
+          message,
+          sessionId: requestedSessionId,
+          operation = "chat",
+          memoryIds,
+          allowSingleEvidence,
+          dryRun,
+        } = args as {
+          message?: string;
+          sessionId?: string;
+          operation?: "chat" | "consolidate";
+          memoryIds?: number[];
+          allowSingleEvidence?: boolean;
+          dryRun?: boolean;
+        };
+        if (operation === "consolidate") {
+          // Decision 6/7: explicit consolidation over the selected materials,
+          // sharing the CLI's seams so the two entries cannot drift.
+          if (!eng.store || typeof eng.store.consolidateMemory !== "function") {
+            return toolFailure("ans_chat: consolidation requires the session store, which this server did not wire.");
+          }
+          if (signal?.aborted) return buildAnsChatResult("");
+          let seams: ReturnType<typeof createConsolidationSeams> | undefined;
+          if (providerName && modelName) {
+            try {
+              const llm = await getLlmSession();
+              seams = createConsolidationSeams(llm);
+              eng.store.setConsolidationSeams?.({ summarize: seams.summarize, classify: seams.classify });
+            } catch (e) {
+              // Fail-open: the store still reports llmUnavailable per cluster;
+              // the usage block names the missing accounting instead of faking it.
+              process.stderr.write(
+                "[anysearch] ans_chat consolidate LLM init failed (" +
+                  (e instanceof Error ? e.message : String(e)) + ")\n",
+              );
+            }
+          }
+          const sessionIds =
+            requestedSessionId !== undefined && isValidSessionHandle(requestedSessionId)
+              ? [requestedSessionId]
+              : undefined;
+          try {
+            const report = await eng.store.consolidateMemory({
+              ...(sessionIds ? { sessionIds } : {}),
+              ...(memoryIds && memoryIds.length > 0 ? { memoryIds } : {}),
+              ...(allowSingleEvidence ? { allowSingleEvidence } : {}),
+              ...(dryRun ? { dryRun } : {}),
+            });
+            const usage = seams?.usage ?? {
+              calls: 0,
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              totalTokens: 0,
+              costUsd: 0,
+              missing: ["consolidation usage", "consolidation cache usage", "consolidation cost"],
+            };
+            return buildAnsChatConsolidateResult(report, usage);
+          } catch (e) {
+            return toolError("ans_chat", e instanceof Error ? e.message : String(e));
+          }
+        }
+        const chatMessage = message?.trim();
+        if (!chatMessage) {
+          return toolFailure("ans_chat: message is required unless operation is \"consolidate\".");
+        }
         if (!providerName || !modelName) {
           // Missing configuration is an execution failure, not a successful
           // chat whose text happens to say "not configured".
@@ -189,6 +256,12 @@ export function registerAnsChat(
             streamFn: session.streamFn,
             models: session.models,
             getApiKey: async () => session.apiKey,
+            // PI's own session record resumes the conversation; the same
+            // handle keys both the record and the SQLite anchors.
+            piSessionDir: memory.sessionId ? resolvePiSessionDir() : undefined,
+            piCompaction: piCompactionFromEnv(),
+            apiKey: session.apiKey,
+            cwd: process.cwd(),
             // one-line observation wiring — the ans_chat span
             // receives the engine's retrieval.domain_filter.* audit events.
             span,
@@ -197,10 +270,19 @@ export function registerAnsChat(
           });
           let output = "";
           let runtimeError: string | undefined;
-          for await (const event of runtime.run(message)) {
+          let runUsage: unknown;
+          let runContext: unknown;
+          // Extra retrieval/tool work is counted separately from LLM usage:
+          // a search spends provider quota, not model tokens.
+          const toolCalls: Record<string, number> = {};
+          for await (const event of runtime.run(chatMessage)) {
             if (event.type === "text") output += event.content;
-            else if (event.type === "done") {
+            else if (event.type === "tool_call") {
+              toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
+            } else if (event.type === "done") {
               output += "\n" + event.summary;
+              runUsage = event.usage ?? null;
+              runContext = event.context ?? null;
               // #189: the one-shot recovery summary stays visible to the caller.
               if (event.recovery) output += "\n" + event.recovery;
             } else if (event.type === "error") {
@@ -210,7 +292,16 @@ export function registerAnsChat(
           // The runtime's error event means the loop did not complete; surface
           // it as an execution failure instead of a successful-looking text.
           if (runtimeError !== undefined) return toolError("ans_chat", runtimeError);
-          return buildAnsChatResult(output, memory.sessionId);
+          // Decision 6/Q4: every call reports what it spent. A null run usage is
+          // reported as missing, never rendered as a free run.
+          return buildAnsChatResult(output, memory.sessionId, {
+            usage: {
+              run: runUsage ?? { missing: ["run usage"] },
+              memorySummary: runtime.getMemoryUsage(),
+            },
+            context: runContext,
+            toolCalls,
+          });
         } catch (e) {
           return toolError("ans_chat", e instanceof Error ? e.message : String(e));
         }
