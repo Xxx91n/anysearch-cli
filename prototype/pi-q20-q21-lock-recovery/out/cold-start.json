@@ -1,0 +1,486 @@
+{
+  "probe": "cold-start",
+  "startedAt": "2026-11-10T17:09:26.711Z",
+  "samples": "SAMPLES-Q20-Q21-LOCK-COLDSTART.md (confirmed)",
+  "requiredTables": [
+    "sessions",
+    "messages",
+    "retrieval_results",
+    "resume_anchors",
+    "budget_ledger",
+    "semantic_memories",
+    "access_events",
+    "entity_merge_log",
+    "edge_patterns",
+    "t0_preferences"
+  ],
+  "before": [
+    {
+      "round": "before-1",
+      "a": {
+        "name": "a",
+        "ok": true,
+        "elapsedMs": 3681,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "b": {
+        "name": "b",
+        "ok": true,
+        "elapsedMs": 3651,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "schema": {
+        "integrity": "ok",
+        "journal": "wal",
+        "missingTables": [],
+        "fts": [
+          "messages_fts",
+          "retrieval_results_fts"
+        ],
+        "triggerCount": 5
+      }
+    },
+    {
+      "round": "before-2",
+      "a": {
+        "name": "a",
+        "ok": true,
+        "elapsedMs": 4244,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "b": {
+        "name": "b",
+        "ok": true,
+        "elapsedMs": 4241,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "schema": {
+        "integrity": "ok",
+        "journal": "wal",
+        "missingTables": [],
+        "fts": [
+          "messages_fts",
+          "retrieval_results_fts"
+        ],
+        "triggerCount": 5
+      }
+    },
+    {
+      "round": "before-3",
+      "a": {
+        "name": "a",
+        "ok": true,
+        "elapsedMs": 4250,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "b": {
+        "name": "b",
+        "ok": true,
+        "elapsedMs": 4168,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "schema": {
+        "integrity": "ok",
+        "journal": "wal",
+        "missingTables": [],
+        "fts": [
+          "messages_fts",
+          "retrieval_results_fts"
+        ],
+        "triggerCount": 5
+      }
+    }
+  ],
+  "after": [
+    {
+      "round": "after-1",
+      "a": {
+        "name": "a",
+        "ok": true,
+        "elapsedMs": 3945,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "b": {
+        "name": "b",
+        "ok": true,
+        "elapsedMs": 3898,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "schema": {
+        "integrity": "ok",
+        "journal": "wal",
+        "missingTables": [],
+        "fts": [
+          "messages_fts",
+          "retrieval_results_fts"
+        ],
+        "triggerCount": 5
+      }
+    },
+    {
+      "round": "after-2",
+      "a": {
+        "name": "a",
+        "ok": true,
+        "elapsedMs": 5676,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "b": {
+        "name": "b",
+        "ok": true,
+        "elapsedMs": 5726,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "schema": {
+        "integrity": "ok",
+        "journal": "wal",
+        "missingTables": [],
+        "fts": [
+          "messages_fts",
+          "retrieval_results_fts"
+        ],
+        "triggerCount": 5
+      }
+    },
+    {
+      "round": "after-3",
+      "a": {
+        "name": "a",
+        "ok": true,
+        "elapsedMs": 5720,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "b": {
+        "name": "b",
+        "ok": true,
+        "elapsedMs": 5656,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "schema": {
+        "integrity": "ok",
+        "journal": "wal",
+        "missingTables": [],
+        "fts": [
+          "messages_fts",
+          "retrieval_results_fts"
+        ],
+        "triggerCount": 5
+      }
+    },
+    {
+      "round": "after-4",
+      "a": {
+        "name": "a",
+        "ok": true,
+        "elapsedMs": 3123,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "b": {
+        "name": "b",
+        "ok": true,
+        "elapsedMs": 3133,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "schema": {
+        "integrity": "ok",
+        "journal": "wal",
+        "missingTables": [],
+        "fts": [
+          "messages_fts",
+          "retrieval_results_fts"
+        ],
+        "triggerCount": 5
+      }
+    },
+    {
+      "round": "after-5",
+      "a": {
+        "name": "a",
+        "ok": true,
+        "elapsedMs": 3918,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "b": {
+        "name": "b",
+        "ok": true,
+        "elapsedMs": 3763,
+        "serverName": "anysearch",
+        "toolCount": 5,
+        "stderr": "anysearch MCP server: stdio transport ready\n"
+      },
+      "schema": {
+        "integrity": "ok",
+        "journal": "wal",
+        "missingTables": [],
+        "fts": [
+          "messages_fts",
+          "retrieval_results_fts"
+        ],
+        "triggerCount": 5
+      }
+    }
+  ],
+  "checks": [
+    {
+      "id": "before-observation",
+      "question": "关闭重试时的同瞬启动结果（诊断，不作为通过断言）",
+      "pass": true,
+      "evidence": [
+        {
+          "round": "before-1",
+          "a": {
+            "ok": true,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          },
+          "b": {
+            "ok": true,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          },
+          "integrity": "ok"
+        },
+        {
+          "round": "before-2",
+          "a": {
+            "ok": true,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          },
+          "b": {
+            "ok": true,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          },
+          "integrity": "ok"
+        },
+        {
+          "round": "before-3",
+          "a": {
+            "ok": true,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          },
+          "b": {
+            "ok": true,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          },
+          "integrity": "ok"
+        }
+      ]
+    },
+    {
+      "id": "D1-both-start",
+      "question": "5 轮 × 2 进程都完成 initialize 和 tools/list",
+      "pass": true,
+      "evidence": [
+        {
+          "round": "after-1",
+          "a": {
+            "name": "a",
+            "ok": true,
+            "elapsedMs": 3945,
+            "serverName": "anysearch",
+            "toolCount": 5,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          },
+          "b": {
+            "name": "b",
+            "ok": true,
+            "elapsedMs": 3898,
+            "serverName": "anysearch",
+            "toolCount": 5,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          }
+        },
+        {
+          "round": "after-2",
+          "a": {
+            "name": "a",
+            "ok": true,
+            "elapsedMs": 5676,
+            "serverName": "anysearch",
+            "toolCount": 5,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          },
+          "b": {
+            "name": "b",
+            "ok": true,
+            "elapsedMs": 5726,
+            "serverName": "anysearch",
+            "toolCount": 5,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          }
+        },
+        {
+          "round": "after-3",
+          "a": {
+            "name": "a",
+            "ok": true,
+            "elapsedMs": 5720,
+            "serverName": "anysearch",
+            "toolCount": 5,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          },
+          "b": {
+            "name": "b",
+            "ok": true,
+            "elapsedMs": 5656,
+            "serverName": "anysearch",
+            "toolCount": 5,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          }
+        },
+        {
+          "round": "after-4",
+          "a": {
+            "name": "a",
+            "ok": true,
+            "elapsedMs": 3123,
+            "serverName": "anysearch",
+            "toolCount": 5,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          },
+          "b": {
+            "name": "b",
+            "ok": true,
+            "elapsedMs": 3133,
+            "serverName": "anysearch",
+            "toolCount": 5,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          }
+        },
+        {
+          "round": "after-5",
+          "a": {
+            "name": "a",
+            "ok": true,
+            "elapsedMs": 3918,
+            "serverName": "anysearch",
+            "toolCount": 5,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          },
+          "b": {
+            "name": "b",
+            "ok": true,
+            "elapsedMs": 3763,
+            "serverName": "anysearch",
+            "toolCount": 5,
+            "stderr": "anysearch MCP server: stdio transport ready\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "D1-schema",
+      "question": "每轮结构完整：integrity ok、关键表和 FTS/触发器齐全、journal_mode=wal",
+      "pass": true,
+      "evidence": [
+        {
+          "round": "after-1",
+          "schema": {
+            "integrity": "ok",
+            "journal": "wal",
+            "missingTables": [],
+            "fts": [
+              "messages_fts",
+              "retrieval_results_fts"
+            ],
+            "triggerCount": 5
+          }
+        },
+        {
+          "round": "after-2",
+          "schema": {
+            "integrity": "ok",
+            "journal": "wal",
+            "missingTables": [],
+            "fts": [
+              "messages_fts",
+              "retrieval_results_fts"
+            ],
+            "triggerCount": 5
+          }
+        },
+        {
+          "round": "after-3",
+          "schema": {
+            "integrity": "ok",
+            "journal": "wal",
+            "missingTables": [],
+            "fts": [
+              "messages_fts",
+              "retrieval_results_fts"
+            ],
+            "triggerCount": 5
+          }
+        },
+        {
+          "round": "after-4",
+          "schema": {
+            "integrity": "ok",
+            "journal": "wal",
+            "missingTables": [],
+            "fts": [
+              "messages_fts",
+              "retrieval_results_fts"
+            ],
+            "triggerCount": 5
+          }
+        },
+        {
+          "round": "after-5",
+          "schema": {
+            "integrity": "ok",
+            "journal": "wal",
+            "missingTables": [],
+            "fts": [
+              "messages_fts",
+              "retrieval_results_fts"
+            ],
+            "triggerCount": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "D1-no-swallowed-error",
+      "question": "没有进程吞掉 database is locked 假装启动成功",
+      "pass": true,
+      "evidence": []
+    },
+    {
+      "id": "SEC",
+      "question": "证据文件不含密钥材料",
+      "pass": true,
+      "evidence": {
+        "checkedChars": 6941
+      }
+    }
+  ]
+}

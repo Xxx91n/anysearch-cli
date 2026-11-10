@@ -1,0 +1,263 @@
+{
+  "probe": "lock-live-recovery",
+  "startedAt": "2026-11-10T17:08:33.761Z",
+  "samples": "SAMPLES-Q20-Q21-LOCK-COLDSTART.md (confirmed)",
+  "nonce": "nmway25aj",
+  "note": "short stale window is a test value, not the formal default",
+  "c1": {
+    "before": {
+      "snapAt4s": {
+        "dirs": [
+          "ans-342f1c105155aee8dbbfbe9abe82d993.lock"
+        ],
+        "entries": [
+          {
+            "name": "ans-342f1c105155aee8dbbfbe9abe82d993.lock",
+            "owner": null,
+            "heartbeatAgeMs": null,
+            "dirAgeMs": 3944.97216796875
+          }
+        ]
+      },
+      "a": {
+        "ok": true,
+        "elapsedMs": 6380
+      },
+      "b": {
+        "ok": true,
+        "elapsedMs": 1263
+      },
+      "provider": {
+        "a": {
+          "start": 1794330521443,
+          "end": 1794330527455
+        },
+        "b": {
+          "start": 1794330525490,
+          "end": 1794330526304
+        },
+        "overlap": true
+      },
+      "jsonl": {
+        "files": 1,
+        "lines": 8,
+        "unparsable": 0
+      }
+    },
+    "after": {
+      "snapAt4s": {
+        "dirs": [
+          "ans-342f1c105155aee8dbbfbe9abe82d993.lock"
+        ],
+        "entries": [
+          {
+            "name": "ans-342f1c105155aee8dbbfbe9abe82d993.lock",
+            "owner": {
+              "pid": 17272,
+              "host": "OP",
+              "startedAt": 1794330533479
+            },
+            "heartbeatAgeMs": 248.793212890625,
+            "dirAgeMs": 4283.59130859375
+          }
+        ]
+      },
+      "ownerPid": 17272,
+      "ownerPidAlive": true,
+      "aPid": 17272,
+      "a": {
+        "ok": true,
+        "elapsedMs": 6528
+      },
+      "b": {
+        "ok": true,
+        "elapsedMs": 3509
+      },
+      "provider": {
+        "a": {
+          "start": 1794330533933,
+          "end": 1794330539944
+        },
+        "b": {
+          "start": 1794330540439,
+          "end": 1794330541248
+        },
+        "overlap": false
+      },
+      "jsonl": {
+        "files": 1,
+        "lines": 8,
+        "unparsable": 0,
+        "assistantMessages": 2,
+        "userMessages": 2,
+        "orderOk": true
+      },
+      "locksLeft": []
+    }
+  },
+  "c2": {
+    "beforeKill": {
+      "dirs": [
+        "ans-71494274c9ca54633a32a90e6a7b1896.lock"
+      ],
+      "entries": [
+        {
+          "name": "ans-71494274c9ca54633a32a90e6a7b1896.lock",
+          "owner": {
+            "pid": 9520,
+            "host": "OP",
+            "startedAt": 1794330548313
+          },
+          "heartbeatAgeMs": 309.908203125,
+          "dirAgeMs": 1319.6416015625
+        }
+      ]
+    },
+    "killedExit": {
+      "code": null,
+      "signal": "SIGKILL"
+    },
+    "killed": {
+      "ok": false,
+      "isError": true,
+      "text": "TRANSPORT ERROR: MCP exited (code=null, signal=SIGKILL)"
+    },
+    "recovered": {
+      "ok": true,
+      "elapsedMs": 4473,
+      "sessionId": "lock-crash-nmway25aj"
+    },
+    "jsonl": {
+      "files": 1,
+      "lines": 7,
+      "hasPartial": false,
+      "hasRecovered": true
+    },
+    "ledger": [],
+    "locksLeft": []
+  },
+  "checks": [
+    {
+      "id": "C1-no-steal",
+      "question": "A 正常跑过 3 秒过期线时，B 不抢锁，两个 provider 请求不重叠",
+      "pass": true,
+      "evidence": {
+        "a": {
+          "start": 1794330533933,
+          "end": 1794330539944
+        },
+        "b": {
+          "start": 1794330540439,
+          "end": 1794330541248
+        },
+        "overlap": false
+      }
+    },
+    {
+      "id": "C1-heartbeat",
+      "question": "锁在 4 秒时仍有活进程证据：owner pid 是本机活进程，心跳是新的",
+      "pass": true,
+      "evidence": {
+        "owner": {
+          "pid": 17272,
+          "host": "OP",
+          "startedAt": 1794330533479
+        },
+        "heartbeatAgeMs": 248.793212890625
+      }
+    },
+    {
+      "id": "C1-continuity",
+      "question": "B 接上 A 的会话并成功返回同一个 sessionId",
+      "pass": true,
+      "evidence": {
+        "a": "lock-live-nmway25aj",
+        "b": "lock-live-nmway25aj"
+      }
+    },
+    {
+      "id": "C1-jsonl",
+      "question": "同一会话只有一份 JSONL，每行可解析，2 user + 2 assistant 顺序正确",
+      "pass": true,
+      "evidence": {
+        "files": 1,
+        "lines": 8,
+        "unparsable": 0,
+        "assistantMessages": 2,
+        "userMessages": 2,
+        "orderOk": true
+      }
+    },
+    {
+      "id": "C1-lock-cleared",
+      "question": "结束后锁目录清空",
+      "pass": true,
+      "evidence": {
+        "locksLeft": []
+      }
+    },
+    {
+      "id": "C2-recovered",
+      "question": "持锁进程真被杀后，等待方拿到锁并完成",
+      "pass": true,
+      "evidence": {
+        "ok": true,
+        "elapsedMs": 4473,
+        "sessionId": "lock-crash-nmway25aj"
+      }
+    },
+    {
+      "id": "C2-no-fake-success",
+      "question": "被杀请求以失败/传输错误结束，不能算成功",
+      "pass": true,
+      "evidence": {
+        "ok": false,
+        "isError": true,
+        "text": "TRANSPORT ERROR: MCP exited (code=null, signal=SIGKILL)"
+      }
+    },
+    {
+      "id": "C2-no-partial-record",
+      "question": "PI JSONL 没有半截回答，B 的完成记录存在",
+      "pass": true,
+      "evidence": {
+        "files": 1,
+        "lines": 7,
+        "hasPartial": false,
+        "hasRecovered": true
+      }
+    },
+    {
+      "id": "C2-no-settlement",
+      "question": "被杀请求没有把已花 token 记进 budget ledger",
+      "pass": true,
+      "evidence": {
+        "ledger": []
+      }
+    },
+    {
+      "id": "C2-lock-cleared",
+      "question": "恢复后锁目录清空",
+      "pass": true,
+      "evidence": {
+        "locksLeft": []
+      }
+    },
+    {
+      "id": "C2-jsonl-integrity",
+      "question": "JSONL 无损坏/重复写入：每一行可解析",
+      "pass": true,
+      "evidence": {
+        "lines": 7
+      }
+    },
+    {
+      "id": "SEC",
+      "question": "证据文件不含密钥材料",
+      "pass": true,
+      "evidence": {
+        "checkedChars": 3458
+      }
+    }
+  ]
+}

@@ -1,0 +1,859 @@
+{
+  "probe": "q20-real-model",
+  "startedAt": "2026-11-10T17:01:31.506Z",
+  "samples": "SAMPLES-Q20-Q21-LOCK-COLDSTART.md (confirmed)",
+  "model": {
+    "provider": "openai",
+    "model": "deepseek-v4.1-flash",
+    "baseUrlPresent": true,
+    "api": "chat",
+    "apiKeyLength": 39,
+    "temperature": "endpoint default (not set)",
+    "note": "custom endpoint: provider returns no USD; cost is unknown, never free"
+  },
+  "cases": [
+    {
+      "case": "A1",
+      "report": {
+        "add": 0,
+        "update": 1,
+        "skip": 0,
+        "conflict": 0,
+        "noop": 0,
+        "singleEvidenceSkipped": 0,
+        "staleUpdates": 0,
+        "retriedAfterStale": 0,
+        "concurrentConflicts": 0,
+        "verifyRejected": 0,
+        "updates": [
+          {
+            "oldId": 1,
+            "newId": 2,
+            "retiredEpisodeIds": [
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "verifyDetails": [],
+        "verifiedCorrections": [
+          {
+            "oldId": 1,
+            "oldContent": "A 公司在线客服的服务时间为工作日（周一至周五）9:00—17:00。客服邮箱为 help@example.com。",
+            "candidate": "A公司官方通知称，自2026年11月1日起，在线客服将改为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排（https://a.example/notice-2026-11-01）。",
+            "evidence": [
+              {
+                "title": "A 公司客服时间更新通知（官方）",
+                "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服自 2026-11-01 起改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                "url": "https://a.example/notice-2026-11-01"
+              }
+            ],
+            "sameFact": true,
+            "reliable": true,
+            "relation": "correction",
+            "reason": "官方通知明确说明在线客服自2026-11-01起由原工作日9:00—17:00改为7×24小时，直接替换同一服务时间安排。"
+          }
+        ],
+        "summariesNeedingRefresh": [
+          "70372b81-af7c-4b13-b983-8df02ec10bcc"
+        ]
+      },
+      "usage": {
+        "calls": 3,
+        "inputTokens": 790,
+        "outputTokens": 800,
+        "cacheReadTokens": 128,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1718,
+        "costUsd": 0,
+        "costBasis": "unknown",
+        "missing": [
+          "consolidation cost (price unknown)"
+        ]
+      },
+      "knowledge": {
+        "oldId": 1,
+        "oldContent": "A 公司在线客服的服务时间为工作日（周一至周五）9:00—17:00。客服邮箱为 help@example.com。",
+        "oldStillLive": false,
+        "oldSupersededBy": 2,
+        "liveRows": [
+          {
+            "id": 2,
+            "content": "A 公司官方通知显示，其在线客服自 2026 年 11 月 1 日起改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排；客服邮箱为 help@example.com。"
+          }
+        ],
+        "newSemanticId": 2,
+        "newContent": "A 公司官方通知显示，其在线客服自 2026 年 11 月 1 日起改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排；客服邮箱为 help@example.com。",
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "url": "https://a.example/support-hours-v1",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 2,
+            "url": "https://a.example/support-hours-v2",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 3,
+            "url": "https://a.example/support-hours-v3",
+            "superseded_by": 2,
+            "valid_until": null
+          }
+        ],
+        "newEpisode": {
+          "id": 4,
+          "url": "https://a.example/notice-2026-11-01",
+          "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服自 2026-11-01 起改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+          "superseded_by": null,
+          "valid_until": null
+        },
+        "anchorStatuses": [
+          "{\"target\":\"rolling_summary\",\"needsRefresh\":true,\"invalidatedBy\":2,\"oldSemanticId\":1,\"overlap\":1,\"markedAt\":\"2026-11-10T17:01:46.533Z\"}"
+        ]
+      }
+    },
+    {
+      "case": "A2",
+      "report": {
+        "add": 0,
+        "update": 0,
+        "skip": 1,
+        "conflict": 0,
+        "noop": 0,
+        "singleEvidenceSkipped": 0,
+        "staleUpdates": 0,
+        "retriedAfterStale": 0,
+        "concurrentConflicts": 0,
+        "verifyRejected": 1,
+        "updates": [],
+        "verifyDetails": [
+          {
+            "oldId": 1,
+            "oldContent": "A 公司门店营业时间为每天 10:00—20:00。",
+            "candidate": "A 公司在线客服自 2026-11-01 起提供 7×24 小时全天候服务。",
+            "evidence": [
+              {
+                "title": "A 公司在线客服时间说明",
+                "snippet": "A 公司在线客服自 2026-11-01 起提供 7×24 小时全天候服务。",
+                "url": "https://a.example/support-now"
+              }
+            ],
+            "sameFact": false,
+            "reliable": true,
+            "relation": "different",
+            "reason": "New material is about online customer service hours, not store business hours.",
+            "followUp": "与旧结论可能是不同对象/时段/范围，不能当成纠正；旧结论保留，请调用方核实对应关系。"
+          }
+        ],
+        "verifiedCorrections": [],
+        "summariesNeedingRefresh": []
+      },
+      "usage": {
+        "calls": 2,
+        "inputTokens": 576,
+        "outputTokens": 622,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1198,
+        "costUsd": 0,
+        "costBasis": "unknown",
+        "missing": [
+          "consolidation cost (price unknown)"
+        ]
+      },
+      "knowledge": {
+        "oldId": 1,
+        "oldContent": "A 公司门店营业时间为每天 10:00—20:00。",
+        "oldStillLive": true,
+        "oldSupersededBy": null,
+        "liveRows": [
+          {
+            "id": 1,
+            "content": "A 公司门店营业时间为每天 10:00—20:00。"
+          }
+        ],
+        "newSemanticId": null,
+        "newContent": null,
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "url": "https://a.example/store-v1",
+            "superseded_by": null,
+            "valid_until": null
+          },
+          {
+            "id": 2,
+            "url": "https://a.example/store-v2",
+            "superseded_by": null,
+            "valid_until": null
+          },
+          {
+            "id": 3,
+            "url": "https://a.example/store-v3",
+            "superseded_by": null,
+            "valid_until": null
+          }
+        ],
+        "newEpisode": {
+          "id": 4,
+          "url": "https://a.example/support-now",
+          "snippet": "A 公司在线客服自 2026-11-01 起提供 7×24 小时全天候服务。",
+          "superseded_by": null,
+          "valid_until": null
+        },
+        "anchorStatuses": []
+      }
+    },
+    {
+      "case": "A3",
+      "report": {
+        "add": 0,
+        "update": 0,
+        "skip": 1,
+        "conflict": 0,
+        "noop": 0,
+        "singleEvidenceSkipped": 0,
+        "staleUpdates": 0,
+        "retriedAfterStale": 0,
+        "concurrentConflicts": 0,
+        "verifyRejected": 1,
+        "updates": [],
+        "verifyDetails": [
+          {
+            "oldId": 1,
+            "oldContent": "A 公司在线客服的服务时间为工作日（周一至周五）9:00—17:00。客服邮箱为 help@example.com。",
+            "candidate": "A forum post asks whether A 公司客服 has changed its hours, stating that the poster heard A 公司在线客服 may have changed to all-day online service, but the poster is unsure and provides no official link.",
+            "evidence": [
+              {
+                "title": "论坛帖子：A 公司客服是不是改时间了",
+                "snippet": "论坛帖子称：听说 A 公司在线客服可能已改成全天在线，但发帖人不确定，也没有给出官方链接。",
+                "url": "https://forum.example/thread-123"
+              }
+            ],
+            "sameFact": true,
+            "reliable": false,
+            "relation": "unclear",
+            "reason": "Forum hearsay asks about a possible hours change without official confirmation; it does not reliably replace the current hours.",
+            "followUp": "新资料与旧结论是否同一事实无法确定；旧结论保留，请调用方人工核实。"
+          }
+        ],
+        "verifiedCorrections": [],
+        "summariesNeedingRefresh": []
+      },
+      "usage": {
+        "calls": 2,
+        "inputTokens": 621,
+        "outputTokens": 729,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "totalTokens": 1350,
+        "costUsd": 0,
+        "costBasis": "unknown",
+        "missing": [
+          "consolidation cost (price unknown)"
+        ]
+      },
+      "knowledge": {
+        "oldId": 1,
+        "oldContent": "A 公司在线客服的服务时间为工作日（周一至周五）9:00—17:00。客服邮箱为 help@example.com。",
+        "oldStillLive": true,
+        "oldSupersededBy": null,
+        "liveRows": [
+          {
+            "id": 1,
+            "content": "A 公司在线客服的服务时间为工作日（周一至周五）9:00—17:00。客服邮箱为 help@example.com。"
+          }
+        ],
+        "newSemanticId": null,
+        "newContent": null,
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "url": "https://a.example/support-hours-v1",
+            "superseded_by": null,
+            "valid_until": null
+          },
+          {
+            "id": 2,
+            "url": "https://a.example/support-hours-v2",
+            "superseded_by": null,
+            "valid_until": null
+          },
+          {
+            "id": 3,
+            "url": "https://a.example/support-hours-v3",
+            "superseded_by": null,
+            "valid_until": null
+          }
+        ],
+        "newEpisode": {
+          "id": 4,
+          "url": "https://forum.example/thread-123",
+          "snippet": "论坛帖子称：听说 A 公司在线客服可能已改成全天在线，但发帖人不确定，也没有给出官方链接。",
+          "superseded_by": null,
+          "valid_until": null
+        },
+        "anchorStatuses": []
+      }
+    },
+    {
+      "case": "A4",
+      "report": {
+        "add": 0,
+        "update": 1,
+        "skip": 0,
+        "conflict": 0,
+        "noop": 0,
+        "singleEvidenceSkipped": 0,
+        "staleUpdates": 0,
+        "retriedAfterStale": 0,
+        "concurrentConflicts": 0,
+        "verifyRejected": 0,
+        "updates": [
+          {
+            "oldId": 1,
+            "newId": 2,
+            "retiredEpisodeIds": [
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "verifyDetails": [],
+        "verifiedCorrections": [
+          {
+            "oldId": 1,
+            "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。公共假期暂停人工客服，仅保留自助服务。",
+            "candidate": "A公司官方通知称，自2026年11月1日起，在线客服改为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排；客服邮箱和公共假期的人工客服安排保持不变。",
+            "evidence": [
+              {
+                "title": "A 公司客服时间更新通知（官方）",
+                "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 安排。客服邮箱和公共假期的人工客服安排保持不变。",
+                "url": "https://a.example/notice-2026-11-01b"
+              }
+            ],
+            "sameFact": true,
+            "reliable": true,
+            "relation": "correction",
+            "reason": "官方通知明确自2026-11-01起将在线客服由工作日9:00—17:00改为7×24小时，属同一事实的明确替换；邮箱和公共假期安排不变。"
+          }
+        ],
+        "summariesNeedingRefresh": [
+          "380847f3-d05c-4787-929f-a8d9467498cb"
+        ]
+      },
+      "usage": {
+        "calls": 3,
+        "inputTokens": 810,
+        "outputTokens": 1151,
+        "cacheReadTokens": 128,
+        "cacheWriteTokens": 0,
+        "totalTokens": 2089,
+        "costUsd": 0,
+        "costBasis": "unknown",
+        "missing": [
+          "consolidation cost (price unknown)"
+        ]
+      },
+      "knowledge": {
+        "oldId": 1,
+        "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。公共假期暂停人工客服，仅保留自助服务。",
+        "oldStillLive": false,
+        "oldSupersededBy": 2,
+        "liveRows": [
+          {
+            "id": 2,
+            "content": "A公司官方通知显示，自2026年11月1日起，其在线客服由原工作日（周一至周五）9:00—17:00改为7×24小时全天候服务；客服邮箱（help@example.com）及公共假期人工客服安排保持不变，即公共假期暂停人工客服、仅保留自助服务。"
+          }
+        ],
+        "newSemanticId": 2,
+        "newContent": "A公司官方通知显示，自2026年11月1日起，其在线客服由原工作日（周一至周五）9:00—17:00改为7×24小时全天候服务；客服邮箱（help@example.com）及公共假期人工客服安排保持不变，即公共假期暂停人工客服、仅保留自助服务。",
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "url": "https://a.example/support-facts-v1",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 2,
+            "url": "https://a.example/support-facts-v2",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 3,
+            "url": "https://a.example/support-facts-v3",
+            "superseded_by": 2,
+            "valid_until": null
+          }
+        ],
+        "newEpisode": {
+          "id": 4,
+          "url": "https://a.example/notice-2026-11-01b",
+          "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 安排。客服邮箱和公共假期的人工客服安排保持不变。",
+          "superseded_by": null,
+          "valid_until": null
+        },
+        "anchorStatuses": [
+          "{\"target\":\"rolling_summary\",\"needsRefresh\":true,\"invalidatedBy\":2,\"oldSemanticId\":1,\"overlap\":1,\"markedAt\":\"2026-11-10T17:02:20.860Z\"}"
+        ]
+      }
+    }
+  ],
+  "checks": [
+    {
+      "id": "A1",
+      "question": "同一事实的官方更正落地一次，旧版本关闭并指向新版本",
+      "pass": true,
+      "evidence": {
+        "report": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "noop": 0,
+          "singleEvidenceSkipped": 0,
+          "staleUpdates": 0,
+          "retriedAfterStale": 0,
+          "concurrentConflicts": 0,
+          "verifyRejected": 0,
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "verifyDetails": [],
+          "verifiedCorrections": [
+            {
+              "oldId": 1,
+              "oldContent": "A 公司在线客服的服务时间为工作日（周一至周五）9:00—17:00。客服邮箱为 help@example.com。",
+              "candidate": "A公司官方通知称，自2026年11月1日起，在线客服将改为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排（https://a.example/notice-2026-11-01）。",
+              "evidence": [
+                {
+                  "title": "A 公司客服时间更新通知（官方）",
+                  "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服自 2026-11-01 起改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                  "url": "https://a.example/notice-2026-11-01"
+                }
+              ],
+              "sameFact": true,
+              "reliable": true,
+              "relation": "correction",
+              "reason": "官方通知明确说明在线客服自2026-11-01起由原工作日9:00—17:00改为7×24小时，直接替换同一服务时间安排。"
+            }
+          ],
+          "summariesNeedingRefresh": [
+            "70372b81-af7c-4b13-b983-8df02ec10bcc"
+          ]
+        },
+        "content": "A 公司官方通知显示，其在线客服自 2026 年 11 月 1 日起改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排；客服邮箱为 help@example.com。"
+      }
+    },
+    {
+      "id": "A1-archive",
+      "question": "旧材料和新材料都还在归档，旧材料只标记被谁取代",
+      "pass": true,
+      "evidence": {
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "url": "https://a.example/support-hours-v1",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 2,
+            "url": "https://a.example/support-hours-v2",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 3,
+            "url": "https://a.example/support-hours-v3",
+            "superseded_by": 2,
+            "valid_until": null
+          }
+        ],
+        "newEpisode": {
+          "id": 4,
+          "url": "https://a.example/notice-2026-11-01",
+          "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服自 2026-11-01 起改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+          "superseded_by": null,
+          "valid_until": null
+        }
+      }
+    },
+    {
+      "id": "A1-evidence",
+      "question": "报告带着“同事实/可靠/明确更正”的真实模型判断，不是关键词命中",
+      "pass": true,
+      "evidence": {
+        "verifiedCorrections": [
+          {
+            "oldId": 1,
+            "oldContent": "A 公司在线客服的服务时间为工作日（周一至周五）9:00—17:00。客服邮箱为 help@example.com。",
+            "candidate": "A公司官方通知称，自2026年11月1日起，在线客服将改为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排（https://a.example/notice-2026-11-01）。",
+            "evidence": [
+              {
+                "title": "A 公司客服时间更新通知（官方）",
+                "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服自 2026-11-01 起改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                "url": "https://a.example/notice-2026-11-01"
+              }
+            ],
+            "sameFact": true,
+            "reliable": true,
+            "relation": "correction",
+            "reason": "官方通知明确说明在线客服自2026-11-01起由原工作日9:00—17:00改为7×24小时，直接替换同一服务时间安排。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "A2",
+      "question": "对象不同（门店 vs 在线客服）不覆盖门店旧知识",
+      "pass": true,
+      "evidence": {
+        "report": {
+          "add": 0,
+          "update": 0,
+          "skip": 1,
+          "conflict": 0,
+          "noop": 0,
+          "singleEvidenceSkipped": 0,
+          "staleUpdates": 0,
+          "retriedAfterStale": 0,
+          "concurrentConflicts": 0,
+          "verifyRejected": 1,
+          "updates": [],
+          "verifyDetails": [
+            {
+              "oldId": 1,
+              "oldContent": "A 公司门店营业时间为每天 10:00—20:00。",
+              "candidate": "A 公司在线客服自 2026-11-01 起提供 7×24 小时全天候服务。",
+              "evidence": [
+                {
+                  "title": "A 公司在线客服时间说明",
+                  "snippet": "A 公司在线客服自 2026-11-01 起提供 7×24 小时全天候服务。",
+                  "url": "https://a.example/support-now"
+                }
+              ],
+              "sameFact": false,
+              "reliable": true,
+              "relation": "different",
+              "reason": "New material is about online customer service hours, not store business hours.",
+              "followUp": "与旧结论可能是不同对象/时段/范围，不能当成纠正；旧结论保留，请调用方核实对应关系。"
+            }
+          ],
+          "verifiedCorrections": [],
+          "summariesNeedingRefresh": []
+        },
+        "knowledge": {
+          "oldId": 1,
+          "oldContent": "A 公司门店营业时间为每天 10:00—20:00。",
+          "oldStillLive": true,
+          "oldSupersededBy": null,
+          "liveRows": [
+            {
+              "id": 1,
+              "content": "A 公司门店营业时间为每天 10:00—20:00。"
+            }
+          ],
+          "newSemanticId": null,
+          "newContent": null,
+          "oldEpisodes": [
+            {
+              "id": 1,
+              "url": "https://a.example/store-v1",
+              "superseded_by": null,
+              "valid_until": null
+            },
+            {
+              "id": 2,
+              "url": "https://a.example/store-v2",
+              "superseded_by": null,
+              "valid_until": null
+            },
+            {
+              "id": 3,
+              "url": "https://a.example/store-v3",
+              "superseded_by": null,
+              "valid_until": null
+            }
+          ],
+          "newEpisode": {
+            "id": 4,
+            "url": "https://a.example/support-now",
+            "snippet": "A 公司在线客服自 2026-11-01 起提供 7×24 小时全天候服务。",
+            "superseded_by": null,
+            "valid_until": null
+          },
+          "anchorStatuses": []
+        }
+      }
+    },
+    {
+      "id": "A2-report",
+      "question": "拒绝报告带回旧知识原文、新材料原文/来源和模型理由",
+      "pass": true,
+      "evidence": {
+        "verifyDetails": [
+          {
+            "oldId": 1,
+            "oldContent": "A 公司门店营业时间为每天 10:00—20:00。",
+            "candidate": "A 公司在线客服自 2026-11-01 起提供 7×24 小时全天候服务。",
+            "evidence": [
+              {
+                "title": "A 公司在线客服时间说明",
+                "snippet": "A 公司在线客服自 2026-11-01 起提供 7×24 小时全天候服务。",
+                "url": "https://a.example/support-now"
+              }
+            ],
+            "sameFact": false,
+            "reliable": true,
+            "relation": "different",
+            "reason": "New material is about online customer service hours, not store business hours.",
+            "followUp": "与旧结论可能是不同对象/时段/范围，不能当成纠正；旧结论保留，请调用方核实对应关系。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "A2-material",
+      "question": "新材料留在归档，没被删掉也没被当成门店结论",
+      "pass": true,
+      "evidence": {
+        "newEpisode": {
+          "id": 4,
+          "url": "https://a.example/support-now",
+          "snippet": "A 公司在线客服自 2026-11-01 起提供 7×24 小时全天候服务。",
+          "superseded_by": null,
+          "valid_until": null
+        },
+        "liveRows": [
+          {
+            "id": 1,
+            "content": "A 公司门店营业时间为每天 10:00—20:00。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "A3",
+      "question": "论坛“听说/可能”不覆盖确定知识",
+      "pass": true,
+      "evidence": {
+        "report": {
+          "add": 0,
+          "update": 0,
+          "skip": 1,
+          "conflict": 0,
+          "noop": 0,
+          "singleEvidenceSkipped": 0,
+          "staleUpdates": 0,
+          "retriedAfterStale": 0,
+          "concurrentConflicts": 0,
+          "verifyRejected": 1,
+          "updates": [],
+          "verifyDetails": [
+            {
+              "oldId": 1,
+              "oldContent": "A 公司在线客服的服务时间为工作日（周一至周五）9:00—17:00。客服邮箱为 help@example.com。",
+              "candidate": "A forum post asks whether A 公司客服 has changed its hours, stating that the poster heard A 公司在线客服 may have changed to all-day online service, but the poster is unsure and provides no official link.",
+              "evidence": [
+                {
+                  "title": "论坛帖子：A 公司客服是不是改时间了",
+                  "snippet": "论坛帖子称：听说 A 公司在线客服可能已改成全天在线，但发帖人不确定，也没有给出官方链接。",
+                  "url": "https://forum.example/thread-123"
+                }
+              ],
+              "sameFact": true,
+              "reliable": false,
+              "relation": "unclear",
+              "reason": "Forum hearsay asks about a possible hours change without official confirmation; it does not reliably replace the current hours.",
+              "followUp": "新资料与旧结论是否同一事实无法确定；旧结论保留，请调用方人工核实。"
+            }
+          ],
+          "verifiedCorrections": [],
+          "summariesNeedingRefresh": []
+        }
+      }
+    },
+    {
+      "id": "A3-reason",
+      "question": "拒绝理由可见（不可靠或对应关系不足）",
+      "pass": true,
+      "evidence": {
+        "verifyDetails": [
+          {
+            "oldId": 1,
+            "oldContent": "A 公司在线客服的服务时间为工作日（周一至周五）9:00—17:00。客服邮箱为 help@example.com。",
+            "candidate": "A forum post asks whether A 公司客服 has changed its hours, stating that the poster heard A 公司在线客服 may have changed to all-day online service, but the poster is unsure and provides no official link.",
+            "evidence": [
+              {
+                "title": "论坛帖子：A 公司客服是不是改时间了",
+                "snippet": "论坛帖子称：听说 A 公司在线客服可能已改成全天在线，但发帖人不确定，也没有给出官方链接。",
+                "url": "https://forum.example/thread-123"
+              }
+            ],
+            "sameFact": true,
+            "reliable": false,
+            "relation": "unclear",
+            "reason": "Forum hearsay asks about a possible hours change without official confirmation; it does not reliably replace the current hours.",
+            "followUp": "新资料与旧结论是否同一事实无法确定；旧结论保留，请调用方人工核实。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "A3-material",
+      "question": "论坛材料仍在归档，不被删除也不被当成事实",
+      "pass": true,
+      "evidence": {
+        "newEpisode": {
+          "id": 4,
+          "url": "https://forum.example/thread-123",
+          "snippet": "论坛帖子称：听说 A 公司在线客服可能已改成全天在线，但发帖人不确定，也没有给出官方链接。",
+          "superseded_by": null,
+          "valid_until": null
+        }
+      }
+    },
+    {
+      "id": "A4",
+      "question": "多事实旧知识只替换被纠正的一条，邮箱和假期安排保留",
+      "pass": true,
+      "evidence": {
+        "report": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "noop": 0,
+          "singleEvidenceSkipped": 0,
+          "staleUpdates": 0,
+          "retriedAfterStale": 0,
+          "concurrentConflicts": 0,
+          "verifyRejected": 0,
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "verifyDetails": [],
+          "verifiedCorrections": [
+            {
+              "oldId": 1,
+              "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。公共假期暂停人工客服，仅保留自助服务。",
+              "candidate": "A公司官方通知称，自2026年11月1日起，在线客服改为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排；客服邮箱和公共假期的人工客服安排保持不变。",
+              "evidence": [
+                {
+                  "title": "A 公司客服时间更新通知（官方）",
+                  "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 安排。客服邮箱和公共假期的人工客服安排保持不变。",
+                  "url": "https://a.example/notice-2026-11-01b"
+                }
+              ],
+              "sameFact": true,
+              "reliable": true,
+              "relation": "correction",
+              "reason": "官方通知明确自2026-11-01起将在线客服由工作日9:00—17:00改为7×24小时，属同一事实的明确替换；邮箱和公共假期安排不变。"
+            }
+          ],
+          "summariesNeedingRefresh": [
+            "380847f3-d05c-4787-929f-a8d9467498cb"
+          ]
+        },
+        "content": "A公司官方通知显示，自2026年11月1日起，其在线客服由原工作日（周一至周五）9:00—17:00改为7×24小时全天候服务；客服邮箱（help@example.com）及公共假期人工客服安排保持不变，即公共假期暂停人工客服、仅保留自助服务。"
+      }
+    },
+    {
+      "id": "Q19",
+      "question": "费用如实报未知，不当成免费",
+      "pass": true,
+      "evidence": {
+        "costBasis": "unknown",
+        "costUsd": 0,
+        "missing": [
+          "consolidation cost (price unknown)"
+        ]
+      }
+    },
+    {
+      "id": "SEC",
+      "question": "证据文件不含密钥材料",
+      "pass": true,
+      "evidence": {
+        "apiKeyLength": 39
+      }
+    }
+  ],
+  "prompts": [
+    {
+      "label": "A1",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] A 公司客服时间更新通知（官方） - A 公司官方通知（2026-11-01 生效）：在线客服自 2026-11-01 起改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。 (https://a.example/notice-2026-11-01)"
+    },
+    {
+      "label": "A1",
+      "prompt": "You are checking a correction before it replaces durable knowledge.\nCURRENT KNOWLEDGE:\nA 公司在线客服的服务时间为工作日（周一至周五）9:00—17:00。客服邮箱为 help@example.com。\n\nCANDIDATE SUMMARY FROM THE NEW MATERIAL:\nA公司官方通知称，自2026年11月1日起，在线客服将改为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排（https://a.example/notice-2026-11-01）。\n\nNEW MATERIAL:\n[1] A 公司客服时间更新通知（官方） - A 公司官方通知（2026-11-01 生效）：在线客服自 2026-11-01 起改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。 (https://a.example/notice-2026-11-01)\n\nDecide:\n1. alreadyCurrent: does the new material already say the same thing as the current\n   knowledge (no change)? If yes, there is nothing to correct.\n2. sameFact: does the new material assert a change to the SAME fact, subject and scope as\n   the current knowledge? A different subject, period, population, or special case\n   (for example holiday hours vs regular hours) is NOT the same fact.\n3. reliable: does the material itself confidently and specifically assert the change?\n   Hearsay, speculation, questions, anonymous forum guesses, or \"might be\" text is NOT\n   reliable enough to replace existing knowledge.\n4. relation: one of\n   \"same\"       the material restates the current value (no correction)\n   \"correction\" the material explicitly replaces the current value (effective date,\n                \"changed to\", \"no longer\", \"replaced by\")\n   \"different\"  a different subject, period, population or special case\n   \"unclear\"    same topic but a conflicting claim with no basis to prefer either side\n                (for example two undated statements of equal authority)\n\nReply with JSON only:\n{\"alreadyCurrent\": true|false, \"sameFact\": true|false, \"reliable\": true|false, \"relation\": \"same|correction|different|unclear\", \"reason\": \"<short reason>\"}"
+    },
+    {
+      "label": "A1",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] A 公司客服时间更新通知（官方） - A 公司官方通知（2026-11-01 生效）：在线客服自 2026-11-01 起改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。 (https://a.example/notice-2026-11-01)\n[2] CURRENT KNOWLEDGE - A 公司在线客服的服务时间为工作日（周一至周五）9:00—17:00。客服邮箱为 help@example.com。 (knowledge://semantic/1)"
+    },
+    {
+      "label": "A2",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] A 公司在线客服时间说明 - A 公司在线客服自 2026-11-01 起提供 7×24 小时全天候服务。 (https://a.example/support-now)"
+    },
+    {
+      "label": "A2",
+      "prompt": "You are checking a correction before it replaces durable knowledge.\nCURRENT KNOWLEDGE:\nA 公司门店营业时间为每天 10:00—20:00。\n\nCANDIDATE SUMMARY FROM THE NEW MATERIAL:\nA 公司在线客服自 2026-11-01 起提供 7×24 小时全天候服务。\n\nNEW MATERIAL:\n[1] A 公司在线客服时间说明 - A 公司在线客服自 2026-11-01 起提供 7×24 小时全天候服务。 (https://a.example/support-now)\n\nDecide:\n1. alreadyCurrent: does the new material already say the same thing as the current\n   knowledge (no change)? If yes, there is nothing to correct.\n2. sameFact: does the new material assert a change to the SAME fact, subject and scope as\n   the current knowledge? A different subject, period, population, or special case\n   (for example holiday hours vs regular hours) is NOT the same fact.\n3. reliable: does the material itself confidently and specifically assert the change?\n   Hearsay, speculation, questions, anonymous forum guesses, or \"might be\" text is NOT\n   reliable enough to replace existing knowledge.\n4. relation: one of\n   \"same\"       the material restates the current value (no correction)\n   \"correction\" the material explicitly replaces the current value (effective date,\n                \"changed to\", \"no longer\", \"replaced by\")\n   \"different\"  a different subject, period, population or special case\n   \"unclear\"    same topic but a conflicting claim with no basis to prefer either side\n                (for example two undated statements of equal authority)\n\nReply with JSON only:\n{\"alreadyCurrent\": true|false, \"sameFact\": true|false, \"reliable\": true|false, \"relation\": \"same|correction|different|unclear\", \"reason\": \"<short reason>\"}"
+    },
+    {
+      "label": "A3",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] 论坛帖子：A 公司客服是不是改时间了 - 论坛帖子称：听说 A 公司在线客服可能已改成全天在线，但发帖人不确定，也没有给出官方链接。 (https://forum.example/thread-123)"
+    },
+    {
+      "label": "A3",
+      "prompt": "You are checking a correction before it replaces durable knowledge.\nCURRENT KNOWLEDGE:\nA 公司在线客服的服务时间为工作日（周一至周五）9:00—17:00。客服邮箱为 help@example.com。\n\nCANDIDATE SUMMARY FROM THE NEW MATERIAL:\nA forum post asks whether A 公司客服 has changed its hours, stating that the poster heard A 公司在线客服 may have changed to all-day online service, but the poster is unsure and provides no official link.\n\nNEW MATERIAL:\n[1] 论坛帖子：A 公司客服是不是改时间了 - 论坛帖子称：听说 A 公司在线客服可能已改成全天在线，但发帖人不确定，也没有给出官方链接。 (https://forum.example/thread-123)\n\nDecide:\n1. alreadyCurrent: does the new material already say the same thing as the current\n   knowledge (no change)? If yes, there is nothing to correct.\n2. sameFact: does the new material assert a change to the SAME fact, subject and scope as\n   the current knowledge? A different subject, period, population, or special case\n   (for example holiday hours vs regular hours) is NOT the same fact.\n3. reliable: does the material itself confidently and specifically assert the change?\n   Hearsay, speculation, questions, anonymous forum guesses, or \"might be\" text is NOT\n   reliable enough to replace existing knowledge.\n4. relation: one of\n   \"same\"       the material restates the current value (no correction)\n   \"correction\" the material explicitly replaces the current value (effective date,\n                \"changed to\", \"no longer\", \"replaced by\")\n   \"different\"  a different subject, period, population or special case\n   \"unclear\"    same topic but a conflicting claim with no basis to prefer either side\n                (for example two undated statements of equal authority)\n\nReply with JSON only:\n{\"alreadyCurrent\": true|false, \"sameFact\": true|false, \"reliable\": true|false, \"relation\": \"same|correction|different|unclear\", \"reason\": \"<short reason>\"}"
+    },
+    {
+      "label": "A4",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] A 公司客服时间更新通知（官方） - A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 安排。客服邮箱和公共假期的人工客服安排保持不变。 (https://a.example/notice-2026-11-01b)"
+    },
+    {
+      "label": "A4",
+      "prompt": "You are checking a correction before it replaces durable knowledge.\nCURRENT KNOWLEDGE:\nA 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。公共假期暂停人工客服，仅保留自助服务。\n\nCANDIDATE SUMMARY FROM THE NEW MATERIAL:\nA公司官方通知称，自2026年11月1日起，在线客服改为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排；客服邮箱和公共假期的人工客服安排保持不变。\n\nNEW MATERIAL:\n[1] A 公司客服时间更新通知（官方） - A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 安排。客服邮箱和公共假期的人工客服安排保持不变。 (https://a.example/notice-2026-11-01b)\n\nDecide:\n1. alreadyCurrent: does the new material already say the same thing as the current\n   knowledge (no change)? If yes, there is nothing to correct.\n2. sameFact: does the new material assert a change to the SAME fact, subject and scope as\n   the current knowledge? A different subject, period, population, or special case\n   (for example holiday hours vs regular hours) is NOT the same fact.\n3. reliable: does the material itself confidently and specifically assert the change?\n   Hearsay, speculation, questions, anonymous forum guesses, or \"might be\" text is NOT\n   reliable enough to replace existing knowledge.\n4. relation: one of\n   \"same\"       the material restates the current value (no correction)\n   \"correction\" the material explicitly replaces the current value (effective date,\n                \"changed to\", \"no longer\", \"replaced by\")\n   \"different\"  a different subject, period, population or special case\n   \"unclear\"    same topic but a conflicting claim with no basis to prefer either side\n                (for example two undated statements of equal authority)\n\nReply with JSON only:\n{\"alreadyCurrent\": true|false, \"sameFact\": true|false, \"reliable\": true|false, \"relation\": \"same|correction|different|unclear\", \"reason\": \"<short reason>\"}"
+    },
+    {
+      "label": "A4",
+      "prompt": "Summarize these episodic memories about the same entity into one short, factual paragraph.\nOnly state facts directly supported by the episodes. No speculation.\nIf an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:\nkeep every fact it states unless a new episode explicitly corrects that same fact.\n[1] A 公司客服时间更新通知（官方） - A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 安排。客服邮箱和公共假期的人工客服安排保持不变。 (https://a.example/notice-2026-11-01b)\n[2] CURRENT KNOWLEDGE - A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。公共假期暂停人工客服，仅保留自助服务。 (knowledge://semantic/1)"
+    }
+  ],
+  "usageTotals": {
+    "calls": 10,
+    "inputTokens": 2797,
+    "outputTokens": 3302,
+    "cacheReadTokens": 256,
+    "cacheWriteTokens": 0,
+    "totalTokens": 6355,
+    "costBasis": "unknown",
+    "note": "costUsd would be a false zero; price table absent"
+  }
+}

@@ -1,0 +1,1466 @@
+{
+  "probe": "q21-concurrent",
+  "startedAt": "2026-11-10T17:07:06.086Z",
+  "samples": "SAMPLES-Q20-Q21-LOCK-COLDSTART.md (confirmed)",
+  "model": {
+    "provider": "openai",
+    "model": "deepseek-v4.1-flash",
+    "baseUrlPresent": true,
+    "api": "chat",
+    "apiKeyLength": 39,
+    "note": "custom endpoint: cost unknown, never free"
+  },
+  "scenarios": [
+    {
+      "mode": "B1",
+      "oldId": 1,
+      "reports": {
+        "alpha": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "noop": 0,
+          "singleEvidenceSkipped": 0,
+          "staleUpdates": 0,
+          "staleDetails": [],
+          "retriedAfterStale": 0,
+          "concurrentConflicts": 0,
+          "conflictDetails": [],
+          "verifyRejected": 0,
+          "verifyDetails": [],
+          "verifiedCorrections": [
+            {
+              "oldId": 1,
+              "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "candidate": "A 公司官方通知，自 2026 年 11 月 1 日起，在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+              "evidence": [
+                {
+                  "title": "A 公司客服时间更新通知（官方）",
+                  "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                  "url": "https://a.example/notice-2026-11-01"
+                }
+              ],
+              "sameFact": true,
+              "reliable": true,
+              "relation": "correction",
+              "reason": "官方通知明确自 2026-11-01 起将在线客服时间由工作日 9:00—17:00 改为 7×24 小时，直接替代现行安排。"
+            }
+          ],
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "semanticIds": [
+            2
+          ],
+          "retiredEpisodeIds": [
+            1,
+            2,
+            3
+          ],
+          "summariesNeedingRefresh": [
+            "22b665e0-fbbb-4fae-bdf9-28034968fcea",
+            "43ee1360-e4fb-4995-8fca-68c88c96afc9"
+          ]
+        },
+        "beta": {
+          "add": 0,
+          "update": 0,
+          "skip": 1,
+          "conflict": 0,
+          "noop": 1,
+          "singleEvidenceSkipped": 0,
+          "staleUpdates": 1,
+          "staleDetails": [
+            {
+              "entity": "a-support-hours",
+              "oldId": 1,
+              "expected": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "current": null,
+              "candidate": "A 公司官方通知称，自2026年11月1日起，其在线客服调整为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排。"
+            }
+          ],
+          "retriedAfterStale": 1,
+          "concurrentConflicts": 0,
+          "conflictDetails": [],
+          "verifyRejected": 0,
+          "verifyDetails": [],
+          "verifiedCorrections": [
+            {
+              "oldId": 1,
+              "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "candidate": "A 公司官方通知称，自2026年11月1日起，其在线客服调整为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排。",
+              "evidence": [
+                {
+                  "title": "A 公司客服时间更新通知（官方）",
+                  "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                  "url": "https://a.example/notice-2026-11-01-copy"
+                }
+              ],
+              "sameFact": true,
+              "reliable": true,
+              "relation": "correction",
+              "reason": "官方通知明确说明自2026-11-01起在线客服改为7×24小时，替代原工作日9:00—17:00安排。"
+            }
+          ],
+          "updates": [],
+          "semanticIds": [],
+          "retiredEpisodeIds": [],
+          "summariesNeedingRefresh": []
+        }
+      },
+      "calls": {
+        "alpha": {
+          "summarize": 2,
+          "verify": 1
+        },
+        "beta": {
+          "summarize": 2,
+          "verify": 2
+        }
+      },
+      "usage": {
+        "alpha": {
+          "calls": 3,
+          "inputTokens": 626,
+          "outputTokens": 839,
+          "cacheReadTokens": 256,
+          "cacheWriteTokens": 0,
+          "totalTokens": 1721,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        },
+        "beta": {
+          "calls": 4,
+          "inputTokens": 1153,
+          "outputTokens": 1330,
+          "cacheReadTokens": 256,
+          "cacheWriteTokens": 0,
+          "totalTokens": 2739,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        }
+      },
+      "lastVerifyPrompts": {
+        "alpha": "CURRENT:\nA 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。\nCANDIDATE:\nA 公司官方通知，自 2026 年 11 月 1 日起，在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+        "beta": "CURRENT:\nA 公司官方通知称，自 2026-11-01 起，在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排；客服邮箱为 help@example.com。\nCANDIDATE:\nA 公司官方通知称，自2026年11月1日起，其在线客服调整为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排。"
+      },
+      "stderr": {
+        "alpha": "",
+        "beta": ""
+      },
+      "state": {
+        "sem": [
+          {
+            "id": 1,
+            "content": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+            "valid_until": "2026-11-10 17:07:23",
+            "superseded_by": 2
+          },
+          {
+            "id": 2,
+            "content": "A 公司官方通知称，自 2026-11-01 起，在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排；客服邮箱为 help@example.com。",
+            "valid_until": null,
+            "superseded_by": null
+          }
+        ],
+        "liveSemantic": [
+          {
+            "id": 2,
+            "content": "A 公司官方通知称，自 2026-11-01 起，在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排；客服邮箱为 help@example.com。"
+          }
+        ],
+        "oldRow": {
+          "id": 1,
+          "content": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+          "valid_until": "2026-11-10 17:07:23",
+          "superseded_by": 2
+        },
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "url": "https://a.example/support-hours-old-v1",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 2,
+            "url": "https://a.example/support-hours-old-v2",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 3,
+            "url": "https://a.example/support-hours-old-v3",
+            "superseded_by": 2,
+            "valid_until": null
+          }
+        ],
+        "materials": [
+          {
+            "id": 4,
+            "url": "https://a.example/notice-2026-11-01",
+            "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+            "superseded_by": null,
+            "valid_until": null
+          },
+          {
+            "id": 5,
+            "url": "https://a.example/notice-2026-11-01-copy",
+            "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+            "superseded_by": null,
+            "valid_until": null
+          }
+        ],
+        "statuses": [
+          {
+            "target": "rolling_summary",
+            "needsRefresh": true,
+            "invalidatedBy": 2,
+            "oldSemanticId": 1,
+            "overlap": 1,
+            "markedAt": "2026-11-10T17:07:23.780Z"
+          },
+          {
+            "target": "rolling_summary",
+            "needsRefresh": true,
+            "invalidatedBy": 2,
+            "oldSemanticId": 1,
+            "overlap": 1,
+            "markedAt": "2026-11-10T17:07:23.781Z"
+          }
+        ],
+        "integrity": "ok"
+      }
+    },
+    {
+      "mode": "B2",
+      "oldId": 1,
+      "reports": {
+        "alpha": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "noop": 0,
+          "singleEvidenceSkipped": 0,
+          "staleUpdates": 0,
+          "staleDetails": [],
+          "retriedAfterStale": 0,
+          "concurrentConflicts": 0,
+          "conflictDetails": [],
+          "verifyRejected": 0,
+          "verifyDetails": [],
+          "verifiedCorrections": [
+            {
+              "oldId": 1,
+              "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "candidate": "A公司官方通知（2026年11月1日生效）显示，其在线客服改为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排。",
+              "evidence": [
+                {
+                  "title": "A 公司客服时间更新通知（官方）",
+                  "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                  "url": "https://a.example/notice-2026-11-01"
+                }
+              ],
+              "sameFact": true,
+              "reliable": true,
+              "relation": "correction",
+              "reason": "Official notice explicitly replaces the current weekday 9:00—17:00 online customer service hours with 7×24 service effective 2026-11-01."
+            }
+          ],
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "semanticIds": [
+            2
+          ],
+          "retiredEpisodeIds": [
+            1,
+            2,
+            3
+          ],
+          "summariesNeedingRefresh": [
+            "298f31cc-3ece-40ae-ba1a-9d73e3d355c8",
+            "81cc77a4-c3f4-46e2-ae0b-4d335525ba1c"
+          ]
+        },
+        "beta": {
+          "add": 0,
+          "update": 0,
+          "skip": 1,
+          "conflict": 0,
+          "noop": 0,
+          "singleEvidenceSkipped": 0,
+          "staleUpdates": 0,
+          "staleDetails": [],
+          "retriedAfterStale": 0,
+          "concurrentConflicts": 0,
+          "conflictDetails": [],
+          "verifyRejected": 1,
+          "verifyDetails": [
+            {
+              "oldId": 1,
+              "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "candidate": "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。",
+              "evidence": [
+                {
+                  "title": "A 公司客服时间通知（另一份）",
+                  "snippet": "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。",
+                  "url": "https://b.example/notice-2"
+                }
+              ],
+              "sameFact": true,
+              "reliable": true,
+              "relation": "unclear",
+              "reason": "New notice asserts weekend-only online service, conflicting with current weekday hours, but does not explicitly say it changed or provide an effective date.",
+              "followUp": "新资料与旧结论是否同一事实无法确定；旧结论保留，请调用方人工核实。"
+            }
+          ],
+          "verifiedCorrections": [],
+          "updates": [],
+          "semanticIds": [],
+          "retiredEpisodeIds": [],
+          "summariesNeedingRefresh": []
+        }
+      },
+      "calls": {
+        "alpha": {
+          "summarize": 2,
+          "verify": 1
+        },
+        "beta": {
+          "summarize": 1,
+          "verify": 1
+        }
+      },
+      "usage": {
+        "alpha": {
+          "calls": 3,
+          "inputTokens": 619,
+          "outputTokens": 767,
+          "cacheReadTokens": 256,
+          "cacheWriteTokens": 0,
+          "totalTokens": 1642,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        },
+        "beta": {
+          "calls": 2,
+          "inputTokens": 65,
+          "outputTokens": 1372,
+          "cacheReadTokens": 512,
+          "cacheWriteTokens": 0,
+          "totalTokens": 1949,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        }
+      },
+      "lastVerifyPrompts": {
+        "alpha": "CURRENT:\nA 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。\nCANDIDATE:\nA公司官方通知（2026年11月1日生效）显示，其在线客服改为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排。",
+        "beta": "CURRENT:\nA 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。\nCANDIDATE:\nA 公司通知：在线客服仅在周末 10:00—18:00 提供服务。"
+      },
+      "stderr": {
+        "alpha": "",
+        "beta": ""
+      },
+      "state": {
+        "sem": [
+          {
+            "id": 1,
+            "content": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+            "valid_until": "2026-11-10 17:07:49",
+            "superseded_by": 2
+          },
+          {
+            "id": 2,
+            "content": "自2026年11月1日起，A公司在线客服改为7×24小时全天候服务，替代原周一至周五9:00—17:00的安排；客服邮箱为 help@example.com。",
+            "valid_until": null,
+            "superseded_by": null
+          }
+        ],
+        "liveSemantic": [
+          {
+            "id": 2,
+            "content": "自2026年11月1日起，A公司在线客服改为7×24小时全天候服务，替代原周一至周五9:00—17:00的安排；客服邮箱为 help@example.com。"
+          }
+        ],
+        "oldRow": {
+          "id": 1,
+          "content": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+          "valid_until": "2026-11-10 17:07:49",
+          "superseded_by": 2
+        },
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "url": "https://a.example/support-hours-old-v1",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 2,
+            "url": "https://a.example/support-hours-old-v2",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 3,
+            "url": "https://a.example/support-hours-old-v3",
+            "superseded_by": 2,
+            "valid_until": null
+          }
+        ],
+        "materials": [
+          {
+            "id": 4,
+            "url": "https://a.example/notice-2026-11-01",
+            "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+            "superseded_by": null,
+            "valid_until": null
+          },
+          {
+            "id": 5,
+            "url": "https://b.example/notice-2",
+            "snippet": "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。",
+            "superseded_by": null,
+            "valid_until": null
+          }
+        ],
+        "statuses": [
+          {
+            "target": "rolling_summary",
+            "needsRefresh": true,
+            "invalidatedBy": 2,
+            "oldSemanticId": 1,
+            "overlap": 1,
+            "markedAt": "2026-11-10T17:07:49.883Z"
+          },
+          {
+            "target": "rolling_summary",
+            "needsRefresh": true,
+            "invalidatedBy": 2,
+            "oldSemanticId": 1,
+            "overlap": 1,
+            "markedAt": "2026-11-10T17:07:49.884Z"
+          }
+        ],
+        "integrity": "ok"
+      }
+    }
+  ],
+  "checks": [
+    {
+      "id": "B1-one-update",
+      "question": "同文更正：只落地一次 update，只剩一条生效结论",
+      "pass": true,
+      "evidence": {
+        "live": [
+          {
+            "id": 2,
+            "content": "A 公司官方通知称，自 2026-11-01 起，在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排；客服邮箱为 help@example.com。"
+          }
+        ],
+        "reports": {
+          "alpha": {
+            "add": 0,
+            "update": 1,
+            "skip": 0,
+            "conflict": 0,
+            "noop": 0,
+            "singleEvidenceSkipped": 0,
+            "staleUpdates": 0,
+            "staleDetails": [],
+            "retriedAfterStale": 0,
+            "concurrentConflicts": 0,
+            "conflictDetails": [],
+            "verifyRejected": 0,
+            "verifyDetails": [],
+            "verifiedCorrections": [
+              {
+                "oldId": 1,
+                "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+                "candidate": "A 公司官方通知，自 2026 年 11 月 1 日起，在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                "evidence": [
+                  {
+                    "title": "A 公司客服时间更新通知（官方）",
+                    "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                    "url": "https://a.example/notice-2026-11-01"
+                  }
+                ],
+                "sameFact": true,
+                "reliable": true,
+                "relation": "correction",
+                "reason": "官方通知明确自 2026-11-01 起将在线客服时间由工作日 9:00—17:00 改为 7×24 小时，直接替代现行安排。"
+              }
+            ],
+            "updates": [
+              {
+                "oldId": 1,
+                "newId": 2,
+                "retiredEpisodeIds": [
+                  1,
+                  2,
+                  3
+                ]
+              }
+            ],
+            "semanticIds": [
+              2
+            ],
+            "retiredEpisodeIds": [
+              1,
+              2,
+              3
+            ],
+            "summariesNeedingRefresh": [
+              "22b665e0-fbbb-4fae-bdf9-28034968fcea",
+              "43ee1360-e4fb-4995-8fca-68c88c96afc9"
+            ]
+          },
+          "beta": {
+            "add": 0,
+            "update": 0,
+            "skip": 1,
+            "conflict": 0,
+            "noop": 1,
+            "singleEvidenceSkipped": 0,
+            "staleUpdates": 1,
+            "staleDetails": [
+              {
+                "entity": "a-support-hours",
+                "oldId": 1,
+                "expected": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+                "current": null,
+                "candidate": "A 公司官方通知称，自2026年11月1日起，其在线客服调整为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排。"
+              }
+            ],
+            "retriedAfterStale": 1,
+            "concurrentConflicts": 0,
+            "conflictDetails": [],
+            "verifyRejected": 0,
+            "verifyDetails": [],
+            "verifiedCorrections": [
+              {
+                "oldId": 1,
+                "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+                "candidate": "A 公司官方通知称，自2026年11月1日起，其在线客服调整为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排。",
+                "evidence": [
+                  {
+                    "title": "A 公司客服时间更新通知（官方）",
+                    "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                    "url": "https://a.example/notice-2026-11-01-copy"
+                  }
+                ],
+                "sameFact": true,
+                "reliable": true,
+                "relation": "correction",
+                "reason": "官方通知明确说明自2026-11-01起在线客服改为7×24小时，替代原工作日9:00—17:00安排。"
+              }
+            ],
+            "updates": [],
+            "semanticIds": [],
+            "retiredEpisodeIds": [],
+            "summariesNeedingRefresh": []
+          }
+        }
+      }
+    },
+    {
+      "id": "B1-loser",
+      "question": "后提交方重读一次、识别已更正、不再造第二个版本",
+      "pass": true,
+      "evidence": {
+        "loser": {
+          "add": 0,
+          "update": 0,
+          "skip": 1,
+          "conflict": 0,
+          "noop": 1,
+          "singleEvidenceSkipped": 0,
+          "staleUpdates": 1,
+          "staleDetails": [
+            {
+              "entity": "a-support-hours",
+              "oldId": 1,
+              "expected": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "current": null,
+              "candidate": "A 公司官方通知称，自2026年11月1日起，其在线客服调整为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排。"
+            }
+          ],
+          "retriedAfterStale": 1,
+          "concurrentConflicts": 0,
+          "conflictDetails": [],
+          "verifyRejected": 0,
+          "verifyDetails": [],
+          "verifiedCorrections": [
+            {
+              "oldId": 1,
+              "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "candidate": "A 公司官方通知称，自2026年11月1日起，其在线客服调整为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排。",
+              "evidence": [
+                {
+                  "title": "A 公司客服时间更新通知（官方）",
+                  "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                  "url": "https://a.example/notice-2026-11-01-copy"
+                }
+              ],
+              "sameFact": true,
+              "reliable": true,
+              "relation": "correction",
+              "reason": "官方通知明确说明自2026-11-01起在线客服改为7×24小时，替代原工作日9:00—17:00安排。"
+            }
+          ],
+          "updates": [],
+          "semanticIds": [],
+          "retiredEpisodeIds": [],
+          "summariesNeedingRefresh": []
+        }
+      }
+    },
+    {
+      "id": "B1-bounded",
+      "question": "后提交方最多 2 次真实模型判断（初次 + 重读后一次）",
+      "pass": true,
+      "evidence": {
+        "calls": {
+          "alpha": {
+            "summarize": 2,
+            "verify": 1
+          },
+          "beta": {
+            "summarize": 2,
+            "verify": 2
+          }
+        }
+      }
+    },
+    {
+      "id": "B1-relations",
+      "question": "旧 row 和旧 episode 的 superseded_by 指向同一条新 row",
+      "pass": true,
+      "evidence": {
+        "oldRow": {
+          "id": 1,
+          "content": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+          "valid_until": "2026-11-10 17:07:23",
+          "superseded_by": 2
+        },
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "url": "https://a.example/support-hours-old-v1",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 2,
+            "url": "https://a.example/support-hours-old-v2",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 3,
+            "url": "https://a.example/support-hours-old-v3",
+            "superseded_by": 2,
+            "valid_until": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "B1-materials",
+      "question": "两边材料都留在归档，没有靠删证据来收场",
+      "pass": true,
+      "evidence": {
+        "materials": [
+          {
+            "id": 4,
+            "url": "https://a.example/notice-2026-11-01",
+            "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+            "superseded_by": null,
+            "valid_until": null
+          },
+          {
+            "id": 5,
+            "url": "https://a.example/notice-2026-11-01-copy",
+            "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+            "superseded_by": null,
+            "valid_until": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "B1-summaries",
+      "question": "受影响摘要的暂停记录指向唯一的新 row",
+      "pass": true,
+      "evidence": {
+        "statuses": [
+          {
+            "target": "rolling_summary",
+            "needsRefresh": true,
+            "invalidatedBy": 2,
+            "oldSemanticId": 1,
+            "overlap": 1,
+            "markedAt": "2026-11-10T17:07:23.780Z"
+          },
+          {
+            "target": "rolling_summary",
+            "needsRefresh": true,
+            "invalidatedBy": 2,
+            "oldSemanticId": 1,
+            "overlap": 1,
+            "markedAt": "2026-11-10T17:07:23.781Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "B2-one-update",
+      "question": "互相冲突：先写入者只落地一次 update，仍只有一条生效结论",
+      "pass": true,
+      "evidence": {
+        "live": [
+          {
+            "id": 2,
+            "content": "自2026年11月1日起，A公司在线客服改为7×24小时全天候服务，替代原周一至周五9:00—17:00的安排；客服邮箱为 help@example.com。"
+          }
+        ],
+        "reports": {
+          "alpha": {
+            "add": 0,
+            "update": 1,
+            "skip": 0,
+            "conflict": 0,
+            "noop": 0,
+            "singleEvidenceSkipped": 0,
+            "staleUpdates": 0,
+            "staleDetails": [],
+            "retriedAfterStale": 0,
+            "concurrentConflicts": 0,
+            "conflictDetails": [],
+            "verifyRejected": 0,
+            "verifyDetails": [],
+            "verifiedCorrections": [
+              {
+                "oldId": 1,
+                "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+                "candidate": "A公司官方通知（2026年11月1日生效）显示，其在线客服改为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排。",
+                "evidence": [
+                  {
+                    "title": "A 公司客服时间更新通知（官方）",
+                    "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                    "url": "https://a.example/notice-2026-11-01"
+                  }
+                ],
+                "sameFact": true,
+                "reliable": true,
+                "relation": "correction",
+                "reason": "Official notice explicitly replaces the current weekday 9:00—17:00 online customer service hours with 7×24 service effective 2026-11-01."
+              }
+            ],
+            "updates": [
+              {
+                "oldId": 1,
+                "newId": 2,
+                "retiredEpisodeIds": [
+                  1,
+                  2,
+                  3
+                ]
+              }
+            ],
+            "semanticIds": [
+              2
+            ],
+            "retiredEpisodeIds": [
+              1,
+              2,
+              3
+            ],
+            "summariesNeedingRefresh": [
+              "298f31cc-3ece-40ae-ba1a-9d73e3d355c8",
+              "81cc77a4-c3f4-46e2-ae0b-4d335525ba1c"
+            ]
+          },
+          "beta": {
+            "add": 0,
+            "update": 0,
+            "skip": 1,
+            "conflict": 0,
+            "noop": 0,
+            "singleEvidenceSkipped": 0,
+            "staleUpdates": 0,
+            "staleDetails": [],
+            "retriedAfterStale": 0,
+            "concurrentConflicts": 0,
+            "conflictDetails": [],
+            "verifyRejected": 1,
+            "verifyDetails": [
+              {
+                "oldId": 1,
+                "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+                "candidate": "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。",
+                "evidence": [
+                  {
+                    "title": "A 公司客服时间通知（另一份）",
+                    "snippet": "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。",
+                    "url": "https://b.example/notice-2"
+                  }
+                ],
+                "sameFact": true,
+                "reliable": true,
+                "relation": "unclear",
+                "reason": "New notice asserts weekend-only online service, conflicting with current weekday hours, but does not explicitly say it changed or provide an effective date.",
+                "followUp": "新资料与旧结论是否同一事实无法确定；旧结论保留，请调用方人工核实。"
+              }
+            ],
+            "verifiedCorrections": [],
+            "updates": [],
+            "semanticIds": [],
+            "retiredEpisodeIds": [],
+            "summariesNeedingRefresh": []
+          }
+        }
+      }
+    },
+    {
+      "id": "B2-unresolved",
+      "question": "后提交方再判一次仍冲突，明确返回冲突而不是覆盖",
+      "pass": false,
+      "evidence": {
+        "loser": null
+      }
+    },
+    {
+      "id": "B2-both-sides",
+      "question": "冲突报告带回双方材料原文、当前生效内容、来源和理由",
+      "pass": false,
+      "evidence": {
+        "conflict": null
+      }
+    },
+    {
+      "id": "B2-bounded",
+      "question": "最多 2 次真实模型判断，没有第三次重试",
+      "pass": false,
+      "evidence": {
+        "calls": {
+          "alpha": {
+            "summarize": 2,
+            "verify": 1
+          },
+          "beta": {
+            "summarize": 1,
+            "verify": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "B2-materials-archive",
+      "question": "双方材料都在归档，冲突没靠清库解决",
+      "pass": true,
+      "evidence": {
+        "materials": [
+          {
+            "id": 4,
+            "url": "https://a.example/notice-2026-11-01",
+            "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+            "superseded_by": null,
+            "valid_until": null
+          },
+          {
+            "id": 5,
+            "url": "https://b.example/notice-2",
+            "snippet": "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。",
+            "superseded_by": null,
+            "valid_until": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "B2-relations",
+      "question": "版本关系与先写入者一致，旧 row/旧 episode 指向同一个新 row",
+      "pass": true,
+      "evidence": {
+        "oldRow": {
+          "id": 1,
+          "content": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+          "valid_until": "2026-11-10 17:07:49",
+          "superseded_by": 2
+        },
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "url": "https://a.example/support-hours-old-v1",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 2,
+            "url": "https://a.example/support-hours-old-v2",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 3,
+            "url": "https://a.example/support-hours-old-v3",
+            "superseded_by": 2,
+            "valid_until": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "B2-mechanics",
+      "question": "诊断（脚本判定）：真正竞态下后提交方重读一次、仍冲突则返回双方材料且不写",
+      "pass": true,
+      "evidence": {
+        "report": {
+          "add": 0,
+          "update": 0,
+          "skip": 0,
+          "conflict": 1,
+          "noop": 0,
+          "singleEvidenceSkipped": 0,
+          "staleUpdates": 1,
+          "staleDetails": [
+            {
+              "entity": "a-support-hours",
+              "oldId": 1,
+              "expected": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "current": null,
+              "candidate": "A 公司通知称，其在线客服仅在周末 10:00—18:00 提供服务。"
+            }
+          ],
+          "retriedAfterStale": 1,
+          "concurrentConflicts": 1,
+          "conflictDetails": [
+            {
+              "entity": "a-support-hours",
+              "oldId": 1,
+              "expected": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "current": "A 公司官方通知显示，自 2026-11-01 起，在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排；客服邮箱为 help@example.com。",
+              "candidate": "A 公司通知称，其在线客服仅在周末 10:00—18:00 提供服务。",
+              "candidateEvidence": [
+                {
+                  "title": "A 公司客服时间通知（另一份）",
+                  "snippet": "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。",
+                  "url": "https://b.example/notice-2"
+                }
+              ],
+              "currentEvidence": [
+                {
+                  "title": "A 公司客服时间（旧页面 v1）",
+                  "snippet": "A 公司官网客服页面写明：在线客服工作日（周一至周五）9:00—17:00 提供服务，客服邮箱 help@example.com。",
+                  "url": "https://a.example/support-hours-old-v1"
+                },
+                {
+                  "title": "A 公司客服时间（旧页面 v2）",
+                  "snippet": "A 公司官网客服页面写明：在线客服工作日（周一至周五）9:00—17:00 提供服务，客服邮箱 help@example.com。",
+                  "url": "https://a.example/support-hours-old-v2"
+                },
+                {
+                  "title": "A 公司客服时间（旧页面 v3）",
+                  "snippet": "A 公司官网客服页面写明：在线客服工作日（周一至周五）9:00—17:00 提供服务，客服邮箱 help@example.com。",
+                  "url": "https://a.example/support-hours-old-v3"
+                },
+                {
+                  "title": "A 公司客服时间更新通知（官方）",
+                  "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                  "url": "https://a.example/notice-2026-11-01"
+                }
+              ],
+              "reason": "diagnostic: 重读后仍无法确定哪边正确",
+              "followUp": "两边材料互相冲突且无法判定哪边更新；未覆盖任何一边，请调用方人工核实后再决定。"
+            }
+          ],
+          "verifyRejected": 0,
+          "verifyDetails": [],
+          "verifiedCorrections": [
+            {
+              "oldId": 1,
+              "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "candidate": "A 公司通知称，其在线客服仅在周末 10:00—18:00 提供服务。",
+              "evidence": [
+                {
+                  "title": "A 公司客服时间通知（另一份）",
+                  "snippet": "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。",
+                  "url": "https://b.example/notice-2"
+                }
+              ],
+              "sameFact": true,
+              "reliable": true,
+              "relation": "correction",
+              "reason": "diagnostic: 初次判断为同一事实的明确更正"
+            }
+          ],
+          "updates": [],
+          "semanticIds": [],
+          "retiredEpisodeIds": [],
+          "summariesNeedingRefresh": []
+        },
+        "conflict": {
+          "entity": "a-support-hours",
+          "oldId": 1,
+          "expected": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+          "current": "A 公司官方通知显示，自 2026-11-01 起，在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排；客服邮箱为 help@example.com。",
+          "candidate": "A 公司通知称，其在线客服仅在周末 10:00—18:00 提供服务。",
+          "candidateEvidence": [
+            {
+              "title": "A 公司客服时间通知（另一份）",
+              "snippet": "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。",
+              "url": "https://b.example/notice-2"
+            }
+          ],
+          "currentEvidence": [
+            {
+              "title": "A 公司客服时间（旧页面 v1）",
+              "snippet": "A 公司官网客服页面写明：在线客服工作日（周一至周五）9:00—17:00 提供服务，客服邮箱 help@example.com。",
+              "url": "https://a.example/support-hours-old-v1"
+            },
+            {
+              "title": "A 公司客服时间（旧页面 v2）",
+              "snippet": "A 公司官网客服页面写明：在线客服工作日（周一至周五）9:00—17:00 提供服务，客服邮箱 help@example.com。",
+              "url": "https://a.example/support-hours-old-v2"
+            },
+            {
+              "title": "A 公司客服时间（旧页面 v3）",
+              "snippet": "A 公司官网客服页面写明：在线客服工作日（周一至周五）9:00—17:00 提供服务，客服邮箱 help@example.com。",
+              "url": "https://a.example/support-hours-old-v3"
+            },
+            {
+              "title": "A 公司客服时间更新通知（官方）",
+              "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+              "url": "https://a.example/notice-2026-11-01"
+            }
+          ],
+          "reason": "diagnostic: 重读后仍无法确定哪边正确",
+          "followUp": "两边材料互相冲突且无法判定哪边更新；未覆盖任何一边，请调用方人工核实后再决定。"
+        },
+        "calls": {
+          "alpha": {
+            "summarize": 2,
+            "verify": 1
+          },
+          "beta": {
+            "summarize": 2,
+            "verify": 2
+          }
+        }
+      }
+    },
+    {
+      "id": "Q19",
+      "question": "调用了真实端点但价格未知：costBasis=unknown，不写成免费",
+      "pass": true,
+      "evidence": {
+        "usages": [
+          {
+            "calls": 3,
+            "inputTokens": 626,
+            "outputTokens": 839,
+            "cacheReadTokens": 256,
+            "cacheWriteTokens": 0,
+            "totalTokens": 1721,
+            "costUsd": 0,
+            "costBasis": "unknown",
+            "missing": [
+              "consolidation cost (price unknown)"
+            ]
+          },
+          {
+            "calls": 4,
+            "inputTokens": 1153,
+            "outputTokens": 1330,
+            "cacheReadTokens": 256,
+            "cacheWriteTokens": 0,
+            "totalTokens": 2739,
+            "costUsd": 0,
+            "costBasis": "unknown",
+            "missing": [
+              "consolidation cost (price unknown)"
+            ]
+          },
+          {
+            "calls": 3,
+            "inputTokens": 619,
+            "outputTokens": 767,
+            "cacheReadTokens": 256,
+            "cacheWriteTokens": 0,
+            "totalTokens": 1642,
+            "costUsd": 0,
+            "costBasis": "unknown",
+            "missing": [
+              "consolidation cost (price unknown)"
+            ]
+          },
+          {
+            "calls": 2,
+            "inputTokens": 65,
+            "outputTokens": 1372,
+            "cacheReadTokens": 512,
+            "cacheWriteTokens": 0,
+            "totalTokens": 1949,
+            "costUsd": 0,
+            "costBasis": "unknown",
+            "missing": [
+              "consolidation cost (price unknown)"
+            ]
+          },
+          {
+            "calls": 2,
+            "inputTokens": 121,
+            "outputTokens": 616,
+            "cacheReadTokens": 256,
+            "cacheWriteTokens": 0,
+            "totalTokens": 993,
+            "costUsd": 0,
+            "costBasis": "unknown",
+            "missing": [
+              "consolidation cost (price unknown)"
+            ]
+          },
+          {
+            "calls": 2,
+            "inputTokens": 59,
+            "outputTokens": 580,
+            "cacheReadTokens": 256,
+            "cacheWriteTokens": 0,
+            "totalTokens": 895,
+            "costUsd": 0,
+            "costBasis": "unknown",
+            "missing": [
+              "consolidation cost (price unknown)"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SEC",
+      "question": "证据文件不含密钥材料",
+      "pass": true,
+      "evidence": {
+        "apiKeyLength": 39
+      }
+    }
+  ],
+  "diagnostic": {
+    "b2ScriptedVerify": {
+      "mode": "B2",
+      "oldId": 1,
+      "reports": {
+        "alpha": {
+          "add": 0,
+          "update": 1,
+          "skip": 0,
+          "conflict": 0,
+          "noop": 0,
+          "singleEvidenceSkipped": 0,
+          "staleUpdates": 0,
+          "staleDetails": [],
+          "retriedAfterStale": 0,
+          "concurrentConflicts": 0,
+          "conflictDetails": [],
+          "verifyRejected": 0,
+          "verifyDetails": [],
+          "verifiedCorrections": [
+            {
+              "oldId": 1,
+              "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "candidate": "A公司官方通知称，自2026-11-01起，在线客服改为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排。",
+              "evidence": [
+                {
+                  "title": "A 公司客服时间更新通知（官方）",
+                  "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                  "url": "https://a.example/notice-2026-11-01"
+                }
+              ],
+              "sameFact": true,
+              "reliable": true,
+              "relation": "correction",
+              "reason": "diagnostic: 初次判断为同一事实的明确更正"
+            }
+          ],
+          "updates": [
+            {
+              "oldId": 1,
+              "newId": 2,
+              "retiredEpisodeIds": [
+                1,
+                2,
+                3
+              ]
+            }
+          ],
+          "semanticIds": [
+            2
+          ],
+          "retiredEpisodeIds": [
+            1,
+            2,
+            3
+          ],
+          "summariesNeedingRefresh": [
+            "26a4bd59-81cd-44c5-a29e-efe922281b8a",
+            "e7569e36-a99f-4928-a644-c4622a0872f5"
+          ]
+        },
+        "beta": {
+          "add": 0,
+          "update": 0,
+          "skip": 0,
+          "conflict": 1,
+          "noop": 0,
+          "singleEvidenceSkipped": 0,
+          "staleUpdates": 1,
+          "staleDetails": [
+            {
+              "entity": "a-support-hours",
+              "oldId": 1,
+              "expected": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "current": null,
+              "candidate": "A 公司通知称，其在线客服仅在周末 10:00—18:00 提供服务。"
+            }
+          ],
+          "retriedAfterStale": 1,
+          "concurrentConflicts": 1,
+          "conflictDetails": [
+            {
+              "entity": "a-support-hours",
+              "oldId": 1,
+              "expected": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "current": "A 公司官方通知显示，自 2026-11-01 起，在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排；客服邮箱为 help@example.com。",
+              "candidate": "A 公司通知称，其在线客服仅在周末 10:00—18:00 提供服务。",
+              "candidateEvidence": [
+                {
+                  "title": "A 公司客服时间通知（另一份）",
+                  "snippet": "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。",
+                  "url": "https://b.example/notice-2"
+                }
+              ],
+              "currentEvidence": [
+                {
+                  "title": "A 公司客服时间（旧页面 v1）",
+                  "snippet": "A 公司官网客服页面写明：在线客服工作日（周一至周五）9:00—17:00 提供服务，客服邮箱 help@example.com。",
+                  "url": "https://a.example/support-hours-old-v1"
+                },
+                {
+                  "title": "A 公司客服时间（旧页面 v2）",
+                  "snippet": "A 公司官网客服页面写明：在线客服工作日（周一至周五）9:00—17:00 提供服务，客服邮箱 help@example.com。",
+                  "url": "https://a.example/support-hours-old-v2"
+                },
+                {
+                  "title": "A 公司客服时间（旧页面 v3）",
+                  "snippet": "A 公司官网客服页面写明：在线客服工作日（周一至周五）9:00—17:00 提供服务，客服邮箱 help@example.com。",
+                  "url": "https://a.example/support-hours-old-v3"
+                },
+                {
+                  "title": "A 公司客服时间更新通知（官方）",
+                  "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+                  "url": "https://a.example/notice-2026-11-01"
+                }
+              ],
+              "reason": "diagnostic: 重读后仍无法确定哪边正确",
+              "followUp": "两边材料互相冲突且无法判定哪边更新；未覆盖任何一边，请调用方人工核实后再决定。"
+            }
+          ],
+          "verifyRejected": 0,
+          "verifyDetails": [],
+          "verifiedCorrections": [
+            {
+              "oldId": 1,
+              "oldContent": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+              "candidate": "A 公司通知称，其在线客服仅在周末 10:00—18:00 提供服务。",
+              "evidence": [
+                {
+                  "title": "A 公司客服时间通知（另一份）",
+                  "snippet": "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。",
+                  "url": "https://b.example/notice-2"
+                }
+              ],
+              "sameFact": true,
+              "reliable": true,
+              "relation": "correction",
+              "reason": "diagnostic: 初次判断为同一事实的明确更正"
+            }
+          ],
+          "updates": [],
+          "semanticIds": [],
+          "retiredEpisodeIds": [],
+          "summariesNeedingRefresh": []
+        }
+      },
+      "calls": {
+        "alpha": {
+          "summarize": 2,
+          "verify": 1
+        },
+        "beta": {
+          "summarize": 2,
+          "verify": 2
+        }
+      },
+      "usage": {
+        "alpha": {
+          "calls": 2,
+          "inputTokens": 121,
+          "outputTokens": 616,
+          "cacheReadTokens": 256,
+          "cacheWriteTokens": 0,
+          "totalTokens": 993,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        },
+        "beta": {
+          "calls": 2,
+          "inputTokens": 59,
+          "outputTokens": 580,
+          "cacheReadTokens": 256,
+          "cacheWriteTokens": 0,
+          "totalTokens": 895,
+          "costUsd": 0,
+          "costBasis": "unknown",
+          "missing": [
+            "consolidation cost (price unknown)"
+          ]
+        }
+      },
+      "lastVerifyPrompts": {
+        "alpha": "CURRENT:\nA 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。\nCANDIDATE:\nA公司官方通知称，自2026-11-01起，在线客服改为7×24小时全天候服务，替代原工作日（周一至周五）9:00—17:00的安排。",
+        "beta": "CURRENT:\nA 公司官方通知显示，自 2026-11-01 起，在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排；客服邮箱为 help@example.com。\nCANDIDATE:\nA 公司通知称，其在线客服仅在周末 10:00—18:00 提供服务。"
+      },
+      "stderr": {
+        "alpha": "",
+        "beta": ""
+      },
+      "state": {
+        "sem": [
+          {
+            "id": 1,
+            "content": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+            "valid_until": "2026-11-10 17:08:03",
+            "superseded_by": 2
+          },
+          {
+            "id": 2,
+            "content": "A 公司官方通知显示，自 2026-11-01 起，在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排；客服邮箱为 help@example.com。",
+            "valid_until": null,
+            "superseded_by": null
+          }
+        ],
+        "liveSemantic": [
+          {
+            "id": 2,
+            "content": "A 公司官方通知显示，自 2026-11-01 起，在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排；客服邮箱为 help@example.com。"
+          }
+        ],
+        "oldRow": {
+          "id": 1,
+          "content": "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱为 help@example.com。",
+          "valid_until": "2026-11-10 17:08:03",
+          "superseded_by": 2
+        },
+        "oldEpisodes": [
+          {
+            "id": 1,
+            "url": "https://a.example/support-hours-old-v1",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 2,
+            "url": "https://a.example/support-hours-old-v2",
+            "superseded_by": 2,
+            "valid_until": null
+          },
+          {
+            "id": 3,
+            "url": "https://a.example/support-hours-old-v3",
+            "superseded_by": 2,
+            "valid_until": null
+          }
+        ],
+        "materials": [
+          {
+            "id": 4,
+            "url": "https://a.example/notice-2026-11-01",
+            "snippet": "A 公司官方通知（2026-11-01 生效）：在线客服改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 的安排。",
+            "superseded_by": null,
+            "valid_until": null
+          },
+          {
+            "id": 5,
+            "url": "https://b.example/notice-2",
+            "snippet": "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。",
+            "superseded_by": null,
+            "valid_until": null
+          }
+        ],
+        "statuses": [
+          {
+            "target": "rolling_summary",
+            "needsRefresh": true,
+            "invalidatedBy": 2,
+            "oldSemanticId": 1,
+            "overlap": 1,
+            "markedAt": "2026-11-10T17:08:03.650Z"
+          },
+          {
+            "target": "rolling_summary",
+            "needsRefresh": true,
+            "invalidatedBy": 2,
+            "oldSemanticId": 1,
+            "overlap": 1,
+            "markedAt": "2026-11-10T17:08:03.651Z"
+          }
+        ],
+        "integrity": "ok"
+      }
+    }
+  },
+  "usageTotals": {
+    "calls": 16,
+    "inputTokens": 2643,
+    "outputTokens": 5504,
+    "cacheReadTokens": 1792,
+    "cacheWriteTokens": 0,
+    "totalTokens": 9939,
+    "costBasis": "unknown"
+  }
+}

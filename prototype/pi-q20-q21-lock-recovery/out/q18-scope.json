@@ -1,0 +1,104 @@
+{
+  "probe": "q18-scope",
+  "startedAt": "2026-11-10T17:10:43.539Z",
+  "samples": "SAMPLES-Q20-Q21-LOCK-COLDSTART.md (confirmed)",
+  "checks": [
+    {
+      "id": "Q18-mcp-no-scope",
+      "question": "MCP：两个范围都没给时直接报错，不退化成全库整理",
+      "pass": true,
+      "evidence": [
+        {
+          "label": "no-scope",
+          "isError": true,
+          "text": "ans_chat consolidate: an explicit scope is required; pass sessionId or memoryIds. Refusing to consolidate the full archive."
+        },
+        {
+          "label": "both-null",
+          "isError": true,
+          "text": "Input validation error: Invalid arguments for tool ans_chat: data/sessionId must be string, data/memoryIds must be array"
+        }
+      ]
+    },
+    {
+      "id": "Q18-mcp-memory",
+      "question": "MCP：非法 memoryIds 报错",
+      "pass": true,
+      "evidence": [
+        {
+          "label": "invalid-memory",
+          "isError": true,
+          "text": "Input validation error: Invalid arguments for tool ans_chat: data/memoryIds/0 must be >= 1, data/memoryIds/1 must be >= 1"
+        },
+        {
+          "label": "valid-session-invalid-memory",
+          "isError": true,
+          "text": "Input validation error: Invalid arguments for tool ans_chat: data/memoryIds/0 must be >= 1"
+        }
+      ]
+    },
+    {
+      "id": "Q18-mcp-session",
+      "question": "MCP：非法 sessionId 仍然报错",
+      "pass": true,
+      "evidence": {
+        "label": "invalid-session",
+        "isError": true,
+        "text": "ans_chat consolidate: sessionId must be 1..128 visible ASCII characters; refusing an invalid scope (no full-archive fallback)."
+      }
+    },
+    {
+      "id": "Q18-cli-no-scope",
+      "question": "CLI：没给 --session/--memory 时退出码 2，并说明拒绝全库整理",
+      "pass": true,
+      "evidence": {
+        "exitCode": 2,
+        "stdout": "",
+        "stderr": "ans consolidate: an explicit scope is required; pass --session ID or --memory ID (full-archive runs are refused).\n"
+      }
+    },
+    {
+      "id": "SEC",
+      "question": "证据文件不含密钥材料",
+      "pass": true,
+      "evidence": {
+        "checkedChars": 2566
+      }
+    }
+  ],
+  "mcp": {
+    "cases": [
+      {
+        "label": "no-scope",
+        "isError": true,
+        "text": "ans_chat consolidate: an explicit scope is required; pass sessionId or memoryIds. Refusing to consolidate the full archive."
+      },
+      {
+        "label": "both-null",
+        "isError": true,
+        "text": "Input validation error: Invalid arguments for tool ans_chat: data/sessionId must be string, data/memoryIds must be array"
+      },
+      {
+        "label": "invalid-memory",
+        "isError": true,
+        "text": "Input validation error: Invalid arguments for tool ans_chat: data/memoryIds/0 must be >= 1, data/memoryIds/1 must be >= 1"
+      },
+      {
+        "label": "valid-session-invalid-memory",
+        "isError": true,
+        "text": "Input validation error: Invalid arguments for tool ans_chat: data/memoryIds/0 must be >= 1"
+      },
+      {
+        "label": "invalid-session",
+        "isError": true,
+        "text": "ans_chat consolidate: sessionId must be 1..128 visible ASCII characters; refusing an invalid scope (no full-archive fallback)."
+      }
+    ],
+    "stderr": "anysearch MCP server: stdio transport ready\n"
+  },
+  "cli": {
+    "exitCode": 2,
+    "stdout": "",
+    "stderr": "ans consolidate: an explicit scope is required; pass --session ID or --memory ID (full-archive runs are refused).\n"
+  }
+}
