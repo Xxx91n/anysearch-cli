@@ -10,8 +10,13 @@
 // decision 6: dual session (pi Agent memory + SqliteSessionStore FTS5 sync).
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
-import { Agent, estimateContextTokens } from "@earendil-works/pi-agent-core";
+import { Agent } from "@earendil-works/pi-agent-core";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+// pi-agent-core 1.5.1 moved the context estimator into pi-coding-agent. That
+// package's root entry reads `import.meta.url` at import time and cannot be
+// bundled into the CJS CLI/MCP, so the message estimator lives in
+// message-text.ts with the same chars/4 contract.
+import { estimateTranscriptTokens } from "./message-text";
 import { Type } from "@sinclair/typebox";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -147,7 +152,18 @@ function reportBudgetFault(stage: string, e: unknown): void {
 
 // Build the search AgentTool: wraps RetroaererdEngine.search() with TypeBox schema.
 // The LLM sees this as a tool it can call to search the web.
-export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObservationSink, onResults?: (urls: string[]) => void): AgentTool {
+//
+// PROTOTYPE WIRING (pi-1.5.1 window): when the runtime owns a session, the
+// internal search now also persists its results through store.saveResults().
+// Before this, only the standalone MCP `search_web` tool indexed results, so an
+// `ans_chat` search never reached retrieval_results and later sessions could
+// not recall it.
+export function createSearchTool(
+  retriever: RetrieverPort,
+  span?: RetrievalObservationSink,
+  onResults?: (urls: string[]) => void,
+  persist?: { store: SessionStorePort; sessionId: string },
+): AgentTool {
   return {
     name: BUILTIN_SEARCH_TOOL,
     label: "Search",
@@ -179,6 +195,20 @@ export function createSearchTool(retriever: RetrieverPort, span?: RetrievalObser
       };
       const envelope = await retriever.search(q);
       onResults?.((envelope.results ?? []).map((r) => r.url));
+      // Index the run's own retrieval into the research archive (fail-open:
+      // a failed write must not fail the turn).
+      if (persist) {
+        try {
+          await persist.store.saveResults(persist.sessionId, envelope.results);
+        } catch (e) {
+          try {
+            process.stderr.write(
+              "[anysearch] search result indexing failed: " +
+              (e instanceof Error ? e.message : String(e)) + "\n",
+            );
+          } catch { /* stderr unavailable */ }
+        }
+      }
       // every retrieved payload crosses the LLM boundary through wrapRetrieved
       // (Anthropic tool_result wire format). The full envelope JSON rides in snippet untruncated
       // ponytail: schema maxLength(4000) is not enforced here; downstream parses via unwrapRetrieved.
@@ -348,15 +378,16 @@ export function accumulateUsage(totals: UsageTotals, message: unknown): void {
 }
 
 // #113: current-context occupancy for the L0 watermark. `lastUsageTokens` is
-// the provider-reported usage of the most recent assistant call; the estimate
+// the provider-reported usage of the most recent assistant call; `estimated`
 // adds messages appended after that call (tool results, user turns) — exactly
 // the lag window CodeRabbit flagged on PR #114. max() keeps a provider report
 // that is larger than the local estimate from being under-counted.
+export function estimateMessagesTokens(messages: any[]): number {
+  return estimateTranscriptTokens(messages ?? []);
+}
+
 export function resolveContextOccupancy(lastUsageTokens: number, messages: any[]): number {
-  let estimated = 0;
-  try {
-    estimated = Number(estimateContextTokens(messages as any)?.tokens) || 0;
-  } catch { /* fail-open: fall back to the usage figure */ }
+  const estimated = estimateMessagesTokens(messages);
   return Math.max(Number(lastUsageTokens) || 0, estimated);
 }
 
@@ -379,17 +410,24 @@ export function resolveReserveInputTokens(
 ): { tokens: number; coldStart: boolean } {
   const anchor = Number(lastUsageTokens) || 0;
   const transcript = Array.isArray(messages) ? messages : [];
-  if (anchor > 0 || transcript.length > 0) {
-    return { tokens: resolveContextOccupancy(anchor, transcript), coldStart: false };
+  // 1.5.1 folds initialState.systemPrompt AND initialState.tools into a leading
+  // system message inside state.messages. That message is the request's static
+  // head, not conversation: treating it as carried history would skip the
+  // cold-start branch and count the tool declarations a second time.
+  const conversation = transcript.filter((m: any) => m?.role !== "system");
+  if (anchor > 0 || conversation.length > 0) {
+    // Occupancy estimate covers trailing messages only; the provider anchor
+    // already counts the static head (prompt + tool declarations).
+    return { tokens: resolveContextOccupancy(anchor, conversation), coldStart: false };
   }
   let tokens = 0;
   try {
     // estimateTokens only reads `role`/`content`; wrapping the system prompt in
     // a user-shaped message makes it part of the same character estimate (a
     // "system" role is not a pi-agent-core message role and would count as 0).
-    tokens += Math.ceil(Number(estimateContextTokens([{ role: "user", content: prompt }] as any)?.tokens) || 0);
+    tokens += Math.ceil(estimateMessagesTokens([{ role: "user", content: prompt }] as any));
     if (systemPrompt) {
-      tokens += Math.ceil(Number(estimateContextTokens([{ role: "user", content: systemPrompt }] as any)?.tokens) || 0);
+      tokens += Math.ceil(estimateMessagesTokens([{ role: "user", content: systemPrompt }] as any));
     }
   } catch { /* fail-open: the output reserve alone is still a valid lower bound */ }
   return { tokens, coldStart: true };
@@ -499,7 +537,8 @@ export class PiAgentRuntime {
 
     // Build tools: search tool + any extra tools, filtered by domain.
     const saturation = new SearchSaturation();
-    const searchTool = createSearchTool(this.scopedRetriever, this.opts.span, (urls) => saturation.record(urls));
+    const searchPersist = store && sessionId ? { store, sessionId } : undefined;
+    const searchTool = createSearchTool(this.scopedRetriever, this.opts.span, (urls) => saturation.record(urls), searchPersist);
     const allTools = [searchTool, ...(this.opts.tools || [])];
     const activeTools = filterAgentTools(allTools, domain);
 
@@ -530,6 +569,10 @@ export class PiAgentRuntime {
         wake();
       }
     };
+
+    // Message array produced by the sufficiency gate in finishTurn, consumed by
+    // prepareNextTurnWithContext. Scoped to this run: the next run starts clean.
+    let pendingTurnMessages: any[] | null = null;
 
     // hooks degrade to 2-line delegation to MemoryPipeline + SufficiencyEvaluator.
     const agent = new Agent({
@@ -600,38 +643,49 @@ export class PiAgentRuntime {
         }
         return undefined;
       },
-      // shouldStopAfterTurn async cold path — delegated to SufficiencyEvaluator + MemoryPipeline.
-      // Fires after each assistant turn; async, does not block current turn.
-      shouldStopAfterTurn: async (ctx: any, signal?: AbortSignal) => {
+      // pi-agent-core 1.5.1 replaced shouldStopAfterTurn with finishTurn and
+      // moved the turn context into the callback argument. The tool name now
+      // lives on toolResults, not on the context root.
+      //
+      // prepareNextTurnWithContext is the seam that finally lets the
+      // sufficiency reround replace the next provider request: the old boolean
+      // hook could not write gate.applyTo() back into agent state.
+      finishTurn: async (turn: any, signal?: AbortSignal) => {
         // Design: an aborted run stops the turn loop before the cold memory
-        // path — no gate/consolidate anchor is written after cancellation. A
-        // consolidation already awaiting its own LLM call is not interrupted
-        // here (MemoryPipeline has no signal seam); that in-flight write can
-        // still land after the abort.
-        if (signal?.aborted) return true;
-        const messages = (agent as any).state?.messages || [];
+        // path — no gate/consolidate anchor is written after cancellation.
+        if (signal?.aborted) return { action: "end" as const };
+        const messages = turn?.context?.messages ?? (agent as any).state?.messages ?? [];
         // #113: current context occupancy, not cumulative run spend. The
-        // usage figure from the last assistant call is combined with a
-        // trailing-message estimate so a tool result appended after that call
-        // is counted before the next provider request. Cumulative totals
-        // remain ledger-only (settled below after the run).
-        const totalTokens = resolveContextOccupancy(usageTotals.lastTotalTokens, messages);
-        // 3-line sequential call — evaluate -> applyTo -> consolidate.
-        // Claim-ticket pattern: gate.evaluate returns envelope, gate.applyTo injects, pipeline.consolidate consumes.
-        const lastTool = ctx?.lastToolName || ctx?.toolName || "";
-        const hasSearchTurn = typeof lastTool === "string" && lastTool.includes("search");
+        // leading system message (prompt + tool declarations) is excluded here
+        // because the provider usage anchor already counts it.
+        const conversation = messages.filter((m: any) => m?.role !== "system");
+        const totalTokens = resolveContextOccupancy(usageTotals.lastTotalTokens, conversation);
+        const toolResults: any[] = Array.isArray(turn?.toolResults) ? turn.toolResults : [];
+        const hasSearchTurn = toolResults.some((r: any) => String(r?.toolName ?? "").includes("search"))
+          || (typeof turn?.lastToolName === "string" && turn.lastToolName.includes("search"));
 
         if (this.gate && this.pipeline) {
           try {
             const env = await this.gate.evaluate(messages);
             const enriched = this.gate.applyTo(messages, env);
+            // Only a real enrichment changes the next request.
+            if (env.enrichedEnvelope !== null && enriched !== messages) {
+              pendingTurnMessages = enriched;
+            }
             await this.pipeline.consolidate(enriched, totalTokens, env.hasRetrievalEvidence || hasSearchTurn);
           } catch { }
         } else if (this.pipeline) {
           try { await this.pipeline.consolidate(messages, totalTokens, hasSearchTurn); } catch { }
         }
-        return false;
+        return undefined;
       },
+      prepareNextTurnWithContext: async (turn: any) => {
+        if (!pendingTurnMessages) return undefined;
+        const nextMessages = pendingTurnMessages;
+        pendingTurnMessages = null;
+        return { context: { ...(turn?.context ?? {}), messages: nextMessages } };
+      },
+
     });
 
     // decision 3: subscribe 9 events -> our 7 AgentEvent types.

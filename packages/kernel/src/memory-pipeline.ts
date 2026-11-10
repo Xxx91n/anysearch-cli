@@ -6,11 +6,53 @@
 // consolidate() is now a shell that calls pure consolidateState() then executes I/O.
 // signalSearchTurn() DELETED — replaced by hasRetrievalEvidence parameter.
 
-import { generateSummaryWithUsage } from "@earendil-works/pi-agent-core";
-// reuse summary engine only, NOT compact window management.
-// Own constant so upstream window-management namespace changes cannot break L0.
-const COMPACTION_RESERVE_TOKENS = 16_384;
+// PROTOTYPE (pi-1.5.1 window): pi-agent-core no longer ships a summary engine
+// and pi-coding-agent's root entry cannot be bundled into the CJS CLI/MCP
+// (it reads import.meta.url at import time). This local summarizer keeps the
+// rolling-summary contract (one direct LLM request, previous summary merged)
+// without that dependency.
+const SUMMARIZATION_SYSTEM_PROMPT =
+  "You are a context summarization assistant. Your task is to read a conversation " +
+  "between a user and an AI assistant, then produce a structured summary following the " +
+  "exact format specified. Do NOT continue the conversation. Do NOT respond to any " +
+  "questions in the conversation. ONLY output the structured summary.";
 
+async function generateSummaryViaStream(
+  streamFn: any,
+  model: any,
+  messages: any[],
+  apiKey: string | undefined,
+  signal: AbortSignal | undefined,
+  customInstructions: string | undefined,
+  previousSummary: string | undefined,
+): Promise<{ text: string }> {
+  const serialized = serializeTranscriptForSummary(messages);
+  const prompt = [
+    previousSummary
+      ? "=== Previous summary ===\n" + previousSummary + "\n\nUpdate it with the new turns below."
+      : "Summarize the conversation below.",
+    customInstructions ?? "",
+    "=== Conversation ===",
+    serialized,
+  ].filter(Boolean).join("\n\n");
+  const context = {
+    messages: [
+      { role: "system", content: SUMMARIZATION_SYSTEM_PROMPT },
+      { role: "user", content: prompt },
+    ],
+  };
+  let text = "";
+  const stream = streamFn(model, context, { ...(apiKey ? { apiKey } : {}), ...(signal ? { signal } : {}) });
+  for await (const event of stream) {
+    if (event?.type === "text_delta" && typeof event.delta === "string") text += event.delta;
+    else if (event?.type === "text" && event.text) text += event.text;
+    else if (event?.type === "done" && event.message) {
+      const blocks = Array.isArray(event.message.content) ? event.message.content : [];
+      for (const block of blocks) if (block?.type === "text" && typeof block.text === "string") text += block.text;
+    }
+  }
+  return { text: text.trim() };
+}
 // Upper bound for the background summarization call. It is fire-and-forget
 // during a turn but the code that owns it drains it before closing the
 // store (#129), so an unbounded provider stall would hold the CLI open until the
@@ -21,7 +63,7 @@ import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
 import { RagAdapterRegistry, RAG_CONTEXT_TAG, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
 import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
-import { appendMessageText, prependMessageText, readMessageText } from "./message-text";
+import { appendMessageText, prependMessageText, readMessageText, serializeTranscriptForSummary } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
 import { isTimeSensitive, isEvergreen } from "@anysearch-cli/store"; // no inline regex copies
@@ -90,7 +132,10 @@ export function distillGap(messages: any[], fromIdx: number): TaggedGap {
   const results: TaggedGap["results"] = [];
   let label: SourceTraceLabel = { source: "retrieved", traceId: "gap" };
   for (const msg of gap) {
-    if (msg.role !== "tool") continue;
+    // pi-agent-core 1.5.1 appends a separate toolResult message; older shapes
+    // used a role:"tool" message. Accept both so gap distillation survives the
+    // SDK upgrade.
+    if (msg.role !== "tool" && msg.role !== "toolResult") continue;
     const toolName = msg.toolName || msg.name || "";
     if (typeof toolName !== "string" || !toolName.includes("search")) continue;
     const raw = typeof msg.content === "string"
@@ -166,7 +211,10 @@ export async function adjudicateReuseCompress(
   try {
     const stream = streamFn(model, context, signal ? { signal } : {});
     for await (const event of stream) {
-      if (event?.type === "text" && event.text) text += event.text;
+      // 1.5.1 streams text as text_delta.delta; the monolithic "text" event
+      // was the pre-upgrade shape.
+      if (event?.type === "text_delta" && typeof event.delta === "string") text += event.delta;
+      else if (event?.type === "text" && event.text) text += event.text;
     }
   } catch {
     return "compress"; // D10: fail-open.
@@ -618,17 +666,21 @@ export class MemoryPipeline {
           };
           // Tracked: flush() must see this write before the store is closed.
           this.track(
-            generateSummaryWithUsage(
-              messages, modelsObj, actualModel,
-              COMPACTION_RESERVE_TOKENS,
-              deadline ?? AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS),
-              IR_CUSTOM_INSTRUCTIONS,
-              previousSummary,
-              "off",
-            ).then((summaryResult: any) => {
-              if (summaryResult?.ok && summaryResult.value?.text) {
+            (async () => {
+              const apiKey = await getApiKey?.();
+              return generateSummaryViaStream(
+                streamFn,
+                actualModel,
+                messages,
+                apiKey,
+                deadline ?? AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS),
+                IR_CUSTOM_INSTRUCTIONS,
+                previousSummary,
+              );
+            })().then((summaryResult: any) => {
+              if (summaryResult?.text) {
                 return store!.saveAnchor(sessionId!, "rolling_summary", {
-                  summary: summaryResult.value.text,
+                  summary: summaryResult.text,
                   tokenWatermark: totalTokens,
                   timestamp: Date.now(),
                 }).catch(() => {});
@@ -690,11 +742,17 @@ export class MemoryPipeline {
       } catch {}
 
       // L2 cold path — FTS5 recall.
+      // 1.5.1 stores assistant tool calls as type:"toolCall" with `arguments`;
+      // the legacy tool_use/input shape is kept as a fallback for adapted
+      // transcripts and older tests.
+      const isSearchCall = (c: any) =>
+        (c?.type === "toolCall" || c?.type === "tool_use") &&
+        typeof c.name === "string" && c.name.includes("search");
       const lastToolCall = [...messages].reverse().find((m: any) =>
-        m.role === "assistant" && Array.isArray(m.content) &&
-        m.content.some((c: any) => c.type === "tool_use" && typeof c.name === "string" && c.name.includes("search"))
+        m.role === "assistant" && Array.isArray(m.content) && m.content.some(isSearchCall)
       );
-      const searchToolInput = lastToolCall?.content?.find((c: any) => c.type === "tool_use" && c.name?.includes("search"))?.input;
+      const searchBlock = lastToolCall?.content?.find(isSearchCall);
+      const searchToolInput = searchBlock?.arguments ?? searchBlock?.input;
       const l2Query = searchToolInput?.query || "";
       if (typeof l2Query === "string" && l2Query.length > 3) {
         // (Q2=B): S1 rewrite + RRF fusion. Fail-open via rewriteQuery when no LLM seam.

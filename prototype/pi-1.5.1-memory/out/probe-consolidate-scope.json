@@ -1,0 +1,225 @@
+{
+  "generatedAt": "2026-11-10T06:18:21.866Z",
+  "inputSource": "real SQLite store; scripted summarize/classify seams",
+  "findings": [
+    {
+      "id": "Q3-1",
+      "question": "限定 session A 后，只整理 A 的资料，B 的寿司资料不混入",
+      "ok": true,
+      "evidence": {
+        "report": {
+          "dryRun": false,
+          "clustersScanned": 1,
+          "clustersTriggered": 1,
+          "llmUnavailable": 0,
+          "gateRejected": 0,
+          "add": 1,
+          "noop": 0,
+          "update": 0,
+          "embeddingAbsent": 0,
+          "singleEvidenceSkipped": 0,
+          "semanticIds": [
+            1
+          ]
+        },
+        "semanticRows": [
+          {
+            "id": 1,
+            "content": "Tempura shop operating hours are 10:00-21:00.",
+            "source_episode_ids": "[1,2,3]",
+            "salience": 0.7000000000000001,
+            "confidence": 1,
+            "created_at": "2026-11-10 06:18:21",
+            "valid_until": null
+          }
+        ],
+        "sushiMentioned": false,
+        "scannedEpisodes": [
+          {
+            "id": 1,
+            "session_id": "244c83f4-9a95-4891-8081-328775fa8818",
+            "entity": "tempura-shop"
+          },
+          {
+            "id": 2,
+            "session_id": "244c83f4-9a95-4891-8081-328775fa8818",
+            "entity": "tempura-shop"
+          },
+          {
+            "id": 3,
+            "session_id": "244c83f4-9a95-4891-8081-328775fa8818",
+            "entity": "tempura-shop"
+          },
+          {
+            "id": 4,
+            "session_id": "e6df5fc7-122b-48b9-8c7b-dca594391339",
+            "entity": "tempura-shop"
+          },
+          {
+            "id": 5,
+            "session_id": "e6df5fc7-122b-48b9-8c7b-dca594391339",
+            "entity": "tempura-shop"
+          },
+          {
+            "id": 6,
+            "session_id": "e6df5fc7-122b-48b9-8c7b-dca594391339",
+            "entity": "tempura-shop"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Q3-2",
+      "question": "重复整理同一范围不产生重复知识",
+      "ok": true,
+      "evidence": {
+        "report": {
+          "dryRun": false,
+          "clustersScanned": 1,
+          "clustersTriggered": 1,
+          "llmUnavailable": 0,
+          "gateRejected": 0,
+          "add": 0,
+          "noop": 1,
+          "update": 0,
+          "embeddingAbsent": 0,
+          "singleEvidenceSkipped": 0,
+          "semanticIds": []
+        },
+        "semanticCount": 1
+      }
+    },
+    {
+      "id": "Q3-3",
+      "question": "单条可靠新证据可跨会话纠错：旧结论关闭，新结论写入",
+      "ok": true,
+      "evidence": {
+        "report": {
+          "dryRun": false,
+          "clustersScanned": 1,
+          "clustersTriggered": 1,
+          "llmUnavailable": 0,
+          "gateRejected": 0,
+          "add": 0,
+          "noop": 0,
+          "update": 1,
+          "embeddingAbsent": 0,
+          "singleEvidenceSkipped": 0,
+          "semanticIds": [
+            2
+          ]
+        },
+        "live": [
+          {
+            "id": 2,
+            "content": "Tempura shop operating hours are no longer 10:00-21:00; they are now 09:00-22:00.",
+            "source_episode_ids": "[1,2,3,7]",
+            "created_at": "2026-11-10 06:18:21",
+            "valid_until": null
+          }
+        ],
+        "closed": [
+          {
+            "id": 1,
+            "content": "Tempura shop operating hours are 10:00-21:00.",
+            "valid_until": "2026-11-10 06:18:21"
+          }
+        ],
+        "sourceEpisodesOfNew": [
+          1,
+          2,
+          3,
+          7
+        ],
+        "newEpisodeId": 7
+      }
+    },
+    {
+      "id": "Q3-4",
+      "question": "纠错后旧结论退出有效检索、新结论可检索",
+      "ok": true,
+      "evidence": {
+        "hitsOld": [
+          "Tempura shop operating hours are 10:00-21:00, source 1.",
+          "Tempura shop operating hours are 10:00-21:00, source 2.",
+          "Tempura shop operating hours are 10:00-21:00, source 3.",
+          "Tempura shop operating hours are no longer 10:00-21:00; they are now 09:00-22:00 as of this reliable source.",
+          "Tempura shop operating hours are no longer 10:00-21:00; they are now 09:00-22:00."
+        ],
+        "hitsNew": [
+          "Tempura shop operating hours are no longer 10:00-21:00; they are now 09:00-22:00 as of this reliable source.",
+          "Tempura shop operating hours are 10:00-21:00, source 1.",
+          "Tempura shop operating hours are 10:00-21:00, source 2.",
+          "Tempura shop operating hours are 10:00-21:00, source 3.",
+          "Tempura shop operating hours are no longer 10:00-21:00; they are now 09:00-22:00."
+        ],
+        "staleStillReturned": false
+      }
+    },
+    {
+      "id": "Q3-5",
+      "question": "不开启单条纠错时，单条资料不会触发整理",
+      "ok": true,
+      "evidence": {
+        "report": {
+          "dryRun": false,
+          "clustersScanned": 1,
+          "clustersTriggered": 0,
+          "llmUnavailable": 0,
+          "gateRejected": 0,
+          "add": 0,
+          "noop": 0,
+          "update": 0,
+          "embeddingAbsent": 0,
+          "singleEvidenceSkipped": 0,
+          "semanticIds": []
+        }
+      }
+    },
+    {
+      "id": "Q3-6",
+      "question": "纠错后，旧会话的滚动摘要仍然保留已被纠正的事实（派生摘要传播缺口）",
+      "ok": false,
+      "evidence": {
+        "anchors": [
+          {
+            "session_id": "244c83f4-9a95-4891-8081-328775fa8818",
+            "anchor_type": "rolling_summary",
+            "payload": "{\"summary\":\"Tempura shop operating hours are 10:00-21:00.\",\"tokenWatermark\":100,\"timestamp\":1794291501850}"
+          }
+        ],
+        "staleSummaryStillInjectable": true
+      }
+    },
+    {
+      "id": "Q3-7",
+      "question": "来源 ID、写入时间与更新关系（valid_until）都保留",
+      "ok": true,
+      "evidence": {
+        "newRow": {
+          "id": 2,
+          "content": "Tempura shop operating hours are no longer 10:00-21:00; they are now 09:00-22:00.",
+          "source_episode_ids": "[1,2,3,7]",
+          "created_at": "2026-11-10 06:18:21",
+          "valid_until": null
+        },
+        "closedRow": {
+          "id": 1,
+          "content": "Tempura shop operating hours are 10:00-21:00.",
+          "valid_until": "2026-11-10 06:18:21"
+        },
+        "episodeCount": 8,
+        "semanticEpisodeLinks": [
+          {
+            "id": 1,
+            "source_episode_ids": "[1,2,3]"
+          },
+          {
+            "id": 2,
+            "source_episode_ids": "[1,2,3,7]"
+          }
+        ]
+      }
+    }
+  ]
+}

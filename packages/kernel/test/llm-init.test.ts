@@ -141,7 +141,10 @@ ok(threwFractional, "#113: fractional contextWindow floors to 0 and fails fast")
 
 for (const kind of ["chat", "messages", "responses"] as LlmEndpointKind[]) {
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    ok(req.url === endpointConfig[kind].expectedPath, kind + " protocol hits " + endpointConfig[kind].expectedPath + " (got " + req.url + ")");
+    // pi-ai 1.5.1's anthropic transport appends a query string (?beta=true).
+    // Route matching is path-only; the protocol is decided by the path.
+    const gotPath = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+    ok(gotPath === endpointConfig[kind].expectedPath, kind + " protocol hits " + endpointConfig[kind].expectedPath + " (got " + req.url + ")");
     res.writeHead(200, { "Content-Type": "text/event-stream" });
     res.end(sseBody(kind));
   });

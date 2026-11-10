@@ -19,7 +19,7 @@ import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate } from "./entity.js";
 import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch-cli/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
-import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
+import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ConsolidateOptions, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
 import { BudgetLedger, UNLIMITED_BUDGET_CAP, type BudgetCaps } from "./budget-ledger.js";
 // embedding is optional — routed through the guarded arm
@@ -1012,7 +1012,7 @@ export class SqliteSessionStore implements SessionStore {
   }
   // ---- turn older episodes into semantic memories (D2/D4) + reversible forgetting (D5) ----
 
-  async consolidateMemory(opts?: { dryRun?: boolean; limit?: number }): Promise<ConsolidateReport> {
+  async consolidateMemory(opts?: ConsolidateOptions): Promise<ConsolidateReport> {
     return consolidateMemoryRun(this.db, { summarize: this.consolidateSummarize, classify: this.consolidateClassify }, opts ?? {});
   }
 

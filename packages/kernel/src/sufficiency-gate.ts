@@ -30,8 +30,27 @@ export interface GateEnvelope {
   targetMessageIndex: number;         // index of the tool_result message to update
 }
 
-export class SufficiencyEvaluator {
-  private deps: SufficiencyEvaluatorDeps;
+/**
+ * Text of a tool-result message in either supported transcript shape:
+ * pi-agent-core 1.5.1's standalone `toolResult` message, or the legacy
+ * `user` message holding a `tool_result` content block.
+ */
+export function toolResultText(message: any): string | undefined {
+  if (!message) return undefined;
+  if (message.role === "toolResult") {
+    const blocks: any[] = Array.isArray(message.content) ? message.content : [];
+    const text = blocks.map((c: any) => (typeof c?.text === "string" ? c.text : "")).join("");
+    return text || undefined;
+  }
+  if (message.role === "user" && Array.isArray(message.content)) {
+    const block = message.content.find((c: any) => c?.type === "tool_result");
+    const text = block?.content?.[0]?.text;
+    return typeof text === "string" && text ? text : undefined;
+  }
+  return undefined;
+}
+
+export class SufficiencyEvaluator {  private deps: SufficiencyEvaluatorDeps;
 
   constructor(deps: SufficiencyEvaluatorDeps) {
     this.deps = deps;
@@ -49,25 +68,21 @@ export class SufficiencyEvaluator {
     const maxRerounds = (domain as any).compaction?.sufficiencyMaxRerounds ?? 1;
     if (maxRerounds <= 0) return empty;
 
-    // Find last tool_result that contains envelope with sufficiency (top-level or metadata).
+    // Find the last tool result that carries a fused envelope. pi-agent-core
+    // 1.5.1 emits a standalone toolResult message; older shapes wrapped the
+    // text in a user message's tool_result block.
     let targetIndex = -1;
-    let lastSearchResult: any = null;
+    let envelopeJson: string | undefined;
     for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (m.role === "user" && Array.isArray(m.content) &&
-          m.content.some((c: any) => c.type === "tool_result" && c.content?.[0]?.text?.includes("sufficiency"))) {
-        targetIndex = i;
-        lastSearchResult = m;
-        break;
-      }
+      const text = toolResultText(messages[i]);
+      if (!text || !text.includes("sufficiency")) continue;
+      targetIndex = i;
+      envelopeJson = text;
+      break;
     }
-    if (targetIndex < 0 || !lastSearchResult) return empty;
+    if (targetIndex < 0 || !envelopeJson) return empty;
 
     try {
-      const toolResultContent = lastSearchResult.content.find((c: any) => c.type === "tool_result");
-      const envelopeJson = toolResultContent?.content?.[0]?.text;
-      if (!envelopeJson) return empty;
-
       const parsedEnvelope = JSON.parse(envelopeJson);
       const envelope = unwrapRetrieved(parsedEnvelope) ?? parsedEnvelope;
       // extract GapRequests from attribution for GateEnvelope.
@@ -95,13 +110,12 @@ export class SufficiencyEvaluator {
 
       let gapQuery = "";
       const apiKey = await getApiKey?.();
-      const stream = streamFn({
-        model: model,
-        messages: gapPrompt,
-        thinkingLevel: "off",
-      }, { apiKey });
+      // 1.5.1 stream contract: streamFn(model, context, options). The old
+      // 0.84.2 shape passed a single {model, messages} object.
+      const stream = streamFn(model, { messages: gapPrompt }, { apiKey });
       for await (const chunk of stream) {
-        if (chunk?.type === "text" && chunk.text) gapQuery += chunk.text;
+        if (chunk?.type === "text_delta" && typeof chunk.delta === "string") gapQuery += chunk.delta;
+        else if (chunk?.type === "text" && chunk.text) gapQuery += chunk.text;
         else if (chunk?.delta) gapQuery += chunk.delta;
       }
       gapQuery = gapQuery.trim().replace(/^["']|["']$/g, "");
@@ -148,6 +162,17 @@ export class SufficiencyEvaluator {
     if (envelope.targetMessageIndex >= messages.length) return messages;
 
     const target = messages[envelope.targetMessageIndex];
+    const replacement = JSON.stringify(envelope.enrichedEnvelope, null, 2);
+
+    // 1.5.1: tool results are standalone messages whose text blocks carry the
+    // envelope. Replace the text channel in place, keeping the tool identity.
+    if (target?.role === "toolResult" && Array.isArray(target.content)) {
+      return messages.map((m, i) => i === envelope.targetMessageIndex
+        ? { ...target, content: target.content.map((c: any) => (c?.type === "text" ? { ...c, text: replacement } : c)) }
+        : m);
+    }
+
+    // Legacy shape: a user message holding a tool_result block.
     const toolResultContent = target.content?.find((c: any) => c.type === "tool_result");
     if (!toolResultContent) return messages;
 

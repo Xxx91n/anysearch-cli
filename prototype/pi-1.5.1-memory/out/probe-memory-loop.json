@@ -1,0 +1,134 @@
+{
+  "generatedAt": "2026-11-10T06:18:17.863Z",
+  "inputSource": "real kernel + real SQLite store, scripted provider",
+  "findings": [
+    {
+      "id": "Q2-1",
+      "question": "ans_chat 内部搜索的结果写进了 retrieval_results",
+      "ok": true,
+      "evidence": {
+        "rows": [
+          {
+            "id": 1,
+            "session_id": "7e7bbf54-1ef4-4cad-8408-3ac4a12fa33b",
+            "url": "https://probe.example/a",
+            "title": "Probe result A",
+            "snippet": "FIRST-EVIDENCE: the probe memory wiring fact lives in this snippet.",
+            "source": "tavily"
+          }
+        ],
+        "rowCount": 1,
+        "anchors": [
+          "consolidation_state",
+          "rolling_summary",
+          "rolling_summary",
+          "l2_recall",
+          "l2_recall"
+        ],
+        "searchCalls": [
+          "probe memory wiring",
+          "probe reround query",
+          "probe reround query",
+          "probe memory wiring",
+          "probe reround query",
+          "probe reround query"
+        ],
+        "providerCalls": [
+          "main",
+          "gap-query",
+          "summary",
+          "main",
+          "gap-query",
+          "summary"
+        ]
+      }
+    },
+    {
+      "id": "Q2-2",
+      "question": "新一轮补搜在下一轮请求里可见（prepareNextTurnWithContext 接线生效）",
+      "ok": true,
+      "evidence": {
+        "providerCalls": [
+          {
+            "kind": "main",
+            "roles": [
+              "system",
+              "user"
+            ]
+          },
+          {
+            "kind": "gap-query",
+            "roles": [
+              "system",
+              "user"
+            ]
+          },
+          {
+            "kind": "summary",
+            "roles": [
+              "system",
+              "user"
+            ]
+          },
+          {
+            "kind": "main",
+            "roles": [
+              "system",
+              "user",
+              "assistant",
+              "toolResult"
+            ]
+          },
+          {
+            "kind": "gap-query",
+            "roles": [
+              "system",
+              "user"
+            ]
+          },
+          {
+            "kind": "summary",
+            "roles": [
+              "system",
+              "user"
+            ]
+          }
+        ],
+        "mainRequestHasReroundEvidence": [
+          false,
+          true
+        ],
+        "gateRan": true
+      }
+    },
+    {
+      "id": "Q2-3",
+      "question": "后续会话的模型请求真的带上了上次检索到的资料",
+      "ok": true,
+      "evidence": {
+        "requestRoles": [
+          "system",
+          "user"
+        ],
+        "hasResearchRecallTag": true,
+        "hasStoredEvidenceText": true,
+        "hasSessionMemoryTag": true,
+        "hasRecoveryDigest": false,
+        "providerCalls": [
+          "main",
+          "summary"
+        ]
+      }
+    },
+    {
+      "id": "Q2-4",
+      "question": "对照组：不写下检索结果时，后续会话取不回资料",
+      "ok": true,
+      "evidence": {
+        "hasStoredEvidenceText": false,
+        "hasResearchRecallTag": false,
+        "controlArchiveHits": 0
+      }
+    }
+  ]
+}

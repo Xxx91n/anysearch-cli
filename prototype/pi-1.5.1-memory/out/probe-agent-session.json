@@ -1,0 +1,146 @@
+{
+  "generatedAt": "2026-11-10T06:18:15.263Z",
+  "versions": {
+    "piAgentCore": "1.5.1",
+    "piAi": "1.5.1",
+    "piCodingAgent": "1.5.1"
+  },
+  "inputSource": "real createAgentSession + ModelRuntime + SessionManager; local SSE endpoint (no real model)",
+  "findings": [
+    {
+      "id": "Q1-SDK-0",
+      "question": "显式 provider/model 注册可在 ModelRuntime 里取回",
+      "ok": true,
+      "evidence": {
+        "modelFound": true,
+        "modelId": "proto-model",
+        "providerCount": 44
+      }
+    },
+    {
+      "id": "Q1-SDK-1",
+      "question": "完整会话 SDK 下活动的工具只有我们放行的那一个",
+      "ok": true,
+      "evidence": {
+        "activeToolNames": [
+          "search"
+        ],
+        "extensionCount": 0,
+        "extensionErrors": [],
+        "discoveredSkills": 70,
+        "discoveredPrompts": 0,
+        "agentsFiles": 0,
+        "registeredToolCount": 1
+      }
+    },
+    {
+      "id": "Q1-SDK-1b",
+      "question": "默认发现机制是否在空目录下仍然加载了额外资源",
+      "ok": false,
+      "evidence": {
+        "discoveredSkills": 70,
+        "skillNames": [
+          "agent-reach",
+          "commands",
+          "android-reverse-engineering",
+          "atomcode-research",
+          "code-vulnscan"
+        ],
+        "discoveredPrompts": 0,
+        "agentsFiles": 0,
+        "zeroDiscovery": false
+      }
+    },
+    {
+      "id": "Q1-SDK-1c",
+      "question": "自定义空 ResourceLoader 后，技能/提示/扩展/AGENTS 文件全部为 0",
+      "ok": true,
+      "evidence": {
+        "activeToolNames": [
+          "search"
+        ],
+        "skills": 0,
+        "prompts": 0,
+        "extensions": 0,
+        "agentsFiles": 0,
+        "systemPromptIsUndefined": true
+      }
+    },
+    {
+      "id": "Q1-SDK-2",
+      "question": "AgentSession 构造后替换了宿主自带的 beforeToolCall（URL 闸门/饱和停止会被绕过）",
+      "ok": true,
+      "evidence": {
+        "hookIsSessionHook": true,
+        "hookSourceHead": "(context) => this._beforeToolCall(context)",
+        "afterToolCallIsSessionHook": true,
+        "transformContextChains": true,
+        "prepareRequestChains": true
+      }
+    },
+    {
+      "id": "Q1-SDK-3",
+      "question": "宿主在构造后重新包一层，仍能拿回工具调用前的控制权",
+      "ok": true,
+      "evidence": {
+        "guardInstalled": true
+      }
+    },
+    {
+      "id": "Q1-SDK-4",
+      "question": "完整 SDK 能实际跑一轮：请求到达端点、会话消息被记录、agent_settled 出现",
+      "ok": true,
+      "evidence": {
+        "httpRequests": 1,
+        "httpPaths": [
+          "/v1/chat/completions"
+        ],
+        "sessionRoles": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "settled": true,
+        "reportedTokens": {
+          "input": 10,
+          "output": 2,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 12
+        }
+      }
+    },
+    {
+      "id": "Q1-SDK-5",
+      "question": "完整 SDK 的手动压缩改变会话投影，旧长文被摘要取代",
+      "ok": true,
+      "evidence": {
+        "beforeMessages": 5,
+        "afterMessages": 4,
+        "hasCompactionSummary": true,
+        "oldTextStillInProjection": false,
+        "stats": {
+          "sessionId": "01a1c41b-703a-7651-bcbb-9bde8000d64e",
+          "userMessages": 2,
+          "assistantMessages": 2,
+          "toolCalls": 0,
+          "toolResults": 0,
+          "totalMessages": 5,
+          "tokens": {
+            "input": 30,
+            "output": 6,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 36
+          },
+          "cost": 0,
+          "contextUsage": {
+            "tokens": null,
+            "contextWindow": 2000,
+            "percent": null
+          }
+        }
+      }
+    }
+  ]
+}

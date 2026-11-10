@@ -9,7 +9,13 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 interface ConsolidateStore {
-  consolidateMemory(opts?: { dryRun?: boolean; limit?: number }): Promise<{
+  consolidateMemory(opts?: {
+    dryRun?: boolean;
+    limit?: number;
+    sessionIds?: string[];
+    memoryIds?: number[];
+    allowSingleEvidence?: boolean;
+  }): Promise<{
     dryRun: boolean; clustersScanned: number; clustersTriggered: number;
     llmUnavailable: number; gateRejected: number; add: number; noop: number; update: number;
     semanticIds: number[];
@@ -20,11 +26,14 @@ function help(): string {
   return [
     "ans consolidate - turn episode records into semantic memories ",
     "",
-    "Usage: ans consolidate [--dry-run|--apply] [--limit N]",
+    "Usage: ans consolidate [--dry-run|--apply] [--limit N] [--session ID]... [--memory ID]... [--single-evidence]",
     "",
     "Episodes are clustered by entity; clusters meeting the deterministic trigger are summarized",
     "through the configured LLM (ANS_LLM_PROVIDER/MODEL, optional ANS_LLM_BASE_URL+ANS_LLM_API),",
     "gated per-claim against source evidence, then written to semantic_memories (RRF sixth arm).",
+    "--session / --memory restrict the run to those episodes (repeatable).",
+    "--single-evidence lets one contradicting episode correct a live semantic memory; it can",
+    "update, never add.",
     "--dry-run runs inside a rolled-back transaction (exact prediction, no writes). Default: --apply.",
     "Without an LLM configured the run reports llmUnavailable clusters and writes nothing (exit 1).",
     "",
@@ -36,13 +45,34 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   if (cmd === "--help" || cmd === "-h") { process.stdout.write(help()); return 0; }
   const { flags: llmFlags, argv: args } = parseLlmFlags(argv);
   // Reject unknown flags instead of silently running --apply.
+  const sessionIds: string[] = [];
+  const memoryIds: number[] = [];
+  let allowSingleEvidence = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === "--limit") { i++; continue; }
+    if (a === "--limit" || a === "--session" || a === "--memory") { i++; continue; }
+    if (a === "--single-evidence") { allowSingleEvidence = true; continue; }
     if (a !== "--dry-run" && a !== "--apply") {
       process.stderr.write("ans consolidate: unknown flag " + a + "\n");
       return 2;
     }
+  }
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--session" && args[i + 1] !== undefined) sessionIds.push(args[++i]!);
+    else if (args[i] === "--memory") {
+      const raw = args[i + 1];
+      const id = Number(raw);
+      if (raw === undefined || !Number.isInteger(id) || id < 1) {
+        process.stderr.write("ans consolidate: --memory must be a positive integer id\n");
+        return 2;
+      }
+      memoryIds.push(id);
+      i++;
+    }
+  }
+  if (args.includes("--session") && sessionIds.length === 0) {
+    process.stderr.write("ans consolidate: --session requires an id\n");
+    return 2;
   }
   const dryRun = args.includes("--dry-run");
   const li = args.indexOf("--limit");
@@ -99,7 +129,13 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   mkdirSync(dirname(dbPath), { recursive: true });
   const store = new SqliteSessionStore(dbPath, { consolidateSummarize: summarize, consolidateClassify: classify });
 
-  const r = await store.consolidateMemory({ dryRun, limit });
+  const r = await store.consolidateMemory({
+    dryRun,
+    limit,
+    ...(sessionIds.length > 0 ? { sessionIds } : {}),
+    ...(memoryIds.length > 0 ? { memoryIds } : {}),
+    ...(allowSingleEvidence ? { allowSingleEvidence } : {}),
+  });
   process.stdout.write(
     "consolidate" + (dryRun ? " (dry-run)" : "") +
       ": scanned " + r.clustersScanned + " cluster(s), triggered " + r.clustersTriggered +

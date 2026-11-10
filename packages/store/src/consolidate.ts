@@ -62,6 +62,9 @@ export interface ConsolidateReport {
   // dedup decisions made on the jaccard-only degraded path (no cosine
   // computable — arm absent or no live row carries an embedding). Never silent.
   embeddingAbsent: number;
+  // single-evidence episodes that were rejected because they did not
+  // contradict anything (a lone episode may correct, never create).
+  singleEvidenceSkipped: number;
   semanticIds: number[];
 }
 
@@ -132,19 +135,34 @@ function blobToFloat32(b: Buffer): Float32Array {
   return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
 }
 
+// PROTOTYPE (pi-1.5.1 window): scoped consolidation options.
+// - sessionIds / memoryIds restrict WHICH episodes may be summarized.
+// - allowSingleEvidence lets one sufficiently reliable contradicting episode
+//   correct an existing live semantic memory, bypassing CLUSTER_MIN. Single
+//   evidence may only UPDATE, never ADD.
+export interface ConsolidateOptions {
+  dryRun?: boolean;
+  thetaDup?: number;
+  limit?: number;
+  sessionIds?: string[];
+  memoryIds?: number[];
+  allowSingleEvidence?: boolean;
+}
+
 // D2/D4 main pipeline: signal-gated cluster scan -> summarize seam -> fidelity gate ->
 // deterministic ops quadruple. dryRun runs the identical write path inside a rolled-back
 // BEGIN IMMEDIATE transaction, so its counters are an exact prediction of apply.
 export async function consolidateMemoryRun(
   db: Database.Database,
   deps: { summarize?: ConsolidateSummarizeFn; classify?: ConsolidateClassifyFn } = {},
-  opts: { dryRun?: boolean; thetaDup?: number; limit?: number } = {},
+  opts: ConsolidateOptions = {},
 ): Promise<ConsolidateReport> {
   const dryRun = opts.dryRun === true;
   const theta = opts.thetaDup ?? THETA_DUP;
   const report: ConsolidateReport = {
     dryRun, clustersScanned: 0, clustersTriggered: 0, llmUnavailable: 0,
-    gateRejected: 0, add: 0, noop: 0, update: 0, embeddingAbsent: 0, semanticIds: [],
+    gateRejected: 0, add: 0, noop: 0, update: 0, embeddingAbsent: 0, singleEvidenceSkipped: 0,
+    semanticIds: [],
   };
 
   // plan phase (scan + LLM summarize + classify + dedup) runs WITHOUT the
@@ -154,13 +172,24 @@ export async function consolidateMemoryRun(
   const plan = async (): Promise<void> => {
     // Cluster scan INCLUDES superseded rows (valid_until NOT NULL): same-entity writes soft-close
     // the prior version immediately, so episodic history *is* the closed-row set.
+    const scope: string[] = [];
+    const scopeParams: Array<string | number> = [];
+    if (opts.memoryIds && opts.memoryIds.length > 0) {
+      scope.push("id IN (" + opts.memoryIds.map(() => "?").join(", ") + ")");
+      scopeParams.push(...opts.memoryIds);
+    } else if (opts.sessionIds && opts.sessionIds.length > 0) {
+      scope.push("session_id IN (" + opts.sessionIds.map(() => "?").join(", ") + ")");
+      scopeParams.push(...opts.sessionIds);
+    }
     const rows = db
       .prepare(
         "SELECT id, entity, title, snippet, url, created_at, last_accessed, access_count " +
           "FROM retrieval_results WHERE entity IS NOT NULL " +
-          "AND quarantine IS NULL AND archived = 0 ORDER BY entity, id",
+          "AND quarantine IS NULL AND archived = 0 " +
+          (scope.length > 0 ? "AND " + scope[0] + " " : "") +
+          "ORDER BY entity, id",
       )
-      .all() as EpisodeRow[];
+      .all(...scopeParams) as EpisodeRow[];
 
     const byEntity = new Map<string, EpisodeRow[]>();
     for (const r of rows) {
@@ -176,7 +205,9 @@ export async function consolidateMemoryRun(
     for (const [, eps] of byEntity) {
       if (opts.limit && processed >= opts.limit) break;
       report.clustersScanned++;
-      if (eps.length < CLUSTER_MIN) continue;
+      // Single-evidence correction is an opt-in exception to the batch threshold.
+      const singleEvidence = eps.length === 1 && opts.allowSingleEvidence === true;
+      if (eps.length < CLUSTER_MIN && !singleEvidence) continue;
       // D2 deterministic trigger: oldest episode past its tier half-life OR low access signal.
       // No LLM scoring at trigger time.
       const oldest = eps[0];
@@ -246,7 +277,16 @@ export async function consolidateMemoryRun(
         report.semanticIds.push(Number(info.lastInsertRowid));
       };
 
-      const op = best ? decideOp(sawCos ? bestCos : null, bestJac, CONTRADICTION_RE.test(summary) || CONTRADICTION_RE.test(best.content), theta) : "add";
+      const contradiction = best
+        ? CONTRADICTION_RE.test(summary) || CONTRADICTION_RE.test(best.content)
+        : false;
+      let op = best ? decideOp(sawCos ? bestCos : null, bestJac, contradiction, theta) : "add";
+      if (singleEvidence) {
+        // One episode may correct an existing memory; it may not create new
+        // knowledge and does not count as a duplicate touch.
+        if (!best || !contradiction) { report.singleEvidenceSkipped++; continue; }
+        op = "update";
+      }
       if (best && op === "noop") {
         // D4 NOOP: touch only; the row is a stable anchor for idempotent reruns.
         const row = best;

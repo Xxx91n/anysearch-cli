@@ -22,8 +22,8 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.84.2",
-    "@earendil-works/pi-ai": "^0.84.2",
+    "@earendil-works/pi-agent-core": "^1.5.1",
+    "@earendil-works/pi-ai": "^1.5.1",
     "@modelcontextprotocol/node": "^2.1.2",
     "@modelcontextprotocol/server": "^2.4.0",
     "better-sqlite3": "^13.0.3",

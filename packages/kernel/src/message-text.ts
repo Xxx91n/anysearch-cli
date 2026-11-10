@@ -80,6 +80,73 @@ export function appendMessageText(message: unknown, suffix: string, target: Text
 }
 
 /**
+ * Approximate token count for one message.
+ *
+ * pi-agent-core 1.5.1 moved `estimateTokens` to pi-coding-agent, whose root
+ * entry cannot be bundled into the CJS CLI/MCP (it reads `import.meta.url` at
+ * import time). This local copy keeps the same chars/4 contract: text blocks,
+ * tool-call arguments, and tool-result text all count; image and thinking
+ * blocks do not.
+ */
+export function estimateMessageTokens(message: unknown): number {
+  const msg = message as { role?: unknown; content?: unknown } | null | undefined;
+  if (!msg) return 0;
+  const content = msg.content;
+  let chars = 0;
+  if (typeof content === "string") {
+    chars += content.length;
+  } else if (Array.isArray(content)) {
+    for (const block of content) {
+      if (!block || typeof block !== "object") continue;
+      const b = block as { type?: unknown; text?: unknown; arguments?: unknown };
+      if (b.type === "text" && typeof b.text === "string") chars += b.text.length;
+      else if (b.type === "toolCall") chars += JSON.stringify(b.arguments ?? {}).length;
+    }
+  }
+  return Math.ceil(chars / 4);
+}
+
+/**
+ * Sum of {@link estimateMessageTokens} over a transcript.
+ *
+ * Conservative by construction: it does not anchor on the last provider usage,
+ * so a caller that also has that anchor should take the larger of the two.
+ */
+export function estimateTranscriptTokens(messages: unknown[]): number {
+  let total = 0;
+  for (const message of messages ?? []) total += estimateMessageTokens(message);
+  return total;
+}
+
+/**
+ * Serialize a transcript to the plain-text form a summarizer reads.
+ *
+ * Tool call arguments are included so a summary can say what was searched;
+ * tool result text is included but capped, because the full payload is what
+ * compaction is trying to shrink.
+ */
+export function serializeTranscriptForSummary(messages: unknown[], perMessageCap = 4000): string {
+  return (messages ?? []).map((message) => {
+    const m = message as { role?: unknown; content?: unknown } | null | undefined;
+    const role = String(m?.role ?? "unknown");
+    const content = m?.content;
+    const blocks: string[] = [];
+    if (typeof content === "string") {
+      blocks.push(content);
+    } else if (Array.isArray(content)) {
+      for (const block of content) {
+        const b = block as { type?: unknown; text?: unknown; name?: unknown; arguments?: unknown } | null;
+        if (!b) continue;
+        if (b.type === "text" && typeof b.text === "string") blocks.push(b.text);
+        else if (b.type === "toolCall") blocks.push("[tool " + String(b.name ?? "") + "] " + JSON.stringify(b.arguments ?? {}));
+      }
+    }
+    const text = blocks.join("\n").slice(0, perMessageCap);
+    return "[" + role + "] " + text;
+  }).join("\n\n");
+}
+
+/**
  * Prepend `prefix` to a message's text channel, preserving the original shape.
  *
  * The mirror of {@link appendMessageText}, used by the T0 preferences block,

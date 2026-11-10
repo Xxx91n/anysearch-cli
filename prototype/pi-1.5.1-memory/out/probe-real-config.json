@@ -1,0 +1,58 @@
+{
+  "generatedAt": "2026-11-10T06:18:25.732Z",
+  "inputSource": "real ANS_LLM_* endpoint",
+  "findings": [
+    {
+      "id": "Q1-REAL-1",
+      "question": "配置输入完整（不含凭据内容）",
+      "ok": true,
+      "evidence": {
+        "provider": "openai",
+        "modelName": "deepseek-v4.1-flash",
+        "baseUrl": "https://amr-link.open-design.ai/v1",
+        "api": "chat",
+        "declaredWindow": 1048000,
+        "apiKeyPresent": true,
+        "apiKeyLength": 39
+      }
+    },
+    {
+      "id": "Q1-REAL-2",
+      "question": "真实模型的上下文窗口进入产品（不是 128K 占位）",
+      "ok": true,
+      "evidence": {
+        "modelContextWindow": 1048000,
+        "sessionContextWindow": 1048000,
+        "declaredWindow": 1048000,
+        "modelApi": "openai-completions",
+        "modelProvider": "openai",
+        "lowWatermarkAt80Percent": 838400
+      }
+    },
+    {
+      "id": "Q1-REAL-3",
+      "question": "真实端点 + 凭据可完成一次模型调用，用量可核对",
+      "ok": true,
+      "evidence": {
+        "answerHead": "OK",
+        "usage": {
+          "input": 35,
+          "output": 11,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "reasoning": 9,
+          "totalTokens": 46,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0,
+            "totalFromProvider": false
+          }
+        },
+        "stopReason": "stop"
+      }
+    }
+  ]
+}

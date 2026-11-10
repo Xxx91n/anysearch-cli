@@ -8,6 +8,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type {
   SpanAttributes,
+  SpanLink,
   SpanOptions,
   SpanStatus,
   TelemetryContext,
@@ -411,6 +412,12 @@ class ObservationSpanNode implements TelemetrySpan {
   setStatus(status: SpanStatus): void {
     if (this.settled) return;
     this.status = status;
+  }
+
+  // pi-telemetry 1.5.1 added SpanLink to the adapter contract. The local
+  // observation schema has no link slot, so a link has nowhere to land yet.
+  addLink(_link: SpanLink): void {
+    // Intentionally dropped: adding links is out of scope for this prototype.
   }
 
   startSpan<T>(options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>): Promise<T> {

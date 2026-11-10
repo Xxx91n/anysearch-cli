@@ -13,8 +13,9 @@
   "dependencies": {
     "@anysearch-cli/retriever": "workspace:*",
     "@anysearch-cli/store": "workspace:*",
-    "@earendil-works/pi-agent-core": "^0.84.2",
-    "@earendil-works/pi-ai": "^0.84.2",
+    "@earendil-works/pi-agent-core": "^1.5.1",
+    "@earendil-works/pi-ai": "^1.5.1",
+    "@earendil-works/pi-coding-agent": "^1.5.1",
     "@sinclair/typebox": "^0.34.52"
   },
   "devDependencies": {

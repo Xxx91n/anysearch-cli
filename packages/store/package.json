@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@anysearch-cli/retriever": "workspace:*",
-    "@earendil-works/pi-telemetry": "^0.84.2",
+    "@earendil-works/pi-telemetry": "^1.5.1",
     "@sinclair/typebox": "^0.34.52",
     "@types/better-sqlite3": "^9.6.0",
     "better-sqlite3": "^13.0.3",
