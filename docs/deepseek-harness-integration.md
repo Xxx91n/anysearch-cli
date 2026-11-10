@@ -10,19 +10,17 @@ HTTP transport (default `127.0.0.1:3001/mcp`). The dsh process holds no
 retrieval logic, no secrets beyond the shared IPC credentials, and no
 database access.
 
-Sandbox-tested against `@deepseek-ai/dsh@0.2.2-rc.1` on 2026-11-10. The web
-profile loaded the plugin unchanged, a browser chat turn ran, the routing card
-showed up, preheat recall fired, and a live patch reload moved the next model
-request to a new port. Evidence is the verification comment on #252 (this run,
-exit 0, 16/16 checks). The anysearch server, the MCP endpoint, and the model
-were local stubs, so this round proves the dsh host wiring, not retrieval
-quality or real-model behavior. On the same host version the approval channel
-was also verified on the interactive path: allow once, reject, cancel, and the
-headless "no channel" refusal all matched the host's recorded outcomes (see
-"Approval channel" below). R90: the native tool plane was implemented and
-unit-tested against the API pinned then
-(`@deepseek-ai/dsh-*@0.1.7-rc.1`). The current pinned API is
-`@deepseek-ai/dsh-*@0.2.2-rc.1`; the bridge row remains retired
+Tried with `@deepseek-ai/dsh@0.2.2-rc.1`. The web profile loaded the plugin
+unchanged, a browser chat turn ran, the routing card showed up, preheat recall
+fired, and a live patch reload moved the next model request to a new port.
+Evidence is the verification comment on #252 (exit 0, 16/16 checks). The
+anysearch server, MCP endpoint, and model were local simulated services. On
+the same host version the approval channel was also verified on the
+interactive path: allow once, reject, cancel, and the headless "no channel"
+refusal all matched the host's recorded outcomes (see "Approval channel"
+below). R90: the native tool plane was implemented and unit-tested against
+the API pinned then (`@deepseek-ai/dsh-*@0.1.7-rc.1`). The current pinned API
+is `@deepseek-ai/dsh-*@0.2.2-rc.1`; the bridge row remains retired
 (`cordis.patch.yml` now ships the plugin row only).
 
 ## Phase 1 (RETIRED — R90) — MCP bridge only (no bundle)
@@ -120,7 +118,7 @@ once. A transport failure degrades fail-open to empty results. An upstream
   need. For `config`, restate every key: the whole row is replaced.
 - Live reload comes from `dsh-hmr`, which the shipped `web` template enables.
   The old `patchReload` profile field was removed in 0.1.7, so do not add it.
-  Verified on 2026-11-10 with 0.2.2-rc.1: changing the `llm-deepseek` baseURL
+  Verified with 0.2.2-rc.1: changing the `llm-deepseek` baseURL
   in the user patch while the host was running sent the next request to the
   new port, and the `anysearch:routing-card` section still appeared exactly
   once (no duplicate registration).
@@ -131,9 +129,8 @@ once. A transport failure degrades fail-open to empty results. An upstream
 
 ## Verification transcript (rerunnable)
 
-Headless profile, isolated `$DSH_HOME`. The 2026-09-19 headless record is
-historical. The 2026-11-10 web run is recorded in the #252 verification
-comment.
+Headless profile, isolated `$DSH_HOME`. The older headless record is
+historical. The web run is recorded in the #252 verification comment.
 
 ```sh
 # install + register
@@ -155,7 +152,7 @@ Verified on the wire:
 - the distilled summary is appended to `additionalContexts`, and `POST /index`
   carries real result entries with `x-anysearch-session-id`.
 
-## Approval channel (verified on the real host, 2026-11-10)
+## Approval channel (verified on the real host)
 
 When a tool argument carries a URL, `tools/pre-execute` decides `deny`, `allow`,
 or `ask`. Our plugin only produces that decision. What happens after `ask` is
@@ -221,7 +218,7 @@ What the run does not cover:
 
 ## Limitations (this round)
 
-- The 2026-11-10 web run used local stubs for the anysearch server, the MCP
+- The web run used local simulated services for the anysearch server, the MCP
   endpoint, and the model. It proves plugin load, the routing card, preheat,
   a native tool call, `/index`, live reload, host shutdown, and port release.
   It does not prove real retrieval or real-model behavior.
