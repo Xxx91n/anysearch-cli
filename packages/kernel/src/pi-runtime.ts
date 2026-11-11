@@ -1029,15 +1029,19 @@ export class PiAgentRuntime {
     let tokenSettled = false;
     let settledTokens = 0;
     let callSettled = false;
-    // Money is settle-only and must land exactly once per run: the happy path
-    // settles it after the run, the finally fallback settles it for a run that
-    // never got there. One flag keeps the two from both billing the same spend.
-    let usdSettled = false;
-    const settleUsdOnce = (amount: number): void => {
-      if (!billingWired || usdSettled || amount <= 0) return;
+    // Money is settle-only and settles incrementally: the happy path books the
+    // run's spend, and a figure that arrives later (a stalled stream's final
+    // usage chunk) is booked as the delta. A single "already settled" flag
+    // would silently drop that late spend. The recorded amount advances only
+    // after a successful write, so a failed settle can be retried.
+    let settledUsd = 0;
+    const settleUsdUpTo = (amount: number): void => {
+      if (!billingWired) return;
+      const delta = Math.round((amount - settledUsd) * 1e9) / 1e9;
+      if (!(delta > 0)) return;
       try {
-        ledger!.settleUsd(sessionId!, 0, amount);
-        usdSettled = true;
+        ledger!.settleUsd(sessionId!, 0, delta);
+        settledUsd = amount;
       } catch (e) {
         reportBudgetFault("usd settlement", e);
       }
@@ -1150,7 +1154,7 @@ export class PiAgentRuntime {
         // flushMemory(), because they are still in flight when the run ends.
         const settledTokensTotal = usageTotals.totalTokens + compactionUsage.totalTokens;
         settleTokenReserve(settledTokensTotal);
-        settleUsdOnce(usageTotals.costUsd + compactionUsage.costUsd);
+        settleUsdUpTo(usageTotals.costUsd + compactionUsage.costUsd);
       }
 
       // Design: sync only this run's finalized messages into the FTS5 store —
@@ -1241,8 +1245,9 @@ export class PiAgentRuntime {
         // Money is settled on this path too. A cancelled or early-closed run
         // still spent whatever the provider already reported, and skipping it
         // here would leave that spend unrecorded whenever the happy path in
-        // runInternal never ran. settleUsdOnce makes the two paths one charge.
-        settleUsdOnce(usageTotals.costUsd + compactionUsage.costUsd);
+        // runInternal never ran. settleUsdUpTo books only the difference, so the
+        // two paths can never charge the same spend twice.
+        settleUsdUpTo(usageTotals.costUsd + compactionUsage.costUsd);
         if (billingWired && callReserved && !callSettled) {
           // A provider call happened if it reported usage, or if we aborted it
           // before the final chunk arrived.
