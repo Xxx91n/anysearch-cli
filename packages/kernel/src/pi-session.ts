@@ -32,3 +32,25 @@ export function piCompactionFromEnv(env: NodeJS.ProcessEnv = process.env): { res
     keepRecentTokens: parse(env.ANS_PI_COMPACTION_KEEP_RECENT_TOKENS),
   };
 }
+
+/**
+ * The PI wiring every host owes the runtime, resolved from one env snapshot:
+ * where the session records live, how PI compacts, the credential the provider
+ * registration needs, and the working directory the session and resource loader
+ * use. Both roots call this, so the contract has one definition instead of two
+ * copies drifting apart (#258).
+ */
+export function piSessionOptions(
+  sessionId: string | undefined,
+  apiKey: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+): { piSessionDir?: string; piCompaction: { reserveTokens?: number; keepRecentTokens?: number }; apiKey?: string; cwd: string } {
+  return {
+    // No handle means no record to key on, so the session stays in memory.
+    piSessionDir: sessionId ? resolvePiSessionDir(env) : undefined,
+    piCompaction: piCompactionFromEnv(env),
+    apiKey,
+    cwd,
+  };
+}

@@ -58,7 +58,15 @@ export function emptyUsageTotals(): UsageTotals {
 }
 
 /** The provenance of this ledger's cost figure. */
+/**
+ * The provenance of this ledger's cost figure.
+ *
+ * `mixed` covers the case the label used to get wrong: one run can contain both
+ * server-priced and rate-card-estimated calls, and calling that total "provider"
+ * would misreport the estimated slice as server-sent truth.
+ */
 export function costSourceOf(totals: UsageTotals): CostSource {
+  if (totals.costReported && totals.costEstimated) return "mixed";
   if (totals.costReported) return "provider";
   if (totals.costEstimated) return "estimated";
   return "unknown";
@@ -115,7 +123,7 @@ export function accumulateUsage(totals: UsageTotals, message: unknown): void {
  * accounting. `missing` is the honest half: a dimension nobody reported is
  * named, never rendered as free.
  *
- * Cost provenance across the two ledgers (D4): when both halves reported
+ * Cost provenance across the two ledgers: when both halves reported
  * prices, or both left them to the local rate card, one label covers the total.
  * A mix is labelled `mixed` rather than picking one side, because calling a
  * partly-estimated total "provider" would misreport part of it as server-sent.
@@ -165,9 +173,9 @@ function combineCostSources(a: CostSource, b: CostSource, hasCost: boolean): Run
 }
 
 /**
- * Name every dimension this ledger never received. `usageLabel` and `costLabel`
- * carry the surface's wording ("assistant usage" for the run, "summary usage"
- * for the memory pipeline).
+ * Name every dimension this ledger never received. `usageLabel` is the surface's
+ * own word for the call count ("assistant usage" for the run, "summary usage"
+ * for the memory pipeline); `prefix` qualifies the cache and cost entries.
  */
 function missingDimensions(totals: UsageTotals, usageLabel: string, prefix: string): string[] {
   const label = prefix ? prefix + " " : "";
@@ -175,8 +183,10 @@ function missingDimensions(totals: UsageTotals, usageLabel: string, prefix: stri
   if (totals.assistantCalls === 0) missing.push(usageLabel);
   if (totals.assistantCalls > 0 && !totals.cacheReported) missing.push(label + "cache usage");
   // A locally estimated figure is not a provider report: say so, so the caller
-  // never presents it as server-sent truth.
+  // never presents it as server-sent truth. A ledger that mixes both kinds
+  // names the estimate as well, because part of the total is still estimated.
   if (!totals.costReported) missing.push(totals.costEstimated ? label + "cost (estimated)" : label + "cost");
+  else if (totals.costEstimated) missing.push(label + "cost (partly estimated)");
   return missing;
 }
 

@@ -10,7 +10,7 @@
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import { PiAgentRuntime, parseContextWindow, piCompactionFromEnv, resolvePiSessionDir, emptyRunUsage, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, parseContextWindow, piSessionOptions, emptyRunUsage, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
 import { domainTomlPath } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import { buildAnsChatResult, resolveAnsChatSession } from "../ans-chat-session.js";
@@ -191,10 +191,7 @@ export function registerAnsChat(
             getApiKey: async () => session.apiKey,
             // PI's own session record resumes the conversation; the same handle
             // keys both the record and the SQLite anchors (#258).
-            piSessionDir: memory.sessionId ? resolvePiSessionDir() : undefined,
-            piCompaction: piCompactionFromEnv(),
-            apiKey: session.apiKey,
-            cwd: process.cwd(),
+            ...piSessionOptions(memory.sessionId, session.apiKey),
             // one-line observation wiring — the ans_chat span
             // receives the engine's retrieval.domain_filter.* audit events.
             span,

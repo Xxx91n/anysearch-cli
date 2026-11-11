@@ -6,11 +6,11 @@
 // consolidate() is now a shell that calls pure consolidateState() then executes I/O.
 // signalSearchTurn() DELETED — replaced by hasRetrievalEvidence parameter.
 
-import { generateSummaryWithUsage } from "@earendil-works/pi-coding-agent";
+import { loadPiCodingAgent } from "./pi-sdk";
 
-// PI's summarizer calls `stream.result()`; test doubles and some wrappers only
-// implement the async iterator. Adding the missing method keeps the official
-// path usable everywhere without a second summarizer implementation.
+// PI's summarizer calls `stream.result()`; a host stream function only has to be
+// an async iterable. Filling in the missing method keeps the official summarizer
+// usable, instead of maintaining a second implementation of it.
 function ensureResult(streamFn: any): any {
   if (typeof streamFn !== "function") return streamFn;
   return (model: any, context: any, options?: any) => {
@@ -658,12 +658,13 @@ export class MemoryPipeline {
           this.track(
             (async () => {
               const apiKey = await getApiKey?.();
+              const sdk = await loadPiCodingAgent();
               // 1.5.1 signature: (messages, model, reserveTokens, apiKey,
               // headers, signal, customInstructions, previousSummary,
               // thinkingLevel, streamFn, env, retry, callbacks, sessionId).
               // The old 0.84.2 shape took a Models object and returned a
               // Result, so the whole call is restructured here.
-              const result = await generateSummaryWithUsage(
+              const result = await sdk.generateSummaryWithUsage(
                 messages,
                 actualModel,
                 COMPACTION_RESERVE_TOKENS,

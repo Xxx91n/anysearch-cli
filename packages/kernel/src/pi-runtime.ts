@@ -15,26 +15,10 @@
 
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 // The full PI session runtime. pi-coding-agent publishes only an ESM entry, so
-// every host that links the kernel (CLI, MCP) builds as ESM.
-//
-// Loaded lazily on purpose: the package pulls a large module graph whose
-// evaluation costs several seconds, and `ans --help`, `ans auth` and every other
-// command that never starts a run must not pay that. A static import here made
-// the CLI's plain `--help` take ~6s and `ans mcp --help` (two stacked processes)
-// past its 15s test budget (#258).
-type PiCodingAgent = typeof import("@earendil-works/pi-coding-agent");
-let piCodingAgentPromise: Promise<PiCodingAgent> | null = null;
-async function loadPiCodingAgent(): Promise<PiCodingAgent> {
-  // Memoised per process: a long-lived MCP host loads it once, and a failing
-  // load is not cached so a transient fault can be retried.
-  if (!piCodingAgentPromise) {
-    piCodingAgentPromise = import("@earendil-works/pi-coding-agent").catch((e) => {
-      piCodingAgentPromise = null;
-      throw e;
-    });
-  }
-  return piCodingAgentPromise;
-}
+// every host that links the kernel (CLI, MCP) builds as ESM; it is loaded
+// lazily through ./pi-sdk so a command that never starts a run does not pay for
+// its multi-second module evaluation (#258).
+import { loadPiCodingAgent } from "./pi-sdk";
 import { estimateTranscriptTokens } from "./message-text";
 import { accumulateUsage, emptyUsageTotals, toRunUsage, type SummaryUsage } from "./usage";
 import { createHash } from "node:crypto";
@@ -524,7 +508,7 @@ export class PiAgentRuntime {
     });
   }
 
-  // decision 3: run returns AsyncIterable<AgentEvent>, mapping PI session events.
+  // run returns AsyncIterable<AgentEvent>, mapping PI session events.
   // Serialization: same session -> one run at a time in this process; different
   // sessions run in parallel. Cross-process locking is ticket #266.
   async *run(input: string): AsyncIterable<AgentEvent> {
@@ -568,10 +552,10 @@ export class PiAgentRuntime {
     const allTools = [searchTool, ...(this.opts.tools || [])];
     const activeTools = filterAgentTools(allTools, domain);
 
-    // decision 4: prompts -> systemPrompt
+    // The domain's prompt layer becomes the session system prompt.
     const systemPrompt = buildSystemPrompt(domain);
 
-    // Token/USD budget tracking (decision 5, amended #103):
+    // Token/USD budget tracking (amended #103):
     // accumulated from message_end events, settled at the end of the run.
     const usageTotals = emptyUsageTotals();
     // #188 (CodeRabbit): distinguish "provider reported zero" from "abort cut the
@@ -829,7 +813,7 @@ export class PiAgentRuntime {
       return { ...(snapshot ?? {}), context: { ...context, messages: nextMessages } };
     };
 
-    // decision 3: session events -> our AgentEvent types.
+    // session events -> our AgentEvent types.
     // text mapping delegated to mapAssistantMessageEvent (pure, tested).
     const mapState = { textSeen: false };
     session.subscribe((event: any) => {
@@ -912,7 +896,7 @@ export class PiAgentRuntime {
     // (provider usage anchor when present, estimate on a cold start) + the
     // output-side static limit ([budget].outputReserveTokens, default 12288).
     //
-    // A rejected reserve is the hard stop from #186 decision 5: yield the
+    // A rejected reserve is the hard stop: yield the
     // structured error and return without starting the run — no done event, no
     // settlement, no fabricated summary. Only this run stops; a later run after
     // a TOML raise is unaffected — the run-boundary reloader re-reads the output
@@ -1049,7 +1033,7 @@ export class PiAgentRuntime {
       }
       if (callerCancelled) return;
 
-      // Budget settle at agent_end (decision 5, amended #103/#188).
+      // Budget settle at agent_end (amended #103/#188).
       if (billingWired) {
         // Design: a rejected per-call reserve is not settled — it was never
         // recorded, so settling would fabricate a billable call.
@@ -1215,7 +1199,7 @@ export class PiAgentRuntime {
    * this first or those writes are lost. No-op when no pipeline is wired.
    *
    * The summary calls are real provider calls made on this session's behalf, so
-   * their spend settles on the same ledger as the main run (#258 D4: extra
+   * their spend settles on the same ledger as the main run: extra
    * merge and check work belongs to the budget, not outside it). Settlement
    * happens AFTER the drain, because the cost only exists once the calls
    * finished — settling earlier would under-report them.

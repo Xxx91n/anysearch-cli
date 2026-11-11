@@ -6,7 +6,7 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piCompactionFromEnv, resolvePiSessionDir } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
@@ -140,10 +140,8 @@ export async function runChat(argv: string[]): Promise<number> {
     getApiKey: async () => session.apiKey,
     // PI owns the session record; key it by the same stable handle the store
     // uses so a later `ans chat` resumes the conversation, not just the anchors.
-    piSessionDir: durableStore && memory.sessionId ? resolvePiSessionDir() : undefined,
-    piCompaction: piCompactionFromEnv(),
-    apiKey: session.apiKey,
-    cwd: process.cwd(),
+    // A store-less run has no resumable handle, so it stays in memory.
+    ...piSessionOptions(durableStore ? memory.sessionId : undefined, session.apiKey),
   });
 
   console.log("ans chat: " + query);
