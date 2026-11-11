@@ -584,7 +584,9 @@ export class SqliteObservationStore {
     withInitBusyRetry("observation schema", () => execDdlAtomically(this.db, OBSERVATION_SQL), initDeadline);
     // bring v0/v1 stores up to OBSERVATION_USER_VERSION.
     withInitBusyRetry("observation migrate", () => migrateObservationSchema(this.db), initDeadline);
-    // restored for ordinary traffic, matching the pre-#257 contract.
+    // restored for ordinary traffic, matching the pre-#257 contract. On failure
+    // the constructor throws, this handle is never used again, and the teardown
+    // registry just closes it.
     endInit(this.db);
   }
 

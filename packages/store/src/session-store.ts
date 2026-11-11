@@ -386,8 +386,10 @@ export class SqliteSessionStore implements SessionStore {
     // #257 cold start: initialization gets its own bounded retry policy
     // (attempt count, backoff and wall-clock window live in sqlite-init.ts). The
     // connection-level timeout is lowered for that phase so each attempt returns
-    // promptly and the backoff — not SQLite's own long wait — decides the pace;
-    // beginInit/endInit restore the ordinary 5s contract afterwards.
+    // promptly and the backoff — not SQLite's own long wait — decides the pace.
+    // endInit restores the ordinary 5s contract on the success path; if init
+    // throws, the constructor throws with it, so this handle is never used again
+    // and the teardown registry simply closes it.
     const initDeadline = beginInit(this.db);
     // atomcode research: WAL persistent, set once, single shared connection.
     withInitBusyRetry("journal_mode", () => this.db.pragma("journal_mode = WAL"), initDeadline);
@@ -416,17 +418,18 @@ export class SqliteSessionStore implements SessionStore {
     try {
       withInitBusyRetry("budget dedup", () => this.mergeDuplicateBudgetRows(), initDeadline);
     } catch (e) {
-      this.warnUnlessContended(e, "[warn] budget_ledger duplicate-row merge failed: ");
+      this.warnOrRefuseWhenContended(e, "[warn] budget_ledger duplicate-row merge failed: ");
     }
     // #187: one budget row per session. New databases got the table-level
     // UNIQUE(session_id); this protected migration covers old databases. It is
     // deliberately outside db.exec(schema): a legacy duplicate row must not
-    // prevent the rest of the schema from opening, and the failure degrades to
-    // a warning (the startup paths then fail open to unmetered).
+    // prevent the rest of the schema from opening, and that data failure
+    // degrades to a warning (the startup paths then fail open to unmetered).
+    // A busy exhaustion is not a data failure and still fails the start.
     try {
       withInitBusyRetry("budget unique index", () => this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_session_unique ON budget_ledger(session_id)"), initDeadline);
     } catch (e) {
-      this.warnUnlessContended(e, "[warn] budget_ledger unique-session index not created: ");
+      this.warnOrRefuseWhenContended(e, "[warn] budget_ledger unique-session index not created: ");
     }
     withInitBusyRetry("access_events switch rebuild", () => migrateSwitchEventSchema(this.db), initDeadline);
     // edge-pattern constraint seed (idempotent; mirrors EDGE_PATTERN_ROWS in relation.ts;
@@ -477,8 +480,9 @@ export class SqliteSessionStore implements SessionStore {
     this.applyColumnMigration("t0_preferences.trace_id", "ALTER TABLE t0_preferences ADD COLUMN trace_id TEXT", initDeadline);
     this.applyColumnMigration("access_events.source_label", "ALTER TABLE access_events ADD COLUMN source_label TEXT", initDeadline);
     // step 1/3: chain columns (idempotent ALTER per existing convention) + one-off
-    // anchor bootstrap in an IMMEDIATE transaction (D6). Persistent busy/IO failure degrades to
-    // stderr WARN + telemetry bit (fail-open); the write path re-probes the anchor.
+    // anchor bootstrap in an IMMEDIATE transaction (D6). A persistent IO/schema
+    // failure degrades to stderr WARN + telemetry bit (fail-open); the write path
+    // re-probes the anchor. Busy exhaustion is not that class and fails the start.
     this.applyColumnMigration("access_events.prev_hash", "ALTER TABLE access_events ADD COLUMN prev_hash TEXT", initDeadline);
     this.applyColumnMigration("access_events.schema_version", "ALTER TABLE access_events ADD COLUMN schema_version INTEGER", initDeadline);
     this.applyColumnMigration("access_events.event_type", "ALTER TABLE access_events ADD COLUMN event_type TEXT", initDeadline);
@@ -488,7 +492,7 @@ export class SqliteSessionStore implements SessionStore {
       // The telemetry bit is D6's own signal; it is set before the warning so it
       // records this degradation even when nothing listens on stderr.
       if (!isBusyRetryExhausted(e)) this.accessEventTel.bootstrapFailed = true;
-      this.warnUnlessContended(e, "anysearch: access-chain bootstrap degraded (fail-open): ");
+      this.warnOrRefuseWhenContended(e, "anysearch: access-chain bootstrap degraded (fail-open): ");
     }
     // Startup contract restored: ordinary reads and writes wait on row locks for
     // the pre-#257 5s instead of the short initialization timeout.
@@ -724,7 +728,7 @@ export class SqliteSessionStore implements SessionStore {
   // NOT keep it for busy/locked exhaustion: that means the database is contended
   // and the retry window ran out, and printing "database is locked" followed by a
   // successful start is exactly what the ticket forbids. So exhaustion rethrows.
-  private warnUnlessContended(e: unknown, prefix: string): void {
+  private warnOrRefuseWhenContended(e: unknown, prefix: string): void {
     if (isBusyRetryExhausted(e)) throw e;
     try {
       process.stderr.write(prefix + (e instanceof Error ? e.message : String(e)) + "\n");

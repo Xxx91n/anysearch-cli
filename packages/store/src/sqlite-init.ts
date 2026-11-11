@@ -24,8 +24,8 @@
 // followed by another one, it surfaces its own error. Measured on this host
 // (Windows, better-sqlite3 13.0.3): a single journal_mode=WAL attempt against a
 // fresh database held by another connection fails after ~1.2-1.4 s regardless of
-// busy_timeout, and a 15 s external lock ends one store's init in ~6.8 s after 4
-// attempts. So the honest upper bound per store is roughly 7.5 s, not the 4 s the
+// busy_timeout, and a 30 s external lock ends one store's init after 5 attempts
+// (~7 s). So the honest upper bound per store is roughly 7.5 s, not the 4 s the
 // attempt budget alone suggests.
 //
 // Each store takes its own deadline: createEngine() opens the session store and

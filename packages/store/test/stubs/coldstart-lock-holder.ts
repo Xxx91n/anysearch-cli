@@ -1,8 +1,8 @@
 // #257 helper process: take and hold an EXCLUSIVE lock on a database, so the
 // other process meets a real locked file (not a simulated busy error).
 //
-// Prints LOCKED once the lock is held, then RELEASED after the hold ends. The
-// caller kills it either way; `holdMs` decides whether the waiter's bounded
+// Prints LOCKED once the lock is held and nothing after that: the caller kills
+// it once its own attempt is done. `holdMs` decides whether the waiter's bounded
 // retry window outlives the lock or not.
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";

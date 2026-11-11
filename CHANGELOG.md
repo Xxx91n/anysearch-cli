@@ -10,7 +10,7 @@
 
 - **两个进程同时开一个全新的库时，不会再随机死一个**。以前哪个进程先改库，另一个就可能直接拿到 `SQLITE_BUSY: database is locked` 然后启动失败，宿主那边看到的就是 MCP 服务时不时少一个。现在初始化阶段遇到忙/锁会有限重试，撑不过去就明确报错，不会假装启动成功。策略写死在 `packages/store/src/sqlite-init.ts`，不走环境变量，发出去的版本不会因为谁设了个变量就变成另一套启动契约：每个步骤最多 5 次（首次 + 4 次重试），间隔 100/200/400/800 毫秒，初始化期间 SQLite 自己的等待降到 500 毫秒（原来是 5000）。窗口是**每个 store 各一份** 6 秒（过了这个点不再开新重试，正在跑的那次自己跑完）；`createEngine()` 先开会话库再开观测库，所以两边同时被占用时最多约两轮窗口，不是总共 6 秒。只重试 `SQLITE_BUSY` / `SQLITE_LOCKED` 及其子码——带别的错误码的不重试，只有拿不到错误码、只能看文字的才按 `database is locked` 兜底；`CANTOPEN`、约束冲突、只读库、IO 错误都原样立刻抛。重试次数或窗口耗尽时抛的是包装过的错误，但真实的 busy 错误连同 `code` 一起挂在 `cause` 上，不会被吞。
 - **整段 schema 改成在一个 IMMEDIATE 事务里一次落地**。这是复现过程中发现的第二个故障：两个进程同时建 FTS5 虚拟表时，会撞上 `SQLITE_SCHEMA: vtable constructor failed: …_fts`。它不是忙错误，按规定不该重试，所以修在根上——要么整套表建好，要么一个都不建，另一个连接在事务上排队等，而不是两边边建边抢。初始化完把连接的 `busy_timeout` 恢复到 5000，普通读写不受影响。
-- **列迁移不再无差别吞错**（行为变更，老库会受影响）。原来 17 条 `ALTER TABLE ADD COLUMN` 都是 `try { … } catch {}`，任何错误都不吭声地跳过。现在只吞「`duplicate column name`」（那正是新库已经建好这一列的重复执行情形），其他错误照常往上抛。这样出错时启动会失败，而不是带着一个半迁移的库声称启动成功。这是本票「不会输出 database is locked 后继续宣称启动成功」的直接延伸。
+- **列迁移不再无差别吞错**（行为变更，老库会受影响）。原来 19 条 `ALTER TABLE ADD COLUMN` 都是 `try { … } catch {}`，任何错误都不吭声地跳过。现在只吞「`duplicate column name`」（那正是新库已经建好这一列的重复执行情形），其他错误照常往上抛。这样出错时启动会失败，而不是带着一个半迁移的库声称启动成功。这是本票「不会输出 database is locked 后继续宣称启动成功」的直接延伸。
 - **三处故意 fail-open 的 catch 现在分辨失败类型**：预算去重、预算唯一索引、链锚点 bootstrap 遇到数据问题时照旧降级成 warning 继续启动（原有 D6 行为不变），但忙重试耗尽会抛出去让启动失败，不再出现「打了 database is locked 还继续启动」。
 
 ### Tests
@@ -20,14 +20,14 @@
 - `apps/mcp/test/coldstart-race.test.ts`：宿主能看到的那一层。两个真实 `ans-mcp` 进程、5 轮、每轮都走完 `initialize` 和 `tools/list` 并拿到 5 个工具，不是“进程还活着”就算过；每轮再查一遍库的结构完整性。
 - 修复前的观察如实记着，而且两次量出来的结果不一样：一套是两进程同时走 `new Database` + `journal_mode=WAL` + `exec(schema.sql)`，20 轮撞到 1 次 `SQLITE_BUSY`（位置在 `Database.pragma`）；另一套是走真实的 `SqliteSessionStore` + `SqliteObservationStore`，30 轮一次没撞到，接着跑到 60 轮才撞到 1 次 `SQLITE_SCHEMA: vtable constructor failed: retrieval_results_fts`。修复后用同一套真实 store 路径加跑到 40 轮（80 个进程），0 失败。
 - 这些数字都是采样，不是必现证明，也不是因果证明：修复前 30 轮可以一次都不撞，所以无法宣称「修复后跑 40 轮通过」就等于「原故障已被修掉」。真正不依赖运气的是上面那三个锁用例——锁在窗口内一定被重试撑过去，锁超过窗口一定如实失败。
-- 「关掉重试也会启动成功」这一情形**确实观测到了，而且如实记在这里**：修复前的代码本来就没有任何重试（`git show origin/main:packages/store/src/session-store.ts` 里没有任何重试函数），所以上面那两次修复前测量就是「有重试之前」的对照组。其中 30 轮两进程冷启动一次故障都没复现，这一轮不能说「重试救回了故障」；只有后来 60 轮撞到那 1 次 `SQLITE_SCHEMA` 才算看到故障本身。所以本轮的因果证据只到「有锁时会重试撑过去 / 锁太久会如实失败」为止，不到「原有竞态已经被消除」。
+- 「关掉重试也会启动成功」这一情形**确实观测到了，而且如实记在这里**：主干的构造函数里没有任何忙重试（`git show 5e60a776e1961144e98d6c33c1506bca6f1843c7:packages/store/src/session-store.ts` 的构造段只有 `busy_timeout = 5000`，没有重试循环；同文件别的批量写入路径另有一套 8 次重试，那是 `backfill` 用的，跟冷启动无关），所以上面那两次修复前测量就是「冷启动没有重试」的对照组。其中 30 轮两进程冷启动一次故障都没复现，这一轮不能说「重试救回了故障」；只有后来 60 轮撞到那 1 次 `SQLITE_SCHEMA` 才算看到故障本身。所以本轮的因果证据只到「有锁时会重试撑过去 / 锁太久会如实失败」为止，不到「原有竞态已经被消除」。
 - 本票**没有**临时加一个关重试的开关再跑一遍：策略是硬编码常量，加开关只会多一条没人长期验证的路径，而 `#255` 已经明确记录「测试用屏障、原型回退开关等不自动成为正式产品接口」。
 
 ### Verification
 
 - 本地跑过并通过：`packages/store` 的 `check` + `test`（73/73）、`apps/mcp` 的 `check` + `test`（16/16）、`packages/kernel` 的 `check` + `test`（170/170）、`packages/retriever` 与 `packages/embedding` 的 `check` + `test`，以及 `pnpm -C packages/store eval --offline`（126/126，verdict=warn，与改动前同一指纹）。
 - **没在本地跑、留给远端 CI 的**：`apps/cli`、`apps/plugin`、`apps/dsh-plugin` 的 `test`（它们要 `dist/`，本票按约定本地不编译），`pnpm -r build`，`node scripts/ship-gate.mjs`。所以「标准门禁全过」这句话现在还说不出口，要等 CI 结果。
-- 这台机器的实测数值也写进了 `sqlite-init.ts` 的注释：单个 `journal_mode=WAL` 尝试在库被别的连接独占时约 1.2–1.4 秒就失败（`busy_timeout` 不管用），锁 15 秒时一个 store 的初始化约 6.8 秒、5 次尝试后放弃。所以每个 store 的真实上界约 7.5 秒，不是“5×500ms + 1500ms 退避”算出来的 4 秒；两个 store 都卡住时约两倍。
+- 这台机器的实测数值也写进了 `sqlite-init.ts` 的注释：单个 `journal_mode=WAL` 尝试在库被别的连接独占时约 1.2–1.4 秒就失败（`busy_timeout` 不管用），锁 30 秒时一个 store 的初始化约 7 秒、5 次尝试后放弃。所以每个 store 的真实上界约 7.5 秒，不是“5×500ms + 1500ms 退避”算出来的 4 秒；两个 store 都卡住时约两倍。
 
 ## Unreleased — #20: dsh 审批通道真机验收（沙盒，四种结果都跑通）
 

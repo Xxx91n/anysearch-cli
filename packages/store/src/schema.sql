@@ -135,7 +135,8 @@ CREATE TABLE IF NOT EXISTS budget_ledger (
 -- migration for them (a no-op for new databases).
 
 -- G019 migration: add time-decay columns to existing retrieval_results table.
--- ALTER TABLE ADD COLUMN is idempotent-safe: errors if column already exists, caught by try/catch in SessionStore constructor.
+-- ALTER TABLE ADD COLUMN is idempotent-safe: "duplicate column name" means the column is
+-- already there and SessionStore absorbs exactly that; every other error fails the start (#257).
 -- These run after the CREATE TABLE IF NOT EXISTS, so new databases already have the columns.
 -- For existing databases, these add the missing columns.
 
