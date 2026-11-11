@@ -23,9 +23,14 @@ const STORE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CHILD = join(STORE_DIR, "test", "stubs", "coldstart-open-child.ts");
 const HOLDER = join(STORE_DIR, "test", "stubs", "coldstart-lock-holder.ts");
 const CHILD_TIMEOUT_MS = 120000;
-// Long enough that the holder cannot expire before the child signals, short
-// enough to stay well inside the 6s retry window once released.
+// How long the holder keeps the lock AFTER the child signals that it is about to
+// open the stores. A single init attempt fails in ~1.1-1.4s on this host even
+// with busy_timeout=500, so a 2.5s hold guarantees at least one attempt fails
+// and the application-level retry — not SQLite's own wait — has to carry it.
+// (Measured: one `journal_mode = WAL` attempt against a held exclusive lock
+// fails after ~1083ms.) The whole hold stays far inside the 6s window.
 const SHORT_LOCK_HOLD_MS = 60000;
+const SHORT_LOCK_RELEASE_AFTER_SIGNAL_MS = 2500;
 
 interface ChildResult { code: number | null; out: string; elapsedMs: number; timedOut: boolean }
 
@@ -113,9 +118,11 @@ async function main() {
     // --- a lock released inside the window is absorbed ---
     {
       // The child signals from inside its own process right before it opens the
-      // stores, and the lock is released only after that signal. Without it the
-      // case would depend on tsx loading outlasting the hold, so a run where the
-      // lock had already gone could pass with the retry removed.
+      // stores. The lock is then held for a further 2.5s, so at least one
+      // attempt is guaranteed to fail (a single attempt dies in ~1.1s here) —
+      // the retry, not SQLite's own wait, is what makes this pass. Without the
+      // extra hold, a child that reached the lock after it was released would
+      // also pass with no retry at all.
       const dbPath = join(base, "short-lock", "anysearch.db");
       const readyFile = join(base, "short-lock", "ready.flag");
       const holder = await startHolder(dbPath, SHORT_LOCK_HOLD_MS);
@@ -123,7 +130,8 @@ async function main() {
       try {
         const openPromise = runChild(dbPath, readyFile);
         await waitForFile(readyFile);
-        // The lock is still held at this instant; release it now.
+        // Still locked at this instant; keep it for longer than one attempt can wait.
+        await new Promise((resolve) => setTimeout(resolve, SHORT_LOCK_RELEASE_AFTER_SIGNAL_MS));
         holder.kill();
         r = await openPromise;
       } finally {
@@ -131,6 +139,11 @@ async function main() {
       }
       assert(r !== undefined, "short lock: the child produced a result");
       assert(r!.code === 0, "short lock: the waiting process still initializes (code " + r!.code + "): " + r!.out.slice(-200));
+      // Timing proof that the retry carried it: a single attempt dies in ~1.1s,
+      // so succeeding after a lock that stayed held past 2.5s requires at least
+      // a second attempt. Without the retry this child would have exited nonzero.
+      assert(r!.elapsedMs >= SHORT_LOCK_RELEASE_AFTER_SIGNAL_MS,
+        "short lock: the child outlived one attempt's own wait, so a retry really ran (" + r!.elapsedMs + "ms)");
       checkStructure(dbPath, "short lock");
     }
 

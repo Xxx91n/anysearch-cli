@@ -21,7 +21,7 @@
 - `packages/store/test/coldstart-race.test.ts`：两个真实进程抢一个全新库，5 轮，每轮两个都初始化成功；每轮查 `integrity_check`、`journal_mode=wal`、21 张表、两个 FTS5 索引、5 个触发器、9 条 edge pattern 种子、单条链锚点、观测库 `user_version=2`，确认没有半初始化残留。另有三个确定性用例：锁 1.5 秒能被重试撑过去；锁 30 秒会如实失败并保留 `SQLITE_BUSY`；路径不可打开时立刻报 `SQLITE_CANTOPEN`、不烧重试退避。
 - `apps/mcp/test/coldstart-race.test.ts`：宿主能看到的那一层。两个真实 `ans-mcp` 进程、5 轮、每轮都走完 `initialize` 和 `tools/list` 并拿到 5 个工具，不是“进程还活着”就算过；每轮再查一遍库的结构完整性。
 - `packages/store/test/fk-restore-after-migration.test.ts`：老库（legacy 3 列 `access_events` + 已加过链列的形态）打开时真的走重建分支，断言重建后外键仍为 ON、`memory_id` 已可空、级联删除真的生效；另有一段确认「锁住时启动如实失败」，并说明那一段到不了重建步骤。
-- 短锁用例改成由子进程在开库前发信号、测试收到才放锁（CodeRabbit nitpick），不再靠 1.5 秒的时序假设。
+- 短锁用例改成「子进程开库前发信号 → 收到信号后**继续持锁 2.5 秒**再放」：实测单次初始化尝试约 1.1 秒就失败（`busy_timeout` 不管用），所以持锁超过这个时长必然要让应用层重试接手，而不是靠 SQLite 自己等过去。验证过：把 `INIT_RETRY_MAX_ATTEMPTS` 临时改成 1，这条用例立刻变红（子进程在 `journal_mode` 步 `still busy after 1 attempts` 失败），改回 5 就恢复。
 - 修复前的观察如实记着，而且两次量出来的结果不一样：一套是两进程同时走 `new Database` + `journal_mode=WAL` + `exec(schema.sql)`，20 轮撞到 1 次 `SQLITE_BUSY`（位置在 `Database.pragma`）；另一套是走真实的 `SqliteSessionStore` + `SqliteObservationStore`，30 轮一次没撞到，接着跑到 60 轮才撞到 1 次 `SQLITE_SCHEMA: vtable constructor failed: retrieval_results_fts`。修复后用同一套真实 store 路径加跑到 40 轮（80 个进程），0 失败。
 - 这些数字都是采样，不是必现证明，也不是因果证明：修复前 30 轮可以一次都不撞，所以无法宣称「修复后跑 40 轮通过」就等于「原故障已被修掉」。真正不依赖运气的是上面那三个锁用例——锁在窗口内一定被重试撑过去，锁超过窗口一定如实失败。
 - 「关掉重试也会启动成功」这一情形**确实观测到了，而且如实记在这里**：主干的构造函数里没有任何忙重试（`git show 5e60a776e1961144e98d6c33c1506bca6f1843c7:packages/store/src/session-store.ts` 的构造段只有 `busy_timeout = 5000`，没有重试循环；同文件别的批量写入路径另有一套 8 次重试，那是 `backfill` 用的，跟冷启动无关），所以上面那两次修复前测量就是「冷启动没有重试」的对照组。其中 30 轮两进程冷启动一次故障都没复现，这一轮不能说「重试救回了故障」；只有后来 60 轮撞到那 1 次 `SQLITE_SCHEMA` 才算看到故障本身。所以本轮的因果证据只到「有锁时会重试撑过去 / 锁太久会如实失败」为止，不到「原有竞态已经被消除」。
