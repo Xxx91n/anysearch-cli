@@ -10,6 +10,10 @@ import {
   INIT_RETRY_MAX_ATTEMPTS,
   INIT_RETRY_MAX_DELAY_MS,
   INIT_RETRY_WINDOW_MS,
+  STEADY_BUSY_TIMEOUT_MS,
+  beginInit,
+  endInit,
+  execDdlAtomically,
   initRetryDeadline,
   initRetryDelayMs,
   isBusyError,
@@ -17,6 +21,7 @@ import {
   isDuplicateColumnError,
   withInitBusyRetry,
 } from "../src/sqlite-init.js";
+import Database from "better-sqlite3";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -53,6 +58,10 @@ function main() {
   assert(!isBusyError(busyError("SQLITE_CONSTRAINT", "constraint failed")), "SQLITE_CONSTRAINT is NOT retryable");
   assert(!isBusyError(busyError("SQLITE_READONLY", "attempt to write a readonly database")), "SQLITE_READONLY is NOT retryable");
   assert(!isBusyError(new Error("disk I/O error")), "plain IO errors are NOT retryable");
+  // A real non-busy code wins over a lock-sounding message: only code-less
+  // errors fall back to the text, so a mislabelled failure is never retried.
+  assert(!isBusyError(busyError("SQLITE_CONSTRAINT", "database is locked constraints")), "a non-busy code is never retried, even if the text says locked");
+  assert(!isBusyError(busyError("SQLITE_CANTOPEN", "database is locked")), "CANTOPEN with a misleading message is still not retryable");
   assert(!isBusyError(null) && !isBusyError(undefined), "null/undefined are not busy errors");
 
   assert(isDuplicateColumnError(new Error("duplicate column name: archived")), "duplicate column name is recognised");
@@ -139,6 +148,63 @@ function main() {
     let wrapped: unknown;
     try { withInitBusyRetry("probe", () => { throw busyError(); }, initRetryDeadline()); } catch (e) { wrapped = e; }
     assert(isBusyRetryExhausted(wrapped), "the real wrapper's output is recognised as exhaustion");
+  }
+
+  // --- the init envelope both stores share ---
+  {
+    const db = new Database(":memory:");
+    try {
+      const deadline = beginInit(db);
+      const during = db.pragma("busy_timeout", { simple: true });
+      assert(during === INIT_BUSY_TIMEOUT_MS, "beginInit lowers the row-lock wait to the init value (got " + String(during) + ")");
+      assert(deadline > Date.now(), "beginInit hands back a future deadline");
+      endInit(db);
+      const after = db.pragma("busy_timeout", { simple: true });
+      assert(after === STEADY_BUSY_TIMEOUT_MS, "endInit restores the steady-state wait (got " + String(after) + ")");
+      assert(after === 5000, "the steady-state wait is the pre-#257 5s contract");
+    } finally {
+      db.close();
+    }
+  }
+
+  // --- schema DDL lands atomically: all of it, or none of it ---
+  {
+    const db = new Database(":memory:");
+    try {
+      execDdlAtomically(db, "CREATE TABLE ok_a (x INTEGER); CREATE TABLE ok_b (y INTEGER);");
+      const ok = db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name LIKE 'ok_%'").get() as { n: number };
+      assert(ok.n === 2, "a valid script creates every statement (got " + ok.n + ")");
+    } finally {
+      db.close();
+    }
+  }
+  {
+    const db = new Database(":memory:");
+    try {
+      // The third statement is invalid, so the whole script must roll back.
+      let threw = false;
+      try {
+        execDdlAtomically(db, "CREATE TABLE roll_a (x INTEGER); CREATE TABLE roll_b (y INTEGER); CREATE TABLE oops (this is not sql;");
+      } catch { threw = true; }
+      assert(threw, "a broken script throws instead of half-applying");
+      const left = db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name LIKE 'roll_%'").get() as { n: number };
+      assert(left.n === 0, "nothing from the broken script survives — no half-initialized schema (got " + left.n + ")");
+    } finally {
+      db.close();
+    }
+  }
+  {
+    const db = new Database(":memory:");
+    try {
+      // The vtable failures that motivated this showed up when the script ran
+      // statement by statement; the atomic form must tolerate a re-run.
+      execDdlAtomically(db, "CREATE TABLE IF NOT EXISTS rerun (x INTEGER);");
+      execDdlAtomically(db, "CREATE TABLE IF NOT EXISTS rerun (x INTEGER);");
+      const n = db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'rerun'").get() as { n: number };
+      assert(n.n === 1, "an idempotent script is safe to apply twice (got " + n.n + ")");
+    } finally {
+      db.close();
+    }
   }
 
   console.log("sqlite-init: " + passed + " passed, " + failed + " failed");

@@ -19,14 +19,21 @@
 //   - backoff 100 / 200 / 400 / 800 ms, summed 1500 ms
 //   - INIT_BUSY_TIMEOUT_MS = 500   (SQLite's own wait inside each attempt)
 //   - INIT_RETRY_WINDOW_MS = 6000  (hard cap on when a retry may START)
-// The wall-clock limit is therefore "window plus at most one attempt's own
-// wait": an attempt that is already running when the window passes is not
+// The wall-clock limit per store is therefore "window plus at most one attempt's
+// own wait": an attempt that is already running when the window passes is not
 // followed by another one, it surfaces its own error. Measured on this host
 // (Windows, better-sqlite3 13.0.3): a single journal_mode=WAL attempt against a
 // fresh database held by another connection fails after ~1.2-1.4 s regardless of
-// busy_timeout, and a 15 s external lock ends the whole init in ~6.8 s after 4
-// attempts. So the honest upper bound is roughly 7.5 s, not the 4 s the attempt
-// budget alone suggests.
+// busy_timeout, and a 15 s external lock ends one store's init in ~6.8 s after 4
+// attempts. So the honest upper bound per store is roughly 7.5 s, not the 4 s the
+// attempt budget alone suggests.
+//
+// Each store takes its own deadline: createEngine() opens the session store and
+// then the observation store, so a cold start where BOTH are contended can wait
+// about twice that. The two windows are not merged into one on purpose — the
+// second store has to be allowed to retry even when the first already used up
+// its window, otherwise a slow first open would leave the second with no
+// tolerance at all.
 //
 // Only SQLITE_BUSY / SQLITE_LOCKED and their sub-codes are retried, matching the
 // ticket contract. Retrying is safe here because every attempt restarts from
@@ -43,22 +50,57 @@ export const INIT_RETRY_MAX_ATTEMPTS = 5;
 export const INIT_RETRY_BASE_DELAY_MS = 100;
 /** Ceiling for the doubling backoff. */
 export const INIT_RETRY_MAX_DELAY_MS = 800;
-/** SQLite-side wait used during initialization (the connection keeps 5000 after). */
+/** SQLite-side wait used during initialization (the connection keeps STEADY after). */
 export const INIT_BUSY_TIMEOUT_MS = 500;
 /** Wall-clock cap: no retry starts after this much time has passed since init began. */
 export const INIT_RETRY_WINDOW_MS = 6000;
+/** Row-lock wait restored once initialization is done — the pre-#257 contract. */
+export const STEADY_BUSY_TIMEOUT_MS = 5000;
+
+/**
+ * Starts the initialization phase on an open handle: lowers SQLite's own wait
+ * and takes this store's retry deadline.
+ *
+ * Both stores (session and observation) open the same file, so both go through
+ * this pair. Keeping it in one place is what stops the two envelopes from drifting
+ * apart — a mismatch here is invisible until a contended cold start.
+ *
+ * @param db Open handle.
+ * @returns The absolute deadline to pass to `withInitBusyRetry`.
+ */
+export function beginInit(db: Database.Database): number {
+  const deadlineAt = initRetryDeadline();
+  db.pragma("busy_timeout = " + INIT_BUSY_TIMEOUT_MS);
+  return deadlineAt;
+}
+
+/**
+ * Ends the initialization phase: restores the steady-state row-lock wait.
+ *
+ * @param db Open handle.
+ */
+export function endInit(db: Database.Database): void {
+  db.pragma("busy_timeout = " + STEADY_BUSY_TIMEOUT_MS);
+}
 
 const BUSY_CODE_PREFIXES = ["SQLITE_BUSY", "SQLITE_LOCKED"] as const;
 
 /**
  * True for the SQLite error classes the initialization retry is allowed to absorb.
  *
+ * The code decides when one is present: an error carrying a real non-busy code
+ * is never retried, even if its text happens to mention a lock. Only errors with
+ * no code at all fall back to the message, which covers a driver or wrapper that
+ * lost the code while keeping the wording.
+ *
  * @param error Value thrown by better-sqlite3.
  * @returns whether the caller may retry the same step.
  */
 export function isBusyError(error: unknown): boolean {
   const code = (error as { code?: unknown })?.code;
-  if (typeof code === "string" && BUSY_CODE_PREFIXES.some((p) => code === p || code.startsWith(p + "_"))) return true;
+  if (typeof code === "string" && code.length > 0) {
+    return BUSY_CODE_PREFIXES.some((p) => code === p || code.startsWith(p + "_"));
+  }
   const message = (error as Error)?.message ?? "";
   return /database is locked|database table is locked/i.test(message);
 }

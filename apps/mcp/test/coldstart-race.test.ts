@@ -43,7 +43,6 @@ function startClient(home: string, dbPath: string): {
   rpc: (method: string, params: unknown) => Promise<any>;
   notify: (method: string) => void;
   stop: () => Promise<void>;
-  stderr: () => string;
 } {
   const child = spawn(process.execPath, ["--import", "tsx", ENTRY, "--transport", "stdio"], {
     cwd: MCP_DIR,
@@ -101,7 +100,7 @@ function startClient(home: string, dbPath: string): {
     child.stdin.end();
     child.kill();
   });
-  return { rpc, notify, stop, stderr: () => err };
+  return { rpc, notify, stop };
 }
 
 async function driveOne(home: string, dbPath: string): Promise<RpcResult> {

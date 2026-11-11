@@ -23,4 +23,5 @@ Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, holdMs);
 
 try { db.exec("COMMIT"); } catch { /* the waiter's failure is the point */ }
 db.close();
-process.stdout.write("RELEASED\n");
+// No trailing RELEASED marker: the caller kills this process either way, and an
+// unread line is just noise (this stub is spawned, never imported).

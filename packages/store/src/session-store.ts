@@ -7,9 +7,9 @@
 import Database from "better-sqlite3";
 import { openDatabase } from "./db";
 import {
+  beginInit,
+  endInit,
   execDdlAtomically,
-  INIT_BUSY_TIMEOUT_MS,
-  initRetryDeadline,
   isBusyRetryExhausted,
   isDuplicateColumnError,
   withInitBusyRetry,
@@ -387,9 +387,8 @@ export class SqliteSessionStore implements SessionStore {
     // (attempt count, backoff and wall-clock window live in sqlite-init.ts). The
     // connection-level timeout is lowered for that phase so each attempt returns
     // promptly and the backoff — not SQLite's own long wait — decides the pace;
-    // it is restored to 5000 once the schema is complete.
-    const initDeadline = initRetryDeadline();
-    this.db.pragma("busy_timeout = " + INIT_BUSY_TIMEOUT_MS);
+    // beginInit/endInit restore the ordinary 5s contract afterwards.
+    const initDeadline = beginInit(this.db);
     // atomcode research: WAL persistent, set once, single shared connection.
     withInitBusyRetry("journal_mode", () => this.db.pragma("journal_mode = WAL"), initDeadline);
     this.db.pragma("synchronous = NORMAL");
@@ -417,14 +416,7 @@ export class SqliteSessionStore implements SessionStore {
     try {
       withInitBusyRetry("budget dedup", () => this.mergeDuplicateBudgetRows(), initDeadline);
     } catch (e) {
-      // A data problem (duplicate legacy rows that cannot be merged) still
-      // degrades to a warning and fail-open-to-unmetered. A busy/locked
-      // exhaustion does NOT: #257 forbids printing "database is locked" and
-      // then reporting a successful start, so that rethrows.
-      if (isBusyRetryExhausted(e)) throw e;
-      try {
-        process.stderr.write("[warn] budget_ledger duplicate-row merge failed: " + (e instanceof Error ? e.message : String(e)) + "\n");
-      } catch { /* stderr unavailable */ }
+      this.warnUnlessContended(e, "[warn] budget_ledger duplicate-row merge failed: ");
     }
     // #187: one budget row per session. New databases got the table-level
     // UNIQUE(session_id); this protected migration covers old databases. It is
@@ -434,12 +426,7 @@ export class SqliteSessionStore implements SessionStore {
     try {
       withInitBusyRetry("budget unique index", () => this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_session_unique ON budget_ledger(session_id)"), initDeadline);
     } catch (e) {
-      // Same split as the dedup step above: a legacy duplicate keeps the
-      // warning-and-fail-open path, a busy exhaustion must fail the start.
-      if (isBusyRetryExhausted(e)) throw e;
-      try {
-        process.stderr.write("[warn] budget_ledger unique-session index not created: " + (e instanceof Error ? e.message : String(e)) + "\n");
-      } catch { /* stderr unavailable */ }
+      this.warnUnlessContended(e, "[warn] budget_ledger unique-session index not created: ");
     }
     withInitBusyRetry("access_events switch rebuild", () => migrateSwitchEventSchema(this.db), initDeadline);
     // edge-pattern constraint seed (idempotent; mirrors EDGE_PATTERN_ROWS in relation.ts;
@@ -498,16 +485,14 @@ export class SqliteSessionStore implements SessionStore {
     try {
       withInitBusyRetry("access-chain bootstrap", () => bootstrapAccessChain(this.db), initDeadline);
     } catch (e) {
-      // D6 keeps this fail-open for persistent IO/schema failures (the write
-      // path re-probes the anchor). A busy exhaustion is different: it means the
-      // database is contended, not degraded, and #257 requires an honest failure.
-      if (isBusyRetryExhausted(e)) throw e;
-      this.accessEventTel.bootstrapFailed = true;
-      process.stderr.write("anysearch: access-chain bootstrap degraded (fail-open): " + String((e as Error)?.message ?? e) + "\n");
+      // The telemetry bit is D6's own signal; it is set before the warning so it
+      // records this degradation even when nothing listens on stderr.
+      if (!isBusyRetryExhausted(e)) this.accessEventTel.bootstrapFailed = true;
+      this.warnUnlessContended(e, "anysearch: access-chain bootstrap degraded (fail-open): ");
     }
     // Startup contract restored: ordinary reads and writes wait on row locks for
     // the pre-#257 5s instead of the short initialization timeout.
-    this.db.pragma("busy_timeout = 5000");
+    endInit(this.db);
 
     // Module-level prepared statements (atomcode research pattern).
     this.stmts = {
@@ -731,6 +716,19 @@ export class SqliteSessionStore implements SessionStore {
       }
     });
     merge();
+  }
+
+  // #257: the fail-open catch shape used by the startup steps below. A step whose
+  // failure only costs a feature (budget metering, chain anchoring) keeps the
+  // pre-existing degrade-and-continue behaviour for data/schema problems. It must
+  // NOT keep it for busy/locked exhaustion: that means the database is contended
+  // and the retry window ran out, and printing "database is locked" followed by a
+  // successful start is exactly what the ticket forbids. So exhaustion rethrows.
+  private warnUnlessContended(e: unknown, prefix: string): void {
+    if (isBusyRetryExhausted(e)) throw e;
+    try {
+      process.stderr.write(prefix + (e instanceof Error ? e.message : String(e)) + "\n");
+    } catch { /* stderr unavailable */ }
   }
 
   // #257: one ADD COLUMN migration. Only "duplicate column name" is absorbed —

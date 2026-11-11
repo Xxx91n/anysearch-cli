@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 import { openDatabase } from "./db";
-import { execDdlAtomically, INIT_BUSY_TIMEOUT_MS, initRetryDeadline, withInitBusyRetry } from "./sqlite-init.js";
+import { beginInit, endInit, execDdlAtomically, withInitBusyRetry } from "./sqlite-init.js";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type {
@@ -576,17 +576,16 @@ export class SqliteObservationStore {
     // path that drains it cannot leave a live native handle behind (#183).
     this.db = openDatabase(dbPath, { timeout: 5000 });
     // #257 cold start: same bounded retry policy as SessionStore (see
-    // sqlite-init.ts). The busy timeout is shortened for initialization only,
-    // so a retry attempt returns promptly instead of waiting out SQLite's 5s.
-    const initDeadline = initRetryDeadline();
-    this.db.pragma("busy_timeout = " + INIT_BUSY_TIMEOUT_MS);
+    // sqlite-init.ts). Its own deadline, because createEngine() opens this store
+    // after the session store and the second one must still get its own window.
+    const initDeadline = beginInit(this.db);
     withInitBusyRetry("journal_mode", () => this.db.pragma("journal_mode = WAL"), initDeadline);
     this.db.pragma("synchronous = NORMAL");
     withInitBusyRetry("observation schema", () => execDdlAtomically(this.db, OBSERVATION_SQL), initDeadline);
     // bring v0/v1 stores up to OBSERVATION_USER_VERSION.
     withInitBusyRetry("observation migrate", () => migrateObservationSchema(this.db), initDeadline);
     // restored for ordinary traffic, matching the pre-#257 contract.
-    this.db.pragma("busy_timeout = 5000");
+    endInit(this.db);
   }
 
   close(): void {
