@@ -174,6 +174,59 @@ intent. The working gate is in `pnpm-workspace.yaml`. Registry consumers are
 unaffected either way, because a repo `.npmrc`/`pnpm-workspace.yaml` never
 reaches `npm i -g` users.
 
+### Why `pnpm install` can reject a fresh lockfile (#256)
+
+The age gate rejects every dependency version published less than two days
+ago, including ones pnpm itself resolved a minute earlier. A lockfile that
+adds or upgrades a just-published package therefore dies on install with
+`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` (lockfile replay) or
+`ERR_PNPM_NO_MATURE_MATCHING_VERSION` (a fresh resolution). This is the gate
+working as designed, not a bug in the tool, and the fix is time: the entry
+passes once two days have gone by since the publish.
+
+The two days come from this repo's `minimumReleaseAge: 2880`. pnpm's own
+default is one day (1440 minutes), so a workspace that does not set the key
+still has a gate; it is just shorter.
+
+pnpm 11 also has a strict switch. This repo leaves `minimumReleaseAgeStrict`
+unset, which means that when a fresh resolution finds nothing old enough,
+pnpm may write `minimumReleaseAgeExclude` entries into
+`pnpm-workspace.yaml` and carry on instead of failing. That rewrite is how a
+too-young version can slip in without an install error. ship-gate's E6 rule
+refuses a non-empty exclude list, so CI does not accept what a loose local run
+just blessed. `node scripts/dep-age-status.mjs` reports the exclude list it
+finds, which is how you notice that rewrite happened.
+
+Two traps make this look like a flake:
+
+- **The local verdict is cached per machine.** A run says
+  `✓ Lockfile passes supply-chain policies (verified 22h ago)` without asking
+  the registry again, so a local green can sit on top of a CI red.
+- **The bypass is easy and wrong.** `PNPM_CONFIG_MINIMUM_RELEASE_AGE=0` turns
+  the gate off for that shell only. It hides the same check CI runs, so the
+  red just moves to the pipeline. A `minimumReleaseAgeExclude` list does the
+  same per package, and ship-gate's E6 rule refuses it outright.
+
+Ask the registry instead of guessing:
+
+    node scripts/dep-age-status.mjs                 # lists too-young entries + the moment they clear
+    node scripts/dep-age-status.mjs --json          # same answer, machine readable
+    node scripts/dep-age-status.mjs --parse-only    # no network: just count lockfile entries
+    node scripts/dep-age-status.mjs --lockfile=<p> --now=<iso>   # check an old lockfile at a past time
+
+`--parse-only` answers nothing about the age gate; its exit 0 only means the
+lockfile parsed. Never treat that as a CI green.
+
+Exit 0 from a normal run means the lockfile passes (what CI will see). Exit 1
+means it lists blocking entries and, when they are merely young, `clearsAt`.
+The workspace sets `minimumReleaseAgeIgnoreMissingTime: false`, so an entry
+with no publish time also counts as blocked and lands in exit 1 — and waiting
+for `clearsAt` does not clear it, which the report says separately
+(`blockedByMissingTime`). Exit 2 means the registry lookup itself failed, so
+the answer is unknown rather than green. Wait for `clearsAt` when everything
+blocking is merely young, or pick a dependency version that has already aged;
+never turn the gate off to get a green.
+
 Registry manifest check (versions / dist-tags.latest / access / repository):
 
     npm view @anysearch-cli/cli@0.0.3 --json | jq '{version,license,repository}'

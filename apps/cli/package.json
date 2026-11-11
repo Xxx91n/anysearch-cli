@@ -12,6 +12,7 @@
     "build": "node scripts/sync-domains.mjs && tsup && node scripts/stamp-dist.mjs",
     "dev": "tsx src/index.ts",
     "lint": "tsc --noEmit",
+    "pretest": "pnpm run build && node scripts/ensure-mcp-dist.mjs",
     "test": "node --import tsx --test \"test/**/*.test.ts\" \"test/**/*.test.mjs\" --test-timeout=30000",
     "check": "tsc --noEmit",
     "prepack": "pnpm run build"
