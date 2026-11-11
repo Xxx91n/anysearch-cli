@@ -4,6 +4,25 @@
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版本号按
 [SemVer](https://semver.org/)。
 
+## Unreleased — #257: 空库同时启动可靠完成（冷启动有限重试 + schema 一次成型）
+
+### Fixed
+
+- **两个进程同时开一个全新的库时，不会再随机死一个**。以前哪个进程先改库，另一个就可能直接拿到 `SQLITE_BUSY: database is locked` 然后启动失败，宿主那边看到的就是 MCP 服务时不时少一个。现在初始化阶段遇到忙/锁会有限重试，撑不过去就明确报错，不会假装启动成功。策略写死在 `packages/store/src/sqlite-init.ts`，不走环境变量，发出去的版本不会因为谁设了个变量就变成另一套启动契约：每个步骤最多 5 次（首次 + 4 次重试），间隔 100/200/400/800 毫秒，初始化期间 SQLite 自己的等待降到 500 毫秒（原来是 5000），整体 6 秒墙钟上限（意思是过了这个点不再开新重试，正在跑的那次自己跑完）。只重试 `SQLITE_BUSY` / `SQLITE_LOCKED` 及其子码；`CANTOPEN`、约束冲突、只读库、IO 错误都原样立刻抛。重试次数或窗口耗尽时抛的是包装过的错误，但真实的 busy 错误连同 `code` 一起挂在 `cause` 上，不会被吞。
+- **整段 schema 改成在一个 IMMEDIATE 事务里一次落地**。这是复现过程中发现的第二个故障：两个进程同时建 FTS5 虚拟表时，会撞上 `SQLITE_SCHEMA: vtable constructor failed: …_fts`。它不是忙错误，按规定不该重试，所以修在根上——要么整套表建好，要么一个都不建，另一个连接在事务上排队等，而不是两边边建边抢。初始化完还顺手把连接的 `busy_timeout` 恢复到 5000，普通读写不受影响。
+
+### Tests
+
+- `packages/store/test/sqlite-init.test.ts`：重试策略本身的单元测试——哪些错误可重试、退避正是 100/200/400/800、次数上限、墙钟上限、耗尽后 `cause` 和 `code` 都还在、非忙错误一次就抛且保持原始对象、`duplicate column name` 不算忙错误。
+- `packages/store/test/coldstart-race.test.ts`：两个真实进程抢一个全新库，5 轮，每轮两个都初始化成功；每轮查 `integrity_check`、`journal_mode=wal`、21 张表、两个 FTS5 索引、5 个触发器、9 条 edge pattern 种子、单条链锚点、观测库 `user_version=2`，确认没有半初始化残留。另有三个确定性用例：锁 1.5 秒能被重试撑过去；锁 30 秒会如实失败并保留 `SQLITE_BUSY`；路径不可打开时立刻报 `SQLITE_CANTOPEN`、不烧重试退避。
+- `apps/mcp/test/coldstart-race.test.ts`：宿主能看到的那一层。两个真实 `ans-mcp` 进程、5 轮、每轮都走完 `initialize` 和 `tools/list` 并拿到 5 个工具，不是“进程还活着”就算过；每轮再查一遍库的结构完整性。
+- 修复前的观察如实记着：同一套两进程竞态跑 20 轮只撞到 1 次 `SQLITE_BUSY`（`Database.pragma` 处），再跑 30 轮一次没撞到，60 轮时撞到 1 次 `SQLITE_SCHEMA`。所以 5 轮的竞态用例是采样，不是必现证明；真正证明因果的是上面那三个锁用例。
+
+### Verification
+
+- `pnpm -C packages/store check` / `test`、`pnpm -C apps/mcp check` / `test`、`pnpm -C packages/kernel check` / `test` 本地全绿（store 73/73、mcp 16/16、kernel 170/170）。
+- 这台机器的实测数值也写进了 `sqlite-init.ts` 的注释：单个 `journal_mode=WAL` 尝试在库被别的连接独占时约 1.2–1.4 秒就失败（`busy_timeout` 不管用），锁 15 秒时整轮初始化约 6.8 秒、4 次尝试后放弃。所以真实上界约 7.5 秒，不是“5×500ms + 1500ms 退避”算出来的 4 秒。
+
 ## Unreleased — #20: dsh 审批通道真机验收（沙盒，四种结果都跑通）
 
 ### Added
