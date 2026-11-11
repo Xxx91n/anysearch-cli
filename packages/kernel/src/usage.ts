@@ -141,14 +141,18 @@ export function toRunUsage(
   const hasCost = totals.assistantCalls > 0 || compaction.assistantCalls > 0;
   const costSource = combineCostSources(runSource, compactionSource, hasCost);
   const costUsd = totals.costUsd + compaction.costUsd;
+  // Tokens and dollars use the same scope: both totals cover the run AND PI's
+  // compaction. A total that counted only the main calls while its price
+  // counted both would make the two fields unreadable by one rule, and the
+  // ledger settles the sum. compactionTokens below is the compaction slice of
+  // this total, exactly like compactionCostUsd is of costUsd.
+  const totalTokens = totals.totalTokens + compaction.totalTokens;
   return {
     inputTokens: totals.inputTokens,
     outputTokens: totals.outputTokens,
     cacheReadTokens: totals.cacheReadTokens,
     cacheWriteTokens: totals.cacheWriteTokens,
-    totalTokens: totals.totalTokens,
-    // costUsd is the whole run's price, compaction included; compactionCostUsd
-    // below is the part of it PI's compaction spent.
+    totalTokens,
     costUsd,
     costSource,
     assistantCalls: totals.assistantCalls,

@@ -844,15 +844,31 @@ export class PiAgentRuntime {
       }
       return sessionFinishTurn?.(turn, signal);
     };
-    const sessionPrepareNextTurn = agent.prepareNextTurnWithContext;
-    (agent as any).prepareNextTurnWithContext = async (turn: any, signal?: AbortSignal) => {
-      const snapshot = await sessionPrepareNextTurn?.(turn, signal);
-      if (!pendingTurnMessages) return snapshot;
-      const nextMessages = pendingTurnMessages;
+    // PI rebuilds the request context from the session record in prepareRequest,
+    // so a snapshot handed to prepareNextTurnWithContext is discarded before the
+    // provider is called. The sufficiency gate's enriched transcript therefore
+    // has to be applied after that rebuild: this wrapper chains PI's own
+    // prepareRequest (compaction, projection, virtual-model routing) and then
+    // swaps in the enriched messages for one request.
+    const sessionPrepareRequest = agent.prepareRequest;
+    (agent as any).prepareRequest = async (request: any, signal?: AbortSignal) => {
+      const prepared = await sessionPrepareRequest?.(request, signal);
+      if (!pendingTurnMessages) return prepared;
+      const enriched = pendingTurnMessages;
       pendingTurnMessages = null;
-      const context = (snapshot?.context ?? turn?.context ?? {}) as Record<string, unknown>;
-      return { ...(snapshot ?? {}), context: { ...context, messages: nextMessages } };
+      const base = prepared?.context ?? request?.context ?? {};
+      // The gate rewrote tool-result text only; the declared tool loadout and
+      // the system head stay exactly what PI projected.
+      return { ...(prepared ?? {}), context: { ...base, messages: enriched } };
     };
+
+    const sessionPrepareNextTurn = agent.prepareNextTurnWithContext;
+    // The finishTurn/prepareRequest chain is enough: PI owns the turn loop, and
+    // the enriched transcript is applied at prepareRequest (see above). Keeping
+    // a second injection point here would race that rebuild and, worse, suggest
+    // the snapshot survives a projection that actually replaces it.
+    (agent as any).prepareNextTurnWithContext = async (turn: any, signal?: AbortSignal) =>
+      sessionPrepareNextTurn?.(turn, signal);
 
     // session events -> our AgentEvent types.
     // text mapping delegated to mapAssistantMessageEvent (pure, tested).
@@ -1145,10 +1161,12 @@ export class PiAgentRuntime {
       if (agentError) {
         yield { type: "error", message: agentError };
       } else {
-        // #178: the total is the same figure settled into the ledger
-        // (settleTokens) — the summary must not under-report cache tokens.
-        const tokenSummary = usageTotals.totalTokens > 0
-          ? ` (tokens: ${usageTotals.inputTokens} in + ${usageTotals.outputTokens} out = ${usageTotals.totalTokens} total)`
+        // The summary reports the same scope the ledger settles: main calls
+        // plus PI's compaction. Reporting only the main total here would
+        // contradict settleTokens the moment compaction runs (#178).
+        const settledTotalTokens = usageTotals.totalTokens + compactionUsage.totalTokens;
+        const tokenSummary = settledTotalTokens > 0
+          ? ` (tokens: ${usageTotals.inputTokens} in + ${usageTotals.outputTokens} out = ${settledTotalTokens} total)`
           : "";
         // #189: make the one-shot recovery visible next to the run summary.
         const recovery = this.pipeline?.getInjectedRecoveryDigest();

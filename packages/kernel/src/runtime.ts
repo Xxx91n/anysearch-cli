@@ -22,7 +22,9 @@ export interface RunUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /** Whole-run total: main calls plus PI's compaction. Same scope as costUsd. */
   totalTokens: number;
+  /** Whole-run price: main calls plus PI's compaction. Same scope as totalTokens. */
   costUsd: number;
   /**
    * Where costUsd came from. `provider` means the server sent the price;
