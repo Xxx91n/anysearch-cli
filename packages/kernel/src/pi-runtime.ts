@@ -1029,6 +1029,19 @@ export class PiAgentRuntime {
     let tokenSettled = false;
     let settledTokens = 0;
     let callSettled = false;
+    // Money is settle-only and must land exactly once per run: the happy path
+    // settles it after the run, the finally fallback settles it for a run that
+    // never got there. One flag keeps the two from both billing the same spend.
+    let usdSettled = false;
+    const settleUsdOnce = (amount: number): void => {
+      if (!billingWired || usdSettled || amount <= 0) return;
+      try {
+        ledger!.settleUsd(sessionId!, 0, amount);
+        usdSettled = true;
+      } catch (e) {
+        reportBudgetFault("usd settlement", e);
+      }
+    };
     const settleTokenReserve = (actual: number): void => {
       if (!billingWired || tokenSettled) return;
       tokenSettled = true;
@@ -1136,15 +1149,8 @@ export class PiAgentRuntime {
         // The memory pipeline's summary calls are drained and settled by
         // flushMemory(), because they are still in flight when the run ends.
         const settledTokensTotal = usageTotals.totalTokens + compactionUsage.totalTokens;
-        const settledUsdTotal = usageTotals.costUsd + compactionUsage.costUsd;
         settleTokenReserve(settledTokensTotal);
-        if (settledUsdTotal > 0) {
-          try {
-            ledger!.settleUsd(sessionId!, 0, settledUsdTotal);
-          } catch (e) {
-            reportBudgetFault("usd settlement", e);
-          }
-        }
+        settleUsdOnce(usageTotals.costUsd + compactionUsage.costUsd);
       }
 
       // Design: sync only this run's finalized messages into the FTS5 store —
@@ -1232,6 +1238,11 @@ export class PiAgentRuntime {
           ? tokenReserved
           : usageTotals.totalTokens + compactionUsage.totalTokens;
         settleTokenReserve(actual);
+        // Money is settled on this path too. A cancelled or early-closed run
+        // still spent whatever the provider already reported, and skipping it
+        // here would leave that spend unrecorded whenever the happy path in
+        // runInternal never ran. settleUsdOnce makes the two paths one charge.
+        settleUsdOnce(usageTotals.costUsd + compactionUsage.costUsd);
         if (billingWired && callReserved && !callSettled) {
           // A provider call happened if it reported usage, or if we aborted it
           // before the final chunk arrived.
