@@ -3,7 +3,8 @@
 // ponytail: no test framework, assert-based demo.
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
-import { PiAgentRuntime, mapAssistantMessageEvent, accumulateUsage, emptyUsageTotals, resetWiringWarnings, resolveContextOccupancy } from "../src/pi-runtime";
+import { PiAgentRuntime, mapAssistantMessageEvent, resetWiringWarnings, resolveContextOccupancy } from "../src/pi-runtime";
+import { accumulateUsage, emptyUsageTotals } from "../src/usage";
 import { distillGap, adjudicateReuseCompress, consolidateState, FALLBACK_LOW_WATERMARK_TOKENS, resolveLowWatermark } from "../src/memory-pipeline";
 import { MemoryPipeline } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";

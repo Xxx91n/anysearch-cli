@@ -596,11 +596,20 @@ function mapSpanToOtlp(span: ObservationSpan): Record<string, unknown> {
     events,
     ...(span.links && span.links.length > 0
       ? {
-          links: span.links.map((link) => ({
-            traceId: link.carrier?.traceparent?.split("-")[1],
-            spanId: link.carrier?.traceparent?.split("-")[2],
-            attributes: Object.entries(link.attributes).map(([key, value]) => ({ key, value: mapAttributeValue(value!) })),
-          })),
+          // An OTLP link without a trace/span id is invalid, so only links whose
+          // carrier yields both ids are exported; the rest stay in the local
+          // record with their attributes.
+          links: span.links.flatMap((link) => {
+            const parts = link.carrier?.traceparent?.split("-") ?? [];
+            const traceId = parts[1];
+            const spanId = parts[2];
+            if (!traceId || !spanId) return [];
+            return [{
+              traceId,
+              spanId,
+              attributes: Object.entries(link.attributes).map(([key, value]) => ({ key, value: mapAttributeValue(value!) })),
+            }];
+          }),
         }
       : {}),
     status: { code: span.status === "ok" ? 1 : 2 },

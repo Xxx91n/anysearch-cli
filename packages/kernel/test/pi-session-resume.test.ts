@@ -17,7 +17,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 import { parseContextWindow } from "../src/llm-init";
-import { accumulateUsage, emptyUsageTotals, piSessionKey, PiAgentRuntime, toRunUsage } from "../src/pi-runtime";
+import { piSessionKey, PiAgentRuntime } from "../src/pi-runtime";
+import { accumulateUsage, emptyUsageTotals, toRunUsage } from "../src/usage";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {

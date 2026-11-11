@@ -151,4 +151,3 @@ export function estimateTranscriptTokens(messages: unknown[]): number {
   for (const message of messages ?? []) total += estimateMessageTokens(message);
   return total;
 }
-

@@ -26,7 +26,7 @@ export interface RunUsage {
   /**
    * Where costUsd came from: the provider's own figure, pi-ai's local rate card
    * (an estimate), or nothing at all. An estimate must never be presented as a
-   * server-reported price (D4).
+   * server-reported price.
    */
   costSource: "provider" | "estimated" | "unknown";
   /** Assistant calls that actually returned usage. 0 means no call landed. */
@@ -35,6 +35,8 @@ export interface RunUsage {
   compactionCalls: number;
   compactionTokens: number;
   compactionCostUsd: number;
+  /** Where the compaction cost figure came from (same three-way口径 as the run). */
+  compactionCostSource: "provider" | "estimated" | "unknown";
   /** Dimensions that stay unknown. Empty only when every dimension was reported. */
   missing: string[];
 }

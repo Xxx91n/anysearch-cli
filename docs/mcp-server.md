@@ -84,7 +84,7 @@ spent:
 | Key | Meaning |
 |-----|---------|
 | `usage.run` | Calls, input/output tokens, cache reads/writes, total, `costUsd` with its `costSource`, PI compaction calls/tokens/cost, and a `missing[]` list naming every dimension the provider never reported. `costSource` is `provider` (the server sent the price), `estimated` (pi-ai's local rate card computed it), or `unknown`. Nothing unknown is rendered as free. |
-| `usage.memorySummary` | The same shape for the memory pipeline's own summary calls, or `null` when no pipeline is wired. |
+| `usage.memorySummary` | The same ledger shape for the memory pipeline's own summary calls, or `null` when no pipeline is wired. Same `costSource` rule: a summary price pi-ai computed from its rate card is `estimated`, not provider-sent. |
 | `context` | PI's own view of the window: `{tokens, window, percent}`. `window` is the window the session actually runs with, so a declared `ANS_LLM_CONTEXT_WINDOW` is verifiable here. |
 | `toolCalls` | Per-tool call counts for this run. Search work is counted here, apart from model usage. |
 

@@ -39,6 +39,7 @@ const COMPACTION_RESERVE_TOKENS = 16_384;
 // simply tries again.
 const BACKGROUND_SUMMARY_TIMEOUT_MS = 90_000;
 import { IR_CUSTOM_INSTRUCTIONS } from "./ir-schema";
+import { accumulateUsage, emptyUsageTotals, toSummaryUsage, type SummaryUsage } from "./usage";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort } from "./ports";
 import { RagAdapterRegistry, RAG_CONTEXT_TAG, RAG_DEFAULT_LIMIT, RAG_QUERY_MAX_CHARS, isDynamicRagAdapter } from "./rag-adapter";
 import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
@@ -398,8 +399,9 @@ export class MemoryPipeline {
   private readonly pendingWrites = new Set<Promise<unknown>>();
 
   // Usage of the pipeline's own summary requests, kept apart from the main run
-  // so the caller can report both without double counting.
-  private summaryUsage = { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0, costUsd: 0, cacheReported: false, costReported: false };
+  // so the caller can report both without double counting. Same ledger type as
+  // the run, so cost provenance follows the same rule.
+  private summaryUsage = emptyUsageTotals();
 
   constructor(deps: MemoryPipelineDeps) {
     this.deps = { ...deps, streamFn: ensureResult(deps.streamFn) };
@@ -407,22 +409,8 @@ export class MemoryPipeline {
   }
 
   /** Summary-call accounting for this runtime (never zero-filled). */
-  getSummaryUsage(): { calls: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; totalTokens: number; costUsd: number; missing: string[] } {
-    const u = this.summaryUsage;
-    const missing: string[] = [];
-    if (u.calls === 0) missing.push("summary usage");
-    if (u.calls > 0 && !u.cacheReported) missing.push("summary cache usage");
-    if (!u.costReported) missing.push("summary cost");
-    return {
-      calls: u.calls,
-      inputTokens: u.inputTokens,
-      outputTokens: u.outputTokens,
-      cacheReadTokens: u.cacheReadTokens,
-      cacheWriteTokens: u.cacheWriteTokens,
-      totalTokens: u.totalTokens,
-      costUsd: u.costUsd,
-      missing,
-    };
+  getSummaryUsage(): SummaryUsage {
+    return toSummaryUsage(this.summaryUsage);
   }
 
   /**
@@ -688,17 +676,7 @@ export class MemoryPipeline {
                 streamFn,
               );
               const u = result.usage;
-              if (u) {
-                this.summaryUsage.calls += 1;
-                this.summaryUsage.inputTokens += Number(u.input) || 0;
-                this.summaryUsage.outputTokens += Number(u.output) || 0;
-                this.summaryUsage.cacheReadTokens += Number(u.cacheRead) || 0;
-                this.summaryUsage.cacheWriteTokens += Number(u.cacheWrite) || 0;
-                this.summaryUsage.totalTokens += Number(u.totalTokens) || (Number(u.input) || 0) + (Number(u.output) || 0);
-                this.summaryUsage.costUsd += Number(u.cost?.total) || 0;
-                this.summaryUsage.cacheReported = this.summaryUsage.cacheReported || u.cacheRead !== undefined || u.cacheWrite !== undefined;
-                this.summaryUsage.costReported = this.summaryUsage.costReported || u.cost !== undefined;
-              }
+              if (u) accumulateUsage(this.summaryUsage, { role: "assistant", usage: u });
               return { text: result.text };
             })().then((summaryResult: any) => {
               if (summaryResult?.text) {

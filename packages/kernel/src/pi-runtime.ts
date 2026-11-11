@@ -26,6 +26,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { estimateTranscriptTokens } from "./message-text";
+import { accumulateUsage, costSourceOf, emptyUsageTotals, toRunUsage, type SummaryUsage } from "./usage";
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { appendFileSync, mkdirSync } from "node:fs";
@@ -40,7 +41,7 @@ import {
 } from "@anysearch-cli/retriever";
 import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, createDomainReloader, parseEnvOverrideSwitch, resolveOutputReserveTokens, resolveUrlPolicy, toBudgetCaps } from "@anysearch-cli/store";
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink } from "./ports";
-import type { AgentEvent, RunUsage } from "./runtime";
+import type { AgentEvent } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
 
@@ -326,128 +327,6 @@ export function mapAssistantMessageEvent(
     return { type: "text", content: ame.text };
   }
   return null;
-}
-
-// #103 (T4 ruling #90): token/USD metering source = subscribed agent events.
-// pi-ai SimpleStreamOptions.onResponse receives ProviderResponse {status, headers}
-// — it carries NO usage — so the old onResponse accumulation was dead code and
-// token totals stayed 0 (also starving shouldStopAfterTurn's consolidate input).
-// The real source is the `message_end` event: it carries the full AgentMessage,
-// and AssistantMessage.usage has input/output/totalTokens plus pi-ai-computed
-// cost (Usage.cost.total is the single USD price source — no local price table).
-// Note message_end also fires for user prompts and tool-result messages (which
-// may carry their own usage); per the ruling only AssistantMessage.usage counts.
-export interface UsageTotals {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  costUsd: number;
-  // Provider-reported cache reads/writes. An absent figure stays 0 here, but the
-  // report names it as unavailable instead of pretending the call was free.
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  // Whether the provider actually reported each dimension, so a reported zero
-  // stays distinguishable from an absent number.
-  cacheReported: boolean;
-  // True only when the server sent the price. pi-ai's own rate-card figure is
-  // an estimate, so it does NOT set this flag (D4).
-  costReported: boolean;
-  // True when costUsd came from pi-ai's local rate card (an estimate, not a
-  // provider-reported figure).
-  costEstimated: boolean;
-  // Assistant calls that actually returned usage.
-  assistantCalls: number;
-  // Latest assistant message's totalTokens (input incl. cache + output of the
-  // most recent LLM call). One input to the L0 watermark's occupancy:
-  // max(this, estimateTranscriptTokens(messages)) in resolveContextOccupancy.
-  // Cumulative totals are ledger-only and must never feed the watermark —
-  // they are monotonic, so a crossed watermark would re-fire every turn.
-  lastTotalTokens: number;
-}
-
-export function emptyUsageTotals(): UsageTotals {
-  return {
-    inputTokens: 0,
-    outputTokens: 0,
-    totalTokens: 0,
-    costUsd: 0,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    cacheReported: false,
-    costReported: false,
-    costEstimated: false,
-    assistantCalls: 0,
-    lastTotalTokens: 0,
-  };
-}
-
-/**
- * Fold the run totals and the PI compaction totals into the caller-facing
- * accounting. `missing` is the honest half: a dimension the provider never
- * reported is named, never zero-filled into "free".
- */
-export function toRunUsage(totals: UsageTotals, compactionCalls: number, compactionTokens: number, compactionCostUsd: number): RunUsage {
-  const missing: string[] = [];
-  if (totals.assistantCalls === 0) missing.push("assistant usage");
-  if (totals.assistantCalls > 0 && !totals.cacheReported) missing.push("cache usage");
-  // A locally estimated figure is not a provider report: name it as estimated
-  // so the caller never presents it as server-sent truth.
-  if (!totals.costReported) missing.push(totals.costEstimated ? "cost (estimated)" : "cost");
-  if (compactionCalls > 0 && compactionTokens === 0) missing.push("compaction usage");
-  return {
-    inputTokens: totals.inputTokens,
-    outputTokens: totals.outputTokens,
-    cacheReadTokens: totals.cacheReadTokens,
-    cacheWriteTokens: totals.cacheWriteTokens,
-    totalTokens: totals.totalTokens,
-    costUsd: totals.costUsd,
-    costSource: totals.costReported ? "provider" : totals.costEstimated ? "estimated" : "unknown",
-    assistantCalls: totals.assistantCalls,
-    compactionCalls,
-    compactionTokens,
-    compactionCostUsd,
-    missing,
-  };
-}
-
-// Accumulate one message_end payload into the run totals. Pure helper,
-// exported for tests. Non-assistant messages and missing usage are ignored.
-//
-// Cost provenance (D4): pi-ai always materialises `usage.cost` from its own
-// rate card and stamps `totalFromProvider: false` on it, so the presence of a
-// cost object does NOT mean the server sent a price. A local-card figure is an
-// estimate, and a custom endpoint declares all-zero rates — neither may read as
-// a provider-reported total or as "free".
-export function accumulateUsage(totals: UsageTotals, message: unknown): void {
-  const msg = message as {
-    role?: string;
-    usage?: {
-      input?: number; output?: number; cacheRead?: number; cacheWrite?: number; totalTokens?: number;
-      cost?: { total?: number; totalFromProvider?: boolean };
-    };
-  } | undefined;
-  if (!msg || msg.role !== "assistant" || !msg.usage) return;
-  const input = Number(msg.usage.input) || 0;
-  const output = Number(msg.usage.output) || 0;
-  totals.inputTokens += input;
-  totals.outputTokens += output;
-  totals.cacheReadTokens += Number(msg.usage.cacheRead) || 0;
-  totals.cacheWriteTokens += Number(msg.usage.cacheWrite) || 0;
-  totals.cacheReported = totals.cacheReported || msg.usage.cacheRead !== undefined || msg.usage.cacheWrite !== undefined;
-  const cost = msg.usage.cost;
-  if (cost && cost.totalFromProvider === true) {
-    totals.costReported = true;
-    totals.costUsd += Number(cost.total) || 0;
-  } else if (cost && Number.isFinite(Number(cost.total))) {
-    totals.costEstimated = true;
-    totals.costUsd += Number(cost.total) || 0;
-  }
-  totals.assistantCalls += 1;
-  // totalTokens includes cache read/write tokens when the provider reports
-  // them; fall back to input+output when absent.
-  const messageTotal = Number(msg.usage.totalTokens) || (input + output);
-  totals.totalTokens += messageTotal;
-  totals.lastTotalTokens = messageTotal;
 }
 
 // #113: current-context occupancy for the L0 watermark. `lastUsageTokens` is
@@ -774,9 +653,10 @@ export class PiAgentRuntime {
       },
     });
 
-    let compactionCalls = 0;
-    let compactionTokens = 0;
-    let compactionCostUsd = 0;
+    // PI's own compaction is a real provider call, so it gets its own ledger
+    // rather than being folded into the run's assistant calls. accumulateUsage
+    // applies the same cost-provenance rule as the main run.
+    const compactionUsage = emptyUsageTotals();
     // Every message finalized in this run. The FTS sync uses this instead of the
     // whole resumed transcript, which would duplicate rows on every call.
     const runMessages: Array<{ role?: string; content?: unknown }> = [];
@@ -932,10 +812,7 @@ export class PiAgentRuntime {
       // PI's own compaction is a real provider call: count it separate from the
       // run's assistant calls so the report can name both.
       if (event.type === "compaction_end" && event.result?.usage) {
-        compactionCalls += 1;
-        const u = event.result.usage;
-        compactionTokens += Number(u.totalTokens) || (Number(u.input) || 0) + (Number(u.output) || 0);
-        compactionCostUsd += Number(u.cost?.total) || 0;
+        accumulateUsage(compactionUsage, { role: "assistant", usage: event.result.usage });
       }
       mapSessionEvent(event, eventBuffer, mapState);
       if (event.type === "agent_end") agentDone = true;
@@ -1231,7 +1108,13 @@ export class PiAgentRuntime {
           summary: `Agent completed${tokenSummary}`,
           ...(recovery ? { recovery } : {}),
           ...(context ? { context } : {}),
-          usage: toRunUsage(usageTotals, compactionCalls, compactionTokens, compactionCostUsd),
+          usage: toRunUsage(
+            usageTotals,
+            compactionUsage.assistantCalls,
+            compactionUsage.totalTokens,
+            compactionUsage.costUsd,
+            costSourceOf(compactionUsage),
+          ),
         };
       }
     } finally {
@@ -1306,7 +1189,7 @@ export class PiAgentRuntime {
   }
 
   /** Usage of the memory pipeline's own summary calls (separate from the run). */
-  getMemoryUsage(): { calls: number; inputTokens: number; outputTokens: number; totalTokens: number; costUsd: number; missing: string[] } | null {
+  getMemoryUsage(): SummaryUsage | null {
     return this.pipeline ? this.pipeline.getSummaryUsage() : null;
   }
 }

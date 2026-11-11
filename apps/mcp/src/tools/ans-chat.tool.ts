@@ -10,7 +10,7 @@
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import { PiAgentRuntime, parseContextWindow, piCompactionFromEnv, resolvePiSessionDir, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, parseContextWindow, piCompactionFromEnv, resolvePiSessionDir, emptyRunUsage, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
 import { domainTomlPath } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import { buildAnsChatResult, resolveAnsChatSession } from "../ans-chat-session.js";
@@ -225,11 +225,12 @@ export function registerAnsChat(
           // The runtime's error event means the loop did not complete; surface
           // it as an execution failure instead of a successful-looking text.
           if (runtimeError !== undefined) return toolError("ans_chat", runtimeError);
-          // #258 D4: every call reports what it spent. A null run usage is
-          // reported as missing, never rendered as a free run.
+          // Every call reports what it spent. A run that produced no accounting
+          // still returns the full shape with every dimension named missing,
+          // never a partial object that renders as a free run.
           return buildAnsChatResult(output, memory.sessionId, {
             usage: {
-              run: runUsage ?? { missing: ["run usage"] },
+              run: runUsage ?? emptyRunUsage(["run usage"]),
               memorySummary: runtime.getMemoryUsage(),
             },
             context: runContext,

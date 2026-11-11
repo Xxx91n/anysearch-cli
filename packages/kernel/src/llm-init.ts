@@ -182,7 +182,7 @@ export async function createLlmSession(opts: LlmSessionOptions): Promise<LlmSess
   // Provider env fallback (OPENAI_/ANTHROPIC_/GOOGLE_API_KEY) lives inside pi-ai's ProviderAuth.
   const apiKey = opts.apiKey;
 
-  // D2 (#258): a declared window is what the operator says their endpoint
+  // #258: a declared window is what the operator says their endpoint
   // really has, and it must drive the run, the budget estimate and PI's own
   // compaction trigger alike. The catalog value is a default, not a verdict —
   // silently keeping it while ignoring the declaration would turn a declared
