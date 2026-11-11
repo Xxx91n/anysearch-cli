@@ -125,6 +125,31 @@ function sleepSync(ms: number): void {
 }
 
 /**
+ * Runs `work` inside one IMMEDIATE transaction with foreign-key enforcement
+ * turned OFF for the duration, then restores it — always, including on failure.
+ *
+ * This exists because a table swap (drop + rename) has to run with enforcement
+ * off, and `foreign_keys` is a per-CONNECTION switch that a pragma cannot flip
+ * inside a transaction. Leaving it off after a failure is the dangerous case:
+ * with the startup retry the connection survives a SQLITE_BUSY, and cascades
+ * would then silently stop working for the rest of the process's life.
+ *
+ * The restore is in a `finally`, so a throwing `work` (including the busy
+ * exhaustion the caller retries) still re-enables enforcement.
+ *
+ * @param db Open handle.
+ * @param work Idempotent migration work; must be safe inside a transaction.
+ */
+export function withForeignKeysOff(db: Database.Database, work: () => void): void {
+  db.pragma("foreign_keys = OFF");
+  try {
+    work();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+}
+
+/**
  * Applies a whole DDL script in ONE IMMEDIATE transaction.
  *
  * Why not a plain `db.exec(sql)`: two processes creating a fresh database at the
@@ -177,24 +202,33 @@ export function isBusyRetryExhausted(error: unknown): boolean {
  *   that keeps the real busy error as `cause` when attempts or the window run out.
  */
 export function withInitBusyRetry<T>(label: string, step: () => T, deadlineAt: number): T {
+  // One failure path, used both when the cap is hit before sleeping and when the
+  // backoff itself crossed the deadline.
+  const exhausted = (error: unknown, attempts: number): never => {
+    const real = (error as Error)?.message ?? String(error);
+    const wrapped = new Error(
+      "sqlite init step \"" + label + "\" still busy after " + attempts +
+      " attempts (window " + INIT_RETRY_WINDOW_MS + "ms): " + real,
+      { cause: error },
+    );
+    const code = (error as { code?: unknown })?.code;
+    if (typeof code === "string") (wrapped as { code?: string }).code = code;
+    throw wrapped;
+  };
   for (let attempt = 0; ; attempt++) {
     try {
       return step();
     } catch (error) {
       if (!isBusyError(error)) throw error;
-      const nextAttempt = attempt + 1;
-      if (nextAttempt >= INIT_RETRY_MAX_ATTEMPTS || Date.now() >= deadlineAt) {
-        const real = (error as Error)?.message ?? String(error);
-        const wrapped = new Error(
-          "sqlite init step \"" + label + "\" still busy after " + nextAttempt +
-          " attempts (window " + INIT_RETRY_WINDOW_MS + "ms): " + real,
-          { cause: error },
-        );
-        const code = (error as { code?: unknown })?.code;
-        if (typeof code === "string") (wrapped as { code?: string }).code = code;
-        throw wrapped;
+      const attemptsSoFar = attempt + 1;
+      if (attemptsSoFar >= INIT_RETRY_MAX_ATTEMPTS || Date.now() >= deadlineAt) {
+        return exhausted(error, attemptsSoFar);
       }
       sleepSync(initRetryDelayMs(attempt));
+      // The backoff can itself cross the window (up to 800ms past it). The
+      // contract is "no retry STARTS after the deadline", so re-check here
+      // instead of starting an attempt that is already out of time.
+      if (Date.now() >= deadlineAt) return exhausted(error, attemptsSoFar);
     }
   }
 }

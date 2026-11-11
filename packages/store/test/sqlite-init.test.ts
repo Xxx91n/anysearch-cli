@@ -19,6 +19,7 @@ import {
   isBusyError,
   isBusyRetryExhausted,
   isDuplicateColumnError,
+  withForeignKeysOff,
   withInitBusyRetry,
 } from "../src/sqlite-init.js";
 import Database from "better-sqlite3";
@@ -128,6 +129,31 @@ function main() {
     assert(thrown?.cause instanceof Error, "window exhaustion still carries the real error as cause");
   }
 
+  // --- the backoff must not start an attempt after the window closed ---
+  {
+    // Deadline lands partway through the first backoff (100ms): the sleep crosses
+    // it, so the loop must give up instead of making a second attempt.
+    let calls = 0;
+    const budgetMs = 40;
+    let thrown: unknown;
+    try {
+      withInitBusyRetry("journal_mode", () => { calls++; throw busyError(); }, Date.now() + budgetMs);
+    } catch (e) { thrown = e; }
+    assert(calls === 1, "a backoff that crosses the deadline makes no further attempt (got " + calls + ")");
+    assert(isBusyRetryExhausted(thrown), "crossing the window throws the same wrapped exhaustion");
+  }
+  {
+    // Control: with time to spare the same step retries, so the case above is
+    // discriminated by the deadline and not by something else.
+    let calls = 0;
+    const v = withInitBusyRetry("journal_mode", () => {
+      calls++;
+      if (calls < 2) throw busyError();
+      return "ok";
+    }, Date.now() + INIT_RETRY_WINDOW_MS);
+    assert(v === "ok" && calls === 2, "the same two-attempt case succeeds when the window allows it");
+  }
+
   // --- deadline arithmetic ---
   {
     const d = initRetryDeadline(1000);
@@ -162,6 +188,39 @@ function main() {
       const after = db.pragma("busy_timeout", { simple: true });
       assert(after === STEADY_BUSY_TIMEOUT_MS, "endInit restores the steady-state wait (got " + String(after) + ")");
       assert(after === 5000, "the steady-state wait is the pre-#257 5s contract");
+    } finally {
+      db.close();
+    }
+  }
+
+  // --- foreign keys are restored on BOTH paths (busy retry keeps the connection alive) ---
+  {
+    const db = new Database(":memory:");
+    try {
+      let seenDuring = -1;
+      withForeignKeysOff(db, () => {
+        seenDuring = db.pragma("foreign_keys", { simple: true }) as number;
+      });
+      assert(seenDuring === 0, "enforcement is off while the swap runs (got " + seenDuring + ")");
+      assert((db.pragma("foreign_keys", { simple: true }) as number) === 1,
+        "enforcement is back on after the swap");
+    } finally {
+      db.close();
+    }
+  }
+  {
+    const db = new Database(":memory:");
+    try {
+      // The failure path is the one that matters: a busy exhaustion inside the
+      // swap leaves the connection alive, so a missed restore would disable
+      // cascades for the rest of the process.
+      let threw = false;
+      try {
+        withForeignKeysOff(db, () => { throw busyError(); });
+      } catch { threw = true; }
+      assert(threw, "a throwing swap propagates the error (it is retried, not swallowed)");
+      assert((db.pragma("foreign_keys", { simple: true }) as number) === 1,
+        "enforcement is restored even when the swap throws");
     } finally {
       db.close();
     }

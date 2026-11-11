@@ -9,10 +9,14 @@
 // can assert both the outer message and the preserved busy error (code + cause).
 import { SqliteSessionStore } from "../../src/session-store.js";
 import { SqliteObservationStore } from "../../src/observation.js";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 const dbPath = process.argv[2];
+// Optional third arg: a file to create (sync) right before the stores open.
+// The short-lock case uses it to prove the lock is still held at the moment
+// initialization starts, instead of hoping tsx loading is slow enough.
+const readyFile = process.argv[3];
 const t0 = Date.now();
 
 try {
@@ -20,6 +24,7 @@ try {
   // caller's ensureOwnerOnlyDb() creates the parent directory first, then the
   // session store, then the observation store, all on one file.
   mkdirSync(dirname(dbPath), { recursive: true });
+  if (readyFile) writeFileSync(readyFile, "ready");
   const session = new SqliteSessionStore(dbPath);
   const observation = new SqliteObservationStore(dbPath);
   observation.close();

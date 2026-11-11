@@ -12,6 +12,7 @@ import {
   execDdlAtomically,
   isBusyRetryExhausted,
   isDuplicateColumnError,
+  withForeignKeysOff,
   withInitBusyRetry,
 } from "./sqlite-init.js";
 import { containsSecret } from "./secret.js";
@@ -292,33 +293,42 @@ export interface AccessEventTelemetry {
 // legacy access_events had memory_id NOT NULL, forcing a fake retrieval_results
 // sentinel for switch edges. Rebuild that table once so switch edges can use NULL memory_id
 // while real access events still satisfy the FK through the same CHECK.
+//
+// The shape check runs INSIDE the IMMEDIATE transaction: with the startup retry
+// (#257) this function can be entered again after another process already
+// finished the rebuild, and a check taken before the lock would then be stale.
+// `foreign_keys` is a per-connection switch and a no-op inside a transaction,
+// so it is turned off outside and restored in a finally block: the busy path
+// must not leave a live connection with foreign keys disabled (cascades would
+// silently stop working).
 function migrateSwitchEventSchema(db: Database.Database): void {
-  const cols = db.prepare("PRAGMA table_info(access_events)").all() as Array<{ name: string; notnull: number }>;
-  const memory = cols.find((c) => c.name === "memory_id");
-  const hasChainColumns = cols.some((c) => c.name === "prev_hash");
-  if (!memory || memory.notnull !== 1 || !hasChainColumns) return;
-  db.pragma("foreign_keys = OFF");
-  const run = db.transaction((): void => {
-    db.exec(`
-      CREATE TABLE access_events_switch_migrate (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        memory_id INTEGER REFERENCES retrieval_results(id) ON DELETE CASCADE,
-        accessed_at TEXT NOT NULL DEFAULT (datetime('now')),
-        prev_hash TEXT,
-        schema_version INTEGER,
-        event_type TEXT,
-        CHECK (memory_id IS NOT NULL OR event_type IS NOT NULL)
-      );
-      INSERT INTO access_events_switch_migrate (id, memory_id, accessed_at, prev_hash, schema_version, event_type)
-        SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events;
-      DROP TABLE access_events;
-      ALTER TABLE access_events_switch_migrate RENAME TO access_events;
-      CREATE INDEX IF NOT EXISTS idx_access_events_memory ON access_events(memory_id);
-      CREATE INDEX IF NOT EXISTS idx_access_events_time ON access_events(accessed_at);
-    `);
+  const needsRebuild = (): boolean => {
+    const cols = db.prepare("PRAGMA table_info(access_events)").all() as Array<{ name: string; notnull: number }>;
+    const memory = cols.find((c) => c.name === "memory_id");
+    return memory !== undefined && memory.notnull === 1 && cols.some((c) => c.name === "prev_hash");
+  };
+  return withForeignKeysOff(db, () => {
+    db.transaction((): void => {
+      if (!needsRebuild()) return;
+      db.exec(`
+        CREATE TABLE access_events_switch_migrate (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          memory_id INTEGER REFERENCES retrieval_results(id) ON DELETE CASCADE,
+          accessed_at TEXT NOT NULL DEFAULT (datetime('now')),
+          prev_hash TEXT,
+          schema_version INTEGER,
+          event_type TEXT,
+          CHECK (memory_id IS NOT NULL OR event_type IS NOT NULL)
+        );
+        INSERT INTO access_events_switch_migrate (id, memory_id, accessed_at, prev_hash, schema_version, event_type)
+          SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events;
+        DROP TABLE access_events;
+        ALTER TABLE access_events_switch_migrate RENAME TO access_events;
+        CREATE INDEX IF NOT EXISTS idx_access_events_memory ON access_events(memory_id);
+        CREATE INDEX IF NOT EXISTS idx_access_events_time ON access_events(accessed_at);
+      `);
+    }).immediate();
   });
-  run.immediate();
-  db.pragma("foreign_keys = ON");
 }
 
 export class SqliteSessionStore implements SessionStore {
