@@ -152,31 +152,3 @@ export function estimateTranscriptTokens(messages: unknown[]): number {
   return total;
 }
 
-/**
- * Serialize a transcript to the plain-text form a summarizer reads.
- *
- * Tool call arguments are included so a summary can say what was searched;
- * result text is capped per message because shrinking it is the point of
- * compaction.
- */
-export function serializeTranscriptForSummary(messages: unknown[], perMessageCap = 4000): string {
-  return (messages ?? []).map((message) => {
-    const m = message as { role?: unknown; content?: unknown } | null | undefined;
-    const role = String(m?.role ?? "unknown");
-    const content = m?.content;
-    const blocks: string[] = [];
-    if (typeof content === "string") {
-      blocks.push(content);
-    } else if (Array.isArray(content)) {
-      for (const block of content) {
-        const b = block as { type?: unknown; text?: unknown; name?: unknown; arguments?: unknown; content?: unknown } | null;
-        if (!b) continue;
-        if (b.type === "text" && typeof b.text === "string") blocks.push(b.text);
-        else if (b.type === "toolCall") blocks.push("[tool " + String(b.name ?? "") + "] " + JSON.stringify(b.arguments ?? {}));
-        else if (b.type === "toolResult" || b.type === "tool_result") blocks.push("[tool result] " + JSON.stringify(b.content ?? ""));
-      }
-    }
-    const text = blocks.join("\n").slice(0, perMessageCap);
-    return "[" + role + "] " + text;
-  }).join("\n\n");
-}

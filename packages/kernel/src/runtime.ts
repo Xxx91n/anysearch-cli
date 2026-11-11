@@ -23,6 +23,12 @@ export interface RunUsage {
   cacheWriteTokens: number;
   totalTokens: number;
   costUsd: number;
+  /**
+   * Where costUsd came from: the provider's own figure, pi-ai's local rate card
+   * (an estimate), or nothing at all. An estimate must never be presented as a
+   * server-reported price (D4).
+   */
+  costSource: "provider" | "estimated" | "unknown";
   /** Assistant calls that actually returned usage. 0 means no call landed. */
   assistantCalls: number;
   /** PI context-compaction calls, kept apart from the main run. */

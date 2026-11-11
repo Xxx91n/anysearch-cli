@@ -10,11 +10,10 @@
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import { PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, parseContextWindow, piCompactionFromEnv, resolvePiSessionDir, KernelJsonSchemas, KernelToolDescriptions, type LlmSession } from "@anysearch-cli/kernel";
 import { domainTomlPath } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import { buildAnsChatResult, resolveAnsChatSession } from "../ans-chat-session.js";
-import { piCompactionFromEnv, resolvePiSessionDir } from "../pi-session.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";

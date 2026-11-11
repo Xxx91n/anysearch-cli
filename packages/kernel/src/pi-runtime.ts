@@ -28,8 +28,7 @@ import {
 import { estimateTranscriptTokens } from "./message-text";
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { hostname } from "node:os";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   CONTENT_TRUST_SCHEMA_VERSION,
@@ -350,7 +349,12 @@ export interface UsageTotals {
   // Whether the provider actually reported each dimension, so a reported zero
   // stays distinguishable from an absent number.
   cacheReported: boolean;
+  // True only when the server sent the price. pi-ai's own rate-card figure is
+  // an estimate, so it does NOT set this flag (D4).
   costReported: boolean;
+  // True when costUsd came from pi-ai's local rate card (an estimate, not a
+  // provider-reported figure).
+  costEstimated: boolean;
   // Assistant calls that actually returned usage.
   assistantCalls: number;
   // Latest assistant message's totalTokens (input incl. cache + output of the
@@ -371,6 +375,7 @@ export function emptyUsageTotals(): UsageTotals {
     cacheWriteTokens: 0,
     cacheReported: false,
     costReported: false,
+    costEstimated: false,
     assistantCalls: 0,
     lastTotalTokens: 0,
   };
@@ -385,7 +390,9 @@ export function toRunUsage(totals: UsageTotals, compactionCalls: number, compact
   const missing: string[] = [];
   if (totals.assistantCalls === 0) missing.push("assistant usage");
   if (totals.assistantCalls > 0 && !totals.cacheReported) missing.push("cache usage");
-  if (!totals.costReported) missing.push("cost");
+  // A locally estimated figure is not a provider report: name it as estimated
+  // so the caller never presents it as server-sent truth.
+  if (!totals.costReported) missing.push(totals.costEstimated ? "cost (estimated)" : "cost");
   if (compactionCalls > 0 && compactionTokens === 0) missing.push("compaction usage");
   return {
     inputTokens: totals.inputTokens,
@@ -394,6 +401,7 @@ export function toRunUsage(totals: UsageTotals, compactionCalls: number, compact
     cacheWriteTokens: totals.cacheWriteTokens,
     totalTokens: totals.totalTokens,
     costUsd: totals.costUsd,
+    costSource: totals.costReported ? "provider" : totals.costEstimated ? "estimated" : "unknown",
     assistantCalls: totals.assistantCalls,
     compactionCalls,
     compactionTokens,
@@ -404,10 +412,19 @@ export function toRunUsage(totals: UsageTotals, compactionCalls: number, compact
 
 // Accumulate one message_end payload into the run totals. Pure helper,
 // exported for tests. Non-assistant messages and missing usage are ignored.
+//
+// Cost provenance (D4): pi-ai always materialises `usage.cost` from its own
+// rate card and stamps `totalFromProvider: false` on it, so the presence of a
+// cost object does NOT mean the server sent a price. A local-card figure is an
+// estimate, and a custom endpoint declares all-zero rates — neither may read as
+// a provider-reported total or as "free".
 export function accumulateUsage(totals: UsageTotals, message: unknown): void {
   const msg = message as {
     role?: string;
-    usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; totalTokens?: number; cost?: { total?: number } };
+    usage?: {
+      input?: number; output?: number; cacheRead?: number; cacheWrite?: number; totalTokens?: number;
+      cost?: { total?: number; totalFromProvider?: boolean };
+    };
   } | undefined;
   if (!msg || msg.role !== "assistant" || !msg.usage) return;
   const input = Number(msg.usage.input) || 0;
@@ -417,18 +434,20 @@ export function accumulateUsage(totals: UsageTotals, message: unknown): void {
   totals.cacheReadTokens += Number(msg.usage.cacheRead) || 0;
   totals.cacheWriteTokens += Number(msg.usage.cacheWrite) || 0;
   totals.cacheReported = totals.cacheReported || msg.usage.cacheRead !== undefined || msg.usage.cacheWrite !== undefined;
-  totals.costReported = totals.costReported || msg.usage.cost !== undefined;
+  const cost = msg.usage.cost;
+  if (cost && cost.totalFromProvider === true) {
+    totals.costReported = true;
+    totals.costUsd += Number(cost.total) || 0;
+  } else if (cost && Number.isFinite(Number(cost.total))) {
+    totals.costEstimated = true;
+    totals.costUsd += Number(cost.total) || 0;
+  }
   totals.assistantCalls += 1;
   // totalTokens includes cache read/write tokens when the provider reports
   // them; fall back to input+output when absent.
   const messageTotal = Number(msg.usage.totalTokens) || (input + output);
   totals.totalTokens += messageTotal;
   totals.lastTotalTokens = messageTotal;
-  totals.costUsd += Number(msg.usage.cost?.total) || 0;
-}
-
-export function estimateMessagesTokens(messages: any[]): number {
-  return estimateTranscriptTokens(messages ?? []);
 }
 
 // #113: current-context occupancy for the L0 watermark. `lastUsageTokens` is
@@ -437,7 +456,7 @@ export function estimateMessagesTokens(messages: any[]): number {
 // the lag window CodeRabbit flagged on PR #114. max() keeps a provider report
 // that is larger than the local estimate from being under-counted.
 export function resolveContextOccupancy(lastUsageTokens: number, messages: any[]): number {
-  const estimated = estimateMessagesTokens(messages);
+  const estimated = estimateTranscriptTokens(messages);
   return Math.max(Number(lastUsageTokens) || 0, estimated);
 }
 
@@ -475,9 +494,9 @@ export function resolveReserveInputTokens(
     // The estimator only reads `role`/`content`; wrapping the system prompt in a
     // user-shaped message puts it inside the same character estimate (a "system"
     // role is not an agent message role and would count as 0).
-    tokens += Math.ceil(estimateMessagesTokens([{ role: "user", content: prompt }] as any));
+    tokens += Math.ceil(estimateTranscriptTokens([{ role: "user", content: prompt }] as any));
     if (systemPrompt) {
-      tokens += Math.ceil(estimateMessagesTokens([{ role: "user", content: systemPrompt }] as any));
+      tokens += Math.ceil(estimateTranscriptTokens([{ role: "user", content: systemPrompt }] as any));
     }
   } catch { /* fail-open: the output reserve alone is still a valid lower bound */ }
   return { tokens, coldStart: true };
@@ -495,7 +514,8 @@ export function resolveTokenReserve(inputTokens: number, outputReserveTokens: nu
 }
 
 // Same-session runs are serialized; different sessions keep separate tails and
-// run in parallel.
+// run in parallel. In-process only: the cross-process lock (owner identity,
+// heartbeat, stale windows, 120s wait) is ticket #266's subject.
 const sessionQueues = new Map<string, Promise<void>>();
 
 async function acquireSessionQueue(key: string): Promise<() => void> {
@@ -509,109 +529,6 @@ async function acquireSessionQueue(key: string): Promise<() => void> {
     release();
     if (sessionQueues.get(key) === tail) sessionQueues.delete(key);
   };
-}
-
-/**
- * Cross-process mutex for one PI session record. The JSONL record has one
- * writer; two processes appending at once would interleave entries. The lock
- * is a directory (mkdir is atomic).
- *
- * A plain directory-mtime lock mistakes a long but healthy run for a dead one,
- * so the holder records its pid/host and refreshes a heartbeat file. A waiter
- * only steals when the recorded owner is really gone:
- * - same host + live pid: never steal, however old the heartbeat is
- * - same host + dead pid: steal once the stale window has passed
- * - other host or unreadable owner: fall back to heartbeat/directory age
- */
-const FILE_LOCK_STALE_MS = 10 * 60_000;
-const FILE_LOCK_TIMEOUT_MS = 120_000;
-const LOCK_OWNER_FILE = "owner.json";
-const LOCK_HEARTBEAT_FILE = "heartbeat";
-
-// The stale/timeout windows are overridable so a killed holder can recover in
-// seconds instead of waiting ten minutes.
-function lockMsFromEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") return fallback;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
-function pidIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    // EPERM means the process exists but belongs to another user.
-    return (e as NodeJS.ErrnoException)?.code === "EPERM";
-  }
-}
-
-interface LockOwner { pid: number; host: string; startedAt: number }
-
-function readLockOwner(lockPath: string): LockOwner | undefined {
-  try {
-    const raw = JSON.parse(readFileSync(join(lockPath, LOCK_OWNER_FILE), "utf8")) as Partial<LockOwner>;
-    if (!Number.isInteger(raw.pid) || raw.pid! <= 0 || typeof raw.host !== "string") return undefined;
-    return { pid: raw.pid!, host: raw.host, startedAt: Number(raw.startedAt) || 0 };
-  } catch {
-    return undefined;
-  }
-}
-
-/** Newest ORIGINAL timestamp available for the lock: heartbeat, else directory. */
-function lockAgeMs(lockPath: string, now: number): number {
-  const heartbeat = join(lockPath, LOCK_HEARTBEAT_FILE);
-  try {
-    return now - statSync(existsSync(heartbeat) ? heartbeat : lockPath).mtimeMs;
-  } catch {
-    return 0;
-  }
-}
-
-async function acquireFileLock(lockPath: string, timeoutMs = lockMsFromEnv("ANS_PI_LOCK_TIMEOUT_MS", FILE_LOCK_TIMEOUT_MS)): Promise<() => void> {
-  const staleMs = lockMsFromEnv("ANS_PI_LOCK_STALE_MS", FILE_LOCK_STALE_MS);
-  const start = Date.now();
-  for (;;) {
-    try {
-      mkdirSync(lockPath);
-      let timer: ReturnType<typeof setInterval> | undefined;
-      const owner: LockOwner = { pid: process.pid, host: hostname(), startedAt: Date.now() };
-      try { writeFileSync(join(lockPath, LOCK_OWNER_FILE), JSON.stringify(owner)); } catch { /* best effort */ }
-      const beat = () => { try { writeFileSync(join(lockPath, LOCK_HEARTBEAT_FILE), String(Date.now())); } catch { /* lock already released */ } };
-      beat();
-      timer = setInterval(beat, Math.min(5_000, Math.max(100, Math.floor(staleMs / 3))));
-      timer.unref?.();
-      return () => {
-        if (timer) clearInterval(timer);
-        try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* unlocked by stale sweep */ }
-      };
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
-      const now = Date.now();
-      const owner = readLockOwner(lockPath);
-      let steal: boolean;
-      if (owner) {
-        const sameHost = owner.host === hostname();
-        // A live local owner is protected no matter how old the heartbeat is.
-        steal = sameHost
-          ? !pidIsAlive(owner.pid) && lockAgeMs(lockPath, now) > staleMs
-          : lockAgeMs(lockPath, now) > staleMs;
-      } else {
-        steal = lockAgeMs(lockPath, now) > staleMs;
-      }
-      if (steal) {
-        try {
-          rmSync(lockPath, { recursive: true, force: true });
-          continue;
-        } catch { /* another waiter swept it first; retry the mkdir */ }
-      }
-      if (Date.now() - start > timeoutMs) {
-        throw new Error("This session is busy in another process; retry after the current run finishes.");
-      }
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-  }
 }
 
 // Stable PI session id per AnySearch session handle. Hashing keeps arbitrary
@@ -714,26 +631,17 @@ export class PiAgentRuntime {
   }
 
   // decision 3: run returns AsyncIterable<AgentEvent>, mapping PI session events.
-  // Serialization: same session -> one run at a time (in-process queue plus a
-  // cross-process lock on the PI record); different sessions run in parallel.
+  // Serialization: same session -> one run at a time in this process; different
+  // sessions run in parallel. Cross-process locking is ticket #266.
   async *run(input: string): AsyncIterable<AgentEvent> {
     if (this.opts.signal?.aborted) return;
     const key = this.opts.sessionId ?? "";
     const releaseQueue = key ? await acquireSessionQueue(key) : () => {};
-    let releaseFile: (() => void) | undefined;
     try {
-      const lockDir = this.opts.piSessionDir && key ? join(this.opts.piSessionDir, "locks") : "";
-      if (lockDir) {
-        mkdirSync(lockDir, { recursive: true });
-        releaseFile = await acquireFileLock(join(lockDir, piSessionKey(key) + ".lock"));
-      }
       yield* this.runInternal(input);
     } catch (e) {
-      // A lock timeout is a real outcome the caller must see, not a silent
-      // empty stream.
       yield { type: "error", message: e instanceof Error ? e.message : String(e) };
     } finally {
-      releaseFile?.();
       releaseQueue();
     }
   }
@@ -982,8 +890,8 @@ export class PiAgentRuntime {
     // boundary, or tool-loadout handling.
     const sessionFinishTurn = agent.finishTurn;
     (agent as any).finishTurn = async (turn: any, signal?: AbortSignal) => {
-      // An aborted run stops the turn loop before the cold memory path — no
-      // gate/consolidate anchor is written after cancellation.
+      // Design: an aborted run stops the turn loop before the cold memory path
+      // — no gate/consolidate anchor is written after cancellation.
       if (signal?.aborted) return { action: "end" as const };
       const messages = turn?.context?.messages ?? agent.state?.messages ?? [];
       const conversation = messages.filter((m: any) => m?.role !== "system");

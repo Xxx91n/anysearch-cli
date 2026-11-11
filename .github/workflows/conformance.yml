@@ -37,7 +37,7 @@ jobs:
 
       - name: start MCP server (Streamable HTTP, port 3001)
         run: |
-          node apps/mcp/dist/index.cjs --transport http --port 3001 &
+          node apps/mcp/dist/index.js --transport http --port 3001 &
           echo $! > /tmp/ans-mcp.pid
           # naive readiness: conformance runner will retry on its own
           sleep 3

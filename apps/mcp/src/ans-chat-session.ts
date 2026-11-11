@@ -202,6 +202,8 @@ export function buildAnsChatResult(output: string, sessionId?: string, extra?: R
         ? [{ type: "text" as const, text: JSON.stringify({ sessionId }) }]
         : []),
     ],
-    ...(sessionId ? { structuredContent: { sessionId, ...(extra ?? {}) } } : {}),
+    // The handle is authoritative: spread `extra` first so a caller-supplied
+    // key can never overwrite it.
+    ...(sessionId ? { structuredContent: { ...(extra ?? {}), sessionId } } : {}),
   };
 }

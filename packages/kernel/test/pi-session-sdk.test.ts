@@ -23,7 +23,8 @@ import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { SqliteSessionStore } from "@anysearch-cli/store";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { estimateMessagesTokens, PiAgentRuntime, resolveReserveInputTokens } from "../src/pi-runtime";
+import { estimateTranscriptTokens } from "../src/message-text";
+import { PiAgentRuntime, resolveReserveInputTokens } from "../src/pi-runtime";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -404,15 +405,15 @@ async function main() {
     {
       const headerOnly = resolveReserveInputTokens(0, [{ role: "system", content: "SYSTEM HEADER ".repeat(100) }], "", "");
       const cold = resolveReserveInputTokens(0, [], "prompt text", "system prompt text");
-      const expectedCold = Math.ceil(estimateMessagesTokens([{ role: "user", content: "prompt text" }] as any)) +
-        Math.ceil(estimateMessagesTokens([{ role: "user", content: "system prompt text" }] as any));
+      const expectedCold = Math.ceil(estimateTranscriptTokens([{ role: "user", content: "prompt text" }] as any)) +
+        Math.ceil(estimateTranscriptTokens([{ role: "user", content: "system prompt text" }] as any));
       const withConversation = resolveReserveInputTokens(
         0,
         [{ role: "system", content: "SYSTEM HEADER ".repeat(100) }, { role: "user", content: "conversation" }],
         "prompt text",
         "system prompt text",
       );
-      const expectedConversation = Math.ceil(estimateMessagesTokens([{ role: "user", content: "conversation" }] as any));
+      const expectedConversation = Math.ceil(estimateTranscriptTokens([{ role: "user", content: "conversation" }] as any));
       assert(headerOnly.tokens === 0, "C8: a lone system head is not counted as carried history");
       assert(headerOnly.coldStart === true, "C8: a lone system head still takes the cold-start branch");
       assert(cold.coldStart === true && cold.tokens === expectedCold,

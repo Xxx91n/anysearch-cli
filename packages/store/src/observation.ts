@@ -18,9 +18,13 @@ import type {
 
 export const OBSERVATION_SCHEMA_URL = "anysearch://schemas/observation/1.0.0";
 export const OBSERVATION_SCHEMA_VERSION = 2;
-// PRAGMA user_version is the schema version for the observation
-// trace store. Fresh-create and incremental-migration paths MUST produce the
-// same column + index set when this matches OBSERVATION_SCHEMA_VERSION.
+// PRAGMA user_version is the version of the observation SQLite store, which is
+// a separate counter from OBSERVATION_SCHEMA_VERSION (the exported trace
+// payload's shape). The store gained observability_spans.links_json in v3 so
+// the adapter can satisfy pi-telemetry 1.5.1's span-link contract; the payload
+// shape did not change, which is why the two numbers differ. Fresh-create and
+// incremental-migration paths MUST still converge on the same column + index
+// set for a given user_version.
 export const OBSERVATION_USER_VERSION = 3;
 export const SEMCONV_GENAI_COMMIT = "b5d8440f6f126738fd50f927752cd669772c517b";
 export const SEMCONV_LEGACY_TAG = "v1.42.0";
@@ -299,16 +303,18 @@ function extractString(attrs: ObservationAttributes | undefined, key: string): s
 // versioned schema migration for the observation trace store.
 // PRAGMA user_version is the source of truth. Two paths converge on the same
 // column + index set:
-// v0 (brand-new DB) -> the v2 CREATE TABLE + indexes above; user_version = 2.
-// v1 (legacy DB) -> BEGIN; ALTER TABLE ADD COLUMN x 3; CREATE INDEX x 3;
-// user_version = 2; COMMIT;
+// v0 (brand-new DB) -> the v3 CREATE TABLEs + indexes above; user_version = 3.
+// v1/v2 (legacy DB) -> BEGIN; the missing attribution columns; the v3 span
+// link column; CREATE INDEX IF NOT EXISTS x 3; user_version = 3; COMMIT.
 // Fresh-create and migration MUST produce identical column/index sets; the
-// integration test (observation.test.ts) locks this with PRAGMA table_info /
-// PRAGMA index_list snapshots.
+// integration test (session-id-propagation.test.ts) locks the trace table with
+// PRAGMA table_info / PRAGMA index_list snapshots.
 function migrateObservationSchema(db: Database.Database): void {
   const current = (db.pragma("user_version", { simple: true }) as number) | 0;
   if (current >= OBSERVATION_USER_VERSION) return;
-  // v0 -> v2 (no incremental v1 -> v2 path; v1 had no attribution columns).
+  // One pass from any older version to the current one: each step checks
+  // PRAGMA table_info first, so re-running on a partly-migrated DB is a no-op
+  // and the outcome always matches the fresh-create schema.
   const tx = db.transaction((): void => {
     // ADD COLUMN is idempotent-safe: ALTER TABLE errors if column exists; we use
     // PRAGMA table_info to skip duplicates instead of relying on try/catch.

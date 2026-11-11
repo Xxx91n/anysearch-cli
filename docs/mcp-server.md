@@ -78,7 +78,15 @@ pretty-printed JSON document in that text block. For the search tools,
 `sufficiency` verdict, attribution, abstain, and provider-failure fields). It never
 carries the result list itself. `ans_chat` returns the answer text plus, when
 a handle exists, a trailing text block `{"sessionId": "..."}` and
-`structuredContent.sessionId`.
+`structuredContent.sessionId`. Alongside the handle it reports what the run
+spent:
+
+| Key | Meaning |
+|-----|---------|
+| `usage.run` | Calls, input/output tokens, cache reads/writes, total, `costUsd` with its `costSource`, PI compaction calls/tokens/cost, and a `missing[]` list naming every dimension the provider never reported. `costSource` is `provider` (the server sent the price), `estimated` (pi-ai's local rate card computed it), or `unknown`. Nothing unknown is rendered as free. |
+| `usage.memorySummary` | The same shape for the memory pipeline's own summary calls, or `null` when no pipeline is wired. |
+| `context` | PI's own view of the window: `{tokens, window, percent}`. `window` is the window the session actually runs with, so a declared `ANS_LLM_CONTEXT_WINDOW` is verifiable here. |
+| `toolCalls` | Per-tool call counts for this run. Search work is counted here, apart from model usage. |
 
 ## `isError` vs empty vs abstain
 
@@ -191,11 +199,12 @@ tells servers to use explicit, server-minted handles (SEP-2567).
 - A later call that passes the handle back as `sessionId` goes through
   `ensureSession()` and is reused. `MemoryPipeline` is then built with
   `store` + `sessionId`, so the session's L1 summary / L2 recall memory and
-  domain retrieval injection continue in that session. The handle carries session
-  identity and available memory, **not the conversation transcript**. Every
-  call builds a fresh runtime, and a later call restores from the one-shot
-  recovery digest. A follow-up that depends on the full earlier message
-  history can therefore lack context.
+  domain retrieval injection continue in that session. The conversation
+  transcript also continues: PI keeps its own append-only session record under
+  `ANS_PI_SESSION_DIR` (default `pi-sessions/` beside the durable DB), keyed by a
+  hash of the handle, so a follow-up request carries the earlier turns — and
+  still does after a process restart. The record is the source of truth for
+  history; the store holds the research archive and the memory anchors.
 - Omitting the handle is the explicit single-shot mode: a fresh session per
   call, no cross-call continuity, and one session row minted per call. With
   the domain retrieval adapter set to `fts`, that fresh session can still
@@ -241,7 +250,9 @@ written to config files. Hosts that inherit their environment (the usual
 | `ANS_LLM_PROVIDER` + `ANS_LLM_MODEL` | `ans_chat` | Required. Missing either makes the call an error result. |
 | `ANS_LLM_API_KEY` | `ans_chat` with `ANS_LLM_BASE_URL` | Credential for the custom upstream; a rotation rebuilds the cached client. Catalog providers (no base URL) authenticate through pi-ai's provider env: `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY`. |
 | `ANS_LLM_BASE_URL` + `ANS_LLM_API` | `ans_chat` | Custom upstream. `ANS_LLM_API` must be `chat`, `messages`, or `responses` whenever `ANS_LLM_BASE_URL` is set. |
-| `ANS_LLM_CONTEXT_WINDOW` | `ans_chat` | Real model window for custom endpoints; drives request budgeting and the L0 low-water mark. A malformed value fails the call rather than silently defaulting. |
+| `ANS_LLM_CONTEXT_WINDOW` | `ans_chat` | The real model window. It drives request budgeting, the L0 low-water mark, PI's compaction trigger, and the window reported back in `structuredContent.context`. It overrides a catalog model's own window; a malformed value fails the call rather than silently defaulting to 128K. |
+| `ANS_PI_SESSION_DIR` | `ans_chat` | Where PI keeps its append-only session records. Defaults to `pi-sessions/` beside the durable DB. Threading the same `sessionId` back resumes the conversation, including after a restart. |
+| `ANS_PI_COMPACTION_RESERVE_TOKENS` / `ANS_PI_COMPACTION_KEEP_RECENT_TOKENS` | `ans_chat` | Override PI's compaction thresholds (defaults 16384 / 20000). Meant for forcing compaction on a small context during a test run; an unparsable value keeps PI's default. |
 
 Auth layers are separate. Provider keys authenticate upstream calls.
 `ANS_MCP_KEY` guards the optional HTTP listener. The LLM trio configures

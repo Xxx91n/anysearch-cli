@@ -6,9 +6,9 @@
 // ANS_LLM_* env, .anysearch/config.toml (whitelisted keys), ~/.anysearch-cli/config.toml.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, createLlmSession, parseContextWindow, piCompactionFromEnv, resolvePiSessionDir } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
-import { createPersistentEngine, domainSearchDirs, piCompactionFromEnv, piSessionDir } from "../db";
+import { createPersistentEngine, domainSearchDirs } from "../db";
 import { createEngine } from "../composition";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
 import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError } from "@anysearch-cli/store";
@@ -140,7 +140,7 @@ export async function runChat(argv: string[]): Promise<number> {
     getApiKey: async () => session.apiKey,
     // PI owns the session record; key it by the same stable handle the store
     // uses so a later `ans chat` resumes the conversation, not just the anchors.
-    piSessionDir: durableStore && memory.sessionId ? piSessionDir() : undefined,
+    piSessionDir: durableStore && memory.sessionId ? resolvePiSessionDir() : undefined,
     piCompaction: piCompactionFromEnv(),
     apiKey: session.apiKey,
     cwd: process.cwd(),
@@ -179,8 +179,8 @@ export async function runChat(argv: string[]): Promise<number> {
               "[usage] calls=" + u.assistantCalls +
               " in=" + u.inputTokens + " out=" + u.outputTokens +
               " cacheRead=" + u.cacheReadTokens + " cacheWrite=" + u.cacheWriteTokens +
-              " total=" + u.totalTokens + " costUsd=" + u.costUsd +
-              " compaction=" + u.compactionCalls + "/" + u.compactionTokens +
+              " total=" + u.totalTokens + " costUsd=" + u.costUsd + "(" + u.costSource + ")" +
+              " compaction=" + u.compactionCalls + "/" + u.compactionTokens + "tok/" + u.compactionCostUsd + "usd" +
               (event.context ? " window=" + event.context.window + " ctxTokens=" + (event.context.tokens ?? "unknown") : "") +
               (u.missing.length ? " MISSING=" + u.missing.join(",") : ""),
             );

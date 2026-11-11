@@ -152,9 +152,12 @@ async function main() {
     // ---------- R2 honest accounting ----------
     {
       const session = await store.createSession("chat");
+      // A provider-reported price carries totalFromProvider: true. That is the
+      // only shape that may be presented as a server-sent figure (D4).
       const reported = provider("ANSWER", {
         input: 1200, output: 80, cacheRead: 400, cacheWrite: 0,
-        totalTokens: 1680, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.012 },
+        totalTokens: 1680,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.012, totalFromProvider: true },
       });
       const r = new PiAgentRuntime({
         retriever: new NoopRetriever() as any,
@@ -167,9 +170,31 @@ async function main() {
         "R2: input and output tokens match the provider report");
       assert(done?.usage?.cacheReadTokens === 400, "R2: cache reads are carried separately");
       assert(done?.usage?.totalTokens === 1680, "R2: the run total matches the provider's totalTokens");
-      assert(Math.abs((done?.usage?.costUsd ?? 0) - 0.012) < 1e-9, "R2: cost comes from the provider, not a local table");
+      assert(Math.abs((done?.usage?.costUsd ?? 0) - 0.012) < 1e-9, "R2: a provider-sent cost is carried as-is");
+      assert(done?.usage?.costSource === "provider",
+        "R2: a server-sent price is labelled provider, not estimate (got " + JSON.stringify(done?.usage?.costSource) + ")");
       assert(Array.isArray(done?.usage?.missing) && done!.usage!.missing.length === 0,
         "R2: nothing is reported missing when the provider answered every dimension (got " + JSON.stringify(done?.usage?.missing) + ")");
+
+      // pi-ai's own rate-card figure arrives with totalFromProvider: false. It
+      // is an estimate, and must not masquerade as a provider report.
+      {
+        const totals = emptyUsageTotals();
+        accumulateUsage(totals, {
+          role: "assistant",
+          usage: {
+            input: 100, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 110,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, totalFromProvider: false },
+          },
+        });
+        const estimated = toRunUsage(totals, 0, 0, 0);
+        assert(estimated.costSource === "estimated",
+          "R2: a locally computed cost is labelled estimated (got " + estimated.costSource + ")");
+        assert(estimated.missing.includes("cost (estimated)"),
+          "R2: the estimate is named in missing rather than presented as a provider figure");
+        assert(!estimated.missing.includes("cost"),
+          "R2: an estimate is not also reported as an unknown cost");
+      }
 
       // PI 1.5.1 normalizes a provider message into a complete Usage object, so
       // an in-run check cannot distinguish "reported zero" from "not reported".
@@ -183,6 +208,7 @@ async function main() {
         });
         const silent = toRunUsage(totals, 0, 0, 0);
         assert(silent.assistantCalls === 1, "R2: the call itself is still counted");
+        assert(silent.costSource === "unknown", "R2: with no cost object the source is unknown");
         assert(silent.missing.includes("cache usage"), "R2: absent cache figures are named (got " + JSON.stringify(silent.missing) + ")");
         assert(silent.missing.includes("cost"), "R2: absent cost is named instead of resting at 0");
         assert(!silent.missing.includes("assistant usage"), "R2: a reported call is not reported missing");
@@ -209,7 +235,8 @@ async function main() {
       }
     }
 
-    // ---------- R3 declared window ----------    {
+    // ---------- R3 declared window ----------
+    {
       const session = await store.createSession("chat");
       const p = provider("WINDOW-ANSWER", {
         input: 100, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 110,
