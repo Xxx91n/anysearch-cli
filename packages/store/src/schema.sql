@@ -3,6 +3,10 @@
 -- Uses external content table (content=) to avoid duplicate storage.
 -- WAL mode for CLI/MCP concurrency.
 
+-- Kept for anyone reading this file directly. It does NOT switch the journal
+-- mode on the startup path: the schema now runs inside one IMMEDIATE
+-- transaction (#257), and a journal_mode change cannot take effect there — the
+-- store sets WAL explicitly on the connection before this script runs.
 PRAGMA journal_mode = WAL;
 
 -- Sessions table: one row per research session.

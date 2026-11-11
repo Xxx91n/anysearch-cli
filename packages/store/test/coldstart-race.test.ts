@@ -182,8 +182,8 @@ async function main() {
         assert(message.includes("window 6000ms"), "long lock: failure names the wall-clock window: " + message);
         assert(payload?.causeCode === "SQLITE_BUSY", "long lock: the real SQLITE_BUSY error is preserved as cause (got " + String(payload?.causeCode) + ")");
         // Window plus at most one attempt's own wait is the honest upper bound
-        // (measured ~6.8s here); an unbounded retry loop would show up as a
-        // multi-minute child instead.
+        // (measured ~7s here against a 30s lock); an unbounded retry loop would
+        // show up as a multi-minute child instead.
         assert(r.elapsedMs < 15000, "long lock: gives up inside a bounded time (" + r.elapsedMs + "ms)");
       } finally {
         holder.kill();
