@@ -389,14 +389,14 @@ async function main() {
   recordPass("dsh present", `${dshBin} ${version.stdout.trim()} (no pin checked)`);
 
   const policyDist = join(REPO, "apps", "plugin", "dist", "server", "index.cjs");
-  const mcpDist = join(REPO, "apps", "mcp", "dist", "index.cjs");
+  const mcpDist = join(REPO, "apps", "mcp", "dist", "index.js");
   if (!existsSync(policyDist) || !existsSync(mcpDist)) {
     console.log("building the local apps the acceptance needs...");
     runOrFail("pnpm", ["-C", "apps/plugin", "build"]);
     runOrFail("pnpm", ["-C", "apps/mcp", "build"]);
   }
   must(existsSync(policyDist), "apps/plugin/dist/server/index.cjs is still missing after the build");
-  must(existsSync(mcpDist), "apps/mcp/dist/index.cjs is still missing after the build");
+  must(existsSync(mcpDist), "apps/mcp/dist/index.js is still missing after the build");
 
   temp = await mkdtemp(join(tmpdir(), "ans-dsh-approval-"));
   const dshHome = join(temp, "dsh-home");

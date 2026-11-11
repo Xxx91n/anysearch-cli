@@ -14,6 +14,7 @@ import { PiAgentRuntime, parseContextWindow, KernelJsonSchemas, KernelToolDescri
 import { domainTomlPath } from "@anysearch-cli/store";
 import { createHash } from "node:crypto";
 import { buildAnsChatResult, resolveAnsChatSession } from "../ans-chat-session.js";
+import { piCompactionFromEnv, resolvePiSessionDir } from "../pi-session.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
@@ -189,6 +190,12 @@ export function registerAnsChat(
             streamFn: session.streamFn,
             models: session.models,
             getApiKey: async () => session.apiKey,
+            // PI's own session record resumes the conversation; the same handle
+            // keys both the record and the SQLite anchors (#258).
+            piSessionDir: memory.sessionId ? resolvePiSessionDir() : undefined,
+            piCompaction: piCompactionFromEnv(),
+            apiKey: session.apiKey,
+            cwd: process.cwd(),
             // one-line observation wiring — the ans_chat span
             // receives the engine's retrieval.domain_filter.* audit events.
             span,
@@ -197,10 +204,19 @@ export function registerAnsChat(
           });
           let output = "";
           let runtimeError: string | undefined;
+          let runUsage: unknown;
+          let runContext: unknown;
+          // Retrieval/tool work is counted separately from LLM usage: a search
+          // spends provider quota, not model tokens.
+          const toolCalls: Record<string, number> = {};
           for await (const event of runtime.run(message)) {
             if (event.type === "text") output += event.content;
-            else if (event.type === "done") {
+            else if (event.type === "tool_call") {
+              toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
+            } else if (event.type === "done") {
               output += "\n" + event.summary;
+              runUsage = event.usage ?? null;
+              runContext = event.context ?? null;
               // #189: the one-shot recovery summary stays visible to the caller.
               if (event.recovery) output += "\n" + event.recovery;
             } else if (event.type === "error") {
@@ -210,7 +226,16 @@ export function registerAnsChat(
           // The runtime's error event means the loop did not complete; surface
           // it as an execution failure instead of a successful-looking text.
           if (runtimeError !== undefined) return toolError("ans_chat", runtimeError);
-          return buildAnsChatResult(output, memory.sessionId);
+          // #258 D4: every call reports what it spent. A null run usage is
+          // reported as missing, never rendered as a free run.
+          return buildAnsChatResult(output, memory.sessionId, {
+            usage: {
+              run: runUsage ?? { missing: ["run usage"] },
+              memorySummary: runtime.getMemoryUsage(),
+            },
+            context: runContext,
+            toolCalls,
+          });
         } catch (e) {
           return toolError("ans_chat", e instanceof Error ? e.message : String(e));
         }

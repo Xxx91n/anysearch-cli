@@ -110,3 +110,73 @@ export function prependMessageText(message: unknown, prefix: string, target: Tex
   blocks.unshift({ type: "text", text: prefix });
   return { ...(message as object), content: blocks };
 }
+
+/**
+ * Approximate token count for one message.
+ *
+ * pi-agent-core 1.5.1 no longer exports `estimateContextTokens`; the estimator
+ * moved into pi-coding-agent, whose entry is ESM-only and drags the whole
+ * coding-agent bundle into a caller that only needs a number. This keeps the
+ * same chars/4 contract the SDK used: text blocks, tool-call arguments and
+ * tool-result text count; images and thinking blocks do not.
+ */
+export function estimateMessageTokens(message: unknown): number {
+  const msg = message as { role?: unknown; content?: unknown } | null | undefined;
+  if (!msg) return 0;
+  const content = msg.content;
+  let chars = 0;
+  if (typeof content === "string") {
+    chars += content.length;
+  } else if (Array.isArray(content)) {
+    for (const block of content) {
+      if (!block || typeof block !== "object") continue;
+      const b = block as { type?: unknown; text?: unknown; arguments?: unknown; content?: unknown };
+      if (b.type === "text" && typeof b.text === "string") chars += b.text.length;
+      else if (b.type === "toolCall") chars += JSON.stringify(b.arguments ?? {}).length;
+      else if (b.type === "toolResult") chars += JSON.stringify(b.content ?? "").length;
+      else if (b.type === "tool_result") chars += JSON.stringify(b.content ?? "").length;
+    }
+  }
+  return Math.ceil(chars / 4);
+}
+
+/**
+ * Sum of {@link estimateMessageTokens} over a transcript.
+ *
+ * Deliberately conservative: it does not anchor on the last provider usage, so
+ * a caller that also has that anchor should take the larger of the two.
+ */
+export function estimateTranscriptTokens(messages: unknown[]): number {
+  let total = 0;
+  for (const message of messages ?? []) total += estimateMessageTokens(message);
+  return total;
+}
+
+/**
+ * Serialize a transcript to the plain-text form a summarizer reads.
+ *
+ * Tool call arguments are included so a summary can say what was searched;
+ * result text is capped per message because shrinking it is the point of
+ * compaction.
+ */
+export function serializeTranscriptForSummary(messages: unknown[], perMessageCap = 4000): string {
+  return (messages ?? []).map((message) => {
+    const m = message as { role?: unknown; content?: unknown } | null | undefined;
+    const role = String(m?.role ?? "unknown");
+    const content = m?.content;
+    const blocks: string[] = [];
+    if (typeof content === "string") {
+      blocks.push(content);
+    } else if (Array.isArray(content)) {
+      for (const block of content) {
+        const b = block as { type?: unknown; text?: unknown; name?: unknown; arguments?: unknown; content?: unknown } | null;
+        if (!b) continue;
+        if (b.type === "text" && typeof b.text === "string") blocks.push(b.text);
+        else if (b.type === "toolCall") blocks.push("[tool " + String(b.name ?? "") + "] " + JSON.stringify(b.arguments ?? {}));
+        else if (b.type === "toolResult" || b.type === "tool_result") blocks.push("[tool result] " + JSON.stringify(b.content ?? ""));
+      }
+    }
+    const text = blocks.join("\n").slice(0, perMessageCap);
+    return "[" + role + "] " + text;
+  }).join("\n\n");
+}

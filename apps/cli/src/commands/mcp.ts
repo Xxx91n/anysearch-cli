@@ -3,12 +3,14 @@
 // Passes through --transport and --port flags.
 
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export async function runMcp(args: string[]): Promise<number> {
-  // Forward all args to apps/mcp entry.
+  // Forward all args to apps/mcp entry (the ESM build).
   // ponytail: spawn the MCP server process, inherit stdio for stdio transport.
-  const mcpEntry = resolve(__dirname, "../../mcp/dist/index.cjs");
+  const self = dirname(fileURLToPath(import.meta.url));
+  const mcpEntry = resolve(self, "../../mcp/dist/index.js");
 
   const child = spawn("node", [mcpEntry, ...args], {
     stdio: "inherit",

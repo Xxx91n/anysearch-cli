@@ -81,7 +81,11 @@ async function main() {
     rmSync(dirB, { recursive: true, force: true });
   }
   check("OBSERVATION_SCHEMA_VERSION = 2", OBSERVATION_SCHEMA_VERSION === 2);
-  check("OBSERVATION_USER_VERSION = 2", OBSERVATION_USER_VERSION === 2);
+  // v3 added observability_spans.links_json (span links required by
+  // pi-telemetry 1.5.1's adapter contract). The trace payload shape did not
+  // change, so OBSERVATION_SCHEMA_VERSION stays 2 while the DB user_version
+  // moves.
+  check("OBSERVATION_USER_VERSION = 3", OBSERVATION_USER_VERSION === 3);
 
   // --- 2) Attribution round-trip (OPA #6905 closure) ---
   {

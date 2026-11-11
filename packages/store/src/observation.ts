@@ -9,6 +9,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type {
   SpanAttributes,
+  SpanLink,
   SpanOptions,
   SpanStatus,
   TelemetryContext,
@@ -20,7 +21,7 @@ export const OBSERVATION_SCHEMA_VERSION = 2;
 // PRAGMA user_version is the schema version for the observation
 // trace store. Fresh-create and incremental-migration paths MUST produce the
 // same column + index set when this matches OBSERVATION_SCHEMA_VERSION.
-export const OBSERVATION_USER_VERSION = 2;
+export const OBSERVATION_USER_VERSION = 3;
 export const SEMCONV_GENAI_COMMIT = "b5d8440f6f126738fd50f927752cd669772c517b";
 export const SEMCONV_LEGACY_TAG = "v1.42.0";
 export const SEMCONV_LEGACY_COMMIT = "ae3a98640194ed405c4c797281502e4d3bd258b3";
@@ -67,6 +68,14 @@ export interface ObservationEvent {
   attributes: ObservationAttributes;
 }
 
+// A link crosses trace boundaries. TelemetryContext is opaque, so the only
+// portable identity is its propagation carrier (traceparent, ...); attributes
+// stay alongside it.
+export interface ObservationLink {
+  carrier?: Record<string, string>;
+  attributes: ObservationAttributes;
+}
+
 export interface ObservationSpan {
   traceId: string;
   spanId: string;
@@ -78,6 +87,7 @@ export interface ObservationSpan {
   status: "ok" | "error";
   attributes: ObservationAttributes;
   events: ObservationEvent[];
+  links?: ObservationLink[];
   error?: { name: string; message: string };
 }
 
@@ -133,6 +143,14 @@ const ObservationEventSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const ObservationLinkSchema = Type.Object(
+  {
+    carrier: Type.Optional(Type.Record(Type.String(), Type.String())),
+    attributes: AttributesSchema,
+  },
+  { additionalProperties: false },
+);
+
 export const ObservationSpanSchema = Type.Object(
   {
     traceId: Type.String({ minLength: 32, maxLength: 32 }),
@@ -145,6 +163,7 @@ export const ObservationSpanSchema = Type.Object(
     status: Type.Union([Type.Literal("ok"), Type.Literal("error")]),
     attributes: AttributesSchema,
     events: Type.Array(ObservationEventSchema),
+    links: Type.Optional(Type.Array(ObservationLinkSchema)),
     error: Type.Optional(
       Type.Object(
         { name: Type.String(), message: Type.String() },
@@ -227,7 +246,8 @@ CREATE TABLE IF NOT EXISTS observability_spans (
   operation TEXT NOT NULL,
   status TEXT NOT NULL,
   attributes_json TEXT NOT NULL,
-  events_json TEXT NOT NULL
+  events_json TEXT NOT NULL,
+  links_json TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS observability_evaluations (
@@ -303,6 +323,12 @@ function migrateObservationSchema(db: Database.Database): void {
     if (!have.has("client_id")) {
       db.exec("ALTER TABLE observability_traces ADD COLUMN client_id TEXT");
     }
+    // v3: span links (cross-trace references) get their own column alongside
+    // the trace payload, matching the fresh-create schema.
+    const spanCols = db.prepare("PRAGMA table_info(observability_spans)").all() as Array<{ name: string }>;
+    if (!spanCols.some((c) => c.name === "links_json")) {
+      db.exec("ALTER TABLE observability_spans ADD COLUMN links_json TEXT NOT NULL DEFAULT '[]'");
+    }
     // CREATE INDEX IF NOT EXISTS is idempotent and safe to re-run.
     db.exec("CREATE INDEX IF NOT EXISTS idx_observability_traces_injected_trace ON observability_traces(injected_trace_id)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_observability_traces_session ON observability_traces(session_id) WHERE session_id IS NOT NULL");
@@ -377,6 +403,7 @@ class ObservationSpanNode implements TelemetrySpan {
   readonly startUnixNano: number;
   readonly attributes: ObservationAttributes;
   readonly events: ObservationEvent[] = [];
+  readonly links: ObservationLink[] = [];
   private settled = false;
   private endUnixNano: number;
   private status: SpanStatus = { status: "ok" };
@@ -414,6 +441,21 @@ class ObservationSpanNode implements TelemetrySpan {
     this.status = status;
   }
 
+  // pi-telemetry 1.5.1 added SpanLink to the adapter contract. The context is
+  // opaque, so the persisted form keeps the propagation carrier when one can be
+  // injected (e.g. traceparent) plus the link attributes.
+  addLink(link: SpanLink): void {
+    if (this.settled) return;
+    let carrier: Record<string, string> | undefined;
+    try {
+      carrier = link.context?.propagation?.inject(link.context) ?? undefined;
+    } catch { /* fail-open: keep the attributes */ }
+    this.links.push({
+      ...(carrier && Object.keys(carrier).length > 0 ? { carrier } : {}),
+      attributes: cleanAttributes(link.attributes ?? {}),
+    });
+  }
+
   startSpan<T>(options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>): Promise<T> {
     const child = new ObservationSpanNode(
       this.traceId,
@@ -424,6 +466,7 @@ class ObservationSpanNode implements TelemetrySpan {
       options.attributes ?? {},
     );
     this.childSpans.push(child);
+    for (const link of options.links ?? []) child.addLink(link);
     try {
       const result = callback(child);
       if (result && typeof (result as Promise<unknown>).then === "function") {
@@ -485,6 +528,10 @@ class ObservationSpanNode implements TelemetrySpan {
         name: event.name,
         attributes: { ...event.attributes },
       })),
+      links: this.links.map((link) => ({
+        ...(link.carrier ? { carrier: { ...link.carrier } } : {}),
+        attributes: { ...link.attributes },
+      })),
       ...(toErrorRecord(this.status) ? { error: toErrorRecord(this.status) } : {}),
     };
   }
@@ -541,6 +588,15 @@ function mapSpanToOtlp(span: ObservationSpan): Record<string, unknown> {
     endTimeUnixNano: span.endUnixNano,
     attributes,
     events,
+    ...(span.links && span.links.length > 0
+      ? {
+          links: span.links.map((link) => ({
+            traceId: link.carrier?.traceparent?.split("-")[1],
+            spanId: link.carrier?.traceparent?.split("-")[2],
+            attributes: Object.entries(link.attributes).map(([key, value]) => ({ key, value: mapAttributeValue(value!) })),
+          })),
+        }
+      : {}),
     status: { code: span.status === "ok" ? 1 : 2 },
   };
 }
@@ -764,10 +820,10 @@ export class SqliteObservationStore {
       "INSERT OR IGNORE INTO observability_traces (trace_id, run_id, kind, operation, status, payload_json, injected_trace_id, session_id, client_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).run(trace.traceId, trace.runId, trace.kind, trace.operation, trace.status, payload, injected, sessionId, clientId);
     const insertSpan = this.db.prepare(
-      "INSERT OR IGNORE INTO observability_spans (span_id, trace_id, parent_span_id, kind, operation, status, attributes_json, events_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT OR IGNORE INTO observability_spans (span_id, trace_id, parent_span_id, kind, operation, status, attributes_json, events_json, links_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
     for (const span of trace.spans) {
-      insertSpan.run(span.spanId, span.traceId, span.parentSpanId, span.kind, span.operation, span.status, JSON.stringify(span.attributes), JSON.stringify(span.events));
+      insertSpan.run(span.spanId, span.traceId, span.parentSpanId, span.kind, span.operation, span.status, JSON.stringify(span.attributes), JSON.stringify(span.events), JSON.stringify(span.links ?? []));
     }
     const insertEvaluation = this.db.prepare(
       "INSERT OR IGNORE INTO observability_evaluations (evaluation_id, trace_id, span_id, name, score_value, score_label, explanation, response_id, evaluated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",

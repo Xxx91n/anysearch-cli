@@ -183,7 +183,7 @@ export interface AnsChatToolResult {
   // this module (the tool layer already owns that dependency).
   [key: string]: unknown;
   content: Array<{ type: "text"; text: string }>;
-  structuredContent?: { sessionId: string };
+  structuredContent?: Record<string, unknown>;
 }
 
 /**
@@ -194,7 +194,7 @@ export interface AnsChatToolResult {
  * tool argument, and content-only proxies (e.g. the dsh native tool plane) never
  * see structuredContent. The answer text itself stays untouched.
  */
-export function buildAnsChatResult(output: string, sessionId?: string): AnsChatToolResult {
+export function buildAnsChatResult(output: string, sessionId?: string, extra?: Record<string, unknown>): AnsChatToolResult {
   return {
     content: [
       { type: "text", text: output || "ans_chat: no response" },
@@ -202,6 +202,6 @@ export function buildAnsChatResult(output: string, sessionId?: string): AnsChatT
         ? [{ type: "text" as const, text: JSON.stringify({ sessionId }) }]
         : []),
     ],
-    ...(sessionId ? { structuredContent: { sessionId } } : {}),
+    ...(sessionId ? { structuredContent: { sessionId, ...(extra ?? {}) } } : {}),
   };
 }

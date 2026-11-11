@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// #100 acceptance — dist-level MCP smoke for the BUILT artifact (apps/mcp/dist/index.cjs).
+// #100 acceptance — dist-level MCP smoke for the BUILT artifact (apps/mcp/dist/index.js).
 //
 // Complements the source-level acceptance tests (apps/mcp/test/sdk-v2-schema.test.ts,
 // dual-era.test.ts) by exercising the real packed binary on BOTH transports:
@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const DIST = resolve(ROOT, "apps/mcp/dist/index.cjs");
+const DIST = resolve(ROOT, "apps/mcp/dist/index.js");
 const TOOL_NAMES = ["search_web", "research_web", "recall_memory", "query_knowledge", "ans_chat"];
 const LATEST_LEGACY = "2025-11-25";
 const MODERN = "2026-07-28";

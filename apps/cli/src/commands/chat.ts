@@ -8,7 +8,7 @@
 
 import { PiAgentRuntime, createLlmSession, parseContextWindow } from "@anysearch-cli/kernel";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
-import { createPersistentEngine, domainSearchDirs } from "../db";
+import { createPersistentEngine, domainSearchDirs, piCompactionFromEnv, piSessionDir } from "../db";
 import { createEngine } from "../composition";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
 import { domainTomlPath, loadDomainByNameIn, isDomainSchemaError } from "@anysearch-cli/store";
@@ -138,6 +138,12 @@ export async function runChat(argv: string[]): Promise<number> {
     streamFn: session.streamFn,
     models: session.models,
     getApiKey: async () => session.apiKey,
+    // PI owns the session record; key it by the same stable handle the store
+    // uses so a later `ans chat` resumes the conversation, not just the anchors.
+    piSessionDir: durableStore && memory.sessionId ? piSessionDir() : undefined,
+    piCompaction: piCompactionFromEnv(),
+    apiKey: session.apiKey,
+    cwd: process.cwd(),
   });
 
   console.log("ans chat: " + query);
@@ -165,6 +171,20 @@ export async function runChat(argv: string[]): Promise<number> {
           console.log("\n---");
           console.log(event.summary);
           if (event.recovery) console.log("\n" + event.recovery);
+          // #258 D4: report the run's own accounting; a dimension the provider
+          // never reported is named instead of zero-filled into "free".
+          if (event.usage) {
+            const u = event.usage;
+            console.log(
+              "[usage] calls=" + u.assistantCalls +
+              " in=" + u.inputTokens + " out=" + u.outputTokens +
+              " cacheRead=" + u.cacheReadTokens + " cacheWrite=" + u.cacheWriteTokens +
+              " total=" + u.totalTokens + " costUsd=" + u.costUsd +
+              " compaction=" + u.compactionCalls + "/" + u.compactionTokens +
+              (event.context ? " window=" + event.context.window + " ctxTokens=" + (event.context.tokens ?? "unknown") : "") +
+              (u.missing.length ? " MISSING=" + u.missing.join(",") : ""),
+            );
+          }
           break;
         case "error":
           console.error("\n[error] " + event.message);
@@ -179,6 +199,16 @@ export async function runChat(argv: string[]): Promise<number> {
     // (runTeardown runs on exit). consolidate() is fire-and-forget by design, so
     // returning here without waiting loses the rolling_summary / l2_recall write.
     await runtime.flushMemory();
+    // Summary calls are a separate, real cost; report them apart from the run.
+    const memoryUsage = runtime.getMemoryUsage();
+    if (memoryUsage && memoryUsage.calls > 0) {
+      console.log(
+        "[usage] memory-summary calls=" + memoryUsage.calls +
+        " in=" + memoryUsage.inputTokens + " out=" + memoryUsage.outputTokens +
+        " total=" + memoryUsage.totalTokens + " costUsd=" + memoryUsage.costUsd +
+        (memoryUsage.missing.length ? " MISSING=" + memoryUsage.missing.join(",") : ""),
+      );
+    }
   }
 
   return 0;
