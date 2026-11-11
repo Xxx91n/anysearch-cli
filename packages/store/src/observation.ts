@@ -14,6 +14,8 @@ import type {
   SpanStatus,
   TelemetryContext,
   TelemetrySpan,
+  TelemetryPropagation,
+  TelemetryCarrier,
 } from "@earendil-works/pi-telemetry";
 
 export const OBSERVATION_SCHEMA_URL = "anysearch://schemas/observation/1.0.0";
@@ -384,6 +386,13 @@ function cleanAttributes(
   for (const [key, value] of Object.entries(attributes ?? {})) {
     // Custom fields never claim the volatile external namespace.
     if (key.startsWith("gen_ai.")) continue;
+    // A linked span keeps the attributes it had when the link was added, so
+    // array values are copied — a later mutation by the caller must not reach
+    // the stored record.
+    if (Array.isArray(value)) {
+      out[key] = [...value] as ObservationAttributeValue;
+      continue;
+    }
     if (value !== undefined) out[key] = value as ObservationAttributeValue;
   }
   return out;
@@ -410,6 +419,20 @@ class ObservationSpanNode implements TelemetrySpan {
   readonly attributes: ObservationAttributes;
   readonly events: ObservationEvent[] = [];
   readonly links: ObservationLink[] = [];
+  /**
+   * A finished span stays linkable: only a custom session dir makes spans
+   * reachable, so an adapter that injects nothing forces every link to fall
+   * back to attributes. Carrying own W3C ids here means addLink can read a
+   * target's identity even after the target ended, without a global registry.
+   */
+  readonly propagation: TelemetryPropagation = {
+    inject: (context: TelemetryContext): TelemetryCarrier | undefined => {
+      const node = context as unknown as { traceId?: string; spanId?: string };
+      if (typeof node.traceId !== "string" || typeof node.spanId !== "string") return undefined;
+      return { traceparent: "00-" + node.traceId + "-" + node.spanId + "-01" };
+    },
+    extract: () => this,
+  };
   private settled = false;
   private endUnixNano: number;
   private status: SpanStatus = { status: "ok" };
@@ -604,7 +627,11 @@ function mapSpanToOtlp(span: ObservationSpan): Record<string, unknown> {
             const traceId = parts[1];
             const spanId = parts[2];
             if (!traceId || !spanId) return [];
+            // W3C: both ids are lowercase hex of fixed width, and neither may
+            // be all zeros. A zero id is not a link target, it is a "no id"
+            // marker, so exporting it would emit an invalid OTLP link.
             if (!/^[0-9a-f]{32}$/.test(traceId) || !/^[0-9a-f]{16}$/.test(spanId)) return [];
+            if (/^0{32}$/.test(traceId) || /^0{16}$/.test(spanId)) return [];
             return [{
               traceId,
               spanId,

@@ -150,6 +150,40 @@ async function main() {
         "R1: the record key is derived from the handle, not shared");
     }
 
+    // ---------- R1b resume from a different working directory ----------
+    // PI's findById filters a record by the cwd it was created in whenever a
+    // custom session dir is in use. Running the same handle from another folder
+    // would then silently start a new conversation, which is exactly the
+    // "restart lost my progress" failure this ticket is about.
+    {
+      const session = await store.createSession("chat");
+      const firstProvider = provider("FIRST-ANSWER");
+      const r1 = new PiAgentRuntime({
+        retriever: new NoopRetriever() as any,
+        domain, model, streamFn: firstProvider.fn as any,
+        store, sessionId: session.id, piSessionDir: piDir,
+        cwd: join(workDir, "dir-a"),
+        getApiKey: async () => "probe-key",
+      });
+      await drain(r1.run("QUESTION-FROM-DIR-A"));
+
+      const secondProvider = provider("SECOND-ANSWER");
+      const r2 = new PiAgentRuntime({
+        retriever: new NoopRetriever() as any,
+        domain, model, streamFn: secondProvider.fn as any,
+        store, sessionId: session.id, piSessionDir: piDir,
+        cwd: join(workDir, "dir-b"),
+        getApiKey: async () => "probe-key",
+      });
+      await drain(r2.run("QUESTION-FROM-DIR-B"));
+
+      assert(textOf(secondProvider.calls[0]?.context).includes("QUESTION-FROM-DIR-A"),
+        "R1b: the same handle resumes its record when run from another directory");
+      const files = readdirSync(piDir).filter((f) => f.endsWith(".jsonl"));
+      assert(files.length === 3,
+        "R1b: a new cwd does not create a second record for the same handle (files=" + files.length + ")");
+    }
+
     // ---------- R2 honest accounting ----------
     {
       const session = await store.createSession("chat");

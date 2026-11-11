@@ -358,9 +358,19 @@ export function resolveReserveInputTokens(
   // cold-start branch and count the tool declarations twice (#258).
   const conversation = transcript.filter((m: any) => m?.role !== "system");
   if (anchor > 0 || conversation.length > 0) {
-    // Occupancy covers trailing messages only; the provider anchor already
-    // counts the static head (prompt + tool declarations).
-    return { tokens: resolveContextOccupancy(anchor, conversation), coldStart: false };
+    // Occupancy covers the carried transcript, but this run's own request is
+    // not in it yet: the new prompt and the system head have not been sent,
+    // and the call site passes anchor 0. Count both once here, or a resumed
+    // turn with a long question and a long system prompt under-reserves and
+    // the token cap stops catching it.
+    let tokens = resolveContextOccupancy(anchor, conversation);
+    try {
+      tokens += Math.ceil(estimateTranscriptTokens([{ role: "user", content: prompt }] as any));
+      if (systemPrompt) {
+        tokens += Math.ceil(estimateTranscriptTokens([{ role: "user", content: systemPrompt }] as any));
+      }
+    } catch { /* fail-open: the carried-transcript estimate still counts */ }
+    return { tokens, coldStart: false };
   }
   let tokens = 0;
   try {
@@ -404,6 +414,18 @@ async function acquireSessionQueue(key: string): Promise<() => void> {
     if (sessionQueues.get(key) === tail) sessionQueues.delete(key);
   };
 }
+
+// Credential handed to the synthetic provider registration when the caller has
+// none of its own. PI refuses a provider with no auth method, but this value
+// must never travel onward: pi-ai treats any non-empty apiKey as authoritative
+// and would skip the provider's env fallback. streamSimple strips it.
+export const PLACEHOLDER_API_KEY = "anysearch-local-stream";
+
+// The cwd a PI session record is stamped with. Fixed on purpose: PI's
+// findById filters by the recorded cwd whenever a custom session dir is used,
+// which would make the same anysearch handle unresumable from another
+// directory. A record belongs to the handle, not to the folder it ran in.
+export const SESSION_RECORD_CWD = "anysearch-session";
 
 // Stable PI session id per AnySearch session handle. Hashing keeps arbitrary
 // visible-ASCII handles out of file names.
@@ -612,10 +634,15 @@ export class PiAgentRuntime {
       // Required by the provider composer even though streamSimple below never
       // dials it; the real endpoint stays on the llm-init model.
       baseUrl: typeof baseModel.baseUrl === "string" && baseModel.baseUrl ? baseModel.baseUrl : "http://127.0.0.1:1/v1",
-      // Placeholder credential for the same reason: the composer refuses a
-      // provider without an auth method, and our streamFn resolves the real key
-      // itself. Never printed.
-      apiKey: this.opts.apiKey || "anysearch-local-stream",
+      // Placeholder credential: the provider composer refuses a provider with
+      // no auth method, and our streamFn resolves the real key itself.
+      //
+      // It must never reach the caller's streamFn, though: pi-ai treats a
+      // non-empty `apiKey` as authoritative and skips the provider's own env
+      // fallback (getClientApiKey returns it as-is), so forwarding this
+      // placeholder would shadow OPENAI_API_KEY and break catalog auth.
+      // streamSimple below therefore drops it again. Never printed.
+      apiKey: this.opts.apiKey || PLACEHOLDER_API_KEY,
       api,
       models: [{
         id: modelId,
@@ -628,8 +655,15 @@ export class PiAgentRuntime {
         maxTokens: Number(baseModel.maxTokens) > 0 ? Number(baseModel.maxTokens) : 8192,
       }],
       // Ignore the registered model: the stream function owns auth and wire
-      // config, so catalog and custom-endpoint paths behave identically.
-      streamSimple: (_model, context, options) => (streamFn as any)(baseModel, context, options),
+      // config, so catalog and custom-endpoint paths behave identically. The
+      // placeholder apiKey PI resolved for this synthetic provider is stripped
+      // for the same reason — the caller's own auth must win.
+      streamSimple: (_model, context, options) => {
+        const forwarded = options && typeof options === "object"
+          ? { ...options, apiKey: PLACEHOLDER_API_KEY === options.apiKey ? undefined : options.apiKey }
+          : options;
+        return (streamFn as any)(baseModel, context, forwarded);
+      },
     });
     const sdkModel = modelRuntime.getModel(sdkProviderId, modelId);
     if (!sdkModel) throw new Error("PI provider registration did not expose " + modelId);
@@ -645,10 +679,17 @@ export class PiAgentRuntime {
       const piKey = piSessionKey(sessionId!);
       // Resume the same handle's record when it exists; a restart then picks up
       // the whole transcript, not just the memory anchors.
-      const found = sdk.SessionManager.findById(cwd, piKey, persistentDir);
+      //
+      // findById filters by the cwd recorded in the session header whenever a
+      // custom session dir is in use, so passing the caller's cwd would hide a
+      // record the same handle created from a different directory (`ans chat`
+      // run in another folder, or MCP started elsewhere). Look the record up
+      // from a fixed anchor instead: the anysearch handle identifies a
+      // session, not the working directory it happened to run in.
+      const found = sdk.SessionManager.findById(SESSION_RECORD_CWD, piKey, persistentDir);
       sessionManager = found
         ? sdk.SessionManager.open(found, persistentDir, cwd)
-        : sdk.SessionManager.create(cwd, persistentDir, { id: piKey });
+        : sdk.SessionManager.create(SESSION_RECORD_CWD, persistentDir, { id: piKey });
     } else {
       sessionManager = sdk.SessionManager.inMemory(cwd);
     }
@@ -1199,10 +1240,10 @@ export class PiAgentRuntime {
    * this first or those writes are lost. No-op when no pipeline is wired.
    *
    * The summary calls are real provider calls made on this session's behalf, so
-   * their spend settles on the same ledger as the main run: extra
-   * merge and check work belongs to the budget, not outside it). Settlement
-   * happens AFTER the drain, because the cost only exists once the calls
-   * finished — settling earlier would under-report them.
+   * their spend settles on the same ledger as the main run: extra merge and
+   * check work belongs to the budget, not outside it. Settlement happens AFTER
+   * the drain, because the cost only exists once the calls finished — settling
+   * earlier would under-report them.
    */
   async flushMemory(): Promise<void> {
     if (!this.pipeline) return;
@@ -1219,17 +1260,24 @@ export class PiAgentRuntime {
     const { ledger, sessionId } = this.opts;
     if (!this.pipeline || !ledger || !sessionId) return;
     const report = this.pipeline.getSummaryUsage();
-    const deltaTokens = Math.max(0, report.totalTokens - this.settledMemoryTokens);
-    const deltaUsd = Math.max(0, report.costUsd - this.settledMemoryCostUsd);
-    if (deltaTokens <= 0 && deltaUsd <= 0) return;
-    try {
-      if (deltaTokens > 0) ledger.settleTokens(sessionId, 0, deltaTokens);
-      if (deltaUsd > 0) ledger.settleUsd(sessionId, 0, deltaUsd);
-      this.settledMemoryTokens = report.totalTokens;
-      this.settledMemoryCostUsd = report.costUsd;
-    } catch (e) {
-      // fail-open: an unsettled summary call is reported, not fatal.
-      reportBudgetFault("memory summary settlement", e);
+    // Each dimension settles and records its own progress. Sharing one catch
+    // would let a USD failure skip the token bookkeeping update, and the next
+    // flush would bill the same tokens again.
+    if (report.totalTokens > this.settledMemoryTokens) {
+      try {
+        ledger.settleTokens(sessionId, 0, report.totalTokens - this.settledMemoryTokens);
+        this.settledMemoryTokens = report.totalTokens;
+      } catch (e) {
+        reportBudgetFault("memory summary token settlement", e);
+      }
+    }
+    if (report.costUsd > this.settledMemoryCostUsd) {
+      try {
+        ledger.settleUsd(sessionId, 0, report.costUsd - this.settledMemoryCostUsd);
+        this.settledMemoryCostUsd = report.costUsd;
+      } catch (e) {
+        reportBudgetFault("memory summary usd settlement", e);
+      }
     }
   }
 

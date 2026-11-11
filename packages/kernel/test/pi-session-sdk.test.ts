@@ -413,13 +413,23 @@ async function main() {
         "prompt text",
         "system prompt text",
       );
-      const expectedConversation = Math.ceil(estimateTranscriptTokens([{ role: "user", content: "conversation" }] as any));
+      // A resumed turn carries history AND sends a new request. The static
+      // head is excluded from the carried part (the system message is not
+      // history), but the prompt and system prompt this run adds are not in
+      // the transcript yet, so they must be counted once here.
+      const expectedConversation =
+        Math.ceil(estimateTranscriptTokens([{ role: "user", content: "conversation" }] as any)) +
+        Math.ceil(estimateTranscriptTokens([{ role: "user", content: "prompt text" }] as any)) +
+        Math.ceil(estimateTranscriptTokens([{ role: "user", content: "system prompt text" }] as any));
       assert(headerOnly.tokens === 0, "C8: a lone system head is not counted as carried history");
       assert(headerOnly.coldStart === true, "C8: a lone system head still takes the cold-start branch");
       assert(cold.coldStart === true && cold.tokens === expectedCold,
         "C8: a cold start counts the prompt and system prompt once each");
       assert(withConversation.coldStart === false && withConversation.tokens === expectedConversation,
-        "C8: with a conversation, only the conversation is counted (got " + withConversation.tokens + " vs " + expectedConversation + ")");
+        "C8: a resumed turn counts carried history plus this run's prompt and system head once each (got " +
+          withConversation.tokens + " vs " + expectedConversation + ")");
+      assert(withConversation.tokens > Math.ceil(estimateTranscriptTokens([{ role: "user", content: "conversation" }] as any)),
+        "C8: the resumed reserve is strictly more than the carried history alone");
     }
   } finally {
     try { store.close?.(); } catch { /* already closed */ }

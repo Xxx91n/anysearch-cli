@@ -225,6 +225,12 @@ export function registerAnsChat(
               runtimeError = event.message;
             }
           }
+          // Background summary calls already ran on this session's behalf, so
+          // their spend belongs on the ledger whatever ended the turn. Drain
+          // before every exit path — an error or a cancellation must not leave
+          // real spend unrecorded and later read as free. Fail-open: a drain
+          // fault is reported by the runtime, never turned into a tool failure.
+          await runtime.flushMemory().catch(() => {});
           // The runtime's error event means the loop did not complete; surface
           // it as an execution failure instead of a successful-looking text.
           if (runtimeError !== undefined) return toolError("ans_chat", runtimeError);
@@ -234,11 +240,6 @@ export function registerAnsChat(
           // accounting. The handle is not part of the answer, so it survives:
           // the caller can resume the same session later.
           if (!completed) return buildAnsChatResult("", memory.sessionId);
-          // Drain the memory pipeline's background summary calls before reading
-          // what they spent. Without this the report would name a summary call
-          // it never saw, which reads as free — and the settle inside it would
-          // never land on the budget. A store-less runtime has nothing to drain.
-          await runtime.flushMemory();
           // Every call reports what it spent. A run that produced no accounting
           // still returns the full shape with every dimension named missing,
           // never a partial object that renders as a free run.
