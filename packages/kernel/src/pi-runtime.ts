@@ -602,9 +602,13 @@ export class PiAgentRuntime {
       }
     };
 
-    // Message array produced by the sufficiency gate in finishTurn, consumed by
-    // prepareNextTurnWithContext. Scoped to this run: the next run starts clean.
-    let pendingTurnMessages: any[] | null = null;
+    // What the sufficiency gate wants to change for the NEXT request, scoped to
+    // this run. PI rebuilds the request from the session record in
+    // prepareRequest — and may compact there — so handing it a whole message
+    // array would resurrect history compaction just removed. This carries only
+    // the rewritten tool-result text, keyed by tool call, and prepareRequest
+    // applies it on top of whatever PI projected.
+    let pendingToolResultEnrichment: { toolCallId: string; text: string } | null = null;
 
     // Full PI SDK session. The provider registration below routes every model
     // call back through the caller's streamFn, so auth/baseUrl stay owned by
@@ -835,7 +839,15 @@ export class PiAgentRuntime {
           const env = await this.gate.evaluate(messages);
           const enriched = this.gate.applyTo(messages, env);
           if (env.enrichedEnvelope !== null && enriched !== messages) {
-            pendingTurnMessages = enriched;
+            // Keep just the rewritten tool-result text. The rest of the array is
+            // PI's business, and compaction may replace it before this is used.
+            const target = messages[env.targetMessageIndex] as any;
+            const replacement = (enriched[env.targetMessageIndex] as any)?.content;
+            const toolCallId = String(target?.toolCallId ?? "");
+            const text = Array.isArray(replacement)
+              ? replacement.map((c: any) => (typeof c?.text === "string" ? c.text : "")).join("")
+              : "";
+            if (toolCallId && text) pendingToolResultEnrichment = { toolCallId, text };
           }
           await this.pipeline.consolidate(enriched, totalTokens, env.hasRetrievalEvidence || hasSearchTurn);
         } catch { /* fail-open: a memory fault must not end the turn */ }
@@ -844,22 +856,29 @@ export class PiAgentRuntime {
       }
       return sessionFinishTurn?.(turn, signal);
     };
-    // PI rebuilds the request context from the session record in prepareRequest,
-    // so a snapshot handed to prepareNextTurnWithContext is discarded before the
-    // provider is called. The sufficiency gate's enriched transcript therefore
-    // has to be applied after that rebuild: this wrapper chains PI's own
-    // prepareRequest (compaction, projection, virtual-model routing) and then
-    // swaps in the enriched messages for one request.
+    // PI rebuilds the request context from the session record in prepareRequest
+    // (and may compact there), so the enriched transcript cannot replace the
+    // message array: that would resurrect history compaction just dropped.
+    // Only the gate's rewritten tool-result text is applied, on top of whatever
+    // PI projected.
     const sessionPrepareRequest = agent.prepareRequest;
     (agent as any).prepareRequest = async (request: any, signal?: AbortSignal) => {
       const prepared = await sessionPrepareRequest?.(request, signal);
-      if (!pendingTurnMessages) return prepared;
-      const enriched = pendingTurnMessages;
-      pendingTurnMessages = null;
+      const pending = pendingToolResultEnrichment;
+      if (!pending) return prepared;
+      pendingToolResultEnrichment = null;
       const base = prepared?.context ?? request?.context ?? {};
-      // The gate rewrote tool-result text only; the declared tool loadout and
-      // the system head stay exactly what PI projected.
-      return { ...(prepared ?? {}), context: { ...base, messages: enriched } };
+      const messages: any[] = Array.isArray(base.messages) ? base.messages : [];
+      // A compacted transcript may no longer contain the target tool result;
+      // then there is nothing to rewrite and PI's projection stands.
+      const patched = messages.map((message: any) => {
+        if (message?.role !== "toolResult" || String(message?.toolCallId ?? "") !== pending.toolCallId) return message;
+        const content = Array.isArray(message.content)
+          ? message.content.map((c: any) => (c?.type === "text" ? { ...c, text: pending.text } : c))
+          : message.content;
+        return { ...message, content };
+      });
+      return { ...(prepared ?? {}), context: { ...base, messages: patched } };
     };
 
     const sessionPrepareNextTurn = agent.prepareNextTurnWithContext;
