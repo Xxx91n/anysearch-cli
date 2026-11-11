@@ -7,6 +7,7 @@
 // the package script (30s), and running both kinds in one file made the whole
 // file miss the budget under a loaded runner.
 import Database from "better-sqlite3";
+import { OBSERVATION_USER_VERSION } from "../src/observation";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -108,7 +109,7 @@ function checkStructure(dbPath: string, label: string): void {
     const anchor = db.prepare("SELECT COUNT(*) AS n FROM access_chain_anchor").get() as { n: number };
     assert(anchor.n === 1, label + ": exactly one access-chain anchor (got " + anchor.n + ")");
     const obsVersion = (db.pragma("user_version", { simple: true }) as number) | 0;
-    assert(obsVersion === 2, label + ": observation user_version is 2 (got " + obsVersion + ")");
+    assert(obsVersion === OBSERVATION_USER_VERSION, label + ": observation user_version reached the migration target (got " + obsVersion + ")");
   } finally {
     db.close();
   }

@@ -37,11 +37,11 @@ function recordingLedger() {
     reserveTokens: () => true,
     reserveCalls: () => true,
     reserveUsd: () => true,
-    settleTokens: (_id, reserved, actual) => { settled.push({ kind: "token", reserved, actual }); },
+    settleTokens: (_id: string, reserved: number, actual: number) => { settled.push({ kind: "token", reserved, actual }); },
     settleCalls: () => {},
-    settleUsd: (_id, reserved, actual) => { settled.push({ kind: "usd", reserved, actual }); },
+    settleUsd: (_id: string, reserved: number, actual: number) => { settled.push({ kind: "usd", reserved, actual }); },
     settled,
-  } as any;
+  };
   return ledger;
 }
 

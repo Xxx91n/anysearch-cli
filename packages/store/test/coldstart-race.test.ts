@@ -19,6 +19,7 @@
 // single 30s budget; five rounds of compiled tsx children plus the lock cases
 // did not fit in one file under a loaded runner.
 import Database from "better-sqlite3";
+import { OBSERVATION_USER_VERSION } from "../src/observation";
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -97,7 +98,7 @@ function checkStructure(dbPath: string, label: string): void {
     // Observation store: migration target reached, so both stores completed on
     // the same shared file (session store does not touch user_version).
     const obsVersion = (db.pragma("user_version", { simple: true }) as number) | 0;
-    assert(obsVersion === 2, label + ": observation schema user_version is 2 (got " + obsVersion + ")");
+    assert(obsVersion === OBSERVATION_USER_VERSION, label + ": observation schema reached the migration target (got " + obsVersion + ")");
   } finally {
     db.close();
   }
