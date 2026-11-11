@@ -205,6 +205,11 @@ export function registerAnsChat(
           let runtimeError: string | undefined;
           let runUsage: unknown;
           let runContext: unknown;
+          // A `done` event is the runtime's own signal that the loop finished.
+          // Its absence after an otherwise clean stream means the run was cut
+          // short (cancellation, a closed generator), and partial text must not
+          // be presented as a completed answer.
+          let completed = false;
           // Retrieval/tool work is counted separately from LLM usage: a search
           // spends provider quota, not model tokens.
           const toolCalls: Record<string, number> = {};
@@ -213,6 +218,7 @@ export function registerAnsChat(
             else if (event.type === "tool_call") {
               toolCalls[event.name] = (toolCalls[event.name] ?? 0) + 1;
             } else if (event.type === "done") {
+              completed = true;
               output += "\n" + event.summary;
               runUsage = event.usage ?? null;
               runContext = event.context ?? null;
@@ -225,6 +231,12 @@ export function registerAnsChat(
           // The runtime's error event means the loop did not complete; surface
           // it as an execution failure instead of a successful-looking text.
           if (runtimeError !== undefined) return toolError("ans_chat", runtimeError);
+          // Cancellation is a transport outcome, not a finished run (#211). The
+          // placeholder result keeps the existing contract, and dropping the
+          // partial text is the part that matters: a stream that ended early
+          // must never be presented as an answer, and no usage or context is
+          // reported for a run that has no accounting.
+          if (!completed) return buildAnsChatResult("");
           // Every call reports what it spent. A run that produced no accounting
           // still returns the full shape with every dimension named missing,
           // never a partial object that renders as a free run.

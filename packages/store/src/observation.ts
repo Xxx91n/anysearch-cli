@@ -596,14 +596,15 @@ function mapSpanToOtlp(span: ObservationSpan): Record<string, unknown> {
     events,
     ...(span.links && span.links.length > 0
       ? {
-          // An OTLP link without a trace/span id is invalid, so only links whose
-          // carrier yields both ids are exported; the rest stay in the local
-          // record with their attributes.
+          // An OTLP link without valid trace/span ids is invalid, so only links
+          // whose carrier yields a W3C 32-hex trace id and 16-hex span id are
+          // exported; the rest stay in the local record with their attributes.
           links: span.links.flatMap((link) => {
             const parts = link.carrier?.traceparent?.split("-") ?? [];
             const traceId = parts[1];
             const spanId = parts[2];
             if (!traceId || !spanId) return [];
+            if (!/^[0-9a-f]{32}$/.test(traceId) || !/^[0-9a-f]{16}$/.test(spanId)) return [];
             return [{
               traceId,
               spanId,

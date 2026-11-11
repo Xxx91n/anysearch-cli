@@ -68,6 +68,13 @@ export function costSourceOf(totals: UsageTotals): CostSource {
  * Fold one message_end payload into the ledger. Pure; exported for tests.
  * Non-assistant messages are ignored — message_end also fires for user prompts
  * and tool results, and only AssistantMessage carries the call's usage.
+ *
+ * Honesty limit worth stating: pi-ai's per-provider parsers always materialise
+ * `cacheRead`/`cacheWrite` as numbers (defaulting to 0), so a provider that
+ * never sends cache figures is indistinguishable from one that reports zero
+ * hits. We therefore only claim cache usage was reported when a non-zero
+ * figure actually arrived; a run with zero cache tokens is named as unknown
+ * instead of being presented as "reported zero".
  */
 export function accumulateUsage(totals: UsageTotals, message: unknown): void {
   const msg = message as {
@@ -80,11 +87,13 @@ export function accumulateUsage(totals: UsageTotals, message: unknown): void {
   if (!msg || msg.role !== "assistant" || !msg.usage) return;
   const input = Number(msg.usage.input) || 0;
   const output = Number(msg.usage.output) || 0;
+  const cacheRead = Number(msg.usage.cacheRead) || 0;
+  const cacheWrite = Number(msg.usage.cacheWrite) || 0;
   totals.inputTokens += input;
   totals.outputTokens += output;
-  totals.cacheReadTokens += Number(msg.usage.cacheRead) || 0;
-  totals.cacheWriteTokens += Number(msg.usage.cacheWrite) || 0;
-  totals.cacheReported = totals.cacheReported || msg.usage.cacheRead !== undefined || msg.usage.cacheWrite !== undefined;
+  totals.cacheReadTokens += cacheRead;
+  totals.cacheWriteTokens += cacheWrite;
+  if (cacheRead > 0 || cacheWrite > 0) totals.cacheReported = true;
   const cost = msg.usage.cost;
   if (cost && cost.totalFromProvider === true) {
     totals.costReported = true;
@@ -108,19 +117,11 @@ export function accumulateUsage(totals: UsageTotals, message: unknown): void {
  */
 export function toRunUsage(
   totals: UsageTotals,
-  compactionCalls: number,
-  compactionTokens: number,
-  compactionCostUsd: number,
-  compactionCostSource: CostSource = "unknown",
+  compaction: UsageTotals,
 ): RunUsage {
-  const missing: string[] = [];
-  if (totals.assistantCalls === 0) missing.push("assistant usage");
-  if (totals.assistantCalls > 0 && !totals.cacheReported) missing.push("cache usage");
-  // A locally estimated figure is not a provider report: say so, so the caller
-  // never presents it as server-sent truth.
-  if (!totals.costReported) missing.push(totals.costEstimated ? "cost (estimated)" : "cost");
-  if (compactionCalls > 0 && compactionTokens === 0) missing.push("compaction usage");
-  if (compactionCalls > 0 && compactionCostSource === "unknown") missing.push("compaction cost");
+  const missing = missingDimensions(totals, "assistant usage", "");
+  if (compaction.assistantCalls > 0 && compaction.totalTokens === 0) missing.push("compaction usage");
+  if (compaction.assistantCalls > 0 && !compaction.costReported && !compaction.costEstimated) missing.push("compaction cost");
   return {
     inputTokens: totals.inputTokens,
     outputTokens: totals.outputTokens,
@@ -130,12 +131,28 @@ export function toRunUsage(
     costUsd: totals.costUsd,
     costSource: costSourceOf(totals),
     assistantCalls: totals.assistantCalls,
-    compactionCalls,
-    compactionTokens,
-    compactionCostUsd,
-    compactionCostSource,
+    compactionCalls: compaction.assistantCalls,
+    compactionTokens: compaction.totalTokens,
+    compactionCostUsd: compaction.costUsd,
+    compactionCostSource: costSourceOf(compaction),
     missing,
   };
+}
+
+/**
+ * Name every dimension this ledger never received. `usageLabel` and `costLabel`
+ * carry the surface's wording ("assistant usage" for the run, "summary usage"
+ * for the memory pipeline).
+ */
+function missingDimensions(totals: UsageTotals, usageLabel: string, prefix: string): string[] {
+  const label = prefix ? prefix + " " : "";
+  const missing: string[] = [];
+  if (totals.assistantCalls === 0) missing.push(usageLabel);
+  if (totals.assistantCalls > 0 && !totals.cacheReported) missing.push(label + "cache usage");
+  // A locally estimated figure is not a provider report: say so, so the caller
+  // never presents it as server-sent truth.
+  if (!totals.costReported) missing.push(totals.costEstimated ? label + "cost (estimated)" : label + "cost");
+  return missing;
 }
 
 /** Summary-call report: the same ledger, labelled for the memory pipeline. */
@@ -152,10 +169,6 @@ export interface SummaryUsage {
 }
 
 export function toSummaryUsage(totals: UsageTotals): SummaryUsage {
-  const missing: string[] = [];
-  if (totals.assistantCalls === 0) missing.push("summary usage");
-  if (totals.assistantCalls > 0 && !totals.cacheReported) missing.push("summary cache usage");
-  if (!totals.costReported) missing.push(totals.costEstimated ? "summary cost (estimated)" : "summary cost");
   return {
     calls: totals.assistantCalls,
     inputTokens: totals.inputTokens,
@@ -165,7 +178,7 @@ export function toSummaryUsage(totals: UsageTotals): SummaryUsage {
     totalTokens: totals.totalTokens,
     costUsd: totals.costUsd,
     costSource: costSourceOf(totals),
-    missing,
+    missing: missingDimensions(totals, "summary usage", "summary"),
   };
 }
 

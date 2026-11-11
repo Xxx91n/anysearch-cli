@@ -195,6 +195,11 @@ export interface AnsChatToolResult {
  * see structuredContent. The answer text itself stays untouched.
  */
 export function buildAnsChatResult(output: string, sessionId?: string, extra?: Record<string, unknown>): AnsChatToolResult {
+  // Usage and context are facts about this call, not properties of the handle.
+  // A store-less run has no handle but still spent a model call, so the
+  // metadata must survive without one. The handle is authoritative: spread
+  // `extra` first so a caller-supplied key can never overwrite it.
+  const metadata = { ...(extra ?? {}), ...(sessionId ? { sessionId } : {}) };
   return {
     content: [
       { type: "text", text: output || "ans_chat: no response" },
@@ -202,8 +207,6 @@ export function buildAnsChatResult(output: string, sessionId?: string, extra?: R
         ? [{ type: "text" as const, text: JSON.stringify({ sessionId }) }]
         : []),
     ],
-    // The handle is authoritative: spread `extra` first so a caller-supplied
-    // key can never overwrite it.
-    ...(sessionId ? { structuredContent: { ...(extra ?? {}), sessionId } } : {}),
+    ...(Object.keys(metadata).length > 0 ? { structuredContent: metadata } : {}),
   };
 }

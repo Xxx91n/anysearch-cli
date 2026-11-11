@@ -1,5 +1,5 @@
 // ans chat: interactive retrieval-augmented chat session.
-// decision 7: uses PiAgentRuntime for agent loop.
+// #258: uses the full PI AgentSession through PiAgentRuntime.
 // uses createLlmSession deep module from kernel.
 // LLM config resolves through the layered loader (cli > env > project > user >
 // default; #108): --llm.provider/--llm.model/--llm.base-url/--llm.api flags,
@@ -171,7 +171,7 @@ export async function runChat(argv: string[]): Promise<number> {
           console.log("\n---");
           console.log(event.summary);
           if (event.recovery) console.log("\n" + event.recovery);
-          // #258 D4: report the run's own accounting; a dimension the provider
+          // Report the run's own accounting; a dimension the provider
           // never reported is named instead of zero-filled into "free".
           if (event.usage) {
             const u = event.usage;

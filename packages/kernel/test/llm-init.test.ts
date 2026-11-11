@@ -36,22 +36,22 @@ ok(s.apiKey === undefined, "kernel never mirrors provider env into the session (
 
 // #113: contextWindow passthrough — the L0 watermark resolves {fraction}
 // against the REAL window. A catalog model with no declaration exposes its own
-// catalog value; D2 (#258) then makes a declaration authoritative instead of
+// catalog value; #258 then makes a declaration authoritative instead of
 // ignoring it.
 const catalog = await createLlmSession({ provider: "openai", model: "gpt-5" });
 const catalogWindow = catalog.model.contextWindow;
 ok(typeof catalogWindow === "number" && catalogWindow > 0, "#113: catalog model carries a context window");
 ok(catalog.contextWindow === catalogWindow, "#113: catalog LlmSession exposes the real window");
 
-// D2 (#258): a declared window wins over the catalog value. A user who says
+// #258: a declared window wins over the catalog value. A user who says
 // their endpoint is 1M must not be quietly held to the catalog's number.
 {
   const declared = catalogWindow + 500_000;
   const overridden = await createLlmSession({ provider: "openai", model: "gpt-5", contextWindow: declared });
   ok(overridden.model.contextWindow === declared,
-    "D2: a declared window overrides the catalog window on the model");
+    "#258: a declared window overrides the catalog window on the model");
   ok(overridden.contextWindow === declared,
-    "D2: LlmSession reports the declared window, not the catalog default");
+    "#258: LlmSession reports the declared window, not the catalog default");
 }
 
 // Composition-root parser: kernel never reads env; roots pass the raw value.

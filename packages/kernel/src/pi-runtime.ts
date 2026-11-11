@@ -8,14 +8,14 @@
 // limit — and stops the run when the reserve is rejected. USD comes from pi-ai
 // Usage.cost — no price table in TOML or kernel, so USD stays settle-only.
 // decision 6: dual session (PI session record + SqliteSessionStore FTS5 sync).
-// decision 7 (#258): the runtime runs a full pi-coding-agent AgentSession, not a
+// #258: the runtime runs a full pi-coding-agent AgentSession, not a
 // bare pi-agent-core Agent. PI owns the session record, resume and compaction;
 // the anysearch side keeps only the research store and its anchors.
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 // The full PI session runtime. pi-coding-agent publishes only an ESM entry, so
-// every host that links the kernel (CLI, MCP) builds as ESM (decision 7).
+// every host that links the kernel (CLI, MCP) builds as ESM.
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -26,7 +26,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { estimateTranscriptTokens } from "./message-text";
-import { accumulateUsage, costSourceOf, emptyUsageTotals, toRunUsage, type SummaryUsage } from "./usage";
+import { accumulateUsage, emptyUsageTotals, toRunUsage, type SummaryUsage } from "./usage";
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { appendFileSync, mkdirSync } from "node:fs";
@@ -392,9 +392,10 @@ export function resolveTokenReserve(inputTokens: number, outputReserveTokens: nu
   return input + output;
 }
 
-// Same-session runs are serialized; different sessions keep separate tails and
-// run in parallel. In-process only: the cross-process lock (owner identity,
-// heartbeat, stale windows, 120s wait) is ticket #266's subject.
+// Design: same session -> one run at a time, different sessions in parallel —
+// one PI record has one writer, and two runs appending to it at once would
+// interleave entries. Cross-process locking is ticket #266's subject, so this
+// queue is deliberately process-local.
 const sessionQueues = new Map<string, Promise<void>>();
 
 async function acquireSessionQueue(key: string): Promise<() => void> {
@@ -588,7 +589,7 @@ export class PiAgentRuntime {
     // Full PI SDK session. The provider registration below routes every model
     // call back through the caller's streamFn, so auth/baseUrl stay owned by
     // llm-init while session persistence, resume, compaction and accounting come
-    // from pi-coding-agent (#258 decision 7).
+    // from pi-coding-agent (#258).
     const cwd = this.opts.cwd ?? process.cwd();
     const baseModel = (model ?? {}) as any;
     const modelId = typeof baseModel.id === "string" && baseModel.id ? baseModel.id : "anysearch-model";
@@ -1044,11 +1045,19 @@ export class PiAgentRuntime {
         // released and the provider-reported total is recorded as spent, even
         // when it exceeds the reservation. This runs unconditionally so a
         // zero-usage run still releases its reservation. USD remains
-        // settle-only (#186 decision 6: no price table).
-        settleTokenReserve(usageTotals.totalTokens);
-        if (usageTotals.costUsd > 0) {
+        // settle-only (no price table in kernel).
+        //
+        // PI's compaction is a real provider call that this run caused, so its
+        // tokens and dollars settle on the same ledger. Leaving them out would
+        // hide part of the run's spend behind the main call (#258 D4). The
+        // memory pipeline's own summary calls are settled by the caller that
+        // owns their lifetime (the CLI drains them via flushMemory).
+        const settledTokensTotal = usageTotals.totalTokens + compactionUsage.totalTokens;
+        const settledUsdTotal = usageTotals.costUsd + compactionUsage.costUsd;
+        settleTokenReserve(settledTokensTotal);
+        if (settledUsdTotal > 0) {
           try {
-            ledger!.settleUsd(sessionId!, 0, usageTotals.costUsd);
+            ledger!.settleUsd(sessionId!, 0, settledUsdTotal);
           } catch (e) {
             reportBudgetFault("usd settlement", e);
           }
@@ -1108,13 +1117,7 @@ export class PiAgentRuntime {
           summary: `Agent completed${tokenSummary}`,
           ...(recovery ? { recovery } : {}),
           ...(context ? { context } : {}),
-          usage: toRunUsage(
-            usageTotals,
-            compactionUsage.assistantCalls,
-            compactionUsage.totalTokens,
-            compactionUsage.costUsd,
-            costSourceOf(compactionUsage),
-          ),
+          usage: toRunUsage(usageTotals, compactionUsage),
         };
       }
     } finally {
@@ -1138,8 +1141,11 @@ export class PiAgentRuntime {
         budgetFinalized = true;
         // An aborted run may never receive its final usage chunk. Missing usage
         // is not a genuine zero: keep the reservation as the conservative
-        // estimate. A provider-reported zero still settles as zero.
-        const actual = abortedEarly && !usageReported ? tokenReserved : usageTotals.totalTokens;
+        // estimate. A provider-reported zero still settles as zero. Compaction
+        // spend belongs to this run, so it settles here too.
+        const actual = (abortedEarly && !usageReported)
+          ? tokenReserved
+          : usageTotals.totalTokens + compactionUsage.totalTokens;
         settleTokenReserve(actual);
         if (billingWired && callReserved && !callSettled) {
           // A provider call happened if it reported usage, or if we aborted it
@@ -1167,8 +1173,8 @@ export class PiAgentRuntime {
         // the later delta when the prompt finally stops (best-effort if the
         // store is already closed).
         void promptPromise!.then(
-          () => settleTokenDelta(usageTotals.totalTokens),
-          () => settleTokenDelta(usageTotals.totalTokens),
+          () => settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens),
+          () => settleTokenDelta(usageTotals.totalTokens + compactionUsage.totalTokens),
         );
       }
       // Release the session listeners; the JSONL record is already durable.

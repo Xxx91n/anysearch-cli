@@ -154,7 +154,7 @@ async function main() {
     {
       const session = await store.createSession("chat");
       // A provider-reported price carries totalFromProvider: true. That is the
-      // only shape that may be presented as a server-sent figure (D4).
+      // only shape that may be presented as a server-sent figure.
       const reported = provider("ANSWER", {
         input: 1200, output: 80, cacheRead: 400, cacheWrite: 0,
         totalTokens: 1680,
@@ -188,7 +188,7 @@ async function main() {
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, totalFromProvider: false },
           },
         });
-        const estimated = toRunUsage(totals, 0, 0, 0);
+        const estimated = toRunUsage(totals, emptyUsageTotals());
         assert(estimated.costSource === "estimated",
           "R2: a locally computed cost is labelled estimated (got " + estimated.costSource + ")");
         assert(estimated.missing.includes("cost (estimated)"),
@@ -207,7 +207,7 @@ async function main() {
           role: "assistant",
           usage: { input: 100, output: 10, totalTokens: 110 },
         });
-        const silent = toRunUsage(totals, 0, 0, 0);
+        const silent = toRunUsage(totals, emptyUsageTotals());
         assert(silent.assistantCalls === 1, "R2: the call itself is still counted");
         assert(silent.costSource === "unknown", "R2: with no cost object the source is unknown");
         assert(silent.missing.includes("cache usage"), "R2: absent cache figures are named (got " + JSON.stringify(silent.missing) + ")");
@@ -217,7 +217,7 @@ async function main() {
 
       // Nothing reported at all: every dimension is named.
       {
-        const none = toRunUsage(emptyUsageTotals(), 0, 0, 0);
+        const none = toRunUsage(emptyUsageTotals(), emptyUsageTotals());
         assert(none.missing.includes("assistant usage"), "R2: a run with no usage names the missing assistant usage");
         assert(none.missing.includes("cost"), "R2: a run with no usage names the missing cost");
       }
@@ -229,10 +229,31 @@ async function main() {
           role: "assistant",
           usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: { total: 0 } },
         });
-        const withCompaction = toRunUsage(totals, 1, 0, 0);
+        const compaction = emptyUsageTotals();
+        accumulateUsage(compaction, {
+          role: "assistant",
+          usage: { input: 0, output: 0 },
+        });
+        const withCompaction = toRunUsage(totals, compaction);
         assert(withCompaction.compactionCalls === 1, "R2: the compaction call is counted separately");
         assert(withCompaction.missing.includes("compaction usage"),
-          "R2: a compaction call without usage is named (got " + JSON.stringify(withCompaction.missing) + ")");
+          "R2: a compaction call without tokens is named (got " + JSON.stringify(withCompaction.missing) + ")");
+        assert(withCompaction.missing.includes("compaction cost"),
+          "R2: a compaction call without a price is named too");
+      }
+
+      // A reported cache hit is carried; a run where no cache figure ever
+      // arrived names it missing instead of presenting a zero as a report.
+      {
+        const hit = emptyUsageTotals();
+        accumulateUsage(hit, {
+          role: "assistant",
+          usage: { input: 10, output: 5, cacheRead: 400, cacheWrite: 0, totalTokens: 415 },
+        });
+        const hitReport = toRunUsage(hit, emptyUsageTotals());
+        assert(hitReport.cacheReadTokens === 400, "R2: cache reads are carried");
+        assert(!hitReport.missing.includes("cache usage"),
+          "R2: a reported cache hit is not named missing (got " + JSON.stringify(hitReport.missing) + ")");
       }
     }
 
