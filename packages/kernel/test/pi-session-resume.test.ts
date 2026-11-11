@@ -222,24 +222,30 @@ async function main() {
         assert(none.missing.includes("cost"), "R2: a run with no usage names the missing cost");
       }
 
-      // Compaction that returned no usage is named too.
+      // A compaction call that returned no usage at all is named; one that ran
+      // but reported zero tokens is a real zero, not a missing figure.
       {
         const totals = emptyUsageTotals();
         accumulateUsage(totals, {
           role: "assistant",
           usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: { total: 0 } },
         });
+        // No message_end for the compaction call at all.
+        const withCompaction = toRunUsage(totals, emptyUsageTotals());
+        assert(withCompaction.compactionCalls === 0, "R2: no compaction call means no compaction count");
+        assert(!withCompaction.missing.includes("compaction usage"),
+          "R2: a run with no compaction does not name compaction usage missing");
+
+        // A compaction call that did run, with a usage report.
         const compaction = emptyUsageTotals();
         accumulateUsage(compaction, {
           role: "assistant",
-          usage: { input: 0, output: 0 },
+          usage: { input: 0, output: 0, totalTokens: 0 },
         });
-        const withCompaction = toRunUsage(totals, compaction);
-        assert(withCompaction.compactionCalls === 1, "R2: the compaction call is counted separately");
-        assert(withCompaction.missing.includes("compaction usage"),
-          "R2: a compaction call without tokens is named (got " + JSON.stringify(withCompaction.missing) + ")");
-        assert(withCompaction.missing.includes("compaction cost"),
-          "R2: a compaction call without a price is named too");
+        const reported = toRunUsage(totals, compaction);
+        assert(reported.compactionCalls === 1, "R2: the compaction call is counted separately");
+        assert(reported.missing.includes("compaction cost"),
+          "R2: a compaction call without a price is named (got " + JSON.stringify(reported.missing) + ")");
       }
 
       // A reported cache hit is carried; a run where no cache figure ever

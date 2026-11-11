@@ -5,6 +5,7 @@
 // domain-aware tool filtering across every command.
 
 import type { RetrieverPort, SessionStorePort, ToolPort, DomainConfigPort } from "./ports";
+import type { CostSource } from "./usage";
 
 export type AgentEvent =
   | { type: "text"; content: string }
@@ -24,19 +25,21 @@ export interface RunUsage {
   totalTokens: number;
   costUsd: number;
   /**
-   * Where costUsd came from: the provider's own figure, pi-ai's local rate card
-   * (an estimate), or nothing at all. An estimate must never be presented as a
-   * server-reported price.
+   * Where costUsd came from. `provider` means the server sent the price;
+   * `estimated` means the local rate card computed it; `unknown` means there is
+   * no figure; `mixed` means part of the total is provider-sent and part
+   * estimated (the run and PI's compaction carried it differently). An estimate
+   * must never be presented as a server-reported price.
    */
-  costSource: "provider" | "estimated" | "unknown";
+  costSource: CostSource;
   /** Assistant calls that actually returned usage. 0 means no call landed. */
   assistantCalls: number;
   /** PI context-compaction calls, kept apart from the main run. */
   compactionCalls: number;
   compactionTokens: number;
   compactionCostUsd: number;
-  /** Where the compaction cost figure came from (same three-way口径 as the run). */
-  compactionCostSource: "provider" | "estimated" | "unknown";
+  /** Where the compaction part of costUsd came from. */
+  compactionCostSource: CostSource;
   /** Dimensions that stay unknown. Empty only when every dimension was reported. */
   missing: string[];
 }

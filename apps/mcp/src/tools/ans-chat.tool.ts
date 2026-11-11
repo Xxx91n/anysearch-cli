@@ -232,11 +232,16 @@ export function registerAnsChat(
           // it as an execution failure instead of a successful-looking text.
           if (runtimeError !== undefined) return toolError("ans_chat", runtimeError);
           // Cancellation is a transport outcome, not a finished run (#211). The
-          // placeholder result keeps the existing contract, and dropping the
-          // partial text is the part that matters: a stream that ended early
-          // must never be presented as an answer, and no usage or context is
-          // reported for a run that has no accounting.
-          if (!completed) return buildAnsChatResult("");
+          // partial text is dropped so a cut-off stream never reads as an
+          // answer, and no usage or context is reported for a run that has no
+          // accounting. The handle is not part of the answer, so it survives:
+          // the caller can resume the same session later.
+          if (!completed) return buildAnsChatResult("", memory.sessionId);
+          // Drain the memory pipeline's background summary calls before reading
+          // what they spent. Without this the report would name a summary call
+          // it never saw, which reads as free — and the settle inside it would
+          // never land on the budget. A store-less runtime has nothing to drain.
+          await runtime.flushMemory();
           // Every call reports what it spent. A run that produced no accounting
           // still returns the full shape with every dimension named missing,
           // never a partial object that renders as a free run.

@@ -10,8 +10,8 @@
 
 import type { RunUsage } from "./runtime";
 
-/** Where a cost figure came from. */
-export type CostSource = "provider" | "estimated" | "unknown";
+/** Where a cost figure came from. `mixed` spans a provider figure and an estimate. */
+export type CostSource = "provider" | "estimated" | "unknown" | "mixed";
 
 export interface UsageTotals {
   inputTokens: number;
@@ -114,29 +114,54 @@ export function accumulateUsage(totals: UsageTotals, message: unknown): void {
  * Fold the run ledger and PI's own compaction ledger into the caller-facing
  * accounting. `missing` is the honest half: a dimension nobody reported is
  * named, never rendered as free.
+ *
+ * Cost provenance across the two ledgers (D4): when both halves reported
+ * prices, or both left them to the local rate card, one label covers the total.
+ * A mix is labelled `mixed` rather than picking one side, because calling a
+ * partly-estimated total "provider" would misreport part of it as server-sent.
  */
 export function toRunUsage(
   totals: UsageTotals,
   compaction: UsageTotals,
 ): RunUsage {
   const missing = missingDimensions(totals, "assistant usage", "");
-  if (compaction.assistantCalls > 0 && compaction.totalTokens === 0) missing.push("compaction usage");
-  if (compaction.assistantCalls > 0 && !compaction.costReported && !compaction.costEstimated) missing.push("compaction cost");
+  if (compaction.assistantCalls > 0) {
+    missing.push(...missingDimensions(compaction, "compaction usage", "compaction"));
+  }
+  const runSource = costSourceOf(totals);
+  const compactionSource = costSourceOf(compaction);
+  const hasCost = totals.assistantCalls > 0 || compaction.assistantCalls > 0;
+  const costSource = combineCostSources(runSource, compactionSource, hasCost);
+  const costUsd = totals.costUsd + compaction.costUsd;
   return {
     inputTokens: totals.inputTokens,
     outputTokens: totals.outputTokens,
     cacheReadTokens: totals.cacheReadTokens,
     cacheWriteTokens: totals.cacheWriteTokens,
     totalTokens: totals.totalTokens,
-    costUsd: totals.costUsd,
-    costSource: costSourceOf(totals),
+    // costUsd is the whole run's price, compaction included; compactionCostUsd
+    // below is the part of it PI's compaction spent.
+    costUsd,
+    costSource,
     assistantCalls: totals.assistantCalls,
     compactionCalls: compaction.assistantCalls,
     compactionTokens: compaction.totalTokens,
     compactionCostUsd: compaction.costUsd,
-    compactionCostSource: costSourceOf(compaction),
+    compactionCostSource: compactionSource,
     missing,
   };
+}
+
+/**
+ * One label for a total that may span two ledgers. `mixed` means part of the
+ * figure was provider-sent and part was estimated.
+ */
+function combineCostSources(a: CostSource, b: CostSource, hasCost: boolean): RunUsage["costSource"] {
+  if (!hasCost) return "unknown";
+  if (a === "unknown" && b === "unknown") return "unknown";
+  if (a === "unknown") return b;
+  if (b === "unknown") return a;
+  return a === b ? a : "mixed";
 }
 
 /**

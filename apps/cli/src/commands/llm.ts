@@ -1,5 +1,5 @@
 // ans llm: configure LLM providers (via @earendil-works/pi-ai).
-// decision 7: list/set/check LLM providers.
+// List / set / check LLM providers.
 // #108: `set` persists to the layered TOML config (~/.anysearch-cli/config.toml);
 // env still overrides the file; secrets stay in env vars referenced by env_key.
 // `set` drops a stale env_key on provider switch (cross-provider secret guard #120).

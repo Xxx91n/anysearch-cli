@@ -1,30 +1,40 @@
-// PiAgentRuntime: pi-agent-core Agent wrapper for anysearch-cli.
-// decision 2: lives in packages/kernel.
-// decision 3: maps PI AgentSession events to our 7 AgentEvent types.
-// decision 4: Domain 5-layer full consumption.
-// decision 5 (amended by #90/#103, #188): token/USD budget metered via session
-// event subscription (message_end usage accumulation, run settle). The token
-// dimension also reserves at run start — input occupancy + the output static
-// limit — and stops the run when the reserve is rejected. USD comes from pi-ai
-// Usage.cost — no price table in TOML or kernel, so USD stays settle-only.
-// decision 6: dual session (PI session record + SqliteSessionStore FTS5 sync).
-// #258: the runtime runs a full pi-coding-agent AgentSession, not a
-// bare pi-agent-core Agent. PI owns the session record, resume and compaction;
-// the anysearch side keeps only the research store and its anchors.
+// PiAgentRuntime: full PI AgentSession driver for anysearch-cli.
+// Lives in packages/kernel; it maps PI session events to our 7 AgentEvent types
+// and consumes the Domain's 5 layers.
+// Budget metering (amended by #90/#103, #188): token/USD usage is accumulated
+// from session events and settled at the end of a run. The token dimension also
+// reserves at run start — input occupancy + the output static limit — and stops
+// the run when the reserve is rejected. USD comes from pi-ai Usage.cost; there
+// is no price table in the domain TOML or in the kernel.
+// Dual session: PI keeps the conversation record, SqliteSessionStore keeps the
+// research archive and its FTS5 index.
+// #258: the runtime runs a full pi-coding-agent AgentSession, not a bare
+// pi-agent-core Agent. PI owns the session record, resume and compaction; the
+// anysearch side keeps only the research store and its anchors.
 // MemoryPipeline + SufficiencyEvaluator extracted as sibling deep modules.
 
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 // The full PI session runtime. pi-coding-agent publishes only an ESM entry, so
 // every host that links the kernel (CLI, MCP) builds as ESM.
-import {
-  createAgentSession,
-  DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
-  SettingsManager,
-  type ExtensionFactory,
-  type ToolDefinition,
-} from "@earendil-works/pi-coding-agent";
+//
+// Loaded lazily on purpose: the package pulls a large module graph whose
+// evaluation costs several seconds, and `ans --help`, `ans auth` and every other
+// command that never starts a run must not pay that. A static import here made
+// the CLI's plain `--help` take ~6s and `ans mcp --help` (two stacked processes)
+// past its 15s test budget (#258).
+type PiCodingAgent = typeof import("@earendil-works/pi-coding-agent");
+let piCodingAgentPromise: Promise<PiCodingAgent> | null = null;
+async function loadPiCodingAgent(): Promise<PiCodingAgent> {
+  // Memoised per process: a long-lived MCP host loads it once, and a failing
+  // load is not cached so a transient fault can be retried.
+  if (!piCodingAgentPromise) {
+    piCodingAgentPromise = import("@earendil-works/pi-coding-agent").catch((e) => {
+      piCodingAgentPromise = null;
+      throw e;
+    });
+  }
+  return piCodingAgentPromise;
+}
 import { estimateTranscriptTokens } from "./message-text";
 import { accumulateUsage, emptyUsageTotals, toRunUsage, type SummaryUsage } from "./usage";
 import { createHash } from "node:crypto";
@@ -458,6 +468,10 @@ export class PiAgentRuntime {
   // no-memory/no-billing runtime instead of hitting budget_ledger's FK on an
   // unregistered session id.
   private readonly scopedRetriever: RetrieverPort;
+  // How much of the memory pipeline's own spend has already been settled, so a
+  // repeated flushMemory adds only the new delta instead of billing twice.
+  private settledMemoryTokens = 0;
+  private settledMemoryCostUsd = 0;
 
   constructor(opts: PiAgentRuntimeOptions) {
     this.domainReloader = opts.domainTomlPath ? createDomainReloader(opts.domainTomlPath, opts.domainsDirs, { forceFirst: true }) : null;
@@ -602,7 +616,13 @@ export class PiAgentRuntime {
         ? this.opts.contextWindow
         : (Number(baseModel.contextWindow) > 0 ? Number(baseModel.contextWindow) : 128000);
     const sdkProviderId = "anysearch";
-    const modelRuntime = await ModelRuntime.create({ modelsPath: null, refreshOnCreate: false, allowModelNetwork: false });
+    // The one place the PI SDK is loaded: a run is the only thing that needs it.
+    const sdk = await loadPiCodingAgent();
+    const modelRuntime = await sdk.ModelRuntime.create({ modelsPath: null, refreshOnCreate: false, allowModelNetwork: false });
+    // Design: register a synthetic provider whose streamSimple is a thin bridge
+    // back to the caller's streamFn — auth, base URL and wire format stay owned
+    // by llm-init (one place decides what endpoint is talked to), while PI
+    // gains a model it can budget, compact and report against.
     modelRuntime.registerProvider(sdkProviderId, {
       name: "AnySearch",
       // Required by the provider composer even though streamSimple below never
@@ -630,23 +650,26 @@ export class PiAgentRuntime {
     const sdkModel = modelRuntime.getModel(sdkProviderId, modelId);
     if (!sdkModel) throw new Error("PI provider registration did not expose " + modelId);
 
+    // Design: a session handle plus a session dir means PI keeps an append-only
+    // record and a later run with the same handle resumes it; without either
+    // there is nothing to key a record on, so the session stays in memory.
     const persistentDir = this.opts.piSessionDir && sessionId ? this.opts.piSessionDir : undefined;
     const agentDir = persistentDir ? join(persistentDir, "agent") : join(cwd, ".anysearch", "pi-agent");
-    let sessionManager: SessionManager;
+    let sessionManager: import("@earendil-works/pi-coding-agent").SessionManager;
     if (persistentDir) {
       mkdirSync(persistentDir, { recursive: true });
       const piKey = piSessionKey(sessionId!);
       // Resume the same handle's record when it exists; a restart then picks up
       // the whole transcript, not just the memory anchors.
-      const found = SessionManager.findById(cwd, piKey, persistentDir);
+      const found = sdk.SessionManager.findById(cwd, piKey, persistentDir);
       sessionManager = found
-        ? SessionManager.open(found, persistentDir, cwd)
-        : SessionManager.create(cwd, persistentDir, { id: piKey });
+        ? sdk.SessionManager.open(found, persistentDir, cwd)
+        : sdk.SessionManager.create(cwd, persistentDir, { id: piKey });
     } else {
-      sessionManager = SessionManager.inMemory(cwd);
+      sessionManager = sdk.SessionManager.inMemory(cwd);
     }
     const piCompaction = this.opts.piCompaction ?? {};
-    const settingsManager = SettingsManager.inMemory({
+    const settingsManager = sdk.SettingsManager.inMemory({
       compaction: {
         enabled: piCompaction.enabled ?? true,
         reserveTokens: piCompaction.reserveTokens ?? 16384,
@@ -666,7 +689,7 @@ export class PiAgentRuntime {
     // official extension seam. AgentSession owns the turn loop, so wrapping its
     // hooks (rather than re-implementing them) is what keeps compaction and
     // boundary handling from PI intact.
-    const controlFactory: ExtensionFactory = (pi) => {
+    const controlFactory: import("@earendil-works/pi-coding-agent").ExtensionFactory = (pi) => {
       // Called before every provider request; PI restores system messages
       // afterwards, so the injected block never accumulates in the record.
       pi.on("context", async (event) => {
@@ -733,7 +756,7 @@ export class PiAgentRuntime {
       });
     };
 
-    const resourceLoader = new DefaultResourceLoader({
+    const resourceLoader = new sdk.DefaultResourceLoader({
       cwd,
       agentDir,
       settingsManager,
@@ -749,7 +772,7 @@ export class PiAgentRuntime {
     });
     await resourceLoader.reload();
 
-    const created = await createAgentSession({
+    const created = await sdk.createAgentSession({
       cwd,
       agentDir,
       modelRuntime,
@@ -760,7 +783,7 @@ export class PiAgentRuntime {
       sessionManager,
       // The whitelist-filtered set is both the executable set and the declared
       // set, so PI cannot expose a tool the domain excluded.
-      customTools: activeTools as unknown as ToolDefinition[],
+      customTools: activeTools as unknown as import("@earendil-works/pi-coding-agent").ToolDefinition[],
       tools: activeTools.map((t) => t.name),
     });
     const session = created.session;
@@ -1049,9 +1072,9 @@ export class PiAgentRuntime {
         //
         // PI's compaction is a real provider call that this run caused, so its
         // tokens and dollars settle on the same ledger. Leaving them out would
-        // hide part of the run's spend behind the main call (#258 D4). The
-        // memory pipeline's own summary calls are settled by the caller that
-        // owns their lifetime (the CLI drains them via flushMemory).
+        // hide part of the run's spend behind the main call (#258).
+        // The memory pipeline's summary calls are drained and settled by
+        // flushMemory(), because they are still in flight when the run ends.
         const settledTokensTotal = usageTotals.totalTokens + compactionUsage.totalTokens;
         const settledUsdTotal = usageTotals.costUsd + compactionUsage.costUsd;
         settleTokenReserve(settledTokensTotal);
@@ -1064,9 +1087,9 @@ export class PiAgentRuntime {
         }
       }
 
-      // decision 6: dual session — sync this run's finalized messages to FTS5.
-      // Only the run's own messages: the PI record owns history, and re-appending
-      // a resumed session's whole transcript would duplicate rows per call.
+      // Design: sync only this run's finalized messages into the FTS5 store —
+      // the PI record already owns the full history, so re-appending a resumed
+      // session's whole transcript would duplicate rows on every call.
       if (this.opts.store) {
         // append() is async: an un-awaited rejection is NOT caught by the
         // surrounding try/catch and can terminate the process on Node >= 15, and
@@ -1183,15 +1206,47 @@ export class PiAgentRuntime {
   }
 
   /**
-   * Drain background memory writes before the caller closes the store.
+   * Drain background memory writes before the caller closes the store, then
+   * settle what those calls actually spent.
    *
    * `consolidate()` intentionally does not block a turn on summary generation or
    * L2 recall, so a run can end with anchor writes still in flight. A caller
    * that owns the store (the CLI, which closes it during teardown) must await
    * this first or those writes are lost. No-op when no pipeline is wired.
+   *
+   * The summary calls are real provider calls made on this session's behalf, so
+   * their spend settles on the same ledger as the main run (#258 D4: extra
+   * merge and check work belongs to the budget, not outside it). Settlement
+   * happens AFTER the drain, because the cost only exists once the calls
+   * finished — settling earlier would under-report them.
    */
   async flushMemory(): Promise<void> {
-    if (this.pipeline) await this.pipeline.flush();
+    if (!this.pipeline) return;
+    await this.pipeline.flush();
+    await this.settleMemoryUsage();
+  }
+
+  /**
+   * Settle the memory pipeline's own spend. Idempotent: the pipeline reports
+   * cumulative totals, so this records only what has not been settled yet, and
+   * a second call after another summary call adds only the delta.
+   */
+  private async settleMemoryUsage(): Promise<void> {
+    const { ledger, sessionId } = this.opts;
+    if (!this.pipeline || !ledger || !sessionId) return;
+    const report = this.pipeline.getSummaryUsage();
+    const deltaTokens = Math.max(0, report.totalTokens - this.settledMemoryTokens);
+    const deltaUsd = Math.max(0, report.costUsd - this.settledMemoryCostUsd);
+    if (deltaTokens <= 0 && deltaUsd <= 0) return;
+    try {
+      if (deltaTokens > 0) ledger.settleTokens(sessionId, 0, deltaTokens);
+      if (deltaUsd > 0) ledger.settleUsd(sessionId, 0, deltaUsd);
+      this.settledMemoryTokens = report.totalTokens;
+      this.settledMemoryCostUsd = report.costUsd;
+    } catch (e) {
+      // fail-open: an unsettled summary call is reported, not fatal.
+      reportBudgetFault("memory summary settlement", e);
+    }
   }
 
   /** Usage of the memory pipeline's own summary calls (separate from the run). */
