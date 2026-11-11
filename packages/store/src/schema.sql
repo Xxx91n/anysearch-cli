@@ -3,6 +3,10 @@
 -- Uses external content table (content=) to avoid duplicate storage.
 -- WAL mode for CLI/MCP concurrency.
 
+-- Kept for anyone reading this file directly. It does NOT switch the journal
+-- mode on the startup path: the schema now runs inside one IMMEDIATE
+-- transaction (#257), and a journal_mode change cannot take effect there — the
+-- store sets WAL explicitly on the connection before this script runs.
 PRAGMA journal_mode = WAL;
 
 -- Sessions table: one row per research session.
@@ -135,7 +139,8 @@ CREATE TABLE IF NOT EXISTS budget_ledger (
 -- migration for them (a no-op for new databases).
 
 -- G019 migration: add time-decay columns to existing retrieval_results table.
--- ALTER TABLE ADD COLUMN is idempotent-safe: errors if column already exists, caught by try/catch in SessionStore constructor.
+-- ALTER TABLE ADD COLUMN is idempotent-safe: "duplicate column name" means the column is
+-- already there and SessionStore absorbs exactly that; every other error fails the start (#257).
 -- These run after the CREATE TABLE IF NOT EXISTS, so new databases already have the columns.
 -- For existing databases, these add the missing columns.
 

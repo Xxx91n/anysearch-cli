@@ -6,6 +6,15 @@
 
 import Database from "better-sqlite3";
 import { openDatabase } from "./db";
+import {
+  beginInit,
+  endInit,
+  execDdlAtomically,
+  isBusyRetryExhausted,
+  isDuplicateColumnError,
+  withForeignKeysOff,
+  withInitBusyRetry,
+} from "./sqlite-init.js";
 import { containsSecret } from "./secret.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -284,33 +293,42 @@ export interface AccessEventTelemetry {
 // legacy access_events had memory_id NOT NULL, forcing a fake retrieval_results
 // sentinel for switch edges. Rebuild that table once so switch edges can use NULL memory_id
 // while real access events still satisfy the FK through the same CHECK.
+//
+// The shape check runs INSIDE the IMMEDIATE transaction: with the startup retry
+// (#257) this function can be entered again after another process already
+// finished the rebuild, and a check taken before the lock would then be stale.
+// `foreign_keys` is a per-connection switch and a no-op inside a transaction,
+// so it is turned off outside and restored in a finally block: the busy path
+// must not leave a live connection with foreign keys disabled (cascades would
+// silently stop working).
 function migrateSwitchEventSchema(db: Database.Database): void {
-  const cols = db.prepare("PRAGMA table_info(access_events)").all() as Array<{ name: string; notnull: number }>;
-  const memory = cols.find((c) => c.name === "memory_id");
-  const hasChainColumns = cols.some((c) => c.name === "prev_hash");
-  if (!memory || memory.notnull !== 1 || !hasChainColumns) return;
-  db.pragma("foreign_keys = OFF");
-  const run = db.transaction((): void => {
-    db.exec(`
-      CREATE TABLE access_events_switch_migrate (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        memory_id INTEGER REFERENCES retrieval_results(id) ON DELETE CASCADE,
-        accessed_at TEXT NOT NULL DEFAULT (datetime('now')),
-        prev_hash TEXT,
-        schema_version INTEGER,
-        event_type TEXT,
-        CHECK (memory_id IS NOT NULL OR event_type IS NOT NULL)
-      );
-      INSERT INTO access_events_switch_migrate (id, memory_id, accessed_at, prev_hash, schema_version, event_type)
-        SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events;
-      DROP TABLE access_events;
-      ALTER TABLE access_events_switch_migrate RENAME TO access_events;
-      CREATE INDEX IF NOT EXISTS idx_access_events_memory ON access_events(memory_id);
-      CREATE INDEX IF NOT EXISTS idx_access_events_time ON access_events(accessed_at);
-    `);
+  const needsRebuild = (): boolean => {
+    const cols = db.prepare("PRAGMA table_info(access_events)").all() as Array<{ name: string; notnull: number }>;
+    const memory = cols.find((c) => c.name === "memory_id");
+    return memory !== undefined && memory.notnull === 1 && cols.some((c) => c.name === "prev_hash");
+  };
+  return withForeignKeysOff(db, () => {
+    db.transaction((): void => {
+      if (!needsRebuild()) return;
+      db.exec(`
+        CREATE TABLE access_events_switch_migrate (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          memory_id INTEGER REFERENCES retrieval_results(id) ON DELETE CASCADE,
+          accessed_at TEXT NOT NULL DEFAULT (datetime('now')),
+          prev_hash TEXT,
+          schema_version INTEGER,
+          event_type TEXT,
+          CHECK (memory_id IS NOT NULL OR event_type IS NOT NULL)
+        );
+        INSERT INTO access_events_switch_migrate (id, memory_id, accessed_at, prev_hash, schema_version, event_type)
+          SELECT id, memory_id, accessed_at, prev_hash, schema_version, event_type FROM access_events;
+        DROP TABLE access_events;
+        ALTER TABLE access_events_switch_migrate RENAME TO access_events;
+        CREATE INDEX IF NOT EXISTS idx_access_events_memory ON access_events(memory_id);
+        CREATE INDEX IF NOT EXISTS idx_access_events_time ON access_events(accessed_at);
+      `);
+    }).immediate();
   });
-  run.immediate();
-  db.pragma("foreign_keys = ON");
 }
 
 export class SqliteSessionStore implements SessionStore {
@@ -375,11 +393,18 @@ export class SqliteSessionStore implements SessionStore {
     // tracked opener: the teardown registry closes it on any store-side exit
     // path that drains it (eval runner, test processes) — F-16 fix, #183.
     this.db = openDatabase(dbPath, { timeout: 5000 });
+    // #257 cold start: initialization gets its own bounded retry policy
+    // (attempt count, backoff and wall-clock window live in sqlite-init.ts). The
+    // connection-level timeout is lowered for that phase so each attempt returns
+    // promptly and the backoff — not SQLite's own long wait — decides the pace.
+    // endInit restores the ordinary 5s contract on the success path; if init
+    // throws, the constructor throws with it, so this handle is never used again
+    // and the teardown registry simply closes it.
+    const initDeadline = beginInit(this.db);
     // atomcode research: WAL persistent, set once, single shared connection.
-    this.db.pragma("journal_mode = WAL");
+    withInitBusyRetry("journal_mode", () => this.db.pragma("journal_mode = WAL"), initDeadline);
     this.db.pragma("synchronous = NORMAL");
     this.db.pragma("foreign_keys = ON");
-    this.db.pragma("busy_timeout = 5000");
     // Apply schema (idempotent IF NOT EXISTS).
     // ESM dev mode: read schema.sql from source dir via import.meta.url.
     // CJS bundled mode: import.meta is empty, use inlined SCHEMA_SQL constant.
@@ -390,64 +415,61 @@ export class SqliteSessionStore implements SessionStore {
     } catch {
       schema = SCHEMA_SQL;
     }
-    this.db.exec(schema);
+    withInitBusyRetry("schema", () => execDdlAtomically(this.db, schema), initDeadline);
     // #187: existing databases predate the `configured` column. New databases
     // already have it from the CREATE TABLE above; this ALTER is the migration
-    // and is caught idempotently like the other column migrations below.
-    try { this.db.exec("ALTER TABLE budget_ledger ADD COLUMN configured INTEGER NOT NULL DEFAULT 1"); } catch {}
+    // and duplicates are absorbed like the other column migrations.
+    this.applyColumnMigration("budget_ledger.configured", "ALTER TABLE budget_ledger ADD COLUMN configured INTEGER NOT NULL DEFAULT 1", initDeadline);
     // #187/CodeRabbit: a legacy DB can carry duplicate budget rows (the old
     // table had no uniqueness and no production writer, but corrupt/raced
     // databases exist). Merge them BEFORE the unique index: one row per
     // session, spend/reserved counters summed, caps taken from the most
     // restrictive active row so merging cannot silently loosen enforcement.
     try {
-      this.mergeDuplicateBudgetRows();
+      withInitBusyRetry("budget dedup", () => this.mergeDuplicateBudgetRows(), initDeadline);
     } catch (e) {
-      try {
-        process.stderr.write("[warn] budget_ledger duplicate-row merge failed: " + (e instanceof Error ? e.message : String(e)) + "\n");
-      } catch { /* stderr unavailable */ }
+      this.warnOrRefuseWhenContended(e, "[warn] budget_ledger duplicate-row merge failed: ");
     }
     // #187: one budget row per session. New databases got the table-level
     // UNIQUE(session_id); this protected migration covers old databases. It is
     // deliberately outside db.exec(schema): a legacy duplicate row must not
-    // prevent the rest of the schema from opening, and the failure degrades to
-    // a warning (the startup paths then fail open to unmetered).
+    // prevent the rest of the schema from opening, and that data failure
+    // degrades to a warning (the startup paths then fail open to unmetered).
+    // A busy exhaustion is not a data failure and still fails the start.
     try {
-      this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_session_unique ON budget_ledger(session_id)");
+      withInitBusyRetry("budget unique index", () => this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_session_unique ON budget_ledger(session_id)"), initDeadline);
     } catch (e) {
-      try {
-        process.stderr.write("[warn] budget_ledger unique-session index not created: " + (e instanceof Error ? e.message : String(e)) + "\n");
-      } catch { /* stderr unavailable */ }
+      this.warnOrRefuseWhenContended(e, "[warn] budget_ledger unique-session index not created: ");
     }
-    migrateSwitchEventSchema(this.db);
+    withInitBusyRetry("access_events switch rebuild", () => migrateSwitchEventSchema(this.db), initDeadline);
     // edge-pattern constraint seed (idempotent; mirrors EDGE_PATTERN_ROWS in relation.ts;
     // existing rows are preserved via INSERT OR IGNORE).
     const seedPattern = this.db.prepare("INSERT OR IGNORE INTO edge_patterns (head_type, relation, tail_type) VALUES (?, ?, ?)");
-    for (const [h, r, t] of EDGE_PATTERN_ROWS) seedPattern.run(h, r, t);
+    withInitBusyRetry("edge seed", () => { for (const [h, r, t] of EDGE_PATTERN_ROWS) seedPattern.run(h, r, t); }, initDeadline);
     // freshness_factor UDF (fused decay+recency+frequency band, supersedes time_decay).
     registerFreshnessFactorFunction(this.db);
     // G019: Migration for existing databases (ALTER TABLE ADD COLUMN is not IF NOT EXISTS safe).
-    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN valid_until TEXT"); } catch {}
-    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN pinned BOOLEAN DEFAULT 0"); } catch {}
-   try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN entity TEXT"); } catch {}
+    this.applyColumnMigration("retrieval_results.valid_until", "ALTER TABLE retrieval_results ADD COLUMN valid_until TEXT", initDeadline);
+    this.applyColumnMigration("retrieval_results.pinned", "ALTER TABLE retrieval_results ADD COLUMN pinned BOOLEAN DEFAULT 0", initDeadline);
+    this.applyColumnMigration("retrieval_results.entity", "ALTER TABLE retrieval_results ADD COLUMN entity TEXT", initDeadline);
     // L2: access-time signal (align Mem0 1.5×/0.3× — recall hit refreshes last_accessed).
-    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN last_accessed TEXT"); } catch {}
+    this.applyColumnMigration("retrieval_results.last_accessed", "ALTER TABLE retrieval_results ADD COLUMN last_accessed TEXT", initDeadline);
     // frequency signal — access_count incremented exactly once per returned hit.
-    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN access_count INTEGER DEFAULT 0"); } catch {}
+    this.applyColumnMigration("retrieval_results.access_count", "ALTER TABLE retrieval_results ADD COLUMN access_count INTEGER DEFAULT 0", initDeadline);
     // (Q3=A): equal-weight conflict quarantine — candidates held for user review at next interaction.
-    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN quarantine TEXT"); } catch {}
+    this.applyColumnMigration("retrieval_results.quarantine", "ALTER TABLE retrieval_results ADD COLUMN quarantine TEXT", initDeadline);
     // evidence persisted on quarantined rows for the review list (atomcode: confidence for queue ordering, never for auto-adjudication).
-    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN evidence REAL"); } catch {}
+    this.applyColumnMigration("retrieval_results.evidence", "ALTER TABLE retrieval_results ADD COLUMN evidence REAL", initDeadline);
     // candidate review list columns on entity_merge_log.
-    try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN hit_count INTEGER NOT NULL DEFAULT 1"); } catch {}
-    try { this.db.exec("ALTER TABLE entity_merge_log ADD COLUMN resolved TEXT"); } catch {}
+    this.applyColumnMigration("entity_merge_log.hit_count", "ALTER TABLE entity_merge_log ADD COLUMN hit_count INTEGER NOT NULL DEFAULT 1", initDeadline);
+    this.applyColumnMigration("entity_merge_log.resolved", "ALTER TABLE entity_merge_log ADD COLUMN resolved TEXT", initDeadline);
     // soft archive (reversible forgetting).
-    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"); } catch {}
+    this.applyColumnMigration("retrieval_results.archived", "ALTER TABLE retrieval_results ADD COLUMN archived INTEGER NOT NULL DEFAULT 0", initDeadline);
     // T0 durable preferences — t0_preferences is the single source of truth; MEMORY.md is a
     // regenerated materialized projection (temp+fsync+rename). scope: "global" | project root path.
     // correction_count drives the T0 promote rule (>=2 cross-session corrections = implicit promote).
     // invalid_at non-null = demoted (d-i conflict / d-iii /forget / d-ii eviction); row is quarantined, never dropped.
-    this.db.exec(`CREATE TABLE IF NOT EXISTS t0_preferences (
+    withInitBusyRetry("prefs table", () => this.db.exec(`CREATE TABLE IF NOT EXISTS t0_preferences (
   key TEXT NOT NULL,
   value TEXT NOT NULL,
   scope TEXT NOT NULL DEFAULT 'global',
@@ -459,28 +481,34 @@ export class SqliteSessionStore implements SessionStore {
   correction_count INTEGER NOT NULL DEFAULT 0,
   provenance TEXT, -- JSON: {event, at, why}
   PRIMARY KEY (key, scope)
-)`);
+)`), initDeadline);
 
     // source trust columns for existing databases.
-    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN source_label TEXT"); } catch {}
-    try { this.db.exec("ALTER TABLE retrieval_results ADD COLUMN trace_id TEXT"); } catch {}
-    try { this.db.exec("ALTER TABLE t0_preferences ADD COLUMN source_label TEXT"); } catch {}
-    try { this.db.exec("ALTER TABLE t0_preferences ADD COLUMN trace_id TEXT"); } catch {}
-    try { this.db.exec("ALTER TABLE access_events ADD COLUMN source_label TEXT"); } catch {}
+    this.applyColumnMigration("retrieval_results.source_label", "ALTER TABLE retrieval_results ADD COLUMN source_label TEXT", initDeadline);
+    this.applyColumnMigration("retrieval_results.trace_id", "ALTER TABLE retrieval_results ADD COLUMN trace_id TEXT", initDeadline);
+    this.applyColumnMigration("t0_preferences.source_label", "ALTER TABLE t0_preferences ADD COLUMN source_label TEXT", initDeadline);
+    this.applyColumnMigration("t0_preferences.trace_id", "ALTER TABLE t0_preferences ADD COLUMN trace_id TEXT", initDeadline);
+    this.applyColumnMigration("access_events.source_label", "ALTER TABLE access_events ADD COLUMN source_label TEXT", initDeadline);
     // step 1/3: chain columns (idempotent ALTER per existing convention) + one-off
-    // anchor bootstrap in an IMMEDIATE transaction (D6). Persistent busy/IO failure degrades to
-    // stderr WARN + telemetry bit (fail-open); the write path re-probes the anchor.
-    try { this.db.exec("ALTER TABLE access_events ADD COLUMN prev_hash TEXT"); } catch {}
-    try { this.db.exec("ALTER TABLE access_events ADD COLUMN schema_version INTEGER"); } catch {}
-    try { this.db.exec("ALTER TABLE access_events ADD COLUMN event_type TEXT"); } catch {}
+    // anchor bootstrap in an IMMEDIATE transaction (D6). A persistent IO/schema
+    // failure degrades to stderr WARN + telemetry bit (fail-open); the write path
+    // re-probes the anchor. Busy exhaustion is not that class and fails the start.
+    this.applyColumnMigration("access_events.prev_hash", "ALTER TABLE access_events ADD COLUMN prev_hash TEXT", initDeadline);
+    this.applyColumnMigration("access_events.schema_version", "ALTER TABLE access_events ADD COLUMN schema_version INTEGER", initDeadline);
+    this.applyColumnMigration("access_events.event_type", "ALTER TABLE access_events ADD COLUMN event_type TEXT", initDeadline);
     try {
-      bootstrapAccessChain(this.db);
+      withInitBusyRetry("access-chain bootstrap", () => bootstrapAccessChain(this.db), initDeadline);
     } catch (e) {
-      this.accessEventTel.bootstrapFailed = true;
-      process.stderr.write("anysearch: access-chain bootstrap degraded (fail-open): " + String((e as Error)?.message ?? e) + "\n");
+      // The telemetry bit is D6's own signal; it is set before the warning so it
+      // records this degradation even when nothing listens on stderr.
+      if (!isBusyRetryExhausted(e)) this.accessEventTel.bootstrapFailed = true;
+      this.warnOrRefuseWhenContended(e, "anysearch: access-chain bootstrap degraded (fail-open): ");
     }
+    // Startup contract restored: ordinary reads and writes wait on row locks for
+    // the pre-#257 5s instead of the short initialization timeout.
+    endInit(this.db);
 
-   // Module-level prepared statements (atomcode research pattern).
+    // Module-level prepared statements (atomcode research pattern).
     this.stmts = {
       createSession: this.db.prepare("INSERT INTO sessions (id, domain) VALUES (?, ?) RETURNING id, domain, created_at as createdAt"),
       // Idempotent registration of an externally minted session id (FK target).
@@ -702,6 +730,33 @@ export class SqliteSessionStore implements SessionStore {
       }
     });
     merge();
+  }
+
+  // #257: the fail-open catch shape used by the startup steps below. A step whose
+  // failure only costs a feature (budget metering, chain anchoring) keeps the
+  // pre-existing degrade-and-continue behaviour for data/schema problems. It must
+  // NOT keep it for busy/locked exhaustion: that means the database is contended
+  // and the retry window ran out, and printing "database is locked" followed by a
+  // successful start is exactly what the ticket forbids. So exhaustion rethrows.
+  private warnOrRefuseWhenContended(e: unknown, prefix: string): void {
+    if (isBusyRetryExhausted(e)) throw e;
+    try {
+      process.stderr.write(prefix + (e instanceof Error ? e.message : String(e)) + "\n");
+    } catch { /* stderr unavailable */ }
+  }
+
+  // #257: one ADD COLUMN migration. Only "duplicate column name" is absorbed —
+  // that is the idempotent-replay case (fresh DDL already created the column).
+  // A busy/locked failure is retried by the shared startup policy, and any other
+  // error propagates: swallowing it would leave a half-migrated database that
+  // reports a successful start.
+  private applyColumnMigration(label: string, ddl: string, deadlineAt: number): void {
+    try {
+      withInitBusyRetry(label, () => this.db.exec(ddl), deadlineAt);
+    } catch (e) {
+      if (isDuplicateColumnError(e)) return;
+      throw e;
+    }
   }
 
   // #187: budget row at the session-registration point. The caller (CLI/MCP
