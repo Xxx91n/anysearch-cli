@@ -34,11 +34,13 @@ const SHORT_LOCK_RELEASE_AFTER_SIGNAL_MS = 2500;
 
 interface ChildResult { code: number | null; out: string; elapsedMs: number; timedOut: boolean }
 
-function runChild(dbPath: string, readyFile?: string): Promise<ChildResult> {
+function runChild(dbPath: string, readyFile?: string, mode?: "probe"): Promise<ChildResult> {
   return new Promise((resolve) => {
     const t0 = Date.now();
-    const args = readyFile ? [CHILD, dbPath, readyFile] : [CHILD, dbPath];
-    const p = spawn(process.execPath, ["--import", "tsx", ...args], { cwd: STORE_DIR });
+    // readyFile and mode are positional (argv[3], argv[4]); an empty string
+    // keeps the mode in place when only probe mode is asked for.
+    const argv = mode ? [CHILD, dbPath, readyFile ?? "", mode] : readyFile ? [CHILD, dbPath, readyFile] : [CHILD, dbPath];
+    const p = spawn(process.execPath, ["--import", "tsx", ...argv], { cwd: STORE_DIR });
     let out = "";
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; p.kill(); }, CHILD_TIMEOUT_MS);
@@ -128,7 +130,7 @@ async function main() {
       const holder = await startHolder(dbPath, SHORT_LOCK_HOLD_MS);
       let r: ChildResult | undefined;
       try {
-        const openPromise = runChild(dbPath, readyFile);
+        const openPromise = runChild(dbPath, readyFile, "probe");
         await waitForFile(readyFile);
         // Still locked at this instant; keep it for longer than one attempt can wait.
         await new Promise((resolve) => setTimeout(resolve, SHORT_LOCK_RELEASE_AFTER_SIGNAL_MS));
@@ -138,12 +140,22 @@ async function main() {
         holder.kill();
       }
       assert(r !== undefined, "short lock: the child produced a result");
+      const payload = lastJson(r!.out);
+      // The child's own throwaway probe is the observation this used to assume:
+      // it tried a WAL switch right before opening the stores and hit the held
+      // lock. That is what makes "the first real attempt must have failed" a
+      // fact rather than a guess about timing.
+      assert(payload?.sawBusyBeforeOpen === true,
+        "short lock: the child really met the held lock before opening (probe saw BUSY: " + String(payload?.sawBusyBeforeOpen) + ")");
       assert(r!.code === 0, "short lock: the waiting process still initializes (code " + r!.code + "): " + r!.out.slice(-200));
-      // Timing proof that the retry carried it: a single attempt dies in ~1.1s,
-      // so succeeding after a lock that stayed held past 2.5s requires at least
-      // a second attempt. Without the retry this child would have exited nonzero.
-      assert(r!.elapsedMs >= SHORT_LOCK_RELEASE_AFTER_SIGNAL_MS,
-        "short lock: the child outlived one attempt's own wait, so a retry really ran (" + r!.elapsedMs + "ms)");
+      // Timing proof that a retry carried it, measured on the store constructors
+      // only (`openMs`), so tsx loading and directory creation cannot inflate it.
+      // A single attempt dies in ~1.1s here; the lock stayed held past 2.5s after
+      // the child announced it was opening, so a success needs a second attempt.
+      const openMs = Number(payload?.openMs ?? NaN);
+      assert(Number.isFinite(openMs), "short lock: the child reports its own open duration (got " + String(openMs) + ")");
+      assert(openMs >= SHORT_LOCK_RELEASE_AFTER_SIGNAL_MS,
+        "short lock: the constructors outlived one attempt's wait, so a retry really ran (openMs " + openMs + ")");
       checkStructure(dbPath, "short lock");
     }
 
@@ -169,8 +181,11 @@ async function main() {
         assert(payload?.causeCode === "SQLITE_BUSY", "long lock: the real SQLITE_BUSY error is preserved as cause (got " + String(payload?.causeCode) + ")");
         // Window plus at most one attempt's own wait is the honest upper bound
         // (measured ~7s here against a 30s lock); an unbounded retry loop would
-        // show up as a multi-minute child instead.
-        assert(r.elapsedMs < 15000, "long lock: gives up inside a bounded time (" + r.elapsedMs + "ms)");
+        // show up as a multi-minute open instead. Measured on `openMs` so a slow
+        // process start on a loaded runner cannot fail this assert.
+        const openMs = Number(payload?.openMs ?? NaN);
+        assert(Number.isFinite(openMs), "long lock: the child reports its own open duration (got " + String(openMs) + ")");
+        assert(openMs < 15000, "long lock: gives up inside a bounded time (openMs " + openMs + ")");
       } finally {
         holder.kill();
       }
@@ -186,7 +201,11 @@ async function main() {
       const payload = lastJson(r.out);
       assert(r.code !== 0, "unopenable path: startup fails (code " + r.code + ")");
       assert(String(payload?.code ?? "").startsWith("SQLITE_CANTOPEN"), "unopenable path: reports the real CANTOPEN code (got " + String(payload?.code) + ")");
-      assert(r.elapsedMs < 5000, "unopenable path: fails promptly, no busy-retry backoff burned (" + r.elapsedMs + "ms)");
+      // Same reason as above: use the constructor's own duration. 5s also
+      // distinguishes "failed at once" from "burned the retry backoff".
+      const openMs = Number(payload?.openMs ?? NaN);
+      assert(Number.isFinite(openMs), "unopenable path: the child reports its own open duration (got " + String(openMs) + ")");
+      assert(openMs < 5000, "unopenable path: fails promptly, no busy-retry backoff burned (openMs " + openMs + ")");
     }
   } finally {
     try { rmSync(base, { recursive: true, force: true }); } catch { /* Windows may hold handles briefly */ }
