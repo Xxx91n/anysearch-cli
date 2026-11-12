@@ -110,6 +110,13 @@ test("memory list beats the session: the session is not applied and the output s
   assert.match(r.out, /sessionId not applied/);
 });
 
+test("several --session owners: unmetered, because one run's spend cannot be split", async () => {
+  const r = await run(["--session", "cli-session-a", "--session", "cli-session-b", "--dry-run"]);
+  assert.equal(r.code, 0, "stderr: " + r.err);
+  assert.match(r.out, /scope: session cli-session-a, cli-session-b/);
+  assert.match(r.out, /budget: unmetered — several --session owners/);
+});
+
 test("help documents the scope requirement and the cost basis", async () => {
   const r = await run(["--help"]);
   assert.equal(r.code, 0);

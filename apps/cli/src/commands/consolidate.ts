@@ -151,7 +151,13 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   // Design: registering caps here (not only at `ans chat`) is what makes the
   // cap real on this path — the ledger's reserve passes for every session that
   // has no row, so without this the help's "budget caps apply" would be a lie.
-  const budgetSessionId = scope.by === "session" ? scope.sessionIds[0] : undefined;
+  //
+  // Design: several `--session` flags name several owners, and one run's model
+  // spend cannot be split across them honestly. The run then goes unmetered and
+  // says why; charging the first session would attribute another session's work
+  // to it. One session is the only shape this path meters.
+  const multiSession = scope.by === "session" && scope.sessionIds.length > 1;
+  const budgetSessionId = scope.by === "session" && !multiSession ? scope.sessionIds[0] : undefined;
   let budget: { sessionId: string; ledger: ReturnType<typeof store.createBudgetLedger> } | undefined;
   if (budgetSessionId) {
     const ledger = store.createBudgetLedger();
@@ -165,9 +171,20 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       // load leaves the caps unregistered (unmetered) rather than failing here.
       const domainName = process.env.ANS_DOMAIN || "default";
       const domain = loadDomainByNameIn(domainName, domainSearchDirs());
-      if (domain.budget) store.initBudget?.(budgetSessionId, toBudgetCaps(domain.budget));
-      else store.clearBudgetCaps?.(budgetSessionId);
-      budget = { sessionId: budgetSessionId, ledger };
+      if (domain.budget) {
+        if (!store.initBudget) {
+          // A store that cannot register caps cannot enforce them; treating
+          // that as metered would report a cap that does not exist.
+          process.stderr.write("[warn] session store lacks initBudget; consolidation runs unmetered\n");
+        } else {
+          store.initBudget(budgetSessionId, toBudgetCaps(domain.budget));
+          budget = { sessionId: budgetSessionId, ledger };
+        }
+      } else {
+        store.clearBudgetCaps?.(budgetSessionId);
+        // No declared [budget] means no cap exists, so there is nothing to
+        // charge against; the run still reports itself unmetered.
+      }
     } catch (e) {
       // Fail-open: a broken budget setup must not make consolidation unusable,
       // but it must not pretend to meter either.
@@ -250,7 +267,9 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     process.stdout.write(
       scope.by === "memory"
         ? "budget: unmetered — a memory-list scope has no owning session to charge.\n"
-        : "budget: unmetered — this session has no usable budget row; these calls were not charged to a cap.\n",
+        : multiSession
+          ? "budget: unmetered — several --session owners cannot share one run's spend, and charging the first would misattribute it.\n"
+          : "budget: unmetered — this session declared no [budget] caps, so these calls were not charged to a cap.\n",
     );
   }
 

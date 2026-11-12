@@ -139,9 +139,11 @@ function textOfMessage(message: unknown): string {
 /**
  * One direct completion plus its usage.
  *
- * Design: reserve before the provider call and release in `finally` — a
- * cap-exhausted run must stop instead of discovering the overspend afterwards,
- * and an aborted or failed stream must not leave a reservation behind.
+ * Design: reserve before the provider call — a cap-exhausted run must stop
+ * instead of discovering the overspend afterwards. Whatever was reserved is
+ * released exactly once: in the reserve block's own error path when a later
+ * reserve rejects (throw before the stream), and in `finally` after the stream
+ * ran, so an aborted or failed stream cannot leave a hold behind.
  *
  * Design: when the provider sends no usage figure, the reservation is booked as
  * spend at its estimated amount instead of being settled as 0. Settling 0 would

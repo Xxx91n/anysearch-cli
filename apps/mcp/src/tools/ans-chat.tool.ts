@@ -201,7 +201,13 @@ export function registerAnsChat(
           // never named (a `sessionId` given alongside the list is echoed, not
           // applied). Billing it anyway would make the two entry points meter
           // the same request differently.
-          const budgetSessionId = scope.by === "session" ? scope.sessionIds[0] : undefined;
+          //
+          // Design: this tool takes one `sessionId` per call, so a multi-owner
+          // run cannot happen here. The CLI accepts several `--session` flags
+          // and goes unmetered for the same reason (one run's spend cannot be
+          // split honestly across owners).
+          const singleSessionScope = scope.by === "session" && scope.sessionIds.length === 1;
+          const budgetSessionId = singleSessionScope ? scope.sessionIds[0] : undefined;
           const ledger = eng.ledger;
           // Registering the row and its caps is what makes a cap real: the
           // ledger's reserve passes for every session without a row.
