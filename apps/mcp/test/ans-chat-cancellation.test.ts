@@ -174,6 +174,17 @@ async function main() {
         "1: the stalled stream's active signal is aborted after cancellation");
       assert(String(result?.content?.[0]?.text ?? "").includes("no response"),
         "1: a cancelled chat returns no Agent-completed summary");
+      // #266: a cut-off run spent real money but has no final provider figure,
+      // so it has to SAY that. An omitted usage block reads as "free".
+      const cancelledUsage = (result?.structuredContent as any)?.usage;
+      assert(cancelledUsage?.run?.costSource === "unknown",
+        "1: a cancelled chat reports its cost as unknown, not omitted (got "
+        + JSON.stringify(cancelledUsage?.run?.costSource) + ")");
+      assert(Array.isArray(cancelledUsage?.run?.missing) && cancelledUsage.run.missing.length > 0,
+        "1: a cancelled chat names the accounting the provider never sent (got "
+        + JSON.stringify(cancelledUsage?.run?.missing) + ")");
+      assert((result?.structuredContent as any)?.interrupted === true,
+        "1: a cancelled chat marks itself interrupted rather than finished");
       await new Promise((r) => setTimeout(r, 30));
       assert(rec.appends === 0, "1: a cancelled chat performs no FTS message sync");
       assert(rec.anchors === 0, "1: a cancelled chat writes no memory anchor");

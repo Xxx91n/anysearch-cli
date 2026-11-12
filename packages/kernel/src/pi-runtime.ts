@@ -19,6 +19,13 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 // lazily through ./pi-sdk so a command that never starts a run does not pay for
 // its multi-second module evaluation (#258).
 import { loadPiCodingAgent } from "./pi-sdk";
+import {
+  acquireSessionLock,
+  resolveSessionLockWindows,
+  SESSION_BUSY_MESSAGE,
+  SESSION_LOCKS_DIRNAME,
+  type SessionLockWindows,
+} from "./session-lock";
 import { estimateTranscriptTokens } from "./message-text";
 import { accumulateUsage, emptyUsageTotals, toRunUsage, type SummaryUsage } from "./usage";
 import { createHash } from "node:crypto";
@@ -279,6 +286,14 @@ export interface PiAgentRuntimeOptions {
    * absent the PI session stays in memory (#258).
    */
   piSessionDir?: string;
+  /**
+   * Cross-process session lock windows (#266). `staleMs` is how long a lock
+   * whose owner cannot be confirmed stays protected (default 10 min);
+   * `waitMs` is the same-session wait cap before the run fails with
+   * "session busy" (default 120 s). Parsed from ANS_PI_LOCK_STALE_MS /
+   * ANS_PI_LOCK_TIMEOUT_MS by piSessionOptions.
+   */
+  sessionLock?: SessionLockWindows;
   /** Working directory for the PI session and resource loader. Defaults to cwd. */
   cwd?: string;
   /** PI auto-compaction thresholds (enabled unless explicitly disabled). */
@@ -398,17 +413,33 @@ export function resolveTokenReserve(inputTokens: number, outputReserveTokens: nu
 
 // Design: same session -> one run at a time, different sessions in parallel —
 // one PI record has one writer, and two runs appending to it at once would
-// interleave entries. Cross-process locking is ticket #266's subject, so this
-// queue is deliberately process-local.
+// interleave entries. This queue is the in-process half; the cross-process
+// half is the file lock in ./session-lock (#266). Both waits share one
+// deadline, so a same-session caller hits the same wait cap either way.
 const sessionQueues = new Map<string, Promise<void>>();
 
-async function acquireSessionQueue(key: string): Promise<() => void> {
+async function acquireSessionQueue(key: string, deadlineAt: number): Promise<() => void> {
   const previous = sessionQueues.get(key) ?? Promise.resolve();
   let release!: () => void;
   const current = new Promise<void>((resolve) => { release = resolve; });
   const tail = previous.then(() => current);
   sessionQueues.set(key, tail);
-  await previous;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(SESSION_BUSY_MESSAGE)), Math.max(0, deadlineAt - Date.now()));
+    timer.unref?.();
+  });
+  try {
+    await Promise.race([previous, expired]);
+  } catch (e) {
+    // Resolve our slot so later waiters chain onto a settled promise instead
+    // of hanging on one nobody will ever release; the abandoned request runs
+    // nothing, so there is nothing to interleave.
+    release();
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
   return () => {
     release();
     if (sessionQueues.get(key) === tail) sessionQueues.delete(key);
@@ -531,17 +562,39 @@ export class PiAgentRuntime {
   }
 
   // run returns AsyncIterable<AgentEvent>, mapping PI session events.
-  // Serialization: same session -> one run at a time in this process; different
-  // sessions run in parallel. Cross-process locking is ticket #266.
+  // Serialization: same session -> one run at a time (the process-local queue
+  // above plus the cross-process file lock); different sessions run in
+  // parallel. The file lock only exists when the PI record is durable (#258):
+  // an in-memory session cannot be shared with another process in the first
+  // place (#266).
   async *run(input: string): AsyncIterable<AgentEvent> {
     if (this.opts.signal?.aborted) return;
     const key = this.opts.sessionId ?? "";
-    const releaseQueue = key ? await acquireSessionQueue(key) : () => {};
+    // Design: the queue and the file lock share one deadline — a same-session
+    // caller must hit the same 120 s cap whether the current run is in this
+    // process or another one, and splitting the budget would let a caller wait
+    // twice as long for the same "session busy" answer. Both waits surface as
+    // an error event, like every other run failure.
+    const windows = resolveSessionLockWindows(this.opts.sessionLock);
+    const deadlineAt = Date.now() + windows.waitMs;
+    let releaseQueue: () => void = () => {};
+    let releaseLock: (() => void) | undefined;
     try {
+      if (key) releaseQueue = await acquireSessionQueue(key, deadlineAt);
+      if (this.opts.piSessionDir && key) {
+        const lockPath = join(this.opts.piSessionDir, SESSION_LOCKS_DIRNAME, piSessionKey(key) + ".lock");
+        // The lock gets whatever is left of the shared budget, so the two
+        // waits never add up past the cap.
+        releaseLock = await acquireSessionLock(lockPath, {
+          staleMs: windows.staleMs,
+          waitMs: Math.max(1, deadlineAt - Date.now()),
+        });
+      }
       yield* this.runInternal(input);
     } catch (e) {
       yield { type: "error", message: e instanceof Error ? e.message : String(e) };
     } finally {
+      releaseLock?.();
       releaseQueue();
     }
   }
