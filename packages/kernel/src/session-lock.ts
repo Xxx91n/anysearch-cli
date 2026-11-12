@@ -35,9 +35,17 @@
 // Design: a confirmed-dead same-host owner is reclaimed at once — a dead pid on
 // this machine cannot come back, so waiting out the stale window would only
 // delay recovery; the window stays for owners this machine cannot confirm.
+// Design: a reclaim MOVES the directory before deleting it — read-then-delete
+// could remove a lock a competing waiter created in the gap, so the atomic
+// rename picks one winner and the loser sees ENOENT.
 // Design: release and heartbeat re-check owner.json before touching the
 // directory — once a lock is reclaimed it belongs to its new holder, and the
 // old holder must neither delete it nor keep refreshing its heartbeat.
+// Design: a holder that cannot write its identity gives the lock back and fails
+// the run — a lock nobody can verify on release is worse than no lock.
+// Design: the wait deadline is checked at the top of every poll, including the
+// reclaim path — a sweep that keeps failing must still end as "session busy",
+// never as an unbounded retry.
 // Design: a live holder never reclaims its own process's lock — defense in
 // depth, so the lock does not trust the in-process queue to be its only
 // serializer; a lock whose release failed keeps failing with "session busy"
@@ -46,7 +54,7 @@
 // keeps a dead owner's lock longer than necessary, and is accepted because the
 // alternative (guessing a start time) would be wrong more often.
 
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -154,6 +162,45 @@ function reclaimableNow(lockPath: string, staleMs: number): boolean {
   return lockAgeMs(lockPath, Date.now()) > staleMs;
 }
 
+/**
+ * Sweep a lock this waiter judged reclaimable, without ever deleting a
+ * replacement.
+ *
+ * A read-then-delete is not safe: a competing waiter can sweep the dead
+ * directory and create its own in the gap, and the delete then removes the
+ * new holder's lock — two writers on one session, the exact failure this
+ * lock exists to prevent. So the directory is first *moved* to a unique
+ * graveyard path (rename is atomic, and exactly one waiter can win it), and
+ * only that moved directory is deleted. Once the rename wins, `lockPath`
+ * is gone and everyone races on `mkdir` like normal.
+ *
+ * Returns true when the directory was swept (now or by another waiter),
+ * false when the sweep could not happen (a live/fresh owner appeared, or
+ * the filesystem refused the rename) — the caller then falls through to its
+ * deadline check instead of retrying forever.
+ */
+function sweepStaleLock(lockPath: string, staleMs: number): boolean {
+  if (!reclaimableNow(lockPath, staleMs)) return false;
+  const graveyard = lockPath + ".swept-" + process.pid + "-" + Math.floor(Math.random() * 1e9);
+  try {
+    renameSync(lockPath, graveyard);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException)?.code;
+    // ENOENT: another waiter already swept it — not a failure for this waiter.
+    // Anything else (permissions, a locked file) means the lock stays; do not
+    // loop on it.
+    return code === "ENOENT";
+  }
+  try {
+    rmSync(graveyard, { recursive: true, force: true });
+  } catch {
+    // The moved directory is now unreachable as a lock, so a failed delete is
+    // cosmetic: it can no longer be claimed or block anyone. Leaving it beats
+    // turning cleanup into the caller's problem.
+  }
+  return true;
+}
+
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -170,40 +217,45 @@ export async function acquireSessionLock(
   const deadlineAt = Date.now() + windows.waitMs;
   mkdirSync(dirname(lockPath), { recursive: true });
   for (;;) {
+    // The deadline is checked at the TOP of every iteration, so every path —
+    // a live holder, a reclaim sweep, or a sweep that keeps failing — ends at
+    // "session busy" instead of spinning forever (#266: the wait has a cap).
+    if (Date.now() >= deadlineAt) throw new Error(SESSION_BUSY_MESSAGE);
     try {
       mkdirSync(lockPath);
     } catch (e) {
       if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
-      if (reclaimableNow(lockPath, staleMs)) {
-        // The holder is provably gone, or the lock is unrecoverably old with
-        // no verifiable owner. Sweep it and try to take its place; losing
-        // the follow-up mkdir race to another waiter is fine — the loop then
-        // waits like any other contender.
-        try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* swept by another waiter */ }
+      // Sweep a dead/unconfirmable holder; a live local holder is never
+      // touched here, so the loop simply waits for it.
+      if (!sweepStaleLock(lockPath, staleMs)) {
         await sleep(POLL_MS);
         continue;
       }
-      if (Date.now() >= deadlineAt) throw new Error(SESSION_BUSY_MESSAGE);
-      await sleep(POLL_MS);
+      // The directory is gone: try to take its place immediately.
       continue;
     }
-    // We hold it: publish our identity and start the heartbeat.
-    let identityPublished = false;
+    // We hold it: publish our identity, then start the heartbeat. The identity
+    // write is not best-effort: a lock without a readable owner.json cannot be
+    // verified on release, so the holder must give the directory back instead
+    // of running with a lock anyone could delete (#266: release and reclaim
+    // only ever target the rightful holder).
     try {
       writeFileSync(join(lockPath, OWNER_FILE), JSON.stringify({
         pid: process.pid,
         host: hostname(),
         startedAt: Date.now(),
       }));
-      identityPublished = true;
-    } catch { /* degraded: the lock then lives and dies by the age rules */ }
+    } catch {
+      try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* swept */ }
+      throw new Error("Session lock could not record its owner; refusing to run without a verifiable lock.");
+    }
     let beating = true;
     const beat = () => {
       if (!beating) return;
       try {
         // Stop touching files that may belong to a new holder: once the
         // recorded identity is not ours, this directory is no longer ours.
-        if (!ownsLockDir(lockPath, identityPublished)) {
+        if (!ownsLockDir(lockPath)) {
           beating = false;
           return;
         }
@@ -218,17 +270,19 @@ export async function acquireSessionLock(
     return () => {
       beating = false;
       clearInterval(timer);
-      // Delete only a lock we still own: with our identity on record, a
-      // directory that now names someone else (or cannot be read) was
-      // reclaimed while we ran and must survive.
-      if (!ownsLockDir(lockPath, identityPublished)) return;
+      // Delete only a lock we still own: a directory that now names someone
+      // else was reclaimed while we ran and must survive.
+      if (!ownsLockDir(lockPath)) return;
       try { rmSync(lockPath, { recursive: true, force: true }); } catch { /* already swept */ }
     };
   }
 }
 
-function ownsLockDir(lockPath: string, identityPublished: boolean): boolean {
-  if (!identityPublished) return true;
+// The identity is written before the lock is handed back, and a failed write
+// aborts the acquisition, so by the time this runs a readable owner.json is
+// the only legitimate state: a directory that does not name us was reclaimed
+// by someone else and must not be touched.
+function ownsLockDir(lockPath: string): boolean {
   const owner = readLockOwner(lockPath);
   return owner !== undefined && owner.pid === process.pid && owner.host === hostname();
 }

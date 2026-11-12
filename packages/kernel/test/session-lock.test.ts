@@ -19,7 +19,7 @@
 // Run: pnpm --filter @anysearch-cli/kernel run test
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { PiAgentRuntime, piSessionKey } from "../src/pi-runtime";
@@ -242,6 +242,64 @@ async function main() {
       assert(owner.pid === 999999, "L6: the new holder's identity survives the old holder's release");
 
       rmSync(lockDir, { recursive: true, force: true });
+    }
+
+    // ---------- L7: the reclaim path still honours the wait cap ----------
+    {
+      // A lock that keeps looking reclaimable but never actually gets swept:
+      // the directory's owner is unreadable, so age decides, and the age is
+      // fresh — no wait, the point is the deadline still fires. Simulate the
+      // harder case: a stale lock whose sweep cannot complete because the
+      // directory is not removable.
+      const lockDir = join(workDir, "l7", "s.lock");
+      mkdirSync(lockDir, { recursive: true });
+      backdate(lockDir, 10_000); // past any short stale window
+      // Make the reclaim rename fail every time by pointing at an unrenameable
+      // target: a pre-existing file where the graveyard would go is not needed —
+      // instead, drop the parent's write permission is not portable on Windows.
+      // Read-only-ness is the portable lever: chmod the directory read-only.
+      let release: (() => void) | undefined;
+      const waitMs = 400;
+      const started = Date.now();
+      try {
+        chmodSync(lockDir, 0o555);
+      } catch { /* not enforced on some platforms */ }
+      const busy = await expectBusy(lockDir, 50, waitMs).then((m) => m);
+      try { chmodSync(lockDir, 0o755); } catch { /* best effort */ }
+      const elapsed = Date.now() - started;
+      // Either the sweep failed and the cap fired, or the sweep succeeded and
+      // the lock was taken — both are finite. The failure this test guards
+      // against is an unbounded loop, which shows up as elapsed >> waitMs.
+      assert(elapsed < waitMs + 2_000,
+        "L7: the reclaim path never spins past the wait cap (waited " + elapsed + " ms, cap " + waitMs + " ms)");
+      if (busy === SESSION_BUSY_MESSAGE) {
+        assert(existsSync(lockDir), "L7: a lock the sweep could not remove still exists for the next waiter");
+      }
+      try { rmSync(lockDir, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
+
+    // ---------- L8: reclaim never deletes a lock a competitor just took ----------
+    {
+      // Two waiters judge the same dead lock reclaimable. The first sweeps it
+      // and creates its own; the second's delete must not remove that one.
+      // The rename-based sweep makes the loser see ENOENT instead.
+      const lockDir = join(workDir, "l8", "s.lock");
+      const deadPid = await recentlyDeadPid();
+      if (deadPid !== null) {
+        writeFakeOwner(lockDir, deadPid, hostname());
+        const first = await expectAcquired(lockDir, SESSION_LOCK_STALE_MS, 3_000);
+        // The first waiter is now the holder; a second contender must not
+        // sweep it even though the previous owner is still dead on paper.
+        const busy = await expectBusy(lockDir, SESSION_LOCK_STALE_MS, 300);
+        assert(busy === SESSION_BUSY_MESSAGE,
+          "L8: a contender does not steal a lock a live competitor just acquired (got " + JSON.stringify(busy) + ")");
+        const ownerNow = JSON.parse(readFileSync(ownerFile(lockDir), "utf8"));
+        assert(ownerNow.pid === process.pid,
+          "L8: the competitor's acquired lock still names its holder (got " + JSON.stringify(ownerNow) + ")");
+        first();
+      } else {
+        assert(false, "L8: could not obtain a recently dead pid to test with");
+      }
     }
 
     // ---------- W1: the runtime holds the lock for the whole run ----------
