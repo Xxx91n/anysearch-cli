@@ -235,6 +235,10 @@ async function completeText(
 
   let text = "";
   let usage: RawUsage | undefined;
+  // A stream that ends with an `error`/`aborted` event has still emitted its
+  // text deltas. Those deltas are a truncated answer, not a summary, and the
+  // store would classify and persist them.
+  let streamFailed = false;
   try {
     const stream = session.streamFn(
       session.model as never,
@@ -251,6 +255,9 @@ async function completeText(
       } else if (event?.type === "done" && event.message) {
         usage = (event.message as { usage?: RawUsage }).usage;
         if (!text) text = textOfMessage(event.message);
+      } else if (event?.type === "error") {
+        // pi-ai 1.5.x reports a failed stream here instead of throwing.
+        streamFailed = true;
       }
     }
   } finally {
@@ -270,7 +277,23 @@ async function completeText(
           budget.ledger.settleTokens(budget.sessionId, reservedTokens, hasUsage ? reportedTotal : reservedTokens);
         }
       } catch { /* fail-open: the ledger release is not the caller's failure */ }
+      // Design: the dollar dimension settles here so a session with a usdCap
+      // sees this spend. Only a server-sent price is booked: pi-ai's own
+      // rate-card figure is an estimate, and booking it would both misstate the
+      // bill and let a guessed price trip a real cap. An estimate stays in the
+      // usage report (`costBasis: "price-estimate"`), not in the ledger.
+      const providerPriced = usage?.cost?.totalFromProvider === true;
+      const reportedUsd = Number(usage?.cost?.total);
+      if (providerPriced && Number.isFinite(reportedUsd) && reportedUsd > 0) {
+        try {
+          budget.ledger.settleUsd(budget.sessionId, 0, reportedUsd);
+        } catch { /* fail-open */ }
+      }
     }
+  }
+  // A failed stream yields no summary: the caller must not persist partial text.
+  if (streamFailed) {
+    return { text: "", usage };
   }
   return { text: text.trim(), usage };
 }
@@ -307,7 +330,10 @@ export function createConsolidationSeams(
     usage.calls += 1;
     if (!raw) {
       // Text came back but the provider sent no usage block: say so, never 0.
+      // The cost gap is named too — without a usage figure there is no price
+      // either, and a caller reading missing[] must not have to infer that.
       if (!usage.missing.includes(MISSING_CONSOLIDATION_USAGE)) usage.missing.push(MISSING_CONSOLIDATION_USAGE);
+      if (!usage.missing.includes(MISSING_CONSOLIDATION_COST)) usage.missing.push(MISSING_CONSOLIDATION_COST);
       return;
     }
     usage.inputTokens += Number(raw.input) || 0;

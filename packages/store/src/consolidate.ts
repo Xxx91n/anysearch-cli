@@ -93,6 +93,20 @@ export interface ConsolidateReport {
   // spending at the first rejection; nothing is written for those clusters.
   budgetRejected: number;
   semanticIds: number[];
+  // Design: dedup compares against every live semantic memory, not only those
+  // built from this scope — shared knowledge is corrected by reliable new
+  // material (D5/D6), so an update may target a row the scope never read. That
+  // is allowed, but it must be visible: each entry names the knowledge row this
+  // run closed and whether that row's own materials were inside the scope.
+  // `false` means knowledge outside the selected materials was replaced.
+  updates: Array<{
+    oldId: number;
+    newId: number;
+    // True when every occurrence this row was built from came from the scope.
+    withinScope: boolean;
+    // Materials of the closed row that the scope did not read.
+    outsideScopeMaterialIds: number[];
+  }>;
 }
 
 /**
@@ -364,6 +378,7 @@ export async function consolidateMemoryRun(
     },
     budgetRejected: 0,
     semanticIds: [],
+    updates: [],
   };
 
   // plan phase (scan + LLM summarize + classify + dedup) runs WITHOUT the
@@ -485,12 +500,14 @@ export async function consolidateMemoryRun(
 
       const salience = Math.min(1, 0.4 + 0.1 * eps.length);
       const epsIds = eps.map((e) => e.id);
-      const insert = (extraSources: number[] = []): void => {
+      const insert = (extraSources: number[] = []): number => {
         const src = Array.from(new Set([...epsIds, ...extraSources])).sort((a, b) => a - b);
         const info = db
           .prepare("INSERT INTO semantic_memories (content, source_episode_ids, salience, confidence, embedding) VALUES (?, ?, ?, ?, ?)")
           .run(summary, JSON.stringify(src), salience, confidence, embBuf);
-        report.semanticIds.push(Number(info.lastInsertRowid));
+        const id = Number(info.lastInsertRowid);
+        report.semanticIds.push(id);
+        return id;
       };
 
       const op = best ? decideOp(sawCos ? bestCos : null, bestJac, CONTRADICTION_RE.test(summary) || CONTRADICTION_RE.test(best.content), theta) : "add";
@@ -503,12 +520,19 @@ export async function consolidateMemoryRun(
         });
       } else if (best && op === "update") {
         // D4 UPDATE: high-overlap contradiction -> soft-close old row, write new, union sources.
+        //
+        // The closed row may have been built from materials outside the scope.
+        // That is allowed (shared knowledge is correctable by reliable new
+        // material), but the report must show it instead of leaving a caller to
+        // assume only the selected materials moved.
         const row = best;
         writes.push(() => {
           db.prepare("UPDATE semantic_memories SET valid_until = datetime('now') WHERE id = ?").run(row.id);
           let prev: number[] = [];
           try { prev = JSON.parse(row.source_episode_ids) as number[]; } catch { prev = []; }
-          insert(prev);
+          const newId = insert(prev);
+          const outside = prev.filter((id) => !epsIds.includes(id));
+          report.updates.push({ oldId: row.id, newId, withinScope: outside.length === 0, outsideScopeMaterialIds: outside });
           report.update++;
         });
       } else {

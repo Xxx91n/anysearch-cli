@@ -60,6 +60,20 @@ test("bare --session with no id: exit 2", async () => {
   assert.match(r.err, /--session requires an id/);
 });
 
+test("--session with a following known flag: exit 2 (not read as an id)", async () => {
+  const r = await run(["--session", "--dry-run"]);
+  assert.equal(r.code, 2);
+  assert.match(r.err, /--session requires an id/);
+});
+
+test("a session id starting with -- is accepted (the scope rule allows it)", async () => {
+  // The value is legal per the shared scope rule, so the CLI must not reject it
+  // just for the prefix; only the command's own options signal a missing value.
+  const r = await run(["--session", "--weird-handle", "--dry-run"]);
+  assert.equal(r.code, 0, "stderr: " + r.err);
+  assert.match(r.out, /scope: session --weird-handle/);
+});
+
 test("--memory with a non-integer id: exit 2 (no other flag can rescue it)", async () => {
   for (const bad of [["--memory", "0"], ["--memory", "-3"], ["--memory", "1.5"], ["--memory", "abc"]]) {
     const r = await run(bad);

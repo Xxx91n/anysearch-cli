@@ -25,9 +25,11 @@
 Call `ans_chat` with `operation="consolidate"` when results should become durable
 knowledge. Do not do it on every turn, and do not run it just because it exists.
 
-- Pick the scope yourself and pass it. Use `memoryIds` for the exact materials you
-  decided are worth keeping (ids from recall_memory or a search); use `sessionId`
-  to sweep one session's materials. A call with neither is rejected.
+- Pick the scope yourself and pass it. `sessionId` is the usual scope: it sweeps
+  one session's materials. `memoryIds` takes positive integer stored material
+  ids, for the case where you already hold real ids; `recall_memory` does not
+  return them, so do not invent ids from its output. A call with neither is
+  rejected.
 - If you pass both, `memoryIds` wins and the session does not widen it. Read
   `structuredContent.scope` to confirm what was actually read.
 - Preview first when the outcome matters: `dryRun: true` saves nothing, but it can

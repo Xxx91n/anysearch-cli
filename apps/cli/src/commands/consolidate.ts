@@ -79,6 +79,12 @@ export async function runConsolidate(argv: string[]): Promise<number> {
 
   // One pass: reject unknown flags AND collect the scope values. Two loops let
   // a bad value hide behind a later good flag.
+  //
+  // Design: a value is only rejected as "missing" when the next token is one of
+  // THIS command's own options. A session id may legitimately start with `--`
+  // (the scope rule accepts any visible ASCII), and the old prefix test made the
+  // CLI refuse handles the MCP entry accepts.
+  const KNOWN_FLAGS = new Set(["--session", "--memory", "--limit", "--dry-run", "--apply"]);
   const sessionIds: string[] = [];
   const memoryIds: number[] = [];
   for (let i = 0; i < args.length; i++) {
@@ -86,7 +92,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     if (a === "--limit") { i++; continue; }
     if (a === "--session") {
       const value = args[i + 1];
-      if (value === undefined || value.startsWith("--")) {
+      if (value === undefined || KNOWN_FLAGS.has(value)) {
         process.stderr.write("ans consolidate: --session requires an id\n");
         return 2;
       }
@@ -227,6 +233,15 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   if (r.semanticIds.length > 0) {
     process.stdout.write("semantic ids: " + r.semanticIds.join(", ") + "\n");
   }
+  // Knowledge that lived outside the selected materials can still be replaced
+  // by a reliable correction. Say so per row: "only the selected materials
+  // moved" must never be something the caller has to assume.
+  for (const u of r.updates.filter((x) => !x.withinScope)) {
+    process.stdout.write(
+      "update outside scope: knowledge " + u.oldId + " -> " + u.newId +
+        " (replaced; its materials outside this scope: " + u.outsideScopeMaterialIds.join(", ") + ")\n",
+    );
+  }
 
   if (seams) {
     const u = seams.usage;
@@ -248,5 +263,16 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     process.stdout.write("budget: unmetered — " + CONSOLIDATION_UNMETERED_TEXT[metering.reason] + ".\n");
   }
 
+  // Design: a budget refusal is an incomplete run, so it must not exit 0 — an
+  // automated caller would read "nothing written, no error" as success. A run
+  // that wrote nothing at all is a failure whether the reason was a missing
+  // summary or a refused cap.
+  if (r.budgetRejected > 0 && r.add === 0 && r.update === 0) {
+    process.stderr.write(
+      "ans consolidate: stopped by the session budget (" + r.budgetRejected +
+        " call(s) refused); nothing was written.\n",
+    );
+    return 1;
+  }
   return r.llmUnavailable > 0 && r.add === 0 && r.update === 0 ? 1 : 0;
 }

@@ -66,7 +66,7 @@ function fakeSession(opts: {
   return { model, streamFn, apiKey: "fake-key" } as never;
 }
 
-type LedgerCall = { kind: "reserve" | "settle"; dimension: "token" | "call"; amount: number; actual?: number };
+type LedgerCall = { kind: "reserve" | "settle"; dimension: "token" | "call" | "usd"; amount: number; actual?: number };
 
 function recordingLedger(opts: { rejectCall?: boolean; rejectTokens?: boolean } = {}) {
   const calls: LedgerCall[] = [];
@@ -88,7 +88,9 @@ function recordingLedger(opts: { rejectCall?: boolean; rejectTokens?: boolean } 
     settleTokens: (_id: string, reserved: number, actual: number) => {
       calls.push({ kind: "settle", dimension: "token", amount: reserved, actual });
     },
-    settleUsd: () => {},
+    settleUsd: (_id: string, _reserved: number, actual: number) => {
+      calls.push({ kind: "settle", dimension: "usd", amount: actual });
+    },
     calls,
   };
   return ledger;
@@ -302,6 +304,63 @@ async function main() {
       assert(!m.metered && m.reason === "budget-setup-failed", "a setup fault reports unmetered, not a failure");
       assert(warned.length === 1, "the fault is named once (got " + JSON.stringify(warned) + ")");
     }
+  }
+
+  // --- 10. a failed stream does not become a summary ---
+  {
+    // pi-ai can end a stream with an `error` event after emitting text deltas.
+    // Persisting those deltas would store a truncated answer as knowledge.
+    const failing = {
+      model: { id: "m", name: "m", api: "openai-completions", provider: "p", baseUrl: "http://x", reasoning: false,
+        input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 8192 },
+      streamFn: () => (async function* () {
+        yield { type: "text_delta", delta: "half an answer" };
+        yield { type: "error", reason: "error", error: { message: "upstream died" } };
+      })(),
+      apiKey: "k",
+    } as never;
+    const seams = createConsolidationSeams(failing);
+    const out = await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
+    assert(out === null, "a failed stream yields no summary (got " + JSON.stringify(out) + ")");
+    assert(seams.usage.calls === 1, "the attempt is still counted");
+  }
+
+  // --- 11. a server-sent price reaches the USD ledger dimension ---
+  {
+    const ledger = recordingLedger();
+    const seams = createConsolidationSeams(
+      fakeSession({
+        usage: { input: 100, output: 10, totalTokens: 110, cost: { total: 0.02, totalFromProvider: true } },
+        priceTable: { input: 0.001, output: 0.002 },
+      }),
+      { budget: { sessionId: "s1", ledger } },
+    );
+    await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
+    const usd = ledger.calls.find((c) => c.kind === "settle" && c.dimension === "usd");
+    assert(usd !== undefined && usd.amount === 0.02, "the provider price settles on the USD dimension (got " + JSON.stringify(usd) + ")");
+  }
+
+  // --- 12. an unknown price does not invent a USD figure ---
+  {
+    const ledger = recordingLedger();
+    const seams = createConsolidationSeams(
+      fakeSession({ usage: { input: 100, output: 10, totalTokens: 110, cost: { total: 0.5 } } }),
+      { budget: { sessionId: "s1", ledger } },
+    );
+    await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
+    const usd = ledger.calls.find((c) => c.kind === "settle" && c.dimension === "usd");
+    assert(usd === undefined, "a rate-card guess is not booked as a server price (got " + JSON.stringify(usd) + ")");
+    assert(seams.usage.costBasis === "unknown", "and the cost basis says unknown");
+  }
+
+  // --- 13. a missing usage block names the cost gap too ---
+  {
+    const seams = createConsolidationSeams(fakeSession({ text: "text only" }));
+    await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
+    assert(
+      seams.usage.missing.some((m) => /cost/i.test(m)),
+      "no usage means no price, so the cost gap is named (got " + JSON.stringify(seams.usage.missing) + ")",
+    );
   }
 
   console.log("consolidation-usage: " + passed + " passed, " + failed + " failed");

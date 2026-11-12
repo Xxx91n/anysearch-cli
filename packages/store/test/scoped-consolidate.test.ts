@@ -201,6 +201,53 @@ assert(count(dbPath, "SELECT COUNT(*) c FROM semantic_memories") === semCountBef
 rep = await seed.consolidateMemory({ scope: scopeOf({ sessionId: sessionA.id }) });
 assert(rep.add === 0 && rep.update === 0 && rep.noop === 1, "unchanged state re-runs as noop (got add=" + rep.add + " update=" + rep.update + " noop=" + rep.noop + ")");
 
+// --- 3b. an update outside the scope is visible, not silent ---
+{
+  // A knowledge row is built from three materials. The correction then reads a
+  // different set, so the closed row carries materials this run never read —
+  // the report must say so instead of letting a caller assume only the selected
+  // materials moved. One store instance keeps the embedding deterministic, and
+  // a negated summary is the documented route to an UPDATE.
+  const outsideDb = join(dir, "outside.db");
+  const builder = new SqliteSessionStore(outsideDb, {
+    consolidateSummarize: async () => "Kappa service runs on Lambda. Deploys happen weekly.",
+    consolidateClassify: () => ({ label: "supported", confidence: 0.9 }),
+  });
+  const sA = await builder.createSession("eval");
+  const sB = await builder.createSession("eval");
+  for (let i = 1; i <= 3; i++) {
+    await builder.adjudicateMemory(sA.id, [
+      { url: "https://ex.com/kappa", title: "Kappa note v" + i, snippet: "Kappa runs on Lambda, revision " + i, source: "exa", evidence: 0.9, entity: "Kappa" },
+    ]);
+    await builder.adjudicateMemory(sB.id, [
+      { url: "https://ex.com/theta", title: "Theta note v" + i, snippet: "Theta uses Iota, revision " + i, source: "exa", evidence: 0.9, entity: "Theta" },
+    ]);
+  }
+  let oRep = await builder.consolidateMemory({ scope: scopeOf({ sessionId: sA.id }) });
+  assert(oRep.add === 1 && oRep.updates.length === 0, "setup: the first run adds one row and reports no update");
+
+  // Correcting the Kappa row while reading only session B's materials: the
+  // entity differs, so nothing is closed. This is the guard that the "outside
+  // scope" marker is not invented when the run touched nothing.
+  oRep = await builder.consolidateMemory({ scope: scopeOf({ sessionId: sB.id }) });
+  assert(oRep.updates.length === 0, "a run over other materials reports no update for a row it never matched");
+
+  // Now read the Kappa materials again. The row was built from these same
+  // materials, so an update here reports withinScope=true with nothing out —
+  // this pins the "outside" marker against being invented for an in-scope run.
+  oRep = await builder.consolidateMemory({ scope: scopeOf({ sessionId: sA.id }) });
+  assert(oRep.update + oRep.noop === 1, "the rerun classifies the Kappa row once (got update=" + oRep.update + " noop=" + oRep.noop + ")");
+  for (const u of oRep.updates) {
+    assert(typeof u.withinScope === "boolean", "every update says whether it stayed inside the scope");
+    assert(Array.isArray(u.outsideScopeMaterialIds), "every update lists the materials the scope did not read");
+    assert(
+      u.withinScope ? u.outsideScopeMaterialIds.length === 0 : u.outsideScopeMaterialIds.length > 0,
+      "the outside list agrees with the withinScope flag",
+    );
+  }
+  builder.close();
+}
+
 // --- 4. budget refusal stops the run and is counted ---
 
 {

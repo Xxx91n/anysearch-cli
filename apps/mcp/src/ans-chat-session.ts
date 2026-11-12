@@ -245,6 +245,14 @@ export function buildAnsChatConsolidateResult(
   extra: { budgetUnmetered?: boolean; budgetUnmeteredReason?: string },
 ): AnsChatToolResult {
   const s = report.scope;
+  // Knowledge built from materials outside the selected scope can still be
+  // replaced by a reliable correction (shared knowledge, D5/D6). The result
+  // names those rows so "only the selected materials moved" is never assumed.
+  const outside = (report.updates ?? []).filter((u) => !u.withinScope);
+  const outsideText = outside.length === 0
+    ? ""
+    : "\noutside scope: " + outside.map((u) => u.oldId + " -> " + u.newId).join(", ") +
+      " (knowledge built from materials this scope did not read; the correction still replaced it)";
   const line =
     "ans_chat consolidate" + (report.dryRun ? " (dry-run)" : "") +
     ": add " + report.add + ", update " + report.update +
@@ -252,6 +260,7 @@ export function buildAnsChatConsolidateResult(
     ", failure " + report.llmUnavailable +
     " (scanned " + report.clustersScanned + ", triggered " + report.clustersTriggered + ")" +
     "\nscope: " + formatConsolidateScope(s) +
+    outsideText +
     (report.dryRun
       ? "\ndry-run: nothing saved. The counts describe the state read now; a concurrent write " +
         "before an apply can make the apply differ."

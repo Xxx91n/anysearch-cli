@@ -41,9 +41,10 @@ Research and fetch information from many sources, with persistent memory.
 Call `ans_chat` with `operation="consolidate"` when results should become durable
 knowledge. Do not do it every turn.
 
-- Pick the scope and pass it: `memoryIds` for the exact materials worth keeping,
-  or `sessionId` for one session's materials. A call with neither is rejected —
-  there is no "consolidate everything".
+- Pick the scope and pass it: `sessionId` for one session's materials, or
+  `memoryIds` when you already hold real positive integer material ids
+  (`recall_memory` does not return them, so do not guess). A call with neither is
+  rejected — there is no "consolidate everything".
 - If you pass both, `memoryIds` wins and the session does not widen it. Check
   `structuredContent.scope` to confirm what was actually read.
 - `dryRun: true` saves nothing but can still call the model and cost money.

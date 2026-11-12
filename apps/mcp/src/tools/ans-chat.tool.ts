@@ -213,12 +213,18 @@ export function registerAnsChat(
             ...(eng.ledger ? { ledger: eng.ledger } : {}),
             warn: (m) => process.stderr.write("[anysearch] " + m + "\n"),
           });
+          // Design: the awaits above open a window the earlier check cannot see.
+          // A request cancelled while waiting for the meter or the LLM session
+          // must not go on to spend money and commit memory, so every wait is
+          // followed by the same check.
+          if (signal?.aborted) return buildAnsChatResult("");
           const budget = metering.metered ? metering.budget : undefined;
 
           let seams: ReturnType<typeof createConsolidationSeams> | undefined;
           if (providerName && modelName) {
             try {
               const llm = await getLlmSession();
+              if (signal?.aborted) return buildAnsChatResult("");
               // The seams carry this request's own usage counter and budget
               // binding. They are handed to the run as a per-call dependency
               // instead of being written onto the shared store: two concurrent
@@ -244,6 +250,16 @@ export function registerAnsChat(
           } catch (e) {
             if (isConsolidationBudgetError(e)) return toolFailure("ans_chat consolidate: " + e.message);
             return toolError("ans_chat", e instanceof Error ? e.message : String(e));
+          }
+          // Design: a run the session cap stopped wrote nothing, so it is an
+          // error result, not a successful report. A caller reading
+          // "add 0, update 0" as success would retry forever against the same
+          // cap; the failure channel makes the stop explicit.
+          if (report.budgetRejected > 0 && report.add === 0 && report.update === 0) {
+            return toolFailure(
+              "ans_chat consolidate: stopped by the session budget (" + report.budgetRejected +
+                " model call(s) refused); nothing was written.",
+            );
           }
           const usage = seams?.usage ?? {
             calls: 0,
