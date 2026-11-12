@@ -130,7 +130,10 @@ interface McpClient {
   stderr: () => string;
   rpc: (method: string, params: unknown, timeoutMs?: number) => Promise<any>;
   chat: (markerMessage: string, sessionId: string, timeoutMs?: number) => Promise<{
-    ok: boolean; isError: boolean; text: string; structured: any; elapsedMs: number;
+    ok: boolean; isError: boolean; text: string; structured: any; elapsedMs: number; transportError: boolean;
+  }>;
+  chatOrTransport: (markerMessage: string, sessionId: string, timeoutMs?: number) => Promise<{
+    ok: boolean; isError: boolean; text: string; structured: any; elapsedMs: number; transportError: boolean;
   }>;
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
 }
@@ -142,11 +145,16 @@ function startMcp(env: Record<string, string>): McpClient {
   });
   let stderr = "";
   child.stderr?.on("data", (c) => { stderr += c.toString(); });
-  const pending = new Map<number, { resolve: (m: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
+  const pending = new Map<number, { resolve: (m: any) => void; timer: NodeJS.Timeout }>();
   let buf = "";
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     child.once("exit", (code, signal) => {
-      for (const [, p] of pending) { clearTimeout(p.timer); p.reject(new Error("MCP exited (code=" + code + ", signal=" + signal + ")")); }
+      // A pending call whose process died can never be answered; settle it as
+      // a failure instead of leaving the caller waiting for the timer.
+      for (const [, p] of pending) {
+        clearTimeout(p.timer);
+        p.resolve({ error: { message: "MCP exited (code=" + code + ", signal=" + signal + ")" } });
+      }
       pending.clear();
       resolve({ code, signal });
     });
@@ -175,7 +183,18 @@ function startMcp(env: Record<string, string>): McpClient {
         pending.delete(id);
         reject(new Error("rpc timeout: " + method + " stderr=" + stderr.slice(-400)));
       }, timeoutMs);
-      pending.set(id, { resolve, reject, timer });
+      pending.set(id, {
+        timer,
+        resolve: (m: any) => {
+          // A JSON-RPC error reply is a failed call, not a successful one:
+          // resolving it would let a broken tools/list pass the handshake.
+          if (m.error) {
+            reject(new Error(method + " failed: " + JSON.stringify(m.error).slice(0, 300)));
+            return;
+          }
+          resolve(m);
+        },
+      });
       child.stdin!.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
     });
   const notify = (method: string, params: unknown) =>
@@ -188,7 +207,11 @@ function startMcp(env: Record<string, string>): McpClient {
     notify("notifications/initialized", {});
     // T3: a live process is not a started one — both handshake steps must
     // succeed before the process is used for the lock assertions.
-    await rpc("tools/list", {});
+    const tools = await rpc("tools/list", {});
+    const names = (tools.result?.tools ?? []).map((t: any) => t.name);
+    if (!names.includes("ans_chat")) {
+      throw new Error("tools/list did not list ans_chat; got " + JSON.stringify(names));
+    }
   };
   const chat = (markerMessage: string, sessionId: string, timeoutMs = RPC_TIMEOUT_MS) => {
     const started = Date.now();
@@ -200,11 +223,21 @@ function startMcp(env: Record<string, string>): McpClient {
       const text = (res.result?.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
       return {
         ok: res.result?.isError !== true, isError: res.result?.isError === true,
-        elapsedMs: Date.now() - started, text, structured: sc,
+        elapsedMs: Date.now() - started, text, structured: sc, transportError: false,
       };
     });
   };
-  return { child, rpc, chat, exited, init, stderr: () => stderr };
+  // A call whose process is killed mid-flight has no reply at all. That is a
+  // transport outcome, not the tool saying "I failed", so it is tagged apart
+  // from a server error instead of being folded into the same shape.
+  const chatOrTransport = (markerMessage: string, sessionId: string, timeoutMs = RPC_TIMEOUT_MS) => {
+    const started = Date.now();
+    return chat(markerMessage, sessionId, timeoutMs).catch((e: Error) => ({
+      ok: false, isError: true, elapsedMs: Date.now() - started,
+      text: "TRANSPORT ERROR: " + e.message, structured: null, transportError: true,
+    }));
+  };
+  return { child, rpc, chat, chatOrTransport, exited, init, stderr: () => stderr };
 }
 
 // ---------- sandbox helpers ----------
@@ -381,9 +414,8 @@ async function main() {
       const b = startMcp(env); await b.init();
       const shared = "lock-crash-" + NONCE;
 
-      const hangCall = a.chat("LOCK-HANG. Hold the session open.", shared).catch((e: Error) => ({
-        ok: false, isError: true, elapsedMs: 0, text: "TRANSPORT ERROR: " + e.message, structured: null,
-      }));      const hangEntry = await waitForKey("LOCK-HANG");
+      const hangCall = a.chatOrTransport("LOCK-HANG. Hold the session open.", shared);
+      const hangEntry = await waitForKey("LOCK-HANG");
       assert(hangEntry !== undefined,
         "C2: the hanging run reached the provider (A stderr: " + a.stderr().slice(-500) + ")");
 
@@ -426,8 +458,12 @@ async function main() {
       const recoveryMs = Date.now() - bStart;
       const hangRes = await hangCall;
 
-      assert(hangRes.ok === false && hangRes.isError === true,
-        "C2: the killed request fails — no fake success (got " + JSON.stringify(hangRes.text.slice(0, 120)) + ")");
+      // A killed client cannot receive a reply, so "failed" here means the
+      // transport went away — explicitly tagged, not inferred from a catch
+      // that would pass no matter what the tool did.
+      assert(hangRes.transportError === true && hangRes.ok === false,
+        "C2: the killed request ends as a transport failure, never as a completed answer (got "
+        + JSON.stringify(hangRes.text.slice(0, 160)) + ")");
       assert(bRes.ok === true && bRes.structured?.sessionId === shared,
         "C2: the waiter takes over and completes the same session (got " + bRes.text.slice(0, 200) + ")");
       assert(recoveryMs < 30_000,
@@ -436,10 +472,16 @@ async function main() {
       const files = fileContaining(join(root, "pi"), "LOCK-B-AFTER-CRASH-ANSWER-" + NONCE);
       const lines = files.length === 1 ? readJsonl(files[0]) : [];
       const allText = lines.map((l) => JSON.stringify(l)).join("\n");
+      const { assistants: crashAssistants } = conversationText(lines);
       assert(files.length === 1 && !allText.includes("LOCK-HANG-PARTIAL-" + NONCE),
         "C2: no half-written answer lands in the session record");
       assert(allText.includes("LOCK-B-AFTER-CRASH-ANSWER-" + NONCE),
         "C2: the recovering run's completion is recorded");
+      // Exactly one assistant record for the recovering run: a duplicated
+      // completion line would otherwise pass every other assertion here.
+      assert(crashAssistants.filter((t) => t.includes("LOCK-B-AFTER-CRASH-ANSWER-" + NONCE)).length === 1,
+        "C2: the recovering run is recorded exactly once, not duplicated (got "
+        + JSON.stringify(crashAssistants.map((t) => t.slice(0, 40))) + ")");
       assert(lines.every((l) => !l.unparsable), "C2: every JSONL line parses after recovery");
       assert(lockEntries(join(root, "pi")).length === 0,
         "C2: the reclaimed lock is cleaned up (exit " + JSON.stringify(killedExit) + ")");
