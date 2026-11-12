@@ -198,6 +198,8 @@ export async function runChat(argv: string[]): Promise<number> {
     // returning here without waiting loses the rolling_summary / l2_recall write.
     await runtime.flushMemory();
     // Summary calls are a separate, real cost; report them apart from the run.
+    // The reuse/compress adjudication is its own book (D4 重判): one judgment
+    // call must not read as a summary the summarizer never made.
     const memoryUsage = runtime.getMemoryUsage();
     if (memoryUsage && memoryUsage.calls > 0) {
       console.log(
@@ -205,6 +207,15 @@ export async function runChat(argv: string[]): Promise<number> {
         " in=" + memoryUsage.inputTokens + " out=" + memoryUsage.outputTokens +
         " total=" + memoryUsage.totalTokens + " costUsd=" + memoryUsage.costUsd +
         (memoryUsage.missing.length ? " MISSING=" + memoryUsage.missing.join(",") : ""),
+      );
+    }
+    const adjudicationUsage = memoryUsage?.adjudication;
+    if (adjudicationUsage && adjudicationUsage.calls > 0) {
+      console.log(
+        "[usage] memory-adjudication calls=" + adjudicationUsage.calls +
+        " in=" + adjudicationUsage.inputTokens + " out=" + adjudicationUsage.outputTokens +
+        " total=" + adjudicationUsage.totalTokens + " costUsd=" + adjudicationUsage.costUsd +
+        (adjudicationUsage.missing.length ? " MISSING=" + adjudicationUsage.missing.join(",") : ""),
       );
     }
   }

@@ -34,6 +34,16 @@ knowledge. Do not do it on every turn, and do not run it just because it exists.
   `structuredContent.scope` to confirm what was actually read.
 - Preview first when the outcome matters: `dryRun: true` saves nothing, but it can
   still call the model and cost money.
+- One reliable material can correct existing knowledge: `allowSingleEvidence:
+  true`. The exception is decided per entity cluster, not per call, so a
+  `sessionId` scope works only when that session holds exactly one material for
+  the entity in question — a session with materials for several entities will
+  trigger whole clusters, not a single-evidence correction. Preview with
+  `dryRun: true` and read `structuredContent.scope` before applying. `memoryIds`
+  with one entry is the precise form. It may only correct, never create new
+  long-term knowledge. A refusal is a normal answer — read `verifyDetails` for
+  the old content, the candidate, the sources and what to check next, then go
+  find the missing evidence instead of forcing the write.
 - Treat the report as the answer, not a success flag: `failure` means no summary
   was available, `conflict` means the fidelity gate refused a claim, and
   `budgetRejected` means a session cap stopped the run. `usage.costBasis =

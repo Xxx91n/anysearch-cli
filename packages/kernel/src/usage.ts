@@ -194,8 +194,13 @@ function missingDimensions(totals: UsageTotals, usageLabel: string, prefix: stri
   return missing;
 }
 
-/** Summary-call report: the same ledger, labelled for the memory pipeline. */
-export interface SummaryUsage {
+/**
+ * One labelled slice of the memory pipeline's own model calls.
+ *
+ * Same honesty rules as the run ledger: a dimension that never arrived is
+ * named in `missing`, never rendered as a zero.
+ */
+export interface MemoryCallUsage {
   calls: number;
   inputTokens: number;
   outputTokens: number;
@@ -207,7 +212,18 @@ export interface SummaryUsage {
   missing: string[];
 }
 
-export function toSummaryUsage(totals: UsageTotals): SummaryUsage {
+/** Summary-call report: the same ledger, labelled for the memory pipeline. */
+export interface SummaryUsage extends MemoryCallUsage {
+  /**
+   * The reuse/compress adjudication calls (D4 重判), kept apart from the
+   * summary slice so neither book inflates the other: a run that only
+   * adjudicated reports adjudication calls and summary calls 0, never a
+   * summary count the summaries did not produce.
+   */
+  adjudication: MemoryCallUsage;
+}
+
+function toMemoryCallUsage(totals: UsageTotals, usageLabel: string, prefix: string): MemoryCallUsage {
   return {
     calls: totals.assistantCalls,
     inputTokens: totals.inputTokens,
@@ -217,7 +233,14 @@ export function toSummaryUsage(totals: UsageTotals): SummaryUsage {
     totalTokens: totals.totalTokens,
     costUsd: totals.costUsd,
     costSource: costSourceOf(totals),
-    missing: missingDimensions(totals, "summary usage", "summary"),
+    missing: missingDimensions(totals, usageLabel, prefix),
+  };
+}
+
+export function toSummaryUsage(totals: UsageTotals, adjudication: UsageTotals): SummaryUsage {
+  return {
+    ...toMemoryCallUsage(totals, "summary usage", "summary"),
+    adjudication: toMemoryCallUsage(adjudication, "adjudication usage", "adjudication"),
   };
 }
 

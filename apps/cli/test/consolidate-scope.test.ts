@@ -140,4 +140,28 @@ test("help documents the scope requirement and the cost basis", async () => {
   assert.match(r.out, /unknown cost is never shown as zero/i);
 });
 
+// --- #261: the single-evidence correction flag ------------------------------
+
+test("--single-evidence is a known flag: accepted, does not eat the next value", async () => {
+  const r = await run(["--single-evidence", "--memory", "5", "--dry-run"]);
+  assert.equal(r.code, 0, "stderr: " + r.err);
+  assert.match(r.out, /scope: memory 5/);
+  // No unknown-flag error, and --memory still got its id.
+  assert.doesNotMatch(r.err, /unknown flag/);
+});
+
+test("--single-evidence with a session scope runs and the flag is not confused with --session", async () => {
+  const r = await run(["--session", "cli-single", "--single-evidence", "--dry-run"]);
+  assert.equal(r.code, 0, "stderr: " + r.err);
+  assert.match(r.out, /scope: session cli-single/);
+});
+
+test("help documents the single-evidence exception and the withheld-correction exit", async () => {
+  const r = await run(["--help"]);
+  assert.equal(r.code, 0);
+  assert.match(r.out, /--single-evidence/);
+  assert.match(r.out, /may only correct existing\s+knowledge/i);
+  assert.match(r.out, /correction as incomplete \(exit 1\)/i);
+});
+
 rmSync(dir, { recursive: true, force: true });

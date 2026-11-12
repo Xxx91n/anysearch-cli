@@ -97,12 +97,14 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
     if (safe === '""') continue;
     // mirror of stmts.searchAllResults: freshness_factor UDF must be registered (see registerFreshnessFactorFunction).
     // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
+    // superseded_by mirrors that statement too: a fact a later consolidation replaced
+    // must not resurface through the multi-query lane (#261 D8).
     const sql =
       "SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, " +
       "freshness_factor(bm25(retrieval_results_fts), r.created_at, r.last_accessed, r.access_count, r.title, r.url, ?, r.pinned) as rank " +
       "FROM retrieval_results_fts JOIN retrieval_results r ON r.id = retrieval_results_fts.rowid " +
       "WHERE retrieval_results_fts MATCH ? AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND r.archived = 0 " +
-      "ORDER BY rank LIMIT ?";
+      "AND (r.superseded_by IS NULL) ORDER BY rank LIMIT ?";
     let hits = store.dbQuery<THit>(sql, safe, safe, limit);
     // relaxed rung only when the strict rung under-fills (decay keyed on the same strict string).
     if (hits.length < limit) {
@@ -135,6 +137,7 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
             CASE r.id ${orderCases} END as rrf_order
      FROM retrieval_results r
      WHERE r.id IN (${placeholders}) AND r.valid_until IS NULL AND r.quarantine IS NULL AND r.archived = 0
+       AND r.superseded_by IS NULL
      ORDER BY rrf_order LIMIT ?`,
     ...fusedIds, limit,
   );

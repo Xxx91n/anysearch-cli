@@ -70,7 +70,11 @@ CREATE TABLE IF NOT EXISTS retrieval_results (
   entity TEXT, -- entity key for bi-temporal invalidation (URL for MVP).
   archived INTEGER NOT NULL DEFAULT 0, -- soft archive (reversible forgetting); 1 = excluded from all read paths
   source_label TEXT, -- FIDES-style source trust label
-  trace_id TEXT -- correlation id, never treated as trust
+  trace_id TEXT, -- correlation id, never treated as trust
+  -- Correction propagation: set when a later consolidation replaced the fact
+  -- this episode supported. The row stays in the table (provenance/undo) but is
+  -- excluded from "current fact" recall until the correction is reverted.
+  superseded_by INTEGER
 );
 
 -- FTS5 for retrieval results (search within session results).
@@ -257,9 +261,39 @@ CREATE TABLE IF NOT EXISTS semantic_memories (
   last_accessed TEXT,
   embedding BLOB,                          -- Float32Array bytes (same model as memory_embeddings); NULL until embedded
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  valid_until TEXT                         -- NULL = live
+  valid_until TEXT,                        -- NULL = live
+  -- Update relation: the live row that replaced this one (NULL = no successor).
+  -- The soft-close plus this column make the replacement traceable both ways.
+  superseded_by INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_semantic_live ON semantic_memories(id) WHERE valid_until IS NULL;
+
+-- Keyword recall for knowledge rows (#261 D8). A corrected row is the only
+-- carrier of the facts the correction did not touch, and the semantic arm
+-- needs an embedding on BOTH the query and the row. So without this index a
+-- kept fact (a support email, a holiday exception) is unreachable whenever
+-- embeddings are unavailable — exactly the "stays retrievable" requirement.
+-- External content table like retrieval_results_fts, kept in sync by triggers.
+CREATE VIRTUAL TABLE IF NOT EXISTS semantic_memories_fts USING fts5(
+  content,
+  content='semantic_memories',
+  content_rowid='id'
+);
+
+CREATE TRIGGER IF NOT EXISTS semantic_ai AFTER INSERT ON semantic_memories BEGIN
+  INSERT INTO semantic_memories_fts(rowid, content) VALUES (new.id, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS semantic_ad AFTER DELETE ON semantic_memories BEGIN
+  INSERT INTO semantic_memories_fts(semantic_memories_fts, rowid, content)
+  VALUES('delete', old.id, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS semantic_au AFTER UPDATE ON semantic_memories BEGIN
+  INSERT INTO semantic_memories_fts(semantic_memories_fts, rowid, content)
+  VALUES('delete', old.id, old.content);
+  INSERT INTO semantic_memories_fts(rowid, content) VALUES (new.id, new.content);
+END;
 
 -- reversible archive ledger (entity_merge_log-style full snapshot). One row per
 -- archive action; undo restores retrieval_results.archived = 0 and stamps undone_at.

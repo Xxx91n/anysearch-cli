@@ -5,6 +5,7 @@
 // Run: tsx test/memory-pipeline.test.ts
 
 import { MemoryPipeline, distillGap, adjudicateReuseCompress, consolidateState, resolveLowWatermark, FALLBACK_LOW_WATERMARK_TOKENS } from "../src/memory-pipeline";
+import { accumulateUsage, emptyUsageTotals, toSummaryUsage } from "../src/usage";
 import { IR_CUSTOM_INSTRUCTIONS, IR_SUMMARY_SECTIONS } from "../src/ir-schema";
 import type { RetrieverPort, DomainConfigPort, Query } from "../src/ports";
 import type { FusedEnvelope } from "@anysearch-cli/retriever";
@@ -125,14 +126,14 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
 {
   const streamFn = mockStreamFn("reuse");
   const result = await adjudicateReuseCompress(streamFn, { id: "test" }, "new data", "existing summary");
-  assert(result === "reuse", "adjudicate: returns 'reuse'");
+  assert(result.decision === "reuse", "adjudicate: returns 'reuse'");
 }
 
 // Test: COMPRESS path.
 {
   const streamFn = mockStreamFn("compress");
   const result = await adjudicateReuseCompress(streamFn, { id: "test" }, "new data", "existing summary");
-  assert(result === "compress", "adjudicate: returns 'compress'");
+  assert(result.decision === "compress", "adjudicate: returns 'compress'");
 }
 
 // Test: failure -> COMPRESS (D10 fail-open).
@@ -141,14 +142,43 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
     async *[Symbol.asyncIterator]() { throw new Error("LLM unavailable"); },
   });
   const result = await adjudicateReuseCompress(failingStreamFn as any, { id: "test" }, "new data", "existing summary");
-  assert(result === "compress", "adjudicate: D10 failure -> COMPRESS");
+  assert(result.decision === "compress", "adjudicate: D10 failure -> COMPRESS");
 }
 
 // Test: unparseable -> COMPRESS (D10).
 {
   const streamFn = mockStreamFn("maybe perhaps...");
   const result = await adjudicateReuseCompress(streamFn, { id: "test" }, "new data", "existing summary");
-  assert(result === "compress", "adjudicate: D10 unparseable -> COMPRESS");
+  assert(result.decision === "compress", "adjudicate: D10 unparseable -> COMPRESS");
+}
+
+// Test (#261 D4): the adjudication call's own usage travels back with the
+// decision, so the pipeline can keep it in its own book instead of losing it.
+{
+  const usage = { input: 120, output: 5, totalTokens: 125 };
+  const streamFn = (_m: any, _c: any, _o?: any) => ({
+    async *[Symbol.asyncIterator]() {
+      yield { type: "text_delta", delta: "reuse" };
+      yield { type: "done", message: { role: "assistant", usage } };
+    },
+  });
+  const result = await adjudicateReuseCompress(streamFn as any, { id: "test" }, "new data", "existing summary");
+  assert(result.decision === "reuse", "adjudicate: usage-bearing stream still decides");
+  assert(result.usage === usage, "adjudicate: the provider usage travels back with the decision");
+}
+
+// Test (#261 D4 review): a stream that ends with `error` still reports the
+// spend it incurred — pi-ai 1.5.x puts the failed turn's usage there.
+{
+  const usage = { input: 90, output: 2, totalTokens: 92 };
+  const streamFn = (_m: any, _c: any, _o?: any) => ({
+    async *[Symbol.asyncIterator]() {
+      yield { type: "text_delta", delta: "reuse" };
+      yield { type: "error", error: { role: "assistant", usage } };
+    },
+  });
+  const result = await adjudicateReuseCompress(streamFn as any, { id: "test" }, "new data", "existing summary");
+  assert(result.usage === usage, "adjudicate: an error event's usage is not dropped");
 }
 
 // === MemoryPipeline inject Tests ===
@@ -354,6 +384,42 @@ function trackingStreamFn(decision: string, callLog: { count: number }): any {
   await pipeline.consolidate(msgs as any, 1000, true); // below low watermark.
   await new Promise(r => setTimeout(r, 100));
   assert(callLog.count > 0, "consolidate: post-search triggers adjudication (streamFn called)");
+}
+
+// Test (#261 D4): one adjudication call lands in its own book — the
+// adjudication slice has the numbers and the summary slice stays at 0, so a
+// judgment never reads as a summary the summarizer did not make.
+{
+  const store = new MockStore();
+  const pipeline = new MemoryPipeline({
+    store: store as any,
+    models: undefined, // no summarize path can fire
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test" } as any,
+    streamFn: (_m: any, _c: any, _o?: any) => ({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "text_delta", delta: "reuse" };
+        yield {
+          type: "done",
+          message: {
+            role: "assistant",
+            usage: { input: 130, output: 4, cacheRead: 30, cacheWrite: 0, totalTokens: 164, cost: { total: 0, totalFromProvider: false } },
+          },
+        };
+      },
+    }) as any,
+    sessionId: "s1",
+  });
+  const msgs = Array.from({ length: 6 }, (_, i) => ({ role: "user", content: `msg${i}` }));
+  await pipeline.consolidate(msgs as any, 1000, true); // post-search path -> adjudication only
+  await pipeline.flush();
+  const usage = pipeline.getSummaryUsage();
+  assert(usage.adjudication.calls === 1, "adjudication: the judgment call is counted in its own book (calls=" + usage.adjudication.calls + ")");
+  assert(usage.adjudication.totalTokens === 164, "adjudication: the judgment tokens are in its own book (total=" + usage.adjudication.totalTokens + ")");
+  assert(usage.calls === 0, "adjudication: the summary book is not inflated by the judgment (calls=" + usage.calls + ")");
+  assert(usage.totalTokens === 0, "adjudication: the summary tokens stay at 0 (total=" + usage.totalTokens + ")");
+  assert(usage.adjudication.missing.length > 0, "adjudication: an all-zero price is named missing, not free");
 }
 
 // Test: consecutive REUSE cap = 3 forces direct COMPRESS (D8) — no adjudication on 4th.
@@ -829,4 +895,38 @@ console.log("consolidateState pure function tests: " + passed + " assertions pas
   assert(!(out[3] as any).content.includes("[Session Memory]"), "trailing tool message not injected");
 }
 
+// === #259 leftover: the two books stay separate ===
+// A report shape assertion, not a pipeline run: the summary slice must never
+// absorb the adjudication spend, and the adjudication slice must name its own
+// gaps. This is the contract the CLI line and the MCP `memorySummary` block
+// are read by, so it is pinned where the shape is built.
+{
+  const summaryTotals = emptyUsageTotals();
+  accumulateUsage(summaryTotals, { role: "assistant", usage: { input: 800, output: 100, totalTokens: 900 } });
+  const adjudicationTotals = emptyUsageTotals();
+  accumulateUsage(adjudicationTotals, { role: "assistant", usage: { input: 130, output: 4, totalTokens: 134 } });
+
+  const report = toSummaryUsage(summaryTotals, adjudicationTotals);
+  assert(report.calls === 1 && report.totalTokens === 900,
+    "two books: the summary slice counts only the summary call (calls=" + report.calls + ")");
+  assert(report.adjudication.calls === 1 && report.adjudication.totalTokens === 134,
+    "two books: the adjudication slice counts only the judgment call");
+  assert(report.adjudication.inputTokens === 130, "two books: the judgment tokens are not shared with the summary");
+  assert(report.totalTokens !== report.adjudication.totalTokens,
+    "two books: the two token figures are independent");
+  // Each slice names its own gaps, with its own label.
+  assert(report.missing.some((m) => m.includes("summary")), "two books: the summary gaps are labelled summary");
+  assert(report.adjudication.missing.some((m) => m.includes("adjudication")),
+    "two books: the adjudication gaps carry their own label");
+
+  // A run that only adjudicated: the summary book stays at zero, not empty-looking.
+  const onlyAdjudication = toSummaryUsage(emptyUsageTotals(), adjudicationTotals);
+  assert(onlyAdjudication.calls === 0, "two books: no summary call means the summary calls stay 0");
+  assert(onlyAdjudication.adjudication.calls === 1, "two books: the adjudication call is still counted");
+  assert(onlyAdjudication.totalTokens === 0, "two books: the summary tokens stay 0, so nothing is double counted");
+}
+
 if (failed > 0) process.exit(1);
+// Tally for the whole file. The per-section prints above fire mid-file, before
+// the later blocks run; this one is the number that covers every assertion.
+console.log("memory-pipeline total: " + passed + " passed, " + failed + " failed");

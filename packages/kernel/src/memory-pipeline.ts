@@ -158,13 +158,15 @@ export function distillGap(messages: any[], fromIdx: number): TaggedGap {
 }
 
 // NOOP adjudication — LLM decides REUSE vs COMPRESS.
+// The call's own spend comes back with the decision: it is a separate book
+// from the summary calls (D4 重判), so neither ledger inflates the other.
 export async function adjudicateReuseCompress(
   streamFn: any,
   model: any,
   gapDistillation: string,
   existingSummary: string | undefined,
   signal?: AbortSignal,
-): Promise<"reuse" | "compress"> {
+): Promise<{ decision: "reuse" | "compress"; usage?: unknown }> {
   const prompt = [
     "You are a memory adjudicator for a research agent.",
     "Decide if the new search results are already fully covered by the existing rolling summary.",
@@ -188,6 +190,7 @@ export async function adjudicateReuseCompress(
   };
 
   let text = "";
+  let usage: unknown;
   try {
     const stream = streamFn(model, context, signal ? { signal } : {});
     for await (const event of stream) {
@@ -195,14 +198,19 @@ export async function adjudicateReuseCompress(
       // the pre-upgrade shape.
       if (event?.type === "text_delta" && typeof event.delta === "string") text += event.delta;
       else if (event?.type === "text" && event.text) text += event.text;
+      else if (event?.type === "done" && event.message) usage = event.message.usage;
+      // A stream that ends with an `error` event still spent tokens: pi-ai 1.5.x
+      // reports the failed turn there instead of throwing, so ignoring it would
+      // drop real spend from the adjudication book (D4: nothing hidden).
+      else if (event?.type === "error" && event.error?.usage) usage = event.error.usage;
     }
   } catch {
-    return "compress"; // D10: fail-open.
+    return { decision: "compress", usage }; // D10: fail-open.
   }
 
   const lower = text.toLowerCase().trim();
-  if (lower.includes("reuse")) return "reuse";
-  return "compress"; // D10: unparseable -> COMPRESS.
+  if (lower.includes("reuse")) return { decision: "reuse", usage };
+  return { decision: "compress", usage }; // D10: unparseable -> COMPRESS.
 }
 
 // PURE consolidateState function — zero I/O, zero side effects.
@@ -402,6 +410,10 @@ export class MemoryPipeline {
   // so the caller can report both without double counting. Same ledger type as
   // the run, so cost provenance follows the same rule.
   private summaryUsage = emptyUsageTotals();
+  // D4: the reuse/compress adjudication calls are a separate book from the
+  // summary calls. Both are the pipeline's own spend, but one adjudication
+  // must not read as a summary the summarizer never made.
+  private adjudicationUsage = emptyUsageTotals();
 
   constructor(deps: MemoryPipelineDeps) {
     this.deps = { ...deps, streamFn: ensureResult(deps.streamFn) };
@@ -410,7 +422,7 @@ export class MemoryPipeline {
 
   /** Summary-call accounting for this runtime (never zero-filled). */
   getSummaryUsage(): SummaryUsage {
-    return toSummaryUsage(this.summaryUsage);
+    return toSummaryUsage(this.summaryUsage, this.adjudicationUsage);
   }
 
   /**
@@ -720,8 +732,20 @@ export class MemoryPipeline {
           const deadline = AbortSignal.timeout(BACKGROUND_SUMMARY_TIMEOUT_MS);
           this.track(
             adjudicateReuseCompress(streamFn, actualModel, gapDistillation, previousSummary, deadline)
-              .then((adjDecision: "reuse" | "compress") => {
-                if (adjDecision === "compress" && !deadline.aborted) {
+              .then((adj: { decision: "reuse" | "compress"; usage?: unknown }) => {
+                // #261/#273 review: the request was SENT, so it must appear in
+                // the adjudication book even when the provider sent no usage.
+                // Without a usage block the old code left `calls` at 0, the CLI's
+                // `calls > 0` gate then suppressed the whole line, and a real
+                // (possibly billed) call vanished from the report. When usage is
+                // missing the call is counted and its dimensions are named
+                // missing, not rendered as free.
+                if (adj.usage) {
+                  accumulateUsage(this.adjudicationUsage, { role: "assistant", usage: adj.usage });
+                } else {
+                  this.adjudicationUsage.assistantCalls += 1;
+                }
+                if (adj.decision === "compress" && !deadline.aborted) {
                   fireCompress(deadline);
                 } else {
                   // Keep the incremented consecutiveReuses from the pure result.

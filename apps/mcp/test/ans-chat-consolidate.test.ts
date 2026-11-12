@@ -102,6 +102,7 @@ async function callConsolidate(args: Record<string, unknown>) {
   const props = tool?.inputSchema?.properties ?? {};
   assert(props.operation !== undefined, "the wire schema exposes operation");
   assert(props.memoryIds !== undefined, "the wire schema exposes memoryIds");
+  assert(props.allowSingleEvidence !== undefined, "the wire schema exposes allowSingleEvidence (#261)");
   assert(props.dryRun !== undefined, "the wire schema exposes dryRun");
   const required: string[] = tool?.inputSchema?.required ?? [];
   assert(!required.includes("message"), "message is no longer unconditionally required (consolidate does not use it)");
@@ -181,6 +182,69 @@ async function callConsolidate(args: Record<string, unknown>) {
   const res = await rpc("tools/call", { name: "ans_chat", arguments: {} });
   assert(isError(res), "message is still required for operation=chat");
   assert(/message is required/i.test(textOf(res)), "the error says the message is required for chat");
+}
+
+// --- 8. #261: allowSingleEvidence is accepted; without an LLM the run says so ---
+{
+  // A single material is below the batch threshold; the flag opts into the
+  // correction exception. With no model configured the cluster reports
+  // llmUnavailable (the honest shape), and the new count fields are present.
+  const res = await callConsolidate({ memoryIds: idsB, allowSingleEvidence: true });
+  assert(!isError(res), "a single-evidence run without an LLM is a report, not an error");
+  const sc = res?.result?.structuredContent as any;
+  assert(sc?.counts?.verifyRejected === 0, "counts carries verifyRejected");
+  assert(sc?.counts?.correctionsIncomplete === 0, "counts carries correctionsIncomplete");
+}
+
+// --- 9. #261: the result renders refusal and incomplete details for
+//        content-only proxies (no structuredContent readers) ---
+{
+  const { buildAnsChatConsolidateResult } = await import("../src/ans-chat-session.js");
+  const report = {
+    dryRun: false, clustersScanned: 1, clustersTriggered: 1, llmUnavailable: 0,
+    gateRejected: 0, add: 0, noop: 0, update: 0, embeddingAbsent: 0,
+    scope: { by: "memory", sessionIds: [], memoryIds: [9], sessionIdNotApplied: false, requestedMaterials: 1, materialsRead: 1 },
+    budgetRejected: 0,
+    singleEvidenceSkipped: 0,
+    verifyRejected: 1,
+    verifyDetails: [{
+      oldId: 4, oldContent: "Acme support runs weekdays 9-17.", candidate: "Acme support is 24x7.",
+      evidence: [{ title: "Forum post", snippet: "heard it changed", url: "https://forum.example/t1" }],
+      sameFact: false, reliable: false, relation: "different", reason: "different subject",
+      followUp: "与旧结论可能不是同一对象/事项/范围/时间，不能当成纠正；旧结论保留，请补查对应关系后再试。",
+    }],
+    verifiedCorrections: [],
+    correctionsIncomplete: 1,
+    incompleteDetails: [{
+      oldId: 4, oldContent: "Acme support runs weekdays 9-17.", candidate: "Acme support is 24x7.",
+      evidence: [{ title: "Notice", snippet: "changed", url: "https://acme.example/n1" }],
+      stage: "final-check", reason: "the email fact vanished",
+    }],
+    semanticIds: [],
+    updates: [],
+  };
+  const usage = {
+    calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
+    totalTokens: 0, costUsd: 0, costBasis: "not-called" as const,
+    missing: ["consolidation usage"],
+  };
+  const result = buildAnsChatConsolidateResult(report as never, usage as never, {});
+  const text = result.content[0]!.text;
+  assert(/refused corrections: 1/.test(text), "the readable line counts refused corrections");
+  assert(/correction refused \(knowledge 4, sameFact=false, reliable=false, relation=different\)/.test(text),
+    "the refusal line shows the verdict");
+  assert(text.includes("old: Acme support runs weekdays 9-17."), "the refusal line shows the old content");
+  assert(text.includes("candidate: Acme support is 24x7."), "the refusal line shows the candidate");
+  assert(text.includes("https://forum.example/t1"), "the refusal line shows the source url");
+  assert(text.includes("next: "), "the refusal line shows the follow-up");
+  assert(/incomplete corrections: 1/.test(text), "the readable line counts incomplete corrections");
+  assert(/correction incomplete \(final-check, knowledge 4 NOT replaced; the email fact vanished\)/.test(text),
+    "the incomplete line names the stage and reason");
+  const sc = result.structuredContent as any;
+  assert(sc.counts.verifyRejected === 1 && sc.counts.correctionsIncomplete === 1,
+    "structuredContent counts carry both new fields");
+  assert(Array.isArray(sc.report.verifyDetails) && sc.report.verifyDetails.length === 1,
+    "the full report travels in structuredContent");
 }
 
 await server.close();

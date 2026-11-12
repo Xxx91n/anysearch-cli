@@ -20,6 +20,7 @@ export const DEFAULT_ROUTING_CARD = [
   "- Domain-specific knowledge base -> query_knowledge",
   "- Complex multi-tool research -> ans_chat",
   "- Results worth keeping as long-term knowledge -> ans_chat operation=consolidate with memoryIds or sessionId (a scope is required; there is no whole-archive mode)",
+  "- One reliable material that corrects existing knowledge -> same call with allowSingleEvidence plus either a single memoryIds entry or a sessionId whose scope holds one material for that entity (preview with dryRun first); a refusal returns what to check next",
   "- Skip a repeat search when recall_memory results already answer the question; search again when they are incomplete, out of date, or you need the latest",
   "",
   "Fail-open: if anysearch server is down, tools degrade gracefully (no block).",

@@ -1313,21 +1313,26 @@ export class PiAgentRuntime {
     const { ledger, sessionId } = this.opts;
     if (!this.pipeline || !ledger || !sessionId) return;
     const report = this.pipeline.getSummaryUsage();
+    // The adjudication slice is the pipeline's own spend too (D4: never hidden
+    // outside the budget), so the settled watermark covers both books. Both
+    // only grow, so one delta counter stays correct across flushes.
+    const pipelineTokens = report.totalTokens + report.adjudication.totalTokens;
+    const pipelineCost = report.costUsd + report.adjudication.costUsd;
     // Each dimension settles and records its own progress. Sharing one catch
     // would let a USD failure skip the token bookkeeping update, and the next
     // flush would bill the same tokens again.
-    if (report.totalTokens > this.settledMemoryTokens) {
+    if (pipelineTokens > this.settledMemoryTokens) {
       try {
-        ledger.settleTokens(sessionId, 0, report.totalTokens - this.settledMemoryTokens);
-        this.settledMemoryTokens = report.totalTokens;
+        ledger.settleTokens(sessionId, 0, pipelineTokens - this.settledMemoryTokens);
+        this.settledMemoryTokens = pipelineTokens;
       } catch (e) {
         reportBudgetFault("memory summary token settlement", e);
       }
     }
-    if (report.costUsd > this.settledMemoryCostUsd) {
+    if (pipelineCost > this.settledMemoryCostUsd) {
       try {
-        ledger.settleUsd(sessionId, 0, report.costUsd - this.settledMemoryCostUsd);
-        this.settledMemoryCostUsd = report.costUsd;
+        ledger.settleUsd(sessionId, 0, pipelineCost - this.settledMemoryCostUsd);
+        this.settledMemoryCostUsd = pipelineCost;
       } catch (e) {
         reportBudgetFault("memory summary usd settlement", e);
       }

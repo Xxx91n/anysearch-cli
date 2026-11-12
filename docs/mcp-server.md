@@ -54,7 +54,7 @@ Five tools are registered by name, with input schemas sourced from the kernel
 | `research_web` | `question` (required); `depth` = `brief` (1 round) \| `standard` (2) \| `deep` (3, default); same three vertical args | Repeats the deep search per round, dedupes URLs across rounds, and stops early when the `sufficiency` verdict is `correct`. Returns the merged result set (last 10 shown) and the top 5 citations. |
 | `recall_memory` | `query` (required); `limit` (default 5, integer ≥ 1) | FTS5 recall over the store-level research archive (the same range `query_knowledge` reads), with a time-sensitivity tag (QDF) and time decay. When internal hits are short of `limit` and `ANS_PROJECT_DB` is set, it falls back to the project index. That fallback is optional and keeps going when it fails. |
 | `query_knowledge` | `query` (required) | Dispatches through the current domain's `rag.adapter`. Only `fts` retrieves. `none` and `note` return an explicit empty result. An unknown adapter id falls back to `none` with a stderr warning (deduped within the server instance, so stateless HTTP can repeat it once per request). |
-| `ans_chat` | `message` (required for chat); `sessionId` (optional); `operation` = `chat` (default) \| `consolidate`; `memoryIds`, `dryRun` (consolidate only) | Runs the `PiAgentRuntime` agent loop. Requires `ANS_LLM_PROVIDER` and `ANS_LLM_MODEL`. Missing configuration is an error result, not a successful-looking message. Returns a session handle (see below). With `operation = "consolidate"` it does not chat: it turns the materials selected by `sessionId` or `memoryIds` into long-term knowledge. See [Consolidation](#consolidation). |
+| `ans_chat` | `message` (required for chat); `sessionId` (optional); `operation` = `chat` (default) \| `consolidate`; `memoryIds`, `allowSingleEvidence`, `dryRun` (consolidate only) | Runs the `PiAgentRuntime` agent loop. Requires `ANS_LLM_PROVIDER` and `ANS_LLM_MODEL`. Missing configuration is an error result, not a successful-looking message. Returns a session handle (see below). With `operation = "consolidate"` it does not chat: it turns the materials selected by `sessionId` or `memoryIds` into long-term knowledge. See [Consolidation](#consolidation). |
 
 Vertical routing (`verticalDomain` / `verticalSubDomain` / `verticalParams`)
 replaces the domain TOML `sources.vertical` default wholesale. It is never
@@ -108,6 +108,34 @@ saved. The model can still be called and does cost money. The preview describes
 the state read at that moment; a concurrent write before an apply can make the
 apply differ.
 
+`allowSingleEvidence: true` lets ONE selected material correct an existing
+knowledge row even though it cannot pass the batch threshold. A lone material
+may only correct existing knowledge, never create a new long-term conclusion.
+Every automatic replacement — single-evidence or batch — passes two checks:
+first the correction relationship (same object, matter, scope and time, and
+evidence reliable enough on its own, plus an explicit `correction` relation;
+a negation word, a newer date, overall similarity or a self-declared "official"
+source is not sufficient), then the final content (every statement supported,
+and every old fact the correction did not replace still present).
+
+A missing checker is a refusal, not a lenient pass: without the relationship
+check the material writes nothing, and without the final-content check the
+replacement is withheld as incomplete. A refused correction is a normal result:
+the old knowledge stays live and `verifyDetails` hands back the old content, the
+candidate, its sources, the check's verdict and what to look into next. When
+the merge fails, comes back empty or the final check fails, the replacement is
+withheld, the result is `isError: true` with `correctionsIncomplete` and the
+previous knowledge stays live.
+
+A landed correction replaces only the corrected fact: the closed row and its
+materials keep an explicit `superseded_by` link to the new row, so the old
+versions stay queryable while leaving current-fact recall. The kept facts
+remain retrievable through keyword search over the knowledge rows, which does
+not depend on embeddings — a preserved fact must not disappear just because
+no vector can be computed. Materials whose facts were all replaced do not
+form a new knowledge row when consolidated again (`supersededClusterSkipped`);
+they stay readable as history.
+
 The result reports the scope it really used, not the one the caller thinks it
 passed:
 
@@ -116,7 +144,7 @@ passed:
 | `scope.by` | `memory` (the explicit list), `session` (one session's materials), or `archive` (internal only; no product surface can request it). |
 | `scope.materialsRead` / `scope.requestedMaterials` | Rows actually read after the archived/quarantined/no-entity filters, and how many the caller asked for. |
 | `scope.sessionIdNotApplied` | `true` when a `sessionId` accompanied `memoryIds` and was therefore not the scope. |
-| `counts` | `add`, `update`, `skip` (no-op reruns), `conflict` (the fidelity gate refused a claim), `failure` (no summary available), `budgetRejected`. Each event lands in exactly one bucket. |
+| `counts` | `add`, `update`, `skip` (no-op reruns), `conflict` (the fidelity gate refused a claim), `failure` (no summary available), `budgetRejected`, `verifyRejected` (the correction check refused: different fact, unreliable evidence, a missing `correction` relation, or unclear), `correctionsIncomplete` (merge or final check withheld a replacement; the result is then `isError: true` and the previous knowledge stays live), `supersededClusterSkipped` (a cluster whose materials were all replaced already, so no new knowledge was created from them). Each event lands in exactly one bucket. |
 | `usage` | The same honest ledger the chat path uses, with these consolidation-specific bases: `not-called`, `unknown`, `price-estimate`, `provider-reported`, `mixed`. `missing[]` names every dimension that never arrived. A custom endpoint's zero price table reports `unknown`; its `costUsd` of 0 is not a claim of a free run. A call that reported no usage still books its reserved estimate against the cap, so a silent provider cannot slip past a budget. |
 | `budgetUnmetered` | Present when the run could not be metered: a memory-list scope has no owning session to charge, several session owners cannot share one run's spend, the Active Domain declares no `[budget]` caps, or the budget row/caps could not be registered. `budgetUnmeteredReason` names which. Both entry points follow the same rule — a `sessionId` given alongside `memoryIds` is echoed but never billed. |
 
