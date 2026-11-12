@@ -71,13 +71,19 @@ export interface SessionLockWindows {
   waitMs?: number;
 }
 
+/** Windows with the production defaults filled in. */
+export interface ResolvedSessionLockWindows {
+  staleMs: number;
+  waitMs: number;
+}
+
 /**
- * Normalized windows with the production defaults filled in. Positive
- * overrides win; anything else (absent, non-finite, non-positive) keeps the
- * default. This is the one place a window value is validated, so the acquire
- * loop never has to second-guess its own inputs.
+ * Fill in the production defaults. Positive overrides win; anything else
+ * (absent, non-finite, non-positive) keeps the default. Callers resolve once
+ * and pass the result along, so a window value is validated in exactly one
+ * place per run.
  */
-export function resolveSessionLockWindows(windows: SessionLockWindows | undefined): { staleMs: number; waitMs: number } {
+export function resolveSessionLockWindows(windows: SessionLockWindows | undefined): ResolvedSessionLockWindows {
   return {
     staleMs: positiveMs(windows?.staleMs, SESSION_LOCK_STALE_MS),
     waitMs: positiveMs(windows?.waitMs, SESSION_LOCK_WAIT_MS),
@@ -93,10 +99,12 @@ export function heartbeatIntervalMs(staleMs: number): number {
   return Math.min(HEARTBEAT_MAX_MS, Math.max(HEARTBEAT_MIN_MS, Math.floor(staleMs / 3)));
 }
 
+// The fields a rule reads. `startedAt` is also written into owner.json for
+// whoever inspects a stuck lock by hand; no decision uses it, so it is not
+// parsed back — a field no rule consumes would just invite one to.
 interface LockOwner {
   pid: number;
   host: string;
-  startedAt: number;
 }
 
 const OWNER_FILE = "owner.json";
@@ -106,7 +114,7 @@ function readLockOwner(lockPath: string): LockOwner | undefined {
   try {
     const raw = JSON.parse(readFileSync(join(lockPath, OWNER_FILE), "utf8")) as Partial<LockOwner>;
     if (!Number.isInteger(raw.pid) || (raw.pid as number) <= 0 || typeof raw.host !== "string") return undefined;
-    return { pid: raw.pid as number, host: raw.host, startedAt: Number(raw.startedAt) || 0 };
+    return { pid: raw.pid as number, host: raw.host };
   } catch {
     return undefined;
   }
@@ -149,16 +157,17 @@ function reclaimableNow(lockPath: string, staleMs: number): boolean {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
- * Acquire the session lock at `lockPath`, giving up at `waitMs` from now with a
- * "session busy" error. The returned function releases the lock; it is safe to
- * call after the lock was reclaimed (it then removes nothing).
+ * Acquire the session lock at `lockPath`, giving up after `windows.waitMs` with
+ * a "session busy" error. `windows` is already resolved (see
+ * resolveSessionLockWindows). The returned function releases the lock; it is
+ * safe to call after the lock was reclaimed (it then removes nothing).
  */
 export async function acquireSessionLock(
   lockPath: string,
-  windows: SessionLockWindows | undefined,
+  windows: ResolvedSessionLockWindows,
 ): Promise<() => void> {
-  const { staleMs, waitMs } = resolveSessionLockWindows(windows);
-  const deadlineAt = Date.now() + waitMs;
+  const { staleMs } = windows;
+  const deadlineAt = Date.now() + windows.waitMs;
   mkdirSync(dirname(lockPath), { recursive: true });
   for (;;) {
     try {

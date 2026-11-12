@@ -251,6 +251,13 @@ tells servers to use explicit, server-minted handles (SEP-2567).
   gets an explicit "session busy" error result and is expected to retry;
   different sessions still run in parallel. No evidence exists for
   network-filesystem session directories; same machine only.
+- A run that is cut off before the provider reports its final usage returns
+  no answer text, and its `structuredContent` says `interrupted: true` with
+  a `usage.run` block whose `costSource` is `"unknown"` and whose `missing`
+  names the accounting that never arrived. The block is present on purpose:
+  omitting usage would read as "this run was free", and the spent tokens of
+  a cut-off run are simply unknown. The same handle still resumes the
+  session later.
 - Omitting the handle is the explicit single-shot mode: a fresh session per
   call, no cross-call continuity, and one session row minted per call. With
   the domain retrieval adapter set to `fts`, that fresh session can still

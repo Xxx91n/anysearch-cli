@@ -301,26 +301,39 @@ async function main() {
       // finishes: with a shared per-key lock the second would sit in the
       // queue and its provider call would start after the first ended.
       const piDir = join(workDir, "w3-pi");
+      // Record when each run's provider call is in flight: serialized runs
+      // never have both intervals open at once, parallel ones do.
+      const windows: Array<{ name: string; start: number; end: number }> = [];
+      const timed = (name: string) => (text: string, delayMs: number) => {
+        const inner = slowProvider(text, delayMs);
+        return async (...args: any[]) => {
+          const entry = { name, start: Date.now(), end: Number.POSITIVE_INFINITY };
+          windows.push(entry);
+          const stream = await (inner as any)(...args);
+          entry.end = Date.now();
+          return stream;
+        };
+      };
       const a = new PiAgentRuntime({
         retriever: new NoopRetriever() as any,
-        domain, model, streamFn: slowProvider("W3-A", 900) as any,
+        domain, model, streamFn: timed("a")("W3-A", 900) as any,
         sessionId: "w3-a", piSessionDir: piDir,
         getApiKey: async () => "probe-key",
       });
       const b = new PiAgentRuntime({
         retriever: new NoopRetriever() as any,
-        domain, model, streamFn: slowProvider("W3-B", 900) as any,
+        domain, model, streamFn: timed("b")("W3-B", 900) as any,
         sessionId: "w3-b", piSessionDir: piDir,
         getApiKey: async () => "probe-key",
       });
-      const started = Date.now();
       const [aEvents, bEvents] = await Promise.all([drain(a.run("W3-A-QUESTION")), drain(b.run("W3-B-QUESTION"))]);
-      const elapsed = Date.now() - started;
       assert(aEvents.some((e) => e.type === "done") && bEvents.some((e) => e.type === "done"),
         "W3: both sessions complete");
-      // Serialized, each 900 ms run would need ~1.8 s; parallel finishes near 0.9-1.0 s.
-      assert(elapsed < 1_600,
-        "W3: different sessions do not serialize behind each other (took " + elapsed + " ms)");
+      const wa = windows.find((w) => w.name === "a");
+      const wb = windows.find((w) => w.name === "b");
+      assert(wa != null && wb != null && wa.start < wb.end && wb.start < wa.end,
+        "W3: the two sessions' provider calls overlap — different sessions are not serialized "
+        + JSON.stringify(windows));
       const locksDir = join(piDir, SESSION_LOCKS_DIRNAME);
       assert(!existsSync(locksDir) || readdirSync(locksDir).length === 0,
         "W3: both locks are cleaned up");

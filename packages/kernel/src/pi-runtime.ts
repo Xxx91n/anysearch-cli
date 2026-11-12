@@ -570,10 +570,11 @@ export class PiAgentRuntime {
   async *run(input: string): AsyncIterable<AgentEvent> {
     if (this.opts.signal?.aborted) return;
     const key = this.opts.sessionId ?? "";
-    // One wait budget covers the queue and the file lock alike, so a
-    // same-session caller hits the same cap whether the current run is in
-    // this process or another one. Both waits surface as an error event,
-    // like every other run failure.
+    // Design: the queue and the file lock share one deadline — a same-session
+    // caller must hit the same 120 s cap whether the current run is in this
+    // process or another one, and splitting the budget would let a caller wait
+    // twice as long for the same "session busy" answer. Both waits surface as
+    // an error event, like every other run failure.
     const windows = resolveSessionLockWindows(this.opts.sessionLock);
     const deadlineAt = Date.now() + windows.waitMs;
     let releaseQueue: () => void = () => {};
@@ -582,7 +583,12 @@ export class PiAgentRuntime {
       if (key) releaseQueue = await acquireSessionQueue(key, deadlineAt);
       if (this.opts.piSessionDir && key) {
         const lockPath = join(this.opts.piSessionDir, SESSION_LOCKS_DIRNAME, piSessionKey(key) + ".lock");
-        releaseLock = await acquireSessionLock(lockPath, { staleMs: windows.staleMs, waitMs: Math.max(1, deadlineAt - Date.now()) });
+        // The lock gets whatever is left of the shared budget, so the two
+        // waits never add up past the cap.
+        releaseLock = await acquireSessionLock(lockPath, {
+          staleMs: windows.staleMs,
+          waitMs: Math.max(1, deadlineAt - Date.now()),
+        });
       }
       yield* this.runInternal(input);
     } catch (e) {

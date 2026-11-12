@@ -26,6 +26,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
+// The lock's on-disk layout and busy wording come from the product, so the
+// test fails when they change instead of drifting alongside them.
+import { SESSION_BUSY_MESSAGE, SESSION_LOCKS_DIRNAME } from "@anysearch-cli/kernel";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -58,8 +61,17 @@ function ssePayload(text: string) {
 }
 
 interface ProviderRequest { key: string; start: number; end: number | null; body: string }
-const requestLog: ProviderRequest[] = [];
-const openResponses = new Set<ServerResponse>();
+
+// One endpoint serves every scenario, so the bookkeeping is switched per
+// scenario instead of being a module-level log the next block inherits. A
+// stale entry from a previous block is exactly what made C2 report "the
+// hanging run never reached the provider" while it plainly had.
+let requestLog: ProviderRequest[] = [];
+let openResponses = new Set<ServerResponse>();
+function resetEndpointState(): void {
+  requestLog = [];
+  openResponses = new Set();
+}
 
 function lastUserText(body: string): string {
   let parsed: any;
@@ -210,7 +222,9 @@ function fileContaining(piDir: string, marker: string): string[] {
   return sessionFiles(piDir).filter((f) => readFileSync(f, "utf8").includes(marker));
 }
 function lockEntries(piDir: string) {
-  const locksDir = join(piDir, "locks");
+  // SESSION_LOCKS_DIRNAME, not a copied "locks": the test reads the product's
+  // on-disk layout, so it must follow it rather than restate it.
+  const locksDir = join(piDir, SESSION_LOCKS_DIRNAME);
   if (!existsSync(locksDir)) return [] as { name: string; owner: any; heartbeatAgeMs: number | null }[];
   return readdirSync(locksDir).map((name) => {
     const path = join(locksDir, name);
@@ -301,6 +315,7 @@ async function main() {
   try {
     // ================= C1: healthy long run is not stolen =================
     {
+      resetEndpointState();
       const root = join(base, "c1");
       const env = { ...makeEnv(root), ANS_LLM_BASE_URL: baseUrl, ANS_PI_LOCK_STALE_MS: "3000" };
       const a = startMcp(env); await a.init();
@@ -349,11 +364,11 @@ async function main() {
 
       a.child.kill("SIGKILL"); b.child.kill("SIGKILL");
       await Promise.all([a.exited, b.exited]);
-      requestLog.length = 0;
     }
 
     // ================= C2: a really killed holder recovers =================
     {
+      resetEndpointState();
       const root = join(base, "c2");
       // Production lock windows on purpose: recovery must not need them.
       // The domain declares [budget], so the session really has a
@@ -368,8 +383,7 @@ async function main() {
 
       const hangCall = a.chat("LOCK-HANG. Hold the session open.", shared).catch((e: Error) => ({
         ok: false, isError: true, elapsedMs: 0, text: "TRANSPORT ERROR: " + e.message, structured: null,
-      }));
-      const hangEntry = await waitForKey("LOCK-HANG");
+      }));      const hangEntry = await waitForKey("LOCK-HANG");
       assert(hangEntry !== undefined,
         "C2: the hanging run reached the provider (A stderr: " + a.stderr().slice(-500) + ")");
 
@@ -432,11 +446,11 @@ async function main() {
 
       b.child.kill("SIGKILL");
       await b.exited;
-      requestLog.length = 0;
     }
 
     // ================= C3: the wait cap says "session busy" =================
     {
+      resetEndpointState();
       const root = join(base, "c3");
       const env = {
         ...makeEnv(root), ANS_LLM_BASE_URL: baseUrl,
@@ -452,7 +466,7 @@ async function main() {
       const bRes = await b.chat("LOCK-BUSY-B. This request should hit the wait cap.", shared);
       const waitedMs = Date.now() - bStart;
 
-      assert(bRes.isError === true && bRes.text.includes("Session is busy"),
+      assert(bRes.isError === true && bRes.text.includes(SESSION_BUSY_MESSAGE.slice(0, 20)),
         "C3: a contender past the wait cap gets an explicit session-busy error (got "
         + JSON.stringify(bRes.text.slice(0, 200)) + ")");
       assert(waitedMs >= 2_500 && waitedMs < 15_000,
@@ -469,11 +483,11 @@ async function main() {
 
       b.child.kill("SIGKILL");
       await b.exited;
-      requestLog.length = 0;
     }
 
     // ================= C4: different sessions run in parallel =================
     {
+      resetEndpointState();
       const root = join(base, "c4");
       const env = { ...makeEnv(root), ANS_LLM_BASE_URL: baseUrl };
       const a = startMcp(env); await a.init();
@@ -502,7 +516,6 @@ async function main() {
 
       a.child.kill("SIGKILL"); b.child.kill("SIGKILL");
       await Promise.all([a.exited, b.exited]);
-      requestLog.length = 0;
     }
   } finally {
     try { rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* OS temp */ }
