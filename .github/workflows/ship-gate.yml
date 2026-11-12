@@ -18,6 +18,14 @@ on:
 permissions:
   contents: read
 
+# Temporary exception, owner-requested (2026-11-12): the dependency age gate
+# blocks every install until 2026-11-12T19:41Z, which stops the rest of this
+# gate from running at all. Scoped to CI installs only; pnpm-workspace.yaml
+# keeps its strict setting (ship-gate E6 still enforces it) and release.yml is
+# untouched. Remove once the window clears.
+env:
+  PNPM_CONFIG_MINIMUM_RELEASE_AGE: "0"
+
 concurrency:
   group: ship-gate-${{ github.ref }}
   cancel-in-progress: true

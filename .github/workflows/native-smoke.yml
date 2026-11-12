@@ -8,6 +8,12 @@ on:
     branches: [main]
   pull_request:
 
+# Temporary exception, owner-requested (2026-11-12): the dependency age gate
+# blocks install until 2026-11-12T19:41Z. Scoped to CI only; pnpm-workspace.yaml
+# keeps its strict setting. Remove once the window clears.
+env:
+  PNPM_CONFIG_MINIMUM_RELEASE_AGE: "0"
+
 jobs:
   smoke:
     name: native smoke (${{ matrix.os }})
