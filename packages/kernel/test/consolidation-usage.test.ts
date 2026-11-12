@@ -180,6 +180,24 @@ async function main() {
     assert(seams.usage.calls === 0, "a refused call is not counted as a made call");
   }
 
+  // --- 6b. a call that reported no usage still books its reservation ---
+  {
+    // Settling 0 would let a silent provider evade the token cap entirely and
+    // read as a free call; the reserved estimate is the only number there is.
+    const ledger = recordingLedger();
+    const seams = createConsolidationSeams(fakeSession({ text: "text, no usage block" }), {
+      budget: { sessionId: "s1", ledger },
+    });
+    const out = await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
+    assert(out === "text, no usage block", "the text still comes back");
+    const tokenSettle = ledger.calls.find((c) => c.kind === "settle" && c.dimension === "token");
+    assert(
+      tokenSettle !== undefined && tokenSettle.actual !== undefined && tokenSettle.actual > 0,
+      "an unreported call books its reserved estimate, not 0 (got " + JSON.stringify(tokenSettle) + ")",
+    );
+    assert(seams.usage.missing.some((m) => /usage/i.test(m)), "and the gap is still named in the usage report");
+  }
+
   // --- 7. a rejected token reserve releases the call reservation ---
   {
     const ledger = recordingLedger({ rejectTokens: true });
@@ -189,8 +207,15 @@ async function main() {
       await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
     } catch (e) { thrown = e; }
     assert(isConsolidationBudgetError(thrown), "a rejected token cap raises the typed budget refusal");
+    // The call reservation succeeded before the token reserve rejected, so it
+    // must be given back. Booking it as a completed call would charge a call
+    // that never ran; leaving it held would leak reserved_calls for the rest of
+    // the session, and a healthy run would later read as exhausted.
     const callSettle = ledger.calls.find((c) => c.kind === "settle" && c.dimension === "call");
-    assert(callSettle === undefined, "the released call reservation is not booked as a completed call");
+    assert(
+      callSettle !== undefined && callSettle.amount === 0,
+      "the held call reservation is released (settleCalls 0), not booked as a completed call (got " + JSON.stringify(callSettle) + ")",
+    );
     assert(seams.usage.calls === 0, "no call is counted when the token reserve refused it");
   }
 

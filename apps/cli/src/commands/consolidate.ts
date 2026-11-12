@@ -20,9 +20,13 @@ import {
   SqliteSessionStore,
   resolveConsolidateScope,
   ConsolidateScopeError,
+  formatConsolidateScope,
+  loadDomainByNameIn,
+  toBudgetCaps,
   type ConsolidateReport,
 } from "@anysearch-cli/store";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
+import { domainSearchDirs } from "../db";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -50,8 +54,10 @@ function help(): string {
     "",
     "The run reports calls, input/output tokens, cache reads/writes and how the cost",
     "figure was obtained: not-called, unknown, a price estimate, or a server-returned",
-    "figure. An unknown cost is never shown as zero. Budget caps from the Active Domain",
-    "apply to these calls too; a refused call stops the run and is counted.",
+    "figure. An unknown cost is never shown as zero.",
+    "--session runs are metered: the Active Domain's [budget] caps are registered on that",
+    "session and a refused call stops the run and is counted. A --memory run has no owning",
+    "session to charge, so it says it ran unmetered instead of naming a session you did not pick.",
     "",
     "Without an LLM configured the run reports llmUnavailable and writes nothing (exit 1).",
     "",
@@ -63,12 +69,23 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   if (cmd === "--help" || cmd === "-h") { process.stdout.write(help()); return 0; }
   const { flags: llmFlags, argv: args } = parseLlmFlags(argv);
 
-  // Reject unknown flags instead of silently running --apply.
+  // One pass: reject unknown flags AND collect the scope values. Two loops let
+  // a bad value hide behind a later good flag.
   const sessionIds: string[] = [];
   const memoryIds: number[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === "--limit" || a === "--session") { i++; continue; }
+    if (a === "--limit") { i++; continue; }
+    if (a === "--session") {
+      const value = args[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        process.stderr.write("ans consolidate: --session requires an id\n");
+        return 2;
+      }
+      sessionIds.push(value);
+      i++;
+      continue;
+    }
     if (a === "--memory") {
       const raw = args[i + 1];
       const id = Number(raw);
@@ -83,17 +100,6 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     if (a !== "--dry-run" && a !== "--apply") {
       process.stderr.write("ans consolidate: unknown flag " + a + "\n");
       return 2;
-    }
-  }
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--session") {
-      const value = args[i + 1];
-      if (value === undefined || value.startsWith("--")) {
-        process.stderr.write("ans consolidate: --session requires an id\n");
-        return 2;
-      }
-      sessionIds.push(value);
-      i++;
     }
   }
 
@@ -134,13 +140,42 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   mkdirSync(dirname(dbPath), { recursive: true });
   const store = new SqliteSessionStore(dbPath);
 
-  // Budget wiring (D4). A CLI consolidation has no chat session of its own, so
-  // the caps that apply are the ones registered for the scope session ids.
-  // Without a scope session there is nothing to meter against; the usage block
-  // says that instead of pretending the calls were free.
-  const budget = scope.by === "session" && scope.sessionIds.length > 0
-    ? { sessionId: scope.sessionIds[0]!, ledger: store.createBudgetLedger() }
-    : undefined;
+  // Budget wiring (D4). One rule, the same one the MCP tool applies: a run is
+  // metered only when it names a session it can charge, and the Active Domain's
+  // [budget] caps are registered on that row before any call.
+  //
+  // Design: a memory-list scope has no owning session, so there is nothing to
+  // register caps on and nothing to charge. The run then reports itself
+  // unmetered instead of picking a session the caller never named.
+  //
+  // Design: registering caps here (not only at `ans chat`) is what makes the
+  // cap real on this path — the ledger's reserve passes for every session that
+  // has no row, so without this the help's "budget caps apply" would be a lie.
+  const budgetSessionId = scope.by === "session" ? scope.sessionIds[0] : undefined;
+  let budget: { sessionId: string; ledger: ReturnType<typeof store.createBudgetLedger> } | undefined;
+  if (budgetSessionId) {
+    const ledger = store.createBudgetLedger();
+    try {
+      // The ledger row has an FK to sessions, and a session reached only by
+      // consolidation may not have a row yet. Register it first (idempotent),
+      // then apply the caps.
+      await store.ensureSession(budgetSessionId, "consolidate");
+      // Same resolved domain `ans chat` uses, so a [budget] section declared
+      // for this domain applies to consolidation too. A domain that fails to
+      // load leaves the caps unregistered (unmetered) rather than failing here.
+      const domainName = process.env.ANS_DOMAIN || "default";
+      const domain = loadDomainByNameIn(domainName, domainSearchDirs());
+      if (domain.budget) store.initBudget?.(budgetSessionId, toBudgetCaps(domain.budget));
+      else store.clearBudgetCaps?.(budgetSessionId);
+      budget = { sessionId: budgetSessionId, ledger };
+    } catch (e) {
+      // Fail-open: a broken budget setup must not make consolidation unusable,
+      // but it must not pretend to meter either.
+      process.stderr.write(
+        "[warn] budget setup failed (" + (e instanceof Error ? e.message : String(e)) + "); consolidation runs unmetered\n",
+      );
+    }
+  }
 
   let seams: ReturnType<typeof createConsolidationSeams> | undefined;
   if (providerName && modelName) {
@@ -160,12 +195,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   let r: ConsolidateReport;
   try {
     r = await store.consolidateMemory(
-      {
-        dryRun,
-        ...(limit !== undefined ? { limit } : {}),
-        scope,
-        ...(scope.by === "memory" ? { requestedMaterials: memoryIds.length } : {}),
-      },
+      { dryRun, ...(limit !== undefined ? { limit } : {}), scope },
       // This run's own seams: the usage counter belongs to this invocation, so
       // it is passed in rather than parked on the store.
       seams ? { summarize: seams.summarize, classify: seams.classify } : undefined,
@@ -189,15 +219,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   );
 
   // The scope that was really used, not the one the caller thinks it passed.
-  const s = r.scope;
-  process.stdout.write(
-    "scope: " + s.by +
-      (s.by === "session" ? " " + s.sessionIds.join(", ") : "") +
-      (s.by === "memory" ? " " + s.memoryIds.join(", ") : "") +
-      " (materials read " + s.materialsRead +
-      (s.by === "memory" ? " of " + s.requestedMaterials + " requested" : "") + ")" +
-      (s.sessionIdNotApplied ? "; sessionId not applied: the memory list is the scope" : "") + "\n",
-  );
+  process.stdout.write("scope: " + formatConsolidateScope(r.scope) + "\n");
   if (dryRun) {
     process.stdout.write(
       "dry-run: nothing saved. The counts describe the state read now; a concurrent write\n" +
@@ -226,7 +248,9 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   }
   if (!budget) {
     process.stdout.write(
-      "budget: no scope session to meter against; these calls were not charged to a session cap.\n",
+      scope.by === "memory"
+        ? "budget: unmetered — a memory-list scope has no owning session to charge.\n"
+        : "budget: unmetered — this session has no usable budget row; these calls were not charged to a cap.\n",
     );
   }
 

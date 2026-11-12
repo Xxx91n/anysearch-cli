@@ -22,8 +22,18 @@
 // history, so a threaded handle is a new recovery each call. The recovery
 // digest (#189) is injected once per call; that is the resume unit here, not
 // the handle's lifetime.
-import type { BudgetLedgerPort, CompositionResult, SessionStorePort } from "@anysearch-cli/kernel";
-import { toBudgetCaps, type BudgetConfig } from "@anysearch-cli/store";
+import type {
+  BudgetLedgerPort,
+  CompositionResult,
+  ConsolidationUsage,
+  SessionStorePort,
+} from "@anysearch-cli/kernel";
+import {
+  formatConsolidateScope,
+  toBudgetCaps,
+  type BudgetConfig,
+  type ConsolidateReport,
+} from "@anysearch-cli/store";
 
 export interface AnsChatSessionWiring {
   store?: SessionStorePort;
@@ -177,6 +187,34 @@ export async function resolveAnsChatSession(
   }
 }
 
+/**
+ * Prepare one session for a consolidation run: make sure its row exists (the
+ * ledger's FK needs it), then apply the Active Domain's [budget] caps.
+ *
+ * Design: the chat path does this inside resolveAnsChatSession, but a run that
+ * only ever consolidates never goes through that resolver. Without this step the
+ * session would have no budget row, and the ledger's reserve passes for every
+ * row-less session — a cap that silently does nothing. Returns false when setup
+ * failed, so the caller can report the run as unmetered instead of implying a
+ * cap was enforced.
+ */
+export async function prepareConsolidateSessionBudget(
+  store: SessionStorePort,
+  sessionId: string,
+  budget?: BudgetConfig,
+): Promise<boolean> {
+  try {
+    await store.ensureSession(sessionId, "consolidate");
+  } catch (e) {
+    warnOnce(
+      "consolidate-register:" + (e instanceof Error ? e.message : String(e)),
+      "consolidate session row registration failed (" + (e instanceof Error ? e.message : String(e)) + ") — continuing unmetered",
+    );
+    return false;
+  }
+  return registerSessionBudget(store, sessionId, budget);
+}
+
 export interface AnsChatToolResult {
   // MCP's callback result is an open object ([x: string]: unknown). The index
   // signature keeps this named type assignable without importing the SDK into
@@ -213,45 +251,9 @@ export function buildAnsChatResult(output: string, sessionId?: string, extra?: R
 
 // ---- consolidation result (D5 / Q18 / Q19) ----
 
-// Kept structural so apps/mcp does not re-declare the store's types: any
-// report satisfying this shape renders, and the store owns the meaning.
-export interface ConsolidateScopeShape {
-  by: "memory" | "session" | "archive";
-  sessionIds: string[];
-  memoryIds: number[];
-  sessionIdNotApplied: boolean;
-  requestedMaterials: number;
-  materialsRead: number;
-}
-
-export interface ConsolidateReportShape {
-  dryRun: boolean;
-  clustersScanned: number;
-  clustersTriggered: number;
-  llmUnavailable: number;
-  gateRejected: number;
-  add: number;
-  noop: number;
-  update: number;
-  budgetRejected: number;
-  scope: ConsolidateScopeShape;
-  semanticIds: number[];
-}
-
-export interface ConsolidationUsageShape {
-  calls: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  totalTokens: number;
-  // A dollar figure is only meaningful for the "provider-reported" and
-  // "price-estimate" bases. For "not-called" and "unknown" the number is 0 and
-  // must not be read as free.
-  costUsd: number;
-  costBasis: "not-called" | "unknown" | "price-estimate" | "provider-reported" | "mixed";
-  missing: string[];
-}
+// The report and usage shapes are imported, not re-declared: a second copy of
+// the store's report would drift the moment a field is added on one side, and
+// the MCP tool already depends on @anysearch-cli/store.
 
 /**
  * Consolidation result.
@@ -260,28 +262,28 @@ export interface ConsolidationUsageShape {
  * and one readable line stays in `content` for content-only proxies. The scope
  * is always echoed: a caller must be able to see which materials were read
  * instead of inferring it from the flags it thinks it sent.
+ *
+ * Design: `skip` and `conflict` are the categories the caller acts on, and
+ * `gateRejected` feeds exactly one of them (conflict). Counting it in both
+ * would report one event twice and make the tallies not add up.
  */
 export function buildAnsChatConsolidateResult(
-  report: ConsolidateReportShape,
-  usage: ConsolidationUsageShape,
-  extra: { scope: ConsolidateScopeShape; budgetUnmetered?: boolean },
+  report: ConsolidateReport,
+  usage: ConsolidationUsage,
+  extra: { budgetUnmetered?: boolean },
 ): AnsChatToolResult {
-  const s = extra.scope;
-  const scopeText = s.by === "session"
-    ? "session " + s.sessionIds.join(", ")
-    : s.by === "memory"
-      ? "memory " + s.memoryIds.join(", ")
-      : "archive";
+  const s = report.scope;
   const line =
     "ans_chat consolidate" + (report.dryRun ? " (dry-run)" : "") +
-    ": add " + report.add + ", update " + report.update + ", skip " +
-    (report.noop + report.gateRejected) + ", conflict " + report.gateRejected +
+    ": add " + report.add + ", update " + report.update +
+    ", skip " + report.noop + ", conflict " + report.gateRejected +
     ", failure " + report.llmUnavailable +
     " (scanned " + report.clustersScanned + ", triggered " + report.clustersTriggered + ")" +
-    "\nscope: " + scopeText + " (materials read " + s.materialsRead +
-    (s.by === "memory" ? " of " + s.requestedMaterials + " requested" : "") + ")" +
-    (s.sessionIdNotApplied ? "; sessionId not applied: the memory list is the scope" : "") +
-    (report.dryRun ? "\ndry-run: nothing saved; the counts describe the state read now" : "") +
+    "\nscope: " + formatConsolidateScope(s) +
+    (report.dryRun
+      ? "\ndry-run: nothing saved. The counts describe the state read now; a concurrent write " +
+        "before an apply can make the apply differ."
+      : "") +
     (report.budgetRejected > 0 ? "\nbudget: " + report.budgetRejected + " model call(s) refused by the session cap" : "");
   return {
     content: [{ type: "text", text: line }],
@@ -292,7 +294,7 @@ export function buildAnsChatConsolidateResult(
       counts: {
         add: report.add,
         update: report.update,
-        skip: report.noop + report.gateRejected,
+        skip: report.noop,
         conflict: report.gateRejected,
         failure: report.llmUnavailable,
         budgetRejected: report.budgetRejected,

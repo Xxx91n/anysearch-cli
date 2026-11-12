@@ -116,9 +116,9 @@ passed:
 | `scope.by` | `memory` (the explicit list), `session` (one session's materials), or `archive` (internal only; no product surface can request it). |
 | `scope.materialsRead` / `scope.requestedMaterials` | Rows actually read after the archived/quarantined/no-entity filters, and how many the caller asked for. |
 | `scope.sessionIdNotApplied` | `true` when a `sessionId` accompanied `memoryIds` and was therefore not the scope. |
-| `counts` | `add`, `update`, `skip`, `conflict`, `failure` (no summary available), `budgetRejected`. |
-| `usage` | The same honest ledger the chat path uses, with these consolidation-specific bases: `not-called`, `unknown`, `price-estimate`, `provider-reported`, `mixed`. `missing[]` names every dimension that never arrived. A custom endpoint's zero price table reports `unknown`; its `costUsd` of 0 is not a claim of a free run. |
-| `budgetUnmetered` | Present when no session could be metered (a pure memory-list scope). Those calls were not charged to a session cap, and the flag says so instead of implying they were free. |
+| `counts` | `add`, `update`, `skip` (no-op reruns), `conflict` (the fidelity gate refused a claim), `failure` (no summary available), `budgetRejected`. Each event lands in exactly one bucket. |
+| `usage` | The same honest ledger the chat path uses, with these consolidation-specific bases: `not-called`, `unknown`, `price-estimate`, `provider-reported`, `mixed`. `missing[]` names every dimension that never arrived. A custom endpoint's zero price table reports `unknown`; its `costUsd` of 0 is not a claim of a free run. A call that reported no usage still books its reserved estimate against the cap, so a silent provider cannot slip past a budget. |
+| `budgetUnmetered` | Present when the run could not be metered at all: a memory-list scope has no owning session to charge, or the session's budget setup failed. Both entry points follow the same rule — a `sessionId` given alongside `memoryIds` is echoed but never billed. |
 
 Consolidation is triggered explicitly by the user or the host agent. There is no
 background consolidation loop.

@@ -97,6 +97,9 @@ test("memory scope echoes the list and the requested count", async () => {
   assert.match(r.out, /scope: memory 5, 7/);
   assert.match(r.out, /requested/);
   assert.doesNotMatch(r.out, /dry-run/);
+  // No owning session => nothing to charge. The output has to say that, not
+  // silently imply a cap was enforced.
+  assert.match(r.out, /budget: unmetered — a memory-list scope has no owning session to charge/);
 });
 
 test("memory list beats the session: the session is not applied and the output says so", async () => {

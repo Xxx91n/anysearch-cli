@@ -25,7 +25,7 @@ Research and fetch information from many sources, with persistent memory.
 
 **query_knowledge** — Search the organization's own knowledge base. Use it when the question is about internal documents and that knowledge base may hold the answer.
 
-**ans_chat** — An agent loop (PiAgentRuntime) for research that needs several tools in a row. Use it when one tool call is not enough.
+**ans_chat** — An agent loop (PiAgentRuntime) for research that needs several tools in a row. Use it when one tool call is not enough. With `operation="consolidate"` it instead turns selected stored materials into long-term knowledge (see below).
 
 ## Decision tree
 
@@ -34,6 +34,22 @@ Research and fetch information from many sources, with persistent memory.
 3. Have we searched this topic before? -> recall_memory first, then search_web only if results are missing, incomplete, out of date, or the user asks for the latest
 4. Is this about internal company knowledge? -> query_knowledge
 5. Does it need several tools in a row? -> ans_chat
+6. Are the results worth keeping as long-term knowledge? -> ans_chat with operation="consolidate"
+
+## Saving research results (consolidation)
+
+Call `ans_chat` with `operation="consolidate"` when results should become durable
+knowledge. Do not do it every turn.
+
+- Pick the scope and pass it: `memoryIds` for the exact materials worth keeping,
+  or `sessionId` for one session's materials. A call with neither is rejected —
+  there is no "consolidate everything".
+- If you pass both, `memoryIds` wins and the session does not widen it. Check
+  `structuredContent.scope` to confirm what was actually read.
+- `dryRun: true` saves nothing but can still call the model and cost money.
+- Read the report as the answer: `failure` = no summary, `conflict` = the
+  fidelity gate refused a claim, `budgetRejected` = a cap stopped the run.
+  `usage.costBasis = "unknown"` means the cost is unknown, not zero.
 
 ## Anti-patterns
 
@@ -41,6 +57,7 @@ Research and fetch information from many sources, with persistent memory.
 - Do NOT call research_web for a simple fact question (use search_web)
 - Do NOT call ans_chat when one tool call is enough
 - Do NOT ignore recall_memory — it saves API calls and tokens
+- Do NOT consolidate without naming the materials, and do NOT run it on a timer
 
 ## Mandatory rules
 

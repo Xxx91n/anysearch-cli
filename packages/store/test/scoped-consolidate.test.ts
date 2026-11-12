@@ -53,7 +53,7 @@ function vecFor(input: string): Float32Array {
 __setExtractorForTest(async (input: string) => ({ data: vecFor(input) }));
 
 function scopeOf(raw: {
-  sessionId?: unknown; sessionIds?: unknown; memoryIds?: unknown; allowArchive?: unknown;
+  sessionId?: unknown; sessionIds?: unknown; memoryIds?: unknown;
 }): { by: ConsolidateScopeBy; sessionIds: string[]; memoryIds: number[]; sessionIdNotApplied: boolean } {
   return resolveConsolidateScope(raw);
 }
@@ -118,8 +118,12 @@ function count(db: string, sql: string, ...params: unknown[]): number {
   assert(byMemory.sessionIds[0] === "sess-a", "the session is echoed back");
   assert(byMemory.sessionIdNotApplied === true, "the report says the sessionId did not decide the scope");
 
-  const archive = scopeOf({ allowArchive: true });
-  assert(archive.by === "archive", "the internal archive mode needs an explicit opt-in");
+  // The archive mode is not reachable from the caller-facing resolver at all:
+  // a caller that asks for it still gets the missing-scope refusal.
+  assert(
+    scopeThrew({ allowArchive: true } as Record<string, unknown>) !== null,
+    "no caller input can reach the full-archive mode",
+  );
 }
 
 // --- 2. the scan reads only the selected materials ---
@@ -164,7 +168,6 @@ assert(rep.clustersScanned === 2, "the cross-session list yields two clusters (o
 rep = await seed.consolidateMemory({
   dryRun: true,
   scope: scopeOf({ memoryIds: [idsA[0]!], sessionId: sessionA.id }),
-  requestedMaterials: 1,
 });
 assert(rep.scope.materialsRead === 1, "a sessionId alongside memoryIds does not widen the list (got " + rep.scope.materialsRead + ")");
 assert(rep.scope.sessionIdNotApplied === true, "the report flags the unused sessionId");

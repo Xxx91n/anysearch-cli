@@ -52,10 +52,12 @@ export interface ConsolidationUsage {
 /**
  * Budget wiring for the seam's own model calls.
  *
- * Consolidation spends real money outside the agent loop, so it must use the
- * same reserve-then-settle ledger as the run (D4: "额外合并和检查纳入预算与
- * 用量"). When no session is in scope the seam stays unmetered and says so —
- * it does not fake a zero.
+ * Design: consolidation spends real money outside the agent loop, so it uses
+ * the same reserve-then-settle ledger as the run (D4: extra model work is
+ * budgeted and accounted, never hidden outside the main call). One rule for
+ * both entry points: a run is metered when it names a session that owns a
+ * ledger row; a memory-list scope that no session owns is reported as
+ * unmetered instead of being charged to a session the caller never named.
  */
 export interface ConsolidationBudget {
   sessionId: string;
@@ -137,15 +139,20 @@ function textOfMessage(message: unknown): string {
 /**
  * One direct completion plus its usage.
  *
- * Reservation happens before the provider call (a cap-exhausted run must stop
- * instead of discovering the overspend afterwards); settlement happens in
- * `finally`, so an aborted or failed stream releases what it reserved.
+ * Design: reserve before the provider call and release in `finally` — a
+ * cap-exhausted run must stop instead of discovering the overspend afterwards,
+ * and an aborted or failed stream must not leave a reservation behind.
+ *
+ * Design: when the provider sends no usage figure, the reservation is booked as
+ * spend at its estimated amount instead of being settled as 0. Settling 0 would
+ * let a silent provider evade the token cap entirely and read as a free call;
+ * the reserved estimate is the only number this code has. The usage report still
+ * names "consolidation usage" as missing.
  */
 async function completeText(
   session: Pick<LlmSession, "model" | "streamFn" | "apiKey">,
   prompt: string,
   budget: ConsolidationBudget | undefined,
-  signal?: AbortSignal,
 ): Promise<CompletionResult> {
   let reservedTokens = 0;
   let reservedCall = false;
@@ -159,17 +166,24 @@ async function completeText(
       }
       reservedTokens = estimatePromptTokens(prompt) + SUMMARY_OUTPUT_RESERVE_TOKENS;
       if (!budget.ledger.reserveTokens(budget.sessionId, reservedTokens)) {
+        // The call reservation succeeded, so it must be given back before this
+        // call aborts: otherwise reserved_calls stays +1 for the rest of the
+        // session and a healthy run later reads as exhausted.
+        try { budget.ledger.settleCalls(budget.sessionId, 1, 0); } catch { /* fail-open */ }
+        reservedCall = false;
         reservedTokens = 0;
         throw new ConsolidationBudgetError(
           "consolidation stopped: the session's token budget cannot cover this model call (reserveTokens rejected)",
         );
       }
     } catch (e) {
-      // A ledger fault is not exhaustion (#200's fail-open rule): release what
-      // this call took and keep going unmetered for it.
       if (isConsolidationBudgetError(e)) throw e;
-      reservedTokens = 0;
+      // A ledger fault is not exhaustion (#200's fail-open rule): give back
+      // whatever this call took and continue unmetered for it.
+      try { if (reservedCall) budget.ledger.settleCalls(budget.sessionId, 1, 0); } catch { /* fail-open */ }
+      try { if (reservedTokens > 0) budget.ledger.settleTokens(budget.sessionId, reservedTokens, 0); } catch { /* fail-open */ }
       reservedCall = false;
+      reservedTokens = 0;
     }
   }
 
@@ -179,7 +193,7 @@ async function completeText(
     const stream = session.streamFn(
       session.model as never,
       { messages: [{ role: "user", content: prompt }] } as never,
-      { ...(session.apiKey ? { apiKey: session.apiKey } : {}), ...(signal ? { signal } : {}) } as never,
+      { ...(session.apiKey ? { apiKey: session.apiKey } : {}) } as never,
     );
     for await (const event of stream as AsyncIterable<{
       type?: string;
@@ -195,12 +209,20 @@ async function completeText(
     }
   } finally {
     if (budget) {
-      const actual = Number(usage?.totalTokens) || 0;
+      // Design: a call that reported no usage still books its reservation as
+      // spend instead of settling 0. Settling 0 would let a silent provider
+      // evade the token cap entirely (and read as a free call); the reserved
+      // estimate is the only number this code has, so it is booked as an
+      // estimate and the usage report names "consolidation usage" missing.
+      const reportedTotal = Number(usage?.totalTokens);
+      const hasUsage = Number.isFinite(reportedTotal) && reportedTotal >= 0;
       try {
         if (reservedCall) budget.ledger.settleCalls(budget.sessionId, 1, 1);
-      } catch { /* the reservation is released below; a fault must not mask the call result */ }
+      } catch { /* the reservation release below still runs; a fault must not mask the call result */ }
       try {
-        if (reservedTokens > 0) budget.ledger.settleTokens(budget.sessionId, reservedTokens, actual);
+        if (reservedTokens > 0) {
+          budget.ledger.settleTokens(budget.sessionId, reservedTokens, hasUsage ? reportedTotal : reservedTokens);
+        }
       } catch { /* fail-open: the ledger release is not the caller's failure */ }
     }
   }

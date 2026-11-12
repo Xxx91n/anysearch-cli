@@ -26,6 +26,7 @@ import { createHash } from "node:crypto";
 import {
   buildAnsChatConsolidateResult,
   buildAnsChatResult,
+  prepareConsolidateSessionBudget,
   resolveAnsChatSession,
 } from "../ans-chat-session.js";
 import { createMcpToolState, type AnsChatCacheEntry, type McpToolState } from "../tool-state.js";
@@ -184,7 +185,6 @@ export function registerAnsChat(
             scope = resolveConsolidateScope({
               sessionId: requestedSessionId,
               memoryIds,
-              allowArchive: false,
             });
           } catch (e) {
             if (e instanceof ConsolidateScopeError) {
@@ -193,14 +193,22 @@ export function registerAnsChat(
             throw e;
           }
           if (signal?.aborted) return buildAnsChatResult("");
-          // Budget (D4): consolidation's own model calls are billed to the
-          // session the caller scoped the run to. A memory-list scope has no
-          // owning session by definition, so those calls are reported as
-          // unmetered instead of being charged to a session the caller never
-          // named.
-          const budgetSessionId = scope.by === "session" ? scope.sessionIds[0] : requestedSessionId;
+          // Budget (D4). The same rule the CLI applies: charge the session the
+          // run was scoped to, and only that one.
+          //
+          // Design: a memory-list scope has no owning session, so its calls are
+          // reported unmetered rather than charged to a session the caller
+          // never named (a `sessionId` given alongside the list is echoed, not
+          // applied). Billing it anyway would make the two entry points meter
+          // the same request differently.
+          const budgetSessionId = scope.by === "session" ? scope.sessionIds[0] : undefined;
           const ledger = eng.ledger;
-          const budget = budgetSessionId && ledger
+          // Registering the row and its caps is what makes a cap real: the
+          // ledger's reserve passes for every session without a row.
+          const budgetReady = budgetSessionId && ledger
+            ? await prepareConsolidateSessionBudget(store, budgetSessionId, eng.config?.budget)
+            : false;
+          const budget = budgetReady && budgetSessionId && ledger
             ? { sessionId: budgetSessionId, ledger }
             : undefined;
 
@@ -229,7 +237,6 @@ export function registerAnsChat(
             report = await store.consolidateMemory({
               dryRun: dryRun === true,
               scope,
-              requestedMaterials: scope.by === "memory" ? scope.memoryIds.length : undefined,
             }, seams ? { summarize: seams.summarize, classify: seams.classify } : undefined);
           } catch (e) {
             if (isConsolidationBudgetError(e)) return toolFailure("ans_chat consolidate: " + e.message);
@@ -246,10 +253,7 @@ export function registerAnsChat(
             costBasis: "not-called" as const,
             missing: ["consolidation usage", "consolidation cache usage", "consolidation cost"],
           };
-          return buildAnsChatConsolidateResult(report, usage, {
-            scope: report.scope,
-            ...(budget ? {} : { budgetUnmetered: true }),
-          });
+          return buildAnsChatConsolidateResult(report, usage, budget ? {} : { budgetUnmetered: true });
         }
         // The message is optional on the wire because consolidate does not use
         // it; chat still needs one. Checked before the configuration gate: a

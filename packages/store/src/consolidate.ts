@@ -53,11 +53,11 @@ export type ConsolidateClassifyFn = (claim: string, evidence: ConsolidateEvidenc
 /**
  * Which materials a run was allowed to read.
  *
- * `by` names the rule that actually selected them. A memory-scoped run reads
- * exactly that list (`memoryIds` wins over `sessionId`; the session does not
- * widen it), a session-scoped run reads that session's materials, and
- * `archive` is the internal full-archive mode that only the eval runner and
- * the existing regression tests ask for explicitly.
+ * Design: `by` names the rule that actually selected them, and the selector
+ * that wins is always the narrower one — `memoryIds` beats `sessionId`, so a
+ * caller cannot accidentally widen an explicit list by repeating a session
+ * handle. `archive` exists only for the eval runner and the existing
+ * regression tests; the caller-facing resolver never produces it.
  */
 export type ConsolidateScopeBy = "memory" | "session" | "archive";
 
@@ -122,20 +122,22 @@ function isPositiveInteger(value: unknown): value is number {
  *
  * Shared by `ans consolidate` and the MCP tool so the two entries cannot
  * disagree on what counts as a usable scope. Rules:
- * - `memoryIds` present -> validate every id, select by that list. `sessionId`
- *   may also be present; it is echoed but never widens the list.
- * - otherwise `sessionIds` -> validate every id, select by session.
+ * - `memoryIds` supplied -> validate every id, select by that list. A
+ *   `sessionId` may also be supplied; it is echoed but never widens the list.
+ * - otherwise `sessionId`/`sessionIds` -> validate every id, select by session.
  * - neither -> error. No implicit full-archive run.
  *
- * Empty arrays count as absent, and an empty resulting scope is an error: a
- * caller that asked for zero materials gets a refusal, not a full-archive run.
+ * An empty `memoryIds` list counts as supplied and malformed: a caller that
+ * said "these materials" and named none gets a refusal, not a different scope.
+ *
+ * The archive mode is deliberately not reachable from here. It exists for the
+ * eval runner and the existing regression tests, which call the store directly.
  */
 export function resolveConsolidateScope(raw: {
   sessionId?: unknown;
   sessionIds?: unknown;
   memoryIds?: unknown;
-  allowArchive?: unknown;
-}): { by: ConsolidateScopeBy; sessionIds: string[]; memoryIds: number[]; sessionIdNotApplied: boolean } {
+}): ConsolidateScope {
   const asArray = (value: unknown): unknown[] => {
     if (Array.isArray(value)) return value;
     if (value === undefined || value === null) return [];
@@ -189,10 +191,6 @@ export function resolveConsolidateScope(raw: {
     return { by: "session", sessionIds: out, memoryIds: [], sessionIdNotApplied: false };
   }
 
-  if (raw.allowArchive === true) {
-    return { by: "archive", sessionIds: [], memoryIds: [], sessionIdNotApplied: false };
-  }
-
   throw new ConsolidateScopeError(
     "an explicit scope is required: pass sessionId or a non-empty memoryIds list. Refusing to consolidate the full archive.",
   );
@@ -211,6 +209,27 @@ export function isValidConsolidateSessionId(value: unknown): value is string {
     && value.length <= CONSOLIDATE_SESSION_ID_MAX_CHARS
     && CONSOLIDATE_SESSION_ID_PATTERN.test(value)
   );
+}
+
+/**
+ * One readable line describing the scope a run actually used.
+ *
+ * Design: both entry points print this, so it lives here. Two copies drifted
+ * before (one said "of N requested" for a session scope, the other did not);
+ * one function makes the CLI and the MCP result describe the same run the same
+ * way.
+ */
+export function formatConsolidateScope(scope: ConsolidateScopeReport): string {
+  const target = scope.by === "session"
+    ? "session " + scope.sessionIds.join(", ")
+    : scope.by === "memory"
+      ? "memory " + scope.memoryIds.join(", ")
+      : "archive";
+  const counts = scope.by === "memory"
+    ? "materials read " + scope.materialsRead + " of " + scope.requestedMaterials + " requested"
+    : "materials read " + scope.materialsRead;
+  return target + " (" + counts + ")"
+    + (scope.sessionIdNotApplied ? "; sessionId not applied: the memory list is the scope" : "");
 }
 
 /**
@@ -301,9 +320,15 @@ export interface ConsolidateRunOptions {
   // internal full-archive mode that the eval runner and the existing
   // regression tests call directly; no product surface can reach it without
   // an explicit scope.
-  scope?: { by: ConsolidateScopeBy; sessionIds: string[]; memoryIds: number[]; sessionIdNotApplied: boolean };
-  // How many materials the caller named. Used only for the scope echo.
-  requestedMaterials?: number;
+  scope?: ConsolidateScope;
+}
+
+/** A validated scope. The store derives every count it reports from this. */
+export interface ConsolidateScope {
+  by: ConsolidateScopeBy;
+  sessionIds: string[];
+  memoryIds: number[];
+  sessionIdNotApplied: boolean;
 }
 
 // D2/D4 main pipeline: signal-gated cluster scan -> summarize seam -> fidelity gate ->
@@ -332,7 +357,9 @@ export async function consolidateMemoryRun(
       sessionIds: [...scope.sessionIds],
       memoryIds: [...scope.memoryIds],
       sessionIdNotApplied: scope.sessionIdNotApplied,
-      requestedMaterials: opts.requestedMaterials ?? (scope.memoryIds.length > 0 ? scope.memoryIds.length : 0),
+      // The caller named these materials; counting them is what lets a reader
+      // tell "asked for 5, read 3" from "asked for 0, read 0".
+      requestedMaterials: scope.memoryIds.length,
       materialsRead: 0,
     },
     budgetRejected: 0,
