@@ -85,6 +85,11 @@ export interface ConsolidationBudget {
  *
  * `reason` is the caller-facing explanation when the run is unmetered; both
  * surfaces print it instead of implying a cap was enforced.
+ *
+ * The declared-caps check reads whatever Active Domain the caller's startup
+ * path resolved (the CLI falls back to "default" like `ans chat`; the MCP
+ * server uses its engine snapshot). That input differs by host on purpose —
+ * the rule below, and therefore the answer to "was this charged?", is one.
  */
 export type ConsolidationMetering =
   | { metered: true; budget: ConsolidationBudget }
