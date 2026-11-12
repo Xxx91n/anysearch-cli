@@ -5,6 +5,7 @@
 // contract lives here once instead of being copied into both roots.
 import { dirname, join } from "node:path";
 import { resolveDbPath } from "./composition";
+import type { SessionLockWindows } from "./session-lock";
 
 /**
  * Directory for PI's append-only JSONL session records. Defaults to a
@@ -17,20 +18,25 @@ export function resolvePiSessionDir(env: NodeJS.ProcessEnv = process.env): strin
 }
 
 /**
+ * Positive-integer env value, or undefined. An unparsable, zero, or negative
+ * value stays undefined so the caller's default applies — never a silent 0.
+ */
+function positiveIntFromEnv(raw: string | undefined): number | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const n = /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
+  return Number.isSafeInteger(n) && n > 0 ? n : undefined;
+}
+
+/**
  * PI compaction thresholds. The defaults are PI's own; the env overrides exist
  * so a probe or an operator can force compaction on a small context without
  * editing product code. An unparsable value stays undefined (PI's default
  * applies) rather than silently becoming 0.
  */
 export function piCompactionFromEnv(env: NodeJS.ProcessEnv = process.env): { reserveTokens?: number; keepRecentTokens?: number } {
-  const parse = (raw: string | undefined): number | undefined => {
-    if (raw === undefined || raw.trim() === "") return undefined;
-    const n = /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
-    return Number.isSafeInteger(n) && n > 0 ? n : undefined;
-  };
   return {
-    reserveTokens: parse(env.ANS_PI_COMPACTION_RESERVE_TOKENS),
-    keepRecentTokens: parse(env.ANS_PI_COMPACTION_KEEP_RECENT_TOKENS),
+    reserveTokens: positiveIntFromEnv(env.ANS_PI_COMPACTION_RESERVE_TOKENS),
+    keepRecentTokens: positiveIntFromEnv(env.ANS_PI_COMPACTION_KEEP_RECENT_TOKENS),
   };
 }
 
@@ -42,15 +48,10 @@ export function piCompactionFromEnv(env: NodeJS.ProcessEnv = process.env): { res
  * observe expiry and recovery in seconds; an unparsable or non-positive value
  * keeps the default rather than silently becoming 0.
  */
-export function sessionLockWindowsFromEnv(env: NodeJS.ProcessEnv = process.env): { staleMs?: number; waitMs?: number } {
-  const parse = (raw: string | undefined): number | undefined => {
-    if (raw === undefined || raw.trim() === "") return undefined;
-    const n = /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
-    return Number.isSafeInteger(n) && n > 0 ? n : undefined;
-  };
-  const staleMs = parse(env.ANS_PI_LOCK_STALE_MS);
-  const waitMs = parse(env.ANS_PI_LOCK_TIMEOUT_MS);
-  const windows: { staleMs?: number; waitMs?: number } = {};
+export function sessionLockWindowsFromEnv(env: NodeJS.ProcessEnv = process.env): SessionLockWindows {
+  const windows: SessionLockWindows = {};
+  const staleMs = positiveIntFromEnv(env.ANS_PI_LOCK_STALE_MS);
+  const waitMs = positiveIntFromEnv(env.ANS_PI_LOCK_TIMEOUT_MS);
   if (staleMs !== undefined) windows.staleMs = staleMs;
   if (waitMs !== undefined) windows.waitMs = waitMs;
   return windows;
@@ -68,7 +69,7 @@ export function piSessionOptions(
   apiKey: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
   cwd: string = process.cwd(),
-): { piSessionDir?: string; piCompaction: { reserveTokens?: number; keepRecentTokens?: number }; sessionLock: { staleMs?: number; waitMs?: number }; apiKey?: string; cwd: string } {
+): { piSessionDir?: string; piCompaction: { reserveTokens?: number; keepRecentTokens?: number }; sessionLock: SessionLockWindows; apiKey?: string; cwd: string } {
   return {
     // No handle means no record to key on, so the session stays in memory.
     piSessionDir: sessionId ? resolvePiSessionDir(env) : undefined,

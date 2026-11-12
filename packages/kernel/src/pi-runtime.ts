@@ -21,10 +21,10 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { loadPiCodingAgent } from "./pi-sdk";
 import {
   acquireSessionLock,
+  resolveSessionLockWindows,
   SESSION_BUSY_MESSAGE,
   SESSION_LOCKS_DIRNAME,
-  sessionLockStaleMs,
-  sessionLockWaitMs,
+  type SessionLockWindows,
 } from "./session-lock";
 import { estimateTranscriptTokens } from "./message-text";
 import { accumulateUsage, emptyUsageTotals, toRunUsage, type SummaryUsage } from "./usage";
@@ -293,7 +293,7 @@ export interface PiAgentRuntimeOptions {
    * "session busy" (default 120 s). Parsed from ANS_PI_LOCK_STALE_MS /
    * ANS_PI_LOCK_TIMEOUT_MS by piSessionOptions.
    */
-  sessionLock?: { staleMs?: number; waitMs?: number };
+  sessionLock?: SessionLockWindows;
   /** Working directory for the PI session and resource loader. Defaults to cwd. */
   cwd?: string;
   /** PI auto-compaction thresholds (enabled unless explicitly disabled). */
@@ -574,17 +574,15 @@ export class PiAgentRuntime {
     // same-session caller hits the same cap whether the current run is in
     // this process or another one. Both waits surface as an error event,
     // like every other run failure.
-    const windows = this.opts.sessionLock;
-    const deadlineAt = Date.now() + sessionLockWaitMs(windows);
+    const windows = resolveSessionLockWindows(this.opts.sessionLock);
+    const deadlineAt = Date.now() + windows.waitMs;
     let releaseQueue: () => void = () => {};
     let releaseLock: (() => void) | undefined;
     try {
       if (key) releaseQueue = await acquireSessionQueue(key, deadlineAt);
       if (this.opts.piSessionDir && key) {
-        releaseLock = await acquireSessionLock(
-          join(this.opts.piSessionDir, SESSION_LOCKS_DIRNAME, piSessionKey(key) + ".lock"),
-          { staleMs: sessionLockStaleMs(windows), deadlineAt },
-        );
+        const lockPath = join(this.opts.piSessionDir, SESSION_LOCKS_DIRNAME, piSessionKey(key) + ".lock");
+        releaseLock = await acquireSessionLock(lockPath, { staleMs: windows.staleMs, waitMs: Math.max(1, deadlineAt - Date.now()) });
       }
       yield* this.runInternal(input);
     } catch (e) {

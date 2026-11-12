@@ -12,9 +12,7 @@
 // one and steals it. A waiter here reclaims only on real evidence:
 //
 //   same host + live pid      never reclaimed, however old the heartbeat is
-//   same host + dead pid      reclaimed at the next poll — a confirmed-dead
-//                             local owner cannot come back, so recovery does
-//                             not wait out the stale window (D12)
+//   same host + dead pid      reclaimed at the next poll
 //   other host / no identity  reclaimed only once the stale window has
 //                             passed — the conservative rule for owners this
 //                             machine cannot confirm. A lock without
@@ -22,28 +20,31 @@
 //                             which holds a just-created lock until its
 //                             identity lands.
 //
-// Engineering values (#266): stale window 10 min (unconfirmable owners
-// only), wait cap 120 s, heartbeat every clamp(stale/3, 100 ms, 5 s),
-// waiter poll 50 ms. The short windows the tests use come from
-// ANS_PI_LOCK_STALE_MS / ANS_PI_LOCK_TIMEOUT_MS and are test values, not
-// production defaults.
+// Production windows are SESSION_LOCK_STALE_MS / SESSION_LOCK_WAIT_MS and the
+// heartbeat cadence is heartbeatIntervalMs. The short windows the tests use
+// come from ANS_PI_LOCK_STALE_MS / ANS_PI_LOCK_TIMEOUT_MS and are test values,
+// not production defaults.
 //
-// Release and heartbeat re-check owner.json: once a lock is reclaimed the
-// directory belongs to its new holder, and the old holder must not delete it
-// or keep refreshing its heartbeat (#266: release and reclaim only ever
-// target the rightful holder). While a same-machine holder is alive its lock
-// is never reclaimed, so the check-then-delete race is cross-machine only —
-// a network-filesystem deployment has no evidence this round and is not
-// claimed to be supported.
-//
-// Known boundary (deliberate): a same-host pid that was recycled to a new
-// process reads as alive, so a dead owner's lock can outlive it until that
-// pid disappears again. Identity here is pid+host; process start times are
-// not portable in Node, so this edge is documented rather than guessed at.
-// A live holder also never reclaims its own process's lock (defense in
-// depth: the lock must not trust the in-process queue to be the only
-// serializer), so a lock whose release failed keeps failing with "session
-// busy" until the process exits — visible, not silent.
+// A network-filesystem session directory has no evidence this round and is
+// not claimed to be supported: with no shared pid namespace the only rule
+// left is the heartbeat window, and that path is untested across hosts.
+
+// Design: identity is pid + host, not process start time — Node has no portable
+// way to read a process start time, and guessing one would make the liveness
+// check wrong in the common case rather than rarely wrong.
+// Design: a confirmed-dead same-host owner is reclaimed at once — a dead pid on
+// this machine cannot come back, so waiting out the stale window would only
+// delay recovery; the window stays for owners this machine cannot confirm.
+// Design: release and heartbeat re-check owner.json before touching the
+// directory — once a lock is reclaimed it belongs to its new holder, and the
+// old holder must neither delete it nor keep refreshing its heartbeat.
+// Design: a live holder never reclaims its own process's lock — defense in
+// depth, so the lock does not trust the in-process queue to be its only
+// serializer; a lock whose release failed keeps failing with "session busy"
+// until the process exits, which is visible rather than silent.
+// Design: a same-host pid recycled to a new process reads as alive — that
+// keeps a dead owner's lock longer than necessary, and is accepted because the
+// alternative (guessing a start time) would be wrong more often.
 
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
@@ -70,12 +71,17 @@ export interface SessionLockWindows {
   waitMs?: number;
 }
 
-export function sessionLockStaleMs(windows: SessionLockWindows | undefined): number {
-  return positiveMs(windows?.staleMs, SESSION_LOCK_STALE_MS);
-}
-
-export function sessionLockWaitMs(windows: SessionLockWindows | undefined): number {
-  return positiveMs(windows?.waitMs, SESSION_LOCK_WAIT_MS);
+/**
+ * Normalized windows with the production defaults filled in. Positive
+ * overrides win; anything else (absent, non-finite, non-positive) keeps the
+ * default. This is the one place a window value is validated, so the acquire
+ * loop never has to second-guess its own inputs.
+ */
+export function resolveSessionLockWindows(windows: SessionLockWindows | undefined): { staleMs: number; waitMs: number } {
+  return {
+    staleMs: positiveMs(windows?.staleMs, SESSION_LOCK_STALE_MS),
+    waitMs: positiveMs(windows?.waitMs, SESSION_LOCK_WAIT_MS),
+  };
 }
 
 function positiveMs(value: number | undefined, fallback: number): number {
@@ -143,16 +149,16 @@ function reclaimableNow(lockPath: string, staleMs: number): boolean {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
- * Acquire the session lock at `lockPath`, giving up at `deadlineAt`
- * (Date.now() basis) with a "session busy" error. The returned function
- * releases the lock; it is safe to call after the lock was reclaimed (it
- * then removes nothing).
+ * Acquire the session lock at `lockPath`, giving up at `waitMs` from now with a
+ * "session busy" error. The returned function releases the lock; it is safe to
+ * call after the lock was reclaimed (it then removes nothing).
  */
 export async function acquireSessionLock(
   lockPath: string,
-  opts: { staleMs?: number; deadlineAt: number },
+  windows: SessionLockWindows | undefined,
 ): Promise<() => void> {
-  const staleMs = sessionLockStaleMs(opts);
+  const { staleMs, waitMs } = resolveSessionLockWindows(windows);
+  const deadlineAt = Date.now() + waitMs;
   mkdirSync(dirname(lockPath), { recursive: true });
   for (;;) {
     try {
@@ -168,7 +174,7 @@ export async function acquireSessionLock(
         await sleep(POLL_MS);
         continue;
       }
-      if (Date.now() >= opts.deadlineAt) throw new Error(SESSION_BUSY_MESSAGE);
+      if (Date.now() >= deadlineAt) throw new Error(SESSION_BUSY_MESSAGE);
       await sleep(POLL_MS);
       continue;
     }

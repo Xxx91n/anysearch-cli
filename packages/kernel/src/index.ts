@@ -7,6 +7,8 @@ export * from "./pi-runtime";
 export * from "./usage";
 // PI session-record location + compaction thresholds, shared by both hosts (#258).
 export * from "./pi-session";
+// Cross-process session lock: one PI record, one writer (#266).
+export * from "./session-lock";
 export * from "./memory-pipeline";
 // rag adapter layer (#35): registry + note/fts adapters, injected at Stage-1.
 export * from "./rag-adapter";

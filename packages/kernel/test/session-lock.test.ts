@@ -64,7 +64,7 @@ async function recentlyDeadPid(): Promise<number | null> {
 
 async function expectBusy(lockDir: string, staleMs: number, waitMs: number): Promise<string | undefined> {
   try {
-    const release = await acquireSessionLock(lockDir, { staleMs, deadlineAt: Date.now() + waitMs });
+    const release = await acquireSessionLock(lockDir, { staleMs, waitMs });
     release();
     return undefined;
   } catch (e) {
@@ -73,7 +73,7 @@ async function expectBusy(lockDir: string, staleMs: number, waitMs: number): Pro
 }
 
 async function expectAcquired(lockDir: string, staleMs: number, waitMs: number): Promise<() => void> {
-  return acquireSessionLock(lockDir, { staleMs, deadlineAt: Date.now() + waitMs });
+  return acquireSessionLock(lockDir, { staleMs, waitMs });
 }
 
 // ---------- runtime wiring helpers (same minimal shape as the #258 tests) ----------
@@ -293,6 +293,37 @@ async function main() {
       const firstEvents = await first;
       assert(firstEvents.some((e) => e.type === "done"),
         "W2: the holder's run is unaffected by the contender's timeout");
+    }
+
+    // ---------- W3: different sessions run in parallel ----------
+    {
+      // Both runs take their lock and reach the provider before either
+      // finishes: with a shared per-key lock the second would sit in the
+      // queue and its provider call would start after the first ended.
+      const piDir = join(workDir, "w3-pi");
+      const a = new PiAgentRuntime({
+        retriever: new NoopRetriever() as any,
+        domain, model, streamFn: slowProvider("W3-A", 900) as any,
+        sessionId: "w3-a", piSessionDir: piDir,
+        getApiKey: async () => "probe-key",
+      });
+      const b = new PiAgentRuntime({
+        retriever: new NoopRetriever() as any,
+        domain, model, streamFn: slowProvider("W3-B", 900) as any,
+        sessionId: "w3-b", piSessionDir: piDir,
+        getApiKey: async () => "probe-key",
+      });
+      const started = Date.now();
+      const [aEvents, bEvents] = await Promise.all([drain(a.run("W3-A-QUESTION")), drain(b.run("W3-B-QUESTION"))]);
+      const elapsed = Date.now() - started;
+      assert(aEvents.some((e) => e.type === "done") && bEvents.some((e) => e.type === "done"),
+        "W3: both sessions complete");
+      // Serialized, each 900 ms run would need ~1.8 s; parallel finishes near 0.9-1.0 s.
+      assert(elapsed < 1_600,
+        "W3: different sessions do not serialize behind each other (took " + elapsed + " ms)");
+      const locksDir = join(piDir, SESSION_LOCKS_DIRNAME);
+      assert(!existsSync(locksDir) || readdirSync(locksDir).length === 0,
+        "W3: both locks are cleaned up");
     }
 
     // The lock directory keeps only per-session subdirectories.

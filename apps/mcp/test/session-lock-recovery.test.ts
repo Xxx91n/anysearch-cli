@@ -21,7 +21,7 @@
 // convention); same stdio JSON-RPC shape as coldstart-race.test.ts.
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type ServerResponse } from "node:http";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -73,7 +73,7 @@ function lastUserText(body: string): string {
   return "";
 }
 
-const MARKERS = ["LOCK-A-START", "LOCK-B-CONTINUE", "LOCK-B-AFTER-CRASH", "LOCK-HANG", "LOCK-BUSY-B", "LOCK-C-AFTER-KILL"] as const;
+const MARKERS = ["LOCK-A-START", "LOCK-B-CONTINUE", "LOCK-B-AFTER-CRASH", "LOCK-HANG", "LOCK-BUSY-B", "LOCK-C-AFTER-KILL", "LOCK-P-ONE", "LOCK-P-TWO"] as const;
 function keyFor(text: string): string {
   return MARKERS.find((m) => text.includes(m)) ?? "other";
 }
@@ -84,6 +84,8 @@ function replyFor(text: string): string {
   if (text.includes("LOCK-HANG")) return "LOCK-HANG-PARTIAL-" + NONCE;
   if (text.includes("LOCK-BUSY-B")) return "LOCK-BUSY-B-ANSWER-" + NONCE;
   if (text.includes("LOCK-C-AFTER-KILL")) return "LOCK-C-AFTER-KILL-ANSWER-" + NONCE;
+  if (text.includes("LOCK-P-ONE")) return "LOCK-P-ONE-ANSWER-" + NONCE;
+  if (text.includes("LOCK-P-TWO")) return "LOCK-P-TWO-ANSWER-" + NONCE;
   return "LOCK-GENERIC-" + NONCE;
 }
 
@@ -113,6 +115,7 @@ const fake = createServer(async (req, res) => {
 interface McpClient {
   child: ChildProcess;
   init: () => Promise<void>;
+  stderr: () => string;
   rpc: (method: string, params: unknown, timeoutMs?: number) => Promise<any>;
   chat: (markerMessage: string, sessionId: string, timeoutMs?: number) => Promise<{
     ok: boolean; isError: boolean; text: string; structured: any; elapsedMs: number;
@@ -171,6 +174,9 @@ function startMcp(env: Record<string, string>): McpClient {
       clientInfo: { name: "session-lock-recovery", version: "0" },
     });
     notify("notifications/initialized", {});
+    // T3: a live process is not a started one — both handshake steps must
+    // succeed before the process is used for the lock assertions.
+    await rpc("tools/list", {});
   };
   const chat = (markerMessage: string, sessionId: string, timeoutMs = RPC_TIMEOUT_MS) => {
     const started = Date.now();
@@ -186,7 +192,7 @@ function startMcp(env: Record<string, string>): McpClient {
       };
     });
   };
-  return { child, rpc, chat, exited, init };
+  return { child, rpc, chat, exited, init, stderr: () => stderr };
 }
 
 // ---------- sandbox helpers ----------
@@ -233,6 +239,31 @@ function makeEnv(root: string, extra: Record<string, string> = {}): Record<strin
     ANS_LLM_CONTEXT_WINDOW: "100000",
     ...extra,
   };
+}
+
+/**
+ * A domain that declares `[budget]`, so a session gets a real budget_ledger
+ * row and "the killed run settled nothing" is a statement about an actual
+ * row rather than an empty table where `every()` passes by itself. The row
+ * exists from the start: the test checks it exists before the kill.
+ */
+function budgetDomainDir(root: string): string {
+  const dir = join(root, "domains");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "lock-probe.toml"), [
+    'name = "lock-probe"',
+    "sources = { enabled = [] }",
+    'prompts = [{ name = "system", content = "LOCK-PROBE: answer briefly." }]',
+    'skills = { active = ["search"] }',
+    'hooks = { toolWhitelist = ["search"] }',
+    'rag = { adapter = "none" }',
+    "",
+    "[budget]",
+    "tokenCap = 1000000",
+    "callCap = 100",
+    "",
+  ].join("\n"));
+  return dir;
 }
 function conversationText(lines: any[]): { users: string[]; assistants: string[] } {
   const users: string[] = [];
@@ -325,7 +356,12 @@ async function main() {
     {
       const root = join(base, "c2");
       // Production lock windows on purpose: recovery must not need them.
-      const env = { ...makeEnv(root), ANS_LLM_BASE_URL: baseUrl };
+      // The domain declares [budget], so the session really has a
+      // budget_ledger row to make "nothing was settled" a real statement.
+      const env = {
+        ...makeEnv(root), ANS_LLM_BASE_URL: baseUrl,
+        ANS_DOMAIN: "lock-probe", ANS_DOMAINS_DIR: budgetDomainDir(root),
+      };
       const a = startMcp(env); await a.init();
       const b = startMcp(env); await b.init();
       const shared = "lock-crash-" + NONCE;
@@ -334,7 +370,8 @@ async function main() {
         ok: false, isError: true, elapsedMs: 0, text: "TRANSPORT ERROR: " + e.message, structured: null,
       }));
       const hangEntry = await waitForKey("LOCK-HANG");
-      assert(hangEntry !== undefined, "C2: the hanging run reached the provider");
+      assert(hangEntry !== undefined,
+        "C2: the hanging run reached the provider (A stderr: " + a.stderr().slice(-500) + ")");
 
       const bStart = Date.now();
       const bCall = b.chat("LOCK-B-AFTER-CRASH. The previous process died; continue the same session.", shared);
@@ -342,6 +379,16 @@ async function main() {
       const beforeKill = lockEntries(join(root, "pi"));
       assert(beforeKill.length === 1 && beforeKill[0].owner?.pid === a.child.pid,
         "C2: the lock names the hanging process before the kill");
+
+      // The budget row must exist BEFORE the kill, otherwise an empty table
+      // would satisfy every() vacuously.
+      const dbBefore = new Database(join(root, "anysearch.db"), { readonly: true });
+      const ledgerBefore = dbBefore.prepare(
+        "SELECT session_id, reserved_tokens, spent_tokens FROM budget_ledger WHERE session_id = ?"
+      ).all(shared) as Array<{ session_id: string; reserved_tokens: number; spent_tokens: number }>;
+      dbBefore.close();
+      assert(ledgerBefore.length === 1,
+        "C2: the session has a real budget_ledger row before the kill (got " + JSON.stringify(ledgerBefore) + ")");
 
       a.child.kill("SIGKILL");
       for (const res of openResponses) { try { res.destroy(); } catch { /* already gone */ } }
@@ -355,8 +402,11 @@ async function main() {
         "SELECT session_id, reserved_tokens, spent_tokens FROM budget_ledger WHERE session_id = ?"
       ).all(shared) as Array<{ session_id: string; reserved_tokens: number; spent_tokens: number }>;
       db.close();
-      assert(ledgerMid.every((r) => Number(r.spent_tokens) === 0),
-        "C2: the killed request settled no tokens (ledger " + JSON.stringify(ledgerMid) + ")");
+      // A killed run may leave its reservation or clear it, but it must never
+      // book spend: spent_tokens is the count of what the provider actually
+      // returned for a completed run.
+      assert(ledgerMid.length === 1 && Number(ledgerMid[0].spent_tokens) === 0,
+        "C2: the killed request settled no spend on a real row (ledger " + JSON.stringify(ledgerMid) + ")");
 
       const bRes = await bCall;
       const recoveryMs = Date.now() - bStart;
@@ -419,6 +469,39 @@ async function main() {
 
       b.child.kill("SIGKILL");
       await b.exited;
+      requestLog.length = 0;
+    }
+
+    // ================= C4: different sessions run in parallel =================
+    {
+      const root = join(base, "c4");
+      const env = { ...makeEnv(root), ANS_LLM_BASE_URL: baseUrl };
+      const a = startMcp(env); await a.init();
+      const b = startMcp(env); await b.init();
+
+      // Two different handles, one process each, started together. A shared
+      // lock key would make one wait for the other; overlapping provider
+      // calls are the observable proof they did not.
+      const started = Date.now();
+      const [r1, r2] = await Promise.all([
+        a.chat("LOCK-P-ONE. Reply with exactly LOCK-P-ONE-ANSWER-" + NONCE + ".", "parallel-one-" + NONCE),
+        b.chat("LOCK-P-TWO. Reply with exactly LOCK-P-TWO-ANSWER-" + NONCE + ".", "parallel-two-" + NONCE),
+      ]);
+      const elapsed = Date.now() - started;
+      const p1 = requestLog.find((r) => r.key === "LOCK-P-ONE");
+      const p2 = requestLog.find((r) => r.key === "LOCK-P-TWO");
+
+      assert(r1.ok && r2.ok && r1.structured?.sessionId === "parallel-one-" + NONCE
+        && r2.structured?.sessionId === "parallel-two-" + NONCE,
+        "C4: both different-session calls complete with their own handle");
+      // Overlap is the proof, not wall-clock: engine cold start is on the
+      // clock too, so a serialized pair and a parallel pair can both be slow.
+      assert(p1 != null && p2 != null && p1.start < (p2.end ?? Infinity) && p2.start < (p1.end ?? Infinity),
+        "C4: the two sessions' provider calls overlap — different sessions are not serialized "
+        + JSON.stringify({ p1, p2: { start: p2?.start, end: p2?.end }, elapsed }));
+
+      a.child.kill("SIGKILL"); b.child.kill("SIGKILL");
+      await Promise.all([a.exited, b.exited]);
       requestLog.length = 0;
     }
   } finally {
