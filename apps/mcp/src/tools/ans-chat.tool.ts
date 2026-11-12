@@ -156,13 +156,16 @@ export function registerAnsChat(
           sessionId: requestedSessionId,
           operation = "chat",
           memoryIds,
-          allowSingleEvidence,
           dryRun,
         } = (args ?? {}) as {
           message?: string;
           sessionId?: string;
           operation?: "chat" | "consolidate";
           memoryIds?: number[];
+          // Reserved for the single-evidence correction (follow-up ticket). The
+          // wire schema still lists it so a caller can already pass it, but it
+          // is not read here: silently accepting a flag that does nothing would
+          // claim a behavior this run does not have.
           allowSingleEvidence?: boolean;
           dryRun?: boolean;
         };
@@ -202,11 +205,16 @@ export function registerAnsChat(
             : undefined;
 
           let seams: ReturnType<typeof createConsolidationSeams> | undefined;
-          if (providerName && modelName && store.setConsolidationSeams) {
+          if (providerName && modelName) {
             try {
               const llm = await getLlmSession();
+              // The seams carry this request's own usage counter and budget
+              // binding. They are handed to the run as a per-call dependency
+              // instead of being written onto the shared store: two concurrent
+              // requests would otherwise read each other's spend, and a
+              // memory-scoped run would inherit whatever the last session run
+              // installed.
               seams = createConsolidationSeams(llm, budget ? { budget } : {});
-              store.setConsolidationSeams({ summarize: seams.summarize, classify: seams.classify });
             } catch (e) {
               // Fail-open: the store reports llmUnavailable per cluster, and the
               // usage block names the missing accounting instead of faking it.

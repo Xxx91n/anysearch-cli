@@ -150,10 +150,6 @@ export async function runConsolidate(argv: string[]): Promise<number> {
         apiKey: llmCfg.apiKey,
       });
       seams = createConsolidationSeams(session, budget ? { budget } : {});
-      store.setConsolidationSeams?.({
-        summarize: seams.summarize,
-        classify: seams.classify,
-      });
     } catch (e) {
       process.stderr.write("[warn] LLM init failed (" + (e as Error).message + "); clusters will report llmUnavailable\n");
     }
@@ -163,12 +159,17 @@ export async function runConsolidate(argv: string[]): Promise<number> {
 
   let r: ConsolidateReport;
   try {
-    r = await store.consolidateMemory({
-      dryRun,
-      ...(limit !== undefined ? { limit } : {}),
-      scope,
-      ...(scope.by === "memory" ? { requestedMaterials: memoryIds.length } : {}),
-    });
+    r = await store.consolidateMemory(
+      {
+        dryRun,
+        ...(limit !== undefined ? { limit } : {}),
+        scope,
+        ...(scope.by === "memory" ? { requestedMaterials: memoryIds.length } : {}),
+      },
+      // This run's own seams: the usage counter belongs to this invocation, so
+      // it is passed in rather than parked on the store.
+      seams ? { summarize: seams.summarize, classify: seams.classify } : undefined,
+    );
   } catch (e) {
     if (isConsolidationBudgetError(e)) {
       // A store-level refusal is not a report: the run stopped before any cluster

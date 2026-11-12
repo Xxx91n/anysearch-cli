@@ -117,7 +117,7 @@ export const AnsChatInput = Type.Object({
   ),
   allowSingleEvidence: Type.Optional(
     Type.Boolean({
-      description: "consolidate only: let one sufficiently reliable conflicting material correct an existing knowledge entry (it may update, never create). Delivered by the follow-up ticket; today the batch threshold still applies.",
+      description: "consolidate only: reserved for the single-evidence correction. Not wired yet — the batch threshold still applies, and the flag is ignored. Do not rely on it.",
     }),
   ),
   dryRun: Type.Optional(
