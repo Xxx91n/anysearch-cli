@@ -590,7 +590,7 @@ export class PiAgentRuntime {
           waitMs: Math.max(1, deadlineAt - Date.now()),
         });
       }
-      yield* this.runInternal(input);
+      yield* this.runInternal(input, Boolean(releaseLock && key));
     } catch (e) {
       yield { type: "error", message: e instanceof Error ? e.message : String(e) };
     } finally {
@@ -599,7 +599,7 @@ export class PiAgentRuntime {
     }
   }
 
-  private async *runInternal(input: string): AsyncIterable<AgentEvent> {
+  private async *runInternal(input: string, holdsSessionLock = false): AsyncIterable<AgentEvent> {
     // #211: a signal that is already aborted means the caller gave up before
     // this run began. Do not start a provider call, reserve budget, or touch
     // session state for a request nobody is waiting for.
@@ -990,6 +990,30 @@ export class PiAgentRuntime {
     // budget_ledger, and both startup paths hand over the engine's ledger
     // only after the session row exists (#178).
     const billingWired = !!(store && sessionId && ledger);
+
+    // #275: release reservations whose owner this machine can prove is gone
+    // before this run reserves anything. A run killed by SIGKILL never reaches
+    // its finally, so its leftover would keep eating this session's cap and
+    // later runs would be refused as "budget exhausted" over nothing.
+    //
+    // The rule is per owner (same host + dead pid), not "clear the session": a
+    // consolidation running in another process holds reservations without the
+    // session lock, and clearing those would loosen its cap mid-run. That is
+    // also why the unowned sweep needs `holdsSessionLock`. A fault here is the
+    // usual fail-open budget fault — the reserve below then reports any real
+    // exhaustion.
+    if (billingWired) {
+      try {
+        ledger!.reclaimDeadReservations?.(sessionId!);
+        // The amount no owner claims can only be judged when this run is the
+        // session's only writer: consolidation reserves without the session
+        // lock, so clearing it earlier could wipe a live reservation. Holding
+        // the lock is that proof, so the sweep runs only here.
+        if (holdsSessionLock) ledger!.reclaimUnownedReservations?.(sessionId!);
+      } catch (e) {
+        reportBudgetFault("reservation reclaim", e);
+      }
+    }
 
     // #188: if the domain TOML changed since the last run, refresh the ledger
     // caps before reserving. The registration sites (#187) sample the domain

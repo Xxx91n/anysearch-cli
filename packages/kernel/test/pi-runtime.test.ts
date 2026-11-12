@@ -9,9 +9,9 @@ import { distillGap, adjudicateReuseCompress, consolidateState, FALLBACK_LOW_WAT
 import { MemoryPipeline } from "../src/memory-pipeline";
 import { readMessageText } from "../src/message-text";
 import type { RetrieverPort, DomainConfigPort, BudgetLedgerPort, Query } from "../src/ports";
-import { SqliteSessionStore } from "@anysearch-cli/store";
+import { SqliteSessionStore, BudgetLedger } from "@anysearch-cli/store";
 import { mkdtempSync, rmSync, writeFileSync, utimesSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, hostname } from "node:os";
 import { join } from "node:path";
 import type { FusedEnvelope, SufficiencySignal } from "@anysearch-cli/retriever";
 
@@ -2167,6 +2167,91 @@ console.log("---");
     assert(!storeUnknown.calls.some((c) => c.type === "consolidation_state"),
       "#184 shell unknown: 15K does NOT cross 128K fallback (placeholder not scaled to 12.8K)");
   }
+}
+
+// #275: the runtime runs the reservation sweep at the run boundary, so a
+// leftover from a SIGKILL'd run is gone before this run reserves. The real row
+// is checked as well as the run outcome: a sweep that never reached the
+// statement would leave the leftover eating the cap.
+{
+  const dir = mkdtempSync(join(tmpdir(), "ans-275-runtime-"));
+  const store = new SqliteSessionStore(join(dir, "anysearch.db"));
+  try {
+    const session = await store.createSession("chat");
+    // A killed run's leftover, recorded by a dead owner exactly as #275 measured
+    // it. The cap leaves no room for the next run until this is released: the
+    // runtime's default reserve is input occupancy + 12288.
+    const ledger = store.createBudgetLedger();
+    const killed = new BudgetLedger((store as any).db, {
+      owner: { pid: 999_999, host: hostname() },
+      isOwnerAlive: () => false,
+    });
+    killed.initBudget(session.id, { tokenCap: 20_000, timeLimitMs: 60_000, callCap: 10 });
+    assert(killed.reserveTokens(session.id, 12_304), "#275 runtime fixture: killed run reserved 12304");
+    const before = ledger.getBalance(session.id)!;
+    assert(before.reservedTokens === 12_304 && before.spentTokens === 0,
+      "#275 runtime fixture: the leftover is on the real row before the next run");
+
+    const runtime = new PiAgentRuntime({
+      retriever: new MockRetriever(),
+      domain: mockDomain,
+      model: { id: "test-model", provider: "test" } as any,
+      streamFn: usageStream(120, 30, 157, 0.003),
+      store,
+      sessionId: session.id,
+      ledger,
+    });
+    const events: any[] = [];
+    for await (const ev of runtime.run("hello")) events.push(ev);
+    const error = events.find((e) => e.type === "error");
+    assert(error === undefined,
+      "#275: the run is not refused as exhaustive over a dead run's leftover (got "
+      + JSON.stringify(error) + ")");
+    const done = events.find((e) => e.type === "done");
+    assert(done !== undefined, "#275: the recovering run completes normally");
+
+    const after = ledger.getBalance(session.id)!;
+    assert(after.spentTokens === 157 && after.reservedTokens === 0,
+      "#275: the recovering run settled its own usage and left no reservation behind");
+  } finally {
+    store.close();
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* OS temp */ }
+  }
+}
+
+// #275: the unowned sweep needs the session lock. Without a durable session
+// record there is no lock, so the runtime must not clear amounts another writer
+// could be holding — consolidation reserves exactly that way.
+{
+  const released: string[] = [];
+  class RecordingLedger implements BudgetLedgerPort {
+    reserveCalls(): boolean { return true; }
+    settleCalls(): void { }
+    reserveTokens(): boolean { return true; }
+    settleTokens(): void { }
+    reserveUsd(): boolean { return true; }
+    settleUsd(): void { }
+    reclaimDeadReservations(): number { released.push("dead"); return 0; }
+    reclaimUnownedReservations(): Record<"tokens" | "usd" | "calls", number> {
+      released.push("unowned");
+      return { tokens: 0, usd: 0, calls: 0 };
+    }
+  }
+  const runtime = new PiAgentRuntime({
+    retriever: new MockRetriever(),
+    domain: mockDomain,
+    model: { id: "test-model", provider: "test" } as any,
+    streamFn: usageStream(10, 5, 15, 0.001),
+    store: noopStore(),
+    sessionId: "s-275-unowned",
+    ledger: new RecordingLedger(),
+    // No piSessionDir: no durable record, so no session lock is taken.
+  });
+  for await (const _ev of runtime.run("hello")) { /* drain */ }
+  assert(released.includes("dead"),
+    "#275: the dead-owner sweep runs even without the session lock (a kill leaves no other trace)");
+  assert(!released.includes("unowned"),
+    "#275: the unowned sweep never runs without the session lock (it could wipe a live consolidation)");
 }
 
 console.log("---");

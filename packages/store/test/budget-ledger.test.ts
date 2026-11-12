@@ -5,7 +5,7 @@
 import Database from "better-sqlite3";
 import { SqliteSessionStore } from "../src/session-store";
 import { BudgetLedger } from "../src/budget-ledger";
-import { tmpdir } from "node:os";
+import { tmpdir, hostname } from "node:os";
 import { join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 
@@ -305,6 +305,130 @@ async function main() {
       settleLedger.settleTokens(s11.id, 0, 10);
       settleLedger.settleUsd(s11.id, 0, 1);
       assert(settleLedger.getBalance(s11.id) === null, "settling a row-less session does not create a row");
+
+      // 18. #275: the reported bug. A run killed by SIGKILL never reaches its
+      //     settle, so its reservation stays in the counters and the next run
+      //     is refused as "exhausted". The fixture is the measured case from
+      //     the ticket: reserved_tokens = 12304, spent_tokens = 0.
+      const s12 = await store.createSession("sigkill-leftover");
+      // A killed owner is simulated by its pid and a liveness probe that reports
+      // it dead; no real process is spawned (the rule under test is the ledger's,
+      // and the pid check itself is the session lock's tested concern).
+      const deadOwner = { pid: 999_999, host: hostname() };
+      const killedLedger = new BudgetLedger((store as any).db, {
+        owner: deadOwner,
+        isOwnerAlive: () => false,
+      });
+      killedLedger.initBudget(s12.id, { tokenCap: 20000, usdCap: 5, timeLimitMs: 60_000, callCap: 10 });
+      const killedReserve = killedLedger.reserveTokens(s12.id, 12304);
+      assert(killedReserve, "#275 fixture: the killed run reserved 12304 tokens");
+      const killedRaw = (store as any).db
+        .prepare("SELECT reserved_tokens, spent_tokens FROM budget_ledger WHERE session_id = ?")
+        .get(s12.id) as { reserved_tokens: number; spent_tokens: number };
+      assert(killedRaw.reserved_tokens === 12304 && killedRaw.spent_tokens === 0,
+        "#275 fixture matches the measured leftover (reserved 12304, spent 0)");
+
+      // Before the fix this is the false "budget exhausted": 12304 + 9000 > 20000.
+      // The control treats the killed pid as alive, which is the pre-fix
+      // behaviour (the ledger never asked). It shows the leftover alone is what
+      // refuses the run, so the fix below is judged against it rather than
+      // against an empty table.
+      const controlLedger = new BudgetLedger((store as any).db, { isOwnerAlive: () => true });
+      assert(!controlLedger.reserveTokens(s12.id, 9000),
+        "#275 control: with the leftover counted, 9000 is refused as exhausted");
+      // The survivor is alive and only the killed pid is dead — the state this
+      // process really is in. A blanket `() => false` probe would say the
+      // survivor itself is dead, which is not a state that can occur.
+      const survivor = new BudgetLedger((store as any).db, { isOwnerAlive: (pid) => pid !== 999_999 });
+      const survivorOk = survivor.reserveTokens(s12.id, 9000);
+      // 12304 + 9000 = 21304 > 20000, so this must be rejected until the dead
+      // owner's share is released. The rejection triggers the release, so the
+      // SAME call is what proves the fix: it must now succeed.
+      assert(survivorOk,
+        "#275: a reserve rejected by a dead owner's leftover is retried after releasing it");
+      const afterReclaim = survivor.getBalance(s12.id)!;
+      assert(afterReclaim.reservedTokens === 9000,
+        "#275: only the dead owner's 12304 was released, the live run's 9000 remains");
+      assert(survivor.reserveTokens(s12.id, 11001) === false,
+        "#275: real exhaustion still rejects — reclaim never invents headroom");
+      // The release cannot leave anything ownerless behind: the next reserve
+      // takes its counter and its owner row in one transaction, so a sweep
+      // between the two calls cannot see a "unowned" amount that is really a
+      // live reservation.
+      assert(survivor.reclaimUnownedReservations(s12.id).tokens === 0,
+        "#275: a live run's reservation is never mistaken for unowned residue");
+      survivor.settleTokens(s12.id, 9000, 8000);
+      const settled = survivor.getBalance(s12.id)!;
+      assert(settled.reservedTokens === 0 && settled.spentTokens === 8000,
+        "#275: the recovering run settles normally after the reclaim");
+      // The dead owner's rows must be gone as evidence of the release.
+      const remainingReservations = (store as any).db
+        .prepare("SELECT owner_pid, amount FROM budget_reservations WHERE session_id = ?")
+        .all(s12.id) as Array<{ owner_pid: number; amount: number }>;
+      assert(remainingReservations.length === 0,
+        "#275: no owner row outlives its release (got " + JSON.stringify(remainingReservations) + ")");
+
+      // 19. #275: a live local owner is never touched. This is the case the
+      //     "clear the whole session" shortcut would break: consolidation
+      //     reserves without the session lock, so a chat run must not wipe it.
+      const s13 = await store.createSession("concurrent-owner");
+      const liveOwner = new BudgetLedger((store as any).db, {
+        owner: { pid: 1234, host: hostname() },
+        isOwnerAlive: () => true,
+      });
+      liveOwner.initBudget(s13.id, { tokenCap: 5000, timeLimitMs: 60_000 });
+      assert(liveOwner.reserveTokens(s13.id, 4000), "#275 fixture: a live second owner reserves 4000");
+      const other = new BudgetLedger((store as any).db, { isOwnerAlive: () => true });
+      other.initBudget(s13.id, { tokenCap: 5000, timeLimitMs: 60_000 });
+      const released = other.reclaimDeadReservations(s13.id);
+      assert(released === 0, "#275: a live owner's reservation is never released");
+      assert(other.getBalance(s13.id)!.reservedTokens === 4000,
+        "#275: the live owner's 4000 is still reserved after a sweep");
+
+      // 20. #275: an owner on another host cannot be confirmed, so it is kept.
+      //     Same conservative rule the session lock uses for a foreign host.
+      const s14 = await store.createSession("foreign-owner");
+      const foreign = new BudgetLedger((store as any).db, {
+        owner: { pid: 4321, host: "some-other-machine" },
+        isOwnerAlive: () => false,
+      });
+      foreign.initBudget(s14.id, { tokenCap: 4000, timeLimitMs: 60_000 });
+      assert(foreign.reserveTokens(s14.id, 3000), "#275 fixture: a foreign owner reserves 3000");
+      const local = new BudgetLedger((store as any).db, { isOwnerAlive: () => false });
+      assert(local.reclaimDeadReservations(s14.id) === 0,
+        "#275: a foreign-host owner is kept even when its pid looks dead here");
+      assert(local.getBalance(s14.id)!.reservedTokens === 3000,
+        "#275: the foreign owner's reservation is still reserved");
+
+      // 21. #275: the unowned residue a pre-#275 database carries has no owner
+      //     row, so the dead-owner rule can never release it. It is only cleared
+      //     by the explicit exclusive-writer call, and only for the amount that
+      //     nothing claims.
+      const s15 = await store.createSession("unowned-residue");
+      const residueLedger = new BudgetLedger((store as any).db);
+      residueLedger.initBudget(s15.id, { tokenCap: 20000, timeLimitMs: 60_000 });
+      // Simulate the pre-#275 write: the counter moved with no owner recorded.
+      (store as any).db.prepare(
+        "UPDATE budget_ledger SET reserved_tokens = 12304 WHERE session_id = ?"
+      ).run(s15.id);
+      assert(residueLedger.reclaimDeadReservations(s15.id) === 0,
+        "#275: the dead-owner rule alone cannot release an unowned amount");
+      assert(residueLedger.getBalance(s15.id)!.reservedTokens === 12304,
+        "#275: the unowned residue is still there before the explicit sweep");
+      const unowned = residueLedger.reclaimUnownedReservations(s15.id);
+      assert(unowned.tokens === 12304, "#275: the exclusive-writer sweep reports the released residue");
+      assert(residueLedger.getBalance(s15.id)!.reservedTokens === 0,
+        "#275: the generated leftover is gone after the exclusive-writer sweep");
+      // The sweep must not touch an amount that a live owner still holds.
+      const s16 = await store.createSession("unowned-vs-owned");
+      const ownedLedger = new BudgetLedger((store as any).db, { owner: { pid: 5678, host: hostname() } });
+      ownedLedger.initBudget(s16.id, { tokenCap: 20000, timeLimitMs: 60_000 });
+      (store as any).db.prepare("UPDATE budget_ledger SET reserved_tokens = 1000 WHERE session_id = ?").run(s16.id);
+      assert(ownedLedger.reserveTokens(s16.id, 1304), "#275 fixture: a live owner records 1304");
+      const mixed = ownedLedger.reclaimUnownedReservations(s16.id);
+      assert(mixed.tokens === 1000, "#275: only the unclaimed 1000 is released, the owned 1304 stays");
+      assert(ownedLedger.getBalance(s16.id)!.reservedTokens === 1304,
+        "#275: the live owner's reservation survives the unowned sweep");
 
       store.close();
     }
