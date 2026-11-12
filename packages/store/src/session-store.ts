@@ -28,7 +28,14 @@ import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate } from "./entity.js";
 import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight } from "@anysearch-cli/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
-import type { ConsolidateSummarizeFn, ConsolidateClassifyFn, ConsolidateReport, ArchiveCandidate, ArchiveApplyReport } from "./consolidate.js";
+import type {
+  ConsolidateSummarizeFn,
+  ConsolidateClassifyFn,
+  ConsolidateReport,
+  ConsolidateRunOptions,
+  ArchiveCandidate,
+  ArchiveApplyReport,
+} from "./consolidate.js";
 import { bootstrapAccessChain, eventHash, CHAIN_SCHEMA_VERSION, CHAIN_EVENT_TYPE, type ChainEventRow } from "./access-chain.js";
 import { BudgetLedger, UNLIMITED_BUDGET_CAP, type BudgetCaps } from "./budget-ledger.js";
 // embedding is optional — routed through the guarded arm
@@ -211,6 +218,21 @@ export interface SessionStore {
   relationTelemetry(): RelationTelemetry;
   // alert-on-silence telemetry — event write failures are counted, never silent.
   accessEventTelemetry(): AccessEventTelemetry;
+  // D5/Q18: explicit consolidation over a caller-selected scope. Omitted
+  // `scope` is the internal full-archive mode (eval runner and the existing
+  // regression tests); product entry points always pass one, and resolve it
+  // through resolveConsolidateScope first. Optional on the port so hand-built
+  // store mocks stay source-compatible; the MCP tool refuses to guess.
+  consolidateMemory?(opts?: ConsolidateRunOptions, deps?: {
+    summarize?: ConsolidateSummarizeFn;
+    classify?: ConsolidateClassifyFn;
+  }): Promise<ConsolidateReport>;
+  // Late-bind the seams above. The MCP server builds its LLM session after the
+  // engine exists, so it cannot pass them through the constructor.
+  setConsolidationSeams?(seams: {
+    summarize?: ConsolidateSummarizeFn;
+    classify?: ConsolidateClassifyFn;
+  }): void;
 }
 
 // +: secret guard lives in ./secret.ts (shared containsSecret) —
@@ -346,9 +368,11 @@ export class SqliteSessionStore implements SessionStore {
   // parseLlmTriples does the Graphiti-style json_schema to json_object degrade.
   private readonly relationLlmFallback?: (text: string) => Promise<string | null>;
   // consolidation seams (summarize = bounded LLM per cluster; classify = kernel
-  // classifyClaim-shaped fidelity gate). Both optional and fail-open.
-  private readonly consolidateSummarize?: ConsolidateSummarizeFn;
-  private readonly consolidateClassify?: ConsolidateClassifyFn;
+  // classifyClaim-shaped fidelity gate). Both optional and fail-open. Not
+  // readonly: the MCP server builds its LLM session after the engine exists, so
+  // it late-binds these (setConsolidationSeams) instead of rebuilding the store.
+  private consolidateSummarize?: ConsolidateSummarizeFn;
+  private consolidateClassify?: ConsolidateClassifyFn;
   // semantic arm telemetry (serve mode; Phase-1 shadow contract retired).
   private readonly semTel = { queries: 0, hits: 0, served: 0 };
   // step7: entity arm telemetry counters (report-only in eval).
@@ -1067,8 +1091,44 @@ export class SqliteSessionStore implements SessionStore {
   }
   // ---- turn older episodes into semantic memories (D2/D4) + reversible forgetting (D5) ----
 
-  async consolidateMemory(opts?: { dryRun?: boolean; limit?: number }): Promise<ConsolidateReport> {
-    return consolidateMemoryRun(this.db, { summarize: this.consolidateSummarize, classify: this.consolidateClassify }, opts ?? {});
+  /**
+   * Late-bind this store's consolidation seams.
+   *
+   * The MCP server builds its LLM session per request, after the engine (and
+   * therefore the store) already exists, so the seams cannot ride the
+   * constructor there. Only the seams actually supplied are replaced; the
+   * caller passes closures scoped to its own run, so one request cannot leak
+   * its usage counter into another.
+   */
+  setConsolidationSeams(seams: {
+    summarize?: ConsolidateSummarizeFn;
+    classify?: ConsolidateClassifyFn;
+  }): void {
+    if (seams.summarize) this.consolidateSummarize = seams.summarize;
+    if (seams.classify) this.consolidateClassify = seams.classify;
+  }
+
+  /**
+   * One consolidation run over an explicit scope (D5/Q18).
+   *
+   * `opts.scope` is the caller's validated selection. Omitting it keeps the
+   * internal full-archive mode that the eval runner and the existing
+   * regression tests use; the two product entry points (`ans consolidate`,
+   * `ans_chat operation=consolidate`) always pass one.
+   *
+   * `deps` late-binds this run's seams. The MCP server builds its LLM session
+   * per request (after the engine exists), so it cannot go through the
+   * constructor; passing them per call keeps that store instance immutable
+   * instead of mutating shared seams under a concurrent request.
+   */
+  async consolidateMemory(
+    opts: ConsolidateRunOptions = {},
+    deps?: { summarize?: ConsolidateSummarizeFn; classify?: ConsolidateClassifyFn },
+  ): Promise<ConsolidateReport> {
+    return consolidateMemoryRun(this.db, {
+      summarize: deps?.summarize ?? this.consolidateSummarize,
+      classify: deps?.classify ?? this.consolidateClassify,
+    }, opts);
   }
 
   scanArchive(opts?: { ageFactor?: number; now?: number; limit?: number }): ArchiveCandidate[] {

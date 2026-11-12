@@ -50,6 +50,30 @@ export type ConsolidateSummarizeFn = (episodes: ConsolidateEvidence[]) => Promis
 export interface ConsolidateClaimVerdict { label: "supported" | "uncertain" | "unsupported"; confidence: number; }
 export type ConsolidateClassifyFn = (claim: string, evidence: ConsolidateEvidence[]) => ConsolidateClaimVerdict;
 
+/**
+ * Which materials a run was allowed to read.
+ *
+ * `by` names the rule that actually selected them. A memory-scoped run reads
+ * exactly that list (`memoryIds` wins over `sessionId`; the session does not
+ * widen it), a session-scoped run reads that session's materials, and
+ * `archive` is the internal full-archive mode that only the eval runner and
+ * the existing regression tests ask for explicitly.
+ */
+export type ConsolidateScopeBy = "memory" | "session" | "archive";
+
+export interface ConsolidateScopeReport {
+  by: ConsolidateScopeBy;
+  sessionIds: string[];
+  memoryIds: number[];
+  // A sessionId given alongside memoryIds. It is reported, not applied: the
+  // explicit list is the scope.
+  sessionIdNotApplied: boolean;
+  // Materials the caller asked for vs. rows the run actually read after the
+  // archived / quarantined / no-entity filters.
+  requestedMaterials: number;
+  materialsRead: number;
+}
+
 export interface ConsolidateReport {
   dryRun: boolean;
   clustersScanned: number;
@@ -62,7 +86,143 @@ export interface ConsolidateReport {
   // dedup decisions made on the jaccard-only degraded path (no cosine
   // computable — arm absent or no live row carries an embedding). Never silent.
   embeddingAbsent: number;
+  // The scope this run really used, echoed back so a caller can see it rather
+  // than infer it from the flags it thinks it passed.
+  scope: ConsolidateScopeReport;
+  // Clusters whose model call was refused by the session budget. The run stops
+  // spending at the first rejection; nothing is written for those clusters.
+  budgetRejected: number;
   semanticIds: number[];
+}
+
+/**
+ * A scope the caller did not supply, or supplied in a form this run refuses.
+ *
+ * Consolidation must never fall back to the whole archive: "I forgot the
+ * flag" and "consolidate everything" are indistinguishable at the store, so
+ * the missing-scope case is an error here.
+ */
+export class ConsolidateScopeError extends Error {
+  readonly code = "consolidate-scope-error";
+  constructor(message: string) {
+    super(message);
+    this.name = "ConsolidateScopeError";
+  }
+}
+
+export const CONSOLIDATE_SESSION_ID_MAX_CHARS = 128;
+const CONSOLIDATE_SESSION_ID_PATTERN = /^[\x21-\x7E]+$/;
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1;
+}
+
+/**
+ * Decide what a consolidation run may read, from raw caller input.
+ *
+ * Shared by `ans consolidate` and the MCP tool so the two entries cannot
+ * disagree on what counts as a usable scope. Rules:
+ * - `memoryIds` present -> validate every id, select by that list. `sessionId`
+ *   may also be present; it is echoed but never widens the list.
+ * - otherwise `sessionIds` -> validate every id, select by session.
+ * - neither -> error. No implicit full-archive run.
+ *
+ * Empty arrays count as absent, and an empty resulting scope is an error: a
+ * caller that asked for zero materials gets a refusal, not a full-archive run.
+ */
+export function resolveConsolidateScope(raw: {
+  sessionId?: unknown;
+  sessionIds?: unknown;
+  memoryIds?: unknown;
+  allowArchive?: unknown;
+}): { by: ConsolidateScopeBy; sessionIds: string[]; memoryIds: number[]; sessionIdNotApplied: boolean } {
+  const asArray = (value: unknown): unknown[] => {
+    if (Array.isArray(value)) return value;
+    if (value === undefined || value === null) return [];
+    return [value];
+  };
+
+  const rawSessions = asArray(raw.sessionIds ?? raw.sessionId);
+  const rawMemories = asArray(raw.memoryIds);
+  // An explicitly supplied memoryIds list is the caller's statement of scope.
+  // Supplying it empty (or with a bad id) is a malformed request, not "no
+  // memory scope": falling through to the session would silently read a
+  // different set of materials than the caller said.
+  const memoriesSupplied = Array.isArray(raw.memoryIds)
+    ? true
+    : raw.memoryIds !== undefined && raw.memoryIds !== null;
+
+  if (memoriesSupplied) {
+    const bad = rawMemories.filter((id) => !isPositiveInteger(id));
+    if (bad.length > 0 || rawMemories.length === 0) {
+      throw new ConsolidateScopeError(
+        "memoryIds must be a non-empty list of positive integer ids; got " + JSON.stringify(rawMemories),
+      );
+    }
+    const sessionIds: string[] = [];
+    for (const raw of rawSessions) {
+      if (!isValidConsolidateSessionId(raw)) {
+        throw new ConsolidateScopeError(
+          "sessionId must be 1.." + CONSOLIDATE_SESSION_ID_MAX_CHARS + " visible ASCII characters; got " + JSON.stringify(raw),
+        );
+      }
+      if (!sessionIds.includes(raw)) sessionIds.push(raw);
+    }
+    return {
+      by: "memory",
+      sessionIds,
+      memoryIds: rawMemories as number[],
+      sessionIdNotApplied: sessionIds.length > 0,
+    };
+  }
+
+  if (rawSessions.length > 0) {
+    const out: string[] = [];
+    for (const id of rawSessions) {
+      if (!isValidConsolidateSessionId(id)) {
+        throw new ConsolidateScopeError(
+          "sessionId must be 1.." + CONSOLIDATE_SESSION_ID_MAX_CHARS + " visible ASCII characters; got " + JSON.stringify(id),
+        );
+      }
+      if (!out.includes(id)) out.push(id);
+    }
+    return { by: "session", sessionIds: out, memoryIds: [], sessionIdNotApplied: false };
+  }
+
+  if (raw.allowArchive === true) {
+    return { by: "archive", sessionIds: [], memoryIds: [], sessionIdNotApplied: false };
+  }
+
+  throw new ConsolidateScopeError(
+    "an explicit scope is required: pass sessionId or a non-empty memoryIds list. Refusing to consolidate the full archive.",
+  );
+}
+
+/**
+ * Scope-id rule for consolidation. Same visible-ASCII 1..128 shape as the
+ * ans_chat session handle, but the failure contract is the opposite: a
+ * malformed chat handle fails open (single-shot), a malformed consolidation
+ * scope fails closed.
+ */
+export function isValidConsolidateSessionId(value: unknown): value is string {
+  return (
+    typeof value === "string"
+    && value.length > 0
+    && value.length <= CONSOLIDATE_SESSION_ID_MAX_CHARS
+    && CONSOLIDATE_SESSION_ID_PATTERN.test(value)
+  );
+}
+
+/**
+ * A summarize seam refused the call because a budget cap rejected it.
+ *
+ * The seam raises a typed error; the store must not import kernel (kernel ->
+ * store is the only direction), so it recognises the shape instead of the
+ * class: the provider-side error carries `code: "consolidate-budget-rejected"`.
+ */
+function isBudgetRejection(e: unknown): boolean {
+  return typeof e === "object" && e !== null
+    && (e as { code?: unknown }).code === "consolidate-budget-rejected";
 }
 
 export interface ArchiveCandidate {
@@ -132,19 +292,51 @@ function blobToFloat32(b: Buffer): Float32Array {
   return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
 }
 
+export interface ConsolidateRunOptions {
+  dryRun?: boolean;
+  thetaDup?: number;
+  limit?: number;
+  // Which materials to read. Product entry points resolve caller input through
+  // resolveConsolidateScope, so this is already validated. Absent keeps the
+  // internal full-archive mode that the eval runner and the existing
+  // regression tests call directly; no product surface can reach it without
+  // an explicit scope.
+  scope?: { by: ConsolidateScopeBy; sessionIds: string[]; memoryIds: number[]; sessionIdNotApplied: boolean };
+  // How many materials the caller named. Used only for the scope echo.
+  requestedMaterials?: number;
+}
+
 // D2/D4 main pipeline: signal-gated cluster scan -> summarize seam -> fidelity gate ->
 // deterministic ops quadruple. dryRun runs the identical write path inside a rolled-back
-// BEGIN IMMEDIATE transaction, so its counters are an exact prediction of apply.
+// BEGIN IMMEDIATE transaction, so its counters are an exact prediction of apply
+// *of the state it read* — a later concurrent write can still change what apply
+// would do, and the report says so rather than promising the same result.
+//
+// Scope (D5/Q18): the scan reads only the resolved scope. The archive mode is
+// internal; both product entry points refuse to build it from a missing or
+// malformed caller scope, so a forgotten flag can never become "consolidate
+// everything".
 export async function consolidateMemoryRun(
   db: Database.Database,
   deps: { summarize?: ConsolidateSummarizeFn; classify?: ConsolidateClassifyFn } = {},
-  opts: { dryRun?: boolean; thetaDup?: number; limit?: number } = {},
+  opts: ConsolidateRunOptions = {},
 ): Promise<ConsolidateReport> {
   const dryRun = opts.dryRun === true;
   const theta = opts.thetaDup ?? THETA_DUP;
+  const scope = opts.scope ?? { by: "archive" as const, sessionIds: [], memoryIds: [], sessionIdNotApplied: false };
   const report: ConsolidateReport = {
     dryRun, clustersScanned: 0, clustersTriggered: 0, llmUnavailable: 0,
-    gateRejected: 0, add: 0, noop: 0, update: 0, embeddingAbsent: 0, semanticIds: [],
+    gateRejected: 0, add: 0, noop: 0, update: 0, embeddingAbsent: 0,
+    scope: {
+      by: scope.by,
+      sessionIds: [...scope.sessionIds],
+      memoryIds: [...scope.memoryIds],
+      sessionIdNotApplied: scope.sessionIdNotApplied,
+      requestedMaterials: opts.requestedMaterials ?? (scope.memoryIds.length > 0 ? scope.memoryIds.length : 0),
+      materialsRead: 0,
+    },
+    budgetRejected: 0,
+    semanticIds: [],
   };
 
   // plan phase (scan + LLM summarize + classify + dedup) runs WITHOUT the
@@ -154,13 +346,26 @@ export async function consolidateMemoryRun(
   const plan = async (): Promise<void> => {
     // Cluster scan INCLUDES superseded rows (valid_until NOT NULL): same-entity writes soft-close
     // the prior version immediately, so episodic history *is* the closed-row set.
+    //
+    // Scope selection: memoryIds wins over sessionIds (the explicit list is the
+    // scope; a sessionId alongside it never widens it). Every filter that
+    // already applies to a full-archive scan still applies inside the scope.
+    const where: string[] = ["entity IS NOT NULL", "quarantine IS NULL", "archived = 0"];
+    const params: Array<string | number> = [];
+    if (scope.by === "memory") {
+      where.push("id IN (" + scope.memoryIds.map(() => "?").join(", ") + ")");
+      params.push(...scope.memoryIds);
+    } else if (scope.by === "session") {
+      where.push("session_id IN (" + scope.sessionIds.map(() => "?").join(", ") + ")");
+      params.push(...scope.sessionIds);
+    }
     const rows = db
       .prepare(
         "SELECT id, entity, title, snippet, url, created_at, last_accessed, access_count " +
-          "FROM retrieval_results WHERE entity IS NOT NULL " +
-          "AND quarantine IS NULL AND archived = 0 ORDER BY entity, id",
+          "FROM retrieval_results WHERE " + where.join(" AND ") + " ORDER BY entity, id",
       )
-      .all() as EpisodeRow[];
+      .all(...params) as EpisodeRow[];
+    report.scope.materialsRead = rows.length;
 
     const byEntity = new Map<string, EpisodeRow[]>();
     for (const r of rows) {
@@ -173,7 +378,9 @@ export async function consolidateMemoryRun(
 
     const nowMs = Date.now();
     let processed = 0;
+    let budgetStopped = false;
     for (const [, eps] of byEntity) {
+      if (budgetStopped) break;
       if (opts.limit && processed >= opts.limit) break;
       report.clustersScanned++;
       if (eps.length < CLUSTER_MIN) continue;
@@ -188,11 +395,24 @@ export async function consolidateMemoryRun(
       processed++;
 
       // Summarize seam (fail-open): absent seam or null result -> skip cluster entirely.
+      // A budget refusal is different from a summary fault: the caller's cap was
+      // reached, so the run stops spending and reports it instead of looping
+      // through the remaining clusters only to be refused again.
       if (!deps.summarize) { report.llmUnavailable++; continue; }
       const evidence: ConsolidateEvidence[] = eps.map((e) => ({
         title: e.title ?? "", snippet: e.snippet ?? "", url: e.url ?? "",
       }));
-      const summary = await deps.summarize(evidence);
+      let summary: string | null;
+      try {
+        summary = await deps.summarize(evidence);
+      } catch (e) {
+        if (isBudgetRejection(e)) {
+          report.budgetRejected++;
+          budgetStopped = true;
+          break;
+        }
+        throw e;
+      }
       if (!summary || summary.trim().length === 0) { report.llmUnavailable++; continue; }
 
       // D4 fidelity gate (kernel classifyClaim shape, injected). Row verdict = worst claim:

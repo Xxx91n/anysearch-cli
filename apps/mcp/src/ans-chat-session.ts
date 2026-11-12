@@ -210,3 +210,95 @@ export function buildAnsChatResult(output: string, sessionId?: string, extra?: R
     ...(Object.keys(metadata).length > 0 ? { structuredContent: metadata } : {}),
   };
 }
+
+// ---- consolidation result (D5 / Q18 / Q19) ----
+
+// Kept structural so apps/mcp does not re-declare the store's types: any
+// report satisfying this shape renders, and the store owns the meaning.
+export interface ConsolidateScopeShape {
+  by: "memory" | "session" | "archive";
+  sessionIds: string[];
+  memoryIds: number[];
+  sessionIdNotApplied: boolean;
+  requestedMaterials: number;
+  materialsRead: number;
+}
+
+export interface ConsolidateReportShape {
+  dryRun: boolean;
+  clustersScanned: number;
+  clustersTriggered: number;
+  llmUnavailable: number;
+  gateRejected: number;
+  add: number;
+  noop: number;
+  update: number;
+  budgetRejected: number;
+  scope: ConsolidateScopeShape;
+  semanticIds: number[];
+}
+
+export interface ConsolidationUsageShape {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  // A dollar figure is only meaningful for the "provider-reported" and
+  // "price-estimate" bases. For "not-called" and "unknown" the number is 0 and
+  // must not be read as free.
+  costUsd: number;
+  costBasis: "not-called" | "unknown" | "price-estimate" | "provider-reported" | "mixed";
+  missing: string[];
+}
+
+/**
+ * Consolidation result.
+ *
+ * The report lands in `structuredContent` (the host reads categories there)
+ * and one readable line stays in `content` for content-only proxies. The scope
+ * is always echoed: a caller must be able to see which materials were read
+ * instead of inferring it from the flags it thinks it sent.
+ */
+export function buildAnsChatConsolidateResult(
+  report: ConsolidateReportShape,
+  usage: ConsolidationUsageShape,
+  extra: { scope: ConsolidateScopeShape; budgetUnmetered?: boolean },
+): AnsChatToolResult {
+  const s = extra.scope;
+  const scopeText = s.by === "session"
+    ? "session " + s.sessionIds.join(", ")
+    : s.by === "memory"
+      ? "memory " + s.memoryIds.join(", ")
+      : "archive";
+  const line =
+    "ans_chat consolidate" + (report.dryRun ? " (dry-run)" : "") +
+    ": add " + report.add + ", update " + report.update + ", skip " +
+    (report.noop + report.gateRejected) + ", conflict " + report.gateRejected +
+    ", failure " + report.llmUnavailable +
+    " (scanned " + report.clustersScanned + ", triggered " + report.clustersTriggered + ")" +
+    "\nscope: " + scopeText + " (materials read " + s.materialsRead +
+    (s.by === "memory" ? " of " + s.requestedMaterials + " requested" : "") + ")" +
+    (s.sessionIdNotApplied ? "; sessionId not applied: the memory list is the scope" : "") +
+    (report.dryRun ? "\ndry-run: nothing saved; the counts describe the state read now" : "") +
+    (report.budgetRejected > 0 ? "\nbudget: " + report.budgetRejected + " model call(s) refused by the session cap" : "");
+  return {
+    content: [{ type: "text", text: line }],
+    structuredContent: {
+      operation: "consolidate",
+      scope: s,
+      report,
+      counts: {
+        add: report.add,
+        update: report.update,
+        skip: report.noop + report.gateRejected,
+        conflict: report.gateRejected,
+        failure: report.llmUnavailable,
+        budgetRejected: report.budgetRejected,
+      },
+      usage,
+      ...(extra.budgetUnmetered ? { budgetUnmetered: true } : {}),
+    },
+  };
+}

@@ -402,8 +402,14 @@ function stepStaticAssertions() {
       // 1o. Phase-3 CLI: consolidate command + memory forget + durable DB path wiring.
       {
         const conCli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/consolidate.ts"), "utf8");
-        for (const tok of ["createLlmSession", "classifyClaim", "resolveDbPath", "consolidateMemory", "--dry-run"])
+        // #260: the fidelity gate now travels inside the shared consolidation
+        // seam (kernel/consolidation.ts), so the CLI's own static markers are
+        // the seam builder and the shared scope rule.
+        for (const tok of ["createLlmSession", "createConsolidationSeams", "resolveDbPath", "consolidateMemory", "resolveConsolidateScope", "--dry-run"])
           if (!conCli.includes(tok)) fail("1o: apps/cli consolidate.ts missing" + tok);
+        const conSeam = fs.readFileSync(path.join(ROOT, "packages/kernel/src/consolidation.ts"), "utf8");
+        for (const tok of ["createConsolidationSeams", "classifyClaim", "costBasis"])
+          if (!conSeam.includes(tok)) fail("1o: kernel consolidation.ts missing" + tok);
         const dbHelper = fs.readFileSync(path.join(ROOT, "apps/cli/src/db.ts"), "utf8");
         if (!dbHelper.includes("createPersistentEngine") || !dbHelper.includes("resolveDbPath")) fail("1o: db.ts helper missing");
         const memCli = fs.readFileSync(path.join(ROOT, "apps/cli/src/commands/memory.ts"), "utf8");

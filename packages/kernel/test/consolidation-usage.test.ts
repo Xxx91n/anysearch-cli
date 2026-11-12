@@ -1,0 +1,211 @@
+// #260 — consolidation usage and cost honesty (spec D4, test T1/T2).
+//
+// The seam makes real provider calls outside the agent loop, so it must:
+//   - reserve before the call and settle after it (the cap is real),
+//   - stop with a typed refusal when the cap rejects, instead of spending on,
+//   - report tokens/cache separately, and
+//   - never label an unknown dollar figure as free.
+//
+// A custom endpoint (baseUrl + api) carries an all-zero price table; that is
+// the "unknown" case this file pins. A catalog model with real prices is the
+// "price-estimate" case. A server-sent price is the "provider-reported" case.
+// Run: pnpm --filter @anysearch-cli/kernel run test
+
+import { createConsolidationSeams, isConsolidationBudgetError } from "../src/consolidation";
+import type { BudgetLedgerPort } from "../src/ports";
+
+let passed = 0;
+let failed = 0;
+function assert(cond: boolean, msg: string): void {
+  if (!cond) { failed++; console.error("FAIL: " + msg); return; }
+  passed++;
+}
+
+type UsageShape = {
+  input?: number; output?: number; cacheRead?: number; cacheWrite?: number;
+  totalTokens?: number; cost?: { total?: number; totalFromProvider?: boolean };
+};
+
+/**
+ * A fake LLM session: `streamFn` yields one text delta and a done event whose
+ * message carries the usage this case wants to exercise.
+ */
+function fakeSession(opts: {
+  text?: string;
+  usage?: UsageShape;
+  priceTable?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+}) {
+  const model = {
+    id: "fake-model",
+    name: "fake-model",
+    api: "openai-completions",
+    provider: "fake",
+    baseUrl: "http://127.0.0.1:1/v1",
+    reasoning: false,
+    input: ["text"],
+    cost: {
+      input: opts.priceTable?.input ?? 0,
+      output: opts.priceTable?.output ?? 0,
+      cacheRead: opts.priceTable?.cacheRead ?? 0,
+      cacheWrite: opts.priceTable?.cacheWrite ?? 0,
+    },
+    contextWindow: 128000,
+    maxTokens: 8192,
+  };
+  const streamFn = () => {
+    const events = [
+      { type: "text_delta", delta: opts.text ?? "Summary text." },
+      ...(opts.usage ? [{ type: "done", message: { role: "assistant", content: [], usage: opts.usage } }] : []),
+    ];
+    return (async function* () { for (const e of events) yield e; })();
+  };
+  return { model, streamFn, apiKey: "fake-key" } as never;
+}
+
+type LedgerCall = { kind: "reserve" | "settle"; dimension: "token" | "call"; amount: number; actual?: number };
+
+function recordingLedger(opts: { rejectCall?: boolean; rejectTokens?: boolean } = {}) {
+  const calls: LedgerCall[] = [];
+  const ledger: BudgetLedgerPort & { calls: LedgerCall[] } = {
+    reserveCalls: (_id: string, count: number) => {
+      if (opts.rejectCall) return false;
+      calls.push({ kind: "reserve", dimension: "call", amount: count });
+      return true;
+    },
+    reserveTokens: (_id: string, amount: number) => {
+      if (opts.rejectTokens) return false;
+      calls.push({ kind: "reserve", dimension: "token", amount });
+      return true;
+    },
+    reserveUsd: () => true,
+    settleCalls: (_id: string, _r: number, actual: number) => {
+      calls.push({ kind: "settle", dimension: "call", amount: actual });
+    },
+    settleTokens: (_id: string, reserved: number, actual: number) => {
+      calls.push({ kind: "settle", dimension: "token", amount: reserved, actual });
+    },
+    settleUsd: () => {},
+    calls,
+  };
+  return ledger;
+}
+
+async function main() {
+  // --- 1. unknown price: a custom endpoint's zero price table is not "free" ---
+  {
+    const ledger = recordingLedger();
+    const seams = createConsolidationSeams(
+      fakeSession({
+        text: "Alpha uses Beta for builds.",
+        usage: { input: 100, output: 20, totalTokens: 120, cost: { total: 0.012 } },
+      }),
+      { budget: { sessionId: "s1", ledger } },
+    );
+    const out = await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
+    assert(out === "Alpha uses Beta for builds.", "summarize returns the model text");
+
+    const u = seams.usage;
+    assert(u.calls === 1, "one call is counted (got " + u.calls + ")");
+    assert(u.inputTokens === 100 && u.outputTokens === 20 && u.totalTokens === 120, "tokens are summed from the provider usage");
+    assert(u.costBasis === "unknown", "a zero price table gives costBasis=unknown (got " + u.costBasis + ")");
+    assert(u.costUsd === 0, "the unknown dollar figure stays 0 and is NOT presented as a real price");
+    assert(u.missing.some((m) => /cost/i.test(m)), "the unknown cost is named in missing[]");
+    assert(u.missing.some((m) => /cache/i.test(m)), "cache usage that never arrived is named in missing[]");
+
+    // Reserve-before, settle-after, on both dimensions.
+    const reserves = ledger.calls.filter((c) => c.kind === "reserve");
+    const settles = ledger.calls.filter((c) => c.kind === "settle");
+    assert(reserves.length === 2, "a call reserves both the call count and tokens (got " + reserves.length + ")");
+    assert(reserves.some((c) => c.dimension === "call" && c.amount === 1), "the call reserve is one call");
+    assert(reserves.some((c) => c.dimension === "token" && c.amount > 0), "the token reserve is positive");
+    const tokenSettle = settles.find((c) => c.dimension === "token");
+    assert(tokenSettle !== undefined && tokenSettle.actual === 120, "the token settle books the actual provider total (got " + (tokenSettle && tokenSettle.actual) + ")");
+  }
+
+  // --- 2. price table present but no server price: an estimate, not a bill ---
+  {
+    const seams = createConsolidationSeams(
+      fakeSession({
+        usage: { input: 1000, output: 100, totalTokens: 1100, cost: { total: 0.05, totalFromProvider: false } },
+        priceTable: { input: 0.001, output: 0.002 },
+      }),
+    );
+    await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
+    assert(seams.usage.costBasis === "price-estimate", "a rate-card figure is an estimate (got " + seams.usage.costBasis + ")");
+    assert(seams.usage.costUsd === 0.05, "the estimate is reported as an estimate, with its number");
+  }
+
+  // --- 3. server-sent price: provider-reported ---
+  {
+    const seams = createConsolidationSeams(
+      fakeSession({
+        usage: { input: 500, output: 50, cacheRead: 400, totalTokens: 550, cost: { total: 0.02, totalFromProvider: true } },
+        priceTable: { input: 0.001, output: 0.002 },
+      }),
+    );
+    await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
+    assert(seams.usage.costBasis === "provider-reported", "a server price is provider-reported (got " + seams.usage.costBasis + ")");
+    assert(seams.usage.cacheReadTokens === 400, "a non-zero cache read is reported");
+    assert(!seams.usage.missing.some((m) => /cache/i.test(m)), "reported cache usage is not listed as missing");
+    assert(seams.usage.missing.length === 0, "a fully reported call names no gaps (got " + JSON.stringify(seams.usage.missing) + ")");
+  }
+
+  // --- 4. no usage block at all: named, never zero-filled as if reported ---
+  {
+    const seams = createConsolidationSeams(fakeSession({ text: "text only" }));
+    const out = await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
+    assert(out === "text only", "text still comes back without usage");
+    assert(seams.usage.calls === 1, "the call is still counted");
+    assert(seams.usage.missing.some((m) => /usage/i.test(m)), "a missing usage block is named");
+    assert(seams.usage.costBasis === "unknown", "no usage and no price leaves the cost unknown (got " + seams.usage.costBasis + ")");
+  }
+
+  // --- 5. never called: not-called, and nothing pretends it spent ---
+  {
+    const seams = createConsolidationSeams(fakeSession({}));
+    assert(seams.usage.calls === 0, "a seam that was never used reports zero calls");
+    assert(seams.usage.costBasis === "not-called", "no call is not-called, not unknown (got " + seams.usage.costBasis + ")");
+  }
+
+  // --- 6. a rejected call reserve stops the call before any provider work ---
+  {
+    const ledger = recordingLedger({ rejectCall: true });
+    const seams = createConsolidationSeams(fakeSession({}), { budget: { sessionId: "s1", ledger } });
+    let thrown: unknown;
+    try {
+      await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
+    } catch (e) { thrown = e; }
+    assert(isConsolidationBudgetError(thrown), "a rejected call cap raises the typed budget refusal");
+    assert(ledger.calls.length === 0, "a rejected reserve records no spend (got " + ledger.calls.length + ")");
+    assert(seams.usage.calls === 0, "a refused call is not counted as a made call");
+  }
+
+  // --- 7. a rejected token reserve releases the call reservation ---
+  {
+    const ledger = recordingLedger({ rejectTokens: true });
+    const seams = createConsolidationSeams(fakeSession({}), { budget: { sessionId: "s1", ledger } });
+    let thrown: unknown;
+    try {
+      await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
+    } catch (e) { thrown = e; }
+    assert(isConsolidationBudgetError(thrown), "a rejected token cap raises the typed budget refusal");
+    const callSettle = ledger.calls.find((c) => c.kind === "settle" && c.dimension === "call");
+    assert(callSettle === undefined, "the released call reservation is not booked as a completed call");
+    assert(seams.usage.calls === 0, "no call is counted when the token reserve refused it");
+  }
+
+  // --- 8. classify stays deterministic and free ---
+  {
+    const seams = createConsolidationSeams(fakeSession({}));
+    const verdict = seams.classify("Alpha uses Beta for builds.", [
+      { title: "Alpha note", snippet: "Alpha uses Beta for builds.", url: "https://ex.com/alpha" },
+    ]);
+    assert(verdict.label === "supported" || verdict.label === "uncertain", "classify returns a real verdict label");
+    assert(seams.usage.calls === 0, "classify makes no model call, so it adds no usage");
+  }
+
+  console.log("consolidation-usage: " + passed + " passed, " + failed + " failed");
+  if (failed > 0) process.exit(1);
+}
+
+await main();

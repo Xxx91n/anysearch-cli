@@ -54,7 +54,7 @@ Five tools are registered by name, with input schemas sourced from the kernel
 | `research_web` | `question` (required); `depth` = `brief` (1 round) \| `standard` (2) \| `deep` (3, default); same three vertical args | Repeats the deep search per round, dedupes URLs across rounds, and stops early when the `sufficiency` verdict is `correct`. Returns the merged result set (last 10 shown) and the top 5 citations. |
 | `recall_memory` | `query` (required); `limit` (default 5, integer ≥ 1) | FTS5 recall over the store-level research archive (the same range `query_knowledge` reads), with a time-sensitivity tag (QDF) and time decay. When internal hits are short of `limit` and `ANS_PROJECT_DB` is set, it falls back to the project index. That fallback is optional and keeps going when it fails. |
 | `query_knowledge` | `query` (required) | Dispatches through the current domain's `rag.adapter`. Only `fts` retrieves. `none` and `note` return an explicit empty result. An unknown adapter id falls back to `none` with a stderr warning (deduped within the server instance, so stateless HTTP can repeat it once per request). |
-| `ans_chat` | `message` (required); `sessionId` (optional) | Runs the `PiAgentRuntime` agent loop. Requires `ANS_LLM_PROVIDER` and `ANS_LLM_MODEL`. Missing configuration is an error result, not a successful-looking message. Returns a session handle (see below). |
+| `ans_chat` | `message` (required for chat); `sessionId` (optional); `operation` = `chat` (default) \| `consolidate`; `memoryIds`, `dryRun` (consolidate only) | Runs the `PiAgentRuntime` agent loop. Requires `ANS_LLM_PROVIDER` and `ANS_LLM_MODEL`. Missing configuration is an error result, not a successful-looking message. Returns a session handle (see below). With `operation = "consolidate"` it does not chat: it turns the materials selected by `sessionId` or `memoryIds` into long-term knowledge. See [Consolidation](#consolidation). |
 
 Vertical routing (`verticalDomain` / `verticalSubDomain` / `verticalParams`)
 replaces the domain TOML `sources.vertical` default wholesale. It is never
@@ -87,6 +87,41 @@ spent:
 | `usage.memorySummary` | The same ledger shape for the memory pipeline's own summary calls, or `null` when no pipeline is wired. Same `costSource` rule: a summary price pi-ai computed from its rate card is `estimated`, not provider-sent. |
 | `context` | PI's own view of the window: `{tokens, window, percent}`. `window` is the window the session actually runs with, so a declared `ANS_LLM_CONTEXT_WINDOW` is verifiable here. |
 | `toolCalls` | Per-tool call counts for this run. Search work is counted here, apart from model usage. |
+
+### Consolidation
+
+`ans_chat` with `operation = "consolidate"` runs the same consolidation path as
+the `ans consolidate` CLI command. The two share the scope rule, the summarize
+prompt, the fidelity gate and the usage accounting, so they cannot drift apart.
+
+The scope is required. `memoryIds` selects exactly those stored materials;
+`sessionId` selects one session's materials. Both may be given, but the list is
+the scope: the session does not widen it. With neither, the call is rejected and
+nothing is consolidated — there is no fallback to the whole archive, because a
+forgotten argument and "everything" would otherwise be indistinguishable. An
+empty `memoryIds` list, a non-positive id, or a `sessionId` that is not 1..128
+visible ASCII characters is an error.
+
+`dryRun: true` runs the same path inside a transaction that is rolled back:
+no knowledge, no material state, no version relation and no summary change is
+saved. The model can still be called and does cost money. The preview describes
+the state read at that moment; a concurrent write before an apply can make the
+apply differ.
+
+The result reports the scope it really used, not the one the caller thinks it
+passed:
+
+| Key | Meaning |
+|-----|---------|
+| `scope.by` | `memory` (the explicit list), `session` (one session's materials), or `archive` (internal only; no product surface can request it). |
+| `scope.materialsRead` / `scope.requestedMaterials` | Rows actually read after the archived/quarantined/no-entity filters, and how many the caller asked for. |
+| `scope.sessionIdNotApplied` | `true` when a `sessionId` accompanied `memoryIds` and was therefore not the scope. |
+| `counts` | `add`, `update`, `skip`, `conflict`, `failure` (no summary available), `budgetRejected`. |
+| `usage` | The same honest ledger the chat path uses, with these consolidation-specific bases: `not-called`, `unknown`, `price-estimate`, `provider-reported`, `mixed`. `missing[]` names every dimension that never arrived. A custom endpoint's zero price table reports `unknown`; its `costUsd` of 0 is not a claim of a free run. |
+| `budgetUnmetered` | Present when no session could be metered (a pure memory-list scope). Those calls were not charged to a session cap, and the flag says so instead of implying they were free. |
+
+Consolidation is triggered explicitly by the user or the host agent. There is no
+background consolidation loop.
 
 ## `isError` vs empty vs abstain
 
